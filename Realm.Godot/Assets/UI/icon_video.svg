@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Stand -->
+  <path d="M 22 44 L 26 50 H 38 L 42 44 Z" fill="none" stroke="#2b2319" stroke-width="6" stroke-linejoin="round" />
+  <path d="M 16 52 H 48" stroke="#2b2319" stroke-width="6" stroke-linecap="round" />
+  <path d="M 16 52 H 48" stroke="#d4b273" stroke-width="3" stroke-linecap="round" />
+  <path d="M 22 44 L 26 50 H 38 L 42 44 Z" fill="#d4b273" stroke="#d4b273" stroke-width="1" stroke-linejoin="round" />
+
+  <!-- Outer monitor border (fill="none" for transparent inside) -->
+  <rect x="6" y="8" width="52" height="36" rx="6" ry="6" fill="none" stroke="#2b2319" stroke-width="6" stroke-linejoin="round" />
+  <rect x="6" y="8" width="52" height="36" rx="6" ry="6" fill="none" stroke="#d4b273" stroke-width="3" />
+
+  <!-- Play Triangle -->
+  <polygon points="27,18 43,26 27,34" fill="#d4b273" stroke="#2b2319" stroke-width="5" stroke-linejoin="round" />
+  <polygon points="27,18 43,26 27,34" fill="#d4b273" stroke="#d4b273" stroke-width="1.5" stroke-linejoin="round" />
+</svg>

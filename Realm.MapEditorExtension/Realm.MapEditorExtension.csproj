@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);node_modules\**;dist\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <Target Name="SyncVersion" BeforeTargets="NpmBuild">
+    <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)/../scripts/sync-version.ps1&quot;" ContinueOnError="true" />
+  </Target>
+
+  <Target Name="NpmInstall" BeforeTargets="Build" Condition="!Exists('node_modules')">
+    <Exec Command="npm install" />
+  </Target>
+
+  <Target Name="NpmBuild" AfterTargets="NpmInstall" BeforeTargets="Build">
+    <Exec Command="npm run compile" />
+  </Target>
+
+  <Target Name="SyncToEmbedded" AfterTargets="Build">
+    <ItemGroup>
+      <DistFiles Include="dist\**\*.*" />
+      <MediaFiles Include="media\**\*.*" />
+      <RootFiles Include="package.json;map_schema.json" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(DistFiles)" DestinationFiles="@(DistFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_extensions_dist/speige.realm-map-editor/dist/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(MediaFiles)" DestinationFiles="@(MediaFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_extensions_dist/speige.realm-map-editor/media/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(RootFiles)" DestinationFiles="@(RootFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_extensions_dist/speige.realm-map-editor/%(Filename)%(Extension)')" />
+    <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)/../scripts/sync-version_visualStudio_debug.ps1&quot;" ContinueOnError="true" />
+  </Target>
+</Project>

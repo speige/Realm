@@ -1,0 +1,521 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Realm.Shared.Metadata;
+
+namespace Realm.Shared.Distribution;
+
+public class ContentAddressableStorage
+{
+    public const long MaximumAssetSizeBytes = 15 * 1024 * 1024;
+    private readonly string _rootDirectory;
+    private readonly string _assetsDirectory;
+    private readonly string _sidecarCacheDirectory;
+    private readonly ConcurrentDictionary<string, object> _fileLocks = new();
+    private readonly ConcurrentDictionary<string, string> _assetPathCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, bool> _ensuredDirectories = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, string> _sidecarMemoryCache = new(StringComparer.OrdinalIgnoreCase);
+    private long _lastDiskCheckTicks = 0;
+    private bool _lastDiskCheckResult = true;
+
+    public string RootDirectory => _rootDirectory;
+    public string AssetsDirectory => _assetsDirectory;
+    public string SidecarCacheDirectory => _sidecarCacheDirectory;
+
+    public ContentAddressableStorage(string rootDirectory)
+    {
+        _rootDirectory = Path.GetFullPath(rootDirectory);
+        _assetsDirectory = Path.Combine(_rootDirectory, "assets");
+        _sidecarCacheDirectory = Path.Combine(_rootDirectory, ".sidecarcache");
+
+        Directory.CreateDirectory(_assetsDirectory);
+        Directory.CreateDirectory(_sidecarCacheDirectory);
+    }
+
+    public static string NormalizeBlake3Hash(string hashOrFileName)
+    {
+        string fileName = Path.GetFileName(hashOrFileName);
+        int dotIndex = fileName.IndexOf('.');
+        return (dotIndex >= 0 ? fileName.Substring(0, dotIndex) : fileName).Trim().ToLowerInvariant();
+    }
+
+    public string? FindAssetFilePath(string blake3Hash)
+    {
+        string normalizedHash = NormalizeBlake3Hash(blake3Hash);
+        if (normalizedHash.Length < 2)
+        {
+            return null;
+        }
+
+        if (_assetPathCache.TryGetValue(normalizedHash, out string? cachedPath) && File.Exists(cachedPath))
+        {
+            return cachedPath;
+        }
+
+        string shard = normalizedHash.Substring(0, 2);
+        string shardDirectory = Path.Combine(_assetsDirectory, shard);
+        if (!Directory.Exists(shardDirectory))
+        {
+            return null;
+        }
+
+        string binPath = Path.Combine(shardDirectory, $"{normalizedHash}.bin");
+        if (File.Exists(binPath))
+        {
+            _assetPathCache[normalizedHash] = binPath;
+            return binPath;
+        }
+
+        string rmeshPath = Path.Combine(shardDirectory, $"{normalizedHash}.rmesh");
+        if (File.Exists(rmeshPath))
+        {
+            _assetPathCache[normalizedHash] = rmeshPath;
+            return rmeshPath;
+        }
+
+        string ranimPath = Path.Combine(shardDirectory, $"{normalizedHash}.ranim");
+        if (File.Exists(ranimPath))
+        {
+            _assetPathCache[normalizedHash] = ranimPath;
+            return ranimPath;
+        }
+
+        string pngPath = Path.Combine(shardDirectory, $"{normalizedHash}.png");
+        if (File.Exists(pngPath))
+        {
+            _assetPathCache[normalizedHash] = pngPath;
+            return pngPath;
+        }
+
+        string[] matchingFiles = Directory.GetFiles(shardDirectory, $"{normalizedHash}*");
+        if (matchingFiles.Length > 0)
+        {
+            string foundPath = matchingFiles[0];
+            _assetPathCache[normalizedHash] = foundPath;
+            return foundPath;
+        }
+
+        return null;
+    }
+
+    public bool HasAsset(string blake3Hash)
+    {
+        return FindAssetFilePath(blake3Hash) != null;
+    }
+
+    public byte[]? GetAssetBytes(string blake3Hash)
+    {
+        string? filePath = FindAssetFilePath(blake3Hash);
+        if (filePath == null || !File.Exists(filePath))
+        {
+            return null;
+        }
+
+        string normalizedHash = NormalizeBlake3Hash(blake3Hash);
+        object fileLock = _fileLocks.GetOrAdd(normalizedHash, _ => new object());
+
+        lock (fileLock)
+        {
+            return File.ReadAllBytes(filePath);
+        }
+    }
+
+    public Stream? OpenAssetReadStream(string blake3Hash)
+    {
+        string? filePath = FindAssetFilePath(blake3Hash);
+        if (filePath == null || !File.Exists(filePath))
+        {
+            return null;
+        }
+
+        return new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+    }
+
+    public string? GetAssetMetadata(string blake3Hash)
+    {
+        string normalizedHash = NormalizeBlake3Hash(blake3Hash);
+        if (_sidecarMemoryCache.TryGetValue(normalizedHash, out var cachedMeta))
+        {
+            return cachedMeta;
+        }
+
+        string sidecarPath = GetSidecarCachePath(normalizedHash);
+        if (File.Exists(sidecarPath))
+        {
+            try
+            {
+                string text = File.ReadAllText(sidecarPath);
+                _sidecarMemoryCache[normalizedHash] = text;
+                return text;
+            }
+            catch
+            {
+            }
+        }
+
+        string? filePath = FindAssetFilePath(normalizedHash);
+        if (filePath == null || !File.Exists(filePath))
+        {
+            return null;
+        }
+
+        string? extractedMetadata = RealmMetadataHelper.ExtractMetadata(filePath);
+        if (!string.IsNullOrWhiteSpace(extractedMetadata))
+        {
+            UpdateSidecarCache(normalizedHash, extractedMetadata);
+        }
+
+        return extractedMetadata;
+    }
+
+    public bool CheckFreeDiskSpaceAcceptingUploads()
+    {
+        long now = Environment.TickCount64;
+        if (now - _lastDiskCheckTicks < 5000)
+        {
+            return _lastDiskCheckResult;
+        }
+
+        try
+        {
+            string rootPath = Path.GetPathRoot(_rootDirectory) ?? _rootDirectory;
+            var driveInfo = new DriveInfo(rootPath);
+            if (driveInfo.TotalSize <= 0)
+            {
+                _lastDiskCheckResult = true;
+            }
+            else
+            {
+                double freePercentage = (double)driveInfo.AvailableFreeSpace / driveInfo.TotalSize;
+                _lastDiskCheckResult = freePercentage >= 0.10;
+            }
+            _lastDiskCheckTicks = now;
+            return _lastDiskCheckResult;
+        }
+        catch
+        {
+            _lastDiskCheckResult = true;
+            _lastDiskCheckTicks = now;
+            return true;
+        }
+    }
+
+    public (bool Success, string Message, bool Deduplicated, bool Merged, string Blake3Hash) StoreAsset(
+        byte[] assetBytes,
+        string? fileExtensionOrPath,
+        string? metadataHeadersJson = null,
+        string? authorPublicKey = null,
+        string? authorSignature = null,
+        string? precomputedBlake3 = null)
+    {
+        if (assetBytes == null || assetBytes.Length == 0)
+        {
+            return (false, "Empty asset payload.", false, false, string.Empty);
+        }
+
+        if (assetBytes.Length > MaximumAssetSizeBytes)
+        {
+            return (false, $"Asset exceeds maximum size limit of {MaximumAssetSizeBytes} bytes.", false, false, string.Empty);
+        }
+
+        string extension = Path.GetExtension(fileExtensionOrPath ?? string.Empty).ToLowerInvariant();
+        string canonicalBlake3 = !string.IsNullOrEmpty(precomputedBlake3)
+            ? precomputedBlake3
+            : RealmMetadataHelper.ComputeBlake3(assetBytes, extension);
+        string normalizedHash = NormalizeBlake3Hash(canonicalBlake3);
+
+        object fileLock = _fileLocks.GetOrAdd(normalizedHash, _ => new object());
+
+        lock (fileLock)
+        {
+            string? existingFilePath = FindAssetFilePath(normalizedHash);
+
+            if (existingFilePath != null && File.Exists(existingFilePath))
+            {
+                bool merged = false;
+                if (!string.IsNullOrWhiteSpace(metadataHeadersJson))
+                {
+                    merged = UpdateExistingAssetHeaders(existingFilePath, normalizedHash, metadataHeadersJson, authorPublicKey, authorSignature);
+                }
+
+                _assetPathCache[normalizedHash] = existingFilePath;
+                return (true, "Asset already exists (deduplicated).", true, merged, normalizedHash);
+            }
+
+            if (!CheckFreeDiskSpaceAcceptingUploads())
+            {
+                return (false, "Upload rejected: available disk space is less than 10%.", false, false, normalizedHash);
+            }
+
+            string shard = normalizedHash.Substring(0, 2);
+            string shardDirectory = Path.Combine(_assetsDirectory, shard);
+            if (!_ensuredDirectories.ContainsKey(shardDirectory))
+            {
+                if (!Directory.Exists(shardDirectory))
+                {
+                    Directory.CreateDirectory(shardDirectory);
+                }
+                _ensuredDirectories[shardDirectory] = true;
+            }
+
+            string finalExtension = !string.IsNullOrEmpty(extension) ? extension : ".bin";
+            string finalFilePath = Path.Combine(shardDirectory, $"{normalizedHash}{finalExtension}");
+
+            byte[] bytesToWrite = assetBytes;
+            string? metadataToEmbed = metadataHeadersJson;
+
+            if (!string.IsNullOrWhiteSpace(authorPublicKey) && !string.IsNullOrWhiteSpace(authorSignature))
+            {
+                metadataToEmbed = InjectAuthorKeysIntoMetadata(metadataToEmbed, authorPublicKey, authorSignature);
+            }
+
+            File.WriteAllBytes(finalFilePath, bytesToWrite);
+            _assetPathCache[normalizedHash] = finalFilePath;
+
+            string? finalMetadata = metadataToEmbed;
+            if (finalMetadata == null && (extension == ".rmesh" || extension == ".ranim"))
+            {
+                finalMetadata = RealmMetadataHelper.ExtractMetadata(finalFilePath);
+            }
+            if (!string.IsNullOrWhiteSpace(finalMetadata))
+            {
+                UpdateSidecarCache(normalizedHash, finalMetadata);
+            }
+
+            return (true, "Asset stored successfully.", false, false, normalizedHash);
+        }
+    }
+
+    private bool UpdateExistingAssetHeaders(
+        string existingFilePath,
+        string normalizedHash,
+        string incomingMetadataJson,
+        string? authorPublicKey,
+        string? authorSignature)
+    {
+        try
+        {
+            string? existingMetadata = GetAssetMetadata(normalizedHash);
+            bool isAuthorized = false;
+
+            if (!string.IsNullOrWhiteSpace(authorPublicKey) && !string.IsNullOrWhiteSpace(authorSignature))
+            {
+                bool signatureValid = AuthorSignatureHelper.VerifySignature(authorPublicKey, normalizedHash, authorSignature);
+                if (signatureValid)
+                {
+                    string? existingAuthorKey = ExtractAuthorPublicKey(existingMetadata);
+                    if (string.IsNullOrEmpty(existingAuthorKey) || string.Equals(existingAuthorKey, authorPublicKey, StringComparison.OrdinalIgnoreCase))
+                    {
+                        isAuthorized = true;
+                    }
+                }
+            }
+
+            string incomingWithKeys = InjectAuthorKeysIntoMetadata(incomingMetadataJson, authorPublicKey, authorSignature);
+            string mergedMetadata = AuthorSignatureHelper.MergeMetadataHeaders(existingMetadata, incomingWithKeys, isAuthorized);
+
+            UpdateSidecarCache(normalizedHash, mergedMetadata);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string? ExtractAuthorPublicKey(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(metadataJson);
+            if (document.RootElement.TryGetProperty("AuthorPublicKey", out var property))
+            {
+                return property.GetString();
+            }
+            if (document.RootElement.TryGetProperty("author_public_key", out var snakeProperty))
+            {
+                return snakeProperty.GetString();
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
+    private static string InjectAuthorKeysIntoMetadata(string? metadataJson, string? authorPublicKey, string? authorSignature)
+    {
+        JsonObject jsonObject;
+        if (!string.IsNullOrWhiteSpace(metadataJson))
+        {
+            try
+            {
+                jsonObject = JsonNode.Parse(metadataJson)?.AsObject() ?? new JsonObject();
+            }
+            catch
+            {
+                jsonObject = new JsonObject();
+            }
+        }
+        else
+        {
+            jsonObject = new JsonObject();
+        }
+
+        if (!string.IsNullOrWhiteSpace(authorPublicKey))
+        {
+            jsonObject["AuthorPublicKey"] = authorPublicKey;
+        }
+
+        if (!string.IsNullOrWhiteSpace(authorSignature))
+        {
+            jsonObject["AuthorSignature"] = authorSignature;
+        }
+
+        return jsonObject.ToJsonString();
+    }
+
+    private string GetSidecarCachePath(string normalizedHash)
+    {
+        string shard = normalizedHash.Substring(0, 2);
+        string shardDirectory = Path.Combine(_sidecarCacheDirectory, shard);
+        if (!_ensuredDirectories.ContainsKey(shardDirectory))
+        {
+            if (!Directory.Exists(shardDirectory))
+            {
+                Directory.CreateDirectory(shardDirectory);
+            }
+            _ensuredDirectories[shardDirectory] = true;
+        }
+        return Path.Combine(shardDirectory, $"{normalizedHash}.json");
+    }
+
+    public void UpdateSidecarCache(string normalizedHash, string metadataJson)
+    {
+        try
+        {
+            _sidecarMemoryCache[normalizedHash] = metadataJson;
+            string path = GetSidecarCachePath(normalizedHash);
+            File.WriteAllText(path, metadataJson, Encoding.UTF8);
+        }
+        catch
+        {
+        }
+    }
+
+    public void RebuildSidecarCache()
+    {
+        if (!Directory.Exists(_assetsDirectory))
+        {
+            return;
+        }
+
+        string[] files = Directory.GetFiles(_assetsDirectory, "*.*", SearchOption.AllDirectories);
+        foreach (string file in files)
+        {
+            string normalizedHash = NormalizeBlake3Hash(Path.GetFileName(file));
+            string? metadata = RealmMetadataHelper.ExtractMetadata(file);
+            if (!string.IsNullOrWhiteSpace(metadata))
+            {
+                UpdateSidecarCache(normalizedHash, metadata);
+            }
+        }
+    }
+
+    public void DeleteSidecarCache()
+    {
+        if (Directory.Exists(_sidecarCacheDirectory))
+        {
+            Directory.Delete(_sidecarCacheDirectory, true);
+            Directory.CreateDirectory(_sidecarCacheDirectory);
+        }
+    }
+
+    public void RemoveSidecarCache(string normalizedHash)
+    {
+        try
+        {
+            string cleanHash = NormalizeBlake3Hash(normalizedHash);
+            if (cleanHash.Length >= 2 && Directory.Exists(_sidecarCacheDirectory))
+            {
+                string shardDirectory = Path.Combine(_sidecarCacheDirectory, cleanHash.Substring(0, 2));
+                string sidecarPath = Path.Combine(shardDirectory, $"{cleanHash}.json");
+                if (File.Exists(sidecarPath))
+                {
+                    File.Delete(sidecarPath);
+                }
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    public HashSet<string> GetAllStoredHashes()
+    {
+        var hashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!Directory.Exists(_assetsDirectory))
+        {
+            return hashes;
+        }
+
+        string[] files = Directory.GetFiles(_assetsDirectory, "*.*", SearchOption.AllDirectories);
+        foreach (string file in files)
+        {
+            string normalizedHash = NormalizeBlake3Hash(Path.GetFileName(file));
+            if (normalizedHash.Length == 64)
+            {
+                hashes.Add(normalizedHash);
+            }
+        }
+
+        return hashes;
+    }
+
+    public long GetTotalUsedBytes()
+    {
+        if (!Directory.Exists(_rootDirectory))
+        {
+            return 0;
+        }
+
+        long totalBytes = 0;
+        try
+        {
+            var directoryInfo = new DirectoryInfo(_rootDirectory);
+            foreach (var file in directoryInfo.EnumerateFiles("*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    totalBytes += file.Length;
+                }
+                catch
+                {
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return totalBytes;
+    }
+
+    public static string FormatByteSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024.0):F1} MB";
+        return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
+    }
+}

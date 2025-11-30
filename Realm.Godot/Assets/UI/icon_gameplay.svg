@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Gamepad body outline (thick shadow/border) -->
+  <path d="M 16 18 C 12 18, 6 22, 6 36 C 6 46, 12 50, 16 48 L 22 42 H 42 L 48 48 C 52 50, 58 46, 58 36 C 58 22, 52 18, 48 18 Z" fill="none" stroke="#2b2319" stroke-width="6" stroke-linejoin="round" />
+  <!-- Gamepad body fill and thin inner gold border -->
+  <path d="M 16 18 C 12 18, 6 22, 6 36 C 6 46, 12 50, 16 48 L 22 42 H 42 L 48 48 C 52 50, 58 46, 58 36 C 58 22, 52 18, 48 18 Z" fill="none" stroke="#d4b273" stroke-width="3" stroke-linejoin="round" />
+
+  <!-- Left Side: D-Pad cross -->
+  <path d="M 14 32 H 22 M 18 28 V 36" stroke="#2b2319" stroke-width="6" stroke-linecap="square" />
+  <path d="M 14 32 H 22 M 18 28 V 36" stroke="#d4b273" stroke-width="3" stroke-linecap="square" />
+
+  <!-- Right Side: Four Action Buttons (Diamond layout) -->
+  <!-- Top button -->
+  <circle cx="46" cy="27" r="3.5" fill="#d4b273" stroke="#2b2319" stroke-width="2" />
+  <!-- Left button -->
+  <circle cx="41" cy="32" r="3.5" fill="#d4b273" stroke="#2b2319" stroke-width="2" />
+  <!-- Right button -->
+  <circle cx="51" cy="32" r="3.5" fill="#d4b273" stroke="#2b2319" stroke-width="2" />
+  <!-- Bottom button -->
+  <circle cx="46" cy="37" r="3.5" fill="#d4b273" stroke="#2b2319" stroke-width="2" />
+</svg>

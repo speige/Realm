@@ -1,0 +1,1 @@
+global using MapManifest = Realm.Shared.Distribution.MapManifest;

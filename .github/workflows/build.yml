@@ -1,0 +1,174 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish Godot build & artifact'
+        type: boolean
+        required: false
+        default: false
+      VersionNumber:
+        description: 'Version Number to embed in published .dll and .exe (e.g. 0.0.1-Pre-Alpha_Rev_G)'
+        type: string
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Apply Version
+        id: apply_version
+        run: powershell -ExecutionPolicy Bypass -File scripts/sync-version.ps1 -VersionNumber "${{ inputs.VersionNumber || github.event.inputs.VersionNumber }}"
+
+      - name: Restore
+        run: dotnet restore Realm.slnx
+
+      - name: Build
+        run: dotnet build Realm.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Realm.Ecs.Tests/Realm.Ecs.Tests.csproj --configuration Release --no-restore --no-build
+
+      - name: Setup Godot
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.7.0
+          use-dotnet: true
+          include-templates: true
+
+      - name: Create Publish Directory
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: New-Item -ItemType Directory -Force -Path publish
+
+      - name: Inject Variable servers.json
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        env:
+          SERVERS_JSON: ${{ vars.SERVERS_JSON }}
+        run: |
+          if ($env:SERVERS_JSON -and $env:SERVERS_JSON.Trim() -ne "") {
+            Set-Content -Path "Realm.Godot\servers.json" -Value $env:SERVERS_JSON -Encoding utf8
+            Write-Host "Successfully injected SERVERS_JSON variable into Realm.Godot\servers.json"
+          } else {
+            Write-Host "SERVERS_JSON variable not set; falling back to Realm.Godot\servers.template.json."
+            if (Test-Path "Realm.Godot\servers.template.json") {
+              Copy-Item -Path "Realm.Godot\servers.template.json" -Destination "Realm.Godot\servers.json" -Force
+            }
+          }
+
+      - name: Import Godot Assets
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: |
+          $consoleExe = (Get-ChildItem -Path "C:\Users\runneradmin\godot" -Filter "*console.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
+          if (-not $consoleExe) { $consoleExe = "godot" }
+          & $consoleExe --headless --path Realm.Godot --editor --quit
+
+      - name: Export Godot Release
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: |
+          $consoleExe = (Get-ChildItem -Path "C:\Users\runneradmin\godot" -Filter "*console.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
+          if (-not $consoleExe) { $consoleExe = "godot" }
+          & $consoleExe --headless --path Realm.Godot --export-release "Windows Desktop" "$PWD\publish\Realm.exe"
+
+      - name: Copy Realm.Tools.Cli to Publish Directory
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: |
+          $cliPath = "Realm.Tools.Cli\bin\Release\net10.0\win-x64\publish\Realm.Tools.Cli.exe"
+          if (-not (Test-Path $cliPath)) {
+            $cliPath = (Get-ChildItem -Path "Realm.Tools.Cli\bin\Release" -Filter "Realm.Tools.Cli.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName)
+          }
+          Copy-Item -Path $cliPath -Destination "$PWD\publish\Realm.Tools.Cli.exe" -Force
+
+      - name: Copy Terms and LICENSE to Publish Directory
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: |
+          if (Test-Path "Terms") {
+            Copy-Item -Path "Terms" -Destination "$PWD\publish\Terms" -Recurse -Force
+          }
+          if (Test-Path "LICENSE") {
+            Copy-Item -Path "LICENSE" -Destination "$PWD\publish\LICENSE" -Force
+          }
+
+      - name: Copy servers.json to Publish Directory
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: |
+          if (Test-Path "Realm.Godot\servers.json") {
+            Copy-Item -Path "Realm.Godot\servers.json" -Destination "$PWD\publish\servers.json" -Force
+          } elseif (Test-Path "Realm.Godot\servers.template.json") {
+            Copy-Item -Path "Realm.Godot\servers.template.json" -Destination "$PWD\publish\servers.json" -Force
+          }
+
+      - name: Create 7z Ultra Archive
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        id: create_archive
+        run: |
+          $osPlatform = "Windows"
+          $systemArchitecture = "x64"
+          $version = if ($env:VERSION_NUMBER -and $env:VERSION_NUMBER.Trim() -ne "") {
+            $env:VERSION_NUMBER.Trim()
+          } else {
+            "0.0.1_Pre-Alpha"
+          }
+          $version = $version.Split('+')[0].Trim()
+          $archiveName = "Realm-${osPlatform}-${systemArchitecture}_${version}.7z"
+          7z a -t7z -m0=lzma2 -mx=9 $archiveName .\publish\*
+          echo "ARCHIVE_NAME=$archiveName" >> $env:GITHUB_ENV
+          echo "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
+
+      - name: Publish Realm.AdminServer
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: |
+          New-Item -ItemType Directory -Force -Path publish-adminserver
+          dotnet publish Realm.AdminServer\Realm.AdminServer.csproj --configuration Release --output "$PWD\publish-adminserver"
+          if (Test-Path "Terms") {
+            Copy-Item -Path "Terms" -Destination "$PWD\publish-adminserver\Terms" -Recurse -Force
+          }
+          if (Test-Path "LICENSE") {
+            Copy-Item -Path "LICENSE" -Destination "$PWD\publish-adminserver\LICENSE" -Force
+          }
+
+      - name: Create 7z Ultra Archive (AdminServer)
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        id: create_adminserver_archive
+        run: |
+          $osPlatform = "Windows"
+          $systemArchitecture = "x64"
+          $version = if ($env:VERSION_NUMBER -and $env:VERSION_NUMBER.Trim() -ne "") {
+            $env:VERSION_NUMBER.Trim()
+          } else {
+            "0.0.1_Pre-Alpha"
+          }
+          $version = $version.Split('+')[0].Trim()
+          $adminArchiveName = "Realm-AdminServer-${osPlatform}-${systemArchitecture}_${version}.7z"
+          7z a -t7z -m0=lzma2 -mx=9 $adminArchiveName .\publish-adminserver\*
+          echo "ADMIN_ARCHIVE_NAME=$adminArchiveName" >> $env:GITHUB_ENV
+          echo "admin_archive_name=$adminArchiveName" >> $env:GITHUB_OUTPUT
+
+      - name: Upload Published Client Artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.ARCHIVE_NAME || 'Realm-Windows-x64' }}
+          path: ${{ env.ARCHIVE_NAME || 'Realm-Windows-x64*.7z' }}
+
+      - name: Upload Published AdminServer Artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.ADMIN_ARCHIVE_NAME || 'Realm-AdminServer-Windows-x64' }}
+          path: ${{ env.ADMIN_ARCHIVE_NAME || 'Realm-AdminServer-Windows-x64*.7z' }}

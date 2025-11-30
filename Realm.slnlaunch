@@ -1,0 +1,47 @@
+[
+  {
+    "Name": "Run AdminServer (Web)",
+    "Projects": [
+      {
+        "Name": "Realm.AdminServer\\Realm.AdminServer.csproj",
+        "Action": "Start",
+        "DebugTarget": "Realm.AdminServer"
+      }
+    ]
+  },
+  {
+    "Name": "Run Simulation Tests",
+    "Projects": [
+      {
+        "Name": "Realm.Godot\\Realm.Godot.csproj",
+        "Action": "Start",
+        "DebugTarget": "Run Simulation Tests"
+      }
+    ]
+  },
+  {
+    "Name": "Run All Tests",
+    "Projects": [
+      {
+        "Name": "Realm.Godot\\Realm.Godot.csproj",
+        "Action": "Start",
+        "DebugTarget": "Run All Tests"
+      }
+    ]
+  },
+  {
+    "Name": "AdminServer & Simulation Tests",
+    "Projects": [
+      {
+        "Name": "Realm.AdminServer\\Realm.AdminServer.csproj",
+        "Action": "Start",
+        "DebugTarget": "Realm.AdminServer"
+      },
+      {
+        "Name": "Realm.Godot\\Realm.Godot.csproj",
+        "Action": "Start",
+        "DebugTarget": "Run Simulation Tests"
+      }
+    ]
+  }
+]

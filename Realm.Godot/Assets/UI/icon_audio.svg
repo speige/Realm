@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Speaker body outline and fill -->
+  <path d="M 6 22 H 18 L 32 10 V 54 L 18 42 H 6 Z" fill="#d4b273" stroke="#2b2319" stroke-width="6" stroke-linejoin="round" />
+  <path d="M 6 22 H 18 L 32 10 V 54 L 18 42 H 6 Z" fill="#d4b273" stroke="#d4b273" stroke-width="1.5" stroke-linejoin="round" />
+
+  <!-- Sound Waves (small and large) -->
+  <path d="M 40 22 C 43 25, 43 39, 40 42" fill="none" stroke="#2b2319" stroke-width="6" stroke-linecap="round" />
+  <path d="M 40 22 C 43 25, 43 39, 40 42" fill="none" stroke="#d4b273" stroke-width="3" stroke-linecap="round" />
+
+  <path d="M 48 14 C 54 20, 54 44, 48 50" fill="none" stroke="#2b2319" stroke-width="6" stroke-linecap="round" />
+  <path d="M 48 14 C 54 20, 54 44, 48 50" fill="none" stroke="#d4b273" stroke-width="3" stroke-linecap="round" />
+</svg>

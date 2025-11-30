@@ -1,0 +1,390 @@
+[gd_scene load_steps=16 format=3]
+
+[ext_resource type="Script" path="res://UI/MainMenu.cs" id="1_script"]
+[ext_resource type="Texture2D" path="res://Assets/UI/gear_icon.png" id="2_gear"]
+[ext_resource type="Texture2D" path="res://Assets/UI/Logo.png" id="3_logo"]
+[ext_resource type="Texture2D" path="res://Assets/UI/play_button_stylized.png" id="4_play"]
+[ext_resource type="Texture2D" path="res://Assets/UI/discord_icon.png" id="5_discord"]
+[ext_resource type="Texture2D" path="res://Assets/UI/donate_icon.png" id="6_donate"]
+[ext_resource type="Texture2D" path="res://Assets/UI/globe_icon.png" id="7_globe"]
+[ext_resource type="Texture2D" path="res://Assets/UI/scroll_icon.png" id="8_scroll"]
+[ext_resource type="Texture2D" path="res://Assets/UI/avatar_icon.png" id="9_avatar"]
+[ext_resource type="Texture2D" path="res://Assets/UI/social_icon.png" id="10_social"]
+[ext_resource type="Texture2D" path="res://Assets/UI/coding_icon.png" id="11_coding"]
+[ext_resource type="Texture2D" path="res://Assets/UI/youtube_icon.png" id="12_youtube"]
+[ext_resource type="Texture2D" path="res://Assets/UI/github_icon.png" id="13_github"]
+[ext_resource type="Texture2D" path="res://Assets/UI/bug_icon.png" id="14_bug"]
+[ext_resource type="Texture2D" path="res://Assets/UI/seed_node_icon.png" id="15_seed_node"]
+[ext_resource type="Texture2D" path="res://Assets/UI/email_icon.png" id="16_email"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LeftPillar" type="Panel" parent="."]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 100.0
+grow_vertical = 2
+
+[node name="RuneContainer" type="VBoxContainer" parent="LeftPillar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+
+[node name="RightPillar" type="Panel" parent="."]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -100.0
+grow_horizontal = 0
+grow_vertical = 2
+
+[node name="RuneContainer" type="VBoxContainer" parent="RightPillar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+
+[node name="GameLogo" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -260.0
+offset_top = 20.0
+offset_right = 260.0
+offset_bottom = 160.0
+grow_horizontal = 2
+texture = ExtResource("3_logo")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CentralPanel" type="PanelContainer" parent="."]
+custom_minimumSize = Vector2(400, 420)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -180.0
+offset_right = 200.0
+offset_bottom = 240.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CentralPanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="PlayButton" type="Button" parent="CentralPanel/VBoxContainer"]
+custom_minimumSize = Vector2(340, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+
+[node name="SinglePlayerButton" type="Button" parent="CentralPanel/VBoxContainer"]
+custom_minimumSize = Vector2(340, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+
+[node name="MapDiscoveryButton" type="Button" parent="CentralPanel/VBoxContainer"]
+custom_minimumSize = Vector2(340, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+
+[node name="CreatorDiscoveryButton" type="Button" parent="CentralPanel/VBoxContainer"]
+custom_minimumSize = Vector2(340, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+
+[node name="MapEditorButton" type="Button" parent="CentralPanel/VBoxContainer"]
+custom_minimumSize = Vector2(340, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+
+[node name="ReplaysButton" type="Button" parent="CentralPanel/VBoxContainer"]
+custom_minimumSize = Vector2(340, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+
+[node name="StorageButton" type="Button" parent="CentralPanel/VBoxContainer"]
+custom_minimumSize = Vector2(340, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+
+[node name="QuitButton" type="Button" parent="."]
+custom_minimumSize = Vector2(206, 68)
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -296.0
+offset_top = -108.0
+offset_right = -90.0
+offset_bottom = -40.0
+grow_horizontal = 0
+grow_vertical = 0
+focus_mode = 0
+
+[node name="SocialButton" type="Button" parent="."]
+custom_minimumSize = Vector2(80, 80)
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 120.0
+offset_top = -120.0
+offset_right = 200.0
+offset_bottom = -40.0
+grow_vertical = 0
+focus_mode = 0
+icon = ExtResource("10_social")
+
+[node name="SocialPopoverOverlay" type="Control" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="SocialPopover" type="Control" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 120.0
+offset_top = -782.0
+offset_right = 480.0
+offset_bottom = -130.0
+grow_vertical = 0
+
+[node name="Background" type="TextureRect" parent="SocialPopover"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="MarginContainer" type="MarginContainer" parent="SocialPopover"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 45
+theme_override_constants/margin_top = 80
+theme_override_constants/margin_right = 45
+theme_override_constants/margin_bottom = 45
+
+[node name="PopoverVBox" type="VBoxContainer" parent="SocialPopover/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="WebsiteButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("7_globe")
+
+[node name="DiscordButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("5_discord")
+
+[node name="YoutubeButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("12_youtube")
+
+[node name="DonateButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("6_donate")
+
+[node name="AnnouncementsButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("16_email")
+
+[node name="BugReportButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("14_bug")
+
+[node name="SettingsButton" type="Button" parent="."]
+custom_minimumSize = Vector2(206, 68)
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -517.0
+offset_top = -108.0
+offset_right = -311.0
+offset_bottom = -40.0
+grow_horizontal = 0
+grow_vertical = 0
+focus_mode = 0
+
+[node name="ProfileButton" type="Button" parent="."]
+custom_minimumSize = Vector2(240, 260)
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -260.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = 280.0
+grow_horizontal = 0
+focus_mode = 0
+flat = true
+pivot_offset = Vector2(120, 130)
+
+[node name="Backdrop" type="TextureRect" parent="ProfileButton"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -95.0
+offset_top = 0.0
+offset_right = 95.0
+offset_bottom = 260.0
+grow_horizontal = 2
+expand_mode = 1
+stretch_mode = 0
+
+[node name="Avatar" type="TextureRect" parent="ProfileButton"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -60.0
+offset_top = 28.0
+offset_right = 60.0
+offset_bottom = 148.0
+grow_horizontal = 2
+texture = ExtResource("9_avatar")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Frame" type="TextureRect" parent="ProfileButton"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -80.0
+offset_top = 18.0
+offset_right = 80.0
+offset_bottom = 178.0
+grow_horizontal = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Nameplate" type="TextureRect" parent="ProfileButton"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -120.0
+offset_top = 156.0
+offset_right = 120.0
+offset_bottom = 201.0
+grow_horizontal = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="ProfileButton/Nameplate"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_bottom = -2.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Player_Name"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Badge" type="TextureRect" parent="ProfileButton"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -60.0
+offset_top = 193.0
+offset_right = 60.0
+offset_bottom = 238.0
+grow_horizontal = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="ProfileButton/Badge"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_bottom = -2.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "LVL 1"
+horizontal_alignment = 1
+vertical_alignment = 1
+

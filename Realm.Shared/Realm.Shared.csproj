@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\ThirdPartyBinaries\**\*.*">
+      <Link>ThirdPartyBinaries\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </EmbeddedResource>
+    <None Include="..\ThirdPartyBinaries\**\*.*">
+      <Link>ThirdPartyBinaries\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <EmbeddedResource Include="MiaSetup\**\*.*" />
+    <EmbeddedResource Include="BlenderSetup\**\*.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AssimpNet" Version="4.1.0" />
+    <PackageReference Include="Blake3" Version="2.2.1" />
+    <PackageReference Include="MemoryPack" Version="1.21.4" />
+    <PackageReference Include="Meshoptimizer.NET" Version="1.0.7" />
+    <PackageReference Include="NSec.Cryptography" Version="26.4.0" />
+    <PackageReference Include="SharpCompress" Version="0.50.4" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.8" />
+    <PackageReference Include="System.IO.Hashing" Version="10.0.11" />
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.8" />
+  </ItemGroup>
+</Project>
