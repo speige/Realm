@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);node_modules\**;dist\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <Target Name="NpmInstall" BeforeTargets="Build" Condition="!Exists('node_modules')">
+    <Exec Command="cmd /c npm install" />
+  </Target>
+
+  <Target Name="NpmBuild" AfterTargets="NpmInstall" BeforeTargets="Build">
+    <Exec Command="cmd /c npm run compile" />
+  </Target>
+</Project>

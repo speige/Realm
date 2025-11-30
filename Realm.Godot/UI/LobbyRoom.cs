@@ -1,0 +1,754 @@
+using Godot;
+using System;
+using System.Collections.Generic;
+
+public partial class LobbyRoom : Control
+{
+	private Panel _bgPanel;
+	private Panel _leftPillar;
+	private Panel _rightPillar;
+	private PanelContainer _playersPanel;
+	private PanelContainer _briefingPanel;
+	private PanelContainer _chatPanel;
+
+	private Button _backButton;
+	private Button _inviteButton;
+	private Button _addBotButton;
+	private Button _startButton;
+	private OptionButton _mapSelectButton;
+	private LineEdit _chatInput;
+	private RichTextLabel _chatLog;
+	private VBoxContainer _playersContainer;
+	private Label _inviteFeedback;
+
+	private Label _lobbyTitle;
+	private Label _playersTitle;
+	private Label _briefingTitle;
+	private RichTextLabel _briefingLabel;
+	private Panel _mapFrame;
+
+	private readonly List<Color> _availableColors = new List<Color>
+	{
+		new Color(0.8f, 0.1f, 0.1f), // Red
+		new Color(0.1f, 0.4f, 0.8f), // Blue
+		new Color(0.1f, 0.7f, 0.2f), // Green
+		new Color(0.1f, 0.7f, 0.7f), // Cyan
+		new Color(0.5f, 0.5f, 0.5f), // Grey
+		new Color(0.6f, 0.2f, 0.8f), // Purple
+		new Color(0.9f, 0.8f, 0.1f)  // Yellow
+	};
+
+	private readonly List<string> _availableMaps = new List<string>();
+	private readonly string[] _runes = { "ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᚲ", "ᚷ", "ᚹ", "ᚺ", "ᚾ", "ᛁ", "ᛃ", "ᛇ", "ᛈ", "ᛉ", "ᛊ", "ᛏ", "ᛒ", "ᛖ", "ᛗ", "ᛚ", "ᛜ", "ᛞ", "ᛟ" };
+	private readonly string[] _factions = { "HUMAN", "ORC", "UNDEAD", "NIGHT ELF" };
+	private string[] _aiQuotes = 
+	{
+		"GLHF!",
+		"Zug zug!",
+		"Ready to work!",
+		"More gold is required...",
+		"We need more lumber!",
+		"Undead is OP in this patch, nerf please.",
+		"For the Alliance!",
+		"My life for Ner'zhul!",
+		"Who summoned me?",
+		"Is this Melee or Co-op?"
+	};
+
+	public override void _Ready()
+	{
+		// Bind Panels
+		_bgPanel = GetNode<Panel>("Background");
+		_leftPillar = GetNode<Panel>("LeftPillar");
+		_rightPillar = GetNode<Panel>("RightPillar");
+		_playersPanel = GetNode<PanelContainer>("PlayersPanel");
+		_briefingPanel = GetNode<PanelContainer>("BriefingPanel");
+		_chatPanel = GetNode<PanelContainer>("ChatPanel");
+
+		// Bind Buttons & Controls
+		_backButton = GetNode<Button>("BackButton");
+		_inviteButton = GetNode<Button>("InviteButton");
+		_addBotButton = GetNode<Button>("AddBotButton");
+		_startButton = GetNode<Button>("StartButton");
+		_addBotButton.Visible = LobbyManager.Instance.IsHost;
+
+		_mapSelectButton = GetNode<OptionButton>("MapSelectButton");
+		_mapSelectButton.Clear();
+		_availableMaps.Clear();
+		using var dir = DirAccess.Open("res://Maps");
+		if (dir != null)
+		{
+			dir.ListDirBegin();
+			string dirName = dir.GetNext();
+			while (dirName != "")
+			{
+				if (dir.CurrentIsDir() && !dirName.StartsWith("."))
+				{
+					_availableMaps.Add(dirName);
+				}
+				dirName = dir.GetNext();
+			}
+			dir.ListDirEnd();
+		}
+		_availableMaps.Sort();
+		if (_availableMaps.Count == 0)
+		{
+			_availableMaps.AddRange(new[] { "green_td", "melee", "legion_td" });
+		}
+		foreach (string rawName in _availableMaps)
+		{
+			_mapSelectButton.AddItem(FormatMapDisplayName(rawName));
+		}
+
+		string currentMap = LobbyManager.Instance.ActiveMapName ?? "green_td";
+		int selectedIndex = _availableMaps.IndexOf(currentMap);
+		if (selectedIndex >= 0)
+		{
+			_mapSelectButton.Selected = selectedIndex;
+		}
+		else
+		{
+			selectedIndex = _availableMaps.FindIndex(m => m.ToLower().Contains(currentMap.ToLower()));
+			if (selectedIndex >= 0)
+			{
+				_mapSelectButton.Selected = selectedIndex;
+			}
+			else if (_availableMaps.Count > 0)
+			{
+				_mapSelectButton.Selected = 0;
+			}
+		}
+
+		_mapSelectButton.Disabled = !LobbyManager.Instance.IsHost;
+		_mapSelectButton.ItemSelected += OnMapSelected;
+
+		_chatInput = GetNode<LineEdit>("ChatPanel/ChatContainer/ChatInput");
+		_chatLog = GetNode<RichTextLabel>("ChatPanel/ChatContainer/ChatLog");
+		_playersContainer = GetNode<VBoxContainer>("PlayersPanel/VBoxContainer/ScrollContainer/PlayersContainer");
+		_inviteFeedback = GetNode<Label>("InviteFeedback");
+
+		// Bind Labels
+		_lobbyTitle = GetNode<Label>("LobbyTitle");
+		_playersTitle = GetNode<Label>("PlayersPanel/VBoxContainer/PanelTitle");
+		_briefingTitle = GetNode<Label>("BriefingPanel/VBoxContainer/PanelTitle");
+		_briefingLabel = GetNode<RichTextLabel>("BriefingPanel/VBoxContainer/BriefingLabel");
+		_mapFrame = GetNode<Panel>("BriefingPanel/VBoxContainer/MapFrame");
+
+		// Apply styles
+		ApplyThemeStyles();
+
+		// Hook up LobbyManager Events
+		LobbyManager.Instance.PlayerListUpdated += PopulatePlayersList;
+		LobbyManager.Instance.ChatReceived += OnLobbyChatReceived;
+		LobbyManager.Instance.ConnectionFailed += OnLobbyConnectionFailed;
+		LobbyManager.Instance.KickReceived += OnLobbyKickReceived;
+
+		// Populate players initially
+		if (!LobbyManager.Instance.IsHost)
+		{
+			CreateDownloadProgressUI();
+		}
+
+		PopulatePlayersList();
+
+		_chatLog.Text = "[color=#ffd700]System: Connected to Lobby. Pre-Match Setup is active.[/color]\n";
+		_chatInput.TextSubmitted += OnChatSubmitted;
+
+		// Add map preview image
+		var mapImage = new TextureRect();
+		mapImage.Texture = GD.Load<Texture2D>("res://Assets/UI/snowy_forest_path.png");
+		mapImage.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		mapImage.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
+		_mapFrame.AddChild(mapImage);
+		mapImage.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+
+		// Add custom map drawer to map frame
+		var mapDrawer = new TacticalMap();
+		_mapFrame.AddChild(mapDrawer);
+		mapDrawer.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+	}
+
+	private void ApplyThemeStyles()
+	{
+		_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		_leftPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(true));
+		_rightPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(false));
+		_playersPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_briefingPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_chatPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+
+		// Text & Labels
+		UIStyle.ApplyTitle(_lobbyTitle, "PRE-MATCH SETUP", 36);
+		UIStyle.ApplyTitle(_playersTitle, "TEAMS & PLAYERS", 20);
+		UIStyle.ApplyTitle(_briefingTitle, "MATCH INFO & BRIEFING", 20);
+
+		_briefingLabel.AddThemeColorOverride("default_color", new Color(0.85f, 0.85f, 0.9f));
+		_briefingLabel.Text = "Map info - Situate in [color=#ff5555]The Frosting Pass[/color], a treacherous valley once controlled by ancient lords. Guard the gates and gather resources to secure the valley. Supports melee conflict and co-op campaign modes. Defeat enemy bases to win.";
+
+		// Table Columns
+		string[] headers = { "PlayersPanel/VBoxContainer/TableHeader/TeamCol", "PlayersPanel/VBoxContainer/TableHeader/ColorCol", 
+							 "PlayersPanel/VBoxContainer/TableHeader/NameCol", "PlayersPanel/VBoxContainer/TableHeader/FactionCol" };
+		foreach (var path in headers)
+		{
+			var lbl = GetNode<Label>(path);
+			lbl.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+			lbl.AddThemeFontSizeOverride("font_size", 15);
+		}
+
+		// Invite Feedback text
+		_inviteFeedback.Modulate = new Color(1, 1, 1, 0);
+
+		// Style Buttons
+		SetupLobbyButton(_backButton, " LEAVE LOBBY", () => 
+		{
+			LobbyManager.Instance.Disconnect();
+			UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser);
+		});
+		SetupLobbyButton(_inviteButton, "INVITE FRIEND", TriggerInviteFeedback);
+		SetupLobbyButton(_addBotButton, "ADD AI BOT", () => LobbyManager.Instance.AddAIBot());
+		SetupStartButton();
+
+		_mapSelectButton.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		_mapSelectButton.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		_mapSelectButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		_mapSelectButton.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		_mapSelectButton.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		_mapSelectButton.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		_mapSelectButton.AddThemeColorOverride("font_pressed_color", UIStyle.ColorCyanGlow);
+		_mapSelectButton.AddThemeFontSizeOverride("font_size", 14);
+
+		// Chat Log & Chat Input
+		var logStyle = new StyleBoxFlat();
+		logStyle.BgColor = new Color(0.08f, 0.08f, 0.1f, 0.7f);
+		logStyle.BorderColor = new Color(0.2f, 0.2f, 0.25f, 0.3f);
+		logStyle.SetBorderWidthAll(1);
+		_chatLog.AddThemeStyleboxOverride("normal", logStyle);
+
+		_chatInput.AddThemeStyleboxOverride("normal", UIStyle.CreateTextInput(false));
+		_chatInput.AddThemeStyleboxOverride("focus", UIStyle.CreateTextInput(true));
+		_chatInput.AddThemeColorOverride("font_color", new Color(0.9f, 0.85f, 0.7f));
+
+		// Populate runic pillars
+		PopulateRunicPillar(GetNode<VBoxContainer>("LeftPillar/RuneContainer"));
+		PopulateRunicPillar(GetNode<VBoxContainer>("RightPillar/RuneContainer"));
+	}
+
+	private void SetupLobbyButton(Button btn, string text, Action onClick)
+	{
+		btn.Flat = false;
+		UIStyle.ApplyButtonText(btn, text, 15);
+
+		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+
+		btn.Pressed += () => 
+		{
+			UIManager.Instance.PlayClickSound();
+			onClick?.Invoke();
+		};
+		btn.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+	}
+
+	private void SetupStartButton()
+	{
+		_startButton.Flat = false;
+
+		var normStyle = UIStyle.CreateButtonNormal();
+		if (normStyle is StyleBoxFlat flatNorm)
+		{
+			flatNorm.BorderColor = UIStyle.ColorCyanGlow;
+		}
+
+		var hoverStyle = UIStyle.CreateButtonHover();
+		if (hoverStyle is StyleBoxFlat flatHover)
+		{
+			flatHover.BgColor = new Color(0.1f, 0.5f, 0.9f, 0.15f);
+			flatHover.BorderColor = UIStyle.ColorCyanGlow;
+			flatHover.ShadowColor = UIStyle.ColorCyanGlow;
+			flatHover.ShadowSize = 10;
+		}
+
+		var pressedStyle = UIStyle.CreateButtonPressed();
+		if (pressedStyle is StyleBoxFlat flatPressed)
+		{
+			flatPressed.BgColor = new Color(0.1f, 0.5f, 0.9f, 0.3f);
+		}
+
+		_startButton.AddThemeStyleboxOverride("normal", normStyle);
+		_startButton.AddThemeStyleboxOverride("hover", hoverStyle);
+		_startButton.AddThemeStyleboxOverride("pressed", pressedStyle);
+		_startButton.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+
+		_startButton.Pressed -= OnStartPressed;
+		
+		if (LobbyManager.Instance.IsHost)
+		{
+			UIStyle.ApplyButtonText(_startButton, "START GAME", 22);
+			_startButton.Disabled = false;
+			_startButton.Pressed += OnStartPressed;
+		}
+		else
+		{
+			UIStyle.ApplyButtonText(_startButton, "WAITING FOR HOST...", 18);
+			_startButton.Disabled = true;
+		}
+		
+		_startButton.MouseEntered -= OnStartButtonMouseEntered;
+		_startButton.MouseEntered += OnStartButtonMouseEntered;
+	}
+
+	private string FormatMapDisplayName(string rawName)
+	{
+		if (string.IsNullOrEmpty(rawName))
+		{
+			return "";
+		}
+		string formatted = rawName.Replace('_', ' ');
+		string[] words = formatted.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+		for (int i = 0; i < words.Length; i++)
+		{
+			if (words[i].Equals("td", StringComparison.OrdinalIgnoreCase))
+			{
+				words[i] = "TD";
+			}
+			else if (words[i].Length > 0)
+			{
+				words[i] = char.ToUpper(words[i][0]) + words[i].Substring(1).ToLower();
+			}
+		}
+		return string.Join(" ", words);
+	}
+
+	private void OnStartPressed()
+	{
+		UIManager.Instance.PlayClickSound();
+		string mapName = "green_td";
+		int selectedIndex = _mapSelectButton.Selected;
+		if (selectedIndex >= 0 && selectedIndex < _availableMaps.Count)
+		{
+			mapName = _availableMaps[selectedIndex];
+		}
+		LobbyManager.Instance.StartGame(mapName);
+	}
+
+	private void OnMapSelected(long index)
+	{
+		UIManager.Instance.PlayClickSound();
+		if (index >= 0 && index < _availableMaps.Count)
+		{
+			string mapName = _availableMaps[(int)index];
+			LobbyManager.Instance.ActiveMapName = mapName;
+		}
+	}
+
+	private void TriggerInviteFeedback()
+	{
+		_inviteFeedback.Text = "Friend Invite Sent!";
+		_inviteFeedback.Modulate = new Color(0.3f, 0.8f, 1.0f, 1.0f);
+		
+		var tween = CreateTween();
+		tween.TweenProperty(_inviteFeedback, "modulate:a", 0.0f, 2.0f).SetDelay(1.0f);
+	}
+
+	private void PopulateRunicPillar(VBoxContainer container)
+	{
+		container.Visible = false;
+	}
+
+	public override void _ExitTree()
+	{
+		if (LobbyManager.Instance != null)
+		{
+			LobbyManager.Instance.PlayerListUpdated -= PopulatePlayersList;
+			LobbyManager.Instance.ChatReceived -= OnLobbyChatReceived;
+			LobbyManager.Instance.ConnectionFailed -= OnLobbyConnectionFailed;
+			LobbyManager.Instance.KickReceived -= OnLobbyKickReceived;
+
+			LobbyManager.Instance.MapDownloadProgressChanged -= OnMapDownloadProgress;
+			LobbyManager.Instance.MapDownloadCompleted -= OnMapDownloadCompleted;
+			LobbyManager.Instance.MapDownloadFailed -= OnMapDownloadFailed;
+		}
+		base._ExitTree();
+	}
+
+	private void PopulatePlayersList()
+	{
+		foreach (Node child in _playersContainer.GetChildren())
+		{
+			child.QueueFree();
+		}
+
+		foreach (var player in LobbyManager.Instance.PlayerList)
+		{
+			var row = CreatePlayerRow(player);
+			_playersContainer.AddChild(row);
+		}
+		
+		// Update Start Button status in case role changed
+		SetupStartButton();
+	}
+
+	private PanelContainer CreatePlayerRow(LobbyManager.PlayerInfo p)
+	{
+		bool isLocalPlayer = p.PeerId == Multiplayer.GetUniqueId() || (p.PeerId == 1 && LobbyManager.Instance.IsHost && Multiplayer.GetUniqueId() == 1);
+
+		var panel = new PanelContainer();
+		panel.CustomMinimumSize = new Vector2(0, 52);
+
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.12f, 0.13f, 0.16f, 0.3f);
+		style.BorderColor = new Color(0.2f, 0.2f, 0.25f, 0.2f);
+		style.SetBorderWidthAll(1);
+		style.ContentMarginLeft = 12;
+		style.ContentMarginRight = 24;
+		style.ContentMarginTop = 0;
+		style.ContentMarginBottom = 0;
+		panel.AddThemeStyleboxOverride("panel", style);
+
+		var hBox = new HBoxContainer();
+		panel.AddChild(hBox);
+
+		var lblTeam = new Label();
+		lblTeam.Text = $"  {p.Team}";
+		lblTeam.CustomMinimumSize = new Vector2(80, 0);
+		lblTeam.AddThemeColorOverride("font_color", new Color(0.8f, 0.8f, 0.85f));
+		lblTeam.AddThemeFontSizeOverride("font_size", 15);
+		lblTeam.VerticalAlignment = VerticalAlignment.Center;
+		hBox.AddChild(lblTeam);
+
+		var colorBtn = new Button();
+		colorBtn.CustomMinimumSize = new Vector2(26, 26);
+		colorBtn.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+		
+		var colorStyle = new StyleBoxFlat();
+		colorStyle.BgColor = p.Color;
+		colorStyle.BorderColor = new Color(0.4f, 0.4f, 0.45f);
+		colorStyle.SetBorderWidthAll(2);
+		colorStyle.CornerRadiusTopLeft = 4;
+		colorStyle.CornerRadiusTopRight = 4;
+		colorStyle.CornerRadiusBottomLeft = 4;
+		colorStyle.CornerRadiusBottomRight = 4;
+		colorBtn.AddThemeStyleboxOverride("normal", colorStyle);
+		colorBtn.AddThemeStyleboxOverride("hover", colorStyle);
+		colorBtn.AddThemeStyleboxOverride("pressed", colorStyle);
+
+		if (isLocalPlayer)
+		{
+			colorBtn.Pressed += () =>
+			{
+				UIManager.Instance.PlayClickSound();
+				int nextIdx = (_availableColors.IndexOf(p.Color) + 1) % _availableColors.Count;
+				p.Color = _availableColors[nextIdx];
+				colorStyle.BgColor = p.Color;
+				colorBtn.AddThemeStyleboxOverride("normal", colorStyle);
+				
+				LobbyManager.Instance.UpdatePlayerSlot(p.PeerId, p.Faction, p.Team, p.Color, p.Name);
+			};
+			colorBtn.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+		}
+		else
+		{
+			colorBtn.Disabled = true;
+		}
+		hBox.AddChild(colorBtn);
+		
+		var sep = new Control();
+		sep.CustomMinimumSize = new Vector2(15, 0);
+		hBox.AddChild(sep);
+
+		if (isLocalPlayer)
+		{
+			var nameEdit = new LineEdit();
+			nameEdit.Text = p.Name;
+			nameEdit.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+			nameEdit.CustomMinimumSize = new Vector2(160, 32);
+			nameEdit.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+			
+			nameEdit.AddThemeStyleboxOverride("normal", UIStyle.CreateTextInput(false));
+			nameEdit.AddThemeStyleboxOverride("focus", UIStyle.CreateTextInput(true));
+			nameEdit.AddThemeColorOverride("font_color", new Color(1, 1, 1));
+			nameEdit.AddThemeFontSizeOverride("font_size", 15);
+			
+			nameEdit.TextSubmitted += (text) =>
+			{
+				p.Name = text;
+				LobbyManager.Instance.UpdatePlayerSlot(p.PeerId, p.Faction, p.Team, p.Color, p.Name);
+			};
+			hBox.AddChild(nameEdit);
+		}
+		else
+		{
+			var lblName = new Label();
+			lblName.Text = p.Name;
+			lblName.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+			lblName.CustomMinimumSize = new Vector2(160, 0);
+			lblName.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.9f));
+			lblName.AddThemeFontSizeOverride("font_size", 15);
+			lblName.VerticalAlignment = VerticalAlignment.Center;
+			hBox.AddChild(lblName);
+		}
+
+		var optFaction = new OptionButton();
+		optFaction.CustomMinimumSize = new Vector2(120, 32);
+		optFaction.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+		optFaction.Flat = false;
+		
+		// Apply fantasy style overrides to the dropdown button
+		optFaction.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		optFaction.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		optFaction.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		optFaction.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		optFaction.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		optFaction.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		optFaction.AddThemeColorOverride("font_pressed_color", UIStyle.ColorCyanGlow);
+		optFaction.AddThemeFontSizeOverride("font_size", 13);
+		
+		foreach (var fact in _factions)
+		{
+			optFaction.AddItem(fact);
+		}
+		
+		int selIdx = Array.IndexOf(_factions, p.Faction);
+		if (selIdx >= 0) optFaction.Select(selIdx);
+
+		if (isLocalPlayer)
+		{
+			optFaction.ItemSelected += (idx) => 
+			{
+				UIManager.Instance.PlayClickSound();
+				p.Faction = _factions[idx];
+				LobbyManager.Instance.UpdatePlayerSlot(p.PeerId, p.Faction, p.Team, p.Color, p.Name);
+			};
+			optFaction.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+		}
+		else
+		{
+			// For disabled AI dropdowns, apply the disabled style to look clean
+			optFaction.Disabled = true;
+			optFaction.AddThemeColorOverride("font_disabled_color", new Color(0.5f, 0.5f, 0.5f));
+		}
+		hBox.AddChild(optFaction);
+
+		// 5. Diagnostics Display (Ping, Jitter, Packet Loss)
+		var diagLabel = new Label();
+		string latencyText = p.Latency == "--" ? "measuring..." : p.Latency;
+		string jitterText = p.Jitter == "--" ? "" : $", Jitter: {p.Jitter}";
+		string lossText = p.PacketLoss == "--" ? "" : $", Loss: {p.PacketLoss}";
+		
+		diagLabel.Text = $"  RTT: {latencyText}{jitterText}{lossText}  ";
+		diagLabel.CustomMinimumSize = new Vector2(250, 0);
+		diagLabel.AddThemeFontSizeOverride("font_size", 13);
+		
+		// Color-code the latency
+		if (p.Latency == "--" || p.Latency == "measuring...")
+		{
+			diagLabel.AddThemeColorOverride("font_color", new Color(0.6f, 0.6f, 0.6f));
+		}
+		else
+		{
+			if (p.PacketLoss.Contains("0%") && !p.Latency.Contains("ms") || (p.Latency.Contains("ms") && int.Parse(p.Latency.Split(' ')[0]) < 80))
+			{
+				diagLabel.AddThemeColorOverride("font_color", new Color(0.3f, 0.8f, 0.4f)); // Healthy green
+			}
+			else
+			{
+				diagLabel.AddThemeColorOverride("font_color", new Color(0.85f, 0.65f, 0.3f)); // Warn orange/yellow
+			}
+		}
+		diagLabel.VerticalAlignment = VerticalAlignment.Center;
+		hBox.AddChild(diagLabel);
+
+		// 6. Host-Only Boot Action
+		if (LobbyManager.Instance.IsHost && p.PeerId != 1)
+		{
+			var bootBtn = new Button();
+			bootBtn.Text = "KICK";
+			bootBtn.CustomMinimumSize = new Vector2(60, 26);
+			bootBtn.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+			
+			var btnNorm = UIStyle.CreateButtonNormal();
+			if (btnNorm is StyleBoxFlat flat)
+			{
+				flat.BgColor = new Color(0.4f, 0.1f, 0.1f, 0.5f);
+				flat.BorderColor = new Color(0.8f, 0.2f, 0.2f, 0.6f);
+			}
+			
+			var btnHover = UIStyle.CreateButtonHover();
+			if (btnHover is StyleBoxFlat flatH)
+			{
+				flatH.BgColor = new Color(0.6f, 0.1f, 0.1f, 0.8f);
+				flatH.BorderColor = new Color(1.0f, 0.2f, 0.2f, 0.9f);
+			}
+
+			bootBtn.AddThemeStyleboxOverride("normal", btnNorm);
+			bootBtn.AddThemeStyleboxOverride("hover", btnHover);
+			bootBtn.AddThemeColorOverride("font_color", new Color(1.0f, 0.8f, 0.8f));
+			bootBtn.AddThemeFontSizeOverride("font_size", 12);
+			
+			bootBtn.Pressed += () =>
+			{
+				UIManager.Instance.PlayWarningSound();
+				LobbyManager.Instance.BootPlayer(p.PeerId);
+			};
+			
+			hBox.AddChild(bootBtn);
+		}
+
+		var spaceEnd = new Control();
+		spaceEnd.CustomMinimumSize = new Vector2(10, 0);
+		hBox.AddChild(spaceEnd);
+
+		return panel;
+	}
+
+	private void OnChatSubmitted(string text)
+	{
+		if (string.IsNullOrEmpty(text.Trim())) return;
+		_chatInput.Clear();
+		LobbyManager.Instance.SendChatMessage(LobbyManager.Instance.LocalPlayer.Name, text);
+	}
+
+	private void OnLobbyChatReceived(string senderName, string message)
+	{
+		string color = senderName == LobbyManager.Instance.LocalPlayer.Name ? "#5cd6ff" : "#d4a0a0";
+		_chatLog.Text += $"[color={color}]{senderName}[/color]: {message}\n";
+	}
+
+	private void OnLobbyConnectionFailed(string reason)
+	{
+		GD.PrintErr($"[LobbyRoom] Connection failed from lobby: {reason}");
+		
+		// Re-enable browser and show alert warning
+		UIManager.Instance.PlayWarningSound();
+		UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser);
+	}
+
+	private void OnLobbyKickReceived(string reason)
+	{
+		GD.Print($"[LobbyRoom] Disconnected / Kicked: {reason}");
+		UIManager.Instance.PlayWarningSound();
+		UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser);
+	}
+
+	private ProgressBar _downloadProgress;
+	private Label _downloadLabel;
+	private void CreateDownloadProgressUI()
+	{
+		// 1. Download Label
+		_downloadLabel = new Label();
+		_downloadLabel.Text = "Checking map package...";
+		_downloadLabel.Position = new Vector2(1450, 805);
+		_downloadLabel.Size = new Vector2(340, 25);
+		_downloadLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		_downloadLabel.AddThemeFontSizeOverride("font_size", 14);
+		AddChild(_downloadLabel);
+
+		// 2. Progress Bar
+		_downloadProgress = new ProgressBar();
+		_downloadProgress.Position = new Vector2(1450, 835);
+		_downloadProgress.Size = new Vector2(340, 24);
+		_downloadProgress.ShowPercentage = true;
+		_downloadProgress.Value = 0;
+		
+		// Apply style overrides
+		_downloadProgress.AddThemeStyleboxOverride("background", UIStyle.CreateSliderTrack());
+		_downloadProgress.AddThemeStyleboxOverride("fill", UIStyle.CreateSliderFill());
+		_downloadProgress.AddThemeColorOverride("font_color", new Color(1, 1, 1));
+		_downloadProgress.AddThemeFontSizeOverride("font_size", 12);
+		AddChild(_downloadProgress);
+
+		// Subscribe to events
+		LobbyManager.Instance.MapDownloadProgressChanged += OnMapDownloadProgress;
+		LobbyManager.Instance.MapDownloadCompleted += OnMapDownloadCompleted;
+		LobbyManager.Instance.MapDownloadFailed += OnMapDownloadFailed;
+		
+		// Disable start button for clients since they must wait
+		_startButton.Disabled = true;
+		_startButton.Text = "WAITING FOR HOST";
+		_startButton.AddThemeColorOverride("font_disabled_color", new Color(0.5f, 0.5f, 0.5f));
+	}
+
+	private void OnMapDownloadProgress(float progress)
+	{
+		if (_downloadProgress != null)
+		{
+			_downloadProgress.Value = progress * 100.0f;
+		}
+		if (_downloadLabel != null)
+		{
+			_downloadLabel.Text = $"Downloading map package: {Math.Round(progress * 100.0f)}%";
+		}
+	}
+
+	private void OnMapDownloadCompleted()
+	{
+		if (_downloadProgress != null)
+		{
+			_downloadProgress.Value = 100.0f;
+		}
+		if (_downloadLabel != null)
+		{
+			_downloadLabel.Text = "Map package ready.";
+			_downloadLabel.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		}
+	}
+
+	private void OnMapDownloadFailed()
+	{
+		if (_downloadLabel != null)
+		{
+			_downloadLabel.Text = "Map download failed!";
+			_downloadLabel.AddThemeColorOverride("font_color", new Color(1.0f, 0.3f, 0.3f));
+		}
+	}
+
+	private void OnStartButtonMouseEntered() => UIManager.Instance.PlayHoverSound();
+}
+
+// Procedural tactical schematic map drawer
+public partial class TacticalMap : Control
+{
+	public override void _Draw()
+	{
+		Vector2 size = Size;
+		
+		// Tactical Path (Route)
+		Color riverColor = new Color(0.2f, 0.55f, 0.9f, 0.8f);
+		Vector2[] riverPoints = new[]
+		{
+			new Vector2(0.2f * size.X, 0.25f * size.Y),
+			new Vector2(0.35f * size.X, 0.35f * size.Y),
+			new Vector2(0.5f * size.X, 0.55f * size.Y),
+			new Vector2(0.65f * size.X, 0.65f * size.Y),
+			new Vector2(0.85f * size.X, 0.7f * size.Y)
+		};
+		for (int i = 0; i < riverPoints.Length - 1; i++)
+		{
+			DrawLine(riverPoints[i], riverPoints[i+1], riverColor, 4f, true);
+		}
+
+		// Player Spawn Base (Gold Circle with border)
+		Vector2 playerPos = new Vector2(0.2f * size.X, 0.25f * size.Y);
+		DrawCircle(playerPos, 10f, UIStyle.ColorGold);
+		DrawCircle(playerPos, 7f, new Color(0.1f, 0.1f, 0.12f));
+		DrawCircle(playerPos, 3f, UIStyle.ColorCyanGlow);
+
+		// Enemy Spawn Base (Red Diamond)
+		Vector2 enemyPos = new Vector2(0.85f * size.X, 0.7f * size.Y);
+		Vector2[] diamondPoints = new[]
+		{
+			new Vector2(enemyPos.X, enemyPos.Y - 10),
+			new Vector2(enemyPos.X + 10, enemyPos.Y),
+			new Vector2(enemyPos.X, enemyPos.Y + 10),
+			new Vector2(enemyPos.X - 10, enemyPos.Y),
+			new Vector2(enemyPos.X, enemyPos.Y - 10)
+		};
+		DrawPolyline(diamondPoints, new Color(0.9f, 0.2f, 0.2f), 2.5f, true);
+		DrawCircle(enemyPos, 3f, new Color(0.9f, 0.2f, 0.2f));
+
+		// Border outline
+		DrawRect(new Rect2(Vector2.Zero, size), UIStyle.ColorBronze, false, 2.0f);
+	}
+}

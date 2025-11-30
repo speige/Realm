@@ -1,0 +1,199 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://UI/GameOver.cs" id="1_script"]
+[ext_resource type="Script" path="res://UI/TimelineGraph.cs" id="3_graph"]
+
+[node name="GameOver" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LeftPillar" type="Panel" parent="."]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 100.0
+grow_vertical = 2
+
+[node name="RuneContainer" type="VBoxContainer" parent="LeftPillar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+
+[node name="RightPillar" type="Panel" parent="."]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -100.0
+grow_horizontal = 0
+grow_vertical = 2
+
+[node name="RuneContainer" type="VBoxContainer" parent="RightPillar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+
+[node name="TitleLabel" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -500.0
+offset_top = 25.0
+offset_right = 500.0
+offset_bottom = 105.0
+grow_horizontal = 2
+theme_override_font_sizes/font_size = 48
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="MainPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -680.0
+offset_top = -410.0
+offset_right = 680.0
+offset_bottom = 300.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="MainPanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TabContainer" type="HBoxContainer" parent="MainPanel/VBox"]
+custom_minimumSize = Vector2(0, 45)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="BtnOverview" type="Button" parent="MainPanel/VBox/TabContainer"]
+custom_minimumSize = Vector2(180, 45)
+layout_mode = 2
+focus_mode = 0
+
+[node name="BtnEconomy" type="Button" parent="MainPanel/VBox/TabContainer"]
+custom_minimumSize = Vector2(180, 45)
+layout_mode = 2
+focus_mode = 0
+
+[node name="BtnMilitary" type="Button" parent="MainPanel/VBox/TabContainer"]
+custom_minimumSize = Vector2(180, 45)
+layout_mode = 2
+focus_mode = 0
+
+[node name="TableFrame" type="PanelContainer" parent="MainPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VBox" type="VBoxContainer" parent="MainPanel/VBox/TableFrame"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TableHeader" type="HBoxContainer" parent="MainPanel/VBox/TableFrame/VBox"]
+custom_minimumSize = Vector2(0, 35)
+layout_mode = 2
+
+[node name="PlayerCol" type="Label" parent="MainPanel/VBox/TableFrame/VBox/TableHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "  PLAYER"
+vertical_alignment = 2
+
+[node name="FactionCol" type="Label" parent="MainPanel/VBox/TableFrame/VBox/TableHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "FACTION"
+vertical_alignment = 2
+
+[node name="ScoreCol" type="Label" parent="MainPanel/VBox/TableFrame/VBox/TableHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "TOTAL SCORE"
+vertical_alignment = 2
+
+[node name="KillsCol" type="Label" parent="MainPanel/VBox/TableFrame/VBox/TableHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "UNITS KILLED"
+vertical_alignment = 2
+
+[node name="ResourcesCol" type="Label" parent="MainPanel/VBox/TableFrame/VBox/TableHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "RESOURCES GATHERED  "
+horizontal_alignment = 2
+vertical_alignment = 2
+
+[node name="TableRowsContainer" type="VBoxContainer" parent="MainPanel/VBox/TableFrame/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+[node name="GraphFrame" type="PanelContainer" parent="MainPanel/VBox"]
+custom_minimumSize = Vector2(0, 240)
+layout_mode = 2
+
+[node name="TimelineGraph" type="Control" parent="MainPanel/VBox/GraphFrame"]
+layout_mode = 2
+script = ExtResource("3_graph")
+
+[node name="BottomButtons" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -470.0
+offset_top = -90.0
+offset_right = 470.0
+offset_bottom = -30.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/separation = 20
+alignment = 1
+
+[node name="CloseButton" type="Button" parent="BottomButtons"]
+custom_minimum_size = Vector2(300, 60)
+layout_mode = 2
+focus_mode = 0
+
+[node name="BtnReportCopyright" type="Button" parent="BottomButtons"]
+custom_minimum_size = Vector2(300, 60)
+layout_mode = 2
+focus_mode = 0
+
+[node name="BtnWriteReview" type="Button" parent="BottomButtons"]
+custom_minimum_size = Vector2(300, 60)
+layout_mode = 2
+focus_mode = 0
+
+

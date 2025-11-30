@@ -1,0 +1,44 @@
+{
+  "name": "realm-map-editor",
+  "displayName": "Realm Map Editor",
+  "description": "Custom editor for Realm map unit configuration files",
+  "version": "1.0.0",
+  "publisher": "speige",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "realm.mapEditor",
+        "displayName": "Realm Map Editor",
+        "selector": [
+          {
+            "filenamePattern": "**/metadata.json"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": "**/metadata.json",
+        "url": "./map_schema.json"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --platform=node",
+    "watch": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --platform=node --watch"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.75.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.0.0"
+  }
+}

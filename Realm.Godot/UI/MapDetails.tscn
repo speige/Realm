@@ -1,0 +1,269 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://UI/MapDetails.cs" id="1_script"]
+
+[node name="MapDetails" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LeftPillar" type="Panel" parent="."]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 100.0
+grow_vertical = 2
+
+[node name="RightPillar" type="Panel" parent="."]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -100.0
+grow_horizontal = 0
+grow_vertical = 2
+
+[node name="BackButton" type="Button" parent="."]
+custom_minimumSize = Vector2(120, 60)
+layout_mode = 0
+offset_left = 130.0
+offset_top = 40.0
+offset_right = 250.0
+offset_bottom = 100.0
+focus_mode = 0
+
+[node name="HeaderPanel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 600.0
+offset_top = 30.0
+offset_right = 1320.0
+offset_bottom = 120.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="HeaderPanel"]
+layout_mode = 2
+theme_override_constants/separation = 2
+alignment = 1
+
+[node name="TitleLabel" type="Label" parent="HeaderPanel/VBoxContainer"]
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="CreatorLabel" type="Label" parent="HeaderPanel/VBoxContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.75, 0.67, 0.5, 1)
+theme_override_font_sizes/font_size = 13
+horizontal_alignment = 1
+
+[node name="CarouselPanel" type="Control" parent="."]
+layout_mode = 0
+offset_left = 130.0
+offset_top = 150.0
+offset_right = 1120.0
+offset_bottom = 600.0
+
+[node name="LeftPeek" type="TextureRect" parent="CarouselPanel"]
+layout_mode = 0
+offset_top = 10.0
+offset_right = 150.0
+offset_bottom = 370.0
+expand_mode = 1
+stretch_mode = 6
+
+[node name="CenterScreenshot" type="TextureRect" parent="CarouselPanel"]
+layout_mode = 0
+offset_left = 170.0
+offset_top = 0.0
+offset_right = 820.0
+offset_bottom = 380.0
+expand_mode = 1
+stretch_mode = 6
+
+[node name="RightPeek" type="TextureRect" parent="CarouselPanel"]
+layout_mode = 0
+offset_left = 840.0
+offset_top = 10.0
+offset_right = 990.0
+offset_bottom = 370.0
+expand_mode = 1
+stretch_mode = 6
+
+[node name="LeftArrow" type="Button" parent="CarouselPanel"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 160.0
+offset_right = 70.0
+offset_bottom = 220.0
+focus_mode = 0
+
+[node name="RightArrow" type="Button" parent="CarouselPanel"]
+layout_mode = 0
+offset_left = 920.0
+offset_top = 160.0
+offset_right = 980.0
+offset_bottom = 220.0
+focus_mode = 0
+
+[node name="CarouselSlider" type="HSlider" parent="CarouselPanel"]
+layout_mode = 0
+offset_left = 170.0
+offset_top = 395.0
+offset_right = 820.0
+offset_bottom = 425.0
+focus_mode = 0
+rounded = true
+
+[node name="DescriptionPanel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 130.0
+offset_top = 620.0
+offset_right = 720.0
+offset_bottom = 980.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="DescriptionPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DescTitle" type="Label" parent="DescriptionPanel/VBoxContainer"]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="DescriptionPanel/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="DescText" type="Label" parent="DescriptionPanel/VBoxContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+autowrap_mode = 2
+
+[node name="FeaturesPanel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 740.0
+offset_top = 620.0
+offset_right = 1120.0
+offset_bottom = 980.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="FeaturesPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="FeaturesTitle" type="Label" parent="FeaturesPanel/VBoxContainer"]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="FeaturesPanel/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="FeaturesList" type="VBoxContainer" parent="FeaturesPanel/VBoxContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="StatsPanel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 1140.0
+offset_top = 150.0
+offset_right = 1790.0
+offset_bottom = 980.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="StatsPanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="StatsTitle" type="Label" parent="StatsPanel/VBoxContainer"]
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="ScrollContainer" type="ScrollContainer" parent="StatsPanel/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ContentVBox" type="VBoxContainer" parent="StatsPanel/VBoxContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 16
+
+[node name="RatingTitle" type="Label" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox"]
+layout_mode = 2
+
+[node name="RatingGrid" type="GridContainer" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox"]
+layout_mode = 2
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 6
+columns = 2
+
+[node name="Row1Stars" type="HBoxContainer" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox/RatingGrid"]
+layout_mode = 2
+
+[node name="Row1Votes" type="Label" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox/RatingGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Row2Stars" type="HBoxContainer" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox/RatingGrid"]
+layout_mode = 2
+
+[node name="Row2Votes" type="Label" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox/RatingGrid"]
+layout_mode = 2
+
+[node name="Row3Stars" type="HBoxContainer" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox/RatingGrid"]
+layout_mode = 2
+
+[node name="Row3Votes" type="Label" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox/RatingGrid"]
+layout_mode = 2
+
+[node name="HSeparator1" type="HSeparator" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox"]
+layout_mode = 2
+
+[node name="AwardsTitle" type="Label" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox"]
+layout_mode = 2
+
+[node name="AwardsContainer" type="HBoxContainer" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HSeparator2" type="HSeparator" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox"]
+layout_mode = 2
+
+[node name="GameplayTitle" type="Label" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox"]
+layout_mode = 2
+
+[node name="GameplayStatsContainer" type="VBoxContainer" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="HSeparator3" type="HSeparator" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox"]
+layout_mode = 2
+
+[node name="TechTitle" type="Label" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox"]
+layout_mode = 2
+
+[node name="TechInfoContainer" type="VBoxContainer" parent="StatsPanel/VBoxContainer/ScrollContainer/ContentVBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="DownloadButton" type="Button" parent="StatsPanel/VBoxContainer"]
+custom_minimumSize = Vector2(0, 55)
+layout_mode = 2
+focus_mode = 0
+
+[node name="DownloadSubtitle" type="Label" parent="StatsPanel/VBoxContainer"]
+layout_mode = 2
+horizontal_alignment = 1

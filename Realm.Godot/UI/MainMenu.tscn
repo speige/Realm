@@ -1,0 +1,200 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://UI/MainMenu.cs" id="1_script"]
+[ext_resource type="Texture2D" path="res://Assets/UI/gear_icon.png" id="2_gear"]
+[ext_resource type="Texture2D" path="res://Assets/UI/realm_logo.png" id="3_logo"]
+[ext_resource type="Texture2D" path="res://Assets/UI/play_button_stylized.png" id="4_play"]
+[ext_resource type="Texture2D" path="res://Assets/UI/discord_icon.png" id="5_discord"]
+[ext_resource type="Texture2D" path="res://Assets/UI/donate_icon.png" id="6_donate"]
+[ext_resource type="Texture2D" path="res://Assets/UI/globe_icon.png" id="7_globe"]
+[ext_resource type="Texture2D" path="res://Assets/UI/scroll_icon.png" id="8_scroll"]
+[ext_resource type="Texture2D" path="res://Assets/UI/avatar_icon.png" id="9_avatar"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LeftPillar" type="Panel" parent="."]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 100.0
+grow_vertical = 2
+
+[node name="RuneContainer" type="VBoxContainer" parent="LeftPillar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+
+[node name="RightPillar" type="Panel" parent="."]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -100.0
+grow_horizontal = 0
+grow_vertical = 2
+
+[node name="RuneContainer" type="VBoxContainer" parent="RightPillar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+
+[node name="GameLogo" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -260.0
+offset_top = 20.0
+offset_right = 260.0
+offset_bottom = 160.0
+grow_horizontal = 2
+texture = ExtResource("3_logo")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CentralPanel" type="PanelContainer" parent="."]
+custom_minimumSize = Vector2(400, 420)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -180.0
+offset_right = 200.0
+offset_bottom = 240.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CentralPanel"]
+layout_mode = 2
+theme_override_constants/separation = 16
+alignment = 1
+
+[node name="PlayButton" type="Button" parent="CentralPanel/VBoxContainer"]
+custom_minimumSize = Vector2(340, 70)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("4_play")
+expand_icon = true
+icon_alignment = 0
+
+[node name="MapDiscoveryButton" type="Button" parent="CentralPanel/VBoxContainer"]
+custom_minimumSize = Vector2(280, 55)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("7_globe")
+
+[node name="MapEditorButton" type="Button" parent="CentralPanel/VBoxContainer"]
+custom_minimumSize = Vector2(280, 55)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("8_scroll")
+
+[node name="QuitButton" type="Button" parent="."]
+custom_minimumSize = Vector2(240, 60)
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -380.0
+offset_top = -120.0
+offset_right = -140.0
+offset_bottom = -60.0
+grow_horizontal = 0
+grow_vertical = 0
+focus_mode = 0
+
+[node name="DiscordButton" type="Button" parent="."]
+custom_minimumSize = Vector2(200, 60)
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 140.0
+offset_top = -120.0
+offset_right = 340.0
+offset_bottom = -60.0
+grow_vertical = 0
+focus_mode = 0
+icon = ExtResource("5_discord")
+
+[node name="DonateButton" type="Button" parent="."]
+custom_minimumSize = Vector2(200, 60)
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 360.0
+offset_top = -120.0
+offset_right = 560.0
+offset_bottom = -60.0
+grow_vertical = 0
+focus_mode = 0
+icon = ExtResource("6_donate")
+
+[node name="SettingsButton" type="Button" parent="."]
+custom_minimumSize = Vector2(60, 60)
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -110.0
+offset_top = -120.0
+offset_right = -50.0
+offset_bottom = -60.0
+grow_horizontal = 0
+grow_vertical = 0
+focus_mode = 0
+
+[node name="ProfileButton" type="Button" parent="."]
+custom_minimumSize = Vector2(60, 60)
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -80.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = 80.0
+grow_horizontal = 0
+focus_mode = 0
+icon = ExtResource("9_avatar")
+flat = true
+expand_icon = true
+pivot_offset = Vector2(30, 30)
+

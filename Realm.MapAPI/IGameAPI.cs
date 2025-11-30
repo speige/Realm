@@ -1,0 +1,617 @@
+using System.Collections.Generic;
+using System.Numerics;
+
+namespace Realm.MapAPI;
+
+/// <summary>
+/// Defines the safe, public API exposed to map scripts to interact with the game engine.
+/// </summary>
+public interface IGameAPI
+{
+    /// <summary>
+    /// Gets or sets the player's gold resource amount.
+    /// </summary>
+    float Gold { get; set; }
+
+    /// <summary>
+    /// Gets or sets the player's wood resource amount.
+    /// </summary>
+    float Wood { get; set; }
+
+    /// <summary>
+    /// Gets or sets the player's stone resource amount.
+    /// </summary>
+    float Stone { get; set; }
+
+    /// <summary>
+    /// Gets the elapsed game time in seconds.
+    /// </summary>
+    float GameElapsedTime { get; }
+
+    /// <summary>
+    /// Spawns a unit or building of the specified type at the given position.
+    /// </summary>
+    /// <param name="unitTypeId">The type identifier of the unit to spawn.</param>
+    /// <param name="position">The spawn coordinates in 3D world space.</param>
+    /// <param name="isEnemy">True if the unit should belong to the enemy, false if friendly.</param>
+    /// <returns>A reference to the spawned unit.</returns>
+    IUnit SpawnUnit(string unitTypeId, Vector3 position, bool isEnemy);
+
+    /// <summary>
+    /// Spawns a unit or building of the specified type at the given position with optional population limit bypassing.
+    /// </summary>
+    /// <param name="unitTypeId">The type identifier of the unit to spawn.</param>
+    /// <param name="position">The spawn coordinates in 3D world space.</param>
+    /// <param name="isEnemy">True if the unit should belong to the enemy, false if friendly.</param>
+    /// <param name="bypassPopulation">True to spawn the unit without consuming the player's population limit, false to consume it normally.</param>
+    /// <returns>A reference to the spawned unit.</returns>
+    IUnit SpawnUnit_V2(string unitTypeId, Vector3 position, bool isEnemy, bool bypassPopulation);
+
+
+    /// <summary>
+    /// Spawns a resource node at the given position.
+    /// </summary>
+    /// <param name="resourceType">The type of resource node (e.g., "goldmine", "tree", "rock").</param>
+    /// <param name="position">The coordinates in 3D world space.</param>
+    /// <param name="amount">The initial amount of resources inside the node.</param>
+    void SpawnResourceNode(string resourceType, Vector3 position, float amount);
+
+    /// <summary>
+    /// Retrieves all units currently alive in the game world.
+    /// </summary>
+    /// <returns>A collection of all active units.</returns>
+    IEnumerable<IUnit> GetAllUnits();
+
+    /// <summary>
+    /// Retrieves all active units within the specified radius of a 3D position.
+    /// </summary>
+    /// <param name="center">The center point in 3D world space.</param>
+    /// <param name="radius">The radius distance check.</param>
+    /// <returns>A collection of units within the radius.</returns>
+    IEnumerable<IUnit> GetUnitsInRadius(Vector3 center, float radius);
+
+    /// <summary>
+    /// Retrieves all active resource nodes in the game world.
+    /// </summary>
+    /// <returns>A collection of all active resource nodes.</returns>
+    IEnumerable<IResourceNode> GetResourceNodes();
+
+    /// <summary>
+    /// Displays floating feedback text on the player's screen.
+    /// </summary>
+    /// <param name="text">The text message to display.</param>
+    /// <param name="color">The color of the text in RGB format.</param>
+    void ShowFeedbackText(string text, Vector3 color);
+
+    /// <summary>
+    /// Plays the standard warning/alert audio sound.
+    /// </summary>
+    void PlayWarningSound();
+
+    /// <summary>
+    /// Plays the standard button/command click audio sound.
+    /// </summary>
+    void PlayClickSound();
+
+    /// <summary>
+    /// Triggers the game victory sequence.
+    /// </summary>
+    void TriggerVictory();
+
+    /// <summary>
+    /// Triggers the game defeat sequence.
+    /// </summary>
+    void TriggerDefeat();
+
+    /// <summary>
+    /// Gets the castle unit belonging to the specified faction.
+    /// </summary>
+    /// <param name="isEnemy">True to get the enemy castle, false for the player castle.</param>
+    /// <returns>The castle unit, or null if it has been destroyed.</returns>
+    IUnit? GetCastle(bool isEnemy);
+
+    /// <summary>
+    /// Upgrades the specified unit to its next level if supported.
+    /// </summary>
+    /// <param name="unit">The unit to upgrade.</param>
+    void UpgradeUnit(IUnit unit);
+
+    /// <summary>
+    /// Spawns a temporary visual target indicator ring at the specified position with the given color.
+    /// </summary>
+    /// <param name="position">The coordinates in 3D world space.</param>
+    /// <param name="color">The color of the indicator ring in RGB format.</param>
+    void SpawnTargetIndicator(Vector3 position, Vector3 color);
+
+    /// <summary>
+    /// Gets or sets the player's maximum population capacity.
+    /// </summary>
+    int MaxPopulation { get; set; }
+
+    /// <summary>
+    /// Gets the player's current population.
+    /// </summary>
+    int CurrentPopulation { get; }
+
+    /// <summary>
+    /// Retrieves a unit by its unique runtime identifier.
+    /// </summary>
+    /// <param name="uniqueId">The unique ID of the unit to retrieve.</param>
+    /// <returns>The unit wrapper if alive, or null.</returns>
+    IUnit? GetUnitById(int uniqueId);
+
+    /// <summary>
+    /// Retrieves all units that are currently selected by the player.
+    /// </summary>
+    /// <returns>A collection of currently selected units.</returns>
+    IEnumerable<IUnit> GetSelectedUnits();
+
+    /// <summary>
+    /// Spawns a minimap ping at the specified 3D position in world space.
+    /// </summary>
+    /// <param name="position">The target position in 3D world space.</param>
+    void PingMinimap(Vector3 position);
+
+    /// <summary>
+    /// Enters building placement mode for the specified structure type.
+    /// </summary>
+    /// <param name="unitTypeId">The unit type ID of the building to place.</param>
+    void StartBuildingPlacement(string unitTypeId);
+
+    /// <summary>
+    /// Generates a new map directory containing boilerplate files for a custom map.
+    /// </summary>
+    /// <param name="mapName">The name of the new map script class and directory.</param>
+    /// <param name="targetDirectory">The parent directory path where the map directory should be created. If left null or empty, it defaults to the standard user maps folder.</param>
+    void GenerateMapDirectory(string mapName, string? targetDirectory = null);
+
+    /// <summary>
+    /// Triggered when a unit is spawned in the game world.
+    /// </summary>
+    event System.Action<IUnit>? OnUnitCreated;
+
+    /// <summary>
+    /// Triggered when a unit dies. Passes the dying unit and the killer unit if available.
+    /// </summary>
+    event System.Action<IUnit, IUnit?>? OnUnitDied;
+
+    /// <summary>
+    /// Triggered when a unit takes damage. Passes the victim unit, the attacker unit, and the damage amount.
+    /// </summary>
+    event System.Action<IUnit, IUnit, float>? OnUnitDamaged;
+
+    /// <summary>
+    /// Triggered when a unit casts or channels a spell. Passes the caster unit, the spell ID, and the target position.
+    /// </summary>
+    event System.Action<IUnit?, string, Vector3>? OnSpellCast;
+
+    /// <summary>
+    /// Triggered when a player types a chat message. Passes the message and the first selected unit if any.
+    /// </summary>
+    event System.Action<string, IUnit?>? OnPlayerChatMessage;
+
+    /// <summary>
+    /// Triggered when the player selects a unit.
+    /// </summary>
+    event System.Action<IUnit>? OnUnitSelected;
+
+    /// <summary>
+    /// Spawns floating text in the 3D world that drifts upwards and fades out.
+    /// </summary>
+    /// <param name="text">The text to display.</param>
+    /// <param name="position">The starting 3D world position.</param>
+    /// <param name="color">The color of the text in RGB format.</param>
+    /// <param name="duration">The time in seconds before the text fully fades out.</param>
+    void CreateFloatingText(string text, Vector3 position, Vector3 color, float duration);
+
+    /// <summary>
+    /// Spawns a 3D visual effect at the specified position.
+    /// </summary>
+    /// <param name="effectTypeId">The identifier of the visual effect (e.g., "fireblast", "lightning", "holylight").</param>
+    /// <param name="position">The coordinates in 3D world space.</param>
+    /// <param name="scale">The visual scale multiplier.</param>
+    void SpawnVisualEffect(string effectTypeId, Vector3 position, float scale = 1.0f);
+
+    /// <summary>
+    /// Spawns a visual projectile moving from a starting position to a target position.
+    /// </summary>
+    /// <param name="projectileTypeId">The type identifier of the projectile (e.g., "arrow", "fireball").</param>
+    /// <param name="start">The starting 3D coordinates.</param>
+    /// <param name="target">The ending 3D coordinates.</param>
+    /// <param name="speed">The speed of the projectile in units per second.</param>
+    void SpawnProjectile(string projectileTypeId, Vector3 start, Vector3 target, float speed);
+
+    /// <summary>
+    /// Displays or hides a custom leaderboard panel on the player's screen.
+    /// </summary>
+    /// <param name="title">The header title of the leaderboard.</param>
+    /// <param name="visible">True to display the leaderboard, false to hide it.</param>
+    void SetLeaderboardVisible(string title, bool visible);
+
+    /// <summary>
+    /// Sets or updates a value on the leaderboard.
+    /// </summary>
+    /// <param name="label">The row label (e.g. player name or score metric).</param>
+    /// <param name="value">The value to display.</param>
+    void SetLeaderboardValue(string label, string value);
+
+    /// <summary>
+    /// Clears all entries from the current leaderboard.
+    /// </summary>
+    void ClearLeaderboard();
+
+    /// <summary>
+    /// Starts a countdown timer UI on the screen.
+    /// </summary>
+    /// <param name="duration">The duration in seconds.</param>
+    /// <param name="label">The title or description of the countdown timer.</param>
+    void StartCountdownTimer(float duration, string label);
+
+    /// <summary>
+    /// Stops and hides the active countdown timer.
+    /// </summary>
+    void StopCountdownTimer();
+
+    /// <summary>
+    /// Shakes the game camera to simulate an explosion or impact.
+    /// </summary>
+    /// <param name="intensity">The shake strength multiplier.</param>
+    /// <param name="duration">The time in seconds the shake lasts.</param>
+    void ShakeCamera(float intensity, float duration);
+
+    /// <summary>
+    /// Smoothly pans the game camera to the specified position.
+    /// </summary>
+    /// <param name="position">The target position in 3D world space.</param>
+    /// <param name="duration">The pan time in seconds.</param>
+    void PanCameraTo(Vector3 position, float duration);
+
+    /// <summary>
+    /// Sets the time of day to a specific hour (0.0 to 24.0).
+    /// </summary>
+    /// <param name="time">The hour value.</param>
+    void SetTimeOfDay(float time);
+
+    /// <summary>
+    /// Enables or disables the day-night cycle.
+    /// </summary>
+    /// <param name="enabled">True to enable, false to freeze the time of day.</param>
+    void SetDayNightCycleEnabled(bool enabled);
+
+    /// <summary>
+    /// Kills the specified unit naturally, triggering death animations and bounties.
+    /// </summary>
+    /// <param name="unit">The unit to kill.</param>
+    void KillUnit(IUnit unit);
+
+    /// <summary>
+    /// Instantly removes the specified unit from the game.
+    /// </summary>
+    /// <param name="unit">The unit to destroy.</param>
+    void DestroyUnit(IUnit unit);
+
+    // ── Multi-player generic APIs ──────────────────────────────────────────
+
+    /// <summary>
+    /// Gets the total number of player slots in the current session (including empty slots).
+    /// </summary>
+    int PlayerCount { get; }
+
+    /// <summary>
+    /// Returns the display name of the player occupying the specified zero-based slot index.
+    /// Returns an empty string if the slot is not occupied.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    string GetPlayerName(int playerIndex);
+
+    /// <summary>
+    /// Returns true if the specified player slot is occupied by an active human or AI participant.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    bool IsPlayerActive(int playerIndex);
+
+    /// <summary>
+    /// Gets the gold resource for the specified player slot.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    float GetPlayerGold(int playerIndex);
+
+    /// <summary>
+    /// Sets the gold resource for the specified player slot.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <param name="amount">The new gold amount.</param>
+    void SetPlayerGold(int playerIndex, float amount);
+
+    /// <summary>
+    /// Adds the specified amount to the gold resource for the given player slot.
+    /// Negative values subtract gold.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <param name="delta">The amount to add (may be negative).</param>
+    void AdjustPlayerGold(int playerIndex, float delta);
+
+    /// <summary>
+    /// Spawns a unit owned by the specified player slot at the given position.
+    /// </summary>
+    /// <param name="unitTypeId">The type identifier of the unit to spawn.</param>
+    /// <param name="position">The spawn coordinates in 3D world space.</param>
+    /// <param name="playerIndex">Zero-based player slot index that will own the unit.</param>
+    /// <returns>A reference to the spawned unit.</returns>
+    IUnit SpawnUnitForPlayer(string unitTypeId, Vector3 position, int playerIndex);
+
+    /// <summary>
+    /// Retrieves all alive units owned by the specified player slot.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <returns>A lazily-evaluated sequence of units belonging to that player.</returns>
+    IEnumerable<IUnit> GetUnitsOwnedByPlayer(int playerIndex);
+
+    /// <summary>
+    /// Triggers the defeat condition for the specified player slot, playing the defeat sequence only for that player.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <param name="reason">An optional human-readable reason string shown to the player.</param>
+    void TriggerPlayerDefeat(int playerIndex, string reason = "");
+
+    /// <summary>
+    /// Triggers the victory condition for the specified player slot.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    void TriggerPlayerVictory(int playerIndex);
+
+    /// <summary>
+    /// Broadcasts a text message to all players simultaneously.
+    /// </summary>
+    /// <param name="message">The message string to display.</param>
+    void BroadcastMessage(string message);
+
+    /// <summary>
+    /// Sends a text message to a single player slot only.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <param name="message">The message string to display.</param>
+    void SendMessageToPlayer(int playerIndex, string message);
+
+    /// <summary>
+    /// Schedules a one-shot callback to fire after the specified delay (in seconds).
+    /// </summary>
+    /// <param name="delay">Delay in seconds before the callback is invoked.</param>
+    /// <param name="callback">The action to invoke when the timer expires.</param>
+    /// <returns>A handle that can be passed to <see cref="CancelTimer"/> to cancel the timer before it fires.</returns>
+    int ScheduleTimer(float delay, System.Action callback);
+
+    /// <summary>
+    /// Schedules a repeating callback to fire every <paramref name="interval"/> seconds.
+    /// </summary>
+    /// <param name="interval">Interval in seconds between invocations.</param>
+    /// <param name="callback">The action to invoke on each tick.</param>
+    /// <returns>A handle that can be passed to <see cref="CancelTimer"/> to stop the repeating timer.</returns>
+    int ScheduleRepeatingTimer(float interval, System.Action callback);
+
+    /// <summary>
+    /// Cancels a previously scheduled timer, preventing any future invocations.
+    /// </summary>
+    /// <param name="timerHandle">The handle returned by <see cref="ScheduleTimer"/> or <see cref="ScheduleRepeatingTimer"/>.</param>
+    void CancelTimer(int timerHandle);
+
+    /// <summary>
+    /// Returns a uniformly distributed random integer in the inclusive range [<paramref name="min"/>, <paramref name="max"/>].
+    /// </summary>
+    /// <param name="min">Inclusive lower bound.</param>
+    /// <param name="max">Inclusive upper bound.</param>
+    int RandomInt(int min, int max);
+
+    /// <summary>
+    /// Returns a uniformly distributed random float in the range [<paramref name="min"/>, <paramref name="max"/>].
+    /// </summary>
+    /// <param name="min">Inclusive lower bound.</param>
+    /// <param name="max">Inclusive upper bound.</param>
+    float RandomFloat(float min, float max);
+
+    // ── Player start locations & team APIs ────────────────────────────────
+
+    /// <summary>
+    /// Returns the start location for the specified player slot in 3D world space.
+    /// The Y component represents terrain height at that position.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <returns>The start position in 3D world space, or <see cref="Vector3.Zero"/> if the slot has no start location.</returns>
+    Vector3 GetPlayerStartLocation(int playerIndex);
+
+    /// <summary>
+    /// Assigns the specified player slot to a numbered team.
+    /// Players on the same team are treated as allies.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <param name="teamIndex">Zero-based team index.</param>
+    void SetPlayerTeam(int playerIndex, int teamIndex);
+
+    /// <summary>
+    /// Returns the team index that the specified player slot belongs to.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    int GetPlayerTeam(int playerIndex);
+
+    /// <summary>
+    /// Configures whether two player slots treat each other as passive allies
+    /// (shared vision, units do not attack each other).
+    /// </summary>
+    /// <param name="playerIndex">Zero-based index of the first player.</param>
+    /// <param name="otherPlayerIndex">Zero-based index of the second player.</param>
+    /// <param name="allied">True to make them allied; false to revert to enemies.</param>
+    void SetPlayersAllied(int playerIndex, int otherPlayerIndex, bool allied);
+
+    /// <summary>
+    /// Returns true if the specified player slot is controlled by a computer AI.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    bool IsPlayerComputer(int playerIndex);
+
+    // ── Unit appearance & tinting APIs ────────────────────────────────────
+
+    /// <summary>
+    /// Applies an RGBA color tint to the specified unit's 3D mesh.
+    /// Use <see cref="Vector3.One"/> (white) to reset to the default appearance.
+    /// </summary>
+    /// <param name="unit">The unit to tint.</param>
+    /// <param name="color">RGB color values in the range [0, 1].</param>
+    void SetUnitColor(IUnit unit, Vector3 color);
+
+    // ── Spatial unit query APIs ───────────────────────────────────────────
+
+    /// <summary>
+    /// Retrieves all alive units within the specified radius of a 3D position
+    /// that satisfy the given filter predicate.
+    /// </summary>
+    /// <param name="center">The center point in 3D world space.</param>
+    /// <param name="radius">The search radius.</param>
+    /// <param name="filter">A predicate function that returns true for units to include.</param>
+    /// <returns>A lazily-evaluated sequence of matching units.</returns>
+    IEnumerable<IUnit> GetUnitsInRadius(Vector3 center, float radius, System.Func<IUnit, bool> filter);
+
+    /// <summary>
+    /// Retrieves all alive units owned by the specified player slot
+    /// that satisfy the given filter predicate.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <param name="filter">A predicate that returns true for units to include.</param>
+    /// <returns>A lazily-evaluated sequence of matching units.</returns>
+    IEnumerable<IUnit> GetUnitsOwnedByPlayer(int playerIndex, System.Func<IUnit, bool> filter);
+
+    // ── Unit AI command APIs ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Orders the unit to attack-move to the specified world position.
+    /// The unit will attack any enemies it encounters along the way.
+    /// </summary>
+    /// <param name="unit">The unit to command.</param>
+    /// <param name="destination">The destination position in world coordinates.</param>
+    void IssueAttackMoveOrder(IUnit unit, Vector3 destination);
+
+    /// <summary>
+    /// Orders the unit to cast a targeted spell on a specific enemy unit.
+    /// Does nothing if the unit does not have the specified ability.
+    /// </summary>
+    /// <param name="caster">The casting unit.</param>
+    /// <param name="abilityId">The ability identifier string.</param>
+    /// <param name="target">The target unit.</param>
+    void IssueCastOrder(IUnit caster, string abilityId, IUnit target);
+
+    /// <summary>
+    /// Orders the unit to cast a ground-targeted spell at the specified world position.
+    /// Does nothing if the unit does not have the specified ability.
+    /// </summary>
+    /// <param name="caster">The casting unit.</param>
+    /// <param name="abilityId">The ability identifier string.</param>
+    /// <param name="position">The target position in world coordinates.</param>
+    void IssueCastOrderAt(IUnit caster, string abilityId, Vector3 position);
+
+    /// <summary>
+    /// Orders the unit to activate or deactivate an auto-cast ability.
+    /// </summary>
+    /// <param name="unit">The unit that owns the ability.</param>
+    /// <param name="abilityId">The ability identifier string.</param>
+    /// <param name="active">True to activate auto-cast; false to deactivate.</param>
+    void SetAbilityAutoCast(IUnit unit, string abilityId, bool active);
+
+    // ── Per-player unit management ────────────────────────────────────────
+
+    /// <summary>
+    /// Sets whether the specified player slot is treated as a proxy (AI-controlled
+    /// stand-in that mirrors another player's drafted units in combat).
+    /// Proxy slots can be given computer-controller behaviour independent of the real player.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <param name="isProxy">True to enable proxy/computer control; false for user control.</param>
+    void SetPlayerComputerControlled(int playerIndex, bool isProxy);
+
+    // ── Leaderboard display ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Appends a new row to the leaderboard panel with the given label and value.
+    /// Must call <see cref="SetLeaderboardVisible"/> first to make the panel visible.
+    /// </summary>
+    /// <param name="label">Row label text.</param>
+    /// <param name="value">Row value text.</param>
+    /// <param name="color">Optional RGB tint for the label text.</param>
+    void AddLeaderboardRow(string label, string value, Vector3? color = null);
+
+    // ── Per-player wood resource APIs ─────────────────────────────────────
+
+    /// <summary>
+    /// Gets the wood (lumber) resource for the specified player slot.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    float GetPlayerWood(int playerIndex);
+
+    /// <summary>
+    /// Sets the wood (lumber) resource for the specified player slot.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <param name="amount">The new wood amount.</param>
+    void SetPlayerWood(int playerIndex, float amount);
+
+    /// <summary>
+    /// Adds the specified amount to the wood resource for the given player slot.
+    /// Negative values subtract wood.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <param name="delta">The amount to add (may be negative).</param>
+    void AdjustPlayerWood(int playerIndex, float delta);
+
+    // ── Unit ownership API ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Transfers ownership of the specified unit to a different player slot.
+    /// </summary>
+    /// <param name="unit">The unit to transfer.</param>
+    /// <param name="playerIndex">Zero-based player slot index of the new owner.</param>
+    void SetUnitOwner(IUnit unit, int playerIndex);
+
+    // ── Per-player population APIs ────────────────────────────────────────
+
+    /// <summary>
+    /// Gets the current population count for the specified player slot.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    int GetPlayerCurrentPopulation(int playerIndex);
+
+    /// <summary>
+    /// Gets the maximum population capacity for the specified player slot.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    int GetPlayerMaxPopulation(int playerIndex);
+
+    /// <summary>
+    /// Sets the maximum population capacity for the specified player slot.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <param name="max">The new population cap.</param>
+    void SetPlayerMaxPopulation(int playerIndex, int max);
+
+    // ── Wave / countdown display APIs ─────────────────────────────────────
+
+    /// <summary>
+    /// Updates the countdown timer label without resetting the current timer.
+    /// Useful for changing the displayed title mid-countdown.
+    /// </summary>
+    /// <param name="label">The new label text for the active countdown timer.</param>
+    void SetCountdownTimerLabel(string label);
+
+    // ── Group movement / AI order APIs ────────────────────────────────────
+
+    /// <summary>
+    /// Orders all units owned by the specified player slot to attack-move to the destination.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <param name="destination">The destination in world coordinates.</param>
+    void IssueAttackMoveOrderToPlayer(int playerIndex, Vector3 destination);
+
+    /// <summary>
+    /// Returns the number of units owned by the specified player that match the optional filter.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <param name="filter">Optional predicate; pass null to count all units.</param>
+    int CountUnitsOwnedByPlayer(int playerIndex, System.Func<IUnit, bool>? filter = null);
+}

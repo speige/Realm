@@ -1,0 +1,770 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://UI/MapEditorHUD.cs" id="1_script"]
+
+[node name="MapEditorHUD" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="LeftPillar" type="Panel" parent="."]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 200.0
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="RightPillar" type="Panel" parent="."]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -200.0
+grow_horizontal = 0
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="VBox" type="VBoxContainer" parent="RightPillar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = 40.0
+offset_right = -12.0
+offset_bottom = -40.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 15
+
+[node name="ObjectToolsTitle" type="Label" parent="RightPillar/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "OBJECT ACTIONS"
+horizontal_alignment = 1
+
+[node name="Spacer1" type="Control" parent="RightPillar/VBox"]
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+
+[node name="BtnDeleteObject" type="Button" parent="RightPillar/VBox"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+focus_mode = 0
+text = "ERASER TOOL"
+
+[node name="Spacer2" type="Control" parent="RightPillar/VBox"]
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+
+[node name="LblInfoText" type="Label" parent="RightPillar/VBox"]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+text = "Select a tool from the panels to begin terrain modification."
+autowrap_mode = 3
+
+[node name="TopLeftBox" type="HBoxContainer" parent="."]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 200.0
+offset_bottom = 68.0
+
+[node name="BtnBack" type="Button" parent="TopLeftBox"]
+custom_minimum_size = Vector2(160, 42)
+layout_mode = 2
+focus_mode = 0
+text = "BACK TO HUB"
+
+[node name="TopToolbar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -480.0
+offset_top = 80.0
+offset_right = 480.0
+offset_bottom = 220.0
+grow_horizontal = 2
+theme_override_constants/separation = 15
+alignment = 1
+
+[node name="PanelTerrain" type="PanelContainer" parent="TopToolbar"]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="VBox" type="VBoxContainer" parent="TopToolbar/PanelTerrain"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HeaderHBox" type="HBoxContainer" parent="TopToolbar/PanelTerrain/VBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="TopToolbar/PanelTerrain/VBox/HeaderHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+text = "TERRAIN MODIFICATION"
+horizontal_alignment = 1
+
+[node name="BtnCollapse" type="Button" parent="TopToolbar/PanelTerrain/VBox/HeaderHBox"]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+focus_mode = 0
+text = "▲"
+
+[node name="Content" type="HBoxContainer" parent="TopToolbar/PanelTerrain/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BtnRaise" type="Button" parent="TopToolbar/PanelTerrain/VBox/Content"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+focus_mode = 0
+text = "⬆️ Raise"
+
+[node name="BtnLower" type="Button" parent="TopToolbar/PanelTerrain/VBox/Content"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+focus_mode = 0
+text = "⬇️ Lower"
+
+[node name="BtnSmooth" type="Button" parent="TopToolbar/PanelTerrain/VBox/Content"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+focus_mode = 0
+text = "🌐 Smooth"
+
+[node name="BtnFlatten" type="Button" parent="TopToolbar/PanelTerrain/VBox/Content"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+focus_mode = 0
+text = "➖ Flatten"
+
+[node name="BtnCliff" type="Button" parent="TopToolbar/PanelTerrain/VBox/Content"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+focus_mode = 0
+text = "⛰️ Cliff"
+
+[node name="PanelDeco" type="PanelContainer" parent="TopToolbar"]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="VBox" type="VBoxContainer" parent="TopToolbar/PanelDeco"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HeaderHBox" type="HBoxContainer" parent="TopToolbar/PanelDeco/VBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="TopToolbar/PanelDeco/VBox/HeaderHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+text = "DECORATION"
+horizontal_alignment = 1
+
+[node name="BtnCollapse" type="Button" parent="TopToolbar/PanelDeco/VBox/HeaderHBox"]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+focus_mode = 0
+text = "▲"
+
+[node name="Content" type="HBoxContainer" parent="TopToolbar/PanelDeco/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BtnTextureBrush" type="Button" parent="TopToolbar/PanelDeco/VBox/Content"]
+custom_minimum_size = Vector2(64, 56)
+layout_mode = 2
+focus_mode = 0
+text = "🖌️ Texture"
+
+[node name="BtnDecalTool" type="Button" parent="TopToolbar/PanelDeco/VBox/Content"]
+custom_minimum_size = Vector2(64, 56)
+layout_mode = 2
+focus_mode = 0
+text = "🖼️ Decal"
+
+[node name="PanelObjects" type="PanelContainer" parent="TopToolbar"]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="VBox" type="VBoxContainer" parent="TopToolbar/PanelObjects"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HeaderHBox" type="HBoxContainer" parent="TopToolbar/PanelObjects/VBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="TopToolbar/PanelObjects/VBox/HeaderHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+text = "OBJECTS"
+horizontal_alignment = 1
+
+[node name="BtnCollapse" type="Button" parent="TopToolbar/PanelObjects/VBox/HeaderHBox"]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+focus_mode = 0
+text = "▲"
+
+[node name="Content" type="HBoxContainer" parent="TopToolbar/PanelObjects/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BtnAddUnit" type="Button" parent="TopToolbar/PanelObjects/VBox/Content"]
+custom_minimum_size = Vector2(64, 56)
+layout_mode = 2
+focus_mode = 0
+text = "💂 Add Unit"
+
+[node name="BtnAddProp" type="Button" parent="TopToolbar/PanelObjects/VBox/Content"]
+custom_minimum_size = Vector2(64, 56)
+layout_mode = 2
+focus_mode = 0
+text = "🌲 Add Prop"
+
+[node name="PanelEnv" type="PanelContainer" parent="TopToolbar"]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="VBox" type="VBoxContainer" parent="TopToolbar/PanelEnv"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HeaderHBox" type="HBoxContainer" parent="TopToolbar/PanelEnv/VBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="TopToolbar/PanelEnv/VBox/HeaderHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+text = "ENVIRONMENT"
+horizontal_alignment = 1
+
+[node name="BtnCollapse" type="Button" parent="TopToolbar/PanelEnv/VBox/HeaderHBox"]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+focus_mode = 0
+text = "▲"
+
+[node name="Content" type="HBoxContainer" parent="TopToolbar/PanelEnv/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BtnSkybox" type="Button" parent="TopToolbar/PanelEnv/VBox/Content"]
+custom_minimum_size = Vector2(100, 56)
+layout_mode = 2
+focus_mode = 0
+text = "☀️ Sky / Time"
+
+[node name="TopBar" type="PanelContainer" parent="."]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 220.0
+offset_top = 10.0
+offset_right = -220.0
+offset_bottom = 70.0
+grow_horizontal = 2
+
+[node name="HBox" type="HBoxContainer" parent="TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="TitleLabel" type="Label" parent="TopBar/HBox"]
+layout_mode = 2
+size_flags_vertical = 4
+text = "MAP LEVEL EDITOR"
+
+[node name="StatusLabel" type="Label" parent="TopBar/HBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+text = "ACTIVE TOOL: NONE"
+
+[node name="MiddleRightBox" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -190.0
+offset_top = -200.0
+offset_right = -20.0
+offset_bottom = 200.0
+grow_horizontal = 0
+grow_vertical = 2
+theme_override_constants/separation = 15
+alignment = 1
+
+[node name="PanelZoom" type="PanelContainer" parent="MiddleRightBox"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="MiddleRightBox/PanelZoom"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HeaderHBox" type="HBoxContainer" parent="MiddleRightBox/PanelZoom/VBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="MiddleRightBox/PanelZoom/VBox/HeaderHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+text = "ZOOM/VIEW"
+horizontal_alignment = 1
+
+[node name="BtnCollapse" type="Button" parent="MiddleRightBox/PanelZoom/VBox/HeaderHBox"]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+focus_mode = 0
+text = "▲"
+
+[node name="Content" type="GridContainer" parent="MiddleRightBox/PanelZoom/VBox"]
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+columns = 2
+
+[node name="BtnZoomIn" type="Button" parent="MiddleRightBox/PanelZoom/VBox/Content"]
+custom_minimum_size = Vector2(64, 40)
+layout_mode = 2
+focus_mode = 0
+text = "➕ In"
+
+[node name="BtnZoomOut" type="Button" parent="MiddleRightBox/PanelZoom/VBox/Content"]
+custom_minimum_size = Vector2(64, 40)
+layout_mode = 2
+focus_mode = 0
+text = "➖ Out"
+
+[node name="BtnCenter" type="Button" parent="MiddleRightBox/PanelZoom/VBox/Content"]
+custom_minimum_size = Vector2(64, 40)
+layout_mode = 2
+focus_mode = 0
+text = "🎯 Target"
+
+[node name="BtnRotate" type="Button" parent="MiddleRightBox/PanelZoom/VBox/Content"]
+custom_minimum_size = Vector2(64, 40)
+layout_mode = 2
+focus_mode = 0
+text = "🔄 Align"
+
+[node name="BtnPublish" type="Button" parent="MiddleRightBox"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+focus_mode = 0
+text = "📜 PUBLISH MAP"
+
+[node name="BtnSave" type="Button" parent="MiddleRightBox"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+focus_mode = 0
+text = "💾 SAVE FILE"
+
+[node name="HistoryHBox" type="HBoxContainer" parent="MiddleRightBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BtnUndo" type="Button" parent="MiddleRightBox/HistoryHBox"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+icon_max_width = 0
+text = "↩️ UNDO"
+
+[node name="BtnRedo" type="Button" parent="MiddleRightBox/HistoryHBox"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+icon_max_width = 0
+text = "↪️ REDO"
+
+[node name="PanelTextures" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -280.0
+offset_right = 440.0
+offset_bottom = -20.0
+grow_vertical = 0
+
+[node name="VBox" type="VBoxContainer" parent="PanelTextures"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HeaderHBox" type="HBoxContainer" parent="PanelTextures/VBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="PanelTextures/VBox/HeaderHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+text = "PALETTE: TEXTURES"
+horizontal_alignment = 1
+
+[node name="BtnCollapse" type="Button" parent="PanelTextures/VBox/HeaderHBox"]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+focus_mode = 0
+text = "▲"
+
+[node name="Content" type="HBoxContainer" parent="PanelTextures/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 15
+
+[node name="GridSwatches" type="GridContainer" parent="PanelTextures/VBox/Content"]
+layout_mode = 2
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
+columns = 4
+
+[node name="Swatch1" type="Button" parent="PanelTextures/VBox/Content/GridSwatches"]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+focus_mode = 0
+
+[node name="Swatch2" type="Button" parent="PanelTextures/VBox/Content/GridSwatches"]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+focus_mode = 0
+
+[node name="Swatch3" type="Button" parent="PanelTextures/VBox/Content/GridSwatches"]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+focus_mode = 0
+
+[node name="Swatch4" type="Button" parent="PanelTextures/VBox/Content/GridSwatches"]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+focus_mode = 0
+
+[node name="Swatch5" type="Button" parent="PanelTextures/VBox/Content/GridSwatches"]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+focus_mode = 0
+
+[node name="Swatch6" type="Button" parent="PanelTextures/VBox/Content/GridSwatches"]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+focus_mode = 0
+
+[node name="Swatch7" type="Button" parent="PanelTextures/VBox/Content/GridSwatches"]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+focus_mode = 0
+
+[node name="Swatch8" type="Button" parent="PanelTextures/VBox/Content/GridSwatches"]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+focus_mode = 0
+
+[node name="Swatch9" type="Button" parent="PanelTextures/VBox/Content/GridSwatches"]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+focus_mode = 0
+
+[node name="Swatch10" type="Button" parent="PanelTextures/VBox/Content/GridSwatches"]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+focus_mode = 0
+
+[node name="Swatch11" type="Button" parent="PanelTextures/VBox/Content/GridSwatches"]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+focus_mode = 0
+
+[node name="Swatch12" type="Button" parent="PanelTextures/VBox/Content/GridSwatches"]
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+focus_mode = 0
+
+[node name="SettingsVBox" type="VBoxContainer" parent="PanelTextures/VBox/Content"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="BrushSettingsTitle" type="Label" parent="PanelTextures/VBox/Content/SettingsVBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "Texture Brush"
+
+[node name="BrushSizeBox" type="VBoxContainer" parent="PanelTextures/VBox/Content/SettingsVBox"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Header" type="HBoxContainer" parent="PanelTextures/VBox/Content/SettingsVBox/BrushSizeBox"]
+layout_mode = 2
+
+[node name="LblSizeTitle" type="Label" parent="PanelTextures/VBox/Content/SettingsVBox/BrushSizeBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 10
+text = "Size"
+
+[node name="LblBrushSizeValue" type="Label" parent="PanelTextures/VBox/Content/SettingsVBox/BrushSizeBox/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "6.0"
+
+[node name="SldBrushSize" type="HSlider" parent="PanelTextures/VBox/Content/SettingsVBox/BrushSizeBox"]
+layout_mode = 2
+focus_mode = 0
+min_value = 1.0
+max_value = 20.0
+step = 0.5
+value = 6.0
+
+[node name="BrushStrengthBox" type="VBoxContainer" parent="PanelTextures/VBox/Content/SettingsVBox"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Header" type="HBoxContainer" parent="PanelTextures/VBox/Content/SettingsVBox/BrushStrengthBox"]
+layout_mode = 2
+
+[node name="LblStrengthTitle" type="Label" parent="PanelTextures/VBox/Content/SettingsVBox/BrushStrengthBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 10
+text = "Intensity"
+
+[node name="LblBrushStrengthValue" type="Label" parent="PanelTextures/VBox/Content/SettingsVBox/BrushStrengthBox/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "3.0"
+
+[node name="SldBrushStrength" type="HSlider" parent="PanelTextures/VBox/Content/SettingsVBox/BrushStrengthBox"]
+layout_mode = 2
+focus_mode = 0
+min_value = 0.5
+max_value = 10.0
+step = 0.1
+value = 3.0
+
+[node name="FlattenHeightBox" type="VBoxContainer" parent="PanelTextures/VBox/Content/SettingsVBox"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Header" type="HBoxContainer" parent="PanelTextures/VBox/Content/SettingsVBox/FlattenHeightBox"]
+layout_mode = 2
+
+[node name="LblFlattenTitle" type="Label" parent="PanelTextures/VBox/Content/SettingsVBox/FlattenHeightBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 10
+text = "Flatten Y"
+
+[node name="LblFlattenHeightValue" type="Label" parent="PanelTextures/VBox/Content/SettingsVBox/FlattenHeightBox/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "0.0 m"
+
+[node name="SldFlattenHeight" type="HSlider" parent="PanelTextures/VBox/Content/SettingsVBox/FlattenHeightBox"]
+layout_mode = 2
+focus_mode = 0
+min_value = -10.0
+max_value = 30.0
+step = 0.5
+value = 0.0
+
+[node name="PanelEntityPalette" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -460.0
+offset_top = -280.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 0
+grow_vertical = 0
+
+[node name="VBox" type="VBoxContainer" parent="PanelEntityPalette"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HeaderHBox" type="HBoxContainer" parent="PanelEntityPalette/VBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="PanelEntityPalette/VBox/HeaderHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+text = "PALETTES: OBJECTS"
+horizontal_alignment = 1
+
+[node name="BtnCollapse" type="Button" parent="PanelEntityPalette/VBox/HeaderHBox"]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+focus_mode = 0
+text = "▲"
+
+[node name="Content" type="HBoxContainer" parent="PanelEntityPalette/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 15
+
+[node name="PalettesVBox" type="VBoxContainer" parent="PanelEntityPalette/VBox/Content"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="LblUnitsTitle" type="Label" parent="PanelEntityPalette/VBox/Content/PalettesVBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "PALETTE: UNITS"
+
+[node name="UnitsGrid" type="GridContainer" parent="PanelEntityPalette/VBox/Content/PalettesVBox"]
+layout_mode = 2
+theme_override_constants/h_separation = 6
+columns = 4
+
+[node name="BtnFootman" type="Button" parent="PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+focus_mode = 0
+text = "💂"
+
+[node name="BtnArcher" type="Button" parent="PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+focus_mode = 0
+text = "🏹"
+
+[node name="BtnCastle" type="Button" parent="PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+focus_mode = 0
+text = "🏰"
+
+[node name="BtnTower" type="Button" parent="PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+focus_mode = 0
+text = "🗼"
+
+[node name="LblPropsTitle" type="Label" parent="PanelEntityPalette/VBox/Content/PalettesVBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "PALETTE: PROPS"
+
+[node name="PropsGrid" type="GridContainer" parent="PanelEntityPalette/VBox/Content/PalettesVBox"]
+layout_mode = 2
+theme_override_constants/h_separation = 6
+columns = 5
+
+[node name="BtnTree" type="Button" parent="PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid"]
+custom_minimum_size = Vector2(42, 42)
+layout_mode = 2
+focus_mode = 0
+text = "🌳"
+
+[node name="BtnPropRock" type="Button" parent="PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid"]
+custom_minimum_size = Vector2(42, 42)
+layout_mode = 2
+focus_mode = 0
+text = "🪨"
+
+[node name="BtnGoldMine" type="Button" parent="PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid"]
+custom_minimum_size = Vector2(42, 42)
+layout_mode = 2
+focus_mode = 0
+text = "🪙"
+
+[node name="BtnPillar" type="Button" parent="PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid"]
+custom_minimum_size = Vector2(42, 42)
+layout_mode = 2
+focus_mode = 0
+text = "🏛️"
+
+[node name="BtnFlag" type="Button" parent="PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid"]
+custom_minimum_size = Vector2(42, 42)
+layout_mode = 2
+focus_mode = 0
+text = "🚩"
+
+[node name="RightSettingsVBox" type="VBoxContainer" parent="PanelEntityPalette/VBox/Content"]
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+theme_override_constants/separation = 6
+alignment = 1
+
+[node name="BtnToggleRotate" type="Button" parent="PanelEntityPalette/VBox/Content/RightSettingsVBox"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+focus_mode = 0
+text = "🔄 Object Rotation"
+
+[node name="BtnToggleScale" type="Button" parent="PanelEntityPalette/VBox/Content/RightSettingsVBox"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+focus_mode = 0
+text = "📏 Scale"
+
+[node name="BtnToggleSnap" type="Button" parent="PanelEntityPalette/VBox/Content/RightSettingsVBox"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+focus_mode = 0
+text = "🔲 Snap to Grid"
+
+[node name="ChkSpawnAsEnemy" type="CheckBox" parent="PanelEntityPalette/VBox/Content/RightSettingsVBox"]
+layout_mode = 2
+focus_mode = 0
+theme_override_font_sizes/font_size = 11
+text = "Spawn as Orc"
+
+[node name="BtnBigSave" type="Button" parent="PanelEntityPalette/VBox/Content/RightSettingsVBox"]
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+focus_mode = 0
+text = "📜 SAVE"
+
+[node name="FeedbackLabel" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -500.0
+offset_top = -240.0
+offset_right = 500.0
+offset_bottom = -160.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 28
+horizontal_alignment = 1
+vertical_alignment = 1

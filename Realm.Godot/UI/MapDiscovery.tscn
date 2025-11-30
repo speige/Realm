@@ -1,0 +1,126 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://UI/MapDiscovery.cs" id="1_script"]
+
+[node name="MapDiscovery" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LeftPillar" type="Panel" parent="."]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 100.0
+grow_vertical = 2
+
+[node name="RightPillar" type="Panel" parent="."]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -100.0
+grow_horizontal = 0
+grow_vertical = 2
+
+[node name="BackButton" type="Button" parent="."]
+custom_minimumSize = Vector2(120, 60)
+layout_mode = 0
+offset_left = 130.0
+offset_top = 40.0
+offset_right = 250.0
+offset_bottom = 100.0
+focus_mode = 0
+
+[node name="DiscoveryTitle" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -400.0
+offset_top = 30.0
+offset_right = 400.0
+offset_bottom = 110.0
+grow_horizontal = 2
+
+[node name="FilterPanel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 130.0
+offset_top = 210.0
+offset_right = 430.0
+offset_bottom = 980.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="FilterPanel"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="SearchBar" type="LineEdit" parent="FilterPanel/VBoxContainer"]
+layout_mode = 2
+focus_mode = 2
+
+[node name="Spacer" type="Control" parent="FilterPanel/VBoxContainer"]
+custom_minimumSize = Vector2(0, 10)
+layout_mode = 2
+
+[node name="CatAll" type="Button" parent="FilterPanel/VBoxContainer"]
+custom_minimumSize = Vector2(0, 45)
+layout_mode = 2
+focus_mode = 0
+
+[node name="CatFeatured" type="Button" parent="FilterPanel/VBoxContainer"]
+custom_minimumSize = Vector2(0, 45)
+layout_mode = 2
+focus_mode = 0
+
+[node name="CatTD" type="Button" parent="FilterPanel/VBoxContainer"]
+custom_minimumSize = Vector2(0, 45)
+layout_mode = 2
+focus_mode = 0
+
+[node name="CatMelee" type="Button" parent="FilterPanel/VBoxContainer"]
+custom_minimumSize = Vector2(0, 45)
+layout_mode = 2
+focus_mode = 0
+
+[node name="CatCampaign" type="Button" parent="FilterPanel/VBoxContainer"]
+custom_minimumSize = Vector2(0, 45)
+layout_mode = 2
+focus_mode = 0
+
+[node name="MapListPanel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 460.0
+offset_top = 210.0
+offset_right = 1790.0
+offset_bottom = 980.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MapListPanel"]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MapListPanel/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="MapGrid" type="GridContainer" parent="MapListPanel/VBoxContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/h_separation = 20
+theme_override_constants/v_separation = 20
+columns = 2

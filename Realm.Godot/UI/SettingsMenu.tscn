@@ -1,0 +1,215 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://UI/SettingsMenu.cs" id="1_script"]
+
+[node name="SettingsMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="OverlayBg" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.65)
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MainFrame" type="PanelContainer" parent="CenterContainer"]
+custom_minimumSize = Vector2(1100, 720)
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer/MainFrame"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="SettingsTitle" type="Label" parent="CenterContainer/MainFrame/VBoxContainer"]
+layout_mode = 2
+text = "GAME SETTINGS"
+horizontal_alignment = 1
+
+[node name="ColumnsContainer" type="HBoxContainer" parent="CenterContainer/MainFrame/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 20
+
+[node name="VideoPanel" type="PanelContainer" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="VBox" type="VBoxContainer" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PanelTitle" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox"]
+layout_mode = 2
+text = "VIDEO"
+horizontal_alignment = 1
+
+[node name="ResLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox"]
+layout_mode = 2
+text = "Resolution"
+
+[node name="ResolutionOpt" type="OptionButton" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+
+[node name="QualLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox"]
+layout_mode = 2
+text = "Graphics Quality"
+
+[node name="QualityOpt" type="OptionButton" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+
+[node name="ModeLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox"]
+layout_mode = 2
+text = "Window Mode"
+
+[node name="WindowModeOpt" type="OptionButton" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+
+[node name="VsyncLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox"]
+layout_mode = 2
+text = "V-Sync"
+
+[node name="VsyncOpt" type="OptionButton" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+
+[node name="AudioPanel" type="PanelContainer" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="VBox" type="VBoxContainer" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PanelTitle" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox"]
+layout_mode = 2
+text = "AUDIO"
+horizontal_alignment = 1
+
+[node name="MasterLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox"]
+layout_mode = 2
+text = "Master"
+
+[node name="MasterSlider" type="HSlider" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+
+[node name="MusicLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox"]
+layout_mode = 2
+text = "Music"
+
+[node name="MusicSlider" type="HSlider" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+
+[node name="SfxLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox"]
+layout_mode = 2
+text = "SFX"
+
+[node name="SfxSlider" type="HSlider" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+
+[node name="VoiceLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox"]
+layout_mode = 2
+text = "Voice"
+
+[node name="VoiceSlider" type="HSlider" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+
+[node name="GameplayPanel" type="PanelContainer" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="VBox" type="VBoxContainer" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PanelTitle" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
+layout_mode = 2
+text = "GAMEPLAY"
+horizontal_alignment = 1
+
+[node name="ScrollLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
+layout_mode = 2
+text = "Camera Scroll Speed"
+
+[node name="ScrollSpeedSlider" type="HSlider" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+
+[node name="SensLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
+layout_mode = 2
+text = "Mouse Sensitivity"
+
+[node name="MouseSensSlider" type="HSlider" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+
+[node name="HudScaleLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
+layout_mode = 2
+text = "HUD scale"
+
+[node name="HudScaleSlider" type="HSlider" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+
+[node name="Control" type="Control" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
+custom_minimumSize = Vector2(0, 30)
+layout_mode = 2
+
+[node name="HealthBarsLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
+layout_mode = 2
+text = "Unit Health Bars"
+
+[node name="HealthBarsOpt" type="OptionButton" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+
+[node name="ButtonsRow" type="HBoxContainer" parent="CenterContainer/MainFrame/VBoxContainer"]
+custom_minimumSize = Vector2(0, 60)
+layout_mode = 2
+theme_override_constants/separation = 20
+alignment = 1
+
+[node name="ApplyButton" type="Button" parent="CenterContainer/MainFrame/VBoxContainer/ButtonsRow"]
+custom_minimumSize = Vector2(180, 50)
+layout_mode = 2
+focus_mode = 0
+
+[node name="CancelButton" type="Button" parent="CenterContainer/MainFrame/VBoxContainer/ButtonsRow"]
+custom_minimumSize = Vector2(180, 50)
+layout_mode = 2
+focus_mode = 0
+
+[node name="ResetButton" type="Button" parent="CenterContainer/MainFrame/VBoxContainer/ButtonsRow"]
+custom_minimumSize = Vector2(280, 50)
+layout_mode = 2
+focus_mode = 0

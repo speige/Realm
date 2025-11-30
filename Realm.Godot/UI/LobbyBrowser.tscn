@@ -1,0 +1,190 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://UI/LobbyBrowser.cs" id="1_script"]
+
+[node name="LobbyBrowser" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LeftPillar" type="Panel" parent="."]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 100.0
+grow_vertical = 2
+
+[node name="RuneContainer" type="VBoxContainer" parent="LeftPillar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+
+[node name="RightPillar" type="Panel" parent="."]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -100.0
+grow_horizontal = 0
+grow_vertical = 2
+
+[node name="RuneContainer" type="VBoxContainer" parent="RightPillar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+
+[node name="BackButton" type="Button" parent="."]
+custom_minimumSize = Vector2(60, 60)
+layout_mode = 0
+offset_left = 130.0
+offset_top = 40.0
+offset_right = 190.0
+offset_bottom = 100.0
+focus_mode = 0
+
+[node name="RefreshButton" type="Button" parent="."]
+custom_minimumSize = Vector2(60, 60)
+layout_mode = 0
+offset_left = 1730.0
+offset_top = 40.0
+offset_right = 1790.0
+offset_bottom = 100.0
+pivot_offset = Vector2(30, 30)
+focus_mode = 0
+
+[node name="BrowserTitle" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -400.0
+offset_top = 30.0
+offset_right = 400.0
+offset_bottom = 110.0
+grow_horizontal = 2
+
+[node name="SearchBar" type="LineEdit" parent="."]
+layout_mode = 0
+offset_left = 550.0
+offset_top = 135.0
+offset_right = 1370.0
+offset_bottom = 180.0
+alignment = 1
+
+[node name="FilterPanel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 130.0
+offset_top = 210.0
+offset_right = 370.0
+offset_bottom = 790.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="FilterPanel"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="FilterTitle" type="Label" parent="FilterPanel/VBoxContainer"]
+layout_mode = 2
+text = "FILTER"
+horizontal_alignment = 1
+
+[node name="CampaignCheck" type="CheckBox" parent="FilterPanel/VBoxContainer"]
+layout_mode = 2
+focus_mode = 0
+text = "Campaign"
+
+[node name="MeleeCheck" type="CheckBox" parent="FilterPanel/VBoxContainer"]
+layout_mode = 2
+focus_mode = 0
+text = "Melee"
+
+[node name="TutorialCheck" type="CheckBox" parent="FilterPanel/VBoxContainer"]
+layout_mode = 2
+focus_mode = 0
+text = "Tutorial"
+
+[node name="ArcadeCheck" type="CheckBox" parent="FilterPanel/VBoxContainer"]
+layout_mode = 2
+focus_mode = 0
+text = "Arcade"
+
+[node name="LobbyPanel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 400.0
+offset_top = 210.0
+offset_right = 1790.0
+offset_bottom = 790.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="LobbyPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TableHeader" type="HBoxContainer" parent="LobbyPanel/VBoxContainer"]
+custom_minimumSize = Vector2(0, 40)
+layout_mode = 2
+
+[node name="MapCol" type="Label" parent="LobbyPanel/VBoxContainer/TableHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "  MAP"
+vertical_alignment = 2
+
+[node name="ModeCol" type="Label" parent="LobbyPanel/VBoxContainer/TableHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "MODE"
+vertical_alignment = 2
+
+[node name="PlayersCol" type="Label" parent="LobbyPanel/VBoxContainer/TableHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "PLAYERS"
+vertical_alignment = 2
+
+[node name="PingCol" type="Label" parent="LobbyPanel/VBoxContainer/TableHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "PING  "
+horizontal_alignment = 2
+vertical_alignment = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="LobbyPanel/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="LobbyListContainer" type="VBoxContainer" parent="LobbyPanel/VBoxContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="HostButton" type="Button" parent="."]
+custom_minimumSize = Vector2(300, 60)
+layout_mode = 0
+offset_left = 1490.0
+offset_top = 820.0
+offset_right = 1790.0
+offset_bottom = 880.0
+focus_mode = 0

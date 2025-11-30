@@ -1,0 +1,220 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://UI/LobbyRoom.cs" id="1_script"]
+
+[node name="LobbyRoom" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LeftPillar" type="Panel" parent="."]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 100.0
+grow_vertical = 2
+
+[node name="RuneContainer" type="VBoxContainer" parent="LeftPillar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+
+[node name="RightPillar" type="Panel" parent="."]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -100.0
+grow_horizontal = 0
+grow_vertical = 2
+
+[node name="RuneContainer" type="VBoxContainer" parent="RightPillar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+
+[node name="BackButton" type="Button" parent="."]
+custom_minimumSize = Vector2(120, 45)
+layout_mode = 0
+offset_left = 130.0
+offset_top = 40.0
+offset_right = 250.0
+offset_bottom = 85.0
+focus_mode = 0
+
+[node name="InviteButton" type="Button" parent="."]
+custom_minimumSize = Vector2(180, 45)
+layout_mode = 0
+offset_left = 280.0
+offset_top = 40.0
+offset_right = 460.0
+offset_bottom = 85.0
+focus_mode = 0
+
+[node name="AddBotButton" type="Button" parent="."]
+custom_minimumSize = Vector2(160, 45)
+layout_mode = 0
+offset_left = 480.0
+offset_top = 40.0
+offset_right = 640.0
+offset_bottom = 85.0
+focus_mode = 0
+
+[node name="InviteFeedback" type="Label" parent="."]
+layout_mode = 0
+offset_left = 660.0
+offset_top = 40.0
+offset_right = 860.0
+offset_bottom = 85.0
+theme_override_font_sizes/font_size = 14
+vertical_alignment = 1
+
+[node name="LobbyTitle" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -400.0
+offset_top = 30.0
+offset_right = 400.0
+offset_bottom = 110.0
+grow_horizontal = 2
+
+[node name="PlayersPanel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 130.0
+offset_top = 120.0
+offset_right = 1090.0
+offset_bottom = 780.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PlayersPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PanelTitle" type="Label" parent="PlayersPanel/VBoxContainer"]
+layout_mode = 2
+text = "TEAMS & PLAYERS"
+horizontal_alignment = 1
+
+[node name="TableHeader" type="HBoxContainer" parent="PlayersPanel/VBoxContainer"]
+custom_minimumSize = Vector2(0, 30)
+layout_mode = 2
+
+[node name="TeamCol" type="Label" parent="PlayersPanel/VBoxContainer/TableHeader"]
+custom_minimumSize = Vector2(100, 0)
+layout_mode = 2
+text = "TEAM"
+
+[node name="ColorCol" type="Label" parent="PlayersPanel/VBoxContainer/TableHeader"]
+custom_minimumSize = Vector2(60, 0)
+layout_mode = 2
+text = "COLOR"
+
+[node name="NameCol" type="Label" parent="PlayersPanel/VBoxContainer/TableHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "PLAYER / AI NAME"
+
+[node name="FactionCol" type="Label" parent="PlayersPanel/VBoxContainer/TableHeader"]
+custom_minimumSize = Vector2(160, 0)
+layout_mode = 2
+text = "FACTION"
+
+[node name="ScrollContainer" type="ScrollContainer" parent="PlayersPanel/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="PlayersContainer" type="VBoxContainer" parent="PlayersPanel/VBoxContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="BriefingPanel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 1110.0
+offset_top = 120.0
+offset_right = 1790.0
+offset_bottom = 780.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="BriefingPanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PanelTitle" type="Label" parent="BriefingPanel/VBoxContainer"]
+layout_mode = 2
+text = "MATCH INFO & BRIEFING"
+horizontal_alignment = 1
+
+[node name="MapFrame" type="Panel" parent="BriefingPanel/VBoxContainer"]
+custom_minimumSize = Vector2(0, 300)
+layout_mode = 2
+
+[node name="BriefingLabel" type="RichTextLabel" parent="BriefingPanel/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+
+[node name="ChatPanel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 130.0
+offset_top = 800.0
+offset_right = 1420.0
+offset_bottom = 980.0
+
+[node name="ChatContainer" type="VBoxContainer" parent="ChatPanel"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ChatLog" type="RichTextLabel" parent="ChatPanel/ChatContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+scroll_following = true
+
+[node name="ChatInput" type="LineEdit" parent="ChatPanel/ChatContainer"]
+custom_minimumSize = Vector2(0, 32)
+layout_mode = 2
+placeholder_text = "Type here and press Enter to chat..."
+
+[node name="MapSelectButton" type="OptionButton" parent="."]
+custom_minimumSize = Vector2(340, 50)
+layout_mode = 0
+offset_left = 1450.0
+offset_top = 820.0
+offset_right = 1790.0
+offset_bottom = 870.0
+focus_mode = 0
+
+[node name="StartButton" type="Button" parent="."]
+custom_minimumSize = Vector2(340, 75)
+layout_mode = 0
+offset_left = 1450.0
+offset_top = 890.0
+offset_right = 1790.0
+offset_bottom = 965.0
+focus_mode = 0
+

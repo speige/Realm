@@ -1,0 +1,36 @@
+[gd_scene format=3 uid="uid://btcnvnkjpuns1"]
+
+[ext_resource type="Script" uid="uid://d0iebymqr5fdl" path="res://GameHost.cs" id="1_gamehost"]
+[ext_resource type="Script" uid="uid://b31pk4bc6amor" path="res://CameraControl.cs" id="3_cm0pq"]
+[ext_resource type="Script" uid="uid://b14qd12uvgxrf" path="res://FPSCounter.cs" id="3_r0du0"]
+[ext_resource type="PackedScene" path="res://UI/UIManager.tscn" id="4_ui"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_cm0pq"]
+
+[sub_resource type="Sky" id="Sky_fos0i"]
+sky_material = SubResource("ProceduralSkyMaterial_cm0pq")
+
+[sub_resource type="Environment" id="Environment_3dxm6"]
+background_mode = 2
+sky = SubResource("Sky_fos0i")
+
+[node name="Main" type="Node3D" unique_id=648672385]
+script = ExtResource("1_gamehost")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=323284250]
+script = ExtResource("3_cm0pq")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1056005627]
+
+[node name="UIManager" parent="CanvasLayer" unique_id=941517973 instance=ExtResource("4_ui")]
+
+[node name="FPS" type="Label" parent="CanvasLayer" unique_id=1722011162]
+offset_left = 996.0
+offset_right = 1148.0
+offset_bottom = 61.0
+script = ExtResource("3_r0du0")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1286803203]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=941781935]
+environment = SubResource("Environment_3dxm6")
