@@ -1,0 +1,31 @@
+[gd_scene load_steps=7 format=3 uid="uid://btcnvnkjpuns1"]
+
+[ext_resource type="Script" uid="uid://b31pk4bc6amor" path="res://CameraControl.cs" id="3_cm0pq"]
+[ext_resource type="Script" uid="uid://b14qd12uvgxrf" path="res://FPSCounter.cs" id="3_r0du0"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_cm0pq"]
+
+[sub_resource type="Sky" id="Sky_fos0i"]
+sky_material = SubResource("ProceduralSkyMaterial_cm0pq")
+
+[sub_resource type="Environment" id="Environment_3dxm6"]
+background_mode = 2
+sky = SubResource("Sky_fos0i")
+
+[node name="Main" type="Node3D"]
+
+[node name="Camera3D" type="Camera3D" parent="."]
+script = ExtResource("3_cm0pq")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="FPS" type="Label" parent="CanvasLayer"]
+offset_left = 996.0
+offset_right = 1148.0
+offset_bottom = 61.0
+script = ExtResource("3_r0du0")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_3dxm6")
