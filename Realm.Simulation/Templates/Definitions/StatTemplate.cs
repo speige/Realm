@@ -9,6 +9,6 @@ namespace Templates.Definitions
     public readonly record struct StatTemplate : IBaseTemplate<StatTemplate>
     {
         public UniqueId<StatTemplate> UniqueId { get; init; }
-        public string Name { get; init; }
+
     }
 }
