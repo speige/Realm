@@ -24,5 +24,6 @@ namespace Templates.Definitions
         public UniqueId<AbilityTemplate>[] AbilityIds { get; init; }
         public UniqueId<ResourceCostTemplate>[] ProductionCosts { get; init; }
         public UniqueId<CommandTemplate> DefaultCommand { get; init; }
+        public UniqueId<StatBonusTemplate>[] BaseStatBonuses { get; init; }
     }
 }

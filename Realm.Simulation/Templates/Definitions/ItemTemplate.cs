@@ -15,5 +15,6 @@ namespace Templates.Definitions
         public bool CanBeDropped { get; init; }
         public bool DropsOnDeath { get; init; }
         public UniqueId<AbilityTemplate>[] GrantedAbilities { get; init; }
+        public UniqueId<StatBonusTemplate>[] StatBonuses { get; init; }
     }
 }

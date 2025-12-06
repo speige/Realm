@@ -9,7 +9,7 @@ namespace Templates.Definitions
 {
         public UniqueId<StatModifierEffectTemplate> UniqueId { get; init; }
 		
-	    public Stat StatToModify { get; init; }
+        public UniqueId<StatTemplate> StatToModify { get; init; }
         public ModifierType Type { get; init; }
         public float Value { get; init; }
     }
