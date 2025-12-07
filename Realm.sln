@@ -3,8 +3,6 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.0.11222.15
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.Simulation", "Realm.Simulation\Realm.Simulation.csproj", "{42EBE7BE-8005-77A3-3F6E-AC14B437733E}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.Lobby", "Realm.Lobby\Realm.Lobby.csproj", "{09B5D9F6-2702-C3EE-DD53-34FBA82563C4}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.Godot", "Realm.Godot\Realm.Godot.csproj", "{DBC6348B-A153-D07B-789E-B77F1D1598E3}"
@@ -12,6 +10,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.ScratchPad", "Realm.ScratchPad\Realm.ScratchPad.csproj", "{BAF1A4EB-F381-4B60-969E-9C921AC4D30E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.TestHarness", "Realm.TestHarness\Realm.TestHarness.csproj", "{8BFA2494-3B41-F7AC-0A96-ACD5FE05FBE8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.Ecs", "Realm.Ecs\Realm.Ecs.csproj", "{7795A43F-6CEE-1B54-B381-3B59DDD8C13A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -23,18 +23,6 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{42EBE7BE-8005-77A3-3F6E-AC14B437733E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{42EBE7BE-8005-77A3-3F6E-AC14B437733E}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{42EBE7BE-8005-77A3-3F6E-AC14B437733E}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{42EBE7BE-8005-77A3-3F6E-AC14B437733E}.Debug|x64.Build.0 = Debug|Any CPU
-		{42EBE7BE-8005-77A3-3F6E-AC14B437733E}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{42EBE7BE-8005-77A3-3F6E-AC14B437733E}.Debug|x86.Build.0 = Debug|Any CPU
-		{42EBE7BE-8005-77A3-3F6E-AC14B437733E}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{42EBE7BE-8005-77A3-3F6E-AC14B437733E}.Release|Any CPU.Build.0 = Release|Any CPU
-		{42EBE7BE-8005-77A3-3F6E-AC14B437733E}.Release|x64.ActiveCfg = Release|Any CPU
-		{42EBE7BE-8005-77A3-3F6E-AC14B437733E}.Release|x64.Build.0 = Release|Any CPU
-		{42EBE7BE-8005-77A3-3F6E-AC14B437733E}.Release|x86.ActiveCfg = Release|Any CPU
-		{42EBE7BE-8005-77A3-3F6E-AC14B437733E}.Release|x86.Build.0 = Release|Any CPU
 		{09B5D9F6-2702-C3EE-DD53-34FBA82563C4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{09B5D9F6-2702-C3EE-DD53-34FBA82563C4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{09B5D9F6-2702-C3EE-DD53-34FBA82563C4}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -83,6 +71,18 @@ Global
 		{8BFA2494-3B41-F7AC-0A96-ACD5FE05FBE8}.Release|x64.Build.0 = Release|Any CPU
 		{8BFA2494-3B41-F7AC-0A96-ACD5FE05FBE8}.Release|x86.ActiveCfg = Release|Any CPU
 		{8BFA2494-3B41-F7AC-0A96-ACD5FE05FBE8}.Release|x86.Build.0 = Release|Any CPU
+		{7795A43F-6CEE-1B54-B381-3B59DDD8C13A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7795A43F-6CEE-1B54-B381-3B59DDD8C13A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7795A43F-6CEE-1B54-B381-3B59DDD8C13A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7795A43F-6CEE-1B54-B381-3B59DDD8C13A}.Debug|x64.Build.0 = Debug|Any CPU
+		{7795A43F-6CEE-1B54-B381-3B59DDD8C13A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7795A43F-6CEE-1B54-B381-3B59DDD8C13A}.Debug|x86.Build.0 = Debug|Any CPU
+		{7795A43F-6CEE-1B54-B381-3B59DDD8C13A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7795A43F-6CEE-1B54-B381-3B59DDD8C13A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7795A43F-6CEE-1B54-B381-3B59DDD8C13A}.Release|x64.ActiveCfg = Release|Any CPU
+		{7795A43F-6CEE-1B54-B381-3B59DDD8C13A}.Release|x64.Build.0 = Release|Any CPU
+		{7795A43F-6CEE-1B54-B381-3B59DDD8C13A}.Release|x86.ActiveCfg = Release|Any CPU
+		{7795A43F-6CEE-1B54-B381-3B59DDD8C13A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

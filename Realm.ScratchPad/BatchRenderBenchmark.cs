@@ -1,11 +1,10 @@
 using Godot;
 using System;
 using System.Collections.Generic;
-using Realm.Simulation;
 
 public partial class BatchRenderBenchmark : Node3D
 {
-	private const int InstancesPerType = SimulationHost.Value;
+	private const int InstancesPerType = 5;
 
 	[Export] public string[] UnitGlbPaths = {
 		"res://Assets/barbarian_warlord.glb",
