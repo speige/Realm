@@ -1226,6 +1226,171 @@ public class {mapName} : IMapScript
 		return count;
 	}
 
+	// ── Zone / Region trigger implementation ──────────────────────────────
+
+	private struct ZoneBounds
+	{
+		public float MinX, MinZ, MaxX, MaxZ;
+		public System.Numerics.Vector3 Center;
+	}
+
+	private readonly List<ZoneBounds> _registeredZones = new();
+	private readonly Dictionary<int, HashSet<int>> _unitZoneOccupancy = new();
+	private readonly int[] _playerKillCounts = new int[12];
+
+	public event Action<IUnit, int>? OnUnitEnterZone;
+	public event Action<int>? OnPlayerLeft;
+
+	int IGameAPI.DefineZone(float minX, float minZ, float maxX, float maxZ)
+	{
+		int handle = _registeredZones.Count;
+		float cx = (minX + maxX) * 0.5f;
+		float cz = (minZ + maxZ) * 0.5f;
+		_registeredZones.Add(new ZoneBounds
+		{
+			MinX = minX, MinZ = minZ, MaxX = maxX, MaxZ = maxZ,
+			Center = new System.Numerics.Vector3(cx, 0f, cz)
+		});
+		return handle;
+	}
+
+	System.Numerics.Vector3 IGameAPI.GetZoneCenter(int zoneHandle)
+	{
+		if (zoneHandle < 0 || zoneHandle >= _registeredZones.Count)
+			return System.Numerics.Vector3.Zero;
+		return _registeredZones[zoneHandle].Center;
+	}
+
+	private void TickZoneTriggers()
+	{
+		if (OnUnitEnterZone == null || _registeredZones.Count == 0) return;
+
+		foreach (var unit3D in AllUnits)
+		{
+			if (!GodotObject.IsInstanceValid(unit3D) || !EcsWorld.IsAlive(unit3D.Entity)) continue;
+
+			int unitId = unit3D.Entity.Id;
+			var pos = unit3D.GlobalPosition;
+
+			if (!_unitZoneOccupancy.TryGetValue(unitId, out var occupiedZones))
+			{
+				occupiedZones = new HashSet<int>();
+				_unitZoneOccupancy[unitId] = occupiedZones;
+			}
+
+			for (int i = 0; i < _registeredZones.Count; i++)
+			{
+				ref ZoneBounds z = ref System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_registeredZones)[i];
+				bool inside = pos.X >= z.MinX && pos.X <= z.MaxX && pos.Z >= z.MinZ && pos.Z <= z.MaxZ;
+
+				if (inside && !occupiedZones.Contains(i))
+				{
+					occupiedZones.Add(i);
+					var wrapper = new UnitWrapper(unit3D.Entity, EcsWorld);
+					OnUnitEnterZone?.Invoke(wrapper, i);
+				}
+				else if (!inside)
+				{
+					occupiedZones.Remove(i);
+				}
+			}
+		}
+	}
+
+	void IGameAPI.SetUnitRouteState(IUnit unit, int state)
+	{
+		unit.SetCustomData("__routeState", state);
+	}
+
+	int IGameAPI.GetUnitRouteState(IUnit unit)
+	{
+		object? data = unit.GetCustomData("__routeState");
+		return data is int i ? i : 0;
+	}
+
+	void IGameAPI.SetUnitLevel(IUnit unit, int level)
+	{
+		if (unit is UnitWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
+		{
+			if (EcsWorld.Has<Realm.Ecs.Components.Meta.Level>(wrapper.Entity))
+			{
+				EcsWorld.Set(wrapper.Entity, new Realm.Ecs.Components.Meta.Level(level));
+			}
+			else
+			{
+				EcsWorld.Add(wrapper.Entity, new Realm.Ecs.Components.Meta.Level(level));
+			}
+		}
+	}
+
+	int IGameAPI.GetPlayerKills(int playerIndex)
+	{
+		if (playerIndex < 0 || playerIndex >= _playerKillCounts.Length) return 0;
+		return _playerKillCounts[playerIndex];
+	}
+
+	void IGameAPI.SetPlayerKills(int playerIndex, int kills)
+	{
+		if (playerIndex < 0 || playerIndex >= _playerKillCounts.Length) return;
+		_playerKillCounts[playerIndex] = kills;
+	}
+
+	void IGameAPI.IssueMoveOrder(IUnit unit, System.Numerics.Vector3 destination)
+	{
+		unit.MoveTo(destination);
+	}
+
+	void IGameAPI.SetUnitSpellImmune(IUnit unit, bool immune)
+	{
+		if (unit is UnitWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
+		{
+			if (immune)
+			{
+				if (!EcsWorld.Has<Realm.Ecs.Components.Tags.SpellImmune>(wrapper.Entity))
+					EcsWorld.Add(wrapper.Entity, new Realm.Ecs.Components.Tags.SpellImmune());
+			}
+			else
+			{
+				if (EcsWorld.Has<Realm.Ecs.Components.Tags.SpellImmune>(wrapper.Entity))
+					EcsWorld.Remove<Realm.Ecs.Components.Tags.SpellImmune>(wrapper.Entity);
+			}
+		}
+	}
+
+	void IGameAPI.SelectUnit(IUnit unit)
+	{
+		Callable.From(() =>
+		{
+			if (unit is UnitWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
+			{
+				if (EcsWorld.Has<Unit3D>(wrapper.Entity))
+				{
+					var u3d = EcsWorld.Get<Unit3D>(wrapper.Entity);
+					if (GodotObject.IsInstanceValid(u3d))
+					{
+						ClearSelection();
+						SelectUnit(u3d);
+						InGameHUD.Instance?.RefreshUI(SelectedUnits);
+					}
+				}
+			}
+		}).CallDeferred();
+	}
+
+	void IGameAPI.ClearSelection()
+	{
+		Callable.From(() =>
+		{
+			ClearSelection();
+			InGameHUD.Instance?.RefreshUI(SelectedUnits);
+		}).CallDeferred();
+	}
+
+
+	public void NotifyPlayerLeft(int playerIndex)
+	{
+		OnPlayerLeft?.Invoke(playerIndex);
+	}
 
 	private void TickScheduledTimers(float delta)
 	{
@@ -4127,6 +4292,7 @@ public class {mapName} : IMapScript
 
 		// 7. Update Map-Specific Script Logic
 		TickScheduledTimers(fDelta);
+		TickZoneTriggers();
 		if (_activeMapScript != null)
 		{
 			_activeMapScript.Update(this, fDelta);

@@ -614,4 +614,111 @@ public interface IGameAPI
     /// <param name="playerIndex">Zero-based player slot index.</param>
     /// <param name="filter">Optional predicate; pass null to count all units.</param>
     int CountUnitsOwnedByPlayer(int playerIndex, System.Func<IUnit, bool>? filter = null);
+
+    // ── Zone / Region trigger APIs ────────────────────────────────────────
+
+    /// <summary>
+    /// Defines a named rectangular zone in 2D map space (X/Z axes).
+    /// Returns a zone handle that can be used with <see cref="OnUnitEnterZone"/>.
+    /// </summary>
+    /// <param name="minX">West boundary of the zone.</param>
+    /// <param name="minZ">South boundary of the zone.</param>
+    /// <param name="maxX">East boundary of the zone.</param>
+    /// <param name="maxZ">North boundary of the zone.</param>
+    /// <returns>An opaque zone identifier.</returns>
+    int DefineZone(float minX, float minZ, float maxX, float maxZ);
+
+    /// <summary>
+    /// Returns the center position (in 3D world space) of the zone with the given handle.
+    /// The Y component is terrain height at that point.
+    /// </summary>
+    /// <param name="zoneHandle">Zone handle returned by <see cref="DefineZone"/>.</param>
+    System.Numerics.Vector3 GetZoneCenter(int zoneHandle);
+
+    /// <summary>
+    /// Triggered whenever a unit enters the specified zone.
+    /// The callback receives the unit that entered and the zone handle it entered.
+    /// </summary>
+    event System.Action<IUnit, int>? OnUnitEnterZone;
+
+    // ── Per-unit route state API ──────────────────────────────────────────
+
+    /// <summary>
+    /// Associates an integer route-state value with the specified unit.
+    /// Useful for tracking which waypoint branch a unit is following.
+    /// </summary>
+    /// <param name="unit">The unit to tag.</param>
+    /// <param name="state">An arbitrary integer value meaningful to the caller.</param>
+    void SetUnitRouteState(IUnit unit, int state);
+
+    /// <summary>
+    /// Retrieves the integer route-state value previously set on the unit,
+    /// or 0 if none has been set.
+    /// </summary>
+    /// <param name="unit">The unit to query.</param>
+    int GetUnitRouteState(IUnit unit);
+
+    // ── Unit level API ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sets the level of the specified hero unit.
+    /// Has no effect on non-hero units.
+    /// </summary>
+    /// <param name="unit">The hero unit whose level should be changed.</param>
+    /// <param name="level">The new level value.</param>
+    void SetUnitLevel(IUnit unit, int level);
+
+    // ── Player event APIs ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Triggered when a player leaves or disconnects from the game.
+    /// The integer argument is the zero-based player slot index.
+    /// </summary>
+    event System.Action<int>? OnPlayerLeft;
+
+    // ── Per-player kill tracking API ──────────────────────────────────────
+
+    /// <summary>
+    /// Returns the number of enemy units killed by the specified player slot.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    int GetPlayerKills(int playerIndex);
+
+    /// <summary>
+    /// Sets the kill count for the specified player slot directly.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    /// <param name="kills">The new kill count.</param>
+    void SetPlayerKills(int playerIndex, int kills);
+
+    // ── Move-to-point order API ───────────────────────────────────────────
+
+    /// <summary>
+    /// Orders the unit to move to the specified destination without attacking anything en route.
+    /// Unlike <see cref="IssueAttackMoveOrder"/>, this is a pure positional move command.
+    /// </summary>
+    /// <param name="unit">The unit to command.</param>
+    /// <param name="destination">The destination in world coordinates.</param>
+    void IssueMoveOrder(IUnit unit, System.Numerics.Vector3 destination);
+
+    // ── Unit invulnerability ability API ──────────────────────────────────
+
+    /// <summary>
+    /// Adds or removes a spell-immunity buff from the specified unit.
+    /// Spell-immune units cannot be targeted by magic-type attacks or abilities.
+    /// </summary>
+    /// <param name="unit">The unit to modify.</param>
+    /// <param name="immune">True to make the unit spell-immune; false to remove the immunity.</param>
+    void SetUnitSpellImmune(IUnit unit, bool immune);
+
+    /// <summary>
+    /// Selects the specified unit programmatically, clearing any previously selected units.
+    /// </summary>
+    /// <param name="unit">The unit to select.</param>
+    void SelectUnit(IUnit unit);
+
+    /// <summary>
+    /// Clears the player's unit selection programmatically.
+    /// </summary>
+    void ClearSelection();
 }

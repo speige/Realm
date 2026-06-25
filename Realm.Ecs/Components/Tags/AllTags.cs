@@ -65,3 +65,9 @@ public readonly record struct Dead;
 /// </summary>
 [TagDefinition("Invulnerable", "Invulnerable", "Marks the entity as invulnerable to damage.")]
 public readonly record struct Invulnerable;
+
+/// <summary>
+///     Tag indicating the entity is immune to spell and magic-type attacks.
+/// </summary>
+[TagDefinition("SpellImmune", "SpellImmune", "Marks the entity as immune to spell and magic-type damage.")]
+public readonly record struct SpellImmune;
