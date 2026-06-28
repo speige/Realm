@@ -374,6 +374,13 @@
         "type": "string",
         "enum": ["ground", "air", "amphibious", "none"]
       },
+      "PathingCapabilities": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["shallow_water", "deep_water", "flying", "ground", "unpathable"]
+        }
+      },
       "StatusEffects": {
         "type": "array",
         "items": {

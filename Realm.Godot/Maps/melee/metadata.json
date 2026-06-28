@@ -17,7 +17,8 @@
     "PopCost": 1,
     "AttackType": "melee",
     "ArmorType": "light",
-    "GoldBounty": 15.0
+    "GoldBounty": 15.0,
+    "PathingCapabilities": ["ground"]
   },
   "footman": {
     "UnitId": "footman",
@@ -37,7 +38,8 @@
     "PopCost": 1,
     "AttackType": "melee",
     "ArmorType": "heavy",
-    "GoldBounty": 20.0
+    "GoldBounty": 20.0,
+    "PathingCapabilities": ["ground"]
   },
   "archer": {
     "UnitId": "archer",
@@ -57,7 +59,8 @@
     "PopCost": 1,
     "AttackType": "ranged",
     "ArmorType": "light",
-    "GoldBounty": 25.0
+    "GoldBounty": 25.0,
+    "PathingCapabilities": ["ground"]
   },
   "priest": {
     "UnitId": "priest",
@@ -77,7 +80,8 @@
     "PopCost": 1,
     "AttackType": "ranged",
     "ArmorType": "light",
-    "GoldBounty": 30.0
+    "GoldBounty": 30.0,
+    "PathingCapabilities": ["ground"]
   },
   "castle": {
     "UnitId": "castle",
@@ -97,7 +101,8 @@
     "PopCost": 0,
     "AttackType": "none",
     "ArmorType": "building",
-    "GoldBounty": 0.0
+    "GoldBounty": 0.0,
+    "PathingCapabilities": ["ground"]
   },
   "tower": {
     "UnitId": "tower",
@@ -117,6 +122,7 @@
     "PopCost": 0,
     "AttackType": "ranged",
     "ArmorType": "building",
-    "GoldBounty": 0.0
+    "GoldBounty": 0.0,
+    "PathingCapabilities": ["ground"]
   }
 }

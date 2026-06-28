@@ -16,8 +16,15 @@ public partial class EditableTerrain : StaticBody3D
 	public int Depth { get; private set; } = 126;
 	public float Spacing { get; private set; } = 2.0f;
 
+	public const int PATHING_SHALLOW_WATER = 1;
+	public const int PATHING_DEEP_WATER = 2;
+	public const int PATHING_FLYING = 4;
+	public const int PATHING_GROUND = 8;
+	public const int PATHING_UNPATHABLE = 16;
+
 	public float[,] Heights { get; private set; }
 	public Color[,] Colors { get; private set; }
+	public int[,] PathingCodes { get; private set; }
 
 	private MeshInstance3D _meshInstance;
 	private CollisionShape3D _collisionShape;
@@ -88,14 +95,16 @@ public partial class EditableTerrain : StaticBody3D
 	{
 		Heights = new float[Width, Depth];
 		Colors = new Color[Width, Depth];
+		PathingCodes = new int[Width, Depth];
 
-		// Initialize heights to 0, colors to green (default grass texture color)
+		// Initialize heights to 0, colors to green (default grass texture color), pathing to ground | flying
 		for (int z = 0; z < Depth; z++)
 		{
 			for (int x = 0; x < Width; x++)
 			{
 				Heights[x, z] = 0.0f;
 				Colors[x, z] = new Color(0.2f, 0.6f, 0.2f); // Default Grass Green
+				PathingCodes[x, z] = PATHING_GROUND | PATHING_FLYING;
 			}
 		}
 
@@ -425,7 +434,36 @@ void fragment() {
 			for (int i = 0; i < result.Mesh.npolys; i++)
 			{
 				pars.polyAreas[i] = result.Mesh.areas[i];
-				pars.polyFlags[i] = 1;
+				
+				float sumX = 0f;
+				float sumZ = 0f;
+				int nv = 0;
+				for (int j = 0; j < result.Mesh.nvp; j++)
+				{
+					int vIdx = result.Mesh.polys[i * result.Mesh.nvp * 2 + j];
+					if (vIdx < 0 || vIdx >= result.Mesh.nverts)
+						break;
+					float wx = bmin.X + result.Mesh.verts[vIdx * 3] * result.Mesh.cs;
+					float wz = bmin.Z + result.Mesh.verts[vIdx * 3 + 2] * result.Mesh.cs;
+					sumX += wx;
+					sumZ += wz;
+					nv++;
+				}
+				float avgX = nv > 0 ? sumX / nv : 0f;
+				float avgZ = nv > 0 ? sumZ / nv : 0f;
+
+				int xGrid = Mathf.Clamp((int)Math.Round(avgX / spacing + (width - 1) / 2.0f), 0, width - 1);
+				int zGrid = Mathf.Clamp((int)Math.Round(avgZ / spacing + (depth - 1) / 2.0f), 0, depth - 1);
+
+				int pathFlags = (PathingCodes != null) ? PathingCodes[xGrid, zGrid] : (PATHING_GROUND | PATHING_FLYING);
+				if ((pathFlags & PATHING_UNPATHABLE) != 0)
+				{
+					pars.polyFlags[i] = 0;
+				}
+				else
+				{
+					pars.polyFlags[i] = pathFlags;
+				}
 			}
 			if (result.MeshDetail != null)
 			{

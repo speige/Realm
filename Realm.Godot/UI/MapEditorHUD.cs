@@ -133,6 +133,15 @@ public partial class MapEditorHUD : Control
 	private Button _btnInspectorAlignToGround;
 	private Button _btnInspectorDelete;
 
+	private Button _btnPathingBrush;
+	private PanelContainer _panelPathing;
+	private CheckBox _chkShallowWater;
+	private CheckBox _chkDeepWater;
+	private CheckBox _chkFlying;
+	private CheckBox _chkGround;
+	private CheckBox _chkUnpathable;
+	private OptionButton _optPathingMode;
+
 	private Button _activeToolButton = null;
 	private StyleBoxFlat _highlightStyle;
 	private Label _lblInfoText;
@@ -1179,6 +1188,131 @@ public partial class MapEditorHUD : Control
 
 		UIStyle.ApplyTitle(_feedbackLabel, "", 24);
 		UpdateMirrorButtonText();
+
+		_btnPathingBrush = new Button();
+		_btnPathingBrush.Name = "BtnPathingBrush";
+		_btnPathingBrush.Set("icon_max_width", 0);
+		SetupButton(_btnPathingBrush, "🧭 Pathing", () => TriggerToolSelection(GameHost.EditorTool.PaintPathing, _btnPathingBrush), 11, "Paint pathing attributes onto the terrain map");
+		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnPathingBrush);
+
+		_panelPathing = new PanelContainer();
+		_panelPathing.Name = "PanelPathing";
+		_panelPathing.LayoutMode = 1;
+		_panelPathing.AnchorsPreset = (int)Control.LayoutPreset.BottomLeft;
+		_panelPathing.AnchorTop = 1.0f;
+		_panelPathing.AnchorBottom = 1.0f;
+		_panelPathing.GrowVertical = Control.GrowDirection.Begin;
+		_panelPathing.OffsetLeft = 20.0f;
+		_panelPathing.OffsetTop = -380.0f;
+		_panelPathing.OffsetRight = 440.0f;
+		_panelPathing.OffsetBottom = -20.0f;
+		_panelPathing.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel());
+		AddChild(_panelPathing);
+		_panelPathing.Visible = false;
+
+		var pVBox = new VBoxContainer();
+		pVBox.Name = "VBox";
+		_panelPathing.AddChild(pVBox);
+
+		var pHeader = new HBoxContainer();
+		pHeader.Name = "HeaderHBox";
+		pVBox.AddChild(pHeader);
+
+		var pTitle = new Label();
+		pTitle.Name = "Title";
+		pTitle.Text = "🧭 PATHING PAINTING";
+		pTitle.AddThemeFontSizeOverride("font_size", 14);
+		pTitle.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
+		pHeader.AddChild(pTitle);
+
+		var pContent = new VBoxContainer();
+		pContent.Name = "Content";
+		pVBox.AddChild(pContent);
+
+		var modeHBox = new HBoxContainer();
+		var modeLabel = new Label();
+		modeLabel.Text = "Mode: ";
+		modeLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		modeHBox.AddChild(modeLabel);
+
+		_optPathingMode = new OptionButton();
+		_optPathingMode.Name = "OptPathingMode";
+		_optPathingMode.AddItem("➕ Add Layer", 0);
+		_optPathingMode.AddItem("➖ Remove Layer", 1);
+		_optPathingMode.Selected = 0;
+		modeHBox.AddChild(_optPathingMode);
+		pContent.AddChild(modeHBox);
+
+		var layersLabel = new Label();
+		layersLabel.Text = "Select Layers:";
+		layersLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		pContent.AddChild(layersLabel);
+
+		_chkShallowWater = new CheckBox();
+		_chkShallowWater.Text = "Shallow Water";
+		_chkShallowWater.ButtonPressed = false;
+		UIStyle.ApplyCheckboxStyle(_chkShallowWater);
+		pContent.AddChild(_chkShallowWater);
+
+		_chkDeepWater = new CheckBox();
+		_chkDeepWater.Text = "Deep Water";
+		_chkDeepWater.ButtonPressed = false;
+		UIStyle.ApplyCheckboxStyle(_chkDeepWater);
+		pContent.AddChild(_chkDeepWater);
+
+		_chkFlying = new CheckBox();
+		_chkFlying.Text = "Flying";
+		_chkFlying.ButtonPressed = false;
+		UIStyle.ApplyCheckboxStyle(_chkFlying);
+		pContent.AddChild(_chkFlying);
+
+		_chkGround = new CheckBox();
+		_chkGround.Text = "Ground";
+		_chkGround.ButtonPressed = true;
+		UIStyle.ApplyCheckboxStyle(_chkGround);
+		pContent.AddChild(_chkGround);
+
+		_chkUnpathable = new CheckBox();
+		_chkUnpathable.Text = "Unpathable";
+		_chkUnpathable.ButtonPressed = false;
+		UIStyle.ApplyCheckboxStyle(_chkUnpathable);
+		pContent.AddChild(_chkUnpathable);
+
+		var brushSettingsTitle = new Label();
+		brushSettingsTitle.Text = "Brush Settings";
+		brushSettingsTitle.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
+		pContent.AddChild(brushSettingsTitle);
+
+		var brushSizeBox = new VBoxContainer();
+		var sizeHeader = new HBoxContainer();
+		var sizeTitle = new Label();
+		sizeTitle.Text = "Size: ";
+		sizeTitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		var sizeVal = new Label();
+		sizeVal.Text = _sldBrushSize.Value.ToString("F1");
+		sizeVal.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		sizeHeader.AddChild(sizeTitle);
+		sizeHeader.AddChild(sizeVal);
+		brushSizeBox.AddChild(sizeHeader);
+
+		var pathSldBrushSize = new HSlider();
+		pathSldBrushSize.MinValue = _sldBrushSize.MinValue;
+		pathSldBrushSize.MaxValue = _sldBrushSize.MaxValue;
+		pathSldBrushSize.Step = _sldBrushSize.Step;
+		pathSldBrushSize.Value = _sldBrushSize.Value;
+		brushSizeBox.AddChild(pathSldBrushSize);
+		pContent.AddChild(brushSizeBox);
+
+		pathSldBrushSize.ValueChanged += (val) =>
+		{
+			_sldBrushSize.Value = val;
+			sizeVal.Text = val.ToString("F1");
+		};
+		_sldBrushSize.ValueChanged += (val) =>
+		{
+			pathSldBrushSize.Value = val;
+			sizeVal.Text = val.ToString("F1");
+		};
 	}
 
 	private void SetupButton(Button btn, string text, Action onClick, int fontSize = 13, string tooltip = "")
@@ -1501,7 +1635,8 @@ public partial class MapEditorHUD : Control
 								tool == GameHost.EditorTool.Ramp ||
 								tool == GameHost.EditorTool.FloodFill ||
 								tool == GameHost.EditorTool.SelectArea ||
-								tool == GameHost.EditorTool.PasteArea;
+								tool == GameHost.EditorTool.PasteArea ||
+								tool == GameHost.EditorTool.PaintPathing;
 
 		bool isObjectPlace = tool == GameHost.EditorTool.PlaceUnit ||
 							 tool == GameHost.EditorTool.PlaceProp ||
@@ -1509,13 +1644,26 @@ public partial class MapEditorHUD : Control
 							 tool == GameHost.EditorTool.PlaceDecal ||
 							 tool == GameHost.EditorTool.Eyedropper;
 
-		if (isTerrainOrPaint)
+		if (tool == GameHost.EditorTool.PaintPathing)
 		{
-			SetPanelExpanded("PanelTextures", "VBox/HeaderHBox/BtnCollapse", "VBox/Content", true);
+			if (_panelPathing != null) _panelPathing.Visible = true;
+			if (_panelTextures != null) _panelTextures.Visible = false;
+			if (_panelEntityPalette != null) _panelEntityPalette.Visible = false;
 		}
-		else if (isObjectPlace)
+		else
 		{
-			SetPanelExpanded("PanelEntityPalette", "VBox/HeaderHBox/BtnCollapse", "VBox/Content", true);
+			if (_panelPathing != null) _panelPathing.Visible = false;
+			if (_panelTextures != null) _panelTextures.Visible = true;
+			if (_panelEntityPalette != null) _panelEntityPalette.Visible = true;
+
+			if (isTerrainOrPaint)
+			{
+				SetPanelExpanded("PanelTextures", "VBox/HeaderHBox/BtnCollapse", "VBox/Content", true);
+			}
+			else if (isObjectPlace)
+			{
+				SetPanelExpanded("PanelEntityPalette", "VBox/HeaderHBox/BtnCollapse", "VBox/Content", true);
+			}
 		}
 
 		string toolName = tool.ToString().ToUpper();
@@ -1587,6 +1735,9 @@ public partial class MapEditorHUD : Control
 					break;
 				case GameHost.EditorTool.Noise:
 					_lblInfoText.Text = "TOOL: Roughen Terrain\n\nDrag left-click to apply random height variations/noise to ruggedize the terrain surface. Adjust size and strength in settings.";
+					break;
+				case GameHost.EditorTool.PaintPathing:
+					_lblInfoText.Text = "TOOL: Pathing Layer Painting\n\nDrag left click to paint pathing properties (ground, flying, water, etc.) onto the map. Use checkboxes to select layers, and Mode to Add/Remove.";
 					break;
 				case GameHost.EditorTool.None:
 					_lblInfoText.Text = "Select a tool from the panels to begin terrain modification.";
@@ -2717,6 +2868,10 @@ public class {mapName} : IMapScript
 		{
 			return true;
 		}
+		if (_panelPathing != null && _panelPathing.Visible && _panelPathing.GetGlobalRect().HasPoint(mousePos))
+		{
+			return true;
+		}
 		return false;
 	}
 
@@ -3367,5 +3522,25 @@ public class {mapName} : IMapScript
 			_ => "🪞 MIRROR: NONE"
 		};
 		_btnMirrorMode.Text = modeText;
+	}
+
+	public int GetSelectedPathingMask()
+	{
+		int mask = 0;
+		if (_chkShallowWater != null && _chkShallowWater.ButtonPressed) mask |= 1;
+		if (_chkDeepWater != null && _chkDeepWater.ButtonPressed) mask |= 2;
+		if (_chkFlying != null && _chkFlying.ButtonPressed) mask |= 4;
+		if (_chkGround != null && _chkGround.ButtonPressed) mask |= 8;
+		if (_chkUnpathable != null && _chkUnpathable.ButtonPressed) mask |= 16;
+		return mask;
+	}
+
+	public bool IsPathingAddMode()
+	{
+		if (_optPathingMode != null)
+		{
+			return _optPathingMode.Selected == 0;
+		}
+		return true;
 	}
 }

@@ -137,7 +137,8 @@ public partial class GameHost : Node3D, IGameAPI
 		PlacePropClump,
 		FloodFill,
 		SelectArea,
-		PasteArea
+		PasteArea,
+		PaintPathing
 	}
 	public EditorTool ActiveEditorTool { get; set; } = EditorTool.None;
 	public string ActivePlaceId { get; set; } = ""; // "footman", "tree", etc.
@@ -217,6 +218,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private float? _activeCliffHeight = null;
 	private float[,] _terrainHeightsBefore;
 	private Color[,] _terrainColorsBefore;
+	private int[,] _terrainPathingBefore;
 	private bool _isDrawingTerrain = false;
 	public Node SelectedEditorObject
 	{
@@ -307,6 +309,49 @@ public partial class GameHost : Node3D, IGameAPI
 		public bool IsHero { get; set; }
 		public string[]? Abilities { get; set; }
 		public float XpBounty { get; set; }
+		public string[]? PathingCapabilities { get; set; }
+		public string? MovementType { get; set; }
+	}
+
+	public static int GetUnitPathingFlags(UnitMetadata meta)
+	{
+		if (meta.PathingCapabilities == null || meta.PathingCapabilities.Length == 0)
+		{
+			if (meta.MovementType == "air" || meta.MovementType == "flying")
+			{
+				return 4; // flying
+			}
+			else if (meta.MovementType == "amphibious")
+			{
+				return 8 | 1; // ground | shallow_water
+			}
+			return 8; // ground
+		}
+
+		int flags = 0;
+		foreach (var cap in meta.PathingCapabilities)
+		{
+			switch (cap.ToLower())
+			{
+				case "shallow_water":
+					flags |= 1;
+					break;
+				case "deep_water":
+					flags |= 2;
+					break;
+				case "flying":
+				case "air":
+					flags |= 4;
+					break;
+				case "ground":
+					flags |= 8;
+					break;
+				case "unpathable":
+					flags |= 16;
+					break;
+			}
+		}
+		return flags;
 	}
 
 	// Supply / Population cap
@@ -2362,7 +2407,8 @@ public class {mapName} : IMapScript
 				AttackType = "melee",
 				ArmorType = "light",
 				GoldBounty = 15f,
-				BuildOptions = new[] { "castle", "tower" }
+				BuildOptions = new[] { "castle", "tower" },
+				PathingCapabilities = new[] { "ground" }
 			}
 		},
 		{
@@ -2384,7 +2430,8 @@ public class {mapName} : IMapScript
 				PopCost = 1,
 				AttackType = "melee",
 				ArmorType = "heavy",
-				GoldBounty = 20f
+				GoldBounty = 20f,
+				PathingCapabilities = new[] { "ground" }
 			}
 		},
 		{
@@ -2406,7 +2453,8 @@ public class {mapName} : IMapScript
 				PopCost = 1,
 				AttackType = "ranged",
 				ArmorType = "light",
-				GoldBounty = 25f
+				GoldBounty = 25f,
+				PathingCapabilities = new[] { "ground" }
 			}
 		},
 		{
@@ -2428,7 +2476,8 @@ public class {mapName} : IMapScript
 				PopCost = 1,
 				AttackType = "ranged",
 				ArmorType = "light",
-				GoldBounty = 30f
+				GoldBounty = 30f,
+				PathingCapabilities = new[] { "ground" }
 			}
 		},
 		{
@@ -2450,7 +2499,8 @@ public class {mapName} : IMapScript
 				PopCost = 0,
 				AttackType = "none",
 				ArmorType = "building",
-				GoldBounty = 0f
+				GoldBounty = 0f,
+				PathingCapabilities = new[] { "ground" }
 			}
 		},
 		{
@@ -3254,13 +3304,15 @@ public class {mapName} : IMapScript
 										 ActiveEditorTool == EditorTool.PaintDirt ||
 										 ActiveEditorTool == EditorTool.PaintRock ||
 										 ActiveEditorTool == EditorTool.PaintSand ||
-										 ActiveEditorTool == EditorTool.Noise;
+										 ActiveEditorTool == EditorTool.Noise ||
+										 ActiveEditorTool == EditorTool.PaintPathing;
 
 					if (isTerrainTool && !_isDrawingTerrain && GroundTerrain != null)
 					{
 						_isDrawingTerrain = true;
 						_terrainHeightsBefore = (float[,])GroundTerrain.Heights.Clone();
 						_terrainColorsBefore = (Color[,])GroundTerrain.Colors.Clone();
+						_terrainPathingBefore = (int[,])GroundTerrain.PathingCodes.Clone();
 
 						if (EditorBlockMode)
 						{
@@ -3359,14 +3411,16 @@ public class {mapName} : IMapScript
 						{
 							var currentHeights = (float[,])GroundTerrain.Heights.Clone();
 							var currentColors = (Color[,])GroundTerrain.Colors.Clone();
-							var action = new TerrainModifyAction(_terrainHeightsBefore, currentHeights, _terrainColorsBefore, currentColors);
+							var currentPathing = (int[,])GroundTerrain.PathingCodes.Clone();
+							var action = new TerrainModifyAction(_terrainHeightsBefore, currentHeights, _terrainColorsBefore, currentColors, _terrainPathingBefore, currentPathing);
 							EditorHistoryManager.RecordAction(action);
 							bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
 												 ActiveEditorTool == EditorTool.Lower ||
 												 ActiveEditorTool == EditorTool.Flatten ||
 												 ActiveEditorTool == EditorTool.Smooth ||
 												 ActiveEditorTool == EditorTool.Cliff ||
-												 ActiveEditorTool == EditorTool.Noise;
+												 ActiveEditorTool == EditorTool.Noise ||
+												 ActiveEditorTool == EditorTool.PaintPathing;
 							if (isHeightsTool)
 							{
 								GroundTerrain.BakeNavMesh();
@@ -3425,14 +3479,16 @@ public class {mapName} : IMapScript
 					{
 						var currentHeights = (float[,])GroundTerrain.Heights.Clone();
 						var currentColors = (Color[,])GroundTerrain.Colors.Clone();
-						var action = new TerrainModifyAction(_terrainHeightsBefore, currentHeights, _terrainColorsBefore, currentColors);
+						var currentPathing = (int[,])GroundTerrain.PathingCodes.Clone();
+						var action = new TerrainModifyAction(_terrainHeightsBefore, currentHeights, _terrainColorsBefore, currentColors, _terrainPathingBefore, currentPathing);
 						EditorHistoryManager.RecordAction(action);
 						bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
 											 ActiveEditorTool == EditorTool.Lower ||
 											 ActiveEditorTool == EditorTool.Flatten ||
 											 ActiveEditorTool == EditorTool.Smooth ||
 											 ActiveEditorTool == EditorTool.Cliff ||
-											 ActiveEditorTool == EditorTool.Noise;
+											 ActiveEditorTool == EditorTool.Noise ||
+											 ActiveEditorTool == EditorTool.PaintPathing;
 						if (isHeightsTool)
 						{
 							GroundTerrain.BakeNavMesh();
@@ -3812,6 +3868,21 @@ public class {mapName} : IMapScript
 				}
 				return;
 			}
+
+			string unitId = "worker";
+			if (EcsWorld.Has<Unit3D>(entity))
+			{
+				unitId = EcsWorld.Get<Unit3D>(entity).UnitId;
+			}
+			int includeFlags = 8; // default to ground (8)
+			if (UnitRegistry.TryGetValue(unitId, out var meta))
+			{
+				includeFlags = GetUnitPathingFlags(meta);
+			}
+			var unitFilter = new DtQueryDefaultFilter();
+			unitFilter.SetIncludeFlags(includeFlags);
+			unitFilter.SetExcludeFlags(0);
+
 			if (!EcsWorld.Has<PathFollow>(entity))
 			{
 				EcsWorld.Add(entity, new PathFollow { Waypoints = new System.Numerics.Vector3[256], WaypointCount = 0, CurrentWaypointIndex = 0, Target = moveTo.Target });
@@ -3830,11 +3901,11 @@ public class {mapName} : IMapScript
 				{
 					var startPos = new RcVec3f(pos.Value.X, pos.Value.Y, pos.Value.Z);
 					var endPos = new RcVec3f(moveTo.Target.X, moveTo.Target.Y, moveTo.Target.Z);
-					GroundTerrain.NavMeshQuery.FindNearestPoly(startPos, _pathfindingExtents, _queryFilter, out long startRef, out var startPt, out _);
-					GroundTerrain.NavMeshQuery.FindNearestPoly(endPos, _pathfindingExtents, _queryFilter, out long endRef, out var endPt, out _);
+					GroundTerrain.NavMeshQuery.FindNearestPoly(startPos, _pathfindingExtents, unitFilter, out long startRef, out var startPt, out _);
+					GroundTerrain.NavMeshQuery.FindNearestPoly(endPos, _pathfindingExtents, unitFilter, out long endRef, out var endPt, out _);
 					if (startRef != 0 && endRef != 0)
 					{
-						GroundTerrain.NavMeshQuery.FindPath(startRef, endRef, startPt, endPt, _queryFilter, _pathCorridorBuffer, out int corridorCount, _pathCorridorBuffer.Length);
+						GroundTerrain.NavMeshQuery.FindPath(startRef, endRef, startPt, endPt, unitFilter, _pathCorridorBuffer, out int corridorCount, _pathCorridorBuffer.Length);
 						if (corridorCount > 0)
 						{
 							GroundTerrain.NavMeshQuery.FindStraightPath(startPt, endPt, _pathCorridorBuffer, corridorCount, _straightPathBuffer, out int straightPathCount, _straightPathBuffer.Length, 0);
@@ -3892,7 +3963,7 @@ public class {mapName} : IMapScript
 					if (GroundTerrain != null && GroundTerrain.NavMeshQuery != null)
 					{
 						var nextRc = new RcVec3f(nextPos.X, nextPos.Y, nextPos.Z);
-						GroundTerrain.NavMeshQuery.FindNearestPoly(nextRc, _pathfindingExtents, _queryFilter, out long nearestRef, out var nearestPt, out _);
+						GroundTerrain.NavMeshQuery.FindNearestPoly(nextRc, _pathfindingExtents, unitFilter, out long nearestRef, out var nearestPt, out _);
 						if (nearestRef != 0)
 						{
 							nextPos = new Vector3(nearestPt.X, nearestPt.Y, nearestPt.Z);
@@ -3931,7 +4002,7 @@ public class {mapName} : IMapScript
 					if (GroundTerrain != null && GroundTerrain.NavMeshQuery != null)
 					{
 						var nextRc = new RcVec3f(nextPos.X, nextPos.Y, nextPos.Z);
-						GroundTerrain.NavMeshQuery.FindNearestPoly(nextRc, _pathfindingExtents, _queryFilter, out long nearestRef, out var nearestPt, out _);
+						GroundTerrain.NavMeshQuery.FindNearestPoly(nextRc, _pathfindingExtents, unitFilter, out long nearestRef, out var nearestPt, out _);
 						if (nearestRef != 0)
 						{
 							nextPos = new Vector3(nearestPt.X, nearestPt.Y, nearestPt.Z);
@@ -9631,8 +9702,10 @@ public class {mapName} : IMapScript
 					   ActiveEditorTool == EditorTool.PaintDirt ||
 					   ActiveEditorTool == EditorTool.PaintRock ||
 					   ActiveEditorTool == EditorTool.PaintSand;
+
+		bool isPathing = ActiveEditorTool == EditorTool.PaintPathing;
 					   
-		if (!isHeights && !isPaint) return;
+		if (!isHeights && !isPaint && !isPathing) return;
 		
 		int width = GroundTerrain.Width;
 		int depth = GroundTerrain.Depth;
@@ -9642,6 +9715,14 @@ public class {mapName} : IMapScript
 		
 		bool modified = false;
 
+		int pathingMask = 0;
+		bool pathingAdd = true;
+		if (isPathing && MapEditorHUD.Instance != null)
+		{
+			pathingMask = MapEditorHUD.Instance.GetSelectedPathingMask();
+			pathingAdd = MapEditorHUD.Instance.IsPathingAddMode();
+		}
+		
 		if (EditorBlockMode)
 		{
 			int cx = Mathf.Clamp((int)Math.Round(worldPos.X / spacing + (width - 1) / 2.0f), 0, width - 1);
@@ -9797,6 +9878,38 @@ public class {mapName} : IMapScript
 					}
 				}
 			}
+			else if (isPathing)
+			{
+				for (int z = cz - brushGridRadius; z <= cz + brushGridRadius; z++)
+				{
+					for (int x = cx - brushGridRadius; x <= cx + brushGridRadius; x++)
+					{
+						if (x >= 0 && x < width && z >= 0 && z < depth)
+						{
+							bool inBounds = true;
+							if (!EditorBrushIsSquare)
+							{
+								float dx = x - cx;
+								float dz = z - cz;
+								inBounds = (dx * dx + dz * dz) <= (brushGridRadius * brushGridRadius);
+							}
+							
+							if (inBounds)
+							{
+								if (pathingAdd)
+								{
+									GroundTerrain.PathingCodes[x, z] |= pathingMask;
+								}
+								else
+								{
+									GroundTerrain.PathingCodes[x, z] &= ~pathingMask;
+								}
+								modified = true;
+							}
+						}
+					}
+				}
+			}
 			
 			if (modified)
 			{
@@ -9900,6 +10013,20 @@ public class {mapName} : IMapScript
 						float targetAlpha = baseColor.A;
 						Color targetColor = new Color(baseColor.R, baseColor.G, baseColor.B, targetAlpha);
 						GroundTerrain.Colors[x, z] = GroundTerrain.Colors[x, z].Lerp(targetColor, EditorBrushStrength * falloff * delta * 3.0f);
+						modified = true;
+					}
+					else if (isPathing)
+					{
+						int cx = Mathf.Clamp((int)Math.Round(vx / spacing + (width - 1) / 2.0f), 0, width - 1);
+						int cz = Mathf.Clamp((int)Math.Round(vz / spacing + (depth - 1) / 2.0f), 0, depth - 1);
+						if (pathingAdd)
+						{
+							GroundTerrain.PathingCodes[cx, cz] |= pathingMask;
+						}
+						else
+						{
+							GroundTerrain.PathingCodes[cx, cz] &= ~pathingMask;
+						}
 						modified = true;
 					}
 				}
@@ -10258,6 +10385,7 @@ public class {mapName} : IMapScript
 		int depth = GroundTerrain.Depth;
 		saveData.Heights = new float[width * depth];
 		saveData.Colors = new string[width * depth];
+		saveData.Pathing = new int[width * depth];
 
 		for (int z = 0; z < depth; z++)
 		{
@@ -10266,6 +10394,7 @@ public class {mapName} : IMapScript
 				int idx = z * width + x;
 				saveData.Heights[idx] = GroundTerrain.Heights[x, z];
 				saveData.Colors[idx] = GroundTerrain.Colors[x, z].ToHtml(true);
+				saveData.Pathing[idx] = GroundTerrain.PathingCodes != null ? GroundTerrain.PathingCodes[x, z] : (EditableTerrain.PATHING_GROUND | EditableTerrain.PATHING_FLYING);
 			}
 		}
 
@@ -10410,6 +10539,28 @@ public class {mapName} : IMapScript
 					{
 						int idx = z * width + x;
 						GroundTerrain.Colors[x, z] = Color.FromHtml(saveData.Colors[idx]);
+					}
+				}
+			}
+
+			if (saveData.Pathing != null && saveData.Pathing.Length == width * depth)
+			{
+				for (int z = 0; z < depth; z++)
+				{
+					for (int x = 0; x < width; x++)
+					{
+						int idx = z * width + x;
+						GroundTerrain.PathingCodes[x, z] = saveData.Pathing[idx];
+					}
+				}
+			}
+			else
+			{
+				for (int z = 0; z < depth; z++)
+				{
+					for (int x = 0; x < width; x++)
+					{
+						GroundTerrain.PathingCodes[x, z] = EditableTerrain.PATHING_GROUND | EditableTerrain.PATHING_FLYING;
 					}
 				}
 			}

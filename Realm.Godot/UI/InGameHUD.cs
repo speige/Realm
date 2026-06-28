@@ -6,6 +6,7 @@ using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Meta;
+using Realm.Ecs.Services;
 
 public partial class InGameHUD : Control
 {
@@ -2231,9 +2232,27 @@ public partial class InGameHUD : Control
 				{
 					var moveTo = world.Get<MoveTo>(unit.Entity);
 					var current3D = unit.GlobalPosition;
-					var target3D = new Vector3(moveTo.Target.X, moveTo.Target.Y, moveTo.Target.Z);
+					var points3D = new List<Vector3> { current3D };
 
-					var points3D = new List<Vector3> { current3D, target3D };
+					if (world.Has<PathFollow>(unit.Entity))
+					{
+						var pf = world.Get<PathFollow>(unit.Entity);
+						if (pf.WaypointCount > 0 && pf.CurrentWaypointIndex < pf.WaypointCount)
+						{
+							for (int i = pf.CurrentWaypointIndex; i < pf.WaypointCount; i++)
+							{
+								points3D.Add(new Vector3(pf.Waypoints[i].X, pf.Waypoints[i].Y, pf.Waypoints[i].Z));
+							}
+						}
+						else
+						{
+							points3D.Add(new Vector3(moveTo.Target.X, moveTo.Target.Y, moveTo.Target.Z));
+						}
+					}
+					else
+					{
+						points3D.Add(new Vector3(moveTo.Target.X, moveTo.Target.Y, moveTo.Target.Z));
+					}
 
 					if (world.Has<WaypointQueue>(unit.Entity))
 					{
