@@ -115,6 +115,7 @@ shader_type spatial;
 
 uniform sampler2DArray terrain_textures : source_color;
 varying vec3 v_color;
+varying float v_rot;
 
 const vec3 SWATCH_COLORS[12] = vec3[](
 	vec3(0.95, 0.95, 1.0),   // 1 (River Silt / Sand)
@@ -133,9 +134,16 @@ const vec3 SWATCH_COLORS[12] = vec3[](
 
 void vertex() {
 	v_color = COLOR.rgb;
+	v_rot = COLOR.a;
 }
 
 void fragment() {
+	float angle = v_rot * 6.2831853;
+	float cos_a = cos(angle);
+	float sin_a = sin(angle);
+	mat2 rot_mat = mat2(vec2(cos_a, -sin_a), vec2(sin_a, cos_a));
+	vec2 rotated_uv = rot_mat * (UV - vec2(12.5, 12.5)) + vec2(12.5, 12.5);
+
 	int first_idx = 0;
 	int second_idx = 0;
 	float first_dist = 99999.0;
@@ -152,8 +160,8 @@ void fragment() {
 			second_idx = i;
 		}
 	}
-	vec4 tex_color1 = texture(terrain_textures, vec3(UV, float(first_idx)));
-	vec4 tex_color2 = texture(terrain_textures, vec3(UV, float(second_idx)));
+	vec4 tex_color1 = texture(terrain_textures, vec3(rotated_uv, float(first_idx)));
+	vec4 tex_color2 = texture(terrain_textures, vec3(rotated_uv, float(second_idx)));
 	float t = 0.0;
 	float total_dist = first_dist + second_dist;
 	if (total_dist > 0.0001) {

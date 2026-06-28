@@ -133,7 +133,10 @@ public partial class GameHost : Node3D, IGameAPI
 		Eyedropper,
 		Noise,
 		Ramp,
-		PlacePropClump
+		PlacePropClump,
+		FloodFill,
+		SelectArea,
+		PasteArea
 	}
 	public EditorTool ActiveEditorTool { get; set; } = EditorTool.None;
 	public string ActivePlaceId { get; set; } = ""; // "footman", "tree", etc.
@@ -169,6 +172,40 @@ public partial class GameHost : Node3D, IGameAPI
 	private float _activeBlockTargetHeight = 0.0f;
 	private Node _hoveredEditorObject = null;
 	private Vector3? _rampStartPos = null;
+	private struct CopiedObjectTemplate
+	{
+		public string Type;
+		public string Id;
+		public float Rotation;
+		public float Scale;
+		public bool IsEnemy;
+	}
+	private CopiedObjectTemplate? _copiedObject = null;
+	private MeshInstance3D _selectionHighlightMesh = null;
+	private Vector2I? _selectionStart = null;
+	private Vector2I? _selectionEnd = null;
+	private bool _isSelectingArea = false;
+	public bool PasteOptionTextures { get; set; } = true;
+	public bool PasteOptionHeights { get; set; } = true;
+	public bool PasteOptionEntities { get; set; } = true;
+	private class CopiedAreaTemplate
+	{
+		public int Width;
+		public int Depth;
+		public float[,] Heights;
+		public Color[,] Colors;
+		public List<CopiedEntityInfo> Entities;
+	}
+	private class CopiedEntityInfo
+	{
+		public string Type;
+		public string Id;
+		public Vector3 RelativePos;
+		public float Rotation;
+		public float Scale;
+		public bool IsEnemy;
+	}
+	private CopiedAreaTemplate _copiedArea = null;
 	private float? _activeCliffHeight = null;
 	private float[,] _terrainHeightsBefore;
 	private Color[,] _terrainColorsBefore;
@@ -3055,6 +3092,36 @@ public class {mapName} : IMapScript
 				Vector3 hitPos = hit["position"].AsVector3();
 				UpdateBrushIndicator(hitPos);
 				UpdateEditorPreview(hitPos);
+				if (GroundTerrain != null)
+				{
+					if (ActiveEditorTool == EditorTool.SelectArea && _isSelectingArea && _selectionStart != null)
+					{
+						float fx = hitPos.X / GroundTerrain.Spacing + (GroundTerrain.Width - 1) / 2.0f;
+						float fz = hitPos.Z / GroundTerrain.Spacing + (GroundTerrain.Depth - 1) / 2.0f;
+						int cx = Mathf.Clamp((int)Math.Round(fx), 0, GroundTerrain.Width - 1);
+						int cz = Mathf.Clamp((int)Math.Round(fz), 0, GroundTerrain.Depth - 1);
+						_selectionEnd = new Vector2I(cx, cz);
+						int minX = Mathf.Min(_selectionStart.Value.X, _selectionEnd.Value.X);
+						int minZ = Mathf.Min(_selectionStart.Value.Y, _selectionEnd.Value.Y);
+						int maxX = Mathf.Max(_selectionStart.Value.X, _selectionEnd.Value.X);
+						int maxZ = Mathf.Max(_selectionStart.Value.Y, _selectionEnd.Value.Y);
+						CreateSelectionHighlight();
+						RebuildSelectionHighlightMesh(minX, minZ, maxX, maxZ);
+					}
+					else if (ActiveEditorTool == EditorTool.PasteArea && _copiedArea != null)
+					{
+						float fx = hitPos.X / GroundTerrain.Spacing + (GroundTerrain.Width - 1) / 2.0f;
+						float fz = hitPos.Z / GroundTerrain.Spacing + (GroundTerrain.Depth - 1) / 2.0f;
+						int cx = Mathf.Clamp((int)Math.Round(fx), 0, GroundTerrain.Width - 1);
+						int cz = Mathf.Clamp((int)Math.Round(fz), 0, GroundTerrain.Depth - 1);
+						int minX = cx;
+						int minZ = cz;
+						int maxX = Mathf.Min(minX + _copiedArea.Width - 1, GroundTerrain.Width - 1);
+						int maxZ = Mathf.Min(minZ + _copiedArea.Depth - 1, GroundTerrain.Depth - 1);
+						CreateSelectionHighlight();
+						RebuildSelectionHighlightMesh(minX, minZ, maxX, maxZ);
+					}
+				}
 				
 				bool canHover = (ActiveEditorTool == EditorTool.SelectMove && !_isDraggingObject) ||
 								ActiveEditorTool == EditorTool.DeleteObject ||
@@ -3261,6 +3328,10 @@ public class {mapName} : IMapScript
 							}
 						}
 					}
+					if (_isSelectingArea)
+					{
+						_isSelectingArea = false;
+					}
 					if (_isDrawingTerrain)
 					{
 						_isDrawingTerrain = false;
@@ -3322,6 +3393,10 @@ public class {mapName} : IMapScript
 						EditorHistoryManager.RecordAction(composite);
 						EditorHasUnsavedChanges = true;
 					}
+				}
+				if (_isSelectingArea)
+				{
+					_isSelectingArea = false;
 				}
 				if (_isDrawingTerrain)
 				{
@@ -4585,6 +4660,176 @@ public class {mapName} : IMapScript
 						return;
 					}
 				}
+				if (editorKeyEvent.Keycode == Key.C && !ctrlPressed && !shiftPressed)
+				{
+					var cam = GetTree().Root.GetNodeOrNull<Camera3D>("Main/Camera3D");
+					if (cam != null && cam.HasMethod("ToggleTopDown"))
+					{
+						cam.Call("ToggleTopDown");
+						bool topDown = cam.Call("IsTopDown").AsBool();
+						MapEditorHUD.Instance?.UpdateCameraAngleButtonText(topDown);
+						GetViewport().SetInputAsHandled();
+						return;
+					}
+				}
+				if (editorKeyEvent.Keycode == Key.C && ctrlPressed)
+				{
+					if (ActiveEditorTool == EditorTool.SelectArea)
+					{
+						PerformCopyArea();
+						GetViewport().SetInputAsHandled();
+						return;
+					}
+					if (ActiveEditorTool == EditorTool.SelectMove && GodotObject.IsInstanceValid(SelectedEditorObject))
+					{
+						if (SelectedEditorObject is Unit3D unit)
+						{
+							_copiedObject = new CopiedObjectTemplate {
+								Type = "unit",
+								Id = unit.UnitId,
+								Rotation = unit.RotationDegrees.Y,
+								Scale = unit.Scale.X,
+								IsEnemy = unit.IsEnemy
+							};
+							MapEditorHUD.Instance?.ShowFeedbackExternal($"Copied Unit: {unit.UnitId.ToUpper()}");
+						}
+						else if (SelectedEditorObject is Prop3D prop)
+						{
+							_copiedObject = new CopiedObjectTemplate {
+								Type = "prop",
+								Id = prop.PropId,
+								Rotation = prop.RotationDegrees.Y,
+								Scale = prop.Scale.X,
+								IsEnemy = false
+							};
+							MapEditorHUD.Instance?.ShowFeedbackExternal($"Copied Prop: {prop.PropId.ToUpper()}");
+						}
+						else if (SelectedEditorObject is Decal decal)
+						{
+							string decalId = decal.HasMeta("DecalId") ? decal.GetMeta("DecalId").AsString() : "logo";
+							_copiedObject = new CopiedObjectTemplate {
+								Type = "decal",
+								Id = decalId,
+								Rotation = decal.RotationDegrees.Y,
+								Scale = decal.Scale.X,
+								IsEnemy = false
+							};
+							MapEditorHUD.Instance?.ShowFeedbackExternal($"Copied Decal: {decalId.ToUpper()}");
+						}
+						GetViewport().SetInputAsHandled();
+						return;
+					}
+				}
+				if (editorKeyEvent.Keycode == Key.V && ctrlPressed)
+				{
+					if (ActiveEditorTool == EditorTool.SelectArea || ActiveEditorTool == EditorTool.PasteArea)
+					{
+						if (_copiedArea != null)
+						{
+							ActiveEditorTool = EditorTool.PasteArea;
+							MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.PasteArea);
+							MapEditorHUD.Instance?.ShowFeedbackExternal("Paste Mode Active - Click to paste");
+							GetViewport().SetInputAsHandled();
+							return;
+						}
+					}
+					if (_copiedObject != null)
+					{
+						var hit = RaycastFromMouse(GetViewport().GetMousePosition());
+						if (hit != null && hit.ContainsKey("position"))
+						{
+							Vector3 spawnPos = hit["position"].AsVector3();
+							if (EditorSnapToGrid && GroundTerrain != null)
+							{
+								float spacing = GroundTerrain.Spacing;
+								int width = GroundTerrain.Width;
+								int depth = GroundTerrain.Depth;
+								float fx = Mathf.Round(spawnPos.X / spacing + (width - 1) / 2.0f);
+								spawnPos.X = (Mathf.Clamp(fx, 0, width - 1) - (width - 1) / 2.0f) * spacing;
+								float fz = Mathf.Round(spawnPos.Z / spacing + (depth - 1) / 2.0f);
+								spawnPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * spacing;
+							}
+							spawnPos.Y = GetTerrainHeightAt(spawnPos);
+							var cop = _copiedObject.Value;
+							Node pastedNode = null;
+							IEditorAction action = null;
+							if (cop.Type == "unit")
+							{
+								pastedNode = SpawnUnitExternal(cop.Id, spawnPos, cop.IsEnemy, cop.Rotation, cop.Scale);
+								if (pastedNode != null)
+								{
+									action = new ObjectSpawnAction("unit", cop.Id, spawnPos, cop.Rotation, cop.Scale, cop.IsEnemy, pastedNode);
+									MapEditorHUD.Instance?.ShowFeedbackExternal($"Pasted Unit: {cop.Id.ToUpper()}");
+								}
+							}
+							else if (cop.Type == "prop")
+							{
+								pastedNode = SpawnPropExternalWithParams(cop.Id, spawnPos, cop.Rotation, cop.Scale);
+								if (pastedNode != null)
+								{
+									action = new ObjectSpawnAction("prop", cop.Id, spawnPos, cop.Rotation, cop.Scale, false, pastedNode);
+									MapEditorHUD.Instance?.ShowFeedbackExternal($"Pasted Prop: {cop.Id.ToUpper()}");
+								}
+							}
+							else if (cop.Type == "decal")
+							{
+								pastedNode = SpawnDecalExternalWithParams(cop.Id, spawnPos, cop.Rotation, cop.Scale);
+								if (pastedNode != null)
+								{
+									action = new ObjectSpawnAction("decal", cop.Id, spawnPos, cop.Rotation, cop.Scale, false, pastedNode);
+									MapEditorHUD.Instance?.ShowFeedbackExternal($"Pasted Decal: {cop.Id.ToUpper()}");
+								}
+							}
+							if (action != null)
+							{
+								if (EditorMirrorMode != MirrorMode.None)
+								{
+									var actionsList = new List<IEditorAction> { action };
+									foreach (var t in GetMirroredTransforms(spawnPos, cop.Rotation))
+									{
+										Vector3 mPos = t.Position;
+										mPos.Y = GetTerrainHeightAt(mPos);
+										Node mNode = null;
+										if (cop.Type == "unit")
+										{
+											mNode = SpawnUnitExternal(cop.Id, mPos, cop.IsEnemy, t.Rotation, cop.Scale);
+											if (mNode != null)
+											{
+												actionsList.Add(new ObjectSpawnAction("unit", cop.Id, mPos, t.Rotation, cop.Scale, cop.IsEnemy, mNode));
+											}
+										}
+										else if (cop.Type == "prop")
+										{
+											mNode = SpawnPropExternalWithParams(cop.Id, mPos, t.Rotation, cop.Scale);
+											if (mNode != null)
+											{
+												actionsList.Add(new ObjectSpawnAction("prop", cop.Id, mPos, t.Rotation, cop.Scale, false, mNode));
+											}
+										}
+										else if (cop.Type == "decal")
+										{
+											mNode = SpawnDecalExternalWithParams(cop.Id, mPos, t.Rotation, cop.Scale);
+											if (mNode != null)
+											{
+												actionsList.Add(new ObjectSpawnAction("decal", cop.Id, mPos, t.Rotation, cop.Scale, false, mNode));
+											}
+										}
+									}
+									var composite = new CompositeAction(actionsList);
+									EditorHistoryManager.RecordAction(composite);
+								}
+								else
+								{
+									EditorHistoryManager.RecordAction(action);
+								}
+								SelectedEditorObject = pastedNode;
+								EditorHasUnsavedChanges = true;
+							}
+						}
+						GetViewport().SetInputAsHandled();
+						return;
+					}
+				}
 				if (editorKeyEvent.Keycode == Key.D && ctrlPressed)
 				{
 					if (ActiveEditorTool == EditorTool.SelectMove && GodotObject.IsInstanceValid(SelectedEditorObject))
@@ -4925,10 +5170,29 @@ public class {mapName} : IMapScript
 					GetViewport().SetInputAsHandled();
 					return;
 				}
+				else if (ActiveEditorTool == EditorTool.PasteArea)
+				{
+					ActiveEditorTool = EditorTool.SelectArea;
+					MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.SelectArea);
+					if (_selectionHighlightMesh != null) _selectionHighlightMesh.Visible = false;
+					GetViewport().SetInputAsHandled();
+					return;
+				}
 				else if (ActiveEditorTool != EditorTool.SelectMove)
 				{
 					ActiveEditorTool = EditorTool.SelectMove;
 					MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.SelectMove);
+					if (_selectionHighlightMesh != null) _selectionHighlightMesh.Visible = false;
+					GetViewport().SetInputAsHandled();
+					return;
+				}
+			}
+
+			if (@event is InputEventMouseButton releaseEvent && !releaseEvent.Pressed && releaseEvent.ButtonIndex == MouseButton.Left)
+			{
+				if (_isSelectingArea)
+				{
+					_isSelectingArea = false;
 					GetViewport().SetInputAsHandled();
 					return;
 				}
@@ -5236,6 +5500,42 @@ public class {mapName} : IMapScript
 							}
 							_rampStartPos = null;
 							MapEditorHUD.Instance?.ShowFeedbackExternal("Ramp Created!");
+						}
+						GetViewport().SetInputAsHandled();
+					}
+					else if (ActiveEditorTool == EditorTool.FloodFill)
+					{
+						PerformFloodFill(hitPos, EditorPaintColor);
+						GetViewport().SetInputAsHandled();
+					}
+					else if (ActiveEditorTool == EditorTool.SelectArea)
+					{
+						if (GroundTerrain != null)
+						{
+							float fx = hitPos.X / GroundTerrain.Spacing + (GroundTerrain.Width - 1) / 2.0f;
+							float fz = hitPos.Z / GroundTerrain.Spacing + (GroundTerrain.Depth - 1) / 2.0f;
+							int cx = Mathf.Clamp((int)Math.Round(fx), 0, GroundTerrain.Width - 1);
+							int cz = Mathf.Clamp((int)Math.Round(fz), 0, GroundTerrain.Depth - 1);
+							_selectionStart = new Vector2I(cx, cz);
+							_selectionEnd = new Vector2I(cx, cz);
+							_isSelectingArea = true;
+							CreateSelectionHighlight();
+							RebuildSelectionHighlightMesh(cx, cz, cx, cz);
+						}
+						GetViewport().SetInputAsHandled();
+					}
+					else if (ActiveEditorTool == EditorTool.PasteArea)
+					{
+						if (GroundTerrain != null && _copiedArea != null)
+						{
+							float fx = hitPos.X / GroundTerrain.Spacing + (GroundTerrain.Width - 1) / 2.0f;
+							float fz = hitPos.Z / GroundTerrain.Spacing + (GroundTerrain.Depth - 1) / 2.0f;
+							int cx = Mathf.Clamp((int)Math.Round(fx), 0, GroundTerrain.Width - 1);
+							int cz = Mathf.Clamp((int)Math.Round(fz), 0, GroundTerrain.Depth - 1);
+							PerformPasteArea(cx, cz);
+							ActiveEditorTool = EditorTool.SelectArea;
+							MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.SelectArea);
+							if (_selectionHighlightMesh != null) _selectionHighlightMesh.Visible = false;
 						}
 						GetViewport().SetInputAsHandled();
 					}
@@ -8644,7 +8944,8 @@ public class {mapName} : IMapScript
 		{
 			for (int x = 0; x < width; x++)
 			{
-				GroundTerrain.Colors[x, z] = paintColor;
+				float targetAlpha = paintColor.A;
+				GroundTerrain.Colors[x, z] = new Color(paintColor.R, paintColor.G, paintColor.B, targetAlpha);
 			}
 		}
 		
@@ -8656,6 +8957,391 @@ public class {mapName} : IMapScript
 		EditorHistoryManager.RecordAction(action);
 		
 		MapEditorHUD.Instance?.ShowFeedbackExternal("Map filled with selected texture");
+	}
+
+	public void PerformFloodFill(Vector3 clickPos, Color fillColor)
+	{
+		if (GroundTerrain == null) return;
+		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
+		var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+		float spacing = GroundTerrain.Spacing;
+		var visited = new bool[width, depth];
+		void DoSingleFill(Vector3 pos)
+		{
+			float fx = pos.X / spacing + (width - 1) / 2.0f;
+			float fz = pos.Z / spacing + (depth - 1) / 2.0f;
+			int startX = Mathf.Clamp((int)Math.Round(fx), 0, width - 1);
+			int startZ = Mathf.Clamp((int)Math.Round(fz), 0, depth - 1);
+			Color startColor = colorsBefore[startX, startZ];
+			if (startColor == fillColor) return;
+			var queue = new Queue<(int x, int z)>();
+			if (!visited[startX, startZ])
+			{
+				queue.Enqueue((startX, startZ));
+				visited[startX, startZ] = true;
+			}
+			while (queue.Count > 0)
+			{
+				var (currX, currZ) = queue.Dequeue();
+				float targetAlpha = fillColor.A;
+				GroundTerrain.Colors[currX, currZ] = new Color(fillColor.R, fillColor.G, fillColor.B, targetAlpha);
+				int[] dx = { 0, 0, -1, 1 };
+				int[] dz = { -1, 1, 0, 0 };
+				for (int i = 0; i < 4; i++)
+				{
+					int nextX = currX + dx[i];
+					int nextZ = currZ + dz[i];
+					if (nextX >= 0 && nextX < width && nextZ >= 0 && nextZ < depth)
+					{
+						if (!visited[nextX, nextZ])
+						{
+							if (colorsBefore[nextX, nextZ] != startColor)
+							{
+								continue;
+							}
+							float hCurrent = GroundTerrain.Heights[currX, currZ];
+							float hNext = GroundTerrain.Heights[nextX, nextZ];
+							if (Mathf.Abs(hNext - hCurrent) >= 1.0f)
+							{
+								continue;
+							}
+							visited[nextX, nextZ] = true;
+							queue.Enqueue((nextX, nextZ));
+						}
+					}
+				}
+			}
+		}
+		DoSingleFill(clickPos);
+		if (EditorMirrorMode != MirrorMode.None)
+		{
+			foreach (var t in GetMirroredTransforms(clickPos, 0.0f))
+			{
+				DoSingleFill(t.Position);
+			}
+		}
+		GroundTerrain.UpdateMeshAndPhysics(false, false);
+		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
+		var colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
+		var action = new TerrainModifyAction(heightsBefore, heightsAfter, colorsBefore, colorsAfter);
+		EditorHistoryManager.RecordAction(action);
+		EditorHasUnsavedChanges = true;
+		MapEditorHUD.Instance?.ShowFeedbackExternal("Flood filled terrain area");
+	}
+
+	private void CreateSelectionHighlight()
+	{
+		if (_selectionHighlightMesh != null) return;
+		_selectionHighlightMesh = new MeshInstance3D();
+		_selectionHighlightMesh.Name = "SelectionHighlight";
+		var mat = new StandardMaterial3D();
+		mat.AlbedoColor = new Color(0.0f, 0.6f, 1.0f, 0.35f);
+		mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+		mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+		mat.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+		_selectionHighlightMesh.MaterialOverride = mat;
+		AddChild(_selectionHighlightMesh);
+		_selectionHighlightMesh.Visible = false;
+	}
+
+	private void RebuildSelectionHighlightMesh(int minX, int minZ, int maxX, int maxZ)
+	{
+		if (_selectionHighlightMesh == null || GroundTerrain == null) return;
+		int selWidth = maxX - minX + 1;
+		int selDepth = maxZ - minZ + 1;
+		if (selWidth <= 0 || selDepth <= 0)
+		{
+			_selectionHighlightMesh.Visible = false;
+			return;
+		}
+		int vertexCount = selWidth * selDepth;
+		var vertices = new Vector3[vertexCount];
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+		float spacing = GroundTerrain.Spacing;
+		for (int sz = 0; sz < selDepth; sz++)
+		{
+			for (int sx = 0; sx < selWidth; sx++)
+			{
+				int mapX = minX + sx;
+				int mapZ = minZ + sz;
+				int idx = sz * selWidth + sx;
+				float lx = (mapX - (width - 1) / 2.0f) * spacing;
+				float lz = (mapZ - (depth - 1) / 2.0f) * spacing;
+				vertices[idx] = new Vector3(lx, GroundTerrain.Heights[mapX, mapZ] + 0.05f, lz);
+			}
+		}
+		int cellWidth = selWidth - 1;
+		int cellDepth = selDepth - 1;
+		int indexCount = cellWidth * cellDepth * 6;
+		var indices = new int[indexCount];
+		int iIdx = 0;
+		for (int sz = 0; sz < cellDepth; sz++)
+		{
+			for (int sx = 0; sx < cellWidth; sx++)
+			{
+				int v00 = sz * selWidth + sx;
+				int v10 = sz * selWidth + (sx + 1);
+				int v01 = (sz + 1) * selWidth + sx;
+				int v11 = (sz + 1) * selWidth + (sx + 1);
+				indices[iIdx++] = v00;
+				indices[iIdx++] = v10;
+				indices[iIdx++] = v01;
+				indices[iIdx++] = v10;
+				indices[iIdx++] = v11;
+				indices[iIdx++] = v01;
+			}
+		}
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+		arrays[(int)Mesh.ArrayType.Index] = indices;
+		var arrayMesh = new ArrayMesh();
+		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+		_selectionHighlightMesh.Mesh = arrayMesh;
+		_selectionHighlightMesh.Visible = true;
+	}
+
+	private void PerformCopyArea()
+	{
+		if (GroundTerrain == null || _selectionStart == null || _selectionEnd == null) return;
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+		float spacing = GroundTerrain.Spacing;
+		int minX = Mathf.Min(_selectionStart.Value.X, _selectionEnd.Value.X);
+		int minZ = Mathf.Min(_selectionStart.Value.Y, _selectionEnd.Value.Y);
+		int maxX = Mathf.Max(_selectionStart.Value.X, _selectionEnd.Value.X);
+		int maxZ = Mathf.Max(_selectionStart.Value.Y, _selectionEnd.Value.Y);
+		int selWidth = maxX - minX + 1;
+		int selDepth = maxZ - minZ + 1;
+		var heights = new float[selWidth, selDepth];
+		var colors = new Color[selWidth, selDepth];
+		for (int sz = 0; sz < selDepth; sz++)
+		{
+			for (int sx = 0; sx < selWidth; sx++)
+			{
+				heights[sx, sz] = GroundTerrain.Heights[minX + sx, minZ + sz];
+				colors[sx, sz] = GroundTerrain.Colors[minX + sx, minZ + sz];
+			}
+		}
+		float minWorldX = (minX - (width - 1) / 2.0f) * spacing - spacing * 0.5f;
+		float maxWorldX = (maxX - (width - 1) / 2.0f) * spacing + spacing * 0.5f;
+		float minWorldZ = (minZ - (depth - 1) / 2.0f) * spacing - spacing * 0.5f;
+		float maxWorldZ = (maxZ - (depth - 1) / 2.0f) * spacing + spacing * 0.5f;
+		Vector3 origin = new Vector3((minX - (width - 1) / 2.0f) * spacing, 0.0f, (minZ - (depth - 1) / 2.0f) * spacing);
+		var entities = new List<CopiedEntityInfo>();
+		foreach (var child in GetChildren())
+		{
+			if (child is Node3D n3d && GodotObject.IsInstanceValid(n3d))
+			{
+				Vector3 pos = n3d.Position;
+				if (pos.X >= minWorldX && pos.X <= maxWorldX && pos.Z >= minWorldZ && pos.Z <= maxWorldZ)
+				{
+					if (n3d is Unit3D unit)
+					{
+						entities.Add(new CopiedEntityInfo {
+							Type = "unit",
+							Id = unit.UnitId,
+							RelativePos = pos - origin,
+							Rotation = unit.RotationDegrees.Y,
+							Scale = unit.Scale.X,
+							IsEnemy = unit.IsEnemy
+						});
+					}
+					else if (n3d is Prop3D prop)
+					{
+						entities.Add(new CopiedEntityInfo {
+							Type = "prop",
+							Id = prop.PropId,
+							RelativePos = pos - origin,
+							Rotation = prop.RotationDegrees.Y,
+							Scale = prop.Scale.X,
+							IsEnemy = false
+						});
+					}
+					else if (n3d is Decal decal)
+					{
+						string decalId = decal.HasMeta("DecalId") ? decal.GetMeta("DecalId").AsString() : "logo";
+						entities.Add(new CopiedEntityInfo {
+							Type = "decal",
+							Id = decalId,
+							RelativePos = pos - origin,
+							Rotation = decal.RotationDegrees.Y,
+							Scale = decal.Scale.X,
+							IsEnemy = false
+						});
+					}
+				}
+			}
+		}
+		_copiedArea = new CopiedAreaTemplate {
+			Width = selWidth,
+			Depth = selDepth,
+			Heights = heights,
+			Colors = colors,
+			Entities = entities
+		};
+		MapEditorHUD.Instance?.ShowFeedbackExternal($"Copied Area: {selWidth}x{selDepth} tiles, {entities.Count} entities");
+	}
+
+	private void PerformPasteArea(int startX, int startZ)
+	{
+		if (GroundTerrain == null || _copiedArea == null) return;
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+		float spacing = GroundTerrain.Spacing;
+		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
+		var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
+		bool modified = false;
+		int pasteWidth = _copiedArea.Width;
+		int pasteDepth = _copiedArea.Depth;
+
+		void PasteCell(int sx, int sz)
+		{
+			int targetX = startX + sx;
+			int targetZ = startZ + sz;
+
+			if (targetX >= 0 && targetX < width && targetZ >= 0 && targetZ < depth)
+			{
+				if (PasteOptionHeights) GroundTerrain.Heights[targetX, targetZ] = _copiedArea.Heights[sx, sz];
+				if (PasteOptionTextures) GroundTerrain.Colors[targetX, targetZ] = _copiedArea.Colors[sx, sz];
+				modified = true;
+			}
+
+			if (EditorMirrorMode == MirrorMode.Horizontal || EditorMirrorMode == MirrorMode.Both)
+			{
+				int mx = width - 1 - targetX;
+				int mz = targetZ;
+				if (mx >= 0 && mx < width && mz >= 0 && mz < depth)
+				{
+					if (PasteOptionHeights) GroundTerrain.Heights[mx, mz] = _copiedArea.Heights[sx, sz];
+					if (PasteOptionTextures) GroundTerrain.Colors[mx, mz] = _copiedArea.Colors[sx, sz];
+					modified = true;
+				}
+			}
+
+			if (EditorMirrorMode == MirrorMode.Vertical || EditorMirrorMode == MirrorMode.Both)
+			{
+				int mx = targetX;
+				int mz = depth - 1 - targetZ;
+				if (mx >= 0 && mx < width && mz >= 0 && mz < depth)
+				{
+					if (PasteOptionHeights) GroundTerrain.Heights[mx, mz] = _copiedArea.Heights[sx, sz];
+					if (PasteOptionTextures) GroundTerrain.Colors[mx, mz] = _copiedArea.Colors[sx, sz];
+					modified = true;
+				}
+			}
+
+			if (EditorMirrorMode == MirrorMode.Both)
+			{
+				int mx = width - 1 - targetX;
+				int mz = depth - 1 - targetZ;
+				if (mx >= 0 && mx < width && mz >= 0 && mz < depth)
+				{
+					if (PasteOptionHeights) GroundTerrain.Heights[mx, mz] = _copiedArea.Heights[sx, sz];
+					if (PasteOptionTextures) GroundTerrain.Colors[mx, mz] = _copiedArea.Colors[sx, sz];
+					modified = true;
+				}
+			}
+		}
+
+		for (int sz = 0; sz < pasteDepth; sz++)
+		{
+			for (int sx = 0; sx < pasteWidth; sx++)
+			{
+				PasteCell(sx, sz);
+			}
+		}
+
+		if (modified)
+		{
+			GroundTerrain.UpdateMeshAndPhysics(PasteOptionHeights, false);
+			if (PasteOptionHeights)
+			{
+				AlignAllEntitiesToTerrain();
+			}
+		}
+
+		var spawnActions = new List<IEditorAction>();
+		void SpawnAndRecord(CopiedEntityInfo ent, Vector3 pos, float rotation)
+		{
+			Node pastedNode = null;
+			if (ent.Type == "unit")
+			{
+				pastedNode = SpawnUnitExternal(ent.Id, pos, ent.IsEnemy, rotation, ent.Scale);
+				if (pastedNode != null)
+				{
+					spawnActions.Add(new ObjectSpawnAction("unit", ent.Id, pos, rotation, ent.Scale, ent.IsEnemy, pastedNode));
+				}
+			}
+			else if (ent.Type == "prop")
+			{
+				pastedNode = SpawnPropExternalWithParams(ent.Id, pos, rotation, ent.Scale);
+				if (pastedNode != null)
+				{
+					spawnActions.Add(new ObjectSpawnAction("prop", ent.Id, pos, rotation, ent.Scale, false, pastedNode));
+				}
+			}
+			else if (ent.Type == "decal")
+			{
+				pastedNode = SpawnDecalExternalWithParams(ent.Id, pos, rotation, ent.Scale);
+				if (pastedNode != null)
+				{
+					spawnActions.Add(new ObjectSpawnAction("decal", ent.Id, pos, rotation, ent.Scale, false, pastedNode));
+				}
+			}
+		}
+
+		if (PasteOptionEntities)
+		{
+			Vector3 origin = new Vector3((startX - (width - 1) / 2.0f) * spacing, 0.0f, (startZ - (depth - 1) / 2.0f) * spacing);
+			foreach (var ent in _copiedArea.Entities)
+			{
+				Vector3 destPos = origin + ent.RelativePos;
+				destPos.Y = GetTerrainHeightAt(destPos);
+				
+				SpawnAndRecord(ent, destPos, ent.Rotation);
+
+				if (EditorMirrorMode == MirrorMode.Horizontal || EditorMirrorMode == MirrorMode.Both)
+				{
+					Vector3 mPos = new Vector3(-destPos.X, destPos.Y, destPos.Z);
+					mPos.Y = GetTerrainHeightAt(mPos);
+					SpawnAndRecord(ent, mPos, 180.0f - ent.Rotation);
+				}
+				if (EditorMirrorMode == MirrorMode.Vertical || EditorMirrorMode == MirrorMode.Both)
+				{
+					Vector3 mPos = new Vector3(destPos.X, destPos.Y, -destPos.Z);
+					mPos.Y = GetTerrainHeightAt(mPos);
+					SpawnAndRecord(ent, mPos, -ent.Rotation);
+				}
+				if (EditorMirrorMode == MirrorMode.Both)
+				{
+					Vector3 mPos = new Vector3(-destPos.X, destPos.Y, -destPos.Z);
+					mPos.Y = GetTerrainHeightAt(mPos);
+					SpawnAndRecord(ent, mPos, ent.Rotation + 180.0f);
+				}
+			}
+		}
+		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
+		var colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
+		var actions = new List<IEditorAction>();
+		if (modified)
+		{
+			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, colorsBefore, colorsAfter));
+		}
+		if (spawnActions.Count > 0)
+		{
+			actions.AddRange(spawnActions);
+		}
+		if (actions.Count > 0)
+		{
+			var composite = new CompositeAction(actions);
+			EditorHistoryManager.RecordAction(composite);
+			EditorHasUnsavedChanges = true;
+			MapEditorHUD.Instance?.ShowFeedbackExternal("Pasted Area");
+		}
 	}
 
 	public void ClearMapEntirely()
@@ -8890,7 +9576,9 @@ public class {mapName} : IMapScript
 									Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
 								);
 								
-								Color targetColor = (maxDiff >= EditorBlockLevelHeight * 0.5f) ? EditorCliffPaintColor : EditorPaintColor;
+								Color baseColor = (maxDiff >= EditorBlockLevelHeight * 0.5f) ? EditorCliffPaintColor : EditorPaintColor;
+								float targetAlpha = baseColor.A;
+								Color targetColor = new Color(baseColor.R, baseColor.G, baseColor.B, targetAlpha);
 								GroundTerrain.Colors[x, z] = GroundTerrain.Colors[x, z].Lerp(targetColor, EditorBrushStrength * delta * 5.0f);
 								modified = true;
 							}
@@ -8997,7 +9685,9 @@ public class {mapName} : IMapScript
 							Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
 						);
 						
-						Color targetColor = (maxDiff >= spacing * 0.5f) ? EditorCliffPaintColor : EditorPaintColor;
+						Color baseColor = (maxDiff >= spacing * 0.5f) ? EditorCliffPaintColor : EditorPaintColor;
+						float targetAlpha = baseColor.A;
+						Color targetColor = new Color(baseColor.R, baseColor.G, baseColor.B, targetAlpha);
 						GroundTerrain.Colors[x, z] = GroundTerrain.Colors[x, z].Lerp(targetColor, EditorBrushStrength * falloff * delta * 3.0f);
 						modified = true;
 					}
@@ -9350,7 +10040,7 @@ public class {mapName} : IMapScript
 			{
 				int idx = z * width + x;
 				saveData.Heights[idx] = GroundTerrain.Heights[x, z];
-				saveData.Colors[idx] = GroundTerrain.Colors[x, z].ToHtml(false);
+				saveData.Colors[idx] = GroundTerrain.Colors[x, z].ToHtml(true);
 			}
 		}
 

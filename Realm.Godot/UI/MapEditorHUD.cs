@@ -31,6 +31,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnZoomOut;
 	private Button _btnCenter;
 	private Button _btnRotate;
+	private Button _btnCameraAngle;
 
 	private Slider _sldBrushSize;
 	private Label _lblBrushSizeValue;
@@ -96,6 +97,8 @@ public partial class MapEditorHUD : Control
 
 	private Button _btnTextureBrush;
 	private Button _btnDecalTool;
+	private Button _btnFloodFill;
+	private Button _btnSelectArea;
 	private Button _btnSelectMove;
 	private PanelContainer _inspectorPanel;
 	private Label _lblInspectorTitle;
@@ -155,6 +158,10 @@ public partial class MapEditorHUD : Control
 		_btnZoomOut = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnZoomOut");
 		_btnCenter = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnCenter");
 		_btnRotate = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnRotate");
+		_btnCameraAngle = new Button();
+		_btnCameraAngle.Name = "BtnCameraAngle";
+		_btnCameraAngle.Set("icon_max_width", 0);
+		GetNode<GridContainer>("MiddleRightBox/PanelZoom/VBox/Content").AddChild(_btnCameraAngle);
 
 		_sldBrushSize = GetNode<Slider>("PanelTextures/VBox/Content/SettingsVBox/BrushSizeBox/SldBrushSize");
 		_lblBrushSizeValue = GetNode<Label>("PanelTextures/VBox/Content/SettingsVBox/BrushSizeBox/Header/LblBrushSizeValue");
@@ -175,6 +182,15 @@ public partial class MapEditorHUD : Control
 
 		_btnTextureBrush = GetNode<Button>("TopToolbar/PanelDeco/VBox/Content/BtnTextureBrush");
 		_btnDecalTool = GetNode<Button>("TopToolbar/PanelDeco/VBox/Content/BtnDecalTool");
+		_btnFloodFill = new Button();
+		_btnFloodFill.Name = "BtnFloodFill";
+		_btnFloodFill.Set("icon_max_width", 0);
+		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnFloodFill);
+
+		_btnSelectArea = new Button();
+		_btnSelectArea.Name = "BtnSelectArea";
+		_btnSelectArea.Set("icon_max_width", 0);
+		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnSelectArea);
 
 		_btnSkybox = GetNode<Button>("TopToolbar/PanelEnv/VBox/Content/BtnSkybox");
 
@@ -548,6 +564,51 @@ public partial class MapEditorHUD : Control
 		_sldWaterHeight.DragStarted += () => _isDraggingSlider = true;
 		_sldWaterHeight.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
+		var pasteDivider = new HSeparator();
+		settingsVBox.AddChild(pasteDivider);
+
+		var pasteOptionsBox = new VBoxContainer();
+		pasteOptionsBox.Name = "PasteOptionsBox";
+		settingsVBox.AddChild(pasteOptionsBox);
+
+		var lblPasteOptionsTitle = new Label();
+		lblPasteOptionsTitle.Text = "PASTE CONTENTS OPTIONS";
+		lblPasteOptionsTitle.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
+		lblPasteOptionsTitle.AddThemeFontSizeOverride("font_size", 11);
+		pasteOptionsBox.AddChild(lblPasteOptionsTitle);
+
+		var chkPasteTextures = new CheckBox();
+		chkPasteTextures.Name = "ChkPasteTextures";
+		chkPasteTextures.Text = "📋 Paste Textures";
+		chkPasteTextures.ButtonPressed = true;
+		UIStyle.ApplyCheckboxStyle(chkPasteTextures);
+		pasteOptionsBox.AddChild(chkPasteTextures);
+		chkPasteTextures.Toggled += (toggled) =>
+		{
+			if (GameHost.Instance != null) GameHost.Instance.PasteOptionTextures = toggled;
+		};
+
+		var chkPasteHeights = new CheckBox();
+		chkPasteHeights.Name = "ChkPasteHeights";
+		chkPasteHeights.Text = "⛰️ Paste HeightMap";
+		chkPasteHeights.ButtonPressed = true;
+		UIStyle.ApplyCheckboxStyle(chkPasteHeights);
+		pasteOptionsBox.AddChild(chkPasteHeights);
+		chkPasteHeights.Toggled += (toggled) =>
+		{
+			if (GameHost.Instance != null) GameHost.Instance.PasteOptionHeights = toggled;
+		};
+
+		var chkPasteEntities = new CheckBox();
+		chkPasteEntities.Name = "ChkPasteEntities";
+		chkPasteEntities.Text = "💂 Paste Units / Props";
+		chkPasteEntities.ButtonPressed = true;
+		UIStyle.ApplyCheckboxStyle(chkPasteEntities);
+		pasteOptionsBox.AddChild(chkPasteEntities);
+		chkPasteEntities.Toggled += (toggled) =>
+		{
+			if (GameHost.Instance != null) GameHost.Instance.PasteOptionEntities = toggled;
+		};
 		_btnBrushShape = new Button();
 		_btnBrushShape.Name = "BtnBrushShape";
 		_btnBrushShape.Set("icon_max_width", 0);
@@ -739,6 +800,8 @@ public partial class MapEditorHUD : Control
 			TriggerToolSelection(GameHost.EditorTool.PlaceDecal, _btnDecalTool);
 			ShowFeedback("Decal Placement Tool Selected");
 		}, 11, "Place decorative decals projecting textures onto ground (7)");
+		SetupButton(_btnFloodFill, "🪣 Flood Fill", () => TriggerToolSelection(GameHost.EditorTool.FloodFill, _btnFloodFill), 11, "Flood fill connected area sharing the same texture until hitting a cliff/boundary");
+		SetupButton(_btnSelectArea, "🟦 Area Select", () => TriggerToolSelection(GameHost.EditorTool.SelectArea, _btnSelectArea), 11, "Select a rectangular area of the map to copy/paste (Ctrl+C, Ctrl+V)");
 
 
 
@@ -751,10 +814,21 @@ public partial class MapEditorHUD : Control
 		SetupButton(_btnZoomIn, "➕ In", () => _camera3D?.Call("ZoomIn"), 12, "Zoom camera in (Mouse Wheel Up)");
 		SetupButton(_btnZoomOut, "➖ Out", () => _camera3D?.Call("ZoomOut"), 12, "Zoom camera out (Mouse Wheel Down)");
 		SetupButton(_btnCenter, "🎯 Target", () => GameHost.Instance?.CenterCameraOnCastle(), 11, "Center camera on the castle (or map center)");
-		SetupButton(_btnRotate, "🔄 Align", () => {
-			_camera3D?.Call("ResetRotationAndCycleZoom");
-			ShowFeedback("Camera reset to North & Cycled zoom!");
-		}, 11, "Reset camera rotation to North and cycle zoom presets");
+		SetupButton(_btnRotate, "🔄 Rotate", () => {
+			if (_camera3D != null && _camera3D.HasMethod("Rotate90Degrees"))
+			{
+				_camera3D.Call("Rotate90Degrees");
+				ShowFeedback("Rotated camera 90 degrees clockwise");
+			}
+		}, 11, "Rotate camera yaw by 90 degrees clockwise on click");
+		SetupButton(_btnCameraAngle, "📐 Angle: Tilt", () => {
+			if (_camera3D != null && _camera3D.HasMethod("ToggleTopDown"))
+			{
+				_camera3D.Call("ToggleTopDown");
+				bool topDown = _camera3D.Call("IsTopDown").AsBool();
+				UpdateCameraAngleButtonText(topDown);
+			}
+		}, 11, "Toggle between precisely top-down view and tilted in-game camera view (C)");
 
 		SetupTextureSwatches(true);
 
@@ -928,14 +1002,22 @@ public partial class MapEditorHUD : Control
 			GameHost.Instance.EditorPaintColor = modColor;
 		}
 		
-		GameHost.EditorTool tool = index switch
+		GameHost.EditorTool tool = GameHost.EditorTool.PaintGrass;
+		if (GameHost.Instance != null && GameHost.Instance.ActiveEditorTool == GameHost.EditorTool.FloodFill)
 		{
-			4 or 7 or 8 => GameHost.EditorTool.PaintGrass,
-			3 or 6 or 12 => GameHost.EditorTool.PaintDirt,
-			2 or 5 or 11 => GameHost.EditorTool.PaintRock,
-			1 or 9 or 10 => GameHost.EditorTool.PaintSand,
-			_ => GameHost.EditorTool.PaintGrass
-		};
+			tool = GameHost.EditorTool.FloodFill;
+		}
+		else
+		{
+			tool = index switch
+			{
+				4 or 7 or 8 => GameHost.EditorTool.PaintGrass,
+				3 or 6 or 12 => GameHost.EditorTool.PaintDirt,
+				2 or 5 or 11 => GameHost.EditorTool.PaintRock,
+				1 or 9 or 10 => GameHost.EditorTool.PaintSand,
+				_ => GameHost.EditorTool.PaintGrass
+			};
+		}
 		TriggerToolSelection(tool, swatch, $"layer_{index}");
 		UpdateTextureLabels();
 	}
@@ -1113,7 +1195,10 @@ public partial class MapEditorHUD : Control
 								tool == GameHost.EditorTool.PaintRock ||
 								tool == GameHost.EditorTool.PaintSand ||
 								tool == GameHost.EditorTool.Noise ||
-								tool == GameHost.EditorTool.Ramp;
+								tool == GameHost.EditorTool.Ramp ||
+								tool == GameHost.EditorTool.FloodFill ||
+								tool == GameHost.EditorTool.SelectArea ||
+								tool == GameHost.EditorTool.PasteArea;
 
 		bool isObjectPlace = tool == GameHost.EditorTool.PlaceUnit ||
 							 tool == GameHost.EditorTool.PlaceProp ||
@@ -1160,6 +1245,15 @@ public partial class MapEditorHUD : Control
 			case GameHost.EditorTool.PaintRock:
 			case GameHost.EditorTool.PaintSand:
 				_lblInfoText.Text = $"TOOL: Texture Painting\n\nDrag left click to paint texture layers onto the vertices of the terrain mesh.";
+				break;
+			case GameHost.EditorTool.FloodFill:
+				_lblInfoText.Text = "TOOL: Flood Fill\n\nClick once on the terrain map to flood-fill an area sharing the same texture color until hitting a boundary (cliff or different texture). Uses selected texture swatch.";
+				break;
+			case GameHost.EditorTool.SelectArea:
+				_lblInfoText.Text = "TOOL: Area Select\n\nDrag left click to select a rectangular area of the map. Press Ctrl+C to copy the area.";
+				break;
+			case GameHost.EditorTool.PasteArea:
+				_lblInfoText.Text = "TOOL: Area Paste\n\nClick on the terrain to paste the copied area. Use the Paste Contents Options checkboxes to filter what is pasted (Textures, Heights, Entities).";
 				break;
 			case GameHost.EditorTool.PlaceUnit:
 				string alignment = _chkSpawnAsEnemy.ButtonPressed ? "Enemy (Orc)" : "Player (Alliance)";
@@ -1427,6 +1521,15 @@ public class {mapName} : IMapScript
 		ShowFeedback($"Brush Size: {size:F1}");
 	}
 
+	public void UpdateCameraAngleButtonText(bool isTopDown)
+	{
+		if (_btnCameraAngle != null)
+		{
+			_btnCameraAngle.Text = isTopDown ? "📐 Angle: TopDown" : "📐 Angle: Tilt";
+		}
+		ShowFeedback(isTopDown ? "Camera set to Top-Down View" : "Camera set to In-game Tilt View");
+	}
+
 	public void UpdateBrushStrengthExternal(float strength)
 	{
 		if (_sldBrushStrength != null)
@@ -1484,6 +1587,9 @@ public class {mapName} : IMapScript
 			GameHost.EditorTool.PaintDirt => _btnTextureBrush,
 			GameHost.EditorTool.PaintRock => _btnTextureBrush,
 			GameHost.EditorTool.PaintSand => _btnTextureBrush,
+			GameHost.EditorTool.FloodFill => _btnFloodFill,
+			GameHost.EditorTool.SelectArea => _btnSelectArea,
+			GameHost.EditorTool.PasteArea => _btnSelectArea,
 			GameHost.EditorTool.PlaceUnit => _btnFootman,
 			GameHost.EditorTool.PlaceProp => _btnTree,
 			GameHost.EditorTool.PlacePropClump => _btnClumpBrush,

@@ -18,6 +18,25 @@ public partial class CameraControl : Camera3D
 	private Vector2 _lastMousePosition = Vector2.Zero;
 	private float _targetYaw = 0.0f;
 	private float _currentYaw = 0.0f;
+	private float _targetPitch = -55.0f;
+	private float _currentPitch = -55.0f;
+	private bool _isTopDown = false;
+
+	public void ToggleTopDown()
+	{
+		_isTopDown = !_isTopDown;
+		_targetPitch = _isTopDown ? -90.0f : -55.0f;
+	}
+
+	public bool IsTopDown()
+	{
+		return _isTopDown;
+	}
+
+	public void Rotate90Degrees()
+	{
+		_targetYaw = (_targetYaw + 90.0f) % 360.0f;
+	}
 
 	public void CycleZoom()
 	{
@@ -43,16 +62,25 @@ public partial class CameraControl : Camera3D
 		CycleZoom();
 	}
 
+	private float GetMaxZoom()
+	{
+		if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+		{
+			return MaxZoom * 5.0f;
+		}
+		return MaxZoom;
+	}
+
 	public void ZoomIn()
 	{
 		if (IsLocked) return;
-		_targetHeight = Mathf.Clamp(_targetHeight - ZoomStep, MinZoom, MaxZoom);
+		_targetHeight = Mathf.Clamp(_targetHeight - ZoomStep, MinZoom, GetMaxZoom());
 	}
 
 	public void ZoomOut()
 	{
 		if (IsLocked) return;
-		_targetHeight = Mathf.Clamp(_targetHeight + ZoomStep, MinZoom, MaxZoom);
+		_targetHeight = Mathf.Clamp(_targetHeight + ZoomStep, MinZoom, GetMaxZoom());
 	}
 
 	private const float MapLimit = 95f;
@@ -84,11 +112,11 @@ public partial class CameraControl : Camera3D
 
 				if (mouseBtn.ButtonIndex == MouseButton.WheelUp)
 				{
-					_targetHeight = Mathf.Clamp(_targetHeight - ZoomStep, MinZoom, MaxZoom);
+					_targetHeight = Mathf.Clamp(_targetHeight - ZoomStep, MinZoom, GetMaxZoom());
 				}
 				else if (mouseBtn.ButtonIndex == MouseButton.WheelDown)
 				{
-					_targetHeight = Mathf.Clamp(_targetHeight + ZoomStep, MinZoom, MaxZoom);
+					_targetHeight = Mathf.Clamp(_targetHeight + ZoomStep, MinZoom, GetMaxZoom());
 				}
 				else if (mouseBtn.ButtonIndex == MouseButton.Middle)
 				{
@@ -157,7 +185,8 @@ public partial class CameraControl : Camera3D
 
 		_currentYaw = Mathf.LerpAngle(Mathf.DegToRad(_currentYaw), Mathf.DegToRad(_targetYaw), 10.0f * fDelta);
 		_currentYaw = Mathf.RadToDeg(_currentYaw);
-		RotationDegrees = new Vector3(RotationDegrees.X, _currentYaw, 0.0f);
+		_currentPitch = Mathf.Lerp(_currentPitch, _targetPitch, 10.0f * fDelta);
+		RotationDegrees = new Vector3(_currentPitch, _currentYaw, 0.0f);
 
 		if (IsLocked || (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive)) return;
 
@@ -203,7 +232,7 @@ public partial class CameraControl : Camera3D
 		{
 			velocity = velocity.Normalized() * MoveSpeed * fDelta;
 
-			float zoomFactor = _currentHeight / MaxZoom;
+			float zoomFactor = _currentHeight / GetMaxZoom();
 			velocity *= Mathf.Lerp(0.5f, 1.5f, zoomFactor);
 
 			Vector3 newPos = Position + velocity;
