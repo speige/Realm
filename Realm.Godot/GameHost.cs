@@ -10300,9 +10300,17 @@ public class {mapName} : IMapScript
 			return decalId;
 		}
 		string customPath = $"res://Assets/2d/Decals/{decalId}";
-		if (FileAccess.FileExists(customPath))
+		if (ResourceLoader.Exists(customPath))
 		{
 			return customPath;
+		}
+		if (!decalId.Contains("."))
+		{
+			string customPathWithPng = $"res://Assets/2d/Decals/{decalId}.png";
+			if (ResourceLoader.Exists(customPathWithPng))
+			{
+				return customPathWithPng;
+			}
 		}
 		return decalId switch
 		{
@@ -10318,8 +10326,9 @@ public class {mapName} : IMapScript
 	{
 		var decal = new Decal();
 		decal.TextureAlbedo = GD.Load<Texture2D>("res://icon.svg");
-		decal.Size = new Vector3(6.0f, 6.0f, 6.0f);
+		decal.Size = new Vector3(6.0f, 20.0f, 6.0f);
 		decal.SetMeta("DecalId", "logo");
+		decal.AlbedoMix = 1.0f;
 		AddChild(decal);
 		
 		position.Y = GetTerrainHeightAt(position);
@@ -10328,7 +10337,8 @@ public class {mapName} : IMapScript
 		if (IsMapEditorMode)
 		{
 			decal.RotationDegrees = new Vector3(0.0f, EditorPlacementRotation, 0.0f);
-			decal.Scale *= EditorPlacementScale;
+			decal.Size = new Vector3(6.0f, 20.0f, 6.0f) * EditorPlacementScale;
+			decal.Scale = Vector3.One;
 		}
 		return decal;
 	}
@@ -10898,14 +10908,15 @@ public class {mapName} : IMapScript
 	{
 		var decal = new Decal();
 		decal.TextureAlbedo = GD.Load<Texture2D>(GetDecalTexturePath(decalId));
-		decal.Size = new Vector3(6.0f, 6.0f, 6.0f);
+		decal.Size = new Vector3(6.0f, 20.0f, 6.0f) * scale;
 		decal.SetMeta("DecalId", string.IsNullOrEmpty(decalId) ? "logo" : decalId);
+		decal.AlbedoMix = 1.0f;
 		AddChild(decal);
 		
 		position.Y = GetTerrainHeightAt(position);
 		decal.Position = position;
 		decal.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
-		decal.Scale = Vector3.One * scale;
+		decal.Scale = Vector3.One;
 		
 		return decal;
 	}
@@ -11138,7 +11149,7 @@ public class {mapName} : IMapScript
 			{
 				var previewDecal = new Decal();
 				previewDecal.TextureAlbedo = GD.Load<Texture2D>(GetDecalTexturePath(reqId));
-				previewDecal.Size = new Vector3(6.0f, 6.0f, 6.0f);
+				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * EditorPlacementScale;
 				AddChild(previewDecal);
 				previewDecal.SetMeta("DecalId", string.IsNullOrEmpty(reqId) ? "logo" : reqId);
 
@@ -11167,7 +11178,15 @@ public class {mapName} : IMapScript
 			previewPos.Y = GetTerrainHeightAt(previewPos);
 			_editorPreviewNode.Position = previewPos;
 			_editorPreviewNode.RotationDegrees = new Vector3(0.0f, EditorPlacementRotation, 0.0f);
-			_editorPreviewNode.Scale = Vector3.One * EditorPlacementScale;
+			if (_editorPreviewNode is Decal previewDecal)
+			{
+				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * EditorPlacementScale;
+				previewDecal.Scale = Vector3.One;
+			}
+			else
+			{
+				_editorPreviewNode.Scale = Vector3.One * EditorPlacementScale;
+			}
 			_editorPreviewNode.Visible = true;
 		}
 	}
