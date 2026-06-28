@@ -85,6 +85,17 @@ public partial class InGameHUD : Control
 	private bool _showMinimapTerrain = true;
 	public bool ShowMinimapTerrain => _showMinimapTerrain;
 
+	private byte[,] _fogGrid = new byte[32, 32];
+	private string _fogOfWarType = "grey";
+	private float _fogUpdateTimer = 0f;
+	public byte[,] FogGrid => _fogGrid;
+	public string FogOfWarType => _fogOfWarType;
+
+	private string _currentWeather = "clear";
+	private CpuParticles3D _rainParticles = null;
+	private MeshInstance3D _fogMeshInstance = null;
+	private float _baseFogDensity = 0f;
+
 	private Label _goldLabel;
 	private Label _woodLabel;
 	private Label _stoneLabel;
@@ -379,21 +390,27 @@ public partial class InGameHUD : Control
 								camCtrl.LimitTop = (float)topProp.GetDouble();
 							if (mapProps.TryGetProperty("CameraBoundsBottom", out var bottomProp) && bottomProp.ValueKind == System.Text.Json.JsonValueKind.Number)
 								camCtrl.LimitBottom = (float)bottomProp.GetDouble();
+							if (mapProps.TryGetProperty("FogOfWarType", out var fogTypeProp) && fogTypeProp.ValueKind == System.Text.Json.JsonValueKind.String)
+								_fogOfWarType = fogTypeProp.GetString() ?? "grey";
+							if (mapProps.TryGetProperty("WeatherType", out var weatherProp) && weatherProp.ValueKind == System.Text.Json.JsonValueKind.String)
+								_currentWeather = weatherProp.GetString() ?? "clear";
 						}
 					}
 					catch (Exception ex)
 					{
-						GD.PrintErr($"[InGameHUD] Failed to load camera bounds from map.json: {ex.Message}");
+						GD.PrintErr($"[InGameHUD] Failed to load map properties from map.json: {ex.Message}");
 					}
 				}
 			}
 		}
 
+		ApplyWeatherEffects(_currentWeather);
 		ApplyThemeStyles();
 		SetupCommandCard();
 		SetupDevPanel();
 		SetupMinimap();
 		SetupPortrait();
+		Setup3DFogOfWar();
 
 		_feedbackLabel.Modulate = new Color(1, 1, 1, 0); // Hide initially
 		Input.MouseMode = Input.MouseModeEnum.Visible;
@@ -1346,6 +1363,26 @@ public partial class InGameHUD : Control
 
 	public override void _Process(double delta)
 	{
+		_fogUpdateTimer += (float)delta;
+		if (_fogUpdateTimer >= 0.1f)
+		{
+			_fogUpdateTimer = 0f;
+			UpdateFogOfWar();
+			var minimapOverlay = _minimapArea?.GetNodeOrNull<MinimapOverlay>("MinimapOverlay");
+			minimapOverlay?.QueueRedraw();
+		}
+
+		if (_baseFogDensity > 0f && _camera3D != null && GodotObject.IsInstanceValid(_camera3D))
+		{
+			var worldEnv = GetTree().Root.GetNodeOrNull<WorldEnvironment>("Main/WorldEnvironment");
+			if (worldEnv != null && worldEnv.Environment != null)
+			{
+				float height = _camera3D.GlobalPosition.Y;
+				float scale = 18.0f / Mathf.Max(8.0f, height);
+				worldEnv.Environment.FogDensity = _baseFogDensity * scale;
+			}
+		}
+
 		if (_countdownActive)
 		{
 			_countdownDuration -= (float)delta;
@@ -2010,6 +2047,29 @@ public partial class InGameHUD : Control
 			}
 		};
 		_chkCameraToggle.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+
+		var devPanel = GetNode<Panel>("DevPanel");
+		devPanel.OffsetBottom = 185;
+
+		var btnWeather = new Button();
+		btnWeather.Name = "BtnWeather";
+		btnWeather.Flat = false;
+		string icon = _currentWeather switch
+		{
+			"clear" => "☀️",
+			"rain" => "🌧️",
+			"foggy" => "🌫️",
+			_ => "☀️"
+		};
+		UIStyle.ApplyButtonText(btnWeather, $"{icon} Weather: {_currentWeather.ToUpper()}", 12);
+		btnWeather.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		btnWeather.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		btnWeather.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btnWeather.Position = new Vector2(10, 130);
+		btnWeather.Size = new Vector2(300, 35);
+		btnWeather.Pressed += CycleWeather;
+		btnWeather.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+		devPanel.AddChild(btnWeather);
 	}
 
 	private void SetupPortrait()
@@ -2993,6 +3053,391 @@ public partial class InGameHUD : Control
 			lblVal.Text = value;
 		}
 	}
+
+	private void UpdateFogOfWar()
+	{
+		if (_fogOfWarType == "visible")
+		{
+			for (int x = 0; x < 32; x++)
+			{
+				for (int z = 0; z < 32; z++)
+				{
+					_fogGrid[x, z] = 2;
+				}
+			}
+			if (GameHost.Instance != null)
+			{
+				foreach (var unit in GameHost.Instance.AllUnits)
+				{
+					if (unit != null && GodotObject.IsInstanceValid(unit))
+					{
+						unit.Visible = true;
+					}
+				}
+			}
+			return;
+		}
+
+		for (int x = 0; x < 32; x++)
+		{
+			for (int z = 0; z < 32; z++)
+			{
+				if (_fogOfWarType == "black")
+				{
+					_fogGrid[x, z] = 0;
+				}
+				else if (_fogGrid[x, z] == 2)
+				{
+					_fogGrid[x, z] = 1;
+				}
+			}
+		}
+
+		if (GameHost.Instance == null) return;
+
+		foreach (var unit in GameHost.Instance.AllUnits)
+		{
+			if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
+			if (unit.IsEnemy) continue;
+
+			Vector3 pos = unit.GlobalPosition;
+			int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
+			int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+
+			float scanRadius = 15.0f;
+			if (GameHost.Instance.EcsWorld.IsAlive(unit.Entity) && GameHost.Instance.EcsWorld.Has<DefinitionId>(unit.Entity))
+			{
+				string defId = GameHost.Instance.EcsWorld.Get<DefinitionId>(unit.Entity).Value;
+				if (GameHost.UnitRegistry.TryGetValue(defId, out var metaReg) && metaReg.ScanRadius > 0)
+				{
+					scanRadius = metaReg.ScanRadius;
+				}
+			}
+
+			int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (250f / 32f)));
+
+			for (int dx = -rGrid; dx <= rGrid; dx++)
+			{
+				for (int dz = -rGrid; dz <= rGrid; dz++)
+				{
+					int nx = gx + dx;
+					int nz = gz + dz;
+					if (nx >= 0 && nx < 32 && nz >= 0 && nz < 32)
+					{
+						if (dx * dx + dz * dz <= rGrid * rGrid)
+						{
+							_fogGrid[nx, nz] = 2;
+						}
+					}
+				}
+			}
+		}
+
+		foreach (var unit in GameHost.Instance.AllUnits)
+		{
+			if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
+			if (!unit.IsEnemy)
+			{
+				unit.Visible = true;
+				continue;
+			}
+
+			Vector3 pos = unit.GlobalPosition;
+			int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
+			int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+
+			unit.Visible = (_fogGrid[gx, gz] == 2);
+		}
+
+		Update3DFogMesh();
+	}
+
+	private void CycleWeather()
+	{
+		UIManager.Instance?.PlayClickSound();
+		if (_currentWeather == "clear")
+		{
+			_currentWeather = "rain";
+		}
+		else if (_currentWeather == "rain")
+		{
+			_currentWeather = "foggy";
+		}
+		else
+		{
+			_currentWeather = "clear";
+		}
+
+		var btnWeather = GetNodeOrNull<Button>("DevPanel/BtnWeather");
+		if (btnWeather != null)
+		{
+			string icon = _currentWeather switch
+			{
+				"clear" => "☀️",
+				"rain" => "🌧️",
+				"foggy" => "🌫️",
+				_ => "☀️"
+			};
+			UIStyle.ApplyButtonText(btnWeather, $"{icon} Weather: {_currentWeather.ToUpper()}", 12);
+		}
+
+		ApplyWeatherEffects(_currentWeather);
+		ShowFeedbackText($"Weather changed to {_currentWeather.ToUpper()}", new Color(0.4f, 0.9f, 0.5f));
+	}
+
+	private void ApplyWeatherEffects(string weather)
+	{
+		var worldEnv = GetTree().Root.GetNodeOrNull<WorldEnvironment>("Main/WorldEnvironment");
+		var sun = GetTree().Root.GetNodeOrNull<DirectionalLight3D>("Main/DirectionalLight3D");
+
+		if (worldEnv != null && worldEnv.Environment != null)
+		{
+			if (!worldEnv.Environment.IsLocalToScene())
+			{
+				worldEnv.Environment = (Godot.Environment)worldEnv.Environment.Duplicate();
+			}
+		}
+
+		if (weather == "clear")
+		{
+			_baseFogDensity = 0f;
+			if (worldEnv != null && worldEnv.Environment != null)
+			{
+				worldEnv.Environment.FogEnabled = false;
+			}
+			if (sun != null)
+			{
+				sun.LightEnergy = 1.0f;
+				sun.LightColor = new Color(1f, 0.95f, 0.9f);
+			}
+			if (_rainParticles != null && GodotObject.IsInstanceValid(_rainParticles))
+			{
+				_rainParticles.QueueFree();
+				_rainParticles = null;
+			}
+		}
+		else if (weather == "rain")
+		{
+			_baseFogDensity = 0.0075f;
+			if (worldEnv != null && worldEnv.Environment != null)
+			{
+				worldEnv.Environment.FogEnabled = true;
+				worldEnv.Environment.FogMode = Godot.Environment.FogModeEnum.Exponential;
+				worldEnv.Environment.FogDensity = 0.0075f;
+				worldEnv.Environment.FogLightColor = new Color(0.3f, 0.32f, 0.35f);
+			}
+			if (sun != null)
+			{
+				sun.LightEnergy = 0.4f;
+				sun.LightColor = new Color(0.6f, 0.65f, 0.7f);
+			}
+
+			if (_camera3D != null && (_rainParticles == null || !GodotObject.IsInstanceValid(_rainParticles)))
+			{
+				_rainParticles = new CpuParticles3D();
+				_rainParticles.Name = "RainParticles";
+				_rainParticles.Amount = 600;
+				_rainParticles.Lifetime = 1.5f;
+				_rainParticles.EmissionShape = CpuParticles3D.EmissionShapeEnum.Box;
+				_rainParticles.EmissionBoxExtents = new Vector3(25, 5, 25);
+				_rainParticles.Direction = new Vector3(0.05f, -1.0f, 0.02f);
+				_rainParticles.Spread = 2f;
+				_rainParticles.Gravity = new Vector3(0, -12.0f, 0);
+				_rainParticles.InitialVelocityMin = 18.0f;
+				_rainParticles.InitialVelocityMax = 22.0f;
+
+				var mesh = new BoxMesh();
+				mesh.Size = new Vector3(0.04f, 0.4f, 0.04f);
+
+				var material = new StandardMaterial3D();
+				material.ShadingMode = StandardMaterial3D.ShadingModeEnum.Unshaded;
+				material.AlbedoColor = new Color(0.6f, 0.7f, 0.85f, 0.25f);
+				material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+				mesh.Material = material;
+
+				_rainParticles.Mesh = mesh;
+				_camera3D.AddChild(_rainParticles);
+				_rainParticles.Position = new Vector3(0, 15, -10);
+			}
+		}
+		else if (weather == "foggy")
+		{
+			_baseFogDensity = 0.0175f;
+			if (worldEnv != null && worldEnv.Environment != null)
+			{
+				worldEnv.Environment.FogEnabled = true;
+				worldEnv.Environment.FogMode = Godot.Environment.FogModeEnum.Exponential;
+				worldEnv.Environment.FogDensity = 0.0175f;
+				worldEnv.Environment.FogLightColor = new Color(0.6f, 0.62f, 0.65f);
+			}
+			if (sun != null)
+			{
+				sun.LightEnergy = 0.5f;
+				sun.LightColor = new Color(0.75f, 0.77f, 0.8f);
+			}
+			if (_rainParticles != null && GodotObject.IsInstanceValid(_rainParticles))
+			{
+				_rainParticles.QueueFree();
+				_rainParticles = null;
+			}
+		}
+	}
+
+	private void Setup3DFogOfWar()
+	{
+		if (_fogOfWarType == "visible") return;
+
+		var mainNode = GetTree().Root.GetNodeOrNull("Main");
+		if (mainNode == null) return;
+
+		_fogMeshInstance = new MeshInstance3D();
+		_fogMeshInstance.Name = "FogOfWar3D";
+
+		var arrMesh = new ArrayMesh();
+		
+		var vertices = new Vector3[33 * 33];
+		var colors = new Color[33 * 33];
+		var indices = new int[32 * 32 * 6];
+
+		float cellWidth = 250f / 32f;
+		float cellHeight = 250f / 32f;
+
+		for (int z = 0; z <= 32; z++)
+		{
+			for (int x = 0; x <= 32; x++)
+			{
+				int idx = x + z * 33;
+				float wx = (x - 16f) * cellWidth;
+				float wz = (z - 16f) * cellHeight;
+				float h = GameHost.Instance != null ? GameHost.Instance.GetTerrainHeightAt(new Vector3(wx, 0f, wz)) : 0f;
+				vertices[idx] = new Vector3(wx, h + 0.15f, wz);
+				colors[idx] = new Color(0f, 0f, 0f, 1.0f);
+			}
+		}
+
+		int iIdx = 0;
+		for (int z = 0; z < 32; z++)
+		{
+			for (int x = 0; x < 32; x++)
+			{
+				int topLeft = x + z * 33;
+				int topRight = (x + 1) + z * 33;
+				int bottomLeft = x + (z + 1) * 33;
+				int bottomRight = (x + 1) + (z + 1) * 33;
+
+				indices[iIdx++] = topLeft;
+				indices[iIdx++] = topRight;
+				indices[iIdx++] = bottomLeft;
+
+				indices[iIdx++] = bottomLeft;
+				indices[iIdx++] = topRight;
+				indices[iIdx++] = bottomRight;
+			}
+		}
+
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+		arrays[(int)Mesh.ArrayType.Color] = colors;
+		arrays[(int)Mesh.ArrayType.Index] = indices;
+
+		arrMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+
+		var material = new StandardMaterial3D();
+		material.ShadingMode = StandardMaterial3D.ShadingModeEnum.Unshaded;
+		material.VertexColorUseAsAlbedo = true;
+		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+		material.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+		_fogMeshInstance.MaterialOverride = material;
+
+		_fogMeshInstance.Mesh = arrMesh;
+		mainNode.AddChild(_fogMeshInstance);
+	}
+
+	private float GetFogValueAtVertex(int x, int z)
+	{
+		float sum = 0f;
+		int count = 0;
+		for (int dx = -1; dx <= 0; dx++)
+		{
+			for (int dz = -1; dz <= 0; dz++)
+			{
+				int cx = x + dx;
+				int cz = z + dz;
+				if (cx >= 0 && cx < 32 && cz >= 0 && cz < 32)
+				{
+					byte val = _fogGrid[cx, cz];
+					float alpha = val switch
+					{
+						0 => 1.0f,
+						1 => 0.48f,
+						2 => 0.0f,
+						_ => 1.0f
+					};
+					sum += alpha;
+					count++;
+				}
+			}
+		}
+		return count > 0 ? (sum / count) : 1.0f;
+	}
+
+	private void Update3DFogMesh()
+	{
+		if (_fogMeshInstance == null || _fogMeshInstance.Mesh == null) return;
+		var arrMesh = _fogMeshInstance.Mesh as ArrayMesh;
+		if (arrMesh == null) return;
+
+		float cellWidth = 250f / 32f;
+		float cellHeight = 250f / 32f;
+
+		var vertices = new Vector3[33 * 33];
+		var colors = new Color[33 * 33];
+		var indices = new int[32 * 32 * 6];
+
+		for (int z = 0; z <= 32; z++)
+		{
+			for (int x = 0; x <= 32; x++)
+			{
+				int idx = x + z * 33;
+				float wx = (x - 16f) * cellWidth;
+				float wz = (z - 16f) * cellHeight;
+				float h = GameHost.Instance != null ? GameHost.Instance.GetTerrainHeightAt(new Vector3(wx, 0f, wz)) : 0f;
+				vertices[idx] = new Vector3(wx, h + 0.15f, wz);
+
+				float alpha = GetFogValueAtVertex(x, z);
+				colors[idx] = new Color(0f, 0f, 0f, alpha);
+			}
+		}
+
+		int iIdx = 0;
+		for (int z = 0; z < 32; z++)
+		{
+			for (int x = 0; x < 32; x++)
+			{
+				int topLeft = x + z * 33;
+				int topRight = (x + 1) + z * 33;
+				int bottomLeft = x + (z + 1) * 33;
+				int bottomRight = (x + 1) + (z + 1) * 33;
+
+				indices[iIdx++] = topLeft;
+				indices[iIdx++] = topRight;
+				indices[iIdx++] = bottomLeft;
+
+				indices[iIdx++] = bottomLeft;
+				indices[iIdx++] = topRight;
+				indices[iIdx++] = bottomRight;
+			}
+		}
+
+		arrMesh.ClearSurfaces();
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+		arrays[(int)Mesh.ArrayType.Color] = colors;
+		arrays[(int)Mesh.ArrayType.Index] = indices;
+		arrMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+	}
 }
 
 // Procedural radar mini-map display (unused legacy frame border)
@@ -3042,11 +3487,45 @@ public partial class MinimapOverlay : Control
 			// Runic outline border
 			DrawRect(new Rect2(Vector2.Zero, size), UIStyle.ColorBronze, false, 1.5f);
 		}
+
+		if (InGameHUD.Instance != null && InGameHUD.Instance.FogOfWarType != "visible")
+		{
+			float cellWidth = size.X / 32f;
+			float cellHeight = size.Y / 32f;
+			var grid = InGameHUD.Instance.FogGrid;
+			for (int x = 0; x < 32; x++)
+			{
+				for (int z = 0; z < 32; z++)
+				{
+					byte val = grid[x, z];
+					if (val == 0)
+					{
+						var rect = new Rect2(new Vector2(x * cellWidth, z * cellHeight), new Vector2(cellWidth, cellHeight));
+						DrawRect(rect, new Color(0f, 0f, 0f, 1.0f), true);
+					}
+					else if (val == 1)
+					{
+						var rect = new Rect2(new Vector2(x * cellWidth, z * cellHeight), new Vector2(cellWidth, cellHeight));
+						DrawRect(rect, new Color(0f, 0f, 0f, 0.33f), true);
+					}
+				}
+			}
+		}
 		
 		// 2. Draw unit positions
 		foreach (var unit in GameHost.Instance.AllUnits)
 		{
 			if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
+
+			if (unit.IsEnemy && InGameHUD.Instance != null && InGameHUD.Instance.FogOfWarType != "visible")
+			{
+				int gx = (int)Mathf.Clamp((unit.GlobalPosition.X / 250f + 0.5f) * 32, 0, 31);
+				int gz = (int)Mathf.Clamp((unit.GlobalPosition.Z / 250f + 0.5f) * 32, 0, 31);
+				if (InGameHUD.Instance.FogGrid[gx, gz] != 2)
+				{
+					continue;
+				}
+			}
 
 			// Map 3D coordinates (-125 to 125) to 2D ratio (0 to 1)
 			float xRatio = (unit.GlobalPosition.X / 250f) + 0.5f;

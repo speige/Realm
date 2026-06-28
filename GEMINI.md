@@ -7,6 +7,7 @@
 
 ## Overall Coding Style:
 
+- All code, variable names, and comments should be written in english
 - Do not add comments anywhere unless explicity requested
 	Structs in the Realm.Ecs project should have a single XML-doc <summary /> comment at the top describing their purpose
 	Everything in Realm.MapAPI should have full comprehensive XML-doc for public consumption

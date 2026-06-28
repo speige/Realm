@@ -4122,10 +4122,21 @@ public class {mapName} : IMapScript
 				var attackerPos = new Vector3(pos.Value.X, pos.Value.Y, pos.Value.Z);
 				var attackerOwner = owner.PlayerEntity;
 
+				bool isAttackerEnemy = false;
+				if (EcsWorld.Has<Unit3D>(entity))
+				{
+					isAttackerEnemy = EcsWorld.Get<Unit3D>(entity).IsEnemy;
+				}
+
 				EcsWorld.Query(in enemyQuery, (Entity potentialEnemy, ref Position enemyPosComp, ref Owner enemyOwnerComp) =>
 				{
 					if (attackerOwner != enemyOwnerComp.PlayerEntity)
 					{
+						if (!isAttackerEnemy && EcsWorld.Has<Unit3D>(potentialEnemy))
+						{
+							var enemyUnit3D = EcsWorld.Get<Unit3D>(potentialEnemy);
+							if (enemyUnit3D != null && !enemyUnit3D.Visible) return;
+						}
 						var enemyPos = new Vector3(enemyPosComp.Value.X, enemyPosComp.Value.Y, enemyPosComp.Value.Z);
 						float dist = attackerPos.DistanceTo(enemyPos);
 						if (dist < closestDist)
@@ -6093,9 +6104,8 @@ public class {mapName} : IMapScript
 					var clickedProp = FindProp3DInParentChain(collider);
 					bool shiftHeld = Input.IsKeyPressed(Key.Shift);
 
-					if (clickedUnit != null && clickedUnit.IsEnemy)
+					if (clickedUnit != null && clickedUnit.IsEnemy && clickedUnit.Visible)
 					{
-						// Right-click on enemy → attack
 						IssueAttackCommand(clickedUnit);
 					}
 					else if (clickedUnit != null && !clickedUnit.IsEnemy && clickedUnit != SelectedUnits.Find(u => !u.IsEnemy))
@@ -6348,6 +6358,11 @@ public class {mapName} : IMapScript
 			
 			if (clickedUnit != null)
 			{
+				if (!clickedUnit.Visible)
+				{
+					ClearSelection();
+					return;
+				}
 				if (clickedUnit.IsEnemy)
 				{
 					// If clicking enemy, single select it only
