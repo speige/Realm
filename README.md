@@ -67,6 +67,7 @@ Maps contain many different pieces of intellectual property in one 7z archive (a
 ## 🛠️ Contribution Guidelines
 
 We encourage contributions! Please submit a pull request. Reach out on discord if you have questions on how to get started.
+AI-generated "vibe" code is acceptable only if it has been thoroughly reviewed by a human before submission. "Slop" will not be accepted.
 
 ## ⚙️ Setting up the Project
 

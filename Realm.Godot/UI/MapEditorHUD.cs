@@ -109,6 +109,8 @@ public partial class MapEditorHUD : Control
 	private Button _activeToolButton = null;
 	private StyleBoxFlat _highlightStyle;
 	private Label _lblInfoText;
+	private Label _lblTerrainTexture;
+	private Label _lblCliffTexture;
 
 	private Camera3D _camera3D;
 	private Button _btnVSCode;
@@ -306,6 +308,20 @@ public partial class MapEditorHUD : Control
 		};
 
 		var settingsVBox = GetNode<VBoxContainer>("PanelTextures/VBox/Content/SettingsVBox");
+		_lblTerrainTexture = new Label();
+		_lblTerrainTexture.Name = "LblTerrainTexture";
+		_lblTerrainTexture.AddThemeFontSizeOverride("font_size", 12);
+		_lblTerrainTexture.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		settingsVBox.AddChild(_lblTerrainTexture);
+		settingsVBox.MoveChild(_lblTerrainTexture, 0);
+
+		_lblCliffTexture = new Label();
+		_lblCliffTexture.Name = "LblCliffTexture";
+		_lblCliffTexture.AddThemeFontSizeOverride("font_size", 12);
+		_lblCliffTexture.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		settingsVBox.AddChild(_lblCliffTexture);
+		settingsVBox.MoveChild(_lblCliffTexture, 1);
+
 		var brushActionsHBox = new HBoxContainer();
 		brushActionsHBox.Name = "BrushActionsHBox";
 		brushActionsHBox.AddThemeConstantOverride("separation", 8);
@@ -734,39 +750,149 @@ public partial class MapEditorHUD : Control
 				_ => new Color(1, 1, 1)
 			};
 
+			string texPath = index switch
+			{
+				1 => "res://Assets/2d/TileSheets/river_silt.png",
+				2 => "res://Assets/2d/TileSheets/cinder_rock.png",
+				3 => "res://Assets/2d/TileSheets/arid_dust.png",
+				4 => "res://Assets/2d/TileSheets/deep_moss.png",
+				5 => "res://Assets/2d/TileSheets/crag_stone.png",
+				6 => "res://Assets/2d/TileSheets/ash_soil.png",
+				7 => "res://Assets/2d/TileSheets/fern_grove.png",
+				8 => "res://Assets/2d/TileSheets/mossy_stone.png",
+				9 => "res://Assets/2d/TileSheets/holy_moss.png",
+				10 => "res://Assets/2d/TileSheets/void_shard.png",
+				11 => "res://Assets/terrain_grass.jpg",
+				12 => "res://Assets/2d/TileSheets/ash_soil.png",
+				_ => "res://Assets/terrain_grass.jpg"
+			};
+
+			var tex = GD.Load<Texture2D>(texPath);
+			if (tex == null)
+			{
+				tex = GD.Load<Texture2D>("res://Assets/terrain_grass.jpg");
+			}
+
 			var styleNormal = new StyleBoxTexture();
-			styleNormal.Texture = GD.Load<Texture2D>("res://Assets/terrain_grass.jpg");
-			styleNormal.ModulateColor = modColor;
+			styleNormal.Texture = tex;
 			swatch.AddThemeStyleboxOverride("normal", styleNormal);
 			
 			var styleHover = (StyleBoxTexture)styleNormal.Duplicate();
-			styleHover.ModulateColor = modColor * 1.2f;
+			styleHover.ModulateColor = new Color(1.2f, 1.2f, 1.2f);
 			swatch.AddThemeStyleboxOverride("hover", styleHover);
 			
 			var stylePressed = (StyleBoxTexture)styleNormal.Duplicate();
-			stylePressed.ModulateColor = modColor * 0.8f;
+			stylePressed.ModulateColor = new Color(0.8f, 0.8f, 0.8f);
 			swatch.AddThemeStyleboxOverride("pressed", stylePressed);
 
-			swatch.Pressed += () =>
+			swatch.ButtonMask = MouseButtonMask.Left | MouseButtonMask.Right;
+			swatch.GuiInput += (InputEvent @event) =>
 			{
-				UIManager.Instance?.PlayClickSound();
-				
-				if (GameHost.Instance != null)
+				if (@event is InputEventMouseButton mouseEvent && mouseEvent.Pressed)
 				{
-					GameHost.Instance.EditorPaintColor = modColor;
+					if (mouseEvent.ButtonIndex == MouseButton.Left)
+					{
+						UIManager.Instance?.PlayClickSound();
+						SelectTerrainTexture(index, modColor, swatch);
+					}
+					else if (mouseEvent.ButtonIndex == MouseButton.Right)
+					{
+						UIManager.Instance?.PlayClickSound();
+						SelectCliffTexture(index, modColor);
+					}
 				}
-				
-				GameHost.EditorTool tool = index switch
-				{
-					4 or 7 or 8 => GameHost.EditorTool.PaintGrass,
-					3 or 6 or 12 => GameHost.EditorTool.PaintDirt,
-					2 or 5 or 11 => GameHost.EditorTool.PaintRock,
-					1 or 9 or 10 => GameHost.EditorTool.PaintSand,
-					_ => GameHost.EditorTool.PaintGrass
-				};
-				TriggerToolSelection(tool, swatch, $"layer_{index}");
 			};
 		}
+		UpdateTextureLabels();
+	}
+
+	private void SelectTerrainTexture(int index, Color modColor, Button swatch)
+	{
+		if (GameHost.Instance != null)
+		{
+			GameHost.Instance.EditorPaintColor = modColor;
+		}
+		
+		GameHost.EditorTool tool = index switch
+		{
+			4 or 7 or 8 => GameHost.EditorTool.PaintGrass,
+			3 or 6 or 12 => GameHost.EditorTool.PaintDirt,
+			2 or 5 or 11 => GameHost.EditorTool.PaintRock,
+			1 or 9 or 10 => GameHost.EditorTool.PaintSand,
+			_ => GameHost.EditorTool.PaintGrass
+		};
+		TriggerToolSelection(tool, swatch, $"layer_{index}");
+		UpdateTextureLabels();
+	}
+
+	private void SelectCliffTexture(int index, Color modColor)
+	{
+		if (GameHost.Instance != null)
+		{
+			GameHost.Instance.EditorCliffPaintColor = modColor;
+		}
+		UpdateTextureLabels();
+	}
+
+	private string GetSwatchName(Color color)
+	{
+		float epsilon = 0.01f;
+		for (int i = 1; i <= 12; i++)
+		{
+			Color c = GetSwatchColor(i);
+			if (Mathf.Abs(color.R - c.R) < epsilon &&
+				Mathf.Abs(color.G - c.G) < epsilon &&
+				Mathf.Abs(color.B - c.B) < epsilon)
+			{
+				string texName = i switch
+				{
+					1 => "River Silt",
+					2 => "Cinder Rock",
+					3 => "Arid Dust",
+					4 => "Deep Moss",
+					5 => "Crag Stone",
+					6 => "Ash Soil",
+					7 => "Fern Grove",
+					8 => "Mossy Stone",
+					9 => "Holy Moss",
+					10 => "Void Shard",
+					11 => "Standard Grass",
+					12 => "Ash Soil 2",
+					_ => "Unknown"
+				};
+				return $"Swatch {i} ({texName})";
+			}
+		}
+		return "Custom";
+	}
+
+	private Color GetSwatchColor(int index)
+	{
+		return index switch
+		{
+			1 => new Color(0.95f, 0.95f, 1.0f),
+			2 => new Color(0.5f, 0.5f, 0.52f),
+			3 => new Color(0.5f, 0.45f, 0.38f),
+			4 => new Color(0.2f, 0.6f, 0.2f),
+			5 => new Color(0.38f, 0.38f, 0.4f),
+			6 => new Color(0.4f, 0.28f, 0.18f),
+			7 => new Color(0.3f, 0.7f, 0.2f),
+			8 => new Color(0.12f, 0.48f, 0.18f),
+			9 => new Color(0.7f, 0.55f, 0.35f),
+			10 => new Color(0.85f, 0.75f, 0.5f),
+			11 => new Color(0.45f, 0.55f, 0.65f),
+			12 => new Color(0.6f, 0.3f, 0.15f),
+			_ => new Color(1, 1, 1)
+		};
+	}
+
+	private void UpdateTextureLabels()
+	{
+		if (_lblTerrainTexture == null || _lblCliffTexture == null) return;
+		if (GameHost.Instance == null) return;
+
+		_lblTerrainTexture.Text = "Terrain: " + GetSwatchName(GameHost.Instance.EditorPaintColor);
+		_lblCliffTexture.Text = "Cliff (Right-Click): " + GetSwatchName(GameHost.Instance.EditorCliffPaintColor);
 	}
 
 	private void SetupMenuHooks()

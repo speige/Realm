@@ -140,6 +140,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public float EditorBrushStrength { get; set; } = 3.0f;
 	public float EditorFlattenHeight { get; set; } = 0.0f;
 	public Color EditorPaintColor { get; set; } = new Color(0.2f, 0.6f, 0.2f);
+	public Color EditorCliffPaintColor { get; set; } = new Color(0.5f, 0.5f, 0.52f);
 	public bool EditorSnapToGrid { get; set; } = false;
 	public float EditorPlacementRotation { get; set; } = 0.0f;
 	public float EditorPlacementScale { get; set; } = 1.0f;
@@ -8380,7 +8381,26 @@ public class {mapName} : IMapScript
 								
 								if (maxDiff >= EditorBlockLevelHeight * 0.5f)
 								{
-									GroundTerrain.Colors[x, z] = new Color(0.5f, 0.5f, 0.52f);
+									GroundTerrain.Colors[x, z] = EditorCliffPaintColor;
+								}
+								else
+								{
+									bool insideBrush = true;
+									if (!EditorBrushIsSquare)
+									{
+										float dx = x - cx;
+										float dz = z - cz;
+										insideBrush = (dx * dx + dz * dz) <= (brushGridRadius * brushGridRadius);
+									}
+									else
+									{
+										insideBrush = (x >= cx - brushGridRadius && x <= cx + brushGridRadius && z >= cz - brushGridRadius && z <= cz + brushGridRadius);
+									}
+									
+									if (insideBrush)
+									{
+										GroundTerrain.Colors[x, z] = EditorPaintColor;
+									}
 								}
 							}
 						}

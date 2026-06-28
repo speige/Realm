@@ -22,7 +22,7 @@ public partial class EditableTerrain : StaticBody3D
 	private MeshInstance3D _meshInstance;
 	private CollisionShape3D _collisionShape;
 	private ArrayMesh _arrayMesh;
-	private StandardMaterial3D _material;
+	private ShaderMaterial _material;
 
 	private MeshInstance3D _waterMesh;
 	private float _waterHeight = -2.0f;
@@ -109,18 +109,112 @@ public partial class EditableTerrain : StaticBody3D
 
 		_arrayMesh = new ArrayMesh();
 		
-		_material = new StandardMaterial3D();
-		_material.VertexColorUseAsAlbedo = true;
-		_material.Roughness = 0.9f;
-		
-		// Attempt to load the grass texture as details for shading if available
-		var texture = GD.Load<Texture2D>("res://Assets/terrain_grass.jpg");
-		if (texture != null)
-		{
-			_material.AlbedoTexture = texture;
-			_material.Uv1Scale = new Vector3(25, 25, 1);
+		var shader = new Shader();
+		shader.Code = @"
+shader_type spatial;
+
+uniform sampler2DArray terrain_textures : source_color;
+varying vec3 v_color;
+
+const vec3 SWATCH_COLORS[12] = vec3[](
+	vec3(0.95, 0.95, 1.0),   // 1 (River Silt / Sand)
+	vec3(0.5, 0.5, 0.52),    // 2 (Cinder Rock)
+	vec3(0.5, 0.45, 0.38),   // 3 (Arid Dust)
+	vec3(0.2, 0.6, 0.2),     // 4 (Deep Moss)
+	vec3(0.38, 0.38, 0.4),   // 5 (Crag Stone)
+	vec3(0.4, 0.28, 0.18),   // 6 (Ash Soil)
+	vec3(0.3, 0.7, 0.2),     // 7 (Fern Grove)
+	vec3(0.12, 0.48, 0.18),  // 8 (Mossy Stone)
+	vec3(0.7, 0.55, 0.35),   // 9 (Holy Moss)
+	vec3(0.85, 0.75, 0.5),   // 10 (Void Shard)
+	vec3(0.2, 0.6, 0.2),     // 11 (Fallback Grass)
+	vec3(0.6, 0.3, 0.15)     // 12 (Fallback Dirt)
+);
+
+void vertex() {
+	v_color = COLOR.rgb;
+}
+
+void fragment() {
+	int closest_idx = 0;
+	float min_dist = 99999.0;
+	for (int i = 0; i < 12; i++) {
+		float dist = distance(v_color, SWATCH_COLORS[i]);
+		if (dist < min_dist) {
+			min_dist = dist;
+			closest_idx = i;
 		}
-		
+	}
+	
+	// Sample from the texture array
+	vec3 uvw = vec3(UV, float(closest_idx));
+	vec4 tex_color = texture(terrain_textures, uvw);
+	
+	ALBEDO = tex_color.rgb;
+	ROUGHNESS = 0.9;
+}
+";
+
+		var paths = new string[]
+		{
+			"res://Assets/2d/TileSheets/river_silt.png",
+			"res://Assets/2d/TileSheets/cinder_rock.png",
+			"res://Assets/2d/TileSheets/arid_dust.png",
+			"res://Assets/2d/TileSheets/deep_moss.png",
+			"res://Assets/2d/TileSheets/crag_stone.png",
+			"res://Assets/2d/TileSheets/ash_soil.png",
+			"res://Assets/2d/TileSheets/fern_grove.png",
+			"res://Assets/2d/TileSheets/mossy_stone.png",
+			"res://Assets/2d/TileSheets/holy_moss.png",
+			"res://Assets/2d/TileSheets/void_shard.png",
+			"res://Assets/terrain_grass.jpg",
+			"res://Assets/2d/TileSheets/ash_soil.png"
+		};
+
+		var images = new Godot.Collections.Array<Image>();
+		int texWidth = 0;
+		int texHeight = 0;
+		Image.Format format = Image.Format.Rgb8;
+
+		foreach (var path in paths)
+		{
+			var tex = GD.Load<Texture2D>(path);
+			if (tex == null)
+			{
+				tex = GD.Load<Texture2D>("res://Assets/terrain_grass.jpg");
+			}
+
+			if (tex != null)
+			{
+				var img = tex.GetImage();
+				if (texWidth == 0)
+				{
+					texWidth = img.GetWidth();
+					texHeight = img.GetHeight();
+					format = img.GetFormat();
+				}
+				else
+				{
+					if (img.GetWidth() != texWidth || img.GetHeight() != texHeight)
+					{
+						img.Resize(texWidth, texHeight);
+					}
+					if (img.GetFormat() != format)
+					{
+						img.Convert(format);
+					}
+				}
+				images.Add(img);
+			}
+		}
+
+		var textureArray = new Texture2DArray();
+		textureArray.CreateFromImages(images);
+
+		_material = new ShaderMaterial();
+		_material.Shader = shader;
+		_material.SetShaderParameter("terrain_textures", textureArray);
+
 		_meshInstance.MaterialOverride = _material;
 
 		CreateWater();
