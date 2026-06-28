@@ -86,13 +86,16 @@ public partial class MapEditorHUD : Control
 	private Button _btnSmooth;
 	private Button _btnFlatten;
 	private Button _btnCliff;
+	private Button _btnRamp;
+	private Button _btnMirrorMode;
+	private Button _btnClumpBrush;
+	private HSlider _sldClumpDensity;
+	private Label _lblClumpDensityValue;
+	private HSlider _sldClumpScaleVar;
+	private Label _lblClumpScaleVarValue;
 
 	private Button _btnTextureBrush;
 	private Button _btnDecalTool;
-
-	private Button _btnAddUnit;
-	private Button _btnAddProp;
-
 	private Button _btnSelectMove;
 	private PanelContainer _inspectorPanel;
 	private Label _lblInspectorTitle;
@@ -115,6 +118,7 @@ public partial class MapEditorHUD : Control
 	private Camera3D _camera3D;
 	private Button _btnVSCode;
 	private VSCodeMdiWindow _vscodeMdi;
+	private bool _isDraggingSlider = false;
 
 	public override void _Ready()
 	{
@@ -164,12 +168,13 @@ public partial class MapEditorHUD : Control
 		_btnSmooth = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnSmooth");
 		_btnFlatten = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnFlatten");
 		_btnCliff = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnCliff");
+		_btnRamp = new Button();
+		_btnRamp.Name = "BtnRamp";
+		_btnRamp.Set("icon_max_width", 0);
+		GetNode<HBoxContainer>("TopToolbar/PanelTerrain/VBox/Content").AddChild(_btnRamp);
 
 		_btnTextureBrush = GetNode<Button>("TopToolbar/PanelDeco/VBox/Content/BtnTextureBrush");
 		_btnDecalTool = GetNode<Button>("TopToolbar/PanelDeco/VBox/Content/BtnDecalTool");
-
-		_btnAddUnit = GetNode<Button>("TopToolbar/PanelObjects/VBox/Content/BtnAddUnit");
-		_btnAddProp = GetNode<Button>("TopToolbar/PanelObjects/VBox/Content/BtnAddProp");
 
 		_btnSkybox = GetNode<Button>("TopToolbar/PanelEnv/VBox/Content/BtnSkybox");
 
@@ -207,6 +212,101 @@ public partial class MapEditorHUD : Control
 
 		_lblInfoText = GetNode<Label>("RightPillar/VBox/LblInfoText");
 
+		var clumpPalettesVBox = GetNode<VBoxContainer>("PanelEntityPalette/VBox/Content/PalettesVBox");
+		var lblClumpTitle = new Label();
+		lblClumpTitle.Name = "LblClumpTitle";
+		lblClumpTitle.Text = "PROP CLUMPING TOOL";
+		lblClumpTitle.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
+		lblClumpTitle.AddThemeFontSizeOverride("font_size", 11);
+		clumpPalettesVBox.AddChild(lblClumpTitle);
+
+		_btnClumpBrush = new Button();
+		_btnClumpBrush.Name = "BtnClumpBrush";
+		_btnClumpBrush.Set("icon_max_width", 0);
+		clumpPalettesVBox.AddChild(_btnClumpBrush);
+		SetupButton(_btnClumpBrush, "🌲 CLUMP BRUSH", () => TriggerToolSelection(GameHost.EditorTool.PlacePropClump, _btnClumpBrush, "tree"), 13, "Paint multiple props continuously inside the brush area");
+
+		var clumpRightSettingsVBox = GetNode<VBoxContainer>("PanelEntityPalette/VBox/Content/RightSettingsVBox");
+		var densityBox = new VBoxContainer();
+		densityBox.Name = "DensityBox";
+		clumpRightSettingsVBox.AddChild(densityBox);
+
+		var densityHeader = new HBoxContainer();
+		densityBox.AddChild(densityHeader);
+
+		var lblDensityTitle = new Label();
+		lblDensityTitle.Text = "Clump Density";
+		lblDensityTitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		lblDensityTitle.AddThemeFontSizeOverride("font_size", 12);
+		densityHeader.AddChild(lblDensityTitle);
+
+		_lblClumpDensityValue = new Label();
+		_lblClumpDensityValue.Text = "5.0";
+		_lblClumpDensityValue.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_lblClumpDensityValue.HorizontalAlignment = HorizontalAlignment.Right;
+		_lblClumpDensityValue.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		_lblClumpDensityValue.AddThemeFontSizeOverride("font_size", 12);
+		densityHeader.AddChild(_lblClumpDensityValue);
+
+		_sldClumpDensity = new HSlider();
+		_sldClumpDensity.Name = "SldClumpDensity";
+		_sldClumpDensity.MinValue = 1.0;
+		_sldClumpDensity.MaxValue = 20.0;
+		_sldClumpDensity.Step = 1.0;
+		_sldClumpDensity.Value = 5.0;
+		densityBox.AddChild(_sldClumpDensity);
+		_sldClumpDensity.ValueChanged += (val) =>
+		{
+			float fVal = (float)val;
+			_lblClumpDensityValue.Text = fVal.ToString("F0");
+			if (GameHost.Instance != null)
+			{
+				GameHost.Instance.EditorClumpDensity = fVal;
+			}
+		};
+		_sldClumpDensity.DragStarted += () => _isDraggingSlider = true;
+		_sldClumpDensity.DragEnded += (valueChanged) => _isDraggingSlider = false;
+
+		var scaleVarBox = new VBoxContainer();
+		scaleVarBox.Name = "ScaleVarBox";
+		clumpRightSettingsVBox.AddChild(scaleVarBox);
+
+		var scaleVarHeader = new HBoxContainer();
+		scaleVarBox.AddChild(scaleVarHeader);
+
+		var lblScaleVarTitle = new Label();
+		lblScaleVarTitle.Text = "Clump Scale Var";
+		lblScaleVarTitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		lblScaleVarTitle.AddThemeFontSizeOverride("font_size", 12);
+		scaleVarHeader.AddChild(lblScaleVarTitle);
+
+		_lblClumpScaleVarValue = new Label();
+		_lblClumpScaleVarValue.Text = "0.3";
+		_lblClumpScaleVarValue.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_lblClumpScaleVarValue.HorizontalAlignment = HorizontalAlignment.Right;
+		_lblClumpScaleVarValue.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		_lblClumpScaleVarValue.AddThemeFontSizeOverride("font_size", 12);
+		scaleVarHeader.AddChild(_lblClumpScaleVarValue);
+
+		_sldClumpScaleVar = new HSlider();
+		_sldClumpScaleVar.Name = "SldClumpScaleVar";
+		_sldClumpScaleVar.MinValue = 0.0;
+		_sldClumpScaleVar.MaxValue = 1.0;
+		_sldClumpScaleVar.Step = 0.05;
+		_sldClumpScaleVar.Value = 0.3;
+		scaleVarBox.AddChild(_sldClumpScaleVar);
+		_sldClumpScaleVar.ValueChanged += (val) =>
+		{
+			float fVal = (float)val;
+			_lblClumpScaleVarValue.Text = fVal.ToString("F2");
+			if (GameHost.Instance != null)
+			{
+				GameHost.Instance.EditorClumpScaleVar = fVal;
+			}
+		};
+		_sldClumpScaleVar.DragStarted += () => _isDraggingSlider = true;
+		_sldClumpScaleVar.DragEnded += (valueChanged) => _isDraggingSlider = false;
+
 		ApplyThemeStyles();
 		SetupMenuHooks();
 
@@ -240,7 +340,7 @@ public partial class MapEditorHUD : Control
 		_btnImportMinimap.Set("icon_max_width", 0);
 		GetNode<VBoxContainer>("MiddleRightBox").AddChild(_btnImportMinimap);
 		GetNode<VBoxContainer>("MiddleRightBox").MoveChild(_btnImportMinimap, _btnGenerateMap.GetIndex() + 1);
-		SetupButton(_btnImportMinimap, "🗺️ IMPORT MINIMAP", () => ImportTerrainFromMinimapDialog(), 13, "Import terrain elevations, textures, and trees from a minimap image file (F6)");
+		SetupButton(_btnImportMinimap, "🗺️ GEN FROM IMAGE", () => ImportTerrainFromMinimapDialog(), 13, "Import terrain elevations, textures, and trees from a minimap image file (F6)");
 
 		var btnHelp = new Button();
 		btnHelp.Name = "BtnHelp";
@@ -291,6 +391,13 @@ public partial class MapEditorHUD : Control
 				UpdateGridOverlayExternal(GameHost.Instance.EditorGridVisible);
 			}
 		}, 10, "Toggle rendering of the overlay alignment grid lines (V)");
+
+		_btnMirrorMode = new Button();
+		_btnMirrorMode.Name = "BtnMirrorMode";
+		_btnMirrorMode.Set("icon_max_width", 0);
+		rightSettingsVBox.AddChild(_btnMirrorMode);
+		rightSettingsVBox.MoveChild(_btnMirrorMode, chkIndex + 1);
+		SetupButton(_btnMirrorMode, "🪞 MIRROR: NONE", () => CycleMirrorMode(), 10, "Cycle terrain and object mirroring symmetry mode");
 
 		_chkRandomRotation = new CheckBox();
 		_chkRandomRotation.Name = "ChkRandomRotation";
@@ -379,6 +486,8 @@ public partial class MapEditorHUD : Control
 				GameHost.Instance.EditorBlockLevelHeight = fVal;
 			}
 		};
+		_sldBlockStep.DragStarted += () => _isDraggingSlider = true;
+		_sldBlockStep.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
 		var divider = new HSeparator();
 		settingsVBox.AddChild(divider);
@@ -436,6 +545,8 @@ public partial class MapEditorHUD : Control
 				GameHost.Instance.GroundTerrain.WaterHeight = fVal;
 			}
 		};
+		_sldWaterHeight.DragStarted += () => _isDraggingSlider = true;
+		_sldWaterHeight.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
 		_btnBrushShape = new Button();
 		_btnBrushShape.Name = "BtnBrushShape";
@@ -557,7 +668,6 @@ public partial class MapEditorHUD : Control
 
 		GetNode<PanelContainer>("TopToolbar/PanelTerrain").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		GetNode<PanelContainer>("TopToolbar/PanelDeco").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		GetNode<PanelContainer>("TopToolbar/PanelObjects").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		GetNode<PanelContainer>("TopToolbar/PanelEnv").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		GetNode<PanelContainer>("MiddleRightBox/PanelZoom").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		_panelTextures.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel());
@@ -566,7 +676,6 @@ public partial class MapEditorHUD : Control
 		var headers = new string[] {
 			"TopToolbar/PanelTerrain/VBox/HeaderHBox/Title",
 			"TopToolbar/PanelDeco/VBox/HeaderHBox/Title",
-			"TopToolbar/PanelObjects/VBox/HeaderHBox/Title",
 			"TopToolbar/PanelEnv/VBox/HeaderHBox/Title",
 			"MiddleRightBox/PanelZoom/VBox/HeaderHBox/Title",
 			"PanelTextures/VBox/HeaderHBox/Title",
@@ -623,6 +732,7 @@ public partial class MapEditorHUD : Control
 		SetupButton(_btnSmooth, "🌐 Smooth", () => TriggerToolSelection(GameHost.EditorTool.Smooth, _btnSmooth), 11, "Blend and soften steep slopes under the brush (3)");
 		SetupButton(_btnFlatten, "➖ Flatten", () => TriggerToolSelection(GameHost.EditorTool.Flatten, _btnFlatten), 11, "Flatten heights under the brush to target Height slider value (4)");
 		SetupButton(_btnCliff, "⛰️ Cliff", () => TriggerToolSelection(GameHost.EditorTool.Cliff, _btnCliff), 11, "Create terraced cliffs. Hold Shift to sculpt lower level (5)");
+		SetupButton(_btnRamp, "📐 Ramp", () => TriggerToolSelection(GameHost.EditorTool.Ramp, _btnRamp), 11, "Create a ramp between two clicked points (9)");
 
 		SetupButton(_btnTextureBrush, "🖌️ Texture", () => TriggerToolSelection(GameHost.EditorTool.PaintGrass, _btnTextureBrush), 11, "Paint vertex colors onto the terrain using selected texture swatch (6)");
 		SetupButton(_btnDecalTool, "🖼️ Decal", () => {
@@ -630,8 +740,7 @@ public partial class MapEditorHUD : Control
 			ShowFeedback("Decal Placement Tool Selected");
 		}, 11, "Place decorative decals projecting textures onto ground (7)");
 
-		SetupButton(_btnAddUnit, "💂 Add Unit", () => TriggerToolSelection(GameHost.EditorTool.PlaceUnit, _btnAddUnit, "footman"), 11, "Activate the unit placement palette (8)");
-		SetupButton(_btnAddProp, "🌲 Add Prop", () => TriggerToolSelection(GameHost.EditorTool.PlaceProp, _btnAddProp, "tree"), 11, "Activate the prop placement palette (9)");
+
 
 		SetupButton(_btnSkybox, "☀️ Sky / Time", () => {
 			GameHost.Instance?.CycleTimeOfDay();
@@ -647,7 +756,7 @@ public partial class MapEditorHUD : Control
 			ShowFeedback("Camera reset to North & Cycled zoom!");
 		}, 11, "Reset camera rotation to North and cycle zoom presets");
 
-		SetupTextureSwatches();
+		SetupTextureSwatches(true);
 
 		SetupButton(_btnFootman, "💂", () => TriggerToolSelection(GameHost.EditorTool.PlaceUnit, _btnFootman, "footman"), 18, "Place a Footman warrior");
 		SetupButton(_btnArcher, "🏹", () => TriggerToolSelection(GameHost.EditorTool.PlaceUnit, _btnArcher, "archer"), 18, "Place an Archer unit");
@@ -703,6 +812,7 @@ public partial class MapEditorHUD : Control
 		GetNode<Label>("RightPillar/VBox/ObjectToolsTitle").AddThemeColorOverride("font_color", UIStyle.ColorBronze);
 
 		UIStyle.ApplyTitle(_feedbackLabel, "", 24);
+		UpdateMirrorButtonText();
 	}
 
 	private void SetupButton(Button btn, string text, Action onClick, int fontSize = 13, string tooltip = "")
@@ -726,7 +836,7 @@ public partial class MapEditorHUD : Control
 		btn.MouseEntered += () => UIManager.Instance?.PlayHoverSound();
 	}
 
-	private void SetupTextureSwatches()
+	private void SetupTextureSwatches(bool connectEvents = false)
 	{
 		for (int i = 1; i <= 12; i++)
 		{
@@ -786,22 +896,27 @@ public partial class MapEditorHUD : Control
 			swatch.AddThemeStyleboxOverride("pressed", stylePressed);
 
 			swatch.ButtonMask = MouseButtonMask.Left | MouseButtonMask.Right;
-			swatch.GuiInput += (InputEvent @event) =>
+			if (connectEvents)
 			{
-				if (@event is InputEventMouseButton mouseEvent && mouseEvent.Pressed)
+				swatch.GuiInput += (InputEvent @event) =>
 				{
-					if (mouseEvent.ButtonIndex == MouseButton.Left)
+					if (@event is InputEventMouseButton mouseEvent && mouseEvent.Pressed)
 					{
-						UIManager.Instance?.PlayClickSound();
-						SelectTerrainTexture(index, modColor, swatch);
+						if (mouseEvent.ButtonIndex == MouseButton.Left)
+						{
+							UIManager.Instance?.PlayClickSound();
+							SelectTerrainTexture(index, modColor, swatch);
+							swatch.AcceptEvent();
+						}
+						else if (mouseEvent.ButtonIndex == MouseButton.Right)
+						{
+							UIManager.Instance?.PlayClickSound();
+							SelectCliffTexture(index, modColor);
+							swatch.AcceptEvent();
+						}
 					}
-					else if (mouseEvent.ButtonIndex == MouseButton.Right)
-					{
-						UIManager.Instance?.PlayClickSound();
-						SelectCliffTexture(index, modColor);
-					}
-				}
-			};
+				};
+			}
 		}
 		UpdateTextureLabels();
 	}
@@ -917,6 +1032,12 @@ public partial class MapEditorHUD : Control
 			_lblFlattenHeightValue.Text = fVal.ToString("F1") + " m";
 			if (GameHost.Instance != null) GameHost.Instance.EditorFlattenHeight = fVal;
 		};
+		_sldBrushSize.DragStarted += () => _isDraggingSlider = true;
+		_sldBrushSize.DragEnded += (valueChanged) => _isDraggingSlider = false;
+		_sldBrushStrength.DragStarted += () => _isDraggingSlider = true;
+		_sldBrushStrength.DragEnded += (valueChanged) => _isDraggingSlider = false;
+		_sldFlattenHeight.DragStarted += () => _isDraggingSlider = true;
+		_sldFlattenHeight.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
 		_chkSpawnAsEnemy.Toggled += (toggled) =>
 		{
@@ -928,7 +1049,6 @@ public partial class MapEditorHUD : Control
 
 		SetupCollapsible("TopToolbar/PanelTerrain", "VBox/HeaderHBox/BtnCollapse", "VBox/Content");
 		SetupCollapsible("TopToolbar/PanelDeco", "VBox/HeaderHBox/BtnCollapse", "VBox/Content");
-		SetupCollapsible("TopToolbar/PanelObjects", "VBox/HeaderHBox/BtnCollapse", "VBox/Content");
 		SetupCollapsible("TopToolbar/PanelEnv", "VBox/HeaderHBox/BtnCollapse", "VBox/Content");
 		SetupCollapsible("MiddleRightBox/PanelZoom", "VBox/HeaderHBox/BtnCollapse", "VBox/Content");
 		SetupCollapsible("PanelTextures", "VBox/HeaderHBox/BtnCollapse", "VBox/Content");
@@ -965,7 +1085,7 @@ public partial class MapEditorHUD : Control
 			_activeToolButton.RemoveThemeStyleboxOverride("normal");
 			if (_activeToolButton.Name.ToString().StartsWith("Swatch"))
 			{
-				SetupTextureSwatches();
+				SetupTextureSwatches(false);
 			}
 		}
 
@@ -976,6 +1096,10 @@ public partial class MapEditorHUD : Control
 		}
 
 		GameHost.Instance.ActiveEditorTool = tool;
+		if (tool != GameHost.EditorTool.Ramp)
+		{
+			GameHost.Instance.ClearRampStartPosExternal();
+		}
 		GameHost.Instance.ActivePlaceId = placeId;
 		GameHost.Instance.PlaceUnitIsEnemy = _chkSpawnAsEnemy.ButtonPressed;
 
@@ -988,10 +1112,12 @@ public partial class MapEditorHUD : Control
 								tool == GameHost.EditorTool.PaintDirt ||
 								tool == GameHost.EditorTool.PaintRock ||
 								tool == GameHost.EditorTool.PaintSand ||
-								tool == GameHost.EditorTool.Noise;
+								tool == GameHost.EditorTool.Noise ||
+								tool == GameHost.EditorTool.Ramp;
 
 		bool isObjectPlace = tool == GameHost.EditorTool.PlaceUnit ||
 							 tool == GameHost.EditorTool.PlaceProp ||
+							 tool == GameHost.EditorTool.PlacePropClump ||
 							 tool == GameHost.EditorTool.PlaceDecal ||
 							 tool == GameHost.EditorTool.Eyedropper;
 
@@ -1013,6 +1139,9 @@ public partial class MapEditorHUD : Control
 		{
 			case GameHost.EditorTool.Raise:
 				_lblInfoText.Text = "TOOL: Raise Heights\n\nDrag left click on the map ground to elevate terrain. Adjust size and strength in settings.";
+				break;
+			case GameHost.EditorTool.Ramp:
+				_lblInfoText.Text = "TOOL: Ramping\n\nLeft-click once on the terrain to set the Ramp Start Point. Left-click again to set the Ramp End Point. The tool will smoothly interpolate heights between the two points. Press Right-click or Escape to cancel.";
 				break;
 			case GameHost.EditorTool.Lower:
 				_lblInfoText.Text = "TOOL: Lower Heights\n\nDrag left click on the map ground to depress terrain. Adjust size and strength in settings.";
@@ -1038,6 +1167,9 @@ public partial class MapEditorHUD : Control
 				break;
 			case GameHost.EditorTool.PlaceProp:
 				_lblInfoText.Text = $"TOOL: Place Prop\n\nLeft-click on the ground to spawn static decorative object: {placeId.ToUpper()}.";
+				break;
+			case GameHost.EditorTool.PlacePropClump:
+				_lblInfoText.Text = $"TOOL: Clump Brush\n\nDrag left click on the ground to paint clumps of static props: {placeId.ToUpper()} based on Density and Scale Variation settings. Uses texture brush shape (Circle/Square).";
 				break;
 			case GameHost.EditorTool.PlaceDecal:
 				_lblInfoText.Text = "TOOL: Place Decal\n\nLeft-click on the ground to project a decorative decal. Snapping, scaling, and rotation apply.";
@@ -1352,13 +1484,15 @@ public class {mapName} : IMapScript
 			GameHost.EditorTool.PaintDirt => _btnTextureBrush,
 			GameHost.EditorTool.PaintRock => _btnTextureBrush,
 			GameHost.EditorTool.PaintSand => _btnTextureBrush,
-			GameHost.EditorTool.PlaceUnit => _btnAddUnit,
-			GameHost.EditorTool.PlaceProp => _btnAddProp,
+			GameHost.EditorTool.PlaceUnit => _btnFootman,
+			GameHost.EditorTool.PlaceProp => _btnTree,
+			GameHost.EditorTool.PlacePropClump => _btnClumpBrush,
 			GameHost.EditorTool.PlaceDecal => _btnDecalTool,
 			GameHost.EditorTool.DeleteObject => _btnDeleteObject,
 			GameHost.EditorTool.SelectMove => _btnSelectMove,
 			GameHost.EditorTool.Eyedropper => _btnEyedropper,
 			GameHost.EditorTool.Noise => _btnNoise,
+			GameHost.EditorTool.Ramp => _btnRamp,
 			_ => null
 		};
 
@@ -1698,6 +1832,10 @@ public class {mapName} : IMapScript
 
 	public bool IsMouseOverUI(Vector2 mousePos)
 	{
+		if (_isDraggingSlider)
+		{
+			return true;
+		}
 		if (_leftPillar != null && _leftPillar.Visible && mousePos.X < _leftPillar.Size.X)
 		{
 			return true;
@@ -2350,5 +2488,36 @@ public class {mapName} : IMapScript
 		}
 
 		ShowFeedback("Terrain imported from minimap image successfully!");
+	}
+
+	private void CycleMirrorMode()
+	{
+		if (GameHost.Instance == null) return;
+		var current = GameHost.Instance.EditorMirrorMode;
+		var next = current switch
+		{
+			GameHost.MirrorMode.None => GameHost.MirrorMode.Vertical,
+			GameHost.MirrorMode.Vertical => GameHost.MirrorMode.Horizontal,
+			GameHost.MirrorMode.Horizontal => GameHost.MirrorMode.Both,
+			GameHost.MirrorMode.Both => GameHost.MirrorMode.None,
+			_ => GameHost.MirrorMode.None
+		};
+		GameHost.Instance.EditorMirrorMode = next;
+		UpdateMirrorButtonText();
+		ShowFeedback($"Mirroring: {next.ToString().ToUpper()}");
+	}
+
+	public void UpdateMirrorButtonText()
+	{
+		if (_btnMirrorMode == null || GameHost.Instance == null) return;
+		string modeText = GameHost.Instance.EditorMirrorMode switch
+		{
+			GameHost.MirrorMode.None => "🪞 MIRROR: NONE",
+			GameHost.MirrorMode.Vertical => "🪞 MIRROR: VERTICAL",
+			GameHost.MirrorMode.Horizontal => "🪞 MIRROR: HORIZONTAL",
+			GameHost.MirrorMode.Both => "🪞 MIRROR: BOTH",
+			_ => "🪞 MIRROR: NONE"
+		};
+		_btnMirrorMode.Text = modeText;
 	}
 }

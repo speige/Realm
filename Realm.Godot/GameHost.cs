@@ -131,7 +131,9 @@ public partial class GameHost : Node3D, IGameAPI
 		DeleteObject,
 		SelectMove,
 		Eyedropper,
-		Noise
+		Noise,
+		Ramp,
+		PlacePropClump
 	}
 	public EditorTool ActiveEditorTool { get; set; } = EditorTool.None;
 	public string ActivePlaceId { get; set; } = ""; // "footman", "tree", etc.
@@ -146,6 +148,19 @@ public partial class GameHost : Node3D, IGameAPI
 	public float EditorPlacementScale { get; set; } = 1.0f;
 	public bool EditorGridVisible { get; set; } = false;
 	public bool EditorBrushIsSquare { get; set; } = false;
+	public enum MirrorMode
+	{
+		None,
+		Horizontal,
+		Vertical,
+		Both
+	}
+	public MirrorMode EditorMirrorMode { get; set; } = MirrorMode.None;
+	public float EditorClumpDensity { get; set; } = 5.0f;
+	public float EditorClumpScaleVar { get; set; } = 0.3f;
+	private float _clumpSpawnCooldown = 0.0f;
+	private bool _isDrawingClump = false;
+	private List<IEditorAction> _clumpSpawnActionsInSession = new List<IEditorAction>();
 	public bool EditorRandomRotation { get; set; } = false;
 	public bool EditorHasUnsavedChanges { get; set; } = false;
 	public bool EditorBlockMode { get; set; } = false;
@@ -153,6 +168,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private bool _hasBlockTargetHeight = false;
 	private float _activeBlockTargetHeight = 0.0f;
 	private Node _hoveredEditorObject = null;
+	private Vector3? _rampStartPos = null;
 	private float? _activeCliffHeight = null;
 	private float[,] _terrainHeightsBefore;
 	private Color[,] _terrainColorsBefore;
@@ -203,6 +219,8 @@ public partial class GameHost : Node3D, IGameAPI
 	private Vector3 _dragObjectStartRot;
 	private Vector3 _dragObjectStartScale;
 	private bool _dragObjectStartIsEnemy;
+	private Vector3 _dragObjectStartHitPos;
+	private bool _dragObjectHasMoved;
 	private Node3D _editorPreviewNode;
 	private string _editorPreviewType = "";
 	private string _editorPreviewId = "";
@@ -2977,7 +2995,7 @@ public class {mapName} : IMapScript
 		unit3D.IsEnemy = isEnemy;
 		unit3D.Name = $"{id}_{entity.Id}";
 
-		if (!isBuilding)
+		if (!isBuilding && !IsMapEditorMode)
 		{
 			unit3D.CollisionLayer = 0;
 			unit3D.CollisionMask = 0;
@@ -3025,6 +3043,11 @@ public class {mapName} : IMapScript
 
 		if (IsMapEditorMode)
 		{
+			if (_clumpSpawnCooldown > 0.0f)
+			{
+				_clumpSpawnCooldown -= fDelta;
+			}
+
 			var mousePos = GetViewport().GetMousePosition();
 			var hit = RaycastFromMouse(mousePos);
 			if (hit != null && hit.ContainsKey("position"))
@@ -3090,27 +3113,49 @@ public class {mapName} : IMapScript
 
 				if (Input.IsMouseButtonPressed(MouseButton.Left) && !IsMouseOverUI())
 				{
+					if (ActiveEditorTool == EditorTool.PlacePropClump)
+					{
+						if (!_isDrawingClump)
+						{
+							_isDrawingClump = true;
+							_clumpSpawnActionsInSession.Clear();
+						}
+						if (_clumpSpawnCooldown <= 0.0f)
+						{
+							ApplyPropClumpSpawn(hitPos);
+							_clumpSpawnCooldown = 0.15f;
+						}
+					}
+
 					if (ActiveEditorTool == EditorTool.SelectMove && _isDraggingObject && GodotObject.IsInstanceValid(SelectedEditorObject))
 					{
-						var node3D = SelectedEditorObject as Node3D;
-						var dragPos = hitPos;
-						if (EditorSnapToGrid && GroundTerrain != null)
+						if (!_dragObjectHasMoved && hitPos.DistanceTo(_dragObjectStartHitPos) > 0.3f)
 						{
-							float spacing = GroundTerrain.Spacing;
-							int width = GroundTerrain.Width;
-							int depth = GroundTerrain.Depth;
-							float fx = Mathf.Round(dragPos.X / spacing + (width - 1) / 2.0f);
-							dragPos.X = (Mathf.Clamp(fx, 0, width - 1) - (width - 1) / 2.0f) * spacing;
-							float fz = Mathf.Round(dragPos.Z / spacing + (depth - 1) / 2.0f);
-							dragPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * spacing;
+							_dragObjectHasMoved = true;
 						}
-						dragPos.Y = GetTerrainHeightAt(dragPos);
-						node3D.Position = dragPos;
-						if (SelectedEditorObject is Unit3D unit && EcsWorld.IsAlive(unit.Entity))
+
+						if (_dragObjectHasMoved)
 						{
-							EcsWorld.Set(unit.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
+							var node3D = SelectedEditorObject as Node3D;
+							var dragPos = hitPos - (_dragObjectStartHitPos - _dragObjectStartPos);
+							if (EditorSnapToGrid && GroundTerrain != null)
+							{
+								float spacing = GroundTerrain.Spacing;
+								int width = GroundTerrain.Width;
+								int depth = GroundTerrain.Depth;
+								float fx = Mathf.Round(dragPos.X / spacing + (width - 1) / 2.0f);
+								dragPos.X = (Mathf.Clamp(fx, 0, width - 1) - (width - 1) / 2.0f) * spacing;
+								float fz = Mathf.Round(dragPos.Z / spacing + (depth - 1) / 2.0f);
+								dragPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * spacing;
+							}
+							dragPos.Y = GetTerrainHeightAt(dragPos);
+							node3D.Position = dragPos;
+							if (SelectedEditorObject is Unit3D unit && EcsWorld.IsAlive(unit.Entity))
+							{
+								EcsWorld.Set(unit.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
+							}
+							MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 						}
-						MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 					}
 
 					bool isTerrainTool = ActiveEditorTool == EditorTool.Raise ||
@@ -3170,9 +3215,27 @@ public class {mapName} : IMapScript
 							_activeCliffHeight = (Mathf.Floor(startHeight / 4.0f) + 1.0f) * 4.0f;
 					}
 					ApplyContinuousTerrainEditing(hitPos, fDelta);
+					if (EditorMirrorMode != MirrorMode.None)
+					{
+						foreach (var t in GetMirroredTransforms(hitPos, 0.0f))
+						{
+							ApplyContinuousTerrainEditing(t.Position, fDelta);
+						}
+					}
 				}
 				else
 				{
+					if (_isDrawingClump)
+					{
+						_isDrawingClump = false;
+						if (_clumpSpawnActionsInSession.Count > 0)
+						{
+							var composite = new CompositeAction(_clumpSpawnActionsInSession);
+							EditorHistoryManager.RecordAction(composite);
+							EditorHasUnsavedChanges = true;
+						}
+					}
+
 					_activeCliffHeight = null;
 					_hasBlockTargetHeight = false;
 					if (_isDraggingObject)
@@ -3207,7 +3270,17 @@ public class {mapName} : IMapScript
 							var currentColors = (Color[,])GroundTerrain.Colors.Clone();
 							var action = new TerrainModifyAction(_terrainHeightsBefore, currentHeights, _terrainColorsBefore, currentColors);
 							EditorHistoryManager.RecordAction(action);
-							RebuildGridOverlayMeshExternal();
+							bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
+												 ActiveEditorTool == EditorTool.Lower ||
+												 ActiveEditorTool == EditorTool.Flatten ||
+												 ActiveEditorTool == EditorTool.Smooth ||
+												 ActiveEditorTool == EditorTool.Cliff ||
+												 ActiveEditorTool == EditorTool.Noise;
+							if (isHeightsTool)
+							{
+								GroundTerrain.BakeNavMesh();
+								RebuildGridOverlayMeshExternal();
+							}
 							EditorHasUnsavedChanges = true;
 						}
 					}
@@ -3240,6 +3313,16 @@ public class {mapName} : IMapScript
 						}
 					}
 				}
+				if (_isDrawingClump)
+				{
+					_isDrawingClump = false;
+					if (_clumpSpawnActionsInSession.Count > 0)
+					{
+						var composite = new CompositeAction(_clumpSpawnActionsInSession);
+						EditorHistoryManager.RecordAction(composite);
+						EditorHasUnsavedChanges = true;
+					}
+				}
 				if (_isDrawingTerrain)
 				{
 					_isDrawingTerrain = false;
@@ -3249,6 +3332,17 @@ public class {mapName} : IMapScript
 						var currentColors = (Color[,])GroundTerrain.Colors.Clone();
 						var action = new TerrainModifyAction(_terrainHeightsBefore, currentHeights, _terrainColorsBefore, currentColors);
 						EditorHistoryManager.RecordAction(action);
+						bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
+											 ActiveEditorTool == EditorTool.Lower ||
+											 ActiveEditorTool == EditorTool.Flatten ||
+											 ActiveEditorTool == EditorTool.Smooth ||
+											 ActiveEditorTool == EditorTool.Cliff ||
+											 ActiveEditorTool == EditorTool.Noise;
+						if (isHeightsTool)
+						{
+							GroundTerrain.BakeNavMesh();
+							RebuildGridOverlayMeshExternal();
+						}
 						EditorHasUnsavedChanges = true;
 					}
 				}
@@ -4324,6 +4418,13 @@ public class {mapName} : IMapScript
 				
 				if (editorKeyEvent.Keycode == Key.Escape)
 				{
+					if (_rampStartPos != null)
+					{
+						_rampStartPos = null;
+						MapEditorHUD.Instance?.ShowFeedbackExternal("Ramp Cancelled");
+						GetViewport().SetInputAsHandled();
+						return;
+					}
 					if (SelectedEditorObject != null)
 					{
 						SelectedEditorObject = null;
@@ -4668,7 +4769,7 @@ public class {mapName} : IMapScript
 						5 => EditorTool.PaintGrass,
 						6 => EditorTool.PlaceDecal,
 						7 => EditorTool.PlaceUnit,
-						8 => EditorTool.PlaceProp,
+						8 => EditorTool.Ramp,
 						_ => EditorTool.None
 					};
 					if (targetTool != EditorTool.None)
@@ -4810,6 +4911,13 @@ public class {mapName} : IMapScript
 			if (@event is InputEventMouseButton editorRightMouseBtn && editorRightMouseBtn.Pressed && editorRightMouseBtn.ButtonIndex == MouseButton.Right)
 			{
 				if (IsMouseOverUI()) return;
+				if (_rampStartPos != null)
+				{
+					_rampStartPos = null;
+					MapEditorHUD.Instance?.ShowFeedbackExternal("Ramp Cancelled");
+					GetViewport().SetInputAsHandled();
+					return;
+				}
 				if (SelectedEditorObject != null)
 				{
 					SelectedEditorObject = null;
@@ -4852,8 +4960,24 @@ public class {mapName} : IMapScript
 						var unit = SpawnUnitExternal(ActivePlaceId, hitPos, PlaceUnitIsEnemy, placementRot, EditorPlacementScale);
 						if (unit != null)
 						{
-							var action = new ObjectSpawnAction("unit", ActivePlaceId, hitPos, placementRot, EditorPlacementScale, PlaceUnitIsEnemy, unit);
-							EditorHistoryManager.RecordAction(action);
+							var actions = new List<IEditorAction> {
+								new ObjectSpawnAction("unit", ActivePlaceId, hitPos, placementRot, EditorPlacementScale, PlaceUnitIsEnemy, unit)
+							};
+							if (EditorMirrorMode != MirrorMode.None)
+							{
+								foreach (var t in GetMirroredTransforms(hitPos, placementRot))
+								{
+									Vector3 mPos = t.Position;
+									mPos.Y = GetTerrainHeightAt(mPos);
+									var mUnit = SpawnUnitExternal(ActivePlaceId, mPos, PlaceUnitIsEnemy, t.Rotation, EditorPlacementScale);
+									if (mUnit != null)
+									{
+										actions.Add(new ObjectSpawnAction("unit", ActivePlaceId, mPos, t.Rotation, EditorPlacementScale, PlaceUnitIsEnemy, mUnit));
+									}
+								}
+							}
+							var composite = new CompositeAction(actions);
+							EditorHistoryManager.RecordAction(composite);
 							EditorHasUnsavedChanges = true;
 						}
 						GetViewport().SetInputAsHandled();
@@ -4864,8 +4988,24 @@ public class {mapName} : IMapScript
 						var prop = SpawnPropExternalWithParams(ActivePlaceId, hitPos, placementRot, EditorPlacementScale);
 						if (prop != null)
 						{
-							var action = new ObjectSpawnAction("prop", ActivePlaceId, hitPos, placementRot, EditorPlacementScale, false, prop);
-							EditorHistoryManager.RecordAction(action);
+							var actions = new List<IEditorAction> {
+								new ObjectSpawnAction("prop", ActivePlaceId, hitPos, placementRot, EditorPlacementScale, false, prop)
+							};
+							if (EditorMirrorMode != MirrorMode.None)
+							{
+								foreach (var t in GetMirroredTransforms(hitPos, placementRot))
+								{
+									Vector3 mPos = t.Position;
+									mPos.Y = GetTerrainHeightAt(mPos);
+									var mProp = SpawnPropExternalWithParams(ActivePlaceId, mPos, t.Rotation, EditorPlacementScale);
+									if (mProp != null)
+									{
+										actions.Add(new ObjectSpawnAction("prop", ActivePlaceId, mPos, t.Rotation, EditorPlacementScale, false, mProp));
+									}
+								}
+							}
+							var composite = new CompositeAction(actions);
+							EditorHistoryManager.RecordAction(composite);
 							EditorHasUnsavedChanges = true;
 						}
 						GetViewport().SetInputAsHandled();
@@ -4876,8 +5016,24 @@ public class {mapName} : IMapScript
 						var decal = SpawnDecalExternalWithParams(ActivePlaceId, hitPos, placementRot, EditorPlacementScale);
 						if (decal != null)
 						{
-							var action = new ObjectSpawnAction("decal", ActivePlaceId, hitPos, placementRot, EditorPlacementScale, false, decal);
-							EditorHistoryManager.RecordAction(action);
+							var actions = new List<IEditorAction> {
+								new ObjectSpawnAction("decal", ActivePlaceId, hitPos, placementRot, EditorPlacementScale, false, decal)
+							};
+							if (EditorMirrorMode != MirrorMode.None)
+							{
+								foreach (var t in GetMirroredTransforms(hitPos, placementRot))
+								{
+									Vector3 mPos = t.Position;
+									mPos.Y = GetTerrainHeightAt(mPos);
+									var mDecal = SpawnDecalExternalWithParams(ActivePlaceId, mPos, t.Rotation, EditorPlacementScale);
+									if (mDecal != null)
+									{
+										actions.Add(new ObjectSpawnAction("decal", ActivePlaceId, mPos, t.Rotation, EditorPlacementScale, false, mDecal));
+									}
+								}
+							}
+							var composite = new CompositeAction(actions);
+							EditorHistoryManager.RecordAction(composite);
 							EditorHasUnsavedChanges = true;
 						}
 						GetViewport().SetInputAsHandled();
@@ -4888,7 +5044,24 @@ public class {mapName} : IMapScript
 						var action = DeleteObjectAtWithUndo(collider, hitPos);
 						if (action != null)
 						{
-							EditorHistoryManager.RecordAction(action);
+							var actions = new List<IEditorAction> { action };
+							if (EditorMirrorMode != MirrorMode.None)
+							{
+								foreach (var t in GetMirroredTransforms(hitPos, 0.0f))
+								{
+									var nearObj = FindObjectNearPosition(t.Position);
+									if (nearObj != null)
+									{
+										var mAction = DeleteObjectAtWithUndo(nearObj, t.Position);
+										if (mAction != null)
+										{
+											actions.Add(mAction);
+										}
+									}
+								}
+							}
+							var composite = new CompositeAction(actions);
+							EditorHistoryManager.RecordAction(composite);
 							EditorHasUnsavedChanges = true;
 						}
 						GetViewport().SetInputAsHandled();
@@ -5018,10 +5191,51 @@ public class {mapName} : IMapScript
 							_dragObjectStartRot = (SelectedEditorObject as Node3D).RotationDegrees;
 							_dragObjectStartScale = (SelectedEditorObject as Node3D).Scale;
 							_dragObjectStartIsEnemy = (SelectedEditorObject is Unit3D u) ? u.IsEnemy : false;
+							_dragObjectStartHitPos = hitPos;
+							_dragObjectHasMoved = false;
 						}
 						else
 						{
 							SelectedEditorObject = null;
+						}
+						GetViewport().SetInputAsHandled();
+					}
+					else if (ActiveEditorTool == EditorTool.Ramp)
+					{
+						if (_rampStartPos == null)
+						{
+							_rampStartPos = hitPos;
+							MapEditorHUD.Instance?.ShowFeedbackExternal("Ramp Start Point Set!");
+						}
+						else
+						{
+							Vector3 start = _rampStartPos.Value;
+							Vector3 end = hitPos;
+							var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
+							var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
+							bool modified = ApplyRampInternal(start, end);
+							if (EditorMirrorMode != MirrorMode.None)
+							{
+								var startMirrored = GetMirroredTransforms(start, 0.0f);
+								var endMirrored = GetMirroredTransforms(end, 0.0f);
+								for (int i = 0; i < startMirrored.Count; i++)
+								{
+									bool mResult = ApplyRampInternal(startMirrored[i].Position, endMirrored[i].Position);
+									if (mResult) modified = true;
+								}
+							}
+							if (modified)
+							{
+								GroundTerrain.UpdateMeshAndPhysics(true, false);
+								AlignAllEntitiesToTerrain();
+								var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
+								var colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
+								var action = new TerrainModifyAction(heightsBefore, heightsAfter, colorsBefore, colorsAfter);
+								EditorHistoryManager.RecordAction(action);
+								EditorHasUnsavedChanges = true;
+							}
+							_rampStartPos = null;
+							MapEditorHUD.Instance?.ShowFeedbackExternal("Ramp Created!");
 						}
 						GetViewport().SetInputAsHandled();
 					}
@@ -8084,9 +8298,199 @@ public class {mapName} : IMapScript
 							 ActiveEditorTool == EditorTool.PaintGrass ||
 							 ActiveEditorTool == EditorTool.PaintDirt ||
 							 ActiveEditorTool == EditorTool.PaintRock ||
-							 ActiveEditorTool == EditorTool.PaintSand;
+							 ActiveEditorTool == EditorTool.PaintSand ||
+							 ActiveEditorTool == EditorTool.Noise ||
+							 ActiveEditorTool == EditorTool.Ramp ||
+							 ActiveEditorTool == EditorTool.PlacePropClump;
 							 
 		_brushIndicatorMesh.Visible = isTerrainTool;
+	}
+
+	public void ClearRampStartPosExternal()
+	{
+		_rampStartPos = null;
+	}
+
+	public struct MirroredTransform
+	{
+		public Vector3 Position;
+		public float Rotation;
+	}
+
+	public List<MirroredTransform> GetMirroredTransforms(Vector3 pos, float rotation)
+	{
+		var list = new List<MirroredTransform>();
+		if (EditorMirrorMode == MirrorMode.None) return list;
+		if (EditorMirrorMode == MirrorMode.Horizontal || EditorMirrorMode == MirrorMode.Both)
+		{
+			list.Add(new MirroredTransform {
+				Position = new Vector3(-pos.X, pos.Y, pos.Z),
+				Rotation = 180.0f - rotation
+			});
+		}
+		if (EditorMirrorMode == MirrorMode.Vertical || EditorMirrorMode == MirrorMode.Both)
+		{
+			list.Add(new MirroredTransform {
+				Position = new Vector3(pos.X, pos.Y, -pos.Z),
+				Rotation = -rotation
+			});
+		}
+		if (EditorMirrorMode == MirrorMode.Both)
+		{
+			list.Add(new MirroredTransform {
+				Position = new Vector3(-pos.X, pos.Y, -pos.Z),
+				Rotation = rotation + 180.0f
+			});
+		}
+		return list;
+	}
+
+	private Node FindObjectNearPosition(Vector3 position, float searchRadius = 1.5f)
+	{
+		foreach (var child in GetChildren())
+		{
+			if (child is Node3D n3d && GodotObject.IsInstanceValid(n3d))
+			{
+				if (n3d is Unit3D || n3d is Prop3D || n3d is Decal)
+				{
+					float dist = new Vector2(n3d.GlobalPosition.X - position.X, n3d.GlobalPosition.Z - position.Z).Length();
+					if (dist <= searchRadius)
+					{
+						return n3d;
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	private bool ApplyRampInternal(Vector3 start, Vector3 end)
+	{
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+		float spacing = GroundTerrain.Spacing;
+		bool modified = false;
+		for (int z = 0; z < depth; z++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				float vx = (x - (width - 1) / 2.0f) * spacing;
+				float vz = (z - (depth - 1) / 2.0f) * spacing;
+				float ab_len_sqr = (end.X - start.X) * (end.X - start.X) + (end.Z - start.Z) * (end.Z - start.Z);
+				if (ab_len_sqr > 0.0001f)
+				{
+					float t = ((vx - start.X) * (end.X - start.X) + (vz - start.Z) * (end.Z - start.Z)) / ab_len_sqr;
+					t = Mathf.Clamp(t, 0.0f, 1.0f);
+					float proj_x = start.X + t * (end.X - start.X);
+					float proj_z = start.Z + t * (end.Z - start.Z);
+					float dist = Mathf.Sqrt((vx - proj_x) * (vx - proj_x) + (vz - proj_z) * (vz - proj_z));
+					if (dist <= EditorBrushRadius)
+					{
+						float targetHeight = Mathf.Lerp(start.Y, end.Y, t);
+						float falloff = 1.0f - (dist / EditorBrushRadius);
+						falloff = Mathf.Sin(falloff * Mathf.Pi / 2.0f);
+						GroundTerrain.Heights[x, z] = Mathf.Lerp(GroundTerrain.Heights[x, z], targetHeight, falloff);
+						modified = true;
+					}
+				}
+			}
+		}
+		if (modified)
+		{
+			float threshold = EditorBlockMode ? (EditorBlockLevelHeight * 0.5f) : (spacing * 0.5f);
+			for (int z = 0; z < depth; z++)
+			{
+				for (int x = 0; x < width; x++)
+				{
+					float vx = (x - (width - 1) / 2.0f) * spacing;
+					float vz = (z - (depth - 1) / 2.0f) * spacing;
+					float ab_len_sqr = (end.X - start.X) * (end.X - start.X) + (end.Z - start.Z) * (end.Z - start.Z);
+					if (ab_len_sqr > 0.0001f)
+					{
+						float t = ((vx - start.X) * (end.X - start.X) + (vz - start.Z) * (end.Z - start.Z)) / ab_len_sqr;
+						t = Mathf.Clamp(t, 0.0f, 1.0f);
+						float proj_x = start.X + t * (end.X - start.X);
+						float proj_z = start.Z + t * (end.Z - start.Z);
+						float dist = Mathf.Sqrt((vx - proj_x) * (vx - proj_x) + (vz - proj_z) * (vz - proj_z));
+						if (dist <= EditorBrushRadius)
+						{
+							float h = GroundTerrain.Heights[x, z];
+							float hl = GroundTerrain.Heights[Math.Max(0, x - 1), z];
+							float hr = GroundTerrain.Heights[Math.Min(width - 1, x + 1), z];
+							float hd = GroundTerrain.Heights[x, Math.Max(0, z - 1)];
+							float hu = GroundTerrain.Heights[x, Math.Min(depth - 1, z + 1)];
+							float maxDiff = Mathf.Max(
+								Mathf.Max(Mathf.Abs(h - hl), Mathf.Abs(h - hr)),
+								Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
+							);
+							if (maxDiff >= threshold)
+							{
+								GroundTerrain.Colors[x, z] = EditorCliffPaintColor;
+							}
+							else
+							{
+								GroundTerrain.Colors[x, z] = EditorPaintColor;
+							}
+						}
+					}
+				}
+			}
+		}
+		return modified;
+	}
+
+	private void ApplyPropClumpSpawn(Vector3 centerPos)
+	{
+		if (string.IsNullOrEmpty(ActivePlaceId)) return;
+		int spawnCount = Mathf.Max(1, (int)Math.Round(EditorClumpDensity));
+		for (int i = 0; i < spawnCount; i++)
+		{
+			float dx = 0.0f;
+			float dz = 0.0f;
+			if (EditorBrushIsSquare)
+			{
+				dx = (float)(GD.Randf() * 2.0 - 1.0) * EditorBrushRadius;
+				dz = (float)(GD.Randf() * 2.0 - 1.0) * EditorBrushRadius;
+			}
+			else
+			{
+				float r = Mathf.Sqrt((float)GD.Randf()) * EditorBrushRadius;
+				float theta = (float)(GD.Randf() * Mathf.Pi * 2.0);
+				dx = r * Mathf.Cos(theta);
+				dz = r * Mathf.Sin(theta);
+			}
+			Vector3 spawnPos = new Vector3(centerPos.X + dx, centerPos.Y, centerPos.Z + dz);
+			if (GroundTerrain != null)
+			{
+				float spacing = GroundTerrain.Spacing;
+				int width = GroundTerrain.Width;
+				int depth = GroundTerrain.Depth;
+				float halfW = (width - 1) / 2.0f * spacing;
+				float halfD = (depth - 1) / 2.0f * spacing;
+				if (Mathf.Abs(spawnPos.X) > halfW || Mathf.Abs(spawnPos.Z) > halfD) continue;
+			}
+			float scaleVal = EditorPlacementScale + (float)(GD.Randf() * 2.0 - 1.0) * EditorClumpScaleVar;
+			scaleVal = Mathf.Clamp(scaleVal, 0.1f, 10.0f);
+			float rotY = (float)(GD.Randf() * 360.0);
+			var prop = SpawnPropExternalWithParams(ActivePlaceId, spawnPos, rotY, scaleVal);
+			if (prop != null)
+			{
+				_clumpSpawnActionsInSession.Add(new ObjectSpawnAction("prop", ActivePlaceId, spawnPos, rotY, scaleVal, false, prop));
+				if (EditorMirrorMode != MirrorMode.None)
+				{
+					foreach (var t in GetMirroredTransforms(spawnPos, rotY))
+					{
+						Vector3 mPos = t.Position;
+						mPos.Y = GetTerrainHeightAt(mPos);
+						var mProp = SpawnPropExternalWithParams(ActivePlaceId, mPos, t.Rotation, scaleVal);
+						if (mProp != null)
+						{
+							_clumpSpawnActionsInSession.Add(new ObjectSpawnAction("prop", ActivePlaceId, mPos, t.Rotation, scaleVal, false, mProp));
+						}
+					}
+				}
+			}
+		}
 	}
 
 	private void CreateGridOverlay()
@@ -8096,15 +8500,12 @@ public class {mapName} : IMapScript
 		_gridOverlayMesh = new MeshInstance3D();
 		_gridOverlayMesh.Name = "GridOverlay";
 
-		var immediateMesh = new ImmediateMesh();
-		_gridOverlayMesh.Mesh = immediateMesh;
-
 		var mat = new StandardMaterial3D();
-		mat.AlbedoColor = new Color(0.15f, 0.65f, 1.0f, 0.35f);
+		mat.AlbedoColor = new Color(1.0f, 1.0f, 1.0f, 1.0f);
 		mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
 		mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 		mat.NoDepthTest = false;
-		mat.UsePointSize = true;
+		mat.VertexColorUseAsAlbedo = true;
 		_gridOverlayMesh.MaterialOverride = mat;
 
 		AddChild(_gridOverlayMesh);
@@ -8119,50 +8520,103 @@ public class {mapName} : IMapScript
 	private void RebuildGridOverlayMesh()
 	{
 		if (_gridOverlayMesh == null || GroundTerrain == null) return;
-
-		var immediateMesh = _gridOverlayMesh.Mesh as ImmediateMesh;
-		if (immediateMesh == null) return;
-
-		immediateMesh.ClearSurfaces();
-		immediateMesh.SurfaceBegin(Mesh.PrimitiveType.Lines);
+		if (!EditorGridVisible) return;
 
 		int width = GroundTerrain.Width;
 		int depth = GroundTerrain.Depth;
 		float spacing = GroundTerrain.Spacing;
 
+		int totalVertices = 0;
 		for (int z = 0; z < depth; z++)
 		{
+			bool isThick = (z % 10 == 0);
+			totalVertices += (width - 1) * (isThick ? 6 : 2);
+		}
+		for (int x = 0; x < width; x++)
+		{
+			bool isThick = (x % 10 == 0);
+			totalVertices += (depth - 1) * (isThick ? 6 : 2);
+		}
+
+		var vertices = new Vector3[totalVertices];
+		var colors = new Color[totalVertices];
+		int idx = 0;
+
+		Color thickColor = new Color(1.0f, 0.9f, 0.0f, 0.85f);
+		Color thinColor = new Color(1.0f, 0.9f, 0.0f, 0.25f);
+
+		void AddLine(Vector3 p1, Vector3 p2, Color color, bool thick, bool isVertical)
+		{
+			vertices[idx] = p1;
+			colors[idx] = color;
+			idx++;
+			vertices[idx] = p2;
+			colors[idx] = color;
+			idx++;
+
+			if (thick)
+			{
+				float offset = 0.04f;
+				Vector3 o = isVertical ? new Vector3(offset, 0, 0) : new Vector3(0, 0, offset);
+				
+				vertices[idx] = p1 + o;
+				colors[idx] = color;
+				idx++;
+				vertices[idx] = p2 + o;
+				colors[idx] = color;
+				idx++;
+
+				vertices[idx] = p1 - o;
+				colors[idx] = color;
+				idx++;
+				vertices[idx] = p2 - o;
+				colors[idx] = color;
+				idx++;
+			}
+		}
+
+		for (int z = 0; z < depth; z++)
+		{
+			bool isThick = (z % 10 == 0);
+			Color col = isThick ? thickColor : thinColor;
 			float lz = (z - (depth - 1) / 2.0f) * spacing;
 			for (int x = 0; x < width - 1; x++)
 			{
 				float lx1 = (x - (width - 1) / 2.0f) * spacing;
 				float lx2 = (x + 1 - (width - 1) / 2.0f) * spacing;
 
-				float y1 = GroundTerrain.Heights[x, z] + 0.05f;
-				float y2 = GroundTerrain.Heights[x + 1, z] + 0.05f;
+				float y1 = GroundTerrain.Heights[x, z] + 0.15f;
+				float y2 = GroundTerrain.Heights[x + 1, z] + 0.15f;
 
-				immediateMesh.SurfaceAddVertex(new Vector3(lx1, y1, lz));
-				immediateMesh.SurfaceAddVertex(new Vector3(lx2, y2, lz));
+				AddLine(new Vector3(lx1, y1, lz), new Vector3(lx2, y2, lz), col, isThick, false);
 			}
 		}
 
 		for (int x = 0; x < width; x++)
 		{
+			bool isThick = (x % 10 == 0);
+			Color col = isThick ? thickColor : thinColor;
 			float lx = (x - (width - 1) / 2.0f) * spacing;
 			for (int z = 0; z < depth - 1; z++)
 			{
 				float lz1 = (z - (depth - 1) / 2.0f) * spacing;
 				float lz2 = (z + 1 - (depth - 1) / 2.0f) * spacing;
 
-				float y1 = GroundTerrain.Heights[x, z] + 0.05f;
-				float y2 = GroundTerrain.Heights[x, z + 1] + 0.05f;
+				float y1 = GroundTerrain.Heights[x, z] + 0.15f;
+				float y2 = GroundTerrain.Heights[x, z + 1] + 0.15f;
 
-				immediateMesh.SurfaceAddVertex(new Vector3(lx, y1, lz1));
-				immediateMesh.SurfaceAddVertex(new Vector3(lx, y2, lz2));
+				AddLine(new Vector3(lx, y1, lz1), new Vector3(lx, y2, lz2), col, isThick, true);
 			}
 		}
 
-		immediateMesh.SurfaceEnd();
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+		arrays[(int)Mesh.ArrayType.Color] = colors;
+
+		var arrayMesh = new ArrayMesh();
+		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Lines, arrays);
+		_gridOverlayMesh.Mesh = arrayMesh;
 	}
 
 	public void UpdateGridOverlayVisibility()
@@ -8194,7 +8648,7 @@ public class {mapName} : IMapScript
 			}
 		}
 		
-		GroundTerrain.UpdateMeshAndPhysics();
+		GroundTerrain.UpdateMeshAndPhysics(false);
 		
 		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
 		var colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
@@ -8242,7 +8696,7 @@ public class {mapName} : IMapScript
 			}
 		}
 		
-		GroundTerrain.UpdateMeshAndPhysics();
+		GroundTerrain.UpdateMeshAndPhysics(true, true);
 		EditorHistoryManager.Clear();
 		RebuildGridOverlayMeshExternal();
 		
@@ -8425,7 +8879,19 @@ public class {mapName} : IMapScript
 							
 							if (inBounds)
 							{
-								GroundTerrain.Colors[x, z] = GroundTerrain.Colors[x, z].Lerp(paintColor, EditorBrushStrength * delta * 5.0f);
+								float h = GroundTerrain.Heights[x, z];
+								float hl = GroundTerrain.Heights[Math.Max(0, x - 1), z];
+								float hr = GroundTerrain.Heights[Math.Min(width - 1, x + 1), z];
+								float hd = GroundTerrain.Heights[x, Math.Max(0, z - 1)];
+								float hu = GroundTerrain.Heights[x, Math.Min(depth - 1, z + 1)];
+								
+								float maxDiff = Mathf.Max(
+									Mathf.Max(Mathf.Abs(h - hl), Mathf.Abs(h - hr)),
+									Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
+								);
+								
+								Color targetColor = (maxDiff >= EditorBlockLevelHeight * 0.5f) ? EditorCliffPaintColor : EditorPaintColor;
+								GroundTerrain.Colors[x, z] = GroundTerrain.Colors[x, z].Lerp(targetColor, EditorBrushStrength * delta * 5.0f);
 								modified = true;
 							}
 						}
@@ -8435,8 +8901,11 @@ public class {mapName} : IMapScript
 			
 			if (modified)
 			{
-				GroundTerrain.UpdateMeshAndPhysics();
-				AlignAllEntitiesToTerrain();
+				GroundTerrain.UpdateMeshAndPhysics(isHeights, false);
+				if (isHeights)
+				{
+					AlignAllEntitiesToTerrain();
+				}
 				EditorHasUnsavedChanges = true;
 			}
 			return;
@@ -8517,7 +8986,19 @@ public class {mapName} : IMapScript
 					}
 					else if (isPaint)
 					{
-						GroundTerrain.Colors[x, z] = GroundTerrain.Colors[x, z].Lerp(paintColor, EditorBrushStrength * falloff * delta * 3.0f);
+						float h = GroundTerrain.Heights[x, z];
+						float hl = GroundTerrain.Heights[Math.Max(0, x - 1), z];
+						float hr = GroundTerrain.Heights[Math.Min(width - 1, x + 1), z];
+						float hd = GroundTerrain.Heights[x, Math.Max(0, z - 1)];
+						float hu = GroundTerrain.Heights[x, Math.Min(depth - 1, z + 1)];
+						
+						float maxDiff = Mathf.Max(
+							Mathf.Max(Mathf.Abs(h - hl), Mathf.Abs(h - hr)),
+							Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
+						);
+						
+						Color targetColor = (maxDiff >= spacing * 0.5f) ? EditorCliffPaintColor : EditorPaintColor;
+						GroundTerrain.Colors[x, z] = GroundTerrain.Colors[x, z].Lerp(targetColor, EditorBrushStrength * falloff * delta * 3.0f);
 						modified = true;
 					}
 				}
@@ -8526,10 +9007,13 @@ public class {mapName} : IMapScript
 		
 		if (modified)
 		{
-			GroundTerrain.UpdateMeshAndPhysics();
+			GroundTerrain.UpdateMeshAndPhysics(isHeights, false);
 			
-			// Auto-align units/props within editing area to the new heights
-			AlignAllEntitiesToTerrain();
+			if (isHeights)
+			{
+				// Auto-align units/props within editing area to the new heights
+				AlignAllEntitiesToTerrain();
+			}
 			EditorHasUnsavedChanges = true;
 		}
 	}
@@ -9138,8 +9622,34 @@ public class {mapName} : IMapScript
 			SelectedEditorObject = null;
 		}
 		var unit = FindUnit3DInParentChain(collider);
+		if (unit == null)
+		{
+			Unit3D closestUnit = null;
+			float closestUnitDist = 2.0f;
+			foreach (var u in AllUnits)
+			{
+				if (GodotObject.IsInstanceValid(u))
+				{
+					float d = u.Position.DistanceTo(hitPos);
+					if (d < closestUnitDist)
+					{
+						closestUnitDist = d;
+						closestUnit = u;
+					}
+				}
+			}
+			if (closestUnit != null)
+			{
+				unit = closestUnit;
+			}
+		}
+
 		if (unit != null)
 		{
+			if (unit == _selectedEditorObject)
+			{
+				SelectedEditorObject = null;
+			}
 			var action = new ObjectDeleteAction("unit", unit.UnitId, unit.Position, unit.RotationDegrees.Y, unit.Scale.X, unit.IsEnemy, unit);
 			SelectedUnits.Remove(unit);
 			AllUnits.Remove(unit);
@@ -9151,16 +9661,49 @@ public class {mapName} : IMapScript
 			return action;
 		}
 		
+		Prop3D prop = null;
 		Node current = collider;
 		while (current != null && current != this)
 		{
-			if (current is Prop3D prop)
+			if (current is Prop3D p)
 			{
-				var action = new ObjectDeleteAction("prop", prop.PropId, prop.Position, prop.RotationDegrees.Y, prop.Scale.X, false, prop);
-				prop.QueueFree();
-				return action;
+				prop = p;
+				break;
 			}
 			current = current.GetParent();
+		}
+
+		if (prop == null)
+		{
+			Prop3D closestProp = null;
+			float closestPropDist = 2.0f;
+			foreach (var child in GetChildren())
+			{
+				if (child is Prop3D p && GodotObject.IsInstanceValid(p))
+				{
+					float d = p.Position.DistanceTo(hitPos);
+					if (d < closestPropDist)
+					{
+						closestPropDist = d;
+						closestProp = p;
+					}
+				}
+			}
+			if (closestProp != null)
+			{
+				prop = closestProp;
+			}
+		}
+
+		if (prop != null)
+		{
+			if (prop == _selectedEditorObject)
+			{
+				SelectedEditorObject = null;
+			}
+			var action = new ObjectDeleteAction("prop", prop.PropId, prop.Position, prop.RotationDegrees.Y, prop.Scale.X, false, prop);
+			prop.QueueFree();
+			return action;
 		}
 
 		Decal closestDecal = null;
@@ -9179,6 +9722,10 @@ public class {mapName} : IMapScript
 		}
 		if (closestDecal != null)
 		{
+			if (closestDecal == _selectedEditorObject)
+			{
+				SelectedEditorObject = null;
+			}
 			var action = new ObjectDeleteAction("decal", "", closestDecal.Position, closestDecal.RotationDegrees.Y, closestDecal.Scale.X, false, closestDecal);
 			closestDecal.QueueFree();
 			return action;

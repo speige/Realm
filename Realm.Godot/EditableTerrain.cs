@@ -127,7 +127,7 @@ const vec3 SWATCH_COLORS[12] = vec3[](
 	vec3(0.12, 0.48, 0.18),  // 8 (Mossy Stone)
 	vec3(0.7, 0.55, 0.35),   // 9 (Holy Moss)
 	vec3(0.85, 0.75, 0.5),   // 10 (Void Shard)
-	vec3(0.2, 0.6, 0.2),     // 11 (Fallback Grass)
+	vec3(0.45, 0.55, 0.65),  // 11 (Fallback Grass)
 	vec3(0.6, 0.3, 0.15)     // 12 (Fallback Dirt)
 );
 
@@ -136,21 +136,30 @@ void vertex() {
 }
 
 void fragment() {
-	int closest_idx = 0;
-	float min_dist = 99999.0;
+	int first_idx = 0;
+	int second_idx = 0;
+	float first_dist = 99999.0;
+	float second_dist = 99999.0;
 	for (int i = 0; i < 12; i++) {
 		float dist = distance(v_color, SWATCH_COLORS[i]);
-		if (dist < min_dist) {
-			min_dist = dist;
-			closest_idx = i;
+		if (dist < first_dist) {
+			second_dist = first_dist;
+			second_idx = first_idx;
+			first_dist = dist;
+			first_idx = i;
+		} else if (dist < second_dist) {
+			second_dist = dist;
+			second_idx = i;
 		}
 	}
-	
-	// Sample from the texture array
-	vec3 uvw = vec3(UV, float(closest_idx));
-	vec4 tex_color = texture(terrain_textures, uvw);
-	
-	ALBEDO = tex_color.rgb;
+	vec4 tex_color1 = texture(terrain_textures, vec3(UV, float(first_idx)));
+	vec4 tex_color2 = texture(terrain_textures, vec3(UV, float(second_idx)));
+	float t = 0.0;
+	float total_dist = first_dist + second_dist;
+	if (total_dist > 0.0001) {
+		t = first_dist / total_dist;
+	}
+	ALBEDO = mix(tex_color1.rgb, tex_color2.rgb, t);
 	ROUGHNESS = 0.9;
 }
 ";
@@ -221,7 +230,7 @@ void fragment() {
 		UpdateMeshAndPhysics();
 	}
 
-	public void UpdateMeshAndPhysics()
+	public void UpdateMeshAndPhysics(bool rebuildPhysics = true, bool rebuildNavMesh = true)
 	{
 		// 1. Rebuild ArrayMesh surface
 		int vertexCount = Width * Depth;
@@ -298,6 +307,8 @@ void fragment() {
 		_arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
 		_meshInstance.Mesh = _arrayMesh;
 
+		if (!rebuildPhysics) return;
+
 		// 2. Rebuild Collision Shape
 		var heightMapShape = new HeightMapShape3D();
 		heightMapShape.MapWidth = Width;
@@ -314,7 +325,13 @@ void fragment() {
 		heightMapShape.MapData = mapData;
 		_collisionShape.Shape = heightMapShape;
 		_collisionShape.Scale = new Vector3(Spacing, 1.0f, Spacing);
-		BakeNavMesh();
+		if (rebuildNavMesh)
+		{
+			if (GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode)
+			{
+				BakeNavMesh();
+			}
+		}
 	}
 
 	public void BakeNavMesh()
