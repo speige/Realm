@@ -51,7 +51,14 @@ public partial class MapEditorHUD : Control
 	private Button _btnGoldMine;
 	private Button _btnPillar;
 	private Button _btnFlag;
+
+	private Button _btnChars;
+	private Button _btnBuilds;
+	private Button _btnEnv;
+	private Button _btnProps;
+	private Button _btnDecals;
 	private CheckBox _chkRandomRotation;
+	private CheckBox _chkRandomScale;
 	private CheckBox _chkBlockMode;
 	private Slider _sldBlockStep;
 	private Label _lblBlockStepValue;
@@ -78,9 +85,23 @@ public partial class MapEditorHUD : Control
 	private int _genDecoDensity = 5;
 	private string _genSeed = "";
 	private Button _btnEyedropper;
+	private OptionButton _optEyedropperMode;
 	private Button _btnNoise;
+	private PanelContainer _minimapFrame;
+	private Control _minimapArea;
+	private ReferenceRect _cameraIndicator;
 
 	private Button _btnSkybox;
+	private OptionButton _optSkybox;
+	private List<string> _skyboxFiles = new List<string>();
+
+	private string _currentCategory = "Characters";
+	private List<string> _categoryFiles = new List<string>();
+	private OptionButton _optCategoryItems;
+
+	private string[] _swatchPaths = new string[12];
+	private string[] _swatchDisplayNames = new string[12];
+	private Color[] _swatchColors = new Color[12];
 
 	private Button _btnRaise;
 	private Button _btnLower;
@@ -117,6 +138,12 @@ public partial class MapEditorHUD : Control
 	private Label _lblInfoText;
 	private Label _lblTerrainTexture;
 	private Label _lblCliffTexture;
+
+	private Button _btnToggleCameraBounds;
+	private Label _lblCamLeftVal;
+	private Label _lblCamRightVal;
+	private Label _lblCamTopVal;
+	private Label _lblCamBottomVal;
 
 	private Camera3D _camera3D;
 	private Button _btnVSCode;
@@ -193,33 +220,123 @@ public partial class MapEditorHUD : Control
 		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnSelectArea);
 
 		_btnSkybox = GetNode<Button>("TopToolbar/PanelEnv/VBox/Content/BtnSkybox");
+		if (_btnSkybox != null)
+		{
+			_btnSkybox.Visible = false;
+		}
 
-		_btnFootman = GetNode<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid/BtnFootman");
-		_btnArcher = GetNode<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid/BtnArcher");
-		_btnCastle = GetNode<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid/BtnCastle");
-		_btnTower = GetNode<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid/BtnTower");
+		_optSkybox = new OptionButton();
+		_optSkybox.Name = "OptSkybox";
+		_optSkybox.CustomMinimumSize = new Vector2(160, 30);
+		var envContent = GetNode<HBoxContainer>("TopToolbar/PanelEnv/VBox/Content");
+		envContent.AddChild(_optSkybox);
 
-		var unitsGrid = _btnFootman.GetParent<GridContainer>();
-		var btnWorker = new Button();
-		btnWorker.Name = "BtnWorker";
-		btnWorker.Set("icon_max_width", 0);
-		btnWorker.CustomMinimumSize = new Vector2(42, 42);
-		unitsGrid.AddChild(btnWorker);
-		SetupButton(btnWorker, "👷", () => TriggerToolSelection(GameHost.EditorTool.PlaceUnit, btnWorker, "worker"), 18, "Place a Peon Worker");
+		_skyboxFiles.Clear();
+		using (var dir = DirAccess.Open("res://Assets/Skyboxes"))
+		{
+			if (dir != null)
+			{
+				dir.ListDirBegin();
+				string fileName = dir.GetNext();
+				while (fileName != "")
+				{
+					if (!dir.CurrentIsDir() && !fileName.EndsWith(".import") && 
+						(fileName.EndsWith(".png") || fileName.EndsWith(".jpg") || fileName.EndsWith(".jpeg")))
+					{
+						_skyboxFiles.Add(fileName);
+					}
+					fileName = dir.GetNext();
+				}
+			}
+		}
 
-		var btnPriest = new Button();
-		btnPriest.Name = "BtnPriest";
-		btnPriest.Set("icon_max_width", 0);
-		btnPriest.CustomMinimumSize = new Vector2(42, 42);
-		unitsGrid.AddChild(btnPriest);
-		SetupButton(btnPriest, "🧙", () => TriggerToolSelection(GameHost.EditorTool.PlaceUnit, btnPriest, "priest"), 18, "Place a Cleric Priest");
+		_skyboxFiles.Sort();
+
+		foreach (var file in _skyboxFiles)
+		{
+			string cleanName = System.IO.Path.GetFileNameWithoutExtension(file).Replace("_", " ");
+			cleanName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(cleanName);
+			_optSkybox.AddItem(cleanName);
+		}
+
+		_optSkybox.ItemSelected += (index) =>
+		{
+			if (index >= 0 && index < _skyboxFiles.Count && GameHost.Instance != null)
+			{
+				string selectedFile = _skyboxFiles[(int)index];
+				string path = $"res://Assets/Skyboxes/{selectedFile}";
+				GameHost.Instance.SetSkyboxTexture(path);
+				ShowFeedback($"Skybox environment set to: {_optSkybox.GetItemText((int)index)}");
+			}
+		};
+
+		_btnFootman = GetNodeOrNull<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid/BtnFootman");
+		_btnArcher = GetNodeOrNull<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid/BtnArcher");
+		_btnCastle = GetNodeOrNull<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid/BtnCastle");
+		_btnTower = GetNodeOrNull<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid/BtnTower");
+		_btnTree = GetNodeOrNull<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid/BtnTree");
+		_btnPropRock = GetNodeOrNull<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid/BtnPropRock");
+		_btnGoldMine = GetNodeOrNull<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid/BtnGoldMine");
+		_btnPillar = GetNodeOrNull<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid/BtnPillar");
+		_btnFlag = GetNodeOrNull<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid/BtnFlag");
+
+		var unitsGrid = GetNodeOrNull<GridContainer>("PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid");
+		if (unitsGrid != null) unitsGrid.Visible = false;
+		var propsGrid = GetNodeOrNull<GridContainer>("PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid");
+		if (propsGrid != null) propsGrid.Visible = false;
+
 		_chkSpawnAsEnemy = GetNode<CheckBox>("PanelEntityPalette/VBox/Content/RightSettingsVBox/ChkSpawnAsEnemy");
 
-		_btnTree = GetNode<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid/BtnTree");
-		_btnPropRock = GetNode<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid/BtnPropRock");
-		_btnGoldMine = GetNode<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid/BtnGoldMine");
-		_btnPillar = GetNode<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid/BtnPillar");
-		_btnFlag = GetNode<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/PropsGrid/BtnFlag");
+		var palettesVBox = GetNode<VBoxContainer>("PanelEntityPalette/VBox/Content/PalettesVBox");
+		foreach (Node child in palettesVBox.GetChildren())
+		{
+			if (child is Label lbl && (lbl.Text.Contains("PALETTE") || lbl.Text.Contains("UNITS") || lbl.Text.Contains("PROPS")))
+			{
+				lbl.Visible = false;
+			}
+		}
+
+		var categoryGrid = new GridContainer();
+		categoryGrid.Columns = 2;
+		categoryGrid.AddThemeConstantOverride("h_separation", 6);
+		categoryGrid.AddThemeConstantOverride("v_separation", 6);
+		palettesVBox.AddChild(categoryGrid);
+		palettesVBox.MoveChild(categoryGrid, 0);
+
+		_optCategoryItems = new OptionButton();
+		_optCategoryItems.Name = "OptCategoryItems";
+		_optCategoryItems.CustomMinimumSize = new Vector2(180, 30);
+		palettesVBox.AddChild(_optCategoryItems);
+		palettesVBox.MoveChild(_optCategoryItems, 1);
+
+		_optCategoryItems.ItemSelected += (index) => SelectCategoryItem((int)index);
+
+		_btnChars = new Button();
+		_btnChars.Set("icon_max_width", 0);
+		SetupButton(_btnChars, "👤 Characters", () => SelectCategory("Characters"), 12, "Select Characters category");
+		categoryGrid.AddChild(_btnChars);
+
+		_btnBuilds = new Button();
+		_btnBuilds.Set("icon_max_width", 0);
+		SetupButton(_btnBuilds, "🏢 Buildings", () => SelectCategory("Buildings"), 12, "Select Buildings category");
+		categoryGrid.AddChild(_btnBuilds);
+
+		_btnEnv = new Button();
+		_btnEnv.Set("icon_max_width", 0);
+		SetupButton(_btnEnv, "🌳 Environment", () => SelectCategory("Environment"), 12, "Select Environment category");
+		categoryGrid.AddChild(_btnEnv);
+
+		_btnProps = new Button();
+		_btnProps.Set("icon_max_width", 0);
+		SetupButton(_btnProps, "📦 Props", () => SelectCategory("Props"), 12, "Select Props category");
+		categoryGrid.AddChild(_btnProps);
+
+		_btnDecals = new Button();
+		_btnDecals.Set("icon_max_width", 0);
+		SetupButton(_btnDecals, "🎨 Decals", () => SelectCategory("Decals"), 12, "Select Decals category");
+		categoryGrid.AddChild(_btnDecals);
+
+		SelectCategory("Characters");
 
 		_btnToggleRotate = GetNode<Button>("PanelEntityPalette/VBox/Content/RightSettingsVBox/BtnToggleRotate");
 		_btnToggleScale = GetNode<Button>("PanelEntityPalette/VBox/Content/RightSettingsVBox/BtnToggleScale");
@@ -430,6 +547,163 @@ public partial class MapEditorHUD : Control
 			}
 		};
 
+		_chkRandomScale = new CheckBox();
+		_chkRandomScale.Name = "ChkRandomScale";
+		_chkRandomScale.Text = "📏 Random Scale";
+		_chkRandomScale.TooltipText = "Randomize the placement scale for props";
+		UIStyle.ApplyCheckboxStyle(_chkRandomScale);
+		rightSettingsVBox.AddChild(_chkRandomScale);
+		rightSettingsVBox.MoveChild(_chkRandomScale, chkIndex + 1);
+		_chkRandomScale.Toggled += (toggled) =>
+		{
+			if (GameHost.Instance != null)
+			{
+				GameHost.Instance.EditorRandomScale = toggled;
+			}
+		};
+
+		_btnToggleCameraBounds = new Button();
+		_btnToggleCameraBounds.Name = "BtnToggleCameraBounds";
+		_btnToggleCameraBounds.Set("icon_max_width", 0);
+		rightSettingsVBox.AddChild(_btnToggleCameraBounds);
+		rightSettingsVBox.MoveChild(_btnToggleCameraBounds, chkIndex + 1);
+		SetupButton(_btnToggleCameraBounds, "📹 CAM BOUNDS: OFF", () =>
+		{
+			if (GameHost.Instance != null)
+			{
+				GameHost.Instance.EditorCameraBoundsVisible = !GameHost.Instance.EditorCameraBoundsVisible;
+				GameHost.Instance.UpdateCameraBoundsOverlayVisibility();
+				UpdateCameraBoundsOverlayExternal(GameHost.Instance.EditorCameraBoundsVisible);
+			}
+		}, 10, "Toggle rendering of the camera bounds overlay");
+
+		var camBoundsBox = new VBoxContainer();
+		camBoundsBox.Name = "CamBoundsBox";
+		rightSettingsVBox.AddChild(camBoundsBox);
+		rightSettingsVBox.MoveChild(camBoundsBox, chkIndex + 2);
+
+		var lblCamBoundsTitle = new Label();
+		lblCamBoundsTitle.Text = "📹 ADJUST CAMERA BOUNDS";
+		lblCamBoundsTitle.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
+		lblCamBoundsTitle.AddThemeFontSizeOverride("font_size", 11);
+		camBoundsBox.AddChild(lblCamBoundsTitle);
+
+		var adjustGrid = new GridContainer();
+		adjustGrid.Columns = 3;
+		adjustGrid.AddThemeConstantOverride("h_separation", 6);
+		adjustGrid.AddThemeConstantOverride("v_separation", 4);
+		camBoundsBox.AddChild(adjustGrid);
+
+		_lblCamLeftVal = new Label();
+		_lblCamLeftVal.AddThemeFontSizeOverride("font_size", 11);
+		_lblCamLeftVal.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		adjustGrid.AddChild(_lblCamLeftVal);
+
+		var btnLeftDec = new Button();
+		btnLeftDec.Set("icon_max_width", 0);
+		SetupButton(btnLeftDec, "⬅️", () => {
+			if (GameHost.Instance != null) {
+				GameHost.Instance.EditorCameraBoundsLeft -= 5.0f;
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
+		}, 10, "Move Left boundary further left (West)");
+		adjustGrid.AddChild(btnLeftDec);
+
+		var btnLeftInc = new Button();
+		btnLeftInc.Set("icon_max_width", 0);
+		SetupButton(btnLeftInc, "➡️", () => {
+			if (GameHost.Instance != null) {
+				GameHost.Instance.EditorCameraBoundsLeft += 5.0f;
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
+		}, 10, "Move Left boundary further right (East)");
+		adjustGrid.AddChild(btnLeftInc);
+
+		_lblCamRightVal = new Label();
+		_lblCamRightVal.AddThemeFontSizeOverride("font_size", 11);
+		_lblCamRightVal.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		adjustGrid.AddChild(_lblCamRightVal);
+
+		var btnRightDec = new Button();
+		btnRightDec.Set("icon_max_width", 0);
+		SetupButton(btnRightDec, "⬅️", () => {
+			if (GameHost.Instance != null) {
+				GameHost.Instance.EditorCameraBoundsRight -= 5.0f;
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
+		}, 10, "Move Right boundary further left (West)");
+		adjustGrid.AddChild(btnRightDec);
+
+		var btnRightInc = new Button();
+		btnRightInc.Set("icon_max_width", 0);
+		SetupButton(btnRightInc, "➡️", () => {
+			if (GameHost.Instance != null) {
+				GameHost.Instance.EditorCameraBoundsRight += 5.0f;
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
+		}, 10, "Move Right boundary further right (East)");
+		adjustGrid.AddChild(btnRightInc);
+
+		_lblCamTopVal = new Label();
+		_lblCamTopVal.AddThemeFontSizeOverride("font_size", 11);
+		_lblCamTopVal.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		adjustGrid.AddChild(_lblCamTopVal);
+
+		var btnTopDec = new Button();
+		btnTopDec.Set("icon_max_width", 0);
+		SetupButton(btnTopDec, "⬆️", () => {
+			if (GameHost.Instance != null) {
+				GameHost.Instance.EditorCameraBoundsTop -= 5.0f;
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
+		}, 10, "Move Top boundary further North (Up)");
+		adjustGrid.AddChild(btnTopDec);
+
+		var btnTopInc = new Button();
+		btnTopInc.Set("icon_max_width", 0);
+		SetupButton(btnTopInc, "⬇️", () => {
+			if (GameHost.Instance != null) {
+				GameHost.Instance.EditorCameraBoundsTop += 5.0f;
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
+		}, 10, "Move Top boundary further South (Down)");
+		adjustGrid.AddChild(btnTopInc);
+
+		_lblCamBottomVal = new Label();
+		_lblCamBottomVal.AddThemeFontSizeOverride("font_size", 11);
+		_lblCamBottomVal.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		adjustGrid.AddChild(_lblCamBottomVal);
+
+		var btnBottomDec = new Button();
+		btnBottomDec.Set("icon_max_width", 0);
+		SetupButton(btnBottomDec, "⬆️", () => {
+			if (GameHost.Instance != null) {
+				GameHost.Instance.EditorCameraBoundsBottom -= 5.0f;
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
+		}, 10, "Move Bottom boundary further North (Up)");
+		adjustGrid.AddChild(btnBottomDec);
+
+		var btnBottomInc = new Button();
+		btnBottomInc.Set("icon_max_width", 0);
+		SetupButton(btnBottomInc, "⬇️", () => {
+			if (GameHost.Instance != null) {
+				GameHost.Instance.EditorCameraBoundsBottom += 5.0f;
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
+		}, 10, "Move Bottom boundary further South (Down)");
+		adjustGrid.AddChild(btnBottomInc);
+
+		UpdateCameraBoundsUI();
+
 		var settingsVBox = GetNode<VBoxContainer>("PanelTextures/VBox/Content/SettingsVBox");
 		_lblTerrainTexture = new Label();
 		_lblTerrainTexture.Name = "LblTerrainTexture";
@@ -638,6 +912,7 @@ public partial class MapEditorHUD : Control
 		{
 			_btnBrushShape.Text = GameHost.Instance.EditorBrushIsSquare ? "🔳 BRUSH: SQUARE" : "⚪ BRUSH: CIRCLE";
 			_btnToggleGrid.Text = GameHost.Instance.EditorGridVisible ? "🌐 GRID OVERLAY: ON" : "🌐 GRID OVERLAY: OFF";
+			_btnToggleCameraBounds.Text = GameHost.Instance.EditorCameraBoundsVisible ? "📹 CAM BOUNDS: ON" : "📹 CAM BOUNDS: OFF";
 		}
 
 		_btnEyedropper = new Button();
@@ -648,6 +923,19 @@ public partial class MapEditorHUD : Control
 		rightVBox.MoveChild(_btnEyedropper, _btnDeleteObject.GetIndex());
 		SetupButton(_btnEyedropper, "🔍 EYEDROPPER", () => TriggerToolSelection(GameHost.EditorTool.Eyedropper, _btnEyedropper), 14, "Pick / sample entities, terrain height (Shift+Click), or vertex color under cursor (I)");
 
+		_optEyedropperMode = new OptionButton();
+		_optEyedropperMode.Name = "OptEyedropperMode";
+		_optEyedropperMode.AddItem("🔍 Auto-Detect Mode", 0);
+		_optEyedropperMode.AddItem("🌳 Pick 3D Asset", 1);
+		_optEyedropperMode.AddItem("🎨 Pick Decal", 2);
+		_optEyedropperMode.AddItem("⛰️ Pick Terrain Texture", 3);
+		_optEyedropperMode.AddItem("📏 Pick Height", 4);
+		_optEyedropperMode.Selected = 0;
+		_optEyedropperMode.AddThemeFontSizeOverride("font_size", 11);
+		_optEyedropperMode.TooltipText = "Select what type of information the Eyedropper tool should sample.";
+		rightVBox.AddChild(_optEyedropperMode);
+		rightVBox.MoveChild(_optEyedropperMode, _btnEyedropper.GetIndex() + 1);
+
 		_btnNoise = new Button();
 		_btnNoise.Name = "BtnNoise";
 		_btnNoise.Set("icon_max_width", 0);
@@ -655,18 +943,20 @@ public partial class MapEditorHUD : Control
 		terrainContent.AddChild(_btnNoise);
 		SetupButton(_btnNoise, "🎲 Roughen", () => TriggerToolSelection(GameHost.EditorTool.Noise, _btnNoise), 11, "Add random height variations/noise to the terrain under the brush (N)");
 
-		var palettesVBox = GetNode<VBoxContainer>("PanelEntityPalette/VBox/Content/PalettesVBox");
+		palettesVBox = GetNode<VBoxContainer>("PanelEntityPalette/VBox/Content/PalettesVBox");
 		var lblDecalsTitle = new Label();
 		lblDecalsTitle.Name = "LblDecalsTitle";
 		lblDecalsTitle.Text = "PALETTE: DECALS";
 		lblDecalsTitle.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
 		lblDecalsTitle.AddThemeFontSizeOverride("font_size", 11);
+		lblDecalsTitle.Visible = false;
 		palettesVBox.AddChild(lblDecalsTitle);
 
 		var decalsGrid = new GridContainer();
 		decalsGrid.Name = "DecalsGrid";
 		decalsGrid.Columns = 5;
 		decalsGrid.AddThemeConstantOverride("h_separation", 6);
+		decalsGrid.Visible = false;
 		palettesVBox.AddChild(decalsGrid);
 
 		string[] decalIds = { "logo", "forest", "snowy", "flag", "rune" };
@@ -694,6 +984,8 @@ public partial class MapEditorHUD : Control
 
 		_feedbackLabel.Modulate = new Color(1, 1, 1, 0);
 		Input.MouseMode = Input.MouseModeEnum.Visible;
+
+		SetupMinimap();
 	}
 
 	private void ApplyThemeStyles()
@@ -910,52 +1202,96 @@ public partial class MapEditorHUD : Control
 		btn.MouseEntered += () => UIManager.Instance?.PlayHoverSound();
 	}
 
+	private Color AutoCalcModColor(Texture2D tex)
+	{
+		if (tex == null) return new Color(1, 1, 1);
+		try
+		{
+			var img = tex.GetImage();
+			if (img != null)
+			{
+				var tempImg = (Image)img.Duplicate();
+				tempImg.Resize(1, 1, Image.Interpolation.Bilinear);
+				Color avgColor = tempImg.GetPixel(0, 0);
+				avgColor.A = 1.0f;
+				return avgColor;
+			}
+		}
+		catch
+		{
+		}
+		return new Color(1, 1, 1);
+	}
+
+	private GameHost.EditorTool ClassifyToolFromColor(Color color)
+	{
+		float maxDiff = Mathf.Max(Mathf.Abs(color.R - color.G), Mathf.Max(Mathf.Abs(color.G - color.B), Mathf.Abs(color.R - color.B)));
+		if (maxDiff < 0.08f)
+		{
+			return GameHost.EditorTool.PaintRock;
+		}
+		
+		if (color.G > color.R + 0.05f && color.G > color.B + 0.05f)
+		{
+			return GameHost.EditorTool.PaintGrass;
+		}
+		
+		if (color.R > 0.5f && color.G > 0.4f && color.B < 0.4f)
+		{
+			return GameHost.EditorTool.PaintSand;
+		}
+		
+		return GameHost.EditorTool.PaintDirt;
+	}
+
 	private void SetupTextureSwatches(bool connectEvents = false)
 	{
+		var sheetFiles = new List<string>();
+		using (var dir = DirAccess.Open("res://Assets/2d/TileSheets"))
+		{
+			if (dir != null)
+			{
+				dir.ListDirBegin();
+				string fileName = dir.GetNext();
+				while (fileName != "")
+				{
+					if (!dir.CurrentIsDir() && !fileName.EndsWith(".import") && 
+						(fileName.EndsWith(".png") || fileName.EndsWith(".jpg") || fileName.EndsWith(".jpeg")))
+					{
+						sheetFiles.Add($"res://Assets/2d/TileSheets/{fileName}");
+					}
+					fileName = dir.GetNext();
+				}
+			}
+		}
+
+		sheetFiles.Sort();
+
+		while (sheetFiles.Count < 12)
+		{
+			sheetFiles.Add("res://Assets/terrain_grass.jpg");
+		}
+
 		for (int i = 1; i <= 12; i++)
 		{
 			int index = i;
 			var swatch = GetNode<Button>($"PanelTextures/VBox/Content/GridSwatches/Swatch{i}");
 			
-			Color modColor = index switch
-			{
-				1 => new Color(0.95f, 0.95f, 1.0f),
-				2 => new Color(0.5f, 0.5f, 0.52f),
-				3 => new Color(0.5f, 0.45f, 0.38f),
-				4 => new Color(0.2f, 0.6f, 0.2f),
-				5 => new Color(0.38f, 0.38f, 0.4f),
-				6 => new Color(0.4f, 0.28f, 0.18f),
-				7 => new Color(0.3f, 0.7f, 0.2f),
-				8 => new Color(0.12f, 0.48f, 0.18f),
-				9 => new Color(0.7f, 0.55f, 0.35f),
-				10 => new Color(0.85f, 0.75f, 0.5f),
-				11 => new Color(0.45f, 0.55f, 0.65f),
-				12 => new Color(0.6f, 0.3f, 0.15f),
-				_ => new Color(1, 1, 1)
-			};
-
-			string texPath = index switch
-			{
-				1 => "res://Assets/2d/TileSheets/river_silt.png",
-				2 => "res://Assets/2d/TileSheets/cinder_rock.png",
-				3 => "res://Assets/2d/TileSheets/arid_dust.png",
-				4 => "res://Assets/2d/TileSheets/deep_moss.png",
-				5 => "res://Assets/2d/TileSheets/crag_stone.png",
-				6 => "res://Assets/2d/TileSheets/ash_soil.png",
-				7 => "res://Assets/2d/TileSheets/fern_grove.png",
-				8 => "res://Assets/2d/TileSheets/mossy_stone.png",
-				9 => "res://Assets/2d/TileSheets/holy_moss.png",
-				10 => "res://Assets/2d/TileSheets/void_shard.png",
-				11 => "res://Assets/terrain_grass.jpg",
-				12 => "res://Assets/2d/TileSheets/ash_soil.png",
-				_ => "res://Assets/terrain_grass.jpg"
-			};
+			string texPath = sheetFiles[i - 1];
+			_swatchPaths[i - 1] = texPath;
+			
+			string cleanName = System.IO.Path.GetFileNameWithoutExtension(texPath).Replace("_", " ");
+			cleanName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(cleanName);
+			_swatchDisplayNames[i - 1] = cleanName;
 
 			var tex = GD.Load<Texture2D>(texPath);
 			if (tex == null)
 			{
 				tex = GD.Load<Texture2D>("res://Assets/terrain_grass.jpg");
 			}
+
+			Color modColor = AutoCalcModColor(tex);
+			_swatchColors[i - 1] = modColor;
 
 			var styleNormal = new StyleBoxTexture();
 			styleNormal.Texture = tex;
@@ -1009,14 +1345,7 @@ public partial class MapEditorHUD : Control
 		}
 		else
 		{
-			tool = index switch
-			{
-				4 or 7 or 8 => GameHost.EditorTool.PaintGrass,
-				3 or 6 or 12 => GameHost.EditorTool.PaintDirt,
-				2 or 5 or 11 => GameHost.EditorTool.PaintRock,
-				1 or 9 or 10 => GameHost.EditorTool.PaintSand,
-				_ => GameHost.EditorTool.PaintGrass
-			};
+			tool = ClassifyToolFromColor(modColor);
 		}
 		TriggerToolSelection(tool, swatch, $"layer_{index}");
 		UpdateTextureLabels();
@@ -1041,22 +1370,7 @@ public partial class MapEditorHUD : Control
 				Mathf.Abs(color.G - c.G) < epsilon &&
 				Mathf.Abs(color.B - c.B) < epsilon)
 			{
-				string texName = i switch
-				{
-					1 => "River Silt",
-					2 => "Cinder Rock",
-					3 => "Arid Dust",
-					4 => "Deep Moss",
-					5 => "Crag Stone",
-					6 => "Ash Soil",
-					7 => "Fern Grove",
-					8 => "Mossy Stone",
-					9 => "Holy Moss",
-					10 => "Void Shard",
-					11 => "Standard Grass",
-					12 => "Ash Soil 2",
-					_ => "Unknown"
-				};
+				string texName = (i >= 1 && i <= 12 && _swatchDisplayNames != null) ? _swatchDisplayNames[i - 1] : "Unknown";
 				return $"Swatch {i} ({texName})";
 			}
 		}
@@ -1065,22 +1379,11 @@ public partial class MapEditorHUD : Control
 
 	private Color GetSwatchColor(int index)
 	{
-		return index switch
+		if (index >= 1 && index <= 12 && _swatchColors != null)
 		{
-			1 => new Color(0.95f, 0.95f, 1.0f),
-			2 => new Color(0.5f, 0.5f, 0.52f),
-			3 => new Color(0.5f, 0.45f, 0.38f),
-			4 => new Color(0.2f, 0.6f, 0.2f),
-			5 => new Color(0.38f, 0.38f, 0.4f),
-			6 => new Color(0.4f, 0.28f, 0.18f),
-			7 => new Color(0.3f, 0.7f, 0.2f),
-			8 => new Color(0.12f, 0.48f, 0.18f),
-			9 => new Color(0.7f, 0.55f, 0.35f),
-			10 => new Color(0.85f, 0.75f, 0.5f),
-			11 => new Color(0.45f, 0.55f, 0.65f),
-			12 => new Color(0.6f, 0.3f, 0.15f),
-			_ => new Color(1, 1, 1)
-		};
+			return _swatchColors[index - 1];
+		}
+		return new Color(1, 1, 1);
 	}
 
 	private void UpdateTextureLabels()
@@ -1218,71 +1521,77 @@ public partial class MapEditorHUD : Control
 		string toolName = tool.ToString().ToUpper();
 		if (!string.IsNullOrEmpty(placeId)) toolName += $" ({placeId.ToUpper()})";
 		
-		_statusLabel.Text = $"ACTIVE TOOL: {toolName}";
-
-		switch (tool)
+		if (_statusLabel != null)
 		{
-			case GameHost.EditorTool.Raise:
-				_lblInfoText.Text = "TOOL: Raise Heights\n\nDrag left click on the map ground to elevate terrain. Adjust size and strength in settings.";
-				break;
-			case GameHost.EditorTool.Ramp:
-				_lblInfoText.Text = "TOOL: Ramping\n\nLeft-click once on the terrain to set the Ramp Start Point. Left-click again to set the Ramp End Point. The tool will smoothly interpolate heights between the two points. Press Right-click or Escape to cancel.";
-				break;
-			case GameHost.EditorTool.Lower:
-				_lblInfoText.Text = "TOOL: Lower Heights\n\nDrag left click on the map ground to depress terrain. Adjust size and strength in settings.";
-				break;
-			case GameHost.EditorTool.Flatten:
-				_lblInfoText.Text = "TOOL: Flatten Heights\n\nDrag left click to snap terrain heights toward the target Flatten Height slider value.";
-				break;
-			case GameHost.EditorTool.Smooth:
-				_lblInfoText.Text = "TOOL: Smooth Terrain\n\nDrag left click to average neighbor vertex heights and smooth out rugged elevations.";
-				break;
-			case GameHost.EditorTool.Cliff:
-				_lblInfoText.Text = "TOOL: Cliff / Terrace\n\nDrag left click to create flat terraced steps. Hold Shift to lower the target cliff level.";
-				break;
-			case GameHost.EditorTool.PaintGrass:
-			case GameHost.EditorTool.PaintDirt:
-			case GameHost.EditorTool.PaintRock:
-			case GameHost.EditorTool.PaintSand:
-				_lblInfoText.Text = $"TOOL: Texture Painting\n\nDrag left click to paint texture layers onto the vertices of the terrain mesh.";
-				break;
-			case GameHost.EditorTool.FloodFill:
-				_lblInfoText.Text = "TOOL: Flood Fill\n\nClick once on the terrain map to flood-fill an area sharing the same texture color until hitting a boundary (cliff or different texture). Uses selected texture swatch.";
-				break;
-			case GameHost.EditorTool.SelectArea:
-				_lblInfoText.Text = "TOOL: Area Select\n\nDrag left click to select a rectangular area of the map. Press Ctrl+C to copy the area.";
-				break;
-			case GameHost.EditorTool.PasteArea:
-				_lblInfoText.Text = "TOOL: Area Paste\n\nClick on the terrain to paste the copied area. Use the Paste Contents Options checkboxes to filter what is pasted (Textures, Heights, Entities).";
-				break;
-			case GameHost.EditorTool.PlaceUnit:
-				string alignment = _chkSpawnAsEnemy.ButtonPressed ? "Enemy (Orc)" : "Player (Alliance)";
-				_lblInfoText.Text = $"TOOL: Place Unit\n\nLeft-click on the ground to spawn a {placeId.ToUpper()} aligned with {alignment}.";
-				break;
-			case GameHost.EditorTool.PlaceProp:
-				_lblInfoText.Text = $"TOOL: Place Prop\n\nLeft-click on the ground to spawn static decorative object: {placeId.ToUpper()}.";
-				break;
-			case GameHost.EditorTool.PlacePropClump:
-				_lblInfoText.Text = $"TOOL: Clump Brush\n\nDrag left click on the ground to paint clumps of static props: {placeId.ToUpper()} based on Density and Scale Variation settings. Uses texture brush shape (Circle/Square).";
-				break;
-			case GameHost.EditorTool.PlaceDecal:
-				_lblInfoText.Text = "TOOL: Place Decal\n\nLeft-click on the ground to project a decorative decal. Snapping, scaling, and rotation apply.";
-				break;
-			case GameHost.EditorTool.DeleteObject:
-				_lblInfoText.Text = "TOOL: Object Eraser\n\nLeft-click directly on any unit or prop in 3D scene to erase and remove it from the map.";
-				break;
-			case GameHost.EditorTool.SelectMove:
-				_lblInfoText.Text = "TOOL: Select / Move\n\nLeft-click directly on any unit, prop, or decal to select it. Hold and drag left click to move it. Use R to rotate, S to scale, or Delete/Backspace to delete.";
-				break;
-			case GameHost.EditorTool.Eyedropper:
-				_lblInfoText.Text = "TOOL: Eyedropper / Picker\n\nLeft-click directly on any unit, prop, or decal to copy and select it as the active placement tool. Click on terrain to copy its texture color, or hold Shift to copy its height.";
-				break;
-			case GameHost.EditorTool.Noise:
-				_lblInfoText.Text = "TOOL: Roughen Terrain\n\nDrag left-click to apply random height variations/noise to ruggedize the terrain surface. Adjust size and strength in settings.";
-				break;
-			case GameHost.EditorTool.None:
-				_lblInfoText.Text = "Select a tool from the panels to begin terrain modification.";
-				break;
+			_statusLabel.Text = $"ACTIVE TOOL: {toolName}";
+		}
+
+		if (_lblInfoText != null)
+		{
+			switch (tool)
+			{
+				case GameHost.EditorTool.Raise:
+					_lblInfoText.Text = "TOOL: Raise Heights\n\nDrag left click on the map ground to elevate terrain. Adjust size and strength in settings.";
+					break;
+				case GameHost.EditorTool.Ramp:
+					_lblInfoText.Text = "TOOL: Ramping\n\nLeft-click once on the terrain to set the Ramp Start Point. Left-click again to set the Ramp End Point. The tool will smoothly interpolate heights between the two points. Press Right-click or Escape to cancel.";
+					break;
+				case GameHost.EditorTool.Lower:
+					_lblInfoText.Text = "TOOL: Lower Heights\n\nDrag left click on the map ground to depress terrain. Adjust size and strength in settings.";
+					break;
+				case GameHost.EditorTool.Flatten:
+					_lblInfoText.Text = "TOOL: Flatten Heights\n\nDrag left click to snap terrain heights toward the target Flatten Height slider value.";
+					break;
+				case GameHost.EditorTool.Smooth:
+					_lblInfoText.Text = "TOOL: Smooth Terrain\n\nDrag left click to average neighbor vertex heights and smooth out rugged elevations.";
+					break;
+				case GameHost.EditorTool.Cliff:
+					_lblInfoText.Text = "TOOL: Cliff / Terrace\n\nDrag left click to create flat terraced steps. Hold Shift to lower the target cliff level.";
+					break;
+				case GameHost.EditorTool.PaintGrass:
+				case GameHost.EditorTool.PaintDirt:
+				case GameHost.EditorTool.PaintRock:
+				case GameHost.EditorTool.PaintSand:
+					_lblInfoText.Text = $"TOOL: Texture Painting\n\nDrag left click to paint texture layers onto the vertices of the terrain mesh.";
+					break;
+				case GameHost.EditorTool.FloodFill:
+					_lblInfoText.Text = "TOOL: Flood Fill\n\nClick once on the terrain map to flood-fill an area sharing the same texture color until hitting a boundary (cliff or different texture). Uses selected texture swatch.";
+					break;
+				case GameHost.EditorTool.SelectArea:
+					_lblInfoText.Text = "TOOL: Area Select\n\nDrag left click to select a rectangular area of the map. Press Ctrl+C to copy the area.";
+					break;
+				case GameHost.EditorTool.PasteArea:
+					_lblInfoText.Text = "TOOL: Area Paste\n\nClick on the terrain to paste the copied area. Use the Paste Contents Options checkboxes to filter what is pasted (Textures, Heights, Entities).";
+					break;
+				case GameHost.EditorTool.PlaceUnit:
+					string alignment = _chkSpawnAsEnemy.ButtonPressed ? "Enemy (Orc)" : "Player (Alliance)";
+					_lblInfoText.Text = $"TOOL: Place Unit\n\nLeft-click on the ground to spawn a {placeId.ToUpper()} aligned with {alignment}.";
+					break;
+				case GameHost.EditorTool.PlaceProp:
+					_lblInfoText.Text = $"TOOL: Place Prop\n\nLeft-click on the ground to spawn static decorative object: {placeId.ToUpper()}.";
+					break;
+				case GameHost.EditorTool.PlacePropClump:
+					_lblInfoText.Text = $"TOOL: Clump Brush\n\nDrag left click on the ground to paint clumps of static props: {placeId.ToUpper()} based on Density and Scale Variation settings. Uses texture brush shape (Circle/Square).";
+					break;
+				case GameHost.EditorTool.PlaceDecal:
+					_lblInfoText.Text = "TOOL: Place Decal\n\nLeft-click on the ground to project a decorative decal. Snapping, scaling, and rotation apply.";
+					break;
+				case GameHost.EditorTool.DeleteObject:
+					_lblInfoText.Text = "TOOL: Object Eraser\n\nLeft-click directly on any unit or prop in 3D scene to erase and remove it from the map.";
+					break;
+				case GameHost.EditorTool.SelectMove:
+					_lblInfoText.Text = "TOOL: Select / Move\n\nLeft-click directly on any unit, prop, or decal to select it. Hold and drag left click to move it. Use R to rotate, S to scale, or Delete/Backspace to delete.";
+					break;
+				case GameHost.EditorTool.Eyedropper:
+					_lblInfoText.Text = "TOOL: Eyedropper / Picker\n\nLeft-click directly on any unit, prop, or decal to copy and select it as the active placement tool. Click on terrain to copy its texture color, or hold Shift to copy its height.";
+					break;
+				case GameHost.EditorTool.Noise:
+					_lblInfoText.Text = "TOOL: Roughen Terrain\n\nDrag left-click to apply random height variations/noise to ruggedize the terrain surface. Adjust size and strength in settings.";
+					break;
+				case GameHost.EditorTool.None:
+					_lblInfoText.Text = "Select a tool from the panels to begin terrain modification.";
+					break;
+			}
 		}
 	}
 
@@ -1485,6 +1794,425 @@ public class {mapName} : IMapScript
 		ShowFeedback(visible ? "Grid Overlay: Visible" : "Grid Overlay: Hidden");
 	}
 
+	public void UpdateCameraBoundsOverlayExternal(bool visible)
+	{
+		if (_btnToggleCameraBounds != null)
+		{
+			_btnToggleCameraBounds.Text = visible ? "📹 CAM BOUNDS: ON" : "📹 CAM BOUNDS: OFF";
+		}
+		ShowFeedback(visible ? "Camera Bounds: Visible" : "Camera Bounds: Hidden");
+	}
+
+	public void UpdateCameraBoundsUI()
+	{
+		if (GameHost.Instance == null) return;
+		if (_lblCamLeftVal != null) _lblCamLeftVal.Text = $"L: {GameHost.Instance.EditorCameraBoundsLeft:F0}m";
+		if (_lblCamRightVal != null) _lblCamRightVal.Text = $"R: {GameHost.Instance.EditorCameraBoundsRight:F0}m";
+		if (_lblCamTopVal != null) _lblCamTopVal.Text = $"T: {GameHost.Instance.EditorCameraBoundsTop:F0}m";
+		if (_lblCamBottomVal != null) _lblCamBottomVal.Text = $"B: {GameHost.Instance.EditorCameraBoundsBottom:F0}m";
+	}
+
+	public void UpdateSelectedSkyboxExternal(string path)
+	{
+		if (_optSkybox == null || _skyboxFiles == null) return;
+		string fileName = System.IO.Path.GetFileName(path);
+		int index = _skyboxFiles.IndexOf(fileName);
+		if (index >= 0)
+		{
+			_optSkybox.Selected = index;
+		}
+	}
+	public string GetEyedropperMode()
+	{
+		if (_optEyedropperMode == null) return "all";
+		return _optEyedropperMode.Selected switch
+		{
+			1 => "3d",
+			2 => "decal",
+			3 => "terrain",
+			4 => "height",
+			_ => "all"
+		};
+	}
+
+	public void SelectCategoryItem(int index)
+	{
+		if (index >= 0 && index < _categoryFiles.Count && GameHost.Instance != null)
+		{
+			string selectedFile = _categoryFiles[index];
+			string path = "";
+			GameHost.EditorTool tool = GameHost.EditorTool.None;
+
+			switch (_currentCategory)
+			{
+				case "Characters":
+					path = "res://Assets/3d/Characters";
+					tool = GameHost.EditorTool.PlaceUnit;
+					break;
+				case "Buildings":
+					path = "res://Assets/3d/Buildings";
+					tool = GameHost.EditorTool.PlaceUnit;
+					break;
+				case "Environment":
+					path = "res://Assets/3d/Environment";
+					tool = GameHost.EditorTool.PlaceProp;
+					break;
+				case "Props":
+					path = "res://Assets/3d/Props";
+					tool = GameHost.EditorTool.PlaceProp;
+					break;
+				case "Decals":
+					path = "res://Assets/2d/Decals";
+					tool = GameHost.EditorTool.PlaceDecal;
+					break;
+			}
+
+			string placeId = selectedFile;
+			if (_currentCategory == "Characters" || _currentCategory == "Buildings" || _currentCategory == "Environment" || _currentCategory == "Props")
+			{
+				placeId = $"{path}/{selectedFile}";
+			}
+			
+			Button categoryBtn = _currentCategory switch
+			{
+				"Characters" => _btnChars,
+				"Buildings" => _btnBuilds,
+				"Environment" => _btnEnv,
+				"Props" => _btnProps,
+				"Decals" => _btnDecals,
+				_ => null
+			};
+			
+			TriggerToolSelection(tool, categoryBtn, placeId);
+			ShowFeedback($"Placing {_currentCategory}: {_optCategoryItems.GetItemText(index)}");
+		}
+	}
+
+	public void SelectCategoryItemExternal(string category, string filename)
+	{
+		SelectCategory(category);
+		int index = _categoryFiles.IndexOf(filename);
+		if (index >= 0)
+		{
+			_optCategoryItems.Selected = index;
+			SelectCategoryItem(index);
+		}
+	}
+
+	public void SelectPickedUnitOrProp(string id, bool isBuilding)
+	{
+		string category = "";
+		string filename = "";
+
+		if (id.StartsWith("res://"))
+		{
+			filename = System.IO.Path.GetFileName(id);
+			if (id.Contains("Characters")) category = "Characters";
+			else if (id.Contains("Buildings")) category = "Buildings";
+			else if (id.Contains("Environment")) category = "Environment";
+			else if (id.Contains("Props")) category = "Props";
+		}
+		else
+		{
+			if (isBuilding)
+			{
+				category = "Buildings";
+				filename = id switch
+				{
+					"castle" => "altar.glb",
+					"tower" => "altar_pillar.glb",
+					_ => id
+				};
+			}
+			else
+			{
+				category = "Characters";
+				filename = id switch
+				{
+					"worker" => "adventurer.glb",
+					"footman" => "armored_warlord.glb",
+					"archer" => "armored_dragon.glb",
+					"priest" => "armored_battlelord.glb",
+					_ => id
+				};
+			}
+		}
+
+		if (!string.IsNullOrEmpty(category) && !string.IsNullOrEmpty(filename))
+		{
+			SelectCategoryItemExternal(category, filename);
+		}
+	}
+
+	public void SelectPickedDecal(string decalId)
+	{
+		string filename = decalId.StartsWith("res://") ? System.IO.Path.GetFileName(decalId) : decalId;
+		if (decalId == "logo") filename = "logo.png";
+		SelectCategoryItemExternal("Decals", filename);
+	}
+	public void SelectPaintSwatchFromColor(Color color)
+	{
+		int bestIndex = 1;
+		float minDiff = float.MaxValue;
+		for (int i = 0; i < 12; i++)
+		{
+			Color c = _swatchColors[i];
+			float diff = Mathf.Abs(c.R - color.R) + Mathf.Abs(c.G - color.G) + Mathf.Abs(c.B - color.B);
+			if (diff < minDiff)
+			{
+				minDiff = diff;
+				bestIndex = i + 1;
+			}
+		}
+
+		var swatch = GetNodeOrNull<Button>($"PanelTextures/VBox/Content/GridSwatches/Swatch{bestIndex}");
+		if (swatch != null)
+		{
+			SelectTerrainTexture(bestIndex, _swatchColors[bestIndex - 1], swatch);
+		}
+		
+		string swatchName = _swatchDisplayNames[bestIndex - 1];
+		ShowFeedback($"Picked Color: #{color.ToHtml(false)} ({swatchName})");
+	}
+
+	private void SetupMinimap()
+	{
+		var rightVBox = GetNode<VBoxContainer>("RightPillar/VBox");
+
+		_minimapFrame = new PanelContainer();
+		_minimapFrame.Name = "MinimapFrame";
+		_minimapFrame.CustomMinimumSize = new Vector2(176, 176);
+		_minimapFrame.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		_minimapFrame.SizeFlagsVertical = SizeFlags.ShrinkBegin;
+		rightVBox.AddChild(_minimapFrame);
+		if (_optEyedropperMode != null)
+		{
+			rightVBox.MoveChild(_minimapFrame, _optEyedropperMode.GetIndex() + 1);
+		}
+
+		_minimapArea = new Control();
+		_minimapArea.Name = "MinimapArea";
+		_minimapArea.LayoutMode = 2;
+		_minimapFrame.AddChild(_minimapArea);
+
+		var minimapBg = new TextureRect();
+		minimapBg.Name = "MinimapBg";
+		minimapBg.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		minimapBg.StretchMode = TextureRect.StretchModeEnum.Scale;
+		minimapBg.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+		_minimapArea.AddChild(minimapBg);
+
+		_cameraIndicator = new ReferenceRect();
+		_cameraIndicator.Name = "Indicator";
+		_cameraIndicator.CustomMinimumSize = new Vector2(25, 18);
+		_cameraIndicator.BorderColor = new Color(0, 0.9f, 0.1f, 0.85f);
+		_cameraIndicator.BorderWidth = 2.0f;
+		_cameraIndicator.EditorOnly = false;
+		_minimapArea.AddChild(_cameraIndicator);
+
+		_minimapArea.GuiInput += (@event) =>
+		{
+			if (@event is InputEventMouseButton mouseBtn && mouseBtn.Pressed && mouseBtn.ButtonIndex == MouseButton.Left)
+			{
+				TeleportCameraToMinimapPos(mouseBtn.Position);
+			}
+			else if (@event is InputEventMouseMotion mouseMotion && mouseMotion.ButtonMask == MouseButtonMask.Left)
+			{
+				TeleportCameraToMinimapPos(mouseMotion.Position);
+			}
+		};
+
+		GenerateDynamicMinimap();
+	}
+
+	private void TeleportCameraToMinimapPos(Vector2 clickPos)
+	{
+		if (_minimapArea == null || GameHost.Instance == null) return;
+		float xRatio = clickPos.X / _minimapArea.Size.X;
+		float yRatio = clickPos.Y / _minimapArea.Size.Y;
+
+		float worldX = Mathf.Clamp((xRatio - 0.5f) * 250f, -95f, 95f);
+		float worldZ = Mathf.Clamp((yRatio - 0.5f) * 250f, -95f, 125f);
+
+		var camera = GameHost.Instance.GetViewport().GetCamera3D();
+		if (camera != null)
+		{
+			camera.GlobalPosition = new Vector3(worldX, camera.GlobalPosition.Y, worldZ);
+		}
+	}
+
+	private void UpdateMinimapIndicator()
+	{
+		if (_cameraIndicator == null || _minimapArea == null || GameHost.Instance == null) return;
+		var camera = GameHost.Instance.GetViewport().GetCamera3D();
+		if (camera == null) return;
+
+		float worldX = camera.GlobalPosition.X;
+		float worldZ = camera.GlobalPosition.Z;
+
+		float xRatio = (worldX / 250f) + 0.5f;
+		float yRatio = (worldZ / 250f) + 0.5f;
+
+		xRatio = Mathf.Clamp(xRatio, 0f, 1f);
+		yRatio = Mathf.Clamp(yRatio, 0f, 1f);
+
+		float xPos = xRatio * _minimapArea.Size.X - (_cameraIndicator.Size.X / 2f);
+		float yPos = yRatio * _minimapArea.Size.Y - (_cameraIndicator.Size.Y / 2f);
+
+		_cameraIndicator.Position = new Vector2(xPos, yPos);
+	}
+
+	public void RegenerateMinimap()
+	{
+		GenerateDynamicMinimap();
+	}
+
+	private async void GenerateDynamicMinimap()
+	{
+		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+
+		if (_minimapArea == null) return;
+		var minimapBg = _minimapArea.GetChildCount() > 0 ? _minimapArea.GetChild<TextureRect>(0) : null;
+		if (minimapBg == null) return;
+
+		try
+		{
+			var viewport = new SubViewport();
+			viewport.Size = new Vector2I(256, 256);
+			viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Once;
+			AddChild(viewport);
+
+			var camera = new Camera3D();
+			camera.Projection = Camera3D.ProjectionType.Orthogonal;
+			camera.Size = 250f;
+			camera.Far = 200f;
+			camera.Position = new Vector3(0, 100, 0);
+			camera.RotationDegrees = new Vector3(-90, 0, 0);
+			viewport.AddChild(camera);
+
+			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+
+			var texture = viewport.GetTexture();
+			if (texture != null)
+			{
+				var img = texture.GetImage();
+				if (img != null)
+				{
+					var imgTexture = ImageTexture.CreateFromImage(img);
+					minimapBg.Texture = imgTexture;
+				}
+			}
+
+			viewport.QueueFree();
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"Failed to dynamically capture terrain minimap: {ex.Message}");
+		}
+	}
+
+	public void SelectCategory(string category)
+	{
+		_currentCategory = category;
+		_categoryFiles.Clear();
+		if (_optCategoryItems != null)
+		{
+			_optCategoryItems.Clear();
+		}
+
+		string path = "";
+		GameHost.EditorTool tool = GameHost.EditorTool.None;
+
+		switch (category)
+		{
+			case "Characters":
+				path = "res://Assets/3d/Characters";
+				tool = GameHost.EditorTool.PlaceUnit;
+				break;
+			case "Buildings":
+				path = "res://Assets/3d/Buildings";
+				tool = GameHost.EditorTool.PlaceUnit;
+				break;
+			case "Environment":
+				path = "res://Assets/3d/Environment";
+				tool = GameHost.EditorTool.PlaceProp;
+				break;
+			case "Props":
+				path = "res://Assets/3d/Props";
+				tool = GameHost.EditorTool.PlaceProp;
+				break;
+			case "Decals":
+				path = "res://Assets/2d/Decals";
+				tool = GameHost.EditorTool.PlaceDecal;
+				break;
+		}
+
+		bool is3D = category == "Characters" || category == "Buildings" || category == "Environment" || category == "Props";
+
+		using (var dir = DirAccess.Open(path))
+		{
+			if (dir != null)
+			{
+				dir.ListDirBegin();
+				string fileName = dir.GetNext();
+				while (fileName != "")
+				{
+					if (!dir.CurrentIsDir() && !fileName.EndsWith(".import"))
+					{
+						if (is3D && fileName.EndsWith(".glb"))
+						{
+							_categoryFiles.Add(fileName);
+						}
+						else if (!is3D && (fileName.EndsWith(".png") || fileName.EndsWith(".jpg") || fileName.EndsWith(".jpeg")))
+						{
+							_categoryFiles.Add(fileName);
+						}
+					}
+					fileName = dir.GetNext();
+				}
+			}
+		}
+
+		_categoryFiles.Sort();
+
+		if (_optCategoryItems != null)
+		{
+			foreach (var file in _categoryFiles)
+			{
+				string cleanName = System.IO.Path.GetFileNameWithoutExtension(file).Replace("_", " ");
+				cleanName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(cleanName);
+				_optCategoryItems.AddItem(cleanName);
+			}
+		}
+
+		if (_categoryFiles.Count > 0)
+		{
+			if (_optCategoryItems != null)
+			{
+				_optCategoryItems.Selected = 0;
+			}
+			string selectedFile = _categoryFiles[0];
+			string placeId = selectedFile;
+			if (category == "Characters" || category == "Buildings" || category == "Environment" || category == "Props")
+			{
+				placeId = $"{path}/{selectedFile}";
+			}
+			
+			Button categoryBtn = category switch
+			{
+				"Characters" => _btnChars,
+				"Buildings" => _btnBuilds,
+				"Environment" => _btnEnv,
+				"Props" => _btnProps,
+				"Decals" => _btnDecals,
+				_ => null
+			};
+			
+			TriggerToolSelection(tool, categoryBtn, placeId);
+		}
+	}
+
 	public void UpdateBrushShapeExternal(bool isSquare)
 	{
 		if (_btnBrushShape != null)
@@ -1590,10 +2318,10 @@ public class {mapName} : IMapScript
 			GameHost.EditorTool.FloodFill => _btnFloodFill,
 			GameHost.EditorTool.SelectArea => _btnSelectArea,
 			GameHost.EditorTool.PasteArea => _btnSelectArea,
-			GameHost.EditorTool.PlaceUnit => _btnFootman,
-			GameHost.EditorTool.PlaceProp => _btnTree,
+			GameHost.EditorTool.PlaceUnit => _btnChars,
+			GameHost.EditorTool.PlaceProp => _btnProps,
 			GameHost.EditorTool.PlacePropClump => _btnClumpBrush,
-			GameHost.EditorTool.PlaceDecal => _btnDecalTool,
+			GameHost.EditorTool.PlaceDecal => _btnDecals,
 			GameHost.EditorTool.DeleteObject => _btnDeleteObject,
 			GameHost.EditorTool.SelectMove => _btnSelectMove,
 			GameHost.EditorTool.Eyedropper => _btnEyedropper,
@@ -1611,10 +2339,22 @@ public class {mapName} : IMapScript
 
 		if (targetBtn != null)
 		{
+			if (tool == GameHost.EditorTool.PlaceUnit)
+			{
+				SelectCategory("Characters");
+				return;
+			}
+			else if (tool == GameHost.EditorTool.PlaceProp)
+			{
+				SelectCategory("Props");
+				return;
+			}
+			else if (tool == GameHost.EditorTool.PlaceDecal)
+			{
+				SelectCategory("Decals");
+				return;
+			}
 			string placeId = "";
-			if (tool == GameHost.EditorTool.PlaceUnit) placeId = "footman";
-			else if (tool == GameHost.EditorTool.PlaceProp) placeId = "tree";
-			else if (tool == GameHost.EditorTool.PlaceDecal) placeId = "logo";
 			TriggerToolSelection(tool, targetBtn, placeId);
 			ShowFeedback($"Selected Tool: {tool.ToString().ToUpper()}");
 		}
@@ -1651,6 +2391,7 @@ public class {mapName} : IMapScript
 				_statusLabel.Text = $"ACTIVE TOOL: {toolName} | Pos: {pos.X:F1}, {pos.Y:F1}, {pos.Z:F1}";
 			}
 		}
+		UpdateMinimapIndicator();
 	}
 
 	private void CreateInspectorPanel()
@@ -2337,6 +3078,7 @@ public class {mapName} : IMapScript
 					_genDecoDensity,
 					_genSeed
 				);
+				GenerateDynamicMinimap();
 			}
 		}, 13, "Generate the random map");
 		btnGen.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);

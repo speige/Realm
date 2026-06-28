@@ -227,6 +227,7 @@ public static class EditorHistoryManager
 	{
 		_undoStack.Push(action);
 		_redoStack.Clear();
+		MapEditorHUD.Instance?.RegenerateMinimap();
 	}
 
 	public static void Undo()
@@ -236,6 +237,7 @@ public static class EditorHistoryManager
 			var action = _undoStack.Pop();
 			action.Undo();
 			_redoStack.Push(action);
+			MapEditorHUD.Instance?.RegenerateMinimap();
 		}
 	}
 
@@ -246,6 +248,7 @@ public static class EditorHistoryManager
 			var action = _redoStack.Pop();
 			action.Redo();
 			_undoStack.Push(action);
+			MapEditorHUD.Instance?.RegenerateMinimap();
 		}
 	}
 
@@ -269,6 +272,11 @@ public class MapSaveData
 	public float? BlockLevelHeight { get; set; }
 	public bool? WC3BlockMode { get; set; }
 	public float? WC3LevelHeight { get; set; }
+	public float? CameraBoundsLeft { get; set; }
+	public float? CameraBoundsRight { get; set; }
+	public float? CameraBoundsTop { get; set; }
+	public float? CameraBoundsBottom { get; set; }
+	public string SkyboxPath { get; set; }
 }
 
 public class UnitSaveData

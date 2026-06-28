@@ -12,6 +12,11 @@ public partial class CameraControl : Camera3D
 
 	[Export] public bool IsLocked { get; set; } = false;
 
+	public float? LimitLeft { get; set; } = null;
+	public float? LimitRight { get; set; } = null;
+	public float? LimitTop { get; set; } = null;
+	public float? LimitBottom { get; set; } = null;
+
 	private float _targetHeight = 35.0f;
 	private float _currentHeight = 35.0f;
 	private bool _isDraggingMouse = false;
@@ -155,8 +160,20 @@ public partial class CameraControl : Camera3D
 			Vector3 velocity = (rightXZ * moveX) + (forwardXZ * moveZ);
 
 			Vector3 newPos = Position + velocity;
-			newPos.X = Mathf.Clamp(newPos.X, -MapLimit, MapLimit);
-			newPos.Z = Mathf.Clamp(newPos.Z, -MapLimit, MapLimit + 30f);
+			if (GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode)
+			{
+				float minX = LimitLeft ?? -MapLimit;
+				float maxX = LimitRight ?? MapLimit;
+				float minZ = LimitTop ?? -MapLimit;
+				float maxZ = LimitBottom ?? (MapLimit + 30f);
+				newPos.X = Mathf.Clamp(newPos.X, minX, maxX);
+				newPos.Z = Mathf.Clamp(newPos.Z, minZ, maxZ);
+			}
+			else
+			{
+				newPos.X = Mathf.Clamp(newPos.X, -MapLimit, MapLimit);
+				newPos.Z = Mathf.Clamp(newPos.Z, -MapLimit, MapLimit + 30f);
+			}
 
 			Position = newPos;
 		}
@@ -236,8 +253,20 @@ public partial class CameraControl : Camera3D
 			velocity *= Mathf.Lerp(0.5f, 1.5f, zoomFactor);
 
 			Vector3 newPos = Position + velocity;
-			newPos.X = Mathf.Clamp(newPos.X, -MapLimit, MapLimit);
-			newPos.Z = Mathf.Clamp(newPos.Z, -MapLimit, MapLimit + 30f);
+			if (GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode)
+			{
+				float minX = LimitLeft ?? -MapLimit;
+				float maxX = LimitRight ?? MapLimit;
+				float minZ = LimitTop ?? -MapLimit;
+				float maxZ = LimitBottom ?? (MapLimit + 30f);
+				newPos.X = Mathf.Clamp(newPos.X, minX, maxX);
+				newPos.Z = Mathf.Clamp(newPos.Z, minZ, maxZ);
+			}
+			else
+			{
+				newPos.X = Mathf.Clamp(newPos.X, -MapLimit, MapLimit);
+				newPos.Z = Mathf.Clamp(newPos.Z, -MapLimit, MapLimit + 30f);
+			}
 
 			Position = newPos;
 		}

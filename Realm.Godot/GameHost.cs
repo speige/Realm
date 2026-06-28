@@ -113,6 +113,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public EditableTerrain GroundTerrain { get; private set; }
 	private MeshInstance3D _brushIndicatorMesh = null;
 	private MeshInstance3D _gridOverlayMesh = null;
+	private MeshInstance3D _cameraBoundsOverlayMesh = null;
 	public enum EditorTool
 	{
 		None,
@@ -150,6 +151,11 @@ public partial class GameHost : Node3D, IGameAPI
 	public float EditorPlacementRotation { get; set; } = 0.0f;
 	public float EditorPlacementScale { get; set; } = 1.0f;
 	public bool EditorGridVisible { get; set; } = false;
+	public bool EditorCameraBoundsVisible { get; set; } = false;
+	public float EditorCameraBoundsLeft { get; set; } = -95.0f;
+	public float EditorCameraBoundsRight { get; set; } = 95.0f;
+	public float EditorCameraBoundsTop { get; set; } = -95.0f;
+	public float EditorCameraBoundsBottom { get; set; } = 125.0f;
 	public bool EditorBrushIsSquare { get; set; } = false;
 	public enum MirrorMode
 	{
@@ -165,6 +171,8 @@ public partial class GameHost : Node3D, IGameAPI
 	private bool _isDrawingClump = false;
 	private List<IEditorAction> _clumpSpawnActionsInSession = new List<IEditorAction>();
 	public bool EditorRandomRotation { get; set; } = false;
+	public bool EditorRandomScale { get; set; } = false;
+	public string EditorSkyboxPath { get; set; } = "res://Assets/skybox_panoramic.jpg";
 	public bool EditorHasUnsavedChanges { get; set; } = false;
 	public bool EditorBlockMode { get; set; } = false;
 	public float EditorBlockLevelHeight { get; set; } = 4.0f;
@@ -340,6 +348,30 @@ public partial class GameHost : Node3D, IGameAPI
 
 	public static readonly Dictionary<string, UnitMetadata> UnitRegistry = new();
 
+	public string GetFallbackModelPath(string unitId, bool isBuilding)
+	{
+		if (isBuilding)
+		{
+			return unitId switch
+			{
+				"castle" => "res://Assets/3d/Buildings/altar.glb",
+				"tower" => "res://Assets/3d/Buildings/altar_pillar.glb",
+				_ => "res://Assets/3d/Buildings/altar.glb"
+			};
+		}
+		else
+		{
+			return unitId switch
+			{
+				"worker" => "res://Assets/3d/Characters/adventurer.glb",
+				"footman" => "res://Assets/3d/Characters/armored_warlord.glb",
+				"archer" => "res://Assets/3d/Characters/armored_dragon.glb",
+				"priest" => "res://Assets/3d/Characters/armored_battlelord.glb",
+				_ => "res://Assets/3d/Characters/adventurer.glb"
+			};
+		}
+	}
+
 	private float _goldBackup = 500f;
 	private float _woodBackup = 400f;
 	private float _stoneBackup = 200f;
@@ -433,16 +465,7 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
 		
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitTypeId switch
-		{
-			"worker" => "res://Assets/3d/Characters/armored_warrior.glb",
-			"footman" => "res://Assets/3d/Characters/armored_warrior.glb",
-			"archer" => "res://Assets/3d/Characters/blue_archer.glb",
-			"priest" => "res://Assets/3d/Characters/blue_archer.glb",
-			"castle" => "res://Assets/3d/Buildings/castle.glb",
-			"tower" => "res://Assets/3d/Buildings/castle_tower.glb",
-			_ => ""
-		};
+		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(unitTypeId, meta.Speed == 0f);
 
 		string name = meta.Name;
 		if (isEnemy)
@@ -470,16 +493,7 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
 		
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitTypeId switch
-		{
-			"worker" => "res://Assets/3d/Characters/armored_warrior.glb",
-			"footman" => "res://Assets/3d/Characters/armored_warrior.glb",
-			"archer" => "res://Assets/3d/Characters/blue_archer.glb",
-			"priest" => "res://Assets/3d/Characters/blue_archer.glb",
-			"castle" => "res://Assets/3d/Buildings/castle.glb",
-			"tower" => "res://Assets/3d/Buildings/castle_tower.glb",
-			_ => ""
-		};
+		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(unitTypeId, meta.Speed == 0f);
 
 		string name = meta.Name;
 		if (isEnemy)
@@ -2737,7 +2751,7 @@ public class {mapName} : IMapScript
 		staticBody.AddChild(collisionShape);
 	}
 
-	private void SetupSkybox()
+	public void SetSkyboxTexture(string path)
 	{
 		var worldEnv = GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
 		if (worldEnv != null)
@@ -2746,7 +2760,7 @@ public class {mapName} : IMapScript
 			if (env != null)
 			{
 				var panoramaMaterial = new PanoramaSkyMaterial();
-				var skyTexture = GD.Load<Texture2D>("res://Assets/skybox_panoramic.jpg");
+				var skyTexture = GD.Load<Texture2D>(path);
 				if (skyTexture != null)
 				{
 					panoramaMaterial.Panorama = skyTexture;
@@ -2754,9 +2768,15 @@ public class {mapName} : IMapScript
 					sky.SkyMaterial = panoramaMaterial;
 					env.Sky = sky;
 					env.BackgroundMode = Godot.Environment.BGMode.Sky;
+					EditorSkyboxPath = path;
 				}
 			}
 		}
+	}
+
+	private void SetupSkybox()
+	{
+		SetSkyboxTexture(EditorSkyboxPath);
 	}
 
 	private void SpawnInitialEntities()
@@ -2770,28 +2790,28 @@ public class {mapName} : IMapScript
 		// 1. Spawning Friendly Units & Buildings (Player owned)
 		// Peon Worker
 		var workerEntity = CreateEcsUnit("worker", "Peon Worker", 70f, 5f, 1.8f, 0f, 7.0f, new Vector3(-16, 0, -20), playerOwner);
-		SpawnUnit3D(workerEntity, "worker", "res://Assets/3d/Characters/armored_warrior.glb", new Vector3(-16, 0, -20), false, false);
+		SpawnUnit3D(workerEntity, "worker", GetFallbackModelPath("worker", false), new Vector3(-16, 0, -20), false, false);
 
 		// Footman
 		var footmanEntity = CreateEcsUnit("footman", "Footman", 150f, 15f, 2.0f, 5f, 6.0f, new Vector3(-8, 0, 5), playerOwner);
-		var footman3D = SpawnUnit3D(footmanEntity, "footman", "res://Assets/3d/Characters/armored_warrior.glb", new Vector3(-8, 0, 5), false, false);
+		var footman3D = SpawnUnit3D(footmanEntity, "footman", GetFallbackModelPath("footman", false), new Vector3(-8, 0, 5), false, false);
 		
 		// Elf Archer
 		var archerEntity = CreateEcsUnit("archer", "Elf Archer", 90f, 12f, 18.0f, 2f, 8.0f, new Vector3(-12, 0, 5), playerOwner);
-		var archer3D = SpawnUnit3D(archerEntity, "archer", "res://Assets/3d/Characters/blue_archer.glb", new Vector3(-12, 0, 5), false, false);
+		var archer3D = SpawnUnit3D(archerEntity, "archer", GetFallbackModelPath("archer", false), new Vector3(-12, 0, 5), false, false);
 
 		// Castle (Base)
 		var castleEntity = CreateEcsUnit("castle", "Town Castle", 1000f, 0f, 0f, 15f, 0f, new Vector3(-25, 0, -25), playerOwner);
-		var castle3D = SpawnUnit3D(castleEntity, "castle", "res://Assets/3d/Buildings/castle.glb", new Vector3(-25, 0, -25), true, false);
+		var castle3D = SpawnUnit3D(castleEntity, "castle", GetFallbackModelPath("castle", true), new Vector3(-25, 0, -25), true, false);
 
 		// Spell Tower (Defense)
 		var towerEntity = CreateEcsUnit("tower", "Spell Tower", 500f, 25f, 25.0f, 8f, 0f, new Vector3(-15, 0, -15), playerOwner);
-		var tower3D = SpawnUnit3D(towerEntity, "tower", "res://Assets/3d/Buildings/castle_tower.glb", new Vector3(-15, 0, -15), true, false);
+		var tower3D = SpawnUnit3D(towerEntity, "tower", GetFallbackModelPath("tower", true), new Vector3(-15, 0, -15), true, false);
 
 		// 2. Spawning Enemy Units & Buildings (Enemy owned)
 		// Enemy Peon Worker
 		var enemyWorkerEntity = CreateEcsUnit("worker", "Orc Worker", 70f, 5f, 1.8f, 0f, 7.0f, new Vector3(16, 0, 20), enemyOwner);
-		SpawnUnit3D(enemyWorkerEntity, "worker", "res://Assets/3d/Characters/armored_warrior.glb", new Vector3(16, 0, 20), false, true);
+		SpawnUnit3D(enemyWorkerEntity, "worker", GetFallbackModelPath("worker", false), new Vector3(16, 0, 20), false, true);
 
 		// Set enemy worker to harvest their nearest goldmine
 		var enemyGoldmine = FindNearbyResourceNode(new Vector3(16, 0, 20), "gold", 50f);
@@ -2803,19 +2823,19 @@ public class {mapName} : IMapScript
 
 		// Enemy Footman
 		var enemyFootmanEntity = CreateEcsUnit("footman", "Orc Raider", 150f, 15f, 2.0f, 5f, 6.0f, new Vector3(15, 0, 10), enemyOwner);
-		var enemyFootman3D = SpawnUnit3D(enemyFootmanEntity, "footman", "res://Assets/3d/Characters/armored_warrior.glb", new Vector3(15, 0, 10), false, true);
+		var enemyFootman3D = SpawnUnit3D(enemyFootmanEntity, "footman", GetFallbackModelPath("footman", false), new Vector3(15, 0, 10), false, true);
 
 		// Enemy Archer
 		var enemyArcherEntity = CreateEcsUnit("archer", "Dark Archer", 90f, 12f, 18.0f, 2f, 8.0f, new Vector3(20, 0, 15), enemyOwner);
-		var enemyArcher3D = SpawnUnit3D(enemyArcherEntity, "archer", "res://Assets/3d/Characters/blue_archer.glb", new Vector3(20, 0, 15), false, true);
+		var enemyArcher3D = SpawnUnit3D(enemyArcherEntity, "archer", GetFallbackModelPath("archer", false), new Vector3(20, 0, 15), false, true);
 
 		// Enemy Spell Tower
 		var enemyTowerEntity = CreateEcsUnit("tower", "Orc Totem Tower", 500f, 25f, 25.0f, 8f, 0f, new Vector3(25, 0, 5), enemyOwner);
-		var enemyTower3D = SpawnUnit3D(enemyTowerEntity, "tower", "res://Assets/3d/Buildings/castle_tower.glb", new Vector3(25, 0, 5), true, true);
+		var enemyTower3D = SpawnUnit3D(enemyTowerEntity, "tower", GetFallbackModelPath("tower", true), new Vector3(25, 0, 5), true, true);
 
 		// Enemy Castle (Orc Stronghold)
 		var enemyCastleEntity = CreateEcsUnit("castle", "Orc Stronghold", 1000f, 0f, 0f, 15f, 0f, new Vector3(25, 0, 25), enemyOwner);
-		var enemyCastle3D = SpawnUnit3D(enemyCastleEntity, "castle", "res://Assets/3d/Buildings/castle.glb", new Vector3(25, 0, 25), true, true);
+		var enemyCastle3D = SpawnUnit3D(enemyCastleEntity, "castle", GetFallbackModelPath("castle", true), new Vector3(25, 0, 25), true, true);
 	}
 
 	private void SpawnDefaultResourceNodes()
@@ -5221,11 +5241,12 @@ public class {mapName} : IMapScript
 					if (ActiveEditorTool == EditorTool.PlaceUnit)
 					{
 						float placementRot = EditorRandomRotation ? (float)(GD.Randf() * 360.0) : EditorPlacementRotation;
-						var unit = SpawnUnitExternal(ActivePlaceId, hitPos, PlaceUnitIsEnemy, placementRot, EditorPlacementScale);
+						float scaleVal = EditorRandomScale ? EditorPlacementScale * (float)(0.7f + GD.Randf() * 0.6f) : EditorPlacementScale;
+						var unit = SpawnUnitExternal(ActivePlaceId, hitPos, PlaceUnitIsEnemy, placementRot, scaleVal);
 						if (unit != null)
 						{
 							var actions = new List<IEditorAction> {
-								new ObjectSpawnAction("unit", ActivePlaceId, hitPos, placementRot, EditorPlacementScale, PlaceUnitIsEnemy, unit)
+								new ObjectSpawnAction("unit", ActivePlaceId, hitPos, placementRot, scaleVal, PlaceUnitIsEnemy, unit)
 							};
 							if (EditorMirrorMode != MirrorMode.None)
 							{
@@ -5233,10 +5254,10 @@ public class {mapName} : IMapScript
 								{
 									Vector3 mPos = t.Position;
 									mPos.Y = GetTerrainHeightAt(mPos);
-									var mUnit = SpawnUnitExternal(ActivePlaceId, mPos, PlaceUnitIsEnemy, t.Rotation, EditorPlacementScale);
+									var mUnit = SpawnUnitExternal(ActivePlaceId, mPos, PlaceUnitIsEnemy, t.Rotation, scaleVal);
 									if (mUnit != null)
 									{
-										actions.Add(new ObjectSpawnAction("unit", ActivePlaceId, mPos, t.Rotation, EditorPlacementScale, PlaceUnitIsEnemy, mUnit));
+										actions.Add(new ObjectSpawnAction("unit", ActivePlaceId, mPos, t.Rotation, scaleVal, PlaceUnitIsEnemy, mUnit));
 									}
 								}
 							}
@@ -5249,11 +5270,12 @@ public class {mapName} : IMapScript
 					else if (ActiveEditorTool == EditorTool.PlaceProp)
 					{
 						float placementRot = EditorRandomRotation ? (float)(GD.Randf() * 360.0) : EditorPlacementRotation;
-						var prop = SpawnPropExternalWithParams(ActivePlaceId, hitPos, placementRot, EditorPlacementScale);
+						float scaleVal = EditorRandomScale ? EditorPlacementScale * (float)(0.7f + GD.Randf() * 0.6f) : EditorPlacementScale;
+						var prop = SpawnPropExternalWithParams(ActivePlaceId, hitPos, placementRot, scaleVal);
 						if (prop != null)
 						{
 							var actions = new List<IEditorAction> {
-								new ObjectSpawnAction("prop", ActivePlaceId, hitPos, placementRot, EditorPlacementScale, false, prop)
+								new ObjectSpawnAction("prop", ActivePlaceId, hitPos, placementRot, scaleVal, false, prop)
 							};
 							if (EditorMirrorMode != MirrorMode.None)
 							{
@@ -5261,10 +5283,10 @@ public class {mapName} : IMapScript
 								{
 									Vector3 mPos = t.Position;
 									mPos.Y = GetTerrainHeightAt(mPos);
-									var mProp = SpawnPropExternalWithParams(ActivePlaceId, mPos, t.Rotation, EditorPlacementScale);
+									var mProp = SpawnPropExternalWithParams(ActivePlaceId, mPos, t.Rotation, scaleVal);
 									if (mProp != null)
 									{
-										actions.Add(new ObjectSpawnAction("prop", ActivePlaceId, mPos, t.Rotation, EditorPlacementScale, false, mProp));
+										actions.Add(new ObjectSpawnAction("prop", ActivePlaceId, mPos, t.Rotation, scaleVal, false, mProp));
 									}
 								}
 							}
@@ -5277,11 +5299,12 @@ public class {mapName} : IMapScript
 					else if (ActiveEditorTool == EditorTool.PlaceDecal)
 					{
 						float placementRot = EditorRandomRotation ? (float)(GD.Randf() * 360.0) : EditorPlacementRotation;
-						var decal = SpawnDecalExternalWithParams(ActivePlaceId, hitPos, placementRot, EditorPlacementScale);
+						float scaleVal = EditorRandomScale ? EditorPlacementScale * (float)(0.7f + GD.Randf() * 0.6f) : EditorPlacementScale;
+						var decal = SpawnDecalExternalWithParams(ActivePlaceId, hitPos, placementRot, scaleVal);
 						if (decal != null)
 						{
 							var actions = new List<IEditorAction> {
-								new ObjectSpawnAction("decal", ActivePlaceId, hitPos, placementRot, EditorPlacementScale, false, decal)
+								new ObjectSpawnAction("decal", ActivePlaceId, hitPos, placementRot, scaleVal, false, decal)
 							};
 							if (EditorMirrorMode != MirrorMode.None)
 							{
@@ -5289,10 +5312,10 @@ public class {mapName} : IMapScript
 								{
 									Vector3 mPos = t.Position;
 									mPos.Y = GetTerrainHeightAt(mPos);
-									var mDecal = SpawnDecalExternalWithParams(ActivePlaceId, mPos, t.Rotation, EditorPlacementScale);
+									var mDecal = SpawnDecalExternalWithParams(ActivePlaceId, mPos, t.Rotation, scaleVal);
 									if (mDecal != null)
 									{
-										actions.Add(new ObjectSpawnAction("decal", ActivePlaceId, mPos, t.Rotation, EditorPlacementScale, false, mDecal));
+										actions.Add(new ObjectSpawnAction("decal", ActivePlaceId, mPos, t.Rotation, scaleVal, false, mDecal));
 									}
 								}
 							}
@@ -5332,17 +5355,23 @@ public class {mapName} : IMapScript
 					}
 					else if (ActiveEditorTool == EditorTool.Eyedropper)
 					{
+						string mode = MapEditorHUD.Instance != null ? MapEditorHUD.Instance.GetEyedropperMode() : "all";
 						var collider = hit.ContainsKey("collider") ? hit["collider"].As<Node>() : null;
 						Node clickedNode = null;
-						if (collider != null)
+
+						if (mode == "all" || mode == "3d")
 						{
-							clickedNode = FindUnit3DInParentChain(collider);
-							if (clickedNode == null)
+							if (collider != null)
 							{
-								clickedNode = FindProp3DInParentChain(collider);
+								clickedNode = FindUnit3DInParentChain(collider);
+								if (clickedNode == null)
+								{
+									clickedNode = FindProp3DInParentChain(collider);
+								}
 							}
 						}
-						if (clickedNode == null)
+
+						if (clickedNode == null && (mode == "all" || mode == "decal"))
 						{
 							Decal closestDecal = null;
 							float closestDist = 3.0f;
@@ -5363,33 +5392,54 @@ public class {mapName} : IMapScript
 								clickedNode = closestDecal;
 							}
 						}
+
 						if (clickedNode != null)
 						{
 							if (clickedNode is Unit3D unit)
 							{
-								ActivePlaceId = unit.UnitId;
-								PlaceUnitIsEnemy = unit.IsEnemy;
-								MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.PlaceUnit);
-								MapEditorHUD.Instance?.ShowFeedbackExternal($"Picked Unit: {unit.UnitId.ToUpper()}");
+								if (MapEditorHUD.Instance != null)
+								{
+									MapEditorHUD.Instance.SelectPickedUnitOrProp(unit.UnitId, unit.IsBuilding);
+								}
+								else
+								{
+									ActivePlaceId = unit.UnitId;
+									PlaceUnitIsEnemy = unit.IsEnemy;
+									ActiveEditorTool = EditorTool.PlaceUnit;
+								}
 							}
 							else if (clickedNode is Prop3D prop)
 							{
-								ActivePlaceId = prop.PropId;
-								MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.PlaceProp);
-								MapEditorHUD.Instance?.ShowFeedbackExternal($"Picked Prop: {prop.PropId.ToUpper()}");
+								if (MapEditorHUD.Instance != null)
+								{
+									MapEditorHUD.Instance.SelectPickedUnitOrProp(prop.PropId, false);
+								}
+								else
+								{
+									ActivePlaceId = prop.PropId;
+									ActiveEditorTool = EditorTool.PlaceProp;
+								}
 							}
 							else if (clickedNode is Decal decal)
 							{
 								string decalId = decal.HasMeta("DecalId") ? decal.GetMeta("DecalId").AsString() : "logo";
-								ActivePlaceId = decalId;
-								MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.PlaceDecal);
-								MapEditorHUD.Instance?.ShowFeedbackExternal($"Picked Decal: {decalId.ToUpper()}");
+								if (MapEditorHUD.Instance != null)
+								{
+									MapEditorHUD.Instance.SelectPickedDecal(decalId);
+								}
+								else
+								{
+									ActivePlaceId = decalId;
+									ActiveEditorTool = EditorTool.PlaceDecal;
+								}
 							}
 						}
 						else
 						{
-							bool shiftPressed = Input.IsKeyPressed(Key.Shift);
-							if (shiftPressed)
+							bool wantHeight = (mode == "height") || (mode == "all" && Input.IsKeyPressed(Key.Shift));
+							bool wantTerrain = (mode == "terrain") || (mode == "all" && !Input.IsKeyPressed(Key.Shift));
+
+							if (wantHeight)
 							{
 								float sampledHeight = GetTerrainHeightAt(hitPos);
 								EditorFlattenHeight = sampledHeight;
@@ -5397,7 +5447,7 @@ public class {mapName} : IMapScript
 								MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.Flatten);
 								MapEditorHUD.Instance?.ShowFeedbackExternal($"Picked Height: {sampledHeight:F1}m");
 							}
-							else if (GroundTerrain != null)
+							else if (wantTerrain && GroundTerrain != null)
 							{
 								int w = GroundTerrain.Width;
 								int d = GroundTerrain.Depth;
@@ -5408,7 +5458,14 @@ public class {mapName} : IMapScript
 								int z = Mathf.Clamp((int)Math.Round(fz), 0, d - 1);
 								Color sampledColor = GroundTerrain.Colors[x, z];
 								EditorPaintColor = sampledColor;
-								MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.PaintGrass);
+								if (MapEditorHUD.Instance != null)
+								{
+									MapEditorHUD.Instance.SelectPaintSwatchFromColor(sampledColor);
+								}
+								else
+								{
+									ActiveEditorTool = EditorTool.PaintGrass;
+								}
 								MapEditorHUD.Instance?.ShowFeedbackExternal($"Picked Color: {sampledColor.ToHtml(false)}");
 							}
 						}
@@ -7737,7 +7794,7 @@ public class {mapName} : IMapScript
 				InGameHUD.Instance.Stone -= meta.CostStone;
 
 				var playerOwner = _playerEntity.AsPlayerEntity(EcsWorld);
-				string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : (type == "castle" ? "res://Assets/3d/Buildings/castle.glb" : "res://Assets/3d/Buildings/castle_tower.glb");
+				string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(type, true);
 				
 				var bldEntity = CreateEcsUnit(type, meta.Name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, 0f, position, playerOwner);
 				SpawnUnit3D(bldEntity, type, modelPath, position, true, false);
@@ -8041,16 +8098,7 @@ public class {mapName} : IMapScript
 
 		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
 		
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitId switch
-		{
-			"worker" => "res://Assets/3d/Characters/armored_warrior.glb",
-			"footman" => "res://Assets/3d/Characters/armored_warrior.glb",
-			"archer" => "res://Assets/3d/Characters/blue_archer.glb",
-			"priest" => "res://Assets/3d/Characters/blue_archer.glb",
-			"castle" => "res://Assets/3d/Buildings/castle.glb",
-			"tower" => "res://Assets/3d/Buildings/castle_tower.glb",
-			_ => ""
-		};
+		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(unitId, meta.Speed == 0f);
 
 		string name = meta.Name;
 		if (isEnemy)
@@ -8470,6 +8518,7 @@ public class {mapName} : IMapScript
 		
 		CreateBrushIndicator();
 		CreateGridOverlay();
+		InitializeCameraBoundsOverlay();
 	}
 
 	public void ExitMapEditorMode()
@@ -8489,6 +8538,12 @@ public class {mapName} : IMapScript
 		{
 			_gridOverlayMesh.QueueFree();
 			_gridOverlayMesh = null;
+		}
+
+		if (_cameraBoundsOverlayMesh != null)
+		{
+			_cameraBoundsOverlayMesh.QueueFree();
+			_cameraBoundsOverlayMesh = null;
 		}
 		
 		var groundNode = GetNodeOrNull("Ground");
@@ -8791,6 +8846,155 @@ public class {mapName} : IMapScript
 				}
 			}
 		}
+	}
+
+	private void InitializeCameraBoundsOverlay()
+	{
+		if (_cameraBoundsOverlayMesh != null) return;
+
+		_cameraBoundsOverlayMesh = new MeshInstance3D();
+		_cameraBoundsOverlayMesh.Name = "CameraBoundsOverlay";
+
+		var mat = new StandardMaterial3D();
+		mat.AlbedoColor = new Color(1.0f, 1.0f, 1.0f, 1.0f);
+		mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+		mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+		mat.NoDepthTest = false;
+		mat.VertexColorUseAsAlbedo = true;
+		_cameraBoundsOverlayMesh.MaterialOverride = mat;
+
+		AddChild(_cameraBoundsOverlayMesh);
+		_cameraBoundsOverlayMesh.Visible = false;
+	}
+
+	public void UpdateCameraBoundsOverlayVisibility()
+	{
+		if (_cameraBoundsOverlayMesh == null) return;
+		_cameraBoundsOverlayMesh.Visible = IsMapEditorMode && EditorCameraBoundsVisible;
+		if (_cameraBoundsOverlayMesh.Visible)
+		{
+			RebuildCameraBoundsOverlay();
+		}
+	}
+
+	public void RebuildCameraBoundsOverlay()
+	{
+		if (_cameraBoundsOverlayMesh == null || GroundTerrain == null) return;
+		if (!EditorCameraBoundsVisible) return;
+
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+		float spacing = GroundTerrain.Spacing;
+
+		float halfW = (width - 1) / 2.0f;
+		float halfD = (depth - 1) / 2.0f;
+
+		float minWorldX = -halfW * spacing;
+		float maxWorldX = halfW * spacing;
+		float minWorldZ = -halfD * spacing;
+		float maxWorldZ = halfD * spacing;
+
+		float left = Mathf.Clamp(EditorCameraBoundsLeft, minWorldX, maxWorldX);
+		float right = Mathf.Clamp(EditorCameraBoundsRight, minWorldX, maxWorldX);
+		float top = Mathf.Clamp(EditorCameraBoundsTop, minWorldZ, maxWorldZ);
+		float bottom = Mathf.Clamp(EditorCameraBoundsBottom, minWorldZ, maxWorldZ);
+
+		var linePoints = new List<Vector3>();
+
+		float GetTerrainHeightAtCoord(float worldX, float worldZ)
+		{
+			float gridX = worldX / spacing + halfW;
+			float gridZ = worldZ / spacing + halfD;
+			int x0 = Mathf.Clamp((int)Mathf.Floor(gridX), 0, width - 1);
+			int x1 = Mathf.Clamp(x0 + 1, 0, width - 1);
+			int z0 = Mathf.Clamp((int)Mathf.Floor(gridZ), 0, depth - 1);
+			int z1 = Mathf.Clamp(z0 + 1, 0, depth - 1);
+			
+			float tx = gridX - x0;
+			float tz = gridZ - z0;
+			
+			float h00 = GroundTerrain.Heights[x0, z0];
+			float h10 = GroundTerrain.Heights[x1, z0];
+			float h01 = GroundTerrain.Heights[x0, z1];
+			float h11 = GroundTerrain.Heights[x1, z1];
+			
+			float h0 = Mathf.Lerp(h00, h10, tx);
+			float h1 = Mathf.Lerp(h01, h11, tx);
+			return Mathf.Lerp(h0, h1, tz);
+		}
+
+		void AddSegmentedLine(float x1, float z1, float x2, float z2)
+		{
+			float dist = Mathf.Sqrt((x2 - x1) * (x2 - x1) + (z2 - z1) * (z2 - z1));
+			int segments = Mathf.Max(1, (int)Mathf.Ceil(dist / spacing));
+			for (int i = 0; i < segments; i++)
+			{
+				float t1 = (float)i / segments;
+				float t2 = (float)(i + 1) / segments;
+				
+				float lx1 = Mathf.Lerp(x1, x2, t1);
+				float lz1 = Mathf.Lerp(z1, z2, t1);
+				float lx2 = Mathf.Lerp(x1, x2, t2);
+				float lz2 = Mathf.Lerp(z1, z2, t2);
+				
+				float y1 = GetTerrainHeightAtCoord(lx1, lz1) + 0.2f;
+				float y2 = GetTerrainHeightAtCoord(lx2, lz2) + 0.2f;
+				
+				linePoints.Add(new Vector3(lx1, y1, lz1));
+				linePoints.Add(new Vector3(lx2, y2, lz2));
+			}
+		}
+
+		AddSegmentedLine(left, top, right, top);
+		AddSegmentedLine(right, top, right, bottom);
+		AddSegmentedLine(right, bottom, left, bottom);
+		AddSegmentedLine(left, bottom, left, top);
+
+		int totalVertices = linePoints.Count * 3;
+		var vertices = new Vector3[totalVertices];
+		var colors = new Color[totalVertices];
+		int idx = 0;
+
+		Color boundsColor = new Color(0.9f, 0.1f, 0.8f, 0.95f);
+
+		for (int i = 0; i < linePoints.Count; i += 2)
+		{
+			Vector3 p1 = linePoints[i];
+			Vector3 p2 = linePoints[i + 1];
+
+			vertices[idx] = p1;
+			colors[idx] = boundsColor;
+			idx++;
+			vertices[idx] = p2;
+			colors[idx] = boundsColor;
+			idx++;
+
+			Vector3 dir = (p2 - p1).Normalized();
+			Vector3 ortho = new Vector3(-dir.Z, 0, dir.X) * 0.08f;
+
+			vertices[idx] = p1 + ortho;
+			colors[idx] = boundsColor;
+			idx++;
+			vertices[idx] = p2 + ortho;
+			colors[idx] = boundsColor;
+			idx++;
+
+			vertices[idx] = p1 - ortho;
+			colors[idx] = boundsColor;
+			idx++;
+			vertices[idx] = p2 - ortho;
+			colors[idx] = boundsColor;
+			idx++;
+		}
+
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+		arrays[(int)Mesh.ArrayType.Color] = colors;
+
+		var arrayMesh = new ArrayMesh();
+		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Lines, arrays);
+		_cameraBoundsOverlayMesh.Mesh = arrayMesh;
 	}
 
 	private void CreateGridOverlay()
@@ -9386,6 +9590,13 @@ public class {mapName} : IMapScript
 		EditorHistoryManager.Clear();
 		RebuildGridOverlayMeshExternal();
 		
+		EditorCameraBoundsLeft = -95.0f;
+		EditorCameraBoundsRight = 95.0f;
+		EditorCameraBoundsTop = -95.0f;
+		EditorCameraBoundsBottom = 125.0f;
+		MapEditorHUD.Instance?.UpdateCameraBoundsUI();
+		RebuildCameraBoundsOverlay();
+
 		MapEditorHUD.Instance?.ShowFeedbackExternal("Map reset: cleared all entities & terrain");
 	}
 
@@ -9728,6 +9939,15 @@ public class {mapName} : IMapScript
 	public string GetDecalTexturePath(string decalId)
 	{
 		if (string.IsNullOrEmpty(decalId)) decalId = "logo";
+		if (decalId.StartsWith("res://") || decalId.Contains("/"))
+		{
+			return decalId;
+		}
+		string customPath = $"res://Assets/2d/Decals/{decalId}";
+		if (FileAccess.FileExists(customPath))
+		{
+			return customPath;
+		}
 		return decalId switch
 		{
 			"forest" => "res://Assets/UI/forest_path.png",
@@ -10028,6 +10248,11 @@ public class {mapName} : IMapScript
 		saveData.BlockLevelHeight = EditorBlockLevelHeight;
 		saveData.WC3BlockMode = EditorBlockMode;
 		saveData.WC3LevelHeight = EditorBlockLevelHeight;
+		saveData.CameraBoundsLeft = EditorCameraBoundsLeft;
+		saveData.CameraBoundsRight = EditorCameraBoundsRight;
+		saveData.CameraBoundsTop = EditorCameraBoundsTop;
+		saveData.CameraBoundsBottom = EditorCameraBoundsBottom;
+		saveData.SkyboxPath = EditorSkyboxPath;
 		
 		int width = GroundTerrain.Width;
 		int depth = GroundTerrain.Depth;
@@ -10149,6 +10374,19 @@ public class {mapName} : IMapScript
 			EditorBlockLevelHeight = step;
 			MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(step);
 
+			if (saveData.CameraBoundsLeft.HasValue) EditorCameraBoundsLeft = saveData.CameraBoundsLeft.Value;
+			if (saveData.CameraBoundsRight.HasValue) EditorCameraBoundsRight = saveData.CameraBoundsRight.Value;
+			if (saveData.CameraBoundsTop.HasValue) EditorCameraBoundsTop = saveData.CameraBoundsTop.Value;
+			if (saveData.CameraBoundsBottom.HasValue) EditorCameraBoundsBottom = saveData.CameraBoundsBottom.Value;
+			MapEditorHUD.Instance?.UpdateCameraBoundsUI();
+			RebuildCameraBoundsOverlay();
+
+			if (!string.IsNullOrEmpty(saveData.SkyboxPath))
+			{
+				SetSkyboxTexture(saveData.SkyboxPath);
+				MapEditorHUD.Instance?.UpdateSelectedSkyboxExternal(saveData.SkyboxPath);
+			}
+
 			int width = GroundTerrain.Width;
 			int depth = GroundTerrain.Depth;
 
@@ -10203,6 +10441,7 @@ public class {mapName} : IMapScript
 			}
 
 			EditorHasUnsavedChanges = false;
+			MapEditorHUD.Instance?.RegenerateMinimap();
 			return true;
 		}
 		catch (Exception ex)
@@ -10214,20 +10453,32 @@ public class {mapName} : IMapScript
 
 	public Unit3D SpawnUnitExternal(string unitId, Vector3 position, bool isEnemy, float rotationY, float scale)
 	{
+		if (!UnitRegistry.ContainsKey(unitId))
+		{
+			var dynamicMeta = new UnitMetadata
+			{
+				Name = System.IO.Path.GetFileNameWithoutExtension(unitId).Replace("_", " "),
+				MaxHp = 100f,
+				Damage = 10f,
+				Range = 2f,
+				Armor = 2f,
+				Speed = 6.0f,
+				ProductionTime = 10f,
+				ModelPath = unitId.StartsWith("res://") ? unitId : $"res://Assets/3d/Characters/{unitId}"
+			};
+			if (unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower"))
+			{
+				dynamicMeta.Speed = 0f;
+				dynamicMeta.ModelPath = unitId.StartsWith("res://") ? unitId : $"res://Assets/3d/Buildings/{unitId}";
+			}
+			UnitRegistry[unitId] = dynamicMeta;
+		}
+
 		if (!UnitRegistry.TryGetValue(unitId, out var meta)) return null;
 
 		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
 		
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitId switch
-		{
-			"worker" => "res://Assets/3d/Characters/armored_warrior.glb",
-			"footman" => "res://Assets/3d/Characters/armored_warrior.glb",
-			"archer" => "res://Assets/3d/Characters/blue_archer.glb",
-			"priest" => "res://Assets/3d/Characters/blue_archer.glb",
-			"castle" => "res://Assets/3d/Buildings/castle.glb",
-			"tower" => "res://Assets/3d/Buildings/castle_tower.glb",
-			_ => ""
-		};
+		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(unitId, meta.Speed == 0f);
 
 		string name = meta.Name;
 		if (isEnemy)
@@ -10454,18 +10705,30 @@ public class {mapName} : IMapScript
 
 			if (ActiveEditorTool == EditorTool.PlaceUnit)
 			{
+				if (!UnitRegistry.ContainsKey(reqId))
+				{
+					var dynamicMeta = new UnitMetadata
+					{
+						Name = System.IO.Path.GetFileNameWithoutExtension(reqId).Replace("_", " "),
+						MaxHp = 100f,
+						Damage = 10f,
+						Range = 2f,
+						Armor = 2f,
+						Speed = 6.0f,
+						ProductionTime = 10f,
+						ModelPath = reqId.StartsWith("res://") ? reqId : $"res://Assets/3d/Characters/{reqId}"
+					};
+					if (reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower"))
+					{
+						dynamicMeta.Speed = 0f;
+						dynamicMeta.ModelPath = reqId.StartsWith("res://") ? reqId : $"res://Assets/3d/Buildings/{reqId}";
+					}
+					UnitRegistry[reqId] = dynamicMeta;
+				}
+
 				if (UnitRegistry.TryGetValue(reqId, out var meta))
 				{
-					string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : reqId switch
-					{
-						"worker" => "res://Assets/3d/Characters/armored_warrior.glb",
-						"footman" => "res://Assets/3d/Characters/armored_warrior.glb",
-						"archer" => "res://Assets/3d/Characters/blue_archer.glb",
-						"priest" => "res://Assets/3d/Characters/blue_archer.glb",
-						"castle" => "res://Assets/3d/Buildings/castle.glb",
-						"tower" => "res://Assets/3d/Buildings/castle_tower.glb",
-						_ => ""
-					};
+ 					string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(reqId, meta.Speed == 0f);
 
 					var previewUnit = new Unit3D();
 					previewUnit.UnitId = reqId;
@@ -11149,7 +11412,7 @@ public class {mapName} : IMapScript
 			{
 				var playerOwner = _peerIdToPlayerEntityMap[peerId].AsPlayerEntity(EcsWorld);
 				Vector3 position = cmd.TargetPosition.ToGodot();
-				string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : (buildType == "castle" ? "res://Assets/3d/Buildings/castle.glb" : "res://Assets/3d/Buildings/castle_tower.glb");
+				string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(buildType, true);
 				var bldEntity = CreateEcsUnit(buildType, meta.Name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, 0f, position, playerOwner);
 				SpawnUnit3D(bldEntity, buildType, modelPath, position, true, false);
 			}
@@ -11395,7 +11658,7 @@ public class {mapName} : IMapScript
 		};
 		EcsWorld.Add(entity, target);
 
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : (snap.IsBuilding ? "res://Assets/3d/Buildings/castle.glb" : "res://Assets/3d/Characters/armored_warrior.glb");
+		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(snap.UnitId, snap.IsBuilding);
 		var unit3D = SpawnUnit3D(entity, snap.UnitId, modelPath, snap.Position.ToGodot(), snap.IsBuilding, isEnemy);
 		_serverToClientEntityMap[snap.EntityId] = entity;
 		_clientToServerEntityMap[entity.Id] = snap.EntityId;

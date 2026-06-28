@@ -34,6 +34,18 @@
           "type": "integer",
           "minimum": 0
         },
+        "CameraBoundsLeft": {
+          "type": "number"
+        },
+        "CameraBoundsRight": {
+          "type": "number"
+        },
+        "CameraBoundsTop": {
+          "type": "number"
+        },
+        "CameraBoundsBottom": {
+          "type": "number"
+        },
         "MapHeight": {
           "type": "integer",
           "minimum": 0

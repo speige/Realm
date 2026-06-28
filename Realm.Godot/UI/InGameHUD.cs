@@ -355,6 +355,36 @@ public partial class InGameHUD : Control
 		_minimapControls.AddChild(btnHotkeys);
 
 		_camera3D = GetTree().Root.GetNodeOrNull<Camera3D>("Main/Camera3D");
+		if (_camera3D is CameraControl camCtrl)
+		{
+			if (FileAccess.FileExists("res://map.json"))
+			{
+				using var file = FileAccess.Open("res://map.json", FileAccess.ModeFlags.Read);
+				if (file != null)
+				{
+					try
+					{
+						string jsonText = file.GetAsText();
+						using var jsonDoc = System.Text.Json.JsonDocument.Parse(jsonText);
+						if (jsonDoc.RootElement.TryGetProperty("MapProperties", out var mapProps))
+						{
+							if (mapProps.TryGetProperty("CameraBoundsLeft", out var leftProp) && leftProp.ValueKind == System.Text.Json.JsonValueKind.Number)
+								camCtrl.LimitLeft = (float)leftProp.GetDouble();
+							if (mapProps.TryGetProperty("CameraBoundsRight", out var rightProp) && rightProp.ValueKind == System.Text.Json.JsonValueKind.Number)
+								camCtrl.LimitRight = (float)rightProp.GetDouble();
+							if (mapProps.TryGetProperty("CameraBoundsTop", out var topProp) && topProp.ValueKind == System.Text.Json.JsonValueKind.Number)
+								camCtrl.LimitTop = (float)topProp.GetDouble();
+							if (mapProps.TryGetProperty("CameraBoundsBottom", out var bottomProp) && bottomProp.ValueKind == System.Text.Json.JsonValueKind.Number)
+								camCtrl.LimitBottom = (float)bottomProp.GetDouble();
+						}
+					}
+					catch (Exception ex)
+					{
+						GD.PrintErr($"[InGameHUD] Failed to load camera bounds from map.json: {ex.Message}");
+					}
+				}
+			}
+		}
 
 		ApplyThemeStyles();
 		SetupCommandCard();

@@ -182,6 +182,48 @@ public partial class Prop3D : StaticBody3D
 		visual.Name = "VisualModel";
 		AddChild(visual);
 		
+		if (PropId.EndsWith(".glb") || PropId.Contains("res://") || PropId.Contains("/"))
+		{
+			string path = PropId;
+			if (!path.StartsWith("res://"))
+			{
+				if (path.Contains("Environment"))
+				{
+					path = $"res://Assets/3d/Environment/{path}";
+				}
+				else
+				{
+					path = $"res://Assets/3d/Props/{path}";
+				}
+			}
+			try
+			{
+				var scene = GD.Load<PackedScene>(path);
+				if (scene != null)
+				{
+					var node = scene.Instantiate();
+					visual.AddChild(node);
+				}
+				else
+				{
+					var meshInstance = new MeshInstance3D();
+					var boxMesh = new BoxMesh();
+					boxMesh.Size = new Vector3(1.5f, 2.0f, 1.5f);
+					meshInstance.Mesh = boxMesh;
+					var mat = new StandardMaterial3D();
+					mat.AlbedoColor = new Color(0.8f, 0.4f, 0.1f);
+					meshInstance.MaterialOverride = mat;
+					meshInstance.Position = new Vector3(0, 1.0f, 0);
+					visual.AddChild(meshInstance);
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"Failed to load dynamic prop visual: {ex.Message}");
+			}
+			return;
+		}
+
 		switch (PropId)
 		{
 			case "tree":
