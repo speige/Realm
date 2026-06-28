@@ -7,6 +7,8 @@ using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Services;
+using DotRecast.Core.Numerics;
+using DotRecast.Detour;
 
 public partial class InGameHUD : Control
 {
@@ -2075,7 +2077,44 @@ public partial class InGameHUD : Control
 						float yRatio = mouseBtn.Position.Y / _minimapArea.Size.Y;
 						float worldX = Mathf.Clamp((xRatio - 0.5f) * 250f, -95f, 95f);
 						float worldZ = Mathf.Clamp((yRatio - 0.5f) * 250f, -95f, 125f);
-						var minimapWorldPos = new Vector3(worldX, 0f, worldZ);
+						float height = 0f;
+						if (GameHost.Instance.GroundTerrain != null)
+						{
+							GameHost.Instance.GroundTerrain.GetHeightAndNormal(worldX, worldZ, out height, out _);
+						}
+						var minimapWorldPos = new Vector3(worldX, height, worldZ);
+
+						if (GameHost.Instance.GroundTerrain != null && GameHost.Instance.GroundTerrain.NavMeshQuery != null)
+						{
+							Unit3D firstMovable = null;
+							foreach (var u in GameHost.Instance.SelectedUnits)
+							{
+								if (u != null && GodotObject.IsInstanceValid(u) && !u.IsEnemy && !u.IsBuilding)
+								{
+									firstMovable = u;
+									break;
+								}
+							}
+							if (firstMovable != null)
+							{
+								int includeFlags = 8;
+								if (GameHost.UnitRegistry.TryGetValue(firstMovable.UnitId, out var meta))
+								{
+									includeFlags = GameHost.GetUnitPathingFlags(meta);
+								}
+								var filter = new DtQueryDefaultFilter();
+								filter.SetIncludeFlags(includeFlags);
+								filter.SetExcludeFlags(0);
+
+								var extents = new RcVec3f(2f, 4f, 2f);
+								var targetRc = new RcVec3f(worldX, height, worldZ);
+								GameHost.Instance.GroundTerrain.NavMeshQuery.FindNearestPoly(targetRc, extents, filter, out long nearestRef, out var nearestPt, out _);
+								if (nearestRef != 0)
+								{
+									minimapWorldPos = new Vector3(nearestPt.X, nearestPt.Y, nearestPt.Z);
+								}
+							}
+						}
 
 						if (GameHost.Instance.ActivePingMode)
 						{
@@ -2135,7 +2174,12 @@ public partial class InGameHUD : Control
 						float yRatio = mouseBtn.Position.Y / _minimapArea.Size.Y;
 						float worldX = Mathf.Clamp((xRatio - 0.5f) * 250f, -95f, 95f);
 						float worldZ = Mathf.Clamp((yRatio - 0.5f) * 250f, -95f, 125f);
-						var hitPos = new Vector3(worldX, 0f, worldZ);
+						float height = 0f;
+						if (GameHost.Instance.GroundTerrain != null)
+						{
+							GameHost.Instance.GroundTerrain.GetHeightAndNormal(worldX, worldZ, out height, out _);
+						}
+						var hitPos = new Vector3(worldX, height, worldZ);
 
 						if (GameHost.Instance.SelectedUnits.Count == 1 && 
 							!GameHost.Instance.SelectedUnits[0].IsEnemy && 
@@ -2145,6 +2189,38 @@ public partial class InGameHUD : Control
 						}
 						else
 						{
+							if (GameHost.Instance.GroundTerrain != null && GameHost.Instance.GroundTerrain.NavMeshQuery != null)
+							{
+								Unit3D firstMovable = null;
+								foreach (var u in GameHost.Instance.SelectedUnits)
+								{
+									if (u != null && GodotObject.IsInstanceValid(u) && !u.IsEnemy && !u.IsBuilding)
+									{
+										firstMovable = u;
+										break;
+									}
+								}
+								if (firstMovable != null)
+								{
+									int includeFlags = 8;
+									if (GameHost.UnitRegistry.TryGetValue(firstMovable.UnitId, out var meta))
+									{
+										includeFlags = GameHost.GetUnitPathingFlags(meta);
+									}
+									var filter = new DtQueryDefaultFilter();
+									filter.SetIncludeFlags(includeFlags);
+									filter.SetExcludeFlags(0);
+
+									var extents = new RcVec3f(2f, 4f, 2f);
+									var targetRc = new RcVec3f(worldX, height, worldZ);
+									GameHost.Instance.GroundTerrain.NavMeshQuery.FindNearestPoly(targetRc, extents, filter, out long nearestRef, out var nearestPt, out _);
+									if (nearestRef != 0)
+									{
+										hitPos = new Vector3(nearestPt.X, nearestPt.Y, nearestPt.Z);
+									}
+								}
+							}
+
 							bool shiftHeld = Input.IsKeyPressed(Key.Shift);
 							if (shiftHeld)
 							{

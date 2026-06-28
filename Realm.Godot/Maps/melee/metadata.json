@@ -124,5 +124,26 @@
     "ArmorType": "building",
     "GoldBounty": 0.0,
     "PathingCapabilities": ["ground"]
+  },
+  "turtle": {
+    "UnitId": "turtle",
+    "Name": "Amphibious Turtle",
+    "Description": "Slow but sturdy amphibious beast that can travel on both ground and shallow water.",
+    "MaxHp": 120.0,
+    "Damage": 10.0,
+    "Range": 1.5,
+    "Armor": 4.0,
+    "Speed": 5.0,
+    "AttackCooldown": 1.8,
+    "ScanRadius": 12.0,
+    "CostGold": 90.0,
+    "CostWood": 10.0,
+    "CostStone": 0.0,
+    "ProductionTime": 5.0,
+    "PopCost": 1,
+    "AttackType": "melee",
+    "ArmorType": "heavy",
+    "GoldBounty": 18.0,
+    "PathingCapabilities": ["ground", "shallow_water"]
   }
 }

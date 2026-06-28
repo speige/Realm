@@ -114,6 +114,8 @@ public partial class GameHost : Node3D, IGameAPI
 	private MeshInstance3D _brushIndicatorMesh = null;
 	private MeshInstance3D _gridOverlayMesh = null;
 	private MeshInstance3D _cameraBoundsOverlayMesh = null;
+	private MeshInstance3D _pathingOverlayMesh = null;
+	public bool PathingOverlayVisible { get; set; } = true;
 	public enum EditorTool
 	{
 		None,
@@ -2523,6 +2525,29 @@ public class {mapName} : IMapScript
 				AttackType = "ranged",
 				ArmorType = "building",
 				GoldBounty = 0f
+			}
+		},
+		{
+			"turtle", new UnitMetadata {
+				UnitId = "turtle",
+				Name = "Amphibious Turtle",
+				Description = "Slow but sturdy amphibious beast that can travel on both ground and shallow water.",
+				MaxHp = 120f,
+				Damage = 10f,
+				Range = 1.5f,
+				Armor = 4f,
+				Speed = 5.0f,
+				AttackCooldown = 1.8f,
+				ScanRadius = 12.0f,
+				CostGold = 90f,
+				CostWood = 10f,
+				CostStone = 0f,
+				ProductionTime = 5.0f,
+				PopCost = 1,
+				AttackType = "melee",
+				ArmorType = "heavy",
+				GoldBounty = 18f,
+				PathingCapabilities = new[] { "ground", "shallow_water" }
 			}
 		}
 	};
@@ -9068,6 +9093,188 @@ public class {mapName} : IMapScript
 		_cameraBoundsOverlayMesh.Mesh = arrayMesh;
 	}
 
+	public void UpdatePathingOverlay()
+	{
+		if (_pathingOverlayMesh == null)
+		{
+			_pathingOverlayMesh = new MeshInstance3D();
+			_pathingOverlayMesh.Name = "PathingOverlay";
+
+			var mat = new StandardMaterial3D();
+			mat.AlbedoColor = new Color(1.0f, 1.0f, 1.0f, 1.0f);
+			mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+			mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+			mat.VertexColorUseAsAlbedo = true;
+			mat.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+			mat.NoDepthTest = false;
+			mat.DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Disabled;
+			_pathingOverlayMesh.MaterialOverride = mat;
+			_pathingOverlayMesh.Position = new Vector3(0f, 0.05f, 0f);
+			AddChild(_pathingOverlayMesh);
+		}
+
+		bool shouldBeVisible = IsMapEditorMode && PathingOverlayVisible && ActiveEditorTool == EditorTool.PaintPathing;
+		_pathingOverlayMesh.Visible = shouldBeVisible;
+
+		if (shouldBeVisible && GroundTerrain != null)
+		{
+			RebuildPathingOverlay();
+		}
+	}
+
+	private void RebuildPathingOverlay()
+	{
+		if (_pathingOverlayMesh == null || GroundTerrain == null) return;
+
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+		float spacing = GroundTerrain.Spacing;
+
+		static Color GetLayerColor(int flag) => flag switch
+		{
+			EditableTerrain.PATHING_SHALLOW_WATER => new Color(0.2f, 0.6f, 1.0f, 0.55f),
+			EditableTerrain.PATHING_DEEP_WATER    => new Color(0.0f, 0.15f, 0.7f, 0.55f),
+			EditableTerrain.PATHING_FLYING        => new Color(0.85f, 0.85f, 0.0f, 0.55f),
+			EditableTerrain.PATHING_GROUND        => new Color(0.2f, 0.85f, 0.2f, 0.55f),
+			EditableTerrain.PATHING_UNPATHABLE    => new Color(0.9f, 0.1f, 0.1f, 0.55f),
+			_ => new Color(0f, 0f, 0f, 0f)
+		};
+
+		var allFlags = new int[]
+		{
+			EditableTerrain.PATHING_SHALLOW_WATER,
+			EditableTerrain.PATHING_DEEP_WATER,
+			EditableTerrain.PATHING_FLYING,
+			EditableTerrain.PATHING_GROUND,
+			EditableTerrain.PATHING_UNPATHABLE
+		};
+
+		int cellWidth = width - 1;
+		int cellDepth = depth - 1;
+		int maxQuads = cellWidth * cellDepth;
+
+		var verticesList = new List<Vector3>(maxQuads * 8);
+		var colorsList = new List<Color>(maxQuads * 8);
+		var indicesList = new List<int>(maxQuads * 12);
+
+		for (int z = 0; z < cellDepth; z++)
+		{
+			for (int x = 0; x < cellWidth; x++)
+			{
+				int code = GroundTerrain.PathingCodes[x, z];
+				if (code == 0)
+				{
+					continue;
+				}
+
+				var activeFlags = new List<int>();
+				foreach (var flag in allFlags)
+				{
+					if ((code & flag) != 0)
+					{
+						activeFlags.Add(flag);
+					}
+				}
+
+				if (activeFlags.Count == 0)
+				{
+					continue;
+				}
+
+				float lx0 = (x - (width - 1) / 2.0f) * spacing;
+				float lz0 = (z - (depth - 1) / 2.0f) * spacing;
+				float lx1 = lx0 + spacing;
+				float lz1 = lz0 + spacing;
+
+				float h00 = GroundTerrain.Heights[x,     z    ] + 0.06f;
+				float h10 = GroundTerrain.Heights[x + 1, z    ] + 0.06f;
+				float h01 = GroundTerrain.Heights[x,     z + 1] + 0.06f;
+				float h11 = GroundTerrain.Heights[x + 1, z + 1] + 0.06f;
+
+				if (activeFlags.Count == 1)
+				{
+					Color cellColor = GetLayerColor(activeFlags[0]);
+					if (cellColor.A < 0.01f) continue;
+
+					int baseV = verticesList.Count;
+					verticesList.Add(new Vector3(lx0, h00, lz0));
+					colorsList.Add(cellColor);
+					verticesList.Add(new Vector3(lx1, h10, lz0));
+					colorsList.Add(cellColor);
+					verticesList.Add(new Vector3(lx1, h11, lz1));
+					colorsList.Add(cellColor);
+					verticesList.Add(new Vector3(lx0, h01, lz1));
+					colorsList.Add(cellColor);
+
+					indicesList.Add(baseV);
+					indicesList.Add(baseV + 1);
+					indicesList.Add(baseV + 2);
+					indicesList.Add(baseV);
+					indicesList.Add(baseV + 2);
+					indicesList.Add(baseV + 3);
+				}
+				else
+				{
+					int S = 4;
+					for (int sz = 0; sz < S; sz++)
+					{
+						for (int sx = 0; sx < S; sx++)
+						{
+							float tx0 = (float)sx / S;
+							float tx1 = (float)(sx + 1) / S;
+							float tz0 = (float)sz / S;
+							float tz1 = (float)(sz + 1) / S;
+
+							float h_sub00 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx0), Mathf.Lerp(h01, h11, tx0), tz0);
+							float h_sub10 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx1), Mathf.Lerp(h01, h11, tx1), tz0);
+							float h_sub11 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx1), Mathf.Lerp(h01, h11, tx1), tz1);
+							float h_sub01 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx0), Mathf.Lerp(h01, h11, tx0), tz1);
+
+							float subX0 = lx0 + sx * (spacing / S);
+							float subX1 = lx0 + (sx + 1) * (spacing / S);
+							float subZ0 = lz0 + sz * (spacing / S);
+							float subZ1 = lz0 + (sz + 1) * (spacing / S);
+
+							int flagIndex = (sx + sz) % activeFlags.Count;
+							Color subColor = GetLayerColor(activeFlags[flagIndex]);
+							if (subColor.A < 0.01f) continue;
+
+							int baseV = verticesList.Count;
+							verticesList.Add(new Vector3(subX0, h_sub00, subZ0));
+							colorsList.Add(subColor);
+							verticesList.Add(new Vector3(subX1, h_sub10, subZ0));
+							colorsList.Add(subColor);
+							verticesList.Add(new Vector3(subX1, h_sub11, subZ1));
+							colorsList.Add(subColor);
+							verticesList.Add(new Vector3(subX0, h_sub01, subZ1));
+							colorsList.Add(subColor);
+
+							indicesList.Add(baseV);
+							indicesList.Add(baseV + 1);
+							indicesList.Add(baseV + 2);
+							indicesList.Add(baseV);
+							indicesList.Add(baseV + 2);
+							indicesList.Add(baseV + 3);
+						}
+					}
+				}
+			}
+		}
+
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = verticesList.ToArray();
+		arrays[(int)Mesh.ArrayType.Color]  = colorsList.ToArray();
+		arrays[(int)Mesh.ArrayType.Index]  = indicesList.ToArray();
+
+		var arrayMesh = new ArrayMesh();
+		if (indicesList.Count > 0)
+		{
+			arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+		}
+		_pathingOverlayMesh.Mesh = arrayMesh;
+	}
+
 	private void CreateGridOverlay()
 	{
 		if (_gridOverlayMesh != null) return;
@@ -9918,6 +10125,10 @@ public class {mapName} : IMapScript
 				{
 					AlignAllEntitiesToTerrain();
 				}
+				if (isPathing && PathingOverlayVisible)
+				{
+					RebuildPathingOverlay();
+				}
 				EditorHasUnsavedChanges = true;
 			}
 			return;
@@ -10039,8 +10250,11 @@ public class {mapName} : IMapScript
 			
 			if (isHeights)
 			{
-				// Auto-align units/props within editing area to the new heights
 				AlignAllEntitiesToTerrain();
+			}
+			if (isPathing && PathingOverlayVisible)
+			{
+				RebuildPathingOverlay();
 			}
 			EditorHasUnsavedChanges = true;
 		}

@@ -1313,6 +1313,55 @@ public partial class MapEditorHUD : Control
 			pathSldBrushSize.Value = val;
 			sizeVal.Text = val.ToString("F1");
 		};
+
+		var pathingDivider = new HSeparator();
+		pContent.AddChild(pathingDivider);
+
+		var legendLabel = new Label();
+		legendLabel.Text = "LAYER COLOR LEGEND";
+		legendLabel.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
+		legendLabel.AddThemeFontSizeOverride("font_size", 11);
+		pContent.AddChild(legendLabel);
+
+		var legendColors = new (string name, Color color)[] {
+			("Shallow Water", new Color(0.2f, 0.6f, 1.0f, 0.7f)),
+			("Deep Water",    new Color(0.0f, 0.15f, 0.7f, 0.7f)),
+			("Flying",        new Color(0.85f, 0.85f, 0.0f, 0.7f)),
+			("Ground",        new Color(0.2f, 0.85f, 0.2f, 0.7f)),
+			("Unpathable",    new Color(0.9f, 0.1f, 0.1f, 0.7f)),
+		};
+		foreach (var (name, col) in legendColors)
+		{
+			var row = new HBoxContainer();
+			row.AddThemeConstantOverride("separation", 6);
+			pContent.AddChild(row);
+
+			var swatch = new ColorRect();
+			swatch.Color = col;
+			swatch.CustomMinimumSize = new Vector2(14, 14);
+			swatch.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+			row.AddChild(swatch);
+
+			var nameLbl = new Label();
+			nameLbl.Text = name;
+			nameLbl.AddThemeColorOverride("font_color", col.Lightened(0.2f));
+			nameLbl.AddThemeFontSizeOverride("font_size", 11);
+			row.AddChild(nameLbl);
+		}
+
+		var overlayBtn = new Button();
+		overlayBtn.Name = "BtnPathingOverlay";
+		overlayBtn.Set("icon_max_width", 0);
+		SetupButton(overlayBtn, "👁 SHOW OVERLAY: ON", () =>
+		{
+			if (GameHost.Instance != null)
+			{
+				GameHost.Instance.PathingOverlayVisible = !GameHost.Instance.PathingOverlayVisible;
+				GameHost.Instance.UpdatePathingOverlay();
+				overlayBtn.Text = GameHost.Instance.PathingOverlayVisible ? "👁 SHOW OVERLAY: ON" : "👁 SHOW OVERLAY: OFF";
+			}
+		}, 11, "Toggle the colored pathing overlay visualization on the terrain");
+		pContent.AddChild(overlayBtn);
 	}
 
 	private void SetupButton(Button btn, string text, Action onClick, int fontSize = 13, string tooltip = "")
@@ -1649,12 +1698,14 @@ public partial class MapEditorHUD : Control
 			if (_panelPathing != null) _panelPathing.Visible = true;
 			if (_panelTextures != null) _panelTextures.Visible = false;
 			if (_panelEntityPalette != null) _panelEntityPalette.Visible = false;
+			GameHost.Instance?.UpdatePathingOverlay();
 		}
 		else
 		{
 			if (_panelPathing != null) _panelPathing.Visible = false;
 			if (_panelTextures != null) _panelTextures.Visible = true;
 			if (_panelEntityPalette != null) _panelEntityPalette.Visible = true;
+			GameHost.Instance?.UpdatePathingOverlay();
 
 			if (isTerrainOrPaint)
 			{
@@ -1665,6 +1716,7 @@ public partial class MapEditorHUD : Control
 				SetPanelExpanded("PanelEntityPalette", "VBox/HeaderHBox/BtnCollapse", "VBox/Content", true);
 			}
 		}
+
 
 		string toolName = tool.ToString().ToUpper();
 		if (!string.IsNullOrEmpty(placeId)) toolName += $" ({placeId.ToUpper()})";
@@ -1984,6 +2036,31 @@ public class {mapName} : IMapScript
 			4 => "height",
 			_ => "all"
 		};
+	}
+
+	public int GetSelectedPathingMask()
+	{
+		int mask = 0;
+		if (_chkShallowWater != null && _chkShallowWater.ButtonPressed) mask |= EditableTerrain.PATHING_SHALLOW_WATER;
+		if (_chkDeepWater    != null && _chkDeepWater.ButtonPressed)    mask |= EditableTerrain.PATHING_DEEP_WATER;
+		if (_chkFlying       != null && _chkFlying.ButtonPressed)       mask |= EditableTerrain.PATHING_FLYING;
+		if (_chkGround       != null && _chkGround.ButtonPressed)       mask |= EditableTerrain.PATHING_GROUND;
+		if (_chkUnpathable   != null && _chkUnpathable.ButtonPressed)   mask |= EditableTerrain.PATHING_UNPATHABLE;
+		return mask == 0 ? EditableTerrain.PATHING_GROUND : mask;
+	}
+
+	public bool IsPathingAddMode()
+	{
+		return _optPathingMode == null || _optPathingMode.Selected == 0;
+	}
+
+	public void UpdatePathingOverlayExternal(bool visible)
+	{
+		var btn = GetNodeOrNull<Button>("PanelPathing/VBox/Content/BtnPathingOverlay");
+		if (btn != null)
+		{
+			btn.Text = visible ? "\ud83d\udc41 SHOW OVERLAY: ON" : "\ud83d\udc41 SHOW OVERLAY: OFF";
+		}
 	}
 
 	public void SelectCategoryItem(int index)
@@ -3522,25 +3599,5 @@ public class {mapName} : IMapScript
 			_ => "🪞 MIRROR: NONE"
 		};
 		_btnMirrorMode.Text = modeText;
-	}
-
-	public int GetSelectedPathingMask()
-	{
-		int mask = 0;
-		if (_chkShallowWater != null && _chkShallowWater.ButtonPressed) mask |= 1;
-		if (_chkDeepWater != null && _chkDeepWater.ButtonPressed) mask |= 2;
-		if (_chkFlying != null && _chkFlying.ButtonPressed) mask |= 4;
-		if (_chkGround != null && _chkGround.ButtonPressed) mask |= 8;
-		if (_chkUnpathable != null && _chkUnpathable.ButtonPressed) mask |= 16;
-		return mask;
-	}
-
-	public bool IsPathingAddMode()
-	{
-		if (_optPathingMode != null)
-		{
-			return _optPathingMode.Selected == 0;
-		}
-		return true;
 	}
 }
