@@ -846,54 +846,11 @@ public class {mapName} : IMapScript
 			var pos = new Vector3(position.X, position.Y, position.Z);
 			if (effectTypeId == "fireblast")
 			{
-				var sphere = new MeshInstance3D();
-				var sphereMesh = new SphereMesh();
-				sphereMesh.Radius = 0.5f * scale;
-				sphereMesh.Height = 1.0f * scale;
-				sphere.Mesh = sphereMesh;
-				sphere.Position = pos + new Vector3(0, 0.5f, 0);
-
-				var material = new StandardMaterial3D();
-				material.AlbedoColor = new Color(1.0f, 0.4f, 0.1f, 0.8f);
-				material.EmissionEnabled = true;
-				material.Emission = new Color(0.9f, 0.2f, 0f);
-				material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-				sphere.MaterialOverride = material;
-
-				AddChild(sphere);
-
-				var tween = CreateTween();
-				tween.SetParallel(true);
-				tween.TweenProperty(sphere, "scale", new Vector3(8f, 8f, 8f), 0.7f);
-				tween.TweenProperty(material, "albedo_color:a", 0.0f, 0.7f);
-				tween.TweenProperty(material, "emission:a", 0.0f, 0.7f);
-				tween.Chain().TweenCallback(Callable.From(sphere.QueueFree));
+				SpawnSpritesheetEffect("res://Assets/2d/SpellSpritesheets/solar_flare_sheet.png", pos + new Vector3(0, 0.5f, 0), 4, 4, 0.05f, scale * 6f);
 			}
 			else if (effectTypeId == "lightning")
 			{
-				var cylinder = new MeshInstance3D();
-				var cylinderMesh = new CylinderMesh();
-				cylinderMesh.TopRadius = 0.3f * scale;
-				cylinderMesh.BottomRadius = 0.3f * scale;
-				cylinderMesh.Height = 60.0f;
-				cylinder.Mesh = cylinderMesh;
-				cylinder.Position = pos + new Vector3(0, 30.0f, 0);
-
-				var material = new StandardMaterial3D();
-				material.AlbedoColor = new Color(0.3f, 0.6f, 1.0f, 0.9f);
-				material.EmissionEnabled = true;
-				material.Emission = new Color(0.2f, 0.5f, 1.0f);
-				material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-				cylinder.MaterialOverride = material;
-
-				AddChild(cylinder);
-
-				var tween = CreateTween();
-				tween.TweenProperty(cylinder, "scale:x", 1.8f, 0.15f);
-				tween.Parallel().TweenProperty(cylinder, "scale:z", 1.8f, 0.15f);
-				tween.TweenProperty(material, "albedo_color:a", 0.0f, 0.25f);
-				tween.Parallel().TweenProperty(material, "emission:a", 0.0f, 0.25f);
-				tween.Chain().TweenCallback(Callable.From(cylinder.QueueFree));
+				SpawnSpritesheetEffect("res://Assets/2d/SpellSpritesheets/arcane_surge_sheet.png", pos + new Vector3(0, 0.5f, 0), 4, 4, 0.035f, scale * 6f);
 			}
 			else if (effectTypeId == "holylight")
 			{
@@ -7438,57 +7395,51 @@ public class {mapName} : IMapScript
 
 	private void SpawnFireblastEffect(Vector3 position)
 	{
-		var sphere = new MeshInstance3D();
-		var sphereMesh = new SphereMesh();
-		sphereMesh.Radius = 0.5f;
-		sphereMesh.Height = 1.0f;
-		sphere.Mesh = sphereMesh;
-		sphere.Position = position + new Vector3(0, 0.5f, 0);
-
-		var material = new StandardMaterial3D();
-		material.AlbedoColor = new Color(1.0f, 0.4f, 0.1f, 0.8f);
-		material.EmissionEnabled = true;
-		material.Emission = new Color(0.9f, 0.2f, 0f);
-		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-		sphere.MaterialOverride = material;
-
-		AddChild(sphere);
-
-		// Tween to expand and fade out
-		var tween = CreateTween();
-		tween.SetParallel(true);
-		tween.TweenProperty(sphere, "scale", new Vector3(8f, 8f, 8f), 0.7f);
-		tween.TweenProperty(material, "albedo_color:a", 0.0f, 0.7f);
-		tween.TweenProperty(material, "emission:a", 0.0f, 0.7f);
-		tween.Chain().TweenCallback(Callable.From(sphere.QueueFree));
+		SpawnSpritesheetEffect("res://Assets/2d/SpellSpritesheets/solar_flare_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.05f, 6f);
 	}
 
 	private void SpawnLightningEffect(Vector3 position)
 	{
-		var cylinder = new MeshInstance3D();
-		var cylinderMesh = new CylinderMesh();
-		cylinderMesh.TopRadius = 0.3f;
-		cylinderMesh.BottomRadius = 0.3f;
-		cylinderMesh.Height = 60.0f;
-		cylinder.Mesh = cylinderMesh;
-		cylinder.Position = position + new Vector3(0, 30.0f, 0); // Spans from sky (Y=60) to ground
+		SpawnSpritesheetEffect("res://Assets/2d/SpellSpritesheets/arcane_surge_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.035f, 6f);
+	}
 
-		var material = new StandardMaterial3D();
-		material.AlbedoColor = new Color(0.3f, 0.6f, 1.0f, 0.9f);
-		material.EmissionEnabled = true;
-		material.Emission = new Color(0.2f, 0.5f, 1.0f);
-		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-		cylinder.MaterialOverride = material;
+	private void SpawnSpritesheetEffect(string texturePath, Vector3 worldPosition, int columns, int rows, float secondsPerFrame, float sizeInWorldUnits)
+	{
+		var texture = GD.Load<Texture2D>(texturePath);
+		if (texture == null) return;
 
-		AddChild(cylinder);
+		int totalFrames = columns * rows;
+		var frames = new SpriteFrames();
+		frames.AddAnimation("play");
+		frames.SetAnimationLoopMode("play", SpriteFrames.LoopMode.None);
+		frames.SetAnimationSpeed("play", 1.0f / secondsPerFrame);
 
-		// Rapid flash and fade out
-		var tween = CreateTween();
-		tween.TweenProperty(cylinder, "scale:x", 1.8f, 0.15f);
-		tween.Parallel().TweenProperty(cylinder, "scale:z", 1.8f, 0.15f);
-		tween.TweenProperty(material, "albedo_color:a", 0.0f, 0.25f);
-		tween.Parallel().TweenProperty(material, "emission:a", 0.0f, 0.25f);
-		tween.Chain().TweenCallback(Callable.From(cylinder.QueueFree));
+		var atlasBase = new AtlasTexture();
+		atlasBase.Atlas = texture;
+		int frameWidth = texture.GetWidth() / columns;
+		int frameHeight = texture.GetHeight() / rows;
+
+		for (int frameIndex = 0; frameIndex < totalFrames; frameIndex++)
+		{
+			int col = frameIndex % columns;
+			int row = frameIndex / columns;
+			var atlasFrame = new AtlasTexture();
+			atlasFrame.Atlas = texture;
+			atlasFrame.Region = new Rect2(col * frameWidth, row * frameHeight, frameWidth, frameHeight);
+			frames.AddFrame("play", atlasFrame);
+		}
+
+		var sprite = new AnimatedSprite3D();
+		sprite.SpriteFrames = frames;
+		sprite.Animation = "play";
+		sprite.Position = worldPosition;
+		sprite.PixelSize = sizeInWorldUnits / frameWidth;
+		sprite.Billboard = BaseMaterial3D.BillboardModeEnum.Enabled;
+		sprite.Transparent = true;
+		sprite.AlphaCut = SpriteBase3D.AlphaCutMode.Disabled;
+		AddChild(sprite);
+		sprite.Play("play");
+		sprite.AnimationFinished += sprite.QueueFree;
 	}
 
 	private void DealSpellDamageAOE(Vector3 position, float radius, float damage, bool enemyOnly = true)
