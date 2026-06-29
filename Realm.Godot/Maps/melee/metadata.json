@@ -1,7 +1,7 @@
 {
   "worker": {
     "UnitId": "worker",
-    "Name": "Peon Worker",
+    "Name": "Worker",
     "Description": "Dedicated worker. Can gather resources from Goldmines, Trees, and Rocks, and construct buildings.",
     "MaxHp": 70.0,
     "Damage": 5.0,
@@ -20,9 +20,9 @@
     "GoldBounty": 15.0,
     "PathingCapabilities": ["ground"]
   },
-  "footman": {
-    "UnitId": "footman",
-    "Name": "Footman",
+  "soldier": {
+    "UnitId": "soldier",
+    "Name": "Soldier",
     "Description": "Heavy armored infantry. Slow but tanky front-line fighter.",
     "MaxHp": 150.0,
     "Damage": 15.0,

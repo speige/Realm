@@ -46,7 +46,7 @@ public partial class InGameHUD : Control
 	private Button _btnCancelBuild;
 
 	// Castle training buttons
-	private Button _btnTrainFootman;
+	private Button _btnTrainSoldier;
 	private Button _btnTrainArcher;
 	private Button _btnTrainPriest;
 	private Button _btnTrainWorker;
@@ -947,7 +947,7 @@ public partial class InGameHUD : Control
 			_armyCompositionLabel?.Hide();
 
 			var unit = selectedUnits[GameHost.Instance != null ? GameHost.Instance.CycleSelectionIndex : 0];
-			string unitName = "Footman";
+			string unitName = "Soldier";
 			float maxHp = 100f, currHp = 100f, damage = 10f, armor = 2f, speed = 5f, range = 2f;
 			string icon = GetUnitIcon(unit.UnitId);
 
@@ -1158,7 +1158,7 @@ public partial class InGameHUD : Control
 					{
 						_productionTitle.Text = "PRODUCTION IDLE";
 						_productionProgress.Visible = false;
-						_productionQueueLabel.Text = "Queue empty — [F] Footman  [R] Archer  [P] Priest";
+						_productionQueueLabel.Text = "Queue empty — [F] Soldier  [R] Archer  [P] Priest";
 						ClearQueueSlots();
 					}
 				}
@@ -1166,7 +1166,7 @@ public partial class InGameHUD : Control
 				{
 					_productionTitle.Text = "PRODUCTION READY";
 					_productionProgress.Visible = false;
-					_productionQueueLabel.Text = "Queue empty — [F] Footman  [R] Archer  [P] Priest";
+					_productionQueueLabel.Text = "Queue empty — [F] Soldier  [R] Archer  [P] Priest";
 					ClearQueueSlots();
 				}
 			}
@@ -1279,7 +1279,7 @@ public partial class InGameHUD : Control
 	{
 		return unitId switch
 		{
-			"footman" => "res://Assets/UI/heavy_knight.png",
+			"soldier" => "res://Assets/UI/heavy_knight.png",
 			"archer" => "res://Assets/UI/elf_warrior.png",
 			"priest" => "res://Assets/UI/alliance_flag.png",
 			"castle" => "res://Assets/UI/moonlit_castle.png",
@@ -1660,7 +1660,7 @@ public partial class InGameHUD : Control
 		{
 			if (focusedUnit.UnitId == "castle")
 			{
-				_commandGrid.AddChild(_btnTrainFootman);
+				_commandGrid.AddChild(_btnTrainSoldier);
 				_commandGrid.AddChild(_btnTrainArcher);
 				_commandGrid.AddChild(_btnTrainPriest);
 				_commandGrid.AddChild(_btnTrainWorker);
@@ -1826,8 +1826,8 @@ public partial class InGameHUD : Control
 		SetupHUDButton(_btnCancelBuild, "res://Assets/UI/cancel_button_2.png", "[Esc] Cancel", () => ExitBuildSubMenu());
 
 		// Castle production commands
-		_btnTrainFootman = new Button();
-		SetupHUDButton(_btnTrainFootman, "res://Assets/UI/heavy_knight.png", "[F] Train Footman (Cost: 100 Gold, 1 Pop) — Heavy armored melee fighter", () => GameHost.Instance?.TrainUnitAtCastle("footman"));
+		_btnTrainSoldier = new Button();
+		SetupHUDButton(_btnTrainSoldier, "res://Assets/UI/heavy_knight.png", "[F] Train Soldier (Cost: 100 Gold, 1 Pop) — Heavy armored melee fighter", () => GameHost.Instance?.TrainUnitAtCastle("soldier"));
 		_btnTrainArcher = new Button();
 		SetupHUDButton(_btnTrainArcher, "res://Assets/UI/elf_warrior.png", "[R] Train Archer (Cost: 120 Gold, 40 Wood, 1 Pop) — Ranged elf with high range", () => GameHost.Instance?.TrainUnitAtCastle("archer"));
 
@@ -2910,7 +2910,7 @@ public partial class InGameHUD : Control
 			("T",   "Build Tower (in build submenu)"),
 			("", ""),
 			("Castle selected:", ""),
-			("F",   "Train Footman"),
+			("F",   "Train Soldier"),
 			("R",   "Train Archer"),
 			("P",   "Train Priest"),
 			("V",   "Train Worker"),
@@ -3592,7 +3592,7 @@ public partial class MinimapOverlay : Control
 					if (unit.UnitId == "archer")
 						color = new Color(0.2f, 0.8f, 0.3f); // Green Elf Archer
 					else
-						color = new Color(0.2f, 0.5f, 0.9f); // Blue Footman
+						color = new Color(0.2f, 0.5f, 0.9f); // Blue Soldier
 
 					DrawCircle(drawPos, iconSize, color);
 					DrawCircle(drawPos, iconSize, new Color(0f, 0f, 0f, 0.6f), false, 1.0f); // dark outline

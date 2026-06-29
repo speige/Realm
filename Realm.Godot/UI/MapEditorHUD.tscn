@@ -612,7 +612,7 @@ layout_mode = 2
 theme_override_constants/h_separation = 6
 columns = 4
 
-[node name="BtnFootman" type="Button" parent="PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid"]
+[node name="BtnSoldier" type="Button" parent="PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid"]
 custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
 focus_mode = 0

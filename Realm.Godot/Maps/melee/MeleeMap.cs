@@ -35,13 +35,13 @@ public class MeleeMap : IMapScript
         api.SpawnResourceNode("rock", new Vector3(-15f, 0f, -15f), 1000f);
 
         api.SpawnUnit("worker", new Vector3(-16f, 0f, -20f), false);
-        api.SpawnUnit("footman", new Vector3(-8f, 0f, 5f), false);
+        api.SpawnUnit("soldier", new Vector3(-8f, 0f, 5f), false);
         api.SpawnUnit("archer", new Vector3(-12f, 0f, 5f), false);
         api.SpawnUnit("castle", new Vector3(-25f, 0f, -25f), false);
         api.SpawnUnit("tower", new Vector3(-15f, 0f, -15f), false);
 
         var enemyWorker = api.SpawnUnit("worker", new Vector3(16f, 0f, 20f), true);
-        api.SpawnUnit("footman", new Vector3(15f, 0f, 10f), true);
+        api.SpawnUnit("soldier", new Vector3(15f, 0f, 10f), true);
         api.SpawnUnit("archer", new Vector3(20f, 0f, 15f), true);
         api.SpawnUnit("tower", new Vector3(25f, 0f, 5f), true);
         api.SpawnUnit("castle", new Vector3(25f, 0f, 25f), true);
@@ -107,11 +107,11 @@ public class MeleeMap : IMapScript
                     }
                     else if (timeFactor > 0.4f && roll <= 1)
                     {
-                        unitId = "footman";
+                        unitId = "soldier";
                     }
                     else
                     {
-                        unitId = (Random.Shared.Next(0, 2) == 0) ? "footman" : "archer";
+                        unitId = (Random.Shared.Next(0, 2) == 0) ? "soldier" : "archer";
                     }
 
                     api.SpawnUnit(unitId, spawnPos, true);

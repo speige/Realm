@@ -152,7 +152,7 @@ public partial class GameHost : Node3D, IGameAPI
 			_isPastingObject = false;
 		}
 	}
-	public string ActivePlaceId { get; set; } = ""; // "footman", "tree", etc.
+	public string ActivePlaceId { get; set; } = ""; // "soldier", "tree", etc.
 	public bool PlaceUnitIsEnemy { get; set; } = false;
 	public float EditorBrushRadius { get; set; } = 6.0f;
 	public float EditorBrushStrength { get; set; } = 3.0f;
@@ -432,7 +432,7 @@ public partial class GameHost : Node3D, IGameAPI
 			return unitId switch
 			{
 				"worker" => "res://Assets/3d/Characters/adventurer.glb",
-				"footman" => "res://Assets/3d/Characters/armored_warlord.glb",
+				"soldier" => "res://Assets/3d/Characters/armored_warlord.glb",
 				"archer" => "res://Assets/3d/Characters/armored_dragon.glb",
 				"priest" => "res://Assets/3d/Characters/armored_battlelord.glb",
 				_ => "res://Assets/3d/Characters/adventurer.glb"
@@ -539,7 +539,7 @@ public partial class GameHost : Node3D, IGameAPI
 		if (isEnemy)
 		{
 			if (unitTypeId == "worker") name = "Orc Worker";
-			else if (unitTypeId == "footman") name = "Orc Raider";
+			else if (unitTypeId == "soldier") name = "Orc Raider";
 			else if (unitTypeId == "archer") name = "Dark Archer";
 			else if (unitTypeId == "priest") name = "Orc Shaman";
 			else if (unitTypeId == "castle") name = "Orc Stronghold";
@@ -567,7 +567,7 @@ public partial class GameHost : Node3D, IGameAPI
 		if (isEnemy)
 		{
 			if (unitTypeId == "worker") name = "Orc Worker";
-			else if (unitTypeId == "footman") name = "Orc Raider";
+			else if (unitTypeId == "soldier") name = "Orc Raider";
 			else if (unitTypeId == "archer") name = "Dark Archer";
 			else if (unitTypeId == "priest") name = "Orc Shaman";
 			else if (unitTypeId == "castle") name = "Orc Stronghold";
@@ -2370,7 +2370,7 @@ public class {mapName} : IMapScript
 		{
 			"worker", new UnitMetadata {
 				UnitId = "worker",
-				Name = "Peon Worker",
+				Name = "Worker",
 				Description = "Dedicated worker. Can gather resources from Goldmines, Trees, and Rocks, and construct buildings.",
 				MaxHp = 70f,
 				Damage = 5f,
@@ -2392,9 +2392,9 @@ public class {mapName} : IMapScript
 			}
 		},
 		{
-			"footman", new UnitMetadata {
-				UnitId = "footman",
-				Name = "Footman",
+			"soldier", new UnitMetadata {
+				UnitId = "soldier",
+				Name = "Soldier",
 				Description = "Heavy armored infantry. Slow but tanky front-line fighter.",
 				MaxHp = 150f,
 				Damage = 15f,
@@ -2845,13 +2845,13 @@ public class {mapName} : IMapScript
 		SpawnDefaultResourceNodes();
 
 		// 1. Spawning Friendly Units & Buildings (Player owned)
-		// Peon Worker
-		var workerEntity = CreateEcsUnit("worker", "Peon Worker", 70f, 5f, 1.8f, 0f, 7.0f, new Vector3(-16, 0, -20), playerOwner);
+		// Worker
+		var workerEntity = CreateEcsUnit("worker", "Worker", 70f, 5f, 1.8f, 0f, 7.0f, new Vector3(-16, 0, -20), playerOwner);
 		SpawnUnit3D(workerEntity, "worker", GetFallbackModelPath("worker", false), new Vector3(-16, 0, -20), false, false);
 
-		// Footman
-		var footmanEntity = CreateEcsUnit("footman", "Footman", 150f, 15f, 2.0f, 5f, 6.0f, new Vector3(-8, 0, 5), playerOwner);
-		var footman3D = SpawnUnit3D(footmanEntity, "footman", GetFallbackModelPath("footman", false), new Vector3(-8, 0, 5), false, false);
+		// Soldier
+		var soldierEntity = CreateEcsUnit("soldier", "Soldier", 150f, 15f, 2.0f, 5f, 6.0f, new Vector3(-8, 0, 5), playerOwner);
+		var soldier3D = SpawnUnit3D(soldierEntity, "soldier", GetFallbackModelPath("soldier", false), new Vector3(-8, 0, 5), false, false);
 		
 		// Elf Archer
 		var archerEntity = CreateEcsUnit("archer", "Elf Archer", 90f, 12f, 18.0f, 2f, 8.0f, new Vector3(-12, 0, 5), playerOwner);
@@ -2866,7 +2866,7 @@ public class {mapName} : IMapScript
 		var tower3D = SpawnUnit3D(towerEntity, "tower", GetFallbackModelPath("tower", true), new Vector3(-15, 0, -15), true, false);
 
 		// 2. Spawning Enemy Units & Buildings (Enemy owned)
-		// Enemy Peon Worker
+		// Enemy Worker
 		var enemyWorkerEntity = CreateEcsUnit("worker", "Orc Worker", 70f, 5f, 1.8f, 0f, 7.0f, new Vector3(16, 0, 20), enemyOwner);
 		SpawnUnit3D(enemyWorkerEntity, "worker", GetFallbackModelPath("worker", false), new Vector3(16, 0, 20), false, true);
 
@@ -2878,9 +2878,9 @@ public class {mapName} : IMapScript
 			EcsWorld.Add(enemyWorkerEntity, gatherer);
 		}
 
-		// Enemy Footman
-		var enemyFootmanEntity = CreateEcsUnit("footman", "Orc Raider", 150f, 15f, 2.0f, 5f, 6.0f, new Vector3(15, 0, 10), enemyOwner);
-		var enemyFootman3D = SpawnUnit3D(enemyFootmanEntity, "footman", GetFallbackModelPath("footman", false), new Vector3(15, 0, 10), false, true);
+		// Enemy Soldier
+		var enemySoldierEntity = CreateEcsUnit("soldier", "Orc Raider", 150f, 15f, 2.0f, 5f, 6.0f, new Vector3(15, 0, 10), enemyOwner);
+		var enemySoldier3D = SpawnUnit3D(enemySoldierEntity, "soldier", GetFallbackModelPath("soldier", false), new Vector3(15, 0, 10), false, true);
 
 		// Enemy Archer
 		var enemyArcherEntity = CreateEcsUnit("archer", "Dark Archer", 90f, 12f, 18.0f, 2f, 8.0f, new Vector3(20, 0, 15), enemyOwner);
@@ -6000,7 +6000,7 @@ public class {mapName} : IMapScript
 				{
 					if (keyEvent.Keycode == Key.F)
 					{
-						TrainUnitAtCastle("footman");
+						TrainUnitAtCastle("soldier");
 						GetViewport().SetInputAsHandled();
 						return;
 					}
@@ -8478,7 +8478,7 @@ public class {mapName} : IMapScript
 		if (isEnemy)
 		{
 			if (unitId == "worker") name = "Orc Worker";
-			else if (unitId == "footman") name = "Orc Raider";
+			else if (unitId == "soldier") name = "Orc Raider";
 			else if (unitId == "archer") name = "Dark Archer";
 			else if (unitId == "priest") name = "Orc Shaman";
 			else if (unitId == "castle") name = "Orc Stronghold";
@@ -8531,15 +8531,15 @@ public class {mapName} : IMapScript
 					float oz = (GD.Randf() - 0.5f) * 6f;
 					Vector3 spawnPos = enemyCastle.GlobalPosition + new Vector3(-8 + ox, 0, -8 + oz);
 					
-					// Alternate between footman, archer, priest; later waves spawn priests too
+					// Alternate between soldier, archer, priest; later waves spawn priests too
 					string unitId;
 					uint roll = GD.Randi() % 10;
 					if (timeFactor > 0.7f && roll == 0)
 						unitId = "priest"; // Enemy gets a shaman healer in late game
 					else if (timeFactor > 0.4f && roll <= 1)
-						unitId = "footman"; // Heavy footman bias mid-game
+						unitId = "soldier"; // Heavy soldier bias mid-game
 					else
-						unitId = (GD.Randi() % 2 == 0) ? "footman" : "archer";
+						unitId = (GD.Randi() % 2 == 0) ? "soldier" : "archer";
 					
 					SpawnUnitFromProduction(unitId, spawnPos, true);
 				}
@@ -11488,7 +11488,7 @@ public class {mapName} : IMapScript
 		if (isEnemy)
 		{
 			if (unitId == "worker") name = "Orc Worker";
-			else if (unitId == "footman") name = "Orc Raider";
+			else if (unitId == "soldier") name = "Orc Raider";
 			else if (unitId == "archer") name = "Dark Archer";
 			else if (unitId == "priest") name = "Orc Shaman";
 			else if (unitId == "castle") name = "Orc Stronghold";
@@ -11859,7 +11859,7 @@ public class {mapName} : IMapScript
 				if (isEnemy)
 				{
 					if (unit.UnitId == "worker") name = "Orc Worker";
-					else if (unit.UnitId == "footman") name = "Orc Raider";
+					else if (unit.UnitId == "soldier") name = "Orc Raider";
 					else if (unit.UnitId == "archer") name = "Dark Archer";
 					else if (unit.UnitId == "priest") name = "Orc Shaman";
 					else if (unit.UnitId == "castle") name = "Orc Stronghold";

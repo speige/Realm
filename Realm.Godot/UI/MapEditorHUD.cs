@@ -107,7 +107,7 @@ public partial class MapEditorHUD : Control
 	private Slider _sldFlattenHeight;
 	private Label _lblFlattenHeightValue;
 
-	private Button _btnFootman;
+	private Button _btnSoldier;
 	private Button _btnArcher;
 	private Button _btnCastle;
 	private Button _btnTower;
@@ -376,7 +376,7 @@ public partial class MapEditorHUD : Control
 			}
 		};
 
-		_btnFootman = GetNodeOrNull<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid/BtnFootman");
+		_btnSoldier = GetNodeOrNull<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid/BtnSoldier");
 		_btnArcher = GetNodeOrNull<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid/BtnArcher");
 		_btnCastle = GetNodeOrNull<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid/BtnCastle");
 		_btnTower = GetNodeOrNull<Button>("PanelEntityPalette/VBox/Content/PalettesVBox/UnitsGrid/BtnTower");
@@ -1321,7 +1321,7 @@ public partial class MapEditorHUD : Control
 
 		SetupTextureSwatches(true);
 
-		SetupButton(_btnFootman, "💂", () => TriggerToolSelection(GameHost.EditorTool.PlaceUnit, _btnFootman, "footman"), 18, "Place a Footman warrior");
+		SetupButton(_btnSoldier, "💂", () => TriggerToolSelection(GameHost.EditorTool.PlaceUnit, _btnSoldier, "soldier"), 18, "Place a Soldier warrior");
 		SetupButton(_btnArcher, "🏹", () => TriggerToolSelection(GameHost.EditorTool.PlaceUnit, _btnArcher, "archer"), 18, "Place an Archer unit");
 		SetupButton(_btnCastle, "🏰", () => TriggerToolSelection(GameHost.EditorTool.PlaceUnit, _btnCastle, "castle"), 18, "Place a Castle/Stronghold town hall");
 		SetupButton(_btnTower, "🗼", () => TriggerToolSelection(GameHost.EditorTool.PlaceUnit, _btnTower, "tower"), 18, "Place a defensive watch tower");
@@ -1867,7 +1867,7 @@ public partial class MapEditorHUD : Control
 
 		if (string.IsNullOrEmpty(placeId))
 		{
-			if (targetTool == GameHost.EditorTool.PlaceUnit) placeId = "res://Assets/3d/Characters/footman.glb";
+			if (targetTool == GameHost.EditorTool.PlaceUnit) placeId = "res://Assets/3d/Characters/soldier.glb";
 			else if (targetTool == GameHost.EditorTool.PlaceDecal) placeId = "logo";
 			else placeId = "res://Assets/3d/Props/tree.glb";
 		}
@@ -2412,7 +2412,7 @@ public class {mapName} : IMapScript
 				filename = id switch
 				{
 					"worker" => "adventurer.glb",
-					"footman" => "armored_warlord.glb",
+					"soldier" => "armored_warlord.glb",
 					"archer" => "armored_dragon.glb",
 					"priest" => "armored_battlelord.glb",
 					_ => id

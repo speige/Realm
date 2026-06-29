@@ -4,7 +4,7 @@ using Arch.Core;
 public partial class Unit3D : CharacterBody3D
 {
 	public Entity Entity { get; set; }
-	public string UnitId { get; set; } // e.g. "footman", "archer", "castle", "tower"
+	public string UnitId { get; set; } // e.g. "soldier", "archer", "castle", "tower"
 	public bool IsBuilding { get; set; }
 	
 	private Node3D _modelNode;
