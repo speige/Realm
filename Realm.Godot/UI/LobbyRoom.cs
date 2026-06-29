@@ -281,7 +281,11 @@ public partial class LobbyRoom : Control
 		_startButton.AddThemeStyleboxOverride("pressed", pressedStyle);
 		_startButton.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
-		_startButton.Pressed -= OnStartPressed;
+		var pressedCallable = Callable.From(OnStartPressed);
+		if (_startButton.IsConnected(Button.SignalName.Pressed, pressedCallable))
+		{
+			_startButton.Disconnect(Button.SignalName.Pressed, pressedCallable);
+		}
 		
 		if (LobbyManager.Instance.IsHost)
 		{
@@ -295,7 +299,11 @@ public partial class LobbyRoom : Control
 			_startButton.Disabled = true;
 		}
 		
-		_startButton.MouseEntered -= OnStartButtonMouseEntered;
+		var mouseEnteredCallable = Callable.From(OnStartButtonMouseEntered);
+		if (_startButton.IsConnected(Control.SignalName.MouseEntered, mouseEnteredCallable))
+		{
+			_startButton.Disconnect(Control.SignalName.MouseEntered, mouseEnteredCallable);
+		}
 		_startButton.MouseEntered += OnStartButtonMouseEntered;
 	}
 

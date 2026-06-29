@@ -239,6 +239,14 @@ public partial class MapEditorHUD : Control
 	private VSCodeMdiWindow _vscodeMdi;
 	private bool _isDraggingSlider = false;
 
+	public override void _ExitTree()
+	{
+		if (Instance == this)
+		{
+			Instance = null;
+		}
+	}
+
 	public override void _Ready()
 	{
 		Instance = this;

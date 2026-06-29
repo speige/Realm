@@ -24,7 +24,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private static readonly RcVec3f _pathfindingExtents = new RcVec3f(2f, 4f, 2f);
 	public string ActiveMapName { get; private set; } = "melee";
 
-	private bool _multiplayerActive = false;
+	private bool _multiplayerActive => Multiplayer.MultiplayerPeer != null;
 	private int _localPeerId = 1;
 	private int _nextCommandId = 1;
 	private float _commandSendTimer = 0f;
@@ -2648,11 +2648,11 @@ public class {mapName} : IMapScript
 
 		CreateGround();
 		SetupSkybox();
+		UpdateDayNightVisuals(0.5f);
 
 		// 2. Initialize Arch ECS
 		EcsWorld = World.Create();
 
-		_multiplayerActive = (Multiplayer.MultiplayerPeer != null);
 		if (_multiplayerActive)
 		{
 			_localPeerId = Multiplayer.GetUniqueId();
@@ -2730,11 +2730,15 @@ public class {mapName} : IMapScript
 		}
 
 		LoadUnitMetadata(normalizedMapName);
-		LoadMapScript(normalizedMapName);
 
-		if (_activeMapScript != null)
+		bool isGameStarted = LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted;
+		if (isGameStarted || IsMapEditorMode)
 		{
-			_activeMapScript.Initialize(this);
+			LoadMapScript(normalizedMapName);
+			if (_activeMapScript != null)
+			{
+				_activeMapScript.Initialize(this);
+			}
 		}
 
 		// 5. Connect UI (wait briefly for UIManager to load InGameHUD)
@@ -3143,6 +3147,12 @@ public class {mapName} : IMapScript
 
 	public override void _PhysicsProcess(double delta)
 	{
+		bool isGameStarted = LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted;
+		if (!isGameStarted && !IsMapEditorMode)
+		{
+			return;
+		}
+
 		float fDelta = (float)delta;
 
 		if (_multiplayerActive && !Multiplayer.IsServer())
@@ -8883,6 +8893,7 @@ public class {mapName} : IMapScript
 		CreateBrushIndicator();
 		CreateGridOverlay();
 		InitializeCameraBoundsOverlay();
+		UpdateDayNightVisuals(0.5f);
 	}
 
 	public void ExitMapEditorMode()
@@ -10497,7 +10508,7 @@ public class {mapName} : IMapScript
 
 	private bool IsMouseOverUI()
 	{
-		if (MapEditorHUD.Instance != null)
+		if (GodotObject.IsInstanceValid(MapEditorHUD.Instance))
 		{
 			return MapEditorHUD.Instance.IsMouseOverUI(GetViewport().GetMousePosition());
 		}

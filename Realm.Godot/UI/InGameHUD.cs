@@ -602,6 +602,18 @@ public partial class InGameHUD : Control
 		{
 			LobbyManager.Instance.ChatReceived -= OnLobbyChatReceived;
 		}
+
+		if (GodotObject.IsInstanceValid(_fogMeshInstance))
+		{
+			_fogMeshInstance.QueueFree();
+			_fogMeshInstance = null;
+		}
+
+		if (GodotObject.IsInstanceValid(_rainParticles))
+		{
+			_rainParticles.QueueFree();
+			_rainParticles = null;
+		}
 	}
 
 	private async void GenerateDynamicMinimap()
@@ -1677,7 +1689,9 @@ public partial class InGameHUD : Control
 					ApplyUpgradeButtonState(_btnUpgradeTower, isMaxed, "MAXED: Tower Level 3");
 				}
 				_commandGrid.AddChild(_btnUpgradeTower);
+				_btnFireball.GetParent()?.RemoveChild(_btnFireball);
 				_commandGrid.AddChild(_btnFireball);
+				_btnLightning.GetParent()?.RemoveChild(_btnLightning);
 				_commandGrid.AddChild(_btnLightning);
 			}
 		}
@@ -1730,6 +1744,7 @@ public partial class InGameHUD : Control
 				// Add spells/potions for mobile unit if applicable
 				if (focusedUnit.UnitId == "priest")
 				{
+					_btnHolyLight.GetParent()?.RemoveChild(_btnHolyLight);
 					_commandGrid.AddChild(_btnHolyLight);
 				}
 
@@ -1744,6 +1759,7 @@ public partial class InGameHUD : Control
 					_btnUsePotion.Text = $" {potions} ";
 					_btnUsePotion.TooltipText = $"[I] Healing Potion (Have: {potions})\nRestores 50 HP on use.";
 					_btnUsePotion.Disabled = potions <= 0;
+					_btnUsePotion.GetParent()?.RemoveChild(_btnUsePotion);
 					_commandGrid.AddChild(_btnUsePotion);
 				}
 			}

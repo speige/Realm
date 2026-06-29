@@ -285,6 +285,10 @@ public partial class UIManager : Control
 			case GameScreen.MainMenu:
 				targetScene = MainMenuScene ?? GD.Load<PackedScene>("res://UI/MainMenu.tscn");
 				Input.MouseMode = Input.MouseModeEnum.Visible;
+				if (LobbyManager.Instance != null)
+				{
+					LobbyManager.Instance.Disconnect();
+				}
 				break;
 			case GameScreen.LobbyBrowser:
 				targetScene = LobbyBrowserScene ?? GD.Load<PackedScene>("res://UI/LobbyBrowser.tscn");
