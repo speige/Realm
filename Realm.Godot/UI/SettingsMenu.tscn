@@ -193,6 +193,14 @@ text = "Unit Health Bars"
 layout_mode = 2
 focus_mode = 0
 
+[node name="LanguageLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
+layout_mode = 2
+text = "Language"
+
+[node name="LanguageOpt" type="OptionButton" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+
 [node name="ButtonsRow" type="HBoxContainer" parent="CenterContainer/MainFrame/VBoxContainer"]
 custom_minimumSize = Vector2(0, 60)
 layout_mode = 2

@@ -203,7 +203,7 @@ public static class UIStyle
 	// Label Styling Apply helpers
 	public static void ApplyTitle(Label label, string text, int fontSize = 36)
 	{
-		label.Text = text;
+		label.Text = TranslationServer.Translate(text);
 		label.AddThemeColorOverride("font_color", ColorGold);
 		label.AddThemeColorOverride("font_outline_color", new Color(0.08f, 0.08f, 0.1f));
 		label.AddThemeConstantOverride("outline_size", 8);
@@ -214,7 +214,7 @@ public static class UIStyle
 
 	public static void ApplyButtonText(Button button, string text, int fontSize = 18)
 	{
-		button.Text = text;
+		button.Text = TranslationServer.Translate(text);
 		button.AddThemeColorOverride("font_color", ColorGoldDull);
 		button.AddThemeColorOverride("font_hover_color", ColorGold);
 		button.AddThemeColorOverride("font_pressed_color", ColorCyanGlow);

@@ -19,6 +19,7 @@ public static class GameSettings
 	public static float MouseSens { get; set; } = 40f;
 	public static float HudScale { get; set; } = 100f; // 100% default
 	public static string ShowHealthBars { get; set; } = "damaged";
+	public static string Language { get; set; } = "en";
 
 	public static void ResetToDefaults()
 	{
@@ -34,6 +35,7 @@ public static class GameSettings
 		MouseSens = 40f;
 		HudScale = 100f;
 		ShowHealthBars = "damaged";
+		Language = "en";
 	}
 
 	static GameSettings()
@@ -69,6 +71,7 @@ public static class GameSettings
 				ScrollSpeed = data.ScrollSpeed;
 				MouseSens = data.MouseSens;
 				HudScale = data.HudScale;
+				Language = data.Language ?? "en";
 				if (data.ShowHealthBars is JsonElement elem)
 				{
 					if (elem.ValueKind == JsonValueKind.True || elem.ValueKind == JsonValueKind.False)
@@ -111,7 +114,8 @@ public static class GameSettings
 			ScrollSpeed = ScrollSpeed,
 			MouseSens = MouseSens,
 			HudScale = HudScale,
-			ShowHealthBars = ShowHealthBars
+			ShowHealthBars = ShowHealthBars,
+			Language = Language
 		};
 
 		string json = JsonSerializer.Serialize(data);
@@ -136,5 +140,6 @@ public static class GameSettings
 		public float MouseSens { get; set; }
 		public float HudScale { get; set; }
 		public object ShowHealthBars { get; set; }
+		public string Language { get; set; }
 	}
 }

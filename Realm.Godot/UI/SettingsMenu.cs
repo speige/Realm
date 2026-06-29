@@ -33,6 +33,7 @@ public partial class SettingsMenu : Control
 	private HSlider _mouseSensSlider;
 	private HSlider _hudScaleSlider;
 	private OptionButton _healthBarsOpt;
+	private OptionButton _languageOpt;
 
 	// BOTTOM BUTTONS
 	private Button _applyBtn;
@@ -71,6 +72,7 @@ public partial class SettingsMenu : Control
 		_mouseSensSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/MouseSensSlider");
 		_hudScaleSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HudScaleSlider");
 		_healthBarsOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HealthBarsOpt");
+		_languageOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/LanguageOpt");
 
 		// Buttons
 		_applyBtn = GetNode<Button>("CenterContainer/MainFrame/VBoxContainer/ButtonsRow/ApplyButton");
@@ -120,11 +122,13 @@ public partial class SettingsMenu : Control
 			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/ScrollLabel",
 			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/SensLabel",
 			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HudScaleLabel",
-			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HealthBarsLabel"
+			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HealthBarsLabel",
+			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/LanguageLabel"
 		};
 		foreach (var path in labelPaths)
 		{
 			var lbl = GetNode<Label>(path);
+			lbl.Text = TranslationServer.Translate(lbl.Text);
 			lbl.AddThemeColorOverride("font_color", new Color(0.85f, 0.85f, 0.9f));
 			lbl.AddThemeFontSizeOverride("font_size", 14);
 		}
@@ -138,27 +142,39 @@ public partial class SettingsMenu : Control
 		_resolutionOpt.AddItem("1280 x 720", 2);
 
 		_qualityOpt.Clear();
-		_qualityOpt.AddItem("Low", 0);
-		_qualityOpt.AddItem("Medium", 1);
-		_qualityOpt.AddItem("High", 2);
-		_qualityOpt.AddItem("Ultra", 3);
+		_qualityOpt.AddItem(TranslationServer.Translate("Low"), 0);
+		_qualityOpt.AddItem(TranslationServer.Translate("Medium"), 1);
+		_qualityOpt.AddItem(TranslationServer.Translate("High"), 2);
+		_qualityOpt.AddItem(TranslationServer.Translate("Ultra"), 3);
 
 		_windowModeOpt.Clear();
-		_windowModeOpt.AddItem("Fullscreen", 0);
-		_windowModeOpt.AddItem("Windowed", 1);
-		_windowModeOpt.AddItem("Borderless", 2);
+		_windowModeOpt.AddItem(TranslationServer.Translate("Fullscreen"), 0);
+		_windowModeOpt.AddItem(TranslationServer.Translate("Windowed"), 1);
+		_windowModeOpt.AddItem(TranslationServer.Translate("Borderless"), 2);
 
 		_vsyncOpt.Clear();
-		_vsyncOpt.AddItem("On", 0);
-		_vsyncOpt.AddItem("Off", 1);
+		_vsyncOpt.AddItem(TranslationServer.Translate("On"), 0);
+		_vsyncOpt.AddItem(TranslationServer.Translate("Off"), 1);
 
 		_healthBarsOpt.Clear();
-		_healthBarsOpt.AddItem("Hidden", 0);
-		_healthBarsOpt.AddItem("Visible", 1);
-		_healthBarsOpt.AddItem("Damaged", 2);
+		_healthBarsOpt.AddItem(TranslationServer.Translate("Hidden"), 0);
+		_healthBarsOpt.AddItem(TranslationServer.Translate("Visible"), 1);
+		_healthBarsOpt.AddItem(TranslationServer.Translate("Damaged"), 2);
+
+		_languageOpt.Clear();
+		_languageOpt.AddItem("English", 0);
+		_languageOpt.AddItem("Español", 1);
+		_languageOpt.AddItem("Français", 2);
+		_languageOpt.AddItem("Deutsch", 3);
+		_languageOpt.AddItem("Português", 4);
+		_languageOpt.AddItem("Русский", 5);
+		_languageOpt.AddItem("中文", 6);
+		_languageOpt.AddItem("日本語", 7);
+		_languageOpt.AddItem("العربية", 8);
+		_languageOpt.AddItem("हिन्दी", 9);
 
 		// Dropdown Theme Styling and Sound Integration
-		var dropdowns = new[] { _resolutionOpt, _qualityOpt, _windowModeOpt, _vsyncOpt, _healthBarsOpt };
+		var dropdowns = new[] { _resolutionOpt, _qualityOpt, _windowModeOpt, _vsyncOpt, _healthBarsOpt, _languageOpt };
 		foreach (var opt in dropdowns)
 		{
 			opt.Flat = false;
@@ -268,6 +284,22 @@ public partial class SettingsMenu : Control
 			_ => 2
 		};
 		_healthBarsOpt.Select(hbIdx);
+
+		int langIdx = GameSettings.Language switch
+		{
+			"en" => 0,
+			"es" => 1,
+			"fr" => 2,
+			"de" => 3,
+			"pt" => 4,
+			"ru" => 5,
+			"zh" => 6,
+			"ja" => 7,
+			"ar" => 8,
+			"hi" => 9,
+			_ => 0
+		};
+		_languageOpt.Select(langIdx);
 	}
 
 	private void ApplySettings()
@@ -325,6 +357,23 @@ public partial class SettingsMenu : Control
 			2 => "damaged",
 			_ => "damaged"
 		};
+
+		string newLang = _languageOpt.Selected switch
+		{
+			0 => "en",
+			1 => "es",
+			2 => "fr",
+			3 => "de",
+			4 => "pt",
+			5 => "ru",
+			6 => "zh",
+			7 => "ja",
+			8 => "ar",
+			9 => "hi",
+			_ => "en"
+		};
+		GameSettings.Language = newLang;
+		LocalizationManager.UpdateLocale(newLang);
 
 		GameSettings.Save();
 

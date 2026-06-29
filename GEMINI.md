@@ -20,6 +20,7 @@
 
 ## Godot specific coding rules:
 - 2d button : always specify icon_max_width property
+- For any text labels that appear on screen, ensure they are translated via LocalizationManager.cs
 
 ### Realm.ECS:
 - The core ECS classes and data must be kept internal.

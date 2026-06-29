@@ -76,6 +76,7 @@ public partial class UIManager : Control
 	private void ApplyStartupSettings()
 	{
 		GameSettings.Load();
+		LocalizationManager.SetupTranslations();
 
 		string[] resolutions = { "1920x1080", "1600x900", "1280x720" };
 		if (GameSettings.ResolutionIdx >= 0 && GameSettings.ResolutionIdx < resolutions.Length)
