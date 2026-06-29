@@ -213,6 +213,14 @@ public partial class GameHost : Node3D, IGameAPI
 	private bool _hasCachedRandom = false;
 	private bool _isPastingObject = false;
 
+	private struct DelayedPacket
+	{
+		public string FunctionName;
+		public object[] Arguments;
+		public double SendTime;
+	}
+	private readonly Dictionary<int, List<DelayedPacket>> _spectatorDelayedPackets = new Dictionary<int, List<DelayedPacket>>();
+
 	public void GenerateNewRandomPlacementRotationAndScale()
 	{
 		_cachedRandomRotation = (float)(GD.Randf() * 360.0);
@@ -2799,6 +2807,7 @@ public class {mapName} : IMapScript
 		{
 			VSCodeManager.Instance.CleanUp();
 		}
+		_spectatorDelayedPackets.Clear();
 		StopRecording();
 	}
 
@@ -5992,6 +6001,39 @@ public class {mapName} : IMapScript
 		if (ReplayPlaybackManager.Instance.IsPlayingReplay)
 		{
 			return;
+		}
+
+		bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
+		if (isSpectator)
+		{
+			if (@event is InputEventKey specKeyEvent && specKeyEvent.Pressed && !specKeyEvent.Echo)
+			{
+				if (specKeyEvent.Keycode != Key.Escape && specKeyEvent.Keycode != Key.Space && specKeyEvent.Keycode != Key.Z && specKeyEvent.Keycode != Key.Tab)
+				{
+					GetViewport().SetInputAsHandled();
+					return;
+				}
+			}
+			else if (@event is InputEventMouseButton specMouseBtn)
+			{
+				if (specMouseBtn.ButtonIndex == MouseButton.Right)
+				{
+					GetViewport().SetInputAsHandled();
+					return;
+				}
+				if (specMouseBtn.ButtonIndex == MouseButton.Left)
+				{
+					if (_activeSpellTargeting != null || _activeCommandTargeting != null || _activeBuildingPlacementType != null)
+					{
+						_activeSpellTargeting = null;
+						_activeCommandTargeting = null;
+						CancelBuildingPlacement();
+						Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
+						GetViewport().SetInputAsHandled();
+						return;
+					}
+				}
+			}
 		}
 
 		// Process Escape key before anything else
@@ -12629,7 +12671,15 @@ public class {mapName} : IMapScript
 			{
 				HealAOE(position, 4.0f, 60f);
 			}
-			Rpc(nameof(PlaySpellEffect), spellId, cmd.TargetPosition.ToGodot());
+			Vector3 effectPos = cmd.TargetPosition.ToGodot();
+			if (LobbyManager.Instance != null)
+			{
+				foreach (var p in LobbyManager.Instance.PlayerList)
+				{
+					if (p.PeerId == _localPeerId || p.PeerId < 0) continue;
+					QueueOrSendPacket(p.PeerId, nameof(PlaySpellEffect), spellId, effectPos);
+				}
+			}
 		}
 	}
 
@@ -12734,7 +12784,7 @@ public class {mapName} : IMapScript
 				Units = snapshotUnits
 			};
 			var payload = MemoryPackSerializer.Serialize(worldSnapshot);
-			RpcId(peerId, nameof(ReceiveSnapshot), payload);
+			QueueOrSendPacket(peerId, nameof(ReceiveSnapshot), payload);
 		}
 		foreach (var unit in AllUnits)
 		{
@@ -13097,6 +13147,96 @@ public class {mapName} : IMapScript
 		ReplayObjectPool.ReturnIntList(activeIds);
 
 		_replayTickCounter++;
+	}
+
+	private void QueueOrSendPacket(int peerId, string funcName, params object[] args)
+	{
+		bool isSpectator = false;
+		if (LobbyManager.Instance != null)
+		{
+			var p = LobbyManager.Instance.PlayerList.Find(x => x.PeerId == peerId);
+			if (p != null && p.Team == "Spectator")
+			{
+				isSpectator = true;
+			}
+		}
+
+		if (isSpectator && LobbyManager.Instance != null && LobbyManager.Instance.SpectatorDelay)
+		{
+			double sendTime = (Time.GetTicksMsec() / 1000.0) + 300.0;
+			if (!_spectatorDelayedPackets.TryGetValue(peerId, out var list))
+			{
+				list = new List<DelayedPacket>();
+				_spectatorDelayedPackets[peerId] = list;
+			}
+			list.Add(new DelayedPacket
+			{
+				FunctionName = funcName,
+				Arguments = args,
+				SendTime = sendTime
+			});
+		}
+		else
+		{
+			if (funcName == nameof(ReceiveSnapshot))
+			{
+				RpcId(peerId, nameof(ReceiveSnapshot), (byte[])args[0]);
+			}
+			else if (funcName == nameof(PlaySpellEffect))
+			{
+				RpcId(peerId, nameof(PlaySpellEffect), (string)args[0], (Vector3)args[1]);
+			}
+		}
+	}
+
+	private void ProcessDelayedSpectatorPackets()
+	{
+		if (_spectatorDelayedPackets.Count == 0) return;
+
+		double currentTime = Time.GetTicksMsec() / 1000.0;
+		var disconnectedPeers = new List<int>();
+		foreach (var key in _spectatorDelayedPackets.Keys)
+		{
+			if (LobbyManager.Instance == null || !LobbyManager.Instance.PlayerList.Exists(p => p.PeerId == key))
+			{
+				disconnectedPeers.Add(key);
+			}
+		}
+		foreach (var peerId in disconnectedPeers)
+		{
+			_spectatorDelayedPackets.Remove(peerId);
+		}
+
+		foreach (var kvp in _spectatorDelayedPackets)
+		{
+			int peerId = kvp.Key;
+			var list = kvp.Value;
+			int sentCount = 0;
+			for (int i = 0; i < list.Count; i++)
+			{
+				if (list[i].SendTime <= currentTime)
+				{
+					var packet = list[i];
+					if (packet.FunctionName == nameof(ReceiveSnapshot))
+					{
+						RpcId(peerId, nameof(ReceiveSnapshot), (byte[])packet.Arguments[0]);
+					}
+					else if (packet.FunctionName == nameof(PlaySpellEffect))
+					{
+						RpcId(peerId, nameof(PlaySpellEffect), (string)packet.Arguments[0], (Vector3)packet.Arguments[1]);
+					}
+					sentCount++;
+				}
+				else
+				{
+					break;
+				}
+			}
+			if (sentCount > 0)
+			{
+				list.RemoveRange(0, sentCount);
+			}
+		}
 	}
 }
 

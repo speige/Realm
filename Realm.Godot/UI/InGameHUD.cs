@@ -188,6 +188,8 @@ public partial class InGameHUD : Control
 	private bool _isChatActive = false;
 	public bool IsChatActive => _isChatActive;
 
+	public int LiveSpectatorPerspective { get; set; } = -1;
+
 	public override void _Ready()
 	{
 		Instance = this;
@@ -540,11 +542,24 @@ public partial class InGameHUD : Control
 			if (_devPanel != null) _devPanel.Visible = false;
 			if (_chatPanel != null) _chatPanel.Visible = false;
 		}
+
+		bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
+		if (isSpectator)
+		{
+			_resourceContainer.Visible = false;
+			if (_devPanel != null) _devPanel.Visible = false;
+			CreateSpectatorPerspectiveUI();
+		}
 	}
 
 	private void OnHUDResized()
 	{
 		ApplyHUDScale();
+		var specPanel = GetNodeOrNull<PanelContainer>("SpectatorPanel");
+		if (specPanel != null)
+		{
+			specPanel.Position = new Vector2((GetViewportRect().Size.X - 300) / 2.0f, 10);
+		}
 	}
 
 	public void ApplyHUDScale()
@@ -924,7 +939,8 @@ public partial class InGameHUD : Control
 				}
 			}
 		}
-		_commandFrame.Visible = hasPlayerSelection;
+		bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
+		_commandFrame.Visible = isSpectator ? false : hasPlayerSelection;
 
 		_isBuildSubMenuOpen = false;
 		PopulateCommandGrid();
@@ -2114,9 +2130,10 @@ public partial class InGameHUD : Control
 
 	private void SetupMinimap()
 	{
+		bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
 		_minimapArea.GuiInput += (@event) =>
 		{
-			if (ReplayPlaybackManager.Instance.IsPlayingReplay)
+			if (ReplayPlaybackManager.Instance.IsPlayingReplay || isSpectator)
 			{
 				if (@event is InputEventMouseButton rMouseBtn && rMouseBtn.Pressed && rMouseBtn.ButtonIndex == MouseButton.Left)
 				{
@@ -3058,9 +3075,14 @@ public partial class InGameHUD : Control
 
 	private void UpdateFogOfWar()
 	{
-		if (ReplayPlaybackManager.Instance.IsPlayingReplay)
+		bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
+		if (ReplayPlaybackManager.Instance.IsPlayingReplay || isSpectator)
 		{
-			if (ReplayPlaybackManager.Instance.SpectatorPerspective == -1)
+			int targetOwnerId = ReplayPlaybackManager.Instance.IsPlayingReplay 
+				? ReplayPlaybackManager.Instance.SpectatorPerspective 
+				: LiveSpectatorPerspective;
+
+			if (targetOwnerId == -1)
 			{
 				for (int x = 0; x < 32; x++)
 				{
@@ -3084,7 +3106,6 @@ public partial class InGameHUD : Control
 			}
 			else
 			{
-				int targetOwnerId = ReplayPlaybackManager.Instance.SpectatorPerspective;
 				for (int x = 0; x < 32; x++)
 				{
 					for (int z = 0; z < 32; z++)
@@ -3529,6 +3550,76 @@ public partial class InGameHUD : Control
 		arrays[(int)Mesh.ArrayType.Color] = colors;
 		arrays[(int)Mesh.ArrayType.Index] = indices;
 		arrMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+	}
+
+	private void CreateSpectatorPerspectiveUI()
+	{
+		var specPanel = new PanelContainer();
+		specPanel.Name = "SpectatorPanel";
+		specPanel.CustomMinimumSize = new Vector2(300, 60);
+		specPanel.Position = new Vector2((GetViewportRect().Size.X - 300) / 2.0f, 10);
+		AddChild(specPanel);
+
+		specPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+
+		var hbox = new HBoxContainer();
+		hbox.Alignment = BoxContainer.AlignmentMode.Center;
+		specPanel.AddChild(hbox);
+
+		var lblSpec = new Label();
+		lblSpec.Text = Tr("FOG OF WAR VIEW: ");
+		lblSpec.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		lblSpec.AddThemeFontSizeOverride("font_size", 14);
+		lblSpec.VerticalAlignment = VerticalAlignment.Center;
+		hbox.AddChild(lblSpec);
+
+		var optSpec = new OptionButton();
+		optSpec.Name = "SpectatorPerspectiveButton";
+		optSpec.CustomMinimumSize = new Vector2(160, 32);
+		optSpec.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+		
+		optSpec.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		optSpec.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		optSpec.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		optSpec.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		optSpec.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		optSpec.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		optSpec.AddThemeColorOverride("font_pressed_color", UIStyle.ColorCyanGlow);
+		optSpec.AddThemeFontSizeOverride("font_size", 13);
+		hbox.AddChild(optSpec);
+
+		optSpec.Clear();
+		optSpec.AddItem(Tr("Omniscient"), 0);
+
+		var players = new List<LobbyManager.PlayerInfo>();
+		if (LobbyManager.Instance != null)
+		{
+			foreach (var p in LobbyManager.Instance.PlayerList)
+			{
+				if (p.Team != "Spectator")
+				{
+					players.Add(p);
+				}
+			}
+		}
+
+		for (int i = 0; i < players.Count; i++)
+		{
+			optSpec.AddItem(players[i].Name, i + 1);
+		}
+
+		optSpec.ItemSelected += (idx) =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			if (idx == 0)
+			{
+				LiveSpectatorPerspective = -1;
+			}
+			else if (idx - 1 < players.Count)
+			{
+				LiveSpectatorPerspective = players[(int)idx - 1].PeerId;
+			}
+		};
 	}
 }
 

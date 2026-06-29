@@ -20,6 +20,7 @@ public partial class LobbyRoom : Control
 	private RichTextLabel _chatLog;
 	private VBoxContainer _playersContainer;
 	private Label _inviteFeedback;
+	private CheckBox _spectatorDelayCheck;
 
 	private Label _lobbyTitle;
 	private Label _playersTitle;
@@ -150,6 +151,9 @@ public partial class LobbyRoom : Control
 		}
 
 		PopulatePlayersList();
+
+		CreateSpectatorDelayUI();
+		LobbyManager.Instance.SpectatorDelayChanged += OnSpectatorDelayChanged;
 
 		_chatLog.Text = "[color=#ffd700]System: Connected to Lobby. Pre-Match Setup is active.[/color]\n";
 		_chatInput.TextSubmitted += OnChatSubmitted;
@@ -374,6 +378,8 @@ public partial class LobbyRoom : Control
 			LobbyManager.Instance.ConnectionFailed -= OnLobbyConnectionFailed;
 			LobbyManager.Instance.KickReceived -= OnLobbyKickReceived;
 
+			LobbyManager.Instance.SpectatorDelayChanged -= OnSpectatorDelayChanged;
+
 			LobbyManager.Instance.MapDownloadProgressChanged -= OnMapDownloadProgress;
 			LobbyManager.Instance.MapDownloadCompleted -= OnMapDownloadCompleted;
 			LobbyManager.Instance.MapDownloadFailed -= OnMapDownloadFailed;
@@ -418,13 +424,52 @@ public partial class LobbyRoom : Control
 		var hBox = new HBoxContainer();
 		panel.AddChild(hBox);
 
-		var lblTeam = new Label();
-		lblTeam.Text = $"  {p.Team}";
-		lblTeam.CustomMinimumSize = new Vector2(80, 0);
-		lblTeam.AddThemeColorOverride("font_color", new Color(0.8f, 0.8f, 0.85f));
-		lblTeam.AddThemeFontSizeOverride("font_size", 15);
-		lblTeam.VerticalAlignment = VerticalAlignment.Center;
-		hBox.AddChild(lblTeam);
+		var optTeam = new OptionButton();
+		optTeam.CustomMinimumSize = new Vector2(100, 32);
+		optTeam.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+		optTeam.Flat = false;
+
+		optTeam.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		optTeam.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		optTeam.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		optTeam.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		optTeam.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		optTeam.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		optTeam.AddThemeColorOverride("font_pressed_color", UIStyle.ColorCyanGlow);
+		optTeam.AddThemeFontSizeOverride("font_size", 13);
+
+		optTeam.AddItem("Team 1");
+		optTeam.AddItem("Team 2");
+		optTeam.AddItem("Spectator");
+
+		int teamIdx = p.Team == "Team 1" ? 0 : (p.Team == "Team 2" ? 1 : 2);
+		optTeam.Select(teamIdx);
+
+		if (isLocalPlayer)
+		{
+			optTeam.ItemSelected += (idx) =>
+			{
+				UIManager.Instance.PlayClickSound();
+				p.Team = idx == 0 ? "Team 1" : (idx == 1 ? "Team 2" : "Spectator");
+				if (p.Team == "Spectator")
+				{
+					p.Faction = "SPECTATOR";
+					p.Color = new Color(0.5f, 0.5f, 0.5f);
+				}
+				else if (p.Faction == "SPECTATOR")
+				{
+					p.Faction = "HUMAN";
+				}
+				LobbyManager.Instance.UpdatePlayerSlot(p.PeerId, p.Faction, p.Team, p.Color, p.Name);
+			};
+			optTeam.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+		}
+		else
+		{
+			optTeam.Disabled = true;
+			optTeam.AddThemeColorOverride("font_disabled_color", new Color(0.5f, 0.5f, 0.5f));
+		}
+		hBox.AddChild(optTeam);
 
 		var colorBtn = new Button();
 		colorBtn.CustomMinimumSize = new Vector2(26, 26);
@@ -442,7 +487,7 @@ public partial class LobbyRoom : Control
 		colorBtn.AddThemeStyleboxOverride("hover", colorStyle);
 		colorBtn.AddThemeStyleboxOverride("pressed", colorStyle);
 
-		if (isLocalPlayer)
+		if (isLocalPlayer && p.Team != "Spectator")
 		{
 			colorBtn.Pressed += () =>
 			{
@@ -503,7 +548,6 @@ public partial class LobbyRoom : Control
 		optFaction.SizeFlagsVertical = SizeFlags.ShrinkCenter;
 		optFaction.Flat = false;
 		
-		// Apply fantasy style overrides to the dropdown button
 		optFaction.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		optFaction.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		optFaction.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
@@ -513,29 +557,38 @@ public partial class LobbyRoom : Control
 		optFaction.AddThemeColorOverride("font_pressed_color", UIStyle.ColorCyanGlow);
 		optFaction.AddThemeFontSizeOverride("font_size", 13);
 		
-		foreach (var fact in _factions)
+		if (p.Team == "Spectator")
 		{
-			optFaction.AddItem(fact);
-		}
-		
-		int selIdx = Array.IndexOf(_factions, p.Faction);
-		if (selIdx >= 0) optFaction.Select(selIdx);
-
-		if (isLocalPlayer)
-		{
-			optFaction.ItemSelected += (idx) => 
-			{
-				UIManager.Instance.PlayClickSound();
-				p.Faction = _factions[idx];
-				LobbyManager.Instance.UpdatePlayerSlot(p.PeerId, p.Faction, p.Team, p.Color, p.Name);
-			};
-			optFaction.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+			optFaction.AddItem("SPECTATOR");
+			optFaction.Select(0);
+			optFaction.Disabled = true;
+			optFaction.AddThemeColorOverride("font_disabled_color", new Color(0.5f, 0.5f, 0.5f));
 		}
 		else
 		{
-			// For disabled AI dropdowns, apply the disabled style to look clean
-			optFaction.Disabled = true;
-			optFaction.AddThemeColorOverride("font_disabled_color", new Color(0.5f, 0.5f, 0.5f));
+			foreach (var fact in _factions)
+			{
+				optFaction.AddItem(fact);
+			}
+			
+			int selIdx = Array.IndexOf(_factions, p.Faction);
+			if (selIdx >= 0) optFaction.Select(selIdx);
+
+			if (isLocalPlayer)
+			{
+				optFaction.ItemSelected += (idx) => 
+				{
+					UIManager.Instance.PlayClickSound();
+					p.Faction = _factions[idx];
+					LobbyManager.Instance.UpdatePlayerSlot(p.PeerId, p.Faction, p.Team, p.Color, p.Name);
+				};
+				optFaction.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+			}
+			else
+			{
+				optFaction.Disabled = true;
+				optFaction.AddThemeColorOverride("font_disabled_color", new Color(0.5f, 0.5f, 0.5f));
+			}
 		}
 		hBox.AddChild(optFaction);
 
@@ -713,6 +766,35 @@ public partial class LobbyRoom : Control
 	}
 
 	private void OnStartButtonMouseEntered() => UIManager.Instance.PlayHoverSound();
+
+	private void CreateSpectatorDelayUI()
+	{
+		_spectatorDelayCheck = new CheckBox();
+		_spectatorDelayCheck.Text = Tr("Spectator Delay (5m)");
+		_spectatorDelayCheck.Position = new Vector2(1450, 760);
+		_spectatorDelayCheck.Size = new Vector2(340, 40);
+		_spectatorDelayCheck.ButtonPressed = LobbyManager.Instance.SpectatorDelay;
+		_spectatorDelayCheck.Disabled = !LobbyManager.Instance.IsHost;
+		
+		UIStyle.ApplyCheckboxStyle(_spectatorDelayCheck);
+		
+		_spectatorDelayCheck.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			LobbyManager.Instance.UpdateSpectatorDelay(_spectatorDelayCheck.ButtonPressed);
+		};
+		
+		_spectatorDelayCheck.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+		AddChild(_spectatorDelayCheck);
+	}
+
+	private void OnSpectatorDelayChanged(bool enabled)
+	{
+		if (_spectatorDelayCheck != null)
+		{
+			_spectatorDelayCheck.ButtonPressed = enabled;
+		}
+	}
 }
 
 // Procedural tactical schematic map drawer

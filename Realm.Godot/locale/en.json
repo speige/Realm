@@ -223,5 +223,9 @@
   "RANDOM MAP GENERATOR": "RANDOM MAP GENERATOR",
   "Map Seed:": "Map Seed:",
   "FILE OPERATIONS": "FILE OPERATIONS",
-  "Skybox Environment": "Skybox Environment"
+  "Skybox Environment": "Skybox Environment",
+  "Spectator Delay (5m)": "Spectator Delay (5m)",
+  "FOG OF WAR VIEW: ": "FOG OF WAR VIEW: ",
+  "Spectator": "Spectator",
+  "SPECTATOR": "SPECTATOR"
 }

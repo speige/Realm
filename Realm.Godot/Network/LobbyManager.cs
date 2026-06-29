@@ -45,6 +45,7 @@ public partial class LobbyManager : Node
     public string? ActiveLobbyId { get; private set; }
     public bool IsGameStarted { get; set; }
     public string ActiveMapName { get; set; } = "green_td";
+    public bool SpectatorDelay { get; set; } = false;
 
     // Player List
     public List<PlayerInfo> PlayerList { get; } = new();
@@ -100,6 +101,7 @@ public partial class LobbyManager : Node
     public event Action<float>? MapDownloadProgressChanged;
     public event Action? MapDownloadCompleted;
     public event Action? MapDownloadFailed;
+    public event Action<bool>? SpectatorDelayChanged;
 
     public override void _Ready()
     {
@@ -214,6 +216,7 @@ public partial class LobbyManager : Node
     {
         IsHost = true;
         IsGameStarted = false;
+        SpectatorDelay = false;
         PlayerList.Clear();
 
         // 1. Initialize local player as slot 0
@@ -578,6 +581,7 @@ public partial class LobbyManager : Node
 
             // 3. Broadcast sync message to all peers
             BroadcastPlayerList();
+            RpcId(id, nameof(SyncSpectatorDelay), SpectatorDelay);
         }
     }
 
@@ -792,8 +796,29 @@ public partial class LobbyManager : Node
 
         IsGameStarted = true;
         
-        // Instantiating Main.tscn
         GetTree().ChangeSceneToFile("res://Main.tscn");
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    public void UpdateSpectatorDelay(bool enabled)
+    {
+        if (IsHost)
+        {
+            SpectatorDelay = enabled;
+            Rpc(nameof(SyncSpectatorDelay), enabled);
+            SpectatorDelayChanged?.Invoke(enabled);
+        }
+        else
+        {
+            RpcId(1, nameof(UpdateSpectatorDelay), enabled);
+        }
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void SyncSpectatorDelay(bool enabled)
+    {
+        SpectatorDelay = enabled;
+        SpectatorDelayChanged?.Invoke(enabled);
     }
 
     // --- HELPERS ---
