@@ -177,7 +177,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool EditorRandomScale { get; set; } = false;
 	public string EditorSkyboxPath { get; set; } = "res://Assets/skybox_panoramic.jpg";
 	public bool EditorHasUnsavedChanges { get; set; } = false;
-	public bool EditorBlockMode { get; set; } = false;
+	public bool EditorBlockMode { get; set; } = true;
 	public float EditorBlockLevelHeight { get; set; } = 4.0f;
 	private bool _hasBlockTargetHeight = false;
 	private float _activeBlockTargetHeight = 0.0f;
@@ -193,6 +193,16 @@ public partial class GameHost : Node3D, IGameAPI
 	}
 	private CopiedObjectTemplate? _copiedObject = null;
 	private MeshInstance3D _selectionHighlightMesh = null;
+	private float _cachedRandomRotation = 0.0f;
+	private float _cachedRandomScale = 1.0f;
+	private bool _hasCachedRandom = false;
+
+	public void GenerateNewRandomPlacementRotationAndScale()
+	{
+		_cachedRandomRotation = (float)(GD.Randf() * 360.0);
+		_cachedRandomScale = (float)(0.7f + GD.Randf() * 0.6f);
+		_hasCachedRandom = true;
+	}
 	private Vector2I? _selectionStart = null;
 	private Vector2I? _selectionEnd = null;
 	private bool _isSelectingArea = false;
@@ -4644,7 +4654,7 @@ public class {mapName} : IMapScript
 				}
 				if (editorKeyEvent.Keycode == Key.Space && !ctrlPressed && !shiftPressed)
 				{
-					CenterCameraOnCastle();
+					CenterCameraOnSelectedOrCastle();
 					GetViewport().SetInputAsHandled();
 					return;
 				}
@@ -5036,6 +5046,16 @@ public class {mapName} : IMapScript
 				}
 				if (editorKeyEvent.Keycode == Key.R)
 				{
+					if (ActiveEditorTool == EditorTool.PlaceUnit || ActiveEditorTool == EditorTool.PlaceProp || ActiveEditorTool == EditorTool.PlaceDecal)
+					{
+						if (EditorRandomRotation || EditorRandomScale)
+						{
+							GenerateNewRandomPlacementRotationAndScale();
+							MapEditorHUD.Instance?.ShowFeedbackExternal("Re-randomized Rotation & Scale");
+							GetViewport().SetInputAsHandled();
+							return;
+						}
+					}
 					float angleStep = shiftPressed ? 15.0f : 45.0f;
 					if (ActiveEditorTool == EditorTool.SelectMove && GodotObject.IsInstanceValid(SelectedEditorObject))
 					{
@@ -5170,6 +5190,13 @@ public class {mapName} : IMapScript
 					EditorGridVisible = !EditorGridVisible;
 					UpdateGridOverlayVisibility();
 					MapEditorHUD.Instance?.UpdateGridOverlayExternal(EditorGridVisible);
+					GetViewport().SetInputAsHandled();
+					return;
+				}
+				if (editorKeyEvent.Keycode == Key.T && !ctrlPressed && !shiftPressed)
+				{
+					GenerateNewRandomPlacementRotationAndScale();
+					MapEditorHUD.Instance?.ShowFeedbackExternal("Re-randomized Rotation & Scale");
 					GetViewport().SetInputAsHandled();
 					return;
 				}
@@ -5347,8 +5374,9 @@ public class {mapName} : IMapScript
 					
 					if (ActiveEditorTool == EditorTool.PlaceUnit)
 					{
-						float placementRot = EditorRandomRotation ? (float)(GD.Randf() * 360.0) : EditorPlacementRotation;
-						float scaleVal = EditorRandomScale ? EditorPlacementScale * (float)(0.7f + GD.Randf() * 0.6f) : EditorPlacementScale;
+						if (!_hasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
+						float placementRot = EditorRandomRotation ? _cachedRandomRotation : EditorPlacementRotation;
+						float scaleVal = EditorRandomScale ? EditorPlacementScale * _cachedRandomScale : EditorPlacementScale;
 						var unit = SpawnUnitExternal(ActivePlaceId, hitPos, PlaceUnitIsEnemy, placementRot, scaleVal);
 						if (unit != null)
 						{
@@ -5372,12 +5400,14 @@ public class {mapName} : IMapScript
 							EditorHistoryManager.RecordAction(composite);
 							EditorHasUnsavedChanges = true;
 						}
+						GenerateNewRandomPlacementRotationAndScale();
 						GetViewport().SetInputAsHandled();
 					}
 					else if (ActiveEditorTool == EditorTool.PlaceProp)
 					{
-						float placementRot = EditorRandomRotation ? (float)(GD.Randf() * 360.0) : EditorPlacementRotation;
-						float scaleVal = EditorRandomScale ? EditorPlacementScale * (float)(0.7f + GD.Randf() * 0.6f) : EditorPlacementScale;
+						if (!_hasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
+						float placementRot = EditorRandomRotation ? _cachedRandomRotation : EditorPlacementRotation;
+						float scaleVal = EditorRandomScale ? EditorPlacementScale * _cachedRandomScale : EditorPlacementScale;
 						var prop = SpawnPropExternalWithParams(ActivePlaceId, hitPos, placementRot, scaleVal);
 						if (prop != null)
 						{
@@ -5401,12 +5431,14 @@ public class {mapName} : IMapScript
 							EditorHistoryManager.RecordAction(composite);
 							EditorHasUnsavedChanges = true;
 						}
+						GenerateNewRandomPlacementRotationAndScale();
 						GetViewport().SetInputAsHandled();
 					}
 					else if (ActiveEditorTool == EditorTool.PlaceDecal)
 					{
-						float placementRot = EditorRandomRotation ? (float)(GD.Randf() * 360.0) : EditorPlacementRotation;
-						float scaleVal = EditorRandomScale ? EditorPlacementScale * (float)(0.7f + GD.Randf() * 0.6f) : EditorPlacementScale;
+						if (!_hasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
+						float placementRot = EditorRandomRotation ? _cachedRandomRotation : EditorPlacementRotation;
+						float scaleVal = EditorRandomScale ? EditorPlacementScale * _cachedRandomScale : EditorPlacementScale;
 						var decal = SpawnDecalExternalWithParams(ActivePlaceId, hitPos, placementRot, scaleVal);
 						if (decal != null)
 						{
@@ -5430,6 +5462,7 @@ public class {mapName} : IMapScript
 							EditorHistoryManager.RecordAction(composite);
 							EditorHasUnsavedChanges = true;
 						}
+						GenerateNewRandomPlacementRotationAndScale();
 						GetViewport().SetInputAsHandled();
 					}
 					else if (ActiveEditorTool == EditorTool.DeleteObject)
@@ -7219,6 +7252,118 @@ public class {mapName} : IMapScript
 			{
 				InGameHUD.Instance.ShowFeedbackText("Camera Centered on Castle", new Color(0.5f, 0.8f, 1.0f));
 			}
+		}
+	}
+
+	public void CenterCameraOnSelectedOrCastle()
+	{
+		var camera = GetViewport().GetCamera3D();
+		if (camera == null) return;
+
+		if (SelectedEditorObject is Node3D node3D && GodotObject.IsInstanceValid(node3D))
+		{
+			camera.GlobalPosition = new Vector3(node3D.GlobalPosition.X, camera.GlobalPosition.Y, node3D.GlobalPosition.Z);
+			MapEditorHUD.Instance?.ShowFeedbackExternal("Centered Camera on Selected Object");
+			return;
+		}
+
+		CenterCameraOnCastle();
+	}
+
+	public void TriggerCopyFromUI()
+	{
+		if (ActiveEditorTool == EditorTool.SelectArea)
+		{
+			PerformCopyArea();
+			return;
+		}
+		if (ActiveEditorTool == EditorTool.SelectMove && GodotObject.IsInstanceValid(SelectedEditorObject))
+		{
+			if (SelectedEditorObject is Unit3D unit)
+			{
+				_copiedObject = new CopiedObjectTemplate {
+					Type = "unit",
+					Id = unit.UnitId,
+					Rotation = unit.RotationDegrees.Y,
+					Scale = unit.Scale.X,
+					IsEnemy = unit.IsEnemy
+				};
+				MapEditorHUD.Instance?.ShowFeedbackExternal($"Copied Unit: {unit.UnitId.ToUpper()}");
+			}
+			else if (SelectedEditorObject is Prop3D prop)
+			{
+				_copiedObject = new CopiedObjectTemplate {
+					Type = "prop",
+					Id = prop.PropId,
+					Rotation = prop.RotationDegrees.Y,
+					Scale = prop.Scale.X,
+					IsEnemy = false
+				};
+				MapEditorHUD.Instance?.ShowFeedbackExternal($"Copied Prop: {prop.PropId.ToUpper()}");
+			}
+			else if (SelectedEditorObject is Decal decal)
+			{
+				string decalId = decal.HasMeta("DecalId") ? decal.GetMeta("DecalId").AsString() : "logo";
+				_copiedObject = new CopiedObjectTemplate {
+					Type = "decal",
+					Id = decalId,
+					Rotation = decal.RotationDegrees.Y,
+					Scale = decal.Scale.X,
+					IsEnemy = false
+				};
+				MapEditorHUD.Instance?.ShowFeedbackExternal($"Copied Decal: {decalId.ToUpper()}");
+			}
+		}
+		else
+		{
+			MapEditorHUD.Instance?.ShowFeedbackExternal("Nothing to Copy (select an object or area first)");
+		}
+	}
+
+	public void TriggerPasteFromUI()
+	{
+		if (ActiveEditorTool == EditorTool.SelectArea || ActiveEditorTool == EditorTool.PasteArea)
+		{
+			if (_copiedArea != null)
+			{
+				ActiveEditorTool = EditorTool.PasteArea;
+				MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.PasteArea);
+				MapEditorHUD.Instance?.ShowFeedbackExternal("Paste Mode Active - Click to paste");
+				return;
+			}
+		}
+		if (_copiedObject != null)
+		{
+			if (_copiedObject.Value.Type == "unit")
+			{
+				ActiveEditorTool = EditorTool.PlaceUnit;
+				ActivePlaceId = _copiedObject.Value.Id;
+				PlaceUnitIsEnemy = _copiedObject.Value.IsEnemy;
+				EditorPlacementRotation = _copiedObject.Value.Rotation;
+				EditorPlacementScale = _copiedObject.Value.Scale;
+				MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.PlaceUnit);
+			}
+			else if (_copiedObject.Value.Type == "prop")
+			{
+				ActiveEditorTool = EditorTool.PlaceProp;
+				ActivePlaceId = _copiedObject.Value.Id;
+				EditorPlacementRotation = _copiedObject.Value.Rotation;
+				EditorPlacementScale = _copiedObject.Value.Scale;
+				MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.PlaceProp);
+			}
+			else if (_copiedObject.Value.Type == "decal")
+			{
+				ActiveEditorTool = EditorTool.PlaceDecal;
+				ActivePlaceId = _copiedObject.Value.Id;
+				EditorPlacementRotation = _copiedObject.Value.Rotation;
+				EditorPlacementScale = _copiedObject.Value.Scale;
+				MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.PlaceDecal);
+			}
+			MapEditorHUD.Instance?.ShowFeedbackExternal($"Paste Mode Active - Placing {_copiedObject.Value.Id.ToUpper()}");
+		}
+		else
+		{
+			MapEditorHUD.Instance?.ShowFeedbackExternal("Nothing to Paste (copy an object or area first)");
 		}
 	}
 
@@ -11164,6 +11309,10 @@ public class {mapName} : IMapScript
 
 		if (_editorPreviewNode != null)
 		{
+			if (!_hasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
+			float previewRot = EditorRandomRotation ? _cachedRandomRotation : EditorPlacementRotation;
+			float previewScaleVal = EditorRandomScale ? EditorPlacementScale * _cachedRandomScale : EditorPlacementScale;
+
 			Vector3 previewPos = position;
 			if (EditorSnapToGrid && GroundTerrain != null)
 			{
@@ -11177,15 +11326,15 @@ public class {mapName} : IMapScript
 			}
 			previewPos.Y = GetTerrainHeightAt(previewPos);
 			_editorPreviewNode.Position = previewPos;
-			_editorPreviewNode.RotationDegrees = new Vector3(0.0f, EditorPlacementRotation, 0.0f);
+			_editorPreviewNode.RotationDegrees = new Vector3(0.0f, previewRot, 0.0f);
 			if (_editorPreviewNode is Decal previewDecal)
 			{
-				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * EditorPlacementScale;
+				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * previewScaleVal;
 				previewDecal.Scale = Vector3.One;
 			}
 			else
 			{
-				_editorPreviewNode.Scale = Vector3.One * EditorPlacementScale;
+				_editorPreviewNode.Scale = Vector3.One * previewScaleVal;
 			}
 			_editorPreviewNode.Visible = true;
 		}

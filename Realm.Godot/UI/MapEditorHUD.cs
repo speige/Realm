@@ -130,6 +130,14 @@ public partial class MapEditorHUD : Control
 
 	private Button _btnToggleRotate;
 	private Button _btnToggleScale;
+	private Slider _sldPlacementRotate;
+	private Label _lblPlacementRotateValue;
+	private Slider _sldPlacementScale;
+	private Label _lblPlacementScaleValue;
+	private VBoxContainer _placementRotateBox;
+	private VBoxContainer _placementScaleBox;
+	private Button _btnCopy;
+	private Button _btnPaste;
 	private Button _btnToggleSnap;
 	private Button _btnBigSave;
 	private Button _btnToggleGrid;
@@ -366,6 +374,8 @@ public partial class MapEditorHUD : Control
 		if (propsGrid != null) propsGrid.Visible = false;
 
 		_chkSpawnAsEnemy = GetNode<CheckBox>("PanelEntityPalette/VBox/Content/RightSettingsVBox/ChkSpawnAsEnemy");
+		_chkSpawnAsEnemy.Visible = false;
+		_chkSpawnAsEnemy.ButtonPressed = false;
 
 		var palettesVBox = GetNode<VBoxContainer>("PanelEntityPalette/VBox/Content/PalettesVBox");
 		foreach (Node child in palettesVBox.GetChildren())
@@ -420,6 +430,76 @@ public partial class MapEditorHUD : Control
 
 		_btnToggleRotate = GetNode<Button>("PanelEntityPalette/VBox/Content/RightSettingsVBox/BtnToggleRotate");
 		_btnToggleScale = GetNode<Button>("PanelEntityPalette/VBox/Content/RightSettingsVBox/BtnToggleScale");
+		_btnToggleRotate.Visible = false;
+		_btnToggleScale.Visible = false;
+
+		_placementRotateBox = new VBoxContainer();
+		_placementRotateBox.Name = "PlacementRotateBox";
+		var rotateHeader = new HBoxContainer();
+		_placementRotateBox.AddChild(rotateHeader);
+		var lblRotateTitle = new Label();
+		lblRotateTitle.Text = "🔄 Rotation";
+		lblRotateTitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		lblRotateTitle.AddThemeFontSizeOverride("font_size", 12);
+		rotateHeader.AddChild(lblRotateTitle);
+		_lblPlacementRotateValue = new Label();
+		_lblPlacementRotateValue.Text = "0°";
+		_lblPlacementRotateValue.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_lblPlacementRotateValue.HorizontalAlignment = HorizontalAlignment.Right;
+		_lblPlacementRotateValue.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		_lblPlacementRotateValue.AddThemeFontSizeOverride("font_size", 12);
+		rotateHeader.AddChild(_lblPlacementRotateValue);
+		_sldPlacementRotate = new HSlider();
+		_sldPlacementRotate.Name = "SldPlacementRotate";
+		_sldPlacementRotate.MinValue = 0.0;
+		_sldPlacementRotate.MaxValue = 360.0;
+		_sldPlacementRotate.Step = 5.0;
+		_sldPlacementRotate.Value = 0.0;
+		_placementRotateBox.AddChild(_sldPlacementRotate);
+		_sldPlacementRotate.ValueChanged += (val) =>
+		{
+			float fVal = (float)val;
+			_lblPlacementRotateValue.Text = fVal.ToString("F0") + "°";
+			if (GameHost.Instance != null) GameHost.Instance.EditorPlacementRotation = fVal;
+		};
+		_sldPlacementRotate.DragStarted += () => _isDraggingSlider = true;
+		_sldPlacementRotate.DragEnded += (valueChanged) => _isDraggingSlider = false;
+
+		_placementScaleBox = new VBoxContainer();
+		_placementScaleBox.Name = "PlacementScaleBox";
+		var scaleHeader = new HBoxContainer();
+		_placementScaleBox.AddChild(scaleHeader);
+		var lblScaleTitle = new Label();
+		lblScaleTitle.Text = "📏 Scale";
+		lblScaleTitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		lblScaleTitle.AddThemeFontSizeOverride("font_size", 12);
+		scaleHeader.AddChild(lblScaleTitle);
+		_lblPlacementScaleValue = new Label();
+		_lblPlacementScaleValue.Text = "1.0x";
+		_lblPlacementScaleValue.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_lblPlacementScaleValue.HorizontalAlignment = HorizontalAlignment.Right;
+		_lblPlacementScaleValue.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		_lblPlacementScaleValue.AddThemeFontSizeOverride("font_size", 12);
+		scaleHeader.AddChild(_lblPlacementScaleValue);
+		_sldPlacementScale = new HSlider();
+		_sldPlacementScale.Name = "SldPlacementScale";
+		_sldPlacementScale.MinValue = 0.2;
+		_sldPlacementScale.MaxValue = 3.0;
+		_sldPlacementScale.Step = 0.1;
+		_sldPlacementScale.Value = 1.0;
+		_placementScaleBox.AddChild(_sldPlacementScale);
+		_sldPlacementScale.ValueChanged += (val) =>
+		{
+			float fVal = (float)val;
+			_lblPlacementScaleValue.Text = fVal.ToString("F1") + "x";
+			if (GameHost.Instance != null) GameHost.Instance.EditorPlacementScale = fVal;
+		};
+		_sldPlacementScale.DragStarted += () => _isDraggingSlider = true;
+		_sldPlacementScale.DragEnded += (valueChanged) => _isDraggingSlider = false;
+
+		var placementRightSettingsVBox = GetNode<VBoxContainer>("PanelEntityPalette/VBox/Content/RightSettingsVBox");
+		placementRightSettingsVBox.AddChild(_placementRotateBox);
+		placementRightSettingsVBox.AddChild(_placementScaleBox);
 		_btnToggleSnap = GetNode<Button>("PanelEntityPalette/VBox/Content/RightSettingsVBox/BtnToggleSnap");
 		_btnBigSave = GetNode<Button>("PanelEntityPalette/VBox/Content/RightSettingsVBox/BtnBigSave");
 
@@ -560,6 +640,18 @@ public partial class MapEditorHUD : Control
 		btnHelp.Set("icon_max_width", 0);
 		GetNode<HBoxContainer>("TopLeftBox").AddChild(btnHelp);
 		SetupButton(btnHelp, "❓ HELP / HOTKEYS", () => ToggleHelpPanelExternal(), 13, "Toggle the hotkeys and editor guide overlay (H)");
+
+		_btnCopy = new Button();
+		_btnCopy.Name = "BtnCopy";
+		_btnCopy.Set("icon_max_width", 0);
+		GetNode<HBoxContainer>("TopLeftBox").AddChild(_btnCopy);
+		SetupButton(_btnCopy, "📋 COPY", () => GameHost.Instance?.TriggerCopyFromUI(), 13, "Copy selected object or selected area (Ctrl+C)");
+
+		_btnPaste = new Button();
+		_btnPaste.Name = "BtnPaste";
+		_btnPaste.Set("icon_max_width", 0);
+		GetNode<HBoxContainer>("TopLeftBox").AddChild(_btnPaste);
+		SetupButton(_btnPaste, "📋 PASTE", () => GameHost.Instance?.TriggerPasteFromUI(), 13, "Paste copied object or area (Ctrl+V)");
 
 		if (OperatingSystem.IsWindows())
 		{
@@ -818,6 +910,7 @@ public partial class MapEditorHUD : Control
 				ShowFeedback(toggled ? "Block Mode: Enabled" : "Block Mode: Disabled");
 			}
 		};
+		_chkBlockMode.ButtonPressed = true;
 
 		var stepBox = new VBoxContainer();
 		stepBox.Name = "StepBox";
@@ -865,22 +958,6 @@ public partial class MapEditorHUD : Control
 		var waterHeightBox = new VBoxContainer();
 		waterHeightBox.Name = "WaterHeightBox";
 		settingsVBox.AddChild(waterHeightBox);
-
-		_chkWaterEnabled = new CheckBox();
-		_chkWaterEnabled.Name = "ChkWaterEnabled";
-		_chkWaterEnabled.Text = "💧 Water Enabled";
-		_chkWaterEnabled.TooltipText = "Toggle visibility of water plane on the map";
-		UIStyle.ApplyCheckboxStyle(_chkWaterEnabled);
-		_chkWaterEnabled.ButtonPressed = true;
-		waterHeightBox.AddChild(_chkWaterEnabled);
-		_chkWaterEnabled.Toggled += (toggled) =>
-		{
-			if (GameHost.Instance?.GroundTerrain != null)
-			{
-				GameHost.Instance.GroundTerrain.WaterEnabled = toggled;
-				ShowFeedback(toggled ? "Water: Enabled" : "Water: Disabled");
-			}
-		};
 
 		var waterHeader = new HBoxContainer();
 		waterHeightBox.AddChild(waterHeader);
@@ -1186,7 +1263,7 @@ public partial class MapEditorHUD : Control
 
 		SetupButton(_btnZoomIn, "➕ In", () => _camera3D?.Call("ZoomIn"), 12, "Zoom camera in (Mouse Wheel Up)");
 		SetupButton(_btnZoomOut, "➖ Out", () => _camera3D?.Call("ZoomOut"), 12, "Zoom camera out (Mouse Wheel Down)");
-		SetupButton(_btnCenter, "🎯 Target", () => GameHost.Instance?.CenterCameraOnCastle(), 11, "Center camera on the castle (or map center)");
+		SetupButton(_btnCenter, "🎯 Target", () => GameHost.Instance?.CenterCameraOnSelectedOrCastle(), 11, "Center camera on selected object (or castle)");
 		SetupButton(_btnRotate, "🔄 Rotate", () => {
 			if (_camera3D != null && _camera3D.HasMethod("Rotate90Degrees"))
 			{
@@ -2703,6 +2780,29 @@ public class {mapName} : IMapScript
 					toolName += $" ({GameHost.Instance.ActivePlaceId.ToUpper()})";
 				
 				_statusLabel.Text = $"ACTIVE TOOL: {toolName} | Pos: {pos.X:F1}, {pos.Y:F1}, {pos.Z:F1}";
+
+				if (GameHost.Instance.ActiveEditorTool == GameHost.EditorTool.PaintPathing && GameHost.Instance.GroundTerrain != null)
+				{
+					var terrain = GameHost.Instance.GroundTerrain;
+					float fx = pos.X / terrain.Spacing + (terrain.Width - 1) / 2.0f;
+					float fz = pos.Z / terrain.Spacing + (terrain.Depth - 1) / 2.0f;
+					int cx = Mathf.Clamp((int)Mathf.Round(fx), 0, terrain.Width - 1);
+					int cz = Mathf.Clamp((int)Mathf.Round(fz), 0, terrain.Depth - 1);
+
+					if (terrain.PathingCodes != null)
+					{
+						int code = terrain.PathingCodes[cx, cz];
+						var layers = new List<string>();
+						if ((code & EditableTerrain.PATHING_GROUND) != 0) layers.Add("Ground");
+						if ((code & EditableTerrain.PATHING_FLYING) != 0) layers.Add("Flying");
+						if ((code & EditableTerrain.PATHING_SHALLOW_WATER) != 0) layers.Add("Shallow Water");
+						if ((code & EditableTerrain.PATHING_DEEP_WATER) != 0) layers.Add("Deep Water");
+						if ((code & EditableTerrain.PATHING_UNPATHABLE) != 0) layers.Add("Unpathable");
+
+						string layersStr = layers.Count > 0 ? string.Join(", ", layers) : "None";
+						_statusLabel.Text += $" | Path: {layersStr}";
+					}
+				}
 			}
 		}
 		UpdateMinimapIndicator();
@@ -3004,6 +3104,22 @@ public class {mapName} : IMapScript
 	public bool IsMouseOverUI(Vector2 mousePos)
 	{
 		if (_isDraggingSlider)
+		{
+			return true;
+		}
+		if (_optSkybox != null && _optSkybox.GetPopup() != null && _optSkybox.GetPopup().Visible)
+		{
+			return true;
+		}
+		if (_optCategoryItems != null && _optCategoryItems.GetPopup() != null && _optCategoryItems.GetPopup().Visible)
+		{
+			return true;
+		}
+		if (_optEyedropperMode != null && _optEyedropperMode.GetPopup() != null && _optEyedropperMode.GetPopup().Visible)
+		{
+			return true;
+		}
+		if (_optPathingMode != null && _optPathingMode.GetPopup() != null && _optPathingMode.GetPopup().Visible)
 		{
 			return true;
 		}
@@ -3855,7 +3971,8 @@ public class {mapName} : IMapScript
 		SafeReparent(_chkBlockMode, _contentBrush);
 		var stepBox = GetNodeOrNull<Control>("PanelTextures/VBox/Content/SettingsVBox/StepBox");
 		SafeReparent(stepBox, _contentBrush);
-		SafeReparent(_chkWaterEnabled?.GetParent(), _contentBrush);
+		var waterHeightBox = GetNodeOrNull<Control>("PanelTextures/VBox/Content/SettingsVBox/WaterHeightBox");
+		SafeReparent(waterHeightBox, _contentBrush);
 
 		_accordionToolSettings = new VBoxContainer();
 		_accordionToolSettings.Name = "AccordionToolSettings";
@@ -3952,6 +4069,8 @@ public class {mapName} : IMapScript
 		
 		SafeReparent(_btnToggleRotate, _contentPlacement);
 		SafeReparent(_btnToggleScale, _contentPlacement);
+		SafeReparent(_placementRotateBox, _contentPlacement);
+		SafeReparent(_placementScaleBox, _contentPlacement);
 		SafeReparent(_btnToggleSnap, _contentPlacement);
 		SafeReparent(_chkSpawnAsEnemy, _contentPlacement);
 		SafeReparent(_chkRandomRotation, _contentPlacement);
@@ -4022,21 +4141,25 @@ public class {mapName} : IMapScript
 		_panelObjects.AddChild(objectsHBox);
 
 		SafeReparent(_btnSelectMove, objectsHBox);
-		SafeReparent(_btnEyedropper, objectsHBox);
 		SafeReparent(_btnDeleteObject, objectsHBox);
 		SafeReparent(_btnClumpBrush, objectsHBox);
 
-		SafeReparent(_btnUndo, _btnVSCode.GetParent());
-		SafeReparent(_btnRedo, _btnVSCode.GetParent());
-		
 		var topLeftBox = GetNode<HBoxContainer>("TopLeftBox");
-		topLeftBox.MoveChild(_btnBackToHub, 0);
-		topLeftBox.MoveChild(_btnVSCode, 1);
-		topLeftBox.MoveChild(_btnUndo, 2);
-		topLeftBox.MoveChild(_btnRedo, 3);
+		SafeReparent(_btnUndo, topLeftBox);
+		SafeReparent(_btnRedo, topLeftBox);
+		SafeReparent(_btnCopy, topLeftBox);
+		SafeReparent(_btnPaste, topLeftBox);
+		SafeReparent(_btnEyedropper, topLeftBox);
 		
+		topLeftBox.MoveChild(_btnBackToHub, 0);
 		var btnHelp = GetNodeOrNull<Button>("TopLeftBox/BtnHelp");
-		if (btnHelp != null) topLeftBox.MoveChild(btnHelp, 4);
+		if (btnHelp != null) topLeftBox.MoveChild(btnHelp, 1);
+		topLeftBox.MoveChild(_btnVSCode, 2);
+		topLeftBox.MoveChild(_btnUndo, 3);
+		topLeftBox.MoveChild(_btnRedo, 4);
+		topLeftBox.MoveChild(_btnCopy, 5);
+		topLeftBox.MoveChild(_btnPaste, 6);
+		topLeftBox.MoveChild(_btnEyedropper, 7);
 
 		foreach (Control child in contentFile.GetChildren())
 		{
@@ -4189,6 +4312,15 @@ public class {mapName} : IMapScript
 			if (_sldBrushStrength != null && _sldBrushStrength.GetParent() is Control strengthParent)
 			{
 				strengthParent.Visible = (tool != GameHost.EditorTool.PaintPathing && tool != GameHost.EditorTool.PlacePropClump);
+			}
+			if (_chkBlockMode != null)
+			{
+				_chkBlockMode.Visible = (tool != GameHost.EditorTool.PaintPathing);
+			}
+			var stepBox = GetNodeOrNull<Control>("PanelTextures/VBox/Content/SettingsVBox/StepBox");
+			if (stepBox != null)
+			{
+				stepBox.Visible = (tool != GameHost.EditorTool.PaintPathing);
 			}
 		}
 
