@@ -10627,7 +10627,7 @@ public class {mapName} : IMapScript
 					}
 				}
 				
-				if (modified)
+				if (modified && ActiveEditorTool != EditorTool.Smooth && ActiveEditorTool != EditorTool.Flatten && ActiveEditorTool != EditorTool.Noise)
 				{
 					for (int z = cz - brushGridRadius - 1; z <= cz + brushGridRadius + 1; z++)
 					{

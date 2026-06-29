@@ -238,7 +238,7 @@ theme_override_constants/separation = 8
 custom_minimum_size = Vector2(100, 56)
 layout_mode = 2
 focus_mode = 0
-text = "☀️ Sky / Time"
+text = "☀️ Cycle Lighting"
 
 [node name="TopBar" type="PanelContainer" parent="."]
 custom_minimum_size = Vector2(0, 60)

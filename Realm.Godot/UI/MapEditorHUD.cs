@@ -153,7 +153,6 @@ public partial class MapEditorHUD : Control
 	private Button _btnBigSave;
 	private Button _btnToggleGrid;
 	private Button _btnBrushShape;
-	private Button _btnFillMap;
 	private Button _btnResetMap;
 	private Button _btnGenerateMap;
 	private Button _btnImportMinimap;
@@ -238,12 +237,17 @@ public partial class MapEditorHUD : Control
 	private Button _btnVSCode;
 	private VSCodeMdiWindow _vscodeMdi;
 	private bool _isDraggingSlider = false;
+	private Panel _swatchHighlightPanel;
 
 	public override void _ExitTree()
 	{
 		if (Instance == this)
 		{
 			Instance = null;
+		}
+		if (GodotObject.IsInstanceValid(_swatchHighlightPanel) && _swatchHighlightPanel.GetParent() == null)
+		{
+			_swatchHighlightPanel.QueueFree();
 		}
 	}
 
@@ -328,7 +332,7 @@ public partial class MapEditorHUD : Control
 		_btnSkybox = GetNode<Button>("TopToolbar/PanelEnv/VBox/Content/BtnSkybox");
 		if (_btnSkybox != null)
 		{
-			_btnSkybox.Visible = false;
+			_btnSkybox.Set("icon_max_width", 0);
 		}
 
 		_optSkybox = new OptionButton();
@@ -1090,16 +1094,6 @@ public partial class MapEditorHUD : Control
 			}
 		}, 11, "Toggle brush shape between circular and square (B)");
 
-		_btnFillMap = new Button();
-		_btnFillMap.Name = "BtnFillMap";
-		_btnFillMap.Set("icon_max_width", 0);
-		_btnFillMap.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		brushActionsHBox.AddChild(_btnFillMap);
-		SetupButton(_btnFillMap, "🪣 FILL MAP", () =>
-		{
-			GameHost.Instance?.FillMapWithActiveColor();
-		}, 11, "Paint the entire map with the currently selected texture swatch");
-
 		if (GameHost.Instance != null)
 		{
 			_btnBrushShape.Text = GameHost.Instance.EditorBrushIsSquare ? "🔳 BRUSH: SQUARE" : "⚪ BRUSH: CIRCLE";
@@ -1294,7 +1288,7 @@ public partial class MapEditorHUD : Control
 
 
 
-		SetupButton(_btnSkybox, "☀️ Sky / Time", () => {
+		SetupButton(_btnSkybox, "☀️ Cycle Lighting", () => {
 			GameHost.Instance?.CycleTimeOfDay();
 			string timeName = GameHost.Instance != null ? GameHost.Instance.Call("GetTimeOfDayName").AsString() : "";
 			ShowFeedback($"Environment time set to: {timeName}");
@@ -1709,17 +1703,24 @@ public partial class MapEditorHUD : Control
 			GameHost.Instance.EditorPaintColor = modColor;
 		}
 		
-		GameHost.EditorTool tool = GameHost.EditorTool.PaintGrass;
-		if (GameHost.Instance != null && GameHost.Instance.ActiveEditorTool == GameHost.EditorTool.FloodFill)
+		if (_activeModule == EditorModule.Terrain)
 		{
-			tool = GameHost.EditorTool.FloodFill;
+			UpdateTextureLabels();
 		}
 		else
 		{
-			tool = ClassifyToolFromColor(modColor);
+			GameHost.EditorTool tool = GameHost.EditorTool.PaintGrass;
+			if (GameHost.Instance != null && GameHost.Instance.ActiveEditorTool == GameHost.EditorTool.FloodFill)
+			{
+				tool = GameHost.EditorTool.FloodFill;
+			}
+			else
+			{
+				tool = ClassifyToolFromColor(modColor);
+			}
+			TriggerToolSelection(tool, swatch, $"layer_{index}");
+			UpdateTextureLabels();
 		}
-		TriggerToolSelection(tool, swatch, $"layer_{index}");
-		UpdateTextureLabels();
 	}
 
 	private void SelectCliffTexture(int index, Color modColor)
@@ -1764,6 +1765,63 @@ public partial class MapEditorHUD : Control
 
 		_lblTerrainTexture.Text = "Terrain: " + GetSwatchName(GameHost.Instance.EditorPaintColor);
 		_lblCliffTexture.Text = "Cliff (Right-Click): " + GetSwatchName(GameHost.Instance.EditorCliffPaintColor);
+
+		if (_activeToolButton == null || !_activeToolButton.Name.ToString().StartsWith("Swatch"))
+		{
+			float epsilon = 0.01f;
+			Button selectedSwatch = null;
+			for (int i = 1; i <= 12; i++)
+			{
+				var swatch = _swatchButtons[i - 1];
+				if (swatch != null)
+				{
+					Color c = GetSwatchColor(i);
+					Color current = GameHost.Instance.EditorPaintColor;
+					bool isSelected = Mathf.Abs(current.R - c.R) < epsilon &&
+									  Mathf.Abs(current.G - c.G) < epsilon &&
+									  Mathf.Abs(current.B - c.B) < epsilon;
+					if (isSelected)
+					{
+						selectedSwatch = swatch;
+						break;
+					}
+				}
+			}
+			HighlightSwatch(selectedSwatch);
+		}
+	}
+
+	private void HighlightSwatch(Button selectedSwatch)
+	{
+		if (_swatchHighlightPanel == null)
+		{
+			_swatchHighlightPanel = new Panel();
+			_swatchHighlightPanel.Name = "SwatchHighlightPanel";
+			_swatchHighlightPanel.MouseFilter = Control.MouseFilterEnum.Ignore;
+			_swatchHighlightPanel.SetAnchorsPreset(LayoutPreset.FullRect);
+			_swatchHighlightPanel.GrowHorizontal = GrowDirection.Both;
+			_swatchHighlightPanel.GrowVertical = GrowDirection.Both;
+
+			var style = new StyleBoxFlat();
+			style.BgColor = new Color(0, 0, 0, 0);
+			style.BorderColor = UIStyle.ColorCyanGlow;
+			style.SetBorderWidthAll(3);
+			style.CornerRadiusTopLeft = 4;
+			style.CornerRadiusTopRight = 4;
+			style.CornerRadiusBottomLeft = 4;
+			style.CornerRadiusBottomRight = 4;
+			_swatchHighlightPanel.AddThemeStyleboxOverride("panel", style);
+		}
+
+		if (_swatchHighlightPanel.GetParent() != null)
+		{
+			_swatchHighlightPanel.GetParent().RemoveChild(_swatchHighlightPanel);
+		}
+
+		if (selectedSwatch != null)
+		{
+			selectedSwatch.AddChild(_swatchHighlightPanel);
+		}
 	}
 
 	private void SetupMenuHooks()
@@ -1887,16 +1945,24 @@ public partial class MapEditorHUD : Control
 		if (_activeToolButton != null)
 		{
 			_activeToolButton.RemoveThemeStyleboxOverride("normal");
-			if (_activeToolButton.Name.ToString().StartsWith("Swatch"))
-			{
-				SetupTextureSwatches(false);
-			}
 		}
 
 		_activeToolButton = btn;
 		if (_activeToolButton != null)
 		{
-			_activeToolButton.AddThemeStyleboxOverride("normal", _highlightStyle);
+			if (_activeToolButton.Name.ToString().StartsWith("Swatch"))
+			{
+				HighlightSwatch(_activeToolButton as Button);
+			}
+			else
+			{
+				_activeToolButton.AddThemeStyleboxOverride("normal", _highlightStyle);
+				HighlightSwatch(null);
+			}
+		}
+		else
+		{
+			HighlightSwatch(null);
 		}
 
 		GameHost.Instance.ActiveEditorTool = tool;
@@ -2050,6 +2116,7 @@ public partial class MapEditorHUD : Control
 					break;
 			}
 		}
+		UpdateTextureLabels();
 	}
 
 	private void SetPanelExpanded(string panelPath, string buttonPath, string contentPath, bool expand)
@@ -4096,7 +4163,6 @@ public class {mapName} : IMapScript
 		SafeReparent(_lblCliffTexture, _containerTextureSettings);
 		var swatchesGrid = GetNodeOrNull<Control>("PanelTextures/VBox/Content/GridSwatches");
 		SafeReparent(swatchesGrid, _containerTextureSettings);
-		SafeReparent(_btnFillMap, _containerTextureSettings);
 
 		_containerPathingSettings = new VBoxContainer();
 		_containerPathingSettings.Name = "ContainerPathing";
@@ -4201,6 +4267,12 @@ public class {mapName} : IMapScript
 
 		SafeReparent(_btnToggleGrid, _contentViewport);
 		SafeReparent(_btnToggleCameraBounds, _contentViewport);
+		if (_btnSkybox != null)
+		{
+			_btnSkybox.CustomMinimumSize = new Vector2(0, 32);
+			_btnSkybox.Visible = true;
+			SafeReparent(_btnSkybox, _contentViewport);
+		}
 
 		_accordionNavigation = new VBoxContainer();
 		_accordionNavigation.Name = "AccordionNavigation";
@@ -4481,7 +4553,11 @@ public class {mapName} : IMapScript
 											 tool == GameHost.EditorTool.PaintDirt ||
 											 tool == GameHost.EditorTool.PaintRock ||
 											 tool == GameHost.EditorTool.PaintSand ||
-											 tool == GameHost.EditorTool.FloodFill);
+											 tool == GameHost.EditorTool.FloodFill ||
+											 tool == GameHost.EditorTool.Raise ||
+											 tool == GameHost.EditorTool.Lower ||
+											 tool == GameHost.EditorTool.Cliff ||
+											 tool == GameHost.EditorTool.Ramp);
 		_containerPathingSettings.Visible = (tool == GameHost.EditorTool.PaintPathing);
 		_containerDecalSettings.Visible = (tool == GameHost.EditorTool.PlaceDecal);
 		_containerEyedropperSettings.Visible = (tool == GameHost.EditorTool.Eyedropper);
