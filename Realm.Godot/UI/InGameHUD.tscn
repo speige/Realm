@@ -15,22 +15,22 @@ layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -360.0
+offset_left = -540.0
 offset_top = 10.0
-offset_right = 360.0
-offset_bottom = 60.0
+offset_right = 540.0
+offset_bottom = 85.0
 grow_horizontal = 2
 
 [node name="HBox" type="HBoxContainer" parent="ResourceContainer"]
 layout_mode = 2
-theme_override_constants/separation = 40
+theme_override_constants/separation = 60
 alignment = 1
 
 [node name="GoldBox" type="HBoxContainer" parent="ResourceContainer/HBox"]
 layout_mode = 2
 
 [node name="GoldIcon" type="TextureRect" parent="ResourceContainer/HBox/GoldBox"]
-custom_minimum_size = Vector2(28, 28)
+custom_minimum_size = Vector2(42, 42)
 layout_mode = 2
 size_flags_vertical = 4
 expand_mode = 2
@@ -44,7 +44,7 @@ text = "30"
 layout_mode = 2
 
 [node name="WoodIcon" type="TextureRect" parent="ResourceContainer/HBox/WoodBox"]
-custom_minimum_size = Vector2(28, 28)
+custom_minimum_size = Vector2(42, 42)
 layout_mode = 2
 size_flags_vertical = 4
 expand_mode = 2
@@ -58,7 +58,7 @@ text = "39"
 layout_mode = 2
 
 [node name="StoneIcon" type="TextureRect" parent="ResourceContainer/HBox/StoneBox"]
-custom_minimum_size = Vector2(28, 28)
+custom_minimum_size = Vector2(42, 42)
 layout_mode = 2
 size_flags_vertical = 4
 expand_mode = 2
@@ -75,7 +75,7 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 0.0
-offset_top = -280.0
+offset_top = -400.0
 offset_right = 0.0
 offset_bottom = 0.0
 grow_horizontal = 2
@@ -86,7 +86,7 @@ layout_mode = 2
 theme_override_constants/separation = 20
 
 [node name="MinimapFrame" type="PanelContainer" parent="BottomConsole/HBox"]
-custom_minimum_size = Vector2(240, 240)
+custom_minimum_size = Vector2(360, 360)
 layout_mode = 2
 size_flags_vertical = 4
 
@@ -94,10 +94,10 @@ size_flags_vertical = 4
 layout_mode = 2
 
 [node name="Indicator" type="ReferenceRect" parent="BottomConsole/HBox/MinimapFrame/MinimapArea"]
-custom_minimum_size = Vector2(30, 20)
+custom_minimum_size = Vector2(45, 30)
 layout_mode = 0
-offset_right = 30.0
-offset_bottom = 20.0
+offset_right = 45.0
+offset_bottom = 30.0
 border_color = Color(0, 0.9, 0.1, 0.85)
 border_width = 2.0
 editor_only = false
@@ -212,7 +212,7 @@ layout_mode = 0
 offset_left = 220.0
 offset_top = 10.0
 offset_right = 540.0
-offset_bottom = 135.0
+offset_bottom = 75.0
 
 [node name="BtnVictory" type="Button" parent="DevPanel"]
 layout_mode = 0
@@ -233,53 +233,6 @@ offset_bottom = 45.0
 theme_override_font_sizes/font_size = 14
 text = "Trigger Defeat"
 focus_mode = 0
-
-[node name="ChkCameraToggle" type="CheckButton" parent="DevPanel"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 60.0
-offset_right = 310.0
-offset_bottom = 110.0
-theme_override_font_sizes/font_size = 13
-text = "Fly Camera Control [Click to Lock]"
-focus_mode = 0
-
-[node name="LeftPillar" type="Panel" parent="."]
-custom_minimum_size = Vector2(200, 0)
-layout_mode = 1
-anchors_preset = 9
-anchor_bottom = 1.0
-offset_right = 200.0
-grow_vertical = 2
-
-[node name="RuneContainer" type="VBoxContainer" parent="LeftPillar"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-alignment = 1
-
-[node name="RightPillar" type="Panel" parent="."]
-custom_minimum_size = Vector2(200, 0)
-layout_mode = 1
-anchors_preset = 11
-anchor_left = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -200.0
-grow_horizontal = 0
-grow_vertical = 2
-
-[node name="RuneContainer" type="VBoxContainer" parent="RightPillar"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-alignment = 1
 
 [node name="ChatPanel" type="PanelContainer" parent="."]
 layout_mode = 1

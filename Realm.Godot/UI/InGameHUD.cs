@@ -25,8 +25,7 @@ public partial class InGameHUD : Control
 	private float _stone = 200f;
 	private float _resourceGatherMultiplier = 1.0f;
 
-	private Panel _leftPillar;
-	private Panel _rightPillar;
+
 	private PanelContainer _resourceContainer;
 	private PanelContainer _bottomConsole;
 	private PanelContainer _minimapFrame;
@@ -127,7 +126,6 @@ public partial class InGameHUD : Control
 	// Dev panel
 	private Button _btnVictory;
 	private Button _btnDefeat;
-	private CheckButton _chkCameraToggle;
 
 	// Feedback label
 	private Label _feedbackLabel;
@@ -194,8 +192,6 @@ public partial class InGameHUD : Control
 		Instance = this;
 
 		// Bind Panels
-		_leftPillar = GetNode<Panel>("LeftPillar");
-		_rightPillar = GetNode<Panel>("RightPillar");
 		_resourceContainer = GetNode<PanelContainer>("ResourceContainer");
 		_bottomConsole = GetNode<PanelContainer>("BottomConsole");
 		_minimapFrame = GetNode<PanelContainer>("BottomConsole/HBox/MinimapFrame");
@@ -216,12 +212,12 @@ public partial class InGameHUD : Control
 		resHBox.AddChild(popBox);
 		var popTitleLbl = new Label();
 		popTitleLbl.Text = "SUPPLY";
-		popTitleLbl.AddThemeFontSizeOverride("font_size", 10);
+		popTitleLbl.AddThemeFontSizeOverride("font_size", 15);
 		popTitleLbl.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
 		popBox.AddChild(popTitleLbl);
 		_populationLabel = new Label();
 		_populationLabel.Text = "0 / 20";
-		_populationLabel.AddThemeFontSizeOverride("font_size", 16);
+		_populationLabel.AddThemeFontSizeOverride("font_size", 24);
 		_populationLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		popBox.AddChild(_populationLabel);
 
@@ -230,12 +226,12 @@ public partial class InGameHUD : Control
 		resHBox.AddChild(clockBox);
 		var clockTitleLbl = new Label();
 		clockTitleLbl.Text = "TIME";
-		clockTitleLbl.AddThemeFontSizeOverride("font_size", 10);
+		clockTitleLbl.AddThemeFontSizeOverride("font_size", 15);
 		clockTitleLbl.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
 		clockBox.AddChild(clockTitleLbl);
 		_clockLabel = new Label();
 		_clockLabel.Text = "0:00";
-		_clockLabel.AddThemeFontSizeOverride("font_size", 16);
+		_clockLabel.AddThemeFontSizeOverride("font_size", 24);
 		_clockLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		clockBox.AddChild(_clockLabel);
 
@@ -318,7 +314,6 @@ public partial class InGameHUD : Control
 		// Bind Dev & Output
 		_btnVictory = GetNode<Button>("DevPanel/BtnVictory");
 		_btnDefeat = GetNode<Button>("DevPanel/BtnDefeat");
-		_chkCameraToggle = GetNode<CheckButton>("DevPanel/ChkCameraToggle");
 		_feedbackLabel = GetNode<Label>("FeedbackLabel");
 
 		_minimapArea = GetNode<Control>("BottomConsole/HBox/MinimapFrame/MinimapArea");
@@ -328,8 +323,8 @@ public partial class InGameHUD : Control
 		_minimapControls = new VBoxContainer();
 		_minimapControls.SizeFlagsHorizontal = SizeFlags.ShrinkEnd;
 		_minimapControls.SizeFlagsVertical = SizeFlags.ShrinkCenter;
-		_minimapControls.AddThemeConstantOverride("separation", 6);
-		_minimapControls.CustomMinimumSize = new Vector2(40, 0);
+		_minimapControls.AddThemeConstantOverride("separation", 9);
+		_minimapControls.CustomMinimumSize = new Vector2(60, 0);
 		_minimapFrame.AddChild(_minimapControls);
 
 		_btnZoom = new Button();
@@ -532,6 +527,7 @@ public partial class InGameHUD : Control
 
 		Resized += OnHUDResized;
 		ApplyHUDScale();
+		UpdateFPSVisibility();
 
 		// Build F5 hotkey reference panel (hidden by default)
 		BuildHotkeyReferencePanel();
@@ -558,17 +554,7 @@ public partial class InGameHUD : Control
 			_bottomConsole.Scale = new Vector2(s, s);
 		}
 
-		if (_leftPillar != null)
-		{
-			_leftPillar.PivotOffset = new Vector2(0f, _leftPillar.Size.Y / 2f);
-			_leftPillar.Scale = new Vector2(s, s);
-		}
 
-		if (_rightPillar != null)
-		{
-			_rightPillar.PivotOffset = new Vector2(_rightPillar.Size.X, _rightPillar.Size.Y / 2f);
-			_rightPillar.Scale = new Vector2(s, s);
-		}
 
 		if (_chatPanel != null)
 		{
@@ -592,6 +578,15 @@ public partial class InGameHUD : Control
 		{
 			_customUIPanel.PivotOffset = new Vector2(_customUIPanel.Size.X, 0f);
 			_customUIPanel.Scale = new Vector2(s, s);
+		}
+	}
+
+	public void UpdateFPSVisibility()
+	{
+		var fpsLabel = GetTree().Root.GetNodeOrNull<Label>("Main/CanvasLayer/FPS");
+		if (fpsLabel != null)
+		{
+			fpsLabel.Visible = GameSettings.DisplayFps;
 		}
 	}
 
@@ -1290,8 +1285,6 @@ public partial class InGameHUD : Control
 
 	private void ApplyThemeStyles()
 	{
-		_leftPillar.AddThemeStyleboxOverride("panel", UIStyle.CreateHUDPillarPanel(true));
-		_rightPillar.AddThemeStyleboxOverride("panel", UIStyle.CreateHUDPillarPanel(false));
 		
 		var resourceBg = new StyleBoxTexture();
 		resourceBg.Texture = GD.Load<Texture2D>("res://Assets/UI/stone_button_premium.png");
@@ -1337,15 +1330,12 @@ public partial class InGameHUD : Control
 		var topLabels = new[] { _goldLabel, _woodLabel, _stoneLabel };
 		foreach (var lbl in topLabels)
 		{
-			lbl.AddThemeFontSizeOverride("font_size", 18);
+			lbl.AddThemeFontSizeOverride("font_size", 27);
 			lbl.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		}
 		_goldLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 
 		GetNode<Label>("BottomConsole/HBox/PortraitFrame/VBox/UnitName").AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-
-		PopulateRunicPillar(GetNode<VBoxContainer>("LeftPillar/RuneContainer"));
-		PopulateRunicPillar(GetNode<VBoxContainer>("RightPillar/RuneContainer"));
 
 		// Minimap Tiled Background (Initially empty, will load terrain snapshot)
 		var minimapBg = new TextureRect();
@@ -1879,7 +1869,8 @@ public partial class InGameHUD : Control
 		btn.TooltipText = tooltip;
 		btn.Icon = GD.Load<Texture2D>(iconPath);
 		btn.ExpandIcon = true;
-		btn.CustomMinimumSize = new Vector2(34, 34);
+		btn.CustomMinimumSize = new Vector2(51, 51);
+		btn.AddThemeConstantOverride("icon_max_width", 51);
 
 		var styleNormal = (StyleBoxTexture)UIStyle.CreateButtonNormal().Duplicate();
 		styleNormal.ContentMarginLeft = 1;
@@ -1932,6 +1923,7 @@ public partial class InGameHUD : Control
 		btn.Icon = GD.Load<Texture2D>(iconPath);
 		btn.ExpandIcon = true;
 		btn.CustomMinimumSize = new Vector2(80, 80);
+		btn.AddThemeConstantOverride("icon_max_width", 80);
 		btn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		btn.SizeFlagsVertical = SizeFlags.ExpandFill;
 		btn.FocusMode = FocusModeEnum.None;
@@ -2036,36 +2028,8 @@ public partial class InGameHUD : Control
 		_btnVictory.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 		_btnDefeat.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 
-		if (_camera3D != null && _camera3D is CameraControl initialCamCtrl)
-		{
-			_chkCameraToggle.SetPressedNoSignal(!initialCamCtrl.IsLocked);
-		}
-
-		_chkCameraToggle.Toggled += (toggled) =>
-		{
-			UIManager.Instance.PlayClickSound();
-			if (_camera3D != null && _camera3D is CameraControl camCtrl)
-			{
-				camCtrl.IsLocked = !toggled;
-				if (toggled)
-				{
-					ShowFeedbackText("Camera Control Active: Use WASD/Shift or Mouse edge", new Color(0.3f, 0.8f, 1.0f));
-				}
-				else
-				{
-					ShowFeedbackText("Camera Control Locked", new Color(0.8f, 0.8f, 0.8f));
-				}
-			}
-			else
-			{
-				ShowFeedbackText("No camera control found!", new Color(1.0f, 0.3f, 0.3f));
-				_chkCameraToggle.SetPressedNoSignal(false);
-			}
-		};
-		_chkCameraToggle.MouseEntered += () => UIManager.Instance.PlayHoverSound();
-
 		var devPanel = GetNode<Panel>("DevPanel");
-		devPanel.OffsetBottom = 185;
+		devPanel.OffsetBottom = 115;
 
 		var btnWeather = new Button();
 		btnWeather.Name = "BtnWeather";
@@ -2081,7 +2045,7 @@ public partial class InGameHUD : Control
 		btnWeather.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		btnWeather.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		btnWeather.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-		btnWeather.Position = new Vector2(10, 130);
+		btnWeather.Position = new Vector2(10, 60);
 		btnWeather.Size = new Vector2(300, 35);
 		btnWeather.Pressed += CycleWeather;
 		btnWeather.MouseEntered += () => UIManager.Instance.PlayHoverSound();

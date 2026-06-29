@@ -25,9 +25,17 @@ script = ExtResource("3_cm0pq")
 [node name="UIManager" parent="CanvasLayer" unique_id=941517973 instance=ExtResource("4_ui")]
 
 [node name="FPS" type="Label" parent="CanvasLayer" unique_id=1722011162]
-offset_left = 996.0
-offset_right = 1148.0
-offset_bottom = 61.0
+layout_mode = 3
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -160.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = 40.0
+grow_horizontal = 0
+text = "FPS: 60"
+horizontal_alignment = 2
 script = ExtResource("3_r0du0")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1286803203]

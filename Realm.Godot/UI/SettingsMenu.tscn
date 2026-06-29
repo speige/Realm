@@ -181,9 +181,10 @@ text = "HUD scale"
 layout_mode = 2
 focus_mode = 0
 
-[node name="Control" type="Control" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
-custom_minimumSize = Vector2(0, 30)
+[node name="DisplayFpsChk" type="CheckBox" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
 layout_mode = 2
+focus_mode = 0
+text = "Display FPS"
 
 [node name="HealthBarsLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
 layout_mode = 2

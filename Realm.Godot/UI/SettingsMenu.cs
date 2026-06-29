@@ -32,6 +32,7 @@ public partial class SettingsMenu : Control
 	private HSlider _scrollSpeedSlider;
 	private HSlider _mouseSensSlider;
 	private HSlider _hudScaleSlider;
+	private CheckBox _displayFpsChk;
 	private OptionButton _healthBarsOpt;
 	private OptionButton _languageOpt;
 
@@ -71,6 +72,7 @@ public partial class SettingsMenu : Control
 		_scrollSpeedSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/ScrollSpeedSlider");
 		_mouseSensSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/MouseSensSlider");
 		_hudScaleSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HudScaleSlider");
+		_displayFpsChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/DisplayFpsChk");
 		_healthBarsOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HealthBarsOpt");
 		_languageOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/LanguageOpt");
 
@@ -132,6 +134,9 @@ public partial class SettingsMenu : Control
 			lbl.AddThemeColorOverride("font_color", new Color(0.85f, 0.85f, 0.9f));
 			lbl.AddThemeFontSizeOverride("font_size", 14);
 		}
+
+		UIStyle.ApplyCheckboxStyle(_displayFpsChk);
+		_displayFpsChk.Text = TranslationServer.Translate(_displayFpsChk.Text);
 	}
 
 	private void PopulateDropdowns()
@@ -191,6 +196,9 @@ public partial class SettingsMenu : Control
 			opt.ItemSelected += (idx) => UIManager.Instance.PlayClickSound();
 			opt.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 		}
+
+		_displayFpsChk.Pressed += () => UIManager.Instance.PlayClickSound();
+		_displayFpsChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 	}
 
 	private void SetupSliders()
@@ -276,6 +284,8 @@ public partial class SettingsMenu : Control
 
 		_scrollSpeedSlider.Value = GameSettings.ScrollSpeed;
 		_mouseSensSlider.Value = GameSettings.MouseSens;
+		_hudScaleSlider.Value = GameSettings.HudScale;
+		_displayFpsChk.ButtonPressed = GameSettings.DisplayFps;
 		int hbIdx = GameSettings.ShowHealthBars switch
 		{
 			"hidden" => 0,
@@ -350,6 +360,7 @@ public partial class SettingsMenu : Control
 		GameSettings.ScrollSpeed = (float)_scrollSpeedSlider.Value;
 		GameSettings.MouseSens = (float)_mouseSensSlider.Value;
 		GameSettings.HudScale = (float)_hudScaleSlider.Value;
+		GameSettings.DisplayFps = _displayFpsChk.ButtonPressed;
 		GameSettings.ShowHealthBars = _healthBarsOpt.Selected switch
 		{
 			0 => "hidden",
@@ -381,6 +392,7 @@ public partial class SettingsMenu : Control
 		if (InGameHUD.Instance != null)
 		{
 			InGameHUD.Instance.ApplyHUDScale();
+			InGameHUD.Instance.UpdateFPSVisibility();
 		}
 
 		GD.Print("Settings Applied successfully!");
@@ -391,6 +403,10 @@ public partial class SettingsMenu : Control
 	{
 		GameSettings.Load();
 		UIManager.Instance.UpdateAudioVolumes();
+		if (InGameHUD.Instance != null)
+		{
+			InGameHUD.Instance.UpdateFPSVisibility();
+		}
 		CloseOrTransition();
 	}
 
@@ -410,6 +426,10 @@ public partial class SettingsMenu : Control
 	{
 		GameSettings.ResetToDefaults();
 		LoadCurrentSettings();
+		if (InGameHUD.Instance != null)
+		{
+			InGameHUD.Instance.UpdateFPSVisibility();
+		}
 		GD.Print("Settings reset to defaults.");
 	}
 }

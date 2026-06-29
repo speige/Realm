@@ -171,6 +171,10 @@ public partial class UIManager : Control
 
 	public void TransitionTo(GameScreen screen, bool isVictory = true)
 	{
+		if (screen == GameScreen.GameOver && (_targetScreen == GameScreen.GameOver || _currentScreen is GameOver))
+		{
+			return;
+		}
 		_targetScreen = screen;
 		_isVictory = isVictory;
 

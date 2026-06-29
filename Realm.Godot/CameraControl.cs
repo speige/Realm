@@ -26,6 +26,8 @@ public partial class CameraControl : Camera3D
 	private float _targetPitch = -55.0f;
 	private float _currentPitch = -55.0f;
 	private bool _isTopDown = false;
+	private float _yawSwing = 0.0f;
+	private float _pitchSwing = 0.0f;
 
 	public void ToggleTopDown()
 	{
@@ -147,7 +149,7 @@ public partial class CameraControl : Camera3D
 
 			float sensFactor = 0.0005f + (GameSettings.MouseSens / 100.0f) * 0.003f;
 			float moveX = -deltaMouse.X * sensFactor * _currentHeight;
-			float moveZ = -deltaMouse.Y * sensFactor * _currentHeight;
+			float moveZ = deltaMouse.Y * sensFactor * _currentHeight;
 
 			Vector3 forwardXZ = -GlobalTransform.Basis.Z;
 			forwardXZ.Y = 0f;
@@ -200,10 +202,47 @@ public partial class CameraControl : Camera3D
 			}
 		}
 
+		bool isEditor = GameHost.Instance != null && GameHost.Instance.IsMapEditorMode;
+		bool isInputBlocked = IsLocked || (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive);
+
+		if (!isEditor)
+		{
+			if (!isInputBlocked && Input.IsKeyPressed(Key.Insert))
+			{
+				_yawSwing = Mathf.MoveToward(_yawSwing, 90.0f, 45.0f * fDelta);
+			}
+			else if (!isInputBlocked && Input.IsKeyPressed(Key.Delete))
+			{
+				_yawSwing = Mathf.MoveToward(_yawSwing, -90.0f, 45.0f * fDelta);
+			}
+			else
+			{
+				_yawSwing = Mathf.MoveToward(_yawSwing, 0.0f, 45.0f * fDelta);
+			}
+
+			if (!isInputBlocked && Input.IsKeyPressed(Key.Pageup))
+			{
+				_pitchSwing = Mathf.MoveToward(_pitchSwing, 45.0f, 22.5f * fDelta);
+			}
+			else if (!isInputBlocked && Input.IsKeyPressed(Key.Pagedown))
+			{
+				_pitchSwing = Mathf.MoveToward(_pitchSwing, -45.0f, 22.5f * fDelta);
+			}
+			else
+			{
+				_pitchSwing = Mathf.MoveToward(_pitchSwing, 0.0f, 22.5f * fDelta);
+			}
+		}
+		else
+		{
+			_yawSwing = 0.0f;
+			_pitchSwing = 0.0f;
+		}
+
 		_currentYaw = Mathf.LerpAngle(Mathf.DegToRad(_currentYaw), Mathf.DegToRad(_targetYaw), 10.0f * fDelta);
 		_currentYaw = Mathf.RadToDeg(_currentYaw);
 		_currentPitch = Mathf.Lerp(_currentPitch, _targetPitch, 10.0f * fDelta);
-		RotationDegrees = new Vector3(_currentPitch, _currentYaw, 0.0f);
+		RotationDegrees = new Vector3(_currentPitch + _pitchSwing, _currentYaw + _yawSwing, 0.0f);
 
 		if (IsLocked || (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive)) return;
 
@@ -217,13 +256,13 @@ public partial class CameraControl : Camera3D
 
 		Vector3 velocity = Vector3.Zero;
 
-		if (Input.IsActionPressed("move_forward") || Input.IsKeyPressed(Key.W) || Input.IsKeyPressed(Key.Up))
+		if (Input.IsActionPressed("move_forward") || Input.IsKeyPressed(Key.Up))
 			velocity += forwardXZ;
-		if (Input.IsActionPressed("move_back") || Input.IsKeyPressed(Key.S) || Input.IsKeyPressed(Key.Down))
+		if (Input.IsActionPressed("move_back") || Input.IsKeyPressed(Key.Down))
 			velocity -= forwardXZ;
-		if (Input.IsActionPressed("move_left") || Input.IsKeyPressed(Key.A) || Input.IsKeyPressed(Key.Left))
+		if (Input.IsActionPressed("move_left") || Input.IsKeyPressed(Key.Left))
 			velocity -= rightXZ;
-		if (Input.IsActionPressed("move_right") || Input.IsKeyPressed(Key.D) || Input.IsKeyPressed(Key.Right))
+		if (Input.IsActionPressed("move_right") || Input.IsKeyPressed(Key.Right))
 			velocity += rightXZ;
 
 		if (EnableEdgePanning && Input.MouseMode == Input.MouseModeEnum.Visible)
