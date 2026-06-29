@@ -55,7 +55,6 @@ public partial class MapEditorHUD : Control
 	private VBoxContainer _containerFlattenSettings;
 	private VBoxContainer _containerTextureSettings;
 	private VBoxContainer _containerPathingSettings;
-	private VBoxContainer _containerClumpSettings;
 	private VBoxContainer _containerPlacementSettings;
 	private VBoxContainer _containerDecalSettings;
 	private VBoxContainer _containerEyedropperSettings;
@@ -122,6 +121,12 @@ public partial class MapEditorHUD : Control
 	private Button _btnDecals;
 	private CheckBox _chkRandomRotation;
 	private CheckBox _chkRandomScale;
+	private Button _btnAddObject;
+	private CheckBox _chkClumpMode;
+	private Control _densityBox;
+	private Control _scaleVarBox;
+	private Control _camBoundsBox;
+	private Control _waterHeightBox;
 	private CheckBox _chkBlockMode;
 	private Slider _sldBlockStep;
 	private Label _lblBlockStepValue;
@@ -138,6 +143,7 @@ public partial class MapEditorHUD : Control
 	private VBoxContainer _placementScaleBox;
 	private Button _btnCopy;
 	private Button _btnPaste;
+	private Control _stepBox;
 	private Button _btnToggleSnap;
 	private Button _btnBigSave;
 	private Button _btnToggleGrid;
@@ -520,12 +526,13 @@ public partial class MapEditorHUD : Control
 		SetupButton(_btnClumpBrush, "🌲 CLUMP BRUSH", () => TriggerToolSelection(GameHost.EditorTool.PlacePropClump, _btnClumpBrush, "tree"), 13, "Paint multiple props continuously inside the brush area");
 
 		var clumpRightSettingsVBox = GetNode<VBoxContainer>("PanelEntityPalette/VBox/Content/RightSettingsVBox");
-		var densityBox = new VBoxContainer();
-		densityBox.Name = "DensityBox";
-		clumpRightSettingsVBox.AddChild(densityBox);
+		_densityBox = new VBoxContainer();
+		_densityBox.Name = "DensityBox";
+		_densityBox.Visible = false;
+		clumpRightSettingsVBox.AddChild(_densityBox);
 
 		var densityHeader = new HBoxContainer();
-		densityBox.AddChild(densityHeader);
+		_densityBox.AddChild(densityHeader);
 
 		var lblDensityTitle = new Label();
 		lblDensityTitle.Text = "Clump Density";
@@ -547,7 +554,7 @@ public partial class MapEditorHUD : Control
 		_sldClumpDensity.MaxValue = 20.0;
 		_sldClumpDensity.Step = 1.0;
 		_sldClumpDensity.Value = 5.0;
-		densityBox.AddChild(_sldClumpDensity);
+		_densityBox.AddChild(_sldClumpDensity);
 		_sldClumpDensity.ValueChanged += (val) =>
 		{
 			float fVal = (float)val;
@@ -560,12 +567,13 @@ public partial class MapEditorHUD : Control
 		_sldClumpDensity.DragStarted += () => _isDraggingSlider = true;
 		_sldClumpDensity.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
-		var scaleVarBox = new VBoxContainer();
-		scaleVarBox.Name = "ScaleVarBox";
-		clumpRightSettingsVBox.AddChild(scaleVarBox);
+		_scaleVarBox = new VBoxContainer();
+		_scaleVarBox.Name = "ScaleVarBox";
+		_scaleVarBox.Visible = false;
+		clumpRightSettingsVBox.AddChild(_scaleVarBox);
 
 		var scaleVarHeader = new HBoxContainer();
-		scaleVarBox.AddChild(scaleVarHeader);
+		_scaleVarBox.AddChild(scaleVarHeader);
 
 		var lblScaleVarTitle = new Label();
 		lblScaleVarTitle.Text = "Clump Scale Var";
@@ -587,7 +595,7 @@ public partial class MapEditorHUD : Control
 		_sldClumpScaleVar.MaxValue = 1.0;
 		_sldClumpScaleVar.Step = 0.05;
 		_sldClumpScaleVar.Value = 0.3;
-		scaleVarBox.AddChild(_sldClumpScaleVar);
+		_scaleVarBox.AddChild(_sldClumpScaleVar);
 		_sldClumpScaleVar.ValueChanged += (val) =>
 		{
 			float fVal = (float)val;
@@ -734,6 +742,21 @@ public partial class MapEditorHUD : Control
 			}
 		};
 
+		_chkClumpMode = new CheckBox();
+		_chkClumpMode.Name = "ChkClumpMode";
+		_chkClumpMode.Text = "🌲 Clump Brush Mode";
+		_chkClumpMode.TooltipText = "Paint multiple objects continuously inside the brush area";
+		UIStyle.ApplyCheckboxStyle(_chkClumpMode);
+		rightSettingsVBox.AddChild(_chkClumpMode);
+		rightSettingsVBox.MoveChild(_chkClumpMode, chkIndex + 1);
+		_chkClumpMode.ButtonPressed = false;
+		_chkClumpMode.Toggled += (toggled) =>
+		{
+			if (GameHost.Instance != null) GameHost.Instance.EditorClumpMode = toggled;
+			if (_densityBox != null) _densityBox.Visible = toggled;
+			if (_scaleVarBox != null) _scaleVarBox.Visible = toggled;
+		};
+
 		_btnToggleCameraBounds = new Button();
 		_btnToggleCameraBounds.Name = "BtnToggleCameraBounds";
 		_btnToggleCameraBounds.Set("icon_max_width", 0);
@@ -749,22 +772,22 @@ public partial class MapEditorHUD : Control
 			}
 		}, 10, "Toggle rendering of the camera bounds overlay");
 
-		var camBoundsBox = new VBoxContainer();
-		camBoundsBox.Name = "CamBoundsBox";
-		rightSettingsVBox.AddChild(camBoundsBox);
-		rightSettingsVBox.MoveChild(camBoundsBox, chkIndex + 2);
+		_camBoundsBox = new VBoxContainer();
+		_camBoundsBox.Name = "CamBoundsBox";
+		rightSettingsVBox.AddChild(_camBoundsBox);
+		rightSettingsVBox.MoveChild(_camBoundsBox, chkIndex + 2);
 
 		var lblCamBoundsTitle = new Label();
 		lblCamBoundsTitle.Text = "📹 ADJUST CAMERA BOUNDS";
 		lblCamBoundsTitle.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
 		lblCamBoundsTitle.AddThemeFontSizeOverride("font_size", 11);
-		camBoundsBox.AddChild(lblCamBoundsTitle);
+		_camBoundsBox.AddChild(lblCamBoundsTitle);
 
 		var adjustGrid = new GridContainer();
 		adjustGrid.Columns = 3;
 		adjustGrid.AddThemeConstantOverride("h_separation", 6);
 		adjustGrid.AddThemeConstantOverride("v_separation", 4);
-		camBoundsBox.AddChild(adjustGrid);
+		_camBoundsBox.AddChild(adjustGrid);
 
 		_lblCamLeftVal = new Label();
 		_lblCamLeftVal.AddThemeFontSizeOverride("font_size", 11);
@@ -912,12 +935,12 @@ public partial class MapEditorHUD : Control
 		};
 		_chkBlockMode.ButtonPressed = true;
 
-		var stepBox = new VBoxContainer();
-		stepBox.Name = "StepBox";
-		settingsVBox.AddChild(stepBox);
+		_stepBox = new VBoxContainer();
+		_stepBox.Name = "StepBox";
+		settingsVBox.AddChild(_stepBox);
 
 		var stepHeader = new HBoxContainer();
-		stepBox.AddChild(stepHeader);
+		_stepBox.AddChild(stepHeader);
 
 		var lblStepTitle = new Label();
 		lblStepTitle.Text = "Block Level Height";
@@ -939,7 +962,7 @@ public partial class MapEditorHUD : Control
 		_sldBlockStep.MaxValue = 10.0;
 		_sldBlockStep.Step = 0.5;
 		_sldBlockStep.Value = 4.0;
-		stepBox.AddChild(_sldBlockStep);
+		_stepBox.AddChild(_sldBlockStep);
 		_sldBlockStep.ValueChanged += (val) =>
 		{
 			float fVal = (float)val;
@@ -955,12 +978,12 @@ public partial class MapEditorHUD : Control
 		var divider = new HSeparator();
 		settingsVBox.AddChild(divider);
 
-		var waterHeightBox = new VBoxContainer();
-		waterHeightBox.Name = "WaterHeightBox";
-		settingsVBox.AddChild(waterHeightBox);
+		_waterHeightBox = new VBoxContainer();
+		_waterHeightBox.Name = "WaterHeightBox";
+		settingsVBox.AddChild(_waterHeightBox);
 
 		var waterHeader = new HBoxContainer();
-		waterHeightBox.AddChild(waterHeader);
+		_waterHeightBox.AddChild(waterHeader);
 
 		var lblWaterTitle = new Label();
 		lblWaterTitle.Text = "Water Height Level";
@@ -982,7 +1005,7 @@ public partial class MapEditorHUD : Control
 		_sldWaterHeight.MaxValue = 40.0;
 		_sldWaterHeight.Step = 0.5;
 		_sldWaterHeight.Value = -2.0;
-		waterHeightBox.AddChild(_sldWaterHeight);
+		_waterHeightBox.AddChild(_sldWaterHeight);
 		_sldWaterHeight.ValueChanged += (val) =>
 		{
 			float fVal = (float)val;
@@ -1235,6 +1258,13 @@ public partial class MapEditorHUD : Control
 		rightVBox.AddChild(_btnSelectMove);
 		rightVBox.MoveChild(_btnSelectMove, _btnDeleteObject.GetIndex());
 		SetupButton(_btnSelectMove, "SELECT / MOVE", () => TriggerToolSelection(GameHost.EditorTool.SelectMove, _btnSelectMove), 14, "Select or drag entities. Drag to move, R to rotate, S to scale (Q)");
+
+		_btnAddObject = new Button();
+		_btnAddObject.Name = "BtnAddObject";
+		_btnAddObject.Set("icon_max_width", 0);
+		rightVBox.AddChild(_btnAddObject);
+		rightVBox.MoveChild(_btnAddObject, _btnSelectMove.GetIndex());
+		SetupButton(_btnAddObject, "➕ ADD", () => TriggerAddObjectMode(), 12, "Switch to placement mode to add objects");
 
 		CreateInspectorPanel();
 
@@ -1786,6 +1816,30 @@ public partial class MapEditorHUD : Control
 			btn.Text = content.Visible ? "▲" : "▼";
 			UIManager.Instance?.PlayClickSound();
 		};
+	}
+
+	private void TriggerAddObjectMode()
+	{
+		if (GameHost.Instance == null) return;
+
+		GameHost.EditorTool targetTool = GameHost.EditorTool.PlaceProp;
+		if (_currentCategory == "Characters" || _currentCategory == "Buildings")
+		{
+			targetTool = GameHost.EditorTool.PlaceUnit;
+		}
+		else if (_currentCategory == "Decals")
+		{
+			targetTool = GameHost.EditorTool.PlaceDecal;
+		}
+
+		if (string.IsNullOrEmpty(GameHost.Instance.ActivePlaceId))
+		{
+			if (targetTool == GameHost.EditorTool.PlaceUnit) GameHost.Instance.ActivePlaceId = "footman";
+			else if (targetTool == GameHost.EditorTool.PlaceDecal) GameHost.Instance.ActivePlaceId = "logo";
+			else GameHost.Instance.ActivePlaceId = "tree";
+		}
+
+		TriggerToolSelection(targetTool, _btnAddObject);
 	}
 
 	private void TriggerToolSelection(GameHost.EditorTool tool, Button btn, string placeId = "")
@@ -3307,9 +3361,9 @@ public class {mapName} : IMapScript
 		scroll.AddChild(grid);
 
 		AddHelpSectionHeader(grid, "PRIMARY MODULE SWITCHING");
-		AddHelpShortcutRow(grid, "F1 / Ctrl+1", "Terrain Modeling Module");
-		AddHelpShortcutRow(grid, "F2 / Ctrl+2", "Texturing & Decoration Module");
-		AddHelpShortcutRow(grid, "F3 / Ctrl+3", "Object Placement Module");
+		AddHelpShortcutRow(grid, "F1 / Ctrl+1", "Terrain Module");
+		AddHelpShortcutRow(grid, "F2 / Ctrl+2", "Texture Module");
+		AddHelpShortcutRow(grid, "F3 / Ctrl+3", "Objects Module");
 
 		AddHelpSectionHeader(grid, "CAMERA CONTROLS");
 		AddHelpShortcutRow(grid, "W, A, S, D / Arrows", "Pan map camera");
@@ -3842,17 +3896,17 @@ public class {mapName} : IMapScript
 
 		_btnModuleTerrain = new Button();
 		_btnModuleTerrain.Set("icon_max_width", 0);
-		SetupButton(_btnModuleTerrain, "⛰️ TERRAIN MODELING", () => SwitchModule(EditorModule.Terrain), 12);
+		SetupButton(_btnModuleTerrain, "⛰️ TERRAIN", () => SwitchModule(EditorModule.Terrain), 12);
 		_moduleBar.AddChild(_btnModuleTerrain);
 
 		_btnModulePaint = new Button();
 		_btnModulePaint.Set("icon_max_width", 0);
-		SetupButton(_btnModulePaint, "🎨 TEXTURE & DECO", () => SwitchModule(EditorModule.TextureDeco), 12);
+		SetupButton(_btnModulePaint, "🎨 TEXTURE", () => SwitchModule(EditorModule.TextureDeco), 12);
 		_moduleBar.AddChild(_btnModulePaint);
 
 		_btnModuleObjects = new Button();
 		_btnModuleObjects.Set("icon_max_width", 0);
-		SetupButton(_btnModuleObjects, "💂 OBJECT PLACEMENT", () => SwitchModule(EditorModule.Objects), 12);
+		SetupButton(_btnModuleObjects, "💂 OBJECTS", () => SwitchModule(EditorModule.Objects), 12);
 		_moduleBar.AddChild(_btnModuleObjects);
 
 		_panelLeft = new PanelContainer();
@@ -3864,9 +3918,15 @@ public class {mapName} : IMapScript
 		_panelLeft.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(false));
 		AddChild(_panelLeft);
 
+		var leftScroll = new ScrollContainer();
+		leftScroll.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		leftScroll.SizeFlagsVertical = SizeFlags.ExpandFill;
+		_panelLeft.AddChild(leftScroll);
+
 		var leftVBox = new VBoxContainer();
+		leftVBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		leftVBox.AddThemeConstantOverride("separation", 10);
-		_panelLeft.AddChild(leftVBox);
+		leftScroll.AddChild(leftVBox);
 
 		var leftTitle = new Label();
 		leftTitle.Text = "📁 FILE OPERATIONS";
@@ -3969,10 +4029,7 @@ public class {mapName} : IMapScript
 		SafeReparent(brushStrengthBox, _contentBrush);
 		SafeReparent(_btnBrushShape, _contentBrush);
 		SafeReparent(_chkBlockMode, _contentBrush);
-		var stepBox = GetNodeOrNull<Control>("PanelTextures/VBox/Content/SettingsVBox/StepBox");
-		SafeReparent(stepBox, _contentBrush);
-		var waterHeightBox = GetNodeOrNull<Control>("PanelTextures/VBox/Content/SettingsVBox/WaterHeightBox");
-		SafeReparent(waterHeightBox, _contentBrush);
+		SafeReparent(_stepBox, _contentBrush);
 
 		_accordionToolSettings = new VBoxContainer();
 		_accordionToolSettings.Name = "AccordionToolSettings";
@@ -4008,17 +4065,11 @@ public class {mapName} : IMapScript
 		var pathingContent = GetNodeOrNull<Control>("PanelPathing/VBox/Content");
 		SafeReparent(pathingContent, _containerPathingSettings);
 
-		_containerClumpSettings = new VBoxContainer();
-		_containerClumpSettings.Name = "ContainerClump";
-		_containerClumpSettings.AddThemeConstantOverride("separation", 6);
-		_contentToolSettings.AddChild(_containerClumpSettings);
-		
 		var clumpTitle = GetNodeOrNull<Label>("PanelEntityPalette/VBox/Content/PalettesVBox/LblClumpTitle");
-		SafeReparent(clumpTitle, _containerClumpSettings);
-		var densityBox = GetNodeOrNull<Control>("PanelEntityPalette/VBox/Content/RightSettingsVBox/DensityBox");
-		SafeReparent(densityBox, _containerClumpSettings);
-		var scaleVarBox = GetNodeOrNull<Control>("PanelEntityPalette/VBox/Content/RightSettingsVBox/ScaleVarBox");
-		SafeReparent(scaleVarBox, _containerClumpSettings);
+		if (clumpTitle != null)
+		{
+			clumpTitle.Visible = false;
+		}
 
 		_containerDecalSettings = new VBoxContainer();
 		_containerDecalSettings.Name = "ContainerDecal";
@@ -4075,6 +4126,9 @@ public class {mapName} : IMapScript
 		SafeReparent(_chkSpawnAsEnemy, _contentPlacement);
 		SafeReparent(_chkRandomRotation, _contentPlacement);
 		SafeReparent(_chkRandomScale, _contentPlacement);
+		SafeReparent(_chkClumpMode, _contentPlacement);
+		SafeReparent(_densityBox, _contentPlacement);
+		SafeReparent(_scaleVarBox, _contentPlacement);
 
 		_accordionInspector = new VBoxContainer();
 		_accordionInspector.Name = "AccordionInspector";
@@ -4096,7 +4150,7 @@ public class {mapName} : IMapScript
 
 		_accordionViewport = new VBoxContainer();
 		_accordionViewport.Name = "AccordionViewport";
-		_accordionContainer.AddChild(_accordionViewport);
+		leftVBox.AddChild(_accordionViewport);
 		_btnHeaderViewport = new Button();
 		_btnHeaderViewport.Set("icon_max_width", 0);
 		StyleAccordionHeader(_btnHeaderViewport);
@@ -4109,12 +4163,10 @@ public class {mapName} : IMapScript
 		SafeReparent(_btnToggleGrid, _contentViewport);
 		SafeReparent(_btnMirrorMode, _contentViewport);
 		SafeReparent(_btnToggleCameraBounds, _contentViewport);
-		var camBoundsBox = GetNodeOrNull<Control>("PanelEntityPalette/VBox/Content/RightSettingsVBox/CamBoundsBox");
-		SafeReparent(camBoundsBox, _contentViewport);
 
 		_accordionNavigation = new VBoxContainer();
 		_accordionNavigation.Name = "AccordionNavigation";
-		_accordionContainer.AddChild(_accordionNavigation);
+		leftVBox.AddChild(_accordionNavigation);
 		_btnHeaderNavigation = new Button();
 		_btnHeaderNavigation.Set("icon_max_width", 0);
 		StyleAccordionHeader(_btnHeaderNavigation);
@@ -4128,6 +4180,39 @@ public class {mapName} : IMapScript
 		var zoomContentGrid = GetNodeOrNull<Control>("MiddleRightBox/PanelZoom/VBox/Content");
 		SafeReparent(zoomContentGrid, _contentNavigation);
 
+		var accordionMapSettings = new VBoxContainer();
+		accordionMapSettings.Name = "AccordionMapSettings";
+		leftVBox.AddChild(accordionMapSettings);
+		
+		var btnHeaderMapSettings = new Button();
+		btnHeaderMapSettings.Set("icon_max_width", 0);
+		StyleAccordionHeader(btnHeaderMapSettings);
+		accordionMapSettings.AddChild(btnHeaderMapSettings);
+		
+		var contentMapSettings = new VBoxContainer();
+		contentMapSettings.AddThemeConstantOverride("separation", 8);
+		accordionMapSettings.AddChild(contentMapSettings);
+		SetupAccordion(btnHeaderMapSettings, contentMapSettings, "Map Settings");
+
+		SafeReparent(_waterHeightBox, contentMapSettings);
+		SafeReparent(_camBoundsBox, contentMapSettings);
+
+		var skyboxBox = new VBoxContainer();
+		skyboxBox.Name = "SkyboxBox";
+		var lblSkyboxTitle = new Label();
+		lblSkyboxTitle.Text = "🌅 Skybox Environment";
+		lblSkyboxTitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		lblSkyboxTitle.AddThemeFontSizeOverride("font_size", 12);
+		skyboxBox.AddChild(lblSkyboxTitle);
+		contentMapSettings.AddChild(skyboxBox);
+		SafeReparent(_optSkybox, skyboxBox);
+
+		_panelEnv = GetNodeOrNull<PanelContainer>("TopToolbar/PanelEnv");
+		if (_panelEnv != null)
+		{
+			_panelEnv.Visible = false;
+		}
+
 		SetRightPanelExpanded(true);
 
 		_panelObjects = new PanelContainer();
@@ -4140,9 +4225,10 @@ public class {mapName} : IMapScript
 		objectsHBox.AddThemeConstantOverride("separation", 8);
 		_panelObjects.AddChild(objectsHBox);
 
+		SafeReparent(_btnAddObject, objectsHBox);
 		SafeReparent(_btnSelectMove, objectsHBox);
 		SafeReparent(_btnDeleteObject, objectsHBox);
-		SafeReparent(_btnClumpBrush, objectsHBox);
+		if (_btnClumpBrush != null) _btnClumpBrush.Visible = false;
 
 		var topLeftBox = GetNode<HBoxContainer>("TopLeftBox");
 		SafeReparent(_btnUndo, topLeftBox);
@@ -4190,7 +4276,7 @@ public class {mapName} : IMapScript
 					TriggerToolSelection(GameHost.EditorTool.PaintGrass, _btnTextureBrush);
 					break;
 				case EditorModule.Objects:
-					TriggerToolSelection(GameHost.EditorTool.SelectMove, _btnSelectMove);
+					TriggerAddObjectMode();
 					break;
 			}
 		}
@@ -4317,10 +4403,9 @@ public class {mapName} : IMapScript
 			{
 				_chkBlockMode.Visible = (tool != GameHost.EditorTool.PaintPathing);
 			}
-			var stepBox = GetNodeOrNull<Control>("PanelTextures/VBox/Content/SettingsVBox/StepBox");
-			if (stepBox != null)
+			if (_stepBox != null)
 			{
-				stepBox.Visible = (tool != GameHost.EditorTool.PaintPathing);
+				_stepBox.Visible = (tool != GameHost.EditorTool.PaintPathing);
 			}
 		}
 
@@ -4331,7 +4416,6 @@ public class {mapName} : IMapScript
 											 tool == GameHost.EditorTool.PaintSand ||
 											 tool == GameHost.EditorTool.FloodFill);
 		_containerPathingSettings.Visible = (tool == GameHost.EditorTool.PaintPathing);
-		_containerClumpSettings.Visible = (tool == GameHost.EditorTool.PlacePropClump);
 		_containerDecalSettings.Visible = (tool == GameHost.EditorTool.PlaceDecal);
 		_containerEyedropperSettings.Visible = (tool == GameHost.EditorTool.Eyedropper);
 		_containerPasteSettings.Visible = (tool == GameHost.EditorTool.SelectArea ||
@@ -4347,7 +4431,6 @@ public class {mapName} : IMapScript
 		bool anyToolSettingVisible = _containerFlattenSettings.Visible ||
 									 _containerTextureSettings.Visible ||
 									 _containerPathingSettings.Visible ||
-									 _containerClumpSettings.Visible ||
 									 _containerDecalSettings.Visible ||
 									 _containerEyedropperSettings.Visible ||
 									 _containerPasteSettings.Visible ||

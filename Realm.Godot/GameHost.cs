@@ -142,7 +142,16 @@ public partial class GameHost : Node3D, IGameAPI
 		PasteArea,
 		PaintPathing
 	}
-	public EditorTool ActiveEditorTool { get; set; } = EditorTool.None;
+	private EditorTool _activeEditorTool = EditorTool.None;
+	public EditorTool ActiveEditorTool
+	{
+		get => _activeEditorTool;
+		set
+		{
+			_activeEditorTool = value;
+			_isPastingObject = false;
+		}
+	}
 	public string ActivePlaceId { get; set; } = ""; // "footman", "tree", etc.
 	public bool PlaceUnitIsEnemy { get; set; } = false;
 	public float EditorBrushRadius { get; set; } = 6.0f;
@@ -170,6 +179,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public MirrorMode EditorMirrorMode { get; set; } = MirrorMode.None;
 	public float EditorClumpDensity { get; set; } = 5.0f;
 	public float EditorClumpScaleVar { get; set; } = 0.3f;
+	public bool EditorClumpMode { get; set; } = false;
 	private float _clumpSpawnCooldown = 0.0f;
 	private bool _isDrawingClump = false;
 	private List<IEditorAction> _clumpSpawnActionsInSession = new List<IEditorAction>();
@@ -196,11 +206,12 @@ public partial class GameHost : Node3D, IGameAPI
 	private float _cachedRandomRotation = 0.0f;
 	private float _cachedRandomScale = 1.0f;
 	private bool _hasCachedRandom = false;
+	private bool _isPastingObject = false;
 
 	public void GenerateNewRandomPlacementRotationAndScale()
 	{
 		_cachedRandomRotation = (float)(GD.Randf() * 360.0);
-		_cachedRandomScale = (float)(0.7f + GD.Randf() * 0.6f);
+		_cachedRandomScale = 0.2f + (float)(GD.Randf() * 2.8);
 		_hasCachedRandom = true;
 	}
 	private Vector2I? _selectionStart = null;
@@ -3285,7 +3296,7 @@ public class {mapName} : IMapScript
 
 				if (Input.IsMouseButtonPressed(MouseButton.Left) && !IsMouseOverUI())
 				{
-					if (ActiveEditorTool == EditorTool.PlacePropClump)
+					if ((ActiveEditorTool == EditorTool.PlaceUnit || ActiveEditorTool == EditorTool.PlaceProp || ActiveEditorTool == EditorTool.PlaceDecal) && EditorClumpMode)
 					{
 						if (!_isDrawingClump)
 						{
@@ -3294,7 +3305,7 @@ public class {mapName} : IMapScript
 						}
 						if (_clumpSpawnCooldown <= 0.0f)
 						{
-							ApplyPropClumpSpawn(hitPos);
+							ApplyGeneralClumpSpawn(hitPos);
 							_clumpSpawnCooldown = 0.15f;
 						}
 					}
@@ -3348,6 +3359,12 @@ public class {mapName} : IMapScript
 						_terrainHeightsBefore = (float[,])GroundTerrain.Heights.Clone();
 						_terrainColorsBefore = (Color[,])GroundTerrain.Colors.Clone();
 						_terrainPathingBefore = (int[,])GroundTerrain.PathingCodes.Clone();
+
+						if (ActiveEditorTool == EditorTool.Flatten)
+						{
+							EditorFlattenHeight = GetMinHeightInBrushBounds(hitPos);
+							MapEditorHUD.Instance?.UpdateFlattenHeightExternal(EditorFlattenHeight);
+						}
 
 						if (EditorBlockMode)
 						{
@@ -5374,9 +5391,10 @@ public class {mapName} : IMapScript
 					
 					if (ActiveEditorTool == EditorTool.PlaceUnit)
 					{
+						if (EditorClumpMode) return;
 						if (!_hasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
-						float placementRot = EditorRandomRotation ? _cachedRandomRotation : EditorPlacementRotation;
-						float scaleVal = EditorRandomScale ? EditorPlacementScale * _cachedRandomScale : EditorPlacementScale;
+						float placementRot = (EditorRandomRotation && !_isPastingObject) ? _cachedRandomRotation : EditorPlacementRotation;
+						float scaleVal = (EditorRandomScale && !_isPastingObject) ? _cachedRandomScale : EditorPlacementScale;
 						var unit = SpawnUnitExternal(ActivePlaceId, hitPos, PlaceUnitIsEnemy, placementRot, scaleVal);
 						if (unit != null)
 						{
@@ -5401,13 +5419,15 @@ public class {mapName} : IMapScript
 							EditorHasUnsavedChanges = true;
 						}
 						GenerateNewRandomPlacementRotationAndScale();
+						_isPastingObject = false;
 						GetViewport().SetInputAsHandled();
 					}
 					else if (ActiveEditorTool == EditorTool.PlaceProp)
 					{
+						if (EditorClumpMode) return;
 						if (!_hasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
-						float placementRot = EditorRandomRotation ? _cachedRandomRotation : EditorPlacementRotation;
-						float scaleVal = EditorRandomScale ? EditorPlacementScale * _cachedRandomScale : EditorPlacementScale;
+						float placementRot = (EditorRandomRotation && !_isPastingObject) ? _cachedRandomRotation : EditorPlacementRotation;
+						float scaleVal = (EditorRandomScale && !_isPastingObject) ? _cachedRandomScale : EditorPlacementScale;
 						var prop = SpawnPropExternalWithParams(ActivePlaceId, hitPos, placementRot, scaleVal);
 						if (prop != null)
 						{
@@ -5432,13 +5452,15 @@ public class {mapName} : IMapScript
 							EditorHasUnsavedChanges = true;
 						}
 						GenerateNewRandomPlacementRotationAndScale();
+						_isPastingObject = false;
 						GetViewport().SetInputAsHandled();
 					}
 					else if (ActiveEditorTool == EditorTool.PlaceDecal)
 					{
+						if (EditorClumpMode) return;
 						if (!_hasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
-						float placementRot = EditorRandomRotation ? _cachedRandomRotation : EditorPlacementRotation;
-						float scaleVal = EditorRandomScale ? EditorPlacementScale * _cachedRandomScale : EditorPlacementScale;
+						float placementRot = (EditorRandomRotation && !_isPastingObject) ? _cachedRandomRotation : EditorPlacementRotation;
+						float scaleVal = (EditorRandomScale && !_isPastingObject) ? _cachedRandomScale : EditorPlacementScale;
 						var decal = SpawnDecalExternalWithParams(ActivePlaceId, hitPos, placementRot, scaleVal);
 						if (decal != null)
 						{
@@ -5463,6 +5485,7 @@ public class {mapName} : IMapScript
 							EditorHasUnsavedChanges = true;
 						}
 						GenerateNewRandomPlacementRotationAndScale();
+						_isPastingObject = false;
 						GetViewport().SetInputAsHandled();
 					}
 					else if (ActiveEditorTool == EditorTool.DeleteObject)
@@ -7247,7 +7270,16 @@ public class {mapName} : IMapScript
 		var camera = GetViewport().GetCamera3D();
 		if (friendlyCastle != null && camera != null)
 		{
-			camera.GlobalPosition = new Vector3(friendlyCastle.GlobalPosition.X, camera.GlobalPosition.Y, friendlyCastle.GlobalPosition.Z);
+			var zVector = camera.GlobalTransform.Basis.Z;
+			if (Mathf.Abs(zVector.Y) > 0.001f)
+			{
+				float dist = (camera.GlobalPosition.Y - friendlyCastle.GlobalPosition.Y) / zVector.Y;
+				camera.GlobalPosition = friendlyCastle.GlobalPosition + zVector * dist;
+			}
+			else
+			{
+				camera.GlobalPosition = new Vector3(friendlyCastle.GlobalPosition.X, camera.GlobalPosition.Y, friendlyCastle.GlobalPosition.Z);
+			}
 			if (InGameHUD.Instance != null)
 			{
 				InGameHUD.Instance.ShowFeedbackText("Camera Centered on Castle", new Color(0.5f, 0.8f, 1.0f));
@@ -7262,7 +7294,16 @@ public class {mapName} : IMapScript
 
 		if (SelectedEditorObject is Node3D node3D && GodotObject.IsInstanceValid(node3D))
 		{
-			camera.GlobalPosition = new Vector3(node3D.GlobalPosition.X, camera.GlobalPosition.Y, node3D.GlobalPosition.Z);
+			var zVector = camera.GlobalTransform.Basis.Z;
+			if (Mathf.Abs(zVector.Y) > 0.001f)
+			{
+				float dist = (camera.GlobalPosition.Y - node3D.GlobalPosition.Y) / zVector.Y;
+				camera.GlobalPosition = node3D.GlobalPosition + zVector * dist;
+			}
+			else
+			{
+				camera.GlobalPosition = new Vector3(node3D.GlobalPosition.X, camera.GlobalPosition.Y, node3D.GlobalPosition.Z);
+			}
 			MapEditorHUD.Instance?.ShowFeedbackExternal("Centered Camera on Selected Object");
 			return;
 		}
@@ -7337,6 +7378,7 @@ public class {mapName} : IMapScript
 			if (_copiedObject.Value.Type == "unit")
 			{
 				ActiveEditorTool = EditorTool.PlaceUnit;
+				_isPastingObject = true;
 				ActivePlaceId = _copiedObject.Value.Id;
 				PlaceUnitIsEnemy = _copiedObject.Value.IsEnemy;
 				EditorPlacementRotation = _copiedObject.Value.Rotation;
@@ -7346,6 +7388,7 @@ public class {mapName} : IMapScript
 			else if (_copiedObject.Value.Type == "prop")
 			{
 				ActiveEditorTool = EditorTool.PlaceProp;
+				_isPastingObject = true;
 				ActivePlaceId = _copiedObject.Value.Id;
 				EditorPlacementRotation = _copiedObject.Value.Rotation;
 				EditorPlacementScale = _copiedObject.Value.Scale;
@@ -7354,6 +7397,7 @@ public class {mapName} : IMapScript
 			else if (_copiedObject.Value.Type == "decal")
 			{
 				ActiveEditorTool = EditorTool.PlaceDecal;
+				_isPastingObject = true;
 				ActivePlaceId = _copiedObject.Value.Id;
 				EditorPlacementRotation = _copiedObject.Value.Rotation;
 				EditorPlacementScale = _copiedObject.Value.Scale;
@@ -9048,6 +9092,144 @@ public class {mapName} : IMapScript
 			}
 		}
 		return modified;
+	}
+
+	private float GetMinHeightInBrushBounds(Vector3 worldPos)
+	{
+		if (GroundTerrain == null) return 0.0f;
+		float spacing = GroundTerrain.Spacing;
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+		float minHeight = float.MaxValue;
+		bool foundAny = false;
+
+		for (int z = 0; z < depth; z++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				float vx = (x - (width - 1) / 2.0f) * spacing;
+				float vz = (z - (depth - 1) / 2.0f) * spacing;
+
+				bool inBounds = false;
+				if (EditorBrushIsSquare)
+				{
+					float dx = Mathf.Abs(vx - worldPos.X);
+					float dz = Mathf.Abs(vz - worldPos.Z);
+					inBounds = dx <= EditorBrushRadius && dz <= EditorBrushRadius;
+				}
+				else
+				{
+					float dist = new Vector2(vx - worldPos.X, vz - worldPos.Z).Length();
+					inBounds = dist <= EditorBrushRadius;
+				}
+
+				if (inBounds)
+				{
+					float h = GroundTerrain.Heights[x, z];
+					if (h < minHeight)
+					{
+						minHeight = h;
+						foundAny = true;
+					}
+				}
+			}
+		}
+
+		return foundAny ? minHeight : GetTerrainHeightAt(worldPos);
+	}
+
+	private void ApplyGeneralClumpSpawn(Vector3 centerPos)
+	{
+		if (string.IsNullOrEmpty(ActivePlaceId)) return;
+		int spawnCount = Mathf.Max(1, (int)Math.Round(EditorClumpDensity));
+		for (int i = 0; i < spawnCount; i++)
+		{
+			float dx = 0.0f;
+			float dz = 0.0f;
+			if (EditorBrushIsSquare)
+			{
+				dx = (float)(GD.Randf() * 2.0 - 1.0) * EditorBrushRadius;
+				dz = (float)(GD.Randf() * 2.0 - 1.0) * EditorBrushRadius;
+			}
+			else
+			{
+				float r = Mathf.Sqrt((float)GD.Randf()) * EditorBrushRadius;
+				float theta = (float)(GD.Randf() * Mathf.Pi * 2.0);
+				dx = r * Mathf.Cos(theta);
+				dz = r * Mathf.Sin(theta);
+			}
+			Vector3 spawnPos = new Vector3(centerPos.X + dx, centerPos.Y, centerPos.Z + dz);
+			if (GroundTerrain != null)
+			{
+				float spacing = GroundTerrain.Spacing;
+				int width = GroundTerrain.Width;
+				int depth = GroundTerrain.Depth;
+				float halfW = (width - 1) / 2.0f * spacing;
+				float halfD = (depth - 1) / 2.0f * spacing;
+				if (Mathf.Abs(spawnPos.X) > halfW || Mathf.Abs(spawnPos.Z) > halfD) continue;
+			}
+			spawnPos.Y = GetTerrainHeightAt(spawnPos);
+
+			float scaleVal = EditorPlacementScale + (float)(GD.Randf() * 2.0 - 1.0) * EditorClumpScaleVar;
+			scaleVal = Mathf.Clamp(scaleVal, 0.2f, 3.0f);
+
+			float rotY = (EditorRandomRotation && !_isPastingObject) ? (float)(GD.Randf() * 360.0) : EditorPlacementRotation;
+			if (EditorRandomScale && !_isPastingObject)
+			{
+				scaleVal = 0.2f + (float)(GD.Randf() * 2.8);
+			}
+
+			Node spawnedNode = null;
+			string spawnType = "";
+			bool isEnemy = false;
+
+			if (ActiveEditorTool == EditorTool.PlaceUnit)
+			{
+				spawnType = "unit";
+				isEnemy = PlaceUnitIsEnemy;
+				spawnedNode = SpawnUnitExternal(ActivePlaceId, spawnPos, isEnemy, rotY, scaleVal);
+			}
+			else if (ActiveEditorTool == EditorTool.PlaceProp)
+			{
+				spawnType = "prop";
+				spawnedNode = SpawnPropExternalWithParams(ActivePlaceId, spawnPos, rotY, scaleVal);
+			}
+			else if (ActiveEditorTool == EditorTool.PlaceDecal)
+			{
+				spawnType = "decal";
+				spawnedNode = SpawnDecalExternalWithParams(ActivePlaceId, spawnPos, rotY, scaleVal);
+			}
+
+			if (spawnedNode != null)
+			{
+				_clumpSpawnActionsInSession.Add(new ObjectSpawnAction(spawnType, ActivePlaceId, spawnPos, rotY, scaleVal, isEnemy, spawnedNode));
+				if (EditorMirrorMode != MirrorMode.None)
+				{
+					foreach (var t in GetMirroredTransforms(spawnPos, rotY))
+					{
+						Vector3 mPos = t.Position;
+						mPos.Y = GetTerrainHeightAt(mPos);
+						Node mNode = null;
+						if (ActiveEditorTool == EditorTool.PlaceUnit)
+						{
+							mNode = SpawnUnitExternal(ActivePlaceId, mPos, isEnemy, t.Rotation, scaleVal);
+						}
+						else if (ActiveEditorTool == EditorTool.PlaceProp)
+						{
+							mNode = SpawnPropExternalWithParams(ActivePlaceId, mPos, t.Rotation, scaleVal);
+						}
+						else if (ActiveEditorTool == EditorTool.PlaceDecal)
+						{
+							mNode = SpawnDecalExternalWithParams(ActivePlaceId, mPos, t.Rotation, scaleVal);
+						}
+						if (mNode != null)
+						{
+							_clumpSpawnActionsInSession.Add(new ObjectSpawnAction(spawnType, ActivePlaceId, mPos, t.Rotation, scaleVal, isEnemy, mNode));
+						}
+					}
+				}
+			}
+		}
 	}
 
 	private void ApplyPropClumpSpawn(Vector3 centerPos)
@@ -11310,8 +11492,8 @@ public class {mapName} : IMapScript
 		if (_editorPreviewNode != null)
 		{
 			if (!_hasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
-			float previewRot = EditorRandomRotation ? _cachedRandomRotation : EditorPlacementRotation;
-			float previewScaleVal = EditorRandomScale ? EditorPlacementScale * _cachedRandomScale : EditorPlacementScale;
+			float previewRot = (EditorRandomRotation && !_isPastingObject) ? _cachedRandomRotation : EditorPlacementRotation;
+			float previewScaleVal = (EditorRandomScale && !_isPastingObject) ? _cachedRandomScale : EditorPlacementScale;
 
 			Vector3 previewPos = position;
 			if (EditorSnapToGrid && GroundTerrain != null)
