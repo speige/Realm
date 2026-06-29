@@ -13,8 +13,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.MapAPI", "Realm.MapAP
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.MapEditorExtension", "Realm.MapEditorExtension\Realm.MapEditorExtension.csproj", "{7240C590-F327-4F8F-BC6F-75DE1DF82534}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LicenseExtractor", "LicenseExtractor\LicenseExtractor.csproj", "{C1CF9A89-9997-4A25-B211-AF8D5D018560}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -85,18 +83,6 @@ Global
 		{7240C590-F327-4F8F-BC6F-75DE1DF82534}.Release|x64.Build.0 = Release|Any CPU
 		{7240C590-F327-4F8F-BC6F-75DE1DF82534}.Release|x86.ActiveCfg = Release|Any CPU
 		{7240C590-F327-4F8F-BC6F-75DE1DF82534}.Release|x86.Build.0 = Release|Any CPU
-		{C1CF9A89-9997-4A25-B211-AF8D5D018560}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{C1CF9A89-9997-4A25-B211-AF8D5D018560}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{C1CF9A89-9997-4A25-B211-AF8D5D018560}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{C1CF9A89-9997-4A25-B211-AF8D5D018560}.Debug|x64.Build.0 = Debug|Any CPU
-		{C1CF9A89-9997-4A25-B211-AF8D5D018560}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{C1CF9A89-9997-4A25-B211-AF8D5D018560}.Debug|x86.Build.0 = Debug|Any CPU
-		{C1CF9A89-9997-4A25-B211-AF8D5D018560}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{C1CF9A89-9997-4A25-B211-AF8D5D018560}.Release|Any CPU.Build.0 = Release|Any CPU
-		{C1CF9A89-9997-4A25-B211-AF8D5D018560}.Release|x64.ActiveCfg = Release|Any CPU
-		{C1CF9A89-9997-4A25-B211-AF8D5D018560}.Release|x64.Build.0 = Release|Any CPU
-		{C1CF9A89-9997-4A25-B211-AF8D5D018560}.Release|x86.ActiveCfg = Release|Any CPU
-		{C1CF9A89-9997-4A25-B211-AF8D5D018560}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

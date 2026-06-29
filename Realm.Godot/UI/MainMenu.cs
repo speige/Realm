@@ -18,6 +18,12 @@ public partial class MainMenu : Control
 	private Button _quitButton;
 	private Button _discordButton;
 	private Button _donateButton;
+	private Button _socialButton;
+	private Control _socialPopover;
+	private Control _socialPopoverOverlay;
+	private Button _contributeButton;
+	private Button _bugReportButton;
+	private Button _seedNodeButton;
 	private Control _profilePopup;
 
 	private readonly string[] _runes = { "ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᚲ", "ᚷ", "ᚹ", "ᚺ", "ᚾ", "ᛁ", "ᛃ", "ᛇ", "ᛈ", "ᛉ", "ᛊ", "ᛏ", "ᛒ", "ᛖ", "ᛗ", "ᛚ", "ᛜ", "ᛞ", "ᛟ" };
@@ -37,8 +43,14 @@ public partial class MainMenu : Control
 		_settingsButton = GetNode<Button>("SettingsButton");
 		_profileButton = GetNode<Button>("ProfileButton");
 		_quitButton = GetNode<Button>("QuitButton");
-		_discordButton = GetNode<Button>("DiscordButton");
-		_donateButton = GetNode<Button>("DonateButton");
+		_socialButton = GetNode<Button>("SocialButton");
+		_socialPopover = GetNode<Control>("SocialPopover");
+		_socialPopoverOverlay = GetNode<Control>("SocialPopoverOverlay");
+		_discordButton = GetNode<Button>("SocialPopover/PopoverVBox/DiscordButton");
+		_donateButton = GetNode<Button>("SocialPopover/PopoverVBox/DonateButton");
+		_contributeButton = GetNode<Button>("SocialPopover/PopoverVBox/ContributeButton");
+		_bugReportButton = GetNode<Button>("SocialPopover/PopoverVBox/BugReportButton");
+		_seedNodeButton = GetNode<Button>("SocialPopover/PopoverVBox/SeedNodeButton");
 
 		// Style background & panels
 		_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
@@ -54,15 +66,33 @@ public partial class MainMenu : Control
 		SetupGearButton(_settingsButton, () => UIManager.Instance.OpenSettingsOverlay());
 		SetupAvatarButton(_profileButton, () => ShowProfilePopup());
 		SetupButton(_quitButton, "QUIT GAME", () => GetTree().Quit());
-		SetupButton(_discordButton, "DISCORD", () => OS.ShellOpen("https://discord.com/servers/realm"));
-		SetupButton(_donateButton, "DONATE", () => OS.ShellOpen("https://github.com/sponsors/speige"));
+		_socialPopover.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+
+		SetupSocialButton(_socialButton, () => ToggleSocialPopover());
+		SetupButton(_discordButton, "DISCORD", () => { OS.ShellOpen("https://discord.com/servers/realm"); HideSocialPopover(); });
+		SetupButton(_donateButton, "DONATE", () => { OS.ShellOpen("https://github.com/sponsors/speige"); HideSocialPopover(); });
+		SetupButton(_contributeButton, "CONTRIBUTE", () => { OS.ShellOpen("https://github.com/speige/realm"); HideSocialPopover(); });
+		SetupButton(_bugReportButton, "BUG REPORT", () => { OS.ShellOpen("https://github.com/speige/Realm/issues"); HideSocialPopover(); });
+		SetupButton(_seedNodeButton, "HOST A SEED NODE (ADVANCED)", () => { OS.ShellOpen("https://github.com/speige/Realm/blob/main/Seed_Node_Setup.md"); HideSocialPopover(); });
+
+		_socialPopoverOverlay.GuiInput += (InputEvent @event) =>
+		{
+			if (@event is InputEventMouseButton mouseEvent && mouseEvent.Pressed && mouseEvent.ButtonIndex == MouseButton.Left)
+			{
+				HideSocialPopover();
+			}
+		};
 
 		// Cap icon sizes for buttons whose texture assets are large raster images
+		_socialButton.AddThemeConstantOverride("icon_max_width", 28);
 		_discordButton.AddThemeConstantOverride("icon_max_width", 28);
 		_mapDiscoveryButton.AddThemeConstantOverride("icon_max_width", 28);
 		_mapEditorButton.AddThemeConstantOverride("icon_max_width", 28);
 		_replaysButton.AddThemeConstantOverride("icon_max_width", 28);
 		_donateButton.AddThemeConstantOverride("icon_max_width", 28);
+		_contributeButton.AddThemeConstantOverride("icon_max_width", 28);
+		_bugReportButton.AddThemeConstantOverride("icon_max_width", 0);
+		_seedNodeButton.AddThemeConstantOverride("icon_max_width", 0);
 
 		// Populate runic pillars
 		PopulateRunicPillar(GetNode<VBoxContainer>("LeftPillar/RuneContainer"));
@@ -253,6 +283,60 @@ public partial class MainMenu : Control
 		{
 			gearIcon.Modulate = button.IsHovered() ? UIStyle.ColorGold : UIStyle.ColorGoldDull;
 		};
+	}
+
+	private void SetupSocialButton(Button button, Action onClick)
+	{
+		button.Flat = false;
+		button.Text = "";
+		button.Icon = GD.Load<Texture2D>("res://Assets/UI/social_icon.png");
+
+		button.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		button.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		button.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+
+		button.AddThemeColorOverride("icon_normal_color", UIStyle.ColorGoldDull);
+		button.AddThemeColorOverride("icon_hover_color", UIStyle.ColorGold);
+		button.AddThemeColorOverride("icon_pressed_color", UIStyle.ColorCyanGlow);
+		button.AddThemeColorOverride("icon_focus_color", UIStyle.ColorGoldDull);
+
+		Tween scaleTween = null;
+		button.MouseEntered += () =>
+		{
+			PlayHoverSound();
+			scaleTween?.Kill();
+			scaleTween = button.CreateTween();
+			button.PivotOffset = button.Size / 2;
+			scaleTween.TweenProperty(button, "scale", new Vector2(1.08f, 1.08f), 0.15f)
+				.SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
+		};
+		button.MouseExited += () =>
+		{
+			scaleTween?.Kill();
+			scaleTween = button.CreateTween();
+			scaleTween.TweenProperty(button, "scale", Vector2.One, 0.15f)
+				.SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
+		};
+
+		button.Pressed += () =>
+		{
+			PlayClickSound();
+			onClick?.Invoke();
+		};
+	}
+
+	private void ToggleSocialPopover()
+	{
+		bool isVisible = !_socialPopover.Visible;
+		_socialPopover.Visible = isVisible;
+		_socialPopoverOverlay.Visible = isVisible;
+	}
+
+	private void HideSocialPopover()
+	{
+		_socialPopover.Visible = false;
+		_socialPopoverOverlay.Visible = false;
 	}
 
 	private void PopulateRunicPillar(VBoxContainer container)
