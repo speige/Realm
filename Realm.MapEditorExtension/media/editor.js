@@ -1479,7 +1479,7 @@
                                             ${(item.AffectedUnitIds || []).map((uId, subIdx) => `
                                                 <tr>
                                                     <td>
-                                                        <input type="text" class="subitem-input" data-type="AffectedUnitIds" data-parent-index="${index}" data-sub-index="${subIdx}" value="${uId || ''}" list="suggest-units" placeholder="e.g. footman" />
+                                                        <input type="text" class="subitem-input" data-type="AffectedUnitIds" data-parent-index="${index}" data-sub-index="${subIdx}" value="${uId || ''}" list="suggest-units" placeholder="e.g. soldier" />
                                                     </td>
                                                     <td>
                                                         <button type="button" class="btn-delete-subitem btn-delete" data-type="AffectedUnitIds" data-parent-index="${index}" data-sub-index="${subIdx}">&times;</button>
