@@ -10,12 +10,13 @@ public partial class MapEditorHUD : Control
 	{
 		Terrain,
 		TextureDeco,
-		Objects
+		Objects,
+		Clipboard
 	}
 
-	private PanelContainer _panelLeft;
+	private Panel _panelLeft;
 	private Button _btnLeftTab;
-	private PanelContainer _panelRight;
+	private Panel _panelRight;
 	private Button _btnRightTab;
 	private VBoxContainer _accordionContainer;
 	
@@ -62,6 +63,10 @@ public partial class MapEditorHUD : Control
 	private VBoxContainer _containerCategorySelector;
 
 	private PanelContainer _panelObjects;
+	private PanelContainer _panelClipboard;
+	private Button _btnModuleClipboard;
+	private Button _btnCut;
+	private Button _btnEraseArea;
 	
 	private Button[] _swatchButtons = new Button[12];
 
@@ -206,8 +211,6 @@ public partial class MapEditorHUD : Control
 	private Button _btnInspectorScaleDown;
 	private Button _btnInspectorScaleUp;
 	private Button _btnInspectorScaleReset;
-	private CheckBox _chkInspectorIsEnemy;
-	private Button _btnInspectorAlignToGround;
 	private Button _btnInspectorDelete;
 
 	private Button _btnPathingBrush;
@@ -302,7 +305,8 @@ public partial class MapEditorHUD : Control
 		GetNode<HBoxContainer>("TopToolbar/PanelTerrain/VBox/Content").AddChild(_btnRamp);
 
 		_btnTextureBrush = GetNode<Button>("TopToolbar/PanelDeco/VBox/Content/BtnTextureBrush");
-		_btnDecalTool = GetNode<Button>("TopToolbar/PanelDeco/VBox/Content/BtnDecalTool");
+		_btnDecalTool = GetNodeOrNull<Button>("TopToolbar/PanelDeco/VBox/Content/BtnDecalTool");
+		if (_btnDecalTool != null) _btnDecalTool.Visible = false;
 		_btnFloodFill = new Button();
 		_btnFloodFill.Name = "BtnFloodFill";
 		_btnFloodFill.Set("icon_max_width", 0);
@@ -1249,7 +1253,7 @@ public partial class MapEditorHUD : Control
 			EditorHistoryManager.Redo();
 			ShowFeedback("Redo Action performed");
 		}, 11, "Redo the last undone action (Ctrl+Y / Ctrl+Shift+Z)");
-		SetupButton(_btnDeleteObject, "ERASER TOOL", () => TriggerToolSelection(GameHost.EditorTool.DeleteObject, _btnDeleteObject), 14, "Remove entities from the map. Left click on units or props in 3D (0)");
+		SetupButton(_btnDeleteObject, "ERASER", () => TriggerToolSelection(GameHost.EditorTool.DeleteObject, _btnDeleteObject), 14, "Remove entities from the map. Left click on units or props in 3D (0)");
 
 		_btnSelectMove = new Button();
 		_btnSelectMove.Name = "BtnSelectMove";
@@ -1276,12 +1280,9 @@ public partial class MapEditorHUD : Control
 		SetupButton(_btnRamp, "📐 Ramp", () => TriggerToolSelection(GameHost.EditorTool.Ramp, _btnRamp), 11, "Create a ramp between two clicked points (9)");
 
 		SetupButton(_btnTextureBrush, "🖌️ Texture", () => TriggerToolSelection(GameHost.EditorTool.PaintGrass, _btnTextureBrush), 11, "Paint vertex colors onto the terrain using selected texture swatch (6)");
-		SetupButton(_btnDecalTool, "🖼️ Decal", () => {
-			TriggerToolSelection(GameHost.EditorTool.PlaceDecal, _btnDecalTool);
-			ShowFeedback("Decal Placement Tool Selected");
-		}, 11, "Place decorative decals projecting textures onto ground (7)");
+
 		SetupButton(_btnFloodFill, "🪣 Flood Fill", () => TriggerToolSelection(GameHost.EditorTool.FloodFill, _btnFloodFill), 11, "Flood fill connected area sharing the same texture until hitting a cliff/boundary");
-		SetupButton(_btnSelectArea, "🟦 Area Select", () => TriggerToolSelection(GameHost.EditorTool.SelectArea, _btnSelectArea), 11, "Select a rectangular area of the map to copy/paste (Ctrl+C, Ctrl+V)");
+		SetupButton(_btnSelectArea, "🟦 SELECT AREA", () => TriggerToolSelection(GameHost.EditorTool.SelectArea, _btnSelectArea), 13, "Select a rectangular area of the map (Ctrl+C, Ctrl+V)");
 
 
 
@@ -1832,14 +1833,38 @@ public partial class MapEditorHUD : Control
 			targetTool = GameHost.EditorTool.PlaceDecal;
 		}
 
-		if (string.IsNullOrEmpty(GameHost.Instance.ActivePlaceId))
+		string placeId = "";
+		int selectedIndex = _optCategoryItems != null ? _optCategoryItems.Selected : -1;
+		if (selectedIndex >= 0 && selectedIndex < _categoryFiles.Count)
 		{
-			if (targetTool == GameHost.EditorTool.PlaceUnit) GameHost.Instance.ActivePlaceId = "footman";
-			else if (targetTool == GameHost.EditorTool.PlaceDecal) GameHost.Instance.ActivePlaceId = "logo";
-			else GameHost.Instance.ActivePlaceId = "tree";
+			string selectedFile = _categoryFiles[selectedIndex];
+			string path = _currentCategory switch
+			{
+				"Characters" => "res://Assets/3d/Characters",
+				"Buildings" => "res://Assets/3d/Buildings",
+				"Environment" => "res://Assets/3d/Environment",
+				"Props" => "res://Assets/3d/Props",
+				"Decals" => "res://Assets/2d/Decals",
+				_ => ""
+			};
+			if (_currentCategory == "Characters" || _currentCategory == "Buildings" || _currentCategory == "Environment" || _currentCategory == "Props")
+			{
+				placeId = $"{path}/{selectedFile}";
+			}
+			else
+			{
+				placeId = selectedFile;
+			}
 		}
 
-		TriggerToolSelection(targetTool, _btnAddObject);
+		if (string.IsNullOrEmpty(placeId))
+		{
+			if (targetTool == GameHost.EditorTool.PlaceUnit) placeId = "res://Assets/3d/Characters/footman.glb";
+			else if (targetTool == GameHost.EditorTool.PlaceDecal) placeId = "logo";
+			else placeId = "res://Assets/3d/Props/tree.glb";
+		}
+
+		TriggerToolSelection(targetTool, _btnAddObject, placeId);
 	}
 
 	private void TriggerToolSelection(GameHost.EditorTool tool, Button btn, string placeId = "")
@@ -1890,8 +1915,6 @@ public partial class MapEditorHUD : Control
 				 tool == GameHost.EditorTool.PaintRock ||
 				 tool == GameHost.EditorTool.PaintSand ||
 				 tool == GameHost.EditorTool.FloodFill ||
-				 tool == GameHost.EditorTool.SelectArea ||
-				 tool == GameHost.EditorTool.PasteArea ||
 				 tool == GameHost.EditorTool.PaintPathing)
 		{
 			targetModule = EditorModule.TextureDeco;
@@ -1906,6 +1929,11 @@ public partial class MapEditorHUD : Control
 		{
 			targetModule = EditorModule.Objects;
 		}
+		else if (tool == GameHost.EditorTool.SelectArea ||
+				 tool == GameHost.EditorTool.PasteArea)
+		{
+			targetModule = EditorModule.Clipboard;
+		}
 
 		if (targetModule != _activeModule)
 		{
@@ -1915,6 +1943,7 @@ public partial class MapEditorHUD : Control
 			if (_panelDeco != null) _panelDeco.Visible = (targetModule == EditorModule.TextureDeco);
 			if (_panelEnv != null) _panelEnv.Visible = (targetModule == EditorModule.TextureDeco);
 			if (_panelObjects != null) _panelObjects.Visible = (targetModule == EditorModule.Objects);
+			if (_panelClipboard != null) _panelClipboard.Visible = (targetModule == EditorModule.Clipboard);
 		}
 
 		if (tool == GameHost.EditorTool.PaintPathing)
@@ -2933,17 +2962,7 @@ public class {mapName} : IMapScript
 		SetupButton(_btnInspectorScaleReset, "🎯", () => ResetScaleSelectedObject(), 11, "Reset selected object scale to 1.0x");
 		scaleHBox.AddChild(_btnInspectorScaleReset);
 
-		_chkInspectorIsEnemy = new CheckBox();
-		_chkInspectorIsEnemy.Text = "Enemy (Orc)";
-		_chkInspectorIsEnemy.TooltipText = "Toggle selected unit team faction alignment";
-		UIStyle.ApplyCheckboxStyle(_chkInspectorIsEnemy);
-		_chkInspectorIsEnemy.Toggled += (toggled) => ToggleSelectedObjectTeam(toggled);
-		vbox.AddChild(_chkInspectorIsEnemy);
 
-		_btnInspectorAlignToGround = new Button();
-		_btnInspectorAlignToGround.Set("icon_max_width", 0);
-		SetupButton(_btnInspectorAlignToGround, "📐 ALIGN TO GROUND", () => AlignSelectedObjectToGround(), 11, "Snap selected object height to align with terrain surface");
-		vbox.AddChild(_btnInspectorAlignToGround);
 
 		_btnInspectorDelete = new Button();
 		_btnInspectorDelete.Set("icon_max_width", 0);
@@ -2975,22 +2994,16 @@ public class {mapName} : IMapScript
 			{
 				typeStr = "UNIT";
 				nameStr = $"{unit.UnitId.ToUpper()}";
-				_chkInspectorIsEnemy.Visible = true;
-				_chkInspectorIsEnemy.SetBlockSignals(true);
-				_chkInspectorIsEnemy.ButtonPressed = unit.IsEnemy;
-				_chkInspectorIsEnemy.SetBlockSignals(false);
 			}
 			else if (selected is Prop3D prop)
 			{
 				typeStr = "PROP";
 				nameStr = prop.PropId.ToUpper();
-				_chkInspectorIsEnemy.Visible = false;
 			}
 			else if (selected is Decal decal)
 			{
 				typeStr = "DECAL";
 				nameStr = "DECAL";
-				_chkInspectorIsEnemy.Visible = false;
 			}
 			_lblInspectorTitle.Text = $"SELECTED: {nameStr}\n[{typeStr}]";
 			_lblInspectorPos.Text = $"Pos: {pos.X:F2}, {pos.Y:F2}, {pos.Z:F2}\nRot: {rot.Y:F1}° | Scale: {scale.X:F2}x";
@@ -3909,7 +3922,12 @@ public class {mapName} : IMapScript
 		SetupButton(_btnModuleObjects, "💂 OBJECTS", () => SwitchModule(EditorModule.Objects), 12);
 		_moduleBar.AddChild(_btnModuleObjects);
 
-		_panelLeft = new PanelContainer();
+		_btnModuleClipboard = new Button();
+		_btnModuleClipboard.Set("icon_max_width", 0);
+		SetupButton(_btnModuleClipboard, "📋 CLIPBOARD", () => SwitchModule(EditorModule.Clipboard), 12);
+		_moduleBar.AddChild(_btnModuleClipboard);
+
+		_panelLeft = new Panel();
 		_panelLeft.Name = "LeftSlidePanel";
 		_panelLeft.CustomMinimumSize = new Vector2(260, 0);
 		_panelLeft.LayoutMode = 1;
@@ -3919,8 +3937,14 @@ public class {mapName} : IMapScript
 		AddChild(_panelLeft);
 
 		var leftScroll = new ScrollContainer();
-		leftScroll.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		leftScroll.SizeFlagsVertical = SizeFlags.ExpandFill;
+		leftScroll.LayoutMode = 1;
+		leftScroll.SetAnchorsPreset(LayoutPreset.FullRect);
+		leftScroll.GrowHorizontal = GrowDirection.Both;
+		leftScroll.GrowVertical = GrowDirection.Both;
+		leftScroll.OffsetLeft = 10;
+		leftScroll.OffsetRight = -10;
+		leftScroll.OffsetTop = 40;
+		leftScroll.OffsetBottom = -10;
 		_panelLeft.AddChild(leftScroll);
 
 		var leftVBox = new VBoxContainer();
@@ -3960,8 +3984,8 @@ public class {mapName} : IMapScript
 		_btnLeftTab.SetAnchorsPreset(LayoutPreset.CenterRight);
 		_btnLeftTab.GrowHorizontal = GrowDirection.Begin;
 		_btnLeftTab.GrowVertical = GrowDirection.Both;
-		_btnLeftTab.OffsetLeft = 260;
-		_btnLeftTab.OffsetRight = 290;
+		_btnLeftTab.OffsetLeft = 6;
+		_btnLeftTab.OffsetRight = 36;
 		_btnLeftTab.OffsetTop = -60;
 		_btnLeftTab.OffsetBottom = 60;
 		_btnLeftTab.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
@@ -3973,7 +3997,7 @@ public class {mapName} : IMapScript
 
 		SetLeftPanelExpanded(false);
 
-		_panelRight = new PanelContainer();
+		_panelRight = new Panel();
 		_panelRight.Name = "RightSlidePanel";
 		_panelRight.CustomMinimumSize = new Vector2(300, 0);
 		_panelRight.LayoutMode = 1;
@@ -4002,8 +4026,14 @@ public class {mapName} : IMapScript
 		_panelRight.AddChild(_btnRightTab);
 
 		var rightScroll = new ScrollContainer();
-		rightScroll.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		rightScroll.SizeFlagsVertical = SizeFlags.ExpandFill;
+		rightScroll.LayoutMode = 1;
+		rightScroll.SetAnchorsPreset(LayoutPreset.FullRect);
+		rightScroll.GrowHorizontal = GrowDirection.Both;
+		rightScroll.GrowVertical = GrowDirection.Both;
+		rightScroll.OffsetLeft = 10;
+		rightScroll.OffsetRight = -10;
+		rightScroll.OffsetTop = 40;
+		rightScroll.OffsetBottom = -10;
 		_panelRight.AddChild(rightScroll);
 
 		_accordionContainer = new VBoxContainer();
@@ -4028,6 +4058,7 @@ public class {mapName} : IMapScript
 		var brushStrengthBox = GetNodeOrNull<Control>("PanelTextures/VBox/Content/SettingsVBox/BrushStrengthBox");
 		SafeReparent(brushStrengthBox, _contentBrush);
 		SafeReparent(_btnBrushShape, _contentBrush);
+		SafeReparent(_btnMirrorMode, _contentBrush);
 		SafeReparent(_chkBlockMode, _contentBrush);
 		SafeReparent(_stepBox, _contentBrush);
 
@@ -4161,7 +4192,6 @@ public class {mapName} : IMapScript
 		SetupAccordion(_btnHeaderViewport, _contentViewport, "Viewport Settings");
 
 		SafeReparent(_btnToggleGrid, _contentViewport);
-		SafeReparent(_btnMirrorMode, _contentViewport);
 		SafeReparent(_btnToggleCameraBounds, _contentViewport);
 
 		_accordionNavigation = new VBoxContainer();
@@ -4230,11 +4260,35 @@ public class {mapName} : IMapScript
 		SafeReparent(_btnDeleteObject, objectsHBox);
 		if (_btnClumpBrush != null) _btnClumpBrush.Visible = false;
 
+		_panelClipboard = new PanelContainer();
+		_panelClipboard.Name = "PanelClipboard";
+		_panelClipboard.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_panelClipboard.Visible = false;
+		_topToolbar.AddChild(_panelClipboard);
+
+		var clipboardHBox = new HBoxContainer();
+		clipboardHBox.AddThemeConstantOverride("separation", 8);
+		_panelClipboard.AddChild(clipboardHBox);
+
+		SafeReparent(_btnSelectArea, clipboardHBox);
+		SafeReparent(_btnCopy, clipboardHBox);
+		SafeReparent(_btnPaste, clipboardHBox);
+
+		_btnCut = new Button();
+		_btnCut.Name = "BtnCut";
+		_btnCut.Set("icon_max_width", 0);
+		SetupButton(_btnCut, "✂️ CUT", () => GameHost.Instance?.PerformCutAreaExternal(), 13, "Cut selected area (Copy and Erase)");
+		clipboardHBox.AddChild(_btnCut);
+
+		_btnEraseArea = new Button();
+		_btnEraseArea.Name = "BtnEraseArea";
+		_btnEraseArea.Set("icon_max_width", 0);
+		SetupButton(_btnEraseArea, "🗑️ ERASE AREA", () => GameHost.Instance?.PerformEraseAreaExternal(), 13, "Erase textures, heights, or entities in selected area");
+		clipboardHBox.AddChild(_btnEraseArea);
+
 		var topLeftBox = GetNode<HBoxContainer>("TopLeftBox");
 		SafeReparent(_btnUndo, topLeftBox);
 		SafeReparent(_btnRedo, topLeftBox);
-		SafeReparent(_btnCopy, topLeftBox);
-		SafeReparent(_btnPaste, topLeftBox);
 		SafeReparent(_btnEyedropper, topLeftBox);
 		
 		topLeftBox.MoveChild(_btnBackToHub, 0);
@@ -4243,9 +4297,7 @@ public class {mapName} : IMapScript
 		topLeftBox.MoveChild(_btnVSCode, 2);
 		topLeftBox.MoveChild(_btnUndo, 3);
 		topLeftBox.MoveChild(_btnRedo, 4);
-		topLeftBox.MoveChild(_btnCopy, 5);
-		topLeftBox.MoveChild(_btnPaste, 6);
-		topLeftBox.MoveChild(_btnEyedropper, 7);
+		topLeftBox.MoveChild(_btnEyedropper, 5);
 
 		foreach (Control child in contentFile.GetChildren())
 		{
@@ -4262,8 +4314,8 @@ public class {mapName} : IMapScript
 
 		if (_panelTerrain != null) _panelTerrain.Visible = (module == EditorModule.Terrain);
 		if (_panelDeco != null) _panelDeco.Visible = (module == EditorModule.TextureDeco);
-		if (_panelEnv != null) _panelEnv.Visible = (module == EditorModule.TextureDeco);
 		if (_panelObjects != null) _panelObjects.Visible = (module == EditorModule.Objects);
+		if (_panelClipboard != null) _panelClipboard.Visible = (module == EditorModule.Clipboard);
 
 		if (GameHost.Instance != null)
 		{
@@ -4278,13 +4330,16 @@ public class {mapName} : IMapScript
 				case EditorModule.Objects:
 					TriggerAddObjectMode();
 					break;
+				case EditorModule.Clipboard:
+					TriggerToolSelection(GameHost.EditorTool.SelectArea, _btnSelectArea);
+					break;
 			}
 		}
 	}
 
 	private void UpdateModuleSwitchButtons()
 	{
-		if (_btnModuleTerrain == null || _btnModulePaint == null || _btnModuleObjects == null) return;
+		if (_btnModuleTerrain == null || _btnModulePaint == null || _btnModuleObjects == null || _btnModuleClipboard == null) return;
 
 		var activeStyle = new StyleBoxFlat();
 		activeStyle.BgColor = new Color(0.15f, 0.45f, 0.7f, 0.8f);
@@ -4298,6 +4353,7 @@ public class {mapName} : IMapScript
 		_btnModuleTerrain.RemoveThemeStyleboxOverride("normal");
 		_btnModulePaint.RemoveThemeStyleboxOverride("normal");
 		_btnModuleObjects.RemoveThemeStyleboxOverride("normal");
+		_btnModuleClipboard.RemoveThemeStyleboxOverride("normal");
 
 		if (_activeModule == EditorModule.Terrain) _btnModuleTerrain.AddThemeStyleboxOverride("normal", activeStyle);
 		else _btnModuleTerrain.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
@@ -4307,6 +4363,9 @@ public class {mapName} : IMapScript
 
 		if (_activeModule == EditorModule.Objects) _btnModuleObjects.AddThemeStyleboxOverride("normal", activeStyle);
 		else _btnModuleObjects.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+
+		if (_activeModule == EditorModule.Clipboard) _btnModuleClipboard.AddThemeStyleboxOverride("normal", activeStyle);
+		else _btnModuleClipboard.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 	}
 
 	private void SetupAccordion(Button headerBtn, Control contentControl, string titleText)
@@ -4445,6 +4504,12 @@ public class {mapName} : IMapScript
 		if (_accordionPlacement != null)
 		{
 			_accordionPlacement.Visible = hasPlacementConfig;
+		}
+		if (_chkClumpMode != null)
+		{
+			_chkClumpMode.Visible = isPlacement;
+			if (_densityBox != null) _densityBox.Visible = isPlacement && _chkClumpMode.ButtonPressed;
+			if (_scaleVarBox != null) _scaleVarBox.Visible = isPlacement && _chkClumpMode.ButtonPressed;
 		}
 
 		bool hasSelectedObject = GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject);

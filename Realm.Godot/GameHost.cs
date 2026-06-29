@@ -5004,6 +5004,89 @@ public class {mapName} : IMapScript
 					GetViewport().SetInputAsHandled();
 					return;
 				}
+				bool isNumpadNudge = editorKeyEvent.Keycode == Key.Kp1 ||
+									 editorKeyEvent.Keycode == Key.Kp2 ||
+									 editorKeyEvent.Keycode == Key.Kp3 ||
+									 editorKeyEvent.Keycode == Key.Kp4 ||
+									 editorKeyEvent.Keycode == Key.Kp6 ||
+									 editorKeyEvent.Keycode == Key.Kp7 ||
+									 editorKeyEvent.Keycode == Key.Kp8 ||
+									 editorKeyEvent.Keycode == Key.Kp9;
+
+				if (isNumpadNudge)
+				{
+					if (GodotObject.IsInstanceValid(SelectedEditorObject) && SelectedEditorObject is Node3D node3D)
+					{
+						Vector3 nudgeDir = Vector3.Zero;
+						if (editorKeyEvent.Keycode == Key.Kp8) nudgeDir = new Vector3(0, 0, -1);
+						else if (editorKeyEvent.Keycode == Key.Kp2) nudgeDir = new Vector3(0, 0, 1);
+						else if (editorKeyEvent.Keycode == Key.Kp4) nudgeDir = new Vector3(-1, 0, 0);
+						else if (editorKeyEvent.Keycode == Key.Kp6) nudgeDir = new Vector3(1, 0, 0);
+						else if (editorKeyEvent.Keycode == Key.Kp7) nudgeDir = new Vector3(-1, 0, -1).Normalized();
+						else if (editorKeyEvent.Keycode == Key.Kp9) nudgeDir = new Vector3(1, 0, -1).Normalized();
+						else if (editorKeyEvent.Keycode == Key.Kp1) nudgeDir = new Vector3(-1, 0, 1).Normalized();
+						else if (editorKeyEvent.Keycode == Key.Kp3) nudgeDir = new Vector3(1, 0, 1).Normalized();
+
+						float nudgeDistance = 1.0f;
+						Vector3 targetPos = node3D.Position + nudgeDir * nudgeDistance;
+						
+						bool valid = true;
+						if (GroundTerrain != null)
+						{
+							float spacing = GroundTerrain.Spacing;
+							int width = GroundTerrain.Width;
+							int depth = GroundTerrain.Depth;
+							float halfW = (width - 1) / 2.0f * spacing;
+							float halfD = (depth - 1) / 2.0f * spacing;
+							if (Mathf.Abs(targetPos.X) > halfW || Mathf.Abs(targetPos.Z) > halfD)
+							{
+								valid = false;
+							}
+						}
+
+						if (valid)
+						{
+							float radius = 1.0f;
+							if (node3D is Unit3D u) radius = GetPlacementRadius(u.UnitId, u.Scale.X);
+							else if (node3D is Prop3D p) radius = GetPlacementRadius(p.PropId, p.Scale.X);
+
+							if (IsPositionBlocked(targetPos, radius, node3D))
+							{
+								valid = false;
+							}
+						}
+
+						if (valid)
+						{
+							targetPos.Y = GetTerrainHeightAt(targetPos);
+							bool isUnit = node3D is Unit3D;
+							bool isEnemy = isUnit ? (node3D as Unit3D).IsEnemy : false;
+							var action = new ObjectTransformAction(
+								node3D,
+								node3D.Position, targetPos,
+								node3D.RotationDegrees, node3D.RotationDegrees,
+								node3D.Scale, node3D.Scale,
+								isEnemy, isEnemy
+							);
+							node3D.Position = targetPos;
+							if (node3D is Unit3D unit && EcsWorld.IsAlive(unit.Entity))
+							{
+								EcsWorld.Set(unit.Entity, new Position(new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z)));
+							}
+							EditorHistoryManager.RecordAction(action);
+							EditorHasUnsavedChanges = true;
+							MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
+							MapEditorHUD.Instance?.ShowFeedbackExternal("Object nudged");
+						}
+						else
+						{
+							UIManager.Instance?.PlayWarningSound();
+						}
+					}
+					GetViewport().SetInputAsHandled();
+					return;
+				}
+
 				if (editorKeyEvent.Keycode == Key.Minus)
 				{
 					EditorBrushStrength = Mathf.Max(0.1f, EditorBrushStrength - 0.5f);
@@ -5352,18 +5435,33 @@ public class {mapName} : IMapScript
 						if (!_hasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
 						float placementRot = (EditorRandomRotation && !_isPastingObject) ? _cachedRandomRotation : EditorPlacementRotation;
 						float scaleVal = (EditorRandomScale && !_isPastingObject) ? _cachedRandomScale : EditorPlacementScale;
-						var unit = SpawnUnitExternal(ActivePlaceId, hitPos, PlaceUnitIsEnemy, placementRot, scaleVal);
+
+						Vector3 spawnPos = hitPos;
+						spawnPos.Y = GetTerrainHeightAt(spawnPos);
+						float radius = GetPlacementRadius(ActivePlaceId, scaleVal);
+						var finalPos = FindNearestFreePosition(spawnPos, radius);
+						if (finalPos == null)
+						{
+							MapEditorHUD.Instance?.ShowFeedbackExternal("invalid location");
+							UIManager.Instance?.PlayWarningSound();
+							GetViewport().SetInputAsHandled();
+							return;
+						}
+						spawnPos = finalPos.Value;
+
+						var unit = SpawnUnitExternal(ActivePlaceId, spawnPos, PlaceUnitIsEnemy, placementRot, scaleVal);
 						if (unit != null)
 						{
 							var actions = new List<IEditorAction> {
-								new ObjectSpawnAction("unit", ActivePlaceId, hitPos, placementRot, scaleVal, PlaceUnitIsEnemy, unit)
+								new ObjectSpawnAction("unit", ActivePlaceId, spawnPos, placementRot, scaleVal, PlaceUnitIsEnemy, unit)
 							};
 							if (EditorMirrorMode != MirrorMode.None)
 							{
-								foreach (var t in GetMirroredTransforms(hitPos, placementRot))
+								foreach (var t in GetMirroredTransforms(spawnPos, placementRot))
 								{
 									Vector3 mPos = t.Position;
 									mPos.Y = GetTerrainHeightAt(mPos);
+									if (IsPositionBlocked(mPos, radius)) continue;
 									var mUnit = SpawnUnitExternal(ActivePlaceId, mPos, PlaceUnitIsEnemy, t.Rotation, scaleVal);
 									if (mUnit != null)
 									{
@@ -5385,18 +5483,33 @@ public class {mapName} : IMapScript
 						if (!_hasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
 						float placementRot = (EditorRandomRotation && !_isPastingObject) ? _cachedRandomRotation : EditorPlacementRotation;
 						float scaleVal = (EditorRandomScale && !_isPastingObject) ? _cachedRandomScale : EditorPlacementScale;
-						var prop = SpawnPropExternalWithParams(ActivePlaceId, hitPos, placementRot, scaleVal);
+
+						Vector3 spawnPos = hitPos;
+						spawnPos.Y = GetTerrainHeightAt(spawnPos);
+						float radius = GetPlacementRadius(ActivePlaceId, scaleVal);
+						var finalPos = FindNearestFreePosition(spawnPos, radius);
+						if (finalPos == null)
+						{
+							MapEditorHUD.Instance?.ShowFeedbackExternal("invalid location");
+							UIManager.Instance?.PlayWarningSound();
+							GetViewport().SetInputAsHandled();
+							return;
+						}
+						spawnPos = finalPos.Value;
+
+						var prop = SpawnPropExternalWithParams(ActivePlaceId, spawnPos, placementRot, scaleVal);
 						if (prop != null)
 						{
 							var actions = new List<IEditorAction> {
-								new ObjectSpawnAction("prop", ActivePlaceId, hitPos, placementRot, scaleVal, false, prop)
+								new ObjectSpawnAction("prop", ActivePlaceId, spawnPos, placementRot, scaleVal, false, prop)
 							};
 							if (EditorMirrorMode != MirrorMode.None)
 							{
-								foreach (var t in GetMirroredTransforms(hitPos, placementRot))
+								foreach (var t in GetMirroredTransforms(spawnPos, placementRot))
 								{
 									Vector3 mPos = t.Position;
 									mPos.Y = GetTerrainHeightAt(mPos);
+									if (IsPositionBlocked(mPos, radius)) continue;
 									var mProp = SpawnPropExternalWithParams(ActivePlaceId, mPos, t.Rotation, scaleVal);
 									if (mProp != null)
 									{
@@ -9183,6 +9296,98 @@ public class {mapName} : IMapScript
 		}
 	}
 
+	private bool IsPositionBlocked(Vector3 pos, float checkRadius, Node3D ignoreNode = null)
+	{
+		foreach (var unit in AllUnits)
+		{
+			if (unit == ignoreNode || !GodotObject.IsInstanceValid(unit)) continue;
+			float distXZ = new Vector2(unit.GlobalPosition.X - pos.X, unit.GlobalPosition.Z - pos.Z).Length();
+			float r1 = checkRadius;
+			float r2 = unit.Scale.X * 1.2f;
+			if (unit.UnitId == "castle") r2 = unit.Scale.X * 5.0f;
+			else if (unit.UnitId == "tower") r2 = unit.Scale.X * 2.5f;
+			if (distXZ < (r1 + r2) * 0.85f)
+			{
+				return true;
+			}
+		}
+
+		foreach (var node in GetChildren())
+		{
+			if (node == ignoreNode || !GodotObject.IsInstanceValid(node)) continue;
+			if (node is Prop3D prop)
+			{
+				float distXZ = new Vector2(prop.GlobalPosition.X - pos.X, prop.GlobalPosition.Z - pos.Z).Length();
+				float r1 = checkRadius;
+				float r2 = prop.Scale.X * 1.5f;
+				if (prop.PropId == "goldmine") r2 = prop.Scale.X * 4.0f;
+				if (distXZ < (r1 + r2) * 0.85f)
+				{
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	private float GetPlacementRadius(string placeId, float scale)
+	{
+		if (string.IsNullOrEmpty(placeId)) return 1.2f * scale;
+		string lowerId = placeId.ToLower();
+		float baseRadius = 1.2f;
+		if (lowerId.Contains("castle")) baseRadius = 5.0f;
+		else if (lowerId.Contains("tower")) baseRadius = 2.5f;
+		else if (lowerId.Contains("goldmine")) baseRadius = 4.0f;
+		else if (lowerId.Contains("logo") || lowerId.Contains("flag") || lowerId.Contains("rune")) baseRadius = 1.0f;
+		return baseRadius * scale;
+	}
+
+	private Vector3? FindNearestFreePosition(Vector3 startPos, float checkRadius, float maxSearchDist = 20.0f)
+	{
+		if (!IsPositionBlocked(startPos, checkRadius))
+		{
+			return startPos;
+		}
+
+		float stepDist = 1.0f;
+		int numSteps = Mathf.CeilToInt(maxSearchDist / stepDist);
+
+		for (int i = 1; i <= numSteps; i++)
+		{
+			float dist = i * stepDist;
+			int numAngles = 8 + i * 4;
+			for (int a = 0; a < numAngles; a++)
+			{
+				float angle = a * (Mathf.Pi * 2.0f) / numAngles;
+				Vector3 testPos = new Vector3(
+					startPos.X + dist * Mathf.Cos(angle),
+					startPos.Y,
+					startPos.Z + dist * Mathf.Sin(angle)
+				);
+
+				if (GroundTerrain != null)
+				{
+					float spacing = GroundTerrain.Spacing;
+					int width = GroundTerrain.Width;
+					int depth = GroundTerrain.Depth;
+					float halfW = (width - 1) / 2.0f * spacing;
+					float halfD = (depth - 1) / 2.0f * spacing;
+					if (Mathf.Abs(testPos.X) > halfW || Mathf.Abs(testPos.Z) > halfD) continue;
+				}
+
+				testPos.Y = GetTerrainHeightAt(testPos);
+
+				if (!IsPositionBlocked(testPos, checkRadius))
+				{
+					return testPos;
+				}
+			}
+		}
+
+		return null;
+	}
+
 	private void ApplyPropClumpSpawn(Vector3 centerPos)
 	{
 		if (string.IsNullOrEmpty(ActivePlaceId)) return;
@@ -10116,6 +10321,125 @@ public class {mapName} : IMapScript
 			EditorHistoryManager.RecordAction(composite);
 			EditorHasUnsavedChanges = true;
 			MapEditorHUD.Instance?.ShowFeedbackExternal("Pasted Area");
+		}
+	}
+
+	public void PerformEraseAreaExternal()
+	{
+		PerformEraseArea();
+	}
+
+	public void PerformCutAreaExternal()
+	{
+		if (GroundTerrain == null || _selectionStart == null || _selectionEnd == null)
+		{
+			MapEditorHUD.Instance?.ShowFeedbackExternal("Nothing to Cut (select an area first)");
+			return;
+		}
+
+		PerformCopyArea();
+		PerformEraseArea();
+		MapEditorHUD.Instance?.ShowFeedbackExternal("Area Cut");
+	}
+
+	private void PerformEraseArea()
+	{
+		if (GroundTerrain == null || _selectionStart == null || _selectionEnd == null)
+		{
+			MapEditorHUD.Instance?.ShowFeedbackExternal("Nothing to Erase (select an area first)");
+			return;
+		}
+
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+		float spacing = GroundTerrain.Spacing;
+		int minX = Mathf.Min(_selectionStart.Value.X, _selectionEnd.Value.X);
+		int minZ = Mathf.Min(_selectionStart.Value.Y, _selectionEnd.Value.Y);
+		int maxX = Mathf.Max(_selectionStart.Value.X, _selectionEnd.Value.X);
+		int maxZ = Mathf.Max(_selectionStart.Value.Y, _selectionEnd.Value.Y);
+		int selWidth = maxX - minX + 1;
+		int selDepth = maxZ - minZ + 1;
+
+		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
+		var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
+		bool terrainModified = false;
+
+		if (PasteOptionHeights || PasteOptionTextures)
+		{
+			for (int sz = 0; sz < selDepth; sz++)
+			{
+				for (int sx = 0; sx < selWidth; sx++)
+				{
+					int targetX = minX + sx;
+					int targetZ = minZ + sz;
+					if (targetX >= 0 && targetX < width && targetZ >= 0 && targetZ < depth)
+					{
+						if (PasteOptionHeights) GroundTerrain.Heights[targetX, targetZ] = 0.0f;
+						if (PasteOptionTextures) GroundTerrain.Colors[targetX, targetZ] = new Color(0.2f, 0.45f, 0.15f);
+						terrainModified = true;
+					}
+				}
+			}
+		}
+
+		if (terrainModified)
+		{
+			GroundTerrain.UpdateMeshAndPhysics(PasteOptionHeights, false);
+			if (PasteOptionHeights)
+			{
+				AlignAllEntitiesToTerrain();
+			}
+		}
+
+		var deleteActions = new List<IEditorAction>();
+		if (PasteOptionEntities)
+		{
+			float minWorldX = (minX - (width - 1) / 2.0f) * spacing - spacing * 0.5f;
+			float maxWorldX = (maxX - (width - 1) / 2.0f) * spacing + spacing * 0.5f;
+			float minWorldZ = (minZ - (depth - 1) / 2.0f) * spacing - spacing * 0.5f;
+			float maxWorldZ = (maxZ - (depth - 1) / 2.0f) * spacing + spacing * 0.5f;
+
+			var toDelete = new List<Node3D>();
+			foreach (var child in GetChildren())
+			{
+				if (child is Node3D n3d && GodotObject.IsInstanceValid(n3d) && n3d != _editorPreviewNode)
+				{
+					Vector3 pos = n3d.Position;
+					if (pos.X >= minWorldX && pos.X <= maxWorldX && pos.Z >= minWorldZ && pos.Z <= maxWorldZ)
+					{
+						if (n3d is Unit3D || n3d is Prop3D || n3d is Decal)
+						{
+							toDelete.Add(n3d);
+						}
+					}
+				}
+			}
+
+			foreach (var node in toDelete)
+			{
+				var act = DeleteObjectAtWithUndo(node, node.Position);
+				if (act != null) deleteActions.Add(act);
+			}
+		}
+
+		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
+		var colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
+		var actions = new List<IEditorAction>();
+		if (terrainModified)
+		{
+			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, colorsBefore, colorsAfter));
+		}
+		if (deleteActions.Count > 0)
+		{
+			actions.AddRange(deleteActions);
+		}
+
+		if (actions.Count > 0)
+		{
+			var composite = new CompositeAction(actions);
+			EditorHistoryManager.RecordAction(composite);
+			EditorHasUnsavedChanges = true;
+			MapEditorHUD.Instance?.ShowFeedbackExternal("Area Erased");
 		}
 	}
 
@@ -11121,6 +11445,7 @@ public class {mapName} : IMapScript
 
 	public Unit3D SpawnUnitExternal(string unitId, Vector3 position, bool isEnemy, float rotationY, float scale)
 	{
+		position.Y = GetTerrainHeightAt(position);
 		if (!UnitRegistry.ContainsKey(unitId))
 		{
 			var dynamicMeta = new UnitMetadata
@@ -11458,6 +11783,15 @@ public class {mapName} : IMapScript
 				previewPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * spacing;
 			}
 			previewPos.Y = GetTerrainHeightAt(previewPos);
+			if (ActiveEditorTool == EditorTool.PlaceUnit || ActiveEditorTool == EditorTool.PlaceProp)
+			{
+				float radius = GetPlacementRadius(ActivePlaceId, previewScaleVal);
+				var finalPos = FindNearestFreePosition(previewPos, radius);
+				if (finalPos != null)
+				{
+					previewPos = finalPos.Value;
+				}
+			}
 			_editorPreviewNode.Position = previewPos;
 			_editorPreviewNode.RotationDegrees = new Vector3(0.0f, previewRot, 0.0f);
 			if (_editorPreviewNode is Decal previewDecal)
