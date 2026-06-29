@@ -2749,6 +2749,11 @@ public partial class InGameHUD : Control
 
 	private bool TryTriggerCheat(string text)
 	{
+		if (Multiplayer.MultiplayerPeer != null)
+		{
+			return false;
+		}
+
 		string lower = text.ToLowerInvariant().Trim();
 		
 		if (lower == "stonks" || lower == "securethebag")
@@ -2860,6 +2865,14 @@ public partial class InGameHUD : Control
 			return true;
 		}
 
+		if (lower == "nocap" || lower == "verydemure")
+		{
+			_fogOfWarType = "visible";
+			ShowFeedbackText("Cheat Activated: Fog of War removed! No cap.", new Color(0.2f, 0.8f, 0.5f));
+			_chatLog.Text += "[color=#ffd700]System: Cheat 'nocap' activated. Fog of War disabled.[/color]\n";
+			return true;
+		}
+
 		return false;
 	}
 
@@ -2952,11 +2965,7 @@ public partial class InGameHUD : Control
 			("Alt+G",      "Ping map alert"),
 			("", ""),
 			("Chat / Cheats:", ""),
-			("Enter",      "Open chat (also type cheats here)"),
-			("stonks",     "Cheat: +10000 resources"),
-			("gigachad",   "Cheat: godmode selected units"),
-			("thanossnap", "Cheat: kill all enemies"),
-			("ezclap",     "Cheat: instant victory"),
+			("Enter",      "Open chat"),
 			("", ""),
 			("[F5]",       "Toggle this hotkey panel"),
 			("[Esc]",      "Cancel / clear selection / open settings"),

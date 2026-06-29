@@ -12,6 +12,50 @@ using System.Threading.Tasks;
 public partial class LobbyManager : Node
 {
     public static LobbyManager Instance { get; private set; }
+    public static readonly string GameBinaryVersion = GetGameBinaryVersion();
+
+    private static string GetGameBinaryVersion()
+    {
+        try
+        {
+            if (OS.HasFeature("editor"))
+            {
+                var assembly = typeof(LobbyManager).Assembly;
+                if (!string.IsNullOrEmpty(assembly.Location))
+                {
+                    var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
+                    if (!string.IsNullOrEmpty(versionInfo.ProductVersion))
+                    {
+                        return versionInfo.ProductVersion.Trim();
+                    }
+                }
+                return "1.0.0";
+            }
+
+            string exePath = OS.GetExecutablePath();
+            if (!string.IsNullOrEmpty(exePath))
+            {
+                var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(exePath);
+                string version = versionInfo.ProductVersion;
+                if (!string.IsNullOrEmpty(version))
+                {
+                    return version.Trim();
+                }
+                version = versionInfo.FileVersion;
+                if (!string.IsNullOrEmpty(version))
+                {
+                    return version.Trim();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"Failed to read version from executable: {ex.Message}");
+        }
+
+        return "1.0.0";
+    }
+
 
     public class PlayerInfo
     {
@@ -25,6 +69,8 @@ public partial class LobbyManager : Node
         public string Latency { get; set; } = "--";
         public string Jitter { get; set; } = "--";
         public string PacketLoss { get; set; } = "--";
+        public bool IsReady { get; set; }
+        public string BinaryVersion { get; set; } = "";
     }
 
     public class ServersConfig
@@ -46,6 +92,8 @@ public partial class LobbyManager : Node
     public bool IsGameStarted { get; set; }
     public string ActiveMapName { get; set; } = "green_td";
     public bool SpectatorDelay { get; set; } = false;
+    public string HostStability { get; set; } = "Excellent";
+    public event System.Action<string> HostStabilityUpdated;
 
     // Player List
     public List<PlayerInfo> PlayerList { get; } = new();
@@ -59,6 +107,12 @@ public partial class LobbyManager : Node
     private string? _hostPublicIp;
     private int _hostPublicPort;
     private MapDistributionServer? _mapServer;
+    private string? _hostToken;
+    private string? _countdownMapName;
+    private int _countdownRemaining;
+    private SceneTreeTimer? _countdownTimer;
+    private SceneTreeTimer? _diagnosticsTimer;
+    private readonly List<(string Sender, string Message)> _chatHistory = new();
 
     public void SwitchToNextServer()
     {
@@ -102,6 +156,10 @@ public partial class LobbyManager : Node
     public event Action? MapDownloadCompleted;
     public event Action? MapDownloadFailed;
     public event Action<bool>? SpectatorDelayChanged;
+    public event Action<string, int>? CountdownStarted;
+    public event Action<int>? CountdownTick;
+    public event Action? CountdownCancelled;
+    public event Action? CountdownFinished;
 
     public override void _Ready()
     {
@@ -121,6 +179,57 @@ public partial class LobbyManager : Node
         RunNatTypeTest();
 
         Task.Run(() => MapAssetManager.PruneGlobalArchive());
+        AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
+    }
+
+    public override void _Notification(int what)
+    {
+        if (what == (int)NotificationWMCloseRequest || what == (int)NotificationPredelete)
+        {
+            CleanUpLobbySynchronously();
+        }
+        base._Notification(what);
+    }
+
+    private void OnProcessExit(object? sender, EventArgs e)
+    {
+        CleanUpLobbySynchronously();
+    }
+
+    private readonly object _cleanupLock = new object();
+    private bool _cleanedUp;
+
+    private void CleanUpLobbySynchronously()
+    {
+        lock (_cleanupLock)
+        {
+            if (_cleanedUp) return;
+            _cleanedUp = true;
+        }
+
+        if (IsHost && !string.IsNullOrEmpty(ActiveLobbyId) && !string.IsNullOrEmpty(_hostToken))
+        {
+            string lobbyIdToClose = ActiveLobbyId;
+            string tokenToClose = _hostToken;
+            _hostToken = null;
+
+            try
+            {
+                GD.Print($"[LobbyManager] Closing lobby {lobbyIdToClose} synchronously before exit...");
+                var payload = new { LobbyId = lobbyIdToClose, HostToken = tokenToClose };
+                var jsonContent = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                
+                var task = Task.Run(async () =>
+                {
+                    await _httpClient.PostAsync($"{RegistryServerUrl}/lobbies/close", jsonContent);
+                });
+                task.Wait(2000);
+            }
+            catch (Exception ex)
+            {
+                GD.PrintErr($"[LobbyManager] Failed synchronous lobby close on exit: {ex.Message}");
+            }
+        }
     }
 
     private void LoadServersConfig()
@@ -132,7 +241,7 @@ public partial class LobbyManager : Node
             string jsonText = file.GetAsText();
             try
             {
-                var config = JsonSerializer.Deserialize<ServersConfig>(jsonText);
+                var config = JsonSerializer.Deserialize<ServersConfig>(jsonText, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (config != null && config.RegistryServers != null && config.RegistryServers.Count > 0)
                 {
                     RegistryServers = config.RegistryServers;
@@ -215,6 +324,7 @@ public partial class LobbyManager : Node
     public async Task<bool> HostLobbyAsync(string mapName)
     {
         IsHost = true;
+        HostStability = HostStabilityTracker.GetOverallStability();
         IsGameStarted = false;
         SpectatorDelay = false;
         PlayerList.Clear();
@@ -228,7 +338,11 @@ public partial class LobbyManager : Node
             Faction = "HUMAN",
             Team = "Team 1",
             Color = new Color(0.8f, 0.1f, 0.1f),
-            IsHost = true
+            IsHost = true,
+            Latency = "0 ms",
+            Jitter = "0 ms",
+            PacketLoss = "0%",
+            BinaryVersion = GameBinaryVersion
         };
         PlayerList.Add(LocalPlayer);
 
@@ -257,6 +371,7 @@ public partial class LobbyManager : Node
 
         // Start diagnostic listener on ENetPort + 1
         Diagnostics.StartHostListener(ENetPort + 1);
+        StartHostDiagnosticsTimer();
 
         // Start Map Distribution Server on ENetPort + 10
         try
@@ -273,6 +388,7 @@ public partial class LobbyManager : Node
         // 4. Register to Registry Server with failover
         try
         {
+            int hostPingBaseline = await MeasurePingToRegistryAsync();
             var registerPayload = new
             {
                 Map = mapName,
@@ -281,7 +397,8 @@ public partial class LobbyManager : Node
                 ReportedHostIP = _hostPublicIp ?? "127.0.0.1",
                 PasswordHash = "",
                 MaxPlayers = MaxPlayers,
-                SlotsUsed = PlayerList.Count
+                SlotsUsed = PlayerList.Count,
+                HostPingBaseline = hostPingBaseline
             };
 
             HttpResponseMessage? response = null;
@@ -312,6 +429,10 @@ public partial class LobbyManager : Node
             var respText = await response.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(respText);
             ActiveLobbyId = doc.RootElement.GetProperty("lobbyId").GetString();
+            if (doc.RootElement.TryGetProperty("hostToken", out var hostTokenProp))
+            {
+                _hostToken = hostTokenProp.GetString();
+            }
             GD.Print($"[LobbyManager] Lobby registered on server. LobbyId: {ActiveLobbyId}");
 
             // 5. Connect WebSocket for incoming client hole punching alerts
@@ -345,7 +466,8 @@ public partial class LobbyManager : Node
             Faction = "HUMAN",
             Team = "Team 1",
             Color = new Color(0.1f, 0.4f, 0.8f),
-            IsHost = false
+            IsHost = false,
+            BinaryVersion = GameBinaryVersion
         };
 
         // 2. STUN NAT Type Test required on lobby join
@@ -432,6 +554,30 @@ public partial class LobbyManager : Node
     public void Disconnect()
     {
         GD.Print("[LobbyManager] Disconnecting...");
+        _countdownRemaining = 0;
+        _countdownMapName = null;
+        StopHostDiagnosticsTimer();
+        _chatHistory.Clear();
+
+        if (IsHost && !string.IsNullOrEmpty(ActiveLobbyId) && !string.IsNullOrEmpty(_hostToken))
+        {
+            string lobbyIdToClose = ActiveLobbyId;
+            string tokenToClose = _hostToken;
+            Task.Run(async () =>
+            {
+                try
+                {
+                    var payload = new { LobbyId = lobbyIdToClose, HostToken = tokenToClose };
+                    var jsonContent = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                    await _httpClient.PostAsync($"{RegistryServerUrl}/lobbies/close", jsonContent);
+                }
+                catch (Exception ex)
+                {
+                    GD.PrintErr($"[LobbyManager] Failed to close lobby {lobbyIdToClose} on server: {ex.Message}");
+                }
+            });
+            _hostToken = null;
+        }
         
         // Stop server processes
         Diagnostics.StopHostListener();
@@ -575,13 +721,16 @@ public partial class LobbyManager : Node
                 Faction = "HUMAN",
                 Team = "Team 1",
                 Color = GetNextColor(),
-                IsHost = false
+                IsHost = false,
+                BinaryVersion = GameBinaryVersion
             };
             PlayerList.Add(newPlayer);
+            SendChatMessage("System", string.Format(Tr("{0} joined the lobby."), newPlayer.Name));
 
             // 3. Broadcast sync message to all peers
-            BroadcastPlayerList();
+            UpdateAllPeerDiagnostics();
             RpcId(id, nameof(SyncSpectatorDelay), SpectatorDelay);
+            RpcId(id, nameof(SyncHostStability), HostStability);
         }
     }
 
@@ -596,13 +745,16 @@ public partial class LobbyManager : Node
             int removedIdx = PlayerList.FindIndex(p => p.PeerId == id);
             if (removedIdx >= 0)
             {
+                var leavingPlayer = PlayerList[removedIdx];
+                string name = leavingPlayer.Name;
                 PlayerList.RemoveAt(removedIdx);
                 // Shift slots down to avoid gaps
                 for (int i = 0; i < PlayerList.Count; i++)
                 {
                     PlayerList[i].Slot = i;
                 }
-                BroadcastPlayerList();
+                UpdateAllPeerDiagnostics();
+                SendChatMessage("System", string.Format(Tr("{0} left the lobby."), name));
             }
         }
     }
@@ -615,17 +767,6 @@ public partial class LobbyManager : Node
         
         if (!string.IsNullOrEmpty(_connectedHostIp))
         {
-            // UDP Diagnostics in background
-            Task.Run(async () =>
-            {
-                GD.Print($"[LobbyManager] Running automatic UDP diagnostics against host {_connectedHostIp}...");
-                var result = await Diagnostics.RunClientDiagnosticsAsync(_connectedHostIp, ENetPort + 1, (progress) =>
-                {
-                    UpdateDiagnostics(myId, progress.MinRtt, progress.MaxRtt, progress.AvgRtt, progress.Jitter, progress.LossPercentage, progress.MaxConsecutiveLoss);
-                });
-                UpdateDiagnostics(myId, result.MinRtt, result.MaxRtt, result.AvgRtt, result.Jitter, result.LossPercentage, result.MaxConsecutiveLoss);
-            });
-
             // Map download in background
             Task.Run(async () =>
             {
@@ -759,17 +900,83 @@ public partial class LobbyManager : Node
             RpcId(1, nameof(UpdateDiagnostics), peerId, minRtt, maxRtt, avgRtt, jitter, lossRate, consecutiveLoss);
         }
     }
+    public void UpdateReadyState(int peerId, bool isReady)
+    {
+        if (IsHost)
+        {
+            var p = PlayerList.Find(x => x.PeerId == peerId);
+            if (p != null)
+            {
+                p.IsReady = isReady;
+                UpdateAllPeerDiagnostics();
+            }
+        }
+        else
+        {
+            RpcId(1, nameof(UpdateReadyStateOnHost), peerId, isReady);
+        }
+    }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void UpdateReadyStateOnHost(int peerId, bool isReady)
+    {
+        if (IsHost)
+        {
+            var p = PlayerList.Find(x => x.PeerId == peerId);
+            if (p != null)
+            {
+                p.IsReady = isReady;
+                UpdateAllPeerDiagnostics();
+            }
+        }
+    }
+
     public void SendChatMessage(string senderName, string message)
     {
         if (IsHost)
         {
+            _chatHistory.Add((senderName, message));
+            Rpc(nameof(ReceiveChatMessage), senderName, message);
+            ChatReceived?.Invoke(senderName, message);
+        }
+        else
+        {
+            RpcId(1, nameof(ReceiveChatMessage), senderName, message);
+        }
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void ReceiveChatMessage(string senderName, string message)
+    {
+        if (IsHost)
+        {
+            _chatHistory.Add((senderName, message));
             // Host relays to everyone
-            Rpc(nameof(SendChatMessage), senderName, message);
+            Rpc(nameof(ReceiveChatMessage), senderName, message);
         }
         
         ChatReceived?.Invoke(senderName, message);
+    }
+
+    public void RequestChatHistory()
+    {
+        if (!IsHost)
+        {
+            RpcId(1, nameof(RequestChatHistoryFromHost));
+        }
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void RequestChatHistoryFromHost()
+    {
+        if (IsHost)
+        {
+            int senderId = Multiplayer.GetRemoteSenderId();
+            foreach (var chat in _chatHistory)
+            {
+                RpcId(senderId, nameof(ReceiveChatMessage), chat.Sender, chat.Message);
+            }
+        }
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
@@ -821,14 +1028,88 @@ public partial class LobbyManager : Node
         SpectatorDelayChanged?.Invoke(enabled);
     }
 
+    [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void SyncHostStability(string stability)
+    {
+        HostStability = stability;
+        HostStabilityUpdated?.Invoke(stability);
+    }
+
     // --- HELPERS ---
 
     public void StartGame(string mapName)
     {
         if (IsHost)
         {
-            Rpc(nameof(LoadMap), mapName);
+            if (_countdownRemaining > 0)
+            {
+                return;
+            }
+            Rpc(nameof(BroadcastStartCountdown), mapName);
         }
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void BroadcastStartCountdown(string mapName)
+    {
+        if (IsHost)
+        {
+            SendChatMessage("System", string.Format(Tr("Game starting in 5 seconds on map: {0}."), mapName));
+        }
+        _countdownMapName = mapName;
+        _countdownRemaining = 5;
+        CountdownStarted?.Invoke(mapName, _countdownRemaining);
+        TickCountdown();
+    }
+
+    private void TickCountdown()
+    {
+        if (_countdownRemaining <= 0)
+        {
+            CountdownFinished?.Invoke();
+            if (IsHost && _countdownMapName != null)
+            {
+                Rpc(nameof(LoadMap), _countdownMapName);
+            }
+            return;
+        }
+
+        _countdownTimer = GetTree().CreateTimer(1.0f);
+        _countdownTimer.Timeout += OnCountdownTimerTimeout;
+    }
+
+    private void OnCountdownTimerTimeout()
+    {
+        if (_countdownRemaining > 0)
+        {
+            _countdownRemaining--;
+            CountdownTick?.Invoke(_countdownRemaining);
+            TickCountdown();
+        }
+    }
+
+    public void RequestCancelCountdown()
+    {
+        Rpc(nameof(BroadcastCancelCountdown));
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void BroadcastCancelCountdown()
+    {
+        if (IsHost)
+        {
+            int senderId = Multiplayer.GetRemoteSenderId();
+            if (senderId == 0)
+            {
+                senderId = 1;
+            }
+            var player = PlayerList.Find(p => p.PeerId == senderId);
+            string name = player != null ? player.Name : "Someone";
+            SendChatMessage("System", string.Format(Tr("{0} cancelled the countdown."), name));
+        }
+        _countdownRemaining = 0;
+        _countdownMapName = null;
+        CountdownCancelled?.Invoke();
     }
 
     public void AddAIBot()
@@ -851,10 +1132,12 @@ public partial class LobbyManager : Node
                 IsHost = false,
                 Latency = "0 ms",
                 Jitter = "0 ms",
-                PacketLoss = "0%"
+                PacketLoss = "0%",
+                BinaryVersion = GameBinaryVersion
             };
             PlayerList.Add(botPlayer);
             BroadcastPlayerList();
+            SendChatMessage("System", string.Format(Tr("{0} added to the lobby."), botPlayer.Name));
         }
     }
 
@@ -911,5 +1194,134 @@ public partial class LobbyManager : Node
             new Color(0.9f, 0.8f, 0.1f)  // Yellow
         };
         return available[PlayerList.Count % available.Length];
+    }
+
+    public async Task<int> MeasurePingToRegistryAsync()
+    {
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var response = await _httpClient.GetAsync($"{RegistryServerUrl}/lobbies");
+            stopwatch.Stop();
+            if (response.IsSuccessStatusCode)
+            {
+                return (int)stopwatch.ElapsedMilliseconds;
+            }
+        }
+        catch { }
+        return 100;
+    }
+
+    public override void _ExitTree()
+    {
+        StopHostDiagnosticsTimer();
+        base._ExitTree();
+    }
+
+    private void StartHostDiagnosticsTimer()
+    {
+        StopHostDiagnosticsTimer();
+        TickHostDiagnostics();
+    }
+
+    private void StopHostDiagnosticsTimer()
+    {
+        _diagnosticsTimer = null;
+    }
+
+    private void TickHostDiagnostics()
+    {
+        if (!IsHost)
+        {
+            return;
+        }
+
+        UpdateAllPeerDiagnostics();
+
+        _diagnosticsTimer = GetTree().CreateTimer(2.0f);
+        _diagnosticsTimer.Timeout += OnDiagnosticsTimerTimeout;
+    }
+
+    private void OnDiagnosticsTimerTimeout()
+    {
+        TickHostDiagnostics();
+    }
+
+    private void UpdateAllPeerDiagnostics()
+    {
+        if (Multiplayer.MultiplayerPeer is ENetMultiplayerPeer enetMultiplayer)
+        {
+            bool changed = false;
+            float totalRtt = 0f;
+            float totalJitter = 0f;
+            float totalLoss = 0f;
+            int clientCount = 0;
+
+            foreach (var p in PlayerList)
+            {
+                if (p.PeerId == 1 || p.PeerId < 0) continue;
+
+                try
+                {
+                    var peer = enetMultiplayer.GetPeer(p.PeerId);
+                    if (peer != null)
+                    {
+                        float rtt = (float)peer.GetStatistic(ENetPacketPeer.PeerStatistic.RoundTripTime);
+                        float jitter = (float)peer.GetStatistic(ENetPacketPeer.PeerStatistic.RoundTripTimeVariance);
+                        float loss = (float)peer.GetStatistic(ENetPacketPeer.PeerStatistic.PacketLoss) / 65536.0f * 100.0f;
+
+                        totalRtt += rtt;
+                        totalJitter += jitter;
+                        totalLoss += loss;
+                        clientCount++;
+
+                        string newLatency = $"{Math.Round(rtt)} ms";
+                        string newJitter = $"{Math.Round(jitter)} ms";
+                        string newLoss = $"{Math.Round(loss)}%";
+
+                        if (p.Latency != newLatency || p.Jitter != newJitter || p.PacketLoss != newLoss)
+                        {
+                            p.Latency = newLatency;
+                            p.Jitter = newJitter;
+                            p.PacketLoss = newLoss;
+                            changed = true;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            var hostInfo = PlayerList.Find(x => x.PeerId == 1);
+            if (hostInfo != null)
+            {
+                string hostLatency = "0 ms";
+                string hostJitter = "0 ms";
+                string hostLoss = "0%";
+
+                if (clientCount > 0)
+                {
+                    hostLatency = $"{Math.Round(totalRtt / clientCount)} ms";
+                    hostJitter = $"{Math.Round(totalJitter / clientCount)} ms";
+                    hostLoss = $"{Math.Round(totalLoss / clientCount)}%";
+                }
+
+                if (hostInfo.Latency != hostLatency || hostInfo.Jitter != hostJitter || hostInfo.PacketLoss != hostLoss)
+                {
+                    hostInfo.Latency = hostLatency;
+                    hostInfo.Jitter = hostJitter;
+                    hostInfo.PacketLoss = hostLoss;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                BroadcastPlayerList();
+            }
+        }
+        else
+        {
+            BroadcastPlayerList();
+        }
     }
 }

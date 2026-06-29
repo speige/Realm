@@ -19,6 +19,7 @@ public partial class LobbyBrowser : Control
 
 	private List<LobbyData> _allLobbies = new List<LobbyData>();
 	private List<LobbyData> _filteredLobbies = new List<LobbyData>();
+	private bool _connectionFailed;
 
 	private Panel _bgPanel;
 	private Panel _leftPillar;
@@ -42,6 +43,8 @@ public partial class LobbyBrowser : Control
 	private Label _modeCol;
 	private Label _playersCol;
 	private Label _pingCol;
+	private Label _refreshIcon;
+	private Timer _refreshTimer;
 
 	private readonly string[] _runes = { "ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᚲ", "ᚷ", "ᚹ", "ᚺ", "ᚾ", "ᛁ", "ᛃ", "ᛇ", "ᛈ", "ᛉ", "ᛊ", "ᛏ", "ᛒ", "ᛖ", "ᛗ", "ᛚ", "ᛜ", "ᛞ", "ᛟ" };
 	private readonly System.Net.Http.HttpClient _httpClient = new System.Net.Http.HttpClient();
@@ -83,6 +86,13 @@ public partial class LobbyBrowser : Control
 
 		// Refresh lists
 		FetchLobbiesFromRegistry();
+
+		_refreshTimer = new Timer();
+		_refreshTimer.WaitTime = 30.0f;
+		_refreshTimer.OneShot = false;
+		_refreshTimer.Timeout += TriggerRefresh;
+		AddChild(_refreshTimer);
+		_refreshTimer.Start();
 	}
 
 	private void ApplyStyles()
@@ -106,28 +116,23 @@ public partial class LobbyBrowser : Control
 
 		// Back and Refresh Buttons (Symbols)
 		SetupPillarButton(_backButton, "◀", () => UIManager.Instance.TransitionTo(GameScreen.MainMenu));
-		Label refreshIcon = new Label();
-		refreshIcon.Text = "↻";
-		refreshIcon.HorizontalAlignment = HorizontalAlignment.Center;
-		refreshIcon.VerticalAlignment = VerticalAlignment.Center;
-		refreshIcon.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-		refreshIcon.PivotOffset = new Vector2(30, 30);
-		refreshIcon.MouseFilter = Control.MouseFilterEnum.Ignore;
-		refreshIcon.AddThemeFontSizeOverride("font_size", 28);
-		refreshIcon.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		_refreshButton.AddChild(refreshIcon);
+		_refreshIcon = new Label();
+		_refreshIcon.Text = "↻";
+		_refreshIcon.HorizontalAlignment = HorizontalAlignment.Center;
+		_refreshIcon.VerticalAlignment = VerticalAlignment.Center;
+		_refreshIcon.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		_refreshIcon.PivotOffset = new Vector2(30, 30);
+		_refreshIcon.MouseFilter = Control.MouseFilterEnum.Ignore;
+		_refreshIcon.AddThemeFontSizeOverride("font_size", 28);
+		_refreshIcon.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		_refreshButton.AddChild(_refreshIcon);
 
-		_refreshButton.MouseEntered += () => refreshIcon.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		_refreshButton.MouseExited += () => refreshIcon.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		_refreshButton.ButtonDown += () => refreshIcon.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
-		_refreshButton.ButtonUp += () => refreshIcon.AddThemeColorOverride("font_color", _refreshButton.IsHovered() ? UIStyle.ColorGold : UIStyle.ColorGoldDull);
+		_refreshButton.MouseEntered += () => _refreshIcon.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		_refreshButton.MouseExited += () => _refreshIcon.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		_refreshButton.ButtonDown += () => _refreshIcon.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		_refreshButton.ButtonUp += () => _refreshIcon.AddThemeColorOverride("font_color", _refreshButton.IsHovered() ? UIStyle.ColorGold : UIStyle.ColorGoldDull);
 
-		SetupPillarButton(_refreshButton, "", () => 
-		{
-			var tween = CreateTween();
-			tween.TweenProperty(refreshIcon, "rotation", refreshIcon.Rotation + Mathf.Pi * 2, 0.4f);
-			FetchLobbiesFromRegistry();
-		});
+		SetupPillarButton(_refreshButton, "", TriggerRefresh);
 
 		// Host Button
 		SetupHostButton();
@@ -193,6 +198,13 @@ public partial class LobbyBrowser : Control
 		_hostButton.Pressed += async () => 
 		{
 			UIManager.Instance.PlayClickSound();
+			if (LobbyManager.Instance.LocalNatType == NatType.Symmetric)
+			{
+				UIManager.Instance.PlayWarningSound();
+				ShowHostingErrorPopup();
+				return;
+			}
+
 			_hostButton.Disabled = true;
 			bool success = await LobbyManager.Instance.HostLobbyAsync("The Frosting Pass");
 			_hostButton.Disabled = false;
@@ -210,20 +222,67 @@ public partial class LobbyBrowser : Control
 		_hostButton.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 	}
 
+	private void ShowHostingErrorPopup()
+	{
+		var warningPopup = new Panel();
+		warningPopup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		warningPopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		AddChild(warningPopup);
+
+		var cardPanel = new Panel();
+		cardPanel.CustomMinimumSize = new Vector2(450, 220);
+		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		warningPopup.AddChild(cardPanel);
+
+		var vbox = new VBoxContainer();
+		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		vbox.CustomMinimumSize = new Vector2(400, 180);
+		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
+		cardPanel.AddChild(vbox);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
+
+		var titleLabel = new Label();
+		UIStyle.ApplyTitle(titleLabel, Tr("HOSTING ERROR"), 20);
+		titleLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
+		vbox.AddChild(titleLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
+
+		var descLabel = new Label();
+		descLabel.Text = Tr("Your network configuration is not compatible with hosting games.");
+		descLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		descLabel.AddThemeFontSizeOverride("font_size", 14);
+		descLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		vbox.AddChild(descLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
+
+		var okBtn = new Button();
+		okBtn.Flat = false;
+		okBtn.AddThemeConstantOverride("icon_max_width", 0);
+		okBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		okBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		okBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		okBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(okBtn, Tr("OK"), 14);
+		okBtn.CustomMinimumSize = new Vector2(160, 40);
+		okBtn.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		okBtn.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			warningPopup.QueueFree();
+		};
+		vbox.AddChild(okBtn);
+	}
+
 	private void UpdateHostButtonState()
 	{
-		if (LobbyManager.Instance.LocalNatType == NatType.Symmetric)
-		{
-			_hostButton.Disabled = true;
-			_hostButton.TooltipText = "WARNING: Symmetric NAT detected! Hosting is disabled since direct UDP connections cannot be established.";
-			_hostButton.AddThemeColorOverride("font_disabled_color", new Color(0.7f, 0.3f, 0.3f));
-		}
-		else
-		{
-			_hostButton.Disabled = false;
-			_hostButton.TooltipText = $"NAT Classification: {LobbyManager.Instance.LocalNatType} (Hole Punching Supported)";
-			_hostButton.RemoveThemeColorOverride("font_disabled_color");
-		}
+		_hostButton.Disabled = false;
+		_hostButton.TooltipText = "";
+		_hostButton.RemoveThemeColorOverride("font_disabled_color");
 	}
 
 	private void PopulateRunicPillar(VBoxContainer container)
@@ -240,18 +299,58 @@ public partial class LobbyBrowser : Control
 				var json = await LobbyManager.Instance.FetchLobbiesRawAsync();
 				if (json != null)
 				{
+					int clientBaseline = await LobbyManager.Instance.MeasurePingToRegistryAsync();
 					using var doc = JsonDocument.Parse(json);
 					var lobbyList = new List<LobbyData>();
 					
 					foreach (var item in doc.RootElement.EnumerateArray())
 					{
+						string hostIp = "";
+						if (item.TryGetProperty("hostIP", out var hostIpProp))
+						{
+							hostIp = hostIpProp.GetString() ?? "";
+						}
+						else if (item.TryGetProperty("hostIp", out hostIpProp))
+						{
+							hostIp = hostIpProp.GetString() ?? "";
+						}
+
+						int calculatedPing;
+						if (hostIp == "127.0.0.1" || hostIp == "localhost" || string.IsNullOrEmpty(hostIp))
+						{
+							calculatedPing = 5;
+						}
+						else
+						{
+							double distanceKm = 0;
+							if (item.TryGetProperty("distanceKm", out var distProp))
+							{
+								distanceKm = distProp.GetDouble();
+							}
+							else if (item.TryGetProperty("distance", out distProp))
+							{
+								distanceKm = distProp.GetDouble();
+							}
+
+							int hostPingBaseline = 20;
+							if (item.TryGetProperty("hostPingBaseline", out var baselineProp))
+							{
+								hostPingBaseline = baselineProp.GetInt32();
+							}
+
+							double geoPing = 10.0 + (distanceKm / 100.0);
+							double clientOverhead = Math.Max(0, clientBaseline - 20);
+							double hostOverhead = Math.Max(0, hostPingBaseline - 20);
+							calculatedPing = (int)Math.Round(geoPing + clientOverhead + hostOverhead);
+						}
+
 						lobbyList.Add(new LobbyData
 						{
-							LobbyId = item.GetProperty("lobbyId").GetString() ?? "",
-							Map = item.GetProperty("map").GetString() ?? "",
+							LobbyId = item.TryGetProperty("lobbyId", out var idProp) ? idProp.GetString() ?? "" : "",
+							Map = item.TryGetProperty("map", out var mapProp) ? mapProp.GetString() ?? "" : "",
 							Mode = "Melee", // Default mode
-							Players = $"{item.GetProperty("slotsUsed").GetInt32()}/{item.GetProperty("maxPlayers").GetInt32()}",
-							Ping = item.GetProperty("estimatedPingMs").GetInt32()
+							Players = $"{(item.TryGetProperty("slotsUsed", out var slotsProp) ? slotsProp.GetInt32() : 0)}/{(item.TryGetProperty("maxPlayers", out var maxProp) ? maxProp.GetInt32() : 8)}",
+							Ping = calculatedPing
 						});
 					}
 
@@ -272,6 +371,7 @@ public partial class LobbyBrowser : Control
 
 	private void OnLobbiesFetched(List<LobbyData> list)
 	{
+		_connectionFailed = false;
 		_allLobbies.Clear();
 		if (list != null)
 		{
@@ -282,10 +382,8 @@ public partial class LobbyBrowser : Control
 
 	private void OnLobbiesFetchedFallback()
 	{
-		// Generate dummy lobbies for offline preview if registry is not reachable
+		_connectionFailed = true;
 		_allLobbies.Clear();
-		_allLobbies.Add(new LobbyData { LobbyId = "offline-1", Map = "CastleTD (Offline Default)", Mode = "Melee", Players = "2/8", Ping = 5 });
-		_allLobbies.Add(new LobbyData { LobbyId = "offline-2", Map = "Frosting Pass (Offline Default)", Mode = "Melee", Players = "1/8", Ping = 8 });
 		ApplyFilters();
 	}
 
@@ -324,10 +422,33 @@ public partial class LobbyBrowser : Control
 			child.QueueFree();
 		}
 
-		foreach (var lobby in _filteredLobbies)
+		if (_connectionFailed)
 		{
-			var row = CreateLobbyRow(lobby);
-			_lobbyListContainer.AddChild(row);
+			var lbl = new Label();
+			lbl.Text = Tr("⚠️ Failed to connect to the lobby registry server. Please check your internet connection or try again later.");
+			lbl.HorizontalAlignment = HorizontalAlignment.Center;
+			lbl.VerticalAlignment = VerticalAlignment.Center;
+			lbl.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
+			lbl.AddThemeFontSizeOverride("font_size", 15);
+			_lobbyListContainer.AddChild(lbl);
+		}
+		else if (_filteredLobbies.Count == 0)
+		{
+			var lbl = new Label();
+			lbl.Text = Tr("Lobby server connected. No active games online. Host a game to start playing!");
+			lbl.HorizontalAlignment = HorizontalAlignment.Center;
+			lbl.VerticalAlignment = VerticalAlignment.Center;
+			lbl.AddThemeColorOverride("font_color", new Color(0.75f, 0.75f, 0.8f));
+			lbl.AddThemeFontSizeOverride("font_size", 15);
+			_lobbyListContainer.AddChild(lbl);
+		}
+		else
+		{
+			foreach (var lobby in _filteredLobbies)
+			{
+				var row = CreateLobbyRow(lobby);
+				_lobbyListContainer.AddChild(row);
+			}
 		}
 	}
 
@@ -421,6 +542,25 @@ public partial class LobbyBrowser : Control
 		};
 
 		return panel;
+	}
+
+	private void TriggerRefresh()
+	{
+		if (_refreshIcon != null && GodotObject.IsInstanceValid(_refreshIcon))
+		{
+			var tween = CreateTween();
+			tween.TweenProperty(_refreshIcon, "rotation", _refreshIcon.Rotation + Mathf.Pi * 2, 0.4f);
+		}
+		FetchLobbiesFromRegistry();
+	}
+
+	public override void _ExitTree()
+	{
+		if (_refreshTimer != null)
+		{
+			_refreshTimer.Timeout -= TriggerRefresh;
+		}
+		base._ExitTree();
 	}
 
 	protected override void Dispose(bool disposing)

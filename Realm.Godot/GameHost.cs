@@ -71,6 +71,11 @@ public partial class GameHost : Node3D, IGameAPI
 	private ReplayRecorder _replayRecorder;
 	private int _replayTickCounter = 0;
 	private readonly Dictionary<int, ReplayUnitSnapshot> _lastRecordedUnits = new();
+	private System.Diagnostics.Stopwatch _trackerTickStopwatch = new System.Diagnostics.Stopwatch();
+	private System.Diagnostics.Stopwatch _trackerIntervalStopwatch = new System.Diagnostics.Stopwatch();
+	private List<float> _trackerTickDurations;
+	private List<float> _trackerApiDurations;
+	private float _trackerLastTickDelay = 0f;
 	private string _activeSpellTargeting = null; // "fireball" or "lightning"
 	private string _activeCommandTargeting = null; // "attack" or "move"
 
@@ -2660,6 +2665,13 @@ public class {mapName} : IMapScript
 			VSCodeManager.Instance.StartInstallIfNeeded();
 		}
 
+		if (Multiplayer.IsServer())
+		{
+			_trackerTickDurations = new List<float>(100000);
+			_trackerApiDurations = new List<float>(10000);
+			_trackerIntervalStopwatch.Start();
+		}
+
 		CreateGround();
 		SetupSkybox();
 		UpdateDayNightVisuals(0.5f);
@@ -2801,6 +2813,20 @@ public class {mapName} : IMapScript
 
 	public override void _ExitTree()
 	{
+		if (Multiplayer.IsServer() && _trackerTickDurations != null && _trackerTickDurations.Count >= 30)
+		{
+			var summary = new GameStabilitySummary
+			{
+				AvgTickMs = HostStabilityTracker.CalculateAverage(_trackerTickDurations),
+				MedianTickMs = HostStabilityTracker.CalculateMedian(_trackerTickDurations),
+				MaxTickMs = HostStabilityTracker.CalculateMax(_trackerTickDurations),
+				AvgApiMs = HostStabilityTracker.CalculateAverage(_trackerApiDurations),
+				MedianApiMs = HostStabilityTracker.CalculateMedian(_trackerApiDurations),
+				MaxApiMs = HostStabilityTracker.CalculateMax(_trackerApiDurations)
+			};
+			HostStabilityTracker.AddGameSummary(summary);
+		}
+
 		if (Instance == this) Instance = null;
 		EcsWorld?.Dispose();
 		if (OperatingSystem.IsWindows())
@@ -3608,7 +3634,21 @@ public class {mapName} : IMapScript
 			return;
 		}
 
-		// 0a. Game clock, spell cooldowns & day/night cycle
+		float actualIntervalMs = 0f;
+		if (Multiplayer.IsServer())
+		{
+			if (_trackerIntervalStopwatch.IsRunning)
+			{
+				actualIntervalMs = (float)_trackerIntervalStopwatch.Elapsed.TotalMilliseconds;
+				_trackerIntervalStopwatch.Restart();
+			}
+			else
+			{
+				_trackerIntervalStopwatch.Start();
+			}
+			_trackerTickStopwatch.Restart();
+		}
+
 		GameElapsedTime += fDelta;
 		if (_fireballCooldown > 0) _fireballCooldown = Math.Max(0, _fireballCooldown - fDelta);
 		if (_lightningCooldown > 0) _lightningCooldown = Math.Max(0, _lightningCooldown - fDelta);
@@ -4749,6 +4789,23 @@ public class {mapName} : IMapScript
 		if (_multiplayerActive && Multiplayer.IsServer())
 		{
 			UpdateServerSnapshotTick(fDelta);
+		}
+
+		if (Multiplayer.IsServer())
+		{
+			_trackerTickStopwatch.Stop();
+			float tickCpuMs = (float)_trackerTickStopwatch.Elapsed.TotalMilliseconds;
+			float tickDelay = 0f;
+			if (actualIntervalMs > 33.33f)
+			{
+				tickDelay = actualIntervalMs - 33.33f;
+			}
+			float adjustedTickMs = tickCpuMs + tickDelay;
+			if (_trackerTickDurations != null)
+			{
+				_trackerTickDurations.Add(adjustedTickMs);
+			}
+			_trackerLastTickDelay = tickDelay;
 		}
 	}
 
@@ -12362,11 +12419,19 @@ public class {mapName} : IMapScript
 	public void SubmitCommand(byte[] payload)
 	{
 		if (!Multiplayer.IsServer()) return;
+		var sw = System.Diagnostics.Stopwatch.StartNew();
 		int senderId = Multiplayer.GetRemoteSenderId();
 		var cmd = MemoryPackSerializer.Deserialize<NetworkCommand>(payload);
 		GD.Print($"[SERVER_CMD_RECEIVED] Peer={senderId} CommandType={cmd.CommandType} Units={string.Join(",", cmd.UnitEntityIds)} Target={cmd.TargetPosition.ToGodot()}");
 		ExecuteServerCommand(senderId, cmd);
 		RpcId(senderId, nameof(AcknowledgeCommand), cmd.CommandId);
+		sw.Stop();
+		float responseCpuMs = (float)sw.Elapsed.TotalMilliseconds;
+		float adjustedResponseMs = responseCpuMs + _trackerLastTickDelay;
+		if (_trackerApiDurations != null)
+		{
+			_trackerApiDurations.Add(adjustedResponseMs);
+		}
 	}
 
 	[Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]

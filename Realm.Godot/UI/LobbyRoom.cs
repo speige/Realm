@@ -21,12 +21,17 @@ public partial class LobbyRoom : Control
 	private VBoxContainer _playersContainer;
 	private Label _inviteFeedback;
 	private CheckBox _spectatorDelayCheck;
+	private Panel? _countdownPopup;
+	private Label? _countdownTextLabel;
 
 	private Label _lobbyTitle;
 	private Label _playersTitle;
 	private Label _briefingTitle;
 	private RichTextLabel _briefingLabel;
 	private Panel _mapFrame;
+	private bool _versionMismatchDetected;
+	private Label? _unstableWarningLabel;
+	private Label? _hostStabilityLabel;
 
 	private readonly List<Color> _availableColors = new List<Color>
 	{
@@ -72,6 +77,7 @@ public partial class LobbyRoom : Control
 		_addBotButton = GetNode<Button>("AddBotButton");
 		_startButton = GetNode<Button>("StartButton");
 		_addBotButton.Visible = LobbyManager.Instance.IsHost;
+
 
 		_mapSelectButton = GetNode<OptionButton>("MapSelectButton");
 		_mapSelectButton.Clear();
@@ -135,6 +141,42 @@ public partial class LobbyRoom : Control
 		_briefingLabel = GetNode<RichTextLabel>("BriefingPanel/VBoxContainer/BriefingLabel");
 		_mapFrame = GetNode<Panel>("BriefingPanel/VBoxContainer/MapFrame");
 
+		_unstableWarningLabel = new Label();
+		_unstableWarningLabel.Name = "UnstableWarningLabel";
+		_unstableWarningLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		_unstableWarningLabel.VerticalAlignment = VerticalAlignment.Center;
+		_unstableWarningLabel.Text = Tr("⚠️ Connection between players is unstable. Gameplay will not be reliable.");
+		_unstableWarningLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.25f, 0.25f));
+		_unstableWarningLabel.AddThemeFontSizeOverride("font_size", 14);
+		_unstableWarningLabel.Visible = false;
+		AddChild(_unstableWarningLabel);
+		_unstableWarningLabel.SetAnchorsPreset(LayoutPreset.CenterTop);
+		_unstableWarningLabel.GrowHorizontal = GrowDirection.Both;
+		_unstableWarningLabel.OffsetLeft = -500;
+		_unstableWarningLabel.OffsetRight = 500;
+		_unstableWarningLabel.OffsetTop = 90;
+		_unstableWarningLabel.OffsetBottom = 115;
+
+		_hostStabilityLabel = new Label();
+		_hostStabilityLabel.Name = "HostStabilityLabel";
+		_hostStabilityLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		_hostStabilityLabel.VerticalAlignment = VerticalAlignment.Center;
+		_hostStabilityLabel.AddThemeFontSizeOverride("font_size", 16);
+		_hostStabilityLabel.Visible = false;
+		AddChild(_hostStabilityLabel);
+		_hostStabilityLabel.SetAnchorsPreset(LayoutPreset.CenterTop);
+		_hostStabilityLabel.GrowHorizontal = GrowDirection.Both;
+		_hostStabilityLabel.OffsetLeft = -300;
+		_hostStabilityLabel.OffsetRight = 300;
+		_hostStabilityLabel.OffsetTop = 85;
+		_hostStabilityLabel.OffsetBottom = 110;
+
+		if (!LobbyManager.Instance.IsHost)
+		{
+			UpdateHostStabilityLabel(LobbyManager.Instance.HostStability);
+			LobbyManager.Instance.HostStabilityUpdated += UpdateHostStabilityLabel;
+		}
+
 		// Apply styles
 		ApplyThemeStyles();
 
@@ -143,11 +185,16 @@ public partial class LobbyRoom : Control
 		LobbyManager.Instance.ChatReceived += OnLobbyChatReceived;
 		LobbyManager.Instance.ConnectionFailed += OnLobbyConnectionFailed;
 		LobbyManager.Instance.KickReceived += OnLobbyKickReceived;
+		LobbyManager.Instance.CountdownStarted += OnCountdownStarted;
+		LobbyManager.Instance.CountdownTick += OnCountdownTick;
+		LobbyManager.Instance.CountdownCancelled += OnCountdownCancelled;
+		LobbyManager.Instance.CountdownFinished += OnCountdownFinished;
 
 		// Populate players initially
 		if (!LobbyManager.Instance.IsHost)
 		{
 			CreateDownloadProgressUI();
+			LobbyManager.Instance.RequestChatHistory();
 		}
 
 		PopulatePlayersList();
@@ -240,6 +287,7 @@ public partial class LobbyRoom : Control
 	private void SetupLobbyButton(Button btn, string text, Action onClick)
 	{
 		btn.Flat = false;
+		btn.AddThemeConstantOverride("icon_max_width", 0);
 		UIStyle.ApplyButtonText(btn, text, 15);
 
 		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
@@ -342,7 +390,162 @@ public partial class LobbyRoom : Control
 		{
 			mapName = _availableMaps[selectedIndex];
 		}
-		LobbyManager.Instance.StartGame(mapName);
+
+		bool anyNotReady = false;
+		foreach (var player in LobbyManager.Instance.PlayerList)
+		{
+			if (player.PeerId > 1 && !player.IsReady)
+			{
+				anyNotReady = true;
+				break;
+			}
+		}
+
+		if (anyNotReady)
+		{
+			ShowStartWarningPopup(mapName);
+		}
+		else
+		{
+			LobbyManager.Instance.StartGame(mapName);
+		}
+	}
+
+	private void ShowVersionMismatchPopup(string hostVersion, string clientVersion)
+	{
+		var warningPopup = new Panel();
+		warningPopup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		warningPopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		AddChild(warningPopup);
+
+		var cardPanel = new Panel();
+		cardPanel.CustomMinimumSize = new Vector2(450, 220);
+		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		warningPopup.AddChild(cardPanel);
+
+		var vbox = new VBoxContainer();
+		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		vbox.CustomMinimumSize = new Vector2(400, 180);
+		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
+		cardPanel.AddChild(vbox);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
+
+		var titleLabel = new Label();
+		UIStyle.ApplyTitle(titleLabel, Tr("VERSION MISMATCH"), 20);
+		titleLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
+		vbox.AddChild(titleLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
+
+		var descLabel = new Label();
+		descLabel.Text = $"{string.Format(Tr("Host Version: {0}"), hostVersion)}\n{string.Format(Tr("Client Version: {0}"), clientVersion)}\n\n{Tr("Connection aborted.")}";
+		descLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		descLabel.AddThemeFontSizeOverride("font_size", 14);
+		descLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		vbox.AddChild(descLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
+
+		var okBtn = new Button();
+		okBtn.Flat = false;
+		okBtn.AddThemeConstantOverride("icon_max_width", 0);
+		okBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		okBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		okBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		okBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(okBtn, Tr("OK"), 14);
+		okBtn.CustomMinimumSize = new Vector2(160, 40);
+		okBtn.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		okBtn.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			warningPopup.QueueFree();
+			LobbyManager.Instance.Disconnect();
+			UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser);
+		};
+		vbox.AddChild(okBtn);
+	}
+
+	private void ShowStartWarningPopup(string mapName)
+	{
+		var warningPopup = new Panel();
+		warningPopup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		warningPopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		AddChild(warningPopup);
+
+		var cardPanel = new Panel();
+		cardPanel.CustomMinimumSize = new Vector2(450, 220);
+		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		warningPopup.AddChild(cardPanel);
+
+		var vbox = new VBoxContainer();
+		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		vbox.CustomMinimumSize = new Vector2(400, 180);
+		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
+		cardPanel.AddChild(vbox);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
+
+		var titleLabel = new Label();
+		UIStyle.ApplyTitle(titleLabel, "NOT ALL PLAYERS READY", 20);
+		titleLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
+		vbox.AddChild(titleLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
+
+		var descLabel = new Label();
+		descLabel.Text = "Not all players are ready, start anyway?";
+		descLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		descLabel.AddThemeFontSizeOverride("font_size", 15);
+		descLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		vbox.AddChild(descLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
+
+		var hbox = new HBoxContainer();
+		hbox.Alignment = BoxContainer.AlignmentMode.Center;
+		vbox.AddChild(hbox);
+
+		var startBtn = new Button();
+		startBtn.Flat = false;
+		startBtn.AddThemeConstantOverride("icon_max_width", 0);
+		startBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		startBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		startBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		startBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(startBtn, "START GAME", 14);
+		startBtn.CustomMinimumSize = new Vector2(160, 40);
+		startBtn.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			warningPopup.QueueFree();
+			LobbyManager.Instance.StartGame(mapName);
+		};
+		hbox.AddChild(startBtn);
+
+		var spacer = new Control { CustomMinimumSize = new Vector2(20, 0) };
+		hbox.AddChild(spacer);
+
+		var cancelBtn = new Button();
+		cancelBtn.Flat = false;
+		cancelBtn.AddThemeConstantOverride("icon_max_width", 0);
+		cancelBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		cancelBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		cancelBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		cancelBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(cancelBtn, "CANCEL", 14);
+		cancelBtn.CustomMinimumSize = new Vector2(160, 40);
+		cancelBtn.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			warningPopup.QueueFree();
+		};
+		hbox.AddChild(cancelBtn);
 	}
 
 	private void OnMapSelected(long index)
@@ -383,12 +586,129 @@ public partial class LobbyRoom : Control
 			LobbyManager.Instance.MapDownloadProgressChanged -= OnMapDownloadProgress;
 			LobbyManager.Instance.MapDownloadCompleted -= OnMapDownloadCompleted;
 			LobbyManager.Instance.MapDownloadFailed -= OnMapDownloadFailed;
+
+			LobbyManager.Instance.CountdownStarted -= OnCountdownStarted;
+			LobbyManager.Instance.CountdownTick -= OnCountdownTick;
+			LobbyManager.Instance.CountdownCancelled -= OnCountdownCancelled;
+			LobbyManager.Instance.CountdownFinished -= OnCountdownFinished;
+			LobbyManager.Instance.HostStabilityUpdated -= UpdateHostStabilityLabel;
 		}
 		base._ExitTree();
 	}
 
+	private void OnCountdownStarted(string mapName, int seconds)
+	{
+		if (_countdownPopup != null && GodotObject.IsInstanceValid(_countdownPopup))
+		{
+			_countdownPopup.QueueFree();
+		}
+
+		_countdownPopup = new Panel();
+		_countdownPopup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		_countdownPopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		AddChild(_countdownPopup);
+
+		var cardPanel = new Panel();
+		cardPanel.CustomMinimumSize = new Vector2(450, 260);
+		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_countdownPopup.AddChild(cardPanel);
+
+		var vbox = new VBoxContainer();
+		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		vbox.CustomMinimumSize = new Vector2(400, 220);
+		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
+		cardPanel.AddChild(vbox);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
+
+		var titleLabel = new Label();
+		UIStyle.ApplyTitle(titleLabel, "GAME STARTING", 22);
+		titleLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		vbox.AddChild(titleLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
+
+		_countdownTextLabel = new Label();
+		_countdownTextLabel.Text = seconds.ToString();
+		_countdownTextLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		_countdownTextLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		_countdownTextLabel.AddThemeFontSizeOverride("font_size", 48);
+		vbox.AddChild(_countdownTextLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
+
+		var cancelBtn = new Button();
+		cancelBtn.Flat = false;
+		cancelBtn.AddThemeConstantOverride("icon_max_width", 0);
+		cancelBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		cancelBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		cancelBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		cancelBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(cancelBtn, "CANCEL", 16);
+
+		cancelBtn.CustomMinimumSize = new Vector2(160, 48);
+		cancelBtn.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		cancelBtn.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			LobbyManager.Instance.RequestCancelCountdown();
+		};
+		vbox.AddChild(cancelBtn);
+	}
+
+	private void OnCountdownTick(int seconds)
+	{
+		if (_countdownTextLabel != null && GodotObject.IsInstanceValid(_countdownTextLabel))
+		{
+			_countdownTextLabel.Text = seconds.ToString();
+		}
+	}
+
+	private void OnCountdownCancelled()
+	{
+		if (_countdownPopup != null && GodotObject.IsInstanceValid(_countdownPopup))
+		{
+			_countdownPopup.QueueFree();
+			_countdownPopup = null;
+			_countdownTextLabel = null;
+		}
+	}
+
+	private void OnCountdownFinished()
+	{
+		if (_countdownPopup != null && GodotObject.IsInstanceValid(_countdownPopup))
+		{
+			_countdownPopup.QueueFree();
+			_countdownPopup = null;
+			_countdownTextLabel = null;
+		}
+	}
+
 	private void PopulatePlayersList()
 	{
+		if (!LobbyManager.Instance.IsHost && !_versionMismatchDetected)
+		{
+			var host = LobbyManager.Instance.PlayerList.Find(p => p.IsHost);
+			if (host != null)
+			{
+				string hostVersion = host.BinaryVersion;
+				string clientVersion = LobbyManager.GameBinaryVersion;
+				if (hostVersion != clientVersion)
+				{
+					_versionMismatchDetected = true;
+					ShowVersionMismatchPopup(hostVersion, clientVersion);
+					return;
+				}
+			}
+		}
+
+		if (_unstableWarningLabel != null)
+		{
+			_unstableWarningLabel.Visible = IsAnyMetricRed();
+		}
+
 		foreach (Node child in _playersContainer.GetChildren())
 		{
 			child.QueueFree();
@@ -400,7 +720,6 @@ public partial class LobbyRoom : Control
 			_playersContainer.AddChild(row);
 		}
 		
-		// Update Start Button status in case role changed
 		SetupStartButton();
 	}
 
@@ -423,6 +742,33 @@ public partial class LobbyRoom : Control
 
 		var hBox = new HBoxContainer();
 		panel.AddChild(hBox);
+
+		if (p.PeerId >= 1)
+		{
+			var readyCheck = new CheckBox();
+			readyCheck.Text = "READY  ";
+			readyCheck.ButtonPressed = p.IsReady;
+			readyCheck.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+
+			if (isLocalPlayer)
+			{
+				readyCheck.Toggled += (toggled) =>
+				{
+					UIManager.Instance.PlayClickSound();
+					LobbyManager.Instance.UpdateReadyState(p.PeerId, toggled);
+				};
+			}
+			else
+			{
+				readyCheck.Disabled = true;
+				readyCheck.AddThemeColorOverride("font_disabled_color", new Color(0.6f, 0.6f, 0.6f));
+			}
+			hBox.AddChild(readyCheck);
+
+			var readySep = new Control();
+			readySep.CustomMinimumSize = new Vector2(10, 0);
+			hBox.AddChild(readySep);
+		}
 
 		var optTeam = new OptionButton();
 		optTeam.CustomMinimumSize = new Vector2(100, 32);
@@ -593,32 +939,22 @@ public partial class LobbyRoom : Control
 		hBox.AddChild(optFaction);
 
 		// 5. Diagnostics Display (Ping, Jitter, Packet Loss)
-		var diagLabel = new Label();
+		var diagLabel = new RichTextLabel();
+		diagLabel.BbcodeEnabled = true;
+		diagLabel.ScrollActive = false;
+		diagLabel.CustomMinimumSize = new Vector2(300, 24);
+		diagLabel.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+		diagLabel.AddThemeFontSizeOverride("normal_font_size", 13);
+		
 		string latencyText = p.Latency == "--" ? "measuring..." : p.Latency;
-		string jitterText = p.Jitter == "--" ? "" : $", Jitter: {p.Jitter}";
-		string lossText = p.PacketLoss == "--" ? "" : $", Loss: {p.PacketLoss}";
-		
-		diagLabel.Text = $"  RTT: {latencyText}{jitterText}{lossText}  ";
-		diagLabel.CustomMinimumSize = new Vector2(250, 0);
-		diagLabel.AddThemeFontSizeOverride("font_size", 13);
-		
-		// Color-code the latency
-		if (p.Latency == "--" || p.Latency == "measuring...")
-		{
-			diagLabel.AddThemeColorOverride("font_color", new Color(0.6f, 0.6f, 0.6f));
-		}
-		else
-		{
-			if (p.PacketLoss.Contains("0%") && !p.Latency.Contains("ms") || (p.Latency.Contains("ms") && int.Parse(p.Latency.Split(' ')[0]) < 80))
-			{
-				diagLabel.AddThemeColorOverride("font_color", new Color(0.3f, 0.8f, 0.4f)); // Healthy green
-			}
-			else
-			{
-				diagLabel.AddThemeColorOverride("font_color", new Color(0.85f, 0.65f, 0.3f)); // Warn orange/yellow
-			}
-		}
-		diagLabel.VerticalAlignment = VerticalAlignment.Center;
+		string jitterText = p.Jitter == "--" ? "n/a" : p.Jitter;
+		string lossText = p.PacketLoss == "--" ? "n/a" : p.PacketLoss;
+
+		string pingColor = GetPingColorCode(p.Latency);
+		string jitterColor = GetJitterColorCode(p.Jitter);
+		string lossColor = GetLossColorCode(p.PacketLoss);
+
+		diagLabel.Text = $"  Ping: [color={pingColor}]{latencyText}[/color] | Jitter: [color={jitterColor}]{jitterText}[/color] | Loss: [color={lossColor}]{lossText}[/color]";
 		hBox.AddChild(diagLabel);
 
 		// 6. Host-Only Boot Action
@@ -673,17 +1009,73 @@ public partial class LobbyRoom : Control
 
 	private void OnLobbyChatReceived(string senderName, string message)
 	{
-		string color = senderName == LobbyManager.Instance.LocalPlayer.Name ? "#5cd6ff" : "#d4a0a0";
+		string color = senderName == "System" ? "#ffd700" : (senderName == LobbyManager.Instance.LocalPlayer.Name ? "#5cd6ff" : "#d4a0a0");
 		_chatLog.Text += $"[color={color}]{senderName}[/color]: {message}\n";
 	}
 
 	private void OnLobbyConnectionFailed(string reason)
 	{
 		GD.PrintErr($"[LobbyRoom] Connection failed from lobby: {reason}");
-		
-		// Re-enable browser and show alert warning
 		UIManager.Instance.PlayWarningSound();
-		UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser);
+		ShowConnectionFailedPopup(reason);
+	}
+
+	private void ShowConnectionFailedPopup(string reason)
+	{
+		var warningPopup = new Panel();
+		warningPopup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		warningPopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		AddChild(warningPopup);
+
+		var cardPanel = new Panel();
+		cardPanel.CustomMinimumSize = new Vector2(450, 220);
+		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		warningPopup.AddChild(cardPanel);
+
+		var vbox = new VBoxContainer();
+		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		vbox.CustomMinimumSize = new Vector2(400, 180);
+		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
+		cardPanel.AddChild(vbox);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
+
+		var titleLabel = new Label();
+		UIStyle.ApplyTitle(titleLabel, Tr("CONNECTION FAILED"), 20);
+		titleLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
+		vbox.AddChild(titleLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
+
+		var descLabel = new Label();
+		descLabel.Text = $"{Tr("Failed to connect to host.")}\n\n{string.Format(Tr("Reason: {0}"), reason)}";
+		descLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		descLabel.AddThemeFontSizeOverride("font_size", 14);
+		descLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		vbox.AddChild(descLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
+
+		var okBtn = new Button();
+		okBtn.Flat = false;
+		okBtn.AddThemeConstantOverride("icon_max_width", 0);
+		okBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		okBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		okBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		okBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(okBtn, Tr("OK"), 14);
+		okBtn.CustomMinimumSize = new Vector2(160, 40);
+		okBtn.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		okBtn.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			warningPopup.QueueFree();
+			LobbyManager.Instance.Disconnect();
+			UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser);
+		};
+		vbox.AddChild(okBtn);
 	}
 
 	private void OnLobbyKickReceived(string reason)
@@ -793,6 +1185,139 @@ public partial class LobbyRoom : Control
 		if (_spectatorDelayCheck != null)
 		{
 			_spectatorDelayCheck.ButtonPressed = enabled;
+		}
+	}
+
+	private int ParsePingValue(string latency)
+	{
+		if (string.IsNullOrEmpty(latency) || latency == "--" || latency == "measuring...")
+		{
+			return -1;
+		}
+		string clean = latency.Replace("ms", "").Trim();
+		if (int.TryParse(clean, out int val))
+		{
+			return val;
+		}
+		return -1;
+	}
+
+	private int ParseJitterValue(string jitter)
+	{
+		if (string.IsNullOrEmpty(jitter) || jitter == "--" || jitter == "")
+		{
+			return -1;
+		}
+		string clean = jitter.Replace("ms", "").Trim();
+		if (int.TryParse(clean, out int val))
+		{
+			return val;
+		}
+		return -1;
+	}
+
+	private float ParseLossValue(string loss)
+	{
+		if (string.IsNullOrEmpty(loss) || loss == "--" || loss == "")
+		{
+			return -1f;
+		}
+		int pctIdx = loss.IndexOf('%');
+		if (pctIdx >= 0)
+		{
+			string clean = loss.Substring(0, pctIdx).Trim();
+			if (float.TryParse(clean, out float val))
+			{
+				return val;
+			}
+		}
+		return -1f;
+	}
+
+	private string GetPingColorCode(string latency)
+	{
+		int val = ParsePingValue(latency);
+		if (val < 0) return "#a0a0a0";
+		if (val < 100) return "#4ce66a";
+		if (val < 200) return "#ffd700";
+		return "#ff5555";
+	}
+
+	private string GetJitterColorCode(string jitter)
+	{
+		int val = ParseJitterValue(jitter);
+		if (val < 0) return "#a0a0a0";
+		if (val < 20) return "#4ce66a";
+		if (val < 50) return "#ffd700";
+		return "#ff5555";
+	}
+
+	private string GetLossColorCode(string loss)
+	{
+		float val = ParseLossValue(loss);
+		if (val < 0f) return "#a0a0a0";
+		if (val < 1.0f) return "#4ce66a";
+		if (val < 5.0f) return "#ffd700";
+		return "#ff5555";
+	}
+
+	private bool IsAnyMetricRed()
+	{
+		foreach (var player in LobbyManager.Instance.PlayerList)
+		{
+			if (player.PeerId < 0)
+			{
+				continue;
+			}
+			int ping = ParsePingValue(player.Latency);
+			if (ping >= 200)
+			{
+				return true;
+			}
+			int jitter = ParseJitterValue(player.Jitter);
+			if (jitter >= 50)
+			{
+				return true;
+			}
+			float loss = ParseLossValue(player.PacketLoss);
+			if (loss >= 5.0f)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private void UpdateHostStabilityLabel(string stability)
+	{
+		if (LobbyManager.Instance == null || LobbyManager.Instance.IsHost || _hostStabilityLabel == null)
+		{
+			if (_hostStabilityLabel != null)
+			{
+				_hostStabilityLabel.Visible = false;
+			}
+			return;
+		}
+
+		_hostStabilityLabel.Visible = true;
+		if (stability == "Excellent")
+		{
+			_hostStabilityLabel.Text = Tr("Host Stability: Excellent");
+			_hostStabilityLabel.AddThemeColorOverride("font_color", new Color(0.3f, 0.9f, 0.4f));
+		}
+		else if (stability == "Average")
+		{
+			_hostStabilityLabel.Text = Tr("Host Stability: Average");
+			_hostStabilityLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.8f, 0.1f));
+		}
+		else if (stability == "Poor")
+		{
+			_hostStabilityLabel.Text = Tr("Host Stability: Poor");
+			_hostStabilityLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.25f, 0.25f));
+		}
+		else
+		{
+			_hostStabilityLabel.Visible = false;
 		}
 	}
 }

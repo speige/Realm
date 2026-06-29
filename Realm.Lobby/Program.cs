@@ -105,7 +105,8 @@ app.MapGet("/lobbies", (LobbyRegistry registry, GeoIpService geoIp, HttpContext 
             lobby.Longitude,
             distance,
             estimatedPing,
-            lobby.OriginServerUri
+            lobby.OriginServerUri,
+            lobby.HostPingBaseline
         );
     });
 
@@ -131,6 +132,7 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
 
     var hostCoords = geoIp.GetCoordinates(hostIp);
     var lobbyId = Guid.NewGuid().ToString();
+    var hostToken = Guid.NewGuid().ToString();
 
     var info = new LobbyInfo
     {
@@ -145,7 +147,9 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
         Latitude = hostCoords.lat,
         Longitude = hostCoords.lon,
         LastHeartbeat = DateTime.UtcNow,
-        OriginServerUri = peerRegistry.SelfUrl
+        OriginServerUri = peerRegistry.SelfUrl,
+        HostToken = hostToken,
+        HostPingBaseline = req.HostPingBaseline
     };
 
     registry.AddOrUpdate(info);
@@ -176,7 +180,7 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
         }
     });
 
-    return Results.Ok(new { LobbyId = lobbyId, Latitude = hostCoords.lat, Longitude = hostCoords.lon });
+    return Results.Ok(new { LobbyId = lobbyId, Latitude = hostCoords.lat, Longitude = hostCoords.lon, HostToken = hostToken });
 });
 
 // POST /lobbies/propagate - Receives propagated lobby info from another node
@@ -224,6 +228,71 @@ app.MapPost("/lobbies/heartbeat", async (HeartbeatRequest req, LobbyRegistry reg
         });
 
         return Results.Ok(new { Status = "Ok" });
+    }
+    return Results.NotFound(new { Message = "Lobby not found" });
+});
+
+app.MapPost("/lobbies/close", async (CloseLobbyRequest req, LobbyRegistry registry, PeerRegistry peerRegistry, IHttpClientFactory httpClientFactory) =>
+{
+    if (registry.TryGet(req.LobbyId, out var lobby) && lobby != null)
+    {
+        if (lobby.HostToken == req.HostToken)
+        {
+            registry.TryRemove(req.LobbyId, out _);
+
+            if (hostConnections.TryRemove(req.LobbyId, out var socket))
+            {
+                try
+                {
+                    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Lobby closed by host", CancellationToken.None);
+                }
+                catch { }
+            }
+
+            _ = Task.Run(async () =>
+            {
+                using var httpClient = httpClientFactory.CreateClient();
+                foreach (var peerUrl in peerRegistry.PeerUrls)
+                {
+                    try
+                    {
+                        var content = new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json");
+                        await httpClient.PostAsync($"{peerUrl.TrimEnd('/')}/lobbies/propagate-close", content);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error propagating close: {ex.Message}");
+                    }
+                }
+            });
+
+            return Results.Ok(new { Status = "Closed" });
+        }
+        return Results.Json(new { Message = "Unauthorized" }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+    return Results.NotFound(new { Message = "Lobby not found" });
+});
+
+app.MapPost("/lobbies/propagate-close", async (CloseLobbyRequest req, LobbyRegistry registry) =>
+{
+    if (registry.TryGet(req.LobbyId, out var lobby) && lobby != null)
+    {
+        if (lobby.HostToken == req.HostToken)
+        {
+            registry.TryRemove(req.LobbyId, out _);
+
+            if (hostConnections.TryRemove(req.LobbyId, out var socket))
+            {
+                try
+                {
+                    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Lobby closed by host", CancellationToken.None);
+                }
+                catch { }
+            }
+
+            return Results.Ok(new { Status = "Closed" });
+        }
+        return Results.Json(new { Message = "Unauthorized" }, statusCode: StatusCodes.Status401Unauthorized);
     }
     return Results.NotFound(new { Message = "Lobby not found" });
 });
@@ -329,11 +398,12 @@ app.Run();
 
 // DTOs & Models
 
-public record RegisterRequest(string Map, int HostPort, string NatType, string? ReportedHostIP, string? PasswordHash, int MaxPlayers, int SlotsUsed);
+public record RegisterRequest(string Map, int HostPort, string NatType, string? ReportedHostIP, string? PasswordHash, int MaxPlayers, int SlotsUsed, int HostPingBaseline);
+public record CloseLobbyRequest(string LobbyId, string HostToken);
 public record HeartbeatRequest(string LobbyId, int SlotsUsed);
 public record JoinRequest(string LobbyId, string ClientPublicIP, int ClientPublicPort);
 public record JoinResponseDto(string HostIP, int HostPort);
-public record LobbyResponseDto(string LobbyId, string Map, string HostIP, int HostPort, string NatType, int SlotsUsed, int MaxPlayers, double Latitude, double Longitude, double DistanceKm, int EstimatedPingMs, string? OriginServerUri);
+public record LobbyResponseDto(string LobbyId, string Map, string HostIP, int HostPort, string NatType, int SlotsUsed, int MaxPlayers, double Latitude, double Longitude, double DistanceKm, int EstimatedPingMs, string? OriginServerUri, int HostPingBaseline);
 
 public class PeerRegistry
 {
@@ -355,11 +425,20 @@ public class LobbyInfo
     public double Longitude { get; set; }
     public DateTime LastHeartbeat { get; set; }
     public string? OriginServerUri { get; set; }
+    public string? HostToken { get; set; }
+    public int HostPingBaseline { get; set; }
 }
 
 public class LobbyRegistry
 {
     private readonly ConcurrentDictionary<string, LobbyInfo> _lobbies = new();
+
+    public bool TryRemove(string lobbyId, out LobbyInfo? info)
+    {
+        bool result = _lobbies.TryRemove(lobbyId, out var tmp);
+        info = tmp;
+        return result;
+    }
 
     public void AddOrUpdate(LobbyInfo info)
     {
