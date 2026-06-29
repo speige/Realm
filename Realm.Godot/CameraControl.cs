@@ -11,6 +11,7 @@ public partial class CameraControl : Camera3D
 	[Export] public bool EnableEdgePanning = true;
 
 	[Export] public bool IsLocked { get; set; } = false;
+	public Node3D FollowTarget { get; set; } = null;
 
 	public float? LimitLeft { get; set; } = null;
 	public float? LimitRight { get; set; } = null;
@@ -138,6 +139,7 @@ public partial class CameraControl : Camera3D
 		}
 		else if (@event is InputEventMouseMotion mouseMotion && _isDraggingMouse)
 		{
+			FollowTarget = null;
 			Vector2 deltaMouse = mouseMotion.Position - _lastMousePosition;
 			_lastMousePosition = mouseMotion.Position;
 
@@ -188,7 +190,14 @@ public partial class CameraControl : Camera3D
 		MoveSpeed = 10.0f + (GameSettings.ScrollSpeed / 100.0f) * 50.0f;
 
 		_currentHeight = Mathf.Lerp(_currentHeight, _targetHeight, ZoomSpeed * fDelta);
-		Position = new Vector3(Position.X, _currentHeight, Position.Z);
+		if (FollowTarget != null && GodotObject.IsInstanceValid(FollowTarget))
+		{
+			Position = new Vector3(FollowTarget.Position.X, _currentHeight, FollowTarget.Position.Z + 25.0f);
+		}
+		else
+		{
+			Position = new Vector3(Position.X, _currentHeight, Position.Z);
+		}
 
 		if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
 		{
@@ -286,6 +295,7 @@ public partial class CameraControl : Camera3D
 
 		if (velocity != Vector3.Zero)
 		{
+			FollowTarget = null;
 			velocity = velocity.Normalized() * MoveSpeed * fDelta;
 
 			float zoomFactor = _currentHeight / GetMaxZoom();

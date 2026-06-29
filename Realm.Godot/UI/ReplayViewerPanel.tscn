@@ -1,0 +1,113 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://UI/ReplayViewerPanel.cs" id="1_script"]
+
+[node name="ReplayViewerPanel" type="PanelContainer"]
+custom_minimumSize = Vector2(960, 110)
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -480.0
+offset_top = -130.0
+offset_right = 480.0
+offset_bottom = -0.0
+grow_horizontal = 2
+grow_vertical = 0
+script = ExtResource("1_script")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBox" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ScrubberRow" type="HBoxContainer" parent="MarginContainer/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Scrubber" type="HSlider" parent="MarginContainer/VBox/ScrubberRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+focus_mode = 0
+
+[node name="TimeLabel" type="Label" parent="MarginContainer/VBox/ScrubberRow"]
+custom_minimumSize = Vector2(120, 0)
+layout_mode = 2
+text = "00:00 / 00:00"
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="ControlsRow" type="HBoxContainer" parent="MarginContainer/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="PlayPauseButton" type="Button" parent="MarginContainer/VBox/ControlsRow"]
+custom_minimumSize = Vector2(80, 34)
+layout_mode = 2
+focus_mode = 0
+text = "PLAY"
+
+[node name="VSeparator" type="VSeparator" parent="MarginContainer/VBox/ControlsRow"]
+layout_mode = 2
+
+[node name="Speed05" type="Button" parent="MarginContainer/VBox/ControlsRow"]
+custom_minimumSize = Vector2(45, 34)
+layout_mode = 2
+focus_mode = 0
+text = "0.5x"
+
+[node name="Speed1" type="Button" parent="MarginContainer/VBox/ControlsRow"]
+custom_minimumSize = Vector2(45, 34)
+layout_mode = 2
+focus_mode = 0
+text = "1x"
+
+[node name="Speed2" type="Button" parent="MarginContainer/VBox/ControlsRow"]
+custom_minimumSize = Vector2(45, 34)
+layout_mode = 2
+focus_mode = 0
+text = "2x"
+
+[node name="Speed4" type="Button" parent="MarginContainer/VBox/ControlsRow"]
+custom_minimumSize = Vector2(45, 34)
+layout_mode = 2
+focus_mode = 0
+text = "4x"
+
+[node name="Speed8" type="Button" parent="MarginContainer/VBox/ControlsRow"]
+custom_minimumSize = Vector2(45, 34)
+layout_mode = 2
+focus_mode = 0
+text = "8x"
+
+[node name="VSeparator2" type="VSeparator" parent="MarginContainer/VBox/ControlsRow"]
+layout_mode = 2
+
+[node name="PerspectiveOpt" type="OptionButton" parent="MarginContainer/VBox/ControlsRow"]
+custom_minimumSize = Vector2(180, 34)
+layout_mode = 2
+focus_mode = 0
+
+[node name="TetherButton" type="Button" parent="MarginContainer/VBox/ControlsRow"]
+custom_minimumSize = Vector2(150, 34)
+layout_mode = 2
+focus_mode = 0
+text = "TETHER CAMERA"
+
+[node name="VSeparator3" type="VSeparator" parent="MarginContainer/VBox/ControlsRow"]
+layout_mode = 2
+
+[node name="QuitButton" type="Button" parent="MarginContainer/VBox/ControlsRow"]
+custom_minimumSize = Vector2(80, 34)
+layout_mode = 2
+focus_mode = 0
+text = "QUIT"

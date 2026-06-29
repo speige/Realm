@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using Realm.Godot.ReplaySystem;
 
 public enum GameScreen
 {
@@ -11,7 +12,8 @@ public enum GameScreen
 	GameOver,
 	MapDiscovery,
 	MapDetails,
-	MapEditorHUD
+	MapEditorHUD,
+	ReplayList
 }
 
 public partial class UIManager : Control
@@ -27,6 +29,7 @@ public partial class UIManager : Control
 	[Export] public PackedScene MapDiscoveryScene;
 	[Export] public PackedScene MapDetailsScene;
 	[Export] public PackedScene MapEditorHUDScene;
+	[Export] public PackedScene ReplayListScene;
 
 	private Control _currentScreen;
 	private ColorRect _fadeOverlay;
@@ -176,6 +179,11 @@ public partial class UIManager : Control
 		}
 		_targetScreen = screen;
 		_isVictory = isVictory;
+
+		if (screen == GameScreen.GameOver || screen == GameScreen.MainMenu)
+		{
+			GameHost.Instance?.StopRecording();
+		}
 
 		// Make overlay intercept inputs during transition
 		_fadeOverlay.MouseFilter = MouseFilterEnum.Stop;
@@ -328,12 +336,27 @@ public partial class UIManager : Control
 				// Notify GameHost to set up editor
 				GameHost.Instance?.StartMapEditorMode();
 				break;
+			case GameScreen.ReplayList:
+				targetScene = ReplayListScene ?? GD.Load<PackedScene>("res://UI/ReplayListPanel.tscn");
+				Input.MouseMode = Input.MouseModeEnum.Visible;
+				break;
 		}
 
 		if (targetScene != null)
 		{
 			_currentScreen = targetScene.Instantiate<Control>();
 			AddChild(_currentScreen);
+
+			if (_targetScreen == GameScreen.InGameHUD && ReplayPlaybackManager.Instance.IsPlayingReplay)
+			{
+				GameHost.Instance?.StopRecording();
+				var panelScene = GD.Load<PackedScene>("res://UI/ReplayViewerPanel.tscn");
+				if (panelScene != null)
+				{
+					var panel = panelScene.Instantiate<Control>();
+					_currentScreen.AddChild(panel);
+				}
+			}
 			
 			// Move fade overlay to front so it stays on top during transition
 			MoveChild(_fadeOverlay, GetChildCount() - 1);

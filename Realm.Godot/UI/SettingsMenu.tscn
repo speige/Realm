@@ -186,6 +186,11 @@ layout_mode = 2
 focus_mode = 0
 text = "Display FPS"
 
+[node name="RecordReplaysChk" type="CheckBox" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+text = "Record Replays"
+
 [node name="HealthBarsLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
 layout_mode = 2
 text = "Unit Health Bars"

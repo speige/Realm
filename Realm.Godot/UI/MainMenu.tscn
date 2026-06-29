@@ -121,6 +121,13 @@ size_flags_horizontal = 4
 focus_mode = 0
 icon = ExtResource("8_scroll")
 
+[node name="ReplaysButton" type="Button" parent="CentralPanel/VBoxContainer"]
+custom_minimumSize = Vector2(280, 55)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("8_scroll")
+
 [node name="QuitButton" type="Button" parent="."]
 custom_minimumSize = Vector2(240, 60)
 layout_mode = 1

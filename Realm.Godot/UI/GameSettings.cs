@@ -23,6 +23,7 @@ public static class GameSettings
 	public static string ShowHealthBars { get; set; } = "damaged";
 	public static string Language { get; set; } = "en";
 	public static bool DisplayFps { get; set; } = true;
+	public static bool RecordReplays { get; set; } = false;
 
 	public static void ResetToDefaults()
 	{
@@ -40,6 +41,7 @@ public static class GameSettings
 		ShowHealthBars = "damaged";
 		Language = "en";
 		DisplayFps = true;
+		RecordReplays = false;
 	}
 
 	public static void InitializeResolutions()
@@ -119,6 +121,7 @@ public static class GameSettings
 				HudScale = data.HudScale;
 				Language = data.Language ?? "en";
 				DisplayFps = data.DisplayFps ?? true;
+				RecordReplays = data.RecordReplays ?? false;
 				if (data.ShowHealthBars is JsonElement elem)
 				{
 					if (elem.ValueKind == JsonValueKind.True || elem.ValueKind == JsonValueKind.False)
@@ -163,7 +166,8 @@ public static class GameSettings
 			HudScale = HudScale,
 			ShowHealthBars = ShowHealthBars,
 			Language = Language,
-			DisplayFps = DisplayFps
+			DisplayFps = DisplayFps,
+			RecordReplays = RecordReplays
 		};
 
 		string json = JsonSerializer.Serialize(data);
@@ -313,5 +317,6 @@ public static class GameSettings
 		public object ShowHealthBars { get; set; }
 		public string Language { get; set; }
 		public bool? DisplayFps { get; set; }
+		public bool? RecordReplays { get; set; }
 	}
 }

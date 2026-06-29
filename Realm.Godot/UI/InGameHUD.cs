@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using Realm.Godot.ReplaySystem;
 using Arch.Core;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Combat;
@@ -531,6 +532,14 @@ public partial class InGameHUD : Control
 
 		// Build F5 hotkey reference panel (hidden by default)
 		BuildHotkeyReferencePanel();
+
+		if (ReplayPlaybackManager.Instance.IsPlayingReplay)
+		{
+			_bottomConsole.Visible = false;
+			_resourceContainer.Visible = false;
+			if (_devPanel != null) _devPanel.Visible = false;
+			if (_chatPanel != null) _chatPanel.Visible = false;
+		}
 	}
 
 	private void OnHUDResized()
@@ -2107,6 +2116,19 @@ public partial class InGameHUD : Control
 	{
 		_minimapArea.GuiInput += (@event) =>
 		{
+			if (ReplayPlaybackManager.Instance.IsPlayingReplay)
+			{
+				if (@event is InputEventMouseButton rMouseBtn && rMouseBtn.Pressed && rMouseBtn.ButtonIndex == MouseButton.Left)
+				{
+					TeleportCameraToMinimapPos(rMouseBtn.Position);
+				}
+				else if (@event is InputEventMouseMotion rMouseMotion && rMouseMotion.ButtonMask == MouseButtonMask.Left)
+				{
+					TeleportCameraToMinimapPos(rMouseMotion.Position);
+				}
+				return;
+			}
+
 			if (@event is InputEventMouseButton mouseBtn && mouseBtn.Pressed)
 			{
 				if (mouseBtn.ButtonIndex == MouseButton.Left)
@@ -3036,6 +3058,96 @@ public partial class InGameHUD : Control
 
 	private void UpdateFogOfWar()
 	{
+		if (ReplayPlaybackManager.Instance.IsPlayingReplay)
+		{
+			if (ReplayPlaybackManager.Instance.SpectatorPerspective == -1)
+			{
+				for (int x = 0; x < 32; x++)
+				{
+					for (int z = 0; z < 32; z++)
+					{
+						_fogGrid[x, z] = 2;
+					}
+				}
+				if (GameHost.Instance != null)
+				{
+					foreach (var unit in GameHost.Instance.AllUnits)
+					{
+						if (unit != null && GodotObject.IsInstanceValid(unit))
+						{
+							unit.Visible = true;
+						}
+					}
+				}
+				Update3DFogMesh();
+				return;
+			}
+			else
+			{
+				int targetOwnerId = ReplayPlaybackManager.Instance.SpectatorPerspective;
+				for (int x = 0; x < 32; x++)
+				{
+					for (int z = 0; z < 32; z++)
+					{
+						_fogGrid[x, z] = 0;
+					}
+				}
+				if (GameHost.Instance == null) return;
+				foreach (var unit in GameHost.Instance.AllUnits)
+				{
+					if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
+					int ownerId = GameHost.Instance.GetOwnerPeerId(unit.Entity);
+					if (ownerId != targetOwnerId) continue;
+					Vector3 pos = unit.GlobalPosition;
+					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
+					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+					float scanRadius = 15.0f;
+					if (GameHost.Instance.EcsWorld.IsAlive(unit.Entity) && GameHost.Instance.EcsWorld.Has<DefinitionId>(unit.Entity))
+					{
+						string defId = GameHost.Instance.EcsWorld.Get<DefinitionId>(unit.Entity).Value;
+						if (GameHost.UnitRegistry.TryGetValue(defId, out var metaReg) && metaReg.ScanRadius > 0)
+						{
+							scanRadius = metaReg.ScanRadius;
+						}
+					}
+					int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (250f / 32f)));
+					for (int dx = -rGrid; dx <= rGrid; dx++)
+					{
+						for (int dz = -rGrid; dz <= rGrid; dz++)
+						{
+							int nx = gx + dx;
+							int nz = gz + dz;
+							if (nx >= 0 && nx < 32 && nz >= 0 && nz < 32)
+							{
+								if (dx * dx + dz * dz <= rGrid * rGrid)
+								{
+									_fogGrid[nx, nz] = 2;
+								}
+							}
+						}
+					}
+				}
+				foreach (var unit in GameHost.Instance.AllUnits)
+				{
+					if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
+					int ownerId = GameHost.Instance.GetOwnerPeerId(unit.Entity);
+					if (ownerId == targetOwnerId)
+					{
+						unit.Visible = true;
+					}
+					else
+					{
+						Vector3 pos = unit.GlobalPosition;
+						int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
+						int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+						unit.Visible = (_fogGrid[gx, gz] == 2);
+					}
+				}
+				Update3DFogMesh();
+				return;
+			}
+		}
+
 		if (_fogOfWarType == "visible")
 		{
 			for (int x = 0; x < 32; x++)

@@ -33,6 +33,7 @@ public partial class SettingsMenu : Control
 	private HSlider _mouseSensSlider;
 	private HSlider _hudScaleSlider;
 	private CheckBox _displayFpsChk;
+	private CheckBox _recordReplaysChk;
 	private OptionButton _healthBarsOpt;
 	private OptionButton _languageOpt;
 
@@ -73,6 +74,7 @@ public partial class SettingsMenu : Control
 		_mouseSensSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/MouseSensSlider");
 		_hudScaleSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HudScaleSlider");
 		_displayFpsChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/DisplayFpsChk");
+		_recordReplaysChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/RecordReplaysChk");
 		_healthBarsOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HealthBarsOpt");
 		_languageOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/LanguageOpt");
 
@@ -137,6 +139,8 @@ public partial class SettingsMenu : Control
 
 		UIStyle.ApplyCheckboxStyle(_displayFpsChk);
 		_displayFpsChk.Text = TranslationServer.Translate(_displayFpsChk.Text);
+		UIStyle.ApplyCheckboxStyle(_recordReplaysChk);
+		_recordReplaysChk.Text = TranslationServer.Translate(_recordReplaysChk.Text);
 	}
 
 	private void PopulateDropdowns()
@@ -215,6 +219,8 @@ public partial class SettingsMenu : Control
 
 		_displayFpsChk.Pressed += () => UIManager.Instance.PlayClickSound();
 		_displayFpsChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+		_recordReplaysChk.Pressed += () => UIManager.Instance.PlayClickSound();
+		_recordReplaysChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 	}
 
 	private void SetupSliders()
@@ -312,6 +318,7 @@ public partial class SettingsMenu : Control
 		_mouseSensSlider.Value = GameSettings.MouseSens;
 		_hudScaleSlider.Value = GameSettings.HudScale;
 		_displayFpsChk.ButtonPressed = GameSettings.DisplayFps;
+		_recordReplaysChk.ButtonPressed = GameSettings.RecordReplays;
 		int hbIdx = GameSettings.ShowHealthBars switch
 		{
 			"hidden" => 0,
@@ -392,6 +399,7 @@ public partial class SettingsMenu : Control
 		GameSettings.MouseSens = (float)_mouseSensSlider.Value;
 		GameSettings.HudScale = (float)_hudScaleSlider.Value;
 		GameSettings.DisplayFps = _displayFpsChk.ButtonPressed;
+		GameSettings.RecordReplays = _recordReplaysChk.ButtonPressed;
 		GameSettings.ShowHealthBars = _healthBarsOpt.Selected switch
 		{
 			0 => "hidden",

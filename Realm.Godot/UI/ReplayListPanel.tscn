@@ -1,0 +1,73 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://UI/ReplayListPanel.cs" id="1_script"]
+
+[node name="ReplayListPanel" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MainFrame" type="PanelContainer" parent="CenterContainer"]
+custom_minimumSize = Vector2(1000, 680)
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="CenterContainer/MainFrame"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="Header" type="HBoxContainer" parent="CenterContainer/MainFrame/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="BackButton" type="Button" parent="CenterContainer/MainFrame/VBox/Header"]
+custom_minimumSize = Vector2(120, 45)
+layout_mode = 2
+focus_mode = 0
+text = "BACK"
+
+[node name="TitleLabel" type="Label" parent="CenterContainer/MainFrame/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "REPLAYS"
+horizontal_alignment = 1
+
+[node name="Control" type="Control" parent="CenterContainer/MainFrame/VBox/Header"]
+custom_minimumSize = Vector2(120, 0)
+layout_mode = 2
+
+[node name="ListFrame" type="PanelContainer" parent="CenterContainer/MainFrame/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ListContainer" type="VBoxContainer" parent="CenterContainer/MainFrame/VBox/ListFrame"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="NoReplaysLabel" type="Label" parent="CenterContainer/MainFrame/VBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = "No replays recorded yet."
+horizontal_alignment = 1
+vertical_alignment = 1

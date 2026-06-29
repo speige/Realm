@@ -12,6 +12,7 @@ public partial class MainMenu : Control
 	private Button _playButton;
 	private Button _mapDiscoveryButton;
 	private Button _mapEditorButton;
+	private Button _replaysButton;
 	private Button _settingsButton;
 	private Button _profileButton;
 	private Button _quitButton;
@@ -32,6 +33,7 @@ public partial class MainMenu : Control
 		_playButton = GetNode<Button>("CentralPanel/VBoxContainer/PlayButton");
 		_mapDiscoveryButton = GetNode<Button>("CentralPanel/VBoxContainer/MapDiscoveryButton");
 		_mapEditorButton = GetNode<Button>("CentralPanel/VBoxContainer/MapEditorButton");
+		_replaysButton = GetNode<Button>("CentralPanel/VBoxContainer/ReplaysButton");
 		_settingsButton = GetNode<Button>("SettingsButton");
 		_profileButton = GetNode<Button>("ProfileButton");
 		_quitButton = GetNode<Button>("QuitButton");
@@ -48,6 +50,7 @@ public partial class MainMenu : Control
 		SetupPlayButton(_playButton, () => UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser));
 		SetupButton(_mapDiscoveryButton, "MAP DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.MapDiscovery));
 		SetupButton(_mapEditorButton, "MAP EDITOR", () => OnMapEditorPressed());
+		SetupButton(_replaysButton, "REPLAYS", () => UIManager.Instance.TransitionTo(GameScreen.ReplayList));
 		SetupGearButton(_settingsButton, () => UIManager.Instance.OpenSettingsOverlay());
 		SetupAvatarButton(_profileButton, () => ShowProfilePopup());
 		SetupButton(_quitButton, "QUIT GAME", () => GetTree().Quit());
@@ -58,6 +61,7 @@ public partial class MainMenu : Control
 		_discordButton.AddThemeConstantOverride("icon_max_width", 28);
 		_mapDiscoveryButton.AddThemeConstantOverride("icon_max_width", 28);
 		_mapEditorButton.AddThemeConstantOverride("icon_max_width", 28);
+		_replaysButton.AddThemeConstantOverride("icon_max_width", 28);
 		_donateButton.AddThemeConstantOverride("icon_max_width", 28);
 
 		// Populate runic pillars
