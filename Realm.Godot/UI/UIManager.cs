@@ -76,19 +76,18 @@ public partial class UIManager : Control
 	private void ApplyStartupSettings()
 	{
 		GameSettings.Load();
+		GameSettings.ApplyGraphicsSettings(this);
 		LocalizationManager.SetupTranslations();
 
-		string[] resolutions = { "1920x1080", "1600x900", "1280x720" };
-		if (GameSettings.ResolutionIdx >= 0 && GameSettings.ResolutionIdx < resolutions.Length)
+		int modeIdx = GameSettings.WindowModeIdx;
+		if (modeIdx != 2)
 		{
-			var parts = resolutions[GameSettings.ResolutionIdx].Split("x");
-			if (parts.Length == 2 && int.TryParse(parts[0], out int w) && int.TryParse(parts[1], out int h))
+			if (GameSettings.ResolutionIdx >= 0 && GameSettings.ResolutionIdx < GameSettings.Resolutions.Count)
 			{
-				GetWindow().Size = new Vector2I(w, h);
+				GetWindow().Size = GameSettings.Resolutions[GameSettings.ResolutionIdx];
 			}
 		}
 
-		int modeIdx = GameSettings.WindowModeIdx;
 		if (modeIdx == 0) // Fullscreen
 		{
 			GetWindow().Mode = Window.ModeEnum.ExclusiveFullscreen;

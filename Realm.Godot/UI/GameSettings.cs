@@ -1,4 +1,5 @@
 using Godot;
+using System.Collections.Generic;
 using System.Text.Json;
 
 public static class GameSettings
@@ -6,6 +7,7 @@ public static class GameSettings
 	private const string SettingsPath = "user://settings.json";
 
 	public static int ResolutionIdx { get; set; } = 0;
+	public static List<Vector2I> Resolutions { get; private set; }
 	public static int QualityIdx { get; set; } = 2; // High
 	public static int WindowModeIdx { get; set; } = 1; // Windowed by default
 	public static int VsyncIdx { get; set; } = 0; // On
@@ -40,6 +42,44 @@ public static class GameSettings
 		DisplayFps = true;
 	}
 
+	public static void InitializeResolutions()
+	{
+		Vector2I screenSize = DisplayServer.ScreenGetSize(DisplayServer.WindowGetCurrentScreen());
+		var standardRes = new List<Vector2I>
+		{
+			new Vector2I(3840, 2160),
+			new Vector2I(3440, 1440),
+			new Vector2I(2560, 1600),
+			new Vector2I(2560, 1440),
+			new Vector2I(2560, 1080),
+			new Vector2I(1920, 1200),
+			new Vector2I(1920, 1080),
+			new Vector2I(1680, 1050),
+			new Vector2I(1600, 900),
+			new Vector2I(1440, 900),
+			new Vector2I(1366, 768),
+			new Vector2I(1280, 800),
+			new Vector2I(1280, 720)
+		};
+
+		var available = new List<Vector2I>();
+		foreach (var res in standardRes)
+		{
+			if (res.X <= screenSize.X && res.Y <= screenSize.Y)
+			{
+				available.Add(res);
+			}
+		}
+
+		if (!available.Contains(screenSize))
+		{
+			available.Add(screenSize);
+		}
+
+		available.Sort((a, b) => b.X == a.X ? b.Y.CompareTo(a.Y) : b.X.CompareTo(a.X));
+		Resolutions = available;
+	}
+
 	static GameSettings()
 	{
 		Load();
@@ -47,6 +87,10 @@ public static class GameSettings
 
 	public static void Load()
 	{
+		if (Resolutions == null)
+		{
+			InitializeResolutions();
+		}
 		if (!FileAccess.FileExists(SettingsPath))
 		{
 			// Default values already set
@@ -128,6 +172,129 @@ public static class GameSettings
 		{
 			file.StoreString(json);
 		}
+	}
+
+	public static void ApplyGraphicsSettings(Node contextNode)
+	{
+		if (contextNode == null || !GodotObject.IsInstanceValid(contextNode)) return;
+
+		var viewport = contextNode.GetViewport();
+		if (viewport != null && GodotObject.IsInstanceValid(viewport))
+		{
+			switch (QualityIdx)
+			{
+				case 0:
+					viewport.Msaa3D = Viewport.Msaa.Disabled;
+					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Disabled;
+					viewport.UseTaa = false;
+					break;
+				case 1:
+					viewport.Msaa3D = Viewport.Msaa.Disabled;
+					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
+					viewport.UseTaa = false;
+					break;
+				case 2:
+					viewport.Msaa3D = Viewport.Msaa.Msaa2X;
+					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
+					viewport.UseTaa = false;
+					break;
+				case 3:
+					viewport.Msaa3D = Viewport.Msaa.Msaa4X;
+					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
+					viewport.UseTaa = true;
+					break;
+			}
+		}
+
+		WorldEnvironment worldEnv = null;
+		DirectionalLight3D light = null;
+
+		var tree = contextNode.GetTree();
+		if (tree != null && GodotObject.IsInstanceValid(tree))
+		{
+			var root = tree.Root;
+			if (root != null && GodotObject.IsInstanceValid(root))
+			{
+				worldEnv = FindNodeInTree<WorldEnvironment>(root);
+				light = FindNodeInTree<DirectionalLight3D>(root);
+			}
+		}
+
+		if (worldEnv != null && GodotObject.IsInstanceValid(worldEnv) && worldEnv.Environment != null)
+		{
+			var env = worldEnv.Environment;
+			if (!env.IsLocalToScene())
+			{
+				env = (Godot.Environment)env.Duplicate();
+				worldEnv.Environment = env;
+			}
+
+			switch (QualityIdx)
+			{
+				case 0:
+					env.SsaoEnabled = false;
+					env.SsilEnabled = false;
+					env.SsrEnabled = false;
+					env.SdfgiEnabled = false;
+					env.GlowEnabled = false;
+					break;
+				case 1:
+					env.SsaoEnabled = true;
+					env.SsilEnabled = false;
+					env.SsrEnabled = false;
+					env.SdfgiEnabled = false;
+					env.GlowEnabled = true;
+					break;
+				case 2:
+					env.SsaoEnabled = true;
+					env.SsilEnabled = true;
+					env.SsrEnabled = false;
+					env.SdfgiEnabled = false;
+					env.GlowEnabled = true;
+					break;
+				case 3:
+					env.SsaoEnabled = true;
+					env.SsilEnabled = true;
+					env.SsrEnabled = true;
+					env.SdfgiEnabled = true;
+					env.GlowEnabled = true;
+					break;
+			}
+		}
+
+		if (light != null && GodotObject.IsInstanceValid(light))
+		{
+			switch (QualityIdx)
+			{
+				case 0:
+					light.ShadowEnabled = false;
+					break;
+				case 1:
+					light.ShadowEnabled = true;
+					light.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal;
+					break;
+				case 2:
+					light.ShadowEnabled = true;
+					light.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Parallel4Splits;
+					break;
+				case 3:
+					light.ShadowEnabled = true;
+					light.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Parallel4Splits;
+					break;
+			}
+		}
+	}
+
+	private static T FindNodeInTree<T>(Node parent) where T : Node
+	{
+		if (parent is T t) return t;
+		int childCount = parent.GetChildCount();
+		for (int i = 0; i < childCount; i++)
+		{
+			var found = FindNodeInTree<T>(parent.GetChild(i));
+			if (found != null) return found;
+		}
+		return null;
 	}
 
 	private class SettingsData

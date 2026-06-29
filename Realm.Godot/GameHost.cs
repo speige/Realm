@@ -63,6 +63,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public World EcsWorld { get; private set; }
 	public List<Unit3D> SelectedUnits { get; } = new List<Unit3D>();
 	public List<Unit3D> AllUnits { get; } = new List<Unit3D>();
+	public List<Prop3D> AllProps { get; } = new List<Prop3D>();
 
 	private Entity _playerEntity;
 	private Entity _enemyPlayerEntity;
@@ -2640,6 +2641,7 @@ public class {mapName} : IMapScript
 	{
 		GD.Print($"[GAMEHOST_READY] GameHost _Ready starting");
 		Instance = this;
+		GameSettings.ApplyGraphicsSettings(this);
 
 		if (System.OperatingSystem.IsWindows())
 		{
@@ -3835,6 +3837,7 @@ public class {mapName} : IMapScript
 					{
 						// Depleted! Destroy the node
 						var depletedNode = gather.TargetNode;
+						AllProps.Remove(depletedNode);
 						depletedNode.QueueFree();
 					}
 					
@@ -4011,6 +4014,70 @@ public class {mapName} : IMapScript
 				{
 					var unit3D = EcsWorld.Get<Unit3D>(entity);
 					var nextPos = current + dir * stats.Speed * fDelta;
+					float r1 = unit3D.Scale.X * 1.2f;
+					if (unit3D.UnitId == "castle") r1 = unit3D.Scale.X * 5.0f;
+					else if (unit3D.UnitId == "tower") r1 = unit3D.Scale.X * 2.5f;
+
+					foreach (var other in AllUnits)
+					{
+						if (other == unit3D || !GodotObject.IsInstanceValid(other)) continue;
+						if (EcsWorld.Has<Dead>(other.Entity)) continue;
+
+						float r2 = other.Scale.X * 1.2f;
+						if (other.UnitId == "castle") r2 = other.Scale.X * 5.0f;
+						else if (other.UnitId == "tower") r2 = other.Scale.X * 2.5f;
+
+						float minDist = (r1 + r2) * 0.85f;
+						float dx = nextPos.X - other.GlobalPosition.X;
+						float dz = nextPos.Z - other.GlobalPosition.Z;
+						float distSq = dx * dx + dz * dz;
+						if (distSq < minDist * minDist)
+						{
+							float otherDist = Mathf.Sqrt(distSq);
+							Vector3 pushDir;
+							if (otherDist < 0.001f)
+							{
+								pushDir = new Vector3(1f, 0f, 0f);
+								otherDist = 1f;
+							}
+							else
+							{
+								pushDir = new Vector3(dx / otherDist, 0f, dz / otherDist);
+							}
+							float overlap = minDist - otherDist;
+							nextPos += pushDir * overlap;
+						}
+					}
+
+					foreach (var prop in AllProps)
+					{
+						if (!GodotObject.IsInstanceValid(prop)) continue;
+
+						float r2 = prop.Scale.X * 1.5f;
+						if (prop.PropId == "goldmine") r2 = prop.Scale.X * 4.0f;
+
+						float minDist = (r1 + r2) * 0.85f;
+						float dx = nextPos.X - prop.GlobalPosition.X;
+						float dz = nextPos.Z - prop.GlobalPosition.Z;
+						float distSq = dx * dx + dz * dz;
+						if (distSq < minDist * minDist)
+						{
+							float propDist = Mathf.Sqrt(distSq);
+							Vector3 pushDir;
+							if (propDist < 0.001f)
+							{
+								pushDir = new Vector3(1f, 0f, 0f);
+								propDist = 1f;
+							}
+							else
+							{
+								pushDir = new Vector3(dx / propDist, 0f, dz / propDist);
+							}
+							float overlap = minDist - propDist;
+							nextPos += pushDir * overlap;
+						}
+					}
+
 					if (GroundTerrain != null && GroundTerrain.NavMeshQuery != null)
 					{
 						var nextRc = new RcVec3f(nextPos.X, nextPos.Y, nextPos.Z);
@@ -8986,6 +9053,7 @@ public class {mapName} : IMapScript
 				prop.QueueFree();
 			}
 		}
+		AllProps.Clear();
 		
 		if (EcsWorld != null)
 		{
@@ -10500,6 +10568,7 @@ public class {mapName} : IMapScript
 		}
 		SelectedUnits.Clear();
 		AllUnits.Clear();
+		AllProps.Clear();
 		
 		foreach (var child in GetChildren())
 		{
@@ -10925,6 +10994,7 @@ public class {mapName} : IMapScript
 		var prop = new Prop3D();
 		prop.PropId = propId;
 		AddChild(prop);
+		AllProps.Add(prop);
 		
 		position.Y = GetTerrainHeightAt(position);
 		prop.Position = position;
@@ -11058,6 +11128,7 @@ public class {mapName} : IMapScript
 		{
 			if (current is Prop3D prop)
 			{
+				AllProps.Remove(prop);
 				prop.QueueFree();
 				return;
 			}
@@ -11544,6 +11615,7 @@ public class {mapName} : IMapScript
 		var prop = new Prop3D();
 		prop.PropId = propId;
 		AddChild(prop);
+		AllProps.Add(prop);
 		
 		position.Y = GetTerrainHeightAt(position);
 		prop.Position = position;
@@ -11588,6 +11660,7 @@ public class {mapName} : IMapScript
 		}
 		else if (node is Prop3D prop && GodotObject.IsInstanceValid(prop))
 		{
+			AllProps.Remove(prop);
 			prop.QueueFree();
 		}
 		else if (node is Decal decal && GodotObject.IsInstanceValid(decal))
@@ -11683,6 +11756,7 @@ public class {mapName} : IMapScript
 				SelectedEditorObject = null;
 			}
 			var action = new ObjectDeleteAction("prop", prop.PropId, prop.Position, prop.RotationDegrees.Y, prop.Scale.X, false, prop);
+			AllProps.Remove(prop);
 			prop.QueueFree();
 			return action;
 		}

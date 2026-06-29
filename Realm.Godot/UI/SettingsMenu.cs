@@ -142,9 +142,11 @@ public partial class SettingsMenu : Control
 	private void PopulateDropdowns()
 	{
 		_resolutionOpt.Clear();
-		_resolutionOpt.AddItem("1920 x 1080", 0);
-		_resolutionOpt.AddItem("1600 x 900", 1);
-		_resolutionOpt.AddItem("1280 x 720", 2);
+		for (int i = 0; i < GameSettings.Resolutions.Count; i++)
+		{
+			var res = GameSettings.Resolutions[i];
+			_resolutionOpt.AddItem($"{res.X} x {res.Y}", i);
+		}
 
 		_qualityOpt.Clear();
 		_qualityOpt.AddItem(TranslationServer.Translate("Low"), 0);
@@ -196,6 +198,20 @@ public partial class SettingsMenu : Control
 			opt.ItemSelected += (idx) => UIManager.Instance.PlayClickSound();
 			opt.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 		}
+
+		_windowModeOpt.ItemSelected += (idx) =>
+		{
+			if (idx == 0 || idx == 2)
+			{
+				_resolutionOpt.Disabled = true;
+				_resolutionOpt.Select(-1);
+			}
+			else
+			{
+				_resolutionOpt.Disabled = false;
+				_resolutionOpt.Select(GameSettings.ResolutionIdx);
+			}
+		};
 
 		_displayFpsChk.Pressed += () => UIManager.Instance.PlayClickSound();
 		_displayFpsChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
@@ -277,6 +293,16 @@ public partial class SettingsMenu : Control
 		_windowModeOpt.Select(GameSettings.WindowModeIdx);
 		_vsyncOpt.Select(GameSettings.VsyncIdx);
 
+		if (GameSettings.WindowModeIdx == 0 || GameSettings.WindowModeIdx == 2)
+		{
+			_resolutionOpt.Disabled = true;
+			_resolutionOpt.Select(-1);
+		}
+		else
+		{
+			_resolutionOpt.Disabled = false;
+		}
+
 		_masterSlider.Value = GameSettings.MasterVolume;
 		_musicSlider.Value = GameSettings.MusicVolume;
 		_sfxSlider.Value = GameSettings.SfxVolume;
@@ -314,14 +340,16 @@ public partial class SettingsMenu : Control
 
 	private void ApplySettings()
 	{
-		string resText = _resolutionOpt.GetItemText(_resolutionOpt.Selected);
-		var parts = resText.Split("x");
-		if (parts.Length == 2 && int.TryParse(parts[0].Trim(), out int w) && int.TryParse(parts[1].Trim(), out int h))
+		int modeIdx = _windowModeOpt.Selected;
+		if (modeIdx == 1)
 		{
-			GetWindow().Size = new Vector2I(w, h);
+			int resSel = _resolutionOpt.Selected;
+			if (resSel >= 0 && resSel < GameSettings.Resolutions.Count)
+			{
+				GetWindow().Size = GameSettings.Resolutions[resSel];
+			}
 		}
 
-		int modeIdx = _windowModeOpt.Selected;
 		if (modeIdx == 0) // Fullscreen
 		{
 			GetWindow().Mode = Window.ModeEnum.ExclusiveFullscreen;
@@ -347,7 +375,10 @@ public partial class SettingsMenu : Control
 		}
 
 		// Save settings in GameSettings
-		GameSettings.ResolutionIdx = _resolutionOpt.Selected;
+		if (modeIdx == 1)
+		{
+			GameSettings.ResolutionIdx = _resolutionOpt.Selected;
+		}
 		GameSettings.QualityIdx = _qualityOpt.Selected;
 		GameSettings.WindowModeIdx = _windowModeOpt.Selected;
 		GameSettings.VsyncIdx = _vsyncOpt.Selected;
@@ -387,6 +418,7 @@ public partial class SettingsMenu : Control
 		LocalizationManager.UpdateLocale(newLang);
 
 		GameSettings.Save();
+		GameSettings.ApplyGraphicsSettings(this);
 
 		// Update active HUD if it exists
 		if (InGameHUD.Instance != null)
