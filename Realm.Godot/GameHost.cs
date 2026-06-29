@@ -2776,6 +2776,38 @@ public class {mapName} : IMapScript
 			return;
 		}
 
+		string rawMapName = "melee";
+		if (LobbyManager.Instance != null && !string.IsNullOrEmpty(LobbyManager.Instance.ActiveMapName))
+		{
+			rawMapName = LobbyManager.Instance.ActiveMapName;
+		}
+
+		string normalizedMapName = rawMapName.ToLower().Trim();
+		if (!DirAccess.DirExistsAbsolute($"res://Maps/{normalizedMapName}"))
+		{
+			if (normalizedMapName.Contains("legion"))
+			{
+				normalizedMapName = "legion_td";
+			}
+			else if (normalizedMapName.Contains("defense") || normalizedMapName.Contains("td"))
+			{
+				normalizedMapName = "green_td";
+			}
+			else
+			{
+				normalizedMapName = "melee";
+			}
+		}
+
+		string terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
+		if (FileAccess.FileExists(terrainPath))
+		{
+			if (LoadMapFromFile(terrainPath, true))
+			{
+				return;
+			}
+		}
+
 		var staticBody = new StaticBody3D();
 		staticBody.Name = "Ground";
 		AddChild(staticBody);
@@ -11315,7 +11347,7 @@ public class {mapName} : IMapScript
 		}
 	}
 
-	public bool LoadMapFromFile(string customPath = "")
+	public bool LoadMapFromFile(string customPath = "", bool terrainOnly = false)
 	{
 		string path = string.IsNullOrEmpty(customPath) ? "user://terrain.json" : customPath;
 		if (!FileAccess.FileExists(path)) return false;
@@ -11419,27 +11451,30 @@ public class {mapName} : IMapScript
 
 			GroundTerrain.UpdateMeshAndPhysics();
 
-			if (saveData.Units != null)
+			if (!terrainOnly)
 			{
-				foreach (var u in saveData.Units)
+				if (saveData.Units != null)
 				{
-					SpawnUnitExternal(u.UnitId, new Vector3(u.PosX, u.PosY, u.PosZ), u.IsEnemy, u.RotationY, u.Scale);
+					foreach (var u in saveData.Units)
+					{
+						SpawnUnitExternal(u.UnitId, new Vector3(u.PosX, u.PosY, u.PosZ), u.IsEnemy, u.RotationY, u.Scale);
+					}
 				}
-			}
 
-			if (saveData.Props != null)
-			{
-				foreach (var p in saveData.Props)
+				if (saveData.Props != null)
 				{
-					SpawnPropExternalWithParams(p.PropId, new Vector3(p.PosX, p.PosY, p.PosZ), p.RotationY, p.Scale);
+					foreach (var p in saveData.Props)
+					{
+						SpawnPropExternalWithParams(p.PropId, new Vector3(p.PosX, p.PosY, p.PosZ), p.RotationY, p.Scale);
+					}
 				}
-			}
 
-			if (saveData.Decals != null)
-			{
-				foreach (var d in saveData.Decals)
+				if (saveData.Decals != null)
 				{
-					SpawnDecalExternalWithParams(d.DecalId, new Vector3(d.PosX, d.PosY, d.PosZ), d.RotationY, d.Scale);
+					foreach (var d in saveData.Decals)
+					{
+						SpawnDecalExternalWithParams(d.DecalId, new Vector3(d.PosX, d.PosY, d.PosZ), d.RotationY, d.Scale);
+					}
 				}
 			}
 

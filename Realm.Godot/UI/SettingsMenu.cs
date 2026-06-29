@@ -432,4 +432,13 @@ public partial class SettingsMenu : Control
 		}
 		GD.Print("Settings reset to defaults.");
 	}
+
+	public override void _UnhandledInput(InputEvent @event)
+	{
+		if (@event is InputEventKey escapeEvent && escapeEvent.Pressed && escapeEvent.Keycode == Key.Escape)
+		{
+			GetViewport().SetInputAsHandled();
+			CancelSettings();
+		}
+	}
 }
