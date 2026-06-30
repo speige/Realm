@@ -130,6 +130,7 @@ public partial class InGameHUD : Control
 
 	// Feedback label
 	private Label _feedbackLabel;
+	private Label _connectionWarningLabel;
 	private Control _minimapArea;
 	private Control _cameraIndicator;
 
@@ -318,6 +319,32 @@ public partial class InGameHUD : Control
 		_btnVictory = GetNode<Button>("DevPanel/BtnVictory");
 		_btnDefeat = GetNode<Button>("DevPanel/BtnDefeat");
 		_feedbackLabel = GetNode<Label>("FeedbackLabel");
+
+		_connectionWarningLabel = new Label();
+		_connectionWarningLabel.Name = "ConnectionWarningLabel";
+		_connectionWarningLabel.Text = "Connection to host lost ... Reconnecting";
+		_connectionWarningLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		_connectionWarningLabel.VerticalAlignment = VerticalAlignment.Center;
+		_connectionWarningLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.2f, 0.2f));
+		_connectionWarningLabel.AddThemeFontSizeOverride("font_size", 22);
+		
+		var warningStyle = new StyleBoxFlat();
+		warningStyle.BgColor = new Color(0.12f, 0.05f, 0.05f, 0.7f);
+		warningStyle.BorderColor = new Color(0.8f, 0.2f, 0.2f, 0.5f);
+		warningStyle.SetBorderWidthAll(2);
+		warningStyle.ContentMarginLeft = 20;
+		warningStyle.ContentMarginRight = 20;
+		warningStyle.ContentMarginTop = 8;
+		warningStyle.ContentMarginBottom = 8;
+		_connectionWarningLabel.AddThemeStyleboxOverride("normal", warningStyle);
+		
+		AddChild(_connectionWarningLabel);
+		_connectionWarningLabel.SetAnchorsPreset(LayoutPreset.CenterTop);
+		_connectionWarningLabel.GrowHorizontal = GrowDirection.Both;
+		_connectionWarningLabel.OffsetTop = 20;
+		_connectionWarningLabel.OffsetLeft = -250;
+		_connectionWarningLabel.OffsetRight = 250;
+		_connectionWarningLabel.Visible = false;
 
 		_minimapArea = GetNode<Control>("BottomConsole/HBox/MinimapFrame/MinimapArea");
 		_cameraIndicator = GetNode<Control>("BottomConsole/HBox/MinimapFrame/MinimapArea/Indicator");
@@ -1408,6 +1435,11 @@ public partial class InGameHUD : Control
 				float scale = 18.0f / Mathf.Max(8.0f, height);
 				worldEnv.Environment.FogDensity = _baseFogDensity * scale;
 			}
+		}
+
+		if (GameHost.Instance != null && _connectionWarningLabel != null)
+		{
+			_connectionWarningLabel.Visible = GameHost.Instance.IsConnectionLost;
 		}
 
 		if (_countdownActive)

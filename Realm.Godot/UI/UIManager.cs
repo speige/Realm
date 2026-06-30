@@ -13,7 +13,8 @@ public enum GameScreen
 	MapDiscovery,
 	MapDetails,
 	MapEditorHUD,
-	ReplayList
+	ReplayList,
+	LobbyCreate
 }
 
 public partial class UIManager : Control
@@ -30,12 +31,14 @@ public partial class UIManager : Control
 	[Export] public PackedScene MapDetailsScene;
 	[Export] public PackedScene MapEditorHUDScene;
 	[Export] public PackedScene ReplayListScene;
+	[Export] public PackedScene LobbyCreateScene;
 
 	private Control _currentScreen;
 	private ColorRect _fadeOverlay;
 	private AnimationPlayer _fadeAnim;
 	private GameScreen _targetScreen;
 	private bool _isVictory = true; // State passed to Game Over screen
+	private bool _transitionInProgress = false;
 
 	private MapData _selectedMapData;
 
@@ -185,6 +188,13 @@ public partial class UIManager : Control
 			GameHost.Instance?.StopRecording();
 		}
 
+		if (_transitionInProgress)
+		{
+			return;
+		}
+
+		_transitionInProgress = true;
+
 		// Make overlay intercept inputs during transition
 		_fadeOverlay.MouseFilter = MouseFilterEnum.Stop;
 
@@ -305,6 +315,10 @@ public partial class UIManager : Control
 				targetScene = LobbyBrowserScene ?? GD.Load<PackedScene>("res://UI/LobbyBrowser.tscn");
 				Input.MouseMode = Input.MouseModeEnum.Visible;
 				break;
+			case GameScreen.LobbyCreate:
+				targetScene = LobbyCreateScene ?? GD.Load<PackedScene>("res://UI/LobbyCreate.tscn");
+				Input.MouseMode = Input.MouseModeEnum.Visible;
+				break;
 			case GameScreen.LobbyRoom:
 				targetScene = LobbyRoomScene ?? GD.Load<PackedScene>("res://UI/LobbyRoom.tscn");
 				Input.MouseMode = Input.MouseModeEnum.Visible;
@@ -379,6 +393,7 @@ public partial class UIManager : Control
 		timer.Timeout += () => 
 		{
 			_fadeOverlay.MouseFilter = MouseFilterEnum.Ignore; // Allow clicks again
+			_transitionInProgress = false;
 		};
 	}
 

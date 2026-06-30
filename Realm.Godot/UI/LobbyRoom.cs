@@ -15,7 +15,7 @@ public partial class LobbyRoom : Control
 	private Button _inviteButton;
 	private Button _addBotButton;
 	private Button _startButton;
-	private OptionButton _mapSelectButton;
+	private Label _mapNameLabel;
 	private LineEdit _chatInput;
 	private RichTextLabel _chatLog;
 	private VBoxContainer _playersContainer;
@@ -23,6 +23,7 @@ public partial class LobbyRoom : Control
 	private CheckBox _spectatorDelayCheck;
 	private Panel? _countdownPopup;
 	private Label? _countdownTextLabel;
+	private Panel _connectingPopup;
 
 	private Label _lobbyTitle;
 	private Label _playersTitle;
@@ -44,7 +45,7 @@ public partial class LobbyRoom : Control
 		new Color(0.9f, 0.8f, 0.1f)  // Yellow
 	};
 
-	private readonly List<string> _availableMaps = new List<string>();
+	private List<MapBriefingDetails> _lobbyRoomMaps = new List<MapBriefingDetails>();
 	private readonly string[] _runes = { "ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᚲ", "ᚷ", "ᚹ", "ᚺ", "ᚾ", "ᛁ", "ᛃ", "ᛇ", "ᛈ", "ᛉ", "ᛊ", "ᛏ", "ᛒ", "ᛖ", "ᛗ", "ᛚ", "ᛜ", "ᛞ", "ᛟ" };
 	private readonly string[] _factions = { "HUMAN", "ORC", "UNDEAD", "NIGHT ELF" };
 	private string[] _aiQuotes = 
@@ -79,55 +80,8 @@ public partial class LobbyRoom : Control
 		_addBotButton.Visible = LobbyManager.Instance.IsHost;
 
 
-		_mapSelectButton = GetNode<OptionButton>("MapSelectButton");
-		_mapSelectButton.Clear();
-		_availableMaps.Clear();
-		using var dir = DirAccess.Open("res://Maps");
-		if (dir != null)
-		{
-			dir.ListDirBegin();
-			string dirName = dir.GetNext();
-			while (dirName != "")
-			{
-				if (dir.CurrentIsDir() && !dirName.StartsWith("."))
-				{
-					_availableMaps.Add(dirName);
-				}
-				dirName = dir.GetNext();
-			}
-			dir.ListDirEnd();
-		}
-		_availableMaps.Sort();
-		if (_availableMaps.Count == 0)
-		{
-			_availableMaps.AddRange(new[] { "green_td", "melee", "legion_td" });
-		}
-		foreach (string rawName in _availableMaps)
-		{
-			_mapSelectButton.AddItem(FormatMapDisplayName(rawName));
-		}
-
-		string currentMap = LobbyManager.Instance.ActiveMapName ?? "green_td";
-		int selectedIndex = _availableMaps.IndexOf(currentMap);
-		if (selectedIndex >= 0)
-		{
-			_mapSelectButton.Selected = selectedIndex;
-		}
-		else
-		{
-			selectedIndex = _availableMaps.FindIndex(m => m.ToLower().Contains(currentMap.ToLower()));
-			if (selectedIndex >= 0)
-			{
-				_mapSelectButton.Selected = selectedIndex;
-			}
-			else if (_availableMaps.Count > 0)
-			{
-				_mapSelectButton.Selected = 0;
-			}
-		}
-
-		_mapSelectButton.Disabled = !LobbyManager.Instance.IsHost;
-		_mapSelectButton.ItemSelected += OnMapSelected;
+		_mapNameLabel = GetNode<Label>("MapNameLabel");
+		_lobbyRoomMaps = MapInfoHelper.GetAvailableMaps();
 
 		_chatInput = GetNode<LineEdit>("ChatPanel/ChatContainer/ChatInput");
 		_chatLog = GetNode<RichTextLabel>("ChatPanel/ChatContainer/ChatLog");
@@ -189,6 +143,7 @@ public partial class LobbyRoom : Control
 		LobbyManager.Instance.CountdownTick += OnCountdownTick;
 		LobbyManager.Instance.CountdownCancelled += OnCountdownCancelled;
 		LobbyManager.Instance.CountdownFinished += OnCountdownFinished;
+		LobbyManager.Instance.ActiveMapChanged += OnActiveMapChanged;
 
 		// Populate players initially
 		if (!LobbyManager.Instance.IsHost)
@@ -198,6 +153,11 @@ public partial class LobbyRoom : Control
 		}
 
 		PopulatePlayersList();
+
+		if (!LobbyManager.Instance.IsHost)
+		{
+			ShowConnectingPopup();
+		}
 
 		CreateSpectatorDelayUI();
 		LobbyManager.Instance.SpectatorDelayChanged += OnSpectatorDelayChanged;
@@ -217,6 +177,8 @@ public partial class LobbyRoom : Control
 		var mapDrawer = new TacticalMap();
 		_mapFrame.AddChild(mapDrawer);
 		mapDrawer.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+
+		UpdateSelectedMapUI();
 	}
 
 	private void ApplyThemeStyles()
@@ -234,7 +196,6 @@ public partial class LobbyRoom : Control
 		UIStyle.ApplyTitle(_briefingTitle, "MATCH INFO & BRIEFING", 20);
 
 		_briefingLabel.AddThemeColorOverride("default_color", new Color(0.85f, 0.85f, 0.9f));
-		_briefingLabel.Text = "Map info - Situate in [color=#ff5555]The Frosting Pass[/color], a treacherous valley once controlled by ancient lords. Guard the gates and gather resources to secure the valley. Supports melee conflict and co-op campaign modes. Defeat enemy bases to win.";
 
 		// Table Columns
 		string[] headers = { "PlayersPanel/VBoxContainer/TableHeader/TeamCol", "PlayersPanel/VBoxContainer/TableHeader/ColorCol", 
@@ -259,14 +220,16 @@ public partial class LobbyRoom : Control
 		SetupLobbyButton(_addBotButton, "ADD AI BOT", () => LobbyManager.Instance.AddAIBot());
 		SetupStartButton();
 
-		_mapSelectButton.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		_mapSelectButton.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		_mapSelectButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-		_mapSelectButton.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
-		_mapSelectButton.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		_mapSelectButton.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
-		_mapSelectButton.AddThemeColorOverride("font_pressed_color", UIStyle.ColorCyanGlow);
-		_mapSelectButton.AddThemeFontSizeOverride("font_size", 14);
+		_mapNameLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		_mapNameLabel.AddThemeFontSizeOverride("font_size", 18);
+		_mapNameLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		_mapNameLabel.VerticalAlignment = VerticalAlignment.Center;
+		
+		var labelStyle = new StyleBoxFlat();
+		labelStyle.BgColor = new Color(0.12f, 0.13f, 0.16f, 0.5f);
+		labelStyle.BorderColor = new Color(0.25f, 0.25f, 0.3f, 0.4f);
+		labelStyle.SetBorderWidthAll(1);
+		_mapNameLabel.AddThemeStyleboxOverride("normal", labelStyle);
 
 		// Chat Log & Chat Input
 		var logStyle = new StyleBoxFlat();
@@ -384,12 +347,7 @@ public partial class LobbyRoom : Control
 	private void OnStartPressed()
 	{
 		UIManager.Instance.PlayClickSound();
-		string mapName = "green_td";
-		int selectedIndex = _mapSelectButton.Selected;
-		if (selectedIndex >= 0 && selectedIndex < _availableMaps.Count)
-		{
-			mapName = _availableMaps[selectedIndex];
-		}
+		string mapName = LobbyManager.Instance.ActiveMapName ?? "melee";
 
 		bool anyNotReady = false;
 		foreach (var player in LobbyManager.Instance.PlayerList)
@@ -548,13 +506,33 @@ public partial class LobbyRoom : Control
 		hbox.AddChild(cancelBtn);
 	}
 
-	private void OnMapSelected(long index)
+	private void OnActiveMapChanged(string mapName)
 	{
-		UIManager.Instance.PlayClickSound();
-		if (index >= 0 && index < _availableMaps.Count)
+		UpdateSelectedMapUI();
+	}
+
+	private void UpdateSelectedMapUI()
+	{
+		string currentMap = LobbyManager.Instance.ActiveMapName ?? "melee";
+		int selectedIndex = _lobbyRoomMaps.FindIndex(m => m.PathName == currentMap);
+		if (selectedIndex >= 0)
 		{
-			string mapName = _availableMaps[(int)index];
-			LobbyManager.Instance.ActiveMapName = mapName;
+			_mapNameLabel.Text = _lobbyRoomMaps[selectedIndex].DisplayName.ToUpper();
+			_briefingLabel.Text = _lobbyRoomMaps[selectedIndex].Description;
+		}
+		else
+		{
+			selectedIndex = _lobbyRoomMaps.FindIndex(m => m.PathName.ToLower().Contains(currentMap.ToLower()));
+			if (selectedIndex >= 0)
+			{
+				_mapNameLabel.Text = _lobbyRoomMaps[selectedIndex].DisplayName.ToUpper();
+				_briefingLabel.Text = _lobbyRoomMaps[selectedIndex].Description;
+			}
+			else if (_lobbyRoomMaps.Count > 0)
+			{
+				_mapNameLabel.Text = _lobbyRoomMaps[0].DisplayName.ToUpper();
+				_briefingLabel.Text = _lobbyRoomMaps[0].Description;
+			}
 		}
 	}
 
@@ -592,6 +570,7 @@ public partial class LobbyRoom : Control
 			LobbyManager.Instance.CountdownCancelled -= OnCountdownCancelled;
 			LobbyManager.Instance.CountdownFinished -= OnCountdownFinished;
 			LobbyManager.Instance.HostStabilityUpdated -= UpdateHostStabilityLabel;
+			LobbyManager.Instance.ActiveMapChanged -= OnActiveMapChanged;
 		}
 		base._ExitTree();
 	}
@@ -688,6 +667,7 @@ public partial class LobbyRoom : Control
 
 	private void PopulatePlayersList()
 	{
+		HideConnectingPopup();
 		if (!LobbyManager.Instance.IsHost && !_versionMismatchDetected)
 		{
 			var host = LobbyManager.Instance.PlayerList.Find(p => p.IsHost);
@@ -1015,6 +995,7 @@ public partial class LobbyRoom : Control
 
 	private void OnLobbyConnectionFailed(string reason)
 	{
+		HideConnectingPopup();
 		GD.PrintErr($"[LobbyRoom] Connection failed from lobby: {reason}");
 		UIManager.Instance.PlayWarningSound();
 		ShowConnectionFailedPopup(reason);
@@ -1318,6 +1299,55 @@ public partial class LobbyRoom : Control
 		else
 		{
 			_hostStabilityLabel.Visible = false;
+		}
+	}
+
+	private void ShowConnectingPopup()
+	{
+		if (_connectingPopup != null && GodotObject.IsInstanceValid(_connectingPopup))
+		{
+			_connectingPopup.QueueFree();
+		}
+
+		_connectingPopup = new Panel();
+		_connectingPopup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		_connectingPopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		AddChild(_connectingPopup);
+
+		var cardPanel = new Panel();
+		cardPanel.CustomMinimumSize = new Vector2(400, 150);
+		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_connectingPopup.AddChild(cardPanel);
+
+		var vbox = new VBoxContainer();
+		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		vbox.CustomMinimumSize = new Vector2(360, 110);
+		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
+		cardPanel.AddChild(vbox);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 25) });
+
+		var label = new Label();
+		UIStyle.ApplyTitle(label, Tr("CONNECTING TO HOST ..."), 22);
+		label.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		vbox.AddChild(label);
+
+		var spinner = new Label();
+		spinner.Text = Tr("Connecting ...");
+		spinner.HorizontalAlignment = HorizontalAlignment.Center;
+		spinner.AddThemeFontSizeOverride("font_size", 14);
+		spinner.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.75f));
+		vbox.AddChild(spinner);
+	}
+
+	private void HideConnectingPopup()
+	{
+		if (_connectingPopup != null && GodotObject.IsInstanceValid(_connectingPopup))
+		{
+			_connectingPopup.QueueFree();
+			_connectingPopup = null;
 		}
 	}
 }

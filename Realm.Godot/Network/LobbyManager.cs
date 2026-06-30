@@ -92,6 +92,7 @@ public partial class LobbyManager : Node
     public bool IsGameStarted { get; set; }
     public string ActiveMapName { get; set; } = "green_td";
     public bool SpectatorDelay { get; set; } = false;
+    public string? LobbyJoinError { get; set; }
     public string HostStability { get; set; } = "Excellent";
     public event System.Action<string> HostStabilityUpdated;
 
@@ -160,6 +161,7 @@ public partial class LobbyManager : Node
     public event Action<int>? CountdownTick;
     public event Action? CountdownCancelled;
     public event Action? CountdownFinished;
+    public event Action<string>? ActiveMapChanged;
 
     public override void _Ready()
     {
@@ -321,13 +323,14 @@ public partial class LobbyManager : Node
 
     // --- LOBBY ACTIONS ---
 
-    public async Task<bool> HostLobbyAsync(string mapName)
+    public async Task<bool> HostLobbyAsync(string mapPathName, string mapDisplayName)
     {
         IsHost = true;
         HostStability = HostStabilityTracker.GetOverallStability();
         IsGameStarted = false;
         SpectatorDelay = false;
         PlayerList.Clear();
+        ActiveMapName = mapPathName;
 
         // 1. Initialize local player as slot 0
         LocalPlayer = new PlayerInfo
@@ -391,7 +394,7 @@ public partial class LobbyManager : Node
             int hostPingBaseline = await MeasurePingToRegistryAsync();
             var registerPayload = new
             {
-                Map = mapName,
+                Map = mapDisplayName,
                 HostPort = _hostPublicPort > 0 ? _hostPublicPort : ENetPort,
                 NatType = LocalNatType.ToString(),
                 ReportedHostIP = _hostPublicIp ?? "127.0.0.1",
@@ -533,6 +536,11 @@ public partial class LobbyManager : Node
                 GD.PrintErr($"[LobbyManager] Failed to create ENet Client: {err}");
                 ConnectionFailed?.Invoke("Failed to bind network socket.");
                 return false;
+            }
+            var packetPeer = peer.GetPeer(1);
+            if (packetPeer != null)
+            {
+                packetPeer.SetTimeout(32, 5000, 15000);
             }
             Multiplayer.MultiplayerPeer = peer;
             if (Multiplayer is SceneMultiplayer sceneMultiplayer)
@@ -731,6 +739,7 @@ public partial class LobbyManager : Node
             UpdateAllPeerDiagnostics();
             RpcId(id, nameof(SyncSpectatorDelay), SpectatorDelay);
             RpcId(id, nameof(SyncHostStability), HostStability);
+            RpcId(id, nameof(SyncActiveMap), ActiveMapName);
         }
     }
 
@@ -816,6 +825,11 @@ public partial class LobbyManager : Node
     private void OnServerDisconnectedGodot()
     {
         GD.Print("[LobbyManager] Host disconnected.");
+        if (IsGameStarted)
+        {
+            GD.Print("[LobbyManager] Allowing local play after host disconnect.");
+            return;
+        }
         KickReceived?.Invoke("Host closed the server.");
         Disconnect();
     }
@@ -848,7 +862,15 @@ public partial class LobbyManager : Node
         catch (Exception ex)
         {
             GD.PrintErr($"[LobbyManager] Failed to deserialize sync: {ex.Message}");
+            CallDeferred(nameof(HandleSyncDeserializationFailure));
         }
+    }
+
+    private void HandleSyncDeserializationFailure()
+    {
+        Disconnect();
+        LobbyJoinError = "Error joining lobby: Game version mismatch with host";
+        UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser);
     }
 
     [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
@@ -857,6 +879,23 @@ public partial class LobbyManager : Node
         GD.Print($"[LobbyManager] Connection Rejected: {reason}");
         ConnectionFailed?.Invoke(reason);
         Disconnect();
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void SyncActiveMap(string mapName)
+    {
+        ActiveMapName = mapName;
+        ActiveMapChanged?.Invoke(mapName);
+    }
+
+    public void UpdateActiveMap(string mapName)
+    {
+        if (IsHost)
+        {
+            ActiveMapName = mapName;
+            Rpc(nameof(SyncActiveMap), mapName);
+            ActiveMapChanged?.Invoke(mapName);
+        }
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]

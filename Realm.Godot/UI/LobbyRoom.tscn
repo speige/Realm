@@ -200,14 +200,13 @@ custom_minimumSize = Vector2(0, 32)
 layout_mode = 2
 placeholder_text = "Type here and press Enter to chat..."
 
-[node name="MapSelectButton" type="OptionButton" parent="."]
+[node name="MapNameLabel" type="Label" parent="."]
 custom_minimumSize = Vector2(340, 50)
 layout_mode = 0
 offset_left = 1450.0
 offset_top = 820.0
 offset_right = 1790.0
 offset_bottom = 870.0
-focus_mode = 0
 
 [node name="StartButton" type="Button" parent="."]
 custom_minimumSize = Vector2(340, 75)

@@ -93,6 +93,12 @@ public partial class LobbyBrowser : Control
 		_refreshTimer.Timeout += TriggerRefresh;
 		AddChild(_refreshTimer);
 		_refreshTimer.Start();
+
+		if (!string.IsNullOrEmpty(LobbyManager.Instance.LobbyJoinError))
+		{
+			ShowLobbyJoinErrorPopup(LobbyManager.Instance.LobbyJoinError);
+			LobbyManager.Instance.LobbyJoinError = null;
+		}
 	}
 
 	private void ApplyStyles()
@@ -136,6 +142,7 @@ public partial class LobbyBrowser : Control
 
 		// Host Button
 		SetupHostButton();
+
 
 		// Checkboxes
 		var checkBoxes = new[] { _campaignCheck, _meleeCheck, _tutorialCheck, _arcadeCheck };
@@ -195,29 +202,10 @@ public partial class LobbyBrowser : Control
 		_hostButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
 		_hostButton.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
-		_hostButton.Pressed += async () => 
+		_hostButton.Pressed += () => 
 		{
 			UIManager.Instance.PlayClickSound();
-			if (LobbyManager.Instance.LocalNatType == NatType.Symmetric)
-			{
-				UIManager.Instance.PlayWarningSound();
-				ShowHostingErrorPopup();
-				return;
-			}
-
-			_hostButton.Disabled = true;
-			bool success = await LobbyManager.Instance.HostLobbyAsync("The Frosting Pass");
-			_hostButton.Disabled = false;
-			
-			if (success)
-			{
-				UIManager.Instance.TransitionTo(GameScreen.LobbyRoom);
-			}
-			else
-			{
-				UIManager.Instance.PlayWarningSound();
-				GD.PrintErr("[LobbyBrowser] Failed to host game.");
-			}
+			UIManager.Instance.TransitionTo(GameScreen.LobbyCreate);
 		};
 		_hostButton.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 	}
@@ -561,6 +549,62 @@ public partial class LobbyBrowser : Control
 			_refreshTimer.Timeout -= TriggerRefresh;
 		}
 		base._ExitTree();
+	}
+
+	private void ShowLobbyJoinErrorPopup(string message)
+	{
+		var warningPopup = new Panel();
+		warningPopup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		warningPopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		AddChild(warningPopup);
+
+		var cardPanel = new Panel();
+		cardPanel.CustomMinimumSize = new Vector2(450, 220);
+		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		warningPopup.AddChild(cardPanel);
+
+		var vbox = new VBoxContainer();
+		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		vbox.CustomMinimumSize = new Vector2(400, 180);
+		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
+		cardPanel.AddChild(vbox);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
+
+		var titleLabel = new Label();
+		UIStyle.ApplyTitle(titleLabel, Tr("CONNECTION ERROR"), 20);
+		titleLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
+		vbox.AddChild(titleLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
+
+		var descLabel = new Label();
+		descLabel.Text = Tr(message);
+		descLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		descLabel.AddThemeFontSizeOverride("font_size", 14);
+		descLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		vbox.AddChild(descLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
+
+		var okBtn = new Button();
+		okBtn.Flat = false;
+		okBtn.AddThemeConstantOverride("icon_max_width", 0);
+		okBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		okBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		okBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		okBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(okBtn, Tr("OK"), 14);
+		okBtn.CustomMinimumSize = new Vector2(160, 40);
+		okBtn.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		okBtn.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			warningPopup.QueueFree();
+		};
+		vbox.AddChild(okBtn);
 	}
 
 	protected override void Dispose(bool disposing)

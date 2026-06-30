@@ -33,6 +33,9 @@ public partial class GameHost : Node3D, IGameAPI
 	private int _lastReceivedBaselineSeq = -1;
 	private bool _hasReceivedInitialBaseline = false;
 	private int _lastAppliedSnapshotSequence = -1;
+	private ulong _lastSnapshotReceivedTime = 0;
+	private bool _wasClientInMultiplayer = false;
+	public bool IsConnectionLost { get; private set; } = false;
 
 	private readonly Dictionary<int, Entity> _peerIdToPlayerEntityMap = new();
 	private readonly Dictionary<int, Entity> _serverToClientEntityMap = new();
@@ -2682,6 +2685,11 @@ public class {mapName} : IMapScript
 		if (_multiplayerActive)
 		{
 			_localPeerId = Multiplayer.GetUniqueId();
+			if (!Multiplayer.IsServer())
+			{
+				_wasClientInMultiplayer = true;
+				_lastSnapshotReceivedTime = Time.GetTicksMsec();
+			}
 			if (Multiplayer is SceneMultiplayer sceneMultiplayer)
 			{
 				sceneMultiplayer.ServerRelay = false;
@@ -3258,6 +3266,28 @@ public class {mapName} : IMapScript
 		}
 
 		float fDelta = (float)delta;
+
+		if (_wasClientInMultiplayer)
+		{
+			bool isLost = false;
+			if (_multiplayerActive && !Multiplayer.IsServer())
+			{
+				ulong now = Time.GetTicksMsec();
+				if (_lastSnapshotReceivedTime > 0)
+				{
+					double timeSinceLastSnapshot = (now - _lastSnapshotReceivedTime) / 1000.0;
+					if (timeSinceLastSnapshot > 30.0)
+					{
+						isLost = true;
+					}
+				}
+			}
+			else
+			{
+				isLost = true;
+			}
+			IsConnectionLost = isLost;
+		}
 
 		if (ReplayPlaybackManager.Instance.IsPlayingReplay)
 		{
@@ -12452,6 +12482,7 @@ public class {mapName} : IMapScript
 	public void ReceiveSnapshot(byte[] payload)
 	{
 		if (Multiplayer.IsServer()) return;
+		_lastSnapshotReceivedTime = Time.GetTicksMsec();
 		ProcessSnapshotDirect(payload);
 	}
 

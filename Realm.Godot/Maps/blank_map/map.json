@@ -1,4 +1,8 @@
 {
+  "MapProperties": {
+    "MapName": "Blank Map",
+    "MapDescription": "Map info - A blank map template. Ideal for scripting customized game scenarios and testing game systems."
+  },
   "worker": {
     "UnitId": "worker",
     "Name": "Worker",

@@ -1,4 +1,8 @@
 {
+  "MapProperties": {
+    "MapName": "Melee Battlefield",
+    "MapDescription": "Map info - Situate in [color=#ff5555]Melee Battlefield[/color], a treacherous valley once controlled by ancient lords. Guard the gates and gather resources to secure the valley. Supports melee conflict and co-op campaign modes. Defeat enemy bases to win."
+  },
   "worker": {
     "UnitId": "worker",
     "Name": "Worker",
