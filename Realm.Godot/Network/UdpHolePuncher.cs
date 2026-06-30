@@ -1,9 +1,9 @@
+using Godot;
 using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
-using Godot;
 
 public class UdpHolePuncher
 {
@@ -36,7 +36,7 @@ public class UdpHolePuncher
         }
         finally
         {
-            // Always close the UDP client so the port is freed for ENet immediately
+
             udp.Close();
         }
     }

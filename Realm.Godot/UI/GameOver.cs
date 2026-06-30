@@ -1,7 +1,5 @@
 using Godot;
-using System;
 using System.Collections.Generic;
-using System.Text.Json;
 
 public partial class GameOver : Control
 {
@@ -45,7 +43,7 @@ public partial class GameOver : Control
 
 	public override void _Ready()
 	{
-		// Bind Panels
+
 		_bgPanel = GetNode<Panel>("Background");
 		_leftPillar = GetNode<Panel>("LeftPillar");
 		_rightPillar = GetNode<Panel>("RightPillar");
@@ -53,7 +51,7 @@ public partial class GameOver : Control
 		_tableFrame = GetNode<PanelContainer>("MainPanel/VBox/TableFrame");
 		_graphFrame = GetNode<PanelContainer>("MainPanel/VBox/GraphFrame");
 
-		// Bind Buttons & Outlets
+
 		_titleLabel = GetNode<Label>("TitleLabel");
 		_btnOverview = GetNode<Button>("MainPanel/VBox/TabContainer/BtnOverview");
 		_btnEconomy = GetNode<Button>("MainPanel/VBox/TabContainer/BtnEconomy");
@@ -65,7 +63,7 @@ public partial class GameOver : Control
 		_tableRowsContainer = GetNode<VBoxContainer>("MainPanel/VBox/TableFrame/VBox/TableRowsContainer");
 		_graphContainer = GetNode<Control>("MainPanel/VBox/GraphFrame/TimelineGraph");
 
-		// Bind Table Headers
+
 		_playerColHeader = GetNode<Label>("MainPanel/VBox/TableFrame/VBox/TableHeader/PlayerCol");
 		_factionColHeader = GetNode<Label>("MainPanel/VBox/TableFrame/VBox/TableHeader/FactionCol");
 		_scoreColHeader = GetNode<Label>("MainPanel/VBox/TableFrame/VBox/TableHeader/ScoreCol");
@@ -90,10 +88,10 @@ public partial class GameOver : Control
 		_tableFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		_graphFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 
-		// Set title text style
+
 		SetStatus(_isVictory);
 
-		// Table Header text colors
+
 		var headers = new[] { _playerColHeader, _factionColHeader, _scoreColHeader, _killsColHeader, _resourcesColHeader };
 		foreach (var lbl in headers)
 		{
@@ -101,7 +99,7 @@ public partial class GameOver : Control
 			lbl.AddThemeFontSizeOverride("font_size", 15);
 		}
 
-		// Side Pillars
+
 		PopulateRunicPillar(GetNode<VBoxContainer>("LeftPillar/RuneContainer"));
 		PopulateRunicPillar(GetNode<VBoxContainer>("RightPillar/RuneContainer"));
 	}
@@ -202,9 +200,9 @@ public partial class GameOver : Control
 	private void SetupReportCopyrightButton()
 	{
 		_btnReportCopyright.Flat = false;
-		_btnReportCopyright.Text = "[!] REPORT INFRINGEMENT\n(DMCA/CopyRiGHT)";
+		_btnReportCopyright.Text = Tr("[!] REPORT INFRINGEMENT\n(DMCA/CopyRiGHT)");
 
-		// Custom styleboxes for red theme matching the uploaded image
+
 		var redNormal = new StyleBoxFlat();
 		redNormal.BgColor = new Color(0.20f, 0.17f, 0.17f, 0.95f);
 		redNormal.BorderColor = new Color(0.55f, 0.2f, 0.2f);
@@ -249,7 +247,7 @@ public partial class GameOver : Control
 		_btnReportCopyright.AddThemeStyleboxOverride("pressed", redPressed);
 		_btnReportCopyright.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
-		// Red/pinkish text colors
+
 		_btnReportCopyright.AddThemeColorOverride("font_color", new Color(0.85f, 0.35f, 0.35f));
 		_btnReportCopyright.AddThemeColorOverride("font_hover_color", new Color(1.0f, 0.45f, 0.45f));
 		_btnReportCopyright.AddThemeColorOverride("font_pressed_color", new Color(1.0f, 0.55f, 0.55f));
@@ -269,7 +267,7 @@ public partial class GameOver : Control
 		public string Comments { get; set; }
 	}
 
-	// In-memory static dictionary representing dummy server/session storage for ratings
+
 	private static readonly Dictionary<string, ReviewEntry> _loadedReviews = new();
 
 	private string GetActiveMapName()
@@ -307,13 +305,13 @@ public partial class GameOver : Control
 		bool hasExisting = _loadedReviews.ContainsKey(mapName);
 		var existingReview = hasExisting ? _loadedReviews[mapName] : null;
 
-		// 1. Root popup control covering the screen to block input behind
+
 		var rootPopup = new ColorRect();
 		rootPopup.Color = new Color(0, 0, 0, 0.6f);
 		rootPopup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 		AddChild(rootPopup);
 
-		// 2. The main container panel
+
 		var panel = new PanelContainer();
 		panel.CustomMinimumSize = new Vector2(550, 420);
 		panel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
@@ -324,28 +322,28 @@ public partial class GameOver : Control
 		vbox.AddThemeConstantOverride("separation", 15);
 		panel.AddChild(vbox);
 
-		// Title
+
 		var titleLabel = new Label();
-		UIStyle.ApplyTitle(titleLabel, hasExisting ? "EDIT YOUR REVIEW" : "WRITE A REVIEW", 22);
+		UIStyle.ApplyTitle(titleLabel, hasExisting ? Tr("EDIT YOUR REVIEW") : Tr("WRITE A REVIEW"), 22);
 		titleLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		vbox.AddChild(titleLabel);
 
-		// Subtitle/Map Info
+
 		var mapLabel = new Label();
-		mapLabel.Text = $"Map: {mapName.ToUpper()}";
+		mapLabel.Text = $"{Tr("Map")}: {mapName.ToUpper()}";
 		mapLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		mapLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		mapLabel.AddThemeFontSizeOverride("font_size", 14);
 		vbox.AddChild(mapLabel);
 
-		// Rating Box
+
 		var ratingHBox = new HBoxContainer();
 		ratingHBox.Alignment = BoxContainer.AlignmentMode.Center;
 		ratingHBox.AddThemeConstantOverride("separation", 10);
 		vbox.AddChild(ratingHBox);
 
 		var ratingTitle = new Label();
-		ratingTitle.Text = "Rating:";
+		ratingTitle.Text = Tr("Rating:");
 		ratingTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 		ratingTitle.AddThemeFontSizeOverride("font_size", 16);
 		ratingHBox.AddChild(ratingTitle);
@@ -356,15 +354,15 @@ public partial class GameOver : Control
 		ratingOption.AddThemeStyleboxOverride("hover", UIStyle.CreateTextInput(true));
 		ratingOption.AddThemeStyleboxOverride("pressed", UIStyle.CreateTextInput(true));
 		ratingOption.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.9f));
-		ratingOption.AddItem("5 Stars (Excellent)", 5);
-		ratingOption.AddItem("4 Stars (Good)", 4);
-		ratingOption.AddItem("3 Stars (Average)", 3);
-		ratingOption.AddItem("2 Stars (Poor)", 2);
-		ratingOption.AddItem("1 Star (Terrible)", 1);
+		ratingOption.AddItem(Tr("5 Stars (Excellent)"), 5);
+		ratingOption.AddItem(Tr("4 Stars (Good)"), 4);
+		ratingOption.AddItem(Tr("3 Stars (Average)"), 3);
+		ratingOption.AddItem(Tr("2 Stars (Poor)"), 2);
+		ratingOption.AddItem(Tr("1 Star (Terrible)"), 1);
 
 		if (hasExisting && existingReview != null)
 		{
-			// Set selected item based on rating (options index is 5 - rating)
+
 			int idx = 5 - existingReview.Rating;
 			ratingOption.Select(idx);
 		}
@@ -374,16 +372,16 @@ public partial class GameOver : Control
 		}
 		ratingHBox.AddChild(ratingOption);
 
-		// Comments Area
+
 		var commentsLabel = new Label();
-		commentsLabel.Text = "Your Review comments:";
+		commentsLabel.Text = Tr("Your Review comments:");
 		commentsLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 		commentsLabel.AddThemeFontSizeOverride("font_size", 15);
 		vbox.AddChild(commentsLabel);
 
 		var commentsEdit = new TextEdit();
 		commentsEdit.SizeFlagsVertical = SizeFlags.ExpandFill;
-		commentsEdit.PlaceholderText = "Write your thoughts about this map here...";
+		commentsEdit.PlaceholderText = Tr("Write your thoughts about this map here...");
 		commentsEdit.AddThemeStyleboxOverride("normal", UIStyle.CreateTextInput(false));
 		commentsEdit.AddThemeStyleboxOverride("focus", UIStyle.CreateTextInput(true));
 		commentsEdit.AddThemeColorOverride("font_color", new Color(0.9f, 0.85f, 0.75f));
@@ -395,13 +393,14 @@ public partial class GameOver : Control
 		}
 		vbox.AddChild(commentsEdit);
 
-		// Action Buttons Box
+
 		var actionsHBox = new HBoxContainer();
 		actionsHBox.Alignment = BoxContainer.AlignmentMode.Center;
 		actionsHBox.AddThemeConstantOverride("separation", 25);
 		vbox.AddChild(actionsHBox);
 
 		var btnSubmit = new Button();
+		btnSubmit.AddThemeConstantOverride("icon_max_width", 0);
 		btnSubmit.CustomMinimumSize = new Vector2(150, 42);
 		UIStyle.ApplyButtonText(btnSubmit, "Submit", 16);
 		btnSubmit.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
@@ -411,6 +410,7 @@ public partial class GameOver : Control
 		actionsHBox.AddChild(btnSubmit);
 
 		var btnCancel = new Button();
+		btnCancel.AddThemeConstantOverride("icon_max_width", 0);
 		btnCancel.CustomMinimumSize = new Vector2(150, 42);
 		UIStyle.ApplyButtonText(btnCancel, "Cancel", 16);
 		btnCancel.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
@@ -419,7 +419,7 @@ public partial class GameOver : Control
 		btnCancel.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 		actionsHBox.AddChild(btnCancel);
 
-		// Event handlers
+
 		btnCancel.Pressed += () =>
 		{
 			UIManager.Instance.PlayClickSound();
@@ -436,7 +436,7 @@ public partial class GameOver : Control
 			var entry = new ReviewEntry { Rating = selectedRating, Comments = commentText };
 			_loadedReviews[mapName] = entry;
 
-			// Update main button text
+
 			UIStyle.ApplyButtonText(_btnWriteReview, "Edit Your Review", 18);
 			rootPopup.QueueFree();
 		};
@@ -463,24 +463,24 @@ public partial class GameOver : Control
 		_btnEconomy.AddThemeStyleboxOverride("normal", _activeTab == 1 ? activeStyle : normStyle);
 		_btnMilitary.AddThemeStyleboxOverride("normal", _activeTab == 2 ? activeStyle : normStyle);
 
-		// Dynamically update Column Header labels
+
 		if (_activeTab == 0) // Overview
 		{
-			_scoreColHeader.Text = "TOTAL SCORE";
-			_killsColHeader.Text = "UNITS KILLED";
-			_resourcesColHeader.Text = "RESOURCES GATHERED  ";
+			_scoreColHeader.Text = Tr("TOTAL SCORE");
+			_killsColHeader.Text = Tr("UNITS KILLED");
+			_resourcesColHeader.Text = Tr("RESOURCES GATHERED") + "  ";
 		}
 		else if (_activeTab == 1) // Economy
 		{
-			_scoreColHeader.Text = "GOLD GATHERED";
-			_killsColHeader.Text = "WOOD GATHERED";
-			_resourcesColHeader.Text = "TOTAL RESOURCES  ";
+			_scoreColHeader.Text = Tr("GOLD GATHERED");
+			_killsColHeader.Text = Tr("WOOD GATHERED");
+			_resourcesColHeader.Text = Tr("TOTAL RESOURCES") + "  ";
 		}
 		else // Military
 		{
-			_scoreColHeader.Text = "UNITS TRAINED";
-			_killsColHeader.Text = "UNITS KILLED";
-			_resourcesColHeader.Text = "UNITS LOST  ";
+			_scoreColHeader.Text = Tr("UNITS TRAINED");
+			_killsColHeader.Text = Tr("UNITS KILLED");
+			_resourcesColHeader.Text = Tr("UNITS LOST") + "  ";
 		}
 
 		PopulateRows();

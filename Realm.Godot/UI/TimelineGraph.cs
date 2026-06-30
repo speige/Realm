@@ -7,15 +7,15 @@ public partial class TimelineGraph : Control
 	private int _activeTab = 0;
 	private float _drawProgress = 0f;
 
-	// Overview points: Time (0..35 mins) vs Army Value (0..30)
+
 	private List<Vector2> _p1Overview = new List<Vector2> { new Vector2(0, 3), new Vector2(5, 5), new Vector2(15, 12), new Vector2(25, 20), new Vector2(35, 28) };
 	private List<Vector2> _p2Overview = new List<Vector2> { new Vector2(0, 1), new Vector2(5, 3), new Vector2(15, 10), new Vector2(25, 25), new Vector2(35, 29) };
 
-	// Economy points: Time vs Total Gold Gathered (0..3000)
+
 	private List<Vector2> _p1Economy = new List<Vector2> { new Vector2(0, 0), new Vector2(5, 300), new Vector2(15, 1200), new Vector2(25, 2000), new Vector2(35, 3000) };
 	private List<Vector2> _p2Economy = new List<Vector2> { new Vector2(0, 0), new Vector2(5, 400), new Vector2(15, 1000), new Vector2(25, 1800), new Vector2(35, 2500) };
 
-	// Military points: Time vs Active Units (0..50)
+
 	private List<Vector2> _p1Military = new List<Vector2> { new Vector2(0, 1), new Vector2(5, 10), new Vector2(15, 32), new Vector2(25, 22), new Vector2(35, 45) };
 	private List<Vector2> _p2Military = new List<Vector2> { new Vector2(0, 1), new Vector2(5, 6), new Vector2(15, 20), new Vector2(25, 29), new Vector2(35, 18) };
 
@@ -39,7 +39,7 @@ public partial class TimelineGraph : Control
 			 .SetEase(Tween.EaseType.Out);
 		tween.StepFinished += (step) => QueueRedraw();
 		
-		// Ensure redraw updates
+
 		for (int i = 1; i <= 10; i++)
 		{
 			var timer = GetTree().CreateTimer(i * 0.06f);
@@ -49,7 +49,7 @@ public partial class TimelineGraph : Control
 
 	public override void _Draw()
 	{
-		// Rect bounds
+
 		Vector2 size = Size;
 		float paddingLeft = 50f;
 		float paddingRight = 30f;
@@ -59,7 +59,7 @@ public partial class TimelineGraph : Control
 		Vector2 graphOrigin = new Vector2(paddingLeft, size.Y - paddingBottom);
 		Vector2 graphSize = new Vector2(size.X - paddingLeft - paddingRight, size.Y - paddingTop - paddingBottom);
 
-		// 1. Draw Grid Lines
+
 		Color gridColor = new Color(0.2f, 0.2f, 0.25f, 0.3f);
 		int gridLinesY = 4;
 		for (int i = 0; i <= gridLinesY; i++)
@@ -67,10 +67,10 @@ public partial class TimelineGraph : Control
 			float yRatio = (float)i / gridLinesY;
 			float yPos = graphOrigin.Y - (yRatio * graphSize.Y);
 			
-			// Horizontal line
+
 			DrawLine(new Vector2(graphOrigin.X, yPos), new Vector2(graphOrigin.X + graphSize.X, yPos), gridColor, 1.0f);
 			
-			// Labels
+
 			string labelVal = GetYLabel(yRatio);
 			DrawString(ThemeDB.FallbackFont, new Vector2(10, yPos + 5), labelVal, HorizontalAlignment.Left, -1, 12, new Color(0.6f, 0.6f, 0.6f));
 		}
@@ -81,20 +81,20 @@ public partial class TimelineGraph : Control
 			float xRatio = (float)i / gridLinesX;
 			float xPos = graphOrigin.X + (xRatio * graphSize.X);
 
-			// Vertical line
+
 			DrawLine(new Vector2(xPos, graphOrigin.Y), new Vector2(xPos, graphOrigin.Y - graphSize.Y), gridColor, 1.0f);
 
-			// X Labels (Time)
+
 			string xLabel = $"{(int)(xRatio * 35)}";
 			DrawString(ThemeDB.FallbackFont, new Vector2(xPos - 10, size.Y - 15), xLabel, HorizontalAlignment.Left, -1, 12, new Color(0.6f, 0.6f, 0.6f));
 		}
 
-		// 2. Axes
+
 		Color axisColor = new Color(0.4f, 0.4f, 0.45f, 0.8f);
 		DrawLine(graphOrigin, new Vector2(graphOrigin.X + graphSize.X, graphOrigin.Y), axisColor, 2.0f); // X axis
 		DrawLine(graphOrigin, new Vector2(graphOrigin.X, graphOrigin.Y - graphSize.Y), axisColor, 2.0f); // Y axis
 
-		// 3. Draw Plots
+
 		List<Vector2> p1Points = GetActiveData(true);
 		List<Vector2> p2Points = GetActiveData(false);
 
@@ -120,7 +120,7 @@ public partial class TimelineGraph : Control
 			screenPoints[i] = new Vector2(px, py);
 		}
 
-		// Draw path animated
+
 		int numPointsToDraw = (int)Math.Max(2, Math.Ceiling(screenPoints.Length * _drawProgress));
 		float subProgress = (screenPoints.Length * _drawProgress) % 1.0f;
 		if (numPointsToDraw > screenPoints.Length)
@@ -135,7 +135,7 @@ public partial class TimelineGraph : Control
 			activePoints[i] = screenPoints[i];
 		}
 
-		// Interpolate last point
+
 		if (numPointsToDraw < screenPoints.Length)
 		{
 			Vector2 lastDrawPoint = screenPoints[numPointsToDraw - 2];
@@ -147,11 +147,11 @@ public partial class TimelineGraph : Control
 			activePoints[numPointsToDraw - 1] = screenPoints[screenPoints.Length - 1];
 		}
 
-		// Draw Lines
+
 		for (int i = 0; i < activePoints.Length - 1; i++)
 		{
 			DrawLine(activePoints[i], activePoints[i + 1], lineColor, 3.0f, true);
-			// Draw simple glowing highlight circles
+
 			DrawCircle(activePoints[i], 4f, lineColor);
 		}
 		DrawCircle(activePoints[activePoints.Length - 1], 4f, lineColor);

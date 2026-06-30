@@ -1,6 +1,5 @@
 using Godot;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 
 public partial class MapDiscovery : Control
@@ -16,7 +15,7 @@ public partial class MapDiscovery : Control
 	private LineEdit _searchBar;
 	private GridContainer _mapGrid;
 
-	// Category buttons
+
 	private Button _btnAll;
 	private Button _btnFeatured;
 	private Button _btnTD;
@@ -47,7 +46,7 @@ public partial class MapDiscovery : Control
 		_btnMelee = GetNode<Button>("FilterPanel/VBoxContainer/CatMelee");
 		_btnCampaign = GetNode<Button>("FilterPanel/VBoxContainer/CatCampaign");
 
-		// Get dummy data
+
 		_allMaps = MapData.GetDummyMaps();
 
 		ApplyStyles();
@@ -145,13 +144,13 @@ public partial class MapDiscovery : Control
 
 	private void RenderMapGrid()
 	{
-		// Clear existing children
+
 		foreach (Node child in _mapGrid.GetChildren())
 		{
 			child.QueueFree();
 		}
 
-		// Filter
+
 		var filtered = _allMaps.AsEnumerable();
 
 		if (_selectedCategory != "All")
@@ -178,7 +177,7 @@ public partial class MapDiscovery : Control
 		if (list.Count == 0)
 		{
 			var noMapsLabel = new Label();
-			noMapsLabel.Text = "No maps found matching criteria.";
+			noMapsLabel.Text = Tr("No maps found matching criteria.");
 			noMapsLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
 			noMapsLabel.AddThemeFontSizeOverride("font_size", 16);
 			_mapGrid.AddChild(noMapsLabel);
@@ -202,7 +201,7 @@ public partial class MapDiscovery : Control
 		hBox.AddThemeConstantOverride("separation", 16);
 		card.AddChild(hBox);
 
-		// Thumbnail
+
 		var thumbnail = new TextureRect();
 		thumbnail.CustomMinimumSize = new Vector2(200, 150);
 		thumbnail.SizeFlagsVertical = SizeFlags.ShrinkCenter;
@@ -218,27 +217,27 @@ public partial class MapDiscovery : Control
 		}
 		hBox.AddChild(thumbnail);
 
-		// Details container
+
 		var vBox = new VBoxContainer();
 		vBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		vBox.AddThemeConstantOverride("separation", 4);
 		hBox.AddChild(vBox);
 
-		// Title
+
 		var title = new Label();
 		title.Text = map.Title;
 		title.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 		title.AddThemeFontSizeOverride("font_size", 20);
 		vBox.AddChild(title);
 
-		// Creator
+
 		var creator = new Label();
 		creator.Text = $"By: {map.Creator}  •  {map.Genre}";
 		creator.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		creator.AddThemeFontSizeOverride("font_size", 12);
 		vBox.AddChild(creator);
 
-		// Rating Stars (Unicode stars)
+
 		var ratingBox = new HBoxContainer();
 		vBox.AddChild(ratingBox);
 		int fullStars = (int)Math.Round(map.RatingStars);
@@ -253,7 +252,7 @@ public partial class MapDiscovery : Control
 		starsLabel.AddThemeFontSizeOverride("font_size", 14);
 		ratingBox.AddChild(starsLabel);
 
-		// Description (trimmed)
+
 		var desc = new Label();
 		desc.Text = map.Description;
 		desc.AutowrapMode = TextServer.AutowrapMode.WordSmart;
@@ -263,7 +262,7 @@ public partial class MapDiscovery : Control
 		desc.AddThemeFontSizeOverride("font_size", 12);
 		vBox.AddChild(desc);
 
-		// Footer Box for Action Button
+
 		var footer = new HBoxContainer();
 		vBox.AddChild(footer);
 

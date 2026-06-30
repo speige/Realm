@@ -1,5 +1,5 @@
-using Godot;
 using Arch.Core;
+using Godot;
 
 public partial class Unit3D : CharacterBody3D
 {
@@ -96,7 +96,7 @@ public partial class Unit3D : CharacterBody3D
 	public override void _Ready()
 	{
 		if (IsPreview) return;
-		// Set up collision shape if not already done
+
 		var collisionShape = new CollisionShape3D();
 		if (IsBuilding)
 		{
@@ -115,7 +115,7 @@ public partial class Unit3D : CharacterBody3D
 		}
 		AddChild(collisionShape);
 
-		// Create selection ring (visible only when selected)
+
 		CreateSelectionRing();
 	}
 
@@ -131,7 +131,7 @@ public partial class Unit3D : CharacterBody3D
 				_modelNode = packedScene.Instantiate<Node3D>();
 				AddChild(_modelNode);
 				
-				// Apply scaling first
+
 				if (IsBuilding)
 				{
 					_modelNode.Scale = new Vector3(1.2f, 1.2f, 1.2f);
@@ -142,10 +142,10 @@ public partial class Unit3D : CharacterBody3D
 					_modelNode.Scale = new Vector3(wScale, wScale, wScale);
 				}
 
-				// Dynamically compute the bottom of the mesh to align it perfectly with the floor Y=0
+
 				float minY = GetMinY(_modelNode, Transform3D.Identity);
 				
-				// Set model position so its feet/base sit exactly at Y = 0
+
 				_modelNode.Position = new Vector3(0f, -minY * _modelNode.Scale.Y, 0f);
 
 				if (UnitId == "priest")
@@ -207,7 +207,7 @@ public partial class Unit3D : CharacterBody3D
 
 	private void CreateFallbackMesh()
 	{
-		// Fallback primitive mesh if model loading fails
+
 		var meshInstance = new MeshInstance3D();
 		var material = new StandardMaterial3D();
 		
@@ -266,7 +266,7 @@ public partial class Unit3D : CharacterBody3D
 
 	private float GetMinY(Node node, Transform3D currentTransform)
 	{
-		float minY = 0f;
+		float minY = float.MaxValue;
 		bool foundMesh = false;
 		GetMinYRecursive(node, currentTransform, ref minY, ref foundMesh);
 		return foundMesh ? minY : 0f;
@@ -280,7 +280,7 @@ public partial class Unit3D : CharacterBody3D
 			if (mesh != null)
 			{
 				var localAabb = mesh.GetAabb();
-				// Test the 8 corners of the local bounding box to find the absolute lowest Y coordinate in model space
+
 				Vector3[] corners = new Vector3[8] {
 					new Vector3(localAabb.Position.X, localAabb.Position.Y, localAabb.Position.Z),
 					new Vector3(localAabb.Position.X + localAabb.Size.X, localAabb.Position.Y, localAabb.Position.Z),
@@ -321,7 +321,7 @@ public partial class Unit3D : CharacterBody3D
 	{
 		if (_rallyMarker != null) return;
 
-		// 1. Rally Marker (a small gold flagpole/cylinder)
+
 		_rallyMarker = new MeshInstance3D();
 		var cylinderMesh = new CylinderMesh();
 		cylinderMesh.TopRadius = 0.1f;
@@ -338,7 +338,7 @@ public partial class Unit3D : CharacterBody3D
 		AddChild(_rallyMarker);
 		_rallyMarker.Visible = false;
 
-		// 2. Rally Line (a thin horizontal box mesh stretching between building and marker)
+
 		_rallyLine = new MeshInstance3D();
 		var boxMesh = new BoxMesh();
 		boxMesh.Size = new Vector3(0.15f, 0.15f, 1.0f); // length will be scaled dynamically
@@ -370,7 +370,7 @@ public partial class Unit3D : CharacterBody3D
 		}
 		else
 		{
-			// Default rally point is 8 meters in front of the building
+
 			localRally = new Vector3(0, 0, 8);
 		}
 

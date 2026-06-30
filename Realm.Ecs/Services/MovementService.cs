@@ -1,13 +1,14 @@
-using System.Numerics;
 using Arch.Core;
 using Realm.Ecs.Components.Movement;
+using Realm.Ecs.Components.Tags;
+using System.Numerics;
 
 namespace Realm.Ecs.Services;
 
 /// <summary>
 ///     Demonstrates how Movement components are used, particularly "intent" components.
 /// </summary>
-public class MovementService
+internal class MovementService
 {
 	private readonly World _world;
 
@@ -20,7 +21,7 @@ public class MovementService
 	/// Sets or updates the movement target for an entity.
 	/// This demonstrates the "intent" pattern. You don't move the entity here.
 	/// You simply add the 'MoveTo' component. A 'MovementSystem' would then query
-	// for all entities with this component and perform the actual pathfinding and movement.
+	/// for all entities with this component and perform the actual pathfinding and movement.
 	/// </summary>
 	public void SetMoveTarget(Entity entity, Vector3 targetPosition)
 	{
@@ -28,15 +29,4 @@ public class MovementService
 
 		_world.Set(entity, new MoveTo(targetPosition));
 	}
-}
-
-/// <summary>
-/// Caches the pathfinding waypoints for navigation to avoid GC allocations in the tick query loop.
-/// </summary>
-public struct PathFollow
-{
-	public Vector3[] Waypoints;
-	public int WaypointCount;
-	public int CurrentWaypointIndex;
-	public Vector3 Target;
 }

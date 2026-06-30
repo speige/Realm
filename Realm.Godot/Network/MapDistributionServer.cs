@@ -1,11 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using System.Collections.Generic;
 using System.Threading.Tasks;
-using Godot;
 
 public class MapDistributionServer
 {
@@ -30,7 +29,7 @@ public class MapDistributionServer
 
         _listener = new HttpListener();
         
-        // Listen on all network interfaces for map requests
+
         string prefix = $"http://*:{port}/";
         _listener.Prefixes.Add(prefix);
 
@@ -109,7 +108,7 @@ public class MapDistributionServer
         {
             if (request.HttpMethod == "GET" && (path == "/map" || path == "/map/manifest"))
             {
-                // Fallback to generating dynamic manifest if somehow not ingested
+
                 if (_currentManifest == null)
                 {
                     _currentManifest = MapAssetManager.IngestHostMap(_mapPath);
@@ -154,7 +153,7 @@ public class MapDistributionServer
                     await outputStream.WriteAsync(rawBytes, 0, rawBytes.Length);
                 }
 
-                // Clean up temporary delta file
+
                 try
                 {
                     if (File.Exists(tempDeltaPath))

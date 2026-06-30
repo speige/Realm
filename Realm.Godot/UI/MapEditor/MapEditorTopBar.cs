@@ -1,0 +1,59 @@
+using Godot;
+using System;
+
+public class MapEditorTopBar
+{
+	private Button _btnBackToHub;
+	private Button _btnPublish;
+	private Button _btnSave;
+	private Button _btnLoad;
+	private Button _btnUndo;
+	private Button _btnRedo;
+	private Button _btnVSCode;
+	private Label _statusLabel;
+	private Label _feedbackLabel;
+
+	public MapEditorTopBar(Button btnBackToHub, Button btnPublish, Button btnSave, Button btnLoad,
+		Button btnUndo, Button btnRedo, Button btnVSCode, Label statusLabel, Label feedbackLabel)
+	{
+		_btnBackToHub = btnBackToHub;
+		_btnPublish = btnPublish;
+		_btnSave = btnSave;
+		_btnLoad = btnLoad;
+		_btnUndo = btnUndo;
+		_btnRedo = btnRedo;
+		_btnVSCode = btnVSCode;
+		_statusLabel = statusLabel;
+		_feedbackLabel = feedbackLabel;
+
+		_btnBackToHub.Pressed += () => MapEditorHUD.Instance?.BackToHubAction();
+		_btnPublish.Pressed += () => MapEditorHUD.Instance?.PublishMapActionExternal();
+		_btnSave.Pressed += () => MapEditorHUD.Instance?.SaveMapActionExternal();
+		_btnLoad.Pressed += () => MapEditorHUD.Instance?.LoadMapAction();
+		_btnUndo.Pressed += () => MapEditorHUD.Instance?.UndoAction();
+		_btnRedo.Pressed += () => MapEditorHUD.Instance?.RedoAction();
+		
+		if (_btnVSCode != null)
+		{
+			_btnVSCode.Pressed += () => MapEditorHUD.Instance?.ToggleVSCodeEditor();
+		}
+	}
+
+	public void Update(MapEditorHUDViewModel viewModel)
+	{
+		if (_statusLabel != null)
+		{
+			_statusLabel.Text = TranslationServer.Translate(viewModel.StatusText);
+		}
+	}
+
+	public void ShowFeedback(string text)
+	{
+		if (_feedbackLabel == null) return;
+		_feedbackLabel.Text = TranslationServer.Translate(text);
+		_feedbackLabel.Modulate = new Color(1, 1, 1, 1);
+		
+		var tween = _feedbackLabel.CreateTween();
+		tween.TweenProperty(_feedbackLabel, "modulate:a", 0.0f, 2.0f).SetDelay(1.5f);
+	}
+}

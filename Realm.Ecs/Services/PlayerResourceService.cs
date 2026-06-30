@@ -1,18 +1,14 @@
 using Arch.Core;
 using Realm.Ecs.Components.Resources;
-// For ResourceId
-
-// For Dictionary
-
 namespace Realm.Ecs.Services;
 
 /// <summary>
 ///     Demonstrates how player-specific resource data is used with archetype definition data.
 /// </summary>
-public class PlayerResourceService
+internal class PlayerResourceService
 {
-	private readonly ArchetypeManager _archetypeManager; // Still needed to get archetype
-	private readonly DefinitionManager _definitionManager; // To validate / convert string IDs
+	private readonly ArchetypeManager _archetypeManager;
+	private readonly DefinitionManager _definitionManager;
 	private readonly World _world;
 
 	public PlayerResourceService(World world, ArchetypeManager archetypeManager, DefinitionManager definitionManager)
@@ -49,7 +45,6 @@ public class PlayerResourceService
 		var archetype = _archetypeManager.GetUnitArchetype(unitArchetypeId);
 		if (archetype?.ResourceCosts == null || !_world.Has<PlayerResources>(playerEntity)) return;
 
-		// Get the component by reference to modify it directly
 		ref var playerResources = ref _world.Get<PlayerResources>(playerEntity);
 
 		foreach (var cost in archetype.ResourceCosts)

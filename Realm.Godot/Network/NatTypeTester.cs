@@ -1,17 +1,7 @@
 using System;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using System.Threading.Tasks;
-
-public enum NatType
-{
-    Open,
-    FullCone,
-    RestrictedCone,
-    PortRestrictedCone,
-    Symmetric
-}
 
 public class NatTypeTester
 {
@@ -27,32 +17,32 @@ public class NatTypeTester
     {
         try
         {
-            // 1. Resolve stun.l.google.com IPs
+
             var stunAddresses = await Dns.GetHostAddressesAsync("stun.l.google.com");
             if (stunAddresses.Length == 0)
             {
-                // Fallback to open if DNS is down/unavailable
+
                 return NatType.Open;
             }
 
-            // We need 2 distinct IP addresses of the STUN servers for full tests.
-            // If DNS returns only one, we can use a hardcoded fallback STUN server as well.
+
+
             var serverIp1 = stunAddresses[0];
             var serverIp2 = stunAddresses.Length > 1 ? stunAddresses[1] : IPAddress.Parse("74.125.200.127"); // google stun alternate
 
-            // Test I: Query STUN server 1
+
             var test1 = await QueryStunAsync(serverIp1, 19302, testLocalPort);
             if (!test1.Success)
             {
-                // If STUN fails, assume Symmetric/Restricted (safe fallback) or Open for local testing
+
                 return NatType.RestrictedCone;
             }
 
-            // If mapped endpoint matches local endpoint, we are directly connected (Open)
+
             if (test1.MappedEndPoint.Address.Equals(test1.LocalEndPoint.Address) && 
                 test1.MappedEndPoint.Port == test1.LocalEndPoint.Port)
             {
-                // Perform Test II to verify if firewall blocks incoming
+
                 var test2Open = await QueryStunWithChangeRequestAsync(serverIp1, 19302, testLocalPort, changeIP: true, changePort: true);
                 if (test2Open.Success)
                 {
@@ -64,19 +54,19 @@ public class NatTypeTester
                 }
             }
 
-            // Test II: Change IP and Port
+
             var test2 = await QueryStunWithChangeRequestAsync(serverIp1, 19302, testLocalPort, changeIP: true, changePort: true);
             if (test2.Success)
             {
                 return NatType.FullCone;
             }
 
-            // If Test II fails, we are behind some NAT. Check if Symmetric or Cone.
-            // We do this by sending Test I to Server 2 (different IP) from the SAME local port.
+
+
             var test1Alt = await QueryStunAsync(serverIp2, 19302, testLocalPort);
             if (test1Alt.Success)
             {
-                // If mapped port or IP changed when talking to a different STUN IP, it's Symmetric NAT.
+
                 if (!test1.MappedEndPoint.Address.Equals(test1Alt.MappedEndPoint.Address) || 
                     test1.MappedEndPoint.Port != test1Alt.MappedEndPoint.Port)
                 {
@@ -84,7 +74,7 @@ public class NatTypeTester
                 }
             }
 
-            // Test III: Change Port only
+
             var test3 = await QueryStunWithChangeRequestAsync(serverIp1, 19302, testLocalPort, changeIP: false, changePort: true);
             if (test3.Success)
             {
@@ -167,12 +157,12 @@ public class NatTypeTester
     private static byte[] CreateStunBindingRequest()
     {
         byte[] packet = new byte[20];
-        // Message Type: 0x0001 (Binding Request)
+
         packet[0] = 0x00; packet[1] = 0x01;
-        // Message Length: 0x0000
+
         packet[2] = 0x00; packet[3] = 0x00;
         
-        // Transaction ID (16 bytes random)
+
         var rand = new Random();
         rand.NextBytes(new Span<byte>(packet, 4, 16));
         
@@ -182,20 +172,20 @@ public class NatTypeTester
     private static byte[] CreateStunChangeRequest(bool changeIP, bool changePort)
     {
         byte[] packet = new byte[28];
-        // Message Type: 0x0001 (Binding Request)
+
         packet[0] = 0x00; packet[1] = 0x01;
-        // Message Length: 8 bytes of attributes
+
         packet[2] = 0x00; packet[3] = 0x08;
         
-        // Transaction ID
+
         var rand = new Random();
         rand.NextBytes(new Span<byte>(packet, 4, 16));
         
-        // Attribute 1: CHANGE-REQUEST (Type: 0x0003, Length: 4)
+
         packet[20] = 0x00; packet[21] = 0x03;
         packet[22] = 0x00; packet[23] = 0x04;
         
-        // Value: 4 bytes flags. 0x02 = Change IP, 0x04 = Change Port.
+
         int flags = 0;
         if (changeIP) flags |= 0x02;
         if (changePort) flags |= 0x04;
@@ -213,7 +203,7 @@ public class NatTypeTester
             return result;
         }
 
-        // Check if message type is 0x0101 (Binding Response)
+
         int type = (response[0] << 8) | response[1];
         if (type != 0x0101 && type != 0x0111) // standard response or XOR response
         {
@@ -242,7 +232,7 @@ public class NatTypeTester
                 result.ChangedEndPoint = ParseAddress(response, offset, attrLength, false);
             }
 
-            // Attribute values are aligned to 4-byte boundaries
+
             offset += (attrLength + 3) & ~3;
         }
 
@@ -260,7 +250,7 @@ public class NatTypeTester
         int port = (response[offset + 2] << 8) | response[offset + 3];
         if (isXor)
         {
-            // XOR Port with most significant 2 bytes of magic cookie 0x2112A442
+
             port ^= 0x2112;
         }
 
@@ -269,7 +259,7 @@ public class NatTypeTester
         
         if (isXor)
         {
-            // XOR IP with magic cookie 0x2112A442
+
             ipBytes[0] ^= 0x21;
             ipBytes[1] ^= 0x12;
             ipBytes[2] ^= 0xA4;

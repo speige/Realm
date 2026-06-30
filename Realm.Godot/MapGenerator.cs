@@ -564,7 +564,7 @@ public static class MapGenerator
                         {
                             if (grid[gx, gy].HasValue)
                             {
-                                float dist = (grid[gx, gy].Value - candidate).Length();
+                                float dist = (grid[gx, gy]!.Value - candidate).Length();
                                 if (dist < radius)
                                 {
                                     farEnough = false;

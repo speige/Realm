@@ -51,7 +51,7 @@ public partial class LobbyRoom : Control
 
 	public override void _Ready()
 	{
-		// Bind Panels
+
 		_bgPanel = GetNode<Panel>("Background");
 		_leftPillar = GetNode<Panel>("LeftPillar");
 		_rightPillar = GetNode<Panel>("RightPillar");
@@ -59,7 +59,7 @@ public partial class LobbyRoom : Control
 		_briefingPanel = GetNode<PanelContainer>("BriefingPanel");
 		_chatPanel = GetNode<PanelContainer>("ChatPanel");
 
-		// Bind Buttons & Controls
+
 		_backButton = GetNode<Button>("BackButton");
 		_inviteButton = GetNode<Button>("InviteButton");
 		_addBotButton = GetNode<Button>("AddBotButton");
@@ -75,7 +75,7 @@ public partial class LobbyRoom : Control
 		_playersContainer = GetNode<VBoxContainer>("PlayersPanel/VBoxContainer/ScrollContainer/PlayersContainer");
 		_inviteFeedback = GetNode<Label>("InviteFeedback");
 
-		// Bind Labels
+
 		_lobbyTitle = GetNode<Label>("LobbyTitle");
 		_playersTitle = GetNode<Label>("PlayersPanel/VBoxContainer/PanelTitle");
 		_briefingTitle = GetNode<Label>("BriefingPanel/VBoxContainer/PanelTitle");
@@ -120,10 +120,10 @@ public partial class LobbyRoom : Control
 			LobbyManager.Instance.HostStabilityUpdated += UpdateHostStabilityLabel;
 		}
 
-		// Apply styles
+
 		ApplyThemeStyles();
 
-		// Hook up LobbyManager Events
+
 		LobbyManager.Instance.PlayerListUpdated += PopulatePlayersList;
 		LobbyManager.Instance.ChatReceived += OnLobbyChatReceived;
 		LobbyManager.Instance.ConnectionFailed += OnLobbyConnectionFailed;
@@ -134,7 +134,7 @@ public partial class LobbyRoom : Control
 		LobbyManager.Instance.CountdownFinished += OnCountdownFinished;
 		LobbyManager.Instance.ActiveMapChanged += OnActiveMapChanged;
 
-		// Populate players initially
+
 		if (!LobbyManager.Instance.IsHost)
 		{
 			CreateDownloadProgressUI();
@@ -154,7 +154,7 @@ public partial class LobbyRoom : Control
 		_chatLog.Text = "[color=#ffd700]System: Connected to Lobby. Pre-Match Setup is active.[/color]\n";
 		_chatInput.TextSubmitted += OnChatSubmitted;
 
-		// Add map preview image
+
 		var mapImage = new TextureRect();
 		mapImage.Texture = GD.Load<Texture2D>("res://Assets/UI/snowy_forest_path.png");
 		mapImage.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
@@ -162,7 +162,7 @@ public partial class LobbyRoom : Control
 		_mapFrame.AddChild(mapImage);
 		mapImage.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
-		// Add custom map drawer to map frame
+
 		var mapDrawer = new TacticalMap();
 		_mapFrame.AddChild(mapDrawer);
 		mapDrawer.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
@@ -179,14 +179,14 @@ public partial class LobbyRoom : Control
 		_briefingPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		_chatPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 
-		// Text & Labels
+
 		UIStyle.ApplyTitle(_lobbyTitle, "PRE-MATCH SETUP", 36);
 		UIStyle.ApplyTitle(_playersTitle, "TEAMS & PLAYERS", 20);
 		UIStyle.ApplyTitle(_briefingTitle, "MATCH INFO & BRIEFING", 20);
 
 		_briefingLabel.AddThemeColorOverride("default_color", new Color(0.85f, 0.85f, 0.9f));
 
-		// Table Columns
+
 		string[] headers = { "PlayersPanel/VBoxContainer/TableHeader/TeamCol", "PlayersPanel/VBoxContainer/TableHeader/ColorCol", 
 							 "PlayersPanel/VBoxContainer/TableHeader/NameCol", "PlayersPanel/VBoxContainer/TableHeader/FactionCol" };
 		foreach (var path in headers)
@@ -196,10 +196,10 @@ public partial class LobbyRoom : Control
 			lbl.AddThemeFontSizeOverride("font_size", 15);
 		}
 
-		// Invite Feedback text
+
 		_inviteFeedback.Modulate = new Color(1, 1, 1, 0);
 
-		// Style Buttons
+
 		SetupLobbyButton(_backButton, " LEAVE LOBBY", () => 
 		{
 			LobbyManager.Instance.Disconnect();
@@ -220,7 +220,7 @@ public partial class LobbyRoom : Control
 		labelStyle.SetBorderWidthAll(1);
 		_mapNameLabel.AddThemeStyleboxOverride("normal", labelStyle);
 
-		// Chat Log & Chat Input
+
 		var logStyle = new StyleBoxFlat();
 		logStyle.BgColor = new Color(0.08f, 0.08f, 0.1f, 0.7f);
 		logStyle.BorderColor = new Color(0.2f, 0.2f, 0.25f, 0.3f);
@@ -231,7 +231,7 @@ public partial class LobbyRoom : Control
 		_chatInput.AddThemeStyleboxOverride("focus", UIStyle.CreateTextInput(true));
 		_chatInput.AddThemeColorOverride("font_color", new Color(0.9f, 0.85f, 0.7f));
 
-		// Populate runic pillars
+
 		PopulateRunicPillar(GetNode<VBoxContainer>("LeftPillar/RuneContainer"));
 		PopulateRunicPillar(GetNode<VBoxContainer>("RightPillar/RuneContainer"));
 	}
@@ -439,14 +439,14 @@ public partial class LobbyRoom : Control
 		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
 
 		var titleLabel = new Label();
-		UIStyle.ApplyTitle(titleLabel, "NOT ALL PLAYERS READY", 20);
+		UIStyle.ApplyTitle(titleLabel, Tr("NOT ALL PLAYERS READY"), 20);
 		titleLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
 		vbox.AddChild(titleLabel);
 
 		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
 
 		var descLabel = new Label();
-		descLabel.Text = "Not all players are ready, start anyway?";
+		descLabel.Text = Tr("Not all players are ready, start anyway?");
 		descLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		descLabel.AddThemeFontSizeOverride("font_size", 15);
 		descLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
@@ -527,7 +527,7 @@ public partial class LobbyRoom : Control
 
 	private void TriggerInviteFeedback()
 	{
-		_inviteFeedback.Text = "Friend Invite Sent!";
+		_inviteFeedback.Text = Tr("Friend Invite Sent!");
 		_inviteFeedback.Modulate = new Color(0.3f, 0.8f, 1.0f, 1.0f);
 		
 		var tween = CreateTween();
@@ -747,7 +747,7 @@ public partial class LobbyRoom : Control
 		{
 			var readyCheck = new CheckBox();
 			readyCheck.Name = "ReadyCheck";
-			readyCheck.Text = "READY  ";
+			readyCheck.Text = Tr("READY  ");
 			readyCheck.ButtonPressed = p.IsReady;
 			readyCheck.SizeFlagsVertical = SizeFlags.ShrinkCenter;
 
@@ -944,7 +944,7 @@ public partial class LobbyRoom : Control
 		}
 		hBox.AddChild(optFaction);
 
-		// 5. Diagnostics Display (Ping, Jitter, Packet Loss)
+
 		var diagLabel = new RichTextLabel();
 		diagLabel.Name = "DiagLabel";
 		diagLabel.BbcodeEnabled = true;
@@ -966,15 +966,15 @@ public partial class LobbyRoom : Control
 		string jitterColor = GetJitterColorCode(p.Jitter);
 		string lossColor = GetLossColorCode(p.PacketLoss);
 
-		diagLabel.Text = $"  Ping: [color={pingColor}]{latencyText}[/color] | Jitter: [color={jitterColor}]{jitterText}[/color] | Loss: [color={lossColor}]{lossText}[/color]";
+		diagLabel.Text = $"  {Tr("Ping")}: [color={pingColor}]{latencyText}[/color] | {Tr("Jitter")}: [color={jitterColor}]{jitterText}[/color] | {Tr("Loss")}: [color={lossColor}]{lossText}[/color]";
 		hBox.AddChild(diagLabel);
 
-		// 6. Host-Only Boot Action
+
 		if (LobbyManager.Instance.IsHost && p.PeerId != 1)
 		{
 			var bootBtn = new Button();
 			bootBtn.Name = "BootBtn";
-			bootBtn.Text = "KICK";
+			bootBtn.Text = Tr("KICK");
 			bootBtn.CustomMinimumSize = new Vector2(60, 26);
 			bootBtn.SizeFlagsVertical = SizeFlags.ShrinkCenter;
 			
@@ -1182,37 +1182,37 @@ public partial class LobbyRoom : Control
 	private Label _downloadLabel;
 	private void CreateDownloadProgressUI()
 	{
-		// 1. Download Label
+
 		_downloadLabel = new Label();
-		_downloadLabel.Text = "Checking map package...";
+		_downloadLabel.Text = Tr("Checking map package...");
 		_downloadLabel.Position = new Vector2(1450, 805);
 		_downloadLabel.Size = new Vector2(340, 25);
 		_downloadLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		_downloadLabel.AddThemeFontSizeOverride("font_size", 14);
 		AddChild(_downloadLabel);
 
-		// 2. Progress Bar
+
 		_downloadProgress = new ProgressBar();
 		_downloadProgress.Position = new Vector2(1450, 835);
 		_downloadProgress.Size = new Vector2(340, 24);
 		_downloadProgress.ShowPercentage = true;
 		_downloadProgress.Value = 0;
 		
-		// Apply style overrides
+
 		_downloadProgress.AddThemeStyleboxOverride("background", UIStyle.CreateSliderTrack());
 		_downloadProgress.AddThemeStyleboxOverride("fill", UIStyle.CreateSliderFill());
 		_downloadProgress.AddThemeColorOverride("font_color", new Color(1, 1, 1));
 		_downloadProgress.AddThemeFontSizeOverride("font_size", 12);
 		AddChild(_downloadProgress);
 
-		// Subscribe to events
+
 		LobbyManager.Instance.MapDownloadProgressChanged += OnMapDownloadProgress;
 		LobbyManager.Instance.MapDownloadCompleted += OnMapDownloadCompleted;
 		LobbyManager.Instance.MapDownloadFailed += OnMapDownloadFailed;
 		
-		// Disable start button for clients since they must wait
+
 		_startButton.Disabled = true;
-		_startButton.Text = "WAITING FOR HOST";
+		_startButton.Text = Tr("WAITING FOR HOST");
 		_startButton.AddThemeColorOverride("font_disabled_color", new Color(0.5f, 0.5f, 0.5f));
 	}
 
@@ -1224,7 +1224,7 @@ public partial class LobbyRoom : Control
 		}
 		if (_downloadLabel != null)
 		{
-			_downloadLabel.Text = $"Downloading map package: {Math.Round(progress * 100.0f)}%";
+			_downloadLabel.Text = $"{Tr("Downloading map package:")} {Math.Round(progress * 100.0f)}%";
 		}
 	}
 
@@ -1236,7 +1236,7 @@ public partial class LobbyRoom : Control
 		}
 		if (_downloadLabel != null)
 		{
-			_downloadLabel.Text = "Map package ready.";
+			_downloadLabel.Text = Tr("Map package ready.");
 			_downloadLabel.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
 		}
 	}
@@ -1245,7 +1245,7 @@ public partial class LobbyRoom : Control
 	{
 		if (_downloadLabel != null)
 		{
-			_downloadLabel.Text = "Map download failed!";
+			_downloadLabel.Text = Tr("Map download failed!");
 			_downloadLabel.AddThemeColorOverride("font_color", new Color(1.0f, 0.3f, 0.3f));
 		}
 	}
@@ -1464,48 +1464,3 @@ public partial class LobbyRoom : Control
 	}
 }
 
-// Procedural tactical schematic map drawer
-public partial class TacticalMap : Control
-{
-	public override void _Draw()
-	{
-		Vector2 size = Size;
-		
-		// Tactical Path (Route)
-		Color riverColor = new Color(0.2f, 0.55f, 0.9f, 0.8f);
-		Vector2[] riverPoints = new[]
-		{
-			new Vector2(0.2f * size.X, 0.25f * size.Y),
-			new Vector2(0.35f * size.X, 0.35f * size.Y),
-			new Vector2(0.5f * size.X, 0.55f * size.Y),
-			new Vector2(0.65f * size.X, 0.65f * size.Y),
-			new Vector2(0.85f * size.X, 0.7f * size.Y)
-		};
-		for (int i = 0; i < riverPoints.Length - 1; i++)
-		{
-			DrawLine(riverPoints[i], riverPoints[i+1], riverColor, 4f, true);
-		}
-
-		// Player Spawn Base (Gold Circle with border)
-		Vector2 playerPos = new Vector2(0.2f * size.X, 0.25f * size.Y);
-		DrawCircle(playerPos, 10f, UIStyle.ColorGold);
-		DrawCircle(playerPos, 7f, new Color(0.1f, 0.1f, 0.12f));
-		DrawCircle(playerPos, 3f, UIStyle.ColorCyanGlow);
-
-		// Enemy Spawn Base (Red Diamond)
-		Vector2 enemyPos = new Vector2(0.85f * size.X, 0.7f * size.Y);
-		Vector2[] diamondPoints = new[]
-		{
-			new Vector2(enemyPos.X, enemyPos.Y - 10),
-			new Vector2(enemyPos.X + 10, enemyPos.Y),
-			new Vector2(enemyPos.X, enemyPos.Y + 10),
-			new Vector2(enemyPos.X - 10, enemyPos.Y),
-			new Vector2(enemyPos.X, enemyPos.Y - 10)
-		};
-		DrawPolyline(diamondPoints, new Color(0.9f, 0.2f, 0.2f), 2.5f, true);
-		DrawCircle(enemyPos, 3f, new Color(0.9f, 0.2f, 0.2f));
-
-		// Border outline
-		DrawRect(new Rect2(Vector2.Zero, size), UIStyle.ColorBronze, false, 2.0f);
-	}
-}

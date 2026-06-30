@@ -3,9 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Collections.Generic;
 using System.Threading.Tasks;
-using Godot;
 
 public class MapDistributionClient
 {
@@ -20,7 +18,7 @@ public class MapDistributionClient
 
         try
         {
-            // 1. Download Manifest
+
             var manifestResponse = await _httpClient.GetAsync(manifestUrl);
             if (!manifestResponse.IsSuccessStatusCode)
             {
@@ -36,7 +34,7 @@ public class MapDistributionClient
                 return false;
             }
 
-            // Save manifest locally in user://maps/
+
             string localManifestDir = MapAssetManager.GlobalArchiveDirectory;
             if (!Directory.Exists(localManifestDir))
             {
@@ -46,13 +44,13 @@ public class MapDistributionClient
             File.WriteAllText(localManifestPath, manifestJson);
             MapAssetManager.Log($"[MapDistributionClient] Saved manifest locally to {localManifestPath}");
 
-            // 2. Determine missing hashes
+
             var missingHashes = MapAssetManager.GetMissingHashes(manifest.Files.Values);
             MapAssetManager.Log($"[MapDistributionClient] Missing {missingHashes.Count} of {manifest.Files.Count} hashes.");
 
             if (missingHashes.Count > 0)
             {
-                // 3. Request delta 7z from host
+
                 string deltaUrl = $"http://{hostIp}:{port}/map/delta";
                 MapAssetManager.Log($"[MapDistributionClient] Requesting delta archive from {deltaUrl}");
 
@@ -94,16 +92,16 @@ public class MapDistributionClient
 
                     MapAssetManager.Log("[MapDistributionClient] Delta download complete. Ingesting delta files into global archive...");
                     
-                    // 4. Ingest the delta archive contents into global archive
+
                     MapAssetManager.IngestDeltaArchive(tempDeltaPath);
 
-                    // Clean up temp delta
+
                     try { File.Delete(tempDeltaPath); } catch { }
                 }
             }
             else
             {
-                // Guest already has all hashes, progress is immediately 100%
+
                 progressCallback?.Invoke(1.0f);
                 DownloadProgressChanged?.Invoke(1.0f);
             }

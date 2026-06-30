@@ -2,9 +2,9 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Timer = Godot.Timer;
 
 public partial class LobbyBrowser : Control
 {
@@ -51,14 +51,14 @@ public partial class LobbyBrowser : Control
 
 	public override void _Ready()
 	{
-		// Bind Panels
+
 		_bgPanel = GetNode<Panel>("Background");
 		_leftPillar = GetNode<Panel>("LeftPillar");
 		_rightPillar = GetNode<Panel>("RightPillar");
 		_filterPanel = GetNode<PanelContainer>("FilterPanel");
 		_lobbyPanel = GetNode<PanelContainer>("LobbyPanel");
 
-		// Bind Buttons and Input
+
 		_backButton = GetNode<Button>("BackButton");
 		_refreshButton = GetNode<Button>("RefreshButton");
 		_hostButton = GetNode<Button>("HostButton");
@@ -69,7 +69,7 @@ public partial class LobbyBrowser : Control
 		_arcadeCheck = GetNode<CheckBox>("FilterPanel/VBoxContainer/ArcadeCheck");
 		_lobbyListContainer = GetNode<VBoxContainer>("LobbyPanel/VBoxContainer/ScrollContainer/LobbyListContainer");
 
-		// Bind Labels
+
 		_browserTitle = GetNode<Label>("BrowserTitle");
 		_filterTitle = GetNode<Label>("FilterPanel/VBoxContainer/FilterTitle");
 		_mapCol = GetNode<Label>("LobbyPanel/VBoxContainer/TableHeader/MapCol");
@@ -77,14 +77,14 @@ public partial class LobbyBrowser : Control
 		_playersCol = GetNode<Label>("LobbyPanel/VBoxContainer/TableHeader/PlayersCol");
 		_pingCol = GetNode<Label>("LobbyPanel/VBoxContainer/TableHeader/PingCol");
 
-		// Apply Theme Styling
+
 		ApplyStyles();
 
-		// Listen to NAT testing status
+
 		LobbyManager.Instance.NatTestCompleted += UpdateHostButtonState;
 		UpdateHostButtonState();
 
-		// Refresh lists
+
 		FetchLobbiesFromRegistry();
 
 		_refreshTimer = new Timer();
@@ -109,18 +109,18 @@ public partial class LobbyBrowser : Control
 		_filterPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		_lobbyPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 
-		// Headers & Text
+
 		UIStyle.ApplyTitle(_browserTitle, "CUSTOM LOBBY BROWSER", 36);
 		UIStyle.ApplyTitle(_filterTitle, "FILTER", 20);
 
-		// Table Columns
+
 		foreach (var lbl in new[] { _mapCol, _modeCol, _playersCol, _pingCol })
 		{
 			lbl.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 			lbl.AddThemeFontSizeOverride("font_size", 16);
 		}
 
-		// Back and Refresh Buttons (Symbols)
+
 		SetupPillarButton(_backButton, "◀", () => UIManager.Instance.TransitionTo(GameScreen.MainMenu));
 		_refreshIcon = new Label();
 		_refreshIcon.Text = "↻";
@@ -140,11 +140,11 @@ public partial class LobbyBrowser : Control
 
 		SetupPillarButton(_refreshButton, "", TriggerRefresh);
 
-		// Host Button
+
 		SetupHostButton();
 
 
-		// Checkboxes
+
 		var checkBoxes = new[] { _campaignCheck, _meleeCheck, _tutorialCheck, _arcadeCheck };
 		foreach (var cb in checkBoxes)
 		{
@@ -157,7 +157,7 @@ public partial class LobbyBrowser : Control
 			UIStyle.ApplyCheckboxStyle(cb);
 		}
 
-		// Search Bar
+
 		_searchBar.TextChanged += (text) => ApplyFilters();
 		_searchBar.AddThemeStyleboxOverride("normal", UIStyle.CreateTextInput(false));
 		_searchBar.AddThemeStyleboxOverride("focus", UIStyle.CreateTextInput(true));
@@ -165,7 +165,7 @@ public partial class LobbyBrowser : Control
 		_searchBar.PlaceholderText = "Search Lobbies...";
 		_searchBar.RightIcon = GD.Load<Texture2D>("res://Assets/UI/search_icon.jpg");
 
-		// Side pillars
+
 		PopulateRunicPillar(GetNode<VBoxContainer>("LeftPillar/RuneContainer"));
 		PopulateRunicPillar(GetNode<VBoxContainer>("RightPillar/RuneContainer"));
 	}
@@ -515,7 +515,7 @@ public partial class LobbyBrowser : Control
 			{
 				UIManager.Instance.PlayClickSound();
 				
-				// Click transitions to join handshake
+
 				panel.MouseFilter = MouseFilterEnum.Ignore;
 				LobbyManager.Instance.ActiveMapName = data.Map;
 				bool success = await LobbyManager.Instance.JoinLobbyAsync(data.LobbyId);

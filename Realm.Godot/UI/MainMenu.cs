@@ -30,7 +30,7 @@ public partial class MainMenu : Control
 
 	public override void _Ready()
 	{
-		// Bind nodes
+
 		_bgPanel = GetNode<Panel>("Background");
 		_leftPillar = GetNode<Panel>("LeftPillar");
 		_rightPillar = GetNode<Panel>("RightPillar");
@@ -52,13 +52,13 @@ public partial class MainMenu : Control
 		_bugReportButton = GetNode<Button>("SocialPopover/PopoverVBox/BugReportButton");
 		_seedNodeButton = GetNode<Button>("SocialPopover/PopoverVBox/SeedNodeButton");
 
-		// Style background & panels
+
 		_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
 		_leftPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(true));
 		_rightPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(false));
 		_centralPanel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
 
-		// Style buttons
+
 		SetupPlayButton(_playButton, () => UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser));
 		SetupButton(_mapDiscoveryButton, "MAP DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.MapDiscovery));
 		SetupButton(_mapEditorButton, "MAP EDITOR", () => OnMapEditorPressed());
@@ -83,7 +83,7 @@ public partial class MainMenu : Control
 			}
 		};
 
-		// Cap icon sizes for buttons whose texture assets are large raster images
+
 		_socialButton.AddThemeConstantOverride("icon_max_width", 28);
 		_discordButton.AddThemeConstantOverride("icon_max_width", 28);
 		_mapDiscoveryButton.AddThemeConstantOverride("icon_max_width", 28);
@@ -94,7 +94,7 @@ public partial class MainMenu : Control
 		_bugReportButton.AddThemeConstantOverride("icon_max_width", 0);
 		_seedNodeButton.AddThemeConstantOverride("icon_max_width", 0);
 
-		// Populate runic pillars
+
 		PopulateRunicPillar(GetNode<VBoxContainer>("LeftPillar/RuneContainer"));
 		PopulateRunicPillar(GetNode<VBoxContainer>("RightPillar/RuneContainer"));
 	}
@@ -104,7 +104,7 @@ public partial class MainMenu : Control
 		button.Flat = false;
 		UIStyle.ApplyButtonText(button, text, 18);
 		
-		// Apply styleboxes
+
 		button.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		button.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		button.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
@@ -122,13 +122,13 @@ public partial class MainMenu : Control
 	private void SetupPlayButton(Button button, Action onClick)
 	{
 		button.Flat = false;
-		button.Text = "PLAY";
+		button.Text = Tr("PLAY");
 		button.AddThemeFontSizeOverride("font_size", 22);
 		button.AddThemeColorOverride("font_color", new Color(1.0f, 0.92f, 0.7f));
 		button.AddThemeColorOverride("font_hover_color", new Color(1.0f, 1.0f, 0.9f));
 		button.AddThemeColorOverride("font_pressed_color", new Color(0.8f, 0.7f, 0.4f));
 
-		// Use the stylized play button image as the button's background
+
 		var normalStyle = new StyleBoxTexture();
 		normalStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/play_button_stylized.png");
 		normalStyle.ContentMarginLeft = 24;
@@ -157,7 +157,7 @@ public partial class MainMenu : Control
 		button.AddThemeStyleboxOverride("pressed", pressedStyle);
 		button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
-		// Scale-up on hover for premium feel
+
 		Tween scaleTween = null;
 		button.MouseEntered += () =>
 		{
@@ -366,7 +366,7 @@ public partial class MainMenu : Control
 		_profilePopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
 		AddChild(_profilePopup);
 
-		// Stone card in the center to hold the stats
+
 		var cardPanel = new Panel();
 		cardPanel.CustomMinimumSize = new Vector2(500, 560);
 		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
@@ -380,17 +380,17 @@ public partial class MainMenu : Control
 		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
 		cardPanel.AddChild(vbox);
 
-		// Top Spacer
+
 		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
 
-		// Title
+
 		var title = new Label();
 		UIStyle.ApplyTitle(title, "PLAYER PROFILE", 26);
 		vbox.AddChild(title);
 
 		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
 
-		// Faction Emblem / Flag
+
 		var factionFlag = new TextureRect();
 		factionFlag.Texture = GD.Load<Texture2D>("res://Assets/UI/alliance_flag.png");
 		factionFlag.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
@@ -401,7 +401,7 @@ public partial class MainMenu : Control
 
 		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
 
-		// Stats
+
 		var statsText = new Label();
 		var currentUsername = LobbyManager.Instance.AuthenticatedUsername;
 		var currentProvider = LobbyManager.Instance.AuthProvider ?? "None";
@@ -448,7 +448,7 @@ public partial class MainMenu : Control
 
 		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
 
-		// Back button (no squished icon, styled like main menu buttons)
+
 		var backBtn = new Button();
 		SetupButton(backBtn, "BACK", () => 
 		{
@@ -516,7 +516,7 @@ public partial class MainMenu : Control
 		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
 
 		var msg = new Label();
-		msg.Text = "The Map Data Editor is currently installing in the background.\nPlease wait for it to complete.";
+		msg.Text = Tr("The Map Data Editor is currently installing in the background.\nPlease wait for it to complete.");
 		msg.HorizontalAlignment = HorizontalAlignment.Center;
 		msg.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
 		msg.AddThemeFontSizeOverride("font_size", 14);

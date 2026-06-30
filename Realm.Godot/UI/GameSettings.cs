@@ -97,7 +97,7 @@ public static class GameSettings
 		}
 		if (!FileAccess.FileExists(SettingsPath))
 		{
-			// Default values already set
+
 			return;
 		}
 

@@ -1,6 +1,3 @@
-using Godot;
-using System;
-
 public class MapData
 {
 	public string MapId { get; set; }
@@ -11,28 +8,28 @@ public class MapData
 	public string[] Screenshots { get; set; }
 	public string[] Features { get; set; }
 	
-	// Ratings & Community
+
 	public float RatingStars { get; set; }
 	public string Votes5Star { get; set; }
 	public string Votes3Star { get; set; }
 	public string Votes1Star { get; set; }
 	public string AvgRating { get; set; }
 	
-	// Gameplay Stats
+
 	public string AvgPlaytime { get; set; }
 	public string PlayerCount { get; set; }
 	public string CompletionRate { get; set; }
 	
-	// Technical Info
+
 	public string FileSize { get; set; }
 	public string EngineVersion { get; set; }
 	public string MaxPlayers { get; set; }
 	public string Genre { get; set; }
 	
-	// Awards
+
 	public string[] Awards { get; set; }
 
-	// Static method to get dummy maps
+
 	public static MapData[] GetDummyMaps()
 	{
 		return new MapData[]

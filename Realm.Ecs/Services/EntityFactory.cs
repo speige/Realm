@@ -1,10 +1,9 @@
-using System.Numerics;
-using System.Reflection;
 using Arch.Core;
 using Realm.Ecs.Archetypes;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Meta;
-// For IdExtensions and specialized definitions
+using System.Numerics;
+using System.Reflection;
 
 namespace Realm.Ecs.Services;
 
@@ -12,19 +11,26 @@ namespace Realm.Ecs.Services;
 ///     A generic factory for creating entities from archetypes using reflection.
 ///     This has been optimized to cache reflection results for performance.
 /// </summary>
-public class EntityFactory
+internal class EntityFactory
 {
-	private static readonly MethodInfo SetComponentMethodInfo = typeof(World).GetMethod(nameof(World.Set));
+	private static readonly MethodInfo SetComponentMethodInfo = typeof(World).GetMethod(nameof(World.Set)) ?? throw new InvalidOperationException("World.Set method not found");
+	private static readonly MethodInfo AddMethodInfo = typeof(World).GetMethod(nameof(World.Add)) ?? throw new InvalidOperationException("World.Add method not found");
+	private static readonly PropertyInfo[] ArchetypeComponentProperties = typeof(UnitArchetype).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+		.Where(p => p.Name is not "Id" and not "Name" and not "Description" and not "Capabilities"
+			and not "Abilities" && p.PropertyType.IsValueType)
+		.ToArray();
+
 	private readonly ArchetypeManager _archetypeManager;
-	private readonly DefinitionManager _definitionManager; // Consolidated manager
+	private readonly DefinitionManager _definitionManager;
 	private readonly Dictionary<Type, MethodInfo> _setComponentCache = new();
+	private readonly Dictionary<Type, MethodInfo> _addMethodCache = new();
 	private readonly World _world;
 
 	public EntityFactory(World world, ArchetypeManager archetypeManager, DefinitionManager definitionManager)
 	{
 		_world = world;
 		_archetypeManager = archetypeManager;
-		_definitionManager = definitionManager; // Initialize new dependency
+		_definitionManager = definitionManager;
 		CacheComponentSetters();
 	}
 
@@ -45,11 +51,7 @@ public class EntityFactory
 
 		var entity = _world.Create();
 
-		var properties = archetype.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
-			.Where(p => p.Name is not "Id" and not "Name" and not "Description" and not "Capabilities"
-				and not "Abilities");
-
-		foreach (var prop in properties)
+		foreach (var prop in ArchetypeComponentProperties)
 		{
 			var componentValue = prop.GetValue(archetype);
 			if (componentValue != null)
@@ -61,20 +63,20 @@ public class EntityFactory
 		_world.Set(entity, new Name(archetype.Name));
 		_world.Set(entity, new Position(position));
 
-		// Dynamically add capabilities as components (empty structs)
-		var addMethodInfo = typeof(World).GetMethod(nameof(World.Add)); // Use Add for empty tags
 		foreach (var capabilityId in archetype.Capabilities)
 		{
-			// Validate capabilityId against the DefinitionManager
 			var tagInfo = _definitionManager.GetTag(capabilityId);
 			if (tagInfo.HasValue)
 			{
 				var (definition, tagType) = tagInfo.Value;
 
-				// Ensure the discovered type is a struct (tag component)
 				if (tagType != null && tagType.IsValueType)
 				{
-					var genericAdd = addMethodInfo.MakeGenericMethod(tagType);
+					if (!_addMethodCache.TryGetValue(tagType, out var genericAdd))
+					{
+						genericAdd = AddMethodInfo.MakeGenericMethod(tagType);
+						_addMethodCache[tagType] = genericAdd;
+					}
 					genericAdd.Invoke(_world, new object[] { entity });
 				}
 				else

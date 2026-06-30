@@ -1,9 +1,8 @@
 using Godot;
-using System;
 
 public static class UIStyle
 {
-	// Colors
+
 	public static readonly Color ColorBgDark = new Color(0.08f, 0.08f, 0.1f, 1.0f);       // Deep charcoal/midnight
 	public static readonly Color ColorPanelBg = new Color(0.13f, 0.14f, 0.17f, 0.95f);    // Granite slate
 	public static readonly Color ColorPanelLight = new Color(0.18f, 0.19f, 0.23f, 0.95f); // Lighter granite
@@ -15,7 +14,7 @@ public static class UIStyle
 	public static readonly Color ColorCyanGlow = new Color(0.15f, 0.65f, 1.0f, 1.0f);     // Runic cyan glow
 	public static readonly Color ColorCyanGlowDim = new Color(0.15f, 0.65f, 1.0f, 0.4f);  // Dim cyan
 	
-	// StyleBox: Dark background texture
+
 	public static StyleBox CreateBgTexture(string path)
 	{
 		var texture = GD.Load<Texture2D>(path);
@@ -29,7 +28,7 @@ public static class UIStyle
 		return CreateBgTexture("res://Assets/UI/menu_background_with_frame.jpg");
 	}
 
-	// StyleBox: Main Frame / Stone Panel
+
 	public static StyleBox CreateStonePanel(bool isLight = false)
 	{
 		var style = new StyleBoxTexture();
@@ -66,13 +65,13 @@ public static class UIStyle
 		return style;
 	}
 
-	// StyleBox: Side runic pillars (menus use pre-rendered background, so keep them empty)
+
 	public static StyleBox CreatePillarPanel(bool isLeft)
 	{
 		return new StyleBoxEmpty();
 	}
 
-	// StyleBox: Side runic pillars for HUD (loads transparent custom stone pillar)
+
 	public static StyleBox CreateHUDPillarPanel(bool isLeft)
 	{
 		var style = new StyleBoxTexture();
@@ -84,7 +83,7 @@ public static class UIStyle
 		return style;
 	}
 
-	// StyleBox: Button Normal
+
 	public static StyleBox CreateButtonNormal()
 	{
 		var style = new StyleBoxTexture();
@@ -103,7 +102,7 @@ public static class UIStyle
 		return style;
 	}
 
-	// StyleBox: Button Hover
+
 	public static StyleBox CreateButtonHover()
 	{
 		var style = new StyleBoxTexture();
@@ -122,7 +121,7 @@ public static class UIStyle
 		return style;
 	}
 
-	// StyleBox: Button Pressed
+
 	public static StyleBox CreateButtonPressed()
 	{
 		var style = new StyleBoxTexture();
@@ -141,7 +140,7 @@ public static class UIStyle
 		return style;
 	}
 
-	// StyleBox: Text Inputs
+
 	public static StyleBoxFlat CreateTextInput(bool hasFocus = false)
 	{
 		var style = new StyleBoxFlat();
@@ -155,7 +154,7 @@ public static class UIStyle
 		return style;
 	}
 
-	// CheckBox Custom Styling helper
+
 	public static void ApplyCheckboxStyle(CheckBox cb)
 	{
 		var checkedTex = GD.Load<Texture2D>("res://Assets/UI/checked_box.jpg");
@@ -172,7 +171,7 @@ public static class UIStyle
 		cb.AddThemeFontSizeOverride("font_size", 14);
 		cb.AddThemeConstantOverride("icon_max_width", 0);
 	}
-	// StyleBox: Progress Bar (Health / Mana / Sliders)
+
 	public static StyleBoxFlat CreateSliderTrack()
 	{
 		var style = new StyleBoxFlat();
@@ -201,7 +200,7 @@ public static class UIStyle
 		return style;
 	}
 
-	// Label Styling Apply helpers
+
 	public static void ApplyTitle(Label label, string text, int fontSize = 36)
 	{
 		label.Text = TranslationServer.Translate(text);

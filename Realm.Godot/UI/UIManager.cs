@@ -1,21 +1,5 @@
 using Godot;
-using System;
 using Realm.Godot.ReplaySystem;
-
-public enum GameScreen
-{
-	MainMenu,
-	LobbyBrowser,
-	LobbyRoom,
-	Settings,
-	InGameHUD,
-	GameOver,
-	MapDiscovery,
-	MapDetails,
-	MapEditorHUD,
-	ReplayList,
-	LobbyCreate
-}
 
 public partial class UIManager : Control
 {
@@ -56,7 +40,7 @@ public partial class UIManager : Control
 		Instance = this;
 		MouseFilter = MouseFilterEnum.Ignore;
 
-		// Initialize Audio Players
+
 		_musicPlayer = new AudioStreamPlayer();
 		AddChild(_musicPlayer);
 
@@ -65,10 +49,10 @@ public partial class UIManager : Control
 
 		ApplyStartupSettings();
 
-		// Create fade overlay for smooth transitions
+
 		CreateFadeOverlay();
 
-		// Start with Main Menu, or bypass directly to InGameHUD if game is already active
+
 		if (LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted)
 		{
 			TransitionTo(GameScreen.InGameHUD);
@@ -151,10 +135,10 @@ public partial class UIManager : Control
 		_fadeAnim = new AnimationPlayer();
 		AddChild(_fadeAnim);
 
-		// Create animations programmatically
+
 		var library = new AnimationLibrary();
 		
-		// Fade In (to black)
+
 		var animFadeIn = new Animation();
 		int trackId = animFadeIn.AddTrack(Animation.TrackType.Value);
 		animFadeIn.TrackSetPath(trackId, $"{_fadeOverlay.GetPath()}:color");
@@ -162,7 +146,7 @@ public partial class UIManager : Control
 		animFadeIn.TrackInsertKey(trackId, 0.3f, new Color(0, 0, 0, 1));
 		library.AddAnimation("fade_in", animFadeIn);
 
-		// Fade Out (to clear)
+
 		var animFadeOut = new Animation();
 		trackId = animFadeOut.AddTrack(Animation.TrackType.Value);
 		animFadeOut.TrackSetPath(trackId, $"{_fadeOverlay.GetPath()}:color");
@@ -195,13 +179,13 @@ public partial class UIManager : Control
 
 		_transitionInProgress = true;
 
-		// Make overlay intercept inputs during transition
+
 		_fadeOverlay.MouseFilter = MouseFilterEnum.Stop;
 
-		// Play fade in
+
 		_fadeAnim.Play("fade_in");
 
-		// Audio Transitions
+
 		if (screen == GameScreen.MainMenu || screen == GameScreen.LobbyBrowser || screen == GameScreen.LobbyRoom || screen == GameScreen.Settings || screen == GameScreen.MapDiscovery || screen == GameScreen.MapDetails)
 		{
 			PlayMusic("res://Assets/Audio/Music/enchanted_realm.ogg");
@@ -221,7 +205,7 @@ public partial class UIManager : Control
 			}
 		}
 		
-		// Connect to finished signal or use a timer
+
 		var timer = GetTree().CreateTimer(0.3f);
 		timer.Timeout += OnFadeInComplete;
 	}
@@ -288,7 +272,7 @@ public partial class UIManager : Control
 
 	private void OnFadeInComplete()
 	{
-		// Clean up current screen
+
 		if (_currentScreen != null)
 		{
 			if (_currentScreen is MapEditorHUD)
@@ -299,7 +283,7 @@ public partial class UIManager : Control
 			_currentScreen = null;
 		}
 
-		// Instantiate new screen
+
 		PackedScene targetScene = null;
 		switch (_targetScreen)
 		{
@@ -329,7 +313,7 @@ public partial class UIManager : Control
 				break;
 			case GameScreen.InGameHUD:
 				targetScene = InGameHUDScene ?? GD.Load<PackedScene>("res://UI/InGameHUD.tscn");
-				// In-game HUD keeps mouse captured by default (RTS screen allows toggle)
+
 				Input.MouseMode = Input.MouseModeEnum.Visible; // Keep visible for HUD interaction
 				break;
 			case GameScreen.GameOver:
@@ -347,7 +331,7 @@ public partial class UIManager : Control
 			case GameScreen.MapEditorHUD:
 				targetScene = MapEditorHUDScene ?? GD.Load<PackedScene>("res://UI/MapEditorHUD.tscn");
 				Input.MouseMode = Input.MouseModeEnum.Visible;
-				// Notify GameHost to set up editor
+
 				GameHost.Instance?.StartMapEditorMode();
 				break;
 			case GameScreen.ReplayList:
@@ -372,10 +356,10 @@ public partial class UIManager : Control
 				}
 			}
 			
-			// Move fade overlay to front so it stays on top during transition
+
 			MoveChild(_fadeOverlay, GetChildCount() - 1);
 
-			// If transitioning to Game Over, pass victory/defeat status
+
 			if (_currentScreen is GameOver gameOver)
 			{
 				gameOver.SetStatus(_isVictory);
@@ -386,7 +370,7 @@ public partial class UIManager : Control
 			}
 		}
 
-		// Play fade out
+
 		_fadeAnim.Play("fade_out");
 		
 		var timer = GetTree().CreateTimer(0.3f);
@@ -397,7 +381,7 @@ public partial class UIManager : Control
 		};
 	}
 
-	// Helper to overlay settings popup
+
 	public void OpenSettingsOverlay()
 	{
 		var settingsPopup = GD.Load<PackedScene>("res://UI/SettingsMenu.tscn").Instantiate<SettingsMenu>();

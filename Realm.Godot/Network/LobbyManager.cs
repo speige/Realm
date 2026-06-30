@@ -78,7 +78,7 @@ public partial class LobbyManager : Node
         public List<string> RegistryServers { get; set; } = new();
     }
 
-    // Network configurations
+
     public List<string> RegistryServers { get; private set; } = new() { "http://127.0.0.1:5000" };
     private int _currentServerIndex = 0;
     public string RegistryServerUrl => RegistryServers.Count > 0 ? RegistryServers[_currentServerIndex] : "http://127.0.0.1:5000";
@@ -89,7 +89,7 @@ public partial class LobbyManager : Node
     public string? AuthToken { get; set; }
     public string? AuthProvider { get; set; }
 
-    // NAT and State
+
     public NatType LocalNatType { get; private set; } = NatType.Open;
     public bool IsHost { get; private set; }
     public string? ActiveLobbyId { get; private set; }
@@ -100,11 +100,11 @@ public partial class LobbyManager : Node
     public string HostStability { get; set; } = "Excellent";
     public event System.Action<string> HostStabilityUpdated;
 
-    // Player List
+
     public List<PlayerInfo> PlayerList { get; } = new();
     public PlayerInfo LocalPlayer { get; private set; } = new();
 
-    // Registry / WebSocket State
+
     private readonly System.Net.Http.HttpClient _httpClient = new();
     private string? _connectedHostIp;
     private ClientWebSocket? _hostWebSocket;
@@ -162,7 +162,7 @@ public partial class LobbyManager : Node
 
     public string? ConnectedHostIp => _connectedHostIp;
 
-    // Events
+
     public event Action? PlayerListUpdated;
     public event Action<string, string>? ChatReceived;
     public event Action<string>? ConnectionFailed;
@@ -183,10 +183,10 @@ public partial class LobbyManager : Node
         Instance = this;
         ProcessMode = ProcessModeEnum.Always;
 
-        // Load registry URL from servers.json
+
         LoadServersConfig();
 
-        // Bind Godot multiplayer signals
+
         Multiplayer.PeerConnected += OnPeerConnected;
         Multiplayer.PeerDisconnected += OnPeerDisconnected;
         Multiplayer.ConnectedToServer += OnConnectedToServer;
@@ -292,7 +292,7 @@ public partial class LobbyManager : Node
             }
         }
 
-        // Fallback default
+
         RegistryServers = new List<string> { "http://127.0.0.1:5000" };
         _currentServerIndex = 0;
         GD.Print($"[LobbyManager] Config servers.json not found or invalid, using fallback: {RegistryServerUrl}");
@@ -304,7 +304,7 @@ public partial class LobbyManager : Node
         LocalNatType = await NatTypeTester.DetermineNatTypeAsync(ENetPort);
         GD.Print($"[LobbyManager] NAT Type Classified: {LocalNatType}");
         
-        // Query a test to get our public mapped endpoint
+
         try
         {
             var dnsAddresses = await Dns.GetHostAddressesAsync("stun.l.google.com");
@@ -355,7 +355,7 @@ public partial class LobbyManager : Node
         NatTestCompleted?.Invoke();
     }
 
-    // --- LOBBY ACTIONS ---
+
 
     public async Task<bool> HostLobbyAsync(string mapPathName, string mapDisplayName)
     {
@@ -366,7 +366,7 @@ public partial class LobbyManager : Node
         PlayerList.Clear();
         ActiveMapName = mapPathName;
 
-        // 1. Initialize local player as slot 0
+
         LocalPlayer = new PlayerInfo
         {
             PeerId = 1,
@@ -383,7 +383,7 @@ public partial class LobbyManager : Node
         };
         PlayerList.Add(LocalPlayer);
 
-        // 2. STUN NAT Type Test required on lobby creation
+
         await RunNatTypeTestAsync();
         if (LocalNatType == NatType.Symmetric)
         {
@@ -391,7 +391,7 @@ public partial class LobbyManager : Node
             return false;
         }
 
-        // 3. Initialize ENet Server
+
         var peer = new ENetMultiplayerPeer();
         var err = peer.CreateServer(ENetPort, MaxPlayers);
         if (err != Error.Ok)
@@ -406,11 +406,11 @@ public partial class LobbyManager : Node
         }
         GD.Print($"[LobbyManager] ENet Server initialized on port {ENetPort}");
 
-        // Start diagnostic listener on ENetPort + 1
+
         Diagnostics.StartHostListener(ENetPort + 1);
         StartHostDiagnosticsTimer();
 
-        // Start Map Distribution Server on ENetPort + 10
+
         try
         {
             _mapServer?.Stop();
@@ -422,7 +422,7 @@ public partial class LobbyManager : Node
             GD.PrintErr($"[LobbyManager] Failed to start map distribution server: {ex.Message}");
         }
 
-        // 4. Register to Registry Server with failover
+
         try
         {
             int hostPingBaseline = await MeasurePingToRegistryAsync();
@@ -472,7 +472,7 @@ public partial class LobbyManager : Node
             }
             GD.Print($"[LobbyManager] Lobby registered on server. LobbyId: {ActiveLobbyId}");
 
-            // 5. Connect WebSocket for incoming client hole punching alerts
+
             if (!string.IsNullOrEmpty(ActiveLobbyId))
             {
                 StartHostWebSocketSignaling(ActiveLobbyId);
@@ -494,7 +494,7 @@ public partial class LobbyManager : Node
         IsGameStarted = false;
         PlayerList.Clear();
 
-        // 1. Setup local player info
+
         LocalPlayer = new PlayerInfo
         {
             PeerId = 0, // Assigned by server
@@ -507,7 +507,7 @@ public partial class LobbyManager : Node
             BinaryVersion = GameBinaryVersion
         };
 
-        // 2. STUN NAT Type Test required on lobby join
+
         await RunNatTypeTestAsync();
 
         string clientPublicIp = _hostPublicIp ?? "127.0.0.1";
@@ -515,7 +515,7 @@ public partial class LobbyManager : Node
 
         try
         {
-            // 3. HTTP Join with failover
+
             var joinPayload = new
             {
                 LobbyId = lobbyId,
@@ -559,10 +559,10 @@ public partial class LobbyManager : Node
 
             GD.Print($"[LobbyManager] Joined. Host endpoint coordinates: {hostIp}:{hostPort}. Launching hole punch...");
 
-            // 4. UDP Hole Punch directly to host ENet port
+
             await UdpHolePuncher.PunchHoleAsync(hostIp, hostPort, ENetPort);
 
-            // 5. Initialize ENet Client on ENetPort
+
             var peer = new ENetMultiplayerPeer();
             var err = peer.CreateClient(hostIp, hostPort, localPort: (hostIp == "127.0.0.1" || hostIp == "localhost") ? 0 : ENetPort);
             if (err != Error.Ok)
@@ -621,18 +621,18 @@ public partial class LobbyManager : Node
             _hostToken = null;
         }
         
-        // Stop server processes
+
         Diagnostics.StopHostListener();
         _wsCts?.Cancel();
         _hostWebSocket?.Dispose();
         _hostWebSocket = null;
         ActiveLobbyId = null;
 
-        // Stop map server
+
         _mapServer?.Stop();
         _mapServer = null;
 
-        // Disconnect ENet
+
         if (Multiplayer.MultiplayerPeer != null)
         {
             Multiplayer.MultiplayerPeer.Close();
@@ -645,7 +645,7 @@ public partial class LobbyManager : Node
         PlayerListUpdated?.Invoke();
     }
 
-    // --- WEBSOCKET & HEARTBEAT FOR HOST ---
+
 
     private void StartHostWebSocketSignaling(string lobbyId)
     {
@@ -684,7 +684,7 @@ public partial class LobbyManager : Node
                             
                             GD.Print($"[LobbyManager] WebSocket signal: incoming client. Punching to {clientIp}:{clientPort}...");
                             
-                            // Punch hole back to client
+
                             _ = Task.Run(async () =>
                             {
                                 try
@@ -727,7 +727,7 @@ public partial class LobbyManager : Node
         }, token);
     }
 
-    // --- PEER CONNECTION SIGNAL HANDLERS ---
+
 
     private void OnPeerConnected(long peerId)
     {
@@ -736,13 +736,13 @@ public partial class LobbyManager : Node
 
         if (IsHost)
         {
-            // 1. Check max players limit
+
             if (PlayerList.Count >= MaxPlayers)
             {
                 GD.Print($"[LobbyManager] Rejecting peer {id}: Lobby is full.");
                 RpcId(id, nameof(RejectConnection), "Lobby is full");
                 
-                // Disconnect peer after brief delay
+
                 var timer = GetTree().CreateTimer(0.1f);
                 timer.Timeout += () =>
                 {
@@ -754,7 +754,7 @@ public partial class LobbyManager : Node
                 return;
             }
 
-            // 2. Assign slot and create PlayerInfo
+
             var newPlayer = new PlayerInfo
             {
                 PeerId = id,
@@ -769,7 +769,7 @@ public partial class LobbyManager : Node
             PlayerList.Add(newPlayer);
             SendChatMessage("System", string.Format(Tr("{0} joined the lobby."), newPlayer.Name));
 
-            // 3. Broadcast sync message to all peers
+
             UpdateAllPeerDiagnostics();
             RpcId(id, nameof(SyncSpectatorDelay), SpectatorDelay);
             RpcId(id, nameof(SyncHostStability), HostStability);
@@ -784,14 +784,14 @@ public partial class LobbyManager : Node
 
         if (IsHost)
         {
-            // Remove player from list and adjust slot indices
+
             int removedIdx = PlayerList.FindIndex(p => p.PeerId == id);
             if (removedIdx >= 0)
             {
                 var leavingPlayer = PlayerList[removedIdx];
                 string name = leavingPlayer.Name;
                 PlayerList.RemoveAt(removedIdx);
-                // Shift slots down to avoid gaps
+
                 for (int i = 0; i < PlayerList.Count; i++)
                 {
                     PlayerList[i].Slot = i;
@@ -888,7 +888,7 @@ public partial class LobbyManager : Node
         Disconnect();
     }
 
-    // --- RPCS ---
+
 
     [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
     private void SyncLobbyData(string serializedData)
@@ -902,7 +902,7 @@ public partial class LobbyManager : Node
                 PlayerList.Clear();
                 PlayerList.AddRange(newList);
                 
-                // Update local reference to our own info
+
                 int myId = Multiplayer.GetUniqueId();
                 var me = PlayerList.Find(p => p.PeerId == myId);
                 if (me != null)
@@ -969,7 +969,7 @@ public partial class LobbyManager : Node
         }
         else
         {
-            // Send request to Server/Host
+
             RpcId(1, nameof(UpdatePlayerSlot), peerId, faction, team, color, name);
         }
     }
@@ -1044,7 +1044,7 @@ public partial class LobbyManager : Node
         if (IsHost)
         {
             _chatHistory.Add((senderName, message));
-            // Host relays to everyone
+
             Rpc(nameof(ReceiveChatMessage), senderName, message);
         }
         
@@ -1078,10 +1078,10 @@ public partial class LobbyManager : Node
         GD.Print($"[LobbyManager] LoadMap RPC received for: {mapName}");
         ActiveMapName = mapName;
 
-        // Dynamically compile local binaries into a cached .pck file and load it
+
         MapAssetManager.CompileAndLoadPck(mapName);
         
-        // Load map.json mockup load
+
         string path = "res://map.json";
         if (FileAccess.FileExists(path))
         {
@@ -1128,7 +1128,7 @@ public partial class LobbyManager : Node
         HostStabilityUpdated?.Invoke(stability);
     }
 
-    // --- HELPERS ---
+
 
     public void StartGame(string mapName)
     {

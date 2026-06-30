@@ -9,7 +9,7 @@ namespace Realm.Ecs.Archetypes;
 ///     Defines the serializable blueprint for a unit archetype.
 ///     This class is used to deserialize unit definitions from JSON files.
 /// </summary>
-public class UnitArchetype
+internal class UnitArchetype
 {
 	public string Id { get; set; } = string.Empty;
 	public string Name { get; set; } = string.Empty;
@@ -20,9 +20,7 @@ public class UnitArchetype
 	public MovementStats MovementStats { get; set; }
 	public ResourceCost[] ResourceCosts { get; set; } = Array.Empty<ResourceCost>();
 
-	// A unit can have multiple tags
 	public List<string> Capabilities { get; set; } = new();
 
-	// In the future, this could point to ability archetype guids
 	public List<string> Abilities { get; set; } = new();
 }

@@ -1,9 +1,8 @@
 namespace Realm.Maps;
 
+using Realm.MapAPI;
 using System;
 using System.Numerics;
-using System.Collections.Generic;
-using Realm.MapAPI;
 
 public class MeleeMap : IMapScript
 {

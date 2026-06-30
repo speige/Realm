@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Numerics;
 
 namespace Realm.MapAPI;
@@ -34,18 +33,9 @@ public interface IGameAPI
     /// <param name="unitTypeId">The type identifier of the unit to spawn.</param>
     /// <param name="position">The spawn coordinates in 3D world space.</param>
     /// <param name="isEnemy">True if the unit should belong to the enemy, false if friendly.</param>
-    /// <returns>A reference to the spawned unit.</returns>
-    IUnit SpawnUnit(string unitTypeId, Vector3 position, bool isEnemy);
-
-    /// <summary>
-    /// Spawns a unit or building of the specified type at the given position with optional population limit bypassing.
-    /// </summary>
-    /// <param name="unitTypeId">The type identifier of the unit to spawn.</param>
-    /// <param name="position">The spawn coordinates in 3D world space.</param>
-    /// <param name="isEnemy">True if the unit should belong to the enemy, false if friendly.</param>
     /// <param name="bypassPopulation">True to spawn the unit without consuming the player's population limit, false to consume it normally.</param>
     /// <returns>A reference to the spawned unit.</returns>
-    IUnit SpawnUnit_V2(string unitTypeId, Vector3 position, bool isEnemy, bool bypassPopulation);
+    IUnit SpawnUnit(string unitTypeId, Vector3 position, bool isEnemy, bool bypassPopulation = false);
 
 
     /// <summary>
@@ -290,7 +280,7 @@ public interface IGameAPI
     /// <param name="unit">The unit to destroy.</param>
     void DestroyUnit(IUnit unit);
 
-    // ── Multi-player generic APIs ──────────────────────────────────────────
+
 
     /// <summary>
     /// Gets the total number of player slots in the current session (including empty slots).
@@ -409,7 +399,7 @@ public interface IGameAPI
     /// <param name="max">Inclusive upper bound.</param>
     float RandomFloat(float min, float max);
 
-    // ── Player start locations & team APIs ────────────────────────────────
+
 
     /// <summary>
     /// Returns the start location for the specified player slot in 3D world space.
@@ -448,7 +438,7 @@ public interface IGameAPI
     /// <param name="playerIndex">Zero-based player slot index.</param>
     bool IsPlayerComputer(int playerIndex);
 
-    // ── Unit appearance & tinting APIs ────────────────────────────────────
+
 
     /// <summary>
     /// Applies an RGBA color tint to the specified unit's 3D mesh.
@@ -458,7 +448,7 @@ public interface IGameAPI
     /// <param name="color">RGB color values in the range [0, 1].</param>
     void SetUnitColor(IUnit unit, Vector3 color);
 
-    // ── Spatial unit query APIs ───────────────────────────────────────────
+
 
     /// <summary>
     /// Retrieves all alive units within the specified radius of a 3D position
@@ -479,7 +469,7 @@ public interface IGameAPI
     /// <returns>A lazily-evaluated sequence of matching units.</returns>
     IEnumerable<IUnit> GetUnitsOwnedByPlayer(int playerIndex, System.Func<IUnit, bool> filter);
 
-    // ── Unit AI command APIs ──────────────────────────────────────────────
+
 
     /// <summary>
     /// Orders the unit to attack-move to the specified world position.
@@ -515,7 +505,7 @@ public interface IGameAPI
     /// <param name="active">True to activate auto-cast; false to deactivate.</param>
     void SetAbilityAutoCast(IUnit unit, string abilityId, bool active);
 
-    // ── Per-player unit management ────────────────────────────────────────
+
 
     /// <summary>
     /// Sets whether the specified player slot is treated as a proxy (AI-controlled
@@ -526,7 +516,7 @@ public interface IGameAPI
     /// <param name="isProxy">True to enable proxy/computer control; false for user control.</param>
     void SetPlayerComputerControlled(int playerIndex, bool isProxy);
 
-    // ── Leaderboard display ───────────────────────────────────────────────
+
 
     /// <summary>
     /// Appends a new row to the leaderboard panel with the given label and value.
@@ -537,7 +527,7 @@ public interface IGameAPI
     /// <param name="color">Optional RGB tint for the label text.</param>
     void AddLeaderboardRow(string label, string value, Vector3? color = null);
 
-    // ── Per-player wood resource APIs ─────────────────────────────────────
+
 
     /// <summary>
     /// Gets the wood (lumber) resource for the specified player slot.
@@ -560,7 +550,7 @@ public interface IGameAPI
     /// <param name="delta">The amount to add (may be negative).</param>
     void AdjustPlayerWood(int playerIndex, float delta);
 
-    // ── Unit ownership API ────────────────────────────────────────────────
+
 
     /// <summary>
     /// Transfers ownership of the specified unit to a different player slot.
@@ -569,7 +559,7 @@ public interface IGameAPI
     /// <param name="playerIndex">Zero-based player slot index of the new owner.</param>
     void SetUnitOwner(IUnit unit, int playerIndex);
 
-    // ── Per-player population APIs ────────────────────────────────────────
+
 
     /// <summary>
     /// Gets the current population count for the specified player slot.
@@ -590,7 +580,7 @@ public interface IGameAPI
     /// <param name="max">The new population cap.</param>
     void SetPlayerMaxPopulation(int playerIndex, int max);
 
-    // ── Wave / countdown display APIs ─────────────────────────────────────
+
 
     /// <summary>
     /// Updates the countdown timer label without resetting the current timer.
@@ -599,7 +589,7 @@ public interface IGameAPI
     /// <param name="label">The new label text for the active countdown timer.</param>
     void SetCountdownTimerLabel(string label);
 
-    // ── Group movement / AI order APIs ────────────────────────────────────
+
 
     /// <summary>
     /// Orders all units owned by the specified player slot to attack-move to the destination.
@@ -615,7 +605,7 @@ public interface IGameAPI
     /// <param name="filter">Optional predicate; pass null to count all units.</param>
     int CountUnitsOwnedByPlayer(int playerIndex, System.Func<IUnit, bool>? filter = null);
 
-    // ── Zone / Region trigger APIs ────────────────────────────────────────
+
 
     /// <summary>
     /// Defines a named rectangular zone in 2D map space (X/Z axes).
@@ -641,7 +631,7 @@ public interface IGameAPI
     /// </summary>
     event System.Action<IUnit, int>? OnUnitEnterZone;
 
-    // ── Per-unit route state API ──────────────────────────────────────────
+
 
     /// <summary>
     /// Associates an integer route-state value with the specified unit.
@@ -658,7 +648,7 @@ public interface IGameAPI
     /// <param name="unit">The unit to query.</param>
     int GetUnitRouteState(IUnit unit);
 
-    // ── Unit level API ────────────────────────────────────────────────────
+
 
     /// <summary>
     /// Sets the level of the specified hero unit.
@@ -668,7 +658,7 @@ public interface IGameAPI
     /// <param name="level">The new level value.</param>
     void SetUnitLevel(IUnit unit, int level);
 
-    // ── Player event APIs ─────────────────────────────────────────────────
+
 
     /// <summary>
     /// Triggered when a player leaves or disconnects from the game.
@@ -676,7 +666,7 @@ public interface IGameAPI
     /// </summary>
     event System.Action<int>? OnPlayerLeft;
 
-    // ── Per-player kill tracking API ──────────────────────────────────────
+
 
     /// <summary>
     /// Returns the number of enemy units killed by the specified player slot.
@@ -691,7 +681,7 @@ public interface IGameAPI
     /// <param name="kills">The new kill count.</param>
     void SetPlayerKills(int playerIndex, int kills);
 
-    // ── Move-to-point order API ───────────────────────────────────────────
+
 
     /// <summary>
     /// Orders the unit to move to the specified destination without attacking anything en route.
@@ -701,7 +691,7 @@ public interface IGameAPI
     /// <param name="destination">The destination in world coordinates.</param>
     void IssueMoveOrder(IUnit unit, System.Numerics.Vector3 destination);
 
-    // ── Unit invulnerability ability API ──────────────────────────────────
+
 
     /// <summary>
     /// Adds or removes a spell-immunity buff from the specified unit.

@@ -1,5 +1,4 @@
 using Godot;
-using System;
 
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public partial class VSCodeMdiWindow : Panel

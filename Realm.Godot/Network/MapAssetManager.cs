@@ -1,21 +1,13 @@
+using Blake3;
+using Godot;
+using SharpCompress.Archives;
+using SharpCompress.Common;
+using SharpCompress.Writers.SevenZip;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using Blake3;
-using SharpCompress.Writers;
-using SharpCompress.Writers.SevenZip;
-using SharpCompress.Archives;
-using SharpCompress.Common;
-using Godot;
-
-public class MapManifest
-{
-    public string MapName { get; set; } = "";
-    public Dictionary<string, string> Files { get; set; } = new(); // virtualPath -> BLAKE3 hash
-}
 
 public static class MapAssetManager
 {
@@ -210,7 +202,7 @@ public static class MapAssetManager
                     {
                         var writtenKeys = new HashSet<string>();
 
-                        // 1. Copy existing entries from global_assets.7z
+
                         if (File.Exists(GlobalArchiveFile))
                         {
                             using (var oldArchive = ArchiveFactory.OpenArchive(GlobalArchiveFile, null))
@@ -245,7 +237,7 @@ public static class MapAssetManager
                             }
                         }
 
-                        // 2. Add brand new entries that were not in oldArchive
+
                         foreach (var kvp in newFilesByHash)
                         {
                            if (!writtenKeys.Contains(kvp.Key))
@@ -260,7 +252,7 @@ public static class MapAssetManager
                     }
                 }
 
-                // 3. Swap the files
+
                 if (File.Exists(GlobalArchiveFile))
                 {
                     File.Delete(GlobalArchiveFile);

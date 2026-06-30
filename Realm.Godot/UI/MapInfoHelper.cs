@@ -3,13 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 
-public struct MapBriefingDetails
-{
-	public string PathName;
-	public string DisplayName;
-	public string Description;
-}
-
 public static class MapInfoHelper
 {
 	public static List<MapBriefingDetails> GetAvailableMaps()

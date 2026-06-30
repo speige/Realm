@@ -1,8 +1,8 @@
+using Godot;
+using MemoryPack;
 using System;
 using System.IO;
 using System.IO.Compression;
-using Godot;
-using MemoryPack;
 
 namespace Realm.Godot.ReplaySystem
 {

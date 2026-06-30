@@ -1,44 +1,44 @@
 # Project: Realm
 
 ## General Project Overview:
-
-- RTS Game using godot with c#
-- Prefer functional programming paradigms where appropriate.
+- RTS Game using Godot with C# and the Arch ECS framework.
 
 ## Overall Coding Style:
 
-- All code, variable names, and comments should be written in english
-- Do not add comments anywhere unless explicity requested
-	Structs in the Realm.Ecs project should have a single XML-doc <summary /> comment at the top describing their purpose
-	Everything in Realm.MapAPI should have full comprehensive XML-doc for public consumption
-- Do not add regions
-- Use names that are verbose enough to clearly identify their purpose
-- Minimize Garbage Collection (GC) pressure by using struct-based data where possible
-- Utilize high-performance .NET structures like `Span<>`, `ReadonlySpan<>`, and `StringBuffer`
-- Use `System.Numerics` to enable SIMD mathematical operations where possible
-- Use `yield return IEnumerable` to allow lazy evaluation where possible
+- Prefer functional programming paradigms where appropriate.
+- All code, variable names, and comments must be written in English.
+- Do not add comments anywhere unless explicitly requested.
+	- Structs in the `Realm.Ecs` project must have a single XML-doc `<summary />` comment at the top describing their purpose.
+	- Everything in `Realm.MapAPI` must have full, comprehensive XML-doc comments for public consumption.
+- Do not use `#region` blocks.
+- Use verbose, descriptive names that clearly identify their purpose (avoid cryptic abbreviations).
+- Avoid the `sealed` keyword.
 
-## Godot specific coding rules:
-- 2d button : always specify icon_max_width property
-- For any text labels that appear on screen, ensure they are translated via LocalizationManager.cs
+## Core 3D rendering and Engine Tick Calculations:
+- Minimize Garbage Collection (GC) pressure by using struct-based data where possible.
+- The game simulation tick runs at 30Hz. Absolute zero-allocation constraint inside the tick: Do not allocate objects, do not use lambdas that capture variables, and do not call `new` inside query loops. Prefer reusing collections, employing object pools, and using `struct` components.
+- Utilize high-performance .NET structures like `Span<>`, `ReadOnlySpan<>`, and `StringBuffer` especially when transferring structural buffers between Godot and C#.
+- Use `System.Numerics` to enable SIMD mathematical operations and vector arithmetic where possible.
+- Use `yield return IEnumerable` to allow lazy evaluation where possible.
 
-### Realm.ECS:
+## Godot-Specific Coding Rules:
+- 2D button: always specify the `icon_max_width` property.
+- For any text labels that appear on screen, ensure they are translated via `LocalizationManager.cs`.
+
+### Realm.ECS Data Layer:
 - The core ECS classes and data must be kept internal.
 - Keep system logic separated from presentation. Physics process query loops in `GameHost.cs` should inspect and manipulate ECS data via components, updating `Unit3D` / `Prop3D` nodes accordingly.
+- Do not store Godot lifecycle elements, scene nodes, or UI references directly inside ECS components. Components must remain pure unmanaged data.
+
+### Logic Services:
+- Classes inheriting from Godot should have minimal orchestration logic, deferring complex logic to domain-specific services.
+- Services should have the `EcsWorld` dependency injected via their constructor and cached for their lifetime.
+- Decoupled Communication: Avoid using DTOs to communicate between orchestrators (`GameHost`) and services. Communication should be minimal and limited to simple ephemeral primitive parameters and return values. All persistent shared data must be stored directly in the ECS, allowing both services and `GameHost` to query and write to the ECS independently to coordinate.
 
 ### Realm.MapAPI:
 - Only expose safe APIs to map authors to prevent the direct manipulation of Godot nodes or internal C# ECS structures.
-- All map scripting operations should strictly proxy through interfaces (like [IGameAPI](file:///C:/temp/Realm/Realm.MapAPI/IGameAPI.cs) and [IUnit](file:///C:/temp/Realm/Realm.MapAPI/IUnit.cs)). Implementations (e.g. `UnitWrapper`) must hide the underlying `Arch.Core.Entity` and raw Godot `Node` references.
+- All map scripting operations should strictly proxy through interfaces (like `IGameAPI` and `IUnit`). Implementations (e.g. `UnitWrapper`) must hide the underlying `Arch.Core.Entity` and raw Godot `Node` references.
 
 ## AI "Vibe" Coding & Maintenance Instructions:
 - Avoid using proprietary or copyrighted terms from other games
-- **Low-GC Architecture**: The game simulation tick runs at 30Hz. Avoid allocating objects, using lambdas that capture variables, or calling `new` inside query loops. Prefer reusing collections, employing object pools, and using `struct` components.
-- **ECS-Godot Coupling**: `GameHost.cs` acts as the bridge. Maintain unity by storing `Unit3D` or `Prop3D` references directly as components on their respective ECS entities, allowing fast lookup during ECS queries.
-- **Styling & Constraints**:
-  - Never add code comments unless explicitly requested.
-  - Every struct in `Realm.Ecs` must have exactly one `<summary />` XML documentation tag describing its purpose.
-  - Every public member/type in `Realm.MapAPI` must have complete, detailed XML-doc comments for Intellisense inside embedded VSCode.
-  - Never use `#region` blocks.
-  - Keep names descriptive and verbose (avoid cryptic abbreviations).
-  - Use `System.Numerics` for vector arithmetic and SIMD performance optimization.
-  - Utilize `Span<T>` and `ReadOnlySpan<T>` when transferring structural buffers between Godot and C#.
+- For fast lookup during queries without breaking the PURE DATA PRINCIPLE, do not put Godot Nodes inside components. Instead, map the relationship using unique entity IDs, or look up corresponding visual nodes via a managed registry outside the ECS system arrays.

@@ -9,12 +9,12 @@ public partial class MapDetails : Control
 	
 	private Button _backButton;
 	
-	// Top Header
+
 	private PanelContainer _headerPanel;
 	private Label _titleLabel;
 	private Label _creatorLabel;
 
-	// Carousel
+
 	private TextureRect _texLeftPeek;
 	private TextureRect _texCenter;
 	private TextureRect _texRightPeek;
@@ -22,17 +22,17 @@ public partial class MapDetails : Control
 	private Button _btnRightArrow;
 	private HSlider _carouselSlider;
 
-	// Bottom-Left
+
 	private PanelContainer _descriptionPanel;
 	private Label _descTitle;
 	private Label _descText;
 
-	// Bottom-Middle
+
 	private PanelContainer _featuresPanel;
 	private Label _featuresTitle;
 	private VBoxContainer _featuresList;
 
-	// Right Panel
+
 	private PanelContainer _statsPanel;
 	private Label _statsTitle;
 	
@@ -63,19 +63,19 @@ public partial class MapDetails : Control
 
 	public override void _Ready()
 	{
-		// Bind root panels
+
 		_bgPanel = GetNode<Panel>("Background");
 		_leftPillar = GetNode<Panel>("LeftPillar");
 		_rightPillar = GetNode<Panel>("RightPillar");
 		
 		_backButton = GetNode<Button>("BackButton");
 
-		// Header
+
 		_headerPanel = GetNode<PanelContainer>("HeaderPanel");
 		_titleLabel = GetNode<Label>("HeaderPanel/VBoxContainer/TitleLabel");
 		_creatorLabel = GetNode<Label>("HeaderPanel/VBoxContainer/CreatorLabel");
 
-		// Carousel
+
 		_texLeftPeek = GetNode<TextureRect>("CarouselPanel/LeftPeek");
 		_texCenter = GetNode<TextureRect>("CarouselPanel/CenterScreenshot");
 		_texRightPeek = GetNode<TextureRect>("CarouselPanel/RightPeek");
@@ -83,17 +83,17 @@ public partial class MapDetails : Control
 		_btnRightArrow = GetNode<Button>("CarouselPanel/RightArrow");
 		_carouselSlider = GetNode<HSlider>("CarouselPanel/CarouselSlider");
 
-		// Bottom-Left Description
+
 		_descriptionPanel = GetNode<PanelContainer>("DescriptionPanel");
 		_descTitle = GetNode<Label>("DescriptionPanel/VBoxContainer/DescTitle");
 		_descText = GetNode<Label>("DescriptionPanel/VBoxContainer/ScrollContainer/DescText");
 
-		// Bottom-Middle Features
+
 		_featuresPanel = GetNode<PanelContainer>("FeaturesPanel");
 		_featuresTitle = GetNode<Label>("FeaturesPanel/VBoxContainer/FeaturesTitle");
 		_featuresList = GetNode<VBoxContainer>("FeaturesPanel/VBoxContainer/ScrollContainer/FeaturesList");
 
-		// Right Stats Panel
+
 		_statsPanel = GetNode<PanelContainer>("StatsPanel");
 		_statsTitle = GetNode<Label>("StatsPanel/VBoxContainer/StatsTitle");
 
@@ -132,7 +132,7 @@ public partial class MapDetails : Control
 				_isDownloading = false;
 				_downloadButton.Disabled = false;
 				UIStyle.ApplyButtonText(_downloadButton, "** PLAY MAP **", 18);
-				_downloadSubtitle.Text = "Ready to Play";
+				_downloadSubtitle.Text = Tr("Ready to Play");
 				_downloadSubtitle.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
 			}
 			else
@@ -152,17 +152,17 @@ public partial class MapDetails : Control
 		_isDownloading = false;
 		_downloadProgress = 0.0f;
 
-		// Populate Header
+
 		UIStyle.ApplyTitle(_titleLabel, $"MAP DETAILS: {_mapData.Title}", 28);
 		_creatorLabel.Text = $"By: {_mapData.Creator}";
 
-		// Description
+
 		_descText.Text = _mapData.Description;
 
-		// Features
+
 		PopulateFeatures();
 
-		// Carousel Setup
+
 		if (_mapData.Screenshots != null && _mapData.Screenshots.Length > 0)
 		{
 			_carouselSlider.MaxValue = _mapData.Screenshots.Length - 1;
@@ -170,19 +170,19 @@ public partial class MapDetails : Control
 			UpdateCarousel();
 		}
 
-		// Rating & Community
+
 		PopulateRatings();
 
-		// Awards
+
 		PopulateAwards();
 
-		// Gameplay Stats
+
 		PopulateGameplayStats();
 
-		// Technical Info
+
 		PopulateTechInfo();
 
-		// Reset download button
+
 		_downloadButton.Disabled = false;
 		UIStyle.ApplyButtonText(_downloadButton, "** DOWNLOAD MAP **", 18);
 		_downloadSubtitle.Text = $"File Size: {_mapData.FileSize}";
@@ -202,36 +202,36 @@ public partial class MapDetails : Control
 
 		SetupPillarButton(_backButton, "◀ BACK", () => UIManager.Instance.TransitionTo(GameScreen.MapDiscovery));
 
-		// Set header labels
-		_descTitle.Text = "MAP DESCRIPTION";
+
+		_descTitle.Text = Tr("MAP DESCRIPTION");
 		_descTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 		_descTitle.AddThemeFontSizeOverride("font_size", 16);
 
-		_featuresTitle.Text = "MAP FEATURES";
+		_featuresTitle.Text = Tr("MAP FEATURES");
 		_featuresTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 		_featuresTitle.AddThemeFontSizeOverride("font_size", 16);
 
-		_statsTitle.Text = "MAP INFO & STATS";
+		_statsTitle.Text = Tr("MAP INFO & STATS");
 		_statsTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 		_statsTitle.AddThemeFontSizeOverride("font_size", 20);
 
-		_ratingTitle.Text = "RATINGS & COMMUNITY";
+		_ratingTitle.Text = Tr("RATINGS & COMMUNITY");
 		_ratingTitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		_ratingTitle.AddThemeFontSizeOverride("font_size", 14);
 
-		_awardsTitle.Text = "AWARDS";
+		_awardsTitle.Text = Tr("AWARDS");
 		_awardsTitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		_awardsTitle.AddThemeFontSizeOverride("font_size", 14);
 
-		_gameplayTitle.Text = "GAMEPLAY STATS";
+		_gameplayTitle.Text = Tr("GAMEPLAY STATS");
 		_gameplayTitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		_gameplayTitle.AddThemeFontSizeOverride("font_size", 14);
 
-		_techTitle.Text = "TECHNICAL INFO";
+		_techTitle.Text = Tr("TECHNICAL INFO");
 		_techTitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		_techTitle.AddThemeFontSizeOverride("font_size", 14);
 
-		// Download Button
+
 		_downloadButton.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		_downloadButton.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		_downloadButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
@@ -239,7 +239,7 @@ public partial class MapDetails : Control
 		_downloadSubtitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		_downloadSubtitle.AddThemeFontSizeOverride("font_size", 12);
 
-		// Carousel peeking overlays style
+
 		_texLeftPeek.Modulate = new Color(0.3f, 0.3f, 0.3f, 0.7f);
 		_texRightPeek.Modulate = new Color(0.3f, 0.3f, 0.3f, 0.7f);
 
@@ -304,7 +304,7 @@ public partial class MapDetails : Control
 			if (_downloadButton.Text == "** PLAY MAP **")
 			{
 				GD.Print("Playing map: " + _mapData?.Title);
-				// Transition back to main menu or show simple game starting simulation
+
 				UIManager.Instance.TransitionTo(GameScreen.MainMenu);
 			}
 			else
@@ -331,7 +331,7 @@ public partial class MapDetails : Control
 
 	private void PopulateFeatures()
 	{
-		// Clear list
+
 		foreach (Node child in _featuresList.GetChildren())
 		{
 			child.QueueFree();
@@ -339,7 +339,7 @@ public partial class MapDetails : Control
 
 		if (_mapData == null) return;
 
-		// Standard list of potential features in game to show checking state
+
 		string[] allPossibleFeatures = { "Custom Units", "Boss Waves", "Achievements", "Hardcore Mode" };
 
 		foreach (var feat in allPossibleFeatures)
@@ -356,7 +356,7 @@ public partial class MapDetails : Control
 
 	private void PopulateRatings()
 	{
-		// Helper to fill star rows
+
 		FillStarsRow(_starsRow1, 5);
 		_votesRow1.Text = $"{_mapData.Votes5Star}   {_mapData.AvgRating} Stars";
 		_votesRow1.AddThemeColorOverride("font_color", new Color(0.85f, 0.85f, 0.9f));
@@ -417,13 +417,13 @@ public partial class MapDetails : Control
 			child.QueueFree();
 		}
 
-		// Playtime
+
 		AddStatRow(_gameplayStatsContainer, "res://Assets/UI/clock.png", $"AVG PLAYTIME: {_mapData.AvgPlaytime}");
 		
-		// Active players
+
 		AddStatRow(_gameplayStatsContainer, "res://Assets/UI/alliance_flag.png", $"PLAYER COUNT: {_mapData.PlayerCount}");
 
-		// Completion rate
+
 		AddStatRow(_gameplayStatsContainer, "res://Assets/UI/victory_flag.png", $"COMPLETION RATE: {_mapData.CompletionRate}");
 	}
 
@@ -434,16 +434,16 @@ public partial class MapDetails : Control
 			child.QueueFree();
 		}
 
-		// File Size
+
 		AddStatRow(_techInfoContainer, "res://Assets/UI/wood_logs.png", $"FILE SIZE: {_mapData.FileSize}");
 
-		// Engine Version
+
 		AddStatRow(_techInfoContainer, "res://Assets/UI/gold_g.png", $"ENGINE VERSION: {_mapData.EngineVersion}");
 
-		// Max Players
+
 		AddStatRow(_techInfoContainer, "res://Assets/UI/battle_shield.png", $"MAX PLAYERS: {_mapData.MaxPlayers}");
 
-		// Genre
+
 		AddStatRow(_techInfoContainer, "res://Assets/UI/battle_axe.png", $"GENRE: {_mapData.Genre}");
 	}
 

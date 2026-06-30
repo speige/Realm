@@ -16,19 +16,19 @@ public partial class SettingsMenu : Control
 	private Label _audioTitle;
 	private Label _gameplayTitle;
 
-	// VIDEO
+
 	private OptionButton _resolutionOpt;
 	private OptionButton _qualityOpt;
 	private OptionButton _windowModeOpt;
 	private OptionButton _vsyncOpt;
 
-	// AUDIO
+
 	private HSlider _masterSlider;
 	private HSlider _musicSlider;
 	private HSlider _sfxSlider;
 	private HSlider _voiceSlider;
 
-	// GAMEPLAY
+
 	private HSlider _scrollSpeedSlider;
 	private HSlider _mouseSensSlider;
 	private HSlider _hudScaleSlider;
@@ -38,39 +38,39 @@ public partial class SettingsMenu : Control
 	private OptionButton _healthBarsOpt;
 	private OptionButton _languageOpt;
 
-	// BOTTOM BUTTONS
+
 	private Button _applyBtn;
 	private Button _cancelBtn;
 	private Button _resetBtn;
 
 	public override void _Ready()
 	{
-		// Panels
+
 		_bgPanel = GetNodeOrNull<Panel>("Background");
 		_mainFrame = GetNode<PanelContainer>("CenterContainer/MainFrame");
 		_videoPanel = GetNode<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel");
 		_audioPanel = GetNode<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel");
 		_gameplayPanel = GetNode<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel");
 
-		// Titles
+
 		_settingsTitle = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/SettingsTitle");
 		_videoTitle = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/PanelTitle");
 		_audioTitle = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox/PanelTitle");
 		_gameplayTitle = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/PanelTitle");
 
-		// Video options
+
 		_resolutionOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/ResolutionOpt");
 		_qualityOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/QualityOpt");
 		_windowModeOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/WindowModeOpt");
 		_vsyncOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/VsyncOpt");
 
-		// Audio options
+
 		_masterSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox/MasterSlider");
 		_musicSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox/MusicSlider");
 		_sfxSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox/SfxSlider");
 		_voiceSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox/VoiceSlider");
 
-		// Gameplay options
+
 		_scrollSpeedSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/ScrollSpeedSlider");
 		_mouseSensSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/MouseSensSlider");
 		_hudScaleSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HudScaleSlider");
@@ -80,7 +80,7 @@ public partial class SettingsMenu : Control
 		_healthBarsOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HealthBarsOpt");
 		_languageOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/LanguageOpt");
 
-		// Buttons
+
 		_applyBtn = GetNode<Button>("CenterContainer/MainFrame/VBoxContainer/ButtonsRow/ApplyButton");
 		_cancelBtn = GetNode<Button>("CenterContainer/MainFrame/VBoxContainer/ButtonsRow/CancelButton");
 		_resetBtn = GetNode<Button>("CenterContainer/MainFrame/VBoxContainer/ButtonsRow/ResetButton");
@@ -115,7 +115,7 @@ public partial class SettingsMenu : Control
 		UIStyle.ApplyTitle(_audioTitle, "AUDIO", 18);
 		UIStyle.ApplyTitle(_gameplayTitle, "GAMEPLAY", 18);
 
-		// Style sub-labels
+
 		string[] labelPaths = {
 			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/ResLabel",
 			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/QualLabel",
@@ -189,7 +189,7 @@ public partial class SettingsMenu : Control
 		_languageOpt.AddItem("العربية", 8);
 		_languageOpt.AddItem("हिन्दी", 9);
 
-		// Dropdown Theme Styling and Sound Integration
+
 		var dropdowns = new[] { _resolutionOpt, _qualityOpt, _windowModeOpt, _vsyncOpt, _healthBarsOpt, _languageOpt };
 		foreach (var opt in dropdowns)
 		{
@@ -247,7 +247,7 @@ public partial class SettingsMenu : Control
 			s.AddThemeStyleboxOverride("grabber_area", fillStyle);
 			s.AddThemeStyleboxOverride("grabber_area_highlight", fillStyle);
 
-			// Slider Sound Trigger Integration
+
 			s.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 			s.DragEnded += (valChanged) => UIManager.Instance.PlayClickSound();
 		}
@@ -390,7 +390,7 @@ public partial class SettingsMenu : Control
 			DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
 		}
 
-		// Save settings in GameSettings
+
 		if (modeIdx == 1)
 		{
 			GameSettings.ResolutionIdx = _resolutionOpt.Selected;
@@ -438,7 +438,7 @@ public partial class SettingsMenu : Control
 		GameSettings.Save();
 		GameSettings.ApplyGraphicsSettings(this);
 
-		// Update active HUD if it exists
+
 		if (InGameHUD.Instance != null)
 		{
 			InGameHUD.Instance.ApplyHUDScale();

@@ -227,7 +227,7 @@ public partial class Prop3D : StaticBody3D
 		switch (PropId)
 		{
 			case "tree":
-				// Cylinder for trunk
+
 				var trunk = new MeshInstance3D();
 				var trunkMesh = new CylinderMesh();
 				trunkMesh.TopRadius = 0.25f;
@@ -241,7 +241,7 @@ public partial class Prop3D : StaticBody3D
 				trunk.Position = new Vector3(0, 0.9f, 0);
 				visual.AddChild(trunk);
 				
-				// Cone for leaves
+
 				var leaves = new MeshInstance3D();
 				var leavesMesh = new CylinderMesh();
 				leavesMesh.TopRadius = 0.0f;
@@ -283,7 +283,7 @@ public partial class Prop3D : StaticBody3D
 				break;
 				
 			case "goldmine":
-				// Large dark stone base
+
 				var goldBase = new MeshInstance3D();
 				var goldBaseMesh = new BoxMesh();
 				goldBaseMesh.Size = new Vector3(3.8f, 1.8f, 3.8f);
@@ -294,7 +294,7 @@ public partial class Prop3D : StaticBody3D
 				goldBase.Position = new Vector3(0, 0.9f, 0);
 				visual.AddChild(goldBase);
 				
-				// Gold nuggets emerging from base
+
 				for (int i = 0; i < 6; i++)
 				{
 					var nugget = new MeshInstance3D();

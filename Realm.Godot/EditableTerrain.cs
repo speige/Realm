@@ -1,10 +1,10 @@
+using DotRecast.Core.Numerics;
+using DotRecast.Detour;
+using DotRecast.Recast;
+using DotRecast.Recast.Geom;
 using Godot;
 using System;
 using System.Collections.Generic;
-using DotRecast.Core.Numerics;
-using DotRecast.Recast;
-using DotRecast.Recast.Geom;
-using DotRecast.Detour;
 
 public partial class EditableTerrain : StaticBody3D
 {
@@ -34,6 +34,13 @@ public partial class EditableTerrain : StaticBody3D
 	private MeshInstance3D _waterMesh;
 	private float _waterHeight = -2.0f;
 	private bool _waterEnabled = true;
+
+	private Vector3[] _verticesCache;
+	private Color[] _colorsCache;
+	private Vector3[] _normalsCache;
+	private Vector2[] _uvsCache;
+	private int[] _indicesCache;
+	private float[] _mapDataCache;
 
 	public float WaterHeight
 	{
@@ -97,7 +104,7 @@ public partial class EditableTerrain : StaticBody3D
 		Colors = new Color[Width, Depth];
 		PathingCodes = new int[Width, Depth];
 
-		// Initialize heights to 0, colors to green (default grass texture color), pathing to ground | flying
+
 		for (int z = 0; z < Depth; z++)
 		{
 			for (int x = 0; x < Width; x++)
@@ -249,14 +256,17 @@ void fragment() {
 
 	public void UpdateMeshAndPhysics(bool rebuildPhysics = true, bool rebuildNavMesh = true)
 	{
-		// 1. Rebuild ArrayMesh surface
-		int vertexCount = Width * Depth;
-		var vertices = new Vector3[vertexCount];
-		var colors = new Color[vertexCount];
-		var normals = new Vector3[vertexCount];
-		var uvs = new Vector2[vertexCount];
 
-		// Compute vertices, colors, uvs
+		int vertexCount = Width * Depth;
+		if (_verticesCache == null || _verticesCache.Length != vertexCount)
+		{
+			_verticesCache = new Vector3[vertexCount];
+			_colorsCache = new Color[vertexCount];
+			_normalsCache = new Vector3[vertexCount];
+			_uvsCache = new Vector2[vertexCount];
+		}
+
+
 		for (int z = 0; z < Depth; z++)
 		{
 			for (int x = 0; x < Width; x++)
@@ -264,13 +274,13 @@ void fragment() {
 				int idx = z * Width + x;
 				float lx = (x - (Width - 1) / 2.0f) * Spacing;
 				float lz = (z - (Depth - 1) / 2.0f) * Spacing;
-				vertices[idx] = new Vector3(lx, Heights[x, z], lz);
-				colors[idx] = Colors[x, z];
-				uvs[idx] = new Vector2((float)x / (Width - 1) * 25f, (float)z / (Depth - 1) * 25f);
+				_verticesCache[idx] = new Vector3(lx, Heights[x, z], lz);
+				_colorsCache[idx] = Colors[x, z];
+				_uvsCache[idx] = new Vector2((float)x / (Width - 1) * 25f, (float)z / (Depth - 1) * 25f);
 			}
 		}
 
-		// Compute Normals for nice shading
+
 		for (int z = 0; z < Depth; z++)
 		{
 			for (int x = 0; x < Width; x++)
@@ -283,15 +293,18 @@ void fragment() {
 				
 				Vector3 tangentX = new Vector3(2.0f * Spacing, hr - hl, 0.0f).Normalized();
 				Vector3 tangentZ = new Vector3(0.0f, hu - hd, 2.0f * Spacing).Normalized();
-				normals[idx] = tangentZ.Cross(tangentX).Normalized();
+				_normalsCache[idx] = tangentZ.Cross(tangentX).Normalized();
 			}
 		}
 
-		// Indices
+
 		int cellWidth = Width - 1;
 		int cellDepth = Depth - 1;
 		int indexCount = cellWidth * cellDepth * 6;
-		var indices = new int[indexCount];
+		if (_indicesCache == null || _indicesCache.Length != indexCount)
+		{
+			_indicesCache = new int[indexCount];
+		}
 		int iIdx = 0;
 		for (int z = 0; z < cellDepth; z++)
 		{
@@ -302,23 +315,23 @@ void fragment() {
 				int v01 = (z + 1) * Width + x;
 				int v11 = (z + 1) * Width + (x + 1);
 				
-				indices[iIdx++] = v00;
-				indices[iIdx++] = v10;
-				indices[iIdx++] = v01;
+				_indicesCache[iIdx++] = v00;
+				_indicesCache[iIdx++] = v10;
+				_indicesCache[iIdx++] = v01;
 				
-				indices[iIdx++] = v10;
-				indices[iIdx++] = v11;
-				indices[iIdx++] = v01;
+				_indicesCache[iIdx++] = v10;
+				_indicesCache[iIdx++] = v11;
+				_indicesCache[iIdx++] = v01;
 			}
 		}
 
 		var arrays = new Godot.Collections.Array();
 		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
-		arrays[(int)Mesh.ArrayType.Normal] = normals;
-		arrays[(int)Mesh.ArrayType.Color] = colors;
-		arrays[(int)Mesh.ArrayType.TexUV] = uvs;
-		arrays[(int)Mesh.ArrayType.Index] = indices;
+		arrays[(int)Mesh.ArrayType.Vertex] = _verticesCache;
+		arrays[(int)Mesh.ArrayType.Normal] = _normalsCache;
+		arrays[(int)Mesh.ArrayType.Color] = _colorsCache;
+		arrays[(int)Mesh.ArrayType.TexUV] = _uvsCache;
+		arrays[(int)Mesh.ArrayType.Index] = _indicesCache;
 
 		_arrayMesh.ClearSurfaces();
 		_arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
@@ -326,20 +339,24 @@ void fragment() {
 
 		if (!rebuildPhysics) return;
 
-		// 2. Rebuild Collision Shape
+
 		var heightMapShape = new HeightMapShape3D();
 		heightMapShape.MapWidth = Width;
 		heightMapShape.MapDepth = Depth;
 		
-		float[] mapData = new float[Width * Depth];
+		int mapDataCount = Width * Depth;
+		if (_mapDataCache == null || _mapDataCache.Length != mapDataCount)
+		{
+			_mapDataCache = new float[mapDataCount];
+		}
 		for (int z = 0; z < Depth; z++)
 		{
 			for (int x = 0; x < Width; x++)
 			{
-				mapData[z * Width + x] = Heights[x, z];
+				_mapDataCache[z * Width + x] = Heights[x, z];
 			}
 		}
-		heightMapShape.MapData = mapData;
+		heightMapShape.MapData = _mapDataCache;
 		_collisionShape.Shape = heightMapShape;
 		_collisionShape.Scale = new Vector3(Spacing, 1.0f, Spacing);
 		if (rebuildNavMesh)

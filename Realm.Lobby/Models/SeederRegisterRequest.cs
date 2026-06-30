@@ -1,0 +1,8 @@
+namespace Realm.Lobby.Models;
+
+public record SeederRegisterRequest(
+	string SeederId, 
+	string? ReportedIP, 
+	int Port, 
+	List<string> MapIds
+);

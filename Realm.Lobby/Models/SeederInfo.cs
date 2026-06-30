@@ -1,0 +1,9 @@
+namespace Realm.Lobby.Models;
+
+public class SeederInfo
+{
+    public required string SeederId { get; set; }
+    public required string IP { get; set; }
+    public required int Port { get; set; }
+    public required List<string> MapIds { get; set; }
+}

@@ -1,14 +1,13 @@
 using Realm.Ecs.Archetypes;
-// For ResourceId and TagId
 
 namespace Realm.Ecs.Services;
 
 /// <summary>
 ///     Loads and manages all game archetypes from definition files.
 /// </summary>
-public class ArchetypeManager
+internal class ArchetypeManager
 {
-	private readonly DefinitionManager _definitionManager; // Consolidated manager
+	private readonly DefinitionManager _definitionManager;
 	private readonly Dictionary<string, UnitArchetype> _unitArchetypes = new();
 
 	public ArchetypeManager(List<UnitArchetype> units, DefinitionManager definitionManager)
@@ -17,27 +16,15 @@ public class ArchetypeManager
 
 		foreach (var archetype in units)
 		{
-			// Validate ResourceCosts
 			foreach (var cost in archetype.ResourceCosts)
-				if (!_definitionManager.IsValidResource(cost.ResourceTypeId.Value)) // Use .Value for comparison
+				if (!_definitionManager.IsValidResource(cost.ResourceTypeId.Value))
 					throw new ArgumentException(
 						$"Unit Archetype '{archetype.Id}' references an invalid ResourceTypeId: '{cost.ResourceTypeId.Value}'");
 
-			// Validate Capabilities
 			foreach (var capabilityId in archetype.Capabilities)
 				if (!_definitionManager.IsValidTag(capabilityId))
 					throw new ArgumentException(
 						$"Unit Archetype '{archetype.Id}' references an invalid CapabilityId: '{capabilityId}'");
-
-			// In a full game, you'd also validate StatTypeIds if the archetype had a 'Stats' component
-			// For example:
-			// if (archetype.Stats != null) {
-			//     foreach (var stat in archetype.Stats.Value) {
-			//         if (!_definitionManager.IsValidStat(stat.Key.Value)) { // Use .Value for comparison
-			//             throw new ArgumentException($"Unit Archetype '{archetype.Id}' references an invalid StatTypeId: '{stat.Key.Value}'");
-			//         }
-			//     }
-			// }
 
 			_unitArchetypes[archetype.Id] = archetype;
 		}

@@ -1,12 +1,11 @@
+using Godot;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Godot;
 
 public class Diagnostics
 {
@@ -26,7 +25,7 @@ public class Diagnostics
 
     private static CancellationTokenSource? _serverCts;
 
-    // --- HOST / SERVER SIDE ---
+
     public static void StartHostListener(int diagPort)
     {
         StopHostListener();
@@ -56,7 +55,7 @@ public class Diagnostics
                         int magic = BitConverter.ToInt32(data, 0);
                         if (magic == MagicHeader)
                         {
-                            // Valid diagnostic packet, echo it back immediately
+
                             await udp.SendAsync(data, data.Length, senderEp);
                         }
                     }
@@ -76,7 +75,7 @@ public class Diagnostics
         _serverCts = null;
     }
 
-    // --- CLIENT SIDE ---
+
     public static async Task<DiagnosticResult> RunClientDiagnosticsAsync(string hostIp, int diagPort, Action<DiagnosticResult> onProgressUpdate)
     {
         GD.Print($"[Diagnostics] Starting diagnostic test to {hostIp}:{diagPort}...");
@@ -94,7 +93,7 @@ public class Diagnostics
 
         var stopwatch = Stopwatch.StartNew();
 
-        // Start receiver thread
+
         var cts = new CancellationTokenSource();
         var receiveTask = Task.Run(async () =>
         {
@@ -126,7 +125,7 @@ public class Diagnostics
                                 }
                             }
 
-                            // Calculate temporary results for live updates
+
                             var currentResult = ComputeMetrics(received, receivedRtts);
                             onProgressUpdate?.Invoke(currentResult);
                         }
@@ -141,7 +140,7 @@ public class Diagnostics
             }
         });
 
-        // Send 50 packets over 5 seconds
+
         for (int i = 0; i < PacketCount; i++)
         {
             byte[] packet = new byte[16];
@@ -164,7 +163,7 @@ public class Diagnostics
             await Task.Delay(DelayBetweenPacketsMs);
         }
 
-        // Wait another 500ms for final in-flight responses
+
         await Task.Delay(500);
         cts.Cancel();
         try { await receiveTask; } catch { /* Ignore task cancellation error */ }
@@ -201,7 +200,7 @@ public class Diagnostics
                 result.MaxRtt = max;
                 result.AvgRtt = sum / receivedCount;
 
-                // Calculate Jitter: standard average absolute difference between consecutive RTTs
+
                 if (receivedRtts.Count > 1)
                 {
                     float jitterSum = 0f;
@@ -227,7 +226,7 @@ public class Diagnostics
 
         result.LossPercentage = (float)(PacketCount - receivedCount) / PacketCount * 100.0f;
 
-        // Calculate consecutive lost packets
+
         int maxConsecutive = 0;
         int currentConsecutive = 0;
         for (int i = 0; i < PacketCount; i++)

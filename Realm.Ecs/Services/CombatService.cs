@@ -10,7 +10,7 @@ namespace Realm.Ecs.Services;
 ///     Demonstrates how Combat-related components are used.
 ///     A real game would have systems that perform these actions every frame.
 /// </summary>
-public class CombatService
+internal class CombatService
 {
 	private readonly World _world;
 

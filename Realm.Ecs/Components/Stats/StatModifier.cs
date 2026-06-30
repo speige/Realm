@@ -3,15 +3,6 @@ using Realm.Ecs.Common;
 namespace Realm.Ecs.Components.Stats;
 
 /// <summary>
-///     The type of modification to apply to a stat.
-/// </summary>
-public enum ModifierType
-{
-	Flat,
-	Percentage
-}
-
-/// <summary>
 ///     A component that modifies a stat on an entity.
 /// </summary>
-public record struct StatModifier(StatId StatTypeId, ModifierType Type, float Value, float Duration = -1);
+internal record struct StatModifier(StatId StatTypeId, ModifierType Type, float Value, float Duration = -1);
