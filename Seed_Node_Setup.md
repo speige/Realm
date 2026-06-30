@@ -140,3 +140,9 @@ To prevent the application from closing when you close the terminal window:
 ### 2. Configure Auto-Restart on Crash
 Operating systems or unexpected network interruptions can occasionally crash applications. Running the node via systemd (`Restart=always`) or an process manager like **PM2** ensures the server immediately spins back up.
 
+---
+
+## 🌐 P2P Map Seeding & Discovery Protocol
+
+The Realm Seed Node also acts as a decentralized directory indexer for P2P map seeding. If the player enables **"Seed map files to other players"** in their settings, their client registers with the Seed Node as an active peer for the maps stored locally on their disk.
+

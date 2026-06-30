@@ -47,20 +47,7 @@ public partial class LobbyRoom : Control
 
 	private List<MapBriefingDetails> _lobbyRoomMaps = new List<MapBriefingDetails>();
 	private readonly string[] _runes = { "ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᚲ", "ᚷ", "ᚹ", "ᚺ", "ᚾ", "ᛁ", "ᛃ", "ᛇ", "ᛈ", "ᛉ", "ᛊ", "ᛏ", "ᛒ", "ᛖ", "ᛗ", "ᛚ", "ᛜ", "ᛞ", "ᛟ" };
-	private readonly string[] _factions = { "HUMAN", "ORC", "UNDEAD", "NIGHT ELF" };
-	private string[] _aiQuotes = 
-	{
-		"GLHF!",
-		"Zug zug!",
-		"Ready to work!",
-		"More gold is required...",
-		"We need more lumber!",
-		"Undead is OP in this patch, nerf please.",
-		"For the Alliance!",
-		"My life for Ner'zhul!",
-		"Who summoned me?",
-		"Is this Melee or Co-op?"
-	};
+	private readonly string[] _factions = { "HUMAN", "ORC", "UNDEAD", "ELF" };
 
 	public override void _Ready()
 	{
@@ -117,6 +104,8 @@ public partial class LobbyRoom : Control
 		_hostStabilityLabel.VerticalAlignment = VerticalAlignment.Center;
 		_hostStabilityLabel.AddThemeFontSizeOverride("font_size", 16);
 		_hostStabilityLabel.Visible = false;
+		_hostStabilityLabel.MouseFilter = Control.MouseFilterEnum.Pass;
+		_hostStabilityLabel.TooltipText = Tr("Average over last 10 games");
 		AddChild(_hostStabilityLabel);
 		_hostStabilityLabel.SetAnchorsPreset(LayoutPreset.CenterTop);
 		_hostStabilityLabel.GrowHorizontal = GrowDirection.Both;
@@ -689,15 +678,46 @@ public partial class LobbyRoom : Control
 			_unstableWarningLabel.Visible = IsAnyMetricRed();
 		}
 
+		var existingRows = new Dictionary<int, PanelContainer>();
 		foreach (Node child in _playersContainer.GetChildren())
 		{
-			child.QueueFree();
+			if (child is PanelContainer pc && pc.Name.ToString().StartsWith("PlayerRow_"))
+			{
+				string idStr = pc.Name.ToString().Substring("PlayerRow_".Length);
+				if (int.TryParse(idStr, out int peerId))
+				{
+					existingRows[peerId] = pc;
+				}
+			}
 		}
 
-		foreach (var player in LobbyManager.Instance.PlayerList)
+		var activePeerIds = new HashSet<int>();
+
+		for (int i = 0; i < LobbyManager.Instance.PlayerList.Count; i++)
 		{
-			var row = CreatePlayerRow(player);
-			_playersContainer.AddChild(row);
+			var player = LobbyManager.Instance.PlayerList[i];
+			activePeerIds.Add(player.PeerId);
+
+			if (existingRows.TryGetValue(player.PeerId, out var row))
+			{
+				UpdatePlayerRow(row, player);
+				_playersContainer.MoveChild(row, i);
+			}
+			else
+			{
+				var newRow = CreatePlayerRow(player);
+				newRow.Name = $"PlayerRow_{player.PeerId}";
+				_playersContainer.AddChild(newRow);
+				_playersContainer.MoveChild(newRow, i);
+			}
+		}
+
+		foreach (var kvp in existingRows)
+		{
+			if (!activePeerIds.Contains(kvp.Key))
+			{
+				kvp.Value.QueueFree();
+			}
 		}
 		
 		SetupStartButton();
@@ -726,6 +746,7 @@ public partial class LobbyRoom : Control
 		if (p.PeerId >= 1)
 		{
 			var readyCheck = new CheckBox();
+			readyCheck.Name = "ReadyCheck";
 			readyCheck.Text = "READY  ";
 			readyCheck.ButtonPressed = p.IsReady;
 			readyCheck.SizeFlagsVertical = SizeFlags.ShrinkCenter;
@@ -751,6 +772,7 @@ public partial class LobbyRoom : Control
 		}
 
 		var optTeam = new OptionButton();
+		optTeam.Name = "OptTeam";
 		optTeam.CustomMinimumSize = new Vector2(100, 32);
 		optTeam.SizeFlagsVertical = SizeFlags.ShrinkCenter;
 		optTeam.Flat = false;
@@ -798,6 +820,7 @@ public partial class LobbyRoom : Control
 		hBox.AddChild(optTeam);
 
 		var colorBtn = new Button();
+		colorBtn.Name = "ColorBtn";
 		colorBtn.CustomMinimumSize = new Vector2(26, 26);
 		colorBtn.SizeFlagsVertical = SizeFlags.ShrinkCenter;
 		
@@ -840,6 +863,7 @@ public partial class LobbyRoom : Control
 		if (isLocalPlayer)
 		{
 			var nameEdit = new LineEdit();
+			nameEdit.Name = "NameEdit";
 			nameEdit.Text = p.Name;
 			nameEdit.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 			nameEdit.CustomMinimumSize = new Vector2(160, 32);
@@ -860,6 +884,7 @@ public partial class LobbyRoom : Control
 		else
 		{
 			var lblName = new Label();
+			lblName.Name = "LblName";
 			lblName.Text = p.Name;
 			lblName.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 			lblName.CustomMinimumSize = new Vector2(160, 0);
@@ -870,6 +895,7 @@ public partial class LobbyRoom : Control
 		}
 
 		var optFaction = new OptionButton();
+		optFaction.Name = "OptFaction";
 		optFaction.CustomMinimumSize = new Vector2(120, 32);
 		optFaction.SizeFlagsVertical = SizeFlags.ShrinkCenter;
 		optFaction.Flat = false;
@@ -920,11 +946,17 @@ public partial class LobbyRoom : Control
 
 		// 5. Diagnostics Display (Ping, Jitter, Packet Loss)
 		var diagLabel = new RichTextLabel();
+		diagLabel.Name = "DiagLabel";
 		diagLabel.BbcodeEnabled = true;
 		diagLabel.ScrollActive = false;
 		diagLabel.CustomMinimumSize = new Vector2(300, 24);
 		diagLabel.SizeFlagsVertical = SizeFlags.ShrinkCenter;
 		diagLabel.AddThemeFontSizeOverride("normal_font_size", 13);
+		if (p.IsHost)
+		{
+			diagLabel.MouseFilter = Control.MouseFilterEnum.Pass;
+			diagLabel.TooltipText = Tr("Host: Average connection with all players in lobby");
+		}
 		
 		string latencyText = p.Latency == "--" ? "measuring..." : p.Latency;
 		string jitterText = p.Jitter == "--" ? "n/a" : p.Jitter;
@@ -941,6 +973,7 @@ public partial class LobbyRoom : Control
 		if (LobbyManager.Instance.IsHost && p.PeerId != 1)
 		{
 			var bootBtn = new Button();
+			bootBtn.Name = "BootBtn";
 			bootBtn.Text = "KICK";
 			bootBtn.CustomMinimumSize = new Vector2(60, 26);
 			bootBtn.SizeFlagsVertical = SizeFlags.ShrinkCenter;
@@ -978,6 +1011,85 @@ public partial class LobbyRoom : Control
 		hBox.AddChild(spaceEnd);
 
 		return panel;
+	}
+
+	private void UpdatePlayerRow(PanelContainer row, LobbyManager.PlayerInfo p)
+	{
+		var hBox = row.GetChildCount() > 0 ? row.GetChild(0) as HBoxContainer : null;
+		if (hBox == null) return;
+
+		var readyCheck = hBox.GetNodeOrNull<CheckBox>("ReadyCheck");
+		if (readyCheck != null && readyCheck.ButtonPressed != p.IsReady)
+		{
+			readyCheck.SetPressedNoSignal(p.IsReady);
+		}
+
+		var optTeam = hBox.GetNodeOrNull<OptionButton>("OptTeam");
+		if (optTeam != null)
+		{
+			int teamIdx = p.Team == "Team 1" ? 0 : (p.Team == "Team 2" ? 1 : 2);
+			if (optTeam.Selected != teamIdx)
+			{
+				optTeam.Selected = teamIdx;
+			}
+		}
+
+		var colorBtn = hBox.GetNodeOrNull<Button>("ColorBtn");
+		if (colorBtn != null && colorBtn.GetThemeStylebox("normal") is StyleBoxFlat colorStyle)
+		{
+			if (colorStyle.BgColor != p.Color)
+			{
+				colorStyle.BgColor = p.Color;
+				colorBtn.AddThemeStyleboxOverride("normal", colorStyle);
+			}
+		}
+
+		var nameEdit = hBox.GetNodeOrNull<LineEdit>("NameEdit");
+		if (nameEdit != null && nameEdit.Text != p.Name)
+		{
+			nameEdit.Text = p.Name;
+		}
+
+		var lblName = hBox.GetNodeOrNull<Label>("LblName");
+		if (lblName != null && lblName.Text != p.Name)
+		{
+			lblName.Text = p.Name;
+		}
+
+		var optFaction = hBox.GetNodeOrNull<OptionButton>("OptFaction");
+		if (optFaction != null)
+		{
+			if (p.Team == "Spectator")
+			{
+				if (optFaction.Selected != 0) optFaction.Selected = 0;
+			}
+			else
+			{
+				int selIdx = Array.IndexOf(_factions, p.Faction);
+				if (selIdx >= 0 && optFaction.Selected != selIdx)
+				{
+					optFaction.Selected = selIdx;
+				}
+			}
+		}
+
+		var diagLabel = hBox.GetNodeOrNull<RichTextLabel>("DiagLabel");
+		if (diagLabel != null)
+		{
+			string latencyText = p.Latency == "--" ? "measuring..." : p.Latency;
+			string jitterText = p.Jitter == "--" ? "n/a" : p.Jitter;
+			string lossText = p.PacketLoss == "--" ? "n/a" : p.PacketLoss;
+
+			string pingColor = GetPingColorCode(p.Latency);
+			string jitterColor = GetJitterColorCode(p.Jitter);
+			string lossColor = GetLossColorCode(p.PacketLoss);
+
+			string newText = $"  Ping: [color={pingColor}]{latencyText}[/color] | Jitter: [color={jitterColor}]{jitterText}[/color] | Loss: [color={lossColor}]{lossText}[/color]";
+			if (diagLabel.Text != newText)
+			{
+				diagLabel.Text = newText;
+			}
+		}
 	}
 
 	private void OnChatSubmitted(string text)
@@ -1283,7 +1395,7 @@ public partial class LobbyRoom : Control
 		_hostStabilityLabel.Visible = true;
 		if (stability == "Excellent")
 		{
-			_hostStabilityLabel.Text = Tr("Host Stability: Excellent");
+			_hostStabilityLabel.Text = Tr("Host Stability: Good");
 			_hostStabilityLabel.AddThemeColorOverride("font_color", new Color(0.3f, 0.9f, 0.4f));
 		}
 		else if (stability == "Average")
@@ -1314,20 +1426,20 @@ public partial class LobbyRoom : Control
 		_connectingPopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
 		AddChild(_connectingPopup);
 
+		var centerContainer = new CenterContainer();
+		centerContainer.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		_connectingPopup.AddChild(centerContainer);
+
 		var cardPanel = new Panel();
 		cardPanel.CustomMinimumSize = new Vector2(400, 150);
-		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
 		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		_connectingPopup.AddChild(cardPanel);
+		centerContainer.AddChild(cardPanel);
 
 		var vbox = new VBoxContainer();
-		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 		vbox.CustomMinimumSize = new Vector2(360, 110);
-		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
+		vbox.Alignment = BoxContainer.AlignmentMode.Center;
 		cardPanel.AddChild(vbox);
-
-		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 25) });
+		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
 		var label = new Label();
 		UIStyle.ApplyTitle(label, Tr("CONNECTING TO HOST ..."), 22);

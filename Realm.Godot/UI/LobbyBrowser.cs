@@ -280,6 +280,7 @@ public partial class LobbyBrowser : Control
 
 	private void FetchLobbiesFromRegistry()
 	{
+		LobbyManager.Instance.RandomizeServerIndex();
 		Task.Run(async () =>
 		{
 			try
@@ -515,7 +516,8 @@ public partial class LobbyBrowser : Control
 				UIManager.Instance.PlayClickSound();
 				
 				// Click transitions to join handshake
-				panel.MouseFilter = MouseFilterEnum.Ignore; // Disable clicks during handshake
+				panel.MouseFilter = MouseFilterEnum.Ignore;
+				LobbyManager.Instance.ActiveMapName = data.Map;
 				bool success = await LobbyManager.Instance.JoinLobbyAsync(data.LobbyId);
 				if (success)
 				{

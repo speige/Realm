@@ -245,9 +245,11 @@
   "FOG OF WAR VIEW: ": "VUE BROUILLARD DE GUERRE: ",
   "Spectator": "Spectateur",
   "SPECTATOR": "SPECTATEUR",
-  "Host Stability: Excellent": "Stabilité de l'hôte: Excellente",
+  "Host Stability: Good": "Stabilité de l'hôte: Bonne",
   "Host Stability: Average": "Stabilité de l'hôte: Moyenne",
   "Host Stability: Poor": "Stabilité de l'hôte: Faible",
+  "Average over last 10 games": "Moyenne sur les 10 dernières parties",
+  "Host: Average connection with all players in lobby": "Hôte: Connexion moyenne avec tous les joueurs du lobby",
   "CONNECTION FAILED": "ÉCHEC DE LA CONNEXION",
   "Failed to connect to host.": "Échec de la connexion à l'hôte.",
   "Reason: {0}": "Raison: {0}"

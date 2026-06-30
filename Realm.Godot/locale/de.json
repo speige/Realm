@@ -245,9 +245,11 @@
   "FOG OF WAR VIEW: ": "NEBEL DES KRIEGES-ANSICHT: ",
   "Spectator": "Zuschauer",
   "SPECTATOR": "ZUSCHAUER",
-  "Host Stability: Excellent": "Host-Stabilität: Hervorragend",
+  "Host Stability: Good": "Host-Stabilität: Gut",
   "Host Stability: Average": "Host-Stabilität: Durchschnittlich",
   "Host Stability: Poor": "Host-Stabilität: Schlecht",
+  "Average over last 10 games": "Durchschnitt der letzten 10 Spiele",
+  "Host: Average connection with all players in lobby": "Host: Durchschnittliche Verbindung mit allen Spielern in der Lobby",
   "CONNECTION FAILED": "VERBINDUNG FEHLGESCHLAGEN",
   "Failed to connect to host.": "Verbindung zum Host fehlgeschlagen.",
   "Reason: {0}": "Grund: {0}"

@@ -191,6 +191,13 @@ layout_mode = 2
 focus_mode = 0
 text = "Record Replays"
 
+[node name="SeedMapFilesChk" type="CheckBox" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
+layout_mode = 2
+focus_mode = 0
+theme_override_constants/icon_max_width = 0
+tooltip_text = "Volunteers a tiny portion of your internet to help players download maps, reducing server costs. Uncheck this if you have a capped internet data plan or a very slow connection"
+text = "Seed map files to other players"
+
 [node name="HealthBarsLabel" type="Label" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
 layout_mode = 2
 text = "Unit Health Bars"

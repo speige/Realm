@@ -245,9 +245,11 @@
   "FOG OF WAR VIEW: ": "VISÃO DA NÉVOA DE GUERRA: ",
   "Spectator": "Espectador",
   "SPECTATOR": "ESPECTADOR",
-  "Host Stability: Excellent": "Estabilidade do Host: Excelente",
+  "Host Stability: Good": "Estabilidade do Host: Boa",
   "Host Stability: Average": "Estabilidade do Host: Média",
   "Host Stability: Poor": "Estabilidade do Host: Ruim",
+  "Average over last 10 games": "Média das últimas 10 partidas",
+  "Host: Average connection with all players in lobby": "Host: Conexão média com todos os jogadores no lobby",
   "CONNECTION FAILED": "FALHA NA CONEXÃO",
   "Failed to connect to host.": "Falha ao conectar ao host.",
   "Reason: {0}": "Motivo: {0}"

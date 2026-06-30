@@ -245,9 +245,11 @@
   "FOG OF WAR VIEW: ": "युद्ध का कोहरा दृश्य: ",
   "Spectator": "दर्शक",
   "SPECTATOR": "दर्शक",
-  "Host Stability: Excellent": "होस्ट की स्थिरता: उत्कृष्ट",
+  "Host Stability: Good": "होस्ट की स्थिरता: अच्छी",
   "Host Stability: Average": "होस्ट की स्थिरता: औसत",
   "Host Stability: Poor": "होस्ट की स्थिरता: खराब",
+  "Average over last 10 games": "पिछले 10 खेलों का औसत",
+  "Host: Average connection with all players in lobby": "होस्ट: लॉबी में सभी खिलाड़ियों के साथ औसत कनेक्शन",
   "CONNECTION FAILED": "कनेक्शन विफल",
   "Failed to connect to host.": "होस्ट से कनेक्ट करने में विफल।",
   "Reason: {0}": "कारण: {0}"

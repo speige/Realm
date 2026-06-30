@@ -85,6 +85,10 @@ public partial class LobbyManager : Node
     public int ENetPort { get; private set; } = 8999;
     public int MaxPlayers { get; set; } = 8;
     
+    public string AuthenticatedUsername { get; set; } = "Horaid_Topa";
+    public string? AuthToken { get; set; }
+    public string? AuthProvider { get; set; }
+
     // NAT and State
     public NatType LocalNatType { get; private set; } = NatType.Open;
     public bool IsHost { get; private set; }
@@ -107,6 +111,8 @@ public partial class LobbyManager : Node
     private CancellationTokenSource? _wsCts;
     private string? _hostPublicIp;
     private int _hostPublicPort;
+    public string PublicIP => _hostPublicIp ?? "127.0.0.1";
+    public int PublicPort => _hostPublicPort > 0 ? _hostPublicPort : ENetPort;
     private MapDistributionServer? _mapServer;
     private string? _hostToken;
     private string? _countdownMapName;
@@ -121,6 +127,15 @@ public partial class LobbyManager : Node
         {
             _currentServerIndex = (_currentServerIndex + 1) % RegistryServers.Count;
             GD.Print($"[LobbyManager] Switched to next bootstrap server: {RegistryServerUrl}");
+        }
+    }
+
+    public void RandomizeServerIndex()
+    {
+        if (RegistryServers.Count > 1)
+        {
+            _currentServerIndex = Random.Shared.Next(RegistryServers.Count);
+            GD.Print($"[LobbyManager] Randomized bootstrap server to: {RegistryServerUrl}");
         }
     }
 
@@ -182,6 +197,19 @@ public partial class LobbyManager : Node
 
         Task.Run(() => MapAssetManager.PruneGlobalArchive());
         AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
+
+        Task.Run(async () =>
+        {
+            while (true)
+            {
+                try
+                {
+                    await Task.Delay(5000);
+                    PeerSeederManager.Instance.CheckIdleAndSeedStatus();
+                }
+                catch { }
+            }
+        });
     }
 
     public override void _Notification(int what)
@@ -208,6 +236,12 @@ public partial class LobbyManager : Node
             if (_cleanedUp) return;
             _cleanedUp = true;
         }
+
+        try
+        {
+            PeerSeederManager.Instance.Stop();
+        }
+        catch { }
 
         if (IsHost && !string.IsNullOrEmpty(ActiveLobbyId) && !string.IsNullOrEmpty(_hostToken))
         {
@@ -337,7 +371,7 @@ public partial class LobbyManager : Node
         {
             PeerId = 1,
             Slot = 0,
-            Name = "Host_Player",
+            Name = AuthenticatedUsername,
             Faction = "HUMAN",
             Team = "Team 1",
             Color = new Color(0.8f, 0.1f, 0.1f),
@@ -465,7 +499,7 @@ public partial class LobbyManager : Node
         {
             PeerId = 0, // Assigned by server
             Slot = -1,
-            Name = "Client_Player",
+            Name = AuthenticatedUsername,
             Faction = "HUMAN",
             Team = "Team 1",
             Color = new Color(0.1f, 0.4f, 0.8f),
@@ -776,26 +810,46 @@ public partial class LobbyManager : Node
         
         if (!string.IsNullOrEmpty(_connectedHostIp))
         {
-            // Map download in background
             Task.Run(async () =>
             {
                 string hostIp = _connectedHostIp;
                 int port = ENetPort + 10;
-                GD.Print($"[LobbyManager] Triggering map download from host {hostIp}:{port}...");
-                var client = new MapDistributionClient();
-                client.DownloadProgressChanged += (progress) =>
-                {
-                    CallDeferred(nameof(EmitDownloadProgress), progress);
-                };
+                bool p2pSuccess = false;
 
-                bool success = await client.DownloadMapAsync(hostIp, port, "downloaded_map");
-                if (success)
+                if (!string.IsNullOrEmpty(ActiveMapName))
+                {
+                    GD.Print($"[LobbyManager] Attempting P2P download for map '{ActiveMapName}'...");
+                    var p2pClient = new PeerMapDownloader();
+                    p2pClient.DownloadProgressChanged += (progress) =>
+                    {
+                        CallDeferred(nameof(EmitDownloadProgress), progress);
+                    };
+                    p2pSuccess = await p2pClient.DownloadMapAsync(ActiveMapName);
+                }
+
+                if (p2pSuccess)
                 {
                     CallDeferred(nameof(EmitDownloadCompleted));
                 }
                 else
                 {
-                    CallDeferred(nameof(EmitDownloadFailed));
+                    GD.Print("[LobbyManager] P2P map download failed or unavailable. Falling back to HTTP host download...");
+                    var client = new MapDistributionClient();
+                    client.DownloadProgressChanged += (progress) =>
+                    {
+                        CallDeferred(nameof(EmitDownloadProgress), progress);
+                    };
+
+                    string downloadMapName = !string.IsNullOrEmpty(ActiveMapName) ? ActiveMapName : "downloaded_map";
+                    bool success = await client.DownloadMapAsync(hostIp, port, downloadMapName);
+                    if (success)
+                    {
+                        CallDeferred(nameof(EmitDownloadCompleted));
+                    }
+                    else
+                    {
+                        CallDeferred(nameof(EmitDownloadFailed));
+                    }
                 }
             });
         }
@@ -1251,8 +1305,94 @@ public partial class LobbyManager : Node
         return 100;
     }
 
+    private HttpListener? _authHttpListener;
+
+    public async Task<bool> StartOAuthFlowAsync(string provider)
+    {
+        _authHttpListener?.Stop();
+        int port = 8089;
+        _authHttpListener = new HttpListener();
+        _authHttpListener.Prefixes.Add($"http://localhost:{port}/auth/callback/");
+        try
+        {
+            _authHttpListener.Start();
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[LobbyManager] Failed to start local OAuth listener on port {port}: {ex.Message}");
+            return false;
+        }
+
+        string loginUrl = $"{RegistryServerUrl}/auth/login?provider={provider}&port={port}";
+        OS.ShellOpen(loginUrl);
+
+        try
+        {
+            var context = await _authHttpListener.GetContextAsync();
+            var request = context.Request;
+            var response = context.Response;
+
+            string? username = request.QueryString["username"];
+            string? token = request.QueryString["token"];
+            string? returnedProvider = request.QueryString["provider"];
+
+            if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(token))
+            {
+                AuthenticatedUsername = username;
+                AuthToken = token;
+                AuthProvider = returnedProvider;
+
+                GD.Print($"[LobbyManager] OAuth Login Success! Provider: {returnedProvider}, User: {username}");
+
+                var successHtml = """
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Login Successful</title>
+                    <style>
+                        body { background: #0f111a; color: #e2e8f0; font-family: sans-serif; text-align: center; padding-top: 50px; }
+                        h1 { color: #ffd700; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Login Successful!</h1>
+                    <p>You have successfully logged in to Realm. You may close this window and return to the game.</p>
+                </body>
+                </html>
+                """;
+
+                byte[] buffer = Encoding.UTF8.GetBytes(successHtml);
+                response.ContentLength64 = buffer.Length;
+                response.OutputStream.Write(buffer, 0, buffer.Length);
+                response.OutputStream.Close();
+
+                _authHttpListener.Stop();
+                return true;
+            }
+            else
+            {
+                var errorHtml = "<h1>Login Failed</h1><p>Invalid parameters received.</p>";
+                byte[] buffer = Encoding.UTF8.GetBytes(errorHtml);
+                response.ContentLength64 = buffer.Length;
+                response.OutputStream.Write(buffer, 0, buffer.Length);
+                response.OutputStream.Close();
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[LobbyManager] Error handling OAuth callback: {ex.Message}");
+        }
+        finally
+        {
+            _authHttpListener?.Stop();
+        }
+
+        return false;
+    }
+
     public override void _ExitTree()
     {
+        _authHttpListener?.Stop();
         StopHostDiagnosticsTimer();
         base._ExitTree();
     }

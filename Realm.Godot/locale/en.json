@@ -245,10 +245,14 @@
   "FOG OF WAR VIEW: ": "FOG OF WAR VIEW: ",
   "Spectator": "Spectator",
   "SPECTATOR": "SPECTATOR",
-  "Host Stability: Excellent": "Host Stability: Excellent",
+  "Host Stability: Good": "Host Stability: Good",
   "Host Stability: Average": "Host Stability: Average",
   "Host Stability: Poor": "Host Stability: Poor",
+  "Average over last 10 games": "Average over last 10 games",
+  "Host: Average connection with all players in lobby": "Host: Average connection with all players in lobby",
   "CONNECTION FAILED": "CONNECTION FAILED",
   "Failed to connect to host.": "Failed to connect to host.",
-  "Reason: {0}": "Reason: {0}"
+  "Reason: {0}": "Reason: {0}",
+  "Seed map files to other players": "Seed map files to other players",
+  "Volunteers a tiny portion of your internet to help players download maps, reducing server costs. Uncheck this if you have a capped internet data plan or a very slow connection": "Volunteers a tiny portion of your internet to help players download maps, reducing server costs. Uncheck this if you have a capped internet data plan or a very slow connection"
 }

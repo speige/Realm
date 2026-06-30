@@ -11,6 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services
 builder.Services.AddSingleton<LobbyRegistry>();
 builder.Services.AddSingleton<GeoIpService>();
+builder.Services.AddSingleton<SeederRegistry>();
 builder.Services.AddHttpClient();
 
 // Add Peer Registry configuration
@@ -394,6 +395,230 @@ app.Map("/lobbies/ws", async (HttpContext context, LobbyRegistry registry) =>
     }
 });
 
+app.MapGet("/auth/login", (string provider, int port, HttpContext context) =>
+{
+    var html = $$"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Authorize Realm</title>
+        <style>
+            body {
+                background: #0f111a;
+                color: #e2e8f0;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                margin: 0;
+            }
+            .card {
+                background: #1a1d2e;
+                border: 2px solid #3b3f5c;
+                border-radius: 12px;
+                padding: 40px;
+                width: 400px;
+                text-align: center;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            }
+            h2 {
+                color: #ffd700;
+                margin-bottom: 10px;
+            }
+            .provider-title {
+                text-transform: capitalize;
+                font-weight: bold;
+                color: #5cd6ff;
+            }
+            .btn {
+                background: #5865F2;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 6px;
+                font-size: 16px;
+                font-weight: bold;
+                cursor: pointer;
+                transition: background 0.2s;
+                width: 100%;
+                margin-top: 20px;
+            }
+            .btn-steam {
+                background: #171a21;
+                border: 1px solid #66c0f4;
+            }
+            .btn:hover {
+                filter: brightness(1.1);
+            }
+            input {
+                width: 90%;
+                padding: 10px;
+                margin-top: 15px;
+                border-radius: 4px;
+                border: 1px solid #3b3f5c;
+                background: #0f111a;
+                color: #e2e8f0;
+                text-align: center;
+                font-size: 16px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h2>Authorize Realm</h2>
+            <p>Connect your <span class="provider-title">{{provider}}</span> account to play.</p>
+            <form action="/auth/authorize" method="GET">
+                <input type="hidden" name="provider" value="{{provider}}" />
+                <input type="hidden" name="port" value="{{port}}" />
+                <input type="text" name="username" placeholder="Enter Username" required value="Gamer_{{Random.Shared.Next(1000, 9999)}}" />
+                <button type="submit" class="btn {{ (provider == "steam" ? "btn-steam" : "") }}">
+                    Login with {{provider}}
+                </button>
+            </form>
+        </div>
+    </body>
+    </html>
+    """;
+    return Results.Content(html, "text/html");
+});
+
+app.MapGet("/auth/authorize", (string provider, int port, string username, HttpContext context) =>
+{
+    var token = Guid.NewGuid().ToString("N");
+    var callbackUrl = $"http://localhost:{port}/auth/callback/?username={Uri.EscapeDataString(username)}&token={token}&provider={provider}";
+    return Results.Redirect(callbackUrl);
+});
+
+// --- SEEDER DISCOVERY & UDP PUNCHING COORDINATION ---
+
+app.MapPost("/seeders/register", (SeederRegisterRequest req, SeederRegistry registry, HttpContext context) =>
+{
+    var ip = context.Connection.RemoteIpAddress?.MapToIPv4().ToString() ?? "127.0.0.1";
+    if (!string.IsNullOrEmpty(req.ReportedIP) && req.ReportedIP != "0.0.0.0" && req.ReportedIP != "127.0.0.1")
+    {
+        ip = req.ReportedIP;
+    }
+
+    var info = new SeederInfo
+    {
+        SeederId = req.SeederId,
+        IP = ip,
+        Port = req.Port,
+        MapIds = req.MapIds
+    };
+    registry.Register(info);
+    return Results.Ok(new { Status = "Registered" });
+});
+
+app.MapPost("/seeders/unregister", (SeederUnregisterRequest req, SeederRegistry registry) =>
+{
+    registry.Unregister(req.SeederId);
+    return Results.Ok(new { Status = "Unregistered" });
+});
+
+app.MapGet("/seeders", (SeederRegistry registry) =>
+{
+    var list = registry.GetAll().Select(s => new
+    {
+        ip = s.IP,
+        port = s.Port,
+        mapIds = s.MapIds
+    });
+    return Results.Ok(list);
+});
+
+app.MapPost("/seeders/download", async (SeederDownloadRequest req, SeederRegistry registry) =>
+{
+    var seeders = registry.GetSeedersForMap(req.MapId);
+    if (seeders.Count == 0)
+    {
+        return Results.NotFound(new { Message = "No seeders found for this map" });
+    }
+
+    var random = new Random();
+    var attempts = seeders.OrderBy(_ => random.Next()).ToList();
+
+    foreach (var seeder in attempts)
+    {
+        var ws = registry.GetConnection(seeder.SeederId);
+        if (ws != null && ws.State == WebSocketState.Open)
+        {
+            try
+            {
+                var msg = JsonSerializer.Serialize(new
+                {
+                    Action = "Punch",
+                    ClientIP = req.ClientPublicIP,
+                    ClientPort = req.ClientPublicPort
+                });
+                var bytes = Encoding.UTF8.GetBytes(msg);
+                await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                
+                Console.WriteLine($"[Registry] Relayed punch request to seeder {seeder.SeederId} ({seeder.IP}:{seeder.Port}) for client {req.ClientPublicIP}:{req.ClientPublicPort}");
+                
+                return Results.Ok(new { SeederIP = seeder.IP, SeederPort = seeder.Port });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Registry] Failed to send punch to seeder {seeder.SeederId}, removing: {ex.Message}");
+                registry.Unregister(seeder.SeederId);
+            }
+        }
+        else
+        {
+            Console.WriteLine($"[Registry] Seeder {seeder.SeederId} has disconnected or closed connection, removing.");
+            registry.Unregister(seeder.SeederId);
+        }
+    }
+
+    return Results.BadRequest(new { Message = "Failed to coordinate UDP punch with seeders" });
+});
+
+app.Map("/seeders/ws", async (HttpContext context, SeederRegistry registry) =>
+{
+    if (context.WebSockets.IsWebSocketRequest)
+    {
+        var seederId = context.Request.Query["seederId"].ToString();
+        if (string.IsNullOrEmpty(seederId))
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+        registry.AddConnection(seederId, webSocket);
+        Console.WriteLine($"[Registry] Seeder connected WebSocket for Seeder {seederId}");
+
+        var buffer = new byte[1024 * 4];
+        try
+        {
+            while (webSocket.State == WebSocketState.Open)
+            {
+                var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+                    break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Registry] Seeder {seederId} WebSocket error: {ex.Message}");
+        }
+        finally
+        {
+            registry.RemoveConnection(seederId);
+            Console.WriteLine($"[Registry] Seeder disconnected WebSocket for Seeder {seederId}");
+        }
+    }
+    else
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+    }
+});
+
 app.Run();
 
 // DTOs & Models
@@ -560,4 +785,59 @@ public class GeoIpService
     }
 
     private static double ToRadians(double val) => (Math.PI / 180) * val;
+}
+
+public record SeederRegisterRequest(string SeederId, string? ReportedIP, int Port, List<string> MapIds);
+public record SeederUnregisterRequest(string SeederId);
+public record SeederDownloadRequest(string MapId, string ClientPublicIP, int ClientPublicPort);
+
+public class SeederInfo
+{
+    public required string SeederId { get; set; }
+    public required string IP { get; set; }
+    public required int Port { get; set; }
+    public required List<string> MapIds { get; set; }
+}
+
+public class SeederRegistry
+{
+    private readonly ConcurrentDictionary<string, SeederInfo> _seeders = new();
+    private readonly ConcurrentDictionary<string, WebSocket> _seederConnections = new();
+
+    public void Register(SeederInfo info)
+    {
+        _seeders[info.SeederId] = info;
+    }
+
+    public void Unregister(string seederId)
+    {
+        _seeders.TryRemove(seederId, out _);
+        _seederConnections.TryRemove(seederId, out _);
+    }
+
+    public void AddConnection(string seederId, WebSocket ws)
+    {
+        _seederConnections[seederId] = ws;
+    }
+
+    public void RemoveConnection(string seederId)
+    {
+        _seederConnections.TryRemove(seederId, out _);
+    }
+
+    public List<SeederInfo> GetAll()
+    {
+        return _seeders.Values.ToList();
+    }
+
+    public List<SeederInfo> GetSeedersForMap(string mapId)
+    {
+        return _seeders.Values.Where(s => s.MapIds.Contains(mapId, StringComparer.OrdinalIgnoreCase)).ToList();
+    }
+
+    public WebSocket? GetConnection(string seederId)
+    {
+        _seederConnections.TryGetValue(seederId, out var ws);
+        return ws;
+    }
 }

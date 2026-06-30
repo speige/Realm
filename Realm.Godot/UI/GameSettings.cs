@@ -24,6 +24,7 @@ public static class GameSettings
 	public static string Language { get; set; } = "en";
 	public static bool DisplayFps { get; set; } = true;
 	public static bool RecordReplays { get; set; } = false;
+	public static bool SeedMapFiles { get; set; } = true;
 
 	public static void ResetToDefaults()
 	{
@@ -42,6 +43,7 @@ public static class GameSettings
 		Language = "en";
 		DisplayFps = true;
 		RecordReplays = false;
+		SeedMapFiles = true;
 	}
 
 	public static void InitializeResolutions()
@@ -122,6 +124,7 @@ public static class GameSettings
 				Language = data.Language ?? "en";
 				DisplayFps = data.DisplayFps ?? true;
 				RecordReplays = data.RecordReplays ?? false;
+				SeedMapFiles = data.SeedMapFiles ?? true;
 				if (data.ShowHealthBars is JsonElement elem)
 				{
 					if (elem.ValueKind == JsonValueKind.True || elem.ValueKind == JsonValueKind.False)
@@ -167,7 +170,8 @@ public static class GameSettings
 			ShowHealthBars = ShowHealthBars,
 			Language = Language,
 			DisplayFps = DisplayFps,
-			RecordReplays = RecordReplays
+			RecordReplays = RecordReplays,
+			SeedMapFiles = SeedMapFiles
 		};
 
 		string json = JsonSerializer.Serialize(data);
@@ -318,5 +322,6 @@ public static class GameSettings
 		public string Language { get; set; }
 		public bool? DisplayFps { get; set; }
 		public bool? RecordReplays { get; set; }
+		public bool? SeedMapFiles { get; set; }
 	}
 }

@@ -403,13 +403,50 @@ public partial class MainMenu : Control
 
 		// Stats
 		var statsText = new Label();
-		statsText.Text = "Username: Horaid_Topa\nFaction: Human Alliance\nMatches Played: 142\nVictories: 89\nDefeats: 53\nWin Rate: 62.7%\nRank: Grand Marshal";
+		var currentUsername = LobbyManager.Instance.AuthenticatedUsername;
+		var currentProvider = LobbyManager.Instance.AuthProvider ?? "None";
+		statsText.Text = $"Username: {currentUsername}\nAuth Provider: {currentProvider}\nMatches Played: 142\nVictories: 89\nDefeats: 53\nWin Rate: 62.7%\nRank: Grand Marshal";
 		statsText.HorizontalAlignment = HorizontalAlignment.Center;
 		statsText.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
 		statsText.AddThemeFontSizeOverride("font_size", 16);
 		vbox.AddChild(statsText);
 
-		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 25) });
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
+
+		var oauthHbox = new HBoxContainer();
+		oauthHbox.Alignment = BoxContainer.AlignmentMode.Center;
+		vbox.AddChild(oauthHbox);
+
+		var discordLoginBtn = new Button();
+		discordLoginBtn.AddThemeConstantOverride("icon_max_width", 0);
+		SetupButton(discordLoginBtn, "LOGIN DISCORD", async () =>
+		{
+			bool success = await LobbyManager.Instance.StartOAuthFlowAsync("discord");
+			if (success && GodotObject.IsInstanceValid(statsText))
+			{
+				statsText.Text = $"Username: {LobbyManager.Instance.AuthenticatedUsername}\nAuth Provider: {LobbyManager.Instance.AuthProvider}\nMatches Played: 142\nVictories: 89\nDefeats: 53\nWin Rate: 62.7%\nRank: Grand Marshal";
+			}
+		});
+		discordLoginBtn.CustomMinimumSize = new Vector2(180, 40);
+		oauthHbox.AddChild(discordLoginBtn);
+
+		var spacer = new Control { CustomMinimumSize = new Vector2(10, 0) };
+		oauthHbox.AddChild(spacer);
+
+		var steamLoginBtn = new Button();
+		steamLoginBtn.AddThemeConstantOverride("icon_max_width", 0);
+		SetupButton(steamLoginBtn, "LOGIN STEAM", async () =>
+		{
+			bool success = await LobbyManager.Instance.StartOAuthFlowAsync("steam");
+			if (success && GodotObject.IsInstanceValid(statsText))
+			{
+				statsText.Text = $"Username: {LobbyManager.Instance.AuthenticatedUsername}\nAuth Provider: {LobbyManager.Instance.AuthProvider}\nMatches Played: 142\nVictories: 89\nDefeats: 53\nWin Rate: 62.7%\nRank: Grand Marshal";
+			}
+		});
+		steamLoginBtn.CustomMinimumSize = new Vector2(180, 40);
+		oauthHbox.AddChild(steamLoginBtn);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
 
 		// Back button (no squished icon, styled like main menu buttons)
 		var backBtn = new Button();

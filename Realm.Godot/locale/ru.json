@@ -245,9 +245,11 @@
   "FOG OF WAR VIEW: ": "РЕЖИМ ТУМАНА ВОЙНЫ: ",
   "Spectator": "Зритель",
   "SPECTATOR": "ЗРИТЕЛЬ",
-  "Host Stability: Excellent": "Стабильность хоста: Отличная",
+  "Host Stability: Good": "Стабильность хоста: Хорошая",
   "Host Stability: Average": "Стабильность хоста: Средняя",
   "Host Stability: Poor": "Стабильность хоста: Плохая",
+  "Average over last 10 games": "Среднее за последние 10 игр",
+  "Host: Average connection with all players in lobby": "Хост: Среднее соединение со всеми игроками в лобби",
   "CONNECTION FAILED": "ОШИБКА ПОДКЛЮЧЕНИЯ",
   "Failed to connect to host.": "Не удалось подключиться к хосту.",
   "Reason: {0}": "Причина: {0}"

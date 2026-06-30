@@ -245,9 +245,11 @@
   "FOG OF WAR VIEW: ": "战争迷雾视图: ",
   "Spectator": "旁观者",
   "SPECTATOR": "旁观者",
-  "Host Stability: Excellent": "主机稳定性：极佳",
+  "Host Stability: Good": "主机稳定性：良好",
   "Host Stability: Average": "主机稳定性：一般",
   "Host Stability: Poor": "主机稳定性：极差",
+  "Average over last 10 games": "最近10场游戏的平均值",
+  "Host: Average connection with all players in lobby": "主机：与大厅中所有玩家的平均连接",
   "CONNECTION FAILED": "连接失败",
   "Failed to connect to host.": "无法连接到主机。",
   "Reason: {0}": "原因：{0}"

@@ -170,6 +170,7 @@ public static class UIStyle
 		cb.AddThemeColorOverride("font_hover_color", ColorGold);
 		cb.AddThemeColorOverride("font_pressed_color", ColorCyanGlow);
 		cb.AddThemeFontSizeOverride("font_size", 14);
+		cb.AddThemeConstantOverride("icon_max_width", 0);
 	}
 	// StyleBox: Progress Bar (Health / Mana / Sliders)
 	public static StyleBoxFlat CreateSliderTrack()

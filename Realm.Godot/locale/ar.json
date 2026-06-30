@@ -245,9 +245,11 @@
   "FOG OF WAR VIEW: ": "عرض ضباب الحرب: ",
   "Spectator": "مشاهد",
   "SPECTATOR": "مشاهد",
-  "Host Stability: Excellent": "استقرار المستضيف: ممتاز",
+  "Host Stability: Good": "استقرار المستضيف: جيد",
   "Host Stability: Average": "استقرار المستضيف: متوسط",
   "Host Stability: Poor": "استقرار المستضيف: ضعيف",
+  "Average over last 10 games": "المتوسط خلال آخر 10 مباريات",
+  "Host: Average connection with all players in lobby": "المستضيف: متوسط الاتصال مع جميع اللاعبين في الردهة",
   "CONNECTION FAILED": "فشل الاتصال",
   "Failed to connect to host.": "فشل الاتصال بالمستضيف.",
   "Reason: {0}": "السبب: {0}"

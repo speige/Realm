@@ -34,6 +34,7 @@ public partial class SettingsMenu : Control
 	private HSlider _hudScaleSlider;
 	private CheckBox _displayFpsChk;
 	private CheckBox _recordReplaysChk;
+	private CheckBox _seedMapFilesChk;
 	private OptionButton _healthBarsOpt;
 	private OptionButton _languageOpt;
 
@@ -75,6 +76,7 @@ public partial class SettingsMenu : Control
 		_hudScaleSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HudScaleSlider");
 		_displayFpsChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/DisplayFpsChk");
 		_recordReplaysChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/RecordReplaysChk");
+		_seedMapFilesChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/SeedMapFilesChk");
 		_healthBarsOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HealthBarsOpt");
 		_languageOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/LanguageOpt");
 
@@ -141,6 +143,9 @@ public partial class SettingsMenu : Control
 		_displayFpsChk.Text = TranslationServer.Translate(_displayFpsChk.Text);
 		UIStyle.ApplyCheckboxStyle(_recordReplaysChk);
 		_recordReplaysChk.Text = TranslationServer.Translate(_recordReplaysChk.Text);
+		UIStyle.ApplyCheckboxStyle(_seedMapFilesChk);
+		_seedMapFilesChk.Text = TranslationServer.Translate(_seedMapFilesChk.Text);
+		_seedMapFilesChk.TooltipText = TranslationServer.Translate(_seedMapFilesChk.TooltipText);
 	}
 
 	private void PopulateDropdowns()
@@ -221,6 +226,8 @@ public partial class SettingsMenu : Control
 		_displayFpsChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 		_recordReplaysChk.Pressed += () => UIManager.Instance.PlayClickSound();
 		_recordReplaysChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+		_seedMapFilesChk.Pressed += () => UIManager.Instance.PlayClickSound();
+		_seedMapFilesChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 	}
 
 	private void SetupSliders()
@@ -283,6 +290,7 @@ public partial class SettingsMenu : Control
 		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
 		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		btn.AddThemeConstantOverride("icon_max_width", 0);
 
 		btn.Pressed += () => 
 		{
@@ -319,6 +327,7 @@ public partial class SettingsMenu : Control
 		_hudScaleSlider.Value = GameSettings.HudScale;
 		_displayFpsChk.ButtonPressed = GameSettings.DisplayFps;
 		_recordReplaysChk.ButtonPressed = GameSettings.RecordReplays;
+		_seedMapFilesChk.ButtonPressed = GameSettings.SeedMapFiles;
 		int hbIdx = GameSettings.ShowHealthBars switch
 		{
 			"hidden" => 0,
@@ -400,6 +409,7 @@ public partial class SettingsMenu : Control
 		GameSettings.HudScale = (float)_hudScaleSlider.Value;
 		GameSettings.DisplayFps = _displayFpsChk.ButtonPressed;
 		GameSettings.RecordReplays = _recordReplaysChk.ButtonPressed;
+		GameSettings.SeedMapFiles = _seedMapFilesChk.ButtonPressed;
 		GameSettings.ShowHealthBars = _healthBarsOpt.Selected switch
 		{
 			0 => "hidden",
