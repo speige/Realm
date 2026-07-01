@@ -25,27 +25,23 @@ public partial class GameHost : Node3D, IGameAPI
 	public string ActiveMapName { get; private set; } = "melee";
 
 	private readonly GameHostAudioService _audioService = new();
-	private readonly GameHostDayNightService _dayNightService = new();
 	private readonly GameHostFXService _fxService = new();
 	private GameHostSaveLoadService _saveLoadService;
 	private GameHostEditorService _editorService;
-	private MapEditorTerrainStatusService _terrainStatusService;
 	private GameHostReplayService _replayService;
 	private GameHostEcsService _ecsService;
-	private GameHostNetworkStateService _networkStateService;
-	private GameHostInputStateService _inputStateService;
 	private GameHostFogOfWarService _fogOfWarService;
 	private UnitSpawnService _unitSpawnService;
 	private GameHostWorldInitService _worldInitService;
-	private GameHostEditorStateService _editorStateService;
 	private MapPropertiesLoader _mapPropertiesLoader;
 	private MapEditorTerrainImportService _terrainImportService;
 	private GameHostCheatService _cheatService;
-	private GameHostWeatherService _weatherService;
+	private GameHostEnvironmentService _environmentService;
 	private GameHostSpectatorService _spectatorService;
+	private TechTreeService _techTreeService;
 
 	public GameHostCheatService CheatService => _cheatService;
-	public GameHostWeatherService WeatherService => _weatherService;
+	public GameHostEnvironmentService EnvironmentService => _environmentService;
 	public GameHostSpectatorService SpectatorService => _spectatorService;
 
 	private float _fDelta;
@@ -65,8 +61,8 @@ public partial class GameHost : Node3D, IGameAPI
 	private bool _multiplayerActive => Multiplayer.MultiplayerPeer != null;
 	private int _localPeerId
 	{
-		get => _networkStateService?.LocalPeerId ?? 1;
-		set { if (_networkStateService != null) _networkStateService.LocalPeerId = value; }
+		get => _networkService?.LocalPeerId ?? 1;
+		set { if (_networkService != null) _networkService.LocalPeerId = value; }
 	}
 
 	private int _nextCommandId
@@ -77,8 +73,8 @@ public partial class GameHost : Node3D, IGameAPI
 
 	private float _commandSendTimer
 	{
-		get => _networkStateService?.CommandSendTimer ?? 0f;
-		set { if (_networkStateService != null) _networkStateService.CommandSendTimer = value; }
+		get => _networkService?.CommandSendTimer ?? 0f;
+		set { if (_networkService != null) _networkService.CommandSendTimer = value; }
 	}
 
 	private int _snapshotSequence
@@ -107,12 +103,12 @@ public partial class GameHost : Node3D, IGameAPI
 
 	private ulong _lastSnapshotReceivedTime
 	{
-		get => _networkStateService?.LastSnapshotReceivedTime ?? 0;
-		set { if (_networkStateService != null) _networkStateService.LastSnapshotReceivedTime = value; }
+		get => _networkService?.LastSnapshotReceivedTime ?? 0;
+		set { if (_networkService != null) _networkService.LastSnapshotReceivedTime = value; }
 	}
 
-	private bool _wasClientInMultiplayer => _networkStateService?.WasClientInMultiplayer ?? false;
-	public bool IsConnectionLost => _networkStateService?.IsConnectionLost ?? false;
+	private bool _wasClientInMultiplayer => _networkService?.WasClientInMultiplayer ?? false;
+	public bool IsConnectionLost => _networkService?.IsConnectionLost ?? false;
 
 	private System.Collections.Generic.Dictionary<int, Entity> _peerIdToPlayerEntityMap
 		=> EcsWorld?.GetFieldOrDefault<NetworkMappingState, System.Collections.Generic.Dictionary<int, Entity>>(_worldEntity, s => s.PeerIdToPlayerEntityMap);
@@ -159,28 +155,28 @@ public partial class GameHost : Node3D, IGameAPI
 	private float _trackerLastTickDelay = 0f;
 	public string? ActiveSpellTargeting
 	{
-		get => _inputStateService?.ActiveSpellTargeting;
-		set { if (_inputStateService != null) _inputStateService.ActiveSpellTargeting = value; }
+		get => _inputService?.ActiveSpellTargeting;
+		set { if (_inputService != null) _inputService.ActiveSpellTargeting = value; }
 	}
 
 	public string? ActiveCommandTargeting
 	{
-		get => _inputStateService?.ActiveCommandTargeting;
-		set { if (_inputStateService != null) _inputStateService.ActiveCommandTargeting = value; }
+		get => _inputService?.ActiveCommandTargeting;
+		set { if (_inputService != null) _inputService.ActiveCommandTargeting = value; }
 	}
 
 	public Prop3D SelectedProp { get; private set; } = null;
 
 	public string? ActiveBuildingPlacementType
 	{
-		get => _inputStateService?.ActiveBuildingPlacementType;
-		set { if (_inputStateService != null) _inputStateService.ActiveBuildingPlacementType = value; }
+		get => _inputService?.ActiveBuildingPlacementType;
+		set { if (_inputService != null) _inputService.ActiveBuildingPlacementType = value; }
 	}
 
 	public int CycleSelectionIndex
 	{
-		get => _inputStateService?.GetCycleSelectionIndex(SelectedUnits.Count) ?? 0;
-		set => _inputStateService?.SetCycleSelectionIndex(value, SelectedUnits.Count);
+		get => _inputService?.GetCycleSelectionIndex(SelectedUnits.Count) ?? 0;
+		set => _inputService?.SetCycleSelectionIndex(value, SelectedUnits.Count);
 	}
 
 	public bool HasWeaponsUpgrade
@@ -251,7 +247,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public string ActivePlaceId { get; set; } = ""; // "soldier", "tree", etc.
 	public string GetTerrainStatusString(Vector3 hitPos)
 	{
-		return _terrainStatusService.GetTerrainStatusString(hitPos, ActiveEditorTool.ToString(), ActivePlaceId);
+		return _editorService.GetTerrainStatusString(hitPos, ActiveEditorTool.ToString(), ActivePlaceId);
 	}
 
 	public void LoadMapProperties(string path)
@@ -287,26 +283,26 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool EditorCameraBoundsVisible { get; set; } = false;
 	public float EditorCameraBoundsLeft
 	{
-		get => _editorStateService.GetCameraBoundsLeft(_worldEntity);
-		set => _editorStateService.SetCameraBoundsLeft(_worldEntity, value);
+		get => _editorService.GetCameraBoundsLeft(_worldEntity);
+		set => _editorService.SetCameraBoundsLeft(_worldEntity, value);
 	}
 
 	public float EditorCameraBoundsRight
 	{
-		get => _editorStateService.GetCameraBoundsRight(_worldEntity);
-		set => _editorStateService.SetCameraBoundsRight(_worldEntity, value);
+		get => _editorService.GetCameraBoundsRight(_worldEntity);
+		set => _editorService.SetCameraBoundsRight(_worldEntity, value);
 	}
 
 	public float EditorCameraBoundsTop
 	{
-		get => _editorStateService.GetCameraBoundsTop(_worldEntity);
-		set => _editorStateService.SetCameraBoundsTop(_worldEntity, value);
+		get => _editorService.GetCameraBoundsTop(_worldEntity);
+		set => _editorService.SetCameraBoundsTop(_worldEntity, value);
 	}
 
 	public float EditorCameraBoundsBottom
 	{
-		get => _editorStateService.GetCameraBoundsBottom(_worldEntity);
-		set => _editorStateService.SetCameraBoundsBottom(_worldEntity, value);
+		get => _editorService.GetCameraBoundsBottom(_worldEntity);
+		set => _editorService.SetCameraBoundsBottom(_worldEntity, value);
 	}
 	public MirrorMode EditorMirrorMode
 	{
@@ -322,26 +318,26 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool EditorRandomScale { get; set; } = false;
 	public string EditorSkyboxPath
 	{
-		get => _editorStateService.GetSkyboxPath(_worldEntity);
-		set => _editorStateService.SetSkyboxPath(_worldEntity, value);
+		get => _editorService.GetSkyboxPath(_worldEntity);
+		set => _editorService.SetSkyboxPath(_worldEntity, value);
 	}
 
 	public bool EditorHasUnsavedChanges
 	{
-		get => _editorStateService.GetHasUnsavedChanges(_worldEntity);
-		set => _editorStateService.SetHasUnsavedChanges(_worldEntity, value);
+		get => _editorService.GetHasUnsavedChanges(_worldEntity);
+		set => _editorService.SetHasUnsavedChanges(_worldEntity, value);
 	}
 
 	public bool EditorBlockMode
 	{
-		get => _editorStateService.GetBlockMode(_worldEntity);
-		set => _editorStateService.SetBlockMode(_worldEntity, value);
+		get => _editorService.GetBlockMode(_worldEntity);
+		set => _editorService.SetBlockMode(_worldEntity, value);
 	}
 
 	public float EditorBlockLevelHeight
 	{
-		get => _editorStateService.GetBlockLevelHeight(_worldEntity);
-		set => _editorStateService.SetBlockLevelHeight(_worldEntity, value);
+		get => _editorService.GetBlockLevelHeight(_worldEntity);
+		set => _editorService.SetBlockLevelHeight(_worldEntity, value);
 	}
 	private Node _hoveredEditorObject = null;
 	private MeshInstance3D _selectionHighlightMesh = null;
@@ -419,8 +415,8 @@ public partial class GameHost : Node3D, IGameAPI
 	public List<MinimapPing> ActivePings { get; } = new List<MinimapPing>();
 	public bool ActivePingMode
 	{
-		get => _inputStateService?.ActivePingMode ?? false;
-		set { if (_inputStateService != null) _inputStateService.ActivePingMode = value; }
+		get => _inputService?.ActivePingMode ?? false;
+		set { if (_inputService != null) _inputService.ActivePingMode = value; }
 	}
 
 
@@ -1992,20 +1988,17 @@ public class {mapName} : IMapScript
 	{
 		_saveLoadService = new GameHostSaveLoadService(EcsWorld);
 		_editorService = new GameHostEditorService(EcsWorld);
-		_terrainStatusService = new MapEditorTerrainStatusService(EcsWorld);
 		_replayService = new GameHostReplayService(EcsWorld);
 		_networkService = new GameHostNetworkService(EcsWorld);
-		_inputService = new GameHostInputService(EcsWorld);
-		_networkStateService = new GameHostNetworkStateService(EcsWorld);
-		_inputStateService = new GameHostInputStateService(EcsWorld);
+		_techTreeService = new TechTreeService(EcsWorld);
+		_inputService = new GameHostInputService(EcsWorld, _techTreeService);
 		_fogOfWarService = new GameHostFogOfWarService(EcsWorld);
 		_unitSpawnService = new UnitSpawnService(EcsWorld);
 		_worldInitService = new GameHostWorldInitService(EcsWorld);
-		_editorStateService = new GameHostEditorStateService(EcsWorld);
 		_mapPropertiesLoader = new MapPropertiesLoader(EcsWorld);
 		_terrainImportService = new MapEditorTerrainImportService(EcsWorld);
 		_cheatService = new GameHostCheatService(EcsWorld);
-		_weatherService = new GameHostWeatherService(EcsWorld);
+		_environmentService = new GameHostEnvironmentService(EcsWorld);
 		_spectatorService = new GameHostSpectatorService(EcsWorld);
 	}
 
@@ -2091,7 +2084,7 @@ public class {mapName} : IMapScript
 			_localPeerId = Multiplayer.GetUniqueId();
 			if (!Multiplayer.IsServer())
 			{
-				_networkStateService.MarkClientEnteredMultiplayer();
+				_networkService.MarkClientEnteredMultiplayer();
 			}
 			if (Multiplayer is SceneMultiplayer sceneMultiplayer)
 			{
@@ -2690,7 +2683,7 @@ public class {mapName} : IMapScript
 
 	private void UpdateConnectionStatus()
 	{
-		_networkStateService.UpdateConnectionStatus(_multiplayerActive, Multiplayer.IsServer());
+		_networkService.UpdateConnectionStatus(_multiplayerActive, Multiplayer.IsServer());
 	}
 
 	private void ProcessGameplayTick(float fDelta)
@@ -2820,19 +2813,17 @@ public class {mapName} : IMapScript
 
 	private void UpdateDayNightVisuals(float progress)
 	{
-		_dayNightService.UpdateDayNightVisuals(this, progress);
+		_environmentService?.UpdateDayNightVisuals(this, progress);
 	}
 
 	public void CycleTimeOfDay()
 	{
-		var (newIndex, newTimer) = _dayNightService.CycleTimeOfDay(this, TimeOfDayIndex, TimeOfDayCycleDuration);
-		EcsWorld?.Mutate<WorldState>(_worldEntity, (ref WorldState state) =>
-			EcsWorld.Set(_worldEntity, new WorldState(state.GameElapsedTime, newIndex, newTimer, state.DayNightCycleEnabled)));
+		_environmentService?.CycleTimeOfDay(this, _worldEntity, TimeOfDayCycleDuration);
 	}
 
 	public string GetTimeOfDayName()
 	{
-		return _dayNightService.GetTimeOfDayName(TimeOfDayIndex);
+		return _environmentService?.GetTimeOfDayName(TimeOfDayIndex) ?? "Unknown";
 	}
 
 	private void SpawnFireblastEffect(Vector3 position)

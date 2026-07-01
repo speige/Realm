@@ -10,14 +10,16 @@ using Realm.Ecs.Services;
 using System;
 using System.Collections.Generic;
 
-public class GameHostInputService
+internal class GameHostInputService
 {
 	private readonly World _ecsWorld;
+	private readonly TechTreeService _techTreeService;
 	private int _buildingCycleIndex = 0;
 
-	public GameHostInputService(World ecsWorld)
+	public GameHostInputService(World ecsWorld, TechTreeService techTreeService)
 	{
 		_ecsWorld = ecsWorld;
+		_techTreeService = techTreeService;
 	}
 
 	private Entity GetWorldEntity()
@@ -48,50 +50,17 @@ public class GameHostInputService
 
 	public bool BuyWeaponsUpgrade(Entity playerEntity)
 	{
-		if (!_ecsWorld.IsAlive(playerEntity)) return false;
-		ref var upgrades = ref _ecsWorld.Get<PlayerUpgrades>(playerEntity);
-		if (upgrades.WeaponsUpgrade) return false;
-
-		upgrades.WeaponsUpgrade = true;
-
-		var query = new QueryDescription().WithAll<Attack, Owner>().WithNone<Dead, Building>();
-		_ecsWorld.Query(in query, (Entity entity, ref Attack atk, ref Owner owner) =>
-		{
-			if (owner.PlayerEntity.Value == playerEntity)
-			{
-				atk.Damage += 3f;
-			}
-		});
-		return true;
+		return _techTreeService.BuyWeaponsUpgrade(playerEntity);
 	}
 
 	public bool BuyShieldsUpgrade(Entity playerEntity)
 	{
-		if (!_ecsWorld.IsAlive(playerEntity)) return false;
-		ref var upgrades = ref _ecsWorld.Get<PlayerUpgrades>(playerEntity);
-		if (upgrades.ShieldsUpgrade) return false;
-
-		upgrades.ShieldsUpgrade = true;
-
-		var query = new QueryDescription().WithAll<Armor, Owner>().WithNone<Dead>();
-		_ecsWorld.Query(in query, (Entity entity, ref Armor arm, ref Owner owner) =>
-		{
-			if (owner.PlayerEntity.Value == playerEntity)
-			{
-				arm.Value += 2f;
-			}
-		});
-		return true;
+		return _techTreeService.BuyShieldsUpgrade(playerEntity);
 	}
 
 	public bool BuyHarvestingUpgrade(Entity playerEntity)
 	{
-		if (!_ecsWorld.IsAlive(playerEntity)) return false;
-		ref var upgrades = ref _ecsWorld.Get<PlayerUpgrades>(playerEntity);
-		if (upgrades.HarvestingUpgrade) return false;
-
-		upgrades.HarvestingUpgrade = true;
-		return true;
+		return _techTreeService.BuyHarvestingUpgrade(playerEntity);
 	}
 
 	public void ClearUnitOrders(Entity entity)
@@ -764,5 +733,93 @@ public class GameHostInputService
 		{
 			_ecsWorld.Set(entity, new Position(position));
 		}
+	}
+
+	public string? ActiveSpellTargeting
+	{
+		get
+		{
+			var worldEntity = GetWorldEntity();
+			return worldEntity != Entity.Null && _ecsWorld.Has<InputState>(worldEntity)
+				? _ecsWorld.Get<InputState>(worldEntity).ActiveSpellTargeting
+				: null;
+		}
+		set
+		{
+			var worldEntity = GetWorldEntity();
+			if (worldEntity == Entity.Null || !_ecsWorld.Has<InputState>(worldEntity)) return;
+			ref var state = ref _ecsWorld.Get<InputState>(worldEntity);
+			state.ActiveSpellTargeting = value;
+		}
+	}
+
+	public string? ActiveCommandTargeting
+	{
+		get
+		{
+			var worldEntity = GetWorldEntity();
+			return worldEntity != Entity.Null && _ecsWorld.Has<InputState>(worldEntity)
+				? _ecsWorld.Get<InputState>(worldEntity).ActiveCommandTargeting
+				: null;
+		}
+		set
+		{
+			var worldEntity = GetWorldEntity();
+			if (worldEntity == Entity.Null || !_ecsWorld.Has<InputState>(worldEntity)) return;
+			ref var state = ref _ecsWorld.Get<InputState>(worldEntity);
+			state.ActiveCommandTargeting = value;
+		}
+	}
+
+	public string? ActiveBuildingPlacementType
+	{
+		get
+		{
+			var worldEntity = GetWorldEntity();
+			return worldEntity != Entity.Null && _ecsWorld.Has<InputState>(worldEntity)
+				? _ecsWorld.Get<InputState>(worldEntity).ActiveBuildingPlacementType
+				: null;
+		}
+		set
+		{
+			var worldEntity = GetWorldEntity();
+			if (worldEntity == Entity.Null || !_ecsWorld.Has<InputState>(worldEntity)) return;
+			ref var state = ref _ecsWorld.Get<InputState>(worldEntity);
+			state.ActiveBuildingPlacementType = value;
+		}
+	}
+
+	public bool ActivePingMode
+	{
+		get
+		{
+			var worldEntity = GetWorldEntity();
+			return worldEntity != Entity.Null && _ecsWorld.Has<InputState>(worldEntity)
+				&& _ecsWorld.Get<InputState>(worldEntity).ActivePingMode;
+		}
+		set
+		{
+			var worldEntity = GetWorldEntity();
+			if (worldEntity == Entity.Null || !_ecsWorld.Has<InputState>(worldEntity)) return;
+			ref var state = ref _ecsWorld.Get<InputState>(worldEntity);
+			state.ActivePingMode = value;
+		}
+	}
+
+	public int GetCycleSelectionIndex(int selectedCount)
+	{
+		if (selectedCount == 0) return 0;
+		var worldEntity = GetWorldEntity();
+		if (worldEntity == Entity.Null || !_ecsWorld.Has<InputState>(worldEntity)) return 0;
+		int val = _ecsWorld.Get<InputState>(worldEntity).CycleSelectionIndex;
+		return Math.Clamp(val, 0, selectedCount - 1);
+	}
+
+	public void SetCycleSelectionIndex(int value, int selectedCount)
+	{
+		var worldEntity = GetWorldEntity();
+		if (worldEntity == Entity.Null || !_ecsWorld.Has<InputState>(worldEntity)) return;
+		ref var state = ref _ecsWorld.Get<InputState>(worldEntity);
+		state.CycleSelectionIndex = selectedCount > 0 ? Math.Clamp(value, 0, selectedCount - 1) : 0;
 	}
 }

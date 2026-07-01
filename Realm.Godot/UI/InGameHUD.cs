@@ -149,16 +149,16 @@ public partial class InGameHUD : Control
 
 	private string _currentWeather
 	{
-		get => GameHost.Instance?.WeatherService?.GetCurrentWeather() ?? "clear";
-		set => GameHost.Instance?.WeatherService?.SetCurrentWeather(value);
+		get => GameHost.Instance?.EnvironmentService?.GetCurrentWeather() ?? "clear";
+		set => GameHost.Instance?.EnvironmentService?.SetCurrentWeather(value);
 	}
 
 	private CpuParticles3D _rainParticles = null;
 
 	private float _baseFogDensity
 	{
-		get => GameHost.Instance?.WeatherService?.GetBaseFogDensity() ?? 0f;
-		set => GameHost.Instance?.WeatherService?.SetBaseFogDensity(value);
+		get => GameHost.Instance?.EnvironmentService?.GetBaseFogDensity() ?? 0f;
+		set => GameHost.Instance?.EnvironmentService?.SetBaseFogDensity(value);
 	}
 
 	private Label _goldLabel;
@@ -1443,9 +1443,9 @@ public partial class InGameHUD : Control
 	{
 		if (Multiplayer.MultiplayerPeer != null && !Multiplayer.IsServer()) return;
 
-		if (GameHost.Instance?.WeatherService != null)
+		if (GameHost.Instance?.EnvironmentService != null)
 		{
-			string next = GameHost.Instance.WeatherService.CycleWeather();
+			string next = GameHost.Instance.EnvironmentService.CycleWeather();
 			if (Multiplayer.MultiplayerPeer != null && Multiplayer.IsServer())
 			{
 				Rpc(nameof(SyncWeather), next);
@@ -1460,9 +1460,9 @@ public partial class InGameHUD : Control
 	[Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = true)]
 	private void SyncWeather(string weather)
 	{
-		if (GameHost.Instance?.WeatherService != null)
+		if (GameHost.Instance?.EnvironmentService != null)
 		{
-			GameHost.Instance.WeatherService.SetCurrentWeather(weather);
+			GameHost.Instance.EnvironmentService.SetCurrentWeather(weather);
 			float density = weather switch
 			{
 				"clear" => 0f,
@@ -1471,7 +1471,7 @@ public partial class InGameHUD : Control
 				"storm" => 0.015f,
 				_ => 0f
 			};
-			GameHost.Instance.WeatherService.SetBaseFogDensity(density);
+			GameHost.Instance.EnvironmentService.SetBaseFogDensity(density);
 		}
 		ApplyWeatherEffects(weather);
 	}
