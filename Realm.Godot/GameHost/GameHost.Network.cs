@@ -7,6 +7,7 @@ using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Tags;
+using Realm.Ecs.Components.Resources;
 using Realm.MapAPI;
 using System.Collections.Generic;
 
@@ -330,7 +331,7 @@ public partial class GameHost
 						if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
 						if (EcsWorld.Has<DefinitionId>(entity) && EcsWorld.Get<DefinitionId>(entity).Value != "worker") continue;
 						ClearUnitOrders(entity);
-						var gatherer = new Gatherer(resType, prop);
+						var gatherer = new Gatherer(resType, prop.Entity);
 						if (EcsWorld.Has<Gatherer>(entity)) EcsWorld.Set(entity, gatherer);
 						else EcsWorld.Add(entity, gatherer);
 						var moveTo = new MoveTo(new System.Numerics.Vector3(prop.GlobalPosition.X, prop.GlobalPosition.Y, prop.GlobalPosition.Z));

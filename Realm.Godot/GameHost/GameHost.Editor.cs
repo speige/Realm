@@ -4,6 +4,7 @@ using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
+using Realm.Ecs.Components.Resources;
 using Realm.Ecs.Components.Tags;
 using System;
 using System.Collections.Generic;
@@ -447,11 +448,29 @@ public partial class GameHost
 
 	public Prop3D SpawnPropExternal(string propId, Vector3 position)
 	{
+		float defaultAmount = propId switch
+		{
+			"goldmine" => 2000f,
+			"rock" => 1000f,
+			"tree" => 500f,
+			_ => 0f
+		};
+
+		var entity = EcsWorld.Create();
+		EcsWorld.Add(entity, new PropIdentity(propId));
+		if (defaultAmount > 0f)
+		{
+			EcsWorld.Add(entity, new ResourceNode(Guid.Empty, defaultAmount));
+		}
+
 		var prop = new Prop3D();
+		prop.Entity = entity;
 		prop.PropId = propId;
 		AddChild(prop);
 		AllProps.Add(prop);
-		
+
+		EcsWorld.Add(entity, prop);
+
 		position.Y = GetTerrainHeightAt(position);
 		prop.Position = position;
 		
@@ -682,11 +701,29 @@ public partial class GameHost
 
 	public Prop3D SpawnPropExternalWithParams(string propId, Vector3 position, float rotationY, float scale)
 	{
+		float defaultAmount = propId switch
+		{
+			"goldmine" => 2000f,
+			"rock" => 1000f,
+			"tree" => 500f,
+			_ => 0f
+		};
+
+		var entity = EcsWorld.Create();
+		EcsWorld.Add(entity, new PropIdentity(propId));
+		if (defaultAmount > 0f)
+		{
+			EcsWorld.Add(entity, new ResourceNode(Guid.Empty, defaultAmount));
+		}
+
 		var prop = new Prop3D();
+		prop.Entity = entity;
 		prop.PropId = propId;
 		AddChild(prop);
 		AllProps.Add(prop);
-		
+
+		EcsWorld.Add(entity, prop);
+
 		position.Y = GetTerrainHeightAt(position);
 		prop.Position = position;
 		prop.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
@@ -731,6 +768,10 @@ public partial class GameHost
 		else if (node is Prop3D prop && GodotObject.IsInstanceValid(prop))
 		{
 			AllProps.Remove(prop);
+			if (EcsWorld.IsAlive(prop.Entity))
+			{
+				EcsWorld.Destroy(prop.Entity);
+			}
 			prop.QueueFree();
 		}
 		else if (node is Decal decal && GodotObject.IsInstanceValid(decal))
@@ -1552,7 +1593,7 @@ public partial class GameHost
 		}
 		AllUnits.Clear();
 		_castlesList.Clear();
-		_currentPopulation = 0;
+		CurrentPopulation = 0;
 		MaxPopulation = 0;
 
 		foreach (var child in GetChildren())
@@ -1568,16 +1609,19 @@ public partial class GameHost
 		{
 			EcsWorld.Dispose();
 			EcsWorld = World.Create();
+			SetupWorldEntityComponents();
 			
 			_playerEntity = EcsWorld.Create();
 			EcsWorld.Add(_playerEntity, new Player());
 			EcsWorld.Add(_playerEntity, new Name("Horaid_Topa"));
 			InitializePlayerResources(_playerEntity);
+			SetupPlayerEntityComponents(_playerEntity);
 
 			_enemyPlayerEntity = EcsWorld.Create();
 			EcsWorld.Add(_enemyPlayerEntity, new Player());
 			EcsWorld.Add(_enemyPlayerEntity, new Name("Enemy_AI"));
 			InitializePlayerResources(_enemyPlayerEntity);
+			SetupPlayerEntityComponents(_enemyPlayerEntity);
 		}
 	}
 

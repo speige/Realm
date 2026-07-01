@@ -1,5 +1,6 @@
 using Arch.Core;
 using DotRecast.Core.Numerics;
+using DotRecast.Detour;
 using Godot;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Combat;
@@ -8,6 +9,7 @@ using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Resources;
 using Realm.Ecs.Components.Tags;
+using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Services;
 using Realm.Godot.ReplaySystem;
 using Realm.MapAPI;
@@ -91,6 +93,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private readonly QueryDescription _priestScanQuery = new QueryDescription().WithAll<Position, Owner, DefinitionId>().WithNone<Dead, HealingTarget>();
 	private readonly QueryDescription _healingExecutionQuery = new QueryDescription().WithAll<Position, Attack, HealingTarget, Owner>().WithNone<Dead>();
 	private readonly QueryDescription _prodQuery = new QueryDescription().WithAll<Realm.Ecs.Components.Core.ProductionQueue>();
+	private readonly QueryDescription _spellCooldownQuery = new QueryDescription().WithAll<SpellCooldowns>();
 
 
 	private ForEachWithEntity<Realm.Ecs.Components.Core.Buffs> _buffsQueryDelegate = null!;
@@ -109,6 +112,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private ForEachWithEntity<Position, MoveTo, MovementStats> _editorMovementQueryDelegate = null!;
 	private ForEachWithEntity<InterpolationTarget, Unit3D> _interpolationQueryDelegate = null!;
 	private ForEachWithEntity<PlayerResources> _passiveIncomeQueryDelegate = null!;
+	private ForEachWithEntity<SpellCooldowns> _spellCooldownQueryDelegate = null!;
 	
 	internal DefinitionManager DefinitionManager => _definitionManager;
 	private DefinitionManager _definitionManager = null!;
@@ -127,14 +131,165 @@ public partial class GameHost : Node3D, IGameAPI
 	private readonly List<List<Prop3D>> _propListPool = new();
 
 	private bool _multiplayerActive => Multiplayer.MultiplayerPeer != null;
-	private int _localPeerId = 1;
-	private int _nextCommandId = 1;
-	private float _commandSendTimer = 0f;
-	private int _snapshotSequence = 0;
-	private int _lastReceivedBaselineSeq = -1;
-	private bool _hasReceivedInitialBaseline = false;
-	private int _lastAppliedSnapshotSequence = -1;
-	private ulong _lastSnapshotReceivedTime = 0;
+	private int _localPeerId
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				return EcsWorld.Get<NetworkState>(_worldEntity).LocalPeerId;
+			}
+			return 1;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<NetworkState>(_worldEntity);
+				state.LocalPeerId = value;
+			}
+		}
+	}
+
+	private int _nextCommandId
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				return EcsWorld.Get<NetworkState>(_worldEntity).NextCommandId;
+			}
+			return 1;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<NetworkState>(_worldEntity);
+				state.NextCommandId = value;
+			}
+		}
+	}
+
+	private float _commandSendTimer
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				return EcsWorld.Get<NetworkState>(_worldEntity).CommandSendTimer;
+			}
+			return 0f;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<NetworkState>(_worldEntity);
+				state.CommandSendTimer = value;
+			}
+		}
+	}
+
+	private int _snapshotSequence
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				return EcsWorld.Get<NetworkState>(_worldEntity).SnapshotSequence;
+			}
+			return 0;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<NetworkState>(_worldEntity);
+				state.SnapshotSequence = value;
+			}
+		}
+	}
+
+	private int _lastReceivedBaselineSeq
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				return EcsWorld.Get<NetworkState>(_worldEntity).LastReceivedBaselineSeq;
+			}
+			return -1;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<NetworkState>(_worldEntity);
+				state.LastReceivedBaselineSeq = value;
+			}
+		}
+	}
+
+	private bool _hasReceivedInitialBaseline
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				return EcsWorld.Get<NetworkState>(_worldEntity).HasReceivedInitialBaseline;
+			}
+			return false;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<NetworkState>(_worldEntity);
+				state.HasReceivedInitialBaseline = value;
+			}
+		}
+	}
+
+	private int _lastAppliedSnapshotSequence
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				return EcsWorld.Get<NetworkState>(_worldEntity).LastAppliedSnapshotSequence;
+			}
+			return -1;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<NetworkState>(_worldEntity);
+				state.LastAppliedSnapshotSequence = value;
+			}
+		}
+	}
+
+	private ulong _lastSnapshotReceivedTime
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				return EcsWorld.Get<NetworkState>(_worldEntity).LastSnapshotReceivedTime;
+			}
+			return 0;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<NetworkState>(_worldEntity);
+				state.LastSnapshotReceivedTime = value;
+			}
+		}
+	}
 	private bool _wasClientInMultiplayer = false;
 	public bool IsConnectionLost { get; private set; } = false;
 
@@ -147,25 +302,10 @@ public partial class GameHost : Node3D, IGameAPI
 	private readonly Dictionary<int, Vector3> _clientCameraPositions = new();
 	private readonly Dictionary<int, Dictionary<int, UnitSnapshot>> _lastBaselineSnapshotsPerClient = new();
 
-	public struct Gatherer
-	{
-		public string ResourceType; // "gold", "wood", "stone"
-		public float CarriedAmount;
-		public float MaxCapacity;
-		public Prop3D TargetNode;
-		public bool ReturningToBase;
 
-		public Gatherer(string type, Prop3D node)
-		{
-			ResourceType = type;
-			CarriedAmount = 0f;
-			MaxCapacity = 15f;
-			TargetNode = node;
-			ReturningToBase = false;
-		}
-	}
 
 	public World EcsWorld { get; private set; }
+	public Entity WorldEntity => _worldEntity;
 	public List<Unit3D> SelectedUnits { get; } = new List<Unit3D>();
 	public List<Unit3D> AllUnits { get; } = new List<Unit3D>();
 	public List<Prop3D> AllProps { get; } = new List<Prop3D>();
@@ -173,8 +313,27 @@ public partial class GameHost : Node3D, IGameAPI
 
 	private Entity _playerEntity;
 	private Entity _enemyPlayerEntity;
+	private Entity _worldEntity;
 	private ReplayRecorder _replayRecorder;
-	private int _replayTickCounter = 0;
+	private int _replayTickCounter
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ReplayState>(_worldEntity))
+			{
+				return EcsWorld.Get<ReplayState>(_worldEntity).ReplayTickCounter;
+			}
+			return 0;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ReplayState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<ReplayState>(_worldEntity);
+				state.ReplayTickCounter = value;
+			}
+		}
+	}
 	private readonly Dictionary<int, ReplayUnitSnapshot> _lastRecordedUnits = new();
 	private System.Diagnostics.Stopwatch _trackerTickStopwatch = new System.Diagnostics.Stopwatch();
 	private System.Diagnostics.Stopwatch _trackerIntervalStopwatch = new System.Diagnostics.Stopwatch();
@@ -215,9 +374,65 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 	}
 
-	public bool HasWeaponsUpgrade { get; set; } = false;
-	public bool HasShieldsUpgrade { get; set; } = false;
-	public bool HasHarvestingUpgrade { get; set; } = false;
+	public bool HasWeaponsUpgrade
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<PlayerUpgrades>(_playerEntity))
+			{
+				return EcsWorld.Get<PlayerUpgrades>(_playerEntity).WeaponsUpgrade;
+			}
+			return false;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<PlayerUpgrades>(_playerEntity))
+			{
+				ref var upgrades = ref EcsWorld.Get<PlayerUpgrades>(_playerEntity);
+				upgrades.WeaponsUpgrade = value;
+			}
+		}
+	}
+
+	public bool HasShieldsUpgrade
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<PlayerUpgrades>(_playerEntity))
+			{
+				return EcsWorld.Get<PlayerUpgrades>(_playerEntity).ShieldsUpgrade;
+			}
+			return false;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<PlayerUpgrades>(_playerEntity))
+			{
+				ref var upgrades = ref EcsWorld.Get<PlayerUpgrades>(_playerEntity);
+				upgrades.ShieldsUpgrade = value;
+			}
+		}
+	}
+
+	public bool HasHarvestingUpgrade
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<PlayerUpgrades>(_playerEntity))
+			{
+				return EcsWorld.Get<PlayerUpgrades>(_playerEntity).HarvestingUpgrade;
+			}
+			return false;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<PlayerUpgrades>(_playerEntity))
+			{
+				ref var upgrades = ref EcsWorld.Get<PlayerUpgrades>(_playerEntity);
+				upgrades.HarvestingUpgrade = value;
+			}
+		}
+	}
 
 
 	private string _activeBuildingPlacementType = null; // "castle" or "tower"
@@ -501,34 +716,147 @@ public partial class GameHost : Node3D, IGameAPI
 	}
 
 
-	public int MaxPopulation { get; private set; } = 0;
-	public int CurrentPopulation => _currentPopulation;
-	private int _currentPopulation = 0;
+	public int MaxPopulation
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<PlayerPopulation>(_playerEntity))
+				return EcsWorld.Get<PlayerPopulation>(_playerEntity).Max;
+			return 0;
+		}
+		private set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<PlayerPopulation>(_playerEntity))
+			{
+				ref var pop = ref EcsWorld.Get<PlayerPopulation>(_playerEntity);
+				EcsWorld.Set(_playerEntity, new PlayerPopulation(pop.Current, value));
+			}
+		}
+	}
 
+	public int CurrentPopulation
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<PlayerPopulation>(_playerEntity))
+				return EcsWorld.Get<PlayerPopulation>(_playerEntity).Current;
+			return 0;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<PlayerPopulation>(_playerEntity))
+			{
+				ref var pop = ref EcsWorld.Get<PlayerPopulation>(_playerEntity);
+				EcsWorld.Set(_playerEntity, new PlayerPopulation(value, pop.Max));
+			}
+		}
+	}
 
-	public float GameElapsedTime { get; private set; } = 0f;
+	public float GameElapsedTime
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<WorldState>(_worldEntity))
+				return EcsWorld.Get<WorldState>(_worldEntity).GameElapsedTime;
+			return 0f;
+		}
+		private set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<WorldState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<WorldState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new WorldState(value, state.TimeOfDayIndex, state.TimeOfDayTimer, state.DayNightCycleEnabled));
+			}
+		}
+	}
 
+	public int TimeOfDayIndex
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<WorldState>(_worldEntity))
+				return EcsWorld.Get<WorldState>(_worldEntity).TimeOfDayIndex;
+			return 0;
+		}
+	}
 
-	public int TimeOfDayIndex => _timeOfDayIndex;
-	private int _timeOfDayIndex = 0; // 0 = Day, 1 = Sunset, 2 = Night, 3 = Dawn
-	private float _timeOfDayTimer = 0f;
+	private float TimeOfDayTimer
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<WorldState>(_worldEntity))
+				return EcsWorld.Get<WorldState>(_worldEntity).TimeOfDayTimer;
+			return 0f;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<WorldState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<WorldState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new WorldState(state.GameElapsedTime, state.TimeOfDayIndex, value, state.DayNightCycleEnabled));
+			}
+		}
+	}
+
 	private const float TimeOfDayCycleDuration = 90f;
 
-
-	public record struct TowerUpgradeLevel(int Value);
-
-	public record struct BypassPopulationTag;
-
-
-	private float _fireballCooldown = 0f;
-	private float _lightningCooldown = 0f;
-	private float _holyLightCooldown = 0f;
 	public const float FireballCooldownMax = 12f;
 	public const float LightningCooldownMax = 18f;
 	public const float HolyLightCooldownMax = 15f;
-	public float FireballCooldown => _fireballCooldown;
-	public float LightningCooldown => _lightningCooldown;
-	public float HolyLightCooldown => _holyLightCooldown;
+
+	public float FireballCooldown
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<SpellCooldowns>(_playerEntity))
+				return EcsWorld.Get<SpellCooldowns>(_playerEntity).FireballCooldown;
+			return 0f;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<SpellCooldowns>(_playerEntity))
+			{
+				ref var cd = ref EcsWorld.Get<SpellCooldowns>(_playerEntity);
+				EcsWorld.Set(_playerEntity, new SpellCooldowns(value, cd.LightningCooldown, cd.HolyLightCooldown));
+			}
+		}
+	}
+
+	public float LightningCooldown
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<SpellCooldowns>(_playerEntity))
+				return EcsWorld.Get<SpellCooldowns>(_playerEntity).LightningCooldown;
+			return 0f;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<SpellCooldowns>(_playerEntity))
+			{
+				ref var cd = ref EcsWorld.Get<SpellCooldowns>(_playerEntity);
+				EcsWorld.Set(_playerEntity, new SpellCooldowns(cd.FireballCooldown, value, cd.HolyLightCooldown));
+			}
+		}
+	}
+
+	public float HolyLightCooldown
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<SpellCooldowns>(_playerEntity))
+				return EcsWorld.Get<SpellCooldowns>(_playerEntity).HolyLightCooldown;
+			return 0f;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_playerEntity) && EcsWorld.Has<SpellCooldowns>(_playerEntity))
+			{
+				ref var cd = ref EcsWorld.Get<SpellCooldowns>(_playerEntity);
+				EcsWorld.Set(_playerEntity, new SpellCooldowns(cd.FireballCooldown, cd.LightningCooldown, value));
+			}
+		}
+	}
 
 
 	public const float ResourceCap = 9999f;
@@ -563,14 +891,84 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 	}
 
-	private float _goldBackup = 500f;
-	private float _woodBackup = 400f;
-	private float _stoneBackup = 200f;
+	private float _goldBackup
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ReplayState>(_worldEntity))
+			{
+				return EcsWorld.Get<ReplayState>(_worldEntity).GoldBackup;
+			}
+			return 500f;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ReplayState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<ReplayState>(_worldEntity);
+				state.GoldBackup = value;
+			}
+		}
+	}
+
+	private float _woodBackup
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ReplayState>(_worldEntity))
+			{
+				return EcsWorld.Get<ReplayState>(_worldEntity).WoodBackup;
+			}
+			return 400f;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ReplayState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<ReplayState>(_worldEntity);
+				state.WoodBackup = value;
+			}
+		}
+	}
+
+	private float _stoneBackup
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ReplayState>(_worldEntity))
+			{
+				return EcsWorld.Get<ReplayState>(_worldEntity).StoneBackup;
+			}
+			return 200f;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ReplayState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<ReplayState>(_worldEntity);
+				state.StoneBackup = value;
+			}
+		}
+	}
 	private IMapScript _activeMapScript;
 
-	public readonly Dictionary<int, float> _unitScale = new();
-	private readonly Dictionary<int, Entity> _lastAttacker = new();
-	private bool _dayNightCycleEnabled = true;
+	private bool DayNightCycleEnabled
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<WorldState>(_worldEntity))
+				return EcsWorld.Get<WorldState>(_worldEntity).DayNightCycleEnabled;
+			return true;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<WorldState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<WorldState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new WorldState(state.GameElapsedTime, state.TimeOfDayIndex, state.TimeOfDayTimer, value));
+			}
+		}
+	}
 
 	public event Action<IUnit>? OnUnitCreated;
 	public event Action<IUnit, IUnit?>? OnUnitDied;
@@ -603,6 +1001,82 @@ public partial class GameHost : Node3D, IGameAPI
 			{ _stoneResourceId, 200 }
 		};
 		EcsWorld.Add(playerEntity, new PlayerResources(resourcesDict));
+	}
+
+	private void SetupPlayerEntityComponents(Entity playerEntity)
+	{
+		EcsWorld.Add(playerEntity, new PlayerPopulation(0, 0));
+		EcsWorld.Add(playerEntity, new SpellCooldowns(0f, 0f, 0f));
+		EcsWorld.Add(playerEntity, new PlayerUpgrades(false, false, false));
+	}
+
+	private void SetupWorldEntityComponents()
+	{
+		_worldEntity = EcsWorld.Create();
+		EcsWorld.Add(_worldEntity, new WorldState(0f, 0, 0f, true));
+		EcsWorld.Add(_worldEntity, new ReplayState(0, 500f, 400f, 200f));
+		EcsWorld.Add(_worldEntity, new NetworkState(1, 0f, 0, -1, -1, false, 0, 1));
+		EcsWorld.Add(_worldEntity, new CameraState
+		{
+			MoveSpeed = 35.0f,
+			ZoomSpeed = 10.0f,
+			MinZoom = 10.0f,
+			MaxZoom = 60.0f,
+			ZoomStep = 4.0f,
+			EdgePanMargin = 20.0f,
+			EnableEdgePanning = true,
+			IsLocked = false,
+			LimitLeft = null,
+			LimitRight = null,
+			LimitTop = null,
+			LimitBottom = null,
+			TargetHeight = 35.0f,
+			CurrentHeight = 35.0f,
+			IsDraggingMouse = false,
+			LastMousePosition = System.Numerics.Vector2.Zero,
+			TargetYaw = 0.0f,
+			CurrentYaw = 0.0f,
+			TargetPitch = -55.0f,
+			CurrentPitch = -55.0f,
+			IsTopDown = false,
+			YawSwing = 0.0f,
+			PitchSwing = 0.0f
+		});
+		
+		int width = GroundTerrain != null ? GroundTerrain.Width : 126;
+		int depth = GroundTerrain != null ? GroundTerrain.Depth : 126;
+		float spacing = GroundTerrain != null ? GroundTerrain.Spacing : 2.0f;
+		float cellSize = GroundTerrain != null ? GroundTerrain.CellSize : 5.0f / 2.5f / 10.0f;
+		float waterHeight = GroundTerrain != null ? GroundTerrain.WaterHeight : -2.0f;
+		bool waterEnabled = GroundTerrain != null ? GroundTerrain.WaterEnabled : true;
+		float[,] heights = GroundTerrain != null ? GroundTerrain.Heights : null;
+		int[,] pathingCodes = GroundTerrain != null ? GroundTerrain.PathingCodes : null;
+		DtNavMesh navMesh = GroundTerrain != null ? GroundTerrain.NavMesh : null;
+		DtNavMeshQuery navMeshQuery = GroundTerrain != null ? GroundTerrain.NavMeshQuery : null;
+
+		EcsWorld.Add(_worldEntity, new TerrainState(
+			width, depth, spacing, cellSize, waterHeight, waterEnabled,
+			heights, pathingCodes, navMesh, navMeshQuery
+		));
+
+		EcsWorld.Add(_worldEntity, new FogAndWeatherState(new byte[32, 32], "grey", "clear", 0f));
+		EcsWorld.Add(_worldEntity, new SpectatorPerspective(-1));
+		EcsWorld.Add(_worldEntity, new CountdownState(false, 0f, ""));
+		EcsWorld.Add(_worldEntity, new LeaderboardState(false, "", new System.Collections.Generic.Dictionary<string, string>()));
+		EcsWorld.Add(_worldEntity, new ScriptZonesState(new System.Collections.Generic.List<ZoneBounds>()));
+		var players = new ScriptPlayer[12];
+		for (int i = 0; i < 12; i++)
+		{
+			players[i] = new ScriptPlayer
+			{
+				Gold = i == 0 ? 500f : 0f,
+				Wood = i == 0 ? 400f : 0f,
+				Active = i == 0,
+				Name = $"Player {i + 1}",
+				KillCount = 0
+			};
+		}
+		EcsWorld.Add(_worldEntity, new ScriptPlayersState(players));
 	}
 
 	float IGameAPI.Gold
@@ -1147,19 +1621,26 @@ public class {mapName} : IMapScript
 
 			float clampedTime = Mathf.Clamp(time, 0f, 24f);
 			
-			if (clampedTime >= 5f && clampedTime < 6f) _timeOfDayIndex = 3;
-			else if (clampedTime >= 6f && clampedTime < 18f) _timeOfDayIndex = 0;
-			else if (clampedTime >= 18f && clampedTime < 20f) _timeOfDayIndex = 1;
-			else _timeOfDayIndex = 2;
+			int index;
+			if (clampedTime >= 5f && clampedTime < 6f) index = 3;
+			else if (clampedTime >= 6f && clampedTime < 18f) index = 0;
+			else if (clampedTime >= 18f && clampedTime < 20f) index = 1;
+			else index = 2;
 
-			_timeOfDayTimer = (clampedTime / 24f) * TimeOfDayCycleDuration;
+			float timer = (clampedTime / 24f) * TimeOfDayCycleDuration;
 			UpdateDayNightVisuals(clampedTime / 24f);
+
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<WorldState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<WorldState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new WorldState(state.GameElapsedTime, index, timer, state.DayNightCycleEnabled));
+			}
 		}).CallDeferred();
 	}
 
 	void IGameAPI.SetDayNightCycleEnabled(bool enabled)
 	{
-		_dayNightCycleEnabled = enabled;
+		DayNightCycleEnabled = enabled;
 	}
 
 	void IGameAPI.KillUnit(IUnit unit)
@@ -1197,8 +1678,6 @@ public class {mapName} : IMapScript
 						_castlesList.Remove(u3d);
 					}
 					int id = wrapper.Entity.Id;
-					_unitScale.Remove(id);
-					_lastAttacker.Remove(id);
 					_unitWrapperCache.Remove(id);
 					EcsWorld.Destroy(wrapper.Entity);
 					u3d.QueueFree();
@@ -1209,46 +1688,95 @@ public class {mapName} : IMapScript
 
 
 
-	private readonly Dictionary<int, float> _playerGold = new();
-	private readonly Dictionary<int, bool> _playerActive = new();
-	private readonly Dictionary<int, string> _playerNames = new();
+
 
 	private int _nextTimerHandle = 0;
 	private readonly Dictionary<int, (float Interval, float Remaining, bool Repeating, Action Callback)> _scheduledTimers = new();
 
 	private static readonly Random _rng = new();
 
-	int IGameAPI.PlayerCount => Math.Max(1, _playerActive.Count);
+	int IGameAPI.PlayerCount
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+			{
+				var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+				int count = 0;
+				foreach (var p in players)
+				{
+					if (p.Active) count++;
+				}
+				return Math.Max(1, count);
+			}
+			return 1;
+		}
+	}
 
 	string IGameAPI.GetPlayerName(int playerIndex)
 	{
-		if (_playerNames.TryGetValue(playerIndex, out var name)) return name;
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+		{
+			var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+			if (playerIndex >= 0 && playerIndex < players.Length)
+			{
+				return players[playerIndex].Name;
+			}
+		}
 		return $"Player {playerIndex + 1}";
 	}
 
 	bool IGameAPI.IsPlayerActive(int playerIndex)
 	{
-		if (_playerActive.TryGetValue(playerIndex, out var active)) return active;
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+		{
+			var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+			if (playerIndex >= 0 && playerIndex < players.Length)
+			{
+				return players[playerIndex].Active;
+			}
+		}
 		return playerIndex == 0;
 	}
 
 	float IGameAPI.GetPlayerGold(int playerIndex)
 	{
 		if (playerIndex == 0) return ((IGameAPI)this).Gold;
-		return _playerGold.TryGetValue(playerIndex, out var g) ? g : 0f;
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+		{
+			var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+			if (playerIndex >= 0 && playerIndex < players.Length)
+			{
+				return players[playerIndex].Gold;
+			}
+		}
+		return 0f;
 	}
 
 	void IGameAPI.SetPlayerGold(int playerIndex, float amount)
 	{
 		if (playerIndex == 0) { ((IGameAPI)this).Gold = amount; return; }
-		_playerGold[playerIndex] = Math.Max(0f, amount);
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+		{
+			var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+			if (playerIndex >= 0 && playerIndex < players.Length)
+			{
+				players[playerIndex].Gold = Math.Max(0f, amount);
+			}
+		}
 	}
 
 	void IGameAPI.AdjustPlayerGold(int playerIndex, float delta)
 	{
 		if (playerIndex == 0) { ((IGameAPI)this).Gold += delta; return; }
-		float current = _playerGold.TryGetValue(playerIndex, out var g) ? g : 0f;
-		_playerGold[playerIndex] = Math.Max(0f, current + delta);
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+		{
+			var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+			if (playerIndex >= 0 && playerIndex < players.Length)
+			{
+				players[playerIndex].Gold = Math.Max(0f, players[playerIndex].Gold + delta);
+			}
+		}
 	}
 
 	IUnit IGameAPI.SpawnUnitForPlayer(string unitTypeId, System.Numerics.Vector3 position, int playerIndex)
@@ -1398,25 +1926,44 @@ public class {mapName} : IMapScript
 		InGameHUD.Instance?.SetLeaderboardValue(label, value);
 	}
 
-	private readonly Dictionary<int, float> _playerWood = new();
-
 	float IGameAPI.GetPlayerWood(int playerIndex)
 	{
 		if (playerIndex == 0) return ((IGameAPI)this).Wood;
-		return _playerWood.TryGetValue(playerIndex, out var w) ? w : 0f;
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+		{
+			var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+			if (playerIndex >= 0 && playerIndex < players.Length)
+			{
+				return players[playerIndex].Wood;
+			}
+		}
+		return 0f;
 	}
 
 	void IGameAPI.SetPlayerWood(int playerIndex, float amount)
 	{
 		if (playerIndex == 0) { ((IGameAPI)this).Wood = amount; return; }
-		_playerWood[playerIndex] = Math.Max(0f, amount);
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+		{
+			var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+			if (playerIndex >= 0 && playerIndex < players.Length)
+			{
+				players[playerIndex].Wood = Math.Max(0f, amount);
+			}
+		}
 	}
 
 	void IGameAPI.AdjustPlayerWood(int playerIndex, float delta)
 	{
 		if (playerIndex == 0) { ((IGameAPI)this).Wood += delta; return; }
-		float current = _playerWood.TryGetValue(playerIndex, out var w) ? w : 0f;
-		_playerWood[playerIndex] = Math.Max(0f, current + delta);
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+		{
+			var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+			if (playerIndex >= 0 && playerIndex < players.Length)
+			{
+				players[playerIndex].Wood = Math.Max(0f, players[playerIndex].Wood + delta);
+			}
+		}
 	}
 
 	void IGameAPI.SetUnitOwner(IUnit unit, int playerIndex)
@@ -1468,59 +2015,68 @@ public class {mapName} : IMapScript
 
 
 
-	private struct ZoneBounds
-	{
-		public float MinX, MinZ, MaxX, MaxZ;
-		public System.Numerics.Vector3 Center;
-	}
 
-	private readonly List<ZoneBounds> _registeredZones = new();
-	private readonly Dictionary<int, HashSet<int>> _unitZoneOccupancy = new();
-	private readonly int[] _playerKillCounts = new int[12];
 
 	public event Action<IUnit, int>? OnUnitEnterZone;
 	public event Action<int>? OnPlayerLeft;
 
 	int IGameAPI.DefineZone(float minX, float minZ, float maxX, float maxZ)
 	{
-		int handle = _registeredZones.Count;
-		float cx = (minX + maxX) * 0.5f;
-		float cz = (minZ + maxZ) * 0.5f;
-		_registeredZones.Add(new ZoneBounds
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ScriptZonesState>(_worldEntity))
 		{
-			MinX = minX, MinZ = minZ, MaxX = maxX, MaxZ = maxZ,
-			Center = new System.Numerics.Vector3(cx, 0f, cz)
-		});
-		return handle;
+			ref var state = ref EcsWorld.Get<ScriptZonesState>(_worldEntity);
+			int handle = state.Zones.Count;
+			float cx = (minX + maxX) * 0.5f;
+			float cz = (minZ + maxZ) * 0.5f;
+			state.Zones.Add(new ZoneBounds
+			{
+				MinX = minX,
+				MinZ = minZ,
+				MaxX = maxX,
+				MaxZ = maxZ,
+				Center = new System.Numerics.Vector3(cx, 0f, cz)
+			});
+			return handle;
+		}
+		return -1;
 	}
 
 	System.Numerics.Vector3 IGameAPI.GetZoneCenter(int zoneHandle)
 	{
-		if (zoneHandle < 0 || zoneHandle >= _registeredZones.Count)
-			return System.Numerics.Vector3.Zero;
-		return _registeredZones[zoneHandle].Center;
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ScriptZonesState>(_worldEntity))
+		{
+			var zones = EcsWorld.Get<ScriptZonesState>(_worldEntity).Zones;
+			if (zoneHandle >= 0 && zoneHandle < zones.Count)
+			{
+				return zones[zoneHandle].Center;
+			}
+		}
+		return System.Numerics.Vector3.Zero;
 	}
 
 	private void TickZoneTriggers()
 	{
-		if (OnUnitEnterZone == null || _registeredZones.Count == 0) return;
+		if (OnUnitEnterZone == null) return;
+		if (EcsWorld == null || !EcsWorld.IsAlive(_worldEntity) || !EcsWorld.Has<ScriptZonesState>(_worldEntity)) return;
+
+		var zones = EcsWorld.Get<ScriptZonesState>(_worldEntity).Zones;
+		if (zones.Count == 0) return;
 
 		foreach (var unit3D in AllUnits)
 		{
 			if (!GodotObject.IsInstanceValid(unit3D) || !EcsWorld.IsAlive(unit3D.Entity)) continue;
 
-			int unitId = unit3D.Entity.Id;
 			var pos = unit3D.GlobalPosition;
 
-			if (!_unitZoneOccupancy.TryGetValue(unitId, out var occupiedZones))
+			if (!EcsWorld.Has<OccupiedZones>(unit3D.Entity))
 			{
-				occupiedZones = new HashSet<int>();
-				_unitZoneOccupancy[unitId] = occupiedZones;
+				EcsWorld.Add(unit3D.Entity, new OccupiedZones(new HashSet<int>()));
 			}
+			var occupiedZones = EcsWorld.Get<OccupiedZones>(unit3D.Entity).ZoneIds;
 
-			for (int i = 0; i < _registeredZones.Count; i++)
+			for (int i = 0; i < zones.Count; i++)
 			{
-				ref ZoneBounds z = ref System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_registeredZones)[i];
+				ref ZoneBounds z = ref System.Runtime.InteropServices.CollectionsMarshal.AsSpan(zones)[i];
 				bool inside = pos.X >= z.MinX && pos.X <= z.MaxX && pos.Z >= z.MinZ && pos.Z <= z.MaxZ;
 
 				if (inside && !occupiedZones.Contains(i))
@@ -1565,14 +2121,27 @@ public class {mapName} : IMapScript
 
 	int IGameAPI.GetPlayerKills(int playerIndex)
 	{
-		if (playerIndex < 0 || playerIndex >= _playerKillCounts.Length) return 0;
-		return _playerKillCounts[playerIndex];
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+		{
+			var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+			if (playerIndex >= 0 && playerIndex < players.Length)
+			{
+				return players[playerIndex].KillCount;
+			}
+		}
+		return 0;
 	}
 
 	void IGameAPI.SetPlayerKills(int playerIndex, int kills)
 	{
-		if (playerIndex < 0 || playerIndex >= _playerKillCounts.Length) return;
-		_playerKillCounts[playerIndex] = kills;
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+		{
+			var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+			if (playerIndex >= 0 && playerIndex < players.Length)
+			{
+				players[playerIndex].KillCount = kills;
+			}
+		}
 	}
 
 	void IGameAPI.IssueMoveOrder(IUnit unit, System.Numerics.Vector3 destination)
@@ -1968,11 +2537,12 @@ public class {mapName} : IMapScript
 			_trackerIntervalStopwatch.Start();
 		}
 
+		EcsWorld = World.Create();
+		SetupWorldEntityComponents();
+
 		CreateGround();
 		SetupSkybox();
 		UpdateDayNightVisuals(0.5f);
-
-		EcsWorld = World.Create();
 		_definitionManager = new DefinitionManager();
 		_goldResourceId = "gold".AsResourceId(_definitionManager);
 		_woodResourceId = "wood".AsResourceId(_definitionManager);
@@ -1993,6 +2563,7 @@ public class {mapName} : IMapScript
 		_editorMovementQueryDelegate = ProcessMapEditorPhysicsQueryAction;
 		_interpolationQueryDelegate = InterpolationQueryAction;
 		_passiveIncomeQueryDelegate = UpdatePassiveIncomeQueryAction;
+		_spellCooldownQueryDelegate = SpellCooldownQueryAction;
 
 		if (_multiplayerActive)
 		{
@@ -2009,12 +2580,14 @@ public class {mapName} : IMapScript
 
 			if (LobbyManager.Instance != null && LobbyManager.Instance.PlayerList.Count > 0)
 			{
+				int pIdx = 0;
 				foreach (var p in LobbyManager.Instance.PlayerList)
 				{
 					var playerEntity = EcsWorld.Create();
 					EcsWorld.Add(playerEntity, new Player());
 					EcsWorld.Add(playerEntity, new Name(p.Name));
 					InitializePlayerResources(playerEntity);
+					SetupPlayerEntityComponents(playerEntity);
 					_peerIdToPlayerEntityMap[p.PeerId] = playerEntity;
 					if (p.PeerId == _localPeerId)
 					{
@@ -2024,6 +2597,16 @@ public class {mapName} : IMapScript
 					{
 						_enemyPlayerEntity = playerEntity;
 					}
+					if (EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+					{
+						var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+						if (pIdx < players.Length)
+						{
+							players[pIdx].Name = p.Name;
+							players[pIdx].Active = true;
+						}
+					}
+					pIdx++;
 				}
 			}
 			else
@@ -2032,13 +2615,24 @@ public class {mapName} : IMapScript
 				EcsWorld.Add(_playerEntity, new Player());
 				EcsWorld.Add(_playerEntity, new Name("Horaid_Topa"));
 				InitializePlayerResources(_playerEntity);
+				SetupPlayerEntityComponents(_playerEntity);
 				_peerIdToPlayerEntityMap[1] = _playerEntity;
 
 				_enemyPlayerEntity = EcsWorld.Create();
 				EcsWorld.Add(_enemyPlayerEntity, new Player());
 				EcsWorld.Add(_enemyPlayerEntity, new Name("Enemy_AI"));
 				InitializePlayerResources(_enemyPlayerEntity);
+				SetupPlayerEntityComponents(_enemyPlayerEntity);
 				_peerIdToPlayerEntityMap[-1] = _enemyPlayerEntity;
+
+				if (EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+				{
+					var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+					players[0].Name = "Horaid_Topa";
+					players[0].Active = true;
+					players[1].Name = "Enemy_AI";
+					players[1].Active = true;
+				}
 			}
 		}
 		else
@@ -2047,13 +2641,24 @@ public class {mapName} : IMapScript
 			EcsWorld.Add(_playerEntity, new Player());
 			EcsWorld.Add(_playerEntity, new Name("Horaid_Topa"));
 			InitializePlayerResources(_playerEntity);
+			SetupPlayerEntityComponents(_playerEntity);
 			_peerIdToPlayerEntityMap[1] = _playerEntity;
 
 			_enemyPlayerEntity = EcsWorld.Create();
 			EcsWorld.Add(_enemyPlayerEntity, new Player());
 			EcsWorld.Add(_enemyPlayerEntity, new Name("Enemy_AI"));
 			InitializePlayerResources(_enemyPlayerEntity);
+			SetupPlayerEntityComponents(_enemyPlayerEntity);
 			_peerIdToPlayerEntityMap[-1] = _enemyPlayerEntity;
+
+			if (EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+			{
+				var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+				players[0].Name = "Horaid_Topa";
+				players[0].Active = true;
+				players[1].Name = "Enemy_AI";
+				players[1].Active = true;
+			}
 		}
 
 
@@ -2303,7 +2908,7 @@ public class {mapName} : IMapScript
 		var enemyGoldmine = FindNearbyResourceNode(new Vector3(16, 0, 20), "gold", 50f);
 		if (enemyGoldmine != null)
 		{
-			var gatherer = new Gatherer("gold", enemyGoldmine);
+			var gatherer = new Gatherer("gold", enemyGoldmine.Entity);
 			EcsWorld.Add(enemyWorkerEntity, gatherer);
 		}
 
@@ -2444,7 +3049,7 @@ public class {mapName} : IMapScript
 				targetIds.Add(GetServerEntityId(unit.Entity));
 				ClearUnitOrders(unit.Entity);
 
-				var gatherer = new Gatherer(resType, prop);
+				var gatherer = new Gatherer(resType, prop.Entity);
 				if (EcsWorld.Has<Gatherer>(unit.Entity)) EcsWorld.Set(unit.Entity, gatherer);
 				else EcsWorld.Add(unit.Entity, gatherer);
 			}
@@ -2460,7 +3065,7 @@ public class {mapName} : IMapScript
 			ClearUnitOrders(unit.Entity);
 
 
-			var gatherer = new Gatherer(resType, prop);
+			var gatherer = new Gatherer(resType, prop.Entity);
 			if (EcsWorld.Has<Gatherer>(unit.Entity))
 				EcsWorld.Set(unit.Entity, gatherer);
 			else
@@ -2540,11 +3145,10 @@ public class {mapName} : IMapScript
 
 	private Unit3D SpawnUnit3D(Entity entity, string id, string modelPath, Vector3 pos, bool isBuilding, bool isEnemy, bool isFromQueue = false)
 	{
+		EcsWorld.Add(entity, new UnitFaction(isEnemy));
+
 		var unit3D = new Unit3D();
 		unit3D.Entity = entity;
-		unit3D.UnitId = id;
-		unit3D.IsBuilding = isBuilding;
-		unit3D.IsEnemy = isEnemy;
 		unit3D.Name = $"{id}_{entity.Id}";
 
 		if (!isBuilding && !IsMapEditorMode)
@@ -2575,7 +3179,7 @@ public class {mapName} : IMapScript
 			}
 			if (!isFromQueue)
 			{
-				_currentPopulation += popMeta.PopCost;
+				CurrentPopulation += popMeta.PopCost;
 			}
 		}
 
@@ -2669,10 +3273,22 @@ public class {mapName} : IMapScript
 		_tickSpawningRequests.Clear();
 		_tickAddPathFollow.Clear();
 		_tickNeedsUiRefresh = false;
-		if (_fireballCooldown > 0) _fireballCooldown = Math.Max(0, _fireballCooldown - fDelta);
-		if (_lightningCooldown > 0) _lightningCooldown = Math.Max(0, _lightningCooldown - fDelta);
-		if (_holyLightCooldown > 0) _holyLightCooldown = Math.Max(0, _holyLightCooldown - fDelta);
+		EcsWorld.Query(in _spellCooldownQuery, _spellCooldownQueryDelegate);
 		if (_underAttackAlertTimer > 0) _underAttackAlertTimer -= fDelta;
+
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<CountdownState>(_worldEntity))
+		{
+			ref var countdown = ref EcsWorld.Get<CountdownState>(_worldEntity);
+			if (countdown.Active)
+			{
+				countdown.Duration -= fDelta;
+				if (countdown.Duration <= 0f)
+				{
+					countdown.Duration = 0f;
+					countdown.Active = false;
+				}
+			}
+		}
 
 
 		EcsWorld.Query(in _passiveIncomeQuery, _passiveIncomeQueryDelegate);
@@ -2748,25 +3364,32 @@ public class {mapName} : IMapScript
 
 	private void UpdateGameplayDayNightCycle(float fDelta)
 	{
-		if (!IsMapEditorMode && _dayNightCycleEnabled)
+		if (!IsMapEditorMode && DayNightCycleEnabled)
 		{
 
-			_timeOfDayTimer += fDelta;
-			if (_timeOfDayTimer >= TimeOfDayCycleDuration)
+			float timer = TimeOfDayTimer + fDelta;
+			if (timer >= TimeOfDayCycleDuration)
 			{
-				_timeOfDayTimer -= TimeOfDayCycleDuration;
+				timer -= TimeOfDayCycleDuration;
 			}
 
-			float progress = _timeOfDayTimer / TimeOfDayCycleDuration; // Normalized 0.0 to 1.0 across full cycle
+			float progress = timer / TimeOfDayCycleDuration; // Normalized 0.0 to 1.0 across full cycle
 			
 
 			float currentHour = progress * 24f;
-			if (currentHour >= 5f && currentHour < 6f) _timeOfDayIndex = 3;      // Dawn
-			else if (currentHour >= 6f && currentHour < 18f) _timeOfDayIndex = 0; // Day
-			else if (currentHour >= 18f && currentHour < 20f) _timeOfDayIndex = 1;// Sunset
-			else _timeOfDayIndex = 2;                                             // Night
+			int index;
+			if (currentHour >= 5f && currentHour < 6f) index = 3;      // Dawn
+			else if (currentHour >= 6f && currentHour < 18f) index = 0; // Day
+			else if (currentHour >= 18f && currentHour < 20f) index = 1;// Sunset
+			else index = 2;                                             // Night
 
 			UpdateDayNightVisuals(progress);
+
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<WorldState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<WorldState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new WorldState(state.GameElapsedTime, index, timer, state.DayNightCycleEnabled));
+			}
 		}
 	}
 
@@ -3085,14 +3708,17 @@ public class {mapName} : IMapScript
 
 	public void CycleTimeOfDay()
 	{
-		var (newIndex, newTimer) = _dayNightService.CycleTimeOfDay(this, _timeOfDayIndex, TimeOfDayCycleDuration);
-		_timeOfDayIndex = newIndex;
-		_timeOfDayTimer = newTimer;
+		var (newIndex, newTimer) = _dayNightService.CycleTimeOfDay(this, TimeOfDayIndex, TimeOfDayCycleDuration);
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<WorldState>(_worldEntity))
+		{
+			ref var state = ref EcsWorld.Get<WorldState>(_worldEntity);
+			EcsWorld.Set(_worldEntity, new WorldState(state.GameElapsedTime, newIndex, newTimer, state.DayNightCycleEnabled));
+		}
 	}
 
 	public string GetTimeOfDayName()
 	{
-		return _dayNightService.GetTimeOfDayName(_timeOfDayIndex);
+		return _dayNightService.GetTimeOfDayName(TimeOfDayIndex);
 	}
 
 	private void SpawnFireblastEffect(Vector3 position)

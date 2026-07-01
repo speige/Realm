@@ -1,0 +1,35 @@
+using System.Numerics;
+
+namespace Realm.Ecs.Components.Core;
+
+/// <summary>
+///     Holds the state and configuration of the game camera.
+/// </summary>
+internal struct CameraState
+{
+	public float MoveSpeed;
+	public float ZoomSpeed;
+	public float MinZoom;
+	public float MaxZoom;
+	public float ZoomStep;
+	public float EdgePanMargin;
+	public bool EnableEdgePanning;
+	public bool IsLocked;
+
+	public float? LimitLeft;
+	public float? LimitRight;
+	public float? LimitTop;
+	public float? LimitBottom;
+
+	public float TargetHeight;
+	public float CurrentHeight;
+	public bool IsDraggingMouse;
+	public Vector2 LastMousePosition;
+	public float TargetYaw;
+	public float CurrentYaw;
+	public float TargetPitch;
+	public float CurrentPitch;
+	public bool IsTopDown;
+	public float YawSwing;
+	public float PitchSwing;
+}

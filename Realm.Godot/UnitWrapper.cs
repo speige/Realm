@@ -6,6 +6,7 @@ using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Tags;
+using Realm.Ecs.Components.Resources;
 using Realm.MapAPI;
 using System;
 using System.Collections.Generic;
@@ -40,10 +41,8 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
 		get
 		{
 			if (!_world.IsAlive(_entity)) return string.Empty;
-			if (_world.Has<Unit3D>(_entity))
-			{
-				return _world.Get<Unit3D>(_entity).UnitId;
-			}
+			if (_world.Has<DefinitionId>(_entity))
+				return _world.Get<DefinitionId>(_entity).Value;
 			return string.Empty;
 		}
 	}
@@ -66,29 +65,23 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
 		get
 		{
 			if (!_world.IsAlive(_entity)) return false;
-			if (_world.Has<Unit3D>(_entity))
-			{
-				return _world.Get<Unit3D>(_entity).IsEnemy;
-			}
+			if (_world.Has<UnitFaction>(_entity))
+				return _world.Get<UnitFaction>(_entity).IsEnemy;
 			return false;
 		}
 		set
 		{
 			if (!_world.IsAlive(_entity)) return;
-			if (_world.Has<Unit3D>(_entity))
+			if (_world.Has<UnitFaction>(_entity))
+				_world.Set(_entity, new UnitFaction(value));
+			else
+				_world.Add(_entity, new UnitFaction(value));
+			if (_world.Has<Owner>(_entity))
 			{
-				var u3d = _world.Get<Unit3D>(_entity);
-				if (GodotObject.IsInstanceValid(u3d))
-				{
-					u3d.IsEnemy = value;
-					if (_world.Has<Owner>(_entity))
-					{
-						var playerOwner = value 
-							? GameHost.Instance.EnemyEntity.AsPlayerEntity(_world) 
-							: GameHost.Instance.PlayerEntity.AsPlayerEntity(_world);
-						_world.Set(_entity, new Owner(playerOwner));
-					}
-				}
+				var playerOwner = value
+					? GameHost.Instance.EnemyEntity.AsPlayerEntity(_world)
+					: GameHost.Instance.PlayerEntity.AsPlayerEntity(_world);
+				_world.Set(_entity, new Owner(playerOwner));
 			}
 		}
 	}
@@ -98,11 +91,7 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
 		get
 		{
 			if (!_world.IsAlive(_entity)) return false;
-			if (_world.Has<Unit3D>(_entity))
-			{
-				return _world.Get<Unit3D>(_entity).IsBuilding;
-			}
-			return false;
+			return _world.Has<Building>(_entity);
 		}
 	}
 
@@ -461,8 +450,8 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
 			var propNode = nodeWrapper.Prop;
 			if (GodotObject.IsInstanceValid(propNode))
 			{
-				var gatherer = new GameHost.Gatherer(resourceNode.ResourceType, propNode);
-				if (_world.Has<GameHost.Gatherer>(_entity))
+				var gatherer = new Gatherer(resourceNode.ResourceType, propNode.Entity);
+				if (_world.Has<Gatherer>(_entity))
 				{
 					_world.Set(_entity, gatherer);
 				}
@@ -557,6 +546,10 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
         get
         {
             if (!_world.IsAlive(_entity)) return 1.0f;
+            if (_world.Has<ModelScale>(_entity))
+            {
+                return _world.Get<ModelScale>(_entity).Value;
+            }
             if (_world.Has<Unit3D>(_entity))
             {
                 var u3d = _world.Get<Unit3D>(_entity);
@@ -565,12 +558,19 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
                     return u3d.Scale.X;
                 }
             }
-            return GameHost.Instance._unitScale.TryGetValue(_entity.Id, out float val) ? val : 1.0f;
+            return 1.0f;
         }
         set
         {
             if (!_world.IsAlive(_entity)) return;
-            GameHost.Instance._unitScale[_entity.Id] = value;
+            if (_world.Has<ModelScale>(_entity))
+            {
+                _world.Set(_entity, new ModelScale(value));
+            }
+            else
+            {
+                _world.Add(_entity, new ModelScale(value));
+            }
             if (_world.Has<Unit3D>(_entity))
             {
                 var u3d = _world.Get<Unit3D>(_entity);

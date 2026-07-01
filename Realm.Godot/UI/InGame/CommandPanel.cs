@@ -126,9 +126,9 @@ public class CommandPanel
 				if (GameHost.Instance != null)
 				{
 					bool isMaxed = false;
-					if (GameHost.Instance.EcsWorld.IsAlive(focusedUnit.Entity) && GameHost.Instance.EcsWorld.Has<GameHost.TowerUpgradeLevel>(focusedUnit.Entity))
+					if (GameHost.Instance.EcsWorld.IsAlive(focusedUnit.Entity) && GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Core.TowerUpgradeLevel>(focusedUnit.Entity))
 					{
-						isMaxed = GameHost.Instance.EcsWorld.Get<GameHost.TowerUpgradeLevel>(focusedUnit.Entity).Value >= 3;
+						isMaxed = GameHost.Instance.EcsWorld.Get<Realm.Ecs.Components.Core.TowerUpgradeLevel>(focusedUnit.Entity).Value >= 3;
 					}
 					ApplyUpgradeButtonState(_btnUpgradeTower, isMaxed, "MAXED: Tower Level 3");
 				}

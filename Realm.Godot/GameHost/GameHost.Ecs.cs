@@ -202,12 +202,18 @@ public partial class GameHost
 					InGameHUD.Instance.CallDeferred(nameof(InGameHUD.ShowFeedbackText), $"+{carry:F0} {resTypeUpper} deposited", new Color(0.2f, 0.9f, 0.4f));
 				}
 				
-				if (gather.TargetNode != null && GodotObject.IsInstanceValid(gather.TargetNode))
+				Prop3D? targetNode = null;
+				if (EcsWorld.IsAlive(gather.TargetEntity) && EcsWorld.Has<Prop3D>(gather.TargetEntity))
+				{
+					targetNode = EcsWorld.Get<Prop3D>(gather.TargetEntity);
+				}
+
+				if (GodotObject.IsInstanceValid(targetNode))
 				{
 					var newState = gather;
 					newState.ReturningToBase = false;
 					newState.CarriedAmount = 0f;
-					var dest = gather.TargetNode.GlobalPosition;
+					var dest = targetNode.GlobalPosition;
 					_tickGatherersToUpdate.Add((entity, newState, dest));
 				}
 				else
@@ -215,7 +221,7 @@ public partial class GameHost
 					var newState = gather;
 					newState.ReturningToBase = false;
 					newState.CarriedAmount = 0f;
-					newState.TargetNode = null;
+					newState.TargetEntity = Entity.Null;
 					_tickGatherersToUpdate.Add((entity, newState, null));
 				}
 			}
@@ -230,13 +236,19 @@ public partial class GameHost
 		}
 		else
 		{
-			if (gather.TargetNode == null || !GodotObject.IsInstanceValid(gather.TargetNode))
+			Prop3D? targetNode = null;
+			if (EcsWorld.IsAlive(gather.TargetEntity) && EcsWorld.Has<Prop3D>(gather.TargetEntity))
+			{
+				targetNode = EcsWorld.Get<Prop3D>(gather.TargetEntity);
+			}
+
+			if (!GodotObject.IsInstanceValid(targetNode))
 			{
 				Prop3D alternate = FindNearbyResourceNode(currentPos, gather.ResourceType, 25.0f);
 				if (alternate != null)
 				{
 					var newState = gather;
-					newState.TargetNode = alternate;
+					newState.TargetEntity = alternate.Entity;
 					var dest = alternate.GlobalPosition;
 					_tickGatherersToUpdate.Add((entity, newState, dest));
 				}
@@ -247,7 +259,7 @@ public partial class GameHost
 				return;
 			}
 			
-			float dist = currentPos.DistanceTo(gather.TargetNode.GlobalPosition);
+			float dist = currentPos.DistanceTo(targetNode.GlobalPosition);
 			float gatherRange = 3.5f;
 			if (dist <= gatherRange)
 			{
@@ -262,13 +274,13 @@ public partial class GameHost
 				bool isEnemy = EcsWorld.Get<Owner>(entity).PlayerEntity == _enemyPlayerEntity.AsPlayerEntity(EcsWorld);
 				if (!isEnemy && HasHarvestingUpgrade) mineRate *= 1.5f;
 				
-				float nodeRemaining = gather.TargetNode.ResourceAmount;
+				float nodeRemaining = targetNode.ResourceAmount;
 				if (mineRate > nodeRemaining)
 				{
 					mineRate = nodeRemaining;
 				}
 				
-				gather.TargetNode.ResourceAmount -= mineRate;
+				targetNode.ResourceAmount -= mineRate;
 				newState.CarriedAmount = Math.Min(gather.MaxCapacity, gather.CarriedAmount + mineRate);
 				
 				if (EcsWorld.Has<Unit3D>(entity))
@@ -278,10 +290,14 @@ public partial class GameHost
 					worker3D.Scale = new Vector3(pulse * 0.9f, (2.0f - pulse) * 0.9f, pulse * 0.9f);
 				}
 				
-				if (gather.TargetNode.ResourceAmount <= 0f)
+				if (targetNode.ResourceAmount <= 0f)
 				{
-					var depletedNode = gather.TargetNode;
+					var depletedNode = targetNode;
 					AllProps.Remove(depletedNode);
+					if (EcsWorld.IsAlive(depletedNode.Entity))
+					{
+						EcsWorld.Destroy(depletedNode.Entity);
+					}
 					depletedNode.QueueFree();
 				}
 				
@@ -324,7 +340,7 @@ public partial class GameHost
 			{
 				if (!EcsWorld.Has<MoveTo>(entity))
 				{
-					var dest = gather.TargetNode.GlobalPosition;
+					var dest = targetNode.GlobalPosition;
 					_tickGatherersToUpdate.Add((entity, gather, dest));
 				}
 			}
@@ -580,6 +596,14 @@ public partial class GameHost
 		}
 	}
 
+	private void SpellCooldownQueryAction(Entity entity, ref SpellCooldowns cd)
+	{
+		float fCo = cd.FireballCooldown > 0 ? Math.Max(0, cd.FireballCooldown - _fDelta) : 0f;
+		float lCo = cd.LightningCooldown > 0 ? Math.Max(0, cd.LightningCooldown - _fDelta) : 0f;
+		float hCo = cd.HolyLightCooldown > 0 ? Math.Max(0, cd.HolyLightCooldown - _fDelta) : 0f;
+		cd = new SpellCooldowns(fCo, lCo, hCo);
+	}
+
 	private void ScanEnemyQueryAction(Entity potentialEnemy, ref Position enemyPosComp, ref Owner enemyOwnerComp)
 	{
 		if (_scanAttackerOwner != enemyOwnerComp.PlayerEntity)
@@ -620,7 +644,7 @@ public partial class GameHost
 					scanRadius = metaReg.ScanRadius;
 			}
 
-			if (_timeOfDayIndex == 2)
+			if (TimeOfDayIndex == 2)
 			{
 				scanRadius *= 0.7f;
 			}
@@ -689,7 +713,14 @@ public partial class GameHost
 				float damage = atk.Damage - targetArmor.Value;
 				if (damage < 1f) damage = 1f;
 
-				_lastAttacker[target.Target.Id] = entity;
+				if (EcsWorld.Has<LastAttacker>(target.Target))
+				{
+					EcsWorld.Set(target.Target, new LastAttacker(entity));
+				}
+				else
+				{
+					EcsWorld.Add(target.Target, new LastAttacker(entity));
+				}
 				OnUnitDamaged?.Invoke(GetUnitWrapper(target.Target), GetUnitWrapper(entity), damage);
 
 				float newHp = Math.Max(0, targetHealth.Current - damage);
@@ -1082,7 +1113,15 @@ public partial class GameHost
 					}
 					if (caster != null)
 					{
-						_lastAttacker[unit.Entity.Id] = ((IEcsEntityWrapper)caster).Entity;
+						var casterEntity = ((IEcsEntityWrapper)caster).Entity;
+						if (EcsWorld.Has<LastAttacker>(unit.Entity))
+						{
+							EcsWorld.Set(unit.Entity, new LastAttacker(casterEntity));
+						}
+						else
+						{
+							EcsWorld.Add(unit.Entity, new LastAttacker(casterEntity));
+						}
 					}
 					OnUnitDamaged?.Invoke(GetUnitWrapper(unit.Entity), caster ?? GetUnitWrapper(unit.Entity), damage);
 
@@ -1132,15 +1171,17 @@ public partial class GameHost
 		IUnit? killer = null;
 		if (EcsWorld.IsAlive(unit.Entity))
 		{
-			if (_lastAttacker.TryGetValue(unit.Entity.Id, out var killerEntity) && EcsWorld.IsAlive(killerEntity))
+			if (EcsWorld.Has<LastAttacker>(unit.Entity))
 			{
-				killer = GetUnitWrapper(killerEntity);
+				var killerEntity = EcsWorld.Get<LastAttacker>(unit.Entity).Value;
+				if (EcsWorld.IsAlive(killerEntity))
+				{
+					killer = GetUnitWrapper(killerEntity);
+				}
 			}
-			_lastAttacker.Remove(unit.Entity.Id);
 			OnUnitDied?.Invoke(GetUnitWrapper(unit.Entity), killer);
 			
 			int id = unit.Entity.Id;
-			_unitScale.Remove(id);
 			_unitWrapperCache.Remove(id);
 		}
 
@@ -1170,7 +1211,7 @@ public partial class GameHost
 			}
 			if (!EcsWorld.Has<BypassPopulationTag>(unit.Entity))
 			{
-				_currentPopulation = Math.Max(0, _currentPopulation - killMeta.PopCost);
+				CurrentPopulation = Math.Max(0, CurrentPopulation - killMeta.PopCost);
 			}
 		}
 

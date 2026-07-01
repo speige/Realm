@@ -8,6 +8,7 @@ using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Resources;
+using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Services;
 using Realm.Godot.ReplaySystem;
 using System;
@@ -91,16 +92,116 @@ public partial class InGameHUD : Control
 	private Button _btnCenter;
 	public bool ShowMinimapTerrain => _viewModel.ShowMinimapTerrain;
 
-	private byte[,] _fogGrid = new byte[32, 32];
-	private string _fogOfWarType = "grey";
 	private float _fogUpdateTimer = 0f;
-	public byte[,] FogGrid => _fogGrid;
-	public string FogOfWarType => _fogOfWarType;
 
-	private string _currentWeather = "clear";
+	public byte[,] FogGrid
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				{
+					return GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity).FogGrid;
+				}
+			}
+			return new byte[32, 32];
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				{
+					ref var state = ref GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity);
+					state.FogGrid = value;
+				}
+			}
+		}
+	}
+	private byte[,] _fogGrid { get => FogGrid; set => FogGrid = value; }
+
+	public string FogOfWarType
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				{
+					return GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity).FogOfWarType;
+				}
+			}
+			return "grey";
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				{
+					ref var state = ref GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity);
+					state.FogOfWarType = value;
+				}
+			}
+		}
+	}
+	private string _fogOfWarType { get => FogOfWarType; set => FogOfWarType = value; }
+
+	private string _currentWeather
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				{
+					return GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity).CurrentWeather;
+				}
+			}
+			return "clear";
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				{
+					ref var state = ref GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity);
+					state.CurrentWeather = value;
+				}
+			}
+		}
+	}
+
 	private CpuParticles3D _rainParticles = null;
 	private MeshInstance3D _fogMeshInstance = null;
-	private float _baseFogDensity = 0f;
+
+	private float _baseFogDensity
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				{
+					return GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity).BaseFogDensity;
+				}
+			}
+			return 0f;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				{
+					ref var state = ref GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity);
+					state.BaseFogDensity = value;
+				}
+			}
+		}
+	}
 
 	private Label _goldLabel;
 	private Label _woodLabel;
@@ -170,7 +271,37 @@ public partial class InGameHUD : Control
 	private RichTextLabel _chatLog;
 	public bool IsChatActive => _chatPanelController.IsChatActive;
 
-	public int LiveSpectatorPerspective { get; set; } = -1;
+	public int LiveSpectatorPerspective
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<SpectatorPerspective>(GameHost.Instance.WorldEntity))
+				{
+					return GameHost.Instance.EcsWorld.Get<SpectatorPerspective>(GameHost.Instance.WorldEntity).Value;
+				}
+			}
+			return -1;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity))
+				{
+					if (GameHost.Instance.EcsWorld.Has<SpectatorPerspective>(GameHost.Instance.WorldEntity))
+					{
+						GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new SpectatorPerspective(value));
+					}
+					else
+					{
+						GameHost.Instance.EcsWorld.Add(GameHost.Instance.WorldEntity, new SpectatorPerspective(value));
+					}
+				}
+			}
+		}
+	}
 
 	private ResourcePanel _resourcePanelController;
 	private MinimapPanel _minimapPanelController;

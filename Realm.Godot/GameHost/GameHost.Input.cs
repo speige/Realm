@@ -5,6 +5,7 @@ using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Tags;
+using Realm.Ecs.Components.Resources;
 using Realm.Ecs.Common;
 using Realm.MapAPI;
 using Realm.Godot.ReplaySystem;
@@ -2385,7 +2386,7 @@ public partial class GameHost
 			bool hasMoveTo = EcsWorld.Has<MoveTo>(unit.Entity);
 			bool hasAttackTarget = EcsWorld.Has<AttackTarget>(unit.Entity);
 			bool hasAttackMove = EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(unit.Entity);
-			bool isGathering = EcsWorld.Has<Gatherer>(unit.Entity) && EcsWorld.Get<Gatherer>(unit.Entity).TargetNode != null;
+			bool isGathering = EcsWorld.Has<Gatherer>(unit.Entity) && EcsWorld.Get<Gatherer>(unit.Entity).TargetEntity != Entity.Null;
 
 			if (isMovable && !hasMoveTo && !hasAttackTarget && !hasAttackMove && !isGathering)
 			{
@@ -2736,19 +2737,19 @@ public partial class GameHost
 		{
 			if (spellId == "fireball")
 			{
-				_fireballCooldown = FireballCooldownMax;
+				FireballCooldown = FireballCooldownMax;
 				SpawnFireblastEffect(position);
 				SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
 			}
 			else if (spellId == "lightning")
 			{
-				_lightningCooldown = LightningCooldownMax;
+				LightningCooldown = LightningCooldownMax;
 				SpawnLightningEffect(position);
 				SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
 			}
 			else if (spellId == "holylight")
 			{
-				_holyLightCooldown = HolyLightCooldownMax;
+				HolyLightCooldown = HolyLightCooldownMax;
 				SpawnHolyLightEffect(position);
 				SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
 			}
@@ -2771,12 +2772,12 @@ public partial class GameHost
 
 		if (spellId == "fireball")
 		{
-			if (_fireballCooldown > 0)
+			if (FireballCooldown > 0)
 			{
-				InGameHUD.Instance?.ShowFeedbackText($"Fireball on cooldown: {_fireballCooldown:F1}s remaining", new Color(0.9f, 0.4f, 0.1f));
+				InGameHUD.Instance?.ShowFeedbackText($"Fireball on cooldown: {FireballCooldown:F1}s remaining", new Color(0.9f, 0.4f, 0.1f));
 				return;
 			}
-			_fireballCooldown = FireballCooldownMax;
+			FireballCooldown = FireballCooldownMax;
 
 			SpawnFireblastEffect(position);
 			SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
@@ -2791,12 +2792,12 @@ public partial class GameHost
 		}
 		else if (spellId == "lightning")
 		{
-			if (_lightningCooldown > 0)
+			if (LightningCooldown > 0)
 			{
-				InGameHUD.Instance?.ShowFeedbackText($"Lightning on cooldown: {_lightningCooldown:F1}s remaining", new Color(0.2f, 0.6f, 1f));
+				InGameHUD.Instance?.ShowFeedbackText($"Lightning on cooldown: {LightningCooldown:F1}s remaining", new Color(0.2f, 0.6f, 1f));
 				return;
 			}
-			_lightningCooldown = LightningCooldownMax;
+			LightningCooldown = LightningCooldownMax;
 
 			SpawnLightningEffect(position);
 			SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
@@ -2811,12 +2812,12 @@ public partial class GameHost
 		}
 		else if (spellId == "holylight")
 		{
-			if (_holyLightCooldown > 0)
+			if (HolyLightCooldown > 0)
 			{
-				InGameHUD.Instance?.ShowFeedbackText($"Holy Light on cooldown: {_holyLightCooldown:F1}s remaining", new Color(0.2f, 0.9f, 0.3f));
+				InGameHUD.Instance?.ShowFeedbackText($"Holy Light on cooldown: {HolyLightCooldown:F1}s remaining", new Color(0.2f, 0.9f, 0.3f));
 				return;
 			}
-			_holyLightCooldown = HolyLightCooldownMax;
+			HolyLightCooldown = HolyLightCooldownMax;
 
 			SpawnHolyLightEffect(position);
 			SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
@@ -3037,7 +3038,7 @@ public partial class GameHost
 					InGameHUD.Instance.Wood += meta.CostWood;
 					InGameHUD.Instance.Stone += meta.CostStone;
 
-					_currentPopulation = Math.Max(0, _currentPopulation - meta.PopCost);
+					CurrentPopulation = Math.Max(0, CurrentPopulation - meta.PopCost);
 					InGameHUD.Instance.ShowFeedbackText($"Cancelled {meta.Name} (Refunded {meta.CostGold}G, {meta.CostWood}W, {meta.CostStone}S)", new Color(1f, 0.8f, 0.2f));
 				}
 
@@ -3667,9 +3668,9 @@ public partial class GameHost
 			return;
 		}
 
-		if (meta.PopCost > 0 && _currentPopulation + meta.PopCost > MaxPopulation)
+		if (meta.PopCost > 0 && CurrentPopulation + meta.PopCost > MaxPopulation)
 		{
-			InGameHUD.Instance.ShowFeedbackText($"Population cap reached! ({_currentPopulation}/{MaxPopulation})", new Color(1f, 0.3f, 0.3f));
+			InGameHUD.Instance.ShowFeedbackText($"Population cap reached! ({CurrentPopulation}/{MaxPopulation})", new Color(1f, 0.3f, 0.3f));
 			UIManager.Instance?.PlayWarningSound();
 			return;
 		}
@@ -3682,11 +3683,11 @@ public partial class GameHost
 			InGameHUD.Instance.Wood -= meta.CostWood;
 			InGameHUD.Instance.Stone -= meta.CostStone;
 
-			_currentPopulation += meta.PopCost;
+			CurrentPopulation += meta.PopCost;
 			targetProd.UnitIds.Add(unitId);
 			EcsWorld.Set(targetCastle.Entity, targetProd);
 
-			InGameHUD.Instance.ShowFeedbackText($"Queued {meta.Name} ({_currentPopulation}/{MaxPopulation} pop)", new Color(0.2f, 0.8f, 1f));
+			InGameHUD.Instance.ShowFeedbackText($"Queued {meta.Name} ({CurrentPopulation}/{MaxPopulation} pop)", new Color(0.2f, 0.8f, 1f));
 			UIManager.Instance?.PlayClickSound();
 			InGameHUD.Instance.RefreshUI(SelectedUnits);
 		}
@@ -3853,7 +3854,7 @@ public partial class GameHost
 					InGameHUD.Instance.Wood += meta.CostWood;
 					InGameHUD.Instance.Stone += meta.CostStone;
 
-					_currentPopulation = Math.Max(0, _currentPopulation - meta.PopCost);
+					CurrentPopulation = Math.Max(0, CurrentPopulation - meta.PopCost);
 					InGameHUD.Instance.ShowFeedbackText($"Cancelled {meta.Name} (Refunded {meta.CostGold}G, {meta.CostWood}W, {meta.CostStone}S)", new Color(1f, 0.8f, 0.2f));
 				}
 

@@ -24,6 +24,7 @@ public partial class GameHost
 
 		EcsWorld?.Dispose();
 		EcsWorld = World.Create();
+		SetupWorldEntityComponents();
 		_serverToClientEntityMap.Clear();
 		_clientToServerEntityMap.Clear();
 		_peerIdToPlayerEntityMap.Clear();
@@ -35,6 +36,7 @@ public partial class GameHost
 				var playerEntity = EcsWorld.Create();
 				EcsWorld.Add(playerEntity, new Player());
 				EcsWorld.Add(playerEntity, new Name(p.Name));
+				SetupPlayerEntityComponents(playerEntity);
 				_peerIdToPlayerEntityMap[p.PeerId] = playerEntity;
 				if (p.PeerId == 1)
 				{

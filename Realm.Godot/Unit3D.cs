@@ -1,17 +1,104 @@
 using Arch.Core;
 using Godot;
+using Realm.Ecs.Components.Core;
+using Realm.Ecs.Components.Tags;
 
 public partial class Unit3D : CharacterBody3D
 {
 	public Entity Entity { get; set; }
-	public string UnitId { get; set; } // e.g. "soldier", "archer", "castle", "tower"
-	public bool IsBuilding { get; set; }
-	
+
+	public string UnitId
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity)
+				&& GameHost.Instance.EcsWorld.Has<DefinitionId>(Entity))
+				return GameHost.Instance.EcsWorld.Get<DefinitionId>(Entity).Value;
+			if (HasMeta("unit_id"))
+				return GetMeta("unit_id").AsString();
+			return string.Empty;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.Has<DefinitionId>(Entity))
+					world.Set(Entity, new DefinitionId(value));
+				else
+					world.Add(Entity, new DefinitionId(value));
+			}
+			else
+			{
+				SetMeta("unit_id", value);
+			}
+		}
+	}
+
+	public bool IsBuilding
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
+				return GameHost.Instance.EcsWorld.Has<Building>(Entity);
+			if (HasMeta("is_building"))
+				return GetMeta("is_building").AsBool();
+			return false;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (value)
+				{
+					if (!world.Has<Building>(Entity))
+						world.Add(Entity, new Building());
+				}
+				else
+				{
+					if (world.Has<Building>(Entity))
+						world.Remove<Building>(Entity);
+				}
+			}
+			else
+			{
+				SetMeta("is_building", value);
+			}
+		}
+	}
+
 	private Node3D _modelNode;
 	private MeshInstance3D _selectionRing;
 	private bool _isSelected = false;
-	
-	public bool IsEnemy { get; set; } = false;
+
+	public bool IsEnemy
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity)
+				&& GameHost.Instance.EcsWorld.Has<UnitFaction>(Entity))
+				return GameHost.Instance.EcsWorld.Get<UnitFaction>(Entity).IsEnemy;
+			if (HasMeta("is_enemy"))
+				return GetMeta("is_enemy").AsBool();
+			return false;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.Has<UnitFaction>(Entity))
+					world.Set(Entity, new UnitFaction(value));
+				else
+					world.Add(Entity, new UnitFaction(value));
+			}
+			else
+			{
+				SetMeta("is_enemy", value);
+			}
+		}
+	}
 
 	private MeshInstance3D _rallyMarker;
 	private MeshInstance3D _rallyLine;
