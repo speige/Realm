@@ -12,6 +12,7 @@ using Realm.Ecs.Components.Tags;
 using Realm.Ecs.Services;
 using System;
 using System.Collections.Generic;
+using static Realm.Ecs.Common.WorldExtensions;
 
 internal class GameHostEcsService
 {
@@ -1621,48 +1622,23 @@ internal class GameHostEcsService
 	private bool GetHarvestingUpgrade()
 	{
 		var playerEntity = _ecsWorld.Get<NetworkMappingState>(_worldEntity).PlayerEntity;
-		if (_ecsWorld.IsAlive(playerEntity) && _ecsWorld.Has<PlayerUpgrades>(playerEntity))
-		{
-			return _ecsWorld.Get<PlayerUpgrades>(playerEntity).HarvestingUpgrade;
-		}
-		return false;
+		return _ecsWorld.GetFieldOrDefault<PlayerUpgrades, bool>(playerEntity, u => u.HarvestingUpgrade);
 	}
 
 	private int GetTimeOfDayIndex()
-	{
-		if (_ecsWorld.IsAlive(_worldEntity) && _ecsWorld.Has<WorldState>(_worldEntity))
-			return _ecsWorld.Get<WorldState>(_worldEntity).TimeOfDayIndex;
-		return 0;
-	}
+		=> _ecsWorld.GetFieldOrDefault<WorldState, int>(_worldEntity, s => s.TimeOfDayIndex);
 
 	private float GetGameElapsedTime()
-	{
-		if (_ecsWorld.IsAlive(_worldEntity) && _ecsWorld.Has<WorldState>(_worldEntity))
-			return _ecsWorld.Get<WorldState>(_worldEntity).GameElapsedTime;
-		return 0f;
-	}
+		=> _ecsWorld.GetFieldOrDefault<WorldState, float>(_worldEntity, s => s.GameElapsedTime);
 
 	private float GetDynamicInterpolationFactor()
-	{
-		if (_ecsWorld.IsAlive(_worldEntity) && _ecsWorld.Has<NetworkState>(_worldEntity))
-			return _ecsWorld.Get<NetworkState>(_worldEntity).DynamicInterpolationFactor;
-		return 10f;
-	}
+		=> _ecsWorld.GetFieldOrDefault<NetworkState, float>(_worldEntity, s => s.DynamicInterpolationFactor, 10f);
 
 	private float GetCombatAlertTimer()
-	{
-		if (_ecsWorld.IsAlive(_worldEntity) && _ecsWorld.Has<CombatAlertState>(_worldEntity))
-			return _ecsWorld.Get<CombatAlertState>(_worldEntity).UnderAttackAlertTimer;
-		return 0f;
-	}
+		=> _ecsWorld.GetFieldOrDefault<CombatAlertState, float>(_worldEntity, s => s.UnderAttackAlertTimer);
 
 	private void SetCombatAlertTimer(float value)
-	{
-		if (_ecsWorld.IsAlive(_worldEntity) && _ecsWorld.Has<CombatAlertState>(_worldEntity))
-		{
-			_ecsWorld.Set(_worldEntity, new CombatAlertState(value));
-		}
-	}
+		=> _ecsWorld.Mutate<CombatAlertState>(_worldEntity, (ref CombatAlertState s) => _ecsWorld.Set(_worldEntity, new CombatAlertState(value)));
 
 	public List<Entity> GetEditorArrivedUnits() => _tickArrivedUnits;
 }

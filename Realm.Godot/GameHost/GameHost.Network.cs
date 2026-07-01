@@ -50,11 +50,8 @@ public partial class GameHost
 				RpcId(1, nameof(UpdateClientCamera), MemoryPackSerializer.Serialize(pos));
 			}
 		}
-		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<Realm.Ecs.Components.Core.NetworkState>(_worldEntity))
-		{
-			ref var netState = ref EcsWorld.Get<Realm.Ecs.Components.Core.NetworkState>(_worldEntity);
-			netState.DynamicInterpolationFactor = _networkService.ComputeDynamicInterpolationFactor();
-		}
+		EcsWorld?.Mutate<Realm.Ecs.Components.Core.NetworkState>(_worldEntity, (ref Realm.Ecs.Components.Core.NetworkState netState) =>
+			netState.DynamicInterpolationFactor = _networkService.ComputeDynamicInterpolationFactor());
 		var query = new QueryDescription().WithAll<InterpolationTarget, Unit3D>();
 		EcsWorld.Query(in query, _ecsService.InterpolationQueryDelegate);
 	}
