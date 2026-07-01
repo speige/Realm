@@ -149,56 +149,16 @@ public partial class InGameHUD : Control
 
 	private string _currentWeather
 	{
-		get
-		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
-			{
-				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
-				{
-					return GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity).CurrentWeather;
-				}
-			}
-			return "clear";
-		}
-		set
-		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
-			{
-				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
-				{
-					ref var state = ref GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity);
-					state.CurrentWeather = value;
-				}
-			}
-		}
+		get => GameHost.Instance?.WeatherService?.GetCurrentWeather() ?? "clear";
+		set => GameHost.Instance?.WeatherService?.SetCurrentWeather(value);
 	}
 
 	private CpuParticles3D _rainParticles = null;
 
 	private float _baseFogDensity
 	{
-		get
-		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
-			{
-				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
-				{
-					return GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity).BaseFogDensity;
-				}
-			}
-			return 0f;
-		}
-		set
-		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
-			{
-				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
-				{
-					ref var state = ref GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity);
-					state.BaseFogDensity = value;
-				}
-			}
-		}
+		get => GameHost.Instance?.WeatherService?.GetBaseFogDensity() ?? 0f;
+		set => GameHost.Instance?.WeatherService?.SetBaseFogDensity(value);
 	}
 
 	private Label _goldLabel;
@@ -271,34 +231,8 @@ public partial class InGameHUD : Control
 
 	public int LiveSpectatorPerspective
 	{
-		get
-		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
-			{
-				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<SpectatorPerspective>(GameHost.Instance.WorldEntity))
-				{
-					return GameHost.Instance.EcsWorld.Get<SpectatorPerspective>(GameHost.Instance.WorldEntity).Value;
-				}
-			}
-			return -1;
-		}
-		set
-		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
-			{
-				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity))
-				{
-					if (GameHost.Instance.EcsWorld.Has<SpectatorPerspective>(GameHost.Instance.WorldEntity))
-					{
-						GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new SpectatorPerspective(value));
-					}
-					else
-					{
-						GameHost.Instance.EcsWorld.Add(GameHost.Instance.WorldEntity, new SpectatorPerspective(value));
-					}
-				}
-			}
-		}
+		get => GameHost.Instance?.SpectatorService?.GetSpectatorPerspective() ?? -1;
+		set => GameHost.Instance?.SpectatorService?.SetSpectatorPerspective(value);
 	}
 
 	private ResourcePanel _resourcePanelController;
@@ -1509,30 +1443,37 @@ public partial class InGameHUD : Control
 	{
 		if (Multiplayer.MultiplayerPeer != null && !Multiplayer.IsServer()) return;
 
-		_currentWeather = _currentWeather switch
+		if (GameHost.Instance?.WeatherService != null)
 		{
-			"clear" => "rain",
-			"rain" => "fog",
-			"fog" => "storm",
-			"storm" => "clear",
-			_ => "clear"
-		};
-
-		if (Multiplayer.MultiplayerPeer != null && Multiplayer.IsServer())
-		{
-			Rpc(nameof(SyncWeather), _currentWeather);
-		}
-		else
-		{
-			ApplyWeatherEffects(_currentWeather);
+			string next = GameHost.Instance.WeatherService.CycleWeather();
+			if (Multiplayer.MultiplayerPeer != null && Multiplayer.IsServer())
+			{
+				Rpc(nameof(SyncWeather), next);
+			}
+			else
+			{
+				ApplyWeatherEffects(next);
+			}
 		}
 	}
 
 	[Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = true)]
 	private void SyncWeather(string weather)
 	{
-		_currentWeather = weather;
-		ApplyWeatherEffects(_currentWeather);
+		if (GameHost.Instance?.WeatherService != null)
+		{
+			GameHost.Instance.WeatherService.SetCurrentWeather(weather);
+			float density = weather switch
+			{
+				"clear" => 0f,
+				"rain" => 0.008f,
+				"fog" => 0.045f,
+				"storm" => 0.015f,
+				_ => 0f
+			};
+			GameHost.Instance.WeatherService.SetBaseFogDensity(density);
+		}
+		ApplyWeatherEffects(weather);
 	}
 
 	private void ApplyWeatherEffects(string weather)
@@ -1626,145 +1567,72 @@ public partial class InGameHUD : Control
 
 	public bool TryTriggerCheat(string text)
 	{
-		if (Multiplayer.MultiplayerPeer != null)
+		if (GameHost.Instance == null || GameHost.Instance.CheatService == null)
 		{
 			return false;
 		}
 
-		string lower = text.ToLowerInvariant().Trim();
-		
-		if (lower == "stonks" || lower == "securethebag")
+		var selectedEntities = new List<Entity>();
+		if (GameHost.Instance.SelectedUnits != null)
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.PlayerEntity != Entity.Null)
+			foreach (var u in GameHost.Instance.SelectedUnits)
 			{
-				var world = GameHost.Instance.EcsWorld;
-				var player = GameHost.Instance.PlayerEntity;
-				if (world.IsAlive(player) && world.Has<PlayerResources>(player))
-				{
-					ref var playerRes = ref world.Get<PlayerResources>(player);
-					var defManager = GameHost.Instance.DefinitionManager;
-					var goldId = "gold".AsResourceId(defManager);
-					var woodId = "wood".AsResourceId(defManager);
-					var stoneId = "stone".AsResourceId(defManager);
-
-					if (playerRes.Value.ContainsKey(goldId)) playerRes.Value[goldId] = (int)Math.Min(GameHost.ResourceCap, playerRes.Value[goldId] + 10000);
-					if (playerRes.Value.ContainsKey(woodId)) playerRes.Value[woodId] = (int)Math.Min(GameHost.ResourceCap, playerRes.Value[woodId] + 10000);
-					if (playerRes.Value.ContainsKey(stoneId)) playerRes.Value[stoneId] = (int)Math.Min(GameHost.ResourceCap, playerRes.Value[stoneId] + 10000);
-				}
+				selectedEntities.Add(u.Entity);
 			}
-			ShowFeedbackText("Cheat Activated: Stonks! (+10,000 resources)", new Color(0.95f, 0.82f, 0.55f));
-			_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'stonks' activated. Added 10,000 resources.")}[/color]\n";
-			return true;
-		}
-		
-		if (lower == "gigachad" || lower == "maincharacter")
-		{
-			var selected = GameHost.Instance?.SelectedUnits;
-			if (selected != null && selected.Count > 0)
-			{
-				var world = GameHost.Instance.EcsWorld;
-				int affected = 0;
-				foreach (var unit in selected)
-				{
-					if (world.IsAlive(unit.Entity))
-					{
-						if (world.Has<Health>(unit.Entity))
-						{
-							world.Set(unit.Entity, new Health(9000f, 9000f));
-						}
-						if (world.Has<Attack>(unit.Entity))
-						{
-							var atk = world.Get<Attack>(unit.Entity);
-							world.Set(unit.Entity, new Attack(9001f, atk.Range, atk.Cooldown, atk.CurrentCooldown));
-						}
-						affected++;
-					}
-				}
-				ShowFeedbackText($"Cheat Activated: Gigachad Main Character Energy! ({affected} units empowered)", new Color(1.0f, 0.3f, 0.1f));
-				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'gigachad' activated. Powered up {0} units."), affected)}[/color]\n";
-				RefreshUI(selected);
-			}
-			else
-			{
-				ShowFeedbackText("Cheat failed: Select some units first!", new Color(0.8f, 0.3f, 0.3f));
-			}
-			return true;
 		}
 
-		if (lower == "skibidi" || lower == "rizz" || lower == "absoluteunit")
+		var (result, affectedCount) = GameHost.Instance.CheatService.TryTriggerCheat(
+			text,
+			Multiplayer.MultiplayerPeer != null,
+			GameHost.Instance.PlayerEntity,
+			GameHost.Instance.DefinitionManager,
+			selectedEntities
+		);
+
+		if (result == GameHostCheatService.CheatResult.None)
 		{
-			var selected = GameHost.Instance?.SelectedUnits;
-			if (selected != null && selected.Count > 0)
-			{
-				int affected = 0;
-				foreach (var unit in selected)
+			return false;
+		}
+
+		switch (result)
+		{
+			case GameHostCheatService.CheatResult.Stonks:
+				ShowFeedbackText("Cheat Activated: Stonks! (+10,000 resources)", new Color(0.95f, 0.82f, 0.55f));
+				_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'stonks' activated. Added 10,000 resources.")}[/color]\n";
+				break;
+			case GameHostCheatService.CheatResult.Gigachad:
+				ShowFeedbackText($"Cheat Activated: Gigachad Main Character Energy! ({affectedCount} units empowered)", new Color(1.0f, 0.3f, 0.1f));
+				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'gigachad' activated. Powered up {0} units."), affectedCount)}[/color]\n";
+				RefreshUI(GameHost.Instance.SelectedUnits);
+				break;
+			case GameHostCheatService.CheatResult.AbsoluteUnit:
+				foreach (var unit in GameHost.Instance.SelectedUnits)
 				{
 					if (GodotObject.IsInstanceValid(unit))
 					{
 						unit.Scale = new Vector3(3f, 3f, 3f);
-						
-						var world = GameHost.Instance.EcsWorld;
-						if (world.IsAlive(unit.Entity) && world.Has<MovementStats>(unit.Entity))
-						{
-							var mv = world.Get<MovementStats>(unit.Entity);
-							world.Set(unit.Entity, new MovementStats(25f, mv.Acceleration, mv.TurnRate));
-						}
-						affected++;
 					}
 				}
-				ShowFeedbackText($"Cheat Activated: Absolute Unit! (+Scale, +Speed) on {affected} units", new Color(0.2f, 0.8f, 1.0f));
-				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'absoluteunit' activated. Gigantified {0} units with super speed!"), affected)}[/color]\n";
-				RefreshUI(selected);
-			}
-			else
-			{
-				ShowFeedbackText("Cheat failed: Select some units first!", new Color(0.8f, 0.3f, 0.3f));
-			}
-			return true;
+				ShowFeedbackText($"Cheat Activated: Absolute Unit! (+Scale, +Speed) on {affectedCount} units", new Color(0.2f, 0.8f, 1.0f));
+				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'absoluteunit' activated. Gigantified {0} units with super speed!"), affectedCount)}[/color]\n";
+				RefreshUI(GameHost.Instance.SelectedUnits);
+				break;
+			case GameHostCheatService.CheatResult.ThanosSnap:
+				ShowFeedbackText($"Cheat Activated: Thanos Snapped. Destroyed {affectedCount} enemies.", new Color(0.9f, 0.1f, 0.1f));
+				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'thanossnap' activated. Slain {0} enemy units."), affectedCount)}[/color]\n";
+				break;
+			case GameHostCheatService.CheatResult.EzClap:
+				ShowFeedbackText("Cheat Activated: EZ Clap Speedrun!", new Color(0.1f, 0.9f, 0.2f));
+				_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'ezclap' activated. Proceeding to Victory.")}[/color]\n";
+				UIManager.Instance?.PlayClickSound();
+				UIManager.Instance?.TransitionTo(GameScreen.GameOver, true);
+				break;
+			case GameHostCheatService.CheatResult.NoCap:
+				ShowFeedbackText("Cheat Activated: Fog of War removed! No cap.", new Color(0.2f, 0.8f, 0.5f));
+				_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'nocap' activated. Fog of War disabled.")}[/color]\n";
+				break;
 		}
-
-		if (lower == "thanossnap" || lower == "emotionaldamage")
-		{
-			if (GameHost.Instance != null)
-			{
-				int destroyed = 0;
-				var unitsCopy = new List<Unit3D>(GameHost.Instance.AllUnits);
-				foreach (var unit in unitsCopy)
-				{
-					if (unit != null && GodotObject.IsInstanceValid(unit) && unit.IsEnemy)
-					{
-						var world = GameHost.Instance.EcsWorld;
-						if (world.IsAlive(unit.Entity) && world.Has<Health>(unit.Entity))
-						{
-							world.Set(unit.Entity, new Health(0f, world.Get<Health>(unit.Entity).Max));
-							destroyed++;
-						}
-					}
-				}
-				ShowFeedbackText($"Cheat Activated: Thanos Snapped. Destroyed {destroyed} enemies.", new Color(0.9f, 0.1f, 0.1f));
-				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'thanossnap' activated. Slain {0} enemy units."), destroyed)}[/color]\n";
-			}
-			return true;
-		}
-
-		if (lower == "ezclap" || lower == "speedrun")
-		{
-			ShowFeedbackText("Cheat Activated: EZ Clap Speedrun!", new Color(0.1f, 0.9f, 0.2f));
-			_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'ezclap' activated. Proceeding to Victory.")}[/color]\n";
-			UIManager.Instance.PlayClickSound();
-			UIManager.Instance.TransitionTo(GameScreen.GameOver, true);
-			return true;
-		}
-
-		if (lower == "nocap" || lower == "verydemure")
-		{
-			_fogOfWarType = "visible";
-			ShowFeedbackText("Cheat Activated: Fog of War removed! No cap.", new Color(0.2f, 0.8f, 0.5f));
-			_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'nocap' activated. Fog of War disabled.")}[/color]\n";
-			return true;
-		}
-
-		return false;
+		return true;
 	}
 
 	private void UpgradeSelectedTower()

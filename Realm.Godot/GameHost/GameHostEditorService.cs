@@ -662,7 +662,7 @@ public class GameHostEditorService
 		bool randomRotation,
 		bool randomScale,
 		float placementRotation,
-		GameHost.MirrorMode mirrorMode)
+		MirrorMode mirrorMode)
 	{
 		if (string.IsNullOrEmpty(activePlaceId)) return new List<EntitySpawnRequest>();
 
@@ -724,7 +724,7 @@ public class GameHostEditorService
 				IsEnemy = isEnemy
 			});
 
-			if (mirrorMode != GameHost.MirrorMode.None)
+			if (mirrorMode != MirrorMode.None)
 			{
 				AddMirroredRequests(requests, spawnType, activePlaceId, spawnPos, rotY, scaleVal, isEnemy, mirrorMode);
 			}
@@ -915,7 +915,7 @@ public class GameHostEditorService
 		bool pasteHeights,
 		bool pasteTextures,
 		bool pasteEntities,
-		GameHost.MirrorMode mirrorMode)
+		MirrorMode mirrorMode)
 	{
 		var result = new PasteAreaResult();
 		result.SpawnRequests = new List<EntitySpawnRequest>();
@@ -1036,7 +1036,7 @@ public class GameHostEditorService
 		return result;
 	}
 
-	public (float[,] Heights, Color[,] Colors) PerformFloodFill(Vector3 clickPos, Color fillColor, GameHost.MirrorMode mirrorMode)
+	public (float[,] Heights, Color[,] Colors) PerformFloodFill(Vector3 clickPos, Color fillColor, MirrorMode mirrorMode)
 	{
 		ref var terrain = ref GetTerrainState();
 		if (terrain.Heights == null) return (null, null);
@@ -1092,7 +1092,7 @@ public class GameHostEditorService
 		}
 
 		DoSingleFill(clickPos);
-		if (mirrorMode != GameHost.MirrorMode.None)
+		if (mirrorMode != MirrorMode.None)
 		{
 			var mirrors = GetMirroredPositions(clickPos, mirrorMode);
 			foreach (var m in mirrors) DoSingleFill(m);
@@ -1101,20 +1101,20 @@ public class GameHostEditorService
 		return ((float[,])terrain.Heights.Clone(), (Color[,])_terrainColors.Clone());
 	}
 
-	public List<GameHost.MirroredTransform> GetMirroredTransforms(Vector3 pos, float rotation, GameHost.MirrorMode mirrorMode)
+	public List<GameHost.MirroredTransform> GetMirroredTransforms(Vector3 pos, float rotation, MirrorMode mirrorMode)
 	{
 		var list = new List<GameHost.MirroredTransform>();
-		if (mirrorMode == GameHost.MirrorMode.None) return list;
+		if (mirrorMode == MirrorMode.None) return list;
 
-		if (mirrorMode == GameHost.MirrorMode.Horizontal || mirrorMode == GameHost.MirrorMode.Both)
+		if (mirrorMode == MirrorMode.Horizontal || mirrorMode == MirrorMode.Both)
 		{
 			list.Add(new GameHost.MirroredTransform { Position = new Vector3(-pos.X, pos.Y, pos.Z), Rotation = 180.0f - rotation });
 		}
-		if (mirrorMode == GameHost.MirrorMode.Vertical || mirrorMode == GameHost.MirrorMode.Both)
+		if (mirrorMode == MirrorMode.Vertical || mirrorMode == MirrorMode.Both)
 		{
 			list.Add(new GameHost.MirroredTransform { Position = new Vector3(pos.X, pos.Y, -pos.Z), Rotation = -rotation });
 		}
-		if (mirrorMode == GameHost.MirrorMode.Both)
+		if (mirrorMode == MirrorMode.Both)
 		{
 			list.Add(new GameHost.MirroredTransform { Position = new Vector3(-pos.X, pos.Y, -pos.Z), Rotation = rotation + 180.0f });
 		}
@@ -1226,21 +1226,21 @@ public class GameHostEditorService
 		string type, string id,
 		Vector3 pos, float rotation, float scale,
 		bool isEnemy,
-		GameHost.MirrorMode mirrorMode)
+		MirrorMode mirrorMode)
 	{
-		if (mirrorMode == GameHost.MirrorMode.Horizontal || mirrorMode == GameHost.MirrorMode.Both)
+		if (mirrorMode == MirrorMode.Horizontal || mirrorMode == MirrorMode.Both)
 		{
 			Vector3 mPos = new Vector3(-pos.X, pos.Y, pos.Z);
 			mPos.Y = GetTerrainHeightAt(mPos);
 			requests.Add(new EntitySpawnRequest { Type = type, Id = id, Position = mPos, Rotation = 180.0f - rotation, Scale = scale, IsEnemy = isEnemy });
 		}
-		if (mirrorMode == GameHost.MirrorMode.Vertical || mirrorMode == GameHost.MirrorMode.Both)
+		if (mirrorMode == MirrorMode.Vertical || mirrorMode == MirrorMode.Both)
 		{
 			Vector3 mPos = new Vector3(pos.X, pos.Y, -pos.Z);
 			mPos.Y = GetTerrainHeightAt(mPos);
 			requests.Add(new EntitySpawnRequest { Type = type, Id = id, Position = mPos, Rotation = -rotation, Scale = scale, IsEnemy = isEnemy });
 		}
-		if (mirrorMode == GameHost.MirrorMode.Both)
+		if (mirrorMode == MirrorMode.Both)
 		{
 			Vector3 mPos = new Vector3(-pos.X, pos.Y, -pos.Z);
 			mPos.Y = GetTerrainHeightAt(mPos);
@@ -1248,14 +1248,14 @@ public class GameHostEditorService
 		}
 	}
 
-	private List<Vector3> GetMirroredPositions(Vector3 pos, GameHost.MirrorMode mirrorMode)
+	private List<Vector3> GetMirroredPositions(Vector3 pos, MirrorMode mirrorMode)
 	{
 		var list = new List<Vector3>();
-		if (mirrorMode == GameHost.MirrorMode.Horizontal || mirrorMode == GameHost.MirrorMode.Both)
+		if (mirrorMode == MirrorMode.Horizontal || mirrorMode == MirrorMode.Both)
 			list.Add(new Vector3(-pos.X, pos.Y, pos.Z));
-		if (mirrorMode == GameHost.MirrorMode.Vertical || mirrorMode == GameHost.MirrorMode.Both)
+		if (mirrorMode == MirrorMode.Vertical || mirrorMode == MirrorMode.Both)
 			list.Add(new Vector3(pos.X, pos.Y, -pos.Z));
-		if (mirrorMode == GameHost.MirrorMode.Both)
+		if (mirrorMode == MirrorMode.Both)
 			list.Add(new Vector3(-pos.X, pos.Y, -pos.Z));
 		return list;
 	}
@@ -1265,7 +1265,7 @@ public class GameHostEditorService
 		int startX, int startZ,
 		int width, int depth,
 		bool pasteHeights, bool pasteTextures,
-		GameHost.MirrorMode mirrorMode,
+		MirrorMode mirrorMode,
 		ref TerrainState terrain,
 		ref bool modified)
 	{
@@ -1279,7 +1279,7 @@ public class GameHostEditorService
 			modified = true;
 		}
 
-		if (mirrorMode == GameHost.MirrorMode.Horizontal || mirrorMode == GameHost.MirrorMode.Both)
+		if (mirrorMode == MirrorMode.Horizontal || mirrorMode == MirrorMode.Both)
 		{
 			int mx = width - 1 - targetX;
 			int mz = targetZ;
@@ -1291,7 +1291,7 @@ public class GameHostEditorService
 			}
 		}
 
-		if (mirrorMode == GameHost.MirrorMode.Vertical || mirrorMode == GameHost.MirrorMode.Both)
+		if (mirrorMode == MirrorMode.Vertical || mirrorMode == MirrorMode.Both)
 		{
 			int mx = targetX;
 			int mz = depth - 1 - targetZ;
@@ -1303,7 +1303,7 @@ public class GameHostEditorService
 			}
 		}
 
-		if (mirrorMode == GameHost.MirrorMode.Both)
+		if (mirrorMode == MirrorMode.Both)
 		{
 			int mx = width - 1 - targetX;
 			int mz = depth - 1 - targetZ;

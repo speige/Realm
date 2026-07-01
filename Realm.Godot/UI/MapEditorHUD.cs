@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using MirrorMode = Realm.Ecs.Components.Core.MirrorMode;
 
 public partial class MapEditorHUD : Control
 {
@@ -2471,11 +2472,11 @@ public class {mapName} : IMapScript
 		var current = GameHost.Instance.EditorMirrorMode;
 		var next = current switch
 		{
-			GameHost.MirrorMode.None => GameHost.MirrorMode.Vertical,
-			GameHost.MirrorMode.Vertical => GameHost.MirrorMode.Horizontal,
-			GameHost.MirrorMode.Horizontal => GameHost.MirrorMode.Both,
-			GameHost.MirrorMode.Both => GameHost.MirrorMode.None,
-			_ => GameHost.MirrorMode.None
+			MirrorMode.None => MirrorMode.Vertical,
+			MirrorMode.Vertical => MirrorMode.Horizontal,
+			MirrorMode.Horizontal => MirrorMode.Both,
+			MirrorMode.Both => MirrorMode.None,
+			_ => MirrorMode.None
 		};
 		GameHost.Instance.EditorMirrorMode = next;
 		UpdateMirrorButtonText();
@@ -2487,10 +2488,10 @@ public class {mapName} : IMapScript
 		if (_btnMirrorMode == null || GameHost.Instance == null) return;
 		string modeText = GameHost.Instance.EditorMirrorMode switch
 		{
-			GameHost.MirrorMode.None => TranslationServer.Translate("🪞 MIRROR: NONE"),
-			GameHost.MirrorMode.Vertical => TranslationServer.Translate("🪞 MIRROR: VERTICAL"),
-			GameHost.MirrorMode.Horizontal => TranslationServer.Translate("🪞 MIRROR: HORIZONTAL"),
-			GameHost.MirrorMode.Both => TranslationServer.Translate("🪞 MIRROR: BOTH"),
+			MirrorMode.None => TranslationServer.Translate("🪞 MIRROR: NONE"),
+			MirrorMode.Vertical => TranslationServer.Translate("🪞 MIRROR: VERTICAL"),
+			MirrorMode.Horizontal => TranslationServer.Translate("🪞 MIRROR: HORIZONTAL"),
+			MirrorMode.Both => TranslationServer.Translate("🪞 MIRROR: BOTH"),
 			_ => TranslationServer.Translate("🪞 MIRROR: NONE")
 		};
 		_btnMirrorMode.Text = modeText;

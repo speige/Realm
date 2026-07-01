@@ -40,6 +40,13 @@ public partial class GameHost : Node3D, IGameAPI
 	private GameHostEditorStateService _editorStateService;
 	private MapPropertiesLoader _mapPropertiesLoader;
 	private MapEditorTerrainImportService _terrainImportService;
+	private GameHostCheatService _cheatService;
+	private GameHostWeatherService _weatherService;
+	private GameHostSpectatorService _spectatorService;
+
+	public GameHostCheatService CheatService => _cheatService;
+	public GameHostWeatherService WeatherService => _weatherService;
+	public GameHostSpectatorService SpectatorService => _spectatorService;
 
 	private float _fDelta;
 
@@ -301,15 +308,12 @@ public partial class GameHost : Node3D, IGameAPI
 		get => _editorStateService.GetCameraBoundsBottom(_worldEntity);
 		set => _editorStateService.SetCameraBoundsBottom(_worldEntity, value);
 	}
-	public bool EditorBrushIsSquare { get; set; } = false;
-	public enum MirrorMode
+	public MirrorMode EditorMirrorMode
 	{
-		None,
-		Horizontal,
-		Vertical,
-		Both
+		get => EcsWorld?.GetFieldOrDefault<EditorState, MirrorMode>(_worldEntity, s => s.MirrorMode, MirrorMode.None) ?? MirrorMode.None;
+		set => EcsWorld?.Mutate<EditorState>(_worldEntity, (ref EditorState s) => s.MirrorMode = value);
 	}
-	public MirrorMode EditorMirrorMode { get; set; } = MirrorMode.None;
+	public bool EditorBrushIsSquare { get; set; } = false;
 	public float EditorClumpDensity { get; set; } = 5.0f;
 	public float EditorClumpScaleVar { get; set; } = 0.3f;
 	public bool EditorClumpMode { get; set; } = false;
@@ -2000,6 +2004,9 @@ public class {mapName} : IMapScript
 		_editorStateService = new GameHostEditorStateService(EcsWorld);
 		_mapPropertiesLoader = new MapPropertiesLoader(EcsWorld);
 		_terrainImportService = new MapEditorTerrainImportService(EcsWorld);
+		_cheatService = new GameHostCheatService(EcsWorld);
+		_weatherService = new GameHostWeatherService(EcsWorld);
+		_spectatorService = new GameHostSpectatorService(EcsWorld);
 	}
 
 	private void InitializeGameEcs()
