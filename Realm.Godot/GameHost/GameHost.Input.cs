@@ -16,8 +16,7 @@ public partial class GameHost
 {
 
 
-	private int _cycleSelectionIndex = 0;
-	private int _buildingCycleIndex = 0;
+	private GameHostInputService _inputService;
 	private PhysicsRayQueryParameters3D? _cachedRaycastQuery;
 
 	public override void _UnhandledInput(InputEvent @event)
@@ -36,9 +35,9 @@ public partial class GameHost
 				
 				if (editorKeyEvent.Keycode == Key.Escape)
 				{
-					if (_rampStartPos != null)
+					if (_editorService.RampStartPos != null)
 					{
-						_rampStartPos = null;
+						_editorService.SetRampStartPos(null);
 						MapEditorHUD.Instance?.ShowFeedbackExternal("Ramp Cancelled");
 						GetViewport().SetInputAsHandled();
 						return;
@@ -227,36 +226,36 @@ public partial class GameHost
 					{
 						if (SelectedEditorObject is Unit3D unit)
 						{
-							_copiedObject = new CopiedObjectTemplate {
+							_editorService.SetCopiedObject(new GameHostEditorService.CopiedObjectTemplate {
 								Type = "unit",
 								Id = unit.UnitId,
 								Rotation = unit.RotationDegrees.Y,
 								Scale = unit.Scale.X,
 								IsEnemy = unit.IsEnemy
-							};
+							});
 							MapEditorHUD.Instance?.ShowFeedbackExternal($"Copied Unit: {unit.UnitId.ToUpper()}");
 						}
 						else if (SelectedEditorObject is Prop3D prop)
 						{
-							_copiedObject = new CopiedObjectTemplate {
+							_editorService.SetCopiedObject(new GameHostEditorService.CopiedObjectTemplate {
 								Type = "prop",
 								Id = prop.PropId,
 								Rotation = prop.RotationDegrees.Y,
 								Scale = prop.Scale.X,
 								IsEnemy = false
-							};
+							});
 							MapEditorHUD.Instance?.ShowFeedbackExternal($"Copied Prop: {prop.PropId.ToUpper()}");
 						}
 						else if (SelectedEditorObject is Decal decal)
 						{
 							string decalId = decal.HasMeta("DecalId") ? decal.GetMeta("DecalId").AsString() : "logo";
-							_copiedObject = new CopiedObjectTemplate {
+							_editorService.SetCopiedObject(new GameHostEditorService.CopiedObjectTemplate {
 								Type = "decal",
 								Id = decalId,
 								Rotation = decal.RotationDegrees.Y,
 								Scale = decal.Scale.X,
 								IsEnemy = false
-							};
+							});
 							MapEditorHUD.Instance?.ShowFeedbackExternal($"Copied Decal: {decalId.ToUpper()}");
 						}
 						GetViewport().SetInputAsHandled();
@@ -267,7 +266,7 @@ public partial class GameHost
 				{
 					if (ActiveEditorTool == EditorTool.SelectArea || ActiveEditorTool == EditorTool.PasteArea)
 					{
-						if (_copiedArea != null)
+						if (_editorService.HasCopiedArea)
 						{
 							ActiveEditorTool = EditorTool.PasteArea;
 							MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.PasteArea);
@@ -276,7 +275,7 @@ public partial class GameHost
 							return;
 						}
 					}
-					if (_copiedObject != null)
+					if (_editorService.GetCopiedObject() != null)
 					{
 						var hit = RaycastFromMouse(GetViewport().GetMousePosition());
 						if (hit != null && hit.ContainsKey("position"))
@@ -293,7 +292,7 @@ public partial class GameHost
 								spawnPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * spacing;
 							}
 							spawnPos.Y = GetTerrainHeightAt(spawnPos);
-							var cop = _copiedObject.Value;
+							var cop = _editorService.GetCopiedObject().Value;
 							Node pastedNode = null;
 							IEditorAction action = null;
 							if (cop.Type == "unit")
@@ -479,8 +478,8 @@ public partial class GameHost
 						if (valid)
 						{
 							float radius = 1.0f;
-							if (node3D is Unit3D u) radius = GetPlacementRadius(u.UnitId, u.Scale.X);
-							else if (node3D is Prop3D p) radius = GetPlacementRadius(p.PropId, p.Scale.X);
+							if (node3D is Unit3D u) radius = _inputService.GetPlacementRadius(u.UnitId, u.Scale.X);
+							else if (node3D is Prop3D p) radius = _inputService.GetPlacementRadius(p.PropId, p.Scale.X);
 
 							if (IsPositionBlocked(targetPos, radius, node3D))
 							{
@@ -503,7 +502,7 @@ public partial class GameHost
 							node3D.Position = targetPos;
 							if (node3D is Unit3D unit && EcsWorld.IsAlive(unit.Entity))
 							{
-								EcsWorld.Set(unit.Entity, new Position(new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z)));
+								_inputService.SetEntityPosition(unit.Entity, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
 							}
 							EditorHistoryManager.RecordAction(action);
 							EditorHasUnsavedChanges = true;
@@ -799,9 +798,9 @@ public partial class GameHost
 			if (@event is InputEventMouseButton editorRightMouseBtn && editorRightMouseBtn.Pressed && editorRightMouseBtn.ButtonIndex == MouseButton.Right)
 			{
 				if (IsMouseOverUI()) return;
-				if (_rampStartPos != null)
+				if (_editorService.RampStartPos != null)
 				{
-					_rampStartPos = null;
+					_editorService.SetRampStartPos(null);
 					MapEditorHUD.Instance?.ShowFeedbackExternal("Ramp Cancelled");
 					GetViewport().SetInputAsHandled();
 					return;
@@ -833,9 +832,9 @@ public partial class GameHost
 
 			if (@event is InputEventMouseButton releaseEvent && !releaseEvent.Pressed && releaseEvent.ButtonIndex == MouseButton.Left)
 			{
-				if (_isSelectingArea)
+				if (_editorService.IsSelectingArea)
 				{
-					_isSelectingArea = false;
+					_editorService.SetIsSelectingArea(false);
 					GetViewport().SetInputAsHandled();
 					return;
 				}
@@ -864,13 +863,13 @@ public partial class GameHost
 					if (ActiveEditorTool == EditorTool.PlaceUnit)
 					{
 						if (EditorClumpMode) return;
-						if (!_hasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
-						float placementRot = (EditorRandomRotation && !_isPastingObject) ? _cachedRandomRotation : EditorPlacementRotation;
-						float scaleVal = (EditorRandomScale && !_isPastingObject) ? _cachedRandomScale : EditorPlacementScale;
+						if (!_editorService.HasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
+						float placementRot = (EditorRandomRotation && !_editorService.IsPastingObject) ? _editorService.CachedRandomRotation : EditorPlacementRotation;
+						float scaleVal = (EditorRandomScale && !_editorService.IsPastingObject) ? _editorService.CachedRandomScale : EditorPlacementScale;
 
 						Vector3 spawnPos = hitPos;
 						spawnPos.Y = GetTerrainHeightAt(spawnPos);
-						float radius = GetPlacementRadius(ActivePlaceId, scaleVal);
+						float radius = _inputService.GetPlacementRadius(ActivePlaceId, scaleVal);
 						var finalPos = FindNearestFreePosition(spawnPos, radius);
 						if (finalPos == null)
 						{
@@ -906,19 +905,19 @@ public partial class GameHost
 							EditorHasUnsavedChanges = true;
 						}
 						GenerateNewRandomPlacementRotationAndScale();
-						_isPastingObject = false;
+						_editorService.SetIsPastingObject(false);
 						GetViewport().SetInputAsHandled();
 					}
 					else if (ActiveEditorTool == EditorTool.PlaceProp)
 					{
 						if (EditorClumpMode) return;
-						if (!_hasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
-						float placementRot = (EditorRandomRotation && !_isPastingObject) ? _cachedRandomRotation : EditorPlacementRotation;
-						float scaleVal = (EditorRandomScale && !_isPastingObject) ? _cachedRandomScale : EditorPlacementScale;
+						if (!_editorService.HasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
+						float placementRot = (EditorRandomRotation && !_editorService.IsPastingObject) ? _editorService.CachedRandomRotation : EditorPlacementRotation;
+						float scaleVal = (EditorRandomScale && !_editorService.IsPastingObject) ? _editorService.CachedRandomScale : EditorPlacementScale;
 
 						Vector3 spawnPos = hitPos;
 						spawnPos.Y = GetTerrainHeightAt(spawnPos);
-						float radius = GetPlacementRadius(ActivePlaceId, scaleVal);
+						float radius = _inputService.GetPlacementRadius(ActivePlaceId, scaleVal);
 						var finalPos = FindNearestFreePosition(spawnPos, radius);
 						if (finalPos == null)
 						{
@@ -954,15 +953,15 @@ public partial class GameHost
 							EditorHasUnsavedChanges = true;
 						}
 						GenerateNewRandomPlacementRotationAndScale();
-						_isPastingObject = false;
+						_editorService.SetIsPastingObject(false);
 						GetViewport().SetInputAsHandled();
 					}
 					else if (ActiveEditorTool == EditorTool.PlaceDecal)
 					{
 						if (EditorClumpMode) return;
-						if (!_hasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
-						float placementRot = (EditorRandomRotation && !_isPastingObject) ? _cachedRandomRotation : EditorPlacementRotation;
-						float scaleVal = (EditorRandomScale && !_isPastingObject) ? _cachedRandomScale : EditorPlacementScale;
+						if (!_editorService.HasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
+						float placementRot = (EditorRandomRotation && !_editorService.IsPastingObject) ? _editorService.CachedRandomRotation : EditorPlacementRotation;
+						float scaleVal = (EditorRandomScale && !_editorService.IsPastingObject) ? _editorService.CachedRandomScale : EditorPlacementScale;
 						var decal = SpawnDecalExternalWithParams(ActivePlaceId, hitPos, placementRot, scaleVal);
 						if (decal != null)
 						{
@@ -987,7 +986,7 @@ public partial class GameHost
 							EditorHasUnsavedChanges = true;
 						}
 						GenerateNewRandomPlacementRotationAndScale();
-						_isPastingObject = false;
+						_editorService.SetIsPastingObject(false);
 						GetViewport().SetInputAsHandled();
 					}
 					else if (ActiveEditorTool == EditorTool.DeleteObject)
@@ -1188,14 +1187,14 @@ public partial class GameHost
 					}
 					else if (ActiveEditorTool == EditorTool.Ramp)
 					{
-						if (_rampStartPos == null)
+						if (_editorService.RampStartPos == null)
 						{
-							_rampStartPos = hitPos;
+							_editorService.SetRampStartPos(hitPos);
 							MapEditorHUD.Instance?.ShowFeedbackExternal("Ramp Start Point Set!");
 						}
 						else
 						{
-							Vector3 start = _rampStartPos.Value;
+							Vector3 start = _editorService.RampStartPos.Value;
 							Vector3 end = hitPos;
 							var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
 							var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
@@ -1220,7 +1219,7 @@ public partial class GameHost
 								EditorHistoryManager.RecordAction(action);
 								EditorHasUnsavedChanges = true;
 							}
-							_rampStartPos = null;
+							_editorService.SetRampStartPos(null);
 							MapEditorHUD.Instance?.ShowFeedbackExternal("Ramp Created!");
 						}
 						GetViewport().SetInputAsHandled();
@@ -1238,9 +1237,9 @@ public partial class GameHost
 							float fz = hitPos.Z / GroundTerrain.Spacing + (GroundTerrain.Depth - 1) / 2.0f;
 							int cx = Mathf.Clamp((int)Math.Round(fx), 0, GroundTerrain.Width - 1);
 							int cz = Mathf.Clamp((int)Math.Round(fz), 0, GroundTerrain.Depth - 1);
-							_selectionStart = new Vector2I(cx, cz);
-							_selectionEnd = new Vector2I(cx, cz);
-							_isSelectingArea = true;
+							_editorService.SetSelectionStart(new Vector2I(cx, cz));
+							_editorService.SetSelectionEnd(new Vector2I(cx, cz));
+							_editorService.SetIsSelectingArea(true);
 							CreateSelectionHighlight();
 							RebuildSelectionHighlightMesh(cx, cz, cx, cz);
 						}
@@ -1248,7 +1247,7 @@ public partial class GameHost
 					}
 					else if (ActiveEditorTool == EditorTool.PasteArea)
 					{
-						if (GroundTerrain != null && _copiedArea != null)
+						if (GroundTerrain != null && _editorService.HasCopiedArea)
 						{
 							float fx = hitPos.X / GroundTerrain.Spacing + (GroundTerrain.Width - 1) / 2.0f;
 							float fz = hitPos.Z / GroundTerrain.Spacing + (GroundTerrain.Depth - 1) / 2.0f;
@@ -1291,10 +1290,10 @@ public partial class GameHost
 				}
 				if (specMouseBtn.ButtonIndex == MouseButton.Left)
 				{
-					if (_activeSpellTargeting != null || _activeCommandTargeting != null || _activeBuildingPlacementType != null)
+					if (ActiveSpellTargeting != null || ActiveCommandTargeting != null || ActiveBuildingPlacementType != null)
 					{
-						_activeSpellTargeting = null;
-						_activeCommandTargeting = null;
+						ActiveSpellTargeting = null;
+						ActiveCommandTargeting = null;
 						CancelBuildingPlacement();
 						Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
 						GetViewport().SetInputAsHandled();
@@ -1306,10 +1305,10 @@ public partial class GameHost
 
 		if (@event is InputEventKey escapeEvent && escapeEvent.Pressed && escapeEvent.Keycode == Key.Escape)
 		{
-			if (_activeSpellTargeting != null || _activeCommandTargeting != null)
+			if (ActiveSpellTargeting != null || ActiveCommandTargeting != null)
 			{
-				_activeSpellTargeting = null;
-				_activeCommandTargeting = null;
+				ActiveSpellTargeting = null;
+				ActiveCommandTargeting = null;
 				Input.SetCustomMouseCursor(null);
 				Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
 				if (InGameHUD.Instance != null)
@@ -1317,7 +1316,7 @@ public partial class GameHost
 				GetViewport().SetInputAsHandled();
 				return;
 			}
-			if (_activeBuildingPlacementType != null)
+			if (ActiveBuildingPlacementType != null)
 			{
 				CancelBuildingPlacement();
 				GetViewport().SetInputAsHandled();
@@ -1640,10 +1639,10 @@ public partial class GameHost
 
 		if (@event is InputEventMouseButton rightBtn && rightBtn.ButtonIndex == MouseButton.Right && rightBtn.Pressed && !IsMouseOverUI())
 		{
-			if (_activeSpellTargeting != null || _activeCommandTargeting != null || _activeBuildingPlacementType != null)
+			if (ActiveSpellTargeting != null || ActiveCommandTargeting != null || ActiveBuildingPlacementType != null)
 			{
-				_activeSpellTargeting = null;
-				_activeCommandTargeting = null;
+				ActiveSpellTargeting = null;
+				ActiveCommandTargeting = null;
 				CancelBuildingPlacement();
 				Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
 				GetViewport().SetInputAsHandled();
@@ -1736,30 +1735,30 @@ public partial class GameHost
 						GetViewport().SetInputAsHandled();
 						return;
 					}
-					else if (_activeBuildingPlacementType != null)
+					else if (ActiveBuildingPlacementType != null)
 					{
 						var hit = RaycastFromMouse(mouseBtn.Position);
 						if (hit != null && hit.ContainsKey("position"))
 						{
 							var hitPos = hit["position"].AsVector3();
 							hitPos.Y = 0f;
-							ExecuteBuildingPlacement(_activeBuildingPlacementType, hitPos);
+							ExecuteBuildingPlacement(ActiveBuildingPlacementType, hitPos);
 						}
 						GetViewport().SetInputAsHandled();
 						return;
 					}
-					else if (_activeSpellTargeting != null)
+					else if (ActiveSpellTargeting != null)
 					{
 						var hit = RaycastFromMouse(mouseBtn.Position);
 						if (hit != null && hit.ContainsKey("position"))
 						{
-							ExecuteSpellCast(_activeSpellTargeting, hit["position"].AsVector3());
+							ExecuteSpellCast(ActiveSpellTargeting, hit["position"].AsVector3());
 						}
-						_activeSpellTargeting = null;
+						ActiveSpellTargeting = null;
 						Input.SetCustomMouseCursor(null); 
 						Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
 					}
-					else if (_activeCommandTargeting != null)
+					else if (ActiveCommandTargeting != null)
 					{
 						var hit = RaycastFromMouse(mouseBtn.Position);
 						if (hit != null && hit.ContainsKey("position"))
@@ -1768,7 +1767,7 @@ public partial class GameHost
 							var collider = hit["collider"].As<Node>();
 							var clickedUnit = FindUnit3DInParentChain(collider);
 
-							if (_activeCommandTargeting == "attack")
+							if (ActiveCommandTargeting == "attack")
 							{
 								if (clickedUnit != null && clickedUnit.Entity != Entity.Null && clickedUnit.IsEnemy)
 								{
@@ -1779,15 +1778,15 @@ public partial class GameHost
 									IssueAttackMoveCommand(hitPos);
 								}
 							}
-							else if (_activeCommandTargeting == "move")
+							else if (ActiveCommandTargeting == "move")
 							{
 								IssueMoveCommand(hitPos);
 							}
-							else if (_activeCommandTargeting == "patrol")
+							else if (ActiveCommandTargeting == "patrol")
 							{
 								IssuePatrolCommand(hitPos);
 							}
-							else if (_activeCommandTargeting == "rally")
+							else if (ActiveCommandTargeting == "rally")
 							{
 								if (SelectedUnits.Count == 1 && !SelectedUnits[0].IsEnemy && SelectedUnits[0].IsBuilding)
 								{
@@ -1795,7 +1794,7 @@ public partial class GameHost
 								}
 							}
 						}
-						_activeCommandTargeting = null;
+						ActiveCommandTargeting = null;
 						Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
 					}
 					else
@@ -1832,7 +1831,7 @@ public partial class GameHost
 			{
 				GD.Print($"[GameHost] Unhandled right-click press at position: {mouseBtn.Position}");
 				
-				if (_activeBuildingPlacementType != null)
+				if (ActiveBuildingPlacementType != null)
 				{
 					CancelBuildingPlacement();
 					GetViewport().SetInputAsHandled();
@@ -1848,10 +1847,10 @@ public partial class GameHost
 					return;
 				}
 
-				if (_activeSpellTargeting != null || _activeCommandTargeting != null)
+				if (ActiveSpellTargeting != null || ActiveCommandTargeting != null)
 				{
-					_activeSpellTargeting = null;
-					_activeCommandTargeting = null;
+					ActiveSpellTargeting = null;
+					ActiveCommandTargeting = null;
 					Input.SetCustomMouseCursor(null);
 					Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
 					if (InGameHUD.Instance != null)
@@ -2045,7 +2044,7 @@ public partial class GameHost
 			u.IsSelected = false;
 		}
 		SelectedUnits.Clear();
-		_cycleSelectionIndex = 0;
+		CycleSelectionIndex = 0;
 	}
 
 	private Unit3D FindUnit3DInParentChain(Node node)
@@ -2060,8 +2059,6 @@ public partial class GameHost
 		}
 		return null;
 	}
-
-
 
 	private Godot.Collections.Dictionary RaycastFromMouse(Vector2 mousePos)
 	{
@@ -2089,8 +2086,8 @@ public partial class GameHost
 
 	public void EnterCommandTargeting(string mode)
 	{
-		_activeCommandTargeting = mode;
-		_activeSpellTargeting = null; 
+		ActiveCommandTargeting = mode;
+		ActiveSpellTargeting = null; 
 		Input.SetDefaultCursorShape(Input.CursorShape.Cross);
 		
 		if (InGameHUD.Instance != null)
@@ -2125,60 +2122,20 @@ public partial class GameHost
 			InGameHUD.Instance.ShowFeedbackText("Command: Move to position", new Color(0.2f, 0.9f, 0.3f));
 		}
 
-		if (_multiplayerActive && !Multiplayer.IsServer())
-		{
-			var targetIds = new List<int>();
-			int clientUnitIndex = 0;
-			int clientCols = Mathf.CeilToInt(Mathf.Sqrt(SelectedUnits.Count));
-			float clientSpacing = 2.2f;
-
-			foreach (var unit in SelectedUnits)
-			{
-				if (unit.IsBuilding || unit.IsEnemy) continue;
-				targetIds.Add(GetServerEntityId(unit.Entity));
-				ClearUnitOrders(unit.Entity);
-
-				int row = clientUnitIndex / clientCols;
-				int col = clientUnitIndex % clientCols;
-				float offsetX = (col - clientCols * 0.5f + 0.5f) * clientSpacing;
-				float offsetZ = row * clientSpacing;
-				Vector3 scattered = new Vector3(targetPos.X + offsetX, targetPos.Y, targetPos.Z + offsetZ);
-
-				var moveTo = new MoveTo(new System.Numerics.Vector3(scattered.X, scattered.Y, scattered.Z));
-				if (EcsWorld.Has<MoveTo>(unit.Entity)) EcsWorld.Set(unit.Entity, moveTo);
-				else EcsWorld.Add(unit.Entity, moveTo);
-				clientUnitIndex++;
-			}
-			QueueClientCommand("move", targetIds, targetPos, 0, "");
-			return;
-		}
-
-		int unitIndex = 0;
-		int cols = Mathf.CeilToInt(Mathf.Sqrt(SelectedUnits.Count));
-		float spacing = 2.2f;
-
+		var targetIds = new List<int>();
+		var selectedEntities = new List<Entity>();
 		foreach (var unit in SelectedUnits)
 		{
 			if (unit.IsBuilding || unit.IsEnemy) continue;
+			selectedEntities.Add(unit.Entity);
+			targetIds.Add(GetServerEntityId(unit.Entity));
+		}
 
-			ClearUnitOrders(unit.Entity);
+		_inputService.IssueMoveCommand(selectedEntities, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
 
-			if (EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(unit.Entity))
-			{
-				int row = unitIndex / cols;
-				int col = unitIndex % cols;
-				float offsetX = (col - cols * 0.5f + 0.5f) * spacing;
-				float offsetZ = row * spacing;
-				Vector3 scattered = new Vector3(targetPos.X + offsetX, targetPos.Y, targetPos.Z + offsetZ);
-
-				var moveTo = new MoveTo(new System.Numerics.Vector3(scattered.X, scattered.Y, scattered.Z));
-				if (EcsWorld.Has<MoveTo>(unit.Entity))
-					EcsWorld.Set(unit.Entity, moveTo);
-				else
-					EcsWorld.Add(unit.Entity, moveTo);
-
-				unitIndex++;
-			}
+		if (_multiplayerActive && !Multiplayer.IsServer())
+		{
+			QueueClientCommand("move", targetIds, targetPos, 0, "");
 		}
 	}
 
@@ -2193,54 +2150,41 @@ public partial class GameHost
 			InGameHUD.Instance.ShowFeedbackText($"Command: Attack {target.UnitId.ToUpper()}", new Color(0.9f, 0.2f, 0.2f));
 		}
 
-		if (_multiplayerActive && !Multiplayer.IsServer())
-		{
-			var targetIds = new List<int>();
-			foreach (var unit in SelectedUnits)
-			{
-				if (unit.IsBuilding || unit.IsEnemy) continue;
-				targetIds.Add(GetServerEntityId(unit.Entity));
-				ClearUnitOrders(unit.Entity);
-
-				var attackTarget = new AttackTarget(target.Entity);
-				if (EcsWorld.Has<AttackTarget>(unit.Entity)) EcsWorld.Set(unit.Entity, attackTarget);
-				else EcsWorld.Add(unit.Entity, attackTarget);
-			}
-			QueueClientCommand("attack", targetIds, target.GlobalPosition, GetServerEntityId(target.Entity), "");
-			return;
-		}
-
+		var targetIds = new List<int>();
+		var selectedEntities = new List<Entity>();
 		foreach (var unit in SelectedUnits)
 		{
-			if (unit.IsBuilding || unit.IsEnemy) continue; 
+			if (unit.IsBuilding || unit.IsEnemy) continue;
+			selectedEntities.Add(unit.Entity);
+			targetIds.Add(GetServerEntityId(unit.Entity));
+		}
 
-			ClearUnitOrders(unit.Entity);
+		_inputService.IssueAttackCommand(selectedEntities, target.Entity);
 
-			var attackTarget = new AttackTarget(target.Entity);
-			if (EcsWorld.Has<AttackTarget>(unit.Entity))
-				EcsWorld.Set(unit.Entity, attackTarget);
-			else
-				EcsWorld.Add(unit.Entity, attackTarget);
+		if (_multiplayerActive && !Multiplayer.IsServer())
+		{
+			QueueClientCommand("attack", targetIds, target.GlobalPosition, GetServerEntityId(target.Entity), "");
 		}
 	}
 
 	public void IssueFollowCommand(Unit3D target)
 	{
-		if (SelectedUnits.Count == 0 || target == null || target.Entity == Entity.Null) return;
+		if (SelectedUnits.Count == 0) return;
 
 		SpawnTargetIndicator(target.GlobalPosition, new Color(0.2f, 0.6f, 1.0f));
 
+		bool hasPriest = false;
+		foreach (var unit in SelectedUnits)
+		{
+			if (EcsWorld.Has<DefinitionId>(unit.Entity) && EcsWorld.Get<DefinitionId>(unit.Entity).Value == "priest")
+			{
+				hasPriest = true;
+				break;
+			}
+		}
+
 		if (InGameHUD.Instance != null)
 		{
-			bool hasPriest = false;
-			foreach (var unit in SelectedUnits)
-			{
-				if (EcsWorld.Has<DefinitionId>(unit.Entity) && EcsWorld.Get<DefinitionId>(unit.Entity).Value == "priest")
-				{
-					hasPriest = true;
-					break;
-				}
-			}
 			if (hasPriest)
 			{
 				InGameHUD.Instance.ShowFeedbackText($"Priest: Healing support target {target.UnitId.ToUpper()}", new Color(0.2f, 0.9f, 0.3f));
@@ -2251,62 +2195,32 @@ public partial class GameHost
 			}
 		}
 
-		if (_multiplayerActive && !Multiplayer.IsServer())
-		{
-			var targetIds = new List<int>();
-			foreach (var unit in SelectedUnits)
-			{
-				if (unit.IsBuilding || unit.IsEnemy || unit.Entity == target.Entity) continue;
-				targetIds.Add(GetServerEntityId(unit.Entity));
-				ClearUnitOrders(unit.Entity);
-
-				if (EcsWorld.Has<DefinitionId>(unit.Entity) && EcsWorld.Get<DefinitionId>(unit.Entity).Value == "priest")
-				{
-					var healTarget = new HealingTarget(target.Entity);
-					EcsWorld.Add(unit.Entity, healTarget);
-				}
-				else if (EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(unit.Entity))
-				{
-					var follow = new Realm.Ecs.Components.Movement.Follow(target.Entity);
-					if (EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(unit.Entity)) EcsWorld.Set(unit.Entity, follow);
-					else EcsWorld.Add(unit.Entity, follow);
-				}
-			}
-			QueueClientCommand("follow", targetIds, target.GlobalPosition, GetServerEntityId(target.Entity), "");
-			return;
-		}
-
+		var targetIds = new List<int>();
+		var selectedEntities = new List<Entity>();
 		foreach (var unit in SelectedUnits)
 		{
-			if (unit.IsBuilding || unit.IsEnemy || unit.Entity == target.Entity) continue; 
+			if (unit.IsBuilding || unit.IsEnemy || unit.Entity == target.Entity) continue;
+			selectedEntities.Add(unit.Entity);
+			targetIds.Add(GetServerEntityId(unit.Entity));
+		}
 
-			ClearUnitOrders(unit.Entity);
+		_inputService.IssueFollowCommand(selectedEntities, target.Entity);
 
-			if (EcsWorld.Has<DefinitionId>(unit.Entity) && EcsWorld.Get<DefinitionId>(unit.Entity).Value == "priest")
-			{
-				var healTarget = new HealingTarget(target.Entity);
-				EcsWorld.Add(unit.Entity, healTarget);
-			}
-			else if (EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(unit.Entity))
-			{
-				var follow = new Realm.Ecs.Components.Movement.Follow(target.Entity);
-				if (EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(unit.Entity))
-					EcsWorld.Set(unit.Entity, follow);
-				else
-					EcsWorld.Add(unit.Entity, follow);
-			}
+		if (_multiplayerActive && !Multiplayer.IsServer())
+		{
+			QueueClientCommand("follow", targetIds, target.GlobalPosition, GetServerEntityId(target.Entity), "");
 		}
 	}
-
-
 
 	private void SelectAllBuildings()
 	{
 		ClearSelection();
+		var entities = _inputService.GetBuildingEntities(_playerEntity);
 		int count = 0;
-		foreach (var unit in AllUnits)
+		foreach (var ent in entities)
 		{
-			if (!unit.IsEnemy && unit.IsBuilding)
+			var unit = AllUnits.Find(u => u.Entity == ent);
+			if (unit != null)
 			{
 				SelectUnit(unit);
 				count++;
@@ -2316,36 +2230,29 @@ public partial class GameHost
 		InGameHUD.Instance?.ShowFeedbackText($"Selected {count} Buildings", new Color(0.9f, 0.7f, 0.2f));
 	}
 
-
 	private void CycleSelectionFocus(bool reverse = false)
 	{
 		if (SelectedUnits.Count <= 1) return;
-		if (reverse)
-		{
-			_cycleSelectionIndex = (_cycleSelectionIndex - 1 + SelectedUnits.Count) % SelectedUnits.Count;
-		}
-		else
-		{
-			_cycleSelectionIndex = (_cycleSelectionIndex + 1) % SelectedUnits.Count;
-		}
-		var focusUnit = SelectedUnits[_cycleSelectionIndex];
+		int index = _inputService.CycleSelectionFocus(_worldEntity, SelectedUnits.Count, reverse);
+		var focusUnit = SelectedUnits[index];
 
 		var camera = GetViewport().GetCamera3D();
 		if (camera != null)
 		{
 			camera.GlobalPosition = new Vector3(focusUnit.GlobalPosition.X, camera.GlobalPosition.Y, focusUnit.GlobalPosition.Z);
 		}
-		InGameHUD.Instance?.ShowFeedbackText($"Focused: {focusUnit.UnitId.ToUpper()} ({_cycleSelectionIndex + 1}/{SelectedUnits.Count})", new Color(0.5f, 1.0f, 0.5f));
+		InGameHUD.Instance?.ShowFeedbackText($"Focused: {focusUnit.UnitId.ToUpper()} ({index + 1}/{SelectedUnits.Count})", new Color(0.5f, 1.0f, 0.5f));
 		InGameHUD.Instance?.RefreshUI(SelectedUnits);
 	}
 
-
 	private void CycleThroughBuildings()
 	{
-		var buildings = AllUnits.FindAll(u => !u.IsEnemy && u.IsBuilding);
-		if (buildings.Count == 0) return;
-		_buildingCycleIndex = (_buildingCycleIndex + 1) % buildings.Count;
-		var building = buildings[_buildingCycleIndex];
+		Entity buildingEntity = _inputService.CycleThroughBuildings(_playerEntity);
+		if (buildingEntity == Entity.Null) return;
+
+		var building = AllUnits.Find(u => u.Entity == buildingEntity);
+		if (building == null) return;
+
 		var camera = GetViewport().GetCamera3D();
 		if (camera != null)
 			camera.GlobalPosition = new Vector3(building.GlobalPosition.X, camera.GlobalPosition.Y, building.GlobalPosition.Z);
@@ -2358,10 +2265,16 @@ public partial class GameHost
 		if (SelectedUnits.Count == 0) return;
 
 		var toDelete = new List<Unit3D>(SelectedUnits.FindAll(u => !u.IsEnemy));
+		var entities = new List<Entity>();
 		foreach (var unit in toDelete)
 		{
-			if (!EcsWorld.Has<Dead>(unit.Entity))
-				EcsWorld.Add<Dead>(unit.Entity);
+			entities.Add(unit.Entity);
+		}
+
+		_inputService.MarkEntitiesAsDead(entities);
+
+		foreach (var unit in toDelete)
+		{
 			CallDeferred("KillUnitDeferred", unit);
 		}
 		InGameHUD.Instance?.ShowFeedbackText($"Removed {toDelete.Count} unit(s)", new Color(0.9f, 0.3f, 0.3f));
@@ -2377,18 +2290,12 @@ public partial class GameHost
 	public void SelectAllIdleUnits()
 	{
 		ClearSelection();
+		var entities = _inputService.GetIdleUnitEntities(_playerEntity);
 		int selectedCount = 0;
-		foreach (var unit in AllUnits)
+		foreach (var ent in entities)
 		{
-			if (unit.IsEnemy || unit.IsBuilding) continue;
-			
-			bool isMovable = EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(unit.Entity);
-			bool hasMoveTo = EcsWorld.Has<MoveTo>(unit.Entity);
-			bool hasAttackTarget = EcsWorld.Has<AttackTarget>(unit.Entity);
-			bool hasAttackMove = EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(unit.Entity);
-			bool isGathering = EcsWorld.Has<Gatherer>(unit.Entity) && EcsWorld.Get<Gatherer>(unit.Entity).TargetEntity != Entity.Null;
-
-			if (isMovable && !hasMoveTo && !hasAttackTarget && !hasAttackMove && !isGathering)
+			var unit = AllUnits.Find(u => u.Entity == ent);
+			if (unit != null)
 			{
 				SelectUnit(unit);
 				selectedCount++;
@@ -2405,13 +2312,12 @@ public partial class GameHost
 	public void SelectAllMilitaryUnits()
 	{
 		ClearSelection();
+		var entities = _inputService.GetMilitaryUnitEntities(_playerEntity);
 		int selectedCount = 0;
-		foreach (var unit in AllUnits)
+		foreach (var ent in entities)
 		{
-			if (unit.IsEnemy || unit.IsBuilding) continue;
-			
-			bool isMovable = EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(unit.Entity);
-			if (isMovable)
+			var unit = AllUnits.Find(u => u.Entity == ent);
+			if (unit != null)
 			{
 				SelectUnit(unit);
 				selectedCount++;
@@ -2427,101 +2333,75 @@ public partial class GameHost
 
 	private void PerformDoubleClickSelection(Vector2 clickPos)
 	{
-		GD.Print($"[GameHost] PerformDoubleClickSelection at screen coordinate: {clickPos}");
 		var hit = RaycastFromMouse(clickPos);
-		if (hit != null && hit.ContainsKey("collider"))
-		{
-			var collider = hit["collider"].As<Node>();
-			var clickedUnit = FindUnit3DInParentChain(collider);
-			
-			if (clickedUnit != null && !clickedUnit.IsEnemy)
-			{
-				ClearSelection();
-				
-				var camera = GetViewport().GetCamera3D();
-				if (camera != null)
-				{
-					var windowSize = GetViewport().GetVisibleRect().Size;
-					var screenRect = new Rect2(Vector2.Zero, windowSize);
-					string targetUnitId = clickedUnit.UnitId;
-					int count = 0;
+		if (hit == null || !hit.ContainsKey("collider")) return;
 
-					foreach (var unit in AllUnits)
-					{
-						if (!unit.IsEnemy && unit.UnitId == targetUnitId && !unit.IsBuilding)
-						{
-							var screenPos = camera.UnprojectPosition(unit.GlobalPosition);
-							if (screenRect.HasPoint(screenPos))
-							{
-								SelectUnit(unit);
-								count++;
-							}
-						}
-					}
-					
-					if (InGameHUD.Instance != null)
-					{
-						InGameHUD.Instance.ShowFeedbackText($"Selected {count} {targetUnitId.ToUpper()}s on screen", new Color(0.5f, 1.0f, 0.5f));
-					}
-				}
+		var collider = hit["collider"].As<Node>();
+		var clickedUnit = FindUnit3DInParentChain(collider);
+		if (clickedUnit == null || clickedUnit.IsEnemy) return;
+
+		string type = clickedUnit.UnitId;
+		var camera = GetViewport().GetCamera3D();
+		if (camera == null) return;
+
+		var viewportRect = GetViewport().GetVisibleRect();
+		int selectCount = 0;
+
+		foreach (var unit in AllUnits)
+		{
+			if (unit.IsEnemy || unit.IsBuilding || unit.UnitId != type) continue;
+
+			var screenPos = camera.UnprojectPosition(unit.GlobalPosition);
+			if (viewportRect.HasPoint(screenPos))
+			{
+				SelectUnit(unit);
+				selectCount++;
 			}
 		}
+
 		InGameHUD.Instance?.RefreshUI(SelectedUnits);
+		if (InGameHUD.Instance != null)
+		{
+			InGameHUD.Instance.ShowFeedbackText($"Selected {selectCount} {type.ToUpper()}(s)", new Color(0.5f, 1.0f, 0.5f));
+		}
 	}
 
 	public void CenterCameraOnCastle()
 	{
-		Unit3D friendlyCastle = null;
+		Unit3D castle = null;
 		foreach (var unit in AllUnits)
 		{
 			if (!unit.IsEnemy && unit.UnitId == "castle")
 			{
-				friendlyCastle = unit;
+				castle = unit;
 				break;
 			}
 		}
-		var camera = GetViewport().GetCamera3D();
-		if (friendlyCastle != null && camera != null)
+		if (castle != null)
 		{
-			var zVector = camera.GlobalTransform.Basis.Z;
-			if (Mathf.Abs(zVector.Y) > 0.001f)
+			var camera = GetViewport().GetCamera3D();
+			if (camera != null)
 			{
-				float dist = (camera.GlobalPosition.Y - friendlyCastle.GlobalPosition.Y) / zVector.Y;
-				camera.GlobalPosition = friendlyCastle.GlobalPosition + zVector * dist;
-			}
-			else
-			{
-				camera.GlobalPosition = new Vector3(friendlyCastle.GlobalPosition.X, camera.GlobalPosition.Y, friendlyCastle.GlobalPosition.Z);
-			}
-			if (InGameHUD.Instance != null)
-			{
-				InGameHUD.Instance.ShowFeedbackText("Camera Centered on Castle", new Color(0.5f, 0.8f, 1.0f));
+				camera.GlobalPosition = new Vector3(castle.GlobalPosition.X, camera.GlobalPosition.Y, castle.GlobalPosition.Z);
 			}
 		}
 	}
 
 	public void CenterCameraOnSelectedOrCastle()
 	{
-		var camera = GetViewport().GetCamera3D();
-		if (camera == null) return;
-
-		if (SelectedEditorObject is Node3D node3D && GodotObject.IsInstanceValid(node3D))
+		if (SelectedUnits.Count > 0)
 		{
-			var zVector = camera.GlobalTransform.Basis.Z;
-			if (Mathf.Abs(zVector.Y) > 0.001f)
+			var unit = SelectedUnits[0];
+			var camera = GetViewport().GetCamera3D();
+			if (camera != null)
 			{
-				float dist = (camera.GlobalPosition.Y - node3D.GlobalPosition.Y) / zVector.Y;
-				camera.GlobalPosition = node3D.GlobalPosition + zVector * dist;
+				camera.GlobalPosition = new Vector3(unit.GlobalPosition.X, camera.GlobalPosition.Y, unit.GlobalPosition.Z);
 			}
-			else
-			{
-				camera.GlobalPosition = new Vector3(node3D.GlobalPosition.X, camera.GlobalPosition.Y, node3D.GlobalPosition.Z);
-			}
-			MapEditorHUD.Instance?.ShowFeedbackExternal("Centered Camera on Selected Object");
-			return;
 		}
-
-		CenterCameraOnCastle();
+		else
+		{
+			CenterCameraOnCastle();
+		}
 	}
 
 	public void TriggerCopyFromUI()
@@ -2535,36 +2415,36 @@ public partial class GameHost
 		{
 			if (SelectedEditorObject is Unit3D unit)
 			{
-				_copiedObject = new CopiedObjectTemplate {
+				_editorService.SetCopiedObject(new GameHostEditorService.CopiedObjectTemplate {
 					Type = "unit",
 					Id = unit.UnitId,
 					Rotation = unit.RotationDegrees.Y,
 					Scale = unit.Scale.X,
 					IsEnemy = unit.IsEnemy
-				};
+				});
 				MapEditorHUD.Instance?.ShowFeedbackExternal($"Copied Unit: {unit.UnitId.ToUpper()}");
 			}
 			else if (SelectedEditorObject is Prop3D prop)
 			{
-				_copiedObject = new CopiedObjectTemplate {
+				_editorService.SetCopiedObject(new GameHostEditorService.CopiedObjectTemplate {
 					Type = "prop",
 					Id = prop.PropId,
 					Rotation = prop.RotationDegrees.Y,
 					Scale = prop.Scale.X,
 					IsEnemy = false
-				};
+				});
 				MapEditorHUD.Instance?.ShowFeedbackExternal($"Copied Prop: {prop.PropId.ToUpper()}");
 			}
 			else if (SelectedEditorObject is Decal decal)
 			{
 				string decalId = decal.HasMeta("DecalId") ? decal.GetMeta("DecalId").AsString() : "logo";
-				_copiedObject = new CopiedObjectTemplate {
+				_editorService.SetCopiedObject(new GameHostEditorService.CopiedObjectTemplate {
 					Type = "decal",
 					Id = decalId,
 					Rotation = decal.RotationDegrees.Y,
 					Scale = decal.Scale.X,
 					IsEnemy = false
-				};
+				});
 				MapEditorHUD.Instance?.ShowFeedbackExternal($"Copied Decal: {decalId.ToUpper()}");
 			}
 		}
@@ -2578,7 +2458,7 @@ public partial class GameHost
 	{
 		if (ActiveEditorTool == EditorTool.SelectArea || ActiveEditorTool == EditorTool.PasteArea)
 		{
-			if (_copiedArea != null)
+			if (_editorService.HasCopiedArea)
 			{
 				ActiveEditorTool = EditorTool.PasteArea;
 				MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.PasteArea);
@@ -2586,37 +2466,38 @@ public partial class GameHost
 				return;
 			}
 		}
-		if (_copiedObject != null)
+		if (_editorService.GetCopiedObject() != null)
 		{
-			if (_copiedObject.Value.Type == "unit")
+			var copiedObj = _editorService.GetCopiedObject().Value;
+			if (copiedObj.Type == "unit")
 			{
 				ActiveEditorTool = EditorTool.PlaceUnit;
-				_isPastingObject = true;
-				ActivePlaceId = _copiedObject.Value.Id;
-				PlaceUnitIsEnemy = _copiedObject.Value.IsEnemy;
-				EditorPlacementRotation = _copiedObject.Value.Rotation;
-				EditorPlacementScale = _copiedObject.Value.Scale;
+				_editorService.SetIsPastingObject(true);
+				ActivePlaceId = copiedObj.Id;
+				PlaceUnitIsEnemy = copiedObj.IsEnemy;
+				EditorPlacementRotation = copiedObj.Rotation;
+				EditorPlacementScale = copiedObj.Scale;
 				MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.PlaceUnit);
 			}
-			else if (_copiedObject.Value.Type == "prop")
+			else if (copiedObj.Type == "prop")
 			{
 				ActiveEditorTool = EditorTool.PlaceProp;
-				_isPastingObject = true;
-				ActivePlaceId = _copiedObject.Value.Id;
-				EditorPlacementRotation = _copiedObject.Value.Rotation;
-				EditorPlacementScale = _copiedObject.Value.Scale;
+				_editorService.SetIsPastingObject(true);
+				ActivePlaceId = copiedObj.Id;
+				EditorPlacementRotation = copiedObj.Rotation;
+				EditorPlacementScale = copiedObj.Scale;
 				MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.PlaceProp);
 			}
-			else if (_copiedObject.Value.Type == "decal")
+			else if (copiedObj.Type == "decal")
 			{
 				ActiveEditorTool = EditorTool.PlaceDecal;
-				_isPastingObject = true;
-				ActivePlaceId = _copiedObject.Value.Id;
-				EditorPlacementRotation = _copiedObject.Value.Rotation;
-				EditorPlacementScale = _copiedObject.Value.Scale;
+				_editorService.SetIsPastingObject(true);
+				ActivePlaceId = copiedObj.Id;
+				EditorPlacementRotation = copiedObj.Rotation;
+				EditorPlacementScale = copiedObj.Scale;
 				MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.PlaceDecal);
 			}
-			MapEditorHUD.Instance?.ShowFeedbackExternal($"Paste Mode Active - Placing {_copiedObject.Value.Id.ToUpper()}");
+			MapEditorHUD.Instance?.ShowFeedbackExternal($"Paste Mode Active - Placing {copiedObj.Id.ToUpper()}");
 		}
 		else
 		{
@@ -2634,7 +2515,7 @@ public partial class GameHost
 				groupUnits.Add(u);
 			}
 		}
-		_controlGroups[index] = groupUnits;
+		ControlGroups[index] = groupUnits;
 		if (InGameHUD.Instance != null)
 		{
 			InGameHUD.Instance.ShowFeedbackText($"Assigned {groupUnits.Count} units to Control Group {index}", new Color(0.5f, 0.8f, 1.0f));
@@ -2644,7 +2525,7 @@ public partial class GameHost
 
 	public void RecallControlGroup(int index)
 	{
-		var group = _controlGroups[index];
+		var group = ControlGroups[index];
 		if (group == null || group.Count == 0) return;
 
 		group.RemoveAll(u => !GodotObject.IsInstanceValid(u) || !AllUnits.Contains(u));
@@ -2678,16 +2559,8 @@ public partial class GameHost
 
 	public void ClearTargetingModes()
 	{
-		_activeSpellTargeting = null;
-		_activeCommandTargeting = null;
-		_activeBuildingPlacementType = null;
-		Input.SetCustomMouseCursor(null);
+		_inputService.ClearTargetingModes();
 		Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
-		if (_buildingPreviewMesh != null)
-		{
-			_buildingPreviewMesh.QueueFree();
-			_buildingPreviewMesh = null;
-		}
 	}
 
 	public void CastSpellAt(string spellId, Vector3 position)
@@ -2700,29 +2573,9 @@ public partial class GameHost
 		ExecuteBuildingPlacement(type, position);
 	}
 
-	private bool UnitHasAbility(Unit3D unit, string abilityId)
-	{
-		if (UnitRegistry.TryGetValue(unit.UnitId, out var meta))
-		{
-			if (meta.Abilities != null)
-			{
-				return Array.Exists(meta.Abilities, a => a == abilityId);
-			}
-		}
-		if (abilityId == "holylight") return unit.UnitId == "priest";
-		if (abilityId == "fireball" || abilityId == "lightning") return unit.UnitId == "tower";
-		return false;
-	}
-
 	public void EnterSpellTargeting(string spellId)
 	{
-		if (SelectedUnits.Count == 0) return;
-		var unit = SelectedUnits[CycleSelectionIndex];
-		if (unit.IsEnemy) return;
-		
-		if (!UnitHasAbility(unit, spellId)) return;
-
-		_activeSpellTargeting = spellId;
+		ActiveSpellTargeting = spellId;
 		Input.SetDefaultCursorShape(Input.CursorShape.Cross);
 
 		if (InGameHUD.Instance != null)
@@ -2763,7 +2616,7 @@ public partial class GameHost
 			return;
 		}
 
-		IUnit? caster = null;
+		IUnit caster = null;
 		if (SelectedUnits.Count > 0 && EcsWorld.IsAlive(SelectedUnits[0].Entity))
 		{
 			caster = GetUnitWrapper(SelectedUnits[0].Entity);
@@ -2777,18 +2630,20 @@ public partial class GameHost
 				InGameHUD.Instance?.ShowFeedbackText($"Fireball on cooldown: {FireballCooldown:F1}s remaining", new Color(0.9f, 0.4f, 0.1f));
 				return;
 			}
-			FireballCooldown = FireballCooldownMax;
 
-			SpawnFireblastEffect(position);
-			SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
-			
-			if (InGameHUD.Instance != null)
+			if (_inputService.TryExecuteSpellCast(_playerEntity, spellId, out float maxCd))
 			{
-				InGameHUD.Instance.ShowFeedbackText("Cast: Fireball Spell", new Color(0.9f, 0.3f, 0.1f));
-				UIManager.Instance.PlayClickSound();
-			}
+				SpawnFireblastEffect(position);
+				SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
+				
+				if (InGameHUD.Instance != null)
+				{
+					InGameHUD.Instance.ShowFeedbackText("Cast: Fireball Spell", new Color(0.9f, 0.3f, 0.1f));
+					UIManager.Instance.PlayClickSound();
+				}
 
-			DealSpellDamageAOE(position, 4.0f, 50f);
+				DealSpellDamageAOE(position, 4.0f, 50f);
+			}
 		}
 		else if (spellId == "lightning")
 		{
@@ -2797,18 +2652,20 @@ public partial class GameHost
 				InGameHUD.Instance?.ShowFeedbackText($"Lightning on cooldown: {LightningCooldown:F1}s remaining", new Color(0.2f, 0.6f, 1f));
 				return;
 			}
-			LightningCooldown = LightningCooldownMax;
 
-			SpawnLightningEffect(position);
-			SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
-
-			if (InGameHUD.Instance != null)
+			if (_inputService.TryExecuteSpellCast(_playerEntity, spellId, out float maxCd))
 			{
-				InGameHUD.Instance.ShowFeedbackText("Cast: Lightning Bolt", new Color(0.2f, 0.6f, 1f));
-				UIManager.Instance.PlayClickSound();
-			}
+				SpawnLightningEffect(position);
+				SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
 
-			DealSpellDamageAOE(position, 2.0f, 80f);
+				if (InGameHUD.Instance != null)
+				{
+					InGameHUD.Instance.ShowFeedbackText("Cast: Lightning Bolt", new Color(0.2f, 0.6f, 1f));
+					UIManager.Instance.PlayClickSound();
+				}
+
+				DealSpellDamageAOE(position, 2.0f, 80f);
+			}
 		}
 		else if (spellId == "holylight")
 		{
@@ -2817,18 +2674,20 @@ public partial class GameHost
 				InGameHUD.Instance?.ShowFeedbackText($"Holy Light on cooldown: {HolyLightCooldown:F1}s remaining", new Color(0.2f, 0.9f, 0.3f));
 				return;
 			}
-			HolyLightCooldown = HolyLightCooldownMax;
 
-			SpawnHolyLightEffect(position);
-			SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
-
-			if (InGameHUD.Instance != null)
+			if (_inputService.TryExecuteSpellCast(_playerEntity, spellId, out float maxCd))
 			{
-				InGameHUD.Instance.ShowFeedbackText("Cast: Holy Light", new Color(0.2f, 0.9f, 0.3f));
-				UIManager.Instance.PlayClickSound();
-			}
+				SpawnHolyLightEffect(position);
+				SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
 
-			HealAOE(position, 4.0f, 60f);
+				if (InGameHUD.Instance != null)
+				{
+					InGameHUD.Instance.ShowFeedbackText("Cast: Holy Light", new Color(0.2f, 0.9f, 0.3f));
+					UIManager.Instance.PlayClickSound();
+				}
+
+				HealAOE(position, 4.0f, 60f);
+			}
 		}
 	}
 
@@ -2840,32 +2699,12 @@ public partial class GameHost
 			if (EcsWorld.Has<Unit3D>(castleEntity))
 			{
 				var castle3D = EcsWorld.Get<Unit3D>(castleEntity);
-				Unit3D targetUnit = null;
-				float closestDist = 20f;
+				var selectedEntity = SelectedUnits.Count > 0 ? SelectedUnits[0].Entity : Entity.Null;
 
-				foreach (var unit in AllUnits)
+				if (_inputService.BuyHealingPotion(_playerEntity, new System.Numerics.Vector3(castle3D.GlobalPosition.X, castle3D.GlobalPosition.Y, castle3D.GlobalPosition.Z), selectedEntity, out Entity targetUnitEntity))
 				{
-					if (!unit.IsEnemy && !unit.IsBuilding)
-					{
-						float dist = castle3D.GlobalPosition.DistanceTo(unit.GlobalPosition);
-						if (dist < closestDist)
-						{
-							closestDist = dist;
-							targetUnit = unit;
-						}
-					}
-				}
-
-				if (targetUnit == null && SelectedUnits.Count > 0 && !SelectedUnits[0].IsEnemy && !SelectedUnits[0].IsBuilding)
-				{
-					targetUnit = SelectedUnits[0];
-				}
-
-				if (targetUnit != null && EcsWorld.Has<Inventory>(targetUnit.Entity))
-				{
+					var targetUnit = AllUnits.Find(u => u.Entity == targetUnitEntity);
 					InGameHUD.Instance.Gold -= costGold;
-					var inv = EcsWorld.Get<Inventory>(targetUnit.Entity);
-					EcsWorld.Set(targetUnit.Entity, new Inventory(inv.Potions + 1));
 
 					InGameHUD.Instance.ShowFeedbackText($"Bought Healing Potion for {targetUnit.UnitId.ToUpper()}!", new Color(0.3f, 0.9f, 0.4f));
 					UIManager.Instance?.PlayClickSound();
@@ -2887,50 +2726,68 @@ public partial class GameHost
 
 	public void UseHealingPotion(Unit3D unit)
 	{
-		if (EcsWorld.IsAlive(unit.Entity) && EcsWorld.Has<Inventory>(unit.Entity))
+		if (_inputService.UseHealingPotion(unit.Entity, out float healedAmount))
 		{
-			var inv = EcsWorld.Get<Inventory>(unit.Entity);
-			if (inv.Potions > 0)
+			InGameHUD.Instance?.ShowFeedbackText($"{unit.UnitId.ToUpper()} used Healing Potion (+{healedAmount:F0} HP)!", new Color(0.3f, 0.9f, 0.4f));
+			SpawnHolyLightEffect(unit.GlobalPosition);
+			FlashHealUnit(unit);
+
+			UIManager.Instance?.PlayClickSound();
+			InGameHUD.Instance?.RefreshUI(SelectedUnits);
+		}
+		else
+		{
+			if (EcsWorld.IsAlive(unit.Entity) && EcsWorld.Has<Health>(unit.Entity))
 			{
 				var hp = EcsWorld.Get<Health>(unit.Entity);
 				if (hp.Current >= hp.Max)
 				{
 					InGameHUD.Instance?.ShowFeedbackText("Unit is already at full health!", new Color(0.8f, 0.8f, 0.8f));
 					UIManager.Instance?.PlayWarningSound();
-					return;
 				}
-
-				EcsWorld.Set(unit.Entity, new Inventory(inv.Potions - 1));
-				float newHp = Math.Min(hp.Max, hp.Current + 50f);
-				EcsWorld.Set(unit.Entity, new Health(newHp, hp.Max));
-
-				InGameHUD.Instance?.ShowFeedbackText($"{unit.UnitId.ToUpper()} used Healing Potion (+50 HP)!", new Color(0.3f, 0.9f, 0.4f));
-				SpawnHolyLightEffect(unit.GlobalPosition);
-				FlashHealUnit(unit);
-
-				UIManager.Instance?.PlayClickSound();
-				InGameHUD.Instance?.RefreshUI(SelectedUnits);
 			}
 		}
 	}
 
 	public void EnterBuildingPlacement(string type)
 	{
-		_activeSpellTargeting = null;
-		_activeCommandTargeting = null;
-		ActivePingMode = false;
+		ActiveBuildingPlacementType = type;
+		
+		if (_buildingPreviewMesh != null)
+		{
+			_buildingPreviewMesh.QueueFree();
+			_buildingPreviewMesh = null;
+		}
 
-		_activeBuildingPlacementType = type;
+		var mesh = new MeshInstance3D();
+		var box = new BoxMesh();
+		if (type == "castle")
+		{
+			box.Size = new Vector3(10f, 2f, 10f);
+		}
+		else
+		{
+			box.Size = new Vector3(3.2f, 4f, 3.2f);
+		}
+		mesh.Mesh = box;
+
+		var mat = new StandardMaterial3D();
+		mat.AlbedoColor = new Color(0.2f, 0.9f, 0.3f, 0.5f);
+		mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+		mesh.MaterialOverride = mat;
+
+		AddChild(mesh);
+		_buildingPreviewMesh = mesh;
+
 		if (InGameHUD.Instance != null)
 		{
-			var meta = UnitRegistry[type];
-			InGameHUD.Instance.ShowFeedbackText($"Place Building: Select Location for {meta.Name}", new Color(0.3f, 0.8f, 1.0f));
+			InGameHUD.Instance.ShowFeedbackText($"Place Building: Click on map to construct {type.ToUpper()}", new Color(0.2f, 0.9f, 0.4f));
 		}
 	}
 
 	public void CancelBuildingPlacement()
 	{
-		_activeBuildingPlacementType = null;
+		ActiveBuildingPlacementType = null;
 		if (_buildingPreviewMesh != null)
 		{
 			_buildingPreviewMesh.QueueFree();
@@ -2940,6 +2797,7 @@ public partial class GameHost
 		{
 			InGameHUD.Instance.ShowFeedbackText("Building Placement Cancelled", new Color(0.8f, 0.8f, 0.8f));
 		}
+		Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
 	}
 
 	private void ExecuteBuildingPlacement(string type, Vector3 position)
@@ -2955,7 +2813,7 @@ public partial class GameHost
 				InGameHUD.Instance.ShowFeedbackText($"Constructing {bldMeta.Name}...", new Color(0.3f, 0.9f, 0.4f));
 			}
 			QueueClientCommand("build", new List<int>(), position, 0, type);
-			_activeBuildingPlacementType = null;
+			ActiveBuildingPlacementType = null;
 			if (_buildingPreviewMesh != null)
 			{
 				_buildingPreviewMesh.QueueFree();
@@ -2968,24 +2826,17 @@ public partial class GameHost
 		if (InGameHUD.Instance != null)
 		{
 			float clearance = type == "castle" ? 7f : 4f;
-			foreach (var unit in AllUnits)
+			if (!_inputService.TryPlaceBuilding(new System.Numerics.Vector3(position.X, position.Y, position.Z), clearance))
 			{
-				if (GodotObject.IsInstanceValid(unit))
+				InGameHUD.Instance.ShowFeedbackText("Cannot construct: Area is obstructed!", new Color(1.0f, 0.2f, 0.2f));
+				UIManager.Instance?.PlayWarningSound();
+				ActiveBuildingPlacementType = null;
+				if (_buildingPreviewMesh != null)
 				{
-					float dist = position.DistanceTo(unit.GlobalPosition);
-					if (dist < clearance)
-					{
-						InGameHUD.Instance.ShowFeedbackText("Cannot construct: Area is obstructed!", new Color(1.0f, 0.2f, 0.2f));
-						UIManager.Instance?.PlayWarningSound();
-						_activeBuildingPlacementType = null;
-						if (_buildingPreviewMesh != null)
-						{
-							_buildingPreviewMesh.QueueFree();
-							_buildingPreviewMesh = null;
-						}
-						return;
-					}
+					_buildingPreviewMesh.QueueFree();
+					_buildingPreviewMesh = null;
 				}
+				return;
 			}
 
 			if (InGameHUD.Instance.Gold >= meta.CostGold &&
@@ -3012,7 +2863,7 @@ public partial class GameHost
 			}
 		}
 
-		_activeBuildingPlacementType = null;
+		ActiveBuildingPlacementType = null;
 		if (_buildingPreviewMesh != null)
 		{
 			_buildingPreviewMesh.QueueFree();
@@ -3027,57 +2878,19 @@ public partial class GameHost
 			var prod = EcsWorld.Get<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity);
 			if (prod.UnitIds.Count > 0)
 			{
-				int lastIndex = prod.UnitIds.Count - 1;
-				string cancelledId = prod.UnitIds[lastIndex];
-				prod.UnitIds.RemoveAt(lastIndex);
-
-				var meta = UnitRegistry[cancelledId];
-				if (InGameHUD.Instance != null)
-				{
-					InGameHUD.Instance.Gold += meta.CostGold;
-					InGameHUD.Instance.Wood += meta.CostWood;
-					InGameHUD.Instance.Stone += meta.CostStone;
-
-					CurrentPopulation = Math.Max(0, CurrentPopulation - meta.PopCost);
-					InGameHUD.Instance.ShowFeedbackText($"Cancelled {meta.Name} (Refunded {meta.CostGold}G, {meta.CostWood}W, {meta.CostStone}S)", new Color(1f, 0.8f, 0.2f));
-				}
-
-				if (prod.UnitIds.Count == 0)
-				{
-					prod.CurrentProgress = 0f;
-				}
-
-				EcsWorld.Set(castleEntity, prod);
-
-				UIManager.Instance?.PlayClickSound();
-				InGameHUD.Instance?.RefreshUI(SelectedUnits);
+				CancelQueuedUnitAt(castleEntity, prod.UnitIds.Count - 1);
 			}
 		}
 	}
 
 	public void SetRallyPoint(Unit3D building, Vector3 position)
 	{
-		if (EcsWorld.IsAlive(building.Entity))
+		SpawnTargetIndicator(position, new Color(0.9f, 0.7f, 0.2f));
+		if (InGameHUD.Instance != null)
 		{
-			var rp = new RallyPoint(new System.Numerics.Vector3(position.X, position.Y, position.Z));
-			if (EcsWorld.Has<RallyPoint>(building.Entity))
-			{
-				EcsWorld.Set(building.Entity, rp);
-			}
-			else
-			{
-				EcsWorld.Add(building.Entity, rp);
-			}
-
-			SpawnTargetIndicator(position, new Color(1.0f, 0.82f, 0.55f)); 
-			
-			if (InGameHUD.Instance != null)
-			{
-				InGameHUD.Instance.ShowFeedbackText($"Set Rally Point to: {position.X:F0}, {position.Z:F0}", new Color(1.0f, 0.85f, 0.5f));
-			}
-
-			building.UpdateRallyVisuals();
+			InGameHUD.Instance.ShowFeedbackText($"Rally Point set to {position.X:F0}, {position.Z:F0}", new Color(0.9f, 0.7f, 0.2f));
 		}
+		_inputService.SetRallyPoint(building.Entity, new System.Numerics.Vector3(position.X, position.Y, position.Z));
 	}
 
 	public void DeselectUnit(Unit3D unit)
@@ -3087,7 +2900,6 @@ public partial class GameHost
 			SelectedUnits.Remove(unit);
 			unit.IsSelected = false;
 		}
-		InGameHUD.Instance?.RefreshUI(SelectedUnits);
 	}
 
 	public void SelectOnlyUnit(Unit3D unit)
@@ -3108,23 +2920,15 @@ public partial class GameHost
 		{
 			if (InGameHUD.Instance.Gold >= costGold && InGameHUD.Instance.Wood >= costWood)
 			{
-				InGameHUD.Instance.Gold -= costGold;
-				InGameHUD.Instance.Wood -= costWood;
-				
-				HasWeaponsUpgrade = true;
-
-				var query = new QueryDescription().WithAll<Attack, Owner>().WithNone<Dead, Building>();
-				EcsWorld.Query(in query, (Entity entity, ref Attack atk, ref Owner owner) =>
+				if (_inputService.BuyWeaponsUpgrade(_playerEntity))
 				{
-					if (owner.PlayerEntity == _playerEntity.AsPlayerEntity(EcsWorld))
-					{
-						atk.Damage += 3f;
-					}
-				});
-				
-				InGameHUD.Instance.ShowFeedbackText("Weapons Upgrade Complete! +3 Damage to all units.", new Color(0.2f, 0.8f, 1.0f));
-				UIManager.Instance?.PlayClickSound();
-				InGameHUD.Instance.RefreshUI(SelectedUnits);
+					InGameHUD.Instance.Gold -= costGold;
+					InGameHUD.Instance.Wood -= costWood;
+					
+					InGameHUD.Instance.ShowFeedbackText("Weapons Upgrade Complete! +3 Damage to all units.", new Color(0.2f, 0.8f, 1.0f));
+					UIManager.Instance?.PlayClickSound();
+					InGameHUD.Instance.RefreshUI(SelectedUnits);
+				}
 			}
 			else
 			{
@@ -3145,23 +2949,15 @@ public partial class GameHost
 		{
 			if (InGameHUD.Instance.Gold >= costGold && InGameHUD.Instance.Stone >= costStone)
 			{
-				InGameHUD.Instance.Gold -= costGold;
-				InGameHUD.Instance.Stone -= costStone;
-				
-				HasShieldsUpgrade = true;
-
-				var query = new QueryDescription().WithAll<Armor, Owner>().WithNone<Dead>();
-				EcsWorld.Query(in query, (Entity entity, ref Armor arm, ref Owner owner) =>
+				if (_inputService.BuyShieldsUpgrade(_playerEntity))
 				{
-					if (owner.PlayerEntity == _playerEntity.AsPlayerEntity(EcsWorld))
-					{
-						arm.Value += 2f;
-					}
-				});
-				
-				InGameHUD.Instance.ShowFeedbackText("Plated Armor Upgrade Complete! +2 Armor to all units.", new Color(0.2f, 0.8f, 1.0f));
-				UIManager.Instance?.PlayClickSound();
-				InGameHUD.Instance.RefreshUI(SelectedUnits);
+					InGameHUD.Instance.Gold -= costGold;
+					InGameHUD.Instance.Stone -= costStone;
+					
+					InGameHUD.Instance.ShowFeedbackText("Plated Armor Upgrade Complete! +2 Armor to all units.", new Color(0.2f, 0.8f, 1.0f));
+					UIManager.Instance?.PlayClickSound();
+					InGameHUD.Instance.RefreshUI(SelectedUnits);
+				}
 			}
 			else
 			{
@@ -3182,15 +2978,17 @@ public partial class GameHost
 		{
 			if (InGameHUD.Instance.Wood >= costWood && InGameHUD.Instance.Stone >= costStone)
 			{
-				InGameHUD.Instance.Wood -= costWood;
-				InGameHUD.Instance.Stone -= costStone;
+				if (_inputService.BuyHarvestingUpgrade(_playerEntity))
+				{
+					InGameHUD.Instance.Wood -= costWood;
+					InGameHUD.Instance.Stone -= costStone;
 
-				HasHarvestingUpgrade = true;
-				InGameHUD.Instance.ResourceGatherMultiplier = 1.5f;
+					InGameHUD.Instance.ResourceGatherMultiplier = 1.5f;
 
-				InGameHUD.Instance.ShowFeedbackText("Harvesting Upgrade Complete! Passive resource accumulation +50%.", new Color(0.2f, 0.8f, 1.0f));
-				UIManager.Instance?.PlayClickSound();
-				InGameHUD.Instance.RefreshUI(SelectedUnits);
+					InGameHUD.Instance.ShowFeedbackText("Harvesting Upgrade Complete! Passive resource accumulation +50%.", new Color(0.2f, 0.8f, 1.0f));
+					UIManager.Instance?.PlayClickSound();
+					InGameHUD.Instance.RefreshUI(SelectedUnits);
+				}
 			}
 			else
 			{
@@ -3211,51 +3009,35 @@ public partial class GameHost
 			InGameHUD.Instance.ShowFeedbackText("Command: Attack-Move to position", new Color(0.9f, 0.5f, 0.1f));
 		}
 
+		var selectedEntities = new List<Entity>();
 		foreach (var unit in SelectedUnits)
 		{
 			if (unit.IsBuilding || unit.IsEnemy) continue;
-
-			ClearUnitOrders(unit.Entity);
-
-			var attackMove = new Realm.Ecs.Components.Movement.AttackMove(new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
-			if (EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(unit.Entity))
-				EcsWorld.Set(unit.Entity, attackMove);
-			else
-				EcsWorld.Add(unit.Entity, attackMove);
-
-			var moveTo = new MoveTo(new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
-			if (EcsWorld.Has<MoveTo>(unit.Entity))
-				EcsWorld.Set(unit.Entity, moveTo);
-			else
-				EcsWorld.Add(unit.Entity, moveTo);
+			selectedEntities.Add(unit.Entity);
 		}
+
+		_inputService.IssueAttackMoveCommand(selectedEntities, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
 	}
 
 	public void HoldSelectedUnits()
 	{
-		if (_multiplayerActive && !Multiplayer.IsServer())
-		{
-			var targetIds = new List<int>();
-			foreach (var unit in SelectedUnits)
-			{
-				if (unit.IsBuilding || unit.IsEnemy) continue;
-				targetIds.Add(GetServerEntityId(unit.Entity));
-				ClearUnitOrders(unit.Entity);
-				unit.Velocity = Vector3.Zero;
-				if (!EcsWorld.Has<Realm.Ecs.Components.Movement.HoldPosition>(unit.Entity))
-					EcsWorld.Add<Realm.Ecs.Components.Movement.HoldPosition>(unit.Entity);
-			}
-			QueueClientCommand("hold", targetIds, Vector3.Zero, 0, "");
-			return;
-		}
+		if (SelectedUnits.Count == 0) return;
 
-		StopSelectedUnits();
+		var targetIds = new List<int>();
+		var selectedEntities = new List<Entity>();
 		foreach (var unit in SelectedUnits)
 		{
 			if (unit.IsBuilding || unit.IsEnemy) continue;
+			selectedEntities.Add(unit.Entity);
+			targetIds.Add(GetServerEntityId(unit.Entity));
+			unit.Velocity = Vector3.Zero;
+		}
 
-			if (!EcsWorld.Has<Realm.Ecs.Components.Movement.HoldPosition>(unit.Entity))
-				EcsWorld.Add<Realm.Ecs.Components.Movement.HoldPosition>(unit.Entity);
+		_inputService.HoldSelectedUnits(selectedEntities);
+
+		if (_multiplayerActive && !Multiplayer.IsServer())
+		{
+			QueueClientCommand("hold", targetIds, Vector3.Zero, 0, "");
 		}
 	}
 
@@ -3266,76 +3048,20 @@ public partial class GameHost
 		SpawnTargetIndicator(targetPos, new Color(0.6f, 0.3f, 1.0f));
 		InGameHUD.Instance?.ShowFeedbackText("Command: Patrol Route Set", new Color(0.7f, 0.4f, 1.0f));
 
-		if (_multiplayerActive && !Multiplayer.IsServer())
-		{
-			var targetIds = new List<int>();
-			int clientUnitIndex = 0;
-			int clientCols = Mathf.CeilToInt(Mathf.Sqrt(SelectedUnits.Count));
-			float clientSpacing = 2.2f;
-
-			foreach (var unit in SelectedUnits)
-			{
-				if (unit.IsBuilding || unit.IsEnemy) continue;
-				targetIds.Add(GetServerEntityId(unit.Entity));
-				ClearUnitOrders(unit.Entity);
-
-				if (EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(unit.Entity))
-				{
-					int row = clientUnitIndex / clientCols;
-					int col = clientUnitIndex % clientCols;
-					float offsetX = (col - clientCols * 0.5f + 0.5f) * clientSpacing;
-					float offsetZ = row * clientSpacing;
-
-					var unitPos = unit.GlobalPosition;
-					var patrolA = new System.Numerics.Vector3(unitPos.X, unitPos.Y, unitPos.Z);
-					var patrolB = new System.Numerics.Vector3(targetPos.X + offsetX, targetPos.Y, targetPos.Z + offsetZ);
-
-					var patrol = new Patrol(patrolA, patrolB);
-					if (EcsWorld.Has<Patrol>(unit.Entity)) EcsWorld.Set(unit.Entity, patrol);
-					else EcsWorld.Add(unit.Entity, patrol);
-
-					var moveTo = new MoveTo(patrolB);
-					if (EcsWorld.Has<MoveTo>(unit.Entity)) EcsWorld.Set(unit.Entity, moveTo);
-					else EcsWorld.Add(unit.Entity, moveTo);
-
-					clientUnitIndex++;
-				}
-			}
-			QueueClientCommand("patrol", targetIds, targetPos, 0, "");
-			return;
-		}
-
-		int unitIndex = 0;
-		int cols = Mathf.CeilToInt(Mathf.Sqrt(SelectedUnits.Count));
-		float spacing = 2.2f;
-
+		var targetIds = new List<int>();
+		var selectedEntities = new List<Entity>();
 		foreach (var unit in SelectedUnits)
 		{
 			if (unit.IsBuilding || unit.IsEnemy) continue;
+			selectedEntities.Add(unit.Entity);
+			targetIds.Add(GetServerEntityId(unit.Entity));
+		}
 
-			ClearUnitOrders(unit.Entity);
+		_inputService.IssuePatrolCommand(selectedEntities, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
 
-			if (EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(unit.Entity))
-			{
-				int row = unitIndex / cols;
-				int col = unitIndex % cols;
-				float offsetX = (col - cols * 0.5f + 0.5f) * spacing;
-				float offsetZ = row * spacing;
-
-				var unitPos = unit.GlobalPosition;
-				var patrolA = new System.Numerics.Vector3(unitPos.X, unitPos.Y, unitPos.Z);
-				var patrolB = new System.Numerics.Vector3(targetPos.X + offsetX, targetPos.Y, targetPos.Z + offsetZ);
-
-				var patrol = new Patrol(patrolA, patrolB);
-				if (EcsWorld.Has<Patrol>(unit.Entity)) EcsWorld.Set(unit.Entity, patrol);
-				else EcsWorld.Add(unit.Entity, patrol);
-
-				var moveTo = new MoveTo(patrolB);
-				if (EcsWorld.Has<MoveTo>(unit.Entity)) EcsWorld.Set(unit.Entity, moveTo);
-				else EcsWorld.Add(unit.Entity, moveTo);
-
-				unitIndex++;
-			}
+		if (_multiplayerActive && !Multiplayer.IsServer())
+		{
+			QueueClientCommand("patrol", targetIds, targetPos, 0, "");
 		}
 	}
 
@@ -3346,273 +3072,42 @@ public partial class GameHost
 		SpawnTargetIndicator(targetPos, new Color(0.2f, 0.7f, 1.0f));
 		InGameHUD.Instance?.ShowFeedbackText("Command: Queued Move (Shift+Click)", new Color(0.2f, 0.7f, 1.0f));
 
-		if (_multiplayerActive && !Multiplayer.IsServer())
-		{
-			var targetIds = new List<int>();
-			int clientUnitIndex = 0;
-			int clientCols = Mathf.CeilToInt(Mathf.Sqrt(SelectedUnits.Count));
-			float clientSpacing = 2.2f;
-
-			foreach (var unit in SelectedUnits)
-			{
-				if (unit.IsBuilding || unit.IsEnemy) continue;
-				if (!EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(unit.Entity)) continue;
-
-				targetIds.Add(GetServerEntityId(unit.Entity));
-
-				bool alreadyMoving = EcsWorld.Has<MoveTo>(unit.Entity);
-				if (!alreadyMoving)
-				{
-					ClearUnitOrders(unit.Entity);
-				}
-
-				int row = clientUnitIndex / clientCols;
-				int col = clientUnitIndex % clientCols;
-				float offsetX = (col - clientCols * 0.5f + 0.5f) * clientSpacing;
-				float offsetZ = row * clientSpacing;
-				Vector3 scattered = new Vector3(targetPos.X + offsetX, targetPos.Y, targetPos.Z + offsetZ);
-
-				var targetVec = new System.Numerics.Vector3(scattered.X, scattered.Y, scattered.Z);
-
-				if (alreadyMoving)
-				{
-					if (EcsWorld.Has<WaypointQueue>(unit.Entity))
-					{
-						var q = EcsWorld.Get<WaypointQueue>(unit.Entity);
-						q.Add(targetVec);
-						EcsWorld.Set(unit.Entity, q);
-					}
-					else
-					{
-						var q = new WaypointQueue(targetVec);
-						EcsWorld.Add(unit.Entity, q);
-					}
-				}
-				else
-				{
-					var moveTo = new MoveTo(targetVec);
-					if (EcsWorld.Has<MoveTo>(unit.Entity)) EcsWorld.Set(unit.Entity, moveTo);
-					else EcsWorld.Add(unit.Entity, moveTo);
-				}
-
-				clientUnitIndex++;
-			}
-			QueueClientCommand("move_queued", targetIds, targetPos, 0, "");
-			return;
-		}
-
-		int unitIndex = 0;
-		int cols = Mathf.CeilToInt(Mathf.Sqrt(SelectedUnits.Count));
-		float spacing = 2.2f;
-
+		var targetIds = new List<int>();
+		var selectedEntities = new List<Entity>();
 		foreach (var unit in SelectedUnits)
 		{
 			if (unit.IsBuilding || unit.IsEnemy) continue;
-			if (!EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(unit.Entity)) continue;
-
-			bool alreadyMoving = EcsWorld.Has<MoveTo>(unit.Entity);
-			if (!alreadyMoving)
-			{
-				ClearUnitOrders(unit.Entity);
-			}
-
-			int row = unitIndex / cols;
-			int col = unitIndex % cols;
-			float offsetX = (col - cols * 0.5f + 0.5f) * spacing;
-			float offsetZ = row * spacing;
-			Vector3 scattered = new Vector3(targetPos.X + offsetX, targetPos.Y, targetPos.Z + offsetZ);
-
-			var targetVec = new System.Numerics.Vector3(scattered.X, scattered.Y, scattered.Z);
-
-			if (alreadyMoving)
-			{
-				if (EcsWorld.Has<WaypointQueue>(unit.Entity))
-				{
-					var q = EcsWorld.Get<WaypointQueue>(unit.Entity);
-					q.Add(targetVec);
-					EcsWorld.Set(unit.Entity, q);
-				}
-				else
-				{
-					var q = new WaypointQueue(targetVec);
-					EcsWorld.Add(unit.Entity, q);
-				}
-			}
-			else
-			{
-				var moveTo = new MoveTo(targetVec);
-				if (EcsWorld.Has<MoveTo>(unit.Entity))
-					EcsWorld.Set(unit.Entity, moveTo);
-				else
-					EcsWorld.Add(unit.Entity, moveTo);
-			}
-
-			unitIndex++;
+			selectedEntities.Add(unit.Entity);
+			targetIds.Add(GetServerEntityId(unit.Entity));
 		}
-	}
 
-	private bool IsPositionBlocked(Vector3 pos, float checkRadius, Node3D ignoreNode = null)
-	{
-		foreach (var unit in AllUnits)
+		_inputService.IssueMoveCommandQueued(selectedEntities, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
+
+		if (_multiplayerActive && !Multiplayer.IsServer())
 		{
-			if (unit == ignoreNode || !GodotObject.IsInstanceValid(unit)) continue;
-			float distXZ = new Vector2(unit.GlobalPosition.X - pos.X, unit.GlobalPosition.Z - pos.Z).Length();
-			float r1 = checkRadius;
-			float r2 = unit.Scale.X * 1.2f;
-			if (unit.UnitId == "castle") r2 = unit.Scale.X * 5.0f;
-			else if (unit.UnitId == "tower") r2 = unit.Scale.X * 2.5f;
-			if (distXZ < (r1 + r2) * 0.85f)
-			{
-				return true;
-			}
+			QueueClientCommand("move_queued", targetIds, targetPos, 0, "");
 		}
-
-		foreach (var node in GetChildren())
-		{
-			if (node == ignoreNode || !GodotObject.IsInstanceValid(node)) continue;
-			if (node is Prop3D prop)
-			{
-				float distXZ = new Vector2(prop.GlobalPosition.X - pos.X, prop.GlobalPosition.Z - pos.Z).Length();
-				float r1 = checkRadius;
-				float r2 = prop.Scale.X * 1.5f;
-				if (prop.PropId == "goldmine") r2 = prop.Scale.X * 4.0f;
-				if (distXZ < (r1 + r2) * 0.85f)
-				{
-					return true;
-				}
-			}
-		}
-
-		return false;
-	}
-
-	private float GetPlacementRadius(string placeId, float scale)
-	{
-		if (string.IsNullOrEmpty(placeId)) return 1.2f * scale;
-		string lowerId = placeId.ToLower();
-		float baseRadius = 1.2f;
-		if (lowerId.Contains("castle")) baseRadius = 5.0f;
-		else if (lowerId.Contains("tower")) baseRadius = 2.5f;
-		else if (lowerId.Contains("goldmine")) baseRadius = 4.0f;
-		else if (lowerId.Contains("logo") || lowerId.Contains("flag") || lowerId.Contains("rune")) baseRadius = 1.0f;
-		return baseRadius * scale;
-	}
-
-	private Vector3? FindNearestFreePosition(Vector3 startPos, float checkRadius, float maxSearchDist = 20.0f)
-	{
-		if (!IsPositionBlocked(startPos, checkRadius))
-		{
-			return startPos;
-		}
-
-		float stepDist = 1.0f;
-		int numSteps = Mathf.CeilToInt(maxSearchDist / stepDist);
-
-		for (int i = 1; i <= numSteps; i++)
-		{
-			float dist = i * stepDist;
-			int numAngles = 8 + i * 4;
-			for (int a = 0; a < numAngles; a++)
-			{
-				float angle = a * (Mathf.Pi * 2.0f) / numAngles;
-				Vector3 testPos = new Vector3(
-					startPos.X + dist * Mathf.Cos(angle),
-					startPos.Y,
-					startPos.Z + dist * Mathf.Sin(angle)
-				);
-
-				if (GroundTerrain != null)
-				{
-					float spacing = GroundTerrain.Spacing;
-					int width = GroundTerrain.Width;
-					int depth = GroundTerrain.Depth;
-					float halfW = (width - 1) / 2.0f * spacing;
-					float halfD = (depth - 1) / 2.0f * spacing;
-					if (Mathf.Abs(testPos.X) > halfW || Mathf.Abs(testPos.Z) > halfD) continue;
-				}
-
-				testPos.Y = GetTerrainHeightAt(testPos);
-
-				if (!IsPositionBlocked(testPos, checkRadius))
-				{
-					return testPos;
-				}
-			}
-		}
-
-		return null;
 	}
 
 	private void UpdateBuildingPreview()
 	{
-		if (_activeBuildingPlacementType == null)
-		{
-			if (_buildingPreviewMesh != null)
-			{
-				_buildingPreviewMesh.QueueFree();
-				_buildingPreviewMesh = null;
-			}
-			return;
-		}
+		if (_buildingPreviewMesh == null || !GodotObject.IsInstanceValid(_buildingPreviewMesh)) return;
 
 		var mousePos = GetViewport().GetMousePosition();
 		var hit = RaycastFromMouse(mousePos);
 		if (hit != null && hit.ContainsKey("position"))
 		{
-			var hitPos = hit["position"].AsVector3();
-			hitPos.Y = 0f;
+			Vector3 pos = hit["position"].AsVector3();
+			pos.Y = GetTerrainHeightAt(pos) + 0.1f;
+			_buildingPreviewMesh.GlobalPosition = pos;
 
-			bool isClear = true;
-			float clearance = _activeBuildingPlacementType == "castle" ? 7f : 4f;
-			foreach (var unit in AllUnits)
+			float clearance = ActiveBuildingPlacementType == "castle" ? 7f : 4f;
+			bool blocked = _inputService.IsAreaObstructed(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z), clearance);
+
+			var mat = _buildingPreviewMesh.MaterialOverride as StandardMaterial3D;
+			if (mat != null)
 			{
-				if (GodotObject.IsInstanceValid(unit))
-				{
-					float dist = hitPos.DistanceTo(unit.GlobalPosition);
-					if (dist < clearance)
-					{
-						isClear = false;
-						break;
-					}
-				}
-			}
-
-			var meta = UnitRegistry[_activeBuildingPlacementType];
-			bool hasResources = InGameHUD.Instance != null &&
-				InGameHUD.Instance.Gold >= meta.CostGold &&
-				InGameHUD.Instance.Wood >= meta.CostWood &&
-				InGameHUD.Instance.Stone >= meta.CostStone;
-
-			bool canPlace = isClear && hasResources;
-
-			if (_buildingPreviewMesh == null)
-			{
-				_buildingPreviewMesh = new MeshInstance3D();
-				var boxMesh = new BoxMesh();
-				boxMesh.Size = _activeBuildingPlacementType == "castle" ? new Vector3(8f, 4f, 8f) : new Vector3(4f, 8f, 4f);
-				_buildingPreviewMesh.Mesh = boxMesh;
-				
-				var mat = new StandardMaterial3D();
-				mat.AlbedoColor = canPlace ? new Color(0.1f, 0.8f, 0.2f, 0.4f) : new Color(0.9f, 0.1f, 0.1f, 0.4f);
-				mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-				_buildingPreviewMesh.MaterialOverride = mat;
-				AddChild(_buildingPreviewMesh);
-			}
-			else
-			{
-				if (_buildingPreviewMesh.MaterialOverride is StandardMaterial3D mat)
-				{
-					mat.AlbedoColor = canPlace ? new Color(0.1f, 0.8f, 0.2f, 0.4f) : new Color(0.9f, 0.1f, 0.1f, 0.4f);
-				}
-			}
-
-			_buildingPreviewMesh.GlobalPosition = hitPos;
-		}
-		else
-		{
-			if (_buildingPreviewMesh != null)
-			{
-				_buildingPreviewMesh.GlobalPosition = new Vector3(9999f, 9999f, 9999f);
+				mat.AlbedoColor = blocked ? new Color(0.9f, 0.2f, 0.2f, 0.5f) : new Color(0.2f, 0.9f, 0.3f, 0.5f);
 			}
 		}
 	}
@@ -3623,7 +3118,6 @@ public partial class GameHost
 		if (InGameHUD.Instance == null) return;
 
 		Unit3D targetCastle = null;
-		Realm.Ecs.Components.Core.ProductionQueue targetProd = default;
 		bool foundCastle = false;
 
 		foreach (var unit in SelectedUnits)
@@ -3636,7 +3130,6 @@ public partial class GameHost
 					if (prod.UnitIds.Count < 5)
 					{
 						targetCastle = unit;
-						targetProd = prod;
 						foundCastle = true;
 						break;
 					}
@@ -3644,9 +3137,6 @@ public partial class GameHost
 				else
 				{
 					targetCastle = unit;
-					targetProd = new Realm.Ecs.Components.Core.ProductionQueue();
-					targetProd.BuildTime = meta.ProductionTime;
-					EcsWorld.Add(unit.Entity, targetProd);
 					foundCastle = true;
 					break;
 				}
@@ -3679,23 +3169,167 @@ public partial class GameHost
 			InGameHUD.Instance.Wood >= meta.CostWood && 
 			InGameHUD.Instance.Stone >= meta.CostStone)
 		{
-			InGameHUD.Instance.Gold -= meta.CostGold;
-			InGameHUD.Instance.Wood -= meta.CostWood;
-			InGameHUD.Instance.Stone -= meta.CostStone;
+			if (_inputService.TryQueueUnitAtCastle(_playerEntity, targetCastle.Entity, unitId, meta.PopCost, meta.ProductionTime))
+			{
+				InGameHUD.Instance.Gold -= meta.CostGold;
+				InGameHUD.Instance.Wood -= meta.CostWood;
+				InGameHUD.Instance.Stone -= meta.CostStone;
 
-			CurrentPopulation += meta.PopCost;
-			targetProd.UnitIds.Add(unitId);
-			EcsWorld.Set(targetCastle.Entity, targetProd);
-
-			InGameHUD.Instance.ShowFeedbackText($"Queued {meta.Name} ({CurrentPopulation}/{MaxPopulation} pop)", new Color(0.2f, 0.8f, 1f));
-			UIManager.Instance?.PlayClickSound();
-			InGameHUD.Instance.RefreshUI(SelectedUnits);
+				InGameHUD.Instance.ShowFeedbackText($"Queued {meta.Name} ({CurrentPopulation}/{MaxPopulation} pop)", new Color(0.2f, 0.8f, 1f));
+				UIManager.Instance?.PlayClickSound();
+				InGameHUD.Instance.RefreshUI(SelectedUnits);
+			}
 		}
 		else
 		{
 			InGameHUD.Instance.ShowFeedbackText("Cannot train unit: Insufficient resources!", new Color(1f, 0.2f, 0.2f));
 			UIManager.Instance?.PlayWarningSound();
 		}
+	}
+
+	public void UpgradeTower(Unit3D tower)
+	{
+		float costGold = 150f;
+		float costStone = 100f;
+
+		if (InGameHUD.Instance != null)
+		{
+			int currentLevel = 1;
+			if (EcsWorld.Has<TowerUpgradeLevel>(tower.Entity))
+			{
+				currentLevel = EcsWorld.Get<TowerUpgradeLevel>(tower.Entity).Value;
+			}
+			
+			if (currentLevel >= 3)
+			{
+				InGameHUD.Instance.ShowFeedbackText("Tower is already at maximum upgrade level (Level 3)!", new Color(1.0f, 0.3f, 0.3f));
+				UIManager.Instance?.PlayWarningSound();
+				return;
+			}
+
+			if (InGameHUD.Instance.Gold >= costGold && InGameHUD.Instance.Stone >= costStone)
+			{
+				if (_inputService.TryUpgradeTower(tower.Entity, out int newLevel, out string _))
+				{
+					InGameHUD.Instance.Gold -= costGold;
+					InGameHUD.Instance.Stone -= costStone;
+
+					float newScale = 1.0f + newLevel * 0.2f;
+					tower.Scale = new Vector3(newScale, newScale, newScale);
+					SpawnTargetIndicator(tower.GlobalPosition, new Color(0.1f, 0.8f, 0.9f));
+					
+					InGameHUD.Instance.ShowFeedbackText($"Tower Upgraded to Level {newLevel}!", new Color(0.2f, 0.8f, 1.0f));
+					UIManager.Instance?.PlayClickSound();
+					
+					InGameHUD.Instance.RefreshUI(SelectedUnits);
+				}
+			}
+			else
+			{
+				InGameHUD.Instance.ShowFeedbackText("Cannot upgrade: Insufficient resources!", new Color(1.0f, 0.2f, 0.2f));
+				UIManager.Instance?.PlayWarningSound();
+			}
+		}
+	}
+
+	public void CycleCameraZoom()
+	{
+		var camera = GetViewport().GetCamera3D();
+		if (camera != null && camera is CameraControl camCtrl)
+		{
+			camCtrl.CycleZoom();
+		}
+	}
+
+	public void StopSelectedUnits()
+	{
+		var targetIds = new List<int>();
+		var selectedEntities = new List<Entity>();
+		foreach (var unit in SelectedUnits)
+		{
+			if (unit.IsEnemy) continue;
+			selectedEntities.Add(unit.Entity);
+			targetIds.Add(GetServerEntityId(unit.Entity));
+			unit.Velocity = Vector3.Zero;
+		}
+
+		_inputService.StopSelectedUnits(selectedEntities);
+
+		if (_multiplayerActive && !Multiplayer.IsServer())
+		{
+			QueueClientCommand("stop", targetIds, Vector3.Zero, 0, "");
+		}
+	}
+
+	public void CancelQueuedUnitAt(Entity castleEntity, int index)
+	{
+		if (EcsWorld.IsAlive(castleEntity) && EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity))
+		{
+			if (_inputService.CancelQueuedUnitAt(castleEntity, index, out string? cancelledId, out string? nextUnitId))
+			{
+				if (cancelledId != null)
+				{
+					var meta = UnitRegistry[cancelledId];
+					if (InGameHUD.Instance != null)
+					{
+						InGameHUD.Instance.Gold += meta.CostGold;
+						InGameHUD.Instance.Wood += meta.CostWood;
+						InGameHUD.Instance.Stone += meta.CostStone;
+
+						CurrentPopulation = Math.Max(0, CurrentPopulation - meta.PopCost);
+						InGameHUD.Instance.ShowFeedbackText($"Cancelled {meta.Name} (Refunded {meta.CostGold}G, {meta.CostWood}W, {meta.CostStone}S)", new Color(1f, 0.8f, 0.2f));
+					}
+				}
+
+				if (index == 0 && nextUnitId != null)
+				{
+					var nextMeta = UnitRegistry[nextUnitId];
+					if (EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity))
+					{
+						var p = EcsWorld.Get<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity);
+						p.BuildTime = nextMeta.ProductionTime;
+						EcsWorld.Set(castleEntity, p);
+					}
+				}
+
+				UIManager.Instance?.PlayClickSound();
+				InGameHUD.Instance?.RefreshUI(SelectedUnits);
+			}
+		}
+	}
+
+	private bool UnitHasAbility(Unit3D unit, string abilityId)
+	{
+		if (UnitRegistry.TryGetValue(unit.UnitId, out var meta))
+		{
+			if (meta.Abilities != null)
+			{
+				return Array.Exists(meta.Abilities, a => a == abilityId);
+			}
+		}
+		if (abilityId == "holylight") return unit.UnitId == "priest";
+		if (abilityId == "fireball" || abilityId == "lightning") return unit.UnitId == "tower";
+		return false;
+	}
+
+	private float GetPlacementRadius(string placeId, float scale = 1.0f)
+	{
+		return _inputService.GetPlacementRadius(placeId, scale);
+	}
+
+	private Vector3? FindNearestFreePosition(Vector3 startPos, float checkRadius, float maxSearchDist = 20.0f)
+	{
+		var res = _inputService.FindNearestFreePosition(new System.Numerics.Vector3(startPos.X, startPos.Y, startPos.Z), checkRadius, maxSearchDist);
+		if (res == null) return null;
+		return new Vector3(res.Value.X, res.Value.Y, res.Value.Z);
+	}
+
+	private bool IsPositionBlocked(Vector3 pos, float radius, Node3D ignoreNode = null)
+	{
+		Entity ignoreEntity = Entity.Null;
+		if (ignoreNode is Unit3D u) ignoreEntity = u.Entity;
+		else if (ignoreNode is Prop3D p) ignoreEntity = p.Entity;
+		return _inputService.IsPositionBlocked(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z), radius, ignoreEntity);
 	}
 
 	public Unit3D SpawnUnitFromProduction(string unitId, Vector3 position, bool isEnemy, Vector3? rallyPoint = null, bool isFromQueue = false)
@@ -3728,151 +3362,5 @@ public partial class GameHost
 			EcsWorld.Add(entity, moveTo);
 		}
 		return unit3D;
-	}
-
-	public void UpgradeTower(Unit3D tower)
-	{
-		float costGold = 150f;
-		float costStone = 100f;
-
-		if (InGameHUD.Instance != null)
-		{
-			int currentLevel = 1;
-			if (EcsWorld.Has<TowerUpgradeLevel>(tower.Entity))
-			{
-				currentLevel = EcsWorld.Get<TowerUpgradeLevel>(tower.Entity).Value;
-			}
-			
-			if (currentLevel >= 3)
-			{
-				InGameHUD.Instance.ShowFeedbackText("Tower is already at maximum upgrade level (Level 3)!", new Color(1.0f, 0.3f, 0.3f));
-				UIManager.Instance?.PlayWarningSound();
-				return;
-			}
-
-			if (InGameHUD.Instance.Gold >= costGold && InGameHUD.Instance.Stone >= costStone)
-			{
-				InGameHUD.Instance.Gold -= costGold;
-				InGameHUD.Instance.Stone -= costStone;
-
-				if (EcsWorld.IsAlive(tower.Entity))
-				{
-					int newLevel = currentLevel + 1;
-					EcsWorld.Set(tower.Entity, new TowerUpgradeLevel(newLevel));
-					
-					string baseName = "Spell Tower";
-					if (EcsWorld.Has<Name>(tower.Entity))
-					{
-						var nameComp = EcsWorld.Get<Name>(tower.Entity);
-						if (nameComp.Value.Contains("Orc")) baseName = "Orc Totem Tower";
-					}
-					EcsWorld.Set(tower.Entity, new Name($"{baseName} (Lvl {newLevel})"));
-
-					if (EcsWorld.Has<Health>(tower.Entity))
-					{
-						var hp = EcsWorld.Get<Health>(tower.Entity);
-						EcsWorld.Set(tower.Entity, new Health(hp.Current + 250f, hp.Max + 250f));
-					}
-					if (EcsWorld.Has<Armor>(tower.Entity))
-					{
-						var arm = EcsWorld.Get<Armor>(tower.Entity);
-						EcsWorld.Set(tower.Entity, new Armor(arm.Value + 5f));
-					}
-					if (EcsWorld.Has<Attack>(tower.Entity))
-					{
-						var atk = EcsWorld.Get<Attack>(tower.Entity);
-						EcsWorld.Set(tower.Entity, new Attack(atk.Damage + 10f, atk.Range, atk.Cooldown));
-					}
-					
-					float newScale = 1.0f + newLevel * 0.2f;
-					tower.Scale = new Vector3(newScale, newScale, newScale);
-					SpawnTargetIndicator(tower.GlobalPosition, new Color(0.1f, 0.8f, 0.9f));
-					
-					InGameHUD.Instance.ShowFeedbackText($"Tower Upgraded to Level {newLevel}!", new Color(0.2f, 0.8f, 1.0f));
-					UIManager.Instance?.PlayClickSound();
-					
-					InGameHUD.Instance.RefreshUI(SelectedUnits);
-				}
-			}
-			else
-			{
-				InGameHUD.Instance.ShowFeedbackText("Cannot upgrade: Insufficient resources!", new Color(1.0f, 0.2f, 0.2f));
-				UIManager.Instance?.PlayWarningSound();
-			}
-		}
-	}
-
-	public void CycleCameraZoom()
-	{
-		var camera = GetViewport().GetCamera3D();
-		if (camera != null && camera is CameraControl camCtrl)
-		{
-			camCtrl.CycleZoom();
-		}
-	}
-
-	public void StopSelectedUnits()
-	{
-		if (_multiplayerActive && !Multiplayer.IsServer())
-		{
-			var targetIds = new List<int>();
-			foreach (var unit in SelectedUnits)
-			{
-				if (unit.IsEnemy) continue;
-				targetIds.Add(GetServerEntityId(unit.Entity));
-				ClearUnitOrders(unit.Entity);
-				unit.Velocity = Vector3.Zero;
-			}
-			QueueClientCommand("stop", targetIds, Vector3.Zero, 0, "");
-			return;
-		}
-
-		foreach (var unit in SelectedUnits)
-		{
-			if (unit.IsEnemy) continue;
-
-			ClearUnitOrders(unit.Entity);
-
-			unit.Velocity = Vector3.Zero;
-		}
-	}
-
-	public void CancelQueuedUnitAt(Entity castleEntity, int index)
-	{
-		if (EcsWorld.IsAlive(castleEntity) && EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity))
-		{
-			var prod = EcsWorld.Get<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity);
-			if (index >= 0 && index < prod.UnitIds.Count)
-			{
-				string cancelledId = prod.UnitIds[index];
-				prod.UnitIds.RemoveAt(index);
-
-				var meta = UnitRegistry[cancelledId];
-				if (InGameHUD.Instance != null)
-				{
-					InGameHUD.Instance.Gold += meta.CostGold;
-					InGameHUD.Instance.Wood += meta.CostWood;
-					InGameHUD.Instance.Stone += meta.CostStone;
-
-					CurrentPopulation = Math.Max(0, CurrentPopulation - meta.PopCost);
-					InGameHUD.Instance.ShowFeedbackText($"Cancelled {meta.Name} (Refunded {meta.CostGold}G, {meta.CostWood}W, {meta.CostStone}S)", new Color(1f, 0.8f, 0.2f));
-				}
-
-				if (index == 0)
-				{
-					prod.CurrentProgress = 0f;
-					if (prod.UnitIds.Count > 0)
-					{
-						string nextUnitId = prod.UnitIds[0];
-						prod.BuildTime = UnitRegistry[nextUnitId].ProductionTime;
-					}
-				}
-
-				EcsWorld.Set(castleEntity, prod);
-
-				UIManager.Instance?.PlayClickSound();
-				InGameHUD.Instance?.RefreshUI(SelectedUnits);
-			}
-		}
 	}
 }

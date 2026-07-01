@@ -26,93 +26,13 @@ public partial class GameHost : Node3D, IGameAPI
 	private readonly GameHostAudioService _audioService = new();
 	private readonly GameHostDayNightService _dayNightService = new();
 	private readonly GameHostFXService _fxService = new();
+	private GameHostSaveLoadService _saveLoadService;
+	private GameHostEditorService _editorService;
+	private GameHostReplayService _replayService;
+	private GameHostEcsService _ecsService;
 
 	private float _fDelta;
-	private float _dynamicInterpolationFactor;
 
-
-	private readonly List<string> _tickExpiredBuffs = new();
-	private readonly List<string> _tickBuffKeys = new();
-	internal readonly List<(Entity Entity, Patrol Patrol)> _tickPatrolToFlip = new();
-	private readonly List<Entity> _tickFollowToStop = new();
-	private readonly List<(Entity Follower, Vector3 TargetPos)> _tickFollowToMove = new();
-	private readonly List<(Entity Worker, Gatherer NewState, Vector3? NewDestination)> _tickGatherersToUpdate = new();
-	private readonly List<Entity> _tickArrivedUnits = new();
-	internal readonly List<(Entity Entity, PathFollow PathFollow)> _tickAddPathFollow = new();
-	internal readonly List<(Entity Attacker, AttackTarget Target)> _tickNewAttackTargets = new();
-	private readonly List<Entity> _tickActionsToRemoveTarget = new();
-	private readonly List<(Entity Attacker, Vector3 TargetPos)> _tickActionsToChase = new();
-	private readonly List<Entity> _tickActionsToStopChasing = new();
-	private readonly List<(Entity Entity, Unit3D Unit)> _tickUnitsToKill = new();
-	internal readonly List<(Entity Priest, HealingTarget Target)> _tickNewHealingTargets = new();
-	private readonly List<Entity> _tickHealRemoveTargets = new();
-	private readonly List<(Entity Priest, Vector3 TargetPos)> _tickHealChaseTargets = new();
-	private readonly List<Entity> _tickHealStopChasing = new();
-	private readonly List<Entity> _tickEditorArrivedUnits = new();
-
-	private struct SpawningRequest
-	{
-		public string UnitId;
-		public Vector3 Position;
-		public bool IsEnemy;
-		public Vector3? RallyPoint;
-		public bool IsFromQueue;
-	}
-
-	private readonly List<Entity> _tickEntitiesToClearOrders = new();
-	private readonly List<Entity> _tickEntitiesToStopGathering = new();
-	private readonly List<SpawningRequest> _tickSpawningRequests = new();
-	private bool _tickNeedsUiRefresh = false;
-
-
-
-
-	private Entity _scanAttackerEntity;
-	private Vector3 _scanAttackerPos;
-	private PlayerEntity _scanAttackerOwner;
-	private bool _scanIsAttackerEnemy;
-	private float _scanClosestDist;
-	private Entity _scanClosestEnemy;
-	
-	private Vector3 _scanPriestPos;
-	private PlayerEntity _scanFriendlyOwner;
-	private float _scanFriendlyClosestDist;
-	private Entity _scanClosestDamagedFriendly;
-
-	private readonly QueryDescription _enemyQuery = new QueryDescription().WithAll<Position, Owner>().WithNone<Dead>();
-	private readonly QueryDescription _friendlyScanQuery = new QueryDescription().WithAll<Position, Health, Owner>().WithNone<Dead>();
-	private readonly QueryDescription _passiveIncomeQuery = new QueryDescription().WithAll<PlayerResources>().WithNone<Dead>();
-	private readonly QueryDescription _buffQuery = new QueryDescription().WithAll<Realm.Ecs.Components.Core.Buffs>().WithNone<Dead>();
-	private readonly QueryDescription _patrolArrivalQuery = new QueryDescription().WithAll<Patrol, Position>().WithNone<Dead, AttackTarget>();
-	private readonly QueryDescription _followQuery = new QueryDescription().WithAll<Follow, Position>().WithNone<Dead>();
-	private readonly QueryDescription _gatherQuery = new QueryDescription().WithAll<Position, Gatherer>().WithNone<Dead>();
-	private readonly QueryDescription _movementQuery = new QueryDescription().WithAll<Position, MoveTo, MovementStats>().WithNone<Dead>();
-	private readonly QueryDescription _attackCooldownQuery = new QueryDescription().WithAll<Attack>();
-	private readonly QueryDescription _targetAcquisitionQuery = new QueryDescription().WithAll<Position, Attack, Owner>().WithNone<AttackTarget, Dead>();
-	private readonly QueryDescription _combatQuery = new QueryDescription().WithAll<Position, Attack, AttackTarget, Owner>().WithNone<Dead>();
-	private readonly QueryDescription _priestScanQuery = new QueryDescription().WithAll<Position, Owner, DefinitionId>().WithNone<Dead, HealingTarget>();
-	private readonly QueryDescription _healingExecutionQuery = new QueryDescription().WithAll<Position, Attack, HealingTarget, Owner>().WithNone<Dead>();
-	private readonly QueryDescription _prodQuery = new QueryDescription().WithAll<Realm.Ecs.Components.Core.ProductionQueue>();
-	private readonly QueryDescription _spellCooldownQuery = new QueryDescription().WithAll<SpellCooldowns>();
-
-
-	private ForEachWithEntity<Realm.Ecs.Components.Core.Buffs> _buffsQueryDelegate = null!;
-	private ForEachWithEntity<Patrol, Position> _patrolArrivalQueryDelegate = null!;
-	private ForEachWithEntity<Follow, Position> _followQueryDelegate = null!;
-	private ForEachWithEntity<Position, Gatherer> _gatherQueryDelegate = null!;
-	private ForEachWithEntity<Position, MoveTo, MovementStats> _movementQueryDelegate = null!;
-	private ForEachWithEntity<Attack> _attackCooldownQueryDelegate = null!;
-	private ForEachWithEntity<Position, Attack, Owner> _targetAcquisitionQueryDelegate = null!;
-	private ForEachWithEntity<Position, Owner> _potentialEnemyQueryDelegate = null!;
-	private ForEachWithEntity<Position, Attack, AttackTarget, Owner> _combatQueryDelegate = null!;
-	private ForEachWithEntity<Position, Owner, DefinitionId> _priestScanQueryDelegate = null!;
-	private ForEachWithEntity<Position, Health, Owner> _friendlyScanQueryDelegate = null!;
-	private ForEachWithEntity<Position, Attack, HealingTarget, Owner> _healingExecutionQueryDelegate = null!;
-	private ForEachWithEntity<Realm.Ecs.Components.Core.ProductionQueue> _prodQueryDelegate = null!;
-	private ForEachWithEntity<Position, MoveTo, MovementStats> _editorMovementQueryDelegate = null!;
-	private ForEachWithEntity<InterpolationTarget, Unit3D> _interpolationQueryDelegate = null!;
-	private ForEachWithEntity<PlayerResources> _passiveIncomeQueryDelegate = null!;
-	private ForEachWithEntity<SpellCooldowns> _spellCooldownQueryDelegate = null!;
 	
 	internal DefinitionManager DefinitionManager => _definitionManager;
 	private DefinitionManager _definitionManager = null!;
@@ -124,11 +44,6 @@ public partial class GameHost : Node3D, IGameAPI
 	public Entity PlayerEntity => _playerEntity;
 	public Entity EnemyEntity => _enemyPlayerEntity;
 	
-	private const float CollisionCellSize = 10f;
-	private readonly Dictionary<long, List<Unit3D>> _unitGrid = new();
-	private readonly Dictionary<long, List<Prop3D>> _propGrid = new();
-	private readonly List<List<Unit3D>> _unitListPool = new();
-	private readonly List<List<Prop3D>> _propListPool = new();
 
 	private bool _multiplayerActive => Multiplayer.MultiplayerPeer != null;
 	private int _localPeerId
@@ -293,14 +208,42 @@ public partial class GameHost : Node3D, IGameAPI
 	private bool _wasClientInMultiplayer = false;
 	public bool IsConnectionLost { get; private set; } = false;
 
-	private readonly Dictionary<int, Entity> _peerIdToPlayerEntityMap = new();
-	private readonly Dictionary<int, Entity> _serverToClientEntityMap = new();
-	private readonly Dictionary<int, int> _clientToServerEntityMap = new();
-	private readonly List<NetworkCommand> _unacknowledgedCommands = new();
-	private readonly List<WorldSnapshot> _queuedDeltas = new();
+	private Dictionary<int, Entity> _peerIdToPlayerEntityMap
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkMappingState>(_worldEntity))
+			{
+				return EcsWorld.Get<NetworkMappingState>(_worldEntity).PeerIdToPlayerEntityMap;
+			}
+			return null;
+		}
+	}
 
-	private readonly Dictionary<int, Vector3> _clientCameraPositions = new();
-	private readonly Dictionary<int, Dictionary<int, UnitSnapshot>> _lastBaselineSnapshotsPerClient = new();
+	private Dictionary<int, Entity> _serverToClientEntityMap
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkMappingState>(_worldEntity))
+			{
+				return EcsWorld.Get<NetworkMappingState>(_worldEntity).ServerToClientEntityMap;
+			}
+			return null;
+		}
+	}
+
+	private Dictionary<int, int> _clientToServerEntityMap
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkMappingState>(_worldEntity))
+			{
+				return EcsWorld.Get<NetworkMappingState>(_worldEntity).ClientToServerEntityMap;
+			}
+			return null;
+		}
+	}
+
 
 
 
@@ -311,10 +254,48 @@ public partial class GameHost : Node3D, IGameAPI
 	public List<Prop3D> AllProps { get; } = new List<Prop3D>();
 	private readonly List<Unit3D> _castlesList = new();
 
-	private Entity _playerEntity;
-	private Entity _enemyPlayerEntity;
+	private Entity _playerEntity
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkMappingState>(_worldEntity))
+			{
+				return EcsWorld.Get<NetworkMappingState>(_worldEntity).PlayerEntity;
+			}
+			return Entity.Null;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkMappingState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<NetworkMappingState>(_worldEntity);
+				state.PlayerEntity = value;
+			}
+		}
+	}
+
+	private Entity _enemyPlayerEntity
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkMappingState>(_worldEntity))
+			{
+				return EcsWorld.Get<NetworkMappingState>(_worldEntity).EnemyPlayerEntity;
+			}
+			return Entity.Null;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<NetworkMappingState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<NetworkMappingState>(_worldEntity);
+				state.EnemyPlayerEntity = value;
+			}
+		}
+	}
+
 	private Entity _worldEntity;
-	private ReplayRecorder _replayRecorder;
+
 	private int _replayTickCounter
 	{
 		get
@@ -334,30 +315,62 @@ public partial class GameHost : Node3D, IGameAPI
 			}
 		}
 	}
-	private readonly Dictionary<int, ReplayUnitSnapshot> _lastRecordedUnits = new();
 	private System.Diagnostics.Stopwatch _trackerTickStopwatch = new System.Diagnostics.Stopwatch();
 	private System.Diagnostics.Stopwatch _trackerIntervalStopwatch = new System.Diagnostics.Stopwatch();
 	private List<float> _trackerTickDurations;
 	private List<float> _trackerApiDurations;
 	private float _trackerLastTickDelay = 0f;
-	private string _activeSpellTargeting = null; // "fireball" or "lightning"
-	private string _activeCommandTargeting = null; // "attack" or "move"
-
-	public string ActiveSpellTargeting
+	public string? ActiveSpellTargeting
 	{
-		get => _activeSpellTargeting;
-		set => _activeSpellTargeting = value;
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<InputState>(_worldEntity))
+				return EcsWorld.Get<InputState>(_worldEntity).ActiveSpellTargeting;
+			return null;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<InputState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<InputState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new InputState(state.CycleSelectionIndex, value, state.ActiveCommandTargeting, state.ActiveBuildingPlacementType, state.ActivePingMode));
+			}
+		}
 	}
-	public string ActiveCommandTargeting
+	public string? ActiveCommandTargeting
 	{
-		get => _activeCommandTargeting;
-		set => _activeCommandTargeting = value;
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<InputState>(_worldEntity))
+				return EcsWorld.Get<InputState>(_worldEntity).ActiveCommandTargeting;
+			return null;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<InputState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<InputState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new InputState(state.CycleSelectionIndex, state.ActiveSpellTargeting, value, state.ActiveBuildingPlacementType, state.ActivePingMode));
+			}
+		}
 	}
 	public Prop3D SelectedProp { get; private set; } = null;
-	public string ActiveBuildingPlacementType
+	public string? ActiveBuildingPlacementType
 	{
-		get => _activeBuildingPlacementType;
-		set => _activeBuildingPlacementType = value;
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<InputState>(_worldEntity))
+				return EcsWorld.Get<InputState>(_worldEntity).ActiveBuildingPlacementType;
+			return null;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<InputState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<InputState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new InputState(state.CycleSelectionIndex, state.ActiveSpellTargeting, state.ActiveCommandTargeting, value, state.ActivePingMode));
+			}
+		}
 	}
 
 	public int CycleSelectionIndex
@@ -365,12 +378,21 @@ public partial class GameHost : Node3D, IGameAPI
 		get
 		{
 			if (SelectedUnits.Count == 0) return 0;
-			_cycleSelectionIndex = Math.Clamp(_cycleSelectionIndex, 0, SelectedUnits.Count - 1);
-			return _cycleSelectionIndex;
+			int val = 0;
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<InputState>(_worldEntity))
+			{
+				val = EcsWorld.Get<InputState>(_worldEntity).CycleSelectionIndex;
+			}
+			return Math.Clamp(val, 0, SelectedUnits.Count - 1);
 		}
 		set
 		{
-			_cycleSelectionIndex = SelectedUnits.Count > 0 ? Math.Clamp(value, 0, SelectedUnits.Count - 1) : 0;
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<InputState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<InputState>(_worldEntity);
+				int val = SelectedUnits.Count > 0 ? Math.Clamp(value, 0, SelectedUnits.Count - 1) : 0;
+				EcsWorld.Set(_worldEntity, new InputState(val, state.ActiveSpellTargeting, state.ActiveCommandTargeting, state.ActiveBuildingPlacementType, state.ActivePingMode));
+			}
 		}
 	}
 
@@ -435,7 +457,6 @@ public partial class GameHost : Node3D, IGameAPI
 	}
 
 
-	private string _activeBuildingPlacementType = null; // "castle" or "tower"
 	private MeshInstance3D _buildingPreviewMesh = null;
 
 
@@ -479,7 +500,7 @@ public partial class GameHost : Node3D, IGameAPI
 		set
 		{
 			_activeEditorTool = value;
-			_isPastingObject = false;
+			_editorService?.SetIsPastingObject(false);
 		}
 	}
 	public string ActivePlaceId { get; set; } = ""; // "soldier", "tree", etc.
@@ -494,10 +515,77 @@ public partial class GameHost : Node3D, IGameAPI
 	public float EditorPlacementScale { get; set; } = 1.0f;
 	public bool EditorGridVisible { get; set; } = false;
 	public bool EditorCameraBoundsVisible { get; set; } = false;
-	public float EditorCameraBoundsLeft { get; set; } = -95.0f;
-	public float EditorCameraBoundsRight { get; set; } = 95.0f;
-	public float EditorCameraBoundsTop { get; set; } = -95.0f;
-	public float EditorCameraBoundsBottom { get; set; } = 125.0f;
+	public float EditorCameraBoundsLeft
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+				return EcsWorld.Get<EditorState>(_worldEntity).CameraBoundsLeft;
+			return -95.0f;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<EditorState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new EditorState(state.BlockMode, state.BlockLevelHeight, value, state.CameraBoundsRight, state.CameraBoundsTop, state.CameraBoundsBottom, state.SkyboxPath, state.HasUnsavedChanges));
+			}
+		}
+	}
+
+	public float EditorCameraBoundsRight
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+				return EcsWorld.Get<EditorState>(_worldEntity).CameraBoundsRight;
+			return 95.0f;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<EditorState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new EditorState(state.BlockMode, state.BlockLevelHeight, state.CameraBoundsLeft, value, state.CameraBoundsTop, state.CameraBoundsBottom, state.SkyboxPath, state.HasUnsavedChanges));
+			}
+		}
+	}
+
+	public float EditorCameraBoundsTop
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+				return EcsWorld.Get<EditorState>(_worldEntity).CameraBoundsTop;
+			return -95.0f;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<EditorState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new EditorState(state.BlockMode, state.BlockLevelHeight, state.CameraBoundsLeft, state.CameraBoundsRight, value, state.CameraBoundsBottom, state.SkyboxPath, state.HasUnsavedChanges));
+			}
+		}
+	}
+
+	public float EditorCameraBoundsBottom
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+				return EcsWorld.Get<EditorState>(_worldEntity).CameraBoundsBottom;
+			return 125.0f;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<EditorState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new EditorState(state.BlockMode, state.BlockLevelHeight, state.CameraBoundsLeft, state.CameraBoundsRight, state.CameraBoundsTop, value, state.SkyboxPath, state.HasUnsavedChanges));
+			}
+		}
+	}
 	public bool EditorBrushIsSquare { get; set; } = false;
 	public enum MirrorMode
 	{
@@ -510,77 +598,93 @@ public partial class GameHost : Node3D, IGameAPI
 	public float EditorClumpDensity { get; set; } = 5.0f;
 	public float EditorClumpScaleVar { get; set; } = 0.3f;
 	public bool EditorClumpMode { get; set; } = false;
-	private float _clumpSpawnCooldown = 0.0f;
-	private bool _isDrawingClump = false;
-	private List<IEditorAction> _clumpSpawnActionsInSession = new List<IEditorAction>();
+
 	public bool EditorRandomRotation { get; set; } = false;
 	public bool EditorRandomScale { get; set; } = false;
-	public string EditorSkyboxPath { get; set; } = "res://Assets/skybox_panoramic.jpg";
-	public bool EditorHasUnsavedChanges { get; set; } = false;
-	public bool EditorBlockMode { get; set; } = true;
-	public float EditorBlockLevelHeight { get; set; } = 4.0f;
-	private bool _hasBlockTargetHeight = false;
-	private float _activeBlockTargetHeight = 0.0f;
-	private Node _hoveredEditorObject = null;
-	private Vector3? _rampStartPos = null;
-	private struct CopiedObjectTemplate
+	public string EditorSkyboxPath
 	{
-		public string Type;
-		public string Id;
-		public float Rotation;
-		public float Scale;
-		public bool IsEnemy;
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+				return EcsWorld.Get<EditorState>(_worldEntity).SkyboxPath;
+			return "res://Assets/skybox_panoramic.jpg";
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<EditorState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new EditorState(state.BlockMode, state.BlockLevelHeight, state.CameraBoundsLeft, state.CameraBoundsRight, state.CameraBoundsTop, state.CameraBoundsBottom, value, state.HasUnsavedChanges));
+			}
+		}
 	}
-	private CopiedObjectTemplate? _copiedObject = null;
-	private MeshInstance3D _selectionHighlightMesh = null;
-	private float _cachedRandomRotation = 0.0f;
-	private float _cachedRandomScale = 1.0f;
-	private bool _hasCachedRandom = false;
-	private bool _isPastingObject = false;
 
-	private struct DelayedPacket
+	public bool EditorHasUnsavedChanges
 	{
-		public string FunctionName;
-		public object[] Arguments;
-		public double SendTime;
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+				return EcsWorld.Get<EditorState>(_worldEntity).HasUnsavedChanges;
+			return false;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<EditorState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new EditorState(state.BlockMode, state.BlockLevelHeight, state.CameraBoundsLeft, state.CameraBoundsRight, state.CameraBoundsTop, state.CameraBoundsBottom, state.SkyboxPath, value));
+			}
+		}
 	}
-	private readonly Dictionary<int, List<DelayedPacket>> _spectatorDelayedPackets = new Dictionary<int, List<DelayedPacket>>();
+
+	public bool EditorBlockMode
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+				return EcsWorld.Get<EditorState>(_worldEntity).BlockMode;
+			return true;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<EditorState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new EditorState(value, state.BlockLevelHeight, state.CameraBoundsLeft, state.CameraBoundsRight, state.CameraBoundsTop, state.CameraBoundsBottom, state.SkyboxPath, state.HasUnsavedChanges));
+			}
+		}
+	}
+
+	public float EditorBlockLevelHeight
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+				return EcsWorld.Get<EditorState>(_worldEntity).BlockLevelHeight;
+			return 4.0f;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<EditorState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<EditorState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new EditorState(state.BlockMode, value, state.CameraBoundsLeft, state.CameraBoundsRight, state.CameraBoundsTop, state.CameraBoundsBottom, state.SkyboxPath, state.HasUnsavedChanges));
+			}
+		}
+	}
+	private Node _hoveredEditorObject = null;
+	private MeshInstance3D _selectionHighlightMesh = null;
+
+
 
 	public void GenerateNewRandomPlacementRotationAndScale()
 	{
-		_cachedRandomRotation = (float)(GD.Randf() * 360.0);
-		_cachedRandomScale = 0.2f + (float)(GD.Randf() * 2.8);
-		_hasCachedRandom = true;
+		_editorService.GenerateNewRandomPlacementRotationAndScale();
 	}
-	private Vector2I? _selectionStart = null;
-	private Vector2I? _selectionEnd = null;
-	private bool _isSelectingArea = false;
 	public bool PasteOptionTextures { get; set; } = true;
 	public bool PasteOptionHeights { get; set; } = true;
 	public bool PasteOptionEntities { get; set; } = true;
-	private class CopiedAreaTemplate
-	{
-		public int Width;
-		public int Depth;
-		public float[,] Heights;
-		public Color[,] Colors;
-		public List<CopiedEntityInfo> Entities;
-	}
-	private class CopiedEntityInfo
-	{
-		public string Type;
-		public string Id;
-		public Vector3 RelativePos;
-		public float Rotation;
-		public float Scale;
-		public bool IsEnemy;
-	}
-	private CopiedAreaTemplate _copiedArea = null;
-	private float? _activeCliffHeight = null;
-	private float[,] _terrainHeightsBefore;
-	private Color[,] _terrainColorsBefore;
-	private int[,] _terrainPathingBefore;
-	private bool _isDrawingTerrain = false;
+
 	public Node SelectedEditorObject
 	{
 		get => _selectedEditorObject;
@@ -642,7 +746,23 @@ public partial class GameHost : Node3D, IGameAPI
 		public float MaxLifeTime;
 	}
 	public List<MinimapPing> ActivePings { get; } = new List<MinimapPing>();
-	public bool ActivePingMode { get; set; } = false;
+	public bool ActivePingMode
+	{
+		get
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<InputState>(_worldEntity))
+				return EcsWorld.Get<InputState>(_worldEntity).ActivePingMode;
+			return false;
+		}
+		set
+		{
+			if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<InputState>(_worldEntity))
+			{
+				ref var state = ref EcsWorld.Get<InputState>(_worldEntity);
+				EcsWorld.Set(_worldEntity, new InputState(state.CycleSelectionIndex, state.ActiveSpellTargeting, state.ActiveCommandTargeting, state.ActiveBuildingPlacementType, value));
+			}
+		}
+	}
 
 
 	public struct UnitMetadata
@@ -862,8 +982,6 @@ public partial class GameHost : Node3D, IGameAPI
 	public const float ResourceCap = 9999f;
 
 
-	private float _underAttackAlertTimer = 0f;
-	private const float UnderAttackAlertCooldown = 8f;
 
 	public static readonly Dictionary<string, UnitMetadata> UnitRegistry = new();
 
@@ -1016,6 +1134,9 @@ public partial class GameHost : Node3D, IGameAPI
 		EcsWorld.Add(_worldEntity, new WorldState(0f, 0, 0f, true));
 		EcsWorld.Add(_worldEntity, new ReplayState(0, 500f, 400f, 200f));
 		EcsWorld.Add(_worldEntity, new NetworkState(1, 0f, 0, -1, -1, false, 0, 1));
+		EcsWorld.Add(_worldEntity, new NetworkMappingState(new(), new(), new()));
+		EcsWorld.Add(_worldEntity, new EditorState(true, 4.0f, -95.0f, 95.0f, -95.0f, 125.0f, "res://Assets/skybox_panoramic.jpg", false));
+		EcsWorld.Add(_worldEntity, new InputState(0, null, null, null, false));
 		EcsWorld.Add(_worldEntity, new CameraState
 		{
 			MoveSpeed = 35.0f,
@@ -1077,6 +1198,7 @@ public partial class GameHost : Node3D, IGameAPI
 			};
 		}
 		EcsWorld.Add(_worldEntity, new ScriptPlayersState(players));
+		EcsWorld.Add(_worldEntity, new CombatAlertState(0f));
 	}
 
 	float IGameAPI.Gold
@@ -2538,32 +2660,71 @@ public class {mapName} : IMapScript
 		}
 
 		EcsWorld = World.Create();
+		_saveLoadService = new GameHostSaveLoadService(EcsWorld);
+		_editorService = new GameHostEditorService(EcsWorld);
+		_replayService = new GameHostReplayService(EcsWorld);
+		_networkService = new GameHostNetworkService(EcsWorld);
+		_inputService = new GameHostInputService(EcsWorld);
 		SetupWorldEntityComponents();
 
 		CreateGround();
+		if (GroundTerrain != null)
+			_editorService.SetTerrainColors(GroundTerrain.Colors);
 		SetupSkybox();
 		UpdateDayNightVisuals(0.5f);
 		_definitionManager = new DefinitionManager();
 		_goldResourceId = "gold".AsResourceId(_definitionManager);
 		_woodResourceId = "wood".AsResourceId(_definitionManager);
 		_stoneResourceId = "stone".AsResourceId(_definitionManager);
-		_buffsQueryDelegate = UpdateBuffsQueryAction;
-		_patrolArrivalQueryDelegate = PatrolArrivalQueryAction;
-		_followQueryDelegate = FollowQueryAction;
-		_gatherQueryDelegate = GatherQueryAction;
-		_movementQueryDelegate = MovementQueryAction;
-		_attackCooldownQueryDelegate = AttackCooldownQueryAction;
-		_targetAcquisitionQueryDelegate = TargetAcquisitionQueryAction;
-		_potentialEnemyQueryDelegate = ScanEnemyQueryAction;
-		_combatQueryDelegate = CombatQueryAction;
-		_priestScanQueryDelegate = PriestScanQueryAction;
-		_friendlyScanQueryDelegate = ScanFriendlyQueryAction;
-		_healingExecutionQueryDelegate = HealingExecutionQueryAction;
-		_prodQueryDelegate = ProdQueryAction;
-		_editorMovementQueryDelegate = ProcessMapEditorPhysicsQueryAction;
-		_interpolationQueryDelegate = InterpolationQueryAction;
-		_passiveIncomeQueryDelegate = UpdatePassiveIncomeQueryAction;
-		_spellCooldownQueryDelegate = SpellCooldownQueryAction;
+		_ecsService = new GameHostEcsService(EcsWorld, _worldEntity, _pathfinder);
+		_ecsService.SetRuntimeReferences(AllUnits, AllProps, _castlesList, _definitionManager, _goldResourceId, _woodResourceId, _stoneResourceId, GroundTerrain);
+		_ecsService.Initialize();
+
+		_ecsService.OnArrowProjectileRequested = (start, target) => SpawnArrowProjectile(start, target);
+		_ecsService.OnDamageFlashRequested = unit => this.CallDeferred(nameof(FlashDamageUnit), unit);
+		_ecsService.OnHealEffectRequested = (start, target) => SpawnHealVisualEffect(start, target);
+		_ecsService.OnHealFlashRequested = unit => this.CallDeferred(nameof(FlashHealUnit), unit);
+		_ecsService.OnKillUnitRequested = entity =>
+		{
+			if (EcsWorld.IsAlive(entity) && EcsWorld.Has<Unit3D>(entity))
+			{
+				var unit3D = EcsWorld.Get<Unit3D>(entity);
+				this.CallDeferred(nameof(KillUnit), unit3D);
+			}
+		};
+		_ecsService.OnUnitDamagedCallback = (targetUnit3D, attackerUnit3D, damage) =>
+		{
+			if (targetUnit3D != null && EcsWorld.IsAlive(targetUnit3D.Entity))
+			{
+				IUnit attackerWrapper = attackerUnit3D != null && EcsWorld.IsAlive(attackerUnit3D.Entity)
+					? GetUnitWrapper(attackerUnit3D.Entity)
+					: null;
+				OnUnitDamaged?.Invoke(GetUnitWrapper(targetUnit3D.Entity), attackerWrapper, damage);
+			}
+		};
+		_ecsService.OnUnderAttackAlertRequested = unitId =>
+		{
+			string alertMsg = unitId == "castle"
+				? "⚠️ YOUR CASTLE IS UNDER ATTACK!"
+				: $"⚠️ {unitId.ToUpper()} is under attack!";
+			InGameHUD.Instance?.CallDeferred(nameof(InGameHUD.ShowFeedbackText), alertMsg, new Color(1.0f, 0.2f, 0.1f));
+			UIManager.Instance?.CallDeferred(nameof(UIManager.PlayWarningSound));
+		};
+		_ecsService.OnSpawnUnitFromProductionRequested = (unitId, position, isEnemy, rallyPoint, isFromQueue) =>
+			SpawnUnitFromProduction(unitId, position, isEnemy, rallyPoint, isFromQueue);
+		_ecsService.OnClearUnitOrdersRequested = entity => ClearUnitOrders(entity);
+		_ecsService.OnStopGatheringMovementRequested = entity => StopGatheringMovement(entity);
+		_ecsService.OnUiRefreshRequested = () => InGameHUD.Instance?.RefreshUI(SelectedUnits);
+		_ecsService.OnResourceDepositedForPlayer = (resType, carry) =>
+		{
+			string resTypeUpper = resType.ToUpper();
+			InGameHUD.Instance?.CallDeferred(nameof(InGameHUD.ShowFeedbackText), $"+{carry:F0} {resTypeUpper} deposited", new Color(0.2f, 0.9f, 0.4f));
+		};
+		_ecsService.OnProductionCompleted = unitToSpawn =>
+		{
+			string displayName = UnitRegistry.TryGetValue(unitToSpawn, out var nm) ? nm.Name : unitToSpawn.ToUpper();
+			InGameHUD.Instance?.CallDeferred(nameof(InGameHUD.ShowFeedbackText), $"✓ {displayName} training complete!", new Color(0.3f, 0.9f, 0.4f));
+		};
 
 		if (_multiplayerActive)
 		{
@@ -2702,14 +2863,11 @@ public class {mapName} : IMapScript
 			string replayDir = ProjectSettings.GlobalizePath("user://replays");
 			string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
 			string replayPath = System.IO.Path.Combine(replayDir, $"replay_{timestamp}.rep");
-			_replayTickCounter = 0;
-			_lastRecordedUnits.Clear();
-			_replayRecorder = new ReplayRecorder(
+			_replayService.StartRecording(
 				replayPath, 
 				normalizedMapName, 
 				LobbyManager.Instance?.PlayerList
 			);
-			_replayRecorder.Start();
 			GD.Print($"[ReplayRecorder] Started recording to {replayPath}");
 		}
 
@@ -2734,11 +2892,7 @@ public class {mapName} : IMapScript
 
 	public void StopRecording()
 	{
-		if (_replayRecorder != null)
-		{
-			_replayRecorder.Stop();
-			_replayRecorder = null;
-		}
+		_replayService.StopRecording();
 	}
 
 	public override void _ExitTree()
@@ -2763,7 +2917,7 @@ public class {mapName} : IMapScript
 		{
 			VSCodeManager.Instance.CleanUp();
 		}
-		_spectatorDelayedPackets.Clear();
+		_networkService?.Clear();
 		StopRecording();
 	}
 
@@ -3268,13 +3422,6 @@ public class {mapName} : IMapScript
 
 		_fDelta = fDelta;
 		GameElapsedTime += fDelta;
-		_tickEntitiesToClearOrders.Clear();
-		_tickEntitiesToStopGathering.Clear();
-		_tickSpawningRequests.Clear();
-		_tickAddPathFollow.Clear();
-		_tickNeedsUiRefresh = false;
-		EcsWorld.Query(in _spellCooldownQuery, _spellCooldownQueryDelegate);
-		if (_underAttackAlertTimer > 0) _underAttackAlertTimer -= fDelta;
 
 		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<CountdownState>(_worldEntity))
 		{
@@ -3290,37 +3437,11 @@ public class {mapName} : IMapScript
 			}
 		}
 
-
-		EcsWorld.Query(in _passiveIncomeQuery, _passiveIncomeQueryDelegate);
-
-
-		EcsWorld.Query(in _buffQuery, _buffsQueryDelegate);
-
 		UpdateGameplayDayNightCycle(fDelta);
 
-		ProcessPatrolArrivals();
-		ProcessFollowMovements();
-
-		ProcessGatheringTicks();
-		ProcessMovementTicks();
-
-		EcsWorld.Query(in _attackCooldownQuery, _attackCooldownQueryDelegate);
-		ProcessTargetAcquisition();
-		ProcessCombatTicks();
-
-		ProcessHealingTicks();
+		_ecsService.TickEcs(fDelta);
 
 		UpdateMinimapPings(fDelta);
-		EcsWorld.Query(in _prodQuery, _prodQueryDelegate);
-
-		foreach (var (entity, pf) in _tickAddPathFollow)
-		{
-			if (EcsWorld.IsAlive(entity))
-			{
-				EcsWorld.Add(entity, pf);
-			}
-		}
-
 
 		TickScheduledTimers(fDelta);
 		TickZoneTriggers();
@@ -3329,10 +3450,9 @@ public class {mapName} : IMapScript
 			_activeMapScript.Update(this, fDelta);
 		}
 
-
 		UpdateBuildingPreview();
 
-		if (!ReplayPlaybackManager.Instance.IsPlayingReplay && GameSettings.RecordReplays && _replayRecorder != null)
+		if (!ReplayPlaybackManager.Instance.IsPlayingReplay && GameSettings.RecordReplays && _replayService.IsRecording)
 		{
 			RecordGameplayTick();
 		}
@@ -3358,30 +3478,26 @@ public class {mapName} : IMapScript
 			}
 			_trackerLastTickDelay = tickDelay;
 		}
-
-		ApplyDeferredTickCommands();
 	}
 
 	private void UpdateGameplayDayNightCycle(float fDelta)
 	{
 		if (!IsMapEditorMode && DayNightCycleEnabled)
 		{
-
 			float timer = TimeOfDayTimer + fDelta;
 			if (timer >= TimeOfDayCycleDuration)
 			{
 				timer -= TimeOfDayCycleDuration;
 			}
 
-			float progress = timer / TimeOfDayCycleDuration; // Normalized 0.0 to 1.0 across full cycle
-			
+			float progress = timer / TimeOfDayCycleDuration;
 
 			float currentHour = progress * 24f;
 			int index;
-			if (currentHour >= 5f && currentHour < 6f) index = 3;      // Dawn
-			else if (currentHour >= 6f && currentHour < 18f) index = 0; // Day
-			else if (currentHour >= 18f && currentHour < 20f) index = 1;// Sunset
-			else index = 2;                                             // Night
+			if (currentHour >= 5f && currentHour < 6f) index = 3;
+			else if (currentHour >= 6f && currentHour < 18f) index = 0;
+			else if (currentHour >= 18f && currentHour < 20f) index = 1;
+			else index = 2;
 
 			UpdateDayNightVisuals(progress);
 
@@ -3389,268 +3505,6 @@ public class {mapName} : IMapScript
 			{
 				ref var state = ref EcsWorld.Get<WorldState>(_worldEntity);
 				EcsWorld.Set(_worldEntity, new WorldState(state.GameElapsedTime, index, timer, state.DayNightCycleEnabled));
-			}
-		}
-	}
-
-	private void ProcessPatrolArrivals()
-	{
-		_tickPatrolToFlip.Clear();
-		EcsWorld.Query(in _patrolArrivalQuery, _patrolArrivalQueryDelegate);
-		foreach (var (entity, patrol) in _tickPatrolToFlip)
-		{
-			var flipped = new Patrol(patrol.PointA, patrol.PointB) { GoingToB = !patrol.GoingToB };
-			EcsWorld.Set(entity, flipped);
-			var newDest = flipped.GoingToB ? flipped.PointB : flipped.PointA;
-			var moveTo = new MoveTo(new System.Numerics.Vector3(newDest.X, newDest.Y, newDest.Z));
-			if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
-			else EcsWorld.Add(entity, moveTo);
-		}
-	}
-
-	private void ProcessFollowMovements()
-	{
-		_tickFollowToStop.Clear();
-		_tickFollowToMove.Clear();
-		EcsWorld.Query(in _followQuery, _followQueryDelegate);
-
-		foreach (var ent in _tickFollowToStop)
-		{
-			if (EcsWorld.IsAlive(ent))
-			{
-				if (!EcsWorld.IsAlive(EcsWorld.Get<Follow>(ent).Target) || EcsWorld.Has<Dead>(EcsWorld.Get<Follow>(ent).Target))
-				{
-					EcsWorld.Remove<Follow>(ent);
-				}
-				if (EcsWorld.Has<MoveTo>(ent))
-				{
-					EcsWorld.Remove<MoveTo>(ent);
-				}
-				if (EcsWorld.Has<Unit3D>(ent))
-				{
-					var unit3D = EcsWorld.Get<Unit3D>(ent);
-					unit3D.Velocity = Vector3.Zero;
-				}
-			}
-		}
-
-		foreach (var (ent, targetPos) in _tickFollowToMove)
-		{
-			if (EcsWorld.IsAlive(ent))
-			{
-				var moveTo = new MoveTo(new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
-				if (EcsWorld.Has<MoveTo>(ent)) EcsWorld.Set(ent, moveTo);
-				else EcsWorld.Add(ent, moveTo);
-			}
-		}
-	}
-
-	private void ProcessGatheringTicks()
-	{
-		_tickGatherersToUpdate.Clear();
-		
-		EcsWorld.Query(in _gatherQuery, _gatherQueryDelegate);
-		
-		foreach (var (worker, newState, dest) in _tickGatherersToUpdate)
-		{
-			if (EcsWorld.IsAlive(worker))
-			{
-				EcsWorld.Set(worker, newState);
-				if (dest.HasValue)
-				{
-					var moveTo = new MoveTo(new System.Numerics.Vector3(dest.Value.X, dest.Value.Y, dest.Value.Z));
-					if (EcsWorld.Has<MoveTo>(worker)) EcsWorld.Set(worker, moveTo);
-					else EcsWorld.Add(worker, moveTo);
-				}
-			}
-		}
-	}
-
-	private void ProcessMovementTicks()
-	{
-		_tickArrivedUnits.Clear();
-		RebuildSpatialGrid();
-		EcsWorld.Query(in _movementQuery, _movementQueryDelegate);
-		foreach (var entity in _tickArrivedUnits)
-		{
-			if (EcsWorld.IsAlive(entity) && EcsWorld.Has<MoveTo>(entity))
-			{
-				if (EcsWorld.Has<PathFollow>(entity))
-				{
-					EcsWorld.Remove<PathFollow>(entity);
-				}
-				if (EcsWorld.Has<WaypointQueue>(entity))
-				{
-					var q = EcsWorld.Get<WaypointQueue>(entity);
-					if (q.Count > 0)
-					{
-						var nextWaypoint = q.Dequeue();
-						EcsWorld.Set(entity, q);
-						EcsWorld.Set(entity, new MoveTo(nextWaypoint));
-						continue;
-					}
-					else
-					{
-						EcsWorld.Remove<WaypointQueue>(entity);
-					}
-				}
-				EcsWorld.Remove<MoveTo>(entity);
-			}
-		}
-	}
-
-	private void ProcessTargetAcquisition()
-	{
-		_tickNewAttackTargets.Clear();
-		EcsWorld.Query(in _targetAcquisitionQuery, _targetAcquisitionQueryDelegate);
-		foreach (var (attacker, target) in _tickNewAttackTargets)
-		{
-			if (EcsWorld.IsAlive(attacker))
-			{
-				if (EcsWorld.Has<AttackTarget>(attacker))
-					EcsWorld.Set(attacker, target);
-				else
-					EcsWorld.Add(attacker, target);
-			}
-		}
-	}
-
-	private void ProcessCombatTicks()
-	{
-		_tickActionsToRemoveTarget.Clear();
-		_tickActionsToChase.Clear();
-		_tickActionsToStopChasing.Clear();
-		_tickUnitsToKill.Clear();
-
-		EcsWorld.Query(in _combatQuery, _combatQueryDelegate);
-
-
-		foreach (var (targetEntity, target3D) in _tickUnitsToKill)
-		{
-			if (EcsWorld.IsAlive(targetEntity))
-			{
-				if (!EcsWorld.Has<Dead>(targetEntity))
-				{
-					EcsWorld.Add<Dead>(targetEntity);
-					this.CallDeferred(nameof(KillUnit), target3D);
-				}
-			}
-		}
-
-
-		foreach (var ent in _tickActionsToRemoveTarget)
-		{
-			if (EcsWorld.IsAlive(ent))
-			{
-				if (EcsWorld.Has<AttackTarget>(ent))
-				{
-					EcsWorld.Remove<AttackTarget>(ent);
-				}
-
-				if (EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(ent))
-				{
-					var am = EcsWorld.Get<Realm.Ecs.Components.Movement.AttackMove>(ent);
-					var moveTo = new MoveTo(am.Target);
-					if (EcsWorld.Has<MoveTo>(ent))
-						EcsWorld.Set(ent, moveTo);
-					else
-						EcsWorld.Add(ent, moveTo);
-				}
-				else if (EcsWorld.Has<Patrol>(ent))
-				{
-
-					var patrol = EcsWorld.Get<Patrol>(ent);
-					var destVec = patrol.GoingToB ? patrol.PointB : patrol.PointA;
-					var moveTo = new MoveTo(destVec);
-					if (EcsWorld.Has<MoveTo>(ent))
-						EcsWorld.Set(ent, moveTo);
-					else
-						EcsWorld.Add(ent, moveTo);
-				}
-			}
-		}
-
-		foreach (var (attacker, targetPos) in _tickActionsToChase)
-		{
-			if (EcsWorld.IsAlive(attacker))
-			{
-				var moveTo = new MoveTo(new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
-				if (EcsWorld.Has<MoveTo>(attacker))
-				{
-					EcsWorld.Set(attacker, moveTo);
-				}
-				else
-				{
-					EcsWorld.Add(attacker, moveTo);
-				}
-			}
-		}
-
-		foreach (var attacker in _tickActionsToStopChasing)
-		{
-			if (EcsWorld.IsAlive(attacker))
-			{
-				if (EcsWorld.Has<MoveTo>(attacker))
-				{
-					EcsWorld.Remove<MoveTo>(attacker);
-				}
-				if (EcsWorld.Has<Unit3D>(attacker))
-				{
-					var unit3D = EcsWorld.Get<Unit3D>(attacker);
-					unit3D.Velocity = Vector3.Zero;
-				}
-			}
-		}
-	}
-
-	private void ProcessHealingTicks()
-	{
-		_tickNewHealingTargets.Clear();
-		EcsWorld.Query(in _priestScanQuery, _priestScanQueryDelegate);
-		foreach (var (priest, target) in _tickNewHealingTargets)
-		{
-			if (EcsWorld.IsAlive(priest))
-			{
-				if (EcsWorld.Has<HealingTarget>(priest)) EcsWorld.Set(priest, target);
-				else EcsWorld.Add(priest, target);
-			}
-		}
-
-
-		_tickHealRemoveTargets.Clear();
-		_tickHealChaseTargets.Clear();
-		_tickHealStopChasing.Clear();
-
-		EcsWorld.Query(in _healingExecutionQuery, _healingExecutionQueryDelegate);
-
-		foreach (var ent in _tickHealRemoveTargets)
-		{
-			if (EcsWorld.IsAlive(ent) && EcsWorld.Has<HealingTarget>(ent))
-			{
-				EcsWorld.Remove<HealingTarget>(ent);
-			}
-		}
-
-		foreach (var (priest, targetPos) in _tickHealChaseTargets)
-		{
-			if (EcsWorld.IsAlive(priest))
-			{
-				var moveTo = new MoveTo(new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
-				if (EcsWorld.Has<MoveTo>(priest)) EcsWorld.Set(priest, moveTo);
-				else EcsWorld.Add(priest, moveTo);
-			}
-		}
-
-		foreach (var priest in _tickHealStopChasing)
-		{
-			if (EcsWorld.IsAlive(priest))
-			{
-				if (EcsWorld.Has<MoveTo>(priest)) EcsWorld.Remove<MoveTo>(priest);
-				if (EcsWorld.Has<Unit3D>(priest))
-				{
-					var unit3D = EcsWorld.Get<Unit3D>(priest);
-					unit3D.Velocity = Vector3.Zero;
-				}
 			}
 		}
 	}
@@ -3669,35 +3523,6 @@ public class {mapName} : IMapScript
 			{
 				ActivePings[i] = ping;
 			}
-		}
-	}
-
-	private void ApplyDeferredTickCommands()
-	{
-		foreach (var ent in _tickEntitiesToClearOrders)
-		{
-			if (EcsWorld.IsAlive(ent))
-			{
-				ClearUnitOrders(ent);
-			}
-		}
-
-		foreach (var ent in _tickEntitiesToStopGathering)
-		{
-			if (EcsWorld.IsAlive(ent))
-			{
-				StopGatheringMovement(ent);
-			}
-		}
-
-		foreach (var req in _tickSpawningRequests)
-		{
-			SpawnUnitFromProduction(req.UnitId, req.Position, req.IsEnemy, req.RallyPoint, req.IsFromQueue);
-		}
-
-		if (_tickNeedsUiRefresh && InGameHUD.Instance != null)
-		{
-			InGameHUD.Instance.RefreshUI(SelectedUnits);
 		}
 	}
 

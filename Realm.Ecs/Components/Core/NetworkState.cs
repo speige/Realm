@@ -13,6 +13,7 @@ namespace Realm.Ecs.Components.Core
 		public bool HasReceivedInitialBaseline;
 		public int SnapshotSequence;
 		public int LocalPeerId;
+		public float DynamicInterpolationFactor;
 
 		public NetworkState(
 			int nextCommandId,
@@ -32,6 +33,7 @@ namespace Realm.Ecs.Components.Core
 			HasReceivedInitialBaseline = hasReceivedInitialBaseline;
 			SnapshotSequence = snapshotSequence;
 			LocalPeerId = localPeerId;
+			DynamicInterpolationFactor = 10f;
 		}
 	}
 }

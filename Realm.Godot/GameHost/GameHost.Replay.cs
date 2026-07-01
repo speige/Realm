@@ -24,225 +24,61 @@ public partial class GameHost
 
 		EcsWorld?.Dispose();
 		EcsWorld = World.Create();
+		_saveLoadService = new GameHostSaveLoadService(EcsWorld);
+		_replayService = new GameHostReplayService(EcsWorld);
+		_networkService = new GameHostNetworkService(EcsWorld);
 		SetupWorldEntityComponents();
-		_serverToClientEntityMap.Clear();
-		_clientToServerEntityMap.Clear();
-		_peerIdToPlayerEntityMap.Clear();
 
+		var players = new List<(int PeerId, string Name)>();
 		if (ReplayPlaybackManager.Instance.Header.Players != null)
 		{
 			foreach (var p in ReplayPlaybackManager.Instance.Header.Players)
 			{
-				var playerEntity = EcsWorld.Create();
-				EcsWorld.Add(playerEntity, new Player());
-				EcsWorld.Add(playerEntity, new Name(p.Name));
-				SetupPlayerEntityComponents(playerEntity);
-				_peerIdToPlayerEntityMap[p.PeerId] = playerEntity;
-				if (p.PeerId == 1)
-				{
-					_playerEntity = playerEntity;
-				}
-				else if (p.PeerId == -1)
-				{
-					_enemyPlayerEntity = playerEntity;
-				}
+				players.Add((p.PeerId, p.Name));
 			}
 		}
+		_replayService.SetupPlayersForPlayback(players);
 	}
 
 	public void SpawnUnitFromReplaySnapshot(ReplayUnitSnapshot snap)
 	{
-		if (!UnitRegistry.TryGetValue(snap.UnitId, out var meta)) return;
-		Entity ownerPlayerEntity = _playerEntity;
-		if (_peerIdToPlayerEntityMap.TryGetValue(snap.OwnerPlayerEntityId, out var pe))
-		{
-			ownerPlayerEntity = pe;
-		}
-		bool isEnemy = ownerPlayerEntity != _playerEntity;
-		var entity = EcsWorld.Create();
-		EcsWorld.Add(entity, new DefinitionId(snap.UnitId));
-		EcsWorld.Add(entity, new Name(meta.Name));
-		EcsWorld.Add(entity, new Position(snap.Position.ToNumerics()));
-		EcsWorld.Add(entity, new Owner(ownerPlayerEntity.AsPlayerEntity(EcsWorld)));
-		EcsWorld.Add(entity, new Health(snap.CurrentHp, snap.MaxHp));
-		if (meta.Damage > 0 || snap.UnitId == "priest")
-		{
-			EcsWorld.Add(entity, new Attack(meta.Damage, meta.Range, meta.AttackCooldown));
-		}
-		EcsWorld.Add(entity, new Armor(meta.Armor));
-		if (meta.Speed > 0)
-		{
-			EcsWorld.Add(entity, new MovementStats(meta.Speed, 20f, 10f));
-			EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Movable());
-			EcsWorld.Add(entity, new Inventory(1));
-		}
-		else
-		{
-			EcsWorld.Add(entity, new Building());
-		}
-		var target = new InterpolationTarget
-		{
-			Position = snap.Position.ToNumerics(),
-			Velocity = snap.Velocity.ToNumerics(),
-			RotationY = snap.RotationY
-		};
-		EcsWorld.Add(entity, target);
+		var result = _replayService.SpawnUnitFromReplaySnapshot(snap);
+		if (result.Entity == default) return;
 
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(snap.UnitId, snap.IsBuilding);
-		var unit3D = SpawnUnit3D(entity, snap.UnitId, modelPath, snap.Position.ToGodot(), snap.IsBuilding, isEnemy);
-		_serverToClientEntityMap[snap.EntityId] = entity;
-		_clientToServerEntityMap[entity.Id] = snap.EntityId;
+		string modelPath = !string.IsNullOrEmpty(result.ModelPath) ? result.ModelPath : GetFallbackModelPath(snap.UnitId, snap.IsBuilding);
+		SpawnUnit3D(result.Entity, snap.UnitId, modelPath, snap.Position.ToGodot(), snap.IsBuilding, result.IsEnemy);
 	}
 
 	private void RecordGameplayTick()
 	{
-		if (_replayRecorder == null) return;
-
-		bool isKeyframe = (_replayTickCounter % 600 == 0);
-		List<ReplayUnitSnapshot> unitsToRecord = ReplayObjectPool.RentList();
-		List<int> activeIds = ReplayObjectPool.RentIntList();
-
-		if (isKeyframe)
-		{
-			_lastRecordedUnits.Clear();
-		}
-
 		foreach (var unit in AllUnits)
 		{
 			if (!GodotObject.IsInstanceValid(unit)) continue;
 
-			int entityId = unit.Entity.Id;
-			string unitId = unit.UnitId;
-			int ownerPlayerEntityId = GetOwnerPeerId(unit.Entity);
-			Vector3 pos = unit.GlobalPosition;
-			float rotY = unit.GlobalRotation.Y;
-			float currentHp = EcsWorld.Has<Realm.Ecs.Components.Core.Health>(unit.Entity) ? EcsWorld.Get<Realm.Ecs.Components.Core.Health>(unit.Entity).Current : 0f;
-			float maxHp = EcsWorld.Has<Realm.Ecs.Components.Core.Health>(unit.Entity) ? EcsWorld.Get<Realm.Ecs.Components.Core.Health>(unit.Entity).Max : 0f;
-			bool isDead = EcsWorld.Has<Realm.Ecs.Components.Tags.Dead>(unit.Entity);
-			bool isBuilding = unit.IsBuilding;
-			Vector3 vel = unit.Velocity;
-
-			activeIds.Add(entityId);
-
-			if (isKeyframe)
+			if (EcsWorld.Has<Position>(unit.Entity))
 			{
-				var snap = new ReplayUnitSnapshot
-				{
-					EntityId = entityId,
-					UnitId = unitId,
-					OwnerPlayerEntityId = ownerPlayerEntityId,
-					Position = new NetworkVector3(pos),
-					RotationY = rotY,
-					CurrentHp = currentHp,
-					MaxHp = maxHp,
-					IsDead = isDead,
-					IsBuilding = isBuilding,
-					Velocity = new NetworkVector3(vel)
-				};
-				unitsToRecord.Add(snap);
-				_lastRecordedUnits[entityId] = snap;
+				EcsWorld.Set(unit.Entity, new Position(new System.Numerics.Vector3(unit.GlobalPosition.X, unit.GlobalPosition.Y, unit.GlobalPosition.Z)));
+			}
+
+			if (EcsWorld.Has<Velocity>(unit.Entity))
+			{
+				EcsWorld.Set(unit.Entity, new Velocity(new System.Numerics.Vector3(unit.Velocity.X, unit.Velocity.Y, unit.Velocity.Z)));
 			}
 			else
 			{
-				if (_lastRecordedUnits.TryGetValue(entityId, out var last))
-				{
-					bool changed = last.UnitId != unitId ||
-								   last.OwnerPlayerEntityId != ownerPlayerEntityId ||
-								   last.Position.X != pos.X ||
-								   last.Position.Y != pos.Y ||
-								   last.Position.Z != pos.Z ||
-								   last.RotationY != rotY ||
-								   last.CurrentHp != currentHp ||
-								   last.MaxHp != maxHp ||
-								   last.IsDead != isDead ||
-								   last.IsBuilding != isBuilding ||
-								   last.Velocity.X != vel.X ||
-								   last.Velocity.Y != vel.Y ||
-								   last.Velocity.Z != vel.Z;
+				EcsWorld.Add(unit.Entity, new Velocity(new System.Numerics.Vector3(unit.Velocity.X, unit.Velocity.Y, unit.Velocity.Z)));
+			}
 
-					if (changed)
-					{
-						var snap = new ReplayUnitSnapshot
-						{
-							EntityId = entityId,
-							UnitId = unitId,
-							OwnerPlayerEntityId = ownerPlayerEntityId,
-							Position = new NetworkVector3(pos),
-							RotationY = rotY,
-							CurrentHp = currentHp,
-							MaxHp = maxHp,
-							IsDead = isDead,
-							IsBuilding = isBuilding,
-							Velocity = new NetworkVector3(vel)
-						};
-						unitsToRecord.Add(snap);
-						_lastRecordedUnits[entityId] = snap;
-					}
-				}
-				else
-				{
-					var snap = new ReplayUnitSnapshot
-					{
-						EntityId = entityId,
-						UnitId = unitId,
-						OwnerPlayerEntityId = ownerPlayerEntityId,
-						Position = new NetworkVector3(pos),
-						RotationY = rotY,
-						CurrentHp = currentHp,
-						MaxHp = maxHp,
-						IsDead = isDead,
-						IsBuilding = isBuilding,
-						Velocity = new NetworkVector3(vel)
-					};
-					unitsToRecord.Add(snap);
-					_lastRecordedUnits[entityId] = snap;
-				}
+			if (EcsWorld.Has<RotationY>(unit.Entity))
+			{
+				EcsWorld.Set(unit.Entity, new RotationY(unit.GlobalRotation.Y));
+			}
+			else
+			{
+				EcsWorld.Add(unit.Entity, new RotationY(unit.GlobalRotation.Y));
 			}
 		}
 
-		if (!isKeyframe)
-		{
-			List<int> destroyedIds = ReplayObjectPool.RentIntList();
-			foreach (var pair in _lastRecordedUnits)
-			{
-				if (!activeIds.Contains(pair.Key))
-				{
-					destroyedIds.Add(pair.Key);
-				}
-			}
-
-			foreach (int id in destroyedIds)
-			{
-				var deadSnap = _lastRecordedUnits[id];
-				var deadEventSnap = new ReplayUnitSnapshot
-				{
-					EntityId = deadSnap.EntityId,
-					UnitId = deadSnap.UnitId,
-					OwnerPlayerEntityId = deadSnap.OwnerPlayerEntityId,
-					Position = deadSnap.Position,
-					RotationY = deadSnap.RotationY,
-					CurrentHp = 0f,
-					MaxHp = deadSnap.MaxHp,
-					IsDead = true,
-					IsBuilding = deadSnap.IsBuilding,
-					Velocity = default
-				};
-				unitsToRecord.Add(deadEventSnap);
-				_lastRecordedUnits.Remove(id);
-			}
-			ReplayObjectPool.ReturnIntList(destroyedIds);
-		}
-
-		float gold = InGameHUD.Instance != null ? InGameHUD.Instance.Gold : _goldBackup;
-		float wood = InGameHUD.Instance != null ? InGameHUD.Instance.Wood : _woodBackup;
-		float stone = InGameHUD.Instance != null ? InGameHUD.Instance.Stone : _stoneBackup;
-
-		_replayRecorder.RecordTick(_replayTickCounter, unitsToRecord, gold, wood, stone, isKeyframe);
-
-		ReplayObjectPool.ReturnList(unitsToRecord);
-		ReplayObjectPool.ReturnIntList(activeIds);
-
-		_replayTickCounter++;
+		_replayService.RecordGameplayTick();
 	}
-
 }

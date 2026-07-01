@@ -83,362 +83,33 @@ public partial class GameHost
 	private void ApplyContinuousTerrainEditing(Vector3 worldPos, float delta)
 	{
 		if (GroundTerrain == null) return;
-		
-		bool isHeights = ActiveEditorTool == EditorTool.Raise ||
-						 ActiveEditorTool == EditorTool.Lower ||
-						 ActiveEditorTool == EditorTool.Flatten ||
-						 ActiveEditorTool == EditorTool.Smooth ||
-						 ActiveEditorTool == EditorTool.Cliff ||
-						 ActiveEditorTool == EditorTool.Noise;
-						 
-		bool isPaint = ActiveEditorTool == EditorTool.PaintGrass ||
-					   ActiveEditorTool == EditorTool.PaintDirt ||
-					   ActiveEditorTool == EditorTool.PaintRock ||
-					   ActiveEditorTool == EditorTool.PaintSand;
-
-		bool isPathing = ActiveEditorTool == EditorTool.PaintPathing;
-					   
-		if (!isHeights && !isPaint && !isPathing) return;
-		
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
-		float spacing = GroundTerrain.Spacing;
-		
-		Color paintColor = EditorPaintColor;
-		
-		bool modified = false;
 
 		int pathingMask = 0;
 		bool pathingAdd = true;
-		if (isPathing && MapEditorHUD.Instance != null)
+		if (ActiveEditorTool == EditorTool.PaintPathing && MapEditorHUD.Instance != null)
 		{
 			pathingMask = MapEditorHUD.Instance.GetSelectedPathingMask();
 			pathingAdd = MapEditorHUD.Instance.IsPathingAddMode();
 		}
-		
-		if (EditorBlockMode)
-		{
-			int cx = Mathf.Clamp((int)Math.Round(worldPos.X / spacing + (width - 1) / 2.0f), 0, width - 1);
-			int cz = Mathf.Clamp((int)Math.Round(worldPos.Z / spacing + (depth - 1) / 2.0f), 0, depth - 1);
-			int brushGridRadius = Mathf.Max(0, (int)Math.Round(EditorBrushRadius / spacing));
-			
-			if (isHeights)
-			{
-				float targetHeight = _hasBlockTargetHeight ? _activeBlockTargetHeight : 0.0f;
-				for (int z = cz - brushGridRadius; z <= cz + brushGridRadius; z++)
-				{
-					for (int x = cx - brushGridRadius; x <= cx + brushGridRadius; x++)
-					{
-						if (x >= 0 && x < width && z >= 0 && z < depth)
-						{
-							bool inBounds = true;
-							if (!EditorBrushIsSquare)
-							{
-								float dx = x - cx;
-								float dz = z - cz;
-								inBounds = (dx * dx + dz * dz) <= (brushGridRadius * brushGridRadius);
-							}
-							
-							if (inBounds)
-							{
-								if (ActiveEditorTool == EditorTool.Raise || 
-									ActiveEditorTool == EditorTool.Lower || 
-									ActiveEditorTool == EditorTool.Flatten || 
-									ActiveEditorTool == EditorTool.Cliff)
-								{
-									GroundTerrain.Heights[x, z] = Mathf.Clamp(targetHeight, -10.0f, 50.0f);
-									modified = true;
-								}
-								else if (ActiveEditorTool == EditorTool.Smooth)
-								{
-									float avg = 0f;
-									int count = 0;
-									for (int nz = -1; nz <= 1; nz++)
-									{
-										for (int nx = -1; nx <= 1; nx++)
-										{
-											int nxVal = x + nx;
-											int nzVal = z + nz;
-											if (nxVal >= 0 && nxVal < width && nzVal >= 0 && nzVal < depth)
-											{
-												avg += GroundTerrain.Heights[nxVal, nzVal];
-												count++;
-											}
-										}
-									}
-									avg /= count;
-									float snappedAvg = Mathf.Round(avg / EditorBlockLevelHeight) * EditorBlockLevelHeight;
-									GroundTerrain.Heights[x, z] = Mathf.Clamp(Mathf.Lerp(GroundTerrain.Heights[x, z], snappedAvg, EditorBrushStrength * delta * 2.0f), -10.0f, 50.0f);
-									modified = true;
-								}
-								else if (ActiveEditorTool == EditorTool.Noise)
-								{
-									if (GD.Randf() < 0.15f * EditorBrushStrength * delta)
-									{
-										float direction = GD.Randf() > 0.5f ? 1.0f : -1.0f;
-										GroundTerrain.Heights[x, z] = Mathf.Clamp(GroundTerrain.Heights[x, z] + direction * EditorBlockLevelHeight, -10.0f, 50.0f);
-										modified = true;
-									}
-								}
-							}
-						}
-					}
-				}
-				
-				if (modified && ActiveEditorTool != EditorTool.Smooth && ActiveEditorTool != EditorTool.Flatten && ActiveEditorTool != EditorTool.Noise)
-				{
-					for (int z = cz - brushGridRadius - 1; z <= cz + brushGridRadius + 1; z++)
-					{
-						for (int x = cx - brushGridRadius - 1; x <= cx + brushGridRadius + 1; x++)
-						{
-							if (x >= 0 && x < width && z >= 0 && z < depth)
-							{
-								float h = GroundTerrain.Heights[x, z];
-								float hl = GroundTerrain.Heights[Math.Max(0, x - 1), z];
-								float hr = GroundTerrain.Heights[Math.Min(width - 1, x + 1), z];
-								float hd = GroundTerrain.Heights[x, Math.Max(0, z - 1)];
-								float hu = GroundTerrain.Heights[x, Math.Min(depth - 1, z + 1)];
-								
-								float maxDiff = Mathf.Max(
-									Mathf.Max(Mathf.Abs(h - hl), Mathf.Abs(h - hr)),
-									Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
-								);
-								
-								if (maxDiff >= EditorBlockLevelHeight * 0.5f)
-								{
-									GroundTerrain.Colors[x, z] = EditorCliffPaintColor;
-								}
-								else
-								{
-									bool insideBrush = true;
-									if (!EditorBrushIsSquare)
-									{
-										float dx = x - cx;
-										float dz = z - cz;
-										insideBrush = (dx * dx + dz * dz) <= (brushGridRadius * brushGridRadius);
-									}
-									else
-									{
-										insideBrush = (x >= cx - brushGridRadius && x <= cx + brushGridRadius && z >= cz - brushGridRadius && z <= cz + brushGridRadius);
-									}
-									
-									if (insideBrush)
-									{
-										GroundTerrain.Colors[x, z] = EditorPaintColor;
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-			else if (isPaint)
-			{
-				for (int z = cz - brushGridRadius; z <= cz + brushGridRadius; z++)
-				{
-					for (int x = cx - brushGridRadius; x <= cx + brushGridRadius; x++)
-					{
-						if (x >= 0 && x < width && z >= 0 && z < depth)
-						{
-							bool inBounds = true;
-							if (!EditorBrushIsSquare)
-							{
-								float dx = x - cx;
-								float dz = z - cz;
-								inBounds = (dx * dx + dz * dz) <= (brushGridRadius * brushGridRadius);
-							}
-							
-							if (inBounds)
-							{
-								float h = GroundTerrain.Heights[x, z];
-								float hl = GroundTerrain.Heights[Math.Max(0, x - 1), z];
-								float hr = GroundTerrain.Heights[Math.Min(width - 1, x + 1), z];
-								float hd = GroundTerrain.Heights[x, Math.Max(0, z - 1)];
-								float hu = GroundTerrain.Heights[x, Math.Min(depth - 1, z + 1)];
-								
-								float maxDiff = Mathf.Max(
-									Mathf.Max(Mathf.Abs(h - hl), Mathf.Abs(h - hr)),
-									Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
-								);
-								
-								Color baseColor = (maxDiff >= EditorBlockLevelHeight * 0.5f) ? EditorCliffPaintColor : EditorPaintColor;
-								float targetAlpha = baseColor.A;
-								Color targetColor = new Color(baseColor.R, baseColor.G, baseColor.B, targetAlpha);
-								GroundTerrain.Colors[x, z] = GroundTerrain.Colors[x, z].Lerp(targetColor, EditorBrushStrength * delta * 5.0f);
-								modified = true;
-							}
-						}
-					}
-				}
-			}
-			else if (isPathing)
-			{
-				for (int z = cz - brushGridRadius; z <= cz + brushGridRadius; z++)
-				{
-					for (int x = cx - brushGridRadius; x <= cx + brushGridRadius; x++)
-					{
-						if (x >= 0 && x < width && z >= 0 && z < depth)
-						{
-							bool inBounds = true;
-							if (!EditorBrushIsSquare)
-							{
-								float dx = x - cx;
-								float dz = z - cz;
-								inBounds = (dx * dx + dz * dz) <= (brushGridRadius * brushGridRadius);
-							}
-							
-							if (inBounds)
-							{
-								if (pathingAdd)
-								{
-									GroundTerrain.PathingCodes[x, z] |= pathingMask;
-								}
-								else
-								{
-									GroundTerrain.PathingCodes[x, z] &= ~pathingMask;
-								}
-								modified = true;
-							}
-						}
-					}
-				}
-			}
-			
-			if (modified)
-			{
-				GroundTerrain.UpdateMeshAndPhysics(isHeights, false);
-				if (isHeights)
-				{
-					AlignAllEntitiesToTerrain();
-				}
-				if (isPathing && PathingOverlayVisible)
-				{
-					RebuildPathingOverlay();
-				}
-				EditorHasUnsavedChanges = true;
-			}
-			return;
-		}
-		
-		for (int z = 0; z < depth; z++)
-		{
-			for (int x = 0; x < width; x++)
-			{
-				float vx = (x - (width - 1) / 2.0f) * spacing;
-				float vz = (z - (depth - 1) / 2.0f) * spacing;
-				
-				float dist = 0.0f;
-				bool inBounds = false;
-				if (EditorBrushIsSquare)
-				{
-					float dx = Mathf.Abs(vx - worldPos.X);
-					float dz = Mathf.Abs(vz - worldPos.Z);
-					inBounds = dx <= EditorBrushRadius && dz <= EditorBrushRadius;
-					dist = Mathf.Max(dx, dz);
-				}
-				else
-				{
-					dist = new Vector2(vx - worldPos.X, vz - worldPos.Z).Length();
-					inBounds = dist <= EditorBrushRadius;
-				}
 
-				if (inBounds)
-				{
-					float falloff = 1.0f - (dist / EditorBrushRadius);
-					falloff = Mathf.Sin(falloff * Mathf.Pi / 2.0f);
-					
-					if (isHeights)
-					{
-						if (ActiveEditorTool == EditorTool.Raise)
-						{
-							GroundTerrain.Heights[x, z] = Mathf.Clamp(GroundTerrain.Heights[x, z] + EditorBrushStrength * falloff * delta, -10.0f, 50.0f);
-						}
-						else if (ActiveEditorTool == EditorTool.Lower)
-						{
-							GroundTerrain.Heights[x, z] = Mathf.Clamp(GroundTerrain.Heights[x, z] - EditorBrushStrength * falloff * delta, -10.0f, 50.0f);
-						}
-						else if (ActiveEditorTool == EditorTool.Flatten)
-						{
-							GroundTerrain.Heights[x, z] = Mathf.Clamp(Mathf.Lerp(GroundTerrain.Heights[x, z], EditorFlattenHeight, EditorBrushStrength * falloff * delta * 2.0f), -10.0f, 50.0f);
-						}
-						else if (ActiveEditorTool == EditorTool.Smooth)
-						{
-							float avg = 0f;
-							int count = 0;
-							for (int nz = -1; nz <= 1; nz++)
-							{
-								for (int nx = -1; nx <= 1; nx++)
-								{
-									int nxVal = x + nx;
-									int nzVal = z + nz;
-									if (nxVal >= 0 && nxVal < width && nzVal >= 0 && nzVal < depth)
-									{
-										avg += GroundTerrain.Heights[nxVal, nzVal];
-										count++;
-									}
-								}
-							}
-							avg /= count;
-							GroundTerrain.Heights[x, z] = Mathf.Clamp(Mathf.Lerp(GroundTerrain.Heights[x, z], avg, EditorBrushStrength * falloff * delta * 2.0f), -10.0f, 50.0f);
-						}
-						else if (ActiveEditorTool == EditorTool.Cliff)
-						{
-							float targetHeight = _activeCliffHeight ?? 4.0f;
-							GroundTerrain.Heights[x, z] = Mathf.Clamp(Mathf.Lerp(GroundTerrain.Heights[x, z], targetHeight, EditorBrushStrength * falloff * delta * 2.0f), -10.0f, 50.0f);
-						}
-						else if (ActiveEditorTool == EditorTool.Noise)
-						{
-							float noiseVal = (float)(GD.Randf() * 2.0 - 1.0) * EditorBrushStrength * falloff * delta * 2.0f;
-							GroundTerrain.Heights[x, z] = Mathf.Clamp(GroundTerrain.Heights[x, z] + noiseVal, -10.0f, 50.0f);
-						}
-						modified = true;
-					}
-					else if (isPaint)
-					{
-						float h = GroundTerrain.Heights[x, z];
-						float hl = GroundTerrain.Heights[Math.Max(0, x - 1), z];
-						float hr = GroundTerrain.Heights[Math.Min(width - 1, x + 1), z];
-						float hd = GroundTerrain.Heights[x, Math.Max(0, z - 1)];
-						float hu = GroundTerrain.Heights[x, Math.Min(depth - 1, z + 1)];
-						
-						float maxDiff = Mathf.Max(
-							Mathf.Max(Mathf.Abs(h - hl), Mathf.Abs(h - hr)),
-							Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
-						);
-						
-						Color baseColor = (maxDiff >= spacing * 0.5f) ? EditorCliffPaintColor : EditorPaintColor;
-						float targetAlpha = baseColor.A;
-						Color targetColor = new Color(baseColor.R, baseColor.G, baseColor.B, targetAlpha);
-						GroundTerrain.Colors[x, z] = GroundTerrain.Colors[x, z].Lerp(targetColor, EditorBrushStrength * falloff * delta * 3.0f);
-						modified = true;
-					}
-					else if (isPathing)
-					{
-						int cx = Mathf.Clamp((int)Math.Round(vx / spacing + (width - 1) / 2.0f), 0, width - 1);
-						int cz = Mathf.Clamp((int)Math.Round(vz / spacing + (depth - 1) / 2.0f), 0, depth - 1);
-						if (pathingAdd)
-						{
-							GroundTerrain.PathingCodes[cx, cz] |= pathingMask;
-						}
-						else
-						{
-							GroundTerrain.PathingCodes[cx, cz] &= ~pathingMask;
-						}
-						modified = true;
-					}
-				}
-			}
-		}
-		
-		if (modified)
+		var result = _editorService.ApplyContinuousTerrainEditing(
+			worldPos, delta,
+			ActiveEditorTool,
+			EditorBrushRadius, EditorBrushStrength,
+			EditorFlattenHeight,
+			EditorBrushIsSquare,
+			EditorBlockMode, EditorBlockLevelHeight,
+			EditorPaintColor, EditorCliffPaintColor,
+			pathingMask, pathingAdd);
+
+		if (result.HeightsModified || result.ColorsModified || result.PathingModified)
 		{
-			GroundTerrain.UpdateMeshAndPhysics(isHeights, false);
-			
-			if (isHeights)
+			GroundTerrain.UpdateMeshAndPhysics(result.HeightsModified, false);
+			if (result.HeightsModified)
 			{
 				AlignAllEntitiesToTerrain();
 			}
-			if (isPathing && PathingOverlayVisible)
+			if (result.PathingModified && PathingOverlayVisible)
 			{
 				RebuildPathingOverlay();
 			}
@@ -471,7 +142,7 @@ public partial class GameHost
 
 		EcsWorld.Add(entity, prop);
 
-		position.Y = GetTerrainHeightAt(position);
+		position.Y = _editorService.GetTerrainHeightAt(position);
 		prop.Position = position;
 		
 		if (IsMapEditorMode)
@@ -521,7 +192,7 @@ public partial class GameHost
 		decal.AlbedoMix = 1.0f;
 		AddChild(decal);
 		
-		position.Y = GetTerrainHeightAt(position);
+		position.Y = _editorService.GetTerrainHeightAt(position);
 		decal.Position = position;
 		
 		if (IsMapEditorMode)
@@ -535,19 +206,7 @@ public partial class GameHost
 
 	public float GetTerrainHeightAt(Vector3 worldPos)
 	{
-		if (GroundTerrain == null) return 0.0f;
-		
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
-		float spacing = GroundTerrain.Spacing;
-		
-		float fx = worldPos.X / spacing + (width - 1) / 2.0f;
-		float fz = worldPos.Z / spacing + (depth - 1) / 2.0f;
-		
-		int x = Mathf.Clamp((int)Math.Round(fx), 0, width - 1);
-		int z = Mathf.Clamp((int)Math.Round(fz), 0, depth - 1);
-		
-		return GroundTerrain.Heights[x, z];
+		return _editorService.GetTerrainHeightAt(worldPos);
 	}
 
 	private void AlignAllEntitiesToTerrain()
@@ -557,7 +216,7 @@ public partial class GameHost
 			if (GodotObject.IsInstanceValid(unit))
 			{
 				var pos = unit.GlobalPosition;
-				pos.Y = GetTerrainHeightAt(pos);
+				pos.Y = _editorService.GetTerrainHeightAt(pos);
 				unit.GlobalPosition = pos;
 				if (EcsWorld.IsAlive(unit.Entity))
 				{
@@ -571,13 +230,13 @@ public partial class GameHost
 			if (child is Prop3D prop && GodotObject.IsInstanceValid(prop))
 			{
 				var pos = prop.GlobalPosition;
-				pos.Y = GetTerrainHeightAt(pos);
+				pos.Y = _editorService.GetTerrainHeightAt(pos);
 				prop.GlobalPosition = pos;
 			}
 			else if (child is Decal decal && GodotObject.IsInstanceValid(decal))
 			{
 				var pos = decal.GlobalPosition;
-				pos.Y = GetTerrainHeightAt(pos);
+				pos.Y = _editorService.GetTerrainHeightAt(pos);
 				decal.GlobalPosition = pos;
 			}
 		}
@@ -612,7 +271,7 @@ public partial class GameHost
 
 
 		Decal closestDecal = null;
-		float closestDist = 3.0f; // search radius in units
+		float closestDist = 3.0f;
 		foreach (var child in GetChildren())
 		{
 			if (child is Decal dec && GodotObject.IsInstanceValid(dec))
@@ -633,12 +292,13 @@ public partial class GameHost
 
 	private void ProcessMapEditorPhysics(float fDelta)
 	{
-		_fDelta = fDelta;
+		_ecsService.TickEditorPhysics(fDelta);
 		var query = new QueryDescription().WithAll<Position, MoveTo, MovementStats>().WithNone<Dead>();
-		_tickEditorArrivedUnits.Clear();
-		EcsWorld.Query(in query, _editorMovementQueryDelegate);
+		var arrivedUnits = _ecsService.GetEditorArrivedUnits();
+		arrivedUnits.Clear();
+		EcsWorld.Query(in query, _ecsService.EditorMovementQueryDelegate);
 
-		foreach (var entity in _tickEditorArrivedUnits)
+		foreach (var entity in arrivedUnits)
 		{
 			if (EcsWorld.IsAlive(entity) && EcsWorld.Has<MoveTo>(entity))
 			{
@@ -651,7 +311,7 @@ public partial class GameHost
 
 	public Unit3D SpawnUnitExternal(string unitId, Vector3 position, bool isEnemy, float rotationY, float scale)
 	{
-		position.Y = GetTerrainHeightAt(position);
+		position.Y = _editorService.GetTerrainHeightAt(position);
 		if (!UnitRegistry.ContainsKey(unitId))
 		{
 			var dynamicMeta = new UnitMetadata
@@ -724,7 +384,7 @@ public partial class GameHost
 
 		EcsWorld.Add(entity, prop);
 
-		position.Y = GetTerrainHeightAt(position);
+		position.Y = _editorService.GetTerrainHeightAt(position);
 		prop.Position = position;
 		prop.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
 		prop.Scale = Vector3.One * scale;
@@ -741,7 +401,7 @@ public partial class GameHost
 		decal.AlbedoMix = 1.0f;
 		AddChild(decal);
 		
-		position.Y = GetTerrainHeightAt(position);
+		position.Y = _editorService.GetTerrainHeightAt(position);
 		decal.Position = position;
 		decal.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
 		decal.Scale = Vector3.One;
@@ -998,22 +658,16 @@ public partial class GameHost
 
 		if (_editorPreviewNode != null)
 		{
-			if (!_hasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
-			float previewRot = (EditorRandomRotation && !_isPastingObject) ? _cachedRandomRotation : EditorPlacementRotation;
-			float previewScaleVal = (EditorRandomScale && !_isPastingObject) ? _cachedRandomScale : EditorPlacementScale;
+			if (!_editorService.HasCachedRandom) _editorService.GenerateNewRandomPlacementRotationAndScale();
+			float previewRot = (EditorRandomRotation && !_editorService.IsPastingObject) ? _editorService.CachedRandomRotation : EditorPlacementRotation;
+			float previewScaleVal = (EditorRandomScale && !_editorService.IsPastingObject) ? _editorService.CachedRandomScale : EditorPlacementScale;
 
 			Vector3 previewPos = position;
 			if (EditorSnapToGrid && GroundTerrain != null)
 			{
-				float spacing = GroundTerrain.Spacing;
-				int width = GroundTerrain.Width;
-				int depth = GroundTerrain.Depth;
-				float fx = Mathf.Round(previewPos.X / spacing + (width - 1) / 2.0f);
-				previewPos.X = (Mathf.Clamp(fx, 0, width - 1) - (width - 1) / 2.0f) * spacing;
-				float fz = Mathf.Round(previewPos.Z / spacing + (depth - 1) / 2.0f);
-				previewPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * spacing;
+				previewPos = _editorService.SnapToGrid(previewPos);
 			}
-			previewPos.Y = GetTerrainHeightAt(previewPos);
+			previewPos.Y = _editorService.GetTerrainHeightAt(previewPos);
 			if (ActiveEditorTool == EditorTool.PlaceUnit || ActiveEditorTool == EditorTool.PlaceProp)
 			{
 				float radius = GetPlacementRadius(ActivePlaceId, previewScaleVal);
@@ -1159,10 +813,7 @@ public partial class GameHost
 
 	private void ProcessMapEditorTick(float fDelta)
 	{
-		if (_clumpSpawnCooldown > 0.0f)
-		{
-			_clumpSpawnCooldown -= fDelta;
-		}
+		_editorService.TickClumpCooldown(fDelta);
 
 		var mousePos = GetViewport().GetMousePosition();
 		var hit = RaycastFromMouse(mousePos);
@@ -1173,30 +824,24 @@ public partial class GameHost
 			UpdateEditorPreview(hitPos);
 			if (GroundTerrain != null)
 			{
-				if (ActiveEditorTool == EditorTool.SelectArea && _isSelectingArea && _selectionStart != null)
+				if (ActiveEditorTool == EditorTool.SelectArea && _editorService.IsSelectingArea && _editorService.SelectionStart != null)
 				{
-					float fx = hitPos.X / GroundTerrain.Spacing + (GroundTerrain.Width - 1) / 2.0f;
-					float fz = hitPos.Z / GroundTerrain.Spacing + (GroundTerrain.Depth - 1) / 2.0f;
-					int cx = Mathf.Clamp((int)Math.Round(fx), 0, GroundTerrain.Width - 1);
-					int cz = Mathf.Clamp((int)Math.Round(fz), 0, GroundTerrain.Depth - 1);
-					_selectionEnd = new Vector2I(cx, cz);
-					int minX = Mathf.Min(_selectionStart.Value.X, _selectionEnd.Value.X);
-					int minZ = Mathf.Min(_selectionStart.Value.Y, _selectionEnd.Value.Y);
-					int maxX = Mathf.Max(_selectionStart.Value.X, _selectionEnd.Value.X);
-					int maxZ = Mathf.Max(_selectionStart.Value.Y, _selectionEnd.Value.Y);
+					var (cx, cz) = _editorService.WorldPosToCellCoords(hitPos);
+					_editorService.SetSelectionEnd(new Vector2I(cx, cz));
+					int minX = Mathf.Min(_editorService.SelectionStart.Value.X, cx);
+					int minZ = Mathf.Min(_editorService.SelectionStart.Value.Y, cz);
+					int maxX = Mathf.Max(_editorService.SelectionStart.Value.X, cx);
+					int maxZ = Mathf.Max(_editorService.SelectionStart.Value.Y, cz);
 					CreateSelectionHighlight();
 					RebuildSelectionHighlightMesh(minX, minZ, maxX, maxZ);
 				}
-				else if (ActiveEditorTool == EditorTool.PasteArea && _copiedArea != null)
+				else if (ActiveEditorTool == EditorTool.PasteArea && _editorService.HasCopiedArea)
 				{
-					float fx = hitPos.X / GroundTerrain.Spacing + (GroundTerrain.Width - 1) / 2.0f;
-					float fz = hitPos.Z / GroundTerrain.Spacing + (GroundTerrain.Depth - 1) / 2.0f;
-					int cx = Mathf.Clamp((int)Math.Round(fx), 0, GroundTerrain.Width - 1);
-					int cz = Mathf.Clamp((int)Math.Round(fz), 0, GroundTerrain.Depth - 1);
+					var (cx, cz) = _editorService.WorldPosToCellCoords(hitPos);
 					int minX = cx;
 					int minZ = cz;
-					int maxX = Mathf.Min(minX + _copiedArea.Width - 1, GroundTerrain.Width - 1);
-					int maxZ = Mathf.Min(minZ + _copiedArea.Depth - 1, GroundTerrain.Depth - 1);
+					int maxX = Mathf.Min(minX + _editorService.CopiedAreaWidth - 1, GroundTerrain.Width - 1);
+					int maxZ = Mathf.Min(minZ + _editorService.CopiedAreaDepth - 1, GroundTerrain.Depth - 1);
 					CreateSelectionHighlight();
 					RebuildSelectionHighlightMesh(minX, minZ, maxX, maxZ);
 				}
@@ -1261,15 +906,14 @@ public partial class GameHost
 			{
 				if ((ActiveEditorTool == EditorTool.PlaceUnit || ActiveEditorTool == EditorTool.PlaceProp || ActiveEditorTool == EditorTool.PlaceDecal) && EditorClumpMode)
 				{
-					if (!_isDrawingClump)
+					if (!_editorService.IsDrawingClump)
 					{
-						_isDrawingClump = true;
-						_clumpSpawnActionsInSession.Clear();
+						_editorService.BeginClumpSession();
 					}
-					if (_clumpSpawnCooldown <= 0.0f)
+					if (_editorService.CanSpawnClump())
 					{
 						ApplyGeneralClumpSpawn(hitPos);
-						_clumpSpawnCooldown = 0.15f;
+						_editorService.SetClumpCooldown(0.15f);
 					}
 				}
 
@@ -1286,15 +930,9 @@ public partial class GameHost
 						var dragPos = hitPos - (_dragObjectStartHitPos - _dragObjectStartPos);
 						if (EditorSnapToGrid && GroundTerrain != null)
 						{
-							float spacing = GroundTerrain.Spacing;
-							int width = GroundTerrain.Width;
-							int depth = GroundTerrain.Depth;
-							float fx = Mathf.Round(dragPos.X / spacing + (width - 1) / 2.0f);
-							dragPos.X = (Mathf.Clamp(fx, 0, width - 1) - (width - 1) / 2.0f) * spacing;
-							float fz = Mathf.Round(dragPos.Z / spacing + (depth - 1) / 2.0f);
-							dragPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * spacing;
+							dragPos = _editorService.SnapToGrid(dragPos);
 						}
-						dragPos.Y = GetTerrainHeightAt(dragPos);
+						dragPos.Y = _editorService.GetTerrainHeightAt(dragPos);
 						node3D.Position = dragPos;
 						if (SelectedEditorObject is Unit3D unit && EcsWorld.IsAlive(unit.Entity))
 						{
@@ -1316,58 +954,31 @@ public partial class GameHost
 									 ActiveEditorTool == EditorTool.Noise ||
 									 ActiveEditorTool == EditorTool.PaintPathing;
 
-				if (isTerrainTool && !_isDrawingTerrain && GroundTerrain != null)
+				if (isTerrainTool && !_editorService.IsDrawingTerrain && GroundTerrain != null)
 				{
-					_isDrawingTerrain = true;
-					_terrainHeightsBefore = (float[,])GroundTerrain.Heights.Clone();
-					_terrainColorsBefore = (Color[,])GroundTerrain.Colors.Clone();
-					_terrainPathingBefore = (int[,])GroundTerrain.PathingCodes.Clone();
+					_editorService.BeginTerrainDraw(
+						hitPos,
+						ActiveEditorTool,
+						EditorBlockMode,
+						EditorBlockLevelHeight,
+						EditorFlattenHeight,
+						GroundTerrain.Heights,
+						GroundTerrain.Colors,
+						GroundTerrain.PathingCodes,
+						out float newFlattenHeight);
 
+					EditorFlattenHeight = newFlattenHeight;
 					if (ActiveEditorTool == EditorTool.Flatten)
 					{
-						EditorFlattenHeight = GetMinHeightInBrushBounds(hitPos);
 						MapEditorHUD.Instance?.UpdateFlattenHeightExternal(EditorFlattenHeight);
 					}
-
-					if (EditorBlockMode)
-					{
-						float startHeight = GetTerrainHeightAt(hitPos);
-						if (ActiveEditorTool == EditorTool.Raise)
-						{
-							_activeBlockTargetHeight = (Mathf.Floor(startHeight / EditorBlockLevelHeight) + 1.0f) * EditorBlockLevelHeight;
-							_hasBlockTargetHeight = true;
-						}
-						else if (ActiveEditorTool == EditorTool.Lower)
-						{
-							_activeBlockTargetHeight = (Mathf.Ceil(startHeight / EditorBlockLevelHeight) - 1.0f) * EditorBlockLevelHeight;
-							_hasBlockTargetHeight = true;
-						}
-						else if (ActiveEditorTool == EditorTool.Flatten)
-						{
-							_activeBlockTargetHeight = Mathf.Round(EditorFlattenHeight / EditorBlockLevelHeight) * EditorBlockLevelHeight;
-							_hasBlockTargetHeight = true;
-						}
-						else if (ActiveEditorTool == EditorTool.Cliff)
-						{
-							bool lower = Input.IsKeyPressed(Key.Shift);
-							if (lower)
-								_activeBlockTargetHeight = (Mathf.Ceil(startHeight / EditorBlockLevelHeight) - 1.0f) * EditorBlockLevelHeight;
-							else
-								_activeBlockTargetHeight = (Mathf.Floor(startHeight / EditorBlockLevelHeight) + 1.0f) * EditorBlockLevelHeight;
-							_hasBlockTargetHeight = true;
-						}
-					}
 				}
 
-				if (ActiveEditorTool == EditorTool.Cliff && _activeCliffHeight == null && !EditorBlockMode)
+				if (ActiveEditorTool == EditorTool.Cliff && !EditorBlockMode)
 				{
-					float startHeight = GetTerrainHeightAt(hitPos);
-					bool lower = Input.IsKeyPressed(Key.Shift);
-					if (lower)
-						_activeCliffHeight = (Mathf.Ceil(startHeight / 4.0f) - 1.0f) * 4.0f;
-					else
-						_activeCliffHeight = (Mathf.Floor(startHeight / 4.0f) + 1.0f) * 4.0f;
+					_editorService.BeginCliffIfNeeded(hitPos, EditorBlockMode, EditorBlockLevelHeight);
 				}
+
 				ApplyContinuousTerrainEditing(hitPos, fDelta);
 				if (EditorMirrorMode != MirrorMode.None)
 				{
@@ -1379,19 +990,18 @@ public partial class GameHost
 			}
 			else
 			{
-				if (_isDrawingClump)
+				if (_editorService.IsDrawingClump)
 				{
-					_isDrawingClump = false;
-					if (_clumpSpawnActionsInSession.Count > 0)
+					var composite = _editorService.EndClumpSession();
+					if (composite != null)
 					{
-						var composite = new CompositeAction(_clumpSpawnActionsInSession);
 						EditorHistoryManager.RecordAction(composite);
 						EditorHasUnsavedChanges = true;
 					}
 				}
 
-				_activeCliffHeight = null;
-				_hasBlockTargetHeight = false;
+				_editorService.ResetDrawState();
+
 				if (_isDraggingObject)
 				{
 					_isDraggingObject = false;
@@ -1415,34 +1025,31 @@ public partial class GameHost
 						}
 					}
 				}
-				if (_isSelectingArea)
+				if (_editorService.IsSelectingArea)
 				{
-					_isSelectingArea = false;
+					_editorService.SetIsSelectingArea(false);
 				}
-				if (_isDrawingTerrain)
+				if (_editorService.IsDrawingTerrain)
 				{
-					_isDrawingTerrain = false;
-					if (GroundTerrain != null)
+					var action = _editorService.EndTerrainDraw(
+						(float[,])GroundTerrain.Heights.Clone(),
+						(Color[,])GroundTerrain.Colors.Clone(),
+						(int[,])GroundTerrain.PathingCodes.Clone());
+
+					EditorHistoryManager.RecordAction(action);
+					bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
+										 ActiveEditorTool == EditorTool.Lower ||
+										 ActiveEditorTool == EditorTool.Flatten ||
+										 ActiveEditorTool == EditorTool.Smooth ||
+										 ActiveEditorTool == EditorTool.Cliff ||
+										 ActiveEditorTool == EditorTool.Noise ||
+										 ActiveEditorTool == EditorTool.PaintPathing;
+					if (isHeightsTool)
 					{
-						var currentHeights = (float[,])GroundTerrain.Heights.Clone();
-						var currentColors = (Color[,])GroundTerrain.Colors.Clone();
-						var currentPathing = (int[,])GroundTerrain.PathingCodes.Clone();
-						var action = new TerrainModifyAction(_terrainHeightsBefore, currentHeights, _terrainColorsBefore, currentColors, _terrainPathingBefore, currentPathing);
-						EditorHistoryManager.RecordAction(action);
-						bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
-											 ActiveEditorTool == EditorTool.Lower ||
-											 ActiveEditorTool == EditorTool.Flatten ||
-											 ActiveEditorTool == EditorTool.Smooth ||
-											 ActiveEditorTool == EditorTool.Cliff ||
-											 ActiveEditorTool == EditorTool.Noise ||
-											 ActiveEditorTool == EditorTool.PaintPathing;
-						if (isHeightsTool)
-						{
-							GroundTerrain.BakeNavMesh();
-							RebuildGridOverlayMeshExternal();
-						}
-						EditorHasUnsavedChanges = true;
+						GroundTerrain.BakeNavMesh();
+						RebuildGridOverlayMeshExternal();
 					}
+					EditorHasUnsavedChanges = true;
 				}
 			}
 		}
@@ -1473,44 +1080,40 @@ public partial class GameHost
 					}
 				}
 			}
-			if (_isDrawingClump)
+			if (_editorService.IsDrawingClump)
 			{
-				_isDrawingClump = false;
-				if (_clumpSpawnActionsInSession.Count > 0)
+				var composite = _editorService.EndClumpSession();
+				if (composite != null)
 				{
-					var composite = new CompositeAction(_clumpSpawnActionsInSession);
 					EditorHistoryManager.RecordAction(composite);
 					EditorHasUnsavedChanges = true;
 				}
 			}
-			if (_isSelectingArea)
+			if (_editorService.IsSelectingArea)
 			{
-				_isSelectingArea = false;
+				_editorService.SetIsSelectingArea(false);
 			}
-			if (_isDrawingTerrain)
+			if (_editorService.IsDrawingTerrain && GroundTerrain != null)
 			{
-				_isDrawingTerrain = false;
-				if (GroundTerrain != null)
+				var action = _editorService.EndTerrainDraw(
+					(float[,])GroundTerrain.Heights.Clone(),
+					(Color[,])GroundTerrain.Colors.Clone(),
+					(int[,])GroundTerrain.PathingCodes.Clone());
+
+				EditorHistoryManager.RecordAction(action);
+				bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
+									 ActiveEditorTool == EditorTool.Lower ||
+									 ActiveEditorTool == EditorTool.Flatten ||
+									 ActiveEditorTool == EditorTool.Smooth ||
+									 ActiveEditorTool == EditorTool.Cliff ||
+									 ActiveEditorTool == EditorTool.Noise ||
+									 ActiveEditorTool == EditorTool.PaintPathing;
+				if (isHeightsTool)
 				{
-					var currentHeights = (float[,])GroundTerrain.Heights.Clone();
-					var currentColors = (Color[,])GroundTerrain.Colors.Clone();
-					var currentPathing = (int[,])GroundTerrain.PathingCodes.Clone();
-					var action = new TerrainModifyAction(_terrainHeightsBefore, currentHeights, _terrainColorsBefore, currentColors, _terrainPathingBefore, currentPathing);
-					EditorHistoryManager.RecordAction(action);
-					bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
-										 ActiveEditorTool == EditorTool.Lower ||
-										 ActiveEditorTool == EditorTool.Flatten ||
-										 ActiveEditorTool == EditorTool.Smooth ||
-										 ActiveEditorTool == EditorTool.Cliff ||
-										 ActiveEditorTool == EditorTool.Noise ||
-										 ActiveEditorTool == EditorTool.PaintPathing;
-					if (isHeightsTool)
-					{
-						GroundTerrain.BakeNavMesh();
-						RebuildGridOverlayMeshExternal();
-					}
-					EditorHasUnsavedChanges = true;
+					GroundTerrain.BakeNavMesh();
+					RebuildGridOverlayMeshExternal();
 				}
+				EditorHasUnsavedChanges = true;
 			}
 		}
 		
@@ -1692,7 +1295,7 @@ public partial class GameHost
 
 	public void ClearRampStartPosExternal()
 	{
-		_rampStartPos = null;
+		_editorService.SetRampStartPos(null);
 	}
 
 	public struct MirroredTransform
@@ -1703,30 +1306,7 @@ public partial class GameHost
 
 	public List<MirroredTransform> GetMirroredTransforms(Vector3 pos, float rotation)
 	{
-		var list = new List<MirroredTransform>();
-		if (EditorMirrorMode == MirrorMode.None) return list;
-		if (EditorMirrorMode == MirrorMode.Horizontal || EditorMirrorMode == MirrorMode.Both)
-		{
-			list.Add(new MirroredTransform {
-				Position = new Vector3(-pos.X, pos.Y, pos.Z),
-				Rotation = 180.0f - rotation
-			});
-		}
-		if (EditorMirrorMode == MirrorMode.Vertical || EditorMirrorMode == MirrorMode.Both)
-		{
-			list.Add(new MirroredTransform {
-				Position = new Vector3(pos.X, pos.Y, -pos.Z),
-				Rotation = -rotation
-			});
-		}
-		if (EditorMirrorMode == MirrorMode.Both)
-		{
-			list.Add(new MirroredTransform {
-				Position = new Vector3(-pos.X, pos.Y, -pos.Z),
-				Rotation = rotation + 180.0f
-			});
-		}
-		return list;
+		return _editorService.GetMirroredTransforms(pos, rotation, EditorMirrorMode);
 	}
 
 	private Node FindObjectNearPosition(Vector3 position, float searchRadius = 1.5f)
@@ -1750,213 +1330,44 @@ public partial class GameHost
 
 	private bool ApplyRampInternal(Vector3 start, Vector3 end)
 	{
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
-		float spacing = GroundTerrain.Spacing;
-		bool modified = false;
-		for (int z = 0; z < depth; z++)
-		{
-			for (int x = 0; x < width; x++)
-			{
-				float vx = (x - (width - 1) / 2.0f) * spacing;
-				float vz = (z - (depth - 1) / 2.0f) * spacing;
-				float ab_len_sqr = (end.X - start.X) * (end.X - start.X) + (end.Z - start.Z) * (end.Z - start.Z);
-				if (ab_len_sqr > 0.0001f)
-				{
-					float t = ((vx - start.X) * (end.X - start.X) + (vz - start.Z) * (end.Z - start.Z)) / ab_len_sqr;
-					t = Mathf.Clamp(t, 0.0f, 1.0f);
-					float proj_x = start.X + t * (end.X - start.X);
-					float proj_z = start.Z + t * (end.Z - start.Z);
-					float dist = Mathf.Sqrt((vx - proj_x) * (vx - proj_x) + (vz - proj_z) * (vz - proj_z));
-					if (dist <= EditorBrushRadius)
-					{
-						float targetHeight = Mathf.Lerp(start.Y, end.Y, t);
-						float falloff = 1.0f - (dist / EditorBrushRadius);
-						falloff = Mathf.Sin(falloff * Mathf.Pi / 2.0f);
-						GroundTerrain.Heights[x, z] = Mathf.Lerp(GroundTerrain.Heights[x, z], targetHeight, falloff);
-						modified = true;
-					}
-				}
-			}
-		}
-		if (modified)
-		{
-			float threshold = EditorBlockMode ? (EditorBlockLevelHeight * 0.5f) : (spacing * 0.5f);
-			for (int z = 0; z < depth; z++)
-			{
-				for (int x = 0; x < width; x++)
-				{
-					float vx = (x - (width - 1) / 2.0f) * spacing;
-					float vz = (z - (depth - 1) / 2.0f) * spacing;
-					float ab_len_sqr = (end.X - start.X) * (end.X - start.X) + (end.Z - start.Z) * (end.Z - start.Z);
-					if (ab_len_sqr > 0.0001f)
-					{
-						float t = ((vx - start.X) * (end.X - start.X) + (vz - start.Z) * (end.Z - start.Z)) / ab_len_sqr;
-						t = Mathf.Clamp(t, 0.0f, 1.0f);
-						float proj_x = start.X + t * (end.X - start.X);
-						float proj_z = start.Z + t * (end.Z - start.Z);
-						float dist = Mathf.Sqrt((vx - proj_x) * (vx - proj_x) + (vz - proj_z) * (vz - proj_z));
-						if (dist <= EditorBrushRadius)
-						{
-							float h = GroundTerrain.Heights[x, z];
-							float hl = GroundTerrain.Heights[Math.Max(0, x - 1), z];
-							float hr = GroundTerrain.Heights[Math.Min(width - 1, x + 1), z];
-							float hd = GroundTerrain.Heights[x, Math.Max(0, z - 1)];
-							float hu = GroundTerrain.Heights[x, Math.Min(depth - 1, z + 1)];
-							float maxDiff = Mathf.Max(
-								Mathf.Max(Mathf.Abs(h - hl), Mathf.Abs(h - hr)),
-								Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
-							);
-							if (maxDiff >= threshold)
-							{
-								GroundTerrain.Colors[x, z] = EditorCliffPaintColor;
-							}
-							else
-							{
-								GroundTerrain.Colors[x, z] = EditorPaintColor;
-							}
-						}
-					}
-				}
-			}
-		}
-		return modified;
+		return _editorService.ApplyRamp(start, end, EditorBrushRadius, EditorBlockMode, EditorBlockLevelHeight, EditorPaintColor, EditorCliffPaintColor);
 	}
 
 	private float GetMinHeightInBrushBounds(Vector3 worldPos)
 	{
-		if (GroundTerrain == null) return 0.0f;
-		float spacing = GroundTerrain.Spacing;
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
-		float minHeight = float.MaxValue;
-		bool foundAny = false;
-
-		for (int z = 0; z < depth; z++)
-		{
-			for (int x = 0; x < width; x++)
-			{
-				float vx = (x - (width - 1) / 2.0f) * spacing;
-				float vz = (z - (depth - 1) / 2.0f) * spacing;
-
-				bool inBounds = false;
-				if (EditorBrushIsSquare)
-				{
-					float dx = Mathf.Abs(vx - worldPos.X);
-					float dz = Mathf.Abs(vz - worldPos.Z);
-					inBounds = dx <= EditorBrushRadius && dz <= EditorBrushRadius;
-				}
-				else
-				{
-					float dist = new Vector2(vx - worldPos.X, vz - worldPos.Z).Length();
-					inBounds = dist <= EditorBrushRadius;
-				}
-
-				if (inBounds)
-				{
-					float h = GroundTerrain.Heights[x, z];
-					if (h < minHeight)
-					{
-						minHeight = h;
-						foundAny = true;
-					}
-				}
-			}
-		}
-
-		return foundAny ? minHeight : GetTerrainHeightAt(worldPos);
+		return _editorService.GetMinHeightInBrushBounds(worldPos, EditorBrushRadius, EditorBrushIsSquare);
 	}
 
 	private void ApplyGeneralClumpSpawn(Vector3 centerPos)
 	{
-		if (string.IsNullOrEmpty(ActivePlaceId)) return;
-		int spawnCount = Mathf.Max(1, (int)Math.Round(EditorClumpDensity));
-		for (int i = 0; i < spawnCount; i++)
+		var requests = _editorService.BuildClumpSpawnRequests(
+			centerPos,
+			ActiveEditorTool,
+			ActivePlaceId,
+			PlaceUnitIsEnemy,
+			EditorPlacementScale,
+			EditorClumpDensity,
+			EditorClumpScaleVar,
+			EditorBrushRadius,
+			EditorBrushIsSquare,
+			EditorRandomRotation,
+			EditorRandomScale,
+			EditorPlacementRotation,
+			EditorMirrorMode);
+
+		foreach (var req in requests)
 		{
-			float dx = 0.0f;
-			float dz = 0.0f;
-			if (EditorBrushIsSquare)
-			{
-				dx = (float)(GD.Randf() * 2.0 - 1.0) * EditorBrushRadius;
-				dz = (float)(GD.Randf() * 2.0 - 1.0) * EditorBrushRadius;
-			}
-			else
-			{
-				float r = Mathf.Sqrt((float)GD.Randf()) * EditorBrushRadius;
-				float theta = (float)(GD.Randf() * Mathf.Pi * 2.0);
-				dx = r * Mathf.Cos(theta);
-				dz = r * Mathf.Sin(theta);
-			}
-			Vector3 spawnPos = new Vector3(centerPos.X + dx, centerPos.Y, centerPos.Z + dz);
-			if (GroundTerrain != null)
-			{
-				float spacing = GroundTerrain.Spacing;
-				int width = GroundTerrain.Width;
-				int depth = GroundTerrain.Depth;
-				float halfW = (width - 1) / 2.0f * spacing;
-				float halfD = (depth - 1) / 2.0f * spacing;
-				if (Mathf.Abs(spawnPos.X) > halfW || Mathf.Abs(spawnPos.Z) > halfD) continue;
-			}
-			spawnPos.Y = GetTerrainHeightAt(spawnPos);
-
-			float scaleVal = EditorPlacementScale + (float)(GD.Randf() * 2.0 - 1.0) * EditorClumpScaleVar;
-			scaleVal = Mathf.Clamp(scaleVal, 0.2f, 3.0f);
-
-			float rotY = (EditorRandomRotation && !_isPastingObject) ? (float)(GD.Randf() * 360.0) : EditorPlacementRotation;
-			if (EditorRandomScale && !_isPastingObject)
-			{
-				scaleVal = 0.2f + (float)(GD.Randf() * 2.8);
-			}
-
 			Node spawnedNode = null;
-			string spawnType = "";
-			bool isEnemy = false;
-
-			if (ActiveEditorTool == EditorTool.PlaceUnit)
-			{
-				spawnType = "unit";
-				isEnemy = PlaceUnitIsEnemy;
-				spawnedNode = SpawnUnitExternal(ActivePlaceId, spawnPos, isEnemy, rotY, scaleVal);
-			}
-			else if (ActiveEditorTool == EditorTool.PlaceProp)
-			{
-				spawnType = "prop";
-				spawnedNode = SpawnPropExternalWithParams(ActivePlaceId, spawnPos, rotY, scaleVal);
-			}
-			else if (ActiveEditorTool == EditorTool.PlaceDecal)
-			{
-				spawnType = "decal";
-				spawnedNode = SpawnDecalExternalWithParams(ActivePlaceId, spawnPos, rotY, scaleVal);
-			}
+			if (req.Type == "unit")
+				spawnedNode = SpawnUnitExternal(req.Id, req.Position, req.IsEnemy, req.Rotation, req.Scale);
+			else if (req.Type == "prop")
+				spawnedNode = SpawnPropExternalWithParams(req.Id, req.Position, req.Rotation, req.Scale);
+			else if (req.Type == "decal")
+				spawnedNode = SpawnDecalExternalWithParams(req.Id, req.Position, req.Rotation, req.Scale);
 
 			if (spawnedNode != null)
 			{
-				_clumpSpawnActionsInSession.Add(new ObjectSpawnAction(spawnType, ActivePlaceId, spawnPos, rotY, scaleVal, isEnemy, spawnedNode));
-				if (EditorMirrorMode != MirrorMode.None)
-				{
-					foreach (var t in GetMirroredTransforms(spawnPos, rotY))
-					{
-						Vector3 mPos = t.Position;
-						mPos.Y = GetTerrainHeightAt(mPos);
-						Node mNode = null;
-						if (ActiveEditorTool == EditorTool.PlaceUnit)
-						{
-							mNode = SpawnUnitExternal(ActivePlaceId, mPos, isEnemy, t.Rotation, scaleVal);
-						}
-						else if (ActiveEditorTool == EditorTool.PlaceProp)
-						{
-							mNode = SpawnPropExternalWithParams(ActivePlaceId, mPos, t.Rotation, scaleVal);
-						}
-						else if (ActiveEditorTool == EditorTool.PlaceDecal)
-						{
-							mNode = SpawnDecalExternalWithParams(ActivePlaceId, mPos, t.Rotation, scaleVal);
-						}
-						if (mNode != null)
-						{
-							_clumpSpawnActionsInSession.Add(new ObjectSpawnAction(spawnType, ActivePlaceId, mPos, t.Rotation, scaleVal, isEnemy, mNode));
-						}
-					}
-				}
+				_editorService.RecordClumpSpawnAction(new ObjectSpawnAction(req.Type, req.Id, req.Position, req.Rotation, req.Scale, req.IsEnemy, spawnedNode));
 			}
 		}
 	}
@@ -2083,83 +1494,21 @@ public partial class GameHost
 
 	private void PerformCopyArea()
 	{
-		if (GroundTerrain == null || _selectionStart == null || _selectionEnd == null) return;
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
-		float spacing = GroundTerrain.Spacing;
-		int minX = Mathf.Min(_selectionStart.Value.X, _selectionEnd.Value.X);
-		int minZ = Mathf.Min(_selectionStart.Value.Y, _selectionEnd.Value.Y);
-		int maxX = Mathf.Max(_selectionStart.Value.X, _selectionEnd.Value.X);
-		int maxZ = Mathf.Max(_selectionStart.Value.Y, _selectionEnd.Value.Y);
-		int selWidth = maxX - minX + 1;
-		int selDepth = maxZ - minZ + 1;
-		var heights = new float[selWidth, selDepth];
-		var colors = new Color[selWidth, selDepth];
-		for (int sz = 0; sz < selDepth; sz++)
-		{
-			for (int sx = 0; sx < selWidth; sx++)
-			{
-				heights[sx, sz] = GroundTerrain.Heights[minX + sx, minZ + sz];
-				colors[sx, sz] = GroundTerrain.Colors[minX + sx, minZ + sz];
-			}
-		}
-		float minWorldX = (minX - (width - 1) / 2.0f) * spacing - spacing * 0.5f;
-		float maxWorldX = (maxX - (width - 1) / 2.0f) * spacing + spacing * 0.5f;
-		float minWorldZ = (minZ - (depth - 1) / 2.0f) * spacing - spacing * 0.5f;
-		float maxWorldZ = (maxZ - (depth - 1) / 2.0f) * spacing + spacing * 0.5f;
-		Vector3 origin = new Vector3((minX - (width - 1) / 2.0f) * spacing, 0.0f, (minZ - (depth - 1) / 2.0f) * spacing);
-		var entities = new List<CopiedEntityInfo>();
+		if (GroundTerrain == null || _editorService.SelectionStart == null || _editorService.SelectionEnd == null) return;
+
+		var (minX, minZ, maxX, maxZ) = _editorService.GetCurrentSelectionBounds();
+
+		var node3Ds = new List<Node3D>();
 		foreach (var child in GetChildren())
 		{
-			if (child is Node3D n3d && GodotObject.IsInstanceValid(n3d))
-			{
-				Vector3 pos = n3d.Position;
-				if (pos.X >= minWorldX && pos.X <= maxWorldX && pos.Z >= minWorldZ && pos.Z <= maxWorldZ)
-				{
-					if (n3d is Unit3D unit)
-					{
-						entities.Add(new CopiedEntityInfo {
-							Type = "unit",
-							Id = unit.UnitId,
-							RelativePos = pos - origin,
-							Rotation = unit.RotationDegrees.Y,
-							Scale = unit.Scale.X,
-							IsEnemy = unit.IsEnemy
-						});
-					}
-					else if (n3d is Prop3D prop)
-					{
-						entities.Add(new CopiedEntityInfo {
-							Type = "prop",
-							Id = prop.PropId,
-							RelativePos = pos - origin,
-							Rotation = prop.RotationDegrees.Y,
-							Scale = prop.Scale.X,
-							IsEnemy = false
-						});
-					}
-					else if (n3d is Decal decal)
-					{
-						string decalId = decal.HasMeta("DecalId") ? decal.GetMeta("DecalId").AsString() : "logo";
-						entities.Add(new CopiedEntityInfo {
-							Type = "decal",
-							Id = decalId,
-							RelativePos = pos - origin,
-							Rotation = decal.RotationDegrees.Y,
-							Scale = decal.Scale.X,
-							IsEnemy = false
-						});
-					}
-				}
-			}
+			if (child is Node3D n3d) node3Ds.Add(n3d);
 		}
-		_copiedArea = new CopiedAreaTemplate {
-			Width = selWidth,
-			Depth = selDepth,
-			Heights = heights,
-			Colors = colors,
-			Entities = entities
-		};
+
+		var entities = _editorService.BuildCopiedEntityList(minX, minZ, maxX, maxZ, node3Ds);
+		_editorService.CopyArea(minX, minZ, maxX, maxZ, entities);
+
+		int selWidth = maxX - minX + 1;
+		int selDepth = maxZ - minZ + 1;
 		MapEditorHUD.Instance?.ShowFeedbackExternal($"Copied Area: {selWidth}x{selDepth} tiles, {entities.Count} entities");
 	}
 
@@ -2285,10 +1634,10 @@ public partial class GameHost
 							float tz0 = (float)sz / S;
 							float tz1 = (float)(sz + 1) / S;
 
-							float h_sub00 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx0), Mathf.Lerp(h01, h11, tx0), tz0);
-							float h_sub10 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx1), Mathf.Lerp(h01, h11, tx1), tz0);
-							float h_sub11 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx1), Mathf.Lerp(h01, h11, tx1), tz1);
-							float h_sub01 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx0), Mathf.Lerp(h01, h11, tx0), tz1);
+							float hSub00 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx0), Mathf.Lerp(h01, h11, tx0), tz0);
+							float hSub10 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx1), Mathf.Lerp(h01, h11, tx1), tz0);
+							float hSub11 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx1), Mathf.Lerp(h01, h11, tx1), tz1);
+							float hSub01 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx0), Mathf.Lerp(h01, h11, tx0), tz1);
 
 							float subX0 = lx0 + sx * (spacing / S);
 							float subX1 = lx0 + (sx + 1) * (spacing / S);
@@ -2300,13 +1649,13 @@ public partial class GameHost
 							if (subColor.A < 0.01f) continue;
 
 							int baseV = verticesList.Count;
-							verticesList.Add(new Vector3(subX0, h_sub00, subZ0));
+							verticesList.Add(new Vector3(subX0, hSub00, subZ0));
 							colorsList.Add(subColor);
-							verticesList.Add(new Vector3(subX1, h_sub10, subZ0));
+							verticesList.Add(new Vector3(subX1, hSub10, subZ0));
 							colorsList.Add(subColor);
-							verticesList.Add(new Vector3(subX1, h_sub11, subZ1));
+							verticesList.Add(new Vector3(subX1, hSub11, subZ1));
 							colorsList.Add(subColor);
-							verticesList.Add(new Vector3(subX0, h_sub01, subZ1));
+							verticesList.Add(new Vector3(subX0, hSub01, subZ1));
 							colorsList.Add(subColor);
 
 							indicesList.Add(baseV);
@@ -2476,64 +1825,9 @@ public partial class GameHost
 		if (GroundTerrain == null) return;
 		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
 		var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
-		float spacing = GroundTerrain.Spacing;
-		var visited = new bool[width, depth];
-		void DoSingleFill(Vector3 pos)
-		{
-			float fx = pos.X / spacing + (width - 1) / 2.0f;
-			float fz = pos.Z / spacing + (depth - 1) / 2.0f;
-			int startX = Mathf.Clamp((int)Math.Round(fx), 0, width - 1);
-			int startZ = Mathf.Clamp((int)Math.Round(fz), 0, depth - 1);
-			Color startColor = colorsBefore[startX, startZ];
-			if (startColor == fillColor) return;
-			var queue = new Queue<(int x, int z)>();
-			if (!visited[startX, startZ])
-			{
-				queue.Enqueue((startX, startZ));
-				visited[startX, startZ] = true;
-			}
-			while (queue.Count > 0)
-			{
-				var (currX, currZ) = queue.Dequeue();
-				float targetAlpha = fillColor.A;
-				GroundTerrain.Colors[currX, currZ] = new Color(fillColor.R, fillColor.G, fillColor.B, targetAlpha);
-				int[] dx = { 0, 0, -1, 1 };
-				int[] dz = { -1, 1, 0, 0 };
-				for (int i = 0; i < 4; i++)
-				{
-					int nextX = currX + dx[i];
-					int nextZ = currZ + dz[i];
-					if (nextX >= 0 && nextX < width && nextZ >= 0 && nextZ < depth)
-					{
-						if (!visited[nextX, nextZ])
-						{
-							if (colorsBefore[nextX, nextZ] != startColor)
-							{
-								continue;
-							}
-							float hCurrent = GroundTerrain.Heights[currX, currZ];
-							float hNext = GroundTerrain.Heights[nextX, nextZ];
-							if (Mathf.Abs(hNext - hCurrent) >= 1.0f)
-							{
-								continue;
-							}
-							visited[nextX, nextZ] = true;
-							queue.Enqueue((nextX, nextZ));
-						}
-					}
-				}
-			}
-		}
-		DoSingleFill(clickPos);
-		if (EditorMirrorMode != MirrorMode.None)
-		{
-			foreach (var t in GetMirroredTransforms(clickPos, 0.0f))
-			{
-				DoSingleFill(t.Position);
-			}
-		}
+
+		_editorService.PerformFloodFill(clickPos, fillColor, EditorMirrorMode);
+
 		GroundTerrain.UpdateMeshAndPhysics(false, false);
 		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
 		var colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
@@ -2623,7 +1917,7 @@ public partial class GameHost
 
 	public void PerformCutAreaExternal()
 	{
-		if (GroundTerrain == null || _selectionStart == null || _selectionEnd == null)
+		if (GroundTerrain == null || _editorService.SelectionStart == null || _editorService.SelectionEnd == null)
 		{
 			MapEditorHUD.Instance?.ShowFeedbackExternal("Nothing to Cut (select an area first)");
 			return;
@@ -2636,88 +1930,48 @@ public partial class GameHost
 
 	private void PerformEraseArea()
 	{
-		if (GroundTerrain == null || _selectionStart == null || _selectionEnd == null)
+		if (GroundTerrain == null || _editorService.SelectionStart == null || _editorService.SelectionEnd == null)
 		{
 			MapEditorHUD.Instance?.ShowFeedbackExternal("Nothing to Erase (select an area first)");
 			return;
 		}
 
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
-		float spacing = GroundTerrain.Spacing;
-		int minX = Mathf.Min(_selectionStart.Value.X, _selectionEnd.Value.X);
-		int minZ = Mathf.Min(_selectionStart.Value.Y, _selectionEnd.Value.Y);
-		int maxX = Mathf.Max(_selectionStart.Value.X, _selectionEnd.Value.X);
-		int maxZ = Mathf.Max(_selectionStart.Value.Y, _selectionEnd.Value.Y);
-		int selWidth = maxX - minX + 1;
-		int selDepth = maxZ - minZ + 1;
+		var (minX, minZ, maxX, maxZ) = _editorService.GetCurrentSelectionBounds();
 
 		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
 		var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
-		bool terrainModified = false;
 
-		if (PasteOptionHeights || PasteOptionTextures)
+		var node3Ds = new List<Node3D>();
+		foreach (var child in GetChildren())
 		{
-			for (int sz = 0; sz < selDepth; sz++)
-			{
-				for (int sx = 0; sx < selWidth; sx++)
-				{
-					int targetX = minX + sx;
-					int targetZ = minZ + sz;
-					if (targetX >= 0 && targetX < width && targetZ >= 0 && targetZ < depth)
-					{
-						if (PasteOptionHeights) GroundTerrain.Heights[targetX, targetZ] = 0.0f;
-						if (PasteOptionTextures) GroundTerrain.Colors[targetX, targetZ] = new Color(0.2f, 0.45f, 0.15f);
-						terrainModified = true;
-					}
-				}
-			}
+			if (child is Node3D n3d) node3Ds.Add(n3d);
 		}
 
-		if (terrainModified)
+		var eraseResult = _editorService.BuildEraseAreaResult(
+			minX, minZ, maxX, maxZ,
+			PasteOptionHeights, PasteOptionTextures, PasteOptionEntities,
+			node3Ds, _editorPreviewNode as Node3D);
+
+		if (eraseResult.TerrainModified)
 		{
-			GroundTerrain.UpdateMeshAndPhysics(PasteOptionHeights, false);
-			if (PasteOptionHeights)
+			GroundTerrain.UpdateMeshAndPhysics(eraseResult.HeightsModified, false);
+			if (eraseResult.HeightsModified)
 			{
 				AlignAllEntitiesToTerrain();
 			}
 		}
 
 		var deleteActions = new List<IEditorAction>();
-		if (PasteOptionEntities)
+		foreach (var node in eraseResult.NodesToDelete)
 		{
-			float minWorldX = (minX - (width - 1) / 2.0f) * spacing - spacing * 0.5f;
-			float maxWorldX = (maxX - (width - 1) / 2.0f) * spacing + spacing * 0.5f;
-			float minWorldZ = (minZ - (depth - 1) / 2.0f) * spacing - spacing * 0.5f;
-			float maxWorldZ = (maxZ - (depth - 1) / 2.0f) * spacing + spacing * 0.5f;
-
-			var toDelete = new List<Node3D>();
-			foreach (var child in GetChildren())
-			{
-				if (child is Node3D n3d && GodotObject.IsInstanceValid(n3d) && n3d != _editorPreviewNode)
-				{
-					Vector3 pos = n3d.Position;
-					if (pos.X >= minWorldX && pos.X <= maxWorldX && pos.Z >= minWorldZ && pos.Z <= maxWorldZ)
-					{
-						if (n3d is Unit3D || n3d is Prop3D || n3d is Decal)
-						{
-							toDelete.Add(n3d);
-						}
-					}
-				}
-			}
-
-			foreach (var node in toDelete)
-			{
-				var act = DeleteObjectAtWithUndo(node, node.Position);
-				if (act != null) deleteActions.Add(act);
-			}
+			var act = DeleteObjectAtWithUndo(node, node.Position);
+			if (act != null) deleteActions.Add(act);
 		}
 
 		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
 		var colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
 		var actions = new List<IEditorAction>();
-		if (terrainModified)
+		if (eraseResult.TerrainModified)
 		{
 			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, colorsBefore, colorsAfter));
 		}
@@ -2737,146 +1991,46 @@ public partial class GameHost
 
 	private void PerformPasteArea(int startX, int startZ)
 	{
-		if (GroundTerrain == null || _copiedArea == null) return;
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
-		float spacing = GroundTerrain.Spacing;
+		if (GroundTerrain == null || !_editorService.HasCopiedArea) return;
+
 		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
 		var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
-		bool modified = false;
-		int pasteWidth = _copiedArea.Width;
-		int pasteDepth = _copiedArea.Depth;
 
-		void PasteCell(int sx, int sz)
+		var pasteResult = _editorService.BuildPasteAreaResult(
+			startX, startZ,
+			PasteOptionHeights, PasteOptionTextures, PasteOptionEntities,
+			EditorMirrorMode);
+
+		if (pasteResult.TerrainModified)
 		{
-			int targetX = startX + sx;
-			int targetZ = startZ + sz;
-
-			if (targetX >= 0 && targetX < width && targetZ >= 0 && targetZ < depth)
-			{
-				if (PasteOptionHeights) GroundTerrain.Heights[targetX, targetZ] = _copiedArea.Heights[sx, sz];
-				if (PasteOptionTextures) GroundTerrain.Colors[targetX, targetZ] = _copiedArea.Colors[sx, sz];
-				modified = true;
-			}
-
-			if (EditorMirrorMode == MirrorMode.Horizontal || EditorMirrorMode == MirrorMode.Both)
-			{
-				int mx = width - 1 - targetX;
-				int mz = targetZ;
-				if (mx >= 0 && mx < width && mz >= 0 && mz < depth)
-				{
-					if (PasteOptionHeights) GroundTerrain.Heights[mx, mz] = _copiedArea.Heights[sx, sz];
-					if (PasteOptionTextures) GroundTerrain.Colors[mx, mz] = _copiedArea.Colors[sx, sz];
-					modified = true;
-				}
-			}
-
-			if (EditorMirrorMode == MirrorMode.Vertical || EditorMirrorMode == MirrorMode.Both)
-			{
-				int mx = targetX;
-				int mz = depth - 1 - targetZ;
-				if (mx >= 0 && mx < width && mz >= 0 && mz < depth)
-				{
-					if (PasteOptionHeights) GroundTerrain.Heights[mx, mz] = _copiedArea.Heights[sx, sz];
-					if (PasteOptionTextures) GroundTerrain.Colors[mx, mz] = _copiedArea.Colors[sx, sz];
-					modified = true;
-				}
-			}
-
-			if (EditorMirrorMode == MirrorMode.Both)
-			{
-				int mx = width - 1 - targetX;
-				int mz = depth - 1 - targetZ;
-				if (mx >= 0 && mx < width && mz >= 0 && mz < depth)
-				{
-					if (PasteOptionHeights) GroundTerrain.Heights[mx, mz] = _copiedArea.Heights[sx, sz];
-					if (PasteOptionTextures) GroundTerrain.Colors[mx, mz] = _copiedArea.Colors[sx, sz];
-					modified = true;
-				}
-			}
-		}
-
-		for (int sz = 0; sz < pasteDepth; sz++)
-		{
-			for (int sx = 0; sx < pasteWidth; sx++)
-			{
-				PasteCell(sx, sz);
-			}
-		}
-
-		if (modified)
-		{
-			GroundTerrain.UpdateMeshAndPhysics(PasteOptionHeights, false);
-			if (PasteOptionHeights)
+			GroundTerrain.UpdateMeshAndPhysics(pasteResult.HeightsModified, false);
+			if (pasteResult.HeightsModified)
 			{
 				AlignAllEntitiesToTerrain();
 			}
 		}
 
 		var spawnActions = new List<IEditorAction>();
-		void SpawnAndRecord(CopiedEntityInfo ent, Vector3 pos, float rotation)
+		foreach (var req in pasteResult.SpawnRequests)
 		{
 			Node pastedNode = null;
-			if (ent.Type == "unit")
+			if (req.Type == "unit")
+				pastedNode = SpawnUnitExternal(req.Id, req.Position, req.IsEnemy, req.Rotation, req.Scale);
+			else if (req.Type == "prop")
+				pastedNode = SpawnPropExternalWithParams(req.Id, req.Position, req.Rotation, req.Scale);
+			else if (req.Type == "decal")
+				pastedNode = SpawnDecalExternalWithParams(req.Id, req.Position, req.Rotation, req.Scale);
+
+			if (pastedNode != null)
 			{
-				pastedNode = SpawnUnitExternal(ent.Id, pos, ent.IsEnemy, rotation, ent.Scale);
-				if (pastedNode != null)
-				{
-					spawnActions.Add(new ObjectSpawnAction("unit", ent.Id, pos, rotation, ent.Scale, ent.IsEnemy, pastedNode));
-				}
-			}
-			else if (ent.Type == "prop")
-			{
-				pastedNode = SpawnPropExternalWithParams(ent.Id, pos, rotation, ent.Scale);
-				if (pastedNode != null)
-				{
-					spawnActions.Add(new ObjectSpawnAction("prop", ent.Id, pos, rotation, ent.Scale, false, pastedNode));
-				}
-			}
-			else if (ent.Type == "decal")
-			{
-				pastedNode = SpawnDecalExternalWithParams(ent.Id, pos, rotation, ent.Scale);
-				if (pastedNode != null)
-				{
-					spawnActions.Add(new ObjectSpawnAction("decal", ent.Id, pos, rotation, ent.Scale, false, pastedNode));
-				}
+				spawnActions.Add(new ObjectSpawnAction(req.Type, req.Id, req.Position, req.Rotation, req.Scale, req.IsEnemy, pastedNode));
 			}
 		}
 
-		if (PasteOptionEntities)
-		{
-			Vector3 origin = new Vector3((startX - (width - 1) / 2.0f) * spacing, 0.0f, (startZ - (depth - 1) / 2.0f) * spacing);
-			foreach (var ent in _copiedArea.Entities)
-			{
-				Vector3 destPos = origin + ent.RelativePos;
-				destPos.Y = GetTerrainHeightAt(destPos);
-				
-				SpawnAndRecord(ent, destPos, ent.Rotation);
-
-				if (EditorMirrorMode == MirrorMode.Horizontal || EditorMirrorMode == MirrorMode.Both)
-				{
-					Vector3 mPos = new Vector3(-destPos.X, destPos.Y, destPos.Z);
-					mPos.Y = GetTerrainHeightAt(mPos);
-					SpawnAndRecord(ent, mPos, 180.0f - ent.Rotation);
-				}
-				if (EditorMirrorMode == MirrorMode.Vertical || EditorMirrorMode == MirrorMode.Both)
-				{
-					Vector3 mPos = new Vector3(destPos.X, destPos.Y, -destPos.Z);
-					mPos.Y = GetTerrainHeightAt(mPos);
-					SpawnAndRecord(ent, mPos, -ent.Rotation);
-				}
-				if (EditorMirrorMode == MirrorMode.Both)
-				{
-					Vector3 mPos = new Vector3(-destPos.X, destPos.Y, -destPos.Z);
-					mPos.Y = GetTerrainHeightAt(mPos);
-					SpawnAndRecord(ent, mPos, ent.Rotation + 180.0f);
-				}
-			}
-		}
 		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
 		var colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
 		var actions = new List<IEditorAction>();
-		if (modified)
+		if (pasteResult.TerrainModified)
 		{
 			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, colorsBefore, colorsAfter));
 		}
