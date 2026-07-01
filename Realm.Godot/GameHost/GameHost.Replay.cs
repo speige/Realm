@@ -24,9 +24,7 @@ public partial class GameHost
 
 		EcsWorld?.Dispose();
 		EcsWorld = World.Create();
-		_saveLoadService = new GameHostSaveLoadService(EcsWorld);
-		_replayService = new GameHostReplayService(EcsWorld);
-		_networkService = new GameHostNetworkService(EcsWorld);
+		InitializeServices();
 		SetupWorldEntityComponents();
 
 		var players = new List<(int PeerId, string Name)>();

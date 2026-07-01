@@ -121,11 +121,6 @@ public partial class MapEditorHUD : Control
 	private Button _btnPillar;
 	private Button _btnFlag;
 
-	private Button _btnChars;
-	private Button _btnBuilds;
-	private Button _btnEnv;
-	private Button _btnProps;
-	private Button _btnDecals;
 	private CheckBox _chkRandomRotation;
 	private CheckBox _chkRandomScale;
 	private Button _btnAddObject;
@@ -158,15 +153,6 @@ public partial class MapEditorHUD : Control
 	private Button _btnResetMap;
 	private Button _btnGenerateMap;
 	private Button _btnImportMinimap;
-	private int _genHillsDensity = 5;
-	private int _genTerrainRoughness = 5;
-	private int _genMountainHeight = 5;
-	private int _genChokeWidth = 5;
-	private int _genWaterLevel = 5;
-	private int _genTreeDensity = 5;
-	private int _genResourceAbundance = 5;
-	private int _genDecoDensity = 5;
-	private string _genSeed = "";
 	private Button _btnEyedropper;
 	private OptionButton _optEyedropperMode;
 	private Button _btnNoise;
@@ -178,9 +164,7 @@ public partial class MapEditorHUD : Control
 	private OptionButton _optSkybox;
 	private List<string> _skyboxFiles = new List<string>();
 
-	private string _currentCategory = "Characters";
-	private List<string> _categoryFiles = new List<string>();
-	private OptionButton _optCategoryItems;
+
 
 	private string[] _swatchPaths = new string[12];
 	private string[] _swatchDisplayNames = new string[12];
@@ -247,6 +231,8 @@ public partial class MapEditorHUD : Control
 	private MapEditorInspector _inspectorController;
 	private MapEditorPathingPanel _pathingPanelController;
 	private MapEditorMinimap _minimapController;
+	private MapEditorEntityPaletteController _entityPaletteController;
+	private MapEditorGenerationDialog _generationDialog;
 
 	public override void _ExitTree()
 	{
@@ -417,47 +403,8 @@ public partial class MapEditorHUD : Control
 			}
 		}
 
-		var categoryGrid = new GridContainer();
-		categoryGrid.Columns = 2;
-		categoryGrid.AddThemeConstantOverride("h_separation", 6);
-		categoryGrid.AddThemeConstantOverride("v_separation", 6);
-		palettesVBox.AddChild(categoryGrid);
-		palettesVBox.MoveChild(categoryGrid, 0);
-
-		_optCategoryItems = new OptionButton();
-		_optCategoryItems.Name = "OptCategoryItems";
-		_optCategoryItems.CustomMinimumSize = new Vector2(180, 30);
-		palettesVBox.AddChild(_optCategoryItems);
-		palettesVBox.MoveChild(_optCategoryItems, 1);
-
-		_optCategoryItems.ItemSelected += (index) => SelectCategoryItem((int)index);
-
-		_btnChars = new Button();
-		_btnChars.Set("icon_max_width", 0);
-		SetupButton(_btnChars, "👤 Characters", () => SelectCategory("Characters"), 12, "Select Characters category");
-		categoryGrid.AddChild(_btnChars);
-
-		_btnBuilds = new Button();
-		_btnBuilds.Set("icon_max_width", 0);
-		SetupButton(_btnBuilds, "🏢 Buildings", () => SelectCategory("Buildings"), 12, "Select Buildings category");
-		categoryGrid.AddChild(_btnBuilds);
-
-		_btnEnv = new Button();
-		_btnEnv.Set("icon_max_width", 0);
-		SetupButton(_btnEnv, "🌳 Environment", () => SelectCategory("Environment"), 12, "Select Environment category");
-		categoryGrid.AddChild(_btnEnv);
-
-		_btnProps = new Button();
-		_btnProps.Set("icon_max_width", 0);
-		SetupButton(_btnProps, "📦 Props", () => SelectCategory("Props"), 12, "Select Props category");
-		categoryGrid.AddChild(_btnProps);
-
-		_btnDecals = new Button();
-		_btnDecals.Set("icon_max_width", 0);
-		SetupButton(_btnDecals, "🎨 Decals", () => SelectCategory("Decals"), 12, "Select Decals category");
-		categoryGrid.AddChild(_btnDecals);
-
-		SelectCategory("Characters");
+		_entityPaletteController = new MapEditorEntityPaletteController(this, palettesVBox, _btnAddObject);
+		_generationDialog = new MapEditorGenerationDialog(this);
 
 		_btnToggleRotate = GetNode<Button>("PanelEntityPalette/VBox/Content/RightSettingsVBox/BtnToggleRotate");
 		_btnToggleScale = GetNode<Button>("PanelEntityPalette/VBox/Content/RightSettingsVBox/BtnToggleScale");
@@ -639,8 +586,6 @@ public partial class MapEditorHUD : Control
 		_panelTextures.OffsetTop = -320;
 		_panelEntityPalette.OffsetTop = -320;
 
-		_genSeed = new Random().Next(100000, 999999).ToString();
-
 		_btnResetMap = new Button();
 		_btnResetMap.Name = "BtnResetMap";
 		_btnResetMap.Set("icon_max_width", 0);
@@ -659,7 +604,7 @@ public partial class MapEditorHUD : Control
 		_btnGenerateMap.Set("icon_max_width", 0);
 		GetNode<VBoxContainer>("MiddleRightBox").AddChild(_btnGenerateMap);
 		GetNode<VBoxContainer>("MiddleRightBox").MoveChild(_btnGenerateMap, _btnResetMap.GetIndex() + 1);
-		SetupButton(_btnGenerateMap, "🎲 RANDOM GEN", () => ShowGenerationDialog(), 13, "Open random terrain generator settings modal");
+		SetupButton(_btnGenerateMap, "🎲 RANDOM GEN", () => _generationDialog.Show(), 13, "Open random terrain generator settings modal");
 
 		_btnImportMinimap = new Button();
 		_btnImportMinimap.Name = "BtnImportMinimap";
@@ -1291,35 +1236,7 @@ public partial class MapEditorHUD : Control
 			if (hit != null && hit.ContainsKey("position"))
 			{
 				Vector3 pos = hit["position"].AsVector3();
-				string toolName = GameHost.Instance.ActiveEditorTool.ToString().ToUpper();
-				if (!string.IsNullOrEmpty(GameHost.Instance.ActivePlaceId)) 
-					toolName += $" ({GameHost.Instance.ActivePlaceId.ToUpper()})";
-				
-				string status = $"ACTIVE TOOL: {toolName} | Pos: {pos.X:F1}, {pos.Y:F1}, {pos.Z:F1}";
-
-				if (GameHost.Instance.ActiveEditorTool == GameHost.EditorTool.PaintPathing && GameHost.Instance.GroundTerrain != null)
-				{
-					var terrain = GameHost.Instance.GroundTerrain;
-					float fx = pos.X / terrain.Spacing + (terrain.Width - 1) / 2.0f;
-					float fz = pos.Z / terrain.Spacing + (terrain.Depth - 1) / 2.0f;
-					int cx = Mathf.Clamp((int)Mathf.Round(fx), 0, terrain.Width - 1);
-					int cz = Mathf.Clamp((int)Mathf.Round(fz), 0, terrain.Depth - 1);
-
-					if (terrain.PathingCodes != null)
-					{
-						int code = terrain.PathingCodes[cx, cz];
-						var layers = new List<string>();
-						if ((code & EditableTerrain.PATHING_GROUND) != 0) layers.Add("Ground");
-						if ((code & EditableTerrain.PATHING_FLYING) != 0) layers.Add("Flying");
-						if ((code & EditableTerrain.PATHING_SHALLOW_WATER) != 0) layers.Add("Shallow Water");
-						if ((code & EditableTerrain.PATHING_DEEP_WATER) != 0) layers.Add("Deep Water");
-						if ((code & EditableTerrain.PATHING_UNPATHABLE) != 0) layers.Add("Unpathable");
-
-						string layersStr = layers.Count > 0 ? string.Join(", ", layers) : "None";
-						status += $" | Path: {layersStr}";
-					}
-				}
-				_viewModel.StatusText = status;
+				_viewModel.StatusText = GameHost.Instance.GetTerrainStatusString(pos);
 			}
 		}
 
@@ -1664,41 +1581,32 @@ public partial class MapEditorHUD : Control
 
 	public void SelectCategoryItemExternal(string category, string filename)
 	{
-		if (category != _currentCategory)
-		{
-			SelectCategory(category);
-		}
-		int idx = _categoryFiles.IndexOf(filename);
-		if (idx >= 0)
-		{
-			_optCategoryItems.Selected = idx;
-			SelectCategoryItem(idx);
-		}
+		_entityPaletteController?.SelectCategoryItemExternal(category, filename);
 	}
 
 	public void SelectPickedUnitOrProp(string id, bool isBuilding)
 	{
 		if (isBuilding)
 		{
-			SelectCategoryItemExternal("Buildings", id + ".glb");
+			_entityPaletteController?.SelectCategoryItemExternal("Buildings", id + ".glb");
 		}
 		else
 		{
 			string charactersPath = "res://Assets/3d/Characters";
 			if (FileAccess.FileExists($"{charactersPath}/{id}.glb") || FileAccess.FileExists($"{charactersPath}/{id}.gltf"))
 			{
-				SelectCategoryItemExternal("Characters", id + ".glb");
+				_entityPaletteController?.SelectCategoryItemExternal("Characters", id + ".glb");
 			}
 			else
 			{
-				SelectCategoryItemExternal("Props", id + ".glb");
+				_entityPaletteController?.SelectCategoryItemExternal("Props", id + ".glb");
 			}
 		}
 	}
 
 	public void SelectPickedDecal(string decalId)
 	{
-		SelectCategoryItemExternal("Decals", decalId);
+		_entityPaletteController?.SelectCategoryItemExternal("Decals", decalId);
 	}
 
 	public void SelectPaintSwatchFromColor(Color color)
@@ -1924,55 +1832,7 @@ public partial class MapEditorHUD : Control
 		};
 	}
 
-	private void TriggerAddObjectMode()
-	{
-		if (GameHost.Instance == null) return;
-
-		GameHost.EditorTool targetTool = GameHost.EditorTool.PlaceProp;
-		if (_currentCategory == "Characters" || _currentCategory == "Buildings")
-		{
-			targetTool = GameHost.EditorTool.PlaceUnit;
-		}
-		else if (_currentCategory == "Decals")
-		{
-			targetTool = GameHost.EditorTool.PlaceDecal;
-		}
-
-		string placeId = "";
-		int selectedIndex = _optCategoryItems != null ? _optCategoryItems.Selected : -1;
-		if (selectedIndex >= 0 && selectedIndex < _categoryFiles.Count)
-		{
-			string selectedFile = _categoryFiles[selectedIndex];
-			string path = _currentCategory switch
-			{
-				"Characters" => "res://Assets/3d/Characters",
-				"Buildings" => "res://Assets/3d/Buildings",
-				"Environment" => "res://Assets/3d/Environment",
-				"Props" => "res://Assets/3d/Props",
-				"Decals" => "res://Assets/2d/Decals",
-				_ => ""
-			};
-			if (_currentCategory == "Characters" || _currentCategory == "Buildings" || _currentCategory == "Environment" || _currentCategory == "Props")
-			{
-				placeId = $"{path}/{selectedFile}";
-			}
-			else
-			{
-				placeId = selectedFile;
-			}
-		}
-
-		if (string.IsNullOrEmpty(placeId))
-		{
-			if (targetTool == GameHost.EditorTool.PlaceUnit) placeId = "res://Assets/3d/Characters/soldier.glb";
-			else if (targetTool == GameHost.EditorTool.PlaceDecal) placeId = "logo";
-			else placeId = "res://Assets/3d/Props/tree.glb";
-		}
-
-		TriggerToolSelection(targetTool, _btnAddObject, placeId);
-	}
-
-	private void TriggerToolSelection(GameHost.EditorTool tool, Button btn, string placeId = "")
+	public void TriggerToolSelection(GameHost.EditorTool tool, Button btn, string placeId = "")
 	{
 		if (GameHost.Instance == null) return;
 
@@ -2545,155 +2405,7 @@ public class {mapName} : IMapScript
 		grid.AddChild(lblAction);
 	}
 
-	private void AddSliderRow(GridContainer grid, string title, int initialValue, Action<int> onValueChanged)
-	{
-		var lblName = new Label();
-		lblName.Text = TranslationServer.Translate(title);
-		lblName.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		lblName.AddThemeFontSizeOverride("font_size", 12);
-		grid.AddChild(lblName);
 
-		var sld = new HSlider();
-		sld.MinValue = 1;
-		sld.MaxValue = 10;
-		sld.Step = 1;
-		sld.Value = initialValue;
-		sld.CustomMinimumSize = new Vector2(180, 0);
-		sld.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		grid.AddChild(sld);
-
-		var lblVal = new Label();
-		lblVal.Text = initialValue.ToString();
-		lblVal.CustomMinimumSize = new Vector2(30, 0);
-		lblVal.HorizontalAlignment = HorizontalAlignment.Right;
-		lblVal.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
-		lblVal.AddThemeFontSizeOverride("font_size", 12);
-		grid.AddChild(lblVal);
-
-		sld.ValueChanged += (double value) =>
-		{
-			int val = (int)value;
-			lblVal.Text = val.ToString();
-			onValueChanged(val);
-		};
-	}
-
-	private void ShowGenerationDialog()
-	{
-		var overlay = new ColorRect();
-		overlay.Name = "GenerationOverlay";
-		overlay.Color = new Color(0, 0, 0, 0.5f);
-		overlay.SetAnchorsPreset(LayoutPreset.FullRect);
-		AddChild(overlay);
-
-		var panel = new PanelContainer();
-		panel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		panel.CustomMinimumSize = new Vector2(420, 480);
-		panel.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
-		panel.SizeFlagsVertical = SizeFlags.ShrinkCenter;
-
-		var center = new CenterContainer();
-		center.SetAnchorsPreset(LayoutPreset.FullRect);
-		overlay.AddChild(center);
-		center.AddChild(panel);
-
-		var vbox = new VBoxContainer();
-		vbox.AddThemeConstantOverride("separation", 15);
-		panel.AddChild(vbox);
-
-		var lblTitle = new Label();
-		UIStyle.ApplyTitle(lblTitle, TranslationServer.Translate("RANDOM MAP GENERATOR"), 18);
-		lblTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		vbox.AddChild(lblTitle);
-
-		var grid = new GridContainer();
-		grid.Columns = 3;
-		grid.AddThemeConstantOverride("h_separation", 10);
-		grid.AddThemeConstantOverride("v_separation", 8);
-		vbox.AddChild(grid);
-
-		AddSliderRow(grid, "Hills Density", _genHillsDensity, (val) => _genHillsDensity = val);
-		AddSliderRow(grid, "Terrain Roughness", _genTerrainRoughness, (val) => _genTerrainRoughness = val);
-		AddSliderRow(grid, "Mountain Height", _genMountainHeight, (val) => _genMountainHeight = val);
-		AddSliderRow(grid, "Choke Point Width", _genChokeWidth, (val) => _genChokeWidth = val);
-		AddSliderRow(grid, "Water Level", _genWaterLevel, (val) => _genWaterLevel = val);
-		AddSliderRow(grid, "Tree Clump Density", _genTreeDensity, (val) => _genTreeDensity = val);
-		AddSliderRow(grid, "Resource Abundance", _genResourceAbundance, (val) => _genResourceAbundance = val);
-		AddSliderRow(grid, "Decorative Prop Density", _genDecoDensity, (val) => _genDecoDensity = val);
-
-		var seedHBox = new HBoxContainer();
-		seedHBox.AddThemeConstantOverride("separation", 10);
-		vbox.AddChild(seedHBox);
-
-		var lblSeed = new Label();
-		lblSeed.Text = TranslationServer.Translate("Map Seed:");
-		lblSeed.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		lblSeed.AddThemeFontSizeOverride("font_size", 12);
-		seedHBox.AddChild(lblSeed);
-
-		var txtSeed = new LineEdit();
-		txtSeed.Text = _genSeed;
-		txtSeed.CustomMinimumSize = new Vector2(150, 30);
-		txtSeed.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		txtSeed.AddThemeStyleboxOverride("normal", UIStyle.CreateTextInput(false));
-		txtSeed.AddThemeStyleboxOverride("focus", UIStyle.CreateTextInput(true));
-		txtSeed.AddThemeFontSizeOverride("font_size", 12);
-		txtSeed.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
-		txtSeed.TextChanged += (newText) =>
-		{
-			_genSeed = newText;
-		};
-		seedHBox.AddChild(txtSeed);
-
-		var btnRoll = new Button();
-		btnRoll.Set("icon_max_width", 0);
-		SetupButton(btnRoll, TranslationServer.Translate("ROLL"), () =>
-		{
-			_genSeed = new Random().Next(100000, 999999).ToString();
-			txtSeed.Text = _genSeed;
-		}, 11, "Generate a new random seed");
-		btnRoll.CustomMinimumSize = new Vector2(70, 30);
-		seedHBox.AddChild(btnRoll);
-
-		var btnHBox = new HBoxContainer();
-		btnHBox.AddThemeConstantOverride("separation", 20);
-		btnHBox.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
-		vbox.AddChild(btnHBox);
-
-		var btnGen = new Button();
-		btnGen.Set("icon_max_width", 0);
-		SetupButton(btnGen, TranslationServer.Translate("GENERATE"), () =>
-		{
-			overlay.QueueFree();
-			if (GameHost.Instance != null)
-			{
-				MapGenerator.GenerateMap(
-					GameHost.Instance,
-					_genHillsDensity,
-					_genTerrainRoughness,
-					_genMountainHeight,
-					_genChokeWidth,
-					_genWaterLevel,
-					_genTreeDensity,
-					_genResourceAbundance,
-					_genDecoDensity,
-					_genSeed
-				);
-				RegenerateMinimap();
-			}
-		}, 13, "Generate the random map");
-		btnGen.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
-		btnHBox.AddChild(btnGen);
-
-		var btnCancel = new Button();
-		btnCancel.Set("icon_max_width", 0);
-		SetupButton(btnCancel, TranslationServer.Translate("CLOSE"), () =>
-		{
-			overlay.QueueFree();
-		}, 13, "Close dialog without generating");
-		btnCancel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
-		btnHBox.AddChild(btnCancel);
-	}
 
 	public void ImportTerrainFromMinimapDialog()
 	{
@@ -2717,131 +2429,11 @@ public class {mapName} : IMapScript
 	{
 		if (GameHost.Instance == null || GameHost.Instance.GroundTerrain == null) return;
 
-		var img = Image.LoadFromFile(selectedPath);
-		if (img == null) return;
+		bool success = GameHost.Instance.ImportTerrainFromMinimap(selectedPath, out var smoothedHeights, out var colors, out var treePositions);
+		if (!success) return;
 
 		int width = GameHost.Instance.GroundTerrain.Width;
 		int depth = GameHost.Instance.GroundTerrain.Depth;
-
-		float[,] heights = new float[width, depth];
-		Color[,] colors = new Color[width, depth];
-		bool[,] isTreeColored = new bool[width, depth];
-
-		for (int gz = 0; gz < depth; gz++)
-		{
-			for (int gx = 0; gx < width; gx++)
-			{
-				float srcX = (gx / (float)(width - 1)) * (img.GetWidth() - 1);
-				float srcZ = (gz / (float)(depth - 1)) * (img.GetHeight() - 1);
-
-				int x0 = (int)MathF.Floor(srcX);
-				int x1 = Math.Min(x0 + 1, img.GetWidth() - 1);
-				int z0 = (int)MathF.Floor(srcZ);
-				int z1 = Math.Min(z0 + 1, img.GetHeight() - 1);
-
-				float tx = srcX - x0;
-				float tz = srcZ - z0;
-
-				Color p00 = img.GetPixel(x0, z0);
-				Color p10 = img.GetPixel(x1, z0);
-				Color p01 = img.GetPixel(x0, z1);
-				Color p11 = img.GetPixel(x1, z1);
-
-				float r = (1f - tx) * (1f - tz) * p00.R + tx * (1f - tz) * p10.R + (1f - tx) * tz * p01.R + tx * tz * p11.R;
-				float g = (1f - tx) * (1f - tz) * p00.G + tx * (1f - tz) * p10.G + (1f - tx) * tz * p01.G + tx * tz * p11.G;
-				float b = (1f - tx) * (1f - tz) * p00.B + tx * (1f - tz) * p10.B + (1f - tx) * tz * p01.B + tx * tz * p11.B;
-
-				string type = "grass";
-				if (b > r + 0.06f && b > g + 0.06f)
-				{
-					type = "water";
-				}
-				else if (g > r + 0.04f && g > b + 0.04f)
-				{
-					if (r < 0.4f && g < 0.5f && b < 0.4f)
-					{
-						type = "forest";
-					}
-					else
-					{
-						type = "grass";
-					}
-				}
-				else if (r > g + 0.06f && r > b + 0.1f && g > b)
-				{
-					type = "cliff";
-				}
-				else if (MathF.Abs(r - g) < 0.08f && MathF.Abs(g - b) < 0.08f && MathF.Abs(r - b) < 0.08f && r > 0.2f)
-				{
-					type = "stone";
-				}
-				else
-				{
-					float max = Math.Max(r, Math.Max(g, b));
-					if (max == b) type = "water";
-					else if (max == g) type = "grass";
-					else if (max == r && g > b) type = "cliff";
-					else type = "stone";
-				}
-
-				float h = 0.0f;
-				Color c = new Color(0.2f, 0.6f, 0.2f);
-				if (type == "water")
-				{
-					h = -2.0f;
-					c = new Color(0.0f, 0.33f, 0.7f);
-				}
-				else if (type == "grass")
-				{
-					h = 0.0f;
-					c = new Color(0.2f, 0.6f, 0.2f);
-				}
-				else if (type == "forest")
-				{
-					h = 0.0f;
-					c = new Color(0.16f, 0.48f, 0.16f);
-					isTreeColored[gx, gz] = true;
-				}
-				else if (type == "cliff")
-				{
-					h = 4.0f;
-					c = new Color(0.54f, 0.35f, 0.17f);
-				}
-				else if (type == "stone")
-				{
-					h = 0.0f;
-					c = new Color(0.5f, 0.5f, 0.5f);
-				}
-
-				heights[gx, gz] = h;
-				colors[gx, gz] = c;
-			}
-		}
-
-		float[,] smoothedHeights = new float[width, depth];
-		int blurRadius = 2;
-		for (int gz = 0; gz < depth; gz++)
-		{
-			for (int gx = 0; gx < width; gx++)
-			{
-				float sum = 0f;
-				int count = 0;
-				for (int dz = -blurRadius; dz <= blurRadius; dz++)
-				{
-					for (int dx = -blurRadius; dx <= blurRadius; dx++)
-					{
-						int nx = gx + dx;
-						int nz = gz + dz;
-						if (nx >= 0 && nx < width && nz >= 0 && nz < depth)
-						{
-							sum += heights[nx, nz];
-							count++;
-						}
-					}
-				}
-				smoothedHeights[gx, gz] = sum / count;
-			}
-		}
 
 		for (int gz = 0; gz < depth; gz++)
 		{
@@ -2865,75 +2457,9 @@ public class {mapName} : IMapScript
 			}
 		}
 
-		var random = new Random();
-		bool[,] visited = new bool[width, depth];
-
-		float Noise2D(float x, float z)
+		foreach (var (x, y, z, rot, scale) in treePositions)
 		{
-			float val = MathF.Sin(x * 12.9898f + z * 78.233f) * 43758.5453123f;
-			return val - MathF.Floor(val);
-		}
-
-		for (int gz = 0; gz < depth; gz++)
-		{
-			for (int gx = 0; gx < width; gx++)
-			{
-				if (isTreeColored[gx, gz] && !visited[gx, gz])
-				{
-					var blob = new List<Vector2I>();
-					var queue = new Queue<Vector2I>();
-					var start = new Vector2I(gx, gz);
-					queue.Enqueue(start);
-					visited[gx, gz] = true;
-
-					while (queue.Count > 0)
-					{
-						var curr = queue.Dequeue();
-						blob.Add(curr);
-
-						Vector2I[] neighbors = new Vector2I[]
-						{
-							new Vector2I(curr.X + 1, curr.Y),
-							new Vector2I(curr.X - 1, curr.Y),
-							new Vector2I(curr.X, curr.Y + 1),
-							new Vector2I(curr.X, curr.Y - 1)
-						};
-
-						foreach (var n in neighbors)
-						{
-							if (n.X >= 0 && n.X < width && n.Y >= 0 && n.Y < depth)
-							{
-								if (isTreeColored[n.X, n.Y] && !visited[n.X, n.Y])
-								{
-									visited[n.X, n.Y] = true;
-									queue.Enqueue(n);
-								}
-							}
-						}
-					}
-
-					int size = blob.Count;
-					float baseDensity = 0.15f;
-					if (size > 15) baseDensity = 0.35f;
-					if (size > 50) baseDensity = 0.55f;
-
-					foreach (var cell in blob)
-					{
-						if (smoothedHeights[cell.X, cell.Y] >= 0.0f && Noise2D(cell.X, cell.Y) < baseDensity)
-						{
-							float offsetX = (random.NextSingle() - 0.5f) * 1.5f;
-							float offsetZ = (random.NextSingle() - 0.5f) * 1.5f;
-							float worldX = (cell.X - (width - 1) / 2.0f) * GameHost.Instance.GroundTerrain.Spacing + offsetX;
-							float worldZ = (cell.Y - (depth - 1) / 2.0f) * GameHost.Instance.GroundTerrain.Spacing + offsetZ;
-							float hValue = smoothedHeights[cell.X, cell.Y];
-							float rot = random.NextSingle() * 360f;
-							float scale = 0.8f + random.NextSingle() * 0.4f;
-
-							GameHost.Instance.SpawnPropExternalWithParams("tree", new Vector3(worldX, hValue, worldZ), rot, scale);
-						}
-					}
-				}
-			}
+			GameHost.Instance.SpawnPropExternalWithParams("tree", new Vector3(x, y, z), rot, scale);
 		}
 
 		ShowFeedback(TranslationServer.Translate("Terrain imported from minimap image successfully!"));
@@ -3235,7 +2761,7 @@ public class {mapName} : IMapScript
 			}
 		}
 		SafeReparent(categoryGrid, _containerCategorySelector);
-		SafeReparent(_optCategoryItems, _containerCategorySelector);
+		SafeReparent(_entityPaletteController?.OptCategoryItems, _containerCategorySelector);
 		
 		SafeReparent(_btnToggleRotate, _contentPlacement);
 		SafeReparent(_btnToggleScale, _contentPlacement);
@@ -3422,7 +2948,7 @@ public class {mapName} : IMapScript
 					TriggerToolSelection(GameHost.EditorTool.PaintGrass, _btnTextureBrush);
 					break;
 				case EditorModule.Objects:
-					TriggerAddObjectMode();
+					_entityPaletteController?.TriggerAddObjectMode();
 					break;
 				case EditorModule.Clipboard:
 					TriggerToolSelection(GameHost.EditorTool.SelectArea, _btnSelectArea);
@@ -3965,7 +3491,7 @@ public class {mapName} : IMapScript
 		{
 			return true;
 		}
-		if (_optCategoryItems != null && _optCategoryItems.GetPopup() != null && _optCategoryItems.GetPopup().Visible)
+		if (_entityPaletteController?.OptCategoryItems != null && _entityPaletteController.OptCategoryItems.GetPopup() != null && _entityPaletteController.OptCategoryItems.GetPopup().Visible)
 		{
 			return true;
 		}
@@ -4014,123 +3540,4 @@ public class {mapName} : IMapScript
 		return false;
 	}
 
-	public void SelectCategory(string category)
-	{
-		_currentCategory = category;
-
-		var activeStyle = new StyleBoxFlat();
-		activeStyle.BgColor = new Color(0.15f, 0.45f, 0.7f, 0.8f);
-		activeStyle.BorderColor = UIStyle.ColorCyanGlow;
-		activeStyle.SetBorderWidthAll(2);
-		activeStyle.CornerRadiusTopLeft = 4;
-		activeStyle.CornerRadiusTopRight = 4;
-		activeStyle.CornerRadiusBottomLeft = 4;
-		activeStyle.CornerRadiusBottomRight = 4;
-
-		_btnChars.RemoveThemeStyleboxOverride("normal");
-		_btnBuilds.RemoveThemeStyleboxOverride("normal");
-		_btnEnv.RemoveThemeStyleboxOverride("normal");
-		_btnProps.RemoveThemeStyleboxOverride("normal");
-		_btnDecals.RemoveThemeStyleboxOverride("normal");
-
-		if (category == "Characters") _btnChars.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnChars.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		if (category == "Buildings") _btnBuilds.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnBuilds.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		if (category == "Environment") _btnEnv.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnEnv.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		if (category == "Props") _btnProps.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnProps.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		if (category == "Decals") _btnDecals.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnDecals.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		_categoryFiles.Clear();
-		_optCategoryItems.Clear();
-
-		if (category == "Decals")
-		{
-			string[] decals = { "logo", "forest", "snowy", "flag", "rune" };
-			foreach (var d in decals)
-			{
-				_categoryFiles.Add(d);
-				_optCategoryItems.AddItem(d.ToUpper());
-			}
-		}
-		else
-		{
-			string subDir = category switch
-			{
-				"Characters" => "res://Assets/3d/Characters",
-				"Buildings" => "res://Assets/3d/Buildings",
-				"Environment" => "res://Assets/3d/Environment",
-				"Props" => "res://Assets/3d/Props",
-				_ => ""
-			};
-
-			using (var dir = DirAccess.Open(subDir))
-			{
-				if (dir != null)
-				{
-					dir.ListDirBegin();
-					string fileName = dir.GetNext();
-					while (fileName != "")
-					{
-						if (!dir.CurrentIsDir() && !fileName.EndsWith(".import") && 
-							(fileName.EndsWith(".glb") || fileName.EndsWith(".gltf")))
-						{
-							_categoryFiles.Add(fileName);
-						}
-						fileName = dir.GetNext();
-					}
-				}
-			}
-
-			_categoryFiles.Sort();
-
-			foreach (var file in _categoryFiles)
-			{
-				string cleanName = System.IO.Path.GetFileNameWithoutExtension(file).Replace("_", " ").ToUpper();
-				_optCategoryItems.AddItem(TranslationServer.Translate(cleanName));
-			}
-		}
-
-		if (_optCategoryItems.ItemCount > 0)
-		{
-			_optCategoryItems.Selected = 0;
-			SelectCategoryItem(0);
-		}
-		
-		TriggerAddObjectMode();
-	}
-
-	public void SelectCategoryItem(int index)
-	{
-		if (index >= 0 && index < _categoryFiles.Count)
-		{
-			string selectedFile = _categoryFiles[index];
-			string placeId = selectedFile;
-			
-			if (_currentCategory != "Decals")
-			{
-				string path = _currentCategory switch
-				{
-					"Characters" => "res://Assets/3d/Characters",
-					"Buildings" => "res://Assets/3d/Buildings",
-					"Environment" => "res://Assets/3d/Environment",
-					"Props" => "res://Assets/3d/Props",
-					_ => ""
-				};
-				placeId = $"{path}/{selectedFile}";
-			}
-
-			if (GameHost.Instance != null)
-			{
-				GameHost.Instance.ActivePlaceId = placeId;
-			}
-		}
-	}
 }

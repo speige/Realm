@@ -1212,6 +1212,7 @@ public partial class GameHost
 		{
 			EcsWorld.Dispose();
 			EcsWorld = World.Create();
+			InitializeServices();
 			SetupWorldEntityComponents();
 			
 			_playerEntity = EcsWorld.Create();

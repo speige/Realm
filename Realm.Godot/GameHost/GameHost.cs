@@ -29,8 +29,17 @@ public partial class GameHost : Node3D, IGameAPI
 	private readonly GameHostFXService _fxService = new();
 	private GameHostSaveLoadService _saveLoadService;
 	private GameHostEditorService _editorService;
+	private MapEditorTerrainStatusService _terrainStatusService;
 	private GameHostReplayService _replayService;
 	private GameHostEcsService _ecsService;
+	private GameHostNetworkStateService _networkStateService;
+	private GameHostInputStateService _inputStateService;
+	private GameHostFogOfWarService _fogOfWarService;
+	private UnitSpawnService _unitSpawnService;
+	private GameHostWorldInitService _worldInitService;
+	private GameHostEditorStateService _editorStateService;
+	private MapPropertiesLoader _mapPropertiesLoader;
+	private MapEditorTerrainImportService _terrainImportService;
 
 	private float _fDelta;
 
@@ -49,8 +58,8 @@ public partial class GameHost : Node3D, IGameAPI
 	private bool _multiplayerActive => Multiplayer.MultiplayerPeer != null;
 	private int _localPeerId
 	{
-		get => EcsWorld?.GetFieldOrDefault<NetworkState, int>(_worldEntity, s => s.LocalPeerId, 1) ?? 1;
-		set => EcsWorld?.Mutate<NetworkState>(_worldEntity, (ref NetworkState s) => s.LocalPeerId = value);
+		get => _networkStateService?.LocalPeerId ?? 1;
+		set { if (_networkStateService != null) _networkStateService.LocalPeerId = value; }
 	}
 
 	private int _nextCommandId
@@ -61,8 +70,8 @@ public partial class GameHost : Node3D, IGameAPI
 
 	private float _commandSendTimer
 	{
-		get => EcsWorld?.GetFieldOrDefault<NetworkState, float>(_worldEntity, s => s.CommandSendTimer) ?? 0f;
-		set => EcsWorld?.Mutate<NetworkState>(_worldEntity, (ref NetworkState s) => s.CommandSendTimer = value);
+		get => _networkStateService?.CommandSendTimer ?? 0f;
+		set { if (_networkStateService != null) _networkStateService.CommandSendTimer = value; }
 	}
 
 	private int _snapshotSequence
@@ -91,20 +100,21 @@ public partial class GameHost : Node3D, IGameAPI
 
 	private ulong _lastSnapshotReceivedTime
 	{
-		get => EcsWorld?.GetFieldOrDefault<NetworkState, ulong>(_worldEntity, s => s.LastSnapshotReceivedTime) ?? 0;
-		set => EcsWorld?.Mutate<NetworkState>(_worldEntity, (ref NetworkState s) => s.LastSnapshotReceivedTime = value);
+		get => _networkStateService?.LastSnapshotReceivedTime ?? 0;
+		set { if (_networkStateService != null) _networkStateService.LastSnapshotReceivedTime = value; }
 	}
-	private bool _wasClientInMultiplayer = false;
-	public bool IsConnectionLost { get; private set; } = false;
 
-	private Dictionary<int, Entity> _peerIdToPlayerEntityMap
-		=> EcsWorld?.GetFieldOrDefault<NetworkMappingState, Dictionary<int, Entity>>(_worldEntity, s => s.PeerIdToPlayerEntityMap);
+	private bool _wasClientInMultiplayer => _networkStateService?.WasClientInMultiplayer ?? false;
+	public bool IsConnectionLost => _networkStateService?.IsConnectionLost ?? false;
 
-	private Dictionary<int, Entity> _serverToClientEntityMap
-		=> EcsWorld?.GetFieldOrDefault<NetworkMappingState, Dictionary<int, Entity>>(_worldEntity, s => s.ServerToClientEntityMap);
+	private System.Collections.Generic.Dictionary<int, Entity> _peerIdToPlayerEntityMap
+		=> EcsWorld?.GetFieldOrDefault<NetworkMappingState, System.Collections.Generic.Dictionary<int, Entity>>(_worldEntity, s => s.PeerIdToPlayerEntityMap);
 
-	private Dictionary<int, int> _clientToServerEntityMap
-		=> EcsWorld?.GetFieldOrDefault<NetworkMappingState, Dictionary<int, int>>(_worldEntity, s => s.ClientToServerEntityMap);
+	private System.Collections.Generic.Dictionary<int, Entity> _serverToClientEntityMap
+		=> EcsWorld?.GetFieldOrDefault<NetworkMappingState, System.Collections.Generic.Dictionary<int, Entity>>(_worldEntity, s => s.ServerToClientEntityMap);
+
+	private System.Collections.Generic.Dictionary<int, int> _clientToServerEntityMap
+		=> EcsWorld?.GetFieldOrDefault<NetworkMappingState, System.Collections.Generic.Dictionary<int, int>>(_worldEntity, s => s.ClientToServerEntityMap);
 
 
 
@@ -142,40 +152,28 @@ public partial class GameHost : Node3D, IGameAPI
 	private float _trackerLastTickDelay = 0f;
 	public string? ActiveSpellTargeting
 	{
-		get => EcsWorld?.GetFieldOrDefault<InputState, string>(_worldEntity, s => s.ActiveSpellTargeting);
-		set => EcsWorld?.Mutate<InputState>(_worldEntity, (ref InputState s) =>
-			EcsWorld.Set(_worldEntity, new InputState(s.CycleSelectionIndex, value, s.ActiveCommandTargeting, s.ActiveBuildingPlacementType, s.ActivePingMode)));
+		get => _inputStateService?.ActiveSpellTargeting;
+		set { if (_inputStateService != null) _inputStateService.ActiveSpellTargeting = value; }
 	}
 
 	public string? ActiveCommandTargeting
 	{
-		get => EcsWorld?.GetFieldOrDefault<InputState, string>(_worldEntity, s => s.ActiveCommandTargeting);
-		set => EcsWorld?.Mutate<InputState>(_worldEntity, (ref InputState s) =>
-			EcsWorld.Set(_worldEntity, new InputState(s.CycleSelectionIndex, s.ActiveSpellTargeting, value, s.ActiveBuildingPlacementType, s.ActivePingMode)));
+		get => _inputStateService?.ActiveCommandTargeting;
+		set { if (_inputStateService != null) _inputStateService.ActiveCommandTargeting = value; }
 	}
 
 	public Prop3D SelectedProp { get; private set; } = null;
 
 	public string? ActiveBuildingPlacementType
 	{
-		get => EcsWorld?.GetFieldOrDefault<InputState, string>(_worldEntity, s => s.ActiveBuildingPlacementType);
-		set => EcsWorld?.Mutate<InputState>(_worldEntity, (ref InputState s) =>
-			EcsWorld.Set(_worldEntity, new InputState(s.CycleSelectionIndex, s.ActiveSpellTargeting, s.ActiveCommandTargeting, value, s.ActivePingMode)));
+		get => _inputStateService?.ActiveBuildingPlacementType;
+		set { if (_inputStateService != null) _inputStateService.ActiveBuildingPlacementType = value; }
 	}
 
 	public int CycleSelectionIndex
 	{
-		get
-		{
-			if (SelectedUnits.Count == 0) return 0;
-			int val = EcsWorld?.GetFieldOrDefault<InputState, int>(_worldEntity, s => s.CycleSelectionIndex) ?? 0;
-			return Math.Clamp(val, 0, SelectedUnits.Count - 1);
-		}
-		set => EcsWorld?.Mutate<InputState>(_worldEntity, (ref InputState s) =>
-		{
-			int clamped = SelectedUnits.Count > 0 ? Math.Clamp(value, 0, SelectedUnits.Count - 1) : 0;
-			EcsWorld.Set(_worldEntity, new InputState(clamped, s.ActiveSpellTargeting, s.ActiveCommandTargeting, s.ActiveBuildingPlacementType, s.ActivePingMode));
-		});
+		get => _inputStateService?.GetCycleSelectionIndex(SelectedUnits.Count) ?? 0;
+		set => _inputStateService?.SetCycleSelectionIndex(value, SelectedUnits.Count);
 	}
 
 	public bool HasWeaponsUpgrade
@@ -244,6 +242,31 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 	}
 	public string ActivePlaceId { get; set; } = ""; // "soldier", "tree", etc.
+	public string GetTerrainStatusString(Vector3 hitPos)
+	{
+		return _terrainStatusService.GetTerrainStatusString(hitPos, ActiveEditorTool.ToString(), ActivePlaceId);
+	}
+
+	public void LoadMapProperties(string path)
+	{
+		_mapPropertiesLoader?.LoadMapProperties(_worldEntity, path);
+	}
+
+	public bool ImportTerrainFromMinimap(
+		string selectedPath,
+		out float[,] smoothedHeights,
+		out Color[,] colors,
+		out List<(float X, float Y, float Z, float Rot, float Scale)> treePositions)
+	{
+		smoothedHeights = null;
+		colors = null;
+		treePositions = null;
+		if (_terrainImportService == null)
+		{
+			return false;
+		}
+		return _terrainImportService.ImportTerrain(_worldEntity, selectedPath, out smoothedHeights, out colors, out treePositions);
+	}
 	public bool PlaceUnitIsEnemy { get; set; } = false;
 	public float EditorBrushRadius { get; set; } = 6.0f;
 	public float EditorBrushStrength { get; set; } = 3.0f;
@@ -257,30 +280,26 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool EditorCameraBoundsVisible { get; set; } = false;
 	public float EditorCameraBoundsLeft
 	{
-		get => EcsWorld?.GetFieldOrDefault<EditorState, float>(_worldEntity, s => s.CameraBoundsLeft, -95.0f) ?? -95.0f;
-		set => EcsWorld?.Mutate<EditorState>(_worldEntity, (ref EditorState s) =>
-			EcsWorld.Set(_worldEntity, new EditorState(s.BlockMode, s.BlockLevelHeight, value, s.CameraBoundsRight, s.CameraBoundsTop, s.CameraBoundsBottom, s.SkyboxPath, s.HasUnsavedChanges)));
+		get => _editorStateService.GetCameraBoundsLeft(_worldEntity);
+		set => _editorStateService.SetCameraBoundsLeft(_worldEntity, value);
 	}
 
 	public float EditorCameraBoundsRight
 	{
-		get => EcsWorld?.GetFieldOrDefault<EditorState, float>(_worldEntity, s => s.CameraBoundsRight, 95.0f) ?? 95.0f;
-		set => EcsWorld?.Mutate<EditorState>(_worldEntity, (ref EditorState s) =>
-			EcsWorld.Set(_worldEntity, new EditorState(s.BlockMode, s.BlockLevelHeight, s.CameraBoundsLeft, value, s.CameraBoundsTop, s.CameraBoundsBottom, s.SkyboxPath, s.HasUnsavedChanges)));
+		get => _editorStateService.GetCameraBoundsRight(_worldEntity);
+		set => _editorStateService.SetCameraBoundsRight(_worldEntity, value);
 	}
 
 	public float EditorCameraBoundsTop
 	{
-		get => EcsWorld?.GetFieldOrDefault<EditorState, float>(_worldEntity, s => s.CameraBoundsTop, -95.0f) ?? -95.0f;
-		set => EcsWorld?.Mutate<EditorState>(_worldEntity, (ref EditorState s) =>
-			EcsWorld.Set(_worldEntity, new EditorState(s.BlockMode, s.BlockLevelHeight, s.CameraBoundsLeft, s.CameraBoundsRight, value, s.CameraBoundsBottom, s.SkyboxPath, s.HasUnsavedChanges)));
+		get => _editorStateService.GetCameraBoundsTop(_worldEntity);
+		set => _editorStateService.SetCameraBoundsTop(_worldEntity, value);
 	}
 
 	public float EditorCameraBoundsBottom
 	{
-		get => EcsWorld?.GetFieldOrDefault<EditorState, float>(_worldEntity, s => s.CameraBoundsBottom, 125.0f) ?? 125.0f;
-		set => EcsWorld?.Mutate<EditorState>(_worldEntity, (ref EditorState s) =>
-			EcsWorld.Set(_worldEntity, new EditorState(s.BlockMode, s.BlockLevelHeight, s.CameraBoundsLeft, s.CameraBoundsRight, s.CameraBoundsTop, value, s.SkyboxPath, s.HasUnsavedChanges)));
+		get => _editorStateService.GetCameraBoundsBottom(_worldEntity);
+		set => _editorStateService.SetCameraBoundsBottom(_worldEntity, value);
 	}
 	public bool EditorBrushIsSquare { get; set; } = false;
 	public enum MirrorMode
@@ -299,30 +318,26 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool EditorRandomScale { get; set; } = false;
 	public string EditorSkyboxPath
 	{
-		get => EcsWorld?.GetFieldOrDefault<EditorState, string>(_worldEntity, s => s.SkyboxPath, "res://Assets/skybox_panoramic.jpg") ?? "res://Assets/skybox_panoramic.jpg";
-		set => EcsWorld?.Mutate<EditorState>(_worldEntity, (ref EditorState s) =>
-			EcsWorld.Set(_worldEntity, new EditorState(s.BlockMode, s.BlockLevelHeight, s.CameraBoundsLeft, s.CameraBoundsRight, s.CameraBoundsTop, s.CameraBoundsBottom, value, s.HasUnsavedChanges)));
+		get => _editorStateService.GetSkyboxPath(_worldEntity);
+		set => _editorStateService.SetSkyboxPath(_worldEntity, value);
 	}
 
 	public bool EditorHasUnsavedChanges
 	{
-		get => EcsWorld?.GetFieldOrDefault<EditorState, bool>(_worldEntity, s => s.HasUnsavedChanges) ?? false;
-		set => EcsWorld?.Mutate<EditorState>(_worldEntity, (ref EditorState s) =>
-			EcsWorld.Set(_worldEntity, new EditorState(s.BlockMode, s.BlockLevelHeight, s.CameraBoundsLeft, s.CameraBoundsRight, s.CameraBoundsTop, s.CameraBoundsBottom, s.SkyboxPath, value)));
+		get => _editorStateService.GetHasUnsavedChanges(_worldEntity);
+		set => _editorStateService.SetHasUnsavedChanges(_worldEntity, value);
 	}
 
 	public bool EditorBlockMode
 	{
-		get => EcsWorld?.GetFieldOrDefault<EditorState, bool>(_worldEntity, s => s.BlockMode, true) ?? true;
-		set => EcsWorld?.Mutate<EditorState>(_worldEntity, (ref EditorState s) =>
-			EcsWorld.Set(_worldEntity, new EditorState(value, s.BlockLevelHeight, s.CameraBoundsLeft, s.CameraBoundsRight, s.CameraBoundsTop, s.CameraBoundsBottom, s.SkyboxPath, s.HasUnsavedChanges)));
+		get => _editorStateService.GetBlockMode(_worldEntity);
+		set => _editorStateService.SetBlockMode(_worldEntity, value);
 	}
 
 	public float EditorBlockLevelHeight
 	{
-		get => EcsWorld?.GetFieldOrDefault<EditorState, float>(_worldEntity, s => s.BlockLevelHeight, 4.0f) ?? 4.0f;
-		set => EcsWorld?.Mutate<EditorState>(_worldEntity, (ref EditorState s) =>
-			EcsWorld.Set(_worldEntity, new EditorState(s.BlockMode, value, s.CameraBoundsLeft, s.CameraBoundsRight, s.CameraBoundsTop, s.CameraBoundsBottom, s.SkyboxPath, s.HasUnsavedChanges)));
+		get => _editorStateService.GetBlockLevelHeight(_worldEntity);
+		set => _editorStateService.SetBlockLevelHeight(_worldEntity, value);
 	}
 	private Node _hoveredEditorObject = null;
 	private MeshInstance3D _selectionHighlightMesh = null;
@@ -400,9 +415,8 @@ public partial class GameHost : Node3D, IGameAPI
 	public List<MinimapPing> ActivePings { get; } = new List<MinimapPing>();
 	public bool ActivePingMode
 	{
-		get => EcsWorld?.GetFieldOrDefault<InputState, bool>(_worldEntity, s => s.ActivePingMode) ?? false;
-		set => EcsWorld?.Mutate<InputState>(_worldEntity, (ref InputState s) =>
-			EcsWorld.Set(_worldEntity, new InputState(s.CycleSelectionIndex, s.ActiveSpellTargeting, s.ActiveCommandTargeting, s.ActiveBuildingPlacementType, value)));
+		get => _inputStateService?.ActivePingMode ?? false;
+		set { if (_inputStateService != null) _inputStateService.ActivePingMode = value; }
 	}
 
 
@@ -437,43 +451,7 @@ public partial class GameHost : Node3D, IGameAPI
 
 	public static int GetUnitPathingFlags(UnitMetadata meta)
 	{
-		if (meta.PathingCapabilities == null || meta.PathingCapabilities.Length == 0)
-		{
-			if (meta.MovementType == "air" || meta.MovementType == "flying")
-			{
-				return 4; // flying
-			}
-			else if (meta.MovementType == "amphibious")
-			{
-				return 8 | 1; // ground | shallow_water
-			}
-			return 8; // ground
-		}
-
-		int flags = 0;
-		foreach (var cap in meta.PathingCapabilities)
-		{
-			switch (cap.ToLower())
-			{
-				case "shallow_water":
-					flags |= 1;
-					break;
-				case "deep_water":
-					flags |= 2;
-					break;
-				case "flying":
-				case "air":
-					flags |= 4;
-					break;
-				case "ground":
-					flags |= 8;
-					break;
-				case "unpathable":
-					flags |= 16;
-					break;
-			}
-		}
-		return flags;
+		return Instance?._unitSpawnService?.GetUnitPathingFlags(meta) ?? 8;
 	}
 
 
@@ -544,26 +522,7 @@ public partial class GameHost : Node3D, IGameAPI
 
 	public string GetFallbackModelPath(string unitId, bool isBuilding)
 	{
-		if (isBuilding)
-		{
-			return unitId switch
-			{
-				"castle" => "res://Assets/3d/Buildings/altar.glb",
-				"tower" => "res://Assets/3d/Buildings/altar_pillar.glb",
-				_ => "res://Assets/3d/Buildings/altar.glb"
-			};
-		}
-		else
-		{
-			return unitId switch
-			{
-				"worker" => "res://Assets/3d/Characters/adventurer.glb",
-				"soldier" => "res://Assets/3d/Characters/armored_warlord.glb",
-				"archer" => "res://Assets/3d/Characters/armored_dragon.glb",
-				"priest" => "res://Assets/3d/Characters/armored_battlelord.glb",
-				_ => "res://Assets/3d/Characters/adventurer.glb"
-			};
-		}
+		return _unitSpawnService.GetFallbackModelPath(unitId, isBuilding);
 	}
 
 	private float _goldBackup
@@ -635,40 +594,6 @@ public partial class GameHost : Node3D, IGameAPI
 
 	private void SetupWorldEntityComponents()
 	{
-		_worldEntity = EcsWorld.Create();
-		EcsWorld.Add(_worldEntity, new WorldState(0f, 0, 0f, true));
-		EcsWorld.Add(_worldEntity, new ReplayState(0, 500f, 400f, 200f));
-		EcsWorld.Add(_worldEntity, new NetworkState(1, 0f, 0, -1, -1, false, 0, 1));
-		EcsWorld.Add(_worldEntity, new NetworkMappingState(new(), new(), new()));
-		EcsWorld.Add(_worldEntity, new EditorState(true, 4.0f, -95.0f, 95.0f, -95.0f, 125.0f, "res://Assets/skybox_panoramic.jpg", false));
-		EcsWorld.Add(_worldEntity, new InputState(0, null, null, null, false));
-		EcsWorld.Add(_worldEntity, new CameraState
-		{
-			MoveSpeed = 35.0f,
-			ZoomSpeed = 10.0f,
-			MinZoom = 10.0f,
-			MaxZoom = 60.0f,
-			ZoomStep = 4.0f,
-			EdgePanMargin = 20.0f,
-			EnableEdgePanning = true,
-			IsLocked = false,
-			LimitLeft = null,
-			LimitRight = null,
-			LimitTop = null,
-			LimitBottom = null,
-			TargetHeight = 35.0f,
-			CurrentHeight = 35.0f,
-			IsDraggingMouse = false,
-			LastMousePosition = System.Numerics.Vector2.Zero,
-			TargetYaw = 0.0f,
-			CurrentYaw = 0.0f,
-			TargetPitch = -55.0f,
-			CurrentPitch = -55.0f,
-			IsTopDown = false,
-			YawSwing = 0.0f,
-			PitchSwing = 0.0f
-		});
-		
 		int width = GroundTerrain != null ? GroundTerrain.Width : 126;
 		int depth = GroundTerrain != null ? GroundTerrain.Depth : 126;
 		float spacing = GroundTerrain != null ? GroundTerrain.Spacing : 2.0f;
@@ -677,33 +602,13 @@ public partial class GameHost : Node3D, IGameAPI
 		bool waterEnabled = GroundTerrain != null ? GroundTerrain.WaterEnabled : true;
 		float[,] heights = GroundTerrain != null ? GroundTerrain.Heights : null;
 		int[,] pathingCodes = GroundTerrain != null ? GroundTerrain.PathingCodes : null;
-		DtNavMesh navMesh = GroundTerrain != null ? GroundTerrain.NavMesh : null;
-		DtNavMeshQuery navMeshQuery = GroundTerrain != null ? GroundTerrain.NavMeshQuery : null;
+		DotRecast.Detour.DtNavMesh navMesh = GroundTerrain != null ? GroundTerrain.NavMesh : null;
+		DotRecast.Detour.DtNavMeshQuery navMeshQuery = GroundTerrain != null ? GroundTerrain.NavMeshQuery : null;
 
-		EcsWorld.Add(_worldEntity, new TerrainState(
+		_worldEntity = _worldInitService.SetupWorldEntityComponents(
 			width, depth, spacing, cellSize, waterHeight, waterEnabled,
 			heights, pathingCodes, navMesh, navMeshQuery
-		));
-
-		EcsWorld.Add(_worldEntity, new FogAndWeatherState(new byte[32, 32], "grey", "clear", 0f));
-		EcsWorld.Add(_worldEntity, new SpectatorPerspective(-1));
-		EcsWorld.Add(_worldEntity, new CountdownState(false, 0f, ""));
-		EcsWorld.Add(_worldEntity, new LeaderboardState(false, "", new System.Collections.Generic.Dictionary<string, string>()));
-		EcsWorld.Add(_worldEntity, new ScriptZonesState(new System.Collections.Generic.List<ZoneBounds>()));
-		var players = new ScriptPlayer[12];
-		for (int i = 0; i < 12; i++)
-		{
-			players[i] = new ScriptPlayer
-			{
-				Gold = i == 0 ? 500f : 0f,
-				Wood = i == 0 ? 400f : 0f,
-				Active = i == 0,
-				Name = $"Player {i + 1}",
-				KillCount = 0
-			};
-		}
-		EcsWorld.Add(_worldEntity, new ScriptPlayersState(players));
-		EcsWorld.Add(_worldEntity, new CombatAlertState(0f));
+		);
 	}
 
 	float IGameAPI.Gold
@@ -786,18 +691,9 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
 		
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(unitTypeId, meta.Speed == 0f);
+		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : _unitSpawnService.GetFallbackModelPath(unitTypeId, meta.Speed == 0f);
 
-		string name = meta.Name;
-		if (isEnemy)
-		{
-			if (unitTypeId == "worker") name = "Orc Worker";
-			else if (unitTypeId == "soldier") name = "Orc Raider";
-			else if (unitTypeId == "archer") name = "Dark Archer";
-			else if (unitTypeId == "priest") name = "Orc Shaman";
-			else if (unitTypeId == "castle") name = "Orc Stronghold";
-			else if (unitTypeId == "tower") name = "Orc Totem Tower";
-		}
+		string name = isEnemy ? _unitSpawnService.GetEnemyUnitName(unitTypeId, meta.Name) : meta.Name;
 
 		var entity = CreateEcsUnit(unitTypeId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, pos, playerOwner);
 		if (bypassPopulation)
@@ -2086,7 +1982,28 @@ public class {mapName} : IMapScript
 		GD.Print($"[GAMEHOST_READY] GameHost _Ready starting");
 		Instance = this;
 		GameSettings.ApplyGraphicsSettings(this);
+	}
 
+	private void InitializeServices()
+	{
+		_saveLoadService = new GameHostSaveLoadService(EcsWorld);
+		_editorService = new GameHostEditorService(EcsWorld);
+		_terrainStatusService = new MapEditorTerrainStatusService(EcsWorld);
+		_replayService = new GameHostReplayService(EcsWorld);
+		_networkService = new GameHostNetworkService(EcsWorld);
+		_inputService = new GameHostInputService(EcsWorld);
+		_networkStateService = new GameHostNetworkStateService(EcsWorld);
+		_inputStateService = new GameHostInputStateService(EcsWorld);
+		_fogOfWarService = new GameHostFogOfWarService(EcsWorld);
+		_unitSpawnService = new UnitSpawnService(EcsWorld);
+		_worldInitService = new GameHostWorldInitService(EcsWorld);
+		_editorStateService = new GameHostEditorStateService(EcsWorld);
+		_mapPropertiesLoader = new MapPropertiesLoader(EcsWorld);
+		_terrainImportService = new MapEditorTerrainImportService(EcsWorld);
+	}
+
+	private void InitializeGameEcs()
+	{
 		if (System.OperatingSystem.IsWindows())
 		{
 			VSCodeManager.Instance.StartInstallIfNeeded();
@@ -2100,11 +2017,7 @@ public class {mapName} : IMapScript
 		}
 
 		EcsWorld = World.Create();
-		_saveLoadService = new GameHostSaveLoadService(EcsWorld);
-		_editorService = new GameHostEditorService(EcsWorld);
-		_replayService = new GameHostReplayService(EcsWorld);
-		_networkService = new GameHostNetworkService(EcsWorld);
-		_inputService = new GameHostInputService(EcsWorld);
+		InitializeServices();
 		SetupWorldEntityComponents();
 
 		CreateGround();
@@ -2171,8 +2084,7 @@ public class {mapName} : IMapScript
 			_localPeerId = Multiplayer.GetUniqueId();
 			if (!Multiplayer.IsServer())
 			{
-				_wasClientInMultiplayer = true;
-				_lastSnapshotReceivedTime = Time.GetTicksMsec();
+				_networkStateService.MarkClientEnteredMultiplayer();
 			}
 			if (Multiplayer is SceneMultiplayer sceneMultiplayer)
 			{
@@ -2328,6 +2240,8 @@ public class {mapName} : IMapScript
 				ReplayPlaybackManager.Instance.ApplyInitialFrame();
 			}
 		};
+
+		_fogOfWarService.Initialize(GetTree().Root.GetNodeOrNull("Main"));
 	}
 
 	public void StopRecording()
@@ -2358,6 +2272,7 @@ public class {mapName} : IMapScript
 			VSCodeManager.Instance.CleanUp();
 		}
 		_networkService?.Clear();
+		_fogOfWarService?.CleanUp();
 		StopRecording();
 	}
 
@@ -2673,65 +2588,10 @@ public class {mapName} : IMapScript
 
 	private Entity CreateEcsUnit(string id, string name, float hp, float damage, float range, float armor, float speed, Vector3 pos, Realm.Ecs.Common.PlayerEntity owner)
 	{
-
-		float cooldown = 1.5f;
-		bool isHero = false;
-		if (UnitRegistry.TryGetValue(id, out var regMeta))
-		{
-			cooldown = regMeta.AttackCooldown > 0 ? regMeta.AttackCooldown : 1.5f;
-			isHero = regMeta.IsHero;
-		}
-
-		var entity = EcsWorld.Create();
-		EcsWorld.Add(entity, new DefinitionId(id));
-		EcsWorld.Add(entity, new Name(name));
-		EcsWorld.Add(entity, new Position(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));
-		EcsWorld.Add(entity, new Owner(owner));
-
-		if (isHero)
-		{
-			EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Hero());
-			EcsWorld.Add(entity, new Realm.Ecs.Components.Meta.Level(1));
-			EcsWorld.Add(entity, new Realm.Ecs.Components.Meta.Experience(0f));
-		}
-		
-
-		bool isPlayer = owner.Value == _playerEntity;
-		if (isPlayer)
-		{
-			if (HasShieldsUpgrade)
-			{
-				armor += 2f;
-			}
-			if (HasWeaponsUpgrade && (damage > 0 || id == "priest") && id != "castle" && id != "tower")
-			{
-				damage += 3f;
-			}
-		}
-
-		EcsWorld.Add(entity, new Health(hp, hp));
-		
-		if (damage > 0 || id == "priest")
-		{
-			EcsWorld.Add(entity, new Attack(damage, range, cooldown));
-		}
-		
-		EcsWorld.Add(entity, new Armor(armor));
-
-		if (speed > 0)
-		{
-			EcsWorld.Add(entity, new MovementStats(speed, 20f, 10f));
-			EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Movable());
-			EcsWorld.Add(entity, new Inventory(1));
-		}
-		else
-		{
-			EcsWorld.Add(entity, new Building());
-			if (id == "tower")
-			{
-				EcsWorld.Add(entity, new TowerUpgradeLevel(1));
-			}
-		}
+		var entity = _unitSpawnService.CreateEcsUnitEntity(
+			id, name, hp, damage, range, armor, speed, pos, owner,
+			_playerEntity, HasShieldsUpgrade, HasWeaponsUpgrade
+		);
 
 		OnUnitCreated?.Invoke(GetUnitWrapper(entity));
 		return entity;
@@ -2823,24 +2683,7 @@ public class {mapName} : IMapScript
 
 	private void UpdateConnectionStatus()
 	{
-		bool isLost = false;
-		if (_multiplayerActive && !Multiplayer.IsServer())
-		{
-			ulong now = Time.GetTicksMsec();
-			if (_lastSnapshotReceivedTime > 0)
-			{
-				double timeSinceLastSnapshot = (now - _lastSnapshotReceivedTime) / 1000.0;
-				if (timeSinceLastSnapshot > 30.0)
-				{
-					isLost = true;
-				}
-			}
-		}
-		else
-		{
-			isLost = true;
-		}
-		IsConnectionLost = isLost;
+		_networkStateService.UpdateConnectionStatus(_multiplayerActive, Multiplayer.IsServer());
 	}
 
 	private void ProcessGameplayTick(float fDelta)
@@ -2879,6 +2722,14 @@ public class {mapName} : IMapScript
 		_ecsService.TickEcs(fDelta);
 
 		UpdateMinimapPings(fDelta);
+
+		if (_fogOfWarService != null)
+		{
+			bool isReplay = ReplayPlaybackManager.Instance.IsPlayingReplay;
+			bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
+			int spectatorPerspective = InGameHUD.Instance?.LiveSpectatorPerspective ?? -1;
+			_fogOfWarService.Tick(fDelta, AllUnits, GetTree().Root.GetNodeOrNull<Camera3D>("Main/Camera3D"), spectatorPerspective, isReplay, isSpectator);
+		}
 
 		TickScheduledTimers(fDelta);
 		TickZoneTriggers();
