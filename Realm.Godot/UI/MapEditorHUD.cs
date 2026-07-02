@@ -16,6 +16,7 @@ public partial class MapEditorHUD : Control
 	}
 
 	private MapEditorHUDViewModel _viewModel = new();
+	public MapEditorHUDViewModel ViewModel => _viewModel;
 
 	private Panel _panelLeft;
 	private Button _btnLeftTab;
@@ -225,6 +226,7 @@ public partial class MapEditorHUD : Control
 	private VSCodeMdiWindow _vscodeMdi;
 	private bool _isDraggingSlider = false;
 	private Panel _swatchHighlightPanel;
+	private Panel _swatchCliffHighlightPanel;
 
 	private MapEditorTopBar _topBarController;
 	private MapEditorBrushSettings _brushSettingsController;
@@ -244,6 +246,10 @@ public partial class MapEditorHUD : Control
 		if (GodotObject.IsInstanceValid(_swatchHighlightPanel) && _swatchHighlightPanel.GetParent() == null)
 		{
 			_swatchHighlightPanel.QueueFree();
+		}
+		if (GodotObject.IsInstanceValid(_swatchCliffHighlightPanel) && _swatchCliffHighlightPanel.GetParent() == null)
+		{
+			_swatchCliffHighlightPanel.QueueFree();
 		}
 	}
 
@@ -276,6 +282,7 @@ public partial class MapEditorHUD : Control
 		{
 			_swatchButtons[i - 1] = GetNode<Button>($"PanelTextures/VBox/Content/GridSwatches/Swatch{i}");
 		}
+		SetupTextureSwatches(true);
 
 		_btnBackToHub = GetNode<Button>("TopLeftBox/BtnBack");
 		_btnPublish = GetNode<Button>("MiddleRightBox/BtnPublish");
@@ -283,17 +290,74 @@ public partial class MapEditorHUD : Control
 		_btnUndo = GetNode<Button>("MiddleRightBox/HistoryHBox/BtnUndo");
 		_btnRedo = GetNode<Button>("MiddleRightBox/HistoryHBox/BtnRedo");
 		_btnDeleteObject = GetNode<Button>("RightPillar/VBox/BtnDeleteObject");
+		SetupButton(_btnDeleteObject, "❌ Erase Object", () => TriggerToolSelection(GameHost.EditorTool.DeleteObject, _btnDeleteObject), 11, "Delete units or props (0)");
 		_statusLabel = GetNode<Label>("TopBar/HBox/StatusLabel");
 		_feedbackLabel = GetNode<Label>("FeedbackLabel");
 
 		_btnZoomIn = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnZoomIn");
+		_btnZoomIn.TooltipText = "Zoom Camera In";
+		_btnZoomIn.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			var camera = GetTree().Root.GetNodeOrNull<CameraControl>("Main/Camera3D");
+			camera?.ZoomIn();
+		};
+
 		_btnZoomOut = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnZoomOut");
+		_btnZoomOut.TooltipText = "Zoom Camera Out";
+		_btnZoomOut.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			var camera = GetTree().Root.GetNodeOrNull<CameraControl>("Main/Camera3D");
+			camera?.ZoomOut();
+		};
+
 		_btnCenter = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnCenter");
+		_btnCenter.TooltipText = "Center camera on selected object (Space)";
+		_btnCenter.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			var camera = GetTree().Root.GetNodeOrNull<CameraControl>("Main/Camera3D");
+			if (camera != null)
+			{
+				Node3D target = null;
+				if (GameHost.Instance != null)
+				{
+					if (GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject) && GameHost.Instance.SelectedEditorObject is Node3D node3D)
+					{
+						target = node3D;
+					}
+					else if (GameHost.Instance.SelectedUnits.Count > 0 && GodotObject.IsInstanceValid(GameHost.Instance.SelectedUnits[0]))
+					{
+						target = GameHost.Instance.SelectedUnits[0];
+					}
+				}
+				if (target != null)
+				{
+					camera.FollowTarget = target;
+					camera.Position = new Vector3(target.Position.X, camera.Position.Y, target.Position.Z + 25.0f);
+				}
+			}
+		};
+
 		_btnRotate = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnRotate");
+		_btnRotate.TooltipText = "Rotate camera 90 degrees (R)";
+		_btnRotate.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			var camera = GetTree().Root.GetNodeOrNull<CameraControl>("Main/Camera3D");
+			camera?.Rotate90Degrees();
+		};
+
 		_btnCameraAngle = new Button();
 		_btnCameraAngle.Name = "BtnCameraAngle";
 		_btnCameraAngle.Set("icon_max_width", 0);
 		GetNode<GridContainer>("MiddleRightBox/PanelZoom/VBox/Content").AddChild(_btnCameraAngle);
+		SetupButton(_btnCameraAngle, "📐 Angle: Tilt", () =>
+		{
+			var camera = GetTree().Root.GetNodeOrNull<CameraControl>("Main/Camera3D");
+			camera?.ToggleTopDown();
+		}, 11, "Toggle top-down vs perspective angle (C)");
 
 		_sldBrushSize = GetNode<Slider>("PanelTextures/VBox/Content/SettingsVBox/BrushSizeBox/SldBrushSize");
 		_lblBrushSizeValue = GetNode<Label>("PanelTextures/VBox/Content/SettingsVBox/BrushSizeBox/Header/LblBrushSizeValue");
@@ -303,32 +367,48 @@ public partial class MapEditorHUD : Control
 		_lblFlattenHeightValue = GetNode<Label>("PanelTextures/VBox/Content/SettingsVBox/FlattenHeightBox/Header/LblFlattenHeightValue");
 
 		_btnRaise = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnRaise");
+		SetupButton(_btnRaise, "⛰️ Raise", () => TriggerToolSelection(GameHost.EditorTool.Raise, _btnRaise), 11, "Elevate terrain height (1)");
+
 		_btnLower = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnLower");
+		SetupButton(_btnLower, "🕳️ Lower", () => TriggerToolSelection(GameHost.EditorTool.Lower, _btnLower), 11, "Lower terrain height (2)");
+
 		_btnSmooth = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnSmooth");
+		SetupButton(_btnSmooth, "✨ Smooth", () => TriggerToolSelection(GameHost.EditorTool.Smooth, _btnSmooth), 11, "Smooth terrain height (3)");
+
 		_btnFlatten = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnFlatten");
+		SetupButton(_btnFlatten, "🟩 Flatten", () => TriggerToolSelection(GameHost.EditorTool.Flatten, _btnFlatten), 11, "Flatten terrain height (4)");
+
 		_btnCliff = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnCliff");
+		SetupButton(_btnCliff, "🏔️ Cliff", () => TriggerToolSelection(GameHost.EditorTool.Cliff, _btnCliff), 11, "Terrace/Cliff terrain height (5)");
+
 		_btnRamp = new Button();
 		_btnRamp.Name = "BtnRamp";
 		_btnRamp.Set("icon_max_width", 0);
 		GetNode<HBoxContainer>("TopToolbar/PanelTerrain/VBox/Content").AddChild(_btnRamp);
+		SetupButton(_btnRamp, "📐 Ramp", () => TriggerToolSelection(GameHost.EditorTool.Ramp, _btnRamp), 11, "Create ramp between two points (9)");
 
 		_btnTextureBrush = GetNode<Button>("TopToolbar/PanelDeco/VBox/Content/BtnTextureBrush");
+		SetupButton(_btnTextureBrush, "🎨 Paint", () => TriggerToolSelection(GameHost.EditorTool.PaintGrass, _btnTextureBrush), 11, "Paint terrain texture (6)");
+
 		_btnDecalTool = GetNodeOrNull<Button>("TopToolbar/PanelDeco/VBox/Content/BtnDecalTool");
 		if (_btnDecalTool != null) _btnDecalTool.Visible = false;
 		_btnFloodFill = new Button();
 		_btnFloodFill.Name = "BtnFloodFill";
 		_btnFloodFill.Set("icon_max_width", 0);
 		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnFloodFill);
+		SetupButton(_btnFloodFill, "🪣 Flood Fill", () => TriggerToolSelection(GameHost.EditorTool.FloodFill, _btnFloodFill), 11, "Flood fill terrain texture");
 
 		_btnSelectArea = new Button();
 		_btnSelectArea.Name = "BtnSelectArea";
 		_btnSelectArea.Set("icon_max_width", 0);
 		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnSelectArea);
+		SetupButton(_btnSelectArea, "🔲 Select Area", () => TriggerToolSelection(GameHost.EditorTool.SelectArea, _btnSelectArea), 11, "Select rectangular area");
 
 		_btnSkybox = GetNode<Button>("TopToolbar/PanelEnv/VBox/Content/BtnSkybox");
 		if (_btnSkybox != null)
 		{
 			_btnSkybox.Set("icon_max_width", 0);
+			SetupButton(_btnSkybox, "☀️ Cycle Lighting", () => GameHost.Instance?.CycleTimeOfDay(), 11, "Cycle map environment lighting (L)");
 		}
 
 		_optSkybox = new OptionButton();
@@ -404,6 +484,16 @@ public partial class MapEditorHUD : Control
 			}
 		}
 
+		_btnSelectMove = new Button();
+		_btnSelectMove.Name = "BtnSelectMove";
+		_btnSelectMove.Set("icon_max_width", 0);
+		SetupButton(_btnSelectMove, "🖱️ SELECT / MOVE", () => TriggerToolSelection(GameHost.EditorTool.SelectMove, _btnSelectMove), 13, "Select, drag-move, rotate, scale, or delete objects (Q)");
+
+		_btnAddObject = new Button();
+		_btnAddObject.Name = "BtnAddObject";
+		_btnAddObject.Set("icon_max_width", 0);
+		SetupButton(_btnAddObject, "➕ ADD OBJECT", () => _entityPaletteController?.TriggerAddObjectMode(), 13, "Place selected unit or prop");
+
 		_entityPaletteController = new MapEditorEntityPaletteController(this, palettesVBox, _btnAddObject);
 		_generationDialog = new MapEditorGenerationDialog(this);
 
@@ -435,12 +525,6 @@ public partial class MapEditorHUD : Control
 		_sldPlacementRotate.Step = 5.0;
 		_sldPlacementRotate.Value = 0.0;
 		_placementRotateBox.AddChild(_sldPlacementRotate);
-		_sldPlacementRotate.ValueChanged += (val) =>
-		{
-			float fVal = (float)val;
-			_lblPlacementRotateValue.Text = fVal.ToString("F0") + "°";
-			if (GameHost.Instance != null) GameHost.Instance.EditorPlacementRotation = fVal;
-		};
 		_sldPlacementRotate.DragStarted += () => _isDraggingSlider = true;
 		_sldPlacementRotate.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
@@ -467,12 +551,6 @@ public partial class MapEditorHUD : Control
 		_sldPlacementScale.Step = 0.1;
 		_sldPlacementScale.Value = 1.0;
 		_placementScaleBox.AddChild(_sldPlacementScale);
-		_sldPlacementScale.ValueChanged += (val) =>
-		{
-			float fVal = (float)val;
-			_lblPlacementScaleValue.Text = fVal.ToString("F1") + "x";
-			if (GameHost.Instance != null) GameHost.Instance.EditorPlacementScale = fVal;
-		};
 		_sldPlacementScale.DragStarted += () => _isDraggingSlider = true;
 		_sldPlacementScale.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
@@ -643,13 +721,7 @@ public partial class MapEditorHUD : Control
 			_btnVSCode.Name = "BtnVSCode";
 			_btnVSCode.Set("icon_max_width", 0);
 			GetNode<HBoxContainer>("TopLeftBox").AddChild(_btnVSCode);
-			SetupButton(_btnVSCode, "💻 DATA EDITOR", () =>
-			{
-				if (_vscodeMdi != null)
-				{
-					_vscodeMdi.Visible = !_vscodeMdi.Visible;
-				}
-			}, 13, "Toggle the embedded VS Code data editor");
+			SetupButton(_btnVSCode, "💻 DATA EDITOR", null, 13, "Toggle the embedded VS Code data editor");
 		}
 
 		_btnLoad = new Button();
@@ -690,13 +762,6 @@ public partial class MapEditorHUD : Control
 		UIStyle.ApplyCheckboxStyle(_chkRandomRotation);
 		rightSettingsVBox.AddChild(_chkRandomRotation);
 		rightSettingsVBox.MoveChild(_chkRandomRotation, chkIndex + 1);
-		_chkRandomRotation.Toggled += (toggled) =>
-		{
-			if (GameHost.Instance != null)
-			{
-				GameHost.Instance.EditorRandomRotation = toggled;
-			}
-		};
 
 		_chkRandomScale = new CheckBox();
 		_chkRandomScale.Name = "ChkRandomScale";
@@ -705,13 +770,6 @@ public partial class MapEditorHUD : Control
 		UIStyle.ApplyCheckboxStyle(_chkRandomScale);
 		rightSettingsVBox.AddChild(_chkRandomScale);
 		rightSettingsVBox.MoveChild(_chkRandomScale, chkIndex + 1);
-		_chkRandomScale.Toggled += (toggled) =>
-		{
-			if (GameHost.Instance != null)
-			{
-				GameHost.Instance.EditorRandomScale = toggled;
-			}
-		};
 
 		_chkClumpMode = new CheckBox();
 		_chkClumpMode.Name = "ChkClumpMode";
@@ -723,7 +781,6 @@ public partial class MapEditorHUD : Control
 		_chkClumpMode.ButtonPressed = false;
 		_chkClumpMode.Toggled += (toggled) =>
 		{
-			if (GameHost.Instance != null) GameHost.Instance.EditorClumpMode = toggled;
 			if (_densityBox != null) _densityBox.Visible = toggled;
 			if (_scaleVarBox != null) _scaleVarBox.Visible = toggled;
 		};
@@ -898,11 +955,7 @@ public partial class MapEditorHUD : Control
 		settingsVBox.AddChild(_chkBlockMode);
 		_chkBlockMode.Toggled += (toggled) =>
 		{
-			if (GameHost.Instance != null)
-			{
-				GameHost.Instance.EditorBlockMode = toggled;
-				ShowFeedback(toggled ? "Block Mode: Enabled" : "Block Mode: Disabled");
-			}
+			ShowFeedback(toggled ? "Block Mode: Enabled" : "Block Mode: Disabled");
 		};
 		_chkBlockMode.ButtonPressed = true;
 
@@ -934,15 +987,6 @@ public partial class MapEditorHUD : Control
 		_sldBlockStep.Step = 0.5;
 		_sldBlockStep.Value = 4.0;
 		_stepBox.AddChild(_sldBlockStep);
-		_sldBlockStep.ValueChanged += (val) =>
-		{
-			float fVal = (float)val;
-			_lblBlockStepValue.Text = fVal.ToString("F1") + " m";
-			if (GameHost.Instance != null)
-			{
-				GameHost.Instance.EditorBlockLevelHeight = fVal;
-			}
-		};
 		_sldBlockStep.DragStarted += () => _isDraggingSlider = true;
 		_sldBlockStep.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
@@ -977,15 +1021,6 @@ public partial class MapEditorHUD : Control
 		_sldWaterHeight.Step = 0.5;
 		_sldWaterHeight.Value = -2.0;
 		_waterHeightBox.AddChild(_sldWaterHeight);
-		_sldWaterHeight.ValueChanged += (val) =>
-		{
-			float fVal = (float)val;
-			_lblWaterHeightValue.Text = fVal.ToString("F1") + " m";
-			if (GameHost.Instance?.GroundTerrain != null)
-			{
-				GameHost.Instance.GroundTerrain.WaterHeight = fVal;
-			}
-		};
 		_sldWaterHeight.DragStarted += () => _isDraggingSlider = true;
 		_sldWaterHeight.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
@@ -1210,6 +1245,7 @@ public partial class MapEditorHUD : Control
 		_topBarController = new MapEditorTopBar(_btnBackToHub, _btnPublish, _btnSave, _btnLoad, _btnUndo, _btnRedo, _btnVSCode, _statusLabel, _feedbackLabel);
 		_brushSettingsController = new MapEditorBrushSettings(_sldBrushSize, _lblBrushSizeValue, _sldBrushStrength, _lblBrushStrengthValue, _sldFlattenHeight, _lblFlattenHeightValue, _chkBlockMode, _sldBlockStep, _lblBlockStepValue, _sldWaterHeight, _lblWaterHeightValue, _chkWaterEnabled);
 		_placementSettingsController = new MapEditorPlacementSettings(_sldPlacementRotate, _lblPlacementRotateValue, _sldPlacementScale, _lblPlacementScaleValue, _chkSpawnAsEnemy, _chkRandomRotation, _chkRandomScale, _chkClumpMode, _sldClumpDensity, _lblClumpDensityValue, _sldClumpScaleVar, _lblClumpScaleVarValue);
+		InitializeInspectorPanel();
 		_inspectorController = new MapEditorInspector(_lblInspectorTitle, _lblInspectorPos, _btnInspectorRotLeft, _btnInspectorRotRight, _btnInspectorScaleDown, _btnInspectorScaleUp, _btnInspectorScaleReset, _btnInspectorDelete);
 		_pathingPanelController = new MapEditorPathingPanel(_chkShallowWater, _chkDeepWater, _chkFlying, _chkGround, _chkUnpathable, _optPathingMode);
 
@@ -1242,8 +1278,11 @@ public partial class MapEditorHUD : Control
 		}
 
 		_topBarController?.Update(_viewModel);
-		_brushSettingsController?.Update(_viewModel);
-		_placementSettingsController?.Update(_viewModel);
+		if (!_isDraggingSlider)
+		{
+			_brushSettingsController?.Update(_viewModel);
+			_placementSettingsController?.Update(_viewModel);
+		}
 		_inspectorController?.Update(_viewModel);
 		_pathingPanelController?.Update(_viewModel);
 		_minimapController?.Update(_viewModel);
@@ -1772,42 +1811,47 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	private void HighlightCliffSwatch(Button selectedSwatch)
+	{
+		if (!GodotObject.IsInstanceValid(_swatchCliffHighlightPanel))
+		{
+			_swatchCliffHighlightPanel = new Panel();
+			_swatchCliffHighlightPanel.Name = "SwatchCliffHighlightPanel";
+			_swatchCliffHighlightPanel.MouseFilter = Control.MouseFilterEnum.Ignore;
+			_swatchCliffHighlightPanel.SetAnchorsPreset(LayoutPreset.FullRect);
+			_swatchCliffHighlightPanel.GrowHorizontal = GrowDirection.Both;
+			_swatchCliffHighlightPanel.GrowVertical = GrowDirection.Both;
+
+			var style = new StyleBoxFlat();
+			style.BgColor = new Color(0, 0, 0, 0);
+			style.BorderColor = new Color(0.9f, 0.45f, 0.1f); // Vibrant orange/gold for cliff
+			style.SetBorderWidthAll(3);
+			style.CornerRadiusTopLeft = 4;
+			style.CornerRadiusTopRight = 4;
+			style.CornerRadiusBottomLeft = 4;
+			style.CornerRadiusBottomRight = 4;
+			_swatchCliffHighlightPanel.AddThemeStyleboxOverride("panel", style);
+		}
+
+		if (_swatchCliffHighlightPanel.GetParent() != null)
+		{
+			_swatchCliffHighlightPanel.GetParent().RemoveChild(_swatchCliffHighlightPanel);
+		}
+
+		if (selectedSwatch != null)
+		{
+			selectedSwatch.AddChild(_swatchCliffHighlightPanel);
+		}
+	}
+
 	private void SetupMenuHooks()
 	{
-		_sldBrushSize.ValueChanged += (val) =>
-		{
-			float fVal = (float)val;
-			_lblBrushSizeValue.Text = fVal.ToString("F1");
-			if (GameHost.Instance != null) GameHost.Instance.EditorBrushRadius = fVal;
-		};
-
-		_sldBrushStrength.ValueChanged += (val) =>
-		{
-			float fVal = (float)val;
-			_lblBrushStrengthValue.Text = fVal.ToString("F1");
-			if (GameHost.Instance != null) GameHost.Instance.EditorBrushStrength = fVal;
-		};
-
-		_sldFlattenHeight.ValueChanged += (val) =>
-		{
-			float fVal = (float)val;
-			_lblFlattenHeightValue.Text = fVal.ToString("F1") + " m";
-			if (GameHost.Instance != null) GameHost.Instance.EditorFlattenHeight = fVal;
-		};
 		_sldBrushSize.DragStarted += () => _isDraggingSlider = true;
 		_sldBrushSize.DragEnded += (valueChanged) => _isDraggingSlider = false;
 		_sldBrushStrength.DragStarted += () => _isDraggingSlider = true;
 		_sldBrushStrength.DragEnded += (valueChanged) => _isDraggingSlider = false;
 		_sldFlattenHeight.DragStarted += () => _isDraggingSlider = true;
 		_sldFlattenHeight.DragEnded += (valueChanged) => _isDraggingSlider = false;
-
-		_chkSpawnAsEnemy.Toggled += (toggled) =>
-		{
-			if (GameHost.Instance != null)
-			{
-				GameHost.Instance.PlaceUnitIsEnemy = toggled;
-			}
-		};
 
 		SetupCollapsible("TopToolbar/PanelTerrain", "VBox/HeaderHBox/BtnCollapse", "VBox/Content");
 		SetupCollapsible("TopToolbar/PanelDeco", "VBox/HeaderHBox/BtnCollapse", "VBox/Content");
@@ -2935,6 +2979,7 @@ public class {mapName} : IMapScript
 
 		if (_panelTerrain != null) _panelTerrain.Visible = (module == EditorModule.Terrain);
 		if (_panelDeco != null) _panelDeco.Visible = (module == EditorModule.TextureDeco);
+		if (_panelEnv != null) _panelEnv.Visible = (module == EditorModule.TextureDeco);
 		if (_panelObjects != null) _panelObjects.Visible = (module == EditorModule.Objects);
 		if (_panelClipboard != null) _panelClipboard.Visible = (module == EditorModule.Clipboard);
 
@@ -3390,26 +3435,57 @@ public class {mapName} : IMapScript
 			btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 			btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
 
-			var colorBox = new ColorRect();
-			colorBox.Color = _swatchColors[i];
-			colorBox.MouseFilter = MouseFilterEnum.Ignore;
-			colorBox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-			colorBox.GrowHorizontal = GrowDirection.Both;
-			colorBox.GrowVertical = GrowDirection.Both;
-			btn.AddChild(colorBox);
+			Texture2D tex = null;
+			if (ResourceLoader.Exists(_swatchPaths[i]))
+			{
+				tex = GD.Load<Texture2D>(_swatchPaths[i]);
+			}
+
+			if (tex != null)
+			{
+				var texRect = new TextureRect();
+				texRect.Texture = tex;
+				texRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+				texRect.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
+				texRect.MouseFilter = MouseFilterEnum.Ignore;
+				texRect.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+				texRect.GrowHorizontal = GrowDirection.Both;
+				texRect.GrowVertical = GrowDirection.Both;
+				btn.AddChild(texRect);
+			}
+			else
+			{
+				var colorBox = new ColorRect();
+				colorBox.Color = _swatchColors[i];
+				colorBox.MouseFilter = MouseFilterEnum.Ignore;
+				colorBox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+				colorBox.GrowHorizontal = GrowDirection.Both;
+				colorBox.GrowVertical = GrowDirection.Both;
+				btn.AddChild(colorBox);
+			}
 
 			if (connectEvents)
 			{
 				int index = i;
-				btn.Pressed += () =>
+				btn.GuiInput += (@event) =>
 				{
-					if (Input.IsKeyPressed(Key.Shift))
+					if (@event is InputEventMouseButton mouseEvent && mouseEvent.Pressed)
 					{
-						SelectCliffTexture(index, _swatchColors[index]);
-					}
-					else
-					{
-						SelectTerrainTexture(index, _swatchColors[index], btn);
+						if (mouseEvent.ButtonIndex == MouseButton.Left)
+						{
+							if (Input.IsKeyPressed(Key.Shift))
+							{
+								SelectCliffTexture(index, _swatchColors[index]);
+							}
+							else
+							{
+								SelectTerrainTexture(index, _swatchColors[index], btn);
+							}
+						}
+						else if (mouseEvent.ButtonIndex == MouseButton.Right)
+						{
+							SelectCliffTexture(index, _swatchColors[index]);
+						}
 					}
 				};
 			}
@@ -3454,6 +3530,22 @@ public class {mapName} : IMapScript
 
 		if (_lblTerrainTexture != null) _lblTerrainTexture.Text = $"{TranslationServer.Translate("Brush")}: {TranslationServer.Translate(terrainName)}";
 		if (_lblCliffTexture != null) _lblCliffTexture.Text = $"{TranslationServer.Translate("Cliff Face")}: {TranslationServer.Translate(cliffName)}";
+
+		Button terrainSwatch = null;
+		Button cliffSwatch = null;
+		for (int i = 0; i < 12; i++)
+		{
+			if (_swatchColors[i].IsEqualApprox(GameHost.Instance.EditorPaintColor))
+			{
+				terrainSwatch = _swatchButtons[i];
+			}
+			if (_swatchColors[i].IsEqualApprox(GameHost.Instance.EditorCliffPaintColor))
+			{
+				cliffSwatch = _swatchButtons[i];
+			}
+		}
+		HighlightSwatch(terrainSwatch);
+		HighlightCliffSwatch(cliffSwatch);
 	}
 
 	private string GetSwatchName(Color color)
@@ -3541,4 +3633,67 @@ public class {mapName} : IMapScript
 		return false;
 	}
 
+	private void InitializeInspectorPanel()
+	{
+		_inspectorPanel = new PanelContainer();
+		_inspectorPanel.Name = "InspectorPanel";
+		
+		var vbox = new VBoxContainer();
+		vbox.Name = "InspectorVBox";
+		_inspectorPanel.AddChild(vbox);
+
+		_lblInspectorTitle = new Label();
+		_lblInspectorTitle.Name = "LblInspectorTitle";
+		_lblInspectorTitle.Text = "No Selection";
+		_lblInspectorTitle.AddThemeFontSizeOverride("font_size", 13);
+		_lblInspectorTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		vbox.AddChild(_lblInspectorTitle);
+
+		_lblInspectorPos = new Label();
+		_lblInspectorPos.Name = "LblInspectorPos";
+		_lblInspectorPos.Text = "Position: (0, 0)";
+		_lblInspectorPos.AddThemeFontSizeOverride("font_size", 11);
+		_lblInspectorPos.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		vbox.AddChild(_lblInspectorPos);
+
+		var grid = new GridContainer();
+		grid.Columns = 2;
+		vbox.AddChild(grid);
+
+		_btnInspectorRotLeft = new Button();
+		_btnInspectorRotLeft.Name = "BtnInspectorRotLeft";
+		_btnInspectorRotLeft.Text = "↩ Rot Left";
+		_btnInspectorRotLeft.Set("icon_max_width", 0);
+		grid.AddChild(_btnInspectorRotLeft);
+
+		_btnInspectorRotRight = new Button();
+		_btnInspectorRotRight.Name = "BtnInspectorRotRight";
+		_btnInspectorRotRight.Text = "Rot Right ↪";
+		_btnInspectorRotRight.Set("icon_max_width", 0);
+		grid.AddChild(_btnInspectorRotRight);
+
+		_btnInspectorScaleDown = new Button();
+		_btnInspectorScaleDown.Name = "BtnInspectorScaleDown";
+		_btnInspectorScaleDown.Text = "➖ Scale Down";
+		_btnInspectorScaleDown.Set("icon_max_width", 0);
+		grid.AddChild(_btnInspectorScaleDown);
+
+		_btnInspectorScaleUp = new Button();
+		_btnInspectorScaleUp.Name = "BtnInspectorScaleUp";
+		_btnInspectorScaleUp.Text = "Scale Up ➕";
+		_btnInspectorScaleUp.Set("icon_max_width", 0);
+		grid.AddChild(_btnInspectorScaleUp);
+
+		_btnInspectorScaleReset = new Button();
+		_btnInspectorScaleReset.Name = "BtnInspectorScaleReset";
+		_btnInspectorScaleReset.Text = "↺ Reset Scale";
+		_btnInspectorScaleReset.Set("icon_max_width", 0);
+		vbox.AddChild(_btnInspectorScaleReset);
+
+		_btnInspectorDelete = new Button();
+		_btnInspectorDelete.Name = "BtnInspectorDelete";
+		_btnInspectorDelete.Text = "❌ Delete Object";
+		_btnInspectorDelete.Set("icon_max_width", 0);
+		vbox.AddChild(_btnInspectorDelete);
+	}
 }

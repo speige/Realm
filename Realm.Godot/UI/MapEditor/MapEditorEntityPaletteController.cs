@@ -49,7 +49,11 @@ public class MapEditorEntityPaletteController
 		_palettesVBox.AddChild(_optCategoryItems);
 		_palettesVBox.MoveChild(_optCategoryItems, 1);
 
-		_optCategoryItems.ItemSelected += (index) => SelectCategoryItem((int)index);
+		_optCategoryItems.ItemSelected += (index) =>
+		{
+			SelectCategoryItem((int)index);
+			TriggerAddObjectMode();
+		};
 
 		_btnChars = new Button();
 		_btnChars.Set("icon_max_width", 0);
@@ -279,6 +283,7 @@ public class MapEditorEntityPaletteController
 		{
 			_optCategoryItems.Selected = idx;
 			SelectCategoryItem(idx);
+			TriggerAddObjectMode();
 		}
 	}
 }

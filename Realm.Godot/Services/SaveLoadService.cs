@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
@@ -252,7 +252,8 @@ public class SaveLoadService
 					editor.CameraBoundsTop,
 					editor.CameraBoundsBottom,
 					editor.SkyboxPath,
-					false
+					false,
+					editor.MirrorMode
 				);
 
 				_ecsWorld.Query(in worldQuery2, (Entity entity, ref TerrainState t, ref EditorState e) =>

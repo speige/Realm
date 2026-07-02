@@ -1,4 +1,4 @@
-﻿using Arch.Core;
+using Arch.Core;
 using Realm.Ecs.Services;
 using Godot;
 using Realm.Ecs.Common;
@@ -205,7 +205,7 @@ public class EditorService
 		bool pathingAdd)
 	{
 		ref var terrain = ref GetTerrainState();
-		if (terrain.Heights == null) return default;
+		if (terrain.Heights == null || _terrainColors == null) return default;
 
 		bool isHeights = activeTool == GameHost.EditorTool.Raise ||
 						 activeTool == GameHost.EditorTool.Lower ||
@@ -1326,8 +1326,7 @@ public class EditorService
 
 	public void SetBlockMode(Entity worldEntity, bool value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) =>
-			_ecsWorld.Set(worldEntity, new EditorState(value, s.BlockLevelHeight, s.CameraBoundsLeft, s.CameraBoundsRight, s.CameraBoundsTop, s.CameraBoundsBottom, s.SkyboxPath, s.HasUnsavedChanges)));
+		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.BlockMode = value);
 	}
 
 	public float GetBlockLevelHeight(Entity worldEntity)
@@ -1337,8 +1336,7 @@ public class EditorService
 
 	public void SetBlockLevelHeight(Entity worldEntity, float value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) =>
-			_ecsWorld.Set(worldEntity, new EditorState(s.BlockMode, value, s.CameraBoundsLeft, s.CameraBoundsRight, s.CameraBoundsTop, s.CameraBoundsBottom, s.SkyboxPath, s.HasUnsavedChanges)));
+		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.BlockLevelHeight = value);
 	}
 
 	public float GetCameraBoundsLeft(Entity worldEntity)
@@ -1348,8 +1346,7 @@ public class EditorService
 
 	public void SetCameraBoundsLeft(Entity worldEntity, float value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) =>
-			_ecsWorld.Set(worldEntity, new EditorState(s.BlockMode, s.BlockLevelHeight, value, s.CameraBoundsRight, s.CameraBoundsTop, s.CameraBoundsBottom, s.SkyboxPath, s.HasUnsavedChanges)));
+		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.CameraBoundsLeft = value);
 	}
 
 	public float GetCameraBoundsRight(Entity worldEntity)
@@ -1359,8 +1356,7 @@ public class EditorService
 
 	public void SetCameraBoundsRight(Entity worldEntity, float value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) =>
-			_ecsWorld.Set(worldEntity, new EditorState(s.BlockMode, s.BlockLevelHeight, s.CameraBoundsLeft, value, s.CameraBoundsTop, s.CameraBoundsBottom, s.SkyboxPath, s.HasUnsavedChanges)));
+		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.CameraBoundsRight = value);
 	}
 
 	public float GetCameraBoundsTop(Entity worldEntity)
@@ -1370,8 +1366,7 @@ public class EditorService
 
 	public void SetCameraBoundsTop(Entity worldEntity, float value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) =>
-			_ecsWorld.Set(worldEntity, new EditorState(s.BlockMode, s.BlockLevelHeight, s.CameraBoundsLeft, s.CameraBoundsRight, value, s.CameraBoundsBottom, s.SkyboxPath, s.HasUnsavedChanges)));
+		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.CameraBoundsTop = value);
 	}
 
 	public float GetCameraBoundsBottom(Entity worldEntity)
@@ -1381,8 +1376,7 @@ public class EditorService
 
 	public void SetCameraBoundsBottom(Entity worldEntity, float value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) =>
-			_ecsWorld.Set(worldEntity, new EditorState(s.BlockMode, s.BlockLevelHeight, s.CameraBoundsLeft, s.CameraBoundsRight, s.CameraBoundsTop, value, s.SkyboxPath, s.HasUnsavedChanges)));
+		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.CameraBoundsBottom = value);
 	}
 
 	public string GetSkyboxPath(Entity worldEntity)
@@ -1392,8 +1386,7 @@ public class EditorService
 
 	public void SetSkyboxPath(Entity worldEntity, string value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) =>
-			_ecsWorld.Set(worldEntity, new EditorState(s.BlockMode, s.BlockLevelHeight, s.CameraBoundsLeft, s.CameraBoundsRight, s.CameraBoundsTop, s.CameraBoundsBottom, value, s.HasUnsavedChanges)));
+		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.SkyboxPath = value);
 	}
 
 	public bool GetHasUnsavedChanges(Entity worldEntity)
@@ -1403,8 +1396,7 @@ public class EditorService
 
 	public void SetHasUnsavedChanges(Entity worldEntity, bool value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) =>
-			_ecsWorld.Set(worldEntity, new EditorState(s.BlockMode, s.BlockLevelHeight, s.CameraBoundsLeft, s.CameraBoundsRight, s.CameraBoundsTop, s.CameraBoundsBottom, s.SkyboxPath, value)));
+		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.HasUnsavedChanges = value);
 	}
 
 	public string GetTerrainStatusString(Vector3 pos, string toolName, string activePlaceId)

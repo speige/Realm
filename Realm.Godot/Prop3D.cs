@@ -8,6 +8,8 @@ public partial class Prop3D : StaticBody3D
 {
 	public Entity Entity { get; set; }
 
+	private string _propId = "tree";
+
 	[Export]
 	public string PropId
 	{
@@ -16,10 +18,11 @@ public partial class Prop3D : StaticBody3D
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity)
 				&& GameHost.Instance.EcsWorld.Has<PropIdentity>(Entity))
 				return GameHost.Instance.EcsWorld.Get<PropIdentity>(Entity).PropId;
-			return "tree";
+			return _propId;
 		}
 		set
 		{
+			_propId = value;
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
 			{
 				var world = GameHost.Instance.EcsWorld;

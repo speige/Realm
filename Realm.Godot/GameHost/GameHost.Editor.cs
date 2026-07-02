@@ -167,6 +167,10 @@ public partial class GameHost
 		if (string.IsNullOrEmpty(decalId)) decalId = "logo";
 		if (decalId.StartsWith("res://") || decalId.Contains("/"))
 		{
+			if (decalId.EndsWith(".glb") || decalId.EndsWith(".gltf"))
+			{
+				return "res://icon.svg";
+			}
 			return decalId;
 		}
 		string customPath = $"res://Assets/2d/Decals/{decalId}";
@@ -436,7 +440,12 @@ public partial class GameHost
 		var decal = new Decal3D();
 		decal.Entity = entity;
 		decal.DecalId = string.IsNullOrEmpty(decalId) ? "logo" : decalId;
-		decal.TextureAlbedo = GD.Load<Texture2D>(GetDecalTexturePath(decalId));
+		var texture = GD.Load<Texture2D>(GetDecalTexturePath(decalId));
+		if (texture == null)
+		{
+			texture = GD.Load<Texture2D>("res://icon.svg");
+		}
+		decal.TextureAlbedo = texture;
 		decal.Size = new Vector3(6.0f, 20.0f, 6.0f) * scale;
 		decal.AlbedoMix = 1.0f;
 		AddChild(decal);
@@ -692,7 +701,12 @@ public partial class GameHost
 			else if (ActiveEditorTool == EditorTool.PlaceDecal)
 			{
 				var previewDecal = new Decal3D();
-				previewDecal.TextureAlbedo = GD.Load<Texture2D>(GetDecalTexturePath(reqId));
+				var texture = GD.Load<Texture2D>(GetDecalTexturePath(reqId));
+				if (texture == null)
+				{
+					texture = GD.Load<Texture2D>("res://icon.svg");
+				}
+				previewDecal.TextureAlbedo = texture;
 				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * EditorPlacementScale;
 				AddChild(previewDecal);
 				previewDecal.DecalId = string.IsNullOrEmpty(reqId) ? "logo" : reqId;
@@ -1904,7 +1918,7 @@ public partial class GameHost
 		if (_selectionHighlightMesh == null || GroundTerrain == null) return;
 		int selWidth = maxX - minX + 1;
 		int selDepth = maxZ - minZ + 1;
-		if (selWidth <= 0 || selDepth <= 0)
+		if (selWidth < 2 || selDepth < 2)
 		{
 			_selectionHighlightMesh.Visible = false;
 			return;

@@ -216,7 +216,19 @@ public partial class GameHost : Node3D, IGameAPI
 
 
 	public bool IsMapEditorMode { get; set; } = false;
-	public EditableTerrain GroundTerrain { get; private set; }
+	private EditableTerrain _groundTerrain;
+	public EditableTerrain GroundTerrain
+	{
+		get => _groundTerrain;
+		private set
+		{
+			_groundTerrain = value;
+			if (value != null && _editorService != null)
+			{
+				_editorService.SetTerrainColors(value.Colors);
+			}
+		}
+	}
 	private MeshInstance3D _brushIndicatorMesh = null;
 	private MeshInstance3D _gridOverlayMesh = null;
 	private MeshInstance3D _cameraBoundsOverlayMesh = null;
@@ -2269,6 +2281,10 @@ public class {mapName} : IMapScript
 		
 		BuildDependencyInjection();
 		ResolveServices();
+		if (GroundTerrain != null)
+		{
+			_editorService.SetTerrainColors(GroundTerrain.Colors);
+		}
 
 		EcsWorld = ServiceLocator.Get<World>();
 		SetupWorldEntityComponents();

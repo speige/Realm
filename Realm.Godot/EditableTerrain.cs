@@ -10,9 +10,21 @@ using System.Collections.Generic;
 
 public partial class EditableTerrain : StaticBody3D
 {
+	private TerrainState GetTerrainStateSafe()
+	{
+		if (GameHost.Instance != null && 
+			GameHost.Instance.EcsWorld != null && 
+			GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
+			GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
+		{
+			return GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
+		}
+		return new TerrainState(126, 126, 2.0f, 0.2f, -2.0f, true, null, null, null, null);
+	}
+
 	public float CellSize
 	{
-		get => GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).CellSize;
+		get => GetTerrainStateSafe().CellSize;
 		private set
 		{
 			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
@@ -25,7 +37,7 @@ public partial class EditableTerrain : StaticBody3D
 
 	public DtNavMesh NavMesh
 	{
-		get => GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).NavMesh;
+		get => GetTerrainStateSafe().NavMesh;
 		private set
 		{
 			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
@@ -38,7 +50,7 @@ public partial class EditableTerrain : StaticBody3D
 
 	public DtNavMeshQuery NavMeshQuery
 	{
-		get => GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).NavMeshQuery;
+		get => GetTerrainStateSafe().NavMeshQuery;
 		private set
 		{
 			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
@@ -51,7 +63,7 @@ public partial class EditableTerrain : StaticBody3D
 
 	public int Width
 	{
-		get => GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).Width;
+		get => GetTerrainStateSafe().Width;
 		private set
 		{
 			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
@@ -64,7 +76,7 @@ public partial class EditableTerrain : StaticBody3D
 
 	public int Depth
 	{
-		get => GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).Depth;
+		get => GetTerrainStateSafe().Depth;
 		private set
 		{
 			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
@@ -77,7 +89,7 @@ public partial class EditableTerrain : StaticBody3D
 
 	public float Spacing
 	{
-		get => GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).Spacing;
+		get => GetTerrainStateSafe().Spacing;
 		private set
 		{
 			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
@@ -96,7 +108,7 @@ public partial class EditableTerrain : StaticBody3D
 
 	public float[,] Heights
 	{
-		get => GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).Heights;
+		get => GetTerrainStateSafe().Heights;
 		private set
 		{
 			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
@@ -111,7 +123,7 @@ public partial class EditableTerrain : StaticBody3D
 
 	public int[,] PathingCodes
 	{
-		get => GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).PathingCodes;
+		get => GetTerrainStateSafe().PathingCodes;
 		private set
 		{
 			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
@@ -138,7 +150,7 @@ public partial class EditableTerrain : StaticBody3D
 
 	public float WaterHeight
 	{
-		get => GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).WaterHeight;
+		get => GetTerrainStateSafe().WaterHeight;
 		set
 		{
 			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
@@ -152,7 +164,7 @@ public partial class EditableTerrain : StaticBody3D
 
 	public bool WaterEnabled
 	{
-		get => GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).WaterEnabled;
+		get => GetTerrainStateSafe().WaterEnabled;
 		set
 		{
 			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
