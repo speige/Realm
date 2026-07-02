@@ -1,4 +1,4 @@
-using Arch.Core;
+﻿using Arch.Core;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Tags;
@@ -9,7 +9,8 @@ using System.Collections.Generic;
 
 internal class MovementAndPathfindingService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 	private readonly Entity _worldEntity;
 	private readonly NavMeshPathfinder _pathfinder;
 	private readonly TerrainNavMeshService _terrainNavMeshService;
@@ -30,9 +31,9 @@ internal class MovementAndPathfindingService
 	private TerrainState _currentTerrainState;
 	private bool _hasTerrainState;
 
-	public MovementAndPathfindingService(World ecsWorld, Entity worldEntity, NavMeshPathfinder pathfinder)
+	public MovementAndPathfindingService(WorldAccessor ecsWorldAccessor, Entity worldEntity, NavMeshPathfinder pathfinder)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 		_worldEntity = worldEntity;
 		_pathfinder = pathfinder;
 		_terrainNavMeshService = ServiceLocator.Get<TerrainNavMeshService>();

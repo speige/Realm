@@ -1,4 +1,5 @@
-using Arch.Core;
+﻿using Arch.Core;
+using Realm.Ecs.Services;
 using Godot;
 using Realm.Godot.ReplaySystem;
 using Realm.Ecs.Components.Terrain;
@@ -7,14 +8,15 @@ using System.Collections.Generic;
 
 public class FogOfWarService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 	private MeshInstance3D _fogMeshInstance;
 	private WorldEnvironment _worldEnv;
 	private float _fogUpdateTimer = 0f;
 
-	public FogOfWarService(World ecsWorld)
+	public FogOfWarService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
 	private Entity FindWorldEntity()

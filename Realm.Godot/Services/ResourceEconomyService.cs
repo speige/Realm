@@ -1,4 +1,4 @@
-using Arch.Core;
+﻿using Arch.Core;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Movement;
@@ -11,7 +11,8 @@ using static Realm.Ecs.Common.ResourceConstants;
 
 internal class ResourceEconomyService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 
 	private float _fDelta;
 
@@ -32,9 +33,9 @@ internal class ResourceEconomyService
 	public Action<Entity> OnStopGatheringMovementRequested;
 	public Action<Entity> OnPropDepleted;
 
-	public ResourceEconomyService(World ecsWorld)
+	public ResourceEconomyService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 		_gatherQueryDelegate = GatherQueryAction;
 		_passiveIncomeQueryDelegate = UpdatePassiveIncomeQueryAction;
 	}

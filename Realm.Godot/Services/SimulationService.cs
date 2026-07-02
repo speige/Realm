@@ -15,7 +15,8 @@ using static Realm.Ecs.Common.WorldExtensions;
 
 internal class SimulationService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 	private readonly Entity _worldEntity;
 	private readonly NavMeshPathfinder _pathfinder;
 
@@ -77,15 +78,15 @@ internal class SimulationService
 		public bool IsFromQueue;
 	}
 
-	public SimulationService(World ecsWorld, Entity worldEntity, NavMeshPathfinder pathfinder)
+	public SimulationService(WorldAccessor ecsWorldAccessor, Entity worldEntity, NavMeshPathfinder pathfinder)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 		_worldEntity = worldEntity;
 		_pathfinder = pathfinder;
 
-		_movementService = new MovementAndPathfindingService(ecsWorld, worldEntity, pathfinder);
-		_combatService = new CombatAndDamageService(ecsWorld);
-		_economyService = new ResourceEconomyService(ecsWorld);
+		_movementService = new MovementAndPathfindingService(ecsWorldAccessor, worldEntity, pathfinder);
+		_combatService = new CombatAndDamageService(ecsWorldAccessor);
+		_economyService = new ResourceEconomyService(ecsWorldAccessor);
 
 		_combatService.OnArrowProjectileRequested = (p1, p2) => OnArrowProjectileRequested?.Invoke(p1, p2);
 		_combatService.OnDamageFlashRequested = ent => OnDamageFlashRequested?.Invoke(ent);

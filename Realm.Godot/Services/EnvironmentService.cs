@@ -1,4 +1,5 @@
-using Arch.Core;
+﻿using Arch.Core;
+using Realm.Ecs.Services;
 using Godot;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Terrain;
@@ -6,11 +7,12 @@ using System;
 
 public class EnvironmentService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 
-	public EnvironmentService(World ecsWorld)
+	public EnvironmentService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
 	private Entity FindWorldEntity()

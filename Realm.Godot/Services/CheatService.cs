@@ -1,4 +1,4 @@
-using Arch.Core;
+﻿using Arch.Core;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Core;
@@ -12,11 +12,12 @@ using System.Collections.Generic;
 
 public class CheatService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 
-	public CheatService(World ecsWorld)
+	public CheatService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
 	public enum CheatResult

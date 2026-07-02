@@ -1,16 +1,18 @@
-using Arch.Core;
+﻿using Arch.Core;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Tags;
 using System;
+using Realm.Ecs.Services;
 
 internal class TechTreeService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 
-	public TechTreeService(World ecsWorld)
+	public TechTreeService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
 	public bool BuyWeaponsUpgrade(Entity playerEntity)

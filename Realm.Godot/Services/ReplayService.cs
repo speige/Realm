@@ -1,4 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using Realm.Ecs.Services;
 using Arch.Core;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Combat;
@@ -11,13 +12,14 @@ using Realm.Godot.ReplaySystem;
 
 public class ReplayService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 	private ReplayRecorder _replayRecorder;
 	private readonly Dictionary<int, ReplayUnitSnapshot> _lastRecordedUnits = new();
 
-	public ReplayService(World ecsWorld)
+	public ReplayService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
 	public bool IsRecording => _replayRecorder != null;

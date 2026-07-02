@@ -1994,6 +1994,7 @@ public class {mapName} : IMapScript
 		GD.Print($"[GAMEHOST_READY] GameHost _Ready starting");
 		Instance = this;
 		GameSettings.ApplyGraphicsSettings(this);
+		ReinitializeEcsAndServices();
 	}
 
 	private void InitializeServices()
@@ -2266,8 +2267,8 @@ public class {mapName} : IMapScript
 	{
 		EcsWorld?.Dispose();
 		
-		var newWorld = World.Create();
-		_worldAccessor.Current = newWorld;
+		BuildDependencyInjection();
+		ResolveServices();
 
 		EcsWorld = ServiceLocator.Get<World>();
 		SetupWorldEntityComponents();

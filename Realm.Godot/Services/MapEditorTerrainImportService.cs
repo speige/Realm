@@ -1,4 +1,5 @@
-using Arch.Core;
+﻿using Arch.Core;
+using Realm.Ecs.Services;
 using Godot;
 using Realm.Ecs.Components.Terrain;
 using System;
@@ -6,11 +7,12 @@ using System.Collections.Generic;
 
 public class MapEditorTerrainImportService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 
-	public MapEditorTerrainImportService(World ecsWorld)
+	public MapEditorTerrainImportService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
 	public bool ImportTerrain(

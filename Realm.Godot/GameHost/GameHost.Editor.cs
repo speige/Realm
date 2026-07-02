@@ -315,6 +315,8 @@ public partial class GameHost
 
 	private void ProcessMapEditorPhysics(float fDelta)
 	{
+		if (_simulationService == null || EcsWorld == null) return;
+
 		_simulationService.TickEditorPhysics(fDelta);
 		var query = new QueryDescription().WithAll<Position, MoveTo, MovementStats>().WithNone<Dead>();
 		var arrivedUnits = _simulationService.GetEditorArrivedUnits();

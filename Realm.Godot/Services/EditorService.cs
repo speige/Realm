@@ -1,4 +1,5 @@
-using Arch.Core;
+﻿using Arch.Core;
+using Realm.Ecs.Services;
 using Godot;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
@@ -12,7 +13,8 @@ using System.Collections.Generic;
 
 public class EditorService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 	private Color[,] _terrainColors;
 
 	private float _clumpSpawnCooldown = 0.0f;
@@ -101,9 +103,9 @@ public class EditorService
 		public List<Node3D> NodesToDelete;
 	}
 
-	public EditorService(World ecsWorld)
+	public EditorService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
 	public void SetTerrainColors(Color[,] colors)

@@ -55,7 +55,7 @@ public partial class GameHost
 		services.AddSingleton<SpectatorService>();
 		services.AddSingleton<SimulationService>(sp =>
 		{
-			return new SimulationService(sp.GetRequiredService<WorldAccessor>().Current, Entity.Null, GameHost.Instance?._pathfinder ?? new NavMeshPathfinder());
+			return new SimulationService(sp.GetRequiredService<WorldAccessor>(), Entity.Null, GameHost.Instance?._pathfinder ?? new NavMeshPathfinder());
 		});
 
 		var provider = services.BuildServiceProvider();
@@ -65,8 +65,11 @@ public partial class GameHost
 	public override void _EnterTree()
 	{
 		BuildDependencyInjection();
+		ResolveServices();
+	}
 
-		// Assign to readonly fields
+	private void ResolveServices()
+	{
 		_audioService = ServiceLocator.Get<AudioService>();
 		_fxService = ServiceLocator.Get<FXService>();
 		_saveLoadService = ServiceLocator.Get<SaveLoadService>();

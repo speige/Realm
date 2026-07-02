@@ -1,4 +1,4 @@
-using Arch.Core;
+﻿using Arch.Core;
 using Godot;
 using MemoryPack;
 using Realm.Ecs.Common;
@@ -13,7 +13,8 @@ using System.Collections.Generic;
 
 public class NetworkService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 
 	private readonly List<NetworkCommand> _unacknowledgedCommands = new();
 	private readonly List<WorldSnapshot> _queuedDeltas = new();
@@ -31,9 +32,9 @@ public class NetworkService
 		public double SendTime;
 	}
 
-	public NetworkService(World ecsWorld)
+	public NetworkService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
 	public void Clear()

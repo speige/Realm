@@ -1,14 +1,16 @@
-using Arch.Core;
+﻿using Arch.Core;
 using Realm.Ecs.Components.Core;
+using Realm.Ecs.Services;
 using System;
 
 public class SpectatorService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 
-	public SpectatorService(World ecsWorld)
+	public SpectatorService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
 	private Entity FindWorldEntity()

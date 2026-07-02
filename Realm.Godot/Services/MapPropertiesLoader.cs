@@ -1,4 +1,5 @@
-using Arch.Core;
+﻿using Arch.Core;
+using Realm.Ecs.Services;
 using Godot;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
@@ -7,11 +8,12 @@ using System;
 
 public class MapPropertiesLoader
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 
-	public MapPropertiesLoader(World ecsWorld)
+	public MapPropertiesLoader(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
 	public void LoadMapProperties(Entity worldEntity, string path)

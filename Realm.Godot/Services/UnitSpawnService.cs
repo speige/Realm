@@ -1,19 +1,21 @@
-using Arch.Core;
+﻿using Arch.Core;
 using Godot;
 using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Tags;
+using Realm.Ecs.Services;
 using System;
 
 internal class UnitSpawnService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 
-	public UnitSpawnService(World ecsWorld)
+	public UnitSpawnService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
 	public string GetFallbackModelPath(string unitId, bool isBuilding)

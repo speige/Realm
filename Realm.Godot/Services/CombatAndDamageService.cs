@@ -1,4 +1,5 @@
-using Arch.Core;
+﻿using Arch.Core;
+using Realm.Ecs.Services;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Combat;
@@ -10,7 +11,8 @@ using System.Collections.Generic;
 
 internal class CombatAndDamageService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 
 	private float _fDelta;
 	private const float UnderAttackAlertCooldown = 8f;
@@ -59,9 +61,9 @@ internal class CombatAndDamageService
 	public Action<string> OnUnderAttackAlertRequested;
 	public Action<Entity> OnKillUnitRequested;
 
-	public CombatAndDamageService(World ecsWorld)
+	public CombatAndDamageService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 		_targetAcquisitionQueryDelegate = TargetAcquisitionQueryAction;
 		_potentialEnemyQueryDelegate = ScanEnemyQueryAction;
 		_combatQueryDelegate = CombatQueryAction;

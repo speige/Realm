@@ -1,4 +1,4 @@
-using Arch.Core;
+﻿using Arch.Core;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
@@ -12,13 +12,14 @@ using System.Collections.Generic;
 
 internal class InputService
 {
-	private readonly World _ecsWorld;
+	private readonly WorldAccessor _ecsWorldAccessor;
+	private World _ecsWorld => _ecsWorldAccessor.Current;
 	private readonly TechTreeService _techTreeService;
 	private int _buildingCycleIndex = 0;
 
-	public InputService(World ecsWorld, TechTreeService techTreeService)
+	public InputService(WorldAccessor ecsWorldAccessor, TechTreeService techTreeService)
 	{
-		_ecsWorld = ecsWorld;
+		_ecsWorldAccessor = ecsWorldAccessor;
 		_techTreeService = techTreeService;
 	}
 
