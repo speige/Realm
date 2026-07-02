@@ -29,7 +29,7 @@ public class SaveLoadService
 		try
 		{
 			Entity worldEntity = Entity.Null;
-			var worldQuery = new QueryDescription().WithAll<TerrainState>();
+			var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateQuery;
 			_ecsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
 
 			if (worldEntity != Entity.Null)
@@ -109,7 +109,7 @@ public class SaveLoadService
 			bool foundWorld = false;
 			bool foundColors = false;
 
-			var worldQuery2 = new QueryDescription().WithAll<TerrainState, EditorState>();
+			var worldQuery2 = Realm.Ecs.Common.QueryCache.AllTerrainStateAndEditorStateQuery;
 			_ecsWorld.Query(in worldQuery2, (Entity entity, ref TerrainState t, ref EditorState e) =>
 			{
 				terrain = t;
@@ -162,7 +162,7 @@ public class SaveLoadService
 			}
 
 			saveData.Units = new List<UnitSaveData>();
-			var unitQuery = new QueryDescription().WithAll<DefinitionId, Position, Owner>();
+			var unitQuery = Realm.Ecs.Common.QueryCache.AllDefinitionIdAndPositionAndOwnerQuery;
 			_ecsWorld.Query(in unitQuery, (Entity entity, ref DefinitionId defId, ref Position pos, ref Owner owner) =>
 			{
 				float rotY = 0f;
@@ -190,7 +190,7 @@ public class SaveLoadService
 			});
 
 			saveData.Props = new List<PropSaveData>();
-			var propQuery = new QueryDescription().WithAll<PropIdentity, Position>();
+			var propQuery = Realm.Ecs.Common.QueryCache.AllPropIdentityAndPositionQuery;
 			_ecsWorld.Query(in propQuery, (Entity entity, ref PropIdentity propId, ref Position pos) =>
 			{
 				float rotY = 0f;
@@ -211,7 +211,7 @@ public class SaveLoadService
 			});
 
 			saveData.Decals = new List<DecalSaveData>();
-			var decalQuery = new QueryDescription().WithAll<DecalIdentity, Position>();
+			var decalQuery = Realm.Ecs.Common.QueryCache.AllDecalIdentityAndPositionQuery;
 			_ecsWorld.Query(in decalQuery, (Entity entity, ref DecalIdentity decalId, ref Position pos) =>
 			{
 				float rotY = 0f;
@@ -281,38 +281,38 @@ public class SaveLoadService
 			var saveData = JsonSerializer.Deserialize<MapSaveData>(json);
 			if (saveData == null) return false;
 
-			var unitQuery = new QueryDescription().WithAll<DefinitionId, Position, Owner>();
+			var unitQuery = Realm.Ecs.Common.QueryCache.AllDefinitionIdAndPositionAndOwnerQuery;
 			var unitsToDestroy = new List<Entity>();
 			_ecsWorld.Query(in unitQuery, (Entity entity) => unitsToDestroy.Add(entity));
 			foreach (var ent in unitsToDestroy) _ecsWorld.Destroy(ent);
 
-			var propQuery = new QueryDescription().WithAll<PropIdentity, Position>();
+			var propQuery = Realm.Ecs.Common.QueryCache.AllPropIdentityAndPositionQuery;
 			var propsToDestroy = new List<Entity>();
 			_ecsWorld.Query(in propQuery, (Entity entity) => propsToDestroy.Add(entity));
 			foreach (var ent in propsToDestroy) _ecsWorld.Destroy(ent);
 
-			var decalQuery = new QueryDescription().WithAll<DecalIdentity, Position>();
+			var decalQuery = Realm.Ecs.Common.QueryCache.AllDecalIdentityAndPositionQuery;
 			var decalsToDestroy = new List<Entity>();
 			_ecsWorld.Query(in decalQuery, (Entity entity) => decalsToDestroy.Add(entity));
 			foreach (var ent in decalsToDestroy) _ecsWorld.Destroy(ent);
 
-			var req1 = new QueryDescription().WithAll<UnitSpawnRequest>();
+			var req1 = Realm.Ecs.Common.QueryCache.AllUnitSpawnRequestQuery;
 			var req1List = new List<Entity>();
 			_ecsWorld.Query(in req1, (Entity entity) => req1List.Add(entity));
 			foreach (var ent in req1List) _ecsWorld.Destroy(ent);
 
-			var req2 = new QueryDescription().WithAll<PropSpawnRequest>();
+			var req2 = Realm.Ecs.Common.QueryCache.AllPropSpawnRequestQuery;
 			var req2List = new List<Entity>();
 			_ecsWorld.Query(in req2, (Entity entity) => req2List.Add(entity));
 			foreach (var ent in req2List) _ecsWorld.Destroy(ent);
 
-			var req3 = new QueryDescription().WithAll<DecalSpawnRequest>();
+			var req3 = Realm.Ecs.Common.QueryCache.AllDecalSpawnRequestQuery;
 			var req3List = new List<Entity>();
 			_ecsWorld.Query(in req3, (Entity entity) => req3List.Add(entity));
 			foreach (var ent in req3List) _ecsWorld.Destroy(ent);
 
 			Entity worldEntity = Entity.Null;
-			var worldQuery = new QueryDescription().WithAll<TerrainState>();
+			var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateQuery;
 			_ecsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
 
 			if (worldEntity == Entity.Null)

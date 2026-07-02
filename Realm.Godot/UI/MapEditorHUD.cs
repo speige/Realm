@@ -257,7 +257,7 @@ public partial class MapEditorHUD : Control
 	{
 		Instance = this;
 
-		_camera3D = GetTree().Root.GetNodeOrNull<Camera3D>("Main/Camera3D");
+		_camera3D = (GameHost.Instance?.MainCamera);
 
 		_highlightStyle = new StyleBoxFlat();
 		_highlightStyle.BgColor = new Color(0, 0, 0, 0);
@@ -299,7 +299,7 @@ public partial class MapEditorHUD : Control
 		_btnZoomIn.Pressed += () =>
 		{
 			UIManager.Instance?.PlayClickSound();
-			var camera = GetTree().Root.GetNodeOrNull<CameraControl>("Main/Camera3D");
+			var camera = (GameHost.Instance?.MainCamera as CameraControl);
 			camera?.ZoomIn();
 		};
 
@@ -308,7 +308,7 @@ public partial class MapEditorHUD : Control
 		_btnZoomOut.Pressed += () =>
 		{
 			UIManager.Instance?.PlayClickSound();
-			var camera = GetTree().Root.GetNodeOrNull<CameraControl>("Main/Camera3D");
+			var camera = (GameHost.Instance?.MainCamera as CameraControl);
 			camera?.ZoomOut();
 		};
 
@@ -317,7 +317,7 @@ public partial class MapEditorHUD : Control
 		_btnCenter.Pressed += () =>
 		{
 			UIManager.Instance?.PlayClickSound();
-			var camera = GetTree().Root.GetNodeOrNull<CameraControl>("Main/Camera3D");
+			var camera = (GameHost.Instance?.MainCamera as CameraControl);
 			if (camera != null)
 			{
 				Node3D target = null;
@@ -345,7 +345,7 @@ public partial class MapEditorHUD : Control
 		_btnRotate.Pressed += () =>
 		{
 			UIManager.Instance?.PlayClickSound();
-			var camera = GetTree().Root.GetNodeOrNull<CameraControl>("Main/Camera3D");
+			var camera = (GameHost.Instance?.MainCamera as CameraControl);
 			camera?.Rotate90Degrees();
 		};
 
@@ -355,7 +355,7 @@ public partial class MapEditorHUD : Control
 		GetNode<GridContainer>("MiddleRightBox/PanelZoom/VBox/Content").AddChild(_btnCameraAngle);
 		SetupButton(_btnCameraAngle, "📐 Angle: Tilt", () =>
 		{
-			var camera = GetTree().Root.GetNodeOrNull<CameraControl>("Main/Camera3D");
+			var camera = (GameHost.Instance?.MainCamera as CameraControl);
 			camera?.ToggleTopDown();
 		}, 11, "Toggle top-down vs perspective angle (C)");
 

@@ -404,7 +404,7 @@ public class NetworkService
 
 	public void SetBackupResources(float gold, float wood, float stone)
 	{
-		var worldQuery = new QueryDescription().WithAll<ReplayState>();
+		var worldQuery = Realm.Ecs.Common.QueryCache.AllReplayStateQuery;
 		_ecsWorld.Query(in worldQuery, (Entity entity) =>
 		{
 			ref var state = ref _ecsWorld.Get<ReplayState>(entity);
@@ -869,7 +869,7 @@ public class NetworkService
 	private Entity FindWorldEntity()
 	{
 		Entity worldEntity = Entity.Null;
-		var query = new QueryDescription().WithAll<NetworkState>();
+		var query = Realm.Ecs.Common.QueryCache.AllNetworkStateQuery;
 		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 		return worldEntity;
 	}

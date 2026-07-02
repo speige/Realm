@@ -120,7 +120,7 @@ public partial class LobbyManager : Node
     private int _countdownRemaining;
     private SceneTreeTimer? _countdownTimer;
     private SceneTreeTimer? _diagnosticsTimer;
-    private readonly List<(string Sender, string Message)> _chatHistory = new();
+    private readonly List<(string Sender, string Message, bool IsMuted)> _chatHistory = new();
 
     public void SwitchToNextServer()
     {
@@ -1057,27 +1057,110 @@ public partial class LobbyManager : Node
     {
         if (IsHost)
         {
-            _chatHistory.Add((senderName, message));
-            Rpc(nameof(ReceiveChatMessage), senderName, message);
-            ChatReceived?.Invoke(senderName, message);
+            if (senderName == "System")
+            {
+                _chatHistory.Add((senderName, message, false));
+                Rpc(nameof(ReceiveChatMessage), senderName, message, false);
+                ChatReceived?.Invoke(senderName, message);
+            }
+            else
+            {
+                _ = ProcessAndSendChatMessageAsync(senderName, message);
+            }
         }
         else
         {
-            RpcId(1, nameof(ReceiveChatMessage), senderName, message);
+            RpcId(1, nameof(ReceiveChatMessage), senderName, message, false);
+        }
+    }
+
+    private async Task<bool> IsMessageToxicAsync(string message)
+    {
+        try
+        {
+            string url = "https://api-inference.huggingface.co/models/unitary/multilingual-toxic-xlm-roberta";
+            var payload = new { inputs = message };
+            var jsonContent = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+            using var client = new System.Net.Http.HttpClient();
+            // Optional: If an API key is available, it would be added here like:
+            // client.DefaultRequestHeaders.Add("Authorization", "Bearer YOUR_API_KEY");
+            
+            var response = await client.PostAsync(url, jsonContent);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadAsStringAsync();
+                
+                // Expected format: [[{"label":"toxic","score":0.9}]]
+                using var doc = JsonDocument.Parse(result);
+                if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+                {
+                    var innerArray = doc.RootElement[0];
+                    if (innerArray.ValueKind == JsonValueKind.Array && innerArray.GetArrayLength() > 0)
+                    {
+                        var firstResult = innerArray[0];
+                        if (firstResult.TryGetProperty("label", out var labelProp) && firstResult.TryGetProperty("score", out var scoreProp))
+                        {
+                            string label = labelProp.GetString() ?? "";
+                            double score = scoreProp.GetDouble();
+                            
+                            if (label.Equals("toxic", StringComparison.OrdinalIgnoreCase) && score > 0.8)
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                GD.PrintErr($"[LobbyManager] Toxicity API returned {response.StatusCode}");
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[LobbyManager] Toxicity check failed: {ex.Message}");
+        }
+        
+        return false;
+    }
+
+    private async Task ProcessAndSendChatMessageAsync(string senderName, string message)
+    {
+        bool isToxic = await IsMessageToxicAsync(message);
+        _chatHistory.Add((senderName, message, isToxic));
+        
+        if (isToxic)
+        {
+            int senderId = Multiplayer.GetRemoteSenderId();
+            if (senderId == 0)
+            {
+                senderId = 1;
+            }
+            RpcId(senderId, nameof(ReceiveChatMessage), senderName, message, true);
+        }
+        else
+        {
+            Rpc(nameof(ReceiveChatMessage), senderName, message, false);
+        }
+        
+        if (!isToxic || Multiplayer.GetRemoteSenderId() == 0 || Multiplayer.GetRemoteSenderId() == 1)
+        {
+            ChatReceived?.Invoke(senderName, message);
         }
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void ReceiveChatMessage(string senderName, string message)
+    private void ReceiveChatMessage(string senderName, string message, bool isMuted = false)
     {
         if (IsHost)
         {
-            _chatHistory.Add((senderName, message));
-
-            Rpc(nameof(ReceiveChatMessage), senderName, message);
+            _ = ProcessAndSendChatMessageAsync(senderName, message);
         }
-        
-        ChatReceived?.Invoke(senderName, message);
+        else
+        {
+            ChatReceived?.Invoke(senderName, message);
+        }
     }
 
     public void RequestChatHistory()
@@ -1096,7 +1179,10 @@ public partial class LobbyManager : Node
             int senderId = Multiplayer.GetRemoteSenderId();
             foreach (var chat in _chatHistory)
             {
-                RpcId(senderId, nameof(ReceiveChatMessage), chat.Sender, chat.Message);
+                if (!chat.IsMuted)
+                {
+                    RpcId(senderId, nameof(ReceiveChatMessage), chat.Sender, chat.Message, false);
+                }
             }
         }
     }

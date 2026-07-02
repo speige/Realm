@@ -23,7 +23,7 @@ internal class TechTreeService
 
 		upgrades.WeaponsUpgrade = true;
 
-		var query = new QueryDescription().WithAll<Attack, Owner>().WithNone<Dead, Building>();
+		var query = Realm.Ecs.Common.QueryCache.AllAttackAndOwnerNoneDeadAndBuildingQuery;
 		_ecsWorld.Query(in query, (Entity entity, ref Attack atk, ref Owner owner) =>
 		{
 			if (owner.PlayerEntity.Value == playerEntity)
@@ -42,7 +42,7 @@ internal class TechTreeService
 
 		upgrades.ShieldsUpgrade = true;
 
-		var query = new QueryDescription().WithAll<Armor, Owner>().WithNone<Dead>();
+		var query = Realm.Ecs.Common.QueryCache.AllArmorAndOwnerNoneDeadQuery;
 		_ecsWorld.Query(in query, (Entity entity, ref Armor arm, ref Owner owner) =>
 		{
 			if (owner.PlayerEntity.Value == playerEntity)

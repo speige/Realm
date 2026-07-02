@@ -78,7 +78,7 @@ public partial class GameHost
 		EditorState editor = default;
 		bool foundWorld = false;
 
-		var worldQuery = new QueryDescription().WithAll<TerrainState, EditorState>();
+		var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateAndEditorStateQuery;
 		EcsWorld.Query(in worldQuery, (ref TerrainState t, ref EditorState e) =>
 		{
 			terrain = t;
@@ -134,7 +134,7 @@ public partial class GameHost
 
 		if (!terrainOnly)
 		{
-			var unitSpawnQuery = new QueryDescription().WithAll<UnitSpawnRequest>();
+			var unitSpawnQuery = Realm.Ecs.Common.QueryCache.AllUnitSpawnRequestQuery;
 			var unitRequests = new List<Entity>();
 			EcsWorld.Query(in unitSpawnQuery, (Entity entity) => unitRequests.Add(entity));
 			foreach (var reqEnt in unitRequests)
@@ -144,7 +144,7 @@ public partial class GameHost
 				EcsWorld.Destroy(reqEnt);
 			}
 
-			var propSpawnQuery = new QueryDescription().WithAll<PropSpawnRequest>();
+			var propSpawnQuery = Realm.Ecs.Common.QueryCache.AllPropSpawnRequestQuery;
 			var propRequests = new List<Entity>();
 			EcsWorld.Query(in propSpawnQuery, (Entity entity) => propRequests.Add(entity));
 			foreach (var reqEnt in propRequests)
@@ -154,7 +154,7 @@ public partial class GameHost
 				EcsWorld.Destroy(reqEnt);
 			}
 
-			var decalSpawnQuery = new QueryDescription().WithAll<DecalSpawnRequest>();
+			var decalSpawnQuery = Realm.Ecs.Common.QueryCache.AllDecalSpawnRequestQuery;
 			var decalRequests = new List<Entity>();
 			EcsWorld.Query(in decalSpawnQuery, (Entity entity) => decalRequests.Add(entity));
 			foreach (var reqEnt in decalRequests)

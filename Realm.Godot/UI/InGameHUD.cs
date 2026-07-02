@@ -652,7 +652,7 @@ public partial class InGameHUD : Control
 
 	public void UpdateFPSVisibility()
 	{
-		var fpsLabel = GetTree().Root.GetNodeOrNull<Label>("Main/CanvasLayer/FPS");
+		var fpsLabel = (GameHost.Instance != null ? GameHost.Instance.MainNode?.GetNodeOrNull<Label>("CanvasLayer/FPS") : null);
 		if (fpsLabel != null)
 		{
 			fpsLabel.Visible = GameSettings.DisplayFps;
@@ -1478,10 +1478,10 @@ public partial class InGameHUD : Control
 
 	private void ApplyWeatherEffects(string weather)
 	{
-		var worldEnv = GetTree().Root.GetNodeOrNull<WorldEnvironment>("Main/WorldEnvironment");
+		var worldEnv = (GameHost.Instance != null ? GameHost.Instance.MainNode?.GetNodeOrNull<WorldEnvironment>("WorldEnvironment") : null);
 		if (worldEnv == null || worldEnv.Environment == null) return;
 
-		var mainNode = GetTree().Root.GetNodeOrNull("Main");
+		var mainNode = (GameHost.Instance != null ? GameHost.Instance.MainNode : null);
 		if (mainNode == null) return;
 
 		if (GodotObject.IsInstanceValid(_rainParticles)) { _rainParticles.QueueFree(); _rainParticles = null; }

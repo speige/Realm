@@ -137,7 +137,7 @@ public partial class GameHost
 
 	private void UpdateVisualNodesFromEcs(float fDelta)
 	{
-		var query = new QueryDescription().WithAll<Position, DefinitionId>();
+		var query = Realm.Ecs.Common.QueryCache.AllPositionAndDefinitionIdQuery;
 		EcsWorld.Query(in query, (Entity entity, ref Position pos) =>
 		{
 			if (TryGetUnit3D(entity, out var unit3D) && GodotObject.IsInstanceValid(unit3D))

@@ -21,6 +21,9 @@ using static Realm.Ecs.Common.WorldExtensions;
 
 public partial class GameHost : Node3D, IGameAPI
 {
+	public Camera3D MainCamera { get; private set; }
+	public Node MainNode { get; private set; }
+
 	public static GameHost Instance { get; private set; }
 	internal readonly NavMeshPathfinder _pathfinder = new();
 	public string ActiveMapName { get; private set; } = "melee";
@@ -1103,7 +1106,7 @@ public class {mapName} : IMapScript
 	{
 		Callable.From(() =>
 		{
-			var camera = GetTree().Root.GetNodeOrNull<Camera3D>("Main/Camera3D");
+			var camera = MainCamera;
 			if (camera == null) return;
 
 			var startPos = camera.Position;
@@ -1126,7 +1129,7 @@ public class {mapName} : IMapScript
 	{
 		Callable.From(() =>
 		{
-			var camera = GetTree().Root.GetNodeOrNull<Camera3D>("Main/Camera3D");
+			var camera = MainCamera;
 			if (camera == null) return;
 
 			var targetPos = new Vector3(position.X, camera.Position.Y, position.Z + 15.0f);
@@ -1549,7 +1552,7 @@ public class {mapName} : IMapScript
 		var zones = EcsWorld.Get<ScriptZonesState>(_worldEntity).Zones;
 		if (zones.Count == 0) return;
 
-		var positionQuery = new QueryDescription().WithAll<Position, DefinitionId>().WithNone<Dead>();
+		var positionQuery = Realm.Ecs.Common.QueryCache.AllPositionAndDefinitionIdNoneDeadQuery;
 		EcsWorld.Query(in positionQuery, (Entity entity, ref Position posComp) =>
 		{
 			var pos = new Vector3(posComp.Value.X, posComp.Value.Y, posComp.Value.Z);
@@ -2003,6 +2006,9 @@ public class {mapName} : IMapScript
 
 	public override void _Ready()
 	{
+		MainNode = GetTree().Root.GetNodeOrNull("Main");
+		MainCamera = GetTree().Root.GetNodeOrNull<Camera3D>("Main/Camera3D");
+
 		GD.Print($"[GAMEHOST_READY] GameHost _Ready starting");
 		Instance = this;
 		GameSettings.ApplyGraphicsSettings(this);
@@ -2272,7 +2278,7 @@ public class {mapName} : IMapScript
 			}
 		};
 
-		_fogOfWarService.Initialize(GetTree().Root.GetNodeOrNull("Main"));
+		_fogOfWarService.Initialize(MainNode);
 	}
 
 	private void ReinitializeEcsAndServices()
@@ -2860,7 +2866,7 @@ public class {mapName} : IMapScript
 			bool isReplay = ReplayPlaybackManager.Instance.IsPlayingReplay;
 			bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
 			int spectatorPerspective = InGameHUD.Instance?.LiveSpectatorPerspective ?? -1;
-			_fogOfWarService.Tick(fDelta, AllUnits, GetTree().Root.GetNodeOrNull<Camera3D>("Main/Camera3D"), spectatorPerspective, isReplay, isSpectator);
+			_fogOfWarService.Tick(fDelta, AllUnits, MainCamera, spectatorPerspective, isReplay, isSpectator);
 		}
 
 		TickScheduledTimers(fDelta);

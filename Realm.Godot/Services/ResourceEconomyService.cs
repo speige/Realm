@@ -17,8 +17,8 @@ internal class ResourceEconomyService
 	private float _fDelta;
 
 	private readonly List<(Entity Worker, Gatherer NewState, System.Numerics.Vector3? NewDestination)> _tickGatherersToUpdate = new();
-	private readonly QueryDescription _gatherQuery = new QueryDescription().WithAll<Position, Gatherer>().WithNone<Dead>();
-	private readonly QueryDescription _passiveIncomeQuery = new QueryDescription().WithAll<PlayerResources>().WithNone<Dead>();
+	private readonly QueryDescription _gatherQuery = Realm.Ecs.Common.QueryCache.AllPositionAndGathererNoneDeadQuery;
+	private readonly QueryDescription _passiveIncomeQuery = Realm.Ecs.Common.QueryCache.AllPlayerResourcesNoneDeadQuery;
 
 	private ForEachWithEntity<Position, Gatherer> _gatherQueryDelegate = null!;
 	private ForEachWithEntity<PlayerResources> _passiveIncomeQueryDelegate = null!;
@@ -63,7 +63,7 @@ internal class ResourceEconomyService
 	private Entity FindWorldEntity()
 	{
 		Entity worldEntity = Entity.Null;
-		var query = new QueryDescription().WithAll<WorldState>();
+		var query = Realm.Ecs.Common.QueryCache.AllWorldStateQuery;
 		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 		return worldEntity;
 	}
@@ -123,7 +123,7 @@ internal class ResourceEconomyService
 	{
 		Entity closest = Entity.Null;
 		float closestDist = radius;
-		var query = new QueryDescription().WithAll<Position, ResourceNode, PropIdentity>();
+		var query = Realm.Ecs.Common.QueryCache.AllPositionAndResourceNodeAndPropIdentityQuery;
 		_ecsWorld.Query(in query, (Entity entity, ref Position nodePos, ref PropIdentity identity) =>
 		{
 			string pType = identity.PropId switch
@@ -158,7 +158,7 @@ internal class ResourceEconomyService
 			float nearestDist = float.MaxValue;
 			var wOwner = _ecsWorld.Get<Owner>(entity).PlayerEntity;
 
-			var castleQuery = new QueryDescription().WithAll<Position, DefinitionId, Owner>().WithNone<Dead>();
+			var castleQuery = Realm.Ecs.Common.QueryCache.AllPositionAndDefinitionIdAndOwnerNoneDeadQuery;
 			_ecsWorld.Query(in castleQuery, (Entity castleEntity, ref Position castlePos, ref DefinitionId defId, ref Owner ownerComp) =>
 			{
 				if (defId.Value == "castle" && ownerComp.PlayerEntity == wOwner)
@@ -303,7 +303,7 @@ internal class ResourceEconomyService
 					float nearestDist = float.MaxValue;
 					var wOwner = _ecsWorld.Get<Owner>(entity).PlayerEntity;
 
-					var castleQuery = new QueryDescription().WithAll<Position, DefinitionId, Owner>().WithNone<Dead>();
+					var castleQuery = Realm.Ecs.Common.QueryCache.AllPositionAndDefinitionIdAndOwnerNoneDeadQuery;
 					_ecsWorld.Query(in castleQuery, (Entity castleEntity, ref Position castlePos, ref DefinitionId defId, ref Owner ownerComp) =>
 					{
 						if (defId.Value == "castle" && ownerComp.PlayerEntity == wOwner)

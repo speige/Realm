@@ -1164,7 +1164,7 @@ public class EditorService
 
 	private ref TerrainState GetTerrainState()
 	{
-		var worldQuery = new QueryDescription().WithAll<TerrainState>();
+		var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateQuery;
 		Entity worldEntity = Entity.Null;
 		_ecsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
 		if (worldEntity != Entity.Null && _ecsWorld.IsAlive(worldEntity))
