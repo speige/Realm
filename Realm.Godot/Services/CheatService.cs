@@ -10,11 +10,11 @@ using Realm.Ecs.Services;
 using System;
 using System.Collections.Generic;
 
-public class GameHostCheatService
+public class CheatService
 {
 	private readonly World _ecsWorld;
 
-	public GameHostCheatService(World ecsWorld)
+	public CheatService(World ecsWorld)
 	{
 		_ecsWorld = ecsWorld;
 	}

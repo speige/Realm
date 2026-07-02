@@ -8,11 +8,11 @@ using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Terrain;
 
-public class GameHostSaveLoadService
+public class SaveLoadService
 {
 	private readonly World _ecsWorld;
 
-	public GameHostSaveLoadService(World ecsWorld)
+	public SaveLoadService(World ecsWorld)
 	{
 		_ecsWorld = ecsWorld;
 	}

@@ -5,14 +5,14 @@ using Realm.Ecs.Components.Terrain;
 using System;
 using System.Collections.Generic;
 
-public class GameHostFogOfWarService
+public class FogOfWarService
 {
 	private readonly World _ecsWorld;
 	private MeshInstance3D _fogMeshInstance;
 	private WorldEnvironment _worldEnv;
 	private float _fogUpdateTimer = 0f;
 
-	public GameHostFogOfWarService(World ecsWorld)
+	public FogOfWarService(World ecsWorld)
 	{
 		_ecsWorld = ecsWorld;
 	}

@@ -10,7 +10,7 @@ using Realm.Ecs.Components.Terrain;
 using System;
 using System.Collections.Generic;
 
-public class GameHostEditorService
+public class EditorService
 {
 	private readonly World _ecsWorld;
 	private Color[,] _terrainColors;
@@ -101,7 +101,7 @@ public class GameHostEditorService
 		public List<Node3D> NodesToDelete;
 	}
 
-	public GameHostEditorService(World ecsWorld)
+	public EditorService(World ecsWorld)
 	{
 		_ecsWorld = ecsWorld;
 	}

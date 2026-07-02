@@ -2,11 +2,11 @@ using Arch.Core;
 using Realm.Ecs.Components.Core;
 using System;
 
-public class GameHostSpectatorService
+public class SpectatorService
 {
 	private readonly World _ecsWorld;
 
-	public GameHostSpectatorService(World ecsWorld)
+	public SpectatorService(World ecsWorld)
 	{
 		_ecsWorld = ecsWorld;
 	}

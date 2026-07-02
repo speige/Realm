@@ -7,11 +7,11 @@ using Realm.Ecs.Components.Tags;
 using Realm.Ecs.Components.Terrain;
 using System;
 
-public class GameHostWorldInitService
+public class WorldInitService
 {
 	private readonly World _ecsWorld;
 
-	public GameHostWorldInitService(World ecsWorld)
+	public WorldInitService(World ecsWorld)
 	{
 		_ecsWorld = ecsWorld;
 	}

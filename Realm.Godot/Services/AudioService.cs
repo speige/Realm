@@ -1,6 +1,6 @@
 using Godot;
 
-public class GameHostAudioService
+public class AudioService
 {
 	public void PlayWarningSound()
 	{

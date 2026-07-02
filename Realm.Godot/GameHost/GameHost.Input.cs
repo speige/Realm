@@ -16,7 +16,7 @@ public partial class GameHost
 {
 
 
-	private GameHostInputService _inputService;
+	private InputService _inputService;
 	private PhysicsRayQueryParameters3D? _cachedRaycastQuery;
 
 	public override void _UnhandledInput(InputEvent @event)
@@ -226,7 +226,7 @@ public partial class GameHost
 					{
 						if (SelectedEditorObject is Unit3D unit)
 						{
-							_editorService.SetCopiedObject(new GameHostEditorService.CopiedObjectTemplate {
+							_editorService.SetCopiedObject(new EditorService.CopiedObjectTemplate {
 								Type = "unit",
 								Id = unit.UnitId,
 								Rotation = unit.RotationDegrees.Y,
@@ -237,7 +237,7 @@ public partial class GameHost
 						}
 						else if (SelectedEditorObject is Prop3D prop)
 						{
-							_editorService.SetCopiedObject(new GameHostEditorService.CopiedObjectTemplate {
+							_editorService.SetCopiedObject(new EditorService.CopiedObjectTemplate {
 								Type = "prop",
 								Id = prop.PropId,
 								Rotation = prop.RotationDegrees.Y,
@@ -249,7 +249,7 @@ public partial class GameHost
 						else if (SelectedEditorObject is Decal decal)
 						{
 							string decalId = decal is Decal3D decal3D ? decal3D.DecalId : "logo";
-							_editorService.SetCopiedObject(new GameHostEditorService.CopiedObjectTemplate {
+							_editorService.SetCopiedObject(new EditorService.CopiedObjectTemplate {
 								Type = "decal",
 								Id = decalId,
 								Rotation = decal.RotationDegrees.Y,
@@ -2415,7 +2415,7 @@ public partial class GameHost
 		{
 			if (SelectedEditorObject is Unit3D unit)
 			{
-				_editorService.SetCopiedObject(new GameHostEditorService.CopiedObjectTemplate {
+				_editorService.SetCopiedObject(new EditorService.CopiedObjectTemplate {
 					Type = "unit",
 					Id = unit.UnitId,
 					Rotation = unit.RotationDegrees.Y,
@@ -2426,7 +2426,7 @@ public partial class GameHost
 			}
 			else if (SelectedEditorObject is Prop3D prop)
 			{
-				_editorService.SetCopiedObject(new GameHostEditorService.CopiedObjectTemplate {
+				_editorService.SetCopiedObject(new EditorService.CopiedObjectTemplate {
 					Type = "prop",
 					Id = prop.PropId,
 					Rotation = prop.RotationDegrees.Y,
@@ -2438,7 +2438,7 @@ public partial class GameHost
 			else if (SelectedEditorObject is Decal decal)
 			{
 				string decalId = decal is Decal3D decal3D ? decal3D.DecalId : "logo";
-				_editorService.SetCopiedObject(new GameHostEditorService.CopiedObjectTemplate {
+				_editorService.SetCopiedObject(new EditorService.CopiedObjectTemplate {
 					Type = "decal",
 					Id = decalId,
 					Rotation = decal.RotationDegrees.Y,

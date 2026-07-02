@@ -8,7 +8,7 @@ using System.Collections.Generic;
 
 public partial class GameHost
 {
-	private GameHostNetworkService _networkService;
+	private NetworkService _networkService;
 
 	public int GetOwnerPeerId(Entity unitEntity) => _networkService.GetOwnerPeerId(unitEntity);
 

@@ -11,7 +11,7 @@ using Realm.Ecs.Components.Tags;
 using Realm.Ecs.Services;
 using System.Collections.Generic;
 
-public class GameHostNetworkService
+public class NetworkService
 {
 	private readonly World _ecsWorld;
 
@@ -31,7 +31,7 @@ public class GameHostNetworkService
 		public double SendTime;
 	}
 
-	public GameHostNetworkService(World ecsWorld)
+	public NetworkService(World ecsWorld)
 	{
 		_ecsWorld = ecsWorld;
 	}

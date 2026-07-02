@@ -9,13 +9,13 @@ using Realm.Ecs.Components.Resources;
 using Realm.Ecs.Components.Tags;
 using Realm.Godot.ReplaySystem;
 
-public class GameHostReplayService
+public class ReplayService
 {
 	private readonly World _ecsWorld;
 	private ReplayRecorder _replayRecorder;
 	private readonly Dictionary<int, ReplayUnitSnapshot> _lastRecordedUnits = new();
 
-	public GameHostReplayService(World ecsWorld)
+	public ReplayService(World ecsWorld)
 	{
 		_ecsWorld = ecsWorld;
 	}

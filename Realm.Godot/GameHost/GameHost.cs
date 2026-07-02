@@ -25,25 +25,25 @@ public partial class GameHost : Node3D, IGameAPI
 	internal readonly NavMeshPathfinder _pathfinder = new();
 	public string ActiveMapName { get; private set; } = "melee";
 
-	private readonly GameHostAudioService _audioService = new();
-	private readonly GameHostFXService _fxService = new();
-	private GameHostSaveLoadService _saveLoadService;
-	private GameHostEditorService _editorService;
-	private GameHostReplayService _replayService;
+	private readonly AudioService _audioService = new();
+	private readonly FXService _fxService = new();
+	private SaveLoadService _saveLoadService;
+	private EditorService _editorService;
+	private ReplayService _replayService;
 	private SimulationService _simulationService;
-	private GameHostFogOfWarService _fogOfWarService;
+	private FogOfWarService _fogOfWarService;
 	private UnitSpawnService _unitSpawnService;
-	private GameHostWorldInitService _worldInitService;
+	private WorldInitService _worldInitService;
 	private MapPropertiesLoader _mapPropertiesLoader;
 	private MapEditorTerrainImportService _terrainImportService;
-	private GameHostCheatService _cheatService;
-	private GameHostEnvironmentService _environmentService;
-	private GameHostSpectatorService _spectatorService;
+	private CheatService _cheatService;
+	private EnvironmentService _environmentService;
+	private SpectatorService _spectatorService;
 	private TechTreeService _techTreeService;
 
-	public GameHostCheatService CheatService => _cheatService;
-	public GameHostEnvironmentService EnvironmentService => _environmentService;
-	public GameHostSpectatorService SpectatorService => _spectatorService;
+	public CheatService CheatService => _cheatService;
+	public EnvironmentService EnvironmentService => _environmentService;
+	public SpectatorService SpectatorService => _spectatorService;
 
 	private float _fDelta;
 
@@ -1998,20 +1998,20 @@ public class {mapName} : IMapScript
 
 	private void InitializeServices()
 	{
-		_saveLoadService = new GameHostSaveLoadService(EcsWorld);
-		_editorService = new GameHostEditorService(EcsWorld);
-		_replayService = new GameHostReplayService(EcsWorld);
-		_networkService = new GameHostNetworkService(EcsWorld);
+		_saveLoadService = new SaveLoadService(EcsWorld);
+		_editorService = new EditorService(EcsWorld);
+		_replayService = new ReplayService(EcsWorld);
+		_networkService = new NetworkService(EcsWorld);
 		_techTreeService = new TechTreeService(EcsWorld);
-		_inputService = new GameHostInputService(EcsWorld, _techTreeService);
-		_fogOfWarService = new GameHostFogOfWarService(EcsWorld);
+		_inputService = new InputService(EcsWorld, _techTreeService);
+		_fogOfWarService = new FogOfWarService(EcsWorld);
 		_unitSpawnService = new UnitSpawnService(EcsWorld);
-		_worldInitService = new GameHostWorldInitService(EcsWorld);
+		_worldInitService = new WorldInitService(EcsWorld);
 		_mapPropertiesLoader = new MapPropertiesLoader(EcsWorld);
 		_terrainImportService = new MapEditorTerrainImportService(EcsWorld);
-		_cheatService = new GameHostCheatService(EcsWorld);
-		_environmentService = new GameHostEnvironmentService(EcsWorld);
-		_spectatorService = new GameHostSpectatorService(EcsWorld);
+		_cheatService = new CheatService(EcsWorld);
+		_environmentService = new EnvironmentService(EcsWorld);
+		_spectatorService = new SpectatorService(EcsWorld);
 	}
 
 	private void InitializeGameEcs()

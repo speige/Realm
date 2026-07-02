@@ -10,13 +10,13 @@ using Realm.Ecs.Services;
 using System;
 using System.Collections.Generic;
 
-internal class GameHostInputService
+internal class InputService
 {
 	private readonly World _ecsWorld;
 	private readonly TechTreeService _techTreeService;
 	private int _buildingCycleIndex = 0;
 
-	public GameHostInputService(World ecsWorld, TechTreeService techTreeService)
+	public InputService(World ecsWorld, TechTreeService techTreeService)
 	{
 		_ecsWorld = ecsWorld;
 		_techTreeService = techTreeService;

@@ -3,7 +3,7 @@ using Realm.MapAPI;
 using System;
 using System.Collections.Generic;
 
-public class GameHostFXService
+public class FXService
 {
 	public void SpawnFireblastEffect(Node3D parent, Vector3 position)
 	{

@@ -4,11 +4,11 @@ using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Terrain;
 using System;
 
-public class GameHostEnvironmentService
+public class EnvironmentService
 {
 	private readonly World _ecsWorld;
 
-	public GameHostEnvironmentService(World ecsWorld)
+	public EnvironmentService(World ecsWorld)
 	{
 		_ecsWorld = ecsWorld;
 	}

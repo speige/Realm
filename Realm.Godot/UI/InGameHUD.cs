@@ -1589,23 +1589,23 @@ public partial class InGameHUD : Control
 			selectedEntities
 		);
 
-		if (result == GameHostCheatService.CheatResult.None)
+		if (result == CheatService.CheatResult.None)
 		{
 			return false;
 		}
 
 		switch (result)
 		{
-			case GameHostCheatService.CheatResult.Stonks:
+			case CheatService.CheatResult.Stonks:
 				ShowFeedbackText("Cheat Activated: Stonks! (+10,000 resources)", new Color(0.95f, 0.82f, 0.55f));
 				_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'stonks' activated. Added 10,000 resources.")}[/color]\n";
 				break;
-			case GameHostCheatService.CheatResult.Gigachad:
+			case CheatService.CheatResult.Gigachad:
 				ShowFeedbackText($"Cheat Activated: Gigachad Main Character Energy! ({affectedCount} units empowered)", new Color(1.0f, 0.3f, 0.1f));
 				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'gigachad' activated. Powered up {0} units."), affectedCount)}[/color]\n";
 				RefreshUI(GameHost.Instance.SelectedUnits);
 				break;
-			case GameHostCheatService.CheatResult.AbsoluteUnit:
+			case CheatService.CheatResult.AbsoluteUnit:
 				foreach (var unit in GameHost.Instance.SelectedUnits)
 				{
 					if (GodotObject.IsInstanceValid(unit))
@@ -1617,17 +1617,17 @@ public partial class InGameHUD : Control
 				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'absoluteunit' activated. Gigantified {0} units with super speed!"), affectedCount)}[/color]\n";
 				RefreshUI(GameHost.Instance.SelectedUnits);
 				break;
-			case GameHostCheatService.CheatResult.ThanosSnap:
+			case CheatService.CheatResult.ThanosSnap:
 				ShowFeedbackText($"Cheat Activated: Thanos Snapped. Destroyed {affectedCount} enemies.", new Color(0.9f, 0.1f, 0.1f));
 				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'thanossnap' activated. Slain {0} enemy units."), affectedCount)}[/color]\n";
 				break;
-			case GameHostCheatService.CheatResult.EzClap:
+			case CheatService.CheatResult.EzClap:
 				ShowFeedbackText("Cheat Activated: EZ Clap Speedrun!", new Color(0.1f, 0.9f, 0.2f));
 				_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'ezclap' activated. Proceeding to Victory.")}[/color]\n";
 				UIManager.Instance?.PlayClickSound();
 				UIManager.Instance?.TransitionTo(GameScreen.GameOver, true);
 				break;
-			case GameHostCheatService.CheatResult.NoCap:
+			case CheatService.CheatResult.NoCap:
 				ShowFeedbackText("Cheat Activated: Fog of War removed! No cap.", new Color(0.2f, 0.8f, 0.5f));
 				_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'nocap' activated. Fog of War disabled.")}[/color]\n";
 				break;
