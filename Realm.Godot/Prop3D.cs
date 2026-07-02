@@ -16,8 +16,6 @@ public partial class Prop3D : StaticBody3D
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity)
 				&& GameHost.Instance.EcsWorld.Has<PropIdentity>(Entity))
 				return GameHost.Instance.EcsWorld.Get<PropIdentity>(Entity).PropId;
-			if (HasMeta("prop_id"))
-				return GetMeta("prop_id").AsString();
 			return "tree";
 		}
 		set
@@ -29,10 +27,6 @@ public partial class Prop3D : StaticBody3D
 					world.Set(Entity, new PropIdentity(value));
 				else
 					world.Add(Entity, new PropIdentity(value));
-			}
-			else
-			{
-				SetMeta("prop_id", value);
 			}
 		}
 	}

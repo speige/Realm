@@ -95,16 +95,8 @@ internal class UnitSpawnService
 		};
 	}
 
-	public Entity CreateEcsUnitEntity(string id, string name, float hp, float damage, float range, float armor, float speed, Vector3 pos, Realm.Ecs.Common.PlayerEntity owner, Entity playerEntity, bool hasShieldsUpgrade, bool hasWeaponsUpgrade)
+	public Entity CreateEcsUnitEntity(string id, string name, float hp, float damage, float range, float armor, float speed, float scanRadius, bool isHero, float attackCooldown, int pathingFlags, Vector3 pos, Realm.Ecs.Common.PlayerEntity owner, Entity playerEntity, bool hasShieldsUpgrade, bool hasWeaponsUpgrade)
 	{
-		float cooldown = 1.5f;
-		bool isHero = false;
-		if (GameHost.UnitRegistry.TryGetValue(id, out var regMeta))
-		{
-			cooldown = regMeta.AttackCooldown > 0 ? regMeta.AttackCooldown : 1.5f;
-			isHero = regMeta.IsHero;
-		}
-
 		var entity = _ecsWorld.Create();
 		_ecsWorld.Add(entity, new DefinitionId(id));
 		_ecsWorld.Add(entity, new Name(name));
@@ -135,14 +127,17 @@ internal class UnitSpawnService
 
 		if (damage > 0 || id == "priest")
 		{
-			_ecsWorld.Add(entity, new Attack(damage, range, cooldown));
+			_ecsWorld.Add(entity, new Attack(damage, range, attackCooldown));
 		}
 
 		_ecsWorld.Add(entity, new Armor(armor));
+		_ecsWorld.Add(entity, new CollisionScale(1.0f));
+		_ecsWorld.Add(entity, new ScanRadius(scanRadius));
 
 		if (speed > 0)
 		{
 			_ecsWorld.Add(entity, new MovementStats(speed, 20f, 10f));
+			_ecsWorld.Add(entity, new PathingFlags(pathingFlags));
 			_ecsWorld.Add(entity, new Realm.Ecs.Components.Tags.Movable());
 			_ecsWorld.Add(entity, new Inventory(1));
 		}

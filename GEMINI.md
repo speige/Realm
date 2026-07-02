@@ -29,6 +29,7 @@
 - The core ECS classes and data must be kept internal.
 - Keep system logic separated from presentation. Physics process query loops in `GameHost.cs` should inspect and manipulate ECS data via components, updating `Unit3D` / `Prop3D` nodes accordingly.
 - Do not store Godot lifecycle elements, scene nodes, or UI references directly inside ECS components. Components must remain pure unmanaged data.
+- All QueryDescription instances should be created 1x as public readonly fields in `QueryCache.cs` and re-used across the application
 
 ### Logic Services:
 - Classes inheriting from Godot should have minimal orchestration logic, deferring complex logic to domain-specific services.

@@ -248,7 +248,7 @@ public partial class GameHost
 						}
 						else if (SelectedEditorObject is Decal decal)
 						{
-							string decalId = decal.HasMeta("DecalId") ? decal.GetMeta("DecalId").AsString() : "logo";
+							string decalId = decal is Decal3D decal3D ? decal3D.DecalId : "logo";
 							_editorService.SetCopiedObject(new GameHostEditorService.CopiedObjectTemplate {
 								Type = "decal",
 								Id = decalId,
@@ -403,7 +403,7 @@ public partial class GameHost
 						}
 						else if (SelectedEditorObject is Decal decal)
 						{
-							string decalId = decal.HasMeta("DecalId") ? decal.GetMeta("DecalId").AsString() : "logo";
+							string decalId = decal is Decal3D decal3D ? decal3D.DecalId : "logo";
 							clonedNode = SpawnDecalExternalWithParams(decalId, spawnPos, rotY, scaleVal);
 							if (clonedNode != null)
 							{
@@ -1086,7 +1086,7 @@ public partial class GameHost
 							}
 							else if (clickedNode is Decal decal)
 							{
-								string decalId = decal.HasMeta("DecalId") ? decal.GetMeta("DecalId").AsString() : "logo";
+								string decalId = decal is Decal3D decal3D ? decal3D.DecalId : "logo";
 								if (MapEditorHUD.Instance != null)
 								{
 									MapEditorHUD.Instance.SelectPickedDecal(decalId);
@@ -2437,7 +2437,7 @@ public partial class GameHost
 			}
 			else if (SelectedEditorObject is Decal decal)
 			{
-				string decalId = decal.HasMeta("DecalId") ? decal.GetMeta("DecalId").AsString() : "logo";
+				string decalId = decal is Decal3D decal3D ? decal3D.DecalId : "logo";
 				_editorService.SetCopiedObject(new GameHostEditorService.CopiedObjectTemplate {
 					Type = "decal",
 					Id = decalId,
@@ -2642,7 +2642,8 @@ public partial class GameHost
 					UIManager.Instance.PlayClickSound();
 				}
 
-				DealSpellDamageAOE(position, 4.0f, 50f);
+				_simulationService.DealSpellDamageAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 4.0f, 50f, SelectedUnits.Count > 0 ? SelectedUnits[0].Entity : Entity.Null);
+				InGameHUD.Instance?.RefreshUI(SelectedUnits);
 			}
 		}
 		else if (spellId == "lightning")
@@ -2664,7 +2665,8 @@ public partial class GameHost
 					UIManager.Instance.PlayClickSound();
 				}
 
-				DealSpellDamageAOE(position, 2.0f, 80f);
+				_simulationService.DealSpellDamageAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 2.0f, 80f, SelectedUnits.Count > 0 ? SelectedUnits[0].Entity : Entity.Null);
+				InGameHUD.Instance?.RefreshUI(SelectedUnits);
 			}
 		}
 		else if (spellId == "holylight")
@@ -2686,7 +2688,8 @@ public partial class GameHost
 					UIManager.Instance.PlayClickSound();
 				}
 
-				HealAOE(position, 4.0f, 60f);
+				_simulationService.HealAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 4.0f, 60f);
+				InGameHUD.Instance?.RefreshUI(SelectedUnits);
 			}
 		}
 	}
@@ -2696,9 +2699,8 @@ public partial class GameHost
 		float costGold = 50f;
 		if (InGameHUD.Instance != null && InGameHUD.Instance.Gold >= costGold)
 		{
-			if (EcsWorld.Has<Unit3D>(castleEntity))
+			if (GameHost.TryGetUnit3D(castleEntity, out var castle3D))
 			{
-				var castle3D = EcsWorld.Get<Unit3D>(castleEntity);
 				var selectedEntity = SelectedUnits.Count > 0 ? SelectedUnits[0].Entity : Entity.Null;
 
 				if (_inputService.BuyHealingPotion(_playerEntity, new System.Numerics.Vector3(castle3D.GlobalPosition.X, castle3D.GlobalPosition.Y, castle3D.GlobalPosition.Z), selectedEntity, out Entity targetUnitEntity))
@@ -3332,7 +3334,7 @@ public partial class GameHost
 		return _inputService.IsPositionBlocked(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z), radius, ignoreEntity);
 	}
 
-	public Unit3D SpawnUnitFromProduction(string unitId, Vector3 position, bool isEnemy, Vector3? rallyPoint = null, bool isFromQueue = false)
+	public Unit3D SpawnUnitFromProduction(string unitId, System.Numerics.Vector3 position, bool isEnemy, System.Numerics.Vector3? rallyPoint = null, bool isFromQueue = false)
 	{
 		if (!UnitRegistry.TryGetValue(unitId, out var meta)) return null;
 
@@ -3340,26 +3342,16 @@ public partial class GameHost
 		
 		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(unitId, meta.Speed == 0f);
 
-		string name = meta.Name;
-		if (isEnemy)
-		{
-			if (unitId == "worker") name = "Orc Worker";
-			else if (unitId == "soldier") name = "Orc Raider";
-			else if (unitId == "archer") name = "Dark Archer";
-			else if (unitId == "priest") name = "Orc Shaman";
-			else if (unitId == "castle") name = "Orc Stronghold";
-			else if (unitId == "tower") name = "Orc Totem Tower";
-		}
+		string name = isEnemy ? _unitSpawnService.GetEnemyUnitName(unitId, meta.Name) : meta.Name;
 
-		var entity = CreateEcsUnit(unitId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, position, playerOwner);
+		var godotPosition = new Vector3(position.X, position.Y, position.Z);
+		var entity = CreateEcsUnit(unitId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, godotPosition, playerOwner);
 
-		var unit3D = SpawnUnit3D(entity, unitId, modelPath, position, meta.Speed == 0f, isEnemy, isFromQueue);
+		var unit3D = SpawnUnit3D(entity, unitId, modelPath, godotPosition, meta.Speed == 0f, isEnemy, isFromQueue);
 
 		if (rallyPoint.HasValue && meta.Speed > 0f)
 		{
-			var rpVal = rallyPoint.Value;
-			var moveTo = new MoveTo(new System.Numerics.Vector3(rpVal.X, rpVal.Y, rpVal.Z));
-			EcsWorld.Add(entity, moveTo);
+			EcsWorld.Add(entity, new MoveTo(rallyPoint.Value));
 		}
 		return unit3D;
 	}

@@ -893,7 +893,7 @@ public class GameHostEditorService
 				}
 				else if (n3d is Decal decal)
 				{
-					string decalId = decal.HasMeta("DecalId") ? decal.GetMeta("DecalId").AsString() : "logo";
+					string decalId = decal is Decal3D decal3D ? decal3D.DecalId : "logo";
 					entities.Add(new CopiedEntityInfo
 					{
 						Type = "decal",

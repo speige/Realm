@@ -1,5 +1,4 @@
 using Arch.Core;
-using Godot;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Combat;
@@ -17,25 +16,25 @@ internal class CombatAndDamageService
 	private const float UnderAttackAlertCooldown = 8f;
 
 	private Entity _scanAttackerEntity;
-	private Vector3 _scanAttackerPos;
+	private System.Numerics.Vector3 _scanAttackerPos;
 	private PlayerEntity _scanAttackerOwner;
 	private bool _scanIsAttackerEnemy;
 	private float _scanClosestDist;
 	private Entity _scanClosestEnemy;
 
-	private Vector3 _scanPriestPos;
+	private System.Numerics.Vector3 _scanPriestPos;
 	private PlayerEntity _scanFriendlyOwner;
 	private float _scanFriendlyClosestDist;
 	private Entity _scanClosestDamagedFriendly;
 
 	private readonly List<(Entity Attacker, AttackTarget Target)> _tickNewAttackTargets = new();
 	private readonly List<Entity> _tickActionsToRemoveTarget = new();
-	private readonly List<(Entity Attacker, Vector3 TargetPos)> _tickActionsToChase = new();
+	private readonly List<(Entity Attacker, System.Numerics.Vector3 TargetPos)> _tickActionsToChase = new();
 	private readonly List<Entity> _tickActionsToStopChasing = new();
-	private readonly List<(Entity Entity, Unit3D Unit)> _tickUnitsToKill = new();
+	private readonly List<Entity> _tickUnitsToKill = new();
 	private readonly List<(Entity Priest, HealingTarget Target)> _tickNewHealingTargets = new();
 	private readonly List<Entity> _tickHealRemoveTargets = new();
-	private readonly List<(Entity Priest, Vector3 TargetPos)> _tickHealChaseTargets = new();
+	private readonly List<(Entity Priest, System.Numerics.Vector3 TargetPos)> _tickHealChaseTargets = new();
 	private readonly List<Entity> _tickHealStopChasing = new();
 
 	private readonly QueryDescription _enemyQuery = new QueryDescription().WithAll<Position, Owner>().WithNone<Dead>();
@@ -52,13 +51,13 @@ internal class CombatAndDamageService
 	private ForEachWithEntity<Position, Health, Owner> _friendlyScanQueryDelegate = null!;
 	private ForEachWithEntity<Position, Attack, HealingTarget, Owner> _healingExecutionQueryDelegate = null!;
 
-	public Action<Vector3, Vector3> OnArrowProjectileRequested;
-	public Action<Unit3D> OnDamageFlashRequested;
-	public Action<Vector3, Vector3> OnHealEffectRequested;
-	public Action<Unit3D> OnHealFlashRequested;
-	public Action<Unit3D, Unit3D, float> OnUnitDamagedCallback;
+	public Action<System.Numerics.Vector3, System.Numerics.Vector3> OnArrowProjectileRequested;
+	public Action<Entity> OnDamageFlashRequested;
+	public Action<System.Numerics.Vector3, System.Numerics.Vector3> OnHealEffectRequested;
+	public Action<Entity> OnHealFlashRequested;
+	public Action<Entity, Entity, float> OnUnitDamagedCallback;
 	public Action<string> OnUnderAttackAlertRequested;
-	public Action<Entity, Unit3D> OnKillUnitRequested;
+	public Action<Entity> OnKillUnitRequested;
 
 	public CombatAndDamageService(World ecsWorld)
 	{
@@ -171,13 +170,9 @@ internal class CombatAndDamageService
 
 		if (isIdle || isAttackMove || isPatrol)
 		{
-			float scanRadius = 15.0f;
-			if (_ecsWorld.Has<DefinitionId>(entity))
-			{
-				string defId = _ecsWorld.Get<DefinitionId>(entity).Value;
-				if (GameHost.UnitRegistry.TryGetValue(defId, out var metaReg) && metaReg.ScanRadius > 0)
-					scanRadius = metaReg.ScanRadius;
-			}
+			float scanRadius = _ecsWorld.Has<ScanRadius>(entity)
+				? _ecsWorld.Get<ScanRadius>(entity).Value
+				: 15.0f;
 
 			if (GetTimeOfDayIndex() == 2)
 			{
@@ -185,12 +180,12 @@ internal class CombatAndDamageService
 			}
 
 			_scanAttackerEntity = entity;
-			_scanAttackerPos = new Vector3(pos.Value.X, pos.Value.Y, pos.Value.Z);
+			_scanAttackerPos = pos.Value;
 			_scanAttackerOwner = owner.PlayerEntity;
 			_scanIsAttackerEnemy = false;
-			if (_ecsWorld.Has<Unit3D>(entity))
+			if (_ecsWorld.Has<UnitFaction>(entity))
 			{
-				_scanIsAttackerEnemy = _ecsWorld.Get<Unit3D>(entity).IsEnemy;
+				_scanIsAttackerEnemy = _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
 			}
 			_scanClosestDist = scanRadius;
 			_scanClosestEnemy = Entity.Null;
@@ -208,12 +203,10 @@ internal class CombatAndDamageService
 	{
 		if (enemyOwner.PlayerEntity != _scanAttackerOwner)
 		{
-			var enemy3D = _ecsWorld.Has<Unit3D>(potentialEnemy) ? _ecsWorld.Get<Unit3D>(potentialEnemy) : null;
-			bool isEnemyEntity = enemy3D != null && enemy3D.IsEnemy;
+			bool isEnemyEntity = _ecsWorld.Has<UnitFaction>(potentialEnemy) && _ecsWorld.Get<UnitFaction>(potentialEnemy).IsEnemy;
 			if (isEnemyEntity != _scanIsAttackerEnemy)
 			{
-				var ePos = new Vector3(enemyPos.Value.X, enemyPos.Value.Y, enemyPos.Value.Z);
-				float dist = _scanAttackerPos.DistanceTo(ePos);
+				float dist = System.Numerics.Vector3.Distance(_scanAttackerPos, enemyPos.Value);
 				if (dist < _scanClosestDist)
 				{
 					_scanClosestDist = dist;
@@ -232,14 +225,14 @@ internal class CombatAndDamageService
 
 		_ecsWorld.Query(in _combatQuery, _combatQueryDelegate);
 
-		foreach (var (targetEntity, target3D) in _tickUnitsToKill)
+		foreach (var targetEntity in _tickUnitsToKill)
 		{
 			if (_ecsWorld.IsAlive(targetEntity))
 			{
 				if (!_ecsWorld.Has<Dead>(targetEntity))
 				{
 					_ecsWorld.Add<Dead>(targetEntity);
-					OnKillUnitRequested?.Invoke(targetEntity, target3D);
+					OnKillUnitRequested?.Invoke(targetEntity);
 				}
 			}
 		}
@@ -279,7 +272,7 @@ internal class CombatAndDamageService
 		{
 			if (_ecsWorld.IsAlive(attacker))
 			{
-				var moveTo = new MoveTo(new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
+				var moveTo = new MoveTo(targetPos);
 				if (_ecsWorld.Has<MoveTo>(attacker))
 					_ecsWorld.Set(attacker, moveTo);
 				else
@@ -295,10 +288,9 @@ internal class CombatAndDamageService
 				{
 					_ecsWorld.Remove<MoveTo>(attacker);
 				}
-				if (_ecsWorld.Has<Unit3D>(attacker))
+				if (_ecsWorld.Has<Velocity>(attacker))
 				{
-					var unit3D = _ecsWorld.Get<Unit3D>(attacker);
-					unit3D.Velocity = Vector3.Zero;
+					_ecsWorld.Set(attacker, new Velocity(System.Numerics.Vector3.Zero));
 				}
 			}
 		}
@@ -313,26 +305,13 @@ internal class CombatAndDamageService
 		}
 
 		var targetPosComp = _ecsWorld.Get<Position>(target.Target);
-		var currentPos = new Vector3(pos.Value.X, pos.Value.Y, pos.Value.Z);
-		var targetPos = new Vector3(targetPosComp.Value.X, targetPosComp.Value.Y, targetPosComp.Value.Z);
+		var currentPos = pos.Value;
+		var targetPos = targetPosComp.Value;
 
-		float dist = currentPos.DistanceTo(targetPos);
+		float dist = System.Numerics.Vector3.Distance(currentPos, targetPos);
 		if (dist <= atk.Range)
 		{
 			_tickActionsToStopChasing.Add(entity);
-
-			if (_ecsWorld.Has<Unit3D>(entity))
-			{
-				var unit3D = _ecsWorld.Get<Unit3D>(entity);
-				Vector3 dir = (targetPos - currentPos).Normalized();
-				if (dir.LengthSquared() > 0.01f)
-				{
-					float angle = Mathf.Atan2(-dir.X, -dir.Z);
-					var rot = unit3D.Rotation;
-					rot.Y = Mathf.LerpAngle(rot.Y, angle, 10f * _fDelta);
-					unit3D.Rotation = rot;
-				}
-			}
 
 			if (atk.CurrentCooldown <= 0)
 			{
@@ -357,24 +336,22 @@ internal class CombatAndDamageService
 					_ecsWorld.Add(target.Target, new LastAttacker(entity));
 				}
 
-				OnUnitDamagedCallback?.Invoke(
-					_ecsWorld.Has<Unit3D>(target.Target) ? _ecsWorld.Get<Unit3D>(target.Target) : null,
-					_ecsWorld.Has<Unit3D>(entity) ? _ecsWorld.Get<Unit3D>(entity) : null,
-					damage);
+				OnUnitDamagedCallback?.Invoke(target.Target, entity, damage);
 
 				float newHp = Math.Max(0, targetHealth.Current - damage);
 				_ecsWorld.Set(target.Target, new Health(newHp, targetHealth.Max));
 
-				if (_ecsWorld.Has<Unit3D>(target.Target))
+				if (_ecsWorld.Has<DefinitionId>(target.Target))
 				{
-					var targetUnit3D_alert = _ecsWorld.Get<Unit3D>(target.Target);
-					if (!targetUnit3D_alert.IsEnemy)
+					string targetUnitId = _ecsWorld.Get<DefinitionId>(target.Target).Value;
+					bool targetIsEnemy = _ecsWorld.Has<UnitFaction>(target.Target) && _ecsWorld.Get<UnitFaction>(target.Target).IsEnemy;
+					if (!targetIsEnemy)
 					{
 						float currentTimer = GetCombatAlertTimer();
 						if (currentTimer <= 0f)
 						{
 							SetCombatAlertTimer(UnderAttackAlertCooldown);
-							OnUnderAttackAlertRequested?.Invoke(targetUnit3D_alert.UnitId);
+							OnUnderAttackAlertRequested?.Invoke(targetUnitId);
 						}
 					}
 				}
@@ -393,24 +370,18 @@ internal class CombatAndDamageService
 
 				atk.CurrentCooldown = atk.Cooldown;
 
-				if (_ecsWorld.Has<Unit3D>(target.Target))
+				if (atk.Range > 3f)
 				{
-					var target3D = _ecsWorld.Get<Unit3D>(target.Target);
+					OnArrowProjectileRequested?.Invoke(currentPos, targetPos);
+				}
 
-					if (atk.Range > 3f && _ecsWorld.Has<Unit3D>(entity))
-					{
-						var attacker3D = _ecsWorld.Get<Unit3D>(entity);
-						OnArrowProjectileRequested?.Invoke(attacker3D.GlobalPosition, target3D.GlobalPosition);
-					}
-
-					if (newHp <= 0)
-					{
-						_tickUnitsToKill.Add((target.Target, target3D));
-					}
-					else
-					{
-						OnDamageFlashRequested?.Invoke(target3D);
-					}
+				if (newHp <= 0)
+				{
+					_tickUnitsToKill.Add(target.Target);
+				}
+				else
+				{
+					OnDamageFlashRequested?.Invoke(target.Target);
 				}
 			}
 		}
@@ -458,7 +429,7 @@ internal class CombatAndDamageService
 		{
 			if (_ecsWorld.IsAlive(priest))
 			{
-				var moveTo = new MoveTo(new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
+				var moveTo = new MoveTo(targetPos);
 				if (_ecsWorld.Has<MoveTo>(priest)) _ecsWorld.Set(priest, moveTo);
 				else _ecsWorld.Add(priest, moveTo);
 			}
@@ -469,10 +440,9 @@ internal class CombatAndDamageService
 			if (_ecsWorld.IsAlive(priest))
 			{
 				if (_ecsWorld.Has<MoveTo>(priest)) _ecsWorld.Remove<MoveTo>(priest);
-				if (_ecsWorld.Has<Unit3D>(priest))
+				if (_ecsWorld.Has<Velocity>(priest))
 				{
-					var unit3D = _ecsWorld.Get<Unit3D>(priest);
-					unit3D.Velocity = Vector3.Zero;
+					_ecsWorld.Set(priest, new Velocity(System.Numerics.Vector3.Zero));
 				}
 			}
 		}
@@ -482,8 +452,7 @@ internal class CombatAndDamageService
 	{
 		if (fOwner.PlayerEntity == _scanFriendlyOwner && fHealth.Current < fHealth.Max)
 		{
-			var fPos = new Vector3(fPosComp.Value.X, fPosComp.Value.Y, fPosComp.Value.Z);
-			float dist = _scanPriestPos.DistanceTo(fPos);
+			float dist = System.Numerics.Vector3.Distance(_scanPriestPos, fPosComp.Value);
 			if (dist < _scanFriendlyClosestDist)
 			{
 				_scanFriendlyClosestDist = dist;
@@ -501,7 +470,7 @@ internal class CombatAndDamageService
 			{
 				_scanClosestDamagedFriendly = Entity.Null;
 				_scanFriendlyClosestDist = 15.0f;
-				_scanPriestPos = new Vector3(pos.Value.X, pos.Value.Y, pos.Value.Z);
+				_scanPriestPos = pos.Value;
 				_scanFriendlyOwner = owner.PlayerEntity;
 
 				_ecsWorld.Query(in _friendlyScanQuery, _friendlyScanQueryDelegate);
@@ -530,26 +499,13 @@ internal class CombatAndDamageService
 		}
 
 		var targetPosComp = _ecsWorld.Get<Position>(target.Target);
-		var currentPos = new Vector3(pos.Value.X, pos.Value.Y, pos.Value.Z);
-		var targetPos = new Vector3(targetPosComp.Value.X, targetPosComp.Value.Y, targetPosComp.Value.Z);
+		var currentPos = pos.Value;
+		var targetPos = targetPosComp.Value;
 
-		float dist = currentPos.DistanceTo(targetPos);
+		float dist = System.Numerics.Vector3.Distance(currentPos, targetPos);
 		if (dist <= atk.Range)
 		{
 			_tickHealStopChasing.Add(entity);
-
-			if (_ecsWorld.Has<Unit3D>(entity))
-			{
-				var unit3D = _ecsWorld.Get<Unit3D>(entity);
-				Vector3 dir = (targetPos - currentPos).Normalized();
-				if (dir.LengthSquared() > 0.01f)
-				{
-					float angle = Mathf.Atan2(-dir.X, -dir.Z);
-					var rot = unit3D.Rotation;
-					rot.Y = Mathf.LerpAngle(rot.Y, angle, 10f * _fDelta);
-					unit3D.Rotation = rot;
-				}
-			}
 
 			if (atk.CurrentCooldown <= 0)
 			{
@@ -559,14 +515,8 @@ internal class CombatAndDamageService
 
 				atk.CurrentCooldown = atk.Cooldown;
 
-				if (_ecsWorld.Has<Unit3D>(target.Target))
-				{
-					var target3D = _ecsWorld.Get<Unit3D>(target.Target);
-					var priest3D = _ecsWorld.Get<Unit3D>(entity);
-
-					OnHealEffectRequested?.Invoke(priest3D.GlobalPosition, target3D.GlobalPosition);
-					OnHealFlashRequested?.Invoke(target3D);
-				}
+				OnHealEffectRequested?.Invoke(currentPos, targetPos);
+				OnHealFlashRequested?.Invoke(target.Target);
 			}
 		}
 		else
@@ -576,5 +526,70 @@ internal class CombatAndDamageService
 				_tickHealChaseTargets.Add((entity, targetPos));
 			}
 		}
+	}
+
+	public void DealSpellDamageAOE(System.Numerics.Vector3 position, float radius, float damage, Entity casterEntity, bool enemyOnly = true)
+	{
+		var query = new QueryDescription().WithAll<Position, Health>().WithNone<Dead>();
+		_ecsWorld.Query(in query, (Entity entity, ref Position pos, ref Health hp) =>
+		{
+			if (_ecsWorld.Has<Realm.Ecs.Components.Tags.Invulnerable>(entity)) return;
+
+			if (enemyOnly)
+			{
+				bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+				if (!isEnemy) return;
+			}
+
+			if (System.Numerics.Vector3.Distance(pos.Value, position) <= radius)
+			{
+				if (casterEntity != Entity.Null && _ecsWorld.IsAlive(casterEntity))
+				{
+					if (_ecsWorld.Has<LastAttacker>(entity))
+					{
+						_ecsWorld.Set(entity, new LastAttacker(casterEntity));
+					}
+					else
+					{
+						_ecsWorld.Add(entity, new LastAttacker(casterEntity));
+					}
+				}
+
+				float newHp = Math.Max(0, hp.Current - damage);
+				hp.Current = newHp;
+
+				OnUnitDamagedCallback?.Invoke(entity, casterEntity, damage);
+
+				if (newHp <= 0)
+				{
+					if (!_ecsWorld.Has<Dead>(entity))
+					{
+						_ecsWorld.Add<Dead>(entity);
+					}
+					OnKillUnitRequested?.Invoke(entity);
+				}
+				else
+				{
+					OnDamageFlashRequested?.Invoke(entity);
+				}
+			}
+		});
+	}
+
+	public void HealAOE(System.Numerics.Vector3 position, float radius, float healAmount)
+	{
+		var query = new QueryDescription().WithAll<Position, Health>().WithNone<Dead>();
+		_ecsWorld.Query(in query, (Entity entity, ref Position pos, ref Health hp) =>
+		{
+			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+			if (isEnemy) return;
+
+			if (System.Numerics.Vector3.Distance(pos.Value, position) <= radius)
+			{
+				float newHp = Math.Min(hp.Max, hp.Current + healAmount);
+				hp.Current = newHp;
+				OnHealFlashRequested?.Invoke(entity);
+			}
+		});
 	}
 }

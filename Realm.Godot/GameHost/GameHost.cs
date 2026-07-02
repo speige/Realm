@@ -16,6 +16,7 @@ using Realm.MapAPI;
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using static Realm.Ecs.Common.ResourceConstants;
 using static Realm.Ecs.Common.WorldExtensions;
 
 public partial class GameHost : Node3D, IGameAPI
@@ -29,7 +30,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private GameHostSaveLoadService _saveLoadService;
 	private GameHostEditorService _editorService;
 	private GameHostReplayService _replayService;
-	private GameHostEcsService _ecsService;
+	private SimulationService _simulationService;
 	private GameHostFogOfWarService _fogOfWarService;
 	private UnitSpawnService _unitSpawnService;
 	private GameHostWorldInitService _worldInitService;
@@ -128,6 +129,19 @@ public partial class GameHost : Node3D, IGameAPI
 	public List<Unit3D> AllUnits { get; } = new List<Unit3D>();
 	public List<Prop3D> AllProps { get; } = new List<Prop3D>();
 	private readonly List<Unit3D> _castlesList = new();
+
+	public static readonly Dictionary<Entity, Unit3D> EntityToUnit3D = new();
+	public static readonly Dictionary<Entity, Prop3D> EntityToProp3D = new();
+
+	public static bool TryGetUnit3D(Entity entity, out Unit3D unit)
+	{
+		return EntityToUnit3D.TryGetValue(entity, out unit);
+	}
+
+	public static bool TryGetProp3D(Entity entity, out Prop3D prop)
+	{
+		return EntityToProp3D.TryGetValue(entity, out prop);
+	}
 
 	private Entity _playerEntity
 	{
@@ -514,7 +528,7 @@ public partial class GameHost : Node3D, IGameAPI
 	}
 
 
-	public const float ResourceCap = 9999f;
+	public const float ResourceCap = ResourceConstants.ResourceCap;
 
 
 
@@ -792,9 +806,8 @@ public partial class GameHost : Node3D, IGameAPI
 		if (unit is IEcsEntityWrapper wrapper)
 		{
 			var entity = wrapper.Entity;
-			if (EcsWorld.IsAlive(entity) && EcsWorld.Has<Unit3D>(entity))
+			if (EcsWorld.IsAlive(entity) && GameHost.TryGetUnit3D(entity, out var tower))
 			{
-				var tower = EcsWorld.Get<Unit3D>(entity);
 				if (GodotObject.IsInstanceValid(tower))
 				{
 					int currentLevel = 1;
@@ -1140,9 +1153,8 @@ public class {mapName} : IMapScript
 	{
 		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
 		{
-			if (EcsWorld.Has<Unit3D>(wrapper.Entity))
+			if (GameHost.TryGetUnit3D(wrapper.Entity, out var u3d))
 			{
-				var u3d = EcsWorld.Get<Unit3D>(wrapper.Entity);
 				if (GodotObject.IsInstanceValid(u3d))
 				{
 					if (!EcsWorld.Has<Dead>(wrapper.Entity))
@@ -1159,13 +1171,13 @@ public class {mapName} : IMapScript
 	{
 		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
 		{
-			if (EcsWorld.Has<Unit3D>(wrapper.Entity))
+			if (GameHost.TryGetUnit3D(wrapper.Entity, out var u3d))
 			{
-				var u3d = EcsWorld.Get<Unit3D>(wrapper.Entity);
 				if (GodotObject.IsInstanceValid(u3d))
 				{
 					SelectedUnits.Remove(u3d);
 					AllUnits.Remove(u3d);
+					EntityToUnit3D.Remove(wrapper.Entity);
 					if (u3d.UnitId == "castle")
 					{
 						_castlesList.Remove(u3d);
@@ -1341,8 +1353,7 @@ public class {mapName} : IMapScript
 	{
 		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
 		{
-			var u3d = EcsWorld.Has<Unit3D>(wrapper.Entity) ? EcsWorld.Get<Unit3D>(wrapper.Entity) : null;
-			if (u3d != null && GodotObject.IsInstanceValid(u3d))
+			if (GameHost.TryGetUnit3D(wrapper.Entity, out var u3d) && GodotObject.IsInstanceValid(u3d))
 				u3d.ApplyModelTint(new Godot.Color(color.X, color.Y, color.Z));
 		}
 	}
@@ -1526,17 +1537,16 @@ public class {mapName} : IMapScript
 		var zones = EcsWorld.Get<ScriptZonesState>(_worldEntity).Zones;
 		if (zones.Count == 0) return;
 
-		foreach (var unit3D in AllUnits)
+		var positionQuery = new QueryDescription().WithAll<Position, DefinitionId>().WithNone<Dead>();
+		EcsWorld.Query(in positionQuery, (Entity entity, ref Position posComp) =>
 		{
-			if (!GodotObject.IsInstanceValid(unit3D) || !EcsWorld.IsAlive(unit3D.Entity)) continue;
+			var pos = new Vector3(posComp.Value.X, posComp.Value.Y, posComp.Value.Z);
 
-			var pos = unit3D.GlobalPosition;
-
-			if (!EcsWorld.Has<OccupiedZones>(unit3D.Entity))
+			if (!EcsWorld.Has<OccupiedZones>(entity))
 			{
-				EcsWorld.Add(unit3D.Entity, new OccupiedZones(new HashSet<int>()));
+				EcsWorld.Add(entity, new OccupiedZones(new HashSet<int>()));
 			}
-			var occupiedZones = EcsWorld.Get<OccupiedZones>(unit3D.Entity).ZoneIds;
+			var occupiedZones = EcsWorld.Get<OccupiedZones>(entity).ZoneIds;
 
 			for (int i = 0; i < zones.Count; i++)
 			{
@@ -1546,15 +1556,18 @@ public class {mapName} : IMapScript
 				if (inside && !occupiedZones.Contains(i))
 				{
 					occupiedZones.Add(i);
-					var wrapper = GetUnitWrapper(unit3D.Entity);
-					OnUnitEnterZone?.Invoke(wrapper, i);
+					if (TryGetUnit3D(entity, out var unit3D))
+					{
+						var wrapper = GetUnitWrapper(entity);
+						OnUnitEnterZone?.Invoke(wrapper, i);
+					}
 				}
 				else if (!inside)
 				{
 					occupiedZones.Remove(i);
 				}
 			}
-		}
+		});
 	}
 
 	void IGameAPI.SetUnitRouteState(IUnit unit, int state)
@@ -1630,9 +1643,8 @@ public class {mapName} : IMapScript
 		{
 			if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
 			{
-				if (EcsWorld.Has<Unit3D>(wrapper.Entity))
+				if (GameHost.TryGetUnit3D(wrapper.Entity, out var u3d))
 				{
-					var u3d = EcsWorld.Get<Unit3D>(wrapper.Entity);
 					if (GodotObject.IsInstanceValid(u3d))
 					{
 						ClearSelection();
@@ -2009,7 +2021,7 @@ public class {mapName} : IMapScript
 			VSCodeManager.Instance.StartInstallIfNeeded();
 		}
 
-		if (Multiplayer.IsServer())
+		if (Multiplayer.MultiplayerPeer == null || Multiplayer.IsServer())
 		{
 			_trackerTickDurations = new List<float>(100000);
 			_trackerApiDurations = new List<float>(10000);
@@ -2029,33 +2041,51 @@ public class {mapName} : IMapScript
 		_goldResourceId = "gold".AsResourceId(_definitionManager);
 		_woodResourceId = "wood".AsResourceId(_definitionManager);
 		_stoneResourceId = "stone".AsResourceId(_definitionManager);
-		_ecsService = new GameHostEcsService(EcsWorld, _worldEntity, _pathfinder);
-		_ecsService.SetRuntimeReferences(AllUnits, AllProps, _castlesList, _definitionManager, _goldResourceId, _woodResourceId, _stoneResourceId, GroundTerrain);
-		_ecsService.Initialize();
+		_simulationService = new SimulationService(EcsWorld, _worldEntity, _pathfinder);
+		_simulationService.SetRuntimeReferences(AllUnits, AllProps, _castlesList, _definitionManager, _goldResourceId, _woodResourceId, _stoneResourceId, GroundTerrain);
+		_simulationService.Initialize();
 
-		_ecsService.OnArrowProjectileRequested = (start, target) => SpawnArrowProjectile(start, target);
-		_ecsService.OnDamageFlashRequested = unit => this.CallDeferred(nameof(FlashDamageUnit), unit);
-		_ecsService.OnHealEffectRequested = (start, target) => SpawnHealVisualEffect(start, target);
-		_ecsService.OnHealFlashRequested = unit => this.CallDeferred(nameof(FlashHealUnit), unit);
-		_ecsService.OnKillUnitRequested = entity =>
+		_simulationService.OnArrowProjectileRequested = (start, target) => SpawnArrowProjectile(new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z));
+		_simulationService.OnDamageFlashRequested = entity =>
 		{
-			if (EcsWorld.IsAlive(entity) && EcsWorld.Has<Unit3D>(entity))
+			if (GameHost.TryGetUnit3D(entity, out var unit3D))
 			{
-				var unit3D = EcsWorld.Get<Unit3D>(entity);
+				this.CallDeferred(nameof(FlashDamageUnit), unit3D);
+			}
+		};
+		_simulationService.OnHealEffectRequested = (start, target) => SpawnHealVisualEffect(new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z));
+		_simulationService.OnHealFlashRequested = entity =>
+		{
+			if (GameHost.TryGetUnit3D(entity, out var unit3D))
+			{
+				this.CallDeferred(nameof(FlashHealUnit), unit3D);
+			}
+		};
+		_simulationService.OnKillUnitRequested = entity =>
+		{
+			if (EcsWorld.IsAlive(entity) && GameHost.TryGetUnit3D(entity, out var unit3D))
+			{
 				this.CallDeferred(nameof(KillUnit), unit3D);
 			}
 		};
-		_ecsService.OnUnitDamagedCallback = (targetUnit3D, attackerUnit3D, damage) =>
+		_simulationService.OnPropDepleted = entity =>
 		{
-			if (targetUnit3D != null && EcsWorld.IsAlive(targetUnit3D.Entity))
+			if (TryGetProp3D(entity, out var prop3D))
 			{
-				IUnit attackerWrapper = attackerUnit3D != null && EcsWorld.IsAlive(attackerUnit3D.Entity)
-					? GetUnitWrapper(attackerUnit3D.Entity)
-					: null;
-				OnUnitDamaged?.Invoke(GetUnitWrapper(targetUnit3D.Entity), attackerWrapper, damage);
+				this.CallDeferred(nameof(DepleteProp), prop3D);
 			}
 		};
-		_ecsService.OnUnderAttackAlertRequested = unitId =>
+		_simulationService.OnUnitDamagedCallback = (targetEntity, attackerEntity, damage) =>
+		{
+			if (EcsWorld.IsAlive(targetEntity))
+			{
+				IUnit attackerWrapper = EcsWorld.IsAlive(attackerEntity)
+					? GetUnitWrapper(attackerEntity)
+					: null;
+				OnUnitDamaged?.Invoke(GetUnitWrapper(targetEntity), attackerWrapper, damage);
+			}
+		};
+		_simulationService.OnUnderAttackAlertRequested = unitId =>
 		{
 			string alertMsg = unitId == "castle"
 				? "⚠️ YOUR CASTLE IS UNDER ATTACK!"
@@ -2063,17 +2093,19 @@ public class {mapName} : IMapScript
 			InGameHUD.Instance?.CallDeferred(nameof(InGameHUD.ShowFeedbackText), alertMsg, new Color(1.0f, 0.2f, 0.1f));
 			UIManager.Instance?.CallDeferred(nameof(UIManager.PlayWarningSound));
 		};
-		_ecsService.OnSpawnUnitFromProductionRequested = (unitId, position, isEnemy, rallyPoint, isFromQueue) =>
+		_simulationService.OnSpawnUnitFromProductionRequested = (unitId, position, isEnemy, rallyPoint, isFromQueue) =>
 			SpawnUnitFromProduction(unitId, position, isEnemy, rallyPoint, isFromQueue);
-		_ecsService.OnClearUnitOrdersRequested = entity => ClearUnitOrders(entity);
-		_ecsService.OnStopGatheringMovementRequested = entity => StopGatheringMovement(entity);
-		_ecsService.OnUiRefreshRequested = () => InGameHUD.Instance?.RefreshUI(SelectedUnits);
-		_ecsService.OnResourceDepositedForPlayer = (resType, carry) =>
+		_simulationService.GetProductionBuildTime = unitId =>
+			UnitRegistry.TryGetValue(unitId, out var meta) ? meta.ProductionTime : 5f;
+		_simulationService.OnClearUnitOrdersRequested = entity => ClearUnitOrders(entity);
+		_simulationService.OnStopGatheringMovementRequested = entity => StopGatheringMovement(entity);
+		_simulationService.OnUiRefreshRequested = () => InGameHUD.Instance?.RefreshUI(SelectedUnits);
+		_simulationService.OnResourceDepositedForPlayer = (resType, carry) =>
 		{
 			string resTypeUpper = resType.ToUpper();
 			InGameHUD.Instance?.CallDeferred(nameof(InGameHUD.ShowFeedbackText), $"+{carry:F0} {resTypeUpper} deposited", new Color(0.2f, 0.9f, 0.4f));
 		};
-		_ecsService.OnProductionCompleted = unitToSpawn =>
+		_simulationService.OnProductionCompleted = unitToSpawn =>
 		{
 			string displayName = UnitRegistry.TryGetValue(unitToSpawn, out var nm) ? nm.Name : unitToSpawn.ToUpper();
 			InGameHUD.Instance?.CallDeferred(nameof(InGameHUD.ShowFeedbackText), $"✓ {displayName} training complete!", new Color(0.3f, 0.9f, 0.4f));
@@ -2244,14 +2276,96 @@ public class {mapName} : IMapScript
 		_fogOfWarService.Initialize(GetTree().Root.GetNodeOrNull("Main"));
 	}
 
+	private void ReinitializeEcsAndServices()
+	{
+		EcsWorld?.Dispose();
+		EcsWorld = World.Create();
+		InitializeServices();
+		SetupWorldEntityComponents();
+
+		_definitionManager = new DefinitionManager();
+		_goldResourceId = "gold".AsResourceId(_definitionManager);
+		_woodResourceId = "wood".AsResourceId(_definitionManager);
+		_stoneResourceId = "stone".AsResourceId(_definitionManager);
+		_simulationService = new SimulationService(EcsWorld, _worldEntity, _pathfinder);
+		_simulationService.SetRuntimeReferences(AllUnits, AllProps, _castlesList, _definitionManager, _goldResourceId, _woodResourceId, _stoneResourceId, GroundTerrain);
+		_simulationService.Initialize();
+
+		_simulationService.OnArrowProjectileRequested = (start, target) => SpawnArrowProjectile(new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z));
+		_simulationService.OnDamageFlashRequested = entity =>
+		{
+			if (GameHost.TryGetUnit3D(entity, out var unit3D))
+			{
+				this.CallDeferred(nameof(FlashDamageUnit), unit3D);
+			}
+		};
+		_simulationService.OnHealEffectRequested = (start, target) => SpawnHealVisualEffect(new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z));
+		_simulationService.OnHealFlashRequested = entity =>
+		{
+			if (GameHost.TryGetUnit3D(entity, out var unit3D))
+			{
+				this.CallDeferred(nameof(FlashHealUnit), unit3D);
+			}
+		};
+		_simulationService.OnKillUnitRequested = entity =>
+		{
+			if (EcsWorld.IsAlive(entity) && GameHost.TryGetUnit3D(entity, out var unit3D))
+			{
+				this.CallDeferred(nameof(KillUnit), unit3D);
+			}
+		};
+		_simulationService.OnPropDepleted = entity =>
+		{
+			if (TryGetProp3D(entity, out var prop3D))
+			{
+				this.CallDeferred(nameof(DepleteProp), prop3D);
+			}
+		};
+		_simulationService.OnUnitDamagedCallback = (targetEntity, attackerEntity, damage) =>
+		{
+			if (EcsWorld.IsAlive(targetEntity))
+			{
+				IUnit attackerWrapper = EcsWorld.IsAlive(attackerEntity)
+					? GetUnitWrapper(attackerEntity)
+					: null;
+				OnUnitDamaged?.Invoke(GetUnitWrapper(targetEntity), attackerWrapper, damage);
+			}
+		};
+		_simulationService.OnUnderAttackAlertRequested = unitId =>
+		{
+			string alertMsg = unitId == "castle"
+				? "⚠️ YOUR CASTLE IS UNDER ATTACK!"
+				: $"⚠️ {unitId.ToUpper()} is under attack!";
+			InGameHUD.Instance?.CallDeferred(nameof(InGameHUD.ShowFeedbackText), alertMsg, new Color(1.0f, 0.2f, 0.1f));
+			UIManager.Instance?.CallDeferred(nameof(UIManager.PlayWarningSound));
+		};
+		_simulationService.OnSpawnUnitFromProductionRequested = (unitId, position, isEnemy, rallyPoint, isFromQueue) =>
+			SpawnUnitFromProduction(unitId, position, isEnemy, rallyPoint, isFromQueue);
+		_simulationService.GetProductionBuildTime = unitId =>
+			UnitRegistry.TryGetValue(unitId, out var meta) ? meta.ProductionTime : 5f;
+		_simulationService.OnClearUnitOrdersRequested = entity => ClearUnitOrders(entity);
+		_simulationService.OnStopGatheringMovementRequested = entity => StopGatheringMovement(entity);
+		_simulationService.OnUiRefreshRequested = () => InGameHUD.Instance?.RefreshUI(SelectedUnits);
+		_simulationService.OnResourceDepositedForPlayer = (resType, carry) =>
+		{
+			string resTypeUpper = resType.ToUpper();
+			InGameHUD.Instance?.CallDeferred(nameof(InGameHUD.ShowFeedbackText), $"+{carry:F0} {resTypeUpper} deposited", new Color(0.2f, 0.9f, 0.4f));
+		};
+		_simulationService.OnProductionCompleted = unitToSpawn =>
+		{
+			string displayName = UnitRegistry.TryGetValue(unitToSpawn, out var nm) ? nm.Name : unitToSpawn.ToUpper();
+			InGameHUD.Instance?.CallDeferred(nameof(InGameHUD.ShowFeedbackText), $"✓ {displayName} training complete!", new Color(0.3f, 0.9f, 0.4f));
+		};
+	}
+
 	public void StopRecording()
 	{
-		_replayService.StopRecording();
+		_replayService?.StopRecording();
 	}
 
 	public override void _ExitTree()
 	{
-		if (Multiplayer.IsServer() && _trackerTickDurations != null && _trackerTickDurations.Count >= 30)
+		if ((Multiplayer.MultiplayerPeer == null || Multiplayer.IsServer()) && _trackerTickDurations != null && _trackerTickDurations.Count >= 30)
 		{
 			var summary = new GameStabilitySummary
 			{
@@ -2498,7 +2612,6 @@ public class {mapName} : IMapScript
 		if (EcsWorld.IsAlive(entity))
 		{
 			if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Remove<MoveTo>(entity);
-			if (EcsWorld.Has<Unit3D>(entity)) EcsWorld.Get<Unit3D>(entity).Velocity = Vector3.Zero;
 		}
 	}
 
@@ -2588,8 +2701,20 @@ public class {mapName} : IMapScript
 
 	private Entity CreateEcsUnit(string id, string name, float hp, float damage, float range, float armor, float speed, Vector3 pos, Realm.Ecs.Common.PlayerEntity owner)
 	{
+		float scanRadius = 15.0f;
+		float attackCooldown = 1.5f;
+		bool isHero = false;
+		int pathingFlags = 8;
+		if (UnitRegistry.TryGetValue(id, out var regMeta))
+		{
+			if (regMeta.ScanRadius > 0) scanRadius = regMeta.ScanRadius;
+			if (regMeta.AttackCooldown > 0) attackCooldown = regMeta.AttackCooldown;
+			isHero = regMeta.IsHero;
+			pathingFlags = GetUnitPathingFlags(regMeta);
+		}
+
 		var entity = _unitSpawnService.CreateEcsUnitEntity(
-			id, name, hp, damage, range, armor, speed, pos, owner,
+			id, name, hp, damage, range, armor, speed, scanRadius, isHero, attackCooldown, pathingFlags, pos, owner,
 			_playerEntity, HasShieldsUpgrade, HasWeaponsUpgrade
 		);
 
@@ -2612,8 +2737,14 @@ public class {mapName} : IMapScript
 		}
 
 		AddChild(unit3D);
-		unit3D.Position = pos; // Set position after AddChild
+		unit3D.Position = pos;
 		unit3D.LoadModel(modelPath);
+
+		if (isBuilding)
+		{
+			var spawnOffset = new System.Numerics.Vector3(0f, 0f, 8f);
+			EcsWorld.Add(entity, new BuildingSpawnOffset(spawnOffset));
+		}
 
 		if (IsMapEditorMode)
 		{
@@ -2621,9 +2752,7 @@ public class {mapName} : IMapScript
 			unit3D.Scale *= EditorPlacementScale;
 		}
 
-
-		EcsWorld.Add(entity, unit3D); // Store Unit3D as component for easy mapping
-
+		EntityToUnit3D[entity] = unit3D;
 
 		if (!isEnemy && UnitRegistry.TryGetValue(id, out var popMeta))
 		{
@@ -2683,13 +2812,13 @@ public class {mapName} : IMapScript
 
 	private void UpdateConnectionStatus()
 	{
-		_networkService.UpdateConnectionStatus(_multiplayerActive, Multiplayer.IsServer());
+		_networkService.UpdateConnectionStatus(_multiplayerActive, Multiplayer.MultiplayerPeer == null || Multiplayer.IsServer());
 	}
 
 	private void ProcessGameplayTick(float fDelta)
 	{
 		float actualIntervalMs = 0f;
-		if (Multiplayer.IsServer())
+		if (Multiplayer.MultiplayerPeer == null || Multiplayer.IsServer())
 		{
 			if (_trackerIntervalStopwatch.IsRunning)
 			{
@@ -2704,22 +2833,19 @@ public class {mapName} : IMapScript
 		}
 
 		_fDelta = fDelta;
-		GameElapsedTime += fDelta;
 
-		EcsWorld?.Mutate<CountdownState>(_worldEntity, (ref CountdownState countdown) =>
+		_simulationService.TickEcs(fDelta);
+		UpdateVisualNodesFromEcs(fDelta);
+
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<WorldState>(_worldEntity))
 		{
-			if (!countdown.Active) return;
-			countdown.Duration -= fDelta;
-			if (countdown.Duration <= 0f)
+			var state = EcsWorld.Get<WorldState>(_worldEntity);
+			if (state.DayNightCycleEnabled && !IsMapEditorMode)
 			{
-				countdown.Duration = 0f;
-				countdown.Active = false;
+				float progress = state.TimeOfDayTimer / TimeOfDayCycleDuration;
+				UpdateDayNightVisuals(progress);
 			}
-		});
-
-		UpdateGameplayDayNightCycle(fDelta);
-
-		_ecsService.TickEcs(fDelta);
+		}
 
 		UpdateMinimapPings(fDelta);
 
@@ -2740,7 +2866,7 @@ public class {mapName} : IMapScript
 
 		UpdateBuildingPreview();
 
-		if (!ReplayPlaybackManager.Instance.IsPlayingReplay && GameSettings.RecordReplays && _replayService.IsRecording)
+		if (!ReplayPlaybackManager.Instance.IsPlayingReplay && GameSettings.RecordReplays && _replayService != null && _replayService.IsRecording)
 		{
 			RecordGameplayTick();
 		}
@@ -2750,7 +2876,7 @@ public class {mapName} : IMapScript
 			UpdateServerSnapshotTick(fDelta);
 		}
 
-		if (Multiplayer.IsServer())
+		if (Multiplayer.MultiplayerPeer == null || Multiplayer.IsServer())
 		{
 			_trackerTickStopwatch.Stop();
 			float tickCpuMs = (float)_trackerTickStopwatch.Elapsed.TotalMilliseconds;
@@ -2768,31 +2894,6 @@ public class {mapName} : IMapScript
 		}
 	}
 
-	private void UpdateGameplayDayNightCycle(float fDelta)
-	{
-		if (!IsMapEditorMode && DayNightCycleEnabled)
-		{
-			float timer = TimeOfDayTimer + fDelta;
-			if (timer >= TimeOfDayCycleDuration)
-			{
-				timer -= TimeOfDayCycleDuration;
-			}
-
-			float progress = timer / TimeOfDayCycleDuration;
-
-			float currentHour = progress * 24f;
-			int index;
-			if (currentHour >= 5f && currentHour < 6f) index = 3;
-			else if (currentHour >= 6f && currentHour < 18f) index = 0;
-			else if (currentHour >= 18f && currentHour < 20f) index = 1;
-			else index = 2;
-
-			UpdateDayNightVisuals(progress);
-
-			EcsWorld?.Mutate<WorldState>(_worldEntity, (ref WorldState state) =>
-				EcsWorld.Set(_worldEntity, new WorldState(state.GameElapsedTime, index, timer, state.DayNightCycleEnabled)));
-		}
-	}
 
 	private void UpdateMinimapPings(float fDelta)
 	{

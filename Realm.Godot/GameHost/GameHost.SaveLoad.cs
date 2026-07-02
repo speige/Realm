@@ -45,7 +45,7 @@ public partial class GameHost
 		{
 			if (child is Decal decal && GodotObject.IsInstanceValid(decal))
 			{
-				string decalId = decal.HasMeta("DecalId") ? decal.GetMeta("DecalId").AsString() : "logo";
+				string decalId = decal is Decal3D decal3D ? decal3D.DecalId : "logo";
 				decalsData.Add((decalId, new System.Numerics.Vector3(decal.Position.X, decal.Position.Y, decal.Position.Z), decal.RotationDegrees.Y, decal.Scale.X));
 			}
 		}

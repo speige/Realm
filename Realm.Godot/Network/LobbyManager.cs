@@ -205,7 +205,7 @@ public partial class LobbyManager : Node
                 try
                 {
                     await Task.Delay(5000);
-                    PeerSeederManager.Instance.CheckIdleAndSeedStatus();
+                    Callable.From(() => PeerSeederManager.Instance.CheckIdleAndSeedStatus()).CallDeferred();
                 }
                 catch { }
             }

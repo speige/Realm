@@ -184,13 +184,9 @@ public class GameHostFogOfWarService
 					Vector3 pos = unit.GlobalPosition;
 					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
 					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-					float scanRadius = 15.0f;
-					if (_ecsWorld.IsAlive(unit.Entity) && _ecsWorld.Has<Realm.Ecs.Components.Core.DefinitionId>(unit.Entity))
-					{
-						string defId = _ecsWorld.Get<Realm.Ecs.Components.Core.DefinitionId>(unit.Entity).Value;
-						if (GameHost.UnitRegistry.TryGetValue(defId, out var metaReg) && metaReg.ScanRadius > 0)
-							scanRadius = metaReg.ScanRadius;
-					}
+					float scanRadius = (_ecsWorld.IsAlive(unit.Entity) && _ecsWorld.Has<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity))
+						? _ecsWorld.Get<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity).Value
+						: 15.0f;
 					int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (250f / 32f)));
 					for (int dx = -rGrid; dx <= rGrid; dx++)
 					{
@@ -266,13 +262,9 @@ public class GameHostFogOfWarService
 				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
 				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
 
-				float scanRadius = 15.0f;
-				if (_ecsWorld.IsAlive(unit.Entity) && _ecsWorld.Has<Realm.Ecs.Components.Core.DefinitionId>(unit.Entity))
-				{
-					string defId = _ecsWorld.Get<Realm.Ecs.Components.Core.DefinitionId>(unit.Entity).Value;
-					if (GameHost.UnitRegistry.TryGetValue(defId, out var metaReg) && metaReg.ScanRadius > 0)
-						scanRadius = metaReg.ScanRadius;
-				}
+				float scanRadius = (_ecsWorld.IsAlive(unit.Entity) && _ecsWorld.Has<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity))
+					? _ecsWorld.Get<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity).Value
+					: 15.0f;
 
 				int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (250f / 32f)));
 				for (int dx = -rGrid; dx <= rGrid; dx++)

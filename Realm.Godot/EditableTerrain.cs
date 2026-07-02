@@ -472,133 +472,14 @@ void fragment() {
 
 	public void BakeNavMesh()
 	{
-		int width = Width;
-		int depth = Depth;
-		float spacing = Spacing;
-		var verts = new List<float>();
-		for (int z = 0; z < depth; z++)
+		var world = GameHost.Instance.EcsWorld;
+		var worldEntity = GameHost.Instance.WorldEntity;
+		if (world != null && world.IsAlive(worldEntity) && world.Has<TerrainState>(worldEntity))
 		{
-			for (int x = 0; x < width; x++)
-			{
-				float lx = (x - (width - 1) / 2.0f) * spacing;
-				float lz = (z - (depth - 1) / 2.0f) * spacing;
-				verts.Add(lx);
-				verts.Add(Heights[x, z]);
-				verts.Add(lz);
-			}
-		}
-		var indices = new List<int>();
-		for (int z = 0; z < depth - 1; z++)
-		{
-			for (int x = 0; x < width - 1; x++)
-			{
-				int v00 = z * width + x;
-				int v10 = z * width + (x + 1);
-				int v01 = (z + 1) * width + x;
-				int v11 = (z + 1) * width + (x + 1);
-				indices.Add(v00);
-				indices.Add(v01);
-				indices.Add(v10);
-				indices.Add(v10);
-				indices.Add(v01);
-				indices.Add(v11);
-			}
-		}
-		var geom = new SimpleInputGeomProvider(verts, indices);
-		float minHeightBrushAdjustment = 5.0f;
-		float maxUnitHeight = 2.5f;
-		float cellSize = minHeightBrushAdjustment / maxUnitHeight / 10.0f;
-		float cellHeight = cellSize * 0.5f;
-		float agentRadius = 1.0f;
-		float agentHeight = 2.5f;
-		float agentMaxClimb = 0.9f;
-		float agentMaxSlope = 45.0f;
-		RcConfig cfg = new RcConfig(
-			RcPartition.WATERSHED,
-			cellSize, cellHeight,
-			agentMaxSlope, agentHeight, agentRadius, agentMaxClimb,
-			8, 20,
-			12.0f, 1.3f,
-			6,
-			6.0f, 1.0f,
-			true, true, true,
-			new RcAreaModification(1),
-			true
-		);
-		RcVec3f bmin = geom.GetMeshBoundsMin();
-		RcVec3f bmax = geom.GetMeshBoundsMax();
-		bmin.Y -= 10f;
-		bmax.Y += 50f;
-		var bcfg = new RcBuilderConfig(cfg, bmin, bmax);
-		var builder = new RcBuilder();
-		var result = builder.Build(geom, bcfg, true);
-		if (result.Mesh != null)
-		{
-			var pars = new DtNavMeshCreateParams();
-			pars.verts = result.Mesh.verts;
-			pars.vertCount = result.Mesh.nverts;
-			pars.polys = result.Mesh.polys;
-			pars.polyCount = result.Mesh.npolys;
-			pars.nvp = result.Mesh.nvp;
-			pars.bmin = result.Mesh.bmin;
-			pars.bmax = result.Mesh.bmax;
-			pars.cs = result.Mesh.cs;
-			pars.ch = result.Mesh.ch;
-			pars.buildBvTree = true;
-			pars.walkableHeight = agentHeight;
-			pars.walkableRadius = agentRadius;
-			pars.walkableClimb = agentMaxClimb;
-			pars.polyAreas = new int[result.Mesh.npolys];
-			pars.polyFlags = new int[result.Mesh.npolys];
-			for (int i = 0; i < result.Mesh.npolys; i++)
-			{
-				pars.polyAreas[i] = result.Mesh.areas[i];
-				
-				float sumX = 0f;
-				float sumZ = 0f;
-				int nv = 0;
-				for (int j = 0; j < result.Mesh.nvp; j++)
-				{
-					int vIdx = result.Mesh.polys[i * result.Mesh.nvp * 2 + j];
-					if (vIdx < 0 || vIdx >= result.Mesh.nverts)
-						break;
-					float wx = bmin.X + result.Mesh.verts[vIdx * 3] * result.Mesh.cs;
-					float wz = bmin.Z + result.Mesh.verts[vIdx * 3 + 2] * result.Mesh.cs;
-					sumX += wx;
-					sumZ += wz;
-					nv++;
-				}
-				float avgX = nv > 0 ? sumX / nv : 0f;
-				float avgZ = nv > 0 ? sumZ / nv : 0f;
-
-				int xGrid = Mathf.Clamp((int)Math.Round(avgX / spacing + (width - 1) / 2.0f), 0, width - 1);
-				int zGrid = Mathf.Clamp((int)Math.Round(avgZ / spacing + (depth - 1) / 2.0f), 0, depth - 1);
-
-				int pathFlags = (PathingCodes != null) ? PathingCodes[xGrid, zGrid] : (PATHING_GROUND | PATHING_FLYING);
-				if ((pathFlags & PATHING_UNPATHABLE) != 0)
-				{
-					pars.polyFlags[i] = 0;
-				}
-				else
-				{
-					pars.polyFlags[i] = pathFlags;
-				}
-			}
-			if (result.MeshDetail != null)
-			{
-				pars.detailMeshes = result.MeshDetail.meshes;
-				pars.detailVerts = result.MeshDetail.verts;
-				pars.detailVertsCount = result.MeshDetail.nverts;
-				pars.detailTris = result.MeshDetail.tris;
-				pars.detailTriCount = result.MeshDetail.ntris;
-			}
-			var navMeshData = DtNavMeshBuilder.CreateNavMeshData(pars);
-			if (navMeshData != null)
-			{
-				NavMesh = new DtNavMesh();
-				NavMesh.Init(navMeshData, pars.nvp, 0);
-				NavMeshQuery = new DtNavMeshQuery(NavMesh);
-			}
+			ref var state = ref world.Get<TerrainState>(worldEntity);
+			var terrainNavMeshService = new Realm.Ecs.Services.TerrainNavMeshService();
+			terrainNavMeshService.BakeNavMesh(ref state);
+			world.Set(worldEntity, state);
 		}
 	}
 

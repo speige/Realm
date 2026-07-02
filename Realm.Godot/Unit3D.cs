@@ -14,8 +14,6 @@ public partial class Unit3D : CharacterBody3D
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity)
 				&& GameHost.Instance.EcsWorld.Has<DefinitionId>(Entity))
 				return GameHost.Instance.EcsWorld.Get<DefinitionId>(Entity).Value;
-			if (HasMeta("unit_id"))
-				return GetMeta("unit_id").AsString();
 			return string.Empty;
 		}
 		set
@@ -28,10 +26,6 @@ public partial class Unit3D : CharacterBody3D
 				else
 					world.Add(Entity, new DefinitionId(value));
 			}
-			else
-			{
-				SetMeta("unit_id", value);
-			}
 		}
 	}
 
@@ -41,8 +35,6 @@ public partial class Unit3D : CharacterBody3D
 		{
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
 				return GameHost.Instance.EcsWorld.Has<Building>(Entity);
-			if (HasMeta("is_building"))
-				return GetMeta("is_building").AsBool();
 			return false;
 		}
 		set
@@ -61,10 +53,6 @@ public partial class Unit3D : CharacterBody3D
 						world.Remove<Building>(Entity);
 				}
 			}
-			else
-			{
-				SetMeta("is_building", value);
-			}
 		}
 	}
 
@@ -79,8 +67,6 @@ public partial class Unit3D : CharacterBody3D
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity)
 				&& GameHost.Instance.EcsWorld.Has<UnitFaction>(Entity))
 				return GameHost.Instance.EcsWorld.Get<UnitFaction>(Entity).IsEnemy;
-			if (HasMeta("is_enemy"))
-				return GetMeta("is_enemy").AsBool();
 			return false;
 		}
 		set
@@ -92,10 +78,6 @@ public partial class Unit3D : CharacterBody3D
 					world.Set(Entity, new UnitFaction(value));
 				else
 					world.Add(Entity, new UnitFaction(value));
-			}
-			else
-			{
-				SetMeta("is_enemy", value);
 			}
 		}
 	}

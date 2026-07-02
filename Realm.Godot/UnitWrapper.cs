@@ -128,9 +128,8 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
 				var hp = _world.Get<Health>(_entity);
 				float finalHp = Math.Max(0f, value);
 				_world.Set(_entity, new Health(finalHp, hp.Max));
-				if (_world.Has<Unit3D>(_entity))
+				if (GameHost.TryGetUnit3D(_entity, out var u3d))
 				{
-					var u3d = _world.Get<Unit3D>(_entity);
 					u3d.SetDeferred("current_hp", finalHp);
 				}
 				if (finalHp <= 0f)
@@ -138,10 +137,9 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
 					if (!_world.Has<Dead>(_entity))
 					{
 						_world.Add(_entity, new Dead());
-						if (_world.Has<Unit3D>(_entity))
+						if (GameHost.TryGetUnit3D(_entity, out var deadU3D))
 						{
-							var u3d = _world.Get<Unit3D>(_entity);
-							GameHost.Instance.TriggerKillUnit(u3d);
+							GameHost.Instance.TriggerKillUnit(deadU3D);
 						}
 					}
 				}
@@ -169,9 +167,8 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
 				float finalMax = Math.Max(1f, value);
 				float finalCur = Math.Min(hp.Current, finalMax);
 				_world.Set(_entity, new Health(finalCur, finalMax));
-				if (_world.Has<Unit3D>(_entity))
+				if (GameHost.TryGetUnit3D(_entity, out var u3d))
 				{
-					var u3d = _world.Get<Unit3D>(_entity);
 					u3d.SetDeferred("max_hp", finalMax);
 					u3d.SetDeferred("current_hp", finalCur);
 				}
@@ -477,9 +474,8 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
             _world.Add(_entity, newPosComp);
         }
 
-        if (_world.Has<Unit3D>(_entity))
+        if (GameHost.TryGetUnit3D(_entity, out var unit3D))
         {
-            var unit3D = _world.Get<Unit3D>(_entity);
             if (GodotObject.IsInstanceValid(unit3D))
             {
                 unit3D.GlobalPosition = new Vector3(position.X, position.Y, position.Z);
@@ -550,9 +546,8 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
             {
                 return _world.Get<ModelScale>(_entity).Value;
             }
-            if (_world.Has<Unit3D>(_entity))
+            if (GameHost.TryGetUnit3D(_entity, out var u3d))
             {
-                var u3d = _world.Get<Unit3D>(_entity);
                 if (GodotObject.IsInstanceValid(u3d))
                 {
                     return u3d.Scale.X;
@@ -571,9 +566,8 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
             {
                 _world.Add(_entity, new ModelScale(value));
             }
-            if (_world.Has<Unit3D>(_entity))
+            if (GameHost.TryGetUnit3D(_entity, out var u3d))
             {
-                var u3d = _world.Get<Unit3D>(_entity);
                 if (GodotObject.IsInstanceValid(u3d))
                 {
                     u3d.Scale = new Vector3(value, value, value);
@@ -613,9 +607,8 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
     {
         if (!_world.IsAlive(_entity)) return;
         GameHost.Instance.ClearUnitOrders(_entity);
-        if (_world.Has<Unit3D>(_entity))
+        if (GameHost.TryGetUnit3D(_entity, out var u3d))
         {
-            var u3d = _world.Get<Unit3D>(_entity);
             if (GodotObject.IsInstanceValid(u3d))
             {
                 u3d.Velocity = Vector3.Zero;

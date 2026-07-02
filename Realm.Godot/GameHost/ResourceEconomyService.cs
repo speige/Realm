@@ -1,5 +1,4 @@
 using Arch.Core;
-using Godot;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Movement;
@@ -8,6 +7,7 @@ using Realm.Ecs.Components.Tags;
 using Realm.Ecs.Services;
 using System;
 using System.Collections.Generic;
+using static Realm.Ecs.Common.ResourceConstants;
 
 internal class ResourceEconomyService
 {
@@ -15,15 +15,13 @@ internal class ResourceEconomyService
 
 	private float _fDelta;
 
-	private readonly List<(Entity Worker, Gatherer NewState, Vector3? NewDestination)> _tickGatherersToUpdate = new();
+	private readonly List<(Entity Worker, Gatherer NewState, System.Numerics.Vector3? NewDestination)> _tickGatherersToUpdate = new();
 	private readonly QueryDescription _gatherQuery = new QueryDescription().WithAll<Position, Gatherer>().WithNone<Dead>();
 	private readonly QueryDescription _passiveIncomeQuery = new QueryDescription().WithAll<PlayerResources>().WithNone<Dead>();
 
 	private ForEachWithEntity<Position, Gatherer> _gatherQueryDelegate = null!;
 	private ForEachWithEntity<PlayerResources> _passiveIncomeQueryDelegate = null!;
 
-	private List<Prop3D> _allPropsRef;
-	private List<Unit3D> _castlesListRef;
 	private DefinitionManager _definitionManagerRef;
 	private ResourceId _goldResourceId;
 	private ResourceId _woodResourceId;
@@ -32,6 +30,7 @@ internal class ResourceEconomyService
 	public Action<string, float> OnResourceDepositedForPlayer;
 	public Action<Entity> OnClearUnitOrdersRequested;
 	public Action<Entity> OnStopGatheringMovementRequested;
+	public Action<Entity> OnPropDepleted;
 
 	public ResourceEconomyService(World ecsWorld)
 	{
@@ -41,15 +40,11 @@ internal class ResourceEconomyService
 	}
 
 	public void SetRuntimeReferences(
-		List<Prop3D> allProps,
-		List<Unit3D> castlesList,
 		DefinitionManager definitionManager,
 		ResourceId goldResourceId,
 		ResourceId woodResourceId,
 		ResourceId stoneResourceId)
 	{
-		_allPropsRef = allProps;
-		_castlesListRef = castlesList;
 		_definitionManagerRef = definitionManager;
 		_goldResourceId = goldResourceId;
 		_woodResourceId = woodResourceId;
@@ -80,18 +75,11 @@ internal class ResourceEconomyService
 		return _ecsWorld.GetFieldOrDefault<PlayerUpgrades, bool>(playerEntity, u => u.HarvestingUpgrade);
 	}
 
-	private float GetGameElapsedTime()
-	{
-		var worldEntity = FindWorldEntity();
-		if (worldEntity == Entity.Null) return 0f;
-		return _ecsWorld.GetFieldOrDefault<WorldState, float>(worldEntity, s => s.GameElapsedTime);
-	}
-
 	private void UpdatePassiveIncomeQueryAction(Entity ent, ref PlayerResources res)
 	{
-		float goldPerSec = 1.5f;
-		float woodPerSec = 1.0f;
-		float stonePerSec = 0.8f;
+		float goldPerSec = DefaultGoldPerSec;
+		float woodPerSec = DefaultWoodPerSec;
+		float stonePerSec = DefaultStonePerSec;
 
 		var worldEntity = FindWorldEntity();
 		if (worldEntity != Entity.Null && _ecsWorld.Has<NetworkMappingState>(worldEntity))
@@ -99,15 +87,15 @@ internal class ResourceEconomyService
 			var playerEntityForUpgrade = _ecsWorld.Get<NetworkMappingState>(worldEntity).PlayerEntity;
 			if (ent == playerEntityForUpgrade && GetHarvestingUpgrade())
 			{
-				goldPerSec *= 1.5f;
-				woodPerSec *= 1.5f;
-				stonePerSec *= 1.5f;
+				goldPerSec *= HarvestingUpgradeMultiplier;
+				woodPerSec *= HarvestingUpgradeMultiplier;
+				stonePerSec *= HarvestingUpgradeMultiplier;
 			}
 		}
 
-		if (res.Value.ContainsKey(_goldResourceId)) res.Value[_goldResourceId] = (int)Math.Min(GameHost.ResourceCap, res.Value[_goldResourceId] + _fDelta * goldPerSec);
-		if (res.Value.ContainsKey(_woodResourceId)) res.Value[_woodResourceId] = (int)Math.Min(GameHost.ResourceCap, res.Value[_woodResourceId] + _fDelta * woodPerSec);
-		if (res.Value.ContainsKey(_stoneResourceId)) res.Value[_stoneResourceId] = (int)Math.Min(GameHost.ResourceCap, res.Value[_stoneResourceId] + _fDelta * stonePerSec);
+		if (res.Value.ContainsKey(_goldResourceId)) res.Value[_goldResourceId] = (int)Math.Min(ResourceCap, res.Value[_goldResourceId] + _fDelta * goldPerSec);
+		if (res.Value.ContainsKey(_woodResourceId)) res.Value[_woodResourceId] = (int)Math.Min(ResourceCap, res.Value[_woodResourceId] + _fDelta * woodPerSec);
+		if (res.Value.ContainsKey(_stoneResourceId)) res.Value[_stoneResourceId] = (int)Math.Min(ResourceCap, res.Value[_stoneResourceId] + _fDelta * stonePerSec);
 	}
 
 	private void ProcessGatheringTicks()
@@ -122,7 +110,7 @@ internal class ResourceEconomyService
 				_ecsWorld.Set(worker, newState);
 				if (dest.HasValue)
 				{
-					var moveTo = new MoveTo(new System.Numerics.Vector3(dest.Value.X, dest.Value.Y, dest.Value.Z));
+					var moveTo = new MoveTo(dest.Value);
 					if (_ecsWorld.Has<MoveTo>(worker)) _ecsWorld.Set(worker, moveTo);
 					else _ecsWorld.Add(worker, moveTo);
 				}
@@ -130,66 +118,61 @@ internal class ResourceEconomyService
 		}
 	}
 
-	private Prop3D FindNearbyResourceNode(Vector3 pos, string type, float radius)
+	private Entity FindNearbyResourceNode(System.Numerics.Vector3 pos, string type, float radius)
 	{
-		Prop3D closest = null;
+		Entity closest = Entity.Null;
 		float closestDist = radius;
-		if (_allPropsRef != null)
+		var query = new QueryDescription().WithAll<Position, ResourceNode, PropIdentity>();
+		_ecsWorld.Query(in query, (Entity entity, ref Position nodePos, ref PropIdentity identity) =>
 		{
-			foreach (var prop in _allPropsRef)
+			string pType = identity.PropId switch
 			{
-				if (GodotObject.IsInstanceValid(prop))
-				{
-					string pType = prop.PropId switch
-					{
-						"goldmine" => "gold",
-						"tree" => "wood",
-						"rock" => "stone",
-						_ => null
-					};
+				"goldmine" => "gold",
+				"tree" => "wood",
+				"rock" => "stone",
+				_ => null
+			};
 
-					if (pType == type)
-					{
-						float d = pos.DistanceTo(prop.GlobalPosition);
-						if (d < closestDist)
-						{
-							closestDist = d;
-							closest = prop;
-						}
-					}
+			if (pType == type)
+			{
+				float d = System.Numerics.Vector3.Distance(pos, nodePos.Value);
+				if (d < closestDist)
+				{
+					closestDist = d;
+					closest = entity;
 				}
 			}
-		}
+		});
 		return closest;
 	}
 
 	private void GatherQueryAction(Entity entity, ref Position pos, ref Gatherer gather)
 	{
-		var currentPos = new Vector3(pos.Value.X, pos.Value.Y, pos.Value.Z);
+		var currentPos = pos.Value;
 
 		if (gather.ReturningToBase)
 		{
-			Unit3D nearestCastle = null;
+			Entity nearestCastle = Entity.Null;
+			System.Numerics.Vector3 nearestCastlePos = System.Numerics.Vector3.Zero;
 			float nearestDist = float.MaxValue;
-			if (_castlesListRef != null)
+			var wOwner = _ecsWorld.Get<Owner>(entity).PlayerEntity;
+
+			var castleQuery = new QueryDescription().WithAll<Position, DefinitionId, Owner>().WithNone<Dead>();
+			_ecsWorld.Query(in castleQuery, (Entity castleEntity, ref Position castlePos, ref DefinitionId defId, ref Owner ownerComp) =>
 			{
-				foreach (var u in _castlesListRef)
+				if (defId.Value == "castle" && ownerComp.PlayerEntity == wOwner)
 				{
-					var wOwner = _ecsWorld.Get<Owner>(entity).PlayerEntity;
-					var uOwner = _ecsWorld.Get<Owner>(u.Entity).PlayerEntity;
-					if (uOwner == wOwner && GodotObject.IsInstanceValid(u))
+					float dist = System.Numerics.Vector3.Distance(currentPos, castlePos.Value);
+					if (dist < nearestDist)
 					{
-						float dist = currentPos.DistanceTo(u.GlobalPosition);
-						if (dist < nearestDist)
-						{
-							nearestDist = dist;
-							nearestCastle = u;
-						}
+						nearestDist = dist;
+						nearestCastle = castleEntity;
+						nearestCastlePos = castlePos.Value;
 					}
 				}
-			}
+			});
 
-			if (nearestCastle == null)
+			if (nearestCastle == Entity.Null)
 			{
 				var newState = gather;
 				newState.ReturningToBase = false;
@@ -199,7 +182,7 @@ internal class ResourceEconomyService
 			}
 
 			float castleRadius = 6.0f;
-			if (currentPos.DistanceTo(nearestCastle.GlobalPosition) <= castleRadius)
+			if (System.Numerics.Vector3.Distance(currentPos, nearestCastlePos) <= castleRadius)
 			{
 				float carry = gather.CarriedAmount;
 				var ownerEntity = _ecsWorld.Get<Owner>(entity).PlayerEntity.Value;
@@ -209,7 +192,7 @@ internal class ResourceEconomyService
 					var resId = gather.ResourceType.AsResourceId(_definitionManagerRef);
 					if (playerRes.Value.ContainsKey(resId))
 					{
-						playerRes.Value[resId] = (int)Math.Min(GameHost.ResourceCap, playerRes.Value[resId] + carry);
+						playerRes.Value[resId] = (int)Math.Min(ResourceCap, playerRes.Value[resId] + carry);
 					}
 				}
 
@@ -223,18 +206,15 @@ internal class ResourceEconomyService
 					}
 				}
 
-				Prop3D targetNode = null;
-				if (_ecsWorld.IsAlive(gather.TargetEntity) && _ecsWorld.Has<Prop3D>(gather.TargetEntity))
-				{
-					targetNode = _ecsWorld.Get<Prop3D>(gather.TargetEntity);
-				}
+				Entity targetNode = gather.TargetEntity;
+				bool nodeAlive = _ecsWorld.IsAlive(targetNode) && _ecsWorld.Has<Position>(targetNode);
 
-				if (GodotObject.IsInstanceValid(targetNode))
+				if (nodeAlive)
 				{
 					var newState = gather;
 					newState.ReturningToBase = false;
 					newState.CarriedAmount = 0f;
-					var dest = targetNode.GlobalPosition;
+					var dest = _ecsWorld.Get<Position>(targetNode).Value;
 					_tickGatherersToUpdate.Add((entity, newState, dest));
 				}
 				else
@@ -250,27 +230,23 @@ internal class ResourceEconomyService
 			{
 				if (!_ecsWorld.Has<MoveTo>(entity))
 				{
-					var dest = nearestCastle.GlobalPosition;
-					_tickGatherersToUpdate.Add((entity, gather, dest));
+					_tickGatherersToUpdate.Add((entity, gather, nearestCastlePos));
 				}
 			}
 		}
 		else
 		{
-			Prop3D targetNode = null;
-			if (_ecsWorld.IsAlive(gather.TargetEntity) && _ecsWorld.Has<Prop3D>(gather.TargetEntity))
-			{
-				targetNode = _ecsWorld.Get<Prop3D>(gather.TargetEntity);
-			}
+			Entity targetNode = gather.TargetEntity;
+			bool nodeAlive = _ecsWorld.IsAlive(targetNode) && _ecsWorld.Has<Position>(targetNode) && _ecsWorld.Has<ResourceNode>(targetNode);
 
-			if (!GodotObject.IsInstanceValid(targetNode))
+			if (!nodeAlive)
 			{
-				Prop3D alternate = FindNearbyResourceNode(currentPos, gather.ResourceType, 25.0f);
-				if (alternate != null)
+				Entity alternate = FindNearbyResourceNode(currentPos, gather.ResourceType, 25.0f);
+				if (alternate != Entity.Null)
 				{
 					var newState = gather;
-					newState.TargetEntity = alternate.Entity;
-					var dest = alternate.GlobalPosition;
+					newState.TargetEntity = alternate;
+					var dest = _ecsWorld.Get<Position>(alternate).Value;
 					_tickGatherersToUpdate.Add((entity, newState, dest));
 				}
 				else
@@ -280,7 +256,8 @@ internal class ResourceEconomyService
 				return;
 			}
 
-			float dist = currentPos.DistanceTo(targetNode.GlobalPosition);
+			var targetPos = _ecsWorld.Get<Position>(targetNode).Value;
+			float dist = System.Numerics.Vector3.Distance(currentPos, targetPos);
 			float gatherRange = 3.5f;
 			if (dist <= gatherRange)
 			{
@@ -300,64 +277,49 @@ internal class ResourceEconomyService
 					if (!isEnemy && GetHarvestingUpgrade()) mineRate *= 1.5f;
 				}
 
-				float nodeRemaining = targetNode.ResourceAmount;
+				ref var resNode = ref _ecsWorld.Get<ResourceNode>(targetNode);
+				float nodeRemaining = resNode.Amount;
 				if (mineRate > nodeRemaining)
 				{
 					mineRate = nodeRemaining;
 				}
 
-				targetNode.ResourceAmount -= mineRate;
+				resNode.Amount -= mineRate;
+				_ecsWorld.Set(targetNode, resNode);
+
 				newState.CarriedAmount = Math.Min(gather.MaxCapacity, gather.CarriedAmount + mineRate);
 
-				if (_ecsWorld.Has<Unit3D>(entity))
+				if (resNode.Amount <= 0f)
 				{
-					var worker3D = _ecsWorld.Get<Unit3D>(entity);
-					float gameElapsed = GetGameElapsedTime();
-					float pulse = 1.0f + Mathf.Sin(gameElapsed * 10f) * 0.1f;
-					worker3D.Scale = new Vector3(pulse * 0.9f, (2.0f - pulse) * 0.9f, pulse * 0.9f);
-				}
-
-				if (targetNode.ResourceAmount <= 0f)
-				{
-					var depletedNode = targetNode;
-					if (_allPropsRef != null)
-					{
-						_allPropsRef.Remove(depletedNode);
-					}
-					if (_ecsWorld.IsAlive(depletedNode.Entity))
-					{
-						_ecsWorld.Destroy(depletedNode.Entity);
-					}
-					depletedNode.QueueFree();
+					OnPropDepleted?.Invoke(targetNode);
 				}
 
 				if (newState.CarriedAmount >= gather.MaxCapacity)
 				{
 					newState.ReturningToBase = true;
-					Unit3D nearestCastle = null;
+					Entity nearestCastle = Entity.Null;
+					System.Numerics.Vector3 nearestCastlePos = System.Numerics.Vector3.Zero;
 					float nearestDist = float.MaxValue;
-					if (_castlesListRef != null)
+					var wOwner = _ecsWorld.Get<Owner>(entity).PlayerEntity;
+
+					var castleQuery = new QueryDescription().WithAll<Position, DefinitionId, Owner>().WithNone<Dead>();
+					_ecsWorld.Query(in castleQuery, (Entity castleEntity, ref Position castlePos, ref DefinitionId defId, ref Owner ownerComp) =>
 					{
-						foreach (var u in _castlesListRef)
+						if (defId.Value == "castle" && ownerComp.PlayerEntity == wOwner)
 						{
-							var wOwner = _ecsWorld.Get<Owner>(entity).PlayerEntity;
-							var uOwner = _ecsWorld.Get<Owner>(u.Entity).PlayerEntity;
-							if (uOwner == wOwner && GodotObject.IsInstanceValid(u))
+							float d = System.Numerics.Vector3.Distance(currentPos, castlePos.Value);
+							if (d < nearestDist)
 							{
-								float d = currentPos.DistanceTo(u.GlobalPosition);
-								if (d < nearestDist)
-								{
-									nearestDist = d;
-									nearestCastle = u;
-								}
+								nearestDist = d;
+								nearestCastle = castleEntity;
+								nearestCastlePos = castlePos.Value;
 							}
 						}
-					}
+					});
 
-					if (nearestCastle != null)
+					if (nearestCastle != Entity.Null)
 					{
-						var dest = nearestCastle.GlobalPosition;
-						_tickGatherersToUpdate.Add((entity, newState, dest));
+						_tickGatherersToUpdate.Add((entity, newState, nearestCastlePos));
 					}
 					else
 					{
@@ -373,8 +335,7 @@ internal class ResourceEconomyService
 			{
 				if (!_ecsWorld.Has<MoveTo>(entity))
 				{
-					var dest = targetNode.GlobalPosition;
-					_tickGatherersToUpdate.Add((entity, gather, dest));
+					_tickGatherersToUpdate.Add((entity, gather, targetPos));
 				}
 			}
 		}

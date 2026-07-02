@@ -15,8 +15,15 @@ public partial class GameHost
 	private int GetServerEntityId(Entity localEntity) =>
 		_networkService.GetServerEntityId(localEntity.Id);
 
-	public bool TryGetLocalEntity(int serverEntityId, out Entity localEntity) =>
-		_networkService.TryGetLocalEntity(serverEntityId, out localEntity);
+	public bool TryGetLocalEntity(int serverEntityId, out Entity localEntity)
+	{
+		if (_networkService == null)
+		{
+			localEntity = Entity.Null;
+			return false;
+		}
+		return _networkService.TryGetLocalEntity(serverEntityId, out localEntity);
+	}
 
 	public void SetBackupResources(float gold, float wood, float stone) =>
 		_networkService.SetBackupResources(gold, wood, stone);
@@ -52,8 +59,8 @@ public partial class GameHost
 		}
 		EcsWorld?.Mutate<Realm.Ecs.Components.Core.NetworkState>(_worldEntity, (ref Realm.Ecs.Components.Core.NetworkState netState) =>
 			netState.DynamicInterpolationFactor = _networkService.ComputeDynamicInterpolationFactor());
-		var query = new QueryDescription().WithAll<InterpolationTarget, Unit3D>();
-		EcsWorld.Query(in query, _ecsService.InterpolationQueryDelegate);
+		var query = new QueryDescription().WithAll<InterpolationTarget>();
+		EcsWorld.Query(in query, _simulationService.InterpolationQueryDelegate);
 	}
 
 	[Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
@@ -112,19 +119,21 @@ public partial class GameHost
 					caster = GetUnitWrapper(casterEntity);
 				}
 			}
+			var casterEnt = caster != null ? ((IEcsEntityWrapper)caster).Entity : Entity.Null;
 			OnSpellCast?.Invoke(caster, spellId, new System.Numerics.Vector3(position.X, position.Y, position.Z));
 			if (spellId == "fireball")
 			{
-				DealSpellDamageAOE(position, 4.0f, 50f);
+				_simulationService.DealSpellDamageAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 4.0f, 50f, casterEnt);
 			}
 			else if (spellId == "lightning")
 			{
-				DealSpellDamageAOE(position, 2.0f, 80f);
+				_simulationService.DealSpellDamageAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 2.0f, 80f, casterEnt);
 			}
 			else if (spellId == "holylight")
 			{
-				HealAOE(position, 4.0f, 60f);
+				_simulationService.HealAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 4.0f, 60f);
 			}
+			InGameHUD.Instance?.RefreshUI(SelectedUnits);
 			if (LobbyManager.Instance != null)
 			{
 				foreach (var p in LobbyManager.Instance.PlayerList)
@@ -172,9 +181,8 @@ public partial class GameHost
 
 		foreach (var localEntity in _networkService.FlushPendingUnitKills())
 		{
-			if (EcsWorld.Has<Unit3D>(localEntity))
+			if (GameHost.TryGetUnit3D(localEntity, out var unit3D))
 			{
-				var unit3D = EcsWorld.Get<Unit3D>(localEntity);
 				CallDeferred("KillUnitDeferred", unit3D);
 			}
 		}

@@ -1,7 +1,6 @@
 using Arch.Core;
 using Arch.Core.Extensions;
 using DotRecast.Core.Numerics;
-using Godot;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Core;
@@ -14,7 +13,7 @@ using System;
 using System.Collections.Generic;
 using static Realm.Ecs.Common.WorldExtensions;
 
-internal class GameHostEcsService
+internal class SimulationService
 {
 	private readonly World _ecsWorld;
 	private readonly Entity _worldEntity;
@@ -30,7 +29,7 @@ internal class GameHostEcsService
 	private readonly List<string> _tickBuffKeys = new();
 	private readonly List<(Entity Entity, Patrol Patrol)> _tickPatrolToFlip = new();
 	private readonly List<Entity> _tickFollowToStop = new();
-	private readonly List<(Entity Follower, Vector3 TargetPos)> _tickFollowToMove = new();
+	private readonly List<(Entity Follower, System.Numerics.Vector3 TargetPos)> _tickFollowToMove = new();
 	private readonly List<Entity> _tickArrivedUnits = new();
 	private readonly List<(Entity Entity, PathFollow PathFollow)> _tickAddPathFollow = new();
 	private readonly List<Entity> _tickEntitiesToClearOrders = new();
@@ -50,53 +49,56 @@ internal class GameHostEcsService
 	private ForEachWithEntity<Follow, Position> _followQueryDelegate = null!;
 	private ForEachWithEntity<Attack> _attackCooldownQueryDelegate = null!;
 	private ForEachWithEntity<Realm.Ecs.Components.Core.ProductionQueue> _prodQueryDelegate = null!;
-	private ForEachWithEntity<InterpolationTarget, Unit3D> _interpolationQueryDelegate = null!;
+	private ForEachWithEntity<InterpolationTarget> _interpolationQueryDelegate = null!;
 	private ForEachWithEntity<SpellCooldowns> _spellCooldownQueryDelegate = null!;
 
-	public Action<Vector3, Vector3> OnArrowProjectileRequested;
-	public Action<Unit3D> OnDamageFlashRequested;
-	public Action<Vector3, Vector3> OnHealEffectRequested;
-	public Action<Unit3D> OnHealFlashRequested;
-	public Action<Unit3D, Unit3D, float> OnUnitDamagedCallback;
+	public Action<System.Numerics.Vector3, System.Numerics.Vector3> OnArrowProjectileRequested;
+	public Action<Entity> OnDamageFlashRequested;
+	public Action<System.Numerics.Vector3, System.Numerics.Vector3> OnHealEffectRequested;
+	public Action<Entity> OnHealFlashRequested;
+	public Action<Entity, Entity, float> OnUnitDamagedCallback;
 	public Action<string> OnUnderAttackAlertRequested;
 	public Action<Entity> OnKillUnitRequested;
-	public Action<string, Vector3, bool, Vector3?, bool> OnSpawnUnitFromProductionRequested;
+	public Action<string, System.Numerics.Vector3, bool, System.Numerics.Vector3?, bool> OnSpawnUnitFromProductionRequested;
 	public Action<Entity> OnClearUnitOrdersRequested;
 	public Action<Entity> OnStopGatheringMovementRequested;
 	public Action OnUiRefreshRequested;
+	public Action<Entity> OnPropDepleted;
 	public Action<string, float> OnResourceDepositedForPlayer;
 	public Action<string> OnProductionCompleted;
+	public Func<string, float> GetProductionBuildTime;
 
 	public struct SpawningRequest
 	{
 		public string UnitId;
-		public Vector3 Position;
+		public System.Numerics.Vector3 Position;
 		public bool IsEnemy;
-		public Vector3? RallyPoint;
+		public System.Numerics.Vector3? RallyPoint;
 		public bool IsFromQueue;
 	}
 
-	public GameHostEcsService(World ecsWorld, Entity worldEntity, NavMeshPathfinder pathfinder)
+	public SimulationService(World ecsWorld, Entity worldEntity, NavMeshPathfinder pathfinder)
 	{
 		_ecsWorld = ecsWorld;
 		_worldEntity = worldEntity;
 		_pathfinder = pathfinder;
 
-		_movementService = new MovementAndPathfindingService(ecsWorld, pathfinder);
+		_movementService = new MovementAndPathfindingService(ecsWorld, worldEntity, pathfinder);
 		_combatService = new CombatAndDamageService(ecsWorld);
 		_economyService = new ResourceEconomyService(ecsWorld);
 
 		_combatService.OnArrowProjectileRequested = (p1, p2) => OnArrowProjectileRequested?.Invoke(p1, p2);
-		_combatService.OnDamageFlashRequested = u => OnDamageFlashRequested?.Invoke(u);
+		_combatService.OnDamageFlashRequested = ent => OnDamageFlashRequested?.Invoke(ent);
 		_combatService.OnHealEffectRequested = (p1, p2) => OnHealEffectRequested?.Invoke(p1, p2);
-		_combatService.OnHealFlashRequested = u => OnHealFlashRequested?.Invoke(u);
-		_combatService.OnUnitDamagedCallback = (u1, u2, d) => OnUnitDamagedCallback?.Invoke(u1, u2, d);
+		_combatService.OnHealFlashRequested = ent => OnHealFlashRequested?.Invoke(ent);
+		_combatService.OnUnitDamagedCallback = (e1, e2, d) => OnUnitDamagedCallback?.Invoke(e1, e2, d);
 		_combatService.OnUnderAttackAlertRequested = id => OnUnderAttackAlertRequested?.Invoke(id);
-		_combatService.OnKillUnitRequested = (ent, u) => OnKillUnitRequested?.Invoke(ent);
+		_combatService.OnKillUnitRequested = ent => OnKillUnitRequested?.Invoke(ent);
 
 		_economyService.OnResourceDepositedForPlayer = (res, amount) => OnResourceDepositedForPlayer?.Invoke(res, amount);
 		_economyService.OnClearUnitOrdersRequested = ent => OnClearUnitOrdersRequested?.Invoke(ent);
 		_economyService.OnStopGatheringMovementRequested = ent => OnStopGatheringMovementRequested?.Invoke(ent);
+		_economyService.OnPropDepleted = ent => OnPropDepleted?.Invoke(ent);
 	}
 
 	public void Initialize()
@@ -118,6 +120,52 @@ internal class GameHostEcsService
 		_tickSpawningRequests.Clear();
 		_tickAddPathFollow.Clear();
 		_tickNeedsUiRefresh = false;
+
+		if (_worldEntity != default && _ecsWorld.IsAlive(_worldEntity))
+		{
+			if (_ecsWorld.Has<WorldState>(_worldEntity))
+			{
+				var state = _ecsWorld.Get<WorldState>(_worldEntity);
+				float elapsed = state.GameElapsedTime + fDelta;
+				float timer = state.TimeOfDayTimer;
+				int index = state.TimeOfDayIndex;
+
+				if (state.DayNightCycleEnabled)
+				{
+					timer += fDelta;
+					const float cycleDuration = 90f;
+					if (timer >= cycleDuration)
+					{
+						timer -= cycleDuration;
+					}
+
+					float progress = timer / cycleDuration;
+					float currentHour = progress * 24f;
+					if (currentHour >= 5f && currentHour < 6f) index = 3;
+					else if (currentHour >= 6f && currentHour < 18f) index = 0;
+					else if (currentHour >= 18f && currentHour < 20f) index = 1;
+					else index = 2;
+				}
+				_ecsWorld.Set(_worldEntity, new WorldState(elapsed, index, timer, state.DayNightCycleEnabled));
+			}
+
+			if (_ecsWorld.Has<CountdownState>(_worldEntity))
+			{
+				var countdown = _ecsWorld.Get<CountdownState>(_worldEntity);
+				if (countdown.Active)
+				{
+					float newDuration = countdown.Duration - fDelta;
+					if (newDuration <= 0f)
+					{
+						_ecsWorld.Set(_worldEntity, new CountdownState(false, 0f, countdown.Text));
+					}
+					else
+					{
+						_ecsWorld.Set(_worldEntity, new CountdownState(true, newDuration, countdown.Text));
+					}
+				}
+			}
+		}
 
 		_ecsWorld.Query(in _spellCooldownQuery, _spellCooldownQueryDelegate);
 
@@ -152,7 +200,7 @@ internal class GameHostEcsService
 	}
 
 	public ForEachWithEntity<Position, MoveTo, MovementStats> EditorMovementQueryDelegate => _movementService.EditorMovementQueryDelegate;
-	public ForEachWithEntity<InterpolationTarget, Unit3D> InterpolationQueryDelegate => _interpolationQueryDelegate;
+	public ForEachWithEntity<InterpolationTarget> InterpolationQueryDelegate => _interpolationQueryDelegate;
 
 	public void SetRuntimeReferences(
 		List<Unit3D> allUnits,
@@ -164,8 +212,7 @@ internal class GameHostEcsService
 		ResourceId stoneResourceId,
 		EditableTerrain groundTerrain)
 	{
-		_movementService.SetRuntimeReferences(allUnits, allProps, groundTerrain);
-		_economyService.SetRuntimeReferences(allProps, castlesList, definitionManager, goldResourceId, woodResourceId, stoneResourceId);
+		_economyService.SetRuntimeReferences(definitionManager, goldResourceId, woodResourceId, stoneResourceId);
 	}
 
 	private void ProcessPatrolArrivals()
@@ -216,7 +263,7 @@ internal class GameHostEcsService
 		{
 			if (_ecsWorld.IsAlive(follower))
 			{
-				var moveTo = new MoveTo(new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
+				var moveTo = new MoveTo(targetPos);
 				if (_ecsWorld.Has<MoveTo>(follower))
 					_ecsWorld.Set(follower, moveTo);
 				else
@@ -284,11 +331,9 @@ internal class GameHostEcsService
 
 	private void PatrolArrivalQueryAction(Entity entity, ref Patrol patrol, ref Position pos)
 	{
-		var current = new Vector3(pos.Value.X, pos.Value.Y, pos.Value.Z);
-		var dest = patrol.GoingToB
-			? new Vector3(patrol.PointB.X, patrol.PointB.Y, patrol.PointB.Z)
-			: new Vector3(patrol.PointA.X, patrol.PointA.Y, patrol.PointA.Z);
-		if (current.DistanceTo(dest) < 1.5f)
+		var current = pos.Value;
+		var dest = patrol.GoingToB ? patrol.PointB : patrol.PointA;
+		if (System.Numerics.Vector3.Distance(current, dest) < 1.5f)
 		{
 			_tickPatrolToFlip.Add((entity, patrol));
 		}
@@ -302,11 +347,10 @@ internal class GameHostEcsService
 			return;
 		}
 
-		var targetPosComp = _ecsWorld.Get<Position>(follow.Target);
-		var currentPos = new Vector3(pos.Value.X, pos.Value.Y, pos.Value.Z);
-		var targetPos = new Vector3(targetPosComp.Value.X, targetPosComp.Value.Y, targetPosComp.Value.Z);
+		var currentPos = pos.Value;
+		var targetPos = _ecsWorld.Get<Position>(follow.Target).Value;
 
-		float dist = currentPos.DistanceTo(targetPos);
+		float dist = System.Numerics.Vector3.Distance(currentPos, targetPos);
 		if (dist <= 3.0f)
 		{
 			_tickFollowToStop.Add(entity);
@@ -346,27 +390,33 @@ internal class GameHostEcsService
 				if (prod.UnitIds.Count > 0)
 				{
 					string nextUnitId = prod.UnitIds[0];
-					prod.BuildTime = GameHost.UnitRegistry[nextUnitId].ProductionTime;
+					prod.BuildTime = GetProductionBuildTime != null
+						? GetProductionBuildTime(nextUnitId)
+						: 5f;
 				}
 
-				if (_ecsWorld.Has<Unit3D>(entity))
+				if (_ecsWorld.Has<Position>(entity))
 				{
-					var building3D = _ecsWorld.Get<Unit3D>(entity);
-					var spawnPos = building3D.GlobalPosition + new Vector3(0, 0, 8);
+					var buildingPos = _ecsWorld.Get<Position>(entity).Value;
+
+					System.Numerics.Vector3 spawnOffset = _ecsWorld.Has<BuildingSpawnOffset>(entity)
+						? _ecsWorld.Get<BuildingSpawnOffset>(entity).Value
+						: new System.Numerics.Vector3(0f, 0f, 8f);
+
+					var spawnPos = buildingPos + spawnOffset;
 
 					var ownerComp = _ecsWorld.Get<Owner>(entity);
 					var playerEntity = _ecsWorld.Get<NetworkMappingState>(_worldEntity).PlayerEntity;
 					bool isEnemy = ownerComp.PlayerEntity != playerEntity.AsPlayerEntity(_ecsWorld);
 
-					Vector3? rallyPoint = null;
+					System.Numerics.Vector3? rallyPoint = null;
 					if (_ecsWorld.Has<RallyPoint>(entity))
 					{
-						var rp = _ecsWorld.Get<RallyPoint>(entity);
-						rallyPoint = new Vector3(rp.Value.X, rp.Value.Y, rp.Value.Z);
+						rallyPoint = _ecsWorld.Get<RallyPoint>(entity).Value;
 					}
 					else
 					{
-						rallyPoint = building3D.ToGlobal(new Vector3(0, 0, 8));
+						rallyPoint = buildingPos + spawnOffset;
 					}
 
 					_tickSpawningRequests.Add(new SpawningRequest
@@ -389,77 +439,78 @@ internal class GameHostEcsService
 		}
 	}
 
-	private void InterpolationQueryAction(Entity entity, ref InterpolationTarget target, ref Unit3D unit)
+	private void InterpolationQueryAction(Entity entity, ref InterpolationTarget target)
 	{
-		if (!GodotObject.IsInstanceValid(unit)) return;
-		Vector3 targetPos = new Vector3(target.Position.X, target.Position.Y, target.Position.Z);
-		Vector3 targetVel = new Vector3(target.Velocity.X, target.Velocity.Y, target.Velocity.Z);
+		if (!_ecsWorld.Has<Position>(entity)) return;
+		var pos = _ecsWorld.Get<Position>(entity);
+		System.Numerics.Vector3 currentPos = pos.Value;
+		System.Numerics.Vector3 targetPos = target.Position;
+		System.Numerics.Vector3 targetVel = target.Velocity;
+
+		System.Numerics.Vector3 finalPos = currentPos;
+		System.Numerics.Vector3 finalVel = targetVel;
+
+		bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
 		float dynamicInterpolationFactor = GetDynamicInterpolationFactor();
-		if (!unit.IsEnemy)
+
+		if (!isEnemy)
 		{
 			if (_ecsWorld.Has<MoveTo>(entity) && _ecsWorld.Has<MovementStats>(entity))
 			{
 				var moveTo = _ecsWorld.Get<MoveTo>(entity);
 				var stats = _ecsWorld.Get<MovementStats>(entity);
-				Vector3 dest = new Vector3(moveTo.Target.X, moveTo.Target.Y, moveTo.Target.Z);
-				float distToDest = unit.GlobalPosition.DistanceTo(dest);
+				System.Numerics.Vector3 dest = moveTo.Target;
+				float distToDest = System.Numerics.Vector3.Distance(currentPos, dest);
 				if (distToDest > 0.05f)
 				{
-					Vector3 dir = (dest - unit.GlobalPosition).Normalized();
+					System.Numerics.Vector3 dir = System.Numerics.Vector3.Normalize(dest - currentPos);
 					float step = stats.Speed * _fDelta;
 					if (step > distToDest) step = distToDest;
-					unit.GlobalPosition += dir * step;
-					unit.Velocity = dir * stats.Speed;
+					finalPos = currentPos + dir * step;
+					finalVel = dir * stats.Speed;
 				}
 				else
 				{
-					unit.GlobalPosition = dest;
-					unit.Velocity = Vector3.Zero;
+					finalPos = dest;
+					finalVel = System.Numerics.Vector3.Zero;
 					_ecsWorld.Remove<MoveTo>(entity);
 				}
-				GD.Print($"[CLIENT_ESTIMATED] Unit={entity.Id} Pos={unit.GlobalPosition} Target={moveTo.Target}");
+				Console.WriteLine($"[CLIENT_ESTIMATED] Unit={entity.Id} Pos={finalPos} Target={moveTo.Target}");
 			}
 			else
 			{
-				float dist = unit.GlobalPosition.DistanceTo(targetPos);
+				float dist = System.Numerics.Vector3.Distance(currentPos, targetPos);
 				if (dist > 2.0f)
 				{
-					unit.GlobalPosition = targetPos;
-					unit.Velocity = targetVel;
+					finalPos = targetPos;
+					finalVel = targetVel;
 				}
 				else if (dist > 0.5f)
 				{
-					Vector3 diff = targetPos - unit.GlobalPosition;
-					unit.GlobalPosition += diff * (_fDelta / 0.2f);
+					System.Numerics.Vector3 diff = targetPos - currentPos;
+					finalPos = currentPos + diff * (_fDelta / 0.2f);
 				}
 				else if (dist > 0.01f)
 				{
-					Vector3 diff = targetPos - unit.GlobalPosition;
-					unit.GlobalPosition += diff * (_fDelta / 0.5f);
+					System.Numerics.Vector3 diff = targetPos - currentPos;
+					finalPos = currentPos + diff * (_fDelta / 0.5f);
 				}
-			}
-			if (_ecsWorld.Has<Position>(entity))
-			{
-				var finalPos = unit.GlobalPosition;
-				_ecsWorld.Set(entity, new Position(new System.Numerics.Vector3(finalPos.X, finalPos.Y, finalPos.Z)));
-			}
-			if (unit.Velocity.LengthSquared() > 0.01f)
-			{
-				float angle = Mathf.Atan2(-unit.Velocity.X, -unit.Velocity.Z);
-				var rot = unit.Rotation;
-				rot.Y = Mathf.LerpAngle(rot.Y, angle, 10f * _fDelta);
-				unit.Rotation = rot;
 			}
 		}
 		else
 		{
-			unit.GlobalPosition = unit.GlobalPosition.Lerp(targetPos, dynamicInterpolationFactor * _fDelta);
-			unit.GlobalRotation = new Vector3(0, Mathf.LerpAngle(unit.GlobalRotation.Y, target.RotationY, dynamicInterpolationFactor * _fDelta), 0);
-			unit.Velocity = targetVel;
-			if (_ecsWorld.Has<Position>(entity))
-			{
-				_ecsWorld.Set(entity, new Position(new System.Numerics.Vector3(unit.GlobalPosition.X, unit.GlobalPosition.Y, unit.GlobalPosition.Z)));
-			}
+			finalPos = System.Numerics.Vector3.Lerp(currentPos, targetPos, Math.Min(1f, dynamicInterpolationFactor * _fDelta));
+			finalVel = targetVel;
+		}
+
+		_ecsWorld.Set(entity, new Position(finalPos));
+		if (_ecsWorld.Has<Velocity>(entity))
+		{
+			_ecsWorld.Set(entity, new Velocity(finalVel));
+		}
+		else
+		{
+			_ecsWorld.Add(entity, new Velocity(finalVel));
 		}
 	}
 
@@ -470,4 +521,14 @@ internal class GameHostEcsService
 		=> _ecsWorld.GetFieldOrDefault<NetworkState, float>(_worldEntity, s => s.DynamicInterpolationFactor, 10f);
 
 	public List<Entity> GetEditorArrivedUnits() => _tickArrivedUnits;
+
+	public void DealSpellDamageAOE(System.Numerics.Vector3 position, float radius, float damage, Entity casterEntity, bool enemyOnly = true)
+	{
+		_combatService.DealSpellDamageAOE(position, radius, damage, casterEntity, enemyOnly);
+	}
+
+	public void HealAOE(System.Numerics.Vector3 position, float radius, float healAmount)
+	{
+		_combatService.HealAOE(position, radius, healAmount);
+	}
 }

@@ -26,6 +26,8 @@ public partial class GameHost
 		SelectedUnits.Clear();
 		AllUnits.Clear();
 		AllProps.Clear();
+		EntityToUnit3D.Clear();
+		EntityToProp3D.Clear();
 		
 		foreach (var child in GetChildren())
 		{
@@ -140,16 +142,23 @@ public partial class GameHost
 		AddChild(prop);
 		AllProps.Add(prop);
 
-		EcsWorld.Add(entity, prop);
+		EntityToProp3D[entity] = prop;
 
 		position.Y = _editorService.GetTerrainHeightAt(position);
 		prop.Position = position;
 		
+		float actualScale = 1.0f;
 		if (IsMapEditorMode)
 		{
 			prop.RotationDegrees = new Vector3(0.0f, EditorPlacementRotation, 0.0f);
 			prop.Scale *= EditorPlacementScale;
+			actualScale = EditorPlacementScale;
 		}
+
+		EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Prop());
+		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(position.X, position.Y, position.Z)));
+		EcsWorld.Add(entity, new CollisionScale(actualScale));
+
 		return prop;
 	}
 
@@ -185,21 +194,29 @@ public partial class GameHost
 
 	public Decal SpawnDecalExternal(Vector3 position)
 	{
-		var decal = new Decal();
+		var entity = EcsWorld.Create();
+		var decal = new Decal3D();
+		decal.Entity = entity;
+		decal.DecalId = "logo";
 		decal.TextureAlbedo = GD.Load<Texture2D>("res://icon.svg");
 		decal.Size = new Vector3(6.0f, 20.0f, 6.0f);
-		decal.SetMeta("DecalId", "logo");
 		decal.AlbedoMix = 1.0f;
 		AddChild(decal);
 		
 		position.Y = _editorService.GetTerrainHeightAt(position);
 		decal.Position = position;
 		
+		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(position.X, position.Y, position.Z)));
+		EcsWorld.Add(entity, new RotationY(0.0f));
+		EcsWorld.Add(entity, new ModelScale(1.0f));
+		
 		if (IsMapEditorMode)
 		{
 			decal.RotationDegrees = new Vector3(0.0f, EditorPlacementRotation, 0.0f);
 			decal.Size = new Vector3(6.0f, 20.0f, 6.0f) * EditorPlacementScale;
 			decal.Scale = Vector3.One;
+			EcsWorld.Set(entity, new RotationY(EditorPlacementRotation));
+			EcsWorld.Set(entity, new ModelScale(EditorPlacementScale));
 		}
 		return decal;
 	}
@@ -249,6 +266,7 @@ public partial class GameHost
 		{
 			SelectedUnits.Remove(unit);
 			AllUnits.Remove(unit);
+			EntityToUnit3D.Remove(unit.Entity);
 			if (EcsWorld.IsAlive(unit.Entity))
 			{
 				EcsWorld.Destroy(unit.Entity);
@@ -263,6 +281,11 @@ public partial class GameHost
 			if (current is Prop3D prop)
 			{
 				AllProps.Remove(prop);
+				EntityToProp3D.Remove(prop.Entity);
+				if (EcsWorld.IsAlive(prop.Entity))
+				{
+					EcsWorld.Destroy(prop.Entity);
+				}
 				prop.QueueFree();
 				return;
 			}
@@ -292,11 +315,11 @@ public partial class GameHost
 
 	private void ProcessMapEditorPhysics(float fDelta)
 	{
-		_ecsService.TickEditorPhysics(fDelta);
+		_simulationService.TickEditorPhysics(fDelta);
 		var query = new QueryDescription().WithAll<Position, MoveTo, MovementStats>().WithNone<Dead>();
-		var arrivedUnits = _ecsService.GetEditorArrivedUnits();
+		var arrivedUnits = _simulationService.GetEditorArrivedUnits();
 		arrivedUnits.Clear();
-		EcsWorld.Query(in query, _ecsService.EditorMovementQueryDelegate);
+		EcsWorld.Query(in query, _simulationService.EditorMovementQueryDelegate);
 
 		foreach (var entity in arrivedUnits)
 		{
@@ -356,6 +379,15 @@ public partial class GameHost
 		unit3D.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
 		unit3D.Scale = Vector3.One * scale;
 
+		if (EcsWorld.Has<CollisionScale>(entity))
+		{
+			EcsWorld.Set(entity, new CollisionScale(scale));
+		}
+		else
+		{
+			EcsWorld.Add(entity, new CollisionScale(scale));
+		}
+
 		return unit3D;
 	}
 
@@ -382,22 +414,28 @@ public partial class GameHost
 		AddChild(prop);
 		AllProps.Add(prop);
 
-		EcsWorld.Add(entity, prop);
+		EntityToProp3D[entity] = prop;
 
 		position.Y = _editorService.GetTerrainHeightAt(position);
 		prop.Position = position;
 		prop.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
 		prop.Scale = Vector3.One * scale;
 		
+		EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Prop());
+		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(position.X, position.Y, position.Z)));
+		EcsWorld.Add(entity, new CollisionScale(scale));
+
 		return prop;
 	}
 
 	public Decal SpawnDecalExternalWithParams(string decalId, Vector3 position, float rotationY, float scale)
 	{
-		var decal = new Decal();
+		var entity = EcsWorld.Create();
+		var decal = new Decal3D();
+		decal.Entity = entity;
+		decal.DecalId = string.IsNullOrEmpty(decalId) ? "logo" : decalId;
 		decal.TextureAlbedo = GD.Load<Texture2D>(GetDecalTexturePath(decalId));
 		decal.Size = new Vector3(6.0f, 20.0f, 6.0f) * scale;
-		decal.SetMeta("DecalId", string.IsNullOrEmpty(decalId) ? "logo" : decalId);
 		decal.AlbedoMix = 1.0f;
 		AddChild(decal);
 		
@@ -405,6 +443,10 @@ public partial class GameHost
 		decal.Position = position;
 		decal.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
 		decal.Scale = Vector3.One;
+		
+		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(position.X, position.Y, position.Z)));
+		EcsWorld.Add(entity, new RotationY(rotationY));
+		EcsWorld.Add(entity, new ModelScale(scale));
 		
 		return decal;
 	}
@@ -419,6 +461,7 @@ public partial class GameHost
 		{
 			SelectedUnits.Remove(unit);
 			AllUnits.Remove(unit);
+			EntityToUnit3D.Remove(unit.Entity);
 			if (EcsWorld.IsAlive(unit.Entity))
 			{
 				EcsWorld.Destroy(unit.Entity);
@@ -428,6 +471,7 @@ public partial class GameHost
 		else if (node is Prop3D prop && GodotObject.IsInstanceValid(prop))
 		{
 			AllProps.Remove(prop);
+			EntityToProp3D.Remove(prop.Entity);
 			if (EcsWorld.IsAlive(prop.Entity))
 			{
 				EcsWorld.Destroy(prop.Entity);
@@ -436,6 +480,10 @@ public partial class GameHost
 		}
 		else if (node is Decal decal && GodotObject.IsInstanceValid(decal))
 		{
+			if (decal is Decal3D decal3D && EcsWorld.IsAlive(decal3D.Entity))
+			{
+				EcsWorld.Destroy(decal3D.Entity);
+			}
 			decal.QueueFree();
 		}
 	}
@@ -641,11 +689,11 @@ public partial class GameHost
 			}
 			else if (ActiveEditorTool == EditorTool.PlaceDecal)
 			{
-				var previewDecal = new Decal();
+				var previewDecal = new Decal3D();
 				previewDecal.TextureAlbedo = GD.Load<Texture2D>(GetDecalTexturePath(reqId));
 				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * EditorPlacementScale;
 				AddChild(previewDecal);
-				previewDecal.SetMeta("DecalId", string.IsNullOrEmpty(reqId) ? "logo" : reqId);
+				previewDecal.DecalId = string.IsNullOrEmpty(reqId) ? "logo" : reqId;
 
 				Color color = new Color(1.0f, 1.0f, 1.0f);
 				var mat = new StandardMaterial3D();
@@ -1207,26 +1255,22 @@ public partial class GameHost
 			}
 		}
 		AllProps.Clear();
+		EntityToUnit3D.Clear();
+		EntityToProp3D.Clear();
 		
-		if (EcsWorld != null)
-		{
-			EcsWorld.Dispose();
-			EcsWorld = World.Create();
-			InitializeServices();
-			SetupWorldEntityComponents();
-			
-			_playerEntity = EcsWorld.Create();
-			EcsWorld.Add(_playerEntity, new Player());
-			EcsWorld.Add(_playerEntity, new Name("Horaid_Topa"));
-			InitializePlayerResources(_playerEntity);
-			SetupPlayerEntityComponents(_playerEntity);
+		ReinitializeEcsAndServices();
+		
+		_playerEntity = EcsWorld.Create();
+		EcsWorld.Add(_playerEntity, new Player());
+		EcsWorld.Add(_playerEntity, new Name("Horaid_Topa"));
+		InitializePlayerResources(_playerEntity);
+		SetupPlayerEntityComponents(_playerEntity);
 
-			_enemyPlayerEntity = EcsWorld.Create();
-			EcsWorld.Add(_enemyPlayerEntity, new Player());
-			EcsWorld.Add(_enemyPlayerEntity, new Name("Enemy_AI"));
-			InitializePlayerResources(_enemyPlayerEntity);
-			SetupPlayerEntityComponents(_enemyPlayerEntity);
-		}
+		_enemyPlayerEntity = EcsWorld.Create();
+		EcsWorld.Add(_enemyPlayerEntity, new Player());
+		EcsWorld.Add(_enemyPlayerEntity, new Name("Enemy_AI"));
+		InitializePlayerResources(_enemyPlayerEntity);
+		SetupPlayerEntityComponents(_enemyPlayerEntity);
 	}
 
 	private void CreateBrushIndicator()

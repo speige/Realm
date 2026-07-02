@@ -21,11 +21,10 @@ public partial class GameHost
 			}
 		}
 		AllUnits.Clear();
+		EntityToUnit3D.Clear();
+		EntityToProp3D.Clear();
 
-		EcsWorld?.Dispose();
-		EcsWorld = World.Create();
-		InitializeServices();
-		SetupWorldEntityComponents();
+		ReinitializeEcsAndServices();
 
 		var players = new List<(int PeerId, string Name)>();
 		if (ReplayPlaybackManager.Instance.Header.Players != null)
