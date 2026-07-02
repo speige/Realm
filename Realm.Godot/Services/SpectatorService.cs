@@ -16,7 +16,7 @@ public class SpectatorService
 	private Entity FindWorldEntity()
 	{
 		Entity worldEntity = Entity.Null;
-		var query = new QueryDescription().WithAll<NetworkMappingState>();
+		var query = Realm.Ecs.Common.QueryCache.AllNetworkMappingStateQuery;
 		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 		return worldEntity;
 	}

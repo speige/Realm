@@ -204,7 +204,7 @@ public partial class GameHost
 				}
 				if (editorKeyEvent.Keycode == Key.C && !ctrlPressed && !shiftPressed)
 				{
-					var cam = GetTree().Root.GetNodeOrNull<Camera3D>("Main/Camera3D");
+					var cam = MainCamera;
 					if (cam != null && cam.HasMethod("ToggleTopDown"))
 					{
 						cam.Call("ToggleTopDown");

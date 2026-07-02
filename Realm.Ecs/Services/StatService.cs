@@ -29,7 +29,7 @@ internal class StatService
 		var baseStats = _ecsWorldAccessor.Current.Get<Stats>(entity).Value;
 		if (!baseStats.TryGetValue(statId, out var currentValue)) return 0f;
 
-		var query = new QueryDescription().WithAll<StatModifier>();
+		var query = Realm.Ecs.Common.QueryCache.AllStatModifierQuery;
 		var flatBonus = 0f;
 		var percentBonus = 1.0f;
 

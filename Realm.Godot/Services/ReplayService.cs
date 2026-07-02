@@ -43,7 +43,7 @@ public class ReplayService
 	public void SetupPlayersForPlayback(List<(int PeerId, string Name)> players)
 	{
 		Entity worldEntity = Entity.Null;
-		var worldQuery = new QueryDescription().WithAll<NetworkMappingState>();
+		var worldQuery = Realm.Ecs.Common.QueryCache.AllNetworkMappingStateQuery;
 		_ecsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
 
 		if (worldEntity == Entity.Null)
@@ -86,7 +86,7 @@ public class ReplayService
 		}
 
 		Entity worldEntity = Entity.Null;
-		var worldQuery = new QueryDescription().WithAll<NetworkMappingState>();
+		var worldQuery = Realm.Ecs.Common.QueryCache.AllNetworkMappingStateQuery;
 		_ecsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
 
 		if (worldEntity == Entity.Null)
@@ -143,7 +143,7 @@ public class ReplayService
 		if (_replayRecorder == null) return;
 
 		Entity worldEntity = Entity.Null;
-		var worldQuery = new QueryDescription().WithAll<ReplayState, NetworkMappingState>();
+		var worldQuery = Realm.Ecs.Common.QueryCache.AllReplayStateAndNetworkMappingStateQuery;
 		_ecsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
 
 		if (worldEntity == Entity.Null) return;
@@ -162,7 +162,7 @@ public class ReplayService
 
 		var mapping = _ecsWorld.Get<NetworkMappingState>(worldEntity);
 
-		var unitQuery = new QueryDescription().WithAll<DefinitionId, Position, Owner>();
+		var unitQuery = Realm.Ecs.Common.QueryCache.AllDefinitionIdAndPositionAndOwnerQuery;
 		_ecsWorld.Query(in unitQuery, (Entity entity, ref DefinitionId defId, ref Position posComp, ref Owner ownerComp) =>
 		{
 			int entityId = entity.Id;

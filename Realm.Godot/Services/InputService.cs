@@ -26,7 +26,7 @@ internal class InputService
 	private Entity GetWorldEntity()
 	{
 		Entity worldEntity = Entity.Null;
-		var query = new QueryDescription().WithAll<InputState>();
+		var query = Realm.Ecs.Common.QueryCache.AllInputStateQuery;
 		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 		return worldEntity;
 	}
@@ -323,7 +323,7 @@ internal class InputService
 	public Entity CycleThroughBuildings(Entity playerEntity)
 	{
 		var buildings = new List<Entity>();
-		var query = new QueryDescription().WithAll<Building, Owner, Position>().WithNone<Dead>();
+		var query = Realm.Ecs.Common.QueryCache.AllBuildingAndOwnerAndPositionNoneDeadQuery;
 		_ecsWorld.Query(in query, (Entity entity, ref Owner owner) =>
 		{
 			if (owner.PlayerEntity.Value == playerEntity)
@@ -351,7 +351,7 @@ internal class InputService
 	public List<Entity> GetIdleUnitEntities(Entity playerEntity)
 	{
 		var result = new List<Entity>();
-		var query = new QueryDescription().WithAll<Owner, Movable>().WithNone<Dead, Building>();
+		var query = Realm.Ecs.Common.QueryCache.AllOwnerAndMovableNoneDeadAndBuildingQuery;
 		_ecsWorld.Query(in query, (Entity entity, ref Owner owner) =>
 		{
 			if (owner.PlayerEntity.Value == playerEntity)
@@ -373,7 +373,7 @@ internal class InputService
 	public List<Entity> GetMilitaryUnitEntities(Entity playerEntity)
 	{
 		var result = new List<Entity>();
-		var query = new QueryDescription().WithAll<Owner, Movable>().WithNone<Dead, Building>();
+		var query = Realm.Ecs.Common.QueryCache.AllOwnerAndMovableNoneDeadAndBuildingQuery;
 		_ecsWorld.Query(in query, (Entity entity, ref Owner owner) =>
 		{
 			if (owner.PlayerEntity.Value == playerEntity)
@@ -387,7 +387,7 @@ internal class InputService
 	public List<Entity> GetBuildingEntities(Entity playerEntity)
 	{
 		var result = new List<Entity>();
-		var query = new QueryDescription().WithAll<Owner, Building>().WithNone<Dead>();
+		var query = Realm.Ecs.Common.QueryCache.AllOwnerAndBuildingNoneDeadQuery;
 		_ecsWorld.Query(in query, (Entity entity, ref Owner owner) =>
 		{
 			if (owner.PlayerEntity.Value == playerEntity)
@@ -406,7 +406,7 @@ internal class InputService
 	public bool IsAreaObstructed(System.Numerics.Vector3 position, float clearance)
 	{
 		bool obstructed = false;
-		var query = new QueryDescription().WithAll<Position>().WithNone<Dead>();
+		var query = Realm.Ecs.Common.QueryCache.AllPositionNoneDeadQuery;
 		_ecsWorld.Query(in query, (Entity entity, ref Position pos) =>
 		{
 			if (System.Numerics.Vector3.Distance(position, pos.Value) < clearance)
@@ -421,7 +421,7 @@ internal class InputService
 	{
 		bool blocked = false;
 
-		var query = new QueryDescription().WithAll<Position>().WithNone<Dead>();
+		var query = Realm.Ecs.Common.QueryCache.AllPositionNoneDeadQuery;
 		_ecsWorld.Query(in query, (Entity entity, ref Position entityPos) =>
 		{
 			if (entity == ignoreEntity) return;
@@ -571,7 +571,7 @@ internal class InputService
 		Entity closestUnit = Entity.Null;
 		float closestDist = maxDistance;
 
-		var query = new QueryDescription().WithAll<Position, Owner, Inventory>().WithNone<Dead, Building>();
+		var query = Realm.Ecs.Common.QueryCache.AllPositionAndOwnerAndInventoryNoneDeadAndBuildingQuery;
 		_ecsWorld.Query(in query, (Entity entity, ref Position pos, ref Owner owner) =>
 		{
 			if (owner.PlayerEntity.Value == playerEntity)

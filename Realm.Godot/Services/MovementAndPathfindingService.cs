@@ -24,8 +24,8 @@ internal class MovementAndPathfindingService
 
 	private readonly List<Entity> _tickArrivedUnits = new();
 
-	private readonly QueryDescription _movementQuery = new QueryDescription().WithAll<Position, MoveTo, MovementStats>().WithNone<Dead>();
-	private readonly QueryDescription _spatialQuery = new QueryDescription().WithAll<Position>();
+	private readonly QueryDescription _movementQuery = Realm.Ecs.Common.QueryCache.AllPositionAndMoveToAndMovementStatsNoneDeadQuery;
+	private readonly QueryDescription _spatialQuery = Realm.Ecs.Common.QueryCache.AllPositionQuery;
 	private ForEachWithEntity<Position, MoveTo, MovementStats> _movementQueryDelegate = null!;
 
 	private TerrainState _currentTerrainState;

@@ -105,7 +105,7 @@ public class CheatService
 		if (lower == "thanossnap" || lower == "emotionaldamage")
 		{
 			int destroyed = 0;
-			var query = new QueryDescription().WithAll<Health, Owner>();
+			var query = Realm.Ecs.Common.QueryCache.AllHealthAndOwnerQuery;
 			_ecsWorld.Query(in query, (Entity entity, ref Owner owner) =>
 			{
 				bool isEnemy = false;
@@ -131,7 +131,7 @@ public class CheatService
 		if (lower == "nocap" || lower == "verydemure")
 		{
 			Entity worldEntity = Entity.Null;
-			var query = new QueryDescription().WithAll<FogAndWeatherState>();
+			var query = Realm.Ecs.Common.QueryCache.AllFogAndWeatherStateQuery;
 			_ecsWorld.Query(in query, (Entity ent) => worldEntity = ent);
 
 			if (worldEntity != Entity.Null && _ecsWorld.IsAlive(worldEntity) && _ecsWorld.Has<FogAndWeatherState>(worldEntity))

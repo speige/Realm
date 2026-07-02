@@ -18,7 +18,7 @@ public class EnvironmentService
 	private Entity FindWorldEntity()
 	{
 		Entity worldEntity = Entity.Null;
-		var query = new QueryDescription().WithAll<FogAndWeatherState>();
+		var query = Realm.Ecs.Common.QueryCache.AllFogAndWeatherStateQuery;
 		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 		return worldEntity;
 	}

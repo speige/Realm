@@ -39,12 +39,12 @@ internal class CombatAndDamageService
 	private readonly List<(Entity Priest, System.Numerics.Vector3 TargetPos)> _tickHealChaseTargets = new();
 	private readonly List<Entity> _tickHealStopChasing = new();
 
-	private readonly QueryDescription _enemyQuery = new QueryDescription().WithAll<Position, Owner>().WithNone<Dead>();
-	private readonly QueryDescription _friendlyScanQuery = new QueryDescription().WithAll<Position, Health, Owner>().WithNone<Dead>();
-	private readonly QueryDescription _targetAcquisitionQuery = new QueryDescription().WithAll<Position, Attack, Owner>().WithNone<AttackTarget, Dead>();
-	private readonly QueryDescription _combatQuery = new QueryDescription().WithAll<Position, Attack, AttackTarget, Owner>().WithNone<Dead>();
-	private readonly QueryDescription _priestScanQuery = new QueryDescription().WithAll<Position, Owner, DefinitionId>().WithNone<Dead, HealingTarget>();
-	private readonly QueryDescription _healingExecutionQuery = new QueryDescription().WithAll<Position, Attack, HealingTarget, Owner>().WithNone<Dead>();
+	private readonly QueryDescription _enemyQuery = Realm.Ecs.Common.QueryCache.AllPositionAndOwnerNoneDeadQuery;
+	private readonly QueryDescription _friendlyScanQuery = Realm.Ecs.Common.QueryCache.AllPositionAndHealthAndOwnerNoneDeadQuery;
+	private readonly QueryDescription _targetAcquisitionQuery = Realm.Ecs.Common.QueryCache.AllPositionAndAttackAndOwnerNoneAttackTargetAndDeadQuery;
+	private readonly QueryDescription _combatQuery = Realm.Ecs.Common.QueryCache.AllPositionAndAttackAndAttackTargetAndOwnerNoneDeadQuery;
+	private readonly QueryDescription _priestScanQuery = Realm.Ecs.Common.QueryCache.AllPositionAndOwnerAndDefinitionIdNoneDeadAndHealingTargetQuery;
+	private readonly QueryDescription _healingExecutionQuery = Realm.Ecs.Common.QueryCache.AllPositionAndAttackAndHealingTargetAndOwnerNoneDeadQuery;
 
 	private ForEachWithEntity<Position, Attack, Owner> _targetAcquisitionQueryDelegate = null!;
 	private ForEachWithEntity<Position, Owner> _potentialEnemyQueryDelegate = null!;
@@ -86,7 +86,7 @@ internal class CombatAndDamageService
 	private Entity FindWorldEntity()
 	{
 		Entity worldEntity = Entity.Null;
-		var query = new QueryDescription().WithAll<WorldState>();
+		var query = Realm.Ecs.Common.QueryCache.AllWorldStateQuery;
 		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 		return worldEntity;
 	}
@@ -104,7 +104,7 @@ internal class CombatAndDamageService
 	private float GetCombatAlertTimer()
 	{
 		Entity worldEntity = Entity.Null;
-		var query = new QueryDescription().WithAll<CombatAlertState>();
+		var query = Realm.Ecs.Common.QueryCache.AllCombatAlertStateQuery;
 		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 
 		if (worldEntity != Entity.Null && _ecsWorld.Has<CombatAlertState>(worldEntity))
@@ -117,7 +117,7 @@ internal class CombatAndDamageService
 	private void SetCombatAlertTimer(float value)
 	{
 		Entity worldEntity = Entity.Null;
-		var query = new QueryDescription().WithAll<CombatAlertState>();
+		var query = Realm.Ecs.Common.QueryCache.AllCombatAlertStateQuery;
 		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 
 		if (worldEntity != Entity.Null && _ecsWorld.Has<CombatAlertState>(worldEntity))
@@ -130,7 +130,7 @@ internal class CombatAndDamageService
 	private void TickCombatAlertTimer(float fDelta)
 	{
 		Entity worldEntity = Entity.Null;
-		var query = new QueryDescription().WithAll<CombatAlertState>();
+		var query = Realm.Ecs.Common.QueryCache.AllCombatAlertStateQuery;
 		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 
 		if (worldEntity != Entity.Null && _ecsWorld.Has<CombatAlertState>(worldEntity))
@@ -532,7 +532,7 @@ internal class CombatAndDamageService
 
 	public void DealSpellDamageAOE(System.Numerics.Vector3 position, float radius, float damage, Entity casterEntity, bool enemyOnly = true)
 	{
-		var query = new QueryDescription().WithAll<Position, Health>().WithNone<Dead>();
+		var query = Realm.Ecs.Common.QueryCache.AllPositionAndHealthNoneDeadQuery;
 		_ecsWorld.Query(in query, (Entity entity, ref Position pos, ref Health hp) =>
 		{
 			if (_ecsWorld.Has<Realm.Ecs.Components.Tags.Invulnerable>(entity)) return;
@@ -580,7 +580,7 @@ internal class CombatAndDamageService
 
 	public void HealAOE(System.Numerics.Vector3 position, float radius, float healAmount)
 	{
-		var query = new QueryDescription().WithAll<Position, Health>().WithNone<Dead>();
+		var query = Realm.Ecs.Common.QueryCache.AllPositionAndHealthNoneDeadQuery;
 		_ecsWorld.Query(in query, (Entity entity, ref Position pos, ref Health hp) =>
 		{
 			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;

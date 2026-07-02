@@ -322,7 +322,7 @@ public partial class GameHost
 		if (_simulationService == null || EcsWorld == null) return;
 
 		_simulationService.TickEditorPhysics(fDelta);
-		var query = new QueryDescription().WithAll<Position, MoveTo, MovementStats>().WithNone<Dead>();
+		var query = Realm.Ecs.Common.QueryCache.AllPositionAndMoveToAndMovementStatsNoneDeadQuery;
 		var arrivedUnits = _simulationService.GetEditorArrivedUnits();
 		arrivedUnits.Clear();
 		EcsWorld.Query(in query, _simulationService.EditorMovementQueryDelegate);

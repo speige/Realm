@@ -38,12 +38,12 @@ internal class SimulationService
 	private readonly List<SpawningRequest> _tickSpawningRequests = new();
 	private bool _tickNeedsUiRefresh = false;
 
-	private readonly QueryDescription _buffQuery = new QueryDescription().WithAll<Realm.Ecs.Components.Core.Buffs>().WithNone<Dead>();
-	private readonly QueryDescription _patrolArrivalQuery = new QueryDescription().WithAll<Patrol, Position>().WithNone<Dead, AttackTarget>();
-	private readonly QueryDescription _followQuery = new QueryDescription().WithAll<Follow, Position>().WithNone<Dead>();
-	private readonly QueryDescription _attackCooldownQuery = new QueryDescription().WithAll<Attack>();
-	private readonly QueryDescription _prodQuery = new QueryDescription().WithAll<Realm.Ecs.Components.Core.ProductionQueue>();
-	private readonly QueryDescription _spellCooldownQuery = new QueryDescription().WithAll<SpellCooldowns>();
+	private readonly QueryDescription _buffQuery = Realm.Ecs.Common.QueryCache.AllBuffsNoneDeadQuery;
+	private readonly QueryDescription _patrolArrivalQuery = Realm.Ecs.Common.QueryCache.AllPatrolAndPositionNoneDeadAndAttackTargetQuery;
+	private readonly QueryDescription _followQuery = Realm.Ecs.Common.QueryCache.AllFollowAndPositionNoneDeadQuery;
+	private readonly QueryDescription _attackCooldownQuery = Realm.Ecs.Common.QueryCache.AllAttackQuery;
+	private readonly QueryDescription _prodQuery = Realm.Ecs.Common.QueryCache.AllProductionQueueQuery;
+	private readonly QueryDescription _spellCooldownQuery = Realm.Ecs.Common.QueryCache.AllSpellCooldownsQuery;
 
 	private ForEachWithEntity<Realm.Ecs.Components.Core.Buffs> _buffsQueryDelegate = null!;
 	private ForEachWithEntity<Patrol, Position> _patrolArrivalQueryDelegate = null!;
