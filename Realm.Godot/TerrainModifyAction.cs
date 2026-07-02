@@ -23,8 +23,14 @@ public class TerrainModifyAction : IEditorAction
 	public void Undo()
 	{
 		if (GameHost.Instance?.GroundTerrain == null) return;
-		Array.Copy(_beforeHeights, GameHost.Instance.GroundTerrain.Heights, _beforeHeights.Length);
-		Array.Copy(_beforeColors, GameHost.Instance.GroundTerrain.Colors, _beforeColors.Length);
+		if (_beforeHeights != null && GameHost.Instance.GroundTerrain.Heights != null)
+		{
+			Array.Copy(_beforeHeights, GameHost.Instance.GroundTerrain.Heights, _beforeHeights.Length);
+		}
+		if (_beforeColors != null && GameHost.Instance.GroundTerrain.Colors != null)
+		{
+			Array.Copy(_beforeColors, GameHost.Instance.GroundTerrain.Colors, _beforeColors.Length);
+		}
 		if (_beforePathing != null && GameHost.Instance.GroundTerrain.PathingCodes != null)
 		{
 			Array.Copy(_beforePathing, GameHost.Instance.GroundTerrain.PathingCodes, _beforePathing.Length);
@@ -37,8 +43,14 @@ public class TerrainModifyAction : IEditorAction
 	public void Redo()
 	{
 		if (GameHost.Instance?.GroundTerrain == null) return;
-		Array.Copy(_afterHeights, GameHost.Instance.GroundTerrain.Heights, _afterHeights.Length);
-		Array.Copy(_afterColors, GameHost.Instance.GroundTerrain.Colors, _afterColors.Length);
+		if (_afterHeights != null && GameHost.Instance.GroundTerrain.Heights != null)
+		{
+			Array.Copy(_afterHeights, GameHost.Instance.GroundTerrain.Heights, _afterHeights.Length);
+		}
+		if (_afterColors != null && GameHost.Instance.GroundTerrain.Colors != null)
+		{
+			Array.Copy(_afterColors, GameHost.Instance.GroundTerrain.Colors, _afterColors.Length);
+		}
 		if (_afterPathing != null && GameHost.Instance.GroundTerrain.PathingCodes != null)
 		{
 			Array.Copy(_afterPathing, GameHost.Instance.GroundTerrain.PathingCodes, _afterPathing.Length);

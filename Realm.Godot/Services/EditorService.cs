@@ -545,9 +545,9 @@ public class EditorService
 		out float newFlattenHeight)
 	{
 		_isDrawingTerrain = true;
-		_terrainHeightsBefore = (float[,])currentHeights.Clone();
-		_terrainColorsBefore = (Color[,])currentColors.Clone();
-		_terrainPathingBefore = (int[,])currentPathing.Clone();
+		_terrainHeightsBefore = currentHeights != null ? (float[,])currentHeights.Clone() : null;
+		_terrainColorsBefore = currentColors != null ? (Color[,])currentColors.Clone() : null;
+		_terrainPathingBefore = currentPathing != null ? (int[,])currentPathing.Clone() : null;
 
 		newFlattenHeight = flattenHeight;
 

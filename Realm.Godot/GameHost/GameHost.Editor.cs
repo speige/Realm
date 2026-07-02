@@ -1095,25 +1095,32 @@ public partial class GameHost
 				}
 				if (_editorService.IsDrawingTerrain)
 				{
-					var action = _editorService.EndTerrainDraw(
-						(float[,])GroundTerrain.Heights.Clone(),
-						(Color[,])GroundTerrain.Colors.Clone(),
-						(int[,])GroundTerrain.PathingCodes.Clone());
-
-					EditorHistoryManager.RecordAction(action);
-					bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
-										 ActiveEditorTool == EditorTool.Lower ||
-										 ActiveEditorTool == EditorTool.Flatten ||
-										 ActiveEditorTool == EditorTool.Smooth ||
-										 ActiveEditorTool == EditorTool.Cliff ||
-										 ActiveEditorTool == EditorTool.Noise ||
-										 ActiveEditorTool == EditorTool.PaintPathing;
-					if (isHeightsTool)
+					if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.Colors != null && GroundTerrain.PathingCodes != null)
 					{
-						GroundTerrain.BakeNavMesh();
-						RebuildGridOverlayMeshExternal();
+						var action = _editorService.EndTerrainDraw(
+							(float[,])GroundTerrain.Heights.Clone(),
+							(Color[,])GroundTerrain.Colors.Clone(),
+							(int[,])GroundTerrain.PathingCodes.Clone());
+
+						EditorHistoryManager.RecordAction(action);
+						bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
+											 ActiveEditorTool == EditorTool.Lower ||
+											 ActiveEditorTool == EditorTool.Flatten ||
+											 ActiveEditorTool == EditorTool.Smooth ||
+											 ActiveEditorTool == EditorTool.Cliff ||
+											 ActiveEditorTool == EditorTool.Noise ||
+											 ActiveEditorTool == EditorTool.PaintPathing;
+						if (isHeightsTool)
+						{
+							GroundTerrain.BakeNavMesh();
+							RebuildGridOverlayMeshExternal();
+						}
+						EditorHasUnsavedChanges = true;
 					}
-					EditorHasUnsavedChanges = true;
+					else
+					{
+						_editorService.EndTerrainDraw(null, null, null);
+					}
 				}
 			}
 		}
