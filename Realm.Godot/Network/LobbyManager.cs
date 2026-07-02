@@ -13,6 +13,7 @@ public partial class LobbyManager : Node
 {
     public static LobbyManager Instance { get; private set; }
     public static readonly string GameBinaryVersion = GetGameBinaryVersion();
+    public bool IsSinglePlayer { get; set; } = false;
 
     private static string GetGameBinaryVersion()
     {
@@ -356,6 +357,34 @@ public partial class LobbyManager : Node
     }
 
 
+
+    public void HostSinglePlayerGame(string mapPathName, string mapDisplayName)
+    {
+        IsSinglePlayer = true;
+        IsHost = true;
+        IsGameStarted = true;
+        ActiveMapName = mapPathName;
+        PlayerList.Clear();
+        
+        LocalPlayer = new PlayerInfo
+        {
+            PeerId = 1,
+            Slot = 0,
+            Name = AuthenticatedUsername,
+            Faction = "HUMAN",
+            Team = "Team 1",
+            Color = new Color(0.8f, 0.1f, 0.1f),
+            IsHost = true,
+            Latency = "0 ms",
+            Jitter = "0 ms",
+            PacketLoss = "0%",
+            BinaryVersion = GameBinaryVersion
+        };
+        PlayerList.Add(LocalPlayer);
+        
+        Multiplayer.MultiplayerPeer = new OfflineMultiplayerPeer();
+        CallDeferred(nameof(LoadMap), mapPathName);
+    }
 
     public async Task<bool> HostLobbyAsync(string mapPathName, string mapDisplayName)
     {

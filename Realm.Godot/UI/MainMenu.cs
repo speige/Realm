@@ -10,6 +10,7 @@ public partial class MainMenu : Control
 	
 	private TextureRect _gameLogo;
 	private Button _playButton;
+	private Button _singlePlayerButton;
 	private Button _mapDiscoveryButton;
 	private Button _mapEditorButton;
 	private Button _replaysButton;
@@ -37,6 +38,7 @@ public partial class MainMenu : Control
 		_centralPanel = GetNode<PanelContainer>("CentralPanel");
 		_gameLogo = GetNode<TextureRect>("GameLogo");
 		_playButton = GetNode<Button>("CentralPanel/VBoxContainer/PlayButton");
+		_singlePlayerButton = GetNode<Button>("CentralPanel/VBoxContainer/SinglePlayerButton");
 		_mapDiscoveryButton = GetNode<Button>("CentralPanel/VBoxContainer/MapDiscoveryButton");
 		_mapEditorButton = GetNode<Button>("CentralPanel/VBoxContainer/MapEditorButton");
 		_replaysButton = GetNode<Button>("CentralPanel/VBoxContainer/ReplaysButton");
@@ -59,7 +61,14 @@ public partial class MainMenu : Control
 		_centralPanel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
 
 
-		SetupPlayButton(_playButton, () => UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser));
+		SetupPlayButton(_playButton, () => {
+			if (LobbyManager.Instance != null) LobbyManager.Instance.IsSinglePlayer = false;
+			UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser);
+		});
+		SetupButton(_singlePlayerButton, "SINGLE PLAYER", () => {
+			if (LobbyManager.Instance != null) LobbyManager.Instance.IsSinglePlayer = true;
+			UIManager.Instance.TransitionTo(GameScreen.LobbyCreate);
+		});
 		SetupButton(_mapDiscoveryButton, "MAP DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.MapDiscovery));
 		SetupButton(_mapEditorButton, "MAP EDITOR", () => OnMapEditorPressed());
 		SetupButton(_replaysButton, "REPLAYS", () => UIManager.Instance.TransitionTo(GameScreen.ReplayList));

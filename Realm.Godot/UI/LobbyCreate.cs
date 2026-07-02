@@ -61,10 +61,10 @@ public partial class LobbyCreate : Control
 		_centralPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		_briefingPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(false));
 
-		UIStyle.ApplyTitle(_titleLabel, "CREATE CUSTOM MATCH", 36);
+		UIStyle.ApplyTitle(_titleLabel, LobbyManager.Instance.IsSinglePlayer ? "SINGLE PLAYER" : "CREATE CUSTOM MATCH", 36);
 		UIStyle.ApplyTitle(_mapSelectLabel, "SELECT MAP", 20);
 
-		SetupPillarButton(_backButton, "◀", () => UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser));
+		SetupPillarButton(_backButton, "◀", () => UIManager.Instance.TransitionTo(LobbyManager.Instance.IsSinglePlayer ? GameScreen.MainMenu : GameScreen.LobbyBrowser));
 		SetupCreateButton();
 
 		_mapSelectButton.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
@@ -108,7 +108,7 @@ public partial class LobbyCreate : Control
 	private void SetupCreateButton()
 	{
 		_createButton.Flat = false;
-		UIStyle.ApplyButtonText(_createButton, "CREATE LOBBY", 18);
+		UIStyle.ApplyButtonText(_createButton, LobbyManager.Instance.IsSinglePlayer ? "START GAME" : "CREATE LOBBY", 18);
 		
 		_createButton.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		_createButton.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
@@ -122,6 +122,22 @@ public partial class LobbyCreate : Control
 	private async void OnCreatePressed()
 	{
 		UIManager.Instance.PlayClickSound();
+
+		if (LobbyManager.Instance.IsSinglePlayer)
+		{
+			string singleMapPathName = "melee";
+			string singleMapDisplayName = "Melee Battlefield";
+			int singleSelectedIndex = _mapSelectButton.Selected;
+			if (singleSelectedIndex >= 0 && singleSelectedIndex < _availableMaps.Count)
+			{
+				singleMapPathName = _availableMaps[singleSelectedIndex].PathName;
+				singleMapDisplayName = _availableMaps[singleSelectedIndex].DisplayName;
+			}
+			_createButton.Disabled = true;
+			LobbyManager.Instance.HostSinglePlayerGame(singleMapPathName, singleMapDisplayName);
+			_createButton.Disabled = false;
+			return;
+		}
 
 		if (LobbyManager.Instance.LocalNatType == NatType.Symmetric)
 		{
