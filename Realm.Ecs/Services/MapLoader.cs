@@ -1,3 +1,4 @@
+using Arch.Core;
 using Realm.Ecs.Definitions;
 using System.Text.Json;
 
@@ -9,9 +10,12 @@ namespace Realm.Ecs.Services;
 /// </summary>
 internal class MapLoader
 {
-	public MapLoader(string definitionsBasePath)
+	private readonly WorldAccessor _ecsWorldAccessor;
+
+	public MapLoader(WorldAccessor ecsWorldAccessor, string definitionsBasePath)
 	{
-		DefinitionManager = new DefinitionManager();
+		_ecsWorldAccessor = ecsWorldAccessor;
+		DefinitionManager = new DefinitionManager(ecsWorldAccessor);
 
 		var mapJsonPath = Path.Combine(definitionsBasePath, "map.json");
 		var mapJson = File.ReadAllText(mapJsonPath);
@@ -20,7 +24,7 @@ internal class MapLoader
 			PropertyNameCaseInsensitive = true
 		}) ?? new MapDefinition();
 
-		ArchetypeManager = new ArchetypeManager(mapDefinitionUnitsOnly.Units, DefinitionManager);
+		ArchetypeManager = new ArchetypeManager(ecsWorldAccessor, mapDefinitionUnitsOnly.Units, DefinitionManager);
 	}
 
 	public DefinitionManager DefinitionManager { get; }

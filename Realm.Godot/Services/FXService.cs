@@ -2,9 +2,16 @@ using Godot;
 using Realm.MapAPI;
 using System;
 using System.Collections.Generic;
+using Arch.Core;
 
 public class FXService
 {
+	private readonly World _ecsWorld;
+
+	public FXService(World ecsWorld)
+	{
+		_ecsWorld = ecsWorld;
+	}
 	public void SpawnFireblastEffect(Node3D parent, Vector3 position)
 	{
 		SpawnSpritesheetEffect(parent, "res://Assets/2d/SpellSpritesheets/solar_flare_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.05f, 6f);

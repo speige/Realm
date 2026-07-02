@@ -12,7 +12,7 @@ internal class MovementAndPathfindingService
 	private readonly World _ecsWorld;
 	private readonly Entity _worldEntity;
 	private readonly NavMeshPathfinder _pathfinder;
-	private readonly TerrainNavMeshService _terrainNavMeshService = new();
+	private readonly TerrainNavMeshService _terrainNavMeshService;
 
 	private float _fDelta;
 	private const float CollisionCellSize = 10f;
@@ -35,6 +35,7 @@ internal class MovementAndPathfindingService
 		_ecsWorld = ecsWorld;
 		_worldEntity = worldEntity;
 		_pathfinder = pathfinder;
+		_terrainNavMeshService = ServiceLocator.Get<TerrainNavMeshService>();
 		_movementQueryDelegate = MovementQueryAction;
 	}
 

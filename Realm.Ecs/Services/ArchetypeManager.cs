@@ -1,3 +1,4 @@
+using Arch.Core;
 using Realm.Ecs.Archetypes;
 
 namespace Realm.Ecs.Services;
@@ -7,11 +8,13 @@ namespace Realm.Ecs.Services;
 /// </summary>
 internal class ArchetypeManager
 {
+	private readonly WorldAccessor _ecsWorldAccessor;
 	private readonly DefinitionManager _definitionManager;
 	private readonly Dictionary<string, UnitArchetype> _unitArchetypes = new();
 
-	public ArchetypeManager(List<UnitArchetype> units, DefinitionManager definitionManager)
+	public ArchetypeManager(WorldAccessor ecsWorldAccessor, List<UnitArchetype> units, DefinitionManager definitionManager)
 	{
+		_ecsWorldAccessor = ecsWorldAccessor;
 		_definitionManager = definitionManager;
 
 		foreach (var archetype in units)

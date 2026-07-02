@@ -25,8 +25,8 @@ public partial class GameHost : Node3D, IGameAPI
 	internal readonly NavMeshPathfinder _pathfinder = new();
 	public string ActiveMapName { get; private set; } = "melee";
 
-	private readonly AudioService _audioService = new();
-	private readonly FXService _fxService = new();
+	private AudioService _audioService;
+	private FXService _fxService;
 	private SaveLoadService _saveLoadService;
 	private EditorService _editorService;
 	private ReplayService _replayService;
@@ -1998,20 +1998,7 @@ public class {mapName} : IMapScript
 
 	private void InitializeServices()
 	{
-		_saveLoadService = new SaveLoadService(EcsWorld);
-		_editorService = new EditorService(EcsWorld);
-		_replayService = new ReplayService(EcsWorld);
-		_networkService = new NetworkService(EcsWorld);
-		_techTreeService = new TechTreeService(EcsWorld);
-		_inputService = new InputService(EcsWorld, _techTreeService);
-		_fogOfWarService = new FogOfWarService(EcsWorld);
-		_unitSpawnService = new UnitSpawnService(EcsWorld);
-		_worldInitService = new WorldInitService(EcsWorld);
-		_mapPropertiesLoader = new MapPropertiesLoader(EcsWorld);
-		_terrainImportService = new MapEditorTerrainImportService(EcsWorld);
-		_cheatService = new CheatService(EcsWorld);
-		_environmentService = new EnvironmentService(EcsWorld);
-		_spectatorService = new SpectatorService(EcsWorld);
+		// Services are initialized and resolved in DI, no-op or just configuration
 	}
 
 	private void InitializeGameEcs()
@@ -2028,8 +2015,7 @@ public class {mapName} : IMapScript
 			_trackerIntervalStopwatch.Start();
 		}
 
-		EcsWorld = World.Create();
-		InitializeServices();
+		EcsWorld = ServiceLocator.Get<World>();
 		SetupWorldEntityComponents();
 
 		CreateGround();
@@ -2037,11 +2023,11 @@ public class {mapName} : IMapScript
 			_editorService.SetTerrainColors(GroundTerrain.Colors);
 		SetupSkybox();
 		UpdateDayNightVisuals(0.5f);
-		_definitionManager = new DefinitionManager();
+		_definitionManager = ServiceLocator.Get<DefinitionManager>();
 		_goldResourceId = "gold".AsResourceId(_definitionManager);
 		_woodResourceId = "wood".AsResourceId(_definitionManager);
 		_stoneResourceId = "stone".AsResourceId(_definitionManager);
-		_simulationService = new SimulationService(EcsWorld, _worldEntity, _pathfinder);
+		_simulationService = ServiceLocator.Get<SimulationService>();
 		_simulationService.SetRuntimeReferences(AllUnits, AllProps, _castlesList, _definitionManager, _goldResourceId, _woodResourceId, _stoneResourceId, GroundTerrain);
 		_simulationService.Initialize();
 
@@ -2279,15 +2265,18 @@ public class {mapName} : IMapScript
 	private void ReinitializeEcsAndServices()
 	{
 		EcsWorld?.Dispose();
-		EcsWorld = World.Create();
-		InitializeServices();
+		
+		var newWorld = World.Create();
+		_worldAccessor.Current = newWorld;
+
+		EcsWorld = ServiceLocator.Get<World>();
 		SetupWorldEntityComponents();
 
-		_definitionManager = new DefinitionManager();
+		_definitionManager = ServiceLocator.Get<DefinitionManager>();
 		_goldResourceId = "gold".AsResourceId(_definitionManager);
 		_woodResourceId = "wood".AsResourceId(_definitionManager);
 		_stoneResourceId = "stone".AsResourceId(_definitionManager);
-		_simulationService = new SimulationService(EcsWorld, _worldEntity, _pathfinder);
+		_simulationService = ServiceLocator.Get<SimulationService>();
 		_simulationService.SetRuntimeReferences(AllUnits, AllProps, _castlesList, _definitionManager, _goldResourceId, _woodResourceId, _stoneResourceId, GroundTerrain);
 		_simulationService.Initialize();
 

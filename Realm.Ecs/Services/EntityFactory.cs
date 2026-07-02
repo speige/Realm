@@ -24,11 +24,11 @@ internal class EntityFactory
 	private readonly DefinitionManager _definitionManager;
 	private readonly Dictionary<Type, MethodInfo> _setComponentCache = new();
 	private readonly Dictionary<Type, MethodInfo> _addMethodCache = new();
-	private readonly World _world;
+	private readonly WorldAccessor _ecsWorldAccessor;
 
-	public EntityFactory(World world, ArchetypeManager archetypeManager, DefinitionManager definitionManager)
+	public EntityFactory(WorldAccessor ecsWorldAccessor, ArchetypeManager archetypeManager, DefinitionManager definitionManager)
 	{
-		_world = world;
+		_ecsWorldAccessor = ecsWorldAccessor;
 		_archetypeManager = archetypeManager;
 		_definitionManager = definitionManager;
 		CacheComponentSetters();
@@ -49,19 +49,19 @@ internal class EntityFactory
 		var archetype = _archetypeManager.GetUnitArchetype(archetypeId);
 		if (archetype == null) throw new ArgumentException($"Archetype with ID '{archetypeId}' not found.");
 
-		var entity = _world.Create();
+		var entity = _ecsWorldAccessor.Current.Create();
 
 		foreach (var prop in ArchetypeComponentProperties)
 		{
 			var componentValue = prop.GetValue(archetype);
 			if (componentValue != null)
 				if (_setComponentCache.TryGetValue(prop.PropertyType, out var setter))
-					setter.Invoke(_world, new[] { entity, componentValue });
+					setter.Invoke(_ecsWorldAccessor.Current, new[] { entity, componentValue });
 		}
 
-		_world.Set(entity, new DefinitionId(archetypeId));
-		_world.Set(entity, new Name(archetype.Name));
-		_world.Set(entity, new Position(position));
+		_ecsWorldAccessor.Current.Set(entity, new DefinitionId(archetypeId));
+		_ecsWorldAccessor.Current.Set(entity, new Name(archetype.Name));
+		_ecsWorldAccessor.Current.Set(entity, new Position(position));
 
 		foreach (var capabilityId in archetype.Capabilities)
 		{
@@ -77,7 +77,7 @@ internal class EntityFactory
 						genericAdd = AddMethodInfo.MakeGenericMethod(tagType);
 						_addMethodCache[tagType] = genericAdd;
 					}
-					genericAdd.Invoke(_world, new object[] { entity });
+					genericAdd.Invoke(_ecsWorldAccessor.Current, new object[] { entity });
 				}
 				else
 				{

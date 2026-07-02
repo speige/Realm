@@ -477,7 +477,7 @@ void fragment() {
 		if (world != null && world.IsAlive(worldEntity) && world.Has<TerrainState>(worldEntity))
 		{
 			ref var state = ref world.Get<TerrainState>(worldEntity);
-			var terrainNavMeshService = new Realm.Ecs.Services.TerrainNavMeshService();
+			var terrainNavMeshService = ServiceLocator.Get<Realm.Ecs.Services.TerrainNavMeshService>();
 			terrainNavMeshService.BakeNavMesh(ref state);
 			world.Set(worldEntity, state);
 		}

@@ -1,3 +1,4 @@
+using Arch.Core;
 using DotRecast.Core.Numerics;
 using DotRecast.Detour;
 using DotRecast.Recast;
@@ -10,6 +11,13 @@ namespace Realm.Ecs.Services;
 
 internal class TerrainNavMeshService
 {
+	private readonly WorldAccessor _ecsWorldAccessor;
+
+	public TerrainNavMeshService(WorldAccessor ecsWorldAccessor)
+	{
+		_ecsWorldAccessor = ecsWorldAccessor;
+	}
+
 	public void BakeNavMesh(ref TerrainState state)
 	{
 		int width = state.Width;
