@@ -1063,6 +1063,7 @@ public partial class GameHost
 							{
 								if (MapEditorHUD.Instance != null)
 								{
+									MapEditorHUD.Instance.SetSpawnAsEnemy(unit.IsEnemy);
 									MapEditorHUD.Instance.SelectPickedUnitOrProp(unit.UnitId, unit.IsBuilding);
 								}
 								else

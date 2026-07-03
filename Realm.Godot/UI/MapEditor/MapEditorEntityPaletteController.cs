@@ -285,5 +285,28 @@ public class MapEditorEntityPaletteController
 			SelectCategoryItem(idx);
 			TriggerAddObjectMode();
 		}
+		else
+		{
+			GameHost.EditorTool targetTool = GameHost.EditorTool.PlaceProp;
+			if (category == "Characters" || category == "Buildings")
+			{
+				targetTool = GameHost.EditorTool.PlaceUnit;
+			}
+			else if (category == "Decals")
+			{
+				targetTool = GameHost.EditorTool.PlaceDecal;
+			}
+
+			string path = category switch
+			{
+				"Characters" => "res://Assets/3d/Characters",
+				"Buildings" => "res://Assets/3d/Buildings",
+				"Environment" => "res://Assets/3d/Environment",
+				"Props" => "res://Assets/3d/Props",
+				_ => ""
+			};
+			string placeId = string.IsNullOrEmpty(path) ? filename : $"{path}/{filename}";
+			_hud.TriggerToolSelection(targetTool, _btnAddObject, placeId);
+		}
 	}
 }

@@ -341,13 +341,11 @@ public partial class MapEditorHUD : Control
 		};
 
 		_btnRotate = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnRotate");
-		_btnRotate.TooltipText = "Rotate camera 90 degrees (R)";
-		_btnRotate.Pressed += () =>
+		SetupButton(_btnRotate, "🔄 Rotate Camera", () =>
 		{
-			UIManager.Instance?.PlayClickSound();
 			var camera = (GameHost.Instance?.MainCamera as CameraControl);
 			camera?.Rotate90Degrees();
-		};
+		}, 13, "Rotate camera 90 degrees (R)");
 
 		_btnCameraAngle = new Button();
 		_btnCameraAngle.Name = "BtnCameraAngle";
@@ -1619,6 +1617,14 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public void SetSpawnAsEnemy(bool isEnemy)
+	{
+		if (_chkSpawnAsEnemy != null)
+		{
+			_chkSpawnAsEnemy.ButtonPressed = isEnemy;
+		}
+	}
+
 	public void SelectCategoryItemExternal(string category, string filename)
 	{
 		_entityPaletteController?.SelectCategoryItemExternal(category, filename);
@@ -1942,8 +1948,7 @@ public partial class MapEditorHUD : Control
 				 tool == GameHost.EditorTool.PlacePropClump ||
 				 tool == GameHost.EditorTool.PlaceDecal ||
 				 tool == GameHost.EditorTool.DeleteObject ||
-				 tool == GameHost.EditorTool.SelectMove ||
-				 tool == GameHost.EditorTool.Eyedropper)
+				 tool == GameHost.EditorTool.SelectMove)
 		{
 			targetModule = EditorModule.Objects;
 		}
@@ -2852,6 +2857,7 @@ public class {mapName} : IMapScript
 
 		SafeReparent(_btnToggleGrid, _contentViewport);
 		SafeReparent(_btnToggleCameraBounds, _contentViewport);
+		SafeReparent(_btnRotate, _contentViewport);
 		if (_btnSkybox != null)
 		{
 			_btnSkybox.CustomMinimumSize = new Vector2(0, 32);

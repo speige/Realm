@@ -1449,7 +1449,7 @@ public partial class GameHost
 
 	public void RebuildCameraBoundsOverlay()
 	{
-		if (_cameraBoundsOverlayMesh == null || GroundTerrain == null) return;
+		if (_cameraBoundsOverlayMesh == null || GroundTerrain == null || GroundTerrain.Heights == null) return;
 		if (!EditorCameraBoundsVisible) return;
 
 		int width = GroundTerrain.Width;
@@ -1473,6 +1473,7 @@ public partial class GameHost
 
 		float GetTerrainHeightAtCoord(float worldX, float worldZ)
 		{
+			if (GroundTerrain == null || GroundTerrain.Heights == null) return 0f;
 			float gridX = worldX / spacing + halfW;
 			float gridZ = worldZ / spacing + halfD;
 			int x0 = Mathf.Clamp((int)Mathf.Floor(gridX), 0, width - 1);
@@ -1785,7 +1786,7 @@ public partial class GameHost
 
 	private void RebuildGridOverlayMesh()
 	{
-		if (_gridOverlayMesh == null || GroundTerrain == null) return;
+		if (_gridOverlayMesh == null || GroundTerrain == null || GroundTerrain.Heights == null) return;
 		if (!EditorGridVisible) return;
 
 		int width = GroundTerrain.Width;
