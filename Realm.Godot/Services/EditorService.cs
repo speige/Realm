@@ -703,7 +703,7 @@ public class EditorService
 			}
 			spawnPos.Y = GetTerrainHeightAt(spawnPos);
 
-			float scaleVal = placementScale + (float)(GD.Randf() * 2.0 - 1.0) * clumpScaleVar;
+			float scaleVal = placementScale + (float)(GD.Randf() * 2.0 - 1.0) * (clumpScaleVar * 2.0f);
 			scaleVal = Mathf.Clamp(scaleVal, 0.2f, 3.0f);
 
 			float rotY = (randomRotation && !_isPastingObject) ? (float)(GD.Randf() * 360.0) : placementRotation;

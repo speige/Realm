@@ -1164,27 +1164,34 @@ public partial class GameHost
 			{
 				_editorService.SetIsSelectingArea(false);
 			}
-			if (_editorService.IsDrawingTerrain && GroundTerrain != null)
+			if (_editorService.IsDrawingTerrain)
 			{
-				var action = _editorService.EndTerrainDraw(
-					(float[,])GroundTerrain.Heights.Clone(),
-					(Color[,])GroundTerrain.Colors.Clone(),
-					(int[,])GroundTerrain.PathingCodes.Clone());
-
-				EditorHistoryManager.RecordAction(action);
-				bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
-									 ActiveEditorTool == EditorTool.Lower ||
-									 ActiveEditorTool == EditorTool.Flatten ||
-									 ActiveEditorTool == EditorTool.Smooth ||
-									 ActiveEditorTool == EditorTool.Cliff ||
-									 ActiveEditorTool == EditorTool.Noise ||
-									 ActiveEditorTool == EditorTool.PaintPathing;
-				if (isHeightsTool)
+				if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.Colors != null && GroundTerrain.PathingCodes != null)
 				{
-					GroundTerrain.BakeNavMesh();
-					RebuildGridOverlayMeshExternal();
+					var action = _editorService.EndTerrainDraw(
+						(float[,])GroundTerrain.Heights.Clone(),
+						(Color[,])GroundTerrain.Colors.Clone(),
+						(int[,])GroundTerrain.PathingCodes.Clone());
+
+					EditorHistoryManager.RecordAction(action);
+					bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
+										 ActiveEditorTool == EditorTool.Lower ||
+										 ActiveEditorTool == EditorTool.Flatten ||
+										 ActiveEditorTool == EditorTool.Smooth ||
+										 ActiveEditorTool == EditorTool.Cliff ||
+										 ActiveEditorTool == EditorTool.Noise ||
+										 ActiveEditorTool == EditorTool.PaintPathing;
+					if (isHeightsTool)
+					{
+						GroundTerrain.BakeNavMesh();
+						RebuildGridOverlayMeshExternal();
+					}
+					EditorHasUnsavedChanges = true;
 				}
-				EditorHasUnsavedChanges = true;
+				else
+				{
+					_editorService.EndTerrainDraw(null, null, null);
+				}
 			}
 		}
 		
@@ -1601,7 +1608,7 @@ public partial class GameHost
 
 	private void RebuildPathingOverlay()
 	{
-		if (_pathingOverlayMesh == null || GroundTerrain == null) return;
+		if (_pathingOverlayMesh == null || GroundTerrain == null || GroundTerrain.PathingCodes == null || GroundTerrain.Heights == null) return;
 
 		int width = GroundTerrain.Width;
 		int depth = GroundTerrain.Depth;
@@ -1890,7 +1897,7 @@ public partial class GameHost
 
 	public void PerformFloodFill(Vector3 clickPos, Color fillColor)
 	{
-		if (GroundTerrain == null) return;
+		if (GroundTerrain == null || GroundTerrain.Heights == null || GroundTerrain.Colors == null) return;
 		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
 		var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
 
@@ -1922,7 +1929,7 @@ public partial class GameHost
 
 	private void RebuildSelectionHighlightMesh(int minX, int minZ, int maxX, int maxZ)
 	{
-		if (_selectionHighlightMesh == null || GroundTerrain == null) return;
+		if (_selectionHighlightMesh == null || GroundTerrain == null || GroundTerrain.Heights == null) return;
 		int selWidth = maxX - minX + 1;
 		int selDepth = maxZ - minZ + 1;
 		if (selWidth < 2 || selDepth < 2)
@@ -1998,7 +2005,7 @@ public partial class GameHost
 
 	private void PerformEraseArea()
 	{
-		if (GroundTerrain == null || _editorService.SelectionStart == null || _editorService.SelectionEnd == null)
+		if (GroundTerrain == null || GroundTerrain.Heights == null || GroundTerrain.Colors == null || _editorService.SelectionStart == null || _editorService.SelectionEnd == null)
 		{
 			MapEditorHUD.Instance?.ShowFeedbackExternal("Nothing to Erase (select an area first)");
 			return;
@@ -2059,7 +2066,7 @@ public partial class GameHost
 
 	private void PerformPasteArea(int startX, int startZ)
 	{
-		if (GroundTerrain == null || !_editorService.HasCopiedArea) return;
+		if (GroundTerrain == null || GroundTerrain.Heights == null || GroundTerrain.Colors == null || !_editorService.HasCopiedArea) return;
 
 		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
 		var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();

@@ -3124,13 +3124,17 @@ public class {mapName} : IMapScript
 			{
 				strengthParent.Visible = (tool != GameHost.EditorTool.PaintPathing && tool != GameHost.EditorTool.PlacePropClump);
 			}
+			bool isTextureMode = tool == GameHost.EditorTool.PaintGrass ||
+			                     tool == GameHost.EditorTool.PaintDirt ||
+			                     tool == GameHost.EditorTool.PaintRock ||
+			                     tool == GameHost.EditorTool.PaintSand;
 			if (_chkBlockMode != null)
 			{
-				_chkBlockMode.Visible = (tool != GameHost.EditorTool.PaintPathing);
+				_chkBlockMode.Visible = (tool != GameHost.EditorTool.PaintPathing && !isTextureMode);
 			}
 			if (_stepBox != null)
 			{
-				_stepBox.Visible = (tool != GameHost.EditorTool.PaintPathing);
+				_stepBox.Visible = (tool != GameHost.EditorTool.PaintPathing && !isTextureMode);
 			}
 		}
 
