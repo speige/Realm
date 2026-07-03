@@ -97,7 +97,9 @@ public partial class GameHost
 		MapEditorHUD.Instance?.UpdateBlockModeExternal(editor.BlockMode);
 		MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(editor.BlockLevelHeight);
 		MapEditorHUD.Instance?.UpdateCameraBoundsUI();
-		RebuildCameraBoundsOverlay();
+		UpdateCameraBoundsOverlayVisibility();
+		UpdateGridOverlayVisibility();
+		UpdatePathingOverlay();
 
 		if (!string.IsNullOrEmpty(editor.SkyboxPath))
 		{

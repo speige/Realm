@@ -2073,16 +2073,8 @@ public partial class GameHost
 		var to = from + camera.ProjectRayNormal(mousePos) * 1000f;
 
 		var spaceState = GetWorld3D().DirectSpaceState;
-		if (_cachedRaycastQuery == null)
-		{
-			_cachedRaycastQuery = PhysicsRayQueryParameters3D.Create(from, to);
-		}
-		else
-		{
-			_cachedRaycastQuery.From = from;
-			_cachedRaycastQuery.To = to;
-		}
-		var result = spaceState.IntersectRay(_cachedRaycastQuery);
+		var query = PhysicsRayQueryParameters3D.Create(from, to);
+		var result = spaceState.IntersectRay(query);
 
 		if (result.Count == 0) return null;
 		return result;

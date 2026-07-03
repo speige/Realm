@@ -498,7 +498,9 @@ public static class MapGenerator
         }
 
         host.EditorHasUnsavedChanges = true;
-        host.RebuildGridOverlayMeshExternal();
+        host.UpdateGridOverlayVisibility();
+        host.UpdateCameraBoundsOverlayVisibility();
+        host.UpdatePathingOverlay();
         MapEditorHUD.Instance?.ShowFeedbackExternal("Random map generation completed!");
     }
 

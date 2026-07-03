@@ -1247,6 +1247,7 @@ public partial class MapEditorHUD : Control
 		RebuildHUDLayout();
 
 		_minimapController = new MapEditorMinimap(_minimapFrame, _minimapArea, _cameraIndicator, this);
+		RegenerateMinimap();
 
 		if (GameHost.Instance != null)
 		{
