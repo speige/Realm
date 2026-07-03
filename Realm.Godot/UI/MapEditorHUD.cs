@@ -50,9 +50,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnHeaderViewport;
 	private VBoxContainer _contentViewport;
 	
-	private VBoxContainer _accordionNavigation;
-	private Button _btnHeaderNavigation;
-	private VBoxContainer _contentNavigation;
+
 	
 	private VBoxContainer _accordionInspector;
 	private Button _btnHeaderInspector;
@@ -299,6 +297,8 @@ public partial class MapEditorHUD : Control
 		_feedbackLabel = GetNode<Label>("FeedbackLabel");
 
 		_btnZoomIn = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnZoomIn");
+		_btnZoomIn.Text = TranslationServer.Translate("🔍 Zoom In");
+		_btnZoomIn.Set("icon_max_width", 0);
 		_btnZoomIn.TooltipText = "Zoom Camera In";
 		_btnZoomIn.Pressed += () =>
 		{
@@ -308,6 +308,8 @@ public partial class MapEditorHUD : Control
 		};
 
 		_btnZoomOut = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnZoomOut");
+		_btnZoomOut.Text = TranslationServer.Translate("🔍 Zoom Out");
+		_btnZoomOut.Set("icon_max_width", 0);
 		_btnZoomOut.TooltipText = "Zoom Camera Out";
 		_btnZoomOut.Pressed += () =>
 		{
@@ -2633,7 +2635,7 @@ public class {mapName} : IMapScript
 		_contentFile = new VBoxContainer();
 		((VBoxContainer)_contentFile).AddThemeConstantOverride("separation", 8);
 		leftVBox.AddChild(_contentFile);
-		SetupMutualAccordion(_btnHeaderFile, _contentFile, TranslationServer.Translate("File & Map Actions"));
+		SetupMutualAccordion(_btnHeaderFile, _contentFile, TranslationServer.Translate("File"));
 
 		SafeReparent(_btnPublish, _contentFile);
 		SafeReparent(_btnSave, _contentFile);
@@ -2657,7 +2659,7 @@ public class {mapName} : IMapScript
 		_btnLeftTab.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		_btnLeftTab.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		_btnLeftTab.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-		_btnLeftTab.AddThemeFontSizeOverride("font_size", 10);
+		_btnLeftTab.AddThemeFontSizeOverride("font_size", 20);
 		_btnLeftTab.Pressed += ToggleLeftPanel;
 		_panelLeft.AddChild(_btnLeftTab);
 
@@ -2687,7 +2689,7 @@ public class {mapName} : IMapScript
 		_btnRightTab.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		_btnRightTab.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		_btnRightTab.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-		_btnRightTab.AddThemeFontSizeOverride("font_size", 10);
+		_btnRightTab.AddThemeFontSizeOverride("font_size", 20);
 		_btnRightTab.Pressed += ToggleRightPanel;
 		_panelRight.AddChild(_btnRightTab);
 
@@ -2854,7 +2856,7 @@ public class {mapName} : IMapScript
 		_contentViewport = new VBoxContainer();
 		_contentViewport.AddThemeConstantOverride("separation", 8);
 		_accordionViewport.AddChild(_contentViewport);
-		SetupMutualAccordion(_btnHeaderViewport, _contentViewport, TranslationServer.Translate("Viewport Settings"));
+		SetupMutualAccordion(_btnHeaderViewport, _contentViewport, TranslationServer.Translate("Viewport & Navigation"));
 
 		SafeReparent(_btnToggleGrid, _contentViewport);
 		SafeReparent(_btnToggleCameraBounds, _contentViewport);
@@ -2867,21 +2869,15 @@ public class {mapName} : IMapScript
 			SafeReparent(_btnSkybox, _contentViewport);
 		}
 
-		_accordionNavigation = new VBoxContainer();
-		_accordionNavigation.Name = "AccordionNavigation";
-		leftVBox.AddChild(_accordionNavigation);
-		_btnHeaderNavigation = new Button();
-		_btnHeaderNavigation.Set("icon_max_width", 0);
-		StyleAccordionHeader(_btnHeaderNavigation);
-		_accordionNavigation.AddChild(_btnHeaderNavigation);
-		_contentNavigation = new VBoxContainer();
-		_contentNavigation.AddThemeConstantOverride("separation", 8);
-		_accordionNavigation.AddChild(_contentNavigation);
-		SetupAccordion(_btnHeaderNavigation, _contentNavigation, TranslationServer.Translate("Map Navigation"));
+		SafeReparent(_btnZoomIn, _contentViewport);
+		SafeReparent(_btnZoomOut, _contentViewport);
+		SafeReparent(_minimapFrame, _contentViewport);
 
-		SafeReparent(_minimapFrame, _contentNavigation);
-		var zoomContentGrid = GetNodeOrNull<Control>("MiddleRightBox/PanelZoom/VBox/Content");
-		SafeReparent(zoomContentGrid, _contentNavigation);
+		var panelZoom = GetNodeOrNull<Control>("MiddleRightBox/PanelZoom");
+		if (panelZoom != null)
+		{
+			panelZoom.Visible = false;
+		}
 
 		var accordionMapSettings = new VBoxContainer();
 		accordionMapSettings.Name = "AccordionMapSettings";
@@ -2964,6 +2960,15 @@ public class {mapName} : IMapScript
 		SafeReparent(_btnRedo, topLeftBox);
 		SafeReparent(_btnEyedropper, topLeftBox);
 		
+		topLeftBox.LayoutMode = 1;
+		topLeftBox.SetAnchorsPreset(LayoutPreset.CenterTop);
+		topLeftBox.GrowHorizontal = GrowDirection.Both;
+		topLeftBox.Alignment = BoxContainer.AlignmentMode.Center;
+		topLeftBox.OffsetLeft = -450;
+		topLeftBox.OffsetRight = 450;
+		topLeftBox.OffsetTop = 15;
+		topLeftBox.OffsetBottom = 55;
+
 		topLeftBox.MoveChild(_btnBackToHub, 0);
 		var btnHelp2 = GetNodeOrNull<Button>("TopLeftBox/BtnHelp");
 		if (btnHelp2 != null) topLeftBox.MoveChild(btnHelp2, 1);
@@ -3065,12 +3070,12 @@ public class {mapName} : IMapScript
 				if (headerBtn != _btnHeaderFile && _contentFile != null)
 				{
 					_contentFile.Visible = false;
-					_btnHeaderFile.Text = "▶ " + TranslationServer.Translate("File & Map Actions");
+					_btnHeaderFile.Text = "▶ " + TranslationServer.Translate("File");
 				}
 				if (headerBtn != _btnHeaderViewport && _contentViewport != null)
 				{
 					_contentViewport.Visible = false;
-					_btnHeaderViewport.Text = "▶ " + TranslationServer.Translate("Viewport Settings");
+					_btnHeaderViewport.Text = "▶ " + TranslationServer.Translate("Viewport & Navigation");
 				}
 				if (headerBtn != _btnHeaderMapSettings && _contentMapSettings != null)
 				{
@@ -3114,7 +3119,7 @@ public class {mapName} : IMapScript
 		float targetRight = expand ? 260.0f : 0.0f;
 		tween.TweenProperty(_panelLeft, "offset_left", targetLeft, 0.2f).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
 		tween.TweenProperty(_panelLeft, "offset_right", targetRight, 0.2f).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
-		_btnLeftTab.Text = expand ? TranslationServer.Translate("◀\nF\nI\nL\nE") : TranslationServer.Translate("▶\nF\nI\nL\nE");
+		_btnLeftTab.Text = expand ? "◀" : "▶";
 	}
 
 	private void SetRightPanelExpanded(bool expand)
@@ -3125,7 +3130,7 @@ public class {mapName} : IMapScript
 		float targetRight = expand ? 0.0f : 300.0f;
 		tween.TweenProperty(_panelRight, "offset_left", targetLeft, 0.2f).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
 		tween.TweenProperty(_panelRight, "offset_right", targetRight, 0.2f).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
-		_btnRightTab.Text = expand ? TranslationServer.Translate("▶\nT\nO\nO\nL\nS") : TranslationServer.Translate("◀\nT\nO\nO\nL\nS");
+		_btnRightTab.Text = expand ? "▶" : "◀";
 	}
 
 	private void SafeReparent(Node node, Node newParent)
@@ -3749,10 +3754,14 @@ public class {mapName} : IMapScript
 		_btnInspectorScaleReset.Set("icon_max_width", 0);
 		vbox.AddChild(_btnInspectorScaleReset);
 
+		SafeReparent(_btnCenter, vbox);
+
 		_btnInspectorDelete = new Button();
 		_btnInspectorDelete.Name = "BtnInspectorDelete";
 		_btnInspectorDelete.Text = "❌ Delete Object";
 		_btnInspectorDelete.Set("icon_max_width", 0);
 		vbox.AddChild(_btnInspectorDelete);
+		
+		vbox.MoveChild(_btnCenter, _btnInspectorDelete.GetIndex());
 	}
 }
