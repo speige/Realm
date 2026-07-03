@@ -64,7 +64,48 @@ public partial class GameHost
 		ClearAllUnits();
 
 		bool success = _saveLoadService.LoadMapFromFile(absolutePath, terrainOnly);
-		if (!success) return false;
+		if (!success)
+		{
+			int defaultWidth = 126;
+			int defaultDepth = 126;
+			float[,] defaultHeights = new float[defaultWidth, defaultDepth];
+			int[,] defaultPathing = new int[defaultWidth, defaultDepth];
+			for (int z = 0; z < defaultDepth; z++)
+			{
+				for (int x = 0; x < defaultWidth; x++)
+				{
+					defaultHeights[x, z] = 0.0f;
+					defaultPathing[x, z] = EditableTerrain.PATHING_GROUND | EditableTerrain.PATHING_FLYING;
+				}
+			}
+			if (EcsWorld.Has<TerrainState>(_worldEntity))
+			{
+				ref var ts = ref EcsWorld.Get<TerrainState>(_worldEntity);
+				ts.Heights = defaultHeights;
+				ts.PathingCodes = defaultPathing;
+				EcsWorld.Set(_worldEntity, ts);
+			}
+			if (GroundTerrain != null)
+			{
+				for (int z = 0; z < defaultDepth; z++)
+				{
+					for (int x = 0; x < defaultWidth; x++)
+					{
+						GroundTerrain.Colors[x, z] = new Color(0.2f, 0.6f, 0.2f);
+					}
+				}
+				GroundTerrain.UpdateMeshAndPhysics();
+			}
+			MapEditorHUD.Instance?.UpdateWaterEnabledExternal(true);
+			MapEditorHUD.Instance?.UpdateWaterHeightExternal(-2.0f);
+			MapEditorHUD.Instance?.UpdateBlockModeExternal(true);
+			MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(4.0f);
+			MapEditorHUD.Instance?.UpdateCameraBoundsUI();
+			UpdateCameraBoundsOverlayVisibility();
+			UpdateGridOverlayVisibility();
+			UpdatePathingOverlay();
+			return false;
+		}
 
 		if (GroundTerrain == null)
 		{
