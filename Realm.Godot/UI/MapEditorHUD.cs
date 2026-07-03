@@ -57,6 +57,10 @@ public partial class MapEditorHUD : Control
 	private VBoxContainer _accordionInspector;
 	private Button _btnHeaderInspector;
 	private VBoxContainer _contentInspector;
+	private Button _btnHeaderFile;
+	private Control _contentFile;
+	private Button _btnHeaderMapSettings;
+	private Control _contentMapSettings;
 
 	private VBoxContainer _containerFlattenSettings;
 	private VBoxContainer _containerTextureSettings;
@@ -313,6 +317,7 @@ public partial class MapEditorHUD : Control
 		};
 
 		_btnCenter = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnCenter");
+		_btnCenter.Text = "🎯 Locate Object";
 		_btnCenter.TooltipText = "Center camera on selected object (Space)";
 		_btnCenter.Pressed += () =>
 		{
@@ -341,7 +346,7 @@ public partial class MapEditorHUD : Control
 		};
 
 		_btnRotate = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnRotate");
-		SetupButton(_btnRotate, "🔄 Rotate Camera", () =>
+		SetupButton(_btnRotate, "🔄 Rotate", () =>
 		{
 			var camera = (GameHost.Instance?.MainCamera as CameraControl);
 			camera?.Rotate90Degrees();
@@ -351,7 +356,7 @@ public partial class MapEditorHUD : Control
 		_btnCameraAngle.Name = "BtnCameraAngle";
 		_btnCameraAngle.Set("icon_max_width", 0);
 		GetNode<GridContainer>("MiddleRightBox/PanelZoom/VBox/Content").AddChild(_btnCameraAngle);
-		SetupButton(_btnCameraAngle, "📐 Angle: Tilt", () =>
+		SetupButton(_btnCameraAngle, "📐 Tilt", () =>
 		{
 			var camera = (GameHost.Instance?.MainCamera as CameraControl);
 			camera?.ToggleTopDown();
@@ -1026,14 +1031,14 @@ public partial class MapEditorHUD : Control
 		settingsVBox.AddChild(pasteOptionsBox);
 
 		var lblPasteOptionsTitle = new Label();
-		lblPasteOptionsTitle.Text = TranslationServer.Translate("PASTE CONTENTS OPTIONS");
+		lblPasteOptionsTitle.Text = TranslationServer.Translate("Affected Layers");
 		lblPasteOptionsTitle.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
 		lblPasteOptionsTitle.AddThemeFontSizeOverride("font_size", 11);
 		pasteOptionsBox.AddChild(lblPasteOptionsTitle);
 
 		var chkPasteTextures = new CheckBox();
 		chkPasteTextures.Name = "ChkPasteTextures";
-		chkPasteTextures.Text = TranslationServer.Translate("Paste Textures");
+		chkPasteTextures.Text = TranslationServer.Translate("Textures");
 		chkPasteTextures.ButtonPressed = true;
 		UIStyle.ApplyCheckboxStyle(chkPasteTextures);
 		pasteOptionsBox.AddChild(chkPasteTextures);
@@ -1044,7 +1049,7 @@ public partial class MapEditorHUD : Control
 
 		var chkPasteHeights = new CheckBox();
 		chkPasteHeights.Name = "ChkPasteHeights";
-		chkPasteHeights.Text = TranslationServer.Translate("Paste HeightMap");
+		chkPasteHeights.Text = TranslationServer.Translate("HeightMap");
 		chkPasteHeights.ButtonPressed = true;
 		UIStyle.ApplyCheckboxStyle(chkPasteHeights);
 		pasteOptionsBox.AddChild(chkPasteHeights);
@@ -1055,7 +1060,7 @@ public partial class MapEditorHUD : Control
 
 		var chkPasteEntities = new CheckBox();
 		chkPasteEntities.Name = "ChkPasteEntities";
-		chkPasteEntities.Text = TranslationServer.Translate("Paste Units / Props");
+		chkPasteEntities.Text = TranslationServer.Translate("Units / Props");
 		chkPasteEntities.ButtonPressed = true;
 		UIStyle.ApplyCheckboxStyle(chkPasteEntities);
 		pasteOptionsBox.AddChild(chkPasteEntities);
@@ -1700,7 +1705,7 @@ public partial class MapEditorHUD : Control
 	{
 		if (_btnCameraAngle != null)
 		{
-			_btnCameraAngle.Text = isTopDown ? "📐 Angle: TopDown" : "📐 Angle: Tilt";
+			_btnCameraAngle.Text = isTopDown ? "📐 TopDown" : "📐 Tilt";
 		}
 	}
 
@@ -2025,7 +2030,7 @@ public partial class MapEditorHUD : Control
 					_lblInfoText.Text = TranslationServer.Translate("TOOL: Area Select\n\nDrag left click to select a rectangular area of the map. Press Ctrl+C to copy the area.");
 					break;
 				case GameHost.EditorTool.PasteArea:
-					_lblInfoText.Text = TranslationServer.Translate("TOOL: Area Paste\n\nClick on the terrain to paste the copied area. Use the Paste Contents Options checkboxes to filter what is pasted (Textures, Heights, Entities).");
+					_lblInfoText.Text = TranslationServer.Translate("TOOL: Area Paste\n\nClick on the terrain to paste the copied area. Use the Affected Layers checkboxes to filter what is pasted (Textures, HeightMap, Units / Props).");
 					break;
 				case GameHost.EditorTool.PlaceUnit:
 					string alignment = _chkSpawnAsEnemy.ButtonPressed ? TranslationServer.Translate("Enemy (Orc)") : TranslationServer.Translate("Player (Alliance)");
@@ -2620,22 +2625,22 @@ public class {mapName} : IMapScript
 		leftTitle.HorizontalAlignment = HorizontalAlignment.Center;
 		leftVBox.AddChild(leftTitle);
 
-		var btnHeaderFile = new Button();
-		btnHeaderFile.Set("icon_max_width", 0);
-		StyleAccordionHeader(btnHeaderFile);
-		leftVBox.AddChild(btnHeaderFile);
+		_btnHeaderFile = new Button();
+		_btnHeaderFile.Set("icon_max_width", 0);
+		StyleAccordionHeader(_btnHeaderFile);
+		leftVBox.AddChild(_btnHeaderFile);
 
-		var contentFile = new VBoxContainer();
-		contentFile.AddThemeConstantOverride("separation", 8);
-		leftVBox.AddChild(contentFile);
-		SetupAccordion(btnHeaderFile, contentFile, TranslationServer.Translate("File & Map Actions"));
+		_contentFile = new VBoxContainer();
+		((VBoxContainer)_contentFile).AddThemeConstantOverride("separation", 8);
+		leftVBox.AddChild(_contentFile);
+		SetupMutualAccordion(_btnHeaderFile, _contentFile, TranslationServer.Translate("File & Map Actions"));
 
-		SafeReparent(_btnPublish, contentFile);
-		SafeReparent(_btnSave, contentFile);
-		SafeReparent(_btnLoad, contentFile);
-		SafeReparent(_btnResetMap, contentFile);
-		SafeReparent(_btnGenerateMap, contentFile);
-		SafeReparent(_btnImportMinimap, contentFile);
+		SafeReparent(_btnPublish, _contentFile);
+		SafeReparent(_btnSave, _contentFile);
+		SafeReparent(_btnLoad, _contentFile);
+		SafeReparent(_btnResetMap, _contentFile);
+		SafeReparent(_btnGenerateMap, _contentFile);
+		SafeReparent(_btnImportMinimap, _contentFile);
 
 		_btnLeftTab = new Button();
 		_btnLeftTab.Name = "LeftTabButton";
@@ -2849,11 +2854,12 @@ public class {mapName} : IMapScript
 		_contentViewport = new VBoxContainer();
 		_contentViewport.AddThemeConstantOverride("separation", 8);
 		_accordionViewport.AddChild(_contentViewport);
-		SetupAccordion(_btnHeaderViewport, _contentViewport, TranslationServer.Translate("Viewport Settings"));
+		SetupMutualAccordion(_btnHeaderViewport, _contentViewport, TranslationServer.Translate("Viewport Settings"));
 
 		SafeReparent(_btnToggleGrid, _contentViewport);
 		SafeReparent(_btnToggleCameraBounds, _contentViewport);
 		SafeReparent(_btnRotate, _contentViewport);
+		SafeReparent(_btnCameraAngle, _contentViewport);
 		if (_btnSkybox != null)
 		{
 			_btnSkybox.CustomMinimumSize = new Vector2(0, 32);
@@ -2881,18 +2887,18 @@ public class {mapName} : IMapScript
 		accordionMapSettings.Name = "AccordionMapSettings";
 		leftVBox.AddChild(accordionMapSettings);
 		
-		var btnHeaderMapSettings = new Button();
-		btnHeaderMapSettings.Set("icon_max_width", 0);
-		StyleAccordionHeader(btnHeaderMapSettings);
-		accordionMapSettings.AddChild(btnHeaderMapSettings);
+		_btnHeaderMapSettings = new Button();
+		_btnHeaderMapSettings.Set("icon_max_width", 0);
+		StyleAccordionHeader(_btnHeaderMapSettings);
+		accordionMapSettings.AddChild(_btnHeaderMapSettings);
 		
-		var contentMapSettings = new VBoxContainer();
-		contentMapSettings.AddThemeConstantOverride("separation", 8);
-		accordionMapSettings.AddChild(contentMapSettings);
-		SetupAccordion(btnHeaderMapSettings, contentMapSettings, TranslationServer.Translate("Map Settings"));
+		_contentMapSettings = new VBoxContainer();
+		((VBoxContainer)_contentMapSettings).AddThemeConstantOverride("separation", 8);
+		accordionMapSettings.AddChild(_contentMapSettings);
+		SetupMutualAccordion(_btnHeaderMapSettings, _contentMapSettings, TranslationServer.Translate("Map Settings"));
 
-		SafeReparent(_waterHeightBox, contentMapSettings);
-		SafeReparent(_camBoundsBox, contentMapSettings);
+		SafeReparent(_waterHeightBox, _contentMapSettings);
+		SafeReparent(_camBoundsBox, _contentMapSettings);
 
 		var skyboxBox = new VBoxContainer();
 		skyboxBox.Name = "SkyboxBox";
@@ -2901,7 +2907,7 @@ public class {mapName} : IMapScript
 		lblSkyboxTitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		lblSkyboxTitle.AddThemeFontSizeOverride("font_size", 12);
 		skyboxBox.AddChild(lblSkyboxTitle);
-		contentMapSettings.AddChild(skyboxBox);
+		_contentMapSettings.AddChild(skyboxBox);
 		SafeReparent(_optSkybox, skyboxBox);
 
 		_panelEnv = GetNodeOrNull<PanelContainer>("TopToolbar/PanelEnv");
@@ -2966,7 +2972,7 @@ public class {mapName} : IMapScript
 		topLeftBox.MoveChild(_btnRedo, 4);
 		topLeftBox.MoveChild(_btnEyedropper, 5);
 
-		foreach (Control child in contentFile.GetChildren())
+		foreach (Control child in _contentFile.GetChildren())
 		{
 			child.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		}
@@ -3043,6 +3049,35 @@ public class {mapName} : IMapScript
 		{
 			contentControl.Visible = !contentControl.Visible;
 			headerBtn.Text = (contentControl.Visible ? "▼ " : "▶ ") + titleText;
+			UIManager.Instance?.PlayClickSound();
+		};
+	}
+
+	private void SetupMutualAccordion(Button headerBtn, Control contentControl, string titleText)
+	{
+		headerBtn.Text = (contentControl.Visible ? "▼ " : "▶ ") + titleText;
+		headerBtn.Pressed += () =>
+		{
+			contentControl.Visible = !contentControl.Visible;
+			headerBtn.Text = (contentControl.Visible ? "▼ " : "▶ ") + titleText;
+			if (contentControl.Visible)
+			{
+				if (headerBtn != _btnHeaderFile && _contentFile != null)
+				{
+					_contentFile.Visible = false;
+					_btnHeaderFile.Text = "▶ " + TranslationServer.Translate("File & Map Actions");
+				}
+				if (headerBtn != _btnHeaderViewport && _contentViewport != null)
+				{
+					_contentViewport.Visible = false;
+					_btnHeaderViewport.Text = "▶ " + TranslationServer.Translate("Viewport Settings");
+				}
+				if (headerBtn != _btnHeaderMapSettings && _contentMapSettings != null)
+				{
+					_contentMapSettings.Visible = false;
+					_btnHeaderMapSettings.Text = "▶ " + TranslationServer.Translate("Map Settings");
+				}
+			}
 			UIManager.Instance?.PlayClickSound();
 		};
 	}
@@ -3124,7 +3159,13 @@ public class {mapName} : IMapScript
 			_accordionBrush.Visible = isBrush;
 			if (_sldBrushStrength != null && _sldBrushStrength.GetParent() is Control strengthParent)
 			{
-				strengthParent.Visible = (tool != GameHost.EditorTool.PaintPathing && tool != GameHost.EditorTool.PlacePropClump);
+				strengthParent.Visible = (tool != GameHost.EditorTool.PaintPathing && 
+				                          tool != GameHost.EditorTool.PlacePropClump &&
+				                          tool != GameHost.EditorTool.Raise &&
+				                          tool != GameHost.EditorTool.Lower &&
+				                          tool != GameHost.EditorTool.Flatten &&
+				                          tool != GameHost.EditorTool.Cliff &&
+				                          tool != GameHost.EditorTool.Ramp);
 			}
 			bool isTextureMode = tool == GameHost.EditorTool.PaintGrass ||
 			                     tool == GameHost.EditorTool.PaintDirt ||
@@ -3132,15 +3173,23 @@ public class {mapName} : IMapScript
 			                     tool == GameHost.EditorTool.PaintSand;
 			if (_chkBlockMode != null)
 			{
-				_chkBlockMode.Visible = (tool != GameHost.EditorTool.PaintPathing && !isTextureMode);
+				_chkBlockMode.Visible = (tool != GameHost.EditorTool.PaintPathing && 
+				                         !isTextureMode &&
+				                         tool != GameHost.EditorTool.Smooth &&
+				                         tool != GameHost.EditorTool.Flatten &&
+				                         tool != GameHost.EditorTool.Noise);
 			}
 			if (_stepBox != null)
 			{
-				_stepBox.Visible = (tool != GameHost.EditorTool.PaintPathing && !isTextureMode);
+				_stepBox.Visible = (tool != GameHost.EditorTool.PaintPathing && 
+				                    !isTextureMode &&
+				                    tool != GameHost.EditorTool.Smooth &&
+				                    tool != GameHost.EditorTool.Flatten &&
+				                    tool != GameHost.EditorTool.Noise);
 			}
 		}
 
-		_containerFlattenSettings.Visible = (tool == GameHost.EditorTool.Flatten);
+		_containerFlattenSettings.Visible = false;
 		_containerTextureSettings.Visible = (tool == GameHost.EditorTool.PaintGrass ||
 											 tool == GameHost.EditorTool.PaintDirt ||
 											 tool == GameHost.EditorTool.PaintRock ||
@@ -3176,7 +3225,7 @@ public class {mapName} : IMapScript
 			_accordionToolSettings.Visible = anyToolSettingVisible;
 		}
 
-		bool hasPlacementConfig = isPlacement || (tool == GameHost.EditorTool.SelectMove);
+		bool hasPlacementConfig = isPlacement;
 		if (_accordionPlacement != null)
 		{
 			_accordionPlacement.Visible = hasPlacementConfig;
@@ -3380,53 +3429,53 @@ public class {mapName} : IMapScript
 
 	private void SetupTextureSwatches(bool connectEvents = false)
 	{
-		_swatchPaths[0] = "res://Assets/Terrain/grass_green.jpg";
+		_swatchPaths[0] = "res://Assets/2d/TileSheets/river_silt.png";
 		_swatchDisplayNames[0] = "Grass Green";
-		_swatchColors[0] = new Color(0.2f, 0.6f, 0.2f);
+		_swatchColors[0] = new Color(0.95f, 0.95f, 1.0f);
 
-		_swatchPaths[1] = "res://Assets/Terrain/dirt_dark.jpg";
+		_swatchPaths[1] = "res://Assets/2d/TileSheets/cinder_rock.png";
 		_swatchDisplayNames[1] = "Dark Dirt";
-		_swatchColors[1] = new Color(0.4f, 0.25f, 0.15f);
+		_swatchColors[1] = new Color(0.5f, 0.5f, 0.52f);
 
-		_swatchPaths[2] = "res://Assets/Terrain/rock_grey.jpg";
+		_swatchPaths[2] = "res://Assets/2d/TileSheets/arid_dust.png";
 		_swatchDisplayNames[2] = "Grey Rock";
-		_swatchColors[2] = new Color(0.5f, 0.5f, 0.5f);
+		_swatchColors[2] = new Color(0.5f, 0.45f, 0.38f);
 
-		_swatchPaths[3] = "res://Assets/Terrain/sand_yellow.jpg";
+		_swatchPaths[3] = "res://Assets/2d/TileSheets/deep_moss.png";
 		_swatchDisplayNames[3] = "Yellow Sand";
-		_swatchColors[3] = new Color(0.85f, 0.85f, 0.5f);
+		_swatchColors[3] = new Color(0.2f, 0.6f, 0.2f);
 
-		_swatchPaths[4] = "res://Assets/Terrain/grass_dry.jpg";
+		_swatchPaths[4] = "res://Assets/2d/TileSheets/crag_stone.png";
 		_swatchDisplayNames[4] = "Dry Grass";
-		_swatchColors[4] = new Color(0.5f, 0.55f, 0.3f);
+		_swatchColors[4] = new Color(0.38f, 0.38f, 0.4f);
 
-		_swatchPaths[5] = "res://Assets/Terrain/dirt_red.jpg";
+		_swatchPaths[5] = "res://Assets/2d/TileSheets/ash_soil.png";
 		_swatchDisplayNames[5] = "Red Dirt";
-		_swatchColors[5] = new Color(0.6f, 0.3f, 0.2f);
+		_swatchColors[5] = new Color(0.4f, 0.28f, 0.18f);
 
-		_swatchPaths[6] = "res://Assets/Terrain/snow_white.jpg";
+		_swatchPaths[6] = "res://Assets/2d/TileSheets/fern_grove.png";
 		_swatchDisplayNames[6] = "White Snow";
-		_swatchColors[6] = new Color(0.95f, 0.95f, 0.98f);
+		_swatchColors[6] = new Color(0.3f, 0.7f, 0.2f);
 
-		_swatchPaths[7] = "res://Assets/Terrain/mud_brown.jpg";
+		_swatchPaths[7] = "res://Assets/2d/TileSheets/mossy_stone.png";
 		_swatchDisplayNames[7] = "Brown Mud";
-		_swatchColors[7] = new Color(0.35f, 0.2f, 0.1f);
+		_swatchColors[7] = new Color(0.12f, 0.48f, 0.18f);
 
-		_swatchPaths[8] = "res://Assets/Terrain/grass_dark.jpg";
+		_swatchPaths[8] = "res://Assets/2d/TileSheets/holy_moss.png";
 		_swatchDisplayNames[8] = "Dark Grass";
-		_swatchColors[8] = new Color(0.12f, 0.35f, 0.12f);
+		_swatchColors[8] = new Color(0.7f, 0.55f, 0.35f);
 
-		_swatchPaths[9] = "res://Assets/Terrain/gravel_grey.jpg";
+		_swatchPaths[9] = "res://Assets/2d/TileSheets/void_shard.png";
 		_swatchDisplayNames[9] = "Grey Gravel";
-		_swatchColors[9] = new Color(0.4f, 0.4f, 0.45f);
+		_swatchColors[9] = new Color(0.85f, 0.75f, 0.5f);
 
-		_swatchPaths[10] = "res://Assets/Terrain/brick_red.jpg";
+		_swatchPaths[10] = "res://Assets/terrain_grass.jpg";
 		_swatchDisplayNames[10] = "Red Brick";
-		_swatchColors[10] = new Color(0.7f, 0.35f, 0.3f);
+		_swatchColors[10] = new Color(0.45f, 0.55f, 0.65f);
 
-		_swatchPaths[11] = "res://Assets/Terrain/paving_stone.jpg";
+		_swatchPaths[11] = "res://Assets/2d/TileSheets/ash_soil.png";
 		_swatchDisplayNames[11] = "Paving Stone";
-		_swatchColors[11] = new Color(0.3f, 0.3f, 0.35f);
+		_swatchColors[11] = new Color(0.6f, 0.3f, 0.15f);
 
 		for (int i = 0; i < 12; i++)
 		{

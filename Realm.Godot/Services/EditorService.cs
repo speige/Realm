@@ -287,7 +287,7 @@ public class EditorService
 								}
 								else if (activeTool == GameHost.EditorTool.Noise)
 								{
-									if (GD.Randf() < 0.15f * brushStrength * delta)
+									if (GD.Randf() < 0.02f * brushStrength * delta)
 									{
 										float direction = GD.Randf() > 0.5f ? 1.0f : -1.0f;
 										terrain.Heights[x, z] = Mathf.Clamp(terrain.Heights[x, z] + direction * blockLevelHeight, -10.0f, 50.0f);
@@ -484,7 +484,7 @@ public class EditorService
 							}
 							else if (activeTool == GameHost.EditorTool.Noise)
 							{
-								float noiseVal = (float)(GD.Randf() * 2.0 - 1.0) * brushStrength * falloff * delta * 2.0f;
+								float noiseVal = (float)(GD.Randf() * 2.0 - 1.0) * brushStrength * falloff * delta * 0.25f;
 								terrain.Heights[x, z] = Mathf.Clamp(terrain.Heights[x, z] + noiseVal, -10.0f, 50.0f);
 							}
 							modified = true;
@@ -703,7 +703,7 @@ public class EditorService
 			}
 			spawnPos.Y = GetTerrainHeightAt(spawnPos);
 
-			float scaleVal = placementScale + (float)(GD.Randf() * 2.0 - 1.0) * (clumpScaleVar * 2.0f);
+			float scaleVal = placementScale + (float)(GD.Randf() * 2.0 - 1.0) * (clumpScaleVar * 4.0f);
 			scaleVal = Mathf.Clamp(scaleVal, 0.2f, 3.0f);
 
 			float rotY = (randomRotation && !_isPastingObject) ? (float)(GD.Randf() * 360.0) : placementRotation;

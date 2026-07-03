@@ -1107,9 +1107,32 @@ public partial class GameHost
 							if (wantHeight)
 							{
 								float sampledHeight = GetTerrainHeightAt(hitPos);
-								EditorFlattenHeight = sampledHeight;
-								MapEditorHUD.Instance?.UpdateFlattenHeightExternal(sampledHeight);
-								MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.Flatten);
+								EditorBlockLevelHeight = sampledHeight;
+								MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(sampledHeight);
+								float avgHeight = 0f;
+								if (GroundTerrain != null && GroundTerrain.Heights != null)
+								{
+									int w = GroundTerrain.Width;
+									int d = GroundTerrain.Depth;
+									float sum = 0f;
+									for (int z = 0; z < d; z++)
+									{
+										for (int x = 0; x < w; x++)
+										{
+											sum += GroundTerrain.Heights[x, z];
+										}
+									}
+									avgHeight = sum / (w * d);
+								}
+								EditorTool targetTool = sampledHeight >= avgHeight ? EditorTool.Raise : EditorTool.Lower;
+								if (MapEditorHUD.Instance != null)
+								{
+									MapEditorHUD.Instance.SelectToolFromHotkey(targetTool);
+								}
+								else
+								{
+									ActiveEditorTool = targetTool;
+								}
 								MapEditorHUD.Instance?.ShowFeedbackExternal($"Picked Height: {sampledHeight:F1}m");
 							}
 							else if (wantTerrain && GroundTerrain != null)

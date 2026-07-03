@@ -883,9 +883,30 @@ public partial class GameHost
 
 		var mousePos = GetViewport().GetMousePosition();
 		var hit = RaycastFromMouse(mousePos);
+		Vector3 hitPos = Vector3.Zero;
+		bool hasHit = false;
 		if (hit != null && hit.ContainsKey("position"))
 		{
-			Vector3 hitPos = hit["position"].AsVector3();
+			hitPos = hit["position"].AsVector3();
+			hasHit = true;
+		}
+		else
+		{
+			var camera = GetViewport().GetCamera3D();
+			if (camera != null)
+			{
+				var from = camera.ProjectRayOrigin(mousePos);
+				var normal = camera.ProjectRayNormal(mousePos);
+				if (Mathf.Abs(normal.Y) > 0.0001f)
+				{
+					float t = (0.0f - from.Y) / normal.Y;
+					hitPos = from + normal * t;
+					hasHit = true;
+				}
+			}
+		}
+		if (hasHit)
+		{
 			UpdateBrushIndicator(hitPos);
 			UpdateEditorPreview(hitPos);
 			if (GroundTerrain != null)
@@ -919,7 +940,7 @@ public partial class GameHost
 			Node newHovered = null;
 			if (canHover && !IsMouseOverUI())
 			{
-				var collider = hit.ContainsKey("collider") ? hit["collider"].As<Node>() : null;
+				var collider = (hit != null && hit.ContainsKey("collider")) ? hit["collider"].As<Node>() : null;
 				if (collider != null)
 				{
 					newHovered = FindUnit3DInParentChain(collider);
@@ -1369,6 +1390,8 @@ public partial class GameHost
 							 
 		_brushIndicatorMesh.Visible = isTerrainTool;
 	}
+
+	public MeshInstance3D BrushIndicatorMesh => _brushIndicatorMesh;
 
 	public void ClearRampStartPosExternal()
 	{
