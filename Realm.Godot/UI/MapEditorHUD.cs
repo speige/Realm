@@ -276,7 +276,7 @@ public partial class MapEditorHUD : Control
 		_panelEntityPalette = GetNode<PanelContainer>("PanelEntityPalette");
 		_panelTerrain = GetNode<PanelContainer>("TopToolbar/PanelTerrain");
 		_panelDeco = GetNode<PanelContainer>("TopToolbar/PanelDeco");
-		_panelEnv = GetNode<PanelContainer>("TopToolbar/PanelEnv");
+		_panelEnv = GetNodeOrNull<PanelContainer>("TopToolbar/PanelEnv");
 
 		for (int i = 1; i <= 12; i++)
 		{

@@ -65,6 +65,40 @@ public static class MapGenerator
         int depth = host.GroundTerrain.Depth;
         float spacing = host.GroundTerrain.Spacing;
 
+        var world = host.EcsWorld;
+        var worldEntity = host.WorldEntity;
+        if (world != null && world.IsAlive(worldEntity))
+        {
+            if (!world.Has<Realm.Ecs.Components.Terrain.TerrainState>(worldEntity))
+            {
+                world.Add(worldEntity, new Realm.Ecs.Components.Terrain.TerrainState(
+                    width, depth, spacing, 0.2f, -2.0f, true,
+                    new float[width, depth],
+                    new int[width, depth],
+                    null, null
+                ));
+            }
+            else
+            {
+                ref var ts = ref world.Get<Realm.Ecs.Components.Terrain.TerrainState>(worldEntity);
+                bool modified = false;
+                if (ts.Heights == null || ts.Heights.GetLength(0) != width || ts.Heights.GetLength(1) != depth)
+                {
+                    ts.Heights = new float[width, depth];
+                    modified = true;
+                }
+                if (ts.PathingCodes == null || ts.PathingCodes.GetLength(0) != width || ts.PathingCodes.GetLength(1) != depth)
+                {
+                    ts.PathingCodes = new int[width, depth];
+                    modified = true;
+                }
+                if (modified)
+                {
+                    world.Set(worldEntity, ts);
+                }
+            }
+        }
+
         int[,] baseGrid = new int[width, depth];
         double fillChance = 0.25 + (hillsDensity / 10.0) * 0.40;
 
