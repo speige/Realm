@@ -206,39 +206,7 @@ layout_mode = 2
 focus_mode = 0
 text = "🖼️ Decal"
 
-[node name="PanelEnv" type="PanelContainer" parent="TopToolbar"]
-layout_mode = 2
-size_flags_vertical = 0
 
-[node name="VBox" type="VBoxContainer" parent="TopToolbar/PanelEnv"]
-layout_mode = 2
-theme_override_constants/separation = 4
-
-[node name="HeaderHBox" type="HBoxContainer" parent="TopToolbar/PanelEnv/VBox"]
-layout_mode = 2
-
-[node name="Title" type="Label" parent="TopToolbar/PanelEnv/VBox/HeaderHBox"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 11
-text = "ENVIRONMENT"
-horizontal_alignment = 1
-
-[node name="BtnCollapse" type="Button" parent="TopToolbar/PanelEnv/VBox/HeaderHBox"]
-custom_minimum_size = Vector2(22, 22)
-layout_mode = 2
-focus_mode = 0
-text = "▲"
-
-[node name="Content" type="HBoxContainer" parent="TopToolbar/PanelEnv/VBox"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="BtnSkybox" type="Button" parent="TopToolbar/PanelEnv/VBox/Content"]
-custom_minimum_size = Vector2(100, 56)
-layout_mode = 2
-focus_mode = 0
-text = "☀️ Cycle Lighting"
 
 [node name="TopBar" type="PanelContainer" parent="."]
 custom_minimum_size = Vector2(0, 60)

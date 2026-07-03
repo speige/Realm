@@ -41,18 +41,20 @@ public partial class GameHost
 			}
 		}
 		
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
-		for (int z = 0; z < depth; z++)
+		if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.Colors != null)
 		{
-			for (int x = 0; x < width; x++)
+			int width = GroundTerrain.Width;
+			int depth = GroundTerrain.Depth;
+			for (int z = 0; z < depth; z++)
 			{
-				GroundTerrain.Heights[x, z] = 0.0f;
-				GroundTerrain.Colors[x, z] = new Color(0.2f, 0.6f, 0.2f);
+				for (int x = 0; x < width; x++)
+				{
+					GroundTerrain.Heights[x, z] = 0.0f;
+					GroundTerrain.Colors[x, z] = new Color(0.2f, 0.6f, 0.2f);
+				}
 			}
+			GroundTerrain.UpdateMeshAndPhysics(true, true);
 		}
-		
-		GroundTerrain.UpdateMeshAndPhysics(true, true);
 		EditorHistoryManager.Clear();
 		RebuildGridOverlayMeshExternal();
 		

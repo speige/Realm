@@ -1197,28 +1197,31 @@ public partial class GameHost
 						{
 							Vector3 start = _editorService.RampStartPos.Value;
 							Vector3 end = hitPos;
-							var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
-							var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
-							bool modified = ApplyRampInternal(start, end);
-							if (EditorMirrorMode != MirrorMode.None)
+							if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.Colors != null)
 							{
-								var startMirrored = GetMirroredTransforms(start, 0.0f);
-								var endMirrored = GetMirroredTransforms(end, 0.0f);
-								for (int i = 0; i < startMirrored.Count; i++)
+								var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
+								var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
+								bool modified = ApplyRampInternal(start, end);
+								if (EditorMirrorMode != MirrorMode.None)
 								{
-									bool mResult = ApplyRampInternal(startMirrored[i].Position, endMirrored[i].Position);
-									if (mResult) modified = true;
+									var startMirrored = GetMirroredTransforms(start, 0.0f);
+									var endMirrored = GetMirroredTransforms(end, 0.0f);
+									for (int i = 0; i < startMirrored.Count; i++)
+									{
+										bool mResult = ApplyRampInternal(startMirrored[i].Position, endMirrored[i].Position);
+										if (mResult) modified = true;
+									}
 								}
-							}
-							if (modified)
-							{
-								GroundTerrain.UpdateMeshAndPhysics(true, false);
-								AlignAllEntitiesToTerrain();
-								var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
-								var colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
-								var action = new TerrainModifyAction(heightsBefore, heightsAfter, colorsBefore, colorsAfter);
-								EditorHistoryManager.RecordAction(action);
-								EditorHasUnsavedChanges = true;
+								if (modified)
+								{
+									GroundTerrain.UpdateMeshAndPhysics(true, false);
+									AlignAllEntitiesToTerrain();
+									var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
+									var colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
+									var action = new TerrainModifyAction(heightsBefore, heightsAfter, colorsBefore, colorsAfter);
+									EditorHistoryManager.RecordAction(action);
+									EditorHasUnsavedChanges = true;
+								}
 							}
 							_editorService.SetRampStartPos(null);
 							MapEditorHUD.Instance?.ShowFeedbackExternal("Ramp Created!");

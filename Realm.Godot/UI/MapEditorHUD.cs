@@ -402,18 +402,14 @@ public partial class MapEditorHUD : Control
 		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnSelectArea);
 		SetupButton(_btnSelectArea, "🔲 Select Area", () => TriggerToolSelection(GameHost.EditorTool.SelectArea, _btnSelectArea), 11, "Select rectangular area");
 
-		_btnSkybox = GetNode<Button>("TopToolbar/PanelEnv/VBox/Content/BtnSkybox");
-		if (_btnSkybox != null)
-		{
-			_btnSkybox.Set("icon_max_width", 0);
-			SetupButton(_btnSkybox, "☀️ Cycle Lighting", () => GameHost.Instance?.CycleTimeOfDay(), 11, "Cycle map environment lighting (L)");
-		}
+		_btnSkybox = new Button();
+		_btnSkybox.Name = "BtnSkybox";
+		_btnSkybox.Set("icon_max_width", 0);
+		SetupButton(_btnSkybox, "☀️ Cycle Lighting", () => GameHost.Instance?.CycleTimeOfDay(), 11, "Cycle map environment lighting (L)");
 
 		_optSkybox = new OptionButton();
 		_optSkybox.Name = "OptSkybox";
 		_optSkybox.CustomMinimumSize = new Vector2(160, 30);
-		var envContent = GetNode<HBoxContainer>("TopToolbar/PanelEnv/VBox/Content");
-		envContent.AddChild(_optSkybox);
 
 		_skyboxFiles.Clear();
 		using (var dir = DirAccess.Open("res://Assets/Skyboxes"))
@@ -1359,7 +1355,6 @@ public partial class MapEditorHUD : Control
 
 		GetNode<PanelContainer>("TopToolbar/PanelTerrain").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		GetNode<PanelContainer>("TopToolbar/PanelDeco").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		GetNode<PanelContainer>("TopToolbar/PanelEnv").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		GetNode<PanelContainer>("MiddleRightBox/PanelZoom").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		_panelTextures.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel());
 		_panelEntityPalette.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel());
@@ -3508,11 +3503,15 @@ public class {mapName} : IMapScript
 	{
 		if (GameHost.Instance != null)
 		{
-			GameHost.Instance.ActiveEditorTool = GameHost.EditorTool.PaintGrass;
 			GameHost.Instance.EditorPaintColor = modColor;
-			
 			HighlightSwatch(swatch);
-			TriggerToolSelection(GameHost.EditorTool.PaintGrass, swatch);
+			
+			if (GameHost.Instance.ActiveEditorTool != GameHost.EditorTool.FloodFill)
+			{
+				GameHost.Instance.ActiveEditorTool = GameHost.EditorTool.PaintGrass;
+				TriggerToolSelection(GameHost.EditorTool.PaintGrass, swatch);
+			}
+			
 			UpdateTextureLabels();
 			
 			string name = TranslationServer.Translate(_swatchDisplayNames[index]);
