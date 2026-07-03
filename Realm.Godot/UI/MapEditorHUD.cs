@@ -27,16 +27,16 @@ public partial class MapEditorHUD : Control
 	private bool _leftPanelExpanded = false;
 	private bool _rightPanelExpanded = true;
 
-	private HBoxContainer _moduleBar;
-	private Button _btnModuleTerrain;
-	private Button _btnModulePaint;
-	private Button _btnModuleObjects;
-	private Button _btnModuleClipboard;
+	private OptionButton _optModule;
 	private EditorModule _activeModule = EditorModule.Terrain;
 
 	private VBoxContainer _accordionBrush;
 	private Button _btnHeaderBrush;
 	private VBoxContainer _contentBrush;
+	
+	private VBoxContainer _accordionTool;
+	private Button _btnHeaderTool;
+	private VBoxContainer _contentTool;
 	
 	private VBoxContainer _accordionToolSettings;
 	private Button _btnHeaderToolSettings;
@@ -69,8 +69,10 @@ public partial class MapEditorHUD : Control
 	private VBoxContainer _containerPasteSettings;
 	private VBoxContainer _containerCategorySelector;
 
-	private PanelContainer _panelObjects;
-	private PanelContainer _panelClipboard;
+	private VBoxContainer _panelObjects;
+	private VBoxContainer _panelClipboard;
+	private VBoxContainer _panelTerrainVBox;
+	private VBoxContainer _panelDecoVBox;
 	private Button _btnCut;
 	private Button _btnEraseArea;
 	
@@ -1965,8 +1967,8 @@ public partial class MapEditorHUD : Control
 		{
 			_activeModule = targetModule;
 			UpdateModuleSwitchButtons();
-			if (_panelTerrain != null) _panelTerrain.Visible = (targetModule == EditorModule.Terrain);
-			if (_panelDeco != null) _panelDeco.Visible = (targetModule == EditorModule.TextureDeco);
+			if (_panelTerrainVBox != null) _panelTerrainVBox.Visible = (targetModule == EditorModule.Terrain);
+			if (_panelDecoVBox != null) _panelDecoVBox.Visible = (targetModule == EditorModule.TextureDeco);
 			if (_panelEnv != null) _panelEnv.Visible = (targetModule == EditorModule.TextureDeco);
 			if (_panelObjects != null) _panelObjects.Visible = (targetModule == EditorModule.Objects);
 			if (_panelClipboard != null) _panelClipboard.Visible = (targetModule == EditorModule.Clipboard);
@@ -2561,39 +2563,7 @@ public class {mapName} : IMapScript
 		var titleLabel = GetNodeOrNull<Label>("TopBar/HBox/TitleLabel");
 		if (titleLabel != null) titleLabel.Visible = false;
 
-		_moduleBar = new HBoxContainer();
-		_moduleBar.Name = "ModuleBar";
-		_moduleBar.Alignment = BoxContainer.AlignmentMode.Center;
-		_moduleBar.AddThemeConstantOverride("separation", 15);
-		AddChild(_moduleBar);
-		
-		_moduleBar.LayoutMode = 1;
-		_moduleBar.SetAnchorsPreset(LayoutPreset.CenterTop);
-		_moduleBar.GrowHorizontal = GrowDirection.Both;
-		_moduleBar.OffsetLeft = -250;
-		_moduleBar.OffsetRight = 250;
-		_moduleBar.OffsetTop = 15;
-		_moduleBar.OffsetBottom = 55;
 
-		_btnModuleTerrain = new Button();
-		_btnModuleTerrain.Set("icon_max_width", 0);
-		SetupButton(_btnModuleTerrain, "⛰️ " + TranslationServer.Translate("TERRAIN"), () => SwitchModule(EditorModule.Terrain), 12);
-		_moduleBar.AddChild(_btnModuleTerrain);
-
-		_btnModulePaint = new Button();
-		_btnModulePaint.Set("icon_max_width", 0);
-		SetupButton(_btnModulePaint, "🎨 " + TranslationServer.Translate("TEXTURE"), () => SwitchModule(EditorModule.TextureDeco), 12);
-		_moduleBar.AddChild(_btnModulePaint);
-
-		_btnModuleObjects = new Button();
-		_btnModuleObjects.Set("icon_max_width", 0);
-		SetupButton(_btnModuleObjects, "💂 " + TranslationServer.Translate("OBJECTS"), () => SwitchModule(EditorModule.Objects), 12);
-		_moduleBar.AddChild(_btnModuleObjects);
-
-		_btnModuleClipboard = new Button();
-		_btnModuleClipboard.Set("icon_max_width", 0);
-		SetupButton(_btnModuleClipboard, "📋 " + TranslationServer.Translate("CLIPBOARD"), () => SwitchModule(EditorModule.Clipboard), 12);
-		_moduleBar.AddChild(_btnModuleClipboard);
 
 		_panelLeft = new Panel();
 		_panelLeft.Name = "LeftSlidePanel";
@@ -2620,12 +2590,7 @@ public class {mapName} : IMapScript
 		leftVBox.AddThemeConstantOverride("separation", 10);
 		leftScroll.AddChild(leftVBox);
 
-		var leftTitle = new Label();
-		leftTitle.Text = "📁 " + TranslationServer.Translate("FILE OPERATIONS");
-		leftTitle.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
-		leftTitle.AddThemeFontSizeOverride("font_size", 13);
-		leftTitle.HorizontalAlignment = HorizontalAlignment.Center;
-		leftVBox.AddChild(leftTitle);
+
 
 		_btnHeaderFile = new Button();
 		_btnHeaderFile.Set("icon_max_width", 0);
@@ -2633,6 +2598,7 @@ public class {mapName} : IMapScript
 		leftVBox.AddChild(_btnHeaderFile);
 
 		_contentFile = new VBoxContainer();
+		_contentFile.Visible = false;
 		((VBoxContainer)_contentFile).AddThemeConstantOverride("separation", 8);
 		leftVBox.AddChild(_contentFile);
 		SetupMutualAccordion(_btnHeaderFile, _contentFile, TranslationServer.Translate("File"));
@@ -2663,7 +2629,7 @@ public class {mapName} : IMapScript
 		_btnLeftTab.Pressed += ToggleLeftPanel;
 		_panelLeft.AddChild(_btnLeftTab);
 
-		SetLeftPanelExpanded(false);
+		SetLeftPanelExpanded(true);
 
 		_panelRight = new Panel();
 		_panelRight.Name = "RightSlidePanel";
@@ -2708,6 +2674,40 @@ public class {mapName} : IMapScript
 		_accordionContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		_accordionContainer.AddThemeConstantOverride("separation", 10);
 		rightScroll.AddChild(_accordionContainer);
+
+		_accordionTool = new VBoxContainer();
+		_accordionTool.Name = "AccordionTool";
+		_accordionContainer.AddChild(_accordionTool);
+		_btnHeaderTool = new Button();
+		_btnHeaderTool.Set("icon_max_width", 0);
+		StyleAccordionHeader(_btnHeaderTool);
+		_accordionTool.AddChild(_btnHeaderTool);
+		_contentTool = new VBoxContainer();
+		_contentTool.AddThemeConstantOverride("separation", 8);
+		_accordionTool.AddChild(_contentTool);
+		SetupAccordion(_btnHeaderTool, _contentTool, TranslationServer.Translate("Tool"));
+
+		if (_panelTerrain != null) _panelTerrain.Visible = false;
+		if (_panelDeco != null) _panelDeco.Visible = false;
+
+		_panelTerrainVBox = new VBoxContainer();
+		_panelTerrainVBox.Name = "PanelTerrainVBox";
+		_panelTerrainVBox.AddThemeConstantOverride("separation", 6);
+		_contentTool.AddChild(_panelTerrainVBox);
+		SafeReparent(_btnRaise, _panelTerrainVBox);
+		SafeReparent(_btnLower, _panelTerrainVBox);
+		SafeReparent(_btnSmooth, _panelTerrainVBox);
+		SafeReparent(_btnFlatten, _panelTerrainVBox);
+		SafeReparent(_btnCliff, _panelTerrainVBox);
+		SafeReparent(_btnRamp, _panelTerrainVBox);
+
+		_panelDecoVBox = new VBoxContainer();
+		_panelDecoVBox.Name = "PanelDecoVBox";
+		_panelDecoVBox.AddThemeConstantOverride("separation", 6);
+		_contentTool.AddChild(_panelDecoVBox);
+		SafeReparent(_btnTextureBrush, _panelDecoVBox);
+		SafeReparent(_btnFloodFill, _panelDecoVBox);
+		if (_btnPathingBrush != null) SafeReparent(_btnPathingBrush, _panelDecoVBox);
 
 		_accordionBrush = new VBoxContainer();
 		_accordionBrush.Name = "AccordionBrush";
@@ -2889,6 +2889,7 @@ public class {mapName} : IMapScript
 		accordionMapSettings.AddChild(_btnHeaderMapSettings);
 		
 		_contentMapSettings = new VBoxContainer();
+		_contentMapSettings.Visible = false;
 		((VBoxContainer)_contentMapSettings).AddThemeConstantOverride("separation", 8);
 		accordionMapSettings.AddChild(_contentMapSettings);
 		SetupMutualAccordion(_btnHeaderMapSettings, _contentMapSettings, TranslationServer.Translate("Map Settings"));
@@ -2914,51 +2915,57 @@ public class {mapName} : IMapScript
 
 		SetRightPanelExpanded(true);
 
-		_panelObjects = new PanelContainer();
+		_panelObjects = new VBoxContainer();
 		_panelObjects.Name = "PanelObjects";
-		_panelObjects.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_panelObjects.AddThemeConstantOverride("separation", 6);
 		_panelObjects.Visible = false;
-		_topToolbar.AddChild(_panelObjects);
+		_contentTool.AddChild(_panelObjects);
 
-		var objectsHBox = new HBoxContainer();
-		objectsHBox.AddThemeConstantOverride("separation", 8);
-		_panelObjects.AddChild(objectsHBox);
-
-		SafeReparent(_btnAddObject, objectsHBox);
-		SafeReparent(_btnSelectMove, objectsHBox);
-		SafeReparent(_btnDeleteObject, objectsHBox);
+		SafeReparent(_btnAddObject, _panelObjects);
+		SafeReparent(_btnSelectMove, _panelObjects);
+		SafeReparent(_btnDeleteObject, _panelObjects);
 		if (_btnClumpBrush != null) _btnClumpBrush.Visible = false;
 
-		_panelClipboard = new PanelContainer();
+		_panelClipboard = new VBoxContainer();
 		_panelClipboard.Name = "PanelClipboard";
-		_panelClipboard.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_panelClipboard.AddThemeConstantOverride("separation", 6);
 		_panelClipboard.Visible = false;
-		_topToolbar.AddChild(_panelClipboard);
+		_contentTool.AddChild(_panelClipboard);
 
-		var clipboardHBox = new HBoxContainer();
-		clipboardHBox.AddThemeConstantOverride("separation", 8);
-		_panelClipboard.AddChild(clipboardHBox);
-
-		SafeReparent(_btnSelectArea, clipboardHBox);
-		SafeReparent(_btnCopy, clipboardHBox);
-		SafeReparent(_btnPaste, clipboardHBox);
+		SafeReparent(_btnSelectArea, _panelClipboard);
+		SafeReparent(_btnCopy, _panelClipboard);
+		SafeReparent(_btnPaste, _panelClipboard);
 
 		_btnCut = new Button();
 		_btnCut.Name = "BtnCut";
 		_btnCut.Set("icon_max_width", 0);
 		SetupButton(_btnCut, TranslationServer.Translate("CUT"), () => GameHost.Instance?.PerformCutAreaExternal(), 13, "Cut selected area (Copy and Erase)");
-		clipboardHBox.AddChild(_btnCut);
+		_panelClipboard.AddChild(_btnCut);
 
 		_btnEraseArea = new Button();
 		_btnEraseArea.Name = "BtnEraseArea";
 		_btnEraseArea.Set("icon_max_width", 0);
 		SetupButton(_btnEraseArea, TranslationServer.Translate("ERASE AREA"), () => GameHost.Instance?.PerformEraseAreaExternal(), 13, "Erase textures, heights, or entities in selected area");
-		clipboardHBox.AddChild(_btnEraseArea);
+		_panelClipboard.AddChild(_btnEraseArea);
 
 		var topLeftBox = GetNode<HBoxContainer>("TopLeftBox");
 		SafeReparent(_btnUndo, topLeftBox);
 		SafeReparent(_btnRedo, topLeftBox);
 		SafeReparent(_btnEyedropper, topLeftBox);
+
+		_optModule = new OptionButton();
+		_optModule.Name = "OptModule";
+		_optModule.CustomMinimumSize = new Vector2(100, 32);
+		_optModule.Set("icon_max_width", 0);
+		_optModule.AddItem("⛰️ " + TranslationServer.Translate("TERRAIN"), (int)EditorModule.Terrain);
+		_optModule.AddItem("🎨 " + TranslationServer.Translate("TEXTURE"), (int)EditorModule.TextureDeco);
+		_optModule.AddItem("💂 " + TranslationServer.Translate("OBJECTS"), (int)EditorModule.Objects);
+		_optModule.AddItem("📋 " + TranslationServer.Translate("CLIPBOARD"), (int)EditorModule.Clipboard);
+		_optModule.ItemSelected += (index) =>
+		{
+			SwitchModule((EditorModule)index);
+		};
+		topLeftBox.AddChild(_optModule);
 		
 		topLeftBox.LayoutMode = 1;
 		topLeftBox.SetAnchorsPreset(LayoutPreset.CenterTop);
@@ -2976,6 +2983,11 @@ public class {mapName} : IMapScript
 		topLeftBox.MoveChild(_btnUndo, 3);
 		topLeftBox.MoveChild(_btnRedo, 4);
 		topLeftBox.MoveChild(_btnEyedropper, 5);
+		topLeftBox.MoveChild(_optModule, 6);
+		if (_topToolbar != null)
+		{
+			_topToolbar.Visible = false;
+		}
 
 		foreach (Control child in _contentFile.GetChildren())
 		{
@@ -2990,8 +3002,8 @@ public class {mapName} : IMapScript
 		_activeModule = module;
 		UpdateModuleSwitchButtons();
 
-		if (_panelTerrain != null) _panelTerrain.Visible = (module == EditorModule.Terrain);
-		if (_panelDeco != null) _panelDeco.Visible = (module == EditorModule.TextureDeco);
+		if (_panelTerrainVBox != null) _panelTerrainVBox.Visible = (module == EditorModule.Terrain);
+		if (_panelDecoVBox != null) _panelDecoVBox.Visible = (module == EditorModule.TextureDeco);
 		if (_panelEnv != null) _panelEnv.Visible = (module == EditorModule.TextureDeco);
 		if (_panelObjects != null) _panelObjects.Visible = (module == EditorModule.Objects);
 		if (_panelClipboard != null) _panelClipboard.Visible = (module == EditorModule.Clipboard);
@@ -3018,34 +3030,14 @@ public class {mapName} : IMapScript
 
 	private void UpdateModuleSwitchButtons()
 	{
-		if (_btnModuleTerrain == null || _btnModulePaint == null || _btnModuleObjects == null || _btnModuleClipboard == null) return;
-
-		var activeStyle = new StyleBoxFlat();
-		activeStyle.BgColor = new Color(0.15f, 0.45f, 0.7f, 0.8f);
-		activeStyle.BorderColor = UIStyle.ColorCyanGlow;
-		activeStyle.SetBorderWidthAll(2);
-		activeStyle.CornerRadiusTopLeft = 4;
-		activeStyle.CornerRadiusTopRight = 4;
-		activeStyle.CornerRadiusBottomLeft = 4;
-		activeStyle.CornerRadiusBottomRight = 4;
-
-		_btnModuleTerrain.RemoveThemeStyleboxOverride("normal");
-		_btnModulePaint.RemoveThemeStyleboxOverride("normal");
-		_btnModuleObjects.RemoveThemeStyleboxOverride("normal");
-		_btnModuleClipboard.RemoveThemeStyleboxOverride("normal");
-
-		if (_activeModule == EditorModule.Terrain) _btnModuleTerrain.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnModuleTerrain.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		if (_activeModule == EditorModule.TextureDeco) _btnModulePaint.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnModulePaint.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		if (_activeModule == EditorModule.Objects) _btnModuleObjects.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnModuleObjects.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		if (_activeModule == EditorModule.Clipboard) _btnModuleClipboard.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnModuleClipboard.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		if (_optModule != null)
+		{
+			_optModule.Selected = (int)_activeModule;
+			_optModule.Text = TranslationServer.Translate("Mode");
+		}
 	}
+
+
 
 	private void SetupAccordion(Button headerBtn, Control contentControl, string titleText)
 	{
@@ -3690,10 +3682,7 @@ public class {mapName} : IMapScript
 		{
 			return true;
 		}
-		if (_moduleBar != null && _moduleBar.Visible && _moduleBar.GetGlobalRect().HasPoint(mousePos))
-		{
-			return true;
-		}
+
 		return false;
 	}
 
