@@ -93,6 +93,9 @@ public partial class InGameHUD : Control
 	public bool ShowMinimapTerrain => _viewModel.ShowMinimapTerrain;
 
 
+	private float _fogUpdateTimer = 0f;
+	private MeshInstance3D _fogMeshInstance = null;
+
 	public byte[,] FogGrid
 	{
 		get
@@ -428,9 +431,11 @@ public partial class InGameHUD : Control
 		SetupMinimapButton(btnHotkeys, "res://Assets/UI/game_menu.png", "Hotkey Reference [F5]", () => ToggleHotkeyPanel());
 		_minimapControls.AddChild(btnHotkeys);
 
+		string currentWeather = "clear";
 		if (GameHost.Instance != null)
 		{
 			GameHost.Instance.LoadMapProperties("res://map.json");
+			currentWeather = GameHost.Instance?.EnvironmentService?.GetCurrentWeather() ?? "clear";
 		}
 
 		_chatPanel = GetNode<PanelContainer>("ChatPanel");
@@ -536,11 +541,12 @@ public partial class InGameHUD : Control
 		_customUIPanel.AddChild(_leaderboardPanel);
 
 		CreateStatsContainer();
-		ApplyWeatherEffects(_currentWeather);
 		ApplyThemeStyles();
 		SetupCommandCard();
 		SetupDevPanel();
 		SetupPortrait();
+		Setup3DFogOfWar();
+		ApplyWeatherEffects(currentWeather);
 
 		_feedbackLabel.Modulate = new Color(1, 1, 1, 0);
 		Input.MouseMode = Input.MouseModeEnum.Visible;
@@ -666,6 +672,12 @@ public partial class InGameHUD : Control
 		if (LobbyManager.Instance != null)
 		{
 			LobbyManager.Instance.ChatReceived -= OnLobbyChatReceived;
+		}
+
+		if (GodotObject.IsInstanceValid(_fogMeshInstance))
+		{
+			_fogMeshInstance.QueueFree();
+			_fogMeshInstance = null;
 		}
 
 		if (GodotObject.IsInstanceValid(_rainParticles))
@@ -1062,6 +1074,26 @@ public partial class InGameHUD : Control
 	{
 		_viewModel.Update(delta);
 
+		_fogUpdateTimer += (float)delta;
+		if (_fogUpdateTimer >= 0.1f)
+		{
+			_fogUpdateTimer = 0f;
+			UpdateFogOfWar();
+			var minimapOverlay = _minimapArea?.GetNodeOrNull<MinimapOverlay>("MinimapOverlay");
+			minimapOverlay?.QueueRedraw();
+		}
+
+		if (_baseFogDensity > 0f && _camera3D != null && GodotObject.IsInstanceValid(_camera3D))
+		{
+			var worldEnv = (GameHost.Instance != null ? GameHost.Instance.MainNode?.GetNodeOrNull<WorldEnvironment>("WorldEnvironment") : null);
+			if (worldEnv != null && worldEnv.Environment != null)
+			{
+				float height = _camera3D.GlobalPosition.Y;
+				float scale = 18.0f / Mathf.Max(8.0f, height);
+				worldEnv.Environment.FogDensity = _baseFogDensity * scale;
+			}
+		}
+
 		_resourcePanelController?.Update(_viewModel);
 		_leaderboardPanelController?.Update(_viewModel);
 
@@ -1193,6 +1225,24 @@ public partial class InGameHUD : Control
 				UIManager.Instance?.PlayClickSound();
 				UIManager.Instance?.TransitionTo(GameScreen.GameOver, false);
 			};
+		}
+
+		// Cycle Weather button — dynamically created since it is not in the .tscn
+		if (_devPanel != null)
+		{
+			var btnWeather = new Button();
+			btnWeather.Name = "BtnCycleWeather";
+			btnWeather.Text = TranslationServer.Translate("Cycle Weather");
+			btnWeather.AddThemeFontSizeOverride("font_size", 14);
+			btnWeather.FocusMode = FocusModeEnum.None;
+			// Position it to the right of BtnDefeat (offset_right = 310)
+			btnWeather.SetAnchorsAndOffsetsPreset(LayoutPreset.TopLeft);
+			btnWeather.OffsetLeft = 320;
+			btnWeather.OffsetTop = 10;
+			btnWeather.OffsetRight = 480;
+			btnWeather.OffsetBottom = 45;
+			btnWeather.Pressed += () => CycleWeather();
+			_devPanel.AddChild(btnWeather);
 		}
 	}
 
@@ -1462,6 +1512,305 @@ public partial class InGameHUD : Control
 		_viewModel.LeaderboardValues[label] = value;
 	}
 
+
+	private void UpdateFogOfWar()
+	{
+		if (GameHost.Instance == null || GameHost.Instance.GroundTerrain == null) return;
+		bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
+		if (ReplayPlaybackManager.Instance.IsPlayingReplay || isSpectator)
+		{
+			int targetOwnerId = ReplayPlaybackManager.Instance.IsPlayingReplay 
+				? ReplayPlaybackManager.Instance.SpectatorPerspective 
+				: LiveSpectatorPerspective;
+
+			if (targetOwnerId == -1)
+			{
+				var grid = FogGrid;
+				for (int x = 0; x < 32; x++)
+					for (int z = 0; z < 32; z++)
+						grid[x, z] = 2;
+				FogGrid = grid;
+				if (GameHost.Instance != null)
+				{
+					foreach (var unit in GameHost.Instance.AllUnits)
+					{
+						if (unit != null && GodotObject.IsInstanceValid(unit))
+							unit.Visible = true;
+					}
+				}
+				Update3DFogMesh();
+				return;
+			}
+			else
+			{
+				var grid = FogGrid;
+				for (int x = 0; x < 32; x++)
+					for (int z = 0; z < 32; z++)
+						grid[x, z] = 0;
+				if (GameHost.Instance == null) { FogGrid = grid; return; }
+				foreach (var unit in GameHost.Instance.AllUnits)
+				{
+					if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
+					int ownerId = GameHost.Instance.GetOwnerPeerId(unit.Entity);
+					if (ownerId != targetOwnerId) continue;
+					Vector3 pos = unit.GlobalPosition;
+					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
+					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+					float scanRadius = 15.0f;
+					if (GameHost.Instance.EcsWorld.IsAlive(unit.Entity) && GameHost.Instance.EcsWorld.Has<DefinitionId>(unit.Entity))
+					{
+						string defId = GameHost.Instance.EcsWorld.Get<DefinitionId>(unit.Entity).Value;
+						if (GameHost.UnitRegistry.TryGetValue(defId, out var metaReg) && metaReg.ScanRadius > 0)
+							scanRadius = metaReg.ScanRadius;
+					}
+					int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (250f / 32f)));
+					for (int dx = -rGrid; dx <= rGrid; dx++)
+					{
+						for (int dz = -rGrid; dz <= rGrid; dz++)
+						{
+							int nx = gx + dx;
+							int nz = gz + dz;
+							if (nx >= 0 && nx < 32 && nz >= 0 && nz < 32)
+								if (dx * dx + dz * dz <= rGrid * rGrid)
+									grid[nx, nz] = 2;
+						}
+					}
+				}
+				FogGrid = grid;
+				var fogGrid2 = FogGrid;
+				foreach (var unit in GameHost.Instance.AllUnits)
+				{
+					if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
+					int ownerId = GameHost.Instance.GetOwnerPeerId(unit.Entity);
+					if (ownerId == targetOwnerId)
+					{
+						unit.Visible = true;
+					}
+					else
+					{
+						Vector3 pos = unit.GlobalPosition;
+						int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
+						int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+						unit.Visible = (fogGrid2[gx, gz] == 2);
+					}
+				}
+				Update3DFogMesh();
+				return;
+			}
+		}
+
+		string fogType = FogOfWarType;
+		if (fogType == "visible")
+		{
+			var grid = FogGrid;
+			for (int x = 0; x < 32; x++)
+				for (int z = 0; z < 32; z++)
+					grid[x, z] = 2;
+			FogGrid = grid;
+			if (GameHost.Instance != null)
+			{
+				foreach (var unit in GameHost.Instance.AllUnits)
+				{
+					if (unit != null && GodotObject.IsInstanceValid(unit))
+						unit.Visible = true;
+				}
+			}
+			return;
+		}
+
+		{
+			var grid = FogGrid;
+			for (int x = 0; x < 32; x++)
+			{
+				for (int z = 0; z < 32; z++)
+				{
+					if (fogType == "black")
+						grid[x, z] = 0;
+					else if (grid[x, z] == 2)
+						grid[x, z] = 1;
+				}
+			}
+
+			if (GameHost.Instance == null) { FogGrid = grid; return; }
+
+			foreach (var unit in GameHost.Instance.AllUnits)
+			{
+				if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
+				if (unit.IsEnemy) continue;
+
+				Vector3 pos = unit.GlobalPosition;
+				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
+				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+
+				float scanRadius = 15.0f;
+				if (GameHost.Instance.EcsWorld.IsAlive(unit.Entity) && GameHost.Instance.EcsWorld.Has<DefinitionId>(unit.Entity))
+				{
+					string defId = GameHost.Instance.EcsWorld.Get<DefinitionId>(unit.Entity).Value;
+					if (GameHost.UnitRegistry.TryGetValue(defId, out var metaReg) && metaReg.ScanRadius > 0)
+						scanRadius = metaReg.ScanRadius;
+				}
+
+				int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (250f / 32f)));
+				for (int dx = -rGrid; dx <= rGrid; dx++)
+				{
+					for (int dz = -rGrid; dz <= rGrid; dz++)
+					{
+						int nx = gx + dx;
+						int nz = gz + dz;
+						if (nx >= 0 && nx < 32 && nz >= 0 && nz < 32)
+							if (dx * dx + dz * dz <= rGrid * rGrid)
+								grid[nx, nz] = 2;
+					}
+				}
+			}
+			FogGrid = grid;
+
+			var visGrid = FogGrid;
+			foreach (var unit in GameHost.Instance.AllUnits)
+			{
+				if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
+				if (!unit.IsEnemy)
+				{
+					unit.Visible = true;
+					continue;
+				}
+
+				Vector3 pos = unit.GlobalPosition;
+				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
+				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+				unit.Visible = (visGrid[gx, gz] == 2);
+			}
+
+			Update3DFogMesh();
+		}
+	}
+
+	private float GetFogValueAtVertex(int x, int z)
+	{
+		var fogGrid = FogGrid;
+		float sum = 0f;
+		int count = 0;
+		for (int dx = -1; dx <= 0; dx++)
+		{
+			for (int dz = -1; dz <= 0; dz++)
+			{
+				int cx = x + dx;
+				int cz = z + dz;
+				if (cx >= 0 && cx < 32 && cz >= 0 && cz < 32)
+				{
+					byte val = fogGrid[cx, cz];
+					float alpha = val switch
+					{
+						0 => 1.0f,
+						1 => 0.48f,
+						2 => 0.0f,
+						_ => 1.0f
+					};
+					sum += alpha;
+					count++;
+				}
+			}
+		}
+		return count > 0 ? (sum / count) : 1.0f;
+	}
+
+	private void Update3DFogMesh()
+	{
+		if (_fogMeshInstance == null) return;
+		var arrMesh = _fogMeshInstance.Mesh as ArrayMesh;
+		if (arrMesh == null)
+		{
+			arrMesh = new ArrayMesh();
+			_fogMeshInstance.Mesh = arrMesh;
+		}
+
+		float cellWidth = 250f / 32f;
+		float cellHeight = 250f / 32f;
+
+		var vertices = new Vector3[33 * 33];
+		var colors = new Color[33 * 33];
+		var indices = new int[32 * 32 * 6];
+
+		for (int z = 0; z <= 32; z++)
+		{
+			for (int x = 0; x <= 32; x++)
+			{
+				int idx = x + z * 33;
+				float wx = (x - 16f) * cellWidth;
+				float wz = (z - 16f) * cellHeight;
+				float h = GameHost.Instance != null ? GameHost.Instance.GetTerrainHeightAt(new Vector3(wx, 0f, wz)) : 0f;
+				vertices[idx] = new Vector3(wx, h + 0.15f, wz);
+
+				float alpha = GetFogValueAtVertex(x, z);
+				colors[idx] = new Color(0f, 0f, 0f, alpha);
+			}
+		}
+
+		int iIdx = 0;
+		for (int z = 0; z < 32; z++)
+		{
+			for (int x = 0; x < 32; x++)
+			{
+				int topLeft = x + z * 33;
+				int topRight = (x + 1) + z * 33;
+				int bottomLeft = x + (z + 1) * 33;
+				int bottomRight = (x + 1) + (z + 1) * 33;
+
+				indices[iIdx++] = topLeft;
+				indices[iIdx++] = topRight;
+				indices[iIdx++] = bottomLeft;
+
+				indices[iIdx++] = bottomLeft;
+				indices[iIdx++] = topRight;
+				indices[iIdx++] = bottomRight;
+			}
+		}
+
+		arrMesh.ClearSurfaces();
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+		arrays[(int)Mesh.ArrayType.Color] = colors;
+		arrays[(int)Mesh.ArrayType.Index] = indices;
+		arrMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+	}
+
+	private void Setup3DFogOfWar()
+	{
+		var mainNode = (GameHost.Instance != null ? GameHost.Instance.MainNode : null);
+		if (mainNode == null) return;
+
+		var fogMesh = new MeshInstance3D();
+		fogMesh.Name = "3DFogMesh";
+
+		// Use an empty ArrayMesh — Update3DFogMesh populates it each frame with
+		// per-vertex color data (black with varying alpha).  An empty ArrayMesh
+		// renders nothing until surfaces are added, so the terrain is visible on startup.
+		fogMesh.Mesh = new ArrayMesh();
+
+		var shaderMaterial = new ShaderMaterial();
+		var shader = new Shader();
+		shader.Code = @"
+			shader_type spatial;
+			render_mode unshaded, depth_draw_never, cull_disabled;
+			
+			// Fog opacity is encoded as vertex alpha (COLOR.a) by Update3DFogMesh():
+			//   alpha = 1.0  => unexplored (solid black)
+			//   alpha = 0.48 => explored but not currently visible (dark shroud)
+			//   alpha = 0.0  => fully visible (discard fragment)
+			void fragment() {
+				ALBEDO = vec3(0.0, 0.0, 0.0);
+				ALPHA = COLOR.a;
+				if (COLOR.a < 0.01) { discard; }
+			}
+		";
+		shaderMaterial.Shader = shader;
+
+		fogMesh.MaterialOverride = shaderMaterial;
+		mainNode.AddChild(fogMesh);
+		fogMesh.GlobalPosition = new Vector3(0f, 0.35f, 15f); // Sit just above the ground meshes
+		_fogMeshInstance = fogMesh;
+	}
 
 	private void CycleWeather()
 	{
