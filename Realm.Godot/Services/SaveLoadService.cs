@@ -320,6 +320,11 @@ public class SaveLoadService
 				worldEntity = _ecsWorld.Create();
 			}
 
+			if (!_ecsWorld.Has<TerrainState>(worldEntity))
+			{
+				_ecsWorld.Add(worldEntity, new TerrainState(126, 126, 2.0f, 5.0f / 2.5f / 10.0f, -2.0f, true, new float[126, 126], new int[126, 126], null, null));
+			}
+
 			if (_ecsWorld.Has<TerrainState>(worldEntity))
 			{
 				ref var ts = ref _ecsWorld.Get<TerrainState>(worldEntity);

@@ -214,19 +214,31 @@ public partial class EditableTerrain : StaticBody3D
 
 	public override void _Ready()
 	{
-		Heights = new float[Width, Depth];
-		Colors = new Color[Width, Depth];
-		PathingCodes = new int[Width, Depth];
-
-
-		for (int z = 0; z < Depth; z++)
+		var state = GetTerrainStateSafe();
+		if (state.Heights == null || state.Heights.GetLength(0) != Width || state.Heights.GetLength(1) != Depth)
 		{
-			for (int x = 0; x < Width; x++)
-			{
-				Heights[x, z] = 0.0f;
-				Colors[x, z] = new Color(0.2f, 0.6f, 0.2f); // Default Grass Green
-				PathingCodes[x, z] = PATHING_GROUND | PATHING_FLYING;
-			}
+			var newHeights = new float[Width, Depth];
+			for (int z = 0; z < Depth; z++)
+				for (int x = 0; x < Width; x++)
+					newHeights[x, z] = 0.0f;
+			Heights = newHeights;
+		}
+
+		if (Colors == null || Colors.GetLength(0) != Width || Colors.GetLength(1) != Depth)
+		{
+			Colors = new Color[Width, Depth];
+			for (int z = 0; z < Depth; z++)
+				for (int x = 0; x < Width; x++)
+					Colors[x, z] = new Color(0.2f, 0.6f, 0.2f); // Default Grass Green
+		}
+
+		if (state.PathingCodes == null || state.PathingCodes.GetLength(0) != Width || state.PathingCodes.GetLength(1) != Depth)
+		{
+			var newPathing = new int[Width, Depth];
+			for (int z = 0; z < Depth; z++)
+				for (int x = 0; x < Width; x++)
+					newPathing[x, z] = PATHING_GROUND | PATHING_FLYING;
+			PathingCodes = newPathing;
 		}
 
 		_meshInstance = new MeshInstance3D();
@@ -370,8 +382,18 @@ void fragment() {
 
 	public void UpdateMeshAndPhysics(bool rebuildPhysics = true, bool rebuildNavMesh = true)
 	{
+		int w = Width;
+		int d = Depth;
 
-		int vertexCount = Width * Depth;
+		if (Colors == null || Colors.GetLength(0) != w || Colors.GetLength(1) != d)
+		{
+			Colors = new Color[w, d];
+			for (int z = 0; z < d; z++)
+				for (int x = 0; x < w; x++)
+					Colors[x, z] = new Color(0.2f, 0.6f, 0.2f);
+		}
+
+		int vertexCount = w * d;
 		if (_verticesCache == null || _verticesCache.Length != vertexCount)
 		{
 			_verticesCache = new Vector3[vertexCount];

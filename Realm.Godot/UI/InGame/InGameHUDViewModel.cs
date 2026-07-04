@@ -8,18 +8,50 @@ using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Resources;
+using Realm.Godot.ReplaySystem;
+
 
 public class InGameHUDViewModel
 {
+	private Entity GetTargetPlayerEntity()
+	{
+		if (GameHost.Instance == null || GameHost.Instance.EcsWorld == null)
+			return Entity.Null;
+
+		var world = GameHost.Instance.EcsWorld;
+		var worldEntity = GameHost.Instance.WorldEntity;
+
+		bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
+		bool isPlayingReplay = ReplayPlaybackManager.Instance.IsPlayingReplay;
+
+		if (isSpectator || isPlayingReplay)
+		{
+			int targetPeerId = isPlayingReplay 
+				? ReplayPlaybackManager.Instance.SpectatorPerspective 
+				: (InGameHUD.Instance != null ? InGameHUD.Instance.LiveSpectatorPerspective : -1);
+
+			if (targetPeerId != -1 && worldEntity != Entity.Null && world.IsAlive(worldEntity) && world.Has<NetworkMappingState>(worldEntity))
+			{
+				var mapping = world.Get<NetworkMappingState>(worldEntity);
+				if (mapping.PeerIdToPlayerEntityMap != null && mapping.PeerIdToPlayerEntityMap.TryGetValue(targetPeerId, out var spectatedPlayer))
+				{
+					return spectatedPlayer;
+				}
+			}
+		}
+
+		return GameHost.Instance.PlayerEntity;
+	}
+
 	public float Gold
 	{
 		get
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.PlayerEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
 				var world = GameHost.Instance.EcsWorld;
-				var player = GameHost.Instance.PlayerEntity;
-				if (world.IsAlive(player) && world.Has<PlayerResources>(player))
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerResources>(player))
 				{
 					var res = world.Get<PlayerResources>(player);
 					var goldId = "gold".AsResourceId(GameHost.Instance.DefinitionManager);
@@ -30,11 +62,11 @@ public class InGameHUDViewModel
 		}
 		set
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.PlayerEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
 				var world = GameHost.Instance.EcsWorld;
-				var player = GameHost.Instance.PlayerEntity;
-				if (world.IsAlive(player) && world.Has<PlayerResources>(player))
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerResources>(player))
 				{
 					ref var res = ref world.Get<PlayerResources>(player);
 					var goldId = "gold".AsResourceId(GameHost.Instance.DefinitionManager);
@@ -48,11 +80,11 @@ public class InGameHUDViewModel
 	{
 		get
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.PlayerEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
 				var world = GameHost.Instance.EcsWorld;
-				var player = GameHost.Instance.PlayerEntity;
-				if (world.IsAlive(player) && world.Has<PlayerResources>(player))
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerResources>(player))
 				{
 					var res = world.Get<PlayerResources>(player);
 					var woodId = "wood".AsResourceId(GameHost.Instance.DefinitionManager);
@@ -63,11 +95,11 @@ public class InGameHUDViewModel
 		}
 		set
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.PlayerEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
 				var world = GameHost.Instance.EcsWorld;
-				var player = GameHost.Instance.PlayerEntity;
-				if (world.IsAlive(player) && world.Has<PlayerResources>(player))
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerResources>(player))
 				{
 					ref var res = ref world.Get<PlayerResources>(player);
 					var woodId = "wood".AsResourceId(GameHost.Instance.DefinitionManager);
@@ -81,11 +113,11 @@ public class InGameHUDViewModel
 	{
 		get
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.PlayerEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
 				var world = GameHost.Instance.EcsWorld;
-				var player = GameHost.Instance.PlayerEntity;
-				if (world.IsAlive(player) && world.Has<PlayerResources>(player))
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerResources>(player))
 				{
 					var res = world.Get<PlayerResources>(player);
 					var stoneId = "stone".AsResourceId(GameHost.Instance.DefinitionManager);
@@ -96,11 +128,11 @@ public class InGameHUDViewModel
 		}
 		set
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.PlayerEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
 				var world = GameHost.Instance.EcsWorld;
-				var player = GameHost.Instance.PlayerEntity;
-				if (world.IsAlive(player) && world.Has<PlayerResources>(player))
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerResources>(player))
 				{
 					ref var res = ref world.Get<PlayerResources>(player);
 					var stoneId = "stone".AsResourceId(GameHost.Instance.DefinitionManager);
@@ -114,11 +146,11 @@ public class InGameHUDViewModel
 	{
 		get
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.PlayerEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
 				var world = GameHost.Instance.EcsWorld;
-				var player = GameHost.Instance.PlayerEntity;
-				if (world.IsAlive(player) && world.Has<PlayerUpgrades>(player))
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerUpgrades>(player))
 				{
 					return world.Get<PlayerUpgrades>(player).HarvestingUpgrade ? 1.5f : 1.0f;
 				}
@@ -127,11 +159,11 @@ public class InGameHUDViewModel
 		}
 		set
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.PlayerEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
 				var world = GameHost.Instance.EcsWorld;
-				var player = GameHost.Instance.PlayerEntity;
-				if (world.IsAlive(player) && world.Has<PlayerUpgrades>(player))
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerUpgrades>(player))
 				{
 					ref var upgrades = ref world.Get<PlayerUpgrades>(player);
 					upgrades.HarvestingUpgrade = value > 1.0f;
@@ -361,8 +393,27 @@ public class InGameHUDViewModel
 
 		if (GameHost.Instance != null)
 		{
-			CurrentPopulation = GameHost.Instance.CurrentPopulation;
-			MaxPopulation = GameHost.Instance.MaxPopulation;
+			if (GameHost.Instance.EcsWorld != null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerPopulation>(player))
+				{
+					var pop = world.Get<PlayerPopulation>(player);
+					CurrentPopulation = pop.Current;
+					MaxPopulation = pop.Max;
+				}
+				else
+				{
+					CurrentPopulation = GameHost.Instance.CurrentPopulation;
+					MaxPopulation = GameHost.Instance.MaxPopulation;
+				}
+			}
+			else
+			{
+				CurrentPopulation = GameHost.Instance.CurrentPopulation;
+				MaxPopulation = GameHost.Instance.MaxPopulation;
+			}
 
 			float t = GameHost.Instance.GameElapsedTime;
 			int mins = (int)(t / 60);

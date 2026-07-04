@@ -173,6 +173,28 @@ public partial class GameHost
 			}
 		}
 
+		if (terrain.Heights != null && terrain.Heights.Length == width * depth)
+		{
+			for (int z = 0; z < depth; z++)
+			{
+				for (int x = 0; x < width; x++)
+				{
+					GroundTerrain.Heights[x, z] = terrain.Heights[x, z];
+				}
+			}
+		}
+
+		if (terrain.PathingCodes != null && terrain.PathingCodes.Length == width * depth)
+		{
+			for (int z = 0; z < depth; z++)
+			{
+				for (int x = 0; x < width; x++)
+				{
+					GroundTerrain.PathingCodes[x, z] = terrain.PathingCodes[x, z];
+				}
+			}
+		}
+
 		GroundTerrain.UpdateMeshAndPhysics();
 
 		if (!terrainOnly)

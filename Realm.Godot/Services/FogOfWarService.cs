@@ -1,4 +1,4 @@
-﻿using Arch.Core;
+using Arch.Core;
 using Realm.Ecs.Services;
 using Godot;
 using Realm.Godot.ReplaySystem;
@@ -77,35 +77,17 @@ public class FogOfWarService
 
 		var fogMesh = new MeshInstance3D();
 		fogMesh.Name = "3DFogMesh";
-
-		var planeMesh = new PlaneMesh();
-		planeMesh.Size = new Vector2(250f, 250f);
-		fogMesh.Mesh = planeMesh;
+		fogMesh.Mesh = new ArrayMesh();
 
 		var shaderMaterial = new ShaderMaterial();
 		var shader = new Shader();
 		shader.Code = @"
 			shader_type spatial;
-			render_mode unshaded, depth_draw_never, cull_disabled;
-			
-			uniform sampler2D fog_texture : filter_linear;
-			uniform vec4 shadow_color : source_color = vec4(0.0, 0.0, 0.0, 0.95);
-			uniform vec4 black_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
+			render_mode unshaded, depth_draw_never, cull_disabled, blend_mix;
 			
 			void fragment() {
-				vec2 uv = UV;
-				vec4 tex = texture(fog_texture, uv);
-				float val = tex.r;
-				
-				if (val < 0.1) {
-					ALBEDO = black_color.rgb;
-					ALPHA = black_color.a;
-				} else if (val < 0.6) {
-					ALBEDO = shadow_color.rgb;
-					ALPHA = shadow_color.a;
-				} else {
-					discard;
-				}
+				ALBEDO = vec3(0.0, 0.0, 0.0);
+				ALPHA = COLOR.a;
 			}
 		";
 		shaderMaterial.Shader = shader;

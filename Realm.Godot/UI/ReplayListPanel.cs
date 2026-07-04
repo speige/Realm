@@ -158,11 +158,14 @@ public partial class ReplayListPanel : Control
 		bool ok = ReplayPlaybackManager.Instance.LoadReplay(path);
 		if (ok)
 		{
-			if (LobbyManager.Instance != null && ReplayPlaybackManager.Instance.Header != null)
+			if (LobbyManager.Instance != null)
 			{
-				LobbyManager.Instance.ActiveMapName = ReplayPlaybackManager.Instance.Header.MapName ?? "melee";
+				if (ReplayPlaybackManager.Instance.Header != null)
+				{
+					LobbyManager.Instance.ActiveMapName = ReplayPlaybackManager.Instance.Header.MapName ?? "melee";
+				}
+				LobbyManager.Instance.IsGameStarted = true;
 			}
-			LobbyManager.Instance.IsGameStarted = true;
 			GetTree().ChangeSceneToFile("res://Main.tscn");
 		}
 		else

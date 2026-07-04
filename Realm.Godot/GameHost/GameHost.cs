@@ -2035,9 +2035,9 @@ public class {mapName} : IMapScript
 		}
 
 		EcsWorld = ServiceLocator.Get<World>();
+		CreateGround();
 		SetupWorldEntityComponents();
 
-		CreateGround();
 		if (GroundTerrain != null)
 			_editorService.SetTerrainColors(GroundTerrain.Colors);
 		SetupSkybox();

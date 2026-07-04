@@ -554,6 +554,7 @@ public partial class InGameHUD : Control
 		_resourcePanelController = new ResourcePanel(_resourceContainer);
 		_resourcePanelController.InitializeSupplyAndClock(_populationLabel, _clockLabel);
 
+		_camera3D = GameHost.Instance?.MainCamera;
 		_minimapPanelController = new MinimapPanel(_minimapFrame, _minimapArea, _cameraIndicator, _camera3D);
 		_chatPanelController = new ChatPanel(_chatPanel, _chatInput, _chatLog);
 		_leaderboardPanelController = new LeaderboardPanel(_customUIPanel, _countdownPanel, _countdownLabel, _leaderboardPanel, _leaderboardTitleLabel, _leaderboardContent);
@@ -682,6 +683,14 @@ public partial class InGameHUD : Control
 		var minimapBg = _minimapArea.GetChildCount() > 0 ? _minimapArea.GetChild<TextureRect>(0) : null;
 		if (minimapBg == null) return;
 
+		var fogMesh = GameHost.Instance?.MainNode?.GetNodeOrNull<MeshInstance3D>("3DFogMesh");
+		bool wasVisible = false;
+		if (fogMesh != null)
+		{
+			wasVisible = fogMesh.Visible;
+			fogMesh.Visible = false;
+		}
+
 		try
 		{
 			var viewport = new SubViewport();
@@ -715,6 +724,13 @@ public partial class InGameHUD : Control
 		catch (Exception ex)
 		{
 			GD.PrintErr($"Failed to dynamically capture terrain minimap: {ex.Message}");
+		}
+		finally
+		{
+			if (fogMesh != null)
+			{
+				fogMesh.Visible = wasVisible;
+			}
 		}
 	}
 
@@ -1256,6 +1272,14 @@ public partial class InGameHUD : Control
 			if (!IsChatActive)
 			{
 				CenterCameraOnSelectedUnit();
+				GetViewport().SetInputAsHandled();
+			}
+		}
+		else if (@event is InputEventKey keyEntEvent && keyEntEvent.Pressed && keyEntEvent.Keycode == Key.Enter)
+		{
+			if (!IsChatActive)
+			{
+				_chatPanelController?.ShowChatInput();
 				GetViewport().SetInputAsHandled();
 			}
 		}
