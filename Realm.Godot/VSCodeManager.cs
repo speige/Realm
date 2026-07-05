@@ -405,6 +405,15 @@ public class VSCodeManager
 
 	private string GetMapFolderToOpen(string projectRoot)
 	{
+		if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+		{
+			string tempWorkspace = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+			if (Directory.Exists(tempWorkspace))
+			{
+				return tempWorkspace.Replace("\\", "/");
+			}
+		}
+
 		try
 		{
 			string recentPathFile = ProjectSettings.GlobalizePath("user://recent_map_dir.txt");

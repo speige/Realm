@@ -242,6 +242,11 @@ public partial class MapEditorHUD : Control
 	private MapEditorEntityPaletteController _entityPaletteController;
 	private MapEditorGenerationDialog _generationDialog;
 
+	private string _tempWorkspacePath;
+	private long _lastTerrainSyncTime = 0;
+	private long _lastMetadataSyncTime = 0;
+	private bool _isSyncing = false;
+
 	public override void _ExitTree()
 	{
 		if (Instance == this)
@@ -1271,6 +1276,8 @@ public partial class MapEditorHUD : Control
 			UpdateScaleExternal(GameHost.Instance.EditorPlacementScale);
 			UpdateGridSnapExternal(GameHost.Instance.EditorSnapToGrid);
 		}
+
+		InitializeTempWorkspace();
 	}
 
 	public override void _Process(double delta)
@@ -2084,6 +2091,252 @@ public partial class MapEditorHUD : Control
 		UpdateTextureLabels();
 	}
 
+	private void InitializeTempWorkspace()
+	{
+		_tempWorkspacePath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		if (!System.IO.Directory.Exists(_tempWorkspacePath))
+		{
+			System.IO.Directory.CreateDirectory(_tempWorkspacePath);
+		}
+		
+		if (System.IO.Directory.GetFiles(_tempWorkspacePath, "*.*", System.IO.SearchOption.AllDirectories).Length == 0)
+		{
+			string initialDir = GetInitialDirectory();
+			if (System.IO.Directory.Exists(initialDir) && System.IO.File.Exists(System.IO.Path.Combine(initialDir, "terrain.json")))
+			{
+				CopyFolderToTempWorkspace(initialDir);
+			}
+			else
+			{
+				GenerateVSCodeFiles(_tempWorkspacePath, "CustomMap");
+			}
+		}
+		else
+		{
+			GenerateVSCodeFiles(_tempWorkspacePath, "CustomMap");
+		}
+
+		_lastTerrainSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "terrain.json"));
+		_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+
+		var syncTimer = new Godot.Timer();
+		syncTimer.WaitTime = 1.0f;
+		syncTimer.Autostart = true;
+		syncTimer.Timeout += OnSyncTimerTimeout;
+		AddChild(syncTimer);
+	}
+
+	private long GetLastWriteTimeSafe(string path)
+	{
+		if (!System.IO.File.Exists(path)) return 0;
+		return System.IO.File.GetLastWriteTimeUtc(path).Ticks;
+	}
+
+	private void OnSyncTimerTimeout()
+	{
+		if (GameHost.Instance == null || _isSyncing) return;
+		_isSyncing = true;
+		
+		string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+		string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+
+		long currentTerrainWrite = GetLastWriteTimeSafe(terrainPath);
+		long currentMetadataWrite = GetLastWriteTimeSafe(metadataPath);
+
+		bool terrainModifiedOnDisk = currentTerrainWrite > _lastTerrainSyncTime;
+		bool metadataModifiedOnDisk = currentMetadataWrite > _lastMetadataSyncTime;
+
+		if (terrainModifiedOnDisk || metadataModifiedOnDisk)
+		{
+			if (terrainModifiedOnDisk)
+			{
+				GameHost.Instance.LoadMapFromFile(terrainPath);
+				_lastTerrainSyncTime = GetLastWriteTimeSafe(terrainPath);
+			}
+			if (metadataModifiedOnDisk)
+			{
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+			}
+			
+			GameHost.Instance.EditorHasUnsavedChanges = false;
+		}
+		else if (GameHost.Instance.EditorHasUnsavedChanges)
+		{
+			GameHost.Instance.SaveMapToFile(terrainPath);
+			GameHost.Instance.EditorHasUnsavedChanges = false;
+			_lastTerrainSyncTime = GetLastWriteTimeSafe(terrainPath);
+		}
+		
+		_isSyncing = false;
+	}
+
+	private void CopyFolderToTempWorkspace(string sourceFolder)
+	{
+		if (!System.IO.Directory.Exists(_tempWorkspacePath))
+		{
+			System.IO.Directory.CreateDirectory(_tempWorkspacePath);
+		}
+		else
+		{
+			foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath))
+			{
+				System.IO.File.Delete(file);
+			}
+		}
+		
+		foreach (var file in System.IO.Directory.GetFiles(sourceFolder, "*", System.IO.SearchOption.AllDirectories))
+		{
+			string relativePath = file.Substring(sourceFolder.Length + 1);
+			string targetFile = System.IO.Path.Combine(_tempWorkspacePath, relativePath);
+			string targetDir = System.IO.Path.GetDirectoryName(targetFile);
+			if (!System.IO.Directory.Exists(targetDir))
+			{
+				System.IO.Directory.CreateDirectory(targetDir);
+			}
+			System.IO.File.Copy(file, targetFile, true);
+		}
+		GenerateVSCodeFiles(_tempWorkspacePath, System.IO.Path.GetFileName(sourceFolder));
+	}
+
+	private void CopyTempWorkspaceToFolder(string targetFolder)
+	{
+		if (!System.IO.Directory.Exists(targetFolder))
+		{
+			System.IO.Directory.CreateDirectory(targetFolder);
+		}
+		
+		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+		if (GameHost.Instance != null)
+		{
+			GameHost.Instance.SaveMapToFile(tempTerrainPath);
+			GameHost.Instance.EditorHasUnsavedChanges = false;
+		}
+		_lastTerrainSyncTime = GetLastWriteTimeSafe(tempTerrainPath);
+		
+		foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories))
+		{
+			string relativePath = file.Substring(_tempWorkspacePath.Length + 1);
+			string targetFile = System.IO.Path.Combine(targetFolder, relativePath);
+			string targetDir = System.IO.Path.GetDirectoryName(targetFile);
+			if (!System.IO.Directory.Exists(targetDir))
+			{
+				System.IO.Directory.CreateDirectory(targetDir);
+			}
+			System.IO.File.Copy(file, targetFile, true);
+		}
+		
+		if (OperatingSystem.IsWindows())
+		{
+			VSCodeManager.Instance.SaveRecentMapDir(targetFolder);
+		}
+	}
+
+	private void GenerateVSCodeFiles(string directory, string mapName)
+	{
+		string vscodeDir = System.IO.Path.Combine(directory, ".vscode");
+		if (!System.IO.Directory.Exists(vscodeDir))
+		{
+			System.IO.Directory.CreateDirectory(vscodeDir);
+		}
+
+		string sourceSchema = ProjectSettings.GlobalizePath("res://..").Replace("\\", "/") + "/Realm.MapEditorExtension/map_schema.json";
+		string targetSchema = System.IO.Path.Combine(vscodeDir, "map_schema.json");
+		if (System.IO.File.Exists(sourceSchema))
+		{
+			System.IO.File.Copy(sourceSchema, targetSchema, true);
+		}
+
+		string settingsJson = @"{
+    ""editor.formatOnSave"": true,
+    ""json.schemas"": [
+        {
+            ""fileMatch"": [
+                ""/metadata.json""
+            ],
+            ""url"": ""./.vscode/map_schema.json""
+        }
+    ]
+}";
+		System.IO.File.WriteAllText(System.IO.Path.Combine(vscodeDir, "settings.json"), settingsJson);
+
+		string launchJson = @"{
+    ""version"": ""0.2.0"",
+    ""configurations"": [
+        {
+            ""name"": ""Attach to Realm Game Host"",
+            ""type"": ""coreclr"",
+            ""request"": ""attach"",
+            ""processName"": ""Realm.Godot""
+        }
+    ]
+}";
+		System.IO.File.WriteAllText(System.IO.Path.Combine(vscodeDir, "launch.json"), launchJson);
+
+		string agentsMd = @"# Realm Custom Map Agents Guide
+
+Realm is an RTS Game using Godot with C# and the Arch ECS framework.
+
+## Map Scripting (MapScript.cs)
+- Implements `IMapScript`.
+- `Initialize(IGameAPI api)` is called when the map starts.
+- `Update(IGameAPI api, float delta)` is called every simulation tick (30Hz).
+- Use `api` to spawn units, send chat messages, define zones, set time of day, etc.
+
+## Unit Configuration (metadata.json)
+- Define custom units and properties here.
+- Examples of properties: `MaxHp`, `Damage`, `Range`, `Armor`, `Speed`, `CostGold`, `PopCost`, `BuildOptions`, etc.
+
+## Debugging
+- Use the 'Attach to Realm Game Host' launch configuration in VS Code to attach the .NET debugger to the game and hit breakpoints in your `MapScript.cs`.
+- Hot reloading is supported via the temp workspace sync.
+";
+		System.IO.File.WriteAllText(System.IO.Path.Combine(directory, "AGENTS.md"), agentsMd);
+
+		string csprojPath = System.IO.Path.Combine(directory, $"{mapName}.csproj");
+		if (!System.IO.File.Exists(csprojPath))
+		{
+			string apiProjPath = ProjectSettings.GlobalizePath("res://..").Replace("\\", "/") + "/Realm.MapAPI/Realm.MapAPI.csproj";
+			string csprojContent = $@"<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include=""{apiProjPath}"" />
+  </ItemGroup>
+</Project>";
+			System.IO.File.WriteAllText(csprojPath, csprojContent);
+		}
+
+		string scriptPath = System.IO.Path.Combine(directory, "MapScript.cs");
+		if (!System.IO.File.Exists(scriptPath))
+		{
+			string scriptContent = $@"namespace Realm.Maps;
+
+using Realm.MapAPI;
+
+public class {mapName} : IMapScript
+{{
+    public void Initialize(IGameAPI api)
+    {{
+    }}
+
+    public void Update(IGameAPI api, float delta)
+    {{
+    }}
+}}
+";
+			System.IO.File.WriteAllText(scriptPath, scriptContent);
+		}
+
+		string unitsPath = System.IO.Path.Combine(directory, "metadata.json");
+		if (!System.IO.File.Exists(unitsPath))
+		{
+			System.IO.File.WriteAllText(unitsPath, "{}");
+		}
+	}
+
 	private void SetPanelExpanded(string panelPath, string buttonPath, string contentPath, bool expand)
 	{
 		var btn = GetNodeOrNull<Button>($"{panelPath}/{buttonPath}");
@@ -2111,41 +2364,7 @@ public partial class MapEditorHUD : Control
 				if (status && selectedPaths.Length > 0)
 				{
 					string selectedFolder = selectedPaths[0];
-					string terrainPath = System.IO.Path.Combine(selectedFolder, "terrain.json");
-					GameHost.Instance.SaveMapToFile(terrainPath);
-
-					string mapName = System.IO.Path.GetFileName(selectedFolder);
-					string scriptPath = System.IO.Path.Combine(selectedFolder, "MapScript.cs");
-					if (!System.IO.File.Exists(scriptPath))
-					{
-						string scriptContent = $@"namespace Realm.Maps;
-
-using Realm.MapAPI;
-
-public class {mapName} : IMapScript
-{{
-    public void Initialize(IGameAPI api)
-    {{
-    }}
-
-    public void Update(IGameAPI api, float delta)
-    {{
-    }}
-}}
-";
-						System.IO.File.WriteAllText(scriptPath, scriptContent);
-					}
-
-					string unitsPath = System.IO.Path.Combine(selectedFolder, "metadata.json");
-					if (!System.IO.File.Exists(unitsPath))
-					{
-						System.IO.File.WriteAllText(unitsPath, "{}");
-					}
-
-					if (OperatingSystem.IsWindows())
-					{
-						VSCodeManager.Instance.SaveRecentMapDir(selectedFolder);
-					}
+					CopyTempWorkspaceToFolder(selectedFolder);
 					ShowFeedback(string.Format(TranslationServer.Translate("Map saved successfully to folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
 				}
 				else
@@ -2157,10 +2376,12 @@ public class {mapName} : IMapScript
 
 		if (err != Error.Ok)
 		{
-			GameHost.Instance.SaveMapToFile();
-			ShowFeedback(TranslationServer.Translate("Saving map heights & entities..."));
+			string defaultFolder = ProjectSettings.GlobalizePath("user://maps/default_map");
+			System.IO.Directory.CreateDirectory(defaultFolder);
+			CopyTempWorkspaceToFolder(defaultFolder);
+			ShowFeedback(TranslationServer.Translate("Saving map to default location..."));
 			var timer = GetTree().CreateTimer(0.8f);
-			timer.Timeout += () => ShowFeedback(TranslationServer.Translate("Map saved successfully to user://terrain.json!"));
+			timer.Timeout += () => ShowFeedback(TranslationServer.Translate("Map saved successfully to user://maps/default_map!"));
 		}
 	}
 
@@ -2179,7 +2400,8 @@ public class {mapName} : IMapScript
 				if (status && selectedPaths.Length > 0)
 				{
 					string selectedFolder = selectedPaths[0];
-					string terrainPath = System.IO.Path.Combine(selectedFolder, "terrain.json");
+					CopyFolderToTempWorkspace(selectedFolder);
+					string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 					bool success = GameHost.Instance.LoadMapFromFile(terrainPath);
 					if (success)
 					{
@@ -2187,6 +2409,8 @@ public class {mapName} : IMapScript
 						{
 							VSCodeManager.Instance.SaveRecentMapDir(selectedFolder);
 						}
+						_lastTerrainSyncTime = GetLastWriteTimeSafe(terrainPath);
+						_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
 						ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
 					}
 					else
@@ -2199,14 +2423,22 @@ public class {mapName} : IMapScript
 
 		if (err != Error.Ok)
 		{
-			bool success = GameHost.Instance.LoadMapFromFile();
+			string defaultFolder = ProjectSettings.GlobalizePath("user://maps/default_map");
+			if (System.IO.Directory.Exists(defaultFolder))
+			{
+				CopyFolderToTempWorkspace(defaultFolder);
+			}
+			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+			bool success = GameHost.Instance.LoadMapFromFile(terrainPath);
 			if (success)
 			{
-				ShowFeedback(TranslationServer.Translate("Map loaded from user://terrain.json"));
+				_lastTerrainSyncTime = GetLastWriteTimeSafe(terrainPath);
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+				ShowFeedback(TranslationServer.Translate("Map loaded from default_map"));
 			}
 			else
 			{
-				ShowFeedback(TranslationServer.Translate("No map file found at user://terrain.json"));
+				ShowFeedback(TranslationServer.Translate("No map file found"));
 			}
 		}
 	}
