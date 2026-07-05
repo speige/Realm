@@ -94,7 +94,6 @@ public partial class InGameHUD : Control
 
 
 	private float _fogUpdateTimer = 0f;
-	private MeshInstance3D _fogMeshInstance = null;
 
 	public byte[,] FogGrid
 	{
@@ -545,7 +544,6 @@ public partial class InGameHUD : Control
 		SetupCommandCard();
 		SetupDevPanel();
 		SetupPortrait();
-		Setup3DFogOfWar();
 		ApplyWeatherEffects(currentWeather);
 
 		_feedbackLabel.Modulate = new Color(1, 1, 1, 0);
@@ -672,12 +670,6 @@ public partial class InGameHUD : Control
 		if (LobbyManager.Instance != null)
 		{
 			LobbyManager.Instance.ChatReceived -= OnLobbyChatReceived;
-		}
-
-		if (GodotObject.IsInstanceValid(_fogMeshInstance))
-		{
-			_fogMeshInstance.QueueFree();
-			_fogMeshInstance = null;
 		}
 
 		if (GodotObject.IsInstanceValid(_rainParticles))
@@ -1074,24 +1066,122 @@ public partial class InGameHUD : Control
 	{
 		_viewModel.Update(delta);
 
+		if (GameHost.Instance != null)
+		{
+			var selected = GameHost.Instance.SelectedUnits;
+			if (selected != null)
+			{
+				bool match = selected.Count == _viewModel.SelectedUnits.Count;
+				if (match)
+				{
+					for (int i = 0; i < selected.Count; i++)
+					{
+						if (_viewModel.SelectedUnits[i].Entity != selected[i].Entity)
+						{
+							match = false;
+							break;
+						}
+					}
+				}
+
+				if (match)
+				{
+					for (int i = 0; i < selected.Count; i++)
+					{
+						var info = _viewModel.SelectedUnits[i];
+						var u = selected[i];
+						if (GameHost.Instance.EcsWorld.IsAlive(u.Entity))
+						{
+							var world = GameHost.Instance.EcsWorld;
+							if (world.Has<Health>(u.Entity))
+							{
+								var hp = world.Get<Health>(u.Entity);
+								info.Health = hp.Current;
+								info.MaxHealth = hp.Max;
+							}
+							if (world.Has<Gatherer>(u.Entity))
+							{
+								var gather = world.Get<Gatherer>(u.Entity);
+								string stateLabel = gather.ReturningToBase ? "● " + TranslationServer.Translate("DELIVERING") : "● " + TranslationServer.Translate("HARVESTING");
+								info.StateText = $"{stateLabel} ({gather.CarriedAmount:F0} / {gather.MaxCapacity:F0} {TranslationServer.Translate(gather.ResourceType.ToUpper())})";
+							}
+							else if (world.Has<Realm.Ecs.Components.Movement.HoldPosition>(u.Entity))   info.StateText = "● " + TranslationServer.Translate("HOLDING");
+							else if (world.Has<Realm.Ecs.Components.Movement.Patrol>(u.Entity))     info.StateText = "● " + TranslationServer.Translate("PATROLLING");
+							else if (world.Has<Realm.Ecs.Components.Movement.AttackMove>(u.Entity)) info.StateText = "● " + TranslationServer.Translate("ATTACK-MOVE");
+							else if (world.Has<Realm.Ecs.Components.Movement.Follow>(u.Entity))     info.StateText = "● " + TranslationServer.Translate("FOLLOWING");
+							else if (world.Has<Realm.Ecs.Components.Movement.MoveTo>(u.Entity))     info.StateText = "● " + TranslationServer.Translate("MOVING");
+							else if (world.Has<AttackTarget>(u.Entity))                              info.StateText = "● " + TranslationServer.Translate("ATTACKING");
+							else                                                                         info.StateText = "○ " + TranslationServer.Translate("IDLE");
+
+							if (u.UnitId == "tower" && world.Has<Realm.Ecs.Components.Core.TowerUpgradeLevel>(u.Entity))
+							{
+								int lvl = world.Get<Realm.Ecs.Components.Core.TowerUpgradeLevel>(u.Entity).Value;
+								info.StateText += $"   ★ {TranslationServer.Translate("LVL")} {lvl}";
+							}
+
+							if (world.Has<Inventory>(u.Entity))
+							{
+								info.Potions = world.Get<Inventory>(u.Entity).Potions;
+							}
+
+							if (u.IsBuilding && !u.IsEnemy && u.UnitId == "castle")
+							{
+								u.UpdateRallyVisuals();
+							}
+
+							if (u.IsBuilding && u.UnitId == "castle" && world.Has<Realm.Ecs.Components.Core.ProductionQueue>(u.Entity))
+							{
+								var prod = world.Get<Realm.Ecs.Components.Core.ProductionQueue>(u.Entity);
+								info.HasProduction = true;
+								if (prod.UnitIds.Count > 0)
+								{
+									info.ProductionTitle = string.Format(TranslationServer.Translate("TRAINING: {0}"), prod.UnitIds[0].ToUpper());
+									info.ProductionProgress = prod.CurrentProgress;
+									info.ProductionMaxProgress = prod.BuildTime;
+
+									bool queueChanged = info.ProductionQueue.Count != prod.UnitIds.Count;
+									if (!queueChanged)
+									{
+										for (int q = 0; q < prod.UnitIds.Count; q++)
+										{
+											if (info.ProductionQueue[q] != prod.UnitIds[q])
+											{
+												queueChanged = true;
+												break;
+											}
+										}
+									}
+									if (queueChanged)
+									{
+										info.ProductionQueue.Clear();
+										info.ProductionQueue.AddRange(prod.UnitIds);
+									}
+								}
+								else
+								{
+									info.ProductionTitle = TranslationServer.Translate("PRODUCTION IDLE");
+									if (info.ProductionQueue.Count > 0)
+									{
+										info.ProductionQueue.Clear();
+									}
+								}
+							}
+						}
+					}
+				}
+				else
+				{
+					_viewModel.UpdateSelectedUnits(selected);
+				}
+			}
+		}
+
 		_fogUpdateTimer += (float)delta;
 		if (_fogUpdateTimer >= 0.1f)
 		{
 			_fogUpdateTimer = 0f;
-			UpdateFogOfWar();
 			var minimapOverlay = _minimapArea?.GetNodeOrNull<MinimapOverlay>("MinimapOverlay");
 			minimapOverlay?.QueueRedraw();
-		}
-
-		if (_baseFogDensity > 0f && _camera3D != null && GodotObject.IsInstanceValid(_camera3D))
-		{
-			var worldEnv = (GameHost.Instance != null ? GameHost.Instance.MainNode?.GetNodeOrNull<WorldEnvironment>("WorldEnvironment") : null);
-			if (worldEnv != null && worldEnv.Environment != null)
-			{
-				float height = _camera3D.GlobalPosition.Y;
-				float scale = 18.0f / Mathf.Max(8.0f, height);
-				worldEnv.Environment.FogDensity = _baseFogDensity * scale;
-			}
 		}
 
 		_resourcePanelController?.Update(_viewModel);
@@ -1291,19 +1381,39 @@ public partial class InGameHUD : Control
 
 	private void OnUnitSelectionButtonClicked(int index)
 	{
-		if (GameHost.Instance != null && index >= 0 && index < GameHost.Instance.SelectedUnits.Count)
+		if (GameHost.Instance == null) return;
+		var selectedUnits = GameHost.Instance.SelectedUnits;
+		if (selectedUnits == null || index < 0 || index >= selectedUnits.Count) return;
+
+		var clickedUnit = selectedUnits[index];
+		bool shiftPressed = Input.IsKeyPressed(Key.Shift);
+		bool ctrlPressed = Input.IsKeyPressed(Key.Ctrl);
+
+		if (ctrlPressed)
 		{
-			if (Input.IsKeyPressed(Key.Ctrl))
+			string targetId = clickedUnit.UnitId;
+			var toDeselect = new List<Unit3D>();
+			foreach (var u in selectedUnits)
 			{
-				var u = GameHost.Instance.SelectedUnits[index];
+				if (u.UnitId != targetId)
+				{
+					toDeselect.Add(u);
+				}
+			}
+			foreach (var u in toDeselect)
+			{
 				GameHost.Instance.DeselectUnit(u);
 			}
-			else
-			{
-				GameHost.Instance.CycleSelectionIndex = index;
-			}
-			RefreshUI(GameHost.Instance.SelectedUnits);
 		}
+		else if (shiftPressed)
+		{
+			GameHost.Instance.DeselectUnit(clickedUnit);
+		}
+		else
+		{
+			GameHost.Instance.SelectOnlyUnit(clickedUnit);
+		}
+		RefreshUI(GameHost.Instance.SelectedUnits);
 	}
 
 	public override void _UnhandledInput(InputEvent @event)
@@ -1513,304 +1623,7 @@ public partial class InGameHUD : Control
 	}
 
 
-	private void UpdateFogOfWar()
-	{
-		if (GameHost.Instance == null || GameHost.Instance.GroundTerrain == null) return;
-		bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
-		if (ReplayPlaybackManager.Instance.IsPlayingReplay || isSpectator)
-		{
-			int targetOwnerId = ReplayPlaybackManager.Instance.IsPlayingReplay 
-				? ReplayPlaybackManager.Instance.SpectatorPerspective 
-				: LiveSpectatorPerspective;
 
-			if (targetOwnerId == -1)
-			{
-				var grid = FogGrid;
-				for (int x = 0; x < 32; x++)
-					for (int z = 0; z < 32; z++)
-						grid[x, z] = 2;
-				FogGrid = grid;
-				if (GameHost.Instance != null)
-				{
-					foreach (var unit in GameHost.Instance.AllUnits)
-					{
-						if (unit != null && GodotObject.IsInstanceValid(unit))
-							unit.Visible = true;
-					}
-				}
-				Update3DFogMesh();
-				return;
-			}
-			else
-			{
-				var grid = FogGrid;
-				for (int x = 0; x < 32; x++)
-					for (int z = 0; z < 32; z++)
-						grid[x, z] = 0;
-				if (GameHost.Instance == null) { FogGrid = grid; return; }
-				foreach (var unit in GameHost.Instance.AllUnits)
-				{
-					if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
-					int ownerId = GameHost.Instance.GetOwnerPeerId(unit.Entity);
-					if (ownerId != targetOwnerId) continue;
-					Vector3 pos = unit.GlobalPosition;
-					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-					float scanRadius = 15.0f;
-					if (GameHost.Instance.EcsWorld.IsAlive(unit.Entity) && GameHost.Instance.EcsWorld.Has<DefinitionId>(unit.Entity))
-					{
-						string defId = GameHost.Instance.EcsWorld.Get<DefinitionId>(unit.Entity).Value;
-						if (GameHost.UnitRegistry.TryGetValue(defId, out var metaReg) && metaReg.ScanRadius > 0)
-							scanRadius = metaReg.ScanRadius;
-					}
-					int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (250f / 32f)));
-					for (int dx = -rGrid; dx <= rGrid; dx++)
-					{
-						for (int dz = -rGrid; dz <= rGrid; dz++)
-						{
-							int nx = gx + dx;
-							int nz = gz + dz;
-							if (nx >= 0 && nx < 32 && nz >= 0 && nz < 32)
-								if (dx * dx + dz * dz <= rGrid * rGrid)
-									grid[nx, nz] = 2;
-						}
-					}
-				}
-				FogGrid = grid;
-				var fogGrid2 = FogGrid;
-				foreach (var unit in GameHost.Instance.AllUnits)
-				{
-					if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
-					int ownerId = GameHost.Instance.GetOwnerPeerId(unit.Entity);
-					if (ownerId == targetOwnerId)
-					{
-						unit.Visible = true;
-					}
-					else
-					{
-						Vector3 pos = unit.GlobalPosition;
-						int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-						int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-						unit.Visible = (fogGrid2[gx, gz] == 2);
-					}
-				}
-				Update3DFogMesh();
-				return;
-			}
-		}
-
-		string fogType = FogOfWarType;
-		if (fogType == "visible")
-		{
-			var grid = FogGrid;
-			for (int x = 0; x < 32; x++)
-				for (int z = 0; z < 32; z++)
-					grid[x, z] = 2;
-			FogGrid = grid;
-			if (GameHost.Instance != null)
-			{
-				foreach (var unit in GameHost.Instance.AllUnits)
-				{
-					if (unit != null && GodotObject.IsInstanceValid(unit))
-						unit.Visible = true;
-				}
-			}
-			return;
-		}
-
-		{
-			var grid = FogGrid;
-			for (int x = 0; x < 32; x++)
-			{
-				for (int z = 0; z < 32; z++)
-				{
-					if (fogType == "black")
-						grid[x, z] = 0;
-					else if (grid[x, z] == 2)
-						grid[x, z] = 1;
-				}
-			}
-
-			if (GameHost.Instance == null) { FogGrid = grid; return; }
-
-			foreach (var unit in GameHost.Instance.AllUnits)
-			{
-				if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
-				if (unit.IsEnemy) continue;
-
-				Vector3 pos = unit.GlobalPosition;
-				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-
-				float scanRadius = 15.0f;
-				if (GameHost.Instance.EcsWorld.IsAlive(unit.Entity) && GameHost.Instance.EcsWorld.Has<DefinitionId>(unit.Entity))
-				{
-					string defId = GameHost.Instance.EcsWorld.Get<DefinitionId>(unit.Entity).Value;
-					if (GameHost.UnitRegistry.TryGetValue(defId, out var metaReg) && metaReg.ScanRadius > 0)
-						scanRadius = metaReg.ScanRadius;
-				}
-
-				int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (250f / 32f)));
-				for (int dx = -rGrid; dx <= rGrid; dx++)
-				{
-					for (int dz = -rGrid; dz <= rGrid; dz++)
-					{
-						int nx = gx + dx;
-						int nz = gz + dz;
-						if (nx >= 0 && nx < 32 && nz >= 0 && nz < 32)
-							if (dx * dx + dz * dz <= rGrid * rGrid)
-								grid[nx, nz] = 2;
-					}
-				}
-			}
-			FogGrid = grid;
-
-			var visGrid = FogGrid;
-			foreach (var unit in GameHost.Instance.AllUnits)
-			{
-				if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
-				if (!unit.IsEnemy)
-				{
-					unit.Visible = true;
-					continue;
-				}
-
-				Vector3 pos = unit.GlobalPosition;
-				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-				unit.Visible = (visGrid[gx, gz] == 2);
-			}
-
-			Update3DFogMesh();
-		}
-	}
-
-	private float GetFogValueAtVertex(int x, int z)
-	{
-		var fogGrid = FogGrid;
-		float sum = 0f;
-		int count = 0;
-		for (int dx = -1; dx <= 0; dx++)
-		{
-			for (int dz = -1; dz <= 0; dz++)
-			{
-				int cx = x + dx;
-				int cz = z + dz;
-				if (cx >= 0 && cx < 32 && cz >= 0 && cz < 32)
-				{
-					byte val = fogGrid[cx, cz];
-					float alpha = val switch
-					{
-						0 => 1.0f,
-						1 => 0.48f,
-						2 => 0.0f,
-						_ => 1.0f
-					};
-					sum += alpha;
-					count++;
-				}
-			}
-		}
-		return count > 0 ? (sum / count) : 1.0f;
-	}
-
-	private void Update3DFogMesh()
-	{
-		if (_fogMeshInstance == null) return;
-		var arrMesh = _fogMeshInstance.Mesh as ArrayMesh;
-		if (arrMesh == null)
-		{
-			arrMesh = new ArrayMesh();
-			_fogMeshInstance.Mesh = arrMesh;
-		}
-
-		float cellWidth = 250f / 32f;
-		float cellHeight = 250f / 32f;
-
-		var vertices = new Vector3[33 * 33];
-		var colors = new Color[33 * 33];
-		var indices = new int[32 * 32 * 6];
-
-		for (int z = 0; z <= 32; z++)
-		{
-			for (int x = 0; x <= 32; x++)
-			{
-				int idx = x + z * 33;
-				float wx = (x - 16f) * cellWidth;
-				float wz = (z - 16f) * cellHeight;
-				float h = GameHost.Instance != null ? GameHost.Instance.GetTerrainHeightAt(new Vector3(wx, 0f, wz)) : 0f;
-				vertices[idx] = new Vector3(wx, h + 0.15f, wz);
-
-				float alpha = GetFogValueAtVertex(x, z);
-				colors[idx] = new Color(0f, 0f, 0f, alpha);
-			}
-		}
-
-		int iIdx = 0;
-		for (int z = 0; z < 32; z++)
-		{
-			for (int x = 0; x < 32; x++)
-			{
-				int topLeft = x + z * 33;
-				int topRight = (x + 1) + z * 33;
-				int bottomLeft = x + (z + 1) * 33;
-				int bottomRight = (x + 1) + (z + 1) * 33;
-
-				indices[iIdx++] = topLeft;
-				indices[iIdx++] = topRight;
-				indices[iIdx++] = bottomLeft;
-
-				indices[iIdx++] = bottomLeft;
-				indices[iIdx++] = topRight;
-				indices[iIdx++] = bottomRight;
-			}
-		}
-
-		arrMesh.ClearSurfaces();
-		var arrays = new Godot.Collections.Array();
-		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
-		arrays[(int)Mesh.ArrayType.Color] = colors;
-		arrays[(int)Mesh.ArrayType.Index] = indices;
-		arrMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-	}
-
-	private void Setup3DFogOfWar()
-	{
-		var mainNode = (GameHost.Instance != null ? GameHost.Instance.MainNode : null);
-		if (mainNode == null) return;
-
-		var fogMesh = new MeshInstance3D();
-		fogMesh.Name = "3DFogMesh";
-
-		// Use an empty ArrayMesh — Update3DFogMesh populates it each frame with
-		// per-vertex color data (black with varying alpha).  An empty ArrayMesh
-		// renders nothing until surfaces are added, so the terrain is visible on startup.
-		fogMesh.Mesh = new ArrayMesh();
-
-		var shaderMaterial = new ShaderMaterial();
-		var shader = new Shader();
-		shader.Code = @"
-			shader_type spatial;
-			render_mode unshaded, depth_draw_never, cull_disabled;
-			
-			// Fog opacity is encoded as vertex alpha (COLOR.a) by Update3DFogMesh():
-			//   alpha = 1.0  => unexplored (solid black)
-			//   alpha = 0.48 => explored but not currently visible (dark shroud)
-			//   alpha = 0.0  => fully visible (discard fragment)
-			void fragment() {
-				ALBEDO = vec3(0.0, 0.0, 0.0);
-				ALPHA = COLOR.a;
-				if (COLOR.a < 0.01) { discard; }
-			}
-		";
-		shaderMaterial.Shader = shader;
-
-		fogMesh.MaterialOverride = shaderMaterial;
-		mainNode.AddChild(fogMesh);
-		fogMesh.GlobalPosition = new Vector3(0f, 0.35f, 15f); // Sit just above the ground meshes
-		_fogMeshInstance = fogMesh;
-	}
 
 	private void CycleWeather()
 	{
@@ -1839,9 +1652,8 @@ public partial class InGameHUD : Control
 			float density = weather switch
 			{
 				"clear" => 0f,
-				"rain" => 0.008f,
-				"fog" => 0.045f,
-				"storm" => 0.015f,
+				"rain" => 0.0075f,
+				"fog" => 0.0175f,
 				_ => 0f
 			};
 			GameHost.Instance.EnvironmentService.SetBaseFogDensity(density);
@@ -1870,7 +1682,7 @@ public partial class InGameHUD : Control
 		else if (weather == "rain")
 		{
 			worldEnv.Environment.FogEnabled = true;
-			_baseFogDensity = 0.008f;
+			_baseFogDensity = 0.0075f;
 			
 			_rainParticles = new CpuParticles3D();
 			_rainParticles.Name = "RainParticles";
@@ -1901,39 +1713,8 @@ public partial class InGameHUD : Control
 		else if (weather == "fog")
 		{
 			worldEnv.Environment.FogEnabled = true;
-			_baseFogDensity = 0.045f;
+			_baseFogDensity = 0.0175f;
 			ShowFeedbackText("Weather Forecast: Dense Fog Warning", new Color(0.7f, 0.7f, 0.8f));
-		}
-		else if (weather == "storm")
-		{
-			worldEnv.Environment.FogEnabled = true;
-			_baseFogDensity = 0.015f;
-			
-			_rainParticles = new CpuParticles3D();
-			_rainParticles.Name = "StormParticles";
-			_rainParticles.Amount = 2500;
-			_rainParticles.Lifetime = 1.5f;
-			_rainParticles.Preprocess = 2.0f;
-			
-			var mesh = new BoxMesh();
-			mesh.Size = new Vector3(0.06f, 2.2f, 0.06f);
-			var mat = new StandardMaterial3D();
-			mat.AlbedoColor = new Color(0.4f, 0.45f, 0.6f, 0.6f);
-			mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-			mesh.Material = mat;
-			_rainParticles.Mesh = mesh;
-			
-			_rainParticles.EmissionShape = CpuParticles3D.EmissionShapeEnum.Box;
-			_rainParticles.EmissionBoxExtents = new Vector3(150f, 1f, 150f);
-			_rainParticles.Direction = new Vector3(-0.4f, -1f, -0.1f);
-			_rainParticles.Spread = 12f;
-			_rainParticles.InitialVelocityMin = 35f;
-			_rainParticles.InitialVelocityMax = 45f;
-			
-			mainNode.AddChild(_rainParticles);
-			_rainParticles.GlobalPosition = new Vector3(0f, 45f, 0f);
-			
-			ShowFeedbackText("Weather Forecast: Severe Thunderstorm!", new Color(0.6f, 0.2f, 0.8f));
 		}
 	}
 

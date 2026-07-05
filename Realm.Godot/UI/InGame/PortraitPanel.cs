@@ -32,6 +32,7 @@ public class PortraitPanel
 	private Button _btnFireball;
 	private Button _btnLightning;
 	private Button _btnHolyLight;
+	private List<string> _lastProductionQueue = new();
 
 	public event Action<int> UnitSelectionButtonClicked;
 
@@ -201,19 +202,45 @@ public class PortraitPanel
 					_productionProgress.Value = info.ProductionProgress;
 					_productionProgress.MaxValue = info.ProductionMaxProgress;
 					_productionQueueLabel.Text = string.Format(TranslationServer.Translate("Queue: {0}"), info.ProductionQueue.Count);
-					PopulateQueueSlots(info.Entity, info.ProductionQueue);
+					
+					bool queueChanged = _lastProductionQueue.Count != info.ProductionQueue.Count;
+					if (!queueChanged)
+					{
+						for (int i = 0; i < info.ProductionQueue.Count; i++)
+						{
+							if (_lastProductionQueue[i] != info.ProductionQueue[i])
+							{
+								queueChanged = true;
+								break;
+							}
+						}
+					}
+					if (queueChanged)
+					{
+						_lastProductionQueue.Clear();
+						_lastProductionQueue.AddRange(info.ProductionQueue);
+						PopulateQueueSlots(info.Entity, info.ProductionQueue);
+					}
 				}
 				else
 				{
 					_productionTitle.Text = TranslationServer.Translate("PRODUCTION IDLE");
 					_productionProgress.Visible = false;
 					_productionQueueLabel.Text = TranslationServer.Translate("Queue empty — [F] Soldier  [R] Archer  [P] Priest");
-					ClearQueueSlots();
+					if (_lastProductionQueue.Count > 0)
+					{
+						_lastProductionQueue.Clear();
+						ClearQueueSlots();
+					}
 				}
 			}
 			else
 			{
 				_productionBox.Visible = false;
+				if (_lastProductionQueue.Count > 0)
+				{
+					_lastProductionQueue.Clear();
+				}
 			}
 		}
 		else

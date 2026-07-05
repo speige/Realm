@@ -1,4 +1,4 @@
-﻿using Arch.Core;
+using Arch.Core;
 using Realm.Ecs.Services;
 using Godot;
 using Realm.Ecs.Components.Core;
@@ -70,8 +70,7 @@ public class EnvironmentService
 		{
 			"clear" => "rain",
 			"rain" => "fog",
-			"fog" => "storm",
-			"storm" => "clear",
+			"fog" => "clear",
 			_ => "clear"
 		};
 		SetCurrentWeather(next);
@@ -81,7 +80,6 @@ public class EnvironmentService
 			"clear" => 0f,
 			"rain" => 0.008f,
 			"fog" => 0.045f,
-			"storm" => 0.015f,
 			_ => 0f
 		};
 		SetBaseFogDensity(density);

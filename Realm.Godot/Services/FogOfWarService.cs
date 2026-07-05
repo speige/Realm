@@ -75,6 +75,14 @@ public class FogOfWarService
 
 		_worldEnv = mainNode.GetTree()?.Root?.GetNodeOrNull<WorldEnvironment>("Main/WorldEnvironment");
 
+		// Clean up any existing duplicate fog mesh immediately to avoid name conflicts
+		var existing = mainNode.GetNodeOrNull<MeshInstance3D>("3DFogMesh");
+		if (GodotObject.IsInstanceValid(existing))
+		{
+			mainNode.RemoveChild(existing);
+			existing.QueueFree();
+		}
+
 		var fogMesh = new MeshInstance3D();
 		fogMesh.Name = "3DFogMesh";
 		fogMesh.Mesh = new ArrayMesh();
@@ -83,18 +91,18 @@ public class FogOfWarService
 		var shader = new Shader();
 		shader.Code = @"
 			shader_type spatial;
-			render_mode unshaded, depth_draw_never, cull_disabled, blend_mix;
+			render_mode unshaded, depth_draw_never, cull_disabled;
 			
 			void fragment() {
 				ALBEDO = vec3(0.0, 0.0, 0.0);
 				ALPHA = COLOR.a;
+				if (COLOR.a < 0.01) { discard; }
 			}
 		";
 		shaderMaterial.Shader = shader;
-
 		fogMesh.MaterialOverride = shaderMaterial;
 		mainNode.AddChild(fogMesh);
-		fogMesh.GlobalPosition = new Vector3(0f, 0.35f, 15f);
+		fogMesh.GlobalPosition = Vector3.Zero;
 		_fogMeshInstance = fogMesh;
 	}
 
@@ -130,7 +138,7 @@ public class FogOfWarService
 
 	private void UpdateFogOfWar(List<Unit3D> allUnits, int spectatorPerspective, bool isPlayingReplay, bool isSpectator)
 	{
-		if (GameHost.Instance == null || GameHost.Instance.GroundTerrain == null) return;
+		if (GameHost.Instance == null) return;
 
 		if (isPlayingReplay || isSpectator)
 		{

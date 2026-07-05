@@ -2752,6 +2752,18 @@ public class {mapName} : IMapScript
 		return unit3D;
 	}
 
+	public override void _Process(double delta)
+	{
+		if (_fogOfWarService != null)
+		{
+			float fDelta = (float)delta;
+			bool isReplay = Realm.Godot.ReplaySystem.ReplayPlaybackManager.Instance.IsPlayingReplay;
+			bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
+			int spectatorPerspective = InGameHUD.Instance?.LiveSpectatorPerspective ?? -1;
+			_fogOfWarService.Tick(fDelta, AllUnits, MainCamera, spectatorPerspective, isReplay, isSpectator);
+		}
+	}
+
 	public override void _PhysicsProcess(double delta)
 	{
 		bool isGameStarted = LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted;
@@ -2835,14 +2847,6 @@ public class {mapName} : IMapScript
 		}
 
 		UpdateMinimapPings(fDelta);
-
-		if (_fogOfWarService != null)
-		{
-			bool isReplay = ReplayPlaybackManager.Instance.IsPlayingReplay;
-			bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
-			int spectatorPerspective = InGameHUD.Instance?.LiveSpectatorPerspective ?? -1;
-			_fogOfWarService.Tick(fDelta, AllUnits, MainCamera, spectatorPerspective, isReplay, isSpectator);
-		}
 
 		TickScheduledTimers(fDelta);
 		TickZoneTriggers();
