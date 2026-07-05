@@ -211,6 +211,26 @@ namespace Realm.Godot.ReplaySystem
 							GameHost.Instance.EcsWorld.Set(localEntity, hp);
 						}
 
+						if (GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Core.Position>(localEntity))
+						{
+							GameHost.Instance.EcsWorld.Set(localEntity, new Realm.Ecs.Components.Core.Position(snap.Position.ToNumerics()));
+						}
+
+						if (GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Movement.Velocity>(localEntity))
+						{
+							GameHost.Instance.EcsWorld.Set(localEntity, new Realm.Ecs.Components.Movement.Velocity(snap.Velocity.ToNumerics()));
+						}
+
+						if (GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Movement.InterpolationTarget>(localEntity))
+						{
+							GameHost.Instance.EcsWorld.Set(localEntity, new Realm.Ecs.Components.Movement.InterpolationTarget
+							{
+								Position = snap.Position.ToNumerics(),
+								Velocity = snap.Velocity.ToNumerics(),
+								RotationY = snap.RotationY
+							});
+						}
+
 						GameHost.TryGetUnit3D(localEntity, out var unit3DNode);
 						if (GodotObject.IsInstanceValid(unit3DNode))
 						{

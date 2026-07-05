@@ -1060,7 +1060,7 @@ public partial class LobbyManager : Node
             if (senderName == "System")
             {
                 _chatHistory.Add((senderName, message, false));
-                Rpc(nameof(ReceiveChatMessage), senderName, message, false);
+                Rpc(nameof(ReceiveChatMessage), senderName, message);
                 ChatReceived?.Invoke(senderName, message);
             }
             else
@@ -1070,7 +1070,7 @@ public partial class LobbyManager : Node
         }
         else
         {
-            RpcId(1, nameof(ReceiveChatMessage), senderName, message, false);
+            RpcId(1, nameof(ReceiveChatMessage), senderName, message);
         }
     }
 
@@ -1130,28 +1130,15 @@ public partial class LobbyManager : Node
         bool isToxic = await IsMessageToxicAsync(message);
         _chatHistory.Add((senderName, message, isToxic));
         
-        if (isToxic)
+        if (!isToxic)
         {
-            int senderId = Multiplayer.GetRemoteSenderId();
-            if (senderId == 0)
-            {
-                senderId = 1;
-            }
-            RpcId(senderId, nameof(ReceiveChatMessage), senderName, message, true);
-        }
-        else
-        {
-            Rpc(nameof(ReceiveChatMessage), senderName, message, false);
-        }
-        
-        if (!isToxic || Multiplayer.GetRemoteSenderId() == 0 || Multiplayer.GetRemoteSenderId() == 1)
-        {
+            Rpc(nameof(ReceiveChatMessage), senderName, message);
             ChatReceived?.Invoke(senderName, message);
         }
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void ReceiveChatMessage(string senderName, string message, bool isMuted = false)
+    private void ReceiveChatMessage(string senderName, string message)
     {
         if (IsHost)
         {
@@ -1181,7 +1168,7 @@ public partial class LobbyManager : Node
             {
                 if (!chat.IsMuted)
                 {
-                    RpcId(senderId, nameof(ReceiveChatMessage), chat.Sender, chat.Message, false);
+                    RpcId(senderId, nameof(ReceiveChatMessage), chat.Sender, chat.Message);
                 }
             }
         }

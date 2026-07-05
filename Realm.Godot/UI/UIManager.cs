@@ -17,7 +17,6 @@ public partial class UIManager : Control
 	[Export] public PackedScene ReplayListScene;
 	[Export] public PackedScene LobbyCreateScene;
 
-	private static bool _hasAutoStarted = false;
 	private Control _currentScreen;
 	private ColorRect _fadeOverlay;
 	private AnimationPlayer _fadeAnim;
@@ -54,12 +53,7 @@ public partial class UIManager : Control
 		CreateFadeOverlay();
 
 
-		if (System.Array.Exists(OS.GetCmdlineArgs(), a => a == "--auto-melee") && !_hasAutoStarted && (LobbyManager.Instance == null || !LobbyManager.Instance.IsGameStarted))
-		{
-			_hasAutoStarted = true;
-			CallDeferred(nameof(AutoStartMeleeGame));
-		}
-		else if (LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted)
+		if (LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted)
 		{
 			TransitionTo(GameScreen.InGameHUD);
 		}
@@ -400,11 +394,4 @@ public partial class UIManager : Control
 		}
 	}
 
-	private void AutoStartMeleeGame()
-	{
-		if (LobbyManager.Instance != null)
-		{
-			LobbyManager.Instance.HostSinglePlayerGame("melee", "Melee Battlefield");
-		}
-	}
 }

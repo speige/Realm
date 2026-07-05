@@ -1735,9 +1735,15 @@ public partial class InGameHUD : Control
 			}
 		}
 
+		bool isMultiplayer = LobbyManager.Instance != null && !LobbyManager.Instance.IsSinglePlayer;
+		if (Multiplayer.MultiplayerPeer == null || Multiplayer.MultiplayerPeer is OfflineMultiplayerPeer)
+		{
+			isMultiplayer = false;
+		}
+
 		var (result, affectedCount) = GameHost.Instance.CheatService.TryTriggerCheat(
 			text,
-			Multiplayer.MultiplayerPeer != null && Multiplayer.MultiplayerPeer is not OfflineMultiplayerPeer,
+			isMultiplayer,
 			GameHost.Instance.PlayerEntity,
 			GameHost.Instance.DefinitionManager,
 			selectedEntities

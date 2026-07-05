@@ -170,6 +170,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private List<float> _trackerTickDurations;
 	private List<float> _trackerApiDurations;
 	private float _trackerLastTickDelay = 0f;
+	private bool _isResettingForReplay = false;
 	public string? ActiveSpellTargeting
 	{
 		get => _inputService?.ActiveSpellTargeting;
@@ -2302,22 +2303,25 @@ public class {mapName} : IMapScript
 		}
 
 
-		var timer = GetTree().CreateTimer(0.1f);
-		timer.Timeout += () =>
+		if (!_isResettingForReplay)
 		{
-			if (InGameHUD.Instance != null)
+			var timer = GetTree().CreateTimer(0.1f);
+			timer.Timeout += () =>
 			{
-				InGameHUD.Instance.Gold = _goldBackup;
-				InGameHUD.Instance.Wood = _woodBackup;
-				InGameHUD.Instance.Stone = _stoneBackup;
-				InGameHUD.Instance.RefreshUI(SelectedUnits);
-			}
+				if (InGameHUD.Instance != null)
+				{
+					InGameHUD.Instance.Gold = _goldBackup;
+					InGameHUD.Instance.Wood = _woodBackup;
+					InGameHUD.Instance.Stone = _stoneBackup;
+					InGameHUD.Instance.RefreshUI(SelectedUnits);
+				}
 
-			if (ReplayPlaybackManager.Instance.IsPlayingReplay)
-			{
-				ReplayPlaybackManager.Instance.ApplyInitialFrame();
-			}
-		};
+				if (ReplayPlaybackManager.Instance.IsPlayingReplay)
+				{
+					ReplayPlaybackManager.Instance.ApplyInitialFrame();
+				}
+			};
+		}
 
 		_fogOfWarService.Initialize(MainNode);
 	}
@@ -2774,6 +2778,10 @@ public class {mapName} : IMapScript
 
 		float fDelta = (float)delta;
 
+
+
+
+
 		if (_wasClientInMultiplayer)
 		{
 			UpdateConnectionStatus();
@@ -2798,15 +2806,6 @@ public class {mapName} : IMapScript
 		}
 
 		ProcessGameplayTick(fDelta);
-
-		if (OS.GetCmdlineArgs().Contains("--auto-melee"))
-		{
-			if (GameElapsedTime >= 3.0f)
-			{
-				GD.Print($"[TEST_HARNESS] Ticked 3s. Resources: Gold={((IGameAPI)this).Gold:F1}, Wood={((IGameAPI)this).Wood:F1}, Stone={((IGameAPI)this).Stone:F1}. Quit!");
-				GetTree().Quit();
-			}
-		}
 	}
 
 	private void UpdateConnectionStatus()

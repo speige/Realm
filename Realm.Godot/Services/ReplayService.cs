@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Realm.Ecs.Services;
 using Arch.Core;
 using Realm.Ecs.Common;
@@ -65,6 +65,14 @@ public class ReplayService
 			_ecsWorld.Add(playerEntity, new PlayerPopulation(0, 0));
 			_ecsWorld.Add(playerEntity, new SpellCooldowns(0f, 0f, 0f));
 			_ecsWorld.Add(playerEntity, new PlayerUpgrades(false, false, false));
+
+			var resourcesDict = new Dictionary<ResourceId, int>
+			{
+				{ new ResourceId("gold"), 0 },
+				{ new ResourceId("wood"), 0 },
+				{ new ResourceId("stone"), 0 }
+			};
+			_ecsWorld.Add(playerEntity, new PlayerResources(resourcesDict));
 
 			mapping.PeerIdToPlayerEntityMap[p.PeerId] = playerEntity;
 			if (p.PeerId == 1)

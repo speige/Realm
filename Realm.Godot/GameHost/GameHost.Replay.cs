@@ -24,7 +24,15 @@ public partial class GameHost
 		EntityToUnit3D.Clear();
 		EntityToProp3D.Clear();
 
-		ReinitializeEcsAndServices();
+		_isResettingForReplay = true;
+		try
+		{
+			ReinitializeEcsAndServices();
+		}
+		finally
+		{
+			_isResettingForReplay = false;
+		}
 
 		var players = new List<(int PeerId, string Name)>();
 		if (ReplayPlaybackManager.Instance.Header.Players != null)
