@@ -16,7 +16,7 @@ internal static class PlayerEntityExtensions
 	/// <exception cref="ArgumentException">Thrown if the entity does not have the 'Player' tag.</exception>
 	public static PlayerEntity AsPlayerEntity(this Entity entity, World world)
 	{
-		if (!world.Has<Player>(entity))
+		if (entity != Entity.Null && !world.Has<Player>(entity))
 			throw new ArgumentException($"Entity {entity.Id} does not represent a player (missing Player tag).");
 		return new PlayerEntity(entity);
 	}

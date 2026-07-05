@@ -1737,7 +1737,7 @@ public partial class InGameHUD : Control
 
 		var (result, affectedCount) = GameHost.Instance.CheatService.TryTriggerCheat(
 			text,
-			Multiplayer.MultiplayerPeer != null,
+			Multiplayer.MultiplayerPeer != null && Multiplayer.MultiplayerPeer is not OfflineMultiplayerPeer,
 			GameHost.Instance.PlayerEntity,
 			GameHost.Instance.DefinitionManager,
 			selectedEntities

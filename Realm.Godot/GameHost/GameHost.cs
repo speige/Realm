@@ -62,7 +62,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public Entity EnemyEntity => _enemyPlayerEntity;
 	
 
-	private bool _multiplayerActive => Multiplayer.MultiplayerPeer != null;
+	private bool _multiplayerActive => Multiplayer.MultiplayerPeer != null && Multiplayer.MultiplayerPeer is not OfflineMultiplayerPeer;
 	private int _localPeerId
 	{
 		get => _networkService?.LocalPeerId ?? 1;
