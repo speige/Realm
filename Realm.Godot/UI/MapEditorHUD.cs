@@ -205,6 +205,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnInspectorDelete;
 
 	private Button _btnPathingBrush;
+	private Button _btnFloodFillPathing;
 	private PanelContainer _panelPathing;
 	private CheckBox _chkShallowWater;
 	private CheckBox _chkDeepWater;
@@ -1164,6 +1165,12 @@ public partial class MapEditorHUD : Control
 		SetupButton(_btnPathingBrush, "🧭 Pathing", () => TriggerToolSelection(GameHost.EditorTool.PaintPathing, _btnPathingBrush), 11, "Paint pathing attributes onto the terrain map");
 		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnPathingBrush);
 
+		_btnFloodFillPathing = new Button();
+		_btnFloodFillPathing.Name = "BtnFloodFillPathing";
+		_btnFloodFillPathing.Set("icon_max_width", 0);
+		SetupButton(_btnFloodFillPathing, "🪣 Fill Pathing", () => TriggerToolSelection(GameHost.EditorTool.FloodFillPathing, _btnFloodFillPathing), 11, "Flood fill pathing attributes onto the terrain map");
+		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnFloodFillPathing);
+
 		_panelPathing = new PanelContainer();
 		_panelPathing.Name = "PanelPathing";
 		_panelPathing.LayoutMode = 1;
@@ -1772,6 +1779,7 @@ public partial class MapEditorHUD : Control
 			case GameHost.EditorTool.PaintGrass: targetBtn = _btnTextureBrush; break;
 			case GameHost.EditorTool.FloodFill: targetBtn = _btnFloodFill; break;
 			case GameHost.EditorTool.PaintPathing: targetBtn = _btnPathingBrush; break;
+			case GameHost.EditorTool.FloodFillPathing: targetBtn = _btnFloodFillPathing; break;
 			case GameHost.EditorTool.SelectArea: targetBtn = _btnSelectArea; break;
 			case GameHost.EditorTool.PasteArea: targetBtn = _btnPaste; break;
 			case GameHost.EditorTool.PlaceUnit:
@@ -1944,7 +1952,8 @@ public partial class MapEditorHUD : Control
 				 tool == GameHost.EditorTool.PaintRock ||
 				 tool == GameHost.EditorTool.PaintSand ||
 				 tool == GameHost.EditorTool.FloodFill ||
-				 tool == GameHost.EditorTool.PaintPathing)
+				 tool == GameHost.EditorTool.PaintPathing ||
+				 tool == GameHost.EditorTool.FloodFillPathing)
 		{
 			targetModule = EditorModule.TextureDeco;
 		}
@@ -1974,9 +1983,9 @@ public partial class MapEditorHUD : Control
 			if (_panelClipboard != null) _panelClipboard.Visible = (targetModule == EditorModule.Clipboard);
 		}
 
-		if (tool == GameHost.EditorTool.PaintPathing)
+		if (tool == GameHost.EditorTool.PaintPathing || tool == GameHost.EditorTool.FloodFillPathing)
 		{
-			if (_panelPathing != null) _panelPathing.Visible = false;
+			if (_panelPathing != null) _panelPathing.Visible = true;
 			if (_panelTextures != null) _panelTextures.Visible = false;
 			if (_panelEntityPalette != null) _panelEntityPalette.Visible = false;
 			GameHost.Instance?.UpdatePathingOverlay();
@@ -2063,6 +2072,9 @@ public partial class MapEditorHUD : Control
 					break;
 				case GameHost.EditorTool.PaintPathing:
 					_lblInfoText.Text = TranslationServer.Translate("TOOL: Pathing Layer Painting\n\nDrag left click to paint pathing properties (ground, flying, water, etc.) onto the map. Use checkboxes to select layers, and Mode to Add/Remove.");
+					break;
+				case GameHost.EditorTool.FloodFillPathing:
+					_lblInfoText.Text = TranslationServer.Translate("TOOL: Flood Fill Pathing\n\nClick once on the terrain map to flood-fill pathing properties (ground, flying, water, etc.) across an area sharing the same texture color until hitting a boundary. Use checkboxes to select layers, and Mode to Add/Remove.");
 					break;
 				case GameHost.EditorTool.None:
 					_lblInfoText.Text = TranslationServer.Translate("Select a tool from the panels to begin terrain modification.");
@@ -2708,6 +2720,7 @@ public class {mapName} : IMapScript
 		SafeReparent(_btnTextureBrush, _panelDecoVBox);
 		SafeReparent(_btnFloodFill, _panelDecoVBox);
 		if (_btnPathingBrush != null) SafeReparent(_btnPathingBrush, _panelDecoVBox);
+		if (_btnFloodFillPathing != null) SafeReparent(_btnFloodFillPathing, _panelDecoVBox);
 
 		_accordionBrush = new VBoxContainer();
 		_accordionBrush.Name = "AccordionBrush";
@@ -3149,6 +3162,7 @@ public class {mapName} : IMapScript
 					   tool == GameHost.EditorTool.PaintSand ||
 					   tool == GameHost.EditorTool.Noise ||
 					   tool == GameHost.EditorTool.PaintPathing ||
+					   tool == GameHost.EditorTool.FloodFillPathing ||
 					   tool == GameHost.EditorTool.PlacePropClump;
 
 		if (_accordionBrush != null)
@@ -3157,32 +3171,35 @@ public class {mapName} : IMapScript
 			if (_sldBrushStrength != null && _sldBrushStrength.GetParent() is Control strengthParent)
 			{
 				strengthParent.Visible = (tool != GameHost.EditorTool.PaintPathing && 
-				                          tool != GameHost.EditorTool.PlacePropClump &&
-				                          tool != GameHost.EditorTool.Raise &&
-				                          tool != GameHost.EditorTool.Lower &&
-				                          tool != GameHost.EditorTool.Flatten &&
-				                          tool != GameHost.EditorTool.Cliff &&
-				                          tool != GameHost.EditorTool.Ramp);
+										  tool != GameHost.EditorTool.FloodFillPathing &&
+										  tool != GameHost.EditorTool.PlacePropClump &&
+										  tool != GameHost.EditorTool.Raise &&
+										  tool != GameHost.EditorTool.Lower &&
+										  tool != GameHost.EditorTool.Flatten &&
+										  tool != GameHost.EditorTool.Cliff &&
+										  tool != GameHost.EditorTool.Ramp);
 			}
 			bool isTextureMode = tool == GameHost.EditorTool.PaintGrass ||
-			                     tool == GameHost.EditorTool.PaintDirt ||
-			                     tool == GameHost.EditorTool.PaintRock ||
-			                     tool == GameHost.EditorTool.PaintSand;
+								 tool == GameHost.EditorTool.PaintDirt ||
+								 tool == GameHost.EditorTool.PaintRock ||
+								 tool == GameHost.EditorTool.PaintSand;
 			if (_chkBlockMode != null)
 			{
 				_chkBlockMode.Visible = (tool != GameHost.EditorTool.PaintPathing && 
-				                         !isTextureMode &&
-				                         tool != GameHost.EditorTool.Smooth &&
-				                         tool != GameHost.EditorTool.Flatten &&
-				                         tool != GameHost.EditorTool.Noise);
+										 tool != GameHost.EditorTool.FloodFillPathing &&
+										 !isTextureMode &&
+										 tool != GameHost.EditorTool.Smooth &&
+										 tool != GameHost.EditorTool.Flatten &&
+										 tool != GameHost.EditorTool.Noise);
 			}
 			if (_stepBox != null)
 			{
 				_stepBox.Visible = (tool != GameHost.EditorTool.PaintPathing && 
-				                    !isTextureMode &&
-				                    tool != GameHost.EditorTool.Smooth &&
-				                    tool != GameHost.EditorTool.Flatten &&
-				                    tool != GameHost.EditorTool.Noise);
+									tool != GameHost.EditorTool.FloodFillPathing &&
+									!isTextureMode &&
+									tool != GameHost.EditorTool.Smooth &&
+									tool != GameHost.EditorTool.Flatten &&
+									tool != GameHost.EditorTool.Noise);
 			}
 		}
 
@@ -3196,7 +3213,7 @@ public class {mapName} : IMapScript
 											 tool == GameHost.EditorTool.Lower ||
 											 tool == GameHost.EditorTool.Cliff ||
 											 tool == GameHost.EditorTool.Ramp);
-		_containerPathingSettings.Visible = (tool == GameHost.EditorTool.PaintPathing);
+		_containerPathingSettings.Visible = (tool == GameHost.EditorTool.PaintPathing || tool == GameHost.EditorTool.FloodFillPathing);
 		_containerDecalSettings.Visible = (tool == GameHost.EditorTool.PlaceDecal);
 		_containerEyedropperSettings.Visible = (tool == GameHost.EditorTool.Eyedropper);
 		_containerPasteSettings.Visible = (tool == GameHost.EditorTool.SelectArea ||

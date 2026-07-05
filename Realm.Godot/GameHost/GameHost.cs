@@ -262,7 +262,8 @@ public partial class GameHost : Node3D, IGameAPI
 		FloodFill,
 		SelectArea,
 		PasteArea,
-		PaintPathing
+		PaintPathing,
+		FloodFillPathing
 	}
 	private EditorTool _activeEditorTool = EditorTool.None;
 	public EditorTool ActiveEditorTool

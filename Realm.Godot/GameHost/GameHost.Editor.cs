@@ -1938,6 +1938,22 @@ public partial class GameHost
 		MapEditorHUD.Instance?.ShowFeedbackExternal("Flood filled terrain area");
 	}
 
+	public void PerformFloodFillPathing(Vector3 clickPos, int pathingMask, bool pathingAdd)
+	{
+		if (GroundTerrain == null || GroundTerrain.PathingCodes == null) return;
+
+		var result = _editorService.PerformFloodFillPathing(clickPos, pathingMask, pathingAdd, EditorMirrorMode);
+
+		if (result.Before != null && result.After != null)
+		{
+			GroundTerrain.UpdateMeshAndPhysics(false, false);
+			var action = new TerrainModifyAction(null, null, null, null, result.Before, result.After);
+			EditorHistoryManager.RecordAction(action);
+			EditorHasUnsavedChanges = true;
+			MapEditorHUD.Instance?.ShowFeedbackExternal("Flood filled pathing area");
+		}
+	}
+
 	private void CreateSelectionHighlight()
 	{
 		if (_selectionHighlightMesh != null) return;
@@ -2176,7 +2192,7 @@ public partial class GameHost
 			AddChild(_pathingOverlayMesh);
 		}
 
-		bool shouldBeVisible = IsMapEditorMode && PathingOverlayVisible && ActiveEditorTool == EditorTool.PaintPathing;
+		bool shouldBeVisible = IsMapEditorMode && PathingOverlayVisible && (ActiveEditorTool == EditorTool.PaintPathing || ActiveEditorTool == EditorTool.FloodFillPathing);
 		_pathingOverlayMesh.Visible = shouldBeVisible;
 
 		if (shouldBeVisible && GroundTerrain != null)

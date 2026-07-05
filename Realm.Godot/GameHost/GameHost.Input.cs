@@ -1256,6 +1256,18 @@ public partial class GameHost
 						PerformFloodFill(hitPos, EditorPaintColor);
 						GetViewport().SetInputAsHandled();
 					}
+					else if (ActiveEditorTool == EditorTool.FloodFillPathing)
+					{
+						int pathingMask = 0;
+						bool pathingAdd = true;
+						if (MapEditorHUD.Instance != null)
+						{
+							pathingMask = MapEditorHUD.Instance.GetSelectedPathingMask();
+							pathingAdd = MapEditorHUD.Instance.IsPathingAddMode();
+						}
+						PerformFloodFillPathing(hitPos, pathingMask, pathingAdd);
+						GetViewport().SetInputAsHandled();
+					}
 					else if (ActiveEditorTool == EditorTool.SelectArea)
 					{
 						if (GroundTerrain != null)
