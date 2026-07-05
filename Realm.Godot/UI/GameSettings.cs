@@ -23,7 +23,7 @@ public static class GameSettings
 	public static string ShowHealthBars { get; set; } = "damaged";
 	public static string Language { get; set; } = "en";
 	public static bool DisplayFps { get; set; } = true;
-	public static bool RecordReplays { get; set; } = false;
+	public static bool RecordReplays { get; set; } = true;
 	public static bool SeedMapFiles { get; set; } = true;
 
 	public static void ResetToDefaults()
@@ -42,7 +42,7 @@ public static class GameSettings
 		ShowHealthBars = "damaged";
 		Language = "en";
 		DisplayFps = true;
-		RecordReplays = false;
+		RecordReplays = true;
 		SeedMapFiles = true;
 	}
 
@@ -123,7 +123,7 @@ public static class GameSettings
 				HudScale = data.HudScale;
 				Language = data.Language ?? "en";
 				DisplayFps = data.DisplayFps ?? true;
-				RecordReplays = data.RecordReplays ?? false;
+				RecordReplays = data.RecordReplays ?? true;
 				SeedMapFiles = data.SeedMapFiles ?? true;
 				if (data.ShowHealthBars is JsonElement elem)
 				{

@@ -38,6 +38,14 @@ public class TerrainModifyAction : IEditorAction
 		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics();
 		GameHost.Instance.AlignAllEntitiesToTerrainExternal();
 		GameHost.Instance.RebuildGridOverlayMeshExternal();
+		if (_beforeHeights != null || _beforePathing != null)
+		{
+			GameHost.Instance.GroundTerrain.BakeNavMesh();
+		}
+		if (_beforePathing != null)
+		{
+			GameHost.Instance.UpdatePathingOverlay();
+		}
 	}
 
 	public void Redo()
@@ -58,5 +66,13 @@ public class TerrainModifyAction : IEditorAction
 		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics();
 		GameHost.Instance.AlignAllEntitiesToTerrainExternal();
 		GameHost.Instance.RebuildGridOverlayMeshExternal();
+		if (_afterHeights != null || _afterPathing != null)
+		{
+			GameHost.Instance.GroundTerrain.BakeNavMesh();
+		}
+		if (_afterPathing != null)
+		{
+			GameHost.Instance.UpdatePathingOverlay();
+		}
 	}
 }

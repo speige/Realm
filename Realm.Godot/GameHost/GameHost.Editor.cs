@@ -1137,6 +1137,7 @@ public partial class GameHost
 						{
 							GroundTerrain.BakeNavMesh();
 							RebuildGridOverlayMeshExternal();
+							UpdatePathingOverlay();
 						}
 						EditorHasUnsavedChanges = true;
 					}
@@ -1208,6 +1209,7 @@ public partial class GameHost
 					{
 						GroundTerrain.BakeNavMesh();
 						RebuildGridOverlayMeshExternal();
+						UpdatePathingOverlay();
 					}
 					EditorHasUnsavedChanges = true;
 				}
@@ -1951,6 +1953,8 @@ public partial class GameHost
 			EditorHistoryManager.RecordAction(action);
 			EditorHasUnsavedChanges = true;
 			MapEditorHUD.Instance?.ShowFeedbackExternal("Flood filled pathing area");
+			UpdatePathingOverlay();
+			GroundTerrain.BakeNavMesh();
 		}
 	}
 

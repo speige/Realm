@@ -1039,6 +1039,52 @@ public class EditorService
 		return result;
 	}
 
+	private List<Vector2I> GetFloodFillCells(Vector3 clickPos, Color[,] colorsBefore, float[,] heights, int width, int depth, float spacing, bool[,] visited)
+	{
+		var cells = new List<Vector2I>();
+
+		float startFx = clickPos.X / spacing + (width - 1) / 2.0f;
+		float startFz = clickPos.Z / spacing + (depth - 1) / 2.0f;
+		int clickX = Mathf.Clamp((int)Math.Round(startFx), 0, width - 1);
+		int clickZ = Mathf.Clamp((int)Math.Round(startFz), 0, depth - 1);
+		Color startColor = colorsBefore[clickX, clickZ];
+
+		var queue = new Queue<(int x, int z)>();
+		if (!visited[clickX, clickZ])
+		{
+			queue.Enqueue((clickX, clickZ));
+			visited[clickX, clickZ] = true;
+		}
+
+		while (queue.Count > 0)
+		{
+			var (currX, currZ) = queue.Dequeue();
+			cells.Add(new Vector2I(currX, currZ));
+
+			int[] dx = { 0, 0, -1, 1 };
+			int[] dz = { -1, 1, 0, 0 };
+			for (int i = 0; i < 4; i++)
+			{
+				int nextX = currX + dx[i];
+				int nextZ = currZ + dz[i];
+				if (nextX >= 0 && nextX < width && nextZ >= 0 && nextZ < depth)
+				{
+					if (!visited[nextX, nextZ])
+					{
+						if (colorsBefore[nextX, nextZ] != startColor) continue;
+						float hCurrent = heights[currX, currZ];
+						float hNext = heights[nextX, nextZ];
+						if (Mathf.Abs(hNext - hCurrent) >= 1.0f) continue;
+						visited[nextX, nextZ] = true;
+						queue.Enqueue((nextX, nextZ));
+					}
+				}
+			}
+		}
+
+		return cells;
+	}
+
 	public (float[,] Heights, Color[,] Colors) PerformFloodFill(Vector3 clickPos, Color fillColor, MirrorMode mirrorMode)
 	{
 		ref var terrain = ref GetTerrainState();
@@ -1051,54 +1097,36 @@ public class EditorService
 		var visited = new bool[width, depth];
 		float[,] heights = terrain.Heights;
 
-		void DoSingleFill(Vector3 pos)
+		var cells = new List<Vector2I>();
+
+		float startFx = clickPos.X / spacing + (width - 1) / 2.0f;
+		float startFz = clickPos.Z / spacing + (depth - 1) / 2.0f;
+		int startX = Mathf.Clamp((int)Math.Round(startFx), 0, width - 1);
+		int startZ = Mathf.Clamp((int)Math.Round(startFz), 0, depth - 1);
+		if (colorsBefore[startX, startZ] != fillColor)
 		{
-			float fx = pos.X / spacing + (width - 1) / 2.0f;
-			float fz = pos.Z / spacing + (depth - 1) / 2.0f;
-			int startX = Mathf.Clamp((int)Math.Round(fx), 0, width - 1);
-			int startZ = Mathf.Clamp((int)Math.Round(fz), 0, depth - 1);
-			Color startColor = colorsBefore[startX, startZ];
-			if (startColor == fillColor) return;
+			cells.AddRange(GetFloodFillCells(clickPos, colorsBefore, heights, width, depth, spacing, visited));
+		}
 
-			var queue = new Queue<(int x, int z)>();
-			if (!visited[startX, startZ])
+		if (mirrorMode != MirrorMode.None)
+		{
+			var mirrors = GetMirroredPositions(clickPos, mirrorMode);
+			foreach (var m in mirrors)
 			{
-				queue.Enqueue((startX, startZ));
-				visited[startX, startZ] = true;
-			}
-
-			while (queue.Count > 0)
-			{
-				var (currX, currZ) = queue.Dequeue();
-				float targetAlpha = fillColor.A;
-				_terrainColors[currX, currZ] = new Color(fillColor.R, fillColor.G, fillColor.B, targetAlpha);
-				int[] dx = { 0, 0, -1, 1 };
-				int[] dz = { -1, 1, 0, 0 };
-				for (int i = 0; i < 4; i++)
+				float mFx = m.X / spacing + (width - 1) / 2.0f;
+				float mFz = m.Z / spacing + (depth - 1) / 2.0f;
+				int mX = Mathf.Clamp((int)Math.Round(mFx), 0, width - 1);
+				int mZ = Mathf.Clamp((int)Math.Round(mFz), 0, depth - 1);
+				if (colorsBefore[mX, mZ] != fillColor)
 				{
-					int nextX = currX + dx[i];
-					int nextZ = currZ + dz[i];
-					if (nextX >= 0 && nextX < width && nextZ >= 0 && nextZ < depth)
-					{
-						if (!visited[nextX, nextZ])
-						{
-							if (colorsBefore[nextX, nextZ] != startColor) continue;
-							float hCurrent = heights[currX, currZ];
-							float hNext = heights[nextX, nextZ];
-							if (Mathf.Abs(hNext - hCurrent) >= 1.0f) continue;
-							visited[nextX, nextZ] = true;
-							queue.Enqueue((nextX, nextZ));
-						}
-					}
+					cells.AddRange(GetFloodFillCells(m, colorsBefore, heights, width, depth, spacing, visited));
 				}
 			}
 		}
 
-		DoSingleFill(clickPos);
-		if (mirrorMode != MirrorMode.None)
+		foreach (var cell in cells)
 		{
-			var mirrors = GetMirroredPositions(clickPos, mirrorMode);
-			foreach (var m in mirrors) DoSingleFill(m);
+			_terrainColors[cell.X, cell.Y] = fillColor;
 		}
 
 		return ((float[,])terrain.Heights.Clone(), (Color[,])_terrainColors.Clone());
@@ -1119,63 +1147,19 @@ public class EditorService
 
 		var pathingCodes = terrain.PathingCodes;
 
-		// Calculate start cell
-		float startFx = clickPos.X / spacing + (width - 1) / 2.0f;
-		float startFz = clickPos.Z / spacing + (depth - 1) / 2.0f;
-		int clickX = Mathf.Clamp((int)Math.Round(startFx), 0, width - 1);
-		int clickZ = Mathf.Clamp((int)Math.Round(startFz), 0, depth - 1);
-		Color startColor = colorsBefore[clickX, clickZ];
-
-		void DoSingleFillPathing(Vector3 pos)
-		{
-			float fx = pos.X / spacing + (width - 1) / 2.0f;
-			float fz = pos.Z / spacing + (depth - 1) / 2.0f;
-			int startX = Mathf.Clamp((int)Math.Round(fx), 0, width - 1);
-			int startZ = Mathf.Clamp((int)Math.Round(fz), 0, depth - 1);
-
-			var queue = new Queue<(int x, int z)>();
-			if (!visited[startX, startZ])
-			{
-				queue.Enqueue((startX, startZ));
-				visited[startX, startZ] = true;
-			}
-
-			while (queue.Count > 0)
-			{
-				var (currX, currZ) = queue.Dequeue();
-				
-				if (pathingAdd)
-					pathingCodes[currX, currZ] |= pathingMask;
-				else
-					pathingCodes[currX, currZ] &= ~pathingMask;
-
-				int[] dx = { 0, 0, -1, 1 };
-				int[] dz = { -1, 1, 0, 0 };
-				for (int i = 0; i < 4; i++)
-				{
-					int nextX = currX + dx[i];
-					int nextZ = currZ + dz[i];
-					if (nextX >= 0 && nextX < width && nextZ >= 0 && nextZ < depth)
-					{
-						if (!visited[nextX, nextZ])
-						{
-							if (colorsBefore[nextX, nextZ] != startColor) continue;
-							float hCurrent = heights[currX, currZ];
-							float hNext = heights[nextX, nextZ];
-							if (Mathf.Abs(hNext - hCurrent) >= 1.0f) continue;
-							visited[nextX, nextZ] = true;
-							queue.Enqueue((nextX, nextZ));
-						}
-					}
-				}
-			}
-		}
-
-		DoSingleFillPathing(clickPos);
+		var cells = GetFloodFillCells(clickPos, colorsBefore, heights, width, depth, spacing, visited);
 		if (mirrorMode != MirrorMode.None)
 		{
 			var mirrors = GetMirroredPositions(clickPos, mirrorMode);
-			foreach (var m in mirrors) DoSingleFillPathing(m);
+			foreach (var m in mirrors)
+			{
+				cells.AddRange(GetFloodFillCells(m, colorsBefore, heights, width, depth, spacing, visited));
+			}
+		}
+
+		foreach (var cell in cells)
+		{
+			pathingCodes[cell.X, cell.Y] = pathingMask;
 		}
 
 		return (pathingBefore, (int[,])pathingCodes.Clone());

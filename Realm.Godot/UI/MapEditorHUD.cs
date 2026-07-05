@@ -213,6 +213,7 @@ public partial class MapEditorHUD : Control
 	private CheckBox _chkGround;
 	private CheckBox _chkUnpathable;
 	private OptionButton _optPathingMode;
+	private HBoxContainer _pathingModeHBox;
 
 	private Button _activeToolButton = null;
 	private StyleBoxFlat _highlightStyle;
@@ -1210,11 +1211,11 @@ public partial class MapEditorHUD : Control
 		pContent.Name = "Content";
 		pVBox.AddChild(pContent);
 
-		var modeHBox = new HBoxContainer();
+		_pathingModeHBox = new HBoxContainer();
 		var modeLabel = new Label();
 		modeLabel.Text = TranslationServer.Translate("Mode: ");
 		modeLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		modeHBox.AddChild(modeLabel);
+		_pathingModeHBox.AddChild(modeLabel);
 
 		_optPathingMode = new OptionButton();
 		_optPathingMode.Name = "OptPathingMode";
@@ -1223,8 +1224,8 @@ public partial class MapEditorHUD : Control
 		_optPathingMode.Selected = 0;
 		_optPathingMode.AddThemeFontSizeOverride("font_size", 11);
 		_optPathingMode.CustomMinimumSize = new Vector2(180, 28);
-		modeHBox.AddChild(_optPathingMode);
-		pContent.AddChild(modeHBox);
+		_pathingModeHBox.AddChild(_optPathingMode);
+		pContent.AddChild(_pathingModeHBox);
 
 		var layersVBox = new VBoxContainer();
 		layersVBox.AddThemeConstantOverride("separation", 6);
@@ -1995,6 +1996,10 @@ public partial class MapEditorHUD : Control
 			if (_panelPathing != null) _panelPathing.Visible = true;
 			if (_panelTextures != null) _panelTextures.Visible = false;
 			if (_panelEntityPalette != null) _panelEntityPalette.Visible = false;
+			if (_pathingModeHBox != null)
+			{
+				_pathingModeHBox.Visible = (tool != GameHost.EditorTool.FloodFillPathing);
+			}
 			GameHost.Instance?.UpdatePathingOverlay();
 		}
 		else
@@ -2247,26 +2252,26 @@ public partial class MapEditorHUD : Control
 		}
 
 		string settingsJson = @"{
-    ""editor.formatOnSave"": true,
-    ""json.schemas"": [
+	""editor.formatOnSave"": true,
+	""json.schemas"": [
         {
-            ""fileMatch"": [
-                ""/metadata.json""
+			""fileMatch"": [
+				""/metadata.json""
             ],
-            ""url"": ""./.vscode/map_schema.json""
+			""url"": ""./.vscode/map_schema.json""
         }
     ]
 }";
 		System.IO.File.WriteAllText(System.IO.Path.Combine(vscodeDir, "settings.json"), settingsJson);
 
 		string launchJson = @"{
-    ""version"": ""0.2.0"",
-    ""configurations"": [
+	""version"": ""0.2.0"",
+	""configurations"": [
         {
-            ""name"": ""Attach to Realm Game Host"",
-            ""type"": ""coreclr"",
-            ""request"": ""attach"",
-            ""processName"": ""Realm.Godot""
+			""name"": ""Attach to Realm Game Host"",
+			""type"": ""coreclr"",
+			""request"": ""attach"",
+			""processName"": ""Realm.Godot""
         }
     ]
 }";
@@ -2303,7 +2308,7 @@ Realm is an RTS Game using Godot with C# and the Arch ECS framework.
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include=""{apiProjPath}"" />
+	<ProjectReference Include=""{apiProjPath}"" />
   </ItemGroup>
 </Project>";
 			System.IO.File.WriteAllText(csprojPath, csprojContent);
@@ -3278,7 +3283,6 @@ public class {mapName} : IMapScript
 		if (_optModule != null)
 		{
 			_optModule.Selected = (int)_activeModule;
-			_optModule.Text = TranslationServer.Translate("Mode");
 		}
 	}
 

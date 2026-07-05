@@ -1,4 +1,4 @@
-﻿using Arch.Core;
+using Arch.Core;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Core;
@@ -7,6 +7,7 @@ using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Resources;
 using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Services;
+using Realm.Ecs.Components.Tags;
 using System;
 using System.Collections.Generic;
 
@@ -104,7 +105,7 @@ public class CheatService
 
 		if (lower == "thanossnap" || lower == "emotionaldamage")
 		{
-			int destroyed = 0;
+			var targets = new List<Entity>();
 			var query = Realm.Ecs.Common.QueryCache.AllHealthAndOwnerQuery;
 			_ecsWorld.Query(in query, (Entity entity, ref Owner owner) =>
 			{
@@ -115,16 +116,37 @@ public class CheatService
 				}
 				if (isEnemy)
 				{
-					var hp = _ecsWorld.Get<Health>(entity);
-					_ecsWorld.Set(entity, new Health(0f, hp.Max));
-					destroyed++;
+					targets.Add(entity);
 				}
 			});
+
+			int destroyed = 0;
+			foreach (var entity in targets)
+			{
+				if (_ecsWorld.IsAlive(entity))
+				{
+					var hp = _ecsWorld.Get<Health>(entity);
+					_ecsWorld.Set(entity, new Health(0f, hp.Max));
+					if (!_ecsWorld.Has<Dead>(entity))
+					{
+						_ecsWorld.Add<Dead>(entity);
+					}
+					if (GameHost.Instance != null && GameHost.TryGetUnit3D(entity, out var unit3D))
+					{
+						GameHost.Instance.TriggerKillUnit(unit3D);
+					}
+					destroyed++;
+				}
+			}
 			return (CheatResult.ThanosSnap, destroyed);
 		}
 
 		if (lower == "ezclap" || lower == "speedrun")
 		{
+			if (GameHost.Instance != null)
+			{
+				((Realm.MapAPI.IGameAPI)GameHost.Instance).TriggerVictory();
+			}
 			return (CheatResult.EzClap, 0);
 		}
 

@@ -160,6 +160,20 @@ public partial class Unit3D : CharacterBody3D
 		}
 	}
 
+	public void SetTemporarySelectionHighlight(bool highlight)
+	{
+		if (_selectionRing != null)
+		{
+			_selectionRing.Visible = highlight || _isSelected;
+			if ((highlight || _isSelected) && _selectionRing.MaterialOverride is StandardMaterial3D material)
+			{
+				Color color = IsEnemy ? new Color(0.9f, 0.1f, 0.2f) : new Color(0.1f, 0.9f, 0.2f);
+				material.AlbedoColor = color;
+				material.Emission = color;
+			}
+		}
+	}
+
 	public bool IsPreview { get; set; } = false;
 
 	public override void _Ready()

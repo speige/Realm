@@ -240,6 +240,11 @@ public class MinimapPanel
 	{
 		if (_camera3D == null || !GodotObject.IsInstanceValid(_camera3D) || _cameraIndicator == null || _minimapArea == null) return;
 
+		float scale = _camera3D.GlobalPosition.Y / 35.0f;
+		Vector2 newSize = new Vector2(45.0f * scale, 30.0f * scale);
+		_cameraIndicator.CustomMinimumSize = newSize;
+		_cameraIndicator.Size = newSize;
+
 		float worldX = _camera3D.GlobalPosition.X;
 		float worldZ = _camera3D.GlobalPosition.Z;
 
@@ -249,8 +254,8 @@ public class MinimapPanel
 		xRatio = Mathf.Clamp(xRatio, 0f, 1f);
 		yRatio = Mathf.Clamp(yRatio, 0f, 1f);
 
-		float xPos = xRatio * _minimapArea.Size.X - (_cameraIndicator.Size.X / 2f);
-		float yPos = yRatio * _minimapArea.Size.Y - (_cameraIndicator.Size.Y / 2f);
+		float xPos = xRatio * _minimapArea.Size.X - (newSize.X / 2f);
+		float yPos = yRatio * _minimapArea.Size.Y - (newSize.Y / 2f);
 
 		_cameraIndicator.Position = new Vector2(xPos, yPos);
 	}

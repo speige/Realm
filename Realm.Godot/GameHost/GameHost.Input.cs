@@ -1855,6 +1855,8 @@ public partial class GameHost
 						InGameHUD.Instance.UpdateDragBox(Vector2.Zero, Vector2.Zero, false);
 					}
 
+					ClearTemporarySelection();
+
 					float dragDist = _dragStart.DistanceTo(_dragEnd);
 					if (dragDist > DragThreshold)
 					{
@@ -1941,6 +1943,7 @@ public partial class GameHost
 			{
 				InGameHUD.Instance.UpdateDragBox(_dragStart, _dragEnd, true);
 			}
+			UpdateTemporarySelection(_dragStart, _dragEnd);
 		}
 	}
 
@@ -2058,6 +2061,37 @@ public partial class GameHost
 		}
 
 		InGameHUD.Instance?.RefreshUI(SelectedUnits);
+	}
+
+	private void UpdateTemporarySelection(Vector2 start, Vector2 end)
+	{
+		var camera = GetViewport().GetCamera3D();
+		if (camera == null) return;
+
+		Vector2 min = new Vector2(Mathf.Min(start.X, end.X), Mathf.Min(start.Y, end.Y));
+		Vector2 max = new Vector2(Mathf.Max(start.X, end.X), Mathf.Max(start.Y, end.Y));
+		var dragRect = new Rect2(min, max - min);
+
+		foreach (var unit in AllUnits)
+		{
+			if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
+			if (unit.IsEnemy) continue;
+
+			var screenPos = camera.UnprojectPosition(unit.GlobalPosition);
+			bool isInside = dragRect.HasPoint(screenPos);
+			unit.SetTemporarySelectionHighlight(isInside);
+		}
+	}
+
+	private void ClearTemporarySelection()
+	{
+		foreach (var unit in AllUnits)
+		{
+			if (unit != null && GodotObject.IsInstanceValid(unit))
+			{
+				unit.SetTemporarySelectionHighlight(false);
+			}
+		}
 	}
 
 	private void SelectUnit(Unit3D unit)
