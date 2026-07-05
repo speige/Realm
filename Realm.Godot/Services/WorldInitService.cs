@@ -1,4 +1,4 @@
-﻿using Arch.Core;
+using Arch.Core;
 using DotRecast.Detour;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Meta;
@@ -18,6 +18,18 @@ public class WorldInitService
 		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
+	private void AddOrSet<T>(Entity entity, T component)
+	{
+		if (_ecsWorld.Has<T>(entity))
+		{
+			_ecsWorld.Set(entity, component);
+		}
+		else
+		{
+			_ecsWorld.Add(entity, component);
+		}
+	}
+
 	public Entity SetupWorldEntityComponents(
 		int width,
 		int depth,
@@ -30,14 +42,22 @@ public class WorldInitService
 		DtNavMesh navMesh,
 		DtNavMeshQuery navMeshQuery)
 	{
-		var worldEntity = _ecsWorld.Create();
-		_ecsWorld.Add(worldEntity, new WorldState(0f, 0, 0f, true));
-		_ecsWorld.Add(worldEntity, new ReplayState(0, 500f, 400f, 200f));
-		_ecsWorld.Add(worldEntity, new NetworkState(1, 0f, 0, -1, -1, false, 0, 1));
-		_ecsWorld.Add(worldEntity, new NetworkMappingState(new(), new(), new()));
-		_ecsWorld.Add(worldEntity, new EditorState(true, 4.0f, -95.0f, 95.0f, -95.0f, 125.0f, "res://Assets/skybox_panoramic.jpg", false));
-		_ecsWorld.Add(worldEntity, new InputState(0, null, null, null, false));
-		_ecsWorld.Add(worldEntity, new CameraState
+		Entity worldEntity = Entity.Null;
+		var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateQuery;
+		_ecsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
+
+		if (worldEntity == Entity.Null)
+		{
+			worldEntity = _ecsWorld.Create();
+		}
+
+		AddOrSet(worldEntity, new WorldState(0f, 0, 0f, true));
+		AddOrSet(worldEntity, new ReplayState(0, 500f, 400f, 200f));
+		AddOrSet(worldEntity, new NetworkState(1, 0f, 0, -1, -1, false, 0, 1));
+		AddOrSet(worldEntity, new NetworkMappingState(new(), new(), new()));
+		AddOrSet(worldEntity, new EditorState(true, 4.0f, -95.0f, 95.0f, -95.0f, 125.0f, "res://Assets/skybox_panoramic.jpg", false));
+		AddOrSet(worldEntity, new InputState(0, null, null, null, false));
+		AddOrSet(worldEntity, new CameraState
 		{
 			MoveSpeed = 35.0f,
 			ZoomSpeed = 10.0f,
@@ -64,16 +84,28 @@ public class WorldInitService
 			PitchSwing = 0.0f
 		});
 
-		_ecsWorld.Add(worldEntity, new TerrainState(
-			width, depth, spacing, cellSize, waterHeight, waterEnabled,
-			heights, pathingCodes, navMesh, navMeshQuery
-		));
+		if (_ecsWorld.Has<TerrainState>(worldEntity))
+		{
+			ref var existing = ref _ecsWorld.Get<TerrainState>(worldEntity);
+			if (heights != null) existing.Heights = heights;
+			if (pathingCodes != null) existing.PathingCodes = pathingCodes;
+			if (navMesh != null) existing.NavMesh = navMesh;
+			if (navMeshQuery != null) existing.NavMeshQuery = navMeshQuery;
+			_ecsWorld.Set(worldEntity, existing);
+		}
+		else
+		{
+			_ecsWorld.Add(worldEntity, new TerrainState(
+				width, depth, spacing, cellSize, waterHeight, waterEnabled,
+				heights ?? new float[width, depth], pathingCodes ?? new int[width, depth], navMesh, navMeshQuery
+			));
+		}
 
-		_ecsWorld.Add(worldEntity, new FogAndWeatherState(new byte[32, 32], "grey", "clear", 0f));
-		_ecsWorld.Add(worldEntity, new SpectatorPerspective(-1));
-		_ecsWorld.Add(worldEntity, new CountdownState(false, 0f, ""));
-		_ecsWorld.Add(worldEntity, new LeaderboardState(false, "", new System.Collections.Generic.Dictionary<string, string>()));
-		_ecsWorld.Add(worldEntity, new ScriptZonesState(new System.Collections.Generic.List<ZoneBounds>()));
+		AddOrSet(worldEntity, new FogAndWeatherState(new byte[32, 32], "grey", "clear", 0f));
+		AddOrSet(worldEntity, new SpectatorPerspective(-1));
+		AddOrSet(worldEntity, new CountdownState(false, 0f, ""));
+		AddOrSet(worldEntity, new LeaderboardState(false, "", new System.Collections.Generic.Dictionary<string, string>()));
+		AddOrSet(worldEntity, new ScriptZonesState(new System.Collections.Generic.List<ZoneBounds>()));
 
 		var players = new ScriptPlayer[12];
 		for (int i = 0; i < 12; i++)
@@ -87,8 +119,8 @@ public class WorldInitService
 				KillCount = 0
 			};
 		}
-		_ecsWorld.Add(worldEntity, new ScriptPlayersState(players));
-		_ecsWorld.Add(worldEntity, new CombatAlertState(0f));
+		AddOrSet(worldEntity, new ScriptPlayersState(players));
+		AddOrSet(worldEntity, new CombatAlertState(0f));
 
 		return worldEntity;
 	}

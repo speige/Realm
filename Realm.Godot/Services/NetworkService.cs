@@ -1,4 +1,4 @@
-﻿using Arch.Core;
+using Arch.Core;
 using Godot;
 using MemoryPack;
 using Realm.Ecs.Common;
@@ -962,7 +962,7 @@ public class NetworkService
 		}
 		else
 		{
-			isLost = true;
+			isLost = false;
 		}
 		IsConnectionLost = isLost;
 	}

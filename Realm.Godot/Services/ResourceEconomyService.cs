@@ -1,4 +1,4 @@
-﻿using Arch.Core;
+using Arch.Core;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Movement;
@@ -76,6 +76,8 @@ internal class ResourceEconomyService
 		return _ecsWorld.GetFieldOrDefault<PlayerUpgrades, bool>(playerEntity, u => u.HarvestingUpgrade);
 	}
 
+	private readonly Dictionary<Entity, Dictionary<ResourceId, float>> _accumulators = new();
+
 	private void UpdatePassiveIncomeQueryAction(Entity ent, ref PlayerResources res)
 	{
 		float goldPerSec = DefaultGoldPerSec;
@@ -94,9 +96,47 @@ internal class ResourceEconomyService
 			}
 		}
 
-		if (res.Value.ContainsKey(_goldResourceId)) res.Value[_goldResourceId] = (int)Math.Min(ResourceCap, res.Value[_goldResourceId] + _fDelta * goldPerSec);
-		if (res.Value.ContainsKey(_woodResourceId)) res.Value[_woodResourceId] = (int)Math.Min(ResourceCap, res.Value[_woodResourceId] + _fDelta * woodPerSec);
-		if (res.Value.ContainsKey(_stoneResourceId)) res.Value[_stoneResourceId] = (int)Math.Min(ResourceCap, res.Value[_stoneResourceId] + _fDelta * stonePerSec);
+		if (!_accumulators.TryGetValue(ent, out var acc))
+		{
+			acc = new Dictionary<ResourceId, float>();
+			_accumulators[ent] = acc;
+		}
+
+		if (res.Value.ContainsKey(_goldResourceId))
+		{
+			float currentAcc = acc.GetValueOrDefault(_goldResourceId) + _fDelta * goldPerSec;
+			if (currentAcc >= 1f)
+			{
+				int add = (int)currentAcc;
+				res.Value[_goldResourceId] = (int)Math.Min(ResourceCap, res.Value[_goldResourceId] + add);
+				currentAcc -= add;
+			}
+			acc[_goldResourceId] = currentAcc;
+		}
+
+		if (res.Value.ContainsKey(_woodResourceId))
+		{
+			float currentAcc = acc.GetValueOrDefault(_woodResourceId) + _fDelta * woodPerSec;
+			if (currentAcc >= 1f)
+			{
+				int add = (int)currentAcc;
+				res.Value[_woodResourceId] = (int)Math.Min(ResourceCap, res.Value[_woodResourceId] + add);
+				currentAcc -= add;
+			}
+			acc[_woodResourceId] = currentAcc;
+		}
+
+		if (res.Value.ContainsKey(_stoneResourceId))
+		{
+			float currentAcc = acc.GetValueOrDefault(_stoneResourceId) + _fDelta * stonePerSec;
+			if (currentAcc >= 1f)
+			{
+				int add = (int)currentAcc;
+				res.Value[_stoneResourceId] = (int)Math.Min(ResourceCap, res.Value[_stoneResourceId] + add);
+				currentAcc -= add;
+			}
+			acc[_stoneResourceId] = currentAcc;
+		}
 	}
 
 	private void ProcessGatheringTicks()

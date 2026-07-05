@@ -106,16 +106,38 @@ public partial class EditableTerrain : StaticBody3D
 	public const int PATHING_GROUND = 8;
 	public const int PATHING_UNPATHABLE = 16;
 
+	private float[,] _localHeights;
+	private int[,] _localPathingCodes;
+	private float _localWaterHeight = -2.0f;
+	private bool _localWaterEnabled = true;
+
 	public float[,] Heights
 	{
-		get => GetTerrainStateSafe().Heights;
+		get
+		{
+			if (GameHost.Instance != null && 
+				GameHost.Instance.EcsWorld != null && 
+				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
+				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
+			{
+				return GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).Heights;
+			}
+			return _localHeights;
+		}
 		private set
 		{
-			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
-			GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-				state.Width, state.Depth, state.Spacing, state.CellSize, state.WaterHeight, state.WaterEnabled,
-				value, state.PathingCodes, state.NavMesh, state.NavMeshQuery
-			));
+			if (GameHost.Instance != null && 
+				GameHost.Instance.EcsWorld != null && 
+				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
+				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
+				GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
+					state.Width, state.Depth, state.Spacing, state.CellSize, state.WaterHeight, state.WaterEnabled,
+					value, state.PathingCodes, state.NavMesh, state.NavMeshQuery
+				));
+			}
+			_localHeights = value;
 		}
 	}
 
@@ -123,14 +145,31 @@ public partial class EditableTerrain : StaticBody3D
 
 	public int[,] PathingCodes
 	{
-		get => GetTerrainStateSafe().PathingCodes;
+		get
+		{
+			if (GameHost.Instance != null && 
+				GameHost.Instance.EcsWorld != null && 
+				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
+				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
+			{
+				return GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).PathingCodes;
+			}
+			return _localPathingCodes;
+		}
 		private set
 		{
-			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
-			GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-				state.Width, state.Depth, state.Spacing, state.CellSize, state.WaterHeight, state.WaterEnabled,
-				state.Heights, value, state.NavMesh, state.NavMeshQuery
-			));
+			if (GameHost.Instance != null && 
+				GameHost.Instance.EcsWorld != null && 
+				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
+				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
+				GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
+					state.Width, state.Depth, state.Spacing, state.CellSize, state.WaterHeight, state.WaterEnabled,
+					state.Heights, value, state.NavMesh, state.NavMeshQuery
+				));
+			}
+			_localPathingCodes = value;
 		}
 	}
 
@@ -150,28 +189,62 @@ public partial class EditableTerrain : StaticBody3D
 
 	public float WaterHeight
 	{
-		get => GetTerrainStateSafe().WaterHeight;
+		get
+		{
+			if (GameHost.Instance != null && 
+				GameHost.Instance.EcsWorld != null && 
+				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
+				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
+			{
+				return GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).WaterHeight;
+			}
+			return _localWaterHeight;
+		}
 		set
 		{
-			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
-			GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-				state.Width, state.Depth, state.Spacing, state.CellSize, value, state.WaterEnabled,
-				state.Heights, state.PathingCodes, state.NavMesh, state.NavMeshQuery
-			));
+			if (GameHost.Instance != null && 
+				GameHost.Instance.EcsWorld != null && 
+				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
+				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
+				GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
+					state.Width, state.Depth, state.Spacing, state.CellSize, value, state.WaterEnabled,
+					state.Heights, state.PathingCodes, state.NavMesh, state.NavMeshQuery
+				));
+			}
+			_localWaterHeight = value;
 			UpdateWaterTransform();
 		}
 	}
 
 	public bool WaterEnabled
 	{
-		get => GetTerrainStateSafe().WaterEnabled;
+		get
+		{
+			if (GameHost.Instance != null && 
+				GameHost.Instance.EcsWorld != null && 
+				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
+				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
+			{
+				return GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).WaterEnabled;
+			}
+			return _localWaterEnabled;
+		}
 		set
 		{
-			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
-			GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-				state.Width, state.Depth, state.Spacing, state.CellSize, state.WaterHeight, value,
-				state.Heights, state.PathingCodes, state.NavMesh, state.NavMeshQuery
-			));
+			if (GameHost.Instance != null && 
+				GameHost.Instance.EcsWorld != null && 
+				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
+				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
+				GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
+					state.Width, state.Depth, state.Spacing, state.CellSize, state.WaterHeight, value,
+					state.Heights, state.PathingCodes, state.NavMesh, state.NavMeshQuery
+				));
+			}
+			_localWaterEnabled = value;
 			if (_waterMesh != null)
 			{
 				_waterMesh.Visible = value;

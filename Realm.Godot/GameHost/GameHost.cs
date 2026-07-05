@@ -644,14 +644,15 @@ public partial class GameHost : Node3D, IGameAPI
 	{
 		get
 		{
-			if (EcsWorld != null && EcsWorld.TryGet<PlayerResources>(_playerEntity, out var res) &&
+			if (EcsWorld != null && _playerEntity != Entity.Null && EcsWorld.IsAlive(_playerEntity) &&
+				EcsWorld.TryGet<PlayerResources>(_playerEntity, out var res) &&
 				res.Value.TryGetValue(_goldResourceId, out var val))
 				return val;
 			return _goldBackup;
 		}
 		set
 		{
-			if (EcsWorld != null)
+			if (EcsWorld != null && _playerEntity != Entity.Null && EcsWorld.IsAlive(_playerEntity))
 				EcsWorld.Mutate<PlayerResources>(_playerEntity, (ref PlayerResources r) =>
 				{
 					if (r.Value.ContainsKey(_goldResourceId))
@@ -667,14 +668,15 @@ public partial class GameHost : Node3D, IGameAPI
 	{
 		get
 		{
-			if (EcsWorld != null && EcsWorld.TryGet<PlayerResources>(_playerEntity, out var res) &&
+			if (EcsWorld != null && _playerEntity != Entity.Null && EcsWorld.IsAlive(_playerEntity) &&
+				EcsWorld.TryGet<PlayerResources>(_playerEntity, out var res) &&
 				res.Value.TryGetValue(_woodResourceId, out var val))
 				return val;
 			return _woodBackup;
 		}
 		set
 		{
-			if (EcsWorld != null)
+			if (EcsWorld != null && _playerEntity != Entity.Null && EcsWorld.IsAlive(_playerEntity))
 				EcsWorld.Mutate<PlayerResources>(_playerEntity, (ref PlayerResources r) =>
 				{
 					if (r.Value.ContainsKey(_woodResourceId))
@@ -690,14 +692,15 @@ public partial class GameHost : Node3D, IGameAPI
 	{
 		get
 		{
-			if (EcsWorld != null && EcsWorld.TryGet<PlayerResources>(_playerEntity, out var res) &&
+			if (EcsWorld != null && _playerEntity != Entity.Null && EcsWorld.IsAlive(_playerEntity) &&
+				EcsWorld.TryGet<PlayerResources>(_playerEntity, out var res) &&
 				res.Value.TryGetValue(_stoneResourceId, out var val))
 				return val;
 			return _stoneBackup;
 		}
 		set
 		{
-			if (EcsWorld != null)
+			if (EcsWorld != null && _playerEntity != Entity.Null && EcsWorld.IsAlive(_playerEntity))
 				EcsWorld.Mutate<PlayerResources>(_playerEntity, (ref PlayerResources r) =>
 				{
 					if (r.Value.ContainsKey(_stoneResourceId))
@@ -2211,6 +2214,44 @@ public class {mapName} : IMapScript
 			}
 		}
 
+		if (_playerEntity == Entity.Null)
+		{
+			_playerEntity = EcsWorld.Create();
+			EcsWorld.Add(_playerEntity, new Player());
+			EcsWorld.Add(_playerEntity, new Name("Horaid_Topa"));
+			InitializePlayerResources(_playerEntity);
+			SetupPlayerEntityComponents(_playerEntity);
+			_peerIdToPlayerEntityMap[1] = _playerEntity;
+			if (EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+			{
+				var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+				if (players.Length > 0)
+				{
+					players[0].Name = "Horaid_Topa";
+					players[0].Active = true;
+				}
+			}
+		}
+
+		if (_enemyPlayerEntity == Entity.Null)
+		{
+			_enemyPlayerEntity = EcsWorld.Create();
+			EcsWorld.Add(_enemyPlayerEntity, new Player());
+			EcsWorld.Add(_enemyPlayerEntity, new Name("Enemy_AI"));
+			InitializePlayerResources(_enemyPlayerEntity);
+			SetupPlayerEntityComponents(_enemyPlayerEntity);
+			_peerIdToPlayerEntityMap[-1] = _enemyPlayerEntity;
+			if (EcsWorld.Has<ScriptPlayersState>(_worldEntity))
+			{
+				var players = EcsWorld.Get<ScriptPlayersState>(_worldEntity).Players;
+				if (players.Length > 1)
+				{
+					players[1].Name = "Enemy_AI";
+					players[1].Active = true;
+				}
+			}
+		}
+
 
 		string rawMapName = "melee";
 		if (LobbyManager.Instance != null && !string.IsNullOrEmpty(LobbyManager.Instance.ActiveMapName))
@@ -2292,82 +2333,7 @@ public class {mapName} : IMapScript
 			_editorService.SetTerrainColors(GroundTerrain.Colors);
 		}
 
-		EcsWorld = ServiceLocator.Get<World>();
-		SetupWorldEntityComponents();
-
-		_definitionManager = ServiceLocator.Get<DefinitionManager>();
-		_goldResourceId = "gold".AsResourceId(_definitionManager);
-		_woodResourceId = "wood".AsResourceId(_definitionManager);
-		_stoneResourceId = "stone".AsResourceId(_definitionManager);
-		_simulationService = ServiceLocator.Get<SimulationService>();
-		_simulationService.SetRuntimeReferences(AllUnits, AllProps, _castlesList, _definitionManager, _goldResourceId, _woodResourceId, _stoneResourceId, GroundTerrain);
-		_simulationService.Initialize();
-
-		_simulationService.OnArrowProjectileRequested = (start, target) => SpawnArrowProjectile(new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z));
-		_simulationService.OnDamageFlashRequested = entity =>
-		{
-			if (GameHost.TryGetUnit3D(entity, out var unit3D))
-			{
-				this.CallDeferred(nameof(FlashDamageUnit), unit3D);
-			}
-		};
-		_simulationService.OnHealEffectRequested = (start, target) => SpawnHealVisualEffect(new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z));
-		_simulationService.OnHealFlashRequested = entity =>
-		{
-			if (GameHost.TryGetUnit3D(entity, out var unit3D))
-			{
-				this.CallDeferred(nameof(FlashHealUnit), unit3D);
-			}
-		};
-		_simulationService.OnKillUnitRequested = entity =>
-		{
-			if (EcsWorld.IsAlive(entity) && GameHost.TryGetUnit3D(entity, out var unit3D))
-			{
-				this.CallDeferred(nameof(KillUnit), unit3D);
-			}
-		};
-		_simulationService.OnPropDepleted = entity =>
-		{
-			if (TryGetProp3D(entity, out var prop3D))
-			{
-				this.CallDeferred(nameof(DepleteProp), prop3D);
-			}
-		};
-		_simulationService.OnUnitDamagedCallback = (targetEntity, attackerEntity, damage) =>
-		{
-			if (EcsWorld.IsAlive(targetEntity))
-			{
-				IUnit attackerWrapper = EcsWorld.IsAlive(attackerEntity)
-					? GetUnitWrapper(attackerEntity)
-					: null;
-				OnUnitDamaged?.Invoke(GetUnitWrapper(targetEntity), attackerWrapper, damage);
-			}
-		};
-		_simulationService.OnUnderAttackAlertRequested = unitId =>
-		{
-			string alertMsg = unitId == "castle"
-				? "⚠️ YOUR CASTLE IS UNDER ATTACK!"
-				: $"⚠️ {unitId.ToUpper()} is under attack!";
-			InGameHUD.Instance?.CallDeferred(nameof(InGameHUD.ShowFeedbackText), alertMsg, new Color(1.0f, 0.2f, 0.1f));
-			UIManager.Instance?.CallDeferred(nameof(UIManager.PlayWarningSound));
-		};
-		_simulationService.OnSpawnUnitFromProductionRequested = (unitId, position, isEnemy, rallyPoint, isFromQueue) =>
-			SpawnUnitFromProduction(unitId, position, isEnemy, rallyPoint, isFromQueue);
-		_simulationService.GetProductionBuildTime = unitId =>
-			UnitRegistry.TryGetValue(unitId, out var meta) ? meta.ProductionTime : 5f;
-		_simulationService.OnClearUnitOrdersRequested = entity => ClearUnitOrders(entity);
-		_simulationService.OnStopGatheringMovementRequested = entity => StopGatheringMovement(entity);
-		_simulationService.OnUiRefreshRequested = () => InGameHUD.Instance?.RefreshUI(SelectedUnits);
-		_simulationService.OnResourceDepositedForPlayer = (resType, carry) =>
-		{
-			string resTypeUpper = resType.ToUpper();
-			InGameHUD.Instance?.CallDeferred(nameof(InGameHUD.ShowFeedbackText), $"+{carry:F0} {resTypeUpper} deposited", new Color(0.2f, 0.9f, 0.4f));
-		};
-		_simulationService.OnProductionCompleted = unitToSpawn =>
-		{
-			string displayName = UnitRegistry.TryGetValue(unitToSpawn, out var nm) ? nm.Name : unitToSpawn.ToUpper();
-			InGameHUD.Instance?.CallDeferred(nameof(InGameHUD.ShowFeedbackText), $"✓ {displayName} training complete!", new Color(0.3f, 0.9f, 0.4f));
-		};
+		InitializeGameEcs();
 	}
 
 	public void StopRecording()
@@ -2820,6 +2786,15 @@ public class {mapName} : IMapScript
 		}
 
 		ProcessGameplayTick(fDelta);
+
+		if (OS.GetCmdlineArgs().Contains("--auto-melee"))
+		{
+			if (GameElapsedTime >= 3.0f)
+			{
+				GD.Print($"[TEST_HARNESS] Ticked 3s. Resources: Gold={((IGameAPI)this).Gold:F1}, Wood={((IGameAPI)this).Wood:F1}, Stone={((IGameAPI)this).Stone:F1}. Quit!");
+				GetTree().Quit();
+			}
+		}
 	}
 
 	private void UpdateConnectionStatus()

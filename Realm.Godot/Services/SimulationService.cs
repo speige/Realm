@@ -18,6 +18,26 @@ internal class SimulationService
 	private readonly WorldAccessor _ecsWorldAccessor;
 	private World _ecsWorld => _ecsWorldAccessor.Current;
 	private readonly Entity _worldEntity;
+	private Entity _resolvedWorldEntity = Entity.Null;
+	private Entity ActiveWorldEntity
+	{
+		get
+		{
+			if (_resolvedWorldEntity == Entity.Null || !_ecsWorld.IsAlive(_resolvedWorldEntity))
+			{
+				if (_worldEntity != Entity.Null && _ecsWorld.IsAlive(_worldEntity))
+				{
+					_resolvedWorldEntity = _worldEntity;
+				}
+				else
+				{
+					var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateQuery;
+					_ecsWorld.Query(in worldQuery, (Entity entity) => _resolvedWorldEntity = entity);
+				}
+			}
+			return _resolvedWorldEntity;
+		}
+	}
 	private readonly NavMeshPathfinder _pathfinder;
 
 	private readonly MovementAndPathfindingService _movementService;
@@ -122,11 +142,11 @@ internal class SimulationService
 		_tickAddPathFollow.Clear();
 		_tickNeedsUiRefresh = false;
 
-		if (_worldEntity != default && _ecsWorld.IsAlive(_worldEntity))
+		if (ActiveWorldEntity != default && _ecsWorld.IsAlive(ActiveWorldEntity))
 		{
-			if (_ecsWorld.Has<WorldState>(_worldEntity))
+			if (_ecsWorld.Has<WorldState>(ActiveWorldEntity))
 			{
-				var state = _ecsWorld.Get<WorldState>(_worldEntity);
+				var state = _ecsWorld.Get<WorldState>(ActiveWorldEntity);
 				float elapsed = state.GameElapsedTime + fDelta;
 				float timer = state.TimeOfDayTimer;
 				int index = state.TimeOfDayIndex;
@@ -147,22 +167,22 @@ internal class SimulationService
 					else if (currentHour >= 18f && currentHour < 20f) index = 1;
 					else index = 2;
 				}
-				_ecsWorld.Set(_worldEntity, new WorldState(elapsed, index, timer, state.DayNightCycleEnabled));
+				_ecsWorld.Set(ActiveWorldEntity, new WorldState(elapsed, index, timer, state.DayNightCycleEnabled));
 			}
 
-			if (_ecsWorld.Has<CountdownState>(_worldEntity))
+			if (_ecsWorld.Has<CountdownState>(ActiveWorldEntity))
 			{
-				var countdown = _ecsWorld.Get<CountdownState>(_worldEntity);
+				var countdown = _ecsWorld.Get<CountdownState>(ActiveWorldEntity);
 				if (countdown.Active)
 				{
 					float newDuration = countdown.Duration - fDelta;
 					if (newDuration <= 0f)
 					{
-						_ecsWorld.Set(_worldEntity, new CountdownState(false, 0f, countdown.Text));
+						_ecsWorld.Set(ActiveWorldEntity, new CountdownState(false, 0f, countdown.Text));
 					}
 					else
 					{
-						_ecsWorld.Set(_worldEntity, new CountdownState(true, newDuration, countdown.Text));
+						_ecsWorld.Set(ActiveWorldEntity, new CountdownState(true, newDuration, countdown.Text));
 					}
 				}
 			}
@@ -407,7 +427,7 @@ internal class SimulationService
 					var spawnPos = buildingPos + spawnOffset;
 
 					var ownerComp = _ecsWorld.Get<Owner>(entity);
-					var playerEntity = _ecsWorld.Get<NetworkMappingState>(_worldEntity).PlayerEntity;
+					var playerEntity = _ecsWorld.Get<NetworkMappingState>(ActiveWorldEntity).PlayerEntity;
 					bool isEnemy = ownerComp.PlayerEntity != playerEntity.AsPlayerEntity(_ecsWorld);
 
 					System.Numerics.Vector3? rallyPoint = null;
@@ -516,10 +536,10 @@ internal class SimulationService
 	}
 
 	private int GetTimeOfDayIndex()
-		=> _ecsWorld.GetFieldOrDefault<WorldState, int>(_worldEntity, s => s.TimeOfDayIndex);
+		=> _ecsWorld.GetFieldOrDefault<WorldState, int>(ActiveWorldEntity, s => s.TimeOfDayIndex);
 
 	private float GetDynamicInterpolationFactor()
-		=> _ecsWorld.GetFieldOrDefault<NetworkState, float>(_worldEntity, s => s.DynamicInterpolationFactor, 10f);
+		=> _ecsWorld.GetFieldOrDefault<NetworkState, float>(ActiveWorldEntity, s => s.DynamicInterpolationFactor, 10f);
 
 	public List<Entity> GetEditorArrivedUnits() => _tickArrivedUnits;
 

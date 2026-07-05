@@ -1,4 +1,4 @@
-﻿using Arch.Core;
+using Arch.Core;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Tags;
@@ -12,6 +12,26 @@ internal class MovementAndPathfindingService
 	private readonly WorldAccessor _ecsWorldAccessor;
 	private World _ecsWorld => _ecsWorldAccessor.Current;
 	private readonly Entity _worldEntity;
+	private Entity _resolvedWorldEntity = Entity.Null;
+	private Entity ActiveWorldEntity
+	{
+		get
+		{
+			if (_resolvedWorldEntity == Entity.Null || !_ecsWorld.IsAlive(_resolvedWorldEntity))
+			{
+				if (_worldEntity != Entity.Null && _ecsWorld.IsAlive(_worldEntity))
+				{
+					_resolvedWorldEntity = _worldEntity;
+				}
+				else
+				{
+					var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateQuery;
+					_ecsWorld.Query(in worldQuery, (Entity entity) => _resolvedWorldEntity = entity);
+				}
+			}
+			return _resolvedWorldEntity;
+		}
+	}
 	private readonly NavMeshPathfinder _pathfinder;
 	private readonly TerrainNavMeshService _terrainNavMeshService;
 
@@ -45,10 +65,10 @@ internal class MovementAndPathfindingService
 		_fDelta = delta;
 		_tickArrivedUnits.Clear();
 
-		_hasTerrainState = _ecsWorld.IsAlive(_worldEntity) && _ecsWorld.Has<TerrainState>(_worldEntity);
+		_hasTerrainState = _ecsWorld.IsAlive(ActiveWorldEntity) && _ecsWorld.Has<TerrainState>(ActiveWorldEntity);
 		if (_hasTerrainState)
 		{
-			_currentTerrainState = _ecsWorld.Get<TerrainState>(_worldEntity);
+			_currentTerrainState = _ecsWorld.Get<TerrainState>(ActiveWorldEntity);
 		}
 
 		RebuildSpatialGrid();
