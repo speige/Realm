@@ -40,17 +40,21 @@ public class ChatPanel
 		HideChatInput();
 		if (string.IsNullOrWhiteSpace(text)) return;
 
-		string trimmedText = text.Trim();
-
-		if (trimmedText.StartsWith("/"))
+		bool isMultiplayer = LobbyManager.Instance != null && !LobbyManager.Instance.IsSinglePlayer;
+		if (InGameHUD.Instance != null && (InGameHUD.Instance.Multiplayer.MultiplayerPeer == null || InGameHUD.Instance.Multiplayer.MultiplayerPeer is OfflineMultiplayerPeer))
 		{
-			if (InGameHUD.Instance != null)
-			{
-				InGameHUD.Instance.TryTriggerCheat(trimmedText.Substring(1));
-			}
-			return;
+			isMultiplayer = false;
 		}
 
+		if (!isMultiplayer && InGameHUD.Instance != null)
+		{
+			if (InGameHUD.Instance.TryTriggerCheat(text))
+			{
+				return;
+			}
+		}
+
+		string trimmedText = text.Trim();
 		string sender = LobbyManager.Instance?.LocalPlayer?.Name ?? "Player";
 		if (LobbyManager.Instance != null)
 		{
