@@ -220,6 +220,11 @@ internal class SimulationService
 		_tickAddPathFollow.Clear();
 	}
 
+	public void SetDelta(float fDelta)
+	{
+		_fDelta = fDelta;
+	}
+
 	public ForEachWithEntity<Position, MoveTo, MovementStats> EditorMovementQueryDelegate => _movementService.EditorMovementQueryDelegate;
 	public ForEachWithEntity<InterpolationTarget> InterpolationQueryDelegate => _interpolationQueryDelegate;
 

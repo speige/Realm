@@ -60,6 +60,7 @@ public partial class GameHost
 		EcsWorld?.Mutate<Realm.Ecs.Components.Core.NetworkState>(_worldEntity, (ref Realm.Ecs.Components.Core.NetworkState netState) =>
 			netState.DynamicInterpolationFactor = _networkService.ComputeDynamicInterpolationFactor());
 		var query = Realm.Ecs.Common.QueryCache.AllInterpolationTargetQuery;
+		_simulationService.SetDelta(fDelta);
 		EcsWorld.Query(in query, _simulationService.InterpolationQueryDelegate);
 		UpdateVisualNodesFromEcs(fDelta);
 	}
