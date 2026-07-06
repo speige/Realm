@@ -108,6 +108,43 @@ public class FogOfWarService
 
 	public void Tick(float delta, List<Unit3D> allUnits, Camera3D camera3D, int spectatorPerspective, bool isPlayingReplay, bool isSpectator)
 	{
+		if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+		{
+			if (GodotObject.IsInstanceValid(_fogMeshInstance))
+			{
+				_fogMeshInstance.Visible = false;
+			}
+			if (_worldEnv != null && _worldEnv.Environment != null)
+			{
+				_worldEnv.Environment.FogEnabled = false;
+			}
+			foreach (var unit in allUnits)
+			{
+				if (unit != null && GodotObject.IsInstanceValid(unit))
+				{
+					unit.Visible = true;
+				}
+			}
+			return;
+		}
+
+		string fogOfWarType = FogOfWarType;
+		if (GodotObject.IsInstanceValid(_fogMeshInstance))
+		{
+			bool shouldMeshBeVisible = (fogOfWarType != "visible");
+			if (shouldMeshBeVisible && (isPlayingReplay || isSpectator))
+			{
+				int targetOwnerId = isPlayingReplay
+					? ReplayPlaybackManager.Instance.SpectatorPerspective
+					: spectatorPerspective;
+				if (targetOwnerId == -1)
+				{
+					shouldMeshBeVisible = false;
+				}
+			}
+			_fogMeshInstance.Visible = shouldMeshBeVisible;
+		}
+
 		_fogUpdateTimer += delta;
 		if (_fogUpdateTimer >= 0.1f)
 		{
@@ -120,9 +157,17 @@ public class FogOfWarService
 		{
 			if (_worldEnv != null && _worldEnv.Environment != null)
 			{
+				_worldEnv.Environment.FogEnabled = true;
 				float height = camera3D.GlobalPosition.Y;
 				float scale = 18.0f / Mathf.Max(8.0f, height);
 				_worldEnv.Environment.FogDensity = baseFogDensity * scale;
+			}
+		}
+		else
+		{
+			if (_worldEnv != null && _worldEnv.Environment != null)
+			{
+				_worldEnv.Environment.FogEnabled = false;
 			}
 		}
 	}
