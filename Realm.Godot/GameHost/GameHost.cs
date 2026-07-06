@@ -1366,7 +1366,16 @@ public class {mapName} : IMapScript
 
 	bool IGameAPI.IsPlayerComputer(int playerIndex)
 	{
-		return false;
+		if (playerIndex == 0) return false;
+		if (_multiplayerActive && LobbyManager.Instance != null)
+		{
+			var p = LobbyManager.Instance.PlayerList.Find(x => x.Slot == playerIndex);
+			if (p != null)
+			{
+				return p.PeerId < 0;
+			}
+		}
+		return playerIndex == 1;
 	}
 
 	void IGameAPI.SetUnitColor(IUnit unit, System.Numerics.Vector3 color)

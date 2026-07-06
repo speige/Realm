@@ -385,6 +385,7 @@ public class NetworkService
 			RotationY = snap.RotationY
 		};
 		_ecsWorld.Add(entity, interpolationTarget);
+		_ecsWorld.Add(entity, new UnitFaction(isEnemy));
 
 		mapping.ServerToClientEntityMap[snap.EntityId] = entity;
 		mapping.ClientToServerEntityMap[entity.Id] = snap.EntityId;
