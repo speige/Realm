@@ -61,6 +61,7 @@ public partial class GameHost
 			netState.DynamicInterpolationFactor = _networkService.ComputeDynamicInterpolationFactor());
 		var query = Realm.Ecs.Common.QueryCache.AllInterpolationTargetQuery;
 		EcsWorld.Query(in query, _simulationService.InterpolationQueryDelegate);
+		UpdateVisualNodesFromEcs(fDelta);
 	}
 
 	[Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
