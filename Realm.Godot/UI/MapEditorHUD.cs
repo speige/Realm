@@ -229,7 +229,6 @@ public partial class MapEditorHUD : Control
 
 	private Camera3D _camera3D;
 	private Button _btnVSCode;
-	private VSCodeMdiWindow _vscodeMdi;
 	private bool _isDraggingSlider = false;
 	private Panel _swatchHighlightPanel;
 	private Panel _swatchCliffHighlightPanel;
@@ -722,16 +721,13 @@ public partial class MapEditorHUD : Control
 
 		if (OperatingSystem.IsWindows())
 		{
-			_vscodeMdi = new VSCodeMdiWindow();
-			_vscodeMdi.Visible = false;
-			AddChild(_vscodeMdi);
-			_vscodeMdi.Position = new Vector2(250, 100);
+			VSCodeManager.Instance.Initialize(this);
 
 			_btnVSCode = new Button();
 			_btnVSCode.Name = "BtnVSCode";
 			_btnVSCode.Set("icon_max_width", 0);
 			GetNode<HBoxContainer>("TopLeftBox").AddChild(_btnVSCode);
-			SetupButton(_btnVSCode, "💻 DATA EDITOR", null, 13, "Toggle the embedded VS Code data editor");
+			SetupButton(_btnVSCode, "💻 CODE & DATA", null, 13, "Toggle the embedded VSCode editor");
 		}
 
 		_btnLoad = new Button();
@@ -1577,9 +1573,10 @@ public partial class MapEditorHUD : Control
 
 	public void ToggleVSCodeEditor()
 	{
-		if (_vscodeMdi != null)
+		if (OperatingSystem.IsWindows())
 		{
-			_vscodeMdi.Visible = !_vscodeMdi.Visible;
+			bool isVisible = !VSCodeManager.Instance.IsVisible;
+			VSCodeManager.Instance.SetVisible(isVisible);
 		}
 	}
 

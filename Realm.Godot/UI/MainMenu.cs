@@ -525,7 +525,7 @@ public partial class MainMenu : Control
 		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
 
 		var msg = new Label();
-		msg.Text = Tr("The Map Data Editor is currently installing in the background.\nPlease wait for it to complete.");
+		msg.Text = Tr("The Map VSCode Editor is currently installing in the background.\nPlease wait for it to complete.");
 		msg.HorizontalAlignment = HorizontalAlignment.Center;
 		msg.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
 		msg.AddThemeFontSizeOverride("font_size", 14);
