@@ -455,6 +455,7 @@ public partial class LobbyManager : Node
         try
         {
             int hostPingBaseline = await MeasurePingToRegistryAsync();
+            string localIpAddress = GetLocalIPAddress();
             var registerPayload = new
             {
                 Map = mapDisplayName,
@@ -464,7 +465,8 @@ public partial class LobbyManager : Node
                 PasswordHash = "",
                 MaxPlayers = MaxPlayers,
                 SlotsUsed = PlayerList.Count,
-                HostPingBaseline = hostPingBaseline
+                HostPingBaseline = hostPingBaseline,
+                LocalIP = localIpAddress
             };
 
             HttpResponseMessage? response = null;
@@ -584,16 +586,30 @@ public partial class LobbyManager : Node
             using var doc = JsonDocument.Parse(respText);
             string hostIp = doc.RootElement.GetProperty("hostIP").GetString() ?? "";
             int hostPort = doc.RootElement.GetProperty("hostPort").GetInt32();
+            string? localIp = null;
+            if (doc.RootElement.TryGetProperty("localIP", out var localIpProp))
+            {
+                localIp = localIpProp.GetString();
+            }
             _connectedHostIp = hostIp;
 
-            GD.Print($"[LobbyManager] Joined. Host endpoint coordinates: {hostIp}:{hostPort}. Launching hole punch...");
+            string connectIp = hostIp;
+            int connectPort = hostPort;
+            if (!string.IsNullOrEmpty(localIp) && hostIp == clientPublicIp)
+            {
+                GD.Print($"[LobbyManager] Host is on the same LAN (Public IP: {hostIp}). Connecting to local IP: {localIp}:{ENetPort}");
+                connectIp = localIp;
+                connectPort = ENetPort;
+            }
 
-
-            await UdpHolePuncher.PunchHoleAsync(hostIp, hostPort, ENetPort);
-
+            bool isLocalConnection = IsPrivateIp(connectIp);
+            if (!isLocalConnection)
+            {
+                await UdpHolePuncher.PunchHoleAsync(connectIp, connectPort, ENetPort);
+            }
 
             var peer = new ENetMultiplayerPeer();
-            var err = peer.CreateClient(hostIp, hostPort, localPort: (hostIp == "127.0.0.1" || hostIp == "localhost") ? 0 : ENetPort);
+            var err = peer.CreateClient(connectIp, connectPort, localPort: isLocalConnection ? 0 : ENetPort);
             if (err != Error.Ok)
             {
                 GD.PrintErr($"[LobbyManager] Failed to create ENet Client: {err}");
@@ -610,7 +626,7 @@ public partial class LobbyManager : Node
             {
                 sceneMultiplayer.ServerRelay = false;
             }
-            GD.Print($"[LobbyManager] ENet Client initialized. Connecting to {hostIp}:{hostPort}...");
+            GD.Print($"[LobbyManager] ENet Client initialized. Connecting to {connectIp}:{connectPort}...");
         }
         catch (Exception ex)
         {
@@ -1604,5 +1620,53 @@ public partial class LobbyManager : Node
         {
             BroadcastPlayerList();
         }
+    }
+
+    private static string GetLocalIPAddress()
+    {
+        try
+        {
+            using (var socket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, 0))
+            {
+                socket.Connect("8.8.8.8", 65530);
+                var endPoint = socket.LocalEndPoint as IPEndPoint;
+                if (endPoint != null)
+                {
+                    return endPoint.Address.ToString();
+                }
+            }
+        }
+        catch
+        {
+            try
+            {
+                var host = Dns.GetHostEntry(Dns.GetHostName());
+                foreach (var ip in host.AddressList)
+                {
+                    if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    {
+                        return ip.ToString();
+                    }
+                }
+            }
+            catch { }
+        }
+        return "127.0.0.1";
+    }
+
+    private static bool IsPrivateIp(string ip)
+    {
+        if (ip == "127.0.0.1" || ip == "localhost") return true;
+        if (IPAddress.TryParse(ip, out var address))
+        {
+            byte[] bytes = address.GetAddressBytes();
+            if (bytes.Length == 4)
+            {
+                if (bytes[0] == 10) return true;
+                if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) return true;
+                if (bytes[0] == 192 && bytes[1] == 168) return true;
+            }
+        }
+        return false;
     }
 }

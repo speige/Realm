@@ -107,7 +107,8 @@ app.MapGet("/lobbies", (LobbyRegistry registry, GeoIpService geoIp, HttpContext 
             distance,
             estimatedPing,
             lobby.OriginServerUri,
-            lobby.HostPingBaseline
+            lobby.HostPingBaseline,
+            lobby.LocalIP
         );
     });
 
@@ -150,7 +151,8 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
         LastHeartbeat = DateTime.UtcNow,
         OriginServerUri = peerRegistry.SelfUrl,
         HostToken = hostToken,
-        HostPingBaseline = req.HostPingBaseline
+        HostPingBaseline = req.HostPingBaseline,
+        LocalIP = req.LocalIP
     };
 
     registry.AddOrUpdate(info);
@@ -321,7 +323,7 @@ app.MapPost("/lobbies/join", async (JoinRequest req, LobbyRegistry registry, IHt
         
         Console.WriteLine($"[Registry] Relayed punch request to host {lobby.LobbyId} for client {req.ClientPublicIP}:{req.ClientPublicPort}");
         
-        return Results.Ok(new JoinResponseDto(lobby.HostIP, lobby.HostPort));
+        return Results.Ok(new JoinResponseDto(lobby.HostIP, lobby.HostPort, lobby.LocalIP));
     }
     else
     {

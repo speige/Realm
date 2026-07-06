@@ -16,4 +16,5 @@ public class LobbyInfo
     public string? OriginServerUri { get; set; }
     public string? HostToken { get; set; }
     public int HostPingBaseline { get; set; }
+    public string? LocalIP { get; set; }
 }

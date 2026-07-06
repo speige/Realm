@@ -8,5 +8,6 @@ public record RegisterRequest(
     string? PasswordHash, 
     int MaxPlayers, 
     int SlotsUsed, 
-    int HostPingBaseline
+    int HostPingBaseline,
+    string? LocalIP = null
 );
