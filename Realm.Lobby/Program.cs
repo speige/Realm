@@ -577,6 +577,112 @@ app.MapPost("/seeders/download", async (SeederDownloadRequest req, SeederRegistr
     return Results.BadRequest(new { Message = "Failed to coordinate UDP punch with seeders" });
 });
 
+
+app.MapPost("/api/publish_map", (Realm.Lobby.Models.PublishMapRequest req, DataStoreService db, HttpContext context) =>
+{
+    try {
+        var mapDoc = JsonDocument.Parse(req.MapJson);
+        var root = mapDoc.RootElement;
+        
+        string mapTitle = "";
+        string mapVersion = "1.0"; // default if missing
+        
+        if (root.TryGetProperty("MapProperties", out var mapProps)) {
+            if (mapProps.TryGetProperty("MapName", out var nameProp)) mapTitle = nameProp.GetString() ?? "";
+            if (mapProps.TryGetProperty("MapTitle", out var titleProp)) mapTitle = titleProp.GetString() ?? mapTitle;
+            if (mapProps.TryGetProperty("MapVersion", out var versionProp)) mapVersion = versionProp.GetString() ?? "1.0";
+        }
+        
+        if (string.IsNullOrEmpty(mapTitle)) {
+            return Results.BadRequest(new { Message = "MapTitle is required in map.json MapProperties" });
+        }
+        
+        string compositeKey = $"{mapTitle}_{mapVersion}";
+        var existingMap = db.Get<JsonDocument>("published_maps", compositeKey);
+        if (existingMap != null) {
+            return Results.BadRequest(new { Message = $"Map with Title '{mapTitle}' and Version '{mapVersion}' already exists." });
+        }
+        
+        // Verify contributors
+        var contributors = new HashSet<string>();
+        if (root.TryGetProperty("Contributors", out var contProp) && contProp.ValueKind == JsonValueKind.Array) {
+            foreach (var element in contProp.EnumerateArray()) {
+                var str = element.GetString();
+                if (str != null) contributors.Add(str);
+            }
+        }
+        
+        // Check all referenced asset hashes
+        foreach (var hash in req.ReferencedHashes) {
+            var assetMeta = db.Get<JsonDocument>("asset_signatures", hash);
+            if (assetMeta != null) {
+                var author = assetMeta.RootElement.GetProperty("AuthorUsername").GetString();
+                if (!string.IsNullOrEmpty(author) && !contributors.Contains(author)) {
+                    return Results.BadRequest(new { Message = $"Author '{author}' from asset '{hash}' is missing from the Contributors list." });
+                }
+            }
+        }
+        
+        db.Upsert("published_maps", compositeKey, mapDoc);
+        return Results.Ok(new { Status = "Published", MapId = compositeKey });
+    }
+    catch (Exception ex) {
+        return Results.BadRequest(new { Message = "Invalid JSON or request", Error = ex.Message });
+    }
+});
+
+app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataStoreService db) =>
+{
+    if (!request.HasFormContentType)
+        return Results.BadRequest("Expected multipart/form-data");
+        
+    var form = await request.ReadFormAsync();
+    
+    string hash = form["Hash"].ToString();
+    string signature = form["Signature"].ToString();
+    string authorUsername = form["AuthorUsername"].ToString();
+    string publicKey = form["PublicKey"].ToString();
+    
+    
+    if (string.IsNullOrEmpty(hash) || hash.Contains(".") || hash.Contains("/") || hash.Contains("\\")) return Results.BadRequest("Invalid Hash.");
+
+    
+    var existingMeta = db.Get<JsonDocument>("asset_signatures", hash);
+    if (existingMeta == null) {
+        var metaDoc = JsonSerializer.SerializeToDocument(new { 
+            Signature = signature, 
+            AuthorUsername = authorUsername,
+            PublicKey = publicKey
+        });
+        db.Upsert("asset_signatures", hash, metaDoc);
+    }
+    
+    var file = form.Files.GetFile("File");
+    if (file != null && file.Length > 0)
+    {
+        string archiveDir = ".data/assets";
+        if (!System.IO.Directory.Exists(archiveDir))
+            System.IO.Directory.CreateDirectory(archiveDir);
+            
+        string filePath = System.IO.Path.Combine(archiveDir, hash);
+        if (!System.IO.File.Exists(filePath))
+        {
+            using var stream = new System.IO.FileStream(filePath, System.IO.FileMode.Create);
+            await file.CopyToAsync(stream);
+        }
+    }
+    
+    return Results.Ok(new { Status = "Asset registered" });
+});
+
+app.MapGet("/api/publish_map/asset_author/{hash}", (string hash, DataStoreService db) => {
+    var existingMeta = db.Get<JsonDocument>("asset_signatures", hash);
+    if (existingMeta != null) {
+        return Results.Ok(existingMeta);
+    }
+    return Results.NotFound();
+});
+
 app.MapGet("/api/data/{collection}/{id}", (string collection, string id, DataStoreService db, HttpContext context) =>
 {
     if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();

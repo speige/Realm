@@ -1,6 +1,11 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using NSec.Cryptography;
+using System.Threading.Tasks;
+
 
 public partial class LobbyRoom : Control
 {
@@ -34,6 +39,13 @@ public partial class LobbyRoom : Control
 	private Label? _unstableWarningLabel;
 	private Label? _hostStabilityLabel;
 
+	private Label _authorshipWarningLabel;
+	private Label _primaryAuthorLabel;
+	private Button _otherAuthorsButton;
+	private List<string> _otherAuthorsList = new List<string>();
+
+
+		private static readonly System.Net.Http.HttpClient _sharedHttpClient = new System.Net.Http.HttpClient();
 	private readonly List<Color> _availableColors = new List<Color>
 	{
 		new Color(0.8f, 0.1f, 0.1f), // Red
@@ -166,6 +178,35 @@ public partial class LobbyRoom : Control
 		var mapDrawer = new TacticalMap();
 		_mapFrame.AddChild(mapDrawer);
 		mapDrawer.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+
+		
+		_authorshipWarningLabel = new Label();
+		_authorshipWarningLabel.Text = "⚠️ Unable to verify map authorship";
+		_authorshipWarningLabel.AddThemeColorOverride("font_color", new Color(1, 0.4f, 0.4f));
+		_authorshipWarningLabel.AddThemeFontSizeOverride("font_size", 12);
+		_authorshipWarningLabel.Visible = false;
+		GetNode<VBoxContainer>("BriefingPanel/VBoxContainer").AddChild(_authorshipWarningLabel);
+		
+		_primaryAuthorLabel = new Label();
+		_primaryAuthorLabel.Text = "Author: Unknown";
+		_primaryAuthorLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		_primaryAuthorLabel.AddThemeFontSizeOverride("font_size", 12);
+		GetNode<VBoxContainer>("BriefingPanel/VBoxContainer").AddChild(_primaryAuthorLabel);
+		
+		_otherAuthorsButton = new Button();
+		_otherAuthorsButton.Text = "Other Authors";
+		_otherAuthorsButton.CustomMinimumSize = new Vector2(100, 24);
+		_otherAuthorsButton.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		_otherAuthorsButton.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		_otherAuthorsButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		_otherAuthorsButton.Pressed += () => {
+			if (_otherAuthorsList.Count > 0) {
+				ShowConfirmationDialog("Contributors:\n" + string.Join("\n", _otherAuthorsList), null);
+			} else {
+				ShowConfirmationDialog("No other contributors listed.", null);
+			}
+		};
+		GetNode<VBoxContainer>("BriefingPanel/VBoxContainer").AddChild(_otherAuthorsButton);
 
 		UpdateSelectedMapUI();
 	}
@@ -309,6 +350,41 @@ public partial class LobbyRoom : Control
 			_startButton.Disconnect(Control.SignalName.MouseEntered, mouseEnteredCallable);
 		}
 		_startButton.MouseEntered += OnStartButtonMouseEntered;
+	}
+
+	
+	private void ShowConfirmationDialog(string message, Action onConfirm)
+	{
+		var overlay = new ColorRect();
+		overlay.Color = new Color(0, 0, 0, 0.5f);
+		overlay.SetAnchorsPreset(LayoutPreset.FullRect);
+		AddChild(overlay);
+
+		var panel = new PanelContainer();
+		panel.CustomMinimumSize = new Vector2(400, 200);
+		panel.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		panel.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+		
+		var center = new CenterContainer();
+		center.SetAnchorsPreset(LayoutPreset.FullRect);
+		overlay.AddChild(center);
+		center.AddChild(panel);
+
+		var vbox = new VBoxContainer();
+		panel.AddChild(vbox);
+
+		var lblMsg = new Label();
+		lblMsg.Text = message;
+		lblMsg.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+		vbox.AddChild(lblMsg);
+
+		var btnConfirm = new Button();
+		btnConfirm.Text = "OK";
+		btnConfirm.Pressed += () => {
+			overlay.QueueFree();
+			onConfirm?.Invoke();
+		};
+		vbox.AddChild(btnConfirm);
 	}
 
 	private string FormatMapDisplayName(string rawName)
@@ -500,7 +576,84 @@ public partial class LobbyRoom : Control
 		UpdateSelectedMapUI();
 	}
 
-	private void UpdateSelectedMapUI()
+
+		private async void VerifyMapAuthorship(string mapName)
+	{
+		_authorshipWarningLabel.Visible = false;
+		_primaryAuthorLabel.Text = "Author: Unknown";
+		_otherAuthorsList.Clear();
+		
+		string mapJsonPath = ProjectSettings.GlobalizePath("user://maps/" + mapName + "/map.json");
+		if (!System.IO.File.Exists(mapJsonPath))
+		{
+			return; 
+		}
+		
+		try
+		{
+			string jsonContent = System.IO.File.ReadAllText(mapJsonPath);
+			var mapDoc = JsonNode.Parse(jsonContent);
+			if (mapDoc != null && mapDoc["Contributors"] is JsonArray contArr)
+			{
+				foreach (var node in contArr)
+				{
+					if (node != null)
+					{
+						_otherAuthorsList.Add(node.GetValue<string>());
+					}
+				}
+			}
+			
+			byte[] fileBytes = System.IO.File.ReadAllBytes(mapJsonPath);
+			string hash = MapAssetManager.ComputeBlake3(fileBytes);
+			
+			string seedServerUrl = LobbyManager.Instance.RegistryServerUrl;
+			var assetAuthorRes = await _sharedHttpClient.GetAsync(seedServerUrl + "/api/publish_map/asset_author/" + hash);
+			if (assetAuthorRes.IsSuccessStatusCode)
+			{
+				string assetAuthorJson = await assetAuthorRes.Content.ReadAsStringAsync();
+				var assetMeta = JsonNode.Parse(assetAuthorJson);
+				if (assetMeta != null)
+				{
+					string author = assetMeta["AuthorUsername"]?.GetValue<string>() ?? "Unknown";
+					string signatureB64 = assetMeta["Signature"]?.GetValue<string>();
+					string pubKeyB64 = assetMeta["PublicKey"]?.GetValue<string>();
+					
+					if (string.IsNullOrEmpty(signatureB64) || string.IsNullOrEmpty(pubKeyB64))
+					{
+						_authorshipWarningLabel.Visible = true;
+						return;
+					}
+					
+					byte[] signatureBytes = Convert.FromBase64String(signatureB64);
+					byte[] pubKeyBytes = Convert.FromBase64String(pubKeyB64);
+					byte[] hashBytes = System.Text.Encoding.UTF8.GetBytes(hash);
+					
+					var publicKey = PublicKey.Import(SignatureAlgorithm.Ed25519, pubKeyBytes, KeyBlobFormat.RawPublicKey);
+					bool isValid = SignatureAlgorithm.Ed25519.Verify(publicKey, hashBytes, signatureBytes);
+					
+					if (isValid)
+					{
+						_primaryAuthorLabel.Text = "Author: " + author;
+					}
+					else
+					{
+						_authorshipWarningLabel.Visible = true;
+					}
+				}
+			}
+			else
+			{
+				_authorshipWarningLabel.Visible = true;
+			}
+		}
+		catch
+		{
+			_authorshipWarningLabel.Visible = true;
+		}
+	}
+
+private void UpdateSelectedMapUI()
 	{
 		string currentMap = LobbyManager.Instance.ActiveMapName ?? "melee";
 		int selectedIndex = _lobbyRoomMaps.FindIndex(m => m.PathName == currentMap);
@@ -522,6 +675,11 @@ public partial class LobbyRoom : Control
 				_mapNameLabel.Text = _lobbyRoomMaps[0].DisplayName.ToUpper();
 				_briefingLabel.Text = _lobbyRoomMaps[0].Description;
 			}
+		}
+
+		if (_lobbyRoomMaps.Count > 0 && selectedIndex >= 0)
+		{
+			VerifyMapAuthorship(_lobbyRoomMaps[selectedIndex].PathName);
 		}
 	}
 

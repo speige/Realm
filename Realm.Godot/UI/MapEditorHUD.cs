@@ -1,6 +1,13 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Net.Http;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using HttpClient = System.Net.Http.HttpClient;
+using NSec.Cryptography;
+using System.Linq;
+
 using MirrorMode = Realm.Ecs.Components.Core.MirrorMode;
 
 public partial class MapEditorHUD : Control
@@ -2466,15 +2473,218 @@ public class {mapName} : IMapScript
 		return ProjectSettings.GlobalizePath("res://");
 	}
 
-	private void PublishMapAction()
+
+	private NSec.Cryptography.Key GetOrGenerateAuthorshipKey()
+	{
+		string keyDir = ProjectSettings.GlobalizePath("user://appdata/keys/");
+		if (!System.IO.Directory.Exists(keyDir))
+		{
+			System.IO.Directory.CreateDirectory(keyDir);
+		}
+		
+		string keyPath = System.IO.Path.Combine(keyDir, "authorship_key.pem");
+		if (System.IO.File.Exists(keyPath))
+		{
+			byte[] keyBytes = System.IO.File.ReadAllBytes(keyPath);
+			return NSec.Cryptography.Key.Import(SignatureAlgorithm.Ed25519, keyBytes, KeyBlobFormat.RawPrivateKey);
+		}
+		else
+		{
+			var key = NSec.Cryptography.Key.Create(SignatureAlgorithm.Ed25519);
+			byte[] exported = key.Export(KeyBlobFormat.RawPrivateKey);
+			System.IO.File.WriteAllBytes(keyPath, exported);
+			
+			// Show warning to backup
+			ShowFeedback("A new authorship key has been generated at " + keyPath + ". Please backup this file to retain your authorship identity.");
+			return key;
+		}
+	}
+
+	private async void PublishMapAction()
 	{
 		if (GameHost.Instance != null)
 		{
 			GameHost.Instance.SaveMapToFile();
 		}
 		ShowFeedback(TranslationServer.Translate("Compiling terrain shaders & entity data..."));
-		var timer = GetTree().CreateTimer(1.0f);
-		timer.Timeout += () => ShowFeedback(TranslationServer.Translate("Map compiled & published successfully!"));
+		
+		// Compile triggers to .dll
+		string workspace = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		try
+		{
+			if (System.IO.Directory.Exists(workspace))
+			{
+				await System.Threading.Tasks.Task.Run(() => 
+				{
+					var compileProcess = new System.Diagnostics.Process();
+					compileProcess.StartInfo.FileName = "dotnet";
+					compileProcess.StartInfo.Arguments = "build -c Release";
+					compileProcess.StartInfo.WorkingDirectory = workspace;
+					compileProcess.StartInfo.CreateNoWindow = true;
+					compileProcess.StartInfo.UseShellExecute = false;
+					compileProcess.Start();
+					compileProcess.WaitForExit();
+				});
+				ShowFeedback(TranslationServer.Translate("Triggers compiled successfully."));
+			}
+		}
+		catch (Exception ex)
+		{
+			ShowFeedback(string.Format(TranslationServer.Translate("Compilation error: {0}"), ex.Message));
+		}
+		
+		try
+		{
+			var authorshipKey = GetOrGenerateAuthorshipKey();
+			string currentUsername = "MapAuthor"; // Could be fetched from a config
+			
+			var referencedHashes = new List<string>();
+			var allFiles = System.IO.Directory.GetFiles(workspace, "*", System.IO.SearchOption.AllDirectories);
+			
+			string seedServerUrl = GameHost.Instance != null && GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
+			
+			using (var httpClient = new System.Net.Http.HttpClient())
+			{
+				foreach (var file in allFiles)
+				{
+					if (file.EndsWith("map.json") || file.EndsWith("authorship_key.pem")) continue;
+					
+					byte[] fileBytes = System.IO.File.ReadAllBytes(file);
+					string hash = MapAssetManager.ComputeBlake3(fileBytes);
+					
+					byte[] hashBytes = System.Text.Encoding.UTF8.GetBytes(hash);
+					byte[] signatureBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, hashBytes);
+					string signatureStr = Convert.ToBase64String(signatureBytes);
+					
+					referencedHashes.Add(hash);
+					
+					var existsRes = await httpClient.GetAsync(seedServerUrl + "/api/publish_map/asset_author/" + hash);
+					if (!existsRes.IsSuccessStatusCode)
+					{
+						using var form = new System.Net.Http.MultipartFormDataContent();
+						form.Add(new System.Net.Http.StringContent(hash), "Hash");
+						form.Add(new System.Net.Http.StringContent(signatureStr), "Signature");
+						form.Add(new System.Net.Http.StringContent(currentUsername), "AuthorUsername");
+						form.Add(new System.Net.Http.StringContent(Convert.ToBase64String(authorshipKey.PublicKey.Export(KeyBlobFormat.RawPublicKey))), "PublicKey");
+						
+						var fileContent = new System.Net.Http.ByteArrayContent(fileBytes);
+						form.Add(fileContent, "File", System.IO.Path.GetFileName(file));
+						
+						await httpClient.PostAsync(seedServerUrl + "/api/publish_map/upload_asset", form);
+					}
+				}
+			}
+			
+			// Load map.json, check and update contributors
+			string mapJsonPath = System.IO.Path.Combine(workspace, "map.json");
+			if (System.IO.File.Exists(mapJsonPath))
+			{
+				string mapJsonContent = System.IO.File.ReadAllText(mapJsonPath);
+				
+				var options = new JsonSerializerOptions { WriteIndented = true };
+				var mapDoc = JsonNode.Parse(mapJsonContent) as JsonObject;
+				
+				if (mapDoc != null)
+				{
+					var contributorsList = new HashSet<string>();
+					if (mapDoc.TryGetPropertyValue("Contributors", out var contNode) && contNode is JsonArray arr)
+					{
+						foreach (var node in arr)
+						{
+							if (node != null)
+							{
+								contributorsList.Add(node.GetValue<string>());
+							}
+						}
+					}
+					else
+					{
+						mapDoc["Contributors"] = new JsonArray();
+					}
+					
+					// Ensure all asset authors are in the contributors list
+					using (var httpClient = new System.Net.Http.HttpClient())
+					{
+						foreach (var hash in referencedHashes)
+						{
+							var assetAuthorRes = await httpClient.GetAsync(seedServerUrl + "/api/publish_map/asset_author/" + hash);
+							if (assetAuthorRes.IsSuccessStatusCode)
+							{
+								string assetAuthorJson = await assetAuthorRes.Content.ReadAsStringAsync();
+								var assetMeta = JsonNode.Parse(assetAuthorJson);
+								if (assetMeta != null && assetMeta["AuthorUsername"] != null)
+								{
+									string author = assetMeta["AuthorUsername"].GetValue<string>();
+									if (!string.IsNullOrEmpty(author))
+									{
+										contributorsList.Add(author);
+									}
+								}
+							}
+						}
+					}
+					
+					// Add self
+					contributorsList.Add(currentUsername);
+					
+					var newContributorsArr = new JsonArray();
+					foreach (var cont in contributorsList)
+					{
+						newContributorsArr.Add(cont);
+					}
+					mapDoc["Contributors"] = newContributorsArr;
+					
+					string updatedMapJson = mapDoc.ToJsonString(options);
+					System.IO.File.WriteAllText(mapJsonPath, updatedMapJson);
+					
+					byte[] mapBytes = System.IO.File.ReadAllBytes(mapJsonPath);
+					string mapHash = MapAssetManager.ComputeBlake3(mapBytes);
+					byte[] mapHashBytes = System.Text.Encoding.UTF8.GetBytes(mapHash);
+					byte[] mapSigBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, mapHashBytes);
+					
+					using (var httpClient = new System.Net.Http.HttpClient())
+					{
+						using var form = new System.Net.Http.MultipartFormDataContent();
+						form.Add(new System.Net.Http.StringContent(mapHash), "Hash");
+						form.Add(new System.Net.Http.StringContent(Convert.ToBase64String(mapSigBytes)), "Signature");
+						form.Add(new System.Net.Http.StringContent(currentUsername), "AuthorUsername");
+						form.Add(new System.Net.Http.StringContent(Convert.ToBase64String(authorshipKey.PublicKey.Export(KeyBlobFormat.RawPublicKey))), "PublicKey");
+						
+						var fileContent = new System.Net.Http.ByteArrayContent(mapBytes);
+						form.Add(fileContent, "File", "map.json");
+						
+						await httpClient.PostAsync(seedServerUrl + "/api/publish_map/upload_asset", form);
+						
+						var publishReq = new 
+						{
+							MapJson = updatedMapJson,
+							ReferencedHashes = referencedHashes
+						};
+						
+						var pubContent = new StringContent(JsonSerializer.Serialize(publishReq), System.Text.Encoding.UTF8, "application/json");
+						var pubRes = await httpClient.PostAsync(seedServerUrl + "/api/publish_map", pubContent);
+						
+						if (pubRes.IsSuccessStatusCode)
+						{
+							ShowFeedback(TranslationServer.Translate("Map compiled & published successfully!"));
+						}
+						else
+						{
+							string errText = await pubRes.Content.ReadAsStringAsync();
+							ShowFeedback("Failed to publish: " + errText);
+						}
+					}
+				}
+			}
+			else
+			{
+				ShowFeedback(TranslationServer.Translate("map.json not found in workspace, unable to publish."));
+			}
+		}
+		catch (Exception ex)
+		{
+			ShowFeedback(string.Format(TranslationServer.Translate("Publish error: {0}"), ex.Message));
+		}
 	}
 
 	public void CycleTextureSwatch(bool forward)
@@ -3501,17 +3711,17 @@ public class {mapName} : IMapScript
 		if (@event is InputEventKey keyEvent && keyEvent.Pressed)
 		{
 			bool ctrl = keyEvent.CtrlPressed;
-			if (keyEvent.Keycode == Key.F1 || (keyEvent.Keycode == Key.Key1 && ctrl))
+			if (keyEvent.Keycode == Godot.Key.F1 || (keyEvent.Keycode == Godot.Key.Key1 && ctrl))
 			{
 				SwitchModule(EditorModule.Terrain);
 				GetViewport().SetInputAsHandled();
 			}
-			else if (keyEvent.Keycode == Key.F2 || (keyEvent.Keycode == Key.Key2 && ctrl))
+			else if (keyEvent.Keycode == Godot.Key.F2 || (keyEvent.Keycode == Godot.Key.Key2 && ctrl))
 			{
 				SwitchModule(EditorModule.TextureDeco);
 				GetViewport().SetInputAsHandled();
 			}
-			else if (keyEvent.Keycode == Key.F3 || (keyEvent.Keycode == Key.Key3 && ctrl))
+			else if (keyEvent.Keycode == Godot.Key.F3 || (keyEvent.Keycode == Godot.Key.Key3 && ctrl))
 			{
 				SwitchModule(EditorModule.Objects);
 				GetViewport().SetInputAsHandled();
@@ -3775,7 +3985,7 @@ public class {mapName} : IMapScript
 					{
 						if (mouseEvent.ButtonIndex == MouseButton.Left)
 						{
-							if (Input.IsKeyPressed(Key.Shift))
+							if (Input.IsKeyPressed(Godot.Key.Shift))
 							{
 								SelectCliffTexture(index, _swatchColors[index]);
 							}

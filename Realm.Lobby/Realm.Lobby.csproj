@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="DBreeze" Version="1.138.2026.603" />
     <PackageReference Include="MaxMind.GeoIP2" Version="5.2.0" />
+    <PackageReference Include="NSec.Cryptography" Version="26.4.0" />
   </ItemGroup>
 
 </Project>
