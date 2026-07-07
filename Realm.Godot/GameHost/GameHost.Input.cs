@@ -3445,15 +3445,35 @@ public partial class GameHost
 		if (!UnitRegistry.TryGetValue(unitId, out var meta)) return null;
 
 		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
+
+		int ownerPeerId = _localPeerId;
+		if (isEnemy)
+		{
+			ownerPeerId = -1; // Default to AI
+			var mappingEntity = _worldEntity;
+			if (mappingEntity != Entity.Null && EcsWorld.Has<NetworkMappingState>(mappingEntity))
+			{
+				var mapping = EcsWorld.Get<NetworkMappingState>(mappingEntity);
+				foreach (var kvp in mapping.PeerIdToPlayerEntityMap)
+				{
+					if (kvp.Key != _localPeerId)
+					{
+						ownerPeerId = kvp.Key;
+						break;
+					}
+				}
+			}
+		}
+		bool actualIsEnemy = NetworkService.ArePeersEnemies(_localPeerId, ownerPeerId);
 		
 		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(unitId, meta.Speed == 0f);
 
-		string name = isEnemy ? _unitSpawnService.GetEnemyUnitName(unitId, meta.Name) : meta.Name;
+		string name = actualIsEnemy ? _unitSpawnService.GetEnemyUnitName(unitId, meta.Name) : meta.Name;
 
 		var godotPosition = new Vector3(position.X, position.Y, position.Z);
 		var entity = CreateEcsUnit(unitId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, godotPosition, playerOwner);
 
-		var unit3D = SpawnUnit3D(entity, unitId, modelPath, godotPosition, meta.Speed == 0f, isEnemy, isFromQueue);
+		var unit3D = SpawnUnit3D(entity, unitId, modelPath, godotPosition, meta.Speed == 0f, actualIsEnemy, isFromQueue);
 
 		if (rallyPoint.HasValue && meta.Speed > 0f)
 		{

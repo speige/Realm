@@ -724,17 +724,37 @@ public partial class GameHost : Node3D, IGameAPI
 			throw new ArgumentException($"Unit ID '{unitTypeId}' not found in registry.");
 		}
 		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
+
+		int ownerPeerId = _localPeerId;
+		if (isEnemy)
+		{
+			ownerPeerId = -1; // Default to AI
+			var mappingEntity = _worldEntity;
+			if (mappingEntity != Entity.Null && EcsWorld.Has<NetworkMappingState>(mappingEntity))
+			{
+				var mapping = EcsWorld.Get<NetworkMappingState>(mappingEntity);
+				foreach (var kvp in mapping.PeerIdToPlayerEntityMap)
+				{
+					if (kvp.Key != _localPeerId)
+					{
+						ownerPeerId = kvp.Key;
+						break;
+					}
+				}
+			}
+		}
+		bool actualIsEnemy = NetworkService.ArePeersEnemies(_localPeerId, ownerPeerId);
 		
 		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : _unitSpawnService.GetFallbackModelPath(unitTypeId, meta.Speed == 0f);
 
-		string name = isEnemy ? _unitSpawnService.GetEnemyUnitName(unitTypeId, meta.Name) : meta.Name;
+		string name = actualIsEnemy ? _unitSpawnService.GetEnemyUnitName(unitTypeId, meta.Name) : meta.Name;
 
 		var entity = CreateEcsUnit(unitTypeId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, pos, playerOwner);
 		if (bypassPopulation)
 		{
 			EcsWorld.Add(entity, new BypassPopulationTag());
 		}
-		var unit3D = SpawnUnit3D(entity, unitTypeId, modelPath, pos, meta.Speed == 0f, isEnemy, bypassPopulation);
+		var unit3D = SpawnUnit3D(entity, unitTypeId, modelPath, pos, meta.Speed == 0f, actualIsEnemy, bypassPopulation);
 		
 		return GetUnitWrapper(entity);
 	}

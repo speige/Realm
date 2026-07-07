@@ -355,7 +355,13 @@ public class NetworkService
 		{
 			ownerPlayerEntity = pe;
 		}
-		isEnemy = ownerPlayerEntity != mapping.PlayerEntity;
+		int localPeerId = 1;
+		var mainLoop = Engine.GetMainLoop();
+		if (mainLoop is SceneTree tree)
+		{
+			localPeerId = tree.GetMultiplayer().GetUniqueId();
+		}
+		isEnemy = ArePeersEnemies(localPeerId, snap.OwnerPlayerEntityId);
 
 		var entity = _ecsWorld.Create();
 		_ecsWorld.Add(entity, new DefinitionId(snap.UnitId));
@@ -1055,5 +1061,25 @@ public class NetworkService
 			isLost = false;
 		}
 		IsConnectionLost = isLost;
+	}
+
+	public static bool ArePeersEnemies(int peerId1, int peerId2)
+	{
+		if (LobbyManager.Instance == null || LobbyManager.Instance.PlayerList == null || LobbyManager.Instance.PlayerList.Count == 0)
+		{
+			return peerId1 != peerId2;
+		}
+
+		var p1 = LobbyManager.Instance.PlayerList.Find(x => x.PeerId == peerId1);
+		var p2 = LobbyManager.Instance.PlayerList.Find(x => x.PeerId == peerId2);
+
+		if (p1 == null || p2 == null)
+		{
+			string t1 = p1?.Team ?? "Team 1";
+			string t2 = p2?.Team ?? "Team 2";
+			return t1 != t2;
+		}
+
+		return p1.Team != p2.Team;
 	}
 }
