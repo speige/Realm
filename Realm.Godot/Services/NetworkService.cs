@@ -646,9 +646,9 @@ public class NetworkService
 		}
 		else if (cmd.CommandType == "train")
 		{
-			var goldResourceId = new ResourceId("gold");
-			var woodResourceId = new ResourceId("wood");
-			var stoneResourceId = new ResourceId("stone");
+			var goldResourceId = new ResourceId("Gold");
+			var woodResourceId = new ResourceId("Wood");
+			var stoneResourceId = new ResourceId("Stone");
 			foreach (int serverId in cmd.UnitEntityIds)
 			{
 				var entity = FindServerEntity(serverId, allUnits);
@@ -691,9 +691,9 @@ public class NetworkService
 		}
 		else if (cmd.CommandType == "cancel_train")
 		{
-			var goldResourceId = new ResourceId("gold");
-			var woodResourceId = new ResourceId("wood");
-			var stoneResourceId = new ResourceId("stone");
+			var goldResourceId = new ResourceId("Gold");
+			var woodResourceId = new ResourceId("Wood");
+			var stoneResourceId = new ResourceId("Stone");
 			foreach (int serverId in cmd.UnitEntityIds)
 			{
 				var entity = FindServerEntity(serverId, allUnits);

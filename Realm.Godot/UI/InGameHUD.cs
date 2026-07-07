@@ -1248,7 +1248,8 @@ public partial class InGameHUD : Control
 		btn.Text = "";
 		btn.ExpandIcon = true;
 		btn.Icon = GD.Load<Texture2D>(iconPath);
-		btn.TooltipText = TranslationServer.Translate(tooltip);
+		string trans = TranslationServer.Translate(tooltip);
+		btn.TooltipText = string.IsNullOrEmpty(trans) ? tooltip : trans;
 		btn.CustomMinimumSize = new Vector2(50, 50);
 		btn.FocusMode = FocusModeEnum.None;
 		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
@@ -1263,7 +1264,8 @@ public partial class InGameHUD : Control
 		btn.Text = "";
 		btn.ExpandIcon = true;
 		btn.Icon = GD.Load<Texture2D>(iconPath);
-		btn.TooltipText = TranslationServer.Translate(tooltip);
+		string trans = TranslationServer.Translate(tooltip);
+		btn.TooltipText = string.IsNullOrEmpty(trans) ? tooltip : trans;
 		btn.CustomMinimumSize = new Vector2(80, 80);
 		btn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		btn.SizeFlagsVertical = SizeFlags.ExpandFill;
