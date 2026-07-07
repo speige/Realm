@@ -2,20 +2,20 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bubj3u2l2c2e1"
-path.s3tc="res://.godot/imported/armored_battlelord_0.png-a992ac33b6b85f5510a4dd4d9ef05222.s3tc.ctex"
+uid="uid://dhy58lmibft7m"
+path.s3tc="res://.godot/imported/armored_warrior_Image_0.png-e5d624841bb6073359e3b6e4c9aa3d82.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
 generator_parameters={
-"md5": "b38a1fe2f6ccf26b3752847807df39fe"
+"md5": "ec706b47364362c4f972e7cae71a5cc7"
 }
 
 [deps]
 
-source_file="res://Assets/3d/Characters/armored_battlelord_0.png"
-dest_files=["res://.godot/imported/armored_battlelord_0.png-a992ac33b6b85f5510a4dd4d9ef05222.s3tc.ctex"]
+source_file="res://Assets/3d/Characters/armored_warrior_Image_0.png"
+dest_files=["res://.godot/imported/armored_warrior_Image_0.png-e5d624841bb6073359e3b6e4c9aa3d82.s3tc.ctex"]
 
 [params]
 

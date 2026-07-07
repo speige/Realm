@@ -57,6 +57,8 @@ public partial class Unit3D : CharacterBody3D
 	}
 
 	private Node3D _modelNode;
+	private AnimationPlayer _animationPlayer;
+	private string _currentAnimation = string.Empty;
 	private MeshInstance3D _selectionRing;
 	private bool _isSelected = false;
 
@@ -213,6 +215,7 @@ public partial class Unit3D : CharacterBody3D
 			{
 				_modelNode = packedScene.Instantiate<Node3D>();
 				AddChild(_modelNode);
+				_animationPlayer = FindAnimationPlayer(_modelNode);
 				
 
 				if (IsBuilding)
@@ -253,6 +256,53 @@ public partial class Unit3D : CharacterBody3D
 			GD.PrintErr($"Error loading model {modelPath}: {ex.Message}");
 			CreateFallbackMesh();
 		}
+	}
+
+	public void PlayAnimation(string animName)
+	{
+		if (_animationPlayer == null || !GodotObject.IsInstanceValid(_animationPlayer)) return;
+
+		StringName resolved = ResolveAnimationName(animName);
+		if (resolved == null) return;
+
+		if (_currentAnimation == resolved.ToString()) return;
+
+		_currentAnimation = resolved.ToString();
+
+		var animResource = _animationPlayer.GetAnimation(resolved);
+		if (animResource != null)
+			animResource.LoopMode = Animation.LoopModeEnum.Linear;
+
+		_animationPlayer.Play(resolved);
+	}
+
+	private AnimationPlayer FindAnimationPlayer(Node root)
+	{
+		if (root is AnimationPlayer ap) return ap;
+		foreach (var child in root.GetChildren())
+		{
+			var found = FindAnimationPlayer(child);
+			if (found != null) return found;
+		}
+		return null;
+	}
+
+	private StringName ResolveAnimationName(string animName)
+	{
+		if (_animationPlayer == null) return null;
+		var animations = _animationPlayer.GetAnimationList();
+		string prefixed = $"Armature|Armature|{animName}";
+		foreach (var name in animations)
+		{
+			if (name.ToString().Equals(prefixed, System.StringComparison.OrdinalIgnoreCase))
+				return name;
+		}
+		foreach (var name in animations)
+		{
+			if (name.ToString().Equals(animName, System.StringComparison.OrdinalIgnoreCase))
+				return name;
+		}
+		return null;
 	}
 
 	public void ApplyModelTint(Color color)

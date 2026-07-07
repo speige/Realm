@@ -2,20 +2,20 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://3l6w3nk2orcd"
-path.s3tc="res://.godot/imported/adventurer_1.png-e0c172cef2ee7b758fa48ed78258d049.s3tc.ctex"
+uid="uid://2msc1mlweipx"
+path.s3tc="res://.godot/imported/adventurer_Image_1.png-755a4e293d18bcd1da365625d288f9bb.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
 generator_parameters={
-"md5": "a8ec96ee2335d1ba06c5beca14dafb7e"
+"md5": "1f3288c4c147774dedb4f4edf6fc24f7"
 }
 
 [deps]
 
-source_file="res://Assets/3d/Characters/adventurer_1.png"
-dest_files=["res://.godot/imported/adventurer_1.png-e0c172cef2ee7b758fa48ed78258d049.s3tc.ctex"]
+source_file="res://Assets/3d/Characters/adventurer_Image_1.png"
+dest_files=["res://.godot/imported/adventurer_Image_1.png-755a4e293d18bcd1da365625d288f9bb.s3tc.ctex"]
 
 [params]
 

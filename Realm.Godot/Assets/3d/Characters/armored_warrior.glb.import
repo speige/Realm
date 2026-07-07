@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://drcelh106cq5b"
-path="res://.godot/imported/armor_knight.glb-834e62e0e8532d3dbb5e4a82acc61eab.scn"
+uid="uid://cyr24r02jya8s"
+path="res://.godot/imported/armored_warrior.glb-713cf360854346d528c6c4be9da4936e.scn"
 
 [deps]
 
-source_file="res://Assets/3d/Characters/armor_knight.glb"
-dest_files=["res://.godot/imported/armor_knight.glb-834e62e0e8532d3dbb5e4a82acc61eab.scn"]
+source_file="res://Assets/3d/Characters/armored_warrior.glb"
+dest_files=["res://.godot/imported/armored_warrior.glb-713cf360854346d528c6c4be9da4936e.scn"]
 
 [params]
 

@@ -2,20 +2,20 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b2fygb0axn243"
-path.s3tc="res://.godot/imported/armor_knight_1.png-cc2af6ce5064971c092d5f0f76721d2c.s3tc.ctex"
+uid="uid://bagoe3wtpt236"
+path.s3tc="res://.godot/imported/adventurer_Image_0.png-0b4679df4e77239dcc1e77e81c9266ba.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
 generator_parameters={
-"md5": "b116676f6705a4fa36bd4666de2f6a61"
+"md5": "6d77c40e1a07d7819246366b2a958a49"
 }
 
 [deps]
 
-source_file="res://Assets/3d/Characters/armor_knight_1.png"
-dest_files=["res://.godot/imported/armor_knight_1.png-cc2af6ce5064971c092d5f0f76721d2c.s3tc.ctex"]
+source_file="res://Assets/3d/Characters/adventurer_Image_0.png"
+dest_files=["res://.godot/imported/adventurer_Image_0.png-0b4679df4e77239dcc1e77e81c9266ba.s3tc.ctex"]
 
 [params]
 

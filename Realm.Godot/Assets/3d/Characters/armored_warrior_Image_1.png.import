@@ -2,20 +2,20 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cbgdy2hq1hay4"
-path.s3tc="res://.godot/imported/armored_dragon_0.png-72ad44fcb5d41d180975b0a16b729253.s3tc.ctex"
+uid="uid://ckmcfmfiue25k"
+path.s3tc="res://.godot/imported/armored_warrior_Image_1.png-3797209f87d84d890956a212ee64eb9f.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
 generator_parameters={
-"md5": "5af8414cca07155a4c43280052676a19"
+"md5": "8ba220cac3713de161622dc652b1794a"
 }
 
 [deps]
 
-source_file="res://Assets/3d/Characters/armored_dragon_0.png"
-dest_files=["res://.godot/imported/armored_dragon_0.png-72ad44fcb5d41d180975b0a16b729253.s3tc.ctex"]
+source_file="res://Assets/3d/Characters/armored_warrior_Image_1.png"
+dest_files=["res://.godot/imported/armored_warrior_Image_1.png-3797209f87d84d890956a212ee64eb9f.s3tc.ctex"]
 
 [params]
 

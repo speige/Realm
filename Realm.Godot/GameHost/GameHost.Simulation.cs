@@ -240,7 +240,32 @@ public partial class GameHost
 					float scaleVal = EcsWorld.Has<CollisionScale>(entity) ? EcsWorld.Get<CollisionScale>(entity).Value : 1.0f;
 					unit3D.Scale = Vector3.One * scaleVal;
 				}
+
+				unit3D.PlayAnimation(DetermineUnitAnimation(entity));
 			}
 		});
+	}
+
+	private string DetermineUnitAnimation(Entity entity)
+	{
+		if (EcsWorld.Has<Dead>(entity))
+			return "Death";
+
+		bool isMoving = EcsWorld.Has<MoveTo>(entity) && EcsWorld.Has<Velocity>(entity)
+			&& EcsWorld.Get<Velocity>(entity).Value.LengthSquared() > 0.01f;
+
+		if (isMoving)
+			return "Walk";
+
+		if (EcsWorld.Has<AttackTarget>(entity))
+			return "Attack";
+
+		if (EcsWorld.Has<HealingTarget>(entity))
+			return "Spell_Cast";
+
+		if (EcsWorld.Has<Gatherer>(entity) && !EcsWorld.Get<Gatherer>(entity).ReturningToBase)
+			return "Labor";
+
+		return "Idle";
 	}
 }

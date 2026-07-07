@@ -2,20 +2,20 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dp46ipb681px8"
-path.s3tc="res://.godot/imported/armor_knight_0.png-211a3e3a2ef82c039f544d7da7d4a4c0.s3tc.ctex"
+uid="uid://cgw5r67lxu7vy"
+path.s3tc="res://.godot/imported/armored_dragon_Image_0.png-1019eee31ca966a6a9f9e6fd2c7345de.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
 generator_parameters={
-"md5": "e28545690c293fb83b2df794d26459af"
+"md5": "10e998b063acd1b103d8eb28ff329f94"
 }
 
 [deps]
 
-source_file="res://Assets/3d/Characters/armor_knight_0.png"
-dest_files=["res://.godot/imported/armor_knight_0.png-211a3e3a2ef82c039f544d7da7d4a4c0.s3tc.ctex"]
+source_file="res://Assets/3d/Characters/armored_dragon_Image_0.png"
+dest_files=["res://.godot/imported/armored_dragon_Image_0.png-1019eee31ca966a6a9f9e6fd2c7345de.s3tc.ctex"]
 
 [params]
 
