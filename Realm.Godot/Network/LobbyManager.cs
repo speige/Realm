@@ -1168,7 +1168,7 @@ public partial class LobbyManager : Node
 
     public void RequestChatHistory()
     {
-        if (!IsHost)
+        if (!IsHost && Multiplayer.MultiplayerPeer != null && Multiplayer.MultiplayerPeer.GetConnectionStatus() == MultiplayerPeer.ConnectionStatus.Connected)
         {
             RpcId(1, nameof(RequestChatHistoryFromHost));
         }

@@ -210,6 +210,12 @@ public partial class GameHost
 		}
 	}
 
+	[Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+	public void ClientSpawnArrowProjectile(Vector3 start, Vector3 target)
+	{
+		_fxService.SpawnArrowProjectile(this, start, target);
+	}
+
 	private void UpdateServerSnapshotTick(float fDelta)
 	{
 		var snapshots = _networkService.BuildServerSnapshots(_localPeerId, AllUnits);

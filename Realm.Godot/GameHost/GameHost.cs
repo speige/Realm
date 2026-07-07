@@ -2803,7 +2803,7 @@ public class {mapName} : IMapScript
 			return;
 		}
 
-		if (_multiplayerActive && !Multiplayer.IsServer())
+		if (_multiplayerActive && !IsServerActive())
 		{
 			UpdateClientTick(fDelta);
 			return;
@@ -2818,9 +2818,23 @@ public class {mapName} : IMapScript
 		ProcessGameplayTick(fDelta);
 	}
 
+	private bool IsServerActive()
+	{
+		if (Multiplayer.MultiplayerPeer == null) return true;
+		try
+		{
+			if (Multiplayer.MultiplayerPeer.GetConnectionStatus() != MultiplayerPeer.ConnectionStatus.Connected) return true;
+			return Multiplayer.IsServer();
+		}
+		catch
+		{
+			return true;
+		}
+	}
+
 	private void UpdateConnectionStatus()
 	{
-		_networkService.UpdateConnectionStatus(_multiplayerActive, Multiplayer.MultiplayerPeer == null || Multiplayer.IsServer());
+		_networkService.UpdateConnectionStatus(_multiplayerActive, IsServerActive());
 	}
 
 	private void ProcessGameplayTick(float fDelta)
@@ -2970,6 +2984,10 @@ public class {mapName} : IMapScript
 	private void SpawnArrowProjectile(Vector3 start, Vector3 target)
 	{
 		_fxService.SpawnArrowProjectile(this, start, target);
+		if (_multiplayerActive && IsServerActive())
+		{
+			Rpc(nameof(ClientSpawnArrowProjectile), start, target);
+		}
 	}
 
 	private void SpawnTargetIndicator(Vector3 position, Color color)
