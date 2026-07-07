@@ -2,17 +2,16 @@ using Godot;
 
 /// <summary>
 /// Attach this node as a direct child of a Unit3D scene root.
-/// On _Ready it recursively patches every StandardMaterial3D / ORMMaterial3D
-/// found in the character hierarchy so that models remain visually readable
-/// under all Day/Night lighting conditions without modifying source assets.
+/// On _Ready it recursively patches every StandardMaterial3D found in the
+/// character hierarchy so that models remain visually readable under all
+/// Day/Night lighting conditions without modifying source assets.
 ///
 /// Visual Layer Setup
 ///   • Sets every MeshInstance3D to render on BOTH Layer 1 (world) and
 ///     Layer 2 (character-only fill light).
-///   • Add a second OmniLight3D or SpotLight3D in your scene with
-///     LightCullMask = Layer 2 only, LightEnergy ≈ 0.35, a cool-white or
-///     sky-blue colour. That light will exclusively boost character brightness
-///     during dark phases without brightening the terrain.
+///   • CharacterFillLight (OmniLight3D, CullMask = Layer 2) in Main.tscn
+///     drives energy dynamically via EnvironmentService.UpdateDayNightVisuals,
+///     peaking at 0.42 during Night so characters outshine the terrain.
 /// </summary>
 public partial class CharacterReadabilitySetup : Node3D
 {
@@ -24,16 +23,17 @@ public partial class CharacterReadabilitySetup : Node3D
 	[Export] public Color AccentColor { get; set; } = new Color(0.95f, 0.82f, 0.55f);
 
 	/// <summary>
-	/// Roughness target for all model surfaces. High values stop armour from
-	/// mirror-reflecting a dark night skybox into a fully black surface.
+	/// Roughness target for all model surfaces. Balanced at 0.65 so armour
+	/// does not mirror-reflect a dark skybox into total black, while still
+	/// allowing sharp specular glints from the high-energy directional sun.
 	/// </summary>
-	[Export] public float TargetRoughness { get; set; } = 0.80f;
+	[Export] public float TargetRoughness { get; set; } = 0.65f;
 
 	/// <summary>
-	/// Specular intensity target. Kept very low to prevent high-contrast
-	/// specular hotspots during the bright Sunset phase from blowing out detail.
+	/// Specular intensity target. 0.25 allows hard glints on armor poly-edges
+	/// without blowing highlights out to flat white under Filmic tonemap.
 	/// </summary>
-	[Export] public float TargetSpecular { get; set; } = 0.10f;
+	[Export] public float TargetSpecular { get; set; } = 0.25f;
 
 	/// <summary>
 	/// Emission energy. Low enough to be invisible in daylight, but prevents

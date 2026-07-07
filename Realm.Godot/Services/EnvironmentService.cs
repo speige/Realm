@@ -98,28 +98,30 @@ public class EnvironmentService
 		env.TonemapMode = Godot.Environment.ToneMapper.Filmic;
 		env.TonemapExposure = 1.0f;
 		env.AdjustmentEnabled = true;
-		env.AdjustmentSaturation = 1.15f;
 		env.AdjustmentContrast = 1.05f;
 		env.AmbientLightSource = Godot.Environment.AmbientSource.Color;
 
 		const float AmbientEnergyFloor = 0.50f;
 		const float DirectionalEnergyFloor = 0.50f;
 
+		// Fix A: Night phases push toward fully-saturated deep indigo (#22254f)
+		// rather than the previous muddy slate. The B channel dominates strongly
+		// and R/G are kept very low so the scene reads as "midnight blue fantasy"
+		// rather than a desaturated grey.
 		Color[] ambientColors = new Color[]
 		{
 			new Color(0.38f, 0.52f, 0.78f),   // Day    – clear sky blue
-			new Color(0.55f, 0.32f, 0.52f),   // Sunset – warm mauve
-			new Color(0.14f, 0.18f, 0.52f),   // Night  – deep indigo (saturated, never black)
-			new Color(0.42f, 0.34f, 0.60f),   // Dawn   – cool violet-pink
+			new Color(0.48f, 0.22f, 0.48f),   // Sunset – deep saturated mauve
+			new Color(0.12f, 0.12f, 0.46f),   // Night  – vivid midnight indigo
+			new Color(0.18f, 0.14f, 0.45f),   // Dawn   – cool violet pre-sunrise
 			new Color(0.38f, 0.52f, 0.78f),   // Day    – wrap
 		};
 
 		float[] ambientEnergies = new float[]
 		{
 			0.70f,   // Day
-			0.65f,   // Sunset
-			0.55f,   // Night  ← at floor; indigo ambient keeps models visible
-			0.60f,   // Dawn
+			0.68f,   // Sunset
+			0.65f,   // Dawn
 			0.70f,   // Day (wrap)
 		};
 
@@ -132,21 +134,24 @@ public class EnvironmentService
 			new Color(1.00f, 0.95f, 0.82f),   // Day    – wrap
 		};
 
+		// Fix B: Raise sun energy (2.2 peak) for sharp armor glints on poly-edges.
+		// Energy > 1.0 is valid with Filmic tonemap – highlights clip gracefully
+		// rather than blowing out flat white.
 		float[] directionalEnergies = new float[]
 		{
-			1.10f,   // Day
-			0.85f,   // Sunset
-			0.55f,   // Night  ← at floor; moon always lights upper bodies
-			0.65f,   // Dawn
-			1.10f,   // Day (wrap)
+			2.20f,   // Day    – strong enough for hard specular glints on armor
+			1.80f,   // Sunset – dramatic rim lighting
+			0.55f,   // Night  ← floor; moon carves upper-body highlights
+			0.75f,   // Dawn
+			2.20f,   // Day    – wrap
 		};
 
-		float[] pitchDegrees = { -50f,      -25f,      -42f,      -30f,      -50f };
-		float[] yawDegrees   = {  35f,       70f,      -25f,      -55f,       35f };
+		float[] pitchDegrees = { -65f,      -62f,      -72f,      -60f,      -65f };
+		float[] yawDegrees   = {  30f,       52f,      -18f,      -45f,       30f };
 
-		float segment = Mathf.Clamp(progress, 0f, 0.9999f) * 4f;
+		float segment = Mathf.Clamp(progress, 0f, 1f) * 4f;
 		int phaseIndex = (int)Mathf.Floor(segment);
-		float t = segment - phaseIndex;
+		float t = Mathf.Clamp(segment - phaseIndex, 0f, 1f);
 
 		Color interpolatedAmbient = ambientColors[phaseIndex].Lerp(ambientColors[phaseIndex + 1], t);
 		float interpolatedAmbientEnergy = Mathf.Lerp(ambientEnergies[phaseIndex], ambientEnergies[phaseIndex + 1], t);
@@ -164,10 +169,16 @@ public class EnvironmentService
 		{
 			sun.LightColor = interpolatedDirectional;
 			sun.LightEnergy = Mathf.Max(interpolatedDirectionalEnergy, DirectionalEnergyFloor);
-
-			// Oblique incidence: pitch controls "height in sky", yaw offsets the
-			// shadow direction so it's never perpendicular to the camera axis.
 			sun.RotationDegrees = new Vector3(interpolatedPitch, interpolatedYaw, 0f);
+		}
+
+		var fillLight = host.GetNodeOrNull<Camera3D>("Camera3D")
+			?.GetNodeOrNull<DirectionalLight3D>("CharacterFillLight");
+		if (fillLight != null)
+		{
+			float[] fillEnergies = { 0.20f, 0.28f, 0.62f, 0.42f, 0.20f };
+			float interpolatedFillEnergy = Mathf.Lerp(fillEnergies[phaseIndex], fillEnergies[phaseIndex + 1], t);
+			fillLight.LightEnergy = interpolatedFillEnergy;
 		}
 	}
 

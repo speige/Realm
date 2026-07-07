@@ -17,8 +17,20 @@ sky = SubResource("Sky_fos0i")
 [node name="Main" type="Node3D" unique_id=648672385]
 script = ExtResource("1_gamehost")
 
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1286803203]
+shadow_enabled = true
+directional_shadow_mode = 2
+
 [node name="Camera3D" type="Camera3D" parent="." unique_id=323284250]
 script = ExtResource("3_cm0pq")
+
+[node name="CharacterFillLight" type="DirectionalLight3D" parent="Camera3D" unique_id=1847392014]
+rotation_degrees = Vector3(-20.0, 15.0, 0.0)
+light_color = Color(0.604, 0.722, 0.91, 1)
+light_energy = 0.35
+light_indirect_energy = 0.0
+light_cull_mask = 2
+shadow_enabled = false
 
 [node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1056005627]
 
@@ -37,18 +49,6 @@ horizontal_alignment = 2
 script = ExtResource("3_r0du0")
 
 [node name="UIManager" parent="CanvasLayer" unique_id=941517973 instance=ExtResource("4_ui")]
-
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1286803203]
-
-[node name="CharacterFillLight" type="OmniLight3D" parent="." unique_id=1847392014]
-position = Vector3(0, 50, 0)
-light_color = Color(0.604, 0.722, 0.91, 1)
-light_energy = 0.35
-light_indirect_energy = 0.0
-light_cull_mask = 2
-shadow_enabled = false
-omni_range = 512.0
-omni_attenuation = 0.0
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=941781935]
 environment = SubResource("Environment_3dxm6")
