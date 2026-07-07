@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 
 namespace Realm.Ecs.Components.Core
 {

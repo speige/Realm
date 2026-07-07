@@ -275,7 +275,8 @@ public partial class GameHost
 							return;
 						}
 					}
-					if (_editorService.GetCopiedObject() != null)
+					var copiedObj = _editorService.GetCopiedObject();
+					if (copiedObj != null)
 					{
 						var hit = RaycastFromMouse(GetViewport().GetMousePosition());
 						if (hit != null && hit.ContainsKey("position"))
@@ -292,7 +293,7 @@ public partial class GameHost
 								spawnPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * spacing;
 							}
 							spawnPos.Y = GetTerrainHeightAt(spawnPos);
-							var cop = _editorService.GetCopiedObject().Value;
+							var cop = copiedObj.Value;
 							Node pastedNode = null;
 							IEditorAction action = null;
 							if (cop.Type == "unit")
@@ -2537,9 +2538,10 @@ public partial class GameHost
 				return;
 			}
 		}
-		if (_editorService.GetCopiedObject() != null)
+		var copiedObjOpt = _editorService.GetCopiedObject();
+		if (copiedObjOpt != null)
 		{
-			var copiedObj = _editorService.GetCopiedObject().Value;
+			var copiedObj = copiedObjOpt.Value;
 			if (copiedObj.Type == "unit")
 			{
 				ActiveEditorTool = EditorTool.PlaceUnit;

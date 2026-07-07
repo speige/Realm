@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Arch.Core;
 
 namespace Realm.Ecs.Components.Core

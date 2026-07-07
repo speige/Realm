@@ -1,15 +1,10 @@
-﻿using Godot;
+using Godot;
 using Realm.Ecs.Services;
-using Arch.Core;
 
 public class AudioService
 {
-	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
-
 	public AudioService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 	public void PlayWarningSound()
 	{

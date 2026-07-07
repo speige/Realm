@@ -1,9 +1,8 @@
-﻿using Arch.Core;
+using Arch.Core;
 using Realm.Ecs.Services;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Combat;
-using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Tags;
 using System;
@@ -11,13 +10,11 @@ using System.Collections.Generic;
 
 internal class CombatAndDamageService
 {
-	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private readonly WorldAccessor EcsWorldAccessor;
+	private World EcsWorld => EcsWorldAccessor.Current;
 
-	private float _fDelta;
 	private const float UnderAttackAlertCooldown = 8f;
 
-	private Entity _scanAttackerEntity;
 	private System.Numerics.Vector3 _scanAttackerPos;
 	private PlayerEntity _scanAttackerOwner;
 	private bool _scanIsAttackerEnemy;
@@ -39,19 +36,19 @@ internal class CombatAndDamageService
 	private readonly List<(Entity Priest, System.Numerics.Vector3 TargetPos)> _tickHealChaseTargets = new();
 	private readonly List<Entity> _tickHealStopChasing = new();
 
-	private readonly QueryDescription _enemyQuery = Realm.Ecs.Common.QueryCache.AllPositionAndOwnerNoneDeadQuery;
-	private readonly QueryDescription _friendlyScanQuery = Realm.Ecs.Common.QueryCache.AllPositionAndHealthAndOwnerNoneDeadQuery;
-	private readonly QueryDescription _targetAcquisitionQuery = Realm.Ecs.Common.QueryCache.AllPositionAndAttackAndOwnerNoneAttackTargetAndDeadQuery;
-	private readonly QueryDescription _combatQuery = Realm.Ecs.Common.QueryCache.AllPositionAndAttackAndAttackTargetAndOwnerNoneDeadQuery;
-	private readonly QueryDescription _priestScanQuery = Realm.Ecs.Common.QueryCache.AllPositionAndOwnerAndDefinitionIdNoneDeadAndHealingTargetQuery;
-	private readonly QueryDescription _healingExecutionQuery = Realm.Ecs.Common.QueryCache.AllPositionAndAttackAndHealingTargetAndOwnerNoneDeadQuery;
+	private readonly QueryDescription _enemyQuery = QueryCache.AllPositionAndOwnerNoneDeadQuery;
+	private readonly QueryDescription _friendlyScanQuery = QueryCache.AllPositionAndHealthAndOwnerNoneDeadQuery;
+	private readonly QueryDescription _targetAcquisitionQuery = QueryCache.AllPositionAndAttackAndOwnerNoneAttackTargetAndDeadQuery;
+	private readonly QueryDescription _combatQuery = QueryCache.AllPositionAndAttackAndAttackTargetAndOwnerNoneDeadQuery;
+	private readonly QueryDescription _priestScanQuery = QueryCache.AllPositionAndOwnerAndDefinitionIdNoneDeadAndHealingTargetQuery;
+	private readonly QueryDescription _healingExecutionQuery = QueryCache.AllPositionAndAttackAndHealingTargetAndOwnerNoneDeadQuery;
 
-	private ForEachWithEntity<Position, Attack, Owner> _targetAcquisitionQueryDelegate = null!;
-	private ForEachWithEntity<Position, Owner> _potentialEnemyQueryDelegate = null!;
-	private ForEachWithEntity<Position, Attack, AttackTarget, Owner> _combatQueryDelegate = null!;
-	private ForEachWithEntity<Position, Owner, DefinitionId> _priestScanQueryDelegate = null!;
-	private ForEachWithEntity<Position, Health, Owner> _friendlyScanQueryDelegate = null!;
-	private ForEachWithEntity<Position, Attack, HealingTarget, Owner> _healingExecutionQueryDelegate = null!;
+	private ForEachWithEntity<Position, Attack, Owner> _targetAcquisitionQueryDelegate;
+	private ForEachWithEntity<Position, Owner> _potentialEnemyQueryDelegate;
+	private ForEachWithEntity<Position, Attack, AttackTarget, Owner> _combatQueryDelegate;
+	private ForEachWithEntity<Position, Owner, DefinitionId> _priestScanQueryDelegate;
+	private ForEachWithEntity<Position, Health, Owner> _friendlyScanQueryDelegate;
+	private ForEachWithEntity<Position, Attack, HealingTarget, Owner> _healingExecutionQueryDelegate;
 
 	public Action<System.Numerics.Vector3, System.Numerics.Vector3> OnArrowProjectileRequested;
 	public Action<Entity> OnDamageFlashRequested;
@@ -63,7 +60,7 @@ internal class CombatAndDamageService
 
 	public CombatAndDamageService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorldAccessor = ecsWorldAccessor;
+		EcsWorldAccessor = ecsWorldAccessor;
 		_targetAcquisitionQueryDelegate = TargetAcquisitionQueryAction;
 		_potentialEnemyQueryDelegate = ScanEnemyQueryAction;
 		_combatQueryDelegate = CombatQueryAction;
@@ -74,8 +71,6 @@ internal class CombatAndDamageService
 
 	public void StepCombat(float delta)
 	{
-		_fDelta = delta;
-
 		TickCombatAlertTimer(delta);
 
 		ProcessTargetAcquisition();
@@ -87,16 +82,16 @@ internal class CombatAndDamageService
 	{
 		Entity worldEntity = Entity.Null;
 		var query = Realm.Ecs.Common.QueryCache.AllWorldStateQuery;
-		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
+		EcsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 		return worldEntity;
 	}
 
 	private int GetTimeOfDayIndex()
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && _ecsWorld.Has<WorldState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.Has<WorldState>(worldEntity))
 		{
-			return _ecsWorld.Get<WorldState>(worldEntity).TimeOfDayIndex;
+			return EcsWorld.Get<WorldState>(worldEntity).TimeOfDayIndex;
 		}
 		return 0;
 	}
@@ -105,11 +100,11 @@ internal class CombatAndDamageService
 	{
 		Entity worldEntity = Entity.Null;
 		var query = Realm.Ecs.Common.QueryCache.AllCombatAlertStateQuery;
-		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
+		EcsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 
-		if (worldEntity != Entity.Null && _ecsWorld.Has<CombatAlertState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.Has<CombatAlertState>(worldEntity))
 		{
-			return _ecsWorld.Get<CombatAlertState>(worldEntity).UnderAttackAlertTimer;
+			return EcsWorld.Get<CombatAlertState>(worldEntity).UnderAttackAlertTimer;
 		}
 		return 0f;
 	}
@@ -118,11 +113,11 @@ internal class CombatAndDamageService
 	{
 		Entity worldEntity = Entity.Null;
 		var query = Realm.Ecs.Common.QueryCache.AllCombatAlertStateQuery;
-		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
+		EcsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 
-		if (worldEntity != Entity.Null && _ecsWorld.Has<CombatAlertState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.Has<CombatAlertState>(worldEntity))
 		{
-			ref var state = ref _ecsWorld.Get<CombatAlertState>(worldEntity);
+			ref var state = ref EcsWorld.Get<CombatAlertState>(worldEntity);
 			state.UnderAttackAlertTimer = value;
 		}
 	}
@@ -131,11 +126,11 @@ internal class CombatAndDamageService
 	{
 		Entity worldEntity = Entity.Null;
 		var query = Realm.Ecs.Common.QueryCache.AllCombatAlertStateQuery;
-		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
+		EcsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 
-		if (worldEntity != Entity.Null && _ecsWorld.Has<CombatAlertState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.Has<CombatAlertState>(worldEntity))
 		{
-			ref var state = ref _ecsWorld.Get<CombatAlertState>(worldEntity);
+			ref var state = ref EcsWorld.Get<CombatAlertState>(worldEntity);
 			if (state.UnderAttackAlertTimer > 0f)
 			{
 				state.UnderAttackAlertTimer = Math.Max(0f, state.UnderAttackAlertTimer - fDelta);
@@ -146,34 +141,34 @@ internal class CombatAndDamageService
 	private void ProcessTargetAcquisition()
 	{
 		_tickNewAttackTargets.Clear();
-		_ecsWorld.Query(in _targetAcquisitionQuery, _targetAcquisitionQueryDelegate);
+		EcsWorld.Query(in _targetAcquisitionQuery, _targetAcquisitionQueryDelegate);
 		foreach (var (attacker, target) in _tickNewAttackTargets)
 		{
-			if (_ecsWorld.IsAlive(attacker))
+			if (EcsWorld.IsAlive(attacker))
 			{
-				if (_ecsWorld.Has<AttackTarget>(attacker))
-					_ecsWorld.Set(attacker, target);
+				if (EcsWorld.Has<AttackTarget>(attacker))
+					EcsWorld.Set(attacker, target);
 				else
-					_ecsWorld.Add(attacker, target);
+					EcsWorld.Add(attacker, target);
 			}
 		}
 	}
 
 	private void TargetAcquisitionQueryAction(Entity entity, ref Position pos, ref Attack atk, ref Owner owner)
 	{
-		if (_ecsWorld.Has<DefinitionId>(entity) && _ecsWorld.Get<DefinitionId>(entity).Value == "priest")
+		if (EcsWorld.Has<DefinitionId>(entity) && EcsWorld.Get<DefinitionId>(entity).Value == "priest")
 		{
 			return;
 		}
 
-		bool isAttackMove = _ecsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(entity);
-		bool isPatrol     = _ecsWorld.Has<Patrol>(entity);
-		bool isIdle = !_ecsWorld.Has<MoveTo>(entity) && !isAttackMove;
+		bool isAttackMove = EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(entity);
+		bool isPatrol     = EcsWorld.Has<Patrol>(entity);
+		bool isIdle = !EcsWorld.Has<MoveTo>(entity) && !isAttackMove;
 
 		if (isIdle || isAttackMove || isPatrol)
 		{
-			float scanRadius = _ecsWorld.Has<ScanRadius>(entity)
-				? _ecsWorld.Get<ScanRadius>(entity).Value
+			float scanRadius = EcsWorld.Has<ScanRadius>(entity)
+				? EcsWorld.Get<ScanRadius>(entity).Value
 				: 15.0f;
 
 			if (GetTimeOfDayIndex() == 2)
@@ -181,18 +176,17 @@ internal class CombatAndDamageService
 				scanRadius *= 0.7f;
 			}
 
-			_scanAttackerEntity = entity;
 			_scanAttackerPos = pos.Value;
 			_scanAttackerOwner = owner.PlayerEntity;
 			_scanIsAttackerEnemy = false;
-			if (_ecsWorld.Has<UnitFaction>(entity))
+			if (EcsWorld.Has<UnitFaction>(entity))
 			{
-				_scanIsAttackerEnemy = _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+				_scanIsAttackerEnemy = EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			}
 			_scanClosestDist = scanRadius;
 			_scanClosestEnemy = Entity.Null;
 
-			_ecsWorld.Query(in _enemyQuery, _potentialEnemyQueryDelegate);
+			EcsWorld.Query(in _enemyQuery, _potentialEnemyQueryDelegate);
 
 			if (_scanClosestEnemy != Entity.Null)
 			{
@@ -205,7 +199,7 @@ internal class CombatAndDamageService
 	{
 		if (enemyOwner.PlayerEntity != _scanAttackerOwner)
 		{
-			bool isEnemyEntity = _ecsWorld.Has<UnitFaction>(potentialEnemy) && _ecsWorld.Get<UnitFaction>(potentialEnemy).IsEnemy;
+			bool isEnemyEntity = EcsWorld.Has<UnitFaction>(potentialEnemy) && EcsWorld.Get<UnitFaction>(potentialEnemy).IsEnemy;
 			if (isEnemyEntity != _scanIsAttackerEnemy)
 			{
 				float dist = System.Numerics.Vector3.Distance(_scanAttackerPos, enemyPos.Value);
@@ -225,15 +219,15 @@ internal class CombatAndDamageService
 		_tickActionsToStopChasing.Clear();
 		_tickUnitsToKill.Clear();
 
-		_ecsWorld.Query(in _combatQuery, _combatQueryDelegate);
+		EcsWorld.Query(in _combatQuery, _combatQueryDelegate);
 
 		foreach (var targetEntity in _tickUnitsToKill)
 		{
-			if (_ecsWorld.IsAlive(targetEntity))
+			if (EcsWorld.IsAlive(targetEntity))
 			{
-				if (!_ecsWorld.Has<Dead>(targetEntity))
+				if (!EcsWorld.Has<Dead>(targetEntity))
 				{
-					_ecsWorld.Add<Dead>(targetEntity);
+					EcsWorld.Add<Dead>(targetEntity);
 					OnKillUnitRequested?.Invoke(targetEntity);
 				}
 			}
@@ -241,58 +235,58 @@ internal class CombatAndDamageService
 
 		foreach (var ent in _tickActionsToRemoveTarget)
 		{
-			if (_ecsWorld.IsAlive(ent))
+			if (EcsWorld.IsAlive(ent))
 			{
-				if (_ecsWorld.Has<AttackTarget>(ent))
+				if (EcsWorld.Has<AttackTarget>(ent))
 				{
-					_ecsWorld.Remove<AttackTarget>(ent);
+					EcsWorld.Remove<AttackTarget>(ent);
 				}
 
-				if (_ecsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(ent))
+				if (EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(ent))
 				{
-					var am = _ecsWorld.Get<Realm.Ecs.Components.Movement.AttackMove>(ent);
+					var am = EcsWorld.Get<Realm.Ecs.Components.Movement.AttackMove>(ent);
 					var moveTo = new MoveTo(am.Target);
-					if (_ecsWorld.Has<MoveTo>(ent))
-						_ecsWorld.Set(ent, moveTo);
+					if (EcsWorld.Has<MoveTo>(ent))
+						EcsWorld.Set(ent, moveTo);
 					else
-						_ecsWorld.Add(ent, moveTo);
+						EcsWorld.Add(ent, moveTo);
 				}
-				else if (_ecsWorld.Has<Patrol>(ent))
+				else if (EcsWorld.Has<Patrol>(ent))
 				{
-					var patrol = _ecsWorld.Get<Patrol>(ent);
+					var patrol = EcsWorld.Get<Patrol>(ent);
 					var destVec = patrol.GoingToB ? patrol.PointB : patrol.PointA;
 					var moveTo = new MoveTo(destVec);
-					if (_ecsWorld.Has<MoveTo>(ent))
-						_ecsWorld.Set(ent, moveTo);
+					if (EcsWorld.Has<MoveTo>(ent))
+						EcsWorld.Set(ent, moveTo);
 					else
-						_ecsWorld.Add(ent, moveTo);
+						EcsWorld.Add(ent, moveTo);
 				}
 			}
 		}
 
 		foreach (var (attacker, targetPos) in _tickActionsToChase)
 		{
-			if (_ecsWorld.IsAlive(attacker))
+			if (EcsWorld.IsAlive(attacker))
 			{
 				var moveTo = new MoveTo(targetPos);
-				if (_ecsWorld.Has<MoveTo>(attacker))
-					_ecsWorld.Set(attacker, moveTo);
+				if (EcsWorld.Has<MoveTo>(attacker))
+					EcsWorld.Set(attacker, moveTo);
 				else
-					_ecsWorld.Add(attacker, moveTo);
+					EcsWorld.Add(attacker, moveTo);
 			}
 		}
 
 		foreach (var attacker in _tickActionsToStopChasing)
 		{
-			if (_ecsWorld.IsAlive(attacker))
+			if (EcsWorld.IsAlive(attacker))
 			{
-				if (_ecsWorld.Has<MoveTo>(attacker))
+				if (EcsWorld.Has<MoveTo>(attacker))
 				{
-					_ecsWorld.Remove<MoveTo>(attacker);
+					EcsWorld.Remove<MoveTo>(attacker);
 				}
-				if (_ecsWorld.Has<Velocity>(attacker))
+				if (EcsWorld.Has<Velocity>(attacker))
 				{
-					_ecsWorld.Set(attacker, new Velocity(System.Numerics.Vector3.Zero));
+					EcsWorld.Set(attacker, new Velocity(System.Numerics.Vector3.Zero));
 				}
 			}
 		}
@@ -300,13 +294,13 @@ internal class CombatAndDamageService
 
 	private void CombatQueryAction(Entity entity, ref Position pos, ref Attack atk, ref AttackTarget target, ref Owner owner)
 	{
-		if (!_ecsWorld.IsAlive(target.Target) || _ecsWorld.Has<Dead>(target.Target))
+		if (!EcsWorld.IsAlive(target.Target) || EcsWorld.Has<Dead>(target.Target))
 		{
 			_tickActionsToRemoveTarget.Add(entity);
 			return;
 		}
 
-		var targetPosComp = _ecsWorld.Get<Position>(target.Target);
+		var targetPosComp = EcsWorld.Get<Position>(target.Target);
 		var currentPos = pos.Value;
 		var targetPos = targetPosComp.Value;
 
@@ -317,36 +311,36 @@ internal class CombatAndDamageService
 
 			if (atk.CurrentCooldown <= 0)
 			{
-				if (_ecsWorld.Has<Realm.Ecs.Components.Tags.Invulnerable>(target.Target))
+				if (EcsWorld.Has<Realm.Ecs.Components.Tags.Invulnerable>(target.Target))
 				{
 					atk.CurrentCooldown = atk.Cooldown;
 					return;
 				}
 
-				var targetHealth = _ecsWorld.Get<Health>(target.Target);
-				var targetArmor = _ecsWorld.Has<Armor>(target.Target) ? _ecsWorld.Get<Armor>(target.Target) : new Armor(0);
+				var targetHealth = EcsWorld.Get<Health>(target.Target);
+				var targetArmor = EcsWorld.Has<Armor>(target.Target) ? EcsWorld.Get<Armor>(target.Target) : new Armor(0);
 
 				float damage = atk.Damage - targetArmor.Value;
 				if (damage < 1f) damage = 1f;
 
-				if (_ecsWorld.Has<LastAttacker>(target.Target))
+				if (EcsWorld.Has<LastAttacker>(target.Target))
 				{
-					_ecsWorld.Set(target.Target, new LastAttacker(entity));
+					EcsWorld.Set(target.Target, new LastAttacker(entity));
 				}
 				else
 				{
-					_ecsWorld.Add(target.Target, new LastAttacker(entity));
+					EcsWorld.Add(target.Target, new LastAttacker(entity));
 				}
 
 				OnUnitDamagedCallback?.Invoke(target.Target, entity, damage);
 
 				float newHp = Math.Max(0, targetHealth.Current - damage);
-				_ecsWorld.Set(target.Target, new Health(newHp, targetHealth.Max));
+				EcsWorld.Set(target.Target, new Health(newHp, targetHealth.Max));
 
-				if (_ecsWorld.Has<DefinitionId>(target.Target))
+				if (EcsWorld.Has<DefinitionId>(target.Target))
 				{
-					string targetUnitId = _ecsWorld.Get<DefinitionId>(target.Target).Value;
-					bool targetIsEnemy = _ecsWorld.Has<UnitFaction>(target.Target) && _ecsWorld.Get<UnitFaction>(target.Target).IsEnemy;
+					string targetUnitId = EcsWorld.Get<DefinitionId>(target.Target).Value;
+					bool targetIsEnemy = EcsWorld.Has<UnitFaction>(target.Target) && EcsWorld.Get<UnitFaction>(target.Target).IsEnemy;
 					if (!targetIsEnemy)
 					{
 						float currentTimer = GetCombatAlertTimer();
@@ -358,12 +352,12 @@ internal class CombatAndDamageService
 					}
 				}
 
-				if (_ecsWorld.IsAlive(target.Target) && !_ecsWorld.Has<Dead>(target.Target) && !_ecsWorld.Has<AttackTarget>(target.Target))
+				if (EcsWorld.IsAlive(target.Target) && !EcsWorld.Has<Dead>(target.Target) && !EcsWorld.Has<AttackTarget>(target.Target))
 				{
-					if (_ecsWorld.Has<Attack>(target.Target))
+					if (EcsWorld.Has<Attack>(target.Target))
 					{
-						bool hasMoveTo = _ecsWorld.Has<MoveTo>(target.Target);
-						if (!hasMoveTo || _ecsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(target.Target))
+						bool hasMoveTo = EcsWorld.Has<MoveTo>(target.Target);
+						if (!hasMoveTo || EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(target.Target))
 						{
 							_tickNewAttackTargets.Add((target.Target, new AttackTarget(entity)));
 						}
@@ -389,7 +383,7 @@ internal class CombatAndDamageService
 		}
 		else
 		{
-			if (!_ecsWorld.Has<Realm.Ecs.Components.Movement.HoldPosition>(entity) && _ecsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity) && !_ecsWorld.Has<Building>(entity))
+			if (!EcsWorld.Has<Realm.Ecs.Components.Movement.HoldPosition>(entity) && EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity) && !EcsWorld.Has<Building>(entity))
 			{
 				_tickActionsToChase.Add((entity, targetPos));
 			}
@@ -403,13 +397,13 @@ internal class CombatAndDamageService
 	private void ProcessHealingTicks()
 	{
 		_tickNewHealingTargets.Clear();
-		_ecsWorld.Query(in _priestScanQuery, _priestScanQueryDelegate);
+		EcsWorld.Query(in _priestScanQuery, _priestScanQueryDelegate);
 		foreach (var (priest, target) in _tickNewHealingTargets)
 		{
-			if (_ecsWorld.IsAlive(priest))
+			if (EcsWorld.IsAlive(priest))
 			{
-				if (_ecsWorld.Has<HealingTarget>(priest)) _ecsWorld.Set(priest, target);
-				else _ecsWorld.Add(priest, target);
+				if (EcsWorld.Has<HealingTarget>(priest)) EcsWorld.Set(priest, target);
+				else EcsWorld.Add(priest, target);
 			}
 		}
 
@@ -417,34 +411,34 @@ internal class CombatAndDamageService
 		_tickHealChaseTargets.Clear();
 		_tickHealStopChasing.Clear();
 
-		_ecsWorld.Query(in _healingExecutionQuery, _healingExecutionQueryDelegate);
+		EcsWorld.Query(in _healingExecutionQuery, _healingExecutionQueryDelegate);
 
 		foreach (var ent in _tickHealRemoveTargets)
 		{
-			if (_ecsWorld.IsAlive(ent) && _ecsWorld.Has<HealingTarget>(ent))
+			if (EcsWorld.IsAlive(ent) && EcsWorld.Has<HealingTarget>(ent))
 			{
-				_ecsWorld.Remove<HealingTarget>(ent);
+				EcsWorld.Remove<HealingTarget>(ent);
 			}
 		}
 
 		foreach (var (priest, targetPos) in _tickHealChaseTargets)
 		{
-			if (_ecsWorld.IsAlive(priest))
+			if (EcsWorld.IsAlive(priest))
 			{
 				var moveTo = new MoveTo(targetPos);
-				if (_ecsWorld.Has<MoveTo>(priest)) _ecsWorld.Set(priest, moveTo);
-				else _ecsWorld.Add(priest, moveTo);
+				if (EcsWorld.Has<MoveTo>(priest)) EcsWorld.Set(priest, moveTo);
+				else EcsWorld.Add(priest, moveTo);
 			}
 		}
 
 		foreach (var priest in _tickHealStopChasing)
 		{
-			if (_ecsWorld.IsAlive(priest))
+			if (EcsWorld.IsAlive(priest))
 			{
-				if (_ecsWorld.Has<MoveTo>(priest)) _ecsWorld.Remove<MoveTo>(priest);
-				if (_ecsWorld.Has<Velocity>(priest))
+				if (EcsWorld.Has<MoveTo>(priest)) EcsWorld.Remove<MoveTo>(priest);
+				if (EcsWorld.Has<Velocity>(priest))
 				{
-					_ecsWorld.Set(priest, new Velocity(System.Numerics.Vector3.Zero));
+					EcsWorld.Set(priest, new Velocity(System.Numerics.Vector3.Zero));
 				}
 			}
 		}
@@ -467,7 +461,7 @@ internal class CombatAndDamageService
 	{
 		if (defId.Value == "priest")
 		{
-			bool isIdle = !_ecsWorld.Has<MoveTo>(entity);
+			bool isIdle = !EcsWorld.Has<MoveTo>(entity);
 			if (isIdle)
 			{
 				_scanClosestDamagedFriendly = Entity.Null;
@@ -475,7 +469,7 @@ internal class CombatAndDamageService
 				_scanPriestPos = pos.Value;
 				_scanFriendlyOwner = owner.PlayerEntity;
 
-				_ecsWorld.Query(in _friendlyScanQuery, _friendlyScanQueryDelegate);
+				EcsWorld.Query(in _friendlyScanQuery, _friendlyScanQueryDelegate);
 
 				if (_scanClosestDamagedFriendly != Entity.Null)
 				{
@@ -487,20 +481,20 @@ internal class CombatAndDamageService
 
 	private void HealingExecutionQueryAction(Entity entity, ref Position pos, ref Attack atk, ref HealingTarget target, ref Owner owner)
 	{
-		if (!_ecsWorld.IsAlive(target.Target) || _ecsWorld.Has<Dead>(target.Target))
+		if (!EcsWorld.IsAlive(target.Target) || EcsWorld.Has<Dead>(target.Target))
 		{
 			_tickHealRemoveTargets.Add(entity);
 			return;
 		}
 
-		var targetHealth = _ecsWorld.Get<Health>(target.Target);
+		var targetHealth = EcsWorld.Get<Health>(target.Target);
 		if (targetHealth.Current >= targetHealth.Max)
 		{
 			_tickHealRemoveTargets.Add(entity);
 			return;
 		}
 
-		var targetPosComp = _ecsWorld.Get<Position>(target.Target);
+		var targetPosComp = EcsWorld.Get<Position>(target.Target);
 		var currentPos = pos.Value;
 		var targetPos = targetPosComp.Value;
 
@@ -513,7 +507,7 @@ internal class CombatAndDamageService
 			{
 				float healAmount = atk.Damage;
 				float newHp = Math.Min(targetHealth.Max, targetHealth.Current + healAmount);
-				_ecsWorld.Set(target.Target, new Health(newHp, targetHealth.Max));
+				EcsWorld.Set(target.Target, new Health(newHp, targetHealth.Max));
 
 				atk.CurrentCooldown = atk.Cooldown;
 
@@ -523,7 +517,7 @@ internal class CombatAndDamageService
 		}
 		else
 		{
-			if (!_ecsWorld.Has<Realm.Ecs.Components.Movement.HoldPosition>(entity) && _ecsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity))
+			if (!EcsWorld.Has<Realm.Ecs.Components.Movement.HoldPosition>(entity) && EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity))
 			{
 				_tickHealChaseTargets.Add((entity, targetPos));
 			}
@@ -533,27 +527,27 @@ internal class CombatAndDamageService
 	public void DealSpellDamageAOE(System.Numerics.Vector3 position, float radius, float damage, Entity casterEntity, bool enemyOnly = true)
 	{
 		var query = Realm.Ecs.Common.QueryCache.AllPositionAndHealthNoneDeadQuery;
-		_ecsWorld.Query(in query, (Entity entity, ref Position pos, ref Health hp) =>
+		EcsWorld.Query(in query, (Entity entity, ref Position pos, ref Health hp) =>
 		{
-			if (_ecsWorld.Has<Realm.Ecs.Components.Tags.Invulnerable>(entity)) return;
+			if (EcsWorld.Has<Realm.Ecs.Components.Tags.Invulnerable>(entity)) return;
 
 			if (enemyOnly)
 			{
-				bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+				bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 				if (!isEnemy) return;
 			}
 
 			if (System.Numerics.Vector3.Distance(pos.Value, position) <= radius)
 			{
-				if (casterEntity != Entity.Null && _ecsWorld.IsAlive(casterEntity))
+				if (casterEntity != Entity.Null && EcsWorld.IsAlive(casterEntity))
 				{
-					if (_ecsWorld.Has<LastAttacker>(entity))
+					if (EcsWorld.Has<LastAttacker>(entity))
 					{
-						_ecsWorld.Set(entity, new LastAttacker(casterEntity));
+						EcsWorld.Set(entity, new LastAttacker(casterEntity));
 					}
 					else
 					{
-						_ecsWorld.Add(entity, new LastAttacker(casterEntity));
+						EcsWorld.Add(entity, new LastAttacker(casterEntity));
 					}
 				}
 
@@ -564,9 +558,9 @@ internal class CombatAndDamageService
 
 				if (newHp <= 0)
 				{
-					if (!_ecsWorld.Has<Dead>(entity))
+					if (!EcsWorld.Has<Dead>(entity))
 					{
-						_ecsWorld.Add<Dead>(entity);
+						EcsWorld.Add<Dead>(entity);
 					}
 					OnKillUnitRequested?.Invoke(entity);
 				}
@@ -581,9 +575,9 @@ internal class CombatAndDamageService
 	public void HealAOE(System.Numerics.Vector3 position, float radius, float healAmount)
 	{
 		var query = Realm.Ecs.Common.QueryCache.AllPositionAndHealthNoneDeadQuery;
-		_ecsWorld.Query(in query, (Entity entity, ref Position pos, ref Health hp) =>
+		EcsWorld.Query(in query, (Entity entity, ref Position pos, ref Health hp) =>
 		{
-			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+			bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			if (isEnemy) return;
 
 			if (System.Numerics.Vector3.Distance(pos.Value, position) <= radius)

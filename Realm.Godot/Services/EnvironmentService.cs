@@ -1,6 +1,7 @@
 using Arch.Core;
 using Realm.Ecs.Services;
 using Godot;
+using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Terrain;
 using System;
@@ -8,7 +9,7 @@ using System;
 public class EnvironmentService
 {
 	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private World EcsWorld => _ecsWorldAccessor.Current;
 
 	public EnvironmentService(WorldAccessor ecsWorldAccessor)
 	{
@@ -18,17 +19,17 @@ public class EnvironmentService
 	private Entity FindWorldEntity()
 	{
 		Entity worldEntity = Entity.Null;
-		var query = Realm.Ecs.Common.QueryCache.AllFogAndWeatherStateQuery;
-		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
+		var query = QueryCache.AllFogAndWeatherStateQuery;
+		EcsWorld.Query(in query, entity => worldEntity = entity);
 		return worldEntity;
 	}
 
 	public string GetCurrentWeather()
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && _ecsWorld.IsAlive(worldEntity) && _ecsWorld.Has<FogAndWeatherState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<FogAndWeatherState>(worldEntity))
 		{
-			return _ecsWorld.Get<FogAndWeatherState>(worldEntity).CurrentWeather;
+			return EcsWorld.Get<FogAndWeatherState>(worldEntity).CurrentWeather;
 		}
 		return "clear";
 	}
@@ -36,9 +37,9 @@ public class EnvironmentService
 	public void SetCurrentWeather(string weather)
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && _ecsWorld.IsAlive(worldEntity) && _ecsWorld.Has<FogAndWeatherState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<FogAndWeatherState>(worldEntity))
 		{
-			ref var state = ref _ecsWorld.Get<FogAndWeatherState>(worldEntity);
+			ref var state = ref EcsWorld.Get<FogAndWeatherState>(worldEntity);
 			state.CurrentWeather = weather;
 		}
 	}
@@ -46,9 +47,9 @@ public class EnvironmentService
 	public float GetBaseFogDensity()
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && _ecsWorld.IsAlive(worldEntity) && _ecsWorld.Has<FogAndWeatherState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<FogAndWeatherState>(worldEntity))
 		{
-			return _ecsWorld.Get<FogAndWeatherState>(worldEntity).BaseFogDensity;
+			return EcsWorld.Get<FogAndWeatherState>(worldEntity).BaseFogDensity;
 		}
 		return 0f;
 	}
@@ -56,9 +57,9 @@ public class EnvironmentService
 	public void SetBaseFogDensity(float density)
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && _ecsWorld.IsAlive(worldEntity) && _ecsWorld.Has<FogAndWeatherState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<FogAndWeatherState>(worldEntity))
 		{
-			ref var state = ref _ecsWorld.Get<FogAndWeatherState>(worldEntity);
+			ref var state = ref EcsWorld.Get<FogAndWeatherState>(worldEntity);
 			state.BaseFogDensity = density;
 		}
 	}
@@ -185,12 +186,12 @@ public class EnvironmentService
 
 	public (int TimeOfDayIndex, float TimeOfDayTimer) CycleTimeOfDay(Node3D host, Entity worldEntity, float cycleDuration)
 	{
-		if (!_ecsWorld.IsAlive(worldEntity) || !_ecsWorld.Has<WorldState>(worldEntity))
+		if (!EcsWorld.IsAlive(worldEntity) || !EcsWorld.Has<WorldState>(worldEntity))
 		{
 			return (0, 0f);
 		}
 
-		ref var state = ref _ecsWorld.Get<WorldState>(worldEntity);
+		ref var state = ref EcsWorld.Get<WorldState>(worldEntity);
 		int nextIndex = (state.TimeOfDayIndex + 1) % 4;
 
 		float targetHour = nextIndex switch
@@ -207,7 +208,7 @@ public class EnvironmentService
 
 		UpdateDayNightVisuals(host, progress);
 
-		_ecsWorld.Set(worldEntity, new WorldState(state.GameElapsedTime, nextIndex, nextTimer, state.DayNightCycleEnabled));
+		EcsWorld.Set(worldEntity, new WorldState(state.GameElapsedTime, nextIndex, nextTimer, state.DayNightCycleEnabled));
 
 		return (nextIndex, nextTimer);
 	}

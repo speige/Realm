@@ -8,14 +8,12 @@ namespace Realm.Ecs.Services;
 internal class PlayerResourceService
 {
 	private readonly ArchetypeManager _archetypeManager;
-	private readonly DefinitionManager _definitionManager;
 	private readonly WorldAccessor _ecsWorldAccessor;
 
 	public PlayerResourceService(WorldAccessor ecsWorldAccessor, ArchetypeManager archetypeManager, DefinitionManager definitionManager)
 	{
 		_ecsWorldAccessor = ecsWorldAccessor;
 		_archetypeManager = archetypeManager;
-		_definitionManager = definitionManager;
 	}
 
 	/// <summary>

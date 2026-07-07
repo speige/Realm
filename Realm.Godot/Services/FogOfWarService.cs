@@ -3,16 +3,17 @@ using Realm.Ecs.Services;
 using Godot;
 using Realm.Godot.ReplaySystem;
 using Realm.Ecs.Components.Terrain;
+using Realm.Ecs.Common;
 using System;
 using System.Collections.Generic;
 
 public class FogOfWarService
 {
 	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private World EcsWorld => _ecsWorldAccessor.Current;
 	private MeshInstance3D _fogMeshInstance;
 	private WorldEnvironment _worldEnv;
-	private float _fogUpdateTimer = 0f;
+	private float _fogUpdateTimer;
 
 	public FogOfWarService(WorldAccessor ecsWorldAccessor)
 	{
@@ -22,8 +23,8 @@ public class FogOfWarService
 	private Entity FindWorldEntity()
 	{
 		Entity worldEntity = Entity.Null;
-		var query = Realm.Ecs.Common.QueryCache.AllFogAndWeatherStateQuery;
-		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
+		var query = QueryCache.AllFogAndWeatherStateQuery;
+		EcsWorld.Query(in query, entity => worldEntity = entity);
 		return worldEntity;
 	}
 
@@ -32,16 +33,16 @@ public class FogOfWarService
 		get
 		{
 			var worldEntity = FindWorldEntity();
-			if (worldEntity != Entity.Null && _ecsWorld.Has<FogAndWeatherState>(worldEntity))
-				return _ecsWorld.Get<FogAndWeatherState>(worldEntity).FogGrid;
+			if (worldEntity != Entity.Null && EcsWorld.Has<FogAndWeatherState>(worldEntity))
+				return EcsWorld.Get<FogAndWeatherState>(worldEntity).FogGrid;
 			return new byte[32, 32];
 		}
 		set
 		{
 			var worldEntity = FindWorldEntity();
-			if (worldEntity != Entity.Null && _ecsWorld.Has<FogAndWeatherState>(worldEntity))
+			if (worldEntity != Entity.Null && EcsWorld.Has<FogAndWeatherState>(worldEntity))
 			{
-				ref var state = ref _ecsWorld.Get<FogAndWeatherState>(worldEntity);
+				ref var state = ref EcsWorld.Get<FogAndWeatherState>(worldEntity);
 				state.FogGrid = value;
 			}
 		}
@@ -52,8 +53,8 @@ public class FogOfWarService
 		get
 		{
 			var worldEntity = FindWorldEntity();
-			if (worldEntity != Entity.Null && _ecsWorld.Has<FogAndWeatherState>(worldEntity))
-				return _ecsWorld.Get<FogAndWeatherState>(worldEntity).FogOfWarType;
+			if (worldEntity != Entity.Null && EcsWorld.Has<FogAndWeatherState>(worldEntity))
+				return EcsWorld.Get<FogAndWeatherState>(worldEntity).FogOfWarType;
 			return "grey";
 		}
 	}
@@ -63,8 +64,8 @@ public class FogOfWarService
 		get
 		{
 			var worldEntity = FindWorldEntity();
-			if (worldEntity != Entity.Null && _ecsWorld.Has<FogAndWeatherState>(worldEntity))
-				return _ecsWorld.Get<FogAndWeatherState>(worldEntity).BaseFogDensity;
+			if (worldEntity != Entity.Null && EcsWorld.Has<FogAndWeatherState>(worldEntity))
+				return EcsWorld.Get<FogAndWeatherState>(worldEntity).BaseFogDensity;
 			return 0f;
 		}
 	}
@@ -221,8 +222,8 @@ public class FogOfWarService
 					Vector3 pos = unit.GlobalPosition;
 					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
 					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-					float scanRadius = (_ecsWorld.IsAlive(unit.Entity) && _ecsWorld.Has<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity))
-						? _ecsWorld.Get<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity).Value
+					float scanRadius = (EcsWorld.IsAlive(unit.Entity) && EcsWorld.Has<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity))
+						? EcsWorld.Get<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity).Value
 						: 15.0f;
 					int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (250f / 32f)));
 					for (int dx = -rGrid; dx <= rGrid; dx++)
@@ -299,8 +300,8 @@ public class FogOfWarService
 				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
 				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
 
-				float scanRadius = (_ecsWorld.IsAlive(unit.Entity) && _ecsWorld.Has<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity))
-					? _ecsWorld.Get<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity).Value
+				float scanRadius = (EcsWorld.IsAlive(unit.Entity) && EcsWorld.Has<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity))
+					? EcsWorld.Get<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity).Value
 					: 15.0f;
 
 				int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (250f / 32f)));

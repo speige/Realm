@@ -4,10 +4,7 @@ using DotRecast.Detour;
 using DotRecast.Recast;
 using DotRecast.Recast.Geom;
 using Realm.Ecs.Components.Core;
-using Realm.Ecs.Components.Tags;
 using Realm.Ecs.Components.Terrain;
-using System;
-using System.Collections.Generic;
 
 namespace Realm.Ecs.Services;
 

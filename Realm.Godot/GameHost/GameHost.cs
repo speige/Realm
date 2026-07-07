@@ -1,6 +1,4 @@
 using Arch.Core;
-using DotRecast.Core.Numerics;
-using DotRecast.Detour;
 using Godot;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Combat;
@@ -9,15 +7,12 @@ using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Resources;
 using Realm.Ecs.Components.Tags;
-using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Services;
 using Realm.Godot.ReplaySystem;
 using Realm.MapAPI;
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
-using static Realm.Ecs.Common.ResourceConstants;
-using static Realm.Ecs.Common.WorldExtensions;
 
 public partial class GameHost : Node3D, IGameAPI
 {
@@ -25,7 +20,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public Node MainNode { get; private set; }
 
 	public static GameHost Instance { get; private set; }
-	internal readonly NavMeshPathfinder _pathfinder = new();
+	private readonly NavMeshPathfinder _pathfinder = new();
 	public string ActiveMapName { get; private set; } = "melee";
 
 	private AudioService _audioService;
@@ -42,7 +37,6 @@ public partial class GameHost : Node3D, IGameAPI
 	private CheatService _cheatService;
 	private EnvironmentService _environmentService;
 	private SpectatorService _spectatorService;
-	private TechTreeService _techTreeService;
 
 	public CheatService CheatService => _cheatService;
 	public EnvironmentService EnvironmentService => _environmentService;
@@ -54,9 +48,9 @@ public partial class GameHost : Node3D, IGameAPI
 	internal DefinitionManager DefinitionManager => _definitionManager;
 	private DefinitionManager _definitionManager = null!;
 	
-	internal ResourceId _goldResourceId;
-	internal ResourceId _woodResourceId;
-	internal ResourceId _stoneResourceId;
+	private ResourceId _goldResourceId;
+	private ResourceId _woodResourceId;
+	private ResourceId _stoneResourceId;
 	
 	public Entity PlayerEntity => _playerEntity;
 	public Entity EnemyEntity => _enemyPlayerEntity;
@@ -72,7 +66,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private int _nextCommandId
 	{
 		get => EcsWorld?.GetFieldOrDefault<NetworkState, int>(_worldEntity, s => s.NextCommandId, 1) ?? 1;
-		set => EcsWorld?.Mutate<NetworkState>(_worldEntity, (ref NetworkState s) => s.NextCommandId = value);
+		set => EcsWorld?.Mutate(_worldEntity, (ref NetworkState s) => s.NextCommandId = value);
 	}
 
 	private float _commandSendTimer
@@ -84,25 +78,25 @@ public partial class GameHost : Node3D, IGameAPI
 	private int _snapshotSequence
 	{
 		get => EcsWorld?.GetFieldOrDefault<NetworkState, int>(_worldEntity, s => s.SnapshotSequence) ?? 0;
-		set => EcsWorld?.Mutate<NetworkState>(_worldEntity, (ref NetworkState s) => s.SnapshotSequence = value);
+		set => EcsWorld?.Mutate(_worldEntity, (ref NetworkState s) => s.SnapshotSequence = value);
 	}
 
 	private int _lastReceivedBaselineSeq
 	{
 		get => EcsWorld?.GetFieldOrDefault<NetworkState, int>(_worldEntity, s => s.LastReceivedBaselineSeq, -1) ?? -1;
-		set => EcsWorld?.Mutate<NetworkState>(_worldEntity, (ref NetworkState s) => s.LastReceivedBaselineSeq = value);
+		set => EcsWorld?.Mutate(_worldEntity, (ref NetworkState s) => s.LastReceivedBaselineSeq = value);
 	}
 
 	private bool _hasReceivedInitialBaseline
 	{
 		get => EcsWorld?.GetFieldOrDefault<NetworkState, bool>(_worldEntity, s => s.HasReceivedInitialBaseline) ?? false;
-		set => EcsWorld?.Mutate<NetworkState>(_worldEntity, (ref NetworkState s) => s.HasReceivedInitialBaseline = value);
+		set => EcsWorld?.Mutate(_worldEntity, (ref NetworkState s) => s.HasReceivedInitialBaseline = value);
 	}
 
 	private int _lastAppliedSnapshotSequence
 	{
 		get => EcsWorld?.GetFieldOrDefault<NetworkState, int>(_worldEntity, s => s.LastAppliedSnapshotSequence, -1) ?? -1;
-		set => EcsWorld?.Mutate<NetworkState>(_worldEntity, (ref NetworkState s) => s.LastAppliedSnapshotSequence = value);
+		set => EcsWorld?.Mutate(_worldEntity, (ref NetworkState s) => s.LastAppliedSnapshotSequence = value);
 	}
 
 	private ulong _lastSnapshotReceivedTime
@@ -169,8 +163,8 @@ public partial class GameHost : Node3D, IGameAPI
 	private System.Diagnostics.Stopwatch _trackerIntervalStopwatch = new System.Diagnostics.Stopwatch();
 	private List<float> _trackerTickDurations;
 	private List<float> _trackerApiDurations;
-	private float _trackerLastTickDelay = 0f;
-	private bool _isResettingForReplay = false;
+	private float _trackerLastTickDelay;
+	private bool _isResettingForReplay;
 	public string? ActiveSpellTargeting
 	{
 		get => _inputService?.ActiveSpellTargeting;
@@ -183,7 +177,7 @@ public partial class GameHost : Node3D, IGameAPI
 		set { if (_inputService != null) _inputService.ActiveCommandTargeting = value; }
 	}
 
-	public Prop3D SelectedProp { get; private set; } = null;
+	public Prop3D? SelectedProp { get; private set; }
 
 	public string? ActiveBuildingPlacementType
 	{
@@ -200,26 +194,26 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool HasWeaponsUpgrade
 	{
 		get => EcsWorld?.GetFieldOrDefault<PlayerUpgrades, bool>(_playerEntity, u => u.WeaponsUpgrade) ?? false;
-		set => EcsWorld?.Mutate<PlayerUpgrades>(_playerEntity, (ref PlayerUpgrades u) => u.WeaponsUpgrade = value);
+		set => EcsWorld?.Mutate(_playerEntity, (ref PlayerUpgrades u) => u.WeaponsUpgrade = value);
 	}
 
 	public bool HasShieldsUpgrade
 	{
 		get => EcsWorld?.GetFieldOrDefault<PlayerUpgrades, bool>(_playerEntity, u => u.ShieldsUpgrade) ?? false;
-		set => EcsWorld?.Mutate<PlayerUpgrades>(_playerEntity, (ref PlayerUpgrades u) => u.ShieldsUpgrade = value);
+		set => EcsWorld?.Mutate(_playerEntity, (ref PlayerUpgrades u) => u.ShieldsUpgrade = value);
 	}
 
 	public bool HasHarvestingUpgrade
 	{
 		get => EcsWorld?.GetFieldOrDefault<PlayerUpgrades, bool>(_playerEntity, u => u.HarvestingUpgrade) ?? false;
-		set => EcsWorld?.Mutate<PlayerUpgrades>(_playerEntity, (ref PlayerUpgrades u) => u.HarvestingUpgrade = value);
+		set => EcsWorld?.Mutate(_playerEntity, (ref PlayerUpgrades u) => u.HarvestingUpgrade = value);
 	}
 
 
-	private MeshInstance3D _buildingPreviewMesh = null;
+	private MeshInstance3D? _buildingPreviewMesh;
 
 
-	public bool IsMapEditorMode { get; set; } = false;
+	public bool IsMapEditorMode { get; set; }
 	private EditableTerrain _groundTerrain;
 	public EditableTerrain GroundTerrain
 	{
@@ -233,10 +227,10 @@ public partial class GameHost : Node3D, IGameAPI
 			}
 		}
 	}
-	private MeshInstance3D _brushIndicatorMesh = null;
-	private MeshInstance3D _gridOverlayMesh = null;
-	private MeshInstance3D _cameraBoundsOverlayMesh = null;
-	private MeshInstance3D _pathingOverlayMesh = null;
+	private MeshInstance3D? _brushIndicatorMesh;
+	private MeshInstance3D? _gridOverlayMesh;
+	private MeshInstance3D? _cameraBoundsOverlayMesh;
+	private MeshInstance3D? _pathingOverlayMesh;
 	public bool PathingOverlayVisible { get; set; } = true;
 	public enum EditorTool
 	{
@@ -370,8 +364,8 @@ public partial class GameHost : Node3D, IGameAPI
 		get => _editorService.GetBlockLevelHeight(_worldEntity);
 		set => _editorService.SetBlockLevelHeight(_worldEntity, value);
 	}
-	private Node _hoveredEditorObject = null;
-	private MeshInstance3D _selectionHighlightMesh = null;
+	private Node? _hoveredEditorObject;
+	private MeshInstance3D? _selectionHighlightMesh;
 
 
 
@@ -423,8 +417,8 @@ public partial class GameHost : Node3D, IGameAPI
 			MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 		}
 	}
-	private Node _selectedEditorObject = null;
-	private bool _isDraggingObject = false;
+	private Node? _selectedEditorObject;
+	private bool _isDraggingObject;
 	private Vector3 _dragObjectStartPos;
 	private Vector3 _dragObjectStartRot;
 	private Vector3 _dragObjectStartScale;
@@ -434,7 +428,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private Node3D _editorPreviewNode;
 	private string _editorPreviewType = "";
 	private string _editorPreviewId = "";
-	private bool _editorPreviewIsEnemy = false;
+	private bool _editorPreviewIsEnemy;
 
 
 	public struct MinimapPing
@@ -754,7 +748,7 @@ public partial class GameHost : Node3D, IGameAPI
 		{
 			EcsWorld.Add(entity, new BypassPopulationTag());
 		}
-		var unit3D = SpawnUnit3D(entity, unitTypeId, modelPath, pos, meta.Speed == 0f, actualIsEnemy, bypassPopulation);
+		SpawnUnit3D(entity, unitTypeId, modelPath, pos, meta.Speed == 0f, actualIsEnemy, bypassPopulation);
 		
 		return GetUnitWrapper(entity);
 	}
@@ -1193,14 +1187,14 @@ public class {mapName} : IMapScript
 	{
 		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
 		{
-			if (GameHost.TryGetUnit3D(wrapper.Entity, out var u3d))
+			if (GameHost.TryGetUnit3D(wrapper.Entity, out var unit3D))
 			{
-				if (GodotObject.IsInstanceValid(u3d))
+				if (GodotObject.IsInstanceValid(unit3D))
 				{
 					if (!EcsWorld.Has<Dead>(wrapper.Entity))
 					{
 						EcsWorld.Add<Dead>(wrapper.Entity);
-						this.CallDeferred(nameof(KillUnit), u3d);
+						this.CallDeferred(nameof(KillUnit), unit3D);
 					}
 				}
 			}
@@ -1211,21 +1205,21 @@ public class {mapName} : IMapScript
 	{
 		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
 		{
-			if (GameHost.TryGetUnit3D(wrapper.Entity, out var u3d))
+			if (GameHost.TryGetUnit3D(wrapper.Entity, out var unit3D))
 			{
-				if (GodotObject.IsInstanceValid(u3d))
+				if (GodotObject.IsInstanceValid(unit3D))
 				{
-					SelectedUnits.Remove(u3d);
-					AllUnits.Remove(u3d);
+					SelectedUnits.Remove(unit3D);
+					AllUnits.Remove(unit3D);
 					EntityToUnit3D.Remove(wrapper.Entity);
-					if (u3d.UnitId == "castle")
+					if (unit3D.UnitId == "castle")
 					{
-						_castlesList.Remove(u3d);
+						_castlesList.Remove(unit3D);
 					}
 					int id = wrapper.Entity.Id;
 					_unitWrapperCache.Remove(id);
 					EcsWorld.Destroy(wrapper.Entity);
-					u3d.QueueFree();
+					unit3D.QueueFree();
 				}
 			}
 		}
@@ -1235,10 +1229,10 @@ public class {mapName} : IMapScript
 
 
 
-	private int _nextTimerHandle = 0;
+	private int _nextTimerHandle;
 	private readonly Dictionary<int, (float Interval, float Remaining, bool Repeating, Action Callback)> _scheduledTimers = new();
 
-	private static readonly Random _rng = new();
+	private static readonly Random Rng = new();
 
 	int IGameAPI.PlayerCount
 	{
@@ -1362,9 +1356,9 @@ public class {mapName} : IMapScript
 		_scheduledTimers.Remove(timerHandle);
 	}
 
-	int IGameAPI.RandomInt(int min, int max) => _rng.Next(min, max + 1);
+	int IGameAPI.RandomInt(int min, int max) => Rng.Next(min, max + 1);
 
-	float IGameAPI.RandomFloat(float min, float max) => min + (float)_rng.NextDouble() * (max - min);
+	float IGameAPI.RandomFloat(float min, float max) => min + (float)Rng.NextDouble() * (max - min);
 
 	System.Numerics.Vector3 IGameAPI.GetPlayerStartLocation(int playerIndex)
 	{
@@ -1402,8 +1396,8 @@ public class {mapName} : IMapScript
 	{
 		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
 		{
-			if (GameHost.TryGetUnit3D(wrapper.Entity, out var u3d) && GodotObject.IsInstanceValid(u3d))
-				u3d.ApplyModelTint(new Godot.Color(color.X, color.Y, color.Z));
+			if (GameHost.TryGetUnit3D(wrapper.Entity, out var unit3D) && GodotObject.IsInstanceValid(unit3D))
+				unit3D.ApplyModelTint(new Godot.Color(color.X, color.Y, color.Z));
 		}
 	}
 
@@ -1605,7 +1599,7 @@ public class {mapName} : IMapScript
 				if (inside && !occupiedZones.Contains(i))
 				{
 					occupiedZones.Add(i);
-					if (TryGetUnit3D(entity, out var unit3D))
+					if (TryGetUnit3D(entity, out _))
 					{
 						var wrapper = GetUnitWrapper(entity);
 						OnUnitEnterZone?.Invoke(wrapper, i);
@@ -1692,12 +1686,12 @@ public class {mapName} : IMapScript
 		{
 			if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
 			{
-				if (GameHost.TryGetUnit3D(wrapper.Entity, out var u3d))
+				if (GameHost.TryGetUnit3D(wrapper.Entity, out var unit3D))
 				{
-					if (GodotObject.IsInstanceValid(u3d))
+					if (GodotObject.IsInstanceValid(unit3D))
 					{
 						ClearSelection();
-						SelectUnit(u3d);
+						SelectUnit(unit3D);
 						InGameHUD.Instance?.RefreshUI(SelectedUnits);
 					}
 				}
@@ -1972,7 +1966,10 @@ public class {mapName} : IMapScript
 					return;
 				}
 			}
-			catch { }
+			catch (Exception ex)
+			{
+				GD.PrintErr($"Failed to load custom unit registry: {ex.Message}");
+			}
 		}
 
 		UnitRegistry.Clear();
@@ -2015,7 +2012,10 @@ public class {mapName} : IMapScript
 							_activeMapScript = (IMapScript)Activator.CreateInstance(type);
 							break;
 						}
-						catch { }
+						catch (Exception ex)
+						{
+							GD.PrintErr($"Failed to instantiate map script type {type.FullName}: {ex.Message}");
+						}
 					}
 				}
 			}
@@ -2033,9 +2033,9 @@ public class {mapName} : IMapScript
 	private double[] _lastGroupPressTime = new double[10];
 
 
-	private bool _isDragging = false;
-	private Vector2 _dragStart = Vector2.Zero;
-	private Vector2 _dragEnd = Vector2.Zero;
+	private bool _isDragging;
+	private Vector2 _dragStart;
+	private Vector2 _dragEnd;
 	private const float DragThreshold = 8f;
 
 	public override void _Ready()
@@ -2552,19 +2552,19 @@ public class {mapName} : IMapScript
 
 
 		var soldierEntity = CreateEcsUnit("soldier", "Soldier", 150f, 15f, 2.0f, 5f, 6.0f, new Vector3(-8, 0, 5), playerOwner);
-		var soldier3D = SpawnUnit3D(soldierEntity, "soldier", GetFallbackModelPath("soldier", false), new Vector3(-8, 0, 5), false, false);
+		SpawnUnit3D(soldierEntity, "soldier", GetFallbackModelPath("soldier", false), new Vector3(-8, 0, 5), false, false);
 		
 
 		var archerEntity = CreateEcsUnit("archer", "Elf Archer", 90f, 12f, 18.0f, 2f, 8.0f, new Vector3(-12, 0, 5), playerOwner);
-		var archer3D = SpawnUnit3D(archerEntity, "archer", GetFallbackModelPath("archer", false), new Vector3(-12, 0, 5), false, false);
+		SpawnUnit3D(archerEntity, "archer", GetFallbackModelPath("archer", false), new Vector3(-12, 0, 5), false, false);
 
 
 		var castleEntity = CreateEcsUnit("castle", "Town Castle", 1000f, 0f, 0f, 15f, 0f, new Vector3(-25, 0, -25), playerOwner);
-		var castle3D = SpawnUnit3D(castleEntity, "castle", GetFallbackModelPath("castle", true), new Vector3(-25, 0, -25), true, false);
+		SpawnUnit3D(castleEntity, "castle", GetFallbackModelPath("castle", true), new Vector3(-25, 0, -25), true, false);
 
 
 		var towerEntity = CreateEcsUnit("tower", "Spell Tower", 500f, 25f, 25.0f, 8f, 0f, new Vector3(-15, 0, -15), playerOwner);
-		var tower3D = SpawnUnit3D(towerEntity, "tower", GetFallbackModelPath("tower", true), new Vector3(-15, 0, -15), true, false);
+		SpawnUnit3D(towerEntity, "tower", GetFallbackModelPath("tower", true), new Vector3(-15, 0, -15), true, false);
 
 
 
@@ -2581,19 +2581,19 @@ public class {mapName} : IMapScript
 
 
 		var enemySoldierEntity = CreateEcsUnit("soldier", "Orc Raider", 150f, 15f, 2.0f, 5f, 6.0f, new Vector3(15, 0, 10), enemyOwner);
-		var enemySoldier3D = SpawnUnit3D(enemySoldierEntity, "soldier", GetFallbackModelPath("soldier", false), new Vector3(15, 0, 10), false, true);
+		SpawnUnit3D(enemySoldierEntity, "soldier", GetFallbackModelPath("soldier", false), new Vector3(15, 0, 10), false, true);
 
 
 		var enemyArcherEntity = CreateEcsUnit("archer", "Dark Archer", 90f, 12f, 18.0f, 2f, 8.0f, new Vector3(20, 0, 15), enemyOwner);
-		var enemyArcher3D = SpawnUnit3D(enemyArcherEntity, "archer", GetFallbackModelPath("archer", false), new Vector3(20, 0, 15), false, true);
+		SpawnUnit3D(enemyArcherEntity, "archer", GetFallbackModelPath("archer", false), new Vector3(20, 0, 15), false, true);
 
 
 		var enemyTowerEntity = CreateEcsUnit("tower", "Orc Totem Tower", 500f, 25f, 25.0f, 8f, 0f, new Vector3(25, 0, 5), enemyOwner);
-		var enemyTower3D = SpawnUnit3D(enemyTowerEntity, "tower", GetFallbackModelPath("tower", true), new Vector3(25, 0, 5), true, true);
+		SpawnUnit3D(enemyTowerEntity, "tower", GetFallbackModelPath("tower", true), new Vector3(25, 0, 5), true, true);
 
 
 		var enemyCastleEntity = CreateEcsUnit("castle", "Orc Stronghold", 1000f, 0f, 0f, 15f, 0f, new Vector3(25, 0, 25), enemyOwner);
-		var enemyCastle3D = SpawnUnit3D(enemyCastleEntity, "castle", GetFallbackModelPath("castle", true), new Vector3(25, 0, 25), true, true);
+		SpawnUnit3D(enemyCastleEntity, "castle", GetFallbackModelPath("castle", true), new Vector3(25, 0, 25), true, true);
 	}
 
 	private void SpawnDefaultResourceNodes()
@@ -2937,11 +2937,11 @@ public class {mapName} : IMapScript
 		}
 	}
 
-	private static readonly Dictionary<string, float> _obstacleRadiusCache = new();
+	private static readonly Dictionary<string, float> ObstacleRadiusCache = new();
 
 	public float GetOrCalculateObstacleRadius(string id, Node3D node)
 	{
-		if (_obstacleRadiusCache.TryGetValue(id, out float cachedRadius))
+		if (ObstacleRadiusCache.TryGetValue(id, out float cachedRadius))
 		{
 			return cachedRadius;
 		}
@@ -2950,7 +2950,7 @@ public class {mapName} : IMapScript
 		if (node != null)
 		{
 			radius = CalculateNodeRadius(node);
-			_obstacleRadiusCache[id] = radius;
+			ObstacleRadiusCache[id] = radius;
 		}
 		return radius;
 	}

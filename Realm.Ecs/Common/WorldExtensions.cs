@@ -27,7 +27,7 @@ internal static class WorldExtensions
         this World world,
         Entity entity,
         Func<TComponent, TField> selector,
-        TField fallback = default)
+        TField fallback = default!)
         where TComponent : struct
     {
         if (world.IsAlive(entity) && world.Has<TComponent>(entity))

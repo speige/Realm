@@ -9,13 +9,11 @@ namespace Realm.Ecs.Services;
 /// </summary>
 internal class StatService
 {
-	private readonly DefinitionManager _definitionManager;
 	private readonly WorldAccessor _ecsWorldAccessor;
 
 	public StatService(WorldAccessor ecsWorldAccessor, DefinitionManager definitionManager)
 	{
 		_ecsWorldAccessor = ecsWorldAccessor;
-		_definitionManager = definitionManager;
 	}
 
 	/// <summary>
@@ -29,7 +27,7 @@ internal class StatService
 		var baseStats = _ecsWorldAccessor.Current.Get<Stats>(entity).Value;
 		if (!baseStats.TryGetValue(statId, out var currentValue)) return 0f;
 
-		var query = Realm.Ecs.Common.QueryCache.AllStatModifierQuery;
+		var query = QueryCache.AllStatModifierQuery;
 		var flatBonus = 0f;
 		var percentBonus = 1.0f;
 

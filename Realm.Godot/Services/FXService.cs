@@ -1,18 +1,13 @@
-﻿using Godot;
+using Godot;
 using Realm.Ecs.Services;
 using Realm.MapAPI;
 using System;
 using System.Collections.Generic;
-using Arch.Core;
 
 public class FXService
 {
-	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
-
 	public FXService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 	public void SpawnFireblastEffect(Node3D parent, Vector3 position)
 	{

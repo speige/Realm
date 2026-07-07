@@ -1,12 +1,8 @@
 using Arch.Core;
 using Realm.Ecs.Components.Terrain;
-using DotRecast.Core.Numerics;
 using DotRecast.Detour;
-using DotRecast.Recast;
-using DotRecast.Recast.Geom;
 using Godot;
 using System;
-using System.Collections.Generic;
 
 public partial class EditableTerrain : StaticBody3D
 {
@@ -35,31 +31,9 @@ public partial class EditableTerrain : StaticBody3D
 		}
 	}
 
-	public DtNavMesh NavMesh
-	{
-		get => GetTerrainStateSafe().NavMesh;
-		private set
-		{
-			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
-			GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-				state.Width, state.Depth, state.Spacing, state.CellSize, state.WaterHeight, state.WaterEnabled,
-				state.Heights, state.PathingCodes, value, state.NavMeshQuery
-			));
-		}
-	}
+	public DtNavMesh NavMesh => GetTerrainStateSafe().NavMesh;
 
-	public DtNavMeshQuery NavMeshQuery
-	{
-		get => GetTerrainStateSafe().NavMeshQuery;
-		private set
-		{
-			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
-			GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-				state.Width, state.Depth, state.Spacing, state.CellSize, state.WaterHeight, state.WaterEnabled,
-				state.Heights, state.PathingCodes, state.NavMesh, value
-			));
-		}
-	}
+	public DtNavMeshQuery NavMeshQuery => GetTerrainStateSafe().NavMeshQuery;
 
 	public int Width
 	{
@@ -387,7 +361,7 @@ void fragment() {
 }
 ";
 
-		var paths = new string[]
+		var paths = new[]
 		{
 			"res://Assets/2d/TileSheets/ancient_ruin.png",
 			"res://Assets/2d/TileSheets/deep_moss.png",

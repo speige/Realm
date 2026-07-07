@@ -12,28 +12,28 @@ using System.Collections.Generic;
 
 internal class InputService
 {
-	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private readonly WorldAccessor EcsWorldAccessor;
+	private World EcsWorld => EcsWorldAccessor.Current;
 	private readonly TechTreeService _techTreeService;
-	private int _buildingCycleIndex = 0;
+	private int _buildingCycleIndex;
 
 	public InputService(WorldAccessor ecsWorldAccessor, TechTreeService techTreeService)
 	{
-		_ecsWorldAccessor = ecsWorldAccessor;
+		EcsWorldAccessor = ecsWorldAccessor;
 		_techTreeService = techTreeService;
 	}
 
 	private Entity GetWorldEntity()
 	{
 		Entity worldEntity = Entity.Null;
-		var query = Realm.Ecs.Common.QueryCache.AllInputStateQuery;
-		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
+		var query = QueryCache.AllInputStateQuery;
+		EcsWorld.Query(in query, entity => worldEntity = entity);
 		return worldEntity;
 	}
 
 	private ref InputState GetInputState(Entity worldEntity)
 	{
-		return ref _ecsWorld.Get<InputState>(worldEntity);
+		return ref EcsWorld.Get<InputState>(worldEntity);
 	}
 
 	public void ClearTargetingModes()
@@ -66,16 +66,16 @@ internal class InputService
 
 	public void ClearUnitOrders(Entity entity)
 	{
-		if (_ecsWorld.Has<MoveTo>(entity)) _ecsWorld.Remove<MoveTo>(entity);
-		if (_ecsWorld.Has<PathFollow>(entity)) _ecsWorld.Remove<PathFollow>(entity);
-		if (_ecsWorld.Has<AttackTarget>(entity)) _ecsWorld.Remove<AttackTarget>(entity);
-		if (_ecsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(entity)) _ecsWorld.Remove<Realm.Ecs.Components.Movement.AttackMove>(entity);
-		if (_ecsWorld.Has<Realm.Ecs.Components.Movement.HoldPosition>(entity)) _ecsWorld.Remove<Realm.Ecs.Components.Movement.HoldPosition>(entity);
-		if (_ecsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity)) _ecsWorld.Remove<Realm.Ecs.Components.Movement.Follow>(entity);
-		if (_ecsWorld.Has<Patrol>(entity)) _ecsWorld.Remove<Patrol>(entity);
-		if (_ecsWorld.Has<HealingTarget>(entity)) _ecsWorld.Remove<HealingTarget>(entity);
-		if (_ecsWorld.Has<WaypointQueue>(entity)) _ecsWorld.Remove<WaypointQueue>(entity);
-		if (_ecsWorld.Has<Gatherer>(entity)) _ecsWorld.Remove<Gatherer>(entity);
+		if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Remove<MoveTo>(entity);
+		if (EcsWorld.Has<PathFollow>(entity)) EcsWorld.Remove<PathFollow>(entity);
+		if (EcsWorld.Has<AttackTarget>(entity)) EcsWorld.Remove<AttackTarget>(entity);
+		if (EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(entity)) EcsWorld.Remove<Realm.Ecs.Components.Movement.AttackMove>(entity);
+		if (EcsWorld.Has<Realm.Ecs.Components.Movement.HoldPosition>(entity)) EcsWorld.Remove<Realm.Ecs.Components.Movement.HoldPosition>(entity);
+		if (EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity)) EcsWorld.Remove<Realm.Ecs.Components.Movement.Follow>(entity);
+		if (EcsWorld.Has<Patrol>(entity)) EcsWorld.Remove<Patrol>(entity);
+		if (EcsWorld.Has<HealingTarget>(entity)) EcsWorld.Remove<HealingTarget>(entity);
+		if (EcsWorld.Has<WaypointQueue>(entity)) EcsWorld.Remove<WaypointQueue>(entity);
+		if (EcsWorld.Has<Gatherer>(entity)) EcsWorld.Remove<Gatherer>(entity);
 	}
 
 	public void IssueMoveCommand(List<Entity> selectedEntities, System.Numerics.Vector3 targetPos)
@@ -88,13 +88,13 @@ internal class InputService
 		int movableCount = 0;
 		foreach (var entity in selectedEntities)
 		{
-			if (!_ecsWorld.IsAlive(entity)) continue;
-			if (_ecsWorld.Has<Building>(entity)) continue;
-			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+			if (!EcsWorld.IsAlive(entity)) continue;
+			if (EcsWorld.Has<Building>(entity)) continue;
+			bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			if (isEnemy) continue;
-			if (_ecsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity) && _ecsWorld.Has<Position>(entity))
+			if (EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity) && EcsWorld.Has<Position>(entity))
 			{
-				groupCenter += _ecsWorld.Get<Position>(entity).Value;
+				groupCenter += EcsWorld.Get<Position>(entity).Value;
 				movableCount++;
 			}
 		}
@@ -117,14 +117,14 @@ internal class InputService
 
 		foreach (var entity in selectedEntities)
 		{
-			if (!_ecsWorld.IsAlive(entity)) continue;
-			bool isBuilding = _ecsWorld.Has<Building>(entity);
-			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+			if (!EcsWorld.IsAlive(entity)) continue;
+			bool isBuilding = EcsWorld.Has<Building>(entity);
+			bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			if (isBuilding || isEnemy) continue;
 
 			ClearUnitOrders(entity);
 
-			if (_ecsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity))
+			if (EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity))
 			{
 				int row = unitIndex / cols;
 				int col = unitIndex % cols;
@@ -133,10 +133,10 @@ internal class InputService
 				var scattered = targetPos + right * offsetX + moveDir * offsetZ;
 
 				var moveTo = new MoveTo(scattered);
-				if (_ecsWorld.Has<MoveTo>(entity))
-					_ecsWorld.Set(entity, moveTo);
+				if (EcsWorld.Has<MoveTo>(entity))
+					EcsWorld.Set(entity, moveTo);
 				else
-					_ecsWorld.Add(entity, moveTo);
+					EcsWorld.Add(entity, moveTo);
 
 				unitIndex++;
 			}
@@ -153,13 +153,13 @@ internal class InputService
 		int movableCount = 0;
 		foreach (var entity in selectedEntities)
 		{
-			if (!_ecsWorld.IsAlive(entity)) continue;
-			if (_ecsWorld.Has<Building>(entity)) continue;
-			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+			if (!EcsWorld.IsAlive(entity)) continue;
+			if (EcsWorld.Has<Building>(entity)) continue;
+			bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			if (isEnemy) continue;
-			if (_ecsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity) && _ecsWorld.Has<Position>(entity))
+			if (EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity) && EcsWorld.Has<Position>(entity))
 			{
-				groupCenter += _ecsWorld.Get<Position>(entity).Value;
+				groupCenter += EcsWorld.Get<Position>(entity).Value;
 				movableCount++;
 			}
 		}
@@ -182,13 +182,13 @@ internal class InputService
 
 		foreach (var entity in selectedEntities)
 		{
-			if (!_ecsWorld.IsAlive(entity)) continue;
-			bool isBuilding = _ecsWorld.Has<Building>(entity);
-			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+			if (!EcsWorld.IsAlive(entity)) continue;
+			bool isBuilding = EcsWorld.Has<Building>(entity);
+			bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			if (isBuilding || isEnemy) continue;
-			if (!_ecsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity)) continue;
+			if (!EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity)) continue;
 
-			bool alreadyMoving = _ecsWorld.Has<MoveTo>(entity);
+			bool alreadyMoving = EcsWorld.Has<MoveTo>(entity);
 			if (!alreadyMoving)
 			{
 				ClearUnitOrders(entity);
@@ -202,25 +202,25 @@ internal class InputService
 
 			if (alreadyMoving)
 			{
-				if (_ecsWorld.Has<WaypointQueue>(entity))
+				if (EcsWorld.Has<WaypointQueue>(entity))
 				{
-					var q = _ecsWorld.Get<WaypointQueue>(entity);
+					var q = EcsWorld.Get<WaypointQueue>(entity);
 					q.Add(scattered);
-					_ecsWorld.Set(entity, q);
+					EcsWorld.Set(entity, q);
 				}
 				else
 				{
 					var q = new WaypointQueue(scattered);
-					_ecsWorld.Add(entity, q);
+					EcsWorld.Add(entity, q);
 				}
 			}
 			else
 			{
 				var moveTo = new MoveTo(scattered);
-				if (_ecsWorld.Has<MoveTo>(entity))
-					_ecsWorld.Set(entity, moveTo);
+				if (EcsWorld.Has<MoveTo>(entity))
+					EcsWorld.Set(entity, moveTo);
 				else
-					_ecsWorld.Add(entity, moveTo);
+					EcsWorld.Add(entity, moveTo);
 			}
 
 			unitIndex++;
@@ -231,18 +231,18 @@ internal class InputService
 	{
 		foreach (var entity in selectedEntities)
 		{
-			if (!_ecsWorld.IsAlive(entity)) continue;
-			bool isBuilding = _ecsWorld.Has<Building>(entity);
-			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+			if (!EcsWorld.IsAlive(entity)) continue;
+			bool isBuilding = EcsWorld.Has<Building>(entity);
+			bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			if (isBuilding || isEnemy) continue;
 
 			ClearUnitOrders(entity);
 
 			var attackTarget = new AttackTarget(targetEntity);
-			if (_ecsWorld.Has<AttackTarget>(entity))
-				_ecsWorld.Set(entity, attackTarget);
+			if (EcsWorld.Has<AttackTarget>(entity))
+				EcsWorld.Set(entity, attackTarget);
 			else
-				_ecsWorld.Add(entity, attackTarget);
+				EcsWorld.Add(entity, attackTarget);
 		}
 	}
 
@@ -250,25 +250,25 @@ internal class InputService
 	{
 		foreach (var entity in selectedEntities)
 		{
-			if (!_ecsWorld.IsAlive(entity) || entity == targetEntity) continue;
-			bool isBuilding = _ecsWorld.Has<Building>(entity);
-			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+			if (!EcsWorld.IsAlive(entity) || entity == targetEntity) continue;
+			bool isBuilding = EcsWorld.Has<Building>(entity);
+			bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			if (isBuilding || isEnemy) continue;
 
 			ClearUnitOrders(entity);
 
-			if (_ecsWorld.Has<DefinitionId>(entity) && _ecsWorld.Get<DefinitionId>(entity).Value == "priest")
+			if (EcsWorld.Has<DefinitionId>(entity) && EcsWorld.Get<DefinitionId>(entity).Value == "priest")
 			{
 				var healTarget = new HealingTarget(targetEntity);
-				_ecsWorld.Add(entity, healTarget);
+				EcsWorld.Add(entity, healTarget);
 			}
-			else if (_ecsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity))
+			else if (EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity))
 			{
 				var follow = new Follow(targetEntity);
-				if (_ecsWorld.Has<Follow>(entity))
-					_ecsWorld.Set(entity, follow);
+				if (EcsWorld.Has<Follow>(entity))
+					EcsWorld.Set(entity, follow);
 				else
-					_ecsWorld.Add(entity, follow);
+					EcsWorld.Add(entity, follow);
 			}
 		}
 	}
@@ -281,31 +281,31 @@ internal class InputService
 
 		foreach (var entity in selectedEntities)
 		{
-			if (!_ecsWorld.IsAlive(entity)) continue;
-			bool isBuilding = _ecsWorld.Has<Building>(entity);
-			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+			if (!EcsWorld.IsAlive(entity)) continue;
+			bool isBuilding = EcsWorld.Has<Building>(entity);
+			bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			if (isBuilding || isEnemy) continue;
 
 			ClearUnitOrders(entity);
 
-			if (_ecsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity))
+			if (EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity))
 			{
 				int row = unitIndex / cols;
 				int col = unitIndex % cols;
 				float offsetX = (col - cols * 0.5f + 0.5f) * spacing;
 				float offsetZ = row * spacing;
 
-				var unitPos = _ecsWorld.Has<Position>(entity) ? _ecsWorld.Get<Position>(entity).Value : System.Numerics.Vector3.Zero;
+				var unitPos = EcsWorld.Has<Position>(entity) ? EcsWorld.Get<Position>(entity).Value : System.Numerics.Vector3.Zero;
 				var patrolA = new System.Numerics.Vector3(unitPos.X, unitPos.Y, unitPos.Z);
 				var patrolB = new System.Numerics.Vector3(targetPos.X + offsetX, targetPos.Y, targetPos.Z + offsetZ);
 
 				var patrol = new Patrol(patrolA, patrolB);
-				if (_ecsWorld.Has<Patrol>(entity)) _ecsWorld.Set(entity, patrol);
-				else _ecsWorld.Add(entity, patrol);
+				if (EcsWorld.Has<Patrol>(entity)) EcsWorld.Set(entity, patrol);
+				else EcsWorld.Add(entity, patrol);
 
 				var moveTo = new MoveTo(patrolB);
-				if (_ecsWorld.Has<MoveTo>(entity)) _ecsWorld.Set(entity, moveTo);
-				else _ecsWorld.Add(entity, moveTo);
+				if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+				else EcsWorld.Add(entity, moveTo);
 
 				unitIndex++;
 			}
@@ -316,24 +316,24 @@ internal class InputService
 	{
 		foreach (var entity in selectedEntities)
 		{
-			if (!_ecsWorld.IsAlive(entity)) continue;
-			bool isBuilding = _ecsWorld.Has<Building>(entity);
-			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+			if (!EcsWorld.IsAlive(entity)) continue;
+			bool isBuilding = EcsWorld.Has<Building>(entity);
+			bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			if (isBuilding || isEnemy) continue;
 
 			ClearUnitOrders(entity);
 
 			var attackMove = new AttackMove(targetPos);
-			if (_ecsWorld.Has<AttackMove>(entity))
-				_ecsWorld.Set(entity, attackMove);
+			if (EcsWorld.Has<AttackMove>(entity))
+				EcsWorld.Set(entity, attackMove);
 			else
-				_ecsWorld.Add(entity, attackMove);
+				EcsWorld.Add(entity, attackMove);
 
 			var moveTo = new MoveTo(targetPos);
-			if (_ecsWorld.Has<MoveTo>(entity))
-				_ecsWorld.Set(entity, moveTo);
+			if (EcsWorld.Has<MoveTo>(entity))
+				EcsWorld.Set(entity, moveTo);
 			else
-				_ecsWorld.Add(entity, moveTo);
+				EcsWorld.Add(entity, moveTo);
 		}
 	}
 
@@ -341,15 +341,15 @@ internal class InputService
 	{
 		foreach (var entity in selectedEntities)
 		{
-			if (!_ecsWorld.IsAlive(entity)) continue;
-			bool isBuilding = _ecsWorld.Has<Building>(entity);
-			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+			if (!EcsWorld.IsAlive(entity)) continue;
+			bool isBuilding = EcsWorld.Has<Building>(entity);
+			bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			if (isBuilding || isEnemy) continue;
 
 			ClearUnitOrders(entity);
 
-			if (!_ecsWorld.Has<HoldPosition>(entity))
-				_ecsWorld.Add<HoldPosition>(entity);
+			if (!EcsWorld.Has<HoldPosition>(entity))
+				EcsWorld.Add<HoldPosition>(entity);
 		}
 	}
 
@@ -357,8 +357,8 @@ internal class InputService
 	{
 		foreach (var entity in selectedEntities)
 		{
-			if (!_ecsWorld.IsAlive(entity)) continue;
-			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+			if (!EcsWorld.IsAlive(entity)) continue;
+			bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			if (isEnemy) continue;
 
 			ClearUnitOrders(entity);
@@ -369,7 +369,7 @@ internal class InputService
 	{
 		if (selectedCount <= 1 || worldEntity == Entity.Null) return 0;
 
-		ref var state = ref _ecsWorld.Get<InputState>(worldEntity);
+		ref var state = ref EcsWorld.Get<InputState>(worldEntity);
 		if (reverse)
 		{
 			state.CycleSelectionIndex = (state.CycleSelectionIndex - 1 + selectedCount) % selectedCount;
@@ -386,7 +386,7 @@ internal class InputService
 	{
 		var buildings = new List<Entity>();
 		var query = Realm.Ecs.Common.QueryCache.AllBuildingAndOwnerAndPositionNoneDeadQuery;
-		_ecsWorld.Query(in query, (Entity entity, ref Owner owner) =>
+		EcsWorld.Query(in query, (Entity entity, ref Owner owner) =>
 		{
 			if (owner.PlayerEntity.Value == playerEntity)
 			{
@@ -403,9 +403,9 @@ internal class InputService
 	{
 		foreach (var entity in entities)
 		{
-			if (_ecsWorld.IsAlive(entity) && !_ecsWorld.Has<Dead>(entity))
+			if (EcsWorld.IsAlive(entity) && !EcsWorld.Has<Dead>(entity))
 			{
-				_ecsWorld.Add<Dead>(entity);
+				EcsWorld.Add<Dead>(entity);
 			}
 		}
 	}
@@ -414,14 +414,14 @@ internal class InputService
 	{
 		var result = new List<Entity>();
 		var query = Realm.Ecs.Common.QueryCache.AllOwnerAndMovableNoneDeadAndBuildingQuery;
-		_ecsWorld.Query(in query, (Entity entity, ref Owner owner) =>
+		EcsWorld.Query(in query, (Entity entity, ref Owner owner) =>
 		{
 			if (owner.PlayerEntity.Value == playerEntity)
 			{
-				bool hasMoveTo = _ecsWorld.Has<MoveTo>(entity);
-				bool hasAttackTarget = _ecsWorld.Has<AttackTarget>(entity);
-				bool hasAttackMove = _ecsWorld.Has<AttackMove>(entity);
-				bool isGathering = _ecsWorld.Has<Gatherer>(entity) && _ecsWorld.Get<Gatherer>(entity).TargetEntity != Entity.Null;
+				bool hasMoveTo = EcsWorld.Has<MoveTo>(entity);
+				bool hasAttackTarget = EcsWorld.Has<AttackTarget>(entity);
+				bool hasAttackMove = EcsWorld.Has<AttackMove>(entity);
+				bool isGathering = EcsWorld.Has<Gatherer>(entity) && EcsWorld.Get<Gatherer>(entity).TargetEntity != Entity.Null;
 
 				if (!hasMoveTo && !hasAttackTarget && !hasAttackMove && !isGathering)
 				{
@@ -436,7 +436,7 @@ internal class InputService
 	{
 		var result = new List<Entity>();
 		var query = Realm.Ecs.Common.QueryCache.AllOwnerAndMovableNoneDeadAndBuildingQuery;
-		_ecsWorld.Query(in query, (Entity entity, ref Owner owner) =>
+		EcsWorld.Query(in query, (Entity entity, ref Owner owner) =>
 		{
 			if (owner.PlayerEntity.Value == playerEntity)
 			{
@@ -450,7 +450,7 @@ internal class InputService
 	{
 		var result = new List<Entity>();
 		var query = Realm.Ecs.Common.QueryCache.AllOwnerAndBuildingNoneDeadQuery;
-		_ecsWorld.Query(in query, (Entity entity, ref Owner owner) =>
+		EcsWorld.Query(in query, (Entity entity, ref Owner owner) =>
 		{
 			if (owner.PlayerEntity.Value == playerEntity)
 			{
@@ -469,7 +469,7 @@ internal class InputService
 	{
 		bool obstructed = false;
 		var query = Realm.Ecs.Common.QueryCache.AllPositionNoneDeadQuery;
-		_ecsWorld.Query(in query, (Entity entity, ref Position pos) =>
+		EcsWorld.Query(in query, (Entity entity, ref Position pos) =>
 		{
 			if (System.Numerics.Vector3.Distance(position, pos.Value) < clearance)
 			{
@@ -484,28 +484,28 @@ internal class InputService
 		bool blocked = false;
 
 		var query = Realm.Ecs.Common.QueryCache.AllPositionNoneDeadQuery;
-		_ecsWorld.Query(in query, (Entity entity, ref Position entityPos) =>
+		EcsWorld.Query(in query, (Entity entity, ref Position entityPos) =>
 		{
 			if (entity == ignoreEntity) return;
 
 			float r1 = checkRadius;
 			float r2 = 1.2f;
 
-			if (_ecsWorld.Has<DefinitionId>(entity))
+			if (EcsWorld.Has<DefinitionId>(entity))
 			{
-				string defId = _ecsWorld.Get<DefinitionId>(entity).Value;
-				float scale = _ecsWorld.Has<ModelScale>(entity) ? _ecsWorld.Get<ModelScale>(entity).Value : 1.0f;
+				string defId = EcsWorld.Get<DefinitionId>(entity).Value;
+				float scale = EcsWorld.Has<ModelScale>(entity) ? EcsWorld.Get<ModelScale>(entity).Value : 1.0f;
 				r2 = GetPlacementRadius(defId, scale);
 			}
-			else if (_ecsWorld.Has<PropIdentity>(entity))
+			else if (EcsWorld.Has<PropIdentity>(entity))
 			{
-				string propId = _ecsWorld.Get<PropIdentity>(entity).PropId;
-				float scale = _ecsWorld.Has<ModelScale>(entity) ? _ecsWorld.Get<ModelScale>(entity).Value : 1.0f;
+				string propId = EcsWorld.Get<PropIdentity>(entity).PropId;
+				float scale = EcsWorld.Has<ModelScale>(entity) ? EcsWorld.Get<ModelScale>(entity).Value : 1.0f;
 				r2 = GetPlacementRadius(propId, scale);
 			}
 			else
 			{
-				float scale = _ecsWorld.Has<ModelScale>(entity) ? _ecsWorld.Get<ModelScale>(entity).Value : 1.0f;
+				float scale = EcsWorld.Has<ModelScale>(entity) ? EcsWorld.Get<ModelScale>(entity).Value : 1.0f;
 				r2 = scale * 1.2f;
 			}
 
@@ -574,10 +574,10 @@ internal class InputService
 	public bool TryExecuteSpellCast(Entity playerEntity, string spellId, out float cooldownMax)
 	{
 		cooldownMax = 0f;
-		if (!_ecsWorld.IsAlive(playerEntity) || !_ecsWorld.Has<SpellCooldowns>(playerEntity))
+		if (!EcsWorld.IsAlive(playerEntity) || !EcsWorld.Has<SpellCooldowns>(playerEntity))
 			return false;
 
-		ref var cd = ref _ecsWorld.Get<SpellCooldowns>(playerEntity);
+		ref var cd = ref EcsWorld.Get<SpellCooldowns>(playerEntity);
 
 		if (spellId == "fireball")
 		{
@@ -607,11 +607,11 @@ internal class InputService
 
 		Entity target = FindClosestFriendlyCombatUnit(castlePos, playerEntity, 20.0f);
 
-		if (target == Entity.Null && _ecsWorld.IsAlive(selectedUnitEntity))
+		if (target == Entity.Null && EcsWorld.IsAlive(selectedUnitEntity))
 		{
-			bool isBuilding = _ecsWorld.Has<Building>(selectedUnitEntity);
-			bool isEnemy = _ecsWorld.Has<UnitFaction>(selectedUnitEntity) && _ecsWorld.Get<UnitFaction>(selectedUnitEntity).IsEnemy;
-			if (!isBuilding && !isEnemy && _ecsWorld.Has<Inventory>(selectedUnitEntity))
+			bool isBuilding = EcsWorld.Has<Building>(selectedUnitEntity);
+			bool isEnemy = EcsWorld.Has<UnitFaction>(selectedUnitEntity) && EcsWorld.Get<UnitFaction>(selectedUnitEntity).IsEnemy;
+			if (!isBuilding && !isEnemy && EcsWorld.Has<Inventory>(selectedUnitEntity))
 			{
 				target = selectedUnitEntity;
 			}
@@ -620,7 +620,7 @@ internal class InputService
 		if (target != Entity.Null)
 		{
 			targetUnitEntity = target;
-			ref var inv = ref _ecsWorld.Get<Inventory>(target);
+			ref var inv = ref EcsWorld.Get<Inventory>(target);
 			inv.Potions += 1;
 			return true;
 		}
@@ -634,7 +634,7 @@ internal class InputService
 		float closestDist = maxDistance;
 
 		var query = Realm.Ecs.Common.QueryCache.AllPositionAndOwnerAndInventoryNoneDeadAndBuildingQuery;
-		_ecsWorld.Query(in query, (Entity entity, ref Position pos, ref Owner owner) =>
+		EcsWorld.Query(in query, (Entity entity, ref Position pos, ref Owner owner) =>
 		{
 			if (owner.PlayerEntity.Value == playerEntity)
 			{
@@ -653,13 +653,13 @@ internal class InputService
 	public bool UseHealingPotion(Entity unitEntity, out float healedAmount)
 	{
 		healedAmount = 0f;
-		if (!_ecsWorld.IsAlive(unitEntity) || !_ecsWorld.Has<Inventory>(unitEntity) || !_ecsWorld.Has<Health>(unitEntity))
+		if (!EcsWorld.IsAlive(unitEntity) || !EcsWorld.Has<Inventory>(unitEntity) || !EcsWorld.Has<Health>(unitEntity))
 			return false;
 
-		ref var inv = ref _ecsWorld.Get<Inventory>(unitEntity);
+		ref var inv = ref EcsWorld.Get<Inventory>(unitEntity);
 		if (inv.Potions <= 0) return false;
 
-		ref var hp = ref _ecsWorld.Get<Health>(unitEntity);
+		ref var hp = ref EcsWorld.Get<Health>(unitEntity);
 		if (hp.Current >= hp.Max) return false;
 
 		inv.Potions--;
@@ -672,11 +672,11 @@ internal class InputService
 
 	public bool TryQueueUnitAtCastle(Entity playerEntity, Entity castleEntity, string unitId, int popCost, float productionTime)
 	{
-		if (!_ecsWorld.IsAlive(playerEntity) || !_ecsWorld.IsAlive(castleEntity)) return false;
+		if (!EcsWorld.IsAlive(playerEntity) || !EcsWorld.IsAlive(castleEntity)) return false;
 
-		if (_ecsWorld.Has<PlayerPopulation>(playerEntity))
+		if (EcsWorld.Has<PlayerPopulation>(playerEntity))
 		{
-			ref var pop = ref _ecsWorld.Get<PlayerPopulation>(playerEntity);
+			ref var pop = ref EcsWorld.Get<PlayerPopulation>(playerEntity);
 			if (popCost > 0 && pop.Current + popCost > pop.Max)
 			{
 				return false;
@@ -684,8 +684,8 @@ internal class InputService
 			pop.Current += popCost;
 		}
 
-		ref var prod = ref _ecsWorld.Has<ProductionQueue>(castleEntity)
-			? ref _ecsWorld.Get<ProductionQueue>(castleEntity)
+		ref var prod = ref EcsWorld.Has<ProductionQueue>(castleEntity)
+			? ref EcsWorld.Get<ProductionQueue>(castleEntity)
 			: ref CreateProductionQueue(castleEntity);
 
 		if (prod.UnitIds.Count >= 5) return false;
@@ -695,15 +695,15 @@ internal class InputService
 			prod.BuildTime = productionTime;
 		}
 		prod.UnitIds.Add(unitId);
-		_ecsWorld.Set(castleEntity, prod);
+		EcsWorld.Set(castleEntity, prod);
 
 		return true;
 	}
 
 	private ref ProductionQueue CreateProductionQueue(Entity castleEntity)
 	{
-		_ecsWorld.Add(castleEntity, new ProductionQueue());
-		return ref _ecsWorld.Get<ProductionQueue>(castleEntity);
+		EcsWorld.Add(castleEntity, new ProductionQueue());
+		return ref EcsWorld.Get<ProductionQueue>(castleEntity);
 	}
 
 	public bool CancelQueuedUnitAt(Entity castleEntity, int index, out string? cancelledUnitId, out string? nextUnitId)
@@ -711,10 +711,10 @@ internal class InputService
 		cancelledUnitId = null;
 		nextUnitId = null;
 
-		if (!_ecsWorld.IsAlive(castleEntity) || !_ecsWorld.Has<ProductionQueue>(castleEntity))
+		if (!EcsWorld.IsAlive(castleEntity) || !EcsWorld.Has<ProductionQueue>(castleEntity))
 			return false;
 
-		var prod = _ecsWorld.Get<ProductionQueue>(castleEntity);
+		var prod = EcsWorld.Get<ProductionQueue>(castleEntity);
 		if (index < 0 || index >= prod.UnitIds.Count)
 			return false;
 
@@ -730,35 +730,35 @@ internal class InputService
 			}
 		}
 
-		_ecsWorld.Set(castleEntity, prod);
+		EcsWorld.Set(castleEntity, prod);
 		return true;
 	}
 
 	public void SetRallyPoint(Entity buildingEntity, System.Numerics.Vector3 position, bool queue)
 	{
-		if (!_ecsWorld.IsAlive(buildingEntity)) return;
+		if (!EcsWorld.IsAlive(buildingEntity)) return;
 
 		if (queue)
 		{
-			if (_ecsWorld.Has<RallyPoint>(buildingEntity))
+			if (EcsWorld.Has<RallyPoint>(buildingEntity))
 			{
-				var rp = _ecsWorld.Get<RallyPoint>(buildingEntity);
+				var rp = EcsWorld.Get<RallyPoint>(buildingEntity);
 				rp.Add(position);
-				_ecsWorld.Set(buildingEntity, rp);
+				EcsWorld.Set(buildingEntity, rp);
 			}
 			else
 			{
 				var rp = new RallyPoint(position);
-				_ecsWorld.Add(buildingEntity, rp);
+				EcsWorld.Add(buildingEntity, rp);
 			}
 		}
 		else
 		{
 			var rp = new RallyPoint(position);
-			if (_ecsWorld.Has<RallyPoint>(buildingEntity))
-				_ecsWorld.Set(buildingEntity, rp);
+			if (EcsWorld.Has<RallyPoint>(buildingEntity))
+				EcsWorld.Set(buildingEntity, rp);
 			else
-				_ecsWorld.Add(buildingEntity, rp);
+				EcsWorld.Add(buildingEntity, rp);
 		}
 	}
 
@@ -766,42 +766,42 @@ internal class InputService
 	{
 		newLevel = 1;
 		newName = "";
-		if (!_ecsWorld.IsAlive(towerEntity)) return false;
+		if (!EcsWorld.IsAlive(towerEntity)) return false;
 
 		int currentLevel = 1;
-		if (_ecsWorld.Has<TowerUpgradeLevel>(towerEntity))
+		if (EcsWorld.Has<TowerUpgradeLevel>(towerEntity))
 		{
-			currentLevel = _ecsWorld.Get<TowerUpgradeLevel>(towerEntity).Value;
+			currentLevel = EcsWorld.Get<TowerUpgradeLevel>(towerEntity).Value;
 		}
 
 		if (currentLevel >= 3) return false;
 
 		newLevel = currentLevel + 1;
-		_ecsWorld.Set(towerEntity, new TowerUpgradeLevel(newLevel));
+		EcsWorld.Set(towerEntity, new TowerUpgradeLevel(newLevel));
 
 		string baseName = "Spell Tower";
-		if (_ecsWorld.Has<Name>(towerEntity))
+		if (EcsWorld.Has<Name>(towerEntity))
 		{
-			var nameComp = _ecsWorld.Get<Name>(towerEntity);
+			var nameComp = EcsWorld.Get<Name>(towerEntity);
 			if (nameComp.Value.Contains("Orc")) baseName = "Orc Totem Tower";
 		}
 		newName = $"{baseName} (Lvl {newLevel})";
-		_ecsWorld.Set(towerEntity, new Name(newName));
+		EcsWorld.Set(towerEntity, new Name(newName));
 
-		if (_ecsWorld.Has<Health>(towerEntity))
+		if (EcsWorld.Has<Health>(towerEntity))
 		{
-			var hp = _ecsWorld.Get<Health>(towerEntity);
-			_ecsWorld.Set(towerEntity, new Health(hp.Current + 250f, hp.Max + 250f));
+			var hp = EcsWorld.Get<Health>(towerEntity);
+			EcsWorld.Set(towerEntity, new Health(hp.Current + 250f, hp.Max + 250f));
 		}
-		if (_ecsWorld.Has<Armor>(towerEntity))
+		if (EcsWorld.Has<Armor>(towerEntity))
 		{
-			var arm = _ecsWorld.Get<Armor>(towerEntity);
-			_ecsWorld.Set(towerEntity, new Armor(arm.Value + 5f));
+			var arm = EcsWorld.Get<Armor>(towerEntity);
+			EcsWorld.Set(towerEntity, new Armor(arm.Value + 5f));
 		}
-		if (_ecsWorld.Has<Attack>(towerEntity))
+		if (EcsWorld.Has<Attack>(towerEntity))
 		{
-			var atk = _ecsWorld.Get<Attack>(towerEntity);
-			_ecsWorld.Set(towerEntity, new Attack(atk.Damage + 10f, atk.Range, atk.Cooldown));
+			var atk = EcsWorld.Get<Attack>(towerEntity);
+			EcsWorld.Set(towerEntity, new Attack(atk.Damage + 10f, atk.Range, atk.Cooldown));
 		}
 
 		return true;
@@ -809,9 +809,9 @@ internal class InputService
 
 	public void SetEntityPosition(Entity entity, System.Numerics.Vector3 position)
 	{
-		if (_ecsWorld.IsAlive(entity))
+		if (EcsWorld.IsAlive(entity))
 		{
-			_ecsWorld.Set(entity, new Position(position));
+			EcsWorld.Set(entity, new Position(position));
 		}
 	}
 
@@ -820,15 +820,15 @@ internal class InputService
 		get
 		{
 			var worldEntity = GetWorldEntity();
-			return worldEntity != Entity.Null && _ecsWorld.Has<InputState>(worldEntity)
-				? _ecsWorld.Get<InputState>(worldEntity).ActiveSpellTargeting
+			return worldEntity != Entity.Null && EcsWorld.Has<InputState>(worldEntity)
+				? EcsWorld.Get<InputState>(worldEntity).ActiveSpellTargeting
 				: null;
 		}
 		set
 		{
 			var worldEntity = GetWorldEntity();
-			if (worldEntity == Entity.Null || !_ecsWorld.Has<InputState>(worldEntity)) return;
-			ref var state = ref _ecsWorld.Get<InputState>(worldEntity);
+			if (worldEntity == Entity.Null || !EcsWorld.Has<InputState>(worldEntity)) return;
+			ref var state = ref EcsWorld.Get<InputState>(worldEntity);
 			state.ActiveSpellTargeting = value;
 		}
 	}
@@ -838,15 +838,15 @@ internal class InputService
 		get
 		{
 			var worldEntity = GetWorldEntity();
-			return worldEntity != Entity.Null && _ecsWorld.Has<InputState>(worldEntity)
-				? _ecsWorld.Get<InputState>(worldEntity).ActiveCommandTargeting
+			return worldEntity != Entity.Null && EcsWorld.Has<InputState>(worldEntity)
+				? EcsWorld.Get<InputState>(worldEntity).ActiveCommandTargeting
 				: null;
 		}
 		set
 		{
 			var worldEntity = GetWorldEntity();
-			if (worldEntity == Entity.Null || !_ecsWorld.Has<InputState>(worldEntity)) return;
-			ref var state = ref _ecsWorld.Get<InputState>(worldEntity);
+			if (worldEntity == Entity.Null || !EcsWorld.Has<InputState>(worldEntity)) return;
+			ref var state = ref EcsWorld.Get<InputState>(worldEntity);
 			state.ActiveCommandTargeting = value;
 		}
 	}
@@ -856,15 +856,15 @@ internal class InputService
 		get
 		{
 			var worldEntity = GetWorldEntity();
-			return worldEntity != Entity.Null && _ecsWorld.Has<InputState>(worldEntity)
-				? _ecsWorld.Get<InputState>(worldEntity).ActiveBuildingPlacementType
+			return worldEntity != Entity.Null && EcsWorld.Has<InputState>(worldEntity)
+				? EcsWorld.Get<InputState>(worldEntity).ActiveBuildingPlacementType
 				: null;
 		}
 		set
 		{
 			var worldEntity = GetWorldEntity();
-			if (worldEntity == Entity.Null || !_ecsWorld.Has<InputState>(worldEntity)) return;
-			ref var state = ref _ecsWorld.Get<InputState>(worldEntity);
+			if (worldEntity == Entity.Null || !EcsWorld.Has<InputState>(worldEntity)) return;
+			ref var state = ref EcsWorld.Get<InputState>(worldEntity);
 			state.ActiveBuildingPlacementType = value;
 		}
 	}
@@ -874,14 +874,14 @@ internal class InputService
 		get
 		{
 			var worldEntity = GetWorldEntity();
-			return worldEntity != Entity.Null && _ecsWorld.Has<InputState>(worldEntity)
-				&& _ecsWorld.Get<InputState>(worldEntity).ActivePingMode;
+			return worldEntity != Entity.Null && EcsWorld.Has<InputState>(worldEntity)
+				&& EcsWorld.Get<InputState>(worldEntity).ActivePingMode;
 		}
 		set
 		{
 			var worldEntity = GetWorldEntity();
-			if (worldEntity == Entity.Null || !_ecsWorld.Has<InputState>(worldEntity)) return;
-			ref var state = ref _ecsWorld.Get<InputState>(worldEntity);
+			if (worldEntity == Entity.Null || !EcsWorld.Has<InputState>(worldEntity)) return;
+			ref var state = ref EcsWorld.Get<InputState>(worldEntity);
 			state.ActivePingMode = value;
 		}
 	}
@@ -890,16 +890,16 @@ internal class InputService
 	{
 		if (selectedCount == 0) return 0;
 		var worldEntity = GetWorldEntity();
-		if (worldEntity == Entity.Null || !_ecsWorld.Has<InputState>(worldEntity)) return 0;
-		int val = _ecsWorld.Get<InputState>(worldEntity).CycleSelectionIndex;
+		if (worldEntity == Entity.Null || !EcsWorld.Has<InputState>(worldEntity)) return 0;
+		int val = EcsWorld.Get<InputState>(worldEntity).CycleSelectionIndex;
 		return Math.Clamp(val, 0, selectedCount - 1);
 	}
 
 	public void SetCycleSelectionIndex(int value, int selectedCount)
 	{
 		var worldEntity = GetWorldEntity();
-		if (worldEntity == Entity.Null || !_ecsWorld.Has<InputState>(worldEntity)) return;
-		ref var state = ref _ecsWorld.Get<InputState>(worldEntity);
+		if (worldEntity == Entity.Null || !EcsWorld.Has<InputState>(worldEntity)) return;
+		ref var state = ref EcsWorld.Get<InputState>(worldEntity);
 		state.CycleSelectionIndex = selectedCount > 0 ? Math.Clamp(value, 0, selectedCount - 1) : 0;
 	}
 }

@@ -1,17 +1,15 @@
 using Arch.Core;
 using DotRecast.Detour;
 using Realm.Ecs.Components.Core;
-using Realm.Ecs.Components.Meta;
-using Realm.Ecs.Components.Movement;
-using Realm.Ecs.Components.Tags;
 using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Services;
+using Realm.Ecs.Common;
 using System;
 
 public class WorldInitService
 {
 	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private World EcsWorld => _ecsWorldAccessor.Current;
 
 	public WorldInitService(WorldAccessor ecsWorldAccessor)
 	{
@@ -20,13 +18,13 @@ public class WorldInitService
 
 	private void AddOrSet<T>(Entity entity, T component)
 	{
-		if (_ecsWorld.Has<T>(entity))
+		if (EcsWorld.Has<T>(entity))
 		{
-			_ecsWorld.Set(entity, component);
+			EcsWorld.Set(entity, component);
 		}
 		else
 		{
-			_ecsWorld.Add(entity, component);
+			EcsWorld.Add(entity, component);
 		}
 	}
 
@@ -43,12 +41,12 @@ public class WorldInitService
 		DtNavMeshQuery navMeshQuery)
 	{
 		Entity worldEntity = Entity.Null;
-		var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateQuery;
-		_ecsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
+		var worldQuery = QueryCache.AllTerrainStateQuery;
+		EcsWorld.Query(in worldQuery, entity => worldEntity = entity);
 
 		if (worldEntity == Entity.Null)
 		{
-			worldEntity = _ecsWorld.Create();
+			worldEntity = EcsWorld.Create();
 		}
 
 		AddOrSet(worldEntity, new WorldState(0f, 0, 0f, true));
@@ -84,18 +82,18 @@ public class WorldInitService
 			PitchSwing = 0.0f
 		});
 
-		if (_ecsWorld.Has<TerrainState>(worldEntity))
+		if (EcsWorld.Has<TerrainState>(worldEntity))
 		{
-			ref var existing = ref _ecsWorld.Get<TerrainState>(worldEntity);
+			ref var existing = ref EcsWorld.Get<TerrainState>(worldEntity);
 			if (heights != null) existing.Heights = heights;
 			if (pathingCodes != null) existing.PathingCodes = pathingCodes;
 			if (navMesh != null) existing.NavMesh = navMesh;
 			if (navMeshQuery != null) existing.NavMeshQuery = navMeshQuery;
-			_ecsWorld.Set(worldEntity, existing);
+			EcsWorld.Set(worldEntity, existing);
 		}
 		else
 		{
-			_ecsWorld.Add(worldEntity, new TerrainState(
+			EcsWorld.Add(worldEntity, new TerrainState(
 				width, depth, spacing, cellSize, waterHeight, waterEnabled,
 				heights ?? new float[width, depth], pathingCodes ?? new int[width, depth], navMesh, navMeshQuery
 			));

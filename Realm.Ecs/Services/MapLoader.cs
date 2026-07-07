@@ -1,4 +1,3 @@
-using Arch.Core;
 using Realm.Ecs.Definitions;
 using System.Text.Json;
 
@@ -10,11 +9,8 @@ namespace Realm.Ecs.Services;
 /// </summary>
 internal class MapLoader
 {
-	private readonly WorldAccessor _ecsWorldAccessor;
-
 	public MapLoader(WorldAccessor ecsWorldAccessor, string definitionsBasePath)
 	{
-		_ecsWorldAccessor = ecsWorldAccessor;
 		DefinitionManager = new DefinitionManager(ecsWorldAccessor);
 
 		var mapJsonPath = Path.Combine(definitionsBasePath, "map.json");

@@ -15,24 +15,24 @@ using static Realm.Ecs.Common.WorldExtensions;
 
 internal class SimulationService
 {
-	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private readonly WorldAccessor EcsWorldAccessor;
+	private World EcsWorld => EcsWorldAccessor.Current;
 	private readonly Entity _worldEntity;
-	private Entity _resolvedWorldEntity = Entity.Null;
+	private Entity _resolvedWorldEntity;
 	private Entity ActiveWorldEntity
 	{
 		get
 		{
-			if (_resolvedWorldEntity == Entity.Null || !_ecsWorld.IsAlive(_resolvedWorldEntity))
+			if (_resolvedWorldEntity == Entity.Null || !EcsWorld.IsAlive(_resolvedWorldEntity))
 			{
-				if (_worldEntity != Entity.Null && _ecsWorld.IsAlive(_worldEntity))
+				if (_worldEntity != Entity.Null && EcsWorld.IsAlive(_worldEntity))
 				{
 					_resolvedWorldEntity = _worldEntity;
 				}
 				else
 				{
-					var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateQuery;
-					_ecsWorld.Query(in worldQuery, (Entity entity) => _resolvedWorldEntity = entity);
+					var worldQuery = QueryCache.AllTerrainStateQuery;
+					EcsWorld.Query(in worldQuery, entity => _resolvedWorldEntity = entity);
 				}
 			}
 			return _resolvedWorldEntity;
@@ -101,7 +101,7 @@ internal class SimulationService
 
 	public SimulationService(WorldAccessor ecsWorldAccessor, Entity worldEntity, NavMeshPathfinder pathfinder)
 	{
-		_ecsWorldAccessor = ecsWorldAccessor;
+		EcsWorldAccessor = ecsWorldAccessor;
 		_worldEntity = worldEntity;
 		_pathfinder = pathfinder;
 
@@ -143,11 +143,11 @@ internal class SimulationService
 		_tickAddPathFollow.Clear();
 		_tickNeedsUiRefresh = false;
 
-		if (ActiveWorldEntity != default && _ecsWorld.IsAlive(ActiveWorldEntity))
+		if (ActiveWorldEntity != default && EcsWorld.IsAlive(ActiveWorldEntity))
 		{
-			if (_ecsWorld.Has<WorldState>(ActiveWorldEntity))
+			if (EcsWorld.Has<WorldState>(ActiveWorldEntity))
 			{
-				var state = _ecsWorld.Get<WorldState>(ActiveWorldEntity);
+				var state = EcsWorld.Get<WorldState>(ActiveWorldEntity);
 				float elapsed = state.GameElapsedTime + fDelta;
 				float timer = state.TimeOfDayTimer;
 				int index = state.TimeOfDayIndex;
@@ -168,46 +168,46 @@ internal class SimulationService
 					else if (currentHour >= 18f && currentHour < 20f) index = 1;
 					else index = 2;
 				}
-				_ecsWorld.Set(ActiveWorldEntity, new WorldState(elapsed, index, timer, state.DayNightCycleEnabled));
+				EcsWorld.Set(ActiveWorldEntity, new WorldState(elapsed, index, timer, state.DayNightCycleEnabled));
 			}
 
-			if (_ecsWorld.Has<CountdownState>(ActiveWorldEntity))
+			if (EcsWorld.Has<CountdownState>(ActiveWorldEntity))
 			{
-				var countdown = _ecsWorld.Get<CountdownState>(ActiveWorldEntity);
+				var countdown = EcsWorld.Get<CountdownState>(ActiveWorldEntity);
 				if (countdown.Active)
 				{
 					float newDuration = countdown.Duration - fDelta;
 					if (newDuration <= 0f)
 					{
-						_ecsWorld.Set(ActiveWorldEntity, new CountdownState(false, 0f, countdown.Text));
+						EcsWorld.Set(ActiveWorldEntity, new CountdownState(false, 0f, countdown.Text));
 					}
 					else
 					{
-						_ecsWorld.Set(ActiveWorldEntity, new CountdownState(true, newDuration, countdown.Text));
+						EcsWorld.Set(ActiveWorldEntity, new CountdownState(true, newDuration, countdown.Text));
 					}
 				}
 			}
 		}
 
-		_ecsWorld.Query(in _spellCooldownQuery, _spellCooldownQueryDelegate);
+		EcsWorld.Query(in _spellCooldownQuery, _spellCooldownQueryDelegate);
 
 		_movementService.StepMovement(fDelta);
 		_combatService.StepCombat(fDelta);
 		_economyService.StepEconomy(fDelta);
 
-		_ecsWorld.Query(in _buffQuery, _buffsQueryDelegate);
+		EcsWorld.Query(in _buffQuery, _buffsQueryDelegate);
 
 		ProcessPatrolArrivals();
 		ProcessFollowMovements();
 
-		_ecsWorld.Query(in _attackCooldownQuery, _attackCooldownQueryDelegate);
-		_ecsWorld.Query(in _prodQuery, _prodQueryDelegate);
+		EcsWorld.Query(in _attackCooldownQuery, _attackCooldownQueryDelegate);
+		EcsWorld.Query(in _prodQuery, _prodQueryDelegate);
 
 		foreach (var (entity, pf) in _tickAddPathFollow)
 		{
-			if (_ecsWorld.IsAlive(entity))
+			if (EcsWorld.IsAlive(entity))
 			{
-				_ecsWorld.Add(entity, pf);
+				EcsWorld.Add(entity, pf);
 			}
 		}
 
@@ -245,21 +245,21 @@ internal class SimulationService
 	private void ProcessPatrolArrivals()
 	{
 		_tickPatrolToFlip.Clear();
-		_ecsWorld.Query(in _patrolArrivalQuery, _patrolArrivalQueryDelegate);
+		EcsWorld.Query(in _patrolArrivalQuery, _patrolArrivalQueryDelegate);
 		foreach (var (entity, patrol) in _tickPatrolToFlip)
 		{
-			if (_ecsWorld.IsAlive(entity))
+			if (EcsWorld.IsAlive(entity))
 			{
 				var newPatrol = patrol;
 				newPatrol.GoingToB = !patrol.GoingToB;
-				_ecsWorld.Set(entity, newPatrol);
+				EcsWorld.Set(entity, newPatrol);
 
 				var dest = newPatrol.GoingToB ? newPatrol.PointB : newPatrol.PointA;
 				var moveTo = new MoveTo(dest);
-				if (_ecsWorld.Has<MoveTo>(entity))
-					_ecsWorld.Set(entity, moveTo);
+				if (EcsWorld.Has<MoveTo>(entity))
+					EcsWorld.Set(entity, moveTo);
 				else
-					_ecsWorld.Add(entity, moveTo);
+					EcsWorld.Add(entity, moveTo);
 			}
 		}
 	}
@@ -270,40 +270,40 @@ internal class SimulationService
 		_tickFollowToMove.Clear();
 		_tickFollowToRemoveMoveTo.Clear();
 
-		_ecsWorld.Query(in _followQuery, _followQueryDelegate);
+		EcsWorld.Query(in _followQuery, _followQueryDelegate);
 
 		foreach (var entity in _tickFollowToStop)
 		{
-			if (_ecsWorld.IsAlive(entity))
+			if (EcsWorld.IsAlive(entity))
 			{
-				if (_ecsWorld.Has<MoveTo>(entity))
+				if (EcsWorld.Has<MoveTo>(entity))
 				{
-					_ecsWorld.Remove<MoveTo>(entity);
+					EcsWorld.Remove<MoveTo>(entity);
 				}
-				if (_ecsWorld.Has<Follow>(entity))
+				if (EcsWorld.Has<Follow>(entity))
 				{
-					_ecsWorld.Remove<Follow>(entity);
+					EcsWorld.Remove<Follow>(entity);
 				}
 			}
 		}
 
 		foreach (var entity in _tickFollowToRemoveMoveTo)
 		{
-			if (_ecsWorld.IsAlive(entity) && _ecsWorld.Has<MoveTo>(entity))
+			if (EcsWorld.IsAlive(entity) && EcsWorld.Has<MoveTo>(entity))
 			{
-				_ecsWorld.Remove<MoveTo>(entity);
+				EcsWorld.Remove<MoveTo>(entity);
 			}
 		}
 
 		foreach (var (follower, targetPos) in _tickFollowToMove)
 		{
-			if (_ecsWorld.IsAlive(follower))
+			if (EcsWorld.IsAlive(follower))
 			{
 				var moveTo = new MoveTo(targetPos);
-				if (_ecsWorld.Has<MoveTo>(follower))
-					_ecsWorld.Set(follower, moveTo);
+				if (EcsWorld.Has<MoveTo>(follower))
+					EcsWorld.Set(follower, moveTo);
 				else
-					_ecsWorld.Add(follower, moveTo);
+					EcsWorld.Add(follower, moveTo);
 			}
 		}
 	}
@@ -312,7 +312,7 @@ internal class SimulationService
 	{
 		foreach (var ent in _tickEntitiesToClearOrders)
 		{
-			if (_ecsWorld.IsAlive(ent))
+			if (EcsWorld.IsAlive(ent))
 			{
 				OnClearUnitOrdersRequested?.Invoke(ent);
 			}
@@ -320,7 +320,7 @@ internal class SimulationService
 
 		foreach (var ent in _tickEntitiesToStopGathering)
 		{
-			if (_ecsWorld.IsAlive(ent))
+			if (EcsWorld.IsAlive(ent))
 			{
 				OnStopGatheringMovementRequested?.Invoke(ent);
 			}
@@ -377,19 +377,19 @@ internal class SimulationService
 
 	private void FollowQueryAction(Entity entity, ref Follow follow, ref Position pos)
 	{
-		if (!_ecsWorld.IsAlive(follow.Target) || _ecsWorld.Has<Dead>(follow.Target))
+		if (!EcsWorld.IsAlive(follow.Target) || EcsWorld.Has<Dead>(follow.Target))
 		{
 			_tickFollowToStop.Add(entity);
 			return;
 		}
 
 		var currentPos = pos.Value;
-		var targetPos = _ecsWorld.Get<Position>(follow.Target).Value;
+		var targetPos = EcsWorld.Get<Position>(follow.Target).Value;
 
 		float dist = System.Numerics.Vector3.Distance(currentPos, targetPos);
 		if (dist <= 3.0f)
 		{
-			if (_ecsWorld.Has<MoveTo>(entity))
+			if (EcsWorld.Has<MoveTo>(entity))
 			{
 				_tickFollowToRemoveMoveTo.Add(entity);
 			}
@@ -434,19 +434,20 @@ internal class SimulationService
 						: 5f;
 				}
 
-				if (_ecsWorld.Has<Position>(entity))
+				if (EcsWorld.Has<Position>(entity))
 				{
-					var buildingPos = _ecsWorld.Get<Position>(entity).Value;
+					var buildingPos = EcsWorld.Get<Position>(entity).Value;
 
-					System.Numerics.Vector3 spawnOffset = _ecsWorld.Has<BuildingSpawnOffset>(entity)
-						? _ecsWorld.Get<BuildingSpawnOffset>(entity).Value
+					System.Numerics.Vector3 spawnOffset = EcsWorld.Has<BuildingSpawnOffset>(entity)
+						? EcsWorld.Get<BuildingSpawnOffset>(entity).Value
 						: new System.Numerics.Vector3(0f, 0f, 8f);
 
 					var spawnPos = buildingPos + spawnOffset;
 
-					var ownerComp = _ecsWorld.Get<Owner>(entity);
-					var playerEntity = _ecsWorld.Get<NetworkMappingState>(ActiveWorldEntity).PlayerEntity;
-					bool isEnemy = ownerComp.PlayerEntity != playerEntity.AsPlayerEntity(_ecsWorld);
+					var ownerComp = EcsWorld.Get<Owner>(entity);
+					var playerEntity = EcsWorld.Get<NetworkMappingState>(ActiveWorldEntity).PlayerEntity;
+					bool isEnemy = ownerComp.PlayerEntity != playerEntity.AsPlayerEntity(EcsWorld);
+
 
 					_tickSpawningRequests.Add(new SpawningRequest
 					{
@@ -470,8 +471,8 @@ internal class SimulationService
 
 	private void InterpolationQueryAction(Entity entity, ref InterpolationTarget target)
 	{
-		if (!_ecsWorld.Has<Position>(entity)) return;
-		var pos = _ecsWorld.Get<Position>(entity);
+		if (!EcsWorld.Has<Position>(entity)) return;
+		var pos = EcsWorld.Get<Position>(entity);
 		System.Numerics.Vector3 currentPos = pos.Value;
 		System.Numerics.Vector3 targetPos = target.Position;
 		System.Numerics.Vector3 targetVel = target.Velocity;
@@ -479,15 +480,15 @@ internal class SimulationService
 		System.Numerics.Vector3 finalPos = currentPos;
 		System.Numerics.Vector3 finalVel = targetVel;
 
-		bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+		bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 		float dynamicInterpolationFactor = GetDynamicInterpolationFactor();
 
 		if (!isEnemy)
 		{
-			if (_ecsWorld.Has<MoveTo>(entity) && _ecsWorld.Has<MovementStats>(entity))
+			if (EcsWorld.Has<MoveTo>(entity) && EcsWorld.Has<MovementStats>(entity))
 			{
-				var moveTo = _ecsWorld.Get<MoveTo>(entity);
-				var stats = _ecsWorld.Get<MovementStats>(entity);
+				var moveTo = EcsWorld.Get<MoveTo>(entity);
+				var stats = EcsWorld.Get<MovementStats>(entity);
 				System.Numerics.Vector3 dest = moveTo.Target;
 				float distToDest = System.Numerics.Vector3.Distance(currentPos, dest);
 				if (distToDest > 0.05f)
@@ -502,7 +503,7 @@ internal class SimulationService
 				{
 					finalPos = dest;
 					finalVel = System.Numerics.Vector3.Zero;
-					_ecsWorld.Remove<MoveTo>(entity);
+					EcsWorld.Remove<MoveTo>(entity);
 				}
 				Console.WriteLine($"[CLIENT_ESTIMATED] Unit={entity.Id} Pos={finalPos} Target={moveTo.Target}");
 			}
@@ -532,22 +533,22 @@ internal class SimulationService
 			finalVel = targetVel;
 		}
 
-		_ecsWorld.Set(entity, new Position(finalPos));
-		if (_ecsWorld.Has<Velocity>(entity))
+		EcsWorld.Set(entity, new Position(finalPos));
+		if (EcsWorld.Has<Velocity>(entity))
 		{
-			_ecsWorld.Set(entity, new Velocity(finalVel));
+			EcsWorld.Set(entity, new Velocity(finalVel));
 		}
 		else
 		{
-			_ecsWorld.Add(entity, new Velocity(finalVel));
+			EcsWorld.Add(entity, new Velocity(finalVel));
 		}
 	}
 
 	private int GetTimeOfDayIndex()
-		=> _ecsWorld.GetFieldOrDefault<WorldState, int>(ActiveWorldEntity, s => s.TimeOfDayIndex);
+		=> EcsWorld.GetFieldOrDefault<WorldState, int>(ActiveWorldEntity, s => s.TimeOfDayIndex);
 
 	private float GetDynamicInterpolationFactor()
-		=> _ecsWorld.GetFieldOrDefault<NetworkState, float>(ActiveWorldEntity, s => s.DynamicInterpolationFactor, 10f);
+		=> EcsWorld.GetFieldOrDefault<NetworkState, float>(ActiveWorldEntity, s => s.DynamicInterpolationFactor, 10f);
 
 	public List<Entity> GetEditorArrivedUnits() => _tickArrivedUnits;
 

@@ -36,7 +36,7 @@ public struct WaypointQueue
 	{
 		if (Count == 0)
 		{
-			throw new System.InvalidOperationException("Queue is empty");
+			throw new InvalidOperationException("Queue is empty");
 		}
 		Vector3 first = Waypoints[0];
 		for (int i = 1; i < Count; i++)

@@ -68,7 +68,7 @@ internal class EntityFactory
 			var tagInfo = _definitionManager.GetTag(capabilityId);
 			if (tagInfo.HasValue)
 			{
-				var (definition, tagType) = tagInfo.Value;
+				var (_, tagType) = tagInfo.Value;
 
 				if (tagType != null && tagType.IsValueType)
 				{

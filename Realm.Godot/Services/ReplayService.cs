@@ -13,7 +13,7 @@ using Realm.Godot.ReplaySystem;
 public class ReplayService
 {
 	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private World EcsWorld => _ecsWorldAccessor.Current;
 	private ReplayRecorder _replayRecorder;
 	private readonly Dictionary<int, ReplayUnitSnapshot> _lastRecordedUnits = new();
 
@@ -43,28 +43,28 @@ public class ReplayService
 	public void SetupPlayersForPlayback(List<(int PeerId, string Name)> players)
 	{
 		Entity worldEntity = Entity.Null;
-		var worldQuery = Realm.Ecs.Common.QueryCache.AllNetworkMappingStateQuery;
-		_ecsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
+		var worldQuery = QueryCache.AllNetworkMappingStateQuery;
+		EcsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
 
 		if (worldEntity == Entity.Null)
 		{
 			return;
 		}
 
-		ref var mapping = ref _ecsWorld.Get<NetworkMappingState>(worldEntity);
+		ref var mapping = ref EcsWorld.Get<NetworkMappingState>(worldEntity);
 		mapping.ServerToClientEntityMap.Clear();
 		mapping.ClientToServerEntityMap.Clear();
 		mapping.PeerIdToPlayerEntityMap.Clear();
 
 		foreach (var p in players)
 		{
-			var playerEntity = _ecsWorld.Create();
-			_ecsWorld.Add(playerEntity, new Player());
-			_ecsWorld.Add(playerEntity, new Name(p.Name));
+			var playerEntity = EcsWorld.Create();
+			EcsWorld.Add(playerEntity, new Player());
+			EcsWorld.Add(playerEntity, new Name(p.Name));
 			
-			_ecsWorld.Add(playerEntity, new PlayerPopulation(0, 0));
-			_ecsWorld.Add(playerEntity, new SpellCooldowns(0f, 0f, 0f));
-			_ecsWorld.Add(playerEntity, new PlayerUpgrades(false, false, false));
+			EcsWorld.Add(playerEntity, new PlayerPopulation(0, 0));
+			EcsWorld.Add(playerEntity, new SpellCooldowns(0f, 0f, 0f));
+			EcsWorld.Add(playerEntity, new PlayerUpgrades(false, false, false));
 
 			var resourcesDict = new Dictionary<ResourceId, int>
 			{
@@ -72,7 +72,7 @@ public class ReplayService
 				{ new ResourceId("wood"), 0 },
 				{ new ResourceId("stone"), 0 }
 			};
-			_ecsWorld.Add(playerEntity, new PlayerResources(resourcesDict));
+			EcsWorld.Add(playerEntity, new PlayerResources(resourcesDict));
 
 			mapping.PeerIdToPlayerEntityMap[p.PeerId] = playerEntity;
 			if (p.PeerId == 1)
@@ -94,15 +94,15 @@ public class ReplayService
 		}
 
 		Entity worldEntity = Entity.Null;
-		var worldQuery = Realm.Ecs.Common.QueryCache.AllNetworkMappingStateQuery;
-		_ecsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
+		var worldQuery = QueryCache.AllNetworkMappingStateQuery;
+		EcsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
 
 		if (worldEntity == Entity.Null)
 		{
 			return (Entity.Null, "", false);
 		}
 
-		ref var mapping = ref _ecsWorld.Get<NetworkMappingState>(worldEntity);
+		ref var mapping = ref EcsWorld.Get<NetworkMappingState>(worldEntity);
 
 		Entity ownerPlayerEntity = mapping.PlayerEntity;
 		if (mapping.PeerIdToPlayerEntityMap.TryGetValue(snap.OwnerPlayerEntityId, out var pe))
@@ -111,26 +111,26 @@ public class ReplayService
 		}
 		bool isEnemy = ownerPlayerEntity != mapping.PlayerEntity;
 
-		var entity = _ecsWorld.Create();
-		_ecsWorld.Add(entity, new DefinitionId(snap.UnitId));
-		_ecsWorld.Add(entity, new Name(meta.Name));
-		_ecsWorld.Add(entity, new Position(snap.Position.ToNumerics()));
-		_ecsWorld.Add(entity, new Owner(ownerPlayerEntity.AsPlayerEntity(_ecsWorld)));
-		_ecsWorld.Add(entity, new Health(snap.CurrentHp, snap.MaxHp));
+		var entity = EcsWorld.Create();
+		EcsWorld.Add(entity, new DefinitionId(snap.UnitId));
+		EcsWorld.Add(entity, new Name(meta.Name));
+		EcsWorld.Add(entity, new Position(snap.Position.ToNumerics()));
+		EcsWorld.Add(entity, new Owner(ownerPlayerEntity.AsPlayerEntity(EcsWorld)));
+		EcsWorld.Add(entity, new Health(snap.CurrentHp, snap.MaxHp));
 		if (meta.Damage > 0 || snap.UnitId == "priest")
 		{
-			_ecsWorld.Add(entity, new Attack(meta.Damage, meta.Range, meta.AttackCooldown));
+			EcsWorld.Add(entity, new Attack(meta.Damage, meta.Range, meta.AttackCooldown));
 		}
-		_ecsWorld.Add(entity, new Armor(meta.Armor));
+		EcsWorld.Add(entity, new Armor(meta.Armor));
 		if (meta.Speed > 0)
 		{
-			_ecsWorld.Add(entity, new MovementStats(meta.Speed, 20f, 10f));
-			_ecsWorld.Add(entity, new Realm.Ecs.Components.Tags.Movable());
-			_ecsWorld.Add(entity, new Inventory(1));
+			EcsWorld.Add(entity, new MovementStats(meta.Speed, 20f, 10f));
+			EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Movable());
+			EcsWorld.Add(entity, new Inventory(1));
 		}
 		else
 		{
-			_ecsWorld.Add(entity, new Building());
+			EcsWorld.Add(entity, new Building());
 		}
 		var target = new InterpolationTarget
 		{
@@ -138,7 +138,7 @@ public class ReplayService
 			Velocity = snap.Velocity.ToNumerics(),
 			RotationY = snap.RotationY
 		};
-		_ecsWorld.Add(entity, target);
+		EcsWorld.Add(entity, target);
 
 		mapping.ServerToClientEntityMap[snap.EntityId] = entity;
 		mapping.ClientToServerEntityMap[entity.Id] = snap.EntityId;
@@ -151,12 +151,12 @@ public class ReplayService
 		if (_replayRecorder == null) return;
 
 		Entity worldEntity = Entity.Null;
-		var worldQuery = Realm.Ecs.Common.QueryCache.AllReplayStateAndNetworkMappingStateQuery;
-		_ecsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
+		var worldQuery = QueryCache.AllReplayStateAndNetworkMappingStateQuery;
+		EcsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
 
 		if (worldEntity == Entity.Null) return;
 
-		ref var replayState = ref _ecsWorld.Get<ReplayState>(worldEntity);
+		ref var replayState = ref EcsWorld.Get<ReplayState>(worldEntity);
 		int currentTick = replayState.ReplayTickCounter;
 
 		bool isKeyframe = (currentTick % 600 == 0);
@@ -168,10 +168,10 @@ public class ReplayService
 			_lastRecordedUnits.Clear();
 		}
 
-		var mapping = _ecsWorld.Get<NetworkMappingState>(worldEntity);
+		var mapping = EcsWorld.Get<NetworkMappingState>(worldEntity);
 
-		var unitQuery = Realm.Ecs.Common.QueryCache.AllDefinitionIdAndPositionAndOwnerQuery;
-		_ecsWorld.Query(in unitQuery, (Entity entity, ref DefinitionId defId, ref Position posComp, ref Owner ownerComp) =>
+		var unitQuery = QueryCache.AllDefinitionIdAndPositionAndOwnerQuery;
+		EcsWorld.Query(in unitQuery, (Entity entity, ref DefinitionId defId, ref Position posComp, ref Owner ownerComp) =>
 		{
 			int entityId = entity.Id;
 			string unitId = defId.Value;
@@ -190,20 +190,20 @@ public class ReplayService
 			System.Numerics.Vector3 pos = posComp.Value;
 
 			float rotY = 0f;
-			if (_ecsWorld.Has<RotationY>(entity))
+			if (EcsWorld.Has<RotationY>(entity))
 			{
-				rotY = _ecsWorld.Get<RotationY>(entity).Value;
+				rotY = EcsWorld.Get<RotationY>(entity).Value;
 			}
 
-			float currentHp = _ecsWorld.Has<Health>(entity) ? _ecsWorld.Get<Health>(entity).Current : 0f;
-			float maxHp = _ecsWorld.Has<Health>(entity) ? _ecsWorld.Get<Health>(entity).Max : 0f;
-			bool isDead = _ecsWorld.Has<Dead>(entity);
-			bool isBuilding = _ecsWorld.Has<Building>(entity);
+			float currentHp = EcsWorld.Has<Health>(entity) ? EcsWorld.Get<Health>(entity).Current : 0f;
+			float maxHp = EcsWorld.Has<Health>(entity) ? EcsWorld.Get<Health>(entity).Max : 0f;
+			bool isDead = EcsWorld.Has<Dead>(entity);
+			bool isBuilding = EcsWorld.Has<Building>(entity);
 
 			System.Numerics.Vector3 vel = System.Numerics.Vector3.Zero;
-			if (_ecsWorld.Has<Velocity>(entity))
+			if (EcsWorld.Has<Velocity>(entity))
 			{
-				vel = _ecsWorld.Get<Velocity>(entity).Value;
+				vel = EcsWorld.Get<Velocity>(entity).Value;
 			}
 
 			activeIds.Add(entityId);
@@ -322,9 +322,9 @@ public class ReplayService
 		float stone = replayState.StoneBackup;
 
 		Entity playerEnt = mapping.PlayerEntity;
-		if (_ecsWorld.IsAlive(playerEnt) && _ecsWorld.Has<PlayerResources>(playerEnt))
+		if (EcsWorld.IsAlive(playerEnt) && EcsWorld.Has<PlayerResources>(playerEnt))
 		{
-			var dict = _ecsWorld.Get<PlayerResources>(playerEnt).Value;
+			var dict = EcsWorld.Get<PlayerResources>(playerEnt).Value;
 			if (dict.TryGetValue(new ResourceId("gold"), out var gVal)) gold = gVal;
 			if (dict.TryGetValue(new ResourceId("wood"), out var wVal)) wood = wVal;
 			if (dict.TryGetValue(new ResourceId("stone"), out var sVal)) stone = sVal;

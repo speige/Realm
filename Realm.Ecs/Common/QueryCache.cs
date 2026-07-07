@@ -1,13 +1,11 @@
 using Arch.Core;
 using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Core;
-using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Resources;
 using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Components.Stats;
 using Realm.Ecs.Components.Tags;
-using Realm.Ecs.Components.Abilities;
 
 namespace Realm.Ecs.Common;
 
@@ -51,11 +49,11 @@ public static class QueryCache
     public static readonly QueryDescription AllPlayerResourcesNoneDeadQuery = new QueryDescription().WithAll<PlayerResources>().WithNone<Dead>();
     public static readonly QueryDescription AllPositionAndResourceNodeAndPropIdentityQuery = new QueryDescription().WithAll<Position, ResourceNode, PropIdentity>();
     public static readonly QueryDescription AllPositionAndDefinitionIdAndOwnerNoneDeadQuery = new QueryDescription().WithAll<Position, DefinitionId, Owner>().WithNone<Dead>();
-    public static readonly QueryDescription AllBuffsNoneDeadQuery = new QueryDescription().WithAll<Realm.Ecs.Components.Core.Buffs>().WithNone<Dead>();
+    public static readonly QueryDescription AllBuffsNoneDeadQuery = new QueryDescription().WithAll<Buffs>().WithNone<Dead>();
     public static readonly QueryDescription AllPatrolAndPositionNoneDeadAndAttackTargetQuery = new QueryDescription().WithAll<Patrol, Position>().WithNone<Dead, AttackTarget>();
     public static readonly QueryDescription AllFollowAndPositionNoneDeadQuery = new QueryDescription().WithAll<Follow, Position>().WithNone<Dead>();
     public static readonly QueryDescription AllAttackQuery = new QueryDescription().WithAll<Attack>();
-    public static readonly QueryDescription AllProductionQueueQuery = new QueryDescription().WithAll<Realm.Ecs.Components.Core.ProductionQueue>();
+    public static readonly QueryDescription AllProductionQueueQuery = new QueryDescription().WithAll<ProductionQueue>();
     public static readonly QueryDescription AllSpellCooldownsQuery = new QueryDescription().WithAll<SpellCooldowns>();
     public static readonly QueryDescription AllPositionQuery = new QueryDescription().WithAll<Position>();
     public static readonly QueryDescription AllPropIdentityAndPositionQuery = new QueryDescription().WithAll<PropIdentity, Position>();

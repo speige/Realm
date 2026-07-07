@@ -3,46 +3,42 @@ using Realm.Ecs.Services;
 using Godot;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
-using Realm.Ecs.Components.Meta;
-using Realm.Ecs.Components.Movement;
-using Realm.Ecs.Components.Resources;
-using Realm.Ecs.Components.Tags;
 using Realm.Ecs.Components.Terrain;
 using System;
 using System.Collections.Generic;
 
 public class EditorService
 {
-	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private readonly WorldAccessor EcsWorldAccessor;
+	private World EcsWorld => EcsWorldAccessor.Current;
 	private Color[,] _terrainColors;
 
-	private float _clumpSpawnCooldown = 0.0f;
-	private bool _isDrawingClump = false;
+	private float _clumpSpawnCooldown;
+	private bool _isDrawingClump;
 	private readonly List<IEditorAction> _clumpSpawnActionsInSession = new();
 
-	private bool _hasBlockTargetHeight = false;
-	private float _activeBlockTargetHeight = 0.0f;
-	private float? _activeCliffHeight = null;
+	private bool _hasBlockTargetHeight;
+	private float _activeBlockTargetHeight;
+	private float? _activeCliffHeight;
 
 	private float[,] _terrainHeightsBefore;
 	private Color[,] _terrainColorsBefore;
 	private int[,] _terrainPathingBefore;
-	private bool _isDrawingTerrain = false;
+	private bool _isDrawingTerrain;
 
-	private CopiedAreaTemplate _copiedArea = null;
+	private CopiedAreaTemplate? _copiedArea;
 
-	private Vector2I? _selectionStart = null;
-	private Vector2I? _selectionEnd = null;
-	private bool _isSelectingArea = false;
+	private Vector2I? _selectionStart;
+	private Vector2I? _selectionEnd;
+	private bool _isSelectingArea;
 
-	private float _cachedRandomRotation = 0.0f;
+	private float _cachedRandomRotation;
 	private float _cachedRandomScale = 1.0f;
-	private bool _hasCachedRandom = false;
-	private bool _isPastingObject = false;
+	private bool _hasCachedRandom;
+	private bool _isPastingObject;
 
-	private CopiedObjectTemplate? _copiedObject = null;
-	private Vector3? _rampStartPos = null;
+	private CopiedObjectTemplate? _copiedObject;
+	private Vector3? _rampStartPos;
 
 	public struct CopiedObjectTemplate
 	{
@@ -105,7 +101,7 @@ public class EditorService
 
 	public EditorService(WorldAccessor ecsWorldAccessor)
 	{
-		_ecsWorldAccessor = ecsWorldAccessor;
+		EcsWorldAccessor = ecsWorldAccessor;
 	}
 
 	public void SetTerrainColors(Color[,] colors)
@@ -1085,7 +1081,7 @@ public class EditorService
 		return cells;
 	}
 
-	public (float[,] Heights, Color[,] Colors) PerformFloodFill(Vector3 clickPos, Color fillColor, MirrorMode mirrorMode)
+	public (float[,]? Heights, Color[,]? Colors) PerformFloodFill(Vector3 clickPos, Color fillColor, MirrorMode mirrorMode)
 	{
 		ref var terrain = ref GetTerrainState();
 		if (terrain.Heights == null) return (null, null);
@@ -1132,7 +1128,7 @@ public class EditorService
 		return ((float[,])terrain.Heights.Clone(), (Color[,])_terrainColors.Clone());
 	}
 
-	public (int[,] Before, int[,] After) PerformFloodFillPathing(Vector3 clickPos, int pathingMask, bool pathingAdd, MirrorMode mirrorMode)
+	public (int[,]? Before, int[,]? After) PerformFloodFillPathing(Vector3 clickPos, int pathingMask, bool pathingAdd, MirrorMode mirrorMode)
 	{
 		ref var terrain = ref GetTerrainState();
 		if (terrain.Heights == null || terrain.PathingCodes == null) return (null, null);
@@ -1227,10 +1223,10 @@ public class EditorService
 	{
 		var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateQuery;
 		Entity worldEntity = Entity.Null;
-		_ecsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
-		if (worldEntity != Entity.Null && _ecsWorld.IsAlive(worldEntity))
+		EcsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity))
 		{
-			return ref _ecsWorld.Get<TerrainState>(worldEntity);
+			return ref EcsWorld.Get<TerrainState>(worldEntity);
 		}
 		throw new InvalidOperationException("TerrainState entity not found in ECS world.");
 	}
@@ -1382,82 +1378,82 @@ public class EditorService
 
 	public bool GetBlockMode(Entity worldEntity)
 	{
-		return _ecsWorld.GetFieldOrDefault<EditorState, bool>(worldEntity, s => s.BlockMode, true);
+		return EcsWorld.GetFieldOrDefault<EditorState, bool>(worldEntity, s => s.BlockMode, true);
 	}
 
 	public void SetBlockMode(Entity worldEntity, bool value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.BlockMode = value);
+		EcsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.BlockMode = value);
 	}
 
 	public float GetBlockLevelHeight(Entity worldEntity)
 	{
-		return _ecsWorld.GetFieldOrDefault<EditorState, float>(worldEntity, s => s.BlockLevelHeight, 4.0f);
+		return EcsWorld.GetFieldOrDefault<EditorState, float>(worldEntity, s => s.BlockLevelHeight, 4.0f);
 	}
 
 	public void SetBlockLevelHeight(Entity worldEntity, float value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.BlockLevelHeight = value);
+		EcsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.BlockLevelHeight = value);
 	}
 
 	public float GetCameraBoundsLeft(Entity worldEntity)
 	{
-		return _ecsWorld.GetFieldOrDefault<EditorState, float>(worldEntity, s => s.CameraBoundsLeft, -95.0f);
+		return EcsWorld.GetFieldOrDefault<EditorState, float>(worldEntity, s => s.CameraBoundsLeft, -95.0f);
 	}
 
 	public void SetCameraBoundsLeft(Entity worldEntity, float value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.CameraBoundsLeft = value);
+		EcsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.CameraBoundsLeft = value);
 	}
 
 	public float GetCameraBoundsRight(Entity worldEntity)
 	{
-		return _ecsWorld.GetFieldOrDefault<EditorState, float>(worldEntity, s => s.CameraBoundsRight, 95.0f);
+		return EcsWorld.GetFieldOrDefault<EditorState, float>(worldEntity, s => s.CameraBoundsRight, 95.0f);
 	}
 
 	public void SetCameraBoundsRight(Entity worldEntity, float value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.CameraBoundsRight = value);
+		EcsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.CameraBoundsRight = value);
 	}
 
 	public float GetCameraBoundsTop(Entity worldEntity)
 	{
-		return _ecsWorld.GetFieldOrDefault<EditorState, float>(worldEntity, s => s.CameraBoundsTop, -95.0f);
+		return EcsWorld.GetFieldOrDefault<EditorState, float>(worldEntity, s => s.CameraBoundsTop, -95.0f);
 	}
 
 	public void SetCameraBoundsTop(Entity worldEntity, float value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.CameraBoundsTop = value);
+		EcsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.CameraBoundsTop = value);
 	}
 
 	public float GetCameraBoundsBottom(Entity worldEntity)
 	{
-		return _ecsWorld.GetFieldOrDefault<EditorState, float>(worldEntity, s => s.CameraBoundsBottom, 125.0f);
+		return EcsWorld.GetFieldOrDefault<EditorState, float>(worldEntity, s => s.CameraBoundsBottom, 125.0f);
 	}
 
 	public void SetCameraBoundsBottom(Entity worldEntity, float value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.CameraBoundsBottom = value);
+		EcsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.CameraBoundsBottom = value);
 	}
 
 	public string GetSkyboxPath(Entity worldEntity)
 	{
-		return _ecsWorld.GetFieldOrDefault<EditorState, string>(worldEntity, s => s.SkyboxPath, "res://Assets/skybox_panoramic.jpg");
+		return EcsWorld.GetFieldOrDefault<EditorState, string>(worldEntity, s => s.SkyboxPath, "res://Assets/skybox_panoramic.jpg");
 	}
 
 	public void SetSkyboxPath(Entity worldEntity, string value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.SkyboxPath = value);
+		EcsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.SkyboxPath = value);
 	}
 
 	public bool GetHasUnsavedChanges(Entity worldEntity)
 	{
-		return _ecsWorld.GetFieldOrDefault<EditorState, bool>(worldEntity, s => s.HasUnsavedChanges, false);
+		return EcsWorld.GetFieldOrDefault<EditorState, bool>(worldEntity, s => s.HasUnsavedChanges, false);
 	}
 
 	public void SetHasUnsavedChanges(Entity worldEntity, bool value)
 	{
-		_ecsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.HasUnsavedChanges = value);
+		EcsWorld.Mutate<EditorState>(worldEntity, (ref EditorState s) => s.HasUnsavedChanges = value);
 	}
 
 	public string GetTerrainStatusString(Vector3 pos, string toolName, string activePlaceId)

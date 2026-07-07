@@ -1,4 +1,3 @@
-using Arch.Core;
 using Realm.Ecs.Archetypes;
 
 namespace Realm.Ecs.Services;
@@ -8,24 +7,19 @@ namespace Realm.Ecs.Services;
 /// </summary>
 internal class ArchetypeManager
 {
-	private readonly WorldAccessor _ecsWorldAccessor;
-	private readonly DefinitionManager _definitionManager;
 	private readonly Dictionary<string, UnitArchetype> _unitArchetypes = new();
 
 	public ArchetypeManager(WorldAccessor ecsWorldAccessor, List<UnitArchetype> units, DefinitionManager definitionManager)
 	{
-		_ecsWorldAccessor = ecsWorldAccessor;
-		_definitionManager = definitionManager;
-
 		foreach (var archetype in units)
 		{
 			foreach (var cost in archetype.ResourceCosts)
-				if (!_definitionManager.IsValidResource(cost.ResourceTypeId.Value))
+				if (!definitionManager.IsValidResource(cost.ResourceTypeId.Value))
 					throw new ArgumentException(
 						$"Unit Archetype '{archetype.Id}' references an invalid ResourceTypeId: '{cost.ResourceTypeId.Value}'");
 
 			foreach (var capabilityId in archetype.Capabilities)
-				if (!_definitionManager.IsValidTag(capabilityId))
+				if (!definitionManager.IsValidTag(capabilityId))
 					throw new ArgumentException(
 						$"Unit Archetype '{archetype.Id}' references an invalid CapabilityId: '{capabilityId}'");
 

@@ -1,8 +1,6 @@
 using Arch.Core;
-using Godot;
 using Microsoft.Extensions.DependencyInjection;
 using Realm.Ecs.Services;
-using System;
 
 public partial class GameHost
 {
@@ -15,7 +13,7 @@ public partial class GameHost
 		var world = World.Create();
 		_worldAccessor = new WorldAccessor(world);
 
-		services.AddSingleton<WorldAccessor>(_worldAccessor);
+		services.AddSingleton(_worldAccessor);
 		services.AddTransient<World>(sp => sp.GetRequiredService<WorldAccessor>().Current);
 
 		// Ecs Services
@@ -76,7 +74,6 @@ public partial class GameHost
 		_editorService = ServiceLocator.Get<EditorService>();
 		_replayService = ServiceLocator.Get<ReplayService>();
 		_networkService = ServiceLocator.Get<NetworkService>();
-		_techTreeService = ServiceLocator.Get<TechTreeService>();
 		_inputService = ServiceLocator.Get<InputService>();
 		_fogOfWarService = ServiceLocator.Get<FogOfWarService>();
 		_unitSpawnService = ServiceLocator.Get<UnitSpawnService>();

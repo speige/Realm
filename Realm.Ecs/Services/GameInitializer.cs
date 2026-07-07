@@ -14,7 +14,6 @@ namespace Realm.Ecs.Services;
 /// </summary>
 internal class GameInitializer
 {
-	private readonly ArchetypeManager _archetypeManager;
 	private readonly DefinitionManager _definitionManager;
 	private readonly EntityFactory _entityFactory;
 	private readonly WorldAccessor _ecsWorldAccessor;
@@ -23,8 +22,8 @@ internal class GameInitializer
 	{
 		_ecsWorldAccessor = ecsWorldAccessor;
 		_definitionManager = mapLoader.DefinitionManager;
-		_archetypeManager = mapLoader.ArchetypeManager;
-		_entityFactory = new EntityFactory(_ecsWorldAccessor, _archetypeManager, mapLoader.DefinitionManager);
+		var archetypeManager = mapLoader.ArchetypeManager;
+		_entityFactory = new EntityFactory(_ecsWorldAccessor, archetypeManager, mapLoader.DefinitionManager);
 	}
 
 	/// <summary>

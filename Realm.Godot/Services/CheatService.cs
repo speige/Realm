@@ -14,7 +14,7 @@ using System.Collections.Generic;
 public class CheatService
 {
 	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private World EcsWorld => _ecsWorldAccessor.Current;
 
 	public CheatService(WorldAccessor ecsWorldAccessor)
 	{
@@ -48,17 +48,17 @@ public class CheatService
 
 		if (lower == "stonks" || lower == "securethebag")
 		{
-			if (playerEntity != Entity.Null && _ecsWorld.IsAlive(playerEntity) && _ecsWorld.Has<PlayerResources>(playerEntity))
+			if (playerEntity != Entity.Null && EcsWorld.IsAlive(playerEntity) && EcsWorld.Has<PlayerResources>(playerEntity))
 			{
-				ref var playerRes = ref _ecsWorld.Get<PlayerResources>(playerEntity);
+				ref var playerRes = ref EcsWorld.Get<PlayerResources>(playerEntity);
 				var goldId = "gold".AsResourceId(definitionManager);
 				var woodId = "wood".AsResourceId(definitionManager);
 				var stoneId = "stone".AsResourceId(definitionManager);
 
-				const float ResourceCap = 9999f;
-				if (playerRes.Value.ContainsKey(goldId)) playerRes.Value[goldId] = (int)Math.Min(ResourceCap, playerRes.Value[goldId] + 10000);
-				if (playerRes.Value.ContainsKey(woodId)) playerRes.Value[woodId] = (int)Math.Min(ResourceCap, playerRes.Value[woodId] + 10000);
-				if (playerRes.Value.ContainsKey(stoneId)) playerRes.Value[stoneId] = (int)Math.Min(ResourceCap, playerRes.Value[stoneId] + 10000);
+				const float resourceCap = 9999f;
+				if (playerRes.Value.ContainsKey(goldId)) playerRes.Value[goldId] = (int)Math.Min(resourceCap, playerRes.Value[goldId] + 10000);
+				if (playerRes.Value.ContainsKey(woodId)) playerRes.Value[woodId] = (int)Math.Min(resourceCap, playerRes.Value[woodId] + 10000);
+				if (playerRes.Value.ContainsKey(stoneId)) playerRes.Value[stoneId] = (int)Math.Min(resourceCap, playerRes.Value[stoneId] + 10000);
 			}
 			return (CheatResult.Stonks, 0);
 		}
@@ -68,16 +68,16 @@ public class CheatService
 			int affected = 0;
 			foreach (var entity in selectedEntities)
 			{
-				if (_ecsWorld.IsAlive(entity))
+				if (EcsWorld.IsAlive(entity))
 				{
-					if (_ecsWorld.Has<Health>(entity))
+					if (EcsWorld.Has<Health>(entity))
 					{
-						_ecsWorld.Set(entity, new Health(9000f, 9000f));
+						EcsWorld.Set(entity, new Health(9000f, 9000f));
 					}
-					if (_ecsWorld.Has<Attack>(entity))
+					if (EcsWorld.Has<Attack>(entity))
 					{
-						var atk = _ecsWorld.Get<Attack>(entity);
-						_ecsWorld.Set(entity, new Attack(9001f, atk.Range, atk.Cooldown, atk.CurrentCooldown));
+						var atk = EcsWorld.Get<Attack>(entity);
+						EcsWorld.Set(entity, new Attack(9001f, atk.Range, atk.Cooldown, atk.CurrentCooldown));
 					}
 					affected++;
 				}
@@ -90,12 +90,12 @@ public class CheatService
 			int affected = 0;
 			foreach (var entity in selectedEntities)
 			{
-				if (_ecsWorld.IsAlive(entity))
+				if (EcsWorld.IsAlive(entity))
 				{
-					if (_ecsWorld.Has<MovementStats>(entity))
+					if (EcsWorld.Has<MovementStats>(entity))
 					{
-						var mv = _ecsWorld.Get<MovementStats>(entity);
-						_ecsWorld.Set(entity, new MovementStats(25f, mv.Acceleration, mv.TurnRate));
+						var mv = EcsWorld.Get<MovementStats>(entity);
+						EcsWorld.Set(entity, new MovementStats(25f, mv.Acceleration, mv.TurnRate));
 					}
 					affected++;
 				}
@@ -106,13 +106,13 @@ public class CheatService
 		if (lower == "thanossnap" || lower == "emotionaldamage")
 		{
 			var targets = new List<Entity>();
-			var query = Realm.Ecs.Common.QueryCache.AllHealthAndOwnerQuery;
-			_ecsWorld.Query(in query, (Entity entity, ref Owner owner) =>
+			var query = QueryCache.AllHealthAndOwnerQuery;
+			EcsWorld.Query(in query, (Entity entity, ref Owner owner) =>
 			{
 				bool isEnemy = false;
-				if (_ecsWorld.IsAlive(owner.PlayerEntity.Value) && _ecsWorld.Has<Name>(owner.PlayerEntity.Value))
+				if (EcsWorld.IsAlive(owner.PlayerEntity.Value) && EcsWorld.Has<Name>(owner.PlayerEntity.Value))
 				{
-					isEnemy = _ecsWorld.Get<Name>(owner.PlayerEntity.Value).Value == "Enemy_AI";
+					isEnemy = EcsWorld.Get<Name>(owner.PlayerEntity.Value).Value == "Enemy_AI";
 				}
 				if (isEnemy)
 				{
@@ -123,13 +123,13 @@ public class CheatService
 			int destroyed = 0;
 			foreach (var entity in targets)
 			{
-				if (_ecsWorld.IsAlive(entity))
+				if (EcsWorld.IsAlive(entity))
 				{
-					var hp = _ecsWorld.Get<Health>(entity);
-					_ecsWorld.Set(entity, new Health(0f, hp.Max));
-					if (!_ecsWorld.Has<Dead>(entity))
+					var hp = EcsWorld.Get<Health>(entity);
+					EcsWorld.Set(entity, new Health(0f, hp.Max));
+					if (!EcsWorld.Has<Dead>(entity))
 					{
-						_ecsWorld.Add<Dead>(entity);
+						EcsWorld.Add<Dead>(entity);
 					}
 					if (GameHost.Instance != null && GameHost.TryGetUnit3D(entity, out var unit3D))
 					{
@@ -153,12 +153,12 @@ public class CheatService
 		if (lower == "nocap" || lower == "verydemure")
 		{
 			Entity worldEntity = Entity.Null;
-			var query = Realm.Ecs.Common.QueryCache.AllFogAndWeatherStateQuery;
-			_ecsWorld.Query(in query, (Entity ent) => worldEntity = ent);
+			var query = QueryCache.AllFogAndWeatherStateQuery;
+			EcsWorld.Query(in query, ent => worldEntity = ent);
 
-			if (worldEntity != Entity.Null && _ecsWorld.IsAlive(worldEntity) && _ecsWorld.Has<FogAndWeatherState>(worldEntity))
+			if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<FogAndWeatherState>(worldEntity))
 			{
-				ref var state = ref _ecsWorld.Get<FogAndWeatherState>(worldEntity);
+				ref var state = ref EcsWorld.Get<FogAndWeatherState>(worldEntity);
 				state.FogOfWarType = "visible";
 			}
 			return (CheatResult.NoCap, 0);
