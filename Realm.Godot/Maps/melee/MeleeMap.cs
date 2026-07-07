@@ -11,6 +11,16 @@ public class MeleeMap : IMapScript
 
     public void Initialize(IGameAPI api)
     {
+        if (global::GameHost.UnitRegistry.TryGetValue("castle", out var castleMeta))
+        {
+            var abilities = castleMeta.Abilities != null 
+                ? new System.Collections.Generic.List<string>(castleMeta.Abilities) 
+                : new System.Collections.Generic.List<string>();
+            abilities.Add("upgrade_health");
+            castleMeta.Abilities = abilities.ToArray();
+            global::GameHost.UnitRegistry["castle"] = castleMeta;
+        }
+
         api.SpawnResourceNode("goldmine", new Vector3(-35f, 0f, -15f), 2000f);
         api.SpawnResourceNode("tree", new Vector3(-18f, 0f, -35f), 500f);
         api.SpawnResourceNode("tree", new Vector3(-22f, 0f, -36f), 500f);

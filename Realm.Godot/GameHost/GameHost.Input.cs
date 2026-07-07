@@ -1478,6 +1478,12 @@ public partial class GameHost
 				return;
 			}
 
+			if (InGameHUD.Instance != null && InGameHUD.Instance.HandleCommandCardHotkey(keyEvent.Keycode))
+			{
+				GetViewport().SetInputAsHandled();
+				return;
+			}
+
 			if (SelectedUnits.Count == 1 && !SelectedUnits[0].IsEnemy)
 			{
 				var selectedUnit = SelectedUnits[0];
@@ -3197,7 +3203,7 @@ public partial class GameHost
 
 		foreach (var unit in SelectedUnits)
 		{
-			if (!unit.IsEnemy && unit.UnitId == "castle" && EcsWorld.IsAlive(unit.Entity))
+			if (!unit.IsEnemy && unit.IsBuilding && EcsWorld.IsAlive(unit.Entity))
 			{
 				if (EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(unit.Entity))
 				{
@@ -3220,14 +3226,14 @@ public partial class GameHost
 
 		if (!foundCastle)
 		{
-			bool hasCastleSelected = SelectedUnits.Exists(u => !u.IsEnemy && u.UnitId == "castle");
-			if (hasCastleSelected)
+			bool hasBuildingSelected = SelectedUnits.Exists(u => !u.IsEnemy && u.IsBuilding);
+			if (hasBuildingSelected)
 			{
-				InGameHUD.Instance.ShowFeedbackText("Training queue is full! (Max 5)", new Color(1f, 0.3f, 0.3f));
+				InGameHUD.Instance.ShowFeedbackText(TranslationServer.Translate("Training queue is full! (Max 5)"), new Color(1f, 0.3f, 0.3f));
 			}
 			else
 			{
-				InGameHUD.Instance.ShowFeedbackText("Cannot train unit: No Castle selected!", new Color(1f, 0.3f, 0.3f));
+				InGameHUD.Instance.ShowFeedbackText(TranslationServer.Translate("Cannot train unit: No producing building selected!"), new Color(1f, 0.3f, 0.3f));
 			}
 			UIManager.Instance?.PlayWarningSound();
 			return;
@@ -3235,7 +3241,7 @@ public partial class GameHost
 
 		if (meta.PopCost > 0 && CurrentPopulation + meta.PopCost > MaxPopulation)
 		{
-			InGameHUD.Instance.ShowFeedbackText($"Population cap reached! ({CurrentPopulation}/{MaxPopulation})", new Color(1f, 0.3f, 0.3f));
+			InGameHUD.Instance.ShowFeedbackText(string.Format(TranslationServer.Translate("Population cap reached! ({0}/{1})"), CurrentPopulation, MaxPopulation), new Color(1f, 0.3f, 0.3f));
 			UIManager.Instance?.PlayWarningSound();
 			return;
 		}
@@ -3251,7 +3257,7 @@ public partial class GameHost
 				InGameHUD.Instance.Wood -= meta.CostWood;
 				InGameHUD.Instance.Stone -= meta.CostStone;
 
-				InGameHUD.Instance.ShowFeedbackText($"Queued {meta.Name} ({CurrentPopulation}/{MaxPopulation} pop)", new Color(0.2f, 0.8f, 1f));
+				InGameHUD.Instance.ShowFeedbackText(string.Format(TranslationServer.Translate("Queued {0} ({1}/{2} pop)"), meta.Name, CurrentPopulation, MaxPopulation), new Color(0.2f, 0.8f, 1f));
 				UIManager.Instance?.PlayClickSound();
 				InGameHUD.Instance.RefreshUI(SelectedUnits);
 			}
@@ -3263,7 +3269,7 @@ public partial class GameHost
 					InGameHUD.Instance.Wood -= meta.CostWood;
 					InGameHUD.Instance.Stone -= meta.CostStone;
 
-					InGameHUD.Instance.ShowFeedbackText($"Queued {meta.Name} ({CurrentPopulation}/{MaxPopulation} pop)", new Color(0.2f, 0.8f, 1f));
+					InGameHUD.Instance.ShowFeedbackText(string.Format(TranslationServer.Translate("Queued {0} ({1}/{2} pop)"), meta.Name, CurrentPopulation, MaxPopulation), new Color(0.2f, 0.8f, 1f));
 					UIManager.Instance?.PlayClickSound();
 					InGameHUD.Instance.RefreshUI(SelectedUnits);
 				}
@@ -3271,7 +3277,7 @@ public partial class GameHost
 		}
 		else
 		{
-			InGameHUD.Instance.ShowFeedbackText("Cannot train unit: Insufficient resources!", new Color(1f, 0.2f, 0.2f));
+			InGameHUD.Instance.ShowFeedbackText(TranslationServer.Translate("Cannot train unit: Insufficient resources!"), new Color(1f, 0.2f, 0.2f));
 			UIManager.Instance?.PlayWarningSound();
 		}
 	}

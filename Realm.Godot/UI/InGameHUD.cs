@@ -927,6 +927,7 @@ public partial class InGameHUD : Control
 		btn.TooltipText = tooltip;
 		btn.CustomMinimumSize = new Vector2(70, 70);
 		btn.ClipContents = true;
+		btn.AddThemeConstantOverride("icon_max_width", 62);
 
 		if (tooltip.StartsWith("[") && tooltip.Contains("]"))
 		{
@@ -1252,6 +1253,7 @@ public partial class InGameHUD : Control
 		btn.TooltipText = string.IsNullOrEmpty(trans) ? tooltip : trans;
 		btn.CustomMinimumSize = new Vector2(50, 50);
 		btn.FocusMode = FocusModeEnum.None;
+		btn.AddThemeConstantOverride("icon_max_width", 45);
 		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
@@ -1271,6 +1273,7 @@ public partial class InGameHUD : Control
 		btn.SizeFlagsVertical = SizeFlags.ExpandFill;
 		btn.FocusMode = FocusModeEnum.None;
 		btn.ClipContents = true;
+		btn.AddThemeConstantOverride("icon_max_width", 72);
 
 		if (tooltip.StartsWith("[") && tooltip.Contains("]"))
 		{
@@ -1808,7 +1811,13 @@ public partial class InGameHUD : Control
 		return true;
 	}
 
-	private void UpgradeSelectedTower()
+	public bool HandleCommandCardHotkey(Key keycode)
+	{
+		if (_commandPanelController == null) return false;
+		return _commandPanelController.HandleHotkey(keycode);
+	}
+
+	public void UpgradeSelectedTower()
 	{
 		var selectedUnits = GameHost.Instance?.SelectedUnits;
 		if (selectedUnits != null && selectedUnits.Count > 0)
@@ -1829,44 +1838,44 @@ public partial class InGameHUD : Control
 
 	private void SetupCommandCard()
 	{
-		SetupHUDButton(_btnMove, "res://Assets/UI/move_speed.png", "[M] Move / Right-Click Ground", () => GameHost.Instance?.EnterCommandTargeting("move"));
-		SetupHUDButton(_btnStop, "res://Assets/UI/cancel_button_2.png", "[S] Stop Selected Units", () => 
+		SetupHUDButton(_btnMove, "res://Assets/UI/move_speed.png", TranslationServer.Translate("[M] Move / Right-Click Ground"), () => GameHost.Instance?.EnterCommandTargeting("move"));
+		SetupHUDButton(_btnStop, "res://Assets/UI/cancel_button_2.png", TranslationServer.Translate("[S] Stop Selected Units"), () => 
 		{
-			ShowFeedbackText("Command: Stop Current Action", new Color(0.9f, 0.2f, 0.2f));
+			ShowFeedbackText(TranslationServer.Translate("Command: Stop Current Action"), new Color(0.9f, 0.2f, 0.2f));
 			GameHost.Instance?.StopSelectedUnits();
 		});
-		SetupHUDButton(_btnHold, "res://Assets/UI/magic_upgrade_arrow.png", "[H] Hold Position — Unit stays put and attacks in place", () => 
+		SetupHUDButton(_btnHold, "res://Assets/UI/magic_upgrade_arrow.png", TranslationServer.Translate("[H] Hold Position — Unit stays put and attacks in place"), () => 
 		{
-			ShowFeedbackText("Command: Hold Position", new Color(0.9f, 0.8f, 0.1f));
+			ShowFeedbackText(TranslationServer.Translate("Command: Hold Position"), new Color(0.9f, 0.8f, 0.1f));
 			GameHost.Instance?.HoldSelectedUnits();
 		});
-		SetupHUDButton(_btnAttack, "res://Assets/UI/battle_axe.png", "[A] Attack / Attack-Move — Click enemy to attack, click ground to attack-move", () => GameHost.Instance?.EnterCommandTargeting("attack"));
-		SetupHUDButton(_btnPatrol, "res://Assets/UI/patrol.jpg", "[P] Patrol — Unit patrols between current position and target, engaging enemies", () => GameHost.Instance?.EnterCommandTargeting("patrol"));
-		SetupHUDButton(_btnBuild, "res://Assets/UI/golden_hammers.png", "[B] Build Structure", () => EnterBuildSubMenu());
+		SetupHUDButton(_btnAttack, "res://Assets/UI/battle_axe.png", TranslationServer.Translate("[A] Attack / Attack-Move — Click enemy to attack, click ground to attack-move"), () => GameHost.Instance?.EnterCommandTargeting("attack"));
+		SetupHUDButton(_btnPatrol, "res://Assets/UI/patrol.jpg", TranslationServer.Translate("[P] Patrol — Unit patrols between current position and target, engaging enemies"), () => GameHost.Instance?.EnterCommandTargeting("patrol"));
+		SetupHUDButton(_btnBuild, "res://Assets/UI/golden_hammers.png", TranslationServer.Translate("[B] Build Structure"), () => EnterBuildSubMenu());
 
 		_btnBuildCastle = new Button();
-		SetupHUDButton(_btnBuildCastle, "res://Assets/UI/moonlit_castle.png", "[C] Build Castle (Cost: 400 Gold, 300 Wood, 200 Stone)", () => GameHost.Instance?.EnterBuildingPlacement("castle"));
+		SetupHUDButton(_btnBuildCastle, "res://Assets/UI/moonlit_castle.png", TranslationServer.Translate("[C] Build Castle (Cost: 400 Gold, 300 Wood, 200 Stone)"), () => GameHost.Instance?.EnterBuildingPlacement("castle"));
 		_btnBuildTower = new Button();
-		SetupHUDButton(_btnBuildTower, "res://Assets/UI/unknown_unit_1.png", "[T] Build Spell Tower (Cost: 200 Gold, 150 Wood, 100 Stone)", () => GameHost.Instance?.EnterBuildingPlacement("tower"));
+		SetupHUDButton(_btnBuildTower, "res://Assets/UI/unknown_unit_1.png", TranslationServer.Translate("[T] Build Spell Tower (Cost: 200 Gold, 150 Wood, 100 Stone)"), () => GameHost.Instance?.EnterBuildingPlacement("tower"));
 		_btnCancelBuild = new Button();
-		SetupHUDButton(_btnCancelBuild, "res://Assets/UI/cancel_button_2.png", "[Esc] Cancel", () => ExitBuildSubMenu());
+		SetupHUDButton(_btnCancelBuild, "res://Assets/UI/cancel_button_2.png", TranslationServer.Translate("[Esc] Cancel"), () => ExitBuildSubMenu());
 
 		_btnTrainSoldier = new Button();
-		SetupHUDButton(_btnTrainSoldier, "res://Assets/UI/heavy_knight.png", "[F] Train Soldier (Cost: 100 Gold, 1 Pop) — Heavy armored melee fighter", () => GameHost.Instance?.TrainUnitAtCastle("soldier"));
+		SetupHUDButton(_btnTrainSoldier, "res://Assets/UI/heavy_knight.png", TranslationServer.Translate("[F] Train Soldier (Cost: 100 Gold, 1 Pop) — Heavy armored melee fighter"), () => GameHost.Instance?.TrainUnitAtCastle("soldier"));
 		_btnTrainArcher = new Button();
-		SetupHUDButton(_btnTrainArcher, "res://Assets/UI/elf_warrior.png", "[R] Train Archer (Cost: 120 Gold, 40 Wood, 1 Pop) — Ranged elf with high range", () => GameHost.Instance?.TrainUnitAtCastle("archer"));
+		SetupHUDButton(_btnTrainArcher, "res://Assets/UI/elf_warrior.png", TranslationServer.Translate("[R] Train Archer (Cost: 120 Gold, 40 Wood, 1 Pop) — Ranged elf with high range"), () => GameHost.Instance?.TrainUnitAtCastle("archer"));
 
 		_btnTrainPriest = new Button();
-		SetupHUDButton(_btnTrainPriest, "res://Assets/UI/alliance_flag.png", "[P] Train Priest (Cost: 140 Gold, 20 Wood, 1 Pop) — Healing support unit", () => GameHost.Instance?.TrainUnitAtCastle("priest"));
+		SetupHUDButton(_btnTrainPriest, "res://Assets/UI/alliance_flag.png", TranslationServer.Translate("[P] Train Priest (Cost: 140 Gold, 20 Wood, 1 Pop) — Healing support unit"), () => GameHost.Instance?.TrainUnitAtCastle("priest"));
 
 		_btnTrainWorker = new Button();
-		SetupHUDButton(_btnTrainWorker, "res://Assets/UI/unit_placeholder.png", "[V] Train Worker (Cost: 75 Gold, 1 Pop) — Dedicated gatherer and builder", () => GameHost.Instance?.TrainUnitAtCastle("worker"));
+		SetupHUDButton(_btnTrainWorker, "res://Assets/UI/unit_placeholder.png", TranslationServer.Translate("[V] Train Worker (Cost: 75 Gold, 1 Pop) — Dedicated gatherer and builder"), () => GameHost.Instance?.TrainUnitAtCastle("worker"));
 
 		_btnSetRally = new Button();
-		SetupHUDButton(_btnSetRally, "res://Assets/UI/alliance_flag.png", "[Y] Set Rally Point — Set location where new units will walk", () => GameHost.Instance?.EnterCommandTargeting("rally"));
+		SetupHUDButton(_btnSetRally, "res://Assets/UI/alliance_flag.png", TranslationServer.Translate("[Y] Set Rally Point — Set location where new units will walk"), () => GameHost.Instance?.EnterCommandTargeting("rally"));
 		
 		_btnBuyPotion = new Button();
-		SetupHUDButton(_btnBuyPotion, "res://Assets/UI/alliance_flag.png", "[I] Buy Potion (Cost: 50 Gold) — Buy a Healing Potion for a nearby combat unit", () => {
+		SetupHUDButton(_btnBuyPotion, "res://Assets/UI/alliance_flag.png", TranslationServer.Translate("[I] Buy Potion (Cost: 50 Gold) — Buy a Healing Potion for a nearby combat unit"), () => {
 			var selected = GameHost.Instance?.SelectedUnits;
 			if (selected != null && selected.Count == 1)
 			{
@@ -1875,14 +1884,14 @@ public partial class InGameHUD : Control
 		});
 
 		_btnUpgradeWeapons = new Button();
-		SetupHUDButton(_btnUpgradeWeapons, "res://Assets/UI/battle_axe.png", "[W] Upgrade Weapons (Cost: 150 Gold, 100 Wood)\nPermanently increases unit damage by +3", () => GameHost.Instance?.BuyWeaponsUpgrade());
+		SetupHUDButton(_btnUpgradeWeapons, "res://Assets/UI/battle_axe.png", TranslationServer.Translate("[W] Upgrade Weapons (Cost: 150 Gold, 100 Wood)\nPermanently increases unit damage by +3"), () => GameHost.Instance?.BuyWeaponsUpgrade());
 		_btnUpgradeShields = new Button();
-		SetupHUDButton(_btnUpgradeShields, "res://Assets/UI/battle_shield.png", "[G] Upgrade Armor (Cost: 150 Gold, 100 Stone)\nPermanently increases unit armor by +2", () => GameHost.Instance?.BuyShieldsUpgrade());
+		SetupHUDButton(_btnUpgradeShields, "res://Assets/UI/battle_shield.png", TranslationServer.Translate("[G] Upgrade Armor (Cost: 150 Gold, 100 Stone)\nPermanently increases unit armor by +2"), () => GameHost.Instance?.BuyShieldsUpgrade());
 		_btnUpgradeHarvesting = new Button();
-		SetupHUDButton(_btnUpgradeHarvesting, "res://Assets/UI/gold_coin.png", "[T] Upgrade Harvesting (Cost: 150 Wood, 100 Stone)\nPermanently increases passive resource gathering rates by +50%", () => GameHost.Instance?.BuyHarvestingUpgrade());
+		SetupHUDButton(_btnUpgradeHarvesting, "res://Assets/UI/gold_coin.png", TranslationServer.Translate("[T] Upgrade Harvesting (Cost: 150 Wood, 100 Stone)\nPermanently increases passive resource gathering rates by +50%"), () => GameHost.Instance?.BuyHarvestingUpgrade());
 
 		_btnUpgradeTower = new Button();
-		SetupHUDButton(_btnUpgradeTower, "res://Assets/UI/magic_upgrade_arrow.png", "[U] Upgrade Tower (Cost: 150 Gold, 100 Stone)", () => UpgradeSelectedTower());
+		SetupHUDButton(_btnUpgradeTower, "res://Assets/UI/magic_upgrade_arrow.png", TranslationServer.Translate("[U] Upgrade Tower (Cost: 150 Gold, 100 Stone)"), () => UpgradeSelectedTower());
 	}
 
 	private void CreateSpectatorPerspectiveUI()

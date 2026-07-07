@@ -163,7 +163,7 @@ public partial class LobbyRoom : Control
 		CreateSpectatorDelayUI();
 		LobbyManager.Instance.SpectatorDelayChanged += OnSpectatorDelayChanged;
 
-		_chatLog.Text = "[color=#ffd700]System: Connected to Lobby. Pre-Match Setup is active.[/color]\n";
+		_chatLog.Text = $"[color=#ffd700]{Tr("System: Connected to Lobby. Pre-Match Setup is active.")}[/color]\n";
 		_chatInput.TextSubmitted += OnChatSubmitted;
 
 
@@ -181,29 +181,29 @@ public partial class LobbyRoom : Control
 
 		
 		_authorshipWarningLabel = new Label();
-		_authorshipWarningLabel.Text = "⚠️ Unable to verify map authorship";
+		_authorshipWarningLabel.Text = "⚠️ " + Tr("Unable to verify map authorship");
 		_authorshipWarningLabel.AddThemeColorOverride("font_color", new Color(1, 0.4f, 0.4f));
 		_authorshipWarningLabel.AddThemeFontSizeOverride("font_size", 12);
 		_authorshipWarningLabel.Visible = false;
 		GetNode<VBoxContainer>("BriefingPanel/VBoxContainer").AddChild(_authorshipWarningLabel);
 		
 		_primaryAuthorLabel = new Label();
-		_primaryAuthorLabel.Text = "Author: Unknown";
+		_primaryAuthorLabel.Text = Tr("Author: Unknown");
 		_primaryAuthorLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		_primaryAuthorLabel.AddThemeFontSizeOverride("font_size", 12);
 		GetNode<VBoxContainer>("BriefingPanel/VBoxContainer").AddChild(_primaryAuthorLabel);
 		
 		_otherAuthorsButton = new Button();
-		_otherAuthorsButton.Text = "Other Authors";
+		_otherAuthorsButton.Text = Tr("Other Authors");
 		_otherAuthorsButton.CustomMinimumSize = new Vector2(100, 24);
 		_otherAuthorsButton.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		_otherAuthorsButton.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		_otherAuthorsButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
 		_otherAuthorsButton.Pressed += () => {
 			if (_otherAuthorsList.Count > 0) {
-				ShowConfirmationDialog("Contributors:\n" + string.Join("\n", _otherAuthorsList), null);
+				ShowConfirmationDialog(Tr("Contributors:") + "\n" + string.Join("\n", _otherAuthorsList), null);
 			} else {
-				ShowConfirmationDialog("No other contributors listed.", null);
+				ShowConfirmationDialog(Tr("No other contributors listed."), null);
 			}
 		};
 		GetNode<VBoxContainer>("BriefingPanel/VBoxContainer").AddChild(_otherAuthorsButton);
@@ -580,7 +580,7 @@ public partial class LobbyRoom : Control
 		private async void VerifyMapAuthorship(string mapName)
 	{
 		_authorshipWarningLabel.Visible = false;
-		_primaryAuthorLabel.Text = "Author: Unknown";
+		_primaryAuthorLabel.Text = Tr("Author: Unknown");
 		_otherAuthorsList.Clear();
 		
 		string mapJsonPath = ProjectSettings.GlobalizePath("user://maps/" + mapName + "/map.json");
@@ -634,7 +634,7 @@ public partial class LobbyRoom : Control
 					
 					if (isValid)
 					{
-						_primaryAuthorLabel.Text = "Author: " + author;
+						_primaryAuthorLabel.Text = Tr("Author:") + " " + author;
 					}
 					else
 					{

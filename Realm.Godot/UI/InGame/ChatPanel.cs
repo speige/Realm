@@ -36,7 +36,7 @@ public class ChatPanel
 
 			_chatPrefixLabel = new Label();
 			_chatPrefixLabel.Name = "ChatPrefixLabel";
-			_chatPrefixLabel.Text = "Allies: ";
+			_chatPrefixLabel.Text = TranslationServer.Translate("Allies: ");
 			_chatPrefixLabel.AddThemeColorOverride("font_color", new Color(0.2f, 0.7f, 1.0f));
 			_inputRow.AddChild(_chatPrefixLabel);
 
@@ -100,12 +100,12 @@ public class ChatPanel
 		{
 			if (_currentMode == ChatMode.AllPlayers)
 			{
-				_chatPrefixLabel.Text = "All Players: ";
+				_chatPrefixLabel.Text = TranslationServer.Translate("All Players: ");
 				_chatPrefixLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.9f));
 			}
 			else
 			{
-				_chatPrefixLabel.Text = "Allies: ";
+				_chatPrefixLabel.Text = TranslationServer.Translate("Allies: ");
 				_chatPrefixLabel.AddThemeColorOverride("font_color", new Color(0.2f, 0.7f, 1.0f));
 			}
 		}
