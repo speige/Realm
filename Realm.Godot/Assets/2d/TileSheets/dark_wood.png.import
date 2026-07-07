@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cacdd366ooqil"
-path="res://.godot/imported/crag_stone.png-5b29a99a03a598c6d56cf2652527e20e.ctex"
+uid="uid://t0nbov1ui4he"
+path="res://.godot/imported/dark_wood.png-5d8787a50c37b7344f33281503c8e25b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/2d/TileSheets/crag_stone.png"
-dest_files=["res://.godot/imported/crag_stone.png-5b29a99a03a598c6d56cf2652527e20e.ctex"]
+source_file="res://Assets/2d/TileSheets/dark_wood.png"
+dest_files=["res://.godot/imported/dark_wood.png-5d8787a50c37b7344f33281503c8e25b.ctex"]
 
 [params]
 

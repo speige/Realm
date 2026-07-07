@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cedap7usyve06"
-path="res://.godot/imported/void_shard.png-9c1cee8329504e2475e30e85a487c1b7.ctex"
+uid="uid://c1lej7epgyrjx"
+path="res://.godot/imported/ancient_ruin.png-7cbabfca303c4f3d318a4277af3ace2f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/2d/TileSheets/void_shard.png"
-dest_files=["res://.godot/imported/void_shard.png-9c1cee8329504e2475e30e85a487c1b7.ctex"]
+source_file="res://Assets/2d/TileSheets/ancient_ruin.png"
+dest_files=["res://.godot/imported/ancient_ruin.png-7cbabfca303c4f3d318a4277af3ace2f.ctex"]
 
 [params]
 

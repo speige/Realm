@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dpurpf7sobkwp"
-path="res://.godot/imported/cinder_rock.png-d086afd0d2603c5acb751d47f90f0e7a.ctex"
+uid="uid://fq0ftftxh2wg"
+path="res://.godot/imported/tarn_mud.png-c0a42124e7dc3b9a97964014c98cd674.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/2d/TileSheets/cinder_rock.png"
-dest_files=["res://.godot/imported/cinder_rock.png-d086afd0d2603c5acb751d47f90f0e7a.ctex"]
+source_file="res://Assets/2d/TileSheets/tarn_mud.png"
+dest_files=["res://.godot/imported/tarn_mud.png-c0a42124e7dc3b9a97964014c98cd674.ctex"]
 
 [params]
 

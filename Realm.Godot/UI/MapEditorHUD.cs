@@ -3886,52 +3886,52 @@ public class {mapName} : IMapScript
 
 	private void SetupTextureSwatches(bool connectEvents = false)
 	{
-		_swatchPaths[0] = "res://Assets/2d/TileSheets/river_silt.png";
-		_swatchDisplayNames[0] = "Grass Green";
+		_swatchPaths[0] = "res://Assets/2d/TileSheets/ancient_ruin.png";
+		_swatchDisplayNames[0] = "Ancient Ruin";
 		_swatchColors[0] = new Color(0.95f, 0.95f, 1.0f);
 
-		_swatchPaths[1] = "res://Assets/2d/TileSheets/cinder_rock.png";
-		_swatchDisplayNames[1] = "Dark Dirt";
+		_swatchPaths[1] = "res://Assets/2d/TileSheets/deep_moss.png";
+		_swatchDisplayNames[1] = "Deep Moss";
 		_swatchColors[1] = new Color(0.5f, 0.5f, 0.52f);
 
-		_swatchPaths[2] = "res://Assets/2d/TileSheets/arid_dust.png";
-		_swatchDisplayNames[2] = "Grey Rock";
+		_swatchPaths[2] = "res://Assets/2d/TileSheets/gray_slate.png";
+		_swatchDisplayNames[2] = "Gray Slate";
 		_swatchColors[2] = new Color(0.5f, 0.45f, 0.38f);
 
-		_swatchPaths[3] = "res://Assets/2d/TileSheets/deep_moss.png";
-		_swatchDisplayNames[3] = "Yellow Sand";
+		_swatchPaths[3] = "res://Assets/2d/TileSheets/iron_dust.png";
+		_swatchDisplayNames[3] = "Iron Dust";
 		_swatchColors[3] = new Color(0.2f, 0.6f, 0.2f);
 
-		_swatchPaths[4] = "res://Assets/2d/TileSheets/crag_stone.png";
-		_swatchDisplayNames[4] = "Dry Grass";
+		_swatchPaths[4] = "res://Assets/2d/TileSheets/lava_vein.png";
+		_swatchDisplayNames[4] = "Lava Vein";
 		_swatchColors[4] = new Color(0.38f, 0.38f, 0.4f);
 
-		_swatchPaths[5] = "res://Assets/2d/TileSheets/ash_soil.png";
-		_swatchDisplayNames[5] = "Red Dirt";
+		_swatchPaths[5] = "res://Assets/2d/TileSheets/mossy_stone.png";
+		_swatchDisplayNames[5] = "Mossy Stone";
 		_swatchColors[5] = new Color(0.4f, 0.28f, 0.18f);
 
-		_swatchPaths[6] = "res://Assets/2d/TileSheets/fern_grove.png";
-		_swatchDisplayNames[6] = "White Snow";
+		_swatchPaths[6] = "res://Assets/2d/TileSheets/pale_sand.png";
+		_swatchDisplayNames[6] = "Pale Sand";
 		_swatchColors[6] = new Color(0.3f, 0.7f, 0.2f);
 
-		_swatchPaths[7] = "res://Assets/2d/TileSheets/mossy_stone.png";
-		_swatchDisplayNames[7] = "Brown Mud";
+		_swatchPaths[7] = "res://Assets/2d/TileSheets/river_silt.png";
+		_swatchDisplayNames[7] = "River Silt";
 		_swatchColors[7] = new Color(0.12f, 0.48f, 0.18f);
 
-		_swatchPaths[8] = "res://Assets/2d/TileSheets/holy_moss.png";
-		_swatchDisplayNames[8] = "Dark Grass";
+		_swatchPaths[8] = "res://Assets/2d/TileSheets/royal_marble.png";
+		_swatchDisplayNames[8] = "Royal Marble";
 		_swatchColors[8] = new Color(0.7f, 0.55f, 0.35f);
 
-		_swatchPaths[9] = "res://Assets/2d/TileSheets/void_shard.png";
-		_swatchDisplayNames[9] = "Grey Gravel";
+		_swatchPaths[9] = "res://Assets/2d/TileSheets/tarn_mud.png";
+		_swatchDisplayNames[9] = "Tarn Mud";
 		_swatchColors[9] = new Color(0.85f, 0.75f, 0.5f);
 
-		_swatchPaths[10] = "res://Assets/terrain_grass.jpg";
-		_swatchDisplayNames[10] = "Red Brick";
+		_swatchPaths[10] = "res://Assets/2d/TileSheets/dark_wood.png";
+		_swatchDisplayNames[10] = "Dark Wood";
 		_swatchColors[10] = new Color(0.45f, 0.55f, 0.65f);
 
-		_swatchPaths[11] = "res://Assets/2d/TileSheets/ash_soil.png";
-		_swatchDisplayNames[11] = "Paving Stone";
+		_swatchPaths[11] = "res://Assets/2d/TileSheets/mist_grove.png";
+		_swatchDisplayNames[11] = "Mist Grove";
 		_swatchColors[11] = new Color(0.6f, 0.3f, 0.15f);
 
 		for (int i = 0; i < 12; i++)

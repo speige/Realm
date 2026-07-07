@@ -389,18 +389,18 @@ void fragment() {
 
 		var paths = new string[]
 		{
-			"res://Assets/2d/TileSheets/river_silt.png",
-			"res://Assets/2d/TileSheets/cinder_rock.png",
-			"res://Assets/2d/TileSheets/arid_dust.png",
+			"res://Assets/2d/TileSheets/ancient_ruin.png",
 			"res://Assets/2d/TileSheets/deep_moss.png",
-			"res://Assets/2d/TileSheets/crag_stone.png",
-			"res://Assets/2d/TileSheets/ash_soil.png",
-			"res://Assets/2d/TileSheets/fern_grove.png",
+			"res://Assets/2d/TileSheets/gray_slate.png",
+			"res://Assets/2d/TileSheets/iron_dust.png",
+			"res://Assets/2d/TileSheets/lava_vein.png",
 			"res://Assets/2d/TileSheets/mossy_stone.png",
-			"res://Assets/2d/TileSheets/holy_moss.png",
-			"res://Assets/2d/TileSheets/void_shard.png",
-			"res://Assets/terrain_grass.jpg",
-			"res://Assets/2d/TileSheets/ash_soil.png"
+			"res://Assets/2d/TileSheets/pale_sand.png",
+			"res://Assets/2d/TileSheets/river_silt.png",
+			"res://Assets/2d/TileSheets/royal_marble.png",
+			"res://Assets/2d/TileSheets/tarn_mud.png",
+			"res://Assets/2d/TileSheets/dark_wood.png",
+			"res://Assets/2d/TileSheets/mist_grove.png"
 		};
 
 		var images = new Godot.Collections.Array<Image>();
@@ -413,7 +413,7 @@ void fragment() {
 			var tex = GD.Load<Texture2D>(path);
 			if (tex == null)
 			{
-				tex = GD.Load<Texture2D>("res://Assets/terrain_grass.jpg");
+				tex = GD.Load<Texture2D>("res://Assets/terrain_default.png");
 			}
 
 			if (tex != null)

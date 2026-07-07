@@ -2458,7 +2458,7 @@ public class {mapName} : IMapScript
 		staticBody.AddChild(meshInstance);
 
 		var material = new StandardMaterial3D();
-		var texture = GD.Load<Texture2D>("res://Assets/terrain_grass.jpg");
+		var texture = GD.Load<Texture2D>("res://Assets/terrain_default.png");
 		if (texture != null)
 		{
 			material.AlbedoTexture = texture;

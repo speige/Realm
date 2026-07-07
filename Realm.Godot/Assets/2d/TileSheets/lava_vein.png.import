@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c5b7labrsxfg3"
-path="res://.godot/imported/river_silt.png-c167e7a2e6496b7b5d0a2acb861822e7.ctex"
+uid="uid://c7ufpcw3w8dmj"
+path="res://.godot/imported/lava_vein.png-31c2e51464e292dfb1752847bc3c9b9c.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/2d/TileSheets/river_silt.png"
-dest_files=["res://.godot/imported/river_silt.png-c167e7a2e6496b7b5d0a2acb861822e7.ctex"]
+source_file="res://Assets/2d/TileSheets/lava_vein.png"
+dest_files=["res://.godot/imported/lava_vein.png-31c2e51464e292dfb1752847bc3c9b9c.ctex"]
 
 [params]
 

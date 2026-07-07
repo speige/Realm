@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://clbi00tsrjlku"
-path="res://.godot/imported/terrain_grass.jpg-0931617d4a6502fe11292b248c77065c.ctex"
+uid="uid://reowu23e5qij"
+path="res://.godot/imported/mist_grove.png-aa6bff2bd6c624b1a39625b551a93705.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/terrain_grass.jpg"
-dest_files=["res://.godot/imported/terrain_grass.jpg-0931617d4a6502fe11292b248c77065c.ctex"]
+source_file="res://Assets/2d/TileSheets/mist_grove.png"
+dest_files=["res://.godot/imported/mist_grove.png-aa6bff2bd6c624b1a39625b551a93705.ctex"]
 
 [params]
 

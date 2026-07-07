@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cdmx61hkfc5hh"
-path="res://.godot/imported/holy_moss.png-52660f5eb7bebe0dbabac13720a60973.ctex"
+uid="uid://dg4hl1bjxm08l"
+path="res://.godot/imported/royal_marble.png-915b2fe43561006bc4ef4fac4309413d.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/2d/TileSheets/holy_moss.png"
-dest_files=["res://.godot/imported/holy_moss.png-52660f5eb7bebe0dbabac13720a60973.ctex"]
+source_file="res://Assets/2d/TileSheets/royal_marble.png"
+dest_files=["res://.godot/imported/royal_marble.png-915b2fe43561006bc4ef4fac4309413d.ctex"]
 
 [params]
 

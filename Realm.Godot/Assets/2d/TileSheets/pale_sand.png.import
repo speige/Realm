@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cp7jf28422h8f"
-path="res://.godot/imported/arid_dust.png-3f12231c0033728b4d54828fe53dfdc3.ctex"
+uid="uid://bndecmns1ovc2"
+path="res://.godot/imported/pale_sand.png-56252aa25657bdc31769e538ee9a3b83.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/2d/TileSheets/arid_dust.png"
-dest_files=["res://.godot/imported/arid_dust.png-3f12231c0033728b4d54828fe53dfdc3.ctex"]
+source_file="res://Assets/2d/TileSheets/pale_sand.png"
+dest_files=["res://.godot/imported/pale_sand.png-56252aa25657bdc31769e538ee9a3b83.ctex"]
 
 [params]
 

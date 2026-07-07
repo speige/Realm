@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c5b7labrsxfg3"
-path="res://.godot/imported/river_silt.png-c167e7a2e6496b7b5d0a2acb861822e7.ctex"
+uid="uid://bamr2e87xp0q5"
+path="res://.godot/imported/terrain_default.png-0df176bcf174356574f75ab006010787.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/2d/TileSheets/river_silt.png"
-dest_files=["res://.godot/imported/river_silt.png-c167e7a2e6496b7b5d0a2acb861822e7.ctex"]
+source_file="res://Assets/terrain_default.png"
+dest_files=["res://.godot/imported/terrain_default.png-0df176bcf174356574f75ab006010787.ctex"]
 
 [params]
 

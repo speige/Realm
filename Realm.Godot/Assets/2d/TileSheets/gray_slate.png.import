@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dnejb2iti60gj"
-path="res://.godot/imported/fern_grove.png-b4c3f7076a5e988f363bd6864ede27c4.ctex"
+uid="uid://bus0h7vxsl45t"
+path="res://.godot/imported/gray_slate.png-cb721a5f06358999d9104c573fa2488b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/2d/TileSheets/fern_grove.png"
-dest_files=["res://.godot/imported/fern_grove.png-b4c3f7076a5e988f363bd6864ede27c4.ctex"]
+source_file="res://Assets/2d/TileSheets/gray_slate.png"
+dest_files=["res://.godot/imported/gray_slate.png-cb721a5f06358999d9104c573fa2488b.ctex"]
 
 [params]
 
