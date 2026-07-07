@@ -2952,12 +2952,20 @@ public partial class GameHost
 
 	public void SetRallyPoint(Unit3D building, Vector3 position)
 	{
+		bool queue = Input.IsKeyPressed(Key.Shift);
 		SpawnTargetIndicator(position, new Color(0.9f, 0.7f, 0.2f));
 		if (InGameHUD.Instance != null)
 		{
-			InGameHUD.Instance.ShowFeedbackText($"Rally Point set to {position.X:F0}, {position.Z:F0}", new Color(0.9f, 0.7f, 0.2f));
+			if (queue)
+			{
+				InGameHUD.Instance.ShowFeedbackText($"Queued Rally Point set to {position.X:F0}, {position.Z:F0}", new Color(0.9f, 0.7f, 0.2f));
+			}
+			else
+			{
+				InGameHUD.Instance.ShowFeedbackText($"Rally Point set to {position.X:F0}, {position.Z:F0}", new Color(0.9f, 0.7f, 0.2f));
+			}
 		}
-		_inputService.SetRallyPoint(building.Entity, new System.Numerics.Vector3(position.X, position.Y, position.Z));
+		_inputService.SetRallyPoint(building.Entity, new System.Numerics.Vector3(position.X, position.Y, position.Z), queue);
 	}
 
 	public void DeselectUnit(Unit3D unit)
@@ -3440,7 +3448,7 @@ public partial class GameHost
 		return _inputService.IsPositionBlocked(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z), radius, ignoreEntity);
 	}
 
-	public Unit3D SpawnUnitFromProduction(string unitId, System.Numerics.Vector3 position, bool isEnemy, System.Numerics.Vector3? rallyPoint = null, bool isFromQueue = false)
+	public Unit3D SpawnUnitFromProduction(string unitId, System.Numerics.Vector3 position, bool isEnemy, Entity buildingEntity, bool isFromQueue = false)
 	{
 		if (!UnitRegistry.TryGetValue(unitId, out var meta)) return null;
 
@@ -3475,9 +3483,29 @@ public partial class GameHost
 
 		var unit3D = SpawnUnit3D(entity, unitId, modelPath, godotPosition, meta.Speed == 0f, actualIsEnemy, isFromQueue);
 
-		if (rallyPoint.HasValue && meta.Speed > 0f)
+		if (meta.Speed > 0f)
 		{
-			EcsWorld.Add(entity, new MoveTo(rallyPoint.Value));
+			if (EcsWorld.IsAlive(buildingEntity) && EcsWorld.Has<Realm.Ecs.Components.Core.RallyPoint>(buildingEntity))
+			{
+				var rp = EcsWorld.Get<Realm.Ecs.Components.Core.RallyPoint>(buildingEntity);
+				if (rp.Count > 0)
+				{
+					EcsWorld.Add(entity, new MoveTo(rp.Waypoints[0]));
+					if (rp.Count > 1)
+					{
+						var wq = new WaypointQueue(rp.Waypoints[1]);
+						for (int i = 2; i < rp.Count; i++)
+						{
+							wq.Add(rp.Waypoints[i]);
+						}
+						EcsWorld.Add(entity, wq);
+					}
+				}
+			}
+			else
+			{
+				EcsWorld.Add(entity, new MoveTo(position));
+			}
 		}
 		return unit3D;
 	}

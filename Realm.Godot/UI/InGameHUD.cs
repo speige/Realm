@@ -1441,8 +1441,19 @@ public partial class InGameHUD : Control
 		{
 			if (!IsChatActive)
 			{
-				_chatPanelController?.ShowChatInput();
+				_chatPanelController?.ShowChatInput(keyEntEvent.ShiftPressed);
 				GetViewport().SetInputAsHandled();
+			}
+		}
+		else if (@event is InputEventKey pauseKeyEvent && pauseKeyEvent.Pressed && (pauseKeyEvent.Keycode == Key.P || pauseKeyEvent.Keycode == Key.Pause))
+		{
+			if (!IsChatActive)
+			{
+				if (GameHost.Instance != null)
+				{
+					GameHost.Instance.TogglePauseRequest();
+					GetViewport().SetInputAsHandled();
+				}
 			}
 		}
 	}
@@ -1456,9 +1467,9 @@ public partial class InGameHUD : Control
 		}
 	}
 
-	private void OnLobbyChatReceived(string senderName, string message)
+	private void OnLobbyChatReceived(string senderName, string message, bool alliesOnly)
 	{
-		_chatPanelController?.OnLobbyChatReceived(senderName, message);
+		_chatPanelController?.OnLobbyChatReceived(senderName, message, alliesOnly);
 	}
 
 	private void BuildHotkeyReferencePanel()
@@ -1920,5 +1931,154 @@ public partial class InGameHUD : Control
 		specHBox.AddChild(btnYellow);
 
 		AddChild(specPanel);
+	}
+
+	private PanelContainer _pausePanel;
+	private VBoxContainer _pausePlayerListContainer;
+	private Label _pauseTitleLabel;
+	private CheckButton _pauseReadyCheck;
+	private Button _pauseForceResumeBtn;
+
+	public void UpdatePauseUI()
+	{
+		if (GameHost.Instance == null) return;
+
+		if (_pausePanel == null)
+		{
+			BuildPausePanel();
+		}
+
+		bool isPaused = GameHost.Instance.IsPaused;
+		_pausePanel.Visible = isPaused;
+
+		if (!isPaused) return;
+
+		if (GameHost.Instance.ResumeCountdownSeconds >= 0)
+		{
+			_pauseTitleLabel.Text = $"Resuming in {GameHost.Instance.ResumeCountdownSeconds}s...";
+		}
+		else
+		{
+			_pauseTitleLabel.Text = "Game Paused";
+		}
+
+		foreach (var child in _pausePlayerListContainer.GetChildren())
+		{
+			child.QueueFree();
+		}
+
+		bool isLocalHost = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.IsHost;
+		int localPeerId = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null ? LobbyManager.Instance.LocalPlayer.PeerId : 1;
+
+		if (LobbyManager.Instance != null)
+		{
+			foreach (var player in LobbyManager.Instance.PlayerList)
+			{
+				if (player.Team == "Spectator") continue;
+
+				var row = new HBoxContainer();
+				row.AddThemeConstantOverride("separation", 15);
+
+				var nameLabel = new Label();
+				nameLabel.Text = player.Name;
+				nameLabel.CustomMinimumSize = new Vector2(150, 0);
+				row.AddChild(nameLabel);
+
+				GameHost.Instance.GetPlayerReadyState(player.PeerId, out bool ready);
+				var readyLabel = new Label();
+				readyLabel.Text = ready ? "READY" : "NOT READY";
+				readyLabel.AddThemeColorOverride("font_color", ready ? new Color(0.2f, 0.9f, 0.3f) : new Color(0.9f, 0.3f, 0.2f));
+				readyLabel.CustomMinimumSize = new Vector2(100, 0);
+				row.AddChild(readyLabel);
+
+				var disallowCheck = new CheckBox();
+				disallowCheck.Text = "Disallow Pause";
+				GameHost.Instance.GetPlayerDisallowPause(player.PeerId, out bool disallowed);
+				disallowCheck.ButtonPressed = disallowed;
+				disallowCheck.Disabled = !isLocalHost || player.PeerId == 1;
+				disallowCheck.Toggled += (buttonPressed) =>
+				{
+					GameHost.Instance.RequestSetDisallowPause(player.PeerId, buttonPressed);
+				};
+				row.AddChild(disallowCheck);
+
+				_pausePlayerListContainer.AddChild(row);
+			}
+		}
+
+		GameHost.Instance.GetPlayerReadyState(localPeerId, out bool localReady);
+		_pauseReadyCheck.ButtonPressed = localReady;
+		_pauseReadyCheck.Disabled = GameHost.Instance.ResumeCountdownSeconds >= 0;
+
+		_pauseForceResumeBtn.Visible = isLocalHost;
+		_pauseForceResumeBtn.Disabled = GameHost.Instance.ResumeCountdownSeconds >= 0;
+	}
+
+	private void BuildPausePanel()
+	{
+		_pausePanel = new PanelContainer();
+		_pausePanel.Name = "PausePanel";
+
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.1f, 0.1f, 0.12f, 0.95f);
+		style.SetBorderWidthAll(2);
+		style.BorderColor = UIStyle.ColorBronze;
+		style.CornerRadiusTopLeft = 8;
+		style.CornerRadiusTopRight = 8;
+		style.CornerRadiusBottomLeft = 8;
+		style.CornerRadiusBottomRight = 8;
+		style.ContentMarginLeft = 20;
+		style.ContentMarginRight = 20;
+		style.ContentMarginTop = 20;
+		style.ContentMarginBottom = 20;
+		_pausePanel.AddThemeStyleboxOverride("panel", style);
+
+		_pausePanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+		_pausePanel.GrowHorizontal = GrowDirection.Both;
+		_pausePanel.GrowVertical = GrowDirection.Both;
+
+		var mainVBox = new VBoxContainer();
+		mainVBox.AddThemeConstantOverride("separation", 15);
+		_pausePanel.AddChild(mainVBox);
+
+		_pauseTitleLabel = new Label();
+		_pauseTitleLabel.Text = "Game Paused";
+		_pauseTitleLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		_pauseTitleLabel.AddThemeFontSizeOverride("font_size", 24);
+		mainVBox.AddChild(_pauseTitleLabel);
+
+		var scroll = new ScrollContainer();
+		scroll.CustomMinimumSize = new Vector2(450, 150);
+		mainVBox.AddChild(scroll);
+
+		_pausePlayerListContainer = new VBoxContainer();
+		_pausePlayerListContainer.AddThemeConstantOverride("separation", 10);
+		scroll.AddChild(_pausePlayerListContainer);
+
+		var actionHBox = new HBoxContainer();
+		actionHBox.AddThemeConstantOverride("separation", 20);
+		actionHBox.Alignment = BoxContainer.AlignmentMode.Center;
+		mainVBox.AddChild(actionHBox);
+
+		_pauseReadyCheck = new CheckButton();
+		_pauseReadyCheck.Text = "Ready to Resume";
+		_pauseReadyCheck.Toggled += (buttonPressed) =>
+		{
+			int localPeerId = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null ? LobbyManager.Instance.LocalPlayer.PeerId : 1;
+			GameHost.Instance?.RequestToggleReady(localPeerId, buttonPressed);
+		};
+		actionHBox.AddChild(_pauseReadyCheck);
+
+		_pauseForceResumeBtn = new Button();
+		_pauseForceResumeBtn.Text = "Force Resume";
+		_pauseForceResumeBtn.Pressed += OnForceResumePressed;
+		actionHBox.AddChild(_pauseForceResumeBtn);
+
+		AddChild(_pausePanel);
+	}
+
+	private void OnForceResumePressed()
+	{
+		GameHost.Instance?.RequestForceResume();
 	}
 }

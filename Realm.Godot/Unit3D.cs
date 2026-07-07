@@ -61,6 +61,9 @@ public partial class Unit3D : CharacterBody3D
 	private string _currentAnimation = string.Empty;
 	private MeshInstance3D _selectionRing;
 	private bool _isSelected = false;
+	private Node3D _pathVisualsContainer;
+	private readonly System.Collections.Generic.List<MeshInstance3D> _pathMarkersPool = new();
+	private readonly System.Collections.Generic.List<MeshInstance3D> _pathLinesPool = new();
 
 	public bool IsEnemy
 	{
@@ -84,8 +87,10 @@ public partial class Unit3D : CharacterBody3D
 		}
 	}
 
+	private Node3D _rallyVisualsContainer;
 	private MeshInstance3D _rallyMarker;
-	private MeshInstance3D _rallyLine;
+	private readonly System.Collections.Generic.List<MeshInstance3D> _rallyMarkersPool = new();
+	private readonly System.Collections.Generic.List<MeshInstance3D> _rallyLinesPool = new();
 
 	private MeshInstance3D _hoverRing;
 	private bool _isHovered = false;
@@ -450,42 +455,83 @@ public partial class Unit3D : CharacterBody3D
 		}
 	}
 
-	private void CreateRallyVisuals()
+	private void GetRemainingRallyPoints(System.Collections.Generic.List<Vector3> points)
 	{
-		if (_rallyMarker != null) return;
+		points.Clear();
+		if (GameHost.Instance == null || !GameHost.Instance.EcsWorld.IsAlive(Entity)) return;
 
+		var world = GameHost.Instance.EcsWorld;
+		points.Add(GlobalPosition);
 
-		_rallyMarker = new MeshInstance3D();
-		var cylinderMesh = new CylinderMesh();
-		cylinderMesh.TopRadius = 0.1f;
-		cylinderMesh.BottomRadius = 0.1f;
-		cylinderMesh.Height = 3.0f;
-		_rallyMarker.Mesh = cylinderMesh;
-		
-		var markerMat = new StandardMaterial3D();
-		markerMat.AlbedoColor = new Color(0.95f, 0.82f, 0.55f); // Gold
-		markerMat.EmissionEnabled = true;
-		markerMat.Emission = new Color(0.95f, 0.82f, 0.55f);
-		_rallyMarker.MaterialOverride = markerMat;
-		
-		AddChild(_rallyMarker);
-		_rallyMarker.Visible = false;
+		if (world.Has<Realm.Ecs.Components.Core.RallyPoint>(Entity))
+		{
+			var rp = world.Get<Realm.Ecs.Components.Core.RallyPoint>(Entity);
+			for (int i = 0; i < rp.Count; i++)
+			{
+				points.Add(new Vector3(rp.Waypoints[i].X, rp.Waypoints[i].Y, rp.Waypoints[i].Z));
+			}
+		}
+		else
+		{
+			points.Add(GlobalPosition + new Vector3(0, 0, 8));
+		}
+	}
 
+	private void EnsureRallyVisualsContainer()
+	{
+		if (_rallyVisualsContainer == null)
+		{
+			_rallyVisualsContainer = new Node3D();
+			_rallyVisualsContainer.TopLevel = true;
+			AddChild(_rallyVisualsContainer);
+		}
+	}
 
-		_rallyLine = new MeshInstance3D();
-		var boxMesh = new BoxMesh();
-		boxMesh.Size = new Vector3(0.15f, 0.15f, 1.0f); // length will be scaled dynamically
-		_rallyLine.Mesh = boxMesh;
+	private MeshInstance3D GetOrCreateRallyMarker(int index)
+	{
+		while (_rallyMarkersPool.Count <= index)
+		{
+			var marker = new MeshInstance3D();
+			var cylinderMesh = new CylinderMesh();
+			cylinderMesh.TopRadius = 0.25f;
+			cylinderMesh.BottomRadius = 0.25f;
+			cylinderMesh.Height = 0.05f;
+			marker.Mesh = cylinderMesh;
 
-		var lineMat = new StandardMaterial3D();
-		lineMat.AlbedoColor = new Color(0.95f, 0.82f, 0.55f, 0.5f); // Transparent gold
-		lineMat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-		lineMat.EmissionEnabled = true;
-		lineMat.Emission = new Color(0.95f, 0.82f, 0.55f);
-		_rallyLine.MaterialOverride = lineMat;
-		
-		AddChild(_rallyLine);
-		_rallyLine.Visible = false;
+			var mat = new StandardMaterial3D();
+			mat.AlbedoColor = new Color(0.95f, 0.82f, 0.55f);
+			mat.EmissionEnabled = true;
+			mat.Emission = new Color(0.95f, 0.82f, 0.55f);
+			mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+			marker.MaterialOverride = mat;
+
+			_rallyVisualsContainer.AddChild(marker);
+			_rallyMarkersPool.Add(marker);
+		}
+		return _rallyMarkersPool[index];
+	}
+
+	private MeshInstance3D GetOrCreateRallyLine(int index)
+	{
+		while (_rallyLinesPool.Count <= index)
+		{
+			var line = new MeshInstance3D();
+			var boxMesh = new BoxMesh();
+			boxMesh.Size = new Vector3(0.1f, 0.05f, 1.0f);
+			line.Mesh = boxMesh;
+
+			var mat = new StandardMaterial3D();
+			mat.AlbedoColor = new Color(0.95f, 0.82f, 0.55f, 0.5f);
+			mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+			mat.EmissionEnabled = true;
+			mat.Emission = new Color(0.95f, 0.82f, 0.55f);
+			mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+			line.MaterialOverride = mat;
+
+			_rallyVisualsContainer.AddChild(line);
+			_rallyLinesPool.Add(line);
+		}
+		return _rallyLinesPool[index];
 	}
 
 	public void UpdateRallyVisuals()
@@ -494,52 +540,292 @@ public partial class Unit3D : CharacterBody3D
 
 		if (GameHost.Instance == null || !GameHost.Instance.EcsWorld.IsAlive(Entity)) return;
 
-		var world = GameHost.Instance.EcsWorld;
-		Vector3 localRally;
-		if (world.Has<Realm.Ecs.Components.Core.RallyPoint>(Entity))
-		{
-			var rp = world.Get<Realm.Ecs.Components.Core.RallyPoint>(Entity);
-			localRally = ToLocal(new Vector3(rp.Value.X, rp.Value.Y, rp.Value.Z));
-		}
-		else
-		{
+		EnsureRallyVisualsContainer();
+		_rallyVisualsContainer.Visible = IsSelected;
 
-			localRally = new Vector3(0, 0, 8);
+		if (!IsSelected) return;
+
+		var points = new System.Collections.Generic.List<Vector3>();
+		GetRemainingRallyPoints(points);
+
+		if (points.Count <= 1)
+		{
+			if (_rallyMarker != null) _rallyMarker.Visible = false;
+			return;
 		}
 
 		if (_rallyMarker == null)
 		{
-			CreateRallyVisuals();
+			_rallyMarker = new MeshInstance3D();
+			var cylinderMesh = new CylinderMesh();
+			cylinderMesh.TopRadius = 0.1f;
+			cylinderMesh.BottomRadius = 0.1f;
+			cylinderMesh.Height = 3.0f;
+			_rallyMarker.Mesh = cylinderMesh;
+			
+			var markerMat = new StandardMaterial3D();
+			markerMat.AlbedoColor = new Color(0.95f, 0.82f, 0.55f);
+			markerMat.EmissionEnabled = true;
+			markerMat.Emission = new Color(0.95f, 0.82f, 0.55f);
+			_rallyMarker.MaterialOverride = markerMat;
+			
+			_rallyVisualsContainer.AddChild(_rallyMarker);
 		}
 
-		if (_rallyMarker != null && _rallyLine != null)
+		_rallyMarker.Visible = true;
+		Vector3 finalPos = points[points.Count - 1];
+		if (GameHost.Instance.GroundTerrain != null)
 		{
-			_rallyMarker.Visible = IsSelected;
-			_rallyLine.Visible = IsSelected;
+			GameHost.Instance.GroundTerrain.GetHeightAndNormal(finalPos.X, finalPos.Z, out float hFinal, out _);
+			finalPos.Y = hFinal + 1.5f;
+		}
+		_rallyMarker.GlobalPosition = finalPos;
 
-			if (IsSelected)
+		int markerCountNeeded = points.Count - 2;
+		for (int i = 0; i < markerCountNeeded; i++)
+		{
+			var marker = GetOrCreateRallyMarker(i);
+			marker.Visible = true;
+			Vector3 pos = points[i + 1];
+			if (GameHost.Instance.GroundTerrain != null)
 			{
-				_rallyMarker.Position = new Vector3(localRally.X, 1.5f, localRally.Z);
+				GameHost.Instance.GroundTerrain.GetHeightAndNormal(pos.X, pos.Z, out float h, out _);
+				pos.Y = h + 0.1f;
+			}
+			marker.GlobalPosition = pos;
+		}
+		for (int i = Mathf.Max(0, markerCountNeeded); i < _rallyMarkersPool.Count; i++)
+		{
+			_rallyMarkersPool[i].Visible = false;
+		}
 
-				Vector3 start = new Vector3(0, 0.1f, 0);
-				Vector3 end = new Vector3(localRally.X, 0.1f, localRally.Z);
-				Vector3 diff = end - start;
-				float length = diff.Length();
+		int lineCountNeeded = points.Count - 1;
+		for (int i = 0; i < lineCountNeeded; i++)
+		{
+			var line = GetOrCreateRallyLine(i);
+			line.Visible = true;
 
-				if (length > 0.1f)
-				{
-					_rallyLine.Visible = true;
-					_rallyLine.Position = start + diff * 0.5f; // Midpoint
-					_rallyLine.Scale = new Vector3(1, 1, length);
-					
-					var basis = Basis.LookingAt(diff.Normalized(), Vector3.Up);
-					_rallyLine.Transform = new Transform3D(basis, _rallyLine.Position);
-				}
-				else
-				{
-					_rallyLine.Visible = false;
-				}
+			Vector3 start = points[i];
+			Vector3 end = points[i + 1];
+
+			if (GameHost.Instance.GroundTerrain != null)
+			{
+				GameHost.Instance.GroundTerrain.GetHeightAndNormal(start.X, start.Z, out float hStart, out _);
+				start.Y = hStart + 0.1f;
+
+				GameHost.Instance.GroundTerrain.GetHeightAndNormal(end.X, end.Z, out float hEnd, out _);
+				end.Y = hEnd + 0.1f;
+			}
+
+			Vector3 diff = end - start;
+			float length = diff.Length();
+
+			if (length > 0.05f)
+			{
+				line.GlobalPosition = start + diff * 0.5f;
+				line.Scale = new Vector3(1f, 1f, length);
+				var basis = Basis.LookingAt(diff.Normalized(), Vector3.Up);
+				line.GlobalTransform = new Transform3D(basis, line.GlobalPosition);
+			}
+			else
+			{
+				line.Visible = false;
 			}
 		}
+		for (int i = lineCountNeeded; i < _rallyLinesPool.Count; i++)
+		{
+			_rallyLinesPool[i].Visible = false;
+		}
+	}
+
+	public override void _Process(double delta)
+	{
+		if (IsSelected && !IsEnemy)
+		{
+			if (IsBuilding)
+			{
+				UpdateRallyVisuals();
+			}
+			else
+			{
+				UpdatePathVisuals();
+			}
+		}
+		else
+		{
+			HidePathVisuals();
+			if (_rallyVisualsContainer != null)
+			{
+				_rallyVisualsContainer.Visible = false;
+			}
+		}
+	}
+
+	private void EnsurePathVisualsContainer()
+	{
+		if (_pathVisualsContainer == null)
+		{
+			_pathVisualsContainer = new Node3D();
+			_pathVisualsContainer.TopLevel = true;
+			AddChild(_pathVisualsContainer);
+		}
+	}
+
+	private void GetRemainingPathPoints(System.Collections.Generic.List<Vector3> points)
+	{
+		points.Clear();
+		if (GameHost.Instance == null || !GameHost.Instance.EcsWorld.IsAlive(Entity)) return;
+
+		var world = GameHost.Instance.EcsWorld;
+		points.Add(GlobalPosition);
+
+		if (world.Has<Realm.Ecs.Services.PathFollow>(Entity))
+		{
+			var pf = world.Get<Realm.Ecs.Services.PathFollow>(Entity);
+			for (int i = pf.CurrentWaypointIndex; i < pf.WaypointCount; i++)
+			{
+				points.Add(new Vector3(pf.Waypoints[i].X, pf.Waypoints[i].Y, pf.Waypoints[i].Z));
+			}
+		}
+		else if (world.Has<Realm.Ecs.Components.Movement.MoveTo>(Entity))
+		{
+			var mt = world.Get<Realm.Ecs.Components.Movement.MoveTo>(Entity);
+			points.Add(new Vector3(mt.Target.X, mt.Target.Y, mt.Target.Z));
+		}
+
+		if (world.Has<Realm.Ecs.Components.Movement.WaypointQueue>(Entity))
+		{
+			var q = world.Get<Realm.Ecs.Components.Movement.WaypointQueue>(Entity);
+			for (int i = 0; i < q.Count; i++)
+			{
+				points.Add(new Vector3(q.Waypoints[i].X, q.Waypoints[i].Y, q.Waypoints[i].Z));
+			}
+		}
+	}
+
+	private void UpdatePathVisuals()
+	{
+		EnsurePathVisualsContainer();
+		_pathVisualsContainer.Visible = true;
+
+		var points = new System.Collections.Generic.List<Vector3>();
+		GetRemainingPathPoints(points);
+
+		if (points.Count <= 1)
+		{
+			HidePathVisuals();
+			return;
+		}
+
+		int markerCountNeeded = points.Count - 1;
+		for (int i = 0; i < markerCountNeeded; i++)
+		{
+			var marker = GetOrCreateMarker(i);
+			marker.Visible = true;
+			Vector3 pos = points[i + 1];
+			if (GameHost.Instance.GroundTerrain != null)
+			{
+				GameHost.Instance.GroundTerrain.GetHeightAndNormal(pos.X, pos.Z, out float h, out _);
+				pos.Y = h + 0.1f;
+			}
+			marker.GlobalPosition = pos;
+		}
+		for (int i = markerCountNeeded; i < _pathMarkersPool.Count; i++)
+		{
+			_pathMarkersPool[i].Visible = false;
+		}
+
+		int lineCountNeeded = points.Count - 1;
+		for (int i = 0; i < lineCountNeeded; i++)
+		{
+			var line = GetOrCreateLine(i);
+			line.Visible = true;
+
+			Vector3 start = points[i];
+			Vector3 end = points[i + 1];
+
+			if (GameHost.Instance.GroundTerrain != null)
+			{
+				GameHost.Instance.GroundTerrain.GetHeightAndNormal(start.X, start.Z, out float hStart, out _);
+				start.Y = hStart + 0.1f;
+
+				GameHost.Instance.GroundTerrain.GetHeightAndNormal(end.X, end.Z, out float hEnd, out _);
+				end.Y = hEnd + 0.1f;
+			}
+
+			Vector3 diff = end - start;
+			float length = diff.Length();
+
+			if (length > 0.05f)
+			{
+				line.GlobalPosition = start + diff * 0.5f;
+				line.Scale = new Vector3(1f, 1f, length);
+				var basis = Basis.LookingAt(diff.Normalized(), Vector3.Up);
+				line.GlobalTransform = new Transform3D(basis, line.GlobalPosition);
+			}
+			else
+			{
+				line.Visible = false;
+			}
+		}
+		for (int i = lineCountNeeded; i < _pathLinesPool.Count; i++)
+		{
+			_pathLinesPool[i].Visible = false;
+		}
+	}
+
+	private void HidePathVisuals()
+	{
+		if (_pathVisualsContainer != null)
+		{
+			_pathVisualsContainer.Visible = false;
+		}
+	}
+
+	private MeshInstance3D GetOrCreateMarker(int index)
+	{
+		while (_pathMarkersPool.Count <= index)
+		{
+			var marker = new MeshInstance3D();
+			var cylinderMesh = new CylinderMesh();
+			cylinderMesh.TopRadius = 0.25f;
+			cylinderMesh.BottomRadius = 0.25f;
+			cylinderMesh.Height = 0.05f;
+			marker.Mesh = cylinderMesh;
+
+			var mat = new StandardMaterial3D();
+			mat.AlbedoColor = new Color(0.2f, 0.6f, 1.0f);
+			mat.EmissionEnabled = true;
+			mat.Emission = new Color(0.2f, 0.6f, 1.0f);
+			mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+			marker.MaterialOverride = mat;
+
+			_pathVisualsContainer.AddChild(marker);
+			_pathMarkersPool.Add(marker);
+		}
+		return _pathMarkersPool[index];
+	}
+
+	private MeshInstance3D GetOrCreateLine(int index)
+	{
+		while (_pathLinesPool.Count <= index)
+		{
+			var line = new MeshInstance3D();
+			var boxMesh = new BoxMesh();
+			boxMesh.Size = new Vector3(0.1f, 0.05f, 1.0f);
+			line.Mesh = boxMesh;
+
+			var mat = new StandardMaterial3D();
+			mat.AlbedoColor = new Color(0.2f, 0.6f, 1.0f, 0.5f);
+			mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+			mat.EmissionEnabled = true;
+			mat.Emission = new Color(0.2f, 0.6f, 1.0f);
+			mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+			line.MaterialOverride = mat;
+
+			_pathVisualsContainer.AddChild(line);
+			_pathLinesPool.Add(line);
+		}
+		return _pathLinesPool[index];
 	}
 }

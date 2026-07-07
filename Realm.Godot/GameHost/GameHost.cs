@@ -2132,8 +2132,8 @@ public class {mapName} : IMapScript
 			InGameHUD.Instance?.CallDeferred(nameof(InGameHUD.ShowFeedbackText), alertMsg, new Color(1.0f, 0.2f, 0.1f));
 			UIManager.Instance?.CallDeferred(nameof(UIManager.PlayWarningSound));
 		};
-		_simulationService.OnSpawnUnitFromProductionRequested = (unitId, position, isEnemy, rallyPoint, isFromQueue) =>
-			SpawnUnitFromProduction(unitId, position, isEnemy, rallyPoint, isFromQueue);
+		_simulationService.OnSpawnUnitFromProductionRequested = (unitId, position, isEnemy, buildingEntity, isFromQueue) =>
+			SpawnUnitFromProduction(unitId, position, isEnemy, buildingEntity, isFromQueue);
 		_simulationService.GetProductionBuildTime = unitId =>
 			UnitRegistry.TryGetValue(unitId, out var meta) ? meta.ProductionTime : 5f;
 		_simulationService.OnClearUnitOrdersRequested = entity => ClearUnitOrders(entity);
@@ -2855,6 +2855,48 @@ public class {mapName} : IMapScript
 		if (ReplayPlaybackManager.Instance.IsPlayingReplay)
 		{
 			ReplayPlaybackManager.Instance.Update(fDelta);
+			return;
+		}
+
+		if (Multiplayer.MultiplayerPeer == null || Multiplayer.IsServer())
+		{
+			if (ResumeCountdownSeconds >= 0)
+			{
+				_resumeCountdownTimer += fDelta;
+				if (_resumeCountdownTimer >= 1.0f)
+				{
+					_resumeCountdownTimer -= 1.0f;
+					ResumeCountdownSeconds--;
+					if (ResumeCountdownSeconds <= 0)
+					{
+						ResumeCountdownSeconds = -1;
+						IsPaused = false;
+						if (Multiplayer.MultiplayerPeer != null && Multiplayer.IsServer())
+						{
+							Rpc(nameof(BroadcastPauseState), false, -1, true);
+						}
+						else
+						{
+							UpdatePauseUI();
+						}
+					}
+					else
+					{
+						if (Multiplayer.MultiplayerPeer != null && Multiplayer.IsServer())
+						{
+							Rpc(nameof(BroadcastCountdownState), ResumeCountdownSeconds, _countdownForcedByHost);
+						}
+						else
+						{
+							UpdatePauseUI();
+						}
+					}
+				}
+			}
+		}
+
+		if (IsPaused)
+		{
 			return;
 		}
 

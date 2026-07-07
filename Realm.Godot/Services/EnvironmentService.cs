@@ -121,6 +121,7 @@ public class EnvironmentService
 		{
 			0.70f,   // Day
 			0.68f,   // Sunset
+			0.55f,
 			0.65f,   // Dawn
 			0.70f,   // Day (wrap)
 		};

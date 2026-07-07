@@ -7,6 +7,15 @@ public class ChatPanel
 	private LineEdit _chatInput;
 	private RichTextLabel _chatLog;
 	private bool _isChatActive = false;
+	private Label _chatPrefixLabel;
+	private HBoxContainer _inputRow;
+	private ChatMode _currentMode = ChatMode.Allies;
+
+	private enum ChatMode
+	{
+		AllPlayers,
+		Allies
+	}
 
 	public bool IsChatActive => _isChatActive;
 
@@ -16,13 +25,53 @@ public class ChatPanel
 		_chatInput = chatInput;
 		_chatLog = chatLog;
 
+		var chatContainer = _chatInput.GetParent();
+		if (chatContainer != null)
+		{
+			chatContainer.RemoveChild(_chatInput);
+
+			_inputRow = new HBoxContainer();
+			_inputRow.Name = "ChatInputRow";
+			_inputRow.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+			_chatPrefixLabel = new Label();
+			_chatPrefixLabel.Name = "ChatPrefixLabel";
+			_chatPrefixLabel.Text = "Allies: ";
+			_chatPrefixLabel.AddThemeColorOverride("font_color", new Color(0.2f, 0.7f, 1.0f));
+			_inputRow.AddChild(_chatPrefixLabel);
+
+			_inputRow.AddChild(_chatInput);
+			chatContainer.AddChild(_inputRow);
+
+			_chatInput.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		}
+
 		_chatInput.TextSubmitted += OnChatInputSubmitted;
+		if (_inputRow != null)
+		{
+			_inputRow.Visible = false;
+		}
 		_chatInput.Visible = false;
+
+		_chatInput.GuiInput += (ev) =>
+		{
+			if (ev is InputEventKey keyEv && keyEv.Pressed && keyEv.Keycode == Key.Tab)
+			{
+				CycleChatMode();
+				_chatInput.AcceptEvent();
+			}
+		};
 	}
 
-	public void ShowChatInput()
+	public void ShowChatInput(bool allPlayersMode)
 	{
+		_currentMode = allPlayersMode ? ChatMode.AllPlayers : ChatMode.Allies;
+		UpdatePrefixLabel();
 		_isChatActive = true;
+		if (_inputRow != null)
+		{
+			_inputRow.Visible = true;
+		}
 		_chatInput.Visible = true;
 		_chatInput.GrabFocus();
 	}
@@ -30,9 +79,36 @@ public class ChatPanel
 	public void HideChatInput()
 	{
 		_isChatActive = false;
+		if (_inputRow != null)
+		{
+			_inputRow.Visible = false;
+		}
 		_chatInput.Visible = false;
 		_chatInput.ReleaseFocus();
 		_chatInput.Text = "";
+	}
+
+	private void CycleChatMode()
+	{
+		_currentMode = _currentMode == ChatMode.AllPlayers ? ChatMode.Allies : ChatMode.AllPlayers;
+		UpdatePrefixLabel();
+	}
+
+	private void UpdatePrefixLabel()
+	{
+		if (_chatPrefixLabel != null)
+		{
+			if (_currentMode == ChatMode.AllPlayers)
+			{
+				_chatPrefixLabel.Text = "All Players: ";
+				_chatPrefixLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.9f));
+			}
+			else
+			{
+				_chatPrefixLabel.Text = "Allies: ";
+				_chatPrefixLabel.AddThemeColorOverride("font_color", new Color(0.2f, 0.7f, 1.0f));
+			}
+		}
 	}
 
 	private void OnChatInputSubmitted(string text)
@@ -55,22 +131,34 @@ public class ChatPanel
 		}
 
 		string trimmedText = text.Trim();
+		if (trimmedText.Equals("/pause", StringComparison.OrdinalIgnoreCase))
+		{
+			if (GameHost.Instance != null)
+			{
+				GameHost.Instance.TogglePauseRequest();
+			}
+			return;
+		}
+
 		string sender = LobbyManager.Instance?.LocalPlayer?.Name ?? "Player";
+		bool alliesOnly = _currentMode == ChatMode.Allies;
+
 		if (LobbyManager.Instance != null)
 		{
-			LobbyManager.Instance.SendChatMessage(sender, trimmedText);
+			LobbyManager.Instance.SendChatMessage(sender, trimmedText, alliesOnly);
 		}
 		else
 		{
-			OnLobbyChatReceived(sender, trimmedText);
+			OnLobbyChatReceived(sender, trimmedText, alliesOnly);
 		}
 	}
 
-	public void OnLobbyChatReceived(string senderName, string message)
+	public void OnLobbyChatReceived(string senderName, string message, bool alliesOnly = false)
 	{
 		if (_chatLog == null) return;
 		string cleanMsg = message.Replace("[", "[[").Replace("]", "]]");
-		string textToAppend = $"[color=#a0a0a0][{DateTime.Now:HH:mm:ss}][/color] [color=#00ffc8]{senderName}:[/color] {cleanMsg}\n";
+		string prefix = alliesOnly ? "[color=#00a2ff](Allies)[/color] " : "";
+		string textToAppend = $"[color=#a0a0a0][{DateTime.Now:HH:mm:ss}][/color] {prefix}[color=#00ffc8]{senderName}:[/color] {cleanMsg}\n";
 		_chatLog.AppendText(textToAppend);
 	}
 }

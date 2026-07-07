@@ -1,4 +1,4 @@
-﻿using Arch.Core;
+using Arch.Core;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
@@ -84,6 +84,37 @@ internal class InputService
 		int cols = (int)Math.Ceiling(Math.Sqrt(selectedEntities.Count));
 		float spacing = 2.2f;
 
+		System.Numerics.Vector3 groupCenter = System.Numerics.Vector3.Zero;
+		int movableCount = 0;
+		foreach (var entity in selectedEntities)
+		{
+			if (!_ecsWorld.IsAlive(entity)) continue;
+			if (_ecsWorld.Has<Building>(entity)) continue;
+			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+			if (isEnemy) continue;
+			if (_ecsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity) && _ecsWorld.Has<Position>(entity))
+			{
+				groupCenter += _ecsWorld.Get<Position>(entity).Value;
+				movableCount++;
+			}
+		}
+		if (movableCount > 0)
+		{
+			groupCenter /= movableCount;
+		}
+
+		System.Numerics.Vector3 moveDir = targetPos - groupCenter;
+		moveDir.Y = 0f;
+		if (moveDir.LengthSquared() > 0.01f)
+		{
+			moveDir = System.Numerics.Vector3.Normalize(moveDir);
+		}
+		else
+		{
+			moveDir = new System.Numerics.Vector3(0f, 0f, -1f);
+		}
+		System.Numerics.Vector3 right = new System.Numerics.Vector3(-moveDir.Z, 0f, moveDir.X);
+
 		foreach (var entity in selectedEntities)
 		{
 			if (!_ecsWorld.IsAlive(entity)) continue;
@@ -98,8 +129,8 @@ internal class InputService
 				int row = unitIndex / cols;
 				int col = unitIndex % cols;
 				float offsetX = (col - cols * 0.5f + 0.5f) * spacing;
-				float offsetZ = row * spacing;
-				var scattered = new System.Numerics.Vector3(targetPos.X + offsetX, targetPos.Y, targetPos.Z + offsetZ);
+				float offsetZ = -row * spacing;
+				var scattered = targetPos + right * offsetX + moveDir * offsetZ;
 
 				var moveTo = new MoveTo(scattered);
 				if (_ecsWorld.Has<MoveTo>(entity))
@@ -118,6 +149,37 @@ internal class InputService
 		int cols = (int)Math.Ceiling(Math.Sqrt(selectedEntities.Count));
 		float spacing = 2.2f;
 
+		System.Numerics.Vector3 groupCenter = System.Numerics.Vector3.Zero;
+		int movableCount = 0;
+		foreach (var entity in selectedEntities)
+		{
+			if (!_ecsWorld.IsAlive(entity)) continue;
+			if (_ecsWorld.Has<Building>(entity)) continue;
+			bool isEnemy = _ecsWorld.Has<UnitFaction>(entity) && _ecsWorld.Get<UnitFaction>(entity).IsEnemy;
+			if (isEnemy) continue;
+			if (_ecsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity) && _ecsWorld.Has<Position>(entity))
+			{
+				groupCenter += _ecsWorld.Get<Position>(entity).Value;
+				movableCount++;
+			}
+		}
+		if (movableCount > 0)
+		{
+			groupCenter /= movableCount;
+		}
+
+		System.Numerics.Vector3 moveDir = targetPos - groupCenter;
+		moveDir.Y = 0f;
+		if (moveDir.LengthSquared() > 0.01f)
+		{
+			moveDir = System.Numerics.Vector3.Normalize(moveDir);
+		}
+		else
+		{
+			moveDir = new System.Numerics.Vector3(0f, 0f, -1f);
+		}
+		System.Numerics.Vector3 right = new System.Numerics.Vector3(-moveDir.Z, 0f, moveDir.X);
+
 		foreach (var entity in selectedEntities)
 		{
 			if (!_ecsWorld.IsAlive(entity)) continue;
@@ -135,8 +197,8 @@ internal class InputService
 			int row = unitIndex / cols;
 			int col = unitIndex % cols;
 			float offsetX = (col - cols * 0.5f + 0.5f) * spacing;
-			float offsetZ = row * spacing;
-			var scattered = new System.Numerics.Vector3(targetPos.X + offsetX, targetPos.Y, targetPos.Z + offsetZ);
+			float offsetZ = -row * spacing;
+			var scattered = targetPos + right * offsetX + moveDir * offsetZ;
 
 			if (alreadyMoving)
 			{
@@ -672,15 +734,32 @@ internal class InputService
 		return true;
 	}
 
-	public void SetRallyPoint(Entity buildingEntity, System.Numerics.Vector3 position)
+	public void SetRallyPoint(Entity buildingEntity, System.Numerics.Vector3 position, bool queue)
 	{
 		if (!_ecsWorld.IsAlive(buildingEntity)) return;
 
-		var rp = new RallyPoint(position);
-		if (_ecsWorld.Has<RallyPoint>(buildingEntity))
-			_ecsWorld.Set(buildingEntity, rp);
+		if (queue)
+		{
+			if (_ecsWorld.Has<RallyPoint>(buildingEntity))
+			{
+				var rp = _ecsWorld.Get<RallyPoint>(buildingEntity);
+				rp.Add(position);
+				_ecsWorld.Set(buildingEntity, rp);
+			}
+			else
+			{
+				var rp = new RallyPoint(position);
+				_ecsWorld.Add(buildingEntity, rp);
+			}
+		}
 		else
-			_ecsWorld.Add(buildingEntity, rp);
+		{
+			var rp = new RallyPoint(position);
+			if (_ecsWorld.Has<RallyPoint>(buildingEntity))
+				_ecsWorld.Set(buildingEntity, rp);
+			else
+				_ecsWorld.Add(buildingEntity, rp);
+		}
 	}
 
 	public bool TryUpgradeTower(Entity towerEntity, out int newLevel, out string newName)

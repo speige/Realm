@@ -11,6 +11,12 @@ using System.Collections.Generic;
 public partial class GameHost
 {
 	private NetworkService _networkService;
+	public bool IsPaused { get; private set; } = false;
+	public int ResumeCountdownSeconds { get; private set; } = -1;
+	private float _resumeCountdownTimer = 0f;
+	private bool _countdownForcedByHost = false;
+	private readonly System.Collections.Generic.Dictionary<int, bool> _playerReadyStates = new();
+	private readonly System.Collections.Generic.Dictionary<int, bool> _disallowedPausePeers = new();
 
 	public int GetOwnerPeerId(Entity unitEntity) => _networkService.GetOwnerPeerId(unitEntity);
 
@@ -358,5 +364,196 @@ public partial class GameHost
 		{
 			RpcId(peerId, nameof(PlaySpellEffect), (string)args[0], (Vector3)args[1]);
 		}
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+	public void NetworkPingMinimap(Vector3 position)
+	{
+		AddMinimapPing(position);
+	}
+
+	public void TogglePauseRequest()
+	{
+		if (_multiplayerActive)
+		{
+			RpcId(1, nameof(RequestPause), Multiplayer.GetUniqueId());
+		}
+		else
+		{
+			IsPaused = !IsPaused;
+			if (!IsPaused)
+			{
+				ResumeCountdownSeconds = -1;
+			}
+			UpdatePauseUI();
+		}
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+	public void RequestPause(int peerId)
+	{
+		if (!Multiplayer.IsServer()) return;
+
+		if (_disallowedPausePeers.TryGetValue(peerId, out bool disallowed) && disallowed)
+		{
+			return;
+		}
+
+		if (ResumeCountdownSeconds >= 0)
+		{
+			ResumeCountdownSeconds = -1;
+			_countdownForcedByHost = false;
+			IsPaused = true;
+			Rpc(nameof(BroadcastPauseState), true, peerId, false);
+			return;
+		}
+
+		IsPaused = !IsPaused;
+		if (IsPaused)
+		{
+			ResumeCountdownSeconds = -1;
+			_countdownForcedByHost = false;
+			_playerReadyStates.Clear();
+			Rpc(nameof(BroadcastPauseState), true, peerId, false);
+		}
+		else
+		{
+			StartCountdown(peerId == 1);
+		}
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+	public void RequestToggleReady(int peerId, bool ready)
+	{
+		if (!Multiplayer.IsServer()) return;
+		if (!IsPaused) return;
+
+		_playerReadyStates[peerId] = ready;
+
+		var serializedReady = System.Text.Json.JsonSerializer.Serialize(_playerReadyStates);
+		Rpc(nameof(BroadcastReadyStates), serializedReady);
+
+		if (CheckAllPlayersReady())
+		{
+			StartCountdown(false);
+		}
+		else if (ResumeCountdownSeconds >= 0 && !_countdownForcedByHost)
+		{
+			ResumeCountdownSeconds = -1;
+			Rpc(nameof(BroadcastCountdownCancel));
+		}
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+	public void RequestSetDisallowPause(int peerId, bool disallowed)
+	{
+		if (!Multiplayer.IsServer()) return;
+		int senderId = Multiplayer.GetRemoteSenderId();
+		if (senderId != 1) return;
+
+		_disallowedPausePeers[peerId] = disallowed;
+
+		var serializedDisallowed = System.Text.Json.JsonSerializer.Serialize(_disallowedPausePeers);
+		Rpc(nameof(BroadcastDisallowedPausePeers), serializedDisallowed);
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+	public void RequestForceResume()
+	{
+		if (!Multiplayer.IsServer()) return;
+		int senderId = Multiplayer.GetRemoteSenderId();
+		if (senderId != 1) return;
+
+		StartCountdown(true);
+	}
+
+	private void StartCountdown(bool forcedByHost)
+	{
+		ResumeCountdownSeconds = 5;
+		_resumeCountdownTimer = 0f;
+		_countdownForcedByHost = forcedByHost;
+		Rpc(nameof(BroadcastCountdownState), 5, forcedByHost);
+	}
+
+	private bool CheckAllPlayersReady()
+	{
+		if (LobbyManager.Instance == null) return true;
+		foreach (var player in LobbyManager.Instance.PlayerList)
+		{
+			if (player.Team == "Spectator") continue;
+			_playerReadyStates.TryGetValue(player.PeerId, out bool ready);
+			if (!ready) return false;
+		}
+		return true;
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+	public void BroadcastPauseState(bool paused, int pausedByPeerId, bool instantResume)
+	{
+		IsPaused = paused;
+		if (paused)
+		{
+			ResumeCountdownSeconds = -1;
+		}
+		else if (instantResume)
+		{
+			ResumeCountdownSeconds = -1;
+		}
+		UpdatePauseUI();
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+	public void BroadcastReadyStates(string serializedReadyStates)
+	{
+		var states = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<int, bool>>(serializedReadyStates);
+		_playerReadyStates.Clear();
+		foreach (var kvp in states)
+		{
+			_playerReadyStates[kvp.Key] = kvp.Value;
+		}
+		UpdatePauseUI();
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+	public void BroadcastDisallowedPausePeers(string serializedDisallowed)
+	{
+		var states = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<int, bool>>(serializedDisallowed);
+		_disallowedPausePeers.Clear();
+		foreach (var kvp in states)
+		{
+			_disallowedPausePeers[kvp.Key] = kvp.Value;
+		}
+		UpdatePauseUI();
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+	public void BroadcastCountdownState(int seconds, bool forcedByHost)
+	{
+		ResumeCountdownSeconds = seconds;
+		_countdownForcedByHost = forcedByHost;
+		UpdatePauseUI();
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = true, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+	public void BroadcastCountdownCancel()
+	{
+		ResumeCountdownSeconds = -1;
+		_countdownForcedByHost = false;
+		UpdatePauseUI();
+	}
+
+	public void GetPlayerReadyState(int peerId, out bool ready)
+	{
+		_playerReadyStates.TryGetValue(peerId, out ready);
+	}
+
+	public void GetPlayerDisallowPause(int peerId, out bool disallowed)
+	{
+		_disallowedPausePeers.TryGetValue(peerId, out disallowed);
+	}
+
+	private void UpdatePauseUI()
+	{
+		InGameHUD.Instance?.UpdatePauseUI();
 	}
 }

@@ -165,7 +165,7 @@ public partial class LobbyManager : Node
 
 
     public event Action? PlayerListUpdated;
-    public event Action<string, string>? ChatReceived;
+    public event Action<string, string, bool>? ChatReceived;
     public event Action<string>? ConnectionFailed;
     public event Action<string>? KickReceived;
     public event Action? NatTestCompleted;
@@ -1069,24 +1069,33 @@ public partial class LobbyManager : Node
         }
     }
 
-    public void SendChatMessage(string senderName, string message)
+    private string GetPlayerTeamByName(string name)
+    {
+        foreach (var player in PlayerList)
+        {
+            if (player.Name == name) return player.Team;
+        }
+        return "Team 1";
+    }
+
+    public void SendChatMessage(string senderName, string message, bool alliesOnly = false)
     {
         if (IsHost)
         {
             if (senderName == "System")
             {
                 _chatHistory.Add((senderName, message, false));
-                Rpc(nameof(ReceiveChatMessage), senderName, message);
-                ChatReceived?.Invoke(senderName, message);
+                Rpc(nameof(ReceiveChatMessage), senderName, message, alliesOnly);
+                ChatReceived?.Invoke(senderName, message, alliesOnly);
             }
             else
             {
-                _ = ProcessAndSendChatMessageAsync(senderName, message);
+                _ = ProcessAndSendChatMessageAsync(senderName, message, alliesOnly);
             }
         }
         else
         {
-            RpcId(1, nameof(ReceiveChatMessage), senderName, message);
+            RpcId(1, nameof(ReceiveChatMessage), senderName, message, alliesOnly);
         }
     }
 
@@ -1099,15 +1108,12 @@ public partial class LobbyManager : Node
             var jsonContent = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
             using var client = new System.Net.Http.HttpClient();
-            // Optional: If an API key is available, it would be added here like:
-            // client.DefaultRequestHeaders.Add("Authorization", "Bearer YOUR_API_KEY");
             
             var response = await client.PostAsync(url, jsonContent);
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadAsStringAsync();
                 
-                // Expected format: [[{"label":"toxic","score":0.9}]]
                 using var doc = JsonDocument.Parse(result);
                 if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
                 {
@@ -1141,28 +1147,49 @@ public partial class LobbyManager : Node
         return false;
     }
 
-    private async Task ProcessAndSendChatMessageAsync(string senderName, string message)
+    private async Task ProcessAndSendChatMessageAsync(string senderName, string message, bool alliesOnly)
     {
         bool isToxic = await IsMessageToxicAsync(message);
         _chatHistory.Add((senderName, message, isToxic));
         
         if (!isToxic)
         {
-            Rpc(nameof(ReceiveChatMessage), senderName, message);
-            ChatReceived?.Invoke(senderName, message);
+            if (alliesOnly)
+            {
+                string senderTeam = GetPlayerTeamByName(senderName);
+				foreach (var player in PlayerList)
+				{
+					if (player.Team == senderTeam)
+					{
+						if (player.PeerId == LocalPlayer.PeerId)
+						{
+							ChatReceived?.Invoke(senderName, message, true);
+						}
+						else
+						{
+							RpcId(player.PeerId, nameof(ReceiveChatMessage), senderName, message, true);
+						}
+					}
+				}
+            }
+            else
+            {
+                Rpc(nameof(ReceiveChatMessage), senderName, message, false);
+                ChatReceived?.Invoke(senderName, message, false);
+            }
         }
     }
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
-    private void ReceiveChatMessage(string senderName, string message)
+    private void ReceiveChatMessage(string senderName, string message, bool alliesOnly)
     {
         if (IsHost)
         {
-            _ = ProcessAndSendChatMessageAsync(senderName, message);
+            _ = ProcessAndSendChatMessageAsync(senderName, message, alliesOnly);
         }
         else
         {
-            ChatReceived?.Invoke(senderName, message);
+            ChatReceived?.Invoke(senderName, message, alliesOnly);
         }
     }
 
@@ -1184,7 +1211,7 @@ public partial class LobbyManager : Node
             {
                 if (!chat.IsMuted)
                 {
-                    RpcId(senderId, nameof(ReceiveChatMessage), chat.Sender, chat.Message);
+                    RpcId(senderId, nameof(ReceiveChatMessage), chat.Sender, chat.Message, false);
                 }
             }
         }

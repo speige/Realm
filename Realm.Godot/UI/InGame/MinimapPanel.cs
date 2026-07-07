@@ -10,6 +10,8 @@ public class MinimapPanel
 	private Control _cameraIndicator;
 	private Camera3D _camera3D;
 	private PanelContainer _minimapFrame;
+	private bool _isRightClickPanning = false;
+	private bool _isLeftClickDragging = false;
 
 	public MinimapPanel(PanelContainer minimapFrame, Control minimapArea, Control cameraIndicator, Camera3D camera3D)
 	{
@@ -33,187 +35,150 @@ public class MinimapPanel
 		{
 			if (ReplayPlaybackManager.Instance.IsPlayingReplay || isSpectator)
 			{
-				if (@event is InputEventMouseButton rMouseBtn && rMouseBtn.Pressed && rMouseBtn.ButtonIndex == MouseButton.Left)
+				if (@event is InputEventMouseButton rMouseBtn)
 				{
-					TeleportCameraToMinimapPos(rMouseBtn.Position);
+					if (rMouseBtn.ButtonIndex == MouseButton.Left)
+					{
+						if (rMouseBtn.Pressed)
+						{
+							TeleportCameraToMinimapPos(rMouseBtn.Position);
+							_isLeftClickDragging = true;
+						}
+						else
+						{
+							_isLeftClickDragging = false;
+						}
+					}
+					else if (rMouseBtn.ButtonIndex == MouseButton.Right)
+					{
+						if (rMouseBtn.Pressed)
+						{
+							TeleportCameraToMinimapPos(rMouseBtn.Position);
+							_isRightClickPanning = true;
+						}
+						else
+						{
+							_isRightClickPanning = false;
+						}
+					}
 				}
-				else if (@event is InputEventMouseMotion rMouseMotion && rMouseMotion.ButtonMask == MouseButtonMask.Left)
+				else if (@event is InputEventMouseMotion rMouseMotion)
 				{
-					TeleportCameraToMinimapPos(rMouseMotion.Position);
+					if (_isLeftClickDragging || _isRightClickPanning)
+					{
+						TeleportCameraToMinimapPos(rMouseMotion.Position);
+					}
 				}
 				return;
 			}
 
-			if (@event is InputEventMouseButton mouseBtn && mouseBtn.Pressed)
+			if (@event is InputEventMouseButton mouseBtn)
 			{
 				if (mouseBtn.ButtonIndex == MouseButton.Left)
 				{
-					if (GameHost.Instance != null)
+					if (mouseBtn.Pressed)
 					{
 						float xRatio = mouseBtn.Position.X / _minimapArea.Size.X;
 						float yRatio = mouseBtn.Position.Y / _minimapArea.Size.Y;
 						float worldX = Mathf.Clamp((xRatio - 0.5f) * 250f, -95f, 95f);
 						float worldZ = Mathf.Clamp((yRatio - 0.5f) * 250f, -95f, 125f);
 						float height = 0f;
-						if (GameHost.Instance.GroundTerrain != null)
+						if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 						{
 							GameHost.Instance.GroundTerrain.GetHeightAndNormal(worldX, worldZ, out height, out _);
 						}
 						var minimapWorldPos = new Vector3(worldX, height, worldZ);
 
-						if (GameHost.Instance.GroundTerrain != null && GameHost.Instance.GroundTerrain.NavMeshQuery != null)
+						if (mouseBtn.AltPressed)
 						{
-							Unit3D firstMovable = null;
-							foreach (var u in GameHost.Instance.SelectedUnits)
+							if (GameHost.Instance != null)
 							{
-								if (u != null && GodotObject.IsInstanceValid(u) && !u.IsEnemy && !u.IsBuilding)
+								if (GameHost.Instance.Multiplayer.MultiplayerPeer != null)
 								{
-									firstMovable = u;
-									break;
+									GameHost.Instance.Rpc("NetworkPingMinimap", minimapWorldPos);
 								}
-							}
-							if (firstMovable != null)
-							{
-								int includeFlags = 8;
-								if (GameHost.UnitRegistry.TryGetValue(firstMovable.UnitId, out var meta))
-								{
-									includeFlags = GameHost.GetUnitPathingFlags(meta);
-								}
-								var filter = new DtQueryDefaultFilter();
-								filter.SetIncludeFlags(includeFlags);
-								filter.SetExcludeFlags(0);
-
-								var extents = new RcVec3f(2f, 4f, 2f);
-								var targetRc = new RcVec3f(worldX, height, worldZ);
-								GameHost.Instance.GroundTerrain.NavMeshQuery.FindNearestPoly(targetRc, extents, filter, out long nearestRef, out var nearestPt, out _);
-								if (nearestRef != 0)
-								{
-									minimapWorldPos = new Vector3(nearestPt.X, nearestPt.Y, nearestPt.Z);
-								}
-							}
-						}
-
-						if (GameHost.Instance.ActivePingMode)
-						{
-							GameHost.Instance.AddMinimapPing(minimapWorldPos);
-							GameHost.Instance.ActivePingMode = false;
-						}
-						else if (GameHost.Instance.ActiveCommandTargeting != null)
-						{
-							string cmd = GameHost.Instance.ActiveCommandTargeting;
-							if (cmd == "attack")
-							{
-								GameHost.Instance.IssueAttackMoveCommand(minimapWorldPos);
-							}
-							else if (cmd == "move")
-							{
-								if (Input.IsKeyPressed(Key.Shift))
-									GameHost.Instance.IssueMoveCommandQueued(minimapWorldPos);
 								else
-									GameHost.Instance.IssueMoveCommand(minimapWorldPos);
-							}
-							else if (cmd == "patrol")
-							{
-								GameHost.Instance.IssuePatrolCommand(minimapWorldPos);
-							}
-							else if (cmd == "rally")
-							{
-								if (GameHost.Instance.SelectedUnits.Count == 1 && 
-									!GameHost.Instance.SelectedUnits[0].IsEnemy && 
-									GameHost.Instance.SelectedUnits[0].IsBuilding)
 								{
-									GameHost.Instance.SetRallyPoint(GameHost.Instance.SelectedUnits[0], minimapWorldPos);
+									GameHost.Instance.AddMinimapPing(minimapWorldPos);
 								}
 							}
-							GameHost.Instance.ClearTargetingModes();
+							return;
 						}
-						else if (GameHost.Instance.ActiveSpellTargeting != null)
+
+						if (GameHost.Instance != null)
 						{
-							GameHost.Instance.CastSpellAt(GameHost.Instance.ActiveSpellTargeting, minimapWorldPos);
-							GameHost.Instance.ClearTargetingModes();
+							if (GameHost.Instance.ActivePingMode)
+							{
+								GameHost.Instance.AddMinimapPing(minimapWorldPos);
+								GameHost.Instance.ActivePingMode = false;
+							}
+							else if (GameHost.Instance.ActiveCommandTargeting != null)
+							{
+								string cmd = GameHost.Instance.ActiveCommandTargeting;
+								if (cmd == "attack")
+								{
+									GameHost.Instance.IssueAttackMoveCommand(minimapWorldPos);
+								}
+								else if (cmd == "move")
+								{
+									if (Input.IsKeyPressed(Key.Shift))
+										GameHost.Instance.IssueMoveCommandQueued(minimapWorldPos);
+									else
+										GameHost.Instance.IssueMoveCommand(minimapWorldPos);
+								}
+								else if (cmd == "patrol")
+								{
+									GameHost.Instance.IssuePatrolCommand(minimapWorldPos);
+								}
+								else if (cmd == "rally")
+								{
+									if (GameHost.Instance.SelectedUnits.Count == 1 && 
+										!GameHost.Instance.SelectedUnits[0].IsEnemy && 
+										GameHost.Instance.SelectedUnits[0].IsBuilding)
+									{
+										GameHost.Instance.SetRallyPoint(GameHost.Instance.SelectedUnits[0], minimapWorldPos);
+									}
+								}
+								GameHost.Instance.ClearTargetingModes();
+							}
+							else if (GameHost.Instance.ActiveSpellTargeting != null)
+							{
+								GameHost.Instance.CastSpellAt(GameHost.Instance.ActiveSpellTargeting, minimapWorldPos);
+								GameHost.Instance.ClearTargetingModes();
+							}
+							else if (GameHost.Instance.ActiveBuildingPlacementType != null)
+							{
+								GameHost.Instance.PlaceBuildingAt(GameHost.Instance.ActiveBuildingPlacementType, minimapWorldPos);
+								GameHost.Instance.ClearTargetingModes();
+							}
+							else
+							{
+								TeleportCameraToMinimapPos(mouseBtn.Position);
+								_isLeftClickDragging = true;
+							}
 						}
-						else if (GameHost.Instance.ActiveBuildingPlacementType != null)
-						{
-							GameHost.Instance.PlaceBuildingAt(GameHost.Instance.ActiveBuildingPlacementType, minimapWorldPos);
-							GameHost.Instance.ClearTargetingModes();
-						}
-						else
-						{
-							TeleportCameraToMinimapPos(mouseBtn.Position);
-						}
+					}
+					else
+					{
+						_isLeftClickDragging = false;
 					}
 				}
 				else if (mouseBtn.ButtonIndex == MouseButton.Right)
 				{
-					if (GameHost.Instance != null && GameHost.Instance.SelectedUnits.Count > 0)
+					if (mouseBtn.Pressed)
 					{
-						float xRatio = mouseBtn.Position.X / _minimapArea.Size.X;
-						float yRatio = mouseBtn.Position.Y / _minimapArea.Size.Y;
-						float worldX = Mathf.Clamp((xRatio - 0.5f) * 250f, -95f, 95f);
-						float worldZ = Mathf.Clamp((yRatio - 0.5f) * 250f, -95f, 125f);
-						float height = 0f;
-						if (GameHost.Instance.GroundTerrain != null)
-						{
-							GameHost.Instance.GroundTerrain.GetHeightAndNormal(worldX, worldZ, out height, out _);
-						}
-						var hitPos = new Vector3(worldX, height, worldZ);
-
-						if (GameHost.Instance.SelectedUnits.Count == 1 && 
-							!GameHost.Instance.SelectedUnits[0].IsEnemy && 
-							GameHost.Instance.SelectedUnits[0].IsBuilding)
-						{
-							GameHost.Instance.SetRallyPoint(GameHost.Instance.SelectedUnits[0], hitPos);
-						}
-						else
-						{
-							if (GameHost.Instance.GroundTerrain != null && GameHost.Instance.GroundTerrain.NavMeshQuery != null)
-							{
-								Unit3D firstMovable = null;
-								foreach (var u in GameHost.Instance.SelectedUnits)
-								{
-									if (u != null && GodotObject.IsInstanceValid(u) && !u.IsEnemy && !u.IsBuilding)
-									{
-										firstMovable = u;
-										break;
-									}
-								}
-								if (firstMovable != null)
-								{
-									int includeFlags = 8;
-									if (GameHost.UnitRegistry.TryGetValue(firstMovable.UnitId, out var meta))
-									{
-										includeFlags = GameHost.GetUnitPathingFlags(meta);
-									}
-									var filter = new DtQueryDefaultFilter();
-									filter.SetIncludeFlags(includeFlags);
-									filter.SetExcludeFlags(0);
-
-									var extents = new RcVec3f(2f, 4f, 2f);
-									var targetRc = new RcVec3f(worldX, height, worldZ);
-									GameHost.Instance.GroundTerrain.NavMeshQuery.FindNearestPoly(targetRc, extents, filter, out long nearestRef, out var nearestPt, out _);
-									if (nearestRef != 0)
-									{
-										hitPos = new Vector3(nearestPt.X, nearestPt.Y, nearestPt.Z);
-									}
-								}
-							}
-
-							bool shiftHeld = Input.IsKeyPressed(Key.Shift);
-							if (shiftHeld)
-							{
-								GameHost.Instance.IssueMoveCommandQueued(hitPos);
-							}
-							else
-							{
-								GameHost.Instance.IssueMoveCommand(hitPos);
-							}
-						}
+						TeleportCameraToMinimapPos(mouseBtn.Position);
+						_isRightClickPanning = true;
+					}
+					else
+					{
+						_isRightClickPanning = false;
 					}
 				}
 			}
-			else if (@event is InputEventMouseMotion mouseMotion && mouseMotion.ButtonMask == MouseButtonMask.Left)
+			else if (@event is InputEventMouseMotion mouseMotion)
 			{
-				if (GameHost.Instance == null || (!GameHost.Instance.ActivePingMode && GameHost.Instance.ActiveCommandTargeting == null && GameHost.Instance.ActiveSpellTargeting == null && GameHost.Instance.ActiveBuildingPlacementType == null))
+				if (_isLeftClickDragging || _isRightClickPanning)
 				{
 					TeleportCameraToMinimapPos(mouseMotion.Position);
 				}

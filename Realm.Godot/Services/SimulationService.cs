@@ -51,6 +51,7 @@ internal class SimulationService
 	private readonly List<(Entity Entity, Patrol Patrol)> _tickPatrolToFlip = new();
 	private readonly List<Entity> _tickFollowToStop = new();
 	private readonly List<(Entity Follower, System.Numerics.Vector3 TargetPos)> _tickFollowToMove = new();
+	private readonly List<Entity> _tickFollowToRemoveMoveTo = new();
 	private readonly List<Entity> _tickArrivedUnits = new();
 	private readonly List<(Entity Entity, PathFollow PathFollow)> _tickAddPathFollow = new();
 	private readonly List<Entity> _tickEntitiesToClearOrders = new();
@@ -80,8 +81,8 @@ internal class SimulationService
 	public Action<Entity, Entity, float> OnUnitDamagedCallback;
 	public Action<string> OnUnderAttackAlertRequested;
 	public Action<Entity> OnKillUnitRequested;
-	public Action<string, System.Numerics.Vector3, bool, System.Numerics.Vector3?, bool> OnSpawnUnitFromProductionRequested;
-	public Action<Entity> OnClearUnitOrdersRequested;
+	public Action<string, System.Numerics.Vector3, bool, Entity, bool>? OnSpawnUnitFromProductionRequested;
+	public Action<Entity>? OnClearUnitOrdersRequested;
 	public Action<Entity> OnStopGatheringMovementRequested;
 	public Action OnUiRefreshRequested;
 	public Action<Entity> OnPropDepleted;
@@ -94,7 +95,7 @@ internal class SimulationService
 		public string UnitId;
 		public System.Numerics.Vector3 Position;
 		public bool IsEnemy;
-		public System.Numerics.Vector3? RallyPoint;
+		public Entity BuildingEntity;
 		public bool IsFromQueue;
 	}
 
@@ -267,6 +268,7 @@ internal class SimulationService
 	{
 		_tickFollowToStop.Clear();
 		_tickFollowToMove.Clear();
+		_tickFollowToRemoveMoveTo.Clear();
 
 		_ecsWorld.Query(in _followQuery, _followQueryDelegate);
 
@@ -282,6 +284,14 @@ internal class SimulationService
 				{
 					_ecsWorld.Remove<Follow>(entity);
 				}
+			}
+		}
+
+		foreach (var entity in _tickFollowToRemoveMoveTo)
+		{
+			if (_ecsWorld.IsAlive(entity) && _ecsWorld.Has<MoveTo>(entity))
+			{
+				_ecsWorld.Remove<MoveTo>(entity);
 			}
 		}
 
@@ -318,7 +328,7 @@ internal class SimulationService
 
 		foreach (var req in _tickSpawningRequests)
 		{
-			OnSpawnUnitFromProductionRequested?.Invoke(req.UnitId, req.Position, req.IsEnemy, req.RallyPoint, req.IsFromQueue);
+			OnSpawnUnitFromProductionRequested?.Invoke(req.UnitId, req.Position, req.IsEnemy, req.BuildingEntity, req.IsFromQueue);
 		}
 
 		if (_tickNeedsUiRefresh)
@@ -379,7 +389,10 @@ internal class SimulationService
 		float dist = System.Numerics.Vector3.Distance(currentPos, targetPos);
 		if (dist <= 3.0f)
 		{
-			_tickFollowToStop.Add(entity);
+			if (_ecsWorld.Has<MoveTo>(entity))
+			{
+				_tickFollowToRemoveMoveTo.Add(entity);
+			}
 		}
 		else
 		{
@@ -435,22 +448,12 @@ internal class SimulationService
 					var playerEntity = _ecsWorld.Get<NetworkMappingState>(ActiveWorldEntity).PlayerEntity;
 					bool isEnemy = ownerComp.PlayerEntity != playerEntity.AsPlayerEntity(_ecsWorld);
 
-					System.Numerics.Vector3? rallyPoint = null;
-					if (_ecsWorld.Has<RallyPoint>(entity))
-					{
-						rallyPoint = _ecsWorld.Get<RallyPoint>(entity).Value;
-					}
-					else
-					{
-						rallyPoint = buildingPos + spawnOffset;
-					}
-
 					_tickSpawningRequests.Add(new SpawningRequest
 					{
 						UnitId = unitToSpawn,
 						Position = spawnPos,
 						IsEnemy = isEnemy,
-						RallyPoint = rallyPoint,
+						BuildingEntity = entity,
 						IsFromQueue = true
 					});
 

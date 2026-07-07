@@ -462,6 +462,36 @@ public class NetworkService
 			int cols = Mathf.CeilToInt(Mathf.Sqrt(cmd.UnitEntityIds.Count));
 			float spacing = 2.2f;
 			int unitIndex = 0;
+
+			System.Numerics.Vector3 groupCenter = System.Numerics.Vector3.Zero;
+			int movableCount = 0;
+			foreach (int serverId in cmd.UnitEntityIds)
+			{
+				var entity = FindServerEntity(serverId, allUnits);
+				if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
+				if (_ecsWorld.Has<Position>(entity))
+				{
+					groupCenter += _ecsWorld.Get<Position>(entity).Value;
+					movableCount++;
+				}
+			}
+			if (movableCount > 0)
+			{
+				groupCenter /= movableCount;
+			}
+
+			System.Numerics.Vector3 moveDir = new System.Numerics.Vector3(cmd.TargetPosition.X, cmd.TargetPosition.Y, cmd.TargetPosition.Z) - groupCenter;
+			moveDir.Y = 0f;
+			if (moveDir.LengthSquared() > 0.01f)
+			{
+				moveDir = System.Numerics.Vector3.Normalize(moveDir);
+			}
+			else
+			{
+				moveDir = new System.Numerics.Vector3(0f, 0f, -1f);
+			}
+			System.Numerics.Vector3 right = new System.Numerics.Vector3(-moveDir.Z, 0f, moveDir.X);
+
 			foreach (int serverId in cmd.UnitEntityIds)
 			{
 				var entity = FindServerEntity(serverId, allUnits);
@@ -470,8 +500,9 @@ public class NetworkService
 				int row = unitIndex / cols;
 				int col = unitIndex % cols;
 				float offsetX = (col - cols * 0.5f + 0.5f) * spacing;
-				float offsetZ = row * spacing;
-				var scattered = new System.Numerics.Vector3(cmd.TargetPosition.X + offsetX, cmd.TargetPosition.Y, cmd.TargetPosition.Z + offsetZ);
+				float offsetZ = -row * spacing;
+				var targetPos = new System.Numerics.Vector3(cmd.TargetPosition.X, cmd.TargetPosition.Y, cmd.TargetPosition.Z);
+				var scattered = targetPos + right * offsetX + moveDir * offsetZ;
 				var moveTo = new MoveTo(scattered);
 				if (_ecsWorld.Has<MoveTo>(entity)) _ecsWorld.Set(entity, moveTo);
 				else _ecsWorld.Add(entity, moveTo);
@@ -578,6 +609,36 @@ public class NetworkService
 			int cols = Mathf.CeilToInt(Mathf.Sqrt(cmd.UnitEntityIds.Count));
 			float spacing = 2.2f;
 			int unitIndex = 0;
+
+			System.Numerics.Vector3 groupCenter = System.Numerics.Vector3.Zero;
+			int movableCount = 0;
+			foreach (int serverId in cmd.UnitEntityIds)
+			{
+				var entity = FindServerEntity(serverId, allUnits);
+				if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
+				if (_ecsWorld.Has<Position>(entity))
+				{
+					groupCenter += _ecsWorld.Get<Position>(entity).Value;
+					movableCount++;
+				}
+			}
+			if (movableCount > 0)
+			{
+				groupCenter /= movableCount;
+			}
+
+			System.Numerics.Vector3 moveDir = new System.Numerics.Vector3(cmd.TargetPosition.X, cmd.TargetPosition.Y, cmd.TargetPosition.Z) - groupCenter;
+			moveDir.Y = 0f;
+			if (moveDir.LengthSquared() > 0.01f)
+			{
+				moveDir = System.Numerics.Vector3.Normalize(moveDir);
+			}
+			else
+			{
+				moveDir = new System.Numerics.Vector3(0f, 0f, -1f);
+			}
+			System.Numerics.Vector3 right = new System.Numerics.Vector3(-moveDir.Z, 0f, moveDir.X);
+
 			foreach (int serverId in cmd.UnitEntityIds)
 			{
 				var entity = FindServerEntity(serverId, allUnits);
@@ -588,7 +649,7 @@ public class NetworkService
 					int row = unitIndex / cols;
 					int col = unitIndex % cols;
 					float offsetX = (col - cols * 0.5f + 0.5f) * spacing;
-					float offsetZ = row * spacing;
+					float offsetZ = -row * spacing;
 					Vector3 unitPos = Vector3.Zero;
 					foreach (var u in allUnits)
 					{
@@ -599,7 +660,8 @@ public class NetworkService
 						}
 					}
 					var patrolA = new System.Numerics.Vector3(unitPos.X, unitPos.Y, unitPos.Z);
-					var patrolB = new System.Numerics.Vector3(cmd.TargetPosition.X + offsetX, cmd.TargetPosition.Y, cmd.TargetPosition.Z + offsetZ);
+					var targetPos = new System.Numerics.Vector3(cmd.TargetPosition.X, cmd.TargetPosition.Y, cmd.TargetPosition.Z);
+					var patrolB = targetPos + right * offsetX + moveDir * offsetZ;
 					var patrol = new Patrol(patrolA, patrolB);
 					if (_ecsWorld.Has<Patrol>(entity)) _ecsWorld.Set(entity, patrol);
 					else _ecsWorld.Add(entity, patrol);
@@ -615,6 +677,36 @@ public class NetworkService
 			int cols = Mathf.CeilToInt(Mathf.Sqrt(cmd.UnitEntityIds.Count));
 			float spacing = 2.2f;
 			int unitIndex = 0;
+
+			System.Numerics.Vector3 groupCenter = System.Numerics.Vector3.Zero;
+			int movableCount = 0;
+			foreach (int serverId in cmd.UnitEntityIds)
+			{
+				var entity = FindServerEntity(serverId, allUnits);
+				if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
+				if (_ecsWorld.Has<Position>(entity))
+				{
+					groupCenter += _ecsWorld.Get<Position>(entity).Value;
+					movableCount++;
+				}
+			}
+			if (movableCount > 0)
+			{
+				groupCenter /= movableCount;
+			}
+
+			System.Numerics.Vector3 moveDir = new System.Numerics.Vector3(cmd.TargetPosition.X, cmd.TargetPosition.Y, cmd.TargetPosition.Z) - groupCenter;
+			moveDir.Y = 0f;
+			if (moveDir.LengthSquared() > 0.01f)
+			{
+				moveDir = System.Numerics.Vector3.Normalize(moveDir);
+			}
+			else
+			{
+				moveDir = new System.Numerics.Vector3(0f, 0f, -1f);
+			}
+			System.Numerics.Vector3 right = new System.Numerics.Vector3(-moveDir.Z, 0f, moveDir.X);
+
 			foreach (int serverId in cmd.UnitEntityIds)
 			{
 				var entity = FindServerEntity(serverId, allUnits);
@@ -625,8 +717,9 @@ public class NetworkService
 				int row = unitIndex / cols;
 				int col = unitIndex % cols;
 				float offsetX = (col - cols * 0.5f + 0.5f) * spacing;
-				float offsetZ = row * spacing;
-				var scattered = new System.Numerics.Vector3(cmd.TargetPosition.X + offsetX, cmd.TargetPosition.Y, cmd.TargetPosition.Z + offsetZ);
+				float offsetZ = -row * spacing;
+				var targetPos = new System.Numerics.Vector3(cmd.TargetPosition.X, cmd.TargetPosition.Y, cmd.TargetPosition.Z);
+				var scattered = targetPos + right * offsetX + moveDir * offsetZ;
 				if (alreadyMoving)
 				{
 					if (_ecsWorld.Has<WaypointQueue>(entity))

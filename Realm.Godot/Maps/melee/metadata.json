@@ -18,6 +18,7 @@
     "AttackType": "melee",
     "ArmorType": "light",
     "GoldBounty": 15.0,
+    "BuildOptions": ["castle", "tower"],
     "PathingCapabilities": ["ground"]
   },
   "soldier": {

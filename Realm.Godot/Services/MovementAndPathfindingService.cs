@@ -234,9 +234,64 @@ internal class MovementAndPathfindingService
 		}
 		else
 		{
-			System.Numerics.Vector3 dir = System.Numerics.Vector3.Normalize(target - current);
-			System.Numerics.Vector3 velocity = dir * stats.Speed;
-			System.Numerics.Vector3 nextPos = current + dir * stats.Speed * _fDelta;
+			System.Numerics.Vector3 desiredVelocity = System.Numerics.Vector3.Normalize(target - current) * stats.Speed;
+			System.Numerics.Vector3 cohesion = System.Numerics.Vector3.Zero;
+			System.Numerics.Vector3 alignment = System.Numerics.Vector3.Zero;
+			System.Numerics.Vector3 separation = System.Numerics.Vector3.Zero;
+			int neighborCount = 0;
+
+			int currentCellX = (int)Math.Floor(current.X / CollisionCellSize);
+			int currentCellZ = (int)Math.Floor(current.Z / CollisionCellSize);
+
+			for (int dx = -1; dx <= 1; dx++)
+			{
+				for (int dz = -1; dz <= 1; dz++)
+				{
+					long key = ((long)(currentCellX + dx) << 32) | (uint)(currentCellZ + dz);
+					if (_unitGrid.TryGetValue(key, out var list))
+					{
+						foreach (var other in list)
+						{
+							if (other == entity) continue;
+							if (!_ecsWorld.Has<Position>(other)) continue;
+
+							var otherPos = _ecsWorld.Get<Position>(other).Value;
+							float neighborDist = System.Numerics.Vector3.Distance(current, otherPos);
+							if (neighborDist > 0f && neighborDist < 8.0f)
+							{
+								cohesion += otherPos;
+								if (_ecsWorld.Has<Velocity>(other))
+								{
+									alignment += _ecsWorld.Get<Velocity>(other).Value;
+								}
+								separation += System.Numerics.Vector3.Normalize(current - otherPos) / neighborDist;
+								neighborCount++;
+							}
+						}
+					}
+				}
+			}
+
+			System.Numerics.Vector3 steering = desiredVelocity;
+			if (neighborCount > 0)
+			{
+				cohesion = (cohesion / neighborCount) - current;
+				if (cohesion.LengthSquared() > 0.001f) cohesion = System.Numerics.Vector3.Normalize(cohesion) * stats.Speed;
+
+				alignment = alignment / neighborCount;
+				if (alignment.LengthSquared() > 0.001f) alignment = System.Numerics.Vector3.Normalize(alignment) * stats.Speed;
+
+				if (separation.LengthSquared() > 0.001f) separation = System.Numerics.Vector3.Normalize(separation) * stats.Speed;
+
+				steering = desiredVelocity * 0.50f + separation * 0.35f + cohesion * 0.08f + alignment * 0.07f;
+				if (steering.LengthSquared() > 0.001f)
+				{
+					steering = System.Numerics.Vector3.Normalize(steering) * stats.Speed;
+				}
+			}
+
+			System.Numerics.Vector3 velocity = steering;
+			System.Numerics.Vector3 nextPos = current + velocity * _fDelta;
 
 			float r1 = _ecsWorld.Has<CollisionRadius>(entity) 
 				? _ecsWorld.Get<CollisionRadius>(entity).Value 

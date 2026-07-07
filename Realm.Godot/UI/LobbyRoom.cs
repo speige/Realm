@@ -1257,7 +1257,7 @@ private void UpdateSelectedMapUI()
 		LobbyManager.Instance.SendChatMessage(LobbyManager.Instance.LocalPlayer.Name, text);
 	}
 
-	private void OnLobbyChatReceived(string senderName, string message)
+	private void OnLobbyChatReceived(string senderName, string message, bool alliesOnly)
 	{
 		string color = senderName == "System" ? "#ffd700" : (senderName == LobbyManager.Instance.LocalPlayer.Name ? "#5cd6ff" : "#d4a0a0");
 		_chatLog.Text += $"[color={color}]{senderName}[/color]: {message}\n";
