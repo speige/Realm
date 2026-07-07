@@ -2726,7 +2726,7 @@ public class {mapName} : IMapScript
 
 		if (!isBuilding && !IsMapEditorMode)
 		{
-			unit3D.CollisionLayer = 0;
+			unit3D.CollisionLayer = 1;
 			unit3D.CollisionMask = 0;
 		}
 
@@ -2894,8 +2894,6 @@ public class {mapName} : IMapScript
 				if (r > maxRadius) maxRadius = r;
 			}
 		}
-
-		if (maxRadius > 0.5f) return maxRadius;
 
 		var meshes = FindChildrenOfType<MeshInstance3D>(node);
 		foreach (var meshNode in meshes)

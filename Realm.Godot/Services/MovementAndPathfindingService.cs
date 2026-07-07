@@ -238,11 +238,9 @@ internal class MovementAndPathfindingService
 			System.Numerics.Vector3 velocity = dir * stats.Speed;
 			System.Numerics.Vector3 nextPos = current + dir * stats.Speed * _fDelta;
 
-			float scale1 = _ecsWorld.Has<CollisionScale>(entity) ? _ecsWorld.Get<CollisionScale>(entity).Value : 1.0f;
-			float r1 = scale1 * 1.2f;
-			string unitId = _ecsWorld.Has<DefinitionId>(entity) ? _ecsWorld.Get<DefinitionId>(entity).Value : "worker";
-			if (unitId == "castle") r1 = scale1 * 5.0f;
-			else if (unitId == "tower") r1 = scale1 * 2.5f;
+			float r1 = _ecsWorld.Has<CollisionRadius>(entity) 
+				? _ecsWorld.Get<CollisionRadius>(entity).Value 
+				: (_ecsWorld.Has<CollisionScale>(entity) ? _ecsWorld.Get<CollisionScale>(entity).Value : 1.0f) * 1.2f;
 
 			int baseCx = (int)Math.Floor(nextPos.X / CollisionCellSize);
 			int baseCz = (int)Math.Floor(nextPos.Z / CollisionCellSize);
@@ -258,12 +256,9 @@ internal class MovementAndPathfindingService
 						{
 							if (otherEntity == entity) continue;
 
-							float scale2 = _ecsWorld.Has<CollisionScale>(otherEntity) ? _ecsWorld.Get<CollisionScale>(otherEntity).Value : 1.0f;
-							string unitId2 = _ecsWorld.Has<DefinitionId>(otherEntity) ? _ecsWorld.Get<DefinitionId>(otherEntity).Value : "worker";
-
-							float r2 = scale2 * 1.2f;
-							if (unitId2 == "castle") r2 = scale2 * 5.0f;
-							else if (unitId2 == "tower") r2 = scale2 * 2.5f;
+							float r2 = _ecsWorld.Has<CollisionRadius>(otherEntity) 
+								? _ecsWorld.Get<CollisionRadius>(otherEntity).Value 
+								: (_ecsWorld.Has<CollisionScale>(otherEntity) ? _ecsWorld.Get<CollisionScale>(otherEntity).Value : 1.0f) * 1.2f;
 
 							float minDist = (r1 + r2) * 0.85f;
 							var otherPos = _ecsWorld.Get<Position>(otherEntity).Value;
@@ -300,11 +295,9 @@ internal class MovementAndPathfindingService
 					{
 						foreach (var propEntity in list)
 						{
-							float scale2 = _ecsWorld.Has<CollisionScale>(propEntity) ? _ecsWorld.Get<CollisionScale>(propEntity).Value : 1.0f;
-							string propId2 = _ecsWorld.Has<PropIdentity>(propEntity) ? _ecsWorld.Get<PropIdentity>(propEntity).PropId : "tree";
-
-							float r2 = scale2 * 1.5f;
-							if (propId2 == "goldmine") r2 = scale2 * 4.0f;
+							float r2 = _ecsWorld.Has<CollisionRadius>(propEntity) 
+								? _ecsWorld.Get<CollisionRadius>(propEntity).Value 
+								: (_ecsWorld.Has<CollisionScale>(propEntity) ? _ecsWorld.Get<CollisionScale>(propEntity).Value : 1.0f) * 1.5f;
 
 							float minDist = (r1 + r2) * 0.85f;
 							var propPos = _ecsWorld.Get<Position>(propEntity).Value;

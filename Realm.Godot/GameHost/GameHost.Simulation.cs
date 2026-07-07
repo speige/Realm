@@ -206,7 +206,7 @@ public partial class GameHost
 				if (hasDir)
 				{
 					dir = dir.Normalized();
-					float angle = Mathf.Atan2(-dir.X, -dir.Z);
+					float angle = Mathf.Atan2(-dir.X, -dir.Z) + Mathf.Pi;
 					var rot = unit3D.Rotation;
 					rot.Y = Mathf.LerpAngle(rot.Y, angle, 10f * fDelta);
 					unit3D.Rotation = rot;
