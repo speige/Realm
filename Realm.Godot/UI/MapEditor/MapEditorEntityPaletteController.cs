@@ -141,51 +141,52 @@ public class MapEditorEntityPaletteController
 		_categoryFiles.Clear();
 		_optCategoryItems.Clear();
 
-		if (category == "Decals")
+		string subDir = category switch
 		{
-			string[] decals = { "logo", "forest", "snowy", "flag", "rune" };
-			foreach (var d in decals)
-			{
-				_categoryFiles.Add(d);
-				_optCategoryItems.AddItem(d.ToUpper());
-			}
-		}
-		else
-		{
-			string subDir = category switch
-			{
-				"Characters" => "res://Assets/3d/Characters",
-				"Buildings" => "res://Assets/3d/Buildings",
-				"Environment" => "res://Assets/3d/Environment",
-				"Props" => "res://Assets/3d/Props",
-				_ => ""
-			};
+			"Characters" => "res://Assets/3d/Characters",
+			"Buildings" => "res://Assets/3d/Buildings",
+			"Environment" => "res://Assets/3d/Environment",
+			"Props" => "res://Assets/3d/Props",
+			"Decals" => "res://Assets/2d/Decals",
+			_ => ""
+		};
 
-			using (var dir = DirAccess.Open(subDir))
+		using (var dir = DirAccess.Open(subDir))
+		{
+			if (dir != null)
 			{
-				if (dir != null)
+				dir.ListDirBegin();
+				string fileName = dir.GetNext();
+				while (fileName != "")
 				{
-					dir.ListDirBegin();
-					string fileName = dir.GetNext();
-					while (fileName != "")
+					if (!dir.CurrentIsDir() && !fileName.EndsWith(".import"))
 					{
-						if (!dir.CurrentIsDir() && !fileName.EndsWith(".import") && 
-							(fileName.EndsWith(".glb") || fileName.EndsWith(".gltf")))
+						if (category == "Decals")
 						{
-							_categoryFiles.Add(fileName);
+							if (fileName.EndsWith(".png") || fileName.EndsWith(".jpg") || fileName.EndsWith(".jpeg") || fileName.EndsWith(".svg"))
+							{
+								_categoryFiles.Add(fileName);
+							}
 						}
-						fileName = dir.GetNext();
+						else
+						{
+							if (fileName.EndsWith(".glb") || fileName.EndsWith(".gltf"))
+							{
+								_categoryFiles.Add(fileName);
+							}
+						}
 					}
+					fileName = dir.GetNext();
 				}
 			}
+		}
 
-			_categoryFiles.Sort();
+		_categoryFiles.Sort();
 
-			foreach (var file in _categoryFiles)
-			{
-				string cleanName = System.IO.Path.GetFileNameWithoutExtension(file).Replace("_", " ").ToUpper();
-				_optCategoryItems.AddItem(TranslationServer.Translate(cleanName));
-			}
+		foreach (var file in _categoryFiles)
+		{
+			string cleanName = System.IO.Path.GetFileNameWithoutExtension(file).Replace("_", " ").ToUpper();
+			_optCategoryItems.AddItem(TranslationServer.Translate(cleanName));
 		}
 
 		if (_optCategoryItems.ItemCount > 0)
@@ -202,20 +203,16 @@ public class MapEditorEntityPaletteController
 		if (index >= 0 && index < _categoryFiles.Count)
 		{
 			string selectedFile = _categoryFiles[index];
-			string placeId = selectedFile;
-
-			if (_currentCategory != "Decals")
+			string path = _currentCategory switch
 			{
-				string path = _currentCategory switch
-				{
-					"Characters" => "res://Assets/3d/Characters",
-					"Buildings" => "res://Assets/3d/Buildings",
-					"Environment" => "res://Assets/3d/Environment",
-					"Props" => "res://Assets/3d/Props",
-					_ => ""
-				};
-				placeId = $"{path}/{selectedFile}";
-			}
+				"Characters" => "res://Assets/3d/Characters",
+				"Buildings" => "res://Assets/3d/Buildings",
+				"Environment" => "res://Assets/3d/Environment",
+				"Props" => "res://Assets/3d/Props",
+				"Decals" => "res://Assets/2d/Decals",
+				_ => ""
+			};
+			string placeId = string.IsNullOrEmpty(path) ? selectedFile : $"{path}/{selectedFile}";
 
 			if (GameHost.Instance != null)
 			{
@@ -252,14 +249,7 @@ public class MapEditorEntityPaletteController
 				"Decals" => "res://Assets/2d/Decals",
 				_ => ""
 			};
-			if (_currentCategory == "Characters" || _currentCategory == "Buildings" || _currentCategory == "Environment" || _currentCategory == "Props")
-			{
-				placeId = $"{path}/{selectedFile}";
-			}
-			else
-			{
-				placeId = selectedFile;
-			}
+			placeId = string.IsNullOrEmpty(path) ? selectedFile : $"{path}/{selectedFile}";
 		}
 
 		if (string.IsNullOrEmpty(placeId))
@@ -278,7 +268,14 @@ public class MapEditorEntityPaletteController
 		{
 			SelectCategory(category);
 		}
-		int idx = _categoryFiles.IndexOf(filename);
+
+		string searchName = filename;
+		if (filename.StartsWith("res://") || filename.Contains("/"))
+		{
+			searchName = System.IO.Path.GetFileName(filename);
+		}
+
+		int idx = _categoryFiles.IndexOf(searchName);
 		if (idx >= 0)
 		{
 			_optCategoryItems.Selected = idx;
@@ -303,9 +300,10 @@ public class MapEditorEntityPaletteController
 				"Buildings" => "res://Assets/3d/Buildings",
 				"Environment" => "res://Assets/3d/Environment",
 				"Props" => "res://Assets/3d/Props",
+				"Decals" => "res://Assets/2d/Decals",
 				_ => ""
 			};
-			string placeId = string.IsNullOrEmpty(path) ? filename : $"{path}/{filename}";
+			string placeId = (filename.StartsWith("res://") || filename.Contains("/")) ? filename : (string.IsNullOrEmpty(path) ? filename : $"{path}/{filename}");
 			_hud.TriggerToolSelection(targetTool, _btnAddObject, placeId);
 		}
 	}

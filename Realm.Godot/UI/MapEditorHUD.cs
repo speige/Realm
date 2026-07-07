@@ -1149,18 +1149,44 @@ public partial class MapEditorHUD : Control
 		decalsGrid.Visible = false;
 		palettesVBox.AddChild(decalsGrid);
 
-		string[] decalIds = { "logo", "forest", "snowy", "flag", "rune" };
-		string[] decalIcons = { "🖼️", "🌳", "❄️", "🚩", "🔯" };
-		string[] decalTooltips = { "Godot Logo decal", "Forest Path decal", "Snowy Forest Path decal", "Alliance Flag decal", "Magic Rune decal" };
-		for (int idx = 0; idx < decalIds.Length; idx++)
+		var decalFiles = new List<string>();
+		using (var dir = DirAccess.Open("res://Assets/2d/Decals"))
 		{
-			string dId = decalIds[idx];
+			if (dir != null)
+			{
+				dir.ListDirBegin();
+				string fileName = dir.GetNext();
+				while (fileName != "")
+				{
+					if (!dir.CurrentIsDir() && !fileName.EndsWith(".import") && 
+						(fileName.EndsWith(".png") || fileName.EndsWith(".jpg") || fileName.EndsWith(".jpeg") || fileName.EndsWith(".svg")))
+					{
+						decalFiles.Add(fileName);
+					}
+					fileName = dir.GetNext();
+				}
+			}
+		}
+		decalFiles.Sort();
+
+		foreach (var dFile in decalFiles)
+		{
 			var btn = new Button();
+			string dId = System.IO.Path.GetFileNameWithoutExtension(dFile);
 			btn.Name = $"BtnDecal_{dId}";
-			btn.Set("icon_max_width", 0);
+			string decalPath = $"res://Assets/2d/Decals/{dFile}";
+			string cleanName = dId.Replace("_", " ");
+			cleanName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(cleanName);
+			SetupButton(btn, "", () => TriggerToolSelection(GameHost.EditorTool.PlaceDecal, btn, decalPath), 12, cleanName);
+			btn.Set("icon_max_width", 32);
 			btn.CustomMinimumSize = new Vector2(42, 42);
 			decalsGrid.AddChild(btn);
-			SetupButton(btn, decalIcons[idx], () => TriggerToolSelection(GameHost.EditorTool.PlaceDecal, btn, dId), 18, decalTooltips[idx]);
+			var tex = GD.Load<Texture2D>(decalPath);
+			if (tex != null)
+			{
+				btn.Icon = tex;
+				btn.ExpandIcon = true;
+			}
 		}
 
 		TriggerToolSelection(GameHost.EditorTool.Raise, _btnRaise);

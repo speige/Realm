@@ -169,7 +169,10 @@ public partial class GameHost
 
 	public string GetDecalTexturePath(string decalId)
 	{
-		if (string.IsNullOrEmpty(decalId)) decalId = "logo";
+		if (string.IsNullOrEmpty(decalId))
+		{
+			decalId = "logo";
+		}
 		if (decalId.StartsWith("res://") || decalId.Contains("/"))
 		{
 			if (decalId.EndsWith(".glb") || decalId.EndsWith(".gltf"))
@@ -191,14 +194,7 @@ public partial class GameHost
 				return customPathWithPng;
 			}
 		}
-		return decalId switch
-		{
-			"forest" => "res://Assets/UI/forest_path.png",
-			"snowy" => "res://Assets/UI/snowy_forest_path.png",
-			"flag" => "res://Assets/UI/alliance_flag.png",
-			"rune" => "res://Assets/UI/magic_frame.png",
-			_ => "res://icon.svg"
-		};
+		return "res://icon.svg";
 	}
 
 	public Decal SpawnDecalExternal(Vector3 position)
