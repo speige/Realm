@@ -53,7 +53,7 @@ public class MapEditorHUDViewModel
 	public bool ShallowWater { get; set; } = false;
 	public bool DeepWater { get; set; } = false;
 	public bool Flying { get; set; } = false;
-	public bool Ground { get; set; } = false;
+	public bool Ground { get; set; } = true;
 	public bool Unpathable { get; set; } = false;
 	public int PathingModeIndex { get; set; } = 0;
 

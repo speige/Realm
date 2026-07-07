@@ -29,11 +29,13 @@
 - The core ECS classes and data must be kept internal.
 - Keep system logic separated from presentation. Physics process query loops in `GameHost.cs` should inspect and manipulate ECS data via components, updating `Unit3D` / `Prop3D` nodes accordingly.
 - Do not store Godot lifecycle elements, scene nodes, or UI references directly inside ECS components. Components must remain pure unmanaged data.
+- All QueryDescription instances should be created 1x as public readonly fields in `QueryCache.cs` and re-used across the application
 
 ### Logic Services:
 - Classes inheriting from Godot should have minimal orchestration logic, deferring complex logic to domain-specific services.
-- Services should have the `EcsWorld` dependency injected via their constructor and cached for their lifetime.
+- Services should have the `WorldAccessor` dependency injected via their constructor and cached for their lifetime.
 - Decoupled Communication: Avoid using DTOs to communicate between orchestrators (`GameHost`) and services. Communication should be minimal and limited to simple ephemeral primitive parameters and return values. All persistent shared data must be stored directly in the ECS, allowing both services and `GameHost` to query and write to the ECS independently to coordinate.
+- Services should never be instantiated directly, they should always be retrieved via the global ServiceLocator during godot scene _Ready() and stored in private readonly fields.
 
 ### Realm.MapAPI:
 - Only expose safe APIs to map authors to prevent the direct manipulation of Godot nodes or internal C# ECS structures.

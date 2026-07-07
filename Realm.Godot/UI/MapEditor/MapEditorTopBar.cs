@@ -33,9 +33,17 @@ public class MapEditorTopBar
 		_btnUndo.Pressed += () => MapEditorHUD.Instance?.UndoAction();
 		_btnRedo.Pressed += () => MapEditorHUD.Instance?.RedoAction();
 		
+		_btnBackToHub.TooltipText = "Return to Main Menu / Hub";
+		_btnPublish.TooltipText = "Publish/export map to custom map registry";
+		_btnSave.TooltipText = "Save current heightmap, textures, and entities (Ctrl+S)";
+		_btnLoad.TooltipText = "Load heightmap, textures, and entities from a saved json file (Ctrl+O)";
+		_btnUndo.TooltipText = "Undo the last action (Ctrl+Z)";
+		_btnRedo.TooltipText = "Redo the last undone action (Ctrl+Y)";
+
 		if (_btnVSCode != null)
 		{
 			_btnVSCode.Pressed += () => MapEditorHUD.Instance?.ToggleVSCodeEditor();
+			_btnVSCode.TooltipText = "Toggle Embedded VSCode JSON / Script editor";
 		}
 	}
 

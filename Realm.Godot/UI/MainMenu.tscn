@@ -109,6 +109,12 @@ icon = ExtResource("4_play")
 expand_icon = true
 icon_alignment = 0
 
+[node name="SinglePlayerButton" type="Button" parent="CentralPanel/VBoxContainer"]
+custom_minimumSize = Vector2(280, 55)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+
 [node name="MapDiscoveryButton" type="Button" parent="CentralPanel/VBoxContainer"]
 custom_minimumSize = Vector2(280, 55)
 layout_mode = 2

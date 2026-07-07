@@ -9,11 +9,11 @@ internal class PlayerResourceService
 {
 	private readonly ArchetypeManager _archetypeManager;
 	private readonly DefinitionManager _definitionManager;
-	private readonly World _world;
+	private readonly WorldAccessor _ecsWorldAccessor;
 
-	public PlayerResourceService(World world, ArchetypeManager archetypeManager, DefinitionManager definitionManager)
+	public PlayerResourceService(WorldAccessor ecsWorldAccessor, ArchetypeManager archetypeManager, DefinitionManager definitionManager)
 	{
-		_world = world;
+		_ecsWorldAccessor = ecsWorldAccessor;
 		_archetypeManager = archetypeManager;
 		_definitionManager = definitionManager;
 	}
@@ -26,9 +26,9 @@ internal class PlayerResourceService
 		var archetype = _archetypeManager.GetUnitArchetype(unitArchetypeId);
 		if (archetype?.ResourceCosts == null || archetype.ResourceCosts.Length == 0) return true; // No cost
 
-		if (!_world.Has<PlayerResources>(playerEntity)) return false; // Player has no resources at all
+		if (!_ecsWorldAccessor.Current.Has<PlayerResources>(playerEntity)) return false; // Player has no resources at all
 
-		var playerResources = _world.Get<PlayerResources>(playerEntity).Value;
+		var playerResources = _ecsWorldAccessor.Current.Get<PlayerResources>(playerEntity).Value;
 
 		foreach (var cost in archetype.ResourceCosts)
 			if (!playerResources.TryGetValue(cost.ResourceTypeId, out var playerAmount) || playerAmount < cost.Amount)
@@ -43,9 +43,9 @@ internal class PlayerResourceService
 	public void DeductCost(Entity playerEntity, string unitArchetypeId)
 	{
 		var archetype = _archetypeManager.GetUnitArchetype(unitArchetypeId);
-		if (archetype?.ResourceCosts == null || !_world.Has<PlayerResources>(playerEntity)) return;
+		if (archetype?.ResourceCosts == null || !_ecsWorldAccessor.Current.Has<PlayerResources>(playerEntity)) return;
 
-		ref var playerResources = ref _world.Get<PlayerResources>(playerEntity);
+		ref var playerResources = ref _ecsWorldAccessor.Current.Get<PlayerResources>(playerEntity);
 
 		foreach (var cost in archetype.ResourceCosts)
 			if (playerResources.Value.ContainsKey(cost.ResourceTypeId))

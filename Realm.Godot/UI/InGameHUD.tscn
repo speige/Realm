@@ -211,7 +211,7 @@ vertical_alignment = 1
 layout_mode = 0
 offset_left = 220.0
 offset_top = 10.0
-offset_right = 540.0
+offset_right = 700.0
 offset_bottom = 75.0
 
 [node name="BtnVictory" type="Button" parent="DevPanel"]

@@ -1,6 +1,14 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Net.Http;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using HttpClient = System.Net.Http.HttpClient;
+using NSec.Cryptography;
+using System.Linq;
+
+using MirrorMode = Realm.Ecs.Components.Core.MirrorMode;
 
 public partial class MapEditorHUD : Control
 {
@@ -15,6 +23,7 @@ public partial class MapEditorHUD : Control
 	}
 
 	private MapEditorHUDViewModel _viewModel = new();
+	public MapEditorHUDViewModel ViewModel => _viewModel;
 
 	private Panel _panelLeft;
 	private Button _btnLeftTab;
@@ -25,16 +34,16 @@ public partial class MapEditorHUD : Control
 	private bool _leftPanelExpanded = false;
 	private bool _rightPanelExpanded = true;
 
-	private HBoxContainer _moduleBar;
-	private Button _btnModuleTerrain;
-	private Button _btnModulePaint;
-	private Button _btnModuleObjects;
-	private Button _btnModuleClipboard;
+	private OptionButton _optModule;
 	private EditorModule _activeModule = EditorModule.Terrain;
 
 	private VBoxContainer _accordionBrush;
 	private Button _btnHeaderBrush;
 	private VBoxContainer _contentBrush;
+	
+	private VBoxContainer _accordionTool;
+	private Button _btnHeaderTool;
+	private VBoxContainer _contentTool;
 	
 	private VBoxContainer _accordionToolSettings;
 	private Button _btnHeaderToolSettings;
@@ -48,13 +57,15 @@ public partial class MapEditorHUD : Control
 	private Button _btnHeaderViewport;
 	private VBoxContainer _contentViewport;
 	
-	private VBoxContainer _accordionNavigation;
-	private Button _btnHeaderNavigation;
-	private VBoxContainer _contentNavigation;
+
 	
 	private VBoxContainer _accordionInspector;
 	private Button _btnHeaderInspector;
 	private VBoxContainer _contentInspector;
+	private Button _btnHeaderFile;
+	private Control _contentFile;
+	private Button _btnHeaderMapSettings;
+	private Control _contentMapSettings;
 
 	private VBoxContainer _containerFlattenSettings;
 	private VBoxContainer _containerTextureSettings;
@@ -65,8 +76,10 @@ public partial class MapEditorHUD : Control
 	private VBoxContainer _containerPasteSettings;
 	private VBoxContainer _containerCategorySelector;
 
-	private PanelContainer _panelObjects;
-	private PanelContainer _panelClipboard;
+	private VBoxContainer _panelObjects;
+	private VBoxContainer _panelClipboard;
+	private VBoxContainer _panelTerrainVBox;
+	private VBoxContainer _panelDecoVBox;
 	private Button _btnCut;
 	private Button _btnEraseArea;
 	
@@ -121,11 +134,6 @@ public partial class MapEditorHUD : Control
 	private Button _btnPillar;
 	private Button _btnFlag;
 
-	private Button _btnChars;
-	private Button _btnBuilds;
-	private Button _btnEnv;
-	private Button _btnProps;
-	private Button _btnDecals;
 	private CheckBox _chkRandomRotation;
 	private CheckBox _chkRandomScale;
 	private Button _btnAddObject;
@@ -158,15 +166,6 @@ public partial class MapEditorHUD : Control
 	private Button _btnResetMap;
 	private Button _btnGenerateMap;
 	private Button _btnImportMinimap;
-	private int _genHillsDensity = 5;
-	private int _genTerrainRoughness = 5;
-	private int _genMountainHeight = 5;
-	private int _genChokeWidth = 5;
-	private int _genWaterLevel = 5;
-	private int _genTreeDensity = 5;
-	private int _genResourceAbundance = 5;
-	private int _genDecoDensity = 5;
-	private string _genSeed = "";
 	private Button _btnEyedropper;
 	private OptionButton _optEyedropperMode;
 	private Button _btnNoise;
@@ -178,9 +177,7 @@ public partial class MapEditorHUD : Control
 	private OptionButton _optSkybox;
 	private List<string> _skyboxFiles = new List<string>();
 
-	private string _currentCategory = "Characters";
-	private List<string> _categoryFiles = new List<string>();
-	private OptionButton _optCategoryItems;
+
 
 	private string[] _swatchPaths = new string[12];
 	private string[] _swatchDisplayNames = new string[12];
@@ -215,6 +212,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnInspectorDelete;
 
 	private Button _btnPathingBrush;
+	private Button _btnFloodFillPathing;
 	private PanelContainer _panelPathing;
 	private CheckBox _chkShallowWater;
 	private CheckBox _chkDeepWater;
@@ -222,6 +220,7 @@ public partial class MapEditorHUD : Control
 	private CheckBox _chkGround;
 	private CheckBox _chkUnpathable;
 	private OptionButton _optPathingMode;
+	private HBoxContainer _pathingModeHBox;
 
 	private Button _activeToolButton = null;
 	private StyleBoxFlat _highlightStyle;
@@ -237,9 +236,9 @@ public partial class MapEditorHUD : Control
 
 	private Camera3D _camera3D;
 	private Button _btnVSCode;
-	private VSCodeMdiWindow _vscodeMdi;
 	private bool _isDraggingSlider = false;
 	private Panel _swatchHighlightPanel;
+	private Panel _swatchCliffHighlightPanel;
 
 	private MapEditorTopBar _topBarController;
 	private MapEditorBrushSettings _brushSettingsController;
@@ -247,6 +246,13 @@ public partial class MapEditorHUD : Control
 	private MapEditorInspector _inspectorController;
 	private MapEditorPathingPanel _pathingPanelController;
 	private MapEditorMinimap _minimapController;
+	private MapEditorEntityPaletteController _entityPaletteController;
+	private MapEditorGenerationDialog _generationDialog;
+
+	private string _tempWorkspacePath;
+	private long _lastTerrainSyncTime = 0;
+	private long _lastMetadataSyncTime = 0;
+	private bool _isSyncing = false;
 
 	public override void _ExitTree()
 	{
@@ -258,13 +264,17 @@ public partial class MapEditorHUD : Control
 		{
 			_swatchHighlightPanel.QueueFree();
 		}
+		if (GodotObject.IsInstanceValid(_swatchCliffHighlightPanel) && _swatchCliffHighlightPanel.GetParent() == null)
+		{
+			_swatchCliffHighlightPanel.QueueFree();
+		}
 	}
 
 	public override void _Ready()
 	{
 		Instance = this;
 
-		_camera3D = GetTree().Root.GetNodeOrNull<Camera3D>("Main/Camera3D");
+		_camera3D = (GameHost.Instance?.MainCamera);
 
 		_highlightStyle = new StyleBoxFlat();
 		_highlightStyle.BgColor = new Color(0, 0, 0, 0);
@@ -283,12 +293,13 @@ public partial class MapEditorHUD : Control
 		_panelEntityPalette = GetNode<PanelContainer>("PanelEntityPalette");
 		_panelTerrain = GetNode<PanelContainer>("TopToolbar/PanelTerrain");
 		_panelDeco = GetNode<PanelContainer>("TopToolbar/PanelDeco");
-		_panelEnv = GetNode<PanelContainer>("TopToolbar/PanelEnv");
+		_panelEnv = GetNodeOrNull<PanelContainer>("TopToolbar/PanelEnv");
 
 		for (int i = 1; i <= 12; i++)
 		{
 			_swatchButtons[i - 1] = GetNode<Button>($"PanelTextures/VBox/Content/GridSwatches/Swatch{i}");
 		}
+		SetupTextureSwatches(true);
 
 		_btnBackToHub = GetNode<Button>("TopLeftBox/BtnBack");
 		_btnPublish = GetNode<Button>("MiddleRightBox/BtnPublish");
@@ -296,17 +307,77 @@ public partial class MapEditorHUD : Control
 		_btnUndo = GetNode<Button>("MiddleRightBox/HistoryHBox/BtnUndo");
 		_btnRedo = GetNode<Button>("MiddleRightBox/HistoryHBox/BtnRedo");
 		_btnDeleteObject = GetNode<Button>("RightPillar/VBox/BtnDeleteObject");
+		SetupButton(_btnDeleteObject, "❌ Erase Object", () => TriggerToolSelection(GameHost.EditorTool.DeleteObject, _btnDeleteObject), 11, "Delete units or props (0)");
 		_statusLabel = GetNode<Label>("TopBar/HBox/StatusLabel");
 		_feedbackLabel = GetNode<Label>("FeedbackLabel");
 
 		_btnZoomIn = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnZoomIn");
+		_btnZoomIn.Text = TranslationServer.Translate("🔍 Zoom In");
+		_btnZoomIn.Set("icon_max_width", 0);
+		_btnZoomIn.TooltipText = "Zoom Camera In";
+		_btnZoomIn.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			var camera = (GameHost.Instance?.MainCamera as CameraControl);
+			camera?.ZoomIn();
+		};
+
 		_btnZoomOut = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnZoomOut");
+		_btnZoomOut.Text = TranslationServer.Translate("🔍 Zoom Out");
+		_btnZoomOut.Set("icon_max_width", 0);
+		_btnZoomOut.TooltipText = "Zoom Camera Out";
+		_btnZoomOut.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			var camera = (GameHost.Instance?.MainCamera as CameraControl);
+			camera?.ZoomOut();
+		};
+
 		_btnCenter = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnCenter");
+		_btnCenter.Text = "🎯 Locate Object";
+		_btnCenter.TooltipText = "Center camera on selected object (Space)";
+		_btnCenter.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			var camera = (GameHost.Instance?.MainCamera as CameraControl);
+			if (camera != null)
+			{
+				Node3D target = null;
+				if (GameHost.Instance != null)
+				{
+					if (GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject) && GameHost.Instance.SelectedEditorObject is Node3D node3D)
+					{
+						target = node3D;
+					}
+					else if (GameHost.Instance.SelectedUnits.Count > 0 && GodotObject.IsInstanceValid(GameHost.Instance.SelectedUnits[0]))
+					{
+						target = GameHost.Instance.SelectedUnits[0];
+					}
+				}
+				if (target != null)
+				{
+					camera.FollowTarget = target;
+					camera.Position = new Vector3(target.Position.X, camera.Position.Y, target.Position.Z + 25.0f);
+				}
+			}
+		};
+
 		_btnRotate = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnRotate");
+		SetupButton(_btnRotate, "🔄 Rotate", () =>
+		{
+			var camera = (GameHost.Instance?.MainCamera as CameraControl);
+			camera?.Rotate90Degrees();
+		}, 13, "Rotate camera 90 degrees (R)");
+
 		_btnCameraAngle = new Button();
 		_btnCameraAngle.Name = "BtnCameraAngle";
 		_btnCameraAngle.Set("icon_max_width", 0);
 		GetNode<GridContainer>("MiddleRightBox/PanelZoom/VBox/Content").AddChild(_btnCameraAngle);
+		SetupButton(_btnCameraAngle, "📐 Tilt", () =>
+		{
+			var camera = (GameHost.Instance?.MainCamera as CameraControl);
+			camera?.ToggleTopDown();
+		}, 11, "Toggle top-down vs perspective angle (C)");
 
 		_sldBrushSize = GetNode<Slider>("PanelTextures/VBox/Content/SettingsVBox/BrushSizeBox/SldBrushSize");
 		_lblBrushSizeValue = GetNode<Label>("PanelTextures/VBox/Content/SettingsVBox/BrushSizeBox/Header/LblBrushSizeValue");
@@ -316,39 +387,51 @@ public partial class MapEditorHUD : Control
 		_lblFlattenHeightValue = GetNode<Label>("PanelTextures/VBox/Content/SettingsVBox/FlattenHeightBox/Header/LblFlattenHeightValue");
 
 		_btnRaise = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnRaise");
+		SetupButton(_btnRaise, "⛰️ Raise", () => TriggerToolSelection(GameHost.EditorTool.Raise, _btnRaise), 11, "Elevate terrain height (1)");
+
 		_btnLower = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnLower");
+		SetupButton(_btnLower, "🕳️ Lower", () => TriggerToolSelection(GameHost.EditorTool.Lower, _btnLower), 11, "Lower terrain height (2)");
+
 		_btnSmooth = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnSmooth");
+		SetupButton(_btnSmooth, "✨ Smooth", () => TriggerToolSelection(GameHost.EditorTool.Smooth, _btnSmooth), 11, "Smooth terrain height (3)");
+
 		_btnFlatten = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnFlatten");
+		SetupButton(_btnFlatten, "🟩 Flatten", () => TriggerToolSelection(GameHost.EditorTool.Flatten, _btnFlatten), 11, "Flatten terrain height (4)");
+
 		_btnCliff = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnCliff");
+		SetupButton(_btnCliff, "🏔️ Cliff", () => TriggerToolSelection(GameHost.EditorTool.Cliff, _btnCliff), 11, "Terrace/Cliff terrain height (5)");
+
 		_btnRamp = new Button();
 		_btnRamp.Name = "BtnRamp";
 		_btnRamp.Set("icon_max_width", 0);
 		GetNode<HBoxContainer>("TopToolbar/PanelTerrain/VBox/Content").AddChild(_btnRamp);
+		SetupButton(_btnRamp, "📐 Ramp", () => TriggerToolSelection(GameHost.EditorTool.Ramp, _btnRamp), 11, "Create ramp between two points (9)");
 
 		_btnTextureBrush = GetNode<Button>("TopToolbar/PanelDeco/VBox/Content/BtnTextureBrush");
+		SetupButton(_btnTextureBrush, "🎨 Paint", () => TriggerToolSelection(GameHost.EditorTool.PaintGrass, _btnTextureBrush), 11, "Paint terrain texture (6)");
+
 		_btnDecalTool = GetNodeOrNull<Button>("TopToolbar/PanelDeco/VBox/Content/BtnDecalTool");
 		if (_btnDecalTool != null) _btnDecalTool.Visible = false;
 		_btnFloodFill = new Button();
 		_btnFloodFill.Name = "BtnFloodFill";
 		_btnFloodFill.Set("icon_max_width", 0);
 		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnFloodFill);
+		SetupButton(_btnFloodFill, "🪣 Flood Fill", () => TriggerToolSelection(GameHost.EditorTool.FloodFill, _btnFloodFill), 11, "Flood fill terrain texture");
 
 		_btnSelectArea = new Button();
 		_btnSelectArea.Name = "BtnSelectArea";
 		_btnSelectArea.Set("icon_max_width", 0);
 		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnSelectArea);
+		SetupButton(_btnSelectArea, "🔲 Select Area", () => TriggerToolSelection(GameHost.EditorTool.SelectArea, _btnSelectArea), 11, "Select rectangular area");
 
-		_btnSkybox = GetNode<Button>("TopToolbar/PanelEnv/VBox/Content/BtnSkybox");
-		if (_btnSkybox != null)
-		{
-			_btnSkybox.Set("icon_max_width", 0);
-		}
+		_btnSkybox = new Button();
+		_btnSkybox.Name = "BtnSkybox";
+		_btnSkybox.Set("icon_max_width", 0);
+		SetupButton(_btnSkybox, "☀️ Cycle Lighting", () => GameHost.Instance?.CycleTimeOfDay(), 11, "Cycle map environment lighting (L)");
 
 		_optSkybox = new OptionButton();
 		_optSkybox.Name = "OptSkybox";
 		_optSkybox.CustomMinimumSize = new Vector2(160, 30);
-		var envContent = GetNode<HBoxContainer>("TopToolbar/PanelEnv/VBox/Content");
-		envContent.AddChild(_optSkybox);
 
 		_skyboxFiles.Clear();
 		using (var dir = DirAccess.Open("res://Assets/Skyboxes"))
@@ -417,47 +500,18 @@ public partial class MapEditorHUD : Control
 			}
 		}
 
-		var categoryGrid = new GridContainer();
-		categoryGrid.Columns = 2;
-		categoryGrid.AddThemeConstantOverride("h_separation", 6);
-		categoryGrid.AddThemeConstantOverride("v_separation", 6);
-		palettesVBox.AddChild(categoryGrid);
-		palettesVBox.MoveChild(categoryGrid, 0);
+		_btnSelectMove = new Button();
+		_btnSelectMove.Name = "BtnSelectMove";
+		_btnSelectMove.Set("icon_max_width", 0);
+		SetupButton(_btnSelectMove, "🖱️ SELECT / MOVE", () => TriggerToolSelection(GameHost.EditorTool.SelectMove, _btnSelectMove), 13, "Select, drag-move, rotate, scale, or delete objects (Q)");
 
-		_optCategoryItems = new OptionButton();
-		_optCategoryItems.Name = "OptCategoryItems";
-		_optCategoryItems.CustomMinimumSize = new Vector2(180, 30);
-		palettesVBox.AddChild(_optCategoryItems);
-		palettesVBox.MoveChild(_optCategoryItems, 1);
+		_btnAddObject = new Button();
+		_btnAddObject.Name = "BtnAddObject";
+		_btnAddObject.Set("icon_max_width", 0);
+		SetupButton(_btnAddObject, "➕ ADD OBJECT", () => _entityPaletteController?.TriggerAddObjectMode(), 13, "Place selected unit or prop");
 
-		_optCategoryItems.ItemSelected += (index) => SelectCategoryItem((int)index);
-
-		_btnChars = new Button();
-		_btnChars.Set("icon_max_width", 0);
-		SetupButton(_btnChars, "👤 Characters", () => SelectCategory("Characters"), 12, "Select Characters category");
-		categoryGrid.AddChild(_btnChars);
-
-		_btnBuilds = new Button();
-		_btnBuilds.Set("icon_max_width", 0);
-		SetupButton(_btnBuilds, "🏢 Buildings", () => SelectCategory("Buildings"), 12, "Select Buildings category");
-		categoryGrid.AddChild(_btnBuilds);
-
-		_btnEnv = new Button();
-		_btnEnv.Set("icon_max_width", 0);
-		SetupButton(_btnEnv, "🌳 Environment", () => SelectCategory("Environment"), 12, "Select Environment category");
-		categoryGrid.AddChild(_btnEnv);
-
-		_btnProps = new Button();
-		_btnProps.Set("icon_max_width", 0);
-		SetupButton(_btnProps, "📦 Props", () => SelectCategory("Props"), 12, "Select Props category");
-		categoryGrid.AddChild(_btnProps);
-
-		_btnDecals = new Button();
-		_btnDecals.Set("icon_max_width", 0);
-		SetupButton(_btnDecals, "🎨 Decals", () => SelectCategory("Decals"), 12, "Select Decals category");
-		categoryGrid.AddChild(_btnDecals);
-
-		SelectCategory("Characters");
+		_entityPaletteController = new MapEditorEntityPaletteController(this, palettesVBox, _btnAddObject);
+		_generationDialog = new MapEditorGenerationDialog(this);
 
 		_btnToggleRotate = GetNode<Button>("PanelEntityPalette/VBox/Content/RightSettingsVBox/BtnToggleRotate");
 		_btnToggleScale = GetNode<Button>("PanelEntityPalette/VBox/Content/RightSettingsVBox/BtnToggleScale");
@@ -487,12 +541,6 @@ public partial class MapEditorHUD : Control
 		_sldPlacementRotate.Step = 5.0;
 		_sldPlacementRotate.Value = 0.0;
 		_placementRotateBox.AddChild(_sldPlacementRotate);
-		_sldPlacementRotate.ValueChanged += (val) =>
-		{
-			float fVal = (float)val;
-			_lblPlacementRotateValue.Text = fVal.ToString("F0") + "°";
-			if (GameHost.Instance != null) GameHost.Instance.EditorPlacementRotation = fVal;
-		};
 		_sldPlacementRotate.DragStarted += () => _isDraggingSlider = true;
 		_sldPlacementRotate.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
@@ -519,12 +567,6 @@ public partial class MapEditorHUD : Control
 		_sldPlacementScale.Step = 0.1;
 		_sldPlacementScale.Value = 1.0;
 		_placementScaleBox.AddChild(_sldPlacementScale);
-		_sldPlacementScale.ValueChanged += (val) =>
-		{
-			float fVal = (float)val;
-			_lblPlacementScaleValue.Text = fVal.ToString("F1") + "x";
-			if (GameHost.Instance != null) GameHost.Instance.EditorPlacementScale = fVal;
-		};
 		_sldPlacementScale.DragStarted += () => _isDraggingSlider = true;
 		_sldPlacementScale.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
@@ -639,8 +681,6 @@ public partial class MapEditorHUD : Control
 		_panelTextures.OffsetTop = -320;
 		_panelEntityPalette.OffsetTop = -320;
 
-		_genSeed = new Random().Next(100000, 999999).ToString();
-
 		_btnResetMap = new Button();
 		_btnResetMap.Name = "BtnResetMap";
 		_btnResetMap.Set("icon_max_width", 0);
@@ -659,7 +699,7 @@ public partial class MapEditorHUD : Control
 		_btnGenerateMap.Set("icon_max_width", 0);
 		GetNode<VBoxContainer>("MiddleRightBox").AddChild(_btnGenerateMap);
 		GetNode<VBoxContainer>("MiddleRightBox").MoveChild(_btnGenerateMap, _btnResetMap.GetIndex() + 1);
-		SetupButton(_btnGenerateMap, "🎲 RANDOM GEN", () => ShowGenerationDialog(), 13, "Open random terrain generator settings modal");
+		SetupButton(_btnGenerateMap, "🎲 RANDOM GEN", () => _generationDialog.Show(), 13, "Open random terrain generator settings modal");
 
 		_btnImportMinimap = new Button();
 		_btnImportMinimap.Name = "BtnImportMinimap";
@@ -688,22 +728,13 @@ public partial class MapEditorHUD : Control
 
 		if (OperatingSystem.IsWindows())
 		{
-			_vscodeMdi = new VSCodeMdiWindow();
-			_vscodeMdi.Visible = false;
-			AddChild(_vscodeMdi);
-			_vscodeMdi.Position = new Vector2(250, 100);
+			VSCodeManager.Instance.Initialize(this);
 
 			_btnVSCode = new Button();
 			_btnVSCode.Name = "BtnVSCode";
 			_btnVSCode.Set("icon_max_width", 0);
 			GetNode<HBoxContainer>("TopLeftBox").AddChild(_btnVSCode);
-			SetupButton(_btnVSCode, "💻 DATA EDITOR", () =>
-			{
-				if (_vscodeMdi != null)
-				{
-					_vscodeMdi.Visible = !_vscodeMdi.Visible;
-				}
-			}, 13, "Toggle the embedded VS Code data editor");
+			SetupButton(_btnVSCode, "💻 CODE & DATA", null, 13, "Toggle the embedded VSCode editor");
 		}
 
 		_btnLoad = new Button();
@@ -744,13 +775,6 @@ public partial class MapEditorHUD : Control
 		UIStyle.ApplyCheckboxStyle(_chkRandomRotation);
 		rightSettingsVBox.AddChild(_chkRandomRotation);
 		rightSettingsVBox.MoveChild(_chkRandomRotation, chkIndex + 1);
-		_chkRandomRotation.Toggled += (toggled) =>
-		{
-			if (GameHost.Instance != null)
-			{
-				GameHost.Instance.EditorRandomRotation = toggled;
-			}
-		};
 
 		_chkRandomScale = new CheckBox();
 		_chkRandomScale.Name = "ChkRandomScale";
@@ -759,13 +783,6 @@ public partial class MapEditorHUD : Control
 		UIStyle.ApplyCheckboxStyle(_chkRandomScale);
 		rightSettingsVBox.AddChild(_chkRandomScale);
 		rightSettingsVBox.MoveChild(_chkRandomScale, chkIndex + 1);
-		_chkRandomScale.Toggled += (toggled) =>
-		{
-			if (GameHost.Instance != null)
-			{
-				GameHost.Instance.EditorRandomScale = toggled;
-			}
-		};
 
 		_chkClumpMode = new CheckBox();
 		_chkClumpMode.Name = "ChkClumpMode";
@@ -777,7 +794,6 @@ public partial class MapEditorHUD : Control
 		_chkClumpMode.ButtonPressed = false;
 		_chkClumpMode.Toggled += (toggled) =>
 		{
-			if (GameHost.Instance != null) GameHost.Instance.EditorClumpMode = toggled;
 			if (_densityBox != null) _densityBox.Visible = toggled;
 			if (_scaleVarBox != null) _scaleVarBox.Visible = toggled;
 		};
@@ -952,11 +968,7 @@ public partial class MapEditorHUD : Control
 		settingsVBox.AddChild(_chkBlockMode);
 		_chkBlockMode.Toggled += (toggled) =>
 		{
-			if (GameHost.Instance != null)
-			{
-				GameHost.Instance.EditorBlockMode = toggled;
-				ShowFeedback(toggled ? "Block Mode: Enabled" : "Block Mode: Disabled");
-			}
+			ShowFeedback(toggled ? "Block Mode: Enabled" : "Block Mode: Disabled");
 		};
 		_chkBlockMode.ButtonPressed = true;
 
@@ -988,15 +1000,6 @@ public partial class MapEditorHUD : Control
 		_sldBlockStep.Step = 0.5;
 		_sldBlockStep.Value = 4.0;
 		_stepBox.AddChild(_sldBlockStep);
-		_sldBlockStep.ValueChanged += (val) =>
-		{
-			float fVal = (float)val;
-			_lblBlockStepValue.Text = fVal.ToString("F1") + " m";
-			if (GameHost.Instance != null)
-			{
-				GameHost.Instance.EditorBlockLevelHeight = fVal;
-			}
-		};
 		_sldBlockStep.DragStarted += () => _isDraggingSlider = true;
 		_sldBlockStep.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
@@ -1031,15 +1034,6 @@ public partial class MapEditorHUD : Control
 		_sldWaterHeight.Step = 0.5;
 		_sldWaterHeight.Value = -2.0;
 		_waterHeightBox.AddChild(_sldWaterHeight);
-		_sldWaterHeight.ValueChanged += (val) =>
-		{
-			float fVal = (float)val;
-			_lblWaterHeightValue.Text = fVal.ToString("F1") + " m";
-			if (GameHost.Instance?.GroundTerrain != null)
-			{
-				GameHost.Instance.GroundTerrain.WaterHeight = fVal;
-			}
-		};
 		_sldWaterHeight.DragStarted += () => _isDraggingSlider = true;
 		_sldWaterHeight.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
@@ -1051,14 +1045,14 @@ public partial class MapEditorHUD : Control
 		settingsVBox.AddChild(pasteOptionsBox);
 
 		var lblPasteOptionsTitle = new Label();
-		lblPasteOptionsTitle.Text = TranslationServer.Translate("PASTE CONTENTS OPTIONS");
+		lblPasteOptionsTitle.Text = TranslationServer.Translate("Affected Layers");
 		lblPasteOptionsTitle.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
 		lblPasteOptionsTitle.AddThemeFontSizeOverride("font_size", 11);
 		pasteOptionsBox.AddChild(lblPasteOptionsTitle);
 
 		var chkPasteTextures = new CheckBox();
 		chkPasteTextures.Name = "ChkPasteTextures";
-		chkPasteTextures.Text = TranslationServer.Translate("Paste Textures");
+		chkPasteTextures.Text = TranslationServer.Translate("Textures");
 		chkPasteTextures.ButtonPressed = true;
 		UIStyle.ApplyCheckboxStyle(chkPasteTextures);
 		pasteOptionsBox.AddChild(chkPasteTextures);
@@ -1069,7 +1063,7 @@ public partial class MapEditorHUD : Control
 
 		var chkPasteHeights = new CheckBox();
 		chkPasteHeights.Name = "ChkPasteHeights";
-		chkPasteHeights.Text = TranslationServer.Translate("Paste HeightMap");
+		chkPasteHeights.Text = TranslationServer.Translate("HeightMap");
 		chkPasteHeights.ButtonPressed = true;
 		UIStyle.ApplyCheckboxStyle(chkPasteHeights);
 		pasteOptionsBox.AddChild(chkPasteHeights);
@@ -1080,7 +1074,7 @@ public partial class MapEditorHUD : Control
 
 		var chkPasteEntities = new CheckBox();
 		chkPasteEntities.Name = "ChkPasteEntities";
-		chkPasteEntities.Text = TranslationServer.Translate("Paste Units / Props");
+		chkPasteEntities.Text = TranslationServer.Translate("Units / Props");
 		chkPasteEntities.ButtonPressed = true;
 		UIStyle.ApplyCheckboxStyle(chkPasteEntities);
 		pasteOptionsBox.AddChild(chkPasteEntities);
@@ -1180,6 +1174,12 @@ public partial class MapEditorHUD : Control
 		SetupButton(_btnPathingBrush, "🧭 Pathing", () => TriggerToolSelection(GameHost.EditorTool.PaintPathing, _btnPathingBrush), 11, "Paint pathing attributes onto the terrain map");
 		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnPathingBrush);
 
+		_btnFloodFillPathing = new Button();
+		_btnFloodFillPathing.Name = "BtnFloodFillPathing";
+		_btnFloodFillPathing.Set("icon_max_width", 0);
+		SetupButton(_btnFloodFillPathing, "🪣 Fill Pathing", () => TriggerToolSelection(GameHost.EditorTool.FloodFillPathing, _btnFloodFillPathing), 11, "Flood fill pathing attributes onto the terrain map");
+		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnFloodFillPathing);
+
 		_panelPathing = new PanelContainer();
 		_panelPathing.Name = "PanelPathing";
 		_panelPathing.LayoutMode = 1;
@@ -1214,11 +1214,11 @@ public partial class MapEditorHUD : Control
 		pContent.Name = "Content";
 		pVBox.AddChild(pContent);
 
-		var modeHBox = new HBoxContainer();
+		_pathingModeHBox = new HBoxContainer();
 		var modeLabel = new Label();
 		modeLabel.Text = TranslationServer.Translate("Mode: ");
 		modeLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		modeHBox.AddChild(modeLabel);
+		_pathingModeHBox.AddChild(modeLabel);
 
 		_optPathingMode = new OptionButton();
 		_optPathingMode.Name = "OptPathingMode";
@@ -1227,8 +1227,8 @@ public partial class MapEditorHUD : Control
 		_optPathingMode.Selected = 0;
 		_optPathingMode.AddThemeFontSizeOverride("font_size", 11);
 		_optPathingMode.CustomMinimumSize = new Vector2(180, 28);
-		modeHBox.AddChild(_optPathingMode);
-		pContent.AddChild(modeHBox);
+		_pathingModeHBox.AddChild(_optPathingMode);
+		pContent.AddChild(_pathingModeHBox);
 
 		var layersVBox = new VBoxContainer();
 		layersVBox.AddThemeConstantOverride("separation", 6);
@@ -1264,6 +1264,7 @@ public partial class MapEditorHUD : Control
 		_topBarController = new MapEditorTopBar(_btnBackToHub, _btnPublish, _btnSave, _btnLoad, _btnUndo, _btnRedo, _btnVSCode, _statusLabel, _feedbackLabel);
 		_brushSettingsController = new MapEditorBrushSettings(_sldBrushSize, _lblBrushSizeValue, _sldBrushStrength, _lblBrushStrengthValue, _sldFlattenHeight, _lblFlattenHeightValue, _chkBlockMode, _sldBlockStep, _lblBlockStepValue, _sldWaterHeight, _lblWaterHeightValue, _chkWaterEnabled);
 		_placementSettingsController = new MapEditorPlacementSettings(_sldPlacementRotate, _lblPlacementRotateValue, _sldPlacementScale, _lblPlacementScaleValue, _chkSpawnAsEnemy, _chkRandomRotation, _chkRandomScale, _chkClumpMode, _sldClumpDensity, _lblClumpDensityValue, _sldClumpScaleVar, _lblClumpScaleVarValue);
+		InitializeInspectorPanel();
 		_inspectorController = new MapEditorInspector(_lblInspectorTitle, _lblInspectorPos, _btnInspectorRotLeft, _btnInspectorRotRight, _btnInspectorScaleDown, _btnInspectorScaleUp, _btnInspectorScaleReset, _btnInspectorDelete);
 		_pathingPanelController = new MapEditorPathingPanel(_chkShallowWater, _chkDeepWater, _chkFlying, _chkGround, _chkUnpathable, _optPathingMode);
 
@@ -1271,6 +1272,7 @@ public partial class MapEditorHUD : Control
 		RebuildHUDLayout();
 
 		_minimapController = new MapEditorMinimap(_minimapFrame, _minimapArea, _cameraIndicator, this);
+		RegenerateMinimap();
 
 		if (GameHost.Instance != null)
 		{
@@ -1278,6 +1280,8 @@ public partial class MapEditorHUD : Control
 			UpdateScaleExternal(GameHost.Instance.EditorPlacementScale);
 			UpdateGridSnapExternal(GameHost.Instance.EditorSnapToGrid);
 		}
+
+		InitializeTempWorkspace();
 	}
 
 	public override void _Process(double delta)
@@ -1291,41 +1295,16 @@ public partial class MapEditorHUD : Control
 			if (hit != null && hit.ContainsKey("position"))
 			{
 				Vector3 pos = hit["position"].AsVector3();
-				string toolName = GameHost.Instance.ActiveEditorTool.ToString().ToUpper();
-				if (!string.IsNullOrEmpty(GameHost.Instance.ActivePlaceId)) 
-					toolName += $" ({GameHost.Instance.ActivePlaceId.ToUpper()})";
-				
-				string status = $"ACTIVE TOOL: {toolName} | Pos: {pos.X:F1}, {pos.Y:F1}, {pos.Z:F1}";
-
-				if (GameHost.Instance.ActiveEditorTool == GameHost.EditorTool.PaintPathing && GameHost.Instance.GroundTerrain != null)
-				{
-					var terrain = GameHost.Instance.GroundTerrain;
-					float fx = pos.X / terrain.Spacing + (terrain.Width - 1) / 2.0f;
-					float fz = pos.Z / terrain.Spacing + (terrain.Depth - 1) / 2.0f;
-					int cx = Mathf.Clamp((int)Mathf.Round(fx), 0, terrain.Width - 1);
-					int cz = Mathf.Clamp((int)Mathf.Round(fz), 0, terrain.Depth - 1);
-
-					if (terrain.PathingCodes != null)
-					{
-						int code = terrain.PathingCodes[cx, cz];
-						var layers = new List<string>();
-						if ((code & EditableTerrain.PATHING_GROUND) != 0) layers.Add("Ground");
-						if ((code & EditableTerrain.PATHING_FLYING) != 0) layers.Add("Flying");
-						if ((code & EditableTerrain.PATHING_SHALLOW_WATER) != 0) layers.Add("Shallow Water");
-						if ((code & EditableTerrain.PATHING_DEEP_WATER) != 0) layers.Add("Deep Water");
-						if ((code & EditableTerrain.PATHING_UNPATHABLE) != 0) layers.Add("Unpathable");
-
-						string layersStr = layers.Count > 0 ? string.Join(", ", layers) : "None";
-						status += $" | Path: {layersStr}";
-					}
-				}
-				_viewModel.StatusText = status;
+				_viewModel.StatusText = GameHost.Instance.GetTerrainStatusString(pos);
 			}
 		}
 
 		_topBarController?.Update(_viewModel);
-		_brushSettingsController?.Update(_viewModel);
-		_placementSettingsController?.Update(_viewModel);
+		if (!_isDraggingSlider)
+		{
+			_brushSettingsController?.Update(_viewModel);
+			_placementSettingsController?.Update(_viewModel);
+		}
 		_inspectorController?.Update(_viewModel);
 		_pathingPanelController?.Update(_viewModel);
 		_minimapController?.Update(_viewModel);
@@ -1404,7 +1383,6 @@ public partial class MapEditorHUD : Control
 
 		GetNode<PanelContainer>("TopToolbar/PanelTerrain").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		GetNode<PanelContainer>("TopToolbar/PanelDeco").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		GetNode<PanelContainer>("TopToolbar/PanelEnv").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		GetNode<PanelContainer>("MiddleRightBox/PanelZoom").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		_panelTextures.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel());
 		_panelEntityPalette.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel());
@@ -1602,9 +1580,10 @@ public partial class MapEditorHUD : Control
 
 	public void ToggleVSCodeEditor()
 	{
-		if (_vscodeMdi != null)
+		if (OperatingSystem.IsWindows())
 		{
-			_vscodeMdi.Visible = !_vscodeMdi.Visible;
+			bool isVisible = !VSCodeManager.Instance.IsVisible;
+			VSCodeManager.Instance.SetVisible(isVisible);
 		}
 	}
 
@@ -1662,43 +1641,42 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public void SetSpawnAsEnemy(bool isEnemy)
+	{
+		if (_chkSpawnAsEnemy != null)
+		{
+			_chkSpawnAsEnemy.ButtonPressed = isEnemy;
+		}
+	}
+
 	public void SelectCategoryItemExternal(string category, string filename)
 	{
-		if (category != _currentCategory)
-		{
-			SelectCategory(category);
-		}
-		int idx = _categoryFiles.IndexOf(filename);
-		if (idx >= 0)
-		{
-			_optCategoryItems.Selected = idx;
-			SelectCategoryItem(idx);
-		}
+		_entityPaletteController?.SelectCategoryItemExternal(category, filename);
 	}
 
 	public void SelectPickedUnitOrProp(string id, bool isBuilding)
 	{
 		if (isBuilding)
 		{
-			SelectCategoryItemExternal("Buildings", id + ".glb");
+			_entityPaletteController?.SelectCategoryItemExternal("Buildings", id + ".glb");
 		}
 		else
 		{
 			string charactersPath = "res://Assets/3d/Characters";
 			if (FileAccess.FileExists($"{charactersPath}/{id}.glb") || FileAccess.FileExists($"{charactersPath}/{id}.gltf"))
 			{
-				SelectCategoryItemExternal("Characters", id + ".glb");
+				_entityPaletteController?.SelectCategoryItemExternal("Characters", id + ".glb");
 			}
 			else
 			{
-				SelectCategoryItemExternal("Props", id + ".glb");
+				_entityPaletteController?.SelectCategoryItemExternal("Props", id + ".glb");
 			}
 		}
 	}
 
 	public void SelectPickedDecal(string decalId)
 	{
-		SelectCategoryItemExternal("Decals", decalId);
+		_entityPaletteController?.SelectCategoryItemExternal("Decals", decalId);
 	}
 
 	public void SelectPaintSwatchFromColor(Color color)
@@ -1750,7 +1728,7 @@ public partial class MapEditorHUD : Control
 	{
 		if (_btnCameraAngle != null)
 		{
-			_btnCameraAngle.Text = isTopDown ? "📐 Angle: TopDown" : "📐 Angle: Tilt";
+			_btnCameraAngle.Text = isTopDown ? "📐 TopDown" : "📐 Tilt";
 		}
 	}
 
@@ -1813,6 +1791,7 @@ public partial class MapEditorHUD : Control
 			case GameHost.EditorTool.PaintGrass: targetBtn = _btnTextureBrush; break;
 			case GameHost.EditorTool.FloodFill: targetBtn = _btnFloodFill; break;
 			case GameHost.EditorTool.PaintPathing: targetBtn = _btnPathingBrush; break;
+			case GameHost.EditorTool.FloodFillPathing: targetBtn = _btnFloodFillPathing; break;
 			case GameHost.EditorTool.SelectArea: targetBtn = _btnSelectArea; break;
 			case GameHost.EditorTool.PasteArea: targetBtn = _btnPaste; break;
 			case GameHost.EditorTool.PlaceUnit:
@@ -1863,42 +1842,47 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	private void HighlightCliffSwatch(Button selectedSwatch)
+	{
+		if (!GodotObject.IsInstanceValid(_swatchCliffHighlightPanel))
+		{
+			_swatchCliffHighlightPanel = new Panel();
+			_swatchCliffHighlightPanel.Name = "SwatchCliffHighlightPanel";
+			_swatchCliffHighlightPanel.MouseFilter = Control.MouseFilterEnum.Ignore;
+			_swatchCliffHighlightPanel.SetAnchorsPreset(LayoutPreset.FullRect);
+			_swatchCliffHighlightPanel.GrowHorizontal = GrowDirection.Both;
+			_swatchCliffHighlightPanel.GrowVertical = GrowDirection.Both;
+
+			var style = new StyleBoxFlat();
+			style.BgColor = new Color(0, 0, 0, 0);
+			style.BorderColor = new Color(0.9f, 0.45f, 0.1f); // Vibrant orange/gold for cliff
+			style.SetBorderWidthAll(3);
+			style.CornerRadiusTopLeft = 4;
+			style.CornerRadiusTopRight = 4;
+			style.CornerRadiusBottomLeft = 4;
+			style.CornerRadiusBottomRight = 4;
+			_swatchCliffHighlightPanel.AddThemeStyleboxOverride("panel", style);
+		}
+
+		if (_swatchCliffHighlightPanel.GetParent() != null)
+		{
+			_swatchCliffHighlightPanel.GetParent().RemoveChild(_swatchCliffHighlightPanel);
+		}
+
+		if (selectedSwatch != null)
+		{
+			selectedSwatch.AddChild(_swatchCliffHighlightPanel);
+		}
+	}
+
 	private void SetupMenuHooks()
 	{
-		_sldBrushSize.ValueChanged += (val) =>
-		{
-			float fVal = (float)val;
-			_lblBrushSizeValue.Text = fVal.ToString("F1");
-			if (GameHost.Instance != null) GameHost.Instance.EditorBrushRadius = fVal;
-		};
-
-		_sldBrushStrength.ValueChanged += (val) =>
-		{
-			float fVal = (float)val;
-			_lblBrushStrengthValue.Text = fVal.ToString("F1");
-			if (GameHost.Instance != null) GameHost.Instance.EditorBrushStrength = fVal;
-		};
-
-		_sldFlattenHeight.ValueChanged += (val) =>
-		{
-			float fVal = (float)val;
-			_lblFlattenHeightValue.Text = fVal.ToString("F1") + " m";
-			if (GameHost.Instance != null) GameHost.Instance.EditorFlattenHeight = fVal;
-		};
 		_sldBrushSize.DragStarted += () => _isDraggingSlider = true;
 		_sldBrushSize.DragEnded += (valueChanged) => _isDraggingSlider = false;
 		_sldBrushStrength.DragStarted += () => _isDraggingSlider = true;
 		_sldBrushStrength.DragEnded += (valueChanged) => _isDraggingSlider = false;
 		_sldFlattenHeight.DragStarted += () => _isDraggingSlider = true;
 		_sldFlattenHeight.DragEnded += (valueChanged) => _isDraggingSlider = false;
-
-		_chkSpawnAsEnemy.Toggled += (toggled) =>
-		{
-			if (GameHost.Instance != null)
-			{
-				GameHost.Instance.PlaceUnitIsEnemy = toggled;
-			}
-		};
 
 		SetupCollapsible("TopToolbar/PanelTerrain", "VBox/HeaderHBox/BtnCollapse", "VBox/Content");
 		SetupCollapsible("TopToolbar/PanelDeco", "VBox/HeaderHBox/BtnCollapse", "VBox/Content");
@@ -1924,55 +1908,7 @@ public partial class MapEditorHUD : Control
 		};
 	}
 
-	private void TriggerAddObjectMode()
-	{
-		if (GameHost.Instance == null) return;
-
-		GameHost.EditorTool targetTool = GameHost.EditorTool.PlaceProp;
-		if (_currentCategory == "Characters" || _currentCategory == "Buildings")
-		{
-			targetTool = GameHost.EditorTool.PlaceUnit;
-		}
-		else if (_currentCategory == "Decals")
-		{
-			targetTool = GameHost.EditorTool.PlaceDecal;
-		}
-
-		string placeId = "";
-		int selectedIndex = _optCategoryItems != null ? _optCategoryItems.Selected : -1;
-		if (selectedIndex >= 0 && selectedIndex < _categoryFiles.Count)
-		{
-			string selectedFile = _categoryFiles[selectedIndex];
-			string path = _currentCategory switch
-			{
-				"Characters" => "res://Assets/3d/Characters",
-				"Buildings" => "res://Assets/3d/Buildings",
-				"Environment" => "res://Assets/3d/Environment",
-				"Props" => "res://Assets/3d/Props",
-				"Decals" => "res://Assets/2d/Decals",
-				_ => ""
-			};
-			if (_currentCategory == "Characters" || _currentCategory == "Buildings" || _currentCategory == "Environment" || _currentCategory == "Props")
-			{
-				placeId = $"{path}/{selectedFile}";
-			}
-			else
-			{
-				placeId = selectedFile;
-			}
-		}
-
-		if (string.IsNullOrEmpty(placeId))
-		{
-			if (targetTool == GameHost.EditorTool.PlaceUnit) placeId = "res://Assets/3d/Characters/soldier.glb";
-			else if (targetTool == GameHost.EditorTool.PlaceDecal) placeId = "logo";
-			else placeId = "res://Assets/3d/Props/tree.glb";
-		}
-
-		TriggerToolSelection(targetTool, _btnAddObject, placeId);
-	}
-
-	private void TriggerToolSelection(GameHost.EditorTool tool, Button btn, string placeId = "")
+	public void TriggerToolSelection(GameHost.EditorTool tool, Button btn, string placeId = "")
 	{
 		if (GameHost.Instance == null) return;
 
@@ -2028,7 +1964,8 @@ public partial class MapEditorHUD : Control
 				 tool == GameHost.EditorTool.PaintRock ||
 				 tool == GameHost.EditorTool.PaintSand ||
 				 tool == GameHost.EditorTool.FloodFill ||
-				 tool == GameHost.EditorTool.PaintPathing)
+				 tool == GameHost.EditorTool.PaintPathing ||
+				 tool == GameHost.EditorTool.FloodFillPathing)
 		{
 			targetModule = EditorModule.TextureDeco;
 		}
@@ -2037,8 +1974,7 @@ public partial class MapEditorHUD : Control
 				 tool == GameHost.EditorTool.PlacePropClump ||
 				 tool == GameHost.EditorTool.PlaceDecal ||
 				 tool == GameHost.EditorTool.DeleteObject ||
-				 tool == GameHost.EditorTool.SelectMove ||
-				 tool == GameHost.EditorTool.Eyedropper)
+				 tool == GameHost.EditorTool.SelectMove)
 		{
 			targetModule = EditorModule.Objects;
 		}
@@ -2052,18 +1988,22 @@ public partial class MapEditorHUD : Control
 		{
 			_activeModule = targetModule;
 			UpdateModuleSwitchButtons();
-			if (_panelTerrain != null) _panelTerrain.Visible = (targetModule == EditorModule.Terrain);
-			if (_panelDeco != null) _panelDeco.Visible = (targetModule == EditorModule.TextureDeco);
+			if (_panelTerrainVBox != null) _panelTerrainVBox.Visible = (targetModule == EditorModule.Terrain);
+			if (_panelDecoVBox != null) _panelDecoVBox.Visible = (targetModule == EditorModule.TextureDeco);
 			if (_panelEnv != null) _panelEnv.Visible = (targetModule == EditorModule.TextureDeco);
 			if (_panelObjects != null) _panelObjects.Visible = (targetModule == EditorModule.Objects);
 			if (_panelClipboard != null) _panelClipboard.Visible = (targetModule == EditorModule.Clipboard);
 		}
 
-		if (tool == GameHost.EditorTool.PaintPathing)
+		if (tool == GameHost.EditorTool.PaintPathing || tool == GameHost.EditorTool.FloodFillPathing)
 		{
-			if (_panelPathing != null) _panelPathing.Visible = false;
+			if (_panelPathing != null) _panelPathing.Visible = true;
 			if (_panelTextures != null) _panelTextures.Visible = false;
 			if (_panelEntityPalette != null) _panelEntityPalette.Visible = false;
+			if (_pathingModeHBox != null)
+			{
+				_pathingModeHBox.Visible = (tool != GameHost.EditorTool.FloodFillPathing);
+			}
 			GameHost.Instance?.UpdatePathingOverlay();
 		}
 		else
@@ -2119,7 +2059,7 @@ public partial class MapEditorHUD : Control
 					_lblInfoText.Text = TranslationServer.Translate("TOOL: Area Select\n\nDrag left click to select a rectangular area of the map. Press Ctrl+C to copy the area.");
 					break;
 				case GameHost.EditorTool.PasteArea:
-					_lblInfoText.Text = TranslationServer.Translate("TOOL: Area Paste\n\nClick on the terrain to paste the copied area. Use the Paste Contents Options checkboxes to filter what is pasted (Textures, Heights, Entities).");
+					_lblInfoText.Text = TranslationServer.Translate("TOOL: Area Paste\n\nClick on the terrain to paste the copied area. Use the Affected Layers checkboxes to filter what is pasted (Textures, HeightMap, Units / Props).");
 					break;
 				case GameHost.EditorTool.PlaceUnit:
 					string alignment = _chkSpawnAsEnemy.ButtonPressed ? TranslationServer.Translate("Enemy (Orc)") : TranslationServer.Translate("Player (Alliance)");
@@ -2149,12 +2089,261 @@ public partial class MapEditorHUD : Control
 				case GameHost.EditorTool.PaintPathing:
 					_lblInfoText.Text = TranslationServer.Translate("TOOL: Pathing Layer Painting\n\nDrag left click to paint pathing properties (ground, flying, water, etc.) onto the map. Use checkboxes to select layers, and Mode to Add/Remove.");
 					break;
+				case GameHost.EditorTool.FloodFillPathing:
+					_lblInfoText.Text = TranslationServer.Translate("TOOL: Flood Fill Pathing\n\nClick once on the terrain map to flood-fill pathing properties (ground, flying, water, etc.) across an area sharing the same texture color until hitting a boundary. Use checkboxes to select layers, and Mode to Add/Remove.");
+					break;
 				case GameHost.EditorTool.None:
 					_lblInfoText.Text = TranslationServer.Translate("Select a tool from the panels to begin terrain modification.");
 					break;
 			}
 		}
 		UpdateTextureLabels();
+	}
+
+	private void InitializeTempWorkspace()
+	{
+		_tempWorkspacePath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		if (!System.IO.Directory.Exists(_tempWorkspacePath))
+		{
+			System.IO.Directory.CreateDirectory(_tempWorkspacePath);
+		}
+		
+		if (System.IO.Directory.GetFiles(_tempWorkspacePath, "*.*", System.IO.SearchOption.AllDirectories).Length == 0)
+		{
+			string initialDir = GetInitialDirectory();
+			if (System.IO.Directory.Exists(initialDir) && System.IO.File.Exists(System.IO.Path.Combine(initialDir, "terrain.json")))
+			{
+				CopyFolderToTempWorkspace(initialDir);
+			}
+			else
+			{
+				GenerateVSCodeFiles(_tempWorkspacePath, "CustomMap");
+			}
+		}
+		else
+		{
+			GenerateVSCodeFiles(_tempWorkspacePath, "CustomMap");
+		}
+
+		_lastTerrainSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "terrain.json"));
+		_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+
+		var syncTimer = new Godot.Timer();
+		syncTimer.WaitTime = 1.0f;
+		syncTimer.Autostart = true;
+		syncTimer.Timeout += OnSyncTimerTimeout;
+		AddChild(syncTimer);
+	}
+
+	private long GetLastWriteTimeSafe(string path)
+	{
+		if (!System.IO.File.Exists(path)) return 0;
+		return System.IO.File.GetLastWriteTimeUtc(path).Ticks;
+	}
+
+	private void OnSyncTimerTimeout()
+	{
+		if (GameHost.Instance == null || _isSyncing) return;
+		_isSyncing = true;
+		
+		string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+		string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+
+		long currentTerrainWrite = GetLastWriteTimeSafe(terrainPath);
+		long currentMetadataWrite = GetLastWriteTimeSafe(metadataPath);
+
+		bool terrainModifiedOnDisk = currentTerrainWrite > _lastTerrainSyncTime;
+		bool metadataModifiedOnDisk = currentMetadataWrite > _lastMetadataSyncTime;
+
+		if (terrainModifiedOnDisk || metadataModifiedOnDisk)
+		{
+			if (terrainModifiedOnDisk)
+			{
+				GameHost.Instance.LoadMapFromFile(terrainPath);
+				_lastTerrainSyncTime = GetLastWriteTimeSafe(terrainPath);
+			}
+			if (metadataModifiedOnDisk)
+			{
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+			}
+			
+			GameHost.Instance.EditorHasUnsavedChanges = false;
+		}
+		else if (GameHost.Instance.EditorHasUnsavedChanges)
+		{
+			GameHost.Instance.SaveMapToFile(terrainPath);
+			GameHost.Instance.EditorHasUnsavedChanges = false;
+			_lastTerrainSyncTime = GetLastWriteTimeSafe(terrainPath);
+		}
+		
+		_isSyncing = false;
+	}
+
+	private void CopyFolderToTempWorkspace(string sourceFolder)
+	{
+		if (!System.IO.Directory.Exists(_tempWorkspacePath))
+		{
+			System.IO.Directory.CreateDirectory(_tempWorkspacePath);
+		}
+		else
+		{
+			foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath))
+			{
+				System.IO.File.Delete(file);
+			}
+		}
+		
+		foreach (var file in System.IO.Directory.GetFiles(sourceFolder, "*", System.IO.SearchOption.AllDirectories))
+		{
+			string relativePath = file.Substring(sourceFolder.Length + 1);
+			string targetFile = System.IO.Path.Combine(_tempWorkspacePath, relativePath);
+			string targetDir = System.IO.Path.GetDirectoryName(targetFile);
+			if (!System.IO.Directory.Exists(targetDir))
+			{
+				System.IO.Directory.CreateDirectory(targetDir);
+			}
+			System.IO.File.Copy(file, targetFile, true);
+		}
+		GenerateVSCodeFiles(_tempWorkspacePath, System.IO.Path.GetFileName(sourceFolder));
+	}
+
+	private void CopyTempWorkspaceToFolder(string targetFolder)
+	{
+		if (!System.IO.Directory.Exists(targetFolder))
+		{
+			System.IO.Directory.CreateDirectory(targetFolder);
+		}
+		
+		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+		if (GameHost.Instance != null)
+		{
+			GameHost.Instance.SaveMapToFile(tempTerrainPath);
+			GameHost.Instance.EditorHasUnsavedChanges = false;
+		}
+		_lastTerrainSyncTime = GetLastWriteTimeSafe(tempTerrainPath);
+		
+		foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories))
+		{
+			string relativePath = file.Substring(_tempWorkspacePath.Length + 1);
+			string targetFile = System.IO.Path.Combine(targetFolder, relativePath);
+			string targetDir = System.IO.Path.GetDirectoryName(targetFile);
+			if (!System.IO.Directory.Exists(targetDir))
+			{
+				System.IO.Directory.CreateDirectory(targetDir);
+			}
+			System.IO.File.Copy(file, targetFile, true);
+		}
+		
+		if (OperatingSystem.IsWindows())
+		{
+			VSCodeManager.Instance.SaveRecentMapDir(targetFolder);
+		}
+	}
+
+	private void GenerateVSCodeFiles(string directory, string mapName)
+	{
+		string vscodeDir = System.IO.Path.Combine(directory, ".vscode");
+		if (!System.IO.Directory.Exists(vscodeDir))
+		{
+			System.IO.Directory.CreateDirectory(vscodeDir);
+		}
+
+		string sourceSchema = ProjectSettings.GlobalizePath("res://..").Replace("\\", "/") + "/Realm.MapEditorExtension/map_schema.json";
+		string targetSchema = System.IO.Path.Combine(vscodeDir, "map_schema.json");
+		if (System.IO.File.Exists(sourceSchema))
+		{
+			System.IO.File.Copy(sourceSchema, targetSchema, true);
+		}
+
+		string settingsJson = @"{
+	""editor.formatOnSave"": true,
+	""json.schemas"": [
+        {
+			""fileMatch"": [
+				""/metadata.json""
+            ],
+			""url"": ""./.vscode/map_schema.json""
+        }
+    ]
+}";
+		System.IO.File.WriteAllText(System.IO.Path.Combine(vscodeDir, "settings.json"), settingsJson);
+
+		string launchJson = @"{
+	""version"": ""0.2.0"",
+	""configurations"": [
+        {
+			""name"": ""Attach to Realm Game Host"",
+			""type"": ""coreclr"",
+			""request"": ""attach"",
+			""processName"": ""Realm.Godot""
+        }
+    ]
+}";
+		System.IO.File.WriteAllText(System.IO.Path.Combine(vscodeDir, "launch.json"), launchJson);
+
+		string agentsMd = @"# Realm Custom Map Agents Guide
+
+Realm is an RTS Game using Godot with C# and the Arch ECS framework.
+
+## Map Scripting (MapScript.cs)
+- Implements `IMapScript`.
+- `Initialize(IGameAPI api)` is called when the map starts.
+- `Update(IGameAPI api, float delta)` is called every simulation tick (30Hz).
+- Use `api` to spawn units, send chat messages, define zones, set time of day, etc.
+
+## Unit Configuration (metadata.json)
+- Define custom units and properties here.
+- Examples of properties: `MaxHp`, `Damage`, `Range`, `Armor`, `Speed`, `CostGold`, `PopCost`, `BuildOptions`, etc.
+
+## Debugging
+- Use the 'Attach to Realm Game Host' launch configuration in VS Code to attach the .NET debugger to the game and hit breakpoints in your `MapScript.cs`.
+- Hot reloading is supported via the temp workspace sync.
+";
+		System.IO.File.WriteAllText(System.IO.Path.Combine(directory, "AGENTS.md"), agentsMd);
+
+		string csprojPath = System.IO.Path.Combine(directory, $"{mapName}.csproj");
+		if (!System.IO.File.Exists(csprojPath))
+		{
+			string apiProjPath = ProjectSettings.GlobalizePath("res://..").Replace("\\", "/") + "/Realm.MapAPI/Realm.MapAPI.csproj";
+			string csprojContent = $@"<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+	<ProjectReference Include=""{apiProjPath}"" />
+  </ItemGroup>
+</Project>";
+			System.IO.File.WriteAllText(csprojPath, csprojContent);
+		}
+
+		string scriptPath = System.IO.Path.Combine(directory, "MapScript.cs");
+		if (!System.IO.File.Exists(scriptPath))
+		{
+			string scriptContent = $@"namespace Realm.Maps;
+
+using Realm.MapAPI;
+
+public class {mapName} : IMapScript
+{{
+    public void Initialize(IGameAPI api)
+    {{
+    }}
+
+    public void Update(IGameAPI api, float delta)
+    {{
+    }}
+}}
+";
+			System.IO.File.WriteAllText(scriptPath, scriptContent);
+		}
+
+		string unitsPath = System.IO.Path.Combine(directory, "metadata.json");
+		if (!System.IO.File.Exists(unitsPath))
+		{
+			System.IO.File.WriteAllText(unitsPath, "{}");
+		}
 	}
 
 	private void SetPanelExpanded(string panelPath, string buttonPath, string contentPath, bool expand)
@@ -2184,41 +2373,7 @@ public partial class MapEditorHUD : Control
 				if (status && selectedPaths.Length > 0)
 				{
 					string selectedFolder = selectedPaths[0];
-					string terrainPath = System.IO.Path.Combine(selectedFolder, "terrain.json");
-					GameHost.Instance.SaveMapToFile(terrainPath);
-
-					string mapName = System.IO.Path.GetFileName(selectedFolder);
-					string scriptPath = System.IO.Path.Combine(selectedFolder, "MapScript.cs");
-					if (!System.IO.File.Exists(scriptPath))
-					{
-						string scriptContent = $@"namespace Realm.Maps;
-
-using Realm.MapAPI;
-
-public class {mapName} : IMapScript
-{{
-    public void Initialize(IGameAPI api)
-    {{
-    }}
-
-    public void Update(IGameAPI api, float delta)
-    {{
-    }}
-}}
-";
-						System.IO.File.WriteAllText(scriptPath, scriptContent);
-					}
-
-					string unitsPath = System.IO.Path.Combine(selectedFolder, "metadata.json");
-					if (!System.IO.File.Exists(unitsPath))
-					{
-						System.IO.File.WriteAllText(unitsPath, "{}");
-					}
-
-					if (OperatingSystem.IsWindows())
-					{
-						VSCodeManager.Instance.SaveRecentMapDir(selectedFolder);
-					}
+					CopyTempWorkspaceToFolder(selectedFolder);
 					ShowFeedback(string.Format(TranslationServer.Translate("Map saved successfully to folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
 				}
 				else
@@ -2230,10 +2385,12 @@ public class {mapName} : IMapScript
 
 		if (err != Error.Ok)
 		{
-			GameHost.Instance.SaveMapToFile();
-			ShowFeedback(TranslationServer.Translate("Saving map heights & entities..."));
+			string defaultFolder = ProjectSettings.GlobalizePath("user://maps/default_map");
+			System.IO.Directory.CreateDirectory(defaultFolder);
+			CopyTempWorkspaceToFolder(defaultFolder);
+			ShowFeedback(TranslationServer.Translate("Saving map to default location..."));
 			var timer = GetTree().CreateTimer(0.8f);
-			timer.Timeout += () => ShowFeedback(TranslationServer.Translate("Map saved successfully to user://terrain.json!"));
+			timer.Timeout += () => ShowFeedback(TranslationServer.Translate("Map saved successfully to user://maps/default_map!"));
 		}
 	}
 
@@ -2252,7 +2409,8 @@ public class {mapName} : IMapScript
 				if (status && selectedPaths.Length > 0)
 				{
 					string selectedFolder = selectedPaths[0];
-					string terrainPath = System.IO.Path.Combine(selectedFolder, "terrain.json");
+					CopyFolderToTempWorkspace(selectedFolder);
+					string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 					bool success = GameHost.Instance.LoadMapFromFile(terrainPath);
 					if (success)
 					{
@@ -2260,6 +2418,8 @@ public class {mapName} : IMapScript
 						{
 							VSCodeManager.Instance.SaveRecentMapDir(selectedFolder);
 						}
+						_lastTerrainSyncTime = GetLastWriteTimeSafe(terrainPath);
+						_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
 						ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
 					}
 					else
@@ -2272,14 +2432,22 @@ public class {mapName} : IMapScript
 
 		if (err != Error.Ok)
 		{
-			bool success = GameHost.Instance.LoadMapFromFile();
+			string defaultFolder = ProjectSettings.GlobalizePath("user://maps/default_map");
+			if (System.IO.Directory.Exists(defaultFolder))
+			{
+				CopyFolderToTempWorkspace(defaultFolder);
+			}
+			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+			bool success = GameHost.Instance.LoadMapFromFile(terrainPath);
 			if (success)
 			{
-				ShowFeedback(TranslationServer.Translate("Map loaded from user://terrain.json"));
+				_lastTerrainSyncTime = GetLastWriteTimeSafe(terrainPath);
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+				ShowFeedback(TranslationServer.Translate("Map loaded from default_map"));
 			}
 			else
 			{
-				ShowFeedback(TranslationServer.Translate("No map file found at user://terrain.json"));
+				ShowFeedback(TranslationServer.Translate("No map file found"));
 			}
 		}
 	}
@@ -2305,15 +2473,218 @@ public class {mapName} : IMapScript
 		return ProjectSettings.GlobalizePath("res://");
 	}
 
-	private void PublishMapAction()
+
+	private NSec.Cryptography.Key GetOrGenerateAuthorshipKey()
+	{
+		string keyDir = ProjectSettings.GlobalizePath("user://appdata/keys/");
+		if (!System.IO.Directory.Exists(keyDir))
+		{
+			System.IO.Directory.CreateDirectory(keyDir);
+		}
+		
+		string keyPath = System.IO.Path.Combine(keyDir, "authorship_key.pem");
+		if (System.IO.File.Exists(keyPath))
+		{
+			byte[] keyBytes = System.IO.File.ReadAllBytes(keyPath);
+			return NSec.Cryptography.Key.Import(SignatureAlgorithm.Ed25519, keyBytes, KeyBlobFormat.RawPrivateKey);
+		}
+		else
+		{
+			var key = NSec.Cryptography.Key.Create(SignatureAlgorithm.Ed25519);
+			byte[] exported = key.Export(KeyBlobFormat.RawPrivateKey);
+			System.IO.File.WriteAllBytes(keyPath, exported);
+			
+			// Show warning to backup
+			ShowFeedback("A new authorship key has been generated at " + keyPath + ". Please backup this file to retain your authorship identity.");
+			return key;
+		}
+	}
+
+	private async void PublishMapAction()
 	{
 		if (GameHost.Instance != null)
 		{
 			GameHost.Instance.SaveMapToFile();
 		}
 		ShowFeedback(TranslationServer.Translate("Compiling terrain shaders & entity data..."));
-		var timer = GetTree().CreateTimer(1.0f);
-		timer.Timeout += () => ShowFeedback(TranslationServer.Translate("Map compiled & published successfully!"));
+		
+		// Compile triggers to .dll
+		string workspace = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		try
+		{
+			if (System.IO.Directory.Exists(workspace))
+			{
+				await System.Threading.Tasks.Task.Run(() => 
+				{
+					var compileProcess = new System.Diagnostics.Process();
+					compileProcess.StartInfo.FileName = "dotnet";
+					compileProcess.StartInfo.Arguments = "build -c Release";
+					compileProcess.StartInfo.WorkingDirectory = workspace;
+					compileProcess.StartInfo.CreateNoWindow = true;
+					compileProcess.StartInfo.UseShellExecute = false;
+					compileProcess.Start();
+					compileProcess.WaitForExit();
+				});
+				ShowFeedback(TranslationServer.Translate("Triggers compiled successfully."));
+			}
+		}
+		catch (Exception ex)
+		{
+			ShowFeedback(string.Format(TranslationServer.Translate("Compilation error: {0}"), ex.Message));
+		}
+		
+		try
+		{
+			var authorshipKey = GetOrGenerateAuthorshipKey();
+			string currentUsername = "MapAuthor"; // Could be fetched from a config
+			
+			var referencedHashes = new List<string>();
+			var allFiles = System.IO.Directory.GetFiles(workspace, "*", System.IO.SearchOption.AllDirectories);
+			
+			string seedServerUrl = GameHost.Instance != null && GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
+			
+			using (var httpClient = new System.Net.Http.HttpClient())
+			{
+				foreach (var file in allFiles)
+				{
+					if (file.EndsWith("map.json") || file.EndsWith("authorship_key.pem")) continue;
+					
+					byte[] fileBytes = System.IO.File.ReadAllBytes(file);
+					string hash = MapAssetManager.ComputeBlake3(fileBytes);
+					
+					byte[] hashBytes = System.Text.Encoding.UTF8.GetBytes(hash);
+					byte[] signatureBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, hashBytes);
+					string signatureStr = Convert.ToBase64String(signatureBytes);
+					
+					referencedHashes.Add(hash);
+					
+					var existsRes = await httpClient.GetAsync(seedServerUrl + "/api/publish_map/asset_author/" + hash);
+					if (!existsRes.IsSuccessStatusCode)
+					{
+						using var form = new System.Net.Http.MultipartFormDataContent();
+						form.Add(new System.Net.Http.StringContent(hash), "Hash");
+						form.Add(new System.Net.Http.StringContent(signatureStr), "Signature");
+						form.Add(new System.Net.Http.StringContent(currentUsername), "AuthorUsername");
+						form.Add(new System.Net.Http.StringContent(Convert.ToBase64String(authorshipKey.PublicKey.Export(KeyBlobFormat.RawPublicKey))), "PublicKey");
+						
+						var fileContent = new System.Net.Http.ByteArrayContent(fileBytes);
+						form.Add(fileContent, "File", System.IO.Path.GetFileName(file));
+						
+						await httpClient.PostAsync(seedServerUrl + "/api/publish_map/upload_asset", form);
+					}
+				}
+			}
+			
+			// Load map.json, check and update contributors
+			string mapJsonPath = System.IO.Path.Combine(workspace, "map.json");
+			if (System.IO.File.Exists(mapJsonPath))
+			{
+				string mapJsonContent = System.IO.File.ReadAllText(mapJsonPath);
+				
+				var options = new JsonSerializerOptions { WriteIndented = true };
+				var mapDoc = JsonNode.Parse(mapJsonContent) as JsonObject;
+				
+				if (mapDoc != null)
+				{
+					var contributorsList = new HashSet<string>();
+					if (mapDoc.TryGetPropertyValue("Contributors", out var contNode) && contNode is JsonArray arr)
+					{
+						foreach (var node in arr)
+						{
+							if (node != null)
+							{
+								contributorsList.Add(node.GetValue<string>());
+							}
+						}
+					}
+					else
+					{
+						mapDoc["Contributors"] = new JsonArray();
+					}
+					
+					// Ensure all asset authors are in the contributors list
+					using (var httpClient = new System.Net.Http.HttpClient())
+					{
+						foreach (var hash in referencedHashes)
+						{
+							var assetAuthorRes = await httpClient.GetAsync(seedServerUrl + "/api/publish_map/asset_author/" + hash);
+							if (assetAuthorRes.IsSuccessStatusCode)
+							{
+								string assetAuthorJson = await assetAuthorRes.Content.ReadAsStringAsync();
+								var assetMeta = JsonNode.Parse(assetAuthorJson);
+								if (assetMeta != null && assetMeta["AuthorUsername"] != null)
+								{
+									string author = assetMeta["AuthorUsername"].GetValue<string>();
+									if (!string.IsNullOrEmpty(author))
+									{
+										contributorsList.Add(author);
+									}
+								}
+							}
+						}
+					}
+					
+					// Add self
+					contributorsList.Add(currentUsername);
+					
+					var newContributorsArr = new JsonArray();
+					foreach (var cont in contributorsList)
+					{
+						newContributorsArr.Add(cont);
+					}
+					mapDoc["Contributors"] = newContributorsArr;
+					
+					string updatedMapJson = mapDoc.ToJsonString(options);
+					System.IO.File.WriteAllText(mapJsonPath, updatedMapJson);
+					
+					byte[] mapBytes = System.IO.File.ReadAllBytes(mapJsonPath);
+					string mapHash = MapAssetManager.ComputeBlake3(mapBytes);
+					byte[] mapHashBytes = System.Text.Encoding.UTF8.GetBytes(mapHash);
+					byte[] mapSigBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, mapHashBytes);
+					
+					using (var httpClient = new System.Net.Http.HttpClient())
+					{
+						using var form = new System.Net.Http.MultipartFormDataContent();
+						form.Add(new System.Net.Http.StringContent(mapHash), "Hash");
+						form.Add(new System.Net.Http.StringContent(Convert.ToBase64String(mapSigBytes)), "Signature");
+						form.Add(new System.Net.Http.StringContent(currentUsername), "AuthorUsername");
+						form.Add(new System.Net.Http.StringContent(Convert.ToBase64String(authorshipKey.PublicKey.Export(KeyBlobFormat.RawPublicKey))), "PublicKey");
+						
+						var fileContent = new System.Net.Http.ByteArrayContent(mapBytes);
+						form.Add(fileContent, "File", "map.json");
+						
+						await httpClient.PostAsync(seedServerUrl + "/api/publish_map/upload_asset", form);
+						
+						var publishReq = new 
+						{
+							MapJson = updatedMapJson,
+							ReferencedHashes = referencedHashes
+						};
+						
+						var pubContent = new StringContent(JsonSerializer.Serialize(publishReq), System.Text.Encoding.UTF8, "application/json");
+						var pubRes = await httpClient.PostAsync(seedServerUrl + "/api/publish_map", pubContent);
+						
+						if (pubRes.IsSuccessStatusCode)
+						{
+							ShowFeedback(TranslationServer.Translate("Map compiled & published successfully!"));
+						}
+						else
+						{
+							string errText = await pubRes.Content.ReadAsStringAsync();
+							ShowFeedback("Failed to publish: " + errText);
+						}
+					}
+				}
+			}
+			else
+			{
+				ShowFeedback(TranslationServer.Translate("map.json not found in workspace, unable to publish."));
+			}
+		}
+		catch (Exception ex)
+		{
+			ShowFeedback(string.Format(TranslationServer.Translate("Publish error: {0}"), ex.Message));
+		}
 	}
 
 	public void CycleTextureSwatch(bool forward)
@@ -2545,155 +2916,7 @@ public class {mapName} : IMapScript
 		grid.AddChild(lblAction);
 	}
 
-	private void AddSliderRow(GridContainer grid, string title, int initialValue, Action<int> onValueChanged)
-	{
-		var lblName = new Label();
-		lblName.Text = TranslationServer.Translate(title);
-		lblName.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		lblName.AddThemeFontSizeOverride("font_size", 12);
-		grid.AddChild(lblName);
 
-		var sld = new HSlider();
-		sld.MinValue = 1;
-		sld.MaxValue = 10;
-		sld.Step = 1;
-		sld.Value = initialValue;
-		sld.CustomMinimumSize = new Vector2(180, 0);
-		sld.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		grid.AddChild(sld);
-
-		var lblVal = new Label();
-		lblVal.Text = initialValue.ToString();
-		lblVal.CustomMinimumSize = new Vector2(30, 0);
-		lblVal.HorizontalAlignment = HorizontalAlignment.Right;
-		lblVal.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
-		lblVal.AddThemeFontSizeOverride("font_size", 12);
-		grid.AddChild(lblVal);
-
-		sld.ValueChanged += (double value) =>
-		{
-			int val = (int)value;
-			lblVal.Text = val.ToString();
-			onValueChanged(val);
-		};
-	}
-
-	private void ShowGenerationDialog()
-	{
-		var overlay = new ColorRect();
-		overlay.Name = "GenerationOverlay";
-		overlay.Color = new Color(0, 0, 0, 0.5f);
-		overlay.SetAnchorsPreset(LayoutPreset.FullRect);
-		AddChild(overlay);
-
-		var panel = new PanelContainer();
-		panel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		panel.CustomMinimumSize = new Vector2(420, 480);
-		panel.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
-		panel.SizeFlagsVertical = SizeFlags.ShrinkCenter;
-
-		var center = new CenterContainer();
-		center.SetAnchorsPreset(LayoutPreset.FullRect);
-		overlay.AddChild(center);
-		center.AddChild(panel);
-
-		var vbox = new VBoxContainer();
-		vbox.AddThemeConstantOverride("separation", 15);
-		panel.AddChild(vbox);
-
-		var lblTitle = new Label();
-		UIStyle.ApplyTitle(lblTitle, TranslationServer.Translate("RANDOM MAP GENERATOR"), 18);
-		lblTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		vbox.AddChild(lblTitle);
-
-		var grid = new GridContainer();
-		grid.Columns = 3;
-		grid.AddThemeConstantOverride("h_separation", 10);
-		grid.AddThemeConstantOverride("v_separation", 8);
-		vbox.AddChild(grid);
-
-		AddSliderRow(grid, "Hills Density", _genHillsDensity, (val) => _genHillsDensity = val);
-		AddSliderRow(grid, "Terrain Roughness", _genTerrainRoughness, (val) => _genTerrainRoughness = val);
-		AddSliderRow(grid, "Mountain Height", _genMountainHeight, (val) => _genMountainHeight = val);
-		AddSliderRow(grid, "Choke Point Width", _genChokeWidth, (val) => _genChokeWidth = val);
-		AddSliderRow(grid, "Water Level", _genWaterLevel, (val) => _genWaterLevel = val);
-		AddSliderRow(grid, "Tree Clump Density", _genTreeDensity, (val) => _genTreeDensity = val);
-		AddSliderRow(grid, "Resource Abundance", _genResourceAbundance, (val) => _genResourceAbundance = val);
-		AddSliderRow(grid, "Decorative Prop Density", _genDecoDensity, (val) => _genDecoDensity = val);
-
-		var seedHBox = new HBoxContainer();
-		seedHBox.AddThemeConstantOverride("separation", 10);
-		vbox.AddChild(seedHBox);
-
-		var lblSeed = new Label();
-		lblSeed.Text = TranslationServer.Translate("Map Seed:");
-		lblSeed.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		lblSeed.AddThemeFontSizeOverride("font_size", 12);
-		seedHBox.AddChild(lblSeed);
-
-		var txtSeed = new LineEdit();
-		txtSeed.Text = _genSeed;
-		txtSeed.CustomMinimumSize = new Vector2(150, 30);
-		txtSeed.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		txtSeed.AddThemeStyleboxOverride("normal", UIStyle.CreateTextInput(false));
-		txtSeed.AddThemeStyleboxOverride("focus", UIStyle.CreateTextInput(true));
-		txtSeed.AddThemeFontSizeOverride("font_size", 12);
-		txtSeed.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
-		txtSeed.TextChanged += (newText) =>
-		{
-			_genSeed = newText;
-		};
-		seedHBox.AddChild(txtSeed);
-
-		var btnRoll = new Button();
-		btnRoll.Set("icon_max_width", 0);
-		SetupButton(btnRoll, TranslationServer.Translate("ROLL"), () =>
-		{
-			_genSeed = new Random().Next(100000, 999999).ToString();
-			txtSeed.Text = _genSeed;
-		}, 11, "Generate a new random seed");
-		btnRoll.CustomMinimumSize = new Vector2(70, 30);
-		seedHBox.AddChild(btnRoll);
-
-		var btnHBox = new HBoxContainer();
-		btnHBox.AddThemeConstantOverride("separation", 20);
-		btnHBox.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
-		vbox.AddChild(btnHBox);
-
-		var btnGen = new Button();
-		btnGen.Set("icon_max_width", 0);
-		SetupButton(btnGen, TranslationServer.Translate("GENERATE"), () =>
-		{
-			overlay.QueueFree();
-			if (GameHost.Instance != null)
-			{
-				MapGenerator.GenerateMap(
-					GameHost.Instance,
-					_genHillsDensity,
-					_genTerrainRoughness,
-					_genMountainHeight,
-					_genChokeWidth,
-					_genWaterLevel,
-					_genTreeDensity,
-					_genResourceAbundance,
-					_genDecoDensity,
-					_genSeed
-				);
-				RegenerateMinimap();
-			}
-		}, 13, "Generate the random map");
-		btnGen.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
-		btnHBox.AddChild(btnGen);
-
-		var btnCancel = new Button();
-		btnCancel.Set("icon_max_width", 0);
-		SetupButton(btnCancel, TranslationServer.Translate("CLOSE"), () =>
-		{
-			overlay.QueueFree();
-		}, 13, "Close dialog without generating");
-		btnCancel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
-		btnHBox.AddChild(btnCancel);
-	}
 
 	public void ImportTerrainFromMinimapDialog()
 	{
@@ -2717,131 +2940,11 @@ public class {mapName} : IMapScript
 	{
 		if (GameHost.Instance == null || GameHost.Instance.GroundTerrain == null) return;
 
-		var img = Image.LoadFromFile(selectedPath);
-		if (img == null) return;
+		bool success = GameHost.Instance.ImportTerrainFromMinimap(selectedPath, out var smoothedHeights, out var colors, out var treePositions);
+		if (!success) return;
 
 		int width = GameHost.Instance.GroundTerrain.Width;
 		int depth = GameHost.Instance.GroundTerrain.Depth;
-
-		float[,] heights = new float[width, depth];
-		Color[,] colors = new Color[width, depth];
-		bool[,] isTreeColored = new bool[width, depth];
-
-		for (int gz = 0; gz < depth; gz++)
-		{
-			for (int gx = 0; gx < width; gx++)
-			{
-				float srcX = (gx / (float)(width - 1)) * (img.GetWidth() - 1);
-				float srcZ = (gz / (float)(depth - 1)) * (img.GetHeight() - 1);
-
-				int x0 = (int)MathF.Floor(srcX);
-				int x1 = Math.Min(x0 + 1, img.GetWidth() - 1);
-				int z0 = (int)MathF.Floor(srcZ);
-				int z1 = Math.Min(z0 + 1, img.GetHeight() - 1);
-
-				float tx = srcX - x0;
-				float tz = srcZ - z0;
-
-				Color p00 = img.GetPixel(x0, z0);
-				Color p10 = img.GetPixel(x1, z0);
-				Color p01 = img.GetPixel(x0, z1);
-				Color p11 = img.GetPixel(x1, z1);
-
-				float r = (1f - tx) * (1f - tz) * p00.R + tx * (1f - tz) * p10.R + (1f - tx) * tz * p01.R + tx * tz * p11.R;
-				float g = (1f - tx) * (1f - tz) * p00.G + tx * (1f - tz) * p10.G + (1f - tx) * tz * p01.G + tx * tz * p11.G;
-				float b = (1f - tx) * (1f - tz) * p00.B + tx * (1f - tz) * p10.B + (1f - tx) * tz * p01.B + tx * tz * p11.B;
-
-				string type = "grass";
-				if (b > r + 0.06f && b > g + 0.06f)
-				{
-					type = "water";
-				}
-				else if (g > r + 0.04f && g > b + 0.04f)
-				{
-					if (r < 0.4f && g < 0.5f && b < 0.4f)
-					{
-						type = "forest";
-					}
-					else
-					{
-						type = "grass";
-					}
-				}
-				else if (r > g + 0.06f && r > b + 0.1f && g > b)
-				{
-					type = "cliff";
-				}
-				else if (MathF.Abs(r - g) < 0.08f && MathF.Abs(g - b) < 0.08f && MathF.Abs(r - b) < 0.08f && r > 0.2f)
-				{
-					type = "stone";
-				}
-				else
-				{
-					float max = Math.Max(r, Math.Max(g, b));
-					if (max == b) type = "water";
-					else if (max == g) type = "grass";
-					else if (max == r && g > b) type = "cliff";
-					else type = "stone";
-				}
-
-				float h = 0.0f;
-				Color c = new Color(0.2f, 0.6f, 0.2f);
-				if (type == "water")
-				{
-					h = -2.0f;
-					c = new Color(0.0f, 0.33f, 0.7f);
-				}
-				else if (type == "grass")
-				{
-					h = 0.0f;
-					c = new Color(0.2f, 0.6f, 0.2f);
-				}
-				else if (type == "forest")
-				{
-					h = 0.0f;
-					c = new Color(0.16f, 0.48f, 0.16f);
-					isTreeColored[gx, gz] = true;
-				}
-				else if (type == "cliff")
-				{
-					h = 4.0f;
-					c = new Color(0.54f, 0.35f, 0.17f);
-				}
-				else if (type == "stone")
-				{
-					h = 0.0f;
-					c = new Color(0.5f, 0.5f, 0.5f);
-				}
-
-				heights[gx, gz] = h;
-				colors[gx, gz] = c;
-			}
-		}
-
-		float[,] smoothedHeights = new float[width, depth];
-		int blurRadius = 2;
-		for (int gz = 0; gz < depth; gz++)
-		{
-			for (int gx = 0; gx < width; gx++)
-			{
-				float sum = 0f;
-				int count = 0;
-				for (int dz = -blurRadius; dz <= blurRadius; dz++)
-				{
-					for (int dx = -blurRadius; dx <= blurRadius; dx++)
-					{
-						int nx = gx + dx;
-						int nz = gz + dz;
-						if (nx >= 0 && nx < width && nz >= 0 && nz < depth)
-						{
-							sum += heights[nx, nz];
-							count++;
-						}
-					}
-				}
-				smoothedHeights[gx, gz] = sum / count;
-			}
-		}
 
 		for (int gz = 0; gz < depth; gz++)
 		{
@@ -2865,75 +2968,9 @@ public class {mapName} : IMapScript
 			}
 		}
 
-		var random = new Random();
-		bool[,] visited = new bool[width, depth];
-
-		float Noise2D(float x, float z)
+		foreach (var (x, y, z, rot, scale) in treePositions)
 		{
-			float val = MathF.Sin(x * 12.9898f + z * 78.233f) * 43758.5453123f;
-			return val - MathF.Floor(val);
-		}
-
-		for (int gz = 0; gz < depth; gz++)
-		{
-			for (int gx = 0; gx < width; gx++)
-			{
-				if (isTreeColored[gx, gz] && !visited[gx, gz])
-				{
-					var blob = new List<Vector2I>();
-					var queue = new Queue<Vector2I>();
-					var start = new Vector2I(gx, gz);
-					queue.Enqueue(start);
-					visited[gx, gz] = true;
-
-					while (queue.Count > 0)
-					{
-						var curr = queue.Dequeue();
-						blob.Add(curr);
-
-						Vector2I[] neighbors = new Vector2I[]
-						{
-							new Vector2I(curr.X + 1, curr.Y),
-							new Vector2I(curr.X - 1, curr.Y),
-							new Vector2I(curr.X, curr.Y + 1),
-							new Vector2I(curr.X, curr.Y - 1)
-						};
-
-						foreach (var n in neighbors)
-						{
-							if (n.X >= 0 && n.X < width && n.Y >= 0 && n.Y < depth)
-							{
-								if (isTreeColored[n.X, n.Y] && !visited[n.X, n.Y])
-								{
-									visited[n.X, n.Y] = true;
-									queue.Enqueue(n);
-								}
-							}
-						}
-					}
-
-					int size = blob.Count;
-					float baseDensity = 0.15f;
-					if (size > 15) baseDensity = 0.35f;
-					if (size > 50) baseDensity = 0.55f;
-
-					foreach (var cell in blob)
-					{
-						if (smoothedHeights[cell.X, cell.Y] >= 0.0f && Noise2D(cell.X, cell.Y) < baseDensity)
-						{
-							float offsetX = (random.NextSingle() - 0.5f) * 1.5f;
-							float offsetZ = (random.NextSingle() - 0.5f) * 1.5f;
-							float worldX = (cell.X - (width - 1) / 2.0f) * GameHost.Instance.GroundTerrain.Spacing + offsetX;
-							float worldZ = (cell.Y - (depth - 1) / 2.0f) * GameHost.Instance.GroundTerrain.Spacing + offsetZ;
-							float hValue = smoothedHeights[cell.X, cell.Y];
-							float rot = random.NextSingle() * 360f;
-							float scale = 0.8f + random.NextSingle() * 0.4f;
-
-							GameHost.Instance.SpawnPropExternalWithParams("tree", new Vector3(worldX, hValue, worldZ), rot, scale);
-						}
-					}
-				}
-			}
+			GameHost.Instance.SpawnPropExternalWithParams("tree", new Vector3(x, y, z), rot, scale);
 		}
 
 		ShowFeedback(TranslationServer.Translate("Terrain imported from minimap image successfully!"));
@@ -2945,11 +2982,11 @@ public class {mapName} : IMapScript
 		var current = GameHost.Instance.EditorMirrorMode;
 		var next = current switch
 		{
-			GameHost.MirrorMode.None => GameHost.MirrorMode.Vertical,
-			GameHost.MirrorMode.Vertical => GameHost.MirrorMode.Horizontal,
-			GameHost.MirrorMode.Horizontal => GameHost.MirrorMode.Both,
-			GameHost.MirrorMode.Both => GameHost.MirrorMode.None,
-			_ => GameHost.MirrorMode.None
+			MirrorMode.None => MirrorMode.Vertical,
+			MirrorMode.Vertical => MirrorMode.Horizontal,
+			MirrorMode.Horizontal => MirrorMode.Both,
+			MirrorMode.Both => MirrorMode.None,
+			_ => MirrorMode.None
 		};
 		GameHost.Instance.EditorMirrorMode = next;
 		UpdateMirrorButtonText();
@@ -2961,10 +2998,10 @@ public class {mapName} : IMapScript
 		if (_btnMirrorMode == null || GameHost.Instance == null) return;
 		string modeText = GameHost.Instance.EditorMirrorMode switch
 		{
-			GameHost.MirrorMode.None => TranslationServer.Translate("🪞 MIRROR: NONE"),
-			GameHost.MirrorMode.Vertical => TranslationServer.Translate("🪞 MIRROR: VERTICAL"),
-			GameHost.MirrorMode.Horizontal => TranslationServer.Translate("🪞 MIRROR: HORIZONTAL"),
-			GameHost.MirrorMode.Both => TranslationServer.Translate("🪞 MIRROR: BOTH"),
+			MirrorMode.None => TranslationServer.Translate("🪞 MIRROR: NONE"),
+			MirrorMode.Vertical => TranslationServer.Translate("🪞 MIRROR: VERTICAL"),
+			MirrorMode.Horizontal => TranslationServer.Translate("🪞 MIRROR: HORIZONTAL"),
+			MirrorMode.Both => TranslationServer.Translate("🪞 MIRROR: BOTH"),
 			_ => TranslationServer.Translate("🪞 MIRROR: NONE")
 		};
 		_btnMirrorMode.Text = modeText;
@@ -2982,39 +3019,7 @@ public class {mapName} : IMapScript
 		var titleLabel = GetNodeOrNull<Label>("TopBar/HBox/TitleLabel");
 		if (titleLabel != null) titleLabel.Visible = false;
 
-		_moduleBar = new HBoxContainer();
-		_moduleBar.Name = "ModuleBar";
-		_moduleBar.Alignment = BoxContainer.AlignmentMode.Center;
-		_moduleBar.AddThemeConstantOverride("separation", 15);
-		AddChild(_moduleBar);
-		
-		_moduleBar.LayoutMode = 1;
-		_moduleBar.SetAnchorsPreset(LayoutPreset.CenterTop);
-		_moduleBar.GrowHorizontal = GrowDirection.Both;
-		_moduleBar.OffsetLeft = -250;
-		_moduleBar.OffsetRight = 250;
-		_moduleBar.OffsetTop = 15;
-		_moduleBar.OffsetBottom = 55;
 
-		_btnModuleTerrain = new Button();
-		_btnModuleTerrain.Set("icon_max_width", 0);
-		SetupButton(_btnModuleTerrain, "⛰️ " + TranslationServer.Translate("TERRAIN"), () => SwitchModule(EditorModule.Terrain), 12);
-		_moduleBar.AddChild(_btnModuleTerrain);
-
-		_btnModulePaint = new Button();
-		_btnModulePaint.Set("icon_max_width", 0);
-		SetupButton(_btnModulePaint, "🎨 " + TranslationServer.Translate("TEXTURE"), () => SwitchModule(EditorModule.TextureDeco), 12);
-		_moduleBar.AddChild(_btnModulePaint);
-
-		_btnModuleObjects = new Button();
-		_btnModuleObjects.Set("icon_max_width", 0);
-		SetupButton(_btnModuleObjects, "💂 " + TranslationServer.Translate("OBJECTS"), () => SwitchModule(EditorModule.Objects), 12);
-		_moduleBar.AddChild(_btnModuleObjects);
-
-		_btnModuleClipboard = new Button();
-		_btnModuleClipboard.Set("icon_max_width", 0);
-		SetupButton(_btnModuleClipboard, "📋 " + TranslationServer.Translate("CLIPBOARD"), () => SwitchModule(EditorModule.Clipboard), 12);
-		_moduleBar.AddChild(_btnModuleClipboard);
 
 		_panelLeft = new Panel();
 		_panelLeft.Name = "LeftSlidePanel";
@@ -3041,29 +3046,25 @@ public class {mapName} : IMapScript
 		leftVBox.AddThemeConstantOverride("separation", 10);
 		leftScroll.AddChild(leftVBox);
 
-		var leftTitle = new Label();
-		leftTitle.Text = "📁 " + TranslationServer.Translate("FILE OPERATIONS");
-		leftTitle.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
-		leftTitle.AddThemeFontSizeOverride("font_size", 13);
-		leftTitle.HorizontalAlignment = HorizontalAlignment.Center;
-		leftVBox.AddChild(leftTitle);
 
-		var btnHeaderFile = new Button();
-		btnHeaderFile.Set("icon_max_width", 0);
-		StyleAccordionHeader(btnHeaderFile);
-		leftVBox.AddChild(btnHeaderFile);
 
-		var contentFile = new VBoxContainer();
-		contentFile.AddThemeConstantOverride("separation", 8);
-		leftVBox.AddChild(contentFile);
-		SetupAccordion(btnHeaderFile, contentFile, TranslationServer.Translate("File & Map Actions"));
+		_btnHeaderFile = new Button();
+		_btnHeaderFile.Set("icon_max_width", 0);
+		StyleAccordionHeader(_btnHeaderFile);
+		leftVBox.AddChild(_btnHeaderFile);
 
-		SafeReparent(_btnPublish, contentFile);
-		SafeReparent(_btnSave, contentFile);
-		SafeReparent(_btnLoad, contentFile);
-		SafeReparent(_btnResetMap, contentFile);
-		SafeReparent(_btnGenerateMap, contentFile);
-		SafeReparent(_btnImportMinimap, contentFile);
+		_contentFile = new VBoxContainer();
+		_contentFile.Visible = false;
+		((VBoxContainer)_contentFile).AddThemeConstantOverride("separation", 8);
+		leftVBox.AddChild(_contentFile);
+		SetupMutualAccordion(_btnHeaderFile, _contentFile, TranslationServer.Translate("File"));
+
+		SafeReparent(_btnPublish, _contentFile);
+		SafeReparent(_btnSave, _contentFile);
+		SafeReparent(_btnLoad, _contentFile);
+		SafeReparent(_btnResetMap, _contentFile);
+		SafeReparent(_btnGenerateMap, _contentFile);
+		SafeReparent(_btnImportMinimap, _contentFile);
 
 		_btnLeftTab = new Button();
 		_btnLeftTab.Name = "LeftTabButton";
@@ -3080,11 +3081,11 @@ public class {mapName} : IMapScript
 		_btnLeftTab.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		_btnLeftTab.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		_btnLeftTab.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-		_btnLeftTab.AddThemeFontSizeOverride("font_size", 10);
+		_btnLeftTab.AddThemeFontSizeOverride("font_size", 20);
 		_btnLeftTab.Pressed += ToggleLeftPanel;
 		_panelLeft.AddChild(_btnLeftTab);
 
-		SetLeftPanelExpanded(false);
+		SetLeftPanelExpanded(true);
 
 		_panelRight = new Panel();
 		_panelRight.Name = "RightSlidePanel";
@@ -3110,7 +3111,7 @@ public class {mapName} : IMapScript
 		_btnRightTab.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		_btnRightTab.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		_btnRightTab.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-		_btnRightTab.AddThemeFontSizeOverride("font_size", 10);
+		_btnRightTab.AddThemeFontSizeOverride("font_size", 20);
 		_btnRightTab.Pressed += ToggleRightPanel;
 		_panelRight.AddChild(_btnRightTab);
 
@@ -3129,6 +3130,41 @@ public class {mapName} : IMapScript
 		_accordionContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		_accordionContainer.AddThemeConstantOverride("separation", 10);
 		rightScroll.AddChild(_accordionContainer);
+
+		_accordionTool = new VBoxContainer();
+		_accordionTool.Name = "AccordionTool";
+		_accordionContainer.AddChild(_accordionTool);
+		_btnHeaderTool = new Button();
+		_btnHeaderTool.Set("icon_max_width", 0);
+		StyleAccordionHeader(_btnHeaderTool);
+		_accordionTool.AddChild(_btnHeaderTool);
+		_contentTool = new VBoxContainer();
+		_contentTool.AddThemeConstantOverride("separation", 8);
+		_accordionTool.AddChild(_contentTool);
+		SetupAccordion(_btnHeaderTool, _contentTool, TranslationServer.Translate("Tool"));
+
+		if (_panelTerrain != null) _panelTerrain.Visible = false;
+		if (_panelDeco != null) _panelDeco.Visible = false;
+
+		_panelTerrainVBox = new VBoxContainer();
+		_panelTerrainVBox.Name = "PanelTerrainVBox";
+		_panelTerrainVBox.AddThemeConstantOverride("separation", 6);
+		_contentTool.AddChild(_panelTerrainVBox);
+		SafeReparent(_btnRaise, _panelTerrainVBox);
+		SafeReparent(_btnLower, _panelTerrainVBox);
+		SafeReparent(_btnSmooth, _panelTerrainVBox);
+		SafeReparent(_btnFlatten, _panelTerrainVBox);
+		SafeReparent(_btnCliff, _panelTerrainVBox);
+		SafeReparent(_btnRamp, _panelTerrainVBox);
+
+		_panelDecoVBox = new VBoxContainer();
+		_panelDecoVBox.Name = "PanelDecoVBox";
+		_panelDecoVBox.AddThemeConstantOverride("separation", 6);
+		_contentTool.AddChild(_panelDecoVBox);
+		SafeReparent(_btnTextureBrush, _panelDecoVBox);
+		SafeReparent(_btnFloodFill, _panelDecoVBox);
+		if (_btnPathingBrush != null) SafeReparent(_btnPathingBrush, _panelDecoVBox);
+		if (_btnFloodFillPathing != null) SafeReparent(_btnFloodFillPathing, _panelDecoVBox);
 
 		_accordionBrush = new VBoxContainer();
 		_accordionBrush.Name = "AccordionBrush";
@@ -3235,7 +3271,7 @@ public class {mapName} : IMapScript
 			}
 		}
 		SafeReparent(categoryGrid, _containerCategorySelector);
-		SafeReparent(_optCategoryItems, _containerCategorySelector);
+		SafeReparent(_entityPaletteController?.OptCategoryItems, _containerCategorySelector);
 		
 		SafeReparent(_btnToggleRotate, _contentPlacement);
 		SafeReparent(_btnToggleScale, _contentPlacement);
@@ -3277,10 +3313,12 @@ public class {mapName} : IMapScript
 		_contentViewport = new VBoxContainer();
 		_contentViewport.AddThemeConstantOverride("separation", 8);
 		_accordionViewport.AddChild(_contentViewport);
-		SetupAccordion(_btnHeaderViewport, _contentViewport, TranslationServer.Translate("Viewport Settings"));
+		SetupMutualAccordion(_btnHeaderViewport, _contentViewport, TranslationServer.Translate("Viewport & Navigation"));
 
 		SafeReparent(_btnToggleGrid, _contentViewport);
 		SafeReparent(_btnToggleCameraBounds, _contentViewport);
+		SafeReparent(_btnRotate, _contentViewport);
+		SafeReparent(_btnCameraAngle, _contentViewport);
 		if (_btnSkybox != null)
 		{
 			_btnSkybox.CustomMinimumSize = new Vector2(0, 32);
@@ -3288,38 +3326,33 @@ public class {mapName} : IMapScript
 			SafeReparent(_btnSkybox, _contentViewport);
 		}
 
-		_accordionNavigation = new VBoxContainer();
-		_accordionNavigation.Name = "AccordionNavigation";
-		leftVBox.AddChild(_accordionNavigation);
-		_btnHeaderNavigation = new Button();
-		_btnHeaderNavigation.Set("icon_max_width", 0);
-		StyleAccordionHeader(_btnHeaderNavigation);
-		_accordionNavigation.AddChild(_btnHeaderNavigation);
-		_contentNavigation = new VBoxContainer();
-		_contentNavigation.AddThemeConstantOverride("separation", 8);
-		_accordionNavigation.AddChild(_contentNavigation);
-		SetupAccordion(_btnHeaderNavigation, _contentNavigation, TranslationServer.Translate("Map Navigation"));
+		SafeReparent(_btnZoomIn, _contentViewport);
+		SafeReparent(_btnZoomOut, _contentViewport);
+		SafeReparent(_minimapFrame, _contentViewport);
 
-		SafeReparent(_minimapFrame, _contentNavigation);
-		var zoomContentGrid = GetNodeOrNull<Control>("MiddleRightBox/PanelZoom/VBox/Content");
-		SafeReparent(zoomContentGrid, _contentNavigation);
+		var panelZoom = GetNodeOrNull<Control>("MiddleRightBox/PanelZoom");
+		if (panelZoom != null)
+		{
+			panelZoom.Visible = false;
+		}
 
 		var accordionMapSettings = new VBoxContainer();
 		accordionMapSettings.Name = "AccordionMapSettings";
 		leftVBox.AddChild(accordionMapSettings);
 		
-		var btnHeaderMapSettings = new Button();
-		btnHeaderMapSettings.Set("icon_max_width", 0);
-		StyleAccordionHeader(btnHeaderMapSettings);
-		accordionMapSettings.AddChild(btnHeaderMapSettings);
+		_btnHeaderMapSettings = new Button();
+		_btnHeaderMapSettings.Set("icon_max_width", 0);
+		StyleAccordionHeader(_btnHeaderMapSettings);
+		accordionMapSettings.AddChild(_btnHeaderMapSettings);
 		
-		var contentMapSettings = new VBoxContainer();
-		contentMapSettings.AddThemeConstantOverride("separation", 8);
-		accordionMapSettings.AddChild(contentMapSettings);
-		SetupAccordion(btnHeaderMapSettings, contentMapSettings, TranslationServer.Translate("Map Settings"));
+		_contentMapSettings = new VBoxContainer();
+		_contentMapSettings.Visible = false;
+		((VBoxContainer)_contentMapSettings).AddThemeConstantOverride("separation", 8);
+		accordionMapSettings.AddChild(_contentMapSettings);
+		SetupMutualAccordion(_btnHeaderMapSettings, _contentMapSettings, TranslationServer.Translate("Map Settings"));
 
-		SafeReparent(_waterHeightBox, contentMapSettings);
-		SafeReparent(_camBoundsBox, contentMapSettings);
+		SafeReparent(_waterHeightBox, _contentMapSettings);
+		SafeReparent(_camBoundsBox, _contentMapSettings);
 
 		var skyboxBox = new VBoxContainer();
 		skyboxBox.Name = "SkyboxBox";
@@ -3328,7 +3361,7 @@ public class {mapName} : IMapScript
 		lblSkyboxTitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		lblSkyboxTitle.AddThemeFontSizeOverride("font_size", 12);
 		skyboxBox.AddChild(lblSkyboxTitle);
-		contentMapSettings.AddChild(skyboxBox);
+		_contentMapSettings.AddChild(skyboxBox);
 		SafeReparent(_optSkybox, skyboxBox);
 
 		_panelEnv = GetNodeOrNull<PanelContainer>("TopToolbar/PanelEnv");
@@ -3339,52 +3372,67 @@ public class {mapName} : IMapScript
 
 		SetRightPanelExpanded(true);
 
-		_panelObjects = new PanelContainer();
+		_panelObjects = new VBoxContainer();
 		_panelObjects.Name = "PanelObjects";
-		_panelObjects.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_panelObjects.AddThemeConstantOverride("separation", 6);
 		_panelObjects.Visible = false;
-		_topToolbar.AddChild(_panelObjects);
+		_contentTool.AddChild(_panelObjects);
 
-		var objectsHBox = new HBoxContainer();
-		objectsHBox.AddThemeConstantOverride("separation", 8);
-		_panelObjects.AddChild(objectsHBox);
-
-		SafeReparent(_btnAddObject, objectsHBox);
-		SafeReparent(_btnSelectMove, objectsHBox);
-		SafeReparent(_btnDeleteObject, objectsHBox);
+		SafeReparent(_btnAddObject, _panelObjects);
+		SafeReparent(_btnSelectMove, _panelObjects);
+		SafeReparent(_btnDeleteObject, _panelObjects);
 		if (_btnClumpBrush != null) _btnClumpBrush.Visible = false;
 
-		_panelClipboard = new PanelContainer();
+		_panelClipboard = new VBoxContainer();
 		_panelClipboard.Name = "PanelClipboard";
-		_panelClipboard.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_panelClipboard.AddThemeConstantOverride("separation", 6);
 		_panelClipboard.Visible = false;
-		_topToolbar.AddChild(_panelClipboard);
+		_contentTool.AddChild(_panelClipboard);
 
-		var clipboardHBox = new HBoxContainer();
-		clipboardHBox.AddThemeConstantOverride("separation", 8);
-		_panelClipboard.AddChild(clipboardHBox);
-
-		SafeReparent(_btnSelectArea, clipboardHBox);
-		SafeReparent(_btnCopy, clipboardHBox);
-		SafeReparent(_btnPaste, clipboardHBox);
+		SafeReparent(_btnSelectArea, _panelClipboard);
+		SafeReparent(_btnCopy, _panelClipboard);
+		SafeReparent(_btnPaste, _panelClipboard);
 
 		_btnCut = new Button();
 		_btnCut.Name = "BtnCut";
 		_btnCut.Set("icon_max_width", 0);
 		SetupButton(_btnCut, TranslationServer.Translate("CUT"), () => GameHost.Instance?.PerformCutAreaExternal(), 13, "Cut selected area (Copy and Erase)");
-		clipboardHBox.AddChild(_btnCut);
+		_panelClipboard.AddChild(_btnCut);
 
 		_btnEraseArea = new Button();
 		_btnEraseArea.Name = "BtnEraseArea";
 		_btnEraseArea.Set("icon_max_width", 0);
 		SetupButton(_btnEraseArea, TranslationServer.Translate("ERASE AREA"), () => GameHost.Instance?.PerformEraseAreaExternal(), 13, "Erase textures, heights, or entities in selected area");
-		clipboardHBox.AddChild(_btnEraseArea);
+		_panelClipboard.AddChild(_btnEraseArea);
 
 		var topLeftBox = GetNode<HBoxContainer>("TopLeftBox");
 		SafeReparent(_btnUndo, topLeftBox);
 		SafeReparent(_btnRedo, topLeftBox);
 		SafeReparent(_btnEyedropper, topLeftBox);
+
+		_optModule = new OptionButton();
+		_optModule.Name = "OptModule";
+		_optModule.CustomMinimumSize = new Vector2(100, 32);
+		_optModule.Set("icon_max_width", 0);
+		_optModule.AddItem("⛰️ " + TranslationServer.Translate("TERRAIN"), (int)EditorModule.Terrain);
+		_optModule.AddItem("🎨 " + TranslationServer.Translate("TEXTURE"), (int)EditorModule.TextureDeco);
+		_optModule.AddItem("💂 " + TranslationServer.Translate("OBJECTS"), (int)EditorModule.Objects);
+		_optModule.AddItem("📋 " + TranslationServer.Translate("CLIPBOARD"), (int)EditorModule.Clipboard);
+		_optModule.ItemSelected += (index) =>
+		{
+			SwitchModule((EditorModule)index);
+		};
+		topLeftBox.AddChild(_optModule);
 		
+		topLeftBox.LayoutMode = 1;
+		topLeftBox.SetAnchorsPreset(LayoutPreset.CenterTop);
+		topLeftBox.GrowHorizontal = GrowDirection.Both;
+		topLeftBox.Alignment = BoxContainer.AlignmentMode.Center;
+		topLeftBox.OffsetLeft = -450;
+		topLeftBox.OffsetRight = 450;
+		topLeftBox.OffsetTop = 15;
+		topLeftBox.OffsetBottom = 55;
+
 		topLeftBox.MoveChild(_btnBackToHub, 0);
 		var btnHelp2 = GetNodeOrNull<Button>("TopLeftBox/BtnHelp");
 		if (btnHelp2 != null) topLeftBox.MoveChild(btnHelp2, 1);
@@ -3392,8 +3440,13 @@ public class {mapName} : IMapScript
 		topLeftBox.MoveChild(_btnUndo, 3);
 		topLeftBox.MoveChild(_btnRedo, 4);
 		topLeftBox.MoveChild(_btnEyedropper, 5);
+		topLeftBox.MoveChild(_optModule, 6);
+		if (_topToolbar != null)
+		{
+			_topToolbar.Visible = false;
+		}
 
-		foreach (Control child in contentFile.GetChildren())
+		foreach (Control child in _contentFile.GetChildren())
 		{
 			child.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		}
@@ -3406,8 +3459,9 @@ public class {mapName} : IMapScript
 		_activeModule = module;
 		UpdateModuleSwitchButtons();
 
-		if (_panelTerrain != null) _panelTerrain.Visible = (module == EditorModule.Terrain);
-		if (_panelDeco != null) _panelDeco.Visible = (module == EditorModule.TextureDeco);
+		if (_panelTerrainVBox != null) _panelTerrainVBox.Visible = (module == EditorModule.Terrain);
+		if (_panelDecoVBox != null) _panelDecoVBox.Visible = (module == EditorModule.TextureDeco);
+		if (_panelEnv != null) _panelEnv.Visible = (module == EditorModule.TextureDeco);
 		if (_panelObjects != null) _panelObjects.Visible = (module == EditorModule.Objects);
 		if (_panelClipboard != null) _panelClipboard.Visible = (module == EditorModule.Clipboard);
 
@@ -3422,7 +3476,7 @@ public class {mapName} : IMapScript
 					TriggerToolSelection(GameHost.EditorTool.PaintGrass, _btnTextureBrush);
 					break;
 				case EditorModule.Objects:
-					TriggerAddObjectMode();
+					_entityPaletteController?.TriggerAddObjectMode();
 					break;
 				case EditorModule.Clipboard:
 					TriggerToolSelection(GameHost.EditorTool.SelectArea, _btnSelectArea);
@@ -3433,34 +3487,13 @@ public class {mapName} : IMapScript
 
 	private void UpdateModuleSwitchButtons()
 	{
-		if (_btnModuleTerrain == null || _btnModulePaint == null || _btnModuleObjects == null || _btnModuleClipboard == null) return;
-
-		var activeStyle = new StyleBoxFlat();
-		activeStyle.BgColor = new Color(0.15f, 0.45f, 0.7f, 0.8f);
-		activeStyle.BorderColor = UIStyle.ColorCyanGlow;
-		activeStyle.SetBorderWidthAll(2);
-		activeStyle.CornerRadiusTopLeft = 4;
-		activeStyle.CornerRadiusTopRight = 4;
-		activeStyle.CornerRadiusBottomLeft = 4;
-		activeStyle.CornerRadiusBottomRight = 4;
-
-		_btnModuleTerrain.RemoveThemeStyleboxOverride("normal");
-		_btnModulePaint.RemoveThemeStyleboxOverride("normal");
-		_btnModuleObjects.RemoveThemeStyleboxOverride("normal");
-		_btnModuleClipboard.RemoveThemeStyleboxOverride("normal");
-
-		if (_activeModule == EditorModule.Terrain) _btnModuleTerrain.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnModuleTerrain.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		if (_activeModule == EditorModule.TextureDeco) _btnModulePaint.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnModulePaint.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		if (_activeModule == EditorModule.Objects) _btnModuleObjects.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnModuleObjects.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		if (_activeModule == EditorModule.Clipboard) _btnModuleClipboard.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnModuleClipboard.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		if (_optModule != null)
+		{
+			_optModule.Selected = (int)_activeModule;
+		}
 	}
+
+
 
 	private void SetupAccordion(Button headerBtn, Control contentControl, string titleText)
 	{
@@ -3469,6 +3502,35 @@ public class {mapName} : IMapScript
 		{
 			contentControl.Visible = !contentControl.Visible;
 			headerBtn.Text = (contentControl.Visible ? "▼ " : "▶ ") + titleText;
+			UIManager.Instance?.PlayClickSound();
+		};
+	}
+
+	private void SetupMutualAccordion(Button headerBtn, Control contentControl, string titleText)
+	{
+		headerBtn.Text = (contentControl.Visible ? "▼ " : "▶ ") + titleText;
+		headerBtn.Pressed += () =>
+		{
+			contentControl.Visible = !contentControl.Visible;
+			headerBtn.Text = (contentControl.Visible ? "▼ " : "▶ ") + titleText;
+			if (contentControl.Visible)
+			{
+				if (headerBtn != _btnHeaderFile && _contentFile != null)
+				{
+					_contentFile.Visible = false;
+					_btnHeaderFile.Text = "▶ " + TranslationServer.Translate("File");
+				}
+				if (headerBtn != _btnHeaderViewport && _contentViewport != null)
+				{
+					_contentViewport.Visible = false;
+					_btnHeaderViewport.Text = "▶ " + TranslationServer.Translate("Viewport & Navigation");
+				}
+				if (headerBtn != _btnHeaderMapSettings && _contentMapSettings != null)
+				{
+					_contentMapSettings.Visible = false;
+					_btnHeaderMapSettings.Text = "▶ " + TranslationServer.Translate("Map Settings");
+				}
+			}
 			UIManager.Instance?.PlayClickSound();
 		};
 	}
@@ -3505,7 +3567,7 @@ public class {mapName} : IMapScript
 		float targetRight = expand ? 260.0f : 0.0f;
 		tween.TweenProperty(_panelLeft, "offset_left", targetLeft, 0.2f).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
 		tween.TweenProperty(_panelLeft, "offset_right", targetRight, 0.2f).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
-		_btnLeftTab.Text = expand ? TranslationServer.Translate("◀\nF\nI\nL\nE") : TranslationServer.Translate("▶\nF\nI\nL\nE");
+		_btnLeftTab.Text = expand ? "◀" : "▶";
 	}
 
 	private void SetRightPanelExpanded(bool expand)
@@ -3516,7 +3578,7 @@ public class {mapName} : IMapScript
 		float targetRight = expand ? 0.0f : 300.0f;
 		tween.TweenProperty(_panelRight, "offset_left", targetLeft, 0.2f).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
 		tween.TweenProperty(_panelRight, "offset_right", targetRight, 0.2f).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
-		_btnRightTab.Text = expand ? TranslationServer.Translate("▶\nT\nO\nO\nL\nS") : TranslationServer.Translate("◀\nT\nO\nO\nL\nS");
+		_btnRightTab.Text = expand ? "▶" : "◀";
 	}
 
 	private void SafeReparent(Node node, Node newParent)
@@ -3543,6 +3605,7 @@ public class {mapName} : IMapScript
 					   tool == GameHost.EditorTool.PaintSand ||
 					   tool == GameHost.EditorTool.Noise ||
 					   tool == GameHost.EditorTool.PaintPathing ||
+					   tool == GameHost.EditorTool.FloodFillPathing ||
 					   tool == GameHost.EditorTool.PlacePropClump;
 
 		if (_accordionBrush != null)
@@ -3550,19 +3613,40 @@ public class {mapName} : IMapScript
 			_accordionBrush.Visible = isBrush;
 			if (_sldBrushStrength != null && _sldBrushStrength.GetParent() is Control strengthParent)
 			{
-				strengthParent.Visible = (tool != GameHost.EditorTool.PaintPathing && tool != GameHost.EditorTool.PlacePropClump);
+				strengthParent.Visible = (tool != GameHost.EditorTool.PaintPathing && 
+										  tool != GameHost.EditorTool.FloodFillPathing &&
+										  tool != GameHost.EditorTool.PlacePropClump &&
+										  tool != GameHost.EditorTool.Raise &&
+										  tool != GameHost.EditorTool.Lower &&
+										  tool != GameHost.EditorTool.Flatten &&
+										  tool != GameHost.EditorTool.Cliff &&
+										  tool != GameHost.EditorTool.Ramp);
 			}
+			bool isTextureMode = tool == GameHost.EditorTool.PaintGrass ||
+								 tool == GameHost.EditorTool.PaintDirt ||
+								 tool == GameHost.EditorTool.PaintRock ||
+								 tool == GameHost.EditorTool.PaintSand;
 			if (_chkBlockMode != null)
 			{
-				_chkBlockMode.Visible = (tool != GameHost.EditorTool.PaintPathing);
+				_chkBlockMode.Visible = (tool != GameHost.EditorTool.PaintPathing && 
+										 tool != GameHost.EditorTool.FloodFillPathing &&
+										 !isTextureMode &&
+										 tool != GameHost.EditorTool.Smooth &&
+										 tool != GameHost.EditorTool.Flatten &&
+										 tool != GameHost.EditorTool.Noise);
 			}
 			if (_stepBox != null)
 			{
-				_stepBox.Visible = (tool != GameHost.EditorTool.PaintPathing);
+				_stepBox.Visible = (tool != GameHost.EditorTool.PaintPathing && 
+									tool != GameHost.EditorTool.FloodFillPathing &&
+									!isTextureMode &&
+									tool != GameHost.EditorTool.Smooth &&
+									tool != GameHost.EditorTool.Flatten &&
+									tool != GameHost.EditorTool.Noise);
 			}
 		}
 
-		_containerFlattenSettings.Visible = (tool == GameHost.EditorTool.Flatten);
+		_containerFlattenSettings.Visible = false;
 		_containerTextureSettings.Visible = (tool == GameHost.EditorTool.PaintGrass ||
 											 tool == GameHost.EditorTool.PaintDirt ||
 											 tool == GameHost.EditorTool.PaintRock ||
@@ -3572,7 +3656,7 @@ public class {mapName} : IMapScript
 											 tool == GameHost.EditorTool.Lower ||
 											 tool == GameHost.EditorTool.Cliff ||
 											 tool == GameHost.EditorTool.Ramp);
-		_containerPathingSettings.Visible = (tool == GameHost.EditorTool.PaintPathing);
+		_containerPathingSettings.Visible = (tool == GameHost.EditorTool.PaintPathing || tool == GameHost.EditorTool.FloodFillPathing);
 		_containerDecalSettings.Visible = (tool == GameHost.EditorTool.PlaceDecal);
 		_containerEyedropperSettings.Visible = (tool == GameHost.EditorTool.Eyedropper);
 		_containerPasteSettings.Visible = (tool == GameHost.EditorTool.SelectArea ||
@@ -3598,7 +3682,7 @@ public class {mapName} : IMapScript
 			_accordionToolSettings.Visible = anyToolSettingVisible;
 		}
 
-		bool hasPlacementConfig = isPlacement || (tool == GameHost.EditorTool.SelectMove);
+		bool hasPlacementConfig = isPlacement;
 		if (_accordionPlacement != null)
 		{
 			_accordionPlacement.Visible = hasPlacementConfig;
@@ -3627,17 +3711,17 @@ public class {mapName} : IMapScript
 		if (@event is InputEventKey keyEvent && keyEvent.Pressed)
 		{
 			bool ctrl = keyEvent.CtrlPressed;
-			if (keyEvent.Keycode == Key.F1 || (keyEvent.Keycode == Key.Key1 && ctrl))
+			if (keyEvent.Keycode == Godot.Key.F1 || (keyEvent.Keycode == Godot.Key.Key1 && ctrl))
 			{
 				SwitchModule(EditorModule.Terrain);
 				GetViewport().SetInputAsHandled();
 			}
-			else if (keyEvent.Keycode == Key.F2 || (keyEvent.Keycode == Key.Key2 && ctrl))
+			else if (keyEvent.Keycode == Godot.Key.F2 || (keyEvent.Keycode == Godot.Key.Key2 && ctrl))
 			{
 				SwitchModule(EditorModule.TextureDeco);
 				GetViewport().SetInputAsHandled();
 			}
-			else if (keyEvent.Keycode == Key.F3 || (keyEvent.Keycode == Key.Key3 && ctrl))
+			else if (keyEvent.Keycode == Godot.Key.F3 || (keyEvent.Keycode == Godot.Key.Key3 && ctrl))
 			{
 				SwitchModule(EditorModule.Objects);
 				GetViewport().SetInputAsHandled();
@@ -3802,53 +3886,53 @@ public class {mapName} : IMapScript
 
 	private void SetupTextureSwatches(bool connectEvents = false)
 	{
-		_swatchPaths[0] = "res://Assets/Terrain/grass_green.jpg";
+		_swatchPaths[0] = "res://Assets/2d/TileSheets/river_silt.png";
 		_swatchDisplayNames[0] = "Grass Green";
-		_swatchColors[0] = new Color(0.2f, 0.6f, 0.2f);
+		_swatchColors[0] = new Color(0.95f, 0.95f, 1.0f);
 
-		_swatchPaths[1] = "res://Assets/Terrain/dirt_dark.jpg";
+		_swatchPaths[1] = "res://Assets/2d/TileSheets/cinder_rock.png";
 		_swatchDisplayNames[1] = "Dark Dirt";
-		_swatchColors[1] = new Color(0.4f, 0.25f, 0.15f);
+		_swatchColors[1] = new Color(0.5f, 0.5f, 0.52f);
 
-		_swatchPaths[2] = "res://Assets/Terrain/rock_grey.jpg";
+		_swatchPaths[2] = "res://Assets/2d/TileSheets/arid_dust.png";
 		_swatchDisplayNames[2] = "Grey Rock";
-		_swatchColors[2] = new Color(0.5f, 0.5f, 0.5f);
+		_swatchColors[2] = new Color(0.5f, 0.45f, 0.38f);
 
-		_swatchPaths[3] = "res://Assets/Terrain/sand_yellow.jpg";
+		_swatchPaths[3] = "res://Assets/2d/TileSheets/deep_moss.png";
 		_swatchDisplayNames[3] = "Yellow Sand";
-		_swatchColors[3] = new Color(0.85f, 0.85f, 0.5f);
+		_swatchColors[3] = new Color(0.2f, 0.6f, 0.2f);
 
-		_swatchPaths[4] = "res://Assets/Terrain/grass_dry.jpg";
+		_swatchPaths[4] = "res://Assets/2d/TileSheets/crag_stone.png";
 		_swatchDisplayNames[4] = "Dry Grass";
-		_swatchColors[4] = new Color(0.5f, 0.55f, 0.3f);
+		_swatchColors[4] = new Color(0.38f, 0.38f, 0.4f);
 
-		_swatchPaths[5] = "res://Assets/Terrain/dirt_red.jpg";
+		_swatchPaths[5] = "res://Assets/2d/TileSheets/ash_soil.png";
 		_swatchDisplayNames[5] = "Red Dirt";
-		_swatchColors[5] = new Color(0.6f, 0.3f, 0.2f);
+		_swatchColors[5] = new Color(0.4f, 0.28f, 0.18f);
 
-		_swatchPaths[6] = "res://Assets/Terrain/snow_white.jpg";
+		_swatchPaths[6] = "res://Assets/2d/TileSheets/fern_grove.png";
 		_swatchDisplayNames[6] = "White Snow";
-		_swatchColors[6] = new Color(0.95f, 0.95f, 0.98f);
+		_swatchColors[6] = new Color(0.3f, 0.7f, 0.2f);
 
-		_swatchPaths[7] = "res://Assets/Terrain/mud_brown.jpg";
+		_swatchPaths[7] = "res://Assets/2d/TileSheets/mossy_stone.png";
 		_swatchDisplayNames[7] = "Brown Mud";
-		_swatchColors[7] = new Color(0.35f, 0.2f, 0.1f);
+		_swatchColors[7] = new Color(0.12f, 0.48f, 0.18f);
 
-		_swatchPaths[8] = "res://Assets/Terrain/grass_dark.jpg";
+		_swatchPaths[8] = "res://Assets/2d/TileSheets/holy_moss.png";
 		_swatchDisplayNames[8] = "Dark Grass";
-		_swatchColors[8] = new Color(0.12f, 0.35f, 0.12f);
+		_swatchColors[8] = new Color(0.7f, 0.55f, 0.35f);
 
-		_swatchPaths[9] = "res://Assets/Terrain/gravel_grey.jpg";
+		_swatchPaths[9] = "res://Assets/2d/TileSheets/void_shard.png";
 		_swatchDisplayNames[9] = "Grey Gravel";
-		_swatchColors[9] = new Color(0.4f, 0.4f, 0.45f);
+		_swatchColors[9] = new Color(0.85f, 0.75f, 0.5f);
 
-		_swatchPaths[10] = "res://Assets/Terrain/brick_red.jpg";
+		_swatchPaths[10] = "res://Assets/terrain_grass.jpg";
 		_swatchDisplayNames[10] = "Red Brick";
-		_swatchColors[10] = new Color(0.7f, 0.35f, 0.3f);
+		_swatchColors[10] = new Color(0.45f, 0.55f, 0.65f);
 
-		_swatchPaths[11] = "res://Assets/Terrain/paving_stone.jpg";
+		_swatchPaths[11] = "res://Assets/2d/TileSheets/ash_soil.png";
 		_swatchDisplayNames[11] = "Paving Stone";
-		_swatchColors[11] = new Color(0.3f, 0.3f, 0.35f);
+		_swatchColors[11] = new Color(0.6f, 0.3f, 0.15f);
 
 		for (int i = 0; i < 12; i++)
 		{
@@ -3863,26 +3947,57 @@ public class {mapName} : IMapScript
 			btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 			btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
 
-			var colorBox = new ColorRect();
-			colorBox.Color = _swatchColors[i];
-			colorBox.MouseFilter = MouseFilterEnum.Ignore;
-			colorBox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-			colorBox.GrowHorizontal = GrowDirection.Both;
-			colorBox.GrowVertical = GrowDirection.Both;
-			btn.AddChild(colorBox);
+			Texture2D tex = null;
+			if (ResourceLoader.Exists(_swatchPaths[i]))
+			{
+				tex = GD.Load<Texture2D>(_swatchPaths[i]);
+			}
+
+			if (tex != null)
+			{
+				var texRect = new TextureRect();
+				texRect.Texture = tex;
+				texRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+				texRect.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
+				texRect.MouseFilter = MouseFilterEnum.Ignore;
+				texRect.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+				texRect.GrowHorizontal = GrowDirection.Both;
+				texRect.GrowVertical = GrowDirection.Both;
+				btn.AddChild(texRect);
+			}
+			else
+			{
+				var colorBox = new ColorRect();
+				colorBox.Color = _swatchColors[i];
+				colorBox.MouseFilter = MouseFilterEnum.Ignore;
+				colorBox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+				colorBox.GrowHorizontal = GrowDirection.Both;
+				colorBox.GrowVertical = GrowDirection.Both;
+				btn.AddChild(colorBox);
+			}
 
 			if (connectEvents)
 			{
 				int index = i;
-				btn.Pressed += () =>
+				btn.GuiInput += (@event) =>
 				{
-					if (Input.IsKeyPressed(Key.Shift))
+					if (@event is InputEventMouseButton mouseEvent && mouseEvent.Pressed)
 					{
-						SelectCliffTexture(index, _swatchColors[index]);
-					}
-					else
-					{
-						SelectTerrainTexture(index, _swatchColors[index], btn);
+						if (mouseEvent.ButtonIndex == MouseButton.Left)
+						{
+							if (Input.IsKeyPressed(Godot.Key.Shift))
+							{
+								SelectCliffTexture(index, _swatchColors[index]);
+							}
+							else
+							{
+								SelectTerrainTexture(index, _swatchColors[index], btn);
+							}
+						}
+						else if (mouseEvent.ButtonIndex == MouseButton.Right)
+						{
+							SelectCliffTexture(index, _swatchColors[index]);
+						}
 					}
 				};
 			}
@@ -3895,11 +4010,15 @@ public class {mapName} : IMapScript
 	{
 		if (GameHost.Instance != null)
 		{
-			GameHost.Instance.ActiveEditorTool = GameHost.EditorTool.PaintGrass;
 			GameHost.Instance.EditorPaintColor = modColor;
-			
 			HighlightSwatch(swatch);
-			TriggerToolSelection(GameHost.EditorTool.PaintGrass, swatch);
+			
+			if (GameHost.Instance.ActiveEditorTool != GameHost.EditorTool.FloodFill)
+			{
+				GameHost.Instance.ActiveEditorTool = GameHost.EditorTool.PaintGrass;
+				TriggerToolSelection(GameHost.EditorTool.PaintGrass, swatch);
+			}
+			
 			UpdateTextureLabels();
 			
 			string name = TranslationServer.Translate(_swatchDisplayNames[index]);
@@ -3927,6 +4046,22 @@ public class {mapName} : IMapScript
 
 		if (_lblTerrainTexture != null) _lblTerrainTexture.Text = $"{TranslationServer.Translate("Brush")}: {TranslationServer.Translate(terrainName)}";
 		if (_lblCliffTexture != null) _lblCliffTexture.Text = $"{TranslationServer.Translate("Cliff Face")}: {TranslationServer.Translate(cliffName)}";
+
+		Button terrainSwatch = null;
+		Button cliffSwatch = null;
+		for (int i = 0; i < 12; i++)
+		{
+			if (_swatchColors[i].IsEqualApprox(GameHost.Instance.EditorPaintColor))
+			{
+				terrainSwatch = _swatchButtons[i];
+			}
+			if (_swatchColors[i].IsEqualApprox(GameHost.Instance.EditorCliffPaintColor))
+			{
+				cliffSwatch = _swatchButtons[i];
+			}
+		}
+		HighlightSwatch(terrainSwatch);
+		HighlightCliffSwatch(cliffSwatch);
 	}
 
 	private string GetSwatchName(Color color)
@@ -3965,7 +4100,7 @@ public class {mapName} : IMapScript
 		{
 			return true;
 		}
-		if (_optCategoryItems != null && _optCategoryItems.GetPopup() != null && _optCategoryItems.GetPopup().Visible)
+		if (_entityPaletteController?.OptCategoryItems != null && _entityPaletteController.OptCategoryItems.GetPopup() != null && _entityPaletteController.OptCategoryItems.GetPopup().Visible)
 		{
 			return true;
 		}
@@ -4007,130 +4142,75 @@ public class {mapName} : IMapScript
 		{
 			return true;
 		}
-		if (_moduleBar != null && _moduleBar.Visible && _moduleBar.GetGlobalRect().HasPoint(mousePos))
-		{
-			return true;
-		}
+
 		return false;
 	}
 
-	public void SelectCategory(string category)
+	private void InitializeInspectorPanel()
 	{
-		_currentCategory = category;
-
-		var activeStyle = new StyleBoxFlat();
-		activeStyle.BgColor = new Color(0.15f, 0.45f, 0.7f, 0.8f);
-		activeStyle.BorderColor = UIStyle.ColorCyanGlow;
-		activeStyle.SetBorderWidthAll(2);
-		activeStyle.CornerRadiusTopLeft = 4;
-		activeStyle.CornerRadiusTopRight = 4;
-		activeStyle.CornerRadiusBottomLeft = 4;
-		activeStyle.CornerRadiusBottomRight = 4;
-
-		_btnChars.RemoveThemeStyleboxOverride("normal");
-		_btnBuilds.RemoveThemeStyleboxOverride("normal");
-		_btnEnv.RemoveThemeStyleboxOverride("normal");
-		_btnProps.RemoveThemeStyleboxOverride("normal");
-		_btnDecals.RemoveThemeStyleboxOverride("normal");
-
-		if (category == "Characters") _btnChars.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnChars.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		if (category == "Buildings") _btnBuilds.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnBuilds.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		if (category == "Environment") _btnEnv.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnEnv.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		if (category == "Props") _btnProps.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnProps.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		if (category == "Decals") _btnDecals.AddThemeStyleboxOverride("normal", activeStyle);
-		else _btnDecals.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-
-		_categoryFiles.Clear();
-		_optCategoryItems.Clear();
-
-		if (category == "Decals")
-		{
-			string[] decals = { "logo", "forest", "snowy", "flag", "rune" };
-			foreach (var d in decals)
-			{
-				_categoryFiles.Add(d);
-				_optCategoryItems.AddItem(d.ToUpper());
-			}
-		}
-		else
-		{
-			string subDir = category switch
-			{
-				"Characters" => "res://Assets/3d/Characters",
-				"Buildings" => "res://Assets/3d/Buildings",
-				"Environment" => "res://Assets/3d/Environment",
-				"Props" => "res://Assets/3d/Props",
-				_ => ""
-			};
-
-			using (var dir = DirAccess.Open(subDir))
-			{
-				if (dir != null)
-				{
-					dir.ListDirBegin();
-					string fileName = dir.GetNext();
-					while (fileName != "")
-					{
-						if (!dir.CurrentIsDir() && !fileName.EndsWith(".import") && 
-							(fileName.EndsWith(".glb") || fileName.EndsWith(".gltf")))
-						{
-							_categoryFiles.Add(fileName);
-						}
-						fileName = dir.GetNext();
-					}
-				}
-			}
-
-			_categoryFiles.Sort();
-
-			foreach (var file in _categoryFiles)
-			{
-				string cleanName = System.IO.Path.GetFileNameWithoutExtension(file).Replace("_", " ").ToUpper();
-				_optCategoryItems.AddItem(TranslationServer.Translate(cleanName));
-			}
-		}
-
-		if (_optCategoryItems.ItemCount > 0)
-		{
-			_optCategoryItems.Selected = 0;
-			SelectCategoryItem(0);
-		}
+		_inspectorPanel = new PanelContainer();
+		_inspectorPanel.Name = "InspectorPanel";
 		
-		TriggerAddObjectMode();
-	}
+		var vbox = new VBoxContainer();
+		vbox.Name = "InspectorVBox";
+		_inspectorPanel.AddChild(vbox);
 
-	public void SelectCategoryItem(int index)
-	{
-		if (index >= 0 && index < _categoryFiles.Count)
-		{
-			string selectedFile = _categoryFiles[index];
-			string placeId = selectedFile;
-			
-			if (_currentCategory != "Decals")
-			{
-				string path = _currentCategory switch
-				{
-					"Characters" => "res://Assets/3d/Characters",
-					"Buildings" => "res://Assets/3d/Buildings",
-					"Environment" => "res://Assets/3d/Environment",
-					"Props" => "res://Assets/3d/Props",
-					_ => ""
-				};
-				placeId = $"{path}/{selectedFile}";
-			}
+		_lblInspectorTitle = new Label();
+		_lblInspectorTitle.Name = "LblInspectorTitle";
+		_lblInspectorTitle.Text = "No Selection";
+		_lblInspectorTitle.AddThemeFontSizeOverride("font_size", 13);
+		_lblInspectorTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		vbox.AddChild(_lblInspectorTitle);
 
-			if (GameHost.Instance != null)
-			{
-				GameHost.Instance.ActivePlaceId = placeId;
-			}
-		}
+		_lblInspectorPos = new Label();
+		_lblInspectorPos.Name = "LblInspectorPos";
+		_lblInspectorPos.Text = "Position: (0, 0)";
+		_lblInspectorPos.AddThemeFontSizeOverride("font_size", 11);
+		_lblInspectorPos.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		vbox.AddChild(_lblInspectorPos);
+
+		var grid = new GridContainer();
+		grid.Columns = 2;
+		vbox.AddChild(grid);
+
+		_btnInspectorRotLeft = new Button();
+		_btnInspectorRotLeft.Name = "BtnInspectorRotLeft";
+		_btnInspectorRotLeft.Text = "↩ Rot Left";
+		_btnInspectorRotLeft.Set("icon_max_width", 0);
+		grid.AddChild(_btnInspectorRotLeft);
+
+		_btnInspectorRotRight = new Button();
+		_btnInspectorRotRight.Name = "BtnInspectorRotRight";
+		_btnInspectorRotRight.Text = "Rot Right ↪";
+		_btnInspectorRotRight.Set("icon_max_width", 0);
+		grid.AddChild(_btnInspectorRotRight);
+
+		_btnInspectorScaleDown = new Button();
+		_btnInspectorScaleDown.Name = "BtnInspectorScaleDown";
+		_btnInspectorScaleDown.Text = "➖ Scale Down";
+		_btnInspectorScaleDown.Set("icon_max_width", 0);
+		grid.AddChild(_btnInspectorScaleDown);
+
+		_btnInspectorScaleUp = new Button();
+		_btnInspectorScaleUp.Name = "BtnInspectorScaleUp";
+		_btnInspectorScaleUp.Text = "Scale Up ➕";
+		_btnInspectorScaleUp.Set("icon_max_width", 0);
+		grid.AddChild(_btnInspectorScaleUp);
+
+		_btnInspectorScaleReset = new Button();
+		_btnInspectorScaleReset.Name = "BtnInspectorScaleReset";
+		_btnInspectorScaleReset.Text = "↺ Reset Scale";
+		_btnInspectorScaleReset.Set("icon_max_width", 0);
+		vbox.AddChild(_btnInspectorScaleReset);
+
+		SafeReparent(_btnCenter, vbox);
+
+		_btnInspectorDelete = new Button();
+		_btnInspectorDelete.Name = "BtnInspectorDelete";
+		_btnInspectorDelete.Text = "❌ Delete Object";
+		_btnInspectorDelete.Set("icon_max_width", 0);
+		vbox.AddChild(_btnInspectorDelete);
+		
+		vbox.MoveChild(_btnCenter, _btnInspectorDelete.GetIndex());
 	}
 }

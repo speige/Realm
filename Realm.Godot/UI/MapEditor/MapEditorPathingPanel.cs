@@ -19,6 +19,19 @@ public class MapEditorPathingPanel
 		_chkGround = chkGround;
 		_chkUnpathable = chkUnpathable;
 		_optPathingMode = optPathingMode;
+
+		if (_chkShallowWater != null)
+			_chkShallowWater.Toggled += (val) => { if (MapEditorHUD.Instance?.ViewModel != null) MapEditorHUD.Instance.ViewModel.ShallowWater = val; };
+		if (_chkDeepWater != null)
+			_chkDeepWater.Toggled += (val) => { if (MapEditorHUD.Instance?.ViewModel != null) MapEditorHUD.Instance.ViewModel.DeepWater = val; };
+		if (_chkFlying != null)
+			_chkFlying.Toggled += (val) => { if (MapEditorHUD.Instance?.ViewModel != null) MapEditorHUD.Instance.ViewModel.Flying = val; };
+		if (_chkGround != null)
+			_chkGround.Toggled += (val) => { if (MapEditorHUD.Instance?.ViewModel != null) MapEditorHUD.Instance.ViewModel.Ground = val; };
+		if (_chkUnpathable != null)
+			_chkUnpathable.Toggled += (val) => { if (MapEditorHUD.Instance?.ViewModel != null) MapEditorHUD.Instance.ViewModel.Unpathable = val; };
+		if (_optPathingMode != null)
+			_optPathingMode.ItemSelected += (idx) => { if (MapEditorHUD.Instance?.ViewModel != null) MapEditorHUD.Instance.ViewModel.PathingModeIndex = (int)idx; };
 	}
 
 	public void Update(MapEditorHUDViewModel viewModel)

@@ -1,17 +1,88 @@
 using Arch.Core;
 using Godot;
+using Realm.Ecs.Components.Core;
+using Realm.Ecs.Components.Tags;
 
 public partial class Unit3D : CharacterBody3D
 {
 	public Entity Entity { get; set; }
-	public string UnitId { get; set; } // e.g. "soldier", "archer", "castle", "tower"
-	public bool IsBuilding { get; set; }
-	
+
+	public string UnitId
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity)
+				&& GameHost.Instance.EcsWorld.Has<DefinitionId>(Entity))
+				return GameHost.Instance.EcsWorld.Get<DefinitionId>(Entity).Value;
+			return string.Empty;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.Has<DefinitionId>(Entity))
+					world.Set(Entity, new DefinitionId(value));
+				else
+					world.Add(Entity, new DefinitionId(value));
+			}
+		}
+	}
+
+	public bool IsBuilding
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
+				return GameHost.Instance.EcsWorld.Has<Building>(Entity);
+			return false;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (value)
+				{
+					if (!world.Has<Building>(Entity))
+						world.Add(Entity, new Building());
+				}
+				else
+				{
+					if (world.Has<Building>(Entity))
+						world.Remove<Building>(Entity);
+				}
+			}
+		}
+	}
+
 	private Node3D _modelNode;
+	private AnimationPlayer _animationPlayer;
+	private string _currentAnimation = string.Empty;
 	private MeshInstance3D _selectionRing;
 	private bool _isSelected = false;
-	
-	public bool IsEnemy { get; set; } = false;
+
+	public bool IsEnemy
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity)
+				&& GameHost.Instance.EcsWorld.Has<UnitFaction>(Entity))
+				return GameHost.Instance.EcsWorld.Get<UnitFaction>(Entity).IsEnemy;
+			return false;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.Has<UnitFaction>(Entity))
+					world.Set(Entity, new UnitFaction(value));
+				else
+					world.Add(Entity, new UnitFaction(value));
+			}
+		}
+	}
 
 	private MeshInstance3D _rallyMarker;
 	private MeshInstance3D _rallyLine;
@@ -91,6 +162,20 @@ public partial class Unit3D : CharacterBody3D
 		}
 	}
 
+	public void SetTemporarySelectionHighlight(bool highlight)
+	{
+		if (_selectionRing != null)
+		{
+			_selectionRing.Visible = highlight || _isSelected;
+			if ((highlight || _isSelected) && _selectionRing.MaterialOverride is StandardMaterial3D material)
+			{
+				Color color = IsEnemy ? new Color(0.9f, 0.1f, 0.2f) : new Color(0.1f, 0.9f, 0.2f);
+				material.AlbedoColor = color;
+				material.Emission = color;
+			}
+		}
+	}
+
 	public bool IsPreview { get; set; } = false;
 
 	public override void _Ready()
@@ -130,6 +215,7 @@ public partial class Unit3D : CharacterBody3D
 			{
 				_modelNode = packedScene.Instantiate<Node3D>();
 				AddChild(_modelNode);
+				_animationPlayer = FindAnimationPlayer(_modelNode);
 				
 
 				if (IsBuilding)
@@ -170,6 +256,53 @@ public partial class Unit3D : CharacterBody3D
 			GD.PrintErr($"Error loading model {modelPath}: {ex.Message}");
 			CreateFallbackMesh();
 		}
+	}
+
+	public void PlayAnimation(string animName)
+	{
+		if (_animationPlayer == null || !GodotObject.IsInstanceValid(_animationPlayer)) return;
+
+		StringName resolved = ResolveAnimationName(animName);
+		if (resolved == null) return;
+
+		if (_currentAnimation == resolved.ToString()) return;
+
+		_currentAnimation = resolved.ToString();
+
+		var animResource = _animationPlayer.GetAnimation(resolved);
+		if (animResource != null)
+			animResource.LoopMode = Animation.LoopModeEnum.Linear;
+
+		_animationPlayer.Play(resolved);
+	}
+
+	private AnimationPlayer FindAnimationPlayer(Node root)
+	{
+		if (root is AnimationPlayer ap) return ap;
+		foreach (var child in root.GetChildren())
+		{
+			var found = FindAnimationPlayer(child);
+			if (found != null) return found;
+		}
+		return null;
+	}
+
+	private StringName ResolveAnimationName(string animName)
+	{
+		if (_animationPlayer == null) return null;
+		var animations = _animationPlayer.GetAnimationList();
+		string prefixed = $"Armature|Armature|{animName}";
+		foreach (var name in animations)
+		{
+			if (name.ToString().Equals(prefixed, System.StringComparison.OrdinalIgnoreCase))
+				return name;
+		}
+		foreach (var name in animations)
+		{
+			if (name.ToString().Equals(animName, System.StringComparison.OrdinalIgnoreCase))
+				return name;
+		}
+		return null;
 	}
 
 	public void ApplyModelTint(Color color)

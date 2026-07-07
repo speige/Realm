@@ -26,17 +26,18 @@ public class MapEditorInspector
 		_btnInspectorScaleReset = btnInspectorScaleReset;
 		_btnInspectorDelete = btnInspectorDelete;
 
-		_btnInspectorRotLeft.Pressed += () => MapEditorHUD.Instance?.RotateSelectedObjectAction(-15f);
-		_btnInspectorRotRight.Pressed += () => MapEditorHUD.Instance?.RotateSelectedObjectAction(15f);
-		_btnInspectorScaleDown.Pressed += () => MapEditorHUD.Instance?.ScaleSelectedObjectAction(0.9f);
-		_btnInspectorScaleUp.Pressed += () => MapEditorHUD.Instance?.ScaleSelectedObjectAction(1.1f);
-		_btnInspectorScaleReset.Pressed += () => MapEditorHUD.Instance?.ScaleSelectedObjectAction(-1f);
-		_btnInspectorDelete.Pressed += () => MapEditorHUD.Instance?.DeleteSelectedObjectAction();
+		if (_btnInspectorRotLeft != null) _btnInspectorRotLeft.Pressed += () => MapEditorHUD.Instance?.RotateSelectedObjectAction(-15f);
+		if (_btnInspectorRotRight != null) _btnInspectorRotRight.Pressed += () => MapEditorHUD.Instance?.RotateSelectedObjectAction(15f);
+		if (_btnInspectorScaleDown != null) _btnInspectorScaleDown.Pressed += () => MapEditorHUD.Instance?.ScaleSelectedObjectAction(0.9f);
+		if (_btnInspectorScaleUp != null) _btnInspectorScaleUp.Pressed += () => MapEditorHUD.Instance?.ScaleSelectedObjectAction(1.1f);
+		if (_btnInspectorScaleReset != null) _btnInspectorScaleReset.Pressed += () => MapEditorHUD.Instance?.ScaleSelectedObjectAction(-1f);
+		if (_btnInspectorDelete != null) _btnInspectorDelete.Pressed += () => MapEditorHUD.Instance?.DeleteSelectedObjectAction();
 	}
 
 	public void Update(MapEditorHUDViewModel viewModel)
 	{
-		_lblInspectorTitle.Text = TranslationServer.Translate(viewModel.InspectorTitle);
-		_lblInspectorPos.Text = TranslationServer.Translate(viewModel.InspectorPos);
+		if (viewModel == null) return;
+		if (_lblInspectorTitle != null) _lblInspectorTitle.Text = TranslationServer.Translate(viewModel.InspectorTitle);
+		if (_lblInspectorPos != null) _lblInspectorPos.Text = TranslationServer.Translate(viewModel.InspectorPos);
 	}
 }

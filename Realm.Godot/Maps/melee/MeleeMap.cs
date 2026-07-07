@@ -86,63 +86,66 @@ public class MeleeMap : IMapScript
         float spawnInterval = 15f - (timeFactor * 9f);
         int unitsPerWave = 1 + (int)(timeFactor * 2f);
 
-        _enemySpawnTimer += delta;
-        if (_enemySpawnTimer >= spawnInterval)
+        if (api.IsPlayerComputer(1))
         {
-            _enemySpawnTimer = 0f;
-            if (enemyCastle != null)
+            _enemySpawnTimer += delta;
+            if (_enemySpawnTimer >= spawnInterval)
             {
-                for (int w = 0; w < unitsPerWave; w++)
+                if (enemyCastle != null)
                 {
-                    float ox = (Random.Shared.NextSingle() - 0.5f) * 6f;
-                    float oz = (Random.Shared.NextSingle() - 0.5f) * 6f;
-                    Vector3 spawnPos = enemyCastle.Position + new Vector3(-8f + ox, 0f, -8f + oz);
-
-                    string unitId;
-                    int roll = Random.Shared.Next(0, 10);
-                    if (timeFactor > 0.7f && roll == 0)
+                    for (int w = 0; w < unitsPerWave; w++)
                     {
-                        unitId = "priest";
+                        float ox = (Random.Shared.NextSingle() - 0.5f) * 6f;
+                        float oz = (Random.Shared.NextSingle() - 0.5f) * 6f;
+                        Vector3 spawnPos = enemyCastle.Position + new Vector3(-8f + ox, 0f, -8f + oz);
+
+                        string unitId;
+                        int roll = Random.Shared.Next(0, 10);
+                        if (timeFactor > 0.7f && roll == 0)
+                        {
+                            unitId = "priest";
+                        }
+                        else if (timeFactor > 0.4f && roll <= 1)
+                        {
+                            unitId = "soldier";
+                        }
+                        else
+                        {
+                            unitId = (Random.Shared.Next(0, 2) == 0) ? "soldier" : "archer";
+                        }
+
+                        api.SpawnUnit(unitId, spawnPos, true);
                     }
-                    else if (timeFactor > 0.4f && roll <= 1)
+
+                    if (unitsPerWave > 1)
                     {
-                        unitId = "soldier";
+                        api.ShowFeedbackText($"ALERT: Enemy sending {unitsPerWave} units!", new Vector3(1f, 0.3f, 0.3f));
                     }
-                    else
-                    {
-                        unitId = (Random.Shared.Next(0, 2) == 0) ? "soldier" : "archer";
-                    }
-
-                    api.SpawnUnit(unitId, spawnPos, true);
                 }
-
-                if (unitsPerWave > 1)
-                {
-                    api.ShowFeedbackText($"ALERT: Enemy sending {unitsPerWave} units!", new Vector3(1f, 0.3f, 0.3f));
-                }
-            }
-        }
-
-        _enemyAiTimer += delta;
-        float marchInterval = 20f - (timeFactor * 8f);
-        if (_enemyAiTimer >= marchInterval)
-        {
-            _enemyAiTimer = 0f;
-            Vector3 targetPos = playerCastle != null ? playerCastle.Position : new Vector3(-25f, 0f, -25f);
-
-            int attackingEnemiesCount = 0;
-            foreach (var unit in api.GetAllUnits())
-            {
-                if (unit.IsEnemy && !unit.IsBuilding && !unit.IsDead)
-                {
-                    unit.AttackMove(targetPos);
-                    attackingEnemiesCount++;
-                }
+                _enemySpawnTimer = 0f;
             }
 
-            if (attackingEnemiesCount > 0)
+            _enemyAiTimer += delta;
+            float marchInterval = 20f - (timeFactor * 8f);
+            if (_enemyAiTimer >= marchInterval)
             {
-                api.ShowFeedbackText("ALERT: Orc Raider forces are marching towards your base!", new Vector3(1f, 0.2f, 0.2f));
+                _enemyAiTimer = 0f;
+                Vector3 targetPos = playerCastle != null ? playerCastle.Position : new Vector3(-25f, 0f, -25f);
+
+                int attackingEnemiesCount = 0;
+                foreach (var unit in api.GetAllUnits())
+                {
+                    if (unit.IsEnemy && !unit.IsBuilding && !unit.IsDead)
+                    {
+                        unit.AttackMove(targetPos);
+                        attackingEnemiesCount++;
+                    }
+                }
+
+                if (attackingEnemiesCount > 0)
+                {
+                    api.ShowFeedbackText("ALERT: Orc Raider forces are marching towards your base!", new Vector3(1f, 0.2f, 0.2f));
+                }
             }
         }
     }

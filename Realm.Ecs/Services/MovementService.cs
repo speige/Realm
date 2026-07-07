@@ -10,11 +10,11 @@ namespace Realm.Ecs.Services;
 /// </summary>
 internal class MovementService
 {
-	private readonly World _world;
+	private readonly WorldAccessor _ecsWorldAccessor;
 
-	public MovementService(World world)
+	public MovementService(WorldAccessor ecsWorldAccessor)
 	{
-		_world = world;
+		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
 	/// <summary>
@@ -25,8 +25,8 @@ internal class MovementService
 	/// </summary>
 	public void SetMoveTarget(Entity entity, Vector3 targetPosition)
 	{
-		if (!_world.Has<Movable>(entity)) return;
+		if (!_ecsWorldAccessor.Current.Has<Movable>(entity)) return;
 
-		_world.Set(entity, new MoveTo(targetPosition));
+		_ecsWorldAccessor.Current.Set(entity, new MoveTo(targetPosition));
 	}
 }

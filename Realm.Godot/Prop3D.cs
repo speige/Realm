@@ -1,10 +1,63 @@
+using Arch.Core;
 using Godot;
+using Realm.Ecs.Components.Core;
+using Realm.Ecs.Components.Resources;
 using System;
 
 public partial class Prop3D : StaticBody3D
 {
-	[Export] public string PropId { get; set; } = "tree"; // "tree", "rock", "goldmine", "pillar", "flag"
-	[Export] public float ResourceAmount { get; set; } = 500f;
+	public Entity Entity { get; set; }
+
+	private string _propId = "tree";
+
+	[Export]
+	public string PropId
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity)
+				&& GameHost.Instance.EcsWorld.Has<PropIdentity>(Entity))
+				return GameHost.Instance.EcsWorld.Get<PropIdentity>(Entity).PropId;
+			return _propId;
+		}
+		set
+		{
+			_propId = value;
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.Has<PropIdentity>(Entity))
+					world.Set(Entity, new PropIdentity(value));
+				else
+					world.Add(Entity, new PropIdentity(value));
+			}
+		}
+	}
+
+	public float ResourceAmount
+	{
+		get
+		{
+			if (GameHost.Instance == null || !GameHost.Instance.EcsWorld.IsAlive(Entity)) return 0f;
+			if (GameHost.Instance.EcsWorld.Has<ResourceNode>(Entity))
+				return GameHost.Instance.EcsWorld.Get<ResourceNode>(Entity).Amount;
+			return 0f;
+		}
+		set
+		{
+			if (GameHost.Instance == null || !GameHost.Instance.EcsWorld.IsAlive(Entity)) return;
+			var world = GameHost.Instance.EcsWorld;
+			if (world.Has<ResourceNode>(Entity))
+			{
+				var existing = world.Get<ResourceNode>(Entity);
+				world.Set(Entity, new ResourceNode(existing.ResourceTypeId, value));
+			}
+			else
+			{
+				world.Add(Entity, new ResourceNode(Guid.Empty, value));
+			}
+		}
+	}
 
 	private MeshInstance3D _selectionRing;
 	private bool _isSelected = false;
@@ -136,10 +189,6 @@ public partial class Prop3D : StaticBody3D
 			CreatePropVisual();
 			return;
 		}
-
-		if (PropId == "goldmine") ResourceAmount = 2000f;
-		else if (PropId == "rock") ResourceAmount = 1000f;
-		else if (PropId == "tree") ResourceAmount = 500f;
 
 		var collisionShape = new CollisionShape3D();
 		collisionShape.Name = "CollisionShape";

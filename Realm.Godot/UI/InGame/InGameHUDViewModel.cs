@@ -8,13 +8,170 @@ using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Resources;
+using Realm.Godot.ReplaySystem;
+
 
 public class InGameHUDViewModel
 {
-	public float Gold { get; set; } = 500f;
-	public float Wood { get; set; } = 400f;
-	public float Stone { get; set; } = 200f;
-	public float ResourceGatherMultiplier { get; set; } = 1.0f;
+	private Entity GetTargetPlayerEntity()
+	{
+		if (GameHost.Instance == null || GameHost.Instance.EcsWorld == null)
+			return Entity.Null;
+
+		var world = GameHost.Instance.EcsWorld;
+		var worldEntity = GameHost.Instance.WorldEntity;
+
+		bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
+		bool isPlayingReplay = ReplayPlaybackManager.Instance.IsPlayingReplay;
+
+		if (isSpectator || isPlayingReplay)
+		{
+			int targetPeerId = isPlayingReplay 
+				? ReplayPlaybackManager.Instance.SpectatorPerspective 
+				: (InGameHUD.Instance != null ? InGameHUD.Instance.LiveSpectatorPerspective : -1);
+
+			if (targetPeerId != -1 && worldEntity != Entity.Null && world.IsAlive(worldEntity) && world.Has<NetworkMappingState>(worldEntity))
+			{
+				var mapping = world.Get<NetworkMappingState>(worldEntity);
+				if (mapping.PeerIdToPlayerEntityMap != null && mapping.PeerIdToPlayerEntityMap.TryGetValue(targetPeerId, out var spectatedPlayer))
+				{
+					return spectatedPlayer;
+				}
+			}
+		}
+
+		return GameHost.Instance.PlayerEntity;
+	}
+
+	public float Gold
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerResources>(player))
+				{
+					var res = world.Get<PlayerResources>(player);
+					var goldId = "gold".AsResourceId(GameHost.Instance.DefinitionManager);
+					if (res.Value.TryGetValue(goldId, out var val)) return val;
+				}
+			}
+			return 500f;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerResources>(player))
+				{
+					ref var res = ref world.Get<PlayerResources>(player);
+					var goldId = "gold".AsResourceId(GameHost.Instance.DefinitionManager);
+					res.Value[goldId] = (int)value;
+				}
+			}
+		}
+	}
+
+	public float Wood
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerResources>(player))
+				{
+					var res = world.Get<PlayerResources>(player);
+					var woodId = "wood".AsResourceId(GameHost.Instance.DefinitionManager);
+					if (res.Value.TryGetValue(woodId, out var val)) return val;
+				}
+			}
+			return 400f;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerResources>(player))
+				{
+					ref var res = ref world.Get<PlayerResources>(player);
+					var woodId = "wood".AsResourceId(GameHost.Instance.DefinitionManager);
+					res.Value[woodId] = (int)value;
+				}
+			}
+		}
+	}
+
+	public float Stone
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerResources>(player))
+				{
+					var res = world.Get<PlayerResources>(player);
+					var stoneId = "stone".AsResourceId(GameHost.Instance.DefinitionManager);
+					if (res.Value.TryGetValue(stoneId, out var val)) return val;
+				}
+			}
+			return 200f;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerResources>(player))
+				{
+					ref var res = ref world.Get<PlayerResources>(player);
+					var stoneId = "stone".AsResourceId(GameHost.Instance.DefinitionManager);
+					res.Value[stoneId] = (int)value;
+				}
+			}
+		}
+	}
+
+	public float ResourceGatherMultiplier
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerUpgrades>(player))
+				{
+					return world.Get<PlayerUpgrades>(player).HarvestingUpgrade ? 1.5f : 1.0f;
+				}
+			}
+			return 1.0f;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerUpgrades>(player))
+				{
+					ref var upgrades = ref world.Get<PlayerUpgrades>(player);
+					upgrades.HarvestingUpgrade = value > 1.0f;
+				}
+			}
+		}
+	}
+
 	public float GoldPerSec { get; set; } = 1.5f;
 	public float WoodPerSec { get; set; } = 1.0f;
 	public float StonePerSec { get; set; } = 0.8f;
@@ -25,13 +182,161 @@ public class InGameHUDViewModel
 
 	public bool IsConnectionLost { get; set; }
 
-	public bool CountdownActive { get; set; }
-	public float CountdownDuration { get; set; }
-	public string CountdownText { get; set; } = "";
+	public bool CountdownActive
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<CountdownState>(GameHost.Instance.WorldEntity))
+				{
+					return world.Get<CountdownState>(GameHost.Instance.WorldEntity).Active;
+				}
+			}
+			return false;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<CountdownState>(GameHost.Instance.WorldEntity))
+				{
+					ref var countdown = ref world.Get<CountdownState>(GameHost.Instance.WorldEntity);
+					countdown.Active = value;
+				}
+			}
+		}
+	}
 
-	public bool LeaderboardVisible { get; set; }
-	public string LeaderboardTitle { get; set; } = "";
-	public Dictionary<string, string> LeaderboardValues { get; } = new();
+	public float CountdownDuration
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<CountdownState>(GameHost.Instance.WorldEntity))
+				{
+					return world.Get<CountdownState>(GameHost.Instance.WorldEntity).Duration;
+				}
+			}
+			return 0f;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<CountdownState>(GameHost.Instance.WorldEntity))
+				{
+					ref var countdown = ref world.Get<CountdownState>(GameHost.Instance.WorldEntity);
+					countdown.Duration = value;
+				}
+			}
+		}
+	}
+
+	public string CountdownText
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<CountdownState>(GameHost.Instance.WorldEntity))
+				{
+					return world.Get<CountdownState>(GameHost.Instance.WorldEntity).Text;
+				}
+			}
+			return "";
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<CountdownState>(GameHost.Instance.WorldEntity))
+				{
+					ref var countdown = ref world.Get<CountdownState>(GameHost.Instance.WorldEntity);
+					countdown.Text = value;
+				}
+			}
+		}
+	}
+
+	public bool LeaderboardVisible
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<LeaderboardState>(GameHost.Instance.WorldEntity))
+				{
+					return world.Get<LeaderboardState>(GameHost.Instance.WorldEntity).Visible;
+				}
+			}
+			return false;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<LeaderboardState>(GameHost.Instance.WorldEntity))
+				{
+					ref var lb = ref world.Get<LeaderboardState>(GameHost.Instance.WorldEntity);
+					lb.Visible = value;
+				}
+			}
+		}
+	}
+
+	public string LeaderboardTitle
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<LeaderboardState>(GameHost.Instance.WorldEntity))
+				{
+					return world.Get<LeaderboardState>(GameHost.Instance.WorldEntity).Title;
+				}
+			}
+			return "";
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<LeaderboardState>(GameHost.Instance.WorldEntity))
+				{
+					ref var lb = ref world.Get<LeaderboardState>(GameHost.Instance.WorldEntity);
+					lb.Title = value;
+				}
+			}
+		}
+	}
+
+	public Dictionary<string, string> LeaderboardValues
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<LeaderboardState>(GameHost.Instance.WorldEntity))
+				{
+					return world.Get<LeaderboardState>(GameHost.Instance.WorldEntity).Values;
+				}
+			}
+			return new Dictionary<string, string>();
+		}
+	}
 
 	public List<SelectedUnitInfo> SelectedUnits { get; } = new();
 	public int CycleSelectionIndex { get; set; }
@@ -82,42 +387,33 @@ public class InGameHUDViewModel
 
 	public void Update(double delta)
 	{
-		if (CountdownActive)
-		{
-			CountdownDuration -= (float)delta;
-			if (CountdownDuration <= 0f)
-			{
-				CountdownDuration = 0f;
-				CountdownActive = false;
-			}
-		}
-
-		if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.PlayerEntity != Entity.Null)
-		{
-			var world = GameHost.Instance.EcsWorld;
-			var player = GameHost.Instance.PlayerEntity;
-			if (world.IsAlive(player) && world.Has<PlayerResources>(player))
-			{
-				var resources = world.Get<PlayerResources>(player).Value;
-				var defManager = GameHost.Instance.DefinitionManager;
-				var goldId = "gold".AsResourceId(defManager);
-				var woodId = "wood".AsResourceId(defManager);
-				var stoneId = "stone".AsResourceId(defManager);
-
-				if (resources.TryGetValue(goldId, out var goldVal)) Gold = goldVal;
-				if (resources.TryGetValue(woodId, out var woodVal)) Wood = woodVal;
-				if (resources.TryGetValue(stoneId, out var stoneVal)) Stone = stoneVal;
-			}
-		}
-
 		GoldPerSec = 1.5f * ResourceGatherMultiplier;
 		WoodPerSec = 1.0f * ResourceGatherMultiplier;
 		StonePerSec = 0.8f * ResourceGatherMultiplier;
 
 		if (GameHost.Instance != null)
 		{
-			CurrentPopulation = GameHost.Instance.CurrentPopulation;
-			MaxPopulation = GameHost.Instance.MaxPopulation;
+			if (GameHost.Instance.EcsWorld != null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				var player = GetTargetPlayerEntity();
+				if (player != Entity.Null && world.IsAlive(player) && world.Has<PlayerPopulation>(player))
+				{
+					var pop = world.Get<PlayerPopulation>(player);
+					CurrentPopulation = pop.Current;
+					MaxPopulation = pop.Max;
+				}
+				else
+				{
+					CurrentPopulation = GameHost.Instance.CurrentPopulation;
+					MaxPopulation = GameHost.Instance.MaxPopulation;
+				}
+			}
+			else
+			{
+				CurrentPopulation = GameHost.Instance.CurrentPopulation;
+				MaxPopulation = GameHost.Instance.MaxPopulation;
+			}
 
 			float t = GameHost.Instance.GameElapsedTime;
 			int mins = (int)(t / 60);
@@ -207,9 +503,9 @@ public class InGameHUDViewModel
 				if (world.Has<Armor>(u.Entity)) info.Armor = world.Get<Armor>(u.Entity).Value;
 				if (world.Has<MovementStats>(u.Entity)) info.Speed = world.Get<MovementStats>(u.Entity).Speed;
 
-				if (world.Has<GameHost.Gatherer>(u.Entity))
+				if (world.Has<Gatherer>(u.Entity))
 				{
-					var gather = world.Get<GameHost.Gatherer>(u.Entity);
+					var gather = world.Get<Gatherer>(u.Entity);
 					string stateLabel = gather.ReturningToBase ? "● " + TranslationServer.Translate("DELIVERING") : "● " + TranslationServer.Translate("HARVESTING");
 					info.StateText = $"{stateLabel} ({gather.CarriedAmount:F0} / {gather.MaxCapacity:F0} {TranslationServer.Translate(gather.ResourceType.ToUpper())})";
 				}
@@ -221,9 +517,9 @@ public class InGameHUDViewModel
 				else if (world.Has<AttackTarget>(u.Entity))                              info.StateText = "● " + TranslationServer.Translate("ATTACKING");
 				else                                                                         info.StateText = "○ " + TranslationServer.Translate("IDLE");
 
-				if (u.UnitId == "tower" && world.Has<GameHost.TowerUpgradeLevel>(u.Entity))
+				if (u.UnitId == "tower" && world.Has<TowerUpgradeLevel>(u.Entity))
 				{
-					int lvl = world.Get<GameHost.TowerUpgradeLevel>(u.Entity).Value;
+					int lvl = world.Get<TowerUpgradeLevel>(u.Entity).Value;
 					info.StateText += $"   ★ {TranslationServer.Translate("LVL")} {lvl}";
 				}
 

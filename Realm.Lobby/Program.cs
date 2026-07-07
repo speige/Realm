@@ -11,6 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton<LobbyRegistry>();
 builder.Services.AddSingleton<GeoIpService>();
 builder.Services.AddSingleton<SeederRegistry>();
+builder.Services.AddSingleton<DataStoreService>();
 builder.Services.AddHttpClient();
 
 
@@ -106,7 +107,8 @@ app.MapGet("/lobbies", (LobbyRegistry registry, GeoIpService geoIp, HttpContext 
             distance,
             estimatedPing,
             lobby.OriginServerUri,
-            lobby.HostPingBaseline
+            lobby.HostPingBaseline,
+            lobby.LocalIP
         );
     });
 
@@ -149,7 +151,8 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
         LastHeartbeat = DateTime.UtcNow,
         OriginServerUri = peerRegistry.SelfUrl,
         HostToken = hostToken,
-        HostPingBaseline = req.HostPingBaseline
+        HostPingBaseline = req.HostPingBaseline,
+        LocalIP = req.LocalIP
     };
 
     registry.AddOrUpdate(info);
@@ -320,7 +323,7 @@ app.MapPost("/lobbies/join", async (JoinRequest req, LobbyRegistry registry, IHt
         
         Console.WriteLine($"[Registry] Relayed punch request to host {lobby.LobbyId} for client {req.ClientPublicIP}:{req.ClientPublicPort}");
         
-        return Results.Ok(new JoinResponseDto(lobby.HostIP, lobby.HostPort));
+        return Results.Ok(new JoinResponseDto(lobby.HostIP, lobby.HostPort, lobby.LocalIP));
     }
     else
     {
@@ -574,6 +577,246 @@ app.MapPost("/seeders/download", async (SeederDownloadRequest req, SeederRegistr
     return Results.BadRequest(new { Message = "Failed to coordinate UDP punch with seeders" });
 });
 
+
+app.MapPost("/api/publish_map", (Realm.Lobby.Models.PublishMapRequest req, DataStoreService db, HttpContext context) =>
+{
+    try {
+        var mapDoc = JsonDocument.Parse(req.MapJson);
+        var root = mapDoc.RootElement;
+        
+        string mapTitle = "";
+        string mapVersion = "1.0"; // default if missing
+        
+        if (root.TryGetProperty("MapProperties", out var mapProps)) {
+            if (mapProps.TryGetProperty("MapName", out var nameProp)) mapTitle = nameProp.GetString() ?? "";
+            if (mapProps.TryGetProperty("MapTitle", out var titleProp)) mapTitle = titleProp.GetString() ?? mapTitle;
+            if (mapProps.TryGetProperty("MapVersion", out var versionProp)) mapVersion = versionProp.GetString() ?? "1.0";
+        }
+        
+        if (string.IsNullOrEmpty(mapTitle)) {
+            return Results.BadRequest(new { Message = "MapTitle is required in map.json MapProperties" });
+        }
+        
+        string compositeKey = $"{mapTitle}_{mapVersion}";
+        var existingMap = db.Get<JsonDocument>("published_maps", compositeKey);
+        if (existingMap != null) {
+            return Results.BadRequest(new { Message = $"Map with Title '{mapTitle}' and Version '{mapVersion}' already exists." });
+        }
+        
+        // Verify contributors
+        var contributors = new HashSet<string>();
+        if (root.TryGetProperty("Contributors", out var contProp) && contProp.ValueKind == JsonValueKind.Array) {
+            foreach (var element in contProp.EnumerateArray()) {
+                var str = element.GetString();
+                if (str != null) contributors.Add(str);
+            }
+        }
+        
+        // Check all referenced asset hashes
+        foreach (var hash in req.ReferencedHashes) {
+            var assetMeta = db.Get<JsonDocument>("asset_signatures", hash);
+            if (assetMeta != null) {
+                var author = assetMeta.RootElement.GetProperty("AuthorUsername").GetString();
+                if (!string.IsNullOrEmpty(author) && !contributors.Contains(author)) {
+                    return Results.BadRequest(new { Message = $"Author '{author}' from asset '{hash}' is missing from the Contributors list." });
+                }
+            }
+        }
+        
+        db.Upsert("published_maps", compositeKey, mapDoc);
+        return Results.Ok(new { Status = "Published", MapId = compositeKey });
+    }
+    catch (Exception ex) {
+        return Results.BadRequest(new { Message = "Invalid JSON or request", Error = ex.Message });
+    }
+});
+
+app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataStoreService db) =>
+{
+    if (!request.HasFormContentType)
+        return Results.BadRequest("Expected multipart/form-data");
+        
+    var form = await request.ReadFormAsync();
+    
+    string hash = form["Hash"].ToString();
+    string signature = form["Signature"].ToString();
+    string authorUsername = form["AuthorUsername"].ToString();
+    string publicKey = form["PublicKey"].ToString();
+    
+    
+    if (string.IsNullOrEmpty(hash) || hash.Contains(".") || hash.Contains("/") || hash.Contains("\\")) return Results.BadRequest("Invalid Hash.");
+
+    
+    var existingMeta = db.Get<JsonDocument>("asset_signatures", hash);
+    if (existingMeta == null) {
+        var metaDoc = JsonSerializer.SerializeToDocument(new { 
+            Signature = signature, 
+            AuthorUsername = authorUsername,
+            PublicKey = publicKey
+        });
+        db.Upsert("asset_signatures", hash, metaDoc);
+    }
+    
+    var file = form.Files.GetFile("File");
+    if (file != null && file.Length > 0)
+    {
+        string archiveDir = ".data/assets";
+        if (!System.IO.Directory.Exists(archiveDir))
+            System.IO.Directory.CreateDirectory(archiveDir);
+            
+        string filePath = System.IO.Path.Combine(archiveDir, hash);
+        if (!System.IO.File.Exists(filePath))
+        {
+            using var stream = new System.IO.FileStream(filePath, System.IO.FileMode.Create);
+            await file.CopyToAsync(stream);
+        }
+    }
+    
+    return Results.Ok(new { Status = "Asset registered" });
+});
+
+app.MapGet("/api/publish_map/asset_author/{hash}", (string hash, DataStoreService db) => {
+    var existingMeta = db.Get<JsonDocument>("asset_signatures", hash);
+    if (existingMeta != null) {
+        return Results.Ok(existingMeta);
+    }
+    return Results.NotFound();
+});
+
+app.MapGet("/api/data/{collection}/{id}", (string collection, string id, DataStoreService db, HttpContext context) =>
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    var item = db.Get<JsonDocument>(collection, id);
+    if (item != null)
+    {
+        return Results.Ok(item);
+    }
+    return Results.NotFound(new { Message = "Not found" });
+});
+
+app.MapGet("/api/data/{collection}", (string collection, DataStoreService db, HttpContext context) =>
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    var items = db.GetAll<JsonDocument>(collection);
+    return Results.Ok(items);
+});
+
+app.MapPost("/api/data/{collection}", (string collection, JsonDocument data, DataStoreService db, HttpContext context) =>
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    var id = Guid.NewGuid().ToString("N");
+    db.Upsert(collection, id, data);
+    return Results.Ok(new { Id = id });
+});
+
+app.MapPut("/api/data/{collection}/{id}", (string collection, string id, JsonDocument data, DataStoreService db, HttpContext context) =>
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    db.Upsert(collection, id, data);
+    return Results.Ok(new { Status = "Updated" });
+});
+
+app.MapDelete("/api/data/{collection}/{id}", (string collection, string id, DataStoreService db, HttpContext context) =>
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    db.Delete(collection, id);
+    return Results.Ok(new { Status = "Deleted" });
+});
+
+app.MapGet("/api/players", (DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    return Results.Ok(db.GetAll<JsonDocument>("players"));
+});
+app.MapGet("/api/players/{id}", (string id, DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    var p = db.Get<JsonDocument>("players", id);
+    return p != null ? Results.Ok(p) : Results.NotFound();
+});
+app.MapPost("/api/players", (JsonDocument data, DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    var id = Guid.NewGuid().ToString("N");
+    db.Upsert("players", id, data);
+    return Results.Ok(new { Id = id });
+});
+app.MapPut("/api/players/{id}", (string id, JsonDocument data, DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    db.Upsert("players", id, data);
+    return Results.Ok();
+});
+app.MapDelete("/api/players/{id}", (string id, DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    db.Delete("players", id);
+    return Results.Ok();
+});
+
+app.MapGet("/api/maps", (DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    return Results.Ok(db.GetAll<JsonDocument>("maps"));
+});
+app.MapGet("/api/maps/{id}", (string id, DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    var m = db.Get<JsonDocument>("maps", id);
+    return m != null ? Results.Ok(m) : Results.NotFound();
+});
+app.MapPost("/api/maps", (JsonDocument data, DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    var id = Guid.NewGuid().ToString("N");
+    db.Upsert("maps", id, data);
+    return Results.Ok(new { Id = id });
+});
+app.MapPut("/api/maps/{id}", (string id, JsonDocument data, DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    db.Upsert("maps", id, data);
+    return Results.Ok();
+});
+app.MapDelete("/api/maps/{id}", (string id, DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    db.Delete("maps", id);
+    return Results.Ok();
+});
+
+app.MapGet("/api/admin/bans", (DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    return Results.Ok(db.GetAll<JsonDocument>("bans"));
+});
+app.MapGet("/api/admin/bans/{id}", (string id, DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    var b = db.Get<JsonDocument>("bans", id);
+    return b != null ? Results.Ok(b) : Results.NotFound();
+});
+app.MapPost("/api/admin/bans", (JsonDocument data, DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    var id = Guid.NewGuid().ToString("N");
+    db.Upsert("bans", id, data);
+    return Results.Ok(new { Id = id });
+});
+app.MapPut("/api/admin/bans/{id}", (string id, JsonDocument data, DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    db.Upsert("bans", id, data);
+    return Results.Ok();
+});
+app.MapDelete("/api/admin/bans/{id}", (string id, DataStoreService db, HttpContext context) => 
+{
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) || !authHeader.ToString().StartsWith("Bearer ")) return Results.Unauthorized();
+    db.Delete("bans", id);
+    return Results.Ok();
+});
+
+
 app.Map("/seeders/ws", async (HttpContext context, SeederRegistry registry) =>
 {
     if (context.WebSockets.IsWebSocketRequest)
@@ -619,4 +862,3 @@ app.Map("/seeders/ws", async (HttpContext context, SeederRegistry registry) =>
 });
 
 app.Run();
-

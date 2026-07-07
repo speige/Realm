@@ -12,11 +12,11 @@ namespace Realm.Ecs.Services;
 /// </summary>
 internal class CombatService
 {
-	private readonly World _world;
+	private readonly WorldAccessor _ecsWorldAccessor;
 
-	public CombatService(World world)
+	public CombatService(WorldAccessor ecsWorldAccessor)
 	{
-		_world = world;
+		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
 	/// <summary>
@@ -25,11 +25,11 @@ internal class CombatService
 	/// </summary>
 	public void PerformAttack(Entity attacker, Entity defender)
 	{
-		if (!_world.Has<Attack>(attacker) || !_world.Has<Health>(defender)) return;
+		if (!_ecsWorldAccessor.Current.Has<Attack>(attacker) || !_ecsWorldAccessor.Current.Has<Health>(defender)) return;
 
-		var attack = _world.Get<Attack>(attacker);
-		var health = _world.Get<Health>(defender);
-		var armor = _world.Has<Armor>(defender) ? _world.Get<Armor>(defender) : new Armor(0);
+		var attack = _ecsWorldAccessor.Current.Get<Attack>(attacker);
+		var health = _ecsWorldAccessor.Current.Get<Health>(defender);
+		var armor = _ecsWorldAccessor.Current.Has<Armor>(defender) ? _ecsWorldAccessor.Current.Get<Armor>(defender) : new Armor(0);
 
 		var damage = attack.Damage - armor.Value;
 		if (damage < 1) damage = 1;
@@ -39,10 +39,10 @@ internal class CombatService
 		if (health.Current <= 0)
 		{
 			health.Current = 0;
-			_world.Add<Dead>(defender);
-			Console.WriteLine($"{_world.Get<Name>(defender).Value} has been slain!");
+			_ecsWorldAccessor.Current.Add<Dead>(defender);
+			Console.WriteLine($"{_ecsWorldAccessor.Current.Get<Name>(defender).Value} has been slain!");
 		}
 
-		_world.Set(defender, health);
+		_ecsWorldAccessor.Current.Set(defender, health);
 	}
 }

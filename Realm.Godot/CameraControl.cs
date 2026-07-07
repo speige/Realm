@@ -1,34 +1,326 @@
 using Godot;
+using Realm.Ecs.Components.Core;
 
 public partial class CameraControl : Camera3D
 {
-	[Export] public float MoveSpeed = 35.0f;
-	[Export] public float ZoomSpeed = 10.0f;
-	[Export] public float MinZoom = 10.0f;
-	[Export] public float MaxZoom = 60.0f;
-	[Export] public float ZoomStep = 4.0f;
-	[Export] public float EdgePanMargin = 20.0f;
-	[Export] public bool EnableEdgePanning = true;
+	private bool HasCameraState => GameHost.Instance?.EcsWorld != null && GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<CameraState>(GameHost.Instance.WorldEntity);
 
-	[Export] public bool IsLocked { get; set; } = false;
+	[Export]
+	public float MoveSpeed
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).MoveSpeed : 35.0f;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.MoveSpeed = value;
+			}
+		}
+	}
+
+	[Export]
+	public float ZoomSpeed
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).ZoomSpeed : 10.0f;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.ZoomSpeed = value;
+			}
+		}
+	}
+
+	[Export]
+	public float MinZoom
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).MinZoom : 10.0f;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.MinZoom = value;
+			}
+		}
+	}
+
+	[Export]
+	public float MaxZoom
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).MaxZoom : 60.0f;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.MaxZoom = value;
+			}
+		}
+	}
+
+	[Export]
+	public float ZoomStep
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).ZoomStep : 4.0f;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.ZoomStep = value;
+			}
+		}
+	}
+
+	[Export]
+	public float EdgePanMargin
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).EdgePanMargin : 20.0f;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.EdgePanMargin = value;
+			}
+		}
+	}
+
+	[Export]
+	public bool EnableEdgePanning
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).EnableEdgePanning : true;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.EnableEdgePanning = value;
+			}
+		}
+	}
+
+	[Export]
+	public bool IsLocked
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).IsLocked : false;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.IsLocked = value;
+			}
+		}
+	}
+
 	public Node3D FollowTarget { get; set; } = null;
 
-	public float? LimitLeft { get; set; } = null;
-	public float? LimitRight { get; set; } = null;
-	public float? LimitTop { get; set; } = null;
-	public float? LimitBottom { get; set; } = null;
+	public float? LimitLeft
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).LimitLeft : null;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.LimitLeft = value;
+			}
+		}
+	}
 
-	private float _targetHeight = 35.0f;
-	private float _currentHeight = 35.0f;
-	private bool _isDraggingMouse = false;
-	private Vector2 _lastMousePosition = Vector2.Zero;
-	private float _targetYaw = 0.0f;
-	private float _currentYaw = 0.0f;
-	private float _targetPitch = -55.0f;
-	private float _currentPitch = -55.0f;
-	private bool _isTopDown = false;
-	private float _yawSwing = 0.0f;
-	private float _pitchSwing = 0.0f;
+	public float? LimitRight
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).LimitRight : null;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.LimitRight = value;
+			}
+		}
+	}
+
+	public float? LimitTop
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).LimitTop : null;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.LimitTop = value;
+			}
+		}
+	}
+
+	public float? LimitBottom
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).LimitBottom : null;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.LimitBottom = value;
+			}
+		}
+	}
+
+	private float _targetHeight
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).TargetHeight : 35.0f;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.TargetHeight = value;
+			}
+		}
+	}
+
+	private float _currentHeight
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).CurrentHeight : 35.0f;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.CurrentHeight = value;
+			}
+		}
+	}
+
+	private bool _isDraggingMouse
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).IsDraggingMouse : false;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.IsDraggingMouse = value;
+			}
+		}
+	}
+
+	private Vector2 _lastMousePosition
+	{
+		get
+		{
+			if (HasCameraState)
+			{
+				var pos = GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).LastMousePosition;
+				return new Vector2(pos.X, pos.Y);
+			}
+			return Vector2.Zero;
+		}
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.LastMousePosition = new System.Numerics.Vector2(value.X, value.Y);
+			}
+		}
+	}
+
+	private float _targetYaw
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).TargetYaw : 0.0f;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.TargetYaw = value;
+			}
+		}
+	}
+
+	private float _currentYaw
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).CurrentYaw : 0.0f;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.CurrentYaw = value;
+			}
+		}
+	}
+
+	private float _targetPitch
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).TargetPitch : -55.0f;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.TargetPitch = value;
+			}
+		}
+	}
+
+	private float _currentPitch
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).CurrentPitch : -55.0f;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.CurrentPitch = value;
+			}
+		}
+	}
+
+	private bool _isTopDown
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).IsTopDown : false;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.IsTopDown = value;
+			}
+		}
+	}
+
+	private float _yawSwing
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).YawSwing : 0.0f;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.YawSwing = value;
+			}
+		}
+	}
+
+	private float _pitchSwing
+	{
+		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).PitchSwing : 0.0f;
+		set
+		{
+			if (HasCameraState)
+			{
+				ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+				state.PitchSwing = value;
+			}
+		}
+	}
 
 	public void ToggleTopDown()
 	{

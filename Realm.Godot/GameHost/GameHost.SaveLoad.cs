@@ -1,251 +1,236 @@
 using Godot;
-using Realm.MapAPI;
-using System;
+using Realm.Ecs.Components.Core;
+using Realm.Ecs.Components.Terrain;
+using Realm.Ecs.Components.Meta;
+using Arch.Core;
 using System.Collections.Generic;
-using System.Text.Json;
 
 public partial class GameHost
 {
-
-
 	public void SaveMapToFile(string customPath = "")
 	{
 		if (GroundTerrain == null) return;
 
-		var saveData = new MapSaveData();
-		saveData.WaterEnabled = GroundTerrain.WaterEnabled;
-		saveData.WaterHeight = GroundTerrain.WaterHeight;
-		saveData.BlockMode = EditorBlockMode;
-		saveData.BlockLevelHeight = EditorBlockLevelHeight;
-		saveData.WC3BlockMode = EditorBlockMode;
-		saveData.WC3LevelHeight = EditorBlockLevelHeight;
-		saveData.CameraBoundsLeft = EditorCameraBoundsLeft;
-		saveData.CameraBoundsRight = EditorCameraBoundsRight;
-		saveData.CameraBoundsTop = EditorCameraBoundsTop;
-		saveData.CameraBoundsBottom = EditorCameraBoundsBottom;
-		saveData.SkyboxPath = EditorSkyboxPath;
-		
 		int width = GroundTerrain.Width;
 		int depth = GroundTerrain.Depth;
-		saveData.Heights = new float[width * depth];
-		saveData.Colors = new string[width * depth];
-		saveData.Pathing = new int[width * depth];
-
+		string[] htmlColors = new string[width * depth];
 		for (int z = 0; z < depth; z++)
 		{
 			for (int x = 0; x < width; x++)
 			{
-				int idx = z * width + x;
-				saveData.Heights[idx] = GroundTerrain.Heights[x, z];
-				saveData.Colors[idx] = GroundTerrain.Colors[x, z].ToHtml(true);
-				saveData.Pathing[idx] = GroundTerrain.PathingCodes != null ? GroundTerrain.PathingCodes[x, z] : (EditableTerrain.PATHING_GROUND | EditableTerrain.PATHING_FLYING);
+				htmlColors[z * width + x] = GroundTerrain.Colors[x, z].ToHtml(true);
 			}
 		}
 
-		saveData.Units = new List<UnitSaveData>();
+		var unitsData = new List<(Entity Entity, float RotationY, float Scale)>();
 		foreach (var unit in AllUnits)
 		{
-			if (GodotObject.IsInstanceValid(unit))
+			if (GodotObject.IsInstanceValid(unit) && EcsWorld.IsAlive(unit.Entity))
 			{
-				saveData.Units.Add(new UnitSaveData
-				{
-					UnitId = unit.UnitId,
-					PosX = unit.Position.X,
-					PosY = unit.Position.Y,
-					PosZ = unit.Position.Z,
-					RotationY = unit.RotationDegrees.Y,
-					Scale = unit.Scale.X,
-					IsEnemy = unit.IsEnemy
-				});
+				unitsData.Add((unit.Entity, unit.RotationDegrees.Y, unit.Scale.X));
 			}
 		}
 
-		saveData.Props = new List<PropSaveData>();
-		saveData.Decals = new List<DecalSaveData>();
+		var propsData = new List<(Entity Entity, float RotationY, float Scale)>();
+		foreach (var prop in AllProps)
+		{
+			if (GodotObject.IsInstanceValid(prop) && EcsWorld.IsAlive(prop.Entity))
+			{
+				propsData.Add((prop.Entity, prop.RotationDegrees.Y, prop.Scale.X));
+			}
+		}
+
+		var decalsData = new List<(string DecalId, System.Numerics.Vector3 Position, float RotationY, float Scale)>();
 		foreach (var child in GetChildren())
 		{
-			if (child is Prop3D prop && GodotObject.IsInstanceValid(prop))
+			if (child is Decal decal && GodotObject.IsInstanceValid(decal))
 			{
-				saveData.Props.Add(new PropSaveData
-				{
-					PropId = prop.PropId,
-					PosX = prop.Position.X,
-					PosY = prop.Position.Y,
-					PosZ = prop.Position.Z,
-					RotationY = prop.RotationDegrees.Y,
-					Scale = prop.Scale.X
-				});
-			}
-			else if (child is Decal decal && GodotObject.IsInstanceValid(decal))
-			{
-				saveData.Decals.Add(new DecalSaveData
-				{
-					DecalId = decal.HasMeta("DecalId") ? decal.GetMeta("DecalId").AsString() : "logo",
-					PosX = decal.Position.X,
-					PosY = decal.Position.Y,
-					PosZ = decal.Position.Z,
-					RotationY = decal.RotationDegrees.Y,
-					Scale = decal.Scale.X
-				});
+				string decalId = decal is Decal3D decal3D ? decal3D.DecalId : "logo";
+				decalsData.Add((decalId, new System.Numerics.Vector3(decal.Position.X, decal.Position.Y, decal.Position.Z), decal.RotationDegrees.Y, decal.Scale.X));
 			}
 		}
 
-		try
-		{
-			string json = System.Text.Json.JsonSerializer.Serialize(saveData);
-			string path = string.IsNullOrEmpty(customPath) ? "user://terrain.json" : customPath;
-			using var file = FileAccess.Open(path, FileAccess.ModeFlags.Write);
-			if (file != null)
-			{
-				file.StoreString(json);
-				EditorHasUnsavedChanges = false;
-			}
-		}
-		catch (Exception ex)
-		{
-			GD.PrintErr(ex.Message);
-		}
+		string path = string.IsNullOrEmpty(customPath) ? "user://terrain.json" : customPath;
+		string absolutePath = ProjectSettings.GlobalizePath(path);
+
+		_saveLoadService.SaveMapToFile(absolutePath, htmlColors, unitsData.ToArray(), propsData.ToArray(), decalsData.ToArray());
 	}
 
 	public bool LoadMapFromFile(string customPath = "", bool terrainOnly = false)
 	{
 		string path = string.IsNullOrEmpty(customPath) ? "user://terrain.json" : customPath;
-		if (!FileAccess.FileExists(path)) return false;
+		string absolutePath = ProjectSettings.GlobalizePath(path);
 
-		try
+		ClearAllUnits();
+
+		bool success = _saveLoadService.LoadMapFromFile(absolutePath, terrainOnly);
+		if (!success)
 		{
-			using var file = FileAccess.Open(path, FileAccess.ModeFlags.Read);
-			if (file == null) return false;
-
-			string json = file.GetAsText();
-			var saveData = System.Text.Json.JsonSerializer.Deserialize<MapSaveData>(json);
-			if (saveData == null) return false;
-
-			ClearAllUnits();
-
-			if (GroundTerrain == null)
+			int defaultWidth = 126;
+			int defaultDepth = 126;
+			float[,] defaultHeights = new float[defaultWidth, defaultDepth];
+			int[,] defaultPathing = new int[defaultWidth, defaultDepth];
+			for (int z = 0; z < defaultDepth; z++)
 			{
-				var terrainNode = new EditableTerrain();
-				terrainNode.Name = "Ground";
-				AddChild(terrainNode);
-				GroundTerrain = terrainNode;
+				for (int x = 0; x < defaultWidth; x++)
+				{
+					defaultHeights[x, z] = 0.0f;
+					defaultPathing[x, z] = EditableTerrain.PATHING_GROUND | EditableTerrain.PATHING_FLYING;
+				}
 			}
-
-			bool waterEnabled = saveData.WaterEnabled ?? true;
-			GroundTerrain.WaterEnabled = waterEnabled;
-			MapEditorHUD.Instance?.UpdateWaterEnabledExternal(waterEnabled);
-			if (saveData.WaterHeight.HasValue)
+			if (EcsWorld.Has<TerrainState>(_worldEntity))
 			{
-				GroundTerrain.WaterHeight = saveData.WaterHeight.Value;
-				MapEditorHUD.Instance?.UpdateWaterHeightExternal(saveData.WaterHeight.Value);
+				ref var ts = ref EcsWorld.Get<TerrainState>(_worldEntity);
+				ts.Heights = defaultHeights;
+				ts.PathingCodes = defaultPathing;
+				EcsWorld.Set(_worldEntity, ts);
 			}
-			bool isBlock = saveData.BlockMode ?? saveData.WC3BlockMode ?? false;
-			EditorBlockMode = isBlock;
-			MapEditorHUD.Instance?.UpdateBlockModeExternal(isBlock);
-
-			float step = saveData.BlockLevelHeight ?? saveData.WC3LevelHeight ?? 4.0f;
-			EditorBlockLevelHeight = step;
-			MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(step);
-
-			if (saveData.CameraBoundsLeft.HasValue) EditorCameraBoundsLeft = saveData.CameraBoundsLeft.Value;
-			if (saveData.CameraBoundsRight.HasValue) EditorCameraBoundsRight = saveData.CameraBoundsRight.Value;
-			if (saveData.CameraBoundsTop.HasValue) EditorCameraBoundsTop = saveData.CameraBoundsTop.Value;
-			if (saveData.CameraBoundsBottom.HasValue) EditorCameraBoundsBottom = saveData.CameraBoundsBottom.Value;
+			if (GroundTerrain != null)
+			{
+				for (int z = 0; z < defaultDepth; z++)
+				{
+					for (int x = 0; x < defaultWidth; x++)
+					{
+						GroundTerrain.Colors[x, z] = new Color(0.2f, 0.6f, 0.2f);
+					}
+				}
+				GroundTerrain.UpdateMeshAndPhysics();
+			}
+			MapEditorHUD.Instance?.UpdateWaterEnabledExternal(true);
+			MapEditorHUD.Instance?.UpdateWaterHeightExternal(-2.0f);
+			MapEditorHUD.Instance?.UpdateBlockModeExternal(true);
+			MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(4.0f);
 			MapEditorHUD.Instance?.UpdateCameraBoundsUI();
-			RebuildCameraBoundsOverlay();
-
-			if (!string.IsNullOrEmpty(saveData.SkyboxPath))
-			{
-				SetSkyboxTexture(saveData.SkyboxPath);
-				MapEditorHUD.Instance?.UpdateSelectedSkyboxExternal(saveData.SkyboxPath);
-			}
-
-			int width = GroundTerrain.Width;
-			int depth = GroundTerrain.Depth;
-
-			if (saveData.Heights != null && saveData.Heights.Length == width * depth)
-			{
-				for (int z = 0; z < depth; z++)
-				{
-					for (int x = 0; x < width; x++)
-					{
-						int idx = z * width + x;
-						GroundTerrain.Heights[x, z] = saveData.Heights[idx];
-					}
-				}
-			}
-
-			if (saveData.Colors != null && saveData.Colors.Length == width * depth)
-			{
-				for (int z = 0; z < depth; z++)
-				{
-					for (int x = 0; x < width; x++)
-					{
-						int idx = z * width + x;
-						GroundTerrain.Colors[x, z] = Color.FromHtml(saveData.Colors[idx]);
-					}
-				}
-			}
-
-			if (saveData.Pathing != null && saveData.Pathing.Length == width * depth)
-			{
-				for (int z = 0; z < depth; z++)
-				{
-					for (int x = 0; x < width; x++)
-					{
-						int idx = z * width + x;
-						GroundTerrain.PathingCodes[x, z] = saveData.Pathing[idx];
-					}
-				}
-			}
-			else
-			{
-				for (int z = 0; z < depth; z++)
-				{
-					for (int x = 0; x < width; x++)
-					{
-						GroundTerrain.PathingCodes[x, z] = EditableTerrain.PATHING_GROUND | EditableTerrain.PATHING_FLYING;
-					}
-				}
-			}
-
-			GroundTerrain.UpdateMeshAndPhysics();
-
-			if (!terrainOnly)
-			{
-				if (saveData.Units != null)
-				{
-					foreach (var u in saveData.Units)
-					{
-						SpawnUnitExternal(u.UnitId, new Vector3(u.PosX, u.PosY, u.PosZ), u.IsEnemy, u.RotationY, u.Scale);
-					}
-				}
-
-				if (saveData.Props != null)
-				{
-					foreach (var p in saveData.Props)
-					{
-						SpawnPropExternalWithParams(p.PropId, new Vector3(p.PosX, p.PosY, p.PosZ), p.RotationY, p.Scale);
-					}
-				}
-
-				if (saveData.Decals != null)
-				{
-					foreach (var d in saveData.Decals)
-					{
-						SpawnDecalExternalWithParams(d.DecalId, new Vector3(d.PosX, d.PosY, d.PosZ), d.RotationY, d.Scale);
-					}
-				}
-			}
-
-			EditorHasUnsavedChanges = false;
-			MapEditorHUD.Instance?.RegenerateMinimap();
-			return true;
-		}
-		catch (Exception ex)
-		{
-			GD.PrintErr(ex.Message);
+			UpdateCameraBoundsOverlayVisibility();
+			UpdateGridOverlayVisibility();
+			UpdatePathingOverlay();
 			return false;
 		}
+
+		if (GroundTerrain == null)
+		{
+			var terrainNode = new EditableTerrain();
+			terrainNode.Name = "Ground";
+			AddChild(terrainNode);
+			GroundTerrain = terrainNode;
+		}
+
+		TerrainState terrain = default;
+		EditorState editor = default;
+		bool foundWorld = false;
+
+		var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateAndEditorStateQuery;
+		EcsWorld.Query(in worldQuery, (ref TerrainState t, ref EditorState e) =>
+		{
+			terrain = t;
+			editor = e;
+			foundWorld = true;
+		});
+
+		if (!foundWorld) return false;
+
+		GroundTerrain.WaterEnabled = terrain.WaterEnabled;
+		MapEditorHUD.Instance?.UpdateWaterEnabledExternal(terrain.WaterEnabled);
+		
+		GroundTerrain.WaterHeight = terrain.WaterHeight;
+		MapEditorHUD.Instance?.UpdateWaterHeightExternal(terrain.WaterHeight);
+
+		MapEditorHUD.Instance?.UpdateBlockModeExternal(editor.BlockMode);
+		MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(editor.BlockLevelHeight);
+		MapEditorHUD.Instance?.UpdateCameraBoundsUI();
+		UpdateCameraBoundsOverlayVisibility();
+		UpdateGridOverlayVisibility();
+		UpdatePathingOverlay();
+
+		if (!string.IsNullOrEmpty(editor.SkyboxPath))
+		{
+			SetSkyboxTexture(editor.SkyboxPath);
+			MapEditorHUD.Instance?.UpdateSelectedSkyboxExternal(editor.SkyboxPath);
+		}
+
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+
+		TerrainColorsState colorsState = default;
+		bool foundColors = false;
+		EcsWorld.Query(in worldQuery, (Entity entity) =>
+		{
+			if (EcsWorld.Has<TerrainColorsState>(entity))
+			{
+				colorsState = EcsWorld.Get<TerrainColorsState>(entity);
+				foundColors = true;
+			}
+		});
+
+		if (foundColors && colorsState.Colors != null && colorsState.Colors.Length == width * depth)
+		{
+			for (int z = 0; z < depth; z++)
+			{
+				for (int x = 0; x < width; x++)
+				{
+					GroundTerrain.Colors[x, z] = Color.FromHtml(colorsState.Colors[z * width + x]);
+				}
+			}
+		}
+
+		if (terrain.Heights != null && terrain.Heights.Length == width * depth)
+		{
+			for (int z = 0; z < depth; z++)
+			{
+				for (int x = 0; x < width; x++)
+				{
+					GroundTerrain.Heights[x, z] = terrain.Heights[x, z];
+				}
+			}
+		}
+
+		if (terrain.PathingCodes != null && terrain.PathingCodes.Length == width * depth)
+		{
+			for (int z = 0; z < depth; z++)
+			{
+				for (int x = 0; x < width; x++)
+				{
+					GroundTerrain.PathingCodes[x, z] = terrain.PathingCodes[x, z];
+				}
+			}
+		}
+
+		GroundTerrain.UpdateMeshAndPhysics();
+
+		if (!terrainOnly)
+		{
+			var unitSpawnQuery = Realm.Ecs.Common.QueryCache.AllUnitSpawnRequestQuery;
+			var unitRequests = new List<Entity>();
+			EcsWorld.Query(in unitSpawnQuery, (Entity entity) => unitRequests.Add(entity));
+			foreach (var reqEnt in unitRequests)
+			{
+				ref var req = ref EcsWorld.Get<UnitSpawnRequest>(reqEnt);
+				SpawnUnitExternal(req.UnitId, new Vector3(req.Position.X, req.Position.Y, req.Position.Z), req.IsEnemy, req.RotationY, req.Scale);
+				EcsWorld.Destroy(reqEnt);
+			}
+
+			var propSpawnQuery = Realm.Ecs.Common.QueryCache.AllPropSpawnRequestQuery;
+			var propRequests = new List<Entity>();
+			EcsWorld.Query(in propSpawnQuery, (Entity entity) => propRequests.Add(entity));
+			foreach (var reqEnt in propRequests)
+			{
+				ref var req = ref EcsWorld.Get<PropSpawnRequest>(reqEnt);
+				SpawnPropExternalWithParams(req.PropId, new Vector3(req.Position.X, req.Position.Y, req.Position.Z), req.RotationY, req.Scale);
+				EcsWorld.Destroy(reqEnt);
+			}
+
+			var decalSpawnQuery = Realm.Ecs.Common.QueryCache.AllDecalSpawnRequestQuery;
+			var decalRequests = new List<Entity>();
+			EcsWorld.Query(in decalSpawnQuery, (Entity entity) => decalRequests.Add(entity));
+			foreach (var reqEnt in decalRequests)
+			{
+				ref var req = ref EcsWorld.Get<DecalSpawnRequest>(reqEnt);
+				SpawnDecalExternalWithParams(req.DecalId, new Vector3(req.Position.X, req.Position.Y, req.Position.Z), req.RotationY, req.Scale);
+				EcsWorld.Destroy(reqEnt);
+			}
+		}
+
+		MapEditorHUD.Instance?.RegenerateMinimap();
+		return true;
 	}
 }

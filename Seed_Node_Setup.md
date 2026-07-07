@@ -20,6 +20,8 @@ When a player hosts a game, the client contacts a registry server configured in 
 
 The server logic is implemented in [Program.cs](file:///C:/temp/Realm/Realm.Lobby/Program.cs).
 
+In addition to acting as a lobby connection registry, the Seed Node handles NoSQL-based data persistence and APIs across the community network to support various features outside the game (ranked ladders, etc).
+
 ---
 
 ## 🛠️ Prerequisites

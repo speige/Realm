@@ -17,14 +17,14 @@ internal class GameInitializer
 	private readonly ArchetypeManager _archetypeManager;
 	private readonly DefinitionManager _definitionManager;
 	private readonly EntityFactory _entityFactory;
-	private readonly World _world;
+	private readonly WorldAccessor _ecsWorldAccessor;
 
-	public GameInitializer(World world, MapLoader mapLoader)
+	public GameInitializer(WorldAccessor ecsWorldAccessor, MapLoader mapLoader)
 	{
-		_world = world;
+		_ecsWorldAccessor = ecsWorldAccessor;
 		_definitionManager = mapLoader.DefinitionManager;
 		_archetypeManager = mapLoader.ArchetypeManager;
-		_entityFactory = new EntityFactory(_world, _archetypeManager, mapLoader.DefinitionManager);
+		_entityFactory = new EntityFactory(_ecsWorldAccessor, _archetypeManager, mapLoader.DefinitionManager);
 	}
 
 	/// <summary>
@@ -32,20 +32,20 @@ internal class GameInitializer
 	/// </summary>
 	public void InitializePlayer(string playerName, string startingUnitArchetypeId)
 	{
-		var playerEntity = _world.Create();
-		_world.Set(playerEntity, new Player());
-		_world.Set(playerEntity, new Name(playerName));
-		_world.Set(playerEntity, new PlayerResources(new Dictionary<ResourceId, int>
+		var playerEntity = _ecsWorldAccessor.Current.Create();
+		_ecsWorldAccessor.Current.Set(playerEntity, new Player());
+		_ecsWorldAccessor.Current.Set(playerEntity, new Name(playerName));
+		_ecsWorldAccessor.Current.Set(playerEntity, new PlayerResources(new Dictionary<ResourceId, int>
 		{
 			{ "Gold".AsResourceId(_definitionManager), 500 }
 		}));
 
-		var typedPlayerEntity = playerEntity.AsPlayerEntity(_world);
+		var typedPlayerEntity = playerEntity.AsPlayerEntity(_ecsWorldAccessor.Current);
 
 		var unitEntity =
 			_entityFactory.SpawnUnit(startingUnitArchetypeId, new Vector3(0, 0, 0));
 
-		_world.Set(unitEntity, new Owner(typedPlayerEntity));
+		_ecsWorldAccessor.Current.Set(unitEntity, new Owner(typedPlayerEntity));
 
 		Console.WriteLine($"{playerName} initialized with a {startingUnitArchetypeId} unit.");
 	}

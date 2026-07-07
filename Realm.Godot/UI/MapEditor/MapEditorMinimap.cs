@@ -103,6 +103,13 @@ public class MapEditorMinimap
 			camera.RotationDegrees = new Vector3(-90, 0, 0);
 			viewport.AddChild(camera);
 
+			bool wasVisible = false;
+			if (GameHost.Instance?.BrushIndicatorMesh != null)
+			{
+				wasVisible = GameHost.Instance.BrushIndicatorMesh.Visible;
+				GameHost.Instance.BrushIndicatorMesh.Visible = false;
+			}
+
 			await _hudNode.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
 
 			var texture = viewport.GetTexture();
@@ -114,6 +121,11 @@ public class MapEditorMinimap
 					var imgTexture = ImageTexture.CreateFromImage(img);
 					minimapBg.Texture = imgTexture;
 				}
+			}
+
+			if (GameHost.Instance?.BrushIndicatorMesh != null)
+			{
+				GameHost.Instance.BrushIndicatorMesh.Visible = wasVisible;
 			}
 
 			viewport.QueueFree();

@@ -10,11 +10,11 @@ namespace Realm.Ecs.Services;
 internal class StatService
 {
 	private readonly DefinitionManager _definitionManager;
-	private readonly World _world;
+	private readonly WorldAccessor _ecsWorldAccessor;
 
-	public StatService(World world, DefinitionManager definitionManager)
+	public StatService(WorldAccessor ecsWorldAccessor, DefinitionManager definitionManager)
 	{
-		_world = world;
+		_ecsWorldAccessor = ecsWorldAccessor;
 		_definitionManager = definitionManager;
 	}
 
@@ -24,16 +24,16 @@ internal class StatService
 	/// </summary>
 	public float GetStatValue(Entity entity, StatId statId)
 	{
-		if (!_world.Has<Stats>(entity)) return 0f;
+		if (!_ecsWorldAccessor.Current.Has<Stats>(entity)) return 0f;
 
-		var baseStats = _world.Get<Stats>(entity).Value;
+		var baseStats = _ecsWorldAccessor.Current.Get<Stats>(entity).Value;
 		if (!baseStats.TryGetValue(statId, out var currentValue)) return 0f;
 
-		var query = new QueryDescription().WithAll<StatModifier>();
+		var query = Realm.Ecs.Common.QueryCache.AllStatModifierQuery;
 		var flatBonus = 0f;
 		var percentBonus = 1.0f;
 
-		_world.Query(in query, (ref Entity e, ref StatModifier mod) =>
+		_ecsWorldAccessor.Current.Query(in query, (ref Entity e, ref StatModifier mod) =>
 		{
 			if (e != entity || mod.StatTypeId != statId) return;
 
@@ -51,6 +51,6 @@ internal class StatService
 	/// </summary>
 	public void ApplyStatModifier(Entity entity, StatModifier modifier)
 	{
-		_world.Add(entity, modifier);
+		_ecsWorldAccessor.Current.Add(entity, modifier);
 	}
 }

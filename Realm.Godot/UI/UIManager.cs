@@ -393,4 +393,5 @@ public partial class UIManager : Control
 			MoveChild(_fadeOverlay, GetChildCount() - 1); // Keep fade overlay at the very top
 		}
 	}
+
 }

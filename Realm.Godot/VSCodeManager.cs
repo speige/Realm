@@ -47,7 +47,8 @@ public class VSCodeManager
 		string embedDir = Path.Combine(projectRoot, "vscode_embedded");
 		string binPath = Path.Combine(embedDir, "bin");
 		string exePath = Path.Combine(binPath, "code.exe");
-		return File.Exists(exePath);
+		string markerPath = Path.Combine(embedDir, "bypass_completed.marker");
+		return File.Exists(exePath) && File.Exists(markerPath);
 	}
 
 	public void StartInstallIfNeeded()
@@ -63,8 +64,9 @@ public class VSCodeManager
 			string embedDir = Path.Combine(projectRoot, "vscode_embedded");
 			string binPath = Path.Combine(embedDir, "bin");
 			string exePath = Path.Combine(binPath, "code.exe");
+			string markerPath = Path.Combine(embedDir, "bypass_completed.marker");
 
-			if (File.Exists(exePath))
+			if (File.Exists(exePath) && File.Exists(markerPath))
 			{
 				_installCompleted = true;
 				return;
@@ -75,22 +77,30 @@ public class VSCodeManager
 			{
 				try
 				{
-					string scriptPath = Path.GetFullPath(Path.Combine(projectRoot, "..", "install_vscode.ps1"));
-					if (File.Exists(scriptPath))
+					if (!File.Exists(exePath))
 					{
-						using (var installProcess = new Process())
+						string scriptPath = Path.GetFullPath(Path.Combine(projectRoot, "..", "install_vscode.ps1"));
+						if (File.Exists(scriptPath))
 						{
-							installProcess.StartInfo.FileName = "powershell.exe";
-							installProcess.StartInfo.Arguments = $"-ExecutionPolicy Bypass -File \"{scriptPath}\"";
-							installProcess.StartInfo.CreateNoWindow = true;
-							installProcess.StartInfo.UseShellExecute = false;
-							installProcess.Start();
-							installProcess.WaitForExit();
+							using (var installProcess = new Process())
+							{
+								installProcess.StartInfo.FileName = "powershell.exe";
+								installProcess.StartInfo.Arguments = $"-ExecutionPolicy Bypass -File \"{scriptPath}\"";
+								installProcess.StartInfo.CreateNoWindow = true;
+								installProcess.StartInfo.UseShellExecute = false;
+								installProcess.Start();
+								installProcess.WaitForExit();
+							}
+						}
+						else
+						{
+							GD.PrintErr("VS Code installer script not found at: " + scriptPath);
 						}
 					}
-					else
+
+					if (File.Exists(exePath))
 					{
-						GD.PrintErr("VS Code installer script not found at: " + scriptPath);
+						RunBypassAndVerify(exePath, embedDir);
 					}
 				}
 				catch (Exception ex)
@@ -102,11 +112,7 @@ public class VSCodeManager
 					lock (_installLock)
 					{
 						_isInstalling = false;
-						string innerProjectRoot = ProjectSettings.GlobalizePath("res://");
-						string innerEmbedDir = Path.Combine(innerProjectRoot, "vscode_embedded");
-						string innerBinPath = Path.Combine(innerEmbedDir, "bin");
-						string innerExePath = Path.Combine(innerBinPath, "code.exe");
-						_installCompleted = File.Exists(innerExePath);
+						_installCompleted = IsInstalled();
 					}
 				}
 			});
@@ -121,16 +127,21 @@ public class VSCodeManager
 	private CoreWebView2Controller _controller;
 	private bool _isInitialized;
 	private bool _isVisible;
+	public bool IsVisible => _isVisible;
 
 	private readonly ConcurrentQueue<Action> _actionQueue = new ConcurrentQueue<Action>();
 
 	private const uint WM_USER = 0x0400;
 	private const uint WM_WAKEUP = WM_USER + 1;
-	private const uint WS_CHILD = 0x40000000;
-	private const uint WS_VISIBLE = 0x10000000;
-	private const uint WS_CLIPSIBLINGS = 0x04000000;
+	private const uint WM_CLOSE = 0x0010;
 	private const int SW_HIDE = 0;
 	private const int SW_SHOW = 5;
+
+	private const uint WS_OVERLAPPEDWINDOW = 0x00CF0000;
+	private const uint WS_VISIBLE = 0x10000000;
+
+	private delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+	private WndProcDelegate _customWndProcDelegate;
 
 	[StructLayout(LayoutKind.Sequential)]
 	public struct MSG
@@ -151,6 +162,23 @@ public class VSCodeManager
 		public int y;
 	}
 
+	[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+	public struct WNDCLASSEX
+	{
+		public int cbSize;
+		public int style;
+		public IntPtr lpfnWndProc;
+		public int cbClsExtra;
+		public int cbWndExtra;
+		public IntPtr hInstance;
+		public IntPtr hIcon;
+		public IntPtr hCursor;
+		public IntPtr hbrBackground;
+		public string lpszMenuName;
+		public string lpszClassName;
+		public IntPtr hIconSm;
+	}
+
 	[DllImport("user32.dll")]
 	public static extern int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
 
@@ -160,7 +188,7 @@ public class VSCodeManager
 	[DllImport("user32.dll")]
 	public static extern IntPtr DispatchMessage(ref MSG lpMsg);
 
-	[DllImport("user32.dll", SetLastError = true)]
+	[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "CreateWindowExW")]
 	public static extern IntPtr CreateWindowEx(
 		uint dwExStyle,
 		string lpClassName,
@@ -187,12 +215,20 @@ public class VSCodeManager
 	[DllImport("user32.dll")]
 	public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
+	[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "RegisterClassExW")]
+	public static extern ushort RegisterClassEx(ref WNDCLASSEX lpwcx);
+
+	[DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "DefWindowProcW")]
+	public static extern IntPtr DefWindowProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+	[DllImport("kernel32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetModuleHandleW")]
+	public static extern IntPtr GetModuleHandle(string lpModuleName);
+
 	public void Initialize(Control containerControl)
 	{
 		if (_isInitialized)
 		{
 			_containerControl = containerControl;
-			UpdateBounds();
 			return;
 		}
 
@@ -218,12 +254,18 @@ public class VSCodeManager
 			string embedDir = Path.Combine(projectRoot, "vscode_embedded");
 			string binPath = Path.Combine(embedDir, "bin");
 			string exePath = Path.Combine(binPath, "code.exe");
-			string serverDataDir = Path.Combine(embedDir, "user-data-dir");
-			string extensionsDir = Path.Combine(serverDataDir, "extensions");
 
 			if (!File.Exists(exePath))
 			{
-				StartInstallIfNeeded();
+				GD.PrintErr("VS Code executable not found at: " + exePath);
+				return;
+			}
+
+			string serverDataDir = Path.Combine(embedDir, "user-data-dir");
+			string extensionsDir = Path.Combine(embedDir, "extensions-dir");
+
+			if (IsInstalling)
+			{
 				_installTask?.Wait();
 			}
 
@@ -245,18 +287,35 @@ public class VSCodeManager
 
 	private void STAThreadLoop()
 	{
+		var wndClass = new WNDCLASSEX();
+		wndClass.cbSize = Marshal.SizeOf(typeof(WNDCLASSEX));
+		wndClass.style = 0;
+		_customWndProcDelegate = CustomWndProc;
+		wndClass.lpfnWndProc = Marshal.GetFunctionPointerForDelegate(_customWndProcDelegate);
+		wndClass.cbClsExtra = 0;
+		wndClass.cbWndExtra = 0;
+		wndClass.hInstance = GetModuleHandle(null);
+		wndClass.hIcon = IntPtr.Zero;
+		wndClass.hCursor = IntPtr.Zero;
+		wndClass.hbrBackground = IntPtr.Zero;
+		wndClass.lpszMenuName = null;
+		wndClass.lpszClassName = "VSCodeEmbedWindow";
+		wndClass.hIconSm = IntPtr.Zero;
+
+		RegisterClassEx(ref wndClass);
+
 		_childHwnd = CreateWindowEx(
 			0,
-			"Static",
-			"",
-			WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
+			"VSCodeEmbedWindow",
+			"Realm Editor",
+			WS_OVERLAPPEDWINDOW | WS_VISIBLE,
 			0,
 			0,
 			800,
 			600,
-			_parentHwnd,
 			IntPtr.Zero,
 			IntPtr.Zero,
+			GetModuleHandle(null),
 			IntPtr.Zero);
 
 		if (_childHwnd == IntPtr.Zero)
@@ -287,6 +346,30 @@ public class VSCodeManager
 		}
 	}
 
+	private IntPtr CustomWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+	{
+		if (msg == 0x0005) // WM_SIZE
+		{
+			int w = (int)(lParam.ToInt64() & 0xFFFF);
+			int h = (int)((lParam.ToInt64() >> 16) & 0xFFFF);
+			if (_controller != null)
+			{
+				_controller.Bounds = new System.Drawing.Rectangle(0, 0, w, h);
+			}
+		}
+		else if (msg == 0x0010) // WM_CLOSE
+		{
+			_actionQueue.Enqueue(() =>
+			{
+				ShowWindow(hWnd, SW_HIDE);
+				_isVisible = false;
+			});
+			PostMessage(hWnd, WM_WAKEUP, IntPtr.Zero, IntPtr.Zero);
+			return IntPtr.Zero;
+		}
+		return DefWindowProc(hWnd, msg, wParam, lParam);
+	}
+
 	private async void InitializeWebView()
 	{
 		try
@@ -299,6 +382,23 @@ public class VSCodeManager
 			var env = await CoreWebView2Environment.CreateAsync(userDataFolder: cachePath);
 			_controller = await env.CreateCoreWebView2ControllerAsync(_childHwnd);
 			_controller.Bounds = new System.Drawing.Rectangle(0, 0, 800, 600);
+			
+			_controller.AcceleratorKeyPressed += (sender, args) =>
+			{
+				if (args.VirtualKey == 0x73) // VK_F4
+				{
+					if (args.KeyEventKind == CoreWebView2KeyEventKind.SystemKeyDown)
+					{
+						args.Handled = true;
+						_actionQueue.Enqueue(() =>
+						{
+							ShowWindow(_childHwnd, SW_HIDE);
+							_isVisible = false;
+						});
+						PostMessage(_childHwnd, WM_WAKEUP, IntPtr.Zero, IntPtr.Zero);
+					}
+				}
+			};
 			
 			string mapFolderRaw = GetMapFolderToOpen(projectRoot);
 			string unitsPathRaw = Path.Combine(mapFolderRaw, "metadata.json");
@@ -318,42 +418,62 @@ public class VSCodeManager
 		}
 	}
 
-	public void SetVisible(bool visible)
-	{
-		_isVisible = visible;
-		_actionQueue.Enqueue(() =>
-		{
-			if (_controller != null)
-			{
-				_controller.IsVisible = visible;
-			}
-			ShowWindow(_childHwnd, visible ? SW_SHOW : SW_HIDE);
-		});
-		PostMessage(_childHwnd, WM_WAKEUP, IntPtr.Zero, IntPtr.Zero);
-	}
-
-	public void UpdateBounds()
+	private void PositionOnScreen()
 	{
 		if (_containerControl == null || !GodotObject.IsInstanceValid(_containerControl))
 		{
 			return;
 		}
 
-		var rect = _containerControl.GetGlobalRect();
-		int x = (int)rect.Position.X;
-		int y = (int)rect.Position.Y;
-		int w = (int)rect.Size.X;
-		int h = (int)rect.Size.Y;
+		int screenCount = DisplayServer.GetScreenCount();
+		int currentScreen = DisplayServer.WindowGetCurrentScreen();
+		Vector2I targetPos;
+		Vector2I targetSize;
 
+		if (screenCount > 1)
+		{
+			int targetScreen = (currentScreen + 1) % screenCount;
+			targetPos = DisplayServer.ScreenGetPosition(targetScreen);
+			targetSize = DisplayServer.ScreenGetSize(targetScreen);
+		}
+		else
+		{
+			targetPos = DisplayServer.ScreenGetPosition(currentScreen);
+			targetSize = DisplayServer.ScreenGetSize(currentScreen);
+		}
+
+		SetWindowPos(_childHwnd, IntPtr.Zero, targetPos.X, targetPos.Y, targetSize.X, targetSize.Y, 0x0014);
+	}
+
+	public void SetVisible(bool visible)
+	{
+		_isVisible = visible;
+		if (!_isInitialized)
+		{
+			return;
+		}
 		_actionQueue.Enqueue(() =>
 		{
-			SetWindowPos(_childHwnd, IntPtr.Zero, x, y, w, h, 0x0014);
 			if (_controller != null)
 			{
-				_controller.Bounds = new System.Drawing.Rectangle(0, 0, w, h);
+				_controller.IsVisible = visible;
+			}
+			if (visible)
+			{
+				PositionOnScreen();
+				ShowWindow(_childHwnd, SW_SHOW);
+				ShowWindow(_childHwnd, 3);
+			}
+			else
+			{
+				ShowWindow(_childHwnd, SW_HIDE);
 			}
 		});
 		PostMessage(_childHwnd, WM_WAKEUP, IntPtr.Zero, IntPtr.Zero);
+	}
+
+	public void UpdateBounds()
+	{
 	}
 
 	public void OpenFile(string relativePath)
@@ -405,6 +525,15 @@ public class VSCodeManager
 
 	private string GetMapFolderToOpen(string projectRoot)
 	{
+		if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+		{
+			string tempWorkspace = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+			if (Directory.Exists(tempWorkspace))
+			{
+				return tempWorkspace.Replace("\\", "/");
+			}
+		}
+
 		try
 		{
 			string recentPathFile = ProjectSettings.GlobalizePath("user://recent_map_dir.txt");
@@ -469,6 +598,310 @@ public class VSCodeManager
 			{
 			}
 			_vscodeProcess = null;
+		}
+	}
+
+	private void RunBypassAndVerify(string exePath, string embedDir)
+	{
+		string serverDataDir = Path.Combine(embedDir, "user-data-dir");
+		string extensionsDir = Path.Combine(embedDir, "extensions-dir");
+
+		Process tempProcess = new Process();
+		tempProcess.StartInfo.FileName = exePath;
+		tempProcess.StartInfo.Arguments = $"--extensions-dir \"{extensionsDir}\" serve-web --port 8089 --server-data-dir \"{serverDataDir}\" --accept-server-license-terms --without-connection-token";
+		tempProcess.StartInfo.CreateNoWindow = true;
+		tempProcess.StartInfo.UseShellExecute = false;
+		tempProcess.StartInfo.EnvironmentVariables["VSCODE_EXTENSIONS"] = extensionsDir;
+		tempProcess.StartInfo.EnvironmentVariables["VSCODE_EXTENSIONS_DIR"] = extensionsDir;
+		tempProcess.Start();
+
+		System.Threading.Thread.Sleep(2000);
+
+		var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+		var thread = new Thread(() =>
+		{
+			try
+			{
+				RunBypassSTA(tcs, embedDir);
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr("Bypass STA thread failed: " + ex.Message);
+				tcs.TrySetException(ex);
+			}
+		});
+		thread.SetApartmentState(ApartmentState.STA);
+		thread.Start();
+
+		bool success = false;
+		if (tcs.Task.Wait(45000))
+		{
+			success = tcs.Task.Result;
+		}
+		else
+		{
+			GD.PrintErr("Bypass task timed out.");
+		}
+
+		try
+		{
+			if (!tempProcess.HasExited)
+			{
+				tempProcess.Kill(true);
+			}
+		}
+		catch
+		{
+		}
+
+		if (success)
+		{
+			try
+			{
+				string markerPath = Path.Combine(embedDir, "bypass_completed.marker");
+				File.WriteAllText(markerPath, "completed");
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr("Failed to write bypass marker file: " + ex.Message);
+			}
+		}
+	}
+
+	private void RunBypassSTA(System.Threading.Tasks.TaskCompletionSource<bool> tcs, string embedDir)
+	{
+		var syncContext = new SingleThreadSynchronizationContext();
+		SynchronizationContext.SetSynchronizationContext(syncContext);
+
+		var wndClass = new WNDCLASSEX();
+		wndClass.cbSize = Marshal.SizeOf(typeof(WNDCLASSEX));
+		wndClass.style = 0;
+		WndProcDelegate bypassWndProc = BypassWndProc;
+		wndClass.lpfnWndProc = Marshal.GetFunctionPointerForDelegate(bypassWndProc);
+		wndClass.cbClsExtra = 0;
+		wndClass.cbWndExtra = 0;
+		wndClass.hInstance = GetModuleHandle(null);
+		wndClass.hIcon = IntPtr.Zero;
+		wndClass.hCursor = IntPtr.Zero;
+		wndClass.hbrBackground = IntPtr.Zero;
+		wndClass.lpszMenuName = null;
+		wndClass.lpszClassName = "VSCodeBypassWindow";
+		wndClass.hIconSm = IntPtr.Zero;
+
+		RegisterClassEx(ref wndClass);
+
+		IntPtr bypassHwnd = CreateWindowEx(
+			0,
+			"VSCodeBypassWindow",
+			"Bypass Window",
+			0,
+			0,
+			0,
+			100,
+			100,
+			IntPtr.Zero,
+			IntPtr.Zero,
+			GetModuleHandle(null),
+			IntPtr.Zero);
+
+		if (bypassHwnd == IntPtr.Zero)
+		{
+			tcs.TrySetResult(false);
+			return;
+		}
+
+		CoreWebView2Controller controller = null;
+		bool running = true;
+
+		Action closeAction = () =>
+		{
+			if (controller != null)
+			{
+				controller.Close();
+				controller = null;
+			}
+			running = false;
+			PostMessage(bypassHwnd, WM_USER + 1, IntPtr.Zero, IntPtr.Zero);
+		};
+
+		InitializeBypassWebView(
+			bypassHwnd,
+			tcs,
+			syncContext,
+			c => { controller = c; },
+			closeAction,
+			embedDir
+		);
+
+		MSG msg;
+		while (running && GetMessage(out msg, IntPtr.Zero, 0, 0) > 0)
+		{
+			if (msg.message == 0x0010)
+			{
+				running = false;
+				break;
+			}
+			TranslateMessage(ref msg);
+			DispatchMessage(ref msg);
+			syncContext.RunPending();
+		}
+	}
+
+	private static IntPtr BypassWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+	{
+		return DefWindowProc(hWnd, msg, wParam, lParam);
+	}
+
+	private async void InitializeBypassWebView(IntPtr hwnd, System.Threading.Tasks.TaskCompletionSource<bool> tcs, SingleThreadSynchronizationContext syncContext, Action<CoreWebView2Controller> setController, Action closeAction, string embedDir)
+	{
+		try
+		{
+			string serverDataDir = Path.Combine(embedDir, "user-data-dir");
+			string cachePath = Path.Combine(serverDataDir, "webview-cache");
+
+			var env = await CoreWebView2Environment.CreateAsync(userDataFolder: cachePath);
+			var localController = await env.CreateCoreWebView2ControllerAsync(hwnd);
+			setController(localController);
+			localController.Bounds = new System.Drawing.Rectangle(0, 0, 100, 100);
+			localController.IsVisible = false;
+
+			int navigationCount = 0;
+			int retryCount = 0;
+			localController.CoreWebView2.NavigationCompleted += async (sender, args) =>
+			{
+				if (!args.IsSuccess)
+				{
+					if (navigationCount == 0 && retryCount < 10)
+					{
+						retryCount++;
+						await System.Threading.Tasks.Task.Delay(500);
+						localController.CoreWebView2.Navigate("http://127.0.0.1:8089/");
+					}
+					else
+					{
+						GD.PrintErr($"Bypass navigation failed: {args.WebErrorStatus}");
+						tcs.TrySetResult(false);
+						closeAction();
+					}
+					return;
+				}
+
+				navigationCount++;
+				if (navigationCount == 1)
+				{
+					string jsScript = """
+					(async () => {
+						const DB_NAME = 'vscode-web-db';
+						const STORE_NAME = 'vscode-userdata-store'; 
+						const TARGET_KEY = '/User/settings.json';
+
+						const request = indexedDB.open(DB_NAME);
+
+						request.onsuccess = (event) => {
+							const db = event.target.result;
+							const transaction = db.transaction([STORE_NAME], 'readwrite');
+							const store = transaction.objectStore(STORE_NAME);
+							
+							const getRequest = store.get(TARGET_KEY);
+
+							getRequest.onsuccess = () => {
+								let config = {};
+								const rawData = getRequest.result;
+
+								if (rawData) {
+									const buffer = rawData instanceof Uint8Array ? rawData : rawData.value;
+									
+									if (buffer instanceof Uint8Array) {
+										try {
+											const decoder = new TextDecoder('utf-8');
+											const jsonString = decoder.decode(buffer);
+											if (jsonString.trim()) {
+												config = JSON.parse(jsonString);
+											}
+										} catch (e) {
+											console.warn("Error parsing existing binary settings. Resetting configuration layer.", e);
+										}
+									}
+								}
+
+								config["security.workspace.trust.enabled"] = false;
+								config["security.workspace.trust.startupPrompt"] = "never";
+
+								const updatedJsonString = JSON.stringify(config, null, '\t');
+								const encoder = new TextEncoder();
+								const encodedUint8Array = encoder.encode(updatedJsonString);
+
+								let putPayload;
+								if (rawData && typeof rawData === 'object' && !(rawData instanceof Uint8Array) && 'key' in rawData) {
+									putPayload = { key: TARGET_KEY, value: encodedUint8Array };
+								} else {
+									putPayload = encodedUint8Array;
+								}
+
+								const putRequest = store.keyPath === null || !store.keyPath
+									? store.put(putPayload, TARGET_KEY)
+									: store.put(putPayload);
+
+								putRequest.onsuccess = () => {
+									console.log("%c[Success] Restricted mode successfully disabled via binary mutation! Reloading...", "color: #00ff00; font-weight: bold;");
+									window.location.reload();
+								};
+
+								putRequest.onerror = (e) => console.error("Failed to write binary buffer to IndexedDB store:", e);
+							};
+						};
+
+						request.onerror = () => console.error("Could not establish a database connection to:", DB_NAME);
+					})();
+					""";
+					try
+					{
+						await localController.CoreWebView2.ExecuteScriptAsync(jsScript);
+					}
+					catch (Exception ex)
+					{
+						GD.PrintErr("ExecuteScriptAsync failed: " + ex.Message);
+						tcs.TrySetResult(false);
+						closeAction();
+					}
+				}
+				else if (navigationCount == 2)
+				{
+					tcs.TrySetResult(true);
+					closeAction();
+				}
+			};
+
+			localController.CoreWebView2.Navigate("http://127.0.0.1:8089/");
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr("InitializeBypassWebView failed: " + ex.Message);
+			tcs.TrySetResult(false);
+			closeAction();
+		}
+	}
+
+	private class SingleThreadSynchronizationContext : SynchronizationContext
+	{
+		private readonly ConcurrentQueue<Action> _queue = new ConcurrentQueue<Action>();
+
+		public override void Post(SendOrPostCallback d, object? state)
+		{
+			_queue.Enqueue(() => d(state));
+		}
+
+		public override void Send(SendOrPostCallback d, object? state)
+		{
+			throw new NotSupportedException();
+		}
+
+		public void RunPending()
+		{
+			while (_queue.TryDequeue(out var action))
+			{
+				action();
+			}
 		}
 	}
 }

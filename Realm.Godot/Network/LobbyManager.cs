@@ -13,6 +13,7 @@ public partial class LobbyManager : Node
 {
     public static LobbyManager Instance { get; private set; }
     public static readonly string GameBinaryVersion = GetGameBinaryVersion();
+    public bool IsSinglePlayer { get; set; } = false;
 
     private static string GetGameBinaryVersion()
     {
@@ -119,7 +120,7 @@ public partial class LobbyManager : Node
     private int _countdownRemaining;
     private SceneTreeTimer? _countdownTimer;
     private SceneTreeTimer? _diagnosticsTimer;
-    private readonly List<(string Sender, string Message)> _chatHistory = new();
+    private readonly List<(string Sender, string Message, bool IsMuted)> _chatHistory = new();
 
     public void SwitchToNextServer()
     {
@@ -205,7 +206,7 @@ public partial class LobbyManager : Node
                 try
                 {
                     await Task.Delay(5000);
-                    PeerSeederManager.Instance.CheckIdleAndSeedStatus();
+                    Callable.From(() => PeerSeederManager.Instance.CheckIdleAndSeedStatus()).CallDeferred();
                 }
                 catch { }
             }
@@ -357,6 +358,34 @@ public partial class LobbyManager : Node
 
 
 
+    public void HostSinglePlayerGame(string mapPathName, string mapDisplayName)
+    {
+        IsSinglePlayer = true;
+        IsHost = true;
+        IsGameStarted = true;
+        ActiveMapName = mapPathName;
+        PlayerList.Clear();
+        
+        LocalPlayer = new PlayerInfo
+        {
+            PeerId = 1,
+            Slot = 0,
+            Name = AuthenticatedUsername,
+            Faction = "HUMAN",
+            Team = "Team 1",
+            Color = new Color(0.8f, 0.1f, 0.1f),
+            IsHost = true,
+            Latency = "0 ms",
+            Jitter = "0 ms",
+            PacketLoss = "0%",
+            BinaryVersion = GameBinaryVersion
+        };
+        PlayerList.Add(LocalPlayer);
+        
+        Multiplayer.MultiplayerPeer = new OfflineMultiplayerPeer();
+        CallDeferred(nameof(LoadMap), mapPathName);
+    }
+
     public async Task<bool> HostLobbyAsync(string mapPathName, string mapDisplayName)
     {
         IsHost = true;
@@ -426,6 +455,7 @@ public partial class LobbyManager : Node
         try
         {
             int hostPingBaseline = await MeasurePingToRegistryAsync();
+            string localIpAddress = GetLocalIPAddress();
             var registerPayload = new
             {
                 Map = mapDisplayName,
@@ -435,7 +465,8 @@ public partial class LobbyManager : Node
                 PasswordHash = "",
                 MaxPlayers = MaxPlayers,
                 SlotsUsed = PlayerList.Count,
-                HostPingBaseline = hostPingBaseline
+                HostPingBaseline = hostPingBaseline,
+                LocalIP = localIpAddress
             };
 
             HttpResponseMessage? response = null;
@@ -555,16 +586,30 @@ public partial class LobbyManager : Node
             using var doc = JsonDocument.Parse(respText);
             string hostIp = doc.RootElement.GetProperty("hostIP").GetString() ?? "";
             int hostPort = doc.RootElement.GetProperty("hostPort").GetInt32();
+            string? localIp = null;
+            if (doc.RootElement.TryGetProperty("localIP", out var localIpProp))
+            {
+                localIp = localIpProp.GetString();
+            }
             _connectedHostIp = hostIp;
 
-            GD.Print($"[LobbyManager] Joined. Host endpoint coordinates: {hostIp}:{hostPort}. Launching hole punch...");
+            string connectIp = hostIp;
+            int connectPort = hostPort;
+            if (!string.IsNullOrEmpty(localIp) && hostIp == clientPublicIp)
+            {
+                GD.Print($"[LobbyManager] Host is on the same LAN (Public IP: {hostIp}). Connecting to local IP: {localIp}:{ENetPort}");
+                connectIp = localIp;
+                connectPort = ENetPort;
+            }
 
-
-            await UdpHolePuncher.PunchHoleAsync(hostIp, hostPort, ENetPort);
-
+            bool isLocalConnection = IsPrivateIp(connectIp);
+            if (!isLocalConnection)
+            {
+                await UdpHolePuncher.PunchHoleAsync(connectIp, connectPort, ENetPort);
+            }
 
             var peer = new ENetMultiplayerPeer();
-            var err = peer.CreateClient(hostIp, hostPort, localPort: (hostIp == "127.0.0.1" || hostIp == "localhost") ? 0 : ENetPort);
+            var err = peer.CreateClient(connectIp, connectPort, localPort: isLocalConnection ? 0 : ENetPort);
             if (err != Error.Ok)
             {
                 GD.PrintErr($"[LobbyManager] Failed to create ENet Client: {err}");
@@ -581,7 +626,7 @@ public partial class LobbyManager : Node
             {
                 sceneMultiplayer.ServerRelay = false;
             }
-            GD.Print($"[LobbyManager] ENet Client initialized. Connecting to {hostIp}:{hostPort}...");
+            GD.Print($"[LobbyManager] ENet Client initialized. Connecting to {connectIp}:{connectPort}...");
         }
         catch (Exception ex)
         {
@@ -1028,13 +1073,83 @@ public partial class LobbyManager : Node
     {
         if (IsHost)
         {
-            _chatHistory.Add((senderName, message));
-            Rpc(nameof(ReceiveChatMessage), senderName, message);
-            ChatReceived?.Invoke(senderName, message);
+            if (senderName == "System")
+            {
+                _chatHistory.Add((senderName, message, false));
+                Rpc(nameof(ReceiveChatMessage), senderName, message);
+                ChatReceived?.Invoke(senderName, message);
+            }
+            else
+            {
+                _ = ProcessAndSendChatMessageAsync(senderName, message);
+            }
         }
         else
         {
             RpcId(1, nameof(ReceiveChatMessage), senderName, message);
+        }
+    }
+
+    private async Task<bool> IsMessageToxicAsync(string message)
+    {
+        try
+        {
+            string url = "https://api-inference.huggingface.co/models/unitary/multilingual-toxic-xlm-roberta";
+            var payload = new { inputs = message };
+            var jsonContent = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+            using var client = new System.Net.Http.HttpClient();
+            // Optional: If an API key is available, it would be added here like:
+            // client.DefaultRequestHeaders.Add("Authorization", "Bearer YOUR_API_KEY");
+            
+            var response = await client.PostAsync(url, jsonContent);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadAsStringAsync();
+                
+                // Expected format: [[{"label":"toxic","score":0.9}]]
+                using var doc = JsonDocument.Parse(result);
+                if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+                {
+                    var innerArray = doc.RootElement[0];
+                    if (innerArray.ValueKind == JsonValueKind.Array && innerArray.GetArrayLength() > 0)
+                    {
+                        var firstResult = innerArray[0];
+                        if (firstResult.TryGetProperty("label", out var labelProp) && firstResult.TryGetProperty("score", out var scoreProp))
+                        {
+                            string label = labelProp.GetString() ?? "";
+                            double score = scoreProp.GetDouble();
+                            
+                            if (label.Equals("toxic", StringComparison.OrdinalIgnoreCase) && score > 0.8)
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                GD.PrintErr($"[LobbyManager] Toxicity API returned {response.StatusCode}");
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[LobbyManager] Toxicity check failed: {ex.Message}");
+        }
+        
+        return false;
+    }
+
+    private async Task ProcessAndSendChatMessageAsync(string senderName, string message)
+    {
+        bool isToxic = await IsMessageToxicAsync(message);
+        _chatHistory.Add((senderName, message, isToxic));
+        
+        if (!isToxic)
+        {
+            Rpc(nameof(ReceiveChatMessage), senderName, message);
+            ChatReceived?.Invoke(senderName, message);
         }
     }
 
@@ -1043,17 +1158,17 @@ public partial class LobbyManager : Node
     {
         if (IsHost)
         {
-            _chatHistory.Add((senderName, message));
-
-            Rpc(nameof(ReceiveChatMessage), senderName, message);
+            _ = ProcessAndSendChatMessageAsync(senderName, message);
         }
-        
-        ChatReceived?.Invoke(senderName, message);
+        else
+        {
+            ChatReceived?.Invoke(senderName, message);
+        }
     }
 
     public void RequestChatHistory()
     {
-        if (!IsHost)
+        if (!IsHost && Multiplayer.MultiplayerPeer != null && Multiplayer.MultiplayerPeer.GetConnectionStatus() == MultiplayerPeer.ConnectionStatus.Connected)
         {
             RpcId(1, nameof(RequestChatHistoryFromHost));
         }
@@ -1067,7 +1182,10 @@ public partial class LobbyManager : Node
             int senderId = Multiplayer.GetRemoteSenderId();
             foreach (var chat in _chatHistory)
             {
-                RpcId(senderId, nameof(ReceiveChatMessage), chat.Sender, chat.Message);
+                if (!chat.IsMuted)
+                {
+                    RpcId(senderId, nameof(ReceiveChatMessage), chat.Sender, chat.Message);
+                }
             }
         }
     }
@@ -1502,5 +1620,53 @@ public partial class LobbyManager : Node
         {
             BroadcastPlayerList();
         }
+    }
+
+    private static string GetLocalIPAddress()
+    {
+        try
+        {
+            using (var socket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, 0))
+            {
+                socket.Connect("8.8.8.8", 65530);
+                var endPoint = socket.LocalEndPoint as IPEndPoint;
+                if (endPoint != null)
+                {
+                    return endPoint.Address.ToString();
+                }
+            }
+        }
+        catch
+        {
+            try
+            {
+                var host = Dns.GetHostEntry(Dns.GetHostName());
+                foreach (var ip in host.AddressList)
+                {
+                    if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    {
+                        return ip.ToString();
+                    }
+                }
+            }
+            catch { }
+        }
+        return "127.0.0.1";
+    }
+
+    private static bool IsPrivateIp(string ip)
+    {
+        if (ip == "127.0.0.1" || ip == "localhost") return true;
+        if (IPAddress.TryParse(ip, out var address))
+        {
+            byte[] bytes = address.GetAddressBytes();
+            if (bytes.Length == 4)
+            {
+                if (bytes[0] == 10) return true;
+                if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) return true;
+                if (bytes[0] == 192 && bytes[1] == 168) return true;
+            }
+        }
+        return false;
     }
 }

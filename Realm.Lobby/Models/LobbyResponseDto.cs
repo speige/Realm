@@ -13,5 +13,6 @@ public record LobbyResponseDto(
 	double DistanceKm, 
 	int EstimatedPingMs, 
 	string? OriginServerUri, 
-	int HostPingBaseline
+	int HostPingBaseline,
+	string? LocalIP = null
 );

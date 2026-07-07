@@ -8,6 +8,7 @@ using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Resources;
+using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Services;
 using Realm.Godot.ReplaySystem;
 using System;
@@ -91,16 +92,76 @@ public partial class InGameHUD : Control
 	private Button _btnCenter;
 	public bool ShowMinimapTerrain => _viewModel.ShowMinimapTerrain;
 
-	private byte[,] _fogGrid = new byte[32, 32];
-	private string _fogOfWarType = "grey";
-	private float _fogUpdateTimer = 0f;
-	public byte[,] FogGrid => _fogGrid;
-	public string FogOfWarType => _fogOfWarType;
 
-	private string _currentWeather = "clear";
+	private float _fogUpdateTimer = 0f;
+
+	public byte[,] FogGrid
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				{
+					return GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity).FogGrid;
+				}
+			}
+			return new byte[32, 32];
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				{
+					ref var state = ref GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity);
+					state.FogGrid = value;
+				}
+			}
+		}
+	}
+	private byte[,] _fogGrid { get => FogGrid; set => FogGrid = value; }
+
+	public string FogOfWarType
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				{
+					return GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity).FogOfWarType;
+				}
+			}
+			return "grey";
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				{
+					ref var state = ref GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity);
+					state.FogOfWarType = value;
+				}
+			}
+		}
+	}
+	private string _fogOfWarType { get => FogOfWarType; set => FogOfWarType = value; }
+
+	private string _currentWeather
+	{
+		get => GameHost.Instance?.EnvironmentService?.GetCurrentWeather() ?? "clear";
+		set => GameHost.Instance?.EnvironmentService?.SetCurrentWeather(value);
+	}
+
 	private CpuParticles3D _rainParticles = null;
-	private MeshInstance3D _fogMeshInstance = null;
-	private float _baseFogDensity = 0f;
+
+	private float _baseFogDensity
+	{
+		get => GameHost.Instance?.EnvironmentService?.GetBaseFogDensity() ?? 0f;
+		set => GameHost.Instance?.EnvironmentService?.SetBaseFogDensity(value);
+	}
 
 	private Label _goldLabel;
 	private Label _woodLabel;
@@ -170,7 +231,11 @@ public partial class InGameHUD : Control
 	private RichTextLabel _chatLog;
 	public bool IsChatActive => _chatPanelController.IsChatActive;
 
-	public int LiveSpectatorPerspective { get; set; } = -1;
+	public int LiveSpectatorPerspective
+	{
+		get => GameHost.Instance?.SpectatorService?.GetSpectatorPerspective() ?? -1;
+		set => GameHost.Instance?.SpectatorService?.SetSpectatorPerspective(value);
+	}
 
 	private ResourcePanel _resourcePanelController;
 	private MinimapPanel _minimapPanelController;
@@ -178,6 +243,7 @@ public partial class InGameHUD : Control
 	private LeaderboardPanel _leaderboardPanelController;
 	private PortraitPanel _portraitPanelController;
 	private CommandPanel _commandPanelController;
+	private ControlGroupsUIController _controlGroupsUIController;
 
 	public override void _Ready()
 	{
@@ -364,40 +430,11 @@ public partial class InGameHUD : Control
 		SetupMinimapButton(btnHotkeys, "res://Assets/UI/game_menu.png", "Hotkey Reference [F5]", () => ToggleHotkeyPanel());
 		_minimapControls.AddChild(btnHotkeys);
 
-		_camera3D = GetTree().Root.GetNodeOrNull<Camera3D>("Main/Camera3D");
-		if (_camera3D is CameraControl camCtrl)
+		string currentWeather = "clear";
+		if (GameHost.Instance != null)
 		{
-			if (FileAccess.FileExists("res://map.json"))
-			{
-				using var file = FileAccess.Open("res://map.json", FileAccess.ModeFlags.Read);
-				if (file != null)
-				{
-					try
-					{
-						string jsonText = file.GetAsText();
-						using var jsonDoc = System.Text.Json.JsonDocument.Parse(jsonText);
-						if (jsonDoc.RootElement.TryGetProperty("MapProperties", out var mapProps))
-						{
-							if (mapProps.TryGetProperty("CameraBoundsLeft", out var leftProp) && leftProp.ValueKind == System.Text.Json.JsonValueKind.Number)
-								camCtrl.LimitLeft = (float)leftProp.GetDouble();
-							if (mapProps.TryGetProperty("CameraBoundsRight", out var rightProp) && rightProp.ValueKind == System.Text.Json.JsonValueKind.Number)
-								camCtrl.LimitRight = (float)rightProp.GetDouble();
-							if (mapProps.TryGetProperty("CameraBoundsTop", out var topProp) && topProp.ValueKind == System.Text.Json.JsonValueKind.Number)
-								camCtrl.LimitTop = (float)topProp.GetDouble();
-							if (mapProps.TryGetProperty("CameraBoundsBottom", out var bottomProp) && bottomProp.ValueKind == System.Text.Json.JsonValueKind.Number)
-								camCtrl.LimitBottom = (float)bottomProp.GetDouble();
-							if (mapProps.TryGetProperty("FogOfWarType", out var fogTypeProp) && fogTypeProp.ValueKind == System.Text.Json.JsonValueKind.String)
-								_fogOfWarType = fogTypeProp.GetString() ?? "grey";
-							if (mapProps.TryGetProperty("WeatherType", out var weatherProp) && weatherProp.ValueKind == System.Text.Json.JsonValueKind.String)
-								_currentWeather = weatherProp.GetString() ?? "clear";
-						}
-					}
-					catch (Exception ex)
-					{
-						GD.PrintErr($"[InGameHUD] Failed to load map properties from map.json: {ex.Message}");
-					}
-				}
-			}
+			GameHost.Instance.LoadMapProperties("res://map.json");
+			currentWeather = GameHost.Instance?.EnvironmentService?.GetCurrentWeather() ?? "clear";
 		}
 
 		_chatPanel = GetNode<PanelContainer>("ChatPanel");
@@ -503,12 +540,11 @@ public partial class InGameHUD : Control
 		_customUIPanel.AddChild(_leaderboardPanel);
 
 		CreateStatsContainer();
-		ApplyWeatherEffects(_currentWeather);
 		ApplyThemeStyles();
 		SetupCommandCard();
 		SetupDevPanel();
 		SetupPortrait();
-		Setup3DFogOfWar();
+		ApplyWeatherEffects(currentWeather);
 
 		_feedbackLabel.Modulate = new Color(1, 1, 1, 0);
 		Input.MouseMode = Input.MouseModeEnum.Visible;
@@ -522,6 +558,7 @@ public partial class InGameHUD : Control
 		_resourcePanelController = new ResourcePanel(_resourceContainer);
 		_resourcePanelController.InitializeSupplyAndClock(_populationLabel, _clockLabel);
 
+		_camera3D = GameHost.Instance?.MainCamera;
 		_minimapPanelController = new MinimapPanel(_minimapFrame, _minimapArea, _cameraIndicator, _camera3D);
 		_chatPanelController = new ChatPanel(_chatPanel, _chatInput, _chatLog);
 		_leaderboardPanelController = new LeaderboardPanel(_customUIPanel, _countdownPanel, _countdownLabel, _leaderboardPanel, _leaderboardTitleLabel, _leaderboardContent);
@@ -547,6 +584,7 @@ public partial class InGameHUD : Control
 			_btnFireball, _btnLightning, _btnHolyLight, _btnUsePotion
 		);
 
+		_controlGroupsUIController = new ControlGroupsUIController(_controlGroupsContainer);
 		GenerateDynamicMinimap();
 
 		if (ReplayPlaybackManager.Instance.IsPlayingReplay)
@@ -619,7 +657,7 @@ public partial class InGameHUD : Control
 
 	public void UpdateFPSVisibility()
 	{
-		var fpsLabel = GetTree().Root.GetNodeOrNull<Label>("Main/CanvasLayer/FPS");
+		var fpsLabel = (GameHost.Instance != null ? GameHost.Instance.MainNode?.GetNodeOrNull<Label>("CanvasLayer/FPS") : null);
 		if (fpsLabel != null)
 		{
 			fpsLabel.Visible = GameSettings.DisplayFps;
@@ -632,12 +670,6 @@ public partial class InGameHUD : Control
 		if (LobbyManager.Instance != null)
 		{
 			LobbyManager.Instance.ChatReceived -= OnLobbyChatReceived;
-		}
-
-		if (GodotObject.IsInstanceValid(_fogMeshInstance))
-		{
-			_fogMeshInstance.QueueFree();
-			_fogMeshInstance = null;
 		}
 
 		if (GodotObject.IsInstanceValid(_rainParticles))
@@ -654,6 +686,14 @@ public partial class InGameHUD : Control
 
 		var minimapBg = _minimapArea.GetChildCount() > 0 ? _minimapArea.GetChild<TextureRect>(0) : null;
 		if (minimapBg == null) return;
+
+		var fogMesh = GameHost.Instance?.MainNode?.GetNodeOrNull<MeshInstance3D>("3DFogMesh");
+		bool wasVisible = false;
+		if (fogMesh != null)
+		{
+			wasVisible = fogMesh.Visible;
+			fogMesh.Visible = false;
+		}
 
 		try
 		{
@@ -688,6 +728,13 @@ public partial class InGameHUD : Control
 		catch (Exception ex)
 		{
 			GD.PrintErr($"Failed to dynamically capture terrain minimap: {ex.Message}");
+		}
+		finally
+		{
+			if (fogMesh != null)
+			{
+				fogMesh.Visible = wasVisible;
+			}
 		}
 	}
 
@@ -1019,24 +1066,122 @@ public partial class InGameHUD : Control
 	{
 		_viewModel.Update(delta);
 
+		if (GameHost.Instance != null)
+		{
+			var selected = GameHost.Instance.SelectedUnits;
+			if (selected != null)
+			{
+				bool match = selected.Count == _viewModel.SelectedUnits.Count;
+				if (match)
+				{
+					for (int i = 0; i < selected.Count; i++)
+					{
+						if (_viewModel.SelectedUnits[i].Entity != selected[i].Entity)
+						{
+							match = false;
+							break;
+						}
+					}
+				}
+
+				if (match)
+				{
+					for (int i = 0; i < selected.Count; i++)
+					{
+						var info = _viewModel.SelectedUnits[i];
+						var u = selected[i];
+						if (GameHost.Instance.EcsWorld.IsAlive(u.Entity))
+						{
+							var world = GameHost.Instance.EcsWorld;
+							if (world.Has<Health>(u.Entity))
+							{
+								var hp = world.Get<Health>(u.Entity);
+								info.Health = hp.Current;
+								info.MaxHealth = hp.Max;
+							}
+							if (world.Has<Gatherer>(u.Entity))
+							{
+								var gather = world.Get<Gatherer>(u.Entity);
+								string stateLabel = gather.ReturningToBase ? "● " + TranslationServer.Translate("DELIVERING") : "● " + TranslationServer.Translate("HARVESTING");
+								info.StateText = $"{stateLabel} ({gather.CarriedAmount:F0} / {gather.MaxCapacity:F0} {TranslationServer.Translate(gather.ResourceType.ToUpper())})";
+							}
+							else if (world.Has<Realm.Ecs.Components.Movement.HoldPosition>(u.Entity))   info.StateText = "● " + TranslationServer.Translate("HOLDING");
+							else if (world.Has<Realm.Ecs.Components.Movement.Patrol>(u.Entity))     info.StateText = "● " + TranslationServer.Translate("PATROLLING");
+							else if (world.Has<Realm.Ecs.Components.Movement.AttackMove>(u.Entity)) info.StateText = "● " + TranslationServer.Translate("ATTACK-MOVE");
+							else if (world.Has<Realm.Ecs.Components.Movement.Follow>(u.Entity))     info.StateText = "● " + TranslationServer.Translate("FOLLOWING");
+							else if (world.Has<Realm.Ecs.Components.Movement.MoveTo>(u.Entity))     info.StateText = "● " + TranslationServer.Translate("MOVING");
+							else if (world.Has<AttackTarget>(u.Entity))                              info.StateText = "● " + TranslationServer.Translate("ATTACKING");
+							else                                                                         info.StateText = "○ " + TranslationServer.Translate("IDLE");
+
+							if (u.UnitId == "tower" && world.Has<Realm.Ecs.Components.Core.TowerUpgradeLevel>(u.Entity))
+							{
+								int lvl = world.Get<Realm.Ecs.Components.Core.TowerUpgradeLevel>(u.Entity).Value;
+								info.StateText += $"   ★ {TranslationServer.Translate("LVL")} {lvl}";
+							}
+
+							if (world.Has<Inventory>(u.Entity))
+							{
+								info.Potions = world.Get<Inventory>(u.Entity).Potions;
+							}
+
+							if (u.IsBuilding && !u.IsEnemy && u.UnitId == "castle")
+							{
+								u.UpdateRallyVisuals();
+							}
+
+							if (u.IsBuilding && u.UnitId == "castle" && world.Has<Realm.Ecs.Components.Core.ProductionQueue>(u.Entity))
+							{
+								var prod = world.Get<Realm.Ecs.Components.Core.ProductionQueue>(u.Entity);
+								info.HasProduction = true;
+								if (prod.UnitIds.Count > 0)
+								{
+									info.ProductionTitle = string.Format(TranslationServer.Translate("TRAINING: {0}"), prod.UnitIds[0].ToUpper());
+									info.ProductionProgress = prod.CurrentProgress;
+									info.ProductionMaxProgress = prod.BuildTime;
+
+									bool queueChanged = info.ProductionQueue.Count != prod.UnitIds.Count;
+									if (!queueChanged)
+									{
+										for (int q = 0; q < prod.UnitIds.Count; q++)
+										{
+											if (info.ProductionQueue[q] != prod.UnitIds[q])
+											{
+												queueChanged = true;
+												break;
+											}
+										}
+									}
+									if (queueChanged)
+									{
+										info.ProductionQueue.Clear();
+										info.ProductionQueue.AddRange(prod.UnitIds);
+									}
+								}
+								else
+								{
+									info.ProductionTitle = TranslationServer.Translate("PRODUCTION IDLE");
+									if (info.ProductionQueue.Count > 0)
+									{
+										info.ProductionQueue.Clear();
+									}
+								}
+							}
+						}
+					}
+				}
+				else
+				{
+					_viewModel.UpdateSelectedUnits(selected);
+				}
+			}
+		}
+
 		_fogUpdateTimer += (float)delta;
 		if (_fogUpdateTimer >= 0.1f)
 		{
 			_fogUpdateTimer = 0f;
-			UpdateFogOfWar();
 			var minimapOverlay = _minimapArea?.GetNodeOrNull<MinimapOverlay>("MinimapOverlay");
 			minimapOverlay?.QueueRedraw();
-		}
-
-		if (_baseFogDensity > 0f && _camera3D != null && GodotObject.IsInstanceValid(_camera3D))
-		{
-			var worldEnv = GetTree().Root.GetNodeOrNull<WorldEnvironment>("Main/WorldEnvironment");
-			if (worldEnv != null && worldEnv.Environment != null)
-			{
-				float height = _camera3D.GlobalPosition.Y;
-				float scale = 18.0f / Mathf.Max(8.0f, height);
-				worldEnv.Environment.FogDensity = _baseFogDensity * scale;
-			}
 		}
 
 		_resourcePanelController?.Update(_viewModel);
@@ -1078,7 +1223,7 @@ public partial class InGameHUD : Control
 			overlay.QueueRedraw();
 		}
 
-		UpdateControlGroupsUI();
+		_controlGroupsUIController?.Update();
 		QueueRedraw();
 	}
 
@@ -1103,7 +1248,8 @@ public partial class InGameHUD : Control
 		btn.Text = "";
 		btn.ExpandIcon = true;
 		btn.Icon = GD.Load<Texture2D>(iconPath);
-		btn.TooltipText = TranslationServer.Translate(tooltip);
+		string trans = TranslationServer.Translate(tooltip);
+		btn.TooltipText = string.IsNullOrEmpty(trans) ? tooltip : trans;
 		btn.CustomMinimumSize = new Vector2(50, 50);
 		btn.FocusMode = FocusModeEnum.None;
 		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
@@ -1118,7 +1264,8 @@ public partial class InGameHUD : Control
 		btn.Text = "";
 		btn.ExpandIcon = true;
 		btn.Icon = GD.Load<Texture2D>(iconPath);
-		btn.TooltipText = TranslationServer.Translate(tooltip);
+		string trans = TranslationServer.Translate(tooltip);
+		btn.TooltipText = string.IsNullOrEmpty(trans) ? tooltip : trans;
 		btn.CustomMinimumSize = new Vector2(80, 80);
 		btn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		btn.SizeFlagsVertical = SizeFlags.ExpandFill;
@@ -1171,6 +1318,24 @@ public partial class InGameHUD : Control
 				UIManager.Instance?.TransitionTo(GameScreen.GameOver, false);
 			};
 		}
+
+		// Cycle Weather button — dynamically created since it is not in the .tscn
+		if (_devPanel != null)
+		{
+			var btnWeather = new Button();
+			btnWeather.Name = "BtnCycleWeather";
+			btnWeather.Text = TranslationServer.Translate("Cycle Weather");
+			btnWeather.AddThemeFontSizeOverride("font_size", 14);
+			btnWeather.FocusMode = FocusModeEnum.None;
+			// Position it to the right of BtnDefeat (offset_right = 310)
+			btnWeather.SetAnchorsAndOffsetsPreset(LayoutPreset.TopLeft);
+			btnWeather.OffsetLeft = 320;
+			btnWeather.OffsetTop = 10;
+			btnWeather.OffsetRight = 480;
+			btnWeather.OffsetBottom = 45;
+			btnWeather.Pressed += () => CycleWeather();
+			_devPanel.AddChild(btnWeather);
+		}
 	}
 
 	private void SetupPortrait()
@@ -1215,51 +1380,42 @@ public partial class InGameHUD : Control
 		}
 	}
 
-	private void UpdateControlGroupsUI()
-	{
-		if (GameHost.Instance == null || _controlGroupsContainer == null) return;
-
-		foreach (Node child in _controlGroupsContainer.GetChildren())
-		{
-			_controlGroupsContainer.RemoveChild(child);
-			child.QueueFree();
-		}
-
-		for (int i = 0; i < 10; i++)
-		{
-			var groupUnits = GameHost.Instance.ControlGroups[i];
-			if (groupUnits != null && groupUnits.Count > 0)
-			{
-				var btn = new Button();
-				btn.Text = $"{i}";
-				btn.CustomMinimumSize = new Vector2(30, 30);
-				btn.FocusMode = FocusModeEnum.None;
-				btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-				btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-				btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-				
-				int groupIndex = i;
-				btn.Pressed += () => GameHost.Instance.RecallControlGroup(groupIndex);
-				_controlGroupsContainer.AddChild(btn);
-			}
-		}
-	}
 
 	private void OnUnitSelectionButtonClicked(int index)
 	{
-		if (GameHost.Instance != null && index >= 0 && index < GameHost.Instance.SelectedUnits.Count)
+		if (GameHost.Instance == null) return;
+		var selectedUnits = GameHost.Instance.SelectedUnits;
+		if (selectedUnits == null || index < 0 || index >= selectedUnits.Count) return;
+
+		var clickedUnit = selectedUnits[index];
+		bool shiftPressed = Input.IsKeyPressed(Key.Shift);
+		bool ctrlPressed = Input.IsKeyPressed(Key.Ctrl);
+
+		if (ctrlPressed)
 		{
-			if (Input.IsKeyPressed(Key.Ctrl))
+			string targetId = clickedUnit.UnitId;
+			var toDeselect = new List<Unit3D>();
+			foreach (var u in selectedUnits)
 			{
-				var u = GameHost.Instance.SelectedUnits[index];
+				if (u.UnitId != targetId)
+				{
+					toDeselect.Add(u);
+				}
+			}
+			foreach (var u in toDeselect)
+			{
 				GameHost.Instance.DeselectUnit(u);
 			}
-			else
-			{
-				GameHost.Instance.CycleSelectionIndex = index;
-			}
-			RefreshUI(GameHost.Instance.SelectedUnits);
 		}
+		else if (shiftPressed)
+		{
+			GameHost.Instance.DeselectUnit(clickedUnit);
+		}
+		else
+		{
+			GameHost.Instance.SelectOnlyUnit(clickedUnit);
+		}
+		RefreshUI(GameHost.Instance.SelectedUnits);
 	}
 
 	public override void _UnhandledInput(InputEvent @event)
@@ -1278,6 +1434,14 @@ public partial class InGameHUD : Control
 			if (!IsChatActive)
 			{
 				CenterCameraOnSelectedUnit();
+				GetViewport().SetInputAsHandled();
+			}
+		}
+		else if (@event is InputEventKey keyEntEvent && keyEntEvent.Pressed && keyEntEvent.Keycode == Key.Enter)
+		{
+			if (!IsChatActive)
+			{
+				_chatPanelController?.ShowChatInput();
 				GetViewport().SetInputAsHandled();
 			}
 		}
@@ -1460,319 +1624,51 @@ public partial class InGameHUD : Control
 		_viewModel.LeaderboardValues[label] = value;
 	}
 
-	private void UpdateFogOfWar()
-	{
-		if (GameHost.Instance == null || GameHost.Instance.GroundTerrain == null) return;
-		bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
-		if (ReplayPlaybackManager.Instance.IsPlayingReplay || isSpectator)
-		{
-			int targetOwnerId = ReplayPlaybackManager.Instance.IsPlayingReplay 
-				? ReplayPlaybackManager.Instance.SpectatorPerspective 
-				: LiveSpectatorPerspective;
 
-			if (targetOwnerId == -1)
-			{
-				for (int x = 0; x < 32; x++)
-				{
-					for (int z = 0; z < 32; z++)
-					{
-						_fogGrid[x, z] = 2;
-					}
-				}
-				if (GameHost.Instance != null)
-				{
-					foreach (var unit in GameHost.Instance.AllUnits)
-					{
-						if (unit != null && GodotObject.IsInstanceValid(unit))
-						{
-							unit.Visible = true;
-						}
-					}
-				}
-				Update3DFogMesh();
-				return;
-			}
-			else
-			{
-				for (int x = 0; x < 32; x++)
-				{
-					for (int z = 0; z < 32; z++)
-					{
-						_fogGrid[x, z] = 0;
-					}
-				}
-				if (GameHost.Instance == null) return;
-				foreach (var unit in GameHost.Instance.AllUnits)
-				{
-					if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
-					int ownerId = GameHost.Instance.GetOwnerPeerId(unit.Entity);
-					if (ownerId != targetOwnerId) continue;
-					Vector3 pos = unit.GlobalPosition;
-					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-					float scanRadius = 15.0f;
-					if (GameHost.Instance.EcsWorld.IsAlive(unit.Entity) && GameHost.Instance.EcsWorld.Has<DefinitionId>(unit.Entity))
-					{
-						string defId = GameHost.Instance.EcsWorld.Get<DefinitionId>(unit.Entity).Value;
-						if (GameHost.UnitRegistry.TryGetValue(defId, out var metaReg) && metaReg.ScanRadius > 0)
-						{
-							scanRadius = metaReg.ScanRadius;
-						}
-					}
-					int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (250f / 32f)));
-					for (int dx = -rGrid; dx <= rGrid; dx++)
-					{
-						for (int dz = -rGrid; dz <= rGrid; dz++)
-						{
-							int nx = gx + dx;
-							int nz = gz + dz;
-							if (nx >= 0 && nx < 32 && nz >= 0 && nz < 32)
-							{
-								if (dx * dx + dz * dz <= rGrid * rGrid)
-								{
-									_fogGrid[nx, nz] = 2;
-								}
-							}
-						}
-					}
-				}
-				foreach (var unit in GameHost.Instance.AllUnits)
-				{
-					if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
-					int ownerId = GameHost.Instance.GetOwnerPeerId(unit.Entity);
-					if (ownerId == targetOwnerId)
-					{
-						unit.Visible = true;
-					}
-					else
-					{
-						Vector3 pos = unit.GlobalPosition;
-						int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-						int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-						unit.Visible = (_fogGrid[gx, gz] == 2);
-					}
-				}
-				Update3DFogMesh();
-				return;
-			}
-		}
 
-		if (_fogOfWarType == "visible")
-		{
-			for (int x = 0; x < 32; x++)
-			{
-				for (int z = 0; z < 32; z++)
-				{
-					_fogGrid[x, z] = 2;
-				}
-			}
-			if (GameHost.Instance != null)
-			{
-				foreach (var unit in GameHost.Instance.AllUnits)
-				{
-					if (unit != null && GodotObject.IsInstanceValid(unit))
-					{
-						unit.Visible = true;
-					}
-				}
-			}
-			return;
-		}
-
-		for (int x = 0; x < 32; x++)
-		{
-			for (int z = 0; z < 32; z++)
-			{
-				if (_fogOfWarType == "black")
-				{
-					_fogGrid[x, z] = 0;
-				}
-				else if (_fogGrid[x, z] == 2)
-				{
-					_fogGrid[x, z] = 1;
-				}
-			}
-		}
-
-		if (GameHost.Instance == null) return;
-
-		foreach (var unit in GameHost.Instance.AllUnits)
-		{
-			if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
-			if (unit.IsEnemy) continue;
-
-			Vector3 pos = unit.GlobalPosition;
-			int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-			int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-
-			float scanRadius = 15.0f;
-			if (GameHost.Instance.EcsWorld.IsAlive(unit.Entity) && GameHost.Instance.EcsWorld.Has<DefinitionId>(unit.Entity))
-			{
-				string defId = GameHost.Instance.EcsWorld.Get<DefinitionId>(unit.Entity).Value;
-				if (GameHost.UnitRegistry.TryGetValue(defId, out var metaReg) && metaReg.ScanRadius > 0)
-				{
-					scanRadius = metaReg.ScanRadius;
-				}
-			}
-
-			int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (250f / 32f)));
-			for (int dx = -rGrid; dx <= rGrid; dx++)
-			{
-				for (int dz = -rGrid; dz <= rGrid; dz++)
-				{
-					int nx = gx + dx;
-					int nz = gz + dz;
-					if (nx >= 0 && nx < 32 && nz >= 0 && nz < 32)
-					{
-						if (dx * dx + dz * dz <= rGrid * rGrid)
-						{
-							_fogGrid[nx, nz] = 2;
-						}
-					}
-				}
-			}
-		}
-
-		foreach (var unit in GameHost.Instance.AllUnits)
-		{
-			if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
-			if (!unit.IsEnemy)
-			{
-				unit.Visible = true;
-				continue;
-			}
-
-			Vector3 pos = unit.GlobalPosition;
-			int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-			int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-
-			unit.Visible = (_fogGrid[gx, gz] == 2);
-		}
-
-		Update3DFogMesh();
-	}
-
-	private float GetFogValueAtVertex(int x, int z)
-	{
-		float sum = 0f;
-		int count = 0;
-		for (int dx = -1; dx <= 0; dx++)
-		{
-			for (int dz = -1; dz <= 0; dz++)
-			{
-				int cx = x + dx;
-				int cz = z + dz;
-				if (cx >= 0 && cx < 32 && cz >= 0 && cz < 32)
-				{
-					byte val = _fogGrid[cx, cz];
-					float alpha = val switch
-					{
-						0 => 1.0f,
-						1 => 0.48f,
-						2 => 0.0f,
-						_ => 1.0f
-					};
-					sum += alpha;
-					count++;
-				}
-			}
-		}
-		return count > 0 ? (sum / count) : 1.0f;
-	}
-
-	private void Update3DFogMesh()
-	{
-		if (_fogMeshInstance == null || _fogMeshInstance.Mesh == null) return;
-		var arrMesh = _fogMeshInstance.Mesh as ArrayMesh;
-		if (arrMesh == null) return;
-
-		float cellWidth = 250f / 32f;
-		float cellHeight = 250f / 32f;
-
-		var vertices = new Vector3[33 * 33];
-		var colors = new Color[33 * 33];
-		var indices = new int[32 * 32 * 6];
-
-		for (int z = 0; z <= 32; z++)
-		{
-			for (int x = 0; x <= 32; x++)
-			{
-				int idx = x + z * 33;
-				float wx = (x - 16f) * cellWidth;
-				float wz = (z - 16f) * cellHeight;
-				float h = GameHost.Instance != null ? GameHost.Instance.GetTerrainHeightAt(new Vector3(wx, 0f, wz)) : 0f;
-				vertices[idx] = new Vector3(wx, h + 0.15f, wz);
-
-				float alpha = GetFogValueAtVertex(x, z);
-				colors[idx] = new Color(0f, 0f, 0f, alpha);
-			}
-		}
-
-		int iIdx = 0;
-		for (int z = 0; z < 32; z++)
-		{
-			for (int x = 0; x < 32; x++)
-			{
-				int topLeft = x + z * 33;
-				int topRight = (x + 1) + z * 33;
-				int bottomLeft = x + (z + 1) * 33;
-				int bottomRight = (x + 1) + (z + 1) * 33;
-
-				indices[iIdx++] = topLeft;
-				indices[iIdx++] = topRight;
-				indices[iIdx++] = bottomLeft;
-
-				indices[iIdx++] = bottomLeft;
-				indices[iIdx++] = topRight;
-				indices[iIdx++] = bottomRight;
-			}
-		}
-
-		arrMesh.ClearSurfaces();
-		var arrays = new Godot.Collections.Array();
-		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
-		arrays[(int)Mesh.ArrayType.Color] = colors;
-		arrays[(int)Mesh.ArrayType.Index] = indices;
-		arrMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-	}
 
 	private void CycleWeather()
 	{
 		if (Multiplayer.MultiplayerPeer != null && !Multiplayer.IsServer()) return;
 
-		_currentWeather = _currentWeather switch
+		if (GameHost.Instance?.EnvironmentService != null)
 		{
-			"clear" => "rain",
-			"rain" => "fog",
-			"fog" => "storm",
-			"storm" => "clear",
-			_ => "clear"
-		};
-
-		if (Multiplayer.MultiplayerPeer != null && Multiplayer.IsServer())
-		{
-			Rpc(nameof(SyncWeather), _currentWeather);
-		}
-		else
-		{
-			ApplyWeatherEffects(_currentWeather);
+			string next = GameHost.Instance.EnvironmentService.CycleWeather();
+			if (Multiplayer.MultiplayerPeer != null && Multiplayer.IsServer())
+			{
+				Rpc(nameof(SyncWeather), next);
+			}
+			else
+			{
+				ApplyWeatherEffects(next);
+			}
 		}
 	}
 
 	[Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = true)]
 	private void SyncWeather(string weather)
 	{
-		_currentWeather = weather;
-		ApplyWeatherEffects(_currentWeather);
+		if (GameHost.Instance?.EnvironmentService != null)
+		{
+			GameHost.Instance.EnvironmentService.SetCurrentWeather(weather);
+			float density = weather switch
+			{
+				"clear" => 0f,
+				"rain" => 0.0075f,
+				"fog" => 0.0175f,
+				_ => 0f
+			};
+			GameHost.Instance.EnvironmentService.SetBaseFogDensity(density);
+		}
+		ApplyWeatherEffects(weather);
 	}
 
 	private void ApplyWeatherEffects(string weather)
 	{
-		var worldEnv = GetTree().Root.GetNodeOrNull<WorldEnvironment>("Main/WorldEnvironment");
+		var worldEnv = (GameHost.Instance != null ? GameHost.Instance.MainNode?.GetNodeOrNull<WorldEnvironment>("WorldEnvironment") : null);
 		if (worldEnv == null || worldEnv.Environment == null) return;
 
-		var mainNode = GetTree().Root.GetNodeOrNull("Main");
+		var mainNode = (GameHost.Instance != null ? GameHost.Instance.MainNode : null);
 		if (mainNode == null) return;
 
 		if (GodotObject.IsInstanceValid(_rainParticles)) { _rainParticles.QueueFree(); _rainParticles = null; }
@@ -1788,7 +1684,7 @@ public partial class InGameHUD : Control
 		else if (weather == "rain")
 		{
 			worldEnv.Environment.FogEnabled = true;
-			_baseFogDensity = 0.008f;
+			_baseFogDensity = 0.0075f;
 			
 			_rainParticles = new CpuParticles3D();
 			_rainParticles.Name = "RainParticles";
@@ -1819,229 +1715,86 @@ public partial class InGameHUD : Control
 		else if (weather == "fog")
 		{
 			worldEnv.Environment.FogEnabled = true;
-			_baseFogDensity = 0.045f;
+			_baseFogDensity = 0.0175f;
 			ShowFeedbackText("Weather Forecast: Dense Fog Warning", new Color(0.7f, 0.7f, 0.8f));
 		}
-		else if (weather == "storm")
-		{
-			worldEnv.Environment.FogEnabled = true;
-			_baseFogDensity = 0.015f;
-			
-			_rainParticles = new CpuParticles3D();
-			_rainParticles.Name = "StormParticles";
-			_rainParticles.Amount = 2500;
-			_rainParticles.Lifetime = 1.5f;
-			_rainParticles.Preprocess = 2.0f;
-			
-			var mesh = new BoxMesh();
-			mesh.Size = new Vector3(0.06f, 2.2f, 0.06f);
-			var mat = new StandardMaterial3D();
-			mat.AlbedoColor = new Color(0.4f, 0.45f, 0.6f, 0.6f);
-			mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-			mesh.Material = mat;
-			_rainParticles.Mesh = mesh;
-			
-			_rainParticles.EmissionShape = CpuParticles3D.EmissionShapeEnum.Box;
-			_rainParticles.EmissionBoxExtents = new Vector3(150f, 1f, 150f);
-			_rainParticles.Direction = new Vector3(-0.4f, -1f, -0.1f);
-			_rainParticles.Spread = 12f;
-			_rainParticles.InitialVelocityMin = 35f;
-			_rainParticles.InitialVelocityMax = 45f;
-			
-			mainNode.AddChild(_rainParticles);
-			_rainParticles.GlobalPosition = new Vector3(0f, 45f, 0f);
-			
-			ShowFeedbackText("Weather Forecast: Severe Thunderstorm!", new Color(0.6f, 0.2f, 0.8f));
-		}
 	}
 
-	private void Setup3DFogOfWar()
-	{
-		var mainNode = GetTree().Root.GetNodeOrNull("Main");
-		if (mainNode == null) return;
-
-		var fogMesh = new MeshInstance3D();
-		fogMesh.Name = "3DFogMesh";
-		
-		var planeMesh = new PlaneMesh();
-		planeMesh.Size = new Vector2(250f, 250f);
-		fogMesh.Mesh = planeMesh;
-
-		var shaderMaterial = new ShaderMaterial();
-		var shader = new Shader();
-		shader.Code = @"
-			shader_type spatial;
-			render_mode unshaded, depth_draw_never, cull_disabled;
-			
-			uniform sampler2D fog_texture : filter_linear;
-			uniform vec4 shadow_color : source_color = vec4(0.0, 0.0, 0.0, 0.95);
-			uniform vec4 black_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
-			
-			void fragment() {
-				vec2 uv = UV;
-				vec4 tex = texture(fog_texture, uv);
-				float val = tex.r; // 0=unexplored, 0.5=explored/shadow, 1.0=visible
-				
-				if (val < 0.1) {
-					ALBEDO = black_color.rgb;
-					ALPHA = black_color.a;
-				} else if (val < 0.6) {
-					ALBEDO = shadow_color.rgb;
-					ALPHA = shadow_color.a;
-				} else {
-					discard;
-				}
-			}
-		";
-		shaderMaterial.Shader = shader;
-		
-		fogMesh.MaterialOverride = shaderMaterial;
-		mainNode.AddChild(fogMesh);
-		fogMesh.GlobalPosition = new Vector3(0f, 0.35f, 15f); // Sit just above the ground meshes
-		_fogMeshInstance = fogMesh;
-	}
 
 	public bool TryTriggerCheat(string text)
 	{
-		if (Multiplayer.MultiplayerPeer != null)
+		if (GameHost.Instance == null || GameHost.Instance.CheatService == null)
 		{
 			return false;
 		}
 
-		string lower = text.ToLowerInvariant().Trim();
-		
-		if (lower == "stonks" || lower == "securethebag")
+		var selectedEntities = new List<Entity>();
+		if (GameHost.Instance.SelectedUnits != null)
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.PlayerEntity != Entity.Null)
+			foreach (var u in GameHost.Instance.SelectedUnits)
 			{
-				var world = GameHost.Instance.EcsWorld;
-				var player = GameHost.Instance.PlayerEntity;
-				if (world.IsAlive(player) && world.Has<PlayerResources>(player))
-				{
-					ref var playerRes = ref world.Get<PlayerResources>(player);
-					var defManager = GameHost.Instance.DefinitionManager;
-					var goldId = "gold".AsResourceId(defManager);
-					var woodId = "wood".AsResourceId(defManager);
-					var stoneId = "stone".AsResourceId(defManager);
-
-					if (playerRes.Value.ContainsKey(goldId)) playerRes.Value[goldId] = (int)Math.Min(GameHost.ResourceCap, playerRes.Value[goldId] + 10000);
-					if (playerRes.Value.ContainsKey(woodId)) playerRes.Value[woodId] = (int)Math.Min(GameHost.ResourceCap, playerRes.Value[woodId] + 10000);
-					if (playerRes.Value.ContainsKey(stoneId)) playerRes.Value[stoneId] = (int)Math.Min(GameHost.ResourceCap, playerRes.Value[stoneId] + 10000);
-				}
+				selectedEntities.Add(u.Entity);
 			}
-			ShowFeedbackText("Cheat Activated: Stonks! (+10,000 resources)", new Color(0.95f, 0.82f, 0.55f));
-			_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'stonks' activated. Added 10,000 resources.")}[/color]\n";
-			return true;
-		}
-		
-		if (lower == "gigachad" || lower == "maincharacter")
-		{
-			var selected = GameHost.Instance?.SelectedUnits;
-			if (selected != null && selected.Count > 0)
-			{
-				var world = GameHost.Instance.EcsWorld;
-				int affected = 0;
-				foreach (var unit in selected)
-				{
-					if (world.IsAlive(unit.Entity))
-					{
-						if (world.Has<Health>(unit.Entity))
-						{
-							world.Set(unit.Entity, new Health(9000f, 9000f));
-						}
-						if (world.Has<Attack>(unit.Entity))
-						{
-							var atk = world.Get<Attack>(unit.Entity);
-							world.Set(unit.Entity, new Attack(9001f, atk.Range, atk.Cooldown, atk.CurrentCooldown));
-						}
-						affected++;
-					}
-				}
-				ShowFeedbackText($"Cheat Activated: Gigachad Main Character Energy! ({affected} units empowered)", new Color(1.0f, 0.3f, 0.1f));
-				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'gigachad' activated. Powered up {0} units."), affected)}[/color]\n";
-				RefreshUI(selected);
-			}
-			else
-			{
-				ShowFeedbackText("Cheat failed: Select some units first!", new Color(0.8f, 0.3f, 0.3f));
-			}
-			return true;
 		}
 
-		if (lower == "skibidi" || lower == "rizz" || lower == "absoluteunit")
+		bool isMultiplayer = LobbyManager.Instance != null && !LobbyManager.Instance.IsSinglePlayer;
+		if (Multiplayer.MultiplayerPeer == null || Multiplayer.MultiplayerPeer is OfflineMultiplayerPeer)
 		{
-			var selected = GameHost.Instance?.SelectedUnits;
-			if (selected != null && selected.Count > 0)
-			{
-				int affected = 0;
-				foreach (var unit in selected)
+			isMultiplayer = false;
+		}
+
+		var (result, affectedCount) = GameHost.Instance.CheatService.TryTriggerCheat(
+			text,
+			isMultiplayer,
+			GameHost.Instance.PlayerEntity,
+			GameHost.Instance.DefinitionManager,
+			selectedEntities
+		);
+
+		if (result == CheatService.CheatResult.None)
+		{
+			return false;
+		}
+
+		switch (result)
+		{
+			case CheatService.CheatResult.Stonks:
+				ShowFeedbackText("Cheat Activated: Stonks! (+10,000 resources)", new Color(0.95f, 0.82f, 0.55f));
+				_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'stonks' activated. Added 10,000 resources.")}[/color]\n";
+				break;
+			case CheatService.CheatResult.Gigachad:
+				ShowFeedbackText($"Cheat Activated: Gigachad Main Character Energy! ({affectedCount} units empowered)", new Color(1.0f, 0.3f, 0.1f));
+				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'gigachad' activated. Powered up {0} units."), affectedCount)}[/color]\n";
+				RefreshUI(GameHost.Instance.SelectedUnits);
+				break;
+			case CheatService.CheatResult.AbsoluteUnit:
+				foreach (var unit in GameHost.Instance.SelectedUnits)
 				{
 					if (GodotObject.IsInstanceValid(unit))
 					{
 						unit.Scale = new Vector3(3f, 3f, 3f);
-						
-						var world = GameHost.Instance.EcsWorld;
-						if (world.IsAlive(unit.Entity) && world.Has<MovementStats>(unit.Entity))
-						{
-							var mv = world.Get<MovementStats>(unit.Entity);
-							world.Set(unit.Entity, new MovementStats(25f, mv.Acceleration, mv.TurnRate));
-						}
-						affected++;
 					}
 				}
-				ShowFeedbackText($"Cheat Activated: Absolute Unit! (+Scale, +Speed) on {affected} units", new Color(0.2f, 0.8f, 1.0f));
-				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'absoluteunit' activated. Gigantified {0} units with super speed!"), affected)}[/color]\n";
-				RefreshUI(selected);
-			}
-			else
-			{
-				ShowFeedbackText("Cheat failed: Select some units first!", new Color(0.8f, 0.3f, 0.3f));
-			}
-			return true;
+				ShowFeedbackText($"Cheat Activated: Absolute Unit! (+Scale, +Speed) on {affectedCount} units", new Color(0.2f, 0.8f, 1.0f));
+				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'absoluteunit' activated. Gigantified {0} units with super speed!"), affectedCount)}[/color]\n";
+				RefreshUI(GameHost.Instance.SelectedUnits);
+				break;
+			case CheatService.CheatResult.ThanosSnap:
+				ShowFeedbackText($"Cheat Activated: Thanos Snapped. Destroyed {affectedCount} enemies.", new Color(0.9f, 0.1f, 0.1f));
+				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'thanossnap' activated. Slain {0} enemy units."), affectedCount)}[/color]\n";
+				break;
+			case CheatService.CheatResult.EzClap:
+				ShowFeedbackText("Cheat Activated: EZ Clap Speedrun!", new Color(0.1f, 0.9f, 0.2f));
+				_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'ezclap' activated. Proceeding to Victory.")}[/color]\n";
+				UIManager.Instance?.PlayClickSound();
+				UIManager.Instance?.TransitionTo(GameScreen.GameOver, true);
+				break;
+			case CheatService.CheatResult.NoCap:
+				ShowFeedbackText("Cheat Activated: Fog of War removed! No cap.", new Color(0.2f, 0.8f, 0.5f));
+				_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'nocap' activated. Fog of War disabled.")}[/color]\n";
+				break;
 		}
-
-		if (lower == "thanossnap" || lower == "emotionaldamage")
-		{
-			if (GameHost.Instance != null)
-			{
-				int destroyed = 0;
-				var unitsCopy = new List<Unit3D>(GameHost.Instance.AllUnits);
-				foreach (var unit in unitsCopy)
-				{
-					if (unit != null && GodotObject.IsInstanceValid(unit) && unit.IsEnemy)
-					{
-						var world = GameHost.Instance.EcsWorld;
-						if (world.IsAlive(unit.Entity) && world.Has<Health>(unit.Entity))
-						{
-							world.Set(unit.Entity, new Health(0f, world.Get<Health>(unit.Entity).Max));
-							destroyed++;
-						}
-					}
-				}
-				ShowFeedbackText($"Cheat Activated: Thanos Snapped. Destroyed {destroyed} enemies.", new Color(0.9f, 0.1f, 0.1f));
-				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'thanossnap' activated. Slain {0} enemy units."), destroyed)}[/color]\n";
-			}
-			return true;
-		}
-
-		if (lower == "ezclap" || lower == "speedrun")
-		{
-			ShowFeedbackText("Cheat Activated: EZ Clap Speedrun!", new Color(0.1f, 0.9f, 0.2f));
-			_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'ezclap' activated. Proceeding to Victory.")}[/color]\n";
-			UIManager.Instance.PlayClickSound();
-			UIManager.Instance.TransitionTo(GameScreen.GameOver, true);
-			return true;
-		}
-
-		if (lower == "nocap" || lower == "verydemure")
-		{
-			_fogOfWarType = "visible";
-			ShowFeedbackText("Cheat Activated: Fog of War removed! No cap.", new Color(0.2f, 0.8f, 0.5f));
-			_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'nocap' activated. Fog of War disabled.")}[/color]\n";
-			return true;
-		}
-
-		return false;
+		return true;
 	}
 
 	private void UpgradeSelectedTower()
