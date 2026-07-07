@@ -644,7 +644,7 @@ public partial class GameHost
 		string reqId = ActivePlaceId;
 		bool reqIsEnemy = PlaceUnitIsEnemy;
 
-		if (_editorPreviewNode == null || _editorPreviewType != reqType || _editorPreviewId != reqId || _editorPreviewIsEnemy != reqIsEnemy)
+		if (_editorPreviewNode == null || !GodotObject.IsInstanceValid(_editorPreviewNode) || _editorPreviewType != reqType || _editorPreviewId != reqId || _editorPreviewIsEnemy != reqIsEnemy)
 		{
 			ClearEditorPreview();
 			
@@ -725,7 +725,7 @@ public partial class GameHost
 			}
 		}
 
-		if (_editorPreviewNode != null)
+		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode))
 		{
 			if (!_editorService.HasCachedRandom) _editorService.GenerateNewRandomPlacementRotationAndScale();
 			float previewRot = (EditorRandomRotation && !_editorService.IsPastingObject) ? _editorService.CachedRandomRotation : EditorPlacementRotation;
@@ -763,11 +763,11 @@ public partial class GameHost
 
 	private void ClearEditorPreview()
 	{
-		if (_editorPreviewNode != null)
+		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode))
 		{
 			_editorPreviewNode.QueueFree();
-			_editorPreviewNode = null;
 		}
+		_editorPreviewNode = null;
 		_editorPreviewType = "";
 		_editorPreviewId = "";
 		_editorPreviewIsEnemy = false;

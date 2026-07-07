@@ -40,5 +40,15 @@ script = ExtResource("3_r0du0")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1286803203]
 
+[node name="CharacterFillLight" type="OmniLight3D" parent="." unique_id=1847392014]
+position = Vector3(0, 50, 0)
+light_color = Color(0.604, 0.722, 0.91, 1)
+light_energy = 0.35
+light_indirect_energy = 0.0
+light_cull_mask = 2
+shadow_enabled = false
+omni_range = 512.0
+omni_attenuation = 0.0
+
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=941781935]
 environment = SubResource("Environment_3dxm6")
