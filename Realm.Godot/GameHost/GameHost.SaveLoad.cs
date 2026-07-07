@@ -56,12 +56,15 @@ public partial class GameHost
 		_saveLoadService.SaveMapToFile(absolutePath, htmlColors, unitsData.ToArray(), propsData.ToArray(), decalsData.ToArray());
 	}
 
-	public bool LoadMapFromFile(string customPath = "", bool terrainOnly = false)
+	public bool LoadMapFromFile(string customPath = "", bool terrainOnly = false, bool clearUnits = true)
 	{
 		string path = string.IsNullOrEmpty(customPath) ? "user://terrain.json" : customPath;
 		string absolutePath = ProjectSettings.GlobalizePath(path);
 
-		ClearAllUnits();
+		if (clearUnits)
+		{
+			ClearAllUnits();
+		}
 
 		bool success = _saveLoadService.LoadMapFromFile(absolutePath, terrainOnly);
 		if (!success)
@@ -109,6 +112,20 @@ public partial class GameHost
 
 		if (GroundTerrain == null)
 		{
+			var toRemove = new List<Node>();
+			foreach (var child in GetChildren())
+			{
+				if (child.Name.ToString().StartsWith("Ground"))
+				{
+					toRemove.Add(child);
+				}
+			}
+			foreach (var child in toRemove)
+			{
+				RemoveChild(child);
+				child.QueueFree();
+			}
+
 			var terrainNode = new EditableTerrain();
 			terrainNode.Name = "Ground";
 			AddChild(terrainNode);

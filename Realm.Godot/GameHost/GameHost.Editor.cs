@@ -1228,20 +1228,6 @@ public partial class GameHost
 		ActiveEditorTool = EditorTool.None;
 		EditorHistoryManager.Clear();
 		
-		ClearAllUnits();
-		
-		var groundNode = GetNodeOrNull("Ground");
-		if (groundNode != null)
-		{
-			groundNode.QueueFree();
-			RemoveChild(groundNode);
-		}
-		
-		var terrainNode = new EditableTerrain();
-		terrainNode.Name = "Ground";
-		AddChild(terrainNode);
-		GroundTerrain = terrainNode;
-
 		bool loaded = LoadMapFromFile();
 		
 		CreateBrushIndicator();

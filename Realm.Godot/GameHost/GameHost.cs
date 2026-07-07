@@ -2406,6 +2406,21 @@ public class {mapName} : IMapScript
 
 	private void CreateGround()
 	{
+		var toRemove = new List<Node>();
+		foreach (var child in GetChildren())
+		{
+			if (child.Name.ToString().StartsWith("Ground"))
+			{
+				toRemove.Add(child);
+			}
+		}
+		foreach (var child in toRemove)
+		{
+			RemoveChild(child);
+			child.QueueFree();
+		}
+		GroundTerrain = null;
+
 		if (IsMapEditorMode)
 		{
 			var terrainNode = new EditableTerrain();
@@ -2441,11 +2456,26 @@ public class {mapName} : IMapScript
 		string terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
 		if (FileAccess.FileExists(terrainPath))
 		{
-			if (LoadMapFromFile(terrainPath, true))
+			if (LoadMapFromFile(terrainPath, true, false)) // clearUnits = false to avoid recursion
 			{
 				return;
 			}
 		}
+
+		toRemove.Clear();
+		foreach (var child in GetChildren())
+		{
+			if (child.Name.ToString().StartsWith("Ground"))
+			{
+				toRemove.Add(child);
+			}
+		}
+		foreach (var child in toRemove)
+		{
+			RemoveChild(child);
+			child.QueueFree();
+		}
+		GroundTerrain = null;
 
 		var staticBody = new StaticBody3D();
 		staticBody.Name = "Ground";
