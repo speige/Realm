@@ -644,6 +644,95 @@ public class NetworkService
 				unitIndex++;
 			}
 		}
+		else if (cmd.CommandType == "train")
+		{
+			var goldResourceId = new ResourceId("gold");
+			var woodResourceId = new ResourceId("wood");
+			var stoneResourceId = new ResourceId("stone");
+			foreach (int serverId in cmd.UnitEntityIds)
+			{
+				var entity = FindServerEntity(serverId, allUnits);
+				if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
+				
+				string unitId = cmd.ArgString;
+				if (GameHost.UnitRegistry.TryGetValue(unitId, out var meta))
+				{
+					var ownerComp = _ecsWorld.Get<Owner>(entity);
+					var ownerEntity = ownerComp.PlayerEntity.Value;
+					if (_ecsWorld.TryGet<PlayerResources>(ownerEntity, out var res))
+					{
+						int costGold = (int)meta.CostGold;
+						int costWood = (int)meta.CostWood;
+						int costStone = (int)meta.CostStone;
+						if (res.Value[goldResourceId] >= costGold && 
+							res.Value[woodResourceId] >= costWood && 
+							res.Value[stoneResourceId] >= costStone)
+						{
+							res.Value[goldResourceId] -= costGold;
+							res.Value[woodResourceId] -= costWood;
+							res.Value[stoneResourceId] -= costStone;
+							_ecsWorld.Set(ownerEntity, res);
+
+							if (!_ecsWorld.Has<ProductionQueue>(entity))
+							{
+								_ecsWorld.Add(entity, new ProductionQueue());
+							}
+							ref var prod = ref _ecsWorld.Get<ProductionQueue>(entity);
+							prod.UnitIds.Add(unitId);
+							if (prod.UnitIds.Count == 1)
+							{
+								prod.BuildTime = meta.ProductionTime;
+								prod.CurrentProgress = 0f;
+							}
+						}
+					}
+				}
+			}
+		}
+		else if (cmd.CommandType == "cancel_train")
+		{
+			var goldResourceId = new ResourceId("gold");
+			var woodResourceId = new ResourceId("wood");
+			var stoneResourceId = new ResourceId("stone");
+			foreach (int serverId in cmd.UnitEntityIds)
+			{
+				var entity = FindServerEntity(serverId, allUnits);
+				if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
+				if (!_ecsWorld.Has<ProductionQueue>(entity)) continue;
+
+				ref var prod = ref _ecsWorld.Get<ProductionQueue>(entity);
+				int idx = cmd.TargetEntityId;
+				if (idx >= 0 && idx < prod.UnitIds.Count)
+				{
+					string unitId = prod.UnitIds[idx];
+					prod.UnitIds.RemoveAt(idx);
+					if (idx == 0)
+					{
+						prod.CurrentProgress = 0f;
+						if (prod.UnitIds.Count > 0)
+						{
+							if (GameHost.UnitRegistry.TryGetValue(prod.UnitIds[0], out var meta))
+							{
+								prod.BuildTime = meta.ProductionTime;
+							}
+						}
+					}
+					
+					if (GameHost.UnitRegistry.TryGetValue(unitId, out var regMeta))
+					{
+						var ownerComp = _ecsWorld.Get<Owner>(entity);
+						var ownerEntity = ownerComp.PlayerEntity.Value;
+						if (_ecsWorld.TryGet<PlayerResources>(ownerEntity, out var res))
+						{
+							res.Value[goldResourceId] += (int)regMeta.CostGold;
+							res.Value[woodResourceId] += (int)regMeta.CostWood;
+							res.Value[stoneResourceId] += (int)regMeta.CostStone;
+							_ecsWorld.Set(ownerEntity, res);
+						}
+					}
+				}
+			}
+		}
 
 		bool needsBuildUnit = cmd.CommandType == "build";
 		string buildUnitType = needsBuildUnit ? cmd.ArgString : null;

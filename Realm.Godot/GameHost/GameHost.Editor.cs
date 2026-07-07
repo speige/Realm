@@ -161,6 +161,9 @@ public partial class GameHost
 		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(position.X, position.Y, position.Z)));
 		EcsWorld.Add(entity, new CollisionScale(actualScale));
 
+		float baseRadius = GetOrCalculateObstacleRadius(propId, prop);
+		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+
 		return prop;
 	}
 

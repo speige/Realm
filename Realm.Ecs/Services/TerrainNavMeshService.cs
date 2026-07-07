@@ -3,6 +3,8 @@ using DotRecast.Core.Numerics;
 using DotRecast.Detour;
 using DotRecast.Recast;
 using DotRecast.Recast.Geom;
+using Realm.Ecs.Components.Core;
+using Realm.Ecs.Components.Tags;
 using Realm.Ecs.Components.Terrain;
 using System;
 using System.Collections.Generic;
@@ -98,6 +100,15 @@ internal class TerrainNavMeshService
 			pars.walkableClimb = agentMaxClimb;
 			pars.polyAreas = new int[result.Mesh.npolys];
 			pars.polyFlags = new int[result.Mesh.npolys];
+			var obstacles = new List<(System.Numerics.Vector3 Pos, float Radius)>();
+			var obstacleQuery = new QueryDescription().WithAll<Position, CollisionRadius>();
+			_ecsWorldAccessor.Current.Query(in obstacleQuery, (Entity ent, ref Position pos, ref CollisionRadius colRad) =>
+			{
+				float scale = _ecsWorldAccessor.Current.Has<CollisionScale>(ent) ? _ecsWorldAccessor.Current.Get<CollisionScale>(ent).Value : 1.0f;
+				float radius = colRad.Value * scale;
+				obstacles.Add((pos.Value, radius));
+			});
+
 			for (int i = 0; i < result.Mesh.npolys; i++)
 			{
 				pars.polyAreas[i] = result.Mesh.areas[i];
@@ -123,7 +134,20 @@ internal class TerrainNavMeshService
 				int zGrid = Math.Clamp((int)Math.Round(avgZ / spacing + (depth - 1) / 2.0f), 0, depth - 1);
 
 				int pathFlags = (state.PathingCodes != null) ? state.PathingCodes[xGrid, zGrid] : (8 | 4);
-				if ((pathFlags & 16) != 0)
+				
+				bool isBlocked = false;
+				foreach (var obs in obstacles)
+				{
+					float dx = avgX - obs.Pos.X;
+					float dz = avgZ - obs.Pos.Z;
+					if (dx * dx + dz * dz < obs.Radius * obs.Radius)
+					{
+						isBlocked = true;
+						break;
+					}
+				}
+
+				if (isBlocked || (pathFlags & 16) != 0)
 				{
 					pars.polyFlags[i] = 0;
 				}

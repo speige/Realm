@@ -3236,8 +3236,9 @@ public partial class GameHost
 			InGameHUD.Instance.Wood >= meta.CostWood && 
 			InGameHUD.Instance.Stone >= meta.CostStone)
 		{
-			if (_inputService.TryQueueUnitAtCastle(_playerEntity, targetCastle.Entity, unitId, meta.PopCost, meta.ProductionTime))
+			if (_multiplayerActive && !IsServerActive())
 			{
+				QueueClientCommand("train", new List<int> { GetServerEntityId(targetCastle.Entity) }, Vector3.Zero, 0, unitId);
 				InGameHUD.Instance.Gold -= meta.CostGold;
 				InGameHUD.Instance.Wood -= meta.CostWood;
 				InGameHUD.Instance.Stone -= meta.CostStone;
@@ -3245,6 +3246,19 @@ public partial class GameHost
 				InGameHUD.Instance.ShowFeedbackText($"Queued {meta.Name} ({CurrentPopulation}/{MaxPopulation} pop)", new Color(0.2f, 0.8f, 1f));
 				UIManager.Instance?.PlayClickSound();
 				InGameHUD.Instance.RefreshUI(SelectedUnits);
+			}
+			else
+			{
+				if (_inputService.TryQueueUnitAtCastle(_playerEntity, targetCastle.Entity, unitId, meta.PopCost, meta.ProductionTime))
+				{
+					InGameHUD.Instance.Gold -= meta.CostGold;
+					InGameHUD.Instance.Wood -= meta.CostWood;
+					InGameHUD.Instance.Stone -= meta.CostStone;
+
+					InGameHUD.Instance.ShowFeedbackText($"Queued {meta.Name} ({CurrentPopulation}/{MaxPopulation} pop)", new Color(0.2f, 0.8f, 1f));
+					UIManager.Instance?.PlayClickSound();
+					InGameHUD.Instance.RefreshUI(SelectedUnits);
+				}
 			}
 		}
 		else
@@ -3330,37 +3344,64 @@ public partial class GameHost
 
 	public void CancelQueuedUnitAt(Entity castleEntity, int index)
 	{
-		if (EcsWorld.IsAlive(castleEntity) && EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity))
+		if (EcsWorld.IsAlive(castleEntity))
 		{
-			if (_inputService.CancelQueuedUnitAt(castleEntity, index, out string? cancelledId, out string? nextUnitId))
+			if (_multiplayerActive && !IsServerActive())
 			{
-				if (cancelledId != null)
+				QueueClientCommand("cancel_train", new List<int> { GetServerEntityId(castleEntity) }, Vector3.Zero, index, "");
+				if (EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity))
 				{
-					var meta = UnitRegistry[cancelledId];
-					if (InGameHUD.Instance != null)
+					if (_inputService.CancelQueuedUnitAt(castleEntity, index, out string? cancelledId, out string? nextUnitId))
 					{
-						InGameHUD.Instance.Gold += meta.CostGold;
-						InGameHUD.Instance.Wood += meta.CostWood;
-						InGameHUD.Instance.Stone += meta.CostStone;
-
-						CurrentPopulation = Math.Max(0, CurrentPopulation - meta.PopCost);
-						InGameHUD.Instance.ShowFeedbackText($"Cancelled {meta.Name} (Refunded {meta.CostGold}G, {meta.CostWood}W, {meta.CostStone}S)", new Color(1f, 0.8f, 0.2f));
+						if (cancelledId != null)
+						{
+							var meta = UnitRegistry[cancelledId];
+							if (InGameHUD.Instance != null)
+							{
+								InGameHUD.Instance.Gold += meta.CostGold;
+								InGameHUD.Instance.Wood += meta.CostWood;
+								InGameHUD.Instance.Stone += meta.CostStone;
+								CurrentPopulation = Math.Max(0, CurrentPopulation - meta.PopCost);
+								InGameHUD.Instance.ShowFeedbackText($"Cancelled {meta.Name} (Refunded {meta.CostGold}G, {meta.CostWood}W, {meta.CostStone}S)", new Color(1f, 0.8f, 0.2f));
+							}
+						}
+						UIManager.Instance?.PlayClickSound();
+						InGameHUD.Instance?.RefreshUI(SelectedUnits);
 					}
 				}
-
-				if (index == 0 && nextUnitId != null)
+			}
+			else if (EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity))
+			{
+				if (_inputService.CancelQueuedUnitAt(castleEntity, index, out string? cancelledId, out string? nextUnitId))
 				{
-					var nextMeta = UnitRegistry[nextUnitId];
-					if (EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity))
+					if (cancelledId != null)
 					{
-						var p = EcsWorld.Get<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity);
-						p.BuildTime = nextMeta.ProductionTime;
-						EcsWorld.Set(castleEntity, p);
-					}
-				}
+						var meta = UnitRegistry[cancelledId];
+						if (InGameHUD.Instance != null)
+						{
+							InGameHUD.Instance.Gold += meta.CostGold;
+							InGameHUD.Instance.Wood += meta.CostWood;
+							InGameHUD.Instance.Stone += meta.CostStone;
 
-				UIManager.Instance?.PlayClickSound();
-				InGameHUD.Instance?.RefreshUI(SelectedUnits);
+							CurrentPopulation = Math.Max(0, CurrentPopulation - meta.PopCost);
+							InGameHUD.Instance.ShowFeedbackText($"Cancelled {meta.Name} (Refunded {meta.CostGold}G, {meta.CostWood}W, {meta.CostStone}S)", new Color(1f, 0.8f, 0.2f));
+						}
+					}
+
+					if (index == 0 && nextUnitId != null)
+					{
+						var nextMeta = UnitRegistry[nextUnitId];
+						if (EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity))
+						{
+							var p = EcsWorld.Get<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity);
+							p.BuildTime = nextMeta.ProductionTime;
+							EcsWorld.Set(castleEntity, p);
+						}
+					}
+
+					UIManager.Instance?.PlayClickSound();
+					InGameHUD.Instance?.RefreshUI(SelectedUnits);
+				}
 			}
 		}
 	}

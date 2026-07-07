@@ -2290,13 +2290,15 @@ public class {mapName} : IMapScript
 		LoadUnitMetadata(normalizedMapName);
 
 		bool isGameStarted = LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted;
-		if ((isGameStarted && !ReplayPlaybackManager.Instance.IsPlayingReplay) || IsMapEditorMode)
+		bool shouldRunMapScript = !isGameStarted || IsServerActive();
+		if ((shouldRunMapScript && !ReplayPlaybackManager.Instance.IsPlayingReplay) || IsMapEditorMode)
 		{
 			LoadMapScript(normalizedMapName);
 			if (_activeMapScript != null)
 			{
 				_activeMapScript.Initialize(this);
 			}
+			RebakeNavMesh();
 		}
 
 		if (isGameStarted && !IsMapEditorMode && !ReplayPlaybackManager.Instance.IsPlayingReplay && GameSettings.RecordReplays)
@@ -2736,6 +2738,9 @@ public class {mapName} : IMapScript
 		{
 			var spawnOffset = new System.Numerics.Vector3(0f, 0f, 8f);
 			EcsWorld.Add(entity, new BuildingSpawnOffset(spawnOffset));
+
+			float baseRadius = GetOrCalculateObstacleRadius(id, unit3D);
+			EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
 		}
 
 		if (IsMapEditorMode)
@@ -2829,6 +2834,100 @@ public class {mapName} : IMapScript
 		catch
 		{
 			return true;
+		}
+	}
+
+	public void RebakeNavMesh()
+	{
+		if (IsServerActive() && GroundTerrain != null)
+		{
+			GroundTerrain.BakeNavMesh();
+		}
+	}
+
+	private static readonly Dictionary<string, float> _obstacleRadiusCache = new();
+
+	public float GetOrCalculateObstacleRadius(string id, Node3D node)
+	{
+		if (_obstacleRadiusCache.TryGetValue(id, out float cachedRadius))
+		{
+			return cachedRadius;
+		}
+
+		float radius = 1.0f;
+		if (node != null)
+		{
+			radius = CalculateNodeRadius(node);
+			_obstacleRadiusCache[id] = radius;
+		}
+		return radius;
+	}
+
+	private float CalculateNodeRadius(Node node)
+	{
+		float maxRadius = 0.5f;
+
+		var shapes = FindChildrenOfType<CollisionShape3D>(node);
+		foreach (var shapeNode in shapes)
+		{
+			if (shapeNode.Shape != null)
+			{
+				float r = 0.5f;
+				if (shapeNode.Shape is BoxShape3D box)
+				{
+					r = Math.Max(box.Size.X, box.Size.Z) * 0.5f;
+				}
+				else if (shapeNode.Shape is CylinderShape3D cyl)
+				{
+					r = cyl.Radius;
+				}
+				else if (shapeNode.Shape is SphereShape3D sphere)
+				{
+					r = sphere.Radius;
+				}
+				else if (shapeNode.Shape is CapsuleShape3D capsule)
+				{
+					r = capsule.Radius;
+				}
+				
+				r *= Math.Max(shapeNode.Scale.X, shapeNode.Scale.Z);
+				if (r > maxRadius) maxRadius = r;
+			}
+		}
+
+		if (maxRadius > 0.5f) return maxRadius;
+
+		var meshes = FindChildrenOfType<MeshInstance3D>(node);
+		foreach (var meshNode in meshes)
+		{
+			if (meshNode.Mesh != null)
+			{
+				var aabb = meshNode.Mesh.GetAabb();
+				float r = Math.Max(aabb.Size.X, aabb.Size.Z) * 0.5f;
+				r *= Math.Max(meshNode.Scale.X, meshNode.Scale.Z);
+				if (r > maxRadius) maxRadius = r;
+			}
+		}
+
+		return maxRadius;
+	}
+
+	private List<T> FindChildrenOfType<T>(Node parent) where T : Node
+	{
+		var result = new List<T>();
+		FindChildrenOfTypeRecursive(parent, result);
+		return result;
+	}
+
+	private void FindChildrenOfTypeRecursive<T>(Node parent, List<T> result) where T : Node
+	{
+		if (parent is T typed)
+		{
+			result.Add(typed);
+		}
+		foreach (var child in parent.GetChildren())
+		{
+			FindChildrenOfTypeRecursive(child, result);
 		}
 	}
 

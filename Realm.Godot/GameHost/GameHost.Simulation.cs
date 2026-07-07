@@ -58,6 +58,10 @@ public partial class GameHost
 		{
 			_castlesList.Remove(unit);
 		}
+		if (unit.IsBuilding)
+		{
+			RebakeNavMesh();
+		}
 
 		if (unit.IsEnemy && UnitRegistry.TryGetValue(unit.UnitId, out var bountyMeta) && bountyMeta.GoldBounty > 0f)
 		{
@@ -132,6 +136,7 @@ public partial class GameHost
 				EcsWorld.Destroy(prop.Entity);
 			}
 			prop.QueueFree();
+			RebakeNavMesh();
 		}
 	}
 

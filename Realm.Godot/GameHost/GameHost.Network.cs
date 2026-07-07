@@ -2,7 +2,9 @@ using Arch.Core;
 using Godot;
 using MemoryPack;
 using Realm.Ecs.Common;
+using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Movement;
+using Realm.Ecs.Components.Resources;
 using Realm.MapAPI;
 using System.Collections.Generic;
 
@@ -59,6 +61,37 @@ public partial class GameHost
 		}
 		EcsWorld?.Mutate<Realm.Ecs.Components.Core.NetworkState>(_worldEntity, (ref Realm.Ecs.Components.Core.NetworkState netState) =>
 			netState.DynamicInterpolationFactor = _networkService.ComputeDynamicInterpolationFactor());
+
+		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<WorldState>(_worldEntity))
+		{
+			var state = EcsWorld.Get<WorldState>(_worldEntity);
+			float elapsed = state.GameElapsedTime + fDelta;
+			float timer = state.TimeOfDayTimer;
+			int index = state.TimeOfDayIndex;
+
+			if (state.DayNightCycleEnabled)
+			{
+				timer += fDelta;
+				if (timer >= TimeOfDayCycleDuration)
+				{
+					timer -= TimeOfDayCycleDuration;
+				}
+
+				float progress = timer / TimeOfDayCycleDuration;
+				float currentHour = progress * 24f;
+				if (currentHour >= 5f && currentHour < 6f) index = 3;
+				else if (currentHour >= 6f && currentHour < 18f) index = 0;
+				else if (currentHour >= 18f && currentHour < 20f) index = 1;
+				else index = 2;
+
+				if (!IsMapEditorMode)
+				{
+					UpdateDayNightVisuals(progress);
+				}
+			}
+			EcsWorld.Set(_worldEntity, new WorldState(elapsed, index, timer, state.DayNightCycleEnabled));
+		}
+
 		var query = Realm.Ecs.Common.QueryCache.AllInterpolationTargetQuery;
 		_simulationService.SetDelta(fDelta);
 		EcsWorld.Query(in query, _simulationService.InterpolationQueryDelegate);
@@ -106,6 +139,7 @@ public partial class GameHost
 			string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(result.BuildUnitType, true);
 			var bldEntity = CreateEcsUnit(result.BuildUnitType, meta.Name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, 0f, result.BuildPosition, playerOwner);
 			SpawnUnit3D(bldEntity, result.BuildUnitType, modelPath, result.BuildPosition, true, false);
+			RebakeNavMesh();
 		}
 
 		if (result.NeedsSpellEffect)
@@ -216,12 +250,73 @@ public partial class GameHost
 		_fxService.SpawnArrowProjectile(this, start, target);
 	}
 
+	[Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+	public void SyncPlayerResources(float gold, float wood, float stone)
+	{
+		((IGameAPI)this).Gold = gold;
+		((IGameAPI)this).Wood = wood;
+		((IGameAPI)this).Stone = stone;
+	}
+
+	[Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+	public void SyncProductionQueue(int castleServerEntityId, string[] unitIds, float currentProgress, float buildTime)
+	{
+		if (_worldEntity == Entity.Null || !EcsWorld.Has<NetworkMappingState>(_worldEntity)) return;
+		var mapping = EcsWorld.Get<NetworkMappingState>(_worldEntity);
+		if (mapping.ServerToClientEntityMap.TryGetValue(castleServerEntityId, out var localEntity))
+		{
+			if (EcsWorld.IsAlive(localEntity))
+			{
+				if (!EcsWorld.Has<ProductionQueue>(localEntity))
+				{
+					EcsWorld.Add(localEntity, new ProductionQueue());
+				}
+				ref var prod = ref EcsWorld.Get<ProductionQueue>(localEntity);
+				prod.UnitIds.Clear();
+				prod.UnitIds.AddRange(unitIds);
+				prod.CurrentProgress = currentProgress;
+				prod.BuildTime = buildTime;
+			}
+		}
+	}
+
 	private void UpdateServerSnapshotTick(float fDelta)
 	{
 		var snapshots = _networkService.BuildServerSnapshots(_localPeerId, AllUnits);
 		foreach (var (peerId, payload) in snapshots)
 		{
 			QueueOrSendPacket(peerId, nameof(ReceiveSnapshot), payload);
+		}
+
+		foreach (var kvp in _peerIdToPlayerEntityMap)
+		{
+			int peerId = kvp.Key;
+			if (peerId != _localPeerId)
+			{
+				if (EcsWorld.IsAlive(kvp.Value) && EcsWorld.TryGet<PlayerResources>(kvp.Value, out var res))
+				{
+					float gold = res.Value.TryGetValue(_goldResourceId, out var g) ? g : 0;
+					float wood = res.Value.TryGetValue(_woodResourceId, out var w) ? w : 0;
+					float stone = res.Value.TryGetValue(_stoneResourceId, out var s) ? s : 0;
+					RpcId(peerId, nameof(SyncPlayerResources), gold, wood, stone);
+				}
+			}
+		}
+
+		foreach (var unit in AllUnits)
+		{
+			if (EcsWorld.IsAlive(unit.Entity) && EcsWorld.Has<ProductionQueue>(unit.Entity))
+			{
+				var prod = EcsWorld.Get<ProductionQueue>(unit.Entity);
+				foreach (var kvp in _peerIdToPlayerEntityMap)
+				{
+					int peerId = kvp.Key;
+					if (peerId != _localPeerId)
+					{
+						RpcId(peerId, nameof(SyncProductionQueue), unit.Entity.Id, prod.UnitIds.ToArray(), prod.CurrentProgress, prod.BuildTime);
+					}
+				}
+			}
 		}
 	}
 
