@@ -1,9 +1,11 @@
-﻿using Arch.Core;
+using Arch.Core;
 using Realm.Ecs.Services;
 using Godot;
 using Realm.Ecs.Components.Terrain;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using SkiaSharp;
 
 public class MapEditorTerrainImportService
 {
@@ -31,7 +33,7 @@ public class MapEditorTerrainImportService
 			return false;
 		}
 
-		var img = Image.LoadFromFile(selectedPath);
+		var img = LoadImageForImport(selectedPath);
 		if (img == null)
 		{
 			return false;
@@ -233,5 +235,22 @@ public class MapEditorTerrainImportService
 		}
 
 		return true;
+	}
+
+	private static Image LoadImageForImport(string path)
+	{
+		string extension = Path.GetExtension(path).ToLowerInvariant();
+		if (extension == ".gif" || extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".webp")
+		{
+			using var skBitmap = SKBitmap.Decode(path);
+			if (skBitmap == null)
+			{
+				return null;
+			}
+			using var converted = skBitmap.Copy(SKColorType.Rgba8888);
+			byte[] rgba = converted.Bytes;
+			return Image.CreateFromData(converted.Width, converted.Height, false, Image.Format.Rgba8, rgba);
+		}
+		return Image.LoadFromFile(path);
 	}
 }

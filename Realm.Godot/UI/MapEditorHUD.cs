@@ -2957,7 +2957,7 @@ public class {mapName} : IMapScript
 			"",
 			false,
 			DisplayServer.FileDialogMode.OpenFile,
-			new string[] { "*.png, *.jpg, *.jpeg, *.webp ; Images" },
+			new string[] { "*.png, *.jpg, *.jpeg, *.webp, *.gif ; Images" },
 			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) => {
 				if (status && selectedPaths.Length > 0)
 				{
