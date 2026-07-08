@@ -127,10 +127,6 @@ public class SaveLoadService
 			var saveData = new MapSaveData();
 			saveData.WaterEnabled = terrain.WaterEnabled;
 			saveData.WaterHeight = terrain.WaterHeight;
-			saveData.BlockMode = editor.BlockMode;
-			saveData.BlockLevelHeight = editor.BlockLevelHeight;
-			saveData.WC3BlockMode = editor.BlockMode;
-			saveData.WC3LevelHeight = editor.BlockLevelHeight;
 			saveData.CameraBoundsLeft = editor.CameraBoundsLeft;
 			saveData.CameraBoundsRight = editor.CameraBoundsRight;
 			saveData.CameraBoundsTop = editor.CameraBoundsTop;
@@ -393,8 +389,8 @@ public class SaveLoadService
 				}
 			}
 
-			bool isBlock = saveData.BlockMode ?? saveData.WC3BlockMode ?? true;
-			float step = saveData.BlockLevelHeight ?? saveData.WC3LevelHeight ?? 4.0f;
+			bool isBlock = true;
+			float step = 4.0f;
 			float left = saveData.CameraBoundsLeft ?? -95.0f;
 			float right = saveData.CameraBoundsRight ?? 95.0f;
 			float top = saveData.CameraBoundsTop ?? -95.0f;

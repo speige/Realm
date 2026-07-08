@@ -10,10 +10,6 @@ public class MapSaveData
 	public List<DecalSaveData> Decals { get; set; }
 	public bool? WaterEnabled { get; set; }
 	public float? WaterHeight { get; set; }
-	public bool? BlockMode { get; set; }
-	public float? BlockLevelHeight { get; set; }
-	public bool? WC3BlockMode { get; set; }
-	public float? WC3LevelHeight { get; set; }
 	public float? CameraBoundsLeft { get; set; }
 	public float? CameraBoundsRight { get; set; }
 	public float? CameraBoundsTop { get; set; }
