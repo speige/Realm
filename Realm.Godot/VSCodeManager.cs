@@ -19,6 +19,16 @@ public class VSCodeManager
 	private System.Threading.Tasks.Task _installTask;
 	private readonly object _installLock = new object();
 
+	private static readonly string[] RequiredExtensions = new[]
+	{
+		"ms-dotnettools.csdevkit",
+		"OHZIInteractiveStudio.ohzi-vscode-glb-viewer",
+		"Gruntfuggly.todo-tree",
+		"mechatroner.rainbow-json",
+		"patcx.vscode-nuget-gallery",
+		"AykutSarac.jsoncrack-vscode"
+	};
+
 	public bool IsInstalling
 	{
 		get
@@ -69,6 +79,7 @@ public class VSCodeManager
 			if (File.Exists(exePath) && File.Exists(markerPath))
 			{
 				_installCompleted = true;
+				System.Threading.Tasks.Task.Run(() => InstallMissingExtensions(exePath, embedDir));
 				return;
 			}
 
@@ -101,6 +112,7 @@ public class VSCodeManager
 					if (File.Exists(exePath))
 					{
 						RunBypassAndVerify(exePath, embedDir);
+						InstallMissingExtensions(exePath, embedDir);
 					}
 				}
 				catch (Exception ex)
@@ -262,7 +274,7 @@ public class VSCodeManager
 			}
 
 			string serverDataDir = Path.Combine(embedDir, "user-data-dir");
-			string extensionsDir = Path.Combine(embedDir, "extensions-dir");
+			string extensionsDir = Path.Combine(serverDataDir, "extensions");
 
 			if (IsInstalling)
 			{
@@ -604,7 +616,7 @@ public class VSCodeManager
 	private void RunBypassAndVerify(string exePath, string embedDir)
 	{
 		string serverDataDir = Path.Combine(embedDir, "user-data-dir");
-		string extensionsDir = Path.Combine(embedDir, "extensions-dir");
+		string extensionsDir = Path.Combine(serverDataDir, "extensions");
 
 		Process tempProcess = new Process();
 		tempProcess.StartInfo.FileName = exePath;
@@ -880,6 +892,60 @@ public class VSCodeManager
 			tcs.TrySetResult(false);
 			closeAction();
 		}
+	}
+
+	private void InstallMissingExtensions(string exePath, string embedDir)
+	{
+		try
+		{
+			string serverDataDir = Path.Combine(embedDir, "user-data-dir");
+			string extensionsDir = Path.Combine(serverDataDir, "extensions");
+
+			foreach (string extensionId in RequiredExtensions)
+			{
+				if (!IsExtensionInstalled(extensionsDir, extensionId))
+				{
+					GD.Print("VS Code: Installing missing extension " + extensionId);
+					using (var process = new Process())
+					{
+						process.StartInfo.FileName = exePath;
+						process.StartInfo.Arguments = $"--extensions-dir \"{extensionsDir}\" ext install {extensionId}";
+						process.StartInfo.CreateNoWindow = true;
+						process.StartInfo.UseShellExecute = false;
+						process.Start();
+						process.WaitForExit();
+					}
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr("Failed to install missing VS Code extensions: " + ex.Message);
+		}
+	}
+
+	private bool IsExtensionInstalled(string extensionsDir, string extensionId)
+	{
+		if (!Directory.Exists(extensionsDir))
+		{
+			return false;
+		}
+		try
+		{
+			string[] directories = Directory.GetDirectories(extensionsDir);
+			foreach (string directory in directories)
+			{
+				string name = Path.GetFileName(directory);
+				if (name.StartsWith(extensionId, StringComparison.OrdinalIgnoreCase))
+				{
+					return true;
+				}
+			}
+		}
+		catch
+		{
+		}
+		return false;
 	}
 
 	private class SingleThreadSynchronizationContext : SynchronizationContext

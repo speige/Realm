@@ -233,6 +233,15 @@ public partial class MapEditorHUD : Control
 	private Label _lblCamRightVal;
 	private Label _lblCamTopVal;
 	private Label _lblCamBottomVal;
+	
+	private Label _lblMapWidthVal;
+	private Label _lblMapHeightVal;
+
+	private PanelContainer _scaleMapDialog;
+	private Label _lblScalePreviewWidth;
+	private Label _lblScalePreviewHeight;
+	private int _scaleDialogTargetWidth;
+	private int _scaleDialogTargetDepth;
 
 	private Camera3D _camera3D;
 	private Button _btnVSCode;
@@ -848,6 +857,7 @@ public partial class MapEditorHUD : Control
 		btnLeftDec.Set("icon_max_width", 0);
 		SetupButton(btnLeftDec, "⬅️", () => {
 			if (GameHost.Instance != null) {
+				EnsureCameraBoundsVisible();
 				GameHost.Instance.EditorCameraBoundsLeft -= 5.0f;
 				GameHost.Instance.RebuildCameraBoundsOverlay();
 				UpdateCameraBoundsUI();
@@ -859,6 +869,7 @@ public partial class MapEditorHUD : Control
 		btnLeftInc.Set("icon_max_width", 0);
 		SetupButton(btnLeftInc, "➡️", () => {
 			if (GameHost.Instance != null) {
+				EnsureCameraBoundsVisible();
 				GameHost.Instance.EditorCameraBoundsLeft += 5.0f;
 				GameHost.Instance.RebuildCameraBoundsOverlay();
 				UpdateCameraBoundsUI();
@@ -875,6 +886,7 @@ public partial class MapEditorHUD : Control
 		btnRightDec.Set("icon_max_width", 0);
 		SetupButton(btnRightDec, "⬅️", () => {
 			if (GameHost.Instance != null) {
+				EnsureCameraBoundsVisible();
 				GameHost.Instance.EditorCameraBoundsRight -= 5.0f;
 				GameHost.Instance.RebuildCameraBoundsOverlay();
 				UpdateCameraBoundsUI();
@@ -886,6 +898,7 @@ public partial class MapEditorHUD : Control
 		btnRightInc.Set("icon_max_width", 0);
 		SetupButton(btnRightInc, "➡️", () => {
 			if (GameHost.Instance != null) {
+				EnsureCameraBoundsVisible();
 				GameHost.Instance.EditorCameraBoundsRight += 5.0f;
 				GameHost.Instance.RebuildCameraBoundsOverlay();
 				UpdateCameraBoundsUI();
@@ -902,6 +915,7 @@ public partial class MapEditorHUD : Control
 		btnTopDec.Set("icon_max_width", 0);
 		SetupButton(btnTopDec, "⬆️", () => {
 			if (GameHost.Instance != null) {
+				EnsureCameraBoundsVisible();
 				GameHost.Instance.EditorCameraBoundsTop -= 5.0f;
 				GameHost.Instance.RebuildCameraBoundsOverlay();
 				UpdateCameraBoundsUI();
@@ -913,6 +927,7 @@ public partial class MapEditorHUD : Control
 		btnTopInc.Set("icon_max_width", 0);
 		SetupButton(btnTopInc, "⬇️", () => {
 			if (GameHost.Instance != null) {
+				EnsureCameraBoundsVisible();
 				GameHost.Instance.EditorCameraBoundsTop += 5.0f;
 				GameHost.Instance.RebuildCameraBoundsOverlay();
 				UpdateCameraBoundsUI();
@@ -929,6 +944,7 @@ public partial class MapEditorHUD : Control
 		btnBottomDec.Set("icon_max_width", 0);
 		SetupButton(btnBottomDec, "⬆️", () => {
 			if (GameHost.Instance != null) {
+				EnsureCameraBoundsVisible();
 				GameHost.Instance.EditorCameraBoundsBottom -= 5.0f;
 				GameHost.Instance.RebuildCameraBoundsOverlay();
 				UpdateCameraBoundsUI();
@@ -940,12 +956,14 @@ public partial class MapEditorHUD : Control
 		btnBottomInc.Set("icon_max_width", 0);
 		SetupButton(btnBottomInc, "⬇️", () => {
 			if (GameHost.Instance != null) {
+				EnsureCameraBoundsVisible();
 				GameHost.Instance.EditorCameraBoundsBottom += 5.0f;
 				GameHost.Instance.RebuildCameraBoundsOverlay();
 				UpdateCameraBoundsUI();
 			}
 		}, 10, "Move Bottom boundary further South (Down)");
 		adjustGrid.AddChild(btnBottomInc);
+
 
 		UpdateCameraBoundsUI();
 
@@ -1603,6 +1621,17 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	private void EnsureCameraBoundsVisible()
+	{
+		if (GameHost.Instance != null && !GameHost.Instance.EditorCameraBoundsVisible)
+		{
+			GameHost.Instance.EditorCameraBoundsVisible = true;
+			GameHost.Instance.UpdateCameraBoundsOverlayVisibility();
+			UpdateCameraBoundsOverlayExternal(true);
+		}
+	}
+
+
 	public void UpdateCameraBoundsUI()
 	{
 		if (GameHost.Instance == null) return;
@@ -1610,6 +1639,12 @@ public partial class MapEditorHUD : Control
 		if (_lblCamRightVal != null) _lblCamRightVal.Text = $"R: {GameHost.Instance.EditorCameraBoundsRight:F0}m";
 		if (_lblCamTopVal != null) _lblCamTopVal.Text = $"T: {GameHost.Instance.EditorCameraBoundsTop:F0}m";
 		if (_lblCamBottomVal != null) _lblCamBottomVal.Text = $"B: {GameHost.Instance.EditorCameraBoundsBottom:F0}m";
+		
+		if (GameHost.Instance.GroundTerrain != null)
+		{
+			if (_lblMapWidthVal != null) _lblMapWidthVal.Text = $"W: {GameHost.Instance.GroundTerrain.Width}";
+			if (_lblMapHeightVal != null) _lblMapHeightVal.Text = $"H: {GameHost.Instance.GroundTerrain.Depth}";
+		}
 	}
 
 	public void UpdateSelectedSkyboxExternal(string path)
@@ -3269,6 +3304,22 @@ public class {mapName} : IMapScript
 		var swatchesGrid = GetNodeOrNull<Control>("PanelTextures/VBox/Content/GridSwatches");
 		SafeReparent(swatchesGrid, _containerTextureSettings);
 
+		var swapBox = new HBoxContainer();
+		swapBox.AddThemeConstantOverride("separation", 8);
+		_containerTextureSettings.AddChild(swapBox);
+
+		var btnTextureSwap = new Button();
+		btnTextureSwap.Set("icon_max_width", 0);
+		btnTextureSwap.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		SetupButton(btnTextureSwap, "🔄 SWAP TEXTURES (GLOBAL)", () =>
+		{
+			if (GameHost.Instance != null)
+			{
+				GameHost.Instance.SwapTexturesExternal(GameHost.Instance.EditorPaintColor, GameHost.Instance.EditorCliffPaintColor);
+			}
+		}, 11, "Globally swap the currently selected Brush Texture with the selected Cliff Texture on the entire map");
+		swapBox.AddChild(btnTextureSwap);
+
 		_containerPathingSettings = new VBoxContainer();
 		_containerPathingSettings.Name = "ContainerPathing";
 		_contentToolSettings.AddChild(_containerPathingSettings);
@@ -3408,6 +3459,86 @@ public class {mapName} : IMapScript
 
 		SafeReparent(_waterHeightBox, _contentMapSettings);
 		SafeReparent(_camBoundsBox, _contentMapSettings);
+
+		var mapSizeBox = new VBoxContainer();
+		mapSizeBox.Name = "MapSizeBox";
+		_contentMapSettings.AddChild(mapSizeBox);
+
+		var lblMapSizeTitle = new Label();
+		lblMapSizeTitle.Text = "📏 " + TranslationServer.Translate("Map Dimensions");
+		lblMapSizeTitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		lblMapSizeTitle.AddThemeFontSizeOverride("font_size", 12);
+		mapSizeBox.AddChild(lblMapSizeTitle);
+
+		var mapSizeGrid = new GridContainer();
+		mapSizeGrid.Columns = 3;
+		mapSizeGrid.AddThemeConstantOverride("h_separation", 6);
+		mapSizeGrid.AddThemeConstantOverride("v_separation", 4);
+		mapSizeBox.AddChild(mapSizeGrid);
+
+		_lblMapWidthVal = new Label();
+		_lblMapWidthVal.AddThemeFontSizeOverride("font_size", 11);
+		_lblMapWidthVal.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		mapSizeGrid.AddChild(_lblMapWidthVal);
+
+		var btnWidthDec = new Button();
+		btnWidthDec.Set("icon_max_width", 0);
+		SetupButton(btnWidthDec, "➖", () => {
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
+				int w = GameHost.Instance.GroundTerrain.Width;
+				if (w > 32) GameHost.Instance.ResizeMapExternal(w - 16, GameHost.Instance.GroundTerrain.Depth);
+			}
+		}, 10, "Decrease Map Width (West/East edges)");
+		mapSizeGrid.AddChild(btnWidthDec);
+
+		var btnWidthInc = new Button();
+		btnWidthInc.Set("icon_max_width", 0);
+		SetupButton(btnWidthInc, "➕", () => {
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
+				int w = GameHost.Instance.GroundTerrain.Width;
+				if (w < 512) GameHost.Instance.ResizeMapExternal(w + 16, GameHost.Instance.GroundTerrain.Depth);
+			}
+		}, 10, "Increase Map Width (West/East edges)");
+		mapSizeGrid.AddChild(btnWidthInc);
+
+		_lblMapHeightVal = new Label();
+		_lblMapHeightVal.AddThemeFontSizeOverride("font_size", 11);
+		_lblMapHeightVal.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		mapSizeGrid.AddChild(_lblMapHeightVal);
+
+		var btnHeightDec = new Button();
+		btnHeightDec.Set("icon_max_width", 0);
+		SetupButton(btnHeightDec, "➖", () => {
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
+				int d = GameHost.Instance.GroundTerrain.Depth;
+				if (d > 32) GameHost.Instance.ResizeMapExternal(GameHost.Instance.GroundTerrain.Width, d - 16);
+			}
+		}, 10, "Decrease Map Height (North/South edges)");
+		mapSizeGrid.AddChild(btnHeightDec);
+
+		var btnHeightInc = new Button();
+		btnHeightInc.Set("icon_max_width", 0);
+		SetupButton(btnHeightInc, "➕", () => {
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
+				int d = GameHost.Instance.GroundTerrain.Depth;
+				if (d < 512) GameHost.Instance.ResizeMapExternal(GameHost.Instance.GroundTerrain.Width, d + 16);
+			}
+		}, 10, "Increase Map Height (North/South edges)");
+		mapSizeGrid.AddChild(btnHeightInc);
+
+		var btnScaleMap = new Button();
+		btnScaleMap.Set("icon_max_width", 0);
+		btnScaleMap.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		SetupButton(btnScaleMap, "⬛ SCALE MAP", () =>
+		{
+			if (GameHost.Instance?.GroundTerrain != null)
+			{
+				_scaleDialogTargetWidth = GameHost.Instance.GroundTerrain.Width;
+				_scaleDialogTargetDepth = GameHost.Instance.GroundTerrain.Depth;
+				OpenScaleMapDialog();
+			}
+		}, 11, "Scale the entire map: stretches/shrinks terrain data and repositions all entities proportionally");
+		mapSizeBox.AddChild(btnScaleMap);
 
 		var skyboxBox = new VBoxContainer();
 		skyboxBox.Name = "SkyboxBox";
@@ -3923,6 +4054,167 @@ public class {mapName} : IMapScript
 		_minimapController?.RegenerateMinimap();
 	}
 
+	private void OpenScaleMapDialog()
+	{
+		if (_scaleMapDialog != null) return;
+
+		GameHost.Instance?.ShowScaleMapSilhouette(_scaleDialogTargetWidth, _scaleDialogTargetDepth);
+
+		_scaleMapDialog = new PanelContainer();
+		_scaleMapDialog.Name = "ScaleMapDialog";
+		_scaleMapDialog.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel());
+		_scaleMapDialog.SetAnchorsPreset(Control.LayoutPreset.Center);
+		_scaleMapDialog.CustomMinimumSize = new Vector2(320, 0);
+		_scaleMapDialog.GrowHorizontal = Control.GrowDirection.Both;
+		_scaleMapDialog.GrowVertical = Control.GrowDirection.Both;
+		AddChild(_scaleMapDialog);
+		_scaleMapDialog.MoveToFront();
+
+		var margin = new MarginContainer();
+		margin.AddThemeConstantOverride("margin_left", 16);
+		margin.AddThemeConstantOverride("margin_right", 16);
+		margin.AddThemeConstantOverride("margin_top", 14);
+		margin.AddThemeConstantOverride("margin_bottom", 14);
+		_scaleMapDialog.AddChild(margin);
+
+		var innerVBox = new VBoxContainer();
+		innerVBox.AddThemeConstantOverride("separation", 12);
+		margin.AddChild(innerVBox);
+
+		var titleLabel = new Label();
+		titleLabel.Text = TranslationServer.Translate("⚖ Scale Map");
+		titleLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		titleLabel.AddThemeFontSizeOverride("font_size", 14);
+		titleLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		innerVBox.AddChild(titleLabel);
+
+		var hintLabel = new Label();
+		hintLabel.Text = TranslationServer.Translate("Sets the new size. All terrain and entity\npositions will be scaled proportionally.");
+		hintLabel.AddThemeColorOverride("font_color", new Color(0.75f, 0.75f, 0.75f));
+		hintLabel.AddThemeFontSizeOverride("font_size", 10);
+		hintLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		innerVBox.AddChild(hintLabel);
+
+		var sizeGrid = new GridContainer();
+		sizeGrid.Columns = 3;
+		sizeGrid.AddThemeConstantOverride("h_separation", 8);
+		sizeGrid.AddThemeConstantOverride("v_separation", 6);
+		innerVBox.AddChild(sizeGrid);
+
+		_lblScalePreviewWidth = new Label();
+		_lblScalePreviewWidth.AddThemeFontSizeOverride("font_size", 11);
+		_lblScalePreviewWidth.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		_lblScalePreviewWidth.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		sizeGrid.AddChild(_lblScalePreviewWidth);
+
+		var btnW_Dec = new Button();
+		btnW_Dec.Set("icon_max_width", 0);
+		SetupButton(btnW_Dec, "➖", () =>
+		{
+			if (_scaleDialogTargetWidth > 32)
+			{
+				_scaleDialogTargetWidth = Math.Max(32, _scaleDialogTargetWidth - 16);
+				UpdateScaleDialogLabels();
+				GameHost.Instance?.ShowScaleMapSilhouette(_scaleDialogTargetWidth, _scaleDialogTargetDepth);
+			}
+		}, 10, "Decrease target width");
+		sizeGrid.AddChild(btnW_Dec);
+
+		var btnW_Inc = new Button();
+		btnW_Inc.Set("icon_max_width", 0);
+		SetupButton(btnW_Inc, "➕", () =>
+		{
+			if (_scaleDialogTargetWidth < 512)
+			{
+				_scaleDialogTargetWidth = Math.Min(512, _scaleDialogTargetWidth + 16);
+				UpdateScaleDialogLabels();
+				GameHost.Instance?.ShowScaleMapSilhouette(_scaleDialogTargetWidth, _scaleDialogTargetDepth);
+			}
+		}, 10, "Increase target width");
+		sizeGrid.AddChild(btnW_Inc);
+
+		_lblScalePreviewHeight = new Label();
+		_lblScalePreviewHeight.AddThemeFontSizeOverride("font_size", 11);
+		_lblScalePreviewHeight.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		_lblScalePreviewHeight.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		sizeGrid.AddChild(_lblScalePreviewHeight);
+
+		UpdateScaleDialogLabels();
+
+		var btnH_Dec = new Button();
+		btnH_Dec.Set("icon_max_width", 0);
+		SetupButton(btnH_Dec, "➖", () =>
+		{
+			if (_scaleDialogTargetDepth > 32)
+			{
+				_scaleDialogTargetDepth = Math.Max(32, _scaleDialogTargetDepth - 16);
+				UpdateScaleDialogLabels();
+				GameHost.Instance?.ShowScaleMapSilhouette(_scaleDialogTargetWidth, _scaleDialogTargetDepth);
+			}
+		}, 10, "Decrease target depth");
+		sizeGrid.AddChild(btnH_Dec);
+
+		var btnH_Inc = new Button();
+		btnH_Inc.Set("icon_max_width", 0);
+		SetupButton(btnH_Inc, "➕", () =>
+		{
+			if (_scaleDialogTargetDepth < 512)
+			{
+				_scaleDialogTargetDepth = Math.Min(512, _scaleDialogTargetDepth + 16);
+				UpdateScaleDialogLabels();
+				GameHost.Instance?.ShowScaleMapSilhouette(_scaleDialogTargetWidth, _scaleDialogTargetDepth);
+			}
+		}, 10, "Increase target depth");
+		sizeGrid.AddChild(btnH_Inc);
+
+		var separator = new HSeparator();
+		innerVBox.AddChild(separator);
+
+		var buttonRow = new HBoxContainer();
+		buttonRow.AddThemeConstantOverride("separation", 8);
+		innerVBox.AddChild(buttonRow);
+
+		var btnCancel = new Button();
+		btnCancel.Set("icon_max_width", 0);
+		btnCancel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		SetupButton(btnCancel, "✖ CANCEL", () =>
+		{
+			GameHost.Instance?.HideScaleMapSilhouette();
+			CloseScaleMapDialog();
+		}, 11, "Cancel and discard the scale operation");
+		buttonRow.AddChild(btnCancel);
+
+		var btnApply = new Button();
+		btnApply.Set("icon_max_width", 0);
+		btnApply.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		SetupButton(btnApply, "✔ APPLY", () =>
+		{
+			GameHost.Instance?.HideScaleMapSilhouette();
+			GameHost.Instance?.ScaleMapExternal(_scaleDialogTargetWidth, _scaleDialogTargetDepth);
+			CloseScaleMapDialog();
+		}, 11, "Apply scale and stretch the entire map");
+		buttonRow.AddChild(btnApply);
+	}
+
+	private void UpdateScaleDialogLabels()
+	{
+		if (_lblScalePreviewWidth != null)
+			_lblScalePreviewWidth.Text = $"W: {_scaleDialogTargetWidth}";
+		if (_lblScalePreviewHeight != null)
+			_lblScalePreviewHeight.Text = $"H: {_scaleDialogTargetDepth}";
+	}
+
+	private void CloseScaleMapDialog()
+	{
+		if (_scaleMapDialog != null && GodotObject.IsInstanceValid(_scaleMapDialog))
+		{
+			_scaleMapDialog.QueueFree();
+			_scaleMapDialog = null;
+		}
+		_lblScalePreviewWidth = null;
+		_lblScalePreviewHeight = null;
+	}
+
 	private void SetupButton(Button btn, string text, Action onClick, int fontSize = 13, string tooltip = "")
 	{
 		btn.Text = TranslationServer.Translate(text);
@@ -4171,7 +4463,16 @@ public class {mapName} : IMapScript
 		{
 			return true;
 		}
+		var hoveredControl = GetViewport().GuiGetHoveredControl();
+		if (hoveredControl != null && hoveredControl != this)
+		{
+			return true;
+		}
 		if (_optSkybox != null && _optSkybox.GetPopup() != null && _optSkybox.GetPopup().Visible)
+		{
+			return true;
+		}
+		if (_optModule != null && _optModule.GetPopup() != null && _optModule.GetPopup().Visible)
 		{
 			return true;
 		}
@@ -4214,6 +4515,19 @@ public class {mapName} : IMapScript
 			return true;
 		}
 		if (_topToolbar != null && _topToolbar.Visible && _topToolbar.GetGlobalRect().HasPoint(mousePos))
+		{
+			return true;
+		}
+		if (_middleRightBox != null && _middleRightBox.Visible && _middleRightBox.GetGlobalRect().HasPoint(mousePos))
+		{
+			return true;
+		}
+		if (_scaleMapDialog != null && _scaleMapDialog.Visible && _scaleMapDialog.GetGlobalRect().HasPoint(mousePos))
+		{
+			return true;
+		}
+		var genOverlay = GetNodeOrNull<Control>("GenerationOverlay");
+		if (genOverlay != null && genOverlay.Visible && genOverlay.GetGlobalRect().HasPoint(mousePos))
 		{
 			return true;
 		}
@@ -4288,4 +4602,22 @@ public class {mapName} : IMapScript
 		
 		vbox.MoveChild(_btnCenter, _btnInspectorDelete.GetIndex());
 	}
+
+	public override void _Input(InputEvent @event)
+	{
+		if (@event is InputEventKey keyEvent && keyEvent.Pressed)
+		{
+			if (keyEvent.Keycode == Godot.Key.Up || keyEvent.Keycode == Godot.Key.Down || 
+				keyEvent.Keycode == Godot.Key.Left || keyEvent.Keycode == Godot.Key.Right)
+			{
+				var focusOwner = GetViewport().GuiGetFocusOwner();
+				if (focusOwner != null && (focusOwner is LineEdit || focusOwner is TextEdit))
+				{
+					return;
+				}
+				GetViewport().SetInputAsHandled();
+			}
+		}
+	}
 }
+

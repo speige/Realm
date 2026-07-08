@@ -39,8 +39,20 @@ public class MapEditorMinimap
 		float xRatio = clickPos.X / _minimapArea.Size.X;
 		float yRatio = clickPos.Y / _minimapArea.Size.Y;
 
-		float worldX = Mathf.Clamp((xRatio - 0.5f) * 250f, -95f, 95f);
-		float worldZ = Mathf.Clamp((yRatio - 0.5f) * 250f, -95f, 125f);
+		float spacing = GameHost.Instance.GroundTerrain?.Spacing ?? 2.0f;
+		float physicalWidth = (GameHost.Instance.GroundTerrain?.Width - 1 ?? 125) * spacing;
+		float physicalDepth = (GameHost.Instance.GroundTerrain?.Depth - 1 ?? 125) * spacing;
+
+		float halfWidth = physicalWidth / 2.0f;
+		float halfDepth = physicalDepth / 2.0f;
+
+		float margin = Mathf.Min(30.0f, halfWidth * 0.8f);
+		float clampX = halfWidth - margin;
+		float clampZMin = -halfDepth + margin;
+		float clampZMax = halfDepth;
+
+		float worldX = Mathf.Clamp((xRatio - 0.5f) * physicalWidth, -clampX, clampX);
+		float worldZ = Mathf.Clamp((yRatio - 0.5f) * physicalDepth, -clampZMin, clampZMax);
 
 		var camera = GameHost.Instance.GetViewport().GetCamera3D();
 		if (camera != null)
@@ -55,16 +67,24 @@ public class MapEditorMinimap
 		var camera = GameHost.Instance.GetViewport().GetCamera3D();
 		if (camera == null) return;
 
+		float spacing = GameHost.Instance.GroundTerrain?.Spacing ?? 2.0f;
+		float physicalWidth = (GameHost.Instance.GroundTerrain?.Width - 1 ?? 125) * spacing;
+		float physicalDepth = (GameHost.Instance.GroundTerrain?.Depth - 1 ?? 125) * spacing;
+
 		float scale = camera.GlobalPosition.Y / 35.0f;
-		Vector2 newSize = new Vector2(25.0f * scale, 18.0f * scale);
+		float targetIndicatorWidth = 25.0f * scale * (250f / physicalWidth);
+		float targetIndicatorHeight = 18.0f * scale * (250f / physicalDepth);
+		targetIndicatorWidth = Mathf.Clamp(targetIndicatorWidth, 5.0f, _minimapArea.Size.X);
+		targetIndicatorHeight = Mathf.Clamp(targetIndicatorHeight, 5.0f, _minimapArea.Size.Y);
+		Vector2 newSize = new Vector2(targetIndicatorWidth, targetIndicatorHeight);
 		_cameraIndicator.CustomMinimumSize = newSize;
 		_cameraIndicator.Size = newSize;
 
 		float worldX = camera.GlobalPosition.X;
 		float worldZ = camera.GlobalPosition.Z;
 
-		float xRatio = (worldX / 250f) + 0.5f;
-		float yRatio = (worldZ / 250f) + 0.5f;
+		float xRatio = (worldX / physicalWidth) + 0.5f;
+		float yRatio = (worldZ / physicalDepth) + 0.5f;
 
 		xRatio = Mathf.Clamp(xRatio, 0f, 1f);
 		yRatio = Mathf.Clamp(yRatio, 0f, 1f);
@@ -95,14 +115,31 @@ public class MapEditorMinimap
 
 		try
 		{
+			float spacing = GameHost.Instance?.GroundTerrain?.Spacing ?? 2.0f;
+			float physicalWidth = (GameHost.Instance?.GroundTerrain?.Width - 1 ?? 125) * spacing;
+			float physicalDepth = (GameHost.Instance?.GroundTerrain?.Depth - 1 ?? 125) * spacing;
+
+			int viewportWidth = 256;
+			int viewportHeight = 256;
+
+			if (physicalWidth >= physicalDepth && physicalWidth > 0.0f)
+			{
+				viewportHeight = Mathf.Max(16, Mathf.RoundToInt(256f * physicalDepth / physicalWidth));
+			}
+			else if (physicalDepth > physicalWidth && physicalDepth > 0.0f)
+			{
+				viewportWidth = Mathf.Max(16, Mathf.RoundToInt(256f * physicalWidth / physicalDepth));
+			}
+
 			var viewport = new SubViewport();
-			viewport.Size = new Vector2I(256, 256);
+			viewport.Size = new Vector2I(viewportWidth, viewportHeight);
 			viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Once;
 			_hudNode.AddChild(viewport);
 
 			var camera = new Camera3D();
 			camera.Projection = Camera3D.ProjectionType.Orthogonal;
-			camera.Size = 250f;
+			camera.KeepAspect = Camera3D.KeepAspectEnum.Height;
+			camera.Size = physicalDepth;
 			camera.Far = 200f;
 			camera.Position = new Vector3(0, 100, 0);
 			camera.RotationDegrees = new Vector3(-90, 0, 0);
@@ -152,4 +189,5 @@ public class MapEditorMinimap
 			GD.PrintErr($"Failed to dynamically capture terrain minimap: {ex.Message}");
 		}
 	}
+
 }

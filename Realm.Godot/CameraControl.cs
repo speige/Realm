@@ -467,9 +467,26 @@ public partial class CameraControl : Camera3D
 			}
 			else
 			{
-				newPos.X = Mathf.Clamp(newPos.X, -MapLimit, MapLimit);
-				newPos.Z = Mathf.Clamp(newPos.Z, -MapLimit, MapLimit + 30f);
+				float leftBound = GameHost.Instance.EditorCameraBoundsLeft;
+				float rightBound = GameHost.Instance.EditorCameraBoundsRight;
+				float topBound = GameHost.Instance.EditorCameraBoundsTop;
+				float bottomBound = GameHost.Instance.EditorCameraBoundsBottom;
+
+				float rangeX = rightBound - leftBound;
+				float rangeZ = bottomBound - topBound;
+
+				float paddingX = rangeX * 0.25f;
+				float paddingZ = rangeZ * 0.25f;
+
+				float minX = leftBound - paddingX;
+				float maxX = rightBound + paddingX;
+				float minZ = topBound - paddingZ;
+				float maxZ = bottomBound + paddingZ;
+
+				newPos.X = Mathf.Clamp(newPos.X, minX, maxX);
+				newPos.Z = Mathf.Clamp(newPos.Z, minZ, maxZ);
 			}
+
 
 			Position = newPos;
 		}
@@ -602,9 +619,26 @@ public partial class CameraControl : Camera3D
 			}
 			else
 			{
-				newPos.X = Mathf.Clamp(newPos.X, -MapLimit, MapLimit);
-				newPos.Z = Mathf.Clamp(newPos.Z, -MapLimit, MapLimit + 30f);
+				float leftBound = GameHost.Instance.EditorCameraBoundsLeft;
+				float rightBound = GameHost.Instance.EditorCameraBoundsRight;
+				float topBound = GameHost.Instance.EditorCameraBoundsTop;
+				float bottomBound = GameHost.Instance.EditorCameraBoundsBottom;
+
+				float rangeX = rightBound - leftBound;
+				float rangeZ = bottomBound - topBound;
+
+				float paddingX = rangeX * 0.25f;
+				float paddingZ = rangeZ * 0.25f;
+
+				float minX = leftBound - paddingX;
+				float maxX = rightBound + paddingX;
+				float minZ = topBound - paddingZ;
+				float maxZ = bottomBound + paddingZ;
+
+				newPos.X = Mathf.Clamp(newPos.X, minX, maxX);
+				newPos.Z = Mathf.Clamp(newPos.Z, minZ, maxZ);
 			}
+
 
 			Position = newPos;
 		}

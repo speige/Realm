@@ -85,4 +85,17 @@ Write-Host "Installing C# Dev Kit extension from Marketplace..."
 Write-Host "Installing GLB Viewer extension from Marketplace..."
 & $cliPath --extensions-dir $extsDir ext install OHZIInteractiveStudio.ohzi-vscode-glb-viewer
 
+Write-Host "Installing Todo Tree extension from Marketplace..."
+& $cliPath --extensions-dir $extsDir ext install Gruntfuggly.todo-tree
+
+Write-Host "Installing Rainbow JSON extension from Marketplace..."
+& $cliPath --extensions-dir $extsDir ext install mechatroner.rainbow-json
+
+Write-Host "Installing NuGet Gallery extension from Marketplace..."
+& $cliPath --extensions-dir $extsDir ext install patcx.vscode-nuget-gallery
+
+Write-Host "Installing JSON Crack extension from Marketplace..."
+& $cliPath --extensions-dir $extsDir ext install AykutSarac.jsoncrack-vscode
+
 Write-Host "VS Code Embedded and Extension setup completed successfully!"
+

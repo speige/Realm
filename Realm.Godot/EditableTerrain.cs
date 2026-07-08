@@ -259,6 +259,15 @@ public partial class EditableTerrain : StaticBody3D
 		}
 	}
 
+	public void UpdateWaterSize()
+	{
+		if (_waterMesh == null) return;
+		var plane = new PlaneMesh();
+		plane.Size = new Vector2(Width * Spacing, Depth * Spacing);
+		_waterMesh.Mesh = plane;
+		UpdateWaterTransform();
+	}
+
 	public override void _Ready()
 	{
 		var state = GetTerrainStateSafe();
@@ -658,6 +667,82 @@ void fragment() {
 		_localPathingCodes = newPathing;
 		Colors = newColors;
 
+		UpdateWaterSize();
 		UpdateMeshAndPhysics();
-}
+	}
+
+	public void ScaleTerrainData(int newWidth, int newDepth)
+	{
+		if (GameHost.Instance == null || GameHost.Instance.EcsWorld == null || !GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity)) return;
+		if (!GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity)) return;
+
+		ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
+
+		int oldWidth = state.Width;
+		int oldDepth = state.Depth;
+		float[,] oldHeights = state.Heights;
+		int[,] oldPathing = state.PathingCodes;
+		Color[,] oldColors = Colors;
+
+		float[,] newHeights = new float[newWidth, newDepth];
+		int[,] newPathing = new int[newWidth, newDepth];
+		Color[,] newColors = new Color[newWidth, newDepth];
+
+		for (int z = 0; z < newDepth; z++)
+		{
+			for (int x = 0; x < newWidth; x++)
+			{
+				float srcX = newWidth > 1 ? x * (oldWidth - 1) / (float)(newWidth - 1) : 0f;
+				float srcZ = newDepth > 1 ? z * (oldDepth - 1) / (float)(newDepth - 1) : 0f;
+
+				int x0 = Math.Clamp((int)Math.Floor(srcX), 0, oldWidth - 1);
+				int x1 = Math.Clamp(x0 + 1, 0, oldWidth - 1);
+				int z0 = Math.Clamp((int)Math.Floor(srcZ), 0, oldDepth - 1);
+				int z1 = Math.Clamp(z0 + 1, 0, oldDepth - 1);
+				float tx = srcX - x0;
+				float tz = srcZ - z0;
+
+				if (oldHeights != null)
+				{
+					newHeights[x, z] =
+						(1 - tx) * (1 - tz) * oldHeights[x0, z0] +
+						tx * (1 - tz) * oldHeights[x1, z0] +
+						(1 - tx) * tz * oldHeights[x0, z1] +
+						tx * tz * oldHeights[x1, z1];
+				}
+
+				if (oldColors != null)
+				{
+					newColors[x, z] =
+						oldColors[x0, z0].Lerp(oldColors[x1, z0], tx)
+						.Lerp(oldColors[x0, z1].Lerp(oldColors[x1, z1], tx), tz);
+				}
+				else
+				{
+					newColors[x, z] = new Color(0.2f, 0.6f, 0.2f);
+				}
+
+				if (oldPathing != null)
+				{
+					newPathing[x, z] = oldPathing[x0, z0];
+				}
+				else
+				{
+					newPathing[x, z] = PATHING_GROUND | PATHING_FLYING;
+				}
+			}
+		}
+
+		GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
+			newWidth, newDepth, state.Spacing, state.CellSize, state.WaterHeight, state.WaterEnabled,
+			newHeights, newPathing, state.NavMesh, state.NavMeshQuery
+		));
+
+		_localHeights = newHeights;
+		_localPathingCodes = newPathing;
+		Colors = newColors;
+
+		UpdateWaterSize();
+		UpdateMeshAndPhysics();
+	}
 }

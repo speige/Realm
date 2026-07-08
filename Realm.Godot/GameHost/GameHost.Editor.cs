@@ -1461,6 +1461,229 @@ public partial class GameHost
 		}
 	}
 
+	public void SwapTexturesExternal(Color colorA, Color colorB)
+	{
+		if (GroundTerrain == null || GroundTerrain.Colors == null) return;
+		if (colorA.IsEqualApprox(colorB)) return;
+
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+
+		float[,] heightsBefore = (float[,])GroundTerrain.Heights.Clone();
+		Color[,] colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
+
+		bool anyChanged = false;
+
+		for (int z = 0; z < depth; z++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				if (GroundTerrain.Colors[x, z].IsEqualApprox(colorA))
+				{
+					GroundTerrain.Colors[x, z] = colorB;
+					anyChanged = true;
+				}
+				else if (GroundTerrain.Colors[x, z].IsEqualApprox(colorB))
+				{
+					GroundTerrain.Colors[x, z] = colorA;
+					anyChanged = true;
+				}
+			}
+		}
+
+		if (anyChanged)
+		{
+			float[,] heightsAfter = (float[,])GroundTerrain.Heights.Clone();
+			Color[,] colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
+			
+			var action = new TerrainModifyAction(heightsBefore, heightsAfter, colorsBefore, colorsAfter);
+			EditorHistoryManager.RecordAction(action);
+			EditorHasUnsavedChanges = true;
+			
+			GroundTerrain.UpdateMeshAndPhysics(false, false);
+			MapEditorHUD.Instance?.ShowFeedbackExternal("Textures swapped successfully!");
+		}
+	}
+
+	public void ResizeMapExternal(int newWidth, int newDepth)
+	{
+		if (GroundTerrain == null) return;
+		
+		int oldWidth = GroundTerrain.Width;
+		int oldDepth = GroundTerrain.Depth;
+		
+		float diffWidth = (newWidth - oldWidth) * GroundTerrain.Spacing;
+		float diffDepth = (newDepth - oldDepth) * GroundTerrain.Spacing;
+
+		EditorCameraBoundsLeft -= diffWidth / 2.0f;
+		EditorCameraBoundsRight += diffWidth / 2.0f;
+		EditorCameraBoundsTop -= diffDepth / 2.0f;
+		EditorCameraBoundsBottom += diffDepth / 2.0f;
+
+		GroundTerrain.ResizeTerrain(newWidth, newDepth);
+
+		_editorService.SetTerrainColors(GroundTerrain.Colors);
+		DeleteEntitiesOutsideBounds();
+
+		RebuildCameraBoundsOverlay();
+		MapEditorHUD.Instance?.UpdateCameraBoundsUI();
+		MapEditorHUD.Instance?.RegenerateMinimap();
+		
+		EditorHasUnsavedChanges = true;
+		MapEditorHUD.Instance?.ShowFeedbackExternal($"Map resized to {newWidth}x{newDepth}");
+
+	}
+
+	public void ScaleMapExternal(int newWidth, int newDepth)
+	{
+		if (GroundTerrain == null) return;
+
+		int oldWidth = GroundTerrain.Width;
+		int oldDepth = GroundTerrain.Depth;
+		float spacing = GroundTerrain.Spacing;
+
+		float oldHalfW = (oldWidth - 1) / 2.0f * spacing;
+		float oldHalfD = (oldDepth - 1) / 2.0f * spacing;
+		float newHalfW = (newWidth - 1) / 2.0f * spacing;
+		float newHalfD = (newDepth - 1) / 2.0f * spacing;
+		float scaleX = oldHalfW > 0f ? newHalfW / oldHalfW : 1f;
+		float scaleZ = oldHalfD > 0f ? newHalfD / oldHalfD : 1f;
+
+		GroundTerrain.ScaleTerrainData(newWidth, newDepth);
+
+
+		foreach (var unit in AllUnits)
+		{
+			if (GodotObject.IsInstanceValid(unit))
+			{
+				unit.Position = new Godot.Vector3(unit.Position.X * scaleX, unit.Position.Y, unit.Position.Z * scaleZ);
+			}
+		}
+
+		foreach (var prop in AllProps)
+		{
+			if (GodotObject.IsInstanceValid(prop))
+			{
+				prop.Position = new Godot.Vector3(prop.Position.X * scaleX, prop.Position.Y, prop.Position.Z * scaleZ);
+			}
+		}
+
+		foreach (var child in GetChildren())
+		{
+			if (child is Decal decal && GodotObject.IsInstanceValid(decal))
+			{
+				decal.Position = new Godot.Vector3(decal.Position.X * scaleX, decal.Position.Y, decal.Position.Z * scaleZ);
+			}
+		}
+
+		float diffWidth = (newWidth - oldWidth) * spacing;
+		float diffDepth = (newDepth - oldDepth) * spacing;
+		EditorCameraBoundsLeft -= diffWidth / 2.0f;
+		EditorCameraBoundsRight += diffWidth / 2.0f;
+		EditorCameraBoundsTop -= diffDepth / 2.0f;
+		EditorCameraBoundsBottom += diffDepth / 2.0f;
+
+		DeleteEntitiesOutsideBounds();
+
+		_editorService.SetTerrainColors(GroundTerrain.Colors);
+		RebuildCameraBoundsOverlay();
+		MapEditorHUD.Instance?.UpdateCameraBoundsUI();
+		MapEditorHUD.Instance?.RegenerateMinimap();
+
+		EditorHasUnsavedChanges = true;
+		MapEditorHUD.Instance?.ShowFeedbackExternal($"Map scaled to {newWidth}x{newDepth}");
+
+	}
+
+	private void DeleteEntitiesOutsideBounds()
+	{
+		if (GroundTerrain == null) return;
+
+		float halfW = (GroundTerrain.Width - 1) / 2.0f * GroundTerrain.Spacing;
+		float halfD = (GroundTerrain.Depth - 1) / 2.0f * GroundTerrain.Spacing;
+
+		var unitsToDelete = new List<Unit3D>();
+		foreach (var unit in AllUnits)
+		{
+			if (GodotObject.IsInstanceValid(unit))
+			{
+				var pos = unit.Position;
+				if (pos.X < -halfW || pos.X > halfW || pos.Z < -halfD || pos.Z > halfD)
+				{
+					unitsToDelete.Add(unit);
+				}
+			}
+		}
+		foreach (var unit in unitsToDelete)
+		{
+			DeleteNodeExternal(unit);
+		}
+
+		var propsToDelete = new List<Prop3D>();
+		foreach (var prop in AllProps)
+		{
+			if (GodotObject.IsInstanceValid(prop))
+			{
+				var pos = prop.Position;
+				if (pos.X < -halfW || pos.X > halfW || pos.Z < -halfD || pos.Z > halfD)
+				{
+					propsToDelete.Add(prop);
+				}
+			}
+		}
+		foreach (var prop in propsToDelete)
+		{
+			DeleteNodeExternal(prop);
+		}
+	}
+
+	private MeshInstance3D _scaleMapSilhouetteMesh;
+
+	public void ShowScaleMapSilhouette(int previewWidth, int previewDepth)
+	{
+		if (GroundTerrain == null) return;
+
+		HideScaleMapSilhouette();
+
+		_scaleMapSilhouetteMesh = new MeshInstance3D();
+		_scaleMapSilhouetteMesh.Name = "ScaleMapSilhouette";
+
+		var plane = new PlaneMesh();
+		plane.Size = new Godot.Vector2(previewWidth * GroundTerrain.Spacing, previewDepth * GroundTerrain.Spacing);
+		plane.SubdivideWidth = 0;
+		plane.SubdivideDepth = 0;
+		_scaleMapSilhouetteMesh.Mesh = plane;
+
+		var mat = new StandardMaterial3D();
+		mat.AlbedoColor = new Color(0.8f, 0.5f, 0.05f, 0.25f);
+		mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+		mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+		mat.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+		mat.EmissionEnabled = true;
+		mat.Emission = new Color(1.0f, 0.6f, 0.1f) * 0.4f;
+		_scaleMapSilhouetteMesh.MaterialOverride = mat;
+
+		float peakY = 0f;
+		if (GroundTerrain.Heights != null)
+		{
+			for (int z = 0; z < GroundTerrain.Depth; z++)
+				for (int x = 0; x < GroundTerrain.Width; x++)
+					if (GroundTerrain.Heights[x, z] > peakY) peakY = GroundTerrain.Heights[x, z];
+		}
+		_scaleMapSilhouetteMesh.Position = new Godot.Vector3(0f, peakY + 0.5f, 0f);
+
+		AddChild(_scaleMapSilhouetteMesh);
+	}
+
+	public void HideScaleMapSilhouette()
+	{
+		if (_scaleMapSilhouetteMesh != null)
+		{
+			_scaleMapSilhouetteMesh.QueueFree();
+			_scaleMapSilhouetteMesh = null;
+		}
+	}
+
 	public void RebuildCameraBoundsOverlay()
 	{
 		if (_cameraBoundsOverlayMesh == null || GroundTerrain == null || GroundTerrain.Heights == null) return;
