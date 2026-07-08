@@ -4045,11 +4045,10 @@ public class {mapName} : IMapScript
 		{
 			GameHost.Instance.EditorPaintColor = modColor;
 			HighlightSwatch(swatch);
-			
-			if (GameHost.Instance.ActiveEditorTool != GameHost.EditorTool.FloodFill)
+
+			if (!IsSwatchCompatibleTool(GameHost.Instance.ActiveEditorTool))
 			{
-				GameHost.Instance.ActiveEditorTool = GameHost.EditorTool.PaintGrass;
-				TriggerToolSelection(GameHost.EditorTool.PaintGrass, swatch);
+				TriggerToolSelection(GameHost.EditorTool.PaintGrass, _btnTextureBrush);
 			}
 			
 			UpdateTextureLabels();
@@ -4070,6 +4069,22 @@ public class {mapName} : IMapScript
 			ShowFeedback(string.Format(TranslationServer.Translate("Selected Cliff Face: {0}"), name));
 		}
 	}
+
+	private static bool IsSwatchCompatibleTool(GameHost.EditorTool tool) => tool switch
+	{
+		GameHost.EditorTool.Raise       => true,
+		GameHost.EditorTool.Lower       => true,
+		GameHost.EditorTool.Smooth      => true,
+		GameHost.EditorTool.Flatten     => true,
+		GameHost.EditorTool.Cliff       => true,
+		GameHost.EditorTool.Ramp        => true,
+		GameHost.EditorTool.Noise       => true,
+		GameHost.EditorTool.PaintGrass  => true,
+		GameHost.EditorTool.FloodFill   => true,
+		GameHost.EditorTool.Eyedropper  => true,
+		GameHost.EditorTool.SelectArea  => true,
+		_ => false
+	};
 
 	private void UpdateTextureLabels()
 	{

@@ -222,7 +222,8 @@ public partial class Unit3D : CharacterBody3D
 				_modelNode = packedScene.Instantiate<Node3D>();
 				AddChild(_modelNode);
 				_animationPlayer = FindAnimationPlayer(_modelNode);
-				
+				SeekToIdleFirstFrame();
+
 
 				if (IsBuilding)
 				{
@@ -280,6 +281,16 @@ public partial class Unit3D : CharacterBody3D
 			animResource.LoopMode = Animation.LoopModeEnum.Linear;
 
 		_animationPlayer.Play(resolved);
+	}
+
+	private void SeekToIdleFirstFrame()
+	{
+		if (_animationPlayer == null || !GodotObject.IsInstanceValid(_animationPlayer)) return;
+		StringName idleAnim = ResolveAnimationName("Idle");
+		if (idleAnim == null) return;
+		_animationPlayer.Play(idleAnim);
+		_animationPlayer.Seek(0.0, true);
+		_animationPlayer.Stop(true);
 	}
 
 	private AnimationPlayer FindAnimationPlayer(Node root)
