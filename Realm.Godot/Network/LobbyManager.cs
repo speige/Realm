@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.WebSockets;
@@ -8,6 +9,9 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.ML.OnnxRuntime;
+using Microsoft.ML.OnnxRuntime.Tensors;
+using SharpToken;
 
 public partial class LobbyManager : Node
 {
@@ -121,6 +125,9 @@ public partial class LobbyManager : Node
     private SceneTreeTimer? _countdownTimer;
     private SceneTreeTimer? _diagnosticsTimer;
     private readonly List<(string Sender, string Message, bool IsMuted)> _chatHistory = new();
+    private static InferenceSession? _onnxSession;
+    private static Dictionary<string, int>? _vocab;
+    private static readonly object _sessionLock = new();
 
     public void SwitchToNextServer()
     {
@@ -1099,51 +1106,180 @@ public partial class LobbyManager : Node
         }
     }
 
-    private async Task<bool> IsMessageToxicAsync(string message)
+    private static void InitializeToxicityModel()
     {
-        try
+        lock (_sessionLock)
         {
-            string url = "https://api-inference.huggingface.co/models/unitary/multilingual-toxic-xlm-roberta";
-            var payload = new { inputs = message };
-            var jsonContent = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-            using var client = new System.Net.Http.HttpClient();
-            
-            var response = await client.PostAsync(url, jsonContent);
-            if (response.IsSuccessStatusCode)
+            if (_onnxSession != null)
             {
-                var result = await response.Content.ReadAsStringAsync();
-                
-                using var doc = JsonDocument.Parse(result);
-                if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
-                {
-                    var innerArray = doc.RootElement[0];
-                    if (innerArray.ValueKind == JsonValueKind.Array && innerArray.GetArrayLength() > 0)
-                    {
-                        var firstResult = innerArray[0];
-                        if (firstResult.TryGetProperty("label", out var labelProp) && firstResult.TryGetProperty("score", out var scoreProp))
-                        {
-                            string label = labelProp.GetString() ?? "";
-                            double score = scoreProp.GetDouble();
-                            
-                            if (label.Equals("toxic", StringComparison.OrdinalIgnoreCase) && score > 0.8)
-                            {
-                                return true;
-                            }
-                        }
-                    }
-                }
+                return;
+            }
+
+            string modelPath = "";
+            string vocabPath = "";
+
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string path1 = System.IO.Path.Combine(baseDir, "Assets", "MLModels", "toxic-xlm-roberta", "model_quantized.onnx");
+            string vPath1 = System.IO.Path.Combine(baseDir, "Assets", "MLModels", "toxic-xlm-roberta", "vocab.bin");
+
+            string path2 = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "Realm.Godot", "Assets", "MLModels", "toxic-xlm-roberta", "model_quantized.onnx");
+            string vPath2 = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "Realm.Godot", "Assets", "MLModels", "toxic-xlm-roberta", "vocab.bin");
+
+            string path3 = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "Assets", "MLModels", "toxic-xlm-roberta", "model_quantized.onnx");
+            string vPath3 = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "Assets", "MLModels", "toxic-xlm-roberta", "vocab.bin");
+
+            if (System.IO.File.Exists(path1))
+            {
+                modelPath = path1;
+                vocabPath = vPath1;
+            }
+            else if (System.IO.File.Exists(path2))
+            {
+                modelPath = path2;
+                vocabPath = vPath2;
+            }
+            else if (System.IO.File.Exists(path3))
+            {
+                modelPath = path3;
+                vocabPath = vPath3;
             }
             else
             {
-                GD.PrintErr($"[LobbyManager] Toxicity API returned {response.StatusCode}");
+                try
+                {
+                    string globalized = ProjectSettings.GlobalizePath("res://Assets/MLModels/toxic-xlm-roberta/model_quantized.onnx");
+                    string globalizedVocab = ProjectSettings.GlobalizePath("res://Assets/MLModels/toxic-xlm-roberta/vocab.bin");
+                    if (!string.IsNullOrEmpty(globalized) && System.IO.File.Exists(globalized))
+                    {
+                        modelPath = globalized;
+                        vocabPath = globalizedVocab;
+                    }
+                }
+                catch
+                {
+                }
             }
+
+            if (string.IsNullOrEmpty(modelPath) || !System.IO.File.Exists(modelPath))
+            {
+                throw new System.IO.FileNotFoundException("Model file not found.");
+            }
+
+            _onnxSession = new InferenceSession(modelPath);
+
+            using (var fs = new System.IO.FileStream(vocabPath, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read))
+            using (var reader = new System.IO.BinaryReader(fs, Encoding.UTF8))
+            {
+                int count = reader.ReadInt32();
+                _vocab = new Dictionary<string, int>(count);
+                for (int i = 0; i < count; i++)
+                {
+                    string token = reader.ReadString();
+                    _vocab[token] = i;
+                }
+            }
+        }
+    }
+
+    private async Task<bool> IsMessageToxicAsync(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return false;
+        }
+
+        try
+        {
+            return await Task.Run(() =>
+            {
+                var encoding = GptEncoding.GetEncoding("cl100k_base");
+                var gptTokens = encoding.Encode(message);
+                if (gptTokens == null || gptTokens.Count == 0)
+                {
+                    return false;
+                }
+
+                if (_onnxSession == null || _vocab == null)
+                {
+                    InitializeToxicityModel();
+                }
+
+                var tokens = new List<long>();
+                tokens.Add(0);
+
+                string normalized = message.Replace(" ", " ");
+                if (!normalized.StartsWith(" "))
+                {
+                    normalized = " " + normalized;
+                }
+
+                int i = 0;
+                while (i < normalized.Length)
+                {
+                    int longestMatchLength = 0;
+                    int longestMatchId = -1;
+
+                    int maxLen = Math.Min(normalized.Length - i, 50);
+                    for (int len = 1; len <= maxLen; len++)
+                    {
+                        string sub = normalized.Substring(i, len);
+                        if (_vocab!.TryGetValue(sub, out int id))
+                        {
+                            longestMatchLength = len;
+                            longestMatchId = id;
+                        }
+                    }
+
+                    if (longestMatchLength > 0)
+                    {
+                        tokens.Add(longestMatchId);
+                        i += longestMatchLength;
+                    }
+                    else
+                    {
+                        tokens.Add(3);
+                        i++;
+                    }
+                }
+
+                tokens.Add(2);
+
+                long[] inputIds = tokens.ToArray();
+                long[] attentionMask = inputIds.Select(_ => 1L).ToArray();
+
+                var inputIdsTensor = new DenseTensor<long>(inputIds, new int[] { 1, inputIds.Length });
+                var attentionMaskTensor = new DenseTensor<long>(attentionMask, new int[] { 1, inputIds.Length });
+
+                var inputs = new List<NamedOnnxValue>
+                {
+                    NamedOnnxValue.CreateFromTensor("input_ids", inputIdsTensor),
+                    NamedOnnxValue.CreateFromTensor("attention_mask", attentionMaskTensor)
+                };
+
+                lock (_sessionLock)
+                {
+                    using var results = _onnxSession!.Run(inputs);
+                    var logits = results.First(r => r.Name == "logits").AsTensor<float>();
+
+                    if (logits.Length > 0)
+                    {
+                        float val = logits[0, 0];
+                        double prob = 1.0 / (1.0 + Math.Exp(-val));
+                        if (prob > 0.5)
+                        {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            });
         }
         catch (Exception ex)
         {
-            GD.PrintErr($"[LobbyManager] Toxicity check failed: {ex.Message}");
+            GD.PrintErr($"[LobbyManager] Local toxicity check failed: {ex.Message}");
         }
-        
+
         return false;
     }
 
