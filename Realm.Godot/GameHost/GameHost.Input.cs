@@ -56,6 +56,7 @@ public partial class GameHost
 						GetViewport().SetInputAsHandled();
 						return;
 					}
+				}
 				if (editorKeyEvent.Keycode == Key.Z && !ctrlPressed && !shiftPressed)
 				{
 					CycleCameraZoom();
@@ -97,13 +98,7 @@ public partial class GameHost
 					GetViewport().SetInputAsHandled();
 					return;
 				}
-				if (editorKeyEvent.Keycode == Key.N && !ctrlPressed && !shiftPressed)
-				{
-					MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.Noise);
-					GetViewport().SetInputAsHandled();
-					return;
-				}
-				if (editorKeyEvent.Keycode == Key.Delete || editorKeyEvent.Keycode == Key.Backspace)
+				if (editorKeyEvent.Keycode == Key.Delete)
 				{
 					if (ActiveEditorTool == EditorTool.SelectMove && GodotObject.IsInstanceValid(SelectedEditorObject))
 					{
@@ -640,10 +635,10 @@ public partial class GameHost
 						2 => EditorTool.Smooth,
 						3 => EditorTool.Flatten,
 						4 => EditorTool.Cliff,
-						5 => EditorTool.PaintGrass,
-						6 => EditorTool.PlaceDecal,
-						7 => EditorTool.PlaceUnit,
-						8 => EditorTool.Ramp,
+						5 => EditorTool.Ramp,
+						6 => EditorTool.Noise,
+						7 => EditorTool.PaintGrass,
+						8 => EditorTool.PlaceProp,
 						_ => EditorTool.None
 					};
 					if (targetTool != EditorTool.None)
@@ -652,12 +647,6 @@ public partial class GameHost
 						GetViewport().SetInputAsHandled();
 						return;
 					}
-				}
-				if (editorKeyEvent.Keycode == Key.Key0)
-				{
-					MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.DeleteObject);
-					GetViewport().SetInputAsHandled();
-					return;
 				}
 				if (editorKeyEvent.Keycode == Key.B && !ctrlPressed && !shiftPressed)
 				{
@@ -700,6 +689,7 @@ public partial class GameHost
 			{
 				bool ctrlPressed = Input.IsKeyPressed(Key.Ctrl);
 				bool shiftPressed = Input.IsKeyPressed(Key.Shift);
+				bool altPressed = Input.IsKeyPressed(Key.Alt);
 				bool isUp = wheelBtn.ButtonIndex == MouseButton.WheelUp;
 
 				bool isTerrainTool = ActiveEditorTool == EditorTool.Raise ||
@@ -763,7 +753,7 @@ public partial class GameHost
 					GetViewport().SetInputAsHandled();
 					return;
 				}
-				if (ctrlPressed)
+				if (altPressed)
 				{
 					float scaleDelta = isUp ? 0.1f : -0.1f;
 					if (ActiveEditorTool == EditorTool.SelectMove && GodotObject.IsInstanceValid(SelectedEditorObject))

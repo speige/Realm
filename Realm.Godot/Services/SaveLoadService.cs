@@ -393,7 +393,7 @@ public class SaveLoadService
 				}
 			}
 
-			bool isBlock = saveData.BlockMode ?? saveData.WC3BlockMode ?? false;
+			bool isBlock = saveData.BlockMode ?? saveData.WC3BlockMode ?? true;
 			float step = saveData.BlockLevelHeight ?? saveData.WC3LevelHeight ?? 4.0f;
 			float left = saveData.CameraBoundsLeft ?? -95.0f;
 			float right = saveData.CameraBoundsRight ?? 95.0f;

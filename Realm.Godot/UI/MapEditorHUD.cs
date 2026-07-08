@@ -310,7 +310,7 @@ public partial class MapEditorHUD : Control
 		UIStyle.ApplyButtonText(_btnRedo, "↪️ REDO", 13);
 		
 		_btnDeleteObject = GetNode<Button>("RightPillar/VBox/BtnDeleteObject");
-		SetupButton(_btnDeleteObject, "❌ Erase Object", () => TriggerToolSelection(GameHost.EditorTool.DeleteObject, _btnDeleteObject), 11, "Delete units or props (0)");
+		SetupButton(_btnDeleteObject, "❌ Erase Object", () => TriggerToolSelection(GameHost.EditorTool.DeleteObject, _btnDeleteObject), 11, "Delete units or props");
 		_statusLabel = GetNode<Label>("TopBar/HBox/StatusLabel");
 		_feedbackLabel = GetNode<Label>("FeedbackLabel");
 
@@ -408,10 +408,10 @@ public partial class MapEditorHUD : Control
 		_btnRamp.Name = "BtnRamp";
 		_btnRamp.Set("icon_max_width", 0);
 		GetNode<HBoxContainer>("TopToolbar/PanelTerrain/VBox/Content").AddChild(_btnRamp);
-		SetupButton(_btnRamp, "📐 Ramp", () => TriggerToolSelection(GameHost.EditorTool.Ramp, _btnRamp), 11, "Create ramp between two points (9)");
+		SetupButton(_btnRamp, "📐 Ramp", () => TriggerToolSelection(GameHost.EditorTool.Ramp, _btnRamp), 11, "Create ramp between two points (6)");
 
 		_btnTextureBrush = GetNode<Button>("TopToolbar/PanelDeco/VBox/Content/BtnTextureBrush");
-		SetupButton(_btnTextureBrush, "🎨 Paint", () => TriggerToolSelection(GameHost.EditorTool.PaintGrass, _btnTextureBrush), 11, "Paint terrain texture (6)");
+		SetupButton(_btnTextureBrush, "🎨 Paint", () => TriggerToolSelection(GameHost.EditorTool.PaintGrass, _btnTextureBrush), 11, "Paint terrain texture (8)");
 
 		_btnDecalTool = GetNodeOrNull<Button>("TopToolbar/PanelDeco/VBox/Content/BtnDecalTool");
 		if (_btnDecalTool != null) _btnDecalTool.Visible = false;
@@ -511,7 +511,7 @@ public partial class MapEditorHUD : Control
 		_btnAddObject = new Button();
 		_btnAddObject.Name = "BtnAddObject";
 		_btnAddObject.Set("icon_max_width", 0);
-		SetupButton(_btnAddObject, "➕ ADD OBJECT", () => _entityPaletteController?.TriggerAddObjectMode(), 13, "Place selected unit or prop");
+		SetupButton(_btnAddObject, "➕ ADD OBJECT", () => _entityPaletteController?.TriggerAddObjectMode(), 13, "Place selected unit or prop (9)");
 
 		_entityPaletteController = new MapEditorEntityPaletteController(this, palettesVBox, _btnAddObject);
 		_generationDialog = new MapEditorGenerationDialog(this);
@@ -709,7 +709,7 @@ public partial class MapEditorHUD : Control
 		_btnImportMinimap.Set("icon_max_width", 0);
 		GetNode<VBoxContainer>("MiddleRightBox").AddChild(_btnImportMinimap);
 		GetNode<VBoxContainer>("MiddleRightBox").MoveChild(_btnImportMinimap, _btnGenerateMap.GetIndex() + 1);
-		SetupButton(_btnImportMinimap, "🗺️ GEN FROM IMAGE", () => ImportTerrainFromMinimapDialog(), 13, "Import terrain elevations, textures, and trees from a minimap image file (F6)");
+		SetupButton(_btnImportMinimap, "🗺️ GEN FROM IMAGE", () => ImportTerrainFromMinimapDialog(), 13, "Import terrain elevations, textures, and trees from a minimap image file");
 
 		var btnHelp = new Button();
 		btnHelp.Name = "BtnHelp";
@@ -1148,7 +1148,7 @@ public partial class MapEditorHUD : Control
 		_btnNoise.Set("icon_max_width", 0);
 		var terrainContent = GetNode<HBoxContainer>("TopToolbar/PanelTerrain/VBox/Content");
 		terrainContent.AddChild(_btnNoise);
-		SetupButton(_btnNoise, "🎲 Roughen", () => TriggerToolSelection(GameHost.EditorTool.Noise, _btnNoise), 11, "Add random height variations/noise to the terrain under the brush (N)");
+		SetupButton(_btnNoise, "🎲 Roughen", () => TriggerToolSelection(GameHost.EditorTool.Noise, _btnNoise), 11, "Add random height variations/noise to the terrain under the brush (7)");
 
 		palettesVBox = GetNode<VBoxContainer>("PanelEntityPalette/VBox/Content/PalettesVBox");
 		var lblDecalsTitle = new Label();
@@ -2127,7 +2127,7 @@ public partial class MapEditorHUD : Control
 					_lblInfoText.Text = TranslationServer.Translate("TOOL: Object Eraser\n\nLeft-click directly on any unit or prop in 3D scene to erase and remove it from the map.");
 					break;
 				case GameHost.EditorTool.SelectMove:
-					_lblInfoText.Text = TranslationServer.Translate("TOOL: Select / Move\n\nLeft-click directly on any unit, prop, or decal to select it. Hold and drag left click to move it. Use R to rotate, S to scale, or Delete/Backspace to delete.");
+					_lblInfoText.Text = TranslationServer.Translate("TOOL: Select / Move\n\nLeft-click directly on any unit, prop, or decal to select it. Hold and drag left click to move it. Use R to rotate, S to scale, or Delete to delete.");
 					break;
 				case GameHost.EditorTool.Eyedropper:
 					_lblInfoText.Text = TranslationServer.Translate("TOOL: Eyedropper / Picker\n\nLeft-click directly on any unit, prop, or decal to copy and select it as the active placement tool. Click on terrain to copy its texture color, or hold Shift to copy its height.");
@@ -2859,7 +2859,7 @@ public class {mapName} : IMapScript
 
 		var panel = new PanelContainer();
 		panel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		panel.CustomMinimumSize = new Vector2(650, 480);
+		panel.CustomMinimumSize = new Vector2(950, 680);
 		center.AddChild(panel);
 
 		var vbox = new VBoxContainer();
@@ -2883,24 +2883,30 @@ public class {mapName} : IMapScript
 		scroll.AddChild(grid);
 
 		AddHelpSectionHeader(grid, TranslationServer.Translate("PRIMARY MODULE SWITCHING"));
-		AddHelpShortcutRow(grid, "F1 / Ctrl+1", TranslationServer.Translate("Terrain Module"));
-		AddHelpShortcutRow(grid, "F2 / Ctrl+2", TranslationServer.Translate("Texture Module"));
-		AddHelpShortcutRow(grid, "F3 / Ctrl+3", TranslationServer.Translate("Objects Module"));
-		AddHelpShortcutRow(grid, "F4 / Ctrl+4", TranslationServer.Translate("Clipboard Module"));
+		AddHelpShortcutRow(grid, "F1", TranslationServer.Translate("Terrain Module"));
+		AddHelpShortcutRow(grid, "F2", TranslationServer.Translate("Texture Module"));
+		AddHelpShortcutRow(grid, "F3", TranslationServer.Translate("Objects Module"));
+		AddHelpShortcutRow(grid, "F4", TranslationServer.Translate("Clipboard Module"));
 
 		AddHelpSectionHeader(grid, TranslationServer.Translate("CAMERA CONTROLS"));
-		AddHelpShortcutRow(grid, "W, A, S, D / Arrows", TranslationServer.Translate("Pan map camera"));
+		AddHelpShortcutRow(grid, "Arrows", TranslationServer.Translate("Pan map camera"));
 		AddHelpShortcutRow(grid, "Mouse Scroll", TranslationServer.Translate("Zoom camera in / out"));
 		AddHelpShortcutRow(grid, "Middle Mouse Drag", TranslationServer.Translate("Pan camera by dragging"));
 		AddHelpShortcutRow(grid, "Shift + Middle Drag", TranslationServer.Translate("Rotate map camera view"));
 		AddHelpShortcutRow(grid, "Comma (,) / Period (.)", TranslationServer.Translate("Rotate camera 90 degrees"));
 
 		AddHelpSectionHeader(grid, TranslationServer.Translate("EDITOR TOOLS"));
-		AddHelpShortcutRow(grid, "1, 2, 3, 4, 5", TranslationServer.Translate("Raise, Lower, Smooth, Flatten, Cliff"));
-		AddHelpShortcutRow(grid, "6, 7", TranslationServer.Translate("Texture Painter, Place Decals"));
-		AddHelpShortcutRow(grid, "8, 9", TranslationServer.Translate("Add Unit Palette, Add Prop Palette"));
-		AddHelpShortcutRow(grid, "0, Q", TranslationServer.Translate("Object Eraser Tool, Select / Move Tool"));
-		AddHelpShortcutRow(grid, "I, N", TranslationServer.Translate("Eyedropper Picker, Roughen (Noise) Tool"));
+		AddHelpShortcutRow(grid, "1", TranslationServer.Translate("Raise Terrain Tool"));
+		AddHelpShortcutRow(grid, "2", TranslationServer.Translate("Lower Terrain Tool"));
+		AddHelpShortcutRow(grid, "3", TranslationServer.Translate("Smooth Terrain Tool"));
+		AddHelpShortcutRow(grid, "4", TranslationServer.Translate("Flatten Terrain Tool"));
+		AddHelpShortcutRow(grid, "5", TranslationServer.Translate("Cliff Terrain Tool"));
+		AddHelpShortcutRow(grid, "6", TranslationServer.Translate("Ramp Tool"));
+		AddHelpShortcutRow(grid, "7", TranslationServer.Translate("Roughen (Noise) Tool"));
+		AddHelpShortcutRow(grid, "8", TranslationServer.Translate("Texture Painter Brush"));
+		AddHelpShortcutRow(grid, "9", TranslationServer.Translate("Add Objects"));
+		AddHelpShortcutRow(grid, "Q", TranslationServer.Translate("Select / Move Tool"));
+		AddHelpShortcutRow(grid, "I", TranslationServer.Translate("Eyedropper Picker"));
 
 		AddHelpSectionHeader(grid, TranslationServer.Translate("SCULPTING / PLACEMENT SETTINGS"));
 		AddHelpShortcutRow(grid, "[ / ]", TranslationServer.Translate("Increase / decrease brush size"));
@@ -2914,18 +2920,16 @@ public class {mapName} : IMapScript
 		AddHelpShortcutRow(grid, "R Key", TranslationServer.Translate("Rotate placement/selected object by 45°"));
 		AddHelpShortcutRow(grid, "Shift + R / Scroll (in Select)", TranslationServer.Translate("Rotate placement/selected object by 15°"));
 		AddHelpShortcutRow(grid, "S Key", TranslationServer.Translate("Cycle placement/selected object scale size"));
-		AddHelpShortcutRow(grid, "Ctrl + S / Scroll (in Select)", TranslationServer.Translate("Fine-tune object scale size"));
+		AddHelpShortcutRow(grid, "Alt + Scroll (in Select)", TranslationServer.Translate("Fine-tune object scale size"));
 		AddHelpShortcutRow(grid, "G Key", TranslationServer.Translate("Align selected object height to ground"));
 		AddHelpShortcutRow(grid, "Ctrl + G", TranslationServer.Translate("Toggle alignment grid snap placement"));
 		AddHelpShortcutRow(grid, "F Key", TranslationServer.Translate("Toggle selected unit faction (Alliance/Orc)"));
 		AddHelpShortcutRow(grid, "Ctrl + D", TranslationServer.Translate("Duplicate / clone selected object"));
-		AddHelpShortcutRow(grid, "Delete / Backspace", TranslationServer.Translate("Delete / erase selected object"));
+		AddHelpShortcutRow(grid, "Delete", TranslationServer.Translate("Delete / erase selected object"));
 
 		AddHelpSectionHeader(grid, TranslationServer.Translate("GENERAL OPERATIONS"));
 		AddHelpShortcutRow(grid, "Ctrl + Z / Ctrl + Y", TranslationServer.Translate("Undo / Redo editor actions"));
 		AddHelpShortcutRow(grid, "Ctrl + S / Ctrl + O", TranslationServer.Translate("Save Map File / Load Map File"));
-		AddHelpShortcutRow(grid, "Ctrl + P", TranslationServer.Translate("Save & Publish Map"));
-		AddHelpShortcutRow(grid, "F6 Key", TranslationServer.Translate("Import terrain from minimap image"));
 		AddHelpShortcutRow(grid, "Escape Key", TranslationServer.Translate("Clear selection or cancel active tool"));
 
 		var btnClose = new Button();
@@ -3206,6 +3210,7 @@ public class {mapName} : IMapScript
 		SafeReparent(_btnFlatten, _panelTerrainVBox);
 		SafeReparent(_btnCliff, _panelTerrainVBox);
 		SafeReparent(_btnRamp, _panelTerrainVBox);
+		SafeReparent(_btnNoise, _panelTerrainVBox);
 
 		_panelDecoVBox = new VBoxContainer();
 		_panelDecoVBox.Name = "PanelDecoVBox";
@@ -3761,23 +3766,22 @@ public class {mapName} : IMapScript
 	{
 		if (@event is InputEventKey keyEvent && keyEvent.Pressed)
 		{
-			bool ctrl = keyEvent.CtrlPressed;
-			if (keyEvent.Keycode == Godot.Key.F1 || (keyEvent.Keycode == Godot.Key.Key1 && ctrl))
+			if (keyEvent.Keycode == Godot.Key.F1)
 			{
 				SwitchModule(EditorModule.Terrain);
 				GetViewport().SetInputAsHandled();
 			}
-			else if (keyEvent.Keycode == Godot.Key.F2 || (keyEvent.Keycode == Godot.Key.Key2 && ctrl))
+			else if (keyEvent.Keycode == Godot.Key.F2)
 			{
 				SwitchModule(EditorModule.TextureDeco);
 				GetViewport().SetInputAsHandled();
 			}
-			else if (keyEvent.Keycode == Godot.Key.F3 || (keyEvent.Keycode == Godot.Key.Key3 && ctrl))
+			else if (keyEvent.Keycode == Godot.Key.F3)
 			{
 				SwitchModule(EditorModule.Objects);
 				GetViewport().SetInputAsHandled();
 			}
-			else if (keyEvent.Keycode == Godot.Key.F4 || (keyEvent.Keycode == Godot.Key.Key4 && ctrl))
+			else if (keyEvent.Keycode == Godot.Key.F4)
 			{
 				SwitchModule(EditorModule.Clipboard);
 				GetViewport().SetInputAsHandled();
