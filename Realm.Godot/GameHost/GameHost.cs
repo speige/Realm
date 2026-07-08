@@ -304,7 +304,9 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool EditorSnapToGrid { get; set; } = false;
 	public float EditorPlacementRotation { get; set; } = 0.0f;
 	public float EditorPlacementScale { get; set; } = 1.0f;
-	public bool EditorGridVisible { get; set; } = false;
+	public enum GridOverlayMode { Off, Mesh, Straight }
+	public GridOverlayMode EditorGridMode { get; set; } = GridOverlayMode.Off;
+	public bool EditorGridVisible => EditorGridMode != GridOverlayMode.Off;
 	public bool EditorCameraBoundsVisible { get; set; } = false;
 	public float EditorCameraBoundsLeft
 	{

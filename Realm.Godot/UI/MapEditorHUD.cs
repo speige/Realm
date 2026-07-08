@@ -338,7 +338,7 @@ public partial class MapEditorHUD : Control
 
 		_btnCenter = GetNode<Button>("MiddleRightBox/PanelZoom/VBox/Content/BtnCenter");
 		_btnCenter.Text = "🎯 Locate Object";
-		_btnCenter.TooltipText = "Center camera on selected object (Space)";
+		_btnCenter.TooltipText = "Center camera on selected object";
 		_btnCenter.Pressed += () =>
 		{
 			UIManager.Instance?.PlayClickSound();
@@ -758,9 +758,15 @@ public partial class MapEditorHUD : Control
 		{
 			if (GameHost.Instance != null)
 			{
-				GameHost.Instance.EditorGridVisible = !GameHost.Instance.EditorGridVisible;
+				GameHost.Instance.EditorGridMode = GameHost.Instance.EditorGridMode switch
+				{
+					GameHost.GridOverlayMode.Off      => GameHost.GridOverlayMode.Mesh,
+					GameHost.GridOverlayMode.Mesh     => GameHost.GridOverlayMode.Straight,
+					GameHost.GridOverlayMode.Straight => GameHost.GridOverlayMode.Off,
+					_                        => GameHost.GridOverlayMode.Off
+				};
 				GameHost.Instance.UpdateGridOverlayVisibility();
-				UpdateGridOverlayExternal(GameHost.Instance.EditorGridVisible);
+				UpdateGridOverlayExternal(GameHost.Instance.EditorGridMode);
 			}
 		}, 10, "Toggle rendering of the overlay alignment grid lines (V)");
 
@@ -1104,7 +1110,13 @@ public partial class MapEditorHUD : Control
 		if (GameHost.Instance != null)
 		{
 			_btnBrushShape.Text = GameHost.Instance.EditorBrushIsSquare ? "🔳 BRUSH: SQUARE" : "⚪ BRUSH: CIRCLE";
-			_btnToggleGrid.Text = GameHost.Instance.EditorGridVisible ? "🌐 GRID OVERLAY: ON" : "🌐 GRID OVERLAY: OFF";
+			_btnToggleGrid.Text = GameHost.Instance.EditorGridMode switch
+			{
+				GameHost.GridOverlayMode.Off => "🌐 GRID OVERLAY: OFF",
+				GameHost.GridOverlayMode.Mesh => "🌐 GRID OVERLAY: MESH",
+				GameHost.GridOverlayMode.Straight => "🌐 GRID OVERLAY: STRAIGHT",
+				_ => "🌐 GRID OVERLAY: OFF"
+			};
 			_btnToggleCameraBounds.Text = GameHost.Instance.EditorCameraBoundsVisible ? "📹 CAM BOUNDS: ON" : "📹 CAM BOUNDS: OFF";
 		}
 
@@ -1569,11 +1581,17 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
-	public void UpdateGridOverlayExternal(bool visible)
+	public void UpdateGridOverlayExternal(GameHost.GridOverlayMode mode)
 	{
 		if (_btnToggleGrid != null)
 		{
-			_btnToggleGrid.Text = visible ? "🌐 GRID OVERLAY: ON" : "🌐 GRID OVERLAY: OFF";
+			_btnToggleGrid.Text = mode switch
+			{
+				GameHost.GridOverlayMode.Off => "🌐 GRID OVERLAY: OFF",
+				GameHost.GridOverlayMode.Mesh => "🌐 GRID OVERLAY: MESH",
+				GameHost.GridOverlayMode.Straight => "🌐 GRID OVERLAY: STRAIGHT",
+				_ => "🌐 GRID OVERLAY: OFF"
+			};
 		}
 	}
 
@@ -2868,6 +2886,7 @@ public class {mapName} : IMapScript
 		AddHelpShortcutRow(grid, "F1 / Ctrl+1", TranslationServer.Translate("Terrain Module"));
 		AddHelpShortcutRow(grid, "F2 / Ctrl+2", TranslationServer.Translate("Texture Module"));
 		AddHelpShortcutRow(grid, "F3 / Ctrl+3", TranslationServer.Translate("Objects Module"));
+		AddHelpShortcutRow(grid, "F4 / Ctrl+4", TranslationServer.Translate("Clipboard Module"));
 
 		AddHelpSectionHeader(grid, TranslationServer.Translate("CAMERA CONTROLS"));
 		AddHelpShortcutRow(grid, "W, A, S, D / Arrows", TranslationServer.Translate("Pan map camera"));
@@ -2875,7 +2894,6 @@ public class {mapName} : IMapScript
 		AddHelpShortcutRow(grid, "Middle Mouse Drag", TranslationServer.Translate("Pan camera by dragging"));
 		AddHelpShortcutRow(grid, "Shift + Middle Drag", TranslationServer.Translate("Rotate map camera view"));
 		AddHelpShortcutRow(grid, "Comma (,) / Period (.)", TranslationServer.Translate("Rotate camera 90 degrees"));
-		AddHelpShortcutRow(grid, "Spacebar", TranslationServer.Translate("Center camera view on castle"));
 
 		AddHelpSectionHeader(grid, TranslationServer.Translate("EDITOR TOOLS"));
 		AddHelpShortcutRow(grid, "1, 2, 3, 4, 5", TranslationServer.Translate("Raise, Lower, Smooth, Flatten, Cliff"));
@@ -3757,6 +3775,11 @@ public class {mapName} : IMapScript
 			else if (keyEvent.Keycode == Godot.Key.F3 || (keyEvent.Keycode == Godot.Key.Key3 && ctrl))
 			{
 				SwitchModule(EditorModule.Objects);
+				GetViewport().SetInputAsHandled();
+			}
+			else if (keyEvent.Keycode == Godot.Key.F4 || (keyEvent.Keycode == Godot.Key.Key4 && ctrl))
+			{
+				SwitchModule(EditorModule.Clipboard);
 				GetViewport().SetInputAsHandled();
 			}
 		}

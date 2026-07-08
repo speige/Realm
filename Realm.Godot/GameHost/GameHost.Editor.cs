@@ -1380,6 +1380,7 @@ public partial class GameHost
 	}
 
 	public MeshInstance3D BrushIndicatorMesh => _brushIndicatorMesh;
+	public MeshInstance3D? GridOverlayMesh => _gridOverlayMesh;
 
 	public void ClearRampStartPosExternal()
 	{
@@ -1802,9 +1803,22 @@ public partial class GameHost
 		if (_gridOverlayMesh == null || GroundTerrain == null || GroundTerrain.Heights == null) return;
 		if (!EditorGridVisible) return;
 
+		bool straightMode = EditorGridMode == GridOverlayMode.Straight;
+
 		int width = GroundTerrain.Width;
 		int depth = GroundTerrain.Depth;
 		float spacing = GroundTerrain.Spacing;
+
+		float straightY = 0f;
+		if (straightMode)
+		{
+			float maxH = float.MinValue;
+			for (int sz = 0; sz < depth; sz++)
+				for (int sx = 0; sx < width; sx++)
+					if (GroundTerrain.Heights[sx, sz] > maxH)
+						maxH = GroundTerrain.Heights[sx, sz];
+			straightY = maxH + 1.0f;
+		}
 
 		int totalVertices = 0;
 		for (int z = 0; z < depth; z++)
@@ -1838,7 +1852,7 @@ public partial class GameHost
 			{
 				float offset = 0.04f;
 				Vector3 o = isVertical ? new Vector3(offset, 0, 0) : new Vector3(0, 0, offset);
-				
+
 				vertices[idx] = p1 + o;
 				colors[idx] = color;
 				idx++;
@@ -1865,8 +1879,8 @@ public partial class GameHost
 				float lx1 = (x - (width - 1) / 2.0f) * spacing;
 				float lx2 = (x + 1 - (width - 1) / 2.0f) * spacing;
 
-				float y1 = GroundTerrain.Heights[x, z] + 0.15f;
-				float y2 = GroundTerrain.Heights[x + 1, z] + 0.15f;
+				float y1 = straightMode ? straightY : GroundTerrain.Heights[x, z] + 0.15f;
+				float y2 = straightMode ? straightY : GroundTerrain.Heights[x + 1, z] + 0.15f;
 
 				AddLine(new Vector3(lx1, y1, lz), new Vector3(lx2, y2, lz), col, isThick, false);
 			}
@@ -1882,8 +1896,8 @@ public partial class GameHost
 				float lz1 = (z - (depth - 1) / 2.0f) * spacing;
 				float lz2 = (z + 1 - (depth - 1) / 2.0f) * spacing;
 
-				float y1 = GroundTerrain.Heights[x, z] + 0.15f;
-				float y2 = GroundTerrain.Heights[x, z + 1] + 0.15f;
+				float y1 = straightMode ? straightY : GroundTerrain.Heights[x, z] + 0.15f;
+				float y2 = straightMode ? straightY : GroundTerrain.Heights[x, z + 1] + 0.15f;
 
 				AddLine(new Vector3(lx, y1, lz1), new Vector3(lx, y2, lz2), col, isThick, true);
 			}

@@ -55,6 +55,11 @@ public class MapEditorMinimap
 		var camera = GameHost.Instance.GetViewport().GetCamera3D();
 		if (camera == null) return;
 
+		float scale = camera.GlobalPosition.Y / 35.0f;
+		Vector2 newSize = new Vector2(25.0f * scale, 18.0f * scale);
+		_cameraIndicator.CustomMinimumSize = newSize;
+		_cameraIndicator.Size = newSize;
+
 		float worldX = camera.GlobalPosition.X;
 		float worldZ = camera.GlobalPosition.Z;
 
@@ -64,8 +69,8 @@ public class MapEditorMinimap
 		xRatio = Mathf.Clamp(xRatio, 0f, 1f);
 		yRatio = Mathf.Clamp(yRatio, 0f, 1f);
 
-		float xPos = xRatio * _minimapArea.Size.X - (_cameraIndicator.Size.X / 2f);
-		float yPos = yRatio * _minimapArea.Size.Y - (_cameraIndicator.Size.Y / 2f);
+		float xPos = xRatio * _minimapArea.Size.X - (newSize.X / 2f);
+		float yPos = yRatio * _minimapArea.Size.Y - (newSize.Y / 2f);
 
 		_cameraIndicator.Position = new Vector2(xPos, yPos);
 	}
@@ -110,6 +115,13 @@ public class MapEditorMinimap
 				GameHost.Instance.BrushIndicatorMesh.Visible = false;
 			}
 
+			bool wasGridVisible = false;
+			if (GameHost.Instance?.GridOverlayMesh != null)
+			{
+				wasGridVisible = GameHost.Instance.GridOverlayMesh.Visible;
+				GameHost.Instance.GridOverlayMesh.Visible = false;
+			}
+
 			await _hudNode.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
 
 			var texture = viewport.GetTexture();
@@ -126,6 +138,11 @@ public class MapEditorMinimap
 			if (GameHost.Instance?.BrushIndicatorMesh != null)
 			{
 				GameHost.Instance.BrushIndicatorMesh.Visible = wasVisible;
+			}
+
+			if (GameHost.Instance?.GridOverlayMesh != null)
+			{
+				GameHost.Instance.GridOverlayMesh.Visible = wasGridVisible;
 			}
 
 			viewport.QueueFree();

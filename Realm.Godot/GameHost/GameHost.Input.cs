@@ -56,13 +56,6 @@ public partial class GameHost
 						GetViewport().SetInputAsHandled();
 						return;
 					}
-				}
-				if (editorKeyEvent.Keycode == Key.Space && !ctrlPressed && !shiftPressed)
-				{
-					CenterCameraOnSelectedOrCastle();
-					GetViewport().SetInputAsHandled();
-					return;
-				}
 				if (editorKeyEvent.Keycode == Key.Z && !ctrlPressed && !shiftPressed)
 				{
 					CycleCameraZoom();
@@ -676,9 +669,15 @@ public partial class GameHost
 				}
 				if (editorKeyEvent.Keycode == Key.V && !ctrlPressed && !shiftPressed)
 				{
-					EditorGridVisible = !EditorGridVisible;
+					EditorGridMode = EditorGridMode switch
+					{
+						GridOverlayMode.Off      => GridOverlayMode.Mesh,
+						GridOverlayMode.Mesh     => GridOverlayMode.Straight,
+						GridOverlayMode.Straight => GridOverlayMode.Off,
+						_                        => GridOverlayMode.Off
+					};
 					UpdateGridOverlayVisibility();
-					MapEditorHUD.Instance?.UpdateGridOverlayExternal(EditorGridVisible);
+					MapEditorHUD.Instance?.UpdateGridOverlayExternal(EditorGridMode);
 					GetViewport().SetInputAsHandled();
 					return;
 				}
