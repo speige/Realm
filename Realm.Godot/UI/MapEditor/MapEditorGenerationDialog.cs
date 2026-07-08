@@ -49,21 +49,6 @@ public class MapEditorGenerationDialog
 		lblTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 		vbox.AddChild(lblTitle);
 
-		var grid = new GridContainer();
-		grid.Columns = 3;
-		grid.AddThemeConstantOverride("h_separation", 10);
-		grid.AddThemeConstantOverride("v_separation", 8);
-		vbox.AddChild(grid);
-
-		AddSliderRow(grid, "Hills Density", _genHillsDensity, (val) => _genHillsDensity = val);
-		AddSliderRow(grid, "Terrain Roughness", _genTerrainRoughness, (val) => _genTerrainRoughness = val);
-		AddSliderRow(grid, "Mountain Height", _genMountainHeight, (val) => _genMountainHeight = val);
-		AddSliderRow(grid, "Choke Point Width", _genChokeWidth, (val) => _genChokeWidth = val);
-		AddSliderRow(grid, "Water Level", _genWaterLevel, (val) => _genWaterLevel = val);
-		AddSliderRow(grid, "Tree Clump Density", _genTreeDensity, (val) => _genTreeDensity = val);
-		AddSliderRow(grid, "Resource Abundance", _genResourceAbundance, (val) => _genResourceAbundance = val);
-		AddSliderRow(grid, "Decorative Prop Density", _genDecoDensity, (val) => _genDecoDensity = val);
-
 		var seedHBox = new HBoxContainer();
 		seedHBox.AddThemeConstantOverride("separation", 10);
 		vbox.AddChild(seedHBox);
@@ -98,6 +83,36 @@ public class MapEditorGenerationDialog
 		btnRoll.CustomMinimumSize = new Vector2(70, 30);
 		seedHBox.AddChild(btnRoll);
 
+		var grid = new GridContainer();
+		grid.Columns = 3;
+		grid.AddThemeConstantOverride("h_separation", 10);
+		grid.AddThemeConstantOverride("v_separation", 8);
+		vbox.AddChild(grid);
+
+		var sldHillsDensity = AddSliderRow(grid, "Hills Density", _genHillsDensity, (val) => _genHillsDensity = val);
+		var sldTerrainRoughness = AddSliderRow(grid, "Terrain Roughness", _genTerrainRoughness, (val) => _genTerrainRoughness = val);
+		var sldMountainHeight = AddSliderRow(grid, "Mountain Height", _genMountainHeight, (val) => _genMountainHeight = val);
+		var sldChokeWidth = AddSliderRow(grid, "Choke Point Width", _genChokeWidth, (val) => _genChokeWidth = val);
+		var sldWaterLevel = AddSliderRow(grid, "Water Level", _genWaterLevel, (val) => _genWaterLevel = val);
+		var sldTreeDensity = AddSliderRow(grid, "Tree Clump Density", _genTreeDensity, (val) => _genTreeDensity = val);
+		var sldResourceAbundance = AddSliderRow(grid, "Resource Abundance", _genResourceAbundance, (val) => _genResourceAbundance = val);
+		var sldDecoDensity = AddSliderRow(grid, "Decorative Prop Density", _genDecoDensity, (val) => _genDecoDensity = val);
+		var btnRandomize = new Button();
+		btnRandomize.Set("icon_max_width", 0);
+		SetupButton(btnRandomize, TranslationServer.Translate("RANDOMIZE SLIDERS"), () =>
+		{
+			var rnd = new Random();
+			sldHillsDensity.Value = rnd.Next(1, 11);
+			sldTerrainRoughness.Value = rnd.Next(1, 11);
+			sldMountainHeight.Value = rnd.Next(1, 11);
+			sldChokeWidth.Value = rnd.Next(1, 11);
+			sldWaterLevel.Value = rnd.Next(1, 11);
+			sldTreeDensity.Value = rnd.Next(1, 11);
+			sldResourceAbundance.Value = rnd.Next(1, 11);
+			sldDecoDensity.Value = rnd.Next(1, 11);
+		}, 11, "Randomize all slider values");
+		vbox.AddChild(btnRandomize);
+
 		var btnHBox = new HBoxContainer();
 		btnHBox.AddThemeConstantOverride("separation", 20);
 		btnHBox.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
@@ -110,6 +125,7 @@ public class MapEditorGenerationDialog
 			overlay.QueueFree();
 			if (GameHost.Instance != null)
 			{
+				GameHost.Instance.ClearMapEntirely();
 				MapGenerator.GenerateMap(
 					GameHost.Instance,
 					_genHillsDensity,
@@ -138,7 +154,7 @@ public class MapEditorGenerationDialog
 		btnHBox.AddChild(btnCancel);
 	}
 
-	private void AddSliderRow(GridContainer grid, string title, int initialValue, Action<int> onValueChanged)
+	private HSlider AddSliderRow(GridContainer grid, string title, int initialValue, Action<int> onValueChanged)
 	{
 		var lblName = new Label();
 		lblName.Text = TranslationServer.Translate(title);
@@ -169,6 +185,8 @@ public class MapEditorGenerationDialog
 			lblVal.Text = val.ToString();
 			onValueChanged(val);
 		};
+
+		return sld;
 	}
 
 	private void SetupButton(Button btn, string text, Action onClick, int fontSize = 13, string tooltip = "")

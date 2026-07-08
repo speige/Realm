@@ -2957,7 +2957,7 @@ public class {mapName} : IMapScript
 			"",
 			false,
 			DisplayServer.FileDialogMode.OpenFile,
-			new string[] { "*.png", "*.jpg", "*.jpeg", "*.webp" },
+			new string[] { "*.png, *.jpg, *.jpeg, *.webp ; Images" },
 			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) => {
 				if (status && selectedPaths.Length > 0)
 				{
@@ -2971,6 +2971,7 @@ public class {mapName} : IMapScript
 	{
 		if (GameHost.Instance == null || GameHost.Instance.GroundTerrain == null) return;
 
+		GameHost.Instance.ClearMapEntirely();
 		bool success = GameHost.Instance.ImportTerrainFromMinimap(selectedPath, out var smoothedHeights, out var colors, out var treePositions);
 		if (!success) return;
 

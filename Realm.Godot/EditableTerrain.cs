@@ -598,4 +598,66 @@ void fragment() {
 		Vector3 tangentZ = new Vector3(0.0f, hu - hd, 2.0f * Spacing).Normalized();
 		return tangentZ.Cross(tangentX).Normalized();
 	}
+
+	public void ResizeTerrain(int newWidth, int newDepth)
+	{
+		if (GameHost.Instance == null || GameHost.Instance.EcsWorld == null || !GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity)) return;
+		if (!GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity)) return;
+
+		ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
+		
+		int oldWidth = state.Width;
+		int oldDepth = state.Depth;
+		float[,] oldHeights = state.Heights;
+		int[,] oldPathing = state.PathingCodes;
+		Color[,] oldColors = Colors;
+
+		float[,] newHeights = new float[newWidth, newDepth];
+		int[,] newPathing = new int[newWidth, newDepth];
+		Color[,] newColors = new Color[newWidth, newDepth];
+
+		int offsetX = (newWidth - oldWidth) / 2;
+		int offsetZ = (newDepth - oldDepth) / 2;
+
+		for (int z = 0; z < newDepth; z++)
+		{
+			for (int x = 0; x < newWidth; x++)
+			{
+				int oldX = x - offsetX;
+				int oldZ = z - offsetZ;
+
+				if (oldX >= 0 && oldX < oldWidth && oldZ >= 0 && oldZ < oldDepth)
+				{
+					if (oldHeights != null) newHeights[x, z] = oldHeights[oldX, oldZ];
+					if (oldPathing != null) newPathing[x, z] = oldPathing[oldX, oldZ];
+					if (oldColors != null) newColors[x, z] = oldColors[oldX, oldZ];
+				}
+				else
+				{
+					newHeights[x, z] = 0.0f;
+					newPathing[x, z] = PATHING_GROUND | PATHING_FLYING;
+					newColors[x, z] = new Color(0.2f, 0.6f, 0.2f);
+				}
+			}
+		}
+
+		GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
+			newWidth,
+			newDepth,
+			state.Spacing,
+			state.CellSize,
+			state.WaterHeight,
+			state.WaterEnabled,
+			newHeights,
+			newPathing,
+			state.NavMesh,
+			state.NavMeshQuery
+		));
+
+		_localHeights = newHeights;
+		_localPathingCodes = newPathing;
+		Colors = newColors;
+
+		UpdateMeshAndPhysics();
+}
 }
