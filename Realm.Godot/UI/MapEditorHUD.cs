@@ -3920,7 +3920,7 @@ public class {mapName} : IMapScript
 		_swatchDisplayNames[1] = "Deep Moss";
 		_swatchColors[1] = new Color(0.5f, 0.5f, 0.52f);
 
-		_swatchPaths[2] = "res://Assets/2d/TileSheets/gray_slate.png";
+		_swatchPaths[2] = "res://Assets/2d/TileSheets/grey_slate.png";
 		_swatchDisplayNames[2] = "Gray Slate";
 		_swatchColors[2] = new Color(0.5f, 0.45f, 0.38f);
 

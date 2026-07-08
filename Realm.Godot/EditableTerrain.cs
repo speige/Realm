@@ -365,7 +365,7 @@ void fragment() {
 		{
 			"res://Assets/2d/TileSheets/ancient_ruin.png",
 			"res://Assets/2d/TileSheets/deep_moss.png",
-			"res://Assets/2d/TileSheets/gray_slate.png",
+			"res://Assets/2d/TileSheets/grey_slate.png",
 			"res://Assets/2d/TileSheets/iron_dust.png",
 			"res://Assets/2d/TileSheets/lava_vein.png",
 			"res://Assets/2d/TileSheets/mossy_stone.png",
