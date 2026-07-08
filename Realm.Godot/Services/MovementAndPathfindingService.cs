@@ -211,7 +211,8 @@ internal class MovementAndPathfindingService
 			target = pf.Waypoints[pf.CurrentWaypointIndex];
 		}
 		float dist = System.Numerics.Vector3.Distance(current, target);
-		if (dist < 0.2f)
+		float arrivalThreshold = Math.Max(0.5f, stats.Speed * _fDelta * 1.2f);
+		if (dist < arrivalThreshold)
 		{
 			pf.CurrentWaypointIndex++;
 			if (pf.CurrentWaypointIndex < pf.WaypointCount)

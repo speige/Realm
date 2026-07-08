@@ -175,19 +175,7 @@ internal class TerrainNavMeshService
 
 				int pathFlags = state.PathingCodes[xGrid, zGrid];
 				
-				bool isBlocked = false;
-				foreach (var obs in obstacles)
-				{
-					float checkRadius = obs.Radius + agentRadius;
-					var center = new System.Numerics.Vector2(obs.Pos.X, obs.Pos.Z);
-					if (PolygonIntersectsCircle(polyVerts, nv, center, checkRadius))
-					{
-						isBlocked = true;
-						break;
-					}
-				}
-
-				if (isBlocked || (pathFlags & 16) != 0)
+				if ((pathFlags & 16) != 0)
 				{
 					pars.polyFlags[i] = 0;
 					blockedCount++;
