@@ -1479,6 +1479,16 @@ public partial class GameHost
 				return;
 			}
 
+			if (!keyEvent.Pressed && keyEvent.Keycode == Key.Shift)
+			{
+				if (ActiveBuildingPlacementType != null)
+				{
+					CancelBuildingPlacement();
+					GetViewport().SetInputAsHandled();
+					return;
+				}
+			}
+
 			if (InGameHUD.Instance != null && InGameHUD.Instance.HandleCommandCardHotkey(keyEvent.Keycode))
 			{
 				GetViewport().SetInputAsHandled();
@@ -1638,7 +1648,7 @@ public partial class GameHost
 						if (SelectedUnits.Count > 0)
 						{
 							var unit = SelectedUnits[CycleSelectionIndex];
-							if (!unit.IsEnemy && UnitHasAbility(unit, "fireball"))
+							if (!unit.IsEnemy && !EcsWorld.Has<Realm.Ecs.Components.Tags.UnderConstruction>(unit.Entity) && UnitHasAbility(unit, "fireball"))
 							{
 								EnterSpellTargeting("fireball");
 								GetViewport().SetInputAsHandled();
@@ -1649,7 +1659,7 @@ public partial class GameHost
 						if (SelectedUnits.Count > 0)
 						{
 							var unit = SelectedUnits[CycleSelectionIndex];
-							if (!unit.IsEnemy && UnitHasAbility(unit, "lightning"))
+							if (!unit.IsEnemy && !EcsWorld.Has<Realm.Ecs.Components.Tags.UnderConstruction>(unit.Entity) && UnitHasAbility(unit, "lightning"))
 							{
 								EnterSpellTargeting("lightning");
 								GetViewport().SetInputAsHandled();
@@ -1660,7 +1670,7 @@ public partial class GameHost
 						if (SelectedUnits.Count > 0)
 						{
 							var unit = SelectedUnits[CycleSelectionIndex];
-							if (!unit.IsEnemy && UnitHasAbility(unit, "holylight"))
+							if (!unit.IsEnemy && !EcsWorld.Has<Realm.Ecs.Components.Tags.UnderConstruction>(unit.Entity) && UnitHasAbility(unit, "holylight"))
 							{
 								EnterSpellTargeting("holylight");
 								GetViewport().SetInputAsHandled();
@@ -1731,7 +1741,30 @@ public partial class GameHost
 					}
 					else if (clickedUnit != null && !clickedUnit.IsEnemy && clickedUnit != SelectedUnits.Find(u => !u.IsEnemy))
 					{
-						IssueFollowCommand(clickedUnit);
+						if (clickedUnit.IsBuilding && EcsWorld.Has<Realm.Ecs.Components.Tags.UnderConstruction>(clickedUnit.Entity))
+						{
+							bool workerSelected = false;
+							foreach (var u in SelectedUnits)
+							{
+								if (u.UnitId == "worker")
+								{
+									workerSelected = true;
+									break;
+								}
+							}
+							if (workerSelected)
+							{
+								IssueResumeConstructionCommand(clickedUnit, shiftHeld);
+							}
+							else
+							{
+								IssueFollowCommand(clickedUnit);
+							}
+						}
+						else
+						{
+							IssueFollowCommand(clickedUnit);
+						}
 					}
 					else if (clickedProp != null && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
 					{
@@ -3578,5 +3611,49 @@ public partial class GameHost
 			}
 		}
 		return unit3D;
+	}
+
+	private void IssueResumeConstructionCommand(Unit3D targetBuilding, bool shiftHeld)
+	{
+		if (targetBuilding == null || !EcsWorld.IsAlive(targetBuilding.Entity)) return;
+		if (!EcsWorld.Has<Realm.Ecs.Components.Tags.UnderConstruction>(targetBuilding.Entity)) return;
+
+		var pos = targetBuilding.GlobalPosition;
+		var bPos = new System.Numerics.Vector3(pos.X, pos.Y, pos.Z);
+
+		foreach (var unit in SelectedUnits)
+		{
+			if (unit.IsBuilding || unit.IsEnemy || unit.UnitId != "worker") continue;
+
+			if (shiftHeld && EcsWorld.Has<BuildTask>(unit.Entity))
+			{
+				if (!EcsWorld.Has<BuildQueue>(unit.Entity))
+					EcsWorld.Add(unit.Entity, new BuildQueue());
+				ref var q = ref EcsWorld.Get<BuildQueue>(unit.Entity);
+				q.TryEnqueue(targetBuilding.UnitId, bPos, targetBuilding.Entity);
+			}
+			else
+			{
+				ClearUnitOrders(unit.Entity);
+				
+				if (EcsWorld.Has<ConstructionState>(targetBuilding.Entity))
+				{
+					var cState = EcsWorld.Get<ConstructionState>(targetBuilding.Entity);
+					var buildTask = new BuildTask(targetBuilding.Entity, cState.TotalBuildTime);
+					buildTask.Progress = cState.Progress;
+					if (EcsWorld.Has<BuildTask>(unit.Entity)) EcsWorld.Set(unit.Entity, buildTask);
+					else EcsWorld.Add(unit.Entity, buildTask);
+
+					if (EcsWorld.Has<MoveTo>(unit.Entity)) EcsWorld.Set(unit.Entity, new MoveTo(bPos));
+					else EcsWorld.Add(unit.Entity, new MoveTo(bPos));
+				}
+			}
+		}
+
+		if (InGameHUD.Instance != null)
+		{
+			InGameHUD.Instance.ShowFeedbackText($"Resuming construction...", new Color(0.3f, 0.9f, 0.4f));
+			InGameHUD.Instance.RefreshUI(SelectedUnits);
+		}
 	}
 }

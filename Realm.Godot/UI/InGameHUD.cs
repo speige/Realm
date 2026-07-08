@@ -987,6 +987,7 @@ public partial class InGameHUD : Control
 			_commandFrame.Visible = isSpectator ? false : hasPlayerSelection;
 		}
 
+		_viewModel.SelectedProp = GameHost.Instance?.SelectedProp;
 		_viewModel.UpdateSelectedUnits(selectedUnits);
 		_portraitPanelController?.Update(_viewModel);
 		_commandPanelController?.Update(_viewModel);

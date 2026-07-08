@@ -325,6 +325,20 @@ public class CommandPanel
 		var items = new List<CommandCardItem>();
 		if (focusedUnit == null) return items;
 
+		if (focusedUnit.IsUnderConstruction)
+		{
+			items.Add(new CommandCardItem
+			{
+				Id = "stop",
+				IconPath = "res://Assets/UI/cancel_button_2.png",
+				Tooltip = "[S] Cancel Construction",
+				Hotkey = Key.S,
+				// Future: Implement cancel construction logic
+				Callback = () => { } 
+			});
+			return items;
+		}
+
 		bool hasMetadata = GameHost.UnitRegistry.TryGetValue(focusedUnit.UnitId, out var meta);
 
 		if (!focusedUnit.IsBuilding)

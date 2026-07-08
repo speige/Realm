@@ -339,6 +339,7 @@ public class InGameHUDViewModel
 	}
 
 	public List<SelectedUnitInfo> SelectedUnits { get; } = new();
+	public Prop3D SelectedProp { get; set; }
 	public int CycleSelectionIndex { get; set; }
 
 	public bool IsChatActive { get; set; }
@@ -370,6 +371,7 @@ public class InGameHUDViewModel
 		public float Dps { get; set; }
 		public bool IsEnemy { get; set; }
 		public bool IsBuilding { get; set; }
+		public bool IsUnderConstruction { get; set; }
 		public string StateText { get; set; }
 		public string Description { get; set; }
 		
@@ -481,6 +483,7 @@ public class InGameHUDViewModel
 			{
 				var world = GameHost.Instance.EcsWorld;
 				if (world.Has<Name>(u.Entity)) info.Name = world.Get<Name>(u.Entity).Value;
+				if (world.Has<Realm.Ecs.Components.Tags.UnderConstruction>(u.Entity)) info.IsUnderConstruction = true;
 				
 				if (world.Has<Health>(u.Entity))
 				{

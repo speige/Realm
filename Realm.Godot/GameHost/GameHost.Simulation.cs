@@ -181,6 +181,21 @@ public partial class GameHost
 				EcsWorld.Remove<MoveTo>(workerEntity);
 			}
 
+			if (EcsWorld.Has<DefinitionId>(buildTask.BuildingEntity))
+			{
+				string bType = EcsWorld.Get<DefinitionId>(buildTask.BuildingEntity).Value;
+				if (UnitRegistry.TryGetValue(bType, out var m) && !TryGetUnit3D(buildTask.BuildingEntity, out _))
+				{
+					string modelPath = !string.IsNullOrEmpty(m.ModelPath) ? m.ModelPath : GetFallbackModelPath(bType, true);
+					SpawnUnit3D(buildTask.BuildingEntity, bType, modelPath, new Godot.Vector3(buildingPos.X, buildingPos.Y, buildingPos.Z), true, false);
+
+					if (TryGetUnit3D(buildTask.BuildingEntity, out var bNode) && GodotObject.IsInstanceValid(bNode))
+					{
+						bNode.Modulate = new Godot.Color(1f, 1f, 1f, 0.4f);
+					}
+				}
+			}
+
 			float progressGain = ConstructionWorkRatePerSecond * fDelta;
 			var updatedTask = new BuildTask(buildTask.BuildingEntity, buildTask.TotalBuildTime)
 			{
@@ -213,9 +228,22 @@ public partial class GameHost
 					if (EcsWorld.Has<BuildQueue>(workerEntity))
 					{
 						ref var buildQueue = ref EcsWorld.Get<BuildQueue>(workerEntity);
-						if (buildQueue.TryDequeue(out string nextType, out var nextPos))
+						if (buildQueue.TryDequeue(out string nextType, out var nextPos, out Arch.Core.Entity nextTarget))
 						{
-							AssignBuildTaskToWorker(workerEntity, nextType, nextPos);
+							if (nextTarget != Entity.Null && EcsWorld.IsAlive(nextTarget) && EcsWorld.Has<ConstructionState>(nextTarget))
+							{
+								var cState = EcsWorld.Get<ConstructionState>(nextTarget);
+								var newTask = new BuildTask(nextTarget, cState.TotalBuildTime);
+								newTask.Progress = cState.Progress;
+								EcsWorld.Add(workerEntity, newTask);
+								var moveTo = new MoveTo(new System.Numerics.Vector3(nextPos.X, nextPos.Y, nextPos.Z));
+								if (EcsWorld.Has<MoveTo>(workerEntity)) EcsWorld.Set(workerEntity, moveTo);
+								else EcsWorld.Add(workerEntity, moveTo);
+							}
+							else
+							{
+								AssignBuildTaskToWorker(workerEntity, nextType, nextPos);
+							}
 						}
 						else
 						{
@@ -358,12 +386,7 @@ public partial class GameHost
 		EcsWorld.Add(bldEntity, new ConstructionState(buildTime));
 		EcsWorld.Add(bldEntity, new UnderConstruction());
 
-		SpawnUnit3D(bldEntity, buildType, modelPath, new Godot.Vector3(targetPos.X, targetPos.Y, targetPos.Z), true, false);
-
-		if (TryGetUnit3D(bldEntity, out var buildingNode) && GodotObject.IsInstanceValid(buildingNode))
-		{
-			buildingNode.Modulate = new Godot.Color(1f, 1f, 1f, 0.4f);
-		}
+		// Removing immediate SpawnUnit3D so it spawns when worker arrives
 
 		var buildTask = new BuildTask(bldEntity, buildTime);
 		if (EcsWorld.Has<BuildTask>(workerEntity))
@@ -528,7 +551,21 @@ public partial class GameHost
 			return "Labor";
 
 		if (EcsWorld.Has<BuildTask>(entity))
+		{
+			var task = EcsWorld.Get<BuildTask>(entity);
+			var target = task.BuildingEntity;
+			if (EcsWorld.IsAlive(target) && EcsWorld.Has<Position>(target))
+			{
+				var tPos = EcsWorld.Get<Position>(target).Value;
+				var wPos = EcsWorld.Has<Position>(entity) ? EcsWorld.Get<Position>(entity).Value : System.Numerics.Vector3.Zero;
+				if (System.Numerics.Vector3.Distance(wPos, tPos) < 4.0f)
+				{
+					return "Labor";
+				}
+				return "Walk";
+			}
 			return "Labor";
+		}
 
 		return "Idle";
 	}

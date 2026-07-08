@@ -79,6 +79,29 @@ public class PortraitPanel
 			int index = i;
 			_unitButtons[i].Pressed += () => UnitSelectionButtonClicked?.Invoke(index);
 		}
+
+		if (_portraitTexture != null)
+		{
+			_portraitTexture.MouseFilter = Control.MouseFilterEnum.Stop;
+			_portraitTexture.GuiInput += (InputEvent e) =>
+			{
+				if (e is InputEventMouseButton mouseEvent && mouseEvent.Pressed && mouseEvent.ButtonIndex == MouseButton.Left)
+				{
+					if (GameHost.Instance != null && GameHost.Instance.SelectedUnits != null && GameHost.Instance.SelectedUnits.Count > 0)
+					{
+						int idx = GameHost.Instance.CycleSelectionIndex;
+						if (idx >= 0 && idx < GameHost.Instance.SelectedUnits.Count)
+						{
+							UnitSelectionButtonClicked?.Invoke(idx);
+						}
+						else
+						{
+							UnitSelectionButtonClicked?.Invoke(0);
+						}
+					}
+				}
+			};
+		}
 	}
 
 	public void Update(InGameHUDViewModel viewModel)
@@ -86,13 +109,50 @@ public class PortraitPanel
 		if (viewModel.SelectedUnits.Count == 0)
 		{
 			_unitsContainer.Visible = false;
-			_statsContainer.Visible = false;
-			_armyCompositionLabel?.Hide();
 			
-			_unitNameLabel.Text = TranslationServer.Translate("No Selection");
-			if (_portraitTexture != null)
+			if (viewModel.SelectedProp != null && GodotObject.IsInstanceValid(viewModel.SelectedProp) && GameHost.Instance != null)
 			{
-				_portraitTexture.Texture = GD.Load<Texture2D>("res://Assets/UI/alliance_flag.png");
+				_statsContainer.Visible = true;
+				_armyCompositionLabel?.Hide();
+				
+				_unitNameLabel.Text = TranslationServer.Translate(viewModel.SelectedProp.PropId.ToUpper());
+				if (_portraitTexture != null)
+				{
+					string iconPath = viewModel.SelectedProp.PropId switch
+					{
+						"goldmine" => "res://Assets/UI/goldmine_icon.png",
+						"tree" => "res://Assets/UI/tree_icon.png",
+						"rock" => "res://Assets/UI/rock_icon.png",
+						_ => "res://Assets/UI/unit_placeholder.png"
+					};
+					// Fallback to placeholder if icon doesn't exist
+					if (!ResourceLoader.Exists(iconPath)) iconPath = "res://Assets/UI/unit_placeholder.png";
+					_portraitTexture.Texture = GD.Load<Texture2D>(iconPath);
+				}
+
+				float remainingAmount = 0f;
+				var ecsWorld = GameHost.Instance.EcsWorld;
+				var propEntity = viewModel.SelectedProp.Entity;
+				if (ecsWorld.IsAlive(propEntity) && ecsWorld.Has<Realm.Ecs.Components.Resources.ResourceNode>(propEntity))
+				{
+					remainingAmount = ecsWorld.Get<Realm.Ecs.Components.Resources.ResourceNode>(propEntity).Amount;
+				}
+
+				_statsLabel.Text = $"{TranslationServer.Translate("REMAINING")}: {remainingAmount:F0}";
+				_spellsBox.Visible = false;
+				_itemsBox.Visible = false;
+				_productionBox.Visible = false;
+			}
+			else
+			{
+				_statsContainer.Visible = false;
+				_armyCompositionLabel?.Hide();
+				
+				_unitNameLabel.Text = TranslationServer.Translate("No Selection");
+				if (_portraitTexture != null)
+				{
+					_portraitTexture.Texture = GD.Load<Texture2D>("res://Assets/UI/alliance_flag.png");
+				}
 			}
 		}
 		else if (viewModel.SelectedUnits.Count == 1)
