@@ -84,7 +84,7 @@ namespace Realm.Godot.ReplaySystem
 			}
 		}
 
-		public void RecordTick(int tick, List<ReplayUnitSnapshot> units, float gold, float wood, float stone, bool isKeyframe)
+		public void RecordTick(int tick, List<ReplayUnitSnapshot> units, List<ReplayProjectileSnapshot> projectiles, float gold, float wood, float stone, bool isKeyframe)
 		{
 			var frame = ReplayObjectPool.RentFrame();
 			frame.Tick = tick;
@@ -96,6 +96,7 @@ namespace Realm.Godot.ReplaySystem
 				Stone = stone
 			};
 			frame.Units.AddRange(units);
+			if (projectiles != null) frame.Projectiles.AddRange(projectiles);
 
 			_queue.Enqueue(frame);
 			_signal.Set();

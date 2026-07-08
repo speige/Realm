@@ -7,6 +7,7 @@ namespace Realm.Godot.ReplaySystem
 	{
 		private static readonly ConcurrentBag<ReplayFrame> _framePool = new();
 		private static readonly ConcurrentBag<List<ReplayUnitSnapshot>> _listPool = new();
+		private static readonly ConcurrentBag<List<ReplayProjectileSnapshot>> _projectileListPool = new();
 		private static readonly ConcurrentBag<List<int>> _intListPool = new();
 
 		public static ReplayFrame RentFrame()
@@ -21,11 +22,20 @@ namespace Realm.Godot.ReplaySystem
 				{
 					frame.Units.Clear();
 				}
+				if (frame.Projectiles == null)
+				{
+					frame.Projectiles = new List<ReplayProjectileSnapshot>();
+				}
+				else
+				{
+					frame.Projectiles.Clear();
+				}
 				return frame;
 			}
 			return new ReplayFrame
 			{
-				Units = new List<ReplayUnitSnapshot>()
+				Units = new List<ReplayUnitSnapshot>(),
+				Projectiles = new List<ReplayProjectileSnapshot>()
 			};
 		}
 
@@ -34,6 +44,10 @@ namespace Realm.Godot.ReplaySystem
 			if (frame.Units != null)
 			{
 				frame.Units.Clear();
+			}
+			if (frame.Projectiles != null)
+			{
+				frame.Projectiles.Clear();
 			}
 			_framePool.Add(frame);
 		}
@@ -54,6 +68,22 @@ namespace Realm.Godot.ReplaySystem
 			_listPool.Add(list);
 		}
 
+
+		public static List<ReplayProjectileSnapshot> RentProjectileList()
+		{
+			if (_projectileListPool.TryTake(out var list))
+			{
+				list.Clear();
+				return list;
+			}
+			return new List<ReplayProjectileSnapshot>();
+		}
+
+		public static void ReturnProjectileList(List<ReplayProjectileSnapshot> list)
+		{
+			list.Clear();
+			_projectileListPool.Add(list);
+		}
 		public static List<int> RentIntList()
 		{
 			if (_intListPool.TryTake(out var list))

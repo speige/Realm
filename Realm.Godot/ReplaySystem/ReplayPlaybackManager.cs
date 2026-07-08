@@ -186,6 +186,21 @@ namespace Realm.Godot.ReplaySystem
 				GameHost.Instance.SetBackupResources(frame.Resources.Gold, frame.Resources.Wood, frame.Resources.Stone);
 			}
 
+			if (frame.Projectiles != null)
+			{
+				foreach (var proj in frame.Projectiles)
+				{
+					if (proj.ProjectileTypeId == "arrow")
+					{
+						GameHost.Instance.SpawnArrowProjectileForReplay(proj.Start.ToNumerics(), proj.Target.ToNumerics());
+					}
+					else
+					{
+						((Realm.MapAPI.IGameAPI)GameHost.Instance).SpawnProjectile(proj.ProjectileTypeId, proj.Start.ToNumerics(), proj.Target.ToNumerics(), proj.Speed);
+					}
+				}
+			}
+
 			foreach (var snap in frame.Units)
 			{
 				if (GameHost.Instance.TryGetLocalEntity(snap.EntityId, out var localEntity))

@@ -16,6 +16,7 @@ public class ReplayService
 	private World EcsWorld => _ecsWorldAccessor.Current;
 	private ReplayRecorder _replayRecorder;
 	private readonly Dictionary<int, ReplayUnitSnapshot> _lastRecordedUnits = new();
+	private readonly List<ReplayProjectileSnapshot> _tickProjectiles = new();
 
 	public ReplayService(WorldAccessor ecsWorldAccessor)
 	{
@@ -38,6 +39,18 @@ public class ReplayService
 			_replayRecorder.Stop();
 			_replayRecorder = null;
 		}
+	}
+
+	public void RecordProjectile(string typeId, System.Numerics.Vector3 start, System.Numerics.Vector3 target)
+	{
+		if (_replayRecorder == null) return;
+		_tickProjectiles.Add(new ReplayProjectileSnapshot
+		{
+			ProjectileTypeId = typeId,
+			Start = new NetworkVector3(start.X, start.Y, start.Z),
+			Target = new NetworkVector3(target.X, target.Y, target.Z),
+			Speed = 0f // We might need to handle speed later or remove it from snapshot
+		});
 	}
 
 	public void SetupPlayersForPlayback(List<(int PeerId, string Name)> players)
@@ -162,6 +175,13 @@ public class ReplayService
 		bool isKeyframe = (currentTick % 600 == 0);
 		List<ReplayUnitSnapshot> unitsToRecord = ReplayObjectPool.RentList();
 		List<int> activeIds = ReplayObjectPool.RentIntList();
+		List<ReplayProjectileSnapshot> projectilesToRecord = null;
+		if (_tickProjectiles.Count > 0)
+		{
+			projectilesToRecord = ReplayObjectPool.RentProjectileList();
+			projectilesToRecord.AddRange(_tickProjectiles);
+			_tickProjectiles.Clear();
+		}
 
 		if (isKeyframe)
 		{
@@ -355,10 +375,14 @@ public class ReplayService
 			if (dict.TryGetValue(new ResourceId("stone"), out var sVal)) stone = sVal;
 		}
 
-		_replayRecorder.RecordTick(currentTick, unitsToRecord, gold, wood, stone, isKeyframe);
+		_replayRecorder.RecordTick(currentTick, unitsToRecord, projectilesToRecord, gold, wood, stone, isKeyframe);
 
 		ReplayObjectPool.ReturnList(unitsToRecord);
 		ReplayObjectPool.ReturnIntList(activeIds);
+		if (projectilesToRecord != null)
+		{
+			ReplayObjectPool.ReturnProjectileList(projectilesToRecord);
+		}
 
 		replayState.ReplayTickCounter++;
 	}

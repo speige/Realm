@@ -1065,6 +1065,10 @@ public class {mapName} : IMapScript
 		Callable.From(() =>
 		{
 			var startPos = new Vector3(start.X, start.Y, start.Z);
+			if (_replayService != null && _replayService.IsRecording)
+			{
+				_replayService.RecordProjectile(projectileTypeId, start, target);
+			}
 			var targetPos = new Vector3(target.X, target.Y, target.Z);
 			if (projectileTypeId == "arrow")
 			{
@@ -3157,9 +3161,17 @@ public class {mapName} : IMapScript
 		_fxService.SpawnPing3DEffect(this, position);
 	}
 
+	public void SpawnArrowProjectileForReplay(System.Numerics.Vector3 start, System.Numerics.Vector3 target)
+	{
+		_fxService.SpawnArrowProjectile(this, new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z));
+	}
 	private void SpawnArrowProjectile(Vector3 start, Vector3 target)
 	{
 		_fxService.SpawnArrowProjectile(this, start, target);
+		if (_replayService != null && _replayService.IsRecording)
+		{
+			_replayService.RecordProjectile("arrow", new System.Numerics.Vector3(start.X, start.Y, start.Z), new System.Numerics.Vector3(target.X, target.Y, target.Z));
+		}
 		if (_multiplayerActive && IsServerActive())
 		{
 			Rpc(nameof(ClientSpawnArrowProjectile), start, target);
