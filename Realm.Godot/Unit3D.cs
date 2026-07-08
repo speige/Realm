@@ -829,4 +829,46 @@ public partial class Unit3D : CharacterBody3D
 		}
 		return _pathLinesPool[index];
 	}
+
+	public Color Modulate
+	{
+		get => new Color(1f, 1f, 1f, _modulateAlpha);
+		set
+		{
+			_modulateAlpha = value.A;
+			if (_modelNode != null)
+				SetAlphaRecursive(_modelNode, value.A);
+		}
+	}
+
+	private float _modulateAlpha = 1f;
+
+	public void SetConstructionAlpha(float alpha)
+	{
+		if (_modelNode != null)
+		{
+			SetAlphaRecursive(_modelNode, alpha);
+		}
+	}
+
+	private void SetAlphaRecursive(Node node, float alpha)
+	{
+		if (node is MeshInstance3D mesh)
+		{
+			Material mat = mesh.MaterialOverride;
+			if (mat is StandardMaterial3D stdMat)
+			{
+				var dup = (StandardMaterial3D)stdMat.Duplicate();
+				dup.Transparency = alpha < 1f ? BaseMaterial3D.TransparencyEnum.Alpha : BaseMaterial3D.TransparencyEnum.Disabled;
+				var c = dup.AlbedoColor;
+				c.A = alpha;
+				dup.AlbedoColor = c;
+				mesh.MaterialOverride = dup;
+			}
+		}
+		foreach (var child in node.GetChildren())
+		{
+			SetAlphaRecursive(child, alpha);
+		}
+	}
 }

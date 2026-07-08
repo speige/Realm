@@ -25,6 +25,7 @@ public partial class GameHost
 		}
 		SelectedUnits.Clear();
 		AllUnits.Clear();
+		ClearAllBuildQueueGhosts();
 		AllProps.Clear();
 		EntityToUnit3D.Clear();
 		EntityToProp3D.Clear();

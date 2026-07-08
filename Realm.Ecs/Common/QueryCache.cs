@@ -3,9 +3,9 @@ using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Resources;
+using Realm.Ecs.Components.Tags;
 using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Components.Stats;
-using Realm.Ecs.Components.Tags;
 
 namespace Realm.Ecs.Common;
 
@@ -59,4 +59,6 @@ public static class QueryCache
     public static readonly QueryDescription AllPropIdentityAndPositionQuery = new QueryDescription().WithAll<PropIdentity, Position>();
     public static readonly QueryDescription AllDecalIdentityAndPositionQuery = new QueryDescription().WithAll<DecalIdentity, Position>();
     public static readonly QueryDescription AllPositionAndCollisionRadiusQuery = new QueryDescription().WithAll<Position, CollisionRadius>();
+    public static readonly QueryDescription AllPositionAndBuildTaskNoneDeadQuery = new QueryDescription().WithAll<Position, BuildTask>().WithNone<Dead>();
+    public static readonly QueryDescription AllBuildingAndConstructionStateAndOwnerNoneDeadQuery = new QueryDescription().WithAll<Building, ConstructionState, Owner>().WithNone<Dead>();
 }

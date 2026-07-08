@@ -2454,7 +2454,7 @@ public partial class GameHost
 			var camera = GetViewport().GetCamera3D();
 			if (camera != null)
 			{
-				camera.GlobalPosition = new Vector3(castle.GlobalPosition.X, camera.GlobalPosition.Y, castle.GlobalPosition.Z);
+				camera.GlobalPosition = new Vector3(castle.GlobalPosition.X, camera.GlobalPosition.Y, castle.GlobalPosition.Z + 25f);
 			}
 		}
 	}
@@ -2467,7 +2467,7 @@ public partial class GameHost
 			var camera = GetViewport().GetCamera3D();
 			if (camera != null)
 			{
-				camera.GlobalPosition = new Vector3(unit.GlobalPosition.X, camera.GlobalPosition.Y, unit.GlobalPosition.Z);
+				camera.GlobalPosition = new Vector3(unit.GlobalPosition.X, camera.GlobalPosition.Y, unit.GlobalPosition.Z + 25f);
 			}
 		}
 		else
@@ -2624,7 +2624,7 @@ public partial class GameHost
 			var camera = GetViewport().GetCamera3D();
 			if (camera != null)
 			{
-				camera.GlobalPosition = new Vector3(avgPos.X, camera.GlobalPosition.Y, avgPos.Z);
+				camera.GlobalPosition = new Vector3(avgPos.X, camera.GlobalPosition.Y, avgPos.Z + 25f);
 			}
 		}
 		_lastGroupPressTime[index] = now;
@@ -2877,6 +2877,8 @@ public partial class GameHost
 
 	private void ExecuteBuildingPlacement(string type, Vector3 position)
 	{
+		bool shiftHeld = Input.IsKeyPressed(Key.Shift);
+
 		if (_multiplayerActive && !Multiplayer.IsServer())
 		{
 			var bldMeta = UnitRegistry[type];
@@ -2888,11 +2890,14 @@ public partial class GameHost
 				InGameHUD.Instance.ShowFeedbackText($"Constructing {bldMeta.Name}...", new Color(0.3f, 0.9f, 0.4f));
 			}
 			QueueClientCommand("build", new List<int>(), position, 0, type);
-			ActiveBuildingPlacementType = null;
-			if (_buildingPreviewMesh != null)
+			if (!shiftHeld)
 			{
-				_buildingPreviewMesh.QueueFree();
-				_buildingPreviewMesh = null;
+				ActiveBuildingPlacementType = null;
+				if (_buildingPreviewMesh != null)
+				{
+					_buildingPreviewMesh.QueueFree();
+					_buildingPreviewMesh = null;
+				}
 			}
 			return;
 		}
@@ -2922,13 +2927,67 @@ public partial class GameHost
 				InGameHUD.Instance.Wood -= meta.CostWood;
 				InGameHUD.Instance.Stone -= meta.CostStone;
 
-				var playerOwner = _playerEntity.AsPlayerEntity(EcsWorld);
-				string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(type, true);
-				
-				var bldEntity = CreateEcsUnit(type, meta.Name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, 0f, position, playerOwner);
-				SpawnUnit3D(bldEntity, type, modelPath, position, true, false);
+				var buildingPos = new System.Numerics.Vector3(position.X, position.Y, position.Z);
 
-				InGameHUD.Instance.ShowFeedbackText($"Constructed: {meta.Name}", new Color(0.3f, 0.9f, 0.4f));
+				Unit3D firstWorker = null;
+				foreach (var unit in SelectedUnits)
+				{
+					if (!unit.IsBuilding && !unit.IsEnemy && unit.UnitId == "worker")
+					{
+						firstWorker = unit;
+						break;
+					}
+				}
+
+				if (firstWorker != null)
+				{
+					if (shiftHeld && EcsWorld.Has<BuildTask>(firstWorker.Entity))
+					{
+						if (!EcsWorld.Has<BuildQueue>(firstWorker.Entity))
+							EcsWorld.Add(firstWorker.Entity, new BuildQueue());
+						ref var buildQueue = ref EcsWorld.Get<BuildQueue>(firstWorker.Entity);
+						buildQueue.TryEnqueue(type, buildingPos);
+						InGameHUD.Instance.ShowFeedbackText($"Queued: Construct {meta.Name}", new Color(0.5f, 0.8f, 1.0f));
+					}
+					else
+					{
+						AssignBuildTaskToWorker(firstWorker.Entity, type, buildingPos);
+						InGameHUD.Instance.ShowFeedbackText($"Constructing: {meta.Name}", new Color(0.3f, 0.9f, 0.4f));
+					}
+
+					foreach (var unit in SelectedUnits)
+					{
+						if (!unit.IsBuilding && !unit.IsEnemy && unit.UnitId == "worker" && unit != firstWorker)
+						{
+							if (EcsWorld.IsAlive(unit.Entity))
+							{
+								if (shiftHeld && EcsWorld.Has<BuildTask>(unit.Entity))
+								{
+									if (!EcsWorld.Has<BuildQueue>(unit.Entity))
+										EcsWorld.Add(unit.Entity, new BuildQueue());
+									ref var q = ref EcsWorld.Get<BuildQueue>(unit.Entity);
+									q.TryEnqueue(type, buildingPos);
+								}
+								else if (!EcsWorld.Has<BuildTask>(unit.Entity))
+								{
+									var moveTo = new MoveTo(buildingPos);
+									if (EcsWorld.Has<MoveTo>(unit.Entity)) EcsWorld.Set(unit.Entity, moveTo);
+									else EcsWorld.Add(unit.Entity, moveTo);
+								}
+							}
+						}
+					}
+				}
+				else
+				{
+					var playerOwner = _playerEntity.AsPlayerEntity(EcsWorld);
+					string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(type, true);
+
+					var bldEntity = CreateEcsUnit(type, meta.Name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, 0f, position, playerOwner);
+					SpawnUnit3D(bldEntity, type, modelPath, position, true, false);
+					InGameHUD.Instance.ShowFeedbackText($"Constructed: {meta.Name}", new Color(0.3f, 0.9f, 0.4f));
+				}
+
 				UIManager.Instance?.PlayClickSound();
 			}
 			else
@@ -2938,11 +2997,14 @@ public partial class GameHost
 			}
 		}
 
-		ActiveBuildingPlacementType = null;
-		if (_buildingPreviewMesh != null)
+		if (!shiftHeld)
 		{
-			_buildingPreviewMesh.QueueFree();
-			_buildingPreviewMesh = null;
+			ActiveBuildingPlacementType = null;
+			if (_buildingPreviewMesh != null)
+			{
+				_buildingPreviewMesh.QueueFree();
+				_buildingPreviewMesh = null;
+			}
 		}
 	}
 

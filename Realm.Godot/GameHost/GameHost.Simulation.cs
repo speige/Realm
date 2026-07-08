@@ -140,6 +140,244 @@ public partial class GameHost
 		}
 	}
 
+	public bool FastBuildEnabled { get; set; } = false;
+
+	private const float BaseConstructionWorkRatePerSecond = 1f / 20f;
+	private float ConstructionWorkRatePerSecond => FastBuildEnabled ? BaseConstructionWorkRatePerSecond * 10f : BaseConstructionWorkRatePerSecond;
+
+	private readonly List<(Entity Worker, BuildTask UpdatedTask)> _pendingBuildTaskUpdates = new();
+	private readonly List<Entity> _completedBuildings = new();
+
+	private readonly Dictionary<int, List<MeshInstance3D>> _buildQueueGhosts = new();
+
+	internal void TickConstructionSystem(float fDelta)
+	{
+		_pendingBuildTaskUpdates.Clear();
+		_completedBuildings.Clear();
+
+		var workerQuery = QueryCache.AllPositionAndBuildTaskNoneDeadQuery;
+		EcsWorld.Query(in workerQuery, (Entity workerEntity, ref Position workerPos, ref BuildTask buildTask) =>
+		{
+			if (!EcsWorld.IsAlive(buildTask.BuildingEntity)) return;
+
+			var buildingPos = EcsWorld.Has<Position>(buildTask.BuildingEntity)
+				? EcsWorld.Get<Position>(buildTask.BuildingEntity).Value
+				: workerPos.Value;
+
+			float distSq = System.Numerics.Vector3.DistanceSquared(workerPos.Value, buildingPos);
+			bool inRange = distSq <= 16f;
+
+			if (!inRange)
+			{
+				if (!EcsWorld.Has<MoveTo>(workerEntity))
+				{
+					EcsWorld.Add(workerEntity, new MoveTo(buildingPos));
+				}
+				return;
+			}
+
+			if (EcsWorld.Has<MoveTo>(workerEntity))
+			{
+				EcsWorld.Remove<MoveTo>(workerEntity);
+			}
+
+			float progressGain = ConstructionWorkRatePerSecond * fDelta;
+			var updatedTask = new BuildTask(buildTask.BuildingEntity, buildTask.TotalBuildTime)
+			{
+				Progress = buildTask.Progress + progressGain
+			};
+			_pendingBuildTaskUpdates.Add((workerEntity, updatedTask));
+
+			if (EcsWorld.Has<ConstructionState>(buildTask.BuildingEntity))
+			{
+				ref var constructionState = ref EcsWorld.Get<ConstructionState>(buildTask.BuildingEntity);
+				constructionState.Progress = Mathf.Min(constructionState.Progress + progressGain, constructionState.TotalBuildTime);
+
+				if (constructionState.Progress >= constructionState.TotalBuildTime && !_completedBuildings.Contains(buildTask.BuildingEntity))
+				{
+					_completedBuildings.Add(buildTask.BuildingEntity);
+				}
+			}
+		});
+
+		foreach (var (workerEntity, updatedTask) in _pendingBuildTaskUpdates)
+		{
+			if (EcsWorld.IsAlive(workerEntity))
+			{
+				EcsWorld.Set(workerEntity, updatedTask);
+
+				if (updatedTask.Progress >= updatedTask.TotalBuildTime && EcsWorld.Has<BuildTask>(workerEntity))
+				{
+					EcsWorld.Remove<BuildTask>(workerEntity);
+
+					if (EcsWorld.Has<BuildQueue>(workerEntity))
+					{
+						ref var buildQueue = ref EcsWorld.Get<BuildQueue>(workerEntity);
+						if (buildQueue.TryDequeue(out string nextType, out var nextPos))
+						{
+							AssignBuildTaskToWorker(workerEntity, nextType, nextPos);
+						}
+						else
+						{
+							EcsWorld.Remove<BuildQueue>(workerEntity);
+						}
+					}
+				}
+			}
+		}
+
+		foreach (var buildingEntity in _completedBuildings)
+		{
+			if (!EcsWorld.IsAlive(buildingEntity)) continue;
+
+			if (EcsWorld.Has<UnderConstruction>(buildingEntity))
+			{
+				EcsWorld.Remove<UnderConstruction>(buildingEntity);
+			}
+
+			if (TryGetUnit3D(buildingEntity, out var buildingNode) && GodotObject.IsInstanceValid(buildingNode))
+			{
+				buildingNode.Modulate = new Godot.Color(1f, 1f, 1f, 1f);
+			}
+
+			InGameHUD.Instance?.ShowFeedbackText("Construction complete!", new Godot.Color(0.3f, 0.9f, 0.4f));
+			InGameHUD.Instance?.RefreshUI(SelectedUnits);
+		}
+
+		if (_pendingBuildTaskUpdates.Count > 0)
+		{
+			InGameHUD.Instance?.RefreshUI(SelectedUnits);
+		}
+
+		UpdateBuildQueueGhosts();
+	}
+
+	private void UpdateBuildQueueGhosts()
+	{
+		var workerQuery = QueryCache.AllPositionAndBuildTaskNoneDeadQuery;
+
+		var activeWorkerIds = new System.Collections.Generic.HashSet<int>();
+		EcsWorld.Query(in workerQuery, (Entity workerEntity, ref BuildTask _) =>
+		{
+			if (!EcsWorld.IsAlive(workerEntity)) return;
+			activeWorkerIds.Add(workerEntity.Id);
+
+			int queueCount = EcsWorld.Has<BuildQueue>(workerEntity)
+				? EcsWorld.Get<BuildQueue>(workerEntity).Count
+				: 0;
+
+			if (!_buildQueueGhosts.TryGetValue(workerEntity.Id, out var ghosts))
+			{
+				ghosts = new List<MeshInstance3D>();
+				_buildQueueGhosts[workerEntity.Id] = ghosts;
+			}
+
+			while (ghosts.Count > queueCount)
+			{
+				int last = ghosts.Count - 1;
+				if (GodotObject.IsInstanceValid(ghosts[last]))
+					ghosts[last].QueueFree();
+				ghosts.RemoveAt(last);
+			}
+
+			if (queueCount == 0) return;
+
+			ref var queue = ref EcsWorld.Get<BuildQueue>(workerEntity);
+			for (int slotIndex = 0; slotIndex < queueCount; slotIndex++)
+			{
+				queue.PeekAt(slotIndex, out string? buildType, out var queuedPos);
+				if (buildType == null) continue;
+
+				var worldPos = new Godot.Vector3(queuedPos.X, GetTerrainHeightAt(new Godot.Vector3(queuedPos.X, 0, queuedPos.Z)), queuedPos.Z);
+
+				if (slotIndex >= ghosts.Count)
+				{
+					ghosts.Add(CreateGhostMesh(buildType));
+				}
+				else if (!GodotObject.IsInstanceValid(ghosts[slotIndex]))
+				{
+					ghosts[slotIndex] = CreateGhostMesh(buildType);
+				}
+
+				ghosts[slotIndex].GlobalPosition = worldPos;
+			}
+		});
+
+		var toRemove = new List<int>();
+		foreach (var kv in _buildQueueGhosts)
+		{
+			if (!activeWorkerIds.Contains(kv.Key))
+			{
+				foreach (var ghost in kv.Value)
+					if (GodotObject.IsInstanceValid(ghost)) ghost.QueueFree();
+				toRemove.Add(kv.Key);
+			}
+		}
+		foreach (var id in toRemove)
+			_buildQueueGhosts.Remove(id);
+	}
+
+	private MeshInstance3D CreateGhostMesh(string buildType)
+	{
+		var mesh = new MeshInstance3D();
+		var box = new BoxMesh();
+		box.Size = buildType == "castle" ? new Godot.Vector3(10f, 6f, 10f) : new Godot.Vector3(3.2f, 4f, 3.2f);
+		mesh.Mesh = box;
+
+		var mat = new StandardMaterial3D();
+		mat.AlbedoColor = new Godot.Color(1.0f, 0.65f, 0.1f, 0.35f);
+		mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+		mat.EmissionEnabled = true;
+		mat.Emission = new Godot.Color(1.0f, 0.5f, 0.05f) * 0.25f;
+		mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+		mesh.MaterialOverride = mat;
+
+		AddChild(mesh);
+		return mesh;
+	}
+
+	internal void ClearAllBuildQueueGhosts()
+	{
+		foreach (var kv in _buildQueueGhosts)
+			foreach (var ghost in kv.Value)
+				if (GodotObject.IsInstanceValid(ghost)) ghost.QueueFree();
+		_buildQueueGhosts.Clear();
+	}
+
+	internal void AssignBuildTaskToWorker(Entity workerEntity, string buildType, System.Numerics.Vector3 targetPos)
+	{
+		if (!UnitRegistry.TryGetValue(buildType, out var meta)) return;
+		float buildTime = meta.ProductionTime > 0f ? meta.ProductionTime : 30f;
+
+		var playerOwner = _playerEntity.AsPlayerEntity(EcsWorld);
+		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(buildType, true);
+
+		var bldEntity = CreateEcsUnit(buildType, meta.Name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, 0f,
+			new Godot.Vector3(targetPos.X, targetPos.Y, targetPos.Z), playerOwner);
+
+		EcsWorld.Add(bldEntity, new ConstructionState(buildTime));
+		EcsWorld.Add(bldEntity, new UnderConstruction());
+
+		SpawnUnit3D(bldEntity, buildType, modelPath, new Godot.Vector3(targetPos.X, targetPos.Y, targetPos.Z), true, false);
+
+		if (TryGetUnit3D(bldEntity, out var buildingNode) && GodotObject.IsInstanceValid(buildingNode))
+		{
+			buildingNode.Modulate = new Godot.Color(1f, 1f, 1f, 0.4f);
+		}
+
+		var buildTask = new BuildTask(bldEntity, buildTime);
+		if (EcsWorld.Has<BuildTask>(workerEntity))
+			EcsWorld.Set(workerEntity, buildTask);
+		else
+			EcsWorld.Add(workerEntity, buildTask);
+
+		var buildingPos = new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z);
+		if (!EcsWorld.Has<MoveTo>(workerEntity))
+			EcsWorld.Add(workerEntity, new MoveTo(buildingPos));
+		else
+			EcsWorld.Set(workerEntity, new MoveTo(buildingPos));
+	}
+
 	private void UpdateVisualNodesFromEcs(float fDelta)
 	{
 		var query = Realm.Ecs.Common.QueryCache.AllPositionAndDefinitionIdQuery;
@@ -195,6 +433,16 @@ public partial class GameHost
 							hasLookTarget = true;
 						}
 					}
+					else if (EcsWorld.Has<BuildTask>(entity))
+					{
+						var buildTask = EcsWorld.Get<BuildTask>(entity);
+						if (EcsWorld.IsAlive(buildTask.BuildingEntity) && EcsWorld.Has<Position>(buildTask.BuildingEntity))
+						{
+							var bPos = EcsWorld.Get<Position>(buildTask.BuildingEntity);
+							lookTargetPos = new Vector3(bPos.Value.X, bPos.Value.Y, bPos.Value.Z);
+							hasLookTarget = true;
+						}
+					}
 
 					if (hasLookTarget)
 					{
@@ -228,7 +476,10 @@ public partial class GameHost
 					unit3D.Basis = new Basis(qLerp);
 				}
 
-				if (EcsWorld.Has<Gatherer>(entity) && !EcsWorld.Get<Gatherer>(entity).ReturningToBase)
+				bool isLaborAnimating = (EcsWorld.Has<Gatherer>(entity) && !EcsWorld.Get<Gatherer>(entity).ReturningToBase)
+					|| (EcsWorld.Has<BuildTask>(entity) && !EcsWorld.Has<MoveTo>(entity));
+
+				if (isLaborAnimating)
 				{
 					var state = EcsWorld.Get<WorldState>(_worldEntity);
 					float gameElapsed = state.GameElapsedTime;
@@ -242,6 +493,16 @@ public partial class GameHost
 				}
 
 				unit3D.PlayAnimation(DetermineUnitAnimation(entity));
+			}
+		});
+
+		var buildingQuery = QueryCache.AllBuildingAndConstructionStateAndOwnerNoneDeadQuery;
+		EcsWorld.Query(in buildingQuery, (Entity entity, ref ConstructionState construction) =>
+		{
+			if (TryGetUnit3D(entity, out var buildingNode) && GodotObject.IsInstanceValid(buildingNode))
+			{
+				float alpha = Mathf.Lerp(0.3f, 1.0f, construction.Progress / Mathf.Max(construction.TotalBuildTime, 0.001f));
+				buildingNode.Modulate = new Color(1f, 1f, 1f, alpha);
 			}
 		});
 	}
@@ -264,6 +525,9 @@ public partial class GameHost
 			return "Spell_Cast";
 
 		if (EcsWorld.Has<Gatherer>(entity) && !EcsWorld.Get<Gatherer>(entity).ReturningToBase)
+			return "Labor";
+
+		if (EcsWorld.Has<BuildTask>(entity))
 			return "Labor";
 
 		return "Idle";

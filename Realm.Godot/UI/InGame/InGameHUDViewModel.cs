@@ -509,6 +509,12 @@ public class InGameHUDViewModel
 					string stateLabel = gather.ReturningToBase ? "● " + TranslationServer.Translate("DELIVERING") : "● " + TranslationServer.Translate("HARVESTING");
 					info.StateText = $"{stateLabel} ({gather.CarriedAmount:F0} / {gather.MaxCapacity:F0} {TranslationServer.Translate(gather.ResourceType.ToUpper())})";
 				}
+				else if (world.Has<Realm.Ecs.Components.Resources.BuildTask>(u.Entity))
+				{
+					var bt = world.Get<Realm.Ecs.Components.Resources.BuildTask>(u.Entity);
+					int pct = (int)(bt.Progress / Mathf.Max(bt.TotalBuildTime, 0.001f) * 100f);
+					info.StateText = $"🔨 {TranslationServer.Translate("CONSTRUCTING")} ({pct}%)";
+				}
 				else if (world.Has<Realm.Ecs.Components.Movement.HoldPosition>(u.Entity))   info.StateText = "● " + TranslationServer.Translate("HOLDING");
 				else if (world.Has<Realm.Ecs.Components.Movement.Patrol>(u.Entity))     info.StateText = "● " + TranslationServer.Translate("PATROLLING");
 				else if (world.Has<Realm.Ecs.Components.Movement.AttackMove>(u.Entity)) info.StateText = "● " + TranslationServer.Translate("ATTACK-MOVE");
@@ -528,7 +534,15 @@ public class InGameHUDViewModel
 					info.Potions = world.Get<Inventory>(u.Entity).Potions;
 				}
 
-				if (u.IsBuilding && u.UnitId == "castle" && world.Has<Realm.Ecs.Components.Core.ProductionQueue>(u.Entity))
+				if (u.IsBuilding && !u.IsEnemy && world.Has<Realm.Ecs.Components.Resources.ConstructionState>(u.Entity))
+				{
+					var cs = world.Get<Realm.Ecs.Components.Resources.ConstructionState>(u.Entity);
+					info.HasProduction = true;
+					info.ProductionTitle = TranslationServer.Translate("UNDER CONSTRUCTION");
+					info.ProductionProgress = cs.Progress;
+					info.ProductionMaxProgress = cs.TotalBuildTime;
+				}
+				else if (u.IsBuilding && u.UnitId == "castle" && world.Has<Realm.Ecs.Components.Core.ProductionQueue>(u.Entity))
 				{
 					var prod = world.Get<Realm.Ecs.Components.Core.ProductionQueue>(u.Entity);
 					info.HasProduction = true;

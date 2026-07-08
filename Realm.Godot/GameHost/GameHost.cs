@@ -2624,6 +2624,8 @@ public class {mapName} : IMapScript
 		if (EcsWorld.Has<HealingTarget>(entity)) EcsWorld.Remove<HealingTarget>(entity);
 		if (EcsWorld.Has<WaypointQueue>(entity)) EcsWorld.Remove<WaypointQueue>(entity);
 		if (EcsWorld.Has<Gatherer>(entity)) EcsWorld.Remove<Gatherer>(entity);
+		if (EcsWorld.Has<Realm.Ecs.Components.Resources.BuildTask>(entity)) EcsWorld.Remove<Realm.Ecs.Components.Resources.BuildTask>(entity);
+		if (EcsWorld.Has<Realm.Ecs.Components.Resources.BuildQueue>(entity)) EcsWorld.Remove<Realm.Ecs.Components.Resources.BuildQueue>(entity);
 	}
 
 	private void StopGatheringMovement(Entity entity)
@@ -3029,6 +3031,7 @@ public class {mapName} : IMapScript
 		_fDelta = fDelta;
 
 		_simulationService.TickEcs(fDelta);
+		TickConstructionSystem(fDelta);
 		UpdateVisualNodesFromEcs(fDelta);
 
 		if (EcsWorld != null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<WorldState>(_worldEntity))

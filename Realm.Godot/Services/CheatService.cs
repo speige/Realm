@@ -29,7 +29,8 @@ public class CheatService
 		AbsoluteUnit,
 		ThanosSnap,
 		EzClap,
-		NoCap
+		NoCap,
+		WarpSpeed
 	}
 
 	internal (CheatResult Result, int AffectedCount) TryTriggerCheat(
@@ -162,6 +163,15 @@ public class CheatService
 				state.FogOfWarType = "visible";
 			}
 			return (CheatResult.NoCap, 0);
+		}
+
+		if (lower == "warpspeed" || lower == "hyperdrive")
+		{
+			if (GameHost.Instance != null)
+			{
+				GameHost.Instance.FastBuildEnabled = !GameHost.Instance.FastBuildEnabled;
+			}
+			return (CheatResult.WarpSpeed, 0);
 		}
 
 		return (CheatResult.None, 0);

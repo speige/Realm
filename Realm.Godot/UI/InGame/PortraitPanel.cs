@@ -192,10 +192,23 @@ public class PortraitPanel
 				_itemsBox.Visible = false;
 			}
 
-			if (info.IsBuilding && !info.IsEnemy && info.UnitId == "castle" && info.HasProduction)
+			if (info.IsBuilding && !info.IsEnemy && info.HasProduction)
 			{
 				_productionBox.Visible = true;
-				if (info.ProductionQueue.Count > 0)
+				if (info.UnitId != "castle")
+				{
+					_productionTitle.Text = info.ProductionTitle;
+					_productionProgress.Visible = true;
+					_productionProgress.Value = info.ProductionProgress;
+					_productionProgress.MaxValue = info.ProductionMaxProgress;
+					_productionQueueLabel.Text = $"{(int)(info.ProductionProgress / System.Math.Max(info.ProductionMaxProgress, 0.001f) * 100f)}%";
+					if (_lastProductionQueue.Count > 0)
+					{
+						_lastProductionQueue.Clear();
+						ClearQueueSlots();
+					}
+				}
+				else if (info.ProductionQueue.Count > 0)
 				{
 					_productionTitle.Text = info.ProductionTitle;
 					_productionProgress.Visible = true;
@@ -224,13 +237,16 @@ public class PortraitPanel
 				}
 				else
 				{
-					_productionTitle.Text = TranslationServer.Translate("PRODUCTION IDLE");
-					_productionProgress.Visible = false;
-					_productionQueueLabel.Text = TranslationServer.Translate("Queue empty — [F] Soldier  [R] Archer  [P] Priest");
-					if (_lastProductionQueue.Count > 0)
+					if (info.UnitId == "castle")
 					{
-						_lastProductionQueue.Clear();
-						ClearQueueSlots();
+						_productionTitle.Text = TranslationServer.Translate("PRODUCTION IDLE");
+						_productionProgress.Visible = false;
+						_productionQueueLabel.Text = TranslationServer.Translate("Queue empty — [F] Soldier  [R] Archer  [P] Priest");
+						if (_lastProductionQueue.Count > 0)
+						{
+							_lastProductionQueue.Clear();
+							ClearQueueSlots();
+						}
 					}
 				}
 			}

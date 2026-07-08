@@ -1106,6 +1106,12 @@ public partial class InGameHUD : Control
 								string stateLabel = gather.ReturningToBase ? "● " + TranslationServer.Translate("DELIVERING") : "● " + TranslationServer.Translate("HARVESTING");
 								info.StateText = $"{stateLabel} ({gather.CarriedAmount:F0} / {gather.MaxCapacity:F0} {TranslationServer.Translate(gather.ResourceType.ToUpper())})";
 							}
+							else if (world.Has<Realm.Ecs.Components.Resources.BuildTask>(u.Entity))
+							{
+								var bt = world.Get<Realm.Ecs.Components.Resources.BuildTask>(u.Entity);
+								int pct = (int)(bt.Progress / Mathf.Max(bt.TotalBuildTime, 0.001f) * 100f);
+								info.StateText = $"🔨 {TranslationServer.Translate("CONSTRUCTING")} ({pct}%)";
+							}
 							else if (world.Has<Realm.Ecs.Components.Movement.HoldPosition>(u.Entity))   info.StateText = "● " + TranslationServer.Translate("HOLDING");
 							else if (world.Has<Realm.Ecs.Components.Movement.Patrol>(u.Entity))     info.StateText = "● " + TranslationServer.Translate("PATROLLING");
 							else if (world.Has<Realm.Ecs.Components.Movement.AttackMove>(u.Entity)) info.StateText = "● " + TranslationServer.Translate("ATTACK-MOVE");
@@ -1130,7 +1136,16 @@ public partial class InGameHUD : Control
 								u.UpdateRallyVisuals();
 							}
 
-							if (u.IsBuilding && u.UnitId == "castle" && world.Has<Realm.Ecs.Components.Core.ProductionQueue>(u.Entity))
+							if (u.IsBuilding && !u.IsEnemy && world.Has<Realm.Ecs.Components.Resources.ConstructionState>(u.Entity))
+							{
+								var cs = world.Get<Realm.Ecs.Components.Resources.ConstructionState>(u.Entity);
+								info.HasProduction = true;
+								info.ProductionTitle = TranslationServer.Translate("UNDER CONSTRUCTION");
+								info.ProductionProgress = cs.Progress;
+								info.ProductionMaxProgress = cs.TotalBuildTime;
+								info.StateText = $"🔨 {TranslationServer.Translate("UNDER CONSTRUCTION")} ({(int)(cs.Progress / Mathf.Max(cs.TotalBuildTime, 0.001f) * 100f)}%)";
+							}
+							else if (u.IsBuilding && u.UnitId == "castle" && world.Has<Realm.Ecs.Components.Core.ProductionQueue>(u.Entity))
 							{
 								var prod = world.Get<Realm.Ecs.Components.Core.ProductionQueue>(u.Entity);
 								info.HasProduction = true;
@@ -1357,12 +1372,18 @@ public partial class InGameHUD : Control
 		if (selected != null && selected.Count > 0)
 		{
 			int idx = GameHost.Instance != null ? GameHost.Instance.CycleSelectionIndex : 0;
-			if (idx >= 0 && idx < selected.Count && _camera3D != null && GodotObject.IsInstanceValid(_camera3D))
-			{
-				var target = selected[idx];
-				_camera3D.GlobalPosition = new Vector3(target.GlobalPosition.X, _camera3D.GlobalPosition.Y, target.GlobalPosition.Z);
-				ShowFeedbackText($"Centered Camera on {target.UnitId.ToUpper()}", new Color(0.9f, 0.8f, 0.5f));
-			}
+			if (idx >= 0 && idx < selected.Count)
+				CenterCameraOnUnit(selected[idx]);
+		}
+	}
+
+	private void CenterCameraOnUnit(Unit3D unit)
+	{
+		if (unit == null || !GodotObject.IsInstanceValid(unit)) return;
+		if (_camera3D != null && GodotObject.IsInstanceValid(_camera3D))
+		{
+			_camera3D.GlobalPosition = new Vector3(unit.GlobalPosition.X, _camera3D.GlobalPosition.Y, unit.GlobalPosition.Z);
+			ShowFeedbackText($"Camera → {unit.UnitId.ToUpper()}", new Color(0.9f, 0.8f, 0.5f));
 		}
 	}
 
@@ -1417,6 +1438,7 @@ public partial class InGameHUD : Control
 		else
 		{
 			GameHost.Instance.SelectOnlyUnit(clickedUnit);
+			CenterCameraOnUnit(clickedUnit);
 		}
 		RefreshUI(GameHost.Instance.SelectedUnits);
 	}
@@ -1807,6 +1829,17 @@ public partial class InGameHUD : Control
 				ShowFeedbackText("Cheat Activated: Fog of War removed! No cap.", new Color(0.2f, 0.8f, 0.5f));
 				_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'nocap' activated. Fog of War disabled.")}[/color]\n";
 				break;
+			case CheatService.CheatResult.WarpSpeed:
+			{
+				bool isOn = GameHost.Instance?.FastBuildEnabled ?? false;
+				string state = isOn ? "ENGAGED" : "DISENGAGED";
+				string msg = isOn
+					? "Cheat Activated: Warp Speed! 🚀 Construction 10× faster."
+					: "Cheat Deactivated: Warp Speed. Construction back to normal.";
+				ShowFeedbackText(msg, new Color(0.4f, 0.9f, 1.0f));
+				_chatLog.Text += $"[color=#ffd700]System: Warp Speed {state}. Fast Build: {(isOn ? "ON" : "OFF")}[/color]\n";
+				break;
+			}
 		}
 		return true;
 	}
