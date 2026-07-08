@@ -203,48 +203,9 @@ public partial class GameOver : Control
 		_btnReportCopyright.Text = Tr("[!] REPORT INFRINGEMENT\n(DMCA/CopyRiGHT)");
 
 
-		var redNormal = new StyleBoxFlat();
-		redNormal.BgColor = new Color(0.20f, 0.17f, 0.17f, 0.95f);
-		redNormal.BorderColor = new Color(0.55f, 0.2f, 0.2f);
-		redNormal.SetBorderWidthAll(2);
-		redNormal.CornerRadiusTopLeft = 4;
-		redNormal.CornerRadiusTopRight = 4;
-		redNormal.CornerRadiusBottomLeft = 4;
-		redNormal.CornerRadiusBottomRight = 4;
-		redNormal.ContentMarginLeft = 20;
-		redNormal.ContentMarginRight = 20;
-		redNormal.ContentMarginTop = 8;
-		redNormal.ContentMarginBottom = 8;
-
-		var redHover = new StyleBoxFlat();
-		redHover.BgColor = new Color(0.25f, 0.20f, 0.20f, 0.95f);
-		redHover.BorderColor = new Color(0.75f, 0.25f, 0.25f);
-		redHover.SetBorderWidthAll(2);
-		redHover.CornerRadiusTopLeft = 4;
-		redHover.CornerRadiusTopRight = 4;
-		redHover.CornerRadiusBottomLeft = 4;
-		redHover.CornerRadiusBottomRight = 4;
-		redHover.ContentMarginLeft = 20;
-		redHover.ContentMarginRight = 20;
-		redHover.ContentMarginTop = 8;
-		redHover.ContentMarginBottom = 8;
-
-		var redPressed = new StyleBoxFlat();
-		redPressed.BgColor = new Color(0.16f, 0.13f, 0.13f, 0.95f);
-		redPressed.BorderColor = new Color(0.9f, 0.3f, 0.3f);
-		redPressed.SetBorderWidthAll(2);
-		redPressed.CornerRadiusTopLeft = 4;
-		redPressed.CornerRadiusTopRight = 4;
-		redPressed.CornerRadiusBottomLeft = 4;
-		redPressed.CornerRadiusBottomRight = 4;
-		redPressed.ContentMarginLeft = 20;
-		redPressed.ContentMarginRight = 20;
-		redPressed.ContentMarginTop = 8;
-		redPressed.ContentMarginBottom = 8;
-
-		_btnReportCopyright.AddThemeStyleboxOverride("normal", redNormal);
-		_btnReportCopyright.AddThemeStyleboxOverride("hover", redHover);
-		_btnReportCopyright.AddThemeStyleboxOverride("pressed", redPressed);
+		_btnReportCopyright.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		_btnReportCopyright.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		_btnReportCopyright.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
 		_btnReportCopyright.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
 

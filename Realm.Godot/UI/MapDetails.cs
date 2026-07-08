@@ -200,6 +200,31 @@ public partial class MapDetails : Control
 		_featuresPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		_statsPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 
+		var descVBox = _descriptionPanel.GetNode<VBoxContainer>("VBoxContainer");
+		var featuresVBox = _featuresPanel.GetNode<VBoxContainer>("VBoxContainer");
+		var statsVBox = _statsPanel.GetNode<VBoxContainer>("VBoxContainer");
+
+		var descWrapper = new PanelContainer();
+		descWrapper.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		descVBox.GetParent().AddChild(descWrapper);
+		descVBox.GetParent().MoveChild(descWrapper, descVBox.GetIndex());
+		descVBox.GetParent().RemoveChild(descVBox);
+		descWrapper.AddChild(descVBox);
+
+		var featuresWrapper = new PanelContainer();
+		featuresWrapper.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		featuresVBox.GetParent().AddChild(featuresWrapper);
+		featuresVBox.GetParent().MoveChild(featuresWrapper, featuresVBox.GetIndex());
+		featuresVBox.GetParent().RemoveChild(featuresVBox);
+		featuresWrapper.AddChild(featuresVBox);
+
+		var statsWrapper = new PanelContainer();
+		statsWrapper.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		statsVBox.GetParent().AddChild(statsWrapper);
+		statsVBox.GetParent().MoveChild(statsWrapper, statsVBox.GetIndex());
+		statsVBox.GetParent().RemoveChild(statsVBox);
+		statsWrapper.AddChild(statsVBox);
+
 		SetupPillarButton(_backButton, "◀ BACK", () => UIManager.Instance.TransitionTo(GameScreen.MapDiscovery));
 
 
@@ -403,12 +428,17 @@ public partial class MapDetails : Control
 
 		foreach (var awardPath in _mapData.Awards)
 		{
+			var badgePanel = new PanelContainer();
+			badgePanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+
 			var rect = new TextureRect();
 			rect.CustomMinimumSize = new Vector2(36, 36);
 			rect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 			rect.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
 			rect.Texture = GD.Load<Texture2D>(awardPath);
-			_awardsContainer.AddChild(rect);
+			
+			badgePanel.AddChild(rect);
+			_awardsContainer.AddChild(badgePanel);
 		}
 	}
 

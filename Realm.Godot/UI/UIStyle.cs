@@ -28,6 +28,20 @@ public static class UIStyle
 		return CreateBgTexture("res://Assets/UI/menu_background_with_frame.jpg");
 	}
 
+	public static StyleBox CreateBackdropPanel()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.05f, 0.05f, 0.05f, 0.6f);
+		style.CornerRadiusTopLeft = 4;
+		style.CornerRadiusTopRight = 4;
+		style.CornerRadiusBottomLeft = 4;
+		style.CornerRadiusBottomRight = 4;
+		style.ContentMarginLeft = 16;
+		style.ContentMarginRight = 16;
+		style.ContentMarginTop = 16;
+		style.ContentMarginBottom = 16;
+		return style;
+	}
 
 	public static StyleBox CreateStonePanel(bool isLight = false)
 	{
@@ -41,10 +55,10 @@ public static class UIStyle
 			style.TextureMarginTop = 32;
 			style.TextureMarginBottom = 32;
 			
-			style.ContentMarginLeft = 32;
-			style.ContentMarginRight = 32;
-			style.ContentMarginTop = 32;
-			style.ContentMarginBottom = 32;
+			style.ContentMarginLeft = 48;
+			style.ContentMarginRight = 48;
+			style.ContentMarginTop = 48;
+			style.ContentMarginBottom = 48;
 			
 			style.ModulateColor = new Color(0.9f, 0.9f, 0.93f, 0.95f); // Slightly lighter for sub-panels
 		}
@@ -55,10 +69,10 @@ public static class UIStyle
 			style.TextureMarginTop = 40;
 			style.TextureMarginBottom = 40;
 			
-			style.ContentMarginLeft = 40;
-			style.ContentMarginRight = 40;
-			style.ContentMarginTop = 40;
-			style.ContentMarginBottom = 40;
+			style.ContentMarginLeft = 56;
+			style.ContentMarginRight = 56;
+			style.ContentMarginTop = 56;
+			style.ContentMarginBottom = 56;
 			
 			style.ModulateColor = new Color(0.72f, 0.72f, 0.75f, 0.98f); // Darker base frame
 		}
@@ -239,9 +253,9 @@ public static class UIStyle
 		cb.AddThemeIconOverride("checked_disabled", checkedTex);
 		cb.AddThemeIconOverride("unchecked_disabled", uncheckedTex);
 		
-		cb.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		cb.AddThemeColorOverride("font_color", ColorGold);
 		cb.AddThemeColorOverride("font_hover_color", ColorGold);
-		cb.AddThemeColorOverride("font_pressed_color", new Color(0.9f, 0.9f, 0.95f));
+		cb.AddThemeColorOverride("font_pressed_color", ColorGold);
 		cb.AddThemeColorOverride("font_hover_pressed_color", ColorGold);
 		cb.AddThemeFontSizeOverride("font_size", 14);
 		cb.AddThemeConstantOverride("icon_max_width", 24);

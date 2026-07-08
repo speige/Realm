@@ -136,7 +136,8 @@ public partial class MainMenu : Control
 		button.AddThemeColorOverride("font_color", new Color(1.0f, 0.92f, 0.7f));
 		button.AddThemeColorOverride("font_hover_color", new Color(1.0f, 1.0f, 0.9f));
 		button.AddThemeColorOverride("font_pressed_color", new Color(0.8f, 0.7f, 0.4f));
-
+		button.AddThemeConstantOverride("outline_size", 4);
+		button.AddThemeColorOverride("font_outline_color", UIStyle.ColorCyanGlowDim);
 
 		var normalStyle = new StyleBoxTexture();
 		normalStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/play_button_stylized.png");

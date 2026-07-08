@@ -72,7 +72,7 @@ public partial class TimelineGraph : Control
 			
 
 			string labelVal = GetYLabel(yRatio);
-			DrawString(ThemeDB.FallbackFont, new Vector2(10, yPos + 5), labelVal, HorizontalAlignment.Left, -1, 12, new Color(0.6f, 0.6f, 0.6f));
+			DrawString(ThemeDB.FallbackFont, new Vector2(10, yPos + 5), labelVal, HorizontalAlignment.Left, -1, 16, new Color(0.8f, 0.8f, 0.8f));
 		}
 
 		int gridLinesX = 5;
@@ -86,13 +86,13 @@ public partial class TimelineGraph : Control
 
 
 			string xLabel = $"{(int)(xRatio * 35)}";
-			DrawString(ThemeDB.FallbackFont, new Vector2(xPos - 10, size.Y - 15), xLabel, HorizontalAlignment.Left, -1, 12, new Color(0.6f, 0.6f, 0.6f));
+			DrawString(ThemeDB.FallbackFont, new Vector2(xPos - 10, size.Y - 15), xLabel, HorizontalAlignment.Left, -1, 16, new Color(0.8f, 0.8f, 0.8f));
 		}
 
 
-		Color axisColor = new Color(0.4f, 0.4f, 0.45f, 0.8f);
-		DrawLine(graphOrigin, new Vector2(graphOrigin.X + graphSize.X, graphOrigin.Y), axisColor, 2.0f); // X axis
-		DrawLine(graphOrigin, new Vector2(graphOrigin.X, graphOrigin.Y - graphSize.Y), axisColor, 2.0f); // Y axis
+		Color axisColor = new Color(0.7f, 0.7f, 0.7f, 0.8f);
+		DrawLine(graphOrigin, new Vector2(graphOrigin.X + graphSize.X, graphOrigin.Y), axisColor, 3.0f); // X axis
+		DrawLine(graphOrigin, new Vector2(graphOrigin.X, graphOrigin.Y - graphSize.Y), axisColor, 3.0f); // Y axis
 
 
 		List<Vector2> p1Points = GetActiveData(true);

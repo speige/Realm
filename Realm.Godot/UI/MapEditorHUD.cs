@@ -306,6 +306,9 @@ public partial class MapEditorHUD : Control
 		_btnSave = GetNode<Button>("MiddleRightBox/BtnSave");
 		_btnUndo = GetNode<Button>("MiddleRightBox/HistoryHBox/BtnUndo");
 		_btnRedo = GetNode<Button>("MiddleRightBox/HistoryHBox/BtnRedo");
+		UIStyle.ApplyButtonText(_btnUndo, "↩️ UNDO", 13);
+		UIStyle.ApplyButtonText(_btnRedo, "↪️ REDO", 13);
+		
 		_btnDeleteObject = GetNode<Button>("RightPillar/VBox/BtnDeleteObject");
 		SetupButton(_btnDeleteObject, "❌ Erase Object", () => TriggerToolSelection(GameHost.EditorTool.DeleteObject, _btnDeleteObject), 11, "Delete units or props (0)");
 		_statusLabel = GetNode<Label>("TopBar/HBox/StatusLabel");
@@ -1109,9 +1112,11 @@ public partial class MapEditorHUD : Control
 		_btnEyedropper.Name = "BtnEyedropper";
 		_btnEyedropper.Set("icon_max_width", 0);
 		var rightVBox = GetNode<VBoxContainer>("RightPillar/VBox");
+		rightVBox.GetParent<Control>().AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		rightVBox.AddChild(_btnEyedropper);
 		rightVBox.MoveChild(_btnEyedropper, _btnDeleteObject.GetIndex());
 		SetupButton(_btnEyedropper, "🔍 EYEDROPPER", () => TriggerToolSelection(GameHost.EditorTool.Eyedropper, _btnEyedropper), 14, "Pick / sample entities, terrain height (Shift+Click), or vertex color under cursor (I)");
+		UIStyle.ApplyButtonText(_btnEyedropper, "🔍 EYEDROPPER", 13);
 
 		_optEyedropperMode = new OptionButton();
 		_optEyedropperMode.Name = "OptEyedropperMode";
@@ -3432,6 +3437,7 @@ public class {mapName} : IMapScript
 		_panelClipboard.AddChild(_btnEraseArea);
 
 		var topLeftBox = GetNode<HBoxContainer>("TopLeftBox");
+		topLeftBox.GetParent<Control>().AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		SafeReparent(_btnUndo, topLeftBox);
 		SafeReparent(_btnRedo, topLeftBox);
 		SafeReparent(_btnEyedropper, topLeftBox);

@@ -114,6 +114,14 @@ public partial class LobbyBrowser : Control
 		UIStyle.ApplyTitle(_filterTitle, "FILTER", 20);
 
 
+		var tableHeader = _lobbyPanel.GetNode<HBoxContainer>("VBoxContainer/TableHeader");
+		var headerWrapper = new PanelContainer();
+		headerWrapper.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		tableHeader.GetParent().AddChild(headerWrapper);
+		tableHeader.GetParent().MoveChild(headerWrapper, tableHeader.GetIndex());
+		tableHeader.GetParent().RemoveChild(tableHeader);
+		headerWrapper.AddChild(tableHeader);
+
 		foreach (var lbl in new[] { _mapCol, _modeCol, _playersCol, _pingCol })
 		{
 			lbl.AddThemeColorOverride("font_color", UIStyle.ColorGold);

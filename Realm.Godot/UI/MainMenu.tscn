@@ -101,7 +101,7 @@ theme_override_constants/separation = 16
 alignment = 1
 
 [node name="PlayButton" type="Button" parent="CentralPanel/VBoxContainer"]
-custom_minimumSize = Vector2(360, 80)
+custom_minimumSize = Vector2(500, 80)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
@@ -110,34 +110,34 @@ expand_icon = true
 icon_alignment = 0
 
 [node name="SinglePlayerButton" type="Button" parent="CentralPanel/VBoxContainer"]
-custom_minimumSize = Vector2(320, 64)
+custom_minimumSize = Vector2(480, 64)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
 
 [node name="MapDiscoveryButton" type="Button" parent="CentralPanel/VBoxContainer"]
-custom_minimumSize = Vector2(320, 64)
+custom_minimumSize = Vector2(480, 64)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
 icon = ExtResource("7_globe")
 
 [node name="MapEditorButton" type="Button" parent="CentralPanel/VBoxContainer"]
-custom_minimumSize = Vector2(320, 64)
+custom_minimumSize = Vector2(480, 64)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
 icon = ExtResource("8_scroll")
 
 [node name="ReplaysButton" type="Button" parent="CentralPanel/VBoxContainer"]
-custom_minimumSize = Vector2(320, 64)
+custom_minimumSize = Vector2(480, 64)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
 icon = ExtResource("8_scroll")
 
 [node name="QuitButton" type="Button" parent="."]
-custom_minimumSize = Vector2(240, 60)
+custom_minimumSize = Vector2(240, 80)
 layout_mode = 1
 anchors_preset = 3
 anchor_left = 1.0
@@ -145,7 +145,7 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = -380.0
-offset_top = -120.0
+offset_top = -140.0
 offset_right = -140.0
 offset_bottom = -60.0
 grow_horizontal = 0
@@ -212,29 +212,29 @@ size_flags_horizontal = 4
 focus_mode = 0
 
 [node name="SocialButton" type="Button" parent="."]
-custom_minimumSize = Vector2(60, 60)
+custom_minimumSize = Vector2(80, 80)
 layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 140.0
-offset_top = -120.0
-offset_right = 200.0
+offset_top = -140.0
+offset_right = 220.0
 offset_bottom = -60.0
 grow_vertical = 0
 focus_mode = 0
 icon = ExtResource("10_social")
 
 [node name="SettingsButton" type="Button" parent="."]
-custom_minimumSize = Vector2(60, 60)
+custom_minimumSize = Vector2(80, 80)
 layout_mode = 1
 anchors_preset = 3
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -110.0
-offset_top = -120.0
+offset_left = -140.0
+offset_top = -140.0
 offset_right = -50.0
 offset_bottom = -60.0
 grow_horizontal = 0
@@ -242,15 +242,15 @@ grow_vertical = 0
 focus_mode = 0
 
 [node name="ProfileButton" type="Button" parent="."]
-custom_minimumSize = Vector2(60, 60)
+custom_minimumSize = Vector2(80, 80)
 layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -80.0
+offset_left = -140.0
 offset_top = 20.0
 offset_right = -20.0
-offset_bottom = 80.0
+offset_bottom = 120.0
 grow_horizontal = 0
 focus_mode = 0
 icon = ExtResource("9_avatar")

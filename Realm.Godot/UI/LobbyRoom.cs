@@ -1414,7 +1414,7 @@ private void UpdateSelectedMapUI()
 	{
 		_spectatorDelayCheck = new CheckBox();
 		_spectatorDelayCheck.Text = Tr("Spectator Delay (5m)");
-		_spectatorDelayCheck.Position = new Vector2(1450, 760);
+		_spectatorDelayCheck.Position = new Vector2(1450, 770);
 		_spectatorDelayCheck.Size = new Vector2(340, 40);
 		_spectatorDelayCheck.ButtonPressed = LobbyManager.Instance.SpectatorDelay;
 		_spectatorDelayCheck.Disabled = !LobbyManager.Instance.IsHost;
@@ -1599,12 +1599,12 @@ private void UpdateSelectedMapUI()
 		_connectingPopup.AddChild(centerContainer);
 
 		var cardPanel = new Panel();
-		cardPanel.CustomMinimumSize = new Vector2(400, 150);
+		cardPanel.CustomMinimumSize = new Vector2(600, 250);
 		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		centerContainer.AddChild(cardPanel);
 
 		var vbox = new VBoxContainer();
-		vbox.CustomMinimumSize = new Vector2(360, 110);
+		vbox.CustomMinimumSize = new Vector2(560, 210);
 		vbox.Alignment = BoxContainer.AlignmentMode.Center;
 		cardPanel.AddChild(vbox);
 		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);

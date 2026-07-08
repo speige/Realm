@@ -31,7 +31,14 @@ public partial class LobbyCreate : Control
 		_createButton = GetNode<Button>("CentralPanel/ContentContainer/CreateButton");
 		_mapSelectButton = GetNode<OptionButton>("CentralPanel/ContentContainer/MapSelectButton");
 		_briefingPanel = GetNode<PanelContainer>("CentralPanel/ContentContainer/BriefingPanel");
-		_briefingText = GetNode<RichTextLabel>("CentralPanel/ContentContainer/BriefingPanel/BriefingText");
+		_briefingText = GetNode<RichTextLabel>("CentralPanel/ContentContainer/BriefingPanel/TextPanelWrapper/BriefingText");
+		
+		var textPanelWrapper = GetNode<PanelContainer>("CentralPanel/ContentContainer/BriefingPanel/TextPanelWrapper");
+		textPanelWrapper.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+
+		var mapThumbnail = GetNode<TextureRect>("CentralPanel/ContentContainer/BriefingPanel/MapThumbnail");
+		mapThumbnail.Texture = GD.Load<Texture2D>("res://Assets/UI/moonlit_castle.png");
+		mapThumbnail.Modulate = new Color(0.6f, 0.6f, 0.6f, 0.8f);
 
 		_titleLabel = GetNode<Label>("Title");
 		_mapSelectLabel = GetNode<Label>("CentralPanel/ContentContainer/MapSelectLabel");

@@ -66,8 +66,8 @@ public partial class MapDiscovery : Control
 
 		SetupPillarButton(_backButton, "◀ BACK", () => UIManager.Instance.TransitionTo(GameScreen.MainMenu));
 
-		_searchBar.AddThemeStyleboxOverride("normal", UIStyle.CreateTextInput(false));
-		_searchBar.AddThemeStyleboxOverride("focus", UIStyle.CreateTextInput(true));
+		_searchBar.AddThemeStyleboxOverride("normal", UIStyle.CreateDropdownStyle(false, false));
+		_searchBar.AddThemeStyleboxOverride("focus", UIStyle.CreateDropdownStyle(true, false));
 		_searchBar.PlaceholderText = "Search maps...";
 		_searchBar.Alignment = HorizontalAlignment.Center;
 		_searchBar.AddThemeFontSizeOverride("font_size", 14);
@@ -218,10 +218,15 @@ public partial class MapDiscovery : Control
 		hBox.AddChild(thumbnail);
 
 
+		var panelWrapper = new PanelContainer();
+		panelWrapper.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		panelWrapper.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		hBox.AddChild(panelWrapper);
+
 		var vBox = new VBoxContainer();
 		vBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		vBox.AddThemeConstantOverride("separation", 4);
-		hBox.AddChild(vBox);
+		panelWrapper.AddChild(vBox);
 
 
 		var title = new Label();
@@ -248,7 +253,7 @@ public partial class MapDiscovery : Control
 			starsStr += i < fullStars ? "★" : "☆";
 		}
 		starsLabel.Text = $"{starsStr} ({map.RatingStars}/5)";
-		starsLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		starsLabel.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
 		starsLabel.AddThemeFontSizeOverride("font_size", 15);
 		ratingBox.AddChild(starsLabel);
 
