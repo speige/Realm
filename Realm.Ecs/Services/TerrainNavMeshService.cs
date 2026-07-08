@@ -144,7 +144,6 @@ internal class TerrainNavMeshService
 			pars.polyAreas = new int[result.Mesh.npolys];
 			pars.polyFlags = new int[result.Mesh.npolys];
 
-			int blockedCount = 0;
 			Span<System.Numerics.Vector2> polyVerts = stackalloc System.Numerics.Vector2[12];
 			for (int i = 0; i < result.Mesh.npolys; i++)
 			{
@@ -178,7 +177,6 @@ internal class TerrainNavMeshService
 				if ((pathFlags & 16) != 0)
 				{
 					pars.polyFlags[i] = 0;
-					blockedCount++;
 				}
 				else
 				{
@@ -236,64 +234,5 @@ internal class TerrainNavMeshService
 		System.Numerics.Vector3 tangentX = System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(2.0f * state.Spacing, hr - hl, 0.0f));
 		System.Numerics.Vector3 tangentZ = System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(0.0f, hu - hd, 2.0f * state.Spacing));
 		return System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Cross(tangentZ, tangentX));
-	}
-
-	private bool PolygonIntersectsCircle(ReadOnlySpan<System.Numerics.Vector2> poly, int nv, System.Numerics.Vector2 circleCenter, float radius)
-	{
-		if (nv == 0)
-		{
-			return false;
-		}
-
-		bool inside = true;
-		int sign = 0;
-		for (int i = 0; i < nv; i++)
-		{
-			var a = poly[i];
-			var b = poly[(i + 1) % nv];
-			float cross = (b.X - a.X) * (circleCenter.Y - a.Y) - (b.Y - a.Y) * (circleCenter.X - a.X);
-			int currentSign = cross > 0 ? 1 : (cross < 0 ? -1 : 0);
-			if (currentSign != 0)
-			{
-				if (sign == 0)
-				{
-					sign = currentSign;
-				}
-				else if (sign != currentSign)
-				{
-					inside = false;
-				}
-			}
-		}
-		if (inside && sign != 0)
-		{
-			return true;
-		}
-
-		float radiusSq = radius * radius;
-		for (int i = 0; i < nv; i++)
-		{
-			var a = poly[i];
-			var b = poly[(i + 1) % nv];
-			float dx = b.X - a.X;
-			float dy = b.Y - a.Y;
-			float lenSq = dx * dx + dy * dy;
-			float t = 0f;
-			if (lenSq > 1e-6f)
-			{
-				t = ((circleCenter.X - a.X) * dx + (circleCenter.Y - a.Y) * dy) / lenSq;
-				t = Math.Clamp(t, 0f, 1f);
-			}
-			float closestX = a.X + t * dx;
-			float closestY = a.Y + t * dy;
-			float distSq = (circleCenter.X - closestX) * (circleCenter.X - closestX) + 
-			               (circleCenter.Y - closestY) * (circleCenter.Y - closestY);
-			if (distSq < radiusSq)
-			{
-				return true;
-			}
-		}
-
-		return false;
 	}
 }

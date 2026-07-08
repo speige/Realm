@@ -1,4 +1,4 @@
-﻿using Arch.Core;
+using Arch.Core;
 using Godot;
 using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Core;
@@ -11,7 +11,7 @@ using System;
 internal class UnitSpawnService
 {
 	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private World EcsWorld => _ecsWorldAccessor.Current;
 
 	public UnitSpawnService(WorldAccessor ecsWorldAccessor)
 	{
@@ -99,17 +99,17 @@ internal class UnitSpawnService
 
 	public Entity CreateEcsUnitEntity(string id, string name, float hp, float damage, float range, float armor, float speed, float scanRadius, bool isHero, float attackCooldown, int pathingFlags, Vector3 pos, Realm.Ecs.Common.PlayerEntity owner, Entity playerEntity, bool hasShieldsUpgrade, bool hasWeaponsUpgrade)
 	{
-		var entity = _ecsWorld.Create();
-		_ecsWorld.Add(entity, new DefinitionId(id));
-		_ecsWorld.Add(entity, new Name(name));
-		_ecsWorld.Add(entity, new Position(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));
-		_ecsWorld.Add(entity, new Owner(owner));
+		var entity = EcsWorld.Create();
+		EcsWorld.Add(entity, new DefinitionId(id));
+		EcsWorld.Add(entity, new Name(name));
+		EcsWorld.Add(entity, new Position(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));
+		EcsWorld.Add(entity, new Owner(owner));
 
 		if (isHero)
 		{
-			_ecsWorld.Add(entity, new Realm.Ecs.Components.Tags.Hero());
-			_ecsWorld.Add(entity, new Realm.Ecs.Components.Meta.Level(1));
-			_ecsWorld.Add(entity, new Realm.Ecs.Components.Meta.Experience(0f));
+			EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Hero());
+			EcsWorld.Add(entity, new Realm.Ecs.Components.Meta.Level(1));
+			EcsWorld.Add(entity, new Realm.Ecs.Components.Meta.Experience(0f));
 		}
 
 		bool isPlayer = owner.Value == playerEntity;
@@ -125,30 +125,30 @@ internal class UnitSpawnService
 			}
 		}
 
-		_ecsWorld.Add(entity, new Health(hp, hp));
+		EcsWorld.Add(entity, new Health(hp, hp));
 
 		if (damage > 0 || id == "priest")
 		{
-			_ecsWorld.Add(entity, new Attack(damage, range, attackCooldown));
+			EcsWorld.Add(entity, new Attack(damage, range, attackCooldown));
 		}
 
-		_ecsWorld.Add(entity, new Armor(armor));
-		_ecsWorld.Add(entity, new CollisionScale(1.0f));
-		_ecsWorld.Add(entity, new ScanRadius(scanRadius));
+		EcsWorld.Add(entity, new Armor(armor));
+		EcsWorld.Add(entity, new CollisionScale(1.0f));
+		EcsWorld.Add(entity, new ScanRadius(scanRadius));
 
 		if (speed > 0)
 		{
-			_ecsWorld.Add(entity, new MovementStats(speed, 20f, 10f));
-			_ecsWorld.Add(entity, new PathingFlags(pathingFlags));
-			_ecsWorld.Add(entity, new Realm.Ecs.Components.Tags.Movable());
-			_ecsWorld.Add(entity, new Inventory(1));
+			EcsWorld.Add(entity, new MovementStats(speed, 20f, 10f));
+			EcsWorld.Add(entity, new PathingFlags(pathingFlags));
+			EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Movable());
+			EcsWorld.Add(entity, new Inventory(1));
 		}
 		else
 		{
-			_ecsWorld.Add(entity, new Building());
+			EcsWorld.Add(entity, new Building());
 			if (id == "tower")
 			{
-				_ecsWorld.Add(entity, new TowerUpgradeLevel(1));
+				EcsWorld.Add(entity, new TowerUpgradeLevel(1));
 			}
 		}
 

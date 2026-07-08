@@ -10,7 +10,7 @@ using SkiaSharp;
 public class MapEditorTerrainImportService
 {
 	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private World EcsWorld => _ecsWorldAccessor.Current;
 
 	public MapEditorTerrainImportService(WorldAccessor ecsWorldAccessor)
 	{
@@ -28,7 +28,7 @@ public class MapEditorTerrainImportService
 		colors = null;
 		treePositions = new List<(float X, float Y, float Z, float Rot, float Scale)>();
 
-		if (!_ecsWorld.TryGet<TerrainState>(worldEntity, out var terrain))
+		if (!EcsWorld.TryGet<TerrainState>(worldEntity, out var terrain))
 		{
 			return false;
 		}

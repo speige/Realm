@@ -116,7 +116,7 @@ app.MapGet("/lobbies", (LobbyRegistry registry, GeoIpService geoIp, HttpContext 
 });
 
 
-app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry registry, PeerRegistry peerRegistry, GeoIpService geoIp, IHttpClientFactory httpClientFactory, HttpContext context) =>
+app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry registry, PeerRegistry registeredPeers, GeoIpService geoIp, IHttpClientFactory httpClientFactory, HttpContext context) =>
 {
 
     if (!string.IsNullOrEmpty(req.NatType) && req.NatType.Equals("Symmetric", StringComparison.OrdinalIgnoreCase))
@@ -149,7 +149,7 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
         Latitude = hostCoords.lat,
         Longitude = hostCoords.lon,
         LastHeartbeat = DateTime.UtcNow,
-        OriginServerUri = peerRegistry.SelfUrl,
+        OriginServerUri = registeredPeers.SelfUrl,
         HostToken = hostToken,
         HostPingBaseline = req.HostPingBaseline,
         LocalIP = req.LocalIP
@@ -161,7 +161,7 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
     _ = Task.Run(async () =>
     {
         using var httpClient = httpClientFactory.CreateClient();
-        foreach (var peerUrl in peerRegistry.PeerUrls)
+        foreach (var peerUrl in registeredPeers.PeerUrls)
         {
             try
             {
@@ -201,7 +201,7 @@ app.MapPost("/lobbies/propagate", (LobbyInfo propagatedLobby, LobbyRegistry regi
 });
 
 
-app.MapPost("/lobbies/heartbeat", async (HeartbeatRequest req, LobbyRegistry registry, PeerRegistry peerRegistry, IHttpClientFactory httpClientFactory) =>
+app.MapPost("/lobbies/heartbeat", async (HeartbeatRequest req, LobbyRegistry registry, PeerRegistry registeredPeers, IHttpClientFactory httpClientFactory) =>
 {
     if (registry.TryGet(req.LobbyId, out var lobby) && lobby != null)
     {
@@ -212,7 +212,7 @@ app.MapPost("/lobbies/heartbeat", async (HeartbeatRequest req, LobbyRegistry reg
         _ = Task.Run(async () =>
         {
             using var httpClient = httpClientFactory.CreateClient();
-            foreach (var peerUrl in peerRegistry.PeerUrls)
+            foreach (var peerUrl in registeredPeers.PeerUrls)
             {
                 try
                 {
@@ -235,7 +235,7 @@ app.MapPost("/lobbies/heartbeat", async (HeartbeatRequest req, LobbyRegistry reg
     return Results.NotFound(new { Message = "Lobby not found" });
 });
 
-app.MapPost("/lobbies/close", async (CloseLobbyRequest req, LobbyRegistry registry, PeerRegistry peerRegistry, IHttpClientFactory httpClientFactory) =>
+app.MapPost("/lobbies/close", async (CloseLobbyRequest req, LobbyRegistry registry, PeerRegistry registeredPeers, IHttpClientFactory httpClientFactory) =>
 {
     if (registry.TryGet(req.LobbyId, out var lobby) && lobby != null)
     {
@@ -249,13 +249,13 @@ app.MapPost("/lobbies/close", async (CloseLobbyRequest req, LobbyRegistry regist
                 {
                     await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Lobby closed by host", CancellationToken.None);
                 }
-                catch { }
+                catch { /* Ignore socket close errors */ }
             }
 
             _ = Task.Run(async () =>
             {
                 using var httpClient = httpClientFactory.CreateClient();
-                foreach (var peerUrl in peerRegistry.PeerUrls)
+                foreach (var peerUrl in registeredPeers.PeerUrls)
                 {
                     try
                     {
@@ -290,7 +290,7 @@ app.MapPost("/lobbies/propagate-close", async (CloseLobbyRequest req, LobbyRegis
                 {
                     await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Lobby closed by host", CancellationToken.None);
                 }
-                catch { }
+                catch { /* Ignore socket close errors */ }
             }
 
             return Results.Ok(new { Status = "Closed" });
@@ -397,7 +397,7 @@ app.Map("/lobbies/ws", async (HttpContext context, LobbyRegistry registry) =>
     }
 });
 
-app.MapGet("/auth/login", (string provider, int port, HttpContext context) =>
+app.MapGet("/auth/login", (string provider, int port) =>
 {
     var html = $$"""
     <!DOCTYPE html>
@@ -485,7 +485,7 @@ app.MapGet("/auth/login", (string provider, int port, HttpContext context) =>
     return Results.Content(html, "text/html");
 });
 
-app.MapGet("/auth/authorize", (string provider, int port, string username, HttpContext context) =>
+app.MapGet("/auth/authorize", (string provider, int port, string username) =>
 {
     var token = Guid.NewGuid().ToString("N");
     var callbackUrl = $"http://localhost:{port}/auth/callback/?username={Uri.EscapeDataString(username)}&token={token}&provider={provider}";
@@ -578,7 +578,7 @@ app.MapPost("/seeders/download", async (SeederDownloadRequest req, SeederRegistr
 });
 
 
-app.MapPost("/api/publish_map", (Realm.Lobby.Models.PublishMapRequest req, DataStoreService db, HttpContext context) =>
+app.MapPost("/api/publish_map", (PublishMapRequest req, DataStoreService db) =>
 {
     try {
         var mapDoc = JsonDocument.Parse(req.MapJson);
@@ -661,13 +661,13 @@ app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataSto
     if (file != null && file.Length > 0)
     {
         string archiveDir = ".data/assets";
-        if (!System.IO.Directory.Exists(archiveDir))
-            System.IO.Directory.CreateDirectory(archiveDir);
+        if (!Directory.Exists(archiveDir))
+            Directory.CreateDirectory(archiveDir);
             
-        string filePath = System.IO.Path.Combine(archiveDir, hash);
-        if (!System.IO.File.Exists(filePath))
+        string filePath = Path.Combine(archiveDir, hash);
+        if (!File.Exists(filePath))
         {
-            using var stream = new System.IO.FileStream(filePath, System.IO.FileMode.Create);
+            using var stream = new FileStream(filePath, FileMode.Create);
             await file.CopyToAsync(stream);
         }
     }

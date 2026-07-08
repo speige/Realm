@@ -199,7 +199,7 @@ public interface IUnit
     /// Retrieves all items currently in the unit's inventory.
     /// </summary>
     /// <returns>A collection of item identifiers.</returns>
-    System.Collections.Generic.IEnumerable<string> GetItems();
+    IEnumerable<string> GetItems();
 
     /// <summary>
     /// Adds a buff/status effect to the unit.

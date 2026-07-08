@@ -7,10 +7,12 @@ namespace Realm.Ecs.Services;
 /// </summary>
 internal class ArchetypeManager
 {
+	private readonly WorldAccessor _ecsWorldAccessor;
 	private readonly Dictionary<string, UnitArchetype> _unitArchetypes = new();
 
 	public ArchetypeManager(WorldAccessor ecsWorldAccessor, List<UnitArchetype> units, DefinitionManager definitionManager)
 	{
+		_ecsWorldAccessor = ecsWorldAccessor;
 		foreach (var archetype in units)
 		{
 			foreach (var cost in archetype.ResourceCosts)

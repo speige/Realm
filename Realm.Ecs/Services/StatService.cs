@@ -11,7 +11,7 @@ internal class StatService
 {
 	private readonly WorldAccessor _ecsWorldAccessor;
 
-	public StatService(WorldAccessor ecsWorldAccessor, DefinitionManager definitionManager)
+	public StatService(WorldAccessor ecsWorldAccessor)
 	{
 		_ecsWorldAccessor = ecsWorldAccessor;
 	}

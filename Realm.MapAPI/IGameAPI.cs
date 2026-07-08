@@ -158,32 +158,32 @@ public interface IGameAPI
     /// <summary>
     /// Triggered when a unit is spawned in the game world.
     /// </summary>
-    event System.Action<IUnit>? OnUnitCreated;
+    event Action<IUnit>? OnUnitCreated;
 
     /// <summary>
     /// Triggered when a unit dies. Passes the dying unit and the killer unit if available.
     /// </summary>
-    event System.Action<IUnit, IUnit?>? OnUnitDied;
+    event Action<IUnit, IUnit?>? OnUnitDied;
 
     /// <summary>
     /// Triggered when a unit takes damage. Passes the victim unit, the attacker unit, and the damage amount.
     /// </summary>
-    event System.Action<IUnit, IUnit, float>? OnUnitDamaged;
+    event Action<IUnit, IUnit, float>? OnUnitDamaged;
 
     /// <summary>
     /// Triggered when a unit casts or channels a spell. Passes the caster unit, the spell ID, and the target position.
     /// </summary>
-    event System.Action<IUnit?, string, Vector3>? OnSpellCast;
+    event Action<IUnit?, string, Vector3>? OnSpellCast;
 
     /// <summary>
     /// Triggered when a player types a chat message. Passes the message and the first selected unit if any.
     /// </summary>
-    event System.Action<string, IUnit?>? OnPlayerChatMessage;
+    event Action<string, IUnit?>? OnPlayerChatMessage;
 
     /// <summary>
     /// Triggered when the player selects a unit.
     /// </summary>
-    event System.Action<IUnit>? OnUnitSelected;
+    event Action<IUnit>? OnUnitSelected;
 
     /// <summary>
     /// Spawns floating text in the 3D world that drifts upwards and fades out.
@@ -369,7 +369,7 @@ public interface IGameAPI
     /// <param name="delay">Delay in seconds before the callback is invoked.</param>
     /// <param name="callback">The action to invoke when the timer expires.</param>
     /// <returns>A handle that can be passed to <see cref="CancelTimer"/> to cancel the timer before it fires.</returns>
-    int ScheduleTimer(float delay, System.Action callback);
+    int ScheduleTimer(float delay, Action callback);
 
     /// <summary>
     /// Schedules a repeating callback to fire every <paramref name="interval"/> seconds.
@@ -377,7 +377,7 @@ public interface IGameAPI
     /// <param name="interval">Interval in seconds between invocations.</param>
     /// <param name="callback">The action to invoke on each tick.</param>
     /// <returns>A handle that can be passed to <see cref="CancelTimer"/> to stop the repeating timer.</returns>
-    int ScheduleRepeatingTimer(float interval, System.Action callback);
+    int ScheduleRepeatingTimer(float interval, Action callback);
 
     /// <summary>
     /// Cancels a previously scheduled timer, preventing any future invocations.
@@ -458,7 +458,7 @@ public interface IGameAPI
     /// <param name="radius">The search radius.</param>
     /// <param name="filter">A predicate function that returns true for units to include.</param>
     /// <returns>A lazily-evaluated sequence of matching units.</returns>
-    IEnumerable<IUnit> GetUnitsInRadius(Vector3 center, float radius, System.Func<IUnit, bool> filter);
+    IEnumerable<IUnit> GetUnitsInRadius(Vector3 center, float radius, Func<IUnit, bool> filter);
 
     /// <summary>
     /// Retrieves all alive units owned by the specified player slot
@@ -467,7 +467,7 @@ public interface IGameAPI
     /// <param name="playerIndex">Zero-based player slot index.</param>
     /// <param name="filter">A predicate that returns true for units to include.</param>
     /// <returns>A lazily-evaluated sequence of matching units.</returns>
-    IEnumerable<IUnit> GetUnitsOwnedByPlayer(int playerIndex, System.Func<IUnit, bool> filter);
+    IEnumerable<IUnit> GetUnitsOwnedByPlayer(int playerIndex, Func<IUnit, bool> filter);
 
 
 
@@ -603,7 +603,7 @@ public interface IGameAPI
     /// </summary>
     /// <param name="playerIndex">Zero-based player slot index.</param>
     /// <param name="filter">Optional predicate; pass null to count all units.</param>
-    int CountUnitsOwnedByPlayer(int playerIndex, System.Func<IUnit, bool>? filter = null);
+    int CountUnitsOwnedByPlayer(int playerIndex, Func<IUnit, bool>? filter = null);
 
 
 
@@ -623,13 +623,13 @@ public interface IGameAPI
     /// The Y component is terrain height at that point.
     /// </summary>
     /// <param name="zoneHandle">Zone handle returned by <see cref="DefineZone"/>.</param>
-    System.Numerics.Vector3 GetZoneCenter(int zoneHandle);
+    Vector3 GetZoneCenter(int zoneHandle);
 
     /// <summary>
     /// Triggered whenever a unit enters the specified zone.
     /// The callback receives the unit that entered and the zone handle it entered.
     /// </summary>
-    event System.Action<IUnit, int>? OnUnitEnterZone;
+    event Action<IUnit, int>? OnUnitEnterZone;
 
 
 
@@ -664,7 +664,7 @@ public interface IGameAPI
     /// Triggered when a player leaves or disconnects from the game.
     /// The integer argument is the zero-based player slot index.
     /// </summary>
-    event System.Action<int>? OnPlayerLeft;
+    event Action<int>? OnPlayerLeft;
 
 
 
@@ -689,7 +689,7 @@ public interface IGameAPI
     /// </summary>
     /// <param name="unit">The unit to command.</param>
     /// <param name="destination">The destination in world coordinates.</param>
-    void IssueMoveOrder(IUnit unit, System.Numerics.Vector3 destination);
+    void IssueMoveOrder(IUnit unit, Vector3 destination);
 
 
 

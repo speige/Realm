@@ -58,6 +58,6 @@ public class DataStoreService : IDisposable
 
     public void Dispose()
     {
-        _engine?.Dispose();
+        _engine.Dispose();
     }
 }

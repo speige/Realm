@@ -12,7 +12,7 @@ using Realm.Ecs.Services;
 public class SaveLoadService
 {
 	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private World EcsWorld => _ecsWorldAccessor.Current;
 
 	public SaveLoadService(WorldAccessor ecsWorldAccessor)
 	{
@@ -30,64 +30,64 @@ public class SaveLoadService
 		{
 			Entity worldEntity = Entity.Null;
 			var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateQuery;
-			_ecsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
+			EcsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
 
 			if (worldEntity != Entity.Null)
 			{
-				if (_ecsWorld.Has<TerrainColorsState>(worldEntity))
+				if (EcsWorld.Has<TerrainColorsState>(worldEntity))
 				{
-					_ecsWorld.Set(worldEntity, new TerrainColorsState(htmlColors));
+					EcsWorld.Set(worldEntity, new TerrainColorsState(htmlColors));
 				}
 				else
 				{
-					_ecsWorld.Add(worldEntity, new TerrainColorsState(htmlColors));
+					EcsWorld.Add(worldEntity, new TerrainColorsState(htmlColors));
 				}
 			}
 
 			foreach (var u in unitsData)
 			{
-				if (_ecsWorld.IsAlive(u.Entity))
+				if (EcsWorld.IsAlive(u.Entity))
 				{
-					if (_ecsWorld.Has<RotationY>(u.Entity))
+					if (EcsWorld.Has<RotationY>(u.Entity))
 					{
-						_ecsWorld.Set(u.Entity, new RotationY(u.RotationY));
+						EcsWorld.Set(u.Entity, new RotationY(u.RotationY));
 					}
 					else
 					{
-						_ecsWorld.Add(u.Entity, new RotationY(u.RotationY));
+						EcsWorld.Add(u.Entity, new RotationY(u.RotationY));
 					}
 
-					if (_ecsWorld.Has<ModelScale>(u.Entity))
+					if (EcsWorld.Has<ModelScale>(u.Entity))
 					{
-						_ecsWorld.Set(u.Entity, new ModelScale(u.Scale));
+						EcsWorld.Set(u.Entity, new ModelScale(u.Scale));
 					}
 					else
 					{
-						_ecsWorld.Add(u.Entity, new ModelScale(u.Scale));
+						EcsWorld.Add(u.Entity, new ModelScale(u.Scale));
 					}
 				}
 			}
 
 			foreach (var p in propsData)
 			{
-				if (_ecsWorld.IsAlive(p.Entity))
+				if (EcsWorld.IsAlive(p.Entity))
 				{
-					if (_ecsWorld.Has<RotationY>(p.Entity))
+					if (EcsWorld.Has<RotationY>(p.Entity))
 					{
-						_ecsWorld.Set(p.Entity, new RotationY(p.RotationY));
+						EcsWorld.Set(p.Entity, new RotationY(p.RotationY));
 					}
 					else
 					{
-						_ecsWorld.Add(p.Entity, new RotationY(p.RotationY));
+						EcsWorld.Add(p.Entity, new RotationY(p.RotationY));
 					}
 
-					if (_ecsWorld.Has<ModelScale>(p.Entity))
+					if (EcsWorld.Has<ModelScale>(p.Entity))
 					{
-						_ecsWorld.Set(p.Entity, new ModelScale(p.Scale));
+						EcsWorld.Set(p.Entity, new ModelScale(p.Scale));
 					}
 					else
 					{
-						_ecsWorld.Add(p.Entity, new ModelScale(p.Scale));
+						EcsWorld.Add(p.Entity, new ModelScale(p.Scale));
 					}
 				}
 			}
@@ -95,11 +95,11 @@ public class SaveLoadService
 			var tempDecals = new List<Entity>();
 			foreach (var d in decalsData)
 			{
-				var ent = _ecsWorld.Create();
-				_ecsWorld.Add(ent, new DecalIdentity(d.DecalId));
-				_ecsWorld.Add(ent, new Position(d.Position));
-				_ecsWorld.Add(ent, new RotationY(d.RotationY));
-				_ecsWorld.Add(ent, new ModelScale(d.Scale));
+				var ent = EcsWorld.Create();
+				EcsWorld.Add(ent, new DecalIdentity(d.DecalId));
+				EcsWorld.Add(ent, new Position(d.Position));
+				EcsWorld.Add(ent, new RotationY(d.RotationY));
+				EcsWorld.Add(ent, new ModelScale(d.Scale));
 				tempDecals.Add(ent);
 			}
 
@@ -110,14 +110,14 @@ public class SaveLoadService
 			bool foundColors = false;
 
 			var worldQuery2 = Realm.Ecs.Common.QueryCache.AllTerrainStateAndEditorStateQuery;
-			_ecsWorld.Query(in worldQuery2, (Entity entity, ref TerrainState t, ref EditorState e) =>
+			EcsWorld.Query(in worldQuery2, (Entity entity, ref TerrainState t, ref EditorState e) =>
 			{
 				terrain = t;
 				editor = e;
 				foundWorld = true;
-				if (_ecsWorld.Has<TerrainColorsState>(entity))
+				if (EcsWorld.Has<TerrainColorsState>(entity))
 				{
-					colorsState = _ecsWorld.Get<TerrainColorsState>(entity);
+					colorsState = EcsWorld.Get<TerrainColorsState>(entity);
 					foundColors = true;
 				}
 			});
@@ -159,18 +159,18 @@ public class SaveLoadService
 
 			saveData.Units = new List<UnitSaveData>();
 			var unitQuery = Realm.Ecs.Common.QueryCache.AllDefinitionIdAndPositionAndOwnerQuery;
-			_ecsWorld.Query(in unitQuery, (Entity entity, ref DefinitionId defId, ref Position pos, ref Owner owner) =>
+			EcsWorld.Query(in unitQuery, (Entity entity, ref DefinitionId defId, ref Position pos, ref Owner owner) =>
 			{
 				float rotY = 0f;
-				if (_ecsWorld.Has<RotationY>(entity)) rotY = _ecsWorld.Get<RotationY>(entity).Value;
+				if (EcsWorld.Has<RotationY>(entity)) rotY = EcsWorld.Get<RotationY>(entity).Value;
 
 				float scale = 1f;
-				if (_ecsWorld.Has<ModelScale>(entity)) scale = _ecsWorld.Get<ModelScale>(entity).Value;
+				if (EcsWorld.Has<ModelScale>(entity)) scale = EcsWorld.Get<ModelScale>(entity).Value;
 
 				bool isEnemy = false;
-				if (_ecsWorld.IsAlive(owner.PlayerEntity.Value) && _ecsWorld.Has<Name>(owner.PlayerEntity.Value))
+				if (EcsWorld.IsAlive(owner.PlayerEntity.Value) && EcsWorld.Has<Name>(owner.PlayerEntity.Value))
 				{
-					isEnemy = _ecsWorld.Get<Name>(owner.PlayerEntity.Value).Value == "Enemy_AI";
+					isEnemy = EcsWorld.Get<Name>(owner.PlayerEntity.Value).Value == "Enemy_AI";
 				}
 
 				saveData.Units.Add(new UnitSaveData
@@ -187,13 +187,13 @@ public class SaveLoadService
 
 			saveData.Props = new List<PropSaveData>();
 			var propQuery = Realm.Ecs.Common.QueryCache.AllPropIdentityAndPositionQuery;
-			_ecsWorld.Query(in propQuery, (Entity entity, ref PropIdentity propId, ref Position pos) =>
+			EcsWorld.Query(in propQuery, (Entity entity, ref PropIdentity propId, ref Position pos) =>
 			{
 				float rotY = 0f;
-				if (_ecsWorld.Has<RotationY>(entity)) rotY = _ecsWorld.Get<RotationY>(entity).Value;
+				if (EcsWorld.Has<RotationY>(entity)) rotY = EcsWorld.Get<RotationY>(entity).Value;
 
 				float scale = 1f;
-				if (_ecsWorld.Has<ModelScale>(entity)) scale = _ecsWorld.Get<ModelScale>(entity).Value;
+				if (EcsWorld.Has<ModelScale>(entity)) scale = EcsWorld.Get<ModelScale>(entity).Value;
 
 				saveData.Props.Add(new PropSaveData
 				{
@@ -208,13 +208,13 @@ public class SaveLoadService
 
 			saveData.Decals = new List<DecalSaveData>();
 			var decalQuery = Realm.Ecs.Common.QueryCache.AllDecalIdentityAndPositionQuery;
-			_ecsWorld.Query(in decalQuery, (Entity entity, ref DecalIdentity decalId, ref Position pos) =>
+			EcsWorld.Query(in decalQuery, (Entity entity, ref DecalIdentity decalId, ref Position pos) =>
 			{
 				float rotY = 0f;
-				if (_ecsWorld.Has<RotationY>(entity)) rotY = _ecsWorld.Get<RotationY>(entity).Value;
+				if (EcsWorld.Has<RotationY>(entity)) rotY = EcsWorld.Get<RotationY>(entity).Value;
 
 				float scale = 1f;
-				if (_ecsWorld.Has<ModelScale>(entity)) scale = _ecsWorld.Get<ModelScale>(entity).Value;
+				if (EcsWorld.Has<ModelScale>(entity)) scale = EcsWorld.Get<ModelScale>(entity).Value;
 
 				saveData.Decals.Add(new DecalSaveData
 				{
@@ -232,9 +232,9 @@ public class SaveLoadService
 
 			foreach (var ent in tempDecals)
 			{
-				if (_ecsWorld.IsAlive(ent))
+				if (EcsWorld.IsAlive(ent))
 				{
-					_ecsWorld.Destroy(ent);
+					EcsWorld.Destroy(ent);
 				}
 			}
 
@@ -252,9 +252,9 @@ public class SaveLoadService
 					editor.MirrorMode
 				);
 
-				_ecsWorld.Query(in worldQuery2, (Entity entity, ref TerrainState t, ref EditorState e) =>
+				EcsWorld.Query(in worldQuery2, (Entity entity, ref TerrainState t, ref EditorState e) =>
 				{
-					_ecsWorld.Set(entity, updatedEditor);
+					EcsWorld.Set(entity, updatedEditor);
 				});
 			}
 
@@ -279,51 +279,51 @@ public class SaveLoadService
 
 			var unitQuery = Realm.Ecs.Common.QueryCache.AllDefinitionIdAndPositionAndOwnerQuery;
 			var unitsToDestroy = new List<Entity>();
-			_ecsWorld.Query(in unitQuery, (Entity entity) => unitsToDestroy.Add(entity));
-			foreach (var ent in unitsToDestroy) _ecsWorld.Destroy(ent);
+			EcsWorld.Query(in unitQuery, (Entity entity) => unitsToDestroy.Add(entity));
+			foreach (var ent in unitsToDestroy) EcsWorld.Destroy(ent);
 
 			var propQuery = Realm.Ecs.Common.QueryCache.AllPropIdentityAndPositionQuery;
 			var propsToDestroy = new List<Entity>();
-			_ecsWorld.Query(in propQuery, (Entity entity) => propsToDestroy.Add(entity));
-			foreach (var ent in propsToDestroy) _ecsWorld.Destroy(ent);
+			EcsWorld.Query(in propQuery, (Entity entity) => propsToDestroy.Add(entity));
+			foreach (var ent in propsToDestroy) EcsWorld.Destroy(ent);
 
 			var decalQuery = Realm.Ecs.Common.QueryCache.AllDecalIdentityAndPositionQuery;
 			var decalsToDestroy = new List<Entity>();
-			_ecsWorld.Query(in decalQuery, (Entity entity) => decalsToDestroy.Add(entity));
-			foreach (var ent in decalsToDestroy) _ecsWorld.Destroy(ent);
+			EcsWorld.Query(in decalQuery, (Entity entity) => decalsToDestroy.Add(entity));
+			foreach (var ent in decalsToDestroy) EcsWorld.Destroy(ent);
 
 			var req1 = Realm.Ecs.Common.QueryCache.AllUnitSpawnRequestQuery;
 			var req1List = new List<Entity>();
-			_ecsWorld.Query(in req1, (Entity entity) => req1List.Add(entity));
-			foreach (var ent in req1List) _ecsWorld.Destroy(ent);
+			EcsWorld.Query(in req1, (Entity entity) => req1List.Add(entity));
+			foreach (var ent in req1List) EcsWorld.Destroy(ent);
 
 			var req2 = Realm.Ecs.Common.QueryCache.AllPropSpawnRequestQuery;
 			var req2List = new List<Entity>();
-			_ecsWorld.Query(in req2, (Entity entity) => req2List.Add(entity));
-			foreach (var ent in req2List) _ecsWorld.Destroy(ent);
+			EcsWorld.Query(in req2, (Entity entity) => req2List.Add(entity));
+			foreach (var ent in req2List) EcsWorld.Destroy(ent);
 
 			var req3 = Realm.Ecs.Common.QueryCache.AllDecalSpawnRequestQuery;
 			var req3List = new List<Entity>();
-			_ecsWorld.Query(in req3, (Entity entity) => req3List.Add(entity));
-			foreach (var ent in req3List) _ecsWorld.Destroy(ent);
+			EcsWorld.Query(in req3, (Entity entity) => req3List.Add(entity));
+			foreach (var ent in req3List) EcsWorld.Destroy(ent);
 
 			Entity worldEntity = Entity.Null;
 			var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateQuery;
-			_ecsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
+			EcsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
 
 			if (worldEntity == Entity.Null)
 			{
-				worldEntity = _ecsWorld.Create();
+				worldEntity = EcsWorld.Create();
 			}
 
-			if (!_ecsWorld.Has<TerrainState>(worldEntity))
+			if (!EcsWorld.Has<TerrainState>(worldEntity))
 			{
-				_ecsWorld.Add(worldEntity, new TerrainState(126, 126, 2.0f, 5.0f / 2.5f / 10.0f, -2.0f, true, new float[126, 126], new int[126, 126], null, null));
+				EcsWorld.Add(worldEntity, new TerrainState(126, 126, 2.0f, 5.0f / 2.5f / 10.0f, -2.0f, true, new float[126, 126], new int[126, 126], null, null));
 			}
 
-			if (_ecsWorld.Has<TerrainState>(worldEntity))
+			if (EcsWorld.Has<TerrainState>(worldEntity))
 			{
-				ref var ts = ref _ecsWorld.Get<TerrainState>(worldEntity);
+				ref var ts = ref EcsWorld.Get<TerrainState>(worldEntity);
 				int width = ts.Width;
 				int depth = ts.Depth;
 
@@ -374,18 +374,18 @@ public class SaveLoadService
 					ts.WaterHeight = saveData.WaterHeight.Value;
 				}
 
-				_ecsWorld.Set(worldEntity, ts);
+				EcsWorld.Set(worldEntity, ts);
 			}
 
 			if (saveData.Colors != null)
 			{
-				if (_ecsWorld.Has<TerrainColorsState>(worldEntity))
+				if (EcsWorld.Has<TerrainColorsState>(worldEntity))
 				{
-					_ecsWorld.Set(worldEntity, new TerrainColorsState(saveData.Colors));
+					EcsWorld.Set(worldEntity, new TerrainColorsState(saveData.Colors));
 				}
 				else
 				{
-					_ecsWorld.Add(worldEntity, new TerrainColorsState(saveData.Colors));
+					EcsWorld.Add(worldEntity, new TerrainColorsState(saveData.Colors));
 				}
 			}
 
@@ -398,13 +398,13 @@ public class SaveLoadService
 			string skybox = saveData.SkyboxPath ?? "res://Assets/skybox_panoramic.jpg";
 
 			var newEditorState = new EditorState(isBlock, step, left, right, top, bottom, skybox, false);
-			if (_ecsWorld.Has<EditorState>(worldEntity))
+			if (EcsWorld.Has<EditorState>(worldEntity))
 			{
-				_ecsWorld.Set(worldEntity, newEditorState);
+				EcsWorld.Set(worldEntity, newEditorState);
 			}
 			else
 			{
-				_ecsWorld.Add(worldEntity, newEditorState);
+				EcsWorld.Add(worldEntity, newEditorState);
 			}
 
 			if (!terrainOnly)
@@ -413,8 +413,8 @@ public class SaveLoadService
 				{
 					foreach (var u in saveData.Units)
 					{
-						var reqEnt = _ecsWorld.Create();
-						_ecsWorld.Add(reqEnt, new UnitSpawnRequest(
+						var reqEnt = EcsWorld.Create();
+						EcsWorld.Add(reqEnt, new UnitSpawnRequest(
 							u.UnitId,
 							new System.Numerics.Vector3(u.PosX, u.PosY, u.PosZ),
 							u.RotationY,
@@ -428,8 +428,8 @@ public class SaveLoadService
 				{
 					foreach (var p in saveData.Props)
 					{
-						var reqEnt = _ecsWorld.Create();
-						_ecsWorld.Add(reqEnt, new PropSpawnRequest(
+						var reqEnt = EcsWorld.Create();
+						EcsWorld.Add(reqEnt, new PropSpawnRequest(
 							p.PropId,
 							new System.Numerics.Vector3(p.PosX, p.PosY, p.PosZ),
 							p.RotationY,
@@ -442,8 +442,8 @@ public class SaveLoadService
 				{
 					foreach (var d in saveData.Decals)
 					{
-						var reqEnt = _ecsWorld.Create();
-						_ecsWorld.Add(reqEnt, new DecalSpawnRequest(
+						var reqEnt = EcsWorld.Create();
+						EcsWorld.Add(reqEnt, new DecalSpawnRequest(
 							d.DecalId,
 							new System.Numerics.Vector3(d.PosX, d.PosY, d.PosZ),
 							d.RotationY,

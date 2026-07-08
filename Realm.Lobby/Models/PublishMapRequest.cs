@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace Realm.Lobby.Models;
 
 public class PublishMapRequest

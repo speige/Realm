@@ -1,4 +1,4 @@
-﻿using Arch.Core;
+using Arch.Core;
 using Realm.Ecs.Services;
 using Godot;
 using Realm.Ecs.Common;
@@ -9,7 +9,7 @@ using System;
 public class MapPropertiesLoader
 {
 	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private World EcsWorld => _ecsWorldAccessor.Current;
 
 	public MapPropertiesLoader(WorldAccessor ecsWorldAccessor)
 	{
@@ -37,29 +37,29 @@ public class MapPropertiesLoader
 			{
 				if (mapProps.TryGetProperty("CameraBoundsLeft", out var leftProp) && leftProp.ValueKind == System.Text.Json.JsonValueKind.Number)
 				{
-					_ecsWorld.Mutate<CameraState>(worldEntity, (ref CameraState s) => s.LimitLeft = (float)leftProp.GetDouble());
+					EcsWorld.Mutate<CameraState>(worldEntity, (ref CameraState s) => s.LimitLeft = (float)leftProp.GetDouble());
 				}
 				if (mapProps.TryGetProperty("CameraBoundsRight", out var rightProp) && rightProp.ValueKind == System.Text.Json.JsonValueKind.Number)
 				{
-					_ecsWorld.Mutate<CameraState>(worldEntity, (ref CameraState s) => s.LimitRight = (float)rightProp.GetDouble());
+					EcsWorld.Mutate<CameraState>(worldEntity, (ref CameraState s) => s.LimitRight = (float)rightProp.GetDouble());
 				}
 				if (mapProps.TryGetProperty("CameraBoundsTop", out var topProp) && topProp.ValueKind == System.Text.Json.JsonValueKind.Number)
 				{
-					_ecsWorld.Mutate<CameraState>(worldEntity, (ref CameraState s) => s.LimitTop = (float)topProp.GetDouble());
+					EcsWorld.Mutate<CameraState>(worldEntity, (ref CameraState s) => s.LimitTop = (float)topProp.GetDouble());
 				}
 				if (mapProps.TryGetProperty("CameraBoundsBottom", out var bottomProp) && bottomProp.ValueKind == System.Text.Json.JsonValueKind.Number)
 				{
-					_ecsWorld.Mutate<CameraState>(worldEntity, (ref CameraState s) => s.LimitBottom = (float)bottomProp.GetDouble());
+					EcsWorld.Mutate<CameraState>(worldEntity, (ref CameraState s) => s.LimitBottom = (float)bottomProp.GetDouble());
 				}
 				if (mapProps.TryGetProperty("FogOfWarType", out var fogTypeProp) && fogTypeProp.ValueKind == System.Text.Json.JsonValueKind.String)
 				{
 					string val = fogTypeProp.GetString() ?? "grey";
-					_ecsWorld.Mutate<FogAndWeatherState>(worldEntity, (ref FogAndWeatherState s) => s.FogOfWarType = val);
+					EcsWorld.Mutate<FogAndWeatherState>(worldEntity, (ref FogAndWeatherState s) => s.FogOfWarType = val);
 				}
 				if (mapProps.TryGetProperty("WeatherType", out var weatherProp) && weatherProp.ValueKind == System.Text.Json.JsonValueKind.String)
 				{
 					string val = weatherProp.GetString() ?? "clear";
-					_ecsWorld.Mutate<FogAndWeatherState>(worldEntity, (ref FogAndWeatherState s) => s.CurrentWeather = val);
+					EcsWorld.Mutate<FogAndWeatherState>(worldEntity, (ref FogAndWeatherState s) => s.CurrentWeather = val);
 				}
 			}
 		}

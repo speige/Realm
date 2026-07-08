@@ -12,7 +12,7 @@ using static Realm.Ecs.Common.ResourceConstants;
 internal class ResourceEconomyService
 {
 	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private World EcsWorld => _ecsWorldAccessor.Current;
 
 	private float _fDelta;
 
@@ -56,7 +56,7 @@ internal class ResourceEconomyService
 	{
 		_fDelta = delta;
 
-		_ecsWorld.Query(in _passiveIncomeQuery, _passiveIncomeQueryDelegate);
+		EcsWorld.Query(in _passiveIncomeQuery, _passiveIncomeQueryDelegate);
 		ProcessGatheringTicks();
 	}
 
@@ -64,7 +64,7 @@ internal class ResourceEconomyService
 	{
 		Entity worldEntity = Entity.Null;
 		var query = Realm.Ecs.Common.QueryCache.AllWorldStateQuery;
-		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
+		EcsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 		return worldEntity;
 	}
 
@@ -72,8 +72,8 @@ internal class ResourceEconomyService
 	{
 		var worldEntity = FindWorldEntity();
 		if (worldEntity == Entity.Null) return false;
-		var playerEntity = _ecsWorld.Get<NetworkMappingState>(worldEntity).PlayerEntity;
-		return _ecsWorld.GetFieldOrDefault<PlayerUpgrades, bool>(playerEntity, u => u.HarvestingUpgrade);
+		var playerEntity = EcsWorld.Get<NetworkMappingState>(worldEntity).PlayerEntity;
+		return EcsWorld.GetFieldOrDefault<PlayerUpgrades, bool>(playerEntity, u => u.HarvestingUpgrade);
 	}
 
 	private readonly Dictionary<Entity, Dictionary<ResourceId, float>> _accumulators = new();
@@ -85,9 +85,9 @@ internal class ResourceEconomyService
 		float stonePerSec = DefaultStonePerSec;
 
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && _ecsWorld.Has<NetworkMappingState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.Has<NetworkMappingState>(worldEntity))
 		{
-			var playerEntityForUpgrade = _ecsWorld.Get<NetworkMappingState>(worldEntity).PlayerEntity;
+			var playerEntityForUpgrade = EcsWorld.Get<NetworkMappingState>(worldEntity).PlayerEntity;
 			if (ent == playerEntityForUpgrade && GetHarvestingUpgrade())
 			{
 				goldPerSec *= HarvestingUpgradeMultiplier;
@@ -142,18 +142,18 @@ internal class ResourceEconomyService
 	private void ProcessGatheringTicks()
 	{
 		_tickGatherersToUpdate.Clear();
-		_ecsWorld.Query(in _gatherQuery, _gatherQueryDelegate);
+		EcsWorld.Query(in _gatherQuery, _gatherQueryDelegate);
 
 		foreach (var (worker, newState, dest) in _tickGatherersToUpdate)
 		{
-			if (_ecsWorld.IsAlive(worker))
+			if (EcsWorld.IsAlive(worker))
 			{
-				_ecsWorld.Set(worker, newState);
+				EcsWorld.Set(worker, newState);
 				if (dest.HasValue)
 				{
 					var moveTo = new MoveTo(dest.Value);
-					if (_ecsWorld.Has<MoveTo>(worker)) _ecsWorld.Set(worker, moveTo);
-					else _ecsWorld.Add(worker, moveTo);
+					if (EcsWorld.Has<MoveTo>(worker)) EcsWorld.Set(worker, moveTo);
+					else EcsWorld.Add(worker, moveTo);
 				}
 			}
 		}
@@ -164,7 +164,7 @@ internal class ResourceEconomyService
 		Entity closest = Entity.Null;
 		float closestDist = radius;
 		var query = Realm.Ecs.Common.QueryCache.AllPositionAndResourceNodeAndPropIdentityQuery;
-		_ecsWorld.Query(in query, (Entity entity, ref Position nodePos, ref PropIdentity identity) =>
+		EcsWorld.Query(in query, (Entity entity, ref Position nodePos, ref PropIdentity identity) =>
 		{
 			string pType = identity.PropId switch
 			{
@@ -196,10 +196,10 @@ internal class ResourceEconomyService
 			Entity nearestCastle = Entity.Null;
 			System.Numerics.Vector3 nearestCastlePos = System.Numerics.Vector3.Zero;
 			float nearestDist = float.MaxValue;
-			var wOwner = _ecsWorld.Get<Owner>(entity).PlayerEntity;
+			var wOwner = EcsWorld.Get<Owner>(entity).PlayerEntity;
 
 			var castleQuery = Realm.Ecs.Common.QueryCache.AllPositionAndDefinitionIdAndOwnerNoneDeadQuery;
-			_ecsWorld.Query(in castleQuery, (Entity castleEntity, ref Position castlePos, ref DefinitionId defId, ref Owner ownerComp) =>
+			EcsWorld.Query(in castleQuery, (Entity castleEntity, ref Position castlePos, ref DefinitionId defId, ref Owner ownerComp) =>
 			{
 				if (defId.Value == "castle" && ownerComp.PlayerEntity == wOwner)
 				{
@@ -226,10 +226,10 @@ internal class ResourceEconomyService
 			if (System.Numerics.Vector3.Distance(currentPos, nearestCastlePos) <= castleRadius)
 			{
 				float carry = gather.CarriedAmount;
-				var ownerEntity = _ecsWorld.Get<Owner>(entity).PlayerEntity.Value;
-				if (_ecsWorld.Has<PlayerResources>(ownerEntity))
+				var ownerEntity = EcsWorld.Get<Owner>(entity).PlayerEntity.Value;
+				if (EcsWorld.Has<PlayerResources>(ownerEntity))
 				{
-					ref var playerRes = ref _ecsWorld.Get<PlayerResources>(ownerEntity);
+					ref var playerRes = ref EcsWorld.Get<PlayerResources>(ownerEntity);
 					var resId = gather.ResourceType.AsResourceId(_definitionManagerRef);
 					if (playerRes.Value.ContainsKey(resId))
 					{
@@ -240,7 +240,7 @@ internal class ResourceEconomyService
 				var worldEntity = FindWorldEntity();
 				if (worldEntity != Entity.Null)
 				{
-					var playerEntityForAlert = _ecsWorld.Get<NetworkMappingState>(worldEntity).PlayerEntity;
+					var playerEntityForAlert = EcsWorld.Get<NetworkMappingState>(worldEntity).PlayerEntity;
 					if (ownerEntity == playerEntityForAlert)
 					{
 						OnResourceDepositedForPlayer?.Invoke(gather.ResourceType, carry);
@@ -248,14 +248,14 @@ internal class ResourceEconomyService
 				}
 
 				Entity targetNode = gather.TargetEntity;
-				bool nodeAlive = _ecsWorld.IsAlive(targetNode) && _ecsWorld.Has<Position>(targetNode);
+				bool nodeAlive = EcsWorld.IsAlive(targetNode) && EcsWorld.Has<Position>(targetNode);
 
 				if (nodeAlive)
 				{
 					var newState = gather;
 					newState.ReturningToBase = false;
 					newState.CarriedAmount = 0f;
-					var dest = _ecsWorld.Get<Position>(targetNode).Value;
+					var dest = EcsWorld.Get<Position>(targetNode).Value;
 					_tickGatherersToUpdate.Add((entity, newState, dest));
 				}
 				else
@@ -269,7 +269,7 @@ internal class ResourceEconomyService
 			}
 			else
 			{
-				if (!_ecsWorld.Has<MoveTo>(entity))
+				if (!EcsWorld.Has<MoveTo>(entity))
 				{
 					_tickGatherersToUpdate.Add((entity, gather, nearestCastlePos));
 				}
@@ -278,7 +278,7 @@ internal class ResourceEconomyService
 		else
 		{
 			Entity targetNode = gather.TargetEntity;
-			bool nodeAlive = _ecsWorld.IsAlive(targetNode) && _ecsWorld.Has<Position>(targetNode) && _ecsWorld.Has<ResourceNode>(targetNode);
+			bool nodeAlive = EcsWorld.IsAlive(targetNode) && EcsWorld.Has<Position>(targetNode) && EcsWorld.Has<ResourceNode>(targetNode);
 
 			if (!nodeAlive)
 			{
@@ -287,7 +287,7 @@ internal class ResourceEconomyService
 				{
 					var newState = gather;
 					newState.TargetEntity = alternate;
-					var dest = _ecsWorld.Get<Position>(alternate).Value;
+					var dest = EcsWorld.Get<Position>(alternate).Value;
 					_tickGatherersToUpdate.Add((entity, newState, dest));
 				}
 				else
@@ -297,12 +297,12 @@ internal class ResourceEconomyService
 				return;
 			}
 
-			var targetPos = _ecsWorld.Get<Position>(targetNode).Value;
+			var targetPos = EcsWorld.Get<Position>(targetNode).Value;
 			float dist = System.Numerics.Vector3.Distance(currentPos, targetPos);
 			float gatherRange = 3.5f;
 			if (dist <= gatherRange)
 			{
-				if (_ecsWorld.Has<MoveTo>(entity))
+				if (EcsWorld.Has<MoveTo>(entity))
 				{
 					OnStopGatheringMovementRequested?.Invoke(entity);
 				}
@@ -313,12 +313,12 @@ internal class ResourceEconomyService
 				var worldEntity = FindWorldEntity();
 				if (worldEntity != Entity.Null)
 				{
-					var enemyPlayerEntity = _ecsWorld.Get<NetworkMappingState>(worldEntity).EnemyPlayerEntity;
-					bool isEnemy = _ecsWorld.Get<Owner>(entity).PlayerEntity == enemyPlayerEntity.AsPlayerEntity(_ecsWorld);
+					var enemyPlayerEntity = EcsWorld.Get<NetworkMappingState>(worldEntity).EnemyPlayerEntity;
+					bool isEnemy = EcsWorld.Get<Owner>(entity).PlayerEntity == enemyPlayerEntity.AsPlayerEntity(EcsWorld);
 					if (!isEnemy && GetHarvestingUpgrade()) mineRate *= 1.5f;
 				}
 
-				ref var resNode = ref _ecsWorld.Get<ResourceNode>(targetNode);
+				ref var resNode = ref EcsWorld.Get<ResourceNode>(targetNode);
 				float nodeRemaining = resNode.Amount;
 				if (mineRate > nodeRemaining)
 				{
@@ -326,7 +326,7 @@ internal class ResourceEconomyService
 				}
 
 				resNode.Amount -= mineRate;
-				_ecsWorld.Set(targetNode, resNode);
+				EcsWorld.Set(targetNode, resNode);
 
 				newState.CarriedAmount = Math.Min(gather.MaxCapacity, gather.CarriedAmount + mineRate);
 
@@ -341,10 +341,10 @@ internal class ResourceEconomyService
 					Entity nearestCastle = Entity.Null;
 					System.Numerics.Vector3 nearestCastlePos = System.Numerics.Vector3.Zero;
 					float nearestDist = float.MaxValue;
-					var wOwner = _ecsWorld.Get<Owner>(entity).PlayerEntity;
+					var wOwner = EcsWorld.Get<Owner>(entity).PlayerEntity;
 
 					var castleQuery = Realm.Ecs.Common.QueryCache.AllPositionAndDefinitionIdAndOwnerNoneDeadQuery;
-					_ecsWorld.Query(in castleQuery, (Entity castleEntity, ref Position castlePos, ref DefinitionId defId, ref Owner ownerComp) =>
+					EcsWorld.Query(in castleQuery, (Entity castleEntity, ref Position castlePos, ref DefinitionId defId, ref Owner ownerComp) =>
 					{
 						if (defId.Value == "castle" && ownerComp.PlayerEntity == wOwner)
 						{
@@ -374,7 +374,7 @@ internal class ResourceEconomyService
 			}
 			else
 			{
-				if (!_ecsWorld.Has<MoveTo>(entity))
+				if (!EcsWorld.Has<MoveTo>(entity))
 				{
 					_tickGatherersToUpdate.Add((entity, gather, targetPos));
 				}

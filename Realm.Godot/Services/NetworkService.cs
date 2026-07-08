@@ -14,7 +14,7 @@ using System.Collections.Generic;
 public class NetworkService
 {
 	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private World EcsWorld => _ecsWorldAccessor.Current;
 
 	private readonly List<NetworkCommand> _unacknowledgedCommands = new();
 	private readonly List<WorldSnapshot> _queuedDeltas = new();
@@ -51,9 +51,9 @@ public class NetworkService
 	public int GetServerEntityId(int localEntityId)
 	{
 		Entity worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && _ecsWorld.Has<NetworkMappingState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.Has<NetworkMappingState>(worldEntity))
 		{
-			var mapping = _ecsWorld.Get<NetworkMappingState>(worldEntity);
+			var mapping = EcsWorld.Get<NetworkMappingState>(worldEntity);
 			if (mapping.ClientToServerEntityMap.TryGetValue(localEntityId, out int serverId))
 			{
 				return serverId;
@@ -100,11 +100,11 @@ public class NetworkService
 
 	public int GetOwnerPeerId(Entity unitEntity)
 	{
-		if (!_ecsWorld.Has<Owner>(unitEntity)) return -1;
-		var owner = _ecsWorld.Get<Owner>(unitEntity).PlayerEntity;
+		if (!EcsWorld.Has<Owner>(unitEntity)) return -1;
+		var owner = EcsWorld.Get<Owner>(unitEntity).PlayerEntity;
 		Entity worldEntity = FindWorldEntity();
-		if (worldEntity == Entity.Null || !_ecsWorld.Has<NetworkMappingState>(worldEntity)) return -1;
-		var mapping = _ecsWorld.Get<NetworkMappingState>(worldEntity);
+		if (worldEntity == Entity.Null || !EcsWorld.Has<NetworkMappingState>(worldEntity)) return -1;
+		var mapping = EcsWorld.Get<NetworkMappingState>(worldEntity);
 		foreach (var kvp in mapping.PeerIdToPlayerEntityMap)
 		{
 			if (kvp.Value == owner.Value)
@@ -117,11 +117,11 @@ public class NetworkService
 
 	public bool IsClientAuthorized(int peerId, Entity unitEntity)
 	{
-		if (!_ecsWorld.Has<Owner>(unitEntity)) return false;
-		var ownerComp = _ecsWorld.Get<Owner>(unitEntity);
+		if (!EcsWorld.Has<Owner>(unitEntity)) return false;
+		var ownerComp = EcsWorld.Get<Owner>(unitEntity);
 		Entity worldEntity = FindWorldEntity();
-		if (worldEntity == Entity.Null || !_ecsWorld.Has<NetworkMappingState>(worldEntity)) return false;
-		var mapping = _ecsWorld.Get<NetworkMappingState>(worldEntity);
+		if (worldEntity == Entity.Null || !EcsWorld.Has<NetworkMappingState>(worldEntity)) return false;
+		var mapping = EcsWorld.Get<NetworkMappingState>(worldEntity);
 		if (mapping.PeerIdToPlayerEntityMap.TryGetValue(peerId, out var playerEntity))
 		{
 			return ownerComp.PlayerEntity.Value == playerEntity;
@@ -131,7 +131,7 @@ public class NetworkService
 
 	public bool IsUnitVisibleToPlayer(Entity playerEntity, Entity unitEntity, List<Unit3D> allUnits)
 	{
-		if (_ecsWorld.Has<Owner>(unitEntity) && _ecsWorld.Get<Owner>(unitEntity).PlayerEntity.Value == playerEntity)
+		if (EcsWorld.Has<Owner>(unitEntity) && EcsWorld.Get<Owner>(unitEntity).PlayerEntity.Value == playerEntity)
 		{
 			return true;
 		}
@@ -146,7 +146,7 @@ public class NetworkService
 		}
 		foreach (var unit in allUnits)
 		{
-			if (_ecsWorld.Has<Owner>(unit.Entity) && _ecsWorld.Get<Owner>(unit.Entity).PlayerEntity.Value == playerEntity)
+			if (EcsWorld.Has<Owner>(unit.Entity) && EcsWorld.Get<Owner>(unit.Entity).PlayerEntity.Value == playerEntity)
 			{
 				if (unit.GlobalPosition.DistanceTo(unitPos) <= 15.0f)
 				{
@@ -179,10 +179,10 @@ public class NetworkService
 	{
 		int commandId = 1;
 		Entity worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && _ecsWorld.Has<NetworkState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.Has<NetworkState>(worldEntity))
 		{
-			commandId = _ecsWorld.Get<NetworkState>(worldEntity).NextCommandId;
-			ref var ns = ref _ecsWorld.Get<NetworkState>(worldEntity);
+			commandId = EcsWorld.Get<NetworkState>(worldEntity).NextCommandId;
+			ref var ns = ref EcsWorld.Get<NetworkState>(worldEntity);
 			ns.NextCommandId++;
 		}
 
@@ -223,8 +223,8 @@ public class NetworkService
 	public void RecordSnapshotReceived(byte[] payload)
 	{
 		Entity worldEntity = FindWorldEntity();
-		if (worldEntity == Entity.Null || !_ecsWorld.Has<NetworkState>(worldEntity)) return;
-		ref var ns = ref _ecsWorld.Get<NetworkState>(worldEntity);
+		if (worldEntity == Entity.Null || !EcsWorld.Has<NetworkState>(worldEntity)) return;
+		ref var ns = ref EcsWorld.Get<NetworkState>(worldEntity);
 		ns.LastSnapshotReceivedTime = Godot.Time.GetTicksMsec();
 		ProcessSnapshotDirect(payload);
 	}
@@ -233,9 +233,9 @@ public class NetworkService
 	{
 		var snapshot = MemoryPackSerializer.Deserialize<WorldSnapshot>(payload);
 		Entity worldEntity = FindWorldEntity();
-		if (worldEntity == Entity.Null || !_ecsWorld.Has<NetworkState>(worldEntity)) return;
+		if (worldEntity == Entity.Null || !EcsWorld.Has<NetworkState>(worldEntity)) return;
 
-		ref var networkState = ref _ecsWorld.Get<NetworkState>(worldEntity);
+		ref var networkState = ref EcsWorld.Get<NetworkState>(worldEntity);
 		if (snapshot.Sequence <= networkState.LastAppliedSnapshotSequence) return;
 		networkState.LastAppliedSnapshotSequence = snapshot.Sequence;
 
@@ -269,30 +269,30 @@ public class NetworkService
 	private void ApplyWorldSnapshot(WorldSnapshot snapshot)
 	{
 		Entity worldEntity = FindWorldEntity();
-		if (worldEntity == Entity.Null || !_ecsWorld.Has<NetworkMappingState>(worldEntity)) return;
-		var mapping = _ecsWorld.Get<NetworkMappingState>(worldEntity);
+		if (worldEntity == Entity.Null || !EcsWorld.Has<NetworkMappingState>(worldEntity)) return;
+		var mapping = EcsWorld.Get<NetworkMappingState>(worldEntity);
 
 		foreach (var snap in snapshot.Units)
 		{
 			if (mapping.ServerToClientEntityMap.TryGetValue(snap.EntityId, out var localEntity))
 			{
-				if (_ecsWorld.IsAlive(localEntity))
+				if (EcsWorld.IsAlive(localEntity))
 				{
 					if (snap.IsDead)
 					{
-						if (!_ecsWorld.Has<Dead>(localEntity))
+						if (!EcsWorld.Has<Dead>(localEntity))
 						{
-							_ecsWorld.Add<Dead>(localEntity);
+							EcsWorld.Add<Dead>(localEntity);
 							_pendingUnitKills.Add(localEntity);
 						}
 						continue;
 					}
-					if (_ecsWorld.Has<Health>(localEntity))
+					if (EcsWorld.Has<Health>(localEntity))
 					{
-						var hp = _ecsWorld.Get<Health>(localEntity);
+						var hp = EcsWorld.Get<Health>(localEntity);
 						hp.Current = snap.CurrentHp;
 						hp.Max = snap.MaxHp;
-						_ecsWorld.Set(localEntity, hp);
+						EcsWorld.Set(localEntity, hp);
 					}
 					var target = new InterpolationTarget
 					{
@@ -300,13 +300,13 @@ public class NetworkService
 						Velocity = snap.Velocity.ToNumerics(),
 						RotationY = snap.RotationY
 					};
-					if (_ecsWorld.Has<InterpolationTarget>(localEntity))
+					if (EcsWorld.Has<InterpolationTarget>(localEntity))
 					{
-						_ecsWorld.Set(localEntity, target);
+						EcsWorld.Set(localEntity, target);
 					}
 					else
 					{
-						_ecsWorld.Add(localEntity, target);
+						EcsWorld.Add(localEntity, target);
 					}
 					GD.Print($"[CLIENT_SNAPSHOT_APPLIED] Sequence={snapshot.Sequence} Unit={snap.EntityId} ServerPos={snap.Position.ToGodot()}");
 				}
@@ -346,9 +346,9 @@ public class NetworkService
 		}
 
 		Entity worldEntity = FindWorldEntity();
-		if (worldEntity == Entity.Null || !_ecsWorld.Has<NetworkMappingState>(worldEntity)) return Entity.Null;
+		if (worldEntity == Entity.Null || !EcsWorld.Has<NetworkMappingState>(worldEntity)) return Entity.Null;
 
-		ref var mapping = ref _ecsWorld.Get<NetworkMappingState>(worldEntity);
+		ref var mapping = ref EcsWorld.Get<NetworkMappingState>(worldEntity);
 
 		Entity ownerPlayerEntity = mapping.PlayerEntity;
 		if (mapping.PeerIdToPlayerEntityMap.TryGetValue(snap.OwnerPlayerEntityId, out var pe))
@@ -363,26 +363,26 @@ public class NetworkService
 		}
 		isEnemy = ArePeersEnemies(localPeerId, snap.OwnerPlayerEntityId);
 
-		var entity = _ecsWorld.Create();
-		_ecsWorld.Add(entity, new DefinitionId(snap.UnitId));
-		_ecsWorld.Add(entity, new Name(meta.Name));
-		_ecsWorld.Add(entity, new Position(snap.Position.ToNumerics()));
-		_ecsWorld.Add(entity, new Owner(ownerPlayerEntity.AsPlayerEntity(_ecsWorld)));
-		_ecsWorld.Add(entity, new Health(snap.CurrentHp, snap.MaxHp));
+		var entity = EcsWorld.Create();
+		EcsWorld.Add(entity, new DefinitionId(snap.UnitId));
+		EcsWorld.Add(entity, new Name(meta.Name));
+		EcsWorld.Add(entity, new Position(snap.Position.ToNumerics()));
+		EcsWorld.Add(entity, new Owner(ownerPlayerEntity.AsPlayerEntity(EcsWorld)));
+		EcsWorld.Add(entity, new Health(snap.CurrentHp, snap.MaxHp));
 		if (meta.Damage > 0 || snap.UnitId == "priest")
 		{
-			_ecsWorld.Add(entity, new Attack(meta.Damage, meta.Range, meta.AttackCooldown));
+			EcsWorld.Add(entity, new Attack(meta.Damage, meta.Range, meta.AttackCooldown));
 		}
-		_ecsWorld.Add(entity, new Armor(meta.Armor));
+		EcsWorld.Add(entity, new Armor(meta.Armor));
 		if (meta.Speed > 0)
 		{
-			_ecsWorld.Add(entity, new MovementStats(meta.Speed, 20f, 10f));
-			_ecsWorld.Add(entity, new Movable());
-			_ecsWorld.Add(entity, new Inventory(1));
+			EcsWorld.Add(entity, new MovementStats(meta.Speed, 20f, 10f));
+			EcsWorld.Add(entity, new Movable());
+			EcsWorld.Add(entity, new Inventory(1));
 		}
 		else
 		{
-			_ecsWorld.Add(entity, new Building());
+			EcsWorld.Add(entity, new Building());
 		}
 		var interpolationTarget = new InterpolationTarget
 		{
@@ -390,8 +390,8 @@ public class NetworkService
 			Velocity = snap.Velocity.ToNumerics(),
 			RotationY = snap.RotationY
 		};
-		_ecsWorld.Add(entity, interpolationTarget);
-		_ecsWorld.Add(entity, new UnitFaction(isEnemy));
+		EcsWorld.Add(entity, interpolationTarget);
+		EcsWorld.Add(entity, new UnitFaction(isEnemy));
 
 		mapping.ServerToClientEntityMap[snap.EntityId] = entity;
 		mapping.ClientToServerEntityMap[entity.Id] = snap.EntityId;
@@ -404,17 +404,17 @@ public class NetworkService
 	{
 		localEntity = Entity.Null;
 		Entity worldEntity = FindWorldEntity();
-		if (worldEntity == Entity.Null || !_ecsWorld.Has<NetworkMappingState>(worldEntity)) return false;
-		var mapping = _ecsWorld.Get<NetworkMappingState>(worldEntity);
+		if (worldEntity == Entity.Null || !EcsWorld.Has<NetworkMappingState>(worldEntity)) return false;
+		var mapping = EcsWorld.Get<NetworkMappingState>(worldEntity);
 		return mapping.ServerToClientEntityMap.TryGetValue(serverEntityId, out localEntity);
 	}
 
 	public void SetBackupResources(float gold, float wood, float stone)
 	{
 		var worldQuery = Realm.Ecs.Common.QueryCache.AllReplayStateQuery;
-		_ecsWorld.Query(in worldQuery, (Entity entity) =>
+		EcsWorld.Query(in worldQuery, (Entity entity) =>
 		{
-			ref var state = ref _ecsWorld.Get<ReplayState>(entity);
+			ref var state = ref EcsWorld.Get<ReplayState>(entity);
 			state.GoldBackup = gold;
 			state.WoodBackup = wood;
 			state.StoneBackup = stone;
@@ -469,9 +469,9 @@ public class NetworkService
 			{
 				var entity = FindServerEntity(serverId, allUnits);
 				if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
-				if (_ecsWorld.Has<Position>(entity))
+				if (EcsWorld.Has<Position>(entity))
 				{
-					groupCenter += _ecsWorld.Get<Position>(entity).Value;
+					groupCenter += EcsWorld.Get<Position>(entity).Value;
 					movableCount++;
 				}
 			}
@@ -504,8 +504,8 @@ public class NetworkService
 				var targetPos = new System.Numerics.Vector3(cmd.TargetPosition.X, cmd.TargetPosition.Y, cmd.TargetPosition.Z);
 				var scattered = targetPos + right * offsetX + moveDir * offsetZ;
 				var moveTo = new MoveTo(scattered);
-				if (_ecsWorld.Has<MoveTo>(entity)) _ecsWorld.Set(entity, moveTo);
-				else _ecsWorld.Add(entity, moveTo);
+				if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+				else EcsWorld.Add(entity, moveTo);
 				unitIndex++;
 			}
 		}
@@ -520,8 +520,8 @@ public class NetworkService
 					if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
 					ClearUnitOrders(entity);
 					var attackTarget = new AttackTarget(targetEntity);
-					if (_ecsWorld.Has<AttackTarget>(entity)) _ecsWorld.Set(entity, attackTarget);
-					else _ecsWorld.Add(entity, attackTarget);
+					if (EcsWorld.Has<AttackTarget>(entity)) EcsWorld.Set(entity, attackTarget);
+					else EcsWorld.Add(entity, attackTarget);
 				}
 			}
 		}
@@ -535,16 +535,16 @@ public class NetworkService
 					var entity = FindServerEntity(serverId, allUnits);
 					if (entity == Entity.Null || !IsClientAuthorized(peerId, entity) || entity == targetEntity) continue;
 					ClearUnitOrders(entity);
-					if (_ecsWorld.Has<DefinitionId>(entity) && _ecsWorld.Get<DefinitionId>(entity).Value == "priest")
+					if (EcsWorld.Has<DefinitionId>(entity) && EcsWorld.Get<DefinitionId>(entity).Value == "priest")
 					{
 						var healTarget = new HealingTarget(targetEntity);
-						_ecsWorld.Add(entity, healTarget);
+						EcsWorld.Add(entity, healTarget);
 					}
-					else if (_ecsWorld.Has<Movable>(entity))
+					else if (EcsWorld.Has<Movable>(entity))
 					{
 						var follow = new Realm.Ecs.Components.Movement.Follow(targetEntity);
-						if (_ecsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity)) _ecsWorld.Set(entity, follow);
-						else _ecsWorld.Add(entity, follow);
+						if (EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity)) EcsWorld.Set(entity, follow);
+						else EcsWorld.Add(entity, follow);
 					}
 				}
 			}
@@ -568,14 +568,14 @@ public class NetworkService
 					{
 						var entity = FindServerEntity(serverId, allUnits);
 						if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
-						if (_ecsWorld.Has<DefinitionId>(entity) && _ecsWorld.Get<DefinitionId>(entity).Value != "worker") continue;
+						if (EcsWorld.Has<DefinitionId>(entity) && EcsWorld.Get<DefinitionId>(entity).Value != "worker") continue;
 						ClearUnitOrders(entity);
 						var gatherer = new Gatherer(resType, prop.Entity);
-						if (_ecsWorld.Has<Gatherer>(entity)) _ecsWorld.Set(entity, gatherer);
-						else _ecsWorld.Add(entity, gatherer);
+						if (EcsWorld.Has<Gatherer>(entity)) EcsWorld.Set(entity, gatherer);
+						else EcsWorld.Add(entity, gatherer);
 						var moveTo = new MoveTo(new System.Numerics.Vector3(prop.GlobalPosition.X, prop.GlobalPosition.Y, prop.GlobalPosition.Z));
-						if (_ecsWorld.Has<MoveTo>(entity)) _ecsWorld.Set(entity, moveTo);
-						else _ecsWorld.Add(entity, moveTo);
+						if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+						else EcsWorld.Add(entity, moveTo);
 					}
 				}
 			}
@@ -598,9 +598,9 @@ public class NetworkService
 				if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
 				ClearUnitOrders(entity);
 				holdVelocityEntityIds.Add(serverId);
-				if (!_ecsWorld.Has<Realm.Ecs.Components.Movement.HoldPosition>(entity))
+				if (!EcsWorld.Has<Realm.Ecs.Components.Movement.HoldPosition>(entity))
 				{
-					_ecsWorld.Add<Realm.Ecs.Components.Movement.HoldPosition>(entity);
+					EcsWorld.Add<Realm.Ecs.Components.Movement.HoldPosition>(entity);
 				}
 			}
 		}
@@ -616,9 +616,9 @@ public class NetworkService
 			{
 				var entity = FindServerEntity(serverId, allUnits);
 				if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
-				if (_ecsWorld.Has<Position>(entity))
+				if (EcsWorld.Has<Position>(entity))
 				{
-					groupCenter += _ecsWorld.Get<Position>(entity).Value;
+					groupCenter += EcsWorld.Get<Position>(entity).Value;
 					movableCount++;
 				}
 			}
@@ -644,7 +644,7 @@ public class NetworkService
 				var entity = FindServerEntity(serverId, allUnits);
 				if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
 				ClearUnitOrders(entity);
-				if (_ecsWorld.Has<Movable>(entity))
+				if (EcsWorld.Has<Movable>(entity))
 				{
 					int row = unitIndex / cols;
 					int col = unitIndex % cols;
@@ -663,11 +663,11 @@ public class NetworkService
 					var targetPos = new System.Numerics.Vector3(cmd.TargetPosition.X, cmd.TargetPosition.Y, cmd.TargetPosition.Z);
 					var patrolB = targetPos + right * offsetX + moveDir * offsetZ;
 					var patrol = new Patrol(patrolA, patrolB);
-					if (_ecsWorld.Has<Patrol>(entity)) _ecsWorld.Set(entity, patrol);
-					else _ecsWorld.Add(entity, patrol);
+					if (EcsWorld.Has<Patrol>(entity)) EcsWorld.Set(entity, patrol);
+					else EcsWorld.Add(entity, patrol);
 					var moveTo = new MoveTo(patrolB);
-					if (_ecsWorld.Has<MoveTo>(entity)) _ecsWorld.Set(entity, moveTo);
-					else _ecsWorld.Add(entity, moveTo);
+					if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+					else EcsWorld.Add(entity, moveTo);
 					unitIndex++;
 				}
 			}
@@ -684,9 +684,9 @@ public class NetworkService
 			{
 				var entity = FindServerEntity(serverId, allUnits);
 				if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
-				if (_ecsWorld.Has<Position>(entity))
+				if (EcsWorld.Has<Position>(entity))
 				{
-					groupCenter += _ecsWorld.Get<Position>(entity).Value;
+					groupCenter += EcsWorld.Get<Position>(entity).Value;
 					movableCount++;
 				}
 			}
@@ -711,8 +711,8 @@ public class NetworkService
 			{
 				var entity = FindServerEntity(serverId, allUnits);
 				if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
-				if (!_ecsWorld.Has<Movable>(entity)) continue;
-				bool alreadyMoving = _ecsWorld.Has<MoveTo>(entity);
+				if (!EcsWorld.Has<Movable>(entity)) continue;
+				bool alreadyMoving = EcsWorld.Has<MoveTo>(entity);
 				if (!alreadyMoving) ClearUnitOrders(entity);
 				int row = unitIndex / cols;
 				int col = unitIndex % cols;
@@ -722,23 +722,23 @@ public class NetworkService
 				var scattered = targetPos + right * offsetX + moveDir * offsetZ;
 				if (alreadyMoving)
 				{
-					if (_ecsWorld.Has<WaypointQueue>(entity))
+					if (EcsWorld.Has<WaypointQueue>(entity))
 					{
-						var q = _ecsWorld.Get<WaypointQueue>(entity);
+						var q = EcsWorld.Get<WaypointQueue>(entity);
 						q.Add(scattered);
-						_ecsWorld.Set(entity, q);
+						EcsWorld.Set(entity, q);
 					}
 					else
 					{
 						var q = new WaypointQueue(scattered);
-						_ecsWorld.Add(entity, q);
+						EcsWorld.Add(entity, q);
 					}
 				}
 				else
 				{
 					var moveTo = new MoveTo(scattered);
-					if (_ecsWorld.Has<MoveTo>(entity)) _ecsWorld.Set(entity, moveTo);
-					else _ecsWorld.Add(entity, moveTo);
+					if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+					else EcsWorld.Add(entity, moveTo);
 				}
 				unitIndex++;
 			}
@@ -756,9 +756,9 @@ public class NetworkService
 				string unitId = cmd.ArgString;
 				if (GameHost.UnitRegistry.TryGetValue(unitId, out var meta))
 				{
-					var ownerComp = _ecsWorld.Get<Owner>(entity);
+					var ownerComp = EcsWorld.Get<Owner>(entity);
 					var ownerEntity = ownerComp.PlayerEntity.Value;
-					if (_ecsWorld.TryGet<PlayerResources>(ownerEntity, out var res))
+					if (EcsWorld.TryGet<PlayerResources>(ownerEntity, out var res))
 					{
 						int costGold = (int)meta.CostGold;
 						int costWood = (int)meta.CostWood;
@@ -770,13 +770,13 @@ public class NetworkService
 							res.Value[goldResourceId] -= costGold;
 							res.Value[woodResourceId] -= costWood;
 							res.Value[stoneResourceId] -= costStone;
-							_ecsWorld.Set(ownerEntity, res);
+							EcsWorld.Set(ownerEntity, res);
 
-							if (!_ecsWorld.Has<ProductionQueue>(entity))
+							if (!EcsWorld.Has<ProductionQueue>(entity))
 							{
-								_ecsWorld.Add(entity, new ProductionQueue());
+								EcsWorld.Add(entity, new ProductionQueue());
 							}
-							ref var prod = ref _ecsWorld.Get<ProductionQueue>(entity);
+							ref var prod = ref EcsWorld.Get<ProductionQueue>(entity);
 							prod.UnitIds.Add(unitId);
 							if (prod.UnitIds.Count == 1)
 							{
@@ -797,9 +797,9 @@ public class NetworkService
 			{
 				var entity = FindServerEntity(serverId, allUnits);
 				if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
-				if (!_ecsWorld.Has<ProductionQueue>(entity)) continue;
+				if (!EcsWorld.Has<ProductionQueue>(entity)) continue;
 
-				ref var prod = ref _ecsWorld.Get<ProductionQueue>(entity);
+				ref var prod = ref EcsWorld.Get<ProductionQueue>(entity);
 				int idx = cmd.TargetEntityId;
 				if (idx >= 0 && idx < prod.UnitIds.Count)
 				{
@@ -819,14 +819,14 @@ public class NetworkService
 					
 					if (GameHost.UnitRegistry.TryGetValue(unitId, out var regMeta))
 					{
-						var ownerComp = _ecsWorld.Get<Owner>(entity);
+						var ownerComp = EcsWorld.Get<Owner>(entity);
 						var ownerEntity = ownerComp.PlayerEntity.Value;
-						if (_ecsWorld.TryGet<PlayerResources>(ownerEntity, out var res))
+						if (EcsWorld.TryGet<PlayerResources>(ownerEntity, out var res))
 						{
 							res.Value[goldResourceId] += (int)regMeta.CostGold;
 							res.Value[woodResourceId] += (int)regMeta.CostWood;
 							res.Value[stoneResourceId] += (int)regMeta.CostStone;
-							_ecsWorld.Set(ownerEntity, res);
+							EcsWorld.Set(ownerEntity, res);
 						}
 					}
 				}
@@ -852,17 +852,17 @@ public class NetworkService
 	{
 		var results = new List<(int PeerId, byte[] Payload)>();
 		Entity worldEntity = FindWorldEntity();
-		if (worldEntity == Entity.Null || !_ecsWorld.Has<NetworkState>(worldEntity)) return results;
-		if (!_ecsWorld.Has<NetworkMappingState>(worldEntity)) return results;
+		if (worldEntity == Entity.Null || !EcsWorld.Has<NetworkState>(worldEntity)) return results;
+		if (!EcsWorld.Has<NetworkMappingState>(worldEntity)) return results;
 
-		ref var networkState = ref _ecsWorld.Get<NetworkState>(worldEntity);
+		ref var networkState = ref EcsWorld.Get<NetworkState>(worldEntity);
 		networkState.SnapshotSequence++;
 		int snapshotSequence = networkState.SnapshotSequence;
 		bool isBaseline = (snapshotSequence % 30 == 0);
 
 		if (LobbyManager.Instance == null) return results;
 
-		var mapping = _ecsWorld.Get<NetworkMappingState>(worldEntity);
+		var mapping = EcsWorld.Get<NetworkMappingState>(worldEntity);
 
 		foreach (var p in LobbyManager.Instance.PlayerList)
 		{
@@ -890,9 +890,9 @@ public class NetworkService
 					OwnerPlayerEntityId = GetOwnerPeerId(unit.Entity),
 					Position = new NetworkVector3(unit.GlobalPosition),
 					RotationY = unit.GlobalRotation.Y,
-					CurrentHp = _ecsWorld.Has<Health>(unit.Entity) ? _ecsWorld.Get<Health>(unit.Entity).Current : 0f,
-					MaxHp = _ecsWorld.Has<Health>(unit.Entity) ? _ecsWorld.Get<Health>(unit.Entity).Max : 0f,
-					IsDead = _ecsWorld.Has<Dead>(unit.Entity),
+					CurrentHp = EcsWorld.Has<Health>(unit.Entity) ? EcsWorld.Get<Health>(unit.Entity).Current : 0f,
+					MaxHp = EcsWorld.Has<Health>(unit.Entity) ? EcsWorld.Get<Health>(unit.Entity).Max : 0f,
+					IsDead = EcsWorld.Has<Dead>(unit.Entity),
 					IsBuilding = unit.IsBuilding,
 					IsDetailed = isDetailed,
 					Velocity = new NetworkVector3(unit.Velocity)
@@ -1043,23 +1043,23 @@ public class NetworkService
 
 	private void ClearUnitOrders(Entity entity)
 	{
-		if (_ecsWorld.Has<MoveTo>(entity)) _ecsWorld.Remove<MoveTo>(entity);
-		if (_ecsWorld.Has<PathFollow>(entity)) _ecsWorld.Remove<PathFollow>(entity);
-		if (_ecsWorld.Has<AttackTarget>(entity)) _ecsWorld.Remove<AttackTarget>(entity);
-		if (_ecsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(entity)) _ecsWorld.Remove<Realm.Ecs.Components.Movement.AttackMove>(entity);
-		if (_ecsWorld.Has<Realm.Ecs.Components.Movement.HoldPosition>(entity)) _ecsWorld.Remove<Realm.Ecs.Components.Movement.HoldPosition>(entity);
-		if (_ecsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity)) _ecsWorld.Remove<Realm.Ecs.Components.Movement.Follow>(entity);
-		if (_ecsWorld.Has<Patrol>(entity)) _ecsWorld.Remove<Patrol>(entity);
-		if (_ecsWorld.Has<HealingTarget>(entity)) _ecsWorld.Remove<HealingTarget>(entity);
-		if (_ecsWorld.Has<WaypointQueue>(entity)) _ecsWorld.Remove<WaypointQueue>(entity);
-		if (_ecsWorld.Has<Gatherer>(entity)) _ecsWorld.Remove<Gatherer>(entity);
+		if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Remove<MoveTo>(entity);
+		if (EcsWorld.Has<PathFollow>(entity)) EcsWorld.Remove<PathFollow>(entity);
+		if (EcsWorld.Has<AttackTarget>(entity)) EcsWorld.Remove<AttackTarget>(entity);
+		if (EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(entity)) EcsWorld.Remove<Realm.Ecs.Components.Movement.AttackMove>(entity);
+		if (EcsWorld.Has<Realm.Ecs.Components.Movement.HoldPosition>(entity)) EcsWorld.Remove<Realm.Ecs.Components.Movement.HoldPosition>(entity);
+		if (EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity)) EcsWorld.Remove<Realm.Ecs.Components.Movement.Follow>(entity);
+		if (EcsWorld.Has<Patrol>(entity)) EcsWorld.Remove<Patrol>(entity);
+		if (EcsWorld.Has<HealingTarget>(entity)) EcsWorld.Remove<HealingTarget>(entity);
+		if (EcsWorld.Has<WaypointQueue>(entity)) EcsWorld.Remove<WaypointQueue>(entity);
+		if (EcsWorld.Has<Gatherer>(entity)) EcsWorld.Remove<Gatherer>(entity);
 	}
 
 	private Entity FindWorldEntity()
 	{
 		Entity worldEntity = Entity.Null;
 		var query = Realm.Ecs.Common.QueryCache.AllNetworkStateQuery;
-		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
+		EcsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 		return worldEntity;
 	}
 
@@ -1071,16 +1071,16 @@ public class NetworkService
 		get
 		{
 			var worldEntity = FindWorldEntity();
-			return worldEntity != Entity.Null && _ecsWorld.Has<NetworkState>(worldEntity)
-				? _ecsWorld.Get<NetworkState>(worldEntity).LocalPeerId
+			return worldEntity != Entity.Null && EcsWorld.Has<NetworkState>(worldEntity)
+				? EcsWorld.Get<NetworkState>(worldEntity).LocalPeerId
 				: 1;
 		}
 		set
 		{
 			var worldEntity = FindWorldEntity();
-			if (worldEntity != Entity.Null && _ecsWorld.Has<NetworkState>(worldEntity))
+			if (worldEntity != Entity.Null && EcsWorld.Has<NetworkState>(worldEntity))
 			{
-				ref var state = ref _ecsWorld.Get<NetworkState>(worldEntity);
+				ref var state = ref EcsWorld.Get<NetworkState>(worldEntity);
 				state.LocalPeerId = value;
 			}
 		}
@@ -1091,16 +1091,16 @@ public class NetworkService
 		get
 		{
 			var worldEntity = FindWorldEntity();
-			return worldEntity != Entity.Null && _ecsWorld.Has<NetworkState>(worldEntity)
-				? _ecsWorld.Get<NetworkState>(worldEntity).CommandSendTimer
+			return worldEntity != Entity.Null && EcsWorld.Has<NetworkState>(worldEntity)
+				? EcsWorld.Get<NetworkState>(worldEntity).CommandSendTimer
 				: 0f;
 		}
 		set
 		{
 			var worldEntity = FindWorldEntity();
-			if (worldEntity != Entity.Null && _ecsWorld.Has<NetworkState>(worldEntity))
+			if (worldEntity != Entity.Null && EcsWorld.Has<NetworkState>(worldEntity))
 			{
-				ref var state = ref _ecsWorld.Get<NetworkState>(worldEntity);
+				ref var state = ref EcsWorld.Get<NetworkState>(worldEntity);
 				state.CommandSendTimer = value;
 			}
 		}
@@ -1111,16 +1111,16 @@ public class NetworkService
 		get
 		{
 			var worldEntity = FindWorldEntity();
-			return worldEntity != Entity.Null && _ecsWorld.Has<NetworkState>(worldEntity)
-				? _ecsWorld.Get<NetworkState>(worldEntity).LastSnapshotReceivedTime
+			return worldEntity != Entity.Null && EcsWorld.Has<NetworkState>(worldEntity)
+				? EcsWorld.Get<NetworkState>(worldEntity).LastSnapshotReceivedTime
 				: 0;
 		}
 		set
 		{
 			var worldEntity = FindWorldEntity();
-			if (worldEntity != Entity.Null && _ecsWorld.Has<NetworkState>(worldEntity))
+			if (worldEntity != Entity.Null && EcsWorld.Has<NetworkState>(worldEntity))
 			{
-				ref var state = ref _ecsWorld.Get<NetworkState>(worldEntity);
+				ref var state = ref EcsWorld.Get<NetworkState>(worldEntity);
 				state.LastSnapshotReceivedTime = value;
 			}
 		}

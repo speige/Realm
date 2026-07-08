@@ -1,9 +1,6 @@
 using NUnit.Framework;
-using System;
 using System.Numerics;
-using System.Collections.Generic;
 using Arch.Core;
-using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Tags;
@@ -64,9 +61,9 @@ namespace Realm.Ecs.Tests
             _movementService = new MovementAndPathfindingService(_worldAccessor, _worldEntity, _pathfinder);
         }
 
-        private Entity SpawnObstacle(Vector3 pos, float radius)
+        private void SpawnObstacle(Vector3 pos, float radius)
         {
-            return _world.Create(
+            _world.Create(
                 new Position(pos),
                 new CollisionRadius(radius),
                 new PropIdentity("rock")

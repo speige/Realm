@@ -10,7 +10,7 @@ internal class PlayerResourceService
 	private readonly ArchetypeManager _archetypeManager;
 	private readonly WorldAccessor _ecsWorldAccessor;
 
-	public PlayerResourceService(WorldAccessor ecsWorldAccessor, ArchetypeManager archetypeManager, DefinitionManager definitionManager)
+	public PlayerResourceService(WorldAccessor ecsWorldAccessor, ArchetypeManager archetypeManager)
 	{
 		_ecsWorldAccessor = ecsWorldAccessor;
 		_archetypeManager = archetypeManager;

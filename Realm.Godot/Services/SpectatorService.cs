@@ -1,4 +1,4 @@
-﻿using Arch.Core;
+using Arch.Core;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Services;
 using System;
@@ -6,7 +6,7 @@ using System;
 public class SpectatorService
 {
 	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private World EcsWorld => _ecsWorldAccessor.Current;
 
 	public SpectatorService(WorldAccessor ecsWorldAccessor)
 	{
@@ -17,16 +17,16 @@ public class SpectatorService
 	{
 		Entity worldEntity = Entity.Null;
 		var query = Realm.Ecs.Common.QueryCache.AllNetworkMappingStateQuery;
-		_ecsWorld.Query(in query, (Entity entity) => worldEntity = entity);
+		EcsWorld.Query(in query, (Entity entity) => worldEntity = entity);
 		return worldEntity;
 	}
 
 	public int GetSpectatorPerspective()
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && _ecsWorld.IsAlive(worldEntity) && _ecsWorld.Has<SpectatorPerspective>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<SpectatorPerspective>(worldEntity))
 		{
-			return _ecsWorld.Get<SpectatorPerspective>(worldEntity).Value;
+			return EcsWorld.Get<SpectatorPerspective>(worldEntity).Value;
 		}
 		return -1;
 	}
@@ -34,15 +34,15 @@ public class SpectatorService
 	public void SetSpectatorPerspective(int value)
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && _ecsWorld.IsAlive(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity))
 		{
-			if (_ecsWorld.Has<SpectatorPerspective>(worldEntity))
+			if (EcsWorld.Has<SpectatorPerspective>(worldEntity))
 			{
-				_ecsWorld.Set(worldEntity, new SpectatorPerspective(value));
+				EcsWorld.Set(worldEntity, new SpectatorPerspective(value));
 			}
 			else
 			{
-				_ecsWorld.Add(worldEntity, new SpectatorPerspective(value));
+				EcsWorld.Add(worldEntity, new SpectatorPerspective(value));
 			}
 		}
 	}

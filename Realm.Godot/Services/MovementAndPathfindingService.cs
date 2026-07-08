@@ -10,23 +10,23 @@ using System.Collections.Generic;
 internal class MovementAndPathfindingService
 {
 	private readonly WorldAccessor _ecsWorldAccessor;
-	private World _ecsWorld => _ecsWorldAccessor.Current;
+	private World EcsWorld => _ecsWorldAccessor.Current;
 	private readonly Entity _worldEntity;
 	private Entity _resolvedWorldEntity = Entity.Null;
 	private Entity ActiveWorldEntity
 	{
 		get
 		{
-			if (_resolvedWorldEntity == Entity.Null || !_ecsWorld.IsAlive(_resolvedWorldEntity))
+			if (_resolvedWorldEntity == Entity.Null || !EcsWorld.IsAlive(_resolvedWorldEntity))
 			{
-				if (_worldEntity != Entity.Null && _ecsWorld.IsAlive(_worldEntity))
+				if (_worldEntity != Entity.Null && EcsWorld.IsAlive(_worldEntity))
 				{
 					_resolvedWorldEntity = _worldEntity;
 				}
 				else
 				{
 					var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateQuery;
-					_ecsWorld.Query(in worldQuery, (Entity entity) => _resolvedWorldEntity = entity);
+					EcsWorld.Query(in worldQuery, entity => _resolvedWorldEntity = entity);
 				}
 			}
 			return _resolvedWorldEntity;
@@ -34,7 +34,7 @@ internal class MovementAndPathfindingService
 	}
 	private readonly NavMeshPathfinder _pathfinder;
 	private readonly TerrainNavMeshService _terrainNavMeshService;
-	private static readonly Random _random = new();
+	private static readonly Random Random = new();
 
 	private float _fDelta;
 	private const float CollisionCellSize = 10f;
@@ -47,7 +47,7 @@ internal class MovementAndPathfindingService
 
 	private readonly QueryDescription _movementQuery = Realm.Ecs.Common.QueryCache.AllPositionAndMoveToAndMovementStatsNoneDeadQuery;
 	private readonly QueryDescription _spatialQuery = Realm.Ecs.Common.QueryCache.AllPositionQuery;
-	private ForEachWithEntity<Position, MoveTo, MovementStats> _movementQueryDelegate = null!;
+	private ForEachWithEntity<Position, MoveTo, MovementStats> _movementQueryDelegate;
 
 	private TerrainState _currentTerrainState;
 	private bool _hasTerrainState;
@@ -66,40 +66,40 @@ internal class MovementAndPathfindingService
 		_fDelta = delta;
 		_tickArrivedUnits.Clear();
 
-		_hasTerrainState = _ecsWorld.IsAlive(ActiveWorldEntity) && _ecsWorld.Has<TerrainState>(ActiveWorldEntity);
+		_hasTerrainState = EcsWorld.IsAlive(ActiveWorldEntity) && EcsWorld.Has<TerrainState>(ActiveWorldEntity);
 		if (_hasTerrainState)
 		{
-			_currentTerrainState = _ecsWorld.Get<TerrainState>(ActiveWorldEntity);
+			_currentTerrainState = EcsWorld.Get<TerrainState>(ActiveWorldEntity);
 		}
 
 		RebuildSpatialGrid();
 
-		_ecsWorld.Query(in _movementQuery, _movementQueryDelegate);
+		EcsWorld.Query(in _movementQuery, _movementQueryDelegate);
 
 		foreach (var entity in _tickArrivedUnits)
 		{
-			if (_ecsWorld.IsAlive(entity) && _ecsWorld.Has<MoveTo>(entity))
+			if (EcsWorld.IsAlive(entity) && EcsWorld.Has<MoveTo>(entity))
 			{
-				if (_ecsWorld.Has<PathFollow>(entity))
+				if (EcsWorld.Has<PathFollow>(entity))
 				{
-					_ecsWorld.Remove<PathFollow>(entity);
+					EcsWorld.Remove<PathFollow>(entity);
 				}
-				if (_ecsWorld.Has<WaypointQueue>(entity))
+				if (EcsWorld.Has<WaypointQueue>(entity))
 				{
-					var q = _ecsWorld.Get<WaypointQueue>(entity);
+					var q = EcsWorld.Get<WaypointQueue>(entity);
 					if (q.Count > 0)
 					{
 						var nextWaypoint = q.Dequeue();
-						_ecsWorld.Set(entity, q);
-						_ecsWorld.Set(entity, new MoveTo(nextWaypoint));
+						EcsWorld.Set(entity, q);
+						EcsWorld.Set(entity, new MoveTo(nextWaypoint));
 						continue;
 					}
 					else
 					{
-						_ecsWorld.Remove<WaypointQueue>(entity);
+						EcsWorld.Remove<WaypointQueue>(entity);
 					}
 				}
-				_ecsWorld.Remove<MoveTo>(entity);
+				EcsWorld.Remove<MoveTo>(entity);
 			}
 		}
 	}
@@ -141,15 +141,15 @@ internal class MovementAndPathfindingService
 		}
 		_propGrid.Clear();
 
-		_ecsWorld.Query(in _spatialQuery, (Entity entity, ref Position p) =>
+		EcsWorld.Query(in _spatialQuery, (Entity entity, ref Position p) =>
 		{
-			if (_ecsWorld.Has<Dead>(entity)) return;
+			if (EcsWorld.Has<Dead>(entity)) return;
 
 			float x = p.Value.X;
 			float z = p.Value.Z;
 			long key = GetCellKey(x, z);
 
-			if (_ecsWorld.Has<DefinitionId>(entity))
+			if (EcsWorld.Has<DefinitionId>(entity))
 			{
 				if (!_unitGrid.TryGetValue(key, out var list))
 				{
@@ -158,7 +158,7 @@ internal class MovementAndPathfindingService
 				}
 				list.Add(entity);
 			}
-			else if (_ecsWorld.Has<PropIdentity>(entity))
+			else if (EcsWorld.Has<PropIdentity>(entity))
 			{
 				if (!_propGrid.TryGetValue(key, out var list))
 				{
@@ -172,26 +172,26 @@ internal class MovementAndPathfindingService
 
 	private void MovementQueryAction(Entity entity, ref Position pos, ref MoveTo moveTo, ref MovementStats stats)
 	{
-		if (_ecsWorld.Has<Realm.Ecs.Components.Core.Buffs>(entity) && _ecsWorld.Get<Realm.Ecs.Components.Core.Buffs>(entity).Value.ContainsKey("stun"))
+		if (EcsWorld.Has<Buffs>(entity) && EcsWorld.Get<Buffs>(entity).Value.ContainsKey("stun"))
 		{
-			if (_ecsWorld.Has<Velocity>(entity))
+			if (EcsWorld.Has<Velocity>(entity))
 			{
-				_ecsWorld.Set(entity, new Velocity(System.Numerics.Vector3.Zero));
+				EcsWorld.Set(entity, new Velocity(System.Numerics.Vector3.Zero));
 			}
 			return;
 		}
 
-		int includeFlags = _ecsWorld.Has<PathingFlags>(entity)
-			? _ecsWorld.Get<PathingFlags>(entity).Value
+		int includeFlags = EcsWorld.Has<PathingFlags>(entity)
+			? EcsWorld.Get<PathingFlags>(entity).Value
 			: 8;
 
 		ushort pathingFlags = (ushort)includeFlags;
 
 		PathFollow pf;
-		bool hasPf = _ecsWorld.Has<PathFollow>(entity);
+		bool hasPf = EcsWorld.Has<PathFollow>(entity);
 		if (hasPf)
 		{
-			pf = _ecsWorld.Get<PathFollow>(entity);
+			pf = EcsWorld.Get<PathFollow>(entity);
 		}
 		else
 		{
@@ -230,10 +230,10 @@ internal class MovementAndPathfindingService
 
 						if (!pf.IsJitterReplanned)
 						{
-							float offsetX1 = (float)(_random.NextDouble() * 0.4 - 0.2);
-							float offsetZ1 = (float)(_random.NextDouble() * 0.4 - 0.2);
-							float offsetX2 = (float)(_random.NextDouble() * 0.4 - 0.2);
-							float offsetZ2 = (float)(_random.NextDouble() * 0.4 - 0.2);
+							float offsetX1 = (float)(Random.NextDouble() * 0.4 - 0.2);
+							float offsetZ1 = (float)(Random.NextDouble() * 0.4 - 0.2);
+							float offsetX2 = (float)(Random.NextDouble() * 0.4 - 0.2);
+							float offsetZ2 = (float)(Random.NextDouble() * 0.4 - 0.2);
 							pathfindStart += new System.Numerics.Vector3(offsetX1, 0f, offsetZ1);
 							pathfindEnd += new System.Numerics.Vector3(offsetX2, 0f, offsetZ2);
 							pf.IsJitterReplanned = true;
@@ -282,19 +282,18 @@ internal class MovementAndPathfindingService
 			if (pf.CurrentWaypointIndex < pf.WaypointCount)
 			{
 				target = pf.Waypoints[pf.CurrentWaypointIndex];
-				dist = System.Numerics.Vector3.Distance(current, target);
 			}
 		}
 		if (pf.CurrentWaypointIndex >= pf.WaypointCount)
 		{
 			_tickArrivedUnits.Add(entity);
-			if (_ecsWorld.Has<Velocity>(entity))
+			if (EcsWorld.Has<Velocity>(entity))
 			{
-				_ecsWorld.Set(entity, new Velocity(System.Numerics.Vector3.Zero));
+				EcsWorld.Set(entity, new Velocity(System.Numerics.Vector3.Zero));
 			}
 			else
 			{
-				_ecsWorld.Add(entity, new Velocity(System.Numerics.Vector3.Zero));
+				EcsWorld.Add(entity, new Velocity(System.Numerics.Vector3.Zero));
 			}
 		}
 		else
@@ -318,16 +317,16 @@ internal class MovementAndPathfindingService
 						foreach (var other in list)
 						{
 							if (other == entity) continue;
-							if (!_ecsWorld.Has<Position>(other)) continue;
+							if (!EcsWorld.Has<Position>(other)) continue;
 
-							var otherPos = _ecsWorld.Get<Position>(other).Value;
+							var otherPos = EcsWorld.Get<Position>(other).Value;
 							float neighborDist = System.Numerics.Vector3.Distance(current, otherPos);
 							if (neighborDist > 0f && neighborDist < 8.0f)
 							{
 								cohesion += otherPos;
-								if (_ecsWorld.Has<Velocity>(other))
+								if (EcsWorld.Has<Velocity>(other))
 								{
-									alignment += _ecsWorld.Get<Velocity>(other).Value;
+									alignment += EcsWorld.Get<Velocity>(other).Value;
 								}
 								separation += System.Numerics.Vector3.Normalize(current - otherPos) / neighborDist;
 								neighborCount++;
@@ -358,9 +357,9 @@ internal class MovementAndPathfindingService
 			System.Numerics.Vector3 velocity = steering;
 			System.Numerics.Vector3 nextPos = current + velocity * _fDelta;
 
-			float r1 = _ecsWorld.Has<CollisionRadius>(entity) 
-				? _ecsWorld.Get<CollisionRadius>(entity).Value 
-				: (_ecsWorld.Has<CollisionScale>(entity) ? _ecsWorld.Get<CollisionScale>(entity).Value : 1.0f) * 1.2f;
+			float r1 = EcsWorld.Has<CollisionRadius>(entity) 
+				? EcsWorld.Get<CollisionRadius>(entity).Value 
+				: (EcsWorld.Has<CollisionScale>(entity) ? EcsWorld.Get<CollisionScale>(entity).Value : 1.0f) * 1.2f;
 
 			int baseCx = (int)Math.Floor(nextPos.X / CollisionCellSize);
 			int baseCz = (int)Math.Floor(nextPos.Z / CollisionCellSize);
@@ -376,12 +375,12 @@ internal class MovementAndPathfindingService
 						{
 							if (otherEntity == entity) continue;
 
-							float r2 = _ecsWorld.Has<CollisionRadius>(otherEntity) 
-								? _ecsWorld.Get<CollisionRadius>(otherEntity).Value 
-								: (_ecsWorld.Has<CollisionScale>(otherEntity) ? _ecsWorld.Get<CollisionScale>(otherEntity).Value : 1.0f) * 1.2f;
+							float r2 = EcsWorld.Has<CollisionRadius>(otherEntity) 
+								? EcsWorld.Get<CollisionRadius>(otherEntity).Value 
+								: (EcsWorld.Has<CollisionScale>(otherEntity) ? EcsWorld.Get<CollisionScale>(otherEntity).Value : 1.0f) * 1.2f;
 
 							float minDist = (r1 + r2) * 0.85f;
-							var otherPos = _ecsWorld.Get<Position>(otherEntity).Value;
+							var otherPos = EcsWorld.Get<Position>(otherEntity).Value;
 							float ox = nextPos.X - otherPos.X;
 							float oz = nextPos.Z - otherPos.Z;
 							float distSq = ox * ox + oz * oz;
@@ -415,12 +414,12 @@ internal class MovementAndPathfindingService
 					{
 						foreach (var propEntity in list)
 						{
-							float r2 = _ecsWorld.Has<CollisionRadius>(propEntity) 
-								? _ecsWorld.Get<CollisionRadius>(propEntity).Value 
-								: (_ecsWorld.Has<CollisionScale>(propEntity) ? _ecsWorld.Get<CollisionScale>(propEntity).Value : 1.0f) * 1.5f;
+							float r2 = EcsWorld.Has<CollisionRadius>(propEntity) 
+								? EcsWorld.Get<CollisionRadius>(propEntity).Value 
+								: (EcsWorld.Has<CollisionScale>(propEntity) ? EcsWorld.Get<CollisionScale>(propEntity).Value : 1.0f) * 1.5f;
 
 							float minDist = (r1 + r2) * 0.85f;
-							var propPos = _ecsWorld.Get<Position>(propEntity).Value;
+							var propPos = EcsWorld.Get<Position>(propEntity).Value;
 							float ox = nextPos.X - propPos.X;
 							float oz = nextPos.Z - propPos.Z;
 							float distSq = ox * ox + oz * oz;
@@ -446,30 +445,29 @@ internal class MovementAndPathfindingService
 			}
 
 			float groundHeight = nextPos.Y;
-			System.Numerics.Vector3 normal = System.Numerics.Vector3.UnitY;
 			if (_hasTerrainState)
 			{
-				_terrainNavMeshService.GetHeightAndNormal(in _currentTerrainState, nextPos.X, nextPos.Z, out groundHeight, out normal);
+				_terrainNavMeshService.GetHeightAndNormal(in _currentTerrainState, nextPos.X, nextPos.Z, out groundHeight, out _);
 			}
 			nextPos.Y = groundHeight;
 			pos.Value = nextPos;
-			if (_ecsWorld.Has<Velocity>(entity))
+			if (EcsWorld.Has<Velocity>(entity))
 			{
-				_ecsWorld.Set(entity, new Velocity(velocity));
+				EcsWorld.Set(entity, new Velocity(velocity));
 			}
 			else
 			{
-				_ecsWorld.Add(entity, new Velocity(velocity));
+				EcsWorld.Add(entity, new Velocity(velocity));
 			}
 		}
 
 		if (hasPf)
 		{
-			_ecsWorld.Set(entity, pf);
+			EcsWorld.Set(entity, pf);
 		}
 		else
 		{
-			_ecsWorld.Add(entity, pf);
+			EcsWorld.Add(entity, pf);
 		}
 	}
 }

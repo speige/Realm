@@ -1,10 +1,9 @@
-using Arch.Core;
 using System;
 using Microsoft.Extensions.DependencyInjection;
 
 public static class ServiceLocator
 {
-	private static IServiceProvider _provider;
+	private static IServiceProvider? _provider;
 
 	public static void Initialize(IServiceProvider provider)
 	{

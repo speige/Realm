@@ -9,12 +9,14 @@ namespace Realm.Ecs.Services;
 /// </summary>
 internal class DefinitionManager
 {
+	private readonly WorldAccessor _ecsWorldAccessor;
 	private readonly Dictionary<string, (ResourceDefinition Definition, Type ComponentType)> _resources = new();
 	private readonly Dictionary<string, (StatDefinition Definition, Type ComponentType)> _stats = new();
 	private readonly Dictionary<string, (TagDefinition Definition, Type ComponentType)> _tags = new();
 
 	public DefinitionManager(WorldAccessor ecsWorldAccessor)
 	{
+		_ecsWorldAccessor = ecsWorldAccessor;
 		var assembly = Assembly.GetExecutingAssembly();
 
 		LoadDefinitions<TagDefinitionAttribute, TagDefinition>(assembly, _tags);
