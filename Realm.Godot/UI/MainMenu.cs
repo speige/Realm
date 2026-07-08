@@ -93,15 +93,15 @@ public partial class MainMenu : Control
 		};
 
 
-		_socialButton.AddThemeConstantOverride("icon_max_width", 28);
-		_discordButton.AddThemeConstantOverride("icon_max_width", 28);
-		_mapDiscoveryButton.AddThemeConstantOverride("icon_max_width", 28);
-		_mapEditorButton.AddThemeConstantOverride("icon_max_width", 28);
-		_replaysButton.AddThemeConstantOverride("icon_max_width", 28);
-		_donateButton.AddThemeConstantOverride("icon_max_width", 28);
-		_contributeButton.AddThemeConstantOverride("icon_max_width", 28);
-		_bugReportButton.AddThemeConstantOverride("icon_max_width", 0);
-		_seedNodeButton.AddThemeConstantOverride("icon_max_width", 0);
+		_socialButton.AddThemeConstantOverride("icon_max_width", 32);
+		_discordButton.AddThemeConstantOverride("icon_max_width", 36);
+		_mapDiscoveryButton.AddThemeConstantOverride("icon_max_width", 36);
+		_mapEditorButton.AddThemeConstantOverride("icon_max_width", 36);
+		_replaysButton.AddThemeConstantOverride("icon_max_width", 36);
+		_donateButton.AddThemeConstantOverride("icon_max_width", 36);
+		_contributeButton.AddThemeConstantOverride("icon_max_width", 36);
+		_bugReportButton.AddThemeConstantOverride("icon_max_width", 36);
+		_seedNodeButton.AddThemeConstantOverride("icon_max_width", 36);
 
 
 		PopulateRunicPillar(GetNode<VBoxContainer>("LeftPillar/RuneContainer"));
@@ -111,7 +111,7 @@ public partial class MainMenu : Control
 	private void SetupButton(Button button, string text, Action onClick)
 	{
 		button.Flat = false;
-		UIStyle.ApplyButtonText(button, text, 18);
+		UIStyle.ApplyButtonText(button, text, 20);
 		
 
 		button.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
@@ -246,13 +246,14 @@ public partial class MainMenu : Control
 		gearIcon.Texture = GD.Load<Texture2D>("res://Assets/UI/gear_icon.png");
 		gearIcon.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		gearIcon.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
-		gearIcon.CustomMinimumSize = new Vector2(28, 28);
-		gearIcon.Size = new Vector2(28, 28);
+		gearIcon.CustomMinimumSize = new Vector2(32, 32);
+		gearIcon.Size = new Vector2(32, 32);
 		gearIcon.MouseFilter = Control.MouseFilterEnum.Ignore;
-		gearIcon.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
-		gearIcon.PivotOffset = new Vector2(14, 14);
+		gearIcon.PivotOffset = new Vector2(16, 16);
 		gearIcon.Modulate = UIStyle.ColorGoldDull;
+		
 		button.AddChild(gearIcon);
+		gearIcon.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
 
 		Tween rotationTween = null;
 

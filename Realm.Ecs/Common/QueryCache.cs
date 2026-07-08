@@ -58,4 +58,5 @@ public static class QueryCache
     public static readonly QueryDescription AllPositionQuery = new QueryDescription().WithAll<Position>();
     public static readonly QueryDescription AllPropIdentityAndPositionQuery = new QueryDescription().WithAll<PropIdentity, Position>();
     public static readonly QueryDescription AllDecalIdentityAndPositionQuery = new QueryDescription().WithAll<DecalIdentity, Position>();
+    public static readonly QueryDescription AllPositionAndCollisionRadiusQuery = new QueryDescription().WithAll<Position, CollisionRadius>();
 }

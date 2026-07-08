@@ -23,6 +23,8 @@ public partial class UIManager : Control
 	private GameScreen _targetScreen;
 	private bool _isVictory = true; // State passed to Game Over screen
 	private bool _transitionInProgress = false;
+	private GameScreen? _queuedScreen;
+	private bool _queuedIsVictory;
 
 	private MapData _selectedMapData;
 
@@ -174,6 +176,8 @@ public partial class UIManager : Control
 
 		if (_transitionInProgress)
 		{
+			_queuedScreen = screen;
+			_queuedIsVictory = isVictory;
 			return;
 		}
 
@@ -378,6 +382,13 @@ public partial class UIManager : Control
 		{
 			_fadeOverlay.MouseFilter = MouseFilterEnum.Ignore; // Allow clicks again
 			_transitionInProgress = false;
+			if (_queuedScreen.HasValue)
+			{
+				GameScreen next = _queuedScreen.Value;
+				bool vic = _queuedIsVictory;
+				_queuedScreen = null;
+				TransitionTo(next, vic);
+			}
 		};
 	}
 

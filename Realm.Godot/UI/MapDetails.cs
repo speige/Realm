@@ -243,15 +243,17 @@ public partial class MapDetails : Control
 		_texLeftPeek.Modulate = new Color(0.3f, 0.3f, 0.3f, 0.7f);
 		_texRightPeek.Modulate = new Color(0.3f, 0.3f, 0.3f, 0.7f);
 
-		_btnLeftArrow.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		_btnLeftArrow.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		_btnLeftArrow.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-		UIStyle.ApplyButtonText(_btnLeftArrow, "◀", 18);
+		_btnLeftArrow.AddThemeStyleboxOverride("normal", UIStyle.CreateFlatButtonStyle(false, false));
+		_btnLeftArrow.AddThemeStyleboxOverride("hover", UIStyle.CreateFlatButtonStyle(true, false));
+		_btnLeftArrow.AddThemeStyleboxOverride("pressed", UIStyle.CreateFlatButtonStyle(false, true));
+		_btnLeftArrow.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(_btnLeftArrow, "◀", 24);
 
-		_btnRightArrow.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		_btnRightArrow.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		_btnRightArrow.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-		UIStyle.ApplyButtonText(_btnRightArrow, "▶", 18);
+		_btnRightArrow.AddThemeStyleboxOverride("normal", UIStyle.CreateFlatButtonStyle(false, false));
+		_btnRightArrow.AddThemeStyleboxOverride("hover", UIStyle.CreateFlatButtonStyle(true, false));
+		_btnRightArrow.AddThemeStyleboxOverride("pressed", UIStyle.CreateFlatButtonStyle(false, true));
+		_btnRightArrow.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(_btnRightArrow, "▶", 24);
 
 		_carouselSlider.AddThemeStyleboxOverride("slider", UIStyle.CreateSliderTrack());
 		_carouselSlider.AddThemeStyleboxOverride("grabber_area", UIStyle.CreateSliderFill());

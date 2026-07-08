@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using GdUnit4;
 using Godot;
+using Realm.Ecs.Services;
 
 [TestSuite]
 [RequireGodotRuntime]
@@ -71,6 +72,21 @@ public class SimulationTests
         System.Numerics.Vector3 destination = new System.Numerics.Vector3(-20f, 0f, -50f);
         Realm.MapAPI.IUnit unitWrapper = gameHost.GetUnitWrapper(worker.Entity);
         unitWrapper.MoveTo(destination);
+
+        await runner.AwaitMillis(100);
+        if (gameHost.EcsWorld.Has<PathFollow>(worker.Entity))
+        {
+            var pf = gameHost.EcsWorld.Get<PathFollow>(worker.Entity);
+            global::Godot.GD.Print($"WAYPOINTS COUNT: {pf.WaypointCount}");
+            for (int i = 0; i < pf.WaypointCount; i++)
+            {
+                global::Godot.GD.Print($"Waypoint {i}: {pf.Waypoints[i]}");
+            }
+        }
+        else
+        {
+            global::Godot.GD.Print("NO PATHFOLLOW COMPONENT");
+        }
 
         string tempDir = Path.Combine(Path.GetTempPath(), "Realm_Simulation_Screenshots");
         Directory.CreateDirectory(tempDir);

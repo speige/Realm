@@ -191,9 +191,10 @@ public partial class Unit3D : CharacterBody3D
 		if (IsBuilding)
 		{
 			var boxShape = new BoxShape3D();
-			boxShape.Size = new Vector3(6f, 6f, 6f);
+			float size = (UnitId == "castle") ? 4f : 3f;
+			boxShape.Size = new Vector3(size, size, size);
 			collisionShape.Shape = boxShape;
-			collisionShape.Position = new Vector3(0, 3f, 0);
+			collisionShape.Position = new Vector3(0, size * 0.5f, 0);
 		}
 		else
 		{

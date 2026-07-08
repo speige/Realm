@@ -41,10 +41,10 @@ public static class UIStyle
 			style.TextureMarginTop = 32;
 			style.TextureMarginBottom = 32;
 			
-			style.ContentMarginLeft = 16;
-			style.ContentMarginRight = 16;
-			style.ContentMarginTop = 16;
-			style.ContentMarginBottom = 16;
+			style.ContentMarginLeft = 32;
+			style.ContentMarginRight = 32;
+			style.ContentMarginTop = 32;
+			style.ContentMarginBottom = 32;
 			
 			style.ModulateColor = new Color(0.9f, 0.9f, 0.93f, 0.95f); // Slightly lighter for sub-panels
 		}
@@ -55,10 +55,10 @@ public static class UIStyle
 			style.TextureMarginTop = 40;
 			style.TextureMarginBottom = 40;
 			
-			style.ContentMarginLeft = 24;
-			style.ContentMarginRight = 24;
-			style.ContentMarginTop = 24;
-			style.ContentMarginBottom = 24;
+			style.ContentMarginLeft = 40;
+			style.ContentMarginRight = 40;
+			style.ContentMarginTop = 40;
+			style.ContentMarginBottom = 40;
 			
 			style.ModulateColor = new Color(0.72f, 0.72f, 0.75f, 0.98f); // Darker base frame
 		}
@@ -154,6 +154,80 @@ public static class UIStyle
 		return style;
 	}
 
+	public static StyleBoxFlat CreateDropdownStyle(bool isHover = false, bool isPressed = false)
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.08f, 0.09f, 0.11f, 0.95f);
+		if (isPressed)
+		{
+			style.BorderColor = ColorCyanGlow;
+		}
+		else if (isHover)
+		{
+			style.BorderColor = ColorGold;
+		}
+		else
+		{
+			style.BorderColor = new Color(0.45f, 0.38f, 0.3f);
+		}
+		style.SetBorderWidthAll(1);
+		style.ContentMarginLeft = 14;
+		style.ContentMarginRight = 28;
+		style.ContentMarginTop = 8;
+		style.ContentMarginBottom = 8;
+		style.CornerRadiusTopLeft = 4;
+		style.CornerRadiusTopRight = 4;
+		style.CornerRadiusBottomLeft = 4;
+		style.CornerRadiusBottomRight = 4;
+		return style;
+	}
+
+	public static StyleBoxFlat CreateFlatButtonStyle(bool isHover = false, bool isPressed = false)
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = isPressed ? new Color(0.12f, 0.14f, 0.18f, 0.75f) : (isHover ? new Color(0.1f, 0.12f, 0.15f, 0.55f) : new Color(0.06f, 0.08f, 0.1f, 0.35f));
+		if (isPressed)
+		{
+			style.BorderColor = ColorCyanGlow;
+		}
+		else if (isHover)
+		{
+			style.BorderColor = ColorGold;
+		}
+		else
+		{
+			style.BorderColor = new Color(0.45f, 0.38f, 0.3f, 0.6f);
+		}
+		style.SetBorderWidthAll(1);
+		style.ContentMarginLeft = 6;
+		style.ContentMarginRight = 6;
+		style.ContentMarginTop = 6;
+		style.ContentMarginBottom = 6;
+		style.CornerRadiusTopLeft = 4;
+		style.CornerRadiusTopRight = 4;
+		style.CornerRadiusBottomLeft = 4;
+		style.CornerRadiusBottomRight = 4;
+		return style;
+	}
+
+	public static StyleBoxFlat CreateHUDButtonStyle(bool isHover = false, bool isPressed = false)
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = isPressed ? new Color(0.12f, 0.14f, 0.16f, 0.9f) : (isHover ? new Color(0.18f, 0.2f, 0.24f, 0.8f) : new Color(0.08f, 0.09f, 0.1f, 0.75f));
+		style.BorderColor = isPressed ? ColorCyanGlow : (isHover ? ColorGold : new Color(0.35f, 0.3f, 0.25f, 0.8f));
+		style.SetBorderWidthAll(2);
+		
+		style.ContentMarginLeft = 6;
+		style.ContentMarginRight = 6;
+		style.ContentMarginTop = 6;
+		style.ContentMarginBottom = 6;
+		
+		style.CornerRadiusTopLeft = 4;
+		style.CornerRadiusTopRight = 4;
+		style.CornerRadiusBottomLeft = 4;
+		style.CornerRadiusBottomRight = 4;
+		return style;
+	}
 
 	public static void ApplyCheckboxStyle(CheckBox cb)
 	{
@@ -165,11 +239,12 @@ public static class UIStyle
 		cb.AddThemeIconOverride("checked_disabled", checkedTex);
 		cb.AddThemeIconOverride("unchecked_disabled", uncheckedTex);
 		
-		cb.AddThemeColorOverride("font_color", new Color(0.85f, 0.85f, 0.9f));
+		cb.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
 		cb.AddThemeColorOverride("font_hover_color", ColorGold);
-		cb.AddThemeColorOverride("font_pressed_color", ColorCyanGlow);
+		cb.AddThemeColorOverride("font_pressed_color", new Color(0.9f, 0.9f, 0.95f));
+		cb.AddThemeColorOverride("font_hover_pressed_color", ColorGold);
 		cb.AddThemeFontSizeOverride("font_size", 14);
-		cb.AddThemeConstantOverride("icon_max_width", 0);
+		cb.AddThemeConstantOverride("icon_max_width", 24);
 	}
 
 	public static StyleBoxFlat CreateSliderTrack()

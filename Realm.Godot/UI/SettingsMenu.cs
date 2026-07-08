@@ -97,11 +97,22 @@ public partial class SettingsMenu : Control
 	{
 		if (_bgPanel != null)
 		{
-			_bgPanel.Visible = true;
-			_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
-			if (GetNodeOrNull<ColorRect>("OverlayBg") is ColorRect rect)
+			if (IsOverlay)
 			{
-				rect.Visible = false;
+				_bgPanel.Visible = false;
+				if (GetNodeOrNull<ColorRect>("OverlayBg") is ColorRect rect)
+				{
+					rect.Visible = true;
+				}
+			}
+			else
+			{
+				_bgPanel.Visible = true;
+				_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+				if (GetNodeOrNull<ColorRect>("OverlayBg") is ColorRect rect)
+				{
+					rect.Visible = false;
+				}
 			}
 		}
 
@@ -194,15 +205,15 @@ public partial class SettingsMenu : Control
 		foreach (var opt in dropdowns)
 		{
 			opt.Flat = false;
-			opt.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-			opt.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-			opt.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+			opt.AddThemeStyleboxOverride("normal", UIStyle.CreateDropdownStyle(false, false));
+			opt.AddThemeStyleboxOverride("hover", UIStyle.CreateDropdownStyle(true, false));
+			opt.AddThemeStyleboxOverride("pressed", UIStyle.CreateDropdownStyle(false, true));
 			opt.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
 			opt.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 			opt.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
 			opt.AddThemeColorOverride("font_pressed_color", UIStyle.ColorCyanGlow);
-			opt.AddThemeFontSizeOverride("font_size", 14);
+			opt.AddThemeFontSizeOverride("font_size", 15);
 
 			opt.ItemSelected += (idx) => UIManager.Instance.PlayClickSound();
 			opt.MouseEntered += () => UIManager.Instance.PlayHoverSound();

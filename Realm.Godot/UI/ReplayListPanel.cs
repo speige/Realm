@@ -69,13 +69,20 @@ public partial class ReplayListPanel : Control
 		int addedCount = 0;
 		foreach (var filePath in sortedFiles)
 		{
-			int totalTicks;
-			var header = ReplayPlaybackManager.ReadReplayHeader(filePath, out totalTicks);
-			if (header == null) continue;
+			try
+			{
+				int totalTicks;
+				var header = ReplayPlaybackManager.ReadReplayHeader(filePath, out totalTicks);
+				if (header == null) continue;
 
-			var row = CreateReplayRow(filePath, header, totalTicks);
-			_listContainer.AddChild(row);
-			addedCount++;
+				var row = CreateReplayRow(filePath, header, totalTicks);
+				_listContainer.AddChild(row);
+				addedCount++;
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[ReplayListPanel] Error processing replay file '{filePath}': {ex}");
+			}
 		}
 
 		if (addedCount == 0)
@@ -116,8 +123,9 @@ public partial class ReplayListPanel : Control
 		hBox.AddChild(infoVBox);
 
 		var mapLabel = new Label();
-		mapLabel.Text = header.MapName.ToUpper();
-		UIStyle.ApplyTitle(mapLabel, header.MapName.ToUpper(), 16);
+		string mapName = (header.MapName ?? "UNKNOWN").ToUpper();
+		mapLabel.Text = mapName;
+		UIStyle.ApplyTitle(mapLabel, mapName, 16);
 		infoVBox.AddChild(mapLabel);
 
 		var metaLabel = new Label();

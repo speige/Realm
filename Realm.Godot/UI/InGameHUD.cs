@@ -396,7 +396,7 @@ public partial class InGameHUD : Control
 		_minimapFrame.AddChild(_minimapControls);
 
 		_btnZoom = new Button();
-		SetupMinimapButton(_btnZoom, "res://Assets/UI/search_icon.jpg", "Toggle Camera Zoom (Near / Mid / Far) [Z]", () => GameHost.Instance?.CycleCameraZoom());
+		SetupMinimapButton(_btnZoom, "res://Assets/UI/search_icon_clean.png", "Toggle Camera Zoom (Near / Mid / Far) [Z]", () => GameHost.Instance?.CycleCameraZoom());
 		_minimapControls.AddChild(_btnZoom);
 
 		_btnToggleTerrain = new Button();
@@ -1254,9 +1254,9 @@ public partial class InGameHUD : Control
 		btn.CustomMinimumSize = new Vector2(50, 50);
 		btn.FocusMode = FocusModeEnum.None;
 		btn.AddThemeConstantOverride("icon_max_width", 45);
-		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateHUDButtonStyle(false, false));
+		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateHUDButtonStyle(true, false));
+		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateHUDButtonStyle(false, true));
 		btn.Pressed += () => onClick?.Invoke();
 	}
 
@@ -1293,9 +1293,9 @@ public partial class InGameHUD : Control
 			btn.AddChild(hotkeyLabel);
 		}
 
-		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateHUDButtonStyle(false, false));
+		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateHUDButtonStyle(true, false));
+		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateHUDButtonStyle(false, true));
 		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
 		btn.Pressed += () => onClick?.Invoke();

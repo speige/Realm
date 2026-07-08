@@ -194,7 +194,7 @@ public partial class MapDiscovery : Control
 	private Control CreateMapCard(MapData map)
 	{
 		var card = new PanelContainer();
-		card.CustomMinimumSize = new Vector2(580, 220);
+		card.CustomMinimumSize = new Vector2(620, 250);
 		card.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 
 		var hBox = new HBoxContainer();
@@ -203,7 +203,7 @@ public partial class MapDiscovery : Control
 
 
 		var thumbnail = new TextureRect();
-		thumbnail.CustomMinimumSize = new Vector2(200, 150);
+		thumbnail.CustomMinimumSize = new Vector2(220, 175);
 		thumbnail.SizeFlagsVertical = SizeFlags.ShrinkCenter;
 		thumbnail.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		thumbnail.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
@@ -227,14 +227,14 @@ public partial class MapDiscovery : Control
 		var title = new Label();
 		title.Text = map.Title;
 		title.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		title.AddThemeFontSizeOverride("font_size", 20);
+		title.AddThemeFontSizeOverride("font_size", 22);
 		vBox.AddChild(title);
 
 
 		var creator = new Label();
 		creator.Text = $"By: {map.Creator}  •  {map.Genre}";
 		creator.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		creator.AddThemeFontSizeOverride("font_size", 12);
+		creator.AddThemeFontSizeOverride("font_size", 14);
 		vBox.AddChild(creator);
 
 
@@ -249,7 +249,7 @@ public partial class MapDiscovery : Control
 		}
 		starsLabel.Text = $"{starsStr} ({map.RatingStars}/5)";
 		starsLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		starsLabel.AddThemeFontSizeOverride("font_size", 14);
+		starsLabel.AddThemeFontSizeOverride("font_size", 15);
 		ratingBox.AddChild(starsLabel);
 
 
@@ -259,7 +259,7 @@ public partial class MapDiscovery : Control
 		desc.MaxLinesVisible = 3;
 		desc.SizeFlagsVertical = SizeFlags.ExpandFill;
 		desc.AddThemeColorOverride("font_color", new Color(0.85f, 0.85f, 0.9f));
-		desc.AddThemeFontSizeOverride("font_size", 12);
+		desc.AddThemeFontSizeOverride("font_size", 14);
 		vBox.AddChild(desc);
 
 
@@ -271,7 +271,7 @@ public partial class MapDiscovery : Control
 		footer.AddChild(filler);
 
 		var btnDetails = new Button();
-		btnDetails.CustomMinimumSize = new Vector2(140, 36);
+		btnDetails.CustomMinimumSize = new Vector2(140, 40);
 		UIStyle.ApplyButtonText(btnDetails, "DETAILS", 14);
 		btnDetails.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		btnDetails.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());

@@ -224,7 +224,7 @@ public class CommandPanel
 		btn.Flat = false;
 		btn.Text = "";
 		btn.ExpandIcon = true;
-		btn.Icon = GD.Load<Texture2D>("res://Assets/UI/search_icon.jpg");
+		btn.Icon = GD.Load<Texture2D>("res://Assets/UI/search_icon_clean.png");
 		btn.TooltipText = TranslationServer.Translate("Cycle Abilities / Commands");
 		btn.CustomMinimumSize = new Vector2(80, 80);
 		btn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
@@ -232,9 +232,9 @@ public class CommandPanel
 		btn.FocusMode = Control.FocusModeEnum.None;
 		btn.AddThemeConstantOverride("icon_max_width", 72);
 
-		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateHUDButtonStyle(false, false));
+		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateHUDButtonStyle(true, false));
+		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateHUDButtonStyle(false, true));
 		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
 		var label = new Label();
@@ -296,9 +296,9 @@ public class CommandPanel
 			btn.AddChild(hotkeyLabel);
 		}
 
-		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateHUDButtonStyle(false, false));
+		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateHUDButtonStyle(true, false));
+		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateHUDButtonStyle(false, true));
 		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
 		bool disabled = item.IsDisabled?.Invoke() ?? false;
@@ -772,9 +772,9 @@ public class CommandPanel
 			btn.AddChild(hotkeyLabel);
 		}
 
-		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateHUDButtonStyle(false, false));
+		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateHUDButtonStyle(true, false));
+		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateHUDButtonStyle(false, true));
 		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
 		btn.Pressed += () => onClick?.Invoke();

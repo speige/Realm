@@ -472,6 +472,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public float XpBounty { get; set; }
 		public string[]? PathingCapabilities { get; set; }
 		public string? MovementType { get; set; }
+		public float? ObstacleRadius { get; set; }
 	}
 
 	public static int GetUnitPathingFlags(UnitMetadata meta)
@@ -1879,7 +1880,8 @@ public class {mapName} : IMapScript
 				AttackType = "none",
 				ArmorType = "building",
 				GoldBounty = 0f,
-				PathingCapabilities = new[] { "ground" }
+				PathingCapabilities = new[] { "ground" },
+				ObstacleRadius = 2.0f
 			}
 		},
 		{
@@ -1901,7 +1903,8 @@ public class {mapName} : IMapScript
 				PopCost = 0,
 				AttackType = "ranged",
 				ArmorType = "building",
-				GoldBounty = 0f
+				GoldBounty = 0f,
+				ObstacleRadius = 1.5f
 			}
 		},
 		{
@@ -2475,38 +2478,10 @@ public class {mapName} : IMapScript
 			RemoveChild(child);
 			child.QueueFree();
 		}
-		GroundTerrain = null;
-
-		var staticBody = new StaticBody3D();
-		staticBody.Name = "Ground";
-		AddChild(staticBody);
-
-		var meshInstance = new MeshInstance3D();
-		var planeMesh = new PlaneMesh();
-		planeMesh.Size = new Vector2(250, 250);
-		meshInstance.Mesh = planeMesh;
-		staticBody.AddChild(meshInstance);
-
-		var material = new StandardMaterial3D();
-		var texture = GD.Load<Texture2D>("res://Assets/terrain_default.png");
-		if (texture != null)
-		{
-			material.AlbedoTexture = texture;
-			material.Uv1Scale = new Vector3(25, 25, 1);
-		}
-		else
-		{
-			material.AlbedoColor = new Color(0.15f, 0.45f, 0.15f); // backup green
-		}
-		material.Roughness = 0.9f;
-		meshInstance.MaterialOverride = material;
-
-		var collisionShape = new CollisionShape3D();
-		var boxShape = new BoxShape3D();
-		boxShape.Size = new Vector3(250, 0.1f, 250);
-		collisionShape.Shape = boxShape;
-		collisionShape.Position = new Vector3(0, -0.05f, 0);
-		staticBody.AddChild(collisionShape);
+		var fallbackNode = new EditableTerrain();
+		fallbackNode.Name = "Ground";
+		AddChild(fallbackNode);
+		GroundTerrain = fallbackNode;
 	}
 
 	public void SetSkyboxTexture(string path)
@@ -2789,7 +2764,7 @@ public class {mapName} : IMapScript
 			var spawnOffset = new System.Numerics.Vector3(0f, 0f, 8f);
 			EcsWorld.Add(entity, new BuildingSpawnOffset(spawnOffset));
 
-			float baseRadius = GetOrCalculateObstacleRadius(id, unit3D);
+			float baseRadius = GetOrCalculateObstacleRadius(id, unit3D, isBuilding);
 			EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
 		}
 
@@ -2939,20 +2914,28 @@ public class {mapName} : IMapScript
 
 	private static readonly Dictionary<string, float> ObstacleRadiusCache = new();
 
-	public float GetOrCalculateObstacleRadius(string id, Node3D node)
+	public float GetOrCalculateObstacleRadius(string id, Node3D node, bool isBuilding = false)
 	{
 		if (ObstacleRadiusCache.TryGetValue(id, out float cachedRadius))
 		{
 			return cachedRadius;
 		}
 
-		float radius = 1.0f;
+		if (UnitRegistry.TryGetValue(id, out var meta) && meta.ObstacleRadius.HasValue)
+		{
+			float radius = meta.ObstacleRadius.Value;
+			ObstacleRadiusCache[id] = radius;
+			return radius;
+		}
+
+		float calculatedRadius = 0.5f;
 		if (node != null)
 		{
-			radius = CalculateNodeRadius(node);
-			ObstacleRadiusCache[id] = radius;
+			calculatedRadius = CalculateNodeRadius(node);
 		}
-		return radius;
+
+		ObstacleRadiusCache[id] = calculatedRadius;
+		return calculatedRadius;
 	}
 
 	private float CalculateNodeRadius(Node node)

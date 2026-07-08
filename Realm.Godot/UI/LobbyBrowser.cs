@@ -163,7 +163,13 @@ public partial class LobbyBrowser : Control
 		_searchBar.AddThemeStyleboxOverride("focus", UIStyle.CreateTextInput(true));
 		_searchBar.AddThemeColorOverride("font_color", new Color(0.9f, 0.85f, 0.7f));
 		_searchBar.PlaceholderText = "Search Lobbies...";
-		_searchBar.RightIcon = GD.Load<Texture2D>("res://Assets/UI/search_icon.jpg");
+		var rawSearchIcon = GD.Load<Texture2D>("res://Assets/UI/search_icon_clean.png");
+		if (rawSearchIcon != null)
+		{
+			var img = rawSearchIcon.GetImage();
+			img.Resize(20, 20, Image.Interpolation.Lanczos);
+			_searchBar.RightIcon = ImageTexture.CreateFromImage(img);
+		}
 
 
 		PopulateRunicPillar(GetNode<VBoxContainer>("LeftPillar/RuneContainer"));

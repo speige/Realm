@@ -67,9 +67,9 @@ public partial class LobbyCreate : Control
 		SetupPillarButton(_backButton, "◀", () => UIManager.Instance.TransitionTo(LobbyManager.Instance.IsSinglePlayer ? GameScreen.MainMenu : GameScreen.LobbyBrowser));
 		SetupCreateButton();
 
-		_mapSelectButton.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		_mapSelectButton.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		_mapSelectButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		_mapSelectButton.AddThemeStyleboxOverride("normal", UIStyle.CreateDropdownStyle(false, false));
+		_mapSelectButton.AddThemeStyleboxOverride("hover", UIStyle.CreateDropdownStyle(true, false));
+		_mapSelectButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateDropdownStyle(false, true));
 		_mapSelectButton.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 		_mapSelectButton.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		_mapSelectButton.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);

@@ -1419,6 +1419,11 @@ private void UpdateSelectedMapUI()
 		_spectatorDelayCheck.ButtonPressed = LobbyManager.Instance.SpectatorDelay;
 		_spectatorDelayCheck.Disabled = !LobbyManager.Instance.IsHost;
 		
+		if (_connectingPopup != null && GodotObject.IsInstanceValid(_connectingPopup))
+		{
+			_spectatorDelayCheck.Visible = false;
+		}
+
 		UIStyle.ApplyCheckboxStyle(_spectatorDelayCheck);
 		
 		_spectatorDelayCheck.Pressed += () =>
@@ -1579,6 +1584,11 @@ private void UpdateSelectedMapUI()
 			_connectingPopup.QueueFree();
 		}
 
+		if (_spectatorDelayCheck != null && GodotObject.IsInstanceValid(_spectatorDelayCheck))
+		{
+			_spectatorDelayCheck.Visible = false;
+		}
+
 		_connectingPopup = new Panel();
 		_connectingPopup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 		_connectingPopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
@@ -1618,6 +1628,11 @@ private void UpdateSelectedMapUI()
 		{
 			_connectingPopup.QueueFree();
 			_connectingPopup = null;
+		}
+
+		if (_spectatorDelayCheck != null && GodotObject.IsInstanceValid(_spectatorDelayCheck))
+		{
+			_spectatorDelayCheck.Visible = true;
 		}
 	}
 }

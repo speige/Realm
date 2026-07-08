@@ -16,9 +16,9 @@ public class ControlGroupsUIController
 			btn.Text = $"{i}";
 			btn.CustomMinimumSize = new Vector2(30, 30);
 			btn.FocusMode = Control.FocusModeEnum.None;
-			btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-			btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-			btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+			btn.AddThemeStyleboxOverride("normal", UIStyle.CreateHUDButtonStyle(false, false));
+			btn.AddThemeStyleboxOverride("hover", UIStyle.CreateHUDButtonStyle(true, false));
+			btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateHUDButtonStyle(false, true));
 			
 			int groupIndex = i;
 			btn.Pressed += () => GameHost.Instance?.RecallControlGroup(groupIndex);

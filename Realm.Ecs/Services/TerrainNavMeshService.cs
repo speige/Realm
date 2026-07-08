@@ -3,6 +3,7 @@ using DotRecast.Core.Numerics;
 using DotRecast.Detour;
 using DotRecast.Recast;
 using DotRecast.Recast.Geom;
+using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Terrain;
 
@@ -22,6 +23,48 @@ internal class TerrainNavMeshService
 		int width = state.Width;
 		int depth = state.Depth;
 		float spacing = state.Spacing;
+
+		var obstacles = new List<(System.Numerics.Vector3 Pos, float Radius)>();
+		var obstacleQuery = QueryCache.AllPositionAndCollisionRadiusQuery;
+		_ecsWorldAccessor.Current.Query(in obstacleQuery, (Entity ent, ref Position pos, ref CollisionRadius colRad) =>
+		{
+			float scale = _ecsWorldAccessor.Current.Has<CollisionScale>(ent) ? _ecsWorldAccessor.Current.Get<CollisionScale>(ent).Value : 1.0f;
+			float radius = colRad.Value * scale;
+			obstacles.Add((pos.Value, radius));
+		});
+
+		float[,] originalHeights = (float[,])state.Heights.Clone();
+		float halfW = (width - 1) / 2.0f * spacing;
+		float halfD = (depth - 1) / 2.0f * spacing;
+
+		foreach (var obs in obstacles)
+		{
+			int nearestX = Math.Clamp((int)Math.Round((obs.Pos.X + halfW) / spacing), 0, width - 1);
+			int nearestZ = Math.Clamp((int)Math.Round((obs.Pos.Z + halfD) / spacing), 0, depth - 1);
+			state.Heights[nearestX, nearestZ] = 20.0f;
+
+			float radius = obs.Radius;
+			int minX = Math.Clamp((int)Math.Floor((obs.Pos.X - radius + halfW) / spacing), 0, width - 1);
+			int maxX = Math.Clamp((int)Math.Ceiling((obs.Pos.X + radius + halfW) / spacing), 0, width - 1);
+			int minZ = Math.Clamp((int)Math.Floor((obs.Pos.Z - radius + halfD) / spacing), 0, depth - 1);
+			int maxZ = Math.Clamp((int)Math.Ceiling((obs.Pos.Z + radius + halfD) / spacing), 0, depth - 1);
+
+			for (int z = minZ; z <= maxZ; z++)
+			{
+				for (int x = minX; x <= maxX; x++)
+				{
+					float lx = (x - (width - 1) / 2.0f) * spacing;
+					float lz = (z - (depth - 1) / 2.0f) * spacing;
+					float dx = lx - obs.Pos.X;
+					float dz = lz - obs.Pos.Z;
+					if (dx * dx + dz * dz <= radius * radius)
+					{
+						state.Heights[x, z] = 20.0f;
+					}
+				}
+			}
+		}
+
 		var verts = new List<float>();
 		for (int z = 0; z < depth; z++)
 		{
@@ -34,6 +77,9 @@ internal class TerrainNavMeshService
 				verts.Add(lz);
 			}
 		}
+
+		state.Heights = originalHeights;
+
 		var indices = new List<int>();
 		for (int z = 0; z < depth - 1; z++)
 		{
@@ -65,7 +111,7 @@ internal class TerrainNavMeshService
 			cellSize, cellHeight,
 			agentMaxSlope, agentHeight, agentRadius, agentMaxClimb,
 			8, 20,
-			12.0f, 1.3f,
+			3.0f, 1.3f,
 			6,
 			6.0f, 1.0f,
 			true, true, true,
@@ -97,15 +143,9 @@ internal class TerrainNavMeshService
 			pars.walkableClimb = agentMaxClimb;
 			pars.polyAreas = new int[result.Mesh.npolys];
 			pars.polyFlags = new int[result.Mesh.npolys];
-			var obstacles = new List<(System.Numerics.Vector3 Pos, float Radius)>();
-			var obstacleQuery = new QueryDescription().WithAll<Position, CollisionRadius>();
-			_ecsWorldAccessor.Current.Query(in obstacleQuery, (Entity ent, ref Position pos, ref CollisionRadius colRad) =>
-			{
-				float scale = _ecsWorldAccessor.Current.Has<CollisionScale>(ent) ? _ecsWorldAccessor.Current.Get<CollisionScale>(ent).Value : 1.0f;
-				float radius = colRad.Value * scale;
-				obstacles.Add((pos.Value, radius));
-			});
 
+			int blockedCount = 0;
+			Span<System.Numerics.Vector2> polyVerts = stackalloc System.Numerics.Vector2[12];
 			for (int i = 0; i < result.Mesh.npolys; i++)
 			{
 				pars.polyAreas[i] = result.Mesh.areas[i];
@@ -122,7 +162,10 @@ internal class TerrainNavMeshService
 					float wz = bmin.Z + result.Mesh.verts[vIdx * 3 + 2] * result.Mesh.cs;
 					sumX += wx;
 					sumZ += wz;
-					nv++;
+					if (nv < polyVerts.Length)
+					{
+						polyVerts[nv++] = new System.Numerics.Vector2(wx, wz);
+					}
 				}
 				float avgX = nv > 0 ? sumX / nv : 0f;
 				float avgZ = nv > 0 ? sumZ / nv : 0f;
@@ -130,14 +173,14 @@ internal class TerrainNavMeshService
 				int xGrid = Math.Clamp((int)Math.Round(avgX / spacing + (width - 1) / 2.0f), 0, width - 1);
 				int zGrid = Math.Clamp((int)Math.Round(avgZ / spacing + (depth - 1) / 2.0f), 0, depth - 1);
 
-				int pathFlags = (state.PathingCodes != null) ? state.PathingCodes[xGrid, zGrid] : (8 | 4);
+				int pathFlags = state.PathingCodes[xGrid, zGrid];
 				
 				bool isBlocked = false;
 				foreach (var obs in obstacles)
 				{
-					float dx = avgX - obs.Pos.X;
-					float dz = avgZ - obs.Pos.Z;
-					if (dx * dx + dz * dz < obs.Radius * obs.Radius)
+					float checkRadius = obs.Radius + agentRadius;
+					var center = new System.Numerics.Vector2(obs.Pos.X, obs.Pos.Z);
+					if (PolygonIntersectsCircle(polyVerts, nv, center, checkRadius))
 					{
 						isBlocked = true;
 						break;
@@ -147,6 +190,7 @@ internal class TerrainNavMeshService
 				if (isBlocked || (pathFlags & 16) != 0)
 				{
 					pars.polyFlags[i] = 0;
+					blockedCount++;
 				}
 				else
 				{
@@ -204,5 +248,64 @@ internal class TerrainNavMeshService
 		System.Numerics.Vector3 tangentX = System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(2.0f * state.Spacing, hr - hl, 0.0f));
 		System.Numerics.Vector3 tangentZ = System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(0.0f, hu - hd, 2.0f * state.Spacing));
 		return System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Cross(tangentZ, tangentX));
+	}
+
+	private bool PolygonIntersectsCircle(ReadOnlySpan<System.Numerics.Vector2> poly, int nv, System.Numerics.Vector2 circleCenter, float radius)
+	{
+		if (nv == 0)
+		{
+			return false;
+		}
+
+		bool inside = true;
+		int sign = 0;
+		for (int i = 0; i < nv; i++)
+		{
+			var a = poly[i];
+			var b = poly[(i + 1) % nv];
+			float cross = (b.X - a.X) * (circleCenter.Y - a.Y) - (b.Y - a.Y) * (circleCenter.X - a.X);
+			int currentSign = cross > 0 ? 1 : (cross < 0 ? -1 : 0);
+			if (currentSign != 0)
+			{
+				if (sign == 0)
+				{
+					sign = currentSign;
+				}
+				else if (sign != currentSign)
+				{
+					inside = false;
+				}
+			}
+		}
+		if (inside && sign != 0)
+		{
+			return true;
+		}
+
+		float radiusSq = radius * radius;
+		for (int i = 0; i < nv; i++)
+		{
+			var a = poly[i];
+			var b = poly[(i + 1) % nv];
+			float dx = b.X - a.X;
+			float dy = b.Y - a.Y;
+			float lenSq = dx * dx + dy * dy;
+			float t = 0f;
+			if (lenSq > 1e-6f)
+			{
+				t = ((circleCenter.X - a.X) * dx + (circleCenter.Y - a.Y) * dy) / lenSq;
+				t = Math.Clamp(t, 0f, 1f);
+			}
+			float closestX = a.X + t * dx;
+			float closestY = a.Y + t * dy;
+			float distSq = (circleCenter.X - closestX) * (circleCenter.X - closestX) + 
+			               (circleCenter.Y - closestY) * (circleCenter.Y - closestY);
+			if (distSq < radiusSq)
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 }
