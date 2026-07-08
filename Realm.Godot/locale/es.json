@@ -252,5 +252,11 @@
   "Host: Average connection with all players in lobby": "Host: Conexión promedio con todos los jugadores en la sala",
   "CONNECTION FAILED": "CONEXIÓN FALLIDA",
   "Failed to connect to host.": "Error al conectar con el host.",
-  "Reason: {0}": "Razón: {0}"
+  "Reason: {0}": "Razón: {0}",
+  "DELETE": "ELIMINAR",
+  "DELETE ALL": "ELIMINAR TODO",
+  "YES": "SÍ",
+  "NO": "NO",
+  "Are you sure you want to delete this replay?": "¿Estás seguro de que quieres eliminar esta repetición?",
+  "Are you sure you want to delete all replays?": "¿Estás seguro de que quieres eliminar todas las repeticiones?"
 }

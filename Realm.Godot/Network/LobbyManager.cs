@@ -196,7 +196,7 @@ public partial class LobbyManager : Node
 
         RunNatTypeTest();
 
-        Task.Run(() => MapAssetManager.PruneGlobalArchive());
+        MapAssetManager.PruneGlobalArchive();
         AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
 
         Task.Run(async () =>

@@ -8,6 +8,7 @@ public partial class ReplayListPanel : Control
 {
 	private VBoxContainer _listContainer;
 	private Button _backBtn;
+	private Button _deleteAllBtn;
 	private Label _titleLabel;
 	private Label _noReplaysLabel;
 
@@ -15,11 +16,15 @@ public partial class ReplayListPanel : Control
 	{
 		_listContainer = GetNode<VBoxContainer>("CenterContainer/MainFrame/VBox/ListFrame/ScrollContainer/ListContainer");
 		_backBtn = GetNode<Button>("CenterContainer/MainFrame/VBox/Header/BackButton");
+		_deleteAllBtn = GetNode<Button>("CenterContainer/MainFrame/VBox/Header/DeleteAllButton");
 		_titleLabel = GetNode<Label>("CenterContainer/MainFrame/VBox/Header/TitleLabel");
 		_noReplaysLabel = GetNode<Label>("CenterContainer/MainFrame/VBox/NoReplaysLabel");
 
 		_backBtn.Pressed += OnBackPressed;
 		_backBtn.MouseEntered += () => UIManager.Instance?.PlayHoverSound();
+
+		_deleteAllBtn.Pressed += OnDeleteAllPressed;
+		_deleteAllBtn.MouseEntered += () => UIManager.Instance?.PlayHoverSound();
 
 		UIStyle.ApplyTitle(_titleLabel, "REPLAYS", 28);
 		UIStyle.ApplyButtonText(_backBtn, "BACK", 14);
@@ -27,6 +32,15 @@ public partial class ReplayListPanel : Control
 		_backBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		_backBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
 		_backBtn.AddThemeConstantOverride("icon_max_width", 0);
+
+		UIStyle.ApplyButtonText(_deleteAllBtn, "DELETE ALL", 14);
+		_deleteAllBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		_deleteAllBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		_deleteAllBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		_deleteAllBtn.AddThemeConstantOverride("icon_max_width", 0);
+		_deleteAllBtn.AddThemeColorOverride("font_color", new Color(0.9f, 0.4f, 0.4f));
+		_deleteAllBtn.AddThemeColorOverride("font_hover_color", new Color(1.0f, 0.5f, 0.5f));
+		_deleteAllBtn.AddThemeColorOverride("font_pressed_color", new Color(0.9f, 0.3f, 0.3f));
 
 		GetNode<Panel>("Background").AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
 		GetNode<PanelContainer>("CenterContainer/MainFrame").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(false));
@@ -45,6 +59,7 @@ public partial class ReplayListPanel : Control
 	{
 		foreach (Node child in _listContainer.GetChildren())
 		{
+			_listContainer.RemoveChild(child);
 			child.QueueFree();
 		}
 
@@ -58,10 +73,14 @@ public partial class ReplayListPanel : Control
 		if (files.Length == 0)
 		{
 			_noReplaysLabel.Visible = true;
+			_deleteAllBtn.Visible = false;
+			GetNode<PanelContainer>("CenterContainer/MainFrame/VBox/ListFrame").Visible = false;
 			return;
 		}
 
 		_noReplaysLabel.Visible = false;
+		_deleteAllBtn.Visible = true;
+		GetNode<PanelContainer>("CenterContainer/MainFrame/VBox/ListFrame").Visible = true;
 
 		var sortedFiles = new List<string>(files);
 		sortedFiles.Sort((a, b) => File.GetLastWriteTime(b).CompareTo(File.GetLastWriteTime(a)));
@@ -73,7 +92,10 @@ public partial class ReplayListPanel : Control
 			{
 				int totalTicks;
 				var header = ReplayPlaybackManager.ReadReplayHeader(filePath, out totalTicks);
-				if (header == null) continue;
+				if (header == null)
+				{
+					continue;
+				}
 
 				var row = CreateReplayRow(filePath, header, totalTicks);
 				_listContainer.AddChild(row);
@@ -88,6 +110,8 @@ public partial class ReplayListPanel : Control
 		if (addedCount == 0)
 		{
 			_noReplaysLabel.Visible = true;
+			_deleteAllBtn.Visible = false;
+			GetNode<PanelContainer>("CenterContainer/MainFrame/VBox/ListFrame").Visible = false;
 		}
 	}
 
@@ -105,18 +129,15 @@ public partial class ReplayListPanel : Control
 		style.CornerRadiusTopRight = 4;
 		style.CornerRadiusBottomLeft = 4;
 		style.CornerRadiusBottomRight = 4;
+		style.ContentMarginLeft = 15;
+		style.ContentMarginRight = 15;
+		style.ContentMarginTop = 10;
+		style.ContentMarginBottom = 10;
 		panel.AddThemeStyleboxOverride("panel", style);
-
-		var margin = new MarginContainer();
-		margin.AddThemeConstantOverride("margin_left", 15);
-		margin.AddThemeConstantOverride("margin_right", 15);
-		margin.AddThemeConstantOverride("margin_top", 10);
-		margin.AddThemeConstantOverride("margin_bottom", 10);
-		panel.AddChild(margin);
 
 		var hBox = new HBoxContainer();
 		hBox.AddThemeConstantOverride("separation", 20);
-		margin.AddChild(hBox);
+		panel.AddChild(hBox);
 
 		var infoVBox = new VBoxContainer();
 		infoVBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
@@ -125,7 +146,9 @@ public partial class ReplayListPanel : Control
 		var mapLabel = new Label();
 		string mapName = (header.MapName ?? "UNKNOWN").ToUpper();
 		mapLabel.Text = mapName;
-		UIStyle.ApplyTitle(mapLabel, mapName, 16);
+		mapLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		mapLabel.AddThemeFontSizeOverride("font_size", 16);
+		mapLabel.VerticalAlignment = VerticalAlignment.Center;
 		infoVBox.AddChild(mapLabel);
 
 		var metaLabel = new Label();
@@ -142,6 +165,7 @@ public partial class ReplayListPanel : Control
 		metaLabel.Text = $"{dt:yyyy-MM-dd HH:mm}  |  {durationStr}  |  {playersStr}";
 		metaLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
 		metaLabel.AddThemeFontSizeOverride("font_size", 12);
+		metaLabel.VerticalAlignment = VerticalAlignment.Center;
 		infoVBox.AddChild(metaLabel);
 
 		var playBtn = new Button();
@@ -156,6 +180,22 @@ public partial class ReplayListPanel : Control
 		playBtn.Pressed += () => OnPlayReplayPressed(path);
 		playBtn.MouseEntered += () => UIManager.Instance?.PlayHoverSound();
 		hBox.AddChild(playBtn);
+
+		var deleteBtn = new Button();
+		deleteBtn.CustomMinimumSize = new Vector2(100, 40);
+		deleteBtn.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+		UIStyle.ApplyButtonText(deleteBtn, "DELETE", 13);
+		deleteBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		deleteBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		deleteBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		deleteBtn.AddThemeConstantOverride("icon_max_width", 0);
+		deleteBtn.AddThemeColorOverride("font_color", new Color(0.9f, 0.4f, 0.4f));
+		deleteBtn.AddThemeColorOverride("font_hover_color", new Color(1.0f, 0.5f, 0.5f));
+		deleteBtn.AddThemeColorOverride("font_pressed_color", new Color(0.9f, 0.3f, 0.3f));
+
+		deleteBtn.Pressed += () => OnDeleteReplayPressed(path);
+		deleteBtn.MouseEntered += () => UIManager.Instance?.PlayHoverSound();
+		hBox.AddChild(deleteBtn);
 
 		return panel;
 	}
@@ -180,5 +220,125 @@ public partial class ReplayListPanel : Control
 		{
 			GD.PrintErr($"Failed to load replay: {path}");
 		}
+	}
+
+	private void OnDeleteReplayPressed(string path)
+	{
+		ShowConfirmationDialog("Are you sure you want to delete this replay?", () =>
+		{
+			try
+			{
+				if (File.Exists(path))
+				{
+					File.Delete(path);
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[ReplayListPanel] Failed to delete replay file '{path}': {ex}");
+			}
+			PopulateReplaysList();
+		});
+	}
+
+	private void OnDeleteAllPressed()
+	{
+		ShowConfirmationDialog("Are you sure you want to delete all replays?", () =>
+		{
+			string replayDir = ProjectSettings.GlobalizePath("user://replays");
+			if (Directory.Exists(replayDir))
+			{
+				var files = Directory.GetFiles(replayDir, "*.rep");
+				foreach (var filePath in files)
+				{
+					try
+					{
+						if (File.Exists(filePath))
+						{
+							File.Delete(filePath);
+						}
+					}
+					catch (Exception ex)
+					{
+						GD.PrintErr($"[ReplayListPanel] Failed to delete replay file '{filePath}': {ex}");
+					}
+				}
+			}
+			PopulateReplaysList();
+		});
+	}
+
+	private void ShowConfirmationDialog(string message, Action onConfirm)
+	{
+		var overlay = new ColorRect();
+		overlay.Name = "ConfirmationOverlay";
+		overlay.Color = new Color(0, 0, 0, 0.6f);
+		overlay.SetAnchorsPreset(LayoutPreset.FullRect);
+		AddChild(overlay);
+
+		var panel = new PanelContainer();
+		panel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		panel.CustomMinimumSize = new Vector2(400, 200);
+		panel.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		panel.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+
+		var center = new CenterContainer();
+		center.SetAnchorsPreset(LayoutPreset.FullRect);
+		overlay.AddChild(center);
+		center.AddChild(panel);
+
+		var vbox = new VBoxContainer();
+		vbox.AddThemeConstantOverride("separation", 20);
+		panel.AddChild(vbox);
+
+		var lblTitle = new Label();
+		UIStyle.ApplyTitle(lblTitle, TranslationServer.Translate("CONFIRMATION REQUIRED"), 18);
+		lblTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		lblTitle.HorizontalAlignment = HorizontalAlignment.Center;
+		vbox.AddChild(lblTitle);
+
+		var lblMsg = new Label();
+		lblMsg.Text = TranslationServer.Translate(message);
+		lblMsg.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+		lblMsg.HorizontalAlignment = HorizontalAlignment.Center;
+		lblMsg.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		lblMsg.AddThemeFontSizeOverride("font_size", 14);
+		vbox.AddChild(lblMsg);
+
+		var hbox = new HBoxContainer();
+		hbox.AddThemeConstantOverride("separation", 30);
+		hbox.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		vbox.AddChild(hbox);
+
+		var btnConfirm = new Button();
+		btnConfirm.CustomMinimumSize = new Vector2(100, 40);
+		btnConfirm.AddThemeConstantOverride("icon_max_width", 0);
+		UIStyle.ApplyButtonText(btnConfirm, "YES", 13);
+		btnConfirm.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		btnConfirm.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		btnConfirm.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btnConfirm.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			overlay.QueueFree();
+			onConfirm?.Invoke();
+		};
+		btnConfirm.MouseEntered += () => UIManager.Instance?.PlayHoverSound();
+		hbox.AddChild(btnConfirm);
+
+		var btnCancel = new Button();
+		btnCancel.CustomMinimumSize = new Vector2(100, 40);
+		btnCancel.AddThemeConstantOverride("icon_max_width", 0);
+		UIStyle.ApplyButtonText(btnCancel, "NO", 13);
+		btnCancel.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		btnCancel.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		btnCancel.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btnCancel.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			overlay.QueueFree();
+		};
+		btnCancel.MouseEntered += () => UIManager.Instance?.PlayHoverSound();
+		hbox.AddChild(btnCancel);
 	}
 }

@@ -252,5 +252,11 @@
   "Host: Average connection with all players in lobby": "Host: Durchschnittliche Verbindung mit allen Spielern in der Lobby",
   "CONNECTION FAILED": "VERBINDUNG FEHLGESCHLAGEN",
   "Failed to connect to host.": "Verbindung zum Host fehlgeschlagen.",
-  "Reason: {0}": "Grund: {0}"
+  "Reason: {0}": "Grund: {0}",
+  "DELETE": "LÖSCHEN",
+  "DELETE ALL": "ALLE LÖSCHEN",
+  "YES": "JA",
+  "NO": "NEIN",
+  "Are you sure you want to delete this replay?": "Sind Sie sicher, dass Sie dieses Replay löschen möchten?",
+  "Are you sure you want to delete all replays?": "Sind Sie sicher, dass Sie alle Replays löschen möchten?"
 }

@@ -252,5 +252,11 @@
   "Host: Average connection with all players in lobby": "Хост: Среднее соединение со всеми игроками в лобби",
   "CONNECTION FAILED": "ОШИБКА ПОДКЛЮЧЕНИЯ",
   "Failed to connect to host.": "Не удалось подключиться к хосту.",
-  "Reason: {0}": "Причина: {0}"
+  "Reason: {0}": "Причина: {0}",
+  "DELETE": "УДАЛИТЬ",
+  "DELETE ALL": "УДАЛИТЬ ВСЕ",
+  "YES": "ДА",
+  "NO": "НЕТ",
+  "Are you sure you want to delete this replay?": "Вы уверены, что хотите удалить этот повтор?",
+  "Are you sure you want to delete all replays?": "Вы уверены, что хотите удалить все повторы?"
 }

@@ -28,7 +28,7 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="MainFrame" type="PanelContainer" parent="CenterContainer"]
-custom_minimumSize = Vector2(1000, 680)
+custom_minimum_size = Vector2(1000, 680)
 layout_mode = 2
 
 [node name="VBox" type="VBoxContainer" parent="CenterContainer/MainFrame"]
@@ -40,7 +40,7 @@ layout_mode = 2
 theme_override_constants/separation = 20
 
 [node name="BackButton" type="Button" parent="CenterContainer/MainFrame/VBox/Header"]
-custom_minimumSize = Vector2(120, 45)
+custom_minimum_size = Vector2(120, 45)
 layout_mode = 2
 focus_mode = 0
 text = "BACK"
@@ -51,22 +51,28 @@ size_flags_horizontal = 3
 text = "REPLAYS"
 horizontal_alignment = 1
 
-[node name="Control" type="Control" parent="CenterContainer/MainFrame/VBox/Header"]
-custom_minimumSize = Vector2(120, 0)
+[node name="DeleteAllButton" type="Button" parent="CenterContainer/MainFrame/VBox/Header"]
+custom_minimum_size = Vector2(120, 45)
 layout_mode = 2
+focus_mode = 0
+text = "DELETE ALL"
+
 
 [node name="ListFrame" type="PanelContainer" parent="CenterContainer/MainFrame/VBox"]
 layout_mode = 2
+size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="ScrollContainer" type="ScrollContainer" parent="CenterContainer/MainFrame/VBox/ListFrame"]
 layout_mode = 2
+size_flags_horizontal = 3
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
 [node name="ListContainer" type="VBoxContainer" parent="CenterContainer/MainFrame/VBox/ListFrame/ScrollContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_vertical = 3
 theme_override_constants/separation = 12
 
 [node name="NoReplaysLabel" type="Label" parent="CenterContainer/MainFrame/VBox"]

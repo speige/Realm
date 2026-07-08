@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 public static class MapAssetManager
 {
@@ -334,24 +335,31 @@ public static class MapAssetManager
 
     public static void PruneGlobalArchive()
     {
+        string archiveDir = GlobalArchiveDirectory;
+        string archiveFile = GlobalArchiveFile;
+        Task.Run(() => PruneGlobalArchiveInternal(archiveDir, archiveFile));
+    }
+
+    private static void PruneGlobalArchiveInternal(string archiveDir, string archiveFile)
+    {
         lock (ArchiveLock)
         {
             try
             {
                 MapAssetManager.Log("[MapAssetManager] Starting background pruning process...");
                 
-                if (!File.Exists(GlobalArchiveFile))
+                if (!File.Exists(archiveFile))
                 {
                     MapAssetManager.Log("[MapAssetManager] Global archive does not exist, skipping pruning.");
                     return;
                 }
 
-                if (!Directory.Exists(GlobalArchiveDirectory))
+                if (!Directory.Exists(archiveDir))
                 {
                     return;
                 }
 
-                var manifestFiles = Directory.GetFiles(GlobalArchiveDirectory, "*.json");
+                var manifestFiles = Directory.GetFiles(archiveDir, "*.json");
                 var referencedHashes = new HashSet<string>();
 
                 foreach (var file in manifestFiles)
@@ -359,7 +367,7 @@ public static class MapAssetManager
                     if (Path.GetFileName(file) == "pck_cache.json" || Path.GetFileName(file) == "servers.json") continue;
 
                     try
-                     {
+                    {
                         string content = File.ReadAllText(file);
                         var manifest = JsonSerializer.Deserialize<MapManifest>(content);
                         if (manifest != null && manifest.Files != null)
@@ -379,7 +387,7 @@ public static class MapAssetManager
                 MapAssetManager.Log($"[MapAssetManager] Total referenced BLAKE3 hashes found in manifests: {referencedHashes.Count}");
 
                 bool needsPruning = false;
-                using (var archive = ArchiveFactory.OpenArchive(GlobalArchiveFile, null))
+                using (var archive = ArchiveFactory.OpenArchive(archiveFile, null))
                 {
                     foreach (var entry in archive.Entries)
                     {
@@ -395,12 +403,12 @@ public static class MapAssetManager
                 if (needsPruning)
                 {
                     MapAssetManager.Log("[MapAssetManager] Rebuilding global archive to prune unreferenced hashes...");
-                    string tempFile = Path.Combine(GlobalArchiveDirectory, Guid.NewGuid().ToString() + ".7z");
+                    string tempFile = Path.Combine(archiveDir, Guid.NewGuid().ToString() + ".7z");
                     
                     using (var newFs = File.Create(tempFile))
                     using (var writer = new SevenZipWriter(newFs, new SevenZipWriterOptions() { CompressionType = CompressionType.LZMA }))
                     {
-                        using (var oldArchive = ArchiveFactory.OpenArchive(GlobalArchiveFile, null))
+                        using (var oldArchive = ArchiveFactory.OpenArchive(archiveFile, null))
                         {
                             foreach (var entry in oldArchive.Entries)
                             {
@@ -420,11 +428,11 @@ public static class MapAssetManager
                         }
                     }
 
-                    if (File.Exists(GlobalArchiveFile))
+                    if (File.Exists(archiveFile))
                     {
-                        File.Delete(GlobalArchiveFile);
+                        File.Delete(archiveFile);
                     }
-                    File.Move(tempFile, GlobalArchiveFile);
+                    File.Move(tempFile, archiveFile);
                     MapAssetManager.Log("[MapAssetManager] Pruning complete.");
                 }
                 else

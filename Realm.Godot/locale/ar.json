@@ -235,7 +235,7 @@
   "  Selected Object Inspector": "  مفتش الكائن المحدد",
   "SELECTED: {0}\n[{1}]": "المحدد: {0}\n[{1}]",
   "Pos: {0}, {1}, {2}\nRot: {3}° | Scale: {4}x": "الموقع: {0}، {1}، {2}\nالدوران: {3} درجة | المقياس: {4} ضعف",
-  "CONFIRMATION REQUIRED": "مطلوب تأكيد",
+  "CONFIRMATION REQUIRED": "تأكيد مطلوب",
   "RTS MAP EDITOR REFERENCE MANUAL": "دليل مرجع محرر خرائط RTS",
   "RANDOM MAP GENERATOR": "منشئ الخرائط العشوائية",
   "Map Seed:": "بذرة الخريطة:",
@@ -252,5 +252,11 @@
   "Host: Average connection with all players in lobby": "المستضيف: متوسط الاتصال مع جميع اللاعبين في الردهة",
   "CONNECTION FAILED": "فشل الاتصال",
   "Failed to connect to host.": "فشل الاتصال بالمستضيف.",
-  "Reason: {0}": "السبب: {0}"
+  "Reason: {0}": "السبب: {0}",
+  "DELETE": "حذف",
+  "DELETE ALL": "حذف الكل",
+  "YES": "نعم",
+  "NO": "لا",
+  "Are you sure you want to delete this replay?": "هل أنت متأكد أنك تريد حذف هذا الإعادة؟",
+  "Are you sure you want to delete all replays?": "هل أنت متأكد أنك تريد حذف جميع الإعادات؟"
 }

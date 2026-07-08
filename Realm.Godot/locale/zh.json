@@ -252,5 +252,11 @@
   "Host: Average connection with all players in lobby": "主机：与大厅中所有玩家的平均连接",
   "CONNECTION FAILED": "连接失败",
   "Failed to connect to host.": "无法连接到主机。",
-  "Reason: {0}": "原因：{0}"
+  "Reason: {0}": "原因：{0}",
+  "DELETE": "删除",
+  "DELETE ALL": "删除全部",
+  "YES": "是",
+  "NO": "否",
+  "Are you sure you want to delete this replay?": "您确定要删除此录像吗？",
+  "Are you sure you want to delete all replays?": "您确定要删除所有录像吗？"
 }
