@@ -85,8 +85,8 @@ public partial class GameOver : Control
 		_leftPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(true));
 		_rightPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(false));
 		_mainPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel());
-		_tableFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		_graphFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_tableFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		_graphFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
 
 
 		SetStatus(_isVictory);

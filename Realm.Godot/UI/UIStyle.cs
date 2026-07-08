@@ -258,7 +258,7 @@ public static class UIStyle
 		cb.AddThemeColorOverride("font_pressed_color", ColorGold);
 		cb.AddThemeColorOverride("font_hover_pressed_color", ColorGold);
 		cb.AddThemeFontSizeOverride("font_size", 14);
-		cb.AddThemeConstantOverride("icon_max_width", 24);
+		cb.AddThemeConstantOverride("icon_max_width", 20);
 	}
 
 	public static StyleBoxFlat CreateSliderTrack()
@@ -279,7 +279,7 @@ public static class UIStyle
 	public static StyleBoxFlat CreateSliderFill()
 	{
 		var style = new StyleBoxFlat();
-		style.BgColor = ColorCyanGlow;
+		style.BgColor = ColorGoldDull;
 		style.ExpandMarginTop = 2;
 		style.ExpandMarginBottom = 2;
 		style.CornerRadiusTopLeft = 2;

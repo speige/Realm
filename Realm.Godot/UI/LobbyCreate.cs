@@ -36,6 +36,10 @@ public partial class LobbyCreate : Control
 		var textPanelWrapper = GetNode<PanelContainer>("CentralPanel/ContentContainer/BriefingPanel/TextPanelWrapper");
 		textPanelWrapper.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
 
+		var spacer = new Control { CustomMinimumSize = new Vector2(0, 16) };
+		_createButton.GetParent().AddChild(spacer);
+		_createButton.GetParent().MoveChild(spacer, _createButton.GetIndex());
+
 		var mapThumbnail = GetNode<TextureRect>("CentralPanel/ContentContainer/BriefingPanel/MapThumbnail");
 		mapThumbnail.Texture = GD.Load<Texture2D>("res://Assets/UI/moonlit_castle.png");
 		mapThumbnail.Modulate = new Color(0.6f, 0.6f, 0.6f, 0.8f);

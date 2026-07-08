@@ -72,12 +72,11 @@ public partial class MainMenu : Control
 		SetupButton(_mapDiscoveryButton, "MAP DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.MapDiscovery));
 		SetupButton(_mapEditorButton, "MAP EDITOR", () => OnMapEditorPressed());
 		SetupButton(_replaysButton, "REPLAYS", () => UIManager.Instance.TransitionTo(GameScreen.ReplayList));
-		SetupGearButton(_settingsButton, () => UIManager.Instance.OpenSettingsOverlay());
-		SetupAvatarButton(_profileButton, () => ShowProfilePopup());
+		SetupUtilityButton(_settingsButton, "res://Assets/UI/gear_icon.png", () => UIManager.Instance.OpenSettingsOverlay());
+		SetupUtilityButton(_profileButton, "res://Assets/UI/avatar_icon.png", () => ShowProfilePopup());
 		SetupButton(_quitButton, "QUIT GAME", () => GetTree().Quit());
+		SetupUtilityButton(_socialButton, "res://Assets/UI/social_icon.png", () => ToggleSocialPopover());
 		_socialPopover.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-
-		SetupSocialButton(_socialButton, () => ToggleSocialPopover());
 		SetupButton(_discordButton, "DISCORD", () => { OS.ShellOpen("https://discord.com/servers/realm"); HideSocialPopover(); });
 		SetupButton(_donateButton, "DONATE", () => { OS.ShellOpen("https://github.com/sponsors/speige"); HideSocialPopover(); });
 		SetupButton(_contributeButton, "CONTRIBUTE", () => { OS.ShellOpen("https://github.com/speige/realm"); HideSocialPopover(); });
@@ -193,114 +192,13 @@ public partial class MainMenu : Control
 		};
 	}
 
-	private void SetupAvatarButton(Button button, Action onClick)
-	{
-		button.Flat = true;
-		button.Text = "";
-
-		button.AddThemeStyleboxOverride("normal", new StyleBoxEmpty());
-		button.AddThemeStyleboxOverride("hover", new StyleBoxEmpty());
-		button.AddThemeStyleboxOverride("pressed", new StyleBoxEmpty());
-		button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
-
-		button.AddThemeColorOverride("icon_normal_color", UIStyle.ColorGoldDull);
-		button.AddThemeColorOverride("icon_hover_color", UIStyle.ColorGold);
-		button.AddThemeColorOverride("icon_pressed_color", UIStyle.ColorCyanGlow);
-		button.AddThemeColorOverride("icon_focus_color", UIStyle.ColorGoldDull);
-
-		Tween scaleTween = null;
-		button.MouseEntered += () =>
-		{
-			PlayHoverSound();
-			scaleTween?.Kill();
-			scaleTween = button.CreateTween();
-			button.PivotOffset = button.Size / 2;
-			scaleTween.TweenProperty(button, "scale", new Vector2(1.12f, 1.12f), 0.15f)
-				.SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
-		};
-		button.MouseExited += () =>
-		{
-			scaleTween?.Kill();
-			scaleTween = button.CreateTween();
-			scaleTween.TweenProperty(button, "scale", Vector2.One, 0.15f)
-				.SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
-		};
-
-		button.Pressed += () =>
-		{
-			PlayClickSound();
-			onClick?.Invoke();
-		};
-	}
-
-	private void SetupGearButton(Button button, Action onClick)
-	{
-		button.Flat = false;
-		button.Icon = null;
-		
-		button.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		button.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		button.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-		button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
-
-		TextureRect gearIcon = new TextureRect();
-		gearIcon.Texture = GD.Load<Texture2D>("res://Assets/UI/gear_icon.png");
-		gearIcon.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-		gearIcon.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
-		gearIcon.CustomMinimumSize = new Vector2(32, 32);
-		gearIcon.Size = new Vector2(32, 32);
-		gearIcon.MouseFilter = Control.MouseFilterEnum.Ignore;
-		gearIcon.PivotOffset = new Vector2(16, 16);
-		gearIcon.Modulate = UIStyle.ColorGoldDull;
-		
-		button.AddChild(gearIcon);
-		gearIcon.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
-
-		Tween rotationTween = null;
-
-		button.Pressed += () => 
-		{
-			PlayClickSound();
-			onClick?.Invoke();
-		};
-
-		button.MouseEntered += () => 
-		{
-			PlayHoverSound();
-			gearIcon.Modulate = UIStyle.ColorGold;
-			rotationTween?.Kill();
-			rotationTween = button.CreateTween();
-			rotationTween.TweenProperty(gearIcon, "rotation", Mathf.Pi * 0.25f, 0.3f)
-				.SetTrans(Tween.TransitionType.Quad)
-				.SetEase(Tween.EaseType.Out);
-		};
-
-		button.MouseExited += () => 
-		{
-			gearIcon.Modulate = UIStyle.ColorGoldDull;
-			rotationTween?.Kill();
-			rotationTween = button.CreateTween();
-			rotationTween.TweenProperty(gearIcon, "rotation", 0.0f, 0.3f)
-				.SetTrans(Tween.TransitionType.Quad)
-				.SetEase(Tween.EaseType.Out);
-		};
-
-		button.ButtonDown += () => 
-		{
-			gearIcon.Modulate = UIStyle.ColorCyanGlow;
-		};
-
-		button.ButtonUp += () => 
-		{
-			gearIcon.Modulate = button.IsHovered() ? UIStyle.ColorGold : UIStyle.ColorGoldDull;
-		};
-	}
-
-	private void SetupSocialButton(Button button, Action onClick)
+		private void SetupUtilityButton(Button button, string iconPath, Action onClick)
 	{
 		button.Flat = false;
 		button.Text = "";
-		button.Icon = GD.Load<Texture2D>("res://Assets/UI/social_icon.png");
+		button.Icon = GD.Load<Texture2D>(iconPath);
+		button.IconAlignment = HorizontalAlignment.Center;
+		button.ExpandIcon = true;
 
 		button.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		button.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
@@ -337,7 +235,7 @@ public partial class MainMenu : Control
 		};
 	}
 
-	private void ToggleSocialPopover()
+private void ToggleSocialPopover()
 	{
 		bool isVisible = !_socialPopover.Visible;
 		_socialPopover.Visible = isVisible;

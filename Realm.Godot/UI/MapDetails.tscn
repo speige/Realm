@@ -260,8 +260,9 @@ layout_mode = 2
 theme_override_constants/separation = 6
 
 [node name="DownloadButton" type="Button" parent="StatsPanel/VBoxContainer"]
-custom_minimumSize = Vector2(0, 55)
+custom_minimumSize = Vector2(300, 55)
 layout_mode = 2
+size_flags_horizontal = 4
 focus_mode = 0
 
 [node name="DownloadSubtitle" type="Label" parent="StatsPanel/VBoxContainer"]

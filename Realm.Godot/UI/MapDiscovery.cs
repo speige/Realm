@@ -59,8 +59,8 @@ public partial class MapDiscovery : Control
 		_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
 		_leftPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(true));
 		_rightPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(false));
-		_filterPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		_mapListPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_filterPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		_mapListPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
 
 		UIStyle.ApplyTitle(_discoveryTitle, "MAP DISCOVERY", 36);
 
@@ -195,7 +195,7 @@ public partial class MapDiscovery : Control
 	{
 		var card = new PanelContainer();
 		card.CustomMinimumSize = new Vector2(620, 250);
-		card.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		card.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
 
 		var hBox = new HBoxContainer();
 		hBox.AddThemeConstantOverride("separation", 16);
@@ -277,6 +277,7 @@ public partial class MapDiscovery : Control
 
 		var btnDetails = new Button();
 		btnDetails.CustomMinimumSize = new Vector2(140, 40);
+		btnDetails.SizeFlagsVertical = SizeFlags.ShrinkEnd;
 		UIStyle.ApplyButtonText(btnDetails, "DETAILS", 14);
 		btnDetails.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		btnDetails.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());

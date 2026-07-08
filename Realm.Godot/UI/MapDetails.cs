@@ -131,7 +131,8 @@ public partial class MapDetails : Control
 				_downloadProgress = 100.0f;
 				_isDownloading = false;
 				_downloadButton.Disabled = false;
-				UIStyle.ApplyButtonText(_downloadButton, "** PLAY MAP **", 18);
+				UIStyle.ApplyButtonText(_downloadButton, "PLAY MAP" +
+					"", 18);
 				_downloadSubtitle.Text = Tr("Ready to Play");
 				_downloadSubtitle.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
 			}
@@ -184,7 +185,7 @@ public partial class MapDetails : Control
 
 
 		_downloadButton.Disabled = false;
-		UIStyle.ApplyButtonText(_downloadButton, "** DOWNLOAD MAP **", 18);
+		UIStyle.ApplyButtonText(_downloadButton, "DOWNLOAD MAP", 18);
 		_downloadSubtitle.Text = $"File Size: {_mapData.FileSize}";
 		_downloadSubtitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 	}
@@ -195,10 +196,10 @@ public partial class MapDetails : Control
 		_leftPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(true));
 		_rightPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(false));
 		
-		_headerPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		_descriptionPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		_featuresPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		_statsPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_headerPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		_descriptionPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		_featuresPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		_statsPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
 
 		var descVBox = _descriptionPanel.GetNode<VBoxContainer>("VBoxContainer");
 		var featuresVBox = _featuresPanel.GetNode<VBoxContainer>("VBoxContainer");
@@ -328,7 +329,7 @@ public partial class MapDetails : Control
 		_downloadButton.Pressed += () =>
 		{
 			UIManager.Instance.PlayClickSound();
-			if (_downloadButton.Text == "** PLAY MAP **")
+			if (_downloadButton.Text == "PLAY MAP")
 			{
 				GD.Print("Playing map: " + _mapData?.Title);
 

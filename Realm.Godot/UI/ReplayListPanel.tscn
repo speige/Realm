@@ -59,7 +59,12 @@ layout_mode = 2
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="ListContainer" type="VBoxContainer" parent="CenterContainer/MainFrame/VBox/ListFrame"]
+[node name="ScrollContainer" type="ScrollContainer" parent="CenterContainer/MainFrame/VBox/ListFrame"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ListContainer" type="VBoxContainer" parent="CenterContainer/MainFrame/VBox/ListFrame/ScrollContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 12

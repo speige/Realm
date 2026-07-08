@@ -61,7 +61,7 @@ public partial class LobbyBrowser : Control
 
 		_backButton = GetNode<Button>("BackButton");
 		_refreshButton = GetNode<Button>("RefreshButton");
-		_hostButton = GetNode<Button>("HostButton");
+		_hostButton = GetNode<Button>("LobbyPanel/VBoxContainer/HostButton");
 		_searchBar = GetNode<LineEdit>("SearchBar");
 		_campaignCheck = GetNode<CheckBox>("FilterPanel/VBoxContainer/CampaignCheck");
 		_meleeCheck = GetNode<CheckBox>("FilterPanel/VBoxContainer/MeleeCheck");
@@ -106,8 +106,11 @@ public partial class LobbyBrowser : Control
 		_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
 		_leftPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(true));
 		_rightPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(false));
-		_filterPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		_lobbyPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_filterPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		_lobbyPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		
+		_searchBar.AddThemeStyleboxOverride("normal", UIStyle.CreateTextInput());
+		_searchBar.AddThemeStyleboxOverride("focus", UIStyle.CreateTextInput(true));
 
 
 		UIStyle.ApplyTitle(_browserTitle, "CUSTOM LOBBY BROWSER", 36);

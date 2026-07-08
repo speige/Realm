@@ -52,7 +52,7 @@ horizontal_alignment = 1
 [node name="ColumnsContainer" type="HBoxContainer" parent="CenterContainer/MainFrame/VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_constants/separation = 20
+theme_override_constants/separation = 40
 
 [node name="VideoPanel" type="PanelContainer" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer"]
 layout_mode = 2
@@ -184,16 +184,19 @@ focus_mode = 0
 [node name="DisplayFpsChk" type="CheckBox" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
 layout_mode = 2
 focus_mode = 0
+theme_override_constants/h_separation = 8
 text = "Display FPS"
 
 [node name="RecordReplaysChk" type="CheckBox" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
 layout_mode = 2
 focus_mode = 0
+theme_override_constants/h_separation = 8
 text = "Record Replays"
 
 [node name="SeedMapFilesChk" type="CheckBox" parent="CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox"]
 layout_mode = 2
 focus_mode = 0
+theme_override_constants/h_separation = 8
 theme_override_constants/icon_max_width = 0
 tooltip_text = "Volunteers a tiny portion of your internet to help players download maps, reducing server costs. Uncheck this if you have a capped internet data plan or a very slow connection"
 text = "Seed map files to other players"
@@ -217,7 +220,7 @@ focus_mode = 0
 [node name="ButtonsRow" type="HBoxContainer" parent="CenterContainer/MainFrame/VBoxContainer"]
 custom_minimumSize = Vector2(0, 60)
 layout_mode = 2
-theme_override_constants/separation = 20
+theme_override_constants/separation = 40
 alignment = 1
 
 [node name="ApplyButton" type="Button" parent="CenterContainer/MainFrame/VBoxContainer/ButtonsRow"]

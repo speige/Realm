@@ -1599,12 +1599,12 @@ private void UpdateSelectedMapUI()
 		_connectingPopup.AddChild(centerContainer);
 
 		var cardPanel = new Panel();
-		cardPanel.CustomMinimumSize = new Vector2(600, 250);
-		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		cardPanel.CustomMinimumSize = new Vector2(440, 160);
+		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
 		centerContainer.AddChild(cardPanel);
 
 		var vbox = new VBoxContainer();
-		vbox.CustomMinimumSize = new Vector2(560, 210);
+		vbox.CustomMinimumSize = new Vector2(400, 120);
 		vbox.Alignment = BoxContainer.AlignmentMode.Center;
 		cardPanel.AddChild(vbox);
 		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
@@ -1612,6 +1612,8 @@ private void UpdateSelectedMapUI()
 		var label = new Label();
 		UIStyle.ApplyTitle(label, Tr("CONNECTING TO HOST ..."), 22);
 		label.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		label.AddThemeConstantOverride("outline_size", 4);
+		label.AddThemeColorOverride("font_outline_color", new Color(0, 0, 0, 1));
 		vbox.AddChild(label);
 
 		var spinner = new Label();

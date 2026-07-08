@@ -13,7 +13,7 @@ public partial class ReplayListPanel : Control
 
 	public override void _Ready()
 	{
-		_listContainer = GetNode<VBoxContainer>("CenterContainer/MainFrame/VBox/ListFrame/ListContainer");
+		_listContainer = GetNode<VBoxContainer>("CenterContainer/MainFrame/VBox/ListFrame/ScrollContainer/ListContainer");
 		_backBtn = GetNode<Button>("CenterContainer/MainFrame/VBox/Header/BackButton");
 		_titleLabel = GetNode<Label>("CenterContainer/MainFrame/VBox/Header/TitleLabel");
 		_noReplaysLabel = GetNode<Label>("CenterContainer/MainFrame/VBox/NoReplaysLabel");
@@ -29,8 +29,8 @@ public partial class ReplayListPanel : Control
 		_backBtn.AddThemeConstantOverride("icon_max_width", 0);
 
 		GetNode<Panel>("Background").AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
-		GetNode<PanelContainer>("CenterContainer/MainFrame").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel());
-		GetNode<PanelContainer>("CenterContainer/MainFrame/VBox/ListFrame").AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		GetNode<PanelContainer>("CenterContainer/MainFrame").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(false));
+		GetNode<PanelContainer>("CenterContainer/MainFrame/VBox/ListFrame").AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
 
 		PopulateReplaysList();
 	}

@@ -180,11 +180,8 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="HostButton" type="Button" parent="."]
+[node name="HostButton" type="Button" parent="LobbyPanel/VBoxContainer"]
 custom_minimumSize = Vector2(300, 60)
-layout_mode = 0
-offset_left = 1490.0
-offset_top = 820.0
-offset_right = 1790.0
-offset_bottom = 880.0
+layout_mode = 2
+size_flags_horizontal = 8
 focus_mode = 0
