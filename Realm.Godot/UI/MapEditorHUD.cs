@@ -171,7 +171,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnNoise;
 	private PanelContainer _minimapFrame;
 	private Control _minimapArea;
-	private ReferenceRect _cameraIndicator;
+	private MapEditorCameraIndicator _cameraIndicator;
 
 	private Button _btnSkybox;
 	private OptionButton _optSkybox;
@@ -379,7 +379,7 @@ public partial class MapEditorHUD : Control
 		{
 			var camera = (GameHost.Instance?.MainCamera as CameraControl);
 			camera?.Rotate90Degrees();
-		}, 13, "Rotate camera 90 degrees (R)");
+		}, 13, "Rotate camera 90 degrees");
 
 		_btnCameraAngle = new Button();
 		_btnCameraAngle.Name = "BtnCameraAngle";
@@ -586,6 +586,14 @@ public partial class MapEditorHUD : Control
 		placementRightSettingsVBox.AddChild(_placementRotateBox);
 		placementRightSettingsVBox.AddChild(_placementScaleBox);
 		_btnToggleSnap = GetNode<Button>("PanelEntityPalette/VBox/Content/RightSettingsVBox/BtnToggleSnap");
+		SetupButton(_btnToggleSnap, "🔲 SNAP TO GRID: OFF", () =>
+		{
+			if (GameHost.Instance != null)
+			{
+				GameHost.Instance.EditorSnapToGrid = !GameHost.Instance.EditorSnapToGrid;
+				UpdateGridSnapExternal(GameHost.Instance.EditorSnapToGrid);
+			}
+		}, 11, "Toggle snapping objects and placements to the grid");
 		_btnBigSave = GetNode<Button>("PanelEntityPalette/VBox/Content/RightSettingsVBox/BtnBigSave");
 
 		_lblInfoText = GetNode<Label>("RightPillar/VBox/LblInfoText");
@@ -1528,61 +1536,6 @@ public partial class MapEditorHUD : Control
 		SaveMapAction();
 	}
 
-	public void ToggleSelectedObjectTeam(bool isEnemy)
-	{
-		if (GameHost.Instance == null) return;
-		var selected = GameHost.Instance.SelectedEditorObject;
-		if (GodotObject.IsInstanceValid(selected) && selected is Unit3D unit)
-		{
-			bool oldIsEnemy = unit.IsEnemy;
-			if (oldIsEnemy == isEnemy) return;
-			var action = new ObjectTransformAction(
-				unit,
-				unit.Position, unit.Position,
-				unit.RotationDegrees, unit.RotationDegrees,
-				unit.Scale, unit.Scale,
-				oldIsEnemy, isEnemy
-			);
-			GameHost.Instance.SetUnitTeamExternal(unit, isEnemy);
-			EditorHistoryManager.RecordAction(action);
-			UpdateSelectedObjectInfo();
-			ShowFeedback(isEnemy ? "Aligned Unit to Enemy" : "Aligned Unit to Player");
-		}
-	}
-
-	public void AlignSelectedObjectToGround()
-	{
-		if (GameHost.Instance == null) return;
-		var selected = GameHost.Instance.SelectedEditorObject;
-		if (GodotObject.IsInstanceValid(selected))
-		{
-			var node3D = selected as Node3D;
-			Vector3 oldPos = node3D.Position;
-			Vector3 newPos = oldPos;
-			newPos.Y = GameHost.Instance.GetTerrainHeightAt(newPos);
-			if (Mathf.Abs(newPos.Y - oldPos.Y) > 0.01f)
-			{
-				bool isUnit = selected is Unit3D;
-				bool isEnemy = isUnit ? (selected as Unit3D).IsEnemy : false;
-				var action = new ObjectTransformAction(
-					node3D,
-					oldPos, newPos,
-					node3D.RotationDegrees, node3D.RotationDegrees,
-					node3D.Scale, node3D.Scale,
-					isEnemy, isEnemy
-				);
-				node3D.Position = newPos;
-				if (selected is Unit3D unit && GameHost.Instance.EcsWorld.IsAlive(unit.Entity))
-				{
-					GameHost.Instance.EcsWorld.Set(unit.Entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(newPos.X, newPos.Y, newPos.Z)));
-				}
-				EditorHistoryManager.RecordAction(action);
-				UpdateSelectedObjectInfo();
-				ShowFeedback("Aligned Object to Ground");
-			}
-		}
-	}
-
 	public void UpdateWaterEnabledExternal(bool enabled)
 	{
 		if (_chkWaterEnabled != null)
@@ -2162,7 +2115,7 @@ public partial class MapEditorHUD : Control
 					_lblInfoText.Text = TranslationServer.Translate("TOOL: Object Eraser\n\nLeft-click directly on any unit or prop in 3D scene to erase and remove it from the map.");
 					break;
 				case GameHost.EditorTool.SelectMove:
-					_lblInfoText.Text = TranslationServer.Translate("TOOL: Select / Move\n\nLeft-click directly on any unit, prop, or decal to select it. Hold and drag left click to move it. Use R to rotate, S to scale, or Delete to delete.");
+					_lblInfoText.Text = TranslationServer.Translate("TOOL: Select / Move\n\nLeft-click directly on any unit, prop, or decal to select it. Hold and drag left click to move it. Use Alt + MouseWheel to scale, or Delete to delete.");
 					break;
 				case GameHost.EditorTool.Eyedropper:
 					_lblInfoText.Text = TranslationServer.Translate("TOOL: Eyedropper / Picker\n\nLeft-click directly on any unit, prop, or decal to copy and select it as the active placement tool. Click on terrain to copy its texture color, or hold Shift to copy its height.");
@@ -2771,33 +2724,6 @@ public class {mapName} : IMapScript
 		}
 	}
 
-	public void CycleTextureSwatch(bool forward)
-	{
-		int currentIndex = 0;
-		if (_activeToolButton != null && _activeToolButton.Name.ToString().StartsWith("Swatch"))
-		{
-			string name = _activeToolButton.Name.ToString();
-			if (int.TryParse(name.Substring(6), out int parsed))
-			{
-				currentIndex = parsed;
-			}
-		}
-		int nextIndex = currentIndex;
-		if (forward)
-		{
-			nextIndex = nextIndex % 12 + 1;
-		}
-		else
-		{
-			nextIndex = (nextIndex - 2 + 12) % 12 + 1;
-		}
-		var nextSwatch = _swatchButtons[nextIndex - 1];
-		if (nextSwatch != null)
-		{
-			nextSwatch.EmitSignal(Button.SignalName.Pressed);
-		}
-	}
-
 	public void UpdateFlattenHeightExternal(float height)
 	{
 		if (_sldFlattenHeight != null)
@@ -2946,19 +2872,14 @@ public class {mapName} : IMapScript
 		AddHelpSectionHeader(grid, TranslationServer.Translate("SCULPTING / PLACEMENT SETTINGS"));
 		AddHelpShortcutRow(grid, "[ / ]", TranslationServer.Translate("Increase / decrease brush size"));
 		AddHelpShortcutRow(grid, "- / =", TranslationServer.Translate("Increase / decrease brush strength"));
-		AddHelpShortcutRow(grid, "Shift + Mouse Scroll", TranslationServer.Translate("Quickly change brush size"));
-		AddHelpShortcutRow(grid, "Ctrl + Mouse Scroll", TranslationServer.Translate("Quickly change brush strength"));
+		AddHelpShortcutRow(grid, "Shift + MouseWheel Scroll", TranslationServer.Translate("Quickly change brush size"));
+		AddHelpShortcutRow(grid, "Ctrl + MouseWheel Scroll", TranslationServer.Translate("Quickly change brush strength"));
 		AddHelpShortcutRow(grid, "B Key", TranslationServer.Translate("Toggle brush shape (Circle / Square)"));
 		AddHelpShortcutRow(grid, "V Key", TranslationServer.Translate("Toggle terrain alignment grid lines"));
 		AddHelpShortcutRow(grid, "M Key", TranslationServer.Translate("Toggle blocky sculpt mode"));
-		AddHelpShortcutRow(grid, "Tab / Shift + Tab", TranslationServer.Translate("Cycle selected texture painted color"));
-		AddHelpShortcutRow(grid, "R Key", TranslationServer.Translate("Rotate placement/selected object by 45°"));
-		AddHelpShortcutRow(grid, "Shift + R / Scroll (in Select)", TranslationServer.Translate("Rotate placement/selected object by 15°"));
-		AddHelpShortcutRow(grid, "S Key", TranslationServer.Translate("Cycle placement/selected object scale size"));
-		AddHelpShortcutRow(grid, "Alt + Scroll (in Select)", TranslationServer.Translate("Fine-tune object scale size"));
-		AddHelpShortcutRow(grid, "G Key", TranslationServer.Translate("Align selected object height to ground"));
+		AddHelpShortcutRow(grid, "Shift + MouseWheel Scroll", TranslationServer.Translate("Rotate placement/selected object"));
+		AddHelpShortcutRow(grid, "Alt + MouseWheel Scroll", TranslationServer.Translate("Fine-tune object scale size"));
 		AddHelpShortcutRow(grid, "Ctrl + G", TranslationServer.Translate("Toggle alignment grid snap placement"));
-		AddHelpShortcutRow(grid, "F Key", TranslationServer.Translate("Toggle selected unit faction (Alliance/Orc)"));
 		AddHelpShortcutRow(grid, "Ctrl + D", TranslationServer.Translate("Duplicate / clone selected object"));
 		AddHelpShortcutRow(grid, "Delete", TranslationServer.Translate("Delete / erase selected object"));
 
@@ -4038,14 +3959,13 @@ public class {mapName} : IMapScript
 		minimapBg.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		minimapBg.StretchMode = TextureRect.StretchModeEnum.Scale;
 		minimapBg.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+		minimapBg.MouseFilter = Control.MouseFilterEnum.Ignore;
 		_minimapArea.AddChild(minimapBg);
 
-		_cameraIndicator = new ReferenceRect();
+		_cameraIndicator = new MapEditorCameraIndicator();
 		_cameraIndicator.Name = "Indicator";
-		_cameraIndicator.CustomMinimumSize = new Vector2(25, 18);
-		_cameraIndicator.BorderColor = new Color(0, 0.9f, 0.1f, 0.85f);
-		_cameraIndicator.BorderWidth = 2.0f;
-		_cameraIndicator.EditorOnly = false;
+		_cameraIndicator.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+		_cameraIndicator.MouseFilter = Control.MouseFilterEnum.Ignore;
 		_minimapArea.AddChild(_cameraIndicator);
 	}
 
@@ -4459,6 +4379,10 @@ public class {mapName} : IMapScript
 
 	public bool IsMouseOverUI(Vector2 mousePos)
 	{
+		if (_minimapController != null && _minimapController.IsDragging)
+		{
+			return true;
+		}
 		if (_isDraggingSlider)
 		{
 			return true;
@@ -4605,10 +4529,15 @@ public class {mapName} : IMapScript
 
 	public override void _Input(InputEvent @event)
 	{
-		if (@event is InputEventKey keyEvent && keyEvent.Pressed)
+		if (@event is InputEventKey keyEvent)
 		{
-			if (keyEvent.Keycode == Godot.Key.Up || keyEvent.Keycode == Godot.Key.Down || 
-				keyEvent.Keycode == Godot.Key.Left || keyEvent.Keycode == Godot.Key.Right)
+			if (keyEvent.Keycode == Godot.Key.Tab)
+			{
+				GetViewport().SetInputAsHandled();
+				return;
+			}
+			if (keyEvent.Pressed && (keyEvent.Keycode == Godot.Key.Up || keyEvent.Keycode == Godot.Key.Down || 
+				keyEvent.Keycode == Godot.Key.Left || keyEvent.Keycode == Godot.Key.Right))
 			{
 				var focusOwner = GetViewport().GuiGetFocusOwner();
 				if (focusOwner != null && (focusOwner is LineEdit || focusOwner is TextEdit))

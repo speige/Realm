@@ -5,10 +5,13 @@ public class MapEditorMinimap
 {
 	private PanelContainer _minimapFrame;
 	private Control _minimapArea;
-	private ReferenceRect _cameraIndicator;
+	private MapEditorCameraIndicator _cameraIndicator;
 	private Node _hudNode;
+	private bool _isDragging;
 
-	public MapEditorMinimap(PanelContainer minimapFrame, Control minimapArea, ReferenceRect cameraIndicator, Node hudNode)
+	public bool IsDragging => _isDragging && Input.IsMouseButtonPressed(MouseButton.Left);
+
+	public MapEditorMinimap(PanelContainer minimapFrame, Control minimapArea, MapEditorCameraIndicator cameraIndicator, Node hudNode)
 	{
 		_minimapFrame = minimapFrame;
 		_minimapArea = minimapArea;
@@ -17,9 +20,13 @@ public class MapEditorMinimap
 
 		_minimapArea.GuiInput += (@event) =>
 		{
-			if (@event is InputEventMouseButton mouseBtn && mouseBtn.Pressed && mouseBtn.ButtonIndex == MouseButton.Left)
+			if (@event is InputEventMouseButton mouseBtn && mouseBtn.ButtonIndex == MouseButton.Left)
 			{
-				TeleportCameraToMinimapPos(mouseBtn.Position);
+				_isDragging = mouseBtn.Pressed;
+				if (mouseBtn.Pressed)
+				{
+					TeleportCameraToMinimapPos(mouseBtn.Position);
+				}
 			}
 			else if (@event is InputEventMouseMotion mouseMotion && mouseMotion.ButtonMask == MouseButtonMask.Left)
 			{
@@ -43,16 +50,16 @@ public class MapEditorMinimap
 		float physicalWidth = (GameHost.Instance.GroundTerrain?.Width - 1 ?? 125) * spacing;
 		float physicalDepth = (GameHost.Instance.GroundTerrain?.Depth - 1 ?? 125) * spacing;
 
-		float halfWidth = physicalWidth / 2.0f;
-		float halfDepth = physicalDepth / 2.0f;
+		float worldX = (xRatio - 0.5f) * physicalWidth;
+		float worldZ = (yRatio - 0.5f) * physicalDepth;
 
-		float margin = Mathf.Min(30.0f, halfWidth * 0.8f);
-		float clampX = halfWidth - margin;
-		float clampZMin = -halfDepth + margin;
-		float clampZMax = halfDepth;
+		float minX = GameHost.Instance.EditorCameraBoundsLeft;
+		float maxX = GameHost.Instance.EditorCameraBoundsRight;
+		float minZ = GameHost.Instance.EditorCameraBoundsTop;
+		float maxZ = GameHost.Instance.EditorCameraBoundsBottom;
 
-		float worldX = Mathf.Clamp((xRatio - 0.5f) * physicalWidth, -clampX, clampX);
-		float worldZ = Mathf.Clamp((yRatio - 0.5f) * physicalDepth, -clampZMin, clampZMax);
+		worldX = Mathf.Clamp(worldX, minX, maxX);
+		worldZ = Mathf.Clamp(worldZ, minZ, maxZ);
 
 		var camera = GameHost.Instance.GetViewport().GetCamera3D();
 		if (camera != null)
@@ -71,28 +78,57 @@ public class MapEditorMinimap
 		float physicalWidth = (GameHost.Instance.GroundTerrain?.Width - 1 ?? 125) * spacing;
 		float physicalDepth = (GameHost.Instance.GroundTerrain?.Depth - 1 ?? 125) * spacing;
 
-		float scale = camera.GlobalPosition.Y / 35.0f;
-		float targetIndicatorWidth = 25.0f * scale * (250f / physicalWidth);
-		float targetIndicatorHeight = 18.0f * scale * (250f / physicalDepth);
-		targetIndicatorWidth = Mathf.Clamp(targetIndicatorWidth, 5.0f, _minimapArea.Size.X);
-		targetIndicatorHeight = Mathf.Clamp(targetIndicatorHeight, 5.0f, _minimapArea.Size.Y);
-		Vector2 newSize = new Vector2(targetIndicatorWidth, targetIndicatorHeight);
-		_cameraIndicator.CustomMinimumSize = newSize;
-		_cameraIndicator.Size = newSize;
+		var viewport = camera.GetViewport();
+		if (viewport == null) return;
+		Vector2 viewportSize = viewport.GetVisibleRect().Size;
 
-		float worldX = camera.GlobalPosition.X;
-		float worldZ = camera.GlobalPosition.Z;
+		Vector2 topLeftScreen = new Vector2(0, 0);
+		Vector2 topRightScreen = new Vector2(viewportSize.X, 0);
+		Vector2 bottomRightScreen = new Vector2(viewportSize.X, viewportSize.Y);
+		Vector2 bottomLeftScreen = new Vector2(0, viewportSize.Y);
 
-		float xRatio = (worldX / physicalWidth) + 0.5f;
-		float yRatio = (worldZ / physicalDepth) + 0.5f;
+		Vector3 pTL = ProjectToGround(camera, topLeftScreen);
+		Vector3 pTR = ProjectToGround(camera, topRightScreen);
+		Vector3 pBR = ProjectToGround(camera, bottomRightScreen);
+		Vector3 pBL = ProjectToGround(camera, bottomLeftScreen);
+
+		Vector2[] minimapPoints = new Vector2[4];
+		minimapPoints[0] = WorldToMinimap(pTL, physicalWidth, physicalDepth);
+		minimapPoints[1] = WorldToMinimap(pTR, physicalWidth, physicalDepth);
+		minimapPoints[2] = WorldToMinimap(pBR, physicalWidth, physicalDepth);
+		minimapPoints[3] = WorldToMinimap(pBL, physicalWidth, physicalDepth);
+
+		_cameraIndicator.SetPoints(minimapPoints);
+	}
+
+	private Vector3 ProjectToGround(Camera3D camera, Vector2 screenPos)
+	{
+		Vector3 rayOrigin = camera.ProjectRayOrigin(screenPos);
+		Vector3 rayNormal = camera.ProjectRayNormal(screenPos);
+
+		if (Mathf.IsZeroApprox(rayNormal.Y))
+		{
+			return rayOrigin + rayNormal * 1000f;
+		}
+
+		float t = -rayOrigin.Y / rayNormal.Y;
+		if (t < 0f || t > 1000f)
+		{
+			t = 1000f;
+		}
+
+		return rayOrigin + t * rayNormal;
+	}
+
+	private Vector2 WorldToMinimap(Vector3 worldPos, float physicalWidth, float physicalDepth)
+	{
+		float xRatio = (worldPos.X / physicalWidth) + 0.5f;
+		float yRatio = (worldPos.Z / physicalDepth) + 0.5f;
 
 		xRatio = Mathf.Clamp(xRatio, 0f, 1f);
 		yRatio = Mathf.Clamp(yRatio, 0f, 1f);
 
-		float xPos = xRatio * _minimapArea.Size.X - (newSize.X / 2f);
-		float yPos = yRatio * _minimapArea.Size.Y - (newSize.Y / 2f);
-
-		_cameraIndicator.Position = new Vector2(xPos, yPos);
+		return new Vector2(xRatio * _minimapArea.Size.X, yRatio * _minimapArea.Size.Y);
 	}
 
 	public void RegenerateMinimap()

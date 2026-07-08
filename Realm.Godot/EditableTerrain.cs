@@ -745,4 +745,35 @@ void fragment() {
 		UpdateWaterSize();
 		UpdateMeshAndPhysics();
 	}
+
+	public void RestoreTerrainFromSnapshot(int newWidth, int newDepth, float spacing, float waterHeight, bool waterEnabled, float[,] heights, int[,] pathingCodes, Color[,] colors)
+	{
+		if (GameHost.Instance == null || GameHost.Instance.EcsWorld == null || !GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity)) return;
+		if (!GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity)) return;
+
+		ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
+
+		float[,] clonedHeights = (float[,])heights.Clone();
+		int[,] clonedPathing = (int[,])pathingCodes.Clone();
+		Color[,] clonedColors = (Color[,])colors.Clone();
+
+		GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
+			newWidth, newDepth, spacing, state.CellSize, waterHeight, waterEnabled,
+			clonedHeights, clonedPathing, state.NavMesh, state.NavMeshQuery
+		));
+
+		_localHeights = clonedHeights;
+		_localPathingCodes = clonedPathing;
+		Colors = clonedColors;
+
+		_localWaterEnabled = waterEnabled;
+		_localWaterHeight = waterHeight;
+		if (_waterMesh != null)
+		{
+			_waterMesh.Visible = waterEnabled;
+		}
+		UpdateWaterTransform();
+		UpdateWaterSize();
+		UpdateMeshAndPhysics();
+	}
 }

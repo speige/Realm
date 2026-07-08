@@ -1508,10 +1508,12 @@ public partial class GameHost
 	public void ResizeMapExternal(int newWidth, int newDepth)
 	{
 		if (GroundTerrain == null) return;
-		
+
+		var before = MapStateSnapshot.CreateSnapshot();
+
 		int oldWidth = GroundTerrain.Width;
 		int oldDepth = GroundTerrain.Depth;
-		
+
 		float diffWidth = (newWidth - oldWidth) * GroundTerrain.Spacing;
 		float diffDepth = (newDepth - oldDepth) * GroundTerrain.Spacing;
 
@@ -1528,15 +1530,19 @@ public partial class GameHost
 		RebuildCameraBoundsOverlay();
 		MapEditorHUD.Instance?.UpdateCameraBoundsUI();
 		MapEditorHUD.Instance?.RegenerateMinimap();
-		
+
 		EditorHasUnsavedChanges = true;
 		MapEditorHUD.Instance?.ShowFeedbackExternal($"Map resized to {newWidth}x{newDepth}");
 
+		var after = MapStateSnapshot.CreateSnapshot();
+		EditorHistoryManager.RecordAction(new MapResizeAction(before, after));
 	}
 
 	public void ScaleMapExternal(int newWidth, int newDepth)
 	{
 		if (GroundTerrain == null) return;
+
+		var before = MapStateSnapshot.CreateSnapshot();
 
 		int oldWidth = GroundTerrain.Width;
 		int oldDepth = GroundTerrain.Depth;
@@ -1550,7 +1556,6 @@ public partial class GameHost
 		float scaleZ = oldHalfD > 0f ? newHalfD / oldHalfD : 1f;
 
 		GroundTerrain.ScaleTerrainData(newWidth, newDepth);
-
 
 		foreach (var unit in AllUnits)
 		{
@@ -1593,6 +1598,8 @@ public partial class GameHost
 		EditorHasUnsavedChanges = true;
 		MapEditorHUD.Instance?.ShowFeedbackExternal($"Map scaled to {newWidth}x{newDepth}");
 
+		var after = MapStateSnapshot.CreateSnapshot();
+		EditorHistoryManager.RecordAction(new MapResizeAction(before, after));
 	}
 
 	private void DeleteEntitiesOutsideBounds()

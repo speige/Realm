@@ -171,25 +171,6 @@ public partial class GameHost
 					GetViewport().SetInputAsHandled();
 					return;
 				}
-				if (editorKeyEvent.Keycode == Key.G && !ctrlPressed)
-				{
-					if (ActiveEditorTool == EditorTool.SelectMove && GodotObject.IsInstanceValid(SelectedEditorObject))
-					{
-						MapEditorHUD.Instance?.AlignSelectedObjectToGround();
-						GetViewport().SetInputAsHandled();
-						return;
-					}
-				}
-				if (editorKeyEvent.Keycode == Key.F && !ctrlPressed && !shiftPressed)
-				{
-					if (ActiveEditorTool == EditorTool.SelectMove && GodotObject.IsInstanceValid(SelectedEditorObject) && SelectedEditorObject is Unit3D unit)
-					{
-						bool nextIsEnemy = !unit.IsEnemy;
-						MapEditorHUD.Instance?.ToggleSelectedObjectTeam(nextIsEnemy);
-						GetViewport().SetInputAsHandled();
-						return;
-					}
-				}
 				if (editorKeyEvent.Keycode == Key.C && !ctrlPressed && !shiftPressed)
 				{
 					var cam = MainCamera;
@@ -366,7 +347,26 @@ public partial class GameHost
 					if (ActiveEditorTool == EditorTool.SelectMove && GodotObject.IsInstanceValid(SelectedEditorObject))
 					{
 						Node3D selectedNode = SelectedEditorObject as Node3D;
-						Vector3 spawnPos = selectedNode.Position + new Vector3(2.0f, 0.0f, 2.0f);
+						Vector3 spawnPos;
+						var hit = RaycastFromMouse(GetViewport().GetMousePosition());
+						if (hit != null && hit.ContainsKey("position"))
+						{
+							spawnPos = hit["position"].AsVector3();
+							if (EditorSnapToGrid && GroundTerrain != null)
+							{
+								float spacing = GroundTerrain.Spacing;
+								int width = GroundTerrain.Width;
+								int depth = GroundTerrain.Depth;
+								float fx = Mathf.Round(spawnPos.X / spacing + (width - 1) / 2.0f);
+								spawnPos.X = (Mathf.Clamp(fx, 0, width - 1) - (width - 1) / 2.0f) * spacing;
+								float fz = Mathf.Round(spawnPos.Z / spacing + (depth - 1) / 2.0f);
+								spawnPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * spacing;
+							}
+						}
+						else
+						{
+							spawnPos = selectedNode.Position + new Vector3(2.0f, 0.0f, 2.0f);
+						}
 						spawnPos.Y = GetTerrainHeightAt(spawnPos);
 						float rotY = selectedNode.RotationDegrees.Y;
 						float scaleVal = selectedNode.Scale.X;
@@ -521,110 +521,6 @@ public partial class GameHost
 					GetViewport().SetInputAsHandled();
 					return;
 				}
-				if (editorKeyEvent.Keycode == Key.R)
-				{
-					if (ActiveEditorTool == EditorTool.PlaceUnit || ActiveEditorTool == EditorTool.PlaceProp || ActiveEditorTool == EditorTool.PlaceDecal)
-					{
-						if (EditorRandomRotation || EditorRandomScale)
-						{
-							GenerateNewRandomPlacementRotationAndScale();
-							MapEditorHUD.Instance?.ShowFeedbackExternal("Re-randomized Rotation & Scale");
-							GetViewport().SetInputAsHandled();
-							return;
-						}
-					}
-					float angleStep = shiftPressed ? 15.0f : 45.0f;
-					if (ActiveEditorTool == EditorTool.SelectMove && GodotObject.IsInstanceValid(SelectedEditorObject))
-					{
-						var node3D = SelectedEditorObject as Node3D;
-						Vector3 oldRot = node3D.RotationDegrees;
-						Vector3 newRot = oldRot;
-						newRot.Y = (newRot.Y + angleStep) % 360.0f;
-						bool isUnit = SelectedEditorObject is Unit3D;
-						bool isEnemy = isUnit ? (SelectedEditorObject as Unit3D).IsEnemy : false;
-						var action = new ObjectTransformAction(
-							node3D,
-							node3D.Position, node3D.Position,
-							oldRot, newRot,
-							node3D.Scale, node3D.Scale,
-							isEnemy, isEnemy
-						);
-						node3D.RotationDegrees = newRot;
-						EditorHistoryManager.RecordAction(action);
-						MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
-						MapEditorHUD.Instance?.ShowFeedbackExternal($"Rotated Object to {newRot.Y}°");
-					}
-					else
-					{
-						EditorPlacementRotation = (EditorPlacementRotation + angleStep) % 360.0f;
-						MapEditorHUD.Instance?.UpdateRotationExternal(EditorPlacementRotation);
-					}
-					GetViewport().SetInputAsHandled();
-					return;
-				}
-				if (editorKeyEvent.Keycode == Key.S)
-				{
-					if (ActiveEditorTool == EditorTool.SelectMove && GodotObject.IsInstanceValid(SelectedEditorObject))
-					{
-						var node3D = SelectedEditorObject as Node3D;
-						Vector3 oldScale = node3D.Scale;
-						float current = oldScale.X;
-						float next = current;
-						if (shiftPressed)
-						{
-							next = current + 0.1f;
-							if (next > 3.0f) next = 0.2f;
-						}
-						else
-						{
-							next = current switch {
-								0.5f => 1.0f,
-								1.0f => 1.5f,
-								1.5f => 2.0f,
-								2.0f => 0.5f,
-								_ => 1.0f
-							};
-						}
-						Vector3 newScale = Vector3.One * next;
-						bool isUnit = SelectedEditorObject is Unit3D;
-						bool isEnemy = isUnit ? (SelectedEditorObject as Unit3D).IsEnemy : false;
-						var action = new ObjectTransformAction(
-							node3D,
-							node3D.Position, node3D.Position,
-							node3D.RotationDegrees, node3D.RotationDegrees,
-							oldScale, newScale,
-							isEnemy, isEnemy
-						);
-						node3D.Scale = newScale;
-						EditorHistoryManager.RecordAction(action);
-						MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
-						MapEditorHUD.Instance?.ShowFeedbackExternal($"Scaled Object to {next:F1}x");
-					}
-					else
-					{
-						float current = EditorPlacementScale;
-						float next = current;
-						if (shiftPressed)
-						{
-							next = current + 0.1f;
-							if (next > 3.0f) next = 0.2f;
-						}
-						else
-						{
-							next = current switch {
-								0.5f => 1.0f,
-								1.0f => 1.5f,
-								1.5f => 2.0f,
-								2.0f => 0.5f,
-								_ => 1.0f
-							};
-						}
-						EditorPlacementScale = next;
-						MapEditorHUD.Instance?.UpdateScaleExternal(next);
-					}
-					GetViewport().SetInputAsHandled();
-					return;
-				}
 				if (editorKeyEvent.Keycode >= Key.Key1 && editorKeyEvent.Keycode <= Key.Key9)
 				{
 					int toolIndex = (int)(editorKeyEvent.Keycode - Key.Key1);
@@ -674,12 +570,6 @@ public partial class GameHost
 				{
 					GenerateNewRandomPlacementRotationAndScale();
 					MapEditorHUD.Instance?.ShowFeedbackExternal("Re-randomized Rotation & Scale");
-					GetViewport().SetInputAsHandled();
-					return;
-				}
-				if (editorKeyEvent.Keycode == Key.Tab)
-				{
-					MapEditorHUD.Instance?.CycleTextureSwatch(!shiftPressed);
 					GetViewport().SetInputAsHandled();
 					return;
 				}

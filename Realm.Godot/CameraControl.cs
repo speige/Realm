@@ -402,6 +402,10 @@ public partial class CameraControl : Camera3D
 			{
 				if (mouseBtn.ButtonIndex == MouseButton.WheelUp || mouseBtn.ButtonIndex == MouseButton.WheelDown)
 				{
+					if (mouseBtn.AltPressed)
+					{
+						return;
+					}
 					bool shiftPressed = Input.IsKeyPressed(Key.Shift);
 					bool ctrlPressed = Input.IsKeyPressed(Key.Ctrl);
 					if ((shiftPressed || ctrlPressed) && GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
