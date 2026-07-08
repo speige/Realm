@@ -35,6 +35,7 @@ public partial class InGameHUD : Control
 	private Panel _devPanel;
 
 	private GridContainer _commandGrid;
+	private GridContainer _inventoryGrid;
 	public bool IsBuildSubMenuOpen => _viewModel.IsBuildSubMenuOpen;
 
 	public void EnterBuildSubMenu()
@@ -243,6 +244,7 @@ public partial class InGameHUD : Control
 	private LeaderboardPanel _leaderboardPanelController;
 	private PortraitPanel _portraitPanelController;
 	private CommandPanel _commandPanelController;
+	private InventoryPanel _inventoryPanelController;
 	private ControlGroupsUIController _controlGroupsUIController;
 
 	public override void _Ready()
@@ -334,7 +336,10 @@ public partial class InGameHUD : Control
 		}
 
 		_commandGrid = GetNode<GridContainer>("BottomConsole/HBox/CommandFrame/GridContainer");
-		_commandGrid.Columns = 3;
+		_commandGrid.Columns = 4;
+
+		_inventoryGrid = GetNode<GridContainer>("BottomConsole/HBox/InventoryFrame/InventoryGrid");
+		_inventoryGrid.Columns = 2;
 
 		_btnMove = GetNode<Button>("BottomConsole/HBox/CommandFrame/GridContainer/BtnMove");
 		_btnStop = GetNode<Button>("BottomConsole/HBox/CommandFrame/GridContainer/BtnStop");
@@ -574,6 +579,8 @@ public partial class InGameHUD : Control
 			_btnFireball, _btnLightning, _btnHolyLight
 		);
 		_portraitPanelController.UnitSelectionButtonClicked += OnUnitSelectionButtonClicked;
+
+		_inventoryPanelController = new InventoryPanel(_inventoryGrid);
 
 		_commandPanelController = new CommandPanel(
 			_commandGrid,
@@ -991,6 +998,7 @@ public partial class InGameHUD : Control
 		_viewModel.UpdateSelectedUnits(selectedUnits);
 		_portraitPanelController?.Update(_viewModel);
 		_commandPanelController?.Update(_viewModel);
+		_inventoryPanelController?.Update(_viewModel);
 	}
 
 	private void ApplyThemeStyles()

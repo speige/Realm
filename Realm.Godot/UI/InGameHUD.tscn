@@ -151,8 +151,19 @@ custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
 focus_mode = 0
 
+[node name="InventoryFrame" type="PanelContainer" parent="BottomConsole/HBox"]
+custom_minimum_size = Vector2(160, 240)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="InventoryGrid" type="GridContainer" parent="BottomConsole/HBox/InventoryFrame"]
+layout_mode = 2
+theme_override_constants/h_separation = 0
+theme_override_constants/v_separation = 0
+columns = 2
+
 [node name="CommandFrame" type="PanelContainer" parent="BottomConsole/HBox"]
-custom_minimum_size = Vector2(240, 240)
+custom_minimum_size = Vector2(320, 240)
 layout_mode = 2
 size_flags_vertical = 4
 
@@ -160,7 +171,7 @@ size_flags_vertical = 4
 layout_mode = 2
 theme_override_constants/h_separation = 0
 theme_override_constants/v_separation = 0
-columns = 2
+columns = 4
 
 [node name="BtnMove" type="Button" parent="BottomConsole/HBox/CommandFrame/GridContainer"]
 custom_minimum_size = Vector2(80, 80)

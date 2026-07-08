@@ -131,10 +131,36 @@ public class CommandPanel
 		_activeItems = GetCommandCardItems(focusedUnit, viewModel.IsBuildSubMenuOpen);
 
 		int totalItems = _activeItems.Count;
-		if (totalItems <= 9)
+		
+		Key[] gridHotkeys = new Key[] {
+			Key.Q, Key.W, Key.E, Key.R,
+			Key.A, Key.S, Key.D, Key.F,
+			Key.Z, Key.X, Key.C, Key.V
+		};
+		
+		int pageOffset = _pageIndex * 11;
+		for (int i = 0; i < totalItems; i++)
+		{
+			int localIdx = -1;
+			if (totalItems <= 12) {
+				localIdx = i;
+			} else {
+				if (i >= pageOffset && i < pageOffset + 11) {
+					localIdx = i - pageOffset;
+				}
+			}
+			
+			if (localIdx >= 0 && localIdx < 12) {
+				_activeItems[i].Hotkey = gridHotkeys[localIdx];
+				_activeItems[i].Tooltip = System.Text.RegularExpressions.Regex.Replace(_activeItems[i].Tooltip, @"^\[.*?\] ", "[" + gridHotkeys[localIdx].ToString() + "] ");
+			} else {
+				_activeItems[i].Hotkey = Key.None;
+			}
+		}
+		if (totalItems <= 12)
 		{
 			_pageIndex = 0;
-			for (int i = 0; i < 9; i++)
+			for (int i = 0; i < 12; i++)
 			{
 				if (i < totalItems)
 				{
@@ -148,11 +174,11 @@ public class CommandPanel
 		}
 		else
 		{
-			int numPages = (totalItems + 7) / 8;
+			int numPages = (totalItems + 10) / 11;
 			if (_pageIndex >= numPages) _pageIndex = 0;
 
-			int startIndex = _pageIndex * 8;
-			for (int i = 0; i < 8; i++)
+			int startIndex = _pageIndex * 11;
+			for (int i = 0; i < 11; i++)
 			{
 				int itemIndex = startIndex + i;
 				if (itemIndex < totalItems)
@@ -174,7 +200,7 @@ public class CommandPanel
 		if (_activeItems.Count == 0) return false;
 
 		int totalItems = _activeItems.Count;
-		if (totalItems <= 9)
+		if (totalItems <= 12)
 		{
 			for (int i = 0; i < totalItems; i++)
 			{
@@ -188,10 +214,10 @@ public class CommandPanel
 		}
 		else
 		{
-			int numPages = (totalItems + 7) / 8;
+			int numPages = (totalItems + 10) / 11;
 			if (_pageIndex >= numPages) _pageIndex = 0;
-			int startIndex = _pageIndex * 8;
-			for (int i = 0; i < 8; i++)
+			int startIndex = _pageIndex * 11;
+			for (int i = 0; i < 11; i++)
 			{
 				int itemIndex = startIndex + i;
 				if (itemIndex < totalItems)
@@ -436,22 +462,7 @@ public class CommandPanel
 					}
 				}
 
-				items.Add(new CommandCardItem
-				{
-					Id = "use_potion",
-					IconPath = "res://Assets/UI/alliance_flag.png",
-					Tooltip = $"[I] Healing Potion (Have: {focusedUnit.Potions})\nRestores 50 HP on use.",
-					Hotkey = Key.I,
-					Callback = () => {
-						var selected = GameHost.Instance?.SelectedUnits;
-						if (selected != null && selected.Count == 1 && !selected[0].IsEnemy)
-						{
-							GameHost.Instance.UseHealingPotion(selected[0]);
-						}
-					},
-					IsDisabled = () => focusedUnit.Potions <= 0,
-					GetButtonText = () => $" {focusedUnit.Potions} "
-				});
+
 			}
 		}
 		else
