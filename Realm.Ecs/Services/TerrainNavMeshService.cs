@@ -102,7 +102,7 @@ internal class TerrainNavMeshService
 		float maxUnitHeight = 2.5f;
 		float cellSize = minHeightBrushAdjustment / maxUnitHeight / 10.0f;
 		float cellHeight = cellSize * 0.5f;
-		float agentRadius = 1.0f;
+		float agentRadius = 0.3f;
 		float agentHeight = 2.5f;
 		float agentMaxClimb = 0.9f;
 		float agentMaxSlope = 45.0f;

@@ -310,5 +310,78 @@ namespace Realm.Ecs.Tests
             }
             Assert.That(pathLength, Is.LessThan(48.0f));
         }
+
+        [Test]
+        public void TestPathingSqueezeAndUnstuck()
+        {
+            InitializeTerrain(128, 128, 0.5f);
+
+            SpawnObstacle(new Vector3(0f, 0f, -2.3f), 1.5f);
+            SpawnObstacle(new Vector3(0f, 0f, 2.3f), 1.5f);
+            for (float z = -64.0f; z <= 64.0f; z += 3.0f)
+            {
+                if (z > -3.5f && z < 3.5f) continue;
+                SpawnObstacle(new Vector3(0f, 0f, z), 1.5f);
+            }
+
+            _terrainNavMeshService.BakeNavMesh(ref _world.Get<TerrainState>(_worldEntity));
+
+            var start = new Vector3(-20f, 0f, 0f);
+            var destination = new Vector3(20f, 0f, 0f);
+            var unit = SpawnUnit(start);
+
+            _world.Add(unit, new MoveTo(destination));
+
+            int ticks = 0;
+            while (_world.Has<MoveTo>(unit) && ticks < 1000)
+            {
+                _movementService.StepMovement(0.0333f);
+                ticks++;
+            }
+
+            Assert.That(_world.Has<MoveTo>(unit), Is.False);
+            var finalPos = _world.Get<Position>(unit).Value;
+            Assert.That(Vector3.Distance(finalPos, destination), Is.LessThan(1.5f));
+            Console.WriteLine($"Squeeze and Unstuck Ticks: {ticks}");
+        }
+
+        [Test]
+        public void TestPathingLargeUnitStuckInNarrowGap()
+        {
+            InitializeTerrain(128, 128, 0.5f);
+
+            SpawnObstacle(new Vector3(0f, 0f, -2.3f), 1.5f);
+            SpawnObstacle(new Vector3(0f, 0f, 2.3f), 1.5f);
+            for (float z = -64.0f; z <= 64.0f; z += 3.0f)
+            {
+                if (z > -3.5f && z < 3.5f) continue;
+                SpawnObstacle(new Vector3(0f, 0f, z), 1.5f);
+            }
+
+            _terrainNavMeshService.BakeNavMesh(ref _world.Get<TerrainState>(_worldEntity));
+
+            var start = new Vector3(-20f, 0f, 0f);
+            var destination = new Vector3(20f, 0f, 0f);
+            var unit = _world.Create(
+                new Position(start),
+                new MovementStats(5.0f, 10.0f, 10.0f),
+                new CollisionRadius(1.6f),
+                new DefinitionId("worker_large"),
+                new Movable()
+            );
+
+            _world.Add(unit, new MoveTo(destination));
+
+            int ticks = 0;
+            while (_world.Has<MoveTo>(unit) && ticks < 600)
+            {
+                _movementService.StepMovement(0.0333f);
+                ticks++;
+            }
+
+            Assert.That(_world.Has<MoveTo>(unit), Is.True);
+            var finalPos = _world.Get<Position>(unit).Value;
+            Assert.That(finalPos.X, Is.LessThan(1.0f));
+        }
     }
 }

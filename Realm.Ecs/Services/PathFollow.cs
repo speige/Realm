@@ -18,4 +18,8 @@ internal struct PathFollow
 	public int WaypointCount;
 	public int CurrentWaypointIndex;
 	public Vector3 Target;
+	public Vector3 LastPosition;
+	public float StuckTime;
+	public float TimeSinceLastReplan;
+	public bool IsJitterReplanned;
 }

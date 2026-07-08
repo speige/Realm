@@ -34,6 +34,7 @@ internal class MovementAndPathfindingService
 	}
 	private readonly NavMeshPathfinder _pathfinder;
 	private readonly TerrainNavMeshService _terrainNavMeshService;
+	private static readonly Random _random = new();
 
 	private float _fDelta;
 	private const float CollisionCellSize = 10f;
@@ -194,14 +195,77 @@ internal class MovementAndPathfindingService
 		}
 		else
 		{
-			pf = new PathFollow { WaypointCount = 0, CurrentWaypointIndex = 0, Target = moveTo.Target };
+			pf = new PathFollow
+			{
+				WaypointCount = 0,
+				CurrentWaypointIndex = 0,
+				Target = moveTo.Target,
+				LastPosition = pos.Value,
+				StuckTime = 0f,
+				TimeSinceLastReplan = 0f,
+				IsJitterReplanned = false
+			};
 		}
 
-		if (pf.Target != moveTo.Target || pf.WaypointCount == 0)
+		bool forceReplan = false;
+		System.Numerics.Vector3 pathfindStart = pos.Value;
+		System.Numerics.Vector3 pathfindEnd = moveTo.Target;
+
+		if (hasPf)
+		{
+			float distMoved = System.Numerics.Vector3.Distance(pos.Value, pf.LastPosition);
+			pf.LastPosition = pos.Value;
+
+			float expectedDist = stats.Speed * _fDelta;
+			if (distMoved < expectedDist * 0.1f)
+			{
+				pf.StuckTime += _fDelta;
+				if (pf.StuckTime >= 0.1f)
+				{
+					pf.TimeSinceLastReplan += _fDelta;
+					if (pf.TimeSinceLastReplan >= 0.1f)
+					{
+						pf.TimeSinceLastReplan = 0f;
+						forceReplan = true;
+
+						if (!pf.IsJitterReplanned)
+						{
+							float offsetX1 = (float)(_random.NextDouble() * 0.4 - 0.2);
+							float offsetZ1 = (float)(_random.NextDouble() * 0.4 - 0.2);
+							float offsetX2 = (float)(_random.NextDouble() * 0.4 - 0.2);
+							float offsetZ2 = (float)(_random.NextDouble() * 0.4 - 0.2);
+							pathfindStart += new System.Numerics.Vector3(offsetX1, 0f, offsetZ1);
+							pathfindEnd += new System.Numerics.Vector3(offsetX2, 0f, offsetZ2);
+							pf.IsJitterReplanned = true;
+						}
+						else
+						{
+							pf.IsJitterReplanned = false;
+						}
+					}
+				}
+			}
+			else
+			{
+				pf.StuckTime = 0f;
+				pf.TimeSinceLastReplan = 0f;
+				pf.IsJitterReplanned = false;
+			}
+		}
+		else
+		{
+			pf.LastPosition = pos.Value;
+			pf.StuckTime = 0f;
+			pf.TimeSinceLastReplan = 0f;
+			pf.IsJitterReplanned = false;
+		}
+
+		if (pf.Target != moveTo.Target || pf.WaypointCount == 0 || forceReplan)
 		{
 			if (_hasTerrainState)
 			{
-				_pathfinder.ComputePath(_currentTerrainState.NavMeshQuery, pos.Value, moveTo.Target, pathingFlags, ref pf);
+				_pathfinder.ComputePath(_currentTerrainState.NavMeshQuery, pathfindStart, pathfindEnd, pathingFlags, ref pf);
+				pf.Target = moveTo.Target;
 			}
 		}
 		var current = pos.Value;
