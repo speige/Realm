@@ -102,6 +102,7 @@
     "AttackType": "none",
     "ArmorType": "building",
     "GoldBounty": 0.0,
+    "BuildOptions": ["soldier", "archer", "priest", "worker"],
     "PathingCapabilities": ["ground"]
   },
   "tower": {

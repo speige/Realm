@@ -11,7 +11,6 @@ public class PortraitPanel
 	private List<Button> _unitButtons;
 	private HBoxContainer _statsContainer;
 	private Label _statsLabel;
-	private VBoxContainer _spellsBox;
 	private VBoxContainer _itemsBox;
 	private Button _btnUsePotion;
 	private VBoxContainer _productionBox;
@@ -23,28 +22,16 @@ public class PortraitPanel
 	private Label _unitNameLabel;
 	private TextureRect _portraitTexture;
 
-	private VBoxContainer _fireballVBox;
-	private VBoxContainer _lightningVBox;
-	private VBoxContainer _holyLightVBox;
-	private ProgressBar _fireballCooldownBar;
-	private ProgressBar _lightningCooldownBar;
-	private ProgressBar _holyLightCooldownBar;
-	private Button _btnFireball;
-	private Button _btnLightning;
-	private Button _btnHolyLight;
 	private List<string> _lastProductionQueue = new();
 
 	public event Action<int> UnitSelectionButtonClicked;
 
 	public PortraitPanel(PanelContainer portraitFrame, PanelContainer selectionFrame, 
 		HBoxContainer unitsContainer, List<Button> unitButtons, HBoxContainer statsContainer,
-		Label statsLabel, VBoxContainer spellsBox, VBoxContainer itemsBox, Button btnUsePotion,
+		Label statsLabel, VBoxContainer itemsBox, Button btnUsePotion,
 		VBoxContainer productionBox, Label productionTitle, ProgressBar productionProgress,
 		Label productionQueueLabel, HBoxContainer queueSlotsContainer, Label armyCompositionLabel,
-		Label unitNameLabel, TextureRect portraitTexture,
-		VBoxContainer fireballVBox, VBoxContainer lightningVBox, VBoxContainer holyLightVBox,
-		ProgressBar fireballCooldownBar, ProgressBar lightningCooldownBar, ProgressBar holyLightCooldownBar,
-		Button btnFireball, Button btnLightning, Button btnHolyLight)
+		Label unitNameLabel, TextureRect portraitTexture)
 	{
 		_portraitFrame = portraitFrame;
 		_selectionFrame = selectionFrame;
@@ -52,7 +39,6 @@ public class PortraitPanel
 		_unitButtons = unitButtons;
 		_statsContainer = statsContainer;
 		_statsLabel = statsLabel;
-		_spellsBox = spellsBox;
 		_itemsBox = itemsBox;
 		_btnUsePotion = btnUsePotion;
 		_productionBox = productionBox;
@@ -63,16 +49,6 @@ public class PortraitPanel
 		_armyCompositionLabel = armyCompositionLabel;
 		_unitNameLabel = unitNameLabel;
 		_portraitTexture = portraitTexture;
-
-		_fireballVBox = fireballVBox;
-		_lightningVBox = lightningVBox;
-		_holyLightVBox = holyLightVBox;
-		_fireballCooldownBar = fireballCooldownBar;
-		_lightningCooldownBar = lightningCooldownBar;
-		_holyLightCooldownBar = holyLightCooldownBar;
-		_btnFireball = btnFireball;
-		_btnLightning = btnLightning;
-		_btnHolyLight = btnHolyLight;
 
 		for (int i = 0; i < _unitButtons.Count; i++)
 		{
@@ -139,7 +115,6 @@ public class PortraitPanel
 				}
 
 				_statsLabel.Text = $"{TranslationServer.Translate("REMAINING")}: {remainingAmount:F0}";
-				_spellsBox.Visible = false;
 				_itemsBox.Visible = false;
 				_productionBox.Visible = false;
 			}
@@ -184,38 +159,6 @@ public class PortraitPanel
 			statsText += $"\n{info.StateText}";
 			if (!string.IsNullOrEmpty(info.Description)) statsText += $"\n\n{info.Description}";
 			_statsLabel.Text = statsText;
-
-			if (info.HasFireball || info.HasLightning || info.HasHolyLight)
-			{
-				_spellsBox.Visible = true;
-				if (_fireballVBox != null) _fireballVBox.Visible = info.HasFireball;
-				if (_lightningVBox != null) _lightningVBox.Visible = info.HasLightning;
-				if (_holyLightVBox != null) _holyLightVBox.Visible = info.HasHolyLight;
-			}
-			else
-			{
-				_spellsBox.Visible = false;
-			}
-
-			if (_btnFireball != null) _btnFireball.Disabled = viewModel.FireballCooldown > 0;
-			if (_btnLightning != null) _btnLightning.Disabled = viewModel.LightningCooldown > 0;
-			if (_btnHolyLight != null) _btnHolyLight.Disabled = viewModel.HolyLightCooldown > 0;
-
-			if (_fireballCooldownBar != null)
-			{
-				_fireballCooldownBar.Value = viewModel.FireballCooldown;
-				_fireballCooldownBar.Visible = viewModel.FireballCooldown > 0;
-			}
-			if (_lightningCooldownBar != null)
-			{
-				_lightningCooldownBar.Value = viewModel.LightningCooldown;
-				_lightningCooldownBar.Visible = viewModel.LightningCooldown > 0;
-			}
-			if (_holyLightCooldownBar != null)
-			{
-				_holyLightCooldownBar.Value = viewModel.HolyLightCooldown;
-				_holyLightCooldownBar.Visible = viewModel.HolyLightCooldown > 0;
-			}
 
 			if (!info.IsBuilding)
 			{

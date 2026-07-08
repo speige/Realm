@@ -1714,7 +1714,7 @@ public partial class GameHost
 			}
 			if (!anyFriendlySelected) goto SkipRightClick;
 
-			if (SelectedUnits.Count == 1 && !SelectedUnits[0].IsEnemy && SelectedUnits[0].IsBuilding)
+			if (SelectedUnits.Count == 1 && !SelectedUnits[0].IsEnemy && CanProduceUnits(SelectedUnits[0]))
 			{
 				var hit = RaycastFromMouse(rightBtn.Position);
 				if (hit != null && hit.ContainsKey("position"))
@@ -1867,7 +1867,7 @@ public partial class GameHost
 							}
 							else if (ActiveCommandTargeting == "rally")
 							{
-								if (SelectedUnits.Count == 1 && !SelectedUnits[0].IsEnemy && SelectedUnits[0].IsBuilding)
+								if (SelectedUnits.Count == 1 && !SelectedUnits[0].IsEnemy && CanProduceUnits(SelectedUnits[0]))
 								{
 									SetRallyPoint(SelectedUnits[0], hitPos);
 								}
@@ -1947,7 +1947,7 @@ public partial class GameHost
 					var clickedUnit = FindUnit3DInParentChain(collider);
 					var clickedProp = FindProp3DInParentChain(collider);
 
-					if (SelectedUnits.Count == 1 && !SelectedUnits[0].IsEnemy && SelectedUnits[0].IsBuilding)
+					if (SelectedUnits.Count == 1 && !SelectedUnits[0].IsEnemy && CanProduceUnits(SelectedUnits[0]))
 					{
 						SetRallyPoint(SelectedUnits[0], hitPos);
 						GetViewport().SetInputAsHandled();
@@ -3051,6 +3051,35 @@ public partial class GameHost
 				CancelQueuedUnitAt(castleEntity, prod.UnitIds.Count - 1);
 			}
 		}
+	}
+
+	public bool CanProduceUnits(Unit3D unit)
+	{
+		if (unit == null || !unit.IsBuilding) return false;
+		if (UnitRegistry.TryGetValue(unit.UnitId, out var meta))
+		{
+			if (meta.BuildOptions != null)
+			{
+				foreach (var opt in meta.BuildOptions)
+				{
+					if (UnitRegistry.TryGetValue(opt, out var optMeta) && !optMeta.ArmorType.Contains("building"))
+					{
+						return true;
+					}
+				}
+			}
+			if (meta.Abilities != null)
+			{
+				foreach (var ab in meta.Abilities)
+				{
+					if (ab.Contains("spawn") || ab.Contains("train"))
+					{
+						return true;
+					}
+				}
+			}
+		}
+		return false;
 	}
 
 	public void SetRallyPoint(Unit3D building, Vector3 position)

@@ -1884,6 +1884,7 @@ public class {mapName} : IMapScript
 				AttackType = "none",
 				ArmorType = "building",
 				GoldBounty = 0f,
+				BuildOptions = new[] { "soldier", "archer", "priest", "worker" },
 				PathingCapabilities = new[] { "ground" },
 				ObstacleRadius = 2.0f
 			}

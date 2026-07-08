@@ -73,13 +73,6 @@ public partial class InGameHUD : Control
 	private Button _btnUpgradeTower;
 	private Button _btnSetRally;
 
-	private Button _btnFireball;
-	private Button _btnLightning;
-	private Button _btnHolyLight;
-	private VBoxContainer _fireballVBox;
-	private VBoxContainer _lightningVBox;
-	private VBoxContainer _holyLightVBox;
-
 	private VBoxContainer _productionBox;
 	private Label _productionTitle;
 	private ProgressBar _productionProgress;
@@ -220,10 +213,6 @@ public partial class InGameHUD : Control
 	private Label _armyCompositionLabel;
 
 	private float _incomeUpdateTimer = 0f;
-
-	private ProgressBar _fireballCooldownBar;
-	private ProgressBar _lightningCooldownBar;
-	private ProgressBar _holyLightCooldownBar;
 
 	private Camera3D _camera3D;
 
@@ -570,13 +559,10 @@ public partial class InGameHUD : Control
 		
 		_portraitPanelController = new PortraitPanel(
 			_portraitFrame, _selectionFrame, _unitsContainer, _unitButtons, _statsContainer,
-			_statsLabel, _spellsBox, _itemsBox, _btnUsePotion,
+				_statsLabel, _itemsBox, _btnUsePotion,
 			_productionBox, _productionTitle, _productionProgress, _productionQueueLabel, _queueSlotsContainer,
 			_armyCompositionLabel, GetNode<Label>("BottomConsole/HBox/PortraitFrame/VBox/UnitName"), 
-			GetNodeOrNull<TextureRect>("BottomConsole/HBox/PortraitFrame/VBox/PortraitTexture") != null ? GetNode<TextureRect>("BottomConsole/HBox/PortraitFrame/VBox/PortraitTexture") : null,
-			_fireballVBox, _lightningVBox, _holyLightVBox,
-			_fireballCooldownBar, _lightningCooldownBar, _holyLightCooldownBar,
-			_btnFireball, _btnLightning, _btnHolyLight
+				GetNodeOrNull<TextureRect>("BottomConsole/HBox/PortraitFrame/VBox/PortraitTexture") != null ? GetNode<TextureRect>("BottomConsole/HBox/PortraitFrame/VBox/PortraitTexture") : null
 		);
 		_portraitPanelController.UnitSelectionButtonClicked += OnUnitSelectionButtonClicked;
 
@@ -588,7 +574,7 @@ public partial class InGameHUD : Control
 			_btnBuildCastle, _btnBuildTower, _btnCancelBuild,
 			_btnTrainSoldier, _btnTrainArcher, _btnTrainPriest, _btnTrainWorker, _btnBuyPotion,
 			_btnUpgradeWeapons, _btnUpgradeShields, _btnUpgradeHarvesting, _btnUpgradeTower, _btnSetRally,
-			_btnFireball, _btnLightning, _btnHolyLight, _btnUsePotion
+			_btnUsePotion
 		);
 
 		_controlGroupsUIController = new ControlGroupsUIController(_controlGroupsContainer);
@@ -765,75 +751,6 @@ public partial class InGameHUD : Control
 		_statsLabel.AddThemeFontSizeOverride("font_size", 14);
 		_statsLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		statsVBox.AddChild(_statsLabel);
-
-		_spellsBox = new VBoxContainer();
-		_spellsBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		_spellsBox.Alignment = BoxContainer.AlignmentMode.Center;
-		_statsContainer.AddChild(_spellsBox);
-
-		var spellsTitle = new Label();
-		spellsTitle.Text = TranslationServer.Translate("SPELLS");
-		UIStyle.ApplyTitle(spellsTitle, TranslationServer.Translate("SPELLS"), 12);
-		spellsTitle.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
-		_spellsBox.AddChild(spellsTitle);
-
-		var spellsHBox = new HBoxContainer();
-		spellsHBox.AddThemeConstantOverride("separation", 8);
-		_spellsBox.AddChild(spellsHBox);
-
-		_fireballVBox = new VBoxContainer();
-		_fireballVBox.AddThemeConstantOverride("separation", 2);
-		spellsHBox.AddChild(_fireballVBox);
-		_btnFireball = new Button();
-		SetupSpellButton(_btnFireball, "res://Assets/UI/fire_spell.png", "fireball",
-			$"[Q] Cast Fireball — 50 AoE Dmg, {GameHost.FireballCooldownMax}s cooldown");
-		_fireballVBox.AddChild(_btnFireball);
-		_fireballCooldownBar = new ProgressBar();
-		_fireballCooldownBar.CustomMinimumSize = new Vector2(70, 6);
-		_fireballCooldownBar.MaxValue = GameHost.FireballCooldownMax;
-		_fireballCooldownBar.ShowPercentage = false;
-		_fireballCooldownBar.AddThemeStyleboxOverride("background", UIStyle.CreateSliderTrack());
-		var fireStyle = new StyleBoxFlat();
-		fireStyle.BgColor = new Color(0.9f, 0.3f, 0.1f);
-		_fireballCooldownBar.AddThemeStyleboxOverride("fill", fireStyle);
-		_fireballCooldownBar.Visible = false;
-		_fireballVBox.AddChild(_fireballCooldownBar);
-
-		_lightningVBox = new VBoxContainer();
-		_lightningVBox.AddThemeConstantOverride("separation", 2);
-		spellsHBox.AddChild(_lightningVBox);
-		_btnLightning = new Button();
-		SetupSpellButton(_btnLightning, "res://Assets/UI/lightning_spell.png", "lightning",
-			$"[E] Cast Lightning — 80 AoE Dmg, {GameHost.LightningCooldownMax}s cooldown");
-		_lightningVBox.AddChild(_btnLightning);
-		_lightningCooldownBar = new ProgressBar();
-		_lightningCooldownBar.CustomMinimumSize = new Vector2(70, 6);
-		_lightningCooldownBar.MaxValue = GameHost.LightningCooldownMax;
-		_lightningCooldownBar.ShowPercentage = false;
-		_lightningCooldownBar.AddThemeStyleboxOverride("background", UIStyle.CreateSliderTrack());
-		var lightStyle = new StyleBoxFlat();
-		lightStyle.BgColor = new Color(0.2f, 0.5f, 1.0f);
-		_lightningCooldownBar.AddThemeStyleboxOverride("fill", lightStyle);
-		_lightningCooldownBar.Visible = false;
-		_lightningVBox.AddChild(_lightningCooldownBar);
-
-		_holyLightVBox = new VBoxContainer();
-		_holyLightVBox.AddThemeConstantOverride("separation", 2);
-		spellsHBox.AddChild(_holyLightVBox);
-		_btnHolyLight = new Button();
-		SetupSpellButton(_btnHolyLight, "res://Assets/UI/magic_upgrade_arrow.png", "holylight",
-			$"[W] Cast Holy Light — 60 AoE Heal, {GameHost.HolyLightCooldownMax}s cooldown");
-		_holyLightVBox.AddChild(_btnHolyLight);
-		_holyLightCooldownBar = new ProgressBar();
-		_holyLightCooldownBar.CustomMinimumSize = new Vector2(70, 6);
-		_holyLightCooldownBar.MaxValue = GameHost.HolyLightCooldownMax;
-		_holyLightCooldownBar.ShowPercentage = false;
-		_holyLightCooldownBar.AddThemeStyleboxOverride("background", UIStyle.CreateSliderTrack());
-		var holyStyle = new StyleBoxFlat();
-		holyStyle.BgColor = new Color(0.2f, 0.9f, 0.3f);
-		_holyLightCooldownBar.AddThemeStyleboxOverride("fill", holyStyle);
-		_holyLightCooldownBar.Visible = false;
-		_holyLightVBox.AddChild(_holyLightCooldownBar);
 
 		_itemsBox = new VBoxContainer();
 		_itemsBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;

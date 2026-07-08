@@ -29,9 +29,6 @@ public class CommandPanel
 	private Button _btnUpgradeTower;
 	private Button _btnSetRally;
 
-	private Button _btnFireball;
-	private Button _btnLightning;
-	private Button _btnHolyLight;
 	private Button _btnUsePotion;
 
 	private List<Button> _dynamicBuildButtons = new();
@@ -41,7 +38,7 @@ public class CommandPanel
 		Button btnBuildCastle, Button btnBuildTower, Button btnCancelBuild,
 		Button btnTrainSoldier, Button btnTrainArcher, Button btnTrainPriest, Button btnTrainWorker, Button btnBuyPotion,
 		Button btnUpgradeWeapons, Button btnUpgradeShields, Button btnUpgradeHarvesting, Button btnUpgradeTower, Button btnSetRally,
-		Button btnFireball, Button btnLightning, Button btnHolyLight, Button btnUsePotion)
+		Button btnUsePotion)
 	{
 		_commandGrid = commandGrid;
 		_btnMove = btnMove;
@@ -63,9 +60,6 @@ public class CommandPanel
 		_btnUpgradeHarvesting = btnUpgradeHarvesting;
 		_btnUpgradeTower = btnUpgradeTower;
 		_btnSetRally = btnSetRally;
-		_btnFireball = btnFireball;
-		_btnLightning = btnLightning;
-		_btnHolyLight = btnHolyLight;
 		_btnUsePotion = btnUsePotion;
 	}
 

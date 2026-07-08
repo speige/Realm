@@ -542,6 +542,11 @@ public partial class Unit3D : CharacterBody3D
 		if (GameHost.Instance == null || !GameHost.Instance.EcsWorld.IsAlive(Entity)) return;
 
 		EnsureRallyVisualsContainer();
+		if (!GameHost.Instance.CanProduceUnits(this))
+		{
+			_rallyVisualsContainer.Visible = false;
+			return;
+		}
 		_rallyVisualsContainer.Visible = IsSelected;
 
 		if (!IsSelected) return;
