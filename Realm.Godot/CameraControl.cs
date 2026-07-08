@@ -547,24 +547,21 @@ public partial class CameraControl : Camera3D
 
 		if (IsLocked || (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive)) return;
 
-		Vector3 forwardXZ = -GlobalTransform.Basis.Z;
-		forwardXZ.Y = 0f;
-		forwardXZ = forwardXZ.Normalized();
-
-		Vector3 rightXZ = GlobalTransform.Basis.X;
-		rightXZ.Y = 0f;
-		rightXZ = rightXZ.Normalized();
 
 		Vector3 velocity = Vector3.Zero;
 
-		if (Input.IsActionPressed("move_forward") || Input.IsKeyPressed(Key.Up))
-			velocity += forwardXZ;
-		if (Input.IsActionPressed("move_back") || Input.IsKeyPressed(Key.Down))
-			velocity -= forwardXZ;
-		if (Input.IsActionPressed("move_left") || Input.IsKeyPressed(Key.Left))
-			velocity -= rightXZ;
-		if (Input.IsActionPressed("move_right") || Input.IsKeyPressed(Key.Right))
-			velocity += rightXZ;
+		float yawRad = Mathf.DegToRad(_currentYaw);
+		Vector3 arrowForward = new Vector3(-Mathf.Sin(yawRad), 0f, -Mathf.Cos(yawRad));
+		Vector3 arrowRight   = new Vector3( Mathf.Cos(yawRad), 0f, -Mathf.Sin(yawRad));
+
+		if (Input.IsKeyPressed(Key.Up))
+			velocity += arrowForward;
+		if (Input.IsKeyPressed(Key.Down))
+			velocity -= arrowForward;
+		if (Input.IsKeyPressed(Key.Left))
+			velocity -= arrowRight;
+		if (Input.IsKeyPressed(Key.Right))
+			velocity += arrowRight;
 
 		if (EnableEdgePanning && Input.MouseMode == Input.MouseModeEnum.Visible)
 		{
@@ -574,14 +571,14 @@ public partial class CameraControl : Camera3D
 			if (mousePos.X >= 0 && mousePos.X < windowSize.X && mousePos.Y >= 0 && mousePos.Y < windowSize.Y)
 			{
 				if (mousePos.X < EdgePanMargin)
-					velocity -= rightXZ;
+					velocity -= arrowRight;
 				else if (mousePos.X > windowSize.X - EdgePanMargin)
-					velocity += rightXZ;
+					velocity += arrowRight;
 
 				if (mousePos.Y < EdgePanMargin)
-					velocity += forwardXZ;
+					velocity += arrowForward;
 				else if (mousePos.Y > windowSize.Y - EdgePanMargin)
-					velocity -= forwardXZ;
+					velocity -= arrowForward;
 			}
 		}
 
