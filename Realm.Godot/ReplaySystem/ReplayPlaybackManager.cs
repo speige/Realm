@@ -231,6 +231,15 @@ namespace Realm.Godot.ReplaySystem
 							});
 						}
 
+						if (GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Meta.ReplayAnimationState>(localEntity))
+						{
+							GameHost.Instance.EcsWorld.Set(localEntity, new Realm.Ecs.Components.Meta.ReplayAnimationState(snap.Animation ?? "Idle"));
+						}
+						else
+						{
+							GameHost.Instance.EcsWorld.Add(localEntity, new Realm.Ecs.Components.Meta.ReplayAnimationState(snap.Animation ?? "Idle"));
+						}
+
 						GameHost.TryGetUnit3D(localEntity, out var unit3DNode);
 						if (GodotObject.IsInstanceValid(unit3DNode))
 						{

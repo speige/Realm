@@ -532,6 +532,15 @@ public partial class GameHost
 
 	private string DetermineUnitAnimation(Entity entity)
 	{
+		if (Realm.Godot.ReplaySystem.ReplayPlaybackManager.Instance.IsPlayingReplay)
+		{
+			if (EcsWorld.Has<Realm.Ecs.Components.Meta.ReplayAnimationState>(entity))
+			{
+				return EcsWorld.Get<Realm.Ecs.Components.Meta.ReplayAnimationState>(entity).Animation;
+			}
+			return "Idle";
+		}
+
 		if (EcsWorld.Has<Dead>(entity))
 			return "Death";
 

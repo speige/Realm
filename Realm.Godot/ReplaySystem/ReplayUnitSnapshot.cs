@@ -15,5 +15,6 @@ namespace Realm.Godot.ReplaySystem
 		public bool IsDead { get; set; }
 		public bool IsBuilding { get; set; }
 		public NetworkVector3 Velocity { get; set; }
+		public string Animation { get; set; }
 	}
 }

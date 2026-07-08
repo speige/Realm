@@ -2314,7 +2314,7 @@ public class {mapName} : IMapScript
 
 		bool isGameStarted = LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted;
 		bool shouldRunMapScript = !isGameStarted || IsServerActive();
-		if ((shouldRunMapScript && !ReplayPlaybackManager.Instance.IsPlayingReplay) || IsMapEditorMode)
+		if (shouldRunMapScript || IsMapEditorMode)
 		{
 			LoadMapScript(normalizedMapName);
 			if (_activeMapScript != null)
@@ -2832,6 +2832,7 @@ public class {mapName} : IMapScript
 		if (ReplayPlaybackManager.Instance.IsPlayingReplay)
 		{
 			ReplayPlaybackManager.Instance.Update(fDelta);
+			UpdateVisualNodesFromEcs(fDelta);
 			return;
 		}
 

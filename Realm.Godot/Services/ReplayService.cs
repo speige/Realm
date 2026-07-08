@@ -206,6 +206,26 @@ public class ReplayService
 				vel = EcsWorld.Get<Velocity>(entity).Value;
 			}
 
+			string anim = "Idle";
+			if (isDead) anim = "Death";
+			else if (EcsWorld.Has<MoveTo>(entity) && vel.LengthSquared() > 0.01f) anim = "Walk";
+			else if (EcsWorld.Has<AttackTarget>(entity)) anim = "Attack";
+			else if (EcsWorld.Has<HealingTarget>(entity)) anim = "Spell_Cast";
+			else if (EcsWorld.Has<Gatherer>(entity) && !EcsWorld.Get<Gatherer>(entity).ReturningToBase) anim = "Labor";
+			else if (EcsWorld.Has<BuildTask>(entity))
+			{
+				var task = EcsWorld.Get<BuildTask>(entity);
+				var target = task.BuildingEntity;
+				if (EcsWorld.IsAlive(target) && EcsWorld.Has<Position>(target))
+				{
+					var tPos = EcsWorld.Get<Position>(target).Value;
+					var wPos = pos;
+					if (System.Numerics.Vector3.Distance(wPos, tPos) < 4.0f) anim = "Labor";
+					else anim = "Walk";
+				}
+				else anim = "Labor";
+			}
+
 			activeIds.Add(entityId);
 
 			if (isKeyframe)
@@ -221,7 +241,8 @@ public class ReplayService
 					MaxHp = maxHp,
 					IsDead = isDead,
 					IsBuilding = isBuilding,
-					Velocity = new NetworkVector3(vel.X, vel.Y, vel.Z)
+					Velocity = new NetworkVector3(vel.X, vel.Y, vel.Z),
+					Animation = anim
 				};
 				unitsToRecord.Add(snap);
 				_lastRecordedUnits[entityId] = snap;
@@ -242,7 +263,8 @@ public class ReplayService
 								   last.IsBuilding != isBuilding ||
 								   last.Velocity.X != vel.X ||
 								   last.Velocity.Y != vel.Y ||
-								   last.Velocity.Z != vel.Z;
+								   last.Velocity.Z != vel.Z ||
+								   last.Animation != anim;
 
 					if (changed)
 					{
@@ -257,7 +279,8 @@ public class ReplayService
 							MaxHp = maxHp,
 							IsDead = isDead,
 							IsBuilding = isBuilding,
-							Velocity = new NetworkVector3(vel.X, vel.Y, vel.Z)
+							Velocity = new NetworkVector3(vel.X, vel.Y, vel.Z),
+							Animation = anim
 						};
 						unitsToRecord.Add(snap);
 						_lastRecordedUnits[entityId] = snap;
@@ -276,7 +299,8 @@ public class ReplayService
 						MaxHp = maxHp,
 						IsDead = isDead,
 						IsBuilding = isBuilding,
-						Velocity = new NetworkVector3(vel.X, vel.Y, vel.Z)
+						Velocity = new NetworkVector3(vel.X, vel.Y, vel.Z),
+						Animation = anim
 					};
 					unitsToRecord.Add(snap);
 					_lastRecordedUnits[entityId] = snap;
@@ -309,7 +333,8 @@ public class ReplayService
 					MaxHp = deadSnap.MaxHp,
 					IsDead = true,
 					IsBuilding = deadSnap.IsBuilding,
-					Velocity = default
+					Velocity = default,
+					Animation = "Death"
 				};
 				unitsToRecord.Add(deadEventSnap);
 				_lastRecordedUnits.Remove(id);

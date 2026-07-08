@@ -21,6 +21,16 @@ public partial class GameHost
 			}
 		}
 		AllUnits.Clear();
+		
+		foreach (var prop in AllProps)
+		{
+			if (GodotObject.IsInstanceValid(prop))
+			{
+				prop.QueueFree();
+			}
+		}
+		AllProps.Clear();
+		
 		EntityToUnit3D.Clear();
 		EntityToProp3D.Clear();
 
@@ -28,6 +38,25 @@ public partial class GameHost
 		try
 		{
 			ReinitializeEcsAndServices();
+
+			if (_activeMapScript != null)
+			{
+				_activeMapScript.Initialize(this);
+				
+				foreach (var unit in AllUnits)
+				{
+					if (EcsWorld.IsAlive(unit.Entity))
+					{
+						EcsWorld.Destroy(unit.Entity);
+					}
+					if (GodotObject.IsInstanceValid(unit))
+					{
+						unit.QueueFree();
+					}
+				}
+				AllUnits.Clear();
+				EntityToUnit3D.Clear();
+			}
 		}
 		finally
 		{
