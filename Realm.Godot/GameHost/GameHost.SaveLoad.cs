@@ -4,6 +4,7 @@ using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Components.Meta;
 using Arch.Core;
 using System.Collections.Generic;
+using System.Linq;
 
 public partial class GameHost
 {
@@ -50,10 +51,19 @@ public partial class GameHost
 			}
 		}
 
+		var coordinatesData = EditorCoordinates.Select(r => new CoordinateSaveData
+		{
+			Name = r.Name,
+			MinX = r.MinX,
+			MinZ = r.MinZ,
+			MaxX = r.MaxX,
+			MaxZ = r.MaxZ
+		}).ToList();
+
 		string path = string.IsNullOrEmpty(customPath) ? "user://terrain.json" : customPath;
 		string absolutePath = ProjectSettings.GlobalizePath(path);
 
-		_saveLoadService.SaveMapToFile(absolutePath, htmlColors, unitsData.ToArray(), propsData.ToArray(), decalsData.ToArray());
+		_saveLoadService.SaveMapToFile(absolutePath, htmlColors, unitsData.ToArray(), propsData.ToArray(), decalsData.ToArray(), coordinatesData);
 	}
 
 	public bool LoadMapFromFile(string customPath = "", bool terrainOnly = false, bool clearUnits = true)
@@ -107,6 +117,11 @@ public partial class GameHost
 			UpdateCameraBoundsOverlayVisibility();
 			UpdateGridOverlayVisibility();
 			UpdatePathingOverlay();
+
+			EditorCoordinates.Clear();
+			RebuildAllCoordinatePersistentMeshes();
+			MapEditorHUD.Instance?.RefreshCoordinateListExternal();
+
 			return false;
 		}
 
@@ -248,6 +263,13 @@ public partial class GameHost
 		}
 
 		MapEditorHUD.Instance?.RegenerateMinimap();
+
+		var loadedCoordinates = _saveLoadService.GetLastLoadedCoordinates();
+		EditorCoordinates.Clear();
+		EditorCoordinates.AddRange(loadedCoordinates.Select(r => new EditorCoordinate { Name = r.Name, MinX = r.MinX, MinZ = r.MinZ, MaxX = r.MaxX, MaxZ = r.MaxZ }));
+		RebuildAllCoordinatePersistentMeshes();
+		MapEditorHUD.Instance?.RefreshCoordinateListExternal();
+
 		return true;
 	}
 }

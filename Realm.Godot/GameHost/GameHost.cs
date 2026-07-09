@@ -266,7 +266,8 @@ public partial class GameHost : Node3D, IGameAPI
 		SelectArea,
 		PasteArea,
 		PaintPathing,
-		FloodFillPathing
+		FloodFillPathing,
+		DrawCoordinate
 	}
 	private EditorTool _activeEditorTool = EditorTool.None;
 	public EditorTool ActiveEditorTool
@@ -279,6 +280,17 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 	}
 	public string ActivePlaceId { get; set; } = ""; // "soldier", "tree", etc.
+
+	public struct EditorCoordinate
+	{
+		public string Name;
+		public float MinX;
+		public float MinZ;
+		public float MaxX;
+		public float MaxZ;
+	}
+
+	public List<EditorCoordinate> EditorCoordinates { get; } = new();
 	public string GetTerrainStatusString(Vector3 hitPos)
 	{
 		return _editorService.GetTerrainStatusString(hitPos, ActiveEditorTool.ToString(), ActivePlaceId);
@@ -377,6 +389,9 @@ public partial class GameHost : Node3D, IGameAPI
 	}
 	private Node? _hoveredEditorObject;
 	private MeshInstance3D? _selectionHighlightMesh;
+	private MeshInstance3D? _coordinatePreviewMesh;
+	private MeshInstance3D? _coordinateSelectionOutlineMesh;
+	private readonly List<MeshInstance3D> _coordinatePersistentMeshes = new();
 
 
 
@@ -1846,6 +1861,42 @@ public class {mapName} : IMapScript
 			ClearSelection();
 			InGameHUD.Instance?.RefreshUI(SelectedUnits);
 		}).CallDeferred();
+	}
+
+	bool IGameAPI.TryGetCoordinate(string coordinateName, out System.Numerics.Vector3 min, out System.Numerics.Vector3 max)
+	{
+		min = System.Numerics.Vector3.Zero;
+		max = System.Numerics.Vector3.Zero;
+		if (string.IsNullOrEmpty(coordinateName)) return false;
+		string searchName = coordinateName.Trim();
+		foreach (var r in EditorCoordinates)
+		{
+			if (r.Name.Equals(searchName, StringComparison.OrdinalIgnoreCase))
+			{
+				min = new System.Numerics.Vector3(r.MinX, 0f, r.MinZ);
+				max = new System.Numerics.Vector3(r.MaxX, 0f, r.MaxZ);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool IGameAPI.IsPositionInCoordinate(System.Numerics.Vector3 position, string coordinateName)
+	{
+		if (string.IsNullOrEmpty(coordinateName)) return false;
+		string searchName = coordinateName.Trim();
+		foreach (var r in EditorCoordinates)
+		{
+			if (r.Name.Equals(searchName, StringComparison.OrdinalIgnoreCase))
+			{
+				float minX = Math.Min(r.MinX, r.MaxX);
+				float maxX = Math.Max(r.MinX, r.MaxX);
+				float minZ = Math.Min(r.MinZ, r.MaxZ);
+				float maxZ = Math.Max(r.MinZ, r.MaxZ);
+				return position.X >= minX && position.X <= maxX && position.Z >= minZ && position.Z <= maxZ;
+			}
+		}
+		return false;
 	}
 
 

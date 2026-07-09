@@ -21,7 +21,9 @@ public partial class MapEditorHUD : Control
 	{
 		Terrain,
 		TextureDeco,
+		Pathing,
 		Objects,
+		Coordinates,
 		Clipboard
 	}
 
@@ -83,6 +85,8 @@ public partial class MapEditorHUD : Control
 	private VBoxContainer _panelClipboard;
 	private VBoxContainer _panelTerrainVBox;
 	private VBoxContainer _panelDecoVBox;
+	private VBoxContainer _panelPathingVBox;
+	private VBoxContainer _panelCoordinatesVBox;
 	private Button _btnCut;
 	private Button _btnEraseArea;
 	
@@ -225,6 +229,15 @@ public partial class MapEditorHUD : Control
 	private CheckBox _chkUnpathable;
 	private OptionButton _optPathingMode;
 	private HBoxContainer _pathingModeHBox;
+
+	private Button _btnDrawCoordinate;
+	private LineEdit _txtCoordinateName;
+	private Button _btnCommitCoordinate;
+	private VBoxContainer _coordinateListVBox;
+	private int _pendingCoordinateMinX;
+	private int _pendingCoordinateMinZ;
+	private int _pendingCoordinateMaxX;
+	private int _pendingCoordinateMaxZ;
 
 	private Button _activeToolButton = null;
 	private StyleBoxFlat _highlightStyle;
@@ -1256,14 +1269,20 @@ public partial class MapEditorHUD : Control
 		_btnPathingBrush = new Button();
 		_btnPathingBrush.Name = "BtnPathingBrush";
 		_btnPathingBrush.Set("icon_max_width", 0);
-		SetupButton(_btnPathingBrush, "🧭 Pathing", () => TriggerToolSelection(GameHost.EditorTool.PaintPathing, _btnPathingBrush), 11, "Paint pathing attributes onto the terrain map");
+		SetupButton(_btnPathingBrush, "🧭 Paint", () => TriggerToolSelection(GameHost.EditorTool.PaintPathing, _btnPathingBrush), 11, "Paint pathing attributes onto the terrain map");
 		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnPathingBrush);
 
 		_btnFloodFillPathing = new Button();
 		_btnFloodFillPathing.Name = "BtnFloodFillPathing";
 		_btnFloodFillPathing.Set("icon_max_width", 0);
-		SetupButton(_btnFloodFillPathing, "🪣 Fill Pathing", () => TriggerToolSelection(GameHost.EditorTool.FloodFillPathing, _btnFloodFillPathing), 11, "Flood fill pathing attributes onto the terrain map");
+		SetupButton(_btnFloodFillPathing, "🪣 Flood Fill", () => TriggerToolSelection(GameHost.EditorTool.FloodFillPathing, _btnFloodFillPathing), 11, "Flood fill pathing attributes onto the terrain map");
 		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnFloodFillPathing);
+
+		_btnDrawCoordinate = new Button();
+		_btnDrawCoordinate.Name = "BtnDrawCoordinate";
+		_btnDrawCoordinate.Set("icon_max_width", 0);
+		SetupButton(_btnDrawCoordinate, "🗺️ Draw Coordinate", () => TriggerToolSelection(GameHost.EditorTool.DrawCoordinate, _btnDrawCoordinate), 11, "Drag to define a named coordinate box exposed as C# variables");
+		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnDrawCoordinate);
 
 		_panelPathing = new PanelContainer();
 		_panelPathing.Name = "PanelPathing";
@@ -1330,12 +1349,12 @@ public partial class MapEditorHUD : Control
 		layersVBox.AddChild(_chkDeepWater);
 
 		_chkFlying = new CheckBox();
-		_chkFlying.Text = TranslationServer.Translate("Flying Units");
+		_chkFlying.Text = TranslationServer.Translate("Flying");
 		UIStyle.ApplyCheckboxStyle(_chkFlying);
 		layersVBox.AddChild(_chkFlying);
 
 		_chkGround = new CheckBox();
-		_chkGround.Text = TranslationServer.Translate("Ground Units");
+		_chkGround.Text = TranslationServer.Translate("Ground");
 		UIStyle.ApplyCheckboxStyle(_chkGround);
 		layersVBox.AddChild(_chkGround);
 
@@ -1570,6 +1589,108 @@ public partial class MapEditorHUD : Control
 		if (_btnToggleSnap != null)
 		{
 			_btnToggleSnap.Text = snap ? "🔲 SNAP TO GRID: ON" : "🔲 SNAP TO GRID: OFF";
+		}
+	}
+
+	public void OpenCoordinateNamingPanel(int minX, int minZ, int maxX, int maxZ)
+	{
+		_pendingCoordinateMinX = minX;
+		_pendingCoordinateMinZ = minZ;
+		_pendingCoordinateMaxX = maxX;
+		_pendingCoordinateMaxZ = maxZ;
+		if (_btnCommitCoordinate != null) _btnCommitCoordinate.Visible = true;
+		if (_txtCoordinateName != null) _txtCoordinateName.GrabFocus();
+	}
+
+	public void RefreshCoordinateListExternal()
+	{
+		if (_coordinateListVBox == null) return;
+		foreach (var child in _coordinateListVBox.GetChildren())
+		{
+			child.QueueFree();
+		}
+		var coordinates = GameHost.Instance?.EditorCoordinates;
+		if (coordinates == null) return;
+		foreach (var coord in coordinates)
+		{
+			var row = new HBoxContainer();
+			row.AddThemeConstantOverride("separation", 6);
+			_coordinateListVBox.AddChild(row);
+
+			var btnSelect = new Button();
+			btnSelect.Text = $"{coord.Name}  ({coord.MinX:F0},{coord.MinZ:F0}) → ({coord.MaxX:F0},{coord.MaxZ:F0})";
+			btnSelect.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+			btnSelect.Flat = true;
+			btnSelect.Alignment = HorizontalAlignment.Left;
+			btnSelect.AddThemeFontSizeOverride("font_size", 11);
+			btnSelect.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+			string coordinateName = coord.Name;
+			btnSelect.Pressed += () =>
+			{
+				GameHost.Instance?.SelectCoordinateExternal(coordinateName);
+			};
+			row.AddChild(btnSelect);
+
+			var btnDel = new Button();
+			btnDel.Set("icon_max_width", 0);
+			SetupButton(btnDel, "✕", () =>
+			{
+				GameHost.Instance?.DeleteCoordinateExternal(coordinateName);
+				RefreshCoordinateListExternal();
+			}, 10, $"Delete coordinate '{coordinateName}'");
+			btnDel.CustomMinimumSize = new Vector2(28, 24);
+			row.AddChild(btnDel);
+		}
+		WriteCoordinatesCsFile();
+	}
+
+	public void WriteCoordinatesCsFile()
+	{
+		if (string.IsNullOrEmpty(_tempWorkspacePath)) return;
+		if (GameHost.Instance == null) return;
+
+		string filePath = System.IO.Path.Combine(_tempWorkspacePath, "Coordinates.cs");
+		var sb = new System.Text.StringBuilder();
+		sb.AppendLine("namespace Realm.Maps;");
+		sb.AppendLine();
+		sb.AppendLine("public readonly struct Coordinate");
+		sb.AppendLine("{");
+		sb.AppendLine("    public readonly System.Numerics.Vector3 Min;");
+		sb.AppendLine("    public readonly System.Numerics.Vector3 Max;");
+		sb.AppendLine("    public readonly System.Numerics.Vector3 Center;");
+		sb.AppendLine();
+		sb.AppendLine("    public Coordinate(System.Numerics.Vector3 min, System.Numerics.Vector3 max)");
+		sb.AppendLine("    {");
+		sb.AppendLine("        Min = min;");
+		sb.AppendLine("        Max = max;");
+		sb.AppendLine("        Center = (min + max) / 2f;");
+		sb.AppendLine("    }");
+		sb.AppendLine("}");
+		sb.AppendLine();
+		sb.AppendLine("public static class Coordinates");
+		sb.AppendLine("{");
+
+		foreach (var coord in GameHost.Instance.EditorCoordinates)
+		{
+			string varName = System.Text.RegularExpressions.Regex.Replace(coord.Name, @"[^a-zA-Z0-9_]", "_");
+			if (varName.Length > 0 && char.IsDigit(varName[0])) varName = "_" + varName;
+
+			sb.AppendLine($"    public static readonly Coordinate {varName} = new Coordinate(");
+			sb.AppendLine($"        new System.Numerics.Vector3({coord.MinX:F2}f, 0f, {coord.MinZ:F2}f),");
+			sb.AppendLine($"        new System.Numerics.Vector3({coord.MaxX:F2}f, 0f, {coord.MaxZ:F2}f)");
+			sb.AppendLine("    );");
+			sb.AppendLine();
+		}
+
+		sb.AppendLine("}");
+
+		try
+		{
+			System.IO.File.WriteAllText(filePath, sb.ToString());
+		}
+		catch (System.Exception ex)
+		{
+			GD.PrintErr($"Failed to write Coordinates.cs: {ex.Message}");
 		}
 	}
 
@@ -1850,6 +1971,7 @@ public partial class MapEditorHUD : Control
 			case GameHost.EditorTool.FloodFill: targetBtn = _btnFloodFill; break;
 			case GameHost.EditorTool.PaintPathing: targetBtn = _btnPathingBrush; break;
 			case GameHost.EditorTool.FloodFillPathing: targetBtn = _btnFloodFillPathing; break;
+			case GameHost.EditorTool.DrawCoordinate: targetBtn = _btnDrawCoordinate; break;
 			case GameHost.EditorTool.SelectArea: targetBtn = _btnSelectArea; break;
 			case GameHost.EditorTool.PasteArea: targetBtn = _btnPaste; break;
 			case GameHost.EditorTool.PlaceUnit:
@@ -2021,11 +2143,18 @@ public partial class MapEditorHUD : Control
 				 tool == GameHost.EditorTool.PaintDirt ||
 				 tool == GameHost.EditorTool.PaintRock ||
 				 tool == GameHost.EditorTool.PaintSand ||
-				 tool == GameHost.EditorTool.FloodFill ||
-				 tool == GameHost.EditorTool.PaintPathing ||
-				 tool == GameHost.EditorTool.FloodFillPathing)
+				 tool == GameHost.EditorTool.FloodFill)
 		{
 			targetModule = EditorModule.TextureDeco;
+		}
+		else if (tool == GameHost.EditorTool.DrawCoordinate)
+		{
+			targetModule = EditorModule.Coordinates;
+		}
+		else if (tool == GameHost.EditorTool.PaintPathing ||
+				 tool == GameHost.EditorTool.FloodFillPathing)
+		{
+			targetModule = EditorModule.Pathing;
 		}
 		else if (tool == GameHost.EditorTool.PlaceUnit ||
 				 tool == GameHost.EditorTool.PlaceProp ||
@@ -2049,6 +2178,8 @@ public partial class MapEditorHUD : Control
 			if (_panelTerrainVBox != null) _panelTerrainVBox.Visible = (targetModule == EditorModule.Terrain);
 			if (_panelDecoVBox != null) _panelDecoVBox.Visible = (targetModule == EditorModule.TextureDeco);
 			if (_panelEnv != null) _panelEnv.Visible = (targetModule == EditorModule.TextureDeco);
+			if (_panelPathingVBox != null) _panelPathingVBox.Visible = (targetModule == EditorModule.Pathing);
+			if (_panelCoordinatesVBox != null) _panelCoordinatesVBox.Visible = (targetModule == EditorModule.Coordinates);
 			if (_panelObjects != null) _panelObjects.Visible = (targetModule == EditorModule.Objects);
 			if (_panelClipboard != null) _panelClipboard.Visible = (targetModule == EditorModule.Clipboard);
 		}
@@ -2062,6 +2193,14 @@ public partial class MapEditorHUD : Control
 			{
 				_pathingModeHBox.Visible = (tool != GameHost.EditorTool.FloodFillPathing);
 			}
+			GameHost.Instance?.UpdatePathingOverlay();
+		}
+		else if (tool == GameHost.EditorTool.DrawCoordinate)
+		{
+			if (_panelPathing != null) _panelPathing.Visible = false;
+			if (_panelTextures != null) _panelTextures.Visible = false;
+			if (_panelEntityPalette != null) _panelEntityPalette.Visible = false;
+			if (_btnCommitCoordinate != null) _btnCommitCoordinate.Visible = false;
 			GameHost.Instance?.UpdatePathingOverlay();
 		}
 		else
@@ -2867,8 +3006,10 @@ public class {mapName} : IMapScript
 		AddHelpSectionHeader(grid, TranslationServer.Translate("PRIMARY MODULE SWITCHING"));
 		AddHelpShortcutRow(grid, "F1", TranslationServer.Translate("Terrain Module"));
 		AddHelpShortcutRow(grid, "F2", TranslationServer.Translate("Texture Module"));
-		AddHelpShortcutRow(grid, "F3", TranslationServer.Translate("Objects Module"));
-		AddHelpShortcutRow(grid, "F4", TranslationServer.Translate("Clipboard Module"));
+		AddHelpShortcutRow(grid, "F3", TranslationServer.Translate("Pathing Module"));
+		AddHelpShortcutRow(grid, "F4", TranslationServer.Translate("Objects Module"));
+		AddHelpShortcutRow(grid, "F5", TranslationServer.Translate("Coordinates Module"));
+		AddHelpShortcutRow(grid, "F6", TranslationServer.Translate("Clipboard Module"));
 
 		AddHelpSectionHeader(grid, TranslationServer.Translate("CAMERA CONTROLS"));
 		AddHelpShortcutRow(grid, "Arrows", TranslationServer.Translate("Pan map camera"));
@@ -3196,8 +3337,85 @@ public class {mapName} : IMapScript
 		_contentTool.AddChild(_panelDecoVBox);
 		SafeReparent(_btnTextureBrush, _panelDecoVBox);
 		SafeReparent(_btnFloodFill, _panelDecoVBox);
-		if (_btnPathingBrush != null) SafeReparent(_btnPathingBrush, _panelDecoVBox);
-		if (_btnFloodFillPathing != null) SafeReparent(_btnFloodFillPathing, _panelDecoVBox);
+
+		_panelPathingVBox = new VBoxContainer();
+		_panelPathingVBox.Name = "PanelPathingVBox";
+		_panelPathingVBox.AddThemeConstantOverride("separation", 6);
+		_panelPathingVBox.Visible = false;
+		_contentTool.AddChild(_panelPathingVBox);
+		if (_btnPathingBrush != null) SafeReparent(_btnPathingBrush, _panelPathingVBox);
+		if (_btnFloodFillPathing != null) SafeReparent(_btnFloodFillPathing, _panelPathingVBox);
+
+		_panelCoordinatesVBox = new VBoxContainer();
+		_panelCoordinatesVBox.Name = "PanelCoordinatesVBox";
+		_panelCoordinatesVBox.AddThemeConstantOverride("separation", 8);
+		_panelCoordinatesVBox.Visible = false;
+		_contentTool.AddChild(_panelCoordinatesVBox);
+
+		if (_btnDrawCoordinate != null) SafeReparent(_btnDrawCoordinate, _panelCoordinatesVBox);
+
+		var rTitle = new Label();
+		rTitle.Text = "🗺️ COORDINATE TOOL";
+		rTitle.AddThemeFontSizeOverride("font_size", 14);
+		rTitle.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
+		_panelCoordinatesVBox.AddChild(rTitle);
+
+		var rInstructions = new Label();
+		rInstructions.Text = "Drag to draw a box on the terrain, then name it and create.";
+		rInstructions.AddThemeFontSizeOverride("font_size", 11);
+		rInstructions.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		rInstructions.AutowrapMode = TextServer.AutowrapMode.Word;
+		_panelCoordinatesVBox.AddChild(rInstructions);
+
+		var rNameRow = new HBoxContainer();
+		rNameRow.AddThemeConstantOverride("separation", 8);
+		_panelCoordinatesVBox.AddChild(rNameRow);
+
+		var rNameLabel = new Label();
+		rNameLabel.Text = "Name:";
+		rNameLabel.AddThemeFontSizeOverride("font_size", 12);
+		rNameLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		rNameRow.AddChild(rNameLabel);
+
+		_txtCoordinateName = new LineEdit();
+		_txtCoordinateName.Name = "TxtCoordinateName";
+		_txtCoordinateName.PlaceholderText = "e.g. spawnZone";
+		_txtCoordinateName.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_txtCoordinateName.AddThemeFontSizeOverride("font_size", 12);
+		rNameRow.AddChild(_txtCoordinateName);
+
+		_btnCommitCoordinate = new Button();
+		_btnCommitCoordinate.Name = "BtnCommitCoordinate";
+		_btnCommitCoordinate.Set("icon_max_width", 0);
+		SetupButton(_btnCommitCoordinate, "✅ Create", () =>
+		{
+			string name = _txtCoordinateName?.Text ?? "";
+			if (string.IsNullOrWhiteSpace(name))
+			{
+				ShowFeedback("Enter a coordinate name before creating.");
+				return;
+			}
+			bool ok = GameHost.Instance?.CommitCoordinateExternal(name, _pendingCoordinateMinX, _pendingCoordinateMinZ, _pendingCoordinateMaxX, _pendingCoordinateMaxZ) ?? false;
+			if (ok)
+			{
+				RefreshCoordinateListExternal();
+				ShowFeedback($"Coordinate '{name}' created.");
+				_txtCoordinateName.Text = "";
+			}
+		}, 12);
+		_panelCoordinatesVBox.AddChild(_btnCommitCoordinate);
+		_btnCommitCoordinate.Visible = false;
+
+		var rListTitle = new Label();
+		rListTitle.Text = "Defined Coordinates";
+		rListTitle.AddThemeFontSizeOverride("font_size", 12);
+		rListTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		_panelCoordinatesVBox.AddChild(rListTitle);
+
+		_coordinateListVBox = new VBoxContainer();
+		_coordinateListVBox.Name = "CoordinateListVBox";
+		_coordinateListVBox.AddThemeConstantOverride("separation", 4);
+		_panelCoordinatesVBox.AddChild(_coordinateListVBox);
 
 		_accordionBrush = new VBoxContainer();
 		_accordionBrush.Name = "AccordionBrush";
@@ -3546,7 +3764,9 @@ public class {mapName} : IMapScript
 		_optModule.Set("icon_max_width", 0);
 		_optModule.AddItem("⛰️ " + TranslationServer.Translate("TERRAIN"), (int)EditorModule.Terrain);
 		_optModule.AddItem("🎨 " + TranslationServer.Translate("TEXTURE"), (int)EditorModule.TextureDeco);
+		_optModule.AddItem("🧭 " + TranslationServer.Translate("PATHING"), (int)EditorModule.Pathing);
 		_optModule.AddItem("💂 " + TranslationServer.Translate("OBJECTS"), (int)EditorModule.Objects);
+		_optModule.AddItem("🗺️ " + TranslationServer.Translate("COORDINATES"), (int)EditorModule.Coordinates);
 		_optModule.AddItem("📋 " + TranslationServer.Translate("CLIPBOARD"), (int)EditorModule.Clipboard);
 		_optModule.ItemSelected += (index) =>
 		{
@@ -3589,9 +3809,16 @@ public class {mapName} : IMapScript
 		_activeModule = module;
 		UpdateModuleSwitchButtons();
 
+		if (module != EditorModule.Coordinates)
+		{
+			GameHost.Instance?.HideCoordinateSelectionOutline();
+		}
+
 		if (_panelTerrainVBox != null) _panelTerrainVBox.Visible = (module == EditorModule.Terrain);
 		if (_panelDecoVBox != null) _panelDecoVBox.Visible = (module == EditorModule.TextureDeco);
 		if (_panelEnv != null) _panelEnv.Visible = (module == EditorModule.TextureDeco);
+		if (_panelPathingVBox != null) _panelPathingVBox.Visible = (module == EditorModule.Pathing);
+		if (_panelCoordinatesVBox != null) _panelCoordinatesVBox.Visible = (module == EditorModule.Coordinates);
 		if (_panelObjects != null) _panelObjects.Visible = (module == EditorModule.Objects);
 		if (_panelClipboard != null) _panelClipboard.Visible = (module == EditorModule.Clipboard);
 
@@ -3605,8 +3832,14 @@ public class {mapName} : IMapScript
 				case EditorModule.TextureDeco:
 					TriggerToolSelection(GameHost.EditorTool.PaintGrass, _btnTextureBrush);
 					break;
+				case EditorModule.Pathing:
+					TriggerToolSelection(GameHost.EditorTool.PaintPathing, _btnPathingBrush);
+					break;
 				case EditorModule.Objects:
 					_entityPaletteController?.TriggerAddObjectMode();
+					break;
+				case EditorModule.Coordinates:
+					TriggerToolSelection(GameHost.EditorTool.DrawCoordinate, _btnDrawCoordinate);
 					break;
 				case EditorModule.Clipboard:
 					TriggerToolSelection(GameHost.EditorTool.SelectArea, _btnSelectArea);
@@ -3834,10 +4067,20 @@ public class {mapName} : IMapScript
 			}
 			else if (keyEvent.Keycode == Godot.Key.F3)
 			{
-				SwitchModule(EditorModule.Objects);
+				SwitchModule(EditorModule.Pathing);
 				GetViewport().SetInputAsHandled();
 			}
 			else if (keyEvent.Keycode == Godot.Key.F4)
+			{
+				SwitchModule(EditorModule.Objects);
+				GetViewport().SetInputAsHandled();
+			}
+			else if (keyEvent.Keycode == Godot.Key.F5)
+			{
+				SwitchModule(EditorModule.Coordinates);
+				GetViewport().SetInputAsHandled();
+			}
+			else if (keyEvent.Keycode == Godot.Key.F6)
 			{
 				SwitchModule(EditorModule.Clipboard);
 				GetViewport().SetInputAsHandled();

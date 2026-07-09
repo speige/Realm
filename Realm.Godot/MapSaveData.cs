@@ -15,4 +15,5 @@ public class MapSaveData
 	public float? CameraBoundsTop { get; set; }
 	public float? CameraBoundsBottom { get; set; }
 	public string SkyboxPath { get; set; }
+	public List<CoordinateSaveData> Coordinates { get; set; }
 }

@@ -8,7 +8,9 @@ public class MapEditorHUDViewModel
 	{
 		Terrain,
 		TextureDeco,
+		Pathing,
 		Objects,
+		Coordinates,
 		Clipboard
 	}
 

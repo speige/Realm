@@ -771,4 +771,21 @@ public interface IGameAPI
     /// Clears the player's unit selection programmatically.
     /// </summary>
     void ClearSelection();
+
+    /// <summary>
+    /// Gets the bounding coordinates of a named coordinate box drawn in the map editor.
+    /// </summary>
+    /// <param name="coordinateName">The name of the coordinate box.</param>
+    /// <param name="min">The minimum coordinates of the box.</param>
+    /// <param name="max">The maximum coordinates of the box.</param>
+    /// <returns>True if the coordinate box exists, false otherwise.</returns>
+    bool TryGetCoordinate(string coordinateName, out Vector3 min, out Vector3 max);
+
+    /// <summary>
+    /// Checks if a 3D position is inside a named coordinate box.
+    /// </summary>
+    /// <param name="position">The position to check.</param>
+    /// <param name="coordinateName">The name of the coordinate box.</param>
+    /// <returns>True if the position is inside the coordinate box, false otherwise.</returns>
+    bool IsPositionInCoordinate(Vector3 position, string coordinateName);
 }

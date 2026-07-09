@@ -158,12 +158,6 @@ public partial class GameHost
 					GetViewport().SetInputAsHandled();
 					return;
 				}
-				if (editorKeyEvent.Keycode == Key.F6 && !ctrlPressed && !shiftPressed)
-				{
-					MapEditorHUD.Instance?.ImportTerrainFromMinimapDialog();
-					GetViewport().SetInputAsHandled();
-					return;
-				}
 				if (editorKeyEvent.Keycode == Key.G && ctrlPressed)
 				{
 					EditorSnapToGrid = !EditorSnapToGrid;
@@ -715,6 +709,14 @@ public partial class GameHost
 				if (_editorService.IsSelectingArea)
 				{
 					_editorService.SetIsSelectingArea(false);
+					if (ActiveEditorTool == EditorTool.DrawCoordinate && _editorService.SelectionStart != null && _editorService.SelectionEnd != null)
+					{
+						int rMinX = Mathf.Min(_editorService.SelectionStart.Value.X, _editorService.SelectionEnd.Value.X);
+						int rMinZ = Mathf.Min(_editorService.SelectionStart.Value.Y, _editorService.SelectionEnd.Value.Y);
+						int rMaxX = Mathf.Max(_editorService.SelectionStart.Value.X, _editorService.SelectionEnd.Value.X);
+						int rMaxZ = Mathf.Max(_editorService.SelectionStart.Value.Y, _editorService.SelectionEnd.Value.Y);
+						MapEditorHUD.Instance?.OpenCoordinateNamingPanel(rMinX, rMinZ, rMaxX, rMaxZ);
+					}
 					GetViewport().SetInputAsHandled();
 					return;
 				}
@@ -1161,6 +1163,21 @@ public partial class GameHost
 							_editorService.SetIsSelectingArea(true);
 							CreateSelectionHighlight();
 							RebuildSelectionHighlightMesh(cx, cz, cx, cz);
+						}
+						GetViewport().SetInputAsHandled();
+					}
+					else if (ActiveEditorTool == EditorTool.DrawCoordinate)
+					{
+						if (GroundTerrain != null)
+						{
+							float rfx = hitPos.X / GroundTerrain.Spacing + (GroundTerrain.Width - 1) / 2.0f;
+							float rfz = hitPos.Z / GroundTerrain.Spacing + (GroundTerrain.Depth - 1) / 2.0f;
+							int rcx = Mathf.Clamp((int)Math.Round(rfx), 0, GroundTerrain.Width - 1);
+							int rcz = Mathf.Clamp((int)Math.Round(rfz), 0, GroundTerrain.Depth - 1);
+							_editorService.SetSelectionStart(new Vector2I(rcx, rcz));
+							_editorService.SetSelectionEnd(new Vector2I(rcx, rcz));
+							_editorService.SetIsSelectingArea(true);
+							HideCoordinatePreviewMesh();
 						}
 						GetViewport().SetInputAsHandled();
 					}
@@ -2310,7 +2327,7 @@ public partial class GameHost
 			var camera = GetViewport().GetCamera3D();
 			if (camera != null)
 			{
-				camera.GlobalPosition = new Vector3(castle.GlobalPosition.X, camera.GlobalPosition.Y, castle.GlobalPosition.Z + 25f);
+				camera.GlobalPosition = new Vector3(castle.GlobalPosition.X, castle.GlobalPosition.Y, castle.GlobalPosition.Z + 25f);
 			}
 		}
 	}
@@ -2323,7 +2340,7 @@ public partial class GameHost
 			var camera = GetViewport().GetCamera3D();
 			if (camera != null)
 			{
-				camera.GlobalPosition = new Vector3(unit.GlobalPosition.X, camera.GlobalPosition.Y, unit.GlobalPosition.Z + 25f);
+				camera.GlobalPosition = new Vector3(unit.GlobalPosition.X, unit.GlobalPosition.Y, unit.GlobalPosition.Z + 25f);
 			}
 		}
 		else

@@ -14,17 +14,22 @@ public class SaveLoadService
 	private readonly WorldAccessor _ecsWorldAccessor;
 	private World EcsWorld => _ecsWorldAccessor.Current;
 
+	private List<CoordinateSaveData> _lastLoadedCoordinates = new();
+
 	public SaveLoadService(WorldAccessor ecsWorldAccessor)
 	{
 		_ecsWorldAccessor = ecsWorldAccessor;
 	}
+
+	public List<CoordinateSaveData> GetLastLoadedCoordinates() => _lastLoadedCoordinates;
 
 	public bool SaveMapToFile(
 		string absolutePath,
 		string[] htmlColors,
 		(Entity Entity, float RotationY, float Scale)[] unitsData,
 		(Entity Entity, float RotationY, float Scale)[] propsData,
-		(string DecalId, System.Numerics.Vector3 Position, float RotationY, float Scale)[] decalsData)
+		(string DecalId, System.Numerics.Vector3 Position, float RotationY, float Scale)[] decalsData,
+		List<CoordinateSaveData> coordinatesData = null)
 	{
 		try
 		{
@@ -132,6 +137,7 @@ public class SaveLoadService
 			saveData.CameraBoundsTop = editor.CameraBoundsTop;
 			saveData.CameraBoundsBottom = editor.CameraBoundsBottom;
 			saveData.SkyboxPath = editor.SkyboxPath;
+			saveData.Coordinates = coordinatesData ?? new List<CoordinateSaveData>();
 
 			int width = terrain.Width;
 			int depth = terrain.Depth;
@@ -276,6 +282,8 @@ public class SaveLoadService
 			string json = File.ReadAllText(absolutePath);
 			var saveData = JsonSerializer.Deserialize<MapSaveData>(json);
 			if (saveData == null) return false;
+
+			_lastLoadedCoordinates = saveData.Coordinates ?? new List<CoordinateSaveData>();
 
 			var unitQuery = Realm.Ecs.Common.QueryCache.AllDefinitionIdAndPositionAndOwnerQuery;
 			var unitsToDestroy = new List<Entity>();

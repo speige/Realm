@@ -67,6 +67,10 @@ public partial class GameHost
 		MapEditorHUD.Instance?.UpdateCameraBoundsUI();
 		RebuildCameraBoundsOverlay();
 
+		EditorCoordinates.Clear();
+		RebuildAllCoordinatePersistentMeshes();
+		MapEditorHUD.Instance?.RefreshCoordinateListExternal();
+
 		MapEditorHUD.Instance?.ShowFeedbackExternal("Map reset: cleared all entities & terrain");
 	}
 
@@ -936,6 +940,16 @@ public partial class GameHost
 					int maxZ = Mathf.Max(_editorService.SelectionStart.Value.Y, cz);
 					CreateSelectionHighlight();
 					RebuildSelectionHighlightMesh(minX, minZ, maxX, maxZ);
+				}
+				else if (ActiveEditorTool == EditorTool.DrawCoordinate && _editorService.IsSelectingArea && _editorService.SelectionStart != null)
+				{
+					var (rcx, rcz) = _editorService.WorldPosToCellCoords(hitPos);
+					_editorService.SetSelectionEnd(new Vector2I(rcx, rcz));
+					int rMinX = Mathf.Min(_editorService.SelectionStart.Value.X, rcx);
+					int rMinZ = Mathf.Min(_editorService.SelectionStart.Value.Y, rcz);
+					int rMaxX = Mathf.Max(_editorService.SelectionStart.Value.X, rcx);
+					int rMaxZ = Mathf.Max(_editorService.SelectionStart.Value.Y, rcz);
+					UpdateCoordinatePreviewMesh(rMinX, rMinZ, rMaxX, rMaxZ);
 				}
 				else if (ActiveEditorTool == EditorTool.PasteArea && _editorService.HasCopiedArea)
 				{
@@ -2273,6 +2287,259 @@ public partial class GameHost
 		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
 		_selectionHighlightMesh.Mesh = arrayMesh;
 		_selectionHighlightMesh.Visible = true;
+	}
+
+	private void CreateCoordinatePreviewMesh()
+	{
+		if (_coordinatePreviewMesh != null) return;
+		_coordinatePreviewMesh = new MeshInstance3D();
+		_coordinatePreviewMesh.Name = "CoordinatePreview";
+		var mat = new StandardMaterial3D();
+		mat.AlbedoColor = new Color(0.1f, 1.0f, 0.3f, 0.4f);
+		mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+		mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+		mat.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+		_coordinatePreviewMesh.MaterialOverride = mat;
+		AddChild(_coordinatePreviewMesh);
+		_coordinatePreviewMesh.Visible = false;
+	}
+
+	public void UpdateCoordinatePreviewMesh(int minX, int minZ, int maxX, int maxZ)
+	{
+		CreateCoordinatePreviewMesh();
+		RebuildCoordinateMeshInstance(_coordinatePreviewMesh, minX, minZ, maxX, maxZ, new Color(0.1f, 1.0f, 0.3f, 0.4f));
+	}
+
+	public void HideCoordinatePreviewMesh()
+	{
+		if (_coordinatePreviewMesh != null) _coordinatePreviewMesh.Visible = false;
+	}
+
+	private void RebuildCoordinateMeshInstance(MeshInstance3D meshInstance, int minX, int minZ, int maxX, int maxZ, Color color, float yOffset = 0.15f)
+	{
+		if (meshInstance == null || GroundTerrain == null || GroundTerrain.Heights == null) return;
+		int selWidth = maxX - minX + 1;
+		int selDepth = maxZ - minZ + 1;
+		if (selWidth < 2 || selDepth < 2)
+		{
+			meshInstance.Visible = false;
+			return;
+		}
+		int vertexCount = selWidth * selDepth;
+		var vertices = new Vector3[vertexCount];
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+		float spacing = GroundTerrain.Spacing;
+		for (int sz = 0; sz < selDepth; sz++)
+		{
+			for (int sx = 0; sx < selWidth; sx++)
+			{
+				int mapX = minX + sx;
+				int mapZ = minZ + sz;
+				int idx = sz * selWidth + sx;
+				float lx = (mapX - (width - 1) / 2.0f) * spacing;
+				float lz = (mapZ - (depth - 1) / 2.0f) * spacing;
+				vertices[idx] = new Vector3(lx, GroundTerrain.Heights[mapX, mapZ] + yOffset, lz);
+			}
+		}
+		int cellWidth = selWidth - 1;
+		int cellDepth = selDepth - 1;
+		int indexCount = cellWidth * cellDepth * 6;
+		var indices = new int[indexCount];
+		var colors = new Color[vertexCount];
+		for (int i = 0; i < vertexCount; i++) colors[i] = color;
+		int iIdx = 0;
+		for (int sz = 0; sz < cellDepth; sz++)
+		{
+			for (int sx = 0; sx < cellWidth; sx++)
+			{
+				int v00 = sz * selWidth + sx;
+				int v10 = sz * selWidth + (sx + 1);
+				int v01 = (sz + 1) * selWidth + sx;
+				int v11 = (sz + 1) * selWidth + (sx + 1);
+				indices[iIdx++] = v00;
+				indices[iIdx++] = v10;
+				indices[iIdx++] = v01;
+				indices[iIdx++] = v10;
+				indices[iIdx++] = v11;
+				indices[iIdx++] = v01;
+			}
+		}
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+		arrays[(int)Mesh.ArrayType.Index] = indices;
+		arrays[(int)Mesh.ArrayType.Color] = colors;
+		var arrayMesh = new ArrayMesh();
+		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+		meshInstance.Mesh = arrayMesh;
+		meshInstance.Visible = true;
+	}
+
+	public bool CommitCoordinateExternal(string coordinateName, int minX, int minZ, int maxX, int maxZ)
+	{
+		if (GroundTerrain == null) return false;
+		string safeName = coordinateName.Trim();
+		if (string.IsNullOrEmpty(safeName)) return false;
+
+		var oldCoordinates = new List<EditorCoordinate>(EditorCoordinates);
+
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+		float spacing = GroundTerrain.Spacing;
+
+		float worldMinX = (minX - (width - 1) / 2.0f) * spacing;
+		float worldMinZ = (minZ - (depth - 1) / 2.0f) * spacing;
+		float worldMaxX = (maxX - (width - 1) / 2.0f) * spacing;
+		float worldMaxZ = (maxZ - (depth - 1) / 2.0f) * spacing;
+
+		bool committed = false;
+		for (int i = 0; i < EditorCoordinates.Count; i++)
+		{
+			if (EditorCoordinates[i].Name == safeName)
+			{
+				EditorCoordinates[i] = new EditorCoordinate { Name = safeName, MinX = worldMinX, MinZ = worldMinZ, MaxX = worldMaxX, MaxZ = worldMaxZ };
+				committed = true;
+				break;
+			}
+		}
+
+		if (!committed)
+		{
+			EditorCoordinates.Add(new EditorCoordinate { Name = safeName, MinX = worldMinX, MinZ = worldMinZ, MaxX = worldMaxX, MaxZ = worldMaxZ });
+		}
+
+		RebuildAllCoordinatePersistentMeshes();
+
+		var newCoordinates = new List<EditorCoordinate>(EditorCoordinates);
+		var action = new CoordinateAction(oldCoordinates, newCoordinates);
+		EditorHistoryManager.RecordAction(action);
+		EditorHasUnsavedChanges = true;
+
+		return true;
+	}
+
+	public void DeleteCoordinateExternal(string coordinateName)
+	{
+		var oldCoordinates = new List<EditorCoordinate>(EditorCoordinates);
+		EditorCoordinates.RemoveAll(r => r.Name == coordinateName);
+		RebuildAllCoordinatePersistentMeshes();
+
+		var newCoordinates = new List<EditorCoordinate>(EditorCoordinates);
+		var action = new CoordinateAction(oldCoordinates, newCoordinates);
+		EditorHistoryManager.RecordAction(action);
+		EditorHasUnsavedChanges = true;
+	}
+
+	public void RebuildAllCoordinatePersistentMeshes()
+	{
+		foreach (var mesh in _coordinatePersistentMeshes)
+		{
+			if (GodotObject.IsInstanceValid(mesh))
+			{
+				RemoveChild(mesh);
+				mesh.QueueFree();
+			}
+		}
+		_coordinatePersistentMeshes.Clear();
+
+		if (GroundTerrain == null || GroundTerrain.Heights == null) return;
+
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+		float spacing = GroundTerrain.Spacing;
+
+		foreach (var coord in EditorCoordinates)
+		{
+			int minX = Mathf.Clamp((int)Mathf.Round(coord.MinX / spacing + (width - 1) / 2.0f), 0, width - 1);
+			int minZ = Mathf.Clamp((int)Mathf.Round(coord.MinZ / spacing + (depth - 1) / 2.0f), 0, depth - 1);
+			int maxX = Mathf.Clamp((int)Mathf.Round(coord.MaxX / spacing + (width - 1) / 2.0f), 0, width - 1);
+			int maxZ = Mathf.Clamp((int)Mathf.Round(coord.MaxZ / spacing + (depth - 1) / 2.0f), 0, depth - 1);
+
+			var meshInst = new MeshInstance3D();
+			meshInst.Name = $"Coordinate_{coord.Name}";
+			var mat = new StandardMaterial3D();
+			mat.AlbedoColor = new Color(0.1f, 0.9f, 0.3f, 0.25f);
+			mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+			mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+			mat.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+			meshInst.MaterialOverride = mat;
+			AddChild(meshInst);
+			RebuildCoordinateMeshInstance(meshInst, minX, minZ, maxX, maxZ, new Color(0.1f, 0.9f, 0.3f, 0.25f));
+			_coordinatePersistentMeshes.Add(meshInst);
+		}
+	}
+
+	public void SelectCoordinateExternal(string coordinateName)
+	{
+		if (string.IsNullOrEmpty(coordinateName))
+		{
+			HideCoordinateSelectionOutline();
+			return;
+		}
+
+		if (GroundTerrain == null || GroundTerrain.Heights == null) return;
+
+		EditorCoordinate? found = null;
+		foreach (var r in EditorCoordinates)
+		{
+			if (r.Name == coordinateName)
+			{
+				found = r;
+				break;
+			}
+		}
+
+		if (found == null)
+		{
+			HideCoordinateSelectionOutline();
+			return;
+		}
+
+		var coord = found.Value;
+
+		if (_coordinateSelectionOutlineMesh == null)
+		{
+			_coordinateSelectionOutlineMesh = new MeshInstance3D();
+			_coordinateSelectionOutlineMesh.Name = "CoordinateSelectionOutline";
+			var mat = new StandardMaterial3D();
+			mat.AlbedoColor = new Color(1.0f, 0.6f, 0.0f, 0.45f);
+			mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+			mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+			mat.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+			_coordinateSelectionOutlineMesh.MaterialOverride = mat;
+			AddChild(_coordinateSelectionOutlineMesh);
+		}
+
+		int width = GroundTerrain.Width;
+		int depth = GroundTerrain.Depth;
+		float spacing = GroundTerrain.Spacing;
+
+		int minX = Mathf.Clamp((int)Mathf.Round(coord.MinX / spacing + (width - 1) / 2.0f), 0, width - 1);
+		int minZ = Mathf.Clamp((int)Mathf.Round(coord.MinZ / spacing + (depth - 1) / 2.0f), 0, depth - 1);
+		int maxX = Mathf.Clamp((int)Mathf.Round(coord.MaxX / spacing + (width - 1) / 2.0f), 0, width - 1);
+		int maxZ = Mathf.Clamp((int)Mathf.Round(coord.MaxZ / spacing + (depth - 1) / 2.0f), 0, depth - 1);
+
+		_coordinateSelectionOutlineMesh.Visible = true;
+		RebuildCoordinateMeshInstance(_coordinateSelectionOutlineMesh, minX, minZ, maxX, maxZ, new Color(1.0f, 0.6f, 0.0f, 0.45f), 0.25f);
+
+		float centerX = (coord.MinX + coord.MaxX) / 2.0f;
+		float centerZ = (coord.MinZ + coord.MaxZ) / 2.0f;
+		float centerY = GetTerrainHeightAt(new Vector3(centerX, 0f, centerZ));
+
+		var camera = GetViewport().GetCamera3D();
+		if (camera != null)
+		{
+			camera.GlobalPosition = new Vector3(centerX, centerY, centerZ + 25f);
+		}
+	}
+
+	public void HideCoordinateSelectionOutline()
+	{
+		if (_coordinateSelectionOutlineMesh != null)
+		{
+			_coordinateSelectionOutlineMesh.Visible = false;
+		}
 	}
 
 	public void PerformEraseAreaExternal()
