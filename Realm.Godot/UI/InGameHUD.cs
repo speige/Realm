@@ -544,6 +544,34 @@ public partial class InGameHUD : Control
 		Input.MouseMode = Input.MouseModeEnum.Visible;
 		MouseFilter = MouseFilterEnum.Ignore;
 
+		if (MapEditorHUD.IsTestMode)
+		{
+			var btnBackToEditor = new Button();
+			btnBackToEditor.Name = "BtnBackToEditor";
+			btnBackToEditor.Text = TranslationServer.Translate("Back to Editor");
+			btnBackToEditor.Set("icon_max_width", 0);
+			btnBackToEditor.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+			btnBackToEditor.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+			btnBackToEditor.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+			btnBackToEditor.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+			btnBackToEditor.AddThemeFontSizeOverride("font_size", 13);
+			btnBackToEditor.CustomMinimumSize = new Vector2(160, 40);
+			btnBackToEditor.SetAnchorsPreset(LayoutPreset.TopLeft);
+			btnBackToEditor.OffsetLeft = 20;
+			btnBackToEditor.OffsetTop = 20;
+			btnBackToEditor.Pressed += () =>
+			{
+				UIManager.Instance?.PlayClickSound();
+				MapEditorHUD.IsTestMode = false;
+				if (LobbyManager.Instance != null)
+				{
+					LobbyManager.Instance.Disconnect();
+				}
+				UIManager.Instance?.TransitionTo(GameScreen.MapEditorHUD);
+			};
+			AddChild(btnBackToEditor);
+		}
+
 		Resized += OnHUDResized;
 		ApplyHUDScale();
 		UpdateFPSVisibility();

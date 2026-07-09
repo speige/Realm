@@ -13,6 +13,9 @@ using MirrorMode = Realm.Ecs.Components.Core.MirrorMode;
 public partial class MapEditorHUD : Control
 {
 	public static MapEditorHUD Instance { get; private set; }
+	public static bool IsTestMode { get; set; } = false;
+
+	private static bool _agreementShownThisSession = false;
 
 	public enum EditorModule
 	{
@@ -1364,7 +1367,11 @@ public partial class MapEditorHUD : Control
 		}
 
 		InitializeTempWorkspace();
-		ShowAgreementModal();
+		if (!_agreementShownThisSession)
+		{
+			_agreementShownThisSession = true;
+			ShowAgreementModal();
+		}
 	}
 
 	public override void _Process(double delta)
@@ -4677,6 +4684,8 @@ public class {mapName} : IMapScript
 		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 		GameHost.Instance.SaveMapToFile(tempTerrainPath);
 		GameHost.Instance.EditorHasUnsavedChanges = false;
+
+		IsTestMode = true;
 
 		if (LobbyManager.Instance != null)
 		{

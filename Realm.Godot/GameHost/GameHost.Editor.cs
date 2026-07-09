@@ -1240,7 +1240,7 @@ public partial class GameHost
 		ActiveEditorTool = EditorTool.None;
 		EditorHistoryManager.Clear();
 		
-		bool loaded = LoadMapFromFile();
+		bool loaded = LoadMapFromFile("user://temp_map_workspace/terrain.json");
 		
 		CreateBrushIndicator();
 		CreateGridOverlay();
@@ -2061,15 +2061,18 @@ public partial class GameHost
 			straightY = maxH + 1.0f;
 		}
 
+		int centerZ = (depth - 1) / 2;
+		int centerX = (width - 1) / 2;
+
 		int totalVertices = 0;
 		for (int z = 0; z < depth; z++)
 		{
-			bool isThick = (z % 10 == 0);
+			bool isThick = ((z - centerZ) % 10 == 0);
 			totalVertices += (width - 1) * (isThick ? 6 : 2);
 		}
 		for (int x = 0; x < width; x++)
 		{
-			bool isThick = (x % 10 == 0);
+			bool isThick = ((x - centerX) % 10 == 0);
 			totalVertices += (depth - 1) * (isThick ? 6 : 2);
 		}
 
@@ -2112,7 +2115,7 @@ public partial class GameHost
 
 		for (int z = 0; z < depth; z++)
 		{
-			bool isThick = (z % 10 == 0);
+			bool isThick = ((z - centerZ) % 10 == 0);
 			Color col = isThick ? thickColor : thinColor;
 			float lz = (z - (depth - 1) / 2.0f) * spacing;
 			for (int x = 0; x < width - 1; x++)
@@ -2129,7 +2132,7 @@ public partial class GameHost
 
 		for (int x = 0; x < width; x++)
 		{
-			bool isThick = (x % 10 == 0);
+			bool isThick = ((x - centerX) % 10 == 0);
 			Color col = isThick ? thickColor : thinColor;
 			float lx = (x - (width - 1) / 2.0f) * spacing;
 			for (int z = 0; z < depth - 1; z++)

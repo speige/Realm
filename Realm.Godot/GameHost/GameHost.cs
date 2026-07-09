@@ -2166,7 +2166,39 @@ public class {mapName} : IMapScript
 
 		if (_activeMapScript == null)
 		{
-			_activeMapScript = new Realm.Maps.MeleeMap();
+			bool hasCustomTerrain = false;
+			string normalizedMapName = mapName.Replace('\\', '/');
+			if (normalizedMapName.StartsWith("user://") || normalizedMapName.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedMapName))
+			{
+				string checkDir = normalizedMapName;
+				if (normalizedMapName.StartsWith("user://") || normalizedMapName.StartsWith("res://"))
+				{
+					checkDir = ProjectSettings.GlobalizePath(normalizedMapName);
+				}
+				if (System.IO.Directory.Exists(checkDir) && System.IO.File.Exists(System.IO.Path.Combine(checkDir, "terrain.json")))
+				{
+					hasCustomTerrain = true;
+				}
+			}
+			else
+			{
+				string lowercaseMapName = mapName.ToLower().Trim();
+				string mapDir = $"res://Maps/{lowercaseMapName}";
+				string targetDir = ProjectSettings.GlobalizePath(mapDir);
+				if (System.IO.Directory.Exists(targetDir) && System.IO.File.Exists(System.IO.Path.Combine(targetDir, "terrain.json")))
+				{
+					hasCustomTerrain = true;
+				}
+			}
+
+			if (hasCustomTerrain)
+			{
+				_activeMapScript = new EmptyMapScript();
+			}
+			else
+			{
+				_activeMapScript = new Realm.Maps.MeleeMap();
+			}
 		}
 	}
 
@@ -2463,6 +2495,45 @@ public class {mapName} : IMapScript
 
 		LoadUnitMetadata(mapParamName);
 
+		if (!IsMapEditorMode)
+		{
+			string customTerrainPath = "";
+			string normalizedRawMapName = rawMapName.Replace('\\', '/');
+			if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRawMapName))
+			{
+				string checkDir = normalizedRawMapName;
+				if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://"))
+				{
+					checkDir = ProjectSettings.GlobalizePath(normalizedRawMapName);
+				}
+				if (System.IO.Directory.Exists(checkDir))
+				{
+					customTerrainPath = System.IO.Path.Combine(checkDir, "terrain.json");
+				}
+			}
+
+			if (string.IsNullOrEmpty(customTerrainPath))
+			{
+				string normalizedMapName = rawMapName.ToLower().Trim();
+				string mapDir = $"res://Maps/{normalizedMapName}";
+				if (System.IO.Directory.Exists(ProjectSettings.GlobalizePath(mapDir)))
+				{
+					customTerrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
+				}
+			}
+
+			string targetPath = customTerrainPath;
+			if (!string.IsNullOrEmpty(customTerrainPath) && (customTerrainPath.StartsWith("user://") || customTerrainPath.StartsWith("res://")))
+			{
+				targetPath = ProjectSettings.GlobalizePath(customTerrainPath);
+			}
+
+			if (!string.IsNullOrEmpty(targetPath) && System.IO.File.Exists(targetPath))
+			{
+				LoadMapFromFile(customTerrainPath, false, false);
+			}
+		}
+
 		bool isGameStarted = LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted;
 		bool shouldRunMapScript = !isGameStarted || IsServerActive();
 		if (shouldRunMapScript || IsMapEditorMode)
@@ -2591,18 +2662,26 @@ public class {mapName} : IMapScript
 		}
 
 		string terrainPath = "";
-		if (rawMapName.StartsWith("user://") || rawMapName.StartsWith("res://") || System.IO.Path.IsPathRooted(rawMapName))
+		string normalizedRawMapName = rawMapName.Replace('\\', '/');
+		if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRawMapName))
 		{
-			if (DirAccess.DirExistsAbsolute(rawMapName))
+			string checkDir = normalizedRawMapName;
+			if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://"))
 			{
-				terrainPath = System.IO.Path.Combine(rawMapName, "terrain.json");
+				checkDir = ProjectSettings.GlobalizePath(normalizedRawMapName);
+			}
+			if (System.IO.Directory.Exists(checkDir))
+			{
+				terrainPath = System.IO.Path.Combine(checkDir, "terrain.json");
 			}
 		}
 
 		if (string.IsNullOrEmpty(terrainPath))
 		{
 			string normalizedMapName = rawMapName.ToLower().Trim();
-			if (!DirAccess.DirExistsAbsolute($"res://Maps/{normalizedMapName}"))
+			string mapDir = $"res://Maps/{normalizedMapName}";
+			string checkDir = ProjectSettings.GlobalizePath(mapDir);
+			if (!System.IO.Directory.Exists(checkDir))
 			{
 				if (normalizedMapName.Contains("legion"))
 				{
@@ -2619,31 +2698,22 @@ public class {mapName} : IMapScript
 			}
 			terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
 		}
-		if (FileAccess.FileExists(terrainPath))
+
+		var activeTerrainNode = new EditableTerrain();
+		activeTerrainNode.Name = "Ground";
+		AddChild(activeTerrainNode);
+		GroundTerrain = activeTerrainNode;
+
+		string targetPath = terrainPath;
+		if (terrainPath.StartsWith("user://") || terrainPath.StartsWith("res://"))
 		{
-			if (LoadMapFromFile(terrainPath, true, false)) // clearUnits = false to avoid recursion
-			{
-				return;
-			}
+			targetPath = ProjectSettings.GlobalizePath(terrainPath);
 		}
 
-		toRemove.Clear();
-		foreach (var child in GetChildren())
+		if (System.IO.File.Exists(targetPath))
 		{
-			if (child.Name.ToString().StartsWith("Ground"))
-			{
-				toRemove.Add(child);
-			}
+			LoadMapFromFile(terrainPath, true, false);
 		}
-		foreach (var child in toRemove)
-		{
-			RemoveChild(child);
-			child.QueueFree();
-		}
-		var fallbackNode = new EditableTerrain();
-		fallbackNode.Name = "Ground";
-		AddChild(fallbackNode);
-		GroundTerrain = fallbackNode;
 	}
 
 	public void SetSkyboxTexture(string path)
@@ -3433,5 +3503,11 @@ public class {mapName} : IMapScript
 	void IGameAPI.PlayClickSound()
 	{
 		_audioService.PlayClickSound();
+	}
+
+	private class EmptyMapScript : Realm.MapAPI.IMapScript
+	{
+		public void Initialize(Realm.MapAPI.IGameAPI api) {}
+		public void Update(Realm.MapAPI.IGameAPI api, float delta) {}
 	}
 }

@@ -53,7 +53,10 @@ public class WorldInitService
 		AddOrSet(worldEntity, new ReplayState(0, 500f, 400f, 200f));
 		AddOrSet(worldEntity, new NetworkState(1, 0f, 0, -1, -1, false, 0, 1));
 		AddOrSet(worldEntity, new NetworkMappingState(new(), new(), new()));
-		AddOrSet(worldEntity, new EditorState(true, 4.0f, -95.0f, 95.0f, -95.0f, 125.0f, "res://Assets/skybox_panoramic.jpg", false));
+		if (!EcsWorld.Has<EditorState>(worldEntity))
+		{
+			EcsWorld.Add(worldEntity, new EditorState(true, 4.0f, -95.0f, 95.0f, -95.0f, 125.0f, "res://Assets/skybox_panoramic.jpg", false));
+		}
 		AddOrSet(worldEntity, new InputState(0, null, null, null, false));
 		AddOrSet(worldEntity, new VFXQueue(new System.Collections.Generic.List<VFXRequest>()));
 		AddOrSet(worldEntity, new CameraState
