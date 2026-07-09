@@ -4549,4 +4549,3 @@ public class {mapName} : IMapScript
 		}
 	}
 }
-

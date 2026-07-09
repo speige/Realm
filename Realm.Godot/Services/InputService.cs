@@ -229,7 +229,7 @@ internal class InputService
 		}
 	}
 
-	public void IssueAttackCommand(List<Entity> selectedEntities, Entity targetEntity)
+	public void IssueAttackCommand(List<Entity> selectedEntities, Entity targetEntity, bool isQueued = false)
 	{
 		foreach (var entity in selectedEntities)
 		{
@@ -238,7 +238,10 @@ internal class InputService
 			bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			if (isBuilding || isEnemy) continue;
 
-			ClearUnitOrders(entity);
+			if (!isQueued)
+			{
+				ClearUnitOrders(entity);
+			}
 
 			var attackTarget = new AttackTarget(targetEntity);
 			if (EcsWorld.Has<AttackTarget>(entity))
@@ -248,7 +251,7 @@ internal class InputService
 		}
 	}
 
-	public void IssueFollowCommand(List<Entity> selectedEntities, Entity targetEntity)
+	public void IssueFollowCommand(List<Entity> selectedEntities, Entity targetEntity, bool isQueued = false)
 	{
 		foreach (var entity in selectedEntities)
 		{
@@ -275,7 +278,7 @@ internal class InputService
 		}
 	}
 
-	public void IssuePatrolCommand(List<Entity> selectedEntities, System.Numerics.Vector3 targetPos)
+	public void IssuePatrolCommand(List<Entity> selectedEntities, System.Numerics.Vector3 targetPos, bool isQueued = false)
 	{
 		int unitIndex = 0;
 		int cols = (int)Math.Ceiling(Math.Sqrt(selectedEntities.Count));
@@ -288,7 +291,10 @@ internal class InputService
 			bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			if (isBuilding || isEnemy) continue;
 
-			ClearUnitOrders(entity);
+			if (!isQueued)
+			{
+				ClearUnitOrders(entity);
+			}
 
 			if (EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity))
 			{
@@ -314,7 +320,7 @@ internal class InputService
 		}
 	}
 
-	public void IssueAttackMoveCommand(List<Entity> selectedEntities, System.Numerics.Vector3 targetPos)
+	public void IssueAttackMoveCommand(List<Entity> selectedEntities, System.Numerics.Vector3 targetPos, bool isQueued = false)
 	{
 		foreach (var entity in selectedEntities)
 		{
@@ -323,7 +329,10 @@ internal class InputService
 			bool isEnemy = EcsWorld.Has<UnitFaction>(entity) && EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 			if (isBuilding || isEnemy) continue;
 
-			ClearUnitOrders(entity);
+			if (!isQueued)
+			{
+				ClearUnitOrders(entity);
+			}
 
 			var attackMove = new AttackMove(targetPos);
 			if (EcsWorld.Has<AttackMove>(entity))

@@ -345,7 +345,7 @@ public class CommandPanel
 		var items = new List<CommandCardItem>();
 		if (focusedUnit == null) return items;
 
-		if (focusedUnit.IsUnderConstruction)
+		if (focusedUnit.IsBuilding && focusedUnit.IsUnderConstruction)
 		{
 			items.Add(new CommandCardItem
 			{

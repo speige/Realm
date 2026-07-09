@@ -419,7 +419,8 @@ internal class SimulationService
 	{
 		if (prod.UnitIds.Count > 0)
 		{
-			prod.CurrentProgress += _fDelta;
+			float multiplier = (GameHost.Instance != null && GameHost.Instance.FastBuildEnabled) ? 10f : 1f;
+			prod.CurrentProgress += _fDelta * multiplier;
 			if (prod.CurrentProgress >= prod.BuildTime)
 			{
 				string unitToSpawn = prod.UnitIds[0];

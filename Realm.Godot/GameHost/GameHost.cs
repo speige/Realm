@@ -2674,7 +2674,7 @@ public class {mapName} : IMapScript
 		return closest;
 	}
 
-	public void IssueGatherCommand(Prop3D prop)
+	public void IssueGatherCommand(Prop3D prop, bool isQueued = false)
 	{
 		if (SelectedUnits.Count == 0 || prop == null || !GodotObject.IsInstanceValid(prop)) return;
 
@@ -2698,7 +2698,11 @@ public class {mapName} : IMapScript
 			{
 				if (unit.IsBuilding || unit.IsEnemy || unit.UnitId != "worker") continue;
 				targetIds.Add(GetServerEntityId(unit.Entity));
-				ClearUnitOrders(unit.Entity);
+				
+				if (!isQueued)
+				{
+					ClearUnitOrders(unit.Entity);
+				}
 
 				var gatherer = new Gatherer(resType, prop.Entity);
 				if (EcsWorld.Has<Gatherer>(unit.Entity)) EcsWorld.Set(unit.Entity, gatherer);
@@ -2712,16 +2716,16 @@ public class {mapName} : IMapScript
 		{
 			if (unit.IsBuilding || unit.IsEnemy || unit.UnitId != "worker") continue;
 
-
-			ClearUnitOrders(unit.Entity);
-
+			if (!isQueued)
+			{
+				ClearUnitOrders(unit.Entity);
+			}
 
 			var gatherer = new Gatherer(resType, prop.Entity);
 			if (EcsWorld.Has<Gatherer>(unit.Entity))
 				EcsWorld.Set(unit.Entity, gatherer);
 			else
 				EcsWorld.Add(unit.Entity, gatherer);
-
 
 			var moveTo = new MoveTo(new System.Numerics.Vector3(prop.GlobalPosition.X, prop.GlobalPosition.Y, prop.GlobalPosition.Z));
 			EcsWorld.Add(unit.Entity, moveTo);

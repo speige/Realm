@@ -122,7 +122,7 @@ public class MinimapPanel
 								else if (cmd == "move")
 								{
 									if (Input.IsKeyPressed(Key.Shift))
-										GameHost.Instance.IssueMoveCommandQueued(minimapWorldPos);
+										GameHost.Instance.IssueMoveCommand(minimapWorldPos, true);
 									else
 										GameHost.Instance.IssueMoveCommand(minimapWorldPos);
 								}

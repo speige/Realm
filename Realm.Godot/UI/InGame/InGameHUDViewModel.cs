@@ -483,7 +483,7 @@ public class InGameHUDViewModel
 			{
 				var world = GameHost.Instance.EcsWorld;
 				if (world.Has<Name>(u.Entity)) info.Name = world.Get<Name>(u.Entity).Value;
-				if (world.Has<Realm.Ecs.Components.Tags.UnderConstruction>(u.Entity)) info.IsUnderConstruction = true;
+				if (u.IsBuilding && world.Has<Realm.Ecs.Components.Tags.UnderConstruction>(u.Entity)) info.IsUnderConstruction = true;
 				
 				if (world.Has<Health>(u.Entity))
 				{

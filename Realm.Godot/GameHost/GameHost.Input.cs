@@ -1363,6 +1363,7 @@ public partial class GameHost
 				if (ActiveBuildingPlacementType != null)
 				{
 					CancelBuildingPlacement();
+					InGameHUD.Instance?.ExitBuildSubMenu();
 					GetViewport().SetInputAsHandled();
 					return;
 				}
@@ -1647,18 +1648,11 @@ public partial class GameHost
 					}
 					else if (clickedProp != null && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
 					{
-						IssueGatherCommand(clickedProp);
+						IssueGatherCommand(clickedProp, shiftHeld);
 					}
 					else
 					{
-						if (shiftHeld)
-						{
-							IssueMoveCommandQueued(hitPos);
-						}
-						else
-						{
-							IssueMoveCommand(hitPos);
-						}
+						IssueMoveCommand(hitPos, shiftHeld);
 					}
 					GetViewport().SetInputAsHandled();
 					return;
@@ -2095,15 +2089,19 @@ public partial class GameHost
 		}
 	}
 
-	public void IssueMoveCommand(Vector3 targetPos)
+	public void IssueMoveCommand(Vector3 targetPos, bool isQueued = false)
 	{
 		if (SelectedUnits.Count == 0) return;
 
-		SpawnTargetIndicator(targetPos, new Color(0.1f, 0.9f, 0.2f));
-
-		if (InGameHUD.Instance != null)
+		if (isQueued)
 		{
-			InGameHUD.Instance.ShowFeedbackText("Command: Move to position", new Color(0.2f, 0.9f, 0.3f));
+			SpawnTargetIndicator(targetPos, new Color(0.2f, 0.7f, 1.0f));
+			InGameHUD.Instance?.ShowFeedbackText("Command: Queued Move (Shift+Click)", new Color(0.2f, 0.7f, 1.0f));
+		}
+		else
+		{
+			SpawnTargetIndicator(targetPos, new Color(0.1f, 0.9f, 0.2f));
+			InGameHUD.Instance?.ShowFeedbackText("Command: Move to position", new Color(0.2f, 0.9f, 0.3f));
 		}
 
 		var targetIds = new List<int>();
@@ -2115,15 +2113,22 @@ public partial class GameHost
 			targetIds.Add(GetServerEntityId(unit.Entity));
 		}
 
-		_inputService.IssueMoveCommand(selectedEntities, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
+		if (isQueued)
+		{
+			_inputService.IssueMoveCommandQueued(selectedEntities, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
+		}
+		else
+		{
+			_inputService.IssueMoveCommand(selectedEntities, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
+		}
 
 		if (_multiplayerActive && !Multiplayer.IsServer())
 		{
-			QueueClientCommand("move", targetIds, targetPos, 0, "");
+			QueueClientCommand(isQueued ? "move_queued" : "move", targetIds, targetPos, 0, "");
 		}
 	}
 
-	public void IssueAttackCommand(Unit3D target)
+	public void IssueAttackCommand(Unit3D target, bool isQueued = false)
 	{
 		if (SelectedUnits.Count == 0) return;
 
@@ -2143,7 +2148,7 @@ public partial class GameHost
 			targetIds.Add(GetServerEntityId(unit.Entity));
 		}
 
-		_inputService.IssueAttackCommand(selectedEntities, target.Entity);
+		_inputService.IssueAttackCommand(selectedEntities, target.Entity, isQueued);
 
 		if (_multiplayerActive && !Multiplayer.IsServer())
 		{
@@ -2151,7 +2156,7 @@ public partial class GameHost
 		}
 	}
 
-	public void IssueFollowCommand(Unit3D target)
+	public void IssueFollowCommand(Unit3D target, bool isQueued = false)
 	{
 		if (SelectedUnits.Count == 0) return;
 
@@ -2188,7 +2193,7 @@ public partial class GameHost
 			targetIds.Add(GetServerEntityId(unit.Entity));
 		}
 
-		_inputService.IssueFollowCommand(selectedEntities, target.Entity);
+		_inputService.IssueFollowCommand(selectedEntities, target.Entity, isQueued);
 
 		if (_multiplayerActive && !Multiplayer.IsServer())
 		{
@@ -3126,7 +3131,7 @@ public partial class GameHost
 		}
 	}
 
-	public void IssuePatrolCommand(Vector3 targetPos)
+	public void IssuePatrolCommand(Vector3 targetPos, bool isQueued = false)
 	{
 		if (SelectedUnits.Count == 0) return;
 
@@ -3142,7 +3147,7 @@ public partial class GameHost
 			targetIds.Add(GetServerEntityId(unit.Entity));
 		}
 
-		_inputService.IssuePatrolCommand(selectedEntities, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
+		_inputService.IssuePatrolCommand(selectedEntities, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z), isQueued);
 
 		if (_multiplayerActive && !Multiplayer.IsServer())
 		{
@@ -3150,7 +3155,7 @@ public partial class GameHost
 		}
 	}
 
-	public void IssueMoveCommandQueued(Vector3 targetPos)
+	public void IssueAttackMoveCommand(Vector3 targetPos, bool isQueued = false)
 	{
 		if (SelectedUnits.Count == 0) return;
 
@@ -3166,7 +3171,7 @@ public partial class GameHost
 			targetIds.Add(GetServerEntityId(unit.Entity));
 		}
 
-		_inputService.IssueMoveCommandQueued(selectedEntities, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
+		_inputService.IssueAttackMoveCommand(selectedEntities, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z), isQueued);
 
 		if (_multiplayerActive && !Multiplayer.IsServer())
 		{
