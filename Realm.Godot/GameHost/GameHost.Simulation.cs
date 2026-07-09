@@ -144,6 +144,7 @@ public partial class GameHost
 
 	private readonly List<(Entity Worker, BuildTask UpdatedTask)> _pendingBuildTaskUpdates = new();
 	private readonly List<Entity> _completedBuildings = new();
+	private readonly List<(Entity Entity, string? Type, System.Numerics.Vector3 Position, Entity Target)> _pendingQueuedCommands = new();
 
 	private readonly Dictionary<int, List<MeshInstance3D>> _buildQueueGhosts = new();
 
@@ -227,20 +228,7 @@ public partial class GameHost
 						ref var buildQueue = ref EcsWorld.Get<BuildQueue>(workerEntity);
 						if (buildQueue.TryDequeue(out string nextType, out var nextPos, out Arch.Core.Entity nextTarget))
 						{
-							if (nextTarget != Entity.Null && EcsWorld.IsAlive(nextTarget) && EcsWorld.Has<ConstructionState>(nextTarget))
-							{
-								var cState = EcsWorld.Get<ConstructionState>(nextTarget);
-								var newTask = new BuildTask(nextTarget, cState.TotalBuildTime);
-								newTask.Progress = cState.Progress;
-								EcsWorld.Add(workerEntity, newTask);
-								var moveTo = new MoveTo(new System.Numerics.Vector3(nextPos.X, nextPos.Y, nextPos.Z));
-								if (EcsWorld.Has<MoveTo>(workerEntity)) EcsWorld.Set(workerEntity, moveTo);
-								else EcsWorld.Add(workerEntity, moveTo);
-							}
-							else
-							{
-								AssignBuildTaskToWorker(workerEntity, nextType, nextPos);
-							}
+							ExecuteQueuedCommand(workerEntity, nextType, nextPos, nextTarget);
 						}
 						else
 						{
@@ -272,6 +260,54 @@ public partial class GameHost
 		if (_pendingBuildTaskUpdates.Count > 0)
 		{
 			InGameHUD.Instance?.RefreshUI(SelectedUnits);
+		}
+
+		_pendingQueuedCommands.Clear();
+		var queueQuery = QueryCache.AllBuildQueueNoneDeadQuery;
+		EcsWorld.Query(in queueQuery, (Entity entity) =>
+		{
+			bool hasMoveTo = EcsWorld.Has<MoveTo>(entity);
+			bool hasBuildTask = EcsWorld.Has<BuildTask>(entity);
+			bool hasAttackTarget = EcsWorld.Has<AttackTarget>(entity);
+			bool hasAttackMove = EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(entity);
+			bool hasFollow = EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity);
+			bool hasPatrol = EcsWorld.Has<Realm.Ecs.Components.Movement.Patrol>(entity);
+			bool hasGatherer = EcsWorld.Has<Gatherer>(entity);
+			bool hasHealingTarget = EcsWorld.Has<HealingTarget>(entity);
+
+			if (!hasMoveTo && !hasBuildTask && !hasAttackTarget && !hasAttackMove && !hasFollow && !hasPatrol && !hasGatherer && !hasHealingTarget)
+			{
+				ref var q = ref EcsWorld.Get<BuildQueue>(entity);
+				if (q.Count > 0)
+				{
+					if (q.TryDequeue(out string nextType, out var nextPos, out Arch.Core.Entity nextTarget))
+					{
+						_pendingQueuedCommands.Add((entity, nextType, nextPos, nextTarget));
+					}
+				}
+				else
+				{
+					_pendingQueuedCommands.Add((entity, "clear_queue_component", System.Numerics.Vector3.Zero, Entity.Null));
+				}
+			}
+		});
+
+		foreach (var cmd in _pendingQueuedCommands)
+		{
+			if (EcsWorld.IsAlive(cmd.Entity))
+			{
+				if (cmd.Type == "clear_queue_component")
+				{
+					if (EcsWorld.Has<BuildQueue>(cmd.Entity))
+					{
+						EcsWorld.Remove<BuildQueue>(cmd.Entity);
+					}
+				}
+				else
+				{
+					ExecuteQueuedCommand(cmd.Entity, cmd.Type, cmd.Position, cmd.Target);
+				}
+			}
 		}
 
 		UpdateBuildQueueGhosts();
@@ -574,5 +610,87 @@ public partial class GameHost
 		}
 
 		return "Idle";
+	}
+
+	internal void ExecuteQueuedCommand(Entity entity, string? commandType, System.Numerics.Vector3 targetPos, Entity targetEntity)
+	{
+		if (commandType == "move")
+		{
+			var moveTo = new MoveTo(targetPos);
+			EcsWorld.Add(entity, moveTo);
+		}
+		else if (commandType == "attack")
+		{
+			if (EcsWorld.IsAlive(targetEntity))
+			{
+				var attackTarget = new AttackTarget(targetEntity);
+				EcsWorld.Add(entity, attackTarget);
+			}
+		}
+		else if (commandType == "attackmove")
+		{
+			var attackMove = new AttackMove(targetPos);
+			EcsWorld.Add(entity, attackMove);
+			var moveTo = new MoveTo(targetPos);
+			EcsWorld.Add(entity, moveTo);
+		}
+		else if (commandType == "follow")
+		{
+			if (EcsWorld.IsAlive(targetEntity))
+			{
+				if (EcsWorld.Has<DefinitionId>(entity) && EcsWorld.Get<DefinitionId>(entity).Value == "priest")
+				{
+					var healTarget = new HealingTarget(targetEntity);
+					EcsWorld.Add(entity, healTarget);
+				}
+				else
+				{
+					var follow = new Follow(targetEntity);
+					EcsWorld.Add(entity, follow);
+				}
+			}
+		}
+		else if (commandType == "patrol")
+		{
+			var unitPos = EcsWorld.Has<Position>(entity) ? EcsWorld.Get<Position>(entity).Value : System.Numerics.Vector3.Zero;
+			var patrol = new Patrol(unitPos, targetPos);
+			EcsWorld.Add(entity, patrol);
+			var moveTo = new MoveTo(targetPos);
+			EcsWorld.Add(entity, moveTo);
+		}
+		else if (commandType == "gather")
+		{
+			if (EcsWorld.IsAlive(targetEntity))
+			{
+				string resType = null;
+				if (EcsWorld.Has<Gold>(targetEntity)) resType = "gold";
+				else if (EcsWorld.Has<Wood>(targetEntity)) resType = "wood";
+				else if (EcsWorld.Has<Stone>(targetEntity)) resType = "stone";
+
+				if (resType != null)
+				{
+					var gatherer = new Gatherer(resType, targetEntity);
+					EcsWorld.Add(entity, gatherer);
+					var moveTo = new MoveTo(targetPos);
+					EcsWorld.Add(entity, moveTo);
+				}
+			}
+		}
+		else
+		{
+			if (targetEntity != Entity.Null && EcsWorld.IsAlive(targetEntity) && EcsWorld.Has<ConstructionState>(targetEntity))
+			{
+				var cState = EcsWorld.Get<ConstructionState>(targetEntity);
+				var newTask = new BuildTask(targetEntity, cState.TotalBuildTime);
+				newTask.Progress = cState.Progress;
+				EcsWorld.Add(entity, newTask);
+				var moveTo = new MoveTo(new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
+				EcsWorld.Add(entity, moveTo);
+			}
+			else
+			{
+				AssignBuildTaskToWorker(entity, commandType, targetPos);
+			}
+		}
 	}
 }

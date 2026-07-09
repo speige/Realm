@@ -101,6 +101,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnBackToHub;
 	private Button _btnPublish;
 	private Button _btnSave;
+	private Button _btnTestMap;
 	private Button _btnLoad;
 	private Button _btnDeleteObject;
 	private Button _btnUndo;
@@ -767,6 +768,11 @@ public partial class MapEditorHUD : Control
 		GetNode<VBoxContainer>("MiddleRightBox").AddChild(_btnLoad);
 		GetNode<VBoxContainer>("MiddleRightBox").MoveChild(_btnLoad, _btnSave.GetIndex() + 1);
 		SetupButton(_btnLoad, "📂 LOAD FILE", () => LoadMapAction(), 13, "Load heights, colors, and entities from a saved json file (Ctrl+O)");
+
+		_btnTestMap = new Button();
+		_btnTestMap.Name = "BtnTestMap";
+		_btnTestMap.Set("icon_max_width", 0);
+		SetupButton(_btnTestMap, "🎮 TEST MAP", () => TestMapAction(), 13, "Launch single-player mode on the current editor map");
 
 		_btnToggleGrid = new Button();
 		_btnToggleGrid.Name = "BtnToggleGrid";
@@ -3077,8 +3083,9 @@ public class {mapName} : IMapScript
 		leftVBox.AddChild(_contentFile);
 		SetupMutualAccordion(_btnHeaderFile, _contentFile, TranslationServer.Translate("File"));
 
-		SafeReparent(_btnPublish, _contentFile);
+		SafeReparent(_btnTestMap, _contentFile);
 		SafeReparent(_btnSave, _contentFile);
+		SafeReparent(_btnPublish, _contentFile);
 		SafeReparent(_btnLoad, _contentFile);
 		SafeReparent(_btnResetMap, _contentFile);
 		SafeReparent(_btnGenerateMap, _contentFile);
@@ -4661,6 +4668,19 @@ public class {mapName} : IMapScript
 				}
 				GetViewport().SetInputAsHandled();
 			}
+		}
+	}
+	private void TestMapAction()
+	{
+		if (GameHost.Instance == null) return;
+
+		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+		GameHost.Instance.SaveMapToFile(tempTerrainPath);
+		GameHost.Instance.EditorHasUnsavedChanges = false;
+
+		if (LobbyManager.Instance != null)
+		{
+			LobbyManager.Instance.HostSinglePlayerGame(_tempWorkspacePath, "Test Map");
 		}
 	}
 }

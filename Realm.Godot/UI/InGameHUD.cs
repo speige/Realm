@@ -1748,6 +1748,17 @@ public partial class InGameHUD : Control
 				ShowFeedbackText("Cheat Activated: Fog of War removed! No cap.", new Color(0.2f, 0.8f, 0.5f));
 				_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'nocap' activated. Fog of War disabled.")}[/color]\n";
 				break;
+			case CheatService.CheatResult.UnlimitedPower:
+				{
+					bool isOn = GameHost.Instance?.UnlimitedPowerEnabled ?? false;
+					string state = isOn ? "ENGAGED" : "DISENGAGED";
+					string msg = isOn
+						? "Cheat Activated: Unlimited Power! ⚡ Cooldowns & mana costs removed."
+						: "Cheat Deactivated: Unlimited Power. Cooldowns back to normal.";
+					ShowFeedbackText(msg, new Color(0.8f, 0.2f, 0.9f));
+					_chatLog.Text += $"[color=#ffd700]System: Unlimited Power {state}. No cooldowns: {(isOn ? "ON" : "OFF")}[/color]\n";
+				}
+				break;
 			case CheatService.CheatResult.WarpSpeed:
 			{
 				bool isOn = GameHost.Instance?.FastBuildEnabled ?? false;

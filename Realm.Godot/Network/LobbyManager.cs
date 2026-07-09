@@ -1362,7 +1362,10 @@ public partial class LobbyManager : Node
         ActiveMapName = mapName;
 
 
-        MapAssetManager.CompileAndLoadPck(mapName);
+		if (!mapName.StartsWith("user://") && !mapName.StartsWith("res://") && !System.IO.Path.IsPathRooted(mapName))
+		{
+			MapAssetManager.CompileAndLoadPck(mapName);
+		}
         
 
         string path = "res://map.json";

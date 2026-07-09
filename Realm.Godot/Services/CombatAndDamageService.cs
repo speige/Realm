@@ -314,7 +314,7 @@ internal class CombatAndDamageService
 			{
 				if (EcsWorld.Has<Realm.Ecs.Components.Tags.Invulnerable>(target.Target))
 				{
-					atk.CurrentCooldown = atk.Cooldown;
+					atk.CurrentCooldown = (GameHost.Instance != null && GameHost.Instance.UnlimitedPowerEnabled) ? 0f : atk.Cooldown;
 					return;
 				}
 
@@ -366,7 +366,7 @@ internal class CombatAndDamageService
 					}
 				}
 
-				atk.CurrentCooldown = atk.Cooldown;
+				atk.CurrentCooldown = (GameHost.Instance != null && GameHost.Instance.UnlimitedPowerEnabled) ? 0f : atk.Cooldown;
 
 				if (atk.Range > 3f)
 				{
@@ -511,7 +511,7 @@ internal class CombatAndDamageService
 				float newHp = Math.Min(targetHealth.Max, targetHealth.Current + healAmount);
 				EcsWorld.Set(target.Target, new Health(newHp, targetHealth.Max));
 
-				atk.CurrentCooldown = atk.Cooldown;
+				atk.CurrentCooldown = (GameHost.Instance != null && GameHost.Instance.UnlimitedPowerEnabled) ? 0f : atk.Cooldown;
 
 				OnHealEffectRequested?.Invoke(currentPos, targetPos);
 				OnHealFlashRequested?.Invoke(target.Target);

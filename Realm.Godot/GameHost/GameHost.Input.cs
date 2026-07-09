@@ -1279,6 +1279,17 @@ public partial class GameHost
 			return;
 		}
 
+		if (@event is InputEventKey keyReleaseEvent && !keyReleaseEvent.Pressed && keyReleaseEvent.Keycode == Key.Shift)
+		{
+			if (ActiveBuildingPlacementType != null)
+			{
+				CancelBuildingPlacement();
+				InGameHUD.Instance?.ExitBuildSubMenu();
+				GetViewport().SetInputAsHandled();
+				return;
+			}
+		}
+
 		if (@event is InputEventKey keyEvent && keyEvent.Pressed && !keyEvent.Echo)
 		{
 			if (keyEvent.Keycode >= Key.Key0 && keyEvent.Keycode <= Key.Key9)
@@ -1356,17 +1367,6 @@ public partial class GameHost
 				CenterCameraOnCastle();
 				GetViewport().SetInputAsHandled();
 				return;
-			}
-
-			if (!keyEvent.Pressed && keyEvent.Keycode == Key.Shift)
-			{
-				if (ActiveBuildingPlacementType != null)
-				{
-					CancelBuildingPlacement();
-					InGameHUD.Instance?.ExitBuildSubMenu();
-					GetViewport().SetInputAsHandled();
-					return;
-				}
 			}
 
 			if (InGameHUD.Instance != null && InGameHUD.Instance.HandleCommandCardHotkey(keyEvent.Keycode))
@@ -1617,7 +1617,7 @@ public partial class GameHost
 
 					if (clickedUnit != null && clickedUnit.IsEnemy && clickedUnit.Visible)
 					{
-						IssueAttackCommand(clickedUnit);
+						IssueAttackCommand(clickedUnit, shiftHeld);
 					}
 					else if (clickedUnit != null && !clickedUnit.IsEnemy && clickedUnit != SelectedUnits.Find(u => !u.IsEnemy))
 					{
@@ -1638,12 +1638,12 @@ public partial class GameHost
 							}
 							else
 							{
-								IssueFollowCommand(clickedUnit);
+								IssueFollowCommand(clickedUnit, shiftHeld);
 							}
 						}
 						else
 						{
-							IssueFollowCommand(clickedUnit);
+							IssueFollowCommand(clickedUnit, shiftHeld);
 						}
 					}
 					else if (clickedProp != null && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
@@ -1719,24 +1719,25 @@ public partial class GameHost
 							var collider = hit["collider"].As<Node>();
 							var clickedUnit = FindUnit3DInParentChain(collider);
 
+							bool shiftHeld = Input.IsKeyPressed(Key.Shift);
 							if (ActiveCommandTargeting == "attack")
 							{
-								if (clickedUnit != null && clickedUnit.Entity != Entity.Null && clickedUnit.IsEnemy)
+								if (clickedUnit != null && clickedUnit.Entity != Entity.Null)
 								{
-									IssueAttackCommand(clickedUnit);
+									IssueAttackCommand(clickedUnit, shiftHeld);
 								}
 								else
 								{
-									IssueAttackMoveCommand(hitPos);
+									IssueAttackMoveCommand(hitPos, shiftHeld);
 								}
 							}
 							else if (ActiveCommandTargeting == "move")
 							{
-								IssueMoveCommand(hitPos);
+								IssueMoveCommand(hitPos, shiftHeld);
 							}
 							else if (ActiveCommandTargeting == "patrol")
 							{
-								IssuePatrolCommand(hitPos);
+								IssuePatrolCommand(hitPos, shiftHeld);
 							}
 							else if (ActiveCommandTargeting == "rally")
 							{
@@ -1962,15 +1963,60 @@ public partial class GameHost
 			ClearSelection();
 		}
 
+		var friendlyUnits = new List<Unit3D>();
+		var enemyUnits = new List<Unit3D>();
+		var goldMines = new List<Prop3D>();
+
 		foreach (var unit in AllUnits)
 		{
-			if (unit.IsEnemy) continue;
+			if (unit == null || !GodotObject.IsInstanceValid(unit) || !unit.Visible) continue;
 
 			var screenPos = camera.UnprojectPosition(unit.GlobalPosition);
 			if (dragRect.HasPoint(screenPos))
 			{
+				if (unit.IsEnemy)
+				{
+					enemyUnits.Add(unit);
+				}
+				else
+				{
+					friendlyUnits.Add(unit);
+				}
+			}
+		}
+
+		foreach (var prop in AllProps)
+		{
+			if (prop == null || !GodotObject.IsInstanceValid(prop) || !prop.Visible) continue;
+			if (prop.PropId == "goldmine")
+			{
+				var screenPos = camera.UnprojectPosition(prop.GlobalPosition);
+				if (dragRect.HasPoint(screenPos))
+				{
+					goldMines.Add(prop);
+				}
+			}
+		}
+
+		if (friendlyUnits.Count > 0)
+		{
+			foreach (var unit in friendlyUnits)
+			{
 				SelectUnit(unit);
 			}
+		}
+		else if (enemyUnits.Count > 0)
+		{
+			foreach (var unit in enemyUnits)
+			{
+				SelectUnit(unit);
+			}
+		}
+		else if (goldMines.Count > 0)
+		{
+			ClearSelection();
+			SelectedProp = goldMines[0];
+			SelectedProp.IsSelected = true;
 		}
 
 		InGameHUD.Instance?.RefreshUI(SelectedUnits);
@@ -1985,14 +2031,42 @@ public partial class GameHost
 		Vector2 max = new Vector2(Mathf.Max(start.X, end.X), Mathf.Max(start.Y, end.Y));
 		var dragRect = new Rect2(min, max - min);
 
+		var friendlyUnits = new List<Unit3D>();
+		var enemyUnits = new List<Unit3D>();
+
 		foreach (var unit in AllUnits)
 		{
-			if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
-			if (unit.IsEnemy) continue;
+			if (unit == null || !GodotObject.IsInstanceValid(unit) || !unit.Visible) continue;
 
 			var screenPos = camera.UnprojectPosition(unit.GlobalPosition);
 			bool isInside = dragRect.HasPoint(screenPos);
-			unit.SetTemporarySelectionHighlight(isInside);
+			if (isInside)
+			{
+				if (unit.IsEnemy)
+				{
+					enemyUnits.Add(unit);
+				}
+				else
+				{
+					friendlyUnits.Add(unit);
+				}
+			}
+			unit.SetTemporarySelectionHighlight(false);
+		}
+
+		if (friendlyUnits.Count > 0)
+		{
+			foreach (var unit in friendlyUnits)
+			{
+				unit.SetTemporarySelectionHighlight(true);
+			}
+		}
+		else if (enemyUnits.Count > 0)
+		{
+			foreach (var unit in enemyUnits)
+			{
+				unit.SetTemporarySelectionHighlight(true);
+			}
 		}
 	}
 

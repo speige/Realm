@@ -30,7 +30,8 @@ public class CheatService
 		ThanosSnap,
 		EzClap,
 		NoCap,
-		WarpSpeed
+		WarpSpeed,
+		UnlimitedPower
 	}
 
 	internal (CheatResult Result, int AffectedCount) TryTriggerCheat(
@@ -66,10 +67,16 @@ public class CheatService
 
 		if (lower == "gigachad" || lower == "maincharacter")
 		{
-			int affected = 0;
-			foreach (var entity in selectedEntities)
+			if (GameHost.Instance != null)
 			{
-				if (EcsWorld.IsAlive(entity))
+				GameHost.Instance.GigachadEnabled = true;
+			}
+			int affected = 0;
+			var query = QueryCache.AllHealthAndOwnerQuery;
+			EcsWorld.Query(in query, (Entity entity, ref Owner owner) =>
+			{
+				bool isFriendly = owner.PlayerEntity.Value == playerEntity;
+				if (isFriendly && EcsWorld.IsAlive(entity))
 				{
 					if (EcsWorld.Has<Health>(entity))
 					{
@@ -82,7 +89,7 @@ public class CheatService
 					}
 					affected++;
 				}
-			}
+			});
 			return (CheatResult.Gigachad, affected);
 		}
 
@@ -172,6 +179,25 @@ public class CheatService
 				GameHost.Instance.FastBuildEnabled = !GameHost.Instance.FastBuildEnabled;
 			}
 			return (CheatResult.WarpSpeed, 0);
+		}
+
+		if (lower == "unlimitedpower" || lower == "nogd" || lower == "nocooldowns" || lower == "nomana")
+		{
+			if (GameHost.Instance != null)
+			{
+				GameHost.Instance.UnlimitedPowerEnabled = !GameHost.Instance.UnlimitedPowerEnabled;
+				if (GameHost.Instance.UnlimitedPowerEnabled)
+				{
+					GameHost.Instance.FireballCooldown = 0f;
+					GameHost.Instance.LightningCooldown = 0f;
+					GameHost.Instance.HolyLightCooldown = 0f;
+					if (playerEntity != Entity.Null && EcsWorld.IsAlive(playerEntity) && EcsWorld.Has<SpellCooldowns>(playerEntity))
+					{
+						EcsWorld.Set(playerEntity, new SpellCooldowns(0f, 0f, 0f));
+					}
+				}
+			}
+			return (CheatResult.UnlimitedPower, 0);
 		}
 
 		return (CheatResult.None, 0);

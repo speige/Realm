@@ -98,6 +98,27 @@ public class NetworkService
 		return closest;
 	}
 
+	private bool IsUnitActive(Entity entity)
+	{
+		return EcsWorld.Has<MoveTo>(entity) ||
+		       EcsWorld.Has<Realm.Ecs.Components.Resources.BuildTask>(entity) ||
+		       EcsWorld.Has<AttackTarget>(entity) ||
+		       EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(entity) ||
+		       EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity) ||
+		       EcsWorld.Has<Realm.Ecs.Components.Movement.Patrol>(entity) ||
+		       EcsWorld.Has<Gatherer>(entity);
+	}
+
+	private void EnqueueCommand(Entity entity, string type, System.Numerics.Vector3 position, Entity target = default)
+	{
+		if (!EcsWorld.Has<BuildQueue>(entity))
+		{
+			EcsWorld.Add(entity, new BuildQueue());
+		}
+		ref var q = ref EcsWorld.Get<BuildQueue>(entity);
+		q.TryEnqueue(type, position, target);
+	}
+
 	public int GetOwnerPeerId(Entity unitEntity)
 	{
 		if (!EcsWorld.Has<Owner>(unitEntity)) return -1;
@@ -509,48 +530,76 @@ public class NetworkService
 				unitIndex++;
 			}
 		}
-		else if (cmd.CommandType == "attack")
+		else if (cmd.CommandType == "attack" || cmd.CommandType == "attack_queued")
 		{
+			bool isQueued = cmd.CommandType == "attack_queued";
 			var targetEntity = FindServerEntity(cmd.TargetEntityId, allUnits);
 			if (targetEntity != Entity.Null)
 			{
+				var targetPos = EcsWorld.Has<Position>(targetEntity) ? EcsWorld.Get<Position>(targetEntity).Value : System.Numerics.Vector3.Zero;
 				foreach (int serverId in cmd.UnitEntityIds)
 				{
 					var entity = FindServerEntity(serverId, allUnits);
 					if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
-					ClearUnitOrders(entity);
-					var attackTarget = new AttackTarget(targetEntity);
-					if (EcsWorld.Has<AttackTarget>(entity)) EcsWorld.Set(entity, attackTarget);
-					else EcsWorld.Add(entity, attackTarget);
+					
+					if (isQueued && IsUnitActive(entity))
+					{
+						EnqueueCommand(entity, "attack", targetPos, targetEntity);
+					}
+					else
+					{
+						if (!isQueued)
+						{
+							ClearUnitOrders(entity);
+						}
+						var attackTarget = new AttackTarget(targetEntity);
+						if (EcsWorld.Has<AttackTarget>(entity)) EcsWorld.Set(entity, attackTarget);
+						else EcsWorld.Add(entity, attackTarget);
+					}
 				}
 			}
 		}
-		else if (cmd.CommandType == "follow")
+		else if (cmd.CommandType == "follow" || cmd.CommandType == "follow_queued")
 		{
+			bool isQueued = cmd.CommandType == "follow_queued";
 			var targetEntity = FindServerEntity(cmd.TargetEntityId, allUnits);
 			if (targetEntity != Entity.Null)
 			{
+				var targetPos = EcsWorld.Has<Position>(targetEntity) ? EcsWorld.Get<Position>(targetEntity).Value : System.Numerics.Vector3.Zero;
 				foreach (int serverId in cmd.UnitEntityIds)
 				{
 					var entity = FindServerEntity(serverId, allUnits);
 					if (entity == Entity.Null || !IsClientAuthorized(peerId, entity) || entity == targetEntity) continue;
-					ClearUnitOrders(entity);
-					if (EcsWorld.Has<DefinitionId>(entity) && EcsWorld.Get<DefinitionId>(entity).Value == "priest")
+					
+					if (isQueued && IsUnitActive(entity))
 					{
-						var healTarget = new HealingTarget(targetEntity);
-						EcsWorld.Add(entity, healTarget);
+						EnqueueCommand(entity, "follow", targetPos, targetEntity);
 					}
-					else if (EcsWorld.Has<Movable>(entity))
+					else
 					{
-						var follow = new Realm.Ecs.Components.Movement.Follow(targetEntity);
-						if (EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity)) EcsWorld.Set(entity, follow);
-						else EcsWorld.Add(entity, follow);
+						if (!isQueued)
+						{
+							ClearUnitOrders(entity);
+						}
+						if (EcsWorld.Has<DefinitionId>(entity) && EcsWorld.Get<DefinitionId>(entity).Value == "priest")
+						{
+							var healTarget = new HealingTarget(targetEntity);
+							if (EcsWorld.Has<HealingTarget>(entity)) EcsWorld.Set(entity, healTarget);
+							else EcsWorld.Add(entity, healTarget);
+						}
+						else if (EcsWorld.Has<Movable>(entity))
+						{
+							var follow = new Realm.Ecs.Components.Movement.Follow(targetEntity);
+							if (EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity)) EcsWorld.Set(entity, follow);
+							else EcsWorld.Add(entity, follow);
+						}
 					}
 				}
 			}
 		}
-		else if (cmd.CommandType == "gather")
+		else if (cmd.CommandType == "gather" || cmd.CommandType == "gather_queued")
 		{
+			bool isQueued = cmd.CommandType == "gather_queued";
 			var targetPos = new System.Numerics.Vector3(cmd.TargetPosition.X, cmd.TargetPosition.Y, cmd.TargetPosition.Z);
 			Prop3D prop = FindClosestProp(targetPos, "", allProps);
 			if (prop != null)
@@ -569,13 +618,24 @@ public class NetworkService
 						var entity = FindServerEntity(serverId, allUnits);
 						if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
 						if (EcsWorld.Has<DefinitionId>(entity) && EcsWorld.Get<DefinitionId>(entity).Value != "worker") continue;
-						ClearUnitOrders(entity);
-						var gatherer = new Gatherer(resType, prop.Entity);
-						if (EcsWorld.Has<Gatherer>(entity)) EcsWorld.Set(entity, gatherer);
-						else EcsWorld.Add(entity, gatherer);
-						var moveTo = new MoveTo(new System.Numerics.Vector3(prop.GlobalPosition.X, prop.GlobalPosition.Y, prop.GlobalPosition.Z));
-						if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
-						else EcsWorld.Add(entity, moveTo);
+						
+						if (isQueued && IsUnitActive(entity))
+						{
+							EnqueueCommand(entity, "gather", new System.Numerics.Vector3(prop.GlobalPosition.X, prop.GlobalPosition.Y, prop.GlobalPosition.Z), prop.Entity);
+						}
+						else
+						{
+							if (!isQueued)
+							{
+								ClearUnitOrders(entity);
+							}
+							var gatherer = new Gatherer(resType, prop.Entity);
+							if (EcsWorld.Has<Gatherer>(entity)) EcsWorld.Set(entity, gatherer);
+							else EcsWorld.Add(entity, gatherer);
+							var moveTo = new MoveTo(new System.Numerics.Vector3(prop.GlobalPosition.X, prop.GlobalPosition.Y, prop.GlobalPosition.Z));
+							if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+							else EcsWorld.Add(entity, moveTo);
+						}
 					}
 				}
 			}
@@ -604,8 +664,9 @@ public class NetworkService
 				}
 			}
 		}
-		else if (cmd.CommandType == "patrol")
+		else if (cmd.CommandType == "patrol" || cmd.CommandType == "patrol_queued")
 		{
+			bool isQueued = cmd.CommandType == "patrol_queued";
 			int cols = Mathf.CeilToInt(Mathf.Sqrt(cmd.UnitEntityIds.Count));
 			float spacing = 2.2f;
 			int unitIndex = 0;
@@ -643,7 +704,6 @@ public class NetworkService
 			{
 				var entity = FindServerEntity(serverId, allUnits);
 				if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
-				ClearUnitOrders(entity);
 				if (EcsWorld.Has<Movable>(entity))
 				{
 					int row = unitIndex / cols;
@@ -662,12 +722,24 @@ public class NetworkService
 					var patrolA = new System.Numerics.Vector3(unitPos.X, unitPos.Y, unitPos.Z);
 					var targetPos = new System.Numerics.Vector3(cmd.TargetPosition.X, cmd.TargetPosition.Y, cmd.TargetPosition.Z);
 					var patrolB = targetPos + right * offsetX + moveDir * offsetZ;
-					var patrol = new Patrol(patrolA, patrolB);
-					if (EcsWorld.Has<Patrol>(entity)) EcsWorld.Set(entity, patrol);
-					else EcsWorld.Add(entity, patrol);
-					var moveTo = new MoveTo(patrolB);
-					if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
-					else EcsWorld.Add(entity, moveTo);
+
+					if (isQueued && IsUnitActive(entity))
+					{
+						EnqueueCommand(entity, "patrol", patrolB);
+					}
+					else
+					{
+						if (!isQueued)
+						{
+							ClearUnitOrders(entity);
+						}
+						var patrol = new Patrol(patrolA, patrolB);
+						if (EcsWorld.Has<Patrol>(entity)) EcsWorld.Set(entity, patrol);
+						else EcsWorld.Add(entity, patrol);
+						var moveTo = new MoveTo(patrolB);
+						if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+						else EcsWorld.Add(entity, moveTo);
+					}
 					unitIndex++;
 				}
 			}
@@ -712,33 +784,49 @@ public class NetworkService
 				var entity = FindServerEntity(serverId, allUnits);
 				if (entity == Entity.Null || !IsClientAuthorized(peerId, entity)) continue;
 				if (!EcsWorld.Has<Movable>(entity)) continue;
-				bool alreadyMoving = EcsWorld.Has<MoveTo>(entity);
-				if (!alreadyMoving) ClearUnitOrders(entity);
+
 				int row = unitIndex / cols;
 				int col = unitIndex % cols;
 				float offsetX = (col - cols * 0.5f + 0.5f) * spacing;
 				float offsetZ = -row * spacing;
 				var targetPos = new System.Numerics.Vector3(cmd.TargetPosition.X, cmd.TargetPosition.Y, cmd.TargetPosition.Z);
 				var scattered = targetPos + right * offsetX + moveDir * offsetZ;
-				if (alreadyMoving)
+
+				bool hasNonMoveTasks = EcsWorld.Has<Realm.Ecs.Components.Resources.BuildTask>(entity) ||
+				                       EcsWorld.Has<AttackTarget>(entity) ||
+				                       EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(entity) ||
+				                       EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity) ||
+				                       EcsWorld.Has<Realm.Ecs.Components.Movement.Patrol>(entity) ||
+				                       EcsWorld.Has<Gatherer>(entity);
+
+				if (hasNonMoveTasks)
 				{
-					if (EcsWorld.Has<WaypointQueue>(entity))
-					{
-						var q = EcsWorld.Get<WaypointQueue>(entity);
-						q.Add(scattered);
-						EcsWorld.Set(entity, q);
-					}
-					else
-					{
-						var q = new WaypointQueue(scattered);
-						EcsWorld.Add(entity, q);
-					}
+					EnqueueCommand(entity, "move", scattered);
 				}
 				else
 				{
-					var moveTo = new MoveTo(scattered);
-					if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
-					else EcsWorld.Add(entity, moveTo);
+					bool alreadyMoving = EcsWorld.Has<MoveTo>(entity);
+					if (alreadyMoving)
+					{
+						if (EcsWorld.Has<WaypointQueue>(entity))
+						{
+							var q = EcsWorld.Get<WaypointQueue>(entity);
+							q.Add(scattered);
+							EcsWorld.Set(entity, q);
+						}
+						else
+						{
+							var q = new WaypointQueue(scattered);
+							EcsWorld.Add(entity, q);
+						}
+					}
+					else
+					{
+						ClearUnitOrders(entity);
+						var moveTo = new MoveTo(scattered);
+						if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+						else EcsWorld.Add(entity, moveTo);
+					}
 				}
 				unitIndex++;
 			}

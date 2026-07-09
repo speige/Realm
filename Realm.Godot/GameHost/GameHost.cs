@@ -48,6 +48,9 @@ public partial class GameHost : Node3D, IGameAPI
 	public EnvironmentService EnvironmentService => _environmentService;
 	public SpectatorService SpectatorService => _spectatorService;
 
+	public bool UnlimitedPowerEnabled { get; set; } = false;
+	public bool GigachadEnabled { get; set; } = false;
+
 	private float _fDelta;
 
 	
@@ -2074,7 +2077,9 @@ public class {mapName} : IMapScript
 		ActiveMapName = mapName;
 		LocalizationManager.CurrentMapName = mapName;
 		LocalizationManager.SetupTranslations();
-		string path = $"res://Maps/{mapName}/metadata.json";
+		string path = (mapName.StartsWith("user://") || mapName.StartsWith("res://") || System.IO.Path.IsPathRooted(mapName))
+			? System.IO.Path.Combine(mapName, "metadata.json")
+			: $"res://Maps/{mapName}/metadata.json";
 		string globalPath = ProjectSettings.GlobalizePath(path);
 		string jsonText = "";
 
@@ -2434,30 +2439,35 @@ public class {mapName} : IMapScript
 			rawMapName = LobbyManager.Instance.ActiveMapName;
 		}
 
-		string normalizedMapName = rawMapName.ToLower().Trim();
-		if (!DirAccess.DirExistsAbsolute($"res://Maps/{normalizedMapName}"))
+		string mapParamName = rawMapName;
+		if (!rawMapName.StartsWith("user://") && !rawMapName.StartsWith("res://") && !System.IO.Path.IsPathRooted(rawMapName))
 		{
-			if (normalizedMapName.Contains("legion"))
+			string normalizedMapName = rawMapName.ToLower().Trim();
+			if (!DirAccess.DirExistsAbsolute($"res://Maps/{normalizedMapName}"))
 			{
-				normalizedMapName = "legion_td";
+				if (normalizedMapName.Contains("legion"))
+				{
+					normalizedMapName = "legion_td";
+				}
+				else if (normalizedMapName.Contains("defense") || normalizedMapName.Contains("td"))
+				{
+					normalizedMapName = "green_td";
+				}
+				else
+				{
+					normalizedMapName = "melee";
+				}
 			}
-			else if (normalizedMapName.Contains("defense") || normalizedMapName.Contains("td"))
-			{
-				normalizedMapName = "green_td";
-			}
-			else
-			{
-				normalizedMapName = "melee";
-			}
+			mapParamName = normalizedMapName;
 		}
 
-		LoadUnitMetadata(normalizedMapName);
+		LoadUnitMetadata(mapParamName);
 
 		bool isGameStarted = LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted;
 		bool shouldRunMapScript = !isGameStarted || IsServerActive();
 		if (shouldRunMapScript || IsMapEditorMode)
 		{
-			LoadMapScript(normalizedMapName);
+			LoadMapScript(mapParamName);
 			if (_activeMapScript != null)
 			{
 				_activeMapScript.Initialize(this);
@@ -2472,7 +2482,7 @@ public class {mapName} : IMapScript
 			string replayPath = System.IO.Path.Combine(replayDir, $"replay_{timestamp}.rep");
 			_replayService.StartRecording(
 				replayPath, 
-				normalizedMapName, 
+				mapParamName, 
 				LobbyManager.Instance?.PlayerList
 			);
 			GD.Print($"[ReplayRecorder] Started recording to {replayPath}");
@@ -2580,24 +2590,35 @@ public class {mapName} : IMapScript
 			rawMapName = LobbyManager.Instance.ActiveMapName;
 		}
 
-		string normalizedMapName = rawMapName.ToLower().Trim();
-		if (!DirAccess.DirExistsAbsolute($"res://Maps/{normalizedMapName}"))
+		string terrainPath = "";
+		if (rawMapName.StartsWith("user://") || rawMapName.StartsWith("res://") || System.IO.Path.IsPathRooted(rawMapName))
 		{
-			if (normalizedMapName.Contains("legion"))
+			if (DirAccess.DirExistsAbsolute(rawMapName))
 			{
-				normalizedMapName = "legion_td";
-			}
-			else if (normalizedMapName.Contains("defense") || normalizedMapName.Contains("td"))
-			{
-				normalizedMapName = "green_td";
-			}
-			else
-			{
-				normalizedMapName = "melee";
+				terrainPath = System.IO.Path.Combine(rawMapName, "terrain.json");
 			}
 		}
 
-		string terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
+		if (string.IsNullOrEmpty(terrainPath))
+		{
+			string normalizedMapName = rawMapName.ToLower().Trim();
+			if (!DirAccess.DirExistsAbsolute($"res://Maps/{normalizedMapName}"))
+			{
+				if (normalizedMapName.Contains("legion"))
+				{
+					normalizedMapName = "legion_td";
+				}
+				else if (normalizedMapName.Contains("defense") || normalizedMapName.Contains("td"))
+				{
+					normalizedMapName = "green_td";
+				}
+				else
+				{
+					normalizedMapName = "melee";
+				}
+			}
+			terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
+		}
 		if (FileAccess.FileExists(terrainPath))
 		{
 			if (LoadMapFromFile(terrainPath, true, false)) // clearUnits = false to avoid recursion
@@ -2831,17 +2852,8 @@ public class {mapName} : IMapScript
 			{
 				if (unit.IsBuilding || unit.IsEnemy || unit.UnitId != "worker") continue;
 				targetIds.Add(GetServerEntityId(unit.Entity));
-				
-				if (!isQueued)
-				{
-					ClearUnitOrders(unit.Entity);
-				}
-
-				var gatherer = new Gatherer(resType, prop.Entity);
-				if (EcsWorld.Has<Gatherer>(unit.Entity)) EcsWorld.Set(unit.Entity, gatherer);
-				else EcsWorld.Add(unit.Entity, gatherer);
 			}
-			QueueClientCommand("gather", targetIds, prop.GlobalPosition, 0, "");
+			QueueClientCommand(isQueued ? "gather_queued" : "gather", targetIds, prop.GlobalPosition, GetServerEntityId(prop.Entity), "");
 			return;
 		}
 
@@ -2849,19 +2861,29 @@ public class {mapName} : IMapScript
 		{
 			if (unit.IsBuilding || unit.IsEnemy || unit.UnitId != "worker") continue;
 
-			if (!isQueued)
+			if (isQueued && _inputService != null && _inputService.IsUnitActive(unit.Entity))
 			{
-				ClearUnitOrders(unit.Entity);
+				_inputService.EnqueueCommand(unit.Entity, "gather", new System.Numerics.Vector3(prop.GlobalPosition.X, prop.GlobalPosition.Y, prop.GlobalPosition.Z), prop.Entity);
 			}
-
-			var gatherer = new Gatherer(resType, prop.Entity);
-			if (EcsWorld.Has<Gatherer>(unit.Entity))
-				EcsWorld.Set(unit.Entity, gatherer);
 			else
-				EcsWorld.Add(unit.Entity, gatherer);
+			{
+				if (!isQueued)
+				{
+					ClearUnitOrders(unit.Entity);
+				}
 
-			var moveTo = new MoveTo(new System.Numerics.Vector3(prop.GlobalPosition.X, prop.GlobalPosition.Y, prop.GlobalPosition.Z));
-			EcsWorld.Add(unit.Entity, moveTo);
+				var gatherer = new Gatherer(resType, prop.Entity);
+				if (EcsWorld.Has<Gatherer>(unit.Entity))
+					EcsWorld.Set(unit.Entity, gatherer);
+				else
+					EcsWorld.Add(unit.Entity, gatherer);
+
+				var moveTo = new MoveTo(new System.Numerics.Vector3(prop.GlobalPosition.X, prop.GlobalPosition.Y, prop.GlobalPosition.Z));
+				if (EcsWorld.Has<MoveTo>(unit.Entity))
+					EcsWorld.Set(unit.Entity, moveTo);
+				else
+					EcsWorld.Add(unit.Entity, moveTo);
+			}
 		}
 	}
 
@@ -2895,6 +2917,19 @@ public class {mapName} : IMapScript
 		var unit3D = new Unit3D();
 		unit3D.Entity = entity;
 		unit3D.Name = $"{id}_{entity.Id}";
+
+		if (GigachadEnabled && !isEnemy)
+		{
+			if (EcsWorld.Has<Health>(entity))
+			{
+				EcsWorld.Set(entity, new Health(9000f, 9000f));
+			}
+			if (EcsWorld.Has<Attack>(entity))
+			{
+				var atk = EcsWorld.Get<Attack>(entity);
+				EcsWorld.Set(entity, new Attack(9001f, atk.Range, atk.Cooldown, atk.CurrentCooldown));
+			}
+		}
 
 		if (!isBuilding && !IsMapEditorMode)
 		{

@@ -530,6 +530,11 @@ internal class SimulationService
 	private void CooldownsQueryAction(Entity entity, ref Realm.Ecs.Components.Core.Cooldowns cooldowns)
 	{
 		var dict = cooldowns.Value;
+		if (GameHost.Instance != null && GameHost.Instance.UnlimitedPowerEnabled)
+		{
+			dict.Clear();
+			return;
+		}
 		_tickCooldownKeys.Clear();
 		_tickExpiredCooldowns.Clear();
 		foreach (var key in dict.Keys)
@@ -601,6 +606,11 @@ internal class SimulationService
 
 	private void AttackCooldownQueryAction(Entity entity, ref Attack atk)
 	{
+		if (GameHost.Instance != null && GameHost.Instance.UnlimitedPowerEnabled)
+		{
+			atk.CurrentCooldown = 0f;
+			return;
+		}
 		if (atk.CurrentCooldown > 0)
 		{
 			atk.CurrentCooldown = Math.Max(0, atk.CurrentCooldown - _fDelta);
@@ -609,6 +619,13 @@ internal class SimulationService
 
 	private void SpellCooldownQueryAction(Entity entity, ref SpellCooldowns spellCooldowns)
 	{
+		if (GameHost.Instance != null && GameHost.Instance.UnlimitedPowerEnabled)
+		{
+			spellCooldowns.FireballCooldown = 0f;
+			spellCooldowns.LightningCooldown = 0f;
+			spellCooldowns.HolyLightCooldown = 0f;
+			return;
+		}
 		if (spellCooldowns.FireballCooldown > 0f) spellCooldowns.FireballCooldown = Math.Max(0f, spellCooldowns.FireballCooldown - _fDelta);
 		if (spellCooldowns.LightningCooldown > 0f) spellCooldowns.LightningCooldown = Math.Max(0f, spellCooldowns.LightningCooldown - _fDelta);
 		if (spellCooldowns.HolyLightCooldown > 0f) spellCooldowns.HolyLightCooldown = Math.Max(0f, spellCooldowns.HolyLightCooldown - _fDelta);

@@ -111,10 +111,13 @@ size_flags_vertical = 4
 layout_mode = 2
 alignment = 1
 
-[node name="PortraitLabel" type="Label" parent="BottomConsole/HBox/PortraitFrame/VBox"]
+[node name="PortraitTexture" type="TextureRect" parent="BottomConsole/HBox/PortraitFrame/VBox"]
+custom_minimum_size = Vector2(100, 100)
 layout_mode = 2
-text = "[ PORTRAIT ]"
-horizontal_alignment = 1
+size_flags_horizontal = 4
+size_flags_vertical = 4
+expand_mode = 2
+stretch_mode = 5
 
 [node name="UnitName" type="Label" parent="BottomConsole/HBox/PortraitFrame/VBox"]
 layout_mode = 2
