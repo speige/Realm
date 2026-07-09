@@ -43,7 +43,7 @@ public partial class GameHost
 			}
 		}
 		
-		if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.Colors != null)
+		if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null)
 		{
 			int width = GroundTerrain.Width;
 			int depth = GroundTerrain.Depth;
@@ -52,7 +52,7 @@ public partial class GameHost
 				for (int x = 0; x < width; x++)
 				{
 					GroundTerrain.Heights[x, z] = 0.0f;
-					GroundTerrain.Colors[x, z] = new Color(0.2f, 0.6f, 0.2f);
+					GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
 				}
 			}
 			GroundTerrain.UpdateMeshAndPhysics(true, true);
@@ -109,10 +109,10 @@ public partial class GameHost
 			EditorFlattenHeight,
 			EditorBrushIsSquare,
 			EditorBlockMode, EditorBlockLevelHeight,
-			EditorPaintColor, EditorCliffPaintColor,
+			EditorPaintTextureIndex, EditorCliffPaintTextureIndex,
 			pathingMask, pathingAdd);
 
-		if (result.HeightsModified || result.ColorsModified || result.PathingModified)
+		if (result.HeightsModified || result.SplatModified || result.PathingModified)
 		{
 			GroundTerrain.UpdateMeshAndPhysics(result.HeightsModified, false);
 			if (result.HeightsModified)
@@ -1079,7 +1079,7 @@ public partial class GameHost
 						EditorBlockLevelHeight,
 						EditorFlattenHeight,
 						GroundTerrain.Heights,
-						GroundTerrain.Colors,
+						GroundTerrain.SplatMap,
 						GroundTerrain.PathingCodes,
 						out float newFlattenHeight);
 
@@ -1143,11 +1143,11 @@ public partial class GameHost
 				}
 				if (_editorService.IsDrawingTerrain)
 				{
-					if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.Colors != null && GroundTerrain.PathingCodes != null)
+					if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
 					{
 						var action = _editorService.EndTerrainDraw(
 							(float[,])GroundTerrain.Heights.Clone(),
-							(Color[,])GroundTerrain.Colors.Clone(),
+							(TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone(),
 							(int[,])GroundTerrain.PathingCodes.Clone());
 
 						EditorHistoryManager.RecordAction(action);
@@ -1215,11 +1215,11 @@ public partial class GameHost
 			}
 			if (_editorService.IsDrawingTerrain)
 			{
-				if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.Colors != null && GroundTerrain.PathingCodes != null)
+				if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
 				{
 					var action = _editorService.EndTerrainDraw(
 						(float[,])GroundTerrain.Heights.Clone(),
-						(Color[,])GroundTerrain.Colors.Clone(),
+						(TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone(),
 						(int[,])GroundTerrain.PathingCodes.Clone());
 
 					EditorHistoryManager.RecordAction(action);
@@ -1452,7 +1452,7 @@ public partial class GameHost
 
 	private bool ApplyRampInternal(Vector3 start, Vector3 end)
 	{
-		return _editorService.ApplyRamp(start, end, EditorBrushRadius, EditorBlockMode, EditorBlockLevelHeight, EditorPaintColor, EditorCliffPaintColor);
+		return _editorService.ApplyRamp(start, end, EditorBrushRadius, EditorBlockMode, EditorBlockLevelHeight, EditorPaintTextureIndex, EditorCliffPaintTextureIndex);
 	}
 
 	private float GetMinHeightInBrushBounds(Vector3 worldPos)
@@ -1494,16 +1494,16 @@ public partial class GameHost
 		}
 	}
 
-	public void SwapTexturesExternal(Color colorA, Color colorB)
+	public void SwapTexturesExternal(int indexA, int indexB)
 	{
-		if (GroundTerrain == null || GroundTerrain.Colors == null) return;
-		if (colorA.IsEqualApprox(colorB)) return;
+		if (GroundTerrain == null || GroundTerrain.SplatMap == null) return;
+		if (indexA == indexB) return;
 
 		int width = GroundTerrain.Width;
 		int depth = GroundTerrain.Depth;
 
 		float[,] heightsBefore = (float[,])GroundTerrain.Heights.Clone();
-		Color[,] colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
+		TerrainSplatWeights[,] splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
 
 		bool anyChanged = false;
 
@@ -1511,14 +1511,23 @@ public partial class GameHost
 		{
 			for (int x = 0; x < width; x++)
 			{
-				if (GroundTerrain.Colors[x, z].IsEqualApprox(colorA))
+				var s = GroundTerrain.SplatMap[x, z];
+				if (s.Index0 == indexA || s.Index0 == indexB ||
+				    s.Index1 == indexA || s.Index1 == indexB ||
+				    s.Index2 == indexA || s.Index2 == indexB ||
+				    s.Index3 == indexA || s.Index3 == indexB)
 				{
-					GroundTerrain.Colors[x, z] = colorB;
-					anyChanged = true;
-				}
-				else if (GroundTerrain.Colors[x, z].IsEqualApprox(colorB))
-				{
-					GroundTerrain.Colors[x, z] = colorA;
+					GroundTerrain.SplatMap[x, z] = new TerrainSplatWeights
+					{
+						Index0 = s.Index0 == indexA ? indexB : (s.Index0 == indexB ? indexA : s.Index0),
+						Index1 = s.Index1 == indexA ? indexB : (s.Index1 == indexB ? indexA : s.Index1),
+						Index2 = s.Index2 == indexA ? indexB : (s.Index2 == indexB ? indexA : s.Index2),
+						Index3 = s.Index3 == indexA ? indexB : (s.Index3 == indexB ? indexA : s.Index3),
+						Weight0 = s.Weight0,
+						Weight1 = s.Weight1,
+						Weight2 = s.Weight2,
+						Weight3 = s.Weight3
+					};
 					anyChanged = true;
 				}
 			}
@@ -1527,14 +1536,22 @@ public partial class GameHost
 		if (anyChanged)
 		{
 			float[,] heightsAfter = (float[,])GroundTerrain.Heights.Clone();
-			Color[,] colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
+			TerrainSplatWeights[,] splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
 			
-			var action = new TerrainModifyAction(heightsBefore, heightsAfter, colorsBefore, colorsAfter);
+			var action = new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter);
 			EditorHistoryManager.RecordAction(action);
 			EditorHasUnsavedChanges = true;
 			
 			GroundTerrain.UpdateMeshAndPhysics(false, false);
 			MapEditorHUD.Instance?.ShowFeedbackExternal("Textures swapped successfully!");
+		}
+	}
+
+	public void AlignTerrainSplatMapExternal()
+	{
+		if (GroundTerrain != null)
+		{
+			_editorService.SetTerrainSplatMap(GroundTerrain.SplatMap);
 		}
 	}
 
@@ -1557,7 +1574,7 @@ public partial class GameHost
 
 		GroundTerrain.ResizeTerrain(newWidth, newDepth);
 
-		_editorService.SetTerrainColors(GroundTerrain.Colors);
+		_editorService.SetTerrainSplatMap(GroundTerrain.SplatMap);
 		DeleteEntitiesOutsideBounds();
 
 		RebuildCameraBoundsOverlay();
@@ -1623,7 +1640,7 @@ public partial class GameHost
 
 		DeleteEntitiesOutsideBounds();
 
-		_editorService.SetTerrainColors(GroundTerrain.Colors);
+		_editorService.SetTerrainSplatMap(GroundTerrain.SplatMap);
 		RebuildCameraBoundsOverlay();
 		MapEditorHUD.Instance?.UpdateCameraBoundsUI();
 		MapEditorHUD.Instance?.RegenerateMinimap();
@@ -2191,18 +2208,20 @@ public partial class GameHost
 		}
 	}
 
-	public void PerformFloodFill(Vector3 clickPos, Color fillColor)
+	public void PerformFloodFill(Vector3 clickPos, int fillTextureIndex)
 	{
-		if (GroundTerrain == null || GroundTerrain.Heights == null || GroundTerrain.Colors == null) return;
+		if (GroundTerrain == null || GroundTerrain.Heights == null || GroundTerrain.SplatMap == null) return;
 		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
-		var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
+		var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
 
-		_editorService.PerformFloodFill(clickPos, fillColor, EditorMirrorMode);
+		var result = _editorService.PerformFloodFill(clickPos, fillTextureIndex, EditorMirrorMode);
+		if (result.Heights == null || result.SplatMap == null) return;
 
+		Array.Copy(result.SplatMap, GroundTerrain.SplatMap, result.SplatMap.Length);
 		GroundTerrain.UpdateMeshAndPhysics(false, false);
 		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
-		var colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
-		var action = new TerrainModifyAction(heightsBefore, heightsAfter, colorsBefore, colorsAfter);
+		var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+		var action = new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter);
 		EditorHistoryManager.RecordAction(action);
 		EditorHasUnsavedChanges = true;
 		MapEditorHUD.Instance?.ShowFeedbackExternal("Flood filled terrain area");
@@ -2572,7 +2591,7 @@ public partial class GameHost
 
 	private void PerformEraseArea()
 	{
-		if (GroundTerrain == null || GroundTerrain.Heights == null || GroundTerrain.Colors == null || _editorService.SelectionStart == null || _editorService.SelectionEnd == null)
+		if (GroundTerrain == null || GroundTerrain.Heights == null || GroundTerrain.SplatMap == null || _editorService.SelectionStart == null || _editorService.SelectionEnd == null)
 		{
 			MapEditorHUD.Instance?.ShowFeedbackExternal("Nothing to Erase (select an area first)");
 			return;
@@ -2581,7 +2600,7 @@ public partial class GameHost
 		var (minX, minZ, maxX, maxZ) = _editorService.GetCurrentSelectionBounds();
 
 		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
-		var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
+		var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
 
 		var node3Ds = new List<Node3D>();
 		foreach (var child in GetChildren())
@@ -2611,11 +2630,11 @@ public partial class GameHost
 		}
 
 		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
-		var colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
+		var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
 		var actions = new List<IEditorAction>();
 		if (eraseResult.TerrainModified)
 		{
-			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, colorsBefore, colorsAfter));
+			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter));
 		}
 		if (deleteActions.Count > 0)
 		{
@@ -2633,10 +2652,10 @@ public partial class GameHost
 
 	private void PerformPasteArea(int startX, int startZ)
 	{
-		if (GroundTerrain == null || GroundTerrain.Heights == null || GroundTerrain.Colors == null || !_editorService.HasCopiedArea) return;
+		if (GroundTerrain == null || GroundTerrain.Heights == null || GroundTerrain.SplatMap == null || !_editorService.HasCopiedArea) return;
 
 		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
-		var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
+		var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
 
 		var pasteResult = _editorService.BuildPasteAreaResult(
 			startX, startZ,
@@ -2670,11 +2689,11 @@ public partial class GameHost
 		}
 
 		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
-		var colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
+		var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
 		var actions = new List<IEditorAction>();
 		if (pasteResult.TerrainModified)
 		{
-			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, colorsBefore, colorsAfter));
+			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter));
 		}
 		if (spawnActions.Count > 0)
 		{

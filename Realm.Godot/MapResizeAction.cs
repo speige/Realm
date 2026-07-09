@@ -32,7 +32,7 @@ public class MapStateSnapshot
 	public int Depth;
 	public float[,] Heights;
 	public int[,] PathingCodes;
-	public Color[,] Colors;
+	public TerrainSplatWeights[,] SplatMap;
 	public bool WaterEnabled;
 	public float WaterHeight;
 
@@ -55,7 +55,7 @@ public class MapStateSnapshot
 		snapshot.Depth = host.GroundTerrain.Depth;
 		snapshot.Heights = (float[,])host.GroundTerrain.Heights.Clone();
 		snapshot.PathingCodes = (int[,])host.GroundTerrain.PathingCodes.Clone();
-		snapshot.Colors = (Color[,])host.GroundTerrain.Colors.Clone();
+		snapshot.SplatMap = (TerrainSplatWeights[,])host.GroundTerrain.SplatMap.Clone();
 		snapshot.WaterEnabled = host.GroundTerrain.WaterEnabled;
 		snapshot.WaterHeight = host.GroundTerrain.WaterHeight;
 
@@ -170,7 +170,7 @@ public class MapResizeAction : IEditorAction
 			snapshot.WaterEnabled,
 			snapshot.Heights,
 			snapshot.PathingCodes,
-			snapshot.Colors
+			snapshot.SplatMap
 		);
 
 		host.EditorCameraBoundsLeft = snapshot.CameraBoundsLeft;

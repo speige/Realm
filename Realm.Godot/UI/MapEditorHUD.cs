@@ -1866,16 +1866,12 @@ public partial class MapEditorHUD : Control
 		_entityPaletteController?.SelectCategoryItemExternal("Decals", decalId);
 	}
 
-	public void SelectPaintSwatchFromColor(Color color)
+	public void SelectPaintSwatchByIndex(int index)
 	{
-		for (int i = 0; i < 12; i++)
+		if (index >= 0 && index < 12)
 		{
-			if (_swatchColors[i].IsEqualApprox(color))
-			{
-				HighlightSwatch(_swatchButtons[i]);
-				TriggerToolSelection(GameHost.EditorTool.PaintGrass, _swatchButtons[i]);
-				break;
-			}
+			HighlightSwatch(_swatchButtons[index]);
+			TriggerToolSelection(GameHost.EditorTool.PaintGrass, _swatchButtons[index]);
 		}
 	}
 
@@ -3105,7 +3101,7 @@ public class {mapName} : IMapScript
 		if (GameHost.Instance == null || GameHost.Instance.GroundTerrain == null) return;
 
 		GameHost.Instance.ClearMapEntirely();
-		bool success = GameHost.Instance.ImportTerrainFromMinimap(selectedPath, out var smoothedHeights, out var colors, out var treePositions);
+		bool success = GameHost.Instance.ImportTerrainFromMinimap(selectedPath, out var smoothedHeights, out var splatMap, out var treePositions);
 		if (!success) return;
 
 		int width = GameHost.Instance.GroundTerrain.Width;
@@ -3116,7 +3112,7 @@ public class {mapName} : IMapScript
 			for (int gx = 0; gx < width; gx++)
 			{
 				GameHost.Instance.GroundTerrain.Heights[gx, gz] = smoothedHeights[gx, gz];
-				GameHost.Instance.GroundTerrain.Colors[gx, gz] = colors[gx, gz];
+				GameHost.Instance.GroundTerrain.SplatMap[gx, gz] = splatMap[gx, gz];
 			}
 		}
 
@@ -3469,7 +3465,7 @@ public class {mapName} : IMapScript
 		{
 			if (GameHost.Instance != null)
 			{
-				GameHost.Instance.SwapTexturesExternal(GameHost.Instance.EditorPaintColor, GameHost.Instance.EditorCliffPaintColor);
+				GameHost.Instance.SwapTexturesExternal(GameHost.Instance.EditorPaintTextureIndex, GameHost.Instance.EditorCliffPaintTextureIndex);
 			}
 		}, 11, "Globally swap the currently selected Brush Texture with the selected Cliff Texture on the entire map");
 		swapBox.AddChild(btnTextureSwap);
@@ -4499,16 +4495,16 @@ public class {mapName} : IMapScript
 						{
 							if (Input.IsKeyPressed(Godot.Key.Shift))
 							{
-								SelectCliffTexture(index, _swatchColors[index]);
+								SelectCliffTexture(index);
 							}
 							else
 							{
-								SelectTerrainTexture(index, _swatchColors[index], btn);
+								SelectTerrainTexture(index, btn);
 							}
 						}
 						else if (mouseEvent.ButtonIndex == MouseButton.Right)
 						{
-							SelectCliffTexture(index, _swatchColors[index]);
+							SelectCliffTexture(index);
 						}
 					}
 				};
@@ -4518,11 +4514,11 @@ public class {mapName} : IMapScript
 		UpdateTextureLabels();
 	}
 
-	private void SelectTerrainTexture(int index, Color modColor, Button swatch)
+	private void SelectTerrainTexture(int index, Button swatch)
 	{
 		if (GameHost.Instance != null)
 		{
-			GameHost.Instance.EditorPaintColor = modColor;
+			GameHost.Instance.EditorPaintTextureIndex = index;
 			HighlightSwatch(swatch);
 
 			if (!IsSwatchCompatibleTool(GameHost.Instance.ActiveEditorTool))
@@ -4537,11 +4533,11 @@ public class {mapName} : IMapScript
 		}
 	}
 
-	private void SelectCliffTexture(int index, Color modColor)
+	private void SelectCliffTexture(int index)
 	{
 		if (GameHost.Instance != null)
 		{
-			GameHost.Instance.EditorCliffPaintColor = modColor;
+			GameHost.Instance.EditorCliffPaintTextureIndex = index;
 			UpdateTextureLabels();
 			
 			string name = TranslationServer.Translate(_swatchDisplayNames[index]);
@@ -4568,25 +4564,18 @@ public class {mapName} : IMapScript
 	private void UpdateTextureLabels()
 	{
 		if (GameHost.Instance == null) return;
-		string terrainName = GetSwatchName(GameHost.Instance.EditorPaintColor);
-		string cliffName = GetSwatchName(GameHost.Instance.EditorCliffPaintColor);
+		int terrainIdx = GameHost.Instance.EditorPaintTextureIndex;
+		int cliffIdx = GameHost.Instance.EditorCliffPaintTextureIndex;
+
+		string terrainName = (terrainIdx >= 0 && terrainIdx < 12) ? _swatchDisplayNames[terrainIdx] : "Unknown";
+		string cliffName = (cliffIdx >= 0 && cliffIdx < 12) ? _swatchDisplayNames[cliffIdx] : "Unknown";
 
 		if (_lblTerrainTexture != null) _lblTerrainTexture.Text = $"{TranslationServer.Translate("Brush")}: {TranslationServer.Translate(terrainName)}";
 		if (_lblCliffTexture != null) _lblCliffTexture.Text = $"{TranslationServer.Translate("Cliff Face")}: {TranslationServer.Translate(cliffName)}";
 
-		Button terrainSwatch = null;
-		Button cliffSwatch = null;
-		for (int i = 0; i < 12; i++)
-		{
-			if (_swatchColors[i].IsEqualApprox(GameHost.Instance.EditorPaintColor))
-			{
-				terrainSwatch = _swatchButtons[i];
-			}
-			if (_swatchColors[i].IsEqualApprox(GameHost.Instance.EditorCliffPaintColor))
-			{
-				cliffSwatch = _swatchButtons[i];
-			}
-		}
+		Button terrainSwatch = (terrainIdx >= 0 && terrainIdx < 12) ? _swatchButtons[terrainIdx] : null;
+		Button cliffSwatch = (cliffIdx >= 0 && cliffIdx < 12) ? _swatchButtons[cliffIdx] : null;
+
 		HighlightSwatch(terrainSwatch);
 		HighlightCliffSwatch(cliffSwatch);
 	}

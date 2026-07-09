@@ -116,7 +116,7 @@ public partial class EditableTerrain : StaticBody3D
 		}
 	}
 
-	public Color[,] Colors { get; private set; }
+	public TerrainSplatWeights[,] SplatMap { get; private set; }
 
 	public int[,] PathingCodes
 	{
@@ -156,7 +156,8 @@ public partial class EditableTerrain : StaticBody3D
 	private MeshInstance3D _waterMesh;
 
 	private Vector3[] _verticesCache;
-	private Color[] _colorsCache;
+	private float[] _texIndicesCache;
+	private float[] _texWeightsCache01;
 	private Vector3[] _normalsCache;
 	private Vector2[] _uvsCache;
 	private int[] _indicesCache;
@@ -281,12 +282,12 @@ public partial class EditableTerrain : StaticBody3D
 			Heights = newHeights;
 		}
 
-		if (Colors == null || Colors.GetLength(0) != Width || Colors.GetLength(1) != Depth)
+		if (SplatMap == null || SplatMap.GetLength(0) != Width || SplatMap.GetLength(1) != Depth)
 		{
-			Colors = new Color[Width, Depth];
+			SplatMap = new TerrainSplatWeights[Width, Depth];
 			for (int z = 0; z < Depth; z++)
 				for (int x = 0; x < Width; x++)
-					Colors[x, z] = new Color(0.2f, 0.6f, 0.2f); // Default Grass Green
+					SplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
 		}
 
 		if (state.PathingCodes == null || state.PathingCodes.GetLength(0) != Width || state.PathingCodes.GetLength(1) != Depth)
@@ -313,60 +314,24 @@ public partial class EditableTerrain : StaticBody3D
 shader_type spatial;
 
 uniform sampler2DArray terrain_textures : source_color;
-varying vec3 v_color;
-varying float v_rot;
 
-const vec3 SWATCH_COLORS[12] = vec3[](
-	vec3(0.95, 0.95, 1.0),   // 1 (River Silt / Sand)
-	vec3(0.5, 0.5, 0.52),    // 2 (Cinder Rock)
-	vec3(0.5, 0.45, 0.38),   // 3 (Arid Dust)
-	vec3(0.2, 0.6, 0.2),     // 4 (Deep Moss)
-	vec3(0.38, 0.38, 0.4),   // 5 (Crag Stone)
-	vec3(0.4, 0.28, 0.18),   // 6 (Ash Soil)
-	vec3(0.3, 0.7, 0.2),     // 7 (Fern Grove)
-	vec3(0.12, 0.48, 0.18),  // 8 (Mossy Stone)
-	vec3(0.7, 0.55, 0.35),   // 9 (Holy Moss)
-	vec3(0.85, 0.75, 0.5),   // 10 (Void Shard)
-	vec3(0.45, 0.55, 0.65),  // 11 (Fallback Grass)
-	vec3(0.6, 0.3, 0.15)     // 12 (Fallback Dirt)
-);
+varying vec4 v_tex_indices;
+varying vec4 v_tex_weights;
 
 void vertex() {
-	v_color = COLOR.rgb;
-	v_rot = COLOR.a;
+	v_tex_indices = CUSTOM0;
+	v_tex_weights = CUSTOM1;
 }
 
 void fragment() {
-	float angle = v_rot * 6.2831853;
-	float cos_a = cos(angle);
-	float sin_a = sin(angle);
-	mat2 rot_mat = mat2(vec2(cos_a, -sin_a), vec2(sin_a, cos_a));
-	vec2 rotated_uv = rot_mat * (UV - vec2(12.5, 12.5)) + vec2(12.5, 12.5);
-
-	int first_idx = 0;
-	int second_idx = 0;
-	float first_dist = 99999.0;
-	float second_dist = 99999.0;
-	for (int i = 0; i < 12; i++) {
-		float dist = distance(v_color, SWATCH_COLORS[i]);
-		if (dist < first_dist) {
-			second_dist = first_dist;
-			second_idx = first_idx;
-			first_dist = dist;
-			first_idx = i;
-		} else if (dist < second_dist) {
-			second_dist = dist;
-			second_idx = i;
-		}
-	}
-	vec4 tex_color1 = texture(terrain_textures, vec3(rotated_uv, float(first_idx)));
-	vec4 tex_color2 = texture(terrain_textures, vec3(rotated_uv, float(second_idx)));
-	float t = 0.0;
-	float total_dist = first_dist + second_dist;
-	if (total_dist > 0.0001) {
-		t = first_dist / total_dist;
-	}
-	ALBEDO = mix(tex_color1.rgb, tex_color2.rgb, t);
+	vec4 c0 = texture(terrain_textures, vec3(UV, v_tex_indices.x));
+	vec4 c1 = texture(terrain_textures, vec3(UV, v_tex_indices.y));
+	vec4 c2 = texture(terrain_textures, vec3(UV, v_tex_indices.z));
+	vec4 c3 = texture(terrain_textures, vec3(UV, v_tex_indices.w));
+	ALBEDO = (c0.rgb * v_tex_weights.x +
+	          c1.rgb * v_tex_weights.y +
+	          c2.rgb * v_tex_weights.z +
+	          c3.rgb * v_tex_weights.w);
 	ROUGHNESS = 0.9;
 }
 ";
@@ -442,79 +407,56 @@ void fragment() {
 		int w = Width;
 		int d = Depth;
 
-		if (Colors == null || Colors.GetLength(0) != w || Colors.GetLength(1) != d)
+		if (SplatMap == null || SplatMap.GetLength(0) != w || SplatMap.GetLength(1) != d)
 		{
-			Colors = new Color[w, d];
+			SplatMap = new TerrainSplatWeights[w, d];
 			for (int z = 0; z < d; z++)
 				for (int x = 0; x < w; x++)
-					Colors[x, z] = new Color(0.2f, 0.6f, 0.2f);
+					SplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
 		}
 
-		int vertexCount = w * d;
+		int cellWidth = w - 1;
+		int cellDepth = d - 1;
+		int triangleCount = cellWidth * cellDepth * 2;
+		int vertexCount = triangleCount * 3;
+
 		if (_verticesCache == null || _verticesCache.Length != vertexCount)
 		{
 			_verticesCache = new Vector3[vertexCount];
-			_colorsCache = new Color[vertexCount];
+			_texIndicesCache = new float[vertexCount * 4];
+			_texWeightsCache01 = new float[vertexCount * 4];
 			_normalsCache = new Vector3[vertexCount];
 			_uvsCache = new Vector2[vertexCount];
+			_indicesCache = new int[vertexCount];
 		}
 
-
-		for (int z = 0; z < Depth; z++)
+		var gridNormals = new Vector3[w * d];
+		for (int z = 0; z < d; z++)
 		{
-			for (int x = 0; x < Width; x++)
+			for (int x = 0; x < w; x++)
 			{
-				int idx = z * Width + x;
-				float lx = (x - (Width - 1) / 2.0f) * Spacing;
-				float lz = (z - (Depth - 1) / 2.0f) * Spacing;
-				_verticesCache[idx] = new Vector3(lx, Heights[x, z], lz);
-				_colorsCache[idx] = Colors[x, z];
-				_uvsCache[idx] = new Vector2((float)x / (Width - 1) * 25f, (float)z / (Depth - 1) * 25f);
-			}
-		}
-
-
-		for (int z = 0; z < Depth; z++)
-		{
-			for (int x = 0; x < Width; x++)
-			{
-				int idx = z * Width + x;
+				int idx = z * w + x;
 				float hl = Heights[Math.Max(0, x - 1), z];
-				float hr = Heights[Math.Min(Width - 1, x + 1), z];
+				float hr = Heights[Math.Min(w - 1, x + 1), z];
 				float hd = Heights[x, Math.Max(0, z - 1)];
-				float hu = Heights[x, Math.Min(Depth - 1, z + 1)];
+				float hu = Heights[x, Math.Min(d - 1, z + 1)];
 				
 				Vector3 tangentX = new Vector3(2.0f * Spacing, hr - hl, 0.0f).Normalized();
 				Vector3 tangentZ = new Vector3(0.0f, hu - hd, 2.0f * Spacing).Normalized();
-				_normalsCache[idx] = tangentZ.Cross(tangentX).Normalized();
+				gridNormals[idx] = tangentZ.Cross(tangentX).Normalized();
 			}
 		}
 
-
-		int cellWidth = Width - 1;
-		int cellDepth = Depth - 1;
-		int indexCount = cellWidth * cellDepth * 6;
-		if (_indicesCache == null || _indicesCache.Length != indexCount)
-		{
-			_indicesCache = new int[indexCount];
-		}
-		int iIdx = 0;
+		int vertexIndex = 0;
 		for (int z = 0; z < cellDepth; z++)
 		{
 			for (int x = 0; x < cellWidth; x++)
 			{
-				int v00 = z * Width + x;
-				int v10 = z * Width + (x + 1);
-				int v01 = (z + 1) * Width + x;
-				int v11 = (z + 1) * Width + (x + 1);
-				
-				_indicesCache[iIdx++] = v00;
-				_indicesCache[iIdx++] = v10;
-				_indicesCache[iIdx++] = v01;
-				
-				_indicesCache[iIdx++] = v10;
-				_indicesCache[iIdx++] = v11;
-				_indicesCache[iIdx++] = v01;
+				// Triangle 1: (x, z), (x + 1, z), (x, z + 1)
+				ProcessTriangle(x, z, x + 1, z, x, z + 1, ref vertexIndex, gridNormals);
+
+				// Triangle 2: (x + 1, z), (x + 1, z + 1), (x, z + 1)
+				ProcessTriangle(x + 1, z, x + 1, z + 1, x, z + 1, ref vertexIndex, gridNormals);
 			}
 		}
 
@@ -522,12 +464,18 @@ void fragment() {
 		arrays.Resize((int)Mesh.ArrayType.Max);
 		arrays[(int)Mesh.ArrayType.Vertex] = _verticesCache;
 		arrays[(int)Mesh.ArrayType.Normal] = _normalsCache;
-		arrays[(int)Mesh.ArrayType.Color] = _colorsCache;
 		arrays[(int)Mesh.ArrayType.TexUV] = _uvsCache;
+		arrays[(int)Mesh.ArrayType.Custom0] = _texIndicesCache;
+		arrays[(int)Mesh.ArrayType.Custom1] = _texWeightsCache01;
 		arrays[(int)Mesh.ArrayType.Index] = _indicesCache;
 
 		_arrayMesh.ClearSurfaces();
-		_arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+		int custom0Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift;
+		int custom1Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom1Shift;
+		_arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays,
+			new Godot.Collections.Array<Godot.Collections.Array>(),
+			null,
+			(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1) | custom0Format | custom1Format));
 		_meshInstance.Mesh = _arrayMesh;
 
 		if (!rebuildPhysics) return;
@@ -559,6 +507,151 @@ void fragment() {
 				BakeNavMesh();
 			}
 		}
+	}
+
+	private void ProcessTriangle(
+		int x0, int z0,
+		int x1, int z1,
+		int x2, int z2,
+		ref int vertexIndex,
+		Vector3[] gridNormals)
+	{
+		var s0 = SplatMap[x0, z0];
+		var s1 = SplatMap[x1, z1];
+		var s2 = SplatMap[x2, z2];
+
+		var uniqueTexs = new System.Collections.Generic.List<int>();
+		var texWeightsSum = new System.Collections.Generic.List<float>();
+
+		void AddTexture(int index, float weight)
+		{
+			if (weight <= 0.0f) return;
+			int idx = uniqueTexs.IndexOf(index);
+			if (idx >= 0)
+			{
+				texWeightsSum[idx] += weight;
+			}
+			else
+			{
+				uniqueTexs.Add(index);
+				texWeightsSum.Add(weight);
+			}
+		}
+
+		AddTexture(s0.Index0, s0.Weight0);
+		AddTexture(s0.Index1, s0.Weight1);
+		AddTexture(s0.Index2, s0.Weight2);
+		AddTexture(s0.Index3, s0.Weight3);
+
+		AddTexture(s1.Index0, s1.Weight0);
+		AddTexture(s1.Index1, s1.Weight1);
+		AddTexture(s1.Index2, s1.Weight2);
+		AddTexture(s1.Index3, s1.Weight3);
+
+		AddTexture(s2.Index0, s2.Weight0);
+		AddTexture(s2.Index1, s2.Weight1);
+		AddTexture(s2.Index2, s2.Weight2);
+		AddTexture(s2.Index3, s2.Weight3);
+
+		if (uniqueTexs.Count == 0)
+		{
+			uniqueTexs.Add(3);
+			texWeightsSum.Add(1.0f);
+		}
+
+		while (uniqueTexs.Count > 4)
+		{
+			int lowestIdx = 0;
+			float lowestW = texWeightsSum[0];
+			for (int i = 1; i < uniqueTexs.Count; i++)
+			{
+				if (texWeightsSum[i] < lowestW)
+				{
+					lowestW = texWeightsSum[i];
+					lowestIdx = i;
+				}
+			}
+			uniqueTexs.RemoveAt(lowestIdx);
+			texWeightsSum.RemoveAt(lowestIdx);
+		}
+
+		while (uniqueTexs.Count < 4)
+		{
+			uniqueTexs.Add(uniqueTexs[0]);
+		}
+
+		int p0 = uniqueTexs[0];
+		int p1 = uniqueTexs[1];
+		int p2 = uniqueTexs[2];
+		int p3 = uniqueTexs[3];
+
+		PopulateTriangleVertex(x0, z0, p0, p1, p2, p3, s0, ref vertexIndex, gridNormals);
+		PopulateTriangleVertex(x1, z1, p0, p1, p2, p3, s1, ref vertexIndex, gridNormals);
+		PopulateTriangleVertex(x2, z2, p0, p1, p2, p3, s2, ref vertexIndex, gridNormals);
+	}
+
+	private void PopulateTriangleVertex(
+		int x, int z,
+		int p0, int p1, int p2, int p3,
+		TerrainSplatWeights srcSplat,
+		ref int vertexIndex,
+		Vector3[] gridNormals)
+	{
+		float lx = (x - (Width - 1) / 2.0f) * Spacing;
+		float lz = (z - (Depth - 1) / 2.0f) * Spacing;
+		_verticesCache[vertexIndex] = new Vector3(lx, Heights[x, z], lz);
+
+		_normalsCache[vertexIndex] = gridNormals[z * Width + x];
+
+		_uvsCache[vertexIndex] = new Vector2((float)x / (Width - 1) * 25f, (float)z / (Depth - 1) * 25f);
+
+		_indicesCache[vertexIndex] = vertexIndex;
+
+		float w0 = 0f, w1 = 0f, w2 = 0f, w3 = 0f;
+
+		float GetWeight(int texIndex)
+		{
+			float sum = 0.0f;
+			if (srcSplat.Index0 == texIndex) sum += srcSplat.Weight0;
+			if (srcSplat.Index1 == texIndex) sum += srcSplat.Weight1;
+			if (srcSplat.Index2 == texIndex) sum += srcSplat.Weight2;
+			if (srcSplat.Index3 == texIndex) sum += srcSplat.Weight3;
+			return sum;
+		}
+
+		w0 = GetWeight(p0);
+		w1 = GetWeight(p1);
+		w2 = GetWeight(p2);
+		w3 = GetWeight(p3);
+
+		float sumW = w0 + w1 + w2 + w3;
+		if (sumW > 0.0001f)
+		{
+			w0 /= sumW;
+			w1 /= sumW;
+			w2 /= sumW;
+			w3 /= sumW;
+		}
+		else
+		{
+			w0 = 1.0f;
+			w1 = 0.0f;
+			w2 = 0.0f;
+			w3 = 0.0f;
+		}
+
+		int sIdx = vertexIndex * 4;
+		_texIndicesCache[sIdx + 0] = p0;
+		_texIndicesCache[sIdx + 1] = p1;
+		_texIndicesCache[sIdx + 2] = p2;
+		_texIndicesCache[sIdx + 3] = p3;
+
+		_texWeightsCache01[sIdx + 0] = w0;
+		_texWeightsCache01[sIdx + 1] = w1;
+		_texWeightsCache01[sIdx + 2] = w2;
+		_texWeightsCache01[sIdx + 3] = w3;
+
+		vertexIndex++;
 	}
 
 	public void BakeNavMesh()
@@ -620,11 +713,11 @@ void fragment() {
 		int oldDepth = state.Depth;
 		float[,] oldHeights = state.Heights;
 		int[,] oldPathing = state.PathingCodes;
-		Color[,] oldColors = Colors;
+		TerrainSplatWeights[,] oldSplatMap = SplatMap;
 
 		float[,] newHeights = new float[newWidth, newDepth];
 		int[,] newPathing = new int[newWidth, newDepth];
-		Color[,] newColors = new Color[newWidth, newDepth];
+		TerrainSplatWeights[,] newSplatMap = new TerrainSplatWeights[newWidth, newDepth];
 
 		int offsetX = (newWidth - oldWidth) / 2;
 		int offsetZ = (newDepth - oldDepth) / 2;
@@ -640,13 +733,13 @@ void fragment() {
 				{
 					if (oldHeights != null) newHeights[x, z] = oldHeights[oldX, oldZ];
 					if (oldPathing != null) newPathing[x, z] = oldPathing[oldX, oldZ];
-					if (oldColors != null) newColors[x, z] = oldColors[oldX, oldZ];
+					if (oldSplatMap != null) newSplatMap[x, z] = oldSplatMap[oldX, oldZ];
 				}
 				else
 				{
 					newHeights[x, z] = 0.0f;
 					newPathing[x, z] = PATHING_GROUND | PATHING_FLYING;
-					newColors[x, z] = new Color(0.2f, 0.6f, 0.2f);
+					newSplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
 				}
 			}
 		}
@@ -666,7 +759,7 @@ void fragment() {
 
 		_localHeights = newHeights;
 		_localPathingCodes = newPathing;
-		Colors = newColors;
+		SplatMap = newSplatMap;
 
 		UpdateWaterSize();
 		UpdateMeshAndPhysics();
@@ -683,11 +776,11 @@ void fragment() {
 		int oldDepth = state.Depth;
 		float[,] oldHeights = state.Heights;
 		int[,] oldPathing = state.PathingCodes;
-		Color[,] oldColors = Colors;
+		TerrainSplatWeights[,] oldSplatMap = SplatMap;
 
 		float[,] newHeights = new float[newWidth, newDepth];
 		int[,] newPathing = new int[newWidth, newDepth];
-		Color[,] newColors = new Color[newWidth, newDepth];
+		TerrainSplatWeights[,] newSplatMap = new TerrainSplatWeights[newWidth, newDepth];
 
 		for (int z = 0; z < newDepth; z++)
 		{
@@ -697,14 +790,14 @@ void fragment() {
 				float srcZ = newDepth > 1 ? z * (oldDepth - 1) / (float)(newDepth - 1) : 0f;
 
 				int x0 = Math.Clamp((int)Math.Floor(srcX), 0, oldWidth - 1);
-				int x1 = Math.Clamp(x0 + 1, 0, oldWidth - 1);
 				int z0 = Math.Clamp((int)Math.Floor(srcZ), 0, oldDepth - 1);
-				int z1 = Math.Clamp(z0 + 1, 0, oldDepth - 1);
-				float tx = srcX - x0;
-				float tz = srcZ - z0;
 
 				if (oldHeights != null)
 				{
+					int x1 = Math.Clamp(x0 + 1, 0, oldWidth - 1);
+					int z1 = Math.Clamp(z0 + 1, 0, oldDepth - 1);
+					float tx = srcX - x0;
+					float tz = srcZ - z0;
 					newHeights[x, z] =
 						(1 - tx) * (1 - tz) * oldHeights[x0, z0] +
 						tx * (1 - tz) * oldHeights[x1, z0] +
@@ -712,16 +805,7 @@ void fragment() {
 						tx * tz * oldHeights[x1, z1];
 				}
 
-				if (oldColors != null)
-				{
-					newColors[x, z] =
-						oldColors[x0, z0].Lerp(oldColors[x1, z0], tx)
-						.Lerp(oldColors[x0, z1].Lerp(oldColors[x1, z1], tx), tz);
-				}
-				else
-				{
-					newColors[x, z] = new Color(0.2f, 0.6f, 0.2f);
-				}
+				newSplatMap[x, z] = oldSplatMap != null ? oldSplatMap[x0, z0] : TerrainSplatWeights.CreateSolid(3);
 
 				if (oldPathing != null)
 				{
@@ -741,13 +825,13 @@ void fragment() {
 
 		_localHeights = newHeights;
 		_localPathingCodes = newPathing;
-		Colors = newColors;
+		SplatMap = newSplatMap;
 
 		UpdateWaterSize();
 		UpdateMeshAndPhysics();
 	}
 
-	public void RestoreTerrainFromSnapshot(int newWidth, int newDepth, float spacing, float waterHeight, bool waterEnabled, float[,] heights, int[,] pathingCodes, Color[,] colors)
+	public void RestoreTerrainFromSnapshot(int newWidth, int newDepth, float spacing, float waterHeight, bool waterEnabled, float[,] heights, int[,] pathingCodes, TerrainSplatWeights[,] splatMap)
 	{
 		if (GameHost.Instance == null || GameHost.Instance.EcsWorld == null || !GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity)) return;
 		if (!GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity)) return;
@@ -756,7 +840,7 @@ void fragment() {
 
 		float[,] clonedHeights = (float[,])heights.Clone();
 		int[,] clonedPathing = (int[,])pathingCodes.Clone();
-		Color[,] clonedColors = (Color[,])colors.Clone();
+		TerrainSplatWeights[,] clonedSplatMap = (TerrainSplatWeights[,])splatMap.Clone();
 
 		GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
 			newWidth, newDepth, spacing, state.CellSize, waterHeight, waterEnabled,
@@ -765,7 +849,7 @@ void fragment() {
 
 		_localHeights = clonedHeights;
 		_localPathingCodes = clonedPathing;
-		Colors = clonedColors;
+		SplatMap = clonedSplatMap;
 
 		_localWaterEnabled = waterEnabled;
 		_localWaterHeight = waterHeight;

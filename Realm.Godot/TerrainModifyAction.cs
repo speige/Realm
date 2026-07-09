@@ -1,21 +1,20 @@
-using Godot;
 using System;
 
 public class TerrainModifyAction : IEditorAction
 {
 	private readonly float[,] _beforeHeights;
 	private readonly float[,] _afterHeights;
-	private readonly Color[,] _beforeColors;
-	private readonly Color[,] _afterColors;
+	private readonly TerrainSplatWeights[,] _beforeSplatMap;
+	private readonly TerrainSplatWeights[,] _afterSplatMap;
 	private readonly int[,] _beforePathing;
 	private readonly int[,] _afterPathing;
 
-	public TerrainModifyAction(float[,] beforeHeights, float[,] afterHeights, Color[,] beforeColors, Color[,] afterColors, int[,] beforePathing = null, int[,] afterPathing = null)
+	public TerrainModifyAction(float[,] beforeHeights, float[,] afterHeights, TerrainSplatWeights[,] beforeSplatMap, TerrainSplatWeights[,] afterSplatMap, int[,] beforePathing = null, int[,] afterPathing = null)
 	{
 		_beforeHeights = beforeHeights;
 		_afterHeights = afterHeights;
-		_beforeColors = beforeColors;
-		_afterColors = afterColors;
+		_beforeSplatMap = beforeSplatMap;
+		_afterSplatMap = afterSplatMap;
 		_beforePathing = beforePathing;
 		_afterPathing = afterPathing;
 	}
@@ -27,9 +26,9 @@ public class TerrainModifyAction : IEditorAction
 		{
 			Array.Copy(_beforeHeights, GameHost.Instance.GroundTerrain.Heights, _beforeHeights.Length);
 		}
-		if (_beforeColors != null && GameHost.Instance.GroundTerrain.Colors != null)
+		if (_beforeSplatMap != null && GameHost.Instance.GroundTerrain.SplatMap != null)
 		{
-			Array.Copy(_beforeColors, GameHost.Instance.GroundTerrain.Colors, _beforeColors.Length);
+			Array.Copy(_beforeSplatMap, GameHost.Instance.GroundTerrain.SplatMap, _beforeSplatMap.Length);
 		}
 		if (_beforePathing != null && GameHost.Instance.GroundTerrain.PathingCodes != null)
 		{
@@ -55,9 +54,9 @@ public class TerrainModifyAction : IEditorAction
 		{
 			Array.Copy(_afterHeights, GameHost.Instance.GroundTerrain.Heights, _afterHeights.Length);
 		}
-		if (_afterColors != null && GameHost.Instance.GroundTerrain.Colors != null)
+		if (_afterSplatMap != null && GameHost.Instance.GroundTerrain.SplatMap != null)
 		{
-			Array.Copy(_afterColors, GameHost.Instance.GroundTerrain.Colors, _afterColors.Length);
+			Array.Copy(_afterSplatMap, GameHost.Instance.GroundTerrain.SplatMap, _afterSplatMap.Length);
 		}
 		if (_afterPathing != null && GameHost.Instance.GroundTerrain.PathingCodes != null)
 		{

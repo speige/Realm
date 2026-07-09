@@ -1026,17 +1026,17 @@ public partial class GameHost
 								float fz = hitPos.Z / sp + (d - 1) / 2.0f;
 								int x = Mathf.Clamp((int)Math.Round(fx), 0, w - 1);
 								int z = Mathf.Clamp((int)Math.Round(fz), 0, d - 1);
-								Color sampledColor = GroundTerrain.Colors[x, z];
-								EditorPaintColor = sampledColor;
+								int sampledIndex = GroundTerrain.SplatMap[x, z].Index0;
+								EditorPaintTextureIndex = sampledIndex;
 								if (MapEditorHUD.Instance != null)
 								{
-									MapEditorHUD.Instance.SelectPaintSwatchFromColor(sampledColor);
+									MapEditorHUD.Instance.SelectPaintSwatchByIndex(sampledIndex);
 								}
 								else
 								{
 									ActiveEditorTool = EditorTool.PaintGrass;
 								}
-								MapEditorHUD.Instance?.ShowFeedbackExternal($"Picked Color: {sampledColor.ToHtml(false)}");
+								MapEditorHUD.Instance?.ShowFeedbackExternal($"Picked Texture: #{sampledIndex}");
 							}
 						}
 						GetViewport().SetInputAsHandled();
@@ -1102,10 +1102,10 @@ public partial class GameHost
 						{
 							Vector3 start = _editorService.RampStartPos.Value;
 							Vector3 end = hitPos;
-							if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.Colors != null)
+							if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null)
 							{
 								var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
-								var colorsBefore = (Color[,])GroundTerrain.Colors.Clone();
+								var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
 								bool modified = ApplyRampInternal(start, end);
 								if (EditorMirrorMode != MirrorMode.None)
 								{
@@ -1122,8 +1122,8 @@ public partial class GameHost
 									GroundTerrain.UpdateMeshAndPhysics(true, false);
 									AlignAllEntitiesToTerrain();
 									var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
-									var colorsAfter = (Color[,])GroundTerrain.Colors.Clone();
-									var action = new TerrainModifyAction(heightsBefore, heightsAfter, colorsBefore, colorsAfter);
+									var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+									var action = new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter);
 									EditorHistoryManager.RecordAction(action);
 									EditorHasUnsavedChanges = true;
 								}
@@ -1135,7 +1135,7 @@ public partial class GameHost
 					}
 					else if (ActiveEditorTool == EditorTool.FloodFill)
 					{
-						PerformFloodFill(hitPos, EditorPaintColor);
+						PerformFloodFill(hitPos, EditorPaintTextureIndex);
 						GetViewport().SetInputAsHandled();
 					}
 					else if (ActiveEditorTool == EditorTool.FloodFillPathing)

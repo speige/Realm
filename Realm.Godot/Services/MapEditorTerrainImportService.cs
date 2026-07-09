@@ -21,11 +21,11 @@ public class MapEditorTerrainImportService
 		Entity worldEntity,
 		string selectedPath,
 		out float[,] smoothedHeights,
-		out Color[,] colors,
+		out TerrainSplatWeights[,] splatMap,
 		out List<(float X, float Y, float Z, float Rot, float Scale)> treePositions)
 	{
 		smoothedHeights = null;
-		colors = null;
+		splatMap = null;
 		treePositions = new List<(float X, float Y, float Z, float Rot, float Scale)>();
 
 		if (!EcsWorld.TryGet<TerrainState>(worldEntity, out var terrain))
@@ -44,7 +44,7 @@ public class MapEditorTerrainImportService
 		float spacing = terrain.Spacing;
 
 		float[,] heights = new float[width, depth];
-		colors = new Color[width, depth];
+		splatMap = new TerrainSplatWeights[width, depth];
 		bool[,] isTreeColored = new bool[width, depth];
 
 		for (int gz = 0; gz < depth; gz++)
@@ -105,36 +105,36 @@ public class MapEditorTerrainImportService
 				}
 
 				float h = 0.0f;
-				Color c = new Color(0.2f, 0.6f, 0.2f);
+				int texIdx = 1;
 				if (type == "water")
 				{
 					h = -2.0f;
-					c = new Color(0.0f, 0.33f, 0.7f);
+					texIdx = 6;
 				}
 				else if (type == "grass")
 				{
 					h = 0.0f;
-					c = new Color(0.2f, 0.6f, 0.2f);
+					texIdx = 1;
 				}
 				else if (type == "forest")
 				{
 					h = 0.0f;
-					c = new Color(0.16f, 0.48f, 0.16f);
+					texIdx = 1;
 					isTreeColored[gx, gz] = true;
 				}
 				else if (type == "cliff")
 				{
 					h = 4.0f;
-					c = new Color(0.54f, 0.35f, 0.17f);
+					texIdx = 2;
 				}
 				else if (type == "stone")
 				{
 					h = 0.0f;
-					c = new Color(0.5f, 0.5f, 0.5f);
+					texIdx = 3;
 				}
 
 				heights[gx, gz] = h;
-				colors[gx, gz] = c;
+				splatMap[gx, gz] = TerrainSplatWeights.CreateSolid(texIdx);
 			}
 		}
 

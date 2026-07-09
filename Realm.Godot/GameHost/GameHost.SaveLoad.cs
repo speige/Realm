@@ -14,12 +14,12 @@ public partial class GameHost
 
 		int width = GroundTerrain.Width;
 		int depth = GroundTerrain.Depth;
-		string[] htmlColors = new string[width * depth];
+		string[] splatData = new string[width * depth];
 		for (int z = 0; z < depth; z++)
 		{
 			for (int x = 0; x < width; x++)
 			{
-				htmlColors[z * width + x] = GroundTerrain.Colors[x, z].ToHtml(true);
+				splatData[z * width + x] = GroundTerrain.SplatMap[x, z].Serialize();
 			}
 		}
 
@@ -63,7 +63,7 @@ public partial class GameHost
 		string path = string.IsNullOrEmpty(customPath) ? "user://terrain.json" : customPath;
 		string absolutePath = ProjectSettings.GlobalizePath(path);
 
-		_saveLoadService.SaveMapToFile(absolutePath, htmlColors, unitsData.ToArray(), propsData.ToArray(), decalsData.ToArray(), coordinatesData);
+		_saveLoadService.SaveMapToFile(absolutePath, splatData, unitsData.ToArray(), propsData.ToArray(), decalsData.ToArray(), coordinatesData);
 	}
 
 	public bool LoadMapFromFile(string customPath = "", bool terrainOnly = false, bool clearUnits = true)
@@ -104,7 +104,7 @@ public partial class GameHost
 				{
 					for (int x = 0; x < defaultWidth; x++)
 					{
-						GroundTerrain.Colors[x, z] = new Color(0.2f, 0.6f, 0.2f);
+						GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
 					}
 				}
 				GroundTerrain.UpdateMeshAndPhysics();
@@ -200,7 +200,8 @@ public partial class GameHost
 			{
 				for (int x = 0; x < width; x++)
 				{
-					GroundTerrain.Colors[x, z] = Color.FromHtml(colorsState.Colors[z * width + x]);
+					string serialized = colorsState.Colors[z * width + x];
+					GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.Deserialize(serialized);
 				}
 			}
 		}
@@ -227,6 +228,7 @@ public partial class GameHost
 			}
 		}
 
+		AlignTerrainSplatMapExternal();
 		GroundTerrain.UpdateMeshAndPhysics();
 
 		if (!terrainOnly)

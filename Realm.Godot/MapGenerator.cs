@@ -398,26 +398,27 @@ public static class MapGenerator
 
                 if (isBorder)
                 {
-                    host.GroundTerrain.Colors[x, z] = new Color(0.5f, 0.5f, 0.52f);
+                    host.GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(2);
                 }
                 else
                 {
                     if (myLevel == 0)
                     {
-                        host.GroundTerrain.Colors[x, z] = new Color(0.85f, 0.75f, 0.5f);
+                        host.GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(9);
                     }
                     else if (myLevel == 1)
                     {
-                        host.GroundTerrain.Colors[x, z] = new Color(0.2f, 0.6f, 0.2f);
+                        host.GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
                     }
                     else
                     {
-                        host.GroundTerrain.Colors[x, z] = new Color(0.95f, 0.95f, 1.0f);
+                        host.GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
                     }
                 }
             }
         }
 
+        host.AlignTerrainSplatMapExternal();
         host.GroundTerrain.UpdateMeshAndPhysics();
 
         Vector3 p1Base = GridToWorld(sites[0].X, sites[0].Y, width, depth, spacing, host.GroundTerrain.Heights[sites[0].X, sites[0].Y]);

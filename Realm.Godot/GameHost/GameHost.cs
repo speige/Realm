@@ -232,7 +232,7 @@ public partial class GameHost : Node3D, IGameAPI
 			_groundTerrain = value;
 			if (value != null && _editorService != null)
 			{
-				_editorService.SetTerrainColors(value.Colors);
+				_editorService.SetTerrainSplatMap(value.SplatMap);
 			}
 		}
 	}
@@ -304,24 +304,24 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool ImportTerrainFromMinimap(
 		string selectedPath,
 		out float[,] smoothedHeights,
-		out Color[,] colors,
+		out TerrainSplatWeights[,] splatMap,
 		out List<(float X, float Y, float Z, float Rot, float Scale)> treePositions)
 	{
 		smoothedHeights = null;
-		colors = null;
+		splatMap = null;
 		treePositions = null;
 		if (_terrainImportService == null)
 		{
 			return false;
 		}
-		return _terrainImportService.ImportTerrain(_worldEntity, selectedPath, out smoothedHeights, out colors, out treePositions);
+		return _terrainImportService.ImportTerrain(_worldEntity, selectedPath, out smoothedHeights, out splatMap, out treePositions);
 	}
 	public bool PlaceUnitIsEnemy { get; set; } = false;
 	public float EditorBrushRadius { get; set; } = 6.0f;
 	public float EditorBrushStrength { get; set; } = 3.0f;
 	public float EditorFlattenHeight { get; set; } = 0.0f;
-	public Color EditorPaintColor { get; set; } = new Color(0.2f, 0.6f, 0.2f);
-	public Color EditorCliffPaintColor { get; set; } = new Color(0.5f, 0.5f, 0.52f);
+	public int EditorPaintTextureIndex { get; set; } = 3;
+	public int EditorCliffPaintTextureIndex { get; set; } = 1;
 	public bool EditorSnapToGrid { get; set; } = false;
 	public float EditorPlacementRotation { get; set; } = 0.0f;
 	public float EditorPlacementScale { get; set; } = 1.0f;
@@ -2298,7 +2298,7 @@ public class {mapName} : IMapScript
 		SetupWorldEntityComponents();
 
 		if (GroundTerrain != null)
-			_editorService.SetTerrainColors(GroundTerrain.Colors);
+			_editorService.SetTerrainSplatMap(GroundTerrain.SplatMap);
 		SetupSkybox();
 		UpdateDayNightVisuals(0.5f);
 		_definitionManager = ServiceLocator.Get<DefinitionManager>();
@@ -2642,7 +2642,7 @@ public class {mapName} : IMapScript
 		ResolveServices();
 		if (GroundTerrain != null)
 		{
-			_editorService.SetTerrainColors(GroundTerrain.Colors);
+			_editorService.SetTerrainSplatMap(GroundTerrain.SplatMap);
 		}
 
 		InitializeGameEcs();
