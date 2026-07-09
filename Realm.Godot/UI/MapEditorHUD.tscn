@@ -301,13 +301,13 @@ text = "🔄 Align"
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 focus_mode = 0
-text = "📜 PUBLISH MAP"
+text = "📜 PUBLISH"
 
 [node name="BtnSave" type="Button" parent="MiddleRightBox"]
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 focus_mode = 0
-text = "💾 SAVE FILE"
+text = "💾 SAVE"
 
 [node name="HistoryHBox" type="HBoxContainer" parent="MiddleRightBox"]
 layout_mode = 2

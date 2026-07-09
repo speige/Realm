@@ -1375,70 +1375,7 @@ public partial class GameHost
 				return;
 			}
 
-			if (SelectedUnits.Count == 1 && !SelectedUnits[0].IsEnemy)
-			{
-				var selectedUnit = SelectedUnits[0];
-				if (selectedUnit.UnitId == "castle")
-				{
-					if (keyEvent.Keycode == Key.F)
-					{
-						TrainUnitAtCastle("soldier");
-						GetViewport().SetInputAsHandled();
-						return;
-					}
-					if (keyEvent.Keycode == Key.R)
-					{
-						TrainUnitAtCastle("archer");
-						GetViewport().SetInputAsHandled();
-						return;
-					}
-					if (keyEvent.Keycode == Key.P)
-					{
-						TrainUnitAtCastle("priest");
-						GetViewport().SetInputAsHandled();
-						return;
-					}
-					if (keyEvent.Keycode == Key.W)
-					{
-						BuyWeaponsUpgrade();
-						GetViewport().SetInputAsHandled();
-						return;
-					}
-					if (keyEvent.Keycode == Key.G)
-					{
-						BuyShieldsUpgrade();
-						GetViewport().SetInputAsHandled();
-						return;
-					}
-					if (keyEvent.Keycode == Key.T)
-					{
-						BuyHarvestingUpgrade();
-						GetViewport().SetInputAsHandled();
-						return;
-					}
-					if (keyEvent.Keycode == Key.Y)
-					{
-						EnterCommandTargeting("rally");
-						GetViewport().SetInputAsHandled();
-						return;
-					}
-					if (keyEvent.Keycode == Key.I)
-					{
-						BuyHealingPotion(selectedUnit.Entity);
-						GetViewport().SetInputAsHandled();
-						return;
-					}
-				}
-				else if (selectedUnit.UnitId == "tower")
-				{
-					if (keyEvent.Keycode == Key.U)
-					{
-						UpgradeTower(selectedUnit);
-						GetViewport().SetInputAsHandled();
-						return;
-					}
-				}
-			}
+
 
 			if (keyEvent.Keycode == Key.Tab)
 			{
@@ -1471,106 +1408,7 @@ public partial class GameHost
 				return;
 			}
 
-			bool hasPlayerSelection = SelectedUnits.Count > 0 && !SelectedUnits[0].IsEnemy;
-			if (hasPlayerSelection)
-			{
-				switch (keyEvent.Keycode)
-				{
-					case Key.A:
-						EnterCommandTargeting("attack");
-						GetViewport().SetInputAsHandled();
-						return;
-					case Key.M:
-						EnterCommandTargeting("move");
-						GetViewport().SetInputAsHandled();
-						return;
-					case Key.P:
-						EnterCommandTargeting("patrol");
-						GetViewport().SetInputAsHandled();
-						return;
-					case Key.S:
-						StopSelectedUnits();
-						if (InGameHUD.Instance != null)
-							InGameHUD.Instance.ShowFeedbackText("Command: Stop Current Action", new Color(0.9f, 0.2f, 0.2f));
-						GetViewport().SetInputAsHandled();
-						return;
-					case Key.H:
-						HoldSelectedUnits();
-						if (InGameHUD.Instance != null)
-							InGameHUD.Instance.ShowFeedbackText("Command: Hold Position", new Color(0.9f, 0.8f, 0.1f));
-						GetViewport().SetInputAsHandled();
-						return;
-					case Key.B:
-						if (InGameHUD.Instance != null)
-						{
-							InGameHUD.Instance.ShowFeedbackText("Build Mode: Select Building structures", new Color(0.3f, 0.8f, 1.0f));
-							InGameHUD.Instance.EnterBuildSubMenu();
-						}
-						GetViewport().SetInputAsHandled();
-						return;
-					case Key.C:
-						if (InGameHUD.Instance != null && InGameHUD.Instance.IsBuildSubMenuOpen)
-						{
-							EnterBuildingPlacement("castle");
-							GetViewport().SetInputAsHandled();
-							return;
-						}
-						break;
-					case Key.T:
-						if (InGameHUD.Instance != null && InGameHUD.Instance.IsBuildSubMenuOpen)
-						{
-							EnterBuildingPlacement("tower");
-							GetViewport().SetInputAsHandled();
-							return;
-						}
-						break;
-					case Key.Q:
-						if (SelectedUnits.Count > 0)
-						{
-							var unit = SelectedUnits[CycleSelectionIndex];
-							if (!unit.IsEnemy && !EcsWorld.Has<Realm.Ecs.Components.Tags.UnderConstruction>(unit.Entity) && UnitHasAbility(unit, "fireball"))
-							{
-								EnterSpellTargeting("fireball");
-								GetViewport().SetInputAsHandled();
-							}
-						}
-						return;
-					case Key.E:
-						if (SelectedUnits.Count > 0)
-						{
-							var unit = SelectedUnits[CycleSelectionIndex];
-							if (!unit.IsEnemy && !EcsWorld.Has<Realm.Ecs.Components.Tags.UnderConstruction>(unit.Entity) && UnitHasAbility(unit, "lightning"))
-							{
-								EnterSpellTargeting("lightning");
-								GetViewport().SetInputAsHandled();
-							}
-						}
-						return;
-					case Key.W:
-						if (SelectedUnits.Count > 0)
-						{
-							var unit = SelectedUnits[CycleSelectionIndex];
-							if (!unit.IsEnemy && !EcsWorld.Has<Realm.Ecs.Components.Tags.UnderConstruction>(unit.Entity) && UnitHasAbility(unit, "holylight"))
-							{
-								EnterSpellTargeting("holylight");
-								GetViewport().SetInputAsHandled();
-							}
-						}
-						return;
-					case Key.I:
-						if (SelectedUnits.Count > 0)
-						{
-							var unit = SelectedUnits[CycleSelectionIndex];
-							if (!unit.IsEnemy && !unit.IsBuilding)
-							{
-								UseHealingPotion(unit);
-								GetViewport().SetInputAsHandled();
-								return;
-							}
-						}
-						break;
-				}
-			}
+
 		}
 
 		if (@event is InputEventMouseButton rightBtn && rightBtn.ButtonIndex == MouseButton.Right && rightBtn.Pressed && !IsMouseOverUI())
@@ -2033,6 +1871,7 @@ public partial class GameHost
 
 		var friendlyUnits = new List<Unit3D>();
 		var enemyUnits = new List<Unit3D>();
+		var goldMines = new List<Prop3D>();
 
 		foreach (var unit in AllUnits)
 		{
@@ -2054,6 +1893,21 @@ public partial class GameHost
 			unit.SetTemporarySelectionHighlight(false);
 		}
 
+		foreach (var prop in AllProps)
+		{
+			if (prop == null || !GodotObject.IsInstanceValid(prop) || !prop.Visible) continue;
+			if (prop.PropId == "goldmine")
+			{
+				var screenPos = camera.UnprojectPosition(prop.GlobalPosition);
+				bool isInside = dragRect.HasPoint(screenPos);
+				if (isInside)
+				{
+					goldMines.Add(prop);
+				}
+				prop.SetTemporarySelectionHighlight(false);
+			}
+		}
+
 		if (friendlyUnits.Count > 0)
 		{
 			foreach (var unit in friendlyUnits)
@@ -2068,6 +1922,10 @@ public partial class GameHost
 				unit.SetTemporarySelectionHighlight(true);
 			}
 		}
+		else if (goldMines.Count > 0)
+		{
+			goldMines[0].SetTemporarySelectionHighlight(true);
+		}
 	}
 
 	private void ClearTemporarySelection()
@@ -2077,6 +1935,13 @@ public partial class GameHost
 			if (unit != null && GodotObject.IsInstanceValid(unit))
 			{
 				unit.SetTemporarySelectionHighlight(false);
+			}
+		}
+		foreach (var prop in AllProps)
+		{
+			if (prop != null && GodotObject.IsInstanceValid(prop) && prop.PropId == "goldmine")
+			{
+				prop.SetTemporarySelectionHighlight(false);
 			}
 		}
 	}
@@ -2889,6 +2754,7 @@ public partial class GameHost
 					_buildingPreviewMesh.QueueFree();
 					_buildingPreviewMesh = null;
 				}
+				InGameHUD.Instance?.ExitBuildSubMenu();
 			}
 			return;
 		}
@@ -2996,6 +2862,7 @@ public partial class GameHost
 				_buildingPreviewMesh.QueueFree();
 				_buildingPreviewMesh = null;
 			}
+			InGameHUD.Instance?.ExitBuildSubMenu();
 		}
 	}
 

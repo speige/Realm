@@ -248,6 +248,11 @@ public partial class GameHost
 				EcsWorld.Remove<UnderConstruction>(buildingEntity);
 			}
 
+			if (EcsWorld.Has<ConstructionState>(buildingEntity))
+			{
+				EcsWorld.Remove<ConstructionState>(buildingEntity);
+			}
+
 			if (TryGetUnit3D(buildingEntity, out var buildingNode) && GodotObject.IsInstanceValid(buildingNode))
 			{
 				buildingNode.Modulate = new Godot.Color(1f, 1f, 1f, 1f);
@@ -662,10 +667,14 @@ public partial class GameHost
 		{
 			if (EcsWorld.IsAlive(targetEntity))
 			{
-				string resType = null;
-				if (EcsWorld.Has<Gold>(targetEntity)) resType = "gold";
-				else if (EcsWorld.Has<Wood>(targetEntity)) resType = "wood";
-				else if (EcsWorld.Has<Stone>(targetEntity)) resType = "stone";
+				string propId = EcsWorld.Has<DefinitionId>(targetEntity) ? EcsWorld.Get<DefinitionId>(targetEntity).Value : "";
+				string resType = propId switch
+				{
+					"goldmine" => "gold",
+					"tree" => "wood",
+					"rock" => "stone",
+					_ => null
+				};
 
 				if (resType != null)
 				{

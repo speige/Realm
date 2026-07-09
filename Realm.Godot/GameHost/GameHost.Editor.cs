@@ -30,15 +30,16 @@ public partial class GameHost
 		EntityToUnit3D.Clear();
 		EntityToProp3D.Clear();
 		
-		foreach (var child in GetChildren())
+		var childrenCopy = new List<Node>(GetChildren());
+		foreach (var child in childrenCopy)
 		{
 			if (child is Prop3D prop && GodotObject.IsInstanceValid(prop))
 			{
-				prop.QueueFree();
+				DeleteNodeExternal(prop);
 			}
 			else if (child is Decal decal && GodotObject.IsInstanceValid(decal))
 			{
-				decal.QueueFree();
+				DeleteNodeExternal(decal);
 			}
 		}
 		
@@ -315,6 +316,10 @@ public partial class GameHost
 		}
 		if (closestDecal != null)
 		{
+			if (closestDecal is Decal3D decal3D && EcsWorld.IsAlive(decal3D.Entity))
+			{
+				EcsWorld.Destroy(decal3D.Entity);
+			}
 			closestDecal.QueueFree();
 		}
 	}
@@ -539,6 +544,7 @@ public partial class GameHost
 			var action = new ObjectDeleteAction("unit", unit.UnitId, unit.Position, unit.RotationDegrees.Y, unit.Scale.X, unit.IsEnemy, unit);
 			SelectedUnits.Remove(unit);
 			AllUnits.Remove(unit);
+			EntityToUnit3D.Remove(unit.Entity);
 			if (EcsWorld.IsAlive(unit.Entity))
 			{
 				EcsWorld.Destroy(unit.Entity);
@@ -589,6 +595,11 @@ public partial class GameHost
 			}
 			var action = new ObjectDeleteAction("prop", prop.PropId, prop.Position, prop.RotationDegrees.Y, prop.Scale.X, false, prop);
 			AllProps.Remove(prop);
+			EntityToProp3D.Remove(prop.Entity);
+			if (EcsWorld.IsAlive(prop.Entity))
+			{
+				EcsWorld.Destroy(prop.Entity);
+			}
 			prop.QueueFree();
 			return action;
 		}
@@ -613,7 +624,11 @@ public partial class GameHost
 			{
 				SelectedEditorObject = null;
 			}
-			var action = new ObjectDeleteAction("decal", "", closestDecal.Position, closestDecal.RotationDegrees.Y, closestDecal.Scale.X, false, closestDecal);
+			var action = new ObjectDeleteAction("decal", closestDecal is Decal3D decal3D ? decal3D.DecalId : "", closestDecal.Position, closestDecal.RotationDegrees.Y, closestDecal.Scale.X, false, closestDecal);
+			if (closestDecal is Decal3D d3d && EcsWorld.IsAlive(d3d.Entity))
+			{
+				EcsWorld.Destroy(d3d.Entity);
+			}
 			closestDecal.QueueFree();
 			return action;
 		}

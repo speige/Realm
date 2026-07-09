@@ -1119,6 +1119,8 @@ public partial class InGameHUD : Control
 			minimapOverlay?.QueueRedraw();
 		}
 
+		_portraitPanelController?.Update(_viewModel);
+		_commandPanelController?.Update(_viewModel);
 		_resourcePanelController?.Update(_viewModel);
 		_leaderboardPanelController?.Update(_viewModel);
 
@@ -1301,7 +1303,7 @@ public partial class InGameHUD : Control
 		if (unit == null || !GodotObject.IsInstanceValid(unit)) return;
 		if (_camera3D != null && GodotObject.IsInstanceValid(_camera3D))
 		{
-			_camera3D.GlobalPosition = new Vector3(unit.GlobalPosition.X, _camera3D.GlobalPosition.Y, unit.GlobalPosition.Z);
+			_camera3D.GlobalPosition = new Vector3(unit.GlobalPosition.X, _camera3D.GlobalPosition.Y, unit.GlobalPosition.Z + 25f);
 			ShowFeedbackText($"Camera → {unit.UnitId.ToUpper()}", new Color(0.9f, 0.8f, 0.5f));
 		}
 	}
@@ -1711,15 +1713,13 @@ public partial class InGameHUD : Control
 			return false;
 		}
 
+		ShowFeedbackText("Cheat Activated!", new Color(0.1f, 0.9f, 0.2f));
+
 		switch (result)
 		{
 			case CheatService.CheatResult.Stonks:
-				ShowFeedbackText("Cheat Activated: Stonks! (+10,000 resources)", new Color(0.95f, 0.82f, 0.55f));
-				_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'stonks' activated. Added 10,000 resources.")}[/color]\n";
 				break;
 			case CheatService.CheatResult.Gigachad:
-				ShowFeedbackText($"Cheat Activated: Gigachad Main Character Energy! ({affectedCount} units empowered)", new Color(1.0f, 0.3f, 0.1f));
-				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'gigachad' activated. Powered up {0} units."), affectedCount)}[/color]\n";
 				RefreshUI(GameHost.Instance.SelectedUnits);
 				break;
 			case CheatService.CheatResult.AbsoluteUnit:
@@ -1730,44 +1730,22 @@ public partial class InGameHUD : Control
 						unit.Scale = new Vector3(3f, 3f, 3f);
 					}
 				}
-				ShowFeedbackText($"Cheat Activated: Absolute Unit! (+Scale, +Speed) on {affectedCount} units", new Color(0.2f, 0.8f, 1.0f));
-				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'absoluteunit' activated. Gigantified {0} units with super speed!"), affectedCount)}[/color]\n";
 				RefreshUI(GameHost.Instance.SelectedUnits);
 				break;
 			case CheatService.CheatResult.ThanosSnap:
-				ShowFeedbackText($"Cheat Activated: Thanos Snapped. Destroyed {affectedCount} enemies.", new Color(0.9f, 0.1f, 0.1f));
-				_chatLog.Text += $"[color=#ffd700]System: {string.Format(TranslationServer.Translate("Cheat 'thanossnap' activated. Slain {0} enemy units."), affectedCount)}[/color]\n";
 				break;
 			case CheatService.CheatResult.EzClap:
-				ShowFeedbackText("Cheat Activated: EZ Clap Speedrun!", new Color(0.1f, 0.9f, 0.2f));
-				_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'ezclap' activated. Proceeding to Victory.")}[/color]\n";
 				UIManager.Instance?.PlayClickSound();
 				UIManager.Instance?.TransitionTo(GameScreen.GameOver, true);
 				break;
 			case CheatService.CheatResult.NoCap:
-				ShowFeedbackText("Cheat Activated: Fog of War removed! No cap.", new Color(0.2f, 0.8f, 0.5f));
-				_chatLog.Text += $"[color=#ffd700]System: {TranslationServer.Translate("Cheat 'nocap' activated. Fog of War disabled.")}[/color]\n";
 				break;
 			case CheatService.CheatResult.UnlimitedPower:
 				{
-					bool isOn = GameHost.Instance?.UnlimitedPowerEnabled ?? false;
-					string state = isOn ? "ENGAGED" : "DISENGAGED";
-					string msg = isOn
-						? "Cheat Activated: Unlimited Power! ⚡ Cooldowns & mana costs removed."
-						: "Cheat Deactivated: Unlimited Power. Cooldowns back to normal.";
-					ShowFeedbackText(msg, new Color(0.8f, 0.2f, 0.9f));
-					_chatLog.Text += $"[color=#ffd700]System: Unlimited Power {state}. No cooldowns: {(isOn ? "ON" : "OFF")}[/color]\n";
 				}
 				break;
 			case CheatService.CheatResult.WarpSpeed:
 			{
-				bool isOn = GameHost.Instance?.FastBuildEnabled ?? false;
-				string state = isOn ? "ENGAGED" : "DISENGAGED";
-				string msg = isOn
-					? "Cheat Activated: Warp Speed! 🚀 Construction 10× faster."
-					: "Cheat Deactivated: Warp Speed. Construction back to normal.";
-				ShowFeedbackText(msg, new Color(0.4f, 0.9f, 1.0f));
-				_chatLog.Text += $"[color=#ffd700]System: Warp Speed {state}. Fast Build: {(isOn ? "ON" : "OFF")}[/color]\n";
 				break;
 			}
 		}

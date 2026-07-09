@@ -711,7 +711,7 @@ public partial class MapEditorHUD : Control
 		_btnResetMap.Set("icon_max_width", 0);
 		GetNode<VBoxContainer>("MiddleRightBox").AddChild(_btnResetMap);
 		GetNode<VBoxContainer>("MiddleRightBox").MoveChild(_btnResetMap, _btnSave.GetIndex() + 1);
-		SetupButton(_btnResetMap, "🧹 RESET MAP", () =>
+		SetupButton(_btnResetMap, "🧹 RESET TO BLANK MAP", () =>
 		{
 			ShowConfirmationDialog(
 				"Are you sure you want to clear the entire map? This will delete all placed entities and reset terrain heights.",
@@ -767,12 +767,12 @@ public partial class MapEditorHUD : Control
 		_btnLoad.Set("icon_max_width", 0);
 		GetNode<VBoxContainer>("MiddleRightBox").AddChild(_btnLoad);
 		GetNode<VBoxContainer>("MiddleRightBox").MoveChild(_btnLoad, _btnSave.GetIndex() + 1);
-		SetupButton(_btnLoad, "📂 LOAD FILE", () => LoadMapAction(), 13, "Load heights, colors, and entities from a saved json file (Ctrl+O)");
+		SetupButton(_btnLoad, "📂 LOAD", () => LoadMapAction(), 13, "Load heights, colors, and entities from a saved json file (Ctrl+O)");
 
 		_btnTestMap = new Button();
 		_btnTestMap.Name = "BtnTestMap";
 		_btnTestMap.Set("icon_max_width", 0);
-		SetupButton(_btnTestMap, "🎮 TEST MAP", () => TestMapAction(), 13, "Launch single-player mode on the current editor map");
+		SetupButton(_btnTestMap, "🎮 TEST", () => TestMapAction(), 13, "Launch single-player mode on the current editor map");
 
 		_btnToggleGrid = new Button();
 		_btnToggleGrid.Name = "BtnToggleGrid";
@@ -3083,10 +3083,10 @@ public class {mapName} : IMapScript
 		leftVBox.AddChild(_contentFile);
 		SetupMutualAccordion(_btnHeaderFile, _contentFile, TranslationServer.Translate("File"));
 
-		SafeReparent(_btnTestMap, _contentFile);
-		SafeReparent(_btnSave, _contentFile);
-		SafeReparent(_btnPublish, _contentFile);
 		SafeReparent(_btnLoad, _contentFile);
+		SafeReparent(_btnSave, _contentFile);
+		SafeReparent(_btnTestMap, _contentFile);
+		SafeReparent(_btnPublish, _contentFile);
 		SafeReparent(_btnResetMap, _contentFile);
 		SafeReparent(_btnGenerateMap, _contentFile);
 		SafeReparent(_btnImportMinimap, _contentFile);

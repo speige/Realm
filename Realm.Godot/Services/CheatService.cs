@@ -48,7 +48,7 @@ public class CheatService
 
 		string lower = text.ToLowerInvariant().Trim();
 
-		if (lower == "stonks" || lower == "securethebag")
+		if (lower == "securethebag")
 		{
 			if (playerEntity != Entity.Null && EcsWorld.IsAlive(playerEntity) && EcsWorld.Has<PlayerResources>(playerEntity))
 			{
@@ -65,7 +65,7 @@ public class CheatService
 			return (CheatResult.Stonks, 0);
 		}
 
-		if (lower == "gigachad" || lower == "maincharacter")
+		if (lower == "gigachad")
 		{
 			if (GameHost.Instance != null)
 			{
@@ -93,7 +93,7 @@ public class CheatService
 			return (CheatResult.Gigachad, affected);
 		}
 
-		if (lower == "skibidi" || lower == "rizz" || lower == "absoluteunit")
+		if (lower == "needforspeed")
 		{
 			int affected = 0;
 			foreach (var entity in selectedEntities)
@@ -111,7 +111,7 @@ public class CheatService
 			return (CheatResult.AbsoluteUnit, affected);
 		}
 
-		if (lower == "thanossnap" || lower == "emotionaldamage")
+		if (lower == "thanossnap")
 		{
 			var targets = new List<Entity>();
 			var query = QueryCache.AllHealthAndOwnerQuery;
@@ -149,7 +149,7 @@ public class CheatService
 			return (CheatResult.ThanosSnap, destroyed);
 		}
 
-		if (lower == "ezclap" || lower == "speedrun")
+		if (lower == "ezclap")
 		{
 			if (GameHost.Instance != null)
 			{
@@ -158,7 +158,7 @@ public class CheatService
 			return (CheatResult.EzClap, 0);
 		}
 
-		if (lower == "nocap" || lower == "verydemure")
+		if (lower == "aura")
 		{
 			Entity worldEntity = Entity.Null;
 			var query = QueryCache.AllFogAndWeatherStateQuery;
@@ -172,7 +172,7 @@ public class CheatService
 			return (CheatResult.NoCap, 0);
 		}
 
-		if (lower == "warpspeed" || lower == "hyperdrive")
+		if (lower == "speedrun")
 		{
 			if (GameHost.Instance != null)
 			{
@@ -181,7 +181,7 @@ public class CheatService
 			return (CheatResult.WarpSpeed, 0);
 		}
 
-		if (lower == "unlimitedpower" || lower == "nogd" || lower == "nocooldowns" || lower == "nomana")
+		if (lower == "skibidi")
 		{
 			if (GameHost.Instance != null)
 			{

@@ -139,6 +139,18 @@ public partial class Prop3D : StaticBody3D
 		}
 	}
 
+	public void SetTemporarySelectionHighlight(bool highlight)
+	{
+		if (_selectionRing == null && highlight)
+		{
+			CreateSelectionRing();
+		}
+		if (_selectionRing != null)
+		{
+			_selectionRing.Visible = highlight || _isSelected;
+		}
+	}
+
 	private void CreateSelectionRing()
 	{
 		_selectionRing = new MeshInstance3D();
