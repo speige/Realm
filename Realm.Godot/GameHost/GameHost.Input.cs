@@ -1189,7 +1189,7 @@ public partial class GameHost
 							float fz = hitPos.Z / GroundTerrain.Spacing + (GroundTerrain.Depth - 1) / 2.0f;
 							int cx = Mathf.Clamp((int)Math.Round(fx), 0, GroundTerrain.Width - 1);
 							int cz = Mathf.Clamp((int)Math.Round(fz), 0, GroundTerrain.Depth - 1);
-							PerformPasteArea(cx, cz);
+							PerformPasteArea(cx, cz, EditorPasteRotation);
 							ActiveEditorTool = EditorTool.SelectArea;
 							MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.SelectArea);
 							if (_selectionHighlightMesh != null) _selectionHighlightMesh.Visible = false;

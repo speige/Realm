@@ -90,6 +90,10 @@ public partial class MapEditorHUD : Control
 	private VBoxContainer _panelCoordinatesVBox;
 	private Button _btnCut;
 	private Button _btnEraseArea;
+	private Button _btnMirrorVertically;
+	private Button _btnMirrorHorizontally;
+	private HSlider _sldPasteRotation;
+	private Label _lblPasteRotation;
 	
 	private Button[] _swatchButtons = new Button[12];
 
@@ -1148,6 +1152,27 @@ public partial class MapEditorHUD : Control
 		{
 			if (GameHost.Instance != null) GameHost.Instance.PasteOptionEntities = toggled;
 		};
+
+		var rotBox = new VBoxContainer();
+		rotBox.Name = "PasteRotationBox";
+		pasteOptionsBox.AddChild(rotBox);
+
+		_lblPasteRotation = new Label();
+		_lblPasteRotation.Text = TranslationServer.Translate("Paste Rotation: 0°");
+		rotBox.AddChild(_lblPasteRotation);
+
+		_sldPasteRotation = new HSlider();
+		_sldPasteRotation.Name = "SldPasteRotation";
+		_sldPasteRotation.MinValue = -180;
+		_sldPasteRotation.MaxValue = 180;
+		_sldPasteRotation.Step = 90;
+		_sldPasteRotation.Value = 0;
+		_sldPasteRotation.ValueChanged += (val) =>
+		{
+			if (GameHost.Instance != null) GameHost.Instance.EditorPasteRotation = (float)val;
+			_lblPasteRotation.Text = string.Format(TranslationServer.Translate("Paste Rotation: {0}°"), val);
+		};
+		rotBox.AddChild(_sldPasteRotation);
 
 		_btnBrushShape = new Button();
 		_btnBrushShape.Name = "BtnBrushShape";
@@ -3756,6 +3781,18 @@ public class {mapName} : IMapScript
 		_btnEraseArea.Set("icon_max_width", 0);
 		SetupButton(_btnEraseArea, TranslationServer.Translate("ERASE AREA"), () => GameHost.Instance?.PerformEraseAreaExternal(), 13, "Erase textures, heights, or entities in selected area");
 		_panelClipboard.AddChild(_btnEraseArea);
+
+		_btnMirrorHorizontally = new Button();
+		_btnMirrorHorizontally.Name = "BtnMirrorHorizontally";
+		_btnMirrorHorizontally.Set("icon_max_width", 0);
+		SetupButton(_btnMirrorHorizontally, TranslationServer.Translate("MIRROR HORIZONTALLY"), () => GameHost.Instance?.PerformMirrorSelectionHorizontallyExternal(), 13, "Mirror selection horizontally");
+		_panelClipboard.AddChild(_btnMirrorHorizontally);
+
+		_btnMirrorVertically = new Button();
+		_btnMirrorVertically.Name = "BtnMirrorVertically";
+		_btnMirrorVertically.Set("icon_max_width", 0);
+		SetupButton(_btnMirrorVertically, TranslationServer.Translate("MIRROR VERTICALLY"), () => GameHost.Instance?.PerformMirrorSelectionVerticallyExternal(), 13, "Mirror selection vertically");
+		_panelClipboard.AddChild(_btnMirrorVertically);
 
 		var topLeftBox = GetNode<HBoxContainer>("TopLeftBox");
 		topLeftBox.GetParent<Control>().AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));

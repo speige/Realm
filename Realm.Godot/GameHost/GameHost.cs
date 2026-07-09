@@ -402,6 +402,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool PasteOptionTextures { get; set; } = true;
 	public bool PasteOptionHeights { get; set; } = true;
 	public bool PasteOptionEntities { get; set; } = true;
+	public float EditorPasteRotation { get; set; } = 0.0f;
 
 	public Node SelectedEditorObject
 	{

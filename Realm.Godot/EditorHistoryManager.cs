@@ -20,6 +20,7 @@ public static class EditorHistoryManager
 			action.Undo();
 			_redoStack.Push(action);
 			MapEditorHUD.Instance?.RegenerateMinimap();
+			GameHost.Instance?.RefreshSelectionHighlight();
 		}
 	}
 
@@ -31,6 +32,7 @@ public static class EditorHistoryManager
 			action.Redo();
 			_undoStack.Push(action);
 			MapEditorHUD.Instance?.RegenerateMinimap();
+			GameHost.Instance?.RefreshSelectionHighlight();
 		}
 	}
 
