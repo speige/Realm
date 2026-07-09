@@ -2304,21 +2304,37 @@ public partial class MapEditorHUD : Control
 	private void InitializeTempWorkspace()
 	{
 		_tempWorkspacePath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
-		if (!System.IO.Directory.Exists(_tempWorkspacePath))
-		{
-			System.IO.Directory.CreateDirectory(_tempWorkspacePath);
-		}
-		
+		ClearTempWorkspaceExternal();
+		System.IO.Directory.CreateDirectory(_tempWorkspacePath);
+
 		GenerateVSCodeFiles(_tempWorkspacePath, "CustomMap");
 
-		_lastTerrainSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "terrain.json"));
-		_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+		_lastTerrainSyncTime = 0;
+		_lastMetadataSyncTime = 0;
 
 		var syncTimer = new Godot.Timer();
 		syncTimer.WaitTime = 1.0f;
 		syncTimer.Autostart = true;
 		syncTimer.Timeout += OnSyncTimerTimeout;
 		AddChild(syncTimer);
+	}
+
+	public void ClearTempWorkspaceExternal()
+	{
+		if (string.IsNullOrEmpty(_tempWorkspacePath) || !System.IO.Directory.Exists(_tempWorkspacePath)) return;
+
+		foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories))
+		{
+			System.IO.File.Delete(file);
+		}
+
+		foreach (var directory in System.IO.Directory.GetDirectories(_tempWorkspacePath))
+		{
+			System.IO.Directory.Delete(directory, true);
+		}
+
+		_lastTerrainSyncTime = 0;
+		_lastMetadataSyncTime = 0;
 	}
 
 	private long GetLastWriteTimeSafe(string path)

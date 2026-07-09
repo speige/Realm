@@ -12,8 +12,11 @@ public class FogOfWarService
 	private readonly WorldAccessor _ecsWorldAccessor;
 	private World EcsWorld => _ecsWorldAccessor.Current;
 	private MeshInstance3D _fogMeshInstance;
+	private ShaderMaterial _fogMeshMaterial;
 	private WorldEnvironment _worldEnv;
 	private float _fogUpdateTimer;
+	private Image _fogImage;
+	private ImageTexture _fogTexture;
 
 	public FogOfWarService(WorldAccessor ecsWorldAccessor)
 	{
@@ -91,20 +94,34 @@ public class FogOfWarService
 		var shaderMaterial = new ShaderMaterial();
 		var shader = new Shader();
 		shader.Code = @"
-			shader_type spatial;
-			render_mode unshaded, depth_draw_never, cull_disabled;
-			
-			void fragment() {
-				ALBEDO = vec3(0.0, 0.0, 0.0);
-				ALPHA = COLOR.a;
-				if (COLOR.a < 0.01) { discard; }
-			}
-		";
+shader_type spatial;
+render_mode unshaded, depth_draw_never, cull_disabled, blend_mix;
+
+uniform sampler2D fog_texture : hint_default_white;
+uniform vec2 fog_world_min = vec2(-125.0, -125.0);
+uniform vec2 fog_world_size = vec2(250.0, 250.0);
+
+varying vec3 v_world_pos;
+
+void vertex() {
+	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	VERTEX += NORMAL * 0.05;
+}
+
+void fragment() {
+	vec2 fog_uv = (v_world_pos.xz - fog_world_min) / fog_world_size;
+	float fog_alpha = texture(fog_texture, clamp(fog_uv, 0.0, 1.0)).r;
+	ALBEDO = vec3(0.0, 0.0, 0.0);
+	ALPHA = fog_alpha;
+	if (fog_alpha < 0.01) { discard; }
+}
+";
 		shaderMaterial.Shader = shader;
 		fogMesh.MaterialOverride = shaderMaterial;
 		mainNode.AddChild(fogMesh);
 		fogMesh.GlobalPosition = Vector3.Zero;
 		_fogMeshInstance = fogMesh;
+		_fogMeshMaterial = shaderMaterial;
 	}
 
 	public void Tick(float delta, List<Unit3D> allUnits, Camera3D camera3D, int spectatorPerspective, bool isPlayingReplay, bool isSpectator)
@@ -125,6 +142,23 @@ public class FogOfWarService
 				{
 					unit.Visible = true;
 				}
+			}
+			if (GameHost.Instance?.GroundTerrain != null)
+			{
+				if (_fogImage == null)
+				{
+					_fogImage = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
+				}
+				_fogImage.Fill(new Color(0f, 0f, 0f, 1f));
+				if (_fogTexture == null)
+				{
+					_fogTexture = ImageTexture.CreateFromImage(_fogImage);
+				}
+				else
+				{
+					_fogTexture.Update(_fogImage);
+				}
+				GameHost.Instance.GroundTerrain.SetFogTexture(_fogTexture);
 			}
 			return;
 		}
@@ -339,89 +373,49 @@ public class FogOfWarService
 		}
 	}
 
-	private float GetFogValueAtVertex(int x, int z)
-	{
-		var fogGrid = FogGrid;
-		float sum = 0f;
-		int count = 0;
-		for (int dx = -1; dx <= 0; dx++)
-		{
-			for (int dz = -1; dz <= 0; dz++)
-			{
-				int cx = x + dx;
-				int cz = z + dz;
-				if (cx >= 0 && cx < 32 && cz >= 0 && cz < 32)
-				{
-					byte val = fogGrid[cx, cz];
-					float alpha = val switch
-					{
-						0 => 1.0f,
-						1 => 0.48f,
-						2 => 0.0f,
-						_ => 1.0f
-					};
-					sum += alpha;
-					count++;
-				}
-			}
-		}
-		return count > 0 ? (sum / count) : 1.0f;
-	}
-
 	private void Update3DFogMesh()
 	{
-		if (_fogMeshInstance == null || _fogMeshInstance.Mesh == null) return;
-		var arrMesh = _fogMeshInstance.Mesh as ArrayMesh;
-		if (arrMesh == null) return;
-
-		float cellWidth = 250f / 32f;
-		float cellHeight = 250f / 32f;
-
-		var vertices = new Vector3[33 * 33];
-		var colors = new Color[33 * 33];
-		var indices = new int[32 * 32 * 6];
-
-		for (int z = 0; z <= 32; z++)
+		if (GodotObject.IsInstanceValid(_fogMeshInstance) && GameHost.Instance?.GroundTerrain != null)
 		{
-			for (int x = 0; x <= 32; x++)
-			{
-				int idx = x + z * 33;
-				float wx = (x - 16f) * cellWidth;
-				float wz = (z - 16f) * cellHeight;
-				float h = GameHost.Instance != null ? GameHost.Instance.GetTerrainHeightAt(new Vector3(wx, 0f, wz)) : 0f;
-				vertices[idx] = new Vector3(wx, h + 0.15f, wz);
+			_fogMeshInstance.Mesh = GameHost.Instance.GroundTerrain.TerrainMesh;
+		}
 
-				float alpha = GetFogValueAtVertex(x, z);
-				colors[idx] = new Color(0f, 0f, 0f, alpha);
+		if (_fogImage == null)
+		{
+			_fogImage = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
+		}
+
+		var fogGrid = FogGrid;
+		for (int gz = 0; gz < 32; gz++)
+		{
+			for (int gx = 0; gx < 32; gx++)
+			{
+				byte val = fogGrid[gx, gz];
+				float alpha = val switch
+				{
+					0 => 1.0f,
+					1 => 0.48f,
+					2 => 0.0f,
+					_ => 1.0f
+				};
+				_fogImage.SetPixel(gx, gz, new Color(alpha, alpha, alpha, 1f));
 			}
 		}
 
-		int iIdx = 0;
-		for (int z = 0; z < 32; z++)
+		if (_fogTexture == null)
 		{
-			for (int x = 0; x < 32; x++)
-			{
-				int topLeft = x + z * 33;
-				int topRight = (x + 1) + z * 33;
-				int bottomLeft = x + (z + 1) * 33;
-				int bottomRight = (x + 1) + (z + 1) * 33;
-
-				indices[iIdx++] = topLeft;
-				indices[iIdx++] = topRight;
-				indices[iIdx++] = bottomLeft;
-
-				indices[iIdx++] = bottomLeft;
-				indices[iIdx++] = topRight;
-				indices[iIdx++] = bottomRight;
-			}
+			_fogTexture = ImageTexture.CreateFromImage(_fogImage);
+		}
+		else
+		{
+			_fogTexture.Update(_fogImage);
 		}
 
-		arrMesh.ClearSurfaces();
-		var arrays = new Godot.Collections.Array();
-		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
-		arrays[(int)Mesh.ArrayType.Color] = colors;
-		arrays[(int)Mesh.ArrayType.Index] = indices;
-		arrMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+		if (GameHost.Instance?.GroundTerrain != null)
+		{
+			GameHost.Instance.GroundTerrain.SetFogTexture(_fogTexture);
+		}
+
+		_fogMeshMaterial?.SetShaderParameter("fog_texture", _fogTexture);
 	}
 }

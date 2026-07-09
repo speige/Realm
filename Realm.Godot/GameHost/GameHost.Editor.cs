@@ -71,6 +71,7 @@ public partial class GameHost
 		RebuildAllCoordinatePersistentMeshes();
 		MapEditorHUD.Instance?.RefreshCoordinateListExternal();
 
+		MapEditorHUD.Instance?.ClearTempWorkspaceExternal();
 		MapEditorHUD.Instance?.ShowFeedbackExternal("Map reset: cleared all entities & terrain");
 	}
 

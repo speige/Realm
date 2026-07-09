@@ -2590,7 +2590,7 @@ public class {mapName} : IMapScript
 		if (shouldRunMapScript || IsMapEditorMode)
 		{
 			LoadMapScript(mapParamName);
-			if (_activeMapScript != null)
+			if (_activeMapScript != null && !IsMapEditorMode)
 			{
 				_activeMapScript.Initialize(this);
 			}

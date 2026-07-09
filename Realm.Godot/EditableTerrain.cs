@@ -312,8 +312,12 @@ public partial class EditableTerrain : StaticBody3D
 		var shader = new Shader();
 		shader.Code = @"
 shader_type spatial;
+render_mode blend_mix;
 
 uniform sampler2DArray terrain_textures : source_color;
+uniform sampler2D fog_texture : hint_default_white;
+uniform vec2 fog_world_min = vec2(-125.0, -125.0);
+uniform vec2 fog_world_size = vec2(250.0, 250.0);
 
 varying vec4 v_tex_indices;
 varying vec4 v_tex_weights;
@@ -328,13 +332,17 @@ void fragment() {
 	vec4 c1 = texture(terrain_textures, vec3(UV, v_tex_indices.y));
 	vec4 c2 = texture(terrain_textures, vec3(UV, v_tex_indices.z));
 	vec4 c3 = texture(terrain_textures, vec3(UV, v_tex_indices.w));
-	ALBEDO = (c0.rgb * v_tex_weights.x +
-	          c1.rgb * v_tex_weights.y +
-	          c2.rgb * v_tex_weights.z +
-	          c3.rgb * v_tex_weights.w);
+	vec3 terrain_color = (c0.rgb * v_tex_weights.x +
+	                      c1.rgb * v_tex_weights.y +
+	                      c2.rgb * v_tex_weights.z +
+	                      c3.rgb * v_tex_weights.w);
+	ALBEDO = terrain_color;
 	ROUGHNESS = 0.9;
 }
+
+
 ";
+
 
 		var paths = new[]
 		{
@@ -396,11 +404,25 @@ void fragment() {
 		_material.Shader = shader;
 		_material.SetShaderParameter("terrain_textures", textureArray);
 
+		var defaultFogImage = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
+		defaultFogImage.Fill(new Color(0f, 0f, 0f, 1f));
+		var defaultFogTexture = ImageTexture.CreateFromImage(defaultFogImage);
+		_material.SetShaderParameter("fog_texture", defaultFogTexture);
 		_meshInstance.MaterialOverride = _material;
 
 		CreateWater();
 		UpdateMeshAndPhysics();
 	}
+
+	public void SetFogTexture(ImageTexture fogTexture)
+	{
+		if (_material != null && fogTexture != null)
+		{
+			_material.SetShaderParameter("fog_texture", fogTexture);
+		}
+	}
+
+	public Mesh TerrainMesh => _meshInstance?.Mesh;
 
 	public void UpdateMeshAndPhysics(bool rebuildPhysics = true, bool rebuildNavMesh = true)
 	{

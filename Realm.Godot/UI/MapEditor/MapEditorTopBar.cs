@@ -29,7 +29,6 @@ public class MapEditorTopBar
 		_btnBackToHub.Pressed += () => MapEditorHUD.Instance?.BackToHubAction();
 		_btnPublish.Pressed += () => MapEditorHUD.Instance?.PublishMapActionExternal();
 		_btnSave.Pressed += () => MapEditorHUD.Instance?.SaveMapActionExternal();
-		_btnLoad.Pressed += () => MapEditorHUD.Instance?.LoadMapAction();
 		_btnUndo.Pressed += () => MapEditorHUD.Instance?.UndoAction();
 		_btnRedo.Pressed += () => MapEditorHUD.Instance?.RedoAction();
 		
