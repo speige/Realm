@@ -2484,6 +2484,9 @@ public partial class MapEditorHUD : Control
 
 		string settingsJson = @"{
 	""editor.formatOnSave"": true,
+	""dotnet.preferCSharpExtension"": true,
+	""dotnet.server.useOmnisharp"": false,
+	""dotnet.projects.enableAutomaticRestore"": true,
 	""json.schemas"": [
         {
 			""fileMatch"": [
@@ -2570,6 +2573,39 @@ public class {mapName} : IMapScript
 		if (!System.IO.File.Exists(unitsPath))
 		{
 			System.IO.File.WriteAllText(unitsPath, "{}");
+		}
+
+		string slnPath = System.IO.Path.Combine(directory, "temp_map_workspace.sln");
+		if (!System.IO.File.Exists(slnPath))
+		{
+			try
+			{
+				var processInfo = new System.Diagnostics.ProcessStartInfo("dotnet", "new sln -n temp_map_workspace")
+				{
+					WorkingDirectory = directory,
+					CreateNoWindow = true,
+					UseShellExecute = false
+				};
+				using (var process = System.Diagnostics.Process.Start(processInfo))
+				{
+					process?.WaitForExit();
+				}
+				
+				var addProcessInfo = new System.Diagnostics.ProcessStartInfo("dotnet", $"sln add {mapName}.csproj")
+				{
+					WorkingDirectory = directory,
+					CreateNoWindow = true,
+					UseShellExecute = false
+				};
+				using (var addProcess = System.Diagnostics.Process.Start(addProcessInfo))
+				{
+					addProcess?.WaitForExit();
+				}
+			}
+			catch (System.Exception e)
+			{
+				GD.PrintErr($"Failed to generate VS Code solution: {e.Message}");
+			}
 		}
 	}
 

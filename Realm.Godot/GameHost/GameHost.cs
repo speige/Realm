@@ -986,6 +986,76 @@ public class {mapName} : IMapScript
 		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "MapScript.cs"), scriptContent);
 		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "metadata.json"), "{}");
 		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "terrain.json"), "{}");
+
+		EnsureMapProjectFiles(mapDir);
+	}
+
+	public static void EnsureMapProjectFiles(string mapDir)
+	{
+		string csprojPath = System.IO.Path.Combine(mapDir, "MapScript.csproj");
+		string libDir = System.IO.Path.Combine(mapDir, "lib");
+		System.IO.Directory.CreateDirectory(libDir);
+
+		string vscodeDir = System.IO.Path.Combine(mapDir, ".vscode");
+		System.IO.Directory.CreateDirectory(vscodeDir);
+		string vscodeSettingsPath = System.IO.Path.Combine(vscodeDir, "settings.json");
+		string vscodeSettingsContent = @"{
+    ""dotnet.preferCSharpExtension"": true,
+    ""dotnet.server.useOmnisharp"": false,
+    ""dotnet.projects.enableAutomaticRestore"": true
+}
+";
+		System.IO.File.WriteAllText(vscodeSettingsPath, vscodeSettingsContent);
+
+		string projectRoot = ProjectSettings.GlobalizePath("res://");
+		string repoRoot = System.IO.Path.GetFullPath(System.IO.Path.Combine(projectRoot, ".."));
+		string sourceDll = System.IO.Path.Combine(repoRoot, "Realm.MapAPI", "bin", "Release", "net10.0", "Realm.MapAPI.dll");
+		string sourceXml = System.IO.Path.Combine(repoRoot, "Realm.MapAPI", "bin", "Release", "net10.0", "Realm.MapAPI.xml");
+
+		if (!System.IO.File.Exists(sourceDll))
+		{
+			sourceDll = System.IO.Path.Combine(repoRoot, "Realm.MapAPI", "bin", "Debug", "net10.0", "Realm.MapAPI.dll");
+			sourceXml = System.IO.Path.Combine(repoRoot, "Realm.MapAPI", "bin", "Debug", "net10.0", "Realm.MapAPI.xml");
+		}
+
+		if (System.IO.File.Exists(sourceDll))
+		{
+			System.IO.File.Copy(sourceDll, System.IO.Path.Combine(libDir, "Realm.MapAPI.dll"), true);
+		}
+		if (System.IO.File.Exists(sourceXml))
+		{
+			System.IO.File.Copy(sourceXml, System.IO.Path.Combine(libDir, "Realm.MapAPI.xml"), true);
+		}
+
+		string csprojContent = @"<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include=""Realm.MapAPI"">
+      <HintPath>lib/Realm.MapAPI.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>
+";
+		System.IO.File.WriteAllText(csprojPath, csprojContent);
+
+		try
+		{
+			using var restoreProcess = new System.Diagnostics.Process();
+			restoreProcess.StartInfo.FileName = "dotnet";
+			restoreProcess.StartInfo.Arguments = $"restore \"{csprojPath}\"";
+			restoreProcess.StartInfo.WorkingDirectory = mapDir;
+			restoreProcess.StartInfo.CreateNoWindow = true;
+			restoreProcess.StartInfo.UseShellExecute = false;
+			restoreProcess.Start();
+			restoreProcess.WaitForExit(10000);
+		}
+		catch
+		{
+		}
 	}
 
 	event Action<IUnit>? IGameAPI.OnUnitCreated

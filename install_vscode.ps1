@@ -76,6 +76,7 @@ try {
 
 Write-Host "Copying extension files..."
 Copy-Item -Path (Join-Path $extSrcDir "package.json") -Destination $extDest -Force
+Copy-Item -Path (Join-Path $extSrcDir "map_schema.json") -Destination $extDest -Force
 Copy-Item -Path (Join-Path $extSrcDir "dist") -Destination $extDest -Recurse -Force
 Copy-Item -Path (Join-Path $extSrcDir "media") -Destination $extDest -Recurse -Force
 

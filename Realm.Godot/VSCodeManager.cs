@@ -21,7 +21,6 @@ public class VSCodeManager
 
 	private static readonly string[] RequiredExtensions = new[]
 	{
-		"ms-dotnettools.csdevkit",
 		"OHZIInteractiveStudio.ohzi-vscode-glb-viewer",
 		"Gruntfuggly.todo-tree",
 		"mechatroner.rainbow-json",
@@ -836,7 +835,6 @@ public class VSCodeManager
 									}
 								}
 
-								config["security.workspace.trust.enabled"] = false;
 								config["security.workspace.trust.startupPrompt"] = "never";
 
 								const updatedJsonString = JSON.stringify(config, null, '\t');
