@@ -530,7 +530,7 @@ public partial class GameHost
 						1 => EditorTool.Lower,
 						2 => EditorTool.Smooth,
 						3 => EditorTool.Flatten,
-						4 => EditorTool.Cliff,
+						4 => EditorTool.Plateau,
 						5 => EditorTool.Ramp,
 						6 => EditorTool.Noise,
 						7 => EditorTool.PaintGrass,
@@ -586,7 +586,7 @@ public partial class GameHost
 									 ActiveEditorTool == EditorTool.Lower ||
 									 ActiveEditorTool == EditorTool.Flatten ||
 									 ActiveEditorTool == EditorTool.Smooth ||
-									 ActiveEditorTool == EditorTool.Cliff ||
+									 ActiveEditorTool == EditorTool.Plateau ||
 									 ActiveEditorTool == EditorTool.PaintGrass ||
 									 ActiveEditorTool == EditorTool.PaintDirt ||
 									 ActiveEditorTool == EditorTool.PaintRock ||

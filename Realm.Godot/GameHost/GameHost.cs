@@ -245,7 +245,7 @@ public partial class GameHost : Node3D, IGameAPI
 		Lower,
 		Flatten,
 		Smooth,
-		Cliff,
+		Plateau,
 		PaintGrass,
 		PaintDirt,
 		PaintRock,

@@ -160,12 +160,6 @@ layout_mode = 2
 focus_mode = 0
 text = "➖ Flatten"
 
-[node name="BtnCliff" type="Button" parent="TopToolbar/PanelTerrain/VBox/Content"]
-custom_minimum_size = Vector2(56, 56)
-layout_mode = 2
-focus_mode = 0
-text = "⛰️ Cliff"
-
 [node name="PanelDeco" type="PanelContainer" parent="TopToolbar"]
 layout_mode = 2
 size_flags_vertical = 0

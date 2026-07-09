@@ -19,7 +19,7 @@ public class EditorService
 
 	private bool _hasBlockTargetHeight;
 	private float _activeBlockTargetHeight;
-	private float? _activeCliffHeight;
+	private float? _activePlateauHeight;
 
 	private float[,] _terrainHeightsBefore;
 	private Color[,] _terrainColorsBefore;
@@ -207,7 +207,7 @@ public class EditorService
 						 activeTool == GameHost.EditorTool.Lower ||
 						 activeTool == GameHost.EditorTool.Flatten ||
 						 activeTool == GameHost.EditorTool.Smooth ||
-						 activeTool == GameHost.EditorTool.Cliff ||
+						 activeTool == GameHost.EditorTool.Plateau ||
 						 activeTool == GameHost.EditorTool.Noise;
 
 		bool isPaint = activeTool == GameHost.EditorTool.PaintGrass ||
@@ -254,7 +254,7 @@ public class EditorService
 								if (activeTool == GameHost.EditorTool.Raise ||
 									activeTool == GameHost.EditorTool.Lower ||
 									activeTool == GameHost.EditorTool.Flatten ||
-									activeTool == GameHost.EditorTool.Cliff)
+									activeTool == GameHost.EditorTool.Plateau)
 								{
 									terrain.Heights[x, z] = Mathf.Clamp(targetHeight, -10.0f, 50.0f);
 									modified = true;
@@ -453,6 +453,11 @@ public class EditorService
 							{
 								terrain.Heights[x, z] = Mathf.Clamp(Mathf.Lerp(terrain.Heights[x, z], flattenHeight, brushStrength * falloff * delta * 2.0f), -10.0f, 50.0f);
 							}
+							else if (activeTool == GameHost.EditorTool.Plateau)
+							{
+								float targetHeight = _activePlateauHeight ?? 0.0f;
+								terrain.Heights[x, z] = Mathf.Clamp(Mathf.Lerp(terrain.Heights[x, z], targetHeight, brushStrength * falloff * delta * 2.0f), -10.0f, 50.0f);
+							}
 							else if (activeTool == GameHost.EditorTool.Smooth)
 							{
 								float avg = 0f;
@@ -472,11 +477,6 @@ public class EditorService
 								}
 								avg /= count;
 								terrain.Heights[x, z] = Mathf.Clamp(Mathf.Lerp(terrain.Heights[x, z], avg, brushStrength * falloff * delta * 2.0f), -10.0f, 50.0f);
-							}
-							else if (activeTool == GameHost.EditorTool.Cliff)
-							{
-								float targetHeight = _activeCliffHeight ?? 4.0f;
-								terrain.Heights[x, z] = Mathf.Clamp(Mathf.Lerp(terrain.Heights[x, z], targetHeight, brushStrength * falloff * delta * 2.0f), -10.0f, 50.0f);
 							}
 							else if (activeTool == GameHost.EditorTool.Noise)
 							{
@@ -551,6 +551,10 @@ public class EditorService
 		{
 			newFlattenHeight = GetMinHeightInBrushBoundsInternal(hitPos);
 		}
+		else if (activeTool == GameHost.EditorTool.Plateau)
+		{
+			_activePlateauHeight = GetTerrainHeightAt(hitPos);
+		}
 
 		if (blockMode)
 		{
@@ -571,12 +575,9 @@ public class EditorService
 				_activeBlockTargetHeight = Mathf.Round(newFlattenHeight / blockLevelHeight) * blockLevelHeight;
 				_hasBlockTargetHeight = true;
 			}
-			else if (activeTool == GameHost.EditorTool.Cliff)
+			else if (activeTool == GameHost.EditorTool.Plateau)
 			{
-				bool lower = Input.IsKeyPressed(Key.Shift);
-				_activeBlockTargetHeight = lower
-					? (Mathf.Ceil(startHeight / blockLevelHeight) - 1.0f) * blockLevelHeight
-					: (Mathf.Floor(startHeight / blockLevelHeight) + 1.0f) * blockLevelHeight;
+				_activeBlockTargetHeight = Mathf.Round(startHeight / blockLevelHeight) * blockLevelHeight;
 				_hasBlockTargetHeight = true;
 			}
 		}
@@ -586,7 +587,7 @@ public class EditorService
 	{
 		_isDrawingTerrain = false;
 		_hasBlockTargetHeight = false;
-		_activeCliffHeight = null;
+		_activePlateauHeight = null;
 
 		var action = new TerrainModifyAction(
 			_terrainHeightsBefore, currentHeights,
@@ -596,22 +597,11 @@ public class EditorService
 		return action;
 	}
 
-	public void BeginCliffIfNeeded(Vector3 hitPos, bool blockMode, float blockLevelHeight)
-	{
-		if (_activeCliffHeight == null && !blockMode)
-		{
-			float startHeight = GetTerrainHeightAt(hitPos);
-			bool lower = Input.IsKeyPressed(Key.Shift);
-			_activeCliffHeight = lower
-				? (Mathf.Ceil(startHeight / 4.0f) - 1.0f) * 4.0f
-				: (Mathf.Floor(startHeight / 4.0f) + 1.0f) * 4.0f;
-		}
-	}
 
 	public void ResetDrawState()
 	{
-		_activeCliffHeight = null;
 		_hasBlockTargetHeight = false;
+		_activePlateauHeight = null;
 	}
 
 	public void TickClumpCooldown(float delta)

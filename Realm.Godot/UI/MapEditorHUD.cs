@@ -187,7 +187,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnLower;
 	private Button _btnSmooth;
 	private Button _btnFlatten;
-	private Button _btnCliff;
+	private Button _btnPlateau;
 	private Button _btnRamp;
 	private Button _btnMirrorMode;
 	private Button _btnClumpBrush;
@@ -410,8 +410,12 @@ public partial class MapEditorHUD : Control
 		_btnFlatten = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnFlatten");
 		SetupButton(_btnFlatten, "🟩 Flatten", () => TriggerToolSelection(GameHost.EditorTool.Flatten, _btnFlatten), 11, "Flatten terrain height (4)");
 
-		_btnCliff = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnCliff");
-		SetupButton(_btnCliff, "🏔️ Cliff", () => TriggerToolSelection(GameHost.EditorTool.Cliff, _btnCliff), 11, "Terrace/Cliff terrain height (5)");
+		_btnPlateau = new Button();
+		_btnPlateau.Name = "BtnPlateau";
+		_btnPlateau.Set("icon_max_width", 0);
+		GetNode<HBoxContainer>("TopToolbar/PanelTerrain/VBox/Content").AddChild(_btnPlateau);
+		SetupButton(_btnPlateau, "🥞 Plateau", () => TriggerToolSelection(GameHost.EditorTool.Plateau, _btnPlateau), 11, "Flatten terrain to cursor height on click (5)");
+
 
 		_btnRamp = new Button();
 		_btnRamp.Name = "BtnRamp";
@@ -1001,11 +1005,6 @@ public partial class MapEditorHUD : Control
 		_chkBlockMode.TooltipText = "Toggle blocky terrain sculpting & automatic steep cliff coloring";
 		UIStyle.ApplyCheckboxStyle(_chkBlockMode);
 		settingsVBox.AddChild(_chkBlockMode);
-		_chkBlockMode.Toggled += (toggled) =>
-		{
-			ShowFeedback(toggled ? "Block Mode: Enabled" : "Block Mode: Disabled");
-		};
-		_chkBlockMode.ButtonPressed = true;
 
 		_stepBox = new VBoxContainer();
 		_stepBox.Name = "StepBox";
@@ -1037,6 +1036,14 @@ public partial class MapEditorHUD : Control
 		_stepBox.AddChild(_sldBlockStep);
 		_sldBlockStep.DragStarted += () => _isDraggingSlider = true;
 		_sldBlockStep.DragEnded += (valueChanged) => _isDraggingSlider = false;
+
+		_chkBlockMode.Toggled += (toggled) =>
+		{
+			ShowFeedback(toggled ? "Block Mode: Enabled" : "Block Mode: Disabled");
+			UpdateBlockStepVisibility();
+			UpdateBrushStrengthVisibility();
+		};
+		_chkBlockMode.ButtonPressed = true;
 
 		var divider = new HSeparator();
 		settingsVBox.AddChild(divider);
@@ -1351,6 +1358,7 @@ public partial class MapEditorHUD : Control
 		}
 
 		InitializeTempWorkspace();
+		ShowAgreementModal();
 	}
 
 	public override void _Process(double delta)
@@ -1822,7 +1830,7 @@ public partial class MapEditorHUD : Control
 			case GameHost.EditorTool.Lower: targetBtn = _btnLower; break;
 			case GameHost.EditorTool.Smooth: targetBtn = _btnSmooth; break;
 			case GameHost.EditorTool.Flatten: targetBtn = _btnFlatten; break;
-			case GameHost.EditorTool.Cliff: targetBtn = _btnCliff; break;
+			case GameHost.EditorTool.Plateau: targetBtn = _btnPlateau; break;
 			case GameHost.EditorTool.Ramp: targetBtn = _btnRamp; break;
 			case GameHost.EditorTool.Noise: targetBtn = _btnNoise; break;
 			case GameHost.EditorTool.PaintGrass: targetBtn = _btnTextureBrush; break;
@@ -1990,7 +1998,7 @@ public partial class MapEditorHUD : Control
 			tool == GameHost.EditorTool.Lower ||
 			tool == GameHost.EditorTool.Flatten ||
 			tool == GameHost.EditorTool.Smooth ||
-			tool == GameHost.EditorTool.Cliff ||
+			tool == GameHost.EditorTool.Plateau ||
 			tool == GameHost.EditorTool.Ramp ||
 			tool == GameHost.EditorTool.Noise)
 		{
@@ -2077,11 +2085,11 @@ public partial class MapEditorHUD : Control
 				case GameHost.EditorTool.Flatten:
 					_lblInfoText.Text = TranslationServer.Translate("TOOL: Flatten Heights\n\nDrag left click to snap terrain heights toward the target Flatten Height slider value.");
 					break;
+				case GameHost.EditorTool.Plateau:
+					_lblInfoText.Text = TranslationServer.Translate("TOOL: Plateau\n\nDrag left click to flatten terrain to the elevation of your initial click point.");
+					break;
 				case GameHost.EditorTool.Smooth:
 					_lblInfoText.Text = TranslationServer.Translate("TOOL: Smooth Terrain\n\nDrag left click to average neighbor vertex heights and smooth out rugged elevations.");
-					break;
-				case GameHost.EditorTool.Cliff:
-					_lblInfoText.Text = TranslationServer.Translate("TOOL: Cliff / Terrace\n\nDrag left click to create flat terraced steps. Hold Shift to lower the target cliff level.");
 					break;
 				case GameHost.EditorTool.PaintGrass:
 				case GameHost.EditorTool.PaintDirt:
@@ -2861,7 +2869,7 @@ public class {mapName} : IMapScript
 		AddHelpShortcutRow(grid, "2", TranslationServer.Translate("Lower Terrain Tool"));
 		AddHelpShortcutRow(grid, "3", TranslationServer.Translate("Smooth Terrain Tool"));
 		AddHelpShortcutRow(grid, "4", TranslationServer.Translate("Flatten Terrain Tool"));
-		AddHelpShortcutRow(grid, "5", TranslationServer.Translate("Cliff Terrain Tool"));
+		AddHelpShortcutRow(grid, "5", TranslationServer.Translate("Plateau Terrain Tool"));
 		AddHelpShortcutRow(grid, "6", TranslationServer.Translate("Ramp Tool"));
 		AddHelpShortcutRow(grid, "7", TranslationServer.Translate("Roughen (Noise) Tool"));
 		AddHelpShortcutRow(grid, "8", TranslationServer.Translate("Texture Painter Brush"));
@@ -3164,7 +3172,7 @@ public class {mapName} : IMapScript
 		SafeReparent(_btnLower, _panelTerrainVBox);
 		SafeReparent(_btnSmooth, _panelTerrainVBox);
 		SafeReparent(_btnFlatten, _panelTerrainVBox);
-		SafeReparent(_btnCliff, _panelTerrainVBox);
+		SafeReparent(_btnPlateau, _panelTerrainVBox);
 		SafeReparent(_btnRamp, _panelTerrainVBox);
 		SafeReparent(_btnNoise, _panelTerrainVBox);
 
@@ -3706,7 +3714,7 @@ public class {mapName} : IMapScript
 					   tool == GameHost.EditorTool.Lower ||
 					   tool == GameHost.EditorTool.Flatten ||
 					   tool == GameHost.EditorTool.Smooth ||
-					   tool == GameHost.EditorTool.Cliff ||
+					   tool == GameHost.EditorTool.Plateau ||
 					   tool == GameHost.EditorTool.PaintGrass ||
 					   tool == GameHost.EditorTool.PaintDirt ||
 					   tool == GameHost.EditorTool.PaintRock ||
@@ -3719,17 +3727,7 @@ public class {mapName} : IMapScript
 		if (_accordionBrush != null)
 		{
 			_accordionBrush.Visible = isBrush;
-			if (_sldBrushStrength != null && _sldBrushStrength.GetParent() is Control strengthParent)
-			{
-				strengthParent.Visible = (tool != GameHost.EditorTool.PaintPathing && 
-										  tool != GameHost.EditorTool.FloodFillPathing &&
-										  tool != GameHost.EditorTool.PlacePropClump &&
-										  tool != GameHost.EditorTool.Raise &&
-										  tool != GameHost.EditorTool.Lower &&
-										  tool != GameHost.EditorTool.Flatten &&
-										  tool != GameHost.EditorTool.Cliff &&
-										  tool != GameHost.EditorTool.Ramp);
-			}
+			UpdateBrushStrengthVisibility();
 			bool isTextureMode = tool == GameHost.EditorTool.PaintGrass ||
 								 tool == GameHost.EditorTool.PaintDirt ||
 								 tool == GameHost.EditorTool.PaintRock ||
@@ -3743,15 +3741,7 @@ public class {mapName} : IMapScript
 										 tool != GameHost.EditorTool.Flatten &&
 										 tool != GameHost.EditorTool.Noise);
 			}
-			if (_stepBox != null)
-			{
-				_stepBox.Visible = (tool != GameHost.EditorTool.PaintPathing && 
-									tool != GameHost.EditorTool.FloodFillPathing &&
-									!isTextureMode &&
-									tool != GameHost.EditorTool.Smooth &&
-									tool != GameHost.EditorTool.Flatten &&
-									tool != GameHost.EditorTool.Noise);
-			}
+			UpdateBlockStepVisibility();
 		}
 
 		_containerFlattenSettings.Visible = false;
@@ -3762,7 +3752,7 @@ public class {mapName} : IMapScript
 											 tool == GameHost.EditorTool.FloodFill ||
 											 tool == GameHost.EditorTool.Raise ||
 											 tool == GameHost.EditorTool.Lower ||
-											 tool == GameHost.EditorTool.Cliff ||
+											 tool == GameHost.EditorTool.Plateau ||
 											 tool == GameHost.EditorTool.Ramp);
 		_containerPathingSettings.Visible = (tool == GameHost.EditorTool.PaintPathing || tool == GameHost.EditorTool.FloodFillPathing);
 		_containerDecalSettings.Visible = (tool == GameHost.EditorTool.PlaceDecal);
@@ -4315,7 +4305,7 @@ public class {mapName} : IMapScript
 		GameHost.EditorTool.Lower       => true,
 		GameHost.EditorTool.Smooth      => true,
 		GameHost.EditorTool.Flatten     => true,
-		GameHost.EditorTool.Cliff       => true,
+		GameHost.EditorTool.Plateau     => true,
 		GameHost.EditorTool.Ramp        => true,
 		GameHost.EditorTool.Noise       => true,
 		GameHost.EditorTool.PaintGrass  => true,
@@ -4457,6 +4447,131 @@ public class {mapName} : IMapScript
 		}
 
 		return false;
+	}
+
+	private void UpdateBlockStepVisibility()
+	{
+		if (_stepBox != null)
+		{
+			bool toolSupportsBlockMode = (_chkBlockMode != null && _chkBlockMode.Visible);
+			bool blockModeEnabled = (_chkBlockMode != null && _chkBlockMode.ButtonPressed);
+			_stepBox.Visible = toolSupportsBlockMode && blockModeEnabled;
+		}
+	}
+
+	private void UpdateBrushStrengthVisibility()
+	{
+		if (_sldBrushStrength != null && _sldBrushStrength.GetParent() is Control strengthParent)
+		{
+			if (GameHost.Instance == null) return;
+			var tool = GameHost.Instance.ActiveEditorTool;
+			bool blockModeEnabled = (_chkBlockMode != null && _chkBlockMode.ButtonPressed);
+
+			if (tool == GameHost.EditorTool.Raise || tool == GameHost.EditorTool.Lower)
+			{
+				strengthParent.Visible = !blockModeEnabled;
+			}
+			else
+			{
+				strengthParent.Visible = (tool != GameHost.EditorTool.PaintPathing && 
+										  tool != GameHost.EditorTool.FloodFillPathing &&
+										  tool != GameHost.EditorTool.PlacePropClump &&
+										  tool != GameHost.EditorTool.Flatten &&
+										  tool != GameHost.EditorTool.Plateau &&
+										  tool != GameHost.EditorTool.Ramp);
+			}
+		}
+	}
+
+	private void ShowAgreementModal()
+	{
+		var overlay = new ColorRect();
+		overlay.Name = "AgreementOverlay";
+		overlay.Color = new Color(0, 0, 0, 0.75f);
+		overlay.SetAnchorsPreset(LayoutPreset.FullRect);
+		overlay.MouseFilter = Control.MouseFilterEnum.Stop;
+		AddChild(overlay);
+
+		var center = new CenterContainer();
+		center.SetAnchorsPreset(LayoutPreset.FullRect);
+		overlay.AddChild(center);
+
+		var panel = new PanelContainer();
+		panel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		panel.CustomMinimumSize = new Vector2(1050, 780);
+		center.AddChild(panel);
+
+		var margin = new MarginContainer();
+		margin.AddThemeConstantOverride("margin_top", 20);
+		margin.AddThemeConstantOverride("margin_bottom", 20);
+		margin.AddThemeConstantOverride("margin_left", 25);
+		margin.AddThemeConstantOverride("margin_right", 25);
+		panel.AddChild(margin);
+
+		var vbox = new VBoxContainer();
+		vbox.AddThemeConstantOverride("separation", 15);
+		margin.AddChild(vbox);
+
+		var lblTitle = new Label();
+		UIStyle.ApplyTitle(lblTitle, "Realm Creator Agreement", 18);
+		lblTitle.Text = "Realm Creator Agreement";
+		lblTitle.HorizontalAlignment = HorizontalAlignment.Center;
+		vbox.AddChild(lblTitle);
+
+		var richText = new RichTextLabel();
+		richText.BbcodeEnabled = true;
+		richText.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		richText.SizeFlagsVertical = SizeFlags.ExpandFill;
+		richText.CustomMinimumSize = new Vector2(975, 570);
+		richText.ScrollActive = true;
+		richText.AddThemeColorOverride("default_color", new Color(0.9f, 0.9f, 0.95f));
+		richText.AddThemeFontSizeOverride("normal_font_size", 13);
+		richText.AddThemeFontSizeOverride("bold_font_size", 13);
+
+		string agreementText = 
+			"By publishing content on Realm, you grant us permission to host, distribute, and display your map so people can play it.\n\n" +
+			"We want Realm to be a thriving, collaborative arcade. Please respect these rules:\n\n" +
+			"[color=#d4af37][b]- Your Work is Yours[/b][/color]\n" +
+			"You retain full ownership of your original creations. You aren't signing away your copyright to anyone.\n\n" +
+			"[color=#d4af37][b]- Collaboration[/b][/color]\n" +
+			"By publishing your content on Realm, you allow other creators to open and learn from your work. You also grant them permission to adapt, build upon, and incorporate it into their own creations, provided those new works remain exclusively within the Realm platform.\n\n" +
+			"[color=#d4af37][b]- Give Credit[/b][/color]\n" +
+			"If you import another creator's work, they still own the original. Never claim their work as your own.\n\n" +
+			"[color=#d4af37][b]- Monetization[/b][/color]\n" +
+			"You may ask for donations from your player base, but you may not offer any differences in gameplay compared to non-paying users, other than cosmetic rewards. Pay-to-win is not allowed.\n\n" +
+			"[color=#d4af37][b]- Going Solo[/b][/color]\n" +
+			"Want to turn your map into a standalone game? Go for it! However, you can only take your original work with you. You must remove and re-create any official Realm assets as well as content you imported from other Realm users, unless you obtain their explicit written permission.\n\n" +
+			"[color=#d4af37][b]- No Plagiarism or Piracy[/b][/color]\n" +
+			"Do not upload content you didn’t make or don't have the rights to use. This includes trademarked content from other video games, movies, music, and media.";
+
+		richText.Text = agreementText;
+		vbox.AddChild(richText);
+
+		var hbox = new HBoxContainer();
+		hbox.AddThemeConstantOverride("separation", 40);
+		hbox.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		vbox.AddChild(hbox);
+
+		var btnAccept = new Button();
+		btnAccept.Set("icon_max_width", 0);
+		SetupButton(btnAccept, "Accept", () =>
+		{
+			overlay.QueueFree();
+		}, 13);
+		btnAccept.Text = "Accept";
+		btnAccept.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		hbox.AddChild(btnAccept);
+
+		var btnQuit = new Button();
+		btnQuit.Set("icon_max_width", 0);
+		SetupButton(btnQuit, "Quit", () =>
+		{
+			overlay.QueueFree();
+			UIManager.Instance?.TransitionTo(GameScreen.MainMenu);
+		}, 13);
+		btnQuit.Text = "Quit";
+		btnQuit.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
+		hbox.AddChild(btnQuit);
 	}
 
 	private void InitializeInspectorPanel()

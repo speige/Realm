@@ -1033,7 +1033,7 @@ public partial class GameHost
 									 ActiveEditorTool == EditorTool.Lower ||
 									 ActiveEditorTool == EditorTool.Flatten ||
 									 ActiveEditorTool == EditorTool.Smooth ||
-									 ActiveEditorTool == EditorTool.Cliff ||
+									 ActiveEditorTool == EditorTool.Plateau ||
 									 ActiveEditorTool == EditorTool.PaintGrass ||
 									 ActiveEditorTool == EditorTool.PaintDirt ||
 									 ActiveEditorTool == EditorTool.PaintRock ||
@@ -1061,10 +1061,6 @@ public partial class GameHost
 					}
 				}
 
-				if (ActiveEditorTool == EditorTool.Cliff && !EditorBlockMode)
-				{
-					_editorService.BeginCliffIfNeeded(hitPos, EditorBlockMode, EditorBlockLevelHeight);
-				}
 
 				ApplyContinuousTerrainEditing(hitPos, fDelta);
 				if (EditorMirrorMode != MirrorMode.None)
@@ -1130,7 +1126,7 @@ public partial class GameHost
 											 ActiveEditorTool == EditorTool.Lower ||
 											 ActiveEditorTool == EditorTool.Flatten ||
 											 ActiveEditorTool == EditorTool.Smooth ||
-											 ActiveEditorTool == EditorTool.Cliff ||
+											 ActiveEditorTool == EditorTool.Plateau ||
 											 ActiveEditorTool == EditorTool.Noise ||
 											 ActiveEditorTool == EditorTool.PaintPathing;
 						if (isHeightsTool)
@@ -1202,7 +1198,7 @@ public partial class GameHost
 										 ActiveEditorTool == EditorTool.Lower ||
 										 ActiveEditorTool == EditorTool.Flatten ||
 										 ActiveEditorTool == EditorTool.Smooth ||
-										 ActiveEditorTool == EditorTool.Cliff ||
+										 ActiveEditorTool == EditorTool.Plateau ||
 										 ActiveEditorTool == EditorTool.Noise ||
 										 ActiveEditorTool == EditorTool.PaintPathing;
 					if (isHeightsTool)
@@ -1367,7 +1363,7 @@ public partial class GameHost
 							 ActiveEditorTool == EditorTool.Lower ||
 							 ActiveEditorTool == EditorTool.Flatten ||
 							 ActiveEditorTool == EditorTool.Smooth ||
-							 ActiveEditorTool == EditorTool.Cliff ||
+							 ActiveEditorTool == EditorTool.Plateau ||
 							 ActiveEditorTool == EditorTool.PaintGrass ||
 							 ActiveEditorTool == EditorTool.PaintDirt ||
 							 ActiveEditorTool == EditorTool.PaintRock ||
