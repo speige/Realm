@@ -563,6 +563,7 @@ public partial class InGameHUD : Control
 			{
 				UIManager.Instance?.PlayClickSound();
 				MapEditorHUD.IsTestMode = false;
+				MapEditorHUD.ReturningFromTest = true;
 				if (LobbyManager.Instance != null)
 				{
 					LobbyManager.Instance.Disconnect();

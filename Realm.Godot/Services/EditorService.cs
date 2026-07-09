@@ -1489,6 +1489,10 @@ public class EditorService
 				{
 					layers.Add("Unpathable");
 				}
+				if ((code & EditableTerrain.PATHING_BUILDABLE) != 0)
+				{
+					layers.Add("Buildable");
+				}
 
 				string layersStr = layers.Count > 0 ? string.Join(", ", layers) : "None";
 				status += $" | Path: {layersStr}";

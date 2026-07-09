@@ -1254,7 +1254,15 @@ public partial class GameHost
 		ActiveEditorTool = EditorTool.None;
 		EditorHistoryManager.Clear();
 		
-		bool loaded = LoadMapFromFile("user://temp_map_workspace/terrain.json");
+		if (MapEditorHUD.ReturningFromTest)
+		{
+			LoadMapFromFile("user://temp_map_workspace/terrain.json");
+			MapEditorHUD.ReturningFromTest = false;
+		}
+		else
+		{
+			ClearMapEntirely();
+		}
 		
 		CreateBrushIndicator();
 		CreateGridOverlay();
@@ -1891,6 +1899,7 @@ public partial class GameHost
 			EditableTerrain.PATHING_FLYING        => new Color(0.85f, 0.85f, 0.0f, 0.55f),
 			EditableTerrain.PATHING_GROUND        => new Color(0.2f, 0.85f, 0.2f, 0.55f),
 			EditableTerrain.PATHING_UNPATHABLE    => new Color(0.9f, 0.1f, 0.1f, 0.55f),
+			EditableTerrain.PATHING_BUILDABLE     => new Color(0.6f, 0.2f, 0.8f, 0.55f),
 			_ => new Color(0f, 0f, 0f, 0f)
 		};
 
@@ -1900,7 +1909,8 @@ public partial class GameHost
 			EditableTerrain.PATHING_DEEP_WATER,
 			EditableTerrain.PATHING_FLYING,
 			EditableTerrain.PATHING_GROUND,
-			EditableTerrain.PATHING_UNPATHABLE
+			EditableTerrain.PATHING_UNPATHABLE,
+			EditableTerrain.PATHING_BUILDABLE
 		};
 
 		int cellWidth = width - 1;

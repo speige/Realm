@@ -14,6 +14,7 @@ public partial class MapEditorHUD : Control
 {
 	public static MapEditorHUD Instance { get; private set; }
 	public static bool IsTestMode { get; set; } = false;
+	public static bool ReturningFromTest { get; set; } = false;
 
 	private static bool _agreementShownThisSession = false;
 
@@ -227,6 +228,7 @@ public partial class MapEditorHUD : Control
 	private CheckBox _chkFlying;
 	private CheckBox _chkGround;
 	private CheckBox _chkUnpathable;
+	private CheckBox _chkBuildable;
 	private OptionButton _optPathingMode;
 	private HBoxContainer _pathingModeHBox;
 
@@ -1363,6 +1365,11 @@ public partial class MapEditorHUD : Control
 		UIStyle.ApplyCheckboxStyle(_chkUnpathable);
 		layersVBox.AddChild(_chkUnpathable);
 
+		_chkBuildable = new CheckBox();
+		_chkBuildable.Text = TranslationServer.Translate("Buildable");
+		UIStyle.ApplyCheckboxStyle(_chkBuildable);
+		layersVBox.AddChild(_chkBuildable);
+
 		_chkGround.ButtonPressed = true;
 
 		_topBarController = new MapEditorTopBar(_btnBackToHub, _btnPublish, _btnSave, _btnLoad, _btnUndo, _btnRedo, _btnVSCode, _statusLabel, _feedbackLabel);
@@ -1370,7 +1377,7 @@ public partial class MapEditorHUD : Control
 		_placementSettingsController = new MapEditorPlacementSettings(_sldPlacementRotate, _lblPlacementRotateValue, _sldPlacementScale, _lblPlacementScaleValue, _chkSpawnAsEnemy, _chkRandomRotation, _chkRandomScale, _chkClumpMode, _sldClumpDensity, _lblClumpDensityValue, _sldClumpScaleVar, _lblClumpScaleVarValue);
 		InitializeInspectorPanel();
 		_inspectorController = new MapEditorInspector(_lblInspectorTitle, _lblInspectorPos, _btnInspectorRotLeft, _btnInspectorRotRight, _btnInspectorScaleDown, _btnInspectorScaleUp, _btnInspectorScaleReset, _btnInspectorDelete);
-		_pathingPanelController = new MapEditorPathingPanel(_chkShallowWater, _chkDeepWater, _chkFlying, _chkGround, _chkUnpathable, _optPathingMode);
+		_pathingPanelController = new MapEditorPathingPanel(_chkShallowWater, _chkDeepWater, _chkFlying, _chkGround, _chkUnpathable, _chkBuildable, _optPathingMode);
 
 		SetupMinimap();
 		RebuildHUDLayout();
@@ -1437,6 +1444,7 @@ public partial class MapEditorHUD : Control
 		if (_chkShallowWater != null && _chkShallowWater.ButtonPressed) mask |= EditableTerrain.PATHING_SHALLOW_WATER;
 		if (_chkDeepWater != null && _chkDeepWater.ButtonPressed) mask |= EditableTerrain.PATHING_DEEP_WATER;
 		if (_chkUnpathable != null && _chkUnpathable.ButtonPressed) mask |= EditableTerrain.PATHING_UNPATHABLE;
+		if (_chkBuildable != null && _chkBuildable.ButtonPressed) mask |= EditableTerrain.PATHING_BUILDABLE;
 		return mask;
 	}
 
@@ -2305,22 +2313,7 @@ public partial class MapEditorHUD : Control
 			System.IO.Directory.CreateDirectory(_tempWorkspacePath);
 		}
 		
-		if (System.IO.Directory.GetFiles(_tempWorkspacePath, "*.*", System.IO.SearchOption.AllDirectories).Length == 0)
-		{
-			string initialDir = GetInitialDirectory();
-			if (System.IO.Directory.Exists(initialDir) && System.IO.File.Exists(System.IO.Path.Combine(initialDir, "terrain.json")))
-			{
-				CopyFolderToTempWorkspace(initialDir);
-			}
-			else
-			{
-				GenerateVSCodeFiles(_tempWorkspacePath, "CustomMap");
-			}
-		}
-		else
-		{
-			GenerateVSCodeFiles(_tempWorkspacePath, "CustomMap");
-		}
+		GenerateVSCodeFiles(_tempWorkspacePath, "CustomMap");
 
 		_lastTerrainSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "terrain.json"));
 		_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));

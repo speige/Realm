@@ -79,6 +79,7 @@ public partial class EditableTerrain : StaticBody3D
 	public const int PATHING_FLYING = 4;
 	public const int PATHING_GROUND = 8;
 	public const int PATHING_UNPATHABLE = 16;
+	public const int PATHING_BUILDABLE = 32;
 
 	private float[,] _localHeights;
 	private int[,] _localPathingCodes;
