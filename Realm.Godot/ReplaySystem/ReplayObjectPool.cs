@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using Realm.Ecs.Common;
 
 namespace Realm.Godot.ReplaySystem
 {
@@ -12,11 +13,13 @@ namespace Realm.Godot.ReplaySystem
 
 		public static ReplayFrame RentFrame()
 		{
+			int unitsCap = GameplayConstants.MaxUnitsLimit;
+			int projCap = GameplayConstants.MaxProjectilesLimit;
 			if (_framePool.TryTake(out var frame))
 			{
 				if (frame.Units == null)
 				{
-					frame.Units = new List<ReplayUnitSnapshot>();
+					frame.Units = new List<ReplayUnitSnapshot>(unitsCap);
 				}
 				else
 				{
@@ -24,7 +27,7 @@ namespace Realm.Godot.ReplaySystem
 				}
 				if (frame.Projectiles == null)
 				{
-					frame.Projectiles = new List<ReplayProjectileSnapshot>();
+					frame.Projectiles = new List<ReplayProjectileSnapshot>(projCap);
 				}
 				else
 				{
@@ -34,8 +37,8 @@ namespace Realm.Godot.ReplaySystem
 			}
 			return new ReplayFrame
 			{
-				Units = new List<ReplayUnitSnapshot>(),
-				Projectiles = new List<ReplayProjectileSnapshot>()
+				Units = new List<ReplayUnitSnapshot>(unitsCap),
+				Projectiles = new List<ReplayProjectileSnapshot>(projCap)
 			};
 		}
 
@@ -59,7 +62,7 @@ namespace Realm.Godot.ReplaySystem
 				list.Clear();
 				return list;
 			}
-			return new List<ReplayUnitSnapshot>();
+			return new List<ReplayUnitSnapshot>(GameplayConstants.MaxUnitsLimit);
 		}
 
 		public static void ReturnList(List<ReplayUnitSnapshot> list)
@@ -68,7 +71,6 @@ namespace Realm.Godot.ReplaySystem
 			_listPool.Add(list);
 		}
 
-
 		public static List<ReplayProjectileSnapshot> RentProjectileList()
 		{
 			if (_projectileListPool.TryTake(out var list))
@@ -76,7 +78,7 @@ namespace Realm.Godot.ReplaySystem
 				list.Clear();
 				return list;
 			}
-			return new List<ReplayProjectileSnapshot>();
+			return new List<ReplayProjectileSnapshot>(GameplayConstants.MaxProjectilesLimit);
 		}
 
 		public static void ReturnProjectileList(List<ReplayProjectileSnapshot> list)
@@ -84,6 +86,7 @@ namespace Realm.Godot.ReplaySystem
 			list.Clear();
 			_projectileListPool.Add(list);
 		}
+
 		public static List<int> RentIntList()
 		{
 			if (_intListPool.TryTake(out var list))
@@ -91,7 +94,7 @@ namespace Realm.Godot.ReplaySystem
 				list.Clear();
 				return list;
 			}
-			return new List<int>();
+			return new List<int>(GameplayConstants.MaxUnitsLimit);
 		}
 
 		public static void ReturnIntList(List<int> list)

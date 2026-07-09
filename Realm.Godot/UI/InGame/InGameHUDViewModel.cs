@@ -374,10 +374,7 @@ public class InGameHUDViewModel
 		public bool IsUnderConstruction { get; set; }
 		public string StateText { get; set; }
 		public string Description { get; set; }
-		
-		public bool HasFireball { get; set; }
-		public bool HasLightning { get; set; }
-		public bool HasHolyLight { get; set; }
+		public List<string> Abilities { get; set; } = new();
 		public int Potions { get; set; }
 
 		public bool HasProduction { get; set; }
@@ -568,20 +565,18 @@ public class InGameHUDViewModel
 				info.Description = regMeta.Description;
 				if (regMeta.Abilities != null)
 				{
-					info.HasFireball = Array.Exists(regMeta.Abilities, a => a == "fireball");
-					info.HasLightning = Array.Exists(regMeta.Abilities, a => a == "lightning");
-					info.HasHolyLight = Array.Exists(regMeta.Abilities, a => a == "holylight");
+					info.Abilities.AddRange(regMeta.Abilities);
 				}
 				else
 				{
-					if (u.UnitId == "priest") info.HasHolyLight = true;
-					else if (u.UnitId == "tower") { info.HasFireball = true; info.HasLightning = true; }
+					if (u.UnitId == "priest") info.Abilities.Add("holylight");
+					else if (u.UnitId == "tower") { info.Abilities.Add("fireball"); info.Abilities.Add("lightning"); }
 				}
 			}
 			else
 			{
-				if (u.UnitId == "priest") info.HasHolyLight = true;
-				else if (u.UnitId == "tower") { info.HasFireball = true; info.HasLightning = true; }
+				if (u.UnitId == "priest") info.Abilities.Add("holylight");
+				else if (u.UnitId == "tower") { info.Abilities.Add("fireball"); info.Abilities.Add("lightning"); }
 			}
 
 			SelectedUnits.Add(info);

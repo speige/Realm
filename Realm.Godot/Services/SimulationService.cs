@@ -60,25 +60,32 @@ internal class SimulationService
 	private bool _tickNeedsUiRefresh = false;
 
 	private readonly QueryDescription _buffQuery = Realm.Ecs.Common.QueryCache.AllBuffsNoneDeadQuery;
+	private readonly QueryDescription _buffStateQuery = Realm.Ecs.Common.QueryCache.AllBuffStateNoneDeadQuery;
+	private readonly QueryDescription _statsRecalcQuery = new QueryDescription().WithAll<Realm.Ecs.Components.Stats.Stats>().WithNone<Dead>();
 	private readonly QueryDescription _patrolArrivalQuery = Realm.Ecs.Common.QueryCache.AllPatrolAndPositionNoneDeadAndAttackTargetQuery;
 	private readonly QueryDescription _followQuery = Realm.Ecs.Common.QueryCache.AllFollowAndPositionNoneDeadQuery;
 	private readonly QueryDescription _attackCooldownQuery = Realm.Ecs.Common.QueryCache.AllAttackQuery;
 	private readonly QueryDescription _prodQuery = Realm.Ecs.Common.QueryCache.AllProductionQueueQuery;
 	private readonly QueryDescription _spellCooldownQuery = Realm.Ecs.Common.QueryCache.AllSpellCooldownsQuery;
+	private readonly QueryDescription _cooldownsQuery = Realm.Ecs.Common.QueryCache.AllCooldownsQuery;
 
 	private ForEachWithEntity<Realm.Ecs.Components.Core.Buffs> _buffsQueryDelegate = null!;
+	private ForEachWithEntity<Realm.Ecs.Components.Core.BuffState> _buffStateQueryDelegate = null!;
+	private ForEachWithEntity<Realm.Ecs.Components.Stats.Stats> _statsRecalcQueryDelegate = null!;
 	private ForEachWithEntity<Patrol, Position> _patrolArrivalQueryDelegate = null!;
 	private ForEachWithEntity<Follow, Position> _followQueryDelegate = null!;
 	private ForEachWithEntity<Attack> _attackCooldownQueryDelegate = null!;
 	private ForEachWithEntity<Realm.Ecs.Components.Core.ProductionQueue> _prodQueryDelegate = null!;
 	private ForEachWithEntity<InterpolationTarget> _interpolationQueryDelegate = null!;
 	private ForEachWithEntity<SpellCooldowns> _spellCooldownQueryDelegate = null!;
+	private ForEachWithEntity<Realm.Ecs.Components.Core.Cooldowns> _cooldownsQueryDelegate = null!;
 
 	public Action<System.Numerics.Vector3, System.Numerics.Vector3> OnArrowProjectileRequested;
 	public Action<Entity> OnDamageFlashRequested;
 	public Action<System.Numerics.Vector3, System.Numerics.Vector3> OnHealEffectRequested;
 	public Action<Entity> OnHealFlashRequested;
 	public Action<Entity, Entity, float> OnUnitDamagedCallback;
+	public Action<Entity, Entity>? OnUnitAttackedCallback;
 	public Action<string> OnUnderAttackAlertRequested;
 	public Action<Entity> OnKillUnitRequested;
 	public Action<string, System.Numerics.Vector3, bool, Entity, bool>? OnSpawnUnitFromProductionRequested;
@@ -109,11 +116,18 @@ internal class SimulationService
 		_combatService = new CombatAndDamageService(ecsWorldAccessor);
 		_economyService = new ResourceEconomyService(ecsWorldAccessor);
 
-		_combatService.OnArrowProjectileRequested = (p1, p2) => OnArrowProjectileRequested?.Invoke(p1, p2);
-		_combatService.OnDamageFlashRequested = ent => OnDamageFlashRequested?.Invoke(ent);
-		_combatService.OnHealEffectRequested = (p1, p2) => OnHealEffectRequested?.Invoke(p1, p2);
-		_combatService.OnHealFlashRequested = ent => OnHealFlashRequested?.Invoke(ent);
+		_combatService.OnArrowProjectileRequested = (p1, p2) => EnqueueVFXRequest("arrow", p1, p2, 1.0f, 40f);
+		_combatService.OnDamageFlashRequested = ent => {
+			if (EcsWorld.IsAlive(ent) && EcsWorld.Has<Position>(ent))
+				EnqueueVFXRequest("damage_flash", EcsWorld.Get<Position>(ent).Value, EcsWorld.Get<Position>(ent).Value, 1.0f, 0f, ent.Id);
+		};
+		_combatService.OnHealEffectRequested = (p1, p2) => EnqueueVFXRequest("heal", p1, p2, 1.0f, 25f);
+		_combatService.OnHealFlashRequested = ent => {
+			if (EcsWorld.IsAlive(ent) && EcsWorld.Has<Position>(ent))
+				EnqueueVFXRequest("heal_flash", EcsWorld.Get<Position>(ent).Value, EcsWorld.Get<Position>(ent).Value, 1.0f, 0f, ent.Id);
+		};
 		_combatService.OnUnitDamagedCallback = (e1, e2, d) => OnUnitDamagedCallback?.Invoke(e1, e2, d);
+		_combatService.OnUnitAttackedCallback = (e1, e2) => OnUnitAttackedCallback?.Invoke(e1, e2);
 		_combatService.OnUnderAttackAlertRequested = id => OnUnderAttackAlertRequested?.Invoke(id);
 		_combatService.OnKillUnitRequested = ent => OnKillUnitRequested?.Invoke(ent);
 
@@ -126,10 +140,13 @@ internal class SimulationService
 	public void Initialize()
 	{
 		_buffsQueryDelegate = UpdateBuffsQueryAction;
+		_buffStateQueryDelegate = UpdateBuffStateQueryAction;
+		_statsRecalcQueryDelegate = StatsRecalcQueryAction;
 		_patrolArrivalQueryDelegate = PatrolArrivalQueryAction;
 		_followQueryDelegate = FollowQueryAction;
 		_attackCooldownQueryDelegate = AttackCooldownQueryAction;
 		_prodQueryDelegate = ProdQueryAction;
+		_cooldownsQueryDelegate = CooldownsQueryAction;
 		_interpolationQueryDelegate = InterpolationQueryAction;
 		_spellCooldownQueryDelegate = SpellCooldownQueryAction;
 	}
@@ -190,12 +207,15 @@ internal class SimulationService
 		}
 
 		EcsWorld.Query(in _spellCooldownQuery, _spellCooldownQueryDelegate);
+		EcsWorld.Query(in _cooldownsQuery, _cooldownsQueryDelegate);
 
 		_movementService.StepMovement(fDelta);
 		_combatService.StepCombat(fDelta);
 		_economyService.StepEconomy(fDelta);
 
 		EcsWorld.Query(in _buffQuery, _buffsQueryDelegate);
+		EcsWorld.Query(in _buffStateQuery, _buffStateQueryDelegate);
+		EcsWorld.Query(in _statsRecalcQuery, _statsRecalcQueryDelegate);
 
 		ProcessPatrolArrivals();
 		ProcessFollowMovements();
@@ -362,6 +382,185 @@ internal class SimulationService
 		for (int i = 0; i < _tickExpiredBuffs.Count; i++)
 		{
 			buffsDict.Remove(_tickExpiredBuffs[i]);
+		}
+	}
+
+	private void UpdateBuffStateQueryAction(Entity entity, ref Realm.Ecs.Components.Core.BuffState buffs)
+	{
+		var buffsDict = buffs.Value;
+		_tickBuffKeys.Clear();
+		_tickExpiredBuffs.Clear();
+		foreach (var key in buffsDict.Keys)
+		{
+			_tickBuffKeys.Add(key);
+		}
+		for (int i = 0; i < _tickBuffKeys.Count; i++)
+		{
+			string key = _tickBuffKeys[i];
+			float newTime = buffsDict[key] - _fDelta;
+			if (newTime <= 0)
+			{
+				_tickExpiredBuffs.Add(key);
+			}
+			else
+			{
+				buffsDict[key] = newTime;
+			}
+		}
+		for (int i = 0; i < _tickExpiredBuffs.Count; i++)
+		{
+			buffsDict.Remove(_tickExpiredBuffs[i]);
+		}
+	}
+
+	private void UpdateModifiers(Entity entity, ref Realm.Ecs.Components.Core.ModifierState modState)
+	{
+		var list = modState.Value;
+		for (int i = list.Count - 1; i >= 0; i--)
+		{
+			var mod = list[i];
+			if (mod.Duration > 0f)
+			{
+				float newDur = mod.Duration - _fDelta;
+				if (newDur <= 0f)
+				{
+					list.RemoveAt(i);
+				}
+				else
+				{
+					list[i] = new Realm.Ecs.Components.Stats.StatModifier(mod.StatTypeId, mod.Type, mod.Value, newDur);
+				}
+			}
+		}
+	}
+
+	private void StatsRecalcQueryAction(Entity entity, ref Realm.Ecs.Components.Stats.Stats stats)
+	{
+		if (EcsWorld.Has<Realm.Ecs.Components.Core.ModifierState>(entity))
+		{
+			ref var modState = ref EcsWorld.Get<Realm.Ecs.Components.Core.ModifierState>(entity);
+			UpdateModifiers(entity, ref modState);
+		}
+
+		var baseStats = stats.Value;
+		float flatArmor = 0f;
+		float percentArmor = 1f;
+		float flatAttack = 0f;
+		float percentAttack = 1f;
+		float flatSpeed = 0f;
+		float percentSpeed = 1f;
+
+		if (EcsWorld.Has<Realm.Ecs.Components.Core.ModifierState>(entity))
+		{
+			var modState = EcsWorld.Get<Realm.Ecs.Components.Core.ModifierState>(entity);
+			var list = modState.Value;
+			for (int i = 0; i < list.Count; i++)
+			{
+				ApplyMod(list[i], ref flatArmor, ref percentArmor, ref flatAttack, ref percentAttack, ref flatSpeed, ref percentSpeed);
+			}
+		}
+
+		if (EcsWorld.Has<Realm.Ecs.Components.Core.BuffState>(entity))
+		{
+			var buffState = EcsWorld.Get<Realm.Ecs.Components.Core.BuffState>(entity);
+			foreach (var buffKey in buffState.Value.Keys)
+			{
+				if (Realm.Ecs.Common.BuffRegistry.BuffModifiers.TryGetValue(buffKey, out var mods))
+				{
+					for (int i = 0; i < mods.Count; i++)
+					{
+						ApplyMod(mods[i], ref flatArmor, ref percentArmor, ref flatAttack, ref percentAttack, ref flatSpeed, ref percentSpeed);
+					}
+				}
+			}
+		}
+
+		if (baseStats.TryGetValue(new Realm.Ecs.Common.StatId("Armor"), out var baseArmor))
+		{
+			float finalArmor = (baseArmor + flatArmor) * percentArmor;
+			if (EcsWorld.Has<Armor>(entity))
+			{
+				EcsWorld.Set(entity, new Armor(finalArmor));
+			}
+		}
+
+		if (baseStats.TryGetValue(new Realm.Ecs.Common.StatId("Attack"), out var baseAttack))
+		{
+			float finalAttack = (baseAttack + flatAttack) * percentAttack;
+			if (EcsWorld.Has<Attack>(entity))
+			{
+				var atk = EcsWorld.Get<Attack>(entity);
+				EcsWorld.Set(entity, new Attack(finalAttack, atk.Range, atk.Cooldown, atk.CurrentCooldown));
+			}
+		}
+
+		if (baseStats.TryGetValue(new Realm.Ecs.Common.StatId("MovementSpeed"), out var baseSpeed))
+		{
+			float finalSpeed = (baseSpeed + flatSpeed) * percentSpeed;
+			if (EcsWorld.Has<MovementStats>(entity))
+			{
+				var mv = EcsWorld.Get<MovementStats>(entity);
+				EcsWorld.Set(entity, new MovementStats(finalSpeed, mv.Acceleration, mv.TurnRate));
+			}
+		}
+	}
+
+	private void ApplyMod(Realm.Ecs.Components.Stats.StatModifier mod, ref float flatArmor, ref float percentArmor, ref float flatAttack, ref float percentAttack, ref float flatSpeed, ref float percentSpeed)
+	{
+		if (mod.StatTypeId.Value.Equals("Armor", StringComparison.OrdinalIgnoreCase))
+		{
+			if (mod.Type == Realm.Ecs.Components.Stats.ModifierType.Flat) flatArmor += mod.Value;
+			else if (mod.Type == Realm.Ecs.Components.Stats.ModifierType.Percentage) percentArmor *= mod.Value;
+		}
+		else if (mod.StatTypeId.Value.Equals("Attack", StringComparison.OrdinalIgnoreCase) || mod.StatTypeId.Value.Equals("AttackDamage", StringComparison.OrdinalIgnoreCase))
+		{
+			if (mod.Type == Realm.Ecs.Components.Stats.ModifierType.Flat) flatAttack += mod.Value;
+			else if (mod.Type == Realm.Ecs.Components.Stats.ModifierType.Percentage) percentAttack *= mod.Value;
+		}
+		else if (mod.StatTypeId.Value.Equals("MovementSpeed", StringComparison.OrdinalIgnoreCase) || mod.StatTypeId.Value.Equals("Speed", StringComparison.OrdinalIgnoreCase))
+		{
+			if (mod.Type == Realm.Ecs.Components.Stats.ModifierType.Flat) flatSpeed += mod.Value;
+			else if (mod.Type == Realm.Ecs.Components.Stats.ModifierType.Percentage) percentSpeed *= mod.Value;
+		}
+	}
+
+	private readonly List<string> _tickExpiredCooldowns = new();
+	private readonly List<string> _tickCooldownKeys = new();
+
+	private void CooldownsQueryAction(Entity entity, ref Realm.Ecs.Components.Core.Cooldowns cooldowns)
+	{
+		var dict = cooldowns.Value;
+		_tickCooldownKeys.Clear();
+		_tickExpiredCooldowns.Clear();
+		foreach (var key in dict.Keys)
+		{
+			_tickCooldownKeys.Add(key);
+		}
+		for (int i = 0; i < _tickCooldownKeys.Count; i++)
+		{
+			string key = _tickCooldownKeys[i];
+			float newTime = dict[key] - _fDelta;
+			if (newTime <= 0)
+			{
+				_tickExpiredCooldowns.Add(key);
+			}
+			else
+			{
+				dict[key] = newTime;
+			}
+		}
+		for (int i = 0; i < _tickExpiredCooldowns.Count; i++)
+		{
+			dict.Remove(_tickExpiredCooldowns[i]);
+		}
+	}
+
+	public void EnqueueVFXRequest(string effectTypeId, System.Numerics.Vector3 position, System.Numerics.Vector3 targetPosition, float scale = 1.0f, float speed = 0f, int entityId = -1)
+	{
+		if (_worldEntity != Entity.Null && EcsWorld.IsAlive(_worldEntity) && EcsWorld.Has<Realm.Ecs.Components.Core.VFXQueue>(_worldEntity))
+		{
+			ref var queue = ref EcsWorld.Get<Realm.Ecs.Components.Core.VFXQueue>(_worldEntity);
+			queue.Requests.Add(new Realm.Ecs.Components.Core.VFXRequest(effectTypeId, position, targetPosition, scale, speed, entityId));
 		}
 	}
 

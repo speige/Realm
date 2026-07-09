@@ -568,14 +568,7 @@ public partial class InGameHUD : Control
 
 		_inventoryPanelController = new InventoryPanel(_inventoryGrid);
 
-		_commandPanelController = new CommandPanel(
-			_commandGrid,
-			_btnMove, _btnStop, _btnHold, _btnBuild, _btnAttack, _btnPatrol,
-			_btnBuildCastle, _btnBuildTower, _btnCancelBuild,
-			_btnTrainSoldier, _btnTrainArcher, _btnTrainPriest, _btnTrainWorker, _btnBuyPotion,
-			_btnUpgradeWeapons, _btnUpgradeShields, _btnUpgradeHarvesting, _btnUpgradeTower, _btnSetRally,
-			_btnUsePotion
-		);
+		_commandPanelController = new CommandPanel(_commandGrid);
 
 		_controlGroupsUIController = new ControlGroupsUIController(_controlGroupsContainer);
 		GenerateDynamicMinimap();

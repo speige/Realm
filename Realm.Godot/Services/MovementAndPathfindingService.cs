@@ -37,7 +37,7 @@ internal class MovementAndPathfindingService
 	private static readonly Random Random = new();
 
 	private float _fDelta;
-	private const float CollisionCellSize = 10f;
+	private readonly float _collisionCellSize = Realm.Ecs.Common.GameplayConstants.PathfindingGridSize;
 
 	private readonly Dictionary<long, List<Entity>> _unitGrid = new();
 	private readonly Dictionary<long, List<Entity>> _propGrid = new();
@@ -108,8 +108,8 @@ internal class MovementAndPathfindingService
 
 	private long GetCellKey(float x, float z)
 	{
-		int cx = (int)Math.Floor(x / CollisionCellSize);
-		int cz = (int)Math.Floor(z / CollisionCellSize);
+		int cx = (int)Math.Floor(x / _collisionCellSize);
+		int cz = (int)Math.Floor(z / _collisionCellSize);
 		return ((long)cx << 32) | (uint)cz;
 	}
 
@@ -304,8 +304,8 @@ internal class MovementAndPathfindingService
 			System.Numerics.Vector3 separation = System.Numerics.Vector3.Zero;
 			int neighborCount = 0;
 
-			int currentCellX = (int)Math.Floor(current.X / CollisionCellSize);
-			int currentCellZ = (int)Math.Floor(current.Z / CollisionCellSize);
+			int currentCellX = (int)Math.Floor(current.X / _collisionCellSize);
+			int currentCellZ = (int)Math.Floor(current.Z / _collisionCellSize);
 
 			for (int dx = -1; dx <= 1; dx++)
 			{
@@ -361,8 +361,8 @@ internal class MovementAndPathfindingService
 				? EcsWorld.Get<CollisionRadius>(entity).Value 
 				: (EcsWorld.Has<CollisionScale>(entity) ? EcsWorld.Get<CollisionScale>(entity).Value : 1.0f) * 1.2f;
 
-			int baseCx = (int)Math.Floor(nextPos.X / CollisionCellSize);
-			int baseCz = (int)Math.Floor(nextPos.Z / CollisionCellSize);
+			int baseCx = (int)Math.Floor(nextPos.X / _collisionCellSize);
+			int baseCz = (int)Math.Floor(nextPos.Z / _collisionCellSize);
 
 			for (int dx = -1; dx <= 1; dx++)
 			{

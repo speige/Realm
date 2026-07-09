@@ -55,6 +55,7 @@ internal class CombatAndDamageService
 	public Action<System.Numerics.Vector3, System.Numerics.Vector3> OnHealEffectRequested;
 	public Action<Entity> OnHealFlashRequested;
 	public Action<Entity, Entity, float> OnUnitDamagedCallback;
+	public Action<Entity, Entity>? OnUnitAttackedCallback;
 	public Action<string> OnUnderAttackAlertRequested;
 	public Action<Entity> OnKillUnitRequested;
 
@@ -332,6 +333,7 @@ internal class CombatAndDamageService
 					EcsWorld.Add(target.Target, new LastAttacker(entity));
 				}
 
+				OnUnitAttackedCallback?.Invoke(entity, target.Target);
 				OnUnitDamagedCallback?.Invoke(target.Target, entity, damage);
 
 				float newHp = Math.Max(0, targetHealth.Current - damage);

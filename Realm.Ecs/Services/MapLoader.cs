@@ -20,11 +20,12 @@ internal class MapLoader
 
 		var mapJsonPath = Path.Combine(definitionsBasePath, "map.json");
 		var mapJson = File.ReadAllText(mapJsonPath);
-		var mapDefinitionUnitsOnly = JsonSerializer.Deserialize<MapDefinition>(mapJson, Options) ?? new MapDefinition();
+		MapDefinition = JsonSerializer.Deserialize<MapDefinition>(mapJson, Options) ?? new MapDefinition();
 
-		ArchetypeManager = new ArchetypeManager(ecsWorldAccessor, mapDefinitionUnitsOnly.Units, DefinitionManager);
+		ArchetypeManager = new ArchetypeManager(ecsWorldAccessor, MapDefinition.Units, DefinitionManager);
 	}
 
+	public MapDefinition MapDefinition { get; }
 	public DefinitionManager DefinitionManager { get; }
 	public ArchetypeManager ArchetypeManager { get; private set; }
 }

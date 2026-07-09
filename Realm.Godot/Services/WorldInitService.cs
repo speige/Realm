@@ -55,6 +55,7 @@ public class WorldInitService
 		AddOrSet(worldEntity, new NetworkMappingState(new(), new(), new()));
 		AddOrSet(worldEntity, new EditorState(true, 4.0f, -95.0f, 95.0f, -95.0f, 125.0f, "res://Assets/skybox_panoramic.jpg", false));
 		AddOrSet(worldEntity, new InputState(0, null, null, null, false));
+		AddOrSet(worldEntity, new VFXQueue(new System.Collections.Generic.List<VFXRequest>()));
 		AddOrSet(worldEntity, new CameraState
 		{
 			MoveSpeed = 35.0f,

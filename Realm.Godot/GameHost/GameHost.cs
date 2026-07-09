@@ -592,6 +592,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public event Action<IUnit?, string, System.Numerics.Vector3>? OnSpellCast;
 	public event Action<string, IUnit?>? OnPlayerChatMessage;
 	public event Action<IUnit>? OnUnitSelected;
+	public event Action<IUnit, IUnit>? OnUnitAttacked;
 
 	public void TriggerPlayerChatMessage(string message)
 	{
@@ -1004,6 +1005,18 @@ public class {mapName} : IMapScript
 		remove => OnUnitSelected -= value;
 	}
 
+	event Action<IUnit, int>? IGameAPI.OnUnitEnterZone
+	{
+		add => OnUnitEnterZone += value;
+		remove => OnUnitEnterZone -= value;
+	}
+
+	event Action<IUnit, IUnit>? IGameAPI.OnUnitAttacked
+	{
+		add => OnUnitAttacked += value;
+		remove => OnUnitAttacked -= value;
+	}
+
 
 	void IGameAPI.CreateFloatingText(string text, System.Numerics.Vector3 position, System.Numerics.Vector3 color, float duration)
 	{
@@ -1066,6 +1079,117 @@ public class {mapName} : IMapScript
 				tween.Chain().TweenCallback(Callable.From(cylinder.QueueFree));
 			}
 		}).CallDeferred();
+	}
+
+	void IGameAPI.AddBuff(IUnit unit, string buffId, float duration)
+	{
+		unit.AddBuff(buffId, duration);
+	}
+
+	void IGameAPI.RegisterBuffModifier(string buffId, string statName, bool isPercentage, float value)
+	{
+		var statId = new Realm.Ecs.Common.StatId(statName);
+		var modType = isPercentage ? Realm.Ecs.Components.Stats.ModifierType.Percentage : Realm.Ecs.Components.Stats.ModifierType.Flat;
+		var modifier = new Realm.Ecs.Components.Stats.StatModifier(statId, modType, value);
+		if (!Realm.Ecs.Common.BuffRegistry.BuffModifiers.TryGetValue(buffId, out var list))
+		{
+			list = new System.Collections.Generic.List<Realm.Ecs.Components.Stats.StatModifier>();
+			Realm.Ecs.Common.BuffRegistry.BuffModifiers[buffId] = list;
+		}
+		list.Add(modifier);
+	}
+
+	void IGameAPI.CastAbility(IUnit unit, string abilityId, System.Numerics.Vector3 targetPosition)
+	{
+		var godotPos = new Godot.Vector3(targetPosition.X, targetPosition.Y, targetPosition.Z);
+		if (abilityId == "fireball")
+		{
+			SpawnFireblastEffect(godotPos);
+			SpawnTargetIndicator(godotPos, new Color(0.9f, 0.3f, 0.1f));
+			_simulationService.DealSpellDamageAOE(targetPosition, 4.0f, 50f, unit is IEcsEntityWrapper w ? w.Entity : Entity.Null);
+		}
+		else if (abilityId == "lightning")
+		{
+			SpawnLightningEffect(godotPos);
+			SpawnTargetIndicator(godotPos, new Color(0.2f, 0.5f, 1f));
+			_simulationService.DealSpellDamageAOE(targetPosition, 2.0f, 80f, unit is IEcsEntityWrapper w ? w.Entity : Entity.Null);
+		}
+		else if (abilityId == "holylight")
+		{
+			SpawnHolyLightEffect(godotPos);
+			SpawnTargetIndicator(godotPos, new Color(0.2f, 0.9f, 0.3f));
+			_simulationService.HealAOE(targetPosition, 4.0f, 60f);
+		}
+		else
+		{
+			OnSpellCast?.Invoke(unit, abilityId, targetPosition);
+		}
+	}
+
+	float IGameAPI.GetAbilityCooldown(IUnit unit, string abilityId)
+	{
+		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
+		{
+			if (EcsWorld.Has<Realm.Ecs.Components.Core.Cooldowns>(wrapper.Entity))
+			{
+				var cds = EcsWorld.Get<Realm.Ecs.Components.Core.Cooldowns>(wrapper.Entity).Value;
+				if (cds.TryGetValue(abilityId, out var val))
+				{
+					return val;
+				}
+			}
+			if (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity))
+			{
+				var cds = EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity);
+				if (abilityId == "fireball") return cds.FireballCooldown;
+				if (abilityId == "lightning") return cds.LightningCooldown;
+				if (abilityId == "holylight") return cds.HolyLightCooldown;
+			}
+		}
+		return 0f;
+	}
+
+	void IGameAPI.SetAbilityCooldown(IUnit unit, string abilityId, float cooldown)
+	{
+		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
+		{
+			System.Collections.Generic.Dictionary<string, float> dict;
+			if (EcsWorld.Has<Realm.Ecs.Components.Core.Cooldowns>(wrapper.Entity))
+			{
+				dict = EcsWorld.Get<Realm.Ecs.Components.Core.Cooldowns>(wrapper.Entity).Value;
+			}
+			else
+			{
+				dict = new System.Collections.Generic.Dictionary<string, float>();
+				EcsWorld.Add(wrapper.Entity, new Realm.Ecs.Components.Core.Cooldowns(dict));
+			}
+			dict[abilityId] = cooldown;
+
+			if (abilityId == "fireball" || abilityId == "lightning" || abilityId == "holylight")
+			{
+				float fb = abilityId == "fireball" ? cooldown : (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity) ? EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity).FireballCooldown : 0f);
+				float lt = abilityId == "lightning" ? cooldown : (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity) ? EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity).LightningCooldown : 0f);
+				float hl = abilityId == "holylight" ? cooldown : (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity) ? EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity).HolyLightCooldown : 0f);
+				if (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity))
+				{
+					EcsWorld.Set(wrapper.Entity, new Realm.Ecs.Components.Core.SpellCooldowns(fb, lt, hl));
+				}
+				else
+				{
+					EcsWorld.Add(wrapper.Entity, new Realm.Ecs.Components.Core.SpellCooldowns(fb, lt, hl));
+				}
+			}
+		}
+	}
+
+	void IGameAPI.RemoveBuff(IUnit unit, string buffId)
+	{
+		unit.RemoveBuff(buffId);
+	}
+
+	System.Collections.Generic.IEnumerable<string> IGameAPI.GetModifiers(IUnit unit)
+	{
+		return unit.GetModifiers();
 	}
 
 	void IGameAPI.SpawnProjectile(string projectileTypeId, System.Numerics.Vector3 start, System.Numerics.Vector3 target, float speed)
@@ -1948,6 +2072,8 @@ public class {mapName} : IMapScript
 	private void LoadUnitMetadata(string mapName)
 	{
 		ActiveMapName = mapName;
+		LocalizationManager.CurrentMapName = mapName;
+		LocalizationManager.SetupTranslations();
 		string path = $"res://Maps/{mapName}/metadata.json";
 		string globalPath = ProjectSettings.GlobalizePath(path);
 		string jsonText = "";
@@ -2133,6 +2259,13 @@ public class {mapName} : IMapScript
 					? GetUnitWrapper(attackerEntity)
 					: null;
 				OnUnitDamaged?.Invoke(GetUnitWrapper(targetEntity), attackerWrapper, damage);
+			}
+		};
+		_simulationService.OnUnitAttackedCallback = (attackerEntity, targetEntity) =>
+		{
+			if (EcsWorld.IsAlive(attackerEntity) && EcsWorld.IsAlive(targetEntity))
+			{
+				OnUnitAttacked?.Invoke(GetUnitWrapper(attackerEntity), GetUnitWrapper(targetEntity));
 			}
 		};
 		_simulationService.OnUnderAttackAlertRequested = unitId =>
@@ -3044,6 +3177,7 @@ public class {mapName} : IMapScript
 		_fDelta = fDelta;
 
 		_simulationService.TickEcs(fDelta);
+		PollVFXQueue();
 		TickConstructionSystem(fDelta);
 		UpdateVisualNodesFromEcs(fDelta);
 
@@ -3094,6 +3228,66 @@ public class {mapName} : IMapScript
 			}
 			_trackerLastTickDelay = tickDelay;
 		}
+	}
+
+	private void PollVFXQueue()
+	{
+		if (EcsWorld == null || !EcsWorld.IsAlive(_worldEntity) || !EcsWorld.Has<Realm.Ecs.Components.Core.VFXQueue>(_worldEntity)) return;
+
+		ref var queue = ref EcsWorld.Get<Realm.Ecs.Components.Core.VFXQueue>(_worldEntity);
+		if (queue.Requests.Count == 0) return;
+
+		for (int i = 0; i < queue.Requests.Count; i++)
+		{
+			var req = queue.Requests[i];
+			var godotPos = new Vector3(req.Position.X, req.Position.Y, req.Position.Z);
+			var godotTarget = new Vector3(req.TargetPosition.X, req.TargetPosition.Y, req.TargetPosition.Z);
+
+			if (req.EffectTypeId == "fireball" || req.EffectTypeId == "fireblast")
+			{
+				SpawnFireblastEffect(godotPos);
+			}
+			else if (req.EffectTypeId == "lightning")
+			{
+				SpawnLightningEffect(godotPos);
+			}
+			else if (req.EffectTypeId == "holylight")
+			{
+				SpawnHolyLightEffect(godotPos);
+			}
+			else if (req.EffectTypeId == "arrow")
+			{
+				SpawnArrowProjectile(godotPos, godotTarget);
+			}
+			else if (req.EffectTypeId == "heal")
+			{
+				SpawnHealVisualEffect(godotPos, godotTarget);
+			}
+			else if (req.EffectTypeId == "target_indicator")
+			{
+				SpawnTargetIndicator(godotPos, new Color(req.Scale, 0.3f, 0.1f));
+			}
+			else if (req.EffectTypeId == "damage_flash" || req.EffectTypeId == "heal_flash")
+			{
+				if (req.EntityId != -1)
+				{
+					foreach (var kv in EntityToUnit3D)
+					{
+						if (kv.Key.Id == req.EntityId)
+						{
+							if (GodotObject.IsInstanceValid(kv.Value))
+							{
+								if (req.EffectTypeId == "damage_flash") _fxService.FlashDamageUnit(kv.Value);
+								else _fxService.FlashHealUnit(kv.Value);
+							}
+							break;
+						}
+					}
+				}
+			}
+		}
+
+		queue.Requests.Clear();
 	}
 
 

@@ -136,6 +136,14 @@ internal class UnitSpawnService
 		EcsWorld.Add(entity, new CollisionScale(1.0f));
 		EcsWorld.Add(entity, new ScanRadius(scanRadius));
 
+		var baseStatsDict = new System.Collections.Generic.Dictionary<Realm.Ecs.Common.StatId, float>
+		{
+			{ new Realm.Ecs.Common.StatId("Armor"), armor },
+			{ new Realm.Ecs.Common.StatId("Attack"), damage },
+			{ new Realm.Ecs.Common.StatId("MovementSpeed"), speed }
+		};
+		EcsWorld.Add(entity, new Realm.Ecs.Components.Stats.Stats(baseStatsDict));
+
 		if (speed > 0)
 		{
 			EcsWorld.Add(entity, new MovementStats(speed, 20f, 10f));

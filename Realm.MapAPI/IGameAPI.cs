@@ -186,6 +186,11 @@ public interface IGameAPI
     event Action<IUnit>? OnUnitSelected;
 
     /// <summary>
+    /// Triggered when a unit attacks another unit. Passes the attacker unit and the target unit.
+    /// </summary>
+    event Action<IUnit, IUnit>? OnUnitAttacked;
+
+    /// <summary>
     /// Spawns floating text in the 3D world that drifts upwards and fades out.
     /// </summary>
     /// <param name="text">The text to display.</param>
@@ -201,6 +206,61 @@ public interface IGameAPI
     /// <param name="position">The coordinates in 3D world space.</param>
     /// <param name="scale">The visual scale multiplier.</param>
     void SpawnVisualEffect(string effectTypeId, Vector3 position, float scale = 1.0f);
+
+    /// <summary>
+    /// Adds a buff to a unit.
+    /// </summary>
+    /// <param name="unit">The target unit.</param>
+    /// <param name="buffId">The identifier of the buff.</param>
+    /// <param name="duration">The duration of the buff in seconds.</param>
+    void AddBuff(IUnit unit, string buffId, float duration);
+
+    /// <summary>
+    /// Registers a stat modifier for a buff type.
+    /// </summary>
+    /// <param name="buffId">The identifier of the buff.</param>
+    /// <param name="statName">The name of the stat (e.g. "Armor", "Attack", "MovementSpeed").</param>
+    /// <param name="isPercentage">True for percentage multiplier, false for flat bonus.</param>
+    /// <param name="value">The modifier value.</param>
+    void RegisterBuffModifier(string buffId, string statName, bool isPercentage, float value);
+
+    /// <summary>
+    /// Executes an ability generically by ID on a unit targeting a position.
+    /// </summary>
+    /// <param name="unit">The unit casting the ability.</param>
+    /// <param name="abilityId">The identifier of the ability.</param>
+    /// <param name="targetPosition">The target position in 3D world space.</param>
+    void CastAbility(IUnit unit, string abilityId, Vector3 targetPosition);
+
+    /// <summary>
+    /// Gets the remaining cooldown of a unit's ability in seconds.
+    /// </summary>
+    /// <param name="unit">The unit to check.</param>
+    /// <param name="abilityId">The identifier of the ability.</param>
+    /// <returns>Remaining cooldown in seconds, or 0 if ready or not found.</returns>
+    float GetAbilityCooldown(IUnit unit, string abilityId);
+
+    /// <summary>
+    /// Sets the cooldown of a unit's ability.
+    /// </summary>
+    /// <param name="unit">The unit.</param>
+    /// <param name="abilityId">The identifier of the ability.</param>
+    /// <param name="cooldown">The cooldown duration in seconds.</param>
+    void SetAbilityCooldown(IUnit unit, string abilityId, float cooldown);
+
+    /// <summary>
+    /// Removes a buff from a unit.
+    /// </summary>
+    /// <param name="unit">The target unit.</param>
+    /// <param name="buffId">The identifier of the buff to remove.</param>
+    void RemoveBuff(IUnit unit, string buffId);
+
+    /// <summary>
+    /// Gets active modifiers on a unit.
+    /// </summary>
+    /// <param name="unit">The target unit.</param>
+    /// <returns>A collection of modifier description strings.</returns>
+    IEnumerable<string> GetModifiers(IUnit unit);
 
     /// <summary>
     /// Spawns a visual projectile moving from a starting position to a target position.

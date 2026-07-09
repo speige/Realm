@@ -222,6 +222,12 @@ public interface IUnit
     bool HasBuff(string buffId);
 
     /// <summary>
+    /// Gets the list of active stat modifiers on the unit.
+    /// </summary>
+    /// <returns>A collection of modifier description strings.</returns>
+    IEnumerable<string> GetModifiers();
+
+    /// <summary>
     /// Associates custom data with a unique string key on this unit.
     /// </summary>
     /// <param name="key">The unique data key.</param>

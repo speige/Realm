@@ -50,11 +50,13 @@ public static class QueryCache
     public static readonly QueryDescription AllPositionAndResourceNodeAndPropIdentityQuery = new QueryDescription().WithAll<Position, ResourceNode, PropIdentity>();
     public static readonly QueryDescription AllPositionAndDefinitionIdAndOwnerNoneDeadQuery = new QueryDescription().WithAll<Position, DefinitionId, Owner>().WithNone<Dead>();
     public static readonly QueryDescription AllBuffsNoneDeadQuery = new QueryDescription().WithAll<Buffs>().WithNone<Dead>();
+    public static readonly QueryDescription AllBuffStateNoneDeadQuery = new QueryDescription().WithAll<BuffState>().WithNone<Dead>();
     public static readonly QueryDescription AllPatrolAndPositionNoneDeadAndAttackTargetQuery = new QueryDescription().WithAll<Patrol, Position>().WithNone<Dead, AttackTarget>();
     public static readonly QueryDescription AllFollowAndPositionNoneDeadQuery = new QueryDescription().WithAll<Follow, Position>().WithNone<Dead>();
     public static readonly QueryDescription AllAttackQuery = new QueryDescription().WithAll<Attack>();
     public static readonly QueryDescription AllProductionQueueQuery = new QueryDescription().WithAll<ProductionQueue>();
     public static readonly QueryDescription AllSpellCooldownsQuery = new QueryDescription().WithAll<SpellCooldowns>();
+    public static readonly QueryDescription AllCooldownsQuery = new QueryDescription().WithAll<Cooldowns>();
     public static readonly QueryDescription AllPositionQuery = new QueryDescription().WithAll<Position>();
     public static readonly QueryDescription AllPropIdentityAndPositionQuery = new QueryDescription().WithAll<PropIdentity, Position>();
     public static readonly QueryDescription AllDecalIdentityAndPositionQuery = new QueryDescription().WithAll<DecalIdentity, Position>();

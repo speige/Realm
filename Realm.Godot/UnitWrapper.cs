@@ -701,6 +701,18 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
             _world.Add(_entity, new Realm.Ecs.Components.Core.Buffs(buffs));
         }
         buffs[buffId] = duration;
+
+        Dictionary<string, float> buffStateDict;
+        if (_world.Has<Realm.Ecs.Components.Core.BuffState>(_entity))
+        {
+            buffStateDict = _world.Get<Realm.Ecs.Components.Core.BuffState>(_entity).Value;
+        }
+        else
+        {
+            buffStateDict = new Dictionary<string, float>();
+            _world.Add(_entity, new Realm.Ecs.Components.Core.BuffState(buffStateDict));
+        }
+        buffStateDict[buffId] = duration;
     }
 
     public void RemoveBuff(string buffId)
@@ -711,17 +723,56 @@ public class UnitWrapper : IUnit, IEcsEntityWrapper
             var buffs = _world.Get<Realm.Ecs.Components.Core.Buffs>(_entity).Value;
             buffs.Remove(buffId);
         }
+        if (_world.Has<Realm.Ecs.Components.Core.BuffState>(_entity))
+        {
+            var buffs = _world.Get<Realm.Ecs.Components.Core.BuffState>(_entity).Value;
+            buffs.Remove(buffId);
+        }
     }
 
     public bool HasBuff(string buffId)
     {
         if (!_world.IsAlive(_entity)) return false;
+        if (_world.Has<Realm.Ecs.Components.Core.BuffState>(_entity))
+        {
+            var buffs = _world.Get<Realm.Ecs.Components.Core.BuffState>(_entity).Value;
+            return buffs.ContainsKey(buffId);
+        }
         if (_world.Has<Realm.Ecs.Components.Core.Buffs>(_entity))
         {
             var buffs = _world.Get<Realm.Ecs.Components.Core.Buffs>(_entity).Value;
             return buffs.ContainsKey(buffId);
         }
         return false;
+    }
+
+    public IEnumerable<string> GetModifiers()
+    {
+        if (!_world.IsAlive(_entity)) return Array.Empty<string>();
+        var result = new List<string>();
+        if (_world.Has<Realm.Ecs.Components.Core.ModifierState>(_entity))
+        {
+            var modState = _world.Get<Realm.Ecs.Components.Core.ModifierState>(_entity);
+            foreach (var mod in modState.Value)
+            {
+                result.Add($"{mod.StatTypeId.Value}: {(mod.Value >= 0f ? "+" : "")}{mod.Value} ({mod.Type})");
+            }
+        }
+        if (_world.Has<Realm.Ecs.Components.Core.BuffState>(_entity))
+        {
+            var buffState = _world.Get<Realm.Ecs.Components.Core.BuffState>(_entity);
+            foreach (var buffKey in buffState.Value.Keys)
+            {
+                if (Realm.Ecs.Common.BuffRegistry.BuffModifiers.TryGetValue(buffKey, out var mods))
+				{
+					foreach (var mod in mods)
+					{
+						result.Add($"[Buff: {buffKey}] {mod.StatTypeId.Value}: {(mod.Value >= 0f ? "+" : "")}{mod.Value} ({mod.Type})");
+					}
+				}
+            }
+        }
+        return result;
     }
 
     public void SetCustomData(string key, object value)

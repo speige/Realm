@@ -6,40 +6,72 @@ public static class LocalizationManager
 {
 	private static readonly string[] Locales = { "en", "es", "fr", "de", "pt", "ru", "zh", "ja", "ar", "hi" };
 
+	public static string CurrentMapName { get; set; } = "";
+
 	public static void SetupTranslations()
 	{
 		foreach (var locale in Locales)
 		{
-			string path = $"res://locale/{locale}.json";
-			if (!FileAccess.FileExists(path))
-			{
-				continue;
-			}
+			var mergedDict = new Dictionary<string, string>();
 
-			using var file = FileAccess.Open(path, FileAccess.ModeFlags.Read);
-			if (file == null)
+			string basePath = $"res://locale/{locale}.json";
+			if (FileAccess.FileExists(basePath))
 			{
-				continue;
-			}
-
-			string content = file.GetAsText();
-			try
-			{
-				var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(content);
-				if (dict != null)
+				using var file = FileAccess.Open(basePath, FileAccess.ModeFlags.Read);
+				if (file != null)
 				{
-					var translation = new Translation();
-					translation.Locale = locale;
-					foreach (var kvp in dict)
+					string content = file.GetAsText();
+					try
 					{
-						translation.AddMessage(kvp.Key, kvp.Value);
+						var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(content);
+						if (dict != null)
+						{
+							foreach (var kvp in dict)
+								mergedDict[kvp.Key] = kvp.Value;
+						}
 					}
-					TranslationServer.AddTranslation(translation);
+					catch (System.Exception e)
+					{
+						GD.PrintErr($"Failed to load base translation for {locale}: {e.Message}");
+					}
 				}
 			}
-			catch (System.Exception e)
+
+			if (!string.IsNullOrEmpty(CurrentMapName))
 			{
-				GD.PrintErr($"Failed to load translation for {locale}: {e.Message}");
+				string mapPath = $"res://Maps/{CurrentMapName}/locale/{locale}.json";
+				if (FileAccess.FileExists(mapPath))
+				{
+					using var file = FileAccess.Open(mapPath, FileAccess.ModeFlags.Read);
+					if (file != null)
+					{
+						string content = file.GetAsText();
+						try
+						{
+							var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(content);
+							if (dict != null)
+							{
+								foreach (var kvp in dict)
+									mergedDict[kvp.Key] = kvp.Value;
+							}
+						}
+						catch (System.Exception e)
+						{
+							GD.PrintErr($"Failed to load map translation for {locale} in {CurrentMapName}: {e.Message}");
+						}
+					}
+				}
+			}
+
+			if (mergedDict.Count > 0)
+			{
+				var translation = new Translation();
+				translation.Locale = locale;
+				foreach (var kvp in mergedDict)
+				{
+					translation.AddMessage(kvp.Key, kvp.Value);
+				}
+				TranslationServer.AddTranslation(translation);
 			}
 		}
 

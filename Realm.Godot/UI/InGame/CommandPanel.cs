@@ -6,61 +6,11 @@ using Arch.Core;
 public class CommandPanel
 {
 	private GridContainer _commandGrid;
-	private Button _btnMove;
-	private Button _btnStop;
-	private Button _btnHold;
-	private Button _btnBuild;
-	private Button _btnAttack;
-	private Button _btnPatrol;
-
-	private Button _btnBuildCastle;
-	private Button _btnBuildTower;
-	private Button _btnCancelBuild;
-
-	private Button _btnTrainSoldier;
-	private Button _btnTrainArcher;
-	private Button _btnTrainPriest;
-	private Button _btnTrainWorker;
-	private Button _btnBuyPotion;
-
-	private Button _btnUpgradeWeapons;
-	private Button _btnUpgradeShields;
-	private Button _btnUpgradeHarvesting;
-	private Button _btnUpgradeTower;
-	private Button _btnSetRally;
-
-	private Button _btnUsePotion;
-
 	private List<Button> _dynamicBuildButtons = new();
 
-	public CommandPanel(GridContainer commandGrid, 
-		Button btnMove, Button btnStop, Button btnHold, Button btnBuild, Button btnAttack, Button btnPatrol,
-		Button btnBuildCastle, Button btnBuildTower, Button btnCancelBuild,
-		Button btnTrainSoldier, Button btnTrainArcher, Button btnTrainPriest, Button btnTrainWorker, Button btnBuyPotion,
-		Button btnUpgradeWeapons, Button btnUpgradeShields, Button btnUpgradeHarvesting, Button btnUpgradeTower, Button btnSetRally,
-		Button btnUsePotion)
+	public CommandPanel(GridContainer commandGrid)
 	{
 		_commandGrid = commandGrid;
-		_btnMove = btnMove;
-		_btnStop = btnStop;
-		_btnHold = btnHold;
-		_btnBuild = btnBuild;
-		_btnAttack = btnAttack;
-		_btnPatrol = btnPatrol;
-		_btnBuildCastle = btnBuildCastle;
-		_btnBuildTower = btnBuildTower;
-		_btnCancelBuild = btnCancelBuild;
-		_btnTrainSoldier = btnTrainSoldier;
-		_btnTrainArcher = btnTrainArcher;
-		_btnTrainPriest = btnTrainPriest;
-		_btnTrainWorker = btnTrainWorker;
-		_btnBuyPotion = btnBuyPotion;
-		_btnUpgradeWeapons = btnUpgradeWeapons;
-		_btnUpgradeShields = btnUpgradeShields;
-		_btnUpgradeHarvesting = btnUpgradeHarvesting;
-		_btnUpgradeTower = btnUpgradeTower;
-		_btnSetRally = btnSetRally;
-		_btnUsePotion = btnUsePotion;
 	}
 
 	public class CommandCardItem
@@ -441,19 +391,9 @@ public class CommandPanel
 					});
 				}
 
-				if (hasMetadata && meta.Abilities != null)
+				foreach (var ab in focusedUnit.Abilities)
 				{
-					foreach (var ab in meta.Abilities)
-					{
-						items.Add(CreateAbilityItem(ab));
-					}
-				}
-				else
-				{
-					if (focusedUnit.UnitId == "priest")
-					{
-						items.Add(CreateAbilityItem("holylight"));
-					}
+					items.Add(CreateAbilityItem(ab));
 				}
 
 
@@ -526,12 +466,9 @@ public class CommandPanel
 					GetButtonText = () => (GameHost.Instance != null && GameHost.Instance.HasHarvestingUpgrade) ? TranslationServer.Translate("MAXED") : ""
 				});
 
-				if (hasMetadata && meta.Abilities != null)
+				foreach (var ab in focusedUnit.Abilities)
 				{
-					foreach (var ab in meta.Abilities)
-					{
-						items.Add(CreateAbilityItem(ab));
-					}
+					items.Add(CreateAbilityItem(ab));
 				}
 			}
 			else if (focusedUnit.UnitId == "tower")
@@ -563,17 +500,9 @@ public class CommandPanel
 					}
 				});
 
-				if (hasMetadata && meta.Abilities != null)
+				foreach (var ab in focusedUnit.Abilities)
 				{
-					foreach (var ab in meta.Abilities)
-					{
-						items.Add(CreateAbilityItem(ab));
-					}
-				}
-				else
-				{
-					items.Add(CreateAbilityItem("fireball"));
-					items.Add(CreateAbilityItem("lightning"));
+					items.Add(CreateAbilityItem(ab));
 				}
 			}
 			else
@@ -585,12 +514,9 @@ public class CommandPanel
 						items.Add(CreateTrainOptionItem(opt));
 					}
 				}
-				if (hasMetadata && meta.Abilities != null)
+				foreach (var ab in focusedUnit.Abilities)
 				{
-					foreach (var ab in meta.Abilities)
-					{
-						items.Add(CreateAbilityItem(ab));
-					}
+					items.Add(CreateAbilityItem(ab));
 				}
 			}
 		}

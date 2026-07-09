@@ -24,10 +24,10 @@ public partial class GameHost
 		});
 		services.AddSingleton<CombatService>();
 		services.AddSingleton<EntityFactory>();
+		services.AddSingleton<MapLoader>(sp => new MapLoader(sp.GetRequiredService<WorldAccessor>(), "Definitions"));
 		services.AddSingleton<GameInitializer>(sp =>
 		{
-			var mapLoader = new MapLoader(sp.GetRequiredService<WorldAccessor>(), "Definitions");
-			return new GameInitializer(sp.GetRequiredService<WorldAccessor>(), mapLoader);
+			return new GameInitializer(sp.GetRequiredService<WorldAccessor>(), sp.GetRequiredService<MapLoader>());
 		});
 		services.AddSingleton<MovementService>();
 		services.AddSingleton<PlayerResourceService>();
