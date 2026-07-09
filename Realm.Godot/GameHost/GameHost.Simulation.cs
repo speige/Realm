@@ -49,10 +49,7 @@ public partial class GameHost
 			_unitWrapperCache.Remove(id);
 		}
 
-		if (SelectedUnits.Contains(unit))
-		{
-			SelectedUnits.Remove(unit);
-		}
+		SelectedUnits.Remove(unit);
 		AllUnits.Remove(unit);
 		if (unit.UnitId == "castle")
 		{
@@ -69,8 +66,8 @@ public partial class GameHost
 			{
 				EcsWorld.Mutate<PlayerResources>(_playerEntity, (ref PlayerResources r) =>
 				{
-					if (r.Value.ContainsKey(_goldResourceId))
-						r.Value[_goldResourceId] = (int)Math.Min(ResourceCap, r.Value[_goldResourceId] + bountyMeta.GoldBounty);
+					if (r.Value.TryGetValue(_goldResourceId, out var currentGold))
+						r.Value[_goldResourceId] = (int)Math.Min(ResourceCap, currentGold + bountyMeta.GoldBounty);
 				});
 				InGameHUD.Instance?.RefreshUI(SelectedUnits);
 			}

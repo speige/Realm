@@ -174,7 +174,7 @@ public partial class GameHost
 		{
 			decalId = "logo";
 		}
-		if (decalId.StartsWith("res://") || decalId.Contains("/"))
+		if (decalId.StartsWith("res://") || decalId.Contains('/'))
 		{
 			if (decalId.EndsWith(".glb") || decalId.EndsWith(".gltf"))
 			{
@@ -187,7 +187,7 @@ public partial class GameHost
 		{
 			return customPath;
 		}
-		if (!decalId.Contains("."))
+		if (!decalId.Contains('.'))
 		{
 			string customPathWithPng = $"res://Assets/2d/Decals/{decalId}.png";
 			if (ResourceLoader.Exists(customPathWithPng))
@@ -1398,7 +1398,7 @@ public partial class GameHost
 		return _editorService.GetMirroredTransforms(pos, rotation, EditorMirrorMode);
 	}
 
-	private Node FindObjectNearPosition(Vector3 position, float searchRadius = 1.5f)
+	private Node3D FindObjectNearPosition(Vector3 position, float searchRadius = 1.5f)
 	{
 		foreach (var child in GetChildren())
 		{

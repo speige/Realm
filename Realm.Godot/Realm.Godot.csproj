@@ -34,4 +34,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+  <Target Name="RemoveUnusedWebView2" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference->WithMetadataValue('FileName', 'Microsoft.Web.WebView2.Wpf'))" />
+      <Reference Remove="@(Reference->WithMetadataValue('FileName', 'Microsoft.Web.WebView2.WinForms'))" />
+    </ItemGroup>
+  </Target>
 </Project>

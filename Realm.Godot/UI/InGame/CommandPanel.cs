@@ -228,7 +228,7 @@ public class CommandPanel
 		return false;
 	}
 
-	private Control CreateBlackTile()
+	private ColorRect CreateBlackTile()
 	{
 		var tile = new ColorRect();
 		tile.Color = Colors.Black;
@@ -773,7 +773,7 @@ public class CommandPanel
 		btn.ClipContents = true;
 		btn.AddThemeConstantOverride("icon_max_width", 72);
 
-		if (tooltip.StartsWith("[") && tooltip.Contains("]"))
+		if (tooltip.StartsWith('[') && tooltip.Contains(']'))
 		{
 			int end = tooltip.IndexOf(']');
 			string hotkeyText = tooltip.Substring(1, end - 1);

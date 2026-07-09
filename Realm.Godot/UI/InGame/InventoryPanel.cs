@@ -70,7 +70,7 @@ public class InventoryPanel
         }
 	}
 
-	private Control CreateBlackTile()
+	private ColorRect CreateBlackTile()
 	{
 		var tile = new ColorRect();
 		tile.Color = Colors.Black;

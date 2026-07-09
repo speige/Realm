@@ -644,7 +644,7 @@ app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataSto
     string publicKey = form["PublicKey"].ToString();
     
     
-    if (string.IsNullOrEmpty(hash) || hash.Contains(".") || hash.Contains("/") || hash.Contains("\\")) return Results.BadRequest("Invalid Hash.");
+    if (string.IsNullOrEmpty(hash) || hash.Contains('.') || hash.Contains('/') || hash.Contains('\\')) return Results.BadRequest("Invalid Hash.");
 
     
     var existingMeta = db.Get<JsonDocument>("asset_signatures", hash);

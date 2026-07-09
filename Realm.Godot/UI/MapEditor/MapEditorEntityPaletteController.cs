@@ -270,7 +270,7 @@ public class MapEditorEntityPaletteController
 		}
 
 		string searchName = filename;
-		if (filename.StartsWith("res://") || filename.Contains("/"))
+		if (filename.StartsWith("res://") || filename.Contains('/'))
 		{
 			searchName = System.IO.Path.GetFileName(filename);
 		}
@@ -303,7 +303,7 @@ public class MapEditorEntityPaletteController
 				"Decals" => "res://Assets/2d/Decals",
 				_ => ""
 			};
-			string placeId = (filename.StartsWith("res://") || filename.Contains("/")) ? filename : (string.IsNullOrEmpty(path) ? filename : $"{path}/{filename}");
+			string placeId = (filename.StartsWith("res://") || filename.Contains('/')) ? filename : (string.IsNullOrEmpty(path) ? filename : $"{path}/{filename}");
 			_hud.TriggerToolSelection(targetTool, _btnAddObject, placeId);
 		}
 	}

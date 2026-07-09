@@ -191,7 +191,7 @@ public partial class MapDiscovery : Control
 		}
 	}
 
-	private Control CreateMapCard(MapData map)
+	private PanelContainer CreateMapCard(MapData map)
 	{
 		var card = new PanelContainer();
 		card.CustomMinimumSize = new Vector2(620, 250);

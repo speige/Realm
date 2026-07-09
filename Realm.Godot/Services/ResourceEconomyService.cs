@@ -231,9 +231,9 @@ internal class ResourceEconomyService
 				{
 					ref var playerRes = ref EcsWorld.Get<PlayerResources>(ownerEntity);
 					var resId = gather.ResourceType.AsResourceId(_definitionManagerRef);
-					if (playerRes.Value.ContainsKey(resId))
+					if (playerRes.Value.TryGetValue(resId, out var currentAmount))
 					{
-						playerRes.Value[resId] = (int)Math.Min(ResourceCap, playerRes.Value[resId] + carry);
+						playerRes.Value[resId] = (int)Math.Min(ResourceCap, currentAmount + carry);
 					}
 				}
 

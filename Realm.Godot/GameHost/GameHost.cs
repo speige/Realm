@@ -23,6 +23,12 @@ public partial class GameHost : Node3D, IGameAPI
 	private readonly NavMeshPathfinder _pathfinder = new();
 	public string ActiveMapName { get; private set; } = "melee";
 
+	private static readonly JsonSerializerOptions Options = new()
+	{
+		PropertyNameCaseInsensitive = true,
+		IncludeFields = true
+	};
+
 	private AudioService _audioService;
 	private FXService _fxService;
 	private SaveLoadService _saveLoadService;
@@ -1960,12 +1966,7 @@ public class {mapName} : IMapScript
 		{
 			try
 			{
-				var options = new JsonSerializerOptions
-				{
-					PropertyNameCaseInsensitive = true,
-					IncludeFields = true
-				};
-				var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, options);
+				var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
 				if (loadedRegistry != null)
 				{
 					UnitRegistry.Clear();

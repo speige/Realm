@@ -2981,9 +2981,8 @@ public partial class GameHost
 
 	public void DeselectUnit(Unit3D unit)
 	{
-		if (SelectedUnits.Contains(unit))
+		if (SelectedUnits.Remove(unit))
 		{
-			SelectedUnits.Remove(unit);
 			unit.IsSelected = false;
 		}
 	}

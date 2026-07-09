@@ -24,7 +24,7 @@ internal class DefinitionManager
 		LoadDefinitions<StatDefinitionAttribute, StatDefinition>(assembly, _stats);
 	}
 
-	private void LoadDefinitions<TAttribute, TDefinition>(Assembly assembly,
+	private static void LoadDefinitions<TAttribute, TDefinition>(Assembly assembly,
 		Dictionary<string, (TDefinition Definition, Type ComponentType)> dictionary)
 		where TAttribute : DefinitionAttribute
 		where TDefinition : Definition

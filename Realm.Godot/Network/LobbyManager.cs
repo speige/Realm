@@ -19,6 +19,8 @@ public partial class LobbyManager : Node
     public static readonly string GameBinaryVersion = GetGameBinaryVersion();
     public bool IsSinglePlayer { get; set; } = false;
 
+    private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
+
     private static string GetGameBinaryVersion()
     {
         try
@@ -285,7 +287,7 @@ public partial class LobbyManager : Node
             string jsonText = file.GetAsText();
             try
             {
-                var config = JsonSerializer.Deserialize<ServersConfig>(jsonText, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var config = JsonSerializer.Deserialize<ServersConfig>(jsonText, Options);
                 if (config != null && config.RegistryServers != null && config.RegistryServers.Count > 0)
                 {
                     RegistryServers = config.RegistryServers;

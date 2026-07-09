@@ -9,16 +9,18 @@ namespace Realm.Ecs.Services;
 /// </summary>
 internal class MapLoader
 {
+	private static readonly JsonSerializerOptions Options = new()
+	{
+		PropertyNameCaseInsensitive = true
+	};
+
 	public MapLoader(WorldAccessor ecsWorldAccessor, string definitionsBasePath)
 	{
 		DefinitionManager = new DefinitionManager(ecsWorldAccessor);
 
 		var mapJsonPath = Path.Combine(definitionsBasePath, "map.json");
 		var mapJson = File.ReadAllText(mapJsonPath);
-		var mapDefinitionUnitsOnly = JsonSerializer.Deserialize<MapDefinition>(mapJson, new JsonSerializerOptions
-		{
-			PropertyNameCaseInsensitive = true
-		}) ?? new MapDefinition();
+		var mapDefinitionUnitsOnly = JsonSerializer.Deserialize<MapDefinition>(mapJson, Options) ?? new MapDefinition();
 
 		ArchetypeManager = new ArchetypeManager(ecsWorldAccessor, mapDefinitionUnitsOnly.Units, DefinitionManager);
 	}

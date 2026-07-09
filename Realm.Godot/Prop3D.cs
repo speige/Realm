@@ -231,7 +231,7 @@ public partial class Prop3D : StaticBody3D
 		visual.Name = "VisualModel";
 		AddChild(visual);
 		
-		if (PropId.EndsWith(".glb") || PropId.Contains("res://") || PropId.Contains("/"))
+		if (PropId.EndsWith(".glb") || PropId.Contains("res://") || PropId.Contains('/'))
 		{
 			string path = PropId;
 			if (!path.StartsWith("res://"))

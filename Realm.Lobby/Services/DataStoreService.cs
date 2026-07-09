@@ -59,5 +59,6 @@ public class DataStoreService : IDisposable
     public void Dispose()
     {
         _engine.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

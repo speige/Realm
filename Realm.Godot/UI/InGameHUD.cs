@@ -853,7 +853,7 @@ public partial class InGameHUD : Control
 		btn.ClipContents = true;
 		btn.AddThemeConstantOverride("icon_max_width", 62);
 
-		if (tooltip.StartsWith("[") && tooltip.Contains("]"))
+		if (tooltip.StartsWith('[') && tooltip.Contains(']'))
 		{
 			int end = tooltip.IndexOf(']');
 			string hotkeyText = tooltip.Substring(1, end - 1);
@@ -1216,7 +1216,7 @@ public partial class InGameHUD : Control
 		btn.ClipContents = true;
 		btn.AddThemeConstantOverride("icon_max_width", 72);
 
-		if (tooltip.StartsWith("[") && tooltip.Contains("]"))
+		if (tooltip.StartsWith('[') && tooltip.Contains(']'))
 		{
 			int end = tooltip.IndexOf(']');
 			string hotkeyText = tooltip.Substring(1, end - 1);
