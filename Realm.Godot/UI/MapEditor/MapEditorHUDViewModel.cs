@@ -56,7 +56,6 @@ public class MapEditorHUDViewModel
 	public bool DeepWater { get; set; } = false;
 	public bool Flying { get; set; } = false;
 	public bool Ground { get; set; } = true;
-	public bool Unpathable { get; set; } = false;
 	public bool Buildable { get; set; } = false;
 	public int PathingModeIndex { get; set; } = 0;
 

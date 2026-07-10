@@ -81,6 +81,27 @@ public partial class EditableTerrain : StaticBody3D
 	public const int PATHING_UNPATHABLE = 16;
 	public const int PATHING_BUILDABLE = 32;
 
+	public static int GetDefaultPathingCode(float height, float waterHeight, bool waterEnabled)
+	{
+		if (!waterEnabled)
+		{
+			return PATHING_GROUND | PATHING_BUILDABLE | PATHING_FLYING;
+		}
+
+		if (height >= waterHeight)
+		{
+			return PATHING_GROUND | PATHING_BUILDABLE | PATHING_FLYING;
+		}
+
+		float depth = waterHeight - height;
+		if (depth < 4.0f)
+		{
+			return PATHING_SHALLOW_WATER | PATHING_FLYING;
+		}
+
+		return PATHING_DEEP_WATER | PATHING_FLYING;
+	}
+
 	private float[,] _localHeights;
 	private int[,] _localPathingCodes;
 	private float _localWaterHeight = -2.0f;
@@ -293,9 +314,10 @@ public partial class EditableTerrain : StaticBody3D
 		if (state.PathingCodes == null || state.PathingCodes.GetLength(0) != Width || state.PathingCodes.GetLength(1) != Depth)
 		{
 			var newPathing = new int[Width, Depth];
+			float[,] h = Heights;
 			for (int z = 0; z < Depth; z++)
 				for (int x = 0; x < Width; x++)
-					newPathing[x, z] = PATHING_GROUND | PATHING_FLYING;
+					newPathing[x, z] = GetDefaultPathingCode(h[x, z], WaterHeight, WaterEnabled);
 			PathingCodes = newPathing;
 		}
 
@@ -760,7 +782,7 @@ void fragment() {
 				else
 				{
 					newHeights[x, z] = 0.0f;
-					newPathing[x, z] = PATHING_GROUND | PATHING_FLYING;
+					newPathing[x, z] = GetDefaultPathingCode(0.0f, state.WaterHeight, state.WaterEnabled);
 					newSplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
 				}
 			}
@@ -835,7 +857,7 @@ void fragment() {
 				}
 				else
 				{
-					newPathing[x, z] = PATHING_GROUND | PATHING_FLYING;
+					newPathing[x, z] = GetDefaultPathingCode(newHeights[x, z], state.WaterHeight, state.WaterEnabled);
 				}
 			}
 		}

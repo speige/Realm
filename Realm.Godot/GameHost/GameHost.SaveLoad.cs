@@ -88,7 +88,7 @@ public partial class GameHost
 				for (int x = 0; x < defaultWidth; x++)
 				{
 					defaultHeights[x, z] = 0.0f;
-					defaultPathing[x, z] = EditableTerrain.PATHING_GROUND | EditableTerrain.PATHING_FLYING;
+					defaultPathing[x, z] = EditableTerrain.GetDefaultPathingCode(0.0f, -2.0f, true);
 				}
 			}
 			if (EcsWorld.Has<TerrainState>(_worldEntity))

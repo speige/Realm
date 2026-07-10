@@ -585,7 +585,10 @@ public partial class GameHost
 									 ActiveEditorTool == EditorTool.PaintDirt ||
 									 ActiveEditorTool == EditorTool.PaintRock ||
 									 ActiveEditorTool == EditorTool.PaintSand ||
-									 ActiveEditorTool == EditorTool.Noise;
+									 ActiveEditorTool == EditorTool.Noise ||
+									 ActiveEditorTool == EditorTool.Ramp ||
+									 ActiveEditorTool == EditorTool.PlacePropClump ||
+									 ActiveEditorTool == EditorTool.PaintPathing;
 
 				if (isTerrainTool)
 				{
@@ -1102,10 +1105,11 @@ public partial class GameHost
 						{
 							Vector3 start = _editorService.RampStartPos.Value;
 							Vector3 end = hitPos;
-							if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null)
+							if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
 							{
 								var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
 								var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+								var pathingBefore = (int[,])GroundTerrain.PathingCodes.Clone();
 								bool modified = ApplyRampInternal(start, end);
 								if (EditorMirrorMode != MirrorMode.None)
 								{
@@ -1123,9 +1127,12 @@ public partial class GameHost
 									AlignAllEntitiesToTerrain();
 									var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
 									var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
-									var action = new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter);
+									var pathingAfter = (int[,])GroundTerrain.PathingCodes.Clone();
+									var action = new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter);
 									EditorHistoryManager.RecordAction(action);
 									EditorHasUnsavedChanges = true;
+									UpdatePathingOverlay();
+									GroundTerrain.BakeNavMesh();
 								}
 							}
 							_editorService.SetRampStartPos(null);

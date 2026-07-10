@@ -254,7 +254,6 @@ public partial class MapEditorHUD : Control
 	private CheckBox _chkDeepWater;
 	private CheckBox _chkFlying;
 	private CheckBox _chkGround;
-	private CheckBox _chkUnpathable;
 	private CheckBox _chkBuildable;
 	private OptionButton _optPathingMode;
 	private HBoxContainer _pathingModeHBox;
@@ -1419,11 +1418,6 @@ public partial class MapEditorHUD : Control
 		UIStyle.ApplyCheckboxStyle(_chkGround);
 		layersVBox.AddChild(_chkGround);
 
-		_chkUnpathable = new CheckBox();
-		_chkUnpathable.Text = TranslationServer.Translate("Unpathable / Blocked");
-		UIStyle.ApplyCheckboxStyle(_chkUnpathable);
-		layersVBox.AddChild(_chkUnpathable);
-
 		_chkBuildable = new CheckBox();
 		_chkBuildable.Text = TranslationServer.Translate("Buildable");
 		UIStyle.ApplyCheckboxStyle(_chkBuildable);
@@ -1436,7 +1430,7 @@ public partial class MapEditorHUD : Control
 		_placementSettingsController = new MapEditorPlacementSettings(_sldPlacementRotate, _lblPlacementRotateValue, _sldPlacementScale, _lblPlacementScaleValue, _chkSpawnAsEnemy, _chkRandomRotation, _chkRandomScale, _chkClumpMode, _sldClumpDensity, _lblClumpDensityValue, _sldClumpScaleVar, _lblClumpScaleVarValue);
 		InitializeInspectorPanel();
 		_inspectorController = new MapEditorInspector(_lblInspectorTitle, _lblInspectorPos, _btnInspectorRotLeft, _btnInspectorRotRight, _btnInspectorScaleDown, _btnInspectorScaleUp, _btnInspectorScaleReset, _btnInspectorDelete);
-		_pathingPanelController = new MapEditorPathingPanel(_chkShallowWater, _chkDeepWater, _chkFlying, _chkGround, _chkUnpathable, _chkBuildable, _optPathingMode);
+		_pathingPanelController = new MapEditorPathingPanel(_chkShallowWater, _chkDeepWater, _chkFlying, _chkGround, _chkBuildable, _optPathingMode);
 
 		SetupMinimap();
 		RebuildHUDLayout();
@@ -1502,7 +1496,6 @@ public partial class MapEditorHUD : Control
 		if (_chkFlying != null && _chkFlying.ButtonPressed) mask |= EditableTerrain.PATHING_FLYING;
 		if (_chkShallowWater != null && _chkShallowWater.ButtonPressed) mask |= EditableTerrain.PATHING_SHALLOW_WATER;
 		if (_chkDeepWater != null && _chkDeepWater.ButtonPressed) mask |= EditableTerrain.PATHING_DEEP_WATER;
-		if (_chkUnpathable != null && _chkUnpathable.ButtonPressed) mask |= EditableTerrain.PATHING_UNPATHABLE;
 		if (_chkBuildable != null && _chkBuildable.ButtonPressed) mask |= EditableTerrain.PATHING_BUILDABLE;
 		return mask;
 	}

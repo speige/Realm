@@ -53,9 +53,18 @@ public partial class GameHost
 				{
 					GroundTerrain.Heights[x, z] = 0.0f;
 					GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
+					if (GroundTerrain.PathingCodes != null)
+					{
+						GroundTerrain.PathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(0.0f, GroundTerrain.WaterHeight, GroundTerrain.WaterEnabled);
+					}
 				}
 			}
 			GroundTerrain.UpdateMeshAndPhysics(true, true);
+			GroundTerrain.BakeNavMesh();
+			if (PathingOverlayVisible)
+			{
+				RebuildPathingOverlay();
+			}
 		}
 		EditorHistoryManager.Clear();
 		RebuildGridOverlayMeshExternal();
@@ -1963,49 +1972,34 @@ public partial class GameHost
 			EditableTerrain.PATHING_GROUND        => new Color(0.2f, 0.85f, 0.2f, 0.25f),
 			EditableTerrain.PATHING_UNPATHABLE    => new Color(0.9f, 0.1f, 0.1f, 0.25f),
 			EditableTerrain.PATHING_BUILDABLE     => new Color(0.6f, 0.2f, 0.8f, 0.25f),
+			0                                     => new Color(0.9f, 0.1f, 0.1f, 0.25f),
 			_ => new Color(0f, 0f, 0f, 0f)
-		};
-
-		var allFlags = new int[]
-		{
-			EditableTerrain.PATHING_SHALLOW_WATER,
-			EditableTerrain.PATHING_DEEP_WATER,
-			EditableTerrain.PATHING_FLYING,
-			EditableTerrain.PATHING_GROUND,
-			EditableTerrain.PATHING_UNPATHABLE,
-			EditableTerrain.PATHING_BUILDABLE
 		};
 
 		int cellWidth = width - 1;
 		int cellDepth = depth - 1;
-		int maxQuads = cellWidth * cellDepth;
 
-		var verticesList = new List<Vector3>(maxQuads * 8);
-		var colorsList = new List<Color>(maxQuads * 8);
-		var indicesList = new List<int>(maxQuads * 12);
+		_pathingVerticesCache.Clear();
+		_pathingColorsCache.Clear();
+		_pathingIndicesCache.Clear();
 
+		Span<int> activeFlags = stackalloc int[6];
 		for (int z = 0; z < cellDepth; z++)
 		{
 			for (int x = 0; x < cellWidth; x++)
 			{
 				int code = GroundTerrain.PathingCodes[x, z];
-				if (code == 0)
-				{
-					continue;
-				}
+				int activeCount = 0;
 
-				var activeFlags = new List<int>();
-				foreach (var flag in allFlags)
-				{
-					if ((code & flag) != 0)
-					{
-						activeFlags.Add(flag);
-					}
-				}
+				if ((code & EditableTerrain.PATHING_SHALLOW_WATER) != 0) activeFlags[activeCount++] = EditableTerrain.PATHING_SHALLOW_WATER;
+				if ((code & EditableTerrain.PATHING_DEEP_WATER) != 0)    activeFlags[activeCount++] = EditableTerrain.PATHING_DEEP_WATER;
+				if ((code & EditableTerrain.PATHING_FLYING) != 0)        activeFlags[activeCount++] = EditableTerrain.PATHING_FLYING;
+				if ((code & EditableTerrain.PATHING_GROUND) != 0)        activeFlags[activeCount++] = EditableTerrain.PATHING_GROUND;
+				if ((code & EditableTerrain.PATHING_BUILDABLE) != 0)     activeFlags[activeCount++] = EditableTerrain.PATHING_BUILDABLE;
 
-				if (activeFlags.Count == 0)
+				if (activeCount == 0)
 				{
-					continue;
+					activeFlags[activeCount++] = 0;
 				}
 
 				float lx0 = (x - (width - 1) / 2.0f) * spacing;
@@ -2018,31 +2012,31 @@ public partial class GameHost
 				float h01 = GroundTerrain.Heights[x,     z + 1] + 0.06f;
 				float h11 = GroundTerrain.Heights[x + 1, z + 1] + 0.06f;
 
-				if (activeFlags.Count == 1)
+				if (activeCount == 1)
 				{
 					Color cellColor = GetLayerColor(activeFlags[0]);
 					if (cellColor.A < 0.01f) continue;
 
-					int baseV = verticesList.Count;
-					verticesList.Add(new Vector3(lx0, h00, lz0));
-					colorsList.Add(cellColor);
-					verticesList.Add(new Vector3(lx1, h10, lz0));
-					colorsList.Add(cellColor);
-					verticesList.Add(new Vector3(lx1, h11, lz1));
-					colorsList.Add(cellColor);
-					verticesList.Add(new Vector3(lx0, h01, lz1));
-					colorsList.Add(cellColor);
+					int baseV = _pathingVerticesCache.Count;
+					_pathingVerticesCache.Add(new Vector3(lx0, h00, lz0));
+					_pathingColorsCache.Add(cellColor);
+					_pathingVerticesCache.Add(new Vector3(lx1, h10, lz0));
+					_pathingColorsCache.Add(cellColor);
+					_pathingVerticesCache.Add(new Vector3(lx1, h11, lz1));
+					_pathingColorsCache.Add(cellColor);
+					_pathingVerticesCache.Add(new Vector3(lx0, h01, lz1));
+					_pathingColorsCache.Add(cellColor);
 
-					indicesList.Add(baseV);
-					indicesList.Add(baseV + 1);
-					indicesList.Add(baseV + 2);
-					indicesList.Add(baseV);
-					indicesList.Add(baseV + 2);
-					indicesList.Add(baseV + 3);
+					_pathingIndicesCache.Add(baseV);
+					_pathingIndicesCache.Add(baseV + 1);
+					_pathingIndicesCache.Add(baseV + 2);
+					_pathingIndicesCache.Add(baseV);
+					_pathingIndicesCache.Add(baseV + 2);
+					_pathingIndicesCache.Add(baseV + 3);
 				}
 				else
 				{
-					int S = 4;
+					int S = 2;
 					for (int sz = 0; sz < S; sz++)
 					{
 						for (int sx = 0; sx < S; sx++)
@@ -2062,26 +2056,26 @@ public partial class GameHost
 							float subZ0 = lz0 + sz * (spacing / S);
 							float subZ1 = lz0 + (sz + 1) * (spacing / S);
 
-							int flagIndex = (sx + sz) % activeFlags.Count;
+							int flagIndex = (sx + sz) % activeCount;
 							Color subColor = GetLayerColor(activeFlags[flagIndex]);
 							if (subColor.A < 0.01f) continue;
 
-							int baseV = verticesList.Count;
-							verticesList.Add(new Vector3(subX0, hSub00, subZ0));
-							colorsList.Add(subColor);
-							verticesList.Add(new Vector3(subX1, hSub10, subZ0));
-							colorsList.Add(subColor);
-							verticesList.Add(new Vector3(subX1, hSub11, subZ1));
-							colorsList.Add(subColor);
-							verticesList.Add(new Vector3(subX0, hSub01, subZ1));
-							colorsList.Add(subColor);
+							int baseV = _pathingVerticesCache.Count;
+							_pathingVerticesCache.Add(new Vector3(subX0, hSub00, subZ0));
+							_pathingColorsCache.Add(subColor);
+							_pathingVerticesCache.Add(new Vector3(subX1, hSub10, subZ0));
+							_pathingColorsCache.Add(subColor);
+							_pathingVerticesCache.Add(new Vector3(subX1, hSub11, subZ1));
+							_pathingColorsCache.Add(subColor);
+							_pathingVerticesCache.Add(new Vector3(subX0, hSub01, subZ1));
+							_pathingColorsCache.Add(subColor);
 
-							indicesList.Add(baseV);
-							indicesList.Add(baseV + 1);
-							indicesList.Add(baseV + 2);
-							indicesList.Add(baseV);
-							indicesList.Add(baseV + 2);
-							indicesList.Add(baseV + 3);
+							_pathingIndicesCache.Add(baseV);
+							_pathingIndicesCache.Add(baseV + 1);
+							_pathingIndicesCache.Add(baseV + 2);
+							_pathingIndicesCache.Add(baseV);
+							_pathingIndicesCache.Add(baseV + 2);
+							_pathingIndicesCache.Add(baseV + 3);
 						}
 					}
 				}
@@ -2090,12 +2084,12 @@ public partial class GameHost
 
 		var arrays = new Godot.Collections.Array();
 		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = verticesList.ToArray();
-		arrays[(int)Mesh.ArrayType.Color]  = colorsList.ToArray();
-		arrays[(int)Mesh.ArrayType.Index]  = indicesList.ToArray();
+		arrays[(int)Mesh.ArrayType.Vertex] = _pathingVerticesCache.ToArray();
+		arrays[(int)Mesh.ArrayType.Color]  = _pathingColorsCache.ToArray();
+		arrays[(int)Mesh.ArrayType.Index]  = _pathingIndicesCache.ToArray();
 
 		var arrayMesh = new ArrayMesh();
-		if (indicesList.Count > 0)
+		if (_pathingIndicesCache.Count > 0)
 		{
 			arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
 		}

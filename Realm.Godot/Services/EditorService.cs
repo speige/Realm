@@ -264,8 +264,22 @@ public class EditorService
 									activeTool == GameHost.EditorTool.Flatten ||
 									activeTool == GameHost.EditorTool.Plateau)
 								{
-									terrain.Heights[x, z] = Mathf.Clamp(targetHeight, -10.0f, 50.0f);
-									modified = true;
+									float oldH = terrain.Heights[x, z];
+									float newH = Mathf.Clamp(targetHeight, -10.0f, 50.0f);
+									if (Mathf.Abs(newH - oldH) > 0.001f)
+									{
+										if (terrain.PathingCodes != null)
+										{
+											int defaultPathBefore = EditableTerrain.GetDefaultPathingCode(oldH, terrain.WaterHeight, terrain.WaterEnabled);
+											if (terrain.PathingCodes[x, z] == defaultPathBefore)
+											{
+												terrain.PathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(newH, terrain.WaterHeight, terrain.WaterEnabled);
+												result.PathingModified = true;
+											}
+										}
+										terrain.Heights[x, z] = newH;
+										modified = true;
+									}
 								}
 								else if (activeTool == GameHost.EditorTool.Smooth)
 								{
@@ -458,12 +472,40 @@ public class EditorService
 							}
 							else if (activeTool == GameHost.EditorTool.Flatten)
 							{
-								terrain.Heights[x, z] = Mathf.Clamp(Mathf.Lerp(terrain.Heights[x, z], flattenHeight, brushStrength * falloff * delta * 2.0f), -10.0f, 50.0f);
+								float oldH = terrain.Heights[x, z];
+								float newH = Mathf.Clamp(Mathf.Lerp(oldH, flattenHeight, brushStrength * falloff * delta * 2.0f), -10.0f, 50.0f);
+								if (Mathf.Abs(newH - oldH) > 0.001f)
+								{
+									if (terrain.PathingCodes != null)
+									{
+										int defaultPathBefore = EditableTerrain.GetDefaultPathingCode(oldH, terrain.WaterHeight, terrain.WaterEnabled);
+										if (terrain.PathingCodes[x, z] == defaultPathBefore)
+										{
+											terrain.PathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(newH, terrain.WaterHeight, terrain.WaterEnabled);
+											result.PathingModified = true;
+										}
+									}
+									terrain.Heights[x, z] = newH;
+								}
 							}
 							else if (activeTool == GameHost.EditorTool.Plateau)
 							{
 								float targetHeight = _activePlateauHeight ?? 0.0f;
-								terrain.Heights[x, z] = Mathf.Clamp(Mathf.Lerp(terrain.Heights[x, z], targetHeight, brushStrength * falloff * delta * 2.0f), -10.0f, 50.0f);
+								float oldH = terrain.Heights[x, z];
+								float newH = Mathf.Clamp(Mathf.Lerp(oldH, targetHeight, brushStrength * falloff * delta * 2.0f), -10.0f, 50.0f);
+								if (Mathf.Abs(newH - oldH) > 0.001f)
+								{
+									if (terrain.PathingCodes != null)
+									{
+										int defaultPathBefore = EditableTerrain.GetDefaultPathingCode(oldH, terrain.WaterHeight, terrain.WaterEnabled);
+										if (terrain.PathingCodes[x, z] == defaultPathBefore)
+										{
+											terrain.PathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(newH, terrain.WaterHeight, terrain.WaterEnabled);
+											result.PathingModified = true;
+										}
+									}
+									terrain.Heights[x, z] = newH;
+								}
 							}
 							else if (activeTool == GameHost.EditorTool.Smooth)
 							{
@@ -765,8 +807,21 @@ public class EditorService
 						float targetHeight = Mathf.Lerp(start.Y, end.Y, t);
 						float falloff = 1.0f - (dist / brushRadius);
 						falloff = Mathf.Sin(falloff * Mathf.Pi / 2.0f);
-						terrain.Heights[x, z] = Mathf.Lerp(terrain.Heights[x, z], targetHeight, falloff);
-						modified = true;
+						float oldH = terrain.Heights[x, z];
+						float newH = Mathf.Lerp(oldH, targetHeight, falloff);
+						if (Mathf.Abs(newH - oldH) > 0.001f)
+						{
+							if (terrain.PathingCodes != null)
+							{
+								int defaultPathBefore = EditableTerrain.GetDefaultPathingCode(oldH, terrain.WaterHeight, terrain.WaterEnabled);
+								if (terrain.PathingCodes[x, z] == defaultPathBefore)
+								{
+									terrain.PathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(newH, terrain.WaterHeight, terrain.WaterEnabled);
+								}
+							}
+							terrain.Heights[x, z] = newH;
+							modified = true;
+						}
 					}
 				}
 			}
@@ -1228,6 +1283,28 @@ public class EditorService
 		return result;
 	}
 
+	private int GetDominantTextureIndex(TerrainSplatWeights splat)
+	{
+		float maxW = splat.Weight0;
+		int idx = splat.Index0;
+		if (splat.Weight1 > maxW)
+		{
+			maxW = splat.Weight1;
+			idx = splat.Index1;
+		}
+		if (splat.Weight2 > maxW)
+		{
+			maxW = splat.Weight2;
+			idx = splat.Index2;
+		}
+		if (splat.Weight3 > maxW)
+		{
+			maxW = splat.Weight3;
+			idx = splat.Index3;
+		}
+		return idx;
+	}
+
 	private List<Vector2I> GetFloodFillCells(Vector3 clickPos, TerrainSplatWeights[,] splatBefore, float[,] heights, int width, int depth, float spacing, bool[,] visited)
 	{
 		var cells = new List<Vector2I>();
@@ -1236,7 +1313,7 @@ public class EditorService
 		float startFz = clickPos.Z / spacing + (depth - 1) / 2.0f;
 		int clickX = Mathf.Clamp((int)Math.Round(startFx), 0, width - 1);
 		int clickZ = Mathf.Clamp((int)Math.Round(startFz), 0, depth - 1);
-		int startDominantIndex = splatBefore[clickX, clickZ].Index0;
+		int startDominantIndex = GetDominantTextureIndex(splatBefore[clickX, clickZ]);
 
 		var queue = new Queue<(int x, int z)>();
 		if (!visited[clickX, clickZ])
@@ -1260,13 +1337,55 @@ public class EditorService
 				{
 					if (!visited[nextX, nextZ])
 					{
-						if (splatBefore[nextX, nextZ].Index0 != startDominantIndex) continue;
+						if (GetDominantTextureIndex(splatBefore[nextX, nextZ]) != startDominantIndex) continue;
 						float hCurrent = heights[currX, currZ];
 						float hNext = heights[nextX, nextZ];
 						if (Mathf.Abs(hNext - hCurrent) >= 1.0f) continue;
 						visited[nextX, nextZ] = true;
 						queue.Enqueue((nextX, nextZ));
 					}
+				}
+			}
+		}
+
+		return cells;
+	}
+
+	private List<Vector2I> GetFloodFillArea(
+		Vector3 clickPos,
+		TerrainSplatWeights[,] splatBefore,
+		float[,] heights,
+		int width,
+		int depth,
+		float spacing,
+		bool[,] visited,
+		MirrorMode mirrorMode,
+		Func<int, int, bool> shouldFillCell)
+	{
+		var cells = new List<Vector2I>();
+
+		float startFx = clickPos.X / spacing + (width - 1) / 2.0f;
+		float startFz = clickPos.Z / spacing + (depth - 1) / 2.0f;
+		int startX = Mathf.Clamp((int)Math.Round(startFx), 0, width - 1);
+		int startZ = Mathf.Clamp((int)Math.Round(startFz), 0, depth - 1);
+
+		if (shouldFillCell(startX, startZ))
+		{
+			cells.AddRange(GetFloodFillCells(clickPos, splatBefore, heights, width, depth, spacing, visited));
+		}
+
+		if (mirrorMode != MirrorMode.None)
+		{
+			var mirrors = GetMirroredPositions(clickPos, mirrorMode);
+			foreach (var m in mirrors)
+			{
+				float mFx = m.X / spacing + (width - 1) / 2.0f;
+				float mFz = m.Z / spacing + (depth - 1) / 2.0f;
+				int mX = Mathf.Clamp((int)Math.Round(mFx), 0, width - 1);
+				int mZ = Mathf.Clamp((int)Math.Round(mFz), 0, depth - 1);
+				if (shouldFillCell(mX, mZ))
+				{
+					cells.AddRange(GetFloodFillCells(m, splatBefore, heights, width, depth, spacing, visited));
 				}
 			}
 		}
@@ -1286,32 +1405,17 @@ public class EditorService
 		var visited = new bool[width, depth];
 		float[,] heights = terrain.Heights;
 
-		var cells = new List<Vector2I>();
-
-		float startFx = clickPos.X / spacing + (width - 1) / 2.0f;
-		float startFz = clickPos.Z / spacing + (depth - 1) / 2.0f;
-		int startX = Mathf.Clamp((int)Math.Round(startFx), 0, width - 1);
-		int startZ = Mathf.Clamp((int)Math.Round(startFz), 0, depth - 1);
-		if (splatBefore[startX, startZ].Index0 != fillTextureIndex)
-		{
-			cells.AddRange(GetFloodFillCells(clickPos, splatBefore, heights, width, depth, spacing, visited));
-		}
-
-		if (mirrorMode != MirrorMode.None)
-		{
-			var mirrors = GetMirroredPositions(clickPos, mirrorMode);
-			foreach (var m in mirrors)
-			{
-				float mFx = m.X / spacing + (width - 1) / 2.0f;
-				float mFz = m.Z / spacing + (depth - 1) / 2.0f;
-				int mX = Mathf.Clamp((int)Math.Round(mFx), 0, width - 1);
-				int mZ = Mathf.Clamp((int)Math.Round(mFz), 0, depth - 1);
-				if (splatBefore[mX, mZ].Index0 != fillTextureIndex)
-				{
-					cells.AddRange(GetFloodFillCells(m, splatBefore, heights, width, depth, spacing, visited));
-				}
-			}
-		}
+		var cells = GetFloodFillArea(
+			clickPos,
+			splatBefore,
+			heights,
+			width,
+			depth,
+			spacing,
+			visited,
+			mirrorMode,
+			(x, z) => splatBefore[x, z].Index0 != fillTextureIndex
+		);
 
 		foreach (var cell in cells)
 		{
@@ -1352,19 +1456,23 @@ public class EditorService
 
 		var pathingCodes = terrain.PathingCodes;
 
-		var cells = GetFloodFillCells(clickPos, splatBefore, heights, width, depth, spacing, visited);
-		if (mirrorMode != MirrorMode.None)
-		{
-			var mirrors = GetMirroredPositions(clickPos, mirrorMode);
-			foreach (var m in mirrors)
-			{
-				cells.AddRange(GetFloodFillCells(m, splatBefore, heights, width, depth, spacing, visited));
-			}
-		}
+		int targetValue = pathingAdd ? pathingMask : 0;
+
+		var cells = GetFloodFillArea(
+			clickPos,
+			splatBefore,
+			heights,
+			width,
+			depth,
+			spacing,
+			visited,
+			mirrorMode,
+			(x, z) => pathingBefore[x, z] != targetValue
+		);
 
 		foreach (var cell in cells)
 		{
-			pathingCodes[cell.X, cell.Y] = pathingMask;
+			pathingCodes[cell.X, cell.Y] = targetValue;
 		}
 
 		return (pathingBefore, (int[,])pathingCodes.Clone());
