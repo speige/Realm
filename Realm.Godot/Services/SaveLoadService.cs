@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using Arch.Core;
+using Godot;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Meta;
@@ -110,9 +111,7 @@ public class SaveLoadService
 
 			TerrainState terrain = default;
 			EditorState editor = default;
-			TerrainColorsState colorsState = default;
 			bool foundWorld = false;
-			bool foundColors = false;
 
 			var worldQuery2 = Realm.Ecs.Common.QueryCache.AllTerrainStateAndEditorStateQuery;
 			EcsWorld.Query(in worldQuery2, (Entity entity, ref TerrainState t, ref EditorState e) =>
@@ -120,16 +119,13 @@ public class SaveLoadService
 				terrain = t;
 				editor = e;
 				foundWorld = true;
-				if (EcsWorld.Has<TerrainColorsState>(entity))
-				{
-					colorsState = EcsWorld.Get<TerrainColorsState>(entity);
-					foundColors = true;
-				}
 			});
 
 			if (!foundWorld) return false;
 
 			var saveData = new MapSaveData();
+			saveData.Width = terrain.Width;
+			saveData.Depth = terrain.Depth;
 			saveData.WaterEnabled = terrain.WaterEnabled;
 			saveData.WaterHeight = terrain.WaterHeight;
 			saveData.CameraBoundsLeft = editor.CameraBoundsLeft;
@@ -141,27 +137,67 @@ public class SaveLoadService
 
 			int width = terrain.Width;
 			int depth = terrain.Depth;
-			saveData.Heights = new float[width * depth];
-			saveData.Pathing = new int[width * depth];
 
+			string directory = Path.GetDirectoryName(absolutePath);
+			if (!Directory.Exists(directory))
+			{
+				Directory.CreateDirectory(directory);
+			}
+
+			string heightsPath = Path.Combine(directory, "terrain_heights.exr");
+			string splatIndicesPath = Path.Combine(directory, "terrain_splat_indices.png");
+			string splatWeightsPath = Path.Combine(directory, "terrain_splat_weights.png");
+			string pathingPath = Path.Combine(directory, "terrain_pathing.png");
+
+			Image heightsImage = Image.CreateEmpty(width, depth, false, Image.Format.Rf);
+			for (int z = 0; z < depth; z++)
+			{
+				for (int x = 0; x < width; x++)
+				{
+					float h = terrain.Heights[x, z];
+					heightsImage.SetPixel(x, z, new Color(h, 0f, 0f, 1f));
+				}
+			}
+			heightsImage.SaveExr(heightsPath);
+
+			Image pathingImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgba8);
+			for (int z = 0; z < depth; z++)
+			{
+				for (int x = 0; x < width; x++)
+				{
+					int code = terrain.PathingCodes != null ? terrain.PathingCodes[x, z] : (8 | 4);
+					pathingImage.SetPixel(x, z, new Color(code / 255f, 0f, 0f, 1f));
+				}
+			}
+			pathingImage.SavePng(pathingPath);
+
+			Image splatIndicesImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgba8);
+			Image splatWeightsImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgba8);
 			for (int z = 0; z < depth; z++)
 			{
 				for (int x = 0; x < width; x++)
 				{
 					int idx = z * width + x;
-					saveData.Heights[idx] = terrain.Heights[x, z];
-					saveData.Pathing[idx] = terrain.PathingCodes != null ? terrain.PathingCodes[x, z] : (8 | 4);
+					string serialized = (htmlColors != null && idx < htmlColors.Length) ? htmlColors[idx] : null;
+					TerrainSplatWeights s = TerrainSplatWeights.Deserialize(serialized);
+
+					splatIndicesImage.SetPixel(x, z, new Color(
+						s.Index0 / 255f,
+						s.Index1 / 255f,
+						s.Index2 / 255f,
+						s.Index3 / 255f
+					));
+
+					splatWeightsImage.SetPixel(x, z, new Color(
+						s.Weight0,
+						s.Weight1,
+						s.Weight2,
+						s.Weight3
+					));
 				}
 			}
-
-			if (foundColors && colorsState.Colors != null)
-			{
-				saveData.Colors = colorsState.Colors;
-			}
-			else
-			{
-				saveData.Colors = new string[width * depth];
-			}
+			splatIndicesImage.SavePng(splatIndicesPath);
+			splatWeightsImage.SavePng(splatWeightsPath);
 
 			saveData.Units = new List<UnitSaveData>();
 			var unitQuery = Realm.Ecs.Common.QueryCache.AllDefinitionIdAndPositionAndOwnerQuery;
@@ -315,6 +351,9 @@ public class SaveLoadService
 			EcsWorld.Query(in req3, (Entity entity) => req3List.Add(entity));
 			foreach (var ent in req3List) EcsWorld.Destroy(ent);
 
+			int width = saveData.Width > 0 ? saveData.Width : 126;
+			int depth = saveData.Depth > 0 ? saveData.Depth : 126;
+
 			Entity worldEntity = Entity.Null;
 			var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateQuery;
 			EcsWorld.Query(in worldQuery, (Entity entity) => worldEntity = entity);
@@ -326,14 +365,21 @@ public class SaveLoadService
 
 			if (!EcsWorld.Has<TerrainState>(worldEntity))
 			{
-				EcsWorld.Add(worldEntity, new TerrainState(126, 126, 2.0f, 5.0f / 2.5f / 10.0f, -2.0f, true, new float[126, 126], new int[126, 126], null, null));
+				EcsWorld.Add(worldEntity, new TerrainState(width, depth, 2.0f, 5.0f / 2.5f / 10.0f, -2.0f, true, new float[width, depth], new int[width, depth], null, null));
+			}
+			else
+			{
+				ref var ts = ref EcsWorld.Get<TerrainState>(worldEntity);
+				ts.Width = width;
+				ts.Depth = depth;
+				ts.Heights = new float[width, depth];
+				ts.PathingCodes = new int[width, depth];
+				EcsWorld.Set(worldEntity, ts);
 			}
 
 			if (EcsWorld.Has<TerrainState>(worldEntity))
 			{
 				ref var ts = ref EcsWorld.Get<TerrainState>(worldEntity);
-				int width = ts.Width;
-				int depth = ts.Depth;
 
 				if (ts.Heights == null)
 				{
@@ -344,28 +390,57 @@ public class SaveLoadService
 					ts.PathingCodes = new int[width, depth];
 				}
 
-				if (saveData.Heights != null && saveData.Heights.Length == width * depth)
+				string directory = Path.GetDirectoryName(absolutePath);
+				string heightsPath = Path.Combine(directory, "terrain_heights.exr");
+				bool heightsLoaded = false;
+				if (File.Exists(heightsPath))
+				{
+					Image heightsImage = Image.LoadFromFile(heightsPath);
+					if (heightsImage != null)
+					{
+						for (int z = 0; z < depth; z++)
+						{
+							for (int x = 0; x < width; x++)
+							{
+								int imgX = Math.Clamp(x, 0, heightsImage.GetWidth() - 1);
+								int imgZ = Math.Clamp(z, 0, heightsImage.GetHeight() - 1);
+								ts.Heights[x, z] = heightsImage.GetPixel(imgX, imgZ).R;
+							}
+						}
+						heightsLoaded = true;
+					}
+				}
+				if (!heightsLoaded)
 				{
 					for (int z = 0; z < depth; z++)
 					{
 						for (int x = 0; x < width; x++)
 						{
-							ts.Heights[x, z] = saveData.Heights[z * width + x];
+							ts.Heights[x, z] = 0.0f;
 						}
 					}
 				}
 
-				if (saveData.Pathing != null && saveData.Pathing.Length == width * depth)
+				string pathingPath = Path.Combine(directory, "terrain_pathing.png");
+				bool pathingLoaded = false;
+				if (File.Exists(pathingPath))
 				{
-					for (int z = 0; z < depth; z++)
+					Image pathingImage = Image.LoadFromFile(pathingPath);
+					if (pathingImage != null)
 					{
-						for (int x = 0; x < width; x++)
+						for (int z = 0; z < depth; z++)
 						{
-							ts.PathingCodes[x, z] = saveData.Pathing[z * width + x];
+							for (int x = 0; x < width; x++)
+							{
+								int imgX = Math.Clamp(x, 0, pathingImage.GetWidth() - 1);
+								int imgZ = Math.Clamp(z, 0, pathingImage.GetHeight() - 1);
+								ts.PathingCodes[x, z] = (int)Math.Round(pathingImage.GetPixel(imgX, imgZ).R * 255f);
+							}
 						}
+						pathingLoaded = true;
 					}
 				}
-				else
+				if (!pathingLoaded)
 				{
 					for (int z = 0; z < depth; z++)
 					{
@@ -385,15 +460,76 @@ public class SaveLoadService
 				EcsWorld.Set(worldEntity, ts);
 			}
 
-			if (saveData.Colors != null)
+			string splatIndicesPath = Path.Combine(Path.GetDirectoryName(absolutePath), "terrain_splat_indices.png");
+			string splatWeightsPath = Path.Combine(Path.GetDirectoryName(absolutePath), "terrain_splat_weights.png");
+			string[] loadedColors = null;
+
+			if (File.Exists(splatIndicesPath) && File.Exists(splatWeightsPath))
+			{
+				Image splatIndicesImage = Image.LoadFromFile(splatIndicesPath);
+				Image splatWeightsImage = Image.LoadFromFile(splatWeightsPath);
+				if (splatIndicesImage != null && splatWeightsImage != null)
+				{
+					loadedColors = new string[width * depth];
+					for (int z = 0; z < depth; z++)
+					{
+						for (int x = 0; x < width; x++)
+						{
+							int imgX = Math.Clamp(x, 0, splatIndicesImage.GetWidth() - 1);
+							int imgZ = Math.Clamp(z, 0, splatIndicesImage.GetHeight() - 1);
+							Color idxPixel = splatIndicesImage.GetPixel(imgX, imgZ);
+
+							int imgWeightX = Math.Clamp(x, 0, splatWeightsImage.GetWidth() - 1);
+							int imgWeightZ = Math.Clamp(z, 0, splatWeightsImage.GetHeight() - 1);
+							Color weightPixel = splatWeightsImage.GetPixel(imgWeightX, imgWeightZ);
+
+							int i0 = (int)Math.Round(idxPixel.R * 255f);
+							int i1 = (int)Math.Round(idxPixel.G * 255f);
+							int i2 = (int)Math.Round(idxPixel.B * 255f);
+							int i3 = (int)Math.Round(idxPixel.A * 255f);
+
+							float w0 = weightPixel.R;
+							float w1 = weightPixel.G;
+							float w2 = weightPixel.B;
+							float w3 = weightPixel.A;
+
+							var s = new TerrainSplatWeights
+							{
+								Index0 = i0,
+								Index1 = i1,
+								Index2 = i2,
+								Index3 = i3,
+								Weight0 = w0,
+								Weight1 = w1,
+								Weight2 = w2,
+								Weight3 = w3
+							};
+
+							loadedColors[z * width + x] = s.Serialize();
+						}
+					}
+				}
+			}
+
+			if (loadedColors == null)
+			{
+				loadedColors = new string[width * depth];
+				string defaultSolid = TerrainSplatWeights.CreateSolid(3).Serialize();
+				for (int i = 0; i < loadedColors.Length; i++)
+				{
+					loadedColors[i] = defaultSolid;
+				}
+			}
+
+			if (loadedColors != null)
 			{
 				if (EcsWorld.Has<TerrainColorsState>(worldEntity))
 				{
-					EcsWorld.Set(worldEntity, new TerrainColorsState(saveData.Colors));
+					EcsWorld.Set(worldEntity, new TerrainColorsState(loadedColors));
 				}
 				else
 				{
-					EcsWorld.Add(worldEntity, new TerrainColorsState(saveData.Colors));
+					EcsWorld.Add(worldEntity, new TerrainColorsState(loadedColors));
 				}
 			}
 

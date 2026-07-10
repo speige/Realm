@@ -2350,7 +2350,21 @@ public partial class MapEditorHUD : Control
 
 		foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories))
 		{
+			var fileAttributes = System.IO.File.GetAttributes(file);
+			if ((fileAttributes & System.IO.FileAttributes.ReadOnly) == System.IO.FileAttributes.ReadOnly)
+			{
+				System.IO.File.SetAttributes(file, fileAttributes & ~System.IO.FileAttributes.ReadOnly);
+			}
 			System.IO.File.Delete(file);
+		}
+
+		foreach (var directory in System.IO.Directory.GetDirectories(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories))
+		{
+			var directoryAttributes = System.IO.File.GetAttributes(directory);
+			if ((directoryAttributes & System.IO.FileAttributes.ReadOnly) == System.IO.FileAttributes.ReadOnly)
+			{
+				System.IO.File.SetAttributes(directory, directoryAttributes & ~System.IO.FileAttributes.ReadOnly);
+			}
 		}
 
 		foreach (var directory in System.IO.Directory.GetDirectories(_tempWorkspacePath))
@@ -2368,6 +2382,20 @@ public partial class MapEditorHUD : Control
 		return System.IO.File.GetLastWriteTimeUtc(path).Ticks;
 	}
 
+	private long GetMaxTerrainWriteTime(string baseTerrainJsonPath)
+	{
+		long maxTime = GetLastWriteTimeSafe(baseTerrainJsonPath);
+		string dir = System.IO.Path.GetDirectoryName(baseTerrainJsonPath);
+		if (!string.IsNullOrEmpty(dir))
+		{
+			maxTime = Math.Max(maxTime, GetLastWriteTimeSafe(System.IO.Path.Combine(dir, "terrain_heights.exr")));
+			maxTime = Math.Max(maxTime, GetLastWriteTimeSafe(System.IO.Path.Combine(dir, "terrain_splat_indices.png")));
+			maxTime = Math.Max(maxTime, GetLastWriteTimeSafe(System.IO.Path.Combine(dir, "terrain_splat_weights.png")));
+			maxTime = Math.Max(maxTime, GetLastWriteTimeSafe(System.IO.Path.Combine(dir, "terrain_pathing.png")));
+		}
+		return maxTime;
+	}
+
 	private void OnSyncTimerTimeout()
 	{
 		if (GameHost.Instance == null || _isSyncing) return;
@@ -2376,7 +2404,7 @@ public partial class MapEditorHUD : Control
 		string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 		string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 
-		long currentTerrainWrite = GetLastWriteTimeSafe(terrainPath);
+		long currentTerrainWrite = GetMaxTerrainWriteTime(terrainPath);
 		long currentMetadataWrite = GetLastWriteTimeSafe(metadataPath);
 
 		bool terrainModifiedOnDisk = currentTerrainWrite > _lastTerrainSyncTime;
@@ -2387,7 +2415,7 @@ public partial class MapEditorHUD : Control
 			if (terrainModifiedOnDisk)
 			{
 				GameHost.Instance.LoadMapFromFile(terrainPath);
-				_lastTerrainSyncTime = GetLastWriteTimeSafe(terrainPath);
+				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
 			}
 			if (metadataModifiedOnDisk)
 			{
@@ -2400,7 +2428,7 @@ public partial class MapEditorHUD : Control
 		{
 			GameHost.Instance.SaveMapToFile(terrainPath);
 			GameHost.Instance.EditorHasUnsavedChanges = false;
-			_lastTerrainSyncTime = GetLastWriteTimeSafe(terrainPath);
+			_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
 		}
 		
 		_isSyncing = false;
@@ -2408,16 +2436,10 @@ public partial class MapEditorHUD : Control
 
 	private void CopyFolderToTempWorkspace(string sourceFolder)
 	{
+		ClearTempWorkspaceExternal();
 		if (!System.IO.Directory.Exists(_tempWorkspacePath))
 		{
 			System.IO.Directory.CreateDirectory(_tempWorkspacePath);
-		}
-		else
-		{
-			foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath))
-			{
-				System.IO.File.Delete(file);
-			}
 		}
 		
 		foreach (var file in System.IO.Directory.GetFiles(sourceFolder, "*", System.IO.SearchOption.AllDirectories))
@@ -2447,7 +2469,7 @@ public partial class MapEditorHUD : Control
 			GameHost.Instance.SaveMapToFile(tempTerrainPath);
 			GameHost.Instance.EditorHasUnsavedChanges = false;
 		}
-		_lastTerrainSyncTime = GetLastWriteTimeSafe(tempTerrainPath);
+		_lastTerrainSyncTime = GetMaxTerrainWriteTime(tempTerrainPath);
 		
 		foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories))
 		{
@@ -2645,7 +2667,7 @@ public class {mapName} : IMapScript
 						{
 							VSCodeManager.Instance.SaveRecentMapDir(selectedFolder);
 						}
-						_lastTerrainSyncTime = GetLastWriteTimeSafe(terrainPath);
+						_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
 						_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
 						ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
 					}
@@ -2668,7 +2690,7 @@ public class {mapName} : IMapScript
 			bool success = GameHost.Instance.LoadMapFromFile(terrainPath);
 			if (success)
 			{
-				_lastTerrainSyncTime = GetLastWriteTimeSafe(terrainPath);
+				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
 				ShowFeedback(TranslationServer.Translate("Map loaded from default_map"));
 			}

@@ -183,6 +183,12 @@ public partial class GameHost
 		int width = GroundTerrain.Width;
 		int depth = GroundTerrain.Depth;
 
+		if (GroundTerrain.SplatMap == null || GroundTerrain.SplatMap.GetLength(0) != width || GroundTerrain.SplatMap.GetLength(1) != depth)
+		{
+			GroundTerrain.UpdateMeshAndPhysics(false, false);
+		}
+		GroundTerrain.UpdateWaterSize();
+
 		TerrainColorsState colorsState = default;
 		bool foundColors = false;
 		EcsWorld.Query(in worldQuery, (Entity entity) =>
