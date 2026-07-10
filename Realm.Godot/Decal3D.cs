@@ -6,6 +6,9 @@ public partial class Decal3D : Decal
 {
 	public Entity Entity { get; set; }
 	private string _decalId = "logo";
+	
+	private StaticBody3D _staticBody;
+	private CollisionShape3D _collisionShape;
 
 	public string DecalId
 	{
@@ -26,6 +29,31 @@ public partial class Decal3D : Decal
 					world.Set(Entity, new DecalIdentity(value));
 				else
 					world.Add(Entity, new DecalIdentity(value));
+			}
+		}
+	}
+	
+	public override void _Ready()
+	{
+		_staticBody = new StaticBody3D();
+		_staticBody.CollisionLayer = 1; // Or appropriate editor layer
+		_staticBody.CollisionMask = 0;
+		AddChild(_staticBody);
+
+		_collisionShape = new CollisionShape3D();
+		var box = new BoxShape3D();
+		box.Size = new Vector3(Size.X, 0.5f, Size.Z);
+		_collisionShape.Shape = box;
+		_staticBody.AddChild(_collisionShape);
+	}
+	
+	public override void _Process(double delta)
+	{
+		if (_collisionShape != null && _collisionShape.Shape is BoxShape3D box)
+		{
+			if (Mathf.Abs(box.Size.X - Size.X) > 0.01f || Mathf.Abs(box.Size.Z - Size.Z) > 0.01f)
+			{
+				box.Size = new Vector3(Size.X, 0.5f, Size.Z);
 			}
 		}
 	}

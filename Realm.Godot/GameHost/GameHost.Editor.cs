@@ -125,10 +125,11 @@ public partial class GameHost
 
 		if (result.HeightsModified || result.SplatModified || result.PathingModified)
 		{
-			GroundTerrain.UpdateMeshAndPhysics(result.HeightsModified, false);
+			Rect2I affected = new Rect2I(result.MinX - 2, result.MinZ - 2, result.MaxX - result.MinX + 4, result.MaxZ - result.MinZ + 4);
+			GroundTerrain.UpdateMeshAndPhysics(result.HeightsModified, false, affected);
 			if (result.HeightsModified)
 			{
-				AlignAllEntitiesToTerrain();
+				AlignAllEntitiesToTerrain(affected);
 			}
 			if (result.PathingModified && PathingOverlayVisible)
 			{
@@ -248,13 +249,30 @@ public partial class GameHost
 		return _editorService.GetTerrainHeightAt(worldPos);
 	}
 
-	private void AlignAllEntitiesToTerrain()
+	private void AlignAllEntitiesToTerrain(Rect2I? affectedRegion = null)
 	{
+		float spacing = GroundTerrain != null ? GroundTerrain.Spacing : 2.0f;
+		float halfW = GroundTerrain != null ? (GroundTerrain.Width - 1) / 2.0f * spacing : 0f;
+		float halfD = GroundTerrain != null ? (GroundTerrain.Depth - 1) / 2.0f * spacing : 0f;
+
+		bool IsInRegion(Vector3 pos)
+		{
+			if (!affectedRegion.HasValue) return true;
+			var region = affectedRegion.Value;
+			float gridX = pos.X / spacing + halfW / spacing;
+			float gridZ = pos.Z / spacing + halfD / spacing;
+			int x = (int)Mathf.Round(gridX);
+			int z = (int)Mathf.Round(gridZ);
+			return x >= region.Position.X - 2 && x <= region.Position.X + region.Size.X + 2 &&
+				   z >= region.Position.Y - 2 && z <= region.Position.Y + region.Size.Y + 2;
+		}
+
 		foreach (var unit in AllUnits)
 		{
 			if (GodotObject.IsInstanceValid(unit))
 			{
 				var pos = unit.GlobalPosition;
+				if (!IsInRegion(pos)) continue;
 				pos.Y = _editorService.GetTerrainHeightAt(pos);
 				unit.GlobalPosition = pos;
 				if (EcsWorld.IsAlive(unit.Entity))
@@ -269,12 +287,14 @@ public partial class GameHost
 			if (child is Prop3D prop && GodotObject.IsInstanceValid(prop))
 			{
 				var pos = prop.GlobalPosition;
+				if (!IsInRegion(pos)) continue;
 				pos.Y = _editorService.GetTerrainHeightAt(pos);
 				prop.GlobalPosition = pos;
 			}
 			else if (child is Decal decal && GodotObject.IsInstanceValid(decal))
 			{
 				var pos = decal.GlobalPosition;
+				if (!IsInRegion(pos)) continue;
 				pos.Y = _editorService.GetTerrainHeightAt(pos);
 				decal.GlobalPosition = pos;
 			}
@@ -315,28 +335,26 @@ public partial class GameHost
 		}
 
 
-		Decal closestDecal = null;
-		float closestDist = 3.0f;
-		foreach (var child in GetChildren())
+		var decal = FindDecal3DInParentChain(collider);
+		if (decal != null)
 		{
-			if (child is Decal dec && GodotObject.IsInstanceValid(dec))
+			if (EcsWorld.IsAlive(decal.Entity))
 			{
-				float d = dec.GlobalPosition.DistanceTo(hitPos);
-				if (d < closestDist)
-				{
-					closestDist = d;
-					closestDecal = dec;
-				}
+				EcsWorld.Destroy(decal.Entity);
 			}
+			decal.QueueFree();
 		}
-		if (closestDecal != null)
+	}
+
+		private Decal3D FindDecal3DInParentChain(Node node)
+	{
+		Node current = node;
+		while (current != null && current != this)
 		{
-			if (closestDecal is Decal3D decal3D && EcsWorld.IsAlive(decal3D.Entity))
-			{
-				EcsWorld.Destroy(decal3D.Entity);
-			}
-			closestDecal.QueueFree();
+			if (current is Decal3D d) return d;
+			current = current.GetParent();
 		}
+		return null;
 	}
 
 	private void ProcessMapEditorPhysics(float fDelta)
@@ -619,32 +637,19 @@ public partial class GameHost
 			return action;
 		}
 
-		Decal closestDecal = null;
-		float closestDist = 3.0f;
-		foreach (var child in GetChildren())
+		var decal = FindDecal3DInParentChain(collider);
+		if (decal != null)
 		{
-			if (child is Decal dec && GodotObject.IsInstanceValid(dec))
-			{
-				float d = dec.GlobalPosition.DistanceTo(hitPos);
-				if (d < closestDist)
-				{
-					closestDist = d;
-					closestDecal = dec;
-				}
-			}
-		}
-		if (closestDecal != null)
-		{
-			if (closestDecal == _selectedEditorObject)
+			if (decal == _selectedEditorObject)
 			{
 				SelectedEditorObject = null;
 			}
-			var action = new ObjectDeleteAction("decal", closestDecal is Decal3D decal3D ? decal3D.DecalId : "", closestDecal.Position, closestDecal.RotationDegrees.Y, closestDecal.Scale.X, false, closestDecal);
-			if (closestDecal is Decal3D d3d && EcsWorld.IsAlive(d3d.Entity))
+			var action = new ObjectDeleteAction("decal", decal.DecalId, decal.Position, decal.RotationDegrees.Y, decal.Scale.X, false, decal);
+			if (EcsWorld.IsAlive(decal.Entity))
 			{
-				EcsWorld.Destroy(d3d.Entity);
+				EcsWorld.Destroy(decal.Entity);
 			}
-			closestDecal.QueueFree();
+			decal.QueueFree();
 			return action;
 		}
 		return null;
@@ -1010,24 +1015,7 @@ public partial class GameHost
 				}
 				if (newHovered == null)
 				{
-					Decal closestDecal = null;
-					float closestDist = 3.0f;
-					foreach (var child in GetChildren())
-					{
-						if (child is Decal dec && GodotObject.IsInstanceValid(dec))
-						{
-							float d = dec.GlobalPosition.DistanceTo(hitPos);
-							if (d < closestDist)
-							{
-								closestDist = d;
-								closestDecal = dec;
-							}
-						}
-					}
-					if (closestDecal != null)
-					{
-						newHovered = closestDecal;
-					}
+					newHovered = FindDecal3DInParentChain(collider);
 				}
 			}
 
@@ -1178,9 +1166,9 @@ public partial class GameHost
 					if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
 					{
 						var action = _editorService.EndTerrainDraw(
-							(float[,])GroundTerrain.Heights.Clone(),
-							(TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone(),
-							(int[,])GroundTerrain.PathingCodes.Clone());
+							GroundTerrain.Heights,
+							GroundTerrain.SplatMap,
+							GroundTerrain.PathingCodes);
 
 						EditorHistoryManager.RecordAction(action);
 						bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
@@ -1250,9 +1238,9 @@ public partial class GameHost
 				if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
 				{
 					var action = _editorService.EndTerrainDraw(
-						(float[,])GroundTerrain.Heights.Clone(),
-						(TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone(),
-						(int[,])GroundTerrain.PathingCodes.Clone());
+						GroundTerrain.Heights,
+						GroundTerrain.SplatMap,
+						GroundTerrain.PathingCodes);
 
 					EditorHistoryManager.RecordAction(action);
 					bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
@@ -1979,9 +1967,8 @@ public partial class GameHost
 		int cellWidth = width - 1;
 		int cellDepth = depth - 1;
 
-		_pathingVerticesCache.Clear();
-		_pathingColorsCache.Clear();
-		_pathingIndicesCache.Clear();
+		var st = new SurfaceTool();
+		st.Begin(Mesh.PrimitiveType.Triangles);
 
 		Span<int> activeFlags = stackalloc int[6];
 		for (int z = 0; z < cellDepth; z++)
@@ -2017,22 +2004,15 @@ public partial class GameHost
 					Color cellColor = GetLayerColor(activeFlags[0]);
 					if (cellColor.A < 0.01f) continue;
 
-					int baseV = _pathingVerticesCache.Count;
-					_pathingVerticesCache.Add(new Vector3(lx0, h00, lz0));
-					_pathingColorsCache.Add(cellColor);
-					_pathingVerticesCache.Add(new Vector3(lx1, h10, lz0));
-					_pathingColorsCache.Add(cellColor);
-					_pathingVerticesCache.Add(new Vector3(lx1, h11, lz1));
-					_pathingColorsCache.Add(cellColor);
-					_pathingVerticesCache.Add(new Vector3(lx0, h01, lz1));
-					_pathingColorsCache.Add(cellColor);
-
-					_pathingIndicesCache.Add(baseV);
-					_pathingIndicesCache.Add(baseV + 1);
-					_pathingIndicesCache.Add(baseV + 2);
-					_pathingIndicesCache.Add(baseV);
-					_pathingIndicesCache.Add(baseV + 2);
-					_pathingIndicesCache.Add(baseV + 3);
+					st.SetColor(cellColor);
+					
+					st.AddVertex(new Vector3(lx0, h00, lz0));
+					st.AddVertex(new Vector3(lx1, h10, lz0));
+					st.AddVertex(new Vector3(lx1, h11, lz1));
+					
+					st.AddVertex(new Vector3(lx0, h00, lz0));
+					st.AddVertex(new Vector3(lx1, h11, lz1));
+					st.AddVertex(new Vector3(lx0, h01, lz1));
 				}
 				else
 				{
@@ -2060,40 +2040,22 @@ public partial class GameHost
 							Color subColor = GetLayerColor(activeFlags[flagIndex]);
 							if (subColor.A < 0.01f) continue;
 
-							int baseV = _pathingVerticesCache.Count;
-							_pathingVerticesCache.Add(new Vector3(subX0, hSub00, subZ0));
-							_pathingColorsCache.Add(subColor);
-							_pathingVerticesCache.Add(new Vector3(subX1, hSub10, subZ0));
-							_pathingColorsCache.Add(subColor);
-							_pathingVerticesCache.Add(new Vector3(subX1, hSub11, subZ1));
-							_pathingColorsCache.Add(subColor);
-							_pathingVerticesCache.Add(new Vector3(subX0, hSub01, subZ1));
-							_pathingColorsCache.Add(subColor);
+							st.SetColor(subColor);
 
-							_pathingIndicesCache.Add(baseV);
-							_pathingIndicesCache.Add(baseV + 1);
-							_pathingIndicesCache.Add(baseV + 2);
-							_pathingIndicesCache.Add(baseV);
-							_pathingIndicesCache.Add(baseV + 2);
-							_pathingIndicesCache.Add(baseV + 3);
+							st.AddVertex(new Vector3(subX0, hSub00, subZ0));
+							st.AddVertex(new Vector3(subX1, hSub10, subZ0));
+							st.AddVertex(new Vector3(subX1, hSub11, subZ1));
+							
+							st.AddVertex(new Vector3(subX0, hSub00, subZ0));
+							st.AddVertex(new Vector3(subX1, hSub11, subZ1));
+							st.AddVertex(new Vector3(subX0, hSub01, subZ1));
 						}
 					}
 				}
 			}
 		}
 
-		var arrays = new Godot.Collections.Array();
-		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = _pathingVerticesCache.ToArray();
-		arrays[(int)Mesh.ArrayType.Color]  = _pathingColorsCache.ToArray();
-		arrays[(int)Mesh.ArrayType.Index]  = _pathingIndicesCache.ToArray();
-
-		var arrayMesh = new ArrayMesh();
-		if (_pathingIndicesCache.Count > 0)
-		{
-			arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-		}
-		_pathingOverlayMesh.Mesh = arrayMesh;
+		_pathingOverlayMesh.Mesh = st.Commit();
 	}
 
 	private void CreateGridOverlay()
@@ -2145,52 +2107,28 @@ public partial class GameHost
 		int centerZ = (depth - 1) / 2;
 		int centerX = (width - 1) / 2;
 
-		int totalVertices = 0;
-		for (int z = 0; z < depth; z++)
-		{
-			bool isThick = ((z - centerZ) % 10 == 0);
-			totalVertices += (width - 1) * (isThick ? 6 : 2);
-		}
-		for (int x = 0; x < width; x++)
-		{
-			bool isThick = ((x - centerX) % 10 == 0);
-			totalVertices += (depth - 1) * (isThick ? 6 : 2);
-		}
-
-		var vertices = new Vector3[totalVertices];
-		var colors = new Color[totalVertices];
-		int idx = 0;
-
 		Color thickColor = new Color(1.0f, 0.9f, 0.0f, 0.85f);
 		Color thinColor = new Color(1.0f, 0.9f, 0.0f, 0.25f);
 
+		var st = new SurfaceTool();
+		st.Begin(Mesh.PrimitiveType.Lines);
+
 		void AddLine(Vector3 p1, Vector3 p2, Color color, bool thick, bool isVertical)
 		{
-			vertices[idx] = p1;
-			colors[idx] = color;
-			idx++;
-			vertices[idx] = p2;
-			colors[idx] = color;
-			idx++;
+			st.SetColor(color);
+			st.AddVertex(p1);
+			st.AddVertex(p2);
 
 			if (thick)
 			{
 				float offset = 0.04f;
 				Vector3 o = isVertical ? new Vector3(offset, 0, 0) : new Vector3(0, 0, offset);
 
-				vertices[idx] = p1 + o;
-				colors[idx] = color;
-				idx++;
-				vertices[idx] = p2 + o;
-				colors[idx] = color;
-				idx++;
+				st.AddVertex(p1 + o);
+				st.AddVertex(p2 + o);
 
-				vertices[idx] = p1 - o;
-				colors[idx] = color;
-				idx++;
-				vertices[idx] = p2 - o;
-				colors[idx] = color;
-				idx++;
+				st.AddVertex(p1 - o);
+				st.AddVertex(p2 - o);
 			}
 		}
 
@@ -2228,14 +2166,7 @@ public partial class GameHost
 			}
 		}
 
-		var arrays = new Godot.Collections.Array();
-		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
-		arrays[(int)Mesh.ArrayType.Color] = colors;
-
-		var arrayMesh = new ArrayMesh();
-		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Lines, arrays);
-		_gridOverlayMesh.Mesh = arrayMesh;
+		_gridOverlayMesh.Mesh = st.Commit();
 	}
 
 	public void UpdateGridOverlayVisibility()
@@ -2742,7 +2673,8 @@ public partial class GameHost
 			GroundTerrain.UpdateMeshAndPhysics(eraseResult.HeightsModified, false);
 			if (eraseResult.HeightsModified)
 			{
-				AlignAllEntitiesToTerrain();
+				Rect2I affected = new Rect2I(minX - 2, minZ - 2, maxX - minX + 4, maxZ - minZ + 4);
+				AlignAllEntitiesToTerrain(affected);
 			}
 			if (eraseResult.HeightsModified || eraseResult.PathingModified)
 			{

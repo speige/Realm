@@ -25,6 +25,10 @@ public class EditorService
 	private TerrainSplatWeights[,] _terrainSplatMapBefore;
 	private int[,] _terrainPathingBefore;
 	private bool _isDrawingTerrain;
+	private int _drawMinX;
+	private int _drawMinZ;
+	private int _drawMaxX;
+	private int _drawMaxZ;
 
 	private CopiedAreaTemplate? _copiedArea;
 
@@ -74,6 +78,10 @@ public class EditorService
 		public bool HeightsModified;
 		public bool SplatModified;
 		public bool PathingModified;
+		public int MinX;
+		public int MinZ;
+		public int MaxX;
+		public int MaxZ;
 	}
 
 	public struct PasteAreaResult
@@ -233,6 +241,11 @@ public class EditorService
 
 		bool modified = false;
 		var result = new TerrainEditResult();
+		
+		int modMinX = width;
+		int modMinZ = depth;
+		int modMaxX = -1;
+		int modMaxZ = -1;
 
 		if (blockMode)
 		{
@@ -278,6 +291,7 @@ public class EditorService
 											}
 										}
 										terrain.Heights[x, z] = newH;
+										if (x < modMinX) modMinX = x; if (x > modMaxX) modMaxX = x; if (z < modMinZ) modMinZ = z; if (z > modMaxZ) modMaxZ = z;
 										modified = true;
 									}
 								}
@@ -301,6 +315,7 @@ public class EditorService
 									avg /= count;
 									float snappedAvg = Mathf.Round(avg / blockLevelHeight) * blockLevelHeight;
 									terrain.Heights[x, z] = Mathf.Clamp(Mathf.Lerp(terrain.Heights[x, z], snappedAvg, brushStrength * delta * 2.0f), -10.0f, 50.0f);
+									if (x < modMinX) modMinX = x; if (x > modMaxX) modMaxX = x; if (z < modMinZ) modMinZ = z; if (z > modMaxZ) modMaxZ = z;
 									modified = true;
 								}
 								else if (activeTool == GameHost.EditorTool.Noise)
@@ -309,6 +324,7 @@ public class EditorService
 									{
 										float direction = GD.Randf() > 0.5f ? 1.0f : -1.0f;
 										terrain.Heights[x, z] = Mathf.Clamp(terrain.Heights[x, z] + direction * blockLevelHeight, -10.0f, 50.0f);
+										if (x < modMinX) modMinX = x; if (x > modMaxX) modMaxX = x; if (z < modMinZ) modMinZ = z; if (z > modMaxZ) modMaxZ = z;
 										modified = true;
 									}
 								}
@@ -396,6 +412,7 @@ public class EditorService
 								int targetIndex = (maxDiff >= blockLevelHeight * 0.5f) ? cliffPaintTextureIndex : paintTextureIndex;
 								float intensity = isFirstClick ? brushStrength : brushStrength * delta * 5.0f;
 								_terrainSplatMap[x, z] = TerrainSplatWeights.PaintVertex(_terrainSplatMap[x, z], targetIndex, intensity);
+								if (x < modMinX) modMinX = x; if (x > modMaxX) modMaxX = x; if (z < modMinZ) modMinZ = z; if (z > modMaxZ) modMaxZ = z;
 								modified = true;
 							}
 						}
@@ -424,6 +441,7 @@ public class EditorService
 									terrain.PathingCodes[x, z] |= pathingMask;
 								else
 									terrain.PathingCodes[x, z] &= ~pathingMask;
+								if (x < modMinX) modMinX = x; if (x > modMaxX) modMaxX = x; if (z < modMinZ) modMinZ = z; if (z > modMaxZ) modMaxZ = z;
 								modified = true;
 							}
 						}
@@ -532,6 +550,7 @@ public class EditorService
 								float noiseVal = (float)(GD.Randf() * 2.0 - 1.0) * brushStrength * falloff * delta * 0.25f;
 								terrain.Heights[x, z] = Mathf.Clamp(terrain.Heights[x, z] + noiseVal, -10.0f, 50.0f);
 							}
+							if (x < modMinX) modMinX = x; if (x > modMaxX) modMaxX = x; if (z < modMinZ) modMinZ = z; if (z > modMaxZ) modMaxZ = z;
 							modified = true;
 						}
 						else if (isPaint)
@@ -550,6 +569,7 @@ public class EditorService
 							int targetIndex = (maxDiff >= spacing * 0.5f) ? cliffPaintTextureIndex : paintTextureIndex;
 							float intensity = isFirstClick ? brushStrength * falloff : brushStrength * falloff * delta * 3.0f;
 							_terrainSplatMap[x, z] = TerrainSplatWeights.PaintVertex(_terrainSplatMap[x, z], targetIndex, intensity);
+							if (x < modMinX) modMinX = x; if (x > modMaxX) modMaxX = x; if (z < modMinZ) modMinZ = z; if (z > modMaxZ) modMaxZ = z;
 							modified = true;
 						}
 						else if (isPathing)
@@ -560,6 +580,7 @@ public class EditorService
 								terrain.PathingCodes[icx, icz] |= pathingMask;
 							else
 								terrain.PathingCodes[icx, icz] &= ~pathingMask;
+							if (icx < modMinX) modMinX = icx; if (icx > modMaxX) modMaxX = icx; if (icz < modMinZ) modMinZ = icz; if (icz > modMaxZ) modMaxZ = icz;
 							modified = true;
 						}
 					}
@@ -572,6 +593,14 @@ public class EditorService
 			result.HeightsModified = isHeights;
 			result.SplatModified = isPaint || (isHeights && !blockMode);
 			result.PathingModified = isPathing;
+			if (modMinX < _drawMinX) _drawMinX = modMinX;
+			if (modMaxX > _drawMaxX) _drawMaxX = modMaxX;
+			if (modMinZ < _drawMinZ) _drawMinZ = modMinZ;
+			if (modMaxZ > _drawMaxZ) _drawMaxZ = modMaxZ;
+			result.MinX = modMinX;
+			result.MinZ = modMinZ;
+			result.MaxX = modMaxX;
+			result.MaxZ = modMaxZ;
 
 			if (result.SplatModified)
 			{
@@ -597,6 +626,10 @@ public class EditorService
 		out float newFlattenHeight)
 	{
 		_isDrawingTerrain = true;
+		_drawMinX = int.MaxValue;
+		_drawMinZ = int.MaxValue;
+		_drawMaxX = -1;
+		_drawMaxZ = -1;
 		_terrainHeightsBefore = currentHeights != null ? (float[,])currentHeights.Clone() : null;
 		_terrainSplatMapBefore = currentSplatMap != null ? (TerrainSplatWeights[,])currentSplatMap.Clone() : null;
 		_terrainPathingBefore = currentPathing != null ? (int[,])currentPathing.Clone() : null;
@@ -645,12 +678,43 @@ public class EditorService
 		_hasBlockTargetHeight = false;
 		_activePlateauHeight = null;
 
-		var action = new TerrainModifyAction(
+		if (_drawMinX <= _drawMaxX && _drawMinZ <= _drawMaxZ && currentHeights != null)
+		{
+			int w = _drawMaxX - _drawMinX + 1;
+			int d = _drawMaxZ - _drawMinZ + 1;
+
+			float[,] beforeH = new float[w, d];
+			float[,] afterH = new float[w, d];
+			TerrainSplatWeights[,] beforeS = new TerrainSplatWeights[w, d];
+			TerrainSplatWeights[,] afterS = new TerrainSplatWeights[w, d];
+			int[,] beforeP = currentPathing != null ? new int[w, d] : null;
+			int[,] afterP = currentPathing != null ? new int[w, d] : null;
+
+			for (int z = 0; z < d; z++)
+			{
+				for (int x = 0; x < w; x++)
+				{
+					int mapX = _drawMinX + x;
+					int mapZ = _drawMinZ + z;
+					beforeH[x, z] = _terrainHeightsBefore[mapX, mapZ];
+					afterH[x, z] = currentHeights[mapX, mapZ];
+					beforeS[x, z] = _terrainSplatMapBefore[mapX, mapZ];
+					afterS[x, z] = currentSplatMap[mapX, mapZ];
+					if (beforeP != null)
+					{
+						beforeP[x, z] = _terrainPathingBefore[mapX, mapZ];
+						afterP[x, z] = currentPathing[mapX, mapZ];
+					}
+				}
+			}
+
+			return new TerrainModifyAction(_drawMinX, _drawMinZ, w, d, beforeH, afterH, beforeS, afterS, beforeP, afterP);
+		}
+
+		return new TerrainModifyAction(
 			_terrainHeightsBefore, currentHeights,
 			_terrainSplatMapBefore, currentSplatMap,
 			_terrainPathingBefore, currentPathing);
-
-		return action;
 	}
 
 

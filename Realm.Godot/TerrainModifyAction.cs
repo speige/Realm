@@ -1,7 +1,13 @@
 using System;
+using Godot;
 
 public class TerrainModifyAction : IEditorAction
 {
+	private readonly int _minX;
+	private readonly int _minZ;
+	private readonly int _width;
+	private readonly int _depth;
+
 	private readonly float[,] _beforeHeights;
 	private readonly float[,] _afterHeights;
 	private readonly TerrainSplatWeights[,] _beforeSplatMap;
@@ -17,24 +23,59 @@ public class TerrainModifyAction : IEditorAction
 		_afterSplatMap = afterSplatMap;
 		_beforePathing = beforePathing;
 		_afterPathing = afterPathing;
+		_minX = 0;
+		_minZ = 0;
+		if (beforeHeights != null) {
+			_width = beforeHeights.GetLength(0);
+			_depth = beforeHeights.GetLength(1);
+		} else if (beforeSplatMap != null) {
+			_width = beforeSplatMap.GetLength(0);
+			_depth = beforeSplatMap.GetLength(1);
+		} else if (beforePathing != null) {
+			_width = beforePathing.GetLength(0);
+			_depth = beforePathing.GetLength(1);
+		}
+	}
+
+	public TerrainModifyAction(int minX, int minZ, int width, int depth, float[,] beforeHeights, float[,] afterHeights, TerrainSplatWeights[,] beforeSplatMap, TerrainSplatWeights[,] afterSplatMap, int[,] beforePathing = null, int[,] afterPathing = null)
+	{
+		_minX = minX;
+		_minZ = minZ;
+		_width = width;
+		_depth = depth;
+		_beforeHeights = beforeHeights;
+		_afterHeights = afterHeights;
+		_beforeSplatMap = beforeSplatMap;
+		_afterSplatMap = afterSplatMap;
+		_beforePathing = beforePathing;
+		_afterPathing = afterPathing;
 	}
 
 	public void Undo()
 	{
 		if (GameHost.Instance?.GroundTerrain == null) return;
+		
 		if (_beforeHeights != null && GameHost.Instance.GroundTerrain.Heights != null)
 		{
-			Array.Copy(_beforeHeights, GameHost.Instance.GroundTerrain.Heights, _beforeHeights.Length);
+			for (int z = 0; z < _depth; z++)
+				for (int x = 0; x < _width; x++)
+					GameHost.Instance.GroundTerrain.Heights[_minX + x, _minZ + z] = _beforeHeights[x, z];
 		}
 		if (_beforeSplatMap != null && GameHost.Instance.GroundTerrain.SplatMap != null)
 		{
-			Array.Copy(_beforeSplatMap, GameHost.Instance.GroundTerrain.SplatMap, _beforeSplatMap.Length);
+			for (int z = 0; z < _depth; z++)
+				for (int x = 0; x < _width; x++)
+					GameHost.Instance.GroundTerrain.SplatMap[_minX + x, _minZ + z] = _beforeSplatMap[x, z];
 		}
 		if (_beforePathing != null && GameHost.Instance.GroundTerrain.PathingCodes != null)
 		{
-			Array.Copy(_beforePathing, GameHost.Instance.GroundTerrain.PathingCodes, _beforePathing.Length);
+			for (int z = 0; z < _depth; z++)
+				for (int x = 0; x < _width; x++)
+					GameHost.Instance.GroundTerrain.PathingCodes[_minX + x, _minZ + z] = _beforePathing[x, z];
 		}
-		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics();
+
+		Rect2I affected = new Rect2I(_minX - 2, _minZ - 2, _width + 4, _depth + 4);
+		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics(true, false, affected);
 		GameHost.Instance.AlignAllEntitiesToTerrainExternal();
 		GameHost.Instance.RebuildGridOverlayMeshExternal();
 		if (_beforeHeights != null || _beforePathing != null)
@@ -50,19 +91,28 @@ public class TerrainModifyAction : IEditorAction
 	public void Redo()
 	{
 		if (GameHost.Instance?.GroundTerrain == null) return;
+
 		if (_afterHeights != null && GameHost.Instance.GroundTerrain.Heights != null)
 		{
-			Array.Copy(_afterHeights, GameHost.Instance.GroundTerrain.Heights, _afterHeights.Length);
+			for (int z = 0; z < _depth; z++)
+				for (int x = 0; x < _width; x++)
+					GameHost.Instance.GroundTerrain.Heights[_minX + x, _minZ + z] = _afterHeights[x, z];
 		}
 		if (_afterSplatMap != null && GameHost.Instance.GroundTerrain.SplatMap != null)
 		{
-			Array.Copy(_afterSplatMap, GameHost.Instance.GroundTerrain.SplatMap, _afterSplatMap.Length);
+			for (int z = 0; z < _depth; z++)
+				for (int x = 0; x < _width; x++)
+					GameHost.Instance.GroundTerrain.SplatMap[_minX + x, _minZ + z] = _afterSplatMap[x, z];
 		}
 		if (_afterPathing != null && GameHost.Instance.GroundTerrain.PathingCodes != null)
 		{
-			Array.Copy(_afterPathing, GameHost.Instance.GroundTerrain.PathingCodes, _afterPathing.Length);
+			for (int z = 0; z < _depth; z++)
+				for (int x = 0; x < _width; x++)
+					GameHost.Instance.GroundTerrain.PathingCodes[_minX + x, _minZ + z] = _afterPathing[x, z];
 		}
-		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics();
+
+		Rect2I affected = new Rect2I(_minX - 2, _minZ - 2, _width + 4, _depth + 4);
+		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics(true, false, affected);
 		GameHost.Instance.AlignAllEntitiesToTerrainExternal();
 		GameHost.Instance.RebuildGridOverlayMeshExternal();
 		if (_afterHeights != null || _afterPathing != null)

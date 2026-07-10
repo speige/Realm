@@ -3,6 +3,7 @@ using Realm.Ecs.Components.Terrain;
 using DotRecast.Detour;
 using Godot;
 using System;
+using System.Collections.Generic;
 
 public partial class EditableTerrain : StaticBody3D
 {
@@ -169,20 +170,29 @@ public partial class EditableTerrain : StaticBody3D
 		}
 	}
 
-	private MeshInstance3D _meshInstance;
-	private CollisionShape3D _collisionShape;
-	private ArrayMesh _arrayMesh;
+	private const int CHUNK_SIZE = 32;
+	
+	private class TerrainChunk
+	{
+		public MeshInstance3D MeshInstance;
+		public CollisionShape3D CollisionShape;
+		public ArrayMesh ArrayMesh;
+		public int StartX;
+		public int StartZ;
+		public int EndX;
+		public int EndZ;
+		public Vector3[] VerticesCache;
+		public float[] TexIndicesCache;
+		public float[] TexWeightsCache01;
+		public Vector3[] NormalsCache;
+		public Vector2[] UvsCache;
+		public int[] IndicesCache;
+		public float[] MapDataCache;
+	}
+	
+	private List<TerrainChunk> _chunks = new List<TerrainChunk>();
 	private ShaderMaterial _material;
-
 	private MeshInstance3D _waterMesh;
-
-	private Vector3[] _verticesCache;
-	private float[] _texIndicesCache;
-	private float[] _texWeightsCache01;
-	private Vector3[] _normalsCache;
-	private Vector2[] _uvsCache;
-	private int[] _indicesCache;
-	private float[] _mapDataCache;
 
 	public float WaterHeight
 	{
@@ -321,16 +331,6 @@ public partial class EditableTerrain : StaticBody3D
 			PathingCodes = newPathing;
 		}
 
-		_meshInstance = new MeshInstance3D();
-		_meshInstance.Name = "TerrainMesh";
-		AddChild(_meshInstance);
-
-		_collisionShape = new CollisionShape3D();
-		_collisionShape.Name = "TerrainCollision";
-		AddChild(_collisionShape);
-
-		_arrayMesh = new ArrayMesh();
-		
 		var shader = new Shader();
 		shader.Code = @"
 shader_type spatial;
@@ -361,10 +361,7 @@ void fragment() {
 	ALBEDO = terrain_color;
 	ROUGHNESS = 0.9;
 }
-
-
 ";
-
 
 		var paths = new[]
 		{
@@ -430,10 +427,59 @@ void fragment() {
 		defaultFogImage.Fill(new Color(0f, 0f, 0f, 1f));
 		var defaultFogTexture = ImageTexture.CreateFromImage(defaultFogImage);
 		_material.SetShaderParameter("fog_texture", defaultFogTexture);
-		_meshInstance.MaterialOverride = _material;
 
+		CreateChunks();
 		CreateWater();
 		UpdateMeshAndPhysics();
+	}
+
+	private void CreateChunks()
+	{
+		foreach (var chunk in _chunks)
+		{
+			if (GodotObject.IsInstanceValid(chunk.MeshInstance)) chunk.MeshInstance.QueueFree();
+			if (GodotObject.IsInstanceValid(chunk.CollisionShape)) chunk.CollisionShape.QueueFree();
+		}
+		_chunks.Clear();
+
+		int w = Width;
+		int d = Depth;
+
+		for (int z = 0; z < d - 1; z += CHUNK_SIZE)
+		{
+			for (int x = 0; x < w - 1; x += CHUNK_SIZE)
+			{
+				int ex = Math.Min(x + CHUNK_SIZE, w - 1);
+				int ez = Math.Min(z + CHUNK_SIZE, d - 1);
+				
+				var chunk = new TerrainChunk
+				{
+					StartX = x,
+					StartZ = z,
+					EndX = ex,
+					EndZ = ez,
+					ArrayMesh = new ArrayMesh()
+				};
+
+				chunk.MeshInstance = new MeshInstance3D();
+				chunk.MeshInstance.Name = $"TerrainChunk_{x}_{z}";
+				chunk.MeshInstance.Mesh = chunk.ArrayMesh;
+				chunk.MeshInstance.MaterialOverride = _material;
+				AddChild(chunk.MeshInstance);
+
+				chunk.CollisionShape = new CollisionShape3D();
+				chunk.CollisionShape.Name = $"TerrainCollision_{x}_{z}";
+				
+				// Position collision shape correctly for the chunk
+				float lx = (x + (ex - x) / 2.0f - (w - 1) / 2.0f) * Spacing;
+				float lz = (z + (ez - z) / 2.0f - (d - 1) / 2.0f) * Spacing;
+				chunk.CollisionShape.Position = new Vector3(lx, 0.0f, lz);
+				
+				AddChild(chunk.CollisionShape);
+				
+				_chunks.Add(chunk);
+			}
+		}
 	}
 
 	public void SetFogTexture(ImageTexture fogTexture)
@@ -444,9 +490,7 @@ void fragment() {
 		}
 	}
 
-	public Mesh TerrainMesh => _meshInstance?.Mesh;
-
-	public void UpdateMeshAndPhysics(bool rebuildPhysics = true, bool rebuildNavMesh = true)
+	public void UpdateMeshAndPhysics(bool rebuildPhysics = true, bool rebuildNavMesh = true, Rect2I? affectedRegion = null)
 	{
 		int w = Width;
 		int d = Depth;
@@ -459,92 +503,27 @@ void fragment() {
 					SplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
 		}
 
-		int cellWidth = w - 1;
-		int cellDepth = d - 1;
-		int triangleCount = cellWidth * cellDepth * 2;
-		int vertexCount = triangleCount * 3;
-
-		if (_verticesCache == null || _verticesCache.Length != vertexCount)
+		if (_chunks.Count == 0)
 		{
-			_verticesCache = new Vector3[vertexCount];
-			_texIndicesCache = new float[vertexCount * 4];
-			_texWeightsCache01 = new float[vertexCount * 4];
-			_normalsCache = new Vector3[vertexCount];
-			_uvsCache = new Vector2[vertexCount];
-			_indicesCache = new int[vertexCount];
+			CreateChunks();
 		}
 
-		var gridNormals = new Vector3[w * d];
-		for (int z = 0; z < d; z++)
+		foreach (var chunk in _chunks)
 		{
-			for (int x = 0; x < w; x++)
+			if (affectedRegion.HasValue)
 			{
-				int idx = z * w + x;
-				float hl = Heights[Math.Max(0, x - 1), z];
-				float hr = Heights[Math.Min(w - 1, x + 1), z];
-				float hd = Heights[x, Math.Max(0, z - 1)];
-				float hu = Heights[x, Math.Min(d - 1, z + 1)];
-				
-				Vector3 tangentX = new Vector3(2.0f * Spacing, hr - hl, 0.0f).Normalized();
-				Vector3 tangentZ = new Vector3(0.0f, hu - hd, 2.0f * Spacing).Normalized();
-				gridNormals[idx] = tangentZ.Cross(tangentX).Normalized();
+				var region = affectedRegion.Value;
+				if (chunk.EndX < region.Position.X || chunk.StartX > region.Position.X + region.Size.X ||
+					chunk.EndZ < region.Position.Y || chunk.StartZ > region.Position.Y + region.Size.Y)
+				{
+					continue;
+				}
 			}
+
+			UpdateChunk(chunk, rebuildPhysics);
 		}
 
-		int vertexIndex = 0;
-		for (int z = 0; z < cellDepth; z++)
-		{
-			for (int x = 0; x < cellWidth; x++)
-			{
-				// Triangle 1: (x, z), (x + 1, z), (x, z + 1)
-				ProcessTriangle(x, z, x + 1, z, x, z + 1, ref vertexIndex, gridNormals);
-
-				// Triangle 2: (x + 1, z), (x + 1, z + 1), (x, z + 1)
-				ProcessTriangle(x + 1, z, x + 1, z + 1, x, z + 1, ref vertexIndex, gridNormals);
-			}
-		}
-
-		var arrays = new Godot.Collections.Array();
-		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = _verticesCache;
-		arrays[(int)Mesh.ArrayType.Normal] = _normalsCache;
-		arrays[(int)Mesh.ArrayType.TexUV] = _uvsCache;
-		arrays[(int)Mesh.ArrayType.Custom0] = _texIndicesCache;
-		arrays[(int)Mesh.ArrayType.Custom1] = _texWeightsCache01;
-		arrays[(int)Mesh.ArrayType.Index] = _indicesCache;
-
-		_arrayMesh.ClearSurfaces();
-		int custom0Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift;
-		int custom1Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom1Shift;
-		_arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays,
-			new Godot.Collections.Array<Godot.Collections.Array>(),
-			null,
-			(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1) | custom0Format | custom1Format));
-		_meshInstance.Mesh = _arrayMesh;
-
-		if (!rebuildPhysics) return;
-
-
-		var heightMapShape = new HeightMapShape3D();
-		heightMapShape.MapWidth = Width;
-		heightMapShape.MapDepth = Depth;
-		
-		int mapDataCount = Width * Depth;
-		if (_mapDataCache == null || _mapDataCache.Length != mapDataCount)
-		{
-			_mapDataCache = new float[mapDataCount];
-		}
-		for (int z = 0; z < Depth; z++)
-		{
-			for (int x = 0; x < Width; x++)
-			{
-				_mapDataCache[z * Width + x] = Heights[x, z];
-			}
-		}
-		heightMapShape.MapData = _mapDataCache;
-		_collisionShape.Shape = heightMapShape;
-		_collisionShape.Scale = new Vector3(Spacing, 1.0f, Spacing);
-		if (rebuildNavMesh)
+		if (rebuildPhysics && rebuildNavMesh)
 		{
 			if (GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode)
 			{
@@ -553,12 +532,84 @@ void fragment() {
 		}
 	}
 
+	private void UpdateChunk(TerrainChunk chunk, bool rebuildPhysics)
+	{
+		int cellWidth = chunk.EndX - chunk.StartX;
+		int cellDepth = chunk.EndZ - chunk.StartZ;
+		int triangleCount = cellWidth * cellDepth * 2;
+		int vertexCount = triangleCount * 3;
+
+		if (chunk.VerticesCache == null || chunk.VerticesCache.Length != vertexCount)
+		{
+			chunk.VerticesCache = new Vector3[vertexCount];
+			chunk.TexIndicesCache = new float[vertexCount * 4];
+			chunk.TexWeightsCache01 = new float[vertexCount * 4];
+			chunk.NormalsCache = new Vector3[vertexCount];
+			chunk.UvsCache = new Vector2[vertexCount];
+			chunk.IndicesCache = new int[vertexCount];
+		}
+
+		int vertexIndex = 0;
+		for (int z = chunk.StartZ; z < chunk.EndZ; z++)
+		{
+			for (int x = chunk.StartX; x < chunk.EndX; x++)
+			{
+				ProcessTriangle(chunk, x, z, x + 1, z, x, z + 1, ref vertexIndex);
+				ProcessTriangle(chunk, x + 1, z, x + 1, z + 1, x, z + 1, ref vertexIndex);
+			}
+		}
+
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = chunk.VerticesCache;
+		arrays[(int)Mesh.ArrayType.Normal] = chunk.NormalsCache;
+		arrays[(int)Mesh.ArrayType.TexUV] = chunk.UvsCache;
+		arrays[(int)Mesh.ArrayType.Custom0] = chunk.TexIndicesCache;
+		arrays[(int)Mesh.ArrayType.Custom1] = chunk.TexWeightsCache01;
+		arrays[(int)Mesh.ArrayType.Index] = chunk.IndicesCache;
+
+		chunk.ArrayMesh.ClearSurfaces();
+		if (vertexCount > 0)
+		{
+			int custom0Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift;
+			int custom1Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom1Shift;
+			chunk.ArrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays,
+				new Godot.Collections.Array<Godot.Collections.Array>(),
+				null,
+				(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1) | custom0Format | custom1Format));
+		}
+
+		if (rebuildPhysics)
+		{
+			var heightMapShape = new HeightMapShape3D();
+			heightMapShape.MapWidth = cellWidth + 1;
+			heightMapShape.MapDepth = cellDepth + 1;
+			
+			int mapDataCount = (cellWidth + 1) * (cellDepth + 1);
+			if (chunk.MapDataCache == null || chunk.MapDataCache.Length != mapDataCount)
+			{
+				chunk.MapDataCache = new float[mapDataCount];
+			}
+			
+			for (int z = 0; z <= cellDepth; z++)
+			{
+				for (int x = 0; x <= cellWidth; x++)
+				{
+					chunk.MapDataCache[z * (cellWidth + 1) + x] = Heights[chunk.StartX + x, chunk.StartZ + z];
+				}
+			}
+			heightMapShape.MapData = chunk.MapDataCache;
+			chunk.CollisionShape.Shape = heightMapShape;
+			chunk.CollisionShape.Scale = new Vector3(Spacing, 1.0f, Spacing);
+		}
+	}
+
 	private void ProcessTriangle(
+		TerrainChunk chunk,
 		int x0, int z0,
 		int x1, int z1,
 		int x2, int z2,
-		ref int vertexIndex,
-		Vector3[] gridNormals)
+		ref int vertexIndex)
 	{
 		var s0 = SplatMap[x0, z0];
 		var s1 = SplatMap[x1, z1];
@@ -629,27 +680,27 @@ void fragment() {
 		int p2 = uniqueTexs[2];
 		int p3 = uniqueTexs[3];
 
-		PopulateTriangleVertex(x0, z0, p0, p1, p2, p3, s0, ref vertexIndex, gridNormals);
-		PopulateTriangleVertex(x1, z1, p0, p1, p2, p3, s1, ref vertexIndex, gridNormals);
-		PopulateTriangleVertex(x2, z2, p0, p1, p2, p3, s2, ref vertexIndex, gridNormals);
+		PopulateTriangleVertex(chunk, x0, z0, p0, p1, p2, p3, s0, ref vertexIndex);
+		PopulateTriangleVertex(chunk, x1, z1, p0, p1, p2, p3, s1, ref vertexIndex);
+		PopulateTriangleVertex(chunk, x2, z2, p0, p1, p2, p3, s2, ref vertexIndex);
 	}
 
 	private void PopulateTriangleVertex(
+		TerrainChunk chunk,
 		int x, int z,
 		int p0, int p1, int p2, int p3,
 		TerrainSplatWeights srcSplat,
-		ref int vertexIndex,
-		Vector3[] gridNormals)
+		ref int vertexIndex)
 	{
 		float lx = (x - (Width - 1) / 2.0f) * Spacing;
 		float lz = (z - (Depth - 1) / 2.0f) * Spacing;
-		_verticesCache[vertexIndex] = new Vector3(lx, Heights[x, z], lz);
+		chunk.VerticesCache[vertexIndex] = new Vector3(lx, Heights[x, z], lz);
 
-		_normalsCache[vertexIndex] = gridNormals[z * Width + x];
+		chunk.NormalsCache[vertexIndex] = GetVertexNormal(x, z);
 
-		_uvsCache[vertexIndex] = new Vector2((float)x / (Width - 1) * 25f, (float)z / (Depth - 1) * 25f);
+		chunk.UvsCache[vertexIndex] = new Vector2((float)x / (Width - 1) * 25f, (float)z / (Depth - 1) * 25f);
 
-		_indicesCache[vertexIndex] = vertexIndex;
+		chunk.IndicesCache[vertexIndex] = vertexIndex;
 
 		float w0 = 0f, w1 = 0f, w2 = 0f, w3 = 0f;
 
@@ -685,15 +736,15 @@ void fragment() {
 		}
 
 		int sIdx = vertexIndex * 4;
-		_texIndicesCache[sIdx + 0] = p0;
-		_texIndicesCache[sIdx + 1] = p1;
-		_texIndicesCache[sIdx + 2] = p2;
-		_texIndicesCache[sIdx + 3] = p3;
+		chunk.TexIndicesCache[sIdx + 0] = p0;
+		chunk.TexIndicesCache[sIdx + 1] = p1;
+		chunk.TexIndicesCache[sIdx + 2] = p2;
+		chunk.TexIndicesCache[sIdx + 3] = p3;
 
-		_texWeightsCache01[sIdx + 0] = w0;
-		_texWeightsCache01[sIdx + 1] = w1;
-		_texWeightsCache01[sIdx + 2] = w2;
-		_texWeightsCache01[sIdx + 3] = w3;
+		chunk.TexWeightsCache01[sIdx + 0] = w0;
+		chunk.TexWeightsCache01[sIdx + 1] = w1;
+		chunk.TexWeightsCache01[sIdx + 2] = w2;
+		chunk.TexWeightsCache01[sIdx + 3] = w3;
 
 		vertexIndex++;
 	}
@@ -804,6 +855,8 @@ void fragment() {
 		_localHeights = newHeights;
 		_localPathingCodes = newPathing;
 		SplatMap = newSplatMap;
+		
+		CreateChunks();
 
 		UpdateWaterSize();
 		UpdateMeshAndPhysics();
@@ -870,6 +923,8 @@ void fragment() {
 		_localHeights = newHeights;
 		_localPathingCodes = newPathing;
 		SplatMap = newSplatMap;
+		
+		CreateChunks();
 
 		UpdateWaterSize();
 		UpdateMeshAndPhysics();
@@ -901,6 +956,11 @@ void fragment() {
 		{
 			_waterMesh.Visible = waterEnabled;
 		}
+		
+		if (newWidth != Width || newDepth != Depth) {
+			CreateChunks();
+		}
+		
 		UpdateWaterTransform();
 		UpdateWaterSize();
 		UpdateMeshAndPhysics();

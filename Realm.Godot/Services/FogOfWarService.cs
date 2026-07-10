@@ -377,7 +377,11 @@ void fragment() {
 	{
 		if (GodotObject.IsInstanceValid(_fogMeshInstance) && GameHost.Instance?.GroundTerrain != null)
 		{
-			_fogMeshInstance.Mesh = GameHost.Instance.GroundTerrain.TerrainMesh;
+			{
+				var plane = new PlaneMesh();
+				plane.Size = new Vector2(GameHost.Instance.GroundTerrain.Width * GameHost.Instance.GroundTerrain.Spacing, GameHost.Instance.GroundTerrain.Depth * GameHost.Instance.GroundTerrain.Spacing);
+				_fogMeshInstance.Mesh = plane;
+			}
 		}
 
 		if (_fogImage == null)
