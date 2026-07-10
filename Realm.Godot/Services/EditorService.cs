@@ -818,40 +818,49 @@ public class EditorService
 		float spacing = terrain.Spacing;
 		bool modified = false;
 
-		for (int z = 0; z < depth; z++)
+		float segmentLengthSquared = (end.X - start.X) * (end.X - start.X) + (end.Z - start.Z) * (end.Z - start.Z);
+		if (segmentLengthSquared <= 0.0001f) return false;
+
+		float minWorldX = Mathf.Min(start.X, end.X) - brushRadius;
+		float maxWorldX = Mathf.Max(start.X, end.X) + brushRadius;
+		float minWorldZ = Mathf.Min(start.Z, end.Z) - brushRadius;
+		float maxWorldZ = Mathf.Max(start.Z, end.Z) + brushRadius;
+
+		int minGridX = Mathf.Clamp(Mathf.FloorToInt(minWorldX / spacing + (width - 1) / 2.0f), 0, width - 1);
+		int maxGridX = Mathf.Clamp(Mathf.CeilToInt(maxWorldX / spacing + (width - 1) / 2.0f), 0, width - 1);
+		int minGridZ = Mathf.Clamp(Mathf.FloorToInt(minWorldZ / spacing + (depth - 1) / 2.0f), 0, depth - 1);
+		int maxGridZ = Mathf.Clamp(Mathf.CeilToInt(maxWorldZ / spacing + (depth - 1) / 2.0f), 0, depth - 1);
+
+		for (int gridZ = minGridZ; gridZ <= maxGridZ; gridZ++)
 		{
-			for (int x = 0; x < width; x++)
+			for (int gridX = minGridX; gridX <= maxGridX; gridX++)
 			{
-				float vx = (x - (width - 1) / 2.0f) * spacing;
-				float vz = (z - (depth - 1) / 2.0f) * spacing;
-				float abLenSqr = (end.X - start.X) * (end.X - start.X) + (end.Z - start.Z) * (end.Z - start.Z);
-				if (abLenSqr > 0.0001f)
+				float worldX = (gridX - (width - 1) / 2.0f) * spacing;
+				float worldZ = (gridZ - (depth - 1) / 2.0f) * spacing;
+				float interpolationFactor = ((worldX - start.X) * (end.X - start.X) + (worldZ - start.Z) * (end.Z - start.Z)) / segmentLengthSquared;
+				interpolationFactor = Mathf.Clamp(interpolationFactor, 0.0f, 1.0f);
+				float projectedX = start.X + interpolationFactor * (end.X - start.X);
+				float projectedZ = start.Z + interpolationFactor * (end.Z - start.Z);
+				float distanceToProjected = Mathf.Sqrt((worldX - projectedX) * (worldX - projectedX) + (worldZ - projectedZ) * (worldZ - projectedZ));
+				if (distanceToProjected <= brushRadius)
 				{
-					float t = ((vx - start.X) * (end.X - start.X) + (vz - start.Z) * (end.Z - start.Z)) / abLenSqr;
-					t = Mathf.Clamp(t, 0.0f, 1.0f);
-					float projX = start.X + t * (end.X - start.X);
-					float projZ = start.Z + t * (end.Z - start.Z);
-					float dist = Mathf.Sqrt((vx - projX) * (vx - projX) + (vz - projZ) * (vz - projZ));
-					if (dist <= brushRadius)
+					float targetHeight = Mathf.Lerp(start.Y, end.Y, interpolationFactor);
+					float falloff = 1.0f - (distanceToProjected / brushRadius);
+					falloff = Mathf.Sin(falloff * Mathf.Pi / 2.0f);
+					float oldHeight = terrain.Heights[gridX, gridZ];
+					float newHeight = Mathf.Lerp(oldHeight, targetHeight, falloff);
+					if (Mathf.Abs(newHeight - oldHeight) > 0.001f)
 					{
-						float targetHeight = Mathf.Lerp(start.Y, end.Y, t);
-						float falloff = 1.0f - (dist / brushRadius);
-						falloff = Mathf.Sin(falloff * Mathf.Pi / 2.0f);
-						float oldH = terrain.Heights[x, z];
-						float newH = Mathf.Lerp(oldH, targetHeight, falloff);
-						if (Mathf.Abs(newH - oldH) > 0.001f)
+						if (terrain.PathingCodes != null)
 						{
-							if (terrain.PathingCodes != null)
+							int defaultPathBefore = EditableTerrain.GetDefaultPathingCode(oldHeight, terrain.WaterHeight, terrain.WaterEnabled);
+							if (terrain.PathingCodes[gridX, gridZ] == defaultPathBefore)
 							{
-								int defaultPathBefore = EditableTerrain.GetDefaultPathingCode(oldH, terrain.WaterHeight, terrain.WaterEnabled);
-								if (terrain.PathingCodes[x, z] == defaultPathBefore)
-								{
-									terrain.PathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(newH, terrain.WaterHeight, terrain.WaterEnabled);
-								}
+								terrain.PathingCodes[gridX, gridZ] = EditableTerrain.GetDefaultPathingCode(newHeight, terrain.WaterHeight, terrain.WaterEnabled);
 							}
-							terrain.Heights[x, z] = newH;
-							modified = true;
 						}
+						terrain.Heights[gridX, gridZ] = newHeight;
+						modified = true;
 					}
 				}
 			}
@@ -860,50 +869,33 @@ public class EditorService
 		if (modified)
 		{
 			float threshold = blockMode ? (blockLevelHeight * 0.5f) : (spacing * 0.5f);
-			for (int z = 0; z < depth; z++)
+			for (int gridZ = minGridZ; gridZ <= maxGridZ; gridZ++)
 			{
-				for (int x = 0; x < width; x++)
+				for (int gridX = minGridX; gridX <= maxGridX; gridX++)
 				{
-					float vx = (x - (width - 1) / 2.0f) * spacing;
-					float vz = (z - (depth - 1) / 2.0f) * spacing;
-					float abLenSqr = (end.X - start.X) * (end.X - start.X) + (end.Z - start.Z) * (end.Z - start.Z);
-					if (abLenSqr > 0.0001f)
+					float worldX = (gridX - (width - 1) / 2.0f) * spacing;
+					float worldZ = (gridZ - (depth - 1) / 2.0f) * spacing;
+					float interpolationFactor = ((worldX - start.X) * (end.X - start.X) + (worldZ - start.Z) * (end.Z - start.Z)) / segmentLengthSquared;
+					interpolationFactor = Mathf.Clamp(interpolationFactor, 0.0f, 1.0f);
+					float projectedX = start.X + interpolationFactor * (end.X - start.X);
+					float projectedZ = start.Z + interpolationFactor * (end.Z - start.Z);
+					float distanceToProjected = Mathf.Sqrt((worldX - projectedX) * (worldX - projectedX) + (worldZ - projectedZ) * (worldZ - projectedZ));
+					if (distanceToProjected <= brushRadius)
 					{
-						float t = ((vx - start.X) * (end.X - start.X) + (vz - start.Z) * (end.Z - start.Z)) / abLenSqr;
-						t = Mathf.Clamp(t, 0.0f, 1.0f);
-						float projX = start.X + t * (end.X - start.X);
-						float projZ = start.Z + t * (end.Z - start.Z);
-						float dist = Mathf.Sqrt((vx - projX) * (vx - projX) + (vz - projZ) * (vz - projZ));
-						if (dist <= brushRadius)
-						{
-							float h = terrain.Heights[x, z];
-							float hl = terrain.Heights[Math.Max(0, x - 1), z];
-							float hr = terrain.Heights[Math.Min(width - 1, x + 1), z];
-							float hd = terrain.Heights[x, Math.Max(0, z - 1)];
-							float hu = terrain.Heights[x, Math.Min(depth - 1, z + 1)];
-							float maxDiff = Mathf.Max(
-								Mathf.Max(Mathf.Abs(h - hl), Mathf.Abs(h - hr)),
-								Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
-							);
-							int targetIndex = maxDiff >= threshold ? cliffPaintTextureIndex : paintTextureIndex;
-							_terrainSplatMap[x, z] = TerrainSplatWeights.CreateSolid(targetIndex);
-						}
+						float centerHeight = terrain.Heights[gridX, gridZ];
+						float leftHeight = terrain.Heights[Math.Max(0, gridX - 1), gridZ];
+						float rightHeight = terrain.Heights[Math.Min(width - 1, gridX + 1), gridZ];
+						float downHeight = terrain.Heights[gridX, Math.Max(0, gridZ - 1)];
+						float upHeight = terrain.Heights[gridX, Math.Min(depth - 1, gridZ + 1)];
+						float maxHeightDifference = Mathf.Max(
+							Mathf.Max(Mathf.Abs(centerHeight - leftHeight), Mathf.Abs(centerHeight - rightHeight)),
+							Mathf.Max(Mathf.Abs(centerHeight - downHeight), Mathf.Abs(centerHeight - upHeight))
+						);
+						int targetTextureIndex = maxHeightDifference >= threshold ? cliffPaintTextureIndex : paintTextureIndex;
+						_terrainSplatMap[gridX, gridZ] = TerrainSplatWeights.CreateSolid(targetTextureIndex);
 					}
 				}
 			}
-		}
-
-		if (modified)
-		{
-			float minWorldX = Mathf.Min(start.X, end.X) - brushRadius;
-			float maxWorldX = Mathf.Max(start.X, end.X) + brushRadius;
-			float minWorldZ = Mathf.Min(start.Z, end.Z) - brushRadius;
-			float maxWorldZ = Mathf.Max(start.Z, end.Z) + brushRadius;
-
-			int minGridX = Mathf.Clamp((int)Math.Round(minWorldX / spacing + (width - 1) / 2.0f), 0, width - 1);
-			int maxGridX = Mathf.Clamp((int)Math.Round(maxWorldX / spacing + (width - 1) / 2.0f), 0, width - 1);
-			int minGridZ = Mathf.Clamp((int)Math.Round(minWorldZ / spacing + (width - 1) / 2.0f), 0, width - 1);
-			int maxGridZ = Mathf.Clamp((int)Math.Round(maxWorldZ / spacing + (width - 1) / 2.0f), 0, width - 1);
 
 			AlignSplatMapSlots(minGridX - 2, minGridZ - 2, maxGridX + 2, maxGridZ + 2);
 		}

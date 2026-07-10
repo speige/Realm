@@ -1946,9 +1946,7 @@ public partial class GameHost
 		if (GroundTerrain != null)
 		{
 			bool meshVisible = IsMapEditorMode && (EditorGridMode == GridOverlayMode.Mesh);
-			bool straightVisible = IsMapEditorMode && (EditorGridMode == GridOverlayMode.Straight);
 			GroundTerrain.SetGridVisible(meshVisible);
-			GroundTerrain.UpdateStraightGrid(straightVisible);
 		}
 	}
 

@@ -107,7 +107,6 @@ public partial class EditableTerrain : StaticBody3D
 	private int[,] _localPathingCodes;
 	private float _localWaterHeight = -2.0f;
 	private bool _localWaterEnabled = true;
-	private MeshInstance3D? _straightGridMesh;
 
 	public float[,] Heights
 	{
@@ -664,112 +663,6 @@ void fragment() {
 		{
 			_material.SetShaderParameter("grid_visible", visible);
 		}
-		if (!visible && _straightGridMesh != null)
-		{
-			_straightGridMesh.Visible = false;
-		}
-	}
-
-	public void UpdateStraightGrid(bool visible)
-	{
-		if (!visible)
-		{
-			if (_straightGridMesh != null)
-			{
-				_straightGridMesh.Visible = false;
-			}
-			return;
-		}
-
-		if (_straightGridMesh == null)
-		{
-			_straightGridMesh = new MeshInstance3D();
-			_straightGridMesh.Name = "StraightGridOverlay";
-
-			var planeMesh = new PlaneMesh();
-			planeMesh.Size = new Vector2(Width * Spacing, Depth * Spacing);
-			_straightGridMesh.Mesh = planeMesh;
-
-			var shader = new Shader();
-			shader.Code = @"
-shader_type spatial;
-render_mode unshaded, depth_prepass_alpha, cull_disabled;
-
-uniform vec4 grid_color_thick = vec4(1.0, 0.9, 0.0, 0.85);
-uniform vec4 grid_color_thin = vec4(1.0, 0.9, 0.0, 0.25);
-uniform float grid_spacing = 2.0;
-
-varying vec3 v_world_pos;
-
-void vertex() {
-	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-}
-
-void fragment() {
-	vec2 grid_uv = v_world_pos.xz / grid_spacing;
-	
-	vec2 df = fwidth(grid_uv) * 3.0;
-	vec2 grid_lines = smoothstep(vec2(1.0) - df, vec2(1.0), fract(grid_uv)) + 
-					  (1.0 - smoothstep(vec2(0.0), df, fract(grid_uv)));
-	
-	float thin_line = max(grid_lines.x, grid_lines.y);
-	
-	vec2 thick_grid_uv = grid_uv / 10.0;
-	vec2 df_thick = fwidth(thick_grid_uv) * 3.0;
-	vec2 thick_grid_lines = smoothstep(vec2(1.0) - df_thick, vec2(1.0), fract(thick_grid_uv)) + 
-							(1.0 - smoothstep(vec2(0.0), df_thick, fract(thick_grid_uv)));
-	
-	float thick_line = max(thick_grid_lines.x, thick_grid_lines.y);
-	
-	vec4 col = vec4(0.0);
-	if (thick_line > 0.0) {
-		col = vec4(grid_color_thick.rgb, grid_color_thick.a * thick_line);
-	} else if (thin_line > 0.0) {
-		col = vec4(grid_color_thin.rgb, grid_color_thin.a * thin_line);
-	}
-	
-	if (col.a < 0.01) {
-		discard;
-	}
-	
-	ALBEDO = col.rgb;
-	ALPHA = col.a;
-}
-";
-			var mat = new ShaderMaterial();
-			mat.Shader = shader;
-			mat.SetShaderParameter("grid_spacing", Spacing);
-			_straightGridMesh.MaterialOverride = mat;
-
-			AddChild(_straightGridMesh);
-		}
-
-		var pMesh = _straightGridMesh.Mesh as PlaneMesh;
-		if (pMesh != null)
-		{
-			pMesh.Size = new Vector2(Width * Spacing, Depth * Spacing);
-		}
-
-		var sMat = _straightGridMesh.MaterialOverride as ShaderMaterial;
-		if (sMat != null)
-		{
-			sMat.SetShaderParameter("grid_spacing", Spacing);
-		}
-
-		float maxH = float.MinValue;
-		for (int z = 0; z < Depth; z++)
-		{
-			for (int x = 0; x < Width; x++)
-			{
-				if (Heights[x, z] > maxH)
-				{
-					maxH = Heights[x, z];
-				}
-			}
-		}
-		
-		_straightGridMesh.Position = new Vector3(0f, maxH + 1.0f, 0f);
-		_straightGridMesh.Visible = true;
 	}
 
 	public void UpdatePathingTexture()

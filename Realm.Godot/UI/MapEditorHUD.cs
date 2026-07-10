@@ -820,10 +820,9 @@ public partial class MapEditorHUD : Control
 			{
 				GameHost.Instance.EditorGridMode = GameHost.Instance.EditorGridMode switch
 				{
-					GameHost.GridOverlayMode.Off      => GameHost.GridOverlayMode.Mesh,
-					GameHost.GridOverlayMode.Mesh     => GameHost.GridOverlayMode.Straight,
-					GameHost.GridOverlayMode.Straight => GameHost.GridOverlayMode.Off,
-					_                        => GameHost.GridOverlayMode.Off
+					GameHost.GridOverlayMode.Off => GameHost.GridOverlayMode.Mesh,
+					GameHost.GridOverlayMode.Mesh => GameHost.GridOverlayMode.Off,
+					_ => GameHost.GridOverlayMode.Off
 				};
 				GameHost.Instance.UpdateGridOverlayVisibility();
 				UpdateGridOverlayExternal(GameHost.Instance.EditorGridMode);
@@ -1217,8 +1216,7 @@ public partial class MapEditorHUD : Control
 			_btnToggleGrid.Text = GameHost.Instance.EditorGridMode switch
 			{
 				GameHost.GridOverlayMode.Off => "🌐 GRID OVERLAY: OFF",
-				GameHost.GridOverlayMode.Mesh => "🌐 GRID OVERLAY: MESH",
-				GameHost.GridOverlayMode.Straight => "🌐 GRID OVERLAY: STRAIGHT",
+				GameHost.GridOverlayMode.Mesh => "🌐 GRID OVERLAY: ON",
 				_ => "🌐 GRID OVERLAY: OFF"
 			};
 			_btnToggleCameraBounds.Text = GameHost.Instance.EditorCameraBoundsVisible ? "📹 CAM BOUNDS: ON" : "📹 CAM BOUNDS: OFF";
@@ -1738,8 +1736,7 @@ public partial class MapEditorHUD : Control
 			_btnToggleGrid.Text = mode switch
 			{
 				GameHost.GridOverlayMode.Off => "🌐 GRID OVERLAY: OFF",
-				GameHost.GridOverlayMode.Mesh => "🌐 GRID OVERLAY: MESH",
-				GameHost.GridOverlayMode.Straight => "🌐 GRID OVERLAY: STRAIGHT",
+				GameHost.GridOverlayMode.Mesh => "🌐 GRID OVERLAY: ON",
 				_ => "🌐 GRID OVERLAY: OFF"
 			};
 		}

@@ -549,10 +549,9 @@ public partial class GameHost
 				{
 					EditorGridMode = EditorGridMode switch
 					{
-						GridOverlayMode.Off      => GridOverlayMode.Mesh,
-						GridOverlayMode.Mesh     => GridOverlayMode.Straight,
-						GridOverlayMode.Straight => GridOverlayMode.Off,
-						_                        => GridOverlayMode.Off
+						GridOverlayMode.Off => GridOverlayMode.Mesh,
+						GridOverlayMode.Mesh => GridOverlayMode.Off,
+						_ => GridOverlayMode.Off
 					};
 					UpdateGridOverlayVisibility();
 					MapEditorHUD.Instance?.UpdateGridOverlayExternal(EditorGridMode);
@@ -1121,8 +1120,38 @@ public partial class GameHost
 								}
 								if (modified)
 								{
-									GroundTerrain.UpdateMeshAndPhysics(true, false);
-									AlignAllEntitiesToTerrain();
+									float minX = Mathf.Min(start.X, end.X);
+									float maxX = Mathf.Max(start.X, end.X);
+									float minZ = Mathf.Min(start.Z, end.Z);
+									float maxZ = Mathf.Max(start.Z, end.Z);
+
+									if (EditorMirrorMode != MirrorMode.None)
+									{
+										var startMirrored = GetMirroredTransforms(start, 0.0f);
+										var endMirrored = GetMirroredTransforms(end, 0.0f);
+										for (int i = 0; i < startMirrored.Count; i++)
+										{
+											minX = Mathf.Min(minX, Mathf.Min(startMirrored[i].Position.X, endMirrored[i].Position.X));
+											maxX = Mathf.Max(maxX, Mathf.Max(startMirrored[i].Position.X, endMirrored[i].Position.X));
+											minZ = Mathf.Min(minZ, Mathf.Min(startMirrored[i].Position.Z, endMirrored[i].Position.Z));
+											maxZ = Mathf.Max(maxZ, Mathf.Max(startMirrored[i].Position.Z, endMirrored[i].Position.Z));
+										}
+									}
+
+									float brushRadius = EditorBrushRadius;
+									float spacing = GroundTerrain.Spacing;
+									int width = GroundTerrain.Width;
+									int depth = GroundTerrain.Depth;
+
+									int minGridX = Mathf.Clamp(Mathf.FloorToInt((minX - brushRadius) / spacing + (width - 1) / 2.0f), 0, width - 1);
+									int maxGridX = Mathf.Clamp(Mathf.CeilToInt((maxX + brushRadius) / spacing + (width - 1) / 2.0f), 0, width - 1);
+									int minGridZ = Mathf.Clamp(Mathf.FloorToInt((minZ - brushRadius) / spacing + (depth - 1) / 2.0f), 0, depth - 1);
+									int maxGridZ = Mathf.Clamp(Mathf.CeilToInt((maxZ + brushRadius) / spacing + (depth - 1) / 2.0f), 0, depth - 1);
+
+									Rect2I affected = new Rect2I(minGridX - 2, minGridZ - 2, maxGridX - minGridX + 4, maxGridZ - minGridZ + 4);
+
+									GroundTerrain.UpdateMeshAndPhysics(true, false, affected);
+									AlignAllEntitiesToTerrain(affected);
 									var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
 									var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
 									var pathingAfter = (int[,])GroundTerrain.PathingCodes.Clone();
@@ -1130,7 +1159,6 @@ public partial class GameHost
 									EditorHistoryManager.RecordAction(action);
 									EditorHasUnsavedChanges = true;
 									UpdatePathingOverlay();
-									GroundTerrain.BakeNavMesh();
 								}
 							}
 							_editorService.SetRampStartPos(null);
