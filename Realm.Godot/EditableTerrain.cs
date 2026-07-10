@@ -378,109 +378,39 @@ void fragment() {
 	if (pathing_visible) {
 		vec2 pathing_uv = (v_world_pos.xz + terrain_size / 2.0) / terrain_size;
 		int code = int(round(texture(pathing_texture, pathing_uv).r * 255.0));
-		
-		int bit_0 = code % 2;
-		int bit_1 = (code / 2) % 2;
-		int bit_2 = (code / 4) % 2;
-		int bit_3 = (code / 8) % 2;
-		int bit_4 = (code / 16) % 2;
-		int bit_5 = (code / 32) % 2;
-		
-		int active_count = 0;
-		int flag_0 = -1;
-		int flag_1 = -1;
-		int flag_2 = -1;
-		int flag_3 = -1;
-		int flag_4 = -1;
-		int flag_5 = -1;
-		
-		if (bit_4 != 0) {
-			if (active_count == 0) flag_0 = 16;
-			else if (active_count == 1) flag_1 = 16;
-			else if (active_count == 2) flag_2 = 16;
-			else if (active_count == 3) flag_3 = 16;
-			else if (active_count == 4) flag_4 = 16;
-			else if (active_count == 5) flag_5 = 16;
-			active_count++;
-		}
-		if (bit_3 != 0) {
-			if (active_count == 0) flag_0 = 8;
-			else if (active_count == 1) flag_1 = 8;
-			else if (active_count == 2) flag_2 = 8;
-			else if (active_count == 3) flag_3 = 8;
-			else if (active_count == 4) flag_4 = 8;
-			else if (active_count == 5) flag_5 = 8;
-			active_count++;
-		}
-		if (bit_5 != 0) {
-			if (active_count == 0) flag_0 = 32;
-			else if (active_count == 1) flag_1 = 32;
-			else if (active_count == 2) flag_2 = 32;
-			else if (active_count == 3) flag_3 = 32;
-			else if (active_count == 4) flag_4 = 32;
-			else if (active_count == 5) flag_5 = 32;
-			active_count++;
-		}
-		if (bit_0 != 0) {
-			if (active_count == 0) flag_0 = 1;
-			else if (active_count == 1) flag_1 = 1;
-			else if (active_count == 2) flag_2 = 1;
-			else if (active_count == 3) flag_3 = 1;
-			else if (active_count == 4) flag_4 = 1;
-			else if (active_count == 5) flag_5 = 1;
-			active_count++;
-		}
-		if (bit_1 != 0) {
-			if (active_count == 0) flag_0 = 2;
-			else if (active_count == 1) flag_1 = 2;
-			else if (active_count == 2) flag_2 = 2;
-			else if (active_count == 3) flag_3 = 2;
-			else if (active_count == 4) flag_4 = 2;
-			else if (active_count == 5) flag_5 = 2;
-			active_count++;
-		}
-		if (bit_2 != 0) {
-			if (active_count == 0) flag_0 = 4;
-			else if (active_count == 1) flag_1 = 4;
-			else if (active_count == 2) flag_2 = 4;
-			else if (active_count == 3) flag_3 = 4;
-			else if (active_count == 4) flag_4 = 4;
-			else if (active_count == 5) flag_5 = 4;
-			active_count++;
-		}
-		
-		if (active_count == 0) {
-			flag_0 = 0;
-			active_count = 1;
-		}
-		
+
 		vec2 cell_frac = fract(v_world_pos.xz / grid_spacing);
-		int sx = int(floor(cell_frac.x * 2.0));
-		int sz = int(floor(cell_frac.y * 2.0));
-		int flag_idx = (sx + sz) % active_count;
-		
-		int active_flag = flag_0;
-		if (flag_idx == 1) active_flag = flag_1;
-		else if (flag_idx == 2) active_flag = flag_2;
-		else if (flag_idx == 3) active_flag = flag_3;
-		else if (flag_idx == 4) active_flag = flag_4;
-		else if (flag_idx == 5) active_flag = flag_5;
-		
+		int sx = int(floor(cell_frac.x * 3.0));
+		int sz = int(floor(cell_frac.y * 3.0));
+		int box_idx = sz * 3 + sx;
+
 		vec4 pathing_color = vec4(0.0);
-		if (active_flag == 16 || active_flag == 0) {
-			pathing_color = vec4(0.9, 0.1, 0.1, 0.25);
-		} else if (active_flag == 32) {
-			pathing_color = vec4(0.6, 0.2, 0.8, 0.25);
-		} else if (active_flag == 8) {
-			pathing_color = vec4(0.2, 0.85, 0.2, 0.25);
-		} else if (active_flag == 1) {
-			pathing_color = vec4(0.2, 0.6, 1.0, 0.25);
-		} else if (active_flag == 2) {
-			pathing_color = vec4(0.0, 0.15, 0.7, 0.25);
-		} else if (active_flag == 4) {
-			pathing_color = vec4(0.85, 0.85, 0.0, 0.25);
+		if (box_idx == 0) {
+			if (code == 0 || (code & 16) != 0) {
+				pathing_color = vec4(0.9, 0.1, 0.1, 0.75);
+			}
+		} else if (box_idx == 1) {
+			if ((code & 1) != 0) {
+				pathing_color = vec4(0.2, 0.6, 1.0, 0.75);
+			}
+		} else if (box_idx == 2) {
+			if ((code & 2) != 0) {
+				pathing_color = vec4(0.0, 0.15, 0.7, 0.75);
+			}
+		} else if (box_idx == 3) {
+			if ((code & 4) != 0) {
+				pathing_color = vec4(0.85, 0.85, 0.0, 0.75);
+			}
+		} else if (box_idx == 4) {
+			if ((code & 8) != 0) {
+				pathing_color = vec4(0.2, 0.85, 0.2, 0.75);
+			}
+		} else if (box_idx == 5) {
+			if ((code & 32) != 0) {
+				pathing_color = vec4(0.6, 0.2, 0.8, 0.75);
+			}
 		}
-		
+
 		if (pathing_color.a > 0.0) {
 			final_albedo = mix(final_albedo, pathing_color.rgb, pathing_color.a);
 		}

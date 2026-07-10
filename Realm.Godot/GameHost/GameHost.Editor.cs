@@ -81,6 +81,7 @@ public partial class GameHost
 
 		MapEditorHUD.Instance?.ClearTempWorkspaceExternal();
 		MapEditorHUD.Instance?.ShowFeedbackExternal("Map reset: cleared all entities & terrain");
+		MapEditorHUD.Instance?.RegenerateMinimap();
 	}
 
 	private bool IsMouseOverUI()
@@ -2213,6 +2214,12 @@ public partial class GameHost
 		}
 		_coordinatePersistentMeshes.Clear();
 
+		if (ActiveEditorTool != EditorTool.DrawCoordinate)
+		{
+			HideCoordinatePreviewMesh();
+			return;
+		}
+
 		if (GroundTerrain == null || GroundTerrain.Heights == null) return;
 
 		int width = GroundTerrain.Width;
@@ -2391,6 +2398,18 @@ public partial class GameHost
 		}
 
 		MapEditorHUD.Instance?.ShowFeedbackExternal("Selection Mirrored Horizontally");
+	}
+
+	public void PerformCopyAreaExternal()
+	{
+		if (GroundTerrain == null || _editorService.SelectionStart == null || _editorService.SelectionEnd == null)
+		{
+			MapEditorHUD.Instance?.ShowFeedbackExternal("Nothing to Copy (select an area first)");
+			return;
+		}
+
+		PerformCopyArea();
+		MapEditorHUD.Instance?.ShowFeedbackExternal("Area Copied");
 	}
 
 	public void PerformCutAreaExternal()
