@@ -98,5 +98,8 @@ Write-Host "Installing NuGet Gallery extension from Marketplace..."
 Write-Host "Installing JSON Crack extension from Marketplace..."
 & $cliPath --extensions-dir $extsDir ext install AykutSarac.jsoncrack-vscode
 
+Write-Host "Installing EXR Preview extension from Marketplace..."
+& $cliPath --extensions-dir $extsDir ext install mateh.exr-preview
+
 Write-Host "VS Code Embedded and Extension setup completed successfully!"
 

@@ -351,11 +351,17 @@ public class InGameHUDViewModel
 	public string CurrentWeather { get; set; } = "clear";
 	public string FogOfWarType { get; set; } = "grey";
 	public bool ShowMinimapTerrain { get; set; } = true;
-	public byte[,] FogGrid { get; set; } = new byte[32, 32];
+	
+	private static readonly byte[,] _emptyFogGrid = new byte[32, 32];
+	public byte[,] FogGrid { get; set; } = _emptyFogGrid;
 
 	public int IdleCount { get; set; }
 
 	public bool IsBuildSubMenuOpen { get; set; }
+
+	private int _lastClockMins = -1;
+	private int _lastClockSecs = -1;
+	private int _lastClockPhase = -1;
 
 	public class SelectedUnitInfo
 	{
@@ -417,15 +423,23 @@ public class InGameHUDViewModel
 			float t = GameHost.Instance.GameElapsedTime;
 			int mins = (int)(t / 60);
 			int secs = (int)(t % 60);
-			string phase = GameHost.Instance.TimeOfDayIndex switch
+			int phaseIdx = GameHost.Instance.TimeOfDayIndex;
+			
+			if (mins != _lastClockMins || secs != _lastClockSecs || phaseIdx != _lastClockPhase)
 			{
-				0 => TranslationServer.Translate("Day"),
-				1 => TranslationServer.Translate("Sunset"),
-				2 => TranslationServer.Translate("Night"),
-				3 => TranslationServer.Translate("Dawn"),
-				_ => TranslationServer.Translate("Day")
-			};
-			ClockText = $"{mins}:{secs:D2} ({phase})";
+				string phase = phaseIdx switch
+				{
+					0 => TranslationServer.Translate("Day"),
+					1 => TranslationServer.Translate("Sunset"),
+					2 => TranslationServer.Translate("Night"),
+					3 => TranslationServer.Translate("Dawn"),
+					_ => TranslationServer.Translate("Day")
+				};
+				ClockText = $"{mins}:{secs:D2} ({phase})";
+				_lastClockMins = mins;
+				_lastClockSecs = secs;
+				_lastClockPhase = phaseIdx;
+			}
 
 			IsConnectionLost = GameHost.Instance.IsConnectionLost;
 			CycleSelectionIndex = GameHost.Instance.CycleSelectionIndex;
@@ -435,26 +449,19 @@ public class InGameHUDViewModel
 		}
 
 		int idleCount = 0;
-		if (GameHost.Instance != null)
+		if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 		{
-			foreach (var unit in GameHost.Instance.AllUnits)
+			var world = GameHost.Instance.EcsWorld;
+			var targetPlayer = GetTargetPlayerEntity();
+			
+			if (targetPlayer != Entity.Null && world.IsAlive(targetPlayer))
 			{
-				if (unit.IsEnemy || unit.IsBuilding) continue;
-				var world = GameHost.Instance.EcsWorld;
-				if (world.IsAlive(unit.Entity))
-				{
-					bool isMovable = world.Has<Realm.Ecs.Components.Tags.Movable>(unit.Entity);
-					bool hasMoveTo = world.Has<MoveTo>(unit.Entity);
-					bool hasAttackTarget = world.Has<AttackTarget>(unit.Entity);
-					bool hasAttackMove = world.Has<Realm.Ecs.Components.Movement.AttackMove>(unit.Entity);
-					bool hasPatrol = world.Has<Patrol>(unit.Entity);
-					bool hasFollow = world.Has<Realm.Ecs.Components.Movement.Follow>(unit.Entity);
-					bool hasHealTarget = world.Has<HealingTarget>(unit.Entity);
-					if (isMovable && !hasMoveTo && !hasAttackTarget && !hasAttackMove && !hasPatrol && !hasFollow && !hasHealTarget)
+				world.Query(in Realm.Ecs.Common.QueryCache.AllIdleMovableQuery, (Entity entity, ref Owner owner) => {
+					if (owner.PlayerEntity.Value == targetPlayer)
 					{
 						idleCount++;
 					}
-				}
+				});
 			}
 		}
 		IdleCount = idleCount;
@@ -462,25 +469,67 @@ public class InGameHUDViewModel
 
 	public void UpdateSelectedUnits(List<Unit3D> selectedUnits)
 	{
-		SelectedUnits.Clear();
-		if (selectedUnits == null) return;
-
-		foreach (var u in selectedUnits)
+		if (selectedUnits == null)
 		{
-			var info = new SelectedUnitInfo
+			SelectedUnits.Clear();
+			return;
+		}
+
+		while (SelectedUnits.Count > selectedUnits.Count)
+		{
+			SelectedUnits.RemoveAt(SelectedUnits.Count - 1);
+		}
+		while (SelectedUnits.Count < selectedUnits.Count)
+		{
+			SelectedUnits.Add(new SelectedUnitInfo());
+		}
+
+		for (int i = 0; i < selectedUnits.Count; i++)
+		{
+			var u = selectedUnits[i];
+			var info = SelectedUnits[i];
+
+			bool entityChanged = info.Entity != u.Entity;
+
+			info.Entity = u.Entity;
+			info.UnitId = u.UnitId;
+			info.IsEnemy = u.IsEnemy;
+			info.IsBuilding = u.IsBuilding;
+			info.Name = u.UnitId;
+			info.IsUnderConstruction = false;
+			info.HasProduction = false;
+			info.ProductionTitle = null;
+			info.ProductionProgress = 0f;
+			info.ProductionMaxProgress = 0f;
+
+			if (entityChanged)
 			{
-				Entity = u.Entity,
-				UnitId = u.UnitId,
-				IsEnemy = u.IsEnemy,
-				IsBuilding = u.IsBuilding,
-				Name = u.UnitId
-			};
+				info.ProductionQueue.Clear();
+				info.Abilities.Clear();
+				info.Description = null;
+			}
+
+			info.Potions = 0;
+			info.StateText = null;
+			info.Health = 0f;
+			info.MaxHealth = 0f;
+			info.Damage = 0f;
+			info.Range = 0f;
+			info.Armor = 0f;
+			info.Speed = 0f;
+			info.Dps = 0f;
 
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(u.Entity))
 			{
 				var world = GameHost.Instance.EcsWorld;
-				if (world.Has<Name>(u.Entity)) info.Name = world.Get<Name>(u.Entity).Value;
-				if (u.IsBuilding && world.Has<Realm.Ecs.Components.Tags.UnderConstruction>(u.Entity)) info.IsUnderConstruction = true;
+				if (world.Has<Name>(u.Entity))
+				{
+					info.Name = world.Get<Name>(u.Entity).Value;
+				}
+				if (u.IsBuilding && world.Has<Realm.Ecs.Components.Tags.UnderConstruction>(u.Entity))
+				{
+					info.IsUnderConstruction = true;
+				}
 				
 				if (world.Has<Health>(u.Entity))
 				{
@@ -500,33 +549,74 @@ public class InGameHUDViewModel
 					}
 				}
 
-				if (world.Has<Armor>(u.Entity)) info.Armor = world.Get<Armor>(u.Entity).Value;
-				if (world.Has<MovementStats>(u.Entity)) info.Speed = world.Get<MovementStats>(u.Entity).Speed;
+				if (world.Has<Armor>(u.Entity))
+				{
+					info.Armor = world.Get<Armor>(u.Entity).Value;
+				}
+				if (world.Has<MovementStats>(u.Entity))
+				{
+					info.Speed = world.Get<MovementStats>(u.Entity).Speed;
+				}
+
+				string cachedHolding = TranslationServer.Translate("HOLDING");
+				string cachedPatrolling = TranslationServer.Translate("PATROLLING");
+				string cachedAttackMove = TranslationServer.Translate("ATTACK-MOVE");
+				string cachedFollowing = TranslationServer.Translate("FOLLOWING");
+				string cachedMoving = TranslationServer.Translate("MOVING");
+				string cachedAttacking = TranslationServer.Translate("ATTACKING");
+				string cachedIdle = TranslationServer.Translate("IDLE");
+				string cachedDelivering = TranslationServer.Translate("DELIVERING");
+				string cachedHarvesting = TranslationServer.Translate("HARVESTING");
+				string cachedConstructing = TranslationServer.Translate("CONSTRUCTING");
+				string cachedUnderConstruction = TranslationServer.Translate("UNDER CONSTRUCTION");
+				string cachedLvl = TranslationServer.Translate("LVL");
+				string cachedProductionIdle = TranslationServer.Translate("PRODUCTION IDLE");
 
 				if (world.Has<Gatherer>(u.Entity))
 				{
 					var gather = world.Get<Gatherer>(u.Entity);
-					string stateLabel = gather.ReturningToBase ? "● " + TranslationServer.Translate("DELIVERING") : "● " + TranslationServer.Translate("HARVESTING");
+					string stateLabel = gather.ReturningToBase ? "● " + cachedDelivering : "● " + cachedHarvesting;
 					info.StateText = $"{stateLabel} ({gather.CarriedAmount:F0} / {gather.MaxCapacity:F0} {TranslationServer.Translate(gather.ResourceType.ToUpper())})";
 				}
 				else if (world.Has<Realm.Ecs.Components.Resources.BuildTask>(u.Entity))
 				{
 					var bt = world.Get<Realm.Ecs.Components.Resources.BuildTask>(u.Entity);
 					int pct = (int)(bt.Progress / Mathf.Max(bt.TotalBuildTime, 0.001f) * 100f);
-					info.StateText = $"🔨 {TranslationServer.Translate("CONSTRUCTING")} ({pct}%)";
+					info.StateText = $"🔨 {cachedConstructing} ({pct}%)";
 				}
-				else if (world.Has<Realm.Ecs.Components.Movement.HoldPosition>(u.Entity))   info.StateText = "● " + TranslationServer.Translate("HOLDING");
-				else if (world.Has<Realm.Ecs.Components.Movement.Patrol>(u.Entity))     info.StateText = "● " + TranslationServer.Translate("PATROLLING");
-				else if (world.Has<Realm.Ecs.Components.Movement.AttackMove>(u.Entity)) info.StateText = "● " + TranslationServer.Translate("ATTACK-MOVE");
-				else if (world.Has<Realm.Ecs.Components.Movement.Follow>(u.Entity))     info.StateText = "● " + TranslationServer.Translate("FOLLOWING");
-				else if (world.Has<Realm.Ecs.Components.Movement.MoveTo>(u.Entity))     info.StateText = "● " + TranslationServer.Translate("MOVING");
-				else if (world.Has<AttackTarget>(u.Entity))                              info.StateText = "● " + TranslationServer.Translate("ATTACKING");
-				else                                                                         info.StateText = "○ " + TranslationServer.Translate("IDLE");
+				else if (world.Has<Realm.Ecs.Components.Movement.HoldPosition>(u.Entity))
+				{
+					info.StateText = "● " + cachedHolding;
+				}
+				else if (world.Has<Realm.Ecs.Components.Movement.Patrol>(u.Entity))
+				{
+					info.StateText = "● " + cachedPatrolling;
+				}
+				else if (world.Has<Realm.Ecs.Components.Movement.AttackMove>(u.Entity))
+				{
+					info.StateText = "● " + cachedAttackMove;
+				}
+				else if (world.Has<Realm.Ecs.Components.Movement.Follow>(u.Entity))
+				{
+					info.StateText = "● " + cachedFollowing;
+				}
+				else if (world.Has<Realm.Ecs.Components.Movement.MoveTo>(u.Entity))
+				{
+					info.StateText = "● " + cachedMoving;
+				}
+				else if (world.Has<AttackTarget>(u.Entity))
+				{
+					info.StateText = "● " + cachedAttacking;
+				}
+				else
+				{
+					info.StateText = "○ " + cachedIdle;
+				}
 
 				if (u.UnitId == "tower" && world.Has<TowerUpgradeLevel>(u.Entity))
 				{
 					int lvl = world.Get<TowerUpgradeLevel>(u.Entity).Value;
-					info.StateText += $"   ★ {TranslationServer.Translate("LVL")} {lvl}";
+					info.StateText += $"   ★ {cachedLvl} {lvl}";
 				}
 
 				if (world.Has<Inventory>(u.Entity))
@@ -538,7 +628,7 @@ public class InGameHUDViewModel
 				{
 					var cs = world.Get<Realm.Ecs.Components.Resources.ConstructionState>(u.Entity);
 					info.HasProduction = true;
-					info.ProductionTitle = TranslationServer.Translate("UNDER CONSTRUCTION");
+					info.ProductionTitle = cachedUnderConstruction;
 					info.ProductionProgress = cs.Progress;
 					info.ProductionMaxProgress = cs.TotalBuildTime;
 				}
@@ -551,35 +641,76 @@ public class InGameHUDViewModel
 						info.ProductionTitle = string.Format(TranslationServer.Translate("TRAINING: {0}"), prod.UnitIds[0].ToUpper());
 						info.ProductionProgress = prod.CurrentProgress;
 						info.ProductionMaxProgress = prod.BuildTime;
-						info.ProductionQueue.AddRange(prod.UnitIds);
+
+						bool queueChanged = info.ProductionQueue.Count != prod.UnitIds.Count;
+						if (!queueChanged)
+						{
+							for (int q = 0; q < prod.UnitIds.Count; q++)
+							{
+								if (info.ProductionQueue[q] != prod.UnitIds[q])
+								{
+									queueChanged = true;
+									break;
+								}
+							}
+						}
+						if (queueChanged)
+						{
+							info.ProductionQueue.Clear();
+							info.ProductionQueue.AddRange(prod.UnitIds);
+						}
 					}
 					else
 					{
-						info.ProductionTitle = TranslationServer.Translate("PRODUCTION IDLE");
+						info.ProductionTitle = cachedProductionIdle;
+						if (info.ProductionQueue.Count > 0)
+						{
+							info.ProductionQueue.Clear();
+						}
 					}
 				}
 			}
 
-			if (GameHost.UnitRegistry.TryGetValue(u.UnitId, out var regMeta))
+			if (!info.HasProduction && info.ProductionQueue.Count > 0)
 			{
-				info.Description = regMeta.Description;
-				if (regMeta.Abilities != null)
+				info.ProductionQueue.Clear();
+			}
+
+			if (entityChanged || info.Abilities.Count == 0)
+			{
+				if (GameHost.UnitRegistry.TryGetValue(u.UnitId, out var regMeta))
 				{
-					info.Abilities.AddRange(regMeta.Abilities);
+					info.Description = regMeta.Description;
+					if (regMeta.Abilities != null)
+					{
+						info.Abilities.AddRange(regMeta.Abilities);
+					}
+					else
+					{
+						if (u.UnitId == "priest")
+						{
+							info.Abilities.Add("holylight");
+						}
+						else if (u.UnitId == "tower")
+						{
+							info.Abilities.Add("fireball");
+							info.Abilities.Add("lightning");
+						}
+					}
 				}
 				else
 				{
-					if (u.UnitId == "priest") info.Abilities.Add("holylight");
-					else if (u.UnitId == "tower") { info.Abilities.Add("fireball"); info.Abilities.Add("lightning"); }
+					if (u.UnitId == "priest")
+					{
+						info.Abilities.Add("holylight");
+					}
+					else if (u.UnitId == "tower")
+					{
+						info.Abilities.Add("fireball");
+						info.Abilities.Add("lightning");
+					}
 				}
 			}
-			else
-			{
-				if (u.UnitId == "priest") info.Abilities.Add("holylight");
-				else if (u.UnitId == "tower") { info.Abilities.Add("fireball"); info.Abilities.Add("lightning"); }
-			}
-
-			SelectedUnits.Add(info);
 		}
 	}
 }

@@ -237,16 +237,16 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 	}
 	private MeshInstance3D? _brushIndicatorMesh;
-	private MeshInstance3D? _gridOverlayMesh;
 	private MeshInstance3D? _cameraBoundsOverlayMesh;
-	private MeshInstance3D? _pathingOverlayMesh;
+	private readonly List<Vector3> _pathingVerticesCache = new();
+	private readonly List<Color> _pathingColorsCache = new();
+	private readonly List<int> _pathingIndicesCache = new();
 	public bool PathingOverlayVisible { get; set; } = true;
 	public enum EditorTool
 	{
 		None,
 		Raise,
 		Lower,
-		Flatten,
 		Smooth,
 		Plateau,
 		PaintGrass,
@@ -319,13 +319,12 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool PlaceUnitIsEnemy { get; set; } = false;
 	public float EditorBrushRadius { get; set; } = 6.0f;
 	public float EditorBrushStrength { get; set; } = 3.0f;
-	public float EditorFlattenHeight { get; set; } = 0.0f;
 	public int EditorPaintTextureIndex { get; set; } = 3;
 	public int EditorCliffPaintTextureIndex { get; set; } = 1;
 	public bool EditorSnapToGrid { get; set; } = false;
 	public float EditorPlacementRotation { get; set; } = 0.0f;
 	public float EditorPlacementScale { get; set; } = 1.0f;
-	public enum GridOverlayMode { Off, Mesh, Straight }
+	public enum GridOverlayMode { Off, Mesh }
 	public GridOverlayMode EditorGridMode { get; set; } = GridOverlayMode.Off;
 	public bool EditorGridVisible => EditorGridMode != GridOverlayMode.Off;
 	public bool EditorCameraBoundsVisible { get; set; } = false;
@@ -402,6 +401,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool PasteOptionTextures { get; set; } = true;
 	public bool PasteOptionHeights { get; set; } = true;
 	public bool PasteOptionEntities { get; set; } = true;
+	public bool PasteOptionPathing { get; set; } = true;
 	public float EditorPasteRotation { get; set; } = 0.0f;
 
 	public Node SelectedEditorObject

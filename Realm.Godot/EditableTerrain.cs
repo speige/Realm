@@ -3,6 +3,7 @@ using Realm.Ecs.Components.Terrain;
 using DotRecast.Detour;
 using Godot;
 using System;
+using System.Collections.Generic;
 
 public partial class EditableTerrain : StaticBody3D
 {
@@ -81,6 +82,27 @@ public partial class EditableTerrain : StaticBody3D
 	public const int PATHING_UNPATHABLE = 16;
 	public const int PATHING_BUILDABLE = 32;
 
+	public static int GetDefaultPathingCode(float height, float waterHeight, bool waterEnabled)
+	{
+		if (!waterEnabled)
+		{
+			return PATHING_GROUND | PATHING_BUILDABLE | PATHING_FLYING;
+		}
+
+		if (height >= waterHeight)
+		{
+			return PATHING_GROUND | PATHING_BUILDABLE | PATHING_FLYING;
+		}
+
+		float depth = waterHeight - height;
+		if (depth < 4.0f)
+		{
+			return PATHING_SHALLOW_WATER | PATHING_FLYING;
+		}
+
+		return PATHING_DEEP_WATER | PATHING_FLYING;
+	}
+
 	private float[,] _localHeights;
 	private int[,] _localPathingCodes;
 	private float _localWaterHeight = -2.0f;
@@ -148,20 +170,31 @@ public partial class EditableTerrain : StaticBody3D
 		}
 	}
 
-	private MeshInstance3D _meshInstance;
-	private CollisionShape3D _collisionShape;
-	private ArrayMesh _arrayMesh;
+	private const int CHUNK_SIZE = 32;
+	private int _chunkedWidth;
+	private int _chunkedDepth;
+	
+	private class TerrainChunk
+	{
+		public MeshInstance3D MeshInstance;
+		public CollisionShape3D CollisionShape;
+		public ArrayMesh ArrayMesh;
+		public int StartX;
+		public int StartZ;
+		public int EndX;
+		public int EndZ;
+		public Vector3[] VerticesCache;
+		public float[] TexIndicesCache;
+		public float[] TexWeightsCache01;
+		public Vector3[] NormalsCache;
+		public Vector2[] UvsCache;
+		public int[] IndicesCache;
+		public float[] MapDataCache;
+	}
+	
+	private List<TerrainChunk> _chunks = new List<TerrainChunk>();
 	private ShaderMaterial _material;
-
 	private MeshInstance3D _waterMesh;
-
-	private Vector3[] _verticesCache;
-	private float[] _texIndicesCache;
-	private float[] _texWeightsCache01;
-	private Vector3[] _normalsCache;
-	private Vector2[] _uvsCache;
-	private int[] _indicesCache;
-	private float[] _mapDataCache;
 
 	public float WaterHeight
 	{
@@ -293,22 +326,13 @@ public partial class EditableTerrain : StaticBody3D
 		if (state.PathingCodes == null || state.PathingCodes.GetLength(0) != Width || state.PathingCodes.GetLength(1) != Depth)
 		{
 			var newPathing = new int[Width, Depth];
+			float[,] h = Heights;
 			for (int z = 0; z < Depth; z++)
 				for (int x = 0; x < Width; x++)
-					newPathing[x, z] = PATHING_GROUND | PATHING_FLYING;
+					newPathing[x, z] = GetDefaultPathingCode(h[x, z], WaterHeight, WaterEnabled);
 			PathingCodes = newPathing;
 		}
 
-		_meshInstance = new MeshInstance3D();
-		_meshInstance.Name = "TerrainMesh";
-		AddChild(_meshInstance);
-
-		_collisionShape = new CollisionShape3D();
-		_collisionShape.Name = "TerrainCollision";
-		AddChild(_collisionShape);
-
-		_arrayMesh = new ArrayMesh();
-		
 		var shader = new Shader();
 		shader.Code = @"
 shader_type spatial;
@@ -319,12 +343,23 @@ uniform sampler2D fog_texture : hint_default_white;
 uniform vec2 fog_world_min = vec2(-125.0, -125.0);
 uniform vec2 fog_world_size = vec2(250.0, 250.0);
 
+uniform sampler2D pathing_texture : hint_default_transparent, filter_nearest;
+uniform bool pathing_visible = false;
+
+uniform bool grid_visible = false;
+uniform vec4 grid_color_thick = vec4(1.0, 0.9, 0.0, 0.85);
+uniform vec4 grid_color_thin = vec4(1.0, 0.9, 0.0, 0.25);
+uniform float grid_spacing = 2.0;
+uniform vec2 terrain_size = vec2(1.0, 1.0);
+
 varying vec4 v_tex_indices;
 varying vec4 v_tex_weights;
+varying vec3 v_world_pos;
 
 void vertex() {
 	v_tex_indices = CUSTOM0;
 	v_tex_weights = CUSTOM1;
+	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 void fragment() {
@@ -336,13 +371,151 @@ void fragment() {
 	                      c1.rgb * v_tex_weights.y +
 	                      c2.rgb * v_tex_weights.z +
 	                      c3.rgb * v_tex_weights.w);
-	ALBEDO = terrain_color;
+
+	vec3 final_albedo = terrain_color;
+	vec3 emission_color = vec3(0.0);
+	
+	if (pathing_visible) {
+		vec2 pathing_uv = (v_world_pos.xz + terrain_size / 2.0) / terrain_size;
+		int code = int(round(texture(pathing_texture, pathing_uv).r * 255.0));
+		
+		int bit_0 = code % 2;
+		int bit_1 = (code / 2) % 2;
+		int bit_2 = (code / 4) % 2;
+		int bit_3 = (code / 8) % 2;
+		int bit_4 = (code / 16) % 2;
+		int bit_5 = (code / 32) % 2;
+		
+		int active_count = 0;
+		int flag_0 = -1;
+		int flag_1 = -1;
+		int flag_2 = -1;
+		int flag_3 = -1;
+		int flag_4 = -1;
+		int flag_5 = -1;
+		
+		if (bit_4 != 0) {
+			if (active_count == 0) flag_0 = 16;
+			else if (active_count == 1) flag_1 = 16;
+			else if (active_count == 2) flag_2 = 16;
+			else if (active_count == 3) flag_3 = 16;
+			else if (active_count == 4) flag_4 = 16;
+			else if (active_count == 5) flag_5 = 16;
+			active_count++;
+		}
+		if (bit_3 != 0) {
+			if (active_count == 0) flag_0 = 8;
+			else if (active_count == 1) flag_1 = 8;
+			else if (active_count == 2) flag_2 = 8;
+			else if (active_count == 3) flag_3 = 8;
+			else if (active_count == 4) flag_4 = 8;
+			else if (active_count == 5) flag_5 = 8;
+			active_count++;
+		}
+		if (bit_5 != 0) {
+			if (active_count == 0) flag_0 = 32;
+			else if (active_count == 1) flag_1 = 32;
+			else if (active_count == 2) flag_2 = 32;
+			else if (active_count == 3) flag_3 = 32;
+			else if (active_count == 4) flag_4 = 32;
+			else if (active_count == 5) flag_5 = 32;
+			active_count++;
+		}
+		if (bit_0 != 0) {
+			if (active_count == 0) flag_0 = 1;
+			else if (active_count == 1) flag_1 = 1;
+			else if (active_count == 2) flag_2 = 1;
+			else if (active_count == 3) flag_3 = 1;
+			else if (active_count == 4) flag_4 = 1;
+			else if (active_count == 5) flag_5 = 1;
+			active_count++;
+		}
+		if (bit_1 != 0) {
+			if (active_count == 0) flag_0 = 2;
+			else if (active_count == 1) flag_1 = 2;
+			else if (active_count == 2) flag_2 = 2;
+			else if (active_count == 3) flag_3 = 2;
+			else if (active_count == 4) flag_4 = 2;
+			else if (active_count == 5) flag_5 = 2;
+			active_count++;
+		}
+		if (bit_2 != 0) {
+			if (active_count == 0) flag_0 = 4;
+			else if (active_count == 1) flag_1 = 4;
+			else if (active_count == 2) flag_2 = 4;
+			else if (active_count == 3) flag_3 = 4;
+			else if (active_count == 4) flag_4 = 4;
+			else if (active_count == 5) flag_5 = 4;
+			active_count++;
+		}
+		
+		if (active_count == 0) {
+			flag_0 = 0;
+			active_count = 1;
+		}
+		
+		vec2 cell_frac = fract(v_world_pos.xz / grid_spacing);
+		int sx = int(floor(cell_frac.x * 2.0));
+		int sz = int(floor(cell_frac.y * 2.0));
+		int flag_idx = (sx + sz) % active_count;
+		
+		int active_flag = flag_0;
+		if (flag_idx == 1) active_flag = flag_1;
+		else if (flag_idx == 2) active_flag = flag_2;
+		else if (flag_idx == 3) active_flag = flag_3;
+		else if (flag_idx == 4) active_flag = flag_4;
+		else if (flag_idx == 5) active_flag = flag_5;
+		
+		vec4 pathing_color = vec4(0.0);
+		if (active_flag == 16 || active_flag == 0) {
+			pathing_color = vec4(0.9, 0.1, 0.1, 0.25);
+		} else if (active_flag == 32) {
+			pathing_color = vec4(0.6, 0.2, 0.8, 0.25);
+		} else if (active_flag == 8) {
+			pathing_color = vec4(0.2, 0.85, 0.2, 0.25);
+		} else if (active_flag == 1) {
+			pathing_color = vec4(0.2, 0.6, 1.0, 0.25);
+		} else if (active_flag == 2) {
+			pathing_color = vec4(0.0, 0.15, 0.7, 0.25);
+		} else if (active_flag == 4) {
+			pathing_color = vec4(0.85, 0.85, 0.0, 0.25);
+		}
+		
+		if (pathing_color.a > 0.0) {
+			final_albedo = mix(final_albedo, pathing_color.rgb, pathing_color.a);
+		}
+	}
+	
+	if (grid_visible) {
+		vec2 grid_uv = v_world_pos.xz / grid_spacing;
+		
+		vec2 df = fwidth(grid_uv) * 3.0;
+		vec2 grid_lines = smoothstep(vec2(1.0) - df, vec2(1.0), fract(grid_uv)) + 
+						  (1.0 - smoothstep(vec2(0.0), df, fract(grid_uv)));
+		
+		float thin_line = max(grid_lines.x, grid_lines.y);
+		
+		vec2 thick_grid_uv = grid_uv / 10.0;
+		vec2 df_thick = fwidth(thick_grid_uv) * 3.0;
+		vec2 thick_grid_lines = smoothstep(vec2(1.0) - df_thick, vec2(1.0), fract(thick_grid_uv)) + 
+								(1.0 - smoothstep(vec2(0.0), df_thick, fract(thick_grid_uv)));
+		
+		float thick_line = max(thick_grid_lines.x, thick_grid_lines.y);
+		
+		if (thick_line > 0.0) {
+			final_albedo = mix(final_albedo, grid_color_thick.rgb, grid_color_thick.a * thick_line);
+			emission_color = mix(emission_color, grid_color_thick.rgb, grid_color_thick.a * thick_line);
+		} else if (thin_line > 0.0) {
+			final_albedo = mix(final_albedo, grid_color_thin.rgb, grid_color_thin.a * thin_line);
+			emission_color = mix(emission_color, grid_color_thin.rgb, grid_color_thin.a * thin_line);
+		}
+	}
+
+	ALBEDO = final_albedo;
+	EMISSION = emission_color;
 	ROUGHNESS = 0.9;
 }
-
-
 ";
-
 
 		var paths = new[]
 		{
@@ -408,10 +581,64 @@ void fragment() {
 		defaultFogImage.Fill(new Color(0f, 0f, 0f, 1f));
 		var defaultFogTexture = ImageTexture.CreateFromImage(defaultFogImage);
 		_material.SetShaderParameter("fog_texture", defaultFogTexture);
-		_meshInstance.MaterialOverride = _material;
 
+		_material.SetShaderParameter("grid_spacing", Spacing);
+		_material.SetShaderParameter("terrain_size", new Vector2(Width * Spacing, Depth * Spacing));
+
+		CreateChunks();
 		CreateWater();
 		UpdateMeshAndPhysics();
+	}
+
+	private void CreateChunks()
+	{
+		foreach (var chunk in _chunks)
+		{
+			if (GodotObject.IsInstanceValid(chunk.MeshInstance)) chunk.MeshInstance.QueueFree();
+			if (GodotObject.IsInstanceValid(chunk.CollisionShape)) chunk.CollisionShape.QueueFree();
+		}
+		_chunks.Clear();
+
+		int w = Width;
+		int d = Depth;
+		_chunkedWidth = w;
+		_chunkedDepth = d;
+
+		for (int z = 0; z < d - 1; z += CHUNK_SIZE)
+		{
+			for (int x = 0; x < w - 1; x += CHUNK_SIZE)
+			{
+				int ex = Math.Min(x + CHUNK_SIZE, w - 1);
+				int ez = Math.Min(z + CHUNK_SIZE, d - 1);
+				
+				var chunk = new TerrainChunk
+				{
+					StartX = x,
+					StartZ = z,
+					EndX = ex,
+					EndZ = ez,
+					ArrayMesh = new ArrayMesh()
+				};
+
+				chunk.MeshInstance = new MeshInstance3D();
+				chunk.MeshInstance.Name = $"TerrainChunk_{x}_{z}";
+				chunk.MeshInstance.Mesh = chunk.ArrayMesh;
+				chunk.MeshInstance.MaterialOverride = _material;
+				AddChild(chunk.MeshInstance);
+
+				chunk.CollisionShape = new CollisionShape3D();
+				chunk.CollisionShape.Name = $"TerrainCollision_{x}_{z}";
+				
+				// Position collision shape correctly for the chunk
+				float lx = (x + (ex - x) / 2.0f - (w - 1) / 2.0f) * Spacing;
+				float lz = (z + (ez - z) / 2.0f - (d - 1) / 2.0f) * Spacing;
+				chunk.CollisionShape.Position = new Vector3(lx, 0.0f, lz);
+				
+				AddChild(chunk.CollisionShape);
+				
+				_chunks.Add(chunk);
+			}
+		}
 	}
 
 	public void SetFogTexture(ImageTexture fogTexture)
@@ -422,9 +649,44 @@ void fragment() {
 		}
 	}
 
-	public Mesh TerrainMesh => _meshInstance?.Mesh;
+	public void SetPathingVisible(bool visible)
+	{
+		if (_material != null)
+		{
+			_material.SetShaderParameter("pathing_visible", visible);
+		}
+	}
 
-	public void UpdateMeshAndPhysics(bool rebuildPhysics = true, bool rebuildNavMesh = true)
+	public void SetGridVisible(bool visible)
+	{
+		if (_material != null)
+		{
+			_material.SetShaderParameter("grid_visible", visible);
+		}
+	}
+
+	public void UpdatePathingTexture()
+	{
+		if (_material == null || PathingCodes == null) return;
+		
+		int w = Width;
+		int d = Depth;
+		var img = Image.CreateEmpty(w, d, false, Image.Format.Rgba8);
+		
+		for (int z = 0; z < d; z++)
+		{
+			for (int x = 0; x < w; x++)
+			{
+				int code = PathingCodes[x, z];
+				img.SetPixel(x, z, new Color(code / 255.0f, 0f, 0f, 0f));
+			}
+		}
+		
+		var tex = ImageTexture.CreateFromImage(img);
+		_material.SetShaderParameter("pathing_texture", tex);
+	}
+
+	public void UpdateMeshAndPhysics(bool rebuildPhysics = true, bool rebuildNavMesh = true, Rect2I? affectedRegion = null)
 	{
 		int w = Width;
 		int d = Depth;
@@ -437,106 +699,131 @@ void fragment() {
 					SplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
 		}
 
-		int cellWidth = w - 1;
-		int cellDepth = d - 1;
+		if (_chunks.Count == 0 || _chunkedWidth != w || _chunkedDepth != d)
+		{
+			CreateChunks();
+		}
+
+		foreach (var chunk in _chunks)
+		{
+			if (affectedRegion.HasValue)
+			{
+				var region = affectedRegion.Value;
+				if (chunk.EndX < region.Position.X || chunk.StartX > region.Position.X + region.Size.X ||
+					chunk.EndZ < region.Position.Y || chunk.StartZ > region.Position.Y + region.Size.Y)
+				{
+					continue;
+				}
+			}
+
+			UpdateChunk(chunk, rebuildPhysics);
+		}
+	}
+
+	public void UpdatePhysics(Rect2I? affectedRegion = null)
+	{
+		foreach (var chunk in _chunks)
+		{
+			if (affectedRegion.HasValue)
+			{
+				var region = affectedRegion.Value;
+				if (chunk.EndX < region.Position.X || chunk.StartX > region.Position.X + region.Size.X ||
+					chunk.EndZ < region.Position.Y || chunk.StartZ > region.Position.Y + region.Size.Y)
+				{
+					continue;
+				}
+			}
+
+			UpdateChunkPhysics(chunk);
+		}
+	}
+
+	private void UpdateChunkPhysics(TerrainChunk chunk)
+	{
+		int cellWidth = chunk.EndX - chunk.StartX;
+		int cellDepth = chunk.EndZ - chunk.StartZ;
+
+		var heightMapShape = new HeightMapShape3D();
+		heightMapShape.MapWidth = cellWidth + 1;
+		heightMapShape.MapDepth = cellDepth + 1;
+		
+		int mapDataCount = (cellWidth + 1) * (cellDepth + 1);
+		if (chunk.MapDataCache == null || chunk.MapDataCache.Length != mapDataCount)
+		{
+			chunk.MapDataCache = new float[mapDataCount];
+		}
+		
+		for (int z = 0; z <= cellDepth; z++)
+		{
+			for (int x = 0; x <= cellWidth; x++)
+			{
+				chunk.MapDataCache[z * (cellWidth + 1) + x] = Heights[chunk.StartX + x, chunk.StartZ + z];
+			}
+		}
+		heightMapShape.MapData = chunk.MapDataCache;
+		chunk.CollisionShape.Shape = heightMapShape;
+		chunk.CollisionShape.Scale = new Vector3(Spacing, 1.0f, Spacing);
+	}
+
+	private void UpdateChunk(TerrainChunk chunk, bool rebuildPhysics)
+	{
+		int cellWidth = chunk.EndX - chunk.StartX;
+		int cellDepth = chunk.EndZ - chunk.StartZ;
 		int triangleCount = cellWidth * cellDepth * 2;
 		int vertexCount = triangleCount * 3;
 
-		if (_verticesCache == null || _verticesCache.Length != vertexCount)
+		if (chunk.VerticesCache == null || chunk.VerticesCache.Length != vertexCount)
 		{
-			_verticesCache = new Vector3[vertexCount];
-			_texIndicesCache = new float[vertexCount * 4];
-			_texWeightsCache01 = new float[vertexCount * 4];
-			_normalsCache = new Vector3[vertexCount];
-			_uvsCache = new Vector2[vertexCount];
-			_indicesCache = new int[vertexCount];
-		}
-
-		var gridNormals = new Vector3[w * d];
-		for (int z = 0; z < d; z++)
-		{
-			for (int x = 0; x < w; x++)
-			{
-				int idx = z * w + x;
-				float hl = Heights[Math.Max(0, x - 1), z];
-				float hr = Heights[Math.Min(w - 1, x + 1), z];
-				float hd = Heights[x, Math.Max(0, z - 1)];
-				float hu = Heights[x, Math.Min(d - 1, z + 1)];
-				
-				Vector3 tangentX = new Vector3(2.0f * Spacing, hr - hl, 0.0f).Normalized();
-				Vector3 tangentZ = new Vector3(0.0f, hu - hd, 2.0f * Spacing).Normalized();
-				gridNormals[idx] = tangentZ.Cross(tangentX).Normalized();
-			}
+			chunk.VerticesCache = new Vector3[vertexCount];
+			chunk.TexIndicesCache = new float[vertexCount * 4];
+			chunk.TexWeightsCache01 = new float[vertexCount * 4];
+			chunk.NormalsCache = new Vector3[vertexCount];
+			chunk.UvsCache = new Vector2[vertexCount];
+			chunk.IndicesCache = new int[vertexCount];
 		}
 
 		int vertexIndex = 0;
-		for (int z = 0; z < cellDepth; z++)
+		for (int z = chunk.StartZ; z < chunk.EndZ; z++)
 		{
-			for (int x = 0; x < cellWidth; x++)
+			for (int x = chunk.StartX; x < chunk.EndX; x++)
 			{
-				// Triangle 1: (x, z), (x + 1, z), (x, z + 1)
-				ProcessTriangle(x, z, x + 1, z, x, z + 1, ref vertexIndex, gridNormals);
-
-				// Triangle 2: (x + 1, z), (x + 1, z + 1), (x, z + 1)
-				ProcessTriangle(x + 1, z, x + 1, z + 1, x, z + 1, ref vertexIndex, gridNormals);
+				ProcessTriangle(chunk, x, z, x + 1, z, x, z + 1, ref vertexIndex);
+				ProcessTriangle(chunk, x + 1, z, x + 1, z + 1, x, z + 1, ref vertexIndex);
 			}
 		}
 
 		var arrays = new Godot.Collections.Array();
 		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = _verticesCache;
-		arrays[(int)Mesh.ArrayType.Normal] = _normalsCache;
-		arrays[(int)Mesh.ArrayType.TexUV] = _uvsCache;
-		arrays[(int)Mesh.ArrayType.Custom0] = _texIndicesCache;
-		arrays[(int)Mesh.ArrayType.Custom1] = _texWeightsCache01;
-		arrays[(int)Mesh.ArrayType.Index] = _indicesCache;
+		arrays[(int)Mesh.ArrayType.Vertex] = chunk.VerticesCache;
+		arrays[(int)Mesh.ArrayType.Normal] = chunk.NormalsCache;
+		arrays[(int)Mesh.ArrayType.TexUV] = chunk.UvsCache;
+		arrays[(int)Mesh.ArrayType.Custom0] = chunk.TexIndicesCache;
+		arrays[(int)Mesh.ArrayType.Custom1] = chunk.TexWeightsCache01;
+		arrays[(int)Mesh.ArrayType.Index] = chunk.IndicesCache;
 
-		_arrayMesh.ClearSurfaces();
-		int custom0Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift;
-		int custom1Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom1Shift;
-		_arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays,
-			new Godot.Collections.Array<Godot.Collections.Array>(),
-			null,
-			(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1) | custom0Format | custom1Format));
-		_meshInstance.Mesh = _arrayMesh;
-
-		if (!rebuildPhysics) return;
-
-
-		var heightMapShape = new HeightMapShape3D();
-		heightMapShape.MapWidth = Width;
-		heightMapShape.MapDepth = Depth;
-		
-		int mapDataCount = Width * Depth;
-		if (_mapDataCache == null || _mapDataCache.Length != mapDataCount)
+		chunk.ArrayMesh.ClearSurfaces();
+		if (vertexCount > 0)
 		{
-			_mapDataCache = new float[mapDataCount];
+			int custom0Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift;
+			int custom1Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom1Shift;
+			chunk.ArrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays,
+				new Godot.Collections.Array<Godot.Collections.Array>(),
+				null,
+				(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1) | custom0Format | custom1Format));
 		}
-		for (int z = 0; z < Depth; z++)
+
+		if (rebuildPhysics)
 		{
-			for (int x = 0; x < Width; x++)
-			{
-				_mapDataCache[z * Width + x] = Heights[x, z];
-			}
-		}
-		heightMapShape.MapData = _mapDataCache;
-		_collisionShape.Shape = heightMapShape;
-		_collisionShape.Scale = new Vector3(Spacing, 1.0f, Spacing);
-		if (rebuildNavMesh)
-		{
-			if (GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode)
-			{
-				BakeNavMesh();
-			}
+			UpdateChunkPhysics(chunk);
 		}
 	}
 
 	private void ProcessTriangle(
+		TerrainChunk chunk,
 		int x0, int z0,
 		int x1, int z1,
 		int x2, int z2,
-		ref int vertexIndex,
-		Vector3[] gridNormals)
+		ref int vertexIndex)
 	{
 		var s0 = SplatMap[x0, z0];
 		var s1 = SplatMap[x1, z1];
@@ -607,27 +894,27 @@ void fragment() {
 		int p2 = uniqueTexs[2];
 		int p3 = uniqueTexs[3];
 
-		PopulateTriangleVertex(x0, z0, p0, p1, p2, p3, s0, ref vertexIndex, gridNormals);
-		PopulateTriangleVertex(x1, z1, p0, p1, p2, p3, s1, ref vertexIndex, gridNormals);
-		PopulateTriangleVertex(x2, z2, p0, p1, p2, p3, s2, ref vertexIndex, gridNormals);
+		PopulateTriangleVertex(chunk, x0, z0, p0, p1, p2, p3, s0, ref vertexIndex);
+		PopulateTriangleVertex(chunk, x1, z1, p0, p1, p2, p3, s1, ref vertexIndex);
+		PopulateTriangleVertex(chunk, x2, z2, p0, p1, p2, p3, s2, ref vertexIndex);
 	}
 
 	private void PopulateTriangleVertex(
+		TerrainChunk chunk,
 		int x, int z,
 		int p0, int p1, int p2, int p3,
 		TerrainSplatWeights srcSplat,
-		ref int vertexIndex,
-		Vector3[] gridNormals)
+		ref int vertexIndex)
 	{
 		float lx = (x - (Width - 1) / 2.0f) * Spacing;
 		float lz = (z - (Depth - 1) / 2.0f) * Spacing;
-		_verticesCache[vertexIndex] = new Vector3(lx, Heights[x, z], lz);
+		chunk.VerticesCache[vertexIndex] = new Vector3(lx, Heights[x, z], lz);
 
-		_normalsCache[vertexIndex] = gridNormals[z * Width + x];
+		chunk.NormalsCache[vertexIndex] = GetVertexNormal(x, z);
 
-		_uvsCache[vertexIndex] = new Vector2((float)x / (Width - 1) * 25f, (float)z / (Depth - 1) * 25f);
+		chunk.UvsCache[vertexIndex] = new Vector2((float)x / (Width - 1) * 25f, (float)z / (Depth - 1) * 25f);
 
-		_indicesCache[vertexIndex] = vertexIndex;
+		chunk.IndicesCache[vertexIndex] = vertexIndex;
 
 		float w0 = 0f, w1 = 0f, w2 = 0f, w3 = 0f;
 
@@ -663,15 +950,15 @@ void fragment() {
 		}
 
 		int sIdx = vertexIndex * 4;
-		_texIndicesCache[sIdx + 0] = p0;
-		_texIndicesCache[sIdx + 1] = p1;
-		_texIndicesCache[sIdx + 2] = p2;
-		_texIndicesCache[sIdx + 3] = p3;
+		chunk.TexIndicesCache[sIdx + 0] = p0;
+		chunk.TexIndicesCache[sIdx + 1] = p1;
+		chunk.TexIndicesCache[sIdx + 2] = p2;
+		chunk.TexIndicesCache[sIdx + 3] = p3;
 
-		_texWeightsCache01[sIdx + 0] = w0;
-		_texWeightsCache01[sIdx + 1] = w1;
-		_texWeightsCache01[sIdx + 2] = w2;
-		_texWeightsCache01[sIdx + 3] = w3;
+		chunk.TexWeightsCache01[sIdx + 0] = w0;
+		chunk.TexWeightsCache01[sIdx + 1] = w1;
+		chunk.TexWeightsCache01[sIdx + 2] = w2;
+		chunk.TexWeightsCache01[sIdx + 3] = w3;
 
 		vertexIndex++;
 	}
@@ -760,7 +1047,7 @@ void fragment() {
 				else
 				{
 					newHeights[x, z] = 0.0f;
-					newPathing[x, z] = PATHING_GROUND | PATHING_FLYING;
+					newPathing[x, z] = GetDefaultPathingCode(0.0f, state.WaterHeight, state.WaterEnabled);
 					newSplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
 				}
 			}
@@ -782,6 +1069,13 @@ void fragment() {
 		_localHeights = newHeights;
 		_localPathingCodes = newPathing;
 		SplatMap = newSplatMap;
+		
+		if (_material != null)
+		{
+			_material.SetShaderParameter("terrain_size", new Vector2(newWidth * state.Spacing, newDepth * state.Spacing));
+		}
+
+		CreateChunks();
 
 		UpdateWaterSize();
 		UpdateMeshAndPhysics();
@@ -835,7 +1129,7 @@ void fragment() {
 				}
 				else
 				{
-					newPathing[x, z] = PATHING_GROUND | PATHING_FLYING;
+					newPathing[x, z] = GetDefaultPathingCode(newHeights[x, z], state.WaterHeight, state.WaterEnabled);
 				}
 			}
 		}
@@ -848,6 +1142,13 @@ void fragment() {
 		_localHeights = newHeights;
 		_localPathingCodes = newPathing;
 		SplatMap = newSplatMap;
+		
+		if (_material != null)
+		{
+			_material.SetShaderParameter("terrain_size", new Vector2(newWidth * state.Spacing, newDepth * state.Spacing));
+		}
+
+		CreateChunks();
 
 		UpdateWaterSize();
 		UpdateMeshAndPhysics();
@@ -879,6 +1180,11 @@ void fragment() {
 		{
 			_waterMesh.Visible = waterEnabled;
 		}
+		
+		if (newWidth != Width || newDepth != Depth) {
+			CreateChunks();
+		}
+		
 		UpdateWaterTransform();
 		UpdateWaterSize();
 		UpdateMeshAndPhysics();

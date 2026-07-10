@@ -65,12 +65,35 @@ public struct TerrainSplatWeights : IEquatable<TerrainSplatWeights>
             slotForTarget = lowestWeightSlot;
         }
 
-        switch (slotForTarget)
+        float I = Math.Max(0.0f, Math.Min(1.0f, brushIntensity));
+
+        if (slotForTarget == 0)
         {
-            case 0: w0 = Math.Min(1.0f, w0 + brushIntensity); break;
-            case 1: w1 = Math.Min(1.0f, w1 + brushIntensity); break;
-            case 2: w2 = Math.Min(1.0f, w2 + brushIntensity); break;
-            case 3: w3 = Math.Min(1.0f, w3 + brushIntensity); break;
+            w0 = w0 + I * (1.0f - w0);
+            w1 = w1 * (1.0f - I);
+            w2 = w2 * (1.0f - I);
+            w3 = w3 * (1.0f - I);
+        }
+        else if (slotForTarget == 1)
+        {
+            w0 = w0 * (1.0f - I);
+            w1 = w1 + I * (1.0f - w1);
+            w2 = w2 * (1.0f - I);
+            w3 = w3 * (1.0f - I);
+        }
+        else if (slotForTarget == 2)
+        {
+            w0 = w0 * (1.0f - I);
+            w1 = w1 * (1.0f - I);
+            w2 = w2 + I * (1.0f - w2);
+            w3 = w3 * (1.0f - I);
+        }
+        else if (slotForTarget == 3)
+        {
+            w0 = w0 * (1.0f - I);
+            w1 = w1 * (1.0f - I);
+            w2 = w2 * (1.0f - I);
+            w3 = w3 + I * (1.0f - w3);
         }
 
         float totalWeight = w0 + w1 + w2 + w3;

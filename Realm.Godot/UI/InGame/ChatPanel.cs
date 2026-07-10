@@ -55,19 +55,64 @@ public class ChatPanel
 
 		_chatInput.GuiInput += (ev) =>
 		{
-			if (ev is InputEventKey keyEv && keyEv.Pressed && keyEv.Keycode == Key.Tab)
+			if (ev is InputEventKey keyEv && keyEv.Pressed)
 			{
-				CycleChatMode();
-				_chatInput.AcceptEvent();
+				if (keyEv.Keycode == Key.Tab)
+				{
+					CycleChatMode();
+					_chatInput.AcceptEvent();
+				}
+				else if (keyEv.Keycode == Key.Escape)
+				{
+					HideChatInput();
+					_chatInput.AcceptEvent();
+				}
 			}
 		};
+
+		UpdateChatPanelActiveState(false);
+	}
+
+	private void UpdateChatPanelActiveState(bool active)
+	{
+		_isChatActive = active;
+		if (_chatPanelNode == null) return;
+
+		var styleBox = _chatPanelNode.GetThemeStylebox("panel") as StyleBoxFlat;
+		if (styleBox != null)
+		{
+			if (active)
+			{
+				styleBox.BgColor = new Color(0.15f, 0.15f, 0.15f, 0.85f);
+				styleBox.BorderColor = new Color(0.25f, 0.25f, 0.25f, 0.85f);
+			}
+			else
+			{
+				styleBox.BgColor = new Color(0.15f, 0.15f, 0.15f, 0.25f);
+				styleBox.BorderColor = new Color(0.25f, 0.25f, 0.25f, 0.15f);
+			}
+			_chatPanelNode.AddThemeStyleboxOverride("panel", styleBox);
+		}
+
+		var filter = active ? Control.MouseFilterEnum.Stop : Control.MouseFilterEnum.Ignore;
+		_chatPanelNode.MouseFilter = filter;
+		if (_chatLog != null)
+		{
+			_chatLog.MouseFilter = filter;
+		}
+
+		var chatContainer = _chatPanelNode.GetNodeOrNull<Control>("ChatContainer");
+		if (chatContainer != null)
+		{
+			chatContainer.MouseFilter = filter;
+		}
 	}
 
 	public void ShowChatInput(bool allPlayersMode)
 	{
 		_currentMode = allPlayersMode ? ChatMode.AllPlayers : ChatMode.Allies;
 		UpdatePrefixLabel();
-		_isChatActive = true;
+		UpdateChatPanelActiveState(true);
 		if (_inputRow != null)
 		{
 			_inputRow.Visible = true;
@@ -78,7 +123,7 @@ public class ChatPanel
 
 	public void HideChatInput()
 	{
-		_isChatActive = false;
+		UpdateChatPanelActiveState(false);
 		if (_inputRow != null)
 		{
 			_inputRow.Visible = false;

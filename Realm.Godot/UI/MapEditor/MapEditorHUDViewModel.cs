@@ -20,7 +20,6 @@ public class MapEditorHUDViewModel
 
 	public float BrushSize { get; set; } = 5f;
 	public float BrushStrength { get; set; } = 20f;
-	public float FlattenHeight { get; set; } = 0f;
 	public float BlockStep { get; set; } = 0.5f;
 	public float WaterHeight { get; set; } = 1.0f;
 
@@ -56,7 +55,6 @@ public class MapEditorHUDViewModel
 	public bool DeepWater { get; set; } = false;
 	public bool Flying { get; set; } = false;
 	public bool Ground { get; set; } = true;
-	public bool Unpathable { get; set; } = false;
 	public bool Buildable { get; set; } = false;
 	public int PathingModeIndex { get; set; } = 0;
 
@@ -66,7 +64,6 @@ public class MapEditorHUDViewModel
 		{
 			BrushSize = GameHost.Instance.EditorBrushRadius;
 			BrushStrength = GameHost.Instance.EditorBrushStrength;
-			FlattenHeight = GameHost.Instance.EditorFlattenHeight;
 			BlockStep = GameHost.Instance.EditorBlockLevelHeight;
 			WaterHeight = GameHost.Instance.GroundTerrain != null ? GameHost.Instance.GroundTerrain.WaterHeight : -2.0f;
 

@@ -53,9 +53,12 @@ internal class NavMeshPathfinder
 
 		if (pf.WaypointCount <= 0)
 		{
-			pf.Waypoints[0] = end;
-			pf.WaypointCount = 1;
-			pf.CurrentWaypointIndex = 0;
+			if (startRef == 0)
+			{
+				pf.Waypoints[0] = end;
+				pf.WaypointCount = 1;
+				pf.CurrentWaypointIndex = 0;
+			}
 		}
 	}
 }

@@ -523,12 +523,11 @@ public partial class GameHost
 						0 => EditorTool.Raise,
 						1 => EditorTool.Lower,
 						2 => EditorTool.Smooth,
-						3 => EditorTool.Flatten,
-						4 => EditorTool.Plateau,
-						5 => EditorTool.Ramp,
-						6 => EditorTool.Noise,
-						7 => EditorTool.PaintGrass,
-						8 => EditorTool.PlaceProp,
+						3 => EditorTool.Plateau,
+						4 => EditorTool.Ramp,
+						5 => EditorTool.Noise,
+						6 => EditorTool.PaintGrass,
+						7 => EditorTool.PlaceProp,
 						_ => EditorTool.None
 					};
 					if (targetTool != EditorTool.None)
@@ -550,10 +549,9 @@ public partial class GameHost
 				{
 					EditorGridMode = EditorGridMode switch
 					{
-						GridOverlayMode.Off      => GridOverlayMode.Mesh,
-						GridOverlayMode.Mesh     => GridOverlayMode.Straight,
-						GridOverlayMode.Straight => GridOverlayMode.Off,
-						_                        => GridOverlayMode.Off
+						GridOverlayMode.Off => GridOverlayMode.Mesh,
+						GridOverlayMode.Mesh => GridOverlayMode.Off,
+						_ => GridOverlayMode.Off
 					};
 					UpdateGridOverlayVisibility();
 					MapEditorHUD.Instance?.UpdateGridOverlayExternal(EditorGridMode);
@@ -578,14 +576,16 @@ public partial class GameHost
 
 				bool isTerrainTool = ActiveEditorTool == EditorTool.Raise ||
 									 ActiveEditorTool == EditorTool.Lower ||
-									 ActiveEditorTool == EditorTool.Flatten ||
 									 ActiveEditorTool == EditorTool.Smooth ||
 									 ActiveEditorTool == EditorTool.Plateau ||
 									 ActiveEditorTool == EditorTool.PaintGrass ||
 									 ActiveEditorTool == EditorTool.PaintDirt ||
 									 ActiveEditorTool == EditorTool.PaintRock ||
 									 ActiveEditorTool == EditorTool.PaintSand ||
-									 ActiveEditorTool == EditorTool.Noise;
+									 ActiveEditorTool == EditorTool.Noise ||
+									 ActiveEditorTool == EditorTool.Ramp ||
+									 ActiveEditorTool == EditorTool.PlacePropClump ||
+									 ActiveEditorTool == EditorTool.PaintPathing;
 
 				if (isTerrainTool)
 				{
@@ -1102,10 +1102,11 @@ public partial class GameHost
 						{
 							Vector3 start = _editorService.RampStartPos.Value;
 							Vector3 end = hitPos;
-							if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null)
+							if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
 							{
 								var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
 								var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+								var pathingBefore = (int[,])GroundTerrain.PathingCodes.Clone();
 								bool modified = ApplyRampInternal(start, end);
 								if (EditorMirrorMode != MirrorMode.None)
 								{
@@ -1119,13 +1120,45 @@ public partial class GameHost
 								}
 								if (modified)
 								{
-									GroundTerrain.UpdateMeshAndPhysics(true, false);
-									AlignAllEntitiesToTerrain();
+									float minX = Mathf.Min(start.X, end.X);
+									float maxX = Mathf.Max(start.X, end.X);
+									float minZ = Mathf.Min(start.Z, end.Z);
+									float maxZ = Mathf.Max(start.Z, end.Z);
+
+									if (EditorMirrorMode != MirrorMode.None)
+									{
+										var startMirrored = GetMirroredTransforms(start, 0.0f);
+										var endMirrored = GetMirroredTransforms(end, 0.0f);
+										for (int i = 0; i < startMirrored.Count; i++)
+										{
+											minX = Mathf.Min(minX, Mathf.Min(startMirrored[i].Position.X, endMirrored[i].Position.X));
+											maxX = Mathf.Max(maxX, Mathf.Max(startMirrored[i].Position.X, endMirrored[i].Position.X));
+											minZ = Mathf.Min(minZ, Mathf.Min(startMirrored[i].Position.Z, endMirrored[i].Position.Z));
+											maxZ = Mathf.Max(maxZ, Mathf.Max(startMirrored[i].Position.Z, endMirrored[i].Position.Z));
+										}
+									}
+
+									float brushRadius = EditorBrushRadius;
+									float spacing = GroundTerrain.Spacing;
+									int width = GroundTerrain.Width;
+									int depth = GroundTerrain.Depth;
+
+									int minGridX = Mathf.Clamp(Mathf.FloorToInt((minX - brushRadius) / spacing + (width - 1) / 2.0f), 0, width - 1);
+									int maxGridX = Mathf.Clamp(Mathf.CeilToInt((maxX + brushRadius) / spacing + (width - 1) / 2.0f), 0, width - 1);
+									int minGridZ = Mathf.Clamp(Mathf.FloorToInt((minZ - brushRadius) / spacing + (depth - 1) / 2.0f), 0, depth - 1);
+									int maxGridZ = Mathf.Clamp(Mathf.CeilToInt((maxZ + brushRadius) / spacing + (depth - 1) / 2.0f), 0, depth - 1);
+
+									Rect2I affected = new Rect2I(minGridX - 2, minGridZ - 2, maxGridX - minGridX + 4, maxGridZ - minGridZ + 4);
+
+									GroundTerrain.UpdateMeshAndPhysics(true, false, affected);
+									AlignAllEntitiesToTerrain(affected);
 									var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
 									var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
-									var action = new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter);
+									var pathingAfter = (int[,])GroundTerrain.PathingCodes.Clone();
+									var action = new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter);
 									EditorHistoryManager.RecordAction(action);
 									EditorHasUnsavedChanges = true;
+									UpdatePathingOverlay();
 								}
 							}
 							_editorService.SetRampStartPos(null);
@@ -3524,6 +3557,103 @@ public partial class GameHost
 		{
 			InGameHUD.Instance.ShowFeedbackText($"Resuming construction...", new Color(0.3f, 0.9f, 0.4f));
 			InGameHUD.Instance.RefreshUI(SelectedUnits);
+		}
+	}
+
+	public void HandleMinimapRightClick(Vector3 minimapWorldPos)
+	{
+		if (ActiveSpellTargeting != null || ActiveCommandTargeting != null || ActiveBuildingPlacementType != null)
+		{
+			ActiveSpellTargeting = null;
+			ActiveCommandTargeting = null;
+			CancelBuildingPlacement();
+			Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
+			return;
+		}
+
+		if (SelectedUnits.Count == 0) return;
+
+		bool anyFriendlySelected = false;
+		foreach (var su in SelectedUnits)
+		{
+			if (!su.IsEnemy)
+			{
+				anyFriendlySelected = true;
+				break;
+			}
+		}
+		if (!anyFriendlySelected) return;
+
+		if (SelectedUnits.Count == 1 && !SelectedUnits[0].IsEnemy && CanProduceUnits(SelectedUnits[0]))
+		{
+			SetRallyPoint(SelectedUnits[0], minimapWorldPos);
+			return;
+		}
+
+		var from = new Vector3(minimapWorldPos.X, 200f, minimapWorldPos.Z);
+		var to = new Vector3(minimapWorldPos.X, -100f, minimapWorldPos.Z);
+		var spaceState = GetWorld3D().DirectSpaceState;
+		var query = PhysicsRayQueryParameters3D.Create(from, to);
+		var result = spaceState.IntersectRay(query);
+
+		Unit3D clickedUnit = null;
+		Prop3D clickedProp = null;
+		Vector3 hitPos = minimapWorldPos;
+
+		if (result != null && result.Count > 0)
+		{
+			if (result.ContainsKey("position"))
+			{
+				hitPos = result["position"].AsVector3();
+			}
+			if (result.ContainsKey("collider"))
+			{
+				var collider = result["collider"].As<Node>();
+				clickedUnit = FindUnit3DInParentChain(collider);
+				clickedProp = FindProp3DInParentChain(collider);
+			}
+		}
+
+		bool shiftHeld = Input.IsKeyPressed(Key.Shift);
+
+		if (clickedUnit != null && clickedUnit.IsEnemy && clickedUnit.Visible)
+		{
+			IssueAttackCommand(clickedUnit, shiftHeld);
+		}
+		else if (clickedUnit != null && !clickedUnit.IsEnemy && clickedUnit != SelectedUnits.Find(u => !u.IsEnemy))
+		{
+			if (clickedUnit.IsBuilding && EcsWorld.Has<Realm.Ecs.Components.Tags.UnderConstruction>(clickedUnit.Entity))
+			{
+				bool workerSelected = false;
+				foreach (var u in SelectedUnits)
+				{
+					if (u.UnitId == "worker")
+					{
+						workerSelected = true;
+						break;
+					}
+				}
+				if (workerSelected)
+				{
+					IssueResumeConstructionCommand(clickedUnit, shiftHeld);
+				}
+				else
+				{
+					IssueFollowCommand(clickedUnit, shiftHeld);
+				}
+			}
+			else
+			{
+				IssueFollowCommand(clickedUnit, shiftHeld);
+			}
+		}
+		else if (clickedProp != null && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
+		{
+			IssueGatherCommand(clickedProp, shiftHeld);
+		}
+		else
+		{
+			IssueMoveCommand(hitPos, shiftHeld);
 		}
 	}
 }

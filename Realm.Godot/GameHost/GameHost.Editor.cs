@@ -53,9 +53,17 @@ public partial class GameHost
 				{
 					GroundTerrain.Heights[x, z] = 0.0f;
 					GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
+					if (GroundTerrain.PathingCodes != null)
+					{
+						GroundTerrain.PathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(0.0f, GroundTerrain.WaterHeight, GroundTerrain.WaterEnabled);
+					}
 				}
 			}
 			GroundTerrain.UpdateMeshAndPhysics(true, true);
+			if (PathingOverlayVisible)
+			{
+				RebuildPathingOverlay();
+			}
 		}
 		EditorHistoryManager.Clear();
 		RebuildGridOverlayMeshExternal();
@@ -91,7 +99,7 @@ public partial class GameHost
 		return false;
 	}
 
-	private void ApplyContinuousTerrainEditing(Vector3 worldPos, float delta)
+	private void ApplyContinuousTerrainEditing(Vector3 worldPos, float delta, bool isFirstClick = false)
 	{
 		if (GroundTerrain == null) return;
 
@@ -107,18 +115,19 @@ public partial class GameHost
 			worldPos, delta,
 			ActiveEditorTool,
 			EditorBrushRadius, EditorBrushStrength,
-			EditorFlattenHeight,
 			EditorBrushIsSquare,
 			EditorBlockMode, EditorBlockLevelHeight,
 			EditorPaintTextureIndex, EditorCliffPaintTextureIndex,
-			pathingMask, pathingAdd);
+			pathingMask, pathingAdd,
+			isFirstClick);
 
 		if (result.HeightsModified || result.SplatModified || result.PathingModified)
 		{
-			GroundTerrain.UpdateMeshAndPhysics(result.HeightsModified, false);
+			Rect2I affected = new Rect2I(result.MinX - 2, result.MinZ - 2, result.MaxX - result.MinX + 4, result.MaxZ - result.MinZ + 4);
+			GroundTerrain.UpdateMeshAndPhysics(false, false, affected); // false for physics rebuild during drag
 			if (result.HeightsModified)
 			{
-				AlignAllEntitiesToTerrain();
+				AlignAllEntitiesToTerrain(affected);
 			}
 			if (result.PathingModified && PathingOverlayVisible)
 			{
@@ -238,13 +247,30 @@ public partial class GameHost
 		return _editorService.GetTerrainHeightAt(worldPos);
 	}
 
-	private void AlignAllEntitiesToTerrain()
+	private void AlignAllEntitiesToTerrain(Rect2I? affectedRegion = null)
 	{
+		float spacing = GroundTerrain != null ? GroundTerrain.Spacing : 2.0f;
+		float halfW = GroundTerrain != null ? (GroundTerrain.Width - 1) / 2.0f * spacing : 0f;
+		float halfD = GroundTerrain != null ? (GroundTerrain.Depth - 1) / 2.0f * spacing : 0f;
+
+		bool IsInRegion(Vector3 pos)
+		{
+			if (!affectedRegion.HasValue) return true;
+			var region = affectedRegion.Value;
+			float gridX = pos.X / spacing + halfW / spacing;
+			float gridZ = pos.Z / spacing + halfD / spacing;
+			int x = (int)Mathf.Round(gridX);
+			int z = (int)Mathf.Round(gridZ);
+			return x >= region.Position.X - 2 && x <= region.Position.X + region.Size.X + 2 &&
+				   z >= region.Position.Y - 2 && z <= region.Position.Y + region.Size.Y + 2;
+		}
+
 		foreach (var unit in AllUnits)
 		{
 			if (GodotObject.IsInstanceValid(unit))
 			{
 				var pos = unit.GlobalPosition;
+				if (!IsInRegion(pos)) continue;
 				pos.Y = _editorService.GetTerrainHeightAt(pos);
 				unit.GlobalPosition = pos;
 				if (EcsWorld.IsAlive(unit.Entity))
@@ -259,12 +285,14 @@ public partial class GameHost
 			if (child is Prop3D prop && GodotObject.IsInstanceValid(prop))
 			{
 				var pos = prop.GlobalPosition;
+				if (!IsInRegion(pos)) continue;
 				pos.Y = _editorService.GetTerrainHeightAt(pos);
 				prop.GlobalPosition = pos;
 			}
 			else if (child is Decal decal && GodotObject.IsInstanceValid(decal))
 			{
 				var pos = decal.GlobalPosition;
+				if (!IsInRegion(pos)) continue;
 				pos.Y = _editorService.GetTerrainHeightAt(pos);
 				decal.GlobalPosition = pos;
 			}
@@ -305,28 +333,26 @@ public partial class GameHost
 		}
 
 
-		Decal closestDecal = null;
-		float closestDist = 3.0f;
-		foreach (var child in GetChildren())
+		var decal = FindDecal3DInParentChain(collider);
+		if (decal != null)
 		{
-			if (child is Decal dec && GodotObject.IsInstanceValid(dec))
+			if (EcsWorld.IsAlive(decal.Entity))
 			{
-				float d = dec.GlobalPosition.DistanceTo(hitPos);
-				if (d < closestDist)
-				{
-					closestDist = d;
-					closestDecal = dec;
-				}
+				EcsWorld.Destroy(decal.Entity);
 			}
+			decal.QueueFree();
 		}
-		if (closestDecal != null)
+	}
+
+		private Decal3D FindDecal3DInParentChain(Node node)
+	{
+		Node current = node;
+		while (current != null && current != this)
 		{
-			if (closestDecal is Decal3D decal3D && EcsWorld.IsAlive(decal3D.Entity))
-			{
-				EcsWorld.Destroy(decal3D.Entity);
-			}
-			closestDecal.QueueFree();
+			if (current is Decal3D d) return d;
+			current = current.GetParent();
 		}
+		return null;
 	}
 
 	private void ProcessMapEditorPhysics(float fDelta)
@@ -609,32 +635,19 @@ public partial class GameHost
 			return action;
 		}
 
-		Decal closestDecal = null;
-		float closestDist = 3.0f;
-		foreach (var child in GetChildren())
+		var decal = FindDecal3DInParentChain(collider);
+		if (decal != null)
 		{
-			if (child is Decal dec && GodotObject.IsInstanceValid(dec))
-			{
-				float d = dec.GlobalPosition.DistanceTo(hitPos);
-				if (d < closestDist)
-				{
-					closestDist = d;
-					closestDecal = dec;
-				}
-			}
-		}
-		if (closestDecal != null)
-		{
-			if (closestDecal == _selectedEditorObject)
+			if (decal == _selectedEditorObject)
 			{
 				SelectedEditorObject = null;
 			}
-			var action = new ObjectDeleteAction("decal", closestDecal is Decal3D decal3D ? decal3D.DecalId : "", closestDecal.Position, closestDecal.RotationDegrees.Y, closestDecal.Scale.X, false, closestDecal);
-			if (closestDecal is Decal3D d3d && EcsWorld.IsAlive(d3d.Entity))
+			var action = new ObjectDeleteAction("decal", decal.DecalId, decal.Position, decal.RotationDegrees.Y, decal.Scale.X, false, decal);
+			if (EcsWorld.IsAlive(decal.Entity))
 			{
-				EcsWorld.Destroy(d3d.Entity);
+				EcsWorld.Destroy(decal.Entity);
 			}
-			closestDecal.QueueFree();
+			decal.QueueFree();
 			return action;
 		}
 		return null;
@@ -1000,24 +1013,7 @@ public partial class GameHost
 				}
 				if (newHovered == null)
 				{
-					Decal closestDecal = null;
-					float closestDist = 3.0f;
-					foreach (var child in GetChildren())
-					{
-						if (child is Decal dec && GodotObject.IsInstanceValid(dec))
-						{
-							float d = dec.GlobalPosition.DistanceTo(hitPos);
-							if (d < closestDist)
-							{
-								closestDist = d;
-								closestDecal = dec;
-							}
-						}
-					}
-					if (closestDecal != null)
-					{
-						newHovered = closestDecal;
-					}
+					newHovered = FindDecal3DInParentChain(collider);
 				}
 			}
 
@@ -1080,7 +1076,6 @@ public partial class GameHost
 
 				bool isTerrainTool = ActiveEditorTool == EditorTool.Raise ||
 									 ActiveEditorTool == EditorTool.Lower ||
-									 ActiveEditorTool == EditorTool.Flatten ||
 									 ActiveEditorTool == EditorTool.Smooth ||
 									 ActiveEditorTool == EditorTool.Plateau ||
 									 ActiveEditorTool == EditorTool.PaintGrass ||
@@ -1090,33 +1085,27 @@ public partial class GameHost
 									 ActiveEditorTool == EditorTool.Noise ||
 									 ActiveEditorTool == EditorTool.PaintPathing;
 
+				bool firstClick = false;
 				if (isTerrainTool && !_editorService.IsDrawingTerrain && GroundTerrain != null)
 				{
+					firstClick = true;
 					_editorService.BeginTerrainDraw(
 						hitPos,
 						ActiveEditorTool,
 						EditorBlockMode,
 						EditorBlockLevelHeight,
-						EditorFlattenHeight,
 						GroundTerrain.Heights,
 						GroundTerrain.SplatMap,
-						GroundTerrain.PathingCodes,
-						out float newFlattenHeight);
-
-					EditorFlattenHeight = newFlattenHeight;
-					if (ActiveEditorTool == EditorTool.Flatten)
-					{
-						MapEditorHUD.Instance?.UpdateFlattenHeightExternal(EditorFlattenHeight);
-					}
+						GroundTerrain.PathingCodes);
 				}
 
 
-				ApplyContinuousTerrainEditing(hitPos, fDelta);
+				ApplyContinuousTerrainEditing(hitPos, fDelta, firstClick);
 				if (EditorMirrorMode != MirrorMode.None)
 				{
 					foreach (var t in GetMirroredTransforms(hitPos, 0.0f))
 					{
-						ApplyContinuousTerrainEditing(t.Position, fDelta);
+						ApplyContinuousTerrainEditing(t.Position, fDelta, firstClick);
 					}
 				}
 			}
@@ -1166,21 +1155,20 @@ public partial class GameHost
 					if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
 					{
 						var action = _editorService.EndTerrainDraw(
-							(float[,])GroundTerrain.Heights.Clone(),
-							(TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone(),
-							(int[,])GroundTerrain.PathingCodes.Clone());
+							GroundTerrain.Heights,
+							GroundTerrain.SplatMap,
+							GroundTerrain.PathingCodes);
 
 						EditorHistoryManager.RecordAction(action);
 						bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
 											 ActiveEditorTool == EditorTool.Lower ||
-											 ActiveEditorTool == EditorTool.Flatten ||
 											 ActiveEditorTool == EditorTool.Smooth ||
 											 ActiveEditorTool == EditorTool.Plateau ||
 											 ActiveEditorTool == EditorTool.Noise ||
 											 ActiveEditorTool == EditorTool.PaintPathing;
 						if (isHeightsTool)
 						{
-							GroundTerrain.BakeNavMesh();
+							GroundTerrain.UpdatePhysics();
 							RebuildGridOverlayMeshExternal();
 							UpdatePathingOverlay();
 						}
@@ -1238,21 +1226,20 @@ public partial class GameHost
 				if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
 				{
 					var action = _editorService.EndTerrainDraw(
-						(float[,])GroundTerrain.Heights.Clone(),
-						(TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone(),
-						(int[,])GroundTerrain.PathingCodes.Clone());
+						GroundTerrain.Heights,
+						GroundTerrain.SplatMap,
+						GroundTerrain.PathingCodes);
 
 					EditorHistoryManager.RecordAction(action);
 					bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
 										 ActiveEditorTool == EditorTool.Lower ||
-										 ActiveEditorTool == EditorTool.Flatten ||
 										 ActiveEditorTool == EditorTool.Smooth ||
 										 ActiveEditorTool == EditorTool.Plateau ||
 										 ActiveEditorTool == EditorTool.Noise ||
 										 ActiveEditorTool == EditorTool.PaintPathing;
 					if (isHeightsTool)
 					{
-						GroundTerrain.BakeNavMesh();
+							GroundTerrain.UpdatePhysics();
 						RebuildGridOverlayMeshExternal();
 						UpdatePathingOverlay();
 					}
@@ -1277,7 +1264,28 @@ public partial class GameHost
 		if (MapEditorHUD.ReturningFromTest)
 		{
 			LoadMapFromFile("user://temp_map_workspace/terrain.json");
-			MapEditorHUD.ReturningFromTest = false;
+
+			EditorGridMode = MapEditorHUD.SavedGridMode;
+			EditorCameraBoundsVisible = MapEditorHUD.SavedCameraBoundsVisible;
+
+			var camera = MainCamera as CameraControl;
+			if (camera != null)
+			{
+				camera.Position = MapEditorHUD.SavedCameraPosition;
+				if (EcsWorld != null && EcsWorld.IsAlive(WorldEntity) && EcsWorld.Has<CameraState>(WorldEntity))
+				{
+					ref var state = ref EcsWorld.Get<CameraState>(WorldEntity);
+					state.TargetHeight = MapEditorHUD.SavedTargetHeight;
+					state.CurrentHeight = MapEditorHUD.SavedTargetHeight;
+					state.TargetYaw = MapEditorHUD.SavedTargetYaw;
+					state.CurrentYaw = MapEditorHUD.SavedTargetYaw;
+					state.TargetPitch = MapEditorHUD.SavedTargetPitch;
+					state.CurrentPitch = MapEditorHUD.SavedTargetPitch;
+					state.IsTopDown = MapEditorHUD.SavedIsTopDown;
+					state.YawSwing = MapEditorHUD.SavedYawSwing;
+					state.PitchSwing = MapEditorHUD.SavedPitchSwing;
+				}
+			}
 		}
 		else
 		{
@@ -1285,7 +1293,7 @@ public partial class GameHost
 		}
 		
 		CreateBrushIndicator();
-		CreateGridOverlay();
+		UpdateGridOverlayVisibility();
 		InitializeCameraBoundsOverlay();
 		UpdateDayNightVisuals(0.5f);
 	}
@@ -1302,11 +1310,11 @@ public partial class GameHost
 			_brushIndicatorMesh.QueueFree();
 			_brushIndicatorMesh = null;
 		}
-		
-		if (_gridOverlayMesh != null)
+
+		if (GroundTerrain != null)
 		{
-			_gridOverlayMesh.QueueFree();
-			_gridOverlayMesh = null;
+			GroundTerrain.SetGridVisible(false);
+			GroundTerrain.SetPathingVisible(false);
 		}
 
 		if (_cameraBoundsOverlayMesh != null)
@@ -1418,7 +1426,6 @@ public partial class GameHost
 		
 		bool isTerrainTool = ActiveEditorTool == EditorTool.Raise ||
 							 ActiveEditorTool == EditorTool.Lower ||
-							 ActiveEditorTool == EditorTool.Flatten ||
 							 ActiveEditorTool == EditorTool.Smooth ||
 							 ActiveEditorTool == EditorTool.Plateau ||
 							 ActiveEditorTool == EditorTool.PaintGrass ||
@@ -1427,13 +1434,15 @@ public partial class GameHost
 							 ActiveEditorTool == EditorTool.PaintSand ||
 							 ActiveEditorTool == EditorTool.Noise ||
 							 ActiveEditorTool == EditorTool.Ramp ||
-							 ActiveEditorTool == EditorTool.PlacePropClump;
+							 ActiveEditorTool == EditorTool.PlacePropClump ||
+							 ActiveEditorTool == EditorTool.PaintPathing;
 							 
 		_brushIndicatorMesh.Visible = isTerrainTool;
 	}
 
 	public MeshInstance3D BrushIndicatorMesh => _brushIndicatorMesh;
-	public MeshInstance3D? GridOverlayMesh => _gridOverlayMesh;
+	public MeshInstance3D? GridOverlayMesh => null;
+	public MeshInstance3D? PathingOverlayMesh => null;
 
 	public void ClearRampStartPosExternal()
 	{
@@ -1923,308 +1932,21 @@ public partial class GameHost
 
 	private void RebuildPathingOverlay()
 	{
-		if (_pathingOverlayMesh == null || GroundTerrain == null || GroundTerrain.PathingCodes == null || GroundTerrain.Heights == null) return;
-
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
-		float spacing = GroundTerrain.Spacing;
-
-		static Color GetLayerColor(int flag) => flag switch
-		{
-			EditableTerrain.PATHING_SHALLOW_WATER => new Color(0.2f, 0.6f, 1.0f, 0.55f),
-			EditableTerrain.PATHING_DEEP_WATER    => new Color(0.0f, 0.15f, 0.7f, 0.55f),
-			EditableTerrain.PATHING_FLYING        => new Color(0.85f, 0.85f, 0.0f, 0.55f),
-			EditableTerrain.PATHING_GROUND        => new Color(0.2f, 0.85f, 0.2f, 0.55f),
-			EditableTerrain.PATHING_UNPATHABLE    => new Color(0.9f, 0.1f, 0.1f, 0.55f),
-			EditableTerrain.PATHING_BUILDABLE     => new Color(0.6f, 0.2f, 0.8f, 0.55f),
-			_ => new Color(0f, 0f, 0f, 0f)
-		};
-
-		var allFlags = new int[]
-		{
-			EditableTerrain.PATHING_SHALLOW_WATER,
-			EditableTerrain.PATHING_DEEP_WATER,
-			EditableTerrain.PATHING_FLYING,
-			EditableTerrain.PATHING_GROUND,
-			EditableTerrain.PATHING_UNPATHABLE,
-			EditableTerrain.PATHING_BUILDABLE
-		};
-
-		int cellWidth = width - 1;
-		int cellDepth = depth - 1;
-		int maxQuads = cellWidth * cellDepth;
-
-		var verticesList = new List<Vector3>(maxQuads * 8);
-		var colorsList = new List<Color>(maxQuads * 8);
-		var indicesList = new List<int>(maxQuads * 12);
-
-		for (int z = 0; z < cellDepth; z++)
-		{
-			for (int x = 0; x < cellWidth; x++)
-			{
-				int code = GroundTerrain.PathingCodes[x, z];
-				if (code == 0)
-				{
-					continue;
-				}
-
-				var activeFlags = new List<int>();
-				foreach (var flag in allFlags)
-				{
-					if ((code & flag) != 0)
-					{
-						activeFlags.Add(flag);
-					}
-				}
-
-				if (activeFlags.Count == 0)
-				{
-					continue;
-				}
-
-				float lx0 = (x - (width - 1) / 2.0f) * spacing;
-				float lz0 = (z - (depth - 1) / 2.0f) * spacing;
-				float lx1 = lx0 + spacing;
-				float lz1 = lz0 + spacing;
-
-				float h00 = GroundTerrain.Heights[x,     z    ] + 0.06f;
-				float h10 = GroundTerrain.Heights[x + 1, z    ] + 0.06f;
-				float h01 = GroundTerrain.Heights[x,     z + 1] + 0.06f;
-				float h11 = GroundTerrain.Heights[x + 1, z + 1] + 0.06f;
-
-				if (activeFlags.Count == 1)
-				{
-					Color cellColor = GetLayerColor(activeFlags[0]);
-					if (cellColor.A < 0.01f) continue;
-
-					int baseV = verticesList.Count;
-					verticesList.Add(new Vector3(lx0, h00, lz0));
-					colorsList.Add(cellColor);
-					verticesList.Add(new Vector3(lx1, h10, lz0));
-					colorsList.Add(cellColor);
-					verticesList.Add(new Vector3(lx1, h11, lz1));
-					colorsList.Add(cellColor);
-					verticesList.Add(new Vector3(lx0, h01, lz1));
-					colorsList.Add(cellColor);
-
-					indicesList.Add(baseV);
-					indicesList.Add(baseV + 1);
-					indicesList.Add(baseV + 2);
-					indicesList.Add(baseV);
-					indicesList.Add(baseV + 2);
-					indicesList.Add(baseV + 3);
-				}
-				else
-				{
-					int S = 4;
-					for (int sz = 0; sz < S; sz++)
-					{
-						for (int sx = 0; sx < S; sx++)
-						{
-							float tx0 = (float)sx / S;
-							float tx1 = (float)(sx + 1) / S;
-							float tz0 = (float)sz / S;
-							float tz1 = (float)(sz + 1) / S;
-
-							float hSub00 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx0), Mathf.Lerp(h01, h11, tx0), tz0);
-							float hSub10 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx1), Mathf.Lerp(h01, h11, tx1), tz0);
-							float hSub11 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx1), Mathf.Lerp(h01, h11, tx1), tz1);
-							float hSub01 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx0), Mathf.Lerp(h01, h11, tx0), tz1);
-
-							float subX0 = lx0 + sx * (spacing / S);
-							float subX1 = lx0 + (sx + 1) * (spacing / S);
-							float subZ0 = lz0 + sz * (spacing / S);
-							float subZ1 = lz0 + (sz + 1) * (spacing / S);
-
-							int flagIndex = (sx + sz) % activeFlags.Count;
-							Color subColor = GetLayerColor(activeFlags[flagIndex]);
-							if (subColor.A < 0.01f) continue;
-
-							int baseV = verticesList.Count;
-							verticesList.Add(new Vector3(subX0, hSub00, subZ0));
-							colorsList.Add(subColor);
-							verticesList.Add(new Vector3(subX1, hSub10, subZ0));
-							colorsList.Add(subColor);
-							verticesList.Add(new Vector3(subX1, hSub11, subZ1));
-							colorsList.Add(subColor);
-							verticesList.Add(new Vector3(subX0, hSub01, subZ1));
-							colorsList.Add(subColor);
-
-							indicesList.Add(baseV);
-							indicesList.Add(baseV + 1);
-							indicesList.Add(baseV + 2);
-							indicesList.Add(baseV);
-							indicesList.Add(baseV + 2);
-							indicesList.Add(baseV + 3);
-						}
-					}
-				}
-			}
-		}
-
-		var arrays = new Godot.Collections.Array();
-		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = verticesList.ToArray();
-		arrays[(int)Mesh.ArrayType.Color]  = colorsList.ToArray();
-		arrays[(int)Mesh.ArrayType.Index]  = indicesList.ToArray();
-
-		var arrayMesh = new ArrayMesh();
-		if (indicesList.Count > 0)
-		{
-			arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-		}
-		_pathingOverlayMesh.Mesh = arrayMesh;
-	}
-
-	private void CreateGridOverlay()
-	{
-		if (_gridOverlayMesh != null) return;
-
-		_gridOverlayMesh = new MeshInstance3D();
-		_gridOverlayMesh.Name = "GridOverlay";
-
-		var mat = new StandardMaterial3D();
-		mat.AlbedoColor = new Color(1.0f, 1.0f, 1.0f, 1.0f);
-		mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-		mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-		mat.NoDepthTest = false;
-		mat.VertexColorUseAsAlbedo = true;
-		_gridOverlayMesh.MaterialOverride = mat;
-
-		AddChild(_gridOverlayMesh);
-		_gridOverlayMesh.Visible = false;
+		if (GroundTerrain == null || GroundTerrain.PathingCodes == null || GroundTerrain.Heights == null) return;
+		GroundTerrain.UpdatePathingTexture();
 	}
 
 	public void RebuildGridOverlayMeshExternal()
 	{
-		RebuildGridOverlayMesh();
-	}
-
-	private void RebuildGridOverlayMesh()
-	{
-		if (_gridOverlayMesh == null || GroundTerrain == null || GroundTerrain.Heights == null) return;
-		if (!EditorGridVisible) return;
-
-		bool straightMode = EditorGridMode == GridOverlayMode.Straight;
-
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
-		float spacing = GroundTerrain.Spacing;
-
-		float straightY = 0f;
-		if (straightMode)
-		{
-			float maxH = float.MinValue;
-			for (int sz = 0; sz < depth; sz++)
-				for (int sx = 0; sx < width; sx++)
-					if (GroundTerrain.Heights[sx, sz] > maxH)
-						maxH = GroundTerrain.Heights[sx, sz];
-			straightY = maxH + 1.0f;
-		}
-
-		int centerZ = (depth - 1) / 2;
-		int centerX = (width - 1) / 2;
-
-		int totalVertices = 0;
-		for (int z = 0; z < depth; z++)
-		{
-			bool isThick = ((z - centerZ) % 10 == 0);
-			totalVertices += (width - 1) * (isThick ? 6 : 2);
-		}
-		for (int x = 0; x < width; x++)
-		{
-			bool isThick = ((x - centerX) % 10 == 0);
-			totalVertices += (depth - 1) * (isThick ? 6 : 2);
-		}
-
-		var vertices = new Vector3[totalVertices];
-		var colors = new Color[totalVertices];
-		int idx = 0;
-
-		Color thickColor = new Color(1.0f, 0.9f, 0.0f, 0.85f);
-		Color thinColor = new Color(1.0f, 0.9f, 0.0f, 0.25f);
-
-		void AddLine(Vector3 p1, Vector3 p2, Color color, bool thick, bool isVertical)
-		{
-			vertices[idx] = p1;
-			colors[idx] = color;
-			idx++;
-			vertices[idx] = p2;
-			colors[idx] = color;
-			idx++;
-
-			if (thick)
-			{
-				float offset = 0.04f;
-				Vector3 o = isVertical ? new Vector3(offset, 0, 0) : new Vector3(0, 0, offset);
-
-				vertices[idx] = p1 + o;
-				colors[idx] = color;
-				idx++;
-				vertices[idx] = p2 + o;
-				colors[idx] = color;
-				idx++;
-
-				vertices[idx] = p1 - o;
-				colors[idx] = color;
-				idx++;
-				vertices[idx] = p2 - o;
-				colors[idx] = color;
-				idx++;
-			}
-		}
-
-		for (int z = 0; z < depth; z++)
-		{
-			bool isThick = ((z - centerZ) % 10 == 0);
-			Color col = isThick ? thickColor : thinColor;
-			float lz = (z - (depth - 1) / 2.0f) * spacing;
-			for (int x = 0; x < width - 1; x++)
-			{
-				float lx1 = (x - (width - 1) / 2.0f) * spacing;
-				float lx2 = (x + 1 - (width - 1) / 2.0f) * spacing;
-
-				float y1 = straightMode ? straightY : GroundTerrain.Heights[x, z] + 0.15f;
-				float y2 = straightMode ? straightY : GroundTerrain.Heights[x + 1, z] + 0.15f;
-
-				AddLine(new Vector3(lx1, y1, lz), new Vector3(lx2, y2, lz), col, isThick, false);
-			}
-		}
-
-		for (int x = 0; x < width; x++)
-		{
-			bool isThick = ((x - centerX) % 10 == 0);
-			Color col = isThick ? thickColor : thinColor;
-			float lx = (x - (width - 1) / 2.0f) * spacing;
-			for (int z = 0; z < depth - 1; z++)
-			{
-				float lz1 = (z - (depth - 1) / 2.0f) * spacing;
-				float lz2 = (z + 1 - (depth - 1) / 2.0f) * spacing;
-
-				float y1 = straightMode ? straightY : GroundTerrain.Heights[x, z] + 0.15f;
-				float y2 = straightMode ? straightY : GroundTerrain.Heights[x, z + 1] + 0.15f;
-
-				AddLine(new Vector3(lx, y1, lz1), new Vector3(lx, y2, lz2), col, isThick, true);
-			}
-		}
-
-		var arrays = new Godot.Collections.Array();
-		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
-		arrays[(int)Mesh.ArrayType.Color] = colors;
-
-		var arrayMesh = new ArrayMesh();
-		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Lines, arrays);
-		_gridOverlayMesh.Mesh = arrayMesh;
+		// No longer needed, grid is on shader
 	}
 
 	public void UpdateGridOverlayVisibility()
 	{
-		if (_gridOverlayMesh == null) return;
-		_gridOverlayMesh.Visible = IsMapEditorMode && EditorGridVisible;
-		if (_gridOverlayMesh.Visible)
+		if (GroundTerrain != null)
 		{
-			RebuildGridOverlayMesh();
+			bool meshVisible = IsMapEditorMode && (EditorGridMode == GridOverlayMode.Mesh);
+			GroundTerrain.SetGridVisible(meshVisible);
 		}
 	}
 
@@ -2261,7 +1983,6 @@ public partial class GameHost
 			EditorHasUnsavedChanges = true;
 			MapEditorHUD.Instance?.ShowFeedbackExternal("Flood filled pathing area");
 			UpdatePathingOverlay();
-			GroundTerrain.BakeNavMesh();
 		}
 	}
 
@@ -2704,6 +2425,7 @@ public partial class GameHost
 
 		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
 		var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+		var pathingBefore = (int[,])GroundTerrain.PathingCodes.Clone();
 
 		var node3Ds = new List<Node3D>();
 		foreach (var child in GetChildren())
@@ -2713,7 +2435,7 @@ public partial class GameHost
 
 		var eraseResult = _editorService.BuildEraseAreaResult(
 			minX, minZ, maxX, maxZ,
-			PasteOptionHeights, PasteOptionTextures, PasteOptionEntities,
+			PasteOptionHeights, PasteOptionTextures, PasteOptionEntities, PasteOptionPathing,
 			node3Ds, _editorPreviewNode as Node3D);
 
 		if (eraseResult.TerrainModified)
@@ -2721,7 +2443,12 @@ public partial class GameHost
 			GroundTerrain.UpdateMeshAndPhysics(eraseResult.HeightsModified, false);
 			if (eraseResult.HeightsModified)
 			{
-				AlignAllEntitiesToTerrain();
+				Rect2I affected = new Rect2I(minX - 2, minZ - 2, maxX - minX + 4, maxZ - minZ + 4);
+				AlignAllEntitiesToTerrain(affected);
+			}
+			if (eraseResult.PathingModified)
+			{
+				UpdatePathingOverlay();
 			}
 		}
 
@@ -2734,10 +2461,11 @@ public partial class GameHost
 
 		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
 		var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+		var pathingAfter = (int[,])GroundTerrain.PathingCodes.Clone();
 		var actions = new List<IEditorAction>();
 		if (eraseResult.TerrainModified)
 		{
-			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter));
+			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter));
 		}
 		if (deleteActions.Count > 0)
 		{
@@ -2763,10 +2491,11 @@ public partial class GameHost
 
 		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
 		var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+		var pathingBefore = (int[,])GroundTerrain.PathingCodes.Clone();
 
 		var pasteResult = _editorService.BuildPasteAreaResult(
 			startX, startZ,
-			PasteOptionHeights, PasteOptionTextures, PasteOptionEntities,
+			PasteOptionHeights, PasteOptionTextures, PasteOptionEntities, PasteOptionPathing,
 			EditorMirrorMode,
 			rotationDegrees);
 
@@ -2776,6 +2505,10 @@ public partial class GameHost
 			if (pasteResult.HeightsModified)
 			{
 				AlignAllEntitiesToTerrain();
+			}
+			if (pasteResult.PathingModified)
+			{
+				UpdatePathingOverlay();
 			}
 		}
 
@@ -2798,10 +2531,11 @@ public partial class GameHost
 
 		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
 		var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+		var pathingAfter = (int[,])GroundTerrain.PathingCodes.Clone();
 		var actions = new List<IEditorAction>();
 		if (pasteResult.TerrainModified)
 		{
-			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter));
+			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter));
 		}
 		if (spawnActions.Count > 0)
 		{
@@ -2832,28 +2566,15 @@ public partial class GameHost
 
 	public void UpdatePathingOverlay()
 	{
-		if (_pathingOverlayMesh == null)
+		bool shouldBeVisible = IsMapEditorMode && PathingOverlayVisible && (ActiveEditorTool == EditorTool.PaintPathing || ActiveEditorTool == EditorTool.FloodFillPathing || ActiveEditorTool == EditorTool.SelectArea || ActiveEditorTool == EditorTool.PasteArea);
+		
+		if (GroundTerrain != null)
 		{
-			_pathingOverlayMesh = new MeshInstance3D();
-			_pathingOverlayMesh.Name = "PathingOverlay";
-
-			var mat = new StandardMaterial3D();
-			mat.AlbedoColor = new Color(1.0f, 1.0f, 1.0f, 1.0f);
-			mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-			mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-			mat.NoDepthTest = false;
-			mat.VertexColorUseAsAlbedo = true;
-			_pathingOverlayMesh.MaterialOverride = mat;
-			_pathingOverlayMesh.Position = new Vector3(0f, 0.05f, 0f);
-			AddChild(_pathingOverlayMesh);
-		}
-
-		bool shouldBeVisible = IsMapEditorMode && PathingOverlayVisible && (ActiveEditorTool == EditorTool.PaintPathing || ActiveEditorTool == EditorTool.FloodFillPathing);
-		_pathingOverlayMesh.Visible = shouldBeVisible;
-
-		if (shouldBeVisible && GroundTerrain != null)
-		{
-			RebuildPathingOverlay();
+			GroundTerrain.SetPathingVisible(shouldBeVisible);
+			if (shouldBeVisible)
+			{
+				RebuildPathingOverlay();
+			}
 		}
 	}
 

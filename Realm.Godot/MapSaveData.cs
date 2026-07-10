@@ -2,9 +2,9 @@ using System.Collections.Generic;
 
 public class MapSaveData
 {
-	public float[] Heights { get; set; }
-	public string[] Colors { get; set; }
-	public int[] Pathing { get; set; }
+	public int Width { get; set; }
+	public int Depth { get; set; }
+
 	public List<UnitSaveData> Units { get; set; }
 	public List<PropSaveData> Props { get; set; }
 	public List<DecalSaveData> Decals { get; set; }

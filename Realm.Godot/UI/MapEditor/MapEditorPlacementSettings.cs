@@ -53,16 +53,19 @@ public class MapEditorPlacementSettings
 		_chkRandomRotation.Toggled += (buttonPressed) =>
 		{
 			if (GameHost.Instance != null) GameHost.Instance.EditorRandomRotation = buttonPressed;
+			UpdateVisibility();
 		};
 
 		_chkRandomScale.Toggled += (buttonPressed) =>
 		{
 			if (GameHost.Instance != null) GameHost.Instance.EditorRandomScale = buttonPressed;
+			UpdateVisibility();
 		};
 
 		_chkClumpMode.Toggled += (buttonPressed) =>
 		{
 			if (GameHost.Instance != null) GameHost.Instance.EditorClumpMode = buttonPressed;
+			UpdateVisibility();
 		};
 
 		_sldClumpDensity.ValueChanged += (val) =>
@@ -76,6 +79,33 @@ public class MapEditorPlacementSettings
 			_lblClumpScaleVarValue.Text = val.ToString("F2");
 			if (GameHost.Instance != null) GameHost.Instance.EditorClumpScaleVar = (float)val;
 		};
+
+		UpdateVisibility();
+	}
+
+	private void UpdateVisibility()
+	{
+		bool clumpMode = _chkClumpMode.ButtonPressed;
+		bool randomRotation = _chkRandomRotation.ButtonPressed;
+		bool randomScale = _chkRandomScale.ButtonPressed;
+
+		var rotateContainer = _sldPlacementRotate.GetParent() as Control;
+		var scaleContainer = _sldPlacementScale.GetParent() as Control;
+
+		if (clumpMode)
+		{
+			if (rotateContainer != null) rotateContainer.Visible = false;
+			if (scaleContainer != null) scaleContainer.Visible = false;
+			_chkRandomRotation.Visible = false;
+			_chkRandomScale.Visible = false;
+		}
+		else
+		{
+			if (rotateContainer != null) rotateContainer.Visible = !randomRotation;
+			if (scaleContainer != null) scaleContainer.Visible = !randomScale;
+			_chkRandomRotation.Visible = true;
+			_chkRandomScale.Visible = true;
+		}
 	}
 
 	public void Update(MapEditorHUDViewModel viewModel)
@@ -96,5 +126,7 @@ public class MapEditorPlacementSettings
 
 		_sldClumpScaleVar.Value = viewModel.ClumpScaleVar;
 		_lblClumpScaleVarValue.Text = viewModel.ClumpScaleVar.ToString("F2");
+
+		UpdateVisibility();
 	}
 }
