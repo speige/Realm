@@ -167,12 +167,21 @@ public class MinimapPanel
 				{
 					if (mouseBtn.Pressed)
 					{
-						TeleportCameraToMinimapPos(mouseBtn.Position);
-						_isRightClickPanning = true;
-					}
-					else
-					{
-						_isRightClickPanning = false;
+						float xRatio = mouseBtn.Position.X / _minimapArea.Size.X;
+						float yRatio = mouseBtn.Position.Y / _minimapArea.Size.Y;
+						float worldX = Mathf.Clamp((xRatio - 0.5f) * 250f, -95f, 95f);
+						float worldZ = Mathf.Clamp((yRatio - 0.5f) * 250f, -95f, 125f);
+						float height = 0f;
+						if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+						{
+							GameHost.Instance.GroundTerrain.GetHeightAndNormal(worldX, worldZ, out height, out _);
+						}
+						var minimapWorldPos = new Vector3(worldX, height, worldZ);
+
+						if (GameHost.Instance != null)
+						{
+							GameHost.Instance.HandleMinimapRightClick(minimapWorldPos);
+						}
 					}
 				}
 			}

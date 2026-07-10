@@ -391,7 +391,9 @@ public partial class InGameHUD : Control
 		_minimapControls.SizeFlagsVertical = SizeFlags.ShrinkCenter;
 		_minimapControls.AddThemeConstantOverride("separation", 9);
 		_minimapControls.CustomMinimumSize = new Vector2(60, 0);
-		_minimapFrame.AddChild(_minimapControls);
+		var minimapHBox = GetNode<HBoxContainer>("BottomConsole/HBox");
+		minimapHBox.AddChild(_minimapControls);
+		minimapHBox.MoveChild(_minimapControls, 1);
 
 		_btnZoom = new Button();
 		SetupMinimapButton(_btnZoom, "res://Assets/UI/search_icon_clean.png", "Toggle Camera Zoom (Near / Mid / Far) [Z]", () => GameHost.Instance?.CycleCameraZoom());
