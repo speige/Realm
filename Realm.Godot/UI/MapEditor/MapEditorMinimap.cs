@@ -188,18 +188,16 @@ public class MapEditorMinimap
 				GameHost.Instance.BrushIndicatorMesh.Visible = false;
 			}
 
-			bool wasGridVisible = false;
-			if (GameHost.Instance?.GridOverlayMesh != null)
-			{
-				wasGridVisible = GameHost.Instance.GridOverlayMesh.Visible;
-				GameHost.Instance.GridOverlayMesh.Visible = false;
-			}
-
+			var wasGridMode = GameHost.GridOverlayMode.Off;
 			bool wasPathingVisible = false;
-			if (GameHost.Instance?.PathingOverlayMesh != null)
+			if (GameHost.Instance != null)
 			{
-				wasPathingVisible = GameHost.Instance.PathingOverlayMesh.Visible;
-				GameHost.Instance.PathingOverlayMesh.Visible = false;
+				wasGridMode = GameHost.Instance.EditorGridMode;
+				wasPathingVisible = GameHost.Instance.PathingOverlayVisible;
+				GameHost.Instance.EditorGridMode = GameHost.GridOverlayMode.Off;
+				GameHost.Instance.PathingOverlayVisible = false;
+				GameHost.Instance.UpdateGridOverlayVisibility();
+				GameHost.Instance.UpdatePathingOverlay();
 			}
 
 			await _hudNode.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
@@ -220,14 +218,12 @@ public class MapEditorMinimap
 				GameHost.Instance.BrushIndicatorMesh.Visible = wasVisible;
 			}
 
-			if (GameHost.Instance?.GridOverlayMesh != null)
+			if (GameHost.Instance != null)
 			{
-				GameHost.Instance.GridOverlayMesh.Visible = wasGridVisible;
-			}
-
-			if (GameHost.Instance?.PathingOverlayMesh != null)
-			{
-				GameHost.Instance.PathingOverlayMesh.Visible = wasPathingVisible;
+				GameHost.Instance.EditorGridMode = wasGridMode;
+				GameHost.Instance.PathingOverlayVisible = wasPathingVisible;
+				GameHost.Instance.UpdateGridOverlayVisibility();
+				GameHost.Instance.UpdatePathingOverlay();
 			}
 
 			viewport.QueueFree();

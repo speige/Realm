@@ -60,7 +60,6 @@ public partial class GameHost
 				}
 			}
 			GroundTerrain.UpdateMeshAndPhysics(true, true);
-			GroundTerrain.BakeNavMesh();
 			if (PathingOverlayVisible)
 			{
 				RebuildPathingOverlay();
@@ -125,7 +124,7 @@ public partial class GameHost
 		if (result.HeightsModified || result.SplatModified || result.PathingModified)
 		{
 			Rect2I affected = new Rect2I(result.MinX - 2, result.MinZ - 2, result.MaxX - result.MinX + 4, result.MaxZ - result.MinZ + 4);
-			GroundTerrain.UpdateMeshAndPhysics(result.HeightsModified, false, affected);
+			GroundTerrain.UpdateMeshAndPhysics(false, false, affected); // false for physics rebuild during drag
 			if (result.HeightsModified)
 			{
 				AlignAllEntitiesToTerrain(affected);
@@ -1169,7 +1168,7 @@ public partial class GameHost
 											 ActiveEditorTool == EditorTool.PaintPathing;
 						if (isHeightsTool)
 						{
-							GroundTerrain.BakeNavMesh();
+							GroundTerrain.UpdatePhysics();
 							RebuildGridOverlayMeshExternal();
 							UpdatePathingOverlay();
 						}
@@ -1240,7 +1239,7 @@ public partial class GameHost
 										 ActiveEditorTool == EditorTool.PaintPathing;
 					if (isHeightsTool)
 					{
-						GroundTerrain.BakeNavMesh();
+							GroundTerrain.UpdatePhysics();
 						RebuildGridOverlayMeshExternal();
 						UpdatePathingOverlay();
 					}
@@ -1294,7 +1293,7 @@ public partial class GameHost
 		}
 		
 		CreateBrushIndicator();
-		CreateGridOverlay();
+		UpdateGridOverlayVisibility();
 		InitializeCameraBoundsOverlay();
 		UpdateDayNightVisuals(0.5f);
 	}
@@ -1311,11 +1310,11 @@ public partial class GameHost
 			_brushIndicatorMesh.QueueFree();
 			_brushIndicatorMesh = null;
 		}
-		
-		if (_gridOverlayMesh != null)
+
+		if (GroundTerrain != null)
 		{
-			_gridOverlayMesh.QueueFree();
-			_gridOverlayMesh = null;
+			GroundTerrain.SetGridVisible(false);
+			GroundTerrain.SetPathingVisible(false);
 		}
 
 		if (_cameraBoundsOverlayMesh != null)
@@ -1442,8 +1441,8 @@ public partial class GameHost
 	}
 
 	public MeshInstance3D BrushIndicatorMesh => _brushIndicatorMesh;
-	public MeshInstance3D? GridOverlayMesh => _gridOverlayMesh;
-	public MeshInstance3D? PathingOverlayMesh => _pathingOverlayMesh;
+	public MeshInstance3D? GridOverlayMesh => null;
+	public MeshInstance3D? PathingOverlayMesh => null;
 
 	public void ClearRampStartPosExternal()
 	{
@@ -1933,236 +1932,23 @@ public partial class GameHost
 
 	private void RebuildPathingOverlay()
 	{
-		if (_pathingOverlayMesh == null || GroundTerrain == null || GroundTerrain.PathingCodes == null || GroundTerrain.Heights == null) return;
-
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
-		float spacing = GroundTerrain.Spacing;
-
-		static Color GetLayerColor(int flag) => flag switch
-		{
-			EditableTerrain.PATHING_SHALLOW_WATER => new Color(0.2f, 0.6f, 1.0f, 0.25f),
-			EditableTerrain.PATHING_DEEP_WATER    => new Color(0.0f, 0.15f, 0.7f, 0.25f),
-			EditableTerrain.PATHING_FLYING        => new Color(0.85f, 0.85f, 0.0f, 0.25f),
-			EditableTerrain.PATHING_GROUND        => new Color(0.2f, 0.85f, 0.2f, 0.25f),
-			EditableTerrain.PATHING_UNPATHABLE    => new Color(0.9f, 0.1f, 0.1f, 0.25f),
-			EditableTerrain.PATHING_BUILDABLE     => new Color(0.6f, 0.2f, 0.8f, 0.25f),
-			0                                     => new Color(0.9f, 0.1f, 0.1f, 0.25f),
-			_ => new Color(0f, 0f, 0f, 0f)
-		};
-
-		int cellWidth = width - 1;
-		int cellDepth = depth - 1;
-
-		var st = new SurfaceTool();
-		st.Begin(Mesh.PrimitiveType.Triangles);
-
-		Span<int> activeFlags = stackalloc int[6];
-		for (int z = 0; z < cellDepth; z++)
-		{
-			for (int x = 0; x < cellWidth; x++)
-			{
-				int code = GroundTerrain.PathingCodes[x, z];
-				int activeCount = 0;
-
-				if ((code & EditableTerrain.PATHING_SHALLOW_WATER) != 0) activeFlags[activeCount++] = EditableTerrain.PATHING_SHALLOW_WATER;
-				if ((code & EditableTerrain.PATHING_DEEP_WATER) != 0)    activeFlags[activeCount++] = EditableTerrain.PATHING_DEEP_WATER;
-				if ((code & EditableTerrain.PATHING_FLYING) != 0)        activeFlags[activeCount++] = EditableTerrain.PATHING_FLYING;
-				if ((code & EditableTerrain.PATHING_GROUND) != 0)        activeFlags[activeCount++] = EditableTerrain.PATHING_GROUND;
-				if ((code & EditableTerrain.PATHING_BUILDABLE) != 0)     activeFlags[activeCount++] = EditableTerrain.PATHING_BUILDABLE;
-
-				if (activeCount == 0)
-				{
-					activeFlags[activeCount++] = 0;
-				}
-
-				float lx0 = (x - (width - 1) / 2.0f) * spacing;
-				float lz0 = (z - (depth - 1) / 2.0f) * spacing;
-				float lx1 = lx0 + spacing;
-				float lz1 = lz0 + spacing;
-
-				float h00 = GroundTerrain.Heights[x,     z    ] + 0.06f;
-				float h10 = GroundTerrain.Heights[x + 1, z    ] + 0.06f;
-				float h01 = GroundTerrain.Heights[x,     z + 1] + 0.06f;
-				float h11 = GroundTerrain.Heights[x + 1, z + 1] + 0.06f;
-
-				if (activeCount == 1)
-				{
-					Color cellColor = GetLayerColor(activeFlags[0]);
-					if (cellColor.A < 0.01f) continue;
-
-					st.SetColor(cellColor);
-					
-					st.AddVertex(new Vector3(lx0, h00, lz0));
-					st.AddVertex(new Vector3(lx1, h10, lz0));
-					st.AddVertex(new Vector3(lx1, h11, lz1));
-					
-					st.AddVertex(new Vector3(lx0, h00, lz0));
-					st.AddVertex(new Vector3(lx1, h11, lz1));
-					st.AddVertex(new Vector3(lx0, h01, lz1));
-				}
-				else
-				{
-					int S = 2;
-					for (int sz = 0; sz < S; sz++)
-					{
-						for (int sx = 0; sx < S; sx++)
-						{
-							float tx0 = (float)sx / S;
-							float tx1 = (float)(sx + 1) / S;
-							float tz0 = (float)sz / S;
-							float tz1 = (float)(sz + 1) / S;
-
-							float hSub00 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx0), Mathf.Lerp(h01, h11, tx0), tz0);
-							float hSub10 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx1), Mathf.Lerp(h01, h11, tx1), tz0);
-							float hSub11 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx1), Mathf.Lerp(h01, h11, tx1), tz1);
-							float hSub01 = Mathf.Lerp(Mathf.Lerp(h00, h10, tx0), Mathf.Lerp(h01, h11, tx0), tz1);
-
-							float subX0 = lx0 + sx * (spacing / S);
-							float subX1 = lx0 + (sx + 1) * (spacing / S);
-							float subZ0 = lz0 + sz * (spacing / S);
-							float subZ1 = lz0 + (sz + 1) * (spacing / S);
-
-							int flagIndex = (sx + sz) % activeCount;
-							Color subColor = GetLayerColor(activeFlags[flagIndex]);
-							if (subColor.A < 0.01f) continue;
-
-							st.SetColor(subColor);
-
-							st.AddVertex(new Vector3(subX0, hSub00, subZ0));
-							st.AddVertex(new Vector3(subX1, hSub10, subZ0));
-							st.AddVertex(new Vector3(subX1, hSub11, subZ1));
-							
-							st.AddVertex(new Vector3(subX0, hSub00, subZ0));
-							st.AddVertex(new Vector3(subX1, hSub11, subZ1));
-							st.AddVertex(new Vector3(subX0, hSub01, subZ1));
-						}
-					}
-				}
-			}
-		}
-
-		_pathingOverlayMesh.Mesh = st.Commit();
-	}
-
-	private void CreateGridOverlay()
-	{
-		if (_gridOverlayMesh != null) return;
-
-		_gridOverlayMesh = new MeshInstance3D();
-		_gridOverlayMesh.Name = "GridOverlay";
-
-		var mat = new StandardMaterial3D();
-		mat.AlbedoColor = new Color(1.0f, 1.0f, 1.0f, 1.0f);
-		mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-		mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-		mat.NoDepthTest = false;
-		mat.VertexColorUseAsAlbedo = true;
-		_gridOverlayMesh.MaterialOverride = mat;
-
-		AddChild(_gridOverlayMesh);
-		_gridOverlayMesh.Visible = false;
+		if (GroundTerrain == null || GroundTerrain.PathingCodes == null || GroundTerrain.Heights == null) return;
+		GroundTerrain.UpdatePathingTexture();
 	}
 
 	public void RebuildGridOverlayMeshExternal()
 	{
-		RebuildGridOverlayMesh();
-	}
-
-	private void RebuildGridOverlayMesh()
-	{
-		if (_gridOverlayMesh == null || GroundTerrain == null || GroundTerrain.Heights == null) return;
-		if (!EditorGridVisible) return;
-
-		bool straightMode = EditorGridMode == GridOverlayMode.Straight;
-
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
-		float spacing = GroundTerrain.Spacing;
-
-		float straightY = 0f;
-		if (straightMode)
-		{
-			float maxH = float.MinValue;
-			for (int sz = 0; sz < depth; sz++)
-				for (int sx = 0; sx < width; sx++)
-					if (GroundTerrain.Heights[sx, sz] > maxH)
-						maxH = GroundTerrain.Heights[sx, sz];
-			straightY = maxH + 1.0f;
-		}
-
-		int centerZ = (depth - 1) / 2;
-		int centerX = (width - 1) / 2;
-
-		Color thickColor = new Color(1.0f, 0.9f, 0.0f, 0.85f);
-		Color thinColor = new Color(1.0f, 0.9f, 0.0f, 0.25f);
-
-		var st = new SurfaceTool();
-		st.Begin(Mesh.PrimitiveType.Lines);
-
-		void AddLine(Vector3 p1, Vector3 p2, Color color, bool thick, bool isVertical)
-		{
-			st.SetColor(color);
-			st.AddVertex(p1);
-			st.AddVertex(p2);
-
-			if (thick)
-			{
-				float offset = 0.04f;
-				Vector3 o = isVertical ? new Vector3(offset, 0, 0) : new Vector3(0, 0, offset);
-
-				st.AddVertex(p1 + o);
-				st.AddVertex(p2 + o);
-
-				st.AddVertex(p1 - o);
-				st.AddVertex(p2 - o);
-			}
-		}
-
-		for (int z = 0; z < depth; z++)
-		{
-			bool isThick = ((z - centerZ) % 10 == 0);
-			Color col = isThick ? thickColor : thinColor;
-			float lz = (z - (depth - 1) / 2.0f) * spacing;
-			for (int x = 0; x < width - 1; x++)
-			{
-				float lx1 = (x - (width - 1) / 2.0f) * spacing;
-				float lx2 = (x + 1 - (width - 1) / 2.0f) * spacing;
-
-				float y1 = straightMode ? straightY : GroundTerrain.Heights[x, z] + 0.15f;
-				float y2 = straightMode ? straightY : GroundTerrain.Heights[x + 1, z] + 0.15f;
-
-				AddLine(new Vector3(lx1, y1, lz), new Vector3(lx2, y2, lz), col, isThick, false);
-			}
-		}
-
-		for (int x = 0; x < width; x++)
-		{
-			bool isThick = ((x - centerX) % 10 == 0);
-			Color col = isThick ? thickColor : thinColor;
-			float lx = (x - (width - 1) / 2.0f) * spacing;
-			for (int z = 0; z < depth - 1; z++)
-			{
-				float lz1 = (z - (depth - 1) / 2.0f) * spacing;
-				float lz2 = (z + 1 - (depth - 1) / 2.0f) * spacing;
-
-				float y1 = straightMode ? straightY : GroundTerrain.Heights[x, z] + 0.15f;
-				float y2 = straightMode ? straightY : GroundTerrain.Heights[x, z + 1] + 0.15f;
-
-				AddLine(new Vector3(lx, y1, lz1), new Vector3(lx, y2, lz2), col, isThick, true);
-			}
-		}
-
-		_gridOverlayMesh.Mesh = st.Commit();
+		// No longer needed, grid is on shader
 	}
 
 	public void UpdateGridOverlayVisibility()
 	{
-		if (_gridOverlayMesh == null) return;
-		_gridOverlayMesh.Visible = IsMapEditorMode && EditorGridVisible;
-		if (_gridOverlayMesh.Visible)
+		if (GroundTerrain != null)
 		{
-			RebuildGridOverlayMesh();
+			bool meshVisible = IsMapEditorMode && (EditorGridMode == GridOverlayMode.Mesh);
+			bool straightVisible = IsMapEditorMode && (EditorGridMode == GridOverlayMode.Straight);
+			GroundTerrain.SetGridVisible(meshVisible);
+			GroundTerrain.UpdateStraightGrid(straightVisible);
 		}
 	}
 
@@ -2199,7 +1985,6 @@ public partial class GameHost
 			EditorHasUnsavedChanges = true;
 			MapEditorHUD.Instance?.ShowFeedbackExternal("Flood filled pathing area");
 			UpdatePathingOverlay();
-			GroundTerrain.BakeNavMesh();
 		}
 	}
 
@@ -2663,10 +2448,6 @@ public partial class GameHost
 				Rect2I affected = new Rect2I(minX - 2, minZ - 2, maxX - minX + 4, maxZ - minZ + 4);
 				AlignAllEntitiesToTerrain(affected);
 			}
-			if (eraseResult.HeightsModified || eraseResult.PathingModified)
-			{
-				GroundTerrain.BakeNavMesh();
-			}
 			if (eraseResult.PathingModified)
 			{
 				UpdatePathingOverlay();
@@ -2726,10 +2507,6 @@ public partial class GameHost
 			if (pasteResult.HeightsModified)
 			{
 				AlignAllEntitiesToTerrain();
-			}
-			if (pasteResult.HeightsModified || pasteResult.PathingModified)
-			{
-				GroundTerrain.BakeNavMesh();
 			}
 			if (pasteResult.PathingModified)
 			{
@@ -2791,28 +2568,15 @@ public partial class GameHost
 
 	public void UpdatePathingOverlay()
 	{
-		if (_pathingOverlayMesh == null)
-		{
-			_pathingOverlayMesh = new MeshInstance3D();
-			_pathingOverlayMesh.Name = "PathingOverlay";
-
-			var mat = new StandardMaterial3D();
-			mat.AlbedoColor = new Color(1.0f, 1.0f, 1.0f, 1.0f);
-			mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-			mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-			mat.NoDepthTest = false;
-			mat.VertexColorUseAsAlbedo = true;
-			_pathingOverlayMesh.MaterialOverride = mat;
-			_pathingOverlayMesh.Position = new Vector3(0f, 0.05f, 0f);
-			AddChild(_pathingOverlayMesh);
-		}
-
 		bool shouldBeVisible = IsMapEditorMode && PathingOverlayVisible && (ActiveEditorTool == EditorTool.PaintPathing || ActiveEditorTool == EditorTool.FloodFillPathing || ActiveEditorTool == EditorTool.SelectArea || ActiveEditorTool == EditorTool.PasteArea);
-		_pathingOverlayMesh.Visible = shouldBeVisible;
-
-		if (shouldBeVisible && GroundTerrain != null)
+		
+		if (GroundTerrain != null)
 		{
-			RebuildPathingOverlay();
+			GroundTerrain.SetPathingVisible(shouldBeVisible);
+			if (shouldBeVisible)
+			{
+				RebuildPathingOverlay();
+			}
 		}
 	}
 

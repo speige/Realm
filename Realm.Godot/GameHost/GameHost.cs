@@ -237,9 +237,7 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 	}
 	private MeshInstance3D? _brushIndicatorMesh;
-	private MeshInstance3D? _gridOverlayMesh;
 	private MeshInstance3D? _cameraBoundsOverlayMesh;
-	private MeshInstance3D? _pathingOverlayMesh;
 	private readonly List<Vector3> _pathingVerticesCache = new();
 	private readonly List<Color> _pathingColorsCache = new();
 	private readonly List<int> _pathingIndicesCache = new();

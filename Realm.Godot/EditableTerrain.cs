@@ -107,6 +107,7 @@ public partial class EditableTerrain : StaticBody3D
 	private int[,] _localPathingCodes;
 	private float _localWaterHeight = -2.0f;
 	private bool _localWaterEnabled = true;
+	private MeshInstance3D? _straightGridMesh;
 
 	public float[,] Heights
 	{
@@ -343,12 +344,23 @@ uniform sampler2D fog_texture : hint_default_white;
 uniform vec2 fog_world_min = vec2(-125.0, -125.0);
 uniform vec2 fog_world_size = vec2(250.0, 250.0);
 
+uniform sampler2D pathing_texture : hint_default_transparent, filter_nearest;
+uniform bool pathing_visible = false;
+
+uniform bool grid_visible = false;
+uniform vec4 grid_color_thick = vec4(1.0, 0.9, 0.0, 0.85);
+uniform vec4 grid_color_thin = vec4(1.0, 0.9, 0.0, 0.25);
+uniform float grid_spacing = 2.0;
+uniform vec2 terrain_size = vec2(1.0, 1.0);
+
 varying vec4 v_tex_indices;
 varying vec4 v_tex_weights;
+varying vec3 v_world_pos;
 
 void vertex() {
 	v_tex_indices = CUSTOM0;
 	v_tex_weights = CUSTOM1;
+	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 void fragment() {
@@ -360,7 +372,148 @@ void fragment() {
 	                      c1.rgb * v_tex_weights.y +
 	                      c2.rgb * v_tex_weights.z +
 	                      c3.rgb * v_tex_weights.w);
-	ALBEDO = terrain_color;
+
+	vec3 final_albedo = terrain_color;
+	vec3 emission_color = vec3(0.0);
+	
+	if (pathing_visible) {
+		vec2 pathing_uv = (v_world_pos.xz + terrain_size / 2.0) / terrain_size;
+		int code = int(round(texture(pathing_texture, pathing_uv).r * 255.0));
+		
+		int bit_0 = code % 2;
+		int bit_1 = (code / 2) % 2;
+		int bit_2 = (code / 4) % 2;
+		int bit_3 = (code / 8) % 2;
+		int bit_4 = (code / 16) % 2;
+		int bit_5 = (code / 32) % 2;
+		
+		int active_count = 0;
+		int flag_0 = -1;
+		int flag_1 = -1;
+		int flag_2 = -1;
+		int flag_3 = -1;
+		int flag_4 = -1;
+		int flag_5 = -1;
+		
+		if (bit_4 != 0) {
+			if (active_count == 0) flag_0 = 16;
+			else if (active_count == 1) flag_1 = 16;
+			else if (active_count == 2) flag_2 = 16;
+			else if (active_count == 3) flag_3 = 16;
+			else if (active_count == 4) flag_4 = 16;
+			else if (active_count == 5) flag_5 = 16;
+			active_count++;
+		}
+		if (bit_3 != 0) {
+			if (active_count == 0) flag_0 = 8;
+			else if (active_count == 1) flag_1 = 8;
+			else if (active_count == 2) flag_2 = 8;
+			else if (active_count == 3) flag_3 = 8;
+			else if (active_count == 4) flag_4 = 8;
+			else if (active_count == 5) flag_5 = 8;
+			active_count++;
+		}
+		if (bit_5 != 0) {
+			if (active_count == 0) flag_0 = 32;
+			else if (active_count == 1) flag_1 = 32;
+			else if (active_count == 2) flag_2 = 32;
+			else if (active_count == 3) flag_3 = 32;
+			else if (active_count == 4) flag_4 = 32;
+			else if (active_count == 5) flag_5 = 32;
+			active_count++;
+		}
+		if (bit_0 != 0) {
+			if (active_count == 0) flag_0 = 1;
+			else if (active_count == 1) flag_1 = 1;
+			else if (active_count == 2) flag_2 = 1;
+			else if (active_count == 3) flag_3 = 1;
+			else if (active_count == 4) flag_4 = 1;
+			else if (active_count == 5) flag_5 = 1;
+			active_count++;
+		}
+		if (bit_1 != 0) {
+			if (active_count == 0) flag_0 = 2;
+			else if (active_count == 1) flag_1 = 2;
+			else if (active_count == 2) flag_2 = 2;
+			else if (active_count == 3) flag_3 = 2;
+			else if (active_count == 4) flag_4 = 2;
+			else if (active_count == 5) flag_5 = 2;
+			active_count++;
+		}
+		if (bit_2 != 0) {
+			if (active_count == 0) flag_0 = 4;
+			else if (active_count == 1) flag_1 = 4;
+			else if (active_count == 2) flag_2 = 4;
+			else if (active_count == 3) flag_3 = 4;
+			else if (active_count == 4) flag_4 = 4;
+			else if (active_count == 5) flag_5 = 4;
+			active_count++;
+		}
+		
+		if (active_count == 0) {
+			flag_0 = 0;
+			active_count = 1;
+		}
+		
+		vec2 cell_frac = fract(v_world_pos.xz / grid_spacing);
+		int sx = int(floor(cell_frac.x * 2.0));
+		int sz = int(floor(cell_frac.y * 2.0));
+		int flag_idx = (sx + sz) % active_count;
+		
+		int active_flag = flag_0;
+		if (flag_idx == 1) active_flag = flag_1;
+		else if (flag_idx == 2) active_flag = flag_2;
+		else if (flag_idx == 3) active_flag = flag_3;
+		else if (flag_idx == 4) active_flag = flag_4;
+		else if (flag_idx == 5) active_flag = flag_5;
+		
+		vec4 pathing_color = vec4(0.0);
+		if (active_flag == 16 || active_flag == 0) {
+			pathing_color = vec4(0.9, 0.1, 0.1, 0.25);
+		} else if (active_flag == 32) {
+			pathing_color = vec4(0.6, 0.2, 0.8, 0.25);
+		} else if (active_flag == 8) {
+			pathing_color = vec4(0.2, 0.85, 0.2, 0.25);
+		} else if (active_flag == 1) {
+			pathing_color = vec4(0.2, 0.6, 1.0, 0.25);
+		} else if (active_flag == 2) {
+			pathing_color = vec4(0.0, 0.15, 0.7, 0.25);
+		} else if (active_flag == 4) {
+			pathing_color = vec4(0.85, 0.85, 0.0, 0.25);
+		}
+		
+		if (pathing_color.a > 0.0) {
+			final_albedo = mix(final_albedo, pathing_color.rgb, pathing_color.a);
+		}
+	}
+	
+	if (grid_visible) {
+		vec2 grid_uv = v_world_pos.xz / grid_spacing;
+		
+		vec2 df = fwidth(grid_uv) * 3.0;
+		vec2 grid_lines = smoothstep(vec2(1.0) - df, vec2(1.0), fract(grid_uv)) + 
+						  (1.0 - smoothstep(vec2(0.0), df, fract(grid_uv)));
+		
+		float thin_line = max(grid_lines.x, grid_lines.y);
+		
+		vec2 thick_grid_uv = grid_uv / 10.0;
+		vec2 df_thick = fwidth(thick_grid_uv) * 3.0;
+		vec2 thick_grid_lines = smoothstep(vec2(1.0) - df_thick, vec2(1.0), fract(thick_grid_uv)) + 
+								(1.0 - smoothstep(vec2(0.0), df_thick, fract(thick_grid_uv)));
+		
+		float thick_line = max(thick_grid_lines.x, thick_grid_lines.y);
+		
+		if (thick_line > 0.0) {
+			final_albedo = mix(final_albedo, grid_color_thick.rgb, grid_color_thick.a * thick_line);
+			emission_color = mix(emission_color, grid_color_thick.rgb, grid_color_thick.a * thick_line);
+		} else if (thin_line > 0.0) {
+			final_albedo = mix(final_albedo, grid_color_thin.rgb, grid_color_thin.a * thin_line);
+			emission_color = mix(emission_color, grid_color_thin.rgb, grid_color_thin.a * thin_line);
+		}
+	}
+
+	ALBEDO = final_albedo;
+	EMISSION = emission_color;
 	ROUGHNESS = 0.9;
 }
 ";
@@ -430,6 +583,9 @@ void fragment() {
 		var defaultFogTexture = ImageTexture.CreateFromImage(defaultFogImage);
 		_material.SetShaderParameter("fog_texture", defaultFogTexture);
 
+		_material.SetShaderParameter("grid_spacing", Spacing);
+		_material.SetShaderParameter("terrain_size", new Vector2(Width * Spacing, Depth * Spacing));
+
 		CreateChunks();
 		CreateWater();
 		UpdateMeshAndPhysics();
@@ -494,6 +650,149 @@ void fragment() {
 		}
 	}
 
+	public void SetPathingVisible(bool visible)
+	{
+		if (_material != null)
+		{
+			_material.SetShaderParameter("pathing_visible", visible);
+		}
+	}
+
+	public void SetGridVisible(bool visible)
+	{
+		if (_material != null)
+		{
+			_material.SetShaderParameter("grid_visible", visible);
+		}
+		if (!visible && _straightGridMesh != null)
+		{
+			_straightGridMesh.Visible = false;
+		}
+	}
+
+	public void UpdateStraightGrid(bool visible)
+	{
+		if (!visible)
+		{
+			if (_straightGridMesh != null)
+			{
+				_straightGridMesh.Visible = false;
+			}
+			return;
+		}
+
+		if (_straightGridMesh == null)
+		{
+			_straightGridMesh = new MeshInstance3D();
+			_straightGridMesh.Name = "StraightGridOverlay";
+
+			var planeMesh = new PlaneMesh();
+			planeMesh.Size = new Vector2(Width * Spacing, Depth * Spacing);
+			_straightGridMesh.Mesh = planeMesh;
+
+			var shader = new Shader();
+			shader.Code = @"
+shader_type spatial;
+render_mode unshaded, depth_prepass_alpha, cull_disabled;
+
+uniform vec4 grid_color_thick = vec4(1.0, 0.9, 0.0, 0.85);
+uniform vec4 grid_color_thin = vec4(1.0, 0.9, 0.0, 0.25);
+uniform float grid_spacing = 2.0;
+
+varying vec3 v_world_pos;
+
+void vertex() {
+	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+
+void fragment() {
+	vec2 grid_uv = v_world_pos.xz / grid_spacing;
+	
+	vec2 df = fwidth(grid_uv) * 3.0;
+	vec2 grid_lines = smoothstep(vec2(1.0) - df, vec2(1.0), fract(grid_uv)) + 
+					  (1.0 - smoothstep(vec2(0.0), df, fract(grid_uv)));
+	
+	float thin_line = max(grid_lines.x, grid_lines.y);
+	
+	vec2 thick_grid_uv = grid_uv / 10.0;
+	vec2 df_thick = fwidth(thick_grid_uv) * 3.0;
+	vec2 thick_grid_lines = smoothstep(vec2(1.0) - df_thick, vec2(1.0), fract(thick_grid_uv)) + 
+							(1.0 - smoothstep(vec2(0.0), df_thick, fract(thick_grid_uv)));
+	
+	float thick_line = max(thick_grid_lines.x, thick_grid_lines.y);
+	
+	vec4 col = vec4(0.0);
+	if (thick_line > 0.0) {
+		col = vec4(grid_color_thick.rgb, grid_color_thick.a * thick_line);
+	} else if (thin_line > 0.0) {
+		col = vec4(grid_color_thin.rgb, grid_color_thin.a * thin_line);
+	}
+	
+	if (col.a < 0.01) {
+		discard;
+	}
+	
+	ALBEDO = col.rgb;
+	ALPHA = col.a;
+}
+";
+			var mat = new ShaderMaterial();
+			mat.Shader = shader;
+			mat.SetShaderParameter("grid_spacing", Spacing);
+			_straightGridMesh.MaterialOverride = mat;
+
+			AddChild(_straightGridMesh);
+		}
+
+		var pMesh = _straightGridMesh.Mesh as PlaneMesh;
+		if (pMesh != null)
+		{
+			pMesh.Size = new Vector2(Width * Spacing, Depth * Spacing);
+		}
+
+		var sMat = _straightGridMesh.MaterialOverride as ShaderMaterial;
+		if (sMat != null)
+		{
+			sMat.SetShaderParameter("grid_spacing", Spacing);
+		}
+
+		float maxH = float.MinValue;
+		for (int z = 0; z < Depth; z++)
+		{
+			for (int x = 0; x < Width; x++)
+			{
+				if (Heights[x, z] > maxH)
+				{
+					maxH = Heights[x, z];
+				}
+			}
+		}
+		
+		_straightGridMesh.Position = new Vector3(0f, maxH + 1.0f, 0f);
+		_straightGridMesh.Visible = true;
+	}
+
+	public void UpdatePathingTexture()
+	{
+		if (_material == null || PathingCodes == null) return;
+		
+		int w = Width;
+		int d = Depth;
+		var img = Image.CreateEmpty(w, d, false, Image.Format.Rgba8);
+		
+		for (int z = 0; z < d; z++)
+		{
+			for (int x = 0; x < w; x++)
+			{
+				int code = PathingCodes[x, z];
+				img.SetPixel(x, z, new Color(code / 255.0f, 0f, 0f, 0f));
+			}
+		}
+		
+		var tex = ImageTexture.CreateFromImage(img);
+		_material.SetShaderParameter("pathing_texture", tex);
+	}
+
 	public void UpdateMeshAndPhysics(bool rebuildPhysics = true, bool rebuildNavMesh = true, Rect2I? affectedRegion = null)
 	{
 		int w = Width;
@@ -526,14 +825,51 @@ void fragment() {
 
 			UpdateChunk(chunk, rebuildPhysics);
 		}
+	}
 
-		if (rebuildPhysics && rebuildNavMesh)
+	public void UpdatePhysics(Rect2I? affectedRegion = null)
+	{
+		foreach (var chunk in _chunks)
 		{
-			if (GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode)
+			if (affectedRegion.HasValue)
 			{
-				BakeNavMesh();
+				var region = affectedRegion.Value;
+				if (chunk.EndX < region.Position.X || chunk.StartX > region.Position.X + region.Size.X ||
+					chunk.EndZ < region.Position.Y || chunk.StartZ > region.Position.Y + region.Size.Y)
+				{
+					continue;
+				}
+			}
+
+			UpdateChunkPhysics(chunk);
+		}
+	}
+
+	private void UpdateChunkPhysics(TerrainChunk chunk)
+	{
+		int cellWidth = chunk.EndX - chunk.StartX;
+		int cellDepth = chunk.EndZ - chunk.StartZ;
+
+		var heightMapShape = new HeightMapShape3D();
+		heightMapShape.MapWidth = cellWidth + 1;
+		heightMapShape.MapDepth = cellDepth + 1;
+		
+		int mapDataCount = (cellWidth + 1) * (cellDepth + 1);
+		if (chunk.MapDataCache == null || chunk.MapDataCache.Length != mapDataCount)
+		{
+			chunk.MapDataCache = new float[mapDataCount];
+		}
+		
+		for (int z = 0; z <= cellDepth; z++)
+		{
+			for (int x = 0; x <= cellWidth; x++)
+			{
+				chunk.MapDataCache[z * (cellWidth + 1) + x] = Heights[chunk.StartX + x, chunk.StartZ + z];
 			}
 		}
+		heightMapShape.MapData = chunk.MapDataCache;
+		chunk.CollisionShape.Shape = heightMapShape;
+		chunk.CollisionShape.Scale = new Vector3(Spacing, 1.0f, Spacing);
 	}
 
 	private void UpdateChunk(TerrainChunk chunk, bool rebuildPhysics)
@@ -585,26 +921,7 @@ void fragment() {
 
 		if (rebuildPhysics)
 		{
-			var heightMapShape = new HeightMapShape3D();
-			heightMapShape.MapWidth = cellWidth + 1;
-			heightMapShape.MapDepth = cellDepth + 1;
-			
-			int mapDataCount = (cellWidth + 1) * (cellDepth + 1);
-			if (chunk.MapDataCache == null || chunk.MapDataCache.Length != mapDataCount)
-			{
-				chunk.MapDataCache = new float[mapDataCount];
-			}
-			
-			for (int z = 0; z <= cellDepth; z++)
-			{
-				for (int x = 0; x <= cellWidth; x++)
-				{
-					chunk.MapDataCache[z * (cellWidth + 1) + x] = Heights[chunk.StartX + x, chunk.StartZ + z];
-				}
-			}
-			heightMapShape.MapData = chunk.MapDataCache;
-			chunk.CollisionShape.Shape = heightMapShape;
-			chunk.CollisionShape.Scale = new Vector3(Spacing, 1.0f, Spacing);
+			UpdateChunkPhysics(chunk);
 		}
 	}
 
@@ -860,6 +1177,11 @@ void fragment() {
 		_localPathingCodes = newPathing;
 		SplatMap = newSplatMap;
 		
+		if (_material != null)
+		{
+			_material.SetShaderParameter("terrain_size", new Vector2(newWidth * state.Spacing, newDepth * state.Spacing));
+		}
+
 		CreateChunks();
 
 		UpdateWaterSize();
@@ -928,6 +1250,11 @@ void fragment() {
 		_localPathingCodes = newPathing;
 		SplatMap = newSplatMap;
 		
+		if (_material != null)
+		{
+			_material.SetShaderParameter("terrain_size", new Vector2(newWidth * state.Spacing, newDepth * state.Spacing));
+		}
+
 		CreateChunks();
 
 		UpdateWaterSize();
