@@ -64,4 +64,5 @@ public static class QueryCache
     public static readonly QueryDescription AllPositionAndBuildTaskNoneDeadQuery = new QueryDescription().WithAll<Position, BuildTask>().WithNone<Dead>();
     public static readonly QueryDescription AllBuildingAndConstructionStateAndOwnerNoneDeadQuery = new QueryDescription().WithAll<Building, ConstructionState, Owner>().WithNone<Dead>();
     public static readonly QueryDescription AllBuildQueueNoneDeadQuery = new QueryDescription().WithAll<BuildQueue>().WithNone<Dead>();
+    public static readonly QueryDescription AllIdleMovableQuery = new QueryDescription().WithAll<Owner, Movable>().WithNone<Dead, Building, MoveTo, AttackTarget, AttackMove, Patrol, Follow, HealingTarget>();
 }

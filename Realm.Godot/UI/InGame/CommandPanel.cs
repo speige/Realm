@@ -27,11 +27,11 @@ public class CommandPanel
 	private int _pageIndex = 0;
 	private List<CommandCardItem> _activeItems = new();
 	private Entity _lastFocusedEntity = Entity.Null;
+	private int _lastPageIndex = -1;
+	private bool _lastIsBuildSubMenuOpen = false;
 
-	public void Update(InGameHUDViewModel viewModel)
+	private void ClearCommandGrid()
 	{
-		if (_commandGrid == null) return;
-
 		foreach (var btn in _dynamicBuildButtons)
 		{
 			if (GodotObject.IsInstanceValid(btn))
@@ -45,97 +45,200 @@ public class CommandPanel
 		{
 			child.QueueFree();
 		}
+	}
+
+	private void UpdateExistingButtons()
+	{
+		var children = _commandGrid.GetChildren();
+		int childCount = children.Count;
+		int totalItems = _activeItems.Count;
+		int pageOffset = _pageIndex * 11;
+
+		for (int i = 0; i < 12; i++)
+		{
+			if (i >= childCount)
+			{
+				break;
+			}
+			var child = children[i];
+			if (child is Button btn)
+			{
+				CommandCardItem item = null;
+				if (totalItems <= 12)
+				{
+					if (i < totalItems)
+					{
+						item = _activeItems[i];
+					}
+				}
+				else
+				{
+					if (i < 11)
+					{
+						int itemIndex = pageOffset + i;
+						if (itemIndex < totalItems)
+						{
+							item = _activeItems[itemIndex];
+						}
+					}
+				}
+
+				if (item != null)
+				{
+					string newText = item.GetButtonText?.Invoke() ?? "";
+					if (btn.Text != newText)
+					{
+						btn.Text = newText;
+					}
+					bool disabled = item.IsDisabled?.Invoke() ?? false;
+					if (btn.Disabled != disabled)
+					{
+						btn.Disabled = disabled;
+						btn.Modulate = disabled ? new Color(0.5f, 0.5f, 0.5f, 0.7f) : Colors.White;
+					}
+				}
+			}
+		}
+	}
+
+	public void Update(InGameHUDViewModel viewModel)
+	{
+		if (_commandGrid == null)
+		{
+			return;
+		}
 
 		if (viewModel.SelectedUnits.Count == 0)
 		{
+			if (_lastFocusedEntity != Entity.Null || _commandGrid.GetChildCount() > 0)
+			{
+				ClearCommandGrid();
+			}
 			_lastFocusedEntity = Entity.Null;
 			_pageIndex = 0;
 			_activeItems.Clear();
+			_lastIsBuildSubMenuOpen = false;
 			return;
 		}
 
 		int focusIdx = viewModel.CycleSelectionIndex;
-		if (focusIdx < 0 || focusIdx >= viewModel.SelectedUnits.Count) focusIdx = 0;
+		if (focusIdx < 0 || focusIdx >= viewModel.SelectedUnits.Count)
+		{
+			focusIdx = 0;
+		}
 		var focusedUnit = viewModel.SelectedUnits[focusIdx];
 
 		if (focusedUnit.IsEnemy)
 		{
+			if (_lastFocusedEntity != Entity.Null || _commandGrid.GetChildCount() > 0)
+			{
+				ClearCommandGrid();
+			}
 			_lastFocusedEntity = Entity.Null;
 			_pageIndex = 0;
 			_activeItems.Clear();
+			_lastIsBuildSubMenuOpen = false;
 			return;
 		}
 
-		if (focusedUnit.Entity != _lastFocusedEntity)
+		bool subMenuOpen = viewModel.IsBuildSubMenuOpen;
+		bool focusedUnitChanged = focusedUnit.Entity != _lastFocusedEntity;
+		bool subMenuChanged = subMenuOpen != _lastIsBuildSubMenuOpen;
+
+		if (focusedUnitChanged)
 		{
 			_pageIndex = 0;
 			_lastFocusedEntity = focusedUnit.Entity;
 		}
 
-		_activeItems = GetCommandCardItems(focusedUnit, viewModel.IsBuildSubMenuOpen);
+		_lastIsBuildSubMenuOpen = subMenuOpen;
 
+		_activeItems = GetCommandCardItems(focusedUnit, subMenuOpen);
 		int totalItems = _activeItems.Count;
-		
+
 		Key[] gridHotkeys = new Key[] {
 			Key.Q, Key.W, Key.E, Key.R,
 			Key.A, Key.S, Key.D, Key.F,
 			Key.Z, Key.X, Key.C, Key.V
 		};
-		
+
 		int pageOffset = _pageIndex * 11;
 		for (int i = 0; i < totalItems; i++)
 		{
 			int localIdx = -1;
-			if (totalItems <= 12) {
+			if (totalItems <= 12)
+			{
 				localIdx = i;
-			} else {
-				if (i >= pageOffset && i < pageOffset + 11) {
+			}
+			else
+			{
+				if (i >= pageOffset && i < pageOffset + 11)
+				{
 					localIdx = i - pageOffset;
 				}
 			}
-			
-			if (localIdx >= 0 && localIdx < 12) {
+
+			if (localIdx >= 0 && localIdx < 12)
+			{
 				_activeItems[i].Hotkey = gridHotkeys[localIdx];
 				_activeItems[i].Tooltip = System.Text.RegularExpressions.Regex.Replace(_activeItems[i].Tooltip, @"^\[.*?\] ", "[" + gridHotkeys[localIdx].ToString() + "] ");
-			} else {
+			}
+			else
+			{
 				_activeItems[i].Hotkey = Key.None;
 			}
 		}
-		if (totalItems <= 12)
+
+		bool pageChanged = _pageIndex != _lastPageIndex;
+		_lastPageIndex = _pageIndex;
+
+		if (focusedUnitChanged || subMenuChanged || pageChanged || _commandGrid.GetChildCount() == 0)
 		{
-			_pageIndex = 0;
-			for (int i = 0; i < 12; i++)
+			ClearCommandGrid();
+
+			if (totalItems <= 12)
 			{
-				if (i < totalItems)
+				_pageIndex = 0;
+				for (int i = 0; i < 12; i++)
 				{
-					_commandGrid.AddChild(CreateButtonForItem(_activeItems[i]));
+					if (i < totalItems)
+					{
+						_commandGrid.AddChild(CreateButtonForItem(_activeItems[i]));
+					}
+					else
+					{
+						_commandGrid.AddChild(CreateBlackTile());
+					}
 				}
-				else
+			}
+			else
+			{
+				int numPages = (totalItems + 10) / 11;
+				if (_pageIndex >= numPages)
 				{
-					_commandGrid.AddChild(CreateBlackTile());
+					_pageIndex = 0;
 				}
+
+				int startIndex = _pageIndex * 11;
+				for (int i = 0; i < 11; i++)
+				{
+					int itemIndex = startIndex + i;
+					if (itemIndex < totalItems)
+					{
+						_commandGrid.AddChild(CreateButtonForItem(_activeItems[itemIndex]));
+					}
+					else
+					{
+						_commandGrid.AddChild(CreateBlackTile());
+					}
+				}
+
+				_commandGrid.AddChild(CreateCycleButton(numPages));
 			}
 		}
 		else
 		{
-			int numPages = (totalItems + 10) / 11;
-			if (_pageIndex >= numPages) _pageIndex = 0;
-
-			int startIndex = _pageIndex * 11;
-			for (int i = 0; i < 11; i++)
-			{
-				int itemIndex = startIndex + i;
-				if (itemIndex < totalItems)
-				{
-					_commandGrid.AddChild(CreateButtonForItem(_activeItems[itemIndex]));
-				}
-				else
-				{
-					_commandGrid.AddChild(CreateBlackTile());
-				}
-			}
-
-			_commandGrid.AddChild(CreateCycleButton(numPages));
+			UpdateExistingButtons();
 		}
 	}
 

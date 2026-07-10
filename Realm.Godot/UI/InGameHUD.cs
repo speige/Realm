@@ -88,6 +88,8 @@ public partial class InGameHUD : Control
 
 
 	private float _fogUpdateTimer = 0f;
+	
+	private static readonly byte[,] _emptyFogGrid = new byte[32, 32];
 
 	public byte[,] FogGrid
 	{
@@ -100,7 +102,7 @@ public partial class InGameHUD : Control
 					return GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity).FogGrid;
 				}
 			}
-			return new byte[32, 32];
+			return _emptyFogGrid;
 		}
 		set
 		{
@@ -235,6 +237,8 @@ public partial class InGameHUD : Control
 	private CommandPanel _commandPanelController;
 	private InventoryPanel _inventoryPanelController;
 	private ControlGroupsUIController _controlGroupsUIController;
+	
+	private MinimapOverlay _minimapOverlay;
 
 	public override void _Ready()
 	{
@@ -1017,6 +1021,7 @@ public partial class InGameHUD : Control
 		overlay.MouseFilter = MouseFilterEnum.Ignore;
 		_minimapArea.AddChild(overlay);
 		overlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		_minimapOverlay = overlay;
 
 		_cameraIndicator.MouseFilter = MouseFilterEnum.Ignore;
 		_minimapArea.MoveChild(_cameraIndicator, _minimapArea.GetChildCount() - 1);
@@ -1031,122 +1036,15 @@ public partial class InGameHUD : Control
 			var selected = GameHost.Instance.SelectedUnits;
 			if (selected != null)
 			{
-				bool match = selected.Count == _viewModel.SelectedUnits.Count;
-				if (match)
+				_viewModel.UpdateSelectedUnits(selected);
+				
+				// Handle specific visual updates that are not data-bound yet.
+				foreach (var u in selected)
 				{
-					for (int i = 0; i < selected.Count; i++)
+					if (u.IsBuilding && !u.IsEnemy && u.UnitId == "castle")
 					{
-						if (_viewModel.SelectedUnits[i].Entity != selected[i].Entity)
-						{
-							match = false;
-							break;
-						}
+						u.UpdateRallyVisuals();
 					}
-				}
-
-				if (match)
-				{
-					for (int i = 0; i < selected.Count; i++)
-					{
-						var info = _viewModel.SelectedUnits[i];
-						var u = selected[i];
-						if (GameHost.Instance.EcsWorld.IsAlive(u.Entity))
-						{
-							var world = GameHost.Instance.EcsWorld;
-							if (world.Has<Health>(u.Entity))
-							{
-								var hp = world.Get<Health>(u.Entity);
-								info.Health = hp.Current;
-								info.MaxHealth = hp.Max;
-							}
-							if (world.Has<Gatherer>(u.Entity))
-							{
-								var gather = world.Get<Gatherer>(u.Entity);
-								string stateLabel = gather.ReturningToBase ? "● " + TranslationServer.Translate("DELIVERING") : "● " + TranslationServer.Translate("HARVESTING");
-								info.StateText = $"{stateLabel} ({gather.CarriedAmount:F0} / {gather.MaxCapacity:F0} {TranslationServer.Translate(gather.ResourceType.ToUpper())})";
-							}
-							else if (world.Has<Realm.Ecs.Components.Resources.BuildTask>(u.Entity))
-							{
-								var bt = world.Get<Realm.Ecs.Components.Resources.BuildTask>(u.Entity);
-								int pct = (int)(bt.Progress / Mathf.Max(bt.TotalBuildTime, 0.001f) * 100f);
-								info.StateText = $"🔨 {TranslationServer.Translate("CONSTRUCTING")} ({pct}%)";
-							}
-							else if (world.Has<Realm.Ecs.Components.Movement.HoldPosition>(u.Entity))   info.StateText = "● " + TranslationServer.Translate("HOLDING");
-							else if (world.Has<Realm.Ecs.Components.Movement.Patrol>(u.Entity))     info.StateText = "● " + TranslationServer.Translate("PATROLLING");
-							else if (world.Has<Realm.Ecs.Components.Movement.AttackMove>(u.Entity)) info.StateText = "● " + TranslationServer.Translate("ATTACK-MOVE");
-							else if (world.Has<Realm.Ecs.Components.Movement.Follow>(u.Entity))     info.StateText = "● " + TranslationServer.Translate("FOLLOWING");
-							else if (world.Has<Realm.Ecs.Components.Movement.MoveTo>(u.Entity))     info.StateText = "● " + TranslationServer.Translate("MOVING");
-							else if (world.Has<AttackTarget>(u.Entity))                              info.StateText = "● " + TranslationServer.Translate("ATTACKING");
-							else                                                                         info.StateText = "○ " + TranslationServer.Translate("IDLE");
-
-							if (u.UnitId == "tower" && world.Has<Realm.Ecs.Components.Core.TowerUpgradeLevel>(u.Entity))
-							{
-								int lvl = world.Get<Realm.Ecs.Components.Core.TowerUpgradeLevel>(u.Entity).Value;
-								info.StateText += $"   ★ {TranslationServer.Translate("LVL")} {lvl}";
-							}
-
-							if (world.Has<Inventory>(u.Entity))
-							{
-								info.Potions = world.Get<Inventory>(u.Entity).Potions;
-							}
-
-							if (u.IsBuilding && !u.IsEnemy && u.UnitId == "castle")
-							{
-								u.UpdateRallyVisuals();
-							}
-
-							if (u.IsBuilding && !u.IsEnemy && world.Has<Realm.Ecs.Components.Resources.ConstructionState>(u.Entity))
-							{
-								var cs = world.Get<Realm.Ecs.Components.Resources.ConstructionState>(u.Entity);
-								info.HasProduction = true;
-								info.ProductionTitle = TranslationServer.Translate("UNDER CONSTRUCTION");
-								info.ProductionProgress = cs.Progress;
-								info.ProductionMaxProgress = cs.TotalBuildTime;
-								info.StateText = $"🔨 {TranslationServer.Translate("UNDER CONSTRUCTION")} ({(int)(cs.Progress / Mathf.Max(cs.TotalBuildTime, 0.001f) * 100f)}%)";
-							}
-							else if (u.IsBuilding && u.UnitId == "castle" && world.Has<Realm.Ecs.Components.Core.ProductionQueue>(u.Entity))
-							{
-								var prod = world.Get<Realm.Ecs.Components.Core.ProductionQueue>(u.Entity);
-								info.HasProduction = true;
-								if (prod.UnitIds.Count > 0)
-								{
-									info.ProductionTitle = string.Format(TranslationServer.Translate("TRAINING: {0}"), prod.UnitIds[0].ToUpper());
-									info.ProductionProgress = prod.CurrentProgress;
-									info.ProductionMaxProgress = prod.BuildTime;
-
-									bool queueChanged = info.ProductionQueue.Count != prod.UnitIds.Count;
-									if (!queueChanged)
-									{
-										for (int q = 0; q < prod.UnitIds.Count; q++)
-										{
-											if (info.ProductionQueue[q] != prod.UnitIds[q])
-											{
-												queueChanged = true;
-												break;
-											}
-										}
-									}
-									if (queueChanged)
-									{
-										info.ProductionQueue.Clear();
-										info.ProductionQueue.AddRange(prod.UnitIds);
-									}
-								}
-								else
-								{
-									info.ProductionTitle = TranslationServer.Translate("PRODUCTION IDLE");
-									if (info.ProductionQueue.Count > 0)
-									{
-										info.ProductionQueue.Clear();
-									}
-								}
-							}
-						}
-					}
-				}
-				else
-				{
-					_viewModel.UpdateSelectedUnits(selected);
 				}
 			}
 		}
@@ -1155,8 +1053,7 @@ public partial class InGameHUD : Control
 		if (_fogUpdateTimer >= 0.1f)
 		{
 			_fogUpdateTimer = 0f;
-			var minimapOverlay = _minimapArea?.GetNodeOrNull<MinimapOverlay>("MinimapOverlay");
-			minimapOverlay?.QueueRedraw();
+			_minimapOverlay?.QueueRedraw();
 		}
 
 		_portraitPanelController?.Update(_viewModel);
@@ -1194,14 +1091,7 @@ public partial class InGameHUD : Control
 		_minimapPanelController?.UpdateMinimapIndicator();
 		_portraitPanelController?.Update(_viewModel);
 
-		var overlay = _minimapArea.GetNodeOrNull<MinimapOverlay>("MinimapOverlay");
-		if (overlay != null)
-		{
-			overlay.QueueRedraw();
-		}
-
 		_controlGroupsUIController?.Update();
-		QueueRedraw();
 	}
 
 	public void ShowFeedbackText(string text, Color color)
