@@ -432,6 +432,9 @@ public partial class MapEditorHUD : Control
 		}, 11, "Toggle top-down vs perspective angle (C)");
 
 		_sldBrushSize = GetNode<Slider>("PanelTextures/VBox/Content/SettingsVBox/BrushSizeBox/SldBrushSize");
+		_lblBrushSizeValue = GetNode<Label>("PanelTextures/VBox/Content/SettingsVBox/BrushSizeBox/Header/LblBrushSizeValue");
+		_sldBrushStrength = GetNode<Slider>("PanelTextures/VBox/Content/SettingsVBox/BrushStrengthBox/SldBrushStrength");
+		_lblBrushStrengthValue = GetNode<Label>("PanelTextures/VBox/Content/SettingsVBox/BrushStrengthBox/Header/LblBrushStrengthValue");
 		_btnRaise = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnRaise");
 		SetupButton(_btnRaise, "⛰️ Raise", () => TriggerToolSelection(GameHost.EditorTool.Raise, _btnRaise), 11, "Elevate terrain height (1)");
 
