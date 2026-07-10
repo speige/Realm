@@ -249,7 +249,6 @@ public partial class GameHost : Node3D, IGameAPI
 		None,
 		Raise,
 		Lower,
-		Flatten,
 		Smooth,
 		Plateau,
 		PaintGrass,
@@ -322,7 +321,6 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool PlaceUnitIsEnemy { get; set; } = false;
 	public float EditorBrushRadius { get; set; } = 6.0f;
 	public float EditorBrushStrength { get; set; } = 3.0f;
-	public float EditorFlattenHeight { get; set; } = 0.0f;
 	public int EditorPaintTextureIndex { get; set; } = 3;
 	public int EditorCliffPaintTextureIndex { get; set; } = 1;
 	public bool EditorSnapToGrid { get; set; } = false;

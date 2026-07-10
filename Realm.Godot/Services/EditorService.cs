@@ -206,7 +206,6 @@ public class EditorService
 		GameHost.EditorTool activeTool,
 		float brushRadius,
 		float brushStrength,
-		float flattenHeight,
 		bool brushIsSquare,
 		bool blockMode,
 		float blockLevelHeight,
@@ -221,7 +220,6 @@ public class EditorService
 
 		bool isHeights = activeTool == GameHost.EditorTool.Raise ||
 						 activeTool == GameHost.EditorTool.Lower ||
-						 activeTool == GameHost.EditorTool.Flatten ||
 						 activeTool == GameHost.EditorTool.Smooth ||
 						 activeTool == GameHost.EditorTool.Plateau ||
 						 activeTool == GameHost.EditorTool.Noise;
@@ -274,7 +272,6 @@ public class EditorService
 							{
 								if (activeTool == GameHost.EditorTool.Raise ||
 									activeTool == GameHost.EditorTool.Lower ||
-									activeTool == GameHost.EditorTool.Flatten ||
 									activeTool == GameHost.EditorTool.Plateau)
 								{
 									float oldH = terrain.Heights[x, z];
@@ -333,7 +330,7 @@ public class EditorService
 					}
 				}
 
-				if (modified && activeTool != GameHost.EditorTool.Smooth && activeTool != GameHost.EditorTool.Flatten && activeTool != GameHost.EditorTool.Noise)
+				if (modified && activeTool != GameHost.EditorTool.Smooth && activeTool != GameHost.EditorTool.Noise)
 				{
 					for (int z = cz - brushGridRadius - 1; z <= cz + brushGridRadius + 1; z++)
 					{
@@ -488,24 +485,6 @@ public class EditorService
 							{
 								terrain.Heights[x, z] = Mathf.Clamp(terrain.Heights[x, z] - brushStrength * falloff * delta, -10.0f, 50.0f);
 							}
-							else if (activeTool == GameHost.EditorTool.Flatten)
-							{
-								float oldH = terrain.Heights[x, z];
-								float newH = Mathf.Clamp(Mathf.Lerp(oldH, flattenHeight, brushStrength * falloff * delta * 2.0f), -10.0f, 50.0f);
-								if (Mathf.Abs(newH - oldH) > 0.001f)
-								{
-									if (terrain.PathingCodes != null)
-									{
-										int defaultPathBefore = EditableTerrain.GetDefaultPathingCode(oldH, terrain.WaterHeight, terrain.WaterEnabled);
-										if (terrain.PathingCodes[x, z] == defaultPathBefore)
-										{
-											terrain.PathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(newH, terrain.WaterHeight, terrain.WaterEnabled);
-											result.PathingModified = true;
-										}
-									}
-									terrain.Heights[x, z] = newH;
-								}
-							}
 							else if (activeTool == GameHost.EditorTool.Plateau)
 							{
 								float targetHeight = _activePlateauHeight ?? 0.0f;
@@ -619,11 +598,9 @@ public class EditorService
 		GameHost.EditorTool activeTool,
 		bool blockMode,
 		float blockLevelHeight,
-		float flattenHeight,
 		float[,] currentHeights,
 		TerrainSplatWeights[,] currentSplatMap,
-		int[,] currentPathing,
-		out float newFlattenHeight)
+		int[,] currentPathing)
 	{
 		_isDrawingTerrain = true;
 		_drawMinX = int.MaxValue;
@@ -634,13 +611,7 @@ public class EditorService
 		_terrainSplatMapBefore = currentSplatMap != null ? (TerrainSplatWeights[,])currentSplatMap.Clone() : null;
 		_terrainPathingBefore = currentPathing != null ? (int[,])currentPathing.Clone() : null;
 
-		newFlattenHeight = flattenHeight;
-
-		if (activeTool == GameHost.EditorTool.Flatten)
-		{
-			newFlattenHeight = GetMinHeightInBrushBoundsInternal(hitPos);
-		}
-		else if (activeTool == GameHost.EditorTool.Plateau)
+		if (activeTool == GameHost.EditorTool.Plateau)
 		{
 			_activePlateauHeight = GetTerrainHeightAt(hitPos);
 		}
@@ -657,11 +628,6 @@ public class EditorService
 			else if (activeTool == GameHost.EditorTool.Lower)
 			{
 				_activeBlockTargetHeight = (Mathf.Ceil(startHeight / blockLevelHeight) - 1.0f) * blockLevelHeight;
-				_hasBlockTargetHeight = true;
-			}
-			else if (activeTool == GameHost.EditorTool.Flatten)
-			{
-				_activeBlockTargetHeight = Mathf.Round(newFlattenHeight / blockLevelHeight) * blockLevelHeight;
 				_hasBlockTargetHeight = true;
 			}
 			else if (activeTool == GameHost.EditorTool.Plateau)
@@ -812,7 +778,7 @@ public class EditorService
 			float scaleVal = placementScale + (float)(GD.Randf() * 2.0 - 1.0) * (clumpScaleVar * 4.0f);
 			scaleVal = Mathf.Clamp(scaleVal, 0.2f, 3.0f);
 
-			float rotY = (randomRotation && !_isPastingObject) ? (float)(GD.Randf() * 360.0) : placementRotation;
+			float rotY = (float)(GD.Randf() * 360.0);
 			if (randomScale && !_isPastingObject)
 			{
 				scaleVal = 0.2f + (float)(GD.Randf() * 2.8);

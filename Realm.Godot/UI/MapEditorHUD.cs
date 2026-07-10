@@ -35,7 +35,6 @@ public partial class MapEditorHUD : Control
 
 	public static float SavedBrushRadius = 4f;
 	public static float SavedBrushStrength = 0.5f;
-	public static float SavedFlattenHeight = 0f;
 
 	private static string _lastUsedFolder = "";
 
@@ -96,7 +95,6 @@ public partial class MapEditorHUD : Control
 	private Button _btnHeaderMapSettings;
 	private Control _contentMapSettings;
 
-	private VBoxContainer _containerFlattenSettings;
 	private VBoxContainer _containerTextureSettings;
 	private VBoxContainer _containerPathingSettings;
 	private VBoxContainer _containerPlacementSettings;
@@ -155,8 +153,6 @@ public partial class MapEditorHUD : Control
 	private Label _lblBrushSizeValue;
 	private Slider _sldBrushStrength;
 	private Label _lblBrushStrengthValue;
-	private Slider _sldFlattenHeight;
-	private Label _lblFlattenHeightValue;
 
 	private Button _btnSoldier;
 	private Button _btnArcher;
@@ -222,7 +218,6 @@ public partial class MapEditorHUD : Control
 	private Button _btnRaise;
 	private Button _btnLower;
 	private Button _btnSmooth;
-	private Button _btnFlatten;
 	private Button _btnPlateau;
 	private Button _btnRamp;
 	private Button _btnMirrorMode;
@@ -437,12 +432,6 @@ public partial class MapEditorHUD : Control
 		}, 11, "Toggle top-down vs perspective angle (C)");
 
 		_sldBrushSize = GetNode<Slider>("PanelTextures/VBox/Content/SettingsVBox/BrushSizeBox/SldBrushSize");
-		_lblBrushSizeValue = GetNode<Label>("PanelTextures/VBox/Content/SettingsVBox/BrushSizeBox/Header/LblBrushSizeValue");
-		_sldBrushStrength = GetNode<Slider>("PanelTextures/VBox/Content/SettingsVBox/BrushStrengthBox/SldBrushStrength");
-		_lblBrushStrengthValue = GetNode<Label>("PanelTextures/VBox/Content/SettingsVBox/BrushStrengthBox/Header/LblBrushStrengthValue");
-		_sldFlattenHeight = GetNode<Slider>("PanelTextures/VBox/Content/SettingsVBox/FlattenHeightBox/SldFlattenHeight");
-		_lblFlattenHeightValue = GetNode<Label>("PanelTextures/VBox/Content/SettingsVBox/FlattenHeightBox/Header/LblFlattenHeightValue");
-
 		_btnRaise = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnRaise");
 		SetupButton(_btnRaise, "⛰️ Raise", () => TriggerToolSelection(GameHost.EditorTool.Raise, _btnRaise), 11, "Elevate terrain height (1)");
 
@@ -451,9 +440,6 @@ public partial class MapEditorHUD : Control
 
 		_btnSmooth = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnSmooth");
 		SetupButton(_btnSmooth, "✨ Smooth", () => TriggerToolSelection(GameHost.EditorTool.Smooth, _btnSmooth), 11, "Smooth terrain height (3)");
-
-		_btnFlatten = GetNode<Button>("TopToolbar/PanelTerrain/VBox/Content/BtnFlatten");
-		SetupButton(_btnFlatten, "🟩 Flatten", () => TriggerToolSelection(GameHost.EditorTool.Flatten, _btnFlatten), 11, "Flatten terrain height (4)");
 
 		_btnPlateau = new Button();
 		_btnPlateau.Name = "BtnPlateau";
@@ -1426,7 +1412,7 @@ public partial class MapEditorHUD : Control
 		_chkGround.ButtonPressed = true;
 
 		_topBarController = new MapEditorTopBar(_btnBackToHub, _btnPublish, _btnSave, _btnLoad, _btnUndo, _btnRedo, _btnVSCode, _statusLabel, _feedbackLabel);
-		_brushSettingsController = new MapEditorBrushSettings(_sldBrushSize, _lblBrushSizeValue, _sldBrushStrength, _lblBrushStrengthValue, _sldFlattenHeight, _lblFlattenHeightValue, _chkBlockMode, _sldBlockStep, _lblBlockStepValue, _sldWaterHeight, _lblWaterHeightValue, _chkWaterEnabled);
+		_brushSettingsController = new MapEditorBrushSettings(_sldBrushSize, _lblBrushSizeValue, _sldBrushStrength, _lblBrushStrengthValue, _chkBlockMode, _sldBlockStep, _lblBlockStepValue, _sldWaterHeight, _lblWaterHeightValue, _chkWaterEnabled);
 		_placementSettingsController = new MapEditorPlacementSettings(_sldPlacementRotate, _lblPlacementRotateValue, _sldPlacementScale, _lblPlacementScaleValue, _chkSpawnAsEnemy, _chkRandomRotation, _chkRandomScale, _chkClumpMode, _sldClumpDensity, _lblClumpDensityValue, _sldClumpScaleVar, _lblClumpScaleVarValue);
 		InitializeInspectorPanel();
 		_inspectorController = new MapEditorInspector(_lblInspectorTitle, _lblInspectorPos, _btnInspectorRotLeft, _btnInspectorRotRight, _btnInspectorScaleDown, _btnInspectorScaleUp, _btnInspectorScaleReset, _btnInspectorDelete);
@@ -1711,21 +1697,9 @@ public partial class MapEditorHUD : Control
 
 		string filePath = System.IO.Path.Combine(_tempWorkspacePath, "Coordinates.cs");
 		var sb = new System.Text.StringBuilder();
+		sb.AppendLine("using Realm.MapAPI;");
+		sb.AppendLine();
 		sb.AppendLine("namespace Realm.Maps;");
-		sb.AppendLine();
-		sb.AppendLine("public readonly struct Coordinate");
-		sb.AppendLine("{");
-		sb.AppendLine("    public readonly System.Numerics.Vector3 Min;");
-		sb.AppendLine("    public readonly System.Numerics.Vector3 Max;");
-		sb.AppendLine("    public readonly System.Numerics.Vector3 Center;");
-		sb.AppendLine();
-		sb.AppendLine("    public Coordinate(System.Numerics.Vector3 min, System.Numerics.Vector3 max)");
-		sb.AppendLine("    {");
-		sb.AppendLine("        Min = min;");
-		sb.AppendLine("        Max = max;");
-		sb.AppendLine("        Center = (min + max) / 2f;");
-		sb.AppendLine("    }");
-		sb.AppendLine("}");
 		sb.AppendLine();
 		sb.AppendLine("public static class Coordinates");
 		sb.AppendLine("{");
@@ -2019,7 +1993,6 @@ public partial class MapEditorHUD : Control
 			case GameHost.EditorTool.Raise: targetBtn = _btnRaise; break;
 			case GameHost.EditorTool.Lower: targetBtn = _btnLower; break;
 			case GameHost.EditorTool.Smooth: targetBtn = _btnSmooth; break;
-			case GameHost.EditorTool.Flatten: targetBtn = _btnFlatten; break;
 			case GameHost.EditorTool.Plateau: targetBtn = _btnPlateau; break;
 			case GameHost.EditorTool.Ramp: targetBtn = _btnRamp; break;
 			case GameHost.EditorTool.Noise: targetBtn = _btnNoise; break;
@@ -2117,8 +2090,6 @@ public partial class MapEditorHUD : Control
 		_sldBrushSize.DragEnded += (valueChanged) => _isDraggingSlider = false;
 		_sldBrushStrength.DragStarted += () => _isDraggingSlider = true;
 		_sldBrushStrength.DragEnded += (valueChanged) => _isDraggingSlider = false;
-		_sldFlattenHeight.DragStarted += () => _isDraggingSlider = true;
-		_sldFlattenHeight.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
 		SetupCollapsible("TopToolbar/PanelTerrain", "VBox/HeaderHBox/BtnCollapse", "VBox/Content");
 		SetupCollapsible("TopToolbar/PanelDeco", "VBox/HeaderHBox/BtnCollapse", "VBox/Content");
@@ -2150,7 +2121,6 @@ public partial class MapEditorHUD : Control
 		{
 			GameHost.EditorTool.Raise => _btnRaise,
 			GameHost.EditorTool.Lower => _btnLower,
-			GameHost.EditorTool.Flatten => _btnFlatten,
 			GameHost.EditorTool.Smooth => _btnSmooth,
 			GameHost.EditorTool.Plateau => _btnPlateau,
 			GameHost.EditorTool.Ramp => _btnRamp,
@@ -2227,7 +2197,6 @@ public partial class MapEditorHUD : Control
 		EditorModule targetModule = _activeModule;
 		if (tool == GameHost.EditorTool.Raise ||
 			tool == GameHost.EditorTool.Lower ||
-			tool == GameHost.EditorTool.Flatten ||
 			tool == GameHost.EditorTool.Smooth ||
 			tool == GameHost.EditorTool.Plateau ||
 			tool == GameHost.EditorTool.Ramp ||
@@ -2329,9 +2298,6 @@ public partial class MapEditorHUD : Control
 					break;
 				case GameHost.EditorTool.Lower:
 					_lblInfoText.Text = TranslationServer.Translate("TOOL: Lower Heights\n\nDrag left click on the map ground to depress terrain. Adjust size and strength in settings.");
-					break;
-				case GameHost.EditorTool.Flatten:
-					_lblInfoText.Text = TranslationServer.Translate("TOOL: Flatten Heights\n\nDrag left click to snap terrain heights toward the target Flatten Height slider value.");
 					break;
 				case GameHost.EditorTool.Plateau:
 					_lblInfoText.Text = TranslationServer.Translate("TOOL: Plateau\n\nDrag left click to flatten terrain to the elevation of your initial click point.");
@@ -2993,17 +2959,6 @@ public class {mapName} : IMapScript
 		}
 	}
 
-	public void UpdateFlattenHeightExternal(float height)
-	{
-		if (_sldFlattenHeight != null)
-		{
-			_sldFlattenHeight.Value = Mathf.Clamp(height, _sldFlattenHeight.MinValue, _sldFlattenHeight.MaxValue);
-		}
-		if (_lblFlattenHeightValue != null)
-		{
-			_lblFlattenHeightValue.Text = height.ToString("F1") + " m";
-		}
-	}
 
 	private void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO")
 	{
@@ -3435,7 +3390,6 @@ public class {mapName} : IMapScript
 		SafeReparent(_btnRaise, _panelTerrainVBox);
 		SafeReparent(_btnLower, _panelTerrainVBox);
 		SafeReparent(_btnSmooth, _panelTerrainVBox);
-		SafeReparent(_btnFlatten, _panelTerrainVBox);
 		SafeReparent(_btnPlateau, _panelTerrainVBox);
 		SafeReparent(_btnRamp, _panelTerrainVBox);
 		SafeReparent(_btnNoise, _panelTerrainVBox);
@@ -3559,11 +3513,6 @@ public class {mapName} : IMapScript
 		_accordionToolSettings.AddChild(_contentToolSettings);
 		SetupAccordion(_btnHeaderToolSettings, _contentToolSettings, TranslationServer.Translate("Tool Settings"));
 
-		_containerFlattenSettings = new VBoxContainer();
-		_containerFlattenSettings.Name = "ContainerFlatten";
-		_contentToolSettings.AddChild(_containerFlattenSettings);
-		var flattenBox = GetNodeOrNull<Control>("PanelTextures/VBox/Content/SettingsVBox/FlattenHeightBox");
-		SafeReparent(flattenBox, _containerFlattenSettings);
 
 		_containerTextureSettings = new VBoxContainer();
 		_containerTextureSettings.Name = "ContainerTexture";
@@ -4080,7 +4029,6 @@ public class {mapName} : IMapScript
 
 		bool isBrush = tool == GameHost.EditorTool.Raise ||
 					   tool == GameHost.EditorTool.Lower ||
-					   tool == GameHost.EditorTool.Flatten ||
 					   tool == GameHost.EditorTool.Smooth ||
 					   tool == GameHost.EditorTool.Plateau ||
 					   tool == GameHost.EditorTool.PaintGrass ||
@@ -4106,13 +4054,11 @@ public class {mapName} : IMapScript
 										 tool != GameHost.EditorTool.FloodFillPathing &&
 										 !isTextureMode &&
 										 tool != GameHost.EditorTool.Smooth &&
-										 tool != GameHost.EditorTool.Flatten &&
 										 tool != GameHost.EditorTool.Noise);
 			}
 			UpdateBlockStepVisibility();
 		}
 
-		_containerFlattenSettings.Visible = false;
 		_containerTextureSettings.Visible = (tool == GameHost.EditorTool.PaintGrass ||
 											 tool == GameHost.EditorTool.PaintDirt ||
 											 tool == GameHost.EditorTool.PaintRock ||
@@ -4135,8 +4081,7 @@ public class {mapName} : IMapScript
 		
 		_containerCategorySelector.Visible = isPlacement;
 
-		bool anyToolSettingVisible = _containerFlattenSettings.Visible ||
-									 _containerTextureSettings.Visible ||
+		bool anyToolSettingVisible = _containerTextureSettings.Visible ||
 									 _containerPathingSettings.Visible ||
 									 _containerDecalSettings.Visible ||
 									 _containerEyedropperSettings.Visible ||
@@ -4487,7 +4432,7 @@ public class {mapName} : IMapScript
 		{
 			_sldBrushSize.Value = SavedBrushRadius;
 			_sldBrushStrength.Value = SavedBrushStrength;
-			_sldFlattenHeight.Value = SavedFlattenHeight;
+
 
 			if (SavedActiveTool == GameHost.EditorTool.PlaceUnit ||
 				SavedActiveTool == GameHost.EditorTool.PlaceProp ||
@@ -4706,7 +4651,6 @@ public class {mapName} : IMapScript
 		GameHost.EditorTool.Raise       => true,
 		GameHost.EditorTool.Lower       => true,
 		GameHost.EditorTool.Smooth      => true,
-		GameHost.EditorTool.Flatten     => true,
 		GameHost.EditorTool.Plateau     => true,
 		GameHost.EditorTool.Ramp        => true,
 		GameHost.EditorTool.Noise       => true,
@@ -4871,7 +4815,6 @@ public class {mapName} : IMapScript
 				strengthParent.Visible = (tool != GameHost.EditorTool.PaintPathing && 
 										  tool != GameHost.EditorTool.FloodFillPathing &&
 										  tool != GameHost.EditorTool.PlacePropClump &&
-										  tool != GameHost.EditorTool.Flatten &&
 										  tool != GameHost.EditorTool.Plateau &&
 										  tool != GameHost.EditorTool.Ramp);
 			}
@@ -5106,7 +5049,7 @@ public class {mapName} : IMapScript
 		SavedEntityCategory = _entityPaletteController?.CurrentCategory ?? "";
 		SavedBrushRadius = (float)_sldBrushSize.Value;
 		SavedBrushStrength = (float)_sldBrushStrength.Value;
-		SavedFlattenHeight = (float)_sldFlattenHeight.Value;
+
 
 		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 		GameHost.Instance.SaveMapToFile(tempTerrainPath);

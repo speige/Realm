@@ -116,7 +116,6 @@ public partial class GameHost
 			worldPos, delta,
 			ActiveEditorTool,
 			EditorBrushRadius, EditorBrushStrength,
-			EditorFlattenHeight,
 			EditorBrushIsSquare,
 			EditorBlockMode, EditorBlockLevelHeight,
 			EditorPaintTextureIndex, EditorCliffPaintTextureIndex,
@@ -1078,7 +1077,6 @@ public partial class GameHost
 
 				bool isTerrainTool = ActiveEditorTool == EditorTool.Raise ||
 									 ActiveEditorTool == EditorTool.Lower ||
-									 ActiveEditorTool == EditorTool.Flatten ||
 									 ActiveEditorTool == EditorTool.Smooth ||
 									 ActiveEditorTool == EditorTool.Plateau ||
 									 ActiveEditorTool == EditorTool.PaintGrass ||
@@ -1097,17 +1095,9 @@ public partial class GameHost
 						ActiveEditorTool,
 						EditorBlockMode,
 						EditorBlockLevelHeight,
-						EditorFlattenHeight,
 						GroundTerrain.Heights,
 						GroundTerrain.SplatMap,
-						GroundTerrain.PathingCodes,
-						out float newFlattenHeight);
-
-					EditorFlattenHeight = newFlattenHeight;
-					if (ActiveEditorTool == EditorTool.Flatten)
-					{
-						MapEditorHUD.Instance?.UpdateFlattenHeightExternal(EditorFlattenHeight);
-					}
+						GroundTerrain.PathingCodes);
 				}
 
 
@@ -1173,7 +1163,6 @@ public partial class GameHost
 						EditorHistoryManager.RecordAction(action);
 						bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
 											 ActiveEditorTool == EditorTool.Lower ||
-											 ActiveEditorTool == EditorTool.Flatten ||
 											 ActiveEditorTool == EditorTool.Smooth ||
 											 ActiveEditorTool == EditorTool.Plateau ||
 											 ActiveEditorTool == EditorTool.Noise ||
@@ -1245,7 +1234,6 @@ public partial class GameHost
 					EditorHistoryManager.RecordAction(action);
 					bool isHeightsTool = ActiveEditorTool == EditorTool.Raise ||
 										 ActiveEditorTool == EditorTool.Lower ||
-										 ActiveEditorTool == EditorTool.Flatten ||
 										 ActiveEditorTool == EditorTool.Smooth ||
 										 ActiveEditorTool == EditorTool.Plateau ||
 										 ActiveEditorTool == EditorTool.Noise ||
@@ -1439,7 +1427,6 @@ public partial class GameHost
 		
 		bool isTerrainTool = ActiveEditorTool == EditorTool.Raise ||
 							 ActiveEditorTool == EditorTool.Lower ||
-							 ActiveEditorTool == EditorTool.Flatten ||
 							 ActiveEditorTool == EditorTool.Smooth ||
 							 ActiveEditorTool == EditorTool.Plateau ||
 							 ActiveEditorTool == EditorTool.PaintGrass ||

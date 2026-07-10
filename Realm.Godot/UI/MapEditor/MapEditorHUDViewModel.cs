@@ -20,7 +20,6 @@ public class MapEditorHUDViewModel
 
 	public float BrushSize { get; set; } = 5f;
 	public float BrushStrength { get; set; } = 20f;
-	public float FlattenHeight { get; set; } = 0f;
 	public float BlockStep { get; set; } = 0.5f;
 	public float WaterHeight { get; set; } = 1.0f;
 
@@ -65,7 +64,6 @@ public class MapEditorHUDViewModel
 		{
 			BrushSize = GameHost.Instance.EditorBrushRadius;
 			BrushStrength = GameHost.Instance.EditorBrushStrength;
-			FlattenHeight = GameHost.Instance.EditorFlattenHeight;
 			BlockStep = GameHost.Instance.EditorBlockLevelHeight;
 			WaterHeight = GameHost.Instance.GroundTerrain != null ? GameHost.Instance.GroundTerrain.WaterHeight : -2.0f;
 

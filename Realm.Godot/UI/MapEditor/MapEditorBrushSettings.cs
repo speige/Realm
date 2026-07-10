@@ -7,8 +7,7 @@ public class MapEditorBrushSettings
 	private Label _lblBrushSizeValue;
 	private Slider _sldBrushStrength;
 	private Label _lblBrushStrengthValue;
-	private Slider _sldFlattenHeight;
-	private Label _lblFlattenHeightValue;
+
 
 	private CheckBox _chkBlockMode;
 	private Slider _sldBlockStep;
@@ -19,15 +18,14 @@ public class MapEditorBrushSettings
 	private CheckBox _chkWaterEnabled;
 
 	public MapEditorBrushSettings(Slider sldBrushSize, Label lblBrushSizeValue, Slider sldBrushStrength, Label lblBrushStrengthValue,
-		Slider sldFlattenHeight, Label lblFlattenHeightValue, CheckBox chkBlockMode, Slider sldBlockStep, Label lblBlockStepValue,
+		CheckBox chkBlockMode, Slider sldBlockStep, Label lblBlockStepValue,
 		Slider sldWaterHeight, Label lblWaterHeightValue, CheckBox chkWaterEnabled)
 	{
 		_sldBrushSize = sldBrushSize;
 		_lblBrushSizeValue = lblBrushSizeValue;
 		_sldBrushStrength = sldBrushStrength;
 		_lblBrushStrengthValue = lblBrushStrengthValue;
-		_sldFlattenHeight = sldFlattenHeight;
-		_lblFlattenHeightValue = lblFlattenHeightValue;
+
 		_chkBlockMode = chkBlockMode;
 		_sldBlockStep = sldBlockStep;
 		_lblBlockStepValue = lblBlockStepValue;
@@ -47,11 +45,7 @@ public class MapEditorBrushSettings
 			if (GameHost.Instance != null) GameHost.Instance.EditorBrushStrength = (float)val;
 		};
 
-		_sldFlattenHeight.ValueChanged += (val) =>
-		{
-			_lblFlattenHeightValue.Text = val.ToString("F1") + "m";
-			if (GameHost.Instance != null) GameHost.Instance.EditorFlattenHeight = (float)val;
-		};
+
 
 		if (_chkBlockMode != null)
 		{
@@ -98,8 +92,7 @@ public class MapEditorBrushSettings
 		_sldBrushStrength.Value = viewModel.BrushStrength;
 		_lblBrushStrengthValue.Text = viewModel.BrushStrength.ToString("F0");
 
-		_sldFlattenHeight.Value = viewModel.FlattenHeight;
-		_lblFlattenHeightValue.Text = viewModel.FlattenHeight.ToString("F1") + "m";
+
 
 		if (_chkBlockMode != null) _chkBlockMode.ButtonPressed = GameHost.Instance != null && GameHost.Instance.EditorBlockMode;
 		if (_sldBlockStep != null)

@@ -523,12 +523,11 @@ public partial class GameHost
 						0 => EditorTool.Raise,
 						1 => EditorTool.Lower,
 						2 => EditorTool.Smooth,
-						3 => EditorTool.Flatten,
-						4 => EditorTool.Plateau,
-						5 => EditorTool.Ramp,
-						6 => EditorTool.Noise,
-						7 => EditorTool.PaintGrass,
-						8 => EditorTool.PlaceProp,
+						3 => EditorTool.Plateau,
+						4 => EditorTool.Ramp,
+						5 => EditorTool.Noise,
+						6 => EditorTool.PaintGrass,
+						7 => EditorTool.PlaceProp,
 						_ => EditorTool.None
 					};
 					if (targetTool != EditorTool.None)
@@ -578,7 +577,6 @@ public partial class GameHost
 
 				bool isTerrainTool = ActiveEditorTool == EditorTool.Raise ||
 									 ActiveEditorTool == EditorTool.Lower ||
-									 ActiveEditorTool == EditorTool.Flatten ||
 									 ActiveEditorTool == EditorTool.Smooth ||
 									 ActiveEditorTool == EditorTool.Plateau ||
 									 ActiveEditorTool == EditorTool.PaintGrass ||
@@ -3531,6 +3529,103 @@ public partial class GameHost
 		{
 			InGameHUD.Instance.ShowFeedbackText($"Resuming construction...", new Color(0.3f, 0.9f, 0.4f));
 			InGameHUD.Instance.RefreshUI(SelectedUnits);
+		}
+	}
+
+	public void HandleMinimapRightClick(Vector3 minimapWorldPos)
+	{
+		if (ActiveSpellTargeting != null || ActiveCommandTargeting != null || ActiveBuildingPlacementType != null)
+		{
+			ActiveSpellTargeting = null;
+			ActiveCommandTargeting = null;
+			CancelBuildingPlacement();
+			Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
+			return;
+		}
+
+		if (SelectedUnits.Count == 0) return;
+
+		bool anyFriendlySelected = false;
+		foreach (var su in SelectedUnits)
+		{
+			if (!su.IsEnemy)
+			{
+				anyFriendlySelected = true;
+				break;
+			}
+		}
+		if (!anyFriendlySelected) return;
+
+		if (SelectedUnits.Count == 1 && !SelectedUnits[0].IsEnemy && CanProduceUnits(SelectedUnits[0]))
+		{
+			SetRallyPoint(SelectedUnits[0], minimapWorldPos);
+			return;
+		}
+
+		var from = new Vector3(minimapWorldPos.X, 200f, minimapWorldPos.Z);
+		var to = new Vector3(minimapWorldPos.X, -100f, minimapWorldPos.Z);
+		var spaceState = GetWorld3D().DirectSpaceState;
+		var query = PhysicsRayQueryParameters3D.Create(from, to);
+		var result = spaceState.IntersectRay(query);
+
+		Unit3D clickedUnit = null;
+		Prop3D clickedProp = null;
+		Vector3 hitPos = minimapWorldPos;
+
+		if (result != null && result.Count > 0)
+		{
+			if (result.ContainsKey("position"))
+			{
+				hitPos = result["position"].AsVector3();
+			}
+			if (result.ContainsKey("collider"))
+			{
+				var collider = result["collider"].As<Node>();
+				clickedUnit = FindUnit3DInParentChain(collider);
+				clickedProp = FindProp3DInParentChain(collider);
+			}
+		}
+
+		bool shiftHeld = Input.IsKeyPressed(Key.Shift);
+
+		if (clickedUnit != null && clickedUnit.IsEnemy && clickedUnit.Visible)
+		{
+			IssueAttackCommand(clickedUnit, shiftHeld);
+		}
+		else if (clickedUnit != null && !clickedUnit.IsEnemy && clickedUnit != SelectedUnits.Find(u => !u.IsEnemy))
+		{
+			if (clickedUnit.IsBuilding && EcsWorld.Has<Realm.Ecs.Components.Tags.UnderConstruction>(clickedUnit.Entity))
+			{
+				bool workerSelected = false;
+				foreach (var u in SelectedUnits)
+				{
+					if (u.UnitId == "worker")
+					{
+						workerSelected = true;
+						break;
+					}
+				}
+				if (workerSelected)
+				{
+					IssueResumeConstructionCommand(clickedUnit, shiftHeld);
+				}
+				else
+				{
+					IssueFollowCommand(clickedUnit, shiftHeld);
+				}
+			}
+			else
+			{
+				IssueFollowCommand(clickedUnit, shiftHeld);
+			}
+		}
+		else if (clickedProp != null && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
+		{
+			IssueGatherCommand(clickedProp, shiftHeld);
+		}
+		else
+		{
+			IssueMoveCommand(hitPos, shiftHeld);
 		}
 	}
 }

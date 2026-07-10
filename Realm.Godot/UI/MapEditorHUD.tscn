@@ -154,11 +154,6 @@ layout_mode = 2
 focus_mode = 0
 text = "🌐 Smooth"
 
-[node name="BtnFlatten" type="Button" parent="TopToolbar/PanelTerrain/VBox/Content"]
-custom_minimum_size = Vector2(56, 56)
-layout_mode = 2
-focus_mode = 0
-text = "➖ Flatten"
 
 [node name="PanelDeco" type="PanelContainer" parent="TopToolbar"]
 layout_mode = 2
@@ -494,31 +489,6 @@ max_value = 10.0
 step = 0.1
 value = 3.0
 
-[node name="FlattenHeightBox" type="VBoxContainer" parent="PanelTextures/VBox/Content/SettingsVBox"]
-layout_mode = 2
-theme_override_constants/separation = 2
-
-[node name="Header" type="HBoxContainer" parent="PanelTextures/VBox/Content/SettingsVBox/FlattenHeightBox"]
-layout_mode = 2
-
-[node name="LblFlattenTitle" type="Label" parent="PanelTextures/VBox/Content/SettingsVBox/FlattenHeightBox/Header"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 10
-text = "Flatten Y"
-
-[node name="LblFlattenHeightValue" type="Label" parent="PanelTextures/VBox/Content/SettingsVBox/FlattenHeightBox/Header"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-text = "0.0 m"
-
-[node name="SldFlattenHeight" type="HSlider" parent="PanelTextures/VBox/Content/SettingsVBox/FlattenHeightBox"]
-layout_mode = 2
-focus_mode = 0
-min_value = -10.0
-max_value = 30.0
-step = 0.5
-value = 0.0
 
 [node name="PanelEntityPalette" type="PanelContainer" parent="."]
 layout_mode = 1
