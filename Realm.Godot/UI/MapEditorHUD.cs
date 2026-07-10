@@ -16,6 +16,29 @@ public partial class MapEditorHUD : Control
 	public static bool IsTestMode { get; set; } = false;
 	public static bool ReturningFromTest { get; set; } = false;
 
+	public static Vector3 SavedCameraPosition;
+	public static float SavedTargetHeight;
+	public static float SavedCurrentHeight;
+	public static float SavedTargetYaw;
+	public static float SavedCurrentYaw;
+	public static float SavedTargetPitch;
+	public static float SavedCurrentPitch;
+	public static bool SavedIsTopDown;
+	public static float SavedYawSwing;
+	public static float SavedPitchSwing;
+
+	public static GameHost.GridOverlayMode SavedGridMode = GameHost.GridOverlayMode.Off;
+	public static GameHost.EditorTool SavedActiveTool = GameHost.EditorTool.Raise;
+	public static string SavedActivePlaceId = "";
+	public static bool SavedCameraBoundsVisible = false;
+	public static string SavedEntityCategory = "";
+
+	public static float SavedBrushRadius = 4f;
+	public static float SavedBrushStrength = 0.5f;
+	public static float SavedFlattenHeight = 0f;
+
+	private static string _lastUsedFolder = "";
+
 	private static bool _agreementShownThisSession = false;
 
 	public enum EditorModule
@@ -1153,6 +1176,17 @@ public partial class MapEditorHUD : Control
 			if (GameHost.Instance != null) GameHost.Instance.PasteOptionEntities = toggled;
 		};
 
+		var chkPastePathing = new CheckBox();
+		chkPastePathing.Name = "ChkPastePathing";
+		chkPastePathing.Text = TranslationServer.Translate("Pathing");
+		chkPastePathing.ButtonPressed = true;
+		UIStyle.ApplyCheckboxStyle(chkPastePathing);
+		pasteOptionsBox.AddChild(chkPastePathing);
+		chkPastePathing.Toggled += (toggled) =>
+		{
+			if (GameHost.Instance != null) GameHost.Instance.PasteOptionPathing = toggled;
+		};
+
 		var rotBox = new VBoxContainer();
 		rotBox.Name = "PasteRotationBox";
 		pasteOptionsBox.AddChild(rotBox);
@@ -2117,6 +2151,46 @@ public partial class MapEditorHUD : Control
 		};
 	}
 
+	private Button GetButtonForTool(GameHost.EditorTool tool, string placeId)
+	{
+		return tool switch
+		{
+			GameHost.EditorTool.Raise => _btnRaise,
+			GameHost.EditorTool.Lower => _btnLower,
+			GameHost.EditorTool.Flatten => _btnFlatten,
+			GameHost.EditorTool.Smooth => _btnSmooth,
+			GameHost.EditorTool.Plateau => _btnPlateau,
+			GameHost.EditorTool.Ramp => _btnRamp,
+			GameHost.EditorTool.Noise => _btnNoise,
+			GameHost.EditorTool.PaintPathing => _btnPathingBrush,
+			GameHost.EditorTool.FloodFillPathing => _btnFloodFillPathing,
+			GameHost.EditorTool.DrawCoordinate => _btnDrawCoordinate,
+			GameHost.EditorTool.SelectArea => _btnSelectArea,
+			GameHost.EditorTool.SelectMove => _btnSelectMove,
+			GameHost.EditorTool.DeleteObject => _btnDeleteObject,
+			GameHost.EditorTool.PaintGrass => GetTextureSwatchButton(placeId),
+			GameHost.EditorTool.PaintDirt => GetTextureSwatchButton(placeId),
+			GameHost.EditorTool.PaintRock => GetTextureSwatchButton(placeId),
+			GameHost.EditorTool.PaintSand => GetTextureSwatchButton(placeId),
+			GameHost.EditorTool.FloodFill => _btnFloodFill,
+			GameHost.EditorTool.PlacePropClump => _btnClumpBrush,
+			GameHost.EditorTool.Eyedropper => _btnEyedropper,
+			_ => null
+		};
+	}
+
+	private Button GetTextureSwatchButton(string placeId)
+	{
+		for (int i = 0; i < 12; i++)
+		{
+			if (_swatchPaths[i] == placeId)
+			{
+				return _swatchButtons[i];
+			}
+		}
+		return _btnTextureBrush;
+	}
+
 	public void TriggerToolSelection(GameHost.EditorTool tool, Button btn, string placeId = "")
 	{
 		if (GameHost.Instance == null) return;
@@ -2285,7 +2359,7 @@ public partial class MapEditorHUD : Control
 					_lblInfoText.Text = TranslationServer.Translate("TOOL: Area Select\n\nDrag left click to select a rectangular area of the map. Press Ctrl+C to copy the area.");
 					break;
 				case GameHost.EditorTool.PasteArea:
-					_lblInfoText.Text = TranslationServer.Translate("TOOL: Area Paste\n\nClick on the terrain to paste the copied area. Use the Affected Layers checkboxes to filter what is pasted (Textures, HeightMap, Units / Props).");
+					_lblInfoText.Text = TranslationServer.Translate("TOOL: Area Paste\n\nClick on the terrain to paste the copied area. Use the Affected Layers checkboxes to filter what is pasted (Textures, HeightMap, Units / Props, Pathing).");
 					break;
 				case GameHost.EditorTool.PlaceUnit:
 					string alignment = _chkSpawnAsEnemy.ButtonPressed ? TranslationServer.Translate("Enemy (Orc)") : TranslationServer.Translate("Player (Alliance)");
@@ -2622,6 +2696,7 @@ public class {mapName} : IMapScript
 				if (status && selectedPaths.Length > 0)
 				{
 					string selectedFolder = selectedPaths[0];
+					_lastUsedFolder = selectedFolder;
 					CopyTempWorkspaceToFolder(selectedFolder);
 					ShowFeedback(string.Format(TranslationServer.Translate("Map saved successfully to folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
 				}
@@ -2658,6 +2733,7 @@ public class {mapName} : IMapScript
 				if (status && selectedPaths.Length > 0)
 				{
 					string selectedFolder = selectedPaths[0];
+					_lastUsedFolder = selectedFolder;
 					CopyFolderToTempWorkspace(selectedFolder);
 					string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 					bool success = GameHost.Instance.LoadMapFromFile(terrainPath);
@@ -2703,21 +2779,9 @@ public class {mapName} : IMapScript
 
 	private string GetInitialDirectory()
 	{
-		if (OperatingSystem.IsWindows())
+		if (!string.IsNullOrEmpty(_lastUsedFolder) && System.IO.Directory.Exists(_lastUsedFolder))
 		{
-			string recentPathFile = ProjectSettings.GlobalizePath("user://recent_map_dir.txt");
-			if (System.IO.File.Exists(recentPathFile))
-			{
-				string path = System.IO.File.ReadAllText(recentPathFile).Trim();
-				if (!string.IsNullOrEmpty(path) && System.IO.Directory.Exists(path))
-				{
-					string parent = System.IO.Path.GetDirectoryName(path);
-					if (!string.IsNullOrEmpty(parent) && System.IO.Directory.Exists(parent))
-					{
-						return parent;
-					}
-				}
-			}
+			return _lastUsedFolder;
 		}
 		return ProjectSettings.GlobalizePath("res://");
 	}
@@ -2948,7 +3012,7 @@ public class {mapName} : IMapScript
 		}
 	}
 
-	private void ShowConfirmationDialog(string message, Action onConfirm)
+	private void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO")
 	{
 		var overlay = new ColorRect();
 		overlay.Name = "ConfirmationOverlay";
@@ -2991,7 +3055,7 @@ public class {mapName} : IMapScript
 
 		var btnConfirm = new Button();
 		btnConfirm.Set("icon_max_width", 0);
-		SetupButton(btnConfirm, TranslationServer.Translate("YES"), () =>
+		SetupButton(btnConfirm, TranslationServer.Translate(confirmText), () =>
 		{
 			overlay.QueueFree();
 			onConfirm?.Invoke();
@@ -3001,7 +3065,7 @@ public class {mapName} : IMapScript
 
 		var btnCancel = new Button();
 		btnCancel.Set("icon_max_width", 0);
-		SetupButton(btnCancel, TranslationServer.Translate("NO"), () =>
+		SetupButton(btnCancel, TranslationServer.Translate(cancelText), () =>
 		{
 			overlay.QueueFree();
 		}, 13);
@@ -4425,6 +4489,30 @@ public class {mapName} : IMapScript
 			CloseScaleMapDialog();
 		}, 11, "Apply scale and stretch the entire map");
 		buttonRow.AddChild(btnApply);
+
+		if (ReturningFromTest)
+		{
+			_sldBrushSize.Value = SavedBrushRadius;
+			_sldBrushStrength.Value = SavedBrushStrength;
+			_sldFlattenHeight.Value = SavedFlattenHeight;
+
+			if (SavedActiveTool == GameHost.EditorTool.PlaceUnit ||
+				SavedActiveTool == GameHost.EditorTool.PlaceProp ||
+				SavedActiveTool == GameHost.EditorTool.PlaceDecal)
+			{
+				_entityPaletteController?.SelectCategoryItemExternal(SavedEntityCategory, SavedActivePlaceId);
+			}
+			else
+			{
+				Button toolBtn = GetButtonForTool(SavedActiveTool, SavedActivePlaceId);
+				if (toolBtn != null)
+				{
+					TriggerToolSelection(SavedActiveTool, toolBtn, SavedActivePlaceId);
+				}
+			}
+
+			ReturningFromTest = false;
+		}
 	}
 
 	private void UpdateScaleDialogLabels()
@@ -4980,6 +5068,52 @@ public class {mapName} : IMapScript
 	private void TestMapAction()
 	{
 		if (GameHost.Instance == null) return;
+
+		if (GameHost.Instance.AllUnits.Count == 0)
+		{
+			ShowConfirmationDialog(
+				"Warning: You have not placed any units, you won't see anything due to Fog of War.",
+				() => ProceedToTestMap(),
+				"Okay",
+				"Cancel"
+			);
+		}
+		else
+		{
+			ProceedToTestMap();
+		}
+	}
+
+	private void ProceedToTestMap()
+	{
+		if (GameHost.Instance == null) return;
+
+		var camera = GameHost.Instance.MainCamera as CameraControl;
+		if (camera != null)
+		{
+			SavedCameraPosition = camera.Position;
+			if (GameHost.Instance.EcsWorld != null && GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Core.CameraState>(GameHost.Instance.WorldEntity))
+			{
+				var state = GameHost.Instance.EcsWorld.Get<Realm.Ecs.Components.Core.CameraState>(GameHost.Instance.WorldEntity);
+				SavedTargetHeight = state.TargetHeight;
+				SavedCurrentHeight = state.CurrentHeight;
+				SavedTargetYaw = state.TargetYaw;
+				SavedCurrentYaw = state.CurrentYaw;
+				SavedTargetPitch = state.TargetPitch;
+				SavedCurrentPitch = state.CurrentPitch;
+				SavedIsTopDown = state.IsTopDown;
+				SavedYawSwing = state.YawSwing;
+				SavedPitchSwing = state.PitchSwing;
+			}
+		}
+		SavedGridMode = GameHost.Instance.EditorGridMode;
+		SavedActiveTool = GameHost.Instance.ActiveEditorTool;
+		SavedActivePlaceId = GameHost.Instance.ActivePlaceId;
+		SavedCameraBoundsVisible = GameHost.Instance.EditorCameraBoundsVisible;
+		SavedEntityCategory = _entityPaletteController?.CurrentCategory ?? "";
+		SavedBrushRadius = (float)_sldBrushSize.Value;
+		SavedBrushStrength = (float)_sldBrushStrength.Value;
+		SavedFlattenHeight = (float)_sldFlattenHeight.Value;
 
 		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 		GameHost.Instance.SaveMapToFile(tempTerrainPath);

@@ -91,7 +91,7 @@ public partial class GameHost
 		return false;
 	}
 
-	private void ApplyContinuousTerrainEditing(Vector3 worldPos, float delta)
+	private void ApplyContinuousTerrainEditing(Vector3 worldPos, float delta, bool isFirstClick = false)
 	{
 		if (GroundTerrain == null) return;
 
@@ -111,7 +111,8 @@ public partial class GameHost
 			EditorBrushIsSquare,
 			EditorBlockMode, EditorBlockLevelHeight,
 			EditorPaintTextureIndex, EditorCliffPaintTextureIndex,
-			pathingMask, pathingAdd);
+			pathingMask, pathingAdd,
+			isFirstClick);
 
 		if (result.HeightsModified || result.SplatModified || result.PathingModified)
 		{
@@ -1090,8 +1091,10 @@ public partial class GameHost
 									 ActiveEditorTool == EditorTool.Noise ||
 									 ActiveEditorTool == EditorTool.PaintPathing;
 
+				bool firstClick = false;
 				if (isTerrainTool && !_editorService.IsDrawingTerrain && GroundTerrain != null)
 				{
+					firstClick = true;
 					_editorService.BeginTerrainDraw(
 						hitPos,
 						ActiveEditorTool,
@@ -1111,12 +1114,12 @@ public partial class GameHost
 				}
 
 
-				ApplyContinuousTerrainEditing(hitPos, fDelta);
+				ApplyContinuousTerrainEditing(hitPos, fDelta, firstClick);
 				if (EditorMirrorMode != MirrorMode.None)
 				{
 					foreach (var t in GetMirroredTransforms(hitPos, 0.0f))
 					{
-						ApplyContinuousTerrainEditing(t.Position, fDelta);
+						ApplyContinuousTerrainEditing(t.Position, fDelta, firstClick);
 					}
 				}
 			}
@@ -1277,7 +1280,28 @@ public partial class GameHost
 		if (MapEditorHUD.ReturningFromTest)
 		{
 			LoadMapFromFile("user://temp_map_workspace/terrain.json");
-			MapEditorHUD.ReturningFromTest = false;
+
+			EditorGridMode = MapEditorHUD.SavedGridMode;
+			EditorCameraBoundsVisible = MapEditorHUD.SavedCameraBoundsVisible;
+
+			var camera = MainCamera as CameraControl;
+			if (camera != null)
+			{
+				camera.Position = MapEditorHUD.SavedCameraPosition;
+				if (EcsWorld != null && EcsWorld.IsAlive(WorldEntity) && EcsWorld.Has<CameraState>(WorldEntity))
+				{
+					ref var state = ref EcsWorld.Get<CameraState>(WorldEntity);
+					state.TargetHeight = MapEditorHUD.SavedTargetHeight;
+					state.CurrentHeight = MapEditorHUD.SavedTargetHeight;
+					state.TargetYaw = MapEditorHUD.SavedTargetYaw;
+					state.CurrentYaw = MapEditorHUD.SavedTargetYaw;
+					state.TargetPitch = MapEditorHUD.SavedTargetPitch;
+					state.CurrentPitch = MapEditorHUD.SavedTargetPitch;
+					state.IsTopDown = MapEditorHUD.SavedIsTopDown;
+					state.YawSwing = MapEditorHUD.SavedYawSwing;
+					state.PitchSwing = MapEditorHUD.SavedPitchSwing;
+				}
+			}
 		}
 		else
 		{
@@ -1427,13 +1451,15 @@ public partial class GameHost
 							 ActiveEditorTool == EditorTool.PaintSand ||
 							 ActiveEditorTool == EditorTool.Noise ||
 							 ActiveEditorTool == EditorTool.Ramp ||
-							 ActiveEditorTool == EditorTool.PlacePropClump;
+							 ActiveEditorTool == EditorTool.PlacePropClump ||
+							 ActiveEditorTool == EditorTool.PaintPathing;
 							 
 		_brushIndicatorMesh.Visible = isTerrainTool;
 	}
 
 	public MeshInstance3D BrushIndicatorMesh => _brushIndicatorMesh;
 	public MeshInstance3D? GridOverlayMesh => _gridOverlayMesh;
+	public MeshInstance3D? PathingOverlayMesh => _pathingOverlayMesh;
 
 	public void ClearRampStartPosExternal()
 	{
@@ -1931,12 +1957,12 @@ public partial class GameHost
 
 		static Color GetLayerColor(int flag) => flag switch
 		{
-			EditableTerrain.PATHING_SHALLOW_WATER => new Color(0.2f, 0.6f, 1.0f, 0.55f),
-			EditableTerrain.PATHING_DEEP_WATER    => new Color(0.0f, 0.15f, 0.7f, 0.55f),
-			EditableTerrain.PATHING_FLYING        => new Color(0.85f, 0.85f, 0.0f, 0.55f),
-			EditableTerrain.PATHING_GROUND        => new Color(0.2f, 0.85f, 0.2f, 0.55f),
-			EditableTerrain.PATHING_UNPATHABLE    => new Color(0.9f, 0.1f, 0.1f, 0.55f),
-			EditableTerrain.PATHING_BUILDABLE     => new Color(0.6f, 0.2f, 0.8f, 0.55f),
+			EditableTerrain.PATHING_SHALLOW_WATER => new Color(0.2f, 0.6f, 1.0f, 0.25f),
+			EditableTerrain.PATHING_DEEP_WATER    => new Color(0.0f, 0.15f, 0.7f, 0.25f),
+			EditableTerrain.PATHING_FLYING        => new Color(0.85f, 0.85f, 0.0f, 0.25f),
+			EditableTerrain.PATHING_GROUND        => new Color(0.2f, 0.85f, 0.2f, 0.25f),
+			EditableTerrain.PATHING_UNPATHABLE    => new Color(0.9f, 0.1f, 0.1f, 0.25f),
+			EditableTerrain.PATHING_BUILDABLE     => new Color(0.6f, 0.2f, 0.8f, 0.25f),
 			_ => new Color(0f, 0f, 0f, 0f)
 		};
 
@@ -2704,6 +2730,7 @@ public partial class GameHost
 
 		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
 		var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+		var pathingBefore = (int[,])GroundTerrain.PathingCodes.Clone();
 
 		var node3Ds = new List<Node3D>();
 		foreach (var child in GetChildren())
@@ -2713,7 +2740,7 @@ public partial class GameHost
 
 		var eraseResult = _editorService.BuildEraseAreaResult(
 			minX, minZ, maxX, maxZ,
-			PasteOptionHeights, PasteOptionTextures, PasteOptionEntities,
+			PasteOptionHeights, PasteOptionTextures, PasteOptionEntities, PasteOptionPathing,
 			node3Ds, _editorPreviewNode as Node3D);
 
 		if (eraseResult.TerrainModified)
@@ -2722,6 +2749,14 @@ public partial class GameHost
 			if (eraseResult.HeightsModified)
 			{
 				AlignAllEntitiesToTerrain();
+			}
+			if (eraseResult.HeightsModified || eraseResult.PathingModified)
+			{
+				GroundTerrain.BakeNavMesh();
+			}
+			if (eraseResult.PathingModified)
+			{
+				UpdatePathingOverlay();
 			}
 		}
 
@@ -2734,10 +2769,11 @@ public partial class GameHost
 
 		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
 		var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+		var pathingAfter = (int[,])GroundTerrain.PathingCodes.Clone();
 		var actions = new List<IEditorAction>();
 		if (eraseResult.TerrainModified)
 		{
-			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter));
+			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter));
 		}
 		if (deleteActions.Count > 0)
 		{
@@ -2763,10 +2799,11 @@ public partial class GameHost
 
 		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
 		var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+		var pathingBefore = (int[,])GroundTerrain.PathingCodes.Clone();
 
 		var pasteResult = _editorService.BuildPasteAreaResult(
 			startX, startZ,
-			PasteOptionHeights, PasteOptionTextures, PasteOptionEntities,
+			PasteOptionHeights, PasteOptionTextures, PasteOptionEntities, PasteOptionPathing,
 			EditorMirrorMode,
 			rotationDegrees);
 
@@ -2776,6 +2813,14 @@ public partial class GameHost
 			if (pasteResult.HeightsModified)
 			{
 				AlignAllEntitiesToTerrain();
+			}
+			if (pasteResult.HeightsModified || pasteResult.PathingModified)
+			{
+				GroundTerrain.BakeNavMesh();
+			}
+			if (pasteResult.PathingModified)
+			{
+				UpdatePathingOverlay();
 			}
 		}
 
@@ -2798,10 +2843,11 @@ public partial class GameHost
 
 		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
 		var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+		var pathingAfter = (int[,])GroundTerrain.PathingCodes.Clone();
 		var actions = new List<IEditorAction>();
 		if (pasteResult.TerrainModified)
 		{
-			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter));
+			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter));
 		}
 		if (spawnActions.Count > 0)
 		{
@@ -2848,7 +2894,7 @@ public partial class GameHost
 			AddChild(_pathingOverlayMesh);
 		}
 
-		bool shouldBeVisible = IsMapEditorMode && PathingOverlayVisible && (ActiveEditorTool == EditorTool.PaintPathing || ActiveEditorTool == EditorTool.FloodFillPathing);
+		bool shouldBeVisible = IsMapEditorMode && PathingOverlayVisible && (ActiveEditorTool == EditorTool.PaintPathing || ActiveEditorTool == EditorTool.FloodFillPathing || ActiveEditorTool == EditorTool.SelectArea || ActiveEditorTool == EditorTool.PasteArea);
 		_pathingOverlayMesh.Visible = shouldBeVisible;
 
 		if (shouldBeVisible && GroundTerrain != null)

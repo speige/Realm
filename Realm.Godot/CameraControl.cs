@@ -447,7 +447,7 @@ public partial class CameraControl : Camera3D
 
 			float sensFactor = 0.0005f + (GameSettings.MouseSens / 100.0f) * 0.003f;
 			float moveX = -deltaMouse.X * sensFactor * _currentHeight;
-			float moveZ = deltaMouse.Y * sensFactor * _currentHeight;
+			float moveZ = -deltaMouse.Y * sensFactor * _currentHeight;
 
 			Vector3 forwardXZ = -GlobalTransform.Basis.Z;
 			forwardXZ.Y = 0f;

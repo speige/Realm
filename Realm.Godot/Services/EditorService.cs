@@ -55,6 +55,7 @@ public class EditorService
 		public int Depth;
 		public float[,] Heights;
 		public TerrainSplatWeights[,] SplatMap;
+		public int[,] Pathing;
 		public List<CopiedEntityInfo> Entities;
 	}
 
@@ -79,6 +80,7 @@ public class EditorService
 	{
 		public bool TerrainModified;
 		public bool HeightsModified;
+		public bool PathingModified;
 		public List<EntitySpawnRequest> SpawnRequests;
 	}
 
@@ -96,6 +98,7 @@ public class EditorService
 	{
 		public bool TerrainModified;
 		public bool HeightsModified;
+		public bool PathingModified;
 		public List<Node3D> NodesToDelete;
 	}
 
@@ -202,7 +205,8 @@ public class EditorService
 		int paintTextureIndex,
 		int cliffPaintTextureIndex,
 		int pathingMask,
-		bool pathingAdd)
+		bool pathingAdd,
+		bool isFirstClick = false)
 	{
 		ref var terrain = ref GetTerrainState();
 		if (terrain.Heights == null || _terrainSplatMap == null) return default;
@@ -376,7 +380,8 @@ public class EditorService
 								);
 
 								int targetIndex = (maxDiff >= blockLevelHeight * 0.5f) ? cliffPaintTextureIndex : paintTextureIndex;
-								_terrainSplatMap[x, z] = TerrainSplatWeights.PaintVertex(_terrainSplatMap[x, z], targetIndex, brushStrength * delta * 5.0f);
+								float intensity = isFirstClick ? brushStrength : brushStrength * delta * 5.0f;
+								_terrainSplatMap[x, z] = TerrainSplatWeights.PaintVertex(_terrainSplatMap[x, z], targetIndex, intensity);
 								modified = true;
 							}
 						}
@@ -501,7 +506,8 @@ public class EditorService
 							);
 
 							int targetIndex = (maxDiff >= spacing * 0.5f) ? cliffPaintTextureIndex : paintTextureIndex;
-							_terrainSplatMap[x, z] = TerrainSplatWeights.PaintVertex(_terrainSplatMap[x, z], targetIndex, brushStrength * falloff * delta * 3.0f);
+							float intensity = isFirstClick ? brushStrength * falloff : brushStrength * falloff * delta * 3.0f;
+							_terrainSplatMap[x, z] = TerrainSplatWeights.PaintVertex(_terrainSplatMap[x, z], targetIndex, intensity);
 							modified = true;
 						}
 						else if (isPathing)
@@ -835,6 +841,7 @@ public class EditorService
 		int selDepth = maxZ - minZ + 1;
 		var heights = new float[selWidth, selDepth];
 		var splatMap = new TerrainSplatWeights[selWidth, selDepth];
+		var pathing = new int[selWidth, selDepth];
 
 		for (int sz = 0; sz < selDepth; sz++)
 		{
@@ -842,6 +849,10 @@ public class EditorService
 			{
 				heights[sx, sz] = terrain.Heights[minX + sx, minZ + sz];
 				splatMap[sx, sz] = _terrainSplatMap[minX + sx, minZ + sz];
+				if (terrain.PathingCodes != null)
+				{
+					pathing[sx, sz] = terrain.PathingCodes[minX + sx, minZ + sz];
+				}
 			}
 		}
 
@@ -851,6 +862,7 @@ public class EditorService
 			Depth = selDepth,
 			Heights = heights,
 			SplatMap = splatMap,
+			Pathing = pathing,
 			Entities = entities
 		};
 	}
@@ -931,6 +943,7 @@ public class EditorService
 		
 		var newHeights = new float[w, d];
 		var newSplatMap = new TerrainSplatWeights[w, d];
+		var newPathing = _copiedArea.Pathing != null ? new int[w, d] : null;
 		
 		for (int z = 0; z < d; z++)
 		{
@@ -938,11 +951,19 @@ public class EditorService
 			{
 				newHeights[x, z] = _copiedArea.Heights[x, d - 1 - z];
 				newSplatMap[x, z] = _copiedArea.SplatMap[x, d - 1 - z];
+				if (newPathing != null)
+				{
+					newPathing[x, z] = _copiedArea.Pathing[x, d - 1 - z];
+				}
 			}
 		}
 		
 		_copiedArea.Heights = newHeights;
 		_copiedArea.SplatMap = newSplatMap;
+		if (newPathing != null)
+		{
+			_copiedArea.Pathing = newPathing;
+		}
 		
 		ref var terrain = ref GetTerrainState();
 		float spacing = terrain.Spacing;
@@ -961,6 +982,7 @@ public class EditorService
 		
 		var newHeights = new float[w, d];
 		var newSplatMap = new TerrainSplatWeights[w, d];
+		var newPathing = _copiedArea.Pathing != null ? new int[w, d] : null;
 		
 		for (int z = 0; z < d; z++)
 		{
@@ -968,11 +990,19 @@ public class EditorService
 			{
 				newHeights[x, z] = _copiedArea.Heights[w - 1 - x, z];
 				newSplatMap[x, z] = _copiedArea.SplatMap[w - 1 - x, z];
+				if (newPathing != null)
+				{
+					newPathing[x, z] = _copiedArea.Pathing[w - 1 - x, z];
+				}
 			}
 		}
 		
 		_copiedArea.Heights = newHeights;
 		_copiedArea.SplatMap = newSplatMap;
+		if (newPathing != null)
+		{
+			_copiedArea.Pathing = newPathing;
+		}
 		
 		ref var terrain = ref GetTerrainState();
 		float spacing = terrain.Spacing;
@@ -989,6 +1019,7 @@ public class EditorService
 		bool pasteHeights,
 		bool pasteTextures,
 		bool pasteEntities,
+		bool pastePathing,
 		MirrorMode mirrorMode,
 		float rotationDegrees)
 	{
@@ -1007,6 +1038,7 @@ public class EditorService
 		int pasteWidth = _copiedArea.Width;
 		int pasteDepth = _copiedArea.Depth;
 		bool modified = false;
+		bool pathingModified = false;
 
 		float cx = (pasteWidth - 1) / 2.0f;
 		float cz = (pasteDepth - 1) / 2.0f;
@@ -1048,7 +1080,7 @@ public class EditorService
 					dZ = (pasteDepth - pasteWidth) / 2;
 				}
 
-				PasteCellRotated(sx, sz, rotX, rotZ, startX + dX, startZ + dZ, width, depth, pasteHeights, pasteTextures, mirrorMode, ref terrain, ref modified);
+				PasteCellRotated(sx, sz, rotX, rotZ, startX + dX, startZ + dZ, width, depth, pasteHeights, pasteTextures, pastePathing, mirrorMode, ref terrain, ref modified, ref pathingModified);
 			}
 		}
 		if (modified && pasteTextures)
@@ -1057,6 +1089,7 @@ public class EditorService
 		}
 		result.TerrainModified = modified;
 		result.HeightsModified = pasteHeights && modified;
+		result.PathingModified = pathingModified;
 
 		if (pasteEntities)
 		{
@@ -1121,6 +1154,7 @@ public class EditorService
 		bool pasteHeights,
 		bool pasteTextures,
 		bool pasteEntities,
+		bool pastePathing,
 		IEnumerable<Node3D> sceneChildren,
 		Node3D previewNode)
 	{
@@ -1137,8 +1171,9 @@ public class EditorService
 		int selWidth = maxX - minX + 1;
 		int selDepth = maxZ - minZ + 1;
 		bool terrainModified = false;
+		bool pathingModified = false;
 
-		if (pasteHeights || pasteTextures)
+		if (pasteHeights || pasteTextures || (pastePathing && terrain.PathingCodes != null))
 		{
 			for (int sz = 0; sz < selDepth; sz++)
 			{
@@ -1150,6 +1185,11 @@ public class EditorService
 					{
 						if (pasteHeights) terrain.Heights[targetX, targetZ] = 0.0f;
 						if (pasteTextures) _terrainSplatMap[targetX, targetZ] = TerrainSplatWeights.CreateSolid(3);
+						if (pastePathing && terrain.PathingCodes != null)
+						{
+							terrain.PathingCodes[targetX, targetZ] = EditableTerrain.PATHING_GROUND | EditableTerrain.PATHING_FLYING;
+							pathingModified = true;
+						}
 						terrainModified = true;
 					}
 				}
@@ -1162,6 +1202,7 @@ public class EditorService
 
 		result.TerrainModified = terrainModified;
 		result.HeightsModified = pasteHeights && terrainModified;
+		result.PathingModified = pathingModified;
 
 		if (pasteEntities)
 		{
@@ -1493,10 +1534,11 @@ public class EditorService
 		int rotX, int rotZ,
 		int startX, int startZ,
 		int width, int depth,
-		bool pasteHeights, bool pasteTextures,
+		bool pasteHeights, bool pasteTextures, bool pastePathing,
 		MirrorMode mirrorMode,
 		ref TerrainState terrain,
-		ref bool modified)
+		ref bool modified,
+		ref bool pathingModified)
 	{
 		int targetX = startX + rotX;
 		int targetZ = startZ + rotZ;
@@ -1505,6 +1547,11 @@ public class EditorService
 		{
 			if (pasteHeights) terrain.Heights[targetX, targetZ] = _copiedArea.Heights[srcX, srcZ];
 			if (pasteTextures) _terrainSplatMap[targetX, targetZ] = _copiedArea.SplatMap[srcX, srcZ];
+			if (pastePathing && _copiedArea.Pathing != null && terrain.PathingCodes != null)
+			{
+				terrain.PathingCodes[targetX, targetZ] = _copiedArea.Pathing[srcX, srcZ];
+				pathingModified = true;
+			}
 			modified = true;
 		}
 
@@ -1516,6 +1563,11 @@ public class EditorService
 			{
 				if (pasteHeights) terrain.Heights[mx, mz] = _copiedArea.Heights[srcX, srcZ];
 				if (pasteTextures) _terrainSplatMap[mx, mz] = _copiedArea.SplatMap[srcX, srcZ];
+				if (pastePathing && _copiedArea.Pathing != null && terrain.PathingCodes != null)
+				{
+					terrain.PathingCodes[mx, mz] = _copiedArea.Pathing[srcX, srcZ];
+					pathingModified = true;
+				}
 				modified = true;
 			}
 		}
@@ -1528,6 +1580,11 @@ public class EditorService
 			{
 				if (pasteHeights) terrain.Heights[mx, mz] = _copiedArea.Heights[srcX, srcZ];
 				if (pasteTextures) _terrainSplatMap[mx, mz] = _copiedArea.SplatMap[srcX, srcZ];
+				if (pastePathing && _copiedArea.Pathing != null && terrain.PathingCodes != null)
+				{
+					terrain.PathingCodes[mx, mz] = _copiedArea.Pathing[srcX, srcZ];
+					pathingModified = true;
+				}
 				modified = true;
 			}
 		}
@@ -1540,6 +1597,11 @@ public class EditorService
 			{
 				if (pasteHeights) terrain.Heights[mx, mz] = _copiedArea.Heights[srcX, srcZ];
 				if (pasteTextures) _terrainSplatMap[mx, mz] = _copiedArea.SplatMap[srcX, srcZ];
+				if (pastePathing && _copiedArea.Pathing != null && terrain.PathingCodes != null)
+				{
+					terrain.PathingCodes[mx, mz] = _copiedArea.Pathing[srcX, srcZ];
+					pathingModified = true;
+				}
 				modified = true;
 			}
 		}
@@ -1549,10 +1611,11 @@ public class EditorService
 		int sx, int sz,
 		int startX, int startZ,
 		int width, int depth,
-		bool pasteHeights, bool pasteTextures,
+		bool pasteHeights, bool pasteTextures, bool pastePathing,
 		MirrorMode mirrorMode,
 		ref TerrainState terrain,
-		ref bool modified)
+		ref bool modified,
+		ref bool pathingModified)
 	{
 		int targetX = startX + sx;
 		int targetZ = startZ + sz;
@@ -1561,6 +1624,11 @@ public class EditorService
 		{
 			if (pasteHeights) terrain.Heights[targetX, targetZ] = _copiedArea.Heights[sx, sz];
 			if (pasteTextures) _terrainSplatMap[targetX, targetZ] = _copiedArea.SplatMap[sx, sz];
+			if (pastePathing && _copiedArea.Pathing != null && terrain.PathingCodes != null)
+			{
+				terrain.PathingCodes[targetX, targetZ] = _copiedArea.Pathing[sx, sz];
+				pathingModified = true;
+			}
 			modified = true;
 		}
 
@@ -1572,6 +1640,11 @@ public class EditorService
 			{
 				if (pasteHeights) terrain.Heights[mx, mz] = _copiedArea.Heights[sx, sz];
 				if (pasteTextures) _terrainSplatMap[mx, mz] = _copiedArea.SplatMap[sx, sz];
+				if (pastePathing && _copiedArea.Pathing != null && terrain.PathingCodes != null)
+				{
+					terrain.PathingCodes[mx, mz] = _copiedArea.Pathing[sx, sz];
+					pathingModified = true;
+				}
 				modified = true;
 			}
 		}
@@ -1584,6 +1657,11 @@ public class EditorService
 			{
 				if (pasteHeights) terrain.Heights[mx, mz] = _copiedArea.Heights[sx, sz];
 				if (pasteTextures) _terrainSplatMap[mx, mz] = _copiedArea.SplatMap[sx, sz];
+				if (pastePathing && _copiedArea.Pathing != null && terrain.PathingCodes != null)
+				{
+					terrain.PathingCodes[mx, mz] = _copiedArea.Pathing[sx, sz];
+					pathingModified = true;
+				}
 				modified = true;
 			}
 		}
@@ -1596,6 +1674,11 @@ public class EditorService
 			{
 				if (pasteHeights) terrain.Heights[mx, mz] = _copiedArea.Heights[sx, sz];
 				if (pasteTextures) _terrainSplatMap[mx, mz] = _copiedArea.SplatMap[sx, sz];
+				if (pastePathing && _copiedArea.Pathing != null && terrain.PathingCodes != null)
+				{
+					terrain.PathingCodes[mx, mz] = _copiedArea.Pathing[sx, sz];
+					pathingModified = true;
+				}
 				modified = true;
 			}
 		}

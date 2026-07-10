@@ -710,6 +710,13 @@ public partial class InGameHUD : Control
 			fogMesh.Visible = false;
 		}
 
+		bool wasPathingVisible = false;
+		if (GameHost.Instance?.PathingOverlayMesh != null)
+		{
+			wasPathingVisible = GameHost.Instance.PathingOverlayMesh.Visible;
+			GameHost.Instance.PathingOverlayMesh.Visible = false;
+		}
+
 		try
 		{
 			var viewport = new SubViewport();
@@ -749,6 +756,10 @@ public partial class InGameHUD : Control
 			if (fogMesh != null)
 			{
 				fogMesh.Visible = wasVisible;
+			}
+			if (GameHost.Instance?.PathingOverlayMesh != null)
+			{
+				GameHost.Instance.PathingOverlayMesh.Visible = wasPathingVisible;
 			}
 		}
 	}

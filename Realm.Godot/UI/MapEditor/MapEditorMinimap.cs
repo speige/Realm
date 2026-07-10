@@ -195,6 +195,13 @@ public class MapEditorMinimap
 				GameHost.Instance.GridOverlayMesh.Visible = false;
 			}
 
+			bool wasPathingVisible = false;
+			if (GameHost.Instance?.PathingOverlayMesh != null)
+			{
+				wasPathingVisible = GameHost.Instance.PathingOverlayMesh.Visible;
+				GameHost.Instance.PathingOverlayMesh.Visible = false;
+			}
+
 			await _hudNode.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
 
 			var texture = viewport.GetTexture();
@@ -216,6 +223,11 @@ public class MapEditorMinimap
 			if (GameHost.Instance?.GridOverlayMesh != null)
 			{
 				GameHost.Instance.GridOverlayMesh.Visible = wasGridVisible;
+			}
+
+			if (GameHost.Instance?.PathingOverlayMesh != null)
+			{
+				GameHost.Instance.PathingOverlayMesh.Visible = wasPathingVisible;
 			}
 
 			viewport.QueueFree();
