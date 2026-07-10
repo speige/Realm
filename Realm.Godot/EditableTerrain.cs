@@ -171,6 +171,8 @@ public partial class EditableTerrain : StaticBody3D
 	}
 
 	private const int CHUNK_SIZE = 32;
+	private int _chunkedWidth;
+	private int _chunkedDepth;
 	
 	private class TerrainChunk
 	{
@@ -444,6 +446,8 @@ void fragment() {
 
 		int w = Width;
 		int d = Depth;
+		_chunkedWidth = w;
+		_chunkedDepth = d;
 
 		for (int z = 0; z < d - 1; z += CHUNK_SIZE)
 		{
@@ -503,7 +507,7 @@ void fragment() {
 					SplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
 		}
 
-		if (_chunks.Count == 0)
+		if (_chunks.Count == 0 || _chunkedWidth != w || _chunkedDepth != d)
 		{
 			CreateChunks();
 		}

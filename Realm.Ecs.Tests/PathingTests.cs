@@ -380,5 +380,58 @@ namespace Realm.Ecs.Tests
             var finalPos = _world.Get<Position>(unit).Value;
             Assert.That(finalPos.X, Is.LessThan(1.0f));
         }
+
+        [Test]
+        public void TestLayeredPathing()
+        {
+            int width = 64;
+            int depth = 64;
+            float spacing = 2.0f;
+            InitializeTerrain(width, depth, spacing);
+
+            ref var terrain = ref _world.Get<TerrainState>(_worldEntity);
+            for (int z = 0; z < depth; z++)
+            {
+                terrain.PathingCodes[32, z] = 4;
+            }
+
+            _terrainNavMeshService.BakeNavMesh(ref terrain);
+
+            var start = new Vector3(-20f, 0f, 0f);
+            var destination = new Vector3(20f, 0f, 0f);
+            
+            var groundUnit = SpawnUnit(start);
+            _world.Add(groundUnit, new PathingFlags(8));
+            _world.Add(groundUnit, new MoveTo(destination));
+
+            int ticks = 0;
+            while (_world.Has<MoveTo>(groundUnit) && ticks < 200)
+            {
+                var beforePos = _world.Get<Position>(groundUnit).Value;
+                _movementService.StepMovement(0.1f);
+                var afterPos = _world.Get<Position>(groundUnit).Value;
+                if (Vector3.Distance(beforePos, afterPos) < 0.001f && _world.Has<MoveTo>(groundUnit))
+                {
+                    break;
+                }
+                ticks++;
+            }
+
+            var groundPos = _world.Get<Position>(groundUnit).Value;
+            Assert.That(groundPos.X, Is.LessThan(0.0f));
+            
+            var flyingUnit = SpawnUnit(start);
+            _world.Add(flyingUnit, new PathingFlags(4));
+            _world.Add(flyingUnit, new MoveTo(destination));
+
+            ticks = 0;
+            while (_world.Has<MoveTo>(flyingUnit) && ticks < 200)
+            {
+                _movementService.StepMovement(0.1f);
+                ticks++;
+            }
+
+            Assert.That(_world.Has<MoveTo>(flyingUnit), Is.False);
+        }
     }
 }

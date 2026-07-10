@@ -98,6 +98,35 @@ internal class TerrainNavMeshService
 			}
 		}
 		var geom = new SimpleInputGeomProvider(verts, indices);
+		for (int z = 0; z < depth; z++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				int pathingCode = state.PathingCodes[x, z];
+				if (pathingCode != 12)
+				{
+					float lx = (x - (width - 1) / 2.0f) * spacing;
+					float lz = (z - (depth - 1) / 2.0f) * spacing;
+					float h = state.Heights[x, z];
+					float halfS = spacing * 0.5f;
+					var vol = new RcConvexVolume
+					{
+						verts = new float[]
+						{
+							lx - halfS, h, lz - halfS,
+							lx + halfS, h, lz - halfS,
+							lx + halfS, h, lz + halfS,
+							lx - halfS, h, lz + halfS
+						},
+						hmin = h - 5.0f,
+						hmax = h + 5.0f,
+						areaMod = new RcAreaModification(pathingCode)
+					};
+					geom.AddConvexVolume(vol);
+				}
+			}
+		}
+
 		float minHeightBrushAdjustment = 5.0f;
 		float maxUnitHeight = 2.5f;
 		float cellSize = minHeightBrushAdjustment / maxUnitHeight / 10.0f;
@@ -171,9 +200,8 @@ internal class TerrainNavMeshService
 
 				int xGrid = Math.Clamp((int)Math.Round(avgX / spacing + (width - 1) / 2.0f), 0, width - 1);
 				int zGrid = Math.Clamp((int)Math.Round(avgZ / spacing + (depth - 1) / 2.0f), 0, depth - 1);
-
 				int pathFlags = state.PathingCodes[xGrid, zGrid];
-				
+
 				if ((pathFlags & 16) != 0)
 				{
 					pars.polyFlags[i] = 0;
