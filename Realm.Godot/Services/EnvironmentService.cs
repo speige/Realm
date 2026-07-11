@@ -88,109 +88,93 @@ public class EnvironmentService
 		return next;
 	}
 
-	public void UpdateDayNightVisuals(Node3D host, float progress)
+public void UpdateDayNightVisuals(Node3D host, float progress)
+{
+	var worldEnv = host.GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
+	var sun = host.GetNodeOrNull<DirectionalLight3D>("DirectionalLight3D");
+	if (worldEnv == null || worldEnv.Environment == null) return;
+
+	var env = worldEnv.Environment;
+
+	env.TonemapMode = Godot.Environment.ToneMapper.Filmic;
+	env.AdjustmentEnabled = true;
+	env.AmbientLightSource = Godot.Environment.AmbientSource.Color;
+
+	float segment = Mathf.Clamp(progress, 0f, 1f) * 4f;
+	int phaseIndex = (int)Mathf.Floor(segment);
+	float t = Mathf.Clamp(segment - phaseIndex, 0f, 1f);
+
+	if (phaseIndex >= 4)
 	{
-		var worldEnv = host.GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
-		var sun = host.GetNodeOrNull<DirectionalLight3D>("DirectionalLight3D");
-		if (worldEnv == null || worldEnv.Environment == null) return;
-
-		var env = worldEnv.Environment;
-
-		env.TonemapMode = Godot.Environment.ToneMapper.Filmic;
-		env.TonemapExposure = 1.0f;
-		env.AdjustmentEnabled = true;
-		env.AdjustmentContrast = 1.05f;
-		env.AmbientLightSource = Godot.Environment.AmbientSource.Color;
-
-		const float AmbientEnergyFloor = 0.50f;
-		const float DirectionalEnergyFloor = 0.50f;
-
-		// Fix A: Night phases push toward fully-saturated deep indigo (#22254f)
-		// rather than the previous muddy slate. The B channel dominates strongly
-		// and R/G are kept very low so the scene reads as "midnight blue fantasy"
-		// rather than a desaturated grey.
-		Color[] ambientColors = new Color[]
-		{
-			new Color(0.38f, 0.52f, 0.78f),   // Day    – clear sky blue
-			new Color(0.48f, 0.22f, 0.48f),   // Sunset – deep saturated mauve
-			new Color(0.12f, 0.12f, 0.46f),   // Night  – vivid midnight indigo
-			new Color(0.18f, 0.14f, 0.45f),   // Dawn   – cool violet pre-sunrise
-			new Color(0.38f, 0.52f, 0.78f),   // Day    – wrap
-		};
-
-		float[] ambientEnergies = new float[]
-		{
-			0.70f,   // Day
-			0.68f,   // Sunset
-			0.55f,
-			0.65f,   // Dawn
-			0.70f,   // Day (wrap)
-		};
-
-		Color[] directionalColors = new Color[]
-		{
-			new Color(1.00f, 0.95f, 0.82f),   // Day    – warm golden white
-			new Color(1.00f, 0.62f, 0.28f),   // Sunset – amber orange
-			new Color(0.62f, 0.82f, 1.00f),   // Night  – silver-cyan moonlight
-			new Color(0.92f, 0.70f, 0.88f),   // Dawn   – rosy pink
-			new Color(1.00f, 0.95f, 0.82f),   // Day    – wrap
-		};
-
-		// Fix B: Raise sun energy (2.2 peak) for sharp armor glints on poly-edges.
-		// Energy > 1.0 is valid with Filmic tonemap – highlights clip gracefully
-		// rather than blowing out flat white.
-		float[] directionalEnergies = new float[]
-		{
-			2.20f,   // Day    – strong enough for hard specular glints on armor
-			1.80f,   // Sunset – dramatic rim lighting
-			0.55f,   // Night  ← floor; moon carves upper-body highlights
-			0.75f,   // Dawn
-			2.20f,   // Day    – wrap
-		};
-
-		float[] pitchDegrees = { -65f,      -62f,      -72f,      -60f,      -65f };
-		float[] yawDegrees   = {  30f,       52f,      -18f,      -45f,       30f };
-
-		float segment = Mathf.Clamp(progress, 0f, 1f) * 4f;
-        int phaseIndex = (int)Mathf.Floor(segment);
-        float t = Mathf.Clamp(segment - phaseIndex, 0f, 1f);
-
-        if (phaseIndex >= 4)
-        {
-            phaseIndex = 3;
-            t = 1.0f;
-        }
-
-        int nextIndex = (phaseIndex + 1) % 5;
-
-        Color interpolatedAmbient = ambientColors[phaseIndex].Lerp(ambientColors[nextIndex], t);
-        float interpolatedAmbientEnergy = Mathf.Lerp(ambientEnergies[phaseIndex], ambientEnergies[nextIndex], t);
-
-        Color interpolatedDirectional = directionalColors[phaseIndex].Lerp(directionalColors[nextIndex], t);
-        float interpolatedDirectionalEnergy = Mathf.Lerp(directionalEnergies[phaseIndex], directionalEnergies[nextIndex], t);
-
-        float interpolatedPitch = Mathf.Lerp(pitchDegrees[phaseIndex], pitchDegrees[nextIndex], t);
-        float interpolatedYaw = Mathf.Lerp(yawDegrees[phaseIndex], yawDegrees[nextIndex], t);
-
-		env.AmbientLightColor = interpolatedAmbient;
-		env.AmbientLightEnergy = Mathf.Max(interpolatedAmbientEnergy, AmbientEnergyFloor);
-
-		if (sun != null)
-		{
-			sun.LightColor = interpolatedDirectional;
-			sun.LightEnergy = Mathf.Max(interpolatedDirectionalEnergy, DirectionalEnergyFloor);
-			sun.RotationDegrees = new Vector3(interpolatedPitch, interpolatedYaw, 0f);
-		}
-
-		var fillLight = host.GetNodeOrNull<Camera3D>("Camera3D")
-			?.GetNodeOrNull<DirectionalLight3D>("CharacterFillLight");
-		if (fillLight != null)
-		{
-			float[] fillEnergies = { 0.20f, 0.28f, 0.62f, 0.42f, 0.20f };
-			float interpolatedFillEnergy = Mathf.Lerp(fillEnergies[phaseIndex], fillEnergies[phaseIndex + 1], t);
-			fillLight.LightEnergy = interpolatedFillEnergy;
-		}
+		phaseIndex = 3;
+		t = 1.0f;
 	}
+	int nextIndex = (phaseIndex + 1) % 5;
+
+	float[] exposures =  { 1.10f, 1.05f, 1.45f, 1.20f, 1.10f }; // Huge boost at Night (index 2) to lift dark textures
+	float[] contrasts =  { 1.10f, 1.15f, 0.95f, 1.05f, 1.10f }; // Lower contrast at night prevents shadows from becoming pitch black
+	float[] saturations = { 1.10f, 1.25f, 1.40f, 1.15f, 1.10f }; // High saturation keeps the night colorful and readable
+
+	env.TonemapExposure = Mathf.Lerp(exposures[phaseIndex], exposures[nextIndex], t);
+	env.AdjustmentContrast = Mathf.Lerp(contrasts[phaseIndex], contrasts[nextIndex], t);
+	env.AdjustmentSaturation = Mathf.Lerp(saturations[phaseIndex], saturations[nextIndex], t);
+
+
+	Color[] ambientColors = new Color[]
+	{
+		new Color(0.45f, 0.55f, 0.75f),   // Day
+		new Color(0.52f, 0.32f, 0.50f),   // Sunset
+		new Color(0.42f, 0.48f, 0.75f),   // Night - Brighter, luminous blue baseline
+		new Color(0.38f, 0.35f, 0.65f),   // Dawn
+		new Color(0.45f, 0.55f, 0.75f),   // Day (wrap)
+	};
+
+	float[] ambientEnergies = new float[] { 1.0f, 0.95f, 1.15f, 1.0f, 1.0f };
+	
+	Color interpolatedAmbient = ambientColors[phaseIndex].Lerp(ambientColors[nextIndex], t);
+	float interpolatedAmbientEnergy = Mathf.Lerp(ambientEnergies[phaseIndex], ambientEnergies[nextIndex], t);
+	
+	env.AmbientLightColor = interpolatedAmbient;
+	env.AmbientLightEnergy = interpolatedAmbientEnergy;
+
+
+	Color[] directionalColors = new Color[]
+	{
+		new Color(1.00f, 0.96f, 0.88f),   // Day
+		new Color(1.00f, 0.55f, 0.20f),   // Sunset
+		new Color(0.55f, 0.80f, 1.00f),   // Night - Strong, vibrant cyan "moonlight"
+		new Color(0.95f, 0.65f, 0.80f),   // Dawn
+		new Color(1.00f, 0.96f, 0.88f),   // Day (wrap)
+	};
+
+	float[] directionalEnergies = new float[] { 2.40f, 1.90f, 1.30f, 1.50f, 2.40f };
+	float[] pitchDegrees = { -48f, -42f, -45f, -40f, -48f };
+	float[] yawDegrees   = {  35f,  60f, -25f, -50f,  35f };
+
+	Color interpolatedDirectional = directionalColors[phaseIndex].Lerp(directionalColors[nextIndex], t);
+	float interpolatedDirectionalEnergy = Mathf.Lerp(directionalEnergies[phaseIndex], directionalEnergies[nextIndex], t);
+	float interpolatedPitch = Mathf.Lerp(pitchDegrees[phaseIndex], pitchDegrees[nextIndex], t);
+	float interpolatedYaw = Mathf.Lerp(yawDegrees[phaseIndex], yawDegrees[nextIndex], t);
+
+	if (sun != null)
+	{
+		sun.LightColor = interpolatedDirectional;
+		sun.LightEnergy = interpolatedDirectionalEnergy;
+		sun.RotationDegrees = new Vector3(interpolatedPitch, interpolatedYaw, 0f);
+		
+		sun.ShadowOpacity = Mathf.Lerp(0.75f, 0.50f, phaseIndex == 2 ? t : 0f); 
+	}
+
+
+	var fillLight = host.GetNodeOrNull<Camera3D>("Camera3D")
+		?.GetNodeOrNull<DirectionalLight3D>("CharacterFillLight");
+	if (fillLight != null)
+	{
+		float[] fillEnergies = { 0.20f, 0.28f, 0.65f, 0.42f, 0.20f };
+		float interpolatedFillEnergy = Mathf.Lerp(fillEnergies[phaseIndex], fillEnergies[nextIndex], t);
+		fillLight.LightEnergy = interpolatedFillEnergy;
+	}
+}
 
 	public (int TimeOfDayIndex, float TimeOfDayTimer) CycleTimeOfDay(Node3D host, Entity worldEntity, float cycleDuration)
 	{
