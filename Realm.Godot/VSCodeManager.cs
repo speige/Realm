@@ -18,6 +18,7 @@ public class VSCodeManager
 	private bool _installCompleted = false;
 	private System.Threading.Tasks.Task _installTask;
 	private readonly object _installLock = new object();
+	private int _vscodePort = 8089;
 
 	private static readonly string[] RequiredExtensions = new[]
 	{
@@ -280,9 +281,14 @@ public class VSCodeManager
 				_installTask?.Wait();
 			}
 
+			var l = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+			l.Start();
+			_vscodePort = ((System.Net.IPEndPoint)l.LocalEndpoint).Port;
+			l.Stop();
+
 			_vscodeProcess = new Process();
 			_vscodeProcess.StartInfo.FileName = exePath;
-			_vscodeProcess.StartInfo.Arguments = $"--extensions-dir \"{extensionsDir}\" serve-web --port 8089 --server-data-dir \"{serverDataDir}\" --accept-server-license-terms --without-connection-token";
+			_vscodeProcess.StartInfo.Arguments = $"--extensions-dir \"{extensionsDir}\" serve-web --port {_vscodePort} --server-data-dir \"{serverDataDir}\" --accept-server-license-terms --without-connection-token";
 			_vscodeProcess.StartInfo.CreateNoWindow = true;
 			_vscodeProcess.StartInfo.UseShellExecute = false;
 			_vscodeProcess.StartInfo.EnvironmentVariables["VSCODE_EXTENSIONS"] = extensionsDir;
@@ -425,7 +431,8 @@ public class VSCodeManager
 			string unitsPath = FormatWinPathForUrl(unitsPathRaw);
 			string scriptPath = FormatWinPathForUrl(scriptPathRaw);
 			
-			string targetUrl = $"http://127.0.0.1:8089/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString("[[\"openFile\",\"metadata.json\"],[\"openFile\",\"MapScript.cs\"]]")}";
+			string payload = System.Text.Json.JsonSerializer.Serialize(new[] { new[] { "openFile", "metadata.json" }, new[] { "openFile", "MapScript.cs" } });
+			string targetUrl = $"http://127.0.0.1:{_vscodePort}/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString(payload)}";
 			_controller.CoreWebView2.Navigate(targetUrl);
 			
 			_controller.IsVisible = _isVisible;
@@ -512,7 +519,8 @@ public class VSCodeManager
 				string projectRoot = ProjectSettings.GlobalizePath("res://");
 				string mapFolderRaw = GetMapFolderToOpen(projectRoot);
 				string mapFolder = FormatWinPathForUrl(mapFolderRaw);
-				string targetUrl = $"http://127.0.0.1:8089/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString("[[\"openFile\",\"metadata.json\"],[\"openFile\",\"MapScript.cs\"]]")}";
+				string payload = System.Text.Json.JsonSerializer.Serialize(new[] { new[] { "openFile", "metadata.json" }, new[] { "openFile", "MapScript.cs" } });
+				string targetUrl = $"http://127.0.0.1:{_vscodePort}/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString(payload)}";
 				_controller.CoreWebView2.Navigate(targetUrl);
 
 				_controller.IsVisible = true;
@@ -553,7 +561,8 @@ public class VSCodeManager
 		{
 			if (_controller != null)
 			{
-				string targetUrl = $"http://127.0.0.1:8089/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString("[[\"openFile\",\"" + fullPath + "\"]]")}";
+				string payload = System.Text.Json.JsonSerializer.Serialize(new[] { new[] { "openFile", fullPath } });
+				string targetUrl = $"http://127.0.0.1:{_vscodePort}/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString(payload)}";
 				_controller.CoreWebView2.Navigate(targetUrl);
 			}
 		});
@@ -841,7 +850,7 @@ public class VSCodeManager
 					{
 						retryCount++;
 						await System.Threading.Tasks.Task.Delay(500);
-						localController.CoreWebView2.Navigate("http://127.0.0.1:8089/");
+						localController.CoreWebView2.Navigate($"http://127.0.0.1:{_vscodePort}/");
 					}
 					else
 					{
@@ -937,7 +946,7 @@ public class VSCodeManager
 				}
 			};
 
-			localController.CoreWebView2.Navigate("http://127.0.0.1:8089/");
+			localController.CoreWebView2.Navigate($"http://127.0.0.1:{_vscodePort}/");
 		}
 		catch (Exception ex)
 		{

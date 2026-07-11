@@ -5055,7 +5055,7 @@ public class {mapName} : IMapScript
 			}
 		}
 	}
-	private void TestMapAction()
+	private async void TestMapAction()
 	{
 		if (GameHost.Instance == null) return;
 
@@ -5063,18 +5063,18 @@ public class {mapName} : IMapScript
 		{
 			ShowConfirmationDialog(
 				"Warning: You have not placed any units, you won't see anything due to Fog of War.",
-				() => ProceedToTestMap(),
+				async () => await ProceedToTestMap(),
 				"Okay",
 				"Cancel"
 			);
 		}
 		else
 		{
-			ProceedToTestMap();
+			await ProceedToTestMap();
 		}
 	}
 
-	private void ProceedToTestMap()
+	private async System.Threading.Tasks.Task ProceedToTestMap()
 	{
 		if (GameHost.Instance == null) return;
 
@@ -5118,6 +5118,7 @@ public class {mapName} : IMapScript
 		string csprojPath = System.IO.Path.Combine(_tempWorkspacePath, "CustomMap.csproj");
 		if (System.IO.File.Exists(csprojPath))
 		{
+			ShowFeedbackExternal("Compiling map script...");
 			try
 			{
 				var psi = new System.Diagnostics.ProcessStartInfo("dotnet", $"build \"{csprojPath}\"")
@@ -5131,7 +5132,7 @@ public class {mapName} : IMapScript
 				using var process = System.Diagnostics.Process.Start(psi);
 				if (process != null)
 				{
-					process.WaitForExit(60000);
+					await process.WaitForExitAsync();
 					if (process.ExitCode == 0)
 					{
 						string dllPath = System.IO.Directory.GetFiles(
@@ -5141,27 +5142,14 @@ public class {mapName} : IMapScript
 						).FirstOrDefault();
 						if (System.IO.File.Exists(dllPath))
 						{
-							var godotContext = System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(typeof(GameHost).Assembly);
-							using var fs = new System.IO.FileStream(dllPath, System.IO.FileMode.Open, System.IO.FileAccess.Read);
-							var asm = godotContext.LoadFromStream(fs);
-							Realm.MapAPI.IMapScript? found = null;
-							foreach (var t in asm.GetExportedTypes())
-							{
-								if (typeof(Realm.MapAPI.IMapScript).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
-								{
-									found = (Realm.MapAPI.IMapScript?)Activator.CreateInstance(t);
-									if (found != null)
-									{
-										break;
-									}
-								}
-							}
-							GameHost.PendingMapScript = found;
+							GameHost.PendingMapScriptPath = dllPath;
 						}
 					}
 					else
 					{
-						_ = process.StandardError.ReadToEnd();
+						string error = process.StandardError.ReadToEnd();
+						ShowFeedbackExternal($"Build failed: {error}");
+						return;
 					}
 				}
 			}

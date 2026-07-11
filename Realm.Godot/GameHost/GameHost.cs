@@ -597,7 +597,16 @@ public partial class GameHost : Node3D, IGameAPI
 	}
 
 	private IMapScript _activeMapScript;
-	public static IMapScript? PendingMapScript { get; set; }
+	public static string? PendingMapScriptPath { get; set; }
+
+	private System.Runtime.Loader.AssemblyLoadContext? _mapScriptLoadContext;
+
+	private class MapScriptLoadContext : System.Runtime.Loader.AssemblyLoadContext
+	{
+		public MapScriptLoadContext() : base(isCollectible: true)
+		{
+		}
+	}
 
 	private bool DayNightCycleEnabled
 	{
@@ -2254,10 +2263,37 @@ public class {mapName} : IMapScript
 
 		if (isCustomPath)
 		{
-			if (PendingMapScript != null)
+			if (!string.IsNullOrEmpty(PendingMapScriptPath))
 			{
-				_activeMapScript = PendingMapScript;
-				PendingMapScript = null;
+				if (_mapScriptLoadContext != null)
+				{
+					_mapScriptLoadContext.Unload();
+					_mapScriptLoadContext = null;
+				}
+
+				try
+				{
+					_mapScriptLoadContext = new MapScriptLoadContext();
+					using var fs = new System.IO.FileStream(PendingMapScriptPath, System.IO.FileMode.Open, System.IO.FileAccess.Read);
+					var asm = _mapScriptLoadContext.LoadFromStream(fs);
+
+					foreach (var t in asm.GetExportedTypes())
+					{
+						if (typeof(IMapScript).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
+						{
+							_activeMapScript = (IMapScript?)Activator.CreateInstance(t);
+							if (_activeMapScript != null)
+							{
+								break;
+							}
+						}
+					}
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"Failed to load pending map script from {PendingMapScriptPath}: {ex.Message}");
+				}
+				PendingMapScriptPath = null;
 			}
 		}
 		else
