@@ -27,6 +27,12 @@ public class MapEditorUxTests
         await runner.AwaitMillis(2500);
 
         var hud = MapEditorHUD.Instance;
+        if (hud != null)
+        {
+            var btnPaint = hud.GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelDecoVBox/BtnTextureBrush");
+            hud.TriggerToolSelection(GameHost.EditorTool.PaintGrass, btnPaint);
+            await runner.AwaitMillis(1000);
+        }
         var sw = new StringWriter();
         if (hud != null)
         {
@@ -61,9 +67,26 @@ public class MapEditorUxTests
         File.WriteAllText(@"C:\temp\Realm\diagnostics.txt", sw.ToString());
 
         global::Godot.Image image = runner.Scene().GetViewport().GetTexture().GetImage();
-        string artifactDir = @"C:\Users\Devin\.gemini\antigravity-cli\brain\fe985247-700e-4d1c-933d-df30dd0046a5";
+        string artifactDir = @"C:\Users\Devin\.gemini\antigravity-cli\brain\3f6febad-2673-47d8-b400-9b856eaa33d0";
         Directory.CreateDirectory(artifactDir);
         string filePath = Path.Combine(artifactDir, "map_editor_ux.png");
         image.SavePng(filePath);
+    }
+
+    [TestCase]
+    public void ConvertDefaultTileSheets()
+    {
+        var terrain = new EditableTerrain();
+        var files = Directory.GetFiles(@"C:\temp\Realm\Realm.Godot\Assets\2d\TileSheets", "*.png");
+        foreach (var file in files)
+        {
+            string ktx2Path = file.Replace(".png", ".ktx2");
+            System.Console.WriteLine($"Converting {file} to {ktx2Path}");
+            terrain.ProcessAndSaveRawTexture(file, ktx2Path);
+            if (!File.Exists(ktx2Path))
+            {
+                throw new System.Exception($"Failed to convert {file} to {ktx2Path}.");
+            }
+        }
     }
 }

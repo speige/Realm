@@ -152,17 +152,25 @@ public class EnvironmentService
 		float[] yawDegrees   = {  30f,       52f,      -18f,      -45f,       30f };
 
 		float segment = Mathf.Clamp(progress, 0f, 1f) * 4f;
-		int phaseIndex = (int)Mathf.Floor(segment);
-		float t = Mathf.Clamp(segment - phaseIndex, 0f, 1f);
+        int phaseIndex = (int)Mathf.Floor(segment);
+        float t = Mathf.Clamp(segment - phaseIndex, 0f, 1f);
 
-		Color interpolatedAmbient = ambientColors[phaseIndex].Lerp(ambientColors[phaseIndex + 1], t);
-		float interpolatedAmbientEnergy = Mathf.Lerp(ambientEnergies[phaseIndex], ambientEnergies[phaseIndex + 1], t);
+        if (phaseIndex >= 4)
+        {
+            phaseIndex = 3;
+            t = 1.0f;
+        }
 
-		Color interpolatedDirectional = directionalColors[phaseIndex].Lerp(directionalColors[phaseIndex + 1], t);
-		float interpolatedDirectionalEnergy = Mathf.Lerp(directionalEnergies[phaseIndex], directionalEnergies[phaseIndex + 1], t);
+        int nextIndex = (phaseIndex + 1) % 5;
 
-		float interpolatedPitch = Mathf.Lerp(pitchDegrees[phaseIndex], pitchDegrees[phaseIndex + 1], t);
-		float interpolatedYaw = Mathf.Lerp(yawDegrees[phaseIndex], yawDegrees[phaseIndex + 1], t);
+        Color interpolatedAmbient = ambientColors[phaseIndex].Lerp(ambientColors[nextIndex], t);
+        float interpolatedAmbientEnergy = Mathf.Lerp(ambientEnergies[phaseIndex], ambientEnergies[nextIndex], t);
+
+        Color interpolatedDirectional = directionalColors[phaseIndex].Lerp(directionalColors[nextIndex], t);
+        float interpolatedDirectionalEnergy = Mathf.Lerp(directionalEnergies[phaseIndex], directionalEnergies[nextIndex], t);
+
+        float interpolatedPitch = Mathf.Lerp(pitchDegrees[phaseIndex], pitchDegrees[nextIndex], t);
+        float interpolatedYaw = Mathf.Lerp(yawDegrees[phaseIndex], yawDegrees[nextIndex], t);
 
 		env.AmbientLightColor = interpolatedAmbient;
 		env.AmbientLightEnergy = Mathf.Max(interpolatedAmbientEnergy, AmbientEnergyFloor);

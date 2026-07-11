@@ -311,6 +311,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			Instance = this;
+			_tempWorkspacePath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
 
 			_camera3D = (GameHost.Instance?.MainCamera);
 
@@ -788,6 +789,11 @@ public partial class MapEditorHUD : Control
 				GameHost.Instance.SwapTexturesExternal(GameHost.Instance.EditorPaintTextureIndex, GameHost.Instance.EditorCliffPaintTextureIndex);
 			}
 		}, 11, "Globally swap grass/dirt texture assignment indices (X)");
+
+		var btnTextureImport = new Button();
+		btnTextureImport.Name = "BtnTextureImport";
+		_containerTextureSettings.AddChild(btnTextureImport);
+		SetupButton(btnTextureImport, "📥 IMPORT CUSTOM TEXTURE", () => ImportTextureAction(), 11, "Import a custom image for the selected slot");
 
 		for (int i = 1; i <= 12; i++)
 		{
@@ -2931,7 +2937,7 @@ public class {mapName} : IMapScript
 			UpdateBlockStepVisibility();
 		}
 
-		_containerTextureSettings.Visible = (tool == GameHost.EditorTool.PaintGrass ||
+		bool texSettingsVisible = _containerTextureSettings != null && (tool == GameHost.EditorTool.PaintGrass ||
 											 tool == GameHost.EditorTool.PaintDirt ||
 											 tool == GameHost.EditorTool.PaintRock ||
 											 tool == GameHost.EditorTool.PaintSand ||
@@ -2940,23 +2946,30 @@ public class {mapName} : IMapScript
 											 tool == GameHost.EditorTool.Lower ||
 											 tool == GameHost.EditorTool.Plateau ||
 											 tool == GameHost.EditorTool.Ramp);
-		_containerPathingSettings.Visible = (tool == GameHost.EditorTool.PaintPathing || tool == GameHost.EditorTool.FloodFillPathing);
-		_containerEyedropperSettings.Visible = (tool == GameHost.EditorTool.Eyedropper);
-		_containerPasteSettings.Visible = (tool == GameHost.EditorTool.SelectArea ||
-										   tool == GameHost.EditorTool.PasteArea);
+		if (_containerTextureSettings != null) _containerTextureSettings.Visible = texSettingsVisible;
+
+		bool pathingSettingsVisible = _containerPathingSettings != null && (tool == GameHost.EditorTool.PaintPathing || tool == GameHost.EditorTool.FloodFillPathing);
+		if (_containerPathingSettings != null) _containerPathingSettings.Visible = pathingSettingsVisible;
+
+		bool eyedropperSettingsVisible = _containerEyedropperSettings != null && (tool == GameHost.EditorTool.Eyedropper);
+		if (_containerEyedropperSettings != null) _containerEyedropperSettings.Visible = eyedropperSettingsVisible;
+
+		bool pasteSettingsVisible = _containerPasteSettings != null && (tool == GameHost.EditorTool.SelectArea || tool == GameHost.EditorTool.PasteArea);
+		if (_containerPasteSettings != null) _containerPasteSettings.Visible = pasteSettingsVisible;
 
 		bool isPlacement = (tool == GameHost.EditorTool.PlaceUnit ||
 							tool == GameHost.EditorTool.PlaceProp ||
 							tool == GameHost.EditorTool.PlacePropClump ||
 							tool == GameHost.EditorTool.PlaceDecal);
 		
-		_containerCategorySelector.Visible = isPlacement;
+		bool categorySelectorVisible = _containerCategorySelector != null && isPlacement;
+		if (_containerCategorySelector != null) _containerCategorySelector.Visible = categorySelectorVisible;
 
-		bool anyToolSettingVisible = _containerTextureSettings.Visible ||
-									 _containerPathingSettings.Visible ||
-									 _containerEyedropperSettings.Visible ||
-									 _containerPasteSettings.Visible ||
-									 _containerCategorySelector.Visible;
+		bool anyToolSettingVisible = texSettingsVisible ||
+									 pathingSettingsVisible ||
+									 eyedropperSettingsVisible ||
+									 pasteSettingsVisible ||
+									 categorySelectorVisible;
 
 		if (_accordionToolSettings != null)
 		{
@@ -3405,11 +3418,13 @@ public class {mapName} : IMapScript
 			btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 			btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
 
-			Texture2D tex = null;
-			if (ResourceLoader.Exists(_swatchPaths[i]))
+			foreach (var child in btn.GetChildren())
 			{
-				tex = GD.Load<Texture2D>(_swatchPaths[i]);
+				btn.RemoveChild(child);
+				child.QueueFree();
 			}
+
+			Texture2D tex = GetSwatchTexture(i);
 
 			if (tex != null)
 			{
@@ -3855,6 +3870,146 @@ public class {mapName} : IMapScript
 		if (LobbyManager.Instance != null)
 		{
 			LobbyManager.Instance.HostSinglePlayerGame(_tempWorkspacePath, "Test Map");
+		}
+	}
+
+	private Texture2D GetSwatchTexture(int i)
+	{
+		var names = new[]
+		{
+			"ancient_ruin", "deep_moss", "grey_slate", "iron_dust",
+			"lava_vein", "mossy_stone", "pale_sand", "river_silt",
+			"royal_marble", "tarn_mud", "dark_wood", "mist_grove"
+		};
+		string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+			? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+			: _tempWorkspacePath;
+		string localKtx2 = System.IO.Path.Combine(wsPath, names[i] + ".ktx2");
+		if (System.IO.File.Exists(localKtx2))
+		{
+			string tempOut = $"user://temp_swatch_{i}_{System.Guid.NewGuid()}.png";
+			string globalTempOut = ProjectSettings.GlobalizePath(tempOut);
+			string ktxCmd = "ktx";
+			string localPath = System.IO.Path.Combine(Godot.ProjectSettings.GlobalizePath("res://"), "ktx_tools", "bin", "ktx.exe");
+			if (System.IO.File.Exists(localPath))
+			{
+				ktxCmd = localPath;
+			}
+			else
+			{
+				string workspacePath = @"C:\temp\Realm\ktx_tools\v5.0.0-rc1\bin\ktx.exe";
+				if (!System.IO.File.Exists(workspacePath))
+				{
+					workspacePath = @"C:\temp\Realm\ktx_tools\bin\ktx.exe";
+				}
+				if (System.IO.File.Exists(workspacePath))
+				{
+					ktxCmd = workspacePath;
+				}
+			}
+			try
+			{
+				var startInfo = new System.Diagnostics.ProcessStartInfo
+				{
+					FileName = ktxCmd,
+					WorkingDirectory = System.IO.Path.GetDirectoryName(ktxCmd),
+					Arguments = $"extract --layer 0 --level 0 --transcode rgba8 \"{localKtx2}\" \"{globalTempOut}\"",
+					UseShellExecute = false,
+					CreateNoWindow = true,
+					RedirectStandardOutput = true,
+					RedirectStandardError = true
+				};
+				using (var process = System.Diagnostics.Process.Start(startInfo))
+				{
+					process.WaitForExit();
+					if (process.ExitCode == 0)
+					{
+						var img = Image.LoadFromFile(globalTempOut);
+						if (img != null)
+						{
+							return ImageTexture.CreateFromImage(img);
+						}
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"Failed to extract swatch preview: {ex.Message}");
+			}
+			finally
+			{
+				if (System.IO.File.Exists(globalTempOut)) System.IO.File.Delete(globalTempOut);
+			}
+		}
+		if (ResourceLoader.Exists(_swatchPaths[i]))
+		{
+			return GD.Load<Texture2D>(_swatchPaths[i]);
+		}
+		return null;
+	}
+
+	private void ImportTextureAction()
+	{
+		if (GameHost.Instance == null) return;
+		int selectedIdx = GameHost.Instance.EditorPaintTextureIndex;
+		if (selectedIdx < 0 || selectedIdx >= 12)
+		{
+			ShowFeedback(TranslationServer.Translate("Please select a texture slot first"));
+			return;
+		}
+		var err = DisplayServer.FileDialogShow(
+			TranslationServer.Translate("Import Texture Image"),
+			GetInitialDirectory(),
+			"",
+			false,
+			DisplayServer.FileDialogMode.OpenFile,
+			new string[] { "*.png", "*.jpg", "*.jpeg" },
+			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) => {
+				if (status && selectedPaths.Length > 0)
+				{
+					string imagePath = selectedPaths[0];
+					ImportTextureFile(imagePath, selectedIdx);
+				}
+				else
+				{
+					ShowFeedback(TranslationServer.Translate("Import cancelled"));
+				}
+			})
+		);
+		if (err != Error.Ok)
+		{
+			ShowFeedback(TranslationServer.Translate("Failed to show file dialog"));
+		}
+	}
+
+	private void ImportTextureFile(string imagePath, int index)
+	{
+		var names = new[]
+		{
+			"ancient_ruin", "deep_moss", "grey_slate", "iron_dust",
+			"lava_vein", "mossy_stone", "pale_sand", "river_silt",
+			"royal_marble", "tarn_mud", "dark_wood", "mist_grove"
+		};
+		string name = names[index];
+		string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+			? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+			: _tempWorkspacePath;
+		string outputKtx2 = System.IO.Path.Combine(wsPath, name + ".ktx2");
+		ShowFeedback(TranslationServer.Translate("Importing texture..."));
+		try
+		{
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+			{
+				GameHost.Instance.GroundTerrain.ProcessAndSaveRawTexture(imagePath, outputKtx2);
+				GameHost.Instance.GroundTerrain.ReloadTerrainTextures();
+				SetupTextureSwatches(false);
+				ShowFeedback(string.Format(TranslationServer.Translate("Successfully imported custom texture for {0}!"), _swatchDisplayNames[index]));
+			}
+		}
+		catch (Exception ex)
+		{
+			ShowFeedback(string.Format(TranslationServer.Translate("Failed to import texture: {0}"), ex.Message));
+			GD.PrintErr($"Failed to import texture: {ex.Message}");
 		}
 	}
 }

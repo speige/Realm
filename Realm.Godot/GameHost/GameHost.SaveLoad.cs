@@ -8,6 +8,8 @@ using System.Linq;
 
 public partial class GameHost
 {
+	public string CurrentMapDirectory { get; set; } = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+
 	public void SaveMapToFile(string customPath = "")
 	{
 		if (GroundTerrain == null) return;
@@ -62,6 +64,7 @@ public partial class GameHost
 
 		string path = string.IsNullOrEmpty(customPath) ? "user://terrain.json" : customPath;
 		string absolutePath = ProjectSettings.GlobalizePath(path);
+		CurrentMapDirectory = System.IO.Path.GetDirectoryName(absolutePath);
 
 		_saveLoadService.SaveMapToFile(absolutePath, splatData, unitsData.ToArray(), propsData.ToArray(), decalsData.ToArray(), coordinatesData);
 	}
@@ -70,6 +73,7 @@ public partial class GameHost
 	{
 		string path = string.IsNullOrEmpty(customPath) ? "user://terrain.json" : customPath;
 		string absolutePath = ProjectSettings.GlobalizePath(path);
+		CurrentMapDirectory = System.IO.Path.GetDirectoryName(absolutePath);
 
 		if (clearUnits)
 		{

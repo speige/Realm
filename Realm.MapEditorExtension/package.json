@@ -40,5 +40,8 @@
     "@types/vscode": "^1.75.0",
     "esbuild": "^0.20.0",
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "ktx2-encoder": "^0.5.3"
   }
 }
