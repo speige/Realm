@@ -89,4 +89,61 @@ public class MapEditorUxTests
             }
         }
     }
+
+    [TestCase]
+    public async Task VerifyTerrainSplatTransitions()
+    {
+        var field = typeof(MapEditorHUD).GetField("_agreementShownThisSession", BindingFlags.NonPublic | BindingFlags.Static);
+        if (field != null)
+        {
+            field.SetValue(null, true);
+        }
+
+        ISceneRunner runner = ISceneRunner.Load("res://Main.tscn");
+        await runner.AwaitMillis(1500);
+
+        UIManager.Instance.TransitionTo(GameScreen.MapEditorHUD);
+        await runner.AwaitMillis(2500);
+
+        var gameHost = GameHost.Instance;
+        var camera = gameHost.MainCamera;
+        if (camera != null)
+        {
+            camera.Position = new Vector3(0.0f, 35.0f, 25.0f);
+            camera.RotationDegrees = new Vector3(-55.0f, 0.0f, 0.0f);
+        }
+
+        var terrain = gameHost.GroundTerrain;
+
+        int width = terrain.Width;
+        int depth = terrain.Depth;
+        var splatMap = terrain.SplatMap;
+
+        for (int z = 0; z < depth; z++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (x <= width / 2)
+                {
+                    splatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
+                }
+                else
+                {
+                    splatMap[x, z] = TerrainSplatWeights.CreateSolid(1);
+                }
+            }
+        }
+
+        var editorService = ServiceLocator.Get<EditorService>();
+        editorService.SetTerrainSplatMap(splatMap);
+
+        terrain.UpdateMeshAndPhysics(true, true);
+        await runner.AwaitMillis(1000);
+
+        global::Godot.Image image = runner.Scene().GetViewport().GetTexture().GetImage();
+        string artifactDir = @"C:\Users\Devin\.gemini\antigravity-cli\brain\7943d49b-03f6-4917-bd98-2a87e32bae94";
+        Directory.CreateDirectory(artifactDir);
+        string filePath = Path.Combine(artifactDir, "terrain_transition_test.png");
+        image.SavePng(filePath);
+    }
 }

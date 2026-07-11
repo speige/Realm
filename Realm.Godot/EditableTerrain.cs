@@ -512,18 +512,18 @@ void fragment() {
 	vec4 c2 = texture(terrain_textures, vec3(UV, v_tex_indices.z));
 	vec4 c3 = texture(terrain_textures, vec3(UV, v_tex_indices.w));
 
-	float h0 = c0.a + v_tex_weights.x;
-	float h1 = c1.a + v_tex_weights.y;
-	float h2 = c2.a + v_tex_weights.z;
-	float h3 = c3.a + v_tex_weights.w;
+	float gh0 = c0.a;
+	float gh1 = c1.a;
+	float gh2 = c2.a;
+	float gh3 = c3.a;
 	
-	float max_h = max(max(h0, h1), max(h2, h3));
-	float t = max_h - blend_softness;
+	float max_gh = max(max(gh0, gh1), max(gh2, gh3));
+	float soft_bias = 0.05;
 	
-	float w0 = max(h0 - t, 0.0);
-	float w1 = max(h1 - t, 0.0);
-	float w2 = max(h2 - t, 0.0);
-	float w3 = max(h3 - t, 0.0);
+	float w0 = max(gh0 - max_gh + blend_softness + soft_bias, 0.0) * v_tex_weights.x;
+	float w1 = max(gh1 - max_gh + blend_softness + soft_bias, 0.0) * v_tex_weights.y;
+	float w2 = max(gh2 - max_gh + blend_softness + soft_bias, 0.0) * v_tex_weights.z;
+	float w3 = max(gh3 - max_gh + blend_softness + soft_bias, 0.0) * v_tex_weights.w;
 	
 	float sum = w0 + w1 + w2 + w3;
 	if (sum > 0.0) {
