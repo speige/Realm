@@ -597,6 +597,7 @@ public partial class GameHost : Node3D, IGameAPI
 	}
 
 	private IMapScript _activeMapScript;
+	public static IMapScript? PendingMapScript { get; set; }
 
 	private bool DayNightCycleEnabled
 	{
@@ -742,6 +743,7 @@ public partial class GameHost : Node3D, IGameAPI
 	IUnit IGameAPI.SpawnUnit(string unitTypeId, System.Numerics.Vector3 position, bool isEnemy, bool bypassPopulation)
 	{
 		var pos = new Vector3(position.X, position.Y, position.Z);
+		pos.Y = GetTerrainHeightAt(pos);
 		if (!UnitRegistry.TryGetValue(unitTypeId, out var meta))
 		{
 			throw new ArgumentException($"Unit ID '{unitTypeId}' not found in registry.");
@@ -2246,56 +2248,70 @@ public class {mapName} : IMapScript
 	private void LoadMapScript(string mapName)
 	{
 		_activeMapScript = null;
-		foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+
+		string normalizedRaw = mapName.Replace('\\', '/');
+		bool isCustomPath = normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRaw);
+
+		if (isCustomPath)
 		{
-			Type?[] types;
-			try
+			if (PendingMapScript != null)
 			{
-				types = assembly.GetTypes();
+				_activeMapScript = PendingMapScript;
+				PendingMapScript = null;
 			}
-			catch (System.Reflection.ReflectionTypeLoadException ex)
+		}
+		else
+		{
+			foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
 			{
-				types = ex.Types;
-			}
-			catch (Exception)
-			{
-				continue;
-			}
-			if (types == null) continue;
-			foreach (var type in types)
-			{
-				if (type == null) continue;
-				if (typeof(IMapScript).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract)
+				Type?[] types;
+				try
 				{
-					string typeName = type.Name.ToLower();
-					string searchName = mapName.Replace("_", "").ToLower();
-					if (typeName.Contains(searchName) || searchName.Contains(typeName))
+					types = assembly.GetTypes();
+				}
+				catch (System.Reflection.ReflectionTypeLoadException ex)
+				{
+					types = ex.Types;
+				}
+				catch (Exception)
+				{
+					continue;
+				}
+				if (types == null) continue;
+				foreach (var type in types)
+				{
+					if (type == null) continue;
+					if (typeof(IMapScript).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract)
 					{
-						try
+						string typeName = type.Name.ToLower();
+						string searchName = mapName.Replace("_", "").ToLower();
+						if (typeName.Contains(searchName) || searchName.Contains(typeName))
 						{
-							_activeMapScript = (IMapScript)Activator.CreateInstance(type);
-							break;
-						}
-						catch (Exception ex)
-						{
-							GD.PrintErr($"Failed to instantiate map script type {type.FullName}: {ex.Message}");
+							try
+							{
+								_activeMapScript = (IMapScript)Activator.CreateInstance(type);
+								break;
+							}
+							catch (Exception ex)
+							{
+								GD.PrintErr($"Failed to instantiate map script type {type.FullName}: {ex.Message}");
+							}
 						}
 					}
 				}
+				if (_activeMapScript != null) break;
 			}
-			if (_activeMapScript != null) break;
 		}
 
 		if (_activeMapScript == null)
 		{
 			bool hasCustomTerrain = false;
-			string normalizedMapName = mapName.Replace('\\', '/');
-			if (normalizedMapName.StartsWith("user://") || normalizedMapName.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedMapName))
+			if (isCustomPath)
 			{
-				string checkDir = normalizedMapName;
-				if (normalizedMapName.StartsWith("user://") || normalizedMapName.StartsWith("res://"))
+				string checkDir = normalizedRaw;
+				if (normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://"))
 				{
-					checkDir = ProjectSettings.GlobalizePath(normalizedMapName);
+					checkDir = ProjectSettings.GlobalizePath(normalizedRaw);
 				}
 				if (System.IO.Directory.Exists(checkDir) && System.IO.File.Exists(System.IO.Path.Combine(checkDir, "terrain.json")))
 				{

@@ -80,6 +80,7 @@ public partial class GameHost
 		MapEditorHUD.Instance?.RefreshCoordinateListExternal();
 
 		MapEditorHUD.Instance?.ClearTempWorkspaceExternal();
+		MapEditorHUD.Instance?.GenerateVSCodeFilesExternal();
 		MapEditorHUD.Instance?.ShowFeedbackExternal("Map reset: cleared all entities & terrain");
 	}
 

@@ -370,8 +370,14 @@ public class VSCodeManager
 		}
 		else if (msg == 0x0010) // WM_CLOSE
 		{
+			if (!_isVisible) return IntPtr.Zero; // already hidden
 			_actionQueue.Enqueue(() =>
 			{
+				if (_controller != null && _controller.CoreWebView2 != null)
+				{
+					_controller.CoreWebView2.Navigate("about:blank");
+					_controller.IsVisible = false;
+				}
 				ShowWindow(hWnd, SW_HIDE);
 				_isVisible = false;
 			});
@@ -413,11 +419,13 @@ public class VSCodeManager
 			
 			string mapFolderRaw = GetMapFolderToOpen(projectRoot);
 			string unitsPathRaw = Path.Combine(mapFolderRaw, "metadata.json");
+			string scriptPathRaw = Path.Combine(mapFolderRaw, "MapScript.cs");
 			
 			string mapFolder = FormatWinPathForUrl(mapFolderRaw);
 			string unitsPath = FormatWinPathForUrl(unitsPathRaw);
+			string scriptPath = FormatWinPathForUrl(scriptPathRaw);
 			
-			string targetUrl = $"http://127.0.0.1:8089/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString("[[\"openFile\",\"" + unitsPath + "\"]]")}";
+			string targetUrl = $"http://127.0.0.1:8089/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString("[[\"openFile\",\"metadata.json\"],[\"openFile\",\"MapScript.cs\"]]")}";
 			_controller.CoreWebView2.Navigate(targetUrl);
 			
 			_controller.IsVisible = _isVisible;
@@ -461,26 +469,71 @@ public class VSCodeManager
 		_isVisible = visible;
 		if (!_isInitialized)
 		{
-			return;
-		}
-		_actionQueue.Enqueue(() =>
-		{
-			if (_controller != null)
-			{
-				_controller.IsVisible = visible;
-			}
 			if (visible)
 			{
+				_containerControl = null;
+				Initialize(_containerControl);
+			}
+			return;
+		}
+
+		if (visible)
+		{
+			if (_vscodeProcess != null && _vscodeProcess.HasExited)
+			{
+				StartVSCodeServer();
+				if (_vscodeProcess != null && !_vscodeProcess.HasExited)
+				{
+					_vscodeProcess.WaitForExit(5000);
+				}
+			}
+		}
+
+		_actionQueue.Enqueue(() =>
+		{
+			if (visible)
+			{
+				bool controllerValid = false;
+				try
+				{
+					controllerValid = _controller != null && _controller.CoreWebView2 != null;
+				}
+				catch
+				{
+					controllerValid = false;
+				}
+
+				if (!controllerValid)
+				{
+					InitializeWebView();
+					return;
+				}
+
+				string projectRoot = ProjectSettings.GlobalizePath("res://");
+				string mapFolderRaw = GetMapFolderToOpen(projectRoot);
+				string mapFolder = FormatWinPathForUrl(mapFolderRaw);
+				string targetUrl = $"http://127.0.0.1:8089/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString("[[\"openFile\",\"metadata.json\"],[\"openFile\",\"MapScript.cs\"]]")}";
+				_controller.CoreWebView2.Navigate(targetUrl);
+
+				_controller.IsVisible = true;
 				PositionOnScreen();
 				ShowWindow(_childHwnd, SW_SHOW);
 				ShowWindow(_childHwnd, 3);
 			}
 			else
 			{
+				if (_controller != null)
+				{
+					_controller.IsVisible = false;
+				}
 				ShowWindow(_childHwnd, SW_HIDE);
 			}
 		});
-		PostMessage(_childHwnd, WM_WAKEUP, IntPtr.Zero, IntPtr.Zero);
+
+		if (_childHwnd != IntPtr.Zero)
+		{
+			PostMessage(_childHwnd, WM_WAKEUP, IntPtr.Zero, IntPtr.Zero);
+		}
 	}
 
 	public void UpdateBounds()
@@ -610,6 +663,8 @@ public class VSCodeManager
 			}
 			_vscodeProcess = null;
 		}
+
+		_isInitialized = false;
 	}
 
 	private void RunBypassAndVerify(string exePath, string embedDir)

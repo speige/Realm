@@ -267,6 +267,12 @@ internal class MovementAndPathfindingService
 				_pathfinder.ComputePath(_currentTerrainState.NavMeshQuery, pathfindStart, pathfindEnd, pathingFlags, ref pf);
 				pf.Target = moveTo.Target;
 			}
+			if (pf.WaypointCount == 0)
+			{
+				pf.WaypointCount = 1;
+				pf.Waypoints[0] = moveTo.Target;
+				pf.Target = moveTo.Target;
+			}
 		}
 		var current = pos.Value;
 		var target = moveTo.Target;

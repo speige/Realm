@@ -37,6 +37,7 @@ public partial class MapEditorHUD : Control
 	public static float SavedBrushStrength = 0.5f;
 
 	private static string _lastUsedFolder = "";
+	private static string _currentSourceFolder = "";
 
 	private static bool _agreementShownThisSession = false;
 
@@ -784,6 +785,8 @@ public partial class MapEditorHUD : Control
 		GetNode<HBoxContainer>("TopLeftBox").AddChild(_btnPaste);
 		SetupButton(_btnPaste, "📋 PASTE", () => GameHost.Instance?.TriggerPasteFromUI(), 13, "Paste copied object or area (Ctrl+V)");
 
+		InitializeTempWorkspace();
+
 		if (OperatingSystem.IsWindows())
 		{
 			VSCodeManager.Instance.Initialize(this);
@@ -1432,7 +1435,6 @@ public partial class MapEditorHUD : Control
 			UpdateGridSnapExternal(GameHost.Instance.EditorSnapToGrid);
 		}
 
-		InitializeTempWorkspace();
 		if (!_agreementShownThisSession)
 		{
 			_agreementShownThisSession = true;
@@ -1710,9 +1712,10 @@ public partial class MapEditorHUD : Control
 			string varName = System.Text.RegularExpressions.Regex.Replace(coord.Name, @"[^a-zA-Z0-9_]", "_");
 			if (varName.Length > 0 && char.IsDigit(varName[0])) varName = "_" + varName;
 
+			var invariant = System.Globalization.CultureInfo.InvariantCulture;
 			sb.AppendLine($"    public static readonly Coordinate {varName} = new Coordinate(");
-			sb.AppendLine($"        new System.Numerics.Vector3({coord.MinX:F2}f, 0f, {coord.MinZ:F2}f),");
-			sb.AppendLine($"        new System.Numerics.Vector3({coord.MaxX:F2}f, 0f, {coord.MaxZ:F2}f)");
+			sb.AppendLine(string.Format(invariant, "        new System.Numerics.Vector3({0:F2}f, 0f, {1:F2}f),", coord.MinX, coord.MinZ));
+			sb.AppendLine(string.Format(invariant, "        new System.Numerics.Vector3({0:F2}f, 0f, {1:F2}f)", coord.MaxX, coord.MaxZ));
 			sb.AppendLine("    );");
 			sb.AppendLine();
 		}
@@ -1796,6 +1799,10 @@ public partial class MapEditorHUD : Control
 		if (OperatingSystem.IsWindows())
 		{
 			bool isVisible = !VSCodeManager.Instance.IsVisible;
+			if (isVisible)
+			{
+				GenerateVSCodeFilesExternal();
+			}
 			VSCodeManager.Instance.SetVisible(isVisible);
 		}
 	}
@@ -2409,6 +2416,15 @@ public partial class MapEditorHUD : Control
 		_lastMetadataSyncTime = 0;
 	}
 
+	public void GenerateVSCodeFilesExternal()
+	{
+		if (string.IsNullOrEmpty(_tempWorkspacePath)) return;
+		string scriptPath = System.IO.Path.Combine(_tempWorkspacePath, "MapScript.cs");
+		string unitsPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+		System.IO.Directory.CreateDirectory(_tempWorkspacePath);
+		GenerateVSCodeFiles(_tempWorkspacePath, "CustomMap");
+	}
+
 	private long GetLastWriteTimeSafe(string path)
 	{
 		if (!System.IO.File.Exists(path)) return 0;
@@ -2604,7 +2620,7 @@ Realm is an RTS Game using Godot with C# and the Arch ECS framework.
 		}
 
 		string scriptPath = System.IO.Path.Combine(directory, "MapScript.cs");
-		if (!System.IO.File.Exists(scriptPath))
+		if (!System.IO.File.Exists(scriptPath) || new System.IO.FileInfo(scriptPath).Length == 0)
 		{
 			string scriptContent = $@"namespace Realm.Maps;
 
@@ -2625,7 +2641,7 @@ public class {mapName} : IMapScript
 		}
 
 		string unitsPath = System.IO.Path.Combine(directory, "metadata.json");
-		if (!System.IO.File.Exists(unitsPath))
+		if (!System.IO.File.Exists(unitsPath) || new System.IO.FileInfo(unitsPath).Length == 0)
 		{
 			System.IO.File.WriteAllText(unitsPath, "{}");
 		}
@@ -2729,6 +2745,7 @@ public class {mapName} : IMapScript
 				{
 					string selectedFolder = selectedPaths[0];
 					_lastUsedFolder = selectedFolder;
+					_currentSourceFolder = selectedFolder;
 					CopyFolderToTempWorkspace(selectedFolder);
 					string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 					bool success = GameHost.Instance.LoadMapFromFile(terrainPath);
@@ -2755,6 +2772,7 @@ public class {mapName} : IMapScript
 			string defaultFolder = ProjectSettings.GlobalizePath("user://maps/default_map");
 			if (System.IO.Directory.Exists(defaultFolder))
 			{
+				_currentSourceFolder = defaultFolder;
 				CopyFolderToTempWorkspace(defaultFolder);
 			}
 			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
@@ -5088,8 +5106,70 @@ public class {mapName} : IMapScript
 
 
 		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+
+		if (!string.IsNullOrEmpty(_currentSourceFolder) && System.IO.Directory.Exists(_currentSourceFolder))
+		{
+			CopyFolderToTempWorkspace(_currentSourceFolder);
+		}
+
 		GameHost.Instance.SaveMapToFile(tempTerrainPath);
 		GameHost.Instance.EditorHasUnsavedChanges = false;
+
+		string csprojPath = System.IO.Path.Combine(_tempWorkspacePath, "CustomMap.csproj");
+		if (System.IO.File.Exists(csprojPath))
+		{
+			try
+			{
+				var psi = new System.Diagnostics.ProcessStartInfo("dotnet", $"build \"{csprojPath}\"")
+				{
+					WorkingDirectory = _tempWorkspacePath,
+					CreateNoWindow = true,
+					UseShellExecute = false,
+					RedirectStandardOutput = true,
+					RedirectStandardError = true
+				};
+				using var process = System.Diagnostics.Process.Start(psi);
+				if (process != null)
+				{
+					process.WaitForExit(60000);
+					if (process.ExitCode == 0)
+					{
+						string dllPath = System.IO.Directory.GetFiles(
+							System.IO.Path.Combine(_tempWorkspacePath, "bin"),
+							"CustomMap.dll",
+							System.IO.SearchOption.AllDirectories
+						).FirstOrDefault();
+						if (System.IO.File.Exists(dllPath))
+						{
+							var godotContext = System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(typeof(GameHost).Assembly);
+							using var fs = new System.IO.FileStream(dllPath, System.IO.FileMode.Open, System.IO.FileAccess.Read);
+							var asm = godotContext.LoadFromStream(fs);
+							Realm.MapAPI.IMapScript? found = null;
+							foreach (var t in asm.GetExportedTypes())
+							{
+								if (typeof(Realm.MapAPI.IMapScript).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
+								{
+									found = (Realm.MapAPI.IMapScript?)Activator.CreateInstance(t);
+									if (found != null)
+									{
+										break;
+									}
+								}
+							}
+							GameHost.PendingMapScript = found;
+						}
+					}
+					else
+					{
+						_ = process.StandardError.ReadToEnd();
+					}
+				}
+			}
+			catch (System.Exception ex)
+			{
+				GD.PrintErr($"[ProceedToTestMap] Build exception: {ex.Message}");
+			}
+		}
 
 		IsTestMode = true;
 
