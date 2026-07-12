@@ -3,8 +3,10 @@ using Microsoft.Web.WebView2.Core;
 using Realm.MapAPI;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -22,6 +24,7 @@ public class VSCodeManager
 
 	private static readonly string[] RequiredExtensions = new[]
 	{
+		"ms-dotnettools.csdevkit",
 		"OHZIInteractiveStudio.ohzi-vscode-glb-viewer",
 		"Gruntfuggly.todo-tree",
 		"mechatroner.rainbow-json",
@@ -431,10 +434,68 @@ public class VSCodeManager
 			string unitsPath = FormatWinPathForUrl(unitsPathRaw);
 			string scriptPath = FormatWinPathForUrl(scriptPathRaw);
 			
-			string payload = System.Text.Json.JsonSerializer.Serialize(new[] { new[] { "openFile", "metadata.json" }, new[] { "openFile", "MapScript.cs" } });
+			string payload = MapWorkspaceService.BuildPayload();
 			string targetUrl = $"http://127.0.0.1:{_vscodePort}/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString(payload)}";
+
+			_controller.CoreWebView2.NavigationCompleted += async (sender, args) =>
+			{
+				if (!args.IsSuccess || sender != _controller.CoreWebView2) return;
+				try
+				{
+					await _controller.CoreWebView2.ExecuteScriptAsync(@"
+(async () => {
+    const DB = 'vscode-web-db';
+    const STORE = 'vscode-userdata-store';
+    const KEY = '/User/settings.json';
+    try {
+        const db = await new Promise((resolve, reject) => {
+            const r = indexedDB.open(DB);
+            r.onupgradeneeded = (e) => {
+                if (!e.target.result.objectStoreNames.contains(STORE))
+                    e.target.result.createObjectStore(STORE);
+            };
+            r.onsuccess = (e) => resolve(e.target.result);
+            r.onerror = (e) => reject(e.target.error);
+        });
+        let config = {};
+        const raw = await new Promise((resolve, reject) => {
+            const t = db.transaction([STORE], 'readwrite');
+            const g = t.objectStore(STORE).get(KEY);
+            g.onsuccess = () => resolve(g.result);
+            g.onerror = () => reject(g.error);
+        });
+        if (raw) {
+            const buf = raw instanceof Uint8Array ? raw : raw.value;
+            if (buf instanceof Uint8Array) {
+                const s = new TextDecoder('utf-8').decode(buf).trim();
+                if (s) config = JSON.parse(s);
+            }
+        }
+        if (config['security.workspace.trust.enabled'] === false &&
+            config['security.workspace.trust.startupPrompt'] === 'never') {
+            return; // already set
+        }
+        config['security.workspace.trust.enabled'] = false;
+        config['security.workspace.trust.startupPrompt'] = 'never';
+        const encoded = new TextEncoder().encode(JSON.stringify(config, null, '\t'));
+        await new Promise((resolve, reject) => {
+            const t = db.transaction([STORE], 'readwrite');
+            const p = t.objectStore(STORE).put(encoded, KEY);
+            p.onsuccess = () => resolve();
+            p.onerror = () => reject(p.error);
+        });
+        window.location.replace(window.location.href);
+    } catch (e) {
+        console.error('Failed to set workspace trust:', e);
+    }
+})();
+");
+				}
+				catch { }
+			};
+
 			_controller.CoreWebView2.Navigate(targetUrl);
-			
+
 			_controller.IsVisible = _isVisible;
 			ShowWindow(_childHwnd, _isVisible ? SW_SHOW : SW_HIDE);
 		}
@@ -519,7 +580,7 @@ public class VSCodeManager
 				string projectRoot = ProjectSettings.GlobalizePath("res://");
 				string mapFolderRaw = GetMapFolderToOpen(projectRoot);
 				string mapFolder = FormatWinPathForUrl(mapFolderRaw);
-				string payload = System.Text.Json.JsonSerializer.Serialize(new[] { new[] { "openFile", "metadata.json" }, new[] { "openFile", "MapScript.cs" } });
+				string payload = MapWorkspaceService.BuildPayload();
 				string targetUrl = $"http://127.0.0.1:{_vscodePort}/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString(payload)}";
 				_controller.CoreWebView2.Navigate(targetUrl);
 
@@ -899,6 +960,7 @@ public class VSCodeManager
 									}
 								}
 
+								config["security.workspace.trust.enabled"] = false;
 								config["security.workspace.trust.startupPrompt"] = "never";
 
 								const updatedJsonString = JSON.stringify(config, null, '\t');
@@ -979,10 +1041,117 @@ public class VSCodeManager
 					}
 				}
 			}
+
+			string realmMapEditorId = "speige.realm-map-editor";
+			if (!IsExtensionInstalled(extensionsDir, realmMapEditorId))
+			{
+				GD.Print("VS Code: Realm Map Editor extension not found, installing from embedded source...");
+				string srcPath = Path.Combine(
+					ProjectSettings.GlobalizePath("res://"),
+					"vscode_embedded", "extensions_src", "speige.realm-map-editor"
+				);
+				string dstPath = Path.Combine(extensionsDir, $"{realmMapEditorId}-1.0.0");
+				try
+				{
+					if (Directory.Exists(srcPath))
+					{
+						Directory.CreateDirectory(dstPath);
+						CopyItemIfExists(Path.Combine(srcPath, "package.json"), Path.Combine(dstPath, "package.json"));
+						CopyItemIfExists(Path.Combine(srcPath, "map_schema.json"), Path.Combine(dstPath, "map_schema.json"));
+						CopyDirectoryIfExists(Path.Combine(srcPath, "dist"), Path.Combine(dstPath, "dist"));
+						CopyDirectoryIfExists(Path.Combine(srcPath, "media"), Path.Combine(dstPath, "media"));
+
+						string obsoletePath = Path.Combine(extensionsDir, ".obsolete");
+						if (File.Exists(obsoletePath))
+						{
+							var obsoleteJson = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, bool>>(File.ReadAllText(obsoletePath));
+							if (obsoleteJson != null && obsoleteJson.Remove("speige.realm-map-editor-1.0.0"))
+							{
+								File.WriteAllText(obsoletePath, System.Text.Json.JsonSerializer.Serialize(obsoleteJson));
+								GD.Print("VS Code: Removed Realm Map Editor from .obsolete.");
+							}
+						}
+
+						string extensionsJsonPath = Path.Combine(extensionsDir, "extensions.json");
+						if (File.Exists(extensionsJsonPath))
+						{
+							var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(extensionsJsonPath));
+							if (jsonNode is System.Text.Json.Nodes.JsonArray jsonArray)
+							{
+								bool alreadyExists = false;
+								foreach (var item in jsonArray)
+								{
+									if (item?["identifier"]?["id"]?.GetValue<string>() == "speige.realm-map-editor")
+									{
+										alreadyExists = true;
+										break;
+									}
+								}
+
+								if (!alreadyExists)
+								{
+									string dstAbsPath = Path.GetFullPath(dstPath).Replace("\\", "/");
+									var newEntry = new System.Text.Json.Nodes.JsonObject
+									{
+										["identifier"] = new System.Text.Json.Nodes.JsonObject { ["id"] = "speige.realm-map-editor" },
+										["version"] = "1.0.0",
+										["location"] = new System.Text.Json.Nodes.JsonObject
+										{
+											["$mid"] = 1,
+											["path"] = "/" + dstAbsPath,
+											["scheme"] = "file"
+										},
+										["relativeLocation"] = "speige.realm-map-editor-1.0.0",
+										["metadata"] = new System.Text.Json.Nodes.JsonObject
+										{
+											["installedTimestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+											["source"] = "local",
+											["isApplicationScoped"] = false,
+											["isMachineScoped"] = false
+										}
+									};
+									jsonArray.Add(newEntry);
+									File.WriteAllText(extensionsJsonPath, jsonNode.ToJsonString());
+									GD.Print("VS Code: Registered Realm Map Editor in extensions.json.");
+								}
+							}
+						}
+
+						GD.Print("VS Code: Realm Map Editor extension installed successfully.");
+					}
+					else
+					{
+						GD.PrintErr("VS Code: Realm Map Editor extension source not found at " + srcPath);
+					}
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr("VS Code: Failed to install Realm Map Editor extension: " + ex.Message);
+				}
+			}
 		}
 		catch (Exception ex)
 		{
 			GD.PrintErr("Failed to install missing VS Code extensions: " + ex.Message);
+		}
+	}
+
+	private static void CopyItemIfExists(string src, string dst)
+	{
+		if (File.Exists(src))
+			File.Copy(src, dst, true);
+	}
+
+	private static void CopyDirectoryIfExists(string src, string dst)
+	{
+		if (Directory.Exists(src))
+		{
+			Directory.CreateDirectory(dst);
+			foreach (string filePath in Directory.GetFiles(src))
+			{
+				string fileName = Path.GetFileName(filePath);
+				File.Copy(filePath, Path.Combine(dst, fileName), true);
+			}
 		}
 	}
 

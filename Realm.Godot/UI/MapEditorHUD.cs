@@ -2372,7 +2372,7 @@ public partial class MapEditorHUD : Control
 		ClearTempWorkspaceExternal();
 		System.IO.Directory.CreateDirectory(_tempWorkspacePath);
 
-		GenerateVSCodeFiles(_tempWorkspacePath, "CustomMap");
+		MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "CustomMap");
 
 		_lastTerrainSyncTime = 0;
 		_lastMetadataSyncTime = 0;
@@ -2422,7 +2422,7 @@ public partial class MapEditorHUD : Control
 		string scriptPath = System.IO.Path.Combine(_tempWorkspacePath, "MapScript.cs");
 		string unitsPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 		System.IO.Directory.CreateDirectory(_tempWorkspacePath);
-		GenerateVSCodeFiles(_tempWorkspacePath, "CustomMap");
+		MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "CustomMap");
 	}
 
 	private long GetLastWriteTimeSafe(string path)
@@ -2502,7 +2502,7 @@ public partial class MapEditorHUD : Control
 			}
 			System.IO.File.Copy(file, targetFile, true);
 		}
-		GenerateVSCodeFiles(_tempWorkspacePath, System.IO.Path.GetFileName(sourceFolder));
+		MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, System.IO.Path.GetFileName(sourceFolder));
 	}
 
 	private void CopyTempWorkspaceToFolder(string targetFolder)
@@ -2535,148 +2535,6 @@ public partial class MapEditorHUD : Control
 		if (OperatingSystem.IsWindows())
 		{
 			VSCodeManager.Instance.SaveRecentMapDir(targetFolder);
-		}
-	}
-
-	private void GenerateVSCodeFiles(string directory, string mapName)
-	{
-		string vscodeDir = System.IO.Path.Combine(directory, ".vscode");
-		if (!System.IO.Directory.Exists(vscodeDir))
-		{
-			System.IO.Directory.CreateDirectory(vscodeDir);
-		}
-
-		string sourceSchema = ProjectSettings.GlobalizePath("res://..").Replace("\\", "/") + "/Realm.MapEditorExtension/map_schema.json";
-		string targetSchema = System.IO.Path.Combine(vscodeDir, "map_schema.json");
-		if (System.IO.File.Exists(sourceSchema))
-		{
-			System.IO.File.Copy(sourceSchema, targetSchema, true);
-		}
-
-		string settingsJson = @"{
-	""editor.formatOnSave"": true,
-	""dotnet.preferCSharpExtension"": true,
-	""dotnet.server.useOmnisharp"": false,
-	""dotnet.projects.enableAutomaticRestore"": true,
-	""json.schemas"": [
-        {
-			""fileMatch"": [
-				""/metadata.json""
-            ],
-			""url"": ""./.vscode/map_schema.json""
-        }
-    ]
-}";
-		System.IO.File.WriteAllText(System.IO.Path.Combine(vscodeDir, "settings.json"), settingsJson);
-
-		string launchJson = @"{
-	""version"": ""0.2.0"",
-	""configurations"": [
-        {
-			""name"": ""Attach to Realm Game Host"",
-			""type"": ""coreclr"",
-			""request"": ""attach"",
-			""processName"": ""Realm.Godot""
-        }
-    ]
-}";
-		System.IO.File.WriteAllText(System.IO.Path.Combine(vscodeDir, "launch.json"), launchJson);
-
-		string agentsMd = @"# Realm Custom Map Agents Guide
-
-Realm is an RTS Game using Godot with C# and the Arch ECS framework.
-
-## Map Scripting (MapScript.cs)
-- Implements `IMapScript`.
-- `Initialize(IGameAPI api)` is called when the map starts.
-- `Update(IGameAPI api, float delta)` is called every simulation tick (30Hz).
-- Use `api` to spawn units, send chat messages, define zones, set time of day, etc.
-
-## Unit Configuration (metadata.json)
-- Define custom units and properties here.
-- Examples of properties: `MaxHp`, `Damage`, `Range`, `Armor`, `Speed`, `CostGold`, `PopCost`, `BuildOptions`, etc.
-
-## Debugging
-- Use the 'Attach to Realm Game Host' launch configuration in VS Code to attach the .NET debugger to the game and hit breakpoints in your `MapScript.cs`.
-- Hot reloading is supported via the temp workspace sync.
-";
-		System.IO.File.WriteAllText(System.IO.Path.Combine(directory, "AGENTS.md"), agentsMd);
-
-		string csprojPath = System.IO.Path.Combine(directory, $"{mapName}.csproj");
-		if (!System.IO.File.Exists(csprojPath))
-		{
-			string apiProjPath = ProjectSettings.GlobalizePath("res://..").Replace("\\", "/") + "/Realm.MapAPI/Realm.MapAPI.csproj";
-			string csprojContent = $@"<Project Sdk=""Microsoft.NET.Sdk"">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
-  <ItemGroup>
-	<ProjectReference Include=""{apiProjPath}"" />
-  </ItemGroup>
-</Project>";
-			System.IO.File.WriteAllText(csprojPath, csprojContent);
-		}
-
-		string scriptPath = System.IO.Path.Combine(directory, "MapScript.cs");
-		if (!System.IO.File.Exists(scriptPath) || new System.IO.FileInfo(scriptPath).Length == 0)
-		{
-			string scriptContent = $@"namespace Realm.Maps;
-
-using Realm.MapAPI;
-
-public class {mapName} : IMapScript
-{{
-    public void Initialize(IGameAPI api)
-    {{
-    }}
-
-    public void Update(IGameAPI api, float delta)
-    {{
-    }}
-}}
-";
-			System.IO.File.WriteAllText(scriptPath, scriptContent);
-		}
-
-		string unitsPath = System.IO.Path.Combine(directory, "metadata.json");
-		if (!System.IO.File.Exists(unitsPath) || new System.IO.FileInfo(unitsPath).Length == 0)
-		{
-			System.IO.File.WriteAllText(unitsPath, "{}");
-		}
-
-		string slnPath = System.IO.Path.Combine(directory, "temp_map_workspace.sln");
-		if (!System.IO.File.Exists(slnPath))
-		{
-			try
-			{
-				var processInfo = new System.Diagnostics.ProcessStartInfo("dotnet", "new sln -n temp_map_workspace")
-				{
-					WorkingDirectory = directory,
-					CreateNoWindow = true,
-					UseShellExecute = false
-				};
-				using (var process = System.Diagnostics.Process.Start(processInfo))
-				{
-					process?.WaitForExit();
-				}
-				
-				var addProcessInfo = new System.Diagnostics.ProcessStartInfo("dotnet", $"sln add {mapName}.csproj")
-				{
-					WorkingDirectory = directory,
-					CreateNoWindow = true,
-					UseShellExecute = false
-				};
-				using (var addProcess = System.Diagnostics.Process.Start(addProcessInfo))
-				{
-					addProcess?.WaitForExit();
-				}
-			}
-			catch (System.Exception e)
-			{
-				GD.PrintErr($"Failed to generate VS Code solution: {e.Message}");
-			}
 		}
 	}
 

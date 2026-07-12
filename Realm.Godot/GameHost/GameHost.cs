@@ -605,6 +605,16 @@ public partial class GameHost : Node3D, IGameAPI
 	{
 		public MapScriptLoadContext() : base(isCollectible: true)
 		{
+			Resolving += OnResolving;
+		}
+
+		private System.Reflection.Assembly? OnResolving(System.Runtime.Loader.AssemblyLoadContext context, System.Reflection.AssemblyName assemblyName)
+		{
+			if (assemblyName.Name == "Realm.MapAPI")
+			{
+				return System.Runtime.Loader.AssemblyLoadContext.Default.LoadFromAssemblyName(assemblyName);
+			}
+			return null;
 		}
 	}
 
