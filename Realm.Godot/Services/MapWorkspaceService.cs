@@ -150,7 +150,7 @@ public class {mapName} : IMapScript
 
 	public static void EnsureSolutionFile(string directory, string mapName)
 	{
-		string slnPath = Path.Combine(directory, "temp_map_workspace.slnx");
+		string slnPath = Path.Combine(directory, "temp_map_workspace.sln");
 		if (!File.Exists(slnPath))
 		{
 			try

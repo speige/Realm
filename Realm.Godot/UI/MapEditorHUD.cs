@@ -2502,7 +2502,7 @@ public partial class MapEditorHUD : Control
 			}
 			System.IO.File.Copy(file, targetFile, true);
 		}
-		MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, System.IO.Path.GetFileName(sourceFolder));
+		MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "CustomMap");
 	}
 
 	private void CopyTempWorkspaceToFolder(string targetFolder)
