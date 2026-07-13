@@ -612,7 +612,11 @@ public partial class GameHost : Node3D, IGameAPI
 		{
 			if (assemblyName.Name == "Realm.MapAPI")
 			{
-				return System.Runtime.Loader.AssemblyLoadContext.Default.LoadFromAssemblyName(assemblyName);
+				foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+				{
+					if (asm.GetName().Name == "Realm.MapAPI")
+						return asm;
+				}
 			}
 			return null;
 		}

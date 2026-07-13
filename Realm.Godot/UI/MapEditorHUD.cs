@@ -5021,7 +5021,7 @@ public partial class MapEditorHUD : Control
 
 		if (LobbyManager.Instance != null)
 		{
-			LobbyManager.Instance.HostSinglePlayerGame(_tempWorkspacePath, "Test Map");
+			LobbyManager.Instance.HostSinglePlayerGame("user://temp_map_workspace", "Test Map");
 		}
 	}
 }
