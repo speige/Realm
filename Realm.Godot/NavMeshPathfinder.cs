@@ -9,7 +9,8 @@ internal class NavMeshPathfinder
 	private readonly long[] _pathCorridorBuffer = new long[512];
 	private readonly DtStraightPath[] _straightPathBuffer = new DtStraightPath[512];
 	public static readonly RcVec3f PathfindingExtents = new RcVec3f(2f, 4f, 2f);
-	private static readonly RcVec3f TargetPathfindingExtents = new RcVec3f(1f, 4f, 1f);
+	private static readonly RcVec3f TargetPathfindingExtents = new RcVec3f(2f, 4f, 2f);
+	private static readonly RcVec3f WideTargetExtents = new RcVec3f(50f, 50f, 50f);
 	private readonly DtQueryDefaultFilter _filter = new DtQueryDefaultFilter();
 
 	public DtQueryDefaultFilter Filter => _filter;
@@ -28,6 +29,12 @@ internal class NavMeshPathfinder
 		var endPos = new RcVec3f(end.X, end.Y, end.Z);
 		query.FindNearestPoly(startPos, PathfindingExtents, _filter, out long startRef, out var startPt, out _);
 		query.FindNearestPoly(endPos, TargetPathfindingExtents, _filter, out long endRef, out var endPt, out _);
+
+		if (endRef == 0)
+		{
+			query.FindNearestPoly(endPos, WideTargetExtents, _filter, out endRef, out endPt, out _);
+		}
+
 		if (startRef != 0 && endRef != 0)
 		{
 			query.FindPath(startRef, endRef, startPt, endPt, _filter, _pathCorridorBuffer, out int corridorCount, _pathCorridorBuffer.Length);

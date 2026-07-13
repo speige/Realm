@@ -103,7 +103,7 @@ internal class TerrainNavMeshService
 			for (int x = 0; x < width; x++)
 			{
 				int pathingCode = state.PathingCodes[x, z];
-				if (pathingCode != 12)
+				if ((pathingCode & 8) == 0) // 8 = GROUND flag, skip convex volumes for walkable cells
 				{
 					float lx = (x - (width - 1) / 2.0f) * spacing;
 					float lz = (z - (depth - 1) / 2.0f) * spacing;

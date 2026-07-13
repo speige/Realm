@@ -133,7 +133,7 @@ public struct TerrainSplatWeights : IEquatable<TerrainSplatWeights>
                Weight2 == other.Weight2 && Weight3 == other.Weight3;
     }
 
-    public override bool Equals(object obj) => obj is TerrainSplatWeights other && Equals(other);
+    public override bool Equals(object? obj) => obj is TerrainSplatWeights other && Equals(other);
     public override int GetHashCode() => HashCode.Combine(Index0, Index1, Index2, Index3);
     public static bool operator ==(TerrainSplatWeights a, TerrainSplatWeights b) => a.Equals(b);
     public static bool operator !=(TerrainSplatWeights a, TerrainSplatWeights b) => !a.Equals(b);
