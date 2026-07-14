@@ -661,7 +661,7 @@ public class VSCodeManager
 	{
 		if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
 		{
-			string tempWorkspace = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+			string tempWorkspace = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 			if (Directory.Exists(tempWorkspace))
 			{
 				return tempWorkspace.Replace("\\", "/");

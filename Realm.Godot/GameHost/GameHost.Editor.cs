@@ -1264,7 +1264,7 @@ public partial class GameHost
 		
 		if (MapEditorHUD.ReturningFromTest)
 		{
-			LoadMapFromFile("user://temp_map_workspace/terrain.json");
+			LoadMapFromFile(MapEditorHUD.TempWorkspaceGodotPath + "/terrain.json");
 
 			EditorGridMode = MapEditorHUD.SavedGridMode;
 			EditorCameraBoundsVisible = MapEditorHUD.SavedCameraBoundsVisible;

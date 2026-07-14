@@ -299,6 +299,8 @@ public partial class MapEditorHUD : Control
 	private MapEditorEntityPaletteController _entityPaletteController;
 	private MapEditorGenerationDialog _generationDialog;
 
+	public const string TempWorkspaceGodotPath = "user://temp_map_workspace";
+
 	private string _tempWorkspacePath;
 	private long _lastTerrainSyncTime = 0;
 	private long _lastMetadataSyncTime = 0;
@@ -2368,7 +2370,7 @@ public partial class MapEditorHUD : Control
 
 	private void InitializeTempWorkspace()
 	{
-		_tempWorkspacePath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		_tempWorkspacePath = ProjectSettings.GlobalizePath(TempWorkspaceGodotPath);
 		ClearTempWorkspaceExternal();
 		System.IO.Directory.CreateDirectory(_tempWorkspacePath);
 
@@ -2693,7 +2695,7 @@ public partial class MapEditorHUD : Control
 		ShowFeedback(TranslationServer.Translate("Compiling terrain shaders & entity data..."));
 		
 		// Compile triggers to .dll
-		string workspace = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		string workspace = ProjectSettings.GlobalizePath(TempWorkspaceGodotPath);
 		try
 		{
 			if (System.IO.Directory.Exists(workspace))
@@ -5021,7 +5023,7 @@ public partial class MapEditorHUD : Control
 
 		if (LobbyManager.Instance != null)
 		{
-			LobbyManager.Instance.HostSinglePlayerGame("user://temp_map_workspace", "Test Map");
+			LobbyManager.Instance.HostSinglePlayerGame(TempWorkspaceGodotPath, "Test Map");
 		}
 	}
 }
