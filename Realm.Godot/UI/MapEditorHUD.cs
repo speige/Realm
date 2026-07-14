@@ -5019,6 +5019,20 @@ public partial class MapEditorHUD : Control
 			}
 		}
 
+		// Clean Godot Mono assembly cache to force fresh assembly loading
+		string godotCachePath = System.IO.Path.Combine(ProjectSettings.GlobalizePath("res://"), ".godot", "mono", "temp");
+		try
+		{
+			if (System.IO.Directory.Exists(godotCachePath))
+			{
+				System.IO.Directory.Delete(godotCachePath, true);
+			}
+		}
+		catch (System.Exception ex)
+		{
+			GD.PrintErr($"[ProceedToTestMap] Failed to clean Godot cache: {ex.Message}");
+		}
+
 		IsTestMode = true;
 
 		if (LobbyManager.Instance != null)

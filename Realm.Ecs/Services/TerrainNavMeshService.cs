@@ -154,6 +154,11 @@ internal class TerrainNavMeshService
 		var bcfg = new RcBuilderConfig(cfg, bmin, bmax);
 		var builder = new RcBuilder();
 		var result = builder.Build(geom, bcfg, true);
+		if (result.Mesh == null || result.Mesh.npolys == 0)
+		{
+			Console.Error.WriteLine($"[BakeNavMesh] BUILDER FAILED: no polys generated. width={width} depth={depth} spacing={spacing}");
+			return;
+		}
 		if (result.Mesh != null)
 		{
 			var pars = new DtNavMeshCreateParams();
