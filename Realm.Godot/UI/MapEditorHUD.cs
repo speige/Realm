@@ -2007,6 +2007,26 @@ public partial class MapEditorHUD : Control
 			GameHost.Instance.SaveMapToFile(tempTerrainPath);
 			GameHost.Instance.EditorHasUnsavedChanges = false;
 		}
+		string mapJsonPath = System.IO.Path.Combine(_tempWorkspacePath, "map.json");
+		if (System.IO.File.Exists(mapJsonPath))
+		{
+			try
+			{
+				string mapJsonContent = System.IO.File.ReadAllText(mapJsonPath);
+				var options = new JsonSerializerOptions { WriteIndented = true };
+				var mapDoc = JsonNode.Parse(mapJsonContent) as JsonObject;
+				if (mapDoc != null)
+				{
+					mapDoc["EngineVersion"] = LobbyManager.GameBinaryVersion;
+					System.IO.File.WriteAllText(mapJsonPath, mapDoc.ToJsonString(options));
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[MapEditorHUD] Error saving EngineVersion to map.json: {ex.Message}");
+			}
+		}
+
 		_lastTerrainSyncTime = GetMaxTerrainWriteTime(tempTerrainPath);
 		
 		foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories))
@@ -2410,6 +2430,8 @@ public class {mapName} : IMapScript
 						newContributorsArr.Add(cont);
 					}
 					mapDoc["Contributors"] = newContributorsArr;
+					
+					mapDoc["EngineVersion"] = LobbyManager.GameBinaryVersion;
 					
 					string updatedMapJson = mapDoc.ToJsonString(options);
 					System.IO.File.WriteAllText(mapJsonPath, updatedMapJson);

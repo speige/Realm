@@ -26,14 +26,6 @@
     <PackageReference Include="SharpToken" Version="2.0.6" />
     <PackageReference Include="SkiaSharp" Version="3.116.1" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="Assets\MLModels\toxic-xlm-roberta\model_quantized.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="Assets\MLModels\toxic-xlm-roberta\vocab.bin">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
   <Target Name="RemoveUnusedWebView2" BeforeTargets="ResolveAssemblyReferences">
     <ItemGroup>
       <Reference Remove="@(Reference->WithMetadataValue('FileName', 'Microsoft.Web.WebView2.Wpf'))" />

@@ -108,6 +108,7 @@ app.MapGet("/lobbies", (LobbyRegistry registry, GeoIpService geoIp, HttpContext 
             estimatedPing,
             lobby.OriginServerUri,
             lobby.HostPingBaseline,
+            lobby.GameVersion,
             lobby.LocalIP
         );
     });
@@ -146,6 +147,7 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
         PasswordHash = req.PasswordHash ?? "",
         MaxPlayers = req.MaxPlayers,
         SlotsUsed = req.SlotsUsed,
+        GameVersion = req.GameVersion,
         Latitude = hostCoords.lat,
         Longitude = hostCoords.lon,
         LastHeartbeat = DateTime.UtcNow,

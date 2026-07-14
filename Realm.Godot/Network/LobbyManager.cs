@@ -21,6 +21,33 @@ public partial class LobbyManager : Node
 
     private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
 
+    public static string GetBaseGameDirectory()
+    {
+        string exePath = OS.GetExecutablePath();
+        string baseDir = System.IO.Path.GetDirectoryName(exePath) ?? "";
+        
+        int versionsIndex = baseDir.IndexOf($"{System.IO.Path.DirectorySeparatorChar}versions{System.IO.Path.DirectorySeparatorChar}");
+        if (versionsIndex == -1) versionsIndex = baseDir.IndexOf("/versions/");
+        if (versionsIndex == -1 && baseDir.EndsWith($"{System.IO.Path.DirectorySeparatorChar}versions")) versionsIndex = baseDir.Length - 9;
+        if (versionsIndex == -1 && baseDir.EndsWith("/versions")) versionsIndex = baseDir.Length - 9;
+        
+        if (versionsIndex != -1)
+        {
+            baseDir = baseDir.Substring(0, versionsIndex);
+        }
+
+        return baseDir;
+    }
+
+    public static string GetVersionExecutablePath(string targetVersion)
+    {
+        string baseDir = GetBaseGameDirectory();
+        string exePath = OS.GetExecutablePath();
+        string fileName = System.IO.Path.GetFileName(exePath);
+
+        return System.IO.Path.Combine(baseDir, "versions", targetVersion, fileName);
+    }
+
     private static string GetGameBinaryVersion()
     {
         try
@@ -475,6 +502,7 @@ public partial class LobbyManager : Node
                 MaxPlayers = MaxPlayers,
                 SlotsUsed = PlayerList.Count,
                 HostPingBaseline = hostPingBaseline,
+                GameVersion = GameBinaryVersion,
                 LocalIP = localIpAddress
             };
 
@@ -1108,14 +1136,22 @@ public partial class LobbyManager : Node
         }
     }
 
-    private static void InitializeToxicityModel()
+    private static bool _isDownloadingModels = false;
+    private static async Task InitializeToxicityModelAsync()
     {
-        lock (_sessionLock)
+        if (_onnxSession != null)
         {
-            if (_onnxSession != null)
-            {
-                return;
-            }
+            return;
+        }
+
+        if (_isDownloadingModels)
+        {
+            return;
+        }
+        _isDownloadingModels = true;
+
+        try
+        {
 
             string modelPath = "";
             string vocabPath = "";
@@ -1164,22 +1200,67 @@ public partial class LobbyManager : Node
 
             if (string.IsNullOrEmpty(modelPath) || !System.IO.File.Exists(modelPath))
             {
+                try
+                {
+                    string globalizedUserDir = ProjectSettings.GlobalizePath("user://Assets/MLModels/toxic-xlm-roberta");
+                    if (!System.IO.Directory.Exists(globalizedUserDir))
+                    {
+                        System.IO.Directory.CreateDirectory(globalizedUserDir);
+                    }
+
+                    modelPath = System.IO.Path.Combine(globalizedUserDir, "model_quantized.onnx");
+                    vocabPath = System.IO.Path.Combine(globalizedUserDir, "vocab.bin");
+
+                    if (!System.IO.File.Exists(modelPath) || !System.IO.File.Exists(vocabPath))
+                    {
+                        GD.Print("[LobbyManager] Downloading toxicity models...");
+                        var httpClient = new System.Net.Http.HttpClient();
+                        
+                        if (!System.IO.File.Exists(modelPath))
+                        {
+                            var modelBytes = await httpClient.GetByteArrayAsync("https://huggingface.co/hoan/multilingual-toxic-xlm-roberta-dynamic-quantized/resolve/main/model_quantized.onnx");
+                            System.IO.File.WriteAllBytes(modelPath, modelBytes);
+                        }
+
+                        if (!System.IO.File.Exists(vocabPath))
+                        {
+                            var vocabBytes = await httpClient.GetByteArrayAsync("https://huggingface.co/hoan/multilingual-toxic-xlm-roberta-dynamic-quantized/resolve/main/vocab.bin");
+                            System.IO.File.WriteAllBytes(vocabPath, vocabBytes);
+                        }
+                        GD.Print("[LobbyManager] Successfully downloaded toxicity models.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    GD.PrintErr($"[LobbyManager] Error downloading toxicity models: {ex}");
+                }
+            }
+
+            if (string.IsNullOrEmpty(modelPath) || !System.IO.File.Exists(modelPath))
+            {
                 throw new System.IO.FileNotFoundException("Model file not found.");
             }
 
-            _onnxSession = new InferenceSession(modelPath);
-
-            using (var fs = new System.IO.FileStream(vocabPath, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read))
-            using (var reader = new System.IO.BinaryReader(fs, Encoding.UTF8))
+            lock (_sessionLock)
             {
-                int count = reader.ReadInt32();
-                _vocab = new Dictionary<string, int>(count);
-                for (int i = 0; i < count; i++)
+                _onnxSession = new InferenceSession(modelPath);
+
+                using (var fs = new System.IO.FileStream(vocabPath, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read))
+                using (var reader = new System.IO.BinaryReader(fs, Encoding.UTF8))
                 {
-                    string token = reader.ReadString();
-                    _vocab[token] = i;
+                    int count = reader.ReadInt32();
+                    _vocab = new Dictionary<string, int>(count);
+                    for (int i = 0; i < count; i++)
+                    {
+                        string token = reader.ReadString();
+                        _vocab[token] = i;
+                    }
                 }
             }
+        }
+        finally
+        {
+            _isDownloadingModels = false;
         }
     }
 
@@ -1192,6 +1273,11 @@ public partial class LobbyManager : Node
 
         try
         {
+            if (_onnxSession == null || _vocab == null)
+            {
+                await InitializeToxicityModelAsync();
+            }
+
             return await Task.Run(() =>
             {
                 var encoding = GptEncoding.GetEncoding("cl100k_base");
@@ -1203,7 +1289,7 @@ public partial class LobbyManager : Node
 
                 if (_onnxSession == null || _vocab == null)
                 {
-                    InitializeToxicityModel();
+                    return false;
                 }
 
                 var tokens = new List<long>();

@@ -15,6 +15,7 @@ public partial class LobbyBrowser : Control
 		public string Mode;
 		public string Players;
 		public int Ping;
+		public string GameVersion;
 	}
 
 	private List<LobbyData> _allLobbies = new List<LobbyData>();
@@ -356,7 +357,8 @@ public partial class LobbyBrowser : Control
 							Map = item.TryGetProperty("map", out var mapProp) ? mapProp.GetString() ?? "" : "",
 							Mode = "Melee", // Default mode
 							Players = $"{(item.TryGetProperty("slotsUsed", out var slotsProp) ? slotsProp.GetInt32() : 0)}/{(item.TryGetProperty("maxPlayers", out var maxProp) ? maxProp.GetInt32() : 8)}",
-							Ping = calculatedPing
+							Ping = calculatedPing,
+							GameVersion = item.TryGetProperty("gameVersion", out var gvProp) ? gvProp.GetString() ?? "" : ""
 						});
 					}
 
@@ -519,6 +521,15 @@ public partial class LobbyBrowser : Control
 		lblPing.VerticalAlignment = VerticalAlignment.Center;
 		hBox.AddChild(lblPing);
 
+		var lblVersion = new Label();
+		lblVersion.Text = $"v{data.GameVersion}  ";
+		lblVersion.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		lblVersion.HorizontalAlignment = HorizontalAlignment.Right;
+		lblVersion.AddThemeColorOverride("font_color", data.GameVersion == LobbyManager.GameBinaryVersion ? new Color(0.3f, 0.8f, 0.4f) : new Color(0.85f, 0.3f, 0.3f));
+		lblVersion.AddThemeFontSizeOverride("font_size", 15);
+		lblVersion.VerticalAlignment = VerticalAlignment.Center;
+		hBox.AddChild(lblVersion);
+
 		panel.MouseEntered += () => 
 		{
 			UIManager.Instance.PlayHoverSound();
@@ -532,6 +543,11 @@ public partial class LobbyBrowser : Control
 			{
 				UIManager.Instance.PlayClickSound();
 				
+				if (!string.IsNullOrEmpty(data.GameVersion) && data.GameVersion != LobbyManager.GameBinaryVersion)
+				{
+					ShowVersionMismatchPopup(data.GameVersion, LobbyManager.GameBinaryVersion);
+					return;
+				}
 
 				panel.MouseFilter = MouseFilterEnum.Ignore;
 				LobbyManager.Instance.ActiveMapName = data.Map;
@@ -549,6 +565,98 @@ public partial class LobbyBrowser : Control
 		};
 
 		return panel;
+	}
+
+	private void ShowVersionMismatchPopup(string lobbyVersion, string currentVersion)
+	{
+		var warningPopup = new Panel();
+		warningPopup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		warningPopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		AddChild(warningPopup);
+
+		var cardPanel = new Panel();
+		cardPanel.CustomMinimumSize = new Vector2(500, 260);
+		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		warningPopup.AddChild(cardPanel);
+
+		var vbox = new VBoxContainer();
+		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		vbox.CustomMinimumSize = new Vector2(450, 220);
+		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
+		cardPanel.AddChild(vbox);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
+
+		var titleLabel = new Label();
+		UIStyle.ApplyTitle(titleLabel, Tr("VERSION MISMATCH"), 20);
+		titleLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
+		vbox.AddChild(titleLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
+
+		bool versionExistsLocally = System.IO.File.Exists(LobbyManager.GetVersionExecutablePath(lobbyVersion));
+
+		var descLabel = new Label();
+		string promptText = versionExistsLocally 
+			? Tr("The running game version doesn't match the lobby. Re-launch game with correct version?") 
+			: Tr("The required game version is not installed. Download it?");
+		descLabel.Text = $"{string.Format(Tr("Host Version: {0}"), lobbyVersion)}\n{string.Format(Tr("Current Version: {0}"), currentVersion)}\n\n{promptText}";
+		descLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		descLabel.AddThemeFontSizeOverride("font_size", 14);
+		descLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		vbox.AddChild(descLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
+		
+		var hBox = new HBoxContainer();
+		hBox.Alignment = BoxContainer.AlignmentMode.Center;
+		hBox.AddThemeConstantOverride("separation", 20);
+		vbox.AddChild(hBox);
+
+		var cancelBtn = new Button();
+		cancelBtn.Flat = false;
+		cancelBtn.AddThemeConstantOverride("icon_max_width", 0);
+		cancelBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		cancelBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		cancelBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		cancelBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(cancelBtn, Tr("CANCEL"), 14);
+		cancelBtn.CustomMinimumSize = new Vector2(160, 40);
+		cancelBtn.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			warningPopup.QueueFree();
+		};
+		hBox.AddChild(cancelBtn);
+
+		var okBtn = new Button();
+		okBtn.Flat = false;
+		okBtn.AddThemeConstantOverride("icon_max_width", 0);
+		okBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		okBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		okBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		okBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(okBtn, versionExistsLocally ? Tr("RELAUNCH") : Tr("DOWNLOAD"), 14);
+		okBtn.CustomMinimumSize = new Vector2(160, 40);
+		okBtn.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			warningPopup.QueueFree();
+			
+			if (versionExistsLocally)
+			{
+				string targetExe = LobbyManager.GetVersionExecutablePath(lobbyVersion);
+				OS.CreateProcess(targetExe, new string[] {});
+				GetTree().Quit();
+			}
+			else
+			{
+				OS.ShellOpen("https://github.com/speige/Realm/releases");
+			}
+		};
+		hBox.AddChild(okBtn);
 	}
 
 	private void TriggerRefresh()

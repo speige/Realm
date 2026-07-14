@@ -123,6 +123,7 @@ namespace Realm.Godot.ReplaySystem
 					Magic = "REALMREP",
 					Version = 1,
 					MapName = _mapName,
+					GameVersion = LobbyManager.GameBinaryVersion,
 					Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
 					Players = _players
 				};
