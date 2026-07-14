@@ -194,6 +194,14 @@ public partial class MapEditorHUD : Control
 
 	private Button _btnSkybox;
 	private OptionButton _optSkybox;
+
+	private OptionButton _optMapType;
+	private CheckBox _chkTagTD;
+	private CheckBox _chkTagCampaign;
+	private CheckBox _chkTagMelee;
+	private CheckBox _chkTagCoop;
+	private CheckBox _chkTagTutorial;
+
 	private List<string> _skyboxFiles = new List<string>();
 
 
@@ -588,6 +596,17 @@ public partial class MapEditorHUD : Control
 		}, 11, "Scale the entire map: stretches/shrinks terrain data and repositions all entities proportionally");
 
 		_optSkybox = GetNode<OptionButton>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/SkyboxBox/OptSkybox");
+
+		_optMapType = GetNodeOrNull<OptionButton>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapTypeBox/OptMapType");
+		if (_optMapType != null) {
+			_optMapType.AddItem("Arcade Custom Map", 0);
+			_optMapType.AddItem("Asset Pack", 1);
+			_optMapType.ItemSelected += (idx) => {
+				RebuildTagsUI();
+				SaveMapProperties();
+			};
+		}
+
 		_skyboxFiles.Clear();
 		_optSkybox.Clear();
 		_skyboxFiles.Add("skybox_panoramic.jpg");
@@ -1345,10 +1364,83 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+
 	public void PublishMapActionExternal()
 	{
-		PublishMapAction();
+		var overlay = new ColorRect();
+		overlay.Name = "PublishInstructionsOverlay";
+		overlay.Color = new Color(0, 0, 0, 0.7f);
+		overlay.SetAnchorsPreset(LayoutPreset.FullRect);
+		AddChild(overlay);
+
+		var center = new CenterContainer();
+		center.SetAnchorsPreset(LayoutPreset.FullRect);
+		overlay.AddChild(center);
+
+		var panel = new PanelContainer();
+		panel.CustomMinimumSize = new Vector2(1200, 800);
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.1f, 0.1f, 0.15f, 0.95f);
+		style.BorderWidthTop = 2; style.BorderWidthBottom = 2; style.BorderWidthLeft = 2; style.BorderWidthRight = 2;
+		style.BorderColor = new Color(0.3f, 0.3f, 0.35f, 1f);
+		style.CornerRadiusTopLeft = 4; style.CornerRadiusTopRight = 4; style.CornerRadiusBottomLeft = 4; style.CornerRadiusBottomRight = 4;
+		panel.AddThemeStyleboxOverride("panel", style);
+		center.AddChild(panel);
+
+		var vbox = new VBoxContainer();
+		vbox.AddThemeConstantOverride("separation", 12);
+		vbox.SetAnchorsPreset(LayoutPreset.FullRect);
+		vbox.CustomMinimumSize = new Vector2(1180, 780);
+		var margin = new MarginContainer();
+		margin.AddThemeConstantOverride("margin_top", 10);
+		margin.AddThemeConstantOverride("margin_bottom", 10);
+		margin.AddThemeConstantOverride("margin_left", 10);
+		margin.AddThemeConstantOverride("margin_right", 10);
+		margin.AddChild(vbox);
+		panel.AddChild(margin);
+
+		var title = new Label();
+		title.Text = "Publish Map Instructions";
+		title.HorizontalAlignment = HorizontalAlignment.Center;
+		title.AddThemeFontSizeOverride("font_size", 24);
+		vbox.AddChild(title);
+
+		var optType = new OptionButton();
+		optType.AddItem("Custom Arcade Map", 0);
+		optType.AddItem("Reusable Asset Pack", 1);
+		optType.Selected = _optMapType != null ? _optMapType.Selected : 0;
+		vbox.AddChild(optType);
+
+		var scroll = new ScrollContainer();
+		scroll.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+		var instructionsText = new RichTextLabel();
+		instructionsText.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		instructionsText.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+		instructionsText.BbcodeEnabled = true;
+		scroll.AddChild(instructionsText);
+		vbox.AddChild(scroll);
+
+		string textArcade = "🚀 [b]Publishing Your Custom Map[/b]\nTo keep the public library high-quality, all new maps start in a Beta-Testing Phase.\n\nOnce your map hits our community play-time metrics (gaining enough unique players, ratings, & community playtime), it will automatically graduate and be available for discovery on community maps screens.\n\nIt is up to you to share it with the community & market it until you hit that threshold.\nYour map is ready to play right now! Host a lobby with your map & wait for players to join.\nMessage the community via discord channels, etc to explain your map & convince them to try it. If they enjoy it, they will probably re-host it, which will help you hit the graduation threshold more quickly.\n\nWhile in testing, your map name will include a prefix [Beta-Testing] so players know it's an active work-in-progress. However, you should still do as much personal testing as possible before public hosting to avoid a frustrating experience for your testers.\n\nAfter graduation, your map name will be permanently reserved to your creator profile so no one else can use that same name.";
+		string textAssetPack = "📦 [b]Publishing a Reusable Asset Pack[/b]\nWant to share your custom 3D models, audio, or code scripts with other map makers?\n\nIn Realm, Asset Packs are published as playable Showcase/Demo Maps.\n\n[b]Build a Playground:[/b] Turn your asset pack into a map where players can preview the functionality provided by your systems, view your models, etc.\n\n[b]Gather Community Metrics:[/b] Just like a regular map, your asset pack will start in a \"beta\" phase before being promoted on community discovery pages. Read the \"Custom Arcade Map\" section for more information.\n\n[b]Easy Importing:[/b] Once a player has a copy of your map, they can import assets from it into their maps via the map editor.\n\n[b]Automatic Credit:[/b] When creators import from you, the system tracks your files' signatures and automatically adds your info to their map credits.";
+
+		Action updateText = () => {
+			instructionsText.Text = optType.Selected == 0 ? textArcade : textAssetPack;
+		};
+		updateText();
+		optType.ItemSelected += (_) => updateText();
+
+		var hbox = new HBoxContainer();
+		hbox.Alignment = BoxContainer.AlignmentMode.Center;
+		hbox.AddThemeConstantOverride("separation", 20);
+		vbox.AddChild(hbox);
+
+		var btnClose = new Button();
+		btnClose.Text = "Close";
+		btnClose.CustomMinimumSize = new Vector2(120, 40);
+		btnClose.Pressed += () => overlay.QueueFree();
+		hbox.AddChild(btnClose);
 	}
+
 
 	public void UndoAction()
 	{
@@ -1867,10 +1959,12 @@ public partial class MapEditorHUD : Control
 	private void InitializeTempWorkspace()
 	{
 		_tempWorkspacePath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
-		ClearTempWorkspaceExternal();
-		System.IO.Directory.CreateDirectory(_tempWorkspacePath);
-
-		GenerateVSCodeFiles(_tempWorkspacePath, "CustomMap");
+		if (!ReturningFromTest)
+		{
+			ClearTempWorkspaceExternal();
+			System.IO.Directory.CreateDirectory(_tempWorkspacePath);
+			GenerateVSCodeFiles(_tempWorkspacePath, "CustomMap");
+		}
 
 		_lastTerrainSyncTime = 0;
 		_lastMetadataSyncTime = 0;
@@ -1880,6 +1974,12 @@ public partial class MapEditorHUD : Control
 		syncTimer.Autostart = true;
 		syncTimer.Timeout += OnSyncTimerTimeout;
 		AddChild(syncTimer);
+
+		// Load properties from map.json
+		LoadMapProperties();
+
+		// Check creator registration on editor startup
+		CheckCreatorRegistrationAndPrompt();
 	}
 
 	public void ClearTempWorkspaceExternal()
@@ -1992,6 +2092,7 @@ public partial class MapEditorHUD : Control
 			System.IO.File.Copy(file, targetFile, true);
 		}
 		GenerateVSCodeFiles(_tempWorkspacePath, System.IO.Path.GetFileName(sourceFolder));
+		LoadMapProperties();
 	}
 
 	private void CopyTempWorkspaceToFolder(string targetFolder)
@@ -2007,25 +2108,9 @@ public partial class MapEditorHUD : Control
 			GameHost.Instance.SaveMapToFile(tempTerrainPath);
 			GameHost.Instance.EditorHasUnsavedChanges = false;
 		}
-		string mapJsonPath = System.IO.Path.Combine(_tempWorkspacePath, "map.json");
-		if (System.IO.File.Exists(mapJsonPath))
-		{
-			try
-			{
-				string mapJsonContent = System.IO.File.ReadAllText(mapJsonPath);
-				var options = new JsonSerializerOptions { WriteIndented = true };
-				var mapDoc = JsonNode.Parse(mapJsonContent) as JsonObject;
-				if (mapDoc != null)
-				{
-					mapDoc["EngineVersion"] = LobbyManager.GameBinaryVersion;
-					System.IO.File.WriteAllText(mapJsonPath, mapDoc.ToJsonString(options));
-				}
-			}
-			catch (Exception ex)
-			{
-				GD.PrintErr($"[MapEditorHUD] Error saving EngineVersion to map.json: {ex.Message}");
-			}
-		}
+
+		// Compile, hash assets, attribution, sign map before copying to destination
+		CompileAndSignMapSync(_tempWorkspacePath);
 
 		_lastTerrainSyncTime = GetMaxTerrainWriteTime(tempTerrainPath);
 		
@@ -2399,7 +2484,8 @@ public class {mapName} : IMapScript
 						mapDoc["Contributors"] = new JsonArray();
 					}
 					
-					// Ensure all asset authors are in the contributors list
+					// Ensure all asset authors are in the contributors and attributions list
+					var authorCounts = new System.Collections.Generic.Dictionary<string, int>();
 					using (var httpClient = new System.Net.Http.HttpClient())
 					{
 						foreach (var hash in referencedHashes)
@@ -2415,6 +2501,8 @@ public class {mapName} : IMapScript
 									if (!string.IsNullOrEmpty(author))
 									{
 										contributorsList.Add(author);
+										if (!authorCounts.ContainsKey(author)) authorCounts[author] = 0;
+										authorCounts[author]++;
 									}
 								}
 							}
@@ -2430,6 +2518,16 @@ public class {mapName} : IMapScript
 						newContributorsArr.Add(cont);
 					}
 					mapDoc["Contributors"] = newContributorsArr;
+
+					// Build Attributions
+					var attributionsArr = new JsonArray();
+					var sortedAuthors = authorCounts.Keys.ToList();
+					sortedAuthors.Sort((a, b) => authorCounts[b].CompareTo(authorCounts[a])); // Sort descending
+					foreach (var a in sortedAuthors)
+					{
+						attributionsArr.Add(a);
+					}
+					mapDoc["Attributions"] = attributionsArr;
 					
 					mapDoc["EngineVersion"] = LobbyManager.GameBinaryVersion;
 					
@@ -2457,7 +2555,9 @@ public class {mapName} : IMapScript
 						var publishReq = new 
 						{
 							MapJson = updatedMapJson,
-							ReferencedHashes = referencedHashes
+							ReferencedHashes = referencedHashes,
+							Signature = Convert.ToBase64String(mapSigBytes),
+							PublicKey = Convert.ToBase64String(authorshipKey.PublicKey.Export(KeyBlobFormat.RawPublicKey))
 						};
 						
 						var pubContent = new StringContent(JsonSerializer.Serialize(publishReq), System.Text.Encoding.UTF8, "application/json");
@@ -2679,6 +2779,502 @@ public class {mapName} : IMapScript
 	}
 
 
+
+	
+	private void SaveMapProperties()
+	{
+		if (GameHost.Instance == null) return;
+		
+		string mapJsonPath = ProjectSettings.GlobalizePath("user://temp_map_workspace/map.json");
+		if (System.IO.File.Exists(mapJsonPath))
+		{
+			try
+			{
+				string mapJsonContent = System.IO.File.ReadAllText(mapJsonPath);
+				var mapDoc = System.Text.Json.Nodes.JsonNode.Parse(mapJsonContent) as System.Text.Json.Nodes.JsonObject;
+				if (mapDoc != null)
+				{
+					if (!mapDoc.ContainsKey("MapProperties")) mapDoc["MapProperties"] = new System.Text.Json.Nodes.JsonObject();
+					var props = mapDoc["MapProperties"] as System.Text.Json.Nodes.JsonObject;
+					if (props != null)
+					{
+						if (_optMapType != null) props["MapType"] = _optMapType.Selected == 0 ? "Arcade Custom Map" : "Asset Pack";
+						var tagsArr = new System.Text.Json.Nodes.JsonArray();
+						foreach (var chk in _activeTagCheckboxes)
+						{
+							if (chk.ButtonPressed)
+							{
+								tagsArr.Add(chk.Text);
+							}
+						}
+						props["Tags"] = tagsArr;
+					}
+					var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+					System.IO.File.WriteAllText(mapJsonPath, mapDoc.ToJsonString(options));
+				}
+			}
+			catch (System.Exception ex)
+			{
+				GD.PrintErr($"Failed to save map properties: {ex.Message}");
+			}
+		}
+	}
+
+	private List<CheckBox> _activeTagCheckboxes = new();
+
+	private void RebuildTagsUI()
+	{
+		var mapTagsBox = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapTagsBox");
+		if (mapTagsBox == null) return;
+
+		// Remove old checkboxes
+		foreach (var child in mapTagsBox.GetChildren())
+		{
+			if (child is CheckBox chk)
+			{
+				mapTagsBox.RemoveChild(chk);
+				chk.QueueFree();
+			}
+		}
+
+		_activeTagCheckboxes.Clear();
+
+		string[] tags;
+		if (_optMapType != null && _optMapType.Selected == 1)
+		{
+			// Asset Pack tags
+			tags = new[] { "3D Models", "Audio", "Code Scripts", "Terrain PBR", "UI Components" };
+		}
+		else
+		{
+			// Arcade Custom Map tags
+			tags = new[] { "Tower Defense", "Campaign", "Melee", "Coop / Survival", "Tutorial / Skirmish" };
+		}
+
+		foreach (var tag in tags)
+		{
+			var chk = new CheckBox();
+			chk.Text = tag;
+			chk.FocusMode = FocusModeEnum.None;
+			chk.AddThemeFontSizeOverride("font_size", 11);
+			chk.Toggled += (_) => SaveMapProperties();
+			mapTagsBox.AddChild(chk);
+			_activeTagCheckboxes.Add(chk);
+		}
+	}
+
+	private void LoadMapProperties()
+	{
+		string mapJsonPath = ProjectSettings.GlobalizePath("user://temp_map_workspace/map.json");
+		if (System.IO.File.Exists(mapJsonPath))
+		{
+			try
+			{
+				string mapJsonContent = System.IO.File.ReadAllText(mapJsonPath);
+				var mapDoc = System.Text.Json.Nodes.JsonNode.Parse(mapJsonContent) as System.Text.Json.Nodes.JsonObject;
+				if (mapDoc != null && mapDoc.ContainsKey("MapProperties"))
+				{
+					var props = mapDoc["MapProperties"] as System.Text.Json.Nodes.JsonObject;
+					if (props != null)
+					{
+						if (_optMapType != null && props.ContainsKey("MapType"))
+						{
+							string mapType = props["MapType"]?.GetValue<string>() ?? "";
+							_optMapType.Selected = (mapType == "Asset Pack") ? 1 : 0;
+						}
+						
+						// Rebuild tags UI based on selected MapType
+						RebuildTagsUI();
+
+						if (props.ContainsKey("Tags") && props["Tags"] is System.Text.Json.Nodes.JsonArray tagsArr)
+						{
+							var activeTags = new HashSet<string>();
+							foreach (var tagNode in tagsArr)
+							{
+								if (tagNode != null) activeTags.Add(tagNode.GetValue<string>());
+							}
+
+							foreach (var chk in _activeTagCheckboxes)
+							{
+								chk.ButtonPressed = activeTags.Contains(chk.Text);
+							}
+						}
+					}
+				}
+			}
+			catch (System.Exception ex)
+			{
+				GD.PrintErr($"Failed to load map properties: {ex.Message}");
+			}
+		}
+		else
+		{
+			// Default initialization
+			RebuildTagsUI();
+		}
+	}
+
+	private void CompileAndSignMapSync(string workspace)
+	{
+		// 1. Compile triggers
+		try
+		{
+			if (System.IO.Directory.Exists(workspace))
+			{
+				var compileProcess = new System.Diagnostics.Process();
+				compileProcess.StartInfo.FileName = "dotnet";
+				compileProcess.StartInfo.Arguments = "build -c Release";
+				compileProcess.StartInfo.WorkingDirectory = workspace;
+				compileProcess.StartInfo.CreateNoWindow = true;
+				compileProcess.StartInfo.UseShellExecute = false;
+				compileProcess.Start();
+				compileProcess.WaitForExit();
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] Trigger compilation failed: {ex.Message}");
+		}
+
+		// 2. Resolve contributors, attributions, and sign
+		try
+		{
+			var authorshipKey = GetOrGenerateAuthorshipKey();
+			string currentUsername = "MapAuthor";
+			string pubKeyStr = Convert.ToBase64String(authorshipKey.PublicKey.Export(KeyBlobFormat.RawPublicKey));
+			
+			string seedServerUrl = GameHost.Instance != null && GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
+			
+			using (var httpClient = new System.Net.Http.HttpClient())
+			{
+				try
+				{
+					var resTask = httpClient.GetAsync(seedServerUrl + "/api/creators/check/" + Uri.EscapeDataString(pubKeyStr));
+					resTask.Wait();
+					var res = resTask.Result;
+					if (res.IsSuccessStatusCode)
+					{
+						var jsonTask = res.Content.ReadAsStringAsync();
+						jsonTask.Wait();
+						using var creatorDoc = JsonDocument.Parse(jsonTask.Result);
+						if (creatorDoc.RootElement.TryGetProperty("username", out var uProp))
+						{
+							currentUsername = uProp.GetString() ?? currentUsername;
+						}
+					}
+				}
+				catch {}
+
+				var referencedHashes = new List<string>();
+				var allFiles = System.IO.Directory.GetFiles(workspace, "*", System.IO.SearchOption.AllDirectories);
+				
+				foreach (var file in allFiles)
+				{
+					if (file.EndsWith("map.json") || file.EndsWith("authorship_key.pem")) continue;
+					
+					byte[] fileBytes = System.IO.File.ReadAllBytes(file);
+					string hash = MapAssetManager.ComputeBlake3(fileBytes);
+					
+					byte[] hashBytes = System.Text.Encoding.UTF8.GetBytes(hash);
+					byte[] signatureBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, hashBytes);
+					string signatureStr = Convert.ToBase64String(signatureBytes);
+					
+					referencedHashes.Add(hash);
+					
+					try
+					{
+						var existsResTask = httpClient.GetAsync(seedServerUrl + "/api/publish_map/asset_author/" + hash);
+						existsResTask.Wait();
+						var existsRes = existsResTask.Result;
+						if (!existsRes.IsSuccessStatusCode)
+						{
+							using var form = new System.Net.Http.MultipartFormDataContent();
+							form.Add(new System.Net.Http.StringContent(hash), "Hash");
+							form.Add(new System.Net.Http.StringContent(signatureStr), "Signature");
+							form.Add(new System.Net.Http.StringContent(currentUsername), "AuthorUsername");
+							form.Add(new System.Net.Http.StringContent(pubKeyStr), "PublicKey");
+							
+							var fileContent = new System.Net.Http.ByteArrayContent(fileBytes);
+							form.Add(fileContent, "File", System.IO.Path.GetFileName(file));
+							
+							var uploadTask = httpClient.PostAsync(seedServerUrl + "/api/publish_map/upload_asset", form);
+							uploadTask.Wait();
+						}
+					}
+					catch {}
+				}
+				
+				string mapJsonPath = System.IO.Path.Combine(workspace, "map.json");
+				if (System.IO.File.Exists(mapJsonPath))
+				{
+					string mapJsonContent = System.IO.File.ReadAllText(mapJsonPath);
+					var options = new JsonSerializerOptions { WriteIndented = true };
+					var mapDoc = JsonNode.Parse(mapJsonContent) as JsonObject;
+					
+					if (mapDoc != null)
+					{
+						var contributorsList = new HashSet<string>();
+						if (mapDoc.TryGetPropertyValue("Contributors", out var contNode) && contNode is JsonArray arr)
+						{
+							foreach (var node in arr)
+							{
+								if (node != null) contributorsList.Add(node.GetValue<string>());
+							}
+						}
+						
+						var authorCounts = new System.Collections.Generic.Dictionary<string, int>();
+						foreach (var hash in referencedHashes)
+						{
+							try
+							{
+								var assetAuthorResTask = httpClient.GetAsync(seedServerUrl + "/api/publish_map/asset_author/" + hash);
+								assetAuthorResTask.Wait();
+								var assetAuthorRes = assetAuthorResTask.Result;
+								if (assetAuthorRes.IsSuccessStatusCode)
+								{
+									var assetAuthorJsonTask = assetAuthorRes.Content.ReadAsStringAsync();
+									assetAuthorJsonTask.Wait();
+									var assetMeta = JsonNode.Parse(assetAuthorJsonTask.Result);
+									if (assetMeta != null && assetMeta["AuthorUsername"] != null)
+									{
+										string author = assetMeta["AuthorUsername"].GetValue<string>();
+										if (!string.IsNullOrEmpty(author))
+										{
+											contributorsList.Add(author);
+											if (!authorCounts.ContainsKey(author)) authorCounts[author] = 0;
+											authorCounts[author]++;
+										}
+									}
+								}
+							}
+							catch {}
+						}
+						
+						contributorsList.Add(currentUsername);
+						
+						var newContributorsArr = new JsonArray();
+						foreach (var cont in contributorsList)
+						{
+							newContributorsArr.Add(cont);
+						}
+						mapDoc["Contributors"] = newContributorsArr;
+
+						var attributionsArr = new JsonArray();
+						var sortedAuthors = authorCounts.Keys.ToList();
+						sortedAuthors.Sort((a, b) => authorCounts[b].CompareTo(authorCounts[a]));
+						foreach (var a in sortedAuthors)
+						{
+							attributionsArr.Add(a);
+						}
+						mapDoc["Attributions"] = attributionsArr;
+						mapDoc["EngineVersion"] = LobbyManager.GameBinaryVersion;
+						
+						mapDoc["author_key"] = pubKeyStr;
+						if (mapDoc.ContainsKey("signature"))
+						{
+							mapDoc.Remove("signature");
+						}
+						
+						string updatedMapJson = mapDoc.ToJsonString(options);
+						System.IO.File.WriteAllText(mapJsonPath, updatedMapJson);
+						
+						byte[] mapBytes = System.IO.File.ReadAllBytes(mapJsonPath);
+						string mapHash = MapAssetManager.ComputeBlake3(mapBytes);
+						byte[] mapHashBytes = System.Text.Encoding.UTF8.GetBytes(mapHash);
+						byte[] mapSigBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, mapHashBytes);
+						
+						mapDoc["signature"] = Convert.ToBase64String(mapSigBytes);
+						updatedMapJson = mapDoc.ToJsonString(options);
+						System.IO.File.WriteAllText(mapJsonPath, updatedMapJson);
+						
+						try
+						{
+							using (var form = new System.Net.Http.MultipartFormDataContent())
+							{
+								form.Add(new System.Net.Http.StringContent(mapHash), "Hash");
+								form.Add(new System.Net.Http.StringContent(Convert.ToBase64String(mapSigBytes)), "Signature");
+								form.Add(new System.Net.Http.StringContent(currentUsername), "AuthorUsername");
+								form.Add(new System.Net.Http.StringContent(pubKeyStr), "PublicKey");
+								
+								var fileContent = new System.Net.Http.ByteArrayContent(mapBytes);
+								form.Add(fileContent, "File", "map.json");
+								
+								var uploadMapTask = httpClient.PostAsync(seedServerUrl + "/api/publish_map/upload_asset", form);
+								uploadMapTask.Wait();
+							}
+							
+							var publishReq = new 
+							{
+								MapJson = updatedMapJson,
+								ReferencedHashes = referencedHashes,
+								Signature = Convert.ToBase64String(mapSigBytes),
+								PublicKey = pubKeyStr
+							};
+							
+							var pubContent = new StringContent(JsonSerializer.Serialize(publishReq), System.Text.Encoding.UTF8, "application/json");
+							var pubTask = httpClient.PostAsync(seedServerUrl + "/api/publish_map", pubContent);
+							pubTask.Wait();
+						}
+						catch {}
+					}
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] Error signing/compiling map: {ex.Message}");
+		}
+	}
+
+	private async void CheckCreatorRegistrationAndPrompt()
+	{
+		var key = GetOrGenerateAuthorshipKey();
+		string pubKeyStr = Convert.ToBase64String(key.PublicKey.Export(KeyBlobFormat.RawPublicKey));
+		
+		string seedServerUrl = GameHost.Instance != null && GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
+		
+		try
+		{
+			using (var httpClient = new System.Net.Http.HttpClient())
+			{
+				var res = await httpClient.GetAsync(seedServerUrl + "/api/creators/check/" + Uri.EscapeDataString(pubKeyStr));
+				if (!res.IsSuccessStatusCode)
+				{
+					// Not registered! Show registration prompt
+					ShowCreatorRegistrationDialog(pubKeyStr, key);
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] Error checking creator registration: {ex.Message}");
+		}
+	}
+
+	private void ShowCreatorRegistrationDialog(string pubKeyStr, NSec.Cryptography.Key key)
+	{
+		var overlay = new ColorRect();
+		overlay.Name = "CreatorRegistrationOverlay";
+		overlay.Color = new Color(0, 0, 0, 0.8f);
+		overlay.SetAnchorsPreset(LayoutPreset.FullRect);
+		AddChild(overlay);
+
+		var panel = new PanelContainer();
+		panel.CustomMinimumSize = new Vector2(400, 200);
+		panel.SetAnchorsPreset(LayoutPreset.Center);
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.12f, 0.12f, 0.18f, 0.95f);
+		style.BorderWidthTop = 2; style.BorderWidthBottom = 2; style.BorderWidthLeft = 2; style.BorderWidthRight = 2;
+		style.BorderColor = UIStyle.ColorCyanGlow;
+		style.CornerRadiusTopLeft = 4; style.CornerRadiusTopRight = 4; style.CornerRadiusBottomLeft = 4; style.CornerRadiusBottomRight = 4;
+		panel.AddThemeStyleboxOverride("panel", style);
+		overlay.AddChild(panel);
+
+		var vbox = new VBoxContainer();
+		vbox.AddThemeConstantOverride("separation", 12);
+		var margin = new MarginContainer();
+		margin.AddThemeConstantOverride("margin_top", 15);
+		margin.AddThemeConstantOverride("margin_bottom", 15);
+		margin.AddThemeConstantOverride("margin_left", 15);
+		margin.AddThemeConstantOverride("margin_right", 15);
+		margin.AddChild(vbox);
+		panel.AddChild(margin);
+
+		var title = new Label();
+		title.Text = "Register Creator Profile";
+		title.HorizontalAlignment = HorizontalAlignment.Center;
+		title.AddThemeFontSizeOverride("font_size", 18);
+		vbox.AddChild(title);
+
+		var desc = new Label();
+		desc.Text = "A new cryptographic key pair has been generated for your machine. Please choose a unique display name to lock to this key.";
+		desc.HorizontalAlignment = HorizontalAlignment.Center;
+		desc.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+		desc.AddThemeFontSizeOverride("font_size", 12);
+		vbox.AddChild(desc);
+
+		var lineEdit = new LineEdit();
+		lineEdit.PlaceholderText = "Enter Username";
+		lineEdit.Alignment = HorizontalAlignment.Center;
+		vbox.AddChild(lineEdit);
+
+		var errLabel = new Label();
+		errLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		errLabel.AddThemeColorOverride("font_color", new Color(1, 0.3f, 0.3f));
+		errLabel.AddThemeFontSizeOverride("font_size", 11);
+		vbox.AddChild(errLabel);
+
+		var btnRegister = new Button();
+		btnRegister.Text = "Register Display Name";
+		btnRegister.CustomMinimumSize = new Vector2(150, 36);
+		btnRegister.Pressed += async () => {
+			string username = lineEdit.Text.Trim();
+			if (string.IsNullOrEmpty(username))
+			{
+				errLabel.Text = "Username cannot be empty.";
+				return;
+			}
+			if (username.Length > 32)
+			{
+				errLabel.Text = "Username must be 32 characters or less.";
+				return;
+			}
+
+			btnRegister.Disabled = true;
+			errLabel.Text = "Registering...";
+
+			try
+			{
+				// Sign the registration payload
+				byte[] payloadBytes = System.Text.Encoding.UTF8.GetBytes(username + ":" + pubKeyStr);
+				byte[] sigBytes = SignatureAlgorithm.Ed25519.Sign(key, payloadBytes);
+				string signatureStr = Convert.ToBase64String(sigBytes);
+
+				var regPayload = new {
+					Username = username,
+					PublicKey = pubKeyStr,
+					Signature = signatureStr
+				};
+
+				string seedServerUrl = GameHost.Instance != null && GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
+				using (var httpClient = new System.Net.Http.HttpClient())
+				{
+					var content = new StringContent(JsonSerializer.Serialize(regPayload), System.Text.Encoding.UTF8, "application/json");
+					var res = await httpClient.PostAsync(seedServerUrl + "/api/creators/register", content);
+					if (res.IsSuccessStatusCode)
+					{
+						overlay.QueueFree();
+						ShowFeedback("Creator registered successfully!");
+					}
+					else
+					{
+						string errText = await res.Content.ReadAsStringAsync();
+						try {
+							var errDoc = JsonDocument.Parse(errText);
+							if (errDoc.RootElement.TryGetProperty("Message", out var msgProp))
+							{
+								errLabel.Text = msgProp.GetString();
+							}
+							else
+							{
+								errLabel.Text = "Registration failed.";
+							}
+						}
+						catch {
+							errLabel.Text = "Registration failed: " + errText;
+						}
+						btnRegister.Disabled = false;
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				errLabel.Text = "Error: " + ex.Message;
+				btnRegister.Disabled = false;
+			}
+		};
+		vbox.AddChild(btnRegister);
+	}
 
 	public void ImportTerrainFromMinimapDialog()
 	{
@@ -3886,6 +4482,9 @@ public class {mapName} : IMapScript
 		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 		GameHost.Instance.SaveMapToFile(tempTerrainPath);
 		GameHost.Instance.EditorHasUnsavedChanges = false;
+
+		// Compile, hash assets, attribution, sign map before testing
+		CompileAndSignMapSync(_tempWorkspacePath);
 
 		IsTestMode = true;
 

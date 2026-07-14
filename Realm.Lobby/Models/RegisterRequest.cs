@@ -10,5 +10,9 @@ public record RegisterRequest(
     int SlotsUsed, 
     int HostPingBaseline,
     string? GameVersion = null,
-    string? LocalIP = null
-);
+    string? LocalIP = null,
+    string? MapVersion = null,
+    string? Signature = null,
+    string? PublicKey = null,
+    string? MapHash = null
+);

@@ -102,6 +102,11 @@ custom_minimumSize = Vector2(0, 45)
 layout_mode = 2
 focus_mode = 0
 
+[node name="CatAssetPacks" type="Button" parent="FilterPanel/VBoxContainer"]
+custom_minimumSize = Vector2(0, 45)
+layout_mode = 2
+focus_mode = 0
+
 [node name="MapListPanel" type="PanelContainer" parent="."]
 layout_mode = 0
 offset_left = 460.0

@@ -39,6 +39,22 @@ public class DataStoreService : IDisposable
         return list;
     }
 
+    public Dictionary<string, T> GetAllWithKeys<T>(string collection)
+    {
+        using var t = _engine.GetTransaction();
+        var dict = new Dictionary<string, T>();
+        foreach (var row in t.SelectForward<string, string>(collection))
+        {
+            var item = JsonSerializer.Deserialize<T>(row.Value);
+            if (item != null)
+            {
+                dict[row.Key] = item;
+            }
+        }
+        return dict;
+    }
+
+
     public void Upsert<T>(string collection, string id, T data)
     {
         using var t = _engine.GetTransaction();

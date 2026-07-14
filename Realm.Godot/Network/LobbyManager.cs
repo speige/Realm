@@ -128,6 +128,7 @@ public partial class LobbyManager : Node
     public bool IsHost { get; private set; }
     public string? ActiveLobbyId { get; private set; }
     public bool IsGameStarted { get; set; }
+    public DateTime? GameSessionStartTime { get; private set; }
     public string ActiveMapName { get; set; } = "green_td";
     public bool SpectatorDelay { get; set; } = false;
     public string? LobbyJoinError { get; set; }
@@ -492,6 +493,41 @@ public partial class LobbyManager : Node
         {
             int hostPingBaseline = await MeasurePingToRegistryAsync();
             string localIpAddress = GetLocalIPAddress();
+            
+            string mapVersion = "1.0";
+            string signature = "";
+            string publicKey = "";
+            string mapHash = "";
+
+            try
+            {
+                string mapJsonPath = System.IO.Path.Combine(mapPathName, "map.json");
+                if (System.IO.File.Exists(mapJsonPath))
+                {
+                    string json = System.IO.File.ReadAllText(mapJsonPath);
+                    using var mapDoc = JsonDocument.Parse(json);
+                    var root = mapDoc.RootElement;
+                    if (root.TryGetProperty("MapProperties", out var props) && props.TryGetProperty("MapVersion", out var mv))
+                    {
+                        mapVersion = mv.GetString() ?? "1.0";
+                    }
+                    if (root.TryGetProperty("signature", out var sigProp))
+                    {
+                        signature = sigProp.GetString() ?? "";
+                    }
+                    if (root.TryGetProperty("author_key", out var keyProp))
+                    {
+                        publicKey = keyProp.GetString() ?? "";
+                    }
+                    byte[] mapBytes = System.IO.File.ReadAllBytes(mapJsonPath);
+                    mapHash = MapAssetManager.ComputeBlake3(mapBytes);
+                }
+            }
+            catch (Exception ex)
+            {
+                GD.PrintErr($"[LobbyManager] Failed to read map signature metadata: {ex.Message}");
+            }
+
             var registerPayload = new
             {
                 Map = mapDisplayName,
@@ -503,7 +539,11 @@ public partial class LobbyManager : Node
                 SlotsUsed = PlayerList.Count,
                 HostPingBaseline = hostPingBaseline,
                 GameVersion = GameBinaryVersion,
-                LocalIP = localIpAddress
+                LocalIP = localIpAddress,
+                MapVersion = mapVersion,
+                Signature = signature,
+                PublicKey = publicKey,
+                MapHash = mapHash
             };
 
             HttpResponseMessage? response = null;
@@ -527,8 +567,28 @@ public partial class LobbyManager : Node
 
             if (response == null || !response.IsSuccessStatusCode)
             {
-                GD.PrintErr($"[LobbyManager] Registry server registration failed on all nodes.");
-                return true; // proceed locally even if registration fails
+                string errMsg = "Registry server registration failed.";
+                if (response != null)
+                {
+                    try
+                    {
+                        string body = await response.Content.ReadAsStringAsync();
+                        using var errDoc = JsonDocument.Parse(body);
+                        if (errDoc.RootElement.TryGetProperty("Message", out var msgProp))
+                        {
+                            errMsg = msgProp.GetString() ?? errMsg;
+                        }
+                    }
+                    catch {}
+                }
+                GD.PrintErr($"[LobbyManager] {errMsg}");
+                if (response != null && response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                {
+                    Multiplayer.MultiplayerPeer = null;
+                    IsHost = false;
+                    return false;
+                }
+                return true; // proceed locally if registry is offline
             }
 
             var respText = await response.Content.ReadAsStringAsync();
@@ -1467,6 +1527,7 @@ public partial class LobbyManager : Node
         }
 
         IsGameStarted = true;
+        GameSessionStartTime = DateTime.UtcNow;
         
         GetTree().ChangeSceneToFile("res://Main.tscn");
     }

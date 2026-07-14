@@ -7,6 +7,7 @@ public enum GameScreen
 	InGameHUD,
 	GameOver,
 	MapDiscovery,
+	CreatorDiscovery,
 	MapDetails,
 	MapEditorHUD,
 	ReplayList,

@@ -1,6 +1,8 @@
 using Godot;
 using System;
 using System.Linq;
+using System.Text.Json;
+using System.Collections.Generic;
 
 public partial class MapDiscovery : Control
 {
@@ -21,6 +23,7 @@ public partial class MapDiscovery : Control
 	private Button _btnTD;
 	private Button _btnMelee;
 	private Button _btnCampaign;
+	private Button _btnAssetPacks;
 
 	private MapData[] _allMaps;
 	private string _selectedCategory = "All";
@@ -45,13 +48,14 @@ public partial class MapDiscovery : Control
 		_btnTD = GetNode<Button>("FilterPanel/VBoxContainer/CatTD");
 		_btnMelee = GetNode<Button>("FilterPanel/VBoxContainer/CatMelee");
 		_btnCampaign = GetNode<Button>("FilterPanel/VBoxContainer/CatCampaign");
+		_btnAssetPacks = GetNode<Button>("FilterPanel/VBoxContainer/CatAssetPacks");
 
 
-		_allMaps = MapData.GetDummyMaps();
+		_allMaps = Array.Empty<MapData>();
 
 		ApplyStyles();
 		RegisterEvents();
-		RenderMapGrid();
+		LoadMapsFromServer();
 	}
 
 	private void ApplyStyles()
@@ -77,6 +81,7 @@ public partial class MapDiscovery : Control
 		SetupCategoryButton(_btnTD, "TOWER DEFENSE", "TD");
 		SetupCategoryButton(_btnMelee, "MELEE", "Melee");
 		SetupCategoryButton(_btnCampaign, "CAMPAIGN", "Campaign");
+		SetupCategoryButton(_btnAssetPacks, "ASSET PACKS", "Asset Packs");
 		
 		UpdateButtonHighlight();
 	}
@@ -119,6 +124,7 @@ public partial class MapDiscovery : Control
 		HighlightButton(_btnTD, _selectedCategory == "TD");
 		HighlightButton(_btnMelee, _selectedCategory == "Melee");
 		HighlightButton(_btnCampaign, _selectedCategory == "Campaign");
+		HighlightButton(_btnAssetPacks, _selectedCategory == "Asset Packs");
 	}
 
 	private void HighlightButton(Button button, bool highlight)
@@ -159,11 +165,17 @@ public partial class MapDiscovery : Control
 			{
 				filtered = filtered.Where(m => m.RatingStars >= 4.5f);
 			}
+			else if (_selectedCategory == "Asset Packs")
+			{
+				filtered = filtered.Where(m => m.Genre != null && m.Genre.Contains("Asset Pack"));
+			}
 			else
 			{
-				filtered = filtered.Where(m => m.Genre.Contains(_selectedCategory) || m.Features.Contains(_selectedCategory) || m.MapId.Contains(_selectedCategory));
+				filtered = filtered.Where(m => (m.Genre != null && m.Genre.Contains(_selectedCategory)) || (m.Features != null && m.Features.Contains(_selectedCategory)) || (m.MapId != null && m.MapId.Contains(_selectedCategory)));
 			}
 		}
+		
+		filtered = filtered.Where(m => m.Title != null && !m.Title.Contains("[Beta-Testing]"));
 
 		if (!string.IsNullOrEmpty(_searchQuery))
 		{
@@ -291,5 +303,35 @@ public partial class MapDiscovery : Control
 		footer.AddChild(btnDetails);
 
 		return card;
+	}
+
+	private async void LoadMapsFromServer()
+	{
+		string seedServerUrl = GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
+		try
+		{
+			using (var httpClient = new System.Net.Http.HttpClient())
+			{
+				var res = await httpClient.GetAsync(seedServerUrl + "/api/maps/discovery");
+				if (res.IsSuccessStatusCode)
+				{
+					string json = await res.Content.ReadAsStringAsync();
+					var maps = JsonSerializer.Deserialize<MapData[]>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+					if (maps != null && maps.Length > 0)
+					{
+						_allMaps = maps;
+						RenderMapGrid();
+						return;
+					}
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapDiscovery] Failed to load discovery maps: {ex.Message}");
+		}
+
+		_allMaps = MapData.GetDummyMaps();
+		RenderMapGrid();
 	}
 }

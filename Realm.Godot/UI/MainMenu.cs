@@ -12,6 +12,7 @@ public partial class MainMenu : Control
 	private Button _playButton;
 	private Button _singlePlayerButton;
 	private Button _mapDiscoveryButton;
+	private Button _creatorDiscoveryButton;
 	private Button _mapEditorButton;
 	private Button _replaysButton;
 	private Button _settingsButton;
@@ -43,6 +44,7 @@ public partial class MainMenu : Control
 		_playButton = GetNode<Button>("CentralPanel/VBoxContainer/PlayButton");
 		_singlePlayerButton = GetNode<Button>("CentralPanel/VBoxContainer/SinglePlayerButton");
 		_mapDiscoveryButton = GetNode<Button>("CentralPanel/VBoxContainer/MapDiscoveryButton");
+		_creatorDiscoveryButton = GetNode<Button>("CentralPanel/VBoxContainer/CreatorDiscoveryButton");
 		_mapEditorButton = GetNode<Button>("CentralPanel/VBoxContainer/MapEditorButton");
 		_replaysButton = GetNode<Button>("CentralPanel/VBoxContainer/ReplaysButton");
 		_settingsButton = GetNode<Button>("SettingsButton");
@@ -73,6 +75,7 @@ public partial class MainMenu : Control
 			UIManager.Instance.TransitionTo(GameScreen.LobbyCreate);
 		});
 		SetupButton(_mapDiscoveryButton, "MAP DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.MapDiscovery));
+		SetupButton(_creatorDiscoveryButton, "CREATOR DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.CreatorDiscovery));
 		SetupButton(_mapEditorButton, "MAP EDITOR", () => OnMapEditorPressed());
 		SetupButton(_replaysButton, "REPLAYS", () => UIManager.Instance.TransitionTo(GameScreen.ReplayList));
 		SetupUtilityButton(_settingsButton, "res://Assets/UI/gear_icon.png", () => UIManager.Instance.OpenSettingsOverlay());
@@ -98,6 +101,7 @@ public partial class MainMenu : Control
 		_socialButton.AddThemeConstantOverride("icon_max_width", 32);
 		_discordButton.AddThemeConstantOverride("icon_max_width", 36);
 		_mapDiscoveryButton.AddThemeConstantOverride("icon_max_width", 36);
+		_creatorDiscoveryButton.AddThemeConstantOverride("icon_max_width", 36);
 		_mapEditorButton.AddThemeConstantOverride("icon_max_width", 36);
 		_replaysButton.AddThemeConstantOverride("icon_max_width", 36);
 		_donateButton.AddThemeConstantOverride("icon_max_width", 36);
