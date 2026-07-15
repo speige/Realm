@@ -38,6 +38,10 @@ public class CustomMap : IMapScript
             if (unit.IsEnemy)
             {
                 _aliveEnemies--;
+                if (_aliveEnemies <= 0 && _wave > 0 && _wave < 10)
+                {
+                    api.ScheduleTimer(3f, () => StartWave(api));
+                }
             }
         };
 
@@ -50,15 +54,13 @@ public class CustomMap : IMapScript
 
         if (_aliveEnemies <= 0 && _wave > 0)
         {
-            if (_wave >= 10)
+            if (_wave >= 4)
             {
                 api.BroadcastMessage("Victory!!");
                 api.TriggerVictory();
                 _gameOver = true;
                 return;
             }
-
-            api.ScheduleTimer(3f, () => StartWave(api));
 
         }
     }
@@ -74,8 +76,7 @@ public class CustomMap : IMapScript
 
         for (int i = 0; i < count; i++)
         {
-            var pos = _spawnPos + new Vector3(i * 2f, 0, 0);
-            var enemy = api.SpawnUnit("footman", pos, true);
+            var enemy = api.SpawnUnit("footman", _spawnPos, true);
             api.ScheduleTimer(0.5f, () => enemy?.AttackMove(_endPos));
         }
     }
