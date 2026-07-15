@@ -56,6 +56,7 @@ public class MapEditorHUDViewModel
 	public bool Flying { get; set; } = false;
 	public bool Ground { get; set; } = true;
 	public bool Buildable { get; set; } = false;
+	public bool Unpathable { get; set; } = false;
 	public int PathingModeIndex { get; set; } = 0;
 
 	public void UpdateFromHost()
