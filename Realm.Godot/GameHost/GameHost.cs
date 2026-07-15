@@ -1996,6 +1996,22 @@ public class {mapName} : IMapScript
 		return false;
 	}
 
+	void IGameAPI.AddUnitTypeAbility(string unitTypeId, string abilityId)
+	{
+		if (UnitRegistry.TryGetValue(unitTypeId, out var meta))
+		{
+			var abilities = meta.Abilities != null 
+				? new List<string>(meta.Abilities) 
+				: new List<string>();
+			if (!abilities.Contains(abilityId))
+			{
+				abilities.Add(abilityId);
+				meta.Abilities = abilities.ToArray();
+				UnitRegistry[unitTypeId] = meta;
+			}
+		}
+	}
+
 
 	public void NotifyPlayerLeft(int playerIndex)
 	{

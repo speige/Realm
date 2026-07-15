@@ -788,4 +788,11 @@ public interface IGameAPI
     /// <param name="coordinateName">The name of the coordinate box.</param>
     /// <returns>True if the position is inside the coordinate box, false otherwise.</returns>
     bool IsPositionInCoordinate(Vector3 position, string coordinateName);
+
+    /// <summary>
+    /// Adds an ability to the specified unit type definition.
+    /// </summary>
+    /// <param name="unitTypeId">The type identifier of the unit/structure.</param>
+    /// <param name="abilityId">The identifier of the ability to add.</param>
+    void AddUnitTypeAbility(string unitTypeId, string abilityId);
 }

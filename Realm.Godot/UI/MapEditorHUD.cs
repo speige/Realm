@@ -4564,6 +4564,17 @@ public partial class MapEditorHUD : Control
 			GD.PrintErr($"[ProceedToTestMap] Failed to clean Godot cache: {ex.Message}");
 		}
 
+		// Find compiled map script DLL
+		string dllPath = System.IO.Directory.GetFiles(
+			System.IO.Path.Combine(_tempWorkspacePath, "bin"),
+			"CustomMap.dll",
+			System.IO.SearchOption.AllDirectories
+		).FirstOrDefault();
+		if (System.IO.File.Exists(dllPath))
+		{
+			GameHost.PendingMapScriptPath = dllPath;
+		}
+
 		IsTestMode = true;
 
 		if (LobbyManager.Instance != null)
