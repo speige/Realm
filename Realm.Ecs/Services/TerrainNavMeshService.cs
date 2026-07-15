@@ -104,7 +104,7 @@ internal class TerrainNavMeshService
 			{
 				int pathingCode = state.PathingCodes[x, z];
 				bool isWalkable = (pathingCode & 8) != 0
-					&& (pathingCode & (16 | 1 | 2)) == 0; // not UNPATHABLE, SHALLOW_WATER, or DEEP_WATER
+					&& (pathingCode & (1 | 2)) == 0; // not SHALLOW_WATER or DEEP_WATER
 				if (!isWalkable)
 				{
 					float lx = (x - (width - 1) / 2.0f) * spacing;

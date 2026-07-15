@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.0.11222.15
@@ -15,7 +15,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.MapEditorExtension", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.Ecs.Tests", "Realm.Ecs.Tests\Realm.Ecs.Tests.csproj", "{4DA0E7F6-4213-4A3B-8DC5-E07CEA0C6584}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Realm.Godot", "Realm.Godot", "{1A2F7B9D-5846-1528-F563-C545B7A46BFA}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Godot", "Godot", "{1A2F7B9D-5846-1528-F563-C545B7A46BFA}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Maps", "Maps", "{68E0F389-9CC9-3EEE-FBCF-ED9971472459}"
 EndProject

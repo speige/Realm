@@ -240,15 +240,14 @@ public partial class MapEditorHUD : Control
 
 	private Button _btnPathingBrush;
 	private Button _btnFloodFillPathing;
-	private PanelContainer _panelPathing;
 	private CheckBox _chkShallowWater;
 	private CheckBox _chkDeepWater;
 	private CheckBox _chkFlying;
 	private CheckBox _chkGround;
 	private CheckBox _chkBuildable;
-	private CheckBox _chkUnpathable;
+
 	private OptionButton _optPathingMode;
-	private HBoxContainer _pathingModeHBox;
+
 
 	private Button _btnDrawCoordinate;
 	private LineEdit _txtCoordinateName;
@@ -339,15 +338,13 @@ public partial class MapEditorHUD : Control
 		_leftPillar = new Panel();
 		_rightPillar = new Panel();
 		_topToolbar = new HBoxContainer();
-		_middleRightBox = new VBoxContainer();
+
 		_panelTextures = new PanelContainer();
 		_panelEntityPalette = new PanelContainer();
 		_panelTerrain = new PanelContainer();
 		_panelDeco = new PanelContainer();
 		_panelEnv = new PanelContainer();
-		_panelPathing = new PanelContainer();
 		_btnClumpBrush = new Button();
-		_pathingModeHBox = new HBoxContainer();
 
 		_panelLeft = GetNode<Panel>("LeftSlidePanel");
 		_panelRight = GetNode<Panel>("RightSlidePanel");
@@ -454,28 +451,8 @@ public partial class MapEditorHUD : Control
 
 		InitializeTempWorkspace();
 
-		if (OperatingSystem.IsWindows())
-		{
-			VSCodeManager.Instance.Initialize(this);
+	
 
-			_btnVSCode = new Button();
-			_btnVSCode.Name = "BtnVSCode";
-			_btnVSCode.Set("icon_max_width", 0);
-			GetNode<HBoxContainer>("TopLeftBox").AddChild(_btnVSCode);
-			SetupButton(_btnVSCode, "💻 CODE & DATA", null, 13, "Toggle the embedded VSCode editor");
-		}
-
-		_btnLoad = new Button();
-		_btnLoad.Name = "BtnLoad";
-		_btnLoad.Set("icon_max_width", 0);
-		GetNode<VBoxContainer>("MiddleRightBox").AddChild(_btnLoad);
-		GetNode<VBoxContainer>("MiddleRightBox").MoveChild(_btnLoad, _btnSave.GetIndex() + 1);
-		SetupButton(_btnLoad, "📂 LOAD", () => LoadMapAction(), 13, "Load heights, colors, and entities from a saved json file (Ctrl+O)");
-
-		_btnTestMap = new Button();
-		_btnTestMap.Name = "BtnTestMap";
-		_btnTestMap.Set("icon_max_width", 0);
-		SetupButton(_btnTestMap, "🎮 TEST", () => TestMapAction(), 13, "Launch single-player mode on the current editor map");
 
 		_btnToggleGrid = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnToggleGrid");
 		SetupButton(_btnToggleGrid, "🌐 GRID OVERLAY: OFF", () =>
@@ -996,109 +973,7 @@ public partial class MapEditorHUD : Control
 		_feedbackLabel.Modulate = new Color(1, 1, 1, 0);
 		Input.MouseMode = Input.MouseModeEnum.Visible;
 
-		_btnPathingBrush = new Button();
-		_btnPathingBrush.Name = "BtnPathingBrush";
-		_btnPathingBrush.Set("icon_max_width", 0);
-		SetupButton(_btnPathingBrush, "🧭 Paint", () => TriggerToolSelection(GameHost.EditorTool.PaintPathing, _btnPathingBrush), 11, "Paint pathing attributes onto the terrain map");
-		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnPathingBrush);
 
-		_btnFloodFillPathing = new Button();
-		_btnFloodFillPathing.Name = "BtnFloodFillPathing";
-		_btnFloodFillPathing.Set("icon_max_width", 0);
-		SetupButton(_btnFloodFillPathing, "🪣 Flood Fill", () => TriggerToolSelection(GameHost.EditorTool.FloodFillPathing, _btnFloodFillPathing), 11, "Flood fill pathing attributes onto the terrain map");
-		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnFloodFillPathing);
-
-		_btnDrawCoordinate = new Button();
-		_btnDrawCoordinate.Name = "BtnDrawCoordinate";
-		_btnDrawCoordinate.Set("icon_max_width", 0);
-		SetupButton(_btnDrawCoordinate, "🗺️ Draw Coordinate", () => TriggerToolSelection(GameHost.EditorTool.DrawCoordinate, _btnDrawCoordinate), 11, "Drag to define a named coordinate box exposed as C# variables");
-		GetNode<HBoxContainer>("TopToolbar/PanelDeco/VBox/Content").AddChild(_btnDrawCoordinate);
-
-		_panelPathing = new PanelContainer();
-		_panelPathing.Name = "PanelPathing";
-		_panelPathing.LayoutMode = 1;
-		_panelPathing.AnchorsPreset = (int)Control.LayoutPreset.BottomLeft;
-		_panelPathing.AnchorTop = 1.0f;
-		_panelPathing.AnchorBottom = 1.0f;
-		_panelPathing.GrowVertical = Control.GrowDirection.Begin;
-		_panelPathing.OffsetLeft = 20.0f;
-		_panelPathing.OffsetTop = -380.0f;
-		_panelPathing.OffsetRight = 440.0f;
-		_panelPathing.OffsetBottom = -20.0f;
-		_panelPathing.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel());
-		AddChild(_panelPathing);
-		_panelPathing.Visible = false;
-
-		var pVBox = new VBoxContainer();
-		pVBox.Name = "VBox";
-		_panelPathing.AddChild(pVBox);
-
-		var pHeader = new HBoxContainer();
-		pHeader.Name = "HeaderHBox";
-		pVBox.AddChild(pHeader);
-
-		var pTitle = new Label();
-		pTitle.Name = "Title";
-		pTitle.Text = "🧭 PATHING PAINTING";
-		pTitle.AddThemeFontSizeOverride("font_size", 14);
-		pTitle.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
-		pHeader.AddChild(pTitle);
-
-		var pContent = new VBoxContainer();
-		pContent.Name = "Content";
-		pVBox.AddChild(pContent);
-
-		_pathingModeHBox = new HBoxContainer();
-		var modeLabel = new Label();
-		modeLabel.Text = TranslationServer.Translate("Mode: ");
-		modeLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		_pathingModeHBox.AddChild(modeLabel);
-
-		_optPathingMode = new OptionButton();
-		_optPathingMode.Name = "OptPathingMode";
-		_optPathingMode.AddItem(TranslationServer.Translate("Add Pathing Attribute"), 0);
-		_optPathingMode.AddItem(TranslationServer.Translate("Clear Pathing Attribute"), 1);
-		_optPathingMode.Selected = 0;
-		_optPathingMode.AddThemeFontSizeOverride("font_size", 11);
-		_optPathingMode.CustomMinimumSize = new Vector2(180, 28);
-		_pathingModeHBox.AddChild(_optPathingMode);
-		pContent.AddChild(_pathingModeHBox);
-
-		var layersVBox = new VBoxContainer();
-		layersVBox.AddThemeConstantOverride("separation", 6);
-		pContent.AddChild(layersVBox);
-
-		_chkShallowWater = new CheckBox();
-		_chkShallowWater.Text = TranslationServer.Translate("Shallow Water");
-		UIStyle.ApplyCheckboxStyle(_chkShallowWater);
-		layersVBox.AddChild(_chkShallowWater);
-
-		_chkDeepWater = new CheckBox();
-		_chkDeepWater.Text = TranslationServer.Translate("Deep Water");
-		UIStyle.ApplyCheckboxStyle(_chkDeepWater);
-		layersVBox.AddChild(_chkDeepWater);
-
-		_chkFlying = new CheckBox();
-		_chkFlying.Text = TranslationServer.Translate("Flying");
-		UIStyle.ApplyCheckboxStyle(_chkFlying);
-		layersVBox.AddChild(_chkFlying);
-
-		_chkGround = new CheckBox();
-		_chkGround.Text = TranslationServer.Translate("Ground");
-		UIStyle.ApplyCheckboxStyle(_chkGround);
-		layersVBox.AddChild(_chkGround);
-
-		_chkBuildable = new CheckBox();
-		_chkBuildable.Text = TranslationServer.Translate("Buildable");
-		UIStyle.ApplyCheckboxStyle(_chkBuildable);
-		layersVBox.AddChild(_chkBuildable);
-
-		_chkUnpathable = new CheckBox();
-		_chkUnpathable.Text = TranslationServer.Translate("Unpathable");
-		UIStyle.ApplyCheckboxStyle(_chkUnpathable);
-		layersVBox.AddChild(_chkUnpathable);
-
-		_chkGround.ButtonPressed = true;
 
 		_entityPaletteController = new MapEditorEntityPaletteController(this, _containerCategorySelector, _btnAddObject);
 		_generationDialog = new MapEditorGenerationDialog(this);
@@ -1108,7 +983,7 @@ public partial class MapEditorHUD : Control
 		_placementSettingsController = new MapEditorPlacementSettings(_sldPlacementRotate, _lblPlacementRotateValue, _sldPlacementScale, _lblPlacementScaleValue, _chkRandomRotation, _chkRandomScale, _chkClumpMode, _sldClumpDensity, _lblClumpDensityValue, _sldClumpScaleVar, _lblClumpScaleVarValue);
 		InitializeInspectorPanel();
 		_inspectorController = new MapEditorInspector(_lblInspectorTitle, _lblInspectorPos, _btnInspectorRotLeft, _btnInspectorRotRight, _btnInspectorScaleDown, _btnInspectorScaleUp, _btnInspectorScaleReset, _btnInspectorDelete);
-		_pathingPanelController = new MapEditorPathingPanel(_chkShallowWater, _chkDeepWater, _chkFlying, _chkGround, _chkBuildable, _chkUnpathable, _optPathingMode);
+		_pathingPanelController = new MapEditorPathingPanel(_chkShallowWater, _chkDeepWater, _chkFlying, _chkGround, _chkBuildable, _optPathingMode);
 
 		SetupMinimap();
 
@@ -1204,7 +1079,6 @@ public partial class MapEditorHUD : Control
 		if (_chkShallowWater != null && _chkShallowWater.ButtonPressed) mask |= EditableTerrain.PATHING_SHALLOW_WATER;
 		if (_chkDeepWater != null && _chkDeepWater.ButtonPressed) mask |= EditableTerrain.PATHING_DEEP_WATER;
 		if (_chkBuildable != null && _chkBuildable.ButtonPressed) mask |= EditableTerrain.PATHING_BUILDABLE;
-		if (_chkUnpathable != null && _chkUnpathable.ButtonPressed) mask |= EditableTerrain.PATHING_UNPATHABLE;
 		return mask;
 	}
 
@@ -2001,18 +1875,12 @@ public partial class MapEditorHUD : Control
 
 		if (tool == GameHost.EditorTool.PaintPathing || tool == GameHost.EditorTool.FloodFillPathing)
 		{
-			if (_panelPathing != null) _panelPathing.Visible = true;
 			if (_panelTextures != null) _panelTextures.Visible = false;
 			if (_panelEntityPalette != null) _panelEntityPalette.Visible = false;
-			if (_pathingModeHBox != null)
-			{
-				_pathingModeHBox.Visible = (tool != GameHost.EditorTool.FloodFillPathing);
-			}
 			GameHost.Instance?.UpdatePathingOverlay();
 		}
 		else if (tool == GameHost.EditorTool.DrawCoordinate)
 		{
-			if (_panelPathing != null) _panelPathing.Visible = false;
 			if (_panelTextures != null) _panelTextures.Visible = false;
 			if (_panelEntityPalette != null) _panelEntityPalette.Visible = false;
 			if (_btnCommitCoordinate != null) _btnCommitCoordinate.Visible = false;
@@ -2020,7 +1888,6 @@ public partial class MapEditorHUD : Control
 		}
 		else
 		{
-			if (_panelPathing != null) _panelPathing.Visible = false;
 			if (_panelTextures != null) _panelTextures.Visible = false;
 			if (_panelEntityPalette != null) _panelEntityPalette.Visible = false;
 			GameHost.Instance?.UpdatePathingOverlay();
@@ -2253,7 +2120,12 @@ public partial class MapEditorHUD : Control
 			}
 			System.IO.File.Copy(file, targetFile, true);
 		}
-		MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, System.IO.Path.GetFileName(sourceFolder));
+		// Only call SetupWorkspace if source folder didn't already provide a .csproj
+		bool sourceHasCsproj = System.IO.Directory.GetFiles(sourceFolder, "*.csproj", System.IO.SearchOption.TopDirectoryOnly).Length > 0;
+		if (!sourceHasCsproj)
+		{
+			MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, System.IO.Path.GetFileName(sourceFolder));
+		}
 		LoadMapProperties();
 	}
 
@@ -2430,7 +2302,7 @@ public partial class MapEditorHUD : Control
 		}
 		else
 		{
-			var key = NSec.Cryptography.Key.Create(SignatureAlgorithm.Ed25519);
+			var key = NSec.Cryptography.Key.Create(SignatureAlgorithm.Ed25519, new NSec.Cryptography.KeyCreationParameters { ExportPolicy = NSec.Cryptography.KeyExportPolicies.AllowPlaintextExport });
 			byte[] exported = key.Export(KeyBlobFormat.RawPrivateKey);
 			System.IO.File.WriteAllBytes(keyPath, exported);
 			
@@ -2972,27 +2844,57 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
-	private void CompileAndSignMapSync(string workspace)
+	private void CompileAndSignMapSync(string workspace, bool skipAttribution = false)
 	{
 		// 1. Compile triggers
 		try
 		{
 			if (System.IO.Directory.Exists(workspace))
 			{
+				// Ensure there is only one .csproj (keep CustomMap.csproj, remove others)
+				var csprojFiles = System.IO.Directory.GetFiles(workspace, "*.csproj", System.IO.SearchOption.TopDirectoryOnly);
+				if (csprojFiles.Length == 0)
+				{
+					GD.PrintErr("[MapEditorHUD] No .csproj found in workspace, cannot compile map script");
+					return;
+				}
+				if (csprojFiles.Length > 1)
+				{
+					foreach (var extra in csprojFiles)
+					{
+						if (!System.IO.Path.GetFileName(extra).Equals("CustomMap.csproj", System.StringComparison.OrdinalIgnoreCase))
+						{
+							System.IO.File.Delete(extra);
+						}
+					}
+				}
+
+				// Pick the first .csproj (prefer CustomMap.csproj)
+				string csproj = csprojFiles.FirstOrDefault(f => System.IO.Path.GetFileName(f).Equals("CustomMap.csproj", System.StringComparison.OrdinalIgnoreCase)) ?? csprojFiles[0];
 				var compileProcess = new System.Diagnostics.Process();
 				compileProcess.StartInfo.FileName = "dotnet";
-				compileProcess.StartInfo.Arguments = "build -c Release";
+				compileProcess.StartInfo.Arguments = $"build \"{csproj}\" -c Release";
 				compileProcess.StartInfo.WorkingDirectory = workspace;
 				compileProcess.StartInfo.CreateNoWindow = true;
 				compileProcess.StartInfo.UseShellExecute = false;
+				compileProcess.StartInfo.RedirectStandardOutput = true;
+				compileProcess.StartInfo.RedirectStandardError = true;
 				compileProcess.Start();
+				string buildOutput = compileProcess.StandardOutput.ReadToEnd();
+				string buildError = compileProcess.StandardError.ReadToEnd();
 				compileProcess.WaitForExit();
+				if (compileProcess.ExitCode != 0)
+				{
+					GD.PrintErr($"[MapEditorHUD] Map script compilation failed (exit code {compileProcess.ExitCode}):\n{buildOutput}\n{buildError}");
+				}
 			}
 		}
 		catch (Exception ex)
 		{
 			GD.PrintErr($"[MapEditorHUD] Trigger compilation failed: {ex.Message}");
 		}
+
+		if (skipAttribution) return;
 
 		// 2. Resolve contributors, attributions, and sign
 		try
@@ -4547,8 +4449,8 @@ public partial class MapEditorHUD : Control
 		GameHost.Instance.SaveMapToFile(tempTerrainPath);
 		GameHost.Instance.EditorHasUnsavedChanges = false;
 
-		// Compile, hash assets, attribution, sign map before testing
-		CompileAndSignMapSync(_tempWorkspacePath);
+		// Compile map script DLL (skip attribution/signing during test mode)
+		CompileAndSignMapSync(_tempWorkspacePath, skipAttribution: true);
 
 		// Clean Godot Mono assembly cache to force fresh assembly loading
 		string godotCachePath = System.IO.Path.Combine(ProjectSettings.GlobalizePath("res://"), ".godot", "mono", "temp");
@@ -4565,14 +4467,23 @@ public partial class MapEditorHUD : Control
 		}
 
 		// Find compiled map script DLL
-		string dllPath = System.IO.Directory.GetFiles(
-			System.IO.Path.Combine(_tempWorkspacePath, "bin"),
-			"CustomMap.dll",
-			System.IO.SearchOption.AllDirectories
-		).FirstOrDefault();
+		string binDir = System.IO.Path.Combine(_tempWorkspacePath, "bin");
+		string dllPath = null;
+		if (System.IO.Directory.Exists(binDir))
+		{
+			dllPath = System.IO.Directory.GetFiles(
+				binDir,
+				"CustomMap.dll",
+				System.IO.SearchOption.AllDirectories
+			).FirstOrDefault();
+		}
 		if (System.IO.File.Exists(dllPath))
 		{
 			GameHost.PendingMapScriptPath = dllPath;
+		}
+		else
+		{
+			GD.PrintErr($"[ProceedToTestMap] Could not find CustomMap.dll in {binDir}. Map script will not be loaded.");
 		}
 
 		IsTestMode = true;
@@ -4599,24 +4510,7 @@ public partial class MapEditorHUD : Control
 		{
 			string tempOut = $"user://temp_swatch_{i}_{System.Guid.NewGuid()}.png";
 			string globalTempOut = ProjectSettings.GlobalizePath(tempOut);
-			string ktxCmd = "ktx";
-			string localPath = System.IO.Path.Combine(Godot.ProjectSettings.GlobalizePath("res://"), "ktx_tools", "bin", "ktx.exe");
-			if (System.IO.File.Exists(localPath))
-			{
-				ktxCmd = localPath;
-			}
-			else
-			{
-				string workspacePath = @"C:\temp\Realm\ktx_tools\v5.0.0-rc1\bin\ktx.exe";
-				if (!System.IO.File.Exists(workspacePath))
-				{
-					workspacePath = @"C:\temp\Realm\ktx_tools\bin\ktx.exe";
-				}
-				if (System.IO.File.Exists(workspacePath))
-				{
-					ktxCmd = workspacePath;
-				}
-			}
+			string ktxCmd = System.IO.Path.GetFullPath(System.IO.Path.Combine(Godot.ProjectSettings.GlobalizePath("res://"), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
 			try
 			{
 				var startInfo = new System.Diagnostics.ProcessStartInfo

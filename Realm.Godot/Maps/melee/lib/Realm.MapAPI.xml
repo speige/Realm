@@ -4,6 +4,33 @@
         <name>Realm.MapAPI</name>
     </assembly>
     <members>
+        <member name="T:Realm.MapAPI.Coordinate">
+            <summary>
+            Represents a 3D bounding region defined by a minimum and maximum coordinate.
+            </summary>
+        </member>
+        <member name="F:Realm.MapAPI.Coordinate.Min">
+            <summary>
+            The minimum corner of the bounding region.
+            </summary>
+        </member>
+        <member name="F:Realm.MapAPI.Coordinate.Max">
+            <summary>
+            The maximum corner of the bounding region.
+            </summary>
+        </member>
+        <member name="F:Realm.MapAPI.Coordinate.Center">
+            <summary>
+            The center point of the bounding region.
+            </summary>
+        </member>
+        <member name="M:Realm.MapAPI.Coordinate.#ctor(System.Numerics.Vector3,System.Numerics.Vector3)">
+            <summary>
+            Initializes a new instance of the <see cref="T:Realm.MapAPI.Coordinate"/> struct.
+            </summary>
+            <param name="min">The minimum corner of the bounding region.</param>
+            <param name="max">The maximum corner of the bounding region.</param>
+        </member>
         <member name="T:Realm.MapAPI.IGameAPI">
             <summary>
             Defines the safe, public API exposed to map scripts to interact with the game engine.
@@ -751,6 +778,13 @@
             <param name="position">The position to check.</param>
             <param name="coordinateName">The name of the coordinate box.</param>
             <returns>True if the position is inside the coordinate box, false otherwise.</returns>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.AddUnitTypeAbility(System.String,System.String)">
+            <summary>
+            Adds an ability to the specified unit type definition.
+            </summary>
+            <param name="unitTypeId">The type identifier of the unit/structure.</param>
+            <param name="abilityId">The identifier of the ability to add.</param>
         </member>
         <member name="T:Realm.MapAPI.IMapScript">
             <summary>
