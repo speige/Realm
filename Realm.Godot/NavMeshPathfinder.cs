@@ -58,9 +58,10 @@ internal class NavMeshPathfinder
 			}
 		}
 
-		if (pf.WaypointCount <= 0)
+		if (pf.WaypointCount <= 0 && startRef == 0)
 		{
-			if (startRef == 0)
+			float directDist = Vector3.Distance(start, end);
+			if (directDist < 10f)
 			{
 				pf.Waypoints[0] = end;
 				pf.WaypointCount = 1;
