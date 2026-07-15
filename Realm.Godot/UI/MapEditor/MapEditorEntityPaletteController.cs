@@ -28,13 +28,7 @@ public class MapEditorEntityPaletteController
 		_palettesVBox = palettesVBox;
 		_btnAddObject = btnAddObject;
 
-		foreach (Node child in _palettesVBox.GetChildren())
-		{
-			if (child is Label lbl && (lbl.Text.Contains("PALETTE") || lbl.Text.Contains("UNITS") || lbl.Text.Contains("PROPS")))
-			{
-				lbl.Visible = false;
-			}
-		}
+
 
 		var categoryGrid = new GridContainer();
 		categoryGrid.Columns = 2;

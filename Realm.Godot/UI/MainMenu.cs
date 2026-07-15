@@ -12,6 +12,7 @@ public partial class MainMenu : Control
 	private Button _playButton;
 	private Button _singlePlayerButton;
 	private Button _mapDiscoveryButton;
+	private Button _creatorDiscoveryButton;
 	private Button _mapEditorButton;
 	private Button _replaysButton;
 	private Button _settingsButton;
@@ -27,6 +28,9 @@ public partial class MainMenu : Control
 	private Button _seedNodeButton;
 	private Control _profilePopup;
 
+	private OptionButton _versionDropdown;
+	private Label _outdatedLabel;
+
 	private readonly string[] _runes = { "ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᚲ", "ᚷ", "ᚹ", "ᚺ", "ᚾ", "ᛁ", "ᛃ", "ᛇ", "ᛈ", "ᛉ", "ᛊ", "ᛏ", "ᛒ", "ᛖ", "ᛗ", "ᛚ", "ᛜ", "ᛞ", "ᛟ" };
 
 	public override void _Ready()
@@ -40,6 +44,7 @@ public partial class MainMenu : Control
 		_playButton = GetNode<Button>("CentralPanel/VBoxContainer/PlayButton");
 		_singlePlayerButton = GetNode<Button>("CentralPanel/VBoxContainer/SinglePlayerButton");
 		_mapDiscoveryButton = GetNode<Button>("CentralPanel/VBoxContainer/MapDiscoveryButton");
+		_creatorDiscoveryButton = GetNode<Button>("CentralPanel/VBoxContainer/CreatorDiscoveryButton");
 		_mapEditorButton = GetNode<Button>("CentralPanel/VBoxContainer/MapEditorButton");
 		_replaysButton = GetNode<Button>("CentralPanel/VBoxContainer/ReplaysButton");
 		_settingsButton = GetNode<Button>("SettingsButton");
@@ -70,6 +75,7 @@ public partial class MainMenu : Control
 			UIManager.Instance.TransitionTo(GameScreen.LobbyCreate);
 		});
 		SetupButton(_mapDiscoveryButton, "MAP DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.MapDiscovery));
+		SetupButton(_creatorDiscoveryButton, "CREATOR DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.CreatorDiscovery));
 		SetupButton(_mapEditorButton, "MAP EDITOR", () => OnMapEditorPressed());
 		SetupButton(_replaysButton, "REPLAYS", () => UIManager.Instance.TransitionTo(GameScreen.ReplayList));
 		SetupUtilityButton(_settingsButton, "res://Assets/UI/gear_icon.png", () => UIManager.Instance.OpenSettingsOverlay());
@@ -95,6 +101,7 @@ public partial class MainMenu : Control
 		_socialButton.AddThemeConstantOverride("icon_max_width", 32);
 		_discordButton.AddThemeConstantOverride("icon_max_width", 36);
 		_mapDiscoveryButton.AddThemeConstantOverride("icon_max_width", 36);
+		_creatorDiscoveryButton.AddThemeConstantOverride("icon_max_width", 36);
 		_mapEditorButton.AddThemeConstantOverride("icon_max_width", 36);
 		_replaysButton.AddThemeConstantOverride("icon_max_width", 36);
 		_donateButton.AddThemeConstantOverride("icon_max_width", 36);
@@ -105,6 +112,118 @@ public partial class MainMenu : Control
 
 		PopulateRunicPillar(GetNode<VBoxContainer>("LeftPillar/RuneContainer"));
 		PopulateRunicPillar(GetNode<VBoxContainer>("RightPillar/RuneContainer"));
+
+		CreateVersionSelector();
+	}
+
+	private void CreateVersionSelector()
+	{
+		var versionBox = new HBoxContainer();
+		versionBox.SetAnchorsAndOffsetsPreset(LayoutPreset.TopLeft);
+		versionBox.Position = new Vector2(110, 10);
+		versionBox.AddThemeConstantOverride("separation", 10);
+		AddChild(versionBox);
+
+		var lbl = new Label();
+		lbl.Text = "Version: ";
+		lbl.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
+		lbl.AddThemeFontSizeOverride("font_size", 14);
+		lbl.VerticalAlignment = VerticalAlignment.Center;
+		versionBox.AddChild(lbl);
+
+		_versionDropdown = new OptionButton();
+		_versionDropdown.CustomMinimumSize = new Vector2(150, 30);
+		_versionDropdown.AddThemeFontSizeOverride("font_size", 14);
+		versionBox.AddChild(_versionDropdown);
+
+		_outdatedLabel = new Label();
+		_outdatedLabel.Text = "Outdated";
+		_outdatedLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
+		_outdatedLabel.AddThemeFontSizeOverride("font_size", 14);
+		_outdatedLabel.VerticalAlignment = VerticalAlignment.Center;
+		_outdatedLabel.Visible = false;
+		versionBox.AddChild(_outdatedLabel);
+
+		var downloadBtn = new Button();
+		downloadBtn.Text = "DOWNLOAD...";
+		downloadBtn.AddThemeFontSizeOverride("font_size", 12);
+		downloadBtn.CustomMinimumSize = new Vector2(100, 30);
+		downloadBtn.Pressed += () => OS.ShellOpen("https://github.com/speige/Realm/releases");
+		versionBox.AddChild(downloadBtn);
+
+		PopulateVersionDropdown();
+		CheckForUpdatesAsync();
+	}
+
+	private async void CheckForUpdatesAsync()
+	{
+		try
+		{
+			using var client = new System.Net.Http.HttpClient();
+			client.DefaultRequestHeaders.UserAgent.ParseAdd("Realm-Godot-Client");
+			var response = await client.GetAsync("https://api.github.com/repos/speige/Realm/releases/latest");
+			if (response.IsSuccessStatusCode)
+			{
+				string json = await response.Content.ReadAsStringAsync();
+				using var doc = System.Text.Json.JsonDocument.Parse(json);
+				if (doc.RootElement.TryGetProperty("tag_name", out var tagProp))
+				{
+					string latestTag = tagProp.GetString() ?? "";
+					if (latestTag.StartsWith("v")) latestTag = latestTag.Substring(1);
+					
+					if (latestTag != LobbyManager.GameBinaryVersion)
+					{
+						_outdatedLabel.Visible = true;
+					}
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MainMenu] Failed to check for updates: {ex.Message}");
+		}
+	}
+
+	private void PopulateVersionDropdown()
+	{
+		_versionDropdown.Clear();
+		_versionDropdown.AddItem(LobbyManager.GameBinaryVersion);
+		_versionDropdown.SetItemMetadata(0, "current");
+
+		if (!OS.HasFeature("editor"))
+		{
+			string baseDir = LobbyManager.GetBaseGameDirectory();
+			string versionsDir = System.IO.Path.Combine(baseDir, "versions");
+			if (System.IO.Directory.Exists(versionsDir))
+			{
+				var dirs = System.IO.Directory.GetDirectories(versionsDir);
+				foreach (var dir in dirs)
+				{
+					string ver = System.IO.Path.GetFileName(dir);
+					if (ver != LobbyManager.GameBinaryVersion)
+					{
+						_versionDropdown.AddItem(ver);
+						_versionDropdown.SetItemMetadata(_versionDropdown.ItemCount - 1, ver);
+					}
+				}
+			}
+		}
+
+		_versionDropdown.ItemSelected += OnVersionSelected;
+	}
+
+	private void OnVersionSelected(long index)
+	{
+		string meta = _versionDropdown.GetItemMetadata((int)index).AsString();
+		if (meta == "current" || string.IsNullOrEmpty(meta)) return;
+
+		string targetExe = LobbyManager.GetVersionExecutablePath(meta);
+		
+		if (System.IO.File.Exists(targetExe))
+		{
+			OS.CreateProcess(targetExe, new string[] {});
+			GetTree().Quit();
+		}
 	}
 
 	private void SetupButton(Button button, string text, Action onClick)

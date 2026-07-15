@@ -7,7 +7,6 @@ public class MapEditorPlacementSettings
 	private Label _lblPlacementRotateValue;
 	private Slider _sldPlacementScale;
 	private Label _lblPlacementScaleValue;
-	private CheckBox _chkSpawnAsEnemy;
 	private CheckBox _chkRandomRotation;
 	private CheckBox _chkRandomScale;
 	private CheckBox _chkClumpMode;
@@ -17,14 +16,13 @@ public class MapEditorPlacementSettings
 	private Label _lblClumpScaleVarValue;
 
 	public MapEditorPlacementSettings(Slider sldPlacementRotate, Label lblPlacementRotateValue, Slider sldPlacementScale, Label lblPlacementScaleValue,
-		CheckBox chkSpawnAsEnemy, CheckBox chkRandomRotation, CheckBox chkRandomScale, CheckBox chkClumpMode,
+		CheckBox chkRandomRotation, CheckBox chkRandomScale, CheckBox chkClumpMode,
 		Slider sldClumpDensity, Label lblClumpDensityValue, Slider sldClumpScaleVar, Label lblClumpScaleVarValue)
 	{
 		_sldPlacementRotate = sldPlacementRotate;
 		_lblPlacementRotateValue = lblPlacementRotateValue;
 		_sldPlacementScale = sldPlacementScale;
 		_lblPlacementScaleValue = lblPlacementScaleValue;
-		_chkSpawnAsEnemy = chkSpawnAsEnemy;
 		_chkRandomRotation = chkRandomRotation;
 		_chkRandomScale = chkRandomScale;
 		_chkClumpMode = chkClumpMode;
@@ -43,11 +41,6 @@ public class MapEditorPlacementSettings
 		{
 			_lblPlacementScaleValue.Text = val.ToString("F1") + "x";
 			if (GameHost.Instance != null) GameHost.Instance.EditorPlacementScale = (float)val;
-		};
-
-		_chkSpawnAsEnemy.Toggled += (buttonPressed) =>
-		{
-			if (GameHost.Instance != null) GameHost.Instance.PlaceUnitIsEnemy = buttonPressed;
 		};
 
 		_chkRandomRotation.Toggled += (buttonPressed) =>
@@ -116,7 +109,6 @@ public class MapEditorPlacementSettings
 		_sldPlacementScale.Value = viewModel.PlacementScale;
 		_lblPlacementScaleValue.Text = viewModel.PlacementScale.ToString("F1") + "x";
 
-		_chkSpawnAsEnemy.ButtonPressed = viewModel.SpawnAsEnemy;
 		_chkRandomRotation.ButtonPressed = viewModel.RandomRotation;
 		_chkRandomScale.ButtonPressed = viewModel.RandomScale;
 		_chkClumpMode.ButtonPressed = viewModel.ClumpMode;

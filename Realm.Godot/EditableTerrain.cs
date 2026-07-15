@@ -7,6 +7,148 @@ using System.Collections.Generic;
 
 public partial class EditableTerrain : StaticBody3D
 {
+	public void ProcessAndSaveRawTexture(string rawPngPath, string outputKtx2Path)
+	{
+		var img = Godot.Image.LoadFromFile(rawPngPath);
+		if (img == null) return;
+		
+		int w = img.GetWidth();
+		int h = img.GetHeight();
+		if (img.GetFormat() != Godot.Image.Format.Rgba8)
+		{
+			img.Convert(Godot.Image.Format.Rgba8);
+		}
+		
+		var layer0 = Godot.Image.CreateEmpty(w, h, false, Godot.Image.Format.Rgba8);
+		var layer1 = Godot.Image.CreateEmpty(w, h, false, Godot.Image.Format.Rgba8);
+		
+		for (int y = 0; y < h; y++)
+		{
+			for (int x = 0; x < w; x++)
+			{
+				var color = img.GetPixel(x, y);
+				float luma = 0.299f * color.R + 0.587f * color.G + 0.114f * color.B;
+				layer0.SetPixel(x, y, new Godot.Color(color.R, color.G, color.B, luma));
+			}
+		}
+		
+		for (int y = 0; y < h; y++)
+		{
+			for (int x = 0; x < w; x++)
+			{
+				int px = x > 0 ? x - 1 : w - 1;
+				int nx = x < w - 1 ? x + 1 : 0;
+				int py = y > 0 ? y - 1 : h - 1;
+				int ny = y < h - 1 ? y + 1 : 0;
+				
+				float h00 = layer0.GetPixel(px, py).A;
+				float h10 = layer0.GetPixel(x, py).A;
+				float h20 = layer0.GetPixel(nx, py).A;
+				
+				float h01 = layer0.GetPixel(px, y).A;
+				float h21 = layer0.GetPixel(nx, y).A;
+				
+				float h02 = layer0.GetPixel(px, ny).A;
+				float h12 = layer0.GetPixel(x, ny).A;
+				float h22 = layer0.GetPixel(nx, ny).A;
+				
+				float dx = (h20 + 2.0f * h21 + h22) - (h00 + 2.0f * h01 + h02);
+				float dy = (h02 + 2.0f * h12 + h22) - (h00 + 2.0f * h10 + h20);
+				float dz = 1.0f / 5.0f;
+				
+				var normal = new Godot.Vector3(-dx, -dy, dz).Normalized();
+				
+				float laplacian = (h10 + h01 + h21 + h12) - 4.0f * layer0.GetPixel(x, y).A;
+				float height = layer0.GetPixel(x, y).A;
+				float ao = 1.0f - Godot.Mathf.Clamp(laplacian * 4.0f, 0.0f, 0.5f);
+				ao *= (0.7f + 0.3f * height);
+				ao = Godot.Mathf.Clamp(ao, 0.0f, 1.0f);
+				
+				float r = (normal.X * 0.5f + 0.5f);
+				float g = (normal.Y * 0.5f + 0.5f);
+				float b = ao;
+				
+				float contrastHeight = (height - 0.5f) * 1.5f + 0.5f;
+				contrastHeight = Godot.Mathf.Clamp(contrastHeight, 0.0f, 1.0f);
+				float roughness = Godot.Mathf.Lerp(0.5f, 0.8f, contrastHeight);
+				
+				layer1.SetPixel(x, y, new Godot.Color(r, g, b, roughness));
+			}
+		}
+		
+		string tempL0 = $"user://temp_l0_{System.Guid.NewGuid()}.png";
+		string tempL1 = $"user://temp_l1_{System.Guid.NewGuid()}.png";
+		
+		layer0.SavePng(tempL0);
+		layer1.SavePng(tempL1);
+		
+		string globalTempL0 = Godot.ProjectSettings.GlobalizePath(tempL0);
+		string globalTempL1 = Godot.ProjectSettings.GlobalizePath(tempL1);
+		string globalOutput = Godot.ProjectSettings.GlobalizePath(outputKtx2Path);
+		
+		string dir = System.IO.Path.GetDirectoryName(globalOutput);
+		if (!System.IO.Directory.Exists(dir))
+		{
+			System.IO.Directory.CreateDirectory(dir);
+		}
+		
+		string ktxCmd = "ktx";
+		string localPath = System.IO.Path.Combine(Godot.ProjectSettings.GlobalizePath("res://"), "ktx_tools", "bin", "ktx.exe");
+		if (System.IO.File.Exists(localPath))
+		{
+			ktxCmd = localPath;
+		}
+		else
+		{
+			string workspacePath = @"C:\temp\Realm\ktx_tools\v5.0.0-rc1\bin\ktx.exe";
+			if (!System.IO.File.Exists(workspacePath))
+			{
+				workspacePath = @"C:\temp\Realm\ktx_tools\bin\ktx.exe";
+			}
+			if (System.IO.File.Exists(workspacePath))
+			{
+				ktxCmd = workspacePath;
+			}
+		}
+		
+		try
+		{
+			string ktxDir = System.IO.Path.GetDirectoryName(ktxCmd);
+			var startInfo = new System.Diagnostics.ProcessStartInfo
+			{
+				FileName = ktxCmd,
+				WorkingDirectory = ktxDir,
+				Arguments = $"create --format R8G8B8A8_UNORM --layers 2 --encode uastc --generate-mipmap \"{globalTempL0}\" \"{globalTempL1}\" \"{globalOutput}\"",
+				UseShellExecute = false,
+				CreateNoWindow = true,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true
+			};
+			
+			using (var process = System.Diagnostics.Process.Start(startInfo))
+			{
+				string stdout = process.StandardOutput.ReadToEnd();
+				string stderr = process.StandardError.ReadToEnd();
+				process.WaitForExit();
+				if (process.ExitCode != 0)
+				{
+					throw new System.Exception($"ktx create failed with exit code {process.ExitCode}. Stderr: {stderr}. Stdout: {stdout}");
+				}
+			}
+		}
+		catch (System.Exception ex)
+		{
+			System.Console.Error.WriteLine($"Failed to execute ktx create: {ex.Message}");
+			Godot.GD.PrintErr($"Failed to execute ktx create: {ex.Message}");
+			throw;
+		}
+		finally
+		{
+			if (System.IO.File.Exists(globalTempL0)) System.IO.File.Delete(globalTempL0);
+			if (System.IO.File.Exists(globalTempL1)) System.IO.File.Delete(globalTempL1);
+		}
+	}
+
 	private TerrainState GetTerrainStateSafe()
 	{
 		if (GameHost.Instance != null && 
@@ -339,6 +481,8 @@ shader_type spatial;
 render_mode blend_mix;
 
 uniform sampler2DArray terrain_textures : source_color;
+uniform sampler2DArray terrain_normals_pbr : hint_default_white;
+uniform float blend_softness = 0.2;
 uniform sampler2D fog_texture : hint_default_white;
 uniform vec2 fog_world_min = vec2(-125.0, -125.0);
 uniform vec2 fog_world_size = vec2(250.0, 250.0);
@@ -367,10 +511,31 @@ void fragment() {
 	vec4 c1 = texture(terrain_textures, vec3(UV, v_tex_indices.y));
 	vec4 c2 = texture(terrain_textures, vec3(UV, v_tex_indices.z));
 	vec4 c3 = texture(terrain_textures, vec3(UV, v_tex_indices.w));
-	vec3 terrain_color = (c0.rgb * v_tex_weights.x +
-	                      c1.rgb * v_tex_weights.y +
-	                      c2.rgb * v_tex_weights.z +
-	                      c3.rgb * v_tex_weights.w);
+
+	float gh0 = c0.a;
+	float gh1 = c1.a;
+	float gh2 = c2.a;
+	float gh3 = c3.a;
+	
+	float max_gh = max(max(gh0, gh1), max(gh2, gh3));
+	float soft_bias = 0.05;
+	
+	float w0 = max(gh0 - max_gh + blend_softness + soft_bias, 0.0) * v_tex_weights.x;
+	float w1 = max(gh1 - max_gh + blend_softness + soft_bias, 0.0) * v_tex_weights.y;
+	float w2 = max(gh2 - max_gh + blend_softness + soft_bias, 0.0) * v_tex_weights.z;
+	float w3 = max(gh3 - max_gh + blend_softness + soft_bias, 0.0) * v_tex_weights.w;
+	
+	float sum = w0 + w1 + w2 + w3;
+	if (sum > 0.0) {
+		w0 /= sum; w1 /= sum; w2 /= sum; w3 /= sum;
+	} else {
+		w0 = 1.0; w1 = 0.0; w2 = 0.0; w3 = 0.0;
+	}
+	
+	vec3 terrain_color = (c0.rgb * w0 +
+	                      c1.rgb * w1 +
+	                      c2.rgb * w2 +
+	                      c3.rgb * w3);
 
 	vec3 final_albedo = terrain_color;
 	vec3 emission_color = vec3(0.0);
@@ -378,109 +543,39 @@ void fragment() {
 	if (pathing_visible) {
 		vec2 pathing_uv = (v_world_pos.xz + terrain_size / 2.0) / terrain_size;
 		int code = int(round(texture(pathing_texture, pathing_uv).r * 255.0));
-		
-		int bit_0 = code % 2;
-		int bit_1 = (code / 2) % 2;
-		int bit_2 = (code / 4) % 2;
-		int bit_3 = (code / 8) % 2;
-		int bit_4 = (code / 16) % 2;
-		int bit_5 = (code / 32) % 2;
-		
-		int active_count = 0;
-		int flag_0 = -1;
-		int flag_1 = -1;
-		int flag_2 = -1;
-		int flag_3 = -1;
-		int flag_4 = -1;
-		int flag_5 = -1;
-		
-		if (bit_4 != 0) {
-			if (active_count == 0) flag_0 = 16;
-			else if (active_count == 1) flag_1 = 16;
-			else if (active_count == 2) flag_2 = 16;
-			else if (active_count == 3) flag_3 = 16;
-			else if (active_count == 4) flag_4 = 16;
-			else if (active_count == 5) flag_5 = 16;
-			active_count++;
-		}
-		if (bit_3 != 0) {
-			if (active_count == 0) flag_0 = 8;
-			else if (active_count == 1) flag_1 = 8;
-			else if (active_count == 2) flag_2 = 8;
-			else if (active_count == 3) flag_3 = 8;
-			else if (active_count == 4) flag_4 = 8;
-			else if (active_count == 5) flag_5 = 8;
-			active_count++;
-		}
-		if (bit_5 != 0) {
-			if (active_count == 0) flag_0 = 32;
-			else if (active_count == 1) flag_1 = 32;
-			else if (active_count == 2) flag_2 = 32;
-			else if (active_count == 3) flag_3 = 32;
-			else if (active_count == 4) flag_4 = 32;
-			else if (active_count == 5) flag_5 = 32;
-			active_count++;
-		}
-		if (bit_0 != 0) {
-			if (active_count == 0) flag_0 = 1;
-			else if (active_count == 1) flag_1 = 1;
-			else if (active_count == 2) flag_2 = 1;
-			else if (active_count == 3) flag_3 = 1;
-			else if (active_count == 4) flag_4 = 1;
-			else if (active_count == 5) flag_5 = 1;
-			active_count++;
-		}
-		if (bit_1 != 0) {
-			if (active_count == 0) flag_0 = 2;
-			else if (active_count == 1) flag_1 = 2;
-			else if (active_count == 2) flag_2 = 2;
-			else if (active_count == 3) flag_3 = 2;
-			else if (active_count == 4) flag_4 = 2;
-			else if (active_count == 5) flag_5 = 2;
-			active_count++;
-		}
-		if (bit_2 != 0) {
-			if (active_count == 0) flag_0 = 4;
-			else if (active_count == 1) flag_1 = 4;
-			else if (active_count == 2) flag_2 = 4;
-			else if (active_count == 3) flag_3 = 4;
-			else if (active_count == 4) flag_4 = 4;
-			else if (active_count == 5) flag_5 = 4;
-			active_count++;
-		}
-		
-		if (active_count == 0) {
-			flag_0 = 0;
-			active_count = 1;
-		}
-		
+
 		vec2 cell_frac = fract(v_world_pos.xz / grid_spacing);
-		int sx = int(floor(cell_frac.x * 2.0));
-		int sz = int(floor(cell_frac.y * 2.0));
-		int flag_idx = (sx + sz) % active_count;
-		
-		int active_flag = flag_0;
-		if (flag_idx == 1) active_flag = flag_1;
-		else if (flag_idx == 2) active_flag = flag_2;
-		else if (flag_idx == 3) active_flag = flag_3;
-		else if (flag_idx == 4) active_flag = flag_4;
-		else if (flag_idx == 5) active_flag = flag_5;
-		
+		int sx = int(floor(cell_frac.x * 3.0));
+		int sz = int(floor(cell_frac.y * 3.0));
+		int box_idx = sz * 3 + sx;
+
 		vec4 pathing_color = vec4(0.0);
-		if (active_flag == 16 || active_flag == 0) {
-			pathing_color = vec4(0.9, 0.1, 0.1, 0.25);
-		} else if (active_flag == 32) {
-			pathing_color = vec4(0.6, 0.2, 0.8, 0.25);
-		} else if (active_flag == 8) {
-			pathing_color = vec4(0.2, 0.85, 0.2, 0.25);
-		} else if (active_flag == 1) {
-			pathing_color = vec4(0.2, 0.6, 1.0, 0.25);
-		} else if (active_flag == 2) {
-			pathing_color = vec4(0.0, 0.15, 0.7, 0.25);
-		} else if (active_flag == 4) {
-			pathing_color = vec4(0.85, 0.85, 0.0, 0.25);
+		if (box_idx == 0) {
+			if (code == 0 || (code & 16) != 0) {
+				pathing_color = vec4(0.9, 0.1, 0.1, 0.75);
+			}
+		} else if (box_idx == 1) {
+			if ((code & 1) != 0) {
+				pathing_color = vec4(0.2, 0.6, 1.0, 0.75);
+			}
+		} else if (box_idx == 2) {
+			if ((code & 2) != 0) {
+				pathing_color = vec4(0.0, 0.15, 0.7, 0.75);
+			}
+		} else if (box_idx == 3) {
+			if ((code & 4) != 0) {
+				pathing_color = vec4(0.85, 0.85, 0.0, 0.75);
+			}
+		} else if (box_idx == 4) {
+			if ((code & 8) != 0) {
+				pathing_color = vec4(0.2, 0.85, 0.2, 0.75);
+			}
+		} else if (box_idx == 5) {
+			if ((code & 32) != 0) {
+				pathing_color = vec4(0.6, 0.2, 0.8, 0.75);
+			}
 		}
-		
+
 		if (pathing_color.a > 0.0) {
 			final_albedo = mix(final_albedo, pathing_color.rgb, pathing_color.a);
 		}
@@ -511,71 +606,41 @@ void fragment() {
 		}
 	}
 
+	vec4 n0 = texture(terrain_normals_pbr, vec3(UV, v_tex_indices.x));
+	vec4 n1 = texture(terrain_normals_pbr, vec3(UV, v_tex_indices.y));
+	vec4 n2 = texture(terrain_normals_pbr, vec3(UV, v_tex_indices.z));
+	vec4 n3 = texture(terrain_normals_pbr, vec3(UV, v_tex_indices.w));
+	
+	vec2 n0_xy = vec2(n0.r * 2.0 - 1.0, (1.0 - n0.g) * 2.0 - 1.0);
+	vec3 n0_vec = vec3(n0_xy, sqrt(max(0.0, 1.0 - dot(n0_xy, n0_xy))));
+	
+	vec2 n1_xy = vec2(n1.r * 2.0 - 1.0, (1.0 - n1.g) * 2.0 - 1.0);
+	vec3 n1_vec = vec3(n1_xy, sqrt(max(0.0, 1.0 - dot(n1_xy, n1_xy))));
+	
+	vec2 n2_xy = vec2(n2.r * 2.0 - 1.0, (1.0 - n2.g) * 2.0 - 1.0);
+	vec3 n2_vec = vec3(n2_xy, sqrt(max(0.0, 1.0 - dot(n2_xy, n2_xy))));
+	
+	vec2 n3_xy = vec2(n3.r * 2.0 - 1.0, (1.0 - n3.g) * 2.0 - 1.0);
+	vec3 n3_vec = vec3(n3_xy, sqrt(max(0.0, 1.0 - dot(n3_xy, n3_xy))));
+	
+	vec3 blended_normal_tangent = normalize(n0_vec * w0 + n1_vec * w1 + n2_vec * w2 + n3_vec * w3);
+	float blended_ao = (n0.b * w0 + n1.b * w1 + n2.b * w2 + n3.b * w3);
+	float blended_roughness = (n0.a * w0 + n1.a * w1 + n2.a * w2 + n3.a * w3);
+	float final_roughness = clamp(blended_roughness, 0.5, 1.0);
+
 	ALBEDO = final_albedo;
+	NORMAL = TANGENT * blended_normal_tangent.x + BINORMAL * blended_normal_tangent.y + NORMAL * blended_normal_tangent.z;
+	AO = mix(1.0, blended_ao, 0.5);
+	ROUGHNESS = final_roughness;
+	METALLIC = 0.0;                 
+	SPECULAR = 0.2;                 
 	EMISSION = emission_color;
-	ROUGHNESS = 0.9;
 }
 ";
 
-		var paths = new[]
-		{
-			"res://Assets/2d/TileSheets/ancient_ruin.png",
-			"res://Assets/2d/TileSheets/deep_moss.png",
-			"res://Assets/2d/TileSheets/grey_slate.png",
-			"res://Assets/2d/TileSheets/iron_dust.png",
-			"res://Assets/2d/TileSheets/lava_vein.png",
-			"res://Assets/2d/TileSheets/mossy_stone.png",
-			"res://Assets/2d/TileSheets/pale_sand.png",
-			"res://Assets/2d/TileSheets/river_silt.png",
-			"res://Assets/2d/TileSheets/royal_marble.png",
-			"res://Assets/2d/TileSheets/tarn_mud.png",
-			"res://Assets/2d/TileSheets/dark_wood.png",
-			"res://Assets/2d/TileSheets/mist_grove.png"
-		};
-
-		var images = new Godot.Collections.Array<Image>();
-		int texWidth = 0;
-		int texHeight = 0;
-		Image.Format format = Image.Format.Rgb8;
-
-		foreach (var path in paths)
-		{
-			var tex = GD.Load<Texture2D>(path);
-			if (tex == null)
-			{
-				tex = GD.Load<Texture2D>("res://Assets/terrain_default.png");
-			}
-
-			if (tex != null)
-			{
-				var img = tex.GetImage();
-				if (texWidth == 0)
-				{
-					texWidth = img.GetWidth();
-					texHeight = img.GetHeight();
-					format = img.GetFormat();
-				}
-				else
-				{
-					if (img.GetWidth() != texWidth || img.GetHeight() != texHeight)
-					{
-						img.Resize(texWidth, texHeight);
-					}
-					if (img.GetFormat() != format)
-					{
-						img.Convert(format);
-					}
-				}
-				images.Add(img);
-			}
-		}
-
-		var textureArray = new Texture2DArray();
-		textureArray.CreateFromImages(images);
-
 		_material = new ShaderMaterial();
 		_material.Shader = shader;
-		_material.SetShaderParameter("terrain_textures", textureArray);
+		ReloadTerrainTextures();
 
 		var defaultFogImage = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
 		defaultFogImage.Fill(new Color(0f, 0f, 0f, 1f));
@@ -588,6 +653,182 @@ void fragment() {
 		CreateChunks();
 		CreateWater();
 		UpdateMeshAndPhysics();
+	}
+
+	private string GetKtxCmdPath()
+	{
+		string ktxCmd = "ktx";
+		string localPath = System.IO.Path.Combine(Godot.ProjectSettings.GlobalizePath("res://"), "ktx_tools", "bin", "ktx.exe");
+		if (System.IO.File.Exists(localPath))
+		{
+			ktxCmd = localPath;
+		}
+		else
+		{
+			string workspacePath = @"C:\temp\Realm\ktx_tools\v5.0.0-rc1\bin\ktx.exe";
+			if (!System.IO.File.Exists(workspacePath))
+			{
+				workspacePath = @"C:\temp\Realm\ktx_tools\bin\ktx.exe";
+			}
+			if (System.IO.File.Exists(workspacePath))
+			{
+				ktxCmd = workspacePath;
+			}
+		}
+		return ktxCmd;
+	}
+
+	private (Image AlbedoHeight, Image NormalRoughness) LoadKtx2LayersDynamic(string ktx2Path)
+	{
+		string globalKtx2Path = Godot.ProjectSettings.GlobalizePath(ktx2Path);
+		string tempOut0 = $"user://temp_ext0_{System.Guid.NewGuid()}.png";
+		string tempOut1 = $"user://temp_ext1_{System.Guid.NewGuid()}.png";
+		string globalTempOut0 = Godot.ProjectSettings.GlobalizePath(tempOut0);
+		string globalTempOut1 = Godot.ProjectSettings.GlobalizePath(tempOut1);
+		string ktxCmd = GetKtxCmdPath();
+		try
+		{
+			var startInfo0 = new System.Diagnostics.ProcessStartInfo
+			{
+				FileName = ktxCmd,
+				WorkingDirectory = System.IO.Path.GetDirectoryName(ktxCmd),
+				Arguments = $"extract --layer 0 --level 0 --transcode rgba8 \"{globalKtx2Path}\" \"{globalTempOut0}\"",
+				UseShellExecute = false,
+				CreateNoWindow = true,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true
+			};
+			using (var process = System.Diagnostics.Process.Start(startInfo0))
+			{
+				process.WaitForExit();
+				if (process.ExitCode != 0)
+				{
+					string err = process.StandardError.ReadToEnd();
+					throw new System.Exception($"ktx extract layer 0 failed: {err}");
+				}
+			}
+			var startInfo1 = new System.Diagnostics.ProcessStartInfo
+			{
+				FileName = ktxCmd,
+				WorkingDirectory = System.IO.Path.GetDirectoryName(ktxCmd),
+				Arguments = $"extract --layer 1 --level 0 --transcode rgba8 \"{globalKtx2Path}\" \"{globalTempOut1}\"",
+				UseShellExecute = false,
+				CreateNoWindow = true,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true
+			};
+			using (var process = System.Diagnostics.Process.Start(startInfo1))
+			{
+				process.WaitForExit();
+				if (process.ExitCode != 0)
+				{
+					string err = process.StandardError.ReadToEnd();
+					throw new System.Exception($"ktx extract layer 1 failed: {err}");
+				}
+			}
+			var img0 = Image.LoadFromFile(globalTempOut0);
+			var img1 = Image.LoadFromFile(globalTempOut1);
+			return (img0, img1);
+		}
+		finally
+		{
+			if (System.IO.File.Exists(globalTempOut0)) System.IO.File.Delete(globalTempOut0);
+			if (System.IO.File.Exists(globalTempOut1)) System.IO.File.Delete(globalTempOut1);
+		}
+	}
+
+	public void ReloadTerrainTextures()
+	{
+		if (_material == null) return;
+		string mapDir = GameHost.Instance != null && !string.IsNullOrEmpty(GameHost.Instance.CurrentMapDirectory)
+			? GameHost.Instance.CurrentMapDirectory
+			: Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		var albedoHeightImages = new Godot.Collections.Array<Image>();
+		var normalRoughnessImages = new Godot.Collections.Array<Image>();
+		int texWidth = 0;
+		int texHeight = 0;
+		var names = new[]
+		{
+			"ancient_ruin", "deep_moss", "grey_slate", "iron_dust",
+			"lava_vein", "mossy_stone", "pale_sand", "river_silt",
+			"royal_marble", "tarn_mud", "dark_wood", "mist_grove"
+		};
+		foreach (var name in names)
+		{
+			string ktx2Path = System.IO.Path.Combine(mapDir, name + ".ktx2");
+			if (!System.IO.File.Exists(ktx2Path))
+			{
+				ktx2Path = ProjectSettings.GlobalizePath($"res://Assets/2d/TileSheets/{name}.ktx2");
+			}
+			if (!System.IO.File.Exists(ktx2Path))
+			{
+				string pngPath = ProjectSettings.GlobalizePath($"res://Assets/2d/TileSheets/{name}.png");
+				if (System.IO.File.Exists(pngPath))
+				{
+					ProcessAndSaveRawTexture(pngPath, ktx2Path);
+				}
+			}
+			Image imgLayer0 = null;
+			Image imgLayer1 = null;
+			if (System.IO.File.Exists(ktx2Path))
+			{
+				try
+				{
+					var layers = LoadKtx2LayersDynamic(ktx2Path);
+					imgLayer0 = layers.AlbedoHeight;
+					imgLayer1 = layers.NormalRoughness;
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"Failed to load dynamic KTX2 layers for {name}: {ex.Message}");
+				}
+			}
+			if (imgLayer0 == null || imgLayer1 == null)
+			{
+				int fbWidth = texWidth != 0 ? texWidth : 512;
+				int fbHeight = texHeight != 0 ? texHeight : 512;
+				imgLayer0 = Godot.Image.CreateEmpty(fbWidth, fbHeight, false, Godot.Image.Format.Rgba8);
+				imgLayer0.Fill(new Color(1f, 0f, 1f, 0.99f));
+				imgLayer1 = Godot.Image.CreateEmpty(fbWidth, fbHeight, false, Godot.Image.Format.Rgba8);
+				imgLayer1.Fill(new Color(0.5f, 0.5f, 1.0f, 0.8f));
+			}
+			if (texWidth == 0)
+			{
+				texWidth = imgLayer0.GetWidth();
+				texHeight = imgLayer0.GetHeight();
+			}
+			else
+			{
+				if (imgLayer0.GetWidth() != texWidth || imgLayer0.GetHeight() != texHeight)
+				{
+					imgLayer0.Resize(texWidth, texHeight);
+				}
+				if (imgLayer1.GetWidth() != texWidth || imgLayer1.GetHeight() != texHeight)
+				{
+					imgLayer1.Resize(texWidth, texHeight);
+				}
+			}
+			if (imgLayer0.GetFormat() != Godot.Image.Format.Rgba8) imgLayer0.Convert(Godot.Image.Format.Rgba8);
+			if (imgLayer1.GetFormat() != Godot.Image.Format.Rgba8) imgLayer1.Convert(Godot.Image.Format.Rgba8);
+
+			var p0 = imgLayer0.GetPixel(0, 0);
+			if (p0.A >= 1.0f) imgLayer0.SetPixel(0, 0, new Color(p0.R, p0.G, p0.B, 0.99f));
+			var p1 = imgLayer1.GetPixel(0, 0);
+			if (p1.A >= 1.0f) imgLayer1.SetPixel(0, 0, new Color(p1.R, p1.G, p1.B, 0.99f));
+
+			imgLayer0.GenerateMipmaps(false);
+			imgLayer1.GenerateMipmaps(true);
+			imgLayer0.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
+			imgLayer1.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
+			albedoHeightImages.Add(imgLayer0);
+			normalRoughnessImages.Add(imgLayer1);
+		}
+		var albedoTextureArray = new Texture2DArray();
+		albedoTextureArray.CreateFromImages(albedoHeightImages);
+		var normalTextureArray = new Texture2DArray();
+		normalTextureArray.CreateFromImages(normalRoughnessImages);
+		_material.SetShaderParameter("terrain_textures", albedoTextureArray);
+		_material.SetShaderParameter("terrain_normals_pbr", normalTextureArray);
 	}
 
 	private void CreateChunks()

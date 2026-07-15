@@ -21,6 +21,33 @@ public partial class LobbyManager : Node
 
     private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
 
+    public static string GetBaseGameDirectory()
+    {
+        string exePath = OS.GetExecutablePath();
+        string baseDir = System.IO.Path.GetDirectoryName(exePath) ?? "";
+        
+        int versionsIndex = baseDir.IndexOf($"{System.IO.Path.DirectorySeparatorChar}versions{System.IO.Path.DirectorySeparatorChar}");
+        if (versionsIndex == -1) versionsIndex = baseDir.IndexOf("/versions/");
+        if (versionsIndex == -1 && baseDir.EndsWith($"{System.IO.Path.DirectorySeparatorChar}versions")) versionsIndex = baseDir.Length - 9;
+        if (versionsIndex == -1 && baseDir.EndsWith("/versions")) versionsIndex = baseDir.Length - 9;
+        
+        if (versionsIndex != -1)
+        {
+            baseDir = baseDir.Substring(0, versionsIndex);
+        }
+
+        return baseDir;
+    }
+
+    public static string GetVersionExecutablePath(string targetVersion)
+    {
+        string baseDir = GetBaseGameDirectory();
+        string exePath = OS.GetExecutablePath();
+        string fileName = System.IO.Path.GetFileName(exePath);
+
+        return System.IO.Path.Combine(baseDir, "versions", targetVersion, fileName);
+    }
+
     private static string GetGameBinaryVersion()
     {
         try
@@ -101,6 +128,7 @@ public partial class LobbyManager : Node
     public bool IsHost { get; private set; }
     public string? ActiveLobbyId { get; private set; }
     public bool IsGameStarted { get; set; }
+    public DateTime? GameSessionStartTime { get; private set; }
     public string ActiveMapName { get; set; } = "green_td";
     public bool SpectatorDelay { get; set; } = false;
     public string? LobbyJoinError { get; set; }
@@ -465,6 +493,41 @@ public partial class LobbyManager : Node
         {
             int hostPingBaseline = await MeasurePingToRegistryAsync();
             string localIpAddress = GetLocalIPAddress();
+            
+            string mapVersion = "1.0";
+            string signature = "";
+            string publicKey = "";
+            string mapHash = "";
+
+            try
+            {
+                string mapJsonPath = System.IO.Path.Combine(mapPathName, "map.json");
+                if (System.IO.File.Exists(mapJsonPath))
+                {
+                    string json = System.IO.File.ReadAllText(mapJsonPath);
+                    using var mapDoc = JsonDocument.Parse(json);
+                    var root = mapDoc.RootElement;
+                    if (root.TryGetProperty("MapProperties", out var props) && props.TryGetProperty("MapVersion", out var mv))
+                    {
+                        mapVersion = mv.GetString() ?? "1.0";
+                    }
+                    if (root.TryGetProperty("signature", out var sigProp))
+                    {
+                        signature = sigProp.GetString() ?? "";
+                    }
+                    if (root.TryGetProperty("author_key", out var keyProp))
+                    {
+                        publicKey = keyProp.GetString() ?? "";
+                    }
+                    byte[] mapBytes = System.IO.File.ReadAllBytes(mapJsonPath);
+                    mapHash = MapAssetManager.ComputeBlake3(mapBytes);
+                }
+            }
+            catch (Exception ex)
+            {
+                GD.PrintErr($"[LobbyManager] Failed to read map signature metadata: {ex.Message}");
+            }
+
             var registerPayload = new
             {
                 Map = mapDisplayName,
@@ -475,7 +538,12 @@ public partial class LobbyManager : Node
                 MaxPlayers = MaxPlayers,
                 SlotsUsed = PlayerList.Count,
                 HostPingBaseline = hostPingBaseline,
-                LocalIP = localIpAddress
+                GameVersion = GameBinaryVersion,
+                LocalIP = localIpAddress,
+                MapVersion = mapVersion,
+                Signature = signature,
+                PublicKey = publicKey,
+                MapHash = mapHash
             };
 
             HttpResponseMessage? response = null;
@@ -499,8 +567,28 @@ public partial class LobbyManager : Node
 
             if (response == null || !response.IsSuccessStatusCode)
             {
-                GD.PrintErr($"[LobbyManager] Registry server registration failed on all nodes.");
-                return true; // proceed locally even if registration fails
+                string errMsg = "Registry server registration failed.";
+                if (response != null)
+                {
+                    try
+                    {
+                        string body = await response.Content.ReadAsStringAsync();
+                        using var errDoc = JsonDocument.Parse(body);
+                        if (errDoc.RootElement.TryGetProperty("Message", out var msgProp))
+                        {
+                            errMsg = msgProp.GetString() ?? errMsg;
+                        }
+                    }
+                    catch {}
+                }
+                GD.PrintErr($"[LobbyManager] {errMsg}");
+                if (response != null && response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                {
+                    Multiplayer.MultiplayerPeer = null;
+                    IsHost = false;
+                    return false;
+                }
+                return true; // proceed locally if registry is offline
             }
 
             var respText = await response.Content.ReadAsStringAsync();
@@ -1108,14 +1196,22 @@ public partial class LobbyManager : Node
         }
     }
 
-    private static void InitializeToxicityModel()
+    private static bool _isDownloadingModels = false;
+    private static async Task InitializeToxicityModelAsync()
     {
-        lock (_sessionLock)
+        if (_onnxSession != null)
         {
-            if (_onnxSession != null)
-            {
-                return;
-            }
+            return;
+        }
+
+        if (_isDownloadingModels)
+        {
+            return;
+        }
+        _isDownloadingModels = true;
+
+        try
+        {
 
             string modelPath = "";
             string vocabPath = "";
@@ -1164,22 +1260,67 @@ public partial class LobbyManager : Node
 
             if (string.IsNullOrEmpty(modelPath) || !System.IO.File.Exists(modelPath))
             {
+                try
+                {
+                    string globalizedUserDir = ProjectSettings.GlobalizePath("user://Assets/MLModels/toxic-xlm-roberta");
+                    if (!System.IO.Directory.Exists(globalizedUserDir))
+                    {
+                        System.IO.Directory.CreateDirectory(globalizedUserDir);
+                    }
+
+                    modelPath = System.IO.Path.Combine(globalizedUserDir, "model_quantized.onnx");
+                    vocabPath = System.IO.Path.Combine(globalizedUserDir, "vocab.bin");
+
+                    if (!System.IO.File.Exists(modelPath) || !System.IO.File.Exists(vocabPath))
+                    {
+                        GD.Print("[LobbyManager] Downloading toxicity models...");
+                        var httpClient = new System.Net.Http.HttpClient();
+                        
+                        if (!System.IO.File.Exists(modelPath))
+                        {
+                            var modelBytes = await httpClient.GetByteArrayAsync("https://huggingface.co/hoan/multilingual-toxic-xlm-roberta-dynamic-quantized/resolve/main/model_quantized.onnx");
+                            System.IO.File.WriteAllBytes(modelPath, modelBytes);
+                        }
+
+                        if (!System.IO.File.Exists(vocabPath))
+                        {
+                            var vocabBytes = await httpClient.GetByteArrayAsync("https://huggingface.co/hoan/multilingual-toxic-xlm-roberta-dynamic-quantized/resolve/main/vocab.bin");
+                            System.IO.File.WriteAllBytes(vocabPath, vocabBytes);
+                        }
+                        GD.Print("[LobbyManager] Successfully downloaded toxicity models.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    GD.PrintErr($"[LobbyManager] Error downloading toxicity models: {ex}");
+                }
+            }
+
+            if (string.IsNullOrEmpty(modelPath) || !System.IO.File.Exists(modelPath))
+            {
                 throw new System.IO.FileNotFoundException("Model file not found.");
             }
 
-            _onnxSession = new InferenceSession(modelPath);
-
-            using (var fs = new System.IO.FileStream(vocabPath, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read))
-            using (var reader = new System.IO.BinaryReader(fs, Encoding.UTF8))
+            lock (_sessionLock)
             {
-                int count = reader.ReadInt32();
-                _vocab = new Dictionary<string, int>(count);
-                for (int i = 0; i < count; i++)
+                _onnxSession = new InferenceSession(modelPath);
+
+                using (var fs = new System.IO.FileStream(vocabPath, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read))
+                using (var reader = new System.IO.BinaryReader(fs, Encoding.UTF8))
                 {
-                    string token = reader.ReadString();
-                    _vocab[token] = i;
+                    int count = reader.ReadInt32();
+                    _vocab = new Dictionary<string, int>(count);
+                    for (int i = 0; i < count; i++)
+                    {
+                        string token = reader.ReadString();
+                        _vocab[token] = i;
+                    }
                 }
             }
+        }
+        finally
+        {
+            _isDownloadingModels = false;
         }
     }
 
@@ -1192,6 +1333,11 @@ public partial class LobbyManager : Node
 
         try
         {
+            if (_onnxSession == null || _vocab == null)
+            {
+                await InitializeToxicityModelAsync();
+            }
+
             return await Task.Run(() =>
             {
                 var encoding = GptEncoding.GetEncoding("cl100k_base");
@@ -1203,7 +1349,7 @@ public partial class LobbyManager : Node
 
                 if (_onnxSession == null || _vocab == null)
                 {
-                    InitializeToxicityModel();
+                    return false;
                 }
 
                 var tokens = new List<long>();
@@ -1381,6 +1527,7 @@ public partial class LobbyManager : Node
         }
 
         IsGameStarted = true;
+        GameSessionStartTime = DateTime.UtcNow;
         
         GetTree().ChangeSceneToFile("res://Main.tscn");
     }

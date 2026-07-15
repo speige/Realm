@@ -170,6 +170,7 @@ public class MapEditorMinimap
 			var viewport = new SubViewport();
 			viewport.Size = new Vector2I(viewportWidth, viewportHeight);
 			viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Once;
+			viewport.DebugDraw = Viewport.DebugDrawEnum.Unshaded;
 			_hudNode.AddChild(viewport);
 
 			var camera = new Camera3D();

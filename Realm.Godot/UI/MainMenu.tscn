@@ -122,6 +122,14 @@ size_flags_horizontal = 4
 focus_mode = 0
 icon = ExtResource("7_globe")
 
+[node name="CreatorDiscoveryButton" type="Button" parent="CentralPanel/VBoxContainer"]
+custom_minimumSize = Vector2(480, 64)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("7_globe")
+
+
 [node name="MapEditorButton" type="Button" parent="CentralPanel/VBoxContainer"]
 custom_minimumSize = Vector2(480, 64)
 layout_mode = 2

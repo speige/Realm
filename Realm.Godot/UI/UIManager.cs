@@ -190,7 +190,7 @@ public partial class UIManager : Control
 		_fadeAnim.Play("fade_in");
 
 
-		if (screen == GameScreen.MainMenu || screen == GameScreen.LobbyBrowser || screen == GameScreen.LobbyRoom || screen == GameScreen.Settings || screen == GameScreen.MapDiscovery || screen == GameScreen.MapDetails)
+		if (screen == GameScreen.MainMenu || screen == GameScreen.LobbyBrowser || screen == GameScreen.LobbyRoom || screen == GameScreen.Settings || screen == GameScreen.MapDiscovery || screen == GameScreen.CreatorDiscovery || screen == GameScreen.MapDetails)
 		{
 			PlayMusic("res://Assets/Audio/Music/enchanted_realm.ogg");
 		}
@@ -323,6 +323,9 @@ public partial class UIManager : Control
 			case GameScreen.GameOver:
 				targetScene = GameOverScene ?? GD.Load<PackedScene>("res://UI/GameOver.tscn");
 				Input.MouseMode = Input.MouseModeEnum.Visible;
+				break;
+						case GameScreen.CreatorDiscovery:
+				targetScene = GD.Load<PackedScene>("res://UI/CreatorDiscovery.tscn");
 				break;
 			case GameScreen.MapDiscovery:
 				targetScene = MapDiscoveryScene ?? GD.Load<PackedScene>("res://UI/MapDiscovery.tscn");

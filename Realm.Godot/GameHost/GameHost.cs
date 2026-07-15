@@ -277,6 +277,7 @@ public partial class GameHost : Node3D, IGameAPI
 		{
 			_activeEditorTool = value;
 			_editorService?.SetIsPastingObject(false);
+			RebuildAllCoordinatePersistentMeshes();
 		}
 	}
 	public string ActivePlaceId { get; set; } = ""; // "soldier", "tree", etc.

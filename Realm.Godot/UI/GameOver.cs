@@ -1,4 +1,9 @@
 using Godot;
+using System;
+using System.IO;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Linq;
 using System.Collections.Generic;
 
 public partial class GameOver : Control
@@ -77,6 +82,19 @@ public partial class GameOver : Control
 		SetupWriteReviewButton();
 
 		UpdateTabDisplay();
+
+		string mapName = GetActiveMapName();
+		double playtimeMinutes = 0.0;
+		if (GodotObject.IsInstanceValid(LobbyManager.Instance) && LobbyManager.Instance.GameSessionStartTime != null)
+		{
+			playtimeMinutes = (DateTime.UtcNow - LobbyManager.Instance.GameSessionStartTime.Value).TotalMinutes;
+		}
+
+		// Save local playtime statistics
+		AddLocalPlaytime(mapName, playtimeMinutes);
+
+		// Report baseline playtime metrics to server
+		_ = ReportMetricsAsync(mapName, playtimeMinutes, 0, true);
 	}
 
 	private void ApplyThemeStyles()
@@ -388,7 +406,7 @@ public partial class GameOver : Control
 		};
 		btnCancel.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 
-		btnSubmit.Pressed += () =>
+		btnSubmit.Pressed += async () =>
 		{
 			UIManager.Instance.PlayClickSound();
 			int selectedRating = ratingOption.GetSelectedId();
@@ -400,6 +418,13 @@ public partial class GameOver : Control
 
 			UIStyle.ApplyButtonText(_btnWriteReview, "Edit Your Review", 18);
 			rootPopup.QueueFree();
+
+			double playtimeMin = 0.0;
+			if (GodotObject.IsInstanceValid(LobbyManager.Instance) && LobbyManager.Instance.GameSessionStartTime != null)
+			{
+				playtimeMin = (DateTime.UtcNow - LobbyManager.Instance.GameSessionStartTime.Value).TotalMinutes;
+			}
+			await ReportMetricsAsync(mapName, playtimeMin, selectedRating, true);
 		};
 		btnSubmit.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 	}
@@ -533,4 +558,112 @@ public partial class GameOver : Control
 			_tableRowsContainer.AddChild(rowContainer);
 		}
 	}
+
+	private async System.Threading.Tasks.Task ReportMetricsAsync(string mapName, double playtimeMinutes, int stars, bool isComplete)
+	{
+		string mapTitle = mapName;
+		if (mapTitle.StartsWith("[Beta-Testing] "))
+		{
+			mapTitle = mapTitle.Substring("[Beta-Testing] ".Length);
+		}
+		int dashIdx = mapTitle.LastIndexOf(" - ");
+		if (dashIdx != -1)
+		{
+			mapTitle = mapTitle.Substring(0, dashIdx);
+		}
+		mapTitle = mapTitle.Trim();
+		
+		var payload = new
+		{
+			MapTitle = mapTitle,
+			MapVersion = "1.0",
+			PlaytimeMinutes = playtimeMinutes,
+			Stars = stars,
+			IsCompleteGame = isComplete
+		};
+		
+		string seedServerUrl = GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
+		try
+		{
+			using (var httpClient = new System.Net.Http.HttpClient())
+			{
+				var content = new System.Net.Http.StringContent(System.Text.Json.JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
+				await httpClient.PostAsync(seedServerUrl + "/api/maps/report_metrics", content);
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[GameOver] Failed to report map metrics: {ex.Message}");
+		}
+	}
+
+	private void AddLocalPlaytime(string mapName, double playtimeMinutes)
+	{
+		try
+		{
+			var contributors = new List<string>();
+			string rawName = mapName;
+			if (rawName.StartsWith("[Beta-Testing] "))
+			{
+				rawName = rawName.Substring("[Beta-Testing] ".Length);
+			}
+			int dashIdx = rawName.LastIndexOf(" - ");
+			if (dashIdx != -1)
+			{
+				rawName = rawName.Substring(0, dashIdx);
+			}
+			rawName = rawName.Trim();
+
+			string[] paths = {
+				ProjectSettings.GlobalizePath($"res://Maps/{rawName}/map.json"),
+				ProjectSettings.GlobalizePath($"user://maps/{rawName}/map.json"),
+				ProjectSettings.GlobalizePath($"user://temp_map_workspace/map.json")
+			};
+
+			foreach (var path in paths)
+			{
+				if (System.IO.File.Exists(path))
+				{
+					string json = System.IO.File.ReadAllText(path);
+					using var doc = JsonDocument.Parse(json);
+					if (doc.RootElement.TryGetProperty("Contributors", out var conts) && conts.ValueKind == JsonValueKind.Array)
+					{
+						foreach (var el in conts.EnumerateArray())
+						{
+							var s = el.GetString();
+							if (!string.IsNullOrEmpty(s)) contributors.Add(s);
+						}
+					}
+					break;
+				}
+			}
+
+			if (contributors.Count == 0)
+			{
+				contributors.Add("Realm Builder"); // fallback
+			}
+
+			string statsPath = ProjectSettings.GlobalizePath("user://appdata/playtime_stats.json");
+			var stats = new Dictionary<string, int>();
+			if (System.IO.File.Exists(statsPath))
+			{
+				string statsJson = System.IO.File.ReadAllText(statsPath);
+				stats = JsonSerializer.Deserialize<Dictionary<string, int>>(statsJson) ?? stats;
+			}
+
+			foreach (var contributor in contributors)
+			{
+				if (!stats.ContainsKey(contributor)) stats[contributor] = 0;
+				stats[contributor] += (int)playtimeMinutes;
+			}
+
+			System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(statsPath));
+			System.IO.File.WriteAllText(statsPath, JsonSerializer.Serialize(stats));
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[GameOver] Failed to update local playtime stats: {ex.Message}");
+		}
+	}
 }
+

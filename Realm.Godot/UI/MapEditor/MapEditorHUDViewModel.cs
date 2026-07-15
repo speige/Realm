@@ -21,10 +21,11 @@ public class MapEditorHUDViewModel
 	public float BrushSize { get; set; } = 5f;
 	public float BrushStrength { get; set; } = 20f;
 	public float BlockStep { get; set; } = 0.5f;
-	public float WaterHeight { get; set; } = 1.0f;
+	public float WaterHeight { get; set; } = -2.0f;
 
 	public float PlacementRotate { get; set; } = 0f;
 	public float PlacementScale { get; set; } = 1.0f;
+	public float PasteRotation { get; set; } = 0f;
 	public bool SpawnAsEnemy { get; set; } = false;
 	public bool RandomRotation { get; set; } = false;
 	public bool RandomScale { get; set; } = false;
@@ -70,6 +71,7 @@ public class MapEditorHUDViewModel
 
 			PlacementRotate = GameHost.Instance.EditorPlacementRotation;
 			PlacementScale = GameHost.Instance.EditorPlacementScale;
+			PasteRotation = GameHost.Instance.EditorPasteRotation;
 			SpawnAsEnemy = GameHost.Instance.PlaceUnitIsEnemy;
 			RandomRotation = GameHost.Instance.EditorRandomRotation;
 			RandomScale = GameHost.Instance.EditorRandomScale;

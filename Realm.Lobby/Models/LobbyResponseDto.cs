@@ -14,5 +14,6 @@ public record LobbyResponseDto(
 	int EstimatedPingMs, 
 	string? OriginServerUri, 
 	int HostPingBaseline,
+	string? GameVersion = null,
 	string? LocalIP = null
 );
