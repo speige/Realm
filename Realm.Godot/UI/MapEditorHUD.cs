@@ -437,18 +437,6 @@ public partial class MapEditorHUD : Control
 		StyleAccordionHeader(_btnHeaderViewport);
 		SetupMutualAccordion(_btnHeaderViewport, _contentViewport, TranslationServer.Translate("Viewport & Navigation"));
 
-		_btnCopy = new Button();
-		_btnCopy.Name = "BtnCopy";
-		_btnCopy.Set("icon_max_width", 0);
-		GetNode<HBoxContainer>("TopLeftBox").AddChild(_btnCopy);
-		SetupButton(_btnCopy, "📋 COPY", () => GameHost.Instance?.TriggerCopyFromUI(), 13, "Copy selected object or selected area (Ctrl+C)");
-
-		_btnPaste = new Button();
-		_btnPaste.Name = "BtnPaste";
-		_btnPaste.Set("icon_max_width", 0);
-		GetNode<HBoxContainer>("TopLeftBox").AddChild(_btnPaste);
-		SetupButton(_btnPaste, "📋 PASTE", () => GameHost.Instance?.TriggerPasteFromUI(), 13, "Paste copied object or area (Ctrl+V)");
-
 		InitializeTempWorkspace();
 
 	
