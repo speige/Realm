@@ -1494,7 +1494,10 @@ public class EditorService
 
 		foreach (var cell in cells)
 		{
-			pathingCodes[cell.X, cell.Y] = targetValue;
+			if (pathingAdd)
+				pathingCodes[cell.X, cell.Y] |= pathingMask;
+			else
+				pathingCodes[cell.X, cell.Y] &= ~pathingMask;
 		}
 
 		return (pathingBefore, (int[,])pathingCodes.Clone());
@@ -1932,10 +1935,6 @@ public class EditorService
 				if ((code & EditableTerrain.PATHING_DEEP_WATER) != 0)
 				{
 					layers.Add("Deep Water");
-				}
-				if ((code & EditableTerrain.PATHING_UNPATHABLE) != 0)
-				{
-					layers.Add("Unpathable");
 				}
 				if ((code & EditableTerrain.PATHING_BUILDABLE) != 0)
 				{

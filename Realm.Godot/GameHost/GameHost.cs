@@ -598,6 +598,30 @@ public partial class GameHost : Node3D, IGameAPI
 	}
 
 	private IMapScript _activeMapScript;
+	public static string? PendingMapScriptPath { get; set; }
+
+	private System.Runtime.Loader.AssemblyLoadContext? _mapScriptLoadContext;
+
+	private class MapScriptLoadContext : System.Runtime.Loader.AssemblyLoadContext
+	{
+		public MapScriptLoadContext() : base(isCollectible: true)
+		{
+			Resolving += OnResolving;
+		}
+
+		private System.Reflection.Assembly? OnResolving(System.Runtime.Loader.AssemblyLoadContext context, System.Reflection.AssemblyName assemblyName)
+		{
+			if (assemblyName.Name == "Realm.MapAPI")
+			{
+				foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+				{
+					if (asm.GetName().Name == "Realm.MapAPI")
+						return asm;
+				}
+			}
+			return null;
+		}
+	}
 
 	private bool DayNightCycleEnabled
 	{
@@ -743,6 +767,7 @@ public partial class GameHost : Node3D, IGameAPI
 	IUnit IGameAPI.SpawnUnit(string unitTypeId, System.Numerics.Vector3 position, bool isEnemy, bool bypassPopulation)
 	{
 		var pos = new Vector3(position.X, position.Y, position.Z);
+		pos.Y = GetTerrainHeightAt(pos);
 		if (!UnitRegistry.TryGetValue(unitTypeId, out var meta))
 		{
 			throw new ArgumentException($"Unit ID '{unitTypeId}' not found in registry.");
@@ -987,6 +1012,76 @@ public class {mapName} : IMapScript
 		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "MapScript.cs"), scriptContent);
 		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "metadata.json"), "{}");
 		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "terrain.json"), "{}");
+
+		EnsureMapProjectFiles(mapDir);
+	}
+
+	public static void EnsureMapProjectFiles(string mapDir)
+	{
+		string csprojPath = System.IO.Path.Combine(mapDir, "MapScript.csproj");
+		string libDir = System.IO.Path.Combine(mapDir, "lib");
+		System.IO.Directory.CreateDirectory(libDir);
+
+		string vscodeDir = System.IO.Path.Combine(mapDir, ".vscode");
+		System.IO.Directory.CreateDirectory(vscodeDir);
+		string vscodeSettingsPath = System.IO.Path.Combine(vscodeDir, "settings.json");
+		string vscodeSettingsContent = @"{
+    ""dotnet.preferCSharpExtension"": true,
+    ""dotnet.server.useOmnisharp"": false,
+    ""dotnet.projects.enableAutomaticRestore"": true
+}
+";
+		System.IO.File.WriteAllText(vscodeSettingsPath, vscodeSettingsContent);
+
+		string projectRoot = ProjectSettings.GlobalizePath("res://");
+		string repoRoot = System.IO.Path.GetFullPath(System.IO.Path.Combine(projectRoot, ".."));
+		string sourceDll = System.IO.Path.Combine(repoRoot, "Realm.MapAPI", "bin", "Release", "net10.0", "Realm.MapAPI.dll");
+		string sourceXml = System.IO.Path.Combine(repoRoot, "Realm.MapAPI", "bin", "Release", "net10.0", "Realm.MapAPI.xml");
+
+		if (!System.IO.File.Exists(sourceDll))
+		{
+			sourceDll = System.IO.Path.Combine(repoRoot, "Realm.MapAPI", "bin", "Debug", "net10.0", "Realm.MapAPI.dll");
+			sourceXml = System.IO.Path.Combine(repoRoot, "Realm.MapAPI", "bin", "Debug", "net10.0", "Realm.MapAPI.xml");
+		}
+
+		if (System.IO.File.Exists(sourceDll))
+		{
+			System.IO.File.Copy(sourceDll, System.IO.Path.Combine(libDir, "Realm.MapAPI.dll"), true);
+		}
+		if (System.IO.File.Exists(sourceXml))
+		{
+			System.IO.File.Copy(sourceXml, System.IO.Path.Combine(libDir, "Realm.MapAPI.xml"), true);
+		}
+
+		string csprojContent = @"<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include=""Realm.MapAPI"">
+      <HintPath>lib/Realm.MapAPI.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>
+";
+		System.IO.File.WriteAllText(csprojPath, csprojContent);
+
+		try
+		{
+			using var restoreProcess = new System.Diagnostics.Process();
+			restoreProcess.StartInfo.FileName = "dotnet";
+			restoreProcess.StartInfo.Arguments = $"restore \"{csprojPath}\"";
+			restoreProcess.StartInfo.WorkingDirectory = mapDir;
+			restoreProcess.StartInfo.CreateNoWindow = true;
+			restoreProcess.StartInfo.UseShellExecute = false;
+			restoreProcess.Start();
+			restoreProcess.WaitForExit(10000);
+		}
+		catch
+		{
+		}
 	}
 
 	event Action<IUnit>? IGameAPI.OnUnitCreated
@@ -1901,6 +1996,22 @@ public class {mapName} : IMapScript
 		return false;
 	}
 
+	void IGameAPI.AddUnitTypeAbility(string unitTypeId, string abilityId)
+	{
+		if (UnitRegistry.TryGetValue(unitTypeId, out var meta))
+		{
+			var abilities = meta.Abilities != null 
+				? new List<string>(meta.Abilities) 
+				: new List<string>();
+			if (!abilities.Contains(abilityId))
+			{
+				abilities.Add(abilityId);
+				meta.Abilities = abilities.ToArray();
+				UnitRegistry[unitTypeId] = meta;
+			}
+		}
+	}
+
 
 	public void NotifyPlayerLeft(int playerIndex)
 	{
@@ -2177,56 +2288,97 @@ public class {mapName} : IMapScript
 	private void LoadMapScript(string mapName)
 	{
 		_activeMapScript = null;
-		foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+
+		string normalizedRaw = mapName.Replace('\\', '/');
+		bool isCustomPath = normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRaw);
+
+		if (isCustomPath)
 		{
-			Type?[] types;
-			try
+			if (!string.IsNullOrEmpty(PendingMapScriptPath))
 			{
-				types = assembly.GetTypes();
-			}
-			catch (System.Reflection.ReflectionTypeLoadException ex)
-			{
-				types = ex.Types;
-			}
-			catch (Exception)
-			{
-				continue;
-			}
-			if (types == null) continue;
-			foreach (var type in types)
-			{
-				if (type == null) continue;
-				if (typeof(IMapScript).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract)
+				if (_mapScriptLoadContext != null)
 				{
-					string typeName = type.Name.ToLower();
-					string searchName = mapName.Replace("_", "").ToLower();
-					if (typeName.Contains(searchName) || searchName.Contains(typeName))
+					_mapScriptLoadContext.Unload();
+					_mapScriptLoadContext = null;
+				}
+
+				try
+				{
+					_mapScriptLoadContext = new MapScriptLoadContext();
+					using var fs = new System.IO.FileStream(PendingMapScriptPath, System.IO.FileMode.Open, System.IO.FileAccess.Read);
+					var asm = _mapScriptLoadContext.LoadFromStream(fs);
+
+					foreach (var t in asm.GetExportedTypes())
 					{
-						try
+						if (typeof(IMapScript).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
 						{
-							_activeMapScript = (IMapScript)Activator.CreateInstance(type);
-							break;
-						}
-						catch (Exception ex)
-						{
-							GD.PrintErr($"Failed to instantiate map script type {type.FullName}: {ex.Message}");
+							_activeMapScript = (IMapScript?)Activator.CreateInstance(t);
+							if (_activeMapScript != null)
+							{
+								break;
+							}
 						}
 					}
 				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"Failed to load pending map script from {PendingMapScriptPath}: {ex.Message}");
+				}
+				PendingMapScriptPath = null;
 			}
-			if (_activeMapScript != null) break;
+		}
+		else
+		{
+			foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+			{
+				Type?[] types;
+				try
+				{
+					types = assembly.GetTypes();
+				}
+				catch (System.Reflection.ReflectionTypeLoadException ex)
+				{
+					types = ex.Types;
+				}
+				catch (Exception)
+				{
+					continue;
+				}
+				if (types == null) continue;
+				foreach (var type in types)
+				{
+					if (type == null) continue;
+					if (typeof(IMapScript).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract)
+					{
+						string typeName = type.Name.ToLower();
+						string searchName = mapName.Replace("_", "").ToLower();
+						if (typeName.Contains(searchName) || searchName.Contains(typeName))
+						{
+							try
+							{
+								_activeMapScript = (IMapScript)Activator.CreateInstance(type);
+								break;
+							}
+							catch (Exception ex)
+							{
+								GD.PrintErr($"Failed to instantiate map script type {type.FullName}: {ex.Message}");
+							}
+						}
+					}
+				}
+				if (_activeMapScript != null) break;
+			}
 		}
 
 		if (_activeMapScript == null)
 		{
 			bool hasCustomTerrain = false;
-			string normalizedMapName = mapName.Replace('\\', '/');
-			if (normalizedMapName.StartsWith("user://") || normalizedMapName.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedMapName))
+			if (isCustomPath)
 			{
-				string checkDir = normalizedMapName;
-				if (normalizedMapName.StartsWith("user://") || normalizedMapName.StartsWith("res://"))
+				string checkDir = normalizedRaw;
+				if (normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://"))
 				{
-					checkDir = ProjectSettings.GlobalizePath(normalizedMapName);
+					checkDir = ProjectSettings.GlobalizePath(normalizedRaw);
 				}
 				if (System.IO.Directory.Exists(checkDir) && System.IO.File.Exists(System.IO.Path.Combine(checkDir, "terrain.json")))
 				{

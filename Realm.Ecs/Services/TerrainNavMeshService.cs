@@ -103,7 +103,9 @@ internal class TerrainNavMeshService
 			for (int x = 0; x < width; x++)
 			{
 				int pathingCode = state.PathingCodes[x, z];
-				if (pathingCode != 12)
+				bool isWalkable = (pathingCode & 8) != 0
+					&& (pathingCode & (1 | 2)) == 0; // not SHALLOW_WATER or DEEP_WATER
+				if (!isWalkable)
 				{
 					float lx = (x - (width - 1) / 2.0f) * spacing;
 					float lz = (z - (depth - 1) / 2.0f) * spacing;
@@ -120,7 +122,7 @@ internal class TerrainNavMeshService
 						},
 						hmin = h - 5.0f,
 						hmax = h + 5.0f,
-						areaMod = new RcAreaModification(pathingCode)
+						areaMod = new RcAreaModification(0)
 					};
 					geom.AddConvexVolume(vol);
 				}
@@ -154,7 +156,11 @@ internal class TerrainNavMeshService
 		var bcfg = new RcBuilderConfig(cfg, bmin, bmax);
 		var builder = new RcBuilder();
 		var result = builder.Build(geom, bcfg, true);
-		if (result.Mesh != null)
+		if (result.Mesh == null || result.Mesh.npolys == 0)
+		{
+			Console.Error.WriteLine($"[BakeNavMesh] BUILDER FAILED: no polys generated. width={width} depth={depth} spacing={spacing}");
+		}
+		if (result.Mesh != null && result.Mesh.npolys > 0)
 		{
 			var pars = new DtNavMeshCreateParams();
 			pars.verts = result.Mesh.verts;
@@ -202,14 +208,9 @@ internal class TerrainNavMeshService
 				int zGrid = Math.Clamp((int)Math.Round(avgZ / spacing + (depth - 1) / 2.0f), 0, depth - 1);
 				int pathFlags = state.PathingCodes[xGrid, zGrid];
 
-				if ((pathFlags & 16) != 0)
-				{
-					pars.polyFlags[i] = 0;
-				}
-				else
-				{
-					pars.polyFlags[i] = pathFlags;
-				}
+				bool isPolyWalkable = (pathFlags & 8) != 0
+					&& (pathFlags & (16 | 1 | 2)) == 0; // not UNPATHABLE, SHALLOW_WATER, or DEEP_WATER
+				pars.polyFlags[i] = isPolyWalkable ? pathFlags : 0;
 			}
 			if (result.MeshDetail != null)
 			{

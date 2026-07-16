@@ -37,6 +37,7 @@ public partial class MapEditorHUD : Control
 	public static float SavedBrushStrength = 0.5f;
 
 	private static string _lastUsedFolder = "";
+	private static string _currentSourceFolder = "";
 
 	private static bool _agreementShownThisSession = false;
 
@@ -239,14 +240,14 @@ public partial class MapEditorHUD : Control
 
 	private Button _btnPathingBrush;
 	private Button _btnFloodFillPathing;
-	private PanelContainer _panelPathing;
 	private CheckBox _chkShallowWater;
 	private CheckBox _chkDeepWater;
 	private CheckBox _chkFlying;
 	private CheckBox _chkGround;
 	private CheckBox _chkBuildable;
+
 	private OptionButton _optPathingMode;
-	private HBoxContainer _pathingModeHBox;
+
 
 	private Button _btnDrawCoordinate;
 	private LineEdit _txtCoordinateName;
@@ -293,6 +294,8 @@ public partial class MapEditorHUD : Control
 	private MapEditorEntityPaletteController _entityPaletteController;
 	private MapEditorGenerationDialog _generationDialog;
 
+	public const string TempWorkspaceGodotPath = "user://temp_map_workspace";
+
 	private string _tempWorkspacePath;
 	private long _lastTerrainSyncTime = 0;
 	private long _lastMetadataSyncTime = 0;
@@ -335,15 +338,13 @@ public partial class MapEditorHUD : Control
 		_leftPillar = new Panel();
 		_rightPillar = new Panel();
 		_topToolbar = new HBoxContainer();
-		_middleRightBox = new VBoxContainer();
+
 		_panelTextures = new PanelContainer();
 		_panelEntityPalette = new PanelContainer();
 		_panelTerrain = new PanelContainer();
 		_panelDeco = new PanelContainer();
 		_panelEnv = new PanelContainer();
-		_panelPathing = new PanelContainer();
 		_btnClumpBrush = new Button();
-		_pathingModeHBox = new HBoxContainer();
 
 		_panelLeft = GetNode<Panel>("LeftSlidePanel");
 		_panelRight = GetNode<Panel>("RightSlidePanel");
@@ -435,6 +436,11 @@ public partial class MapEditorHUD : Control
 		_contentViewport = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport");
 		StyleAccordionHeader(_btnHeaderViewport);
 		SetupMutualAccordion(_btnHeaderViewport, _contentViewport, TranslationServer.Translate("Viewport & Navigation"));
+
+		InitializeTempWorkspace();
+
+	
+
 
 		_btnToggleGrid = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnToggleGrid");
 		SetupButton(_btnToggleGrid, "🌐 GRID OVERLAY: OFF", () =>
@@ -952,6 +958,11 @@ public partial class MapEditorHUD : Control
 
 		TriggerToolSelection(GameHost.EditorTool.Raise, _btnRaise);
 
+		_feedbackLabel.Modulate = new Color(1, 1, 1, 0);
+		Input.MouseMode = Input.MouseModeEnum.Visible;
+
+
+
 		_entityPaletteController = new MapEditorEntityPaletteController(this, _containerCategorySelector, _btnAddObject);
 		_generationDialog = new MapEditorGenerationDialog(this);
 
@@ -975,7 +986,6 @@ public partial class MapEditorHUD : Control
 			UpdatePasteRotationExternal(GameHost.Instance.EditorPasteRotation);
 		}
 
-		InitializeTempWorkspace();
 		if (!_agreementShownThisSession)
 		{
 			_agreementShownThisSession = true;
@@ -1259,9 +1269,10 @@ public partial class MapEditorHUD : Control
 			string varName = System.Text.RegularExpressions.Regex.Replace(coord.Name, @"[^a-zA-Z0-9_]", "_");
 			if (varName.Length > 0 && char.IsDigit(varName[0])) varName = "_" + varName;
 
+			var invariant = System.Globalization.CultureInfo.InvariantCulture;
 			sb.AppendLine($"    public static readonly Coordinate {varName} = new Coordinate(");
-			sb.AppendLine($"        new System.Numerics.Vector3({coord.MinX:F2}f, 0f, {coord.MinZ:F2}f),");
-			sb.AppendLine($"        new System.Numerics.Vector3({coord.MaxX:F2}f, 0f, {coord.MaxZ:F2}f)");
+			sb.AppendLine(string.Format(invariant, "        new System.Numerics.Vector3({0:F2}f, 0f, {1:F2}f),", coord.MinX, coord.MinZ));
+			sb.AppendLine(string.Format(invariant, "        new System.Numerics.Vector3({0:F2}f, 0f, {1:F2}f)", coord.MaxX, coord.MaxZ));
 			sb.AppendLine("    );");
 			sb.AppendLine();
 		}
@@ -1345,6 +1356,10 @@ public partial class MapEditorHUD : Control
 		if (OperatingSystem.IsWindows())
 		{
 			bool isVisible = !VSCodeManager.Instance.IsVisible;
+			if (isVisible)
+			{
+				GenerateVSCodeFilesExternal();
+			}
 			VSCodeManager.Instance.SetVisible(isVisible);
 		}
 	}
@@ -1848,18 +1863,12 @@ public partial class MapEditorHUD : Control
 
 		if (tool == GameHost.EditorTool.PaintPathing || tool == GameHost.EditorTool.FloodFillPathing)
 		{
-			if (_panelPathing != null) _panelPathing.Visible = true;
 			if (_panelTextures != null) _panelTextures.Visible = false;
 			if (_panelEntityPalette != null) _panelEntityPalette.Visible = false;
-			if (_pathingModeHBox != null)
-			{
-				_pathingModeHBox.Visible = (tool != GameHost.EditorTool.FloodFillPathing);
-			}
 			GameHost.Instance?.UpdatePathingOverlay();
 		}
 		else if (tool == GameHost.EditorTool.DrawCoordinate)
 		{
-			if (_panelPathing != null) _panelPathing.Visible = false;
 			if (_panelTextures != null) _panelTextures.Visible = false;
 			if (_panelEntityPalette != null) _panelEntityPalette.Visible = false;
 			if (_btnCommitCoordinate != null) _btnCommitCoordinate.Visible = false;
@@ -1867,7 +1876,6 @@ public partial class MapEditorHUD : Control
 		}
 		else
 		{
-			if (_panelPathing != null) _panelPathing.Visible = false;
 			if (_panelTextures != null) _panelTextures.Visible = false;
 			if (_panelEntityPalette != null) _panelEntityPalette.Visible = false;
 			GameHost.Instance?.UpdatePathingOverlay();
@@ -1958,12 +1966,12 @@ public partial class MapEditorHUD : Control
 
 	private void InitializeTempWorkspace()
 	{
-		_tempWorkspacePath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		_tempWorkspacePath = ProjectSettings.GlobalizePath(TempWorkspaceGodotPath);
 		if (!ReturningFromTest)
 		{
 			ClearTempWorkspaceExternal();
 			System.IO.Directory.CreateDirectory(_tempWorkspacePath);
-			GenerateVSCodeFiles(_tempWorkspacePath, "CustomMap");
+			MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "CustomMap");
 		}
 
 		_lastTerrainSyncTime = 0;
@@ -2012,6 +2020,15 @@ public partial class MapEditorHUD : Control
 
 		_lastTerrainSyncTime = 0;
 		_lastMetadataSyncTime = 0;
+	}
+
+	public void GenerateVSCodeFilesExternal()
+	{
+		if (string.IsNullOrEmpty(_tempWorkspacePath)) return;
+		string scriptPath = System.IO.Path.Combine(_tempWorkspacePath, "MapScript.cs");
+		string unitsPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+		System.IO.Directory.CreateDirectory(_tempWorkspacePath);
+		MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "CustomMap");
 	}
 
 	private long GetLastWriteTimeSafe(string path)
@@ -2091,7 +2108,12 @@ public partial class MapEditorHUD : Control
 			}
 			System.IO.File.Copy(file, targetFile, true);
 		}
-		GenerateVSCodeFiles(_tempWorkspacePath, System.IO.Path.GetFileName(sourceFolder));
+		// Only call SetupWorkspace if source folder didn't already provide a .csproj
+		bool sourceHasCsproj = System.IO.Directory.GetFiles(sourceFolder, "*.csproj", System.IO.SearchOption.TopDirectoryOnly).Length > 0;
+		if (!sourceHasCsproj)
+		{
+			MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, System.IO.Path.GetFileName(sourceFolder));
+		}
 		LoadMapProperties();
 	}
 
@@ -2129,112 +2151,6 @@ public partial class MapEditorHUD : Control
 		if (OperatingSystem.IsWindows())
 		{
 			VSCodeManager.Instance.SaveRecentMapDir(targetFolder);
-		}
-	}
-
-	private void GenerateVSCodeFiles(string directory, string mapName)
-	{
-		string vscodeDir = System.IO.Path.Combine(directory, ".vscode");
-		if (!System.IO.Directory.Exists(vscodeDir))
-		{
-			System.IO.Directory.CreateDirectory(vscodeDir);
-		}
-
-		string sourceSchema = ProjectSettings.GlobalizePath("res://..").Replace("\\", "/") + "/Realm.MapEditorExtension/map_schema.json";
-		string targetSchema = System.IO.Path.Combine(vscodeDir, "map_schema.json");
-		if (System.IO.File.Exists(sourceSchema))
-		{
-			System.IO.File.Copy(sourceSchema, targetSchema, true);
-		}
-
-		string settingsJson = @"{
-	""editor.formatOnSave"": true,
-	""json.schemas"": [
-        {
-			""fileMatch"": [
-				""/metadata.json""
-            ],
-			""url"": ""./.vscode/map_schema.json""
-        }
-    ]
-}";
-		System.IO.File.WriteAllText(System.IO.Path.Combine(vscodeDir, "settings.json"), settingsJson);
-
-		string launchJson = @"{
-	""version"": ""0.2.0"",
-	""configurations"": [
-        {
-			""name"": ""Attach to Realm Game Host"",
-			""type"": ""coreclr"",
-			""request"": ""attach"",
-			""processName"": ""Realm.Godot""
-        }
-    ]
-}";
-		System.IO.File.WriteAllText(System.IO.Path.Combine(vscodeDir, "launch.json"), launchJson);
-
-		string agentsMd = @"# Realm Custom Map Agents Guide
-
-Realm is an RTS Game using Godot with C# and the Arch ECS framework.
-
-## Map Scripting (MapScript.cs)
-- Implements `IMapScript`.
-- `Initialize(IGameAPI api)` is called when the map starts.
-- `Update(IGameAPI api, float delta)` is called every simulation tick (30Hz).
-- Use `api` to spawn units, send chat messages, define zones, set time of day, etc.
-
-## Unit Configuration (metadata.json)
-- Define custom units and properties here.
-- Examples of properties: `MaxHp`, `Damage`, `Range`, `Armor`, `Speed`, `CostGold`, `PopCost`, `BuildOptions`, etc.
-
-## Debugging
-- Use the 'Attach to Realm Game Host' launch configuration in VS Code to attach the .NET debugger to the game and hit breakpoints in your `MapScript.cs`.
-- Hot reloading is supported via the temp workspace sync.
-";
-		System.IO.File.WriteAllText(System.IO.Path.Combine(directory, "AGENTS.md"), agentsMd);
-
-		string csprojPath = System.IO.Path.Combine(directory, $"{mapName}.csproj");
-		if (!System.IO.File.Exists(csprojPath))
-		{
-			string apiProjPath = ProjectSettings.GlobalizePath("res://..").Replace("\\", "/") + "/Realm.MapAPI/Realm.MapAPI.csproj";
-			string csprojContent = $@"<Project Sdk=""Microsoft.NET.Sdk"">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
-  <ItemGroup>
-	<ProjectReference Include=""{apiProjPath}"" />
-  </ItemGroup>
-</Project>";
-			System.IO.File.WriteAllText(csprojPath, csprojContent);
-		}
-
-		string scriptPath = System.IO.Path.Combine(directory, "MapScript.cs");
-		if (!System.IO.File.Exists(scriptPath))
-		{
-			string scriptContent = $@"namespace Realm.Maps;
-
-using Realm.MapAPI;
-
-public class {mapName} : IMapScript
-{{
-    public void Initialize(IGameAPI api)
-    {{
-    }}
-
-    public void Update(IGameAPI api, float delta)
-    {{
-    }}
-}}
-";
-			System.IO.File.WriteAllText(scriptPath, scriptContent);
-		}
-
-		string unitsPath = System.IO.Path.Combine(directory, "metadata.json");
-		if (!System.IO.File.Exists(unitsPath))
-		{
-			System.IO.File.WriteAllText(unitsPath, "{}");
 		}
 	}
 
@@ -2303,6 +2219,7 @@ public class {mapName} : IMapScript
 				{
 					string selectedFolder = selectedPaths[0];
 					_lastUsedFolder = selectedFolder;
+					_currentSourceFolder = selectedFolder;
 					CopyFolderToTempWorkspace(selectedFolder);
 					string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 					bool success = GameHost.Instance.LoadMapFromFile(terrainPath);
@@ -2329,6 +2246,7 @@ public class {mapName} : IMapScript
 			string defaultFolder = ProjectSettings.GlobalizePath("user://maps/default_map");
 			if (System.IO.Directory.Exists(defaultFolder))
 			{
+				_currentSourceFolder = defaultFolder;
 				CopyFolderToTempWorkspace(defaultFolder);
 			}
 			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
@@ -2372,7 +2290,7 @@ public class {mapName} : IMapScript
 		}
 		else
 		{
-			var key = NSec.Cryptography.Key.Create(SignatureAlgorithm.Ed25519);
+			var key = NSec.Cryptography.Key.Create(SignatureAlgorithm.Ed25519, new NSec.Cryptography.KeyCreationParameters { ExportPolicy = NSec.Cryptography.KeyExportPolicies.AllowPlaintextExport });
 			byte[] exported = key.Export(KeyBlobFormat.RawPrivateKey);
 			System.IO.File.WriteAllBytes(keyPath, exported);
 			
@@ -2391,7 +2309,7 @@ public class {mapName} : IMapScript
 		ShowFeedback(TranslationServer.Translate("Compiling terrain shaders & entity data..."));
 		
 		// Compile triggers to .dll
-		string workspace = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		string workspace = ProjectSettings.GlobalizePath(TempWorkspaceGodotPath);
 		try
 		{
 			if (System.IO.Directory.Exists(workspace))
@@ -2914,27 +2832,57 @@ public class {mapName} : IMapScript
 		}
 	}
 
-	private void CompileAndSignMapSync(string workspace)
+	private void CompileAndSignMapSync(string workspace, bool skipAttribution = false)
 	{
 		// 1. Compile triggers
 		try
 		{
 			if (System.IO.Directory.Exists(workspace))
 			{
+				// Ensure there is only one .csproj (keep CustomMap.csproj, remove others)
+				var csprojFiles = System.IO.Directory.GetFiles(workspace, "*.csproj", System.IO.SearchOption.TopDirectoryOnly);
+				if (csprojFiles.Length == 0)
+				{
+					GD.PrintErr("[MapEditorHUD] No .csproj found in workspace, cannot compile map script");
+					return;
+				}
+				if (csprojFiles.Length > 1)
+				{
+					foreach (var extra in csprojFiles)
+					{
+						if (!System.IO.Path.GetFileName(extra).Equals("CustomMap.csproj", System.StringComparison.OrdinalIgnoreCase))
+						{
+							System.IO.File.Delete(extra);
+						}
+					}
+				}
+
+				// Pick the first .csproj (prefer CustomMap.csproj)
+				string csproj = csprojFiles.FirstOrDefault(f => System.IO.Path.GetFileName(f).Equals("CustomMap.csproj", System.StringComparison.OrdinalIgnoreCase)) ?? csprojFiles[0];
 				var compileProcess = new System.Diagnostics.Process();
 				compileProcess.StartInfo.FileName = "dotnet";
-				compileProcess.StartInfo.Arguments = "build -c Release";
+				compileProcess.StartInfo.Arguments = $"build \"{csproj}\" -c Release";
 				compileProcess.StartInfo.WorkingDirectory = workspace;
 				compileProcess.StartInfo.CreateNoWindow = true;
 				compileProcess.StartInfo.UseShellExecute = false;
+				compileProcess.StartInfo.RedirectStandardOutput = true;
+				compileProcess.StartInfo.RedirectStandardError = true;
 				compileProcess.Start();
+				string buildOutput = compileProcess.StandardOutput.ReadToEnd();
+				string buildError = compileProcess.StandardError.ReadToEnd();
 				compileProcess.WaitForExit();
+				if (compileProcess.ExitCode != 0)
+				{
+					GD.PrintErr($"[MapEditorHUD] Map script compilation failed (exit code {compileProcess.ExitCode}):\n{buildOutput}\n{buildError}");
+				}
 			}
 		}
 		catch (Exception ex)
 		{
 			GD.PrintErr($"[MapEditorHUD] Trigger compilation failed: {ex.Message}");
 		}
+
+		if (skipAttribution) return;
 
 		// 2. Resolve contributors, attributions, and sign
 		try
@@ -4429,7 +4377,7 @@ public class {mapName} : IMapScript
 			}
 		}
 	}
-	private void TestMapAction()
+	private async void TestMapAction()
 	{
 		if (GameHost.Instance == null) return;
 
@@ -4437,18 +4385,18 @@ public class {mapName} : IMapScript
 		{
 			ShowConfirmationDialog(
 				"Warning: You have not placed any units, you won't see anything due to Fog of War.",
-				() => ProceedToTestMap(),
+				async () => await ProceedToTestMap(),
 				"Okay",
 				"Cancel"
 			);
 		}
 		else
 		{
-			ProceedToTestMap();
+			await ProceedToTestMap();
 		}
 	}
 
-	private void ProceedToTestMap()
+	private async System.Threading.Tasks.Task ProceedToTestMap()
 	{
 		if (GameHost.Instance == null) return;
 
@@ -4480,17 +4428,57 @@ public class {mapName} : IMapScript
 
 
 		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+
+		if (!string.IsNullOrEmpty(_currentSourceFolder) && System.IO.Directory.Exists(_currentSourceFolder))
+		{
+			CopyFolderToTempWorkspace(_currentSourceFolder);
+		}
+
 		GameHost.Instance.SaveMapToFile(tempTerrainPath);
 		GameHost.Instance.EditorHasUnsavedChanges = false;
 
-		// Compile, hash assets, attribution, sign map before testing
-		CompileAndSignMapSync(_tempWorkspacePath);
+		// Compile map script DLL (skip attribution/signing during test mode)
+		CompileAndSignMapSync(_tempWorkspacePath, skipAttribution: true);
+
+		// Clean Godot Mono assembly cache to force fresh assembly loading
+		string godotCachePath = System.IO.Path.Combine(ProjectSettings.GlobalizePath("res://"), ".godot", "mono", "temp");
+		try
+		{
+			if (System.IO.Directory.Exists(godotCachePath))
+			{
+				System.IO.Directory.Delete(godotCachePath, true);
+			}
+		}
+		catch (System.Exception ex)
+		{
+			GD.PrintErr($"[ProceedToTestMap] Failed to clean Godot cache: {ex.Message}");
+		}
+
+		// Find compiled map script DLL
+		string binDir = System.IO.Path.Combine(_tempWorkspacePath, "bin");
+		string dllPath = null;
+		if (System.IO.Directory.Exists(binDir))
+		{
+			dllPath = System.IO.Directory.GetFiles(
+				binDir,
+				"CustomMap.dll",
+				System.IO.SearchOption.AllDirectories
+			).FirstOrDefault();
+		}
+		if (System.IO.File.Exists(dllPath))
+		{
+			GameHost.PendingMapScriptPath = dllPath;
+		}
+		else
+		{
+			GD.PrintErr($"[ProceedToTestMap] Could not find CustomMap.dll in {binDir}. Map script will not be loaded.");
+		}
 
 		IsTestMode = true;
 
 		if (LobbyManager.Instance != null)
 		{
-			LobbyManager.Instance.HostSinglePlayerGame(_tempWorkspacePath, "Test Map");
+			LobbyManager.Instance.HostSinglePlayerGame(TempWorkspaceGodotPath, "Test Map");
 		}
 	}
 
@@ -4510,24 +4498,7 @@ public class {mapName} : IMapScript
 		{
 			string tempOut = $"user://temp_swatch_{i}_{System.Guid.NewGuid()}.png";
 			string globalTempOut = ProjectSettings.GlobalizePath(tempOut);
-			string ktxCmd = "ktx";
-			string localPath = System.IO.Path.Combine(Godot.ProjectSettings.GlobalizePath("res://"), "ktx_tools", "bin", "ktx.exe");
-			if (System.IO.File.Exists(localPath))
-			{
-				ktxCmd = localPath;
-			}
-			else
-			{
-				string workspacePath = @"C:\temp\Realm\ktx_tools\v5.0.0-rc1\bin\ktx.exe";
-				if (!System.IO.File.Exists(workspacePath))
-				{
-					workspacePath = @"C:\temp\Realm\ktx_tools\bin\ktx.exe";
-				}
-				if (System.IO.File.Exists(workspacePath))
-				{
-					ktxCmd = workspacePath;
-				}
-			}
+			string ktxCmd = System.IO.Path.GetFullPath(System.IO.Path.Combine(Godot.ProjectSettings.GlobalizePath("res://"), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
 			try
 			{
 				var startInfo = new System.Diagnostics.ProcessStartInfo

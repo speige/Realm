@@ -1,0 +1,11 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+        {
+			"name": "Attach to Realm Game Host",
+			"type": "coreclr",
+			"request": "attach",
+			"processName": "Realm.Godot"
+        }
+    ]
+}

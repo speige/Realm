@@ -80,6 +80,7 @@ public partial class GameHost
 		MapEditorHUD.Instance?.RefreshCoordinateListExternal();
 
 		MapEditorHUD.Instance?.ClearTempWorkspaceExternal();
+		MapEditorHUD.Instance?.GenerateVSCodeFilesExternal();
 		MapEditorHUD.Instance?.ShowFeedbackExternal("Map reset: cleared all entities & terrain");
 		MapEditorHUD.Instance?.RegenerateMinimap();
 	}
@@ -1264,7 +1265,7 @@ public partial class GameHost
 		
 		if (MapEditorHUD.ReturningFromTest)
 		{
-			LoadMapFromFile("user://temp_map_workspace/terrain.json");
+			LoadMapFromFile(MapEditorHUD.TempWorkspaceGodotPath + "/terrain.json");
 
 			EditorGridMode = MapEditorHUD.SavedGridMode;
 			EditorCameraBoundsVisible = MapEditorHUD.SavedCameraBoundsVisible;

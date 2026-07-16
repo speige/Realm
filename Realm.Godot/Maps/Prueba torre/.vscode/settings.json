@@ -1,0 +1,14 @@
+{
+	"editor.formatOnSave": true,
+	"dotnet.preferCSharpExtension": true,
+	"dotnet.server.useOmnisharp": false,
+	"dotnet.projects.enableAutomaticRestore": true,
+	"json.schemas": [
+        {
+			"fileMatch": [
+				"/metadata.json"
+            ],
+			"url": "./.vscode/map_schema.json"
+        }
+    ]
+}

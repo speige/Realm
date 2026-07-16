@@ -1,4 +1,5 @@
 using Arch.Core;
+using DotRecast.Core.Numerics;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Tags;
@@ -441,6 +442,19 @@ internal class MovementAndPathfindingService
 							}
 						}
 					}
+				}
+			}
+
+			if (_hasTerrainState && _currentTerrainState.NavMeshQuery != null)
+			{
+				var snapPos = new RcVec3f(nextPos.X, nextPos.Y, nextPos.Z);
+				_currentTerrainState.NavMeshQuery.FindNearestPoly(snapPos,
+					NavMeshPathfinder.PathfindingExtents, _pathfinder.Filter,
+					out long snapRef, out var snappedPt, out _);
+				if (snapRef != 0)
+				{
+					nextPos.X = snappedPt.X;
+					nextPos.Z = snappedPt.Z;
 				}
 			}
 

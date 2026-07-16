@@ -1,0 +1,92 @@
+{
+  "MapProperties": {
+    "CustomAbilities": [
+      {
+        "AbilityId": "boilingOil",
+        "AbilityType": "target_spell",
+        "Cooldown": 5,
+        "Description": "A new spell effect.",
+        "ManaCost": 5,
+        "Name": "Boiling Oil",
+        "TargetRange": 80
+      }
+    ],
+    "CustomUpgrades": [
+      {
+        "Description": "Increases unit stats.",
+        "Name": "New Upgrade",
+        "UpgradeId": "Upgrade_001"
+      }
+    ],
+    "CustomWeapons": [
+      {
+        "AttackCooldown": 1.5,
+        "AttackType": "melee",
+        "Damage": 10,
+        "Name": "axe",
+        "Range": 8,
+        "WeaponId": "axe"
+      }
+    ]
+  },
+  "base": {
+    "Armor": 10,
+    "ArmorType": "building",
+    "AttackCooldown": 0,
+    "AttackType": "none",
+    "CostGold": 100,
+    "CostStone": 0,
+    "CostWood": 0,
+    "Damage": 0,
+    "Description": "A new custom unit.",
+    "GoldBounty": 10,
+    "MaxHp": 500,
+    "Name": "base",
+    "PopCost": 1,
+    "ProductionTime": 10,
+    "Range": 0,
+    "ScanRadius": 1000,
+    "Speed": 0,
+    "UnitId": "base"
+  },
+  "footman": {
+    "Armor": 0,
+    "ArmorType": "light",
+    "AttackCooldown": 1.5,
+    "AttackType": "melee",
+    "CostGold": 100,
+    "CostStone": 0,
+    "CostWood": 0,
+    "Damage": 10,
+    "Description": "A new custom unit.",
+    "GoldBounty": 100,
+    "MaxHp": 100,
+    "Name": "Footman",
+    "PopCost": 1,
+    "ProductionTime": 10,
+    "Range": 7,
+    "ScanRadius": 20,
+    "Speed": 3,
+    "UnitId": "footman"
+  },
+  "tower": {
+    "Armor": 0,
+    "ArmorType": "light",
+    "AttackCooldown": 1.5,
+    "AttackType": "ranged",
+    "CostGold": 100,
+    "CostStone": 0,
+    "CostWood": 0,
+    "Damage": 15,
+    "Description": "A new custom unit.",
+    "GoldBounty": 10,
+    "MaxHp": 100,
+    "Name": "tower",
+    "PopCost": 1,
+    "ProductionTime": 10,
+    "Range": 80,
+    "ScanRadius": 100,
+    "Speed": 0,
+    "UnitId": "tower"
+  }
+}

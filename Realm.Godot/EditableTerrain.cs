@@ -92,24 +92,7 @@ public partial class EditableTerrain : StaticBody3D
 			System.IO.Directory.CreateDirectory(dir);
 		}
 		
-		string ktxCmd = "ktx";
-		string localPath = System.IO.Path.Combine(Godot.ProjectSettings.GlobalizePath("res://"), "ktx_tools", "bin", "ktx.exe");
-		if (System.IO.File.Exists(localPath))
-		{
-			ktxCmd = localPath;
-		}
-		else
-		{
-			string workspacePath = @"C:\temp\Realm\ktx_tools\v5.0.0-rc1\bin\ktx.exe";
-			if (!System.IO.File.Exists(workspacePath))
-			{
-				workspacePath = @"C:\temp\Realm\ktx_tools\bin\ktx.exe";
-			}
-			if (System.IO.File.Exists(workspacePath))
-			{
-				ktxCmd = workspacePath;
-			}
-		}
+		string ktxCmd = System.IO.Path.GetFullPath(System.IO.Path.Combine(Godot.ProjectSettings.GlobalizePath("res://"), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
 		
 		try
 		{
@@ -221,7 +204,6 @@ public partial class EditableTerrain : StaticBody3D
 	public const int PATHING_DEEP_WATER = 2;
 	public const int PATHING_FLYING = 4;
 	public const int PATHING_GROUND = 8;
-	public const int PATHING_UNPATHABLE = 16;
 	public const int PATHING_BUILDABLE = 32;
 
 	public static int GetDefaultPathingCode(float height, float waterHeight, bool waterEnabled)
@@ -657,25 +639,7 @@ void fragment() {
 
 	private string GetKtxCmdPath()
 	{
-		string ktxCmd = "ktx";
-		string localPath = System.IO.Path.Combine(Godot.ProjectSettings.GlobalizePath("res://"), "ktx_tools", "bin", "ktx.exe");
-		if (System.IO.File.Exists(localPath))
-		{
-			ktxCmd = localPath;
-		}
-		else
-		{
-			string workspacePath = @"C:\temp\Realm\ktx_tools\v5.0.0-rc1\bin\ktx.exe";
-			if (!System.IO.File.Exists(workspacePath))
-			{
-				workspacePath = @"C:\temp\Realm\ktx_tools\bin\ktx.exe";
-			}
-			if (System.IO.File.Exists(workspacePath))
-			{
-				ktxCmd = workspacePath;
-			}
-		}
-		return ktxCmd;
+		return System.IO.Path.GetFullPath(System.IO.Path.Combine(Godot.ProjectSettings.GlobalizePath("res://"), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
 	}
 
 	private (Image AlbedoHeight, Image NormalRoughness) LoadKtx2LayersDynamic(string ktx2Path)
