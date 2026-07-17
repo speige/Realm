@@ -30,8 +30,8 @@ body {
 }
 
 .app-container {
-    display: grid;
-    grid-template-columns: 320px 1fr;
+    display: flex;
+    flex-direction: column;
     height: 100vh;
     width: 100vw;
 }
@@ -41,6 +41,7 @@ body {
     border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
+    min-height: 0;
     height: 100%;
 }
 
@@ -273,7 +274,7 @@ body {
 
 .main-content {
     background-color: var(--bg-primary);
-    height: 100%;
+    min-height: 0;
     display: flex;
     flex-direction: column;
 }
@@ -310,7 +311,8 @@ body {
 .editor-form {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
 }
 
 .form-header {
@@ -890,14 +892,6 @@ textarea:focus {
 }
 
 /* Tab & Global Header Layout */
-.app-container {
-    display: grid;
-    grid-template-rows: 56px 1fr;
-    grid-template-columns: 1fr;
-    height: 100vh;
-    width: 100vw;
-    overflow: hidden;
-}
 
 .global-header {
     display: flex;
@@ -965,8 +959,8 @@ textarea:focus {
 .editor-body {
     display: grid;
     grid-template-columns: 320px 1fr;
-    height: 100%;
-    overflow: hidden;
+    flex: 1;
+    min-height: 0;
 }
 
 /* Hide sidebar for non-unit tabs */
