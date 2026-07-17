@@ -55,15 +55,12 @@ var RealmMapEditorProvider = class _RealmMapEditorProvider {
       enableScripts: true
     };
     webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview);
-    const updateWebview = () => {
-      webviewPanel.webview.postMessage({
-        type: "update",
-        text: document.getText()
-      });
-    };
     const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === document.uri.toString()) {
-        updateWebview();
+        webviewPanel.webview.postMessage({
+          type: "update",
+          text: e.document.getText()
+        });
       }
     });
     webviewPanel.onDidDispose(() => {
@@ -72,10 +69,20 @@ var RealmMapEditorProvider = class _RealmMapEditorProvider {
     webviewPanel.webview.onDidReceiveMessage(async (e) => {
       switch (e.type) {
         case "ready":
-          updateWebview();
+          webviewPanel.webview.postMessage({
+            type: "update",
+            text: document.getText()
+          });
           break;
         case "change":
-          this.updateTextDocument(document, e.text);
+          const applied = await this.updateTextDocument(document, e.text);
+          if (!applied) {
+            console.warn("WorkspaceEdit was not applied, resyncing webview");
+            webviewPanel.webview.postMessage({
+              type: "update",
+              text: document.getText()
+            });
+          }
           break;
         case "browseFile":
           await this.handleBrowseFile(webviewPanel.webview, e.fieldId, e.fieldClass, e.fieldIndex, e.fileTypes, document.uri);
@@ -214,14 +221,27 @@ var RealmMapEditorProvider = class _RealmMapEditorProvider {
     }
     return null;
   }
-  updateTextDocument(document, text) {
+  async updateTextDocument(document, text) {
     const edit = new vscode.WorkspaceEdit();
+    const fullRange = new vscode.Range(
+      document.positionAt(0),
+      document.positionAt(document.getText().length)
+    );
     edit.replace(
       document.uri,
-      new vscode.Range(0, 0, document.lineCount, 0),
+      fullRange,
       text
     );
-    return vscode.workspace.applyEdit(edit);
+    try {
+      const applied = await vscode.workspace.applyEdit(edit);
+      if (!applied) {
+        console.error("updateTextDocument: applyEdit returned false");
+      }
+      return applied;
+    } catch (err) {
+      console.error("updateTextDocument error:", err);
+      return false;
+    }
   }
   getHtmlForWebview(webview) {
     const scriptUri = webview.asWebviewUri(vscode.Uri.file(

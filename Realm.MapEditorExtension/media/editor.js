@@ -424,9 +424,7 @@
 
             deleteBtn.addEventListener('click', e => {
                 e.stopPropagation();
-                if (confirm(`Are you sure you want to delete unit "${name || id}"?`)) {
-                    deleteUnit(id);
-                }
+                showDeleteConfirm(name || id, id);
             });
 
             card.appendChild(header);
@@ -2343,16 +2341,35 @@
         renderCustomItems();
     }
 
+    function showDeleteConfirm(displayName, id) {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;';
+        const dialog = document.createElement('div');
+        dialog.style.cssText = 'background:var(--bg-secondary,#252526);border:1px solid var(--border-color,#3c3c3c);border-radius:8px;padding:24px;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.5);';
+        dialog.innerHTML = '<p style="margin:0 0 16px 0;color:var(--text-primary,#d4d4d4);font-size:14px;">Are you sure you want to delete unit "' + displayName + '"?</p><div style="display:flex;gap:8px;justify-content:flex-end;"><button id="confirm-cancel" style="padding:8px 16px;border:1px solid var(--border-color,#3c3c3c);border-radius:6px;background:transparent;color:var(--text-primary,#d4d4d4);cursor:pointer;font-weight:600;">Cancel</button><button id="confirm-ok" style="padding:8px 16px;border:none;border-radius:6px;background:var(--danger-color,#f48771);color:#fff;cursor:pointer;font-weight:600;">Delete</button></div>';
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        dialog.querySelector('#confirm-ok').addEventListener('click', function () { overlay.remove(); deleteUnit(id); });
+        dialog.querySelector('#confirm-cancel').addEventListener('click', function () { overlay.remove(); });
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+    }
+
     function deleteUnit(id) {
-        pushToUndoStack();
-        cascadeDelete('unit', id);
-        delete units[id];
-        if (selectedUnitId === id) {
-            selectedUnitId = null;
-            showEmptyState();
+        if (isLocked) return;
+        try {
+            pushToUndoStack();
+            cascadeDelete('unit', id);
+            delete units[id];
+            if (selectedUnitId === id) {
+                selectedUnitId = null;
+                showEmptyState();
+            }
+            renderUnitList();
+            saveChanges();
+        } catch (err) {
+            console.error('deleteUnit error:', err);
+            vscode.postMessage({ type: 'ready' });
         }
-        renderUnitList();
-        saveChanges();
     }
 
     addUnitBtn.addEventListener('click', () => {

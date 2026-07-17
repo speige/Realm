@@ -708,7 +708,13 @@ public partial class MapEditorHUD : Control
 		SetupButton(_btnSelectMove, "🖱️ Select / Move", () => TriggerToolSelection(GameHost.EditorTool.SelectMove, _btnSelectMove), 11, "Select and move units, props, or decals");
 
 		_btnDeleteObject = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelObjectsVBox/BtnDeleteObject");
-		SetupButton(_btnDeleteObject, "❌ Erase Object", () => TriggerToolSelection(GameHost.EditorTool.DeleteObject, _btnDeleteObject), 11, "Erase units, props, or decals");
+		SetupButton(_btnDeleteObject, "❌ Erase Object", () =>
+		{
+			if (GodotObject.IsInstanceValid(GameHost.Instance?.SelectedEditorObject))
+				DeleteSelectedObjectAction();
+			else
+				TriggerToolSelection(GameHost.EditorTool.DeleteObject, _btnDeleteObject);
+		}, 11, "Erase units, props, or decals");
 
 		_btnDrawCoordinate = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelCoordinatesVBox/BtnDrawCoordinate");
 		SetupButton(_btnDrawCoordinate, "🗺️ Draw Coordinate", () => TriggerToolSelection(GameHost.EditorTool.DrawCoordinate, _btnDrawCoordinate), 11, "Drag to define a named coordinate box exposed as C# variables");

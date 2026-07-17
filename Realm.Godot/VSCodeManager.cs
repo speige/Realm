@@ -408,7 +408,6 @@ public class VSCodeManager
 
 			var env = await CoreWebView2Environment.CreateAsync(userDataFolder: cachePath);
 			_controller = await env.CreateCoreWebView2ControllerAsync(_childHwnd);
-			_controller.BoundsMode = CoreWebView2BoundsMode.UseRawPixels;
 			_controller.Bounds = new System.Drawing.Rectangle(0, 0, 800, 600);
 			
 			_controller.AcceleratorKeyPressed += (sender, args) =>
@@ -475,7 +474,7 @@ public class VSCodeManager
         }
         if (config['security.workspace.trust.enabled'] === false &&
             config['security.workspace.trust.startupPrompt'] === 'never') {
-            return; // already set
+            return;
         }
         config['security.workspace.trust.enabled'] = false;
         config['security.workspace.trust.startupPrompt'] = 'never';
@@ -587,6 +586,7 @@ public class VSCodeManager
 				_controller.CoreWebView2.Navigate(targetUrl);
 
 				_controller.IsVisible = true;
+				PositionOnScreen();
 				ShowWindow(_childHwnd, SW_SHOWMAXIMIZED);
 			}
 			else
