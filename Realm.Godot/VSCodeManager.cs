@@ -151,6 +151,7 @@ public class VSCodeManager
 	private const uint WM_CLOSE = 0x0010;
 	private const int SW_HIDE = 0;
 	private const int SW_SHOW = 5;
+	private const int SW_SHOWMAXIMIZED = 3;
 
 	private const uint WS_OVERLAPPEDWINDOW = 0x00CF0000;
 	private const uint WS_VISIBLE = 0x10000000;
@@ -407,6 +408,7 @@ public class VSCodeManager
 
 			var env = await CoreWebView2Environment.CreateAsync(userDataFolder: cachePath);
 			_controller = await env.CreateCoreWebView2ControllerAsync(_childHwnd);
+			_controller.BoundsMode = CoreWebView2BoundsMode.UseRawPixels;
 			_controller.Bounds = new System.Drawing.Rectangle(0, 0, 800, 600);
 			
 			_controller.AcceleratorKeyPressed += (sender, args) =>
@@ -585,9 +587,7 @@ public class VSCodeManager
 				_controller.CoreWebView2.Navigate(targetUrl);
 
 				_controller.IsVisible = true;
-				PositionOnScreen();
-				ShowWindow(_childHwnd, SW_SHOW);
-				ShowWindow(_childHwnd, 3);
+				ShowWindow(_childHwnd, SW_SHOWMAXIMIZED);
 			}
 			else
 			{

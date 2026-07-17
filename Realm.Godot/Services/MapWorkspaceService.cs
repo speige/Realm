@@ -39,6 +39,8 @@ public static class MapWorkspaceService
 
 		string settingsJson = @"{
 	""editor.formatOnSave"": true,
+	""editor.scrollbar.vertical"": ""visible"",
+	""editor.scrollbar.horizontal"": ""visible"",
 	""dotnet.preferCSharpExtension"": true,
 	""dotnet.server.useOmnisharp"": false,
 	""dotnet.projects.enableAutomaticRestore"": true,
