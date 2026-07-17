@@ -2112,9 +2112,15 @@ public partial class MapEditorHUD : Control
 		foreach (var file in System.IO.Directory.GetFiles(sourceFolder, "*", System.IO.SearchOption.AllDirectories))
 		{
 			string relativePath = file.Substring(sourceFolder.Length + 1);
+			string[] pathParts = relativePath.Split(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+			if (System.Array.IndexOf(pathParts, ".git") >= 0 ||
+				System.Array.IndexOf(pathParts, ".vs") >= 0 ||
+				System.Array.IndexOf(pathParts, "bin") >= 0 ||
+				System.Array.IndexOf(pathParts, "obj") >= 0)
+				continue;
 			string targetFile = System.IO.Path.Combine(_tempWorkspacePath, relativePath);
 			string targetDir = System.IO.Path.GetDirectoryName(targetFile);
-			if (!System.IO.Directory.Exists(targetDir))
+			if (!string.IsNullOrEmpty(targetDir) && !System.IO.Directory.Exists(targetDir))
 			{
 				System.IO.Directory.CreateDirectory(targetDir);
 			}
@@ -2143,17 +2149,36 @@ public partial class MapEditorHUD : Control
 			GameHost.Instance.EditorHasUnsavedChanges = false;
 		}
 
-		// Compile, hash assets, attribution, sign map before copying to destination
-		CompileAndSignMapSync(_tempWorkspacePath);
+		// Sync latest source code files before compiling
+		if (!string.IsNullOrEmpty(_currentSourceFolder) && System.IO.Directory.Exists(_currentSourceFolder))
+		{
+			foreach (var codeFile in new[] { "MapScript.cs", "Coordinates.cs", "metadata.json" })
+			{
+				string src = System.IO.Path.Combine(_currentSourceFolder, codeFile);
+				if (System.IO.File.Exists(src))
+				{
+					System.IO.File.Copy(src, System.IO.Path.Combine(_tempWorkspacePath, codeFile), true);
+				}
+			}
+		}
+
+		// Compile (skip attribution — that's only for the Publish button)
+		CompileAndSignMapSync(_tempWorkspacePath, skipAttribution: true);
 
 		_lastTerrainSyncTime = GetMaxTerrainWriteTime(tempTerrainPath);
-		
+
 		foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories))
 		{
 			string relativePath = file.Substring(_tempWorkspacePath.Length + 1);
+			string[] pathParts = relativePath.Split(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+			if (System.Array.IndexOf(pathParts, ".git") >= 0 ||
+				System.Array.IndexOf(pathParts, ".vs") >= 0 ||
+				System.Array.IndexOf(pathParts, "bin") >= 0 ||
+				System.Array.IndexOf(pathParts, "obj") >= 0)
+				continue;
 			string targetFile = System.IO.Path.Combine(targetFolder, relativePath);
 			string targetDir = System.IO.Path.GetDirectoryName(targetFile);
-			if (!System.IO.Directory.Exists(targetDir))
+			if (!string.IsNullOrEmpty(targetDir) && !System.IO.Directory.Exists(targetDir))
 			{
 				System.IO.Directory.CreateDirectory(targetDir);
 			}
