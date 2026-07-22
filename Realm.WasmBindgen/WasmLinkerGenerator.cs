@@ -1,0 +1,2031 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Text;
+
+namespace Realm.WasmBindgen;
+
+[Generator]
+public class WasmLinkerGenerator : IIncrementalGenerator
+{
+    private enum PrmKind
+    {
+        DirectInt,
+        DirectFloat,
+        BoolParam,
+        StringParam,
+        Vector3Param,
+        Vector3NullableParam,
+        EntityParam,
+        Unsupported
+    }
+
+    private enum RetKind
+    {
+        Void,
+        DirectInt,
+        DirectFloat,
+        BoolReturn,
+        StringReturn,
+        EntityReturn,
+        EntityNullableReturn,
+        EntityListReturn,
+        StringListReturn,
+        Unsupported
+    }
+
+    private struct ParamInfo
+    {
+        public string Name { get; }
+        public PrmKind Kind { get; }
+        public ITypeSymbol Type { get; }
+
+        public ParamInfo(string name, PrmKind kind, ITypeSymbol type)
+        {
+            Name = name;
+            Kind = kind;
+            Type = type;
+        }
+    }
+
+    public void Initialize(IncrementalGeneratorInitializationContext context)
+    {
+        var compilationProvider = context.CompilationProvider;
+
+        var witFileProvider = context.AdditionalTextsProvider
+            .Where(file => System.IO.Path.GetFileName(file.Path).Equals("game.wit", System.StringComparison.OrdinalIgnoreCase))
+            .Select((file, cancellationToken) => file.GetText(cancellationToken)?.ToString() ?? "");
+
+        var combined = compilationProvider.Combine(witFileProvider.Collect());
+
+        context.RegisterSourceOutput(combined, Execute);
+    }
+
+    private static void Execute(SourceProductionContext context, (Compilation Left, System.Collections.Immutable.ImmutableArray<string> Right) input)
+    {
+        var compilation = input.Left;
+        var gameApiSymbol = compilation.GetTypeByMetadataName("Realm.MapAPI.IGameAPI");
+        if (gameApiSymbol == null)
+            return;
+
+        var entityInterfaces = DiscoverEntityInterfaces(gameApiSymbol);
+
+        string staticWit = input.Right.FirstOrDefault() ?? "";
+        string manualFunctions = "";
+        if (!string.IsNullOrEmpty(staticWit))
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(staticWit, @"interface\s+game-api\s*\{(.*?)\}", System.Text.RegularExpressions.RegexOptions.Singleline);
+            if (match.Success)
+            {
+                manualFunctions = match.Groups[1].Value.Trim();
+            }
+        }
+
+        // Always write the game.g.wit to the MapAPI folder during compilation
+        try
+        {
+            string witContent = GenerateWitContent(gameApiSymbol, entityInterfaces, manualFunctions);
+            string mapApiWitPath = @"D:\git\Realm\Realm\Realm.MapAPI\wit\game.g.wit";
+            if (System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(mapApiWitPath)))
+            {
+                System.IO.File.WriteAllText(mapApiWitPath, witContent, Encoding.UTF8);
+            }
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                System.IO.File.WriteAllText(@"D:\git\Realm\generator_error.txt", ex.ToString());
+            }
+            catch {}
+        }
+
+        string assemblyName = compilation.AssemblyName ?? "";
+        if (assemblyName == "Realm.Godot")
+        {
+            context.AddSource("WasmRuntime.g.cs",
+                SourceText.From(GenerateHostBindings(gameApiSymbol, entityInterfaces), Encoding.UTF8));
+
+            context.AddSource("WasmRuntime.AutoEvents.g.cs",
+                SourceText.From(GenerateAutoEvents(gameApiSymbol), Encoding.UTF8));
+
+            context.AddSource("GeneratedWit.g.cs",
+                SourceText.From(GenerateWitConstant(gameApiSymbol, entityInterfaces, manualFunctions), Encoding.UTF8));
+        }
+        else if (assemblyName == "Realm.MapAPI")
+        {
+            context.AddSource("WasmWrappers.g.cs",
+                SourceText.From(GenerateWasmWrappers(gameApiSymbol, entityInterfaces), Encoding.UTF8));
+        }
+    }
+
+    // ── Helper Discovery and Symbol Checks ──────────────────────────────────────
+
+    private static HashSet<INamedTypeSymbol> DiscoverEntityInterfaces(INamedTypeSymbol gameApiSymbol)
+    {
+        var discovered = new HashSet<INamedTypeSymbol>(SymbolComparer.Instance);
+        var queue = new Queue<INamedTypeSymbol>();
+        queue.Enqueue(gameApiSymbol);
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            foreach (var member in current.GetMembers())
+            {
+                ITypeSymbol? type = null;
+                if (member is IPropertySymbol prop)
+                {
+                    type = prop.Type;
+                }
+                else if (member is IMethodSymbol method)
+                {
+                    foreach (var p in method.Parameters)
+                    {
+                        ProcessType(p.Type, discovered, queue);
+                    }
+                    type = method.ReturnType;
+                }
+
+                if (type != null)
+                {
+                    ProcessType(type, discovered, queue);
+                }
+            }
+        }
+
+        discovered.Remove(gameApiSymbol);
+        return discovered;
+    }
+
+    private static void ProcessType(ITypeSymbol type, HashSet<INamedTypeSymbol> discovered, Queue<INamedTypeSymbol> queue)
+    {
+        if (IsCollection(type, out var elemType))
+        {
+            type = elemType;
+        }
+
+        if (IsEntityInterface(type, out var unwrapped))
+        {
+            if (unwrapped is INamedTypeSymbol named && !discovered.Contains(named))
+            {
+                discovered.Add(named);
+                queue.Enqueue(named);
+            }
+        }
+    }
+
+    private static bool IsEntityInterface(ITypeSymbol type, out ITypeSymbol unwrappedType)
+    {
+        unwrappedType = type;
+        if (type is INamedTypeSymbol named && named.IsGenericType && named.ConstructedFrom.SpecialType == SpecialType.System_Nullable_T)
+        {
+            unwrappedType = named.TypeArguments[0];
+        }
+        else if (type.NullableAnnotation == NullableAnnotation.Annotated)
+        {
+            unwrappedType = type.WithNullableAnnotation(NullableAnnotation.NotAnnotated);
+        }
+
+        if (unwrappedType.TypeKind != TypeKind.Interface)
+            return false;
+
+        string display = unwrappedType.ToDisplayString();
+        if (!display.StartsWith("Realm.MapAPI."))
+            return false;
+
+        if (display == "Realm.MapAPI.IGameAPI" || display == "Realm.MapAPI.IMapScript")
+            return false;
+
+        return true;
+    }
+
+    private static bool IsCollection(ITypeSymbol type, out ITypeSymbol elementType)
+    {
+        elementType = null!;
+        if (type.SpecialType == SpecialType.System_String)
+            return false;
+
+        if (type is IArrayTypeSymbol arrayType)
+        {
+            elementType = arrayType.ElementType;
+            return true;
+        }
+
+        if (type is INamedTypeSymbol namedType)
+        {
+            if (namedType.IsGenericType && namedType.ConstructedFrom.ToDisplayString() == "System.Collections.Generic.IEnumerable<T>")
+            {
+                elementType = namedType.TypeArguments[0];
+                return true;
+            }
+
+            foreach (var iface in namedType.AllInterfaces)
+            {
+                if (iface.IsGenericType && iface.ConstructedFrom.ToDisplayString() == "System.Collections.Generic.IEnumerable<T>")
+                {
+                    elementType = iface.TypeArguments[0];
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static string CleanInterfaceName(ITypeSymbol type)
+    {
+        string name = type.Name;
+        if (name.StartsWith("I") && name.Length > 1 && char.IsUpper(name[1]))
+            return name.Substring(1);
+        return name;
+    }
+
+    private static string FindCollectionMember(INamedTypeSymbol gameApiSymbol, ITypeSymbol entityType)
+    {
+        foreach (var member in gameApiSymbol.GetMembers())
+        {
+            ITypeSymbol? returnType = null;
+            if (member is IPropertySymbol prop)
+            {
+                returnType = prop.Type;
+            }
+            else if (member is IMethodSymbol method && method.Parameters.Length == 0 && method.MethodKind == MethodKind.Ordinary)
+            {
+                returnType = method.ReturnType;
+            }
+
+            if (returnType != null && IsCollection(returnType, out var elemType) && SymbolEqualityComparer.Default.Equals(elemType, entityType))
+            {
+                return member is IMethodSymbol ? member.Name + "()" : member.Name;
+            }
+        }
+        throw new InvalidOperationException($"Could not find collection member on IGameAPI returning a collection of {entityType.ToDisplayString()}");
+    }
+
+    private static string FindResolverMember(INamedTypeSymbol gameApiSymbol, ITypeSymbol entityType)
+    {
+        foreach (var member in gameApiSymbol.GetMembers())
+        {
+            if (member is IMethodSymbol method && method.Parameters.Length == 1 && method.Parameters[0].Type.SpecialType == SpecialType.System_Int32 && method.MethodKind == MethodKind.Ordinary)
+            {
+                ITypeSymbol ret = method.ReturnType;
+                if (IsEntityInterface(ret, out var unwrapped) && SymbolEqualityComparer.Default.Equals(unwrapped, entityType))
+                {
+                    return member.Name;
+                }
+            }
+        }
+        throw new InvalidOperationException($"Could not find resolver method on IGameAPI returning {entityType.ToDisplayString()} taking a single int parameter");
+    }
+
+    private class SymbolComparer : IEqualityComparer<INamedTypeSymbol>
+    {
+        public static readonly SymbolComparer Instance = new SymbolComparer();
+        public bool Equals(INamedTypeSymbol x, INamedTypeSymbol y) => SymbolEqualityComparer.Default.Equals(x, y);
+        public int GetHashCode(INamedTypeSymbol obj) => obj.ToDisplayString().GetHashCode();
+    }
+
+    // ── Output 1: Host-side DefineFunction registrations ────────────────────────
+
+    private static string GenerateHostBindings(INamedTypeSymbol gameApiSymbol, HashSet<INamedTypeSymbol> entityInterfaces)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("// <auto-generated/>");
+        sb.AppendLine("#nullable enable");
+        sb.AppendLine("using System;");
+        sb.AppendLine("using System.Linq;");
+        sb.AppendLine("using Wasmtime;");
+        sb.AppendLine("using Realm.MapAPI;");
+        sb.AppendLine();
+        sb.AppendLine("namespace Realm.Godot;");
+        sb.AppendLine();
+        sb.AppendLine("partial class WasmRuntime");
+        sb.AppendLine("{");
+        sb.AppendLine("    private partial void InitializeAutoBindings()");
+        sb.AppendLine("    {");
+        sb.AppendLine("        const string mod = \"custom:game/game-api\";");
+        sb.AppendLine();
+
+        var propertyAccessorMethods = CollectPropertyAccessorNames(gameApiSymbol);
+        var definedFunctions = new HashSet<string>();
+        bool lastWasMultiLine = false;
+
+        // Auto-generate IGameAPI bindings
+        foreach (var member in gameApiSymbol.GetMembers())
+        {
+            if (member is IEventSymbol)
+                continue;
+
+            if (!member.IsAbstract)
+                continue;
+
+            if (member is IPropertySymbol property)
+                EmitPropertyBindings(sb, property, ref lastWasMultiLine, "((IGameAPI?)GameHost.Instance)", definedFunctions);
+            else if (member is IMethodSymbol method)
+            {
+                if (method.MethodKind != MethodKind.Ordinary)
+                    continue;
+                if (propertyAccessorMethods.Contains(method.Name))
+                    continue;
+                EmitMethodBinding(sb, method, ref lastWasMultiLine, "((IGameAPI?)GameHost.Instance)", gameApiSymbol, definedFunctions);
+            }
+        }
+
+        // Auto-generate discovered entity interface bindings
+        foreach (var entityIface in entityInterfaces)
+        {
+            string tKebab = ToKebabCase(CleanInterfaceName(entityIface));
+            bool hasUniqueId = entityIface.GetMembers().Any(m => m is IPropertySymbol p && p.Name == "UniqueId");
+
+            if (!hasUniqueId)
+            {
+                string countName = $"{tKebab}-count";
+                if (definedFunctions.Add(countName))
+                {
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{countName}\", () => ((IGameAPI?)GameHost.Instance)?.{FindCollectionMember(gameApiSymbol, entityIface)}?.Count() ?? 0);");
+                }
+            }
+
+            var accessorMethods = CollectPropertyAccessorNames(entityIface);
+            foreach (var member in entityIface.GetMembers())
+            {
+                if (!member.IsAbstract)
+                    continue;
+
+                if (member is IPropertySymbol property)
+                {
+                    if (property.Name == "UniqueId") continue;
+                    EmitEntityPropertyBindings(sb, property, tKebab, entityIface, gameApiSymbol, ref lastWasMultiLine, definedFunctions);
+                }
+                else if (member is IMethodSymbol method)
+                {
+                    if (method.MethodKind != MethodKind.Ordinary) continue;
+                    if (accessorMethods.Contains(method.Name)) continue;
+                    EmitEntityMethodBinding(sb, method, tKebab, entityIface, gameApiSymbol, ref lastWasMultiLine, definedFunctions);
+                }
+            }
+        }
+
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
+    private static void EmitEntityPropertyBindings(StringBuilder sb, IPropertySymbol property, string tKebab, INamedTypeSymbol entitySymbol, INamedTypeSymbol gameApiSymbol, ref bool lastWasMultiLine, HashSet<string> definedFunctions)
+    {
+        var retKind = ClassifyReturn(property.Type);
+        if (retKind == RetKind.Unsupported) return;
+
+        string witBase = tKebab + "-" + ToKebabCase(property.Name);
+        string resolver = FindResolverMember(gameApiSymbol, entitySymbol);
+
+        if (property.Type.ToDisplayString() == "System.Numerics.Vector3")
+        {
+            if (definedFunctions.Add($"{witBase}-x"))
+                sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}-x\", (int id) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); return u != null ? u.{property.Name}.X : 0f; }});");
+            if (definedFunctions.Add($"{witBase}-y"))
+                sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}-y\", (int id) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); return u != null ? u.{property.Name}.Y : 0f; }});");
+            if (definedFunctions.Add($"{witBase}-z"))
+                sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}-z\", (int id) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); return u != null ? u.{property.Name}.Z : 0f; }});");
+        }
+        else
+        {
+            string expr = $"((IGameAPI?)GameHost.Instance)?.{resolver}(id)?.{property.Name}";
+            string mapped;
+            if (retKind == RetKind.EntityReturn || retKind == RetKind.EntityNullableReturn)
+            {
+                IsEntityInterface(property.Type, out var unwrapped);
+                bool targetHasId = unwrapped.GetMembers().Any(m => m is IPropertySymbol p && p.Name == "UniqueId");
+                if (targetHasId)
+                {
+                    mapped = $"{expr}?.UniqueId ?? 0";
+                }
+                else
+                {
+                    string colName = FindCollectionMember(gameApiSymbol, unwrapped);
+                    mapped = $"({expr} != null) ? (((IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf({expr}) ?? -1) : -1";
+                }
+            }
+            else
+            {
+                mapped = retKind switch
+                {
+                    RetKind.BoolReturn => $"({expr} ?? false) ? 1 : 0",
+                    RetKind.DirectFloat => $"{expr} ?? 0f",
+                    RetKind.DirectInt => $"{expr} ?? 0",
+                    RetKind.StringReturn => $"{expr} ?? \"\"",
+                    _ => "0"
+                };
+            }
+
+            if (definedFunctions.Add(witBase))
+            {
+                if (lastWasMultiLine) sb.AppendLine();
+                if (retKind == RetKind.StringReturn)
+                {
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}\", (Caller caller, int id, int retArea) => {{ string s = {mapped}; WriteGuestString(caller, retArea, s); }});");
+                }
+                else
+                {
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}\", (int id) => {mapped});");
+                }
+                lastWasMultiLine = false;
+            }
+
+            if (property.SetMethod != null)
+            {
+                string setWitBase = "set-" + witBase;
+                if (definedFunctions.Add(setWitBase))
+                {
+                    if (property.Type.SpecialType == SpecialType.System_Boolean)
+                        sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val != 0; }});");
+                    else if (property.Type.SpecialType == SpecialType.System_Single)
+                        sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, float val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val; }});");
+                    else if (property.Type.SpecialType == SpecialType.System_Int32)
+                        sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val; }});");
+                    else if (property.Type.SpecialType == SpecialType.System_String)
+                        sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (Caller caller, int id, int valPtr, int valLen) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = ReadGuestString(caller, valPtr, valLen); }});");
+                    else if (IsEntityInterface(property.Type, out var unwrapped))
+                    {
+                        string resolverR = FindResolverMember(gameApiSymbol, unwrapped);
+                        sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = ((IGameAPI?)GameHost.Instance)?.{resolverR}(val); }});");
+                    }
+                }
+            }
+        }
+    }
+
+    private static void EmitEntityMethodBinding(StringBuilder sb, IMethodSymbol method, string tKebab, INamedTypeSymbol entitySymbol, INamedTypeSymbol gameApiSymbol, ref bool lastWasMultiLine, HashSet<string> definedFunctions)
+    {
+        var retKind = ClassifyReturn(method.ReturnType);
+        if (retKind == RetKind.Unsupported && method.ReturnType.ToDisplayString() != "System.Numerics.Vector3" && method.ReturnType.SpecialType != SpecialType.System_Void) return;
+        if (retKind == RetKind.EntityListReturn) return;
+
+        string witName = tKebab + "-" + ToKebabCase(method.Name);
+        if (!definedFunctions.Add(witName)) return;
+        string resolver = FindResolverMember(gameApiSymbol, entitySymbol);
+
+        if (retKind == RetKind.StringListReturn)
+        {
+            sb.AppendLine($"        _linker.DefineFunction(mod, \"{witName}-count\", (int id) =>");
+            sb.AppendLine("        {");
+            sb.AppendLine($"            var target = ((IGameAPI?)GameHost.Instance)?.{resolver}(id);");
+            sb.AppendLine($"            return target?.{method.Name}().Count() ?? 0;");
+            sb.AppendLine("        });");
+
+            sb.AppendLine($"        _linker.DefineFunction(mod, \"{witName}-get\", (Caller caller, int id, int index, int retArea) =>");
+            sb.AppendLine("        {");
+            sb.AppendLine($"            var target = ((IGameAPI?)GameHost.Instance)?.{resolver}(id);");
+            sb.AppendLine($"            string s = target?.{method.Name}().ElementAtOrDefault(index) ?? \"\";");
+            sb.AppendLine("            WriteGuestString(caller, retArea, s);");
+            sb.AppendLine("        });");
+            lastWasMultiLine = true;
+            return;
+        }
+
+        var paramInfos = new List<ParamInfo>();
+        foreach (var param in method.Parameters)
+        {
+            var kind = ClassifyParam(param.Type);
+            if (kind == PrmKind.Unsupported) return;
+            paramInfos.Add(new ParamInfo(param.Name, kind, param.Type));
+        }
+
+        bool hasStringParam = method.Parameters.Any(p => p.Type.SpecialType == SpecialType.System_String);
+        bool hasVector3Param = method.Parameters.Any(p => p.Type.ToDisplayString() == "System.Numerics.Vector3");
+        bool hasVector3NullableParam = method.Parameters.Any(p => IsNullableVector3(p.Type));
+        bool hasUnitParam = method.Parameters.Any(p => IsEntityInterface(p.Type, out _));
+        bool needsRetArea = retKind == RetKind.StringReturn;
+        bool needsCaller = hasStringParam || needsRetArea;
+
+        var lambdaParams = new List<string>();
+        if (needsCaller) lambdaParams.Add("Caller caller");
+        lambdaParams.Add("int id");
+        foreach (var p in paramInfos)
+        {
+            switch (p.Kind)
+            {
+                case PrmKind.StringParam: lambdaParams.Add($"int {p.Name}Ptr"); lambdaParams.Add($"int {p.Name}Len"); break;
+                case PrmKind.DirectFloat: lambdaParams.Add($"float {p.Name}"); break;
+                case PrmKind.DirectInt:
+                case PrmKind.BoolParam: lambdaParams.Add($"int {p.Name}"); break;
+                case PrmKind.EntityParam: lambdaParams.Add($"int {p.Name}Id"); break;
+                case PrmKind.Vector3Param: lambdaParams.Add($"float {p.Name}X"); lambdaParams.Add($"float {p.Name}Y"); lambdaParams.Add($"float {p.Name}Z"); break;
+                case PrmKind.Vector3NullableParam: lambdaParams.Add($"float {p.Name}R"); lambdaParams.Add($"float {p.Name}G"); lambdaParams.Add($"float {p.Name}B"); lambdaParams.Add($"int {p.Name}HasColor"); break;
+            }
+        }
+        if (needsRetArea) lambdaParams.Add("int retArea");
+
+        if (lastWasMultiLine) sb.AppendLine();
+        sb.AppendLine($"        _linker.DefineFunction(mod, \"{witName}\", ({string.Join(", ", lambdaParams)}) =>");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            var hostTarget = ((IGameAPI?)GameHost.Instance)?.{resolver}(id);");
+        sb.AppendLine("            if (hostTarget != null)");
+        sb.AppendLine("            {");
+
+        foreach (var p in paramInfos)
+            if (p.Kind == PrmKind.StringParam)
+                sb.AppendLine($"                string {p.Name} = ReadGuestString(caller, {p.Name}Ptr, {p.Name}Len);");
+        foreach (var p in paramInfos)
+            if (p.Kind == PrmKind.Vector3Param)
+            {
+                sb.AppendLine($"                var {p.Name} = new System.Numerics.Vector3({p.Name}X, {p.Name}Y, {p.Name}Z);");
+            }
+        foreach (var p in paramInfos)
+            if (p.Kind == PrmKind.EntityParam)
+            {
+                IsEntityInterface(p.Type, out var unwrapped);
+                string res = FindResolverMember(gameApiSymbol, unwrapped);
+                sb.AppendLine($"                var {p.Name} = ((IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
+            }
+
+        var callArgs = new List<string>();
+        foreach (var p in method.Parameters)
+        {
+            if (p.Type.ToDisplayString() == "System.Numerics.Vector3")
+                callArgs.Add(p.Name);
+            else if (p.Type.SpecialType == SpecialType.System_Boolean)
+                callArgs.Add($"{p.Name} != 0");
+            else
+                callArgs.Add(p.Name);
+        }
+
+        string callExpr = $"hostTarget.{method.Name}({string.Join(", ", callArgs)})";
+
+        if (method.ReturnType.SpecialType == SpecialType.System_Void)
+        {
+            sb.AppendLine($"                {callExpr};");
+        }
+        else if (retKind == RetKind.StringReturn)
+        {
+            sb.AppendLine($"                string s = {callExpr} ?? \"\";");
+            sb.AppendLine("                WriteGuestString(caller, retArea, s);");
+        }
+        else
+        {
+            string exprMapped;
+            if (retKind == RetKind.EntityReturn || retKind == RetKind.EntityNullableReturn)
+            {
+                IsEntityInterface(method.ReturnType, out var unwrapped);
+                bool targetHasId = unwrapped.GetMembers().Any(m => m is IPropertySymbol p && p.Name == "UniqueId");
+                if (targetHasId)
+                    exprMapped = $"({callExpr})?.UniqueId ?? 0";
+                else
+                {
+                    string colName = FindCollectionMember(gameApiSymbol, unwrapped);
+                    exprMapped = $"({callExpr} != null) ? (((IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf({callExpr}) ?? -1) : -1";
+                }
+            }
+            else
+            {
+                exprMapped = retKind switch
+                {
+                    RetKind.BoolReturn => $"({callExpr}) ? 1 : 0",
+                    _ => callExpr
+                };
+            }
+            sb.AppendLine($"                return {exprMapped};");
+        }
+
+        sb.AppendLine("            }");
+        if (method.ReturnType.SpecialType != SpecialType.System_Void && !needsRetArea)
+        {
+            sb.AppendLine($"            return { (retKind == RetKind.DirectFloat ? "0f" : "0") };");
+        }
+        sb.AppendLine("        });");
+        lastWasMultiLine = true;
+    }
+
+    private static void EmitPropertyBindings(StringBuilder sb, IPropertySymbol property, ref bool lastWasMultiLine, string targetInstance, HashSet<string> definedFunctions)
+    {
+        var retKind = ClassifyReturn(property.Type);
+        if (retKind == RetKind.Unsupported)
+            return;
+
+        string witBase = ToKebabCase(property.Name);
+        string? witType = RetKindToWit(retKind);
+        if (witType == null)
+            return;
+
+        if (property.GetMethod != null)
+        {
+            string getWitBase = $"get-{witBase}";
+            if (definedFunctions.Add(getWitBase))
+            {
+                if (lastWasMultiLine) sb.AppendLine();
+                string expr = BuildPropertyGetterExpression(property.Name, retKind, targetInstance);
+                if (retKind == RetKind.StringReturn)
+                {
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"get-{witBase}\", (Caller caller, int retArea) => {{ string s = {expr}; WriteGuestString(caller, retArea, s); }});");
+                }
+                else
+                {
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"get-{witBase}\", () => {expr});");
+                }
+                lastWasMultiLine = false;
+            }
+        }
+
+        if (property.SetMethod != null)
+        {
+            string setWitBase = $"set-{witBase}";
+            if (definedFunctions.Add(setWitBase))
+            {
+                if (property.Type.SpecialType == SpecialType.System_Boolean)
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int val) => {{ if ({targetInstance} != null) {targetInstance}.{property.Name} = val != 0; }});");
+                else if (property.Type.SpecialType == SpecialType.System_Single)
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (float val) => {{ if ({targetInstance} != null) {targetInstance}.{property.Name} = val; }});");
+                else if (property.Type.SpecialType == SpecialType.System_Int32)
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int val) => {{ if ({targetInstance} != null) {targetInstance}.{property.Name} = val; }});");
+                else if (property.Type.SpecialType == SpecialType.System_String)
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (Caller caller, int valPtr, int valLen) => {{ if ({targetInstance} != null) {targetInstance}.{property.Name} = ReadGuestString(caller, valPtr, valLen); }});");
+            }
+        }
+    }
+
+    private static string BuildPropertyGetterExpression(string propertyName, RetKind retKind, string targetInstance)
+    {
+        return retKind switch
+        {
+            RetKind.DirectFloat => $"{targetInstance}?.{propertyName} ?? 0f",
+            RetKind.DirectInt => $"{targetInstance}?.{propertyName} ?? 0",
+            RetKind.BoolReturn => $"({targetInstance}?.{propertyName} ?? false) ? 1 : 0",
+            RetKind.StringReturn => $"{targetInstance}?.{propertyName} ?? \"\"",
+            _ => "0"
+        };
+    }
+
+    private static void EmitMethodBinding(StringBuilder sb, IMethodSymbol method, ref bool lastWasMultiLine, string targetInstance, INamedTypeSymbol gameApiSymbol, HashSet<string> definedFunctions)
+    {
+        foreach (var param in method.Parameters)
+        {
+            if (param.RefKind != RefKind.None)
+                return;
+        }
+
+        var paramInfos = new List<ParamInfo>();
+        foreach (var param in method.Parameters)
+        {
+            var kind = ClassifyParam(param.Type);
+            if (kind == PrmKind.Unsupported)
+                return;
+            paramInfos.Add(new ParamInfo(param.Name, kind, param.Type));
+        }
+
+        var retKind = ClassifyReturn(method.ReturnType);
+        bool isVector3Ret = method.ReturnType.ToDisplayString() == "System.Numerics.Vector3";
+        if (retKind == RetKind.Unsupported && !isVector3Ret)
+            return;
+
+        var witName = ToKebabCase(method.Name);
+        if (!definedFunctions.Add(witName)) return;
+
+        if (retKind == RetKind.StringListReturn)
+        {
+            var lambdaParamsCount = BuildLambdaParams(paramInfos, paramInfos.Exists(p => p.Kind == PrmKind.StringParam), false);
+            sb.AppendLine($"        _linker.DefineFunction(mod, \"{witName}-count\", ({lambdaParamsCount}) =>");
+            sb.AppendLine("        {");
+            foreach (var p in paramInfos)
+                if (p.Kind == PrmKind.StringParam)
+                    sb.AppendLine($"            string {p.Name} = ReadGuestString(caller, {p.Name}Ptr, {p.Name}Len);");
+            foreach (var p in paramInfos)
+                if (p.Kind == PrmKind.Vector3Param)
+                    sb.AppendLine($"            var {p.Name} = new System.Numerics.Vector3({p.Name}X, {p.Name}Y, {p.Name}Z);");
+            foreach (var p in paramInfos)
+                if (p.Kind == PrmKind.EntityParam)
+                {
+                    IsEntityInterface(p.Type, out var unwrapped);
+                    string res = FindResolverMember(gameApiSymbol, unwrapped);
+                    sb.AppendLine($"            var {p.Name} = ((IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
+                }
+            
+            string callExprCount = BuildCallExpressionFull(method, paramInfos, targetInstance);
+            sb.AppendLine($"            return {callExprCount}?.Count() ?? 0;");
+            sb.AppendLine("        });");
+
+            var paramInfosGet = new List<ParamInfo>(paramInfos);
+            paramInfosGet.Add(new ParamInfo("index", PrmKind.DirectInt, gameApiSymbol));
+            var lambdaParamsGet = BuildLambdaParams(paramInfosGet, needsCaller: true, needsRetArea: true);
+            
+            sb.AppendLine($"        _linker.DefineFunction(mod, \"{witName}-get\", ({lambdaParamsGet}) =>");
+            sb.AppendLine("        {");
+            foreach (var p in paramInfos)
+                if (p.Kind == PrmKind.StringParam)
+                    sb.AppendLine($"            string {p.Name} = ReadGuestString(caller, {p.Name}Ptr, {p.Name}Len);");
+            foreach (var p in paramInfos)
+                if (p.Kind == PrmKind.Vector3Param)
+                    sb.AppendLine($"            var {p.Name} = new System.Numerics.Vector3({p.Name}X, {p.Name}Y, {p.Name}Z);");
+            foreach (var p in paramInfos)
+                if (p.Kind == PrmKind.EntityParam)
+                {
+                    IsEntityInterface(p.Type, out var unwrapped);
+                    string res = FindResolverMember(gameApiSymbol, unwrapped);
+                    sb.AppendLine($"            var {p.Name} = ((IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
+                }
+            
+            string callExprGet = BuildCallExpressionFull(method, paramInfos, targetInstance);
+            sb.AppendLine($"            string s = {callExprGet}?.ElementAtOrDefault(index) ?? \"\";");
+            sb.AppendLine("            WriteGuestString(caller, retArea, s);");
+            sb.AppendLine("        });");
+            
+            lastWasMultiLine = true;
+            return;
+        }
+
+        bool hasStringParam = method.Parameters.Any(p => p.Type.SpecialType == SpecialType.System_String);
+        bool hasVector3Param = method.Parameters.Any(p => p.Type.ToDisplayString() == "System.Numerics.Vector3");
+        bool hasVector3NullableParam = method.Parameters.Any(p => IsNullableVector3(p.Type));
+        bool hasUnitParam = method.Parameters.Any(p => IsEntityInterface(p.Type, out _));
+        bool needsRetArea = !isVector3Ret && (retKind == RetKind.StringReturn || retKind == RetKind.EntityListReturn);
+        bool needsCaller = hasStringParam || needsRetArea;
+
+        bool useExpressionBody = !isVector3Ret && !hasStringParam && !hasVector3Param && !hasVector3NullableParam && !hasUnitParam && !needsRetArea && retKind != RetKind.EntityReturn && retKind != RetKind.EntityNullableReturn;
+
+        var lambdaParams = BuildLambdaParams(paramInfos, needsCaller, needsRetArea);
+
+        if (useExpressionBody)
+        {
+            string expr = BuildSimpleExpression(method, paramInfos, retKind, targetInstance, gameApiSymbol);
+            if (lastWasMultiLine)
+                sb.AppendLine();
+            sb.AppendLine($"        _linker.DefineFunction(mod, \"{witName}\", ({lambdaParams}) => {expr});");
+            lastWasWasMultiLine(ref lastWasMultiLine, false);
+        }
+        else
+        {
+            if (lastWasMultiLine)
+                sb.AppendLine();
+
+            if (isVector3Ret)
+            {
+                EmitVector3AxisBinding(sb, witName, "x", lambdaParams, paramInfos, method, targetInstance, gameApiSymbol);
+                EmitVector3AxisBinding(sb, witName, "y", lambdaParams, paramInfos, method, targetInstance, gameApiSymbol);
+                EmitVector3AxisBinding(sb, witName, "z", lambdaParams, paramInfos, method, targetInstance, gameApiSymbol);
+                lastWasWasMultiLine(ref lastWasMultiLine, true);
+            }
+            else
+            {
+                sb.AppendLine($"        _linker.DefineFunction(mod, \"{witName}\", ({lambdaParams}) =>");
+                sb.AppendLine("        {");
+                EmitBlockBody(sb, method, paramInfos, retKind, targetInstance, gameApiSymbol);
+                sb.AppendLine("        });");
+                sb.AppendLine();
+                lastWasWasMultiLine(ref lastWasMultiLine, true);
+            }
+        }
+    }
+
+    private static void EmitVector3AxisBinding(StringBuilder sb, string witName, string axis, string lambdaParams, List<ParamInfo> paramInfos, IMethodSymbol method, string targetInstance, INamedTypeSymbol gameApiSymbol)
+    {
+        sb.AppendLine($"        _linker.DefineFunction(mod, \"{witName}-{axis}\", ({lambdaParams}) =>");
+        sb.AppendLine("        {");
+        foreach (var p in paramInfos)
+            if (p.Kind == PrmKind.StringParam)
+                sb.AppendLine($"            string {p.Name} = ReadGuestString(caller, {p.Name}Ptr, {p.Name}Len);");
+        foreach (var p in paramInfos)
+            if (p.Kind == PrmKind.Vector3Param)
+                sb.AppendLine($"            var {p.Name} = new System.Numerics.Vector3({p.Name}X, {p.Name}Y, {p.Name}Z);");
+        foreach (var p in paramInfos)
+            if (p.Kind == PrmKind.EntityParam)
+            {
+                IsEntityInterface(p.Type, out var unwrapped);
+                string res = FindResolverMember(gameApiSymbol, unwrapped);
+                sb.AppendLine($"            var {p.Name} = ((IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
+            }
+
+        var entityParams = paramInfos.FindAll(p => p.Kind == PrmKind.EntityParam);
+        string callExpr = BuildCallExpressionFull(method, paramInfos, targetInstance);
+
+        if (entityParams.Count == 0)
+        {
+            sb.AppendLine($"            return ({callExpr}).GetValueOrDefault().{axis.ToUpper()};");
+        }
+        else
+        {
+            string condition = string.Join(" && ", entityParams.Select(u => $"{u.Name} != null"));
+            sb.AppendLine($"            return ({condition}) ? ({callExpr}).GetValueOrDefault().{axis.ToUpper()} : 0f;");
+        }
+        sb.AppendLine("        });");
+    }
+
+    private static string BuildLambdaParams(List<ParamInfo> paramInfos, bool needsCaller, bool needsRetArea)
+    {
+        var parts = new List<string>();
+
+        if (needsCaller)
+            parts.Add("Caller caller");
+
+        foreach (var p in paramInfos)
+        {
+            switch (p.Kind)
+            {
+                case PrmKind.DirectInt: parts.Add($"int {p.Name}"); break;
+                case PrmKind.DirectFloat: parts.Add($"float {p.Name}"); break;
+                case PrmKind.BoolParam: parts.Add($"int {p.Name}"); break;
+                case PrmKind.StringParam: parts.Add($"int {p.Name}Ptr, int {p.Name}Len"); break;
+                case PrmKind.Vector3Param: parts.Add($"float {p.Name}X, float {p.Name}Y, float {p.Name}Z"); break;
+                case PrmKind.EntityParam: parts.Add($"int {p.Name}Id"); break;
+                case PrmKind.Vector3NullableParam: parts.Add($"float {p.Name}R, float {p.Name}G, float {p.Name}B, int {p.Name}HasColor"); break;
+            }
+        }
+
+        if (needsRetArea)
+            parts.Add("int retArea");
+
+        return string.Join(", ", parts);
+    }
+
+    private static string BuildCallExpressionSimple(IMethodSymbol method, List<ParamInfo> paramInfos, string targetInstance)
+    {
+        var args = new List<string>();
+        foreach (var p in method.Parameters)
+        {
+            if (p.Type.ToDisplayString() == "System.Numerics.Vector3")
+                args.Add(p.Name);
+            else if (IsNullableVector3(p.Type))
+                args.Add(p.Name);
+            else if (p.Type.SpecialType == SpecialType.System_Boolean)
+                args.Add($"{p.Name} != 0");
+            else
+                args.Add(p.Name);
+        }
+        return $"{targetInstance}?.{method.Name}({string.Join(", ", args)})";
+    }
+
+    private static string BuildCallExpressionFull(IMethodSymbol method, List<ParamInfo> paramInfos, string targetInstance)
+    {
+        var args = new List<string>();
+        foreach (var p in method.Parameters)
+        {
+            if (p.Type.ToDisplayString() == "System.Numerics.Vector3")
+                args.Add(p.Name);
+            else if (IsNullableVector3(p.Type))
+                args.Add(p.Name);
+            else if (p.Type.SpecialType == SpecialType.System_Boolean)
+                args.Add($"{p.Name} != 0");
+            else
+                args.Add(p.Name);
+        }
+        return $"{targetInstance}?.{method.Name}({string.Join(", ", args)})";
+    }
+
+    private static void EmitBlockBody(StringBuilder sb, IMethodSymbol method, List<ParamInfo> paramInfos, RetKind retKind, string targetInstance, INamedTypeSymbol gameApiSymbol)
+    {
+        foreach (var p in paramInfos)
+            if (p.Kind == PrmKind.StringParam)
+                sb.AppendLine($"            string {p.Name} = ReadGuestString(caller, {p.Name}Ptr, {p.Name}Len);");
+
+        var processedVec3 = new HashSet<string>();
+        foreach (var p in paramInfos)
+            if (p.Kind == PrmKind.Vector3Param && p.Name.EndsWith("X"))
+            {
+                string baseName = p.Name.Substring(0, p.Name.Length - 1);
+                if (processedVec3.Add(baseName))
+                    sb.AppendLine($"            var {baseName} = new System.Numerics.Vector3({baseName}X, {baseName}Y, {baseName}Z);");
+            }
+
+        foreach (var p in paramInfos)
+            if (p.Kind == PrmKind.Vector3Param)
+                sb.AppendLine($"            var {p.Name} = new System.Numerics.Vector3({p.Name}X, {p.Name}Y, {p.Name}Z);");
+
+        foreach (var p in paramInfos)
+            if (p.Kind == PrmKind.Vector3NullableParam)
+                sb.AppendLine($"            System.Numerics.Vector3? {p.Name} = {p.Name}HasColor != 0 ? new System.Numerics.Vector3({p.Name}R, {p.Name}G, {p.Name}B) : null;");
+
+        foreach (var p in paramInfos)
+            if (p.Kind == PrmKind.EntityParam)
+            {
+                IsEntityInterface(p.Type, out var unwrapped);
+                string res = FindResolverMember(gameApiSymbol, unwrapped);
+                sb.AppendLine($"            var {p.Name} = ((IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
+            }
+
+        var entityParams = paramInfos.FindAll(p => p.Kind == PrmKind.EntityParam);
+        string callExpr = BuildCallExpressionFull(method, paramInfos, targetInstance);
+
+        if (retKind == RetKind.Void)
+        {
+            if (entityParams.Count == 0)
+                sb.AppendLine($"            {callExpr};");
+            else if (entityParams.Count == 1)
+                sb.AppendLine($"            if ({entityParams[0].Name} != null) {callExpr};");
+            else
+            {
+                var checks = new List<string>();
+                foreach (var u in entityParams) checks.Add($"{u.Name} != null");
+                sb.AppendLine($"            if ({string.Join(" && ", checks)}) {callExpr};");
+            }
+        }
+        else if (retKind == RetKind.StringReturn)
+        {
+            sb.AppendLine($"            string result = {callExpr} ?? \"\";");
+            sb.AppendLine("            WriteGuestString(caller, retArea, result);");
+        }
+        else if (retKind == RetKind.EntityListReturn)
+        {
+            IsCollection(method.ReturnType, out var elemType);
+            bool hasUniqueId = elemType.GetMembers().Any(m => m is IPropertySymbol p && p.Name == "UniqueId");
+            sb.AppendLine($"            var items = {callExpr} ?? Array.Empty<{elemType.ToDisplayString()}>();");
+            if (hasUniqueId)
+            {
+                sb.AppendLine("            WriteGuestIntList(caller, retArea, items.Select(e => e.UniqueId).ToList());");
+            }
+            else
+            {
+                string colName = FindCollectionMember(gameApiSymbol, elemType);
+                sb.AppendLine($"            WriteGuestIntList(caller, retArea, items.Select(e => (((IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf(e) ?? -1)).ToList());");
+            }
+        }
+        else if (retKind == RetKind.EntityReturn || retKind == RetKind.EntityNullableReturn)
+        {
+            IsEntityInterface(method.ReturnType, out var unwrapped);
+            bool hasUniqueId = unwrapped.GetMembers().Any(m => m is IPropertySymbol p && p.Name == "UniqueId");
+
+            if (entityParams.Count == 0)
+            {
+                sb.AppendLine($"            var result = {callExpr};");
+                if (hasUniqueId)
+                {
+                    sb.AppendLine($"            return result?.UniqueId ?? 0;");
+                }
+                else
+                {
+                    string colName = FindCollectionMember(gameApiSymbol, unwrapped);
+                    sb.AppendLine($"            return (result != null) ? (((IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf(result) ?? -1) : -1;");
+                }
+            }
+            else
+            {
+                string condition = string.Join(" && ", entityParams.Select(u => $"{u.Name} != null"));
+                sb.AppendLine($"            if ({condition})");
+                sb.AppendLine("            {");
+                sb.AppendLine($"                var result = {callExpr};");
+                if (hasUniqueId)
+                {
+                    sb.AppendLine($"                return result?.UniqueId ?? 0;");
+                }
+                else
+                {
+                    string colName = FindCollectionMember(gameApiSymbol, unwrapped);
+                    sb.AppendLine($"                return (result != null) ? (((IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf(result) ?? -1) : -1;");
+                }
+                sb.AppendLine("            }");
+                sb.AppendLine($"            return {(hasUniqueId ? "0" : "-1")};");
+            }
+        }
+        else if (retKind == RetKind.BoolReturn)
+        {
+            if (entityParams.Count == 0)
+            {
+                sb.AppendLine($"            return ({callExpr} ?? false) ? 1 : 0;");
+            }
+            else
+            {
+                string condition = string.Join(" && ", entityParams.Select(u => $"{u.Name} != null"));
+                sb.AppendLine($"            return ({condition}) ? (({callExpr} ?? false) ? 1 : 0) : 0;");
+            }
+        }
+        else
+        {
+            string defaultVal = retKind == RetKind.DirectFloat ? "0f" : "0";
+            if (entityParams.Count == 0)
+            {
+                sb.AppendLine($"            return {callExpr} ?? {defaultVal};");
+            }
+            else
+            {
+                string condition = string.Join(" && ", entityParams.Select(u => $"{u.Name} != null"));
+                sb.AppendLine($"            return ({condition}) ? ({callExpr} ?? {defaultVal}) : {defaultVal};");
+            }
+        }
+    }
+
+    private static string BuildSimpleExpression(IMethodSymbol method, List<ParamInfo> paramInfos, RetKind retKind, string targetInstance, INamedTypeSymbol gameApiSymbol)
+    {
+        string callExpr = BuildCallExpressionSimple(method, paramInfos, targetInstance);
+        if (retKind == RetKind.EntityReturn || retKind == RetKind.EntityNullableReturn)
+        {
+            IsEntityInterface(method.ReturnType, out var unwrapped);
+            bool hasUniqueId = unwrapped.GetMembers().Any(m => m is IPropertySymbol p && p.Name == "UniqueId");
+            if (hasUniqueId)
+            {
+                return $"({callExpr})?.UniqueId ?? 0";
+            }
+            else
+            {
+                string colName = FindCollectionMember(gameApiSymbol, unwrapped);
+                return $"({callExpr} != null) ? (((IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf({callExpr}) ?? -1) : -1";
+            }
+        }
+
+        return retKind switch
+        {
+            RetKind.Void => callExpr,
+            RetKind.DirectInt => $"{callExpr} ?? 0",
+            RetKind.DirectFloat => $"{callExpr} ?? 0f",
+            RetKind.BoolReturn => $"({callExpr} ?? false) ? 1 : 0",
+            RetKind.StringReturn => $"{callExpr} ?? \"\"",
+            _ => callExpr
+        };
+    }
+
+    private static PrmKind ClassifyParam(ITypeSymbol type)
+    {
+        if (type.SpecialType == SpecialType.System_Int32) return PrmKind.DirectInt;
+        if (type.SpecialType == SpecialType.System_Single) return PrmKind.DirectFloat;
+        if (type.SpecialType == SpecialType.System_Boolean) return PrmKind.BoolParam;
+        if (type.SpecialType == SpecialType.System_String) return PrmKind.StringParam;
+
+        string displayName = type.ToDisplayString();
+
+        if (displayName == "System.Numerics.Vector3") return PrmKind.Vector3Param;
+        if (IsNullableVector3(type)) return PrmKind.Vector3NullableParam;
+        if (IsEntityInterface(type, out _)) return PrmKind.EntityParam;
+
+        return PrmKind.Unsupported;
+    }
+
+    private static RetKind ClassifyReturn(ITypeSymbol type)
+    {
+        if (type.SpecialType == SpecialType.System_Void) return RetKind.Void;
+        if (type.SpecialType == SpecialType.System_Int32) return RetKind.DirectInt;
+        if (type.SpecialType == SpecialType.System_Single) return RetKind.DirectFloat;
+        if (type.SpecialType == SpecialType.System_Boolean) return RetKind.BoolReturn;
+        if (type.SpecialType == SpecialType.System_String) return RetKind.StringReturn;
+
+        if (IsEntityInterface(type, out _))
+        {
+            if (type.NullableAnnotation == NullableAnnotation.Annotated || type.ToDisplayString().EndsWith("?"))
+                return RetKind.EntityNullableReturn;
+            return RetKind.EntityReturn;
+        }
+
+        if (IsCollection(type, out var elemType))
+        {
+            if (elemType.SpecialType == SpecialType.System_String) return RetKind.StringListReturn;
+            if (IsEntityInterface(elemType, out _)) return RetKind.EntityListReturn;
+        }
+
+        return RetKind.Unsupported;
+    }
+
+    private static bool IsNullableVector3(ITypeSymbol type)
+    {
+        if (type is INamedTypeSymbol named && named.IsGenericType && named.ConstructedFrom.SpecialType == SpecialType.System_Nullable_T)
+        {
+            return named.TypeArguments[0].ToDisplayString() == "System.Numerics.Vector3";
+        }
+        return false;
+    }
+
+    private static void lastWasWasMultiLine(ref bool last, bool current)
+    {
+        last = current;
+    }
+
+    // ── Output 2: Wit bindings dynamic generation ──────────────────────────────
+
+    private static string GenerateWitContent(INamedTypeSymbol gameApiSymbol, HashSet<INamedTypeSymbol> entityInterfaces, string manualFunctions)
+    {
+        var witBody = new StringBuilder();
+        var propertyAccessorMethods = CollectPropertyAccessorNames(gameApiSymbol);
+        var declared = new HashSet<string>(System.StringComparer.Ordinal);
+
+        // Auto-generate IGameAPI members
+        foreach (var member in gameApiSymbol.GetMembers())
+        {
+            if (member is IEventSymbol)
+                continue;
+
+            if (!member.IsAbstract)
+                continue;
+
+            if (member is IPropertySymbol property)
+                AppendWitProperty(witBody, property, declared);
+            else if (member is IMethodSymbol method)
+            {
+                if (method.MethodKind != MethodKind.Ordinary)
+                    continue;
+                if (propertyAccessorMethods.Contains(method.Name))
+                    continue;
+                AppendWitMethod(witBody, method, declared);
+            }
+        }
+
+        // Auto-generate discovered entity interface members
+        foreach (var entityIface in entityInterfaces)
+        {
+            AppendWitEntityInterface(witBody, entityIface, declared);
+        }
+
+        if (!string.IsNullOrEmpty(manualFunctions))
+        {
+            witBody.AppendLine();
+            witBody.AppendLine("    // Manual WIT entries");
+            witBody.AppendLine("    " + manualFunctions.Replace("\r\n", "\n").Replace("\n", "\n    "));
+        }
+
+        var wit = new StringBuilder();
+        wit.AppendLine("package custom:game;");
+        wit.AppendLine();
+        wit.AppendLine("interface game-api {");
+        wit.Append(witBody.ToString());
+        wit.AppendLine("}");
+        wit.AppendLine();
+        wit.AppendLine("world game-client {");
+        wit.AppendLine("    import game-api;");
+        wit.AppendLine("}");
+
+        return wit.ToString();
+    }
+
+    private static string GenerateWitConstant(INamedTypeSymbol gameApiSymbol, HashSet<INamedTypeSymbol> entityInterfaces, string manualFunctions)
+    {
+        string witBody = GenerateWitContent(gameApiSymbol, entityInterfaces, manualFunctions);
+
+        var wit = new StringBuilder();
+        wit.AppendLine("// Do not edit file directly.");
+        wit.AppendLine("// This file is auto-generated by the custom WasmLinkerGenerator tool.");
+        wit.AppendLine("// Generator source: file:///D:/git/Realm/Realm.WasmBindgen/WasmLinkerGenerator.cs");
+        wit.AppendLine();
+        wit.AppendLine("namespace Realm.Godot;");
+        wit.AppendLine();
+        wit.AppendLine("public static class GeneratedWit");
+        wit.AppendLine("{");
+        wit.AppendLine("    public const string Content = \"\"\"");
+        wit.Append(witBody);
+        wit.AppendLine("\"\"\";");
+        wit.AppendLine("}");
+
+        return wit.ToString();
+    }
+
+    private static void AppendWitEntityInterface(StringBuilder sb, INamedTypeSymbol entitySymbol, HashSet<string> declared)
+    {
+        string tKebab = ToKebabCase(CleanInterfaceName(entitySymbol));
+        bool hasUniqueId = entitySymbol.GetMembers().Any(m => m is IPropertySymbol p && p.Name == "UniqueId");
+
+        if (!hasUniqueId)
+        {
+            AppendFunction(sb, declared, $"{tKebab}-count", "func() -> s32");
+        }
+
+        var propertyAccessors = CollectPropertyAccessorNames(entitySymbol);
+        foreach (var member in entitySymbol.GetMembers())
+        {
+            if (!member.IsAbstract)
+                continue;
+
+            if (member is IPropertySymbol property)
+            {
+                if (property.Name == "UniqueId") continue;
+
+                string witBase = $"{tKebab}-{ToKebabCase(property.Name)}";
+
+                if (property.Type.ToDisplayString() == "System.Numerics.Vector3")
+                {
+                    AppendFunction(sb, declared, $"{witBase}-x", "func(id: s32) -> f32");
+                    AppendFunction(sb, declared, $"{witBase}-y", "func(id: s32) -> f32");
+                    AppendFunction(sb, declared, $"{witBase}-z", "func(id: s32) -> f32");
+                    
+                    if (property.SetMethod != null)
+                    {
+                        AppendFunction(sb, declared, $"set-{witBase}", "func(id: s32, val-x: f32, val-y: f32, val-z: f32)");
+                    }
+                    continue;
+                }
+
+                var retKind = ClassifyReturn(property.Type);
+                if (retKind == RetKind.Unsupported) continue;
+                else
+                {
+                    string? witType = RetKindToWit(retKind);
+                    if (witType != null)
+                    {
+                        AppendFunction(sb, declared, witBase, $"func(id: s32) -> {witType}");
+                        if (property.SetMethod != null)
+                        {
+                            string? paramType = RetKindToWitParam(retKind);
+                            if (paramType != null)
+                                AppendFunction(sb, declared, $"set-{witBase}", $"func(id: s32, val: {paramType})");
+                        }
+                    }
+                }
+            }
+            else if (member is IMethodSymbol method && method.MethodKind == MethodKind.Ordinary)
+            {
+                if (propertyAccessors.Contains(method.Name)) continue;
+                AppendWitEntityMethod(sb, method, tKebab, declared);
+            }
+        }
+    }
+
+    private static void AppendWitEntityMethod(StringBuilder sb, IMethodSymbol method, string tKebab, HashSet<string> declared)
+    {
+        var retKind = ClassifyReturn(method.ReturnType);
+        if (retKind == RetKind.Unsupported && method.ReturnType.ToDisplayString() != "System.Numerics.Vector3" && method.ReturnType.SpecialType != SpecialType.System_Void)
+            return;
+        if (retKind == RetKind.EntityListReturn)
+            return;
+
+        foreach (var param in method.Parameters)
+        {
+            if (param.RefKind != RefKind.None)
+                return;
+        }
+
+        string witName = tKebab + "-" + ToKebabCase(method.Name);
+        var witParams = new List<string> { "id: s32" };
+
+        foreach (var param in method.Parameters)
+        {
+            string? paramWit = ParamToWit(param.Type, param.Name);
+            if (paramWit == null)
+                return;
+            witParams.Add(paramWit);
+        }
+
+        string paramsStr = string.Join(", ", witParams);
+        if (method.ReturnType.ToDisplayString() == "System.Numerics.Vector3")
+        {
+            AppendFunction(sb, declared, $"{witName}-x", $"func({paramsStr}) -> f32");
+            AppendFunction(sb, declared, $"{witName}-y", $"func({paramsStr}) -> f32");
+            AppendFunction(sb, declared, $"{witName}-z", $"func({paramsStr}) -> f32");
+        }
+        else if (retKind == RetKind.StringListReturn)
+        {
+            AppendFunction(sb, declared, $"{witName}-count", $"func({paramsStr}) -> s32");
+            AppendFunction(sb, declared, $"{witName}-get", $"func({paramsStr}, index: s32) -> string");
+        }
+        else
+        {
+            string retStr = (retKind == RetKind.Void || method.ReturnType.SpecialType == SpecialType.System_Void)
+                ? ""
+                : $" -> {RetKindToWit(retKind)}";
+
+            AppendFunction(sb, declared, witName, $"func({paramsStr}){retStr}");
+        }
+    }
+
+    private static void AppendWitProperty(StringBuilder sb, IPropertySymbol property, HashSet<string> declared)
+    {
+        var retKind = ClassifyReturn(property.Type);
+        if (retKind == RetKind.Unsupported)
+            return;
+
+        string witBase = ToKebabCase(property.Name);
+        string? witType = RetKindToWit(retKind);
+        if (witType == null)
+            return;
+
+        if (property.GetMethod != null)
+            AppendFunction(sb, declared, $"get-{witBase}", $"func() -> {witType}");
+
+        if (property.SetMethod != null)
+        {
+            string? paramType = RetKindToWitParam(retKind);
+            if (paramType != null)
+                AppendFunction(sb, declared, $"set-{witBase}", $"func(val: {paramType})");
+        }
+    }
+
+    private static void AppendWitMethod(StringBuilder sb, IMethodSymbol method, HashSet<string> declared)
+    {
+        var retKind = ClassifyReturn(method.ReturnType);
+        bool isVector3Ret = method.ReturnType.ToDisplayString() == "System.Numerics.Vector3";
+        if (retKind == RetKind.Unsupported && !isVector3Ret)
+            return;
+
+        foreach (var param in method.Parameters)
+        {
+            if (param.RefKind != RefKind.None)
+                return;
+        }
+
+        string witName = ToKebabCase(method.Name);
+
+        if (retKind == RetKind.StringListReturn)
+        {
+            var witParams = new List<string>();
+            foreach (var param in method.Parameters)
+            {
+                var paramWit = ParamToWit(param.Type, param.Name);
+                if (paramWit != null) witParams.Add(paramWit);
+            }
+            string paramsStr = string.Join(", ", witParams);
+            AppendFunction(sb, declared, $"{witName}-count", $"func({paramsStr}) -> s32");
+            AppendFunction(sb, declared, $"{witName}-get", $"func({paramsStr}, index: s32) -> string");
+            return;
+        }
+
+        var witParamsList = new List<string>();
+        foreach (var param in method.Parameters)
+        {
+            string? paramWit = ParamToWit(param.Type, param.Name);
+            if (paramWit == null)
+                return;
+            witParamsList.Add(paramWit);
+        }
+
+        string paramsStrCombined = string.Join(", ", witParamsList);
+
+        if (isVector3Ret)
+        {
+            AppendFunction(sb, declared, $"{witName}-x", $"func({paramsStrCombined}) -> f32");
+            AppendFunction(sb, declared, $"{witName}-y", $"func({paramsStrCombined}) -> f32");
+            AppendFunction(sb, declared, $"{witName}-z", $"func({paramsStrCombined}) -> f32");
+        }
+        else
+        {
+            string retStr = (retKind == RetKind.Void || method.ReturnType.SpecialType == SpecialType.System_Void)
+                ? ""
+                : $" -> {RetKindToWit(retKind)}";
+
+            AppendFunction(sb, declared, witName, $"func({paramsStrCombined}){retStr}");
+        }
+    }
+
+    private static string? ParamToWit(ITypeSymbol type, string name)
+    {
+        var kind = ClassifyParam(type);
+        return kind switch
+        {
+            PrmKind.DirectInt => $"{ToKebabCase(name)}: s32",
+            PrmKind.DirectFloat => $"{ToKebabCase(name)}: f32",
+            PrmKind.BoolParam => $"{ToKebabCase(name)}: bool",
+            PrmKind.StringParam => $"{ToKebabCase(name)}: string",
+            PrmKind.Vector3Param => $"{ToKebabCase(name)}-x: f32, {ToKebabCase(name)}-y: f32, {ToKebabCase(name)}-z: f32",
+            PrmKind.EntityParam => $"{ToKebabCase(name)}-id: s32",
+            PrmKind.Vector3NullableParam => $"{ToKebabCase(name)}-r: f32, {ToKebabCase(name)}-g: f32, {ToKebabCase(name)}-b: f32, {ToKebabCase(name)}-has-color: bool",
+            _ => null
+        };
+    }
+
+    private static string? RetKindToWit(RetKind retKind)
+    {
+        return retKind switch
+        {
+            RetKind.Void => null,
+            RetKind.DirectInt => "s32",
+            RetKind.DirectFloat => "f32",
+            RetKind.BoolReturn => "bool",
+            RetKind.StringReturn => "string",
+            RetKind.EntityReturn => "s32",
+            RetKind.EntityNullableReturn => "s32",
+            RetKind.EntityListReturn => "list<s32>",
+            _ => null
+        };
+    }
+
+    private static string? RetKindToWitParam(RetKind retKind)
+    {
+        return retKind switch
+        {
+            RetKind.Void => null,
+            RetKind.DirectInt => "s32",
+            RetKind.DirectFloat => "f32",
+            RetKind.BoolReturn => "bool",
+            RetKind.StringReturn => "string",
+            RetKind.EntityReturn => "s32",
+            RetKind.EntityNullableReturn => "s32",
+            _ => null
+        };
+    }
+
+    private static void AppendFunction(StringBuilder sb, HashSet<string> declared, string name, string body)
+    {
+        if (declared.Add(name))
+        {
+            sb.AppendLine($"    {name}: {body};");
+        }
+    }
+
+    // ── Output 3: Auto-Events bindings dynamic generation ───────────────────────
+
+    private static string GenerateAutoEvents(INamedTypeSymbol gameApiSymbol)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("// <auto-generated/>");
+        sb.AppendLine("#nullable enable");
+        sb.AppendLine("using System;");
+        sb.AppendLine("using System.Linq;");
+        sb.AppendLine("using Wasmtime;");
+        sb.AppendLine("using Realm.MapAPI;");
+        sb.AppendLine();
+        sb.AppendLine("namespace Realm.Godot;");
+        sb.AppendLine();
+        sb.AppendLine("partial class WasmRuntime");
+        sb.AppendLine("{");
+
+        var events = gameApiSymbol.GetMembers().OfType<IEventSymbol>().ToList();
+
+        foreach (var ev in events)
+        {
+            var delegateMethod = ((INamedTypeSymbol)ev.Type).DelegateInvokeMethod;
+            if (delegateMethod == null) continue;
+
+            bool hasString = delegateMethod.Parameters.Any(p => p.Type.SpecialType == SpecialType.System_String);
+            string fieldType = hasString ? "Function" : GetWasmDelegateType(delegateMethod.Parameters);
+            sb.AppendLine($"    private {fieldType}? {GetWasmField(ev.Name)};");
+        }
+        sb.AppendLine();
+
+        sb.AppendLine("    private partial void InitializeAutoEvents()");
+        sb.AppendLine("    {");
+        foreach (var ev in events)
+        {
+            var delegateMethod = ((INamedTypeSymbol)ev.Type).DelegateInvokeMethod;
+            if (delegateMethod == null) continue;
+
+            string witName = ToKebabCase(ev.Name);
+            bool hasString = delegateMethod.Parameters.Any(p => p.Type.SpecialType == SpecialType.System_String);
+
+            if (hasString)
+            {
+                sb.AppendLine($"        {GetWasmField(ev.Name)} = _instance.GetFunction(\"{witName}\");");
+            }
+            else
+            {
+                string typeArgs = GetWasmDelegateTypeArgs(delegateMethod.Parameters);
+                string wrapMethod = string.IsNullOrEmpty(typeArgs) ? "WrapAction" : $"WrapAction<{typeArgs}>";
+                sb.AppendLine($"        {GetWasmField(ev.Name)} = _instance.GetFunction(\"{witName}\")?.{wrapMethod}();");
+            }
+        }
+        sb.AppendLine("    }");
+        sb.AppendLine();
+
+        sb.AppendLine("    private partial void SubscribeAutoEvents(IGameAPI api)");
+        sb.AppendLine("    {");
+        foreach (var ev in events)
+        {
+            sb.AppendLine($"        api.{ev.Name} += {GetWasmHandler(ev.Name)};");
+        }
+        sb.AppendLine("    }");
+        sb.AppendLine();
+
+        sb.AppendLine("    private partial void UnsubscribeAutoEvents()");
+        sb.AppendLine("    {");
+        sb.AppendLine("        if (_cachedApi != null)");
+        sb.AppendLine("        {");
+        foreach (var ev in events)
+        {
+            sb.AppendLine($"            _cachedApi.{ev.Name} -= {GetWasmHandler(ev.Name)};");
+        }
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+
+        foreach (var ev in events)
+        {
+            var delegateMethod = ((INamedTypeSymbol)ev.Type).DelegateInvokeMethod;
+            if (delegateMethod == null) continue;
+
+            string handlerName = GetWasmHandler(ev.Name);
+            var sigParams = new List<string>();
+            foreach (var p in delegateMethod.Parameters)
+            {
+                sigParams.Add($"{p.Type.ToDisplayString()} {p.Name}");
+            }
+
+            sb.AppendLine($"    private void {handlerName}({string.Join(", ", sigParams)})");
+            sb.AppendLine("    {");
+
+            string fieldName = GetWasmField(ev.Name);
+            bool hasString = delegateMethod.Parameters.Any(p => p.Type.SpecialType == SpecialType.System_String);
+
+            if (hasString)
+            {
+                sb.AppendLine($"        if ({fieldName} != null)");
+                sb.AppendLine("        {");
+                sb.AppendLine("            var memory = _instance.GetMemory(\"memory\");");
+                sb.AppendLine("            if (memory != null)");
+                sb.AppendLine("            {");
+
+                var invokeArgs = new List<string>();
+                foreach (var p in delegateMethod.Parameters)
+                {
+                    if (p.Type.SpecialType == SpecialType.System_String)
+                    {
+                        sb.AppendLine($"                byte[] bytes_{p.Name} = System.Text.Encoding.UTF8.GetBytes({p.Name});");
+                        sb.AppendLine($"                int ptr_{p.Name} = AllocateInGuest(bytes_{p.Name}.Length);");
+                        sb.AppendLine($"                bytes_{p.Name}.CopyTo(memory.GetSpan(ptr_{p.Name}, bytes_{p.Name}.Length));");
+                        invokeArgs.Add($"ptr_{p.Name}");
+                        invokeArgs.Add($"bytes_{p.Name}.Length");
+                    }
+                    else if (p.Type.ToDisplayString() == "System.Numerics.Vector3" || p.Type.ToDisplayString() == "System.Numerics.Vector3?")
+                    {
+                        invokeArgs.Add($"{p.Name}.X");
+                        invokeArgs.Add($"{p.Name}.Y");
+                        invokeArgs.Add($"{p.Name}.Z");
+                    }
+                    else if (IsEntityInterface(p.Type, out var unwrapped))
+                    {
+                        bool hasId = unwrapped.GetMembers().Any(m => m is IPropertySymbol prop && prop.Name == "UniqueId");
+                        if (hasId)
+                        {
+                            invokeArgs.Add($"{p.Name}?.UniqueId ?? 0");
+                        }
+                        else
+                        {
+                            string col = FindCollectionMember(gameApiSymbol, unwrapped);
+                            invokeArgs.Add($"{p.Name} != null ? (((IGameAPI?)GameHost.Instance)?.{col}().ToList().IndexOf({p.Name}) ?? -1) : -1");
+                        }
+                    }
+                    else
+                    {
+                        invokeArgs.Add(p.Name);
+                    }
+                }
+
+                sb.AppendLine($"                {fieldName}.Invoke({string.Join(", ", invokeArgs)});");
+                sb.AppendLine("            }");
+                sb.AppendLine("        }");
+            }
+            else
+            {
+                var invokeArgs = new List<string>();
+                foreach (var p in delegateMethod.Parameters)
+                {
+                    if (IsEntityInterface(p.Type, out var unwrapped))
+                    {
+                        bool hasId = unwrapped.GetMembers().Any(m => m is IPropertySymbol prop && prop.Name == "UniqueId");
+                        if (hasId)
+                        {
+                            invokeArgs.Add($"{p.Name}?.UniqueId ?? 0");
+                        }
+                        else
+                        {
+                            string col = FindCollectionMember(gameApiSymbol, unwrapped);
+                            invokeArgs.Add($"{p.Name} != null ? (((IGameAPI?)GameHost.Instance)?.{col}().ToList().IndexOf({p.Name}) ?? -1) : -1");
+                        }
+                    }
+                    else
+                    {
+                        invokeArgs.Add(p.Name);
+                    }
+                }
+                sb.AppendLine($"        {fieldName}?.Invoke({string.Join(", ", invokeArgs)});");
+            }
+
+            sb.AppendLine("    }");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
+    private static string GetWasmField(string eventName)
+    {
+        return $"_{char.ToLowerInvariant(eventName[2])}{eventName.Substring(3)}";
+    }
+
+    private static string GetWasmHandler(string eventName) => $"{eventName}Handler";
+
+    private static string GetWasmDelegateType(System.Collections.Immutable.ImmutableArray<IParameterSymbol> parameters)
+    {
+        if (parameters.Length == 0) return "Action";
+        return $"Action<{GetWasmDelegateTypeArgs(parameters)}>";
+    }
+
+    private static string GetWasmDelegateTypeArgs(System.Collections.Immutable.ImmutableArray<IParameterSymbol> parameters)
+    {
+        var list = new List<string>();
+        foreach (var p in parameters)
+        {
+            if (IsEntityInterface(p.Type, out _))
+                list.Add("int");
+            else if (p.Type.SpecialType == SpecialType.System_Int32)
+                list.Add("int");
+            else if (p.Type.SpecialType == SpecialType.System_Single)
+                list.Add("float");
+            else if (p.Type.SpecialType == SpecialType.System_Boolean)
+                list.Add("bool");
+        }
+        return string.Join(", ", list);
+    }
+
+    // ── Output 4: Guest-side WasmWrappers dynamic generation ────────────────────
+
+    private static string GenerateWasmWrappers(INamedTypeSymbol gameApiSymbol, HashSet<INamedTypeSymbol> entityInterfaces)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("// <auto-generated/>");
+        sb.AppendLine("#nullable enable");
+        sb.AppendLine("#pragma warning disable CS8603, CS1591, CS1573");
+        sb.AppendLine("using System;");
+        sb.AppendLine("using System.Collections.Generic;");
+        sb.AppendLine("using System.Linq;");
+        sb.AppendLine("using System.Numerics;");
+        sb.AppendLine("using GameClientWorld.wit.Imports.custom.game;");
+        sb.AppendLine();
+        sb.AppendLine("namespace Realm.MapAPI;");
+        sb.AppendLine();
+        sb.AppendLine("public interface IWasmWrapper");
+        sb.AppendLine("{");
+        sb.AppendLine("    int WasmId { get; }");
+        sb.AppendLine("}");
+        sb.AppendLine();
+
+        // 1. Generate Entity proxies dynamically
+        foreach (var entityIface in entityInterfaces)
+        {
+            string cleanName = CleanInterfaceName(entityIface);
+            string tKebab = ToKebabCase(cleanName);
+            bool hasUniqueId = entityIface.GetMembers().Any(m => m is IPropertySymbol p && p.Name == "UniqueId");
+
+            sb.AppendLine($"public class {cleanName}_WasmModule : {entityIface.ToDisplayString()}, IWasmWrapper");
+            sb.AppendLine("{");
+            if (hasUniqueId)
+            {
+                sb.AppendLine("    public int UniqueId { get; }");
+                sb.AppendLine("    public int WasmId => UniqueId;");
+                sb.AppendLine($"    public {cleanName}_WasmModule(int id) => UniqueId = id;");
+            }
+            else
+            {
+                sb.AppendLine("    private readonly int _index;");
+                sb.AppendLine("    public int WasmId => _index;");
+                sb.AppendLine($"    public {cleanName}_WasmModule(int index) => _index = index;");
+            }
+            sb.AppendLine();
+
+            string key = hasUniqueId ? "UniqueId" : "_index";
+            var accessorMethods = CollectPropertyAccessorNames(entityIface);
+            foreach (var member in entityIface.GetMembers())
+            {
+                if (!member.IsAbstract)
+                    continue;
+
+                if (member is IPropertySymbol property)
+                {
+                    if (property.Name == "UniqueId") continue;
+                    EmitGuestProperty(sb, property, cleanName, key);
+                }
+                else if (member is IMethodSymbol method)
+                {
+                    if (method.MethodKind != MethodKind.Ordinary) continue;
+                    if (accessorMethods.Contains(method.Name)) continue;
+                    EmitGuestMethod(sb, method, cleanName, key);
+                }
+            }
+            sb.AppendLine("}");
+            sb.AppendLine();
+        }
+
+        // 2. Generate GameAPI_WasmModule
+        sb.AppendLine("public class GameAPI_WasmModule : IGameAPI");
+        sb.AppendLine("{");
+        sb.AppendLine("    private readonly Dictionary<int, Action> _timers = new();");
+        sb.AppendLine();
+
+        var propertyAccessorMethods = CollectPropertyAccessorNames(gameApiSymbol);
+        foreach (var member in gameApiSymbol.GetMembers())
+        {
+            if (member is IEventSymbol) continue;
+            if (!member.IsAbstract) continue;
+
+            if (member is IPropertySymbol property)
+            {
+                EmitGuestProperty(sb, property, "", "");
+            }
+            else if (member is IMethodSymbol method)
+            {
+                if (method.MethodKind != MethodKind.Ordinary) continue;
+                if (propertyAccessorMethods.Contains(method.Name)) continue;
+                EmitGuestMethod(sb, method, "", "");
+            }
+        }
+
+        // Auto-generate events triggering in WasmGameAPI
+        var events = gameApiSymbol.GetMembers().OfType<IEventSymbol>().ToList();
+        foreach (var ev in events)
+        {
+            var delegateMethod = ((INamedTypeSymbol)ev.Type).DelegateInvokeMethod;
+            if (delegateMethod == null) continue;
+
+            sb.AppendLine($"    public event Action<{string.Join(", ", delegateMethod.Parameters.Select(p => p.Type.ToDisplayString()))}>? {ev.Name};");
+        }
+        sb.AppendLine();
+
+        foreach (var ev in events)
+        {
+            var delegateMethod = ((INamedTypeSymbol)ev.Type).DelegateInvokeMethod;
+            if (delegateMethod == null) continue;
+
+            var triggerParams = new List<string>();
+            foreach (var p in delegateMethod.Parameters)
+            {
+                if (IsEntityInterface(p.Type, out _))
+                    triggerParams.Add($"int {p.Name}");
+                else if (p.Type.ToDisplayString().Contains("Vector3"))
+                    triggerParams.Add($"Vector3 {p.Name}");
+                else
+                    triggerParams.Add($"{p.Type.ToDisplayString()} {p.Name}");
+            }
+
+            var invokeArgs = new List<string>();
+            foreach (var p in delegateMethod.Parameters)
+            {
+                if (IsEntityInterface(p.Type, out var unwrapped))
+                {
+                    string cleanElem = CleanInterfaceName(unwrapped);
+                    if (p.Type.NullableAnnotation == NullableAnnotation.Annotated || p.Type.ToDisplayString().Contains("?"))
+                        invokeArgs.Add($"{p.Name} > 0 ? new {cleanElem}_WasmModule({p.Name}) : null");
+                    else
+                        invokeArgs.Add($"new {cleanElem}_WasmModule({p.Name})");
+                }
+                else
+                {
+                    invokeArgs.Add(p.Name);
+                }
+            }
+
+            sb.AppendLine($"    public void TriggerOn{ev.Name.Substring(2)}({string.Join(", ", triggerParams)})");
+            sb.AppendLine($"        => {ev.Name}?.Invoke({string.Join(", ", invokeArgs)});");
+        }
+
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
+    private static void EmitGuestProperty(StringBuilder sb, IPropertySymbol property, string prefix, string key)
+    {
+        string typeStr = property.Type.ToDisplayString();
+        string keyArg = string.IsNullOrEmpty(key) ? "" : key;
+
+        if (property.Type.ToDisplayString() == "System.Numerics.Vector3")
+        {
+            sb.AppendLine($"    public {typeStr} {property.Name}");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        get => new Vector3(");
+            sb.AppendLine($"            IGameApiImports.{prefix}{property.Name}X({keyArg}),");
+            sb.AppendLine($"            IGameApiImports.{prefix}{property.Name}Y({keyArg}),");
+            sb.AppendLine($"            IGameApiImports.{prefix}{property.Name}Z({keyArg}));");
+            if (property.SetMethod != null)
+            {
+                sb.AppendLine("        set");
+                sb.AppendLine("        {");
+                sb.AppendLine($"            IGameApiImports.Set{prefix}{property.Name}({keyArg}, value.X, value.Y, value.Z);");
+                sb.AppendLine("        }");
+            }
+            sb.AppendLine("    }");
+            return;
+        }
+
+        var retKind = ClassifyReturn(property.Type);
+        if (retKind == RetKind.Unsupported) return;
+
+        string witBase = string.IsNullOrEmpty(prefix) ? ToKebabCase(property.Name) : $"{ToKebabCase(prefix)}-{ToKebabCase(property.Name)}";
+        sb.AppendLine($"    public {typeStr} {property.Name}");
+        sb.AppendLine("    {");
+
+        string getterName = string.IsNullOrEmpty(prefix) ? $"Get{property.Name}" : $"{prefix}{property.Name}";
+
+        if (retKind == RetKind.EntityReturn || retKind == RetKind.EntityNullableReturn)
+        {
+            IsEntityInterface(property.Type, out var unwrapped);
+            string cleanElem = CleanInterfaceName(unwrapped);
+            if (retKind == RetKind.EntityNullableReturn)
+            {
+                sb.AppendLine($"        get {{ int id = IGameApiImports.{getterName}({keyArg}); return id > 0 ? new {cleanElem}_WasmModule(id) : null; }}");
+            }
+            else
+            {
+                sb.AppendLine($"        get => new {cleanElem}_WasmModule(IGameApiImports.{getterName}({keyArg}));");
+            }
+        }
+        else
+        {
+            sb.AppendLine($"        get => IGameApiImports.{getterName}({keyArg});");
+        }
+
+        if (property.SetMethod != null)
+        {
+            string setVal = "value";
+            if (IsEntityInterface(property.Type, out _))
+            {
+                if (property.Type.NullableAnnotation == NullableAnnotation.Annotated || property.Type.ToDisplayString().Contains("?"))
+                {
+                    setVal = "(value != null) ? ((IWasmWrapper)value).WasmId : 0";
+                }
+                else
+                {
+                    setVal = "((IWasmWrapper)value).WasmId";
+                }
+            }
+            string setArgs = string.IsNullOrEmpty(keyArg) ? setVal : $"{keyArg}, {setVal}";
+            sb.AppendLine($"        set => IGameApiImports.Set{prefix}{property.Name}({setArgs});");
+        }
+        sb.AppendLine("    }");
+    }
+
+    private static void EmitGuestMethod(StringBuilder sb, IMethodSymbol method, string prefix, string key)
+    {
+        var retKind = ClassifyReturn(method.ReturnType);
+        string typeStr = method.ReturnType.ToDisplayString();
+
+        var paramsDecl = new List<string>();
+        foreach (var p in method.Parameters)
+        {
+            string pType = p.Type.ToDisplayString();
+            string pName = p.Name;
+            if (p.HasExplicitDefaultValue)
+            {
+                string defaultVal = p.ExplicitDefaultValue == null ? "null" : 
+                                   (p.ExplicitDefaultValue is bool b ? b.ToString().ToLower() : 
+                                   (p.ExplicitDefaultValue is string s ? $"\"{s}\"" : p.ExplicitDefaultValue.ToString()));
+                paramsDecl.Add($"{pType} {pName} = {defaultVal}");
+            }
+            else
+            {
+                paramsDecl.Add($"{pType} {pName}");
+            }
+        }
+
+        var callArgs = new List<string>();
+        if (!string.IsNullOrEmpty(prefix))
+            callArgs.Add(key);
+
+        foreach (var p in method.Parameters)
+        {
+            if (IsEntityInterface(p.Type, out _))
+            {
+                if (p.Type.NullableAnnotation == NullableAnnotation.Annotated || p.Type.ToDisplayString().Contains("?"))
+                    callArgs.Add($"({p.Name} != null) ? ((IWasmWrapper){p.Name}).WasmId : 0");
+                else
+                    callArgs.Add($"((IWasmWrapper){p.Name}).WasmId");
+            }
+            else if (p.Type.ToDisplayString() == "object")
+            {
+                callArgs.Add($"{p.Name}?.ToString() ?? \"\"");
+            }
+            else if (p.Type.ToDisplayString() == "System.Numerics.Vector3")
+            {
+                callArgs.Add($"{p.Name}.X");
+                callArgs.Add($"{p.Name}.Y");
+                callArgs.Add($"{p.Name}.Z");
+            }
+            else if (p.Type.ToDisplayString() == "System.Numerics.Vector3?")
+            {
+                callArgs.Add($"{p.Name}?.X ?? 0f");
+                callArgs.Add($"{p.Name}?.Y ?? 0f");
+                callArgs.Add($"{p.Name}?.Z ?? 0f");
+                callArgs.Add($"{p.Name}.HasValue");
+            }
+            else if (p.Type.SpecialType == SpecialType.System_String)
+            {
+                if (p.NullableAnnotation == NullableAnnotation.Annotated || p.Type.ToDisplayString().Contains("?"))
+                    callArgs.Add($"{p.Name} ?? \"\"");
+                else
+                    callArgs.Add(p.Name);
+            }
+            else
+            {
+                callArgs.Add(p.Name);
+            }
+        }
+
+        string importName = string.IsNullOrEmpty(prefix) ? method.Name : $"{prefix}{method.Name}";
+        string importCall = $"IGameApiImports.{importName}({string.Join(", ", callArgs)})";
+
+        if (typeStr == "System.Numerics.Vector3")
+        {
+            sb.AppendLine($"    public {typeStr} {method.Name}({string.Join(", ", paramsDecl)})");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        return new Vector3(");
+            sb.AppendLine($"            IGameApiImports.{importName}X({string.Join(", ", callArgs)}),");
+            sb.AppendLine($"            IGameApiImports.{importName}Y({string.Join(", ", callArgs)}),");
+            sb.AppendLine($"            IGameApiImports.{importName}Z({string.Join(", ", callArgs)}));");
+            sb.AppendLine("    }");
+            return;
+        }
+
+        if (retKind == RetKind.StringListReturn)
+        {
+            var callArgsCount = new List<string>(callArgs);
+            var callArgsGet = new List<string>(callArgs);
+            callArgsGet.Add("i");
+            
+            sb.AppendLine($"    public {typeStr} {method.Name}({string.Join(", ", paramsDecl)})");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        int count = IGameApiImports.{importName}Count({string.Join(", ", callArgsCount)});");
+            sb.AppendLine($"        var list = new List<string>(count);");
+            sb.AppendLine($"        for (int i = 0; i < count; i++)");
+            sb.AppendLine($"            list.Add(IGameApiImports.{importName}Get({string.Join(", ", callArgsGet)}));");
+            sb.AppendLine("        return list;");
+            sb.AppendLine("    }");
+            return;
+        }
+
+        if (retKind == RetKind.EntityReturn || retKind == RetKind.EntityNullableReturn)
+        {
+            IsEntityInterface(method.ReturnType, out var unwrapped);
+            string cleanElem = CleanInterfaceName(unwrapped);
+            if (retKind == RetKind.EntityNullableReturn)
+            {
+                sb.AppendLine($"    public {typeStr} {method.Name}({string.Join(", ", paramsDecl)})");
+                sb.AppendLine("    {");
+                sb.AppendLine($"        int id = {importCall};");
+                sb.AppendLine($"        return id > 0 ? new {cleanElem}_WasmModule(id) : null;");
+                sb.AppendLine("    }");
+            }
+            else
+            {
+                sb.AppendLine($"    public {typeStr} {method.Name}({string.Join(", ", paramsDecl)})");
+                sb.AppendLine("    {");
+                sb.AppendLine($"        return new {cleanElem}_WasmModule({importCall});");
+                sb.AppendLine("    }");
+            }
+            return;
+        }
+
+        if (retKind == RetKind.EntityListReturn)
+        {
+            IsCollection(method.ReturnType, out var elemType);
+            string cleanElem = CleanInterfaceName(elemType);
+            sb.AppendLine($"    public {typeStr} {method.Name}({string.Join(", ", paramsDecl)})");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        return {importCall}.Select(id => ({elemType.ToDisplayString()})new {cleanElem}_WasmModule(id));");
+            sb.AppendLine("    }");
+            return;
+        }
+
+        sb.AppendLine($"    public {typeStr} {method.Name}({string.Join(", ", paramsDecl)})");
+        sb.AppendLine("    {");
+
+        if (retKind == RetKind.Void || method.ReturnType.SpecialType == SpecialType.System_Void)
+        {
+            sb.AppendLine($"        {importCall};");
+        }
+        else
+        {
+            sb.AppendLine($"        return {importCall};");
+        }
+        sb.AppendLine("    }");
+    }
+
+    private static string ToKebabCase(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        var sb = new StringBuilder();
+        sb.Append(char.ToLowerInvariant(value[0]));
+        for (int i = 1; i < value.Length; i++)
+        {
+            char c = value[i];
+            if (char.IsUpper(c))
+            {
+                sb.Append('-');
+                sb.Append(char.ToLowerInvariant(c));
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString();
+    }
+
+    private static string ToPascalCase(string kebab)
+    {
+        if (string.IsNullOrEmpty(kebab)) return "";
+        var sb = new StringBuilder();
+        bool nextUpper = true;
+        foreach (char c in kebab)
+        {
+            if (c == '-')
+            {
+                nextUpper = true;
+            }
+            else
+            {
+                if (nextUpper)
+                {
+                    sb.Append(char.ToUpperInvariant(c));
+                    nextUpper = false;
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
+        }
+        return sb.ToString();
+    }
+
+    private static HashSet<string> CollectPropertyAccessorNames(INamedTypeSymbol symbol)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var member in symbol.GetMembers())
+        {
+            if (member is IPropertySymbol prop)
+            {
+                if (prop.GetMethod != null) set.Add(prop.GetMethod.Name);
+                if (prop.SetMethod != null) set.Add(prop.SetMethod.Name);
+            }
+        }
+        return set;
+    }
+}

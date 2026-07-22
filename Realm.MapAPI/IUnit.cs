@@ -18,9 +18,9 @@ public interface IUnit
     string UnitId { get; }
 
     /// <summary>
-    /// Gets the display name of the unit.
+    /// Gets or sets the display name of the unit.
     /// </summary>
-    string Name { get; }
+    string Name { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether the unit is owned by an enemy player.
@@ -232,14 +232,21 @@ public interface IUnit
     /// </summary>
     /// <param name="key">The unique data key.</param>
     /// <param name="value">The data object to store.</param>
-    void SetCustomData(string key, object value);
+    void SetCustomData(string key, string value);
+
+    /// <summary>
+    /// Associates custom data with a unique string key on this unit.
+    /// </summary>
+    /// <param name="key">The unique data key.</param>
+    /// <param name="value">The data object to store.</param>
+    void SetCustomData(string key, object value) => SetCustomData(key, value?.ToString() ?? "");
 
     /// <summary>
     /// Retrieves custom data associated with a unique string key on this unit.
     /// </summary>
     /// <param name="key">The data key.</param>
     /// <returns>The stored data object, or null if the key does not exist.</returns>
-    object? GetCustomData(string key);
+    string? GetCustomData(string key);
 
     /// <summary>
     /// Removes custom data associated with a unique string key on this unit.

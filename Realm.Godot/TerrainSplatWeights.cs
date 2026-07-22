@@ -143,21 +143,55 @@ public struct TerrainSplatWeights : IEquatable<TerrainSplatWeights>
         return $"{Index0},{Index1},{Index2},{Index3},{Weight0:F4},{Weight1:F4},{Weight2:F4},{Weight3:F4}";
     }
 
-    public static TerrainSplatWeights Deserialize(string serialized)
+    public static TerrainSplatWeights Deserialize(ReadOnlySpan<char> span)
     {
-        if (string.IsNullOrEmpty(serialized)) return CreateSolid(3);
-        var parts = serialized.Split(',');
-        if (parts.Length != 8) return CreateSolid(3);
+        if (span.IsEmpty) return CreateSolid(3);
+
+        int idx0 = 0, idx1 = 0, idx2 = 0, idx3 = 0;
+        float w0 = 0f, w1 = 0f, w2 = 0f, w3 = 0f;
+
+        int fieldIndex = 0;
+        int start = 0;
+        for (int i = 0; i <= span.Length; i++)
+        {
+            if (i == span.Length || span[i] == ',')
+            {
+                ReadOnlySpan<char> field = span.Slice(start, i - start);
+                start = i + 1;
+
+                switch (fieldIndex)
+                {
+                    case 0: int.TryParse(field, out idx0); break;
+                    case 1: int.TryParse(field, out idx1); break;
+                    case 2: int.TryParse(field, out idx2); break;
+                    case 3: int.TryParse(field, out idx3); break;
+                    case 4: float.TryParse(field, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out w0); break;
+                    case 5: float.TryParse(field, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out w1); break;
+                    case 6: float.TryParse(field, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out w2); break;
+                    case 7: float.TryParse(field, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out w3); break;
+                }
+                fieldIndex++;
+            }
+        }
+
+        if (fieldIndex < 8) return CreateSolid(3);
+
         return new TerrainSplatWeights
         {
-            Index0 = int.Parse(parts[0]),
-            Index1 = int.Parse(parts[1]),
-            Index2 = int.Parse(parts[2]),
-            Index3 = int.Parse(parts[3]),
-            Weight0 = float.Parse(parts[4], System.Globalization.CultureInfo.InvariantCulture),
-            Weight1 = float.Parse(parts[5], System.Globalization.CultureInfo.InvariantCulture),
-            Weight2 = float.Parse(parts[6], System.Globalization.CultureInfo.InvariantCulture),
-            Weight3 = float.Parse(parts[7], System.Globalization.CultureInfo.InvariantCulture)
+            Index0 = idx0,
+            Index1 = idx1,
+            Index2 = idx2,
+            Index3 = idx3,
+            Weight0 = w0,
+            Weight1 = w1,
+            Weight2 = w2,
+            Weight3 = w3
         };
+    }
+
+    public static TerrainSplatWeights Deserialize(string? serialized)
+    {
+        if (string.IsNullOrEmpty(serialized)) return CreateSolid(3);
+        return Deserialize(serialized.AsSpan());
     }
 }

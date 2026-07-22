@@ -61,10 +61,25 @@ public interface IGameAPI
     IEnumerable<IUnit> GetUnitsInRadius(Vector3 center, float radius);
 
     /// <summary>
+    /// Gets the number of resource nodes.
+    /// </summary>
+    int ResourceNodeCount { get; }
+
+    /// <summary>
+    /// Retrieves a resource node by its index.
+    /// </summary>
+    IResourceNode GetResourceNode(int index);
+
+    /// <summary>
     /// Retrieves all active resource nodes in the game world.
     /// </summary>
     /// <returns>A collection of all active resource nodes.</returns>
-    IEnumerable<IResourceNode> GetResourceNodes();
+    IEnumerable<IResourceNode> GetResourceNodes()
+    {
+        int count = ResourceNodeCount;
+        for (int i = 0; i < count; i++)
+            yield return GetResourceNode(i);
+    }
 
     /// <summary>
     /// Displays floating feedback text on the player's screen.
@@ -424,25 +439,57 @@ public interface IGameAPI
     void SendMessageToPlayer(int playerIndex, string message);
 
     /// <summary>
+    /// Triggered when a scheduled timer expires.
+    /// </summary>
+    event Action<int>? OnTimerExpired;
+
+    /// <summary>
     /// Schedules a one-shot callback to fire after the specified delay (in seconds).
     /// </summary>
     /// <param name="delay">Delay in seconds before the callback is invoked.</param>
-    /// <param name="callback">The action to invoke when the timer expires.</param>
     /// <returns>A handle that can be passed to <see cref="CancelTimer"/> to cancel the timer before it fires.</returns>
-    int ScheduleTimer(float delay, Action callback);
+    int ScheduleTimer(float delay);
 
     /// <summary>
     /// Schedules a repeating callback to fire every <paramref name="interval"/> seconds.
     /// </summary>
     /// <param name="interval">Interval in seconds between invocations.</param>
-    /// <param name="callback">The action to invoke on each tick.</param>
     /// <returns>A handle that can be passed to <see cref="CancelTimer"/> to stop the repeating timer.</returns>
-    int ScheduleRepeatingTimer(float interval, Action callback);
+    int ScheduleRepeatingTimer(float interval);
+
+    /// <summary>
+    /// Schedules a one-shot callback to fire after the specified delay (in seconds).
+    /// </summary>
+    int ScheduleTimer(float delay, Action callback)
+    {
+        int handle = ScheduleTimer(delay);
+        Action<int>? handler = null;
+        handler = (h) =>
+        {
+            if (h == handle)
+            {
+                callback();
+                OnTimerExpired -= handler;
+            }
+        };
+        OnTimerExpired += handler;
+        return handle;
+    }
+
+    /// <summary>
+    /// Schedules a repeating callback to fire every <paramref name="interval"/> seconds.
+    /// </summary>
+    int ScheduleRepeatingTimer(float interval, Action callback)
+    {
+        int handle = ScheduleRepeatingTimer(interval);
+        OnTimerExpired += (h) => { if (h == handle) callback(); };
+        return handle;
+    }
 
     /// <summary>
     /// Cancels a previously scheduled timer, preventing any future invocations.
     /// </summary>
-    /// <param name="timerHandle">The handle returned by <see cref="ScheduleTimer"/> or <see cref="ScheduleRepeatingTimer"/>.</param>
+    /// <param name="timerHandle">The handle returned by <see cref="ScheduleTimer(float)"/> or <see cref="ScheduleRepeatingTimer(float)"/>.</param>
     void CancelTimer(int timerHandle);
 
     /// <summary>
@@ -518,7 +565,8 @@ public interface IGameAPI
     /// <param name="radius">The search radius.</param>
     /// <param name="filter">A predicate function that returns true for units to include.</param>
     /// <returns>A lazily-evaluated sequence of matching units.</returns>
-    IEnumerable<IUnit> GetUnitsInRadius(Vector3 center, float radius, Func<IUnit, bool> filter);
+    IEnumerable<IUnit> GetUnitsInRadius(Vector3 center, float radius, Func<IUnit, bool> filter)
+        => GetUnitsInRadius(center, radius).Where(filter);
 
     /// <summary>
     /// Retrieves all alive units owned by the specified player slot
@@ -527,7 +575,8 @@ public interface IGameAPI
     /// <param name="playerIndex">Zero-based player slot index.</param>
     /// <param name="filter">A predicate that returns true for units to include.</param>
     /// <returns>A lazily-evaluated sequence of matching units.</returns>
-    IEnumerable<IUnit> GetUnitsOwnedByPlayer(int playerIndex, Func<IUnit, bool> filter);
+    IEnumerable<IUnit> GetUnitsOwnedByPlayer(int playerIndex, Func<IUnit, bool> filter)
+        => GetUnitsOwnedByPlayer(playerIndex).Where(filter);
 
 
 
@@ -659,11 +708,18 @@ public interface IGameAPI
     void IssueAttackMoveOrderToPlayer(int playerIndex, Vector3 destination);
 
     /// <summary>
+    /// Returns the number of units owned by the specified player.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player slot index.</param>
+    int CountUnitsOwnedByPlayer(int playerIndex);
+
+    /// <summary>
     /// Returns the number of units owned by the specified player that match the optional filter.
     /// </summary>
     /// <param name="playerIndex">Zero-based player slot index.</param>
     /// <param name="filter">Optional predicate; pass null to count all units.</param>
-    int CountUnitsOwnedByPlayer(int playerIndex, Func<IUnit, bool>? filter = null);
+    int CountUnitsOwnedByPlayer(int playerIndex, Func<IUnit, bool>? filter = null)
+        => filter == null ? CountUnitsOwnedByPlayer(playerIndex) : GetUnitsOwnedByPlayer(playerIndex).Count(filter);
 
 
 
@@ -773,13 +829,39 @@ public interface IGameAPI
     void ClearSelection();
 
     /// <summary>
+    /// Checks if a named coordinate box exists.
+    /// </summary>
+    bool HasCoordinate(string coordinateName);
+
+    /// <summary>
+    /// Gets the minimum coordinates of a named coordinate box.
+    /// </summary>
+    Vector3 GetCoordinateMin(string coordinateName);
+
+    /// <summary>
+    /// Gets the maximum coordinates of a named coordinate box.
+    /// </summary>
+    Vector3 GetCoordinateMax(string coordinateName);
+
+    /// <summary>
     /// Gets the bounding coordinates of a named coordinate box drawn in the map editor.
     /// </summary>
     /// <param name="coordinateName">The name of the coordinate box.</param>
     /// <param name="min">The minimum coordinates of the box.</param>
     /// <param name="max">The maximum coordinates of the box.</param>
     /// <returns>True if the coordinate box exists, false otherwise.</returns>
-    bool TryGetCoordinate(string coordinateName, out Vector3 min, out Vector3 max);
+    bool TryGetCoordinate(string coordinateName, out Vector3 min, out Vector3 max)
+    {
+        if (HasCoordinate(coordinateName))
+        {
+            min = GetCoordinateMin(coordinateName);
+            max = GetCoordinateMax(coordinateName);
+            return true;
+        }
+        min = Vector3.Zero;
+        max = Vector3.Zero;
+        return false;
+    }
 
     /// <summary>
     /// Checks if a 3D position is inside a named coordinate box.
@@ -795,4 +877,80 @@ public interface IGameAPI
     /// <param name="unitTypeId">The type identifier of the unit/structure.</param>
     /// <param name="abilityId">The identifier of the ability to add.</param>
     void AddUnitTypeAbility(string unitTypeId, string abilityId);
+
+    /// <summary>
+    /// Writes string content to a file in the whitelisted, map-specific subfolder in AppData saved_data directory.
+    /// The target location is sandboxed to user://saved_data/{mapName}/{fileName}.
+    /// </summary>
+    /// <param name="fileName">The name of the file to write to. Must be a safe, relative file name without directory traversal characters.</param>
+    /// <param name="content">The string content to write to the file.</param>
+    void WriteSavedData(string fileName, string content);
+
+    /// <summary>
+    /// Reads string content from a file in the whitelisted, map-specific subfolder in AppData saved_data directory.
+    /// The target location is sandboxed to user://saved_data/{mapName}/{fileName}.
+    /// </summary>
+    /// <param name="fileName">The name of the file to read from. Must be a safe, relative file name without directory traversal characters.</param>
+    /// <returns>The string content read from the file, or an empty string if the file does not exist or has invalid path characters.</returns>
+    string ReadSavedData(string fileName);
+
+    /// <summary>
+    /// Triggered when a unit buys or receives an item from a shop or altar.
+    /// </summary>
+    event Action<IUnit, string>? OnItemSold { add { } remove { } }
+
+    /// <summary>
+    /// Triggered when a structure finishes construction.
+    /// </summary>
+    event Action<IUnit>? OnConstructionFinished { add { } remove { } }
+
+    /// <summary>
+    /// Triggered when a unit is issued an order.
+    /// </summary>
+    event Action<IUnit, string, Vector3>? OnUnitOrdered { add { } remove { } }
+
+    /// <summary>
+    /// Gets the research level of a technology upgrade for the specified player slot.
+    /// </summary>
+    int GetPlayerTechLevel(int playerIndex, string techId) => 0;
+
+    /// <summary>
+    /// Sets the research level of a technology upgrade for the specified player slot.
+    /// </summary>
+    void SetPlayerTechLevel(int playerIndex, string techId, int level) { }
+
+    /// <summary>
+    /// Adds to the research level of a technology upgrade for the specified player slot.
+    /// </summary>
+    void AddPlayerTechLevel(int playerIndex, string techId, int delta = 1) { }
+
+    /// <summary>
+    /// Sets the display tooltip for an ability.
+    /// </summary>
+    void SetAbilityTooltip(string abilityId, string tooltip) { }
+
+    /// <summary>
+    /// Sets the display tooltip for an item.
+    /// </summary>
+    void SetItemTooltip(string itemId, string tooltip) { }
+
+    /// <summary>
+    /// Configures the grid position (X, Y) of an ability in the command card interface.
+    /// </summary>
+    void SetAbilityGridPosition(string abilityId, int x, int y) { }
+
+    /// <summary>
+    /// Sets whether an ability on a unit is disabled or hidden in the UI.
+    /// </summary>
+    void SetAbilityState(IUnit unit, string abilityId, bool disabled, bool hidden) { }
+
+    /// <summary>
+    /// Sets the mana cost of a unit's ability.
+    /// </summary>
+    void SetAbilityManaCost(IUnit unit, string abilityId, float manaCost) { }
+
+    /// <summary>
+    /// Plays a named visual animation on the unit's 3D model.
+    /// </summary>
+    void SetUnitAnimation(IUnit unit, string animationName) { }
 }

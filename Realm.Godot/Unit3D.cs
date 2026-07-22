@@ -688,12 +688,20 @@ public partial class Unit3D : CharacterBody3D
 		}
 	}
 
+	public bool IsAttackPath { get; set; } = false;
+
 	private void GetRemainingPathPoints(System.Collections.Generic.List<Vector3> points)
 	{
 		points.Clear();
+		IsAttackPath = false;
 		if (GameHost.Instance == null || !GameHost.Instance.EcsWorld.IsAlive(Entity)) return;
 
 		var world = GameHost.Instance.EcsWorld;
+		if (world.Has<Realm.Ecs.Components.Combat.AttackTarget>(Entity) || world.Has<Realm.Ecs.Components.Movement.AttackMove>(Entity))
+		{
+			IsAttackPath = true;
+		}
+
 		points.Add(GlobalPosition);
 
 		if (world.Has<Realm.Ecs.Services.PathFollow>(Entity))
@@ -820,7 +828,14 @@ public partial class Unit3D : CharacterBody3D
 			_pathVisualsContainer.AddChild(marker);
 			_pathMarkersPool.Add(marker);
 		}
-		return _pathMarkersPool[index];
+		var m = _pathMarkersPool[index];
+		if (m.MaterialOverride is StandardMaterial3D markerMat)
+		{
+			Color c = IsAttackPath ? new Color(0.9f, 0.1f, 0.1f) : new Color(0.2f, 0.6f, 1.0f);
+			markerMat.AlbedoColor = c;
+			markerMat.Emission = c;
+		}
+		return m;
 	}
 
 	private MeshInstance3D GetOrCreateLine(int index)
@@ -843,7 +858,15 @@ public partial class Unit3D : CharacterBody3D
 			_pathVisualsContainer.AddChild(line);
 			_pathLinesPool.Add(line);
 		}
-		return _pathLinesPool[index];
+		var l = _pathLinesPool[index];
+		if (l.MaterialOverride is StandardMaterial3D lineMat)
+		{
+			Color c = IsAttackPath ? new Color(0.9f, 0.1f, 0.1f, 0.5f) : new Color(0.2f, 0.6f, 1.0f, 0.5f);
+			Color emissionColor = IsAttackPath ? new Color(0.9f, 0.1f, 0.1f) : new Color(0.2f, 0.6f, 1.0f);
+			lineMat.AlbedoColor = c;
+			lineMat.Emission = emissionColor;
+		}
+		return l;
 	}
 
 	public Color Modulate

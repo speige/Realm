@@ -33,7 +33,7 @@ public partial class MapEditorHUD : Control
 	public static bool SavedCameraBoundsVisible = false;
 	public static string SavedEntityCategory = "";
 
-	public static float SavedBrushRadius = 4f;
+	public static float SavedBrushRadius = 2f;
 	public static float SavedBrushStrength = 0.5f;
 
 	private static string _lastUsedFolder = "";
@@ -294,6 +294,9 @@ public partial class MapEditorHUD : Control
 	private MapEditorEntityPaletteController _entityPaletteController;
 	private MapEditorGenerationDialog _generationDialog;
 
+	private bool _wasmHasErrors = false;
+	private string _wasmCompileLogPath = "";
+
 	public const string TempWorkspaceGodotPath = "user://temp_map_workspace";
 
 	private string _tempWorkspacePath;
@@ -303,6 +306,7 @@ public partial class MapEditorHUD : Control
 
 	public override void _ExitTree()
 	{
+		CloseWasmConsoleModal();
 		if (Instance == this)
 		{
 			Instance = null;
@@ -365,7 +369,7 @@ public partial class MapEditorHUD : Control
 		{
 			VSCodeManager.Instance.Initialize(this);
 			_btnVSCode = GetNode<Button>("TopLeftBox/BtnVSCode");
-			SetupButton(_btnVSCode, "💻 CODE & DATA", null, 13, "Toggle the embedded VSCode editor");
+			SetupButton(_btnVSCode, "💻 CODE & DATA", () => ToggleVSCodeEditor(), 13, "Toggle the embedded VSCode editor");
 		}
 		else
 		{
@@ -373,14 +377,10 @@ public partial class MapEditorHUD : Control
 		}
 
 		_btnUndo = GetNode<Button>("TopLeftBox/BtnUndo");
-		UIStyle.ApplyButtonText(_btnUndo, "↩️ UNDO", 13);
-		_btnUndo.Pressed += () => UndoAction();
-		_btnUndo.TooltipText = "Undo the last action (Ctrl+Z)";
+		SetupButton(_btnUndo, "↩️ UNDO", () => UndoAction(), 13, "Undo the last action (Ctrl+Z)");
 
 		_btnRedo = GetNode<Button>("TopLeftBox/BtnRedo");
-		UIStyle.ApplyButtonText(_btnRedo, "↪️ REDO", 13);
-		_btnRedo.Pressed += () => RedoAction();
-		_btnRedo.TooltipText = "Redo the last undone action (Ctrl+Y)";
+		SetupButton(_btnRedo, "↪️ REDO", () => RedoAction(), 13, "Redo the last undone action (Ctrl+Y)");
 
 		_btnEyedropper = GetNode<Button>("TopLeftBox/BtnEyedropper");
 		SetupButton(_btnEyedropper, "🔍 EYEDROPPER", () => TriggerToolSelection(GameHost.EditorTool.Eyedropper, _btnEyedropper), 14, "Pick / sample entities, terrain height (Shift+Click), or vertex color under cursor (I)");
@@ -485,7 +485,13 @@ public partial class MapEditorHUD : Control
 		}, 11, "Toggle top-down vs perspective angle (C)");
 
 		_btnSkybox = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnSkybox");
-		SetupButton(_btnSkybox, "☀️ Cycle Lighting", () => GameHost.Instance?.CycleTimeOfDay(), 11, "Cycle map environment lighting (L)");
+		SetupButton(_btnSkybox, "☀️ Cycle Lighting", () => {
+			if (GameHost.Instance != null)
+			{
+				var res = GameHost.Instance.CycleTimeOfDay();
+				UpdateLightingTuningSlidersFromPhase(res.TimeOfDayIndex);
+			}
+		}, 11, "Cycle map environment lighting (L)");
 
 		_btnZoomIn = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnZoomIn");
 		_btnZoomIn.Pressed += () =>
@@ -653,6 +659,7 @@ public partial class MapEditorHUD : Control
 		};
 
 		ApplyThemeStyles();
+		SetupLightingTuningUI();
 
 		// Right Accordions
 		_accordionTool = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion");
@@ -1135,18 +1142,24 @@ public partial class MapEditorHUD : Control
 		var selected = GameHost.Instance.SelectedEditorObject;
 		if (GodotObject.IsInstanceValid(selected))
 		{
-			_lblInfoText.Visible = false;
-			_inspectorPanel.Visible = true;
+			if (_lblInfoText != null) _lblInfoText.Visible = false;
+			if (_inspectorPanel != null) _inspectorPanel.Visible = true;
 			if (_accordionInspector != null)
 			{
 				_accordionInspector.Visible = true;
-				_btnHeaderInspector.Text = "▼ Selected Object Inspector";
-				_contentInspector.Visible = true;
+				if (_btnHeaderInspector != null) _btnHeaderInspector.Text = "▼ Selected Object Inspector";
+				if (_contentInspector != null) _contentInspector.Visible = true;
 			}
 			string nameStr = selected.Name;
-			Vector3 pos = (selected as Node3D).Position;
-			Vector3 rot = (selected as Node3D).RotationDegrees;
-			Vector3 scale = (selected as Node3D).Scale;
+			Vector3 pos = Vector3.Zero;
+			Vector3 rot = Vector3.Zero;
+			Vector3 scale = Vector3.One;
+			if (selected is Node3D node3D)
+			{
+				pos = node3D.Position;
+				rot = node3D.RotationDegrees;
+				scale = node3D.Scale;
+			}
 			string typeStr = "";
 			if (selected is Unit3D unit)
 			{
@@ -1164,21 +1177,27 @@ public partial class MapEditorHUD : Control
 				nameStr = "DECAL";
 			}
 			
-			_viewModel.HasInspectorSelection = true;
-			_viewModel.InspectorTitle = $"SELECTED: {nameStr}\n[{typeStr}]";
-			_viewModel.InspectorPos = $"Pos: {pos.X:F2}, {pos.Y:F2}, {pos.Z:F2}\nRot: {rot.Y:F1}° | Scale: {scale.X:F2}x";
+			if (_viewModel != null)
+			{
+				_viewModel.HasInspectorSelection = true;
+				_viewModel.InspectorTitle = $"SELECTED: {nameStr}\n[{typeStr}]";
+				_viewModel.InspectorPos = $"Pos: {pos.X:F2}, {pos.Y:F2}, {pos.Z:F2}\nRot: {rot.Y:F1}° | Scale: {scale.X:F2}x";
+			}
 		}
 		else
 		{
-			_lblInfoText.Visible = true;
-			_inspectorPanel.Visible = false;
+			if (_lblInfoText != null) _lblInfoText.Visible = true;
+			if (_inspectorPanel != null) _inspectorPanel.Visible = false;
 			if (_accordionInspector != null)
 			{
 				_accordionInspector.Visible = false;
 			}
-			_viewModel.HasInspectorSelection = false;
-			_viewModel.InspectorTitle = "No Selection";
-			_viewModel.InspectorPos = "Position: (0, 0)";
+			if (_viewModel != null)
+			{
+				_viewModel.HasInspectorSelection = false;
+				_viewModel.InspectorTitle = "No Selection";
+				_viewModel.InspectorPos = "Position: (0, 0)";
+			}
 			TriggerToolSelection(GameHost.Instance.ActiveEditorTool, _activeToolButton, GameHost.Instance.ActivePlaceId);
 		}
 	}
@@ -1478,6 +1497,30 @@ public partial class MapEditorHUD : Control
 	public void DeleteSelectedObjectAction()
 	{
 		DeleteSelectedObject();
+	}
+
+	private void DeleteSelectedObject()
+	{
+		if (GameHost.Instance == null)
+		{
+			ShowFeedback("[Debug] DeleteSelectedObject: GameHost.Instance is NULL!");
+			return;
+		}
+		var selected = GameHost.Instance.SelectedEditorObject;
+		if (GodotObject.IsInstanceValid(selected))
+		{
+			Vector3 pos = (selected is Node3D n) ? n.Position : Vector3.Zero;
+			GameHost.Instance.SelectedEditorObject = null;
+			var action = GameHost.Instance.DeleteObjectAtWithUndo(selected, pos);
+			if (action != null)
+			{
+				EditorHistoryManager.RecordAction(action);
+			}
+			else
+			{
+				GameHost.Instance.DeleteNodeExternal(selected);
+			}
+		}
 	}
 
 	public void RotateSelectedObjectAction(float angleDelta)
@@ -2000,32 +2043,48 @@ public partial class MapEditorHUD : Control
 	{
 		if (string.IsNullOrEmpty(_tempWorkspacePath) || !System.IO.Directory.Exists(_tempWorkspacePath)) return;
 
-		foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories))
+		try
 		{
-			var fileAttributes = System.IO.File.GetAttributes(file);
-			if ((fileAttributes & System.IO.FileAttributes.ReadOnly) == System.IO.FileAttributes.ReadOnly)
+			foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.TopDirectoryOnly))
 			{
-				System.IO.File.SetAttributes(file, fileAttributes & ~System.IO.FileAttributes.ReadOnly);
+				var fileAttributes = System.IO.File.GetAttributes(file);
+				if ((fileAttributes & System.IO.FileAttributes.ReadOnly) == System.IO.FileAttributes.ReadOnly)
+				{
+					System.IO.File.SetAttributes(file, fileAttributes & ~System.IO.FileAttributes.ReadOnly);
+				}
+				System.IO.File.Delete(file);
 			}
-			System.IO.File.Delete(file);
-		}
 
-		foreach (var directory in System.IO.Directory.GetDirectories(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories))
-		{
-			var directoryAttributes = System.IO.File.GetAttributes(directory);
-			if ((directoryAttributes & System.IO.FileAttributes.ReadOnly) == System.IO.FileAttributes.ReadOnly)
+			foreach (var directory in System.IO.Directory.GetDirectories(_tempWorkspacePath))
 			{
-				System.IO.File.SetAttributes(directory, directoryAttributes & ~System.IO.FileAttributes.ReadOnly);
+				string name = System.IO.Path.GetFileName(directory);
+				if (name.Equals("bin", StringComparison.OrdinalIgnoreCase) || name.Equals("obj", StringComparison.OrdinalIgnoreCase))
+				{
+					continue;
+				}
+				ClearDirectoryReadOnly(directory);
+				System.IO.Directory.Delete(directory, true);
 			}
 		}
-
-		foreach (var directory in System.IO.Directory.GetDirectories(_tempWorkspacePath))
+		catch (Exception ex)
 		{
-			System.IO.Directory.Delete(directory, true);
+			GD.PrintErr($"[ClearTempWorkspaceExternal] Error: {ex.Message}");
 		}
 
 		_lastTerrainSyncTime = 0;
 		_lastMetadataSyncTime = 0;
+	}
+
+	private static void ClearDirectoryReadOnly(string targetDir)
+	{
+		foreach (var file in System.IO.Directory.GetFiles(targetDir, "*", System.IO.SearchOption.AllDirectories))
+		{
+			var attrs = System.IO.File.GetAttributes(file);
+			if ((attrs & System.IO.FileAttributes.ReadOnly) != 0)
+			{
+				System.IO.File.SetAttributes(file, attrs & ~System.IO.FileAttributes.ReadOnly);
+			}
+		}
 	}
 
 	public void GenerateVSCodeFilesExternal()
@@ -2095,6 +2154,39 @@ public partial class MapEditorHUD : Control
 		_isSyncing = false;
 	}
 
+	private static bool IsIgnoredPath(string relativePath)
+	{
+		if (string.IsNullOrEmpty(relativePath)) return false;
+		string normalized = relativePath.Replace('\\', '/');
+		string[] parts = normalized.Split('/');
+		foreach (var part in parts)
+		{
+			if (part.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+				part.Equals(".vs", StringComparison.OrdinalIgnoreCase) ||
+				part.Equals(".godot", StringComparison.OrdinalIgnoreCase) ||
+				part.Equals(".idea", StringComparison.OrdinalIgnoreCase) ||
+				part.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+				part.Equals("obj", StringComparison.OrdinalIgnoreCase))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static void CopyFileClearingReadOnly(string sourceFile, string targetFile)
+	{
+		if (System.IO.File.Exists(targetFile))
+		{
+			var attrs = System.IO.File.GetAttributes(targetFile);
+			if ((attrs & System.IO.FileAttributes.ReadOnly) != 0)
+			{
+				System.IO.File.SetAttributes(targetFile, attrs & ~System.IO.FileAttributes.ReadOnly);
+			}
+		}
+		System.IO.File.Copy(sourceFile, targetFile, true);
+	}
+
 	private void CopyFolderToTempWorkspace(string sourceFolder)
 	{
 		ClearTempWorkspaceExternal();
@@ -2106,27 +2198,19 @@ public partial class MapEditorHUD : Control
 		foreach (var file in System.IO.Directory.GetFiles(sourceFolder, "*", System.IO.SearchOption.AllDirectories))
 		{
 			string relativePath = file.Substring(sourceFolder.Length + 1);
-			string[] pathParts = relativePath.Split(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
-			if (System.Array.IndexOf(pathParts, ".git") >= 0 ||
-				System.Array.IndexOf(pathParts, ".vs") >= 0 ||
-				System.Array.IndexOf(pathParts, "bin") >= 0 ||
-				System.Array.IndexOf(pathParts, "obj") >= 0)
-				continue;
+			if (IsIgnoredPath(relativePath)) continue;
+
 			string targetFile = System.IO.Path.Combine(_tempWorkspacePath, relativePath);
 			string targetDir = System.IO.Path.GetDirectoryName(targetFile);
 			if (!string.IsNullOrEmpty(targetDir) && !System.IO.Directory.Exists(targetDir))
 			{
 				System.IO.Directory.CreateDirectory(targetDir);
 			}
-			System.IO.File.Copy(file, targetFile, true);
+			CopyFileClearingReadOnly(file, targetFile);
 		}
-		// Only call SetupWorkspace if source folder didn't already provide a .csproj
-		bool sourceHasCsproj = System.IO.Directory.GetFiles(sourceFolder, "*.csproj", System.IO.SearchOption.TopDirectoryOnly).Length > 0;
-		if (!sourceHasCsproj)
-		{
-			MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, System.IO.Path.GetFileName(sourceFolder));
-		}
-		LoadMapProperties();
+		MapWorkspaceService.EnsureWitFile(_tempWorkspacePath);
+		MapWorkspaceService.EnsureWasmEntryPoint(_tempWorkspacePath);
+		MapWorkspaceService.EnsureCsproj(_tempWorkspacePath, System.IO.Path.GetFileName(sourceFolder));
 	}
 
 	private void CopyTempWorkspaceToFolder(string targetFolder)
@@ -2137,11 +2221,6 @@ public partial class MapEditorHUD : Control
 		}
 		
 		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
-		if (GameHost.Instance != null)
-		{
-			GameHost.Instance.SaveMapToFile(tempTerrainPath);
-			GameHost.Instance.EditorHasUnsavedChanges = false;
-		}
 
 		// Sync latest source code files before compiling
 		if (!string.IsNullOrEmpty(_currentSourceFolder) && System.IO.Directory.Exists(_currentSourceFolder))
@@ -2156,27 +2235,19 @@ public partial class MapEditorHUD : Control
 			}
 		}
 
-		// Compile (skip attribution — that's only for the Publish button)
-		CompileAndSignMapSync(_tempWorkspacePath, skipAttribution: true);
-
 		_lastTerrainSyncTime = GetMaxTerrainWriteTime(tempTerrainPath);
 
 		foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories))
 		{
 			string relativePath = file.Substring(_tempWorkspacePath.Length + 1);
-			string[] pathParts = relativePath.Split(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
-			if (System.Array.IndexOf(pathParts, ".git") >= 0 ||
-				System.Array.IndexOf(pathParts, ".vs") >= 0 ||
-				System.Array.IndexOf(pathParts, "bin") >= 0 ||
-				System.Array.IndexOf(pathParts, "obj") >= 0)
-				continue;
+			if (IsIgnoredPath(relativePath)) continue;
 			string targetFile = System.IO.Path.Combine(targetFolder, relativePath);
 			string targetDir = System.IO.Path.GetDirectoryName(targetFile);
 			if (!string.IsNullOrEmpty(targetDir) && !System.IO.Directory.Exists(targetDir))
 			{
 				System.IO.Directory.CreateDirectory(targetDir);
 			}
-			System.IO.File.Copy(file, targetFile, true);
+			CopyFileClearingReadOnly(file, targetFile);
 		}
 		
 		if (OperatingSystem.IsWindows())
@@ -2197,6 +2268,30 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	private async System.Threading.Tasks.Task SaveMapToFolderAsync(string targetFolder)
+	{
+		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+		if (GameHost.Instance != null)
+		{
+			GameHost.Instance.SaveMapToFile(tempTerrainPath);
+			GameHost.Instance.EditorHasUnsavedChanges = false;
+		}
+
+		ShowFeedback(TranslationServer.Translate("Saving map folder..."));
+
+		try
+		{
+			await System.Threading.Tasks.Task.Run(() => CopyTempWorkspaceToFolder(targetFolder));
+
+			ShowFeedback(string.Format(TranslationServer.Translate("Map saved successfully to folder {0}!"), System.IO.Path.GetFileName(targetFolder)));
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] SaveMapToFolderAsync failed: {ex}");
+			ShowFeedback(string.Format(TranslationServer.Translate("Failed to save map: {0}"), ex.Message));
+		}
+	}
+
 	private void SaveMapAction()
 	{
 		if (GameHost.Instance == null) return;
@@ -2213,8 +2308,7 @@ public partial class MapEditorHUD : Control
 				{
 					string selectedFolder = selectedPaths[0];
 					_lastUsedFolder = selectedFolder;
-					CopyTempWorkspaceToFolder(selectedFolder);
-					ShowFeedback(string.Format(TranslationServer.Translate("Map saved successfully to folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
+					_ = SaveMapToFolderAsync(selectedFolder);
 				}
 				else
 				{
@@ -2227,10 +2321,7 @@ public partial class MapEditorHUD : Control
 		{
 			string defaultFolder = ProjectSettings.GlobalizePath("user://maps/default_map");
 			System.IO.Directory.CreateDirectory(defaultFolder);
-			CopyTempWorkspaceToFolder(defaultFolder);
-			ShowFeedback(TranslationServer.Translate("Saving map to default location..."));
-			var timer = GetTree().CreateTimer(0.8f);
-			timer.Timeout += () => ShowFeedback(TranslationServer.Translate("Map saved successfully to user://maps/default_map!"));
+			_ = SaveMapToFolderAsync(defaultFolder);
 		}
 	}
 
@@ -2249,25 +2340,7 @@ public partial class MapEditorHUD : Control
 				if (status && selectedPaths.Length > 0)
 				{
 					string selectedFolder = selectedPaths[0];
-					_lastUsedFolder = selectedFolder;
-					_currentSourceFolder = selectedFolder;
-					CopyFolderToTempWorkspace(selectedFolder);
-					string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
-					bool success = GameHost.Instance.LoadMapFromFile(terrainPath);
-					if (success)
-					{
-						if (OperatingSystem.IsWindows())
-						{
-							VSCodeManager.Instance.SaveRecentMapDir(selectedFolder);
-						}
-						_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
-						_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
-						ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
-					}
-					else
-					{
-						ShowFeedback(TranslationServer.Translate("Failed to load map files from folder!"));
-					}
+					_ = LoadMapFolderAsync(selectedFolder);
 				}
 			})
 		);
@@ -2277,22 +2350,58 @@ public partial class MapEditorHUD : Control
 			string defaultFolder = ProjectSettings.GlobalizePath("user://maps/default_map");
 			if (System.IO.Directory.Exists(defaultFolder))
 			{
-				_currentSourceFolder = defaultFolder;
-				CopyFolderToTempWorkspace(defaultFolder);
-			}
-			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
-			bool success = GameHost.Instance.LoadMapFromFile(terrainPath);
-			if (success)
-			{
-				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
-				_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
-				ShowFeedback(TranslationServer.Translate("Map loaded from default_map"));
-			}
-			else
-			{
-				ShowFeedback(TranslationServer.Translate("No map file found"));
+				_ = LoadMapFolderAsync(defaultFolder);
 			}
 		}
+	}
+
+	public bool LoadMapFolder(string selectedFolder)
+	{
+		return LoadMapFolderAsync(selectedFolder).GetAwaiter().GetResult();
+	}
+
+	public async System.Threading.Tasks.Task<bool> LoadMapFolderAsync(string selectedFolder)
+	{
+		if (!System.IO.Directory.Exists(selectedFolder)) return false;
+		_lastUsedFolder = selectedFolder;
+		_currentSourceFolder = selectedFolder;
+
+		ShowFeedback(TranslationServer.Translate("Loading map..."));
+		await System.Threading.Tasks.Task.Run(() => CopyFolderToTempWorkspace(selectedFolder));
+
+		var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+		Callable.From(() =>
+		{
+			try
+			{
+				LoadMapProperties();
+				string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+				bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
+
+				if (success)
+				{
+					if (OperatingSystem.IsWindows())
+					{
+						VSCodeManager.Instance.SaveRecentMapDir(selectedFolder);
+					}
+					_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
+					_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+					ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
+				}
+				else
+				{
+					ShowFeedback(TranslationServer.Translate("Failed to load map files from folder!"));
+				}
+
+				tcs.SetResult(success);
+			}
+			catch (Exception ex)
+			{
+				tcs.SetException(ex);
+			}
+		}).CallDeferred();
+
+		return await tcs.Task;
 	}
 
 	private string GetInitialDirectory()
@@ -2349,7 +2458,8 @@ public partial class MapEditorHUD : Control
 				{
 					var compileProcess = new System.Diagnostics.Process();
 					compileProcess.StartInfo.FileName = "dotnet";
-					compileProcess.StartInfo.Arguments = "build -c Release";
+					compileProcess.StartInfo.Arguments = "publish \"CustomMap.csproj\" -c Release -r wasi-wasm";
+					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = "C:\\Users\\devin\\.wasi-sdk\\wasi-sdk-25.0-x86_64-windows";
 					compileProcess.StartInfo.WorkingDirectory = workspace;
 					compileProcess.StartInfo.CreateNoWindow = true;
 					compileProcess.StartInfo.UseShellExecute = false;
@@ -2595,6 +2705,27 @@ public partial class MapEditorHUD : Control
 		}, 13);
 		btnCancel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
 		hbox.AddChild(btnCancel);
+	}
+
+	private void ShowWasmConsoleModal()
+	{
+		Realm.Godot.UI.WasmConsoleWindow.Instance.ClearLogs();
+		Realm.Godot.UI.WasmConsoleWindow.Instance.ShowConsole();
+	}
+
+	public void AppendWasmConsoleLog(string line)
+	{
+		Realm.Godot.UI.WasmConsoleWindow.Instance.AppendLog(line);
+	}
+
+	public void SetWasmConsoleStatus(string statusText, Color color)
+	{
+		Realm.Godot.UI.WasmConsoleWindow.Instance.SetStatus(statusText, color);
+	}
+
+	public void CloseWasmConsoleModal()
+	{
+		// WasmConsoleWindow remains open as a persistent window across scene transitions.
 	}
 
 	private ColorRect _helpOverlayPanel = null;
@@ -2863,53 +2994,166 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
-	private void CompileAndSignMapSync(string workspace, bool skipAttribution = false)
+	private async System.Threading.Tasks.Task CompileAndSignMapAsync(string workspace, bool skipAttribution = true)
 	{
 		// 1. Compile triggers
 		try
 		{
 			if (System.IO.Directory.Exists(workspace))
 			{
-				// Ensure there is only one .csproj (keep CustomMap.csproj, remove others)
+				MapWorkspaceService.EnsureWitFile(workspace);
+				MapWorkspaceService.EnsureWasmEntryPoint(workspace);
+				MapWorkspaceService.EnsureCsproj(workspace, System.IO.Path.GetFileName(workspace));
+
 				var csprojFiles = System.IO.Directory.GetFiles(workspace, "*.csproj", System.IO.SearchOption.TopDirectoryOnly);
 				if (csprojFiles.Length == 0)
 				{
+					_wasmHasErrors = true;
+					SetWasmConsoleStatus("❌ WASM Compilation Failed: No .csproj found", new Color(1.0f, 0.3f, 0.3f));
+					AppendWasmConsoleLog("[ERROR] No .csproj found in workspace, cannot compile map script");
 					GD.PrintErr("[MapEditorHUD] No .csproj found in workspace, cannot compile map script");
 					return;
-				}
-				if (csprojFiles.Length > 1)
-				{
-					foreach (var extra in csprojFiles)
-					{
-						if (!System.IO.Path.GetFileName(extra).Equals("CustomMap.csproj", System.StringComparison.OrdinalIgnoreCase))
-						{
-							System.IO.File.Delete(extra);
-						}
-					}
 				}
 
 				// Pick the first .csproj (prefer CustomMap.csproj)
 				string csproj = csprojFiles.FirstOrDefault(f => System.IO.Path.GetFileName(f).Equals("CustomMap.csproj", System.StringComparison.OrdinalIgnoreCase)) ?? csprojFiles[0];
-				var compileProcess = new System.Diagnostics.Process();
-				compileProcess.StartInfo.FileName = "dotnet";
-				compileProcess.StartInfo.Arguments = $"build \"{csproj}\" -c Release";
-				compileProcess.StartInfo.WorkingDirectory = workspace;
-				compileProcess.StartInfo.CreateNoWindow = true;
-				compileProcess.StartInfo.UseShellExecute = false;
-				compileProcess.StartInfo.RedirectStandardOutput = true;
-				compileProcess.StartInfo.RedirectStandardError = true;
-				compileProcess.Start();
-				string buildOutput = compileProcess.StandardOutput.ReadToEnd();
-				string buildError = compileProcess.StandardError.ReadToEnd();
-				compileProcess.WaitForExit();
-				if (compileProcess.ExitCode != 0)
+
+				// Check if WASM binary already exists and no .cs files have been modified since it was built
+				string binDir = System.IO.Path.Combine(workspace, "bin");
+				string existingWasm = null;
+				if (System.IO.Directory.Exists(binDir))
 				{
-					GD.PrintErr($"[MapEditorHUD] Map script compilation failed (exit code {compileProcess.ExitCode}):\n{buildOutput}\n{buildError}");
+					existingWasm = System.IO.Directory.GetFiles(
+						binDir,
+						"*.wasm",
+						System.IO.SearchOption.AllDirectories
+					).FirstOrDefault();
 				}
+
+				if (string.IsNullOrEmpty(existingWasm) && !string.IsNullOrEmpty(_currentSourceFolder) && System.IO.Directory.Exists(_currentSourceFolder))
+				{
+					string sourceBinDir = System.IO.Path.Combine(_currentSourceFolder, "bin");
+					if (System.IO.Directory.Exists(sourceBinDir))
+					{
+						existingWasm = System.IO.Directory.GetFiles(
+							sourceBinDir,
+							"*.wasm",
+							System.IO.SearchOption.AllDirectories
+						).FirstOrDefault();
+					}
+				}
+
+				if (!string.IsNullOrEmpty(existingWasm) && System.IO.File.Exists(existingWasm))
+				{
+					DateTime wasmTime = System.IO.File.GetLastWriteTimeUtc(existingWasm);
+					var sourceDirs = new System.Collections.Generic.List<string> { workspace };
+					if (!string.IsNullOrEmpty(_currentSourceFolder) && System.IO.Directory.Exists(_currentSourceFolder) && !_currentSourceFolder.Equals(workspace, System.StringComparison.OrdinalIgnoreCase))
+					{
+						sourceDirs.Add(_currentSourceFolder);
+					}
+
+					bool hasNewerCsFile = false;
+					foreach (var dir in sourceDirs)
+					{
+						var csFiles = System.IO.Directory.GetFiles(dir, "*.cs", System.IO.SearchOption.AllDirectories)
+							.Where(f => {
+								string rel = f.Substring(dir.Length).TrimStart(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+								return !rel.StartsWith("bin", System.StringComparison.OrdinalIgnoreCase) && !rel.StartsWith("obj", System.StringComparison.OrdinalIgnoreCase);
+							});
+
+						if (csFiles.Any(f => System.IO.File.GetLastWriteTimeUtc(f) > wasmTime))
+						{
+							hasNewerCsFile = true;
+							break;
+						}
+					}
+
+					if (!hasNewerCsFile)
+					{
+						string targetWasmInTemp = System.IO.Path.Combine(workspace, "bin", System.IO.Path.GetFileName(existingWasm));
+						if (!System.IO.File.Exists(targetWasmInTemp))
+						{
+							System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(targetWasmInTemp));
+							System.IO.File.Copy(existingWasm, targetWasmInTemp, true);
+						}
+
+						_wasmHasErrors = false;
+						SetWasmConsoleStatus("✓ WASM Compilation Bypassed (Unchanged)", UIStyle.ColorCyanGlow);
+						AppendWasmConsoleLog("[INFO] .cs files unchanged since last build. Bypassing compilation using existing WASM binary.");
+						if (skipAttribution) return;
+					}
+				}
+
+				await System.Threading.Tasks.Task.Run(() =>
+				{
+					var compileProcess = new System.Diagnostics.Process();
+					compileProcess.StartInfo.FileName = "dotnet";
+					compileProcess.StartInfo.Arguments = $"publish \"{csproj}\" -c Release -r wasi-wasm";
+					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = "C:\\Users\\devin\\.wasi-sdk\\wasi-sdk-25.0-x86_64-windows";
+					compileProcess.StartInfo.WorkingDirectory = workspace;
+					compileProcess.StartInfo.CreateNoWindow = true;
+					compileProcess.StartInfo.UseShellExecute = false;
+					compileProcess.StartInfo.RedirectStandardOutput = true;
+					compileProcess.StartInfo.RedirectStandardError = true;
+
+					compileProcess.OutputDataReceived += (s, e) =>
+					{
+						if (!string.IsNullOrEmpty(e.Data))
+						{
+							if (e.Data.Contains(": error ") || e.Data.Contains("Build FAILED"))
+							{
+								_wasmHasErrors = true;
+							}
+							AppendWasmConsoleLog(e.Data);
+						}
+					};
+
+					compileProcess.ErrorDataReceived += (s, e) =>
+					{
+						if (!string.IsNullOrEmpty(e.Data))
+						{
+							if (e.Data.Contains(": error ") || e.Data.Contains("Build FAILED"))
+							{
+								_wasmHasErrors = true;
+								AppendWasmConsoleLog("[COMPILER ERROR] " + e.Data);
+							}
+							else if (e.Data.Contains(": warning "))
+							{
+								AppendWasmConsoleLog("[COMPILER WARNING] " + e.Data);
+							}
+							else
+							{
+								AppendWasmConsoleLog(e.Data);
+							}
+						}
+					};
+
+					compileProcess.Start();
+					compileProcess.BeginOutputReadLine();
+					compileProcess.BeginErrorReadLine();
+					compileProcess.WaitForExit();
+
+					if (compileProcess.ExitCode != 0 || _wasmHasErrors)
+					{
+						_wasmHasErrors = true;
+						SetWasmConsoleStatus($"❌ WASM Compilation Failed (exit code {compileProcess.ExitCode})", new Color(1.0f, 0.3f, 0.3f));
+						AppendWasmConsoleLog($"[ERROR] dotnet publish failed with exit code {compileProcess.ExitCode}");
+						GD.PrintErr($"[MapEditorHUD] Map script compilation failed (exit code {compileProcess.ExitCode})");
+					}
+					else
+					{
+						_wasmHasErrors = false;
+						SetWasmConsoleStatus("✓ WASM Compilation Succeeded", UIStyle.ColorCyanGlow);
+						AppendWasmConsoleLog("[SUCCESS] WASM compilation complete (exit code 0).");
+					}
+				});
 			}
 		}
 		catch (Exception ex)
 		{
+			_wasmHasErrors = true;
+			SetWasmConsoleStatus($"❌ WASM Compilation Failed: {ex.Message}", new Color(1.0f, 0.3f, 0.3f));
+			AppendWasmConsoleLog($"[COMPILER EXCEPTION] {ex}");
 			GD.PrintErr($"[MapEditorHUD] Trigger compilation failed: {ex.Message}");
 		}
 
@@ -3711,21 +3955,22 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
-	private void DeleteSelectedObject()
+	public void LocateSelectedObjectAction()
 	{
 		if (GameHost.Instance == null) return;
 		var selected = GameHost.Instance.SelectedEditorObject;
-		if (GodotObject.IsInstanceValid(selected))
+		if (GodotObject.IsInstanceValid(selected) && selected is Node3D node3D)
 		{
-			GameHost.Instance.SelectedEditorObject = null;
-			var action = GameHost.Instance.DeleteObjectAtWithUndo(selected, (selected as Node3D).Position);
-			if (action != null)
-			{
-				EditorHistoryManager.RecordAction(action);
-				ShowFeedback(TranslationServer.Translate("Deleted Selected Object"));
-			}
+			(GameHost.Instance.MainCamera as CameraControl)?.FocusOnPosition(node3D.Position);
+			ShowFeedback(string.Format(TranslationServer.Translate("Focused camera on {0}"), selected.Name));
+		}
+		else
+		{
+			ShowFeedback(TranslationServer.Translate("No object selected to locate"));
 		}
 	}
+
+
 
 	private void SetupMinimap()
 	{
@@ -4378,13 +4623,27 @@ public partial class MapEditorHUD : Control
 		_inspectorPanel = GetNode<PanelContainer>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel");
 		_lblInspectorTitle = GetNode<Label>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/LblInspectorTitle");
 		_lblInspectorPos = GetNode<Label>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/LblInspectorPos");
+		
 		_btnInspectorRotLeft = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/Grid/BtnInspectorRotLeft");
+		SetupButton(_btnInspectorRotLeft, "🔄 Rot -15°", () => RotateSelectedObjectAction(-15f), 11, "Rotate object counter-clockwise");
+
 		_btnInspectorRotRight = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/Grid/BtnInspectorRotRight");
+		SetupButton(_btnInspectorRotRight, "🔄 Rot +15°", () => RotateSelectedObjectAction(15f), 11, "Rotate object clockwise");
+
 		_btnInspectorScaleDown = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/Grid/BtnInspectorScaleDown");
+		SetupButton(_btnInspectorScaleDown, "➖ Scale Down", () => ScaleSelectedObjectAction(0.9f), 11, "Shrink object size by 10%");
+
 		_btnInspectorScaleUp = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/Grid/BtnInspectorScaleUp");
+		SetupButton(_btnInspectorScaleUp, "➕ Scale Up", () => ScaleSelectedObjectAction(1.1f), 11, "Enlarge object size by 10%");
+
 		_btnInspectorScaleReset = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/BtnInspectorScaleReset");
+		SetupButton(_btnInspectorScaleReset, "📐 Reset Scale", () => ScaleSelectedObjectAction(-1f), 12, "Reset object scale size to 1.0x");
+
 		_btnCenter = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/BtnCenter");
+		SetupButton(_btnCenter, "🎯 Locate Object", () => LocateSelectedObjectAction(), 12, "Center camera on selected object");
+
 		_btnInspectorDelete = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/BtnInspectorDelete");
+		SetupButton(_btnInspectorDelete, "❌ Erase", () => DeleteSelectedObjectAction(), 12, "Erase selected unit, prop, or decal");
 	}
 
 	public override void _Input(InputEvent @event)
@@ -4395,6 +4654,20 @@ public partial class MapEditorHUD : Control
 			{
 				GetViewport().SetInputAsHandled();
 				return;
+			}
+			if (keyEvent.Pressed && !keyEvent.Echo && keyEvent.Keycode == Godot.Key.Quoteleft)
+			{
+				var focusOwner = GetViewport().GuiGetFocusOwner();
+				if (focusOwner != null && (focusOwner is LineEdit || focusOwner is TextEdit))
+				{
+					return;
+				}
+				if (Realm.Godot.UI.WasmConsoleWindow.IsSinglePlayerOrTestMode())
+				{
+					Realm.Godot.UI.WasmConsoleWindow.Instance.ToggleVisibility();
+					GetViewport().SetInputAsHandled();
+					return;
+				}
 			}
 			if (keyEvent.Pressed && (keyEvent.Keycode == Godot.Key.Up || keyEvent.Keycode == Godot.Key.Down || 
 				keyEvent.Keycode == Godot.Key.Left || keyEvent.Keycode == Godot.Key.Right))
@@ -4427,89 +4700,118 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
-	private async System.Threading.Tasks.Task ProceedToTestMap()
+	public async System.Threading.Tasks.Task ProceedToTestMap()
 	{
 		if (GameHost.Instance == null) return;
 
-		var camera = GameHost.Instance.MainCamera as CameraControl;
-		if (camera != null)
-		{
-			SavedCameraPosition = camera.Position;
-			if (GameHost.Instance.EcsWorld != null && GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Core.CameraState>(GameHost.Instance.WorldEntity))
-			{
-				var state = GameHost.Instance.EcsWorld.Get<Realm.Ecs.Components.Core.CameraState>(GameHost.Instance.WorldEntity);
-				SavedTargetHeight = state.TargetHeight;
-				SavedCurrentHeight = state.CurrentHeight;
-				SavedTargetYaw = state.TargetYaw;
-				SavedCurrentYaw = state.CurrentYaw;
-				SavedTargetPitch = state.TargetPitch;
-				SavedCurrentPitch = state.CurrentPitch;
-				SavedIsTopDown = state.IsTopDown;
-				SavedYawSwing = state.YawSwing;
-				SavedPitchSwing = state.PitchSwing;
-			}
-		}
-		SavedGridMode = GameHost.Instance.EditorGridMode;
-		SavedActiveTool = GameHost.Instance.ActiveEditorTool;
-		SavedActivePlaceId = GameHost.Instance.ActivePlaceId;
-		SavedCameraBoundsVisible = GameHost.Instance.EditorCameraBoundsVisible;
-		SavedEntityCategory = _entityPaletteController?.CurrentCategory ?? "";
-		SavedBrushRadius = (float)_sldBrushSize.Value;
-		SavedBrushStrength = (float)_sldBrushStrength.Value;
+		ShowWasmConsoleModal();
+		Action<string> logHandler = line => AppendWasmConsoleLog(line);
+		Realm.Godot.WasmRuntime.OnWasmLog += logHandler;
 
-
-		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
-
-		if (!string.IsNullOrEmpty(_currentSourceFolder) && System.IO.Directory.Exists(_currentSourceFolder))
-		{
-			CopyFolderToTempWorkspace(_currentSourceFolder);
-		}
-
-		GameHost.Instance.SaveMapToFile(tempTerrainPath);
-		GameHost.Instance.EditorHasUnsavedChanges = false;
-
-		// Compile map script DLL (skip attribution/signing during test mode)
-		CompileAndSignMapSync(_tempWorkspacePath, skipAttribution: true);
-
-		// Clean Godot Mono assembly cache to force fresh assembly loading
-		string godotCachePath = System.IO.Path.Combine(ProjectSettings.GlobalizePath("res://"), ".godot", "mono", "temp");
 		try
 		{
-			if (System.IO.Directory.Exists(godotCachePath))
+			var camera = GameHost.Instance.MainCamera as CameraControl;
+			if (camera != null)
 			{
-				System.IO.Directory.Delete(godotCachePath, true);
+				SavedCameraPosition = camera.Position;
+				if (GameHost.Instance.EcsWorld != null && GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Core.CameraState>(GameHost.Instance.WorldEntity))
+				{
+					var state = GameHost.Instance.EcsWorld.Get<Realm.Ecs.Components.Core.CameraState>(GameHost.Instance.WorldEntity);
+					SavedTargetHeight = state.TargetHeight;
+					SavedCurrentHeight = state.CurrentHeight;
+					SavedTargetYaw = state.TargetYaw;
+					SavedCurrentYaw = state.CurrentYaw;
+					SavedTargetPitch = state.TargetPitch;
+					SavedCurrentPitch = state.CurrentPitch;
+					SavedIsTopDown = state.IsTopDown;
+					SavedYawSwing = state.YawSwing;
+					SavedPitchSwing = state.PitchSwing;
+				}
 			}
-		}
-		catch (System.Exception ex)
-		{
-			GD.PrintErr($"[ProceedToTestMap] Failed to clean Godot cache: {ex.Message}");
-		}
+			SavedGridMode = GameHost.Instance.EditorGridMode;
+			SavedActiveTool = GameHost.Instance.ActiveEditorTool;
+			SavedActivePlaceId = GameHost.Instance.ActivePlaceId;
+			SavedCameraBoundsVisible = GameHost.Instance.EditorCameraBoundsVisible;
+			SavedEntityCategory = _entityPaletteController?.CurrentCategory ?? "";
+			SavedBrushRadius = (float)_sldBrushSize.Value;
+			SavedBrushStrength = (float)_sldBrushStrength.Value;
 
-		// Find compiled map script DLL
-		string binDir = System.IO.Path.Combine(_tempWorkspacePath, "bin");
-		string dllPath = null;
-		if (System.IO.Directory.Exists(binDir))
-		{
-			dllPath = System.IO.Directory.GetFiles(
-				binDir,
-				"CustomMap.dll",
-				System.IO.SearchOption.AllDirectories
-			).FirstOrDefault();
-		}
-		if (System.IO.File.Exists(dllPath))
-		{
-			GameHost.PendingMapScriptPath = dllPath;
-		}
-		else
-		{
-			GD.PrintErr($"[ProceedToTestMap] Could not find CustomMap.dll in {binDir}. Map script will not be loaded.");
-		}
+			string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 
-		IsTestMode = true;
+			if (!string.IsNullOrEmpty(_currentSourceFolder) && System.IO.Directory.Exists(_currentSourceFolder))
+			{
+				CopyFolderToTempWorkspace(_currentSourceFolder);
+			}
 
-		if (LobbyManager.Instance != null)
+			GameHost.Instance.SaveMapToFile(tempTerrainPath);
+			GameHost.Instance.EditorHasUnsavedChanges = false;
+
+			SetWasmConsoleStatus("Compiling WASM map script...", UIStyle.ColorCyanGlow);
+			AppendWasmConsoleLog("=== WASM COMPILATION PIPELINE STARTED ===");
+
+			// Compile map script DLL (skip attribution/signing during test mode)
+			await CompileAndSignMapAsync(_tempWorkspacePath, skipAttribution: true);
+
+			if (_wasmHasErrors)
+			{
+				SetWasmConsoleStatus("❌ WASM Compilation Failed", new Color(1.0f, 0.3f, 0.3f));
+				AppendWasmConsoleLog("[ERROR] Map script compilation failed. Test mode aborted.");
+				return;
+			}
+
+			// Find compiled map script WASM
+			string binDir = System.IO.Path.Combine(_tempWorkspacePath, "bin");
+			string wasmPath = null;
+			if (System.IO.Directory.Exists(binDir))
+			{
+				wasmPath = System.IO.Directory.GetFiles(
+					binDir,
+					"*.wasm",
+					System.IO.SearchOption.AllDirectories
+				).FirstOrDefault();
+			}
+			if (System.IO.File.Exists(wasmPath))
+			{
+				GameHost.PendingMapScriptPath = wasmPath;
+				AppendWasmConsoleLog($"[WASM] Located compiled WASM binary: {System.IO.Path.GetFileName(wasmPath)}");
+			}
+			else
+			{
+				_wasmHasErrors = true;
+				SetWasmConsoleStatus("❌ WASM Compilation Failed: Output binary missing", new Color(1.0f, 0.3f, 0.3f));
+				AppendWasmConsoleLog($"[ERROR] Could not find compiled WASM in {binDir}. Test mode aborted.");
+				return;
+			}
+
+			SetWasmConsoleStatus("Launching test mode...", UIStyle.ColorCyanGlow);
+			AppendWasmConsoleLog("=== LAUNCHING GAME ENGINE ===");
+
+			GameHost.Instance.ExitMapEditorMode();
+			IsTestMode = true;
+
+			if (UIManager.Instance != null)
+			{
+				UIManager.Instance.TransitionTo(GameScreen.InGameHUD);
+			}
+
+			if (LobbyManager.Instance != null)
+			{
+				LobbyManager.Instance.HostSinglePlayerGame(TempWorkspaceGodotPath, "Test Map");
+			}
+
+			// Close console modal once InGameHUD has started
+			await System.Threading.Tasks.Task.Delay(500);
+			CloseWasmConsoleModal();
+		}
+		catch (Exception ex)
 		{
-			LobbyManager.Instance.HostSinglePlayerGame(TempWorkspaceGodotPath, "Test Map");
+			_wasmHasErrors = true;
+			SetWasmConsoleStatus("❌ Error launching test mode", new Color(1.0f, 0.3f, 0.3f));
+			AppendWasmConsoleLog($"[RUNTIME EXCEPTION] {ex}");
+		}
+		finally
+		{
+			Realm.Godot.WasmRuntime.OnWasmLog -= logHandler;
 		}
 	}
 
@@ -4634,5 +4936,319 @@ public partial class MapEditorHUD : Control
 			ShowFeedback(string.Format(TranslationServer.Translate("Failed to import texture: {0}"), ex.Message));
 			GD.PrintErr($"Failed to import texture: {ex.Message}");
 		}
+	}
+
+	private Button _btnHeaderLightingTuning;
+	private VBoxContainer _contentLightingTuning;
+
+	private bool _tuneOverrideDayNight = true;
+
+	private float _tuneSunPitch = 55.0f;
+	private float _tuneSunYaw = 20.0f;
+	private float _tuneSunEnergy = 3.20f;
+	private float _tuneSunR = 1.000f;
+	private float _tuneSunG = 0.957f;
+	private float _tuneSunB = 0.878f;
+
+	private float _tuneAmbientEnergy = 2.00f;
+	private float _tuneAmbientR = 0.400f;
+	private float _tuneAmbientG = 0.600f;
+	private float _tuneAmbientB = 0.850f;
+
+	private bool _tuneFogEnabled = true;
+	private float _tuneFogDensity = 0.0150f;
+	private float _tuneFogR = 0.080f;
+	private float _tuneFogG = 0.100f;
+	private float _tuneFogB = 0.150f;
+
+	private bool _tuneSsaoEnabled = true;
+	private float _tuneSsaoRadius = 1.80f;
+	private float _tuneSsaoIntensity = 0.80f;
+
+	private float _tuneExposure = 1.00f;
+	private float _tuneContrast = 1.00f;
+	private float _tuneSaturation = 1.05f;
+
+	private float _tuneBloomIntensity = 0.60f;
+	private float _tuneBloomThreshold = 0.12f;
+
+	private HSlider _sldSunPitch, _sldSunYaw, _sldSunEnergy, _sldSunR, _sldSunG, _sldSunB;
+	private HSlider _sldShadowPitch, _sldShadowYaw, _sldShadowEnergy, _sldShadowOpacity;
+	private HSlider _sldAmbientEnergy, _sldAmbientR, _sldAmbientG, _sldAmbientB;
+	private HSlider _sldFogDensity, _sldFogR, _sldFogG, _sldFogB;
+	private HSlider _sldSsaoRadius, _sldSsaoIntensity;
+	private HSlider _sldExposure, _sldContrast, _sldSaturation, _sldBloomIntensity, _sldBloomThreshold;
+
+	private void SetupLightingTuningUI()
+	{
+		var leftSlidePanel = GetNodeOrNull<Control>("LeftSlidePanel");
+		if (leftSlidePanel != null)
+		{
+			leftSlidePanel.CustomMinimumSize = new Vector2(325, 0);
+			leftSlidePanel.OffsetRight = 325.0f;
+		}
+
+		var leftVBox = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox");
+		if (leftVBox == null) return;
+
+		var lightingAccordion = new VBoxContainer();
+		lightingAccordion.Name = "LightingTuningAccordion";
+
+		_btnHeaderLightingTuning = new Button();
+		_btnHeaderLightingTuning.Name = "BtnHeaderLightingTuning";
+		lightingAccordion.AddChild(_btnHeaderLightingTuning);
+
+		_contentLightingTuning = new VBoxContainer();
+		_contentLightingTuning.Name = "ContentLightingTuning";
+		lightingAccordion.AddChild(_contentLightingTuning);
+
+		leftVBox.AddChild(lightingAccordion);
+
+		StyleAccordionHeader(_btnHeaderLightingTuning);
+		SetupAccordion(_btnHeaderLightingTuning, _contentLightingTuning, "💡 Lighting Tuning (Live Override)");
+
+		CreateToggleRow(_contentLightingTuning, "Freeze Day/Night Cycle (Live Override)", _tuneOverrideDayNight, val => {
+			_tuneOverrideDayNight = val;
+			ApplyLiveLightingTuning();
+		});
+
+		var btnLog = new Button();
+		btnLog.Text = "📋 LOG / COPY VALUES TO CLIPBOARD";
+		btnLog.CustomMinimumSize = new Vector2(0, 26);
+		btnLog.Pressed += LogLightingTuningValues;
+		_contentLightingTuning.AddChild(btnLog);
+
+		CreateSectionHeader(_contentLightingTuning, "--- SUN (PRIMARY LIGHT) ---");
+		_sldSunPitch = CreateSliderRow(_contentLightingTuning, "Sun Pitch", -90f, 90f, 1f, _tuneSunPitch, val => { _tuneSunPitch = val; ApplyLiveLightingTuning(); });
+		_sldSunYaw = CreateSliderRow(_contentLightingTuning, "Sun Yaw", -180f, 180f, 1f, _tuneSunYaw, val => { _tuneSunYaw = val; ApplyLiveLightingTuning(); });
+		_sldSunEnergy = CreateSliderRow(_contentLightingTuning, "Sun Energy", 0f, 5f, 0.05f, _tuneSunEnergy, val => { _tuneSunEnergy = val; ApplyLiveLightingTuning(); });
+		_sldSunR = CreateSliderRow(_contentLightingTuning, "Sun Red", 0f, 1f, 0.01f, _tuneSunR, val => { _tuneSunR = val; ApplyLiveLightingTuning(); });
+		_sldSunG = CreateSliderRow(_contentLightingTuning, "Sun Green", 0f, 1f, 0.01f, _tuneSunG, val => { _tuneSunG = val; ApplyLiveLightingTuning(); });
+		_sldSunB = CreateSliderRow(_contentLightingTuning, "Sun Blue", 0f, 1f, 0.01f, _tuneSunB, val => { _tuneSunB = val; ApplyLiveLightingTuning(); });
+
+		CreateSectionHeader(_contentLightingTuning, "--- AMBIENT LIGHT ---");
+		_sldAmbientEnergy = CreateSliderRow(_contentLightingTuning, "Amb Energy", 0f, 3f, 0.05f, _tuneAmbientEnergy, val => { _tuneAmbientEnergy = val; ApplyLiveLightingTuning(); });
+		_sldAmbientR = CreateSliderRow(_contentLightingTuning, "Amb Red", 0f, 1f, 0.01f, _tuneAmbientR, val => { _tuneAmbientR = val; ApplyLiveLightingTuning(); });
+		_sldAmbientG = CreateSliderRow(_contentLightingTuning, "Amb Green", 0f, 1f, 0.01f, _tuneAmbientG, val => { _tuneAmbientG = val; ApplyLiveLightingTuning(); });
+		_sldAmbientB = CreateSliderRow(_contentLightingTuning, "Amb Blue", 0f, 1f, 0.01f, _tuneAmbientB, val => { _tuneAmbientB = val; ApplyLiveLightingTuning(); });
+
+		CreateSectionHeader(_contentLightingTuning, "--- ATMOSPHERIC FOG ---");
+		CreateToggleRow(_contentLightingTuning, "Fog Enabled", _tuneFogEnabled, val => { _tuneFogEnabled = val; ApplyLiveLightingTuning(); });
+		_sldFogDensity = CreateSliderRow(_contentLightingTuning, "Fog Density", 0f, 0.03f, 0.0005f, _tuneFogDensity, val => { _tuneFogDensity = val; ApplyLiveLightingTuning(); });
+		_sldFogR = CreateSliderRow(_contentLightingTuning, "Fog Red", 0f, 1f, 0.01f, _tuneFogR, val => { _tuneFogR = val; ApplyLiveLightingTuning(); });
+		_sldFogG = CreateSliderRow(_contentLightingTuning, "Fog Green", 0f, 1f, 0.01f, _tuneFogG, val => { _tuneFogG = val; ApplyLiveLightingTuning(); });
+		_sldFogB = CreateSliderRow(_contentLightingTuning, "Fog Blue", 0f, 1f, 0.01f, _tuneFogB, val => { _tuneFogB = val; ApplyLiveLightingTuning(); });
+
+		CreateSectionHeader(_contentLightingTuning, "--- SSAO (AMBIENT OCCLUSION) ---");
+		CreateToggleRow(_contentLightingTuning, "SSAO Enabled", _tuneSsaoEnabled, val => { _tuneSsaoEnabled = val; ApplyLiveLightingTuning(); });
+		_sldSsaoRadius = CreateSliderRow(_contentLightingTuning, "SSAO Radius", 0.1f, 5f, 0.1f, _tuneSsaoRadius, val => { _tuneSsaoRadius = val; ApplyLiveLightingTuning(); });
+		_sldSsaoIntensity = CreateSliderRow(_contentLightingTuning, "SSAO Intensity", 0f, 6f, 0.1f, _tuneSsaoIntensity, val => { _tuneSsaoIntensity = val; ApplyLiveLightingTuning(); });
+
+		CreateSectionHeader(_contentLightingTuning, "--- POST-PROCESSING ---");
+		_sldExposure = CreateSliderRow(_contentLightingTuning, "Exposure", 0.1f, 3f, 0.02f, _tuneExposure, val => { _tuneExposure = val; ApplyLiveLightingTuning(); });
+		_sldContrast = CreateSliderRow(_contentLightingTuning, "Contrast", 0.5f, 2f, 0.02f, _tuneContrast, val => { _tuneContrast = val; ApplyLiveLightingTuning(); });
+		_sldSaturation = CreateSliderRow(_contentLightingTuning, "Saturation", 0f, 2f, 0.02f, _tuneSaturation, val => { _tuneSaturation = val; ApplyLiveLightingTuning(); });
+		_sldBloomIntensity = CreateSliderRow(_contentLightingTuning, "Bloom Intensity", 0f, 2f, 0.05f, _tuneBloomIntensity, val => { _tuneBloomIntensity = val; ApplyLiveLightingTuning(); });
+		_sldBloomThreshold = CreateSliderRow(_contentLightingTuning, "Bloom Threshold", 0f, 1f, 0.02f, _tuneBloomThreshold, val => { _tuneBloomThreshold = val; ApplyLiveLightingTuning(); });
+
+		ApplyLiveLightingTuning();
+		lightingAccordion.Visible = false;
+	}
+
+	public void UpdateLightingTuningSlidersFromPhase(int phaseIndex)
+	{
+		phaseIndex = Math.Clamp(phaseIndex, 0, 3);
+
+		_tuneSunPitch = EnvironmentService.SunPitches[phaseIndex];
+		_tuneSunYaw = EnvironmentService.SunYaws[phaseIndex];
+		_tuneSunEnergy = EnvironmentService.SunEnergies[phaseIndex];
+		_tuneSunR = EnvironmentService.SunColors[phaseIndex].R;
+		_tuneSunG = EnvironmentService.SunColors[phaseIndex].G;
+		_tuneSunB = EnvironmentService.SunColors[phaseIndex].B;
+
+		_tuneAmbientEnergy = EnvironmentService.AmbientEnergies[phaseIndex];
+		_tuneAmbientR = EnvironmentService.AmbientColors[phaseIndex].R;
+		_tuneAmbientG = EnvironmentService.AmbientColors[phaseIndex].G;
+		_tuneAmbientB = EnvironmentService.AmbientColors[phaseIndex].B;
+
+		_tuneFogEnabled = true;
+		_tuneFogDensity = EnvironmentService.FogDensities[phaseIndex];
+		_tuneFogR = EnvironmentService.FogColors[phaseIndex].R;
+		_tuneFogG = EnvironmentService.FogColors[phaseIndex].G;
+		_tuneFogB = EnvironmentService.FogColors[phaseIndex].B;
+
+		_tuneSsaoEnabled = true;
+		_tuneSsaoRadius = EnvironmentService.SsaoRadii[phaseIndex];
+		_tuneSsaoIntensity = EnvironmentService.SsaoIntensities[phaseIndex];
+
+		_tuneExposure = EnvironmentService.Exposures[phaseIndex];
+		_tuneContrast = EnvironmentService.Contrasts[phaseIndex];
+		_tuneSaturation = EnvironmentService.Saturations[phaseIndex];
+
+		_tuneBloomIntensity = EnvironmentService.GlowIntensities[phaseIndex];
+		_tuneBloomThreshold = EnvironmentService.GlowBlooms[phaseIndex];
+
+		if (_sldSunPitch != null) _sldSunPitch.Value = _tuneSunPitch;
+		if (_sldSunYaw != null) _sldSunYaw.Value = _tuneSunYaw;
+		if (_sldSunEnergy != null) _sldSunEnergy.Value = _tuneSunEnergy;
+		if (_sldSunR != null) _sldSunR.Value = _tuneSunR;
+		if (_sldSunG != null) _sldSunG.Value = _tuneSunG;
+		if (_sldSunB != null) _sldSunB.Value = _tuneSunB;
+
+		if (_sldAmbientEnergy != null) _sldAmbientEnergy.Value = _tuneAmbientEnergy;
+		if (_sldAmbientR != null) _sldAmbientR.Value = _tuneAmbientR;
+		if (_sldAmbientG != null) _sldAmbientG.Value = _tuneAmbientG;
+		if (_sldAmbientB != null) _sldAmbientB.Value = _tuneAmbientB;
+
+		if (_sldFogDensity != null) _sldFogDensity.Value = _tuneFogDensity;
+		if (_sldFogR != null) _sldFogR.Value = _tuneFogR;
+		if (_sldFogG != null) _sldFogG.Value = _tuneFogG;
+		if (_sldFogB != null) _sldFogB.Value = _tuneFogB;
+
+		if (_sldSsaoRadius != null) _sldSsaoRadius.Value = _tuneSsaoRadius;
+		if (_sldSsaoIntensity != null) _sldSsaoIntensity.Value = _tuneSsaoIntensity;
+
+		if (_sldExposure != null) _sldExposure.Value = _tuneExposure;
+		if (_sldContrast != null) _sldContrast.Value = _tuneContrast;
+		if (_sldSaturation != null) _sldSaturation.Value = _tuneSaturation;
+
+		if (_sldBloomIntensity != null) _sldBloomIntensity.Value = _tuneBloomIntensity;
+		if (_sldBloomThreshold != null) _sldBloomThreshold.Value = _tuneBloomThreshold;
+
+		ApplyLiveLightingTuning();
+	}
+
+	private void ApplyLiveLightingTuning()
+	{
+		if (GameHost.Instance == null) return;
+		var host = GameHost.Instance;
+		var worldEnv = host.GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
+		var sun = host.GetNodeOrNull<DirectionalLight3D>("DirectionalLight3D");
+
+		if (GameHost.Instance.EnvironmentService != null)
+		{
+			GameHost.Instance.EnvironmentService.OverrideDayNightVisuals = _tuneOverrideDayNight;
+		}
+
+		if (sun != null)
+		{
+			sun.RotationDegrees = new Vector3(_tuneSunPitch, _tuneSunYaw, 0f);
+			sun.LightEnergy = _tuneSunEnergy;
+			sun.LightColor = new Color(_tuneSunR, _tuneSunG, _tuneSunB);
+			sun.ShadowEnabled = false;
+		}
+
+		if (worldEnv != null && worldEnv.Environment != null)
+		{
+			var env = worldEnv.Environment;
+			env.AmbientLightSource = Godot.Environment.AmbientSource.Color;
+			env.AmbientLightColor = new Color(_tuneAmbientR, _tuneAmbientG, _tuneAmbientB);
+			env.AmbientLightEnergy = _tuneAmbientEnergy;
+
+			env.FogEnabled = _tuneFogEnabled;
+			env.FogDensity = _tuneFogDensity;
+			env.FogLightColor = new Color(_tuneFogR, _tuneFogG, _tuneFogB);
+
+			env.SsaoEnabled = _tuneSsaoEnabled;
+			env.SsaoRadius = _tuneSsaoRadius;
+			env.SsaoIntensity = _tuneSsaoIntensity;
+
+			env.TonemapMode = Godot.Environment.ToneMapper.Aces;
+			env.TonemapExposure = _tuneExposure;
+			env.AdjustmentEnabled = true;
+			env.AdjustmentContrast = _tuneContrast;
+			env.AdjustmentSaturation = _tuneSaturation;
+
+			env.GlowEnabled = true;
+			env.GlowIntensity = _tuneBloomIntensity;
+			env.GlowBloom = _tuneBloomThreshold;
+		}
+	}
+
+	private void LogLightingTuningValues()
+	{
+		string report = $@"
+=== LIVE LIGHTING TUNING VALUES ===
+Sun Pitch: {_tuneSunPitch:F1}°, Yaw: {_tuneSunYaw:F1}°, Energy: {_tuneSunEnergy:F2}, Color: ({_tuneSunR:F3}f, {_tuneSunG:F3}f, {_tuneSunB:F3}f)
+Ambient Energy: {_tuneAmbientEnergy:F2}, Color: ({_tuneAmbientR:F3}f, {_tuneAmbientG:F3}f, {_tuneAmbientB:F3}f) [Hex: #{ColorToHex(_tuneAmbientR, _tuneAmbientG, _tuneAmbientB)}]
+Fog Enabled: {_tuneFogEnabled}, Density: {_tuneFogDensity:F4}, Color: ({_tuneFogR:F3}f, {_tuneFogG:F3}f, {_tuneFogB:F3}f)
+SSAO Enabled: {_tuneSsaoEnabled}, Radius: {_tuneSsaoRadius:F2}, Intensity: {_tuneSsaoIntensity:F2}
+PostProc Exposure: {_tuneExposure:F2}, Contrast: {_tuneContrast:F2}, Saturation: {_tuneSaturation:F2}
+Glow/Bloom Intensity: {_tuneBloomIntensity:F2}, Threshold: {_tuneBloomThreshold:F2}
+===================================
+";
+		GD.Print(report);
+		DisplayServer.ClipboardSet(report);
+		ShowFeedback(TranslationServer.Translate("Copied lighting tuning values to clipboard!"));
+	}
+
+	private string ColorToHex(float r, float g, float b)
+	{
+		int ir = Mathf.Clamp((int)(r * 255f), 0, 255);
+		int ig = Mathf.Clamp((int)(g * 255f), 0, 255);
+		int ib = Mathf.Clamp((int)(b * 255f), 0, 255);
+		return $"{ir:X2}{ig:X2}{ib:X2}";
+	}
+
+	private HSlider CreateSliderRow(VBoxContainer parent, string labelText, float min, float max, float step, float initialVal, Action<float> onChanged)
+	{
+		var row = new HBoxContainer();
+		
+		var lblName = new Label();
+		lblName.Text = labelText;
+		lblName.CustomMinimumSize = new Vector2(110, 0);
+		lblName.AddThemeFontSizeOverride("font_size", 11);
+		row.AddChild(lblName);
+
+		var slider = new HSlider();
+		slider.MinValue = min;
+		slider.MaxValue = max;
+		slider.Step = step;
+		slider.Value = initialVal;
+		slider.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		slider.CustomMinimumSize = new Vector2(90, 0);
+		slider.DragStarted += () => _isDraggingSlider = true;
+		slider.DragEnded += (valueChanged) => _isDraggingSlider = false;
+		row.AddChild(slider);
+
+		var lblVal = new Label();
+		lblVal.Text = initialVal.ToString("0.00");
+		lblVal.CustomMinimumSize = new Vector2(40, 0);
+		lblVal.HorizontalAlignment = HorizontalAlignment.Right;
+		lblVal.AddThemeFontSizeOverride("font_size", 11);
+		row.AddChild(lblVal);
+
+		slider.ValueChanged += (double val) =>
+		{
+			float fVal = (float)val;
+			lblVal.Text = fVal.ToString("0.00");
+			onChanged(fVal);
+		};
+
+		parent.AddChild(row);
+		return slider;
+	}
+
+	private HBoxContainer CreateToggleRow(VBoxContainer parent, string labelText, bool initialVal, Action<bool> onChanged)
+	{
+		var row = new HBoxContainer();
+		var chk = new CheckBox();
+		chk.Text = labelText;
+		chk.ButtonPressed = initialVal;
+		chk.AddThemeFontSizeOverride("font_size", 11);
+		chk.Toggled += (bool pressed) => onChanged(pressed);
+		row.AddChild(chk);
+		parent.AddChild(row);
+		return row;
+	}
+
+	private Label CreateSectionHeader(VBoxContainer parent, string titleText)
+	{
+		var lbl = new Label();
+		lbl.Text = titleText;
+		lbl.AddThemeFontSizeOverride("font_size", 11);
+		lbl.Modulate = new Color(0.95f, 0.85f, 0.35f);
+		parent.AddChild(lbl);
+		return lbl;
 	}
 }

@@ -13,9 +13,9 @@ using static Realm.Ecs.Common.ResourceConstants;
 
 public partial class GameHost
 {
-	private readonly Dictionary<int, UnitWrapper> _unitWrapperCache = new();
+	private readonly Dictionary<int, Unit_WasmRuntime> _unitWrapperCache = new();
 
-	public UnitWrapper GetUnitWrapper(Entity entity)
+	public Unit_WasmRuntime GetUnitWrapper(Entity entity)
 	{
 		if (!EcsWorld.IsAlive(entity))
 		{
@@ -25,7 +25,7 @@ public partial class GameHost
 		{
 			return wrapper;
 		}
-		wrapper = new UnitWrapper(entity, EcsWorld);
+		wrapper = new Unit_WasmRuntime(entity, EcsWorld);
 		_unitWrapperCache[entity.Id] = wrapper;
 		return wrapper;
 	}

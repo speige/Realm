@@ -116,11 +116,11 @@ text = "ACTIVE TOOL: NONE"
 horizontal_alignment = 1
 
 [node name="LeftSlidePanel" type="Panel" parent="."]
-custom_minimum_size = Vector2(260, 0)
+custom_minimum_size = Vector2(325, 0)
 layout_mode = 1
 anchors_preset = 9
 anchor_bottom = 1.0
-offset_right = 260.0
+offset_right = 325.0
 grow_vertical = 2
 
 [node name="LeftTabButton" type="Button" parent="LeftSlidePanel"]
@@ -767,7 +767,7 @@ text = "Size"
 [node name="LblBrushSizeValue" type="Label" parent="RightSlidePanel/RightScroll/AccordionContainer/BrushAccordion/ContentBrush/BrushSizeBox/Header"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
-text = "6.0"
+text = "2.0"
 
 [node name="SldBrushSize" type="HSlider" parent="RightSlidePanel/RightScroll/AccordionContainer/BrushAccordion/ContentBrush/BrushSizeBox"]
 layout_mode = 2
@@ -775,7 +775,7 @@ focus_mode = 0
 min_value = 1.0
 max_value = 20.0
 step = 0.5
-value = 6.0
+value = 2.0
 
 [node name="BrushStrengthBox" type="VBoxContainer" parent="RightSlidePanel/RightScroll/AccordionContainer/BrushAccordion/ContentBrush"]
 layout_mode = 2
@@ -835,7 +835,7 @@ text = "Step Height"
 [node name="LblBlockStepValue" type="Label" parent="RightSlidePanel/RightScroll/AccordionContainer/BrushAccordion/ContentBrush/StepBox/Header"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
-text = "4.0"
+text = "1.0"
 
 [node name="SldBlockStep" type="HSlider" parent="RightSlidePanel/RightScroll/AccordionContainer/BrushAccordion/ContentBrush/StepBox"]
 layout_mode = 2
@@ -843,7 +843,7 @@ focus_mode = 0
 min_value = 0.5
 max_value = 20.0
 step = 0.5
-value = 4.0
+value = 1.0
 
 [node name="ToolSettingsAccordion" type="VBoxContainer" parent="RightSlidePanel/RightScroll/AccordionContainer"]
 layout_mode = 2

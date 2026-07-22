@@ -179,11 +179,7 @@ internal class SimulationService
 					}
 
 					float progress = timer / cycleDuration;
-					float currentHour = progress * 24f;
-					if (currentHour >= 5f && currentHour < 6f) index = 3;
-					else if (currentHour >= 6f && currentHour < 18f) index = 0;
-					else if (currentHour >= 18f && currentHour < 20f) index = 1;
-					else index = 2;
+					index = (int)(progress * 4f) % 4;
 				}
 				EcsWorld.Set(ActiveWorldEntity, new WorldState(elapsed, index, timer, state.DayNightCycleEnabled));
 			}

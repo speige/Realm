@@ -26,12 +26,6 @@ public class MapEditorTopBar
 		_statusLabel = statusLabel;
 		_feedbackLabel = feedbackLabel;
 
-		_btnBackToHub.Pressed += () => MapEditorHUD.Instance?.BackToHubAction();
-		_btnPublish.Pressed += () => MapEditorHUD.Instance?.PublishMapActionExternal();
-		_btnSave.Pressed += () => MapEditorHUD.Instance?.SaveMapActionExternal();
-		_btnUndo.Pressed += () => MapEditorHUD.Instance?.UndoAction();
-		_btnRedo.Pressed += () => MapEditorHUD.Instance?.RedoAction();
-		
 		_btnBackToHub.TooltipText = "Return to Main Menu / Hub";
 		_btnPublish.TooltipText = "Publish/export map to custom map registry";
 		_btnSave.TooltipText = "Save current heightmap, textures, and entities (Ctrl+S)";
@@ -41,7 +35,6 @@ public class MapEditorTopBar
 
 		if (_btnVSCode != null)
 		{
-			_btnVSCode.Pressed += () => MapEditorHUD.Instance?.ToggleVSCodeEditor();
 			_btnVSCode.TooltipText = "Toggle Embedded VSCode JSON / Script editor";
 		}
 	}

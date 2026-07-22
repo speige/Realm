@@ -119,12 +119,12 @@ void fragment() {
 		shaderMaterial.Shader = shader;
 		fogMesh.MaterialOverride = shaderMaterial;
 		mainNode.AddChild(fogMesh);
-		fogMesh.GlobalPosition = Vector3.Zero;
+		fogMesh.GlobalPosition = new Vector3(0, 60.0f, 0);
 		_fogMeshInstance = fogMesh;
 		_fogMeshMaterial = shaderMaterial;
 	}
 
-	public void Tick(float delta, List<Unit3D> allUnits, Camera3D camera3D, int spectatorPerspective, bool isPlayingReplay, bool isSpectator)
+	public void Tick(float delta, List<Unit3D> allUnits, List<Prop3D> allProps, List<Decal> allDecals, Camera3D camera3D, int spectatorPerspective, bool isPlayingReplay, bool isSpectator)
 	{
 		if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
 		{
@@ -141,6 +141,20 @@ void fragment() {
 				if (unit != null && GodotObject.IsInstanceValid(unit))
 				{
 					unit.Visible = true;
+				}
+			}
+			foreach (var prop in allProps)
+			{
+				if (prop != null && GodotObject.IsInstanceValid(prop))
+				{
+					prop.Visible = true;
+				}
+			}
+			foreach (var decal in allDecals)
+			{
+				if (decal != null && GodotObject.IsInstanceValid(decal))
+				{
+					decal.Visible = true;
 				}
 			}
 			if (GameHost.Instance?.GroundTerrain != null)
@@ -184,7 +198,7 @@ void fragment() {
 		if (_fogUpdateTimer >= 0.1f)
 		{
 			_fogUpdateTimer = 0f;
-			UpdateFogOfWar(allUnits, spectatorPerspective, isPlayingReplay, isSpectator);
+			UpdateFogOfWar(allUnits, allProps, allDecals, spectatorPerspective, isPlayingReplay, isSpectator);
 		}
 
 		float baseFogDensity = BaseFogDensity;
@@ -207,6 +221,16 @@ void fragment() {
 		}
 	}
 
+	public void TriggerImmediateUpdate()
+	{
+		if (GameHost.Instance != null)
+		{
+			int specPerspective = GameHost.Instance.SpectatorService?.GetSpectatorPerspective() ?? -1;
+			UpdateFogOfWar(GameHost.Instance.AllUnits, GameHost.Instance.AllProps, GameHost.Instance.AllDecals, specPerspective, ReplayPlaybackManager.Instance.IsPlayingReplay, LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator");
+			InGameHUD.Instance?.QueueMinimapRedraw();
+		}
+	}
+
 	public void CleanUp()
 	{
 		if (GodotObject.IsInstanceValid(_fogMeshInstance))
@@ -216,7 +240,7 @@ void fragment() {
 		}
 	}
 
-	private void UpdateFogOfWar(List<Unit3D> allUnits, int spectatorPerspective, bool isPlayingReplay, bool isSpectator)
+	private void UpdateFogOfWar(List<Unit3D> allUnits, List<Prop3D> allProps, List<Decal> allDecals, int spectatorPerspective, bool isPlayingReplay, bool isSpectator)
 	{
 		if (GameHost.Instance == null) return;
 
@@ -237,6 +261,14 @@ void fragment() {
 				foreach (var unit in allUnits)
 					if (unit != null && GodotObject.IsInstanceValid(unit))
 						unit.Visible = true;
+
+				foreach (var prop in allProps)
+					if (prop != null && GodotObject.IsInstanceValid(prop))
+						prop.Visible = true;
+
+				foreach (var decal in allDecals)
+					if (decal != null && GodotObject.IsInstanceValid(decal))
+						decal.Visible = true;
 
 				Update3DFogMesh();
 				return;
@@ -291,6 +323,25 @@ void fragment() {
 						unit.Visible = (FogGrid[gx, gz] == 2);
 					}
 				}
+
+				foreach (var prop in allProps)
+				{
+					if (prop == null || !GodotObject.IsInstanceValid(prop)) continue;
+					Vector3 pos = prop.GlobalPosition;
+					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
+					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+					prop.Visible = (FogGrid[gx, gz] != 0);
+				}
+
+				foreach (var decal in allDecals)
+				{
+					if (decal == null || !GodotObject.IsInstanceValid(decal)) continue;
+					Vector3 pos = decal.GlobalPosition;
+					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
+					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+					decal.Visible = (FogGrid[gx, gz] != 0);
+				}
+
 				Update3DFogMesh();
 				return;
 			}
@@ -309,6 +360,16 @@ void fragment() {
 			foreach (var unit in allUnits)
 				if (unit != null && GodotObject.IsInstanceValid(unit))
 					unit.Visible = true;
+
+			foreach (var prop in allProps)
+				if (prop != null && GodotObject.IsInstanceValid(prop))
+					prop.Visible = true;
+
+			foreach (var decal in allDecals)
+				if (decal != null && GodotObject.IsInstanceValid(decal))
+					decal.Visible = true;
+
+			Update3DFogMesh();
 			return;
 		}
 
@@ -367,6 +428,24 @@ void fragment() {
 				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
 				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
 				unit.Visible = (FogGrid[gx, gz] == 2);
+			}
+
+			foreach (var prop in allProps)
+			{
+				if (prop == null || !GodotObject.IsInstanceValid(prop)) continue;
+				Vector3 pos = prop.GlobalPosition;
+				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
+				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+				prop.Visible = (FogGrid[gx, gz] != 0);
+			}
+
+			foreach (var decal in allDecals)
+			{
+				if (decal == null || !GodotObject.IsInstanceValid(decal)) continue;
+				Vector3 pos = decal.GlobalPosition;
+				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
+				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+				decal.Visible = (FogGrid[gx, gz] != 0);
 			}
 
 			Update3DFogMesh();

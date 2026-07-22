@@ -47,6 +47,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public CheatService CheatService => _cheatService;
 	public EnvironmentService EnvironmentService => _environmentService;
 	public SpectatorService SpectatorService => _spectatorService;
+	public FogOfWarService FogOfWarService => _fogOfWarService;
 
 	public bool UnlimitedPowerEnabled { get; set; } = false;
 	public bool GigachadEnabled { get; set; } = false;
@@ -134,6 +135,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public List<Unit3D> SelectedUnits { get; } = new List<Unit3D>();
 	public List<Unit3D> AllUnits { get; } = new List<Unit3D>();
 	public List<Prop3D> AllProps { get; } = new List<Prop3D>();
+	public List<Decal> AllDecals { get; } = new List<Decal>();
 	private readonly List<Unit3D> _castlesList = new();
 
 	public static readonly Dictionary<Entity, Unit3D> EntityToUnit3D = new();
@@ -223,6 +225,7 @@ public partial class GameHost : Node3D, IGameAPI
 
 
 	public bool IsMapEditorMode { get; set; }
+	public bool IsLoadingMap { get; set; }
 	private EditableTerrain _groundTerrain;
 	public EditableTerrain GroundTerrain
 	{
@@ -842,18 +845,28 @@ public partial class GameHost : Node3D, IGameAPI
 		return list;
 	}
 
-	IEnumerable<IResourceNode> IGameAPI.GetResourceNodes()
+	private List<IResourceNode> GetCachedResourceNodes()
 	{
+		var list = new List<IResourceNode>();
 		foreach (var prop in AllProps)
 		{
 			if (GodotObject.IsInstanceValid(prop))
 			{
 				if (prop.PropId == "goldmine" || prop.PropId == "tree" || prop.PropId == "rock")
 				{
-					yield return new ResourceNodeWrapper(prop);
+					list.Add(new ResourceNode_WasmRuntime(prop));
 				}
 			}
 		}
+		return list;
+	}
+
+	int IGameAPI.ResourceNodeCount => GetCachedResourceNodes().Count;
+
+	IResourceNode IGameAPI.GetResourceNode(int index)
+	{
+		var list = GetCachedResourceNodes();
+		return (index >= 0 && index < list.Count) ? list[index] : null!;
 	}
 
 	void IGameAPI.ShowFeedbackText(string text, System.Numerics.Vector3 color)
@@ -994,7 +1007,18 @@ public partial class GameHost : Node3D, IGameAPI
 		string mapDir = System.IO.Path.Combine(globalParentDir, mapName);
 		System.IO.Directory.CreateDirectory(mapDir);
 
-		string scriptContent = $@"namespace Realm.Maps;
+		string projectRoot = ProjectSettings.GlobalizePath("res://");
+		string templateDir = System.IO.Path.Combine(projectRoot, "MapTemplate");
+		string templateScriptPath = System.IO.Path.Combine(templateDir, "MapScript.cs");
+
+		string scriptContent;
+		if (System.IO.File.Exists(templateScriptPath))
+		{
+			scriptContent = System.IO.File.ReadAllText(templateScriptPath).Replace("__MAP_NAME__", mapName);
+		}
+		else
+		{
+			scriptContent = $@"namespace Realm.Maps;
 
 using Realm.MapAPI;
 
@@ -1009,11 +1033,48 @@ public class {mapName} : IMapScript
     }}
 }}
 ";
+		}
 		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "MapScript.cs"), scriptContent);
 		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "metadata.json"), "{}");
 		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "terrain.json"), "{}");
 
 		EnsureMapProjectFiles(mapDir);
+	}
+
+	void IGameAPI.WriteSavedData(string fileName, string content)
+	{
+		if (string.IsNullOrEmpty(fileName) || fileName.Contains("..") || fileName.Contains("/") || fileName.Contains("\\"))
+		{
+			GD.PrintErr($"[Sandbox block] Blocked invalid or traversal path: {fileName}");
+			return;
+		}
+
+		string mapNameOnly = System.IO.Path.GetFileNameWithoutExtension(ActiveMapName);
+		string targetDir = System.IO.Path.Combine(OS.GetUserDataDir(), "saved_data", mapNameOnly);
+		System.IO.Directory.CreateDirectory(targetDir);
+
+		string targetFile = System.IO.Path.Combine(targetDir, fileName);
+		System.IO.File.WriteAllText(targetFile, content);
+	}
+
+	string IGameAPI.ReadSavedData(string fileName)
+	{
+		if (string.IsNullOrEmpty(fileName) || fileName.Contains("..") || fileName.Contains("/") || fileName.Contains("\\"))
+		{
+			GD.PrintErr($"[Sandbox block] Blocked invalid or traversal path: {fileName}");
+			return string.Empty;
+		}
+
+		string mapNameOnly = System.IO.Path.GetFileNameWithoutExtension(ActiveMapName);
+		string targetDir = System.IO.Path.Combine(OS.GetUserDataDir(), "saved_data", mapNameOnly);
+		string targetFile = System.IO.Path.Combine(targetDir, fileName);
+
+		if (!System.IO.File.Exists(targetFile))
+		{
+			return string.Empty;
+		}
+
+		return System.IO.File.ReadAllText(targetFile);
 	}
 
 	public static void EnsureMapProjectFiles(string mapDir)
@@ -1025,15 +1086,28 @@ public class {mapName} : IMapScript
 		string vscodeDir = System.IO.Path.Combine(mapDir, ".vscode");
 		System.IO.Directory.CreateDirectory(vscodeDir);
 		string vscodeSettingsPath = System.IO.Path.Combine(vscodeDir, "settings.json");
-		string vscodeSettingsContent = @"{
+
+		string projectRoot = ProjectSettings.GlobalizePath("res://");
+		string templateDir = System.IO.Path.Combine(projectRoot, "MapTemplate");
+		string templateCsprojPath = System.IO.Path.Combine(templateDir, "MapScript.csproj");
+		string templateTargetsPath = System.IO.Path.Combine(templateDir, "Directory.Build.targets");
+		string templateVscodeSettingsPath = System.IO.Path.Combine(templateDir, ".vscode", "settings.json");
+
+		if (System.IO.File.Exists(templateVscodeSettingsPath))
+		{
+			System.IO.File.Copy(templateVscodeSettingsPath, vscodeSettingsPath, true);
+		}
+		else
+		{
+			string vscodeSettingsContent = @"{
     ""dotnet.preferCSharpExtension"": true,
     ""dotnet.server.useOmnisharp"": false,
     ""dotnet.projects.enableAutomaticRestore"": true
 }
 ";
-		System.IO.File.WriteAllText(vscodeSettingsPath, vscodeSettingsContent);
+			System.IO.File.WriteAllText(vscodeSettingsPath, vscodeSettingsContent);
+		}
 
-		string projectRoot = ProjectSettings.GlobalizePath("res://");
 		string repoRoot = System.IO.Path.GetFullPath(System.IO.Path.Combine(projectRoot, ".."));
 		string sourceDll = System.IO.Path.Combine(repoRoot, "Realm.MapAPI", "bin", "Release", "net10.0", "Realm.MapAPI.dll");
 		string sourceXml = System.IO.Path.Combine(repoRoot, "Realm.MapAPI", "bin", "Release", "net10.0", "Realm.MapAPI.xml");
@@ -1053,20 +1127,65 @@ public class {mapName} : IMapScript
 			System.IO.File.Copy(sourceXml, System.IO.Path.Combine(libDir, "Realm.MapAPI.xml"), true);
 		}
 
-		string csprojContent = @"<Project Sdk=""Microsoft.NET.Sdk"">
+		if (System.IO.File.Exists(templateCsprojPath))
+		{
+			System.IO.File.Copy(templateCsprojPath, csprojPath, true);
+		}
+		else
+		{
+			string csprojContent = @"<Project Sdk=""Microsoft.NET.Sdk"">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+    <WasmGenerateAppBundle>false</WasmGenerateAppBundle>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NativeLib>Shared</NativeLib>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include=""Realm.MapAPI"">
       <HintPath>lib/Realm.MapAPI.dll</HintPath>
     </Reference>
   </ItemGroup>
+  <ItemGroup>
+    <DirectPInvoke Include=""env"" />
+    <LinkerArg Include=""-Wl,--allow-undefined"" />
+  </ItemGroup>
+  <Target Name=""EnableAotLate"" BeforeTargets=""ImportRuntimeIlcPackageTarget;IlcCompile;_ComputeAssembliesToCompileToNative"">
+    <PropertyGroup>
+      <PublishAot>true</PublishAot>
+      <IlcLlvmTarget>wasm32-unknown-wasi</IlcLlvmTarget>
+    </PropertyGroup>
+  </Target>
+  <Target Name=""ClearComponentWit"" BeforeTargets=""LinkNative;LinkNativeLlvm"">
+    <ItemGroup>
+      <WasmComponentTypeWit Remove=""@(WasmComponentTypeWit)"" />
+    </ItemGroup>
+  </Target>
+  <ItemGroup>
+    <PackageReference Include=""Microsoft.DotNet.ILCompiler.LLVM"" Version=""10.0.0-rc.1.26357.1"" />
+    <PackageReference Include=""runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM"" Version=""10.0.0-rc.1.26357.1"" />
+  </ItemGroup>
 </Project>
 ";
-		System.IO.File.WriteAllText(csprojPath, csprojContent);
+			System.IO.File.WriteAllText(csprojPath, csprojContent);
+		}
+
+		string targetsPath = System.IO.Path.Combine(mapDir, "Directory.Build.targets");
+		if (System.IO.File.Exists(templateTargetsPath))
+		{
+			System.IO.File.Copy(templateTargetsPath, targetsPath, true);
+		}
+		else
+		{
+			string targetsContent = @"<Project>
+  <!-- Override Mono WASM SDK target to allow Native AOT build -->
+  <Target Name=""PrepareInputsForWasmBuild"" />
+</Project>
+";
+			System.IO.File.WriteAllText(targetsPath, targetsContent);
+		}
 
 		try
 		{
@@ -1581,25 +1700,37 @@ public class {mapName} : IMapScript
 
 	void IGameAPI.BroadcastMessage(string message)
 	{
+		string formatted = $"[HOST BROADCAST] {message}";
+		try { System.IO.File.AppendAllText("D:/git/Realm/wasm_debug.log", $"{formatted}\n"); } catch { }
+		Realm.Godot.WasmRuntime.LogToConsole(formatted);
 		((IGameAPI)this).ShowFeedbackText(message, new System.Numerics.Vector3(0.9f, 0.9f, 0.9f));
 	}
 
 	void IGameAPI.SendMessageToPlayer(int playerIndex, string message)
 	{
+		string formatted = $"[HOST MESSAGE P{playerIndex}] {message}";
+		Realm.Godot.WasmRuntime.LogToConsole(formatted);
 		if (playerIndex == 0) ((IGameAPI)this).ShowFeedbackText(message, new System.Numerics.Vector3(0.9f, 0.9f, 0.9f));
 	}
 
-	int IGameAPI.ScheduleTimer(float delay, Action callback)
+	private event Action<int>? _onTimerExpired;
+	event Action<int>? IGameAPI.OnTimerExpired
+	{
+		add => _onTimerExpired += value;
+		remove => _onTimerExpired -= value;
+	}
+
+	int IGameAPI.ScheduleTimer(float delay)
 	{
 		int handle = _nextTimerHandle++;
-		_scheduledTimers[handle] = (delay, delay, false, callback);
+		_scheduledTimers[handle] = (delay, delay, false, () => _onTimerExpired?.Invoke(handle));
 		return handle;
 	}
 
-	int IGameAPI.ScheduleRepeatingTimer(float interval, Action callback)
+	int IGameAPI.ScheduleRepeatingTimer(float interval)
 	{
 		int handle = _nextTimerHandle++;
-		_scheduledTimers[handle] = (interval, interval, true, callback);
+		_scheduledTimers[handle] = (interval, interval, true, () => _onTimerExpired?.Invoke(handle));
 		return handle;
 	}
 
@@ -1776,12 +1907,12 @@ public class {mapName} : IMapScript
 		}
 	}
 
-	int IGameAPI.CountUnitsOwnedByPlayer(int playerIndex, System.Func<IUnit, bool>? filter)
+	int IGameAPI.CountUnitsOwnedByPlayer(int playerIndex)
 	{
 		int count = 0;
 		foreach (var unit in ((IGameAPI)this).GetUnitsOwnedByPlayer(playerIndex))
 		{
-			if (!unit.IsDead && (filter == null || filter(unit)))
+			if (!unit.IsDead)
 				count++;
 		}
 		return count;
@@ -1872,8 +2003,8 @@ public class {mapName} : IMapScript
 
 	int IGameAPI.GetUnitRouteState(IUnit unit)
 	{
-		object? data = unit.GetCustomData("__routeState");
-		return data is int i ? i : 0;
+		string? data = unit.GetCustomData("__routeState");
+		return int.TryParse(data, out int i) ? i : 0;
 	}
 
 	void IGameAPI.SetUnitLevel(IUnit unit, int level)
@@ -1960,22 +2091,40 @@ public class {mapName} : IMapScript
 		}).CallDeferred();
 	}
 
-	bool IGameAPI.TryGetCoordinate(string coordinateName, out System.Numerics.Vector3 min, out System.Numerics.Vector3 max)
+	bool IGameAPI.HasCoordinate(string coordinateName)
 	{
-		min = System.Numerics.Vector3.Zero;
-		max = System.Numerics.Vector3.Zero;
 		if (string.IsNullOrEmpty(coordinateName)) return false;
 		string searchName = coordinateName.Trim();
 		foreach (var r in EditorCoordinates)
 		{
 			if (r.Name.Equals(searchName, StringComparison.OrdinalIgnoreCase))
-			{
-				min = new System.Numerics.Vector3(r.MinX, 0f, r.MinZ);
-				max = new System.Numerics.Vector3(r.MaxX, 0f, r.MaxZ);
 				return true;
-			}
 		}
 		return false;
+	}
+
+	System.Numerics.Vector3 IGameAPI.GetCoordinateMin(string coordinateName)
+	{
+		if (string.IsNullOrEmpty(coordinateName)) return System.Numerics.Vector3.Zero;
+		string searchName = coordinateName.Trim();
+		foreach (var r in EditorCoordinates)
+		{
+			if (r.Name.Equals(searchName, StringComparison.OrdinalIgnoreCase))
+				return new System.Numerics.Vector3(r.MinX, 0f, r.MinZ);
+		}
+		return System.Numerics.Vector3.Zero;
+	}
+
+	System.Numerics.Vector3 IGameAPI.GetCoordinateMax(string coordinateName)
+	{
+		if (string.IsNullOrEmpty(coordinateName)) return System.Numerics.Vector3.Zero;
+		string searchName = coordinateName.Trim();
+		foreach (var r in EditorCoordinates)
+		{
+			if (r.Name.Equals(searchName, StringComparison.OrdinalIgnoreCase))
+				return new System.Numerics.Vector3(r.MaxX, 0f, r.MaxZ);
+		}
+		return System.Numerics.Vector3.Zero;
 	}
 
 	bool IGameAPI.IsPositionInCoordinate(System.Numerics.Vector3 position, string coordinateName)
@@ -2294,6 +2443,35 @@ public class {mapName} : IMapScript
 
 		if (isCustomPath)
 		{
+			if (string.IsNullOrEmpty(PendingMapScriptPath))
+			{
+				string checkDir = normalizedRaw;
+				if (normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://"))
+				{
+					checkDir = ProjectSettings.GlobalizePath(normalizedRaw);
+				}
+				if (System.IO.Directory.Exists(checkDir))
+				{
+					string binDir = System.IO.Path.Combine(checkDir, "bin");
+					if (System.IO.Directory.Exists(binDir))
+					{
+						PendingMapScriptPath = System.Linq.Enumerable.FirstOrDefault(System.IO.Directory.GetFiles(
+							binDir,
+							"CustomMap.wasm",
+							System.IO.SearchOption.AllDirectories
+						));
+					}
+					if (string.IsNullOrEmpty(PendingMapScriptPath))
+					{
+						PendingMapScriptPath = System.Linq.Enumerable.FirstOrDefault(System.IO.Directory.GetFiles(
+							checkDir,
+							"*.wasm",
+							System.IO.SearchOption.AllDirectories
+						));
+					}
+				}
+			}
+
 			if (!string.IsNullOrEmpty(PendingMapScriptPath))
 			{
 				if (_mapScriptLoadContext != null)
@@ -2304,24 +2482,53 @@ public class {mapName} : IMapScript
 
 				try
 				{
-					_mapScriptLoadContext = new MapScriptLoadContext();
-					using var fs = new System.IO.FileStream(PendingMapScriptPath, System.IO.FileMode.Open, System.IO.FileAccess.Read);
-					var asm = _mapScriptLoadContext.LoadFromStream(fs);
-
-					foreach (var t in asm.GetExportedTypes())
+					System.IO.File.AppendAllText("D:/git/Realm/wasm_debug.log", $"[{DateTime.Now:HH:mm:ss}] GameHost LoadMapScript: PendingMapScriptPath={PendingMapScriptPath}\n");
+					if (PendingMapScriptPath.EndsWith(".wasm", StringComparison.OrdinalIgnoreCase))
 					{
-						if (typeof(IMapScript).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
+						string mapNameOnly = System.IO.Path.GetFileNameWithoutExtension(PendingMapScriptPath);
+						if (mapNameOnly.Equals("CustomMap", StringComparison.OrdinalIgnoreCase))
 						{
-							_activeMapScript = (IMapScript?)Activator.CreateInstance(t);
-							if (_activeMapScript != null)
+							string parentDir = System.IO.Path.GetDirectoryName(PendingMapScriptPath);
+							while (!string.IsNullOrEmpty(parentDir))
 							{
-								break;
+								string folderName = System.IO.Path.GetFileName(parentDir);
+								if (!string.IsNullOrEmpty(folderName) && 
+									!folderName.Equals("bin", StringComparison.OrdinalIgnoreCase) && 
+									!folderName.Equals("Release", StringComparison.OrdinalIgnoreCase) && 
+									!folderName.Equals("net10.0", StringComparison.OrdinalIgnoreCase) && 
+									!folderName.Equals("wasi-wasm", StringComparison.OrdinalIgnoreCase) && 
+									!folderName.Equals("publish", StringComparison.OrdinalIgnoreCase))
+								{
+									mapNameOnly = folderName;
+									break;
+								}
+								parentDir = System.IO.Path.GetDirectoryName(parentDir);
+							}
+						}
+						_activeMapScript = new Realm.Godot.WasmRuntime(PendingMapScriptPath, mapNameOnly);
+					}
+					else
+					{
+						_mapScriptLoadContext = new MapScriptLoadContext();
+						using var fs = new System.IO.FileStream(PendingMapScriptPath, System.IO.FileMode.Open, System.IO.FileAccess.Read);
+						var asm = _mapScriptLoadContext.LoadFromStream(fs);
+
+						foreach (var t in asm.GetExportedTypes())
+						{
+							if (typeof(IMapScript).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
+							{
+								_activeMapScript = (IMapScript?)Activator.CreateInstance(t);
+								if (_activeMapScript != null)
+								{
+									break;
+								}
 							}
 						}
 					}
 				}
 				catch (Exception ex)
 				{
+					System.IO.File.AppendAllText("D:/git/Realm/wasm_debug.log", $"[{DateTime.Now:HH:mm:ss}] GameHost LoadMapScript failed: {ex}\n");
 					GD.PrintErr($"Failed to load pending map script from {PendingMapScriptPath}: {ex.Message}");
 				}
 				PendingMapScriptPath = null;
@@ -2453,12 +2660,15 @@ public class {mapName} : IMapScript
 
 		if (GroundTerrain != null)
 			_editorService.SetTerrainSplatMap(GroundTerrain.SplatMap);
+
 		SetupSkybox();
+
 		UpdateDayNightVisuals(0.5f);
 		_definitionManager = ServiceLocator.Get<DefinitionManager>();
 		_goldResourceId = "gold".AsResourceId(_definitionManager);
 		_woodResourceId = "wood".AsResourceId(_definitionManager);
 		_stoneResourceId = "stone".AsResourceId(_definitionManager);
+
 		_simulationService = ServiceLocator.Get<SimulationService>();
 		_simulationService.SetRuntimeReferences(AllUnits, AllProps, _castlesList, _definitionManager, _goldResourceId, _woodResourceId, _stoneResourceId, GroundTerrain);
 		_simulationService.Initialize();
@@ -2700,55 +2910,58 @@ public class {mapName} : IMapScript
 
 		LoadUnitMetadata(mapParamName);
 
-		if (!IsMapEditorMode)
-		{
-			string customTerrainPath = "";
-			string normalizedRawMapName = rawMapName.Replace('\\', '/');
-			if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRawMapName))
-			{
-				string checkDir = normalizedRawMapName;
-				if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://"))
-				{
-					checkDir = ProjectSettings.GlobalizePath(normalizedRawMapName);
-				}
-				if (System.IO.Directory.Exists(checkDir))
-				{
-					customTerrainPath = System.IO.Path.Combine(checkDir, "terrain.json");
-				}
-			}
-
-			if (string.IsNullOrEmpty(customTerrainPath))
-			{
-				string normalizedMapName = rawMapName.ToLower().Trim();
-				string mapDir = $"res://Maps/{normalizedMapName}";
-				if (System.IO.Directory.Exists(ProjectSettings.GlobalizePath(mapDir)))
-				{
-					customTerrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
-				}
-			}
-
-			string targetPath = customTerrainPath;
-			if (!string.IsNullOrEmpty(customTerrainPath) && (customTerrainPath.StartsWith("user://") || customTerrainPath.StartsWith("res://")))
-			{
-				targetPath = ProjectSettings.GlobalizePath(customTerrainPath);
-			}
-
-			if (!string.IsNullOrEmpty(targetPath) && System.IO.File.Exists(targetPath))
-			{
-				LoadMapFromFile(customTerrainPath, false, false);
-			}
-		}
-
 		bool isGameStarted = LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted;
-		bool shouldRunMapScript = !isGameStarted || IsServerActive();
-		if (shouldRunMapScript || IsMapEditorMode)
+		if (isGameStarted || IsMapEditorMode)
 		{
-			LoadMapScript(mapParamName);
-			if (_activeMapScript != null && !IsMapEditorMode)
+			if (!IsMapEditorMode && !IsLoadingMap)
 			{
-				_activeMapScript.Initialize(this);
+				string customTerrainPath = "";
+				string normalizedRawMapName = rawMapName.Replace('\\', '/');
+				if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRawMapName))
+				{
+					string checkDir = normalizedRawMapName;
+					if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://"))
+					{
+						checkDir = ProjectSettings.GlobalizePath(normalizedRawMapName);
+					}
+					if (System.IO.Directory.Exists(checkDir))
+					{
+						customTerrainPath = System.IO.Path.Combine(checkDir, "terrain.json");
+					}
+				}
+
+				if (string.IsNullOrEmpty(customTerrainPath))
+				{
+					string normalizedMapName = rawMapName.ToLower().Trim();
+					string mapDir = $"res://Maps/{normalizedMapName}";
+					if (System.IO.Directory.Exists(ProjectSettings.GlobalizePath(mapDir)))
+					{
+						customTerrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
+					}
+				}
+
+				string targetPath = customTerrainPath;
+				if (!string.IsNullOrEmpty(customTerrainPath) && (customTerrainPath.StartsWith("user://") || customTerrainPath.StartsWith("res://")))
+				{
+					targetPath = ProjectSettings.GlobalizePath(customTerrainPath);
+				}
+
+				if (!string.IsNullOrEmpty(targetPath) && System.IO.File.Exists(targetPath))
+				{
+					LoadMapFromFile(customTerrainPath, false, true);
+				}
 			}
-			RebakeNavMesh();
+
+			bool shouldRunMapScript = !isGameStarted || IsServerActive();
+			if ((shouldRunMapScript || IsMapEditorMode) && !IsLoadingMap)
+			{
+				LoadMapScript(mapParamName);
+				if (_activeMapScript != null && !IsMapEditorMode)
+				{
+					_activeMapScript.Initialize(this);
+				}
+				RebakeNavMesh();
+			}
 		}
 
 		if (isGameStarted && !IsMapEditorMode && !ReplayPlaybackManager.Instance.IsPlayingReplay && GameSettings.RecordReplays)
@@ -2791,9 +3004,9 @@ public class {mapName} : IMapScript
 	private void ReinitializeEcsAndServices()
 	{
 		EcsWorld?.Dispose();
-		
 		BuildDependencyInjection();
 		ResolveServices();
+
 		if (GroundTerrain != null)
 		{
 			_editorService.SetTerrainSplatMap(GroundTerrain.SplatMap);
@@ -2851,7 +3064,7 @@ public class {mapName} : IMapScript
 		}
 		GroundTerrain = null;
 
-		if (IsMapEditorMode)
+		if (IsMapEditorMode || IsLoadingMap)
 		{
 			var terrainNode = new EditableTerrain();
 			terrainNode.Name = "Ground";
@@ -2948,94 +3161,7 @@ public class {mapName} : IMapScript
 	{
 		SetSkyboxTexture(EditorSkyboxPath);
 	}
-
-	private void SpawnInitialEntities()
-	{
-
-		var playerOwner = _playerEntity.AsPlayerEntity(EcsWorld);
-		var enemyOwner = _enemyPlayerEntity.AsPlayerEntity(EcsWorld);
-
-		SpawnDefaultResourceNodes();
-
-
-
-		var workerEntity = CreateEcsUnit("worker", "Worker", 70f, 5f, 1.8f, 0f, 7.0f, new Vector3(-16, 0, -20), playerOwner);
-		SpawnUnit3D(workerEntity, "worker", GetFallbackModelPath("worker", false), new Vector3(-16, 0, -20), false, false);
-
-
-		var soldierEntity = CreateEcsUnit("soldier", "Soldier", 150f, 15f, 2.0f, 5f, 6.0f, new Vector3(-8, 0, 5), playerOwner);
-		SpawnUnit3D(soldierEntity, "soldier", GetFallbackModelPath("soldier", false), new Vector3(-8, 0, 5), false, false);
-		
-
-		var archerEntity = CreateEcsUnit("archer", "Elf Archer", 90f, 12f, 18.0f, 2f, 8.0f, new Vector3(-12, 0, 5), playerOwner);
-		SpawnUnit3D(archerEntity, "archer", GetFallbackModelPath("archer", false), new Vector3(-12, 0, 5), false, false);
-
-
-		var castleEntity = CreateEcsUnit("castle", "Town Castle", 1000f, 0f, 0f, 15f, 0f, new Vector3(-25, 0, -25), playerOwner);
-		SpawnUnit3D(castleEntity, "castle", GetFallbackModelPath("castle", true), new Vector3(-25, 0, -25), true, false);
-
-
-		var towerEntity = CreateEcsUnit("tower", "Spell Tower", 500f, 25f, 25.0f, 8f, 0f, new Vector3(-15, 0, -15), playerOwner);
-		SpawnUnit3D(towerEntity, "tower", GetFallbackModelPath("tower", true), new Vector3(-15, 0, -15), true, false);
-
-
-
-		var enemyWorkerEntity = CreateEcsUnit("worker", "Orc Worker", 70f, 5f, 1.8f, 0f, 7.0f, new Vector3(16, 0, 20), enemyOwner);
-		SpawnUnit3D(enemyWorkerEntity, "worker", GetFallbackModelPath("worker", false), new Vector3(16, 0, 20), false, true);
-
-
-		var enemyGoldmine = FindNearbyResourceNode(new Vector3(16, 0, 20), "gold", 50f);
-		if (enemyGoldmine != null)
-		{
-			var gatherer = new Gatherer("gold", enemyGoldmine.Entity);
-			EcsWorld.Add(enemyWorkerEntity, gatherer);
-		}
-
-
-		var enemySoldierEntity = CreateEcsUnit("soldier", "Orc Raider", 150f, 15f, 2.0f, 5f, 6.0f, new Vector3(15, 0, 10), enemyOwner);
-		SpawnUnit3D(enemySoldierEntity, "soldier", GetFallbackModelPath("soldier", false), new Vector3(15, 0, 10), false, true);
-
-
-		var enemyArcherEntity = CreateEcsUnit("archer", "Dark Archer", 90f, 12f, 18.0f, 2f, 8.0f, new Vector3(20, 0, 15), enemyOwner);
-		SpawnUnit3D(enemyArcherEntity, "archer", GetFallbackModelPath("archer", false), new Vector3(20, 0, 15), false, true);
-
-
-		var enemyTowerEntity = CreateEcsUnit("tower", "Orc Totem Tower", 500f, 25f, 25.0f, 8f, 0f, new Vector3(25, 0, 5), enemyOwner);
-		SpawnUnit3D(enemyTowerEntity, "tower", GetFallbackModelPath("tower", true), new Vector3(25, 0, 5), true, true);
-
-
-		var enemyCastleEntity = CreateEcsUnit("castle", "Orc Stronghold", 1000f, 0f, 0f, 15f, 0f, new Vector3(25, 0, 25), enemyOwner);
-		SpawnUnit3D(enemyCastleEntity, "castle", GetFallbackModelPath("castle", true), new Vector3(25, 0, 25), true, true);
-	}
-
-	private void SpawnDefaultResourceNodes()
-	{
-
-		SpawnPropExternal("goldmine", new Vector3(-35f, 0f, -15f));
-		SpawnPropExternal("tree", new Vector3(-18f, 0f, -35f));
-		SpawnPropExternal("tree", new Vector3(-22f, 0f, -36f));
-		SpawnPropExternal("tree", new Vector3(-26f, 0f, -34f));
-		SpawnPropExternal("rock", new Vector3(-36f, 0f, -32f));
-		SpawnPropExternal("rock", new Vector3(-32f, 0f, -35f));
-
-
-		SpawnPropExternal("goldmine", new Vector3(35f, 0f, 15f));
-		SpawnPropExternal("tree", new Vector3(18f, 0f, 35f));
-		SpawnPropExternal("tree", new Vector3(22f, 0f, 36f));
-		SpawnPropExternal("tree", new Vector3(26f, 0f, 34f));
-		SpawnPropExternal("rock", new Vector3(36f, 0f, 32f));
-		SpawnPropExternal("rock", new Vector3(32f, 0f, 35f));
-
-
-		SpawnPropExternal("goldmine", new Vector3(0f, 0f, 0f));
-		SpawnPropExternal("tree", new Vector3(-10f, 0f, 10f));
-		SpawnPropExternal("tree", new Vector3(-12f, 0f, 12f));
-		SpawnPropExternal("tree", new Vector3(10f, 0f, -10f));
-		SpawnPropExternal("tree", new Vector3(12f, 0f, -12f));
-		SpawnPropExternal("rock", new Vector3(15f, 0f, 15f));
-		SpawnPropExternal("rock", new Vector3(-15f, 0f, -15f));
-	}
-
+	
 	private Prop3D FindProp3DInParentChain(Node node)
 	{
 		while (node != null)
@@ -3261,7 +3387,7 @@ public class {mapName} : IMapScript
 			bool isReplay = Realm.Godot.ReplaySystem.ReplayPlaybackManager.Instance.IsPlayingReplay;
 			bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
 			int spectatorPerspective = InGameHUD.Instance?.LiveSpectatorPerspective ?? -1;
-			_fogOfWarService.Tick(fDelta, AllUnits, MainCamera, spectatorPerspective, isReplay, isSpectator);
+			_fogOfWarService.Tick(fDelta, AllUnits, AllProps, AllDecals, MainCamera, spectatorPerspective, isReplay, isSpectator);
 		}
 	}
 
@@ -3623,9 +3749,9 @@ public class {mapName} : IMapScript
 		_environmentService?.UpdateDayNightVisuals(this, progress);
 	}
 
-	public void CycleTimeOfDay()
+	public (int TimeOfDayIndex, float TimeOfDayTimer) CycleTimeOfDay()
 	{
-		_environmentService?.CycleTimeOfDay(this, _worldEntity, TimeOfDayCycleDuration);
+		return _environmentService?.CycleTimeOfDay(this, _worldEntity, TimeOfDayCycleDuration) ?? (0, 0f);
 	}
 
 	public string GetTimeOfDayName()

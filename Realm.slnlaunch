@@ -1,0 +1,47 @@
+[
+  {
+    "Name": "Run Lobby (Web)",
+    "Projects": [
+      {
+        "Name": "Realm.Lobby\\Realm.Lobby.csproj",
+        "Action": "Start",
+        "DebugTarget": "Realm.Lobby"
+      }
+    ]
+  },
+  {
+    "Name": "Run Simulation Tests",
+    "Projects": [
+      {
+        "Name": "Realm.Godot\\Realm.Godot.csproj",
+        "Action": "Start",
+        "DebugTarget": "Run Simulation Tests"
+      }
+    ]
+  },
+  {
+    "Name": "Run All Tests",
+    "Projects": [
+      {
+        "Name": "Realm.Godot\\Realm.Godot.csproj",
+        "Action": "Start",
+        "DebugTarget": "Run All Tests"
+      }
+    ]
+  },
+  {
+    "Name": "Lobby & Simulation Tests",
+    "Projects": [
+      {
+        "Name": "Realm.Lobby\\Realm.Lobby.csproj",
+        "Action": "Start",
+        "DebugTarget": "Realm.Lobby"
+      },
+      {
+        "Name": "Realm.Godot\\Realm.Godot.csproj",
+        "Action": "Start",
+        "DebugTarget": "Run Simulation Tests"
+      }
+    ]
+  }
+]

@@ -1052,6 +1052,10 @@ public partial class GameHost
 							{
 								clickedNode = FindProp3DInParentChain(collider);
 							}
+							if (clickedNode == null)
+							{
+								clickedNode = FindDecalInParentChain(collider);
+							}
 						}
 						if (clickedNode == null)
 						{
@@ -1453,6 +1457,12 @@ public partial class GameHost
 			}
 			if (keyEvent.Keycode == Key.Quoteleft) 
 			{
+				if (Realm.Godot.UI.WasmConsoleWindow.IsSinglePlayerOrTestMode())
+				{
+					Realm.Godot.UI.WasmConsoleWindow.Instance.ToggleVisibility();
+					GetViewport().SetInputAsHandled();
+					return;
+				}
 				CycleThroughBuildings();
 				GetViewport().SetInputAsHandled();
 				return;
@@ -2029,6 +2039,19 @@ public partial class GameHost
 			if (node is Unit3D unit)
 			{
 				return unit;
+			}
+			node = node.GetParent();
+		}
+		return null;
+	}
+
+	private Decal FindDecalInParentChain(Node node)
+	{
+		while (node != null)
+		{
+			if (node is Decal decal)
+			{
+				return decal;
 			}
 			node = node.GetParent();
 		}

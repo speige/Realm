@@ -4,3 +4,4 @@ bin/
 *.user
 node_modules/
 vscode_embedded/
+GeneratedFiles/

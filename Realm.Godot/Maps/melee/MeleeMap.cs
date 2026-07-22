@@ -4,7 +4,7 @@ using Realm.MapAPI;
 using System;
 using System.Numerics;
 
-public class MeleeMap : IMapScript
+public class MeleeMap : IWasmModule
 {
     private float _enemyAiTimer = 0f;
     private float _enemySpawnTimer = 0f;

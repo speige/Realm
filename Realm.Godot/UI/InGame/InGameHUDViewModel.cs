@@ -430,7 +430,7 @@ public class InGameHUDViewModel
 				string phase = phaseIdx switch
 				{
 					0 => TranslationServer.Translate("Day"),
-					1 => TranslationServer.Translate("Sunset"),
+					1 => TranslationServer.Translate("Dusk"),
 					2 => TranslationServer.Translate("Night"),
 					3 => TranslationServer.Translate("Dawn"),
 					_ => TranslationServer.Translate("Day")

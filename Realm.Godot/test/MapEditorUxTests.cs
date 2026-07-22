@@ -146,4 +146,56 @@ public class MapEditorUxTests
         string filePath = Path.Combine(artifactDir, "terrain_transition_test.png");
         image.SavePng(filePath);
     }
+
+    [TestCase]
+    public async Task TestClickTestButtonOnBlankMap()
+    {
+        var field = typeof(MapEditorHUD).GetField("_agreementShownThisSession", BindingFlags.NonPublic | BindingFlags.Static);
+        if (field != null)
+        {
+            field.SetValue(null, true);
+        }
+
+        ISceneRunner runner = ISceneRunner.Load("res://Main.tscn");
+        await runner.AwaitMillis(1500);
+
+        UIManager.Instance.TransitionTo(GameScreen.MapEditorHUD);
+        await runner.AwaitMillis(2500);
+
+        var hud = MapEditorHUD.Instance;
+        Assertions.AssertThat(hud).IsNotNull();
+
+        var btnTestMap = hud!.GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnTestMap");
+        Assertions.AssertThat(btnTestMap).IsNotNull();
+        
+        // Trigger TestMapAction on blank map
+        btnTestMap.EmitSignal("pressed");
+        await runner.AwaitMillis(500);
+
+        // Find the confirmation dialog overlay created by ShowConfirmationDialog
+        Node? overlay = hud.GetNodeOrNull<Node>("ConfirmationDialogOverlay");
+
+        if (overlay != null)
+        {
+            var btnConfirm = overlay.FindChild("BtnConfirm", true, false) as Button
+                ?? overlay.FindChild("*Confirm*", true, false) as Button;
+
+            if (btnConfirm != null)
+            {
+                btnConfirm.EmitSignal("pressed");
+            }
+            else
+            {
+                // Fallback: directly proceed if button search fails
+                await hud.ProceedToTestMap();
+            }
+        }
+        else
+        {
+            await hud.ProceedToTestMap();
+        }
+
+        await runner.AwaitMillis(2000);
+        Assertions.AssertThat(UI.WasmConsoleWindow.Instance).IsNotNull();
+    }
 }

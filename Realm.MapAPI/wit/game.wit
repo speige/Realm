@@ -1,0 +1,18 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Realm.MapAPI Hand-Coded WIT interface definitions (game.wit)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// What belongs in this file:
+// 1. Manual WIT functions that CANNOT be auto-generated from C# interfaces because:
+//    - They use unsupported return/parameter types (e.g., generics, out/ref parameters).
+//    - They require custom sandboxed logic or special low-level bindings.
+//
+// What should NOT be in this file (Leave to Auto-Generate in game.g.wit):
+// 1. Standard bindings for abstract interface members of IGameAPI, IUnit,
+//    or IResourceNode using primitive types, Vector3, lists, or simple strings.
+// ─────────────────────────────────────────────────────────────────────────────
+
+package custom:game;
+
+interface game-api {
+}

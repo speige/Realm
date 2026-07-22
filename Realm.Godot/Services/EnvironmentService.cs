@@ -88,93 +88,124 @@ public class EnvironmentService
 		return next;
 	}
 
-public void UpdateDayNightVisuals(Node3D host, float progress)
-{
-	var worldEnv = host.GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
-	var sun = host.GetNodeOrNull<DirectionalLight3D>("DirectionalLight3D");
-	if (worldEnv == null || worldEnv.Environment == null) return;
+	public bool OverrideDayNightVisuals { get; set; } = false;
 
-	var env = worldEnv.Environment;
+	// --- Core Day-Night Keyframe Preset Arrays (0=Noon, 1=Dusk, 2=Midnight, 3=Dawn) ---
 
-	env.TonemapMode = Godot.Environment.ToneMapper.Filmic;
-	env.AdjustmentEnabled = true;
-	env.AmbientLightSource = Godot.Environment.AmbientSource.Color;
-
-	float segment = Mathf.Clamp(progress, 0f, 1f) * 4f;
-	int phaseIndex = (int)Mathf.Floor(segment);
-	float t = Mathf.Clamp(segment - phaseIndex, 0f, 1f);
-
-	if (phaseIndex >= 4)
-	{
-		phaseIndex = 3;
-		t = 1.0f;
-	}
-	int nextIndex = (phaseIndex + 1) % 5;
-
-	float[] exposures =  { 1.10f, 1.05f, 1.45f, 1.20f, 1.10f }; // Huge boost at Night (index 2) to lift dark textures
-	float[] contrasts =  { 1.10f, 1.15f, 0.95f, 1.05f, 1.10f }; // Lower contrast at night prevents shadows from becoming pitch black
-	float[] saturations = { 1.10f, 1.25f, 1.40f, 1.15f, 1.10f }; // High saturation keeps the night colorful and readable
-
-	env.TonemapExposure = Mathf.Lerp(exposures[phaseIndex], exposures[nextIndex], t);
-	env.AdjustmentContrast = Mathf.Lerp(contrasts[phaseIndex], contrasts[nextIndex], t);
-	env.AdjustmentSaturation = Mathf.Lerp(saturations[phaseIndex], saturations[nextIndex], t);
-
-
-	Color[] ambientColors = new Color[]
-	{
-		new Color(0.45f, 0.55f, 0.75f),   // Day
-		new Color(0.52f, 0.32f, 0.50f),   // Sunset
-		new Color(0.42f, 0.48f, 0.75f),   // Night - Brighter, luminous blue baseline
-		new Color(0.38f, 0.35f, 0.65f),   // Dawn
-		new Color(0.45f, 0.55f, 0.75f),   // Day (wrap)
+	// Directional Sun Angles & Accent Energies (Low energy = Accent rim/shadows only)
+	public static readonly float[] SunPitches       = {  55.0f,  15.0f,  65.0f,  15.0f };
+	public static readonly float[] SunYaws          = {  20.0f,-101.0f, 180.0f,  74.0f };
+	public static readonly float[] SunEnergies      = {   0.80f,  0.45f,   0.05f,  0.50f }; // Subtle accents
+	public static readonly Color[] SunColors        = {
+		new Color(1.000f, 0.957f, 0.878f), // Noon (Midday Warm White)
+		new Color(1.000f, 0.700f, 0.400f), // Dusk (Golden Amber Rim)
+		new Color(0.450f, 0.650f, 0.950f), // Midnight (Subtle Moonlight)
+		new Color(1.000f, 0.800f, 0.600f)  // Dawn (Soft Sunrise Gold)
 	};
 
-	float[] ambientEnergies = new float[] { 1.0f, 0.95f, 1.15f, 1.0f, 1.0f };
-	
-	Color interpolatedAmbient = ambientColors[phaseIndex].Lerp(ambientColors[nextIndex], t);
-	float interpolatedAmbientEnergy = Mathf.Lerp(ambientEnergies[phaseIndex], ambientEnergies[nextIndex], t);
-	
-	env.AmbientLightColor = interpolatedAmbient;
-	env.AmbientLightEnergy = interpolatedAmbientEnergy;
-
-
-	Color[] directionalColors = new Color[]
-	{
-		new Color(1.00f, 0.96f, 0.88f),   // Day
-		new Color(1.00f, 0.55f, 0.20f),   // Sunset
-		new Color(0.55f, 0.80f, 1.00f),   // Night - Strong, vibrant cyan "moonlight"
-		new Color(0.95f, 0.65f, 0.80f),   // Dawn
-		new Color(1.00f, 0.96f, 0.88f),   // Day (wrap)
+	// Locked Universal Ambient Baseline
+	public static readonly float[] AmbientEnergies  = {   3.88f,  2.10f,   1.93f,  2.70f };
+	public static readonly Color[] AmbientColors    = {
+		new Color(0.680f, 0.760f, 0.860f), // Noon
+		new Color(0.420f, 0.450f, 0.600f), // Dusk
+		new Color(0.350f, 0.500f, 0.780f), // Midnight
+		new Color(0.520f, 0.620f, 0.750f)  // Dawn
 	};
 
-	float[] directionalEnergies = new float[] { 2.40f, 1.90f, 1.30f, 1.50f, 2.40f };
-	float[] pitchDegrees = { -48f, -42f, -45f, -40f, -48f };
-	float[] yawDegrees   = {  35f,  60f, -25f, -50f,  35f };
+	public static readonly float[] FogDensities     = { 0.0150f, 0.0190f, 0.0190f, 0.0250f };
+	public static readonly Color[] FogColors        = {
+		new Color(0.080f, 0.100f, 0.150f),
+		new Color(0.190f, 0.080f, 0.120f),
+		new Color(0.030f, 0.060f, 0.120f),
+		new Color(0.120f, 0.150f, 0.220f)
+	};
 
-	Color interpolatedDirectional = directionalColors[phaseIndex].Lerp(directionalColors[nextIndex], t);
-	float interpolatedDirectionalEnergy = Mathf.Lerp(directionalEnergies[phaseIndex], directionalEnergies[nextIndex], t);
-	float interpolatedPitch = Mathf.Lerp(pitchDegrees[phaseIndex], pitchDegrees[nextIndex], t);
-	float interpolatedYaw = Mathf.Lerp(yawDegrees[phaseIndex], yawDegrees[nextIndex], t);
+	public static readonly float[] SsaoIntensities  = {   0.80f,  0.90f,   1.15f,  0.85f };
+	public static readonly float[] SsaoRadii        = {   1.80f,  1.80f,   1.80f,  1.80f };
 
-	if (sun != null)
+	public static readonly float[] Exposures        = {   1.00f,  1.02f,   1.04f,  1.02f };
+	public static readonly float[] Contrasts        = {   1.10f,  1.08f,   1.04f,  1.08f };
+	public static readonly float[] Saturations      = {   0.98f,  0.92f,   0.88f,  0.96f };
+
+	public static readonly float[] GlowIntensities  = {   0.60f,  0.70f,   0.80f,  0.65f };
+	public static readonly float[] GlowBlooms       = {   0.12f,  0.10f,   0.10f,  0.11f };
+
+	public void UpdateDayNightVisuals(Node3D host, float progress)
 	{
-		sun.LightColor = interpolatedDirectional;
-		sun.LightEnergy = interpolatedDirectionalEnergy;
-		sun.RotationDegrees = new Vector3(interpolatedPitch, interpolatedYaw, 0f);
+		if (OverrideDayNightVisuals) return;
+
+		var worldEnv = host.GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
+		var sun = host.GetNodeOrNull<DirectionalLight3D>("DirectionalLight3D");
+		if (worldEnv == null || worldEnv.Environment == null) return;
+
+		var env = worldEnv.Environment;
+
+		// --- 1. Compute Phase Interpolation (Noon -> Dusk -> Midnight -> Dawn -> Noon) ---
+		float normalizedProgress = Mathf.PosMod(progress, 1.0f);
+		float segment = normalizedProgress * 4.0f;
+		int phaseIndex = (int)Mathf.Floor(segment);
+		float t = segment - phaseIndex;
+		int nextIndex = (phaseIndex + 1) % 4;
+
+		// --- 2. Update Environment Settings ---
+		env.TonemapMode = Godot.Environment.ToneMapper.Aces;
+		env.AdjustmentEnabled = true;
+		env.AmbientLightSource = Godot.Environment.AmbientSource.Color;
+
+		env.TonemapExposure = Mathf.Lerp(Exposures[phaseIndex], Exposures[nextIndex], t);
+		env.AdjustmentContrast = Mathf.Lerp(Contrasts[phaseIndex], Contrasts[nextIndex], t);
+		env.AdjustmentSaturation = Mathf.Lerp(Saturations[phaseIndex], Saturations[nextIndex], t);
+
+		env.AmbientLightColor = AmbientColors[phaseIndex].Lerp(AmbientColors[nextIndex], t);
+		env.AmbientLightEnergy = Mathf.Lerp(AmbientEnergies[phaseIndex], AmbientEnergies[nextIndex], t);
+
+		env.SsaoEnabled = true;
+		env.SsaoRadius = Mathf.Lerp(SsaoRadii[phaseIndex], SsaoRadii[nextIndex], t);
+		env.SsaoIntensity = Mathf.Lerp(SsaoIntensities[phaseIndex], SsaoIntensities[nextIndex], t);
+		env.SsaoDetail = 0.5f;
+
+		env.FogEnabled = true;
+		env.FogLightColor = FogColors[phaseIndex].Lerp(FogColors[nextIndex], t);
+		env.FogDensity = Mathf.Lerp(FogDensities[phaseIndex], FogDensities[nextIndex], t);
+
+		env.GlowEnabled = true;
+		env.GlowIntensity = Mathf.Lerp(GlowIntensities[phaseIndex], GlowIntensities[nextIndex], t);
+		env.GlowStrength = 0.90f;
+		env.GlowBloom = Mathf.Lerp(GlowBlooms[phaseIndex], GlowBlooms[nextIndex], t);
+		env.GlowBlendMode = Godot.Environment.GlowBlendModeEnum.Additive;
+
+		// --- 3. Primary Directional Accent Light ---
+		Color interpSunColor = SunColors[phaseIndex].Lerp(SunColors[nextIndex], t);
+		float interpSunEnergy = Mathf.Lerp(SunEnergies[phaseIndex], SunEnergies[nextIndex], t);
 		
-		sun.ShadowOpacity = Mathf.Lerp(0.75f, 0.50f, phaseIndex == 2 ? t : 0f); 
-	}
+		float radSunPitch = Mathf.LerpAngle(Mathf.DegToRad(SunPitches[phaseIndex]), Mathf.DegToRad(SunPitches[nextIndex]), t);
+		float radSunYaw   = Mathf.LerpAngle(Mathf.DegToRad(SunYaws[phaseIndex]),   Mathf.DegToRad(SunYaws[nextIndex]),   t);
 
+		float interpSunPitch = Mathf.Clamp(Mathf.RadToDeg(radSunPitch), 12.0f, 85.0f);
+		float interpSunYaw   = Mathf.RadToDeg(radSunYaw);
 
-	var fillLight = host.GetNodeOrNull<Camera3D>("Camera3D")
-		?.GetNodeOrNull<DirectionalLight3D>("CharacterFillLight");
-	if (fillLight != null)
-	{
-		float[] fillEnergies = { 0.20f, 0.28f, 0.65f, 0.42f, 0.20f };
-		float interpolatedFillEnergy = Mathf.Lerp(fillEnergies[phaseIndex], fillEnergies[nextIndex], t);
-		fillLight.LightEnergy = interpolatedFillEnergy;
+		if (sun != null)
+		{
+			sun.ShadowEnabled = interpSunEnergy > 0.1f; // Only calculate shadows when sun energy is active
+			sun.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Parallel4Splits;
+			sun.DirectionalShadowBlendSplits = true;
+			sun.ShadowBias = 0.04f;
+			sun.ShadowNormalBias = 1.5f;
+			sun.LightColor = new Color(1.0f, 1.0f, 1.0f);
+			sun.LightEnergy = interpSunEnergy;
+			sun.LightSpecular = 0.0f;
+			sun.RotationDegrees = new Vector3(interpSunPitch, interpSunYaw, 0f);
+		}
+
+		// --- 5. Character Fill Light ---
+		var fillLight = host.GetNodeOrNull<Camera3D>("Camera3D")
+			?.GetNodeOrNull<DirectionalLight3D>("CharacterFillLight");
+		if (fillLight != null)
+		{
+			float[] fillEnergies = { 0.20f, 0.28f, 0.65f, 0.42f };
+			fillLight.LightEnergy = Mathf.Lerp(fillEnergies[phaseIndex], fillEnergies[nextIndex], t);
+		}
 	}
-}
 
 	public (int TimeOfDayIndex, float TimeOfDayTimer) CycleTimeOfDay(Node3D host, Entity worldEntity, float cycleDuration)
 	{
@@ -186,16 +217,7 @@ public void UpdateDayNightVisuals(Node3D host, float progress)
 		ref var state = ref EcsWorld.Get<WorldState>(worldEntity);
 		int nextIndex = (state.TimeOfDayIndex + 1) % 4;
 
-		float targetHour = nextIndex switch
-		{
-			0 => 12.0f,
-			1 => 19.0f,
-			2 => 0.0f,
-			3 => 5.5f,
-			_ => 12.0f
-		};
-
-		float progress = targetHour / 24f;
+		float progress = nextIndex * 0.25f;
 		float nextTimer = progress * cycleDuration;
 
 		UpdateDayNightVisuals(host, progress);
@@ -210,7 +232,7 @@ public void UpdateDayNightVisuals(Node3D host, float progress)
 		return timeOfDayIndex switch
 		{
 			0 => "Day",
-			1 => "Sunset",
+			1 => "Dusk",
 			2 => "Night",
 			3 => "Dawn",
 			_ => "Unknown"

@@ -3,7 +3,7 @@ namespace Realm.Maps;
 using System.Numerics;
 using Realm.MapAPI;
 
-public class CustomMap : IMapScript
+public class CustomMap : IWasmModule
 {
     private int _wave = 0;
     private int _alive = 0;

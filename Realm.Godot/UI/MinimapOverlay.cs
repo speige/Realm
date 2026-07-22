@@ -50,7 +50,6 @@ public partial class MinimapOverlay : Control
 				}
 			}
 		}
-		
 
 		foreach (var unit in GameHost.Instance.AllUnits)
 		{

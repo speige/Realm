@@ -3,7 +3,7 @@ namespace Realm.Maps;
 using System.Numerics;
 using Realm.MapAPI;
 
-public class CustomMap : IMapScript
+public class CustomMap : IWasmModule
 {
     private Vector3 _spawnPos;
     private Vector3 _endPos;

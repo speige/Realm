@@ -423,19 +423,19 @@ public static class MapGenerator
 
         Vector3 p1Base = GridToWorld(sites[0].X, sites[0].Y, width, depth, spacing, host.GroundTerrain.Heights[sites[0].X, sites[0].Y]);
         host.SpawnUnitExternal("castle", p1Base, false, 0f, 1.0f);
-        host.SpawnUnitExternal("worker", p1Base + new Vector3(-6f, 0f, -6f), false, 45f, 1.0f);
-        host.SpawnUnitExternal("worker", p1Base + new Vector3(-6f, 0f, 6f), false, 135f, 1.0f);
-        host.SpawnUnitExternal("worker", p1Base + new Vector3(6f, 0f, -6f), false, 315f, 1.0f);
-        host.SpawnUnitExternal("soldier", p1Base + new Vector3(8f, 0f, 8f), false, 225f, 1.0f);
-        host.SpawnUnitExternal("soldier", p1Base + new Vector3(0f, 0f, 10f), false, 180f, 1.0f);
+        host.SpawnUnitExternal("adventurer", p1Base + new Vector3(-6f, 0f, -6f), false, 45f, 1.0f);
+        host.SpawnUnitExternal("adventurer", p1Base + new Vector3(-6f, 0f, 6f), false, 135f, 1.0f);
+        host.SpawnUnitExternal("adventurer", p1Base + new Vector3(6f, 0f, -6f), false, 315f, 1.0f);
+        host.SpawnUnitExternal("armored_battlelord", p1Base + new Vector3(8f, 0f, 8f), false, 225f, 1.0f);
+        host.SpawnUnitExternal("armored_battlelord", p1Base + new Vector3(0f, 0f, 10f), false, 180f, 1.0f);
 
         Vector3 p2Base = GridToWorld(sites[1].X, sites[1].Y, width, depth, spacing, host.GroundTerrain.Heights[sites[1].X, sites[1].Y]);
         host.SpawnUnitExternal("castle", p2Base, true, 180f, 1.0f);
-        host.SpawnUnitExternal("worker", p2Base + new Vector3(-6f, 0f, -6f), true, 45f, 1.0f);
-        host.SpawnUnitExternal("worker", p2Base + new Vector3(-6f, 0f, 6f), true, 135f, 1.0f);
-        host.SpawnUnitExternal("worker", p2Base + new Vector3(6f, 0f, -6f), true, 315f, 1.0f);
-        host.SpawnUnitExternal("soldier", p2Base + new Vector3(-8f, 0f, -8f), true, 45f, 1.0f);
-        host.SpawnUnitExternal("soldier", p2Base + new Vector3(0f, 0f, -10f), true, 0f, 1.0f);
+        host.SpawnUnitExternal("adventurer", p2Base + new Vector3(-6f, 0f, -6f), true, 45f, 1.0f);
+        host.SpawnUnitExternal("adventurer", p2Base + new Vector3(-6f, 0f, 6f), true, 135f, 1.0f);
+        host.SpawnUnitExternal("adventurer", p2Base + new Vector3(6f, 0f, -6f), true, 315f, 1.0f);
+        host.SpawnUnitExternal("armored_battlelord", p2Base + new Vector3(-8f, 0f, -8f), true, 45f, 1.0f);
+        host.SpawnUnitExternal("armored_battlelord", p2Base + new Vector3(0f, 0f, -10f), true, 0f, 1.0f);
 
         Vector3 g1 = GridToWorld(28, 20, width, depth, spacing, host.GroundTerrain.Heights[28, 20]);
         host.SpawnPropExternalWithParams("goldmine", g1, 0f, 1.0f);

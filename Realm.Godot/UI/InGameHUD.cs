@@ -700,7 +700,7 @@ public partial class InGameHUD : Control
 		}
 	}
 
-	private async void GenerateDynamicMinimap()
+	public async void RegenerateMinimapBackground()
 	{
 		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
@@ -768,6 +768,11 @@ public partial class InGameHUD : Control
 				GameHost.Instance.PathingOverlayMesh.Visible = wasPathingVisible;
 			}
 		}
+	}
+
+	private void GenerateDynamicMinimap()
+	{
+		RegenerateMinimapBackground();
 	}
 
 	private void CreateStatsContainer()
@@ -1055,7 +1060,7 @@ public partial class InGameHUD : Control
 		if (_fogUpdateTimer >= 0.1f)
 		{
 			_fogUpdateTimer = 0f;
-			_minimapOverlay?.QueueRedraw();
+			QueueMinimapRedraw();
 		}
 
 		_portraitPanelController?.Update(_viewModel);
@@ -1094,6 +1099,11 @@ public partial class InGameHUD : Control
 		_portraitPanelController?.Update(_viewModel);
 
 		_controlGroupsUIController?.Update();
+	}
+
+	public void QueueMinimapRedraw()
+	{
+		_minimapOverlay?.QueueRedraw();
 	}
 
 	public void ShowFeedbackText(string text, Color color)
@@ -1332,6 +1342,14 @@ public partial class InGameHUD : Control
 					GameHost.Instance.TogglePauseRequest();
 					GetViewport().SetInputAsHandled();
 				}
+			}
+		}
+		else if (@event is InputEventKey tildeEvent && tildeEvent.Pressed && !tildeEvent.Echo && tildeEvent.Keycode == Key.Quoteleft)
+		{
+			if (!IsChatActive && Realm.Godot.UI.WasmConsoleWindow.IsSinglePlayerOrTestMode())
+			{
+				Realm.Godot.UI.WasmConsoleWindow.Instance.ToggleVisibility();
+				GetViewport().SetInputAsHandled();
 			}
 		}
 	}
@@ -1671,6 +1689,8 @@ public partial class InGameHUD : Control
 				UIManager.Instance?.TransitionTo(GameScreen.GameOver, true);
 				break;
 			case CheatService.CheatResult.NoCap:
+				RegenerateMinimapBackground();
+				QueueMinimapRedraw();
 				break;
 			case CheatService.CheatResult.UnlimitedPower:
 				{

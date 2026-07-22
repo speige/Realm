@@ -1,0 +1,4 @@
+<Project>
+  <!-- Override Mono WASM SDK target to allow Native AOT build -->
+  <Target Name="PrepareInputsForWasmBuild" />
+</Project>

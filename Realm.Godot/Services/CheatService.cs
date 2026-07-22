@@ -169,6 +169,10 @@ public class CheatService
 				ref var state = ref EcsWorld.Get<FogAndWeatherState>(worldEntity);
 				state.FogOfWarType = "visible";
 			}
+			if (GameHost.Instance?.FogOfWarService != null)
+			{
+				GameHost.Instance.FogOfWarService.TriggerImmediateUpdate();
+			}
 			return (CheatResult.NoCap, 0);
 		}
 

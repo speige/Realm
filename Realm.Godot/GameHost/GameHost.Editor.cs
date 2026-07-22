@@ -225,6 +225,7 @@ public partial class GameHost
 		decal.Size = new Vector3(6.0f, 20.0f, 6.0f);
 		decal.AlbedoMix = 1.0f;
 		AddChild(decal);
+		AllDecals.Add(decal);
 		
 		position.Y = _editorService.GetTerrainHeightAt(position);
 		decal.Position = position;
@@ -397,7 +398,16 @@ public partial class GameHost
 			if (unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower"))
 			{
 				dynamicMeta.Speed = 0f;
-				dynamicMeta.ModelPath = unitId.StartsWith("res://") ? unitId : $"res://Assets/3d/Buildings/{unitId}";
+				if (unitId.StartsWith("res://"))
+				{
+					dynamicMeta.ModelPath = unitId;
+				}
+				else
+				{
+					string ext = (unitId == "castle") ? ".glb" : ".tscn";
+					string pathWithExt = $"res://Assets/3d/Buildings/{unitId}{ext}";
+					dynamicMeta.ModelPath = FileAccess.FileExists(pathWithExt) ? pathWithExt : GetFallbackModelPath(unitId, true);
+				}
 			}
 			UnitRegistry[unitId] = dynamicMeta;
 		}
@@ -406,19 +416,11 @@ public partial class GameHost
 
 		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
 		
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(unitId, meta.Speed == 0f);
+		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) && FileAccess.FileExists(meta.ModelPath) 
+			? meta.ModelPath 
+			: GetFallbackModelPath(unitId, meta.Speed == 0f);
 
 		string name = meta.Name;
-		if (isEnemy)
-		{
-			if (unitId == "worker") name = "Orc Worker";
-			else if (unitId == "soldier") name = "Orc Raider";
-			else if (unitId == "archer") name = "Dark Archer";
-			else if (unitId == "priest") name = "Orc Shaman";
-			else if (unitId == "castle") name = "Orc Stronghold";
-			else if (unitId == "tower") name = "Orc Totem Tower";
-		}
-
 		var entity = CreateEcsUnit(unitId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, position, playerOwner);
 
 		var unit3D = SpawnUnit3D(entity, unitId, modelPath, position, meta.Speed == 0f, isEnemy);
@@ -489,6 +491,7 @@ public partial class GameHost
 		decal.Size = new Vector3(6.0f, 20.0f, 6.0f) * scale;
 		decal.AlbedoMix = 1.0f;
 		AddChild(decal);
+		AllDecals.Add(decal);
 		
 		position.Y = _editorService.GetTerrainHeightAt(position);
 		decal.Position = position;
@@ -504,12 +507,19 @@ public partial class GameHost
 
 	public void DeleteNodeExternal(Node node)
 	{
-		if (_selectedEditorObject == node)
+		if (node == null || !GodotObject.IsInstanceValid(node))
 		{
-			SelectedEditorObject = null;
+			MapEditorHUD.Instance?.ShowFeedbackExternal("[Debug] DeleteNodeExternal: node is NULL or invalid");
+			return;
 		}
-		if (node is Unit3D unit && GodotObject.IsInstanceValid(unit))
+
+		var unit = (node as Unit3D) ?? FindUnit3DInParentChain(node);
+		if (unit != null && GodotObject.IsInstanceValid(unit))
 		{
+			if (unit == _selectedEditorObject || FindUnit3DInParentChain(_selectedEditorObject) == unit)
+			{
+				SelectedEditorObject = null;
+			}
 			SelectedUnits.Remove(unit);
 			AllUnits.Remove(unit);
 			EntityToUnit3D.Remove(unit.Entity);
@@ -518,9 +528,15 @@ public partial class GameHost
 				EcsWorld.Destroy(unit.Entity);
 			}
 			unit.QueueFree();
+			return;
 		}
-		else if (node is Prop3D prop && GodotObject.IsInstanceValid(prop))
+		var prop = (node as Prop3D) ?? FindProp3DInParentChain(node);
+		if (prop != null && GodotObject.IsInstanceValid(prop))
 		{
+			if (prop == _selectedEditorObject || FindProp3DInParentChain(_selectedEditorObject) == prop)
+			{
+				SelectedEditorObject = null;
+			}
 			AllProps.Remove(prop);
 			EntityToProp3D.Remove(prop.Entity);
 			if (EcsWorld.IsAlive(prop.Entity))
@@ -528,130 +544,157 @@ public partial class GameHost
 				EcsWorld.Destroy(prop.Entity);
 			}
 			prop.QueueFree();
+			return;
 		}
-		else if (node is Decal decal && GodotObject.IsInstanceValid(decal))
+		var decal = (node as Decal) ?? FindDecalInParentChain(node);
+		if (decal != null && GodotObject.IsInstanceValid(decal))
 		{
+			if (decal == _selectedEditorObject || FindDecalInParentChain(_selectedEditorObject) == decal)
+			{
+				SelectedEditorObject = null;
+			}
 			if (decal is Decal3D decal3D && EcsWorld.IsAlive(decal3D.Entity))
 			{
 				EcsWorld.Destroy(decal3D.Entity);
 			}
 			decal.QueueFree();
+			return;
 		}
+
+		if (_selectedEditorObject == node)
+		{
+			SelectedEditorObject = null;
+		}
+		node.QueueFree();
 	}
 
 	public IEditorAction DeleteObjectAtWithUndo(Node collider, Vector3 hitPos)
 	{
-		if (collider == _selectedEditorObject)
+		if (collider == null || !GodotObject.IsInstanceValid(collider))
 		{
-			SelectedEditorObject = null;
-		}
-		var unit = FindUnit3DInParentChain(collider);
-		if (unit == null)
-		{
-			Unit3D closestUnit = null;
-			float closestUnitDist = 2.0f;
-			foreach (var u in AllUnits)
-			{
-				if (GodotObject.IsInstanceValid(u))
-				{
-					float d = u.Position.DistanceTo(hitPos);
-					if (d < closestUnitDist)
-					{
-						closestUnitDist = d;
-						closestUnit = u;
-					}
-				}
-			}
-			if (closestUnit != null)
-			{
-				unit = closestUnit;
-			}
+			MapEditorHUD.Instance?.ShowFeedbackExternal("[Debug] DeleteObjectAtWithUndo: collider is NULL or invalid");
+			return null;
 		}
 
-		if (unit != null)
+		// 1. Direct Parent Chain Check
+		var unit = (collider as Unit3D) ?? FindUnit3DInParentChain(collider);
+		if (unit != null && GodotObject.IsInstanceValid(unit))
 		{
-			if (unit == _selectedEditorObject)
-			{
-				SelectedEditorObject = null;
-			}
+			if (unit == _selectedEditorObject || FindUnit3DInParentChain(_selectedEditorObject) == unit) SelectedEditorObject = null;
 			var action = new ObjectDeleteAction("unit", unit.UnitId, unit.Position, unit.RotationDegrees.Y, unit.Scale.X, unit.IsEnemy, unit);
 			SelectedUnits.Remove(unit);
 			AllUnits.Remove(unit);
 			EntityToUnit3D.Remove(unit.Entity);
-			if (EcsWorld.IsAlive(unit.Entity))
-			{
-				EcsWorld.Destroy(unit.Entity);
-			}
+			if (EcsWorld.IsAlive(unit.Entity)) EcsWorld.Destroy(unit.Entity);
 			unit.QueueFree();
 			return action;
 		}
-		
-		Prop3D prop = null;
-		Node current = collider;
-		while (current != null && current != this)
-		{
-			if (current is Prop3D p)
-			{
-				prop = p;
-				break;
-			}
-			current = current.GetParent();
-		}
 
-		if (prop == null)
+		var prop = (collider as Prop3D) ?? FindProp3DInParentChain(collider);
+		if (prop != null && GodotObject.IsInstanceValid(prop))
 		{
-			Prop3D closestProp = null;
-			float closestPropDist = 2.0f;
-			foreach (var child in GetChildren())
-			{
-				if (child is Prop3D p && GodotObject.IsInstanceValid(p))
-				{
-					float d = p.Position.DistanceTo(hitPos);
-					if (d < closestPropDist)
-					{
-						closestPropDist = d;
-						closestProp = p;
-					}
-				}
-			}
-			if (closestProp != null)
-			{
-				prop = closestProp;
-			}
-		}
-
-		if (prop != null)
-		{
-			if (prop == _selectedEditorObject)
-			{
-				SelectedEditorObject = null;
-			}
+			if (prop == _selectedEditorObject || FindProp3DInParentChain(_selectedEditorObject) == prop) SelectedEditorObject = null;
 			var action = new ObjectDeleteAction("prop", prop.PropId, prop.Position, prop.RotationDegrees.Y, prop.Scale.X, false, prop);
 			AllProps.Remove(prop);
 			EntityToProp3D.Remove(prop.Entity);
-			if (EcsWorld.IsAlive(prop.Entity))
-			{
-				EcsWorld.Destroy(prop.Entity);
-			}
+			if (EcsWorld.IsAlive(prop.Entity)) EcsWorld.Destroy(prop.Entity);
 			prop.QueueFree();
 			return action;
 		}
 
-		var decal = FindDecal3DInParentChain(collider);
-		if (decal != null)
+		var decal = (collider as Decal) ?? FindDecalInParentChain(collider);
+		if (decal != null && GodotObject.IsInstanceValid(decal))
 		{
-			if (decal == _selectedEditorObject)
-			{
-				SelectedEditorObject = null;
-			}
-			var action = new ObjectDeleteAction("decal", decal.DecalId, decal.Position, decal.RotationDegrees.Y, decal.Scale.X, false, decal);
-			if (EcsWorld.IsAlive(decal.Entity))
-			{
-				EcsWorld.Destroy(decal.Entity);
-			}
+			if (decal == _selectedEditorObject || FindDecalInParentChain(_selectedEditorObject) == decal) SelectedEditorObject = null;
+			string decalId = decal is Decal3D d3d ? d3d.DecalId : "logo";
+			var action = new ObjectDeleteAction("decal", decalId, decal.Position, decal.RotationDegrees.Y, decal.Scale.X, false, decal);
+			if (decal is Decal3D d3 && EcsWorld.IsAlive(d3.Entity)) EcsWorld.Destroy(d3.Entity);
 			decal.QueueFree();
 			return action;
 		}
+
+		// 2. Proximity Search (if clicking terrain ground near object)
+		Unit3D closestUnit = null;
+		float closestUnitDist = 2.0f;
+		foreach (var u in AllUnits)
+		{
+			if (GodotObject.IsInstanceValid(u))
+			{
+				float d = u.Position.DistanceTo(hitPos);
+				if (d < closestUnitDist)
+				{
+					closestUnitDist = d;
+					closestUnit = u;
+				}
+			}
+		}
+
+		Prop3D closestProp = null;
+		float closestPropDist = 2.0f;
+		foreach (var child in GetChildren())
+		{
+			if (child is Prop3D p && GodotObject.IsInstanceValid(p))
+			{
+				float d = p.Position.DistanceTo(hitPos);
+				if (d < closestPropDist)
+				{
+					closestPropDist = d;
+					closestProp = p;
+				}
+			}
+		}
+
+		Decal closestDecal = null;
+		float closestDecalDist = 2.0f;
+		foreach (var child in GetChildren())
+		{
+			if (child is Decal dec && GodotObject.IsInstanceValid(dec))
+			{
+				float d = dec.GlobalPosition.DistanceTo(hitPos);
+				if (d < closestDecalDist)
+				{
+					closestDecalDist = d;
+					closestDecal = dec;
+				}
+			}
+		}
+
+		float minDistance = Mathf.Min(closestUnitDist, Mathf.Min(closestPropDist, closestDecalDist));
+		if (minDistance < 2.0f)
+		{
+			if (closestUnit != null && minDistance == closestUnitDist)
+			{
+				if (closestUnit == _selectedEditorObject) SelectedEditorObject = null;
+				var action = new ObjectDeleteAction("unit", closestUnit.UnitId, closestUnit.Position, closestUnit.RotationDegrees.Y, closestUnit.Scale.X, closestUnit.IsEnemy, closestUnit);
+				SelectedUnits.Remove(closestUnit);
+				AllUnits.Remove(closestUnit);
+				EntityToUnit3D.Remove(closestUnit.Entity);
+				if (EcsWorld.IsAlive(closestUnit.Entity)) EcsWorld.Destroy(closestUnit.Entity);
+				closestUnit.QueueFree();
+				return action;
+			}
+			else if (closestProp != null && minDistance == closestPropDist)
+			{
+				if (closestProp == _selectedEditorObject) SelectedEditorObject = null;
+				var action = new ObjectDeleteAction("prop", closestProp.PropId, closestProp.Position, closestProp.RotationDegrees.Y, closestProp.Scale.X, false, closestProp);
+				AllProps.Remove(closestProp);
+				EntityToProp3D.Remove(closestProp.Entity);
+				if (EcsWorld.IsAlive(closestProp.Entity)) EcsWorld.Destroy(closestProp.Entity);
+				closestProp.QueueFree();
+				return action;
+			}
+			else if (closestDecal != null && minDistance == closestDecalDist)
+			{
+				if (closestDecal == _selectedEditorObject) SelectedEditorObject = null;
+				string decalId = closestDecal is Decal3D d3d ? d3d.DecalId : "logo";
+				var action = new ObjectDeleteAction("decal", decalId, closestDecal.Position, closestDecal.RotationDegrees.Y, closestDecal.Scale.X, false, closestDecal);
+				if (closestDecal is Decal3D d3 && EcsWorld.IsAlive(d3.Entity)) EcsWorld.Destroy(d3.Entity);
+				closestDecal.QueueFree();
+				return action;
+			}
+		}
+
+		MapEditorHUD.Instance?.ShowFeedbackExternal("[Debug] DeleteObjectAtWithUndo returned NULL (no direct or proximity match)");
 		return null;
 	}
 
@@ -1333,7 +1376,6 @@ public partial class GameHost
 		}
 		
 		CreateGround();
-		SpawnInitialEntities();
 	}
 
 	private void ClearAllUnits()
@@ -1357,8 +1399,13 @@ public partial class GameHost
 			{
 				prop.QueueFree();
 			}
+			else if (child is Decal decal)
+			{
+				decal.QueueFree();
+			}
 		}
 		AllProps.Clear();
+		AllDecals.Clear();
 		EntityToUnit3D.Clear();
 		EntityToProp3D.Clear();
 		

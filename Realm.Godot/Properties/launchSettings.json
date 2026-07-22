@@ -1,0 +1,20 @@
+{
+  "profiles": {
+    "Run Simulation Tests": {
+      "commandName": "Executable",
+      "executablePath": "dotnet",
+      "commandLineArgs": "test --filter \"FullyQualifiedName~SimulationTests\"",
+      "environmentVariables": {
+        "GODOT_BIN": "C:\\Program Files\\Godot_v4.7-stable_mono_win64\\Godot_v4.7-stable_mono_win64.exe"
+      }
+    },
+    "Run All Tests": {
+      "commandName": "Executable",
+      "executablePath": "dotnet",
+      "commandLineArgs": "test",
+      "environmentVariables": {
+        "GODOT_BIN": "C:\\Program Files\\Godot_v4.7-stable_mono_win64\\Godot_v4.7-stable_mono_win64.exe"
+      }
+    }
+  }
+}

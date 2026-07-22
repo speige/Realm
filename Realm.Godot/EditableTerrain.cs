@@ -7,6 +7,59 @@ using System.Collections.Generic;
 
 public partial class EditableTerrain : StaticBody3D
 {
+public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLinearLuminance = 0.35f, float maxScaleFactor = 2.2f)
+    {
+        int w = sourceImage.GetWidth();
+        int h = sourceImage.GetHeight();
+        int pixelCount = w * h;
+        double totalLinearLuminance = 0.0;
+
+        // 1. Compute Average Physical Luminance in Linear Space
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                Color srgbColor = sourceImage.GetPixel(x, y);
+                Color linearColor = srgbColor.SrgbToLinear();
+                
+                // Rec. 709 linear luminance equation
+                float lum = (0.2126f * linearColor.R) + (0.7152f * linearColor.G) + (0.0722f * linearColor.B);
+                totalLinearLuminance += lum;
+            }
+        }
+
+        float avgLuminance = (float)(totalLinearLuminance / pixelCount);
+        if (avgLuminance <= 0.0001f) return sourceImage;
+
+        // 2. Compute Target Scale Factor (Clamped to prevent extreme distortions)
+        float rawScaleFactor = targetLinearLuminance / avgLuminance;
+        float scaleFactor = Mathf.Min(rawScaleFactor, maxScaleFactor);
+
+        // 3. Apply Linear Scaling with Color Ratio Preservation
+        Image result = Image.CreateEmpty(w, h, false, sourceImage.GetFormat());
+
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                Color srgbColor = sourceImage.GetPixel(x, y);
+                Color linearColor = srgbColor.SrgbToLinear();
+
+                // Multiply Linear RGB by Scale Factor
+                float rLinear = Mathf.Clamp(linearColor.R * scaleFactor, 0.0f, 1.0f);
+                float gLinear = Mathf.Clamp(linearColor.G * scaleFactor, 0.0f, 1.0f);
+                float bLinear = Mathf.Clamp(linearColor.B * scaleFactor, 0.0f, 1.0f);
+
+                Color scaledLinearColor = new Color(rLinear, gLinear, bLinear, srgbColor.A);
+                Color scaledSrgbColor = scaledLinearColor.LinearToSrgb();
+
+                result.SetPixel(x, y, scaledSrgbColor);
+            }
+        }
+
+        return result;
+    }
+	
 	public void ProcessAndSaveRawTexture(string rawPngPath, string outputKtx2Path)
 	{
 		var img = Godot.Image.LoadFromFile(rawPngPath);
@@ -18,6 +71,8 @@ public partial class EditableTerrain : StaticBody3D
 		{
 			img.Convert(Godot.Image.Format.Rgba8);
 		}
+
+		img = NormalizeAlbedoLuminance(img);
 		
 		var layer0 = Godot.Image.CreateEmpty(w, h, false, Godot.Image.Format.Rgba8);
 		var layer1 = Godot.Image.CreateEmpty(w, h, false, Godot.Image.Format.Rgba8);
@@ -396,13 +451,71 @@ public partial class EditableTerrain : StaticBody3D
 		plane.Size = new Vector2(Width * Spacing, Depth * Spacing);
 		_waterMesh.Mesh = plane;
 
-		var mat = new StandardMaterial3D();
-		mat.AlbedoColor = new Color(0.0f, 0.35f, 0.7f, 0.5f);
-		mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-		mat.Roughness = 0.1f;
-		mat.Metallic = 0.2f;
-		mat.BacklightEnabled = true;
-		mat.Backlight = new Color(0.0f, 0.5f, 1.0f);
+		var waterShader = new Shader();
+		waterShader.Code = @"
+shader_type spatial;
+render_mode blend_mix, depth_draw_always, cull_disabled;
+
+uniform vec4 shallow_color : source_color = vec4(0.04, 0.16, 0.20, 0.60);
+uniform vec4 deep_color : source_color = vec4(0.015, 0.05, 0.09, 0.95);
+uniform vec4 foam_color : source_color = vec4(0.55, 0.68, 0.72, 0.45);
+uniform float max_depth = 3.5;
+uniform float foam_depth = 0.5;
+uniform float wave_speed = 1.2;
+uniform sampler2D depth_texture : hint_depth_texture, filter_linear;
+
+uniform sampler2D fog_texture : hint_default_white;
+uniform vec2 fog_world_min = vec2(-125.0, -125.0);
+uniform vec2 fog_world_size = vec2(250.0, 250.0);
+
+varying vec3 v_world_pos;
+
+void vertex() {
+	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float w1 = sin(v_world_pos.x * 0.3 + TIME * wave_speed * 2.0);
+	float w2 = cos(v_world_pos.z * 0.3 + TIME * wave_speed * 1.5);
+	VERTEX.y += (w1 + w2) * 0.06;
+}
+
+void fragment() {
+	vec2 uv1 = v_world_pos.xz * 0.12 + vec2(TIME * wave_speed * 0.08, TIME * wave_speed * 0.05);
+	vec2 uv2 = v_world_pos.xz * 0.20 - vec2(TIME * wave_speed * 0.05, TIME * wave_speed * 0.09);
+	
+	float wave1 = sin(uv1.x * 10.0 + uv1.y * 7.0 + TIME * wave_speed * 1.8) * 0.5 + 0.5;
+	float wave2 = cos(uv2.x * 12.0 - uv2.y * 8.0 + TIME * wave_speed * 1.4) * 0.5 + 0.5;
+	float wave = mix(wave1, wave2, 0.5);
+	
+	vec3 wave_normal = normalize(vec3((wave1 - 0.5) * 0.25, 1.0, (wave2 - 0.5) * 0.25));
+	NORMAL = TANGENT * wave_normal.x + BINORMAL * wave_normal.z + NORMAL * wave_normal.y;
+
+	float depth_raw = texture(depth_texture, SCREEN_UV).r;
+	vec4 upos = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, depth_raw, 1.0);
+	float pixel_z = -upos.z / upos.w;
+	float water_z = -VERTEX.z;
+	float water_depth = max(0.0, pixel_z - water_z);
+
+	float depth_factor = clamp(water_depth / max_depth, 0.0, 1.0);
+	vec4 water_col = mix(shallow_color, deep_color, depth_factor);
+
+	float shore_fade = smoothstep(0.001, 0.05, water_depth);
+	float foam_factor = smoothstep(foam_depth, 0.0, water_depth) * shore_fade;
+	foam_factor = pow(foam_factor, 2.0) * (0.3 + 0.7 * wave);
+	
+	vec2 fog_uv = (v_world_pos.xz - fog_world_min) / fog_world_size;
+	float fog_factor = texture(fog_texture, clamp(fog_uv, 0.0, 1.0)).r;
+
+	vec3 final_albedo = mix(water_col.rgb, foam_color.rgb, foam_factor * foam_color.a) * (1.0 - fog_factor * 0.98);
+
+	ALBEDO = final_albedo;
+	ALPHA = mix(water_col.a, 1.0, foam_factor * 0.5);
+	ROUGHNESS = mix(0.18, 1.0, fog_factor);
+	METALLIC = 0.05 * (1.0 - fog_factor * 0.98);
+	SPECULAR = 0.25 * (1.0 - fog_factor * 0.98);
+}
+";
+
+		var mat = new ShaderMaterial();
+		mat.Shader = waterShader;
 		_waterMesh.MaterialOverride = mat;
 		
 		AddChild(_waterMesh);
@@ -450,7 +563,7 @@ public partial class EditableTerrain : StaticBody3D
 		if (state.PathingCodes == null || state.PathingCodes.GetLength(0) != Width || state.PathingCodes.GetLength(1) != Depth)
 		{
 			var newPathing = new int[Width, Depth];
-			float[,] h = Heights;
+			var h = Heights;
 			for (int z = 0; z < Depth; z++)
 				for (int x = 0; x < Width; x++)
 					newPathing[x, z] = GetDefaultPathingCode(h[x, z], WaterHeight, WaterEnabled);
@@ -481,18 +594,79 @@ uniform vec2 terrain_size = vec2(1.0, 1.0);
 varying vec4 v_tex_indices;
 varying vec4 v_tex_weights;
 varying vec3 v_world_pos;
+varying vec3 v_world_normal;
 
 void vertex() {
 	v_tex_indices = CUSTOM0;
 	v_tex_weights = CUSTOM1;
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	v_world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+}
+
+vec4 sample_triplanar_array(sampler2DArray tex_array, float layer, vec3 w_pos, vec3 w_norm, float scale) {
+	vec3 abs_norm = abs(w_norm);
+	vec3 blend = pow(abs_norm, vec3(8.0));
+	blend /= max(0.00001, blend.x + blend.y + blend.z);
+	
+	float side_scale_h = scale;
+	float side_scale_v = scale;
+
+	vec2 uv_x = vec2(w_pos.z * side_scale_h, w_pos.y * side_scale_v);
+	vec2 uv_z = vec2(w_pos.x * side_scale_h, w_pos.y * side_scale_v);
+	vec2 uv_y = w_pos.xz * scale;
+
+	// Compute screen-space gradients from world position projections to avoid normal boundary mipmap collapse
+	vec2 dx_x = vec2(dFdx(w_pos.z) * side_scale_h, dFdx(w_pos.y) * side_scale_v);
+	vec2 dy_x = vec2(dFdy(w_pos.z) * side_scale_h, dFdy(w_pos.y) * side_scale_v);
+
+	vec2 dx_z = vec2(dFdx(w_pos.x) * side_scale_h, dFdx(w_pos.y) * side_scale_v);
+	vec2 dy_z = vec2(dFdy(w_pos.x) * side_scale_h, dFdy(w_pos.y) * side_scale_v);
+
+	vec2 dx_y = dFdx(w_pos.xz) * scale;
+	vec2 dy_y = dFdy(w_pos.xz) * scale;
+
+	vec4 cx = textureGrad(tex_array, vec3(uv_x, layer), dx_x, dy_x);
+	vec4 cy = textureGrad(tex_array, vec3(uv_y, layer), dx_y, dy_y);
+	vec4 cz = textureGrad(tex_array, vec3(uv_z, layer), dx_z, dy_z);
+	
+	return cx * blend.x + cy * blend.y + cz * blend.z;
+}
+
+float macro_hash(vec2 p) {
+	p = fract(p * vec2(123.34, 456.21));
+	p += dot(p, p + 45.32);
+	return fract(p.x * p.y);
+}
+
+float macro_noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	float a = macro_hash(i);
+	float b = macro_hash(i + vec2(1.0, 0.0));
+	float c = macro_hash(i + vec2(0.0, 1.0));
+	float d = macro_hash(i + vec2(1.0, 1.0));
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float macro_fbm(vec2 p) {
+	float v = 0.0;
+	float a = 0.5;
+	for (int i = 0; i < 3; i++) {
+		v += a * macro_noise(p);
+		p *= 2.0;
+		a *= 0.5;
+	}
+	return v;
 }
 
 void fragment() {
-	vec4 c0 = texture(terrain_textures, vec3(UV, v_tex_indices.x));
-	vec4 c1 = texture(terrain_textures, vec3(UV, v_tex_indices.y));
-	vec4 c2 = texture(terrain_textures, vec3(UV, v_tex_indices.z));
-	vec4 c3 = texture(terrain_textures, vec3(UV, v_tex_indices.w));
+	float tri_scale = 0.25;
+
+	vec4 c0 = sample_triplanar_array(terrain_textures, round(v_tex_indices.x), v_world_pos, v_world_normal, tri_scale);
+	vec4 c1 = sample_triplanar_array(terrain_textures, round(v_tex_indices.y), v_world_pos, v_world_normal, tri_scale);
+	vec4 c2 = sample_triplanar_array(terrain_textures, round(v_tex_indices.z), v_world_pos, v_world_normal, tri_scale);
+	vec4 c3 = sample_triplanar_array(terrain_textures, round(v_tex_indices.w), v_world_pos, v_world_normal, tri_scale);
 
 	float gh0 = c0.a;
 	float gh1 = c1.a;
@@ -514,12 +688,25 @@ void fragment() {
 		w0 = 1.0; w1 = 0.0; w2 = 0.0; w3 = 0.0;
 	}
 	
-	vec3 terrain_color = (c0.rgb * w0 +
-	                      c1.rgb * w1 +
-	                      c2.rgb * w2 +
-	                      c3.rgb * w3);
+	vec3 splat_color = (c0.rgb * w0 +
+	                    c1.rgb * w1 +
+	                    c2.rgb * w2 +
+	                    c3.rgb * w3);
 
-	vec3 final_albedo = terrain_color;
+	// Dedicated vertical cliff wall texture (Layer 2)
+	vec4 c_cliff = sample_triplanar_array(terrain_textures, 2.0, v_world_pos, v_world_normal, tri_scale);
+	
+	// Smooth power slope mask using hard C# vertex normals: cliffs (normal.y near 0) seamlessly render cliff wall texture
+	float cliff_mask = smoothstep(0.40, 0.75, abs(v_world_normal.y));
+
+	vec3 terrain_color = mix(c_cliff.rgb, splat_color, cliff_mask);
+
+	float macro_var = mix(0.80, 1.20, macro_fbm(v_world_pos.xz * 0.035));
+	float wall_mask = clamp(1.0 - abs(v_world_normal.y), 0.0, 1.0);
+	float wall_macro = mix(0.82, 1.18, macro_fbm(vec2(v_world_pos.x + v_world_pos.z, v_world_pos.y) * 0.05));
+	macro_var = mix(macro_var, wall_macro, wall_mask);
+
+	vec3 final_albedo = terrain_color * macro_var;
 	vec3 emission_color = vec3(0.0);
 	
 	if (pathing_visible) {
@@ -588,10 +775,10 @@ void fragment() {
 		}
 	}
 
-	vec4 n0 = texture(terrain_normals_pbr, vec3(UV, v_tex_indices.x));
-	vec4 n1 = texture(terrain_normals_pbr, vec3(UV, v_tex_indices.y));
-	vec4 n2 = texture(terrain_normals_pbr, vec3(UV, v_tex_indices.z));
-	vec4 n3 = texture(terrain_normals_pbr, vec3(UV, v_tex_indices.w));
+	vec4 n0 = sample_triplanar_array(terrain_normals_pbr, v_tex_indices.x, v_world_pos, v_world_normal, tri_scale);
+	vec4 n1 = sample_triplanar_array(terrain_normals_pbr, v_tex_indices.y, v_world_pos, v_world_normal, tri_scale);
+	vec4 n2 = sample_triplanar_array(terrain_normals_pbr, v_tex_indices.z, v_world_pos, v_world_normal, tri_scale);
+	vec4 n3 = sample_triplanar_array(terrain_normals_pbr, v_tex_indices.w, v_world_pos, v_world_normal, tri_scale);
 	
 	vec2 n0_xy = vec2(n0.r * 2.0 - 1.0, (1.0 - n0.g) * 2.0 - 1.0);
 	vec3 n0_vec = vec3(n0_xy, sqrt(max(0.0, 1.0 - dot(n0_xy, n0_xy))));
@@ -610,18 +797,24 @@ void fragment() {
 	float blended_roughness = (n0.a * w0 + n1.a * w1 + n2.a * w2 + n3.a * w3);
 	float final_roughness = clamp(blended_roughness, 0.5, 1.0);
 
+	vec2 fog_uv = (v_world_pos.xz - fog_world_min) / fog_world_size;
+	float fog_factor = texture(fog_texture, clamp(fog_uv, 0.0, 1.0)).r;
+	final_albedo *= (1.0 - fog_factor * 0.98);
+	emission_color *= (1.0 - fog_factor * 0.98);
+
 	ALBEDO = final_albedo;
 	NORMAL = TANGENT * blended_normal_tangent.x + BINORMAL * blended_normal_tangent.y + NORMAL * blended_normal_tangent.z;
-	AO = mix(1.0, blended_ao, 0.5);
-	ROUGHNESS = final_roughness;
+	AO = mix(1.0, blended_ao, 0.5) * (1.0 - fog_factor * 0.98);
+	ROUGHNESS = mix(final_roughness, 1.0, fog_factor);
 	METALLIC = 0.0;                 
-	SPECULAR = 0.2;                 
+	SPECULAR = 0.2 * (1.0 - fog_factor * 0.98);                 
 	EMISSION = emission_color;
 }
 ";
 
 		_material = new ShaderMaterial();
 		_material.Shader = shader;
+
 		ReloadTerrainTextures();
 
 		var defaultFogImage = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
@@ -634,7 +827,11 @@ void fragment() {
 
 		CreateChunks();
 		CreateWater();
-		UpdateMeshAndPhysics();
+
+		if (GameHost.Instance == null || !GameHost.Instance.IsLoadingMap)
+		{
+			UpdateMeshAndPhysics();
+		}
 	}
 
 	private string GetKtxCmdPath()
@@ -701,22 +898,48 @@ void fragment() {
 		}
 	}
 
-	public void ReloadTerrainTextures()
+	private static Texture2DArray? _cachedAlbedoTextureArray;
+	private static Texture2DArray? _cachedNormalRoughnessTextureArray;
+	private static string? _cachedMapDir;
+
+	public void ReloadTerrainTextures(bool forceReload = false)
 	{
 		if (_material == null) return;
 		string mapDir = GameHost.Instance != null && !string.IsNullOrEmpty(GameHost.Instance.CurrentMapDirectory)
 			? GameHost.Instance.CurrentMapDirectory
 			: Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
-		var albedoHeightImages = new Godot.Collections.Array<Image>();
-		var normalRoughnessImages = new Godot.Collections.Array<Image>();
-		int texWidth = 0;
-		int texHeight = 0;
+
 		var names = new[]
 		{
 			"ancient_ruin", "deep_moss", "grey_slate", "iron_dust",
 			"lava_vein", "mossy_stone", "pale_sand", "river_silt",
 			"royal_marble", "tarn_mud", "dark_wood", "mist_grove"
 		};
+
+		bool hasCustomKtx2 = false;
+		foreach (var name in names)
+		{
+			if (System.IO.File.Exists(System.IO.Path.Combine(mapDir, name + ".ktx2")))
+			{
+				hasCustomKtx2 = true;
+				break;
+			}
+		}
+
+		if (!forceReload && _cachedAlbedoTextureArray != null && _cachedNormalRoughnessTextureArray != null)
+		{
+			if (!hasCustomKtx2 || _cachedMapDir == mapDir)
+			{
+				_material.SetShaderParameter("terrain_textures", _cachedAlbedoTextureArray);
+				_material.SetShaderParameter("terrain_normals_pbr", _cachedNormalRoughnessTextureArray);
+				return;
+			}
+		}
+
+		var albedoHeightImages = new Godot.Collections.Array<Image>();
+		var normalRoughnessImages = new Godot.Collections.Array<Image>();
+		int texWidth = 0;
+		int texHeight = 0;
 		foreach (var name in names)
 		{
 			string ktx2Path = System.IO.Path.Combine(mapDir, name + ".ktx2");
@@ -791,6 +1014,10 @@ void fragment() {
 		albedoTextureArray.CreateFromImages(albedoHeightImages);
 		var normalTextureArray = new Texture2DArray();
 		normalTextureArray.CreateFromImages(normalRoughnessImages);
+		_cachedAlbedoTextureArray = albedoTextureArray;
+		_cachedNormalRoughnessTextureArray = normalTextureArray;
+		_cachedMapDir = mapDir;
+
 		_material.SetShaderParameter("terrain_textures", albedoTextureArray);
 		_material.SetShaderParameter("terrain_normals_pbr", normalTextureArray);
 	}
@@ -851,6 +1078,10 @@ void fragment() {
 		if (_material != null && fogTexture != null)
 		{
 			_material.SetShaderParameter("fog_texture", fogTexture);
+		}
+		if (_waterMesh?.MaterialOverride is ShaderMaterial waterMat && fogTexture != null)
+		{
+			waterMat.SetShaderParameter("fog_texture", fogTexture);
 		}
 	}
 
@@ -1099,9 +1330,39 @@ void fragment() {
 		int p2 = uniqueTexs[2];
 		int p3 = uniqueTexs[3];
 
-		PopulateTriangleVertex(chunk, x0, z0, p0, p1, p2, p3, s0, ref vertexIndex);
-		PopulateTriangleVertex(chunk, x1, z1, p0, p1, p2, p3, s1, ref vertexIndex);
-		PopulateTriangleVertex(chunk, x2, z2, p0, p1, p2, p3, s2, ref vertexIndex);
+		Vector3 faceNormal = GetTriangleFaceNormal(x0, z0, x1, z1, x2, z2);
+
+		PopulateTriangleVertex(chunk, x0, z0, p0, p1, p2, p3, s0, faceNormal, ref vertexIndex);
+		PopulateTriangleVertex(chunk, x1, z1, p0, p1, p2, p3, s1, faceNormal, ref vertexIndex);
+		PopulateTriangleVertex(chunk, x2, z2, p0, p1, p2, p3, s2, faceNormal, ref vertexIndex);
+	}
+
+	private Vector3 GetTriangleFaceNormal(int x0, int z0, int x1, int z1, int x2, int z2)
+	{
+		Vector3 p0 = new Vector3(x0 * Spacing, Heights[x0, z0], z0 * Spacing);
+		Vector3 p1 = new Vector3(x1 * Spacing, Heights[x1, z1], z1 * Spacing);
+		Vector3 p2 = new Vector3(x2 * Spacing, Heights[x2, z2], z2 * Spacing);
+
+		Vector3 edge1 = p1 - p0;
+		Vector3 edge2 = p2 - p0;
+		Vector3 normal = edge2.Cross(edge1).Normalized();
+
+		// Hard un-smoothed norm: if slope is vertical (normal.Y < 0.65), snap to pure wall vector
+		if (Mathf.Abs(normal.Y) < 0.65f)
+		{
+			Vector3 sideNorm = new Vector3(normal.X, 0.0f, normal.Z);
+			if (sideNorm.LengthSquared() > 0.0001f)
+			{
+				return sideNorm.Normalized();
+			}
+		}
+		else
+		{
+			// Flat horizontal ground surfaces: snap to pure up vector
+			return new Vector3(0.0f, Math.Sign(normal.Y != 0 ? normal.Y : 1.0f), 0.0f);
+		}
+
+		return normal;
 	}
 
 	private void PopulateTriangleVertex(
@@ -1109,13 +1370,14 @@ void fragment() {
 		int x, int z,
 		int p0, int p1, int p2, int p3,
 		TerrainSplatWeights srcSplat,
+		Vector3 faceNormal,
 		ref int vertexIndex)
 	{
 		float lx = (x - (Width - 1) / 2.0f) * Spacing;
 		float lz = (z - (Depth - 1) / 2.0f) * Spacing;
 		chunk.VerticesCache[vertexIndex] = new Vector3(lx, Heights[x, z], lz);
 
-		chunk.NormalsCache[vertexIndex] = GetVertexNormal(x, z);
+		chunk.NormalsCache[vertexIndex] = faceNormal;
 
 		chunk.UvsCache[vertexIndex] = new Vector2((float)x / (Width - 1) * 25f, (float)z / (Depth - 1) * 25f);
 

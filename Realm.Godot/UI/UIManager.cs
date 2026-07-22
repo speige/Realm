@@ -408,4 +408,11 @@ public partial class UIManager : Control
 		}
 	}
 
+	public override void _Input(InputEvent @event)
+	{
+		if (@event is InputEventKey keyEvent && keyEvent.Keycode == Key.F8)
+		{
+			GetViewport().SetInputAsHandled();
+		}
+	}
 }

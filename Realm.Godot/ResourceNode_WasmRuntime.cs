@@ -1,11 +1,11 @@
 using Godot;
 using Realm.MapAPI;
 
-public class ResourceNodeWrapper : IResourceNode, IEcsPropWrapper
+public class ResourceNode_WasmRuntime : IResourceNode, IEcsPropWrapper
 {
 	private readonly Prop3D _prop;
 
-	public ResourceNodeWrapper(Prop3D prop)
+	public ResourceNode_WasmRuntime(Prop3D prop)
 	{
 		_prop = prop;
 	}

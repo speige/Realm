@@ -385,6 +385,12 @@ public partial class CameraControl : Camera3D
 
 	private const float MapLimit = 95f;
 
+	public void FocusOnPosition(Vector3 targetPos)
+	{
+		float offsetZ = _isTopDown ? 0.0f : 15.0f;
+		Position = new Vector3(targetPos.X, Position.Y, targetPos.Z + offsetZ);
+	}
+
 	public override void _Ready()
 	{
 		RotationDegrees = new Vector3(-55.0f, 0.0f, 0.0f);
@@ -502,14 +508,33 @@ public partial class CameraControl : Camera3D
 
 		MoveSpeed = 10.0f + (GameSettings.ScrollSpeed / 100.0f) * 50.0f;
 
+		// Get current terrain height at camera position (or 0 if terrain not ready)
+		float terrainHeight = 0.0f;
+		if (GameHost.Instance?.GroundTerrain != null)
+		{
+			GameHost.Instance.GroundTerrain.GetHeightAndNormal(Position.X, Position.Z, out terrainHeight, out _);
+		}
+
+		// Calculate minimum allowable target height so the camera never clips below terrain
+		float minAllowedTargetHeight = terrainHeight + MinZoom;
+		if (_targetHeight < minAllowedTargetHeight)
+		{
+			// Permanently adjust _targetHeight so it stays at the elevated level
+			_targetHeight = minAllowedTargetHeight;
+		}
+
 		_currentHeight = Mathf.Lerp(_currentHeight, _targetHeight, ZoomSpeed * fDelta);
+
+		// Smoothly transition camera Y over a 1-second duration (exponential decay with factor ~3.0)
+		float smoothY = Mathf.Lerp(Position.Y, _targetHeight, 3.0f * fDelta);
+
 		if (FollowTarget != null && GodotObject.IsInstanceValid(FollowTarget))
 		{
-			Position = new Vector3(FollowTarget.Position.X, _currentHeight, FollowTarget.Position.Z + 25.0f);
+			Position = new Vector3(FollowTarget.Position.X, smoothY, FollowTarget.Position.Z + 25.0f);
 		}
 		else
 		{
-			Position = new Vector3(Position.X, _currentHeight, Position.Z);
+			Position = new Vector3(Position.X, smoothY, Position.Z);
 		}
 
 		if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
