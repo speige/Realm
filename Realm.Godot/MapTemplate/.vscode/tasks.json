@@ -1,0 +1,20 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Re-generate Map API",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-Command",
+				"dotnet build '${workspaceFolder}/../../../Realm.MapAPI/Realm.MapAPI.csproj'; Copy-Item '${workspaceFolder}/../../../Realm.MapAPI/bin/Debug/net10.0/Realm.MapAPI.*' '${workspaceFolder}/lib/' -Force"
+			],
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"detail": "Compiles Realm.MapAPI and copies DLL, XML, and PDB to the local map lib folder."
+		}
+	]
+}
