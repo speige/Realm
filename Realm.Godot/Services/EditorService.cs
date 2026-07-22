@@ -352,6 +352,7 @@ public class EditorService
 								if (maxDiff >= blockLevelHeight * 0.5f)
 								{
 									_terrainSplatMap[x, z] = TerrainSplatWeights.CreateSolid(cliffPaintTextureIndex);
+									if (x < modMinX) modMinX = x; if (x > modMaxX) modMaxX = x; if (z < modMinZ) modMinZ = z; if (z > modMaxZ) modMaxZ = z;
 								}
 								else
 								{
@@ -370,6 +371,7 @@ public class EditorService
 									if (insideBrush)
 									{
 										_terrainSplatMap[x, z] = TerrainSplatWeights.CreateSolid(paintTextureIndex);
+										if (x < modMinX) modMinX = x; if (x > modMaxX) modMaxX = x; if (z < modMinZ) modMinZ = z; if (z > modMaxZ) modMaxZ = z;
 									}
 								}
 							}
@@ -1949,7 +1951,7 @@ public class EditorService
 		return status;
 	}
 
-	private void AlignSplatMapSlots(int minX, int minZ, int maxX, int maxZ)
+	public void AlignSplatMapSlots(int minX, int minZ, int maxX, int maxZ)
 	{
 		int width = _terrainSplatMap.GetLength(0);
 		int depth = _terrainSplatMap.GetLength(1);

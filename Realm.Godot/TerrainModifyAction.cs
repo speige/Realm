@@ -76,6 +76,10 @@ public class TerrainModifyAction : IEditorAction
 
 		Rect2I affected = new Rect2I(_minX - 2, _minZ - 2, _width + 4, _depth + 4);
 		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics(true, false, affected);
+		if (_beforeSplatMap != null && GameHost.Instance.GroundTerrain.SplatMap != null)
+		{
+			ServiceLocator.Get<EditorService>()?.AlignSplatMapSlots(_minX - 2, _minZ - 2, _minX + _width + 2, _minZ + _depth + 2);
+		}
 		GameHost.Instance.AlignAllEntitiesToTerrainExternal();
 		GameHost.Instance.RebuildGridOverlayMeshExternal();
 		if (_beforeHeights != null || _beforePathing != null)
@@ -113,6 +117,10 @@ public class TerrainModifyAction : IEditorAction
 
 		Rect2I affected = new Rect2I(_minX - 2, _minZ - 2, _width + 4, _depth + 4);
 		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics(true, false, affected);
+		if (_afterSplatMap != null && GameHost.Instance.GroundTerrain.SplatMap != null)
+		{
+			ServiceLocator.Get<EditorService>()?.AlignSplatMapSlots(_minX - 2, _minZ - 2, _minX + _width + 2, _minZ + _depth + 2);
+		}
 		GameHost.Instance.AlignAllEntitiesToTerrainExternal();
 		GameHost.Instance.RebuildGridOverlayMeshExternal();
 		if (_afterHeights != null || _afterPathing != null)

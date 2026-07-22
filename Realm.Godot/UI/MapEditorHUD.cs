@@ -530,28 +530,76 @@ public partial class MapEditorHUD : Control
 		_lblCamBottomVal = GetNode<Label>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/LblCamBottomVal");
 
 		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnLeftDec"), "⬅️", () => {
-			if (GameHost.Instance != null) { EnsureCameraBoundsVisible(); GameHost.Instance.EditorCameraBoundsLeft -= 5.0f; GameHost.Instance.RebuildCameraBoundsOverlay(); UpdateCameraBoundsUI(); }
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
+				EnsureCameraBoundsVisible();
+				float minX = -GameHost.Instance.GroundTerrain.Width;
+				GameHost.Instance.EditorCameraBoundsLeft = Mathf.Max(minX, GameHost.Instance.EditorCameraBoundsLeft - 5.0f);
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
 		}, 10, "Move Left boundary further left (West)");
 		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnLeftInc"), "➡️", () => {
-			if (GameHost.Instance != null) { EnsureCameraBoundsVisible(); GameHost.Instance.EditorCameraBoundsLeft += 5.0f; GameHost.Instance.RebuildCameraBoundsOverlay(); UpdateCameraBoundsUI(); }
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
+				EnsureCameraBoundsVisible();
+				float maxX = GameHost.Instance.EditorCameraBoundsRight;
+				GameHost.Instance.EditorCameraBoundsLeft = Mathf.Min(maxX, GameHost.Instance.EditorCameraBoundsLeft + 5.0f);
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
 		}, 10, "Move Left boundary further right (East)");
 		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnRightDec"), "⬅️", () => {
-			if (GameHost.Instance != null) { EnsureCameraBoundsVisible(); GameHost.Instance.EditorCameraBoundsRight -= 5.0f; GameHost.Instance.RebuildCameraBoundsOverlay(); UpdateCameraBoundsUI(); }
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
+				EnsureCameraBoundsVisible();
+				float minX = GameHost.Instance.EditorCameraBoundsLeft;
+				GameHost.Instance.EditorCameraBoundsRight = Mathf.Max(minX, GameHost.Instance.EditorCameraBoundsRight - 5.0f);
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
 		}, 10, "Move Right boundary further left (West)");
 		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnRightInc"), "➡️", () => {
-			if (GameHost.Instance != null) { EnsureCameraBoundsVisible(); GameHost.Instance.EditorCameraBoundsRight += 5.0f; GameHost.Instance.RebuildCameraBoundsOverlay(); UpdateCameraBoundsUI(); }
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
+				EnsureCameraBoundsVisible();
+				float maxX = (float)GameHost.Instance.GroundTerrain.Width;
+				GameHost.Instance.EditorCameraBoundsRight = Mathf.Min(maxX, GameHost.Instance.EditorCameraBoundsRight + 5.0f);
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
 		}, 10, "Move Right boundary further right (East)");
 		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnTopDec"), "⬅️", () => {
-			if (GameHost.Instance != null) { EnsureCameraBoundsVisible(); GameHost.Instance.EditorCameraBoundsTop -= 5.0f; GameHost.Instance.RebuildCameraBoundsOverlay(); UpdateCameraBoundsUI(); }
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
+				EnsureCameraBoundsVisible();
+				float minZ = -GameHost.Instance.GroundTerrain.Depth;
+				GameHost.Instance.EditorCameraBoundsTop = Mathf.Max(minZ, GameHost.Instance.EditorCameraBoundsTop - 5.0f);
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
 		}, 10, "Move Top boundary further North (Up)");
 		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnTopInc"), "➡️", () => {
-			if (GameHost.Instance != null) { EnsureCameraBoundsVisible(); GameHost.Instance.EditorCameraBoundsTop += 5.0f; GameHost.Instance.RebuildCameraBoundsOverlay(); UpdateCameraBoundsUI(); }
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
+				EnsureCameraBoundsVisible();
+				float maxZ = GameHost.Instance.EditorCameraBoundsBottom;
+				GameHost.Instance.EditorCameraBoundsTop = Mathf.Min(maxZ, GameHost.Instance.EditorCameraBoundsTop + 5.0f);
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
 		}, 10, "Move Top boundary further South (Down)");
 		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnBottomDec"), "⬅️", () => {
-			if (GameHost.Instance != null) { EnsureCameraBoundsVisible(); GameHost.Instance.EditorCameraBoundsBottom -= 5.0f; GameHost.Instance.RebuildCameraBoundsOverlay(); UpdateCameraBoundsUI(); }
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
+				EnsureCameraBoundsVisible();
+				float minZ = GameHost.Instance.EditorCameraBoundsTop;
+				GameHost.Instance.EditorCameraBoundsBottom = Mathf.Max(minZ, GameHost.Instance.EditorCameraBoundsBottom - 5.0f);
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
 		}, 10, "Move Bottom boundary further North (Up)");
 		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnBottomInc"), "➡️", () => {
-			if (GameHost.Instance != null) { EnsureCameraBoundsVisible(); GameHost.Instance.EditorCameraBoundsBottom += 5.0f; GameHost.Instance.RebuildCameraBoundsOverlay(); UpdateCameraBoundsUI(); }
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
+				EnsureCameraBoundsVisible();
+				float maxZ = (float)GameHost.Instance.GroundTerrain.Depth;
+				GameHost.Instance.EditorCameraBoundsBottom = Mathf.Min(maxZ, GameHost.Instance.EditorCameraBoundsBottom + 5.0f);
+				GameHost.Instance.RebuildCameraBoundsOverlay();
+				UpdateCameraBoundsUI();
+			}
 		}, 10, "Move Bottom boundary further South (Down)");
 
 		_lblMapWidthVal = GetNode<Label>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/LblMapWidthVal");
