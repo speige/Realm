@@ -63,7 +63,7 @@ public partial class LobbyManager : Node
                         return versionInfo.ProductVersion.Trim();
                     }
                 }
-                return "1.0.0";
+                return "0.0.1_Pre-Alpha";
             }
 
             string exePath = OS.GetExecutablePath();
@@ -87,7 +87,7 @@ public partial class LobbyManager : Node
             GD.PrintErr($"Failed to read version from executable: {ex.Message}");
         }
 
-        return "1.0.0";
+        return "0.0.1_Pre-Alpha";
     }
 
 

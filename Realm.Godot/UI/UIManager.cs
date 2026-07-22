@@ -20,6 +20,7 @@ public partial class UIManager : Control
 	private Control _currentScreen;
 	private ColorRect _fadeOverlay;
 	private AnimationPlayer _fadeAnim;
+	private Label _watermark;
 	private GameScreen _targetScreen;
 	private bool _isVictory = true; // State passed to Game Over screen
 	private bool _transitionInProgress = false;
@@ -54,6 +55,25 @@ public partial class UIManager : Control
 
 		CreateFadeOverlay();
 
+#if DEBUG
+		_watermark = new Label();
+		_watermark.Text = $"Realm {LobbyManager.GameBinaryVersion}";
+		_watermark.AddThemeColorOverride("font_color", new Color(1.0f, 1.0f, 1.0f, 0.5f));
+		_watermark.AddThemeColorOverride("font_outline_color", new Color(0.0f, 0.0f, 0.0f, 0.8f));
+		_watermark.AddThemeConstantOverride("outline_size", 4);
+		_watermark.AddThemeFontSizeOverride("font_size", 14);
+		_watermark.HorizontalAlignment = HorizontalAlignment.Right;
+		_watermark.VerticalAlignment = VerticalAlignment.Bottom;
+		_watermark.SetAnchorsAndOffsetsPreset(LayoutPreset.BottomRight);
+		_watermark.OffsetLeft = -250;
+		_watermark.OffsetTop = -30;
+		_watermark.OffsetRight = -10;
+		_watermark.OffsetBottom = -10;
+		_watermark.GrowHorizontal = GrowDirection.Begin;
+		_watermark.GrowVertical = GrowDirection.Begin;
+		_watermark.MouseFilter = MouseFilterEnum.Ignore;
+		AddChild(_watermark);
+#endif
 
 		if (LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted)
 		{
@@ -365,6 +385,12 @@ public partial class UIManager : Control
 			
 
 			MoveChild(_fadeOverlay, GetChildCount() - 1);
+#if DEBUG
+			if (_watermark != null)
+			{
+				MoveChild(_watermark, GetChildCount() - 1);
+			}
+#endif
 
 
 			if (_currentScreen is GameOver gameOver)
