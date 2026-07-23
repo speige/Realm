@@ -3564,7 +3564,7 @@
         const unitKeys = sortedKeys.filter(k => k !== 'MapProperties');
         unitKeys.forEach((uKey, uIdx) => {
             const unit = data[uKey];
-            const sortedUnit = sortObjectKeys(unit);
+            const sortedUnit = sortObjectKeys(unit, uKey);
             const comma = uIdx === unitKeys.length - 1 ? '' : ',';
             lines.push(`  "${uKey}": ${JSON.stringify(sortedUnit)}${comma}`);
         });
@@ -3573,22 +3573,26 @@
         return lines.join('\n');
     }
 
-    function sortObjectKeys(obj) {
+    function sortObjectKeys(obj, keyName = '') {
         if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
             return obj;
         }
         const sorted = {};
-        Object.keys(obj).sort().forEach(key => {
+        const keys = Object.keys(obj);
+        if (keyName !== 'textures') {
+            keys.sort();
+        }
+        keys.forEach(key => {
             const val = obj[key];
             if (Array.isArray(val)) {
                 sorted[key] = val.map(item => {
                     if (typeof item === 'object' && item !== null) {
-                        return sortObjectKeys(item);
+                        return sortObjectKeys(item, key);
                     }
                     return item;
                 });
             } else if (typeof val === 'object' && val !== null) {
-                sorted[key] = sortObjectKeys(val);
+                sorted[key] = sortObjectKeys(val, key);
             } else {
                 sorted[key] = val;
             }

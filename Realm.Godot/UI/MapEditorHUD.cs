@@ -993,7 +993,9 @@ public partial class MapEditorHUD : Control
 		_sldClumpScaleVar.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
 		_sldPlacementRotate.DragStarted += () => _isDraggingSlider = true;
+		_sldPlacementRotate.DragEnded += (valueChanged) => _isDraggingSlider = false;
 		_sldPlacementScale.DragStarted += () => _isDraggingSlider = true;
+		_sldPlacementScale.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
 		TriggerToolSelection(GameHost.EditorTool.Raise, _btnRaise);
 
@@ -2259,18 +2261,6 @@ public partial class MapEditorHUD : Control
 		
 		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 
-		// Sync latest source code files before compiling
-		if (!string.IsNullOrEmpty(_currentSourceFolder) && System.IO.Directory.Exists(_currentSourceFolder))
-		{
-			foreach (var codeFile in new[] { "MapScript.cs", "Coordinates.cs", "metadata.json" })
-			{
-				string src = System.IO.Path.Combine(_currentSourceFolder, codeFile);
-				if (System.IO.File.Exists(src))
-				{
-					System.IO.File.Copy(src, System.IO.Path.Combine(_tempWorkspacePath, codeFile), true);
-				}
-			}
-		}
 
 		_lastTerrainSyncTime = GetMaxTerrainWriteTime(tempTerrainPath);
 

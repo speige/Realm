@@ -145,8 +145,8 @@ public class SaveLoadService
 			}
 
 			string heightsPath = Path.Combine(directory, "terrain_heights.exr");
-			string splatIndicesPath = Path.Combine(directory, "terrain_splat_indices.png");
-			string splatWeightsPath = Path.Combine(directory, "terrain_splat_weights.png");
+			string splatIndicesPath = Path.Combine(directory, "terrain_splat_indices.exr");
+			string splatWeightsPath = Path.Combine(directory, "terrain_splat_weights.exr");
 			string pathingPath = Path.Combine(directory, "terrain_pathing.png");
 
 			Image heightsImage = Image.CreateEmpty(width, depth, false, Image.Format.Rf);
@@ -171,8 +171,8 @@ public class SaveLoadService
 			}
 			pathingImage.SavePng(pathingPath);
 
-			Image splatIndicesImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgba8);
-			Image splatWeightsImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgba8);
+			Image splatIndicesImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgbaf);
+			Image splatWeightsImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgbaf);
 			for (int z = 0; z < depth; z++)
 			{
 				for (int x = 0; x < width; x++)
@@ -182,10 +182,10 @@ public class SaveLoadService
 					TerrainSplatWeights s = TerrainSplatWeights.Deserialize(serialized);
 
 					splatIndicesImage.SetPixel(x, z, new Color(
-						s.Index0 / 255f,
-						s.Index1 / 255f,
-						s.Index2 / 255f,
-						s.Index3 / 255f
+						s.Index0,
+						s.Index1,
+						s.Index2,
+						s.Index3
 					));
 
 					splatWeightsImage.SetPixel(x, z, new Color(
@@ -196,8 +196,8 @@ public class SaveLoadService
 					));
 				}
 			}
-			splatIndicesImage.SavePng(splatIndicesPath);
-			splatWeightsImage.SavePng(splatWeightsPath);
+			splatIndicesImage.SaveExr(splatIndicesPath);
+			splatWeightsImage.SaveExr(splatWeightsPath);
 
 			saveData.Units = new List<UnitSaveData>();
 			var unitQuery = Realm.Ecs.Common.QueryCache.AllDefinitionIdAndPositionAndOwnerQuery;
@@ -460,8 +460,9 @@ public class SaveLoadService
 				EcsWorld.Set(worldEntity, ts);
 			}
 
-			string splatIndicesPath = Path.Combine(Path.GetDirectoryName(absolutePath), "terrain_splat_indices.png");
-			string splatWeightsPath = Path.Combine(Path.GetDirectoryName(absolutePath), "terrain_splat_weights.png");
+			string splatIndicesPath = Path.Combine(Path.GetDirectoryName(absolutePath), "terrain_splat_indices.exr");
+			string splatWeightsPath = Path.Combine(Path.GetDirectoryName(absolutePath), "terrain_splat_weights.exr");
+			
 			string[] loadedColors = null;
 
 			if (File.Exists(splatIndicesPath) && File.Exists(splatWeightsPath))
@@ -483,10 +484,10 @@ public class SaveLoadService
 							int imgWeightZ = Math.Clamp(z, 0, splatWeightsImage.GetHeight() - 1);
 							Color weightPixel = splatWeightsImage.GetPixel(imgWeightX, imgWeightZ);
 
-							int i0 = (int)Math.Round(idxPixel.R * 255f);
-							int i1 = (int)Math.Round(idxPixel.G * 255f);
-							int i2 = (int)Math.Round(idxPixel.B * 255f);
-							int i3 = (int)Math.Round(idxPixel.A * 255f);
+							int i0 = (int)Math.Round(idxPixel.R);
+							int i1 = (int)Math.Round(idxPixel.G);
+							int i2 = (int)Math.Round(idxPixel.B);
+							int i3 = (int)Math.Round(idxPixel.A);
 
 							float w0 = weightPixel.R;
 							float w1 = weightPixel.G;

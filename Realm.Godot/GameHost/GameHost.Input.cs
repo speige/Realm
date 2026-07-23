@@ -755,7 +755,14 @@ public partial class GameHost
 						var finalPos = FindNearestFreePosition(spawnPos, radius);
 						if (finalPos == null)
 						{
-							MapEditorHUD.Instance?.ShowFeedbackExternal("invalid location");
+							if (scaleVal > 1.5f)
+							{
+								MapEditorHUD.Instance?.ShowFeedbackExternal($"Invalid location: The object (Scale: {scaleVal:F1}x) is too large to fit here.");
+							}
+							else
+							{
+								MapEditorHUD.Instance?.ShowFeedbackExternal("invalid location");
+							}
 							UIManager.Instance?.PlayWarningSound();
 							GetViewport().SetInputAsHandled();
 							return;
@@ -803,7 +810,14 @@ public partial class GameHost
 						var finalPos = FindNearestFreePosition(spawnPos, radius);
 						if (finalPos == null)
 						{
-							MapEditorHUD.Instance?.ShowFeedbackExternal("invalid location");
+							if (scaleVal > 1.5f)
+							{
+								MapEditorHUD.Instance?.ShowFeedbackExternal($"Invalid location: The object (Scale: {scaleVal:F1}x) is too large to fit here.");
+							}
+							else
+							{
+								MapEditorHUD.Instance?.ShowFeedbackExternal("invalid location");
+							}
 							UIManager.Instance?.PlayWarningSound();
 							GetViewport().SetInputAsHandled();
 							return;
