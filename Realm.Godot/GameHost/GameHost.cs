@@ -2671,7 +2671,7 @@ public class {mapName} : IMapScript
 
 		SetupSkybox();
 
-		UpdateDayNightVisuals(0.5f);
+		UpdateDayNightVisuals(0.0f);
 		_definitionManager = ServiceLocator.Get<DefinitionManager>();
 		_goldResourceId = "gold".AsResourceId(_definitionManager);
 		_woodResourceId = "wood".AsResourceId(_definitionManager);
@@ -3158,6 +3158,16 @@ public class {mapName} : IMapScript
 					if (!System.IO.File.Exists(fullPath))
 					{
 						fullPath = System.IO.Path.Combine(wsPath, "Assets", "skyboxes", System.IO.Path.GetFileName(path));
+					}
+					if (!System.IO.File.Exists(fullPath))
+					{
+						fullPath = System.IO.Path.Combine(wsPath, "MapTemplate", "Assets", "skyboxes", System.IO.Path.GetFileName(path));
+					}
+					if (!System.IO.File.Exists(fullPath))
+					{
+						var resPath = AssetResolver.ResolveSkybox(System.IO.Path.GetFileName(path));
+						if (resPath.StartsWith("res://"))
+							fullPath = ProjectSettings.GlobalizePath(resPath);
 					}
 				}
 

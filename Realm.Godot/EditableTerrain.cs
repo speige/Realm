@@ -959,23 +959,7 @@ void fragment() {
 		int texHeight = 0;
 		foreach (var name in textureList)
 		{
-			string ktx2Path = System.IO.Path.Combine(mapDir, "Assets", "textures", name + ".ktx2");
-			if (!System.IO.File.Exists(ktx2Path))
-			{
-				ktx2Path = System.IO.Path.Combine(mapDir, name + ".ktx2");
-			}
-			if (!System.IO.File.Exists(ktx2Path))
-			{
-				ktx2Path = ProjectSettings.GlobalizePath($"res://Assets/2d/TileSheets/{name}.ktx2");
-			}
-			if (!System.IO.File.Exists(ktx2Path))
-			{
-				string pngPath = ProjectSettings.GlobalizePath($"res://Assets/2d/TileSheets/{name}.png");
-				if (System.IO.File.Exists(pngPath))
-				{
-					ProcessAndSaveRawTexture(pngPath, ktx2Path);
-				}
-			}
+			string ktx2Path = AssetResolver.GlobalizeTexturePath(mapDir, name);
 			Image imgLayer0 = null;
 			Image imgLayer1 = null;
 			if (System.IO.File.Exists(ktx2Path))

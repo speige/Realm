@@ -14,17 +14,6 @@ public partial class GameHost
 	{
 		if (GroundTerrain == null) return;
 
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
-		string[] splatData = new string[width * depth];
-		for (int z = 0; z < depth; z++)
-		{
-			for (int x = 0; x < width; x++)
-			{
-				splatData[z * width + x] = GroundTerrain.SplatMap[x, z].Serialize();
-			}
-		}
-
 		var unitsData = new List<(Entity Entity, float RotationY, float Scale)>();
 		foreach (var unit in AllUnits)
 		{
@@ -64,9 +53,10 @@ public partial class GameHost
 
 		string path = string.IsNullOrEmpty(customPath) ? "user://terrain.json" : customPath;
 		string absolutePath = ProjectSettings.GlobalizePath(path);
-		CurrentMapDirectory = System.IO.Path.GetDirectoryName(absolutePath);
+		if (!string.IsNullOrEmpty(customPath))
+			CurrentMapDirectory = System.IO.Path.GetDirectoryName(absolutePath);
 
-		_saveLoadService.SaveMapToFile(absolutePath, splatData, unitsData.ToArray(), propsData.ToArray(), decalsData.ToArray(), coordinatesData);
+		_saveLoadService.SaveMapToFile(absolutePath, GroundTerrain.SplatMap, unitsData.ToArray(), propsData.ToArray(), decalsData.ToArray(), coordinatesData);
 	}
 
 	public bool LoadMapFromFile(string customPath = "", bool terrainOnly = false, bool clearUnits = true)
@@ -83,7 +73,8 @@ public partial class GameHost
 				ClearAllUnits();
 			}
 
-			bool success = _saveLoadService.LoadMapFromFile(absolutePath, terrainOnly);
+			TerrainSplatWeights[,] loadedSplatMap = null;
+			bool success = _saveLoadService.LoadMapFromFile(absolutePath, out loadedSplatMap, terrainOnly);
 			if (!success)
 			{
 				int defaultWidth = 126;
@@ -196,25 +187,13 @@ public partial class GameHost
 			}
 			GroundTerrain.UpdateWaterSize();
 
-			TerrainColorsState colorsState = default;
-			bool foundColors = false;
-			EcsWorld.Query(in worldQuery, (Entity entity) =>
-			{
-				if (EcsWorld.Has<TerrainColorsState>(entity))
-				{
-					colorsState = EcsWorld.Get<TerrainColorsState>(entity);
-					foundColors = true;
-				}
-			});
-
-			if (foundColors && colorsState.Colors != null && colorsState.Colors.Length == width * depth)
+			if (loadedSplatMap != null)
 			{
 				for (int z = 0; z < depth; z++)
 				{
 					for (int x = 0; x < width; x++)
 					{
-						string serialized = colorsState.Colors[z * width + x];
-						GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.Deserialize(serialized);
+						GroundTerrain.SplatMap[x, z] = loadedSplatMap[x, z];
 					}
 				}
 			}

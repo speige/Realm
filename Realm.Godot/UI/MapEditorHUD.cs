@@ -676,8 +676,8 @@ public partial class MapEditorHUD : Control
 			{
 				string selectedFile = _skyboxFiles[idx];
 				string relPath = selectedFile.Contains("/") || selectedFile.Contains("\\")
-					? selectedFile
-					: $"Assets/skyboxes/{selectedFile}";
+					? AssetResolver.ResolveSkyboxRelative(selectedFile)
+					: AssetResolver.ResolveSkybox(selectedFile);
 				GameHost.Instance?.SetSkyboxTexture(relPath);
 			}
 		};
@@ -687,8 +687,8 @@ public partial class MapEditorHUD : Control
 			_optSkybox.Selected = 0;
 			string initialFile = _skyboxFiles[0];
 			string initialRelPath = initialFile.Contains("/") || initialFile.Contains("\\")
-				? initialFile
-				: $"Assets/skyboxes/{initialFile}";
+				? AssetResolver.ResolveSkyboxRelative(initialFile)
+				: AssetResolver.ResolveSkybox(initialFile);
 			GameHost.Instance?.SetSkyboxTexture(initialRelPath);
 		}
 
@@ -1592,8 +1592,9 @@ public partial class MapEditorHUD : Control
 		}
 		else
 		{
-			string charactersPath = "res://Assets/3d/Characters";
-			if (FileAccess.FileExists($"{charactersPath}/{id}.glb") || FileAccess.FileExists($"{charactersPath}/{id}.gltf"))
+			bool inCharacters = AssetResolver.ModelFileExists("Characters", id + ".glb")
+					|| AssetResolver.ModelFileExists("Characters", id + ".gltf");
+			if (inCharacters)
 			{
 				_entityPaletteController?.SelectCategoryItemExternal("Characters", id + ".glb");
 			}
@@ -2312,6 +2313,7 @@ public partial class MapEditorHUD : Control
 		{
 			GameHost.Instance.SaveMapToFile(tempTerrainPath);
 			GameHost.Instance.EditorHasUnsavedChanges = false;
+			_lastTerrainSyncTime = GetMaxTerrainWriteTime(tempTerrainPath);
 		}
 
 		ShowFeedback(TranslationServer.Translate("Saving map folder..."));
@@ -2412,9 +2414,9 @@ public partial class MapEditorHUD : Control
 			try
 			{
 				LoadMapProperties();
-				ReadMetadataAndRefreshTextures();
 				string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 				bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
+				ReadMetadataAndRefreshTextures();
 
 				if (success)
 				{
@@ -4865,10 +4867,15 @@ public partial class MapEditorHUD : Control
 			: _tempWorkspacePath;
 		string texName = (i >= 0 && i < _swatchDisplayNames.Count) ? _swatchDisplayNames[i] : $"swatch_{i}";
 		string cleanName = texName.ToLowerInvariant().Replace(" ", "_") + ".ktx2";
+		string cleanBase = texName.ToLowerInvariant().Replace(" ", "_");
 		string localKtx2 = System.IO.Path.Combine(wsPath, "Assets", "textures", cleanName);
 		if (!System.IO.File.Exists(localKtx2))
 		{
 			localKtx2 = System.IO.Path.Combine(wsPath, cleanName);
+		}
+		if (!System.IO.File.Exists(localKtx2))
+		{
+			localKtx2 = AssetResolver.GlobalizeTexturePath(wsPath, cleanBase);
 		}
 		if (System.IO.File.Exists(localKtx2))
 		{

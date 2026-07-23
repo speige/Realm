@@ -26,7 +26,7 @@ public class SaveLoadService
 
 	public bool SaveMapToFile(
 		string absolutePath,
-		string[] htmlColors,
+		TerrainSplatWeights[,] splatWeights,
 		(Entity Entity, float RotationY, float Scale)[] unitsData,
 		(Entity Entity, float RotationY, float Scale)[] propsData,
 		(string DecalId, System.Numerics.Vector3 Position, float RotationY, float Scale)[] decalsData,
@@ -40,14 +40,13 @@ public class SaveLoadService
 
 			if (worldEntity != Entity.Null)
 			{
-				if (EcsWorld.Has<TerrainColorsState>(worldEntity))
-				{
-					EcsWorld.Set(worldEntity, new TerrainColorsState(htmlColors));
-				}
-				else
-				{
-					EcsWorld.Add(worldEntity, new TerrainColorsState(htmlColors));
-				}
+				int w = splatWeights.GetLength(0);
+				int d = splatWeights.GetLength(1);
+
+				// Debug print for a specific vertex (e.g., center of map)
+				int debugX = w / 2;
+				int debugZ = d / 2;
+				GD.Print($"[SaveLoadService.SaveMapToFile] Debug SplatWeights at ({debugX}, {debugZ}): {splatWeights[debugX, debugZ].Serialize()}");
 			}
 
 			foreach (var u in unitsData)
@@ -177,9 +176,7 @@ public class SaveLoadService
 			{
 				for (int x = 0; x < width; x++)
 				{
-					int idx = z * width + x;
-					string serialized = (htmlColors != null && idx < htmlColors.Length) ? htmlColors[idx] : null;
-					TerrainSplatWeights s = TerrainSplatWeights.Deserialize(serialized);
+					var s = splatWeights[x, z];
 
 					splatIndicesImage.SetPixel(x, z, new Color(
 						s.Index0 / 255f,
@@ -309,8 +306,9 @@ public class SaveLoadService
 		}
 	}
 
-	public bool LoadMapFromFile(string absolutePath, bool terrainOnly = false)
+	public bool LoadMapFromFile(string absolutePath, out TerrainSplatWeights[,] loadedSplatMap, bool terrainOnly = false)
 	{
+		loadedSplatMap = null;
 		if (!File.Exists(absolutePath)) return false;
 
 		try
@@ -462,7 +460,9 @@ public class SaveLoadService
 
 			string splatIndicesPath = Path.Combine(Path.GetDirectoryName(absolutePath), "terrain_splat_indices.png");
 			string splatWeightsPath = Path.Combine(Path.GetDirectoryName(absolutePath), "terrain_splat_weights.png");
-			string[] loadedColors = null;
+
+			loadedSplatMap = new TerrainSplatWeights[width, depth];
+			bool loadedSuccessfully = false;
 
 			if (File.Exists(splatIndicesPath) && File.Exists(splatWeightsPath))
 			{
@@ -470,7 +470,11 @@ public class SaveLoadService
 				Image splatWeightsImage = Image.LoadFromFile(splatWeightsPath);
 				if (splatIndicesImage != null && splatWeightsImage != null)
 				{
-					loadedColors = new string[width * depth];
+					if (splatIndicesImage.GetWidth() != width || splatIndicesImage.GetHeight() != depth)
+						GD.Print($"[SaveLoadService] splat_indices.png dimensions ({splatIndicesImage.GetWidth()}x{splatIndicesImage.GetHeight()}) don't match terrain ({width}x{depth})");
+					if (splatWeightsImage.GetWidth() != width || splatWeightsImage.GetHeight() != depth)
+						GD.Print($"[SaveLoadService] splat_weights.png dimensions ({splatWeightsImage.GetWidth()}x{splatWeightsImage.GetHeight()}) don't match terrain ({width}x{depth})");
+
 					for (int z = 0; z < depth; z++)
 					{
 						for (int x = 0; x < width; x++)
@@ -505,31 +509,26 @@ public class SaveLoadService
 								Weight3 = w3
 							};
 
-							loadedColors[z * width + x] = s.Serialize();
+							loadedSplatMap[x, z] = s;
 						}
 					}
+					loadedSuccessfully = true;
+					
+					int debugX = width / 2;
+					int debugZ = depth / 2;
+					GD.Print($"[SaveLoadService.LoadMapFromFile] Debug SplatWeights loaded from PNG at ({debugX}, {debugZ}): {loadedSplatMap[debugX, debugZ].Serialize()}");
 				}
 			}
 
-			if (loadedColors == null)
+			if (!loadedSuccessfully)
 			{
-				loadedColors = new string[width * depth];
-				string defaultSolid = TerrainSplatWeights.CreateSolid(3).Serialize();
-				for (int i = 0; i < loadedColors.Length; i++)
+				TerrainSplatWeights defaultSolid = TerrainSplatWeights.CreateSolid(3);
+				for (int z = 0; z < depth; z++)
 				{
-					loadedColors[i] = defaultSolid;
-				}
-			}
-
-			if (loadedColors != null)
-			{
-				if (EcsWorld.Has<TerrainColorsState>(worldEntity))
-				{
-					EcsWorld.Set(worldEntity, new TerrainColorsState(loadedColors));
-				}
-				else
-				{
-					EcsWorld.Add(worldEntity, new TerrainColorsState(loadedColors));
+					for (int x = 0; x < width; x++)
+					{
+						loadedSplatMap[x, z] = defaultSolid;
+					}
 				}
 			}
 
@@ -539,7 +538,7 @@ public class SaveLoadService
 			float right = saveData.CameraBoundsRight ?? 95.0f;
 			float top = saveData.CameraBoundsTop ?? -95.0f;
 			float bottom = saveData.CameraBoundsBottom ?? 125.0f;
-			string skybox = saveData.SkyboxPath ?? "Assets/skyboxes/jade_shrine.png";
+			string skybox = saveData.SkyboxPath ?? AssetResolver.ResolveSkybox("jade_shrine.png");
 
 			var newEditorState = new EditorState(isBlock, step, left, right, top, bottom, skybox, false);
 			if (EcsWorld.Has<EditorState>(worldEntity))

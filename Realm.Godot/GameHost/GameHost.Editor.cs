@@ -771,8 +771,8 @@ public partial class GameHost
 					if (!reqId.StartsWith("res://") && !System.IO.File.Exists(reqId))
 					{
 						resolvedModelPath = (reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower"))
-							? $"res://Assets/3d/Buildings/{reqId}"
-							: $"res://Assets/3d/Characters/{reqId}";
+							? AssetResolver.ResolveModel("Buildings", reqId)
+							: AssetResolver.ResolveModel("Characters", reqId);
 					}
 					var dynamicMeta = new UnitMetadata
 					{
@@ -1373,7 +1373,7 @@ public partial class GameHost
 		CreateBrushIndicator();
 		UpdateGridOverlayVisibility();
 		InitializeCameraBoundsOverlay();
-		UpdateDayNightVisuals(0.5f);
+		UpdateDayNightVisuals(0.0f);
 	}
 
 	public void ExitMapEditorMode()

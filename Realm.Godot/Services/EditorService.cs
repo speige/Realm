@@ -1881,7 +1881,7 @@ public class EditorService
 
 	public string GetSkyboxPath(Entity worldEntity)
 	{
-		return EcsWorld.GetFieldOrDefault<EditorState, string>(worldEntity, s => s.SkyboxPath, "Assets/skyboxes/jade_shrine.png");
+		return EcsWorld.GetFieldOrDefault<EditorState, string>(worldEntity, s => s.SkyboxPath, AssetResolver.ResolveSkybox("jade_shrine.png"));
 	}
 
 	public void SetSkyboxPath(Entity worldEntity, string value)
@@ -1983,6 +1983,13 @@ public class EditorService
 					}
 				}
 			}
+		}
+
+		int debugX = width / 2;
+		int debugZ = depth / 2;
+		if (debugX >= minX && debugX <= maxX && debugZ >= minZ && debugZ <= maxZ)
+		{
+			GD.Print($"[EditorService.AlignSplatMapSlots] Debug SplatWeights at ({debugX}, {debugZ}): {_terrainSplatMap[debugX, debugZ].Serialize()}");
 		}
 	}
 
