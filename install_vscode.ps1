@@ -52,6 +52,17 @@ if (-not (Test-Path (Join-Path $editorDir "code.exe"))) {
     Write-Host "VS Code Desktop already exists at $editorDir"
 }
 
+# Patch product.json so webview frame URLs do not try to reach remote *.vscode-cdn.net (Azure Front Door)
+$productJsonFiles = Get-ChildItem -Recurse -Filter "product.json" $editorDir
+foreach ($pj in $productJsonFiles) {
+    $content = Get-Content $pj.FullName -Raw
+    if ($content -match 'vscode-cdn\.net') {
+        Write-Host "Patching webview CDN endpoint in $($pj.FullName)..."
+        $content = $content -replace '"webviewContentExternalBaseUrlTemplate":\s*"https://\{\{uuid\}\}\.vscode-cdn\.net/\{\{quality\}\}/\{\{commit\}\}/out/vs/workbench/contrib/webview/browser/pre/"', '"webviewContentExternalBaseUrlTemplate": "{{commit}}/out/vs/workbench/contrib/webview/browser/pre/"'
+        Set-Content -Path $pj.FullName -Value $content -NoNewline
+    }
+}
+
 Write-Host "Registering editor path with VS Code CLI..."
 & $cliPath version use stable --install-dir $editorDir
 
