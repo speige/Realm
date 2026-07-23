@@ -240,6 +240,111 @@ public class VSCodeManager
 	[DllImport("kernel32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetModuleHandleW")]
 	public static extern IntPtr GetModuleHandle(string lpModuleName);
 
+	[DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+	public static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string lpName);
+
+	[DllImport("kernel32.dll")]
+	public static extern bool SetInformationJobObject(IntPtr hJob, int JobObjectInfoClass, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);
+
+	[DllImport("kernel32.dll")]
+	public static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+	private static IntPtr _jobHandle = IntPtr.Zero;
+
+	private static void EnsureChildProcessJobObject()
+	{
+		if (_jobHandle != IntPtr.Zero || !OperatingSystem.IsWindows()) return;
+		try
+		{
+			_jobHandle = CreateJobObject(IntPtr.Zero, null);
+			if (_jobHandle != IntPtr.Zero)
+			{
+				int JOBOBJECT_EXTENDED_LIMIT_INFORMATION = 9;
+				uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
+
+				int length = Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION_STRUCT));
+				IntPtr extendedInfoPtr = Marshal.AllocHGlobal(length);
+				try
+				{
+					ZeroMemory(extendedInfoPtr, length);
+					Marshal.WriteInt32(extendedInfoPtr, 4, (int)JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE); // BasicLimitInformation.LimitFlags at offset 4 (after 4-byte PerProcessUserTimeLimit/PerJobUserTimeLimit or 8-byte alignment)
+					// Structure layout:
+					// JOBOBJECT_BASIC_LIMIT_INFORMATION (48 bytes):
+					//   LONGLONG PerProcessUserTimeLimit (8)
+					//   LONGLONG PerJobUserTimeLimit (8)
+					//   DWORD LimitFlags (4) -> offset 16
+					Marshal.WriteInt32(extendedInfoPtr, 16, (int)JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE);
+					SetInformationJobObject(_jobHandle, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, extendedInfoPtr, (uint)length);
+				}
+				finally
+				{
+					Marshal.FreeHGlobal(extendedInfoPtr);
+				}
+				AssignProcessToJobObject(_jobHandle, Process.GetCurrentProcess().Handle);
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"Failed to create/assign Job Object: {ex.Message}");
+		}
+	}
+
+	[DllImport("kernel32.dll", EntryPoint = "RtlZeroMemory")]
+	private static extern void ZeroMemory(IntPtr destination, int length);
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct JOBOBJECT_BASIC_LIMIT_INFORMATION_STRUCT
+	{
+		public long PerProcessUserTimeLimit;
+		public long PerJobUserTimeLimit;
+		public uint LimitFlags;
+		public UIntPtr MinimumWorkingSetSize;
+		public UIntPtr MaximumWorkingSetSize;
+		public uint ActiveProcessLimit;
+		public UIntPtr Affinity;
+		public uint PriorityClass;
+		public uint SchedulingClass;
+	}
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct IO_COUNTERS_STRUCT
+	{
+		public ulong ReadOperationCount;
+		public ulong WriteOperationCount;
+		public ulong OtherOperationCount;
+		public ulong ReadTransferCount;
+		public ulong WriteTransferCount;
+		public ulong OtherTransferCount;
+	}
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION_STRUCT
+	{
+		public JOBOBJECT_BASIC_LIMIT_INFORMATION_STRUCT BasicLimitInformation;
+		public IO_COUNTERS_STRUCT IoInfo;
+		public UIntPtr ProcessMemoryLimit;
+		public UIntPtr JobMemoryLimit;
+		public UIntPtr PeakProcessMemoryUsed;
+		public UIntPtr PeakJobMemoryUsed;
+	}
+
+	private static void AddProcessToJob(Process proc)
+	{
+		if (proc == null || proc.HasExited || !OperatingSystem.IsWindows()) return;
+		try
+		{
+			EnsureChildProcessJobObject();
+			if (_jobHandle != IntPtr.Zero)
+			{
+				AssignProcessToJobObject(_jobHandle, proc.Handle);
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"Failed to assign process {proc.Id} to Job Object: {ex.Message}");
+		}
+	}
+
 	public void Initialize(Control containerControl)
 	{
 		if (_isInitialized)
@@ -298,6 +403,7 @@ public class VSCodeManager
 			_vscodeProcess.StartInfo.EnvironmentVariables["VSCODE_EXTENSIONS"] = extensionsDir;
 			_vscodeProcess.StartInfo.EnvironmentVariables["VSCODE_EXTENSIONS_DIR"] = extensionsDir;
 			_vscodeProcess.Start();
+			AddProcessToJob(_vscodeProcess);
 			GD.Print("VS Code server started successfully.");
 		}
 		catch (Exception ex)
@@ -435,7 +541,7 @@ public class VSCodeManager
 			string unitsPath = FormatWinPathForUrl(unitsPathRaw);
 			string scriptPath = FormatWinPathForUrl(scriptPathRaw);
 			
-			string payload = MapWorkspaceService.BuildPayload();
+			string payload = MapWorkspaceService.BuildPayload(mapFolderRaw);
 			string targetUrl = $"http://127.0.0.1:{_vscodePort}/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString(payload)}";
 
 			_controller.CoreWebView2.NavigationCompleted += async (sender, args) =>
@@ -581,7 +687,7 @@ public class VSCodeManager
 				string projectRoot = ProjectSettings.GlobalizePath("res://");
 				string mapFolderRaw = GetMapFolderToOpen(projectRoot);
 				string mapFolder = FormatWinPathForUrl(mapFolderRaw);
-				string payload = MapWorkspaceService.BuildPayload();
+				string payload = MapWorkspaceService.BuildPayload(mapFolderRaw);
 				string targetUrl = $"http://127.0.0.1:{_vscodePort}/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString(payload)}";
 				_controller.CoreWebView2.Navigate(targetUrl);
 
@@ -750,6 +856,7 @@ public class VSCodeManager
 		tempProcess.StartInfo.EnvironmentVariables["VSCODE_EXTENSIONS"] = extensionsDir;
 		tempProcess.StartInfo.EnvironmentVariables["VSCODE_EXTENSIONS_DIR"] = extensionsDir;
 		tempProcess.Start();
+		AddProcessToJob(tempProcess);
 
 		System.Threading.Thread.Sleep(2000);
 
@@ -1037,29 +1144,43 @@ public class VSCodeManager
 						process.StartInfo.CreateNoWindow = true;
 						process.StartInfo.UseShellExecute = false;
 						process.Start();
+						AddProcessToJob(process);
 						process.WaitForExit();
 					}
 				}
 			}
 
 			string realmMapEditorId = "speige.realm-map-editor";
+			string srcPath = Path.GetFullPath(Path.Combine(
+				ProjectSettings.GlobalizePath("res://"),
+				"..", "Realm.MapEditorExtension"
+			));
+			string dstPath = Path.Combine(extensionsDir, $"{realmMapEditorId}-1.0.0");
+
+			// Always sync compiled extension files on launch so updates take effect without deleting vscode_embedded
+			try
+			{
+				if (Directory.Exists(srcPath))
+				{
+					Directory.CreateDirectory(dstPath);
+					CopyItemIfExists(Path.Combine(srcPath, "package.json"), Path.Combine(dstPath, "package.json"));
+					CopyItemIfExists(Path.Combine(srcPath, "map_schema.json"), Path.Combine(dstPath, "map_schema.json"));
+					CopyDirectoryIfExists(Path.Combine(srcPath, "dist"), Path.Combine(dstPath, "dist"));
+					CopyDirectoryIfExists(Path.Combine(srcPath, "media"), Path.Combine(dstPath, "media"));
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr("VS Code: Failed to sync Realm Map Editor extension files: " + ex.Message);
+			}
+
 			if (!IsExtensionInstalled(extensionsDir, realmMapEditorId))
 			{
-				GD.Print("VS Code: Realm Map Editor extension not found, installing from embedded source...");
-				string srcPath = Path.Combine(
-					ProjectSettings.GlobalizePath("res://"),
-					"vscode_embedded", "extensions_src", "speige.realm-map-editor"
-				);
-				string dstPath = Path.Combine(extensionsDir, $"{realmMapEditorId}-1.0.0");
+				GD.Print("VS Code: Registering Realm Map Editor extension...");
 				try
 				{
 					if (Directory.Exists(srcPath))
 					{
-						Directory.CreateDirectory(dstPath);
-						CopyItemIfExists(Path.Combine(srcPath, "package.json"), Path.Combine(dstPath, "package.json"));
-						CopyItemIfExists(Path.Combine(srcPath, "map_schema.json"), Path.Combine(dstPath, "map_schema.json"));
-						CopyDirectoryIfExists(Path.Combine(srcPath, "dist"), Path.Combine(dstPath, "dist"));
-						CopyDirectoryIfExists(Path.Combine(srcPath, "media"), Path.Combine(dstPath, "media"));
 
 						string obsoletePath = Path.Combine(extensionsDir, ".obsolete");
 						if (File.Exists(obsoletePath))

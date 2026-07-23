@@ -52,7 +52,7 @@ public partial class GameHost
 				for (int x = 0; x < width; x++)
 				{
 					GroundTerrain.Heights[x, z] = 0.0f;
-					GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
+					GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
 					if (GroundTerrain.PathingCodes != null)
 					{
 						GroundTerrain.PathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(0.0f, GroundTerrain.WaterHeight, GroundTerrain.WaterEnabled);
@@ -185,32 +185,64 @@ public partial class GameHost
 		return prop;
 	}
 
+	public Texture2D LoadDecalTexture(string decalId)
+	{
+		if (string.IsNullOrEmpty(decalId)) decalId = "logo";
+
+		string wsPath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		string wsDecalPath = System.IO.Path.Combine(wsPath, "Assets", "decals", decalId);
+		if (!System.IO.File.Exists(wsDecalPath) && !decalId.Contains('.'))
+		{
+			wsDecalPath = System.IO.Path.Combine(wsPath, "Assets", "decals", decalId + ".png");
+		}
+		if (System.IO.File.Exists(wsDecalPath))
+		{
+			var img = Image.LoadFromFile(wsDecalPath);
+			if (img != null) return ImageTexture.CreateFromImage(img);
+		}
+
+		if (System.IO.File.Exists(decalId) && !decalId.StartsWith("res://"))
+		{
+			var img = Image.LoadFromFile(decalId);
+			if (img != null)
+			{
+				return ImageTexture.CreateFromImage(img);
+			}
+		}
+
+		string texPath = GetDecalTexturePath(decalId);
+		var texture = GD.Load<Texture2D>(texPath);
+		return texture ?? GD.Load<Texture2D>("res://icon.svg");
+	}
+
 	public string GetDecalTexturePath(string decalId)
 	{
 		if (string.IsNullOrEmpty(decalId))
 		{
 			decalId = "logo";
 		}
-		if (decalId.StartsWith("res://") || decalId.Contains('/'))
+		string wsPath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		string wsDecalPath = System.IO.Path.Combine(wsPath, "Assets", "decals", decalId);
+		if (!System.IO.File.Exists(wsDecalPath) && !decalId.Contains('.'))
+		{
+			wsDecalPath = System.IO.Path.Combine(wsPath, "Assets", "decals", decalId + ".png");
+		}
+		if (System.IO.File.Exists(wsDecalPath))
+		{
+			return wsDecalPath;
+		}
+
+		if (System.IO.File.Exists(decalId) && !decalId.StartsWith("res://"))
+		{
+			return decalId;
+		}
+		if (decalId.StartsWith("res://") || decalId.Contains('/') || decalId.Contains('\\'))
 		{
 			if (decalId.EndsWith(".glb") || decalId.EndsWith(".gltf"))
 			{
 				return "res://icon.svg";
 			}
 			return decalId;
-		}
-		string customPath = $"res://Assets/2d/Decals/{decalId}";
-		if (ResourceLoader.Exists(customPath))
-		{
-			return customPath;
-		}
-		if (!decalId.Contains('.'))
-		{
-			string customPathWithPng = $"res://Assets/2d/Decals/{decalId}.png";
-			if (ResourceLoader.Exists(customPathWithPng))
-			{
-				return customPathWithPng;
-			}
 		}
 		return "res://icon.svg";
 	}
@@ -384,6 +416,23 @@ public partial class GameHost
 		position.Y = _editorService.GetTerrainHeightAt(position);
 		if (!UnitRegistry.ContainsKey(unitId))
 		{
+			string resolvedModelPath = unitId;
+			if (!unitId.StartsWith("res://") && !System.IO.File.Exists(unitId))
+			{
+				string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+				string filename = System.IO.Path.GetFileName(unitId);
+				if (!filename.EndsWith(".glb") && !filename.EndsWith(".gltf")) filename += ".glb";
+				string[] subDirs = new[] { "character", "building", "environment", "props" };
+				foreach (var sub in subDirs)
+				{
+					string cand = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
+					if (System.IO.File.Exists(cand))
+					{
+						resolvedModelPath = cand;
+						break;
+					}
+				}
+			}
 			var dynamicMeta = new UnitMetadata
 			{
 				Name = System.IO.Path.GetFileNameWithoutExtension(unitId).Replace("_", " "),
@@ -391,24 +440,10 @@ public partial class GameHost
 				Damage = 10f,
 				Range = 2f,
 				Armor = 2f,
-				Speed = 6.0f,
+				Speed = (unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower")) ? 0f : 6.0f,
 				ProductionTime = 10f,
-				ModelPath = unitId.StartsWith("res://") ? unitId : $"res://Assets/3d/Characters/{unitId}"
+				ModelPath = resolvedModelPath
 			};
-			if (unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower"))
-			{
-				dynamicMeta.Speed = 0f;
-				if (unitId.StartsWith("res://"))
-				{
-					dynamicMeta.ModelPath = unitId;
-				}
-				else
-				{
-					string ext = (unitId == "castle") ? ".glb" : ".tscn";
-					string pathWithExt = $"res://Assets/3d/Buildings/{unitId}{ext}";
-					dynamicMeta.ModelPath = FileAccess.FileExists(pathWithExt) ? pathWithExt : GetFallbackModelPath(unitId, true);
-				}
-			}
 			UnitRegistry[unitId] = dynamicMeta;
 		}
 
@@ -416,9 +451,15 @@ public partial class GameHost
 
 		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
 		
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) && FileAccess.FileExists(meta.ModelPath) 
-			? meta.ModelPath 
-			: GetFallbackModelPath(unitId, meta.Speed == 0f);
+		string modelPath;
+		if (!string.IsNullOrEmpty(meta.ModelPath) && (FileAccess.FileExists(meta.ModelPath) || System.IO.File.Exists(meta.ModelPath)))
+		{
+			modelPath = meta.ModelPath;
+		}
+		else
+		{
+			modelPath = GetFallbackModelPath(unitId, meta.Speed == 0f);
+		}
 
 		string name = meta.Name;
 		var entity = CreateEcsUnit(unitId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, position, playerOwner);
@@ -482,12 +523,7 @@ public partial class GameHost
 		var decal = new Decal3D();
 		decal.Entity = entity;
 		decal.DecalId = string.IsNullOrEmpty(decalId) ? "logo" : decalId;
-		var texture = GD.Load<Texture2D>(GetDecalTexturePath(decalId));
-		if (texture == null)
-		{
-			texture = GD.Load<Texture2D>("res://icon.svg");
-		}
-		decal.TextureAlbedo = texture;
+		decal.TextureAlbedo = LoadDecalTexture(decalId);
 		decal.Size = new Vector3(6.0f, 20.0f, 6.0f) * scale;
 		decal.AlbedoMix = 1.0f;
 		AddChild(decal);
@@ -731,6 +767,13 @@ public partial class GameHost
 			{
 				if (!UnitRegistry.ContainsKey(reqId))
 				{
+					string resolvedModelPath = reqId;
+					if (!reqId.StartsWith("res://") && !System.IO.File.Exists(reqId))
+					{
+						resolvedModelPath = (reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower"))
+							? $"res://Assets/3d/Buildings/{reqId}"
+							: $"res://Assets/3d/Characters/{reqId}";
+					}
 					var dynamicMeta = new UnitMetadata
 					{
 						Name = System.IO.Path.GetFileNameWithoutExtension(reqId).Replace("_", " "),
@@ -738,15 +781,10 @@ public partial class GameHost
 						Damage = 10f,
 						Range = 2f,
 						Armor = 2f,
-						Speed = 6.0f,
+						Speed = (reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower")) ? 0f : 6.0f,
 						ProductionTime = 10f,
-						ModelPath = reqId.StartsWith("res://") ? reqId : $"res://Assets/3d/Characters/{reqId}"
+						ModelPath = resolvedModelPath
 					};
-					if (reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower"))
-					{
-						dynamicMeta.Speed = 0f;
-						dynamicMeta.ModelPath = reqId.StartsWith("res://") ? reqId : $"res://Assets/3d/Buildings/{reqId}";
-					}
 					UnitRegistry[reqId] = dynamicMeta;
 				}
 
@@ -781,12 +819,7 @@ public partial class GameHost
 			else if (ActiveEditorTool == EditorTool.PlaceDecal)
 			{
 				var previewDecal = new Decal3D();
-				var texture = GD.Load<Texture2D>(GetDecalTexturePath(reqId));
-				if (texture == null)
-				{
-					texture = GD.Load<Texture2D>("res://icon.svg");
-				}
-				previewDecal.TextureAlbedo = texture;
+				previewDecal.TextureAlbedo = LoadDecalTexture(reqId);
 				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * EditorPlacementScale;
 				AddChild(previewDecal);
 				previewDecal.DecalId = string.IsNullOrEmpty(reqId) ? "logo" : reqId;

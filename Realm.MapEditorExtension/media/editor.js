@@ -202,7 +202,7 @@
             if (selectedUnitId && !selectedUnitId.startsWith('__')) {
                 selectUnit(selectedUnitId);
             } else {
-                const skipKeys = ['MapProperties', 'CustomWeapons', 'CustomAbilities', 'CustomUpgrades', 'CustomItems'];
+                const skipKeys = ['MapProperties', 'CustomWeapons', 'CustomAbilities', 'CustomUpgrades', 'CustomItems', 'Assets'];
                 const firstUnitId = Object.keys(units).find(id => !skipKeys.includes(id));
                 if (firstUnitId) {
                     selectUnit(firstUnitId);
@@ -219,6 +219,8 @@
             selectCustomUpgrades();
         } else if (domain === 'items') {
             selectCustomItems();
+        } else if (domain === 'assets') {
+            selectCustomAssets();
         } else if (domain === 'properties') {
             selectMapProperties();
         }
@@ -269,6 +271,7 @@
                     saveChanges();
                 }
 
+                renderAssetsMetadata();
                 if (serializeDeterministic(units) !== oldUnitsStr) {
                     renderUnitList();
                     if (selectedUnitId === '__map_properties__') {
@@ -281,6 +284,8 @@
                         renderCustomUpgrades();
                     } else if (selectedUnitId === '__custom_items__') {
                         renderCustomItems();
+                    } else if (selectedUnitId === '__custom_assets__') {
+                        renderAssetsMetadata();
                     } else if (selectedUnitId && units[selectedUnitId]) {
                         populateForm(selectedUnitId);
                     } else {
@@ -293,6 +298,8 @@
                             showEmptyState();
                         }
                     }
+                } else if (selectedUnitId === '__custom_assets__') {
+                    renderAssetsMetadata();
                 }
                 updateDebugJson();
                 updateCatalogCardErrors();
@@ -314,6 +321,110 @@
                     targetInput.dispatchEvent(event);
                     updateThumbnailForInput(targetInput);
                 }
+                break;
+            case 'browseFileFallback':
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                if (message.accept) {
+                    fileInput.accept = message.accept;
+                }
+                fileInput.style.display = 'none';
+                fileInput.addEventListener('change', () => {
+                    if (fileInput.files && fileInput.files[0]) {
+                        const selectedFile = fileInput.files[0];
+                        let filePath = selectedFile.name;
+                        let targetInp = null;
+                        if (message.fieldId) {
+                            targetInp = document.getElementById(message.fieldId);
+                        } else if (message.fieldClass) {
+                            const selector = `input.${message.fieldClass.split(' ').join('.')}[data-index="${message.fieldIndex}"]`;
+                            targetInp = document.querySelector(selector);
+                        }
+                        if (targetInp) {
+                            targetInp.value = filePath;
+                            const evt = new Event('change', { bubbles: true });
+                            targetInp.dispatchEvent(evt);
+                            updateThumbnailForInput(targetInp);
+                        }
+                    }
+                    fileInput.remove();
+                });
+                document.body.appendChild(fileInput);
+                fileInput.click();
+                break;
+            case 'importAssetFallback':
+                const assetInput = document.createElement('input');
+                assetInput.type = 'file';
+                if (message.accept) {
+                    assetInput.accept = message.accept;
+                }
+                assetInput.style.display = 'none';
+                assetInput.addEventListener('change', () => {
+                    if (assetInput.files && assetInput.files[0]) {
+                        const selectedFile = assetInput.files[0];
+                        if (message.assetType === 'vfx' || message.assetType === 'decal') {
+                            const img = new Image();
+                            const url = URL.createObjectURL(selectedFile);
+                            img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                canvas.width = img.width;
+                                canvas.height = img.height;
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0);
+                                canvas.toBlob((blob) => {
+                                    URL.revokeObjectURL(url);
+                                    if (blob) {
+                                        const r = new FileReader();
+                                        r.onload = () => {
+                                            const arrayBuffer = r.result;
+                                            const bytes = new Uint8Array(arrayBuffer);
+                                            let binaryString = '';
+                                            for (let i = 0; i < bytes.byteLength; i++) {
+                                                binaryString += String.fromCharCode(bytes[i]);
+                                            }
+                                            const base64Data = btoa(binaryString);
+                                            const baseName = selectedFile.name.substring(0, selectedFile.name.lastIndexOf('.')) || selectedFile.name;
+                                            vscode.postMessage({
+                                                type: 'processImportedAsset',
+                                                fileName: baseName + '.png',
+                                                fileDataBase64: base64Data,
+                                                assetType: message.assetType,
+                                                options: message.extraOptions
+                                            });
+                                        };
+                                        r.readAsArrayBuffer(blob);
+                                    }
+                                }, 'image/png');
+                            };
+                            img.onerror = () => {
+                                URL.revokeObjectURL(url);
+                            };
+                            img.src = url;
+                        } else {
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                                const arrayBuffer = reader.result;
+                                const bytes = new Uint8Array(arrayBuffer);
+                                let binaryString = '';
+                                for (let i = 0; i < bytes.byteLength; i++) {
+                                    binaryString += String.fromCharCode(bytes[i]);
+                                }
+                                const base64Data = btoa(binaryString);
+                                vscode.postMessage({
+                                    type: 'processImportedAsset',
+                                    fileName: selectedFile.name,
+                                    fileDataBase64: base64Data,
+                                    assetType: message.assetType,
+                                    options: message.extraOptions
+                                });
+                            };
+                            reader.readAsArrayBuffer(selectedFile);
+                        }
+                    }
+                    assetInput.remove();
+                });
+                document.body.appendChild(assetInput);
+                assetInput.click();
                 break;
             case 'resolvePathResult':
                 const callback = resolveCallbacks[message.requestId];
@@ -493,6 +604,8 @@
         customAbilitiesForm.classList.add('hidden');
         customUpgradesForm.classList.add('hidden');
         customItemsForm.classList.add('hidden');
+        const customAssetsForm = document.getElementById('custom-assets-form');
+        if (customAssetsForm) customAssetsForm.classList.add('hidden');
     }
 
     function populateForm(id) {
@@ -3615,6 +3728,376 @@
             }
         }
     }
+
+    function selectCustomAssets() {
+        selectedUnitId = '__custom_assets__';
+        hideAllForms();
+        const customAssetsForm = document.getElementById('custom-assets-form');
+        if (customAssetsForm) {
+            customAssetsForm.classList.remove('hidden');
+        }
+        renderAssetsMetadata();
+    }
+
+    function removeAsset(category, key, subCategory) {
+        if (!units) return;
+
+        let deleted = false;
+        const containers = [
+            units.Assets,
+            units.MapProperties?.Assets,
+            units
+        ].filter(c => c && typeof c === 'object');
+
+        for (const targetObj of containers) {
+            if (subCategory && targetObj[category] && targetObj[category][subCategory] && key in targetObj[category][subCategory]) {
+                delete targetObj[category][subCategory][key];
+                if (Object.keys(targetObj[category][subCategory]).length === 0) {
+                    delete targetObj[category][subCategory];
+                }
+                deleted = true;
+                break;
+            } else if (targetObj[category] && key in targetObj[category]) {
+                delete targetObj[category][key];
+                if (Object.keys(targetObj[category]).length === 0) {
+                    delete targetObj[category];
+                }
+                deleted = true;
+                break;
+            }
+        }
+
+        if (deleted) {
+            saveChanges();
+            renderAssetsMetadata();
+        }
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function renderAssetsMetadata() {
+        const display = document.getElementById('assets-metadata-display');
+        if (!display) return;
+
+        let assets = {};
+        const candidateKeys = ['textures', 'glb', 'decals', 'icons', 'vfx_spritesheets', 'sfx', 'music', 'skyboxes'];
+
+        // Collect from units.Assets
+        if (units?.Assets && typeof units.Assets === 'object') {
+            Object.assign(assets, units.Assets);
+        }
+        // Collect from units.MapProperties.Assets
+        if (units?.MapProperties?.Assets && typeof units.MapProperties.Assets === 'object') {
+            Object.assign(assets, units.MapProperties.Assets);
+        }
+        // Collect candidate keys directly on units root or MapProperties root
+        candidateKeys.forEach(k => {
+            if (units && units[k] && typeof units[k] === 'object' && Object.keys(units[k]).length > 0) {
+                assets[k] = Object.assign({}, assets[k] || {}, units[k]);
+            }
+            if (units?.MapProperties && units.MapProperties[k] && typeof units.MapProperties[k] === 'object' && Object.keys(units.MapProperties[k]).length > 0) {
+                assets[k] = Object.assign({}, assets[k] || {}, units.MapProperties[k]);
+            }
+        });
+
+        if (!assets || Object.keys(assets).length === 0) {
+            display.innerHTML = '<em>No assets registered in metadata.json yet. Use the buttons above to import assets!</em>';
+            return;
+        }
+
+        let html = '<div class="asset-list" style="display: flex; flex-direction: column; gap: 8px;">';
+        
+        Object.keys(assets).forEach(category => {
+            const catObj = assets[category];
+            if (!catObj || typeof catObj !== 'object') return;
+
+            html += `<div class="asset-category" style="margin-bottom: 8px;">`;
+            html += `<div style="font-weight: bold; color: var(--vscode-symbolIcon-propertyForeground, #4ec9b0); margin-bottom: 4px; text-transform: uppercase; font-size: 11px;">${escapeHtml(category)}</div>`;
+
+            const isSubCategorized = category === 'glb';
+            if (isSubCategorized) {
+                Object.keys(catObj).forEach(subCat => {
+                    const subObj = catObj[subCat];
+                    if (typeof subObj === 'object' && subObj !== null) {
+                        html += `<div style="margin-left: 8px; font-weight: 600; color: var(--text-muted); font-size: 11px; margin-top: 4px;">${escapeHtml(subCat)}</div>`;
+                        Object.keys(subObj).forEach(itemKey => {
+                            const relAssetPath = `Assets/models/${subCat}/${itemKey}`;
+                            html += `<div style="margin-left: 12px; margin-top: 2px;">`;
+                            html += `<div class="asset-item-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 4px;">`;
+                            html += `<span style="font-family: monospace;">${escapeHtml(itemKey)}</span>`;
+                            html += `<div style="display: flex; gap: 6px; align-items: center;">`;
+                            html += `<button type="button" class="btn small-btn btn-preview-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" data-path="${escapeHtml(relAssetPath)}" title="Preview asset" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">👁️ Preview</button>`;
+                            html += `<button type="button" class="btn small-btn btn-delete-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" title="Remove asset" style="color: #f44336; background: transparent; border: none; cursor: pointer; font-weight: bold; font-size: 14px; padding: 0 4px;">✕</button>`;
+                            html += `</div></div>`;
+                            html += `<div class="asset-preview-container hidden" style="margin-top: 4px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px; text-align: center;"></div>`;
+                            html += `</div>`;
+                        });
+                    }
+                });
+            } else {
+                Object.keys(catObj).forEach(itemKey => {
+                    let relAssetPath = `Assets/${category}/${itemKey}`;
+                    let itemVal = catObj[itemKey];
+                    let cols = 4, rows = 4;
+                    if (typeof itemVal === 'object' && itemVal !== null) {
+                        cols = itemVal.columns || 4;
+                        rows = itemVal.rows || 4;
+                    }
+
+                    if (category === 'vfx_spritesheets') relAssetPath = `Assets/vfx/${itemKey}`;
+                    else if (category === 'skyboxes') relAssetPath = `Assets/skyboxes/${itemKey}`;
+                    else if (category === 'decals') relAssetPath = `Assets/decals/${itemKey}`;
+                    else if (category === 'icons') relAssetPath = `Assets/icons/${itemKey}`;
+                    else if (category === 'textures') relAssetPath = `Assets/textures/${itemKey}`;
+                    else if (category === 'sfx') relAssetPath = `Assets/audio/sfx/${itemKey}`;
+                    else if (category === 'music') relAssetPath = `Assets/audio/music/${itemKey}`;
+
+                    html += `<div style="margin-top: 2px;">`;
+                    html += `<div class="asset-item-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 4px;">`;
+                    html += `<span style="font-family: monospace;">${escapeHtml(itemKey)}</span>`;
+                    html += `<div style="display: flex; gap: 6px; align-items: center;">`;
+                    html += `<button type="button" class="btn small-btn btn-preview-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" data-cols="${cols}" data-rows="${rows}" data-path="${escapeHtml(relAssetPath)}" title="Preview asset" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">👁️ Preview</button>`;
+                    html += `<button type="button" class="btn small-btn btn-delete-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" title="Remove asset" style="color: #f44336; background: transparent; border: none; cursor: pointer; font-weight: bold; font-size: 14px; padding: 0 4px;">✕</button>`;
+                    html += `</div></div>`;
+                    html += `<div class="asset-preview-container hidden" style="margin-top: 4px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px; text-align: center;"></div>`;
+                    html += `</div>`;
+                });
+            }
+
+            html += `</div>`;
+        });
+
+        html += '</div>';
+        display.innerHTML = html;
+
+        // Attach delete event handlers
+        display.querySelectorAll('.btn-delete-asset').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const target = e.currentTarget;
+                const cat = target.getAttribute('data-category');
+                const subCat = target.getAttribute('data-subcategory');
+                const key = target.getAttribute('data-key');
+                if (cat && key) {
+                    removeAsset(cat, key, subCat);
+                }
+            });
+        });
+
+        // Attach preview event handlers
+        display.querySelectorAll('.btn-preview-asset').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const target = e.currentTarget;
+                const cat = target.getAttribute('data-category');
+                const pathStr = target.getAttribute('data-path');
+                const cols = parseInt(target.getAttribute('data-cols'), 10) || 4;
+                const rows = parseInt(target.getAttribute('data-rows'), 10) || 4;
+                const parentRow = target.closest('div[style*="margin-top"]');
+                const previewContainer = parentRow ? parentRow.querySelector('.asset-preview-container') : null;
+                if (!previewContainer) return;
+
+                if (!previewContainer.classList.contains('hidden')) {
+                    previewContainer.classList.add('hidden');
+                    previewContainer.innerHTML = '';
+                    if (previewContainer._animInterval) {
+                        clearInterval(previewContainer._animInterval);
+                        previewContainer._animInterval = null;
+                    }
+                    return;
+                }
+
+                previewContainer.classList.remove('hidden');
+                previewContainer.innerHTML = '<span style="color: var(--text-muted); font-size: 11px;">Loading preview...</span>';
+
+                const reqId = 'preview_' + Math.random().toString(36).substring(2, 9);
+                const handleResult = (evt) => {
+                    const msg = evt.data;
+                    if (msg.type === 'resolvePathResult' && msg.requestId === reqId) {
+                        window.removeEventListener('message', handleResult);
+                        const fileUri = msg.uri;
+                        if (!fileUri) {
+                            previewContainer.innerHTML = '<span style="color: #f44336; font-size: 11px;">File not found</span>';
+                            return;
+                        }
+
+                        if (cat === 'vfx_spritesheets') {
+                            const img = new Image();
+                            img.crossOrigin = 'anonymous';
+                            img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                const frameWidth = Math.floor(img.width / cols);
+                                const frameHeight = Math.floor(img.height / rows);
+                                canvas.width = frameWidth;
+                                canvas.height = frameHeight;
+                                canvas.style.maxWidth = '200px';
+                                canvas.style.maxHeight = '200px';
+                                canvas.style.border = '1px solid rgba(255,255,255,0.2)';
+                                canvas.style.borderRadius = '4px';
+
+                                const ctx = canvas.getContext('2d');
+                                let currentFrame = 0;
+                                const totalFrames = cols * rows;
+
+                                const renderFrame = () => {
+                                    const col = currentFrame % cols;
+                                    const row = Math.floor(currentFrame / cols);
+                                    ctx.clearRect(0, 0, frameWidth, frameHeight);
+                                    ctx.drawImage(img, col * frameWidth, row * frameHeight, frameWidth, frameHeight, 0, 0, frameWidth, frameHeight);
+                                    currentFrame = (currentFrame + 1) % totalFrames;
+                                };
+
+                                renderFrame();
+                                previewContainer.innerHTML = '';
+                                previewContainer.appendChild(canvas);
+                                if (previewContainer._animInterval) clearInterval(previewContainer._animInterval);
+                                previewContainer._animInterval = setInterval(renderFrame, 80);
+                            };
+                            img.onerror = () => {
+                                previewContainer.innerHTML = '<span style="color: #f44336; font-size: 11px;">Failed to load image</span>';
+                            };
+                            img.src = fileUri;
+                        } else if (cat === 'decals' || cat === 'icons' || cat === 'skyboxes') {
+                            previewContainer.innerHTML = `<img src="${fileUri}" style="max-width: 250px; max-height: 150px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" />`;
+                        } else if (cat === 'textures') {
+                            // KTX2 files cannot render natively in a webview — open via installed texture-viewer extension
+                            const isKtx2 = pathStr && pathStr.toLowerCase().endsWith('.ktx2');
+                            if (isKtx2) {
+                                previewContainer.innerHTML = `
+                                    <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+                                        <span style="color: var(--text-muted); font-size: 11px; word-break: break-all;">${escapeHtml(pathStr)}</span>
+                                        <button type="button" class="btn small-btn btn-open-in-vscode" data-path="${escapeHtml(pathStr)}" style="background: rgba(78,201,176,0.15); border: 1px solid rgba(78,201,176,0.4); border-radius: 4px; cursor: pointer; font-size: 11px; padding: 4px 10px; color: #4ec9b0;">🖼️ Open in Texture Viewer</button>
+                                    </div>`;
+                                previewContainer.querySelector('.btn-open-in-vscode').addEventListener('click', () => {
+                                    vscode.postMessage({ type: 'openFile', path: pathStr });
+                                });
+                            } else {
+                                // Raw PNG/other image formats for textures — render inline
+                                previewContainer.innerHTML = `<img src="${fileUri}" style="max-width: 250px; max-height: 150px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" />`;
+                            }
+                        } else if (cat === 'sfx' || cat === 'music') {
+                            previewContainer.innerHTML = `<audio controls src="${fileUri}" style="width: 100%; max-width: 250px;"></audio>`;
+                        } else if (cat === 'glb') {
+                            // GLB files cannot render natively in a webview — open via installed OHZI GLB Viewer extension
+                            previewContainer.innerHTML = `
+                                <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+                                    <span style="color: var(--text-muted); font-size: 11px; word-break: break-all;">${escapeHtml(pathStr)}</span>
+                                    <button type="button" class="btn small-btn btn-open-in-vscode" data-path="${escapeHtml(pathStr)}" style="background: rgba(120,120,255,0.15); border: 1px solid rgba(120,120,255,0.4); border-radius: 4px; cursor: pointer; font-size: 11px; padding: 4px 10px; color: #9c9cff;">📦 Open in GLB Viewer</button>
+                                </div>`;
+                            previewContainer.querySelector('.btn-open-in-vscode').addEventListener('click', () => {
+                                vscode.postMessage({ type: 'openFile', path: pathStr });
+                            });
+                        } else {
+                            previewContainer.innerHTML = `<span style="color: var(--text-muted); font-size: 11px;">Asset path: ${escapeHtml(fileUri)}</span>`;
+                        }
+                    }
+                };
+                window.addEventListener('message', handleResult);
+                vscode.postMessage({
+                    type: 'resolvePath',
+                    requestId: reqId,
+                    path: pathStr
+                });
+            });
+        });
+    }
+
+    function setupAssetImportListeners() {
+        const btnTexture = document.getElementById('btn-import-texture');
+        if (btnTexture) {
+            btnTexture.addEventListener('click', () => {
+                vscode.postMessage({
+                    type: 'importAsset',
+                    assetType: 'texture',
+                    options: {}
+                });
+            });
+        }
+
+        const btnGlb = document.getElementById('btn-import-glb');
+        if (btnGlb) {
+            btnGlb.addEventListener('click', () => {
+                const catSelect = document.getElementById('glb-category-select');
+                const category = catSelect ? catSelect.value : 'props';
+                vscode.postMessage({
+                    type: 'importAsset',
+                    assetType: 'glb',
+                    options: { category }
+                });
+            });
+        }
+
+        const btnSkybox = document.getElementById('btn-import-skybox');
+        if (btnSkybox) {
+            btnSkybox.addEventListener('click', () => {
+                vscode.postMessage({
+                    type: 'importAsset',
+                    assetType: 'skybox'
+                });
+            });
+        }
+
+        const btnDecal = document.getElementById('btn-import-decal');
+        if (btnDecal) {
+            btnDecal.addEventListener('click', () => {
+                vscode.postMessage({
+                    type: 'importAsset',
+                    assetType: 'decal'
+                });
+            });
+        }
+
+        const btnIcon = document.getElementById('btn-import-icon');
+        if (btnIcon) {
+            btnIcon.addEventListener('click', () => {
+                vscode.postMessage({
+                    type: 'importAsset',
+                    assetType: 'icon'
+                });
+            });
+        }
+
+        const btnVfx = document.getElementById('btn-import-vfx');
+        if (btnVfx) {
+            btnVfx.addEventListener('click', () => {
+                const colsInput = document.getElementById('vfx-cols-input');
+                const rowsInput = document.getElementById('vfx-rows-input');
+                const columns = colsInput ? parseInt(colsInput.value, 10) || 4 : 4;
+                const rows = rowsInput ? parseInt(rowsInput.value, 10) || 4 : 4;
+                vscode.postMessage({
+                    type: 'importAsset',
+                    assetType: 'vfx',
+                    options: { columns, rows }
+                });
+            });
+        }
+
+        const btnAudio = document.getElementById('btn-import-audio');
+        if (btnAudio) {
+            btnAudio.addEventListener('click', () => {
+                const audioSelect = document.getElementById('audio-type-select');
+                const audioType = audioSelect ? audioSelect.value : 'sfx';
+                vscode.postMessage({
+                    type: 'importAsset',
+                    assetType: 'audio',
+                    options: { audioType }
+                });
+            });
+        }
+    }
+
+    // Call setupAssetImportListeners inside init
+    const originalInit = init;
+    init = function() {
+        originalInit();
+        setupAssetImportListeners();
+    };
 
     init();
 })();

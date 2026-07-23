@@ -11,17 +11,41 @@ public class FXService
 	}
 	public void SpawnFireblastEffect(Node3D parent, Vector3 position)
 	{
-		SpawnSpritesheetEffect(parent, "res://Assets/2d/SpellSpritesheets/solar_flare_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.05f, 6f);
+		SpawnSpritesheetEffect(parent, "Assets/vfx/solar_flare_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.05f, 6f);
 	}
 
 	public void SpawnLightningEffect(Node3D parent, Vector3 position)
 	{
-		SpawnSpritesheetEffect(parent, "res://Assets/2d/SpellSpritesheets/arcane_surge_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.035f, 6f);
+		SpawnSpritesheetEffect(parent, "Assets/vfx/arcane_surge_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.035f, 6f);
 	}
 
 	public void SpawnSpritesheetEffect(Node3D parent, string texturePath, Vector3 worldPosition, int columns, int rows, float secondsPerFrame, float sizeInWorldUnits)
 	{
-		var texture = GD.Load<Texture2D>(texturePath);
+		Texture2D? texture = null;
+		string fullPath = texturePath;
+		if (!texturePath.StartsWith("res://") && !System.IO.File.Exists(texturePath))
+		{
+			string wsPath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+			fullPath = System.IO.Path.Combine(wsPath, texturePath.Replace('/', System.IO.Path.DirectorySeparatorChar));
+			if (!System.IO.File.Exists(fullPath))
+			{
+				fullPath = System.IO.Path.Combine(wsPath, "Assets", "vfx", System.IO.Path.GetFileName(texturePath));
+			}
+		}
+
+		if (fullPath.StartsWith("res://"))
+		{
+			texture = GD.Load<Texture2D>(fullPath);
+		}
+		else if (System.IO.File.Exists(fullPath))
+		{
+			var img = Image.LoadFromFile(fullPath);
+			if (img != null)
+			{
+				texture = ImageTexture.CreateFromImage(img);
+			}
+		}
+
 		if (texture == null) return;
 
 		int totalFrames = columns * rows;
@@ -30,8 +54,6 @@ public class FXService
 		frames.SetAnimationLoopMode("play", SpriteFrames.LoopMode.None);
 		frames.SetAnimationSpeed("play", 1.0f / secondsPerFrame);
 
-		var atlasBase = new AtlasTexture();
-		atlasBase.Atlas = texture;
 		int frameWidth = texture.GetWidth() / columns;
 		int frameHeight = texture.GetHeight() / rows;
 

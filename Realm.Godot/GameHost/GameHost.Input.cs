@@ -1449,12 +1449,7 @@ public partial class GameHost
 				GetViewport().SetInputAsHandled();
 				return;
 			}
-			if (keyEvent.Keycode == Key.Delete)
-			{
-				DeleteSelectedUnits();
-				GetViewport().SetInputAsHandled();
-				return;
-			}
+	
 			if (keyEvent.Keycode == Key.Quoteleft) 
 			{
 				if (Realm.Godot.UI.WasmConsoleWindow.IsSinglePlayerOrTestMode())

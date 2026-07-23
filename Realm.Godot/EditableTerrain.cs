@@ -557,7 +557,7 @@ void fragment() {
 			SplatMap = new TerrainSplatWeights[Width, Depth];
 			for (int z = 0; z < Depth; z++)
 				for (int x = 0; x < Width; x++)
-					SplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
+					SplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
 		}
 
 		if (state.PathingCodes == null || state.PathingCodes.GetLength(0) != Width || state.PathingCodes.GetLength(1) != Depth)
@@ -693,13 +693,7 @@ void fragment() {
 	                    c2.rgb * w2 +
 	                    c3.rgb * w3);
 
-	// Dedicated vertical cliff wall texture (Layer 2)
-	vec4 c_cliff = sample_triplanar_array(terrain_textures, 2.0, v_world_pos, v_world_normal, tri_scale);
-	
-	// Smooth power slope mask using hard C# vertex normals: cliffs (normal.y near 0) seamlessly render cliff wall texture
-	float cliff_mask = smoothstep(0.40, 0.75, abs(v_world_normal.y));
-
-	vec3 terrain_color = mix(c_cliff.rgb, splat_color, cliff_mask);
+	vec3 terrain_color = splat_color;
 
 	float macro_var = mix(0.80, 1.20, macro_fbm(v_world_pos.xz * 0.035));
 	float wall_mask = clamp(1.0 - abs(v_world_normal.y), 0.0, 1.0);
@@ -909,40 +903,67 @@ void fragment() {
 			? GameHost.Instance.CurrentMapDirectory
 			: Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
 
-		var names = new[]
-		{
-			"ancient_ruin", "deep_moss", "grey_slate", "iron_dust",
-			"lava_vein", "mossy_stone", "pale_sand", "river_silt",
-			"royal_marble", "tarn_mud", "dark_wood", "mist_grove"
-		};
+		var textureList = new List<string>();
 
-		bool hasCustomKtx2 = false;
-		foreach (var name in names)
+		try
 		{
-			if (System.IO.File.Exists(System.IO.Path.Combine(mapDir, name + ".ktx2")))
+			string metadataPath = System.IO.Path.Combine(mapDir, "metadata.json");
+			if (System.IO.File.Exists(metadataPath))
 			{
-				hasCustomKtx2 = true;
-				break;
+				string text = System.IO.File.ReadAllText(metadataPath);
+				var root = System.Text.Json.Nodes.JsonNode.Parse(text) as System.Text.Json.Nodes.JsonObject;
+				if (root != null)
+				{
+					System.Text.Json.Nodes.JsonObject? texturesObj = null;
+					if (root.ContainsKey("Assets") && root["Assets"] is System.Text.Json.Nodes.JsonObject assets && assets.ContainsKey("textures") && assets["textures"] is System.Text.Json.Nodes.JsonObject tObj1)
+					{
+						texturesObj = tObj1;
+					}
+					else if (root.ContainsKey("MapProperties") && root["MapProperties"] is System.Text.Json.Nodes.JsonObject mp && mp.ContainsKey("Assets") && mp["Assets"] is System.Text.Json.Nodes.JsonObject mpAssets && mpAssets.ContainsKey("textures") && mpAssets["textures"] is System.Text.Json.Nodes.JsonObject tObj2)
+					{
+						texturesObj = tObj2;
+					}
+					else if (root.ContainsKey("textures") && root["textures"] is System.Text.Json.Nodes.JsonObject tObj3)
+					{
+						texturesObj = tObj3;
+					}
+
+					if (texturesObj != null)
+					{
+						var baseSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+						foreach (var kvp in texturesObj)
+						{
+							string baseName = System.IO.Path.GetFileNameWithoutExtension(kvp.Key);
+							if (!baseSet.Contains(baseName))
+							{
+								baseSet.Add(baseName);
+								textureList.Add(baseName);
+							}
+						}
+					}
+				}
 			}
 		}
+		catch { }
 
-		if (!forceReload && _cachedAlbedoTextureArray != null && _cachedNormalRoughnessTextureArray != null)
+		if (!forceReload && _cachedAlbedoTextureArray != null && _cachedNormalRoughnessTextureArray != null && _cachedMapDir == mapDir)
 		{
-			if (!hasCustomKtx2 || _cachedMapDir == mapDir)
-			{
-				_material.SetShaderParameter("terrain_textures", _cachedAlbedoTextureArray);
-				_material.SetShaderParameter("terrain_normals_pbr", _cachedNormalRoughnessTextureArray);
-				return;
-			}
+			_material.SetShaderParameter("terrain_textures", _cachedAlbedoTextureArray);
+			_material.SetShaderParameter("terrain_normals_pbr", _cachedNormalRoughnessTextureArray);
+			return;
 		}
 
 		var albedoHeightImages = new Godot.Collections.Array<Image>();
 		var normalRoughnessImages = new Godot.Collections.Array<Image>();
 		int texWidth = 0;
 		int texHeight = 0;
-		foreach (var name in names)
+		foreach (var name in textureList)
 		{
-			string ktx2Path = System.IO.Path.Combine(mapDir, name + ".ktx2");
+			string ktx2Path = System.IO.Path.Combine(mapDir, "Assets", "textures", name + ".ktx2");
+			if (!System.IO.File.Exists(ktx2Path))
+			{
+				ktx2Path = System.IO.Path.Combine(mapDir, name + ".ktx2");
+			}
 			if (!System.IO.File.Exists(ktx2Path))
 			{
 				ktx2Path = ProjectSettings.GlobalizePath($"res://Assets/2d/TileSheets/{name}.ktx2");
@@ -1132,7 +1153,7 @@ void fragment() {
 			SplatMap = new TerrainSplatWeights[w, d];
 			for (int z = 0; z < d; z++)
 				for (int x = 0; x < w; x++)
-					SplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
+					SplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
 		}
 
 		if (_chunks.Count == 0 || _chunkedWidth != w || _chunkedDepth != d)
@@ -1515,7 +1536,7 @@ void fragment() {
 				{
 					newHeights[x, z] = 0.0f;
 					newPathing[x, z] = GetDefaultPathingCode(0.0f, state.WaterHeight, state.WaterEnabled);
-					newSplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
+					newSplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
 				}
 			}
 		}
@@ -1588,7 +1609,7 @@ void fragment() {
 						tx * tz * oldHeights[x1, z1];
 				}
 
-				newSplatMap[x, z] = oldSplatMap != null ? oldSplatMap[x0, z0] : TerrainSplatWeights.CreateSolid(3);
+				newSplatMap[x, z] = oldSplatMap != null ? oldSplatMap[x0, z0] : TerrainSplatWeights.CreateSolid(0);
 
 				if (oldPathing != null)
 				{

@@ -20,26 +20,21 @@ internal class UnitSpawnService
 
 	public string GetFallbackModelPath(string unitId, bool isBuilding)
 	{
-		if (isBuilding)
+		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		string filename = System.IO.Path.GetFileName(unitId);
+		if (!filename.EndsWith(".glb") && !filename.EndsWith(".gltf")) filename += ".glb";
+		string primarySub = isBuilding ? "building" : "character";
+		string cand = System.IO.Path.Combine(wsPath, "Assets", "models", primarySub, filename);
+		if (System.IO.File.Exists(cand)) return cand;
+
+		string[] subDirs = new[] { "character", "building", "environment", "props" };
+		foreach (var sub in subDirs)
 		{
-			return unitId switch
-			{
-				"castle" => "res://Assets/3d/Buildings/altar.glb",
-				"tower" => "res://Assets/3d/Buildings/altar_pillar.glb",
-				_ => "res://Assets/3d/Buildings/altar.glb"
-			};
+			cand = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
+			if (System.IO.File.Exists(cand)) return cand;
 		}
-		else
-		{
-			return unitId switch
-			{
-				"worker" => "res://Assets/3d/Characters/adventurer.glb",
-				"soldier" => "res://Assets/3d/Characters/armored_warlord.glb",
-				"archer" => "res://Assets/3d/Characters/armored_dragon.glb",
-				"priest" => "res://Assets/3d/Characters/armored_battlelord.glb",
-				_ => "res://Assets/3d/Characters/adventurer.glb"
-			};
-		}
+
+		return unitId;
 	}
 
 	public int GetUnitPathingFlags(GameHost.UnitMetadata meta)

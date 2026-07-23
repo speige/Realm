@@ -10,6 +10,7 @@
   "categories": [
     "Other"
   ],
+  "activationEvents": ["onStartupFinished"],
   "main": "./dist/extension.js",
   "contributes": {
     "customEditors": [
@@ -38,7 +39,10 @@
   },
   "devDependencies": {
     "@types/vscode": "^1.75.0",
+    "canvas": "^3.2.3",
     "esbuild": "^0.20.0",
+    "jsdom": "^29.1.1",
+    "puppeteer": "^25.3.0",
     "typescript": "^5.0.0"
   },
   "dependencies": {

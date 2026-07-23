@@ -1008,7 +1008,11 @@ public partial class GameHost : Node3D, IGameAPI
 		System.IO.Directory.CreateDirectory(mapDir);
 
 		string projectRoot = ProjectSettings.GlobalizePath("res://");
-		string templateDir = System.IO.Path.Combine(projectRoot, "MapTemplate");
+		string templateDir = System.IO.Path.Combine(projectRoot, "..", "MapTemplate");
+		if (!System.IO.Directory.Exists(templateDir))
+		{
+			templateDir = System.IO.Path.Combine(projectRoot, "MapTemplate");
+		}
 		string templateScriptPath = System.IO.Path.Combine(templateDir, "MapScript.cs");
 
 		string scriptContent;
@@ -1088,7 +1092,11 @@ public class {mapName} : IMapScript
 		string vscodeSettingsPath = System.IO.Path.Combine(vscodeDir, "settings.json");
 
 		string projectRoot = ProjectSettings.GlobalizePath("res://");
-		string templateDir = System.IO.Path.Combine(projectRoot, "MapTemplate");
+		string templateDir = System.IO.Path.Combine(projectRoot, "..", "MapTemplate");
+		if (!System.IO.Directory.Exists(templateDir))
+		{
+			templateDir = System.IO.Path.Combine(projectRoot, "MapTemplate");
+		}
 		string templateCsprojPath = System.IO.Path.Combine(templateDir, "MapScript.csproj");
 		string templateTargetsPath = System.IO.Path.Combine(templateDir, "Directory.Build.targets");
 		string templateVscodeSettingsPath = System.IO.Path.Combine(templateDir, ".vscode", "settings.json");
@@ -1280,11 +1288,11 @@ public class {mapName} : IMapScript
 			var pos = new Vector3(position.X, position.Y, position.Z);
 			if (effectTypeId == "fireblast")
 			{
-				SpawnSpritesheetEffect("res://Assets/2d/SpellSpritesheets/solar_flare_sheet.png", pos + new Vector3(0, 0.5f, 0), 4, 4, 0.05f, scale * 6f);
+				SpawnSpritesheetEffect("Assets/vfx/solar_flare_sheet.png", pos + new Vector3(0, 0.5f, 0), 4, 4, 0.05f, scale * 6f);
 			}
 			else if (effectTypeId == "lightning")
 			{
-				SpawnSpritesheetEffect("res://Assets/2d/SpellSpritesheets/arcane_surge_sheet.png", pos + new Vector3(0, 0.5f, 0), 4, 4, 0.035f, scale * 6f);
+				SpawnSpritesheetEffect("Assets/vfx/arcane_surge_sheet.png", pos + new Vector3(0, 0.5f, 0), 4, 4, 0.035f, scale * 6f);
 			}
 			else if (effectTypeId == "holylight")
 			{
@@ -3142,10 +3150,34 @@ public class {mapName} : IMapScript
 			var env = worldEnv.Environment;
 			if (env != null)
 			{
-				var panoramaMaterial = new PanoramaSkyMaterial();
-				var skyTexture = GD.Load<Texture2D>(path);
+				string fullPath = path;
+				if (!path.StartsWith("res://") && !System.IO.File.Exists(path))
+				{
+					string wsPath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+					fullPath = System.IO.Path.Combine(wsPath, path.Replace('/', System.IO.Path.DirectorySeparatorChar));
+					if (!System.IO.File.Exists(fullPath))
+					{
+						fullPath = System.IO.Path.Combine(wsPath, "Assets", "skyboxes", System.IO.Path.GetFileName(path));
+					}
+				}
+
+				Texture2D? skyTexture = null;
+				if (fullPath.StartsWith("res://"))
+				{
+					skyTexture = GD.Load<Texture2D>(fullPath);
+				}
+				else if (System.IO.File.Exists(fullPath))
+				{
+					var img = Image.LoadFromFile(fullPath);
+					if (img != null)
+					{
+						skyTexture = ImageTexture.CreateFromImage(img);
+					}
+				}
+
 				if (skyTexture != null)
 				{
+					var panoramaMaterial = new PanoramaSkyMaterial();
 					panoramaMaterial.Panorama = skyTexture;
 					var sky = new Sky();
 					sky.SkyMaterial = panoramaMaterial;

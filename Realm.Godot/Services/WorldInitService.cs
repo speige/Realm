@@ -55,7 +55,7 @@ public class WorldInitService
 		AddOrSet(worldEntity, new NetworkMappingState(new(), new(), new()));
 		if (!EcsWorld.Has<EditorState>(worldEntity))
 		{
-			EcsWorld.Add(worldEntity, new EditorState(true, 4.0f, -95.0f, 95.0f, -95.0f, 125.0f, "res://Assets/skybox_panoramic.jpg", false));
+			EcsWorld.Add(worldEntity, new EditorState(true, 4.0f, -95.0f, 95.0f, -95.0f, 125.0f, "Assets/skyboxes/jade_shrine.png", false));
 		}
 		AddOrSet(worldEntity, new InputState(0, null, null, null, false));
 		AddOrSet(worldEntity, new VFXQueue(new System.Collections.Generic.List<VFXRequest>()));

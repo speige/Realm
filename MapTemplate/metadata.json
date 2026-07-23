@@ -1,0 +1,57 @@
+{
+  "MapProperties": {},
+  "Assets": {
+    "textures": {
+      "ancient_ruin.ktx2": "376787275c145e4a930da203c934856134c5fb3469ce868117ebdd53fa7b7d6e",
+      "deep_moss.ktx2": "16293262dc02e7d078ffcdfaa70edd963160f8c0d78d51b757e1c5c0d8257128",
+      "grey_slate.ktx2": "2dd4df9fb30a28db31854797ff40e636ba9a6dfb1d40d6559b7783305102eb17",
+      "lava_vein.ktx2": "d0153bad3dac55c7aced8c1a9a5a34894fdde97da98de7eb8cc2d3ae2dd108ac",
+      "mossy_stone.ktx2": "925ccf48d8fb100289da73b728f3d4a44d04aa756e8aaeec66c65bdc90fd6e68",
+      "river_silt.ktx2": "6cd80e922c75307481ba9bf0ee7a72c4f7742db234d8983fb712b42ec4cedc7c",
+      "royal_marble.ktx2": "094ba2d7e3d8fa74488cbaf491894e57bbfc0c9af97b69342d4f2ddc7b993aea",
+      "mist_grove.ktx2": "108a0eea0d6880302184a3ad9fb4a20a2baeb1ce1764fff6c9395c0a20c40fe6"
+    },
+    "decals": {
+      "acid_drip.png": "e1ae4c43637d45fdfc0a927f1ca214ee7a030e464939219bd2170141600f3c64",
+      "arcane_spark.png": "b44e0bbea2ed1d70380381a37bec49db7881509c38225688c70b2539de58ad4f"
+    },
+    "glb": {
+      "character": {
+        "adventurer.glb": "543910be92b4f5648731a3458c58c2ab4689e71a1c601cb762900ebc488d145f",
+        "armored_dragon.glb": "9602413526348e5867c191ae0c6450b4acb144814e0b2c2e67a0087a9091a6c2"
+      },
+      "building": {
+        "ancient_altar.glb": "90e663ae8a33a5b5c264311f0da28b57a7582aa2998cba2272865106c5fec4c2",
+        "castle.glb": "2857417a188864b47bed1a796240dfb0b7f3e2b969db02d8340eaf0c6fe50d16"
+      },
+      "environment": {
+        "fantasy_tree.glb": "70feee30d8646ca3aa306f352ee920034791b9544df08306f25bf7cff383f4fe",
+        "rock_formation.glb": "5575947dc231f516519419bdee996f80a0bd195dd19cd5d4321f0e861822dbb8"
+      },
+      "props": {
+        "architectural_components.glb": "636a37bf9d9b379340f2a3c9ec5c63c86c88ccaee7392df6809a2fdf5ead9292",
+        "wooden_box.glb": "897e92fb41a141e7ad3c86738a6cec1ab9a4c6b85e7a9f10d20ce77fe5e80ced"
+      }
+    },
+    "skyboxes": {
+      "jade_shrine.png": "07d819f01cbbada5d711ca37c3041ecbdf4e91f9db99a0e6348ab7e575a038ed",
+      "star_reach.png": "48cb6f7411f929a3d06d602bb525536894bc5a19681d72282760d359c1af97d0"
+    },
+    "vfx_spritesheets": {
+      "arcane_surge_sheet.png": {
+        "hash": "5dc4b22b6c5f4c5c40f91cf4929d04667bae13e642f0ad4813b6b83dd4255059",
+        "columns": 4,
+        "rows": 4
+      },
+      "solar_flare_sheet.png": {
+        "hash": "9dc2f9b91f8af2eee0d174fa246ab818fc626201f629a175f173e9b01d9147c1",
+        "columns": 4,
+        "rows": 4
+      }
+    },
+    "icons": {
+      "victory_flag.png": "9229018b139ea0e269a8e1cb2c1f5130107056ddde81bacbd759a7f74eee51e1",
+      "wood_logs.png": "9282ac3b62682d82e3139f30a384823058b3423ade551a53edcf14092c076d51"
+    }
+  }
+}

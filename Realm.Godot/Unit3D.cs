@@ -216,10 +216,27 @@ public partial class Unit3D : CharacterBody3D
 
 		try
 		{
-			var packedScene = GD.Load<PackedScene>(modelPath);
-			if (packedScene != null)
+			if (System.IO.File.Exists(modelPath) && !modelPath.StartsWith("res://"))
 			{
-				_modelNode = packedScene.Instantiate<Node3D>();
+				var doc = new GltfDocument();
+				var state = new GltfState();
+				var err = doc.AppendFromFile(modelPath, state);
+				if (err == Error.Ok)
+				{
+					_modelNode = doc.GenerateScene(state) as Node3D;
+				}
+			}
+			else
+			{
+				var packedScene = GD.Load<PackedScene>(modelPath);
+				if (packedScene != null)
+				{
+					_modelNode = packedScene.Instantiate<Node3D>();
+				}
+			}
+
+			if (_modelNode != null)
+			{
 				AddChild(_modelNode);
 				_animationPlayer = FindAnimationPlayer(_modelNode);
 				SeekToIdleFirstFrame();

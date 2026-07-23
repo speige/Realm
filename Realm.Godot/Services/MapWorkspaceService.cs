@@ -48,7 +48,7 @@ public static class MapWorkspaceService
 
 	private static string GetTemplatePath(string fileName)
 	{
-		return FindRootFile("Realm.Godot/MapTemplate/" + fileName);
+		return FindRootFile("MapTemplate/" + fileName);
 	}
 
 	public static void SetupWorkspace(string directory, string mapName)
@@ -167,19 +167,53 @@ public static class MapWorkspaceService
 
 	public static void EnsureMetadataJson(string directory)
 	{
+		string templateMeta = GetTemplatePath("metadata.json");
 		string metadataPath = Path.Combine(directory, "metadata.json");
 		if (!File.Exists(metadataPath) || new FileInfo(metadataPath).Length == 0)
 		{
-			File.WriteAllText(metadataPath, "{}");
+			if (File.Exists(templateMeta))
+			{
+				File.Copy(templateMeta, metadataPath, true);
+			}
+			else
+			{
+				File.WriteAllText(metadataPath, "{}");
+			}
+		}
+
+		// Also copy any template asset files (such as .ktx2 textures in Assets/textures) if not already present
+		string templateAssetsDir = Path.Combine(Path.GetDirectoryName(templateMeta), "Assets");
+		if (Directory.Exists(templateAssetsDir))
+		{
+			string destAssetsDir = Path.Combine(directory, "Assets");
+			foreach (var assetFile in Directory.GetFiles(templateAssetsDir, "*", SearchOption.AllDirectories))
+			{
+				string relPath = Path.GetRelativePath(templateAssetsDir, assetFile);
+				string destFile = Path.Combine(destAssetsDir, relPath);
+				Directory.CreateDirectory(Path.GetDirectoryName(destFile));
+				if (!File.Exists(destFile))
+				{
+					File.Copy(assetFile, destFile, true);
+				}
+			}
 		}
 	}
 
-	public static string BuildPayload()
+	public static string BuildPayload(string workspaceDir = null)
 	{
+		if (string.IsNullOrEmpty(workspaceDir))
+		{
+			workspaceDir = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+		}
+		string metaPath = Path.Combine(workspaceDir, "metadata.json").Replace("\\", "/");
+		string scriptPath = Path.Combine(workspaceDir, "MapScript.cs").Replace("\\", "/");
+		if (!metaPath.StartsWith("/")) metaPath = "/" + metaPath;
+		if (!scriptPath.StartsWith("/")) scriptPath = "/" + scriptPath;
+
 		return System.Text.Json.JsonSerializer.Serialize(new[]
 		{
-			new[] { "openFile", "metadata.json" },
-			new[] { "openFile", "MapScript.cs" }
+			new[] { "openFile", metaPath },
+			new[] { "openFile", scriptPath }
 		});
 	}
 

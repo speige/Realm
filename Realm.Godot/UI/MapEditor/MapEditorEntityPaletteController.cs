@@ -135,45 +135,73 @@ public class MapEditorEntityPaletteController
 		_categoryFiles.Clear();
 		_optCategoryItems.Clear();
 
-		string subDir = category switch
+		// Scan temp workspace files and metadata.json for custom assets
+		try
 		{
-			"Characters" => "res://Assets/3d/Characters",
-			"Buildings" => "res://Assets/3d/Buildings",
-			"Environment" => "res://Assets/3d/Environment",
-			"Props" => "res://Assets/3d/Props",
-			"Decals" => "res://Assets/2d/Decals",
-			_ => ""
-		};
+			string wsPath = MapEditorHUD.TempWorkspaceGodotPath;
+			string globalWs = Godot.ProjectSettings.GlobalizePath(wsPath);
+			string metadataPath = System.IO.Path.Combine(globalWs, "metadata.json");
 
-		using (var dir = DirAccess.Open(subDir))
-		{
-			if (dir != null)
+			if (System.IO.File.Exists(metadataPath))
 			{
-				dir.ListDirBegin();
-				string fileName = dir.GetNext();
-				while (fileName != "")
+				string json = System.IO.File.ReadAllText(metadataPath);
+				var rootNode = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
+				if (rootNode != null && rootNode.ContainsKey("Assets") && rootNode["Assets"] is System.Text.Json.Nodes.JsonObject assets)
 				{
-					if (!dir.CurrentIsDir() && !fileName.EndsWith(".import"))
+					if (category == "Decals" && assets.ContainsKey("decals") && assets["decals"] is System.Text.Json.Nodes.JsonObject decalsObj)
 					{
-						if (category == "Decals")
+						foreach (var kvp in decalsObj)
 						{
-							if (fileName.EndsWith(".png") || fileName.EndsWith(".jpg") || fileName.EndsWith(".jpeg") || fileName.EndsWith(".svg"))
+							string decalFile = kvp.Key;
+							string relDecalPath = System.IO.Path.Combine("Assets", "decals", decalFile);
+							if (!_categoryFiles.Contains(relDecalPath) && !_categoryFiles.Contains(decalFile))
 							{
-								_categoryFiles.Add(fileName);
-							}
-						}
-						else
-						{
-							if (fileName.EndsWith(".glb") || fileName.EndsWith(".gltf"))
-							{
-								_categoryFiles.Add(fileName);
+								if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, relDecalPath)))
+								{
+									_categoryFiles.Add(relDecalPath);
+								}
+								else if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, decalFile)))
+								{
+									_categoryFiles.Add(decalFile);
+								}
 							}
 						}
 					}
-					fileName = dir.GetNext();
+					else if (assets.ContainsKey("glb") && assets["glb"] is System.Text.Json.Nodes.JsonObject glbRoot)
+					{
+						string glbCatKey = category switch
+						{
+							"Characters" => "character",
+							"Buildings" => "building",
+							"Environment" => "environment",
+							"Props" => "props",
+							_ => ""
+						};
+
+						if (!string.IsNullOrEmpty(glbCatKey) && glbRoot.ContainsKey(glbCatKey) && glbRoot[glbCatKey] is System.Text.Json.Nodes.JsonObject catObj)
+						{
+							foreach (var kvp in catObj)
+							{
+								string modelFile = kvp.Key;
+								string relModelPath = System.IO.Path.Combine("Assets", "models", glbCatKey, modelFile);
+								if (!_categoryFiles.Contains(relModelPath) && !_categoryFiles.Contains(modelFile))
+								{
+									if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, relModelPath)))
+									{
+										_categoryFiles.Add(relModelPath);
+									}
+									else if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, modelFile)))
+									{
+										_categoryFiles.Add(modelFile);
+									}
+								}
+							}
+						}
+					}
 				}
 			}
 		}
+		catch { }
 
 		_categoryFiles.Sort();
 
@@ -197,16 +225,14 @@ public class MapEditorEntityPaletteController
 		if (index >= 0 && index < _categoryFiles.Count)
 		{
 			string selectedFile = _categoryFiles[index];
-			string path = _currentCategory switch
+			string wsPath = MapEditorHUD.TempWorkspaceGodotPath;
+			string globalWs = Godot.ProjectSettings.GlobalizePath(wsPath);
+
+			string placeId = System.IO.Path.Combine(globalWs, selectedFile);
+			if (!System.IO.File.Exists(placeId))
 			{
-				"Characters" => "res://Assets/3d/Characters",
-				"Buildings" => "res://Assets/3d/Buildings",
-				"Environment" => "res://Assets/3d/Environment",
-				"Props" => "res://Assets/3d/Props",
-				"Decals" => "res://Assets/2d/Decals",
-				_ => ""
-			};
-			string placeId = string.IsNullOrEmpty(path) ? selectedFile : $"{path}/{selectedFile}";
+				placeId = selectedFile;
+			}
 
 			if (GameHost.Instance != null)
 			{
@@ -234,23 +260,21 @@ public class MapEditorEntityPaletteController
 		if (selectedIndex >= 0 && selectedIndex < _categoryFiles.Count)
 		{
 			string selectedFile = _categoryFiles[selectedIndex];
-			string path = _currentCategory switch
+			string wsPath = MapEditorHUD.TempWorkspaceGodotPath;
+			string globalWs = Godot.ProjectSettings.GlobalizePath(wsPath);
+
+			placeId = System.IO.Path.Combine(globalWs, selectedFile);
+			if (!System.IO.File.Exists(placeId))
 			{
-				"Characters" => "res://Assets/3d/Characters",
-				"Buildings" => "res://Assets/3d/Buildings",
-				"Environment" => "res://Assets/3d/Environment",
-				"Props" => "res://Assets/3d/Props",
-				"Decals" => "res://Assets/2d/Decals",
-				_ => ""
-			};
-			placeId = string.IsNullOrEmpty(path) ? selectedFile : $"{path}/{selectedFile}";
+				placeId = selectedFile;
+			}
 		}
 
 		if (string.IsNullOrEmpty(placeId))
 		{
-			if (targetTool == GameHost.EditorTool.PlaceUnit) placeId = "res://Assets/3d/Characters/soldier.glb";
-			else if (targetTool == GameHost.EditorTool.PlaceDecal) placeId = "logo";
-			else placeId = "res://Assets/3d/Props/tree.glb";
+			if (targetTool == GameHost.EditorTool.PlaceUnit) placeId = "adventurer.glb";
+			else if (targetTool == GameHost.EditorTool.PlaceDecal) placeId = "acid_drip.png";
+			else placeId = "wooden_box.glb";
 		}
 
 		_hud.TriggerToolSelection(targetTool, _btnAddObject, placeId);
@@ -264,12 +288,12 @@ public class MapEditorEntityPaletteController
 		}
 
 		string searchName = filename;
-		if (filename.StartsWith("res://") || filename.Contains('/'))
+		if (filename.StartsWith("res://") || filename.Contains('/') || filename.Contains('\\'))
 		{
 			searchName = System.IO.Path.GetFileName(filename);
 		}
 
-		int idx = _categoryFiles.IndexOf(searchName);
+		int idx = _categoryFiles.FindIndex(f => System.IO.Path.GetFileName(f).Equals(searchName, StringComparison.OrdinalIgnoreCase));
 		if (idx >= 0)
 		{
 			_optCategoryItems.Selected = idx;
@@ -288,17 +312,7 @@ public class MapEditorEntityPaletteController
 				targetTool = GameHost.EditorTool.PlaceDecal;
 			}
 
-			string path = category switch
-			{
-				"Characters" => "res://Assets/3d/Characters",
-				"Buildings" => "res://Assets/3d/Buildings",
-				"Environment" => "res://Assets/3d/Environment",
-				"Props" => "res://Assets/3d/Props",
-				"Decals" => "res://Assets/2d/Decals",
-				_ => ""
-			};
-			string placeId = (filename.StartsWith("res://") || filename.Contains('/')) ? filename : (string.IsNullOrEmpty(path) ? filename : $"{path}/{filename}");
-			_hud.TriggerToolSelection(targetTool, _btnAddObject, placeId);
+			_hud.TriggerToolSelection(targetTool, _btnAddObject, filename);
 		}
 	}
 }

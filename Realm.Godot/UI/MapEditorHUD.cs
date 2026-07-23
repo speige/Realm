@@ -116,7 +116,11 @@ public partial class MapEditorHUD : Control
 	private HSlider _sldPasteRotation;
 	private Label _lblPasteRotation;
 	
-	private Button[] _swatchButtons = new Button[12];
+	private List<Button> _swatchButtons = new List<Button>();
+	private List<string> _swatchPaths = new List<string>();
+	private List<string> _swatchDisplayNames = new List<string>();
+	private List<Color> _swatchColors = new List<Color>();
+	private Control _gridSwatches;
 
 	private Panel _leftPillar;
 	private CheckBox _chkWaterEnabled;
@@ -206,10 +210,6 @@ public partial class MapEditorHUD : Control
 	private List<string> _skyboxFiles = new List<string>();
 
 
-
-	private string[] _swatchPaths = new string[12];
-	private string[] _swatchDisplayNames = new string[12];
-	private Color[] _swatchColors = new Color[12];
 
 	private Button _btnRaise;
 	private Button _btnLower;
@@ -367,6 +367,7 @@ public partial class MapEditorHUD : Control
 
 		if (OperatingSystem.IsWindows())
 		{
+			GenerateVSCodeFilesExternal();
 			VSCodeManager.Instance.Initialize(this);
 			_btnVSCode = GetNode<Button>("TopLeftBox/BtnVSCode");
 			SetupButton(_btnVSCode, "💻 CODE & DATA", () => ToggleVSCodeEditor(), 13, "Toggle the embedded VSCode editor");
@@ -667,44 +668,29 @@ public partial class MapEditorHUD : Control
 			};
 		}
 
-		_skyboxFiles.Clear();
-		_optSkybox.Clear();
-		_skyboxFiles.Add("skybox_panoramic.jpg");
-		_optSkybox.AddItem(TranslationServer.Translate("Default Panoramic"));
-
-		using (var dir = DirAccess.Open("res://Assets/Skyboxes"))
-		{
-			if (dir != null)
-			{
-				dir.ListDirBegin();
-				string fileName = dir.GetNext();
-				while (fileName != "")
-				{
-					if (!dir.CurrentIsDir() && !fileName.EndsWith(".import") &&
-						(fileName.EndsWith(".png") || fileName.EndsWith(".jpg") || fileName.EndsWith(".jpeg")))
-					{
-						_skyboxFiles.Add(fileName);
-						string cleanName = System.IO.Path.GetFileNameWithoutExtension(fileName).Replace("_", " ");
-						cleanName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(cleanName);
-						_optSkybox.AddItem(TranslationServer.Translate(cleanName));
-					}
-					fileName = dir.GetNext();
-				}
-			}
-		}
-
+		RefreshSkyboxList();
 		_optSkybox.ItemSelected += (index) =>
 		{
 			int idx = (int)index;
 			if (idx >= 0 && idx < _skyboxFiles.Count)
 			{
 				string selectedFile = _skyboxFiles[idx];
-				string path = selectedFile == "skybox_panoramic.jpg"
-					? "res://Assets/skybox_panoramic.jpg"
-					: $"res://Assets/Skyboxes/{selectedFile}";
-				GameHost.Instance?.SetSkyboxTexture(path);
+				string relPath = selectedFile.Contains("/") || selectedFile.Contains("\\")
+					? selectedFile
+					: $"Assets/skyboxes/{selectedFile}";
+				GameHost.Instance?.SetSkyboxTexture(relPath);
 			}
 		};
+
+		if (_skyboxFiles.Count > 0)
+		{
+			_optSkybox.Selected = 0;
+			string initialFile = _skyboxFiles[0];
+			string initialRelPath = initialFile.Contains("/") || initialFile.Contains("\\")
+				? initialFile
+				: $"Assets/skyboxes/{initialFile}";
+			GameHost.Instance?.SetSkyboxTexture(initialRelPath);
+		}
 
 		ApplyThemeStyles();
 		SetupLightingTuningUI();
@@ -876,15 +862,7 @@ public partial class MapEditorHUD : Control
 			}
 		}, 11, "Globally swap grass/dirt texture assignment indices (X)");
 
-		var btnTextureImport = new Button();
-		btnTextureImport.Name = "BtnTextureImport";
-		_containerTextureSettings.AddChild(btnTextureImport);
-		SetupButton(btnTextureImport, "📥 IMPORT CUSTOM TEXTURE", () => ImportTextureAction(), 11, "Import a custom image for the selected slot");
-
-		for (int i = 1; i <= 12; i++)
-		{
-			_swatchButtons[i - 1] = GetNode<Button>($"RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerTexture/GridSwatches/Swatch{i}");
-		}
+		_gridSwatches = GetNodeOrNull<Control>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerTexture/GridSwatches");
 		SetupTextureSwatches(true);
 
 		_containerPathingSettings = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing");
@@ -1058,7 +1036,7 @@ public partial class MapEditorHUD : Control
 			child.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		}
 
-			SwitchModule(EditorModule.Terrain);
+		SwitchModule(EditorModule.Terrain);
 		}
 		catch (Exception ex)
 		{
@@ -1414,6 +1392,11 @@ public partial class MapEditorHUD : Control
 		if (_optSkybox == null) return;
 		string file = System.IO.Path.GetFileName(path);
 		int index = _skyboxFiles.IndexOf(file);
+		if (index < 0)
+		{
+			RefreshSkyboxList();
+			index = _skyboxFiles.IndexOf(file);
+		}
 		if (index >= 0)
 		{
 			_optSkybox.Selected = index;
@@ -1628,7 +1611,7 @@ public partial class MapEditorHUD : Control
 
 	public void SelectPaintSwatchByIndex(int index)
 	{
-		if (index >= 0 && index < 12)
+		if (index >= 0 && index < _swatchButtons.Count)
 		{
 			HighlightSwatch(_swatchButtons[index]);
 			TriggerToolSelection(GameHost.EditorTool.PaintGrass, _swatchButtons[index]);
@@ -1853,7 +1836,7 @@ public partial class MapEditorHUD : Control
 
 	private Button GetTextureSwatchButton(string placeId)
 	{
-		for (int i = 0; i < 12; i++)
+		for (int i = 0; i < _swatchPaths.Count && i < _swatchButtons.Count; i++)
 		{
 			if (_swatchPaths[i] == placeId)
 			{
@@ -2083,6 +2066,11 @@ public partial class MapEditorHUD : Control
 		// Load properties from map.json
 		LoadMapProperties();
 
+		if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+		{
+			GameHost.Instance.GroundTerrain.ReloadTerrainTextures(true);
+		}
+
 		// Check creator registration on editor startup
 		CheckCreatorRegistrationAndPrompt();
 	}
@@ -2188,6 +2176,7 @@ public partial class MapEditorHUD : Control
 			if (metadataModifiedOnDisk)
 			{
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+				ReadMetadataAndRefreshTextures();
 			}
 			
 			GameHost.Instance.EditorHasUnsavedChanges = false;
@@ -2423,6 +2412,7 @@ public partial class MapEditorHUD : Control
 			try
 			{
 				LoadMapProperties();
+				ReadMetadataAndRefreshTextures();
 				string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 				bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
 
@@ -4247,100 +4237,102 @@ public partial class MapEditorHUD : Control
 
 	private void SetupTextureSwatches(bool connectEvents = false)
 	{
-		_swatchPaths[0] = "res://Assets/2d/TileSheets/ancient_ruin.png";
-		_swatchDisplayNames[0] = "Ancient Ruin";
-		_swatchColors[0] = new Color(0.95f, 0.95f, 1.0f);
+		_swatchPaths.Clear();
+		_swatchDisplayNames.Clear();
+		_swatchColors.Clear();
 
-		_swatchPaths[1] = "res://Assets/2d/TileSheets/deep_moss.png";
-		_swatchDisplayNames[1] = "Deep Moss";
-		_swatchColors[1] = new Color(0.5f, 0.5f, 0.52f);
-
-		_swatchPaths[2] = "res://Assets/2d/TileSheets/grey_slate.png";
-		_swatchDisplayNames[2] = "Gray Slate";
-		_swatchColors[2] = new Color(0.5f, 0.45f, 0.38f);
-
-		_swatchPaths[3] = "res://Assets/2d/TileSheets/iron_dust.png";
-		_swatchDisplayNames[3] = "Iron Dust";
-		_swatchColors[3] = new Color(0.2f, 0.6f, 0.2f);
-
-		_swatchPaths[4] = "res://Assets/2d/TileSheets/lava_vein.png";
-		_swatchDisplayNames[4] = "Lava Vein";
-		_swatchColors[4] = new Color(0.38f, 0.38f, 0.4f);
-
-		_swatchPaths[5] = "res://Assets/2d/TileSheets/mossy_stone.png";
-		_swatchDisplayNames[5] = "Mossy Stone";
-		_swatchColors[5] = new Color(0.4f, 0.28f, 0.18f);
-
-		_swatchPaths[6] = "res://Assets/2d/TileSheets/pale_sand.png";
-		_swatchDisplayNames[6] = "Pale Sand";
-		_swatchColors[6] = new Color(0.3f, 0.7f, 0.2f);
-
-		_swatchPaths[7] = "res://Assets/2d/TileSheets/river_silt.png";
-		_swatchDisplayNames[7] = "River Silt";
-		_swatchColors[7] = new Color(0.12f, 0.48f, 0.18f);
-
-		_swatchPaths[8] = "res://Assets/2d/TileSheets/royal_marble.png";
-		_swatchDisplayNames[8] = "Royal Marble";
-		_swatchColors[8] = new Color(0.7f, 0.55f, 0.35f);
-
-		_swatchPaths[9] = "res://Assets/2d/TileSheets/tarn_mud.png";
-		_swatchDisplayNames[9] = "Tarn Mud";
-		_swatchColors[9] = new Color(0.85f, 0.75f, 0.5f);
-
-		_swatchPaths[10] = "res://Assets/2d/TileSheets/dark_wood.png";
-		_swatchDisplayNames[10] = "Dark Wood";
-		_swatchColors[10] = new Color(0.45f, 0.55f, 0.65f);
-
-		_swatchPaths[11] = "res://Assets/2d/TileSheets/mist_grove.png";
-		_swatchDisplayNames[11] = "Mist Grove";
-		_swatchColors[11] = new Color(0.6f, 0.3f, 0.15f);
-
-		for (int i = 0; i < 12; i++)
+		// Read textures from metadata.json
+		try
 		{
-			var btn = _swatchButtons[i];
-			if (btn == null) continue;
-
-			btn.Flat = false;
-			btn.ExpandIcon = true;
-			btn.FocusMode = FocusModeEnum.None;
-			btn.CustomMinimumSize = new Vector2(46, 46);
-			btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-			btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-			btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-
-			foreach (var child in btn.GetChildren())
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (System.IO.File.Exists(metadataPath))
 			{
-				btn.RemoveChild(child);
+				string content = System.IO.File.ReadAllText(metadataPath);
+				var root = System.Text.Json.Nodes.JsonNode.Parse(content) as JsonObject;
+				if (root != null)
+				{
+					JsonObject? texturesObj = null;
+					if (root.ContainsKey("Assets") && root["Assets"] is JsonObject assets && assets.ContainsKey("textures") && assets["textures"] is JsonObject tObj1)
+					{
+						texturesObj = tObj1;
+					}
+					else if (root.ContainsKey("MapProperties") && root["MapProperties"] is JsonObject mp && mp.ContainsKey("Assets") && mp["Assets"] is JsonObject mpAssets && mpAssets.ContainsKey("textures") && mpAssets["textures"] is JsonObject tObj2)
+					{
+						texturesObj = tObj2;
+					}
+					else if (root.ContainsKey("textures") && root["textures"] is JsonObject tObj3)
+					{
+						texturesObj = tObj3;
+					}
+
+					if (texturesObj != null)
+					{
+						foreach (var kvp in texturesObj)
+						{
+							string filename = kvp.Key;
+							string baseName = System.IO.Path.GetFileNameWithoutExtension(filename);
+							if (!_swatchDisplayNames.Any(n => n.Equals(baseName, StringComparison.OrdinalIgnoreCase)))
+							{
+								string cleanDisplayName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(baseName.Replace("_", " "));
+								_swatchDisplayNames.Add(cleanDisplayName);
+								_swatchPaths.Add(System.IO.Path.Combine(wsPath, filename));
+								_swatchColors.Add(new Color(0.6f, 0.6f, 0.6f));
+							}
+						}
+					}
+				}
+			}
+		}
+		catch { }
+
+		if (_gridSwatches != null)
+		{
+			foreach (Node child in _gridSwatches.GetChildren())
+			{
+				_gridSwatches.RemoveChild(child);
 				child.QueueFree();
 			}
+			_swatchButtons.Clear();
 
-			Texture2D tex = GetSwatchTexture(i);
+			for (int i = 0; i < _swatchDisplayNames.Count; i++)
+			{
+				var btn = new Button();
+				btn.Name = $"Swatch{i + 1}";
+				btn.Flat = false;
+				btn.ExpandIcon = true;
+				btn.FocusMode = FocusModeEnum.None;
+				btn.CustomMinimumSize = new Vector2(46, 46);
+				btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+				btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+				btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
 
-			if (tex != null)
-			{
-				var texRect = new TextureRect();
-				texRect.Texture = tex;
-				texRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-				texRect.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
-				texRect.MouseFilter = MouseFilterEnum.Ignore;
-				texRect.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-				texRect.GrowHorizontal = GrowDirection.Both;
-				texRect.GrowVertical = GrowDirection.Both;
-				btn.AddChild(texRect);
-			}
-			else
-			{
-				var colorBox = new ColorRect();
-				colorBox.Color = _swatchColors[i];
-				colorBox.MouseFilter = MouseFilterEnum.Ignore;
-				colorBox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-				colorBox.GrowHorizontal = GrowDirection.Both;
-				colorBox.GrowVertical = GrowDirection.Both;
-				btn.AddChild(colorBox);
-			}
+				Texture2D tex = GetSwatchTexture(i);
+				if (tex != null)
+				{
+					var texRect = new TextureRect();
+					texRect.Texture = tex;
+					texRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+					texRect.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
+					texRect.MouseFilter = MouseFilterEnum.Ignore;
+					texRect.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+					texRect.GrowHorizontal = GrowDirection.Both;
+					texRect.GrowVertical = GrowDirection.Both;
+					btn.AddChild(texRect);
+				}
+				else
+				{
+					var colorBox = new ColorRect();
+					colorBox.Color = _swatchColors[i];
+					colorBox.MouseFilter = MouseFilterEnum.Ignore;
+					colorBox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+					colorBox.GrowHorizontal = GrowDirection.Both;
+					colorBox.GrowVertical = GrowDirection.Both;
+					btn.AddChild(colorBox);
+				}
 
-			if (connectEvents)
-			{
 				int index = i;
 				btn.GuiInput += (@event) =>
 				{
@@ -4363,6 +4355,9 @@ public partial class MapEditorHUD : Control
 						}
 					}
 				};
+
+				_gridSwatches.AddChild(btn);
+				_swatchButtons.Add(btn);
 			}
 		}
 
@@ -4421,14 +4416,14 @@ public partial class MapEditorHUD : Control
 		int terrainIdx = GameHost.Instance.EditorPaintTextureIndex;
 		int cliffIdx = GameHost.Instance.EditorCliffPaintTextureIndex;
 
-		string terrainName = (terrainIdx >= 0 && terrainIdx < 12) ? _swatchDisplayNames[terrainIdx] : "Unknown";
-		string cliffName = (cliffIdx >= 0 && cliffIdx < 12) ? _swatchDisplayNames[cliffIdx] : "Unknown";
+		string terrainName = (terrainIdx >= 0 && terrainIdx < _swatchDisplayNames.Count) ? _swatchDisplayNames[terrainIdx] : "Unknown";
+		string cliffName = (cliffIdx >= 0 && cliffIdx < _swatchDisplayNames.Count) ? _swatchDisplayNames[cliffIdx] : "Unknown";
 
 		if (_lblTerrainTexture != null) _lblTerrainTexture.Text = $"{TranslationServer.Translate("Brush")}: {TranslationServer.Translate(terrainName)}";
 		if (_lblCliffTexture != null) _lblCliffTexture.Text = $"{TranslationServer.Translate("Cliff Face")}: {TranslationServer.Translate(cliffName)}";
 
-		Button terrainSwatch = (terrainIdx >= 0 && terrainIdx < 12) ? _swatchButtons[terrainIdx] : null;
-		Button cliffSwatch = (cliffIdx >= 0 && cliffIdx < 12) ? _swatchButtons[cliffIdx] : null;
+		Button terrainSwatch = (terrainIdx >= 0 && terrainIdx < _swatchButtons.Count) ? _swatchButtons[terrainIdx] : null;
+		Button cliffSwatch = (cliffIdx >= 0 && cliffIdx < _swatchButtons.Count) ? _swatchButtons[cliffIdx] : null;
 
 		HighlightSwatch(terrainSwatch);
 		HighlightCliffSwatch(cliffSwatch);
@@ -4437,14 +4432,14 @@ public partial class MapEditorHUD : Control
 	private string GetSwatchName(Color color)
 	{
 		float epsilon = 0.01f;
-		for (int i = 1; i <= 12; i++)
+		for (int i = 1; i <= _swatchColors.Count; i++)
 		{
 			Color c = GetSwatchColor(i);
 			if (Mathf.Abs(color.R - c.R) < epsilon &&
 				Mathf.Abs(color.G - c.G) < epsilon &&
 				Mathf.Abs(color.B - c.B) < epsilon)
 			{
-				string texName = (i >= 1 && i <= 12 && _swatchDisplayNames != null) ? _swatchDisplayNames[i - 1] : "Unknown";
+				string texName = (i >= 1 && i <= _swatchDisplayNames.Count) ? _swatchDisplayNames[i - 1] : "Unknown";
 				return texName;
 			}
 		}
@@ -4453,7 +4448,7 @@ public partial class MapEditorHUD : Control
 
 	private Color GetSwatchColor(int index)
 	{
-		if (index >= 1 && index <= 12 && _swatchColors != null)
+		if (index >= 1 && index <= _swatchColors.Count)
 		{
 			return _swatchColors[index - 1];
 		}
@@ -4865,16 +4860,16 @@ public partial class MapEditorHUD : Control
 
 	private Texture2D GetSwatchTexture(int i)
 	{
-		var names = new[]
-		{
-			"ancient_ruin", "deep_moss", "grey_slate", "iron_dust",
-			"lava_vein", "mossy_stone", "pale_sand", "river_silt",
-			"royal_marble", "tarn_mud", "dark_wood", "mist_grove"
-		};
 		string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 			? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
 			: _tempWorkspacePath;
-		string localKtx2 = System.IO.Path.Combine(wsPath, names[i] + ".ktx2");
+		string texName = (i >= 0 && i < _swatchDisplayNames.Count) ? _swatchDisplayNames[i] : $"swatch_{i}";
+		string cleanName = texName.ToLowerInvariant().Replace(" ", "_") + ".ktx2";
+		string localKtx2 = System.IO.Path.Combine(wsPath, "Assets", "textures", cleanName);
+		if (!System.IO.File.Exists(localKtx2))
+		{
+			localKtx2 = System.IO.Path.Combine(wsPath, cleanName);
+		}
 		if (System.IO.File.Exists(localKtx2))
 		{
 			string tempOut = $"user://temp_swatch_{i}_{System.Guid.NewGuid()}.png";
@@ -4925,7 +4920,7 @@ public partial class MapEditorHUD : Control
 	{
 		if (GameHost.Instance == null) return;
 		int selectedIdx = GameHost.Instance.EditorPaintTextureIndex;
-		if (selectedIdx < 0 || selectedIdx >= 12)
+		if (selectedIdx < 0 || selectedIdx >= _swatchDisplayNames.Count)
 		{
 			ShowFeedback(TranslationServer.Translate("Please select a texture slot first"));
 			return;
@@ -4957,24 +4952,27 @@ public partial class MapEditorHUD : Control
 
 	private void ImportTextureFile(string imagePath, int index)
 	{
-		var names = new[]
-		{
-			"ancient_ruin", "deep_moss", "grey_slate", "iron_dust",
-			"lava_vein", "mossy_stone", "pale_sand", "river_silt",
-			"royal_marble", "tarn_mud", "dark_wood", "mist_grove"
-		};
-		string name = names[index];
+		string rawName = (index >= 0 && index < _swatchDisplayNames.Count) ? _swatchDisplayNames[index] : $"swatch_{index}";
+		string name = rawName.ToLowerInvariant().Replace(" ", "_");
 		string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 			? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
 			: _tempWorkspacePath;
-		string outputKtx2 = System.IO.Path.Combine(wsPath, name + ".ktx2");
+		string texDir = System.IO.Path.Combine(wsPath, "Assets", "textures");
+		System.IO.Directory.CreateDirectory(texDir);
+		string outputKtx2 = System.IO.Path.Combine(texDir, name + ".ktx2");
 		ShowFeedback(TranslationServer.Translate("Importing texture..."));
 		try
 		{
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 			{
 				GameHost.Instance.GroundTerrain.ProcessAndSaveRawTexture(imagePath, outputKtx2);
-				GameHost.Instance.GroundTerrain.ReloadTerrainTextures();
+				if (System.IO.File.Exists(outputKtx2))
+				{
+					byte[] ktx2Bytes = System.IO.File.ReadAllBytes(outputKtx2);
+					string blake3 = MapAssetManager.ComputeBlake3(ktx2Bytes);
+					UpdateMetadataJsonAsset("textures", name + ".ktx2", blake3);
+				}
+				GameHost.Instance.GroundTerrain.ReloadTerrainTextures(true);
 				SetupTextureSwatches(false);
 				ShowFeedback(string.Format(TranslationServer.Translate("Successfully imported custom texture for {0}!"), _swatchDisplayNames[index]));
 			}
@@ -4983,6 +4981,444 @@ public partial class MapEditorHUD : Control
 		{
 			ShowFeedback(string.Format(TranslationServer.Translate("Failed to import texture: {0}"), ex.Message));
 			GD.PrintErr($"Failed to import texture: {ex.Message}");
+		}
+	}
+
+	private void RefreshSkyboxList()
+	{
+		if (_optSkybox == null) return;
+		_skyboxFiles.Clear();
+		_optSkybox.Clear();
+
+		string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+			? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+			: _tempWorkspacePath;
+		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+
+		if (System.IO.File.Exists(metadataPath))
+		{
+			try
+			{
+				string text = System.IO.File.ReadAllText(metadataPath);
+				var root = System.Text.Json.Nodes.JsonNode.Parse(text) as JsonObject;
+				if (root != null)
+				{
+					JsonObject? skyboxesObj = null;
+					if (root.ContainsKey("Assets") && root["Assets"] is JsonObject assets && assets.ContainsKey("skyboxes") && assets["skyboxes"] is JsonObject sObj1)
+					{
+						skyboxesObj = sObj1;
+					}
+					else if (root.ContainsKey("MapProperties") && root["MapProperties"] is JsonObject mp && mp.ContainsKey("Assets") && mp["Assets"] is JsonObject mpAssets && mpAssets.ContainsKey("skyboxes") && mpAssets["skyboxes"] is JsonObject sObj2)
+					{
+						skyboxesObj = sObj2;
+					}
+					else if (root.ContainsKey("skyboxes") && root["skyboxes"] is JsonObject sObj3)
+					{
+						skyboxesObj = sObj3;
+					}
+
+					if (skyboxesObj != null)
+					{
+						foreach (var kvp in skyboxesObj)
+						{
+							string filename = kvp.Key;
+							if (!_skyboxFiles.Contains(filename))
+							{
+								_skyboxFiles.Add(filename);
+								string cleanName = System.IO.Path.GetFileNameWithoutExtension(filename).Replace("_", " ");
+								cleanName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(cleanName);
+								_optSkybox.AddItem(TranslationServer.Translate(cleanName));
+							}
+						}
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"RefreshSkyboxList error parsing metadata.json: {ex.Message}");
+			}
+		}
+
+		if (_skyboxFiles.Count == 0)
+		{
+			_skyboxFiles.Add("skybox_panoramic.jpg");
+			_optSkybox.AddItem(TranslationServer.Translate("Default Panoramic"));
+		}
+	}
+
+	private void UpdateMetadataJsonAsset(string category, string fileName, string blake3Hash, string subCategory = null, int columns = 0, int rows = 0)
+	{
+		try
+		{
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			JsonObject root = new JsonObject();
+			if (System.IO.File.Exists(metadataPath))
+			{
+				string text = System.IO.File.ReadAllText(metadataPath);
+				if (!string.IsNullOrWhiteSpace(text))
+				{
+					root = System.Text.Json.Nodes.JsonNode.Parse(text) as JsonObject ?? new JsonObject();
+				}
+			}
+
+			if (!root.ContainsKey("MapProperties")) root["MapProperties"] = new JsonObject();
+			if (!root.ContainsKey("Assets")) root["Assets"] = new JsonObject();
+
+			JsonObject assetsObj = root["Assets"] as JsonObject ?? new JsonObject();
+
+			if (!string.IsNullOrEmpty(subCategory))
+			{
+				if (!assetsObj.ContainsKey(category)) assetsObj[category] = new JsonObject();
+				JsonObject catObj = assetsObj[category] as JsonObject ?? new JsonObject();
+				if (!catObj.ContainsKey(subCategory)) catObj[subCategory] = new JsonObject();
+				JsonObject subObj = catObj[subCategory] as JsonObject ?? new JsonObject();
+				subObj[fileName] = blake3Hash;
+				catObj[subCategory] = subObj;
+				assetsObj[category] = catObj;
+			}
+			else
+			{
+				if (!assetsObj.ContainsKey(category)) assetsObj[category] = new JsonObject();
+				JsonObject catObj = assetsObj[category] as JsonObject ?? new JsonObject();
+				if (columns > 0 && rows > 0)
+				{
+					var metaObj = new JsonObject
+					{
+						["hash"] = blake3Hash,
+						["columns"] = columns,
+						["rows"] = rows
+					};
+					catObj[fileName] = metaObj;
+				}
+				else
+				{
+					catObj[fileName] = blake3Hash;
+				}
+				assetsObj[category] = catObj;
+			}
+
+			root["Assets"] = assetsObj;
+			System.IO.File.WriteAllText(metadataPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"Failed to update metadata.json asset: {ex.Message}");
+		}
+	}
+
+	public void ImportTextureAssetFromExtension(string sourceFilePath, int slotIndex)
+	{
+		try
+		{
+			string rawName = (slotIndex >= 0 && slotIndex < _swatchDisplayNames.Count) ? _swatchDisplayNames[slotIndex] : $"swatch_{slotIndex}";
+			string name = rawName.ToLowerInvariant().Replace(" ", "_");
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string texDir = System.IO.Path.Combine(wsPath, "Assets", "textures");
+			System.IO.Directory.CreateDirectory(texDir);
+			string outputKtx2 = System.IO.Path.Combine(texDir, name + ".ktx2");
+
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+			{
+				GameHost.Instance.GroundTerrain.ProcessAndSaveRawTexture(sourceFilePath, outputKtx2);
+			}
+
+			if (System.IO.File.Exists(outputKtx2))
+			{
+				byte[] ktx2Bytes = System.IO.File.ReadAllBytes(outputKtx2);
+				string blake3 = MapAssetManager.ComputeBlake3(ktx2Bytes);
+				UpdateMetadataJsonAsset("textures", name + ".ktx2", blake3);
+				ReadMetadataAndRefreshTextures();
+				ShowFeedback($"Successfully processed & imported KTX2 texture for {rawName}!");
+			}
+			else
+			{
+				ShowFeedback($"Failed to generate KTX2 texture at {outputKtx2}");
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ImportTextureAssetFromExtension error: {ex.Message}");
+			ShowFeedback($"Failed to import texture: {ex.Message}");
+		}
+	}
+
+	public void ReadMetadataAndRefreshTextures()
+	{
+		try
+		{
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metadataPath)) return;
+
+			string texDir = System.IO.Path.Combine(wsPath, "Assets", "textures");
+			System.IO.Directory.CreateDirectory(texDir);
+
+			// Check for pending _temp_import_*.png files written by VS Code extension or web view
+			if (System.IO.Directory.Exists(wsPath))
+			{
+				string[] tempFiles = System.IO.Directory.GetFiles(wsPath, "_temp_import_*.png");
+				foreach (var rawPng in tempFiles)
+				{
+					try
+					{
+						string filename = System.IO.Path.GetFileNameWithoutExtension(rawPng);
+						string swatchName = filename.Replace("_temp_import_", "");
+						string outputKtx2 = System.IO.Path.Combine(texDir, swatchName + ".ktx2");
+
+						if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+						{
+							GameHost.Instance.GroundTerrain.ProcessAndSaveRawTexture(rawPng, outputKtx2);
+						}
+
+						if (System.IO.File.Exists(outputKtx2))
+						{
+							byte[] ktx2Bytes = System.IO.File.ReadAllBytes(outputKtx2);
+							string blake3 = MapAssetManager.ComputeBlake3(ktx2Bytes);
+							UpdateMetadataJsonAsset("textures", swatchName + ".ktx2", blake3);
+						}
+
+						if (System.IO.File.Exists(rawPng))
+						{
+							System.IO.File.Delete(rawPng);
+						}
+					}
+					catch (Exception ex)
+					{
+						GD.PrintErr($"Failed to convert temp import PNG {rawPng} to KTX2: {ex.Message}");
+					}
+				}
+			}
+
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+			{
+				GameHost.Instance.GroundTerrain.ReloadTerrainTextures(true);
+			}
+			SetupTextureSwatches(false);
+			RefreshSkyboxList();
+			_entityPaletteController?.SelectCategory(_entityPaletteController.CurrentCategory);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ReadMetadataAndRefreshTextures error: {ex.Message}");
+		}
+	}
+
+	public void ImportGlbAssetFromExtension(string sourceFilePath, string category)
+	{
+		try
+		{
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string fileName = System.IO.Path.GetFileName(sourceFilePath);
+			string subCat = category.ToLowerInvariant();
+			string modelsDir = System.IO.Path.Combine(wsPath, "Assets", "models", subCat);
+			System.IO.Directory.CreateDirectory(modelsDir);
+			string targetPath = System.IO.Path.Combine(modelsDir, fileName);
+			System.IO.File.Copy(sourceFilePath, targetPath, true);
+
+			byte[] bytes = System.IO.File.ReadAllBytes(targetPath);
+			string blake3 = MapAssetManager.ComputeBlake3(bytes);
+
+			UpdateMetadataJsonAsset("glb", fileName, blake3, subCategory: category.ToLowerInvariant());
+			ShowFeedback($"Imported GLB asset {fileName} ({category})");
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ImportGlbAssetFromExtension error: {ex.Message}");
+			ShowFeedback($"Failed to import GLB asset: {ex.Message}");
+		}
+	}
+
+	public void ImportDecalAssetFromExtension(string sourceFilePath)
+	{
+		try
+		{
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string baseName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
+			string fileName = baseName + ".png";
+			string decalsDir = System.IO.Path.Combine(wsPath, "Assets", "decals");
+			System.IO.Directory.CreateDirectory(decalsDir);
+			string targetPath = System.IO.Path.Combine(decalsDir, fileName);
+
+			var img = Image.LoadFromFile(sourceFilePath);
+			if (img != null)
+			{
+				img.SavePng(targetPath);
+			}
+			else
+			{
+				System.IO.File.Copy(sourceFilePath, targetPath, true);
+			}
+
+			byte[] bytes = System.IO.File.ReadAllBytes(targetPath);
+			string blake3 = MapAssetManager.ComputeBlake3(bytes);
+
+			UpdateMetadataJsonAsset("decals", fileName, blake3);
+			ShowFeedback($"Imported decal {fileName}");
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ImportDecalAssetFromExtension error: {ex.Message}");
+			ShowFeedback($"Failed to import decal: {ex.Message}");
+		}
+	}
+
+	public void ImportSkyboxAssetFromExtension(string sourceFilePath)
+	{
+		try
+		{
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string fileName = System.IO.Path.GetFileName(sourceFilePath);
+			string skyboxesDir = System.IO.Path.Combine(wsPath, "Assets", "skyboxes");
+			System.IO.Directory.CreateDirectory(skyboxesDir);
+			string targetPath = System.IO.Path.Combine(skyboxesDir, fileName);
+
+			System.IO.File.Copy(sourceFilePath, targetPath, true);
+
+			byte[] bytes = System.IO.File.ReadAllBytes(targetPath);
+			string blake3 = MapAssetManager.ComputeBlake3(bytes);
+
+			UpdateMetadataJsonAsset("skyboxes", fileName, blake3);
+			RefreshSkyboxList();
+			ShowFeedback($"Imported skybox {fileName}");
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ImportSkyboxAssetFromExtension error: {ex.Message}");
+			ShowFeedback($"Failed to import skybox: {ex.Message}");
+		}
+	}
+
+	public void ImportSpritesheetAssetFromExtension(string sourceFilePath, int columns = 4, int rows = 4)
+	{
+		try
+		{
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string baseName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
+			string fileName = baseName + ".png";
+			string vfxDir = System.IO.Path.Combine(wsPath, "Assets", "vfx");
+			System.IO.Directory.CreateDirectory(vfxDir);
+			string targetPath = System.IO.Path.Combine(vfxDir, fileName);
+
+			var img = Image.LoadFromFile(sourceFilePath);
+			if (img != null)
+			{
+				img.SavePng(targetPath);
+			}
+			else
+			{
+				System.IO.File.Copy(sourceFilePath, targetPath, true);
+			}
+
+			byte[] bytes = System.IO.File.ReadAllBytes(targetPath);
+			string blake3 = MapAssetManager.ComputeBlake3(bytes);
+
+			UpdateMetadataJsonAsset("vfx_spritesheets", fileName, blake3, columns: columns, rows: rows);
+			ShowFeedback($"Imported VFX spritesheet {fileName}");
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ImportSpritesheetAssetFromExtension error: {ex.Message}");
+			ShowFeedback($"Failed to import VFX spritesheet: {ex.Message}");
+		}
+	}
+
+	public void ImportIconAssetFromExtension(string sourceFilePath)
+	{
+		try
+		{
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string baseName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
+			string fileName = baseName + ".png";
+			string iconsDir = System.IO.Path.Combine(wsPath, "Assets", "icons");
+			System.IO.Directory.CreateDirectory(iconsDir);
+			string targetPath = System.IO.Path.Combine(iconsDir, fileName);
+
+			var img = Image.LoadFromFile(sourceFilePath);
+			if (img != null)
+			{
+				img.SavePng(targetPath);
+			}
+			else
+			{
+				System.IO.File.Copy(sourceFilePath, targetPath, true);
+			}
+
+			byte[] bytes = System.IO.File.ReadAllBytes(targetPath);
+			string blake3 = MapAssetManager.ComputeBlake3(bytes);
+
+			UpdateMetadataJsonAsset("icons", fileName, blake3);
+			ShowFeedback($"Imported 2D Icon {fileName}");
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ImportIconAssetFromExtension error: {ex.Message}");
+			ShowFeedback($"Failed to import 2D Icon: {ex.Message}");
+		}
+	}
+
+	public void ImportAudioAssetFromExtension(string sourceFilePath, string audioType)
+	{
+		try
+		{
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string baseName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
+			string fileName = baseName + ".ogg";
+			string targetPath = System.IO.Path.Combine(wsPath, fileName);
+
+			if (sourceFilePath.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase))
+			{
+				System.IO.File.Copy(sourceFilePath, targetPath, true);
+			}
+			else
+			{
+				var startInfo = new System.Diagnostics.ProcessStartInfo
+				{
+					FileName = "ffmpeg",
+					Arguments = $"-y -i \"{sourceFilePath}\" -c:a libvorbis \"{targetPath}\"",
+					UseShellExecute = false,
+					CreateNoWindow = true,
+					RedirectStandardOutput = true,
+					RedirectStandardError = true
+				};
+				using (var process = System.Diagnostics.Process.Start(startInfo))
+				{
+					process.WaitForExit();
+				}
+				if (!System.IO.File.Exists(targetPath) || new System.IO.FileInfo(targetPath).Length == 0)
+				{
+					System.IO.File.Copy(sourceFilePath, targetPath, true);
+				}
+			}
+
+			byte[] bytes = System.IO.File.ReadAllBytes(targetPath);
+			string blake3 = MapAssetManager.ComputeBlake3(bytes);
+
+			UpdateMetadataJsonAsset(audioType.ToLowerInvariant() == "music" ? "music" : "sfx", fileName, blake3);
+			ShowFeedback($"Imported audio {fileName} ({audioType})");
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ImportAudioAssetFromExtension error: {ex.Message}");
+			ShowFeedback($"Failed to import audio asset: {ex.Message}");
 		}
 	}
 

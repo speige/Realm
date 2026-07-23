@@ -111,7 +111,7 @@ public partial class GameHost
 					{
 						for (int x = 0; x < defaultWidth; x++)
 						{
-							GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(3);
+							GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
 						}
 					}
 					GroundTerrain.UpdateMeshAndPhysics();

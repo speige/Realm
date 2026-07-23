@@ -265,15 +265,28 @@ public partial class Prop3D : StaticBody3D
 		string modelPath = ResolvePropModelPath(PropId);
 		try
 		{
-			var scene = GD.Load<PackedScene>(modelPath);
-			if (scene == null)
+			Node node = null;
+			if (System.IO.File.Exists(modelPath) && !modelPath.StartsWith("res://"))
 			{
-				scene = GD.Load<PackedScene>("res://Assets/3d/Props/wooden_box.glb");
+				var doc = new GltfDocument();
+				var state = new GltfState();
+				var err = doc.AppendFromFile(modelPath, state);
+				if (err == Error.Ok)
+				{
+					node = doc.GenerateScene(state);
+				}
+			}
+			else if (ResourceLoader.Exists(modelPath))
+			{
+				var scene = GD.Load<PackedScene>(modelPath);
+				if (scene != null)
+				{
+					node = scene.Instantiate();
+				}
 			}
 
-			if (scene != null)
+			if (node != null)
 			{
-				var node = scene.Instantiate();
 				visual.AddChild(node);
 			}
 		}
@@ -286,39 +299,31 @@ public partial class Prop3D : StaticBody3D
 	private string ResolvePropModelPath(string propId)
 	{
 		if (string.IsNullOrEmpty(propId))
-			return "res://Assets/3d/Props/wooden_box.glb";
+			propId = "wooden_box.glb";
 
-		if (propId.StartsWith("res://"))
+		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		if (propId.StartsWith("res://") || System.IO.File.Exists(propId))
 			return propId;
 
-		if (propId.EndsWith(".glb") || propId.Contains('/'))
+		string filename = System.IO.Path.GetFileName(propId);
+		if (!filename.EndsWith(".glb") && !filename.EndsWith(".gltf"))
 		{
-			if (propId.Contains("Buildings/"))
-				return $"res://Assets/3d/Buildings/{System.IO.Path.GetFileName(propId)}";
-			if (propId.Contains("Environment/"))
-				return $"res://Assets/3d/Environment/{System.IO.Path.GetFileName(propId)}";
-			if (propId.Contains("Props/"))
-				return $"res://Assets/3d/Props/{System.IO.Path.GetFileName(propId)}";
-
-			string filename = System.IO.Path.GetFileName(propId);
-			if (ResourceLoader.Exists($"res://Assets/3d/Environment/{filename}"))
-				return $"res://Assets/3d/Environment/{filename}";
-			if (ResourceLoader.Exists($"res://Assets/3d/Buildings/{filename}"))
-				return $"res://Assets/3d/Buildings/{filename}";
-			return $"res://Assets/3d/Props/{filename}";
+			filename += ".glb";
 		}
 
-		return propId.ToLowerInvariant() switch
+		string[] subDirs = new[] { "props", "environment", "building", "character" };
+		foreach (var sub in subDirs)
 		{
-			"tree" => "res://Assets/3d/Environment/fantasy_tree.glb",
-			"rock" => "res://Assets/3d/Environment/rock_formation.glb",
-			"goldmine" => "res://Assets/3d/Props/crystal_ore.glb",
-			"pillar" => "res://Assets/3d/Buildings/stone_pillar.glb",
-			"flag" => "res://Assets/3d/Props/skeletal_flag.glb",
-			_ => ResourceLoader.Exists($"res://Assets/3d/Props/{propId}.glb") ? $"res://Assets/3d/Props/{propId}.glb" :
-				 ResourceLoader.Exists($"res://Assets/3d/Environment/{propId}.glb") ? $"res://Assets/3d/Environment/{propId}.glb" :
-				 ResourceLoader.Exists($"res://Assets/3d/Buildings/{propId}.glb") ? $"res://Assets/3d/Buildings/{propId}.glb" :
-				 "res://Assets/3d/Props/wooden_box.glb"
-		};
+			string candidate = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
+			if (System.IO.File.Exists(candidate))
+				return candidate;
+		}
+
+		// Fallback check root workspace
+		string rootCandidate = System.IO.Path.Combine(wsPath, filename);
+		if (System.IO.File.Exists(rootCandidate))
+			return rootCandidate;
+
+		return propId;
 	}
 }

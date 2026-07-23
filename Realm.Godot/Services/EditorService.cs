@@ -1881,7 +1881,7 @@ public class EditorService
 
 	public string GetSkyboxPath(Entity worldEntity)
 	{
-		return EcsWorld.GetFieldOrDefault<EditorState, string>(worldEntity, s => s.SkyboxPath, "res://Assets/skybox_panoramic.jpg");
+		return EcsWorld.GetFieldOrDefault<EditorState, string>(worldEntity, s => s.SkyboxPath, "Assets/skyboxes/jade_shrine.png");
 	}
 
 	public void SetSkyboxPath(Entity worldEntity, string value)

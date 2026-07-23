@@ -73,8 +73,24 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         uri: webviewUri
                     });
                     break;
+                case 'importAsset':
+                    await this.handleImportAsset(webviewPanel.webview, e.assetType, e.options, document);
+                    break;
+                case 'processImportedAsset':
+                    if (e.fileName || e.filePath) {
+                        await this.processImportedAssetFile(e.fileName || e.filePath, e.fileDataBase64, e.assetType, e.options, document);
+                    }
+                    break;
             }
         });
+    }
+
+    private get lastOpenedDirectory(): string | undefined {
+        return this.context.globalState.get<string>('lastOpenedDirectory');
+    }
+
+    private set lastOpenedDirectory(dir: string | undefined) {
+        this.context.globalState.update('lastOpenedDirectory', dir);
     }
 
     private async handleBrowseFile(
@@ -85,46 +101,177 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         fileTypes?: string[],
         documentUri?: vscode.Uri
     ) {
-        let defaultUri: vscode.Uri | undefined = undefined;
-        if (documentUri) {
-            const docDir = path.dirname(documentUri.fsPath);
-            let currentDir = docDir;
-            while (true) {
-                const projectFile = path.join(currentDir, 'project.godot');
-                if (fs.existsSync(projectFile)) {
-                    defaultUri = vscode.Uri.file(currentDir);
-                    break;
-                }
-                const parent = path.dirname(currentDir);
-                if (parent === currentDir) {
-                    break;
-                }
-                currentDir = parent;
+        // Direct HTML file dialog trigger (avoids vscode.window.showOpenDialog text prompt in web mode)
+        webview.postMessage({
+            type: 'browseFileFallback',
+            fieldId,
+            fieldClass,
+            fieldIndex,
+            accept: fileTypes ? fileTypes.map(ext => '.' + ext.replace(/^\./, '')).join(',') : '*'
+        });
+    }
+
+    private computeHashHex(buffer: Buffer): string {
+        const crypto = require('crypto');
+        return crypto.createHash('sha256').update(buffer).digest('hex');
+    }
+
+    private async handleImportAsset(
+        webview: vscode.Webview,
+        assetType: string,
+        extraOptions: any,
+        document: vscode.TextDocument
+    ) {
+        let accept = '*';
+        if (assetType === 'texture') {
+            accept = '.png,.jpg,.jpeg,.bmp,.tga,.webp';
+        } else if (assetType === 'glb') {
+            accept = '.glb,.gltf';
+        } else if (assetType === 'decal' || assetType === 'vfx' || assetType === 'icon') {
+            accept = '.png,.jpg,.jpeg,.bmp,.tga,.webp,.svg';
+        } else if (assetType === 'audio') {
+            accept = '.ogg,.wav,.mp3,.flac,.aac,.m4a';
+        }
+
+        webview.postMessage({
+            type: 'importAssetFallback',
+            assetType,
+            extraOptions,
+            accept
+        });
+    }
+
+    private async processImportedAssetFile(
+        sourceFileOrName: string,
+        fileDataBase64: string | undefined,
+        assetType: string,
+        extraOptions: any,
+        document: vscode.TextDocument
+    ) {
+        try {
+            const documentDir = path.dirname(document.uri.fsPath);
+            let targetDir = documentDir;
+
+            let fileBytes: Buffer;
+            let fileName = path.basename(sourceFileOrName);
+            if (fileDataBase64) {
+                fileBytes = Buffer.from(fileDataBase64, 'base64');
+            } else {
+                fileBytes = fs.readFileSync(sourceFileOrName);
             }
-        }
-        const filters: { [name: string]: string[] } = {};
-        if (fileTypes && fileTypes.length > 0) {
-            filters['Supported Files'] = fileTypes;
-        }
 
-        const options: vscode.OpenDialogOptions = {
-            canSelectMany: false,
-            openLabel: 'Select Asset',
-            defaultUri,
-            filters: Object.keys(filters).length > 0 ? filters : undefined
-        };
+            const metadataText = document.getText();
+            let metadata: any = {};
+            if (metadataText.trim()) {
+                try {
+                    metadata = JSON.parse(metadataText);
+                } catch {
+                    metadata = {};
+                }
+            }
 
-        const fileUri = await vscode.window.showOpenDialog(options);
-        if (fileUri && fileUri[0]) {
-            const selectedPath = fileUri[0].fsPath;
-            const relativePath = this.getGodotRelativePath(selectedPath);
-            webview.postMessage({
-                type: 'browseFileResult',
-                fieldId,
-                fieldClass,
-                fieldIndex,
-                path: relativePath
-            });
+            if (!metadata.Assets) {
+                metadata.Assets = {};
+            }
+
+            if (assetType === 'glb') {
+                const subCategory = (extraOptions && extraOptions.category) ? extraOptions.category.toLowerCase() : 'props';
+                const subDir = path.join(targetDir, 'Assets', 'models', subCategory);
+                if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+                const baseName = path.basename(fileName, path.extname(fileName)) + '.glb';
+                const targetPath = path.join(subDir, baseName);
+                fs.writeFileSync(targetPath, fileBytes);
+                const blake3 = this.computeHashHex(fileBytes);
+                if (!metadata.Assets.glb) metadata.Assets.glb = {};
+                if (!metadata.Assets.glb[subCategory]) metadata.Assets.glb[subCategory] = {};
+                metadata.Assets.glb[subCategory][baseName] = blake3;
+                vscode.window.showInformationMessage(`Imported GLB Model (${subCategory}): ${baseName}`);
+            } else if (assetType === 'decal') {
+                const subDir = path.join(targetDir, 'Assets', 'decals');
+                if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+                const baseName = path.basename(fileName, path.extname(fileName)) + '.png';
+                const targetPath = path.join(subDir, baseName);
+                fs.writeFileSync(targetPath, fileBytes);
+                const blake3 = this.computeHashHex(fileBytes);
+                if (!metadata.Assets.decals) metadata.Assets.decals = {};
+                metadata.Assets.decals[baseName] = blake3;
+                vscode.window.showInformationMessage(`Imported Decal: ${baseName}`);
+            } else if (assetType === 'icon') {
+                const subDir = path.join(targetDir, 'Assets', 'icons');
+                if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+                const baseName = path.basename(fileName, path.extname(fileName)) + '.png';
+                const targetPath = path.join(subDir, baseName);
+                fs.writeFileSync(targetPath, fileBytes);
+                const blake3 = this.computeHashHex(fileBytes);
+                if (!metadata.Assets.icons) metadata.Assets.icons = {};
+                metadata.Assets.icons[baseName] = blake3;
+                vscode.window.showInformationMessage(`Imported 2D Icon: ${baseName}`);
+            } else if (assetType === 'vfx') {
+                const subDir = path.join(targetDir, 'Assets', 'vfx');
+                if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+                const baseName = path.basename(fileName, path.extname(fileName)) + '.png';
+                const targetPath = path.join(subDir, baseName);
+                fs.writeFileSync(targetPath, fileBytes);
+                const blake3 = this.computeHashHex(fileBytes);
+                const cols = (extraOptions && extraOptions.columns) ? parseInt(extraOptions.columns, 10) : 4;
+                const rows = (extraOptions && extraOptions.rows) ? parseInt(extraOptions.rows, 10) : 4;
+                if (!metadata.Assets.vfx_spritesheets) metadata.Assets.vfx_spritesheets = {};
+                metadata.Assets.vfx_spritesheets[baseName] = {
+                    hash: blake3,
+                    columns: cols,
+                    rows: rows
+                };
+                vscode.window.showInformationMessage(`Imported VFX Spritesheet: ${baseName} (${cols}x${rows})`);
+            } else if (assetType === 'audio') {
+                const audioType = (extraOptions && extraOptions.audioType) ? extraOptions.audioType.toLowerCase() : 'sfx';
+                const catKey = audioType === 'music' ? 'music' : 'sfx';
+                const subDir = path.join(targetDir, 'Assets', 'audio', catKey);
+                if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+                const baseName = path.basename(fileName, path.extname(fileName)) + '.ogg';
+                const targetPath = path.join(subDir, baseName);
+                fs.writeFileSync(targetPath, fileBytes);
+                const blake3 = this.computeHashHex(fileBytes);
+                if (!metadata.Assets[catKey]) metadata.Assets[catKey] = {};
+                metadata.Assets[catKey][baseName] = blake3;
+                vscode.window.showInformationMessage(`Imported Audio (${audioType}): ${baseName}`);
+            } else if (assetType === 'skybox') {
+                const subDir = path.join(targetDir, 'Assets', 'skyboxes');
+                if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+                const baseName = path.basename(fileName, path.extname(fileName)) + '.png';
+                const targetPath = path.join(subDir, baseName);
+                fs.writeFileSync(targetPath, fileBytes);
+                const blake3 = this.computeHashHex(fileBytes);
+                if (!metadata.Assets.skyboxes) metadata.Assets.skyboxes = {};
+                metadata.Assets.skyboxes[baseName] = blake3;
+                vscode.window.showInformationMessage(`Imported Skybox: ${baseName}`);
+            } else if (assetType === 'texture') {
+                const cleanBase = path.basename(fileName, path.extname(fileName)).toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                let swatchName = cleanBase || 'custom_texture';
+                
+                if (!metadata.Assets) metadata.Assets = {};
+                if (!metadata.Assets.textures) metadata.Assets.textures = {};
+
+                // Ensure unique name if swatchName already exists
+                let finalSwatchName = swatchName;
+                let counter = 1;
+                while (metadata.Assets.textures[finalSwatchName + '.ktx2']) {
+                    finalSwatchName = `${swatchName}_${counter}`;
+                    counter++;
+                }
+
+                const subDir = path.join(targetDir, 'Assets', 'textures');
+                if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+                const targetRawPng = path.join(subDir, `_temp_import_${finalSwatchName}.png`);
+                fs.writeFileSync(targetRawPng, fileBytes);
+
+                const blake3 = this.computeHashHex(fileBytes);
+                metadata.Assets.textures[finalSwatchName + '.ktx2'] = blake3;
+                vscode.window.showInformationMessage(`Imported Texture (${finalSwatchName}). Godot converts raw texture to PBR KTX2.`);
+            }
+
+            await this.updateTextDocument(document, JSON.stringify(metadata, null, 2));
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`Failed to import asset: ${err.message}`);
         }
     }
 
@@ -266,6 +413,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 <button type="button" class="tab-btn" data-domain="abilities">🪄 Abilities</button>
                 <button type="button" class="tab-btn" data-domain="upgrades">🛡️ Upgrades</button>
                 <button type="button" class="tab-btn" data-domain="items">📦 Items</button>
+                <button type="button" class="tab-btn" data-domain="assets">🎨 Assets</button>
                 <button type="button" class="tab-btn" data-domain="properties">⚙️ Map Props</button>
             </div>
             <div class="header-right-actions">
@@ -810,6 +958,105 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                                 <button type="button" id="add-custom-item-5-btn" class="btn secondary-btn small-btn" title="Add 5 Items">+5</button>
                                 <button type="button" id="paste-custom-item-btn" class="btn secondary-btn" title="Paste Item from Clipboard">📋 Paste Item</button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="custom-assets-form" class="editor-form hidden">
+                <div class="form-header">
+                    <div>
+                        <div class="breadcrumb">Map > Assets Manager</div>
+                        <h2>Assets Manager</h2>
+                        <span class="subtitle">Import and manage textures, 3D models, decals, VFX, and audio</span>
+                    </div>
+                </div>
+                <div class="form-scroll-container">
+                    <div class="form-section">
+                        <h3>🎨 Import Terrain Texture</h3>
+                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import a custom terrain texture image. It will append as a new paint swatch and be converted into PBR KTX2 format with normal & AO maps.</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <button type="button" id="btn-import-texture" class="btn primary-btn">📥 Import Custom Texture...</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>📦 Import 3D Model (GLB)</h3>
+                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import binary GLB 3D models. Subcategory will categorize BLAKE3 hash in metadata.json under Character, Building, Environment, or Props.</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="glb-category-select">Category</label>
+                                <select id="glb-category-select">
+                                    <option value="character">Character</option>
+                                    <option value="building">Building</option>
+                                    <option value="environment">Environment</option>
+                                    <option value="props">Props</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="display: flex; align-items: flex-end;">
+                                <button type="button" id="btn-import-glb" class="btn secondary-btn">📥 Import GLB Model...</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>🌌 Import Skybox Panoramic Image</h3>
+                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import a 360-degree panoramic HDRI / skybox image (PNG, JPG, EXR, HDR, etc.). Image will convert to PNG format for Godot world environment rendering.</p>
+                        <div class="form-row">
+                            <button type="button" id="btn-import-skybox" class="btn secondary-btn">📥 Import Skybox Image...</button>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>🖼️ Import Decal & 2D Icon</h3>
+                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import decal and UI icon images (PNG, JPG, BMP, etc.). Image will automatically convert to lossless PNG format.</p>
+                        <div class="form-row" style="gap: 16px;">
+                            <button type="button" id="btn-import-decal" class="btn secondary-btn">📥 Import PNG Decal...</button>
+                            <button type="button" id="btn-import-icon" class="btn secondary-btn">📥 Import 2D Icon...</button>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>💥 Import VFX Spritesheet</h3>
+                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import animated VFX spritesheet. Specify grid frame counts for columns and rows.</p>
+                        <div class="form-row" style="gap: 16px;">
+                            <div class="form-group" style="width: 80px;">
+                                <label for="vfx-cols-input">Columns</label>
+                                <input type="number" id="vfx-cols-input" value="4" min="1" max="64" />
+                            </div>
+                            <div class="form-group" style="width: 80px;">
+                                <label for="vfx-rows-input">Rows</label>
+                                <input type="number" id="vfx-rows-input" value="4" min="1" max="64" />
+                            </div>
+                            <div class="form-group" style="display: flex; align-items: flex-end;">
+                                <button type="button" id="btn-import-vfx" class="btn secondary-btn">📥 Import VFX Spritesheet...</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>🎵 Import Audio (Sound Effects / Music)</h3>
+                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import audio files (MP3, WAV, FLAC, OGG, etc.). Audio will automatically convert to OGG Vorbis format.</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="audio-type-select">Audio Type</label>
+                                <select id="audio-type-select">
+                                    <option value="sfx">Sound Effect (SFX)</option>
+                                    <option value="music">Music</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="display: flex; align-items: flex-end;">
+                                <button type="button" id="btn-import-audio" class="btn secondary-btn">📥 Import Audio File...</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>📂 Current Map Assets</h3>
+                        <div id="assets-metadata-display" class="tag-list-container" style="padding: 12px; font-family: monospace; font-size: 12px; max-height: 250px; overflow-y: auto;">
+                            <em>No assets registered yet.</em>
                         </div>
                     </div>
                 </div>

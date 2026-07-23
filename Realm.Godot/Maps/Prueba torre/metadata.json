@@ -1,7 +1,0 @@
-{
-  "MapProperties": {
-  },
-  "base": {"Armor":10,"ArmorType":"building","AttackCooldown":0,"AttackType":"none","CostGold":0,"CostStone":0,"CostWood":0,"Damage":0,"Description":"A new custom unit.","GoldBounty":0,"MaxHp":500,"Name":"base","PopCost":1,"ProductionTime":0,"Range":0,"ScanRadius":200,"Speed":0,"UnitId":"base"},
-  "footman": {"Armor":2,"ArmorType":"light","AttackCooldown":1.5,"AttackType":"melee","CostGold":0,"CostStone":0,"CostWood":0,"Damage":50,"Description":"A new custom unit.","GoldBounty":10,"MaxHp":100,"Name":"footman","PopCost":1,"ProductionTime":0,"Range":8,"ScanRadius":10,"Speed":10,"UnitId":"footman"},
-  "tower": {"Armor":5,"ArmorType":"building","AttackCooldown":1,"AttackType":"ranged","CostGold":0,"CostStone":0,"CostWood":0,"Damage":12,"Description":"A new custom unit.","GoldBounty":0,"MaxHp":300,"Name":"tower","PopCost":0,"ProductionTime":0,"Range":15,"ScanRadius":200,"Speed":0,"UnitId":"tower"}
-}
