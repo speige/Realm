@@ -269,7 +269,45 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 vscode.window.showInformationMessage(`Imported Texture (${finalSwatchName}). Godot converts raw texture to PBR KTX2.`);
             }
 
-            await this.updateTextDocument(document, JSON.stringify(metadata, null, 2));
+            // Fix race condition: re-read document text AFTER slow file I/O operations
+            // so we don't overwrite user edits made in the UI while the file was copying.
+            const freshMetadataText = document.getText();
+            let freshMetadata: any = {};
+            if (freshMetadataText.trim()) {
+                try {
+                    freshMetadata = JSON.parse(freshMetadataText);
+                } catch {
+                    freshMetadata = {};
+                }
+            }
+            if (!freshMetadata.Assets) {
+                freshMetadata.Assets = {};
+            }
+
+            // Auto-migrate legacy root "textures" if they exist
+            if (freshMetadata.textures) {
+                if (!freshMetadata.Assets.textures) {
+                    freshMetadata.Assets.textures = freshMetadata.textures;
+                }
+                delete freshMetadata.textures;
+            }
+
+            // Merge our newly imported asset into the fresh state
+            if (metadata.Assets) {
+                for (const cat of Object.keys(metadata.Assets)) {
+                    if (!freshMetadata.Assets[cat]) freshMetadata.Assets[cat] = {};
+                    for (const item of Object.keys(metadata.Assets[cat])) {
+                        if (typeof metadata.Assets[cat][item] === 'object' && metadata.Assets[cat][item] !== null && !Array.isArray(metadata.Assets[cat][item])) {
+                            if (!freshMetadata.Assets[cat][item]) freshMetadata.Assets[cat][item] = {};
+                            Object.assign(freshMetadata.Assets[cat][item], metadata.Assets[cat][item]);
+                        } else {
+                            freshMetadata.Assets[cat][item] = metadata.Assets[cat][item];
+                        }
+                    }
+                }
+            }
+
+            await this.updateTextDocument(document, JSON.stringify(freshMetadata, null, 2));
         } catch (err: any) {
             vscode.window.showErrorMessage(`Failed to import asset: ${err.message}`);
         }

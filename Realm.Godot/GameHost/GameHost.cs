@@ -3164,7 +3164,10 @@ public class {mapName} : IMapScript
 				Texture2D? skyTexture = null;
 				if (fullPath.StartsWith("res://"))
 				{
-					skyTexture = GD.Load<Texture2D>(fullPath);
+					if (ResourceLoader.Exists(fullPath))
+					{
+						skyTexture = GD.Load<Texture2D>(fullPath);
+					}
 				}
 				else if (System.IO.File.Exists(fullPath))
 				{
