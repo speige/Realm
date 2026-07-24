@@ -2432,6 +2432,237 @@ public partial class MapEditorHUD : Control
 		return await tcs.Task;
 	}
 
+	public async System.Threading.Tasks.Task<string> GenerateAssetSnapshotBase64(string filePath)
+	{
+		GD.Print($"[MapEditorHUD] GenerateAssetSnapshotBase64 starting for: '{filePath}'");
+		try
+		{
+			string absPath = filePath;
+			if (!System.IO.Path.IsPathRooted(absPath))
+			{
+				absPath = System.IO.Path.Combine(_tempWorkspacePath, filePath);
+			}
+			GD.Print($"[MapEditorHUD] Resolved absolute path: '{absPath}', Exists={System.IO.File.Exists(absPath)}");
+
+			if (!System.IO.File.Exists(absPath))
+			{
+				GD.PrintErr($"[MapEditorHUD] GenerateAssetSnapshotBase64 file NOT found: '{absPath}'");
+				return "";
+			}
+
+			string ext = System.IO.Path.GetExtension(absPath).ToLowerInvariant();
+			Image imageToThumbnail = null;
+
+			if (ext == ".glb" || ext == ".gltf")
+			{
+				var state = new Godot.GltfDocument();
+				var stateObj = new Godot.GltfState();
+				var err = state.AppendFromFile(absPath, stateObj);
+				if (err == Error.Ok)
+				{
+					Node scene = state.GenerateScene(stateObj);
+					if (scene != null)
+					{
+						var vp = new SubViewport();
+						vp.Size = new Vector2I(256, 256);
+						vp.TransparentBg = false;
+						vp.OwnWorld3D = true;
+
+						var world3D = new World3D();
+						var env = new Godot.Environment();
+						env.BackgroundMode = Godot.Environment.BGMode.Color;
+						env.BackgroundColor = new Godot.Color(0.12f, 0.14f, 0.18f);
+						env.AmbientLightSource = Godot.Environment.AmbientSource.Color;
+						env.AmbientLightColor = new Godot.Color(0.6f, 0.6f, 0.6f);
+						world3D.Environment = env;
+
+						vp.World3D = world3D;
+
+						vp.AddChild(scene);
+
+						var light = new DirectionalLight3D();
+						light.RotationDegrees = new Vector3(-45, 45, 0);
+						light.LightEnergy = 1.2f;
+						vp.AddChild(light);
+
+						var cam = new Camera3D();
+						cam.Position = new Vector3(0, 1.5f, 3.5f);
+						vp.AddChild(cam);
+
+						AddChild(vp);
+
+						// Force transform propagation across scene tree
+						scene.PropagateNotification((int)Godot.Node3D.NotificationTransformChanged);
+
+						// Scale scene to standard unit box so camera framing is consistent
+						Godot.Aabb totalAabb = new Godot.Aabb();
+						bool hasAabb = false;
+
+						Action<Node, Transform3D> collectAabb = null;
+						collectAabb = (n, parentXform) =>
+						{
+							Transform3D currentXform = parentXform;
+							if (n is Node3D n3d)
+							{
+								currentXform = parentXform * n3d.Transform;
+							}
+
+							if (n is MeshInstance3D mi && mi.Mesh != null)
+							{
+								Godot.Aabb localAabb = mi.GetAabb();
+								Vector3 min = localAabb.Position;
+								Vector3 max = localAabb.End;
+								Vector3[] corners = new Vector3[]
+								{
+									currentXform * new Vector3(min.X, min.Y, min.Z),
+									currentXform * new Vector3(max.X, min.Y, min.Z),
+									currentXform * new Vector3(min.X, max.Y, min.Z),
+									currentXform * new Vector3(max.X, max.Y, min.Z),
+									currentXform * new Vector3(min.X, min.Y, max.Z),
+									currentXform * new Vector3(max.X, min.Y, max.Z),
+									currentXform * new Vector3(min.X, max.Y, max.Z),
+									currentXform * max
+								};
+
+								Godot.Aabb globalMeshAabb = new Godot.Aabb(corners[0], Vector3.Zero);
+								foreach (var c in corners) globalMeshAabb = globalMeshAabb.Expand(c);
+
+								if (!hasAabb) { totalAabb = globalMeshAabb; hasAabb = true; }
+								else { totalAabb = totalAabb.Merge(globalMeshAabb); }
+							}
+
+							foreach (Node child in n.GetChildren())
+							{
+								collectAabb(child, currentXform);
+							}
+						};
+
+						collectAabb(scene, Transform3D.Identity);
+
+						GD.Print($"[MapEditorHUD GLB Snapshot] path='{absPath}', hasAabb={hasAabb}, center={totalAabb.GetCenter()}, size={totalAabb.Size}");
+
+						// Create pivot wrapper node to center and frame scene
+						var pivotNode = new Node3D();
+						vp.AddChild(pivotNode);
+
+						// Re-parent loaded GLB scene under pivot
+						scene.GetParent()?.RemoveChild(scene);
+						pivotNode.AddChild(scene);
+
+						if (hasAabb && totalAabb.Size != Vector3.Zero)
+						{
+							Vector3 center = totalAabb.GetCenter();
+							float maxDim = Mathf.Max(totalAabb.Size.X, Mathf.Max(totalAabb.Size.Y, totalAabb.Size.Z));
+
+							// Translate scene so bounding box center rests at pivot origin
+							if (scene is Node3D scene3D)
+							{
+								scene3D.Position = -center;
+							}
+
+							float radius = (maxDim * 0.5f);
+							float fovRad = Mathf.DegToRad(cam.Fov);
+							float fitDist = (radius / Mathf.Sin(fovRad * 0.5f)) * 2.2f;
+							if (fitDist < 4.0f) fitDist = 4.0f;
+
+							Vector3 viewDir = new Vector3(1.2f, 0.9f, 1.5f).Normalized();
+							cam.Position = viewDir * fitDist;
+							cam.LookAt(Vector3.Zero, Vector3.Up);
+						}
+						else
+						{
+							cam.Position = new Vector3(3.0f, 2.5f, 4.0f);
+							cam.LookAt(Vector3.Zero, Vector3.Up);
+						}
+
+						vp.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
+
+						// In Godot 4.x SubViewport offscreen rendering, force 2 render iterations for 3D camera draw completion
+						RenderingServer.ForceDraw(false);
+						await System.Threading.Tasks.Task.Delay(50);
+						RenderingServer.ForceDraw(false);
+
+						var vpTex = vp.GetTexture();
+						if (vpTex != null)
+						{
+							var rawImg = vpTex.GetImage();
+							if (rawImg != null && !rawImg.IsEmpty())
+							{
+								imageToThumbnail = (Image)rawImg.Duplicate();
+							}
+						}
+						vp.QueueFree();
+					}
+				}
+			}
+			else if (ext == ".ktx2")
+			{
+				try
+				{
+					// Custom 2-layer PBR KTX2 files (created via ktx create --layers 2) fail in Image.LoadKtxFromBuffer.
+					// Use ktx.exe extract or Texture2D array loading if available, or extract Layer 0 bytes via ktx_tools.
+					string ktxCmd = System.IO.Path.GetFullPath(System.IO.Path.Combine(Godot.ProjectSettings.GlobalizePath("res://"), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
+					string tempPng = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"ktx_thumb_{System.Guid.NewGuid()}.png");
+
+					if (System.IO.File.Exists(ktxCmd))
+					{
+						var startInfo = new System.Diagnostics.ProcessStartInfo
+						{
+							FileName = ktxCmd,
+							WorkingDirectory = System.IO.Path.GetDirectoryName(ktxCmd),
+							Arguments = $"extract \"{absPath}\" \"{tempPng}\"",
+							UseShellExecute = false,
+							CreateNoWindow = true,
+							RedirectStandardOutput = true,
+							RedirectStandardError = true
+						};
+						using var process = System.Diagnostics.Process.Start(startInfo);
+						process?.WaitForExit(3000);
+
+						if (System.IO.File.Exists(tempPng))
+						{
+							imageToThumbnail = Image.LoadFromFile(tempPng);
+							try { System.IO.File.Delete(tempPng); } catch { }
+						}
+					}
+
+					if (imageToThumbnail == null)
+					{
+						byte[] ktxData = System.IO.File.ReadAllBytes(absPath);
+						imageToThumbnail = new Image();
+						var err = imageToThumbnail.LoadKtxFromBuffer(ktxData);
+						if (err != Error.Ok) imageToThumbnail = null;
+					}
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"[MapEditorHUD] KTX2 snapshot extract exception: {ex.Message}");
+				}
+			}
+			else
+			{
+				imageToThumbnail = Image.LoadFromFile(absPath);
+			}
+
+			if (imageToThumbnail != null)
+			{
+				if (imageToThumbnail.GetWidth() != 256 || imageToThumbnail.GetHeight() != 256)
+				{
+					imageToThumbnail.Resize(256, 256, Image.Interpolation.Bilinear);
+				}
+
+				byte[] pngBytes = imageToThumbnail.SavePngToBuffer();
+				return Convert.ToBase64String(pngBytes);
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"GenerateAssetSnapshotBase64 failed for '{filePath}': {ex.Message}");
+		}
+
+		return "";
+	}
+
 	private string GetInitialDirectory()
 	{
 		if (!string.IsNullOrEmpty(_lastUsedFolder) && System.IO.Directory.Exists(_lastUsedFolder))

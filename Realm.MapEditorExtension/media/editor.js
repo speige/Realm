@@ -425,14 +425,6 @@
                 });
                 document.body.appendChild(assetInput);
                 assetInput.click();
-                break;
-            case 'godotIpc':
-                if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
-                    window.chrome.webview.postMessage(JSON.stringify(message));
-                } else if (window.parent && typeof window.parent.postMessage === 'function') {
-                    window.parent.postMessage(JSON.stringify(message), '*');
-                }
-                break;
             case 'resolvePathResult':
                 const callback = resolveCallbacks[message.requestId];
                 if (callback) {
@@ -3845,6 +3837,12 @@
                             html += `<div class="asset-item-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 4px;">`;
                             html += `<span style="font-family: monospace;">${escapeHtml(itemKey)}</span>`;
                             html += `<div style="display: flex; gap: 6px; align-items: center;">`;
+                            html += `<select class="select-migrate-target" style="background: rgba(0,0,0,0.4); color: #ccc; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; font-size: 11px; padding: 1px 4px;">`;
+                            ['character', 'building', 'environment', 'props'].forEach(sc => {
+                                html += `<option value="glb:${sc}" ${sc === subCat ? 'selected' : ''}>Model: ${sc}</option>`;
+                            });
+                            html += `</select>`;
+                            html += `<button type="button" class="btn small-btn btn-migrate-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" title="Migrate Asset Type" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">🔄 Move</button>`;
                             html += `<button type="button" class="btn small-btn btn-preview-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" data-path="${escapeHtml(relAssetPath)}" title="Preview asset" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">👁️ Preview</button>`;
                             html += `<button type="button" class="btn small-btn btn-delete-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" title="Remove asset" style="color: #f44336; background: transparent; border: none; cursor: pointer; font-weight: bold; font-size: 14px; padding: 0 4px;">✕</button>`;
                             html += `</div></div>`;
@@ -3871,10 +3869,27 @@
                     else if (category === 'sfx') relAssetPath = `Assets/audio/sfx/${itemKey}`;
                     else if (category === 'music') relAssetPath = `Assets/audio/music/${itemKey}`;
 
+                    const canMigrateRawPng = category === 'decals' || category === 'icons' || category === 'skyboxes';
+                    const canMigrateAudio = category === 'sfx' || category === 'music';
+
                     html += `<div style="margin-top: 2px;">`;
                     html += `<div class="asset-item-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 4px;">`;
                     html += `<span style="font-family: monospace;">${escapeHtml(itemKey)}</span>`;
                     html += `<div style="display: flex; gap: 6px; align-items: center;">`;
+                    if (canMigrateRawPng) {
+                        html += `<select class="select-migrate-target" style="background: rgba(0,0,0,0.4); color: #ccc; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; font-size: 11px; padding: 1px 4px;">`;
+                        html += `<option value="decals" ${category === 'decals' ? 'selected' : ''}>Decal</option>`;
+                        html += `<option value="icons" ${category === 'icons' ? 'selected' : ''}>Icon</option>`;
+                        html += `<option value="skyboxes" ${category === 'skyboxes' ? 'selected' : ''}>Skybox</option>`;
+                        html += `</select>`;
+                        html += `<button type="button" class="btn small-btn btn-migrate-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" title="Migrate Asset Type" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">🔄 Move</button>`;
+                    } else if (canMigrateAudio) {
+                        html += `<select class="select-migrate-target" style="background: rgba(0,0,0,0.4); color: #ccc; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; font-size: 11px; padding: 1px 4px;">`;
+                        html += `<option value="sfx" ${category === 'sfx' ? 'selected' : ''}>Audio: SFX</option>`;
+                        html += `<option value="music" ${category === 'music' ? 'selected' : ''}>Audio: Music</option>`;
+                        html += `</select>`;
+                        html += `<button type="button" class="btn small-btn btn-migrate-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" title="Migrate Asset Type" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">🔄 Move</button>`;
+                    }
                     html += `<button type="button" class="btn small-btn btn-preview-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" data-cols="${cols}" data-rows="${rows}" data-path="${escapeHtml(relAssetPath)}" title="Preview asset" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">👁️ Preview</button>`;
                     html += `<button type="button" class="btn small-btn btn-delete-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" title="Remove asset" style="color: #f44336; background: transparent; border: none; cursor: pointer; font-weight: bold; font-size: 14px; padding: 0 4px;">✕</button>`;
                     html += `</div></div>`;
@@ -3888,6 +3903,36 @@
 
         html += '</div>';
         display.innerHTML = html;
+
+        // Attach migration event handlers
+        display.querySelectorAll('.btn-migrate-asset').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const target = e.currentTarget;
+                const cat = target.getAttribute('data-category');
+                const subCat = target.getAttribute('data-subcategory');
+                const key = target.getAttribute('data-key');
+                const row = target.closest('.asset-item-row');
+                const sel = row ? row.querySelector('.select-migrate-target') : null;
+                if (!sel) return;
+                const val = sel.value; // e.g. "glb:character", "decals", "icons", "sfx"
+                let toCat = val;
+                let toSubCat = undefined;
+                if (val.includes(':')) {
+                    const parts = val.split(':');
+                    toCat = parts[0];
+                    toSubCat = parts[1];
+                }
+                if (cat === toCat && subCat === toSubCat) return;
+                vscode.postMessage({
+                    type: 'migrateAsset',
+                    fromCategory: cat,
+                    fromSubCategory: subCat,
+                    key: key,
+                    toCategory: toCat,
+                    toSubCategory: toSubCat
+                });
+            });
+        });
 
         // Attach delete event handlers
         display.querySelectorAll('.btn-delete-asset').forEach(btn => {
@@ -3928,10 +3973,20 @@
                 previewContainer.innerHTML = '<span style="color: var(--text-muted); font-size: 11px;">Loading preview...</span>';
 
                 const reqId = 'preview_' + Math.random().toString(36).substring(2, 9);
+
                 const handleResult = (evt) => {
-                    const msg = evt.data;
+                    const msg = evt.data || (evt.detail ? evt.detail : null);
+                    if (!msg) return;
+                    if ((msg.action === 'snapshotResult' || msg.type === 'snapshotResult' || msg.type === 'requestGodotSnapshot') && (msg.requestId === reqId || msg.filePath === pathStr)) {
+                        if (msg.base64) {
+                            if (previewContainer._snapshotTimeout) clearTimeout(previewContainer._snapshotTimeout);
+                            previewContainer.innerHTML = `<img src="data:image/png;base64,${msg.base64}" style="max-width: 256px; max-height: 256px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" title="Godot Live Snapshot (256x256)" />`;
+                            window.removeEventListener('message', handleResult);
+                            if (window.chrome && window.chrome.webview) window.chrome.webview.removeEventListener('message', handleResult);
+                            return;
+                        }
+                    }
                     if (msg.type === 'resolvePathResult' && msg.requestId === reqId) {
-                        window.removeEventListener('message', handleResult);
                         const fileUri = msg.uri;
                         if (!fileUri) {
                             previewContainer.innerHTML = '<span style="color: #f44336; font-size: 11px;">File not found</span>';
@@ -3977,29 +4032,54 @@
                         } else if (cat === 'decals' || cat === 'icons' || cat === 'skyboxes') {
                             previewContainer.innerHTML = `<img src="${fileUri}" style="max-width: 250px; max-height: 150px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" />`;
                         } else if (cat === 'textures') {
-                            // KTX2 files cannot render natively in a webview — open via installed texture-viewer extension
                             const isKtx2 = pathStr && pathStr.toLowerCase().endsWith('.ktx2');
                             if (isKtx2) {
+                                // Request snapshot via HTTP REST API from Godot host
+                                const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
+                                fetch(`http://127.0.0.1:${ipcPort}/api/`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ action: 'generateSnapshot', filePath: pathStr, requestId: reqId })
+                                }).then(res => res.json()).then(msg => {
+                                    if (msg && msg.base64) {
+                                        previewContainer.innerHTML = `<img src="data:image/png;base64,${msg.base64}" style="max-width: 256px; max-height: 256px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" title="Godot Live Snapshot (256x256)" />`;
+                                    }
+                                }).catch(err => {
+                                    console.warn('REST IPC snapshot fetch error:', err);
+                                });
+
                                 previewContainer.innerHTML = `
                                     <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
-                                        <span style="color: var(--text-muted); font-size: 11px; word-break: break-all;">${escapeHtml(pathStr)}</span>
-                                        <button type="button" class="btn small-btn btn-open-in-vscode" data-path="${escapeHtml(pathStr)}" style="background: rgba(78,201,176,0.15); border: 1px solid rgba(78,201,176,0.4); border-radius: 4px; cursor: pointer; font-size: 11px; padding: 4px 10px; color: #4ec9b0;">🖼️ Open in Texture Viewer</button>
+                                        <span class="snapshot-status-lbl" style="color: var(--text-muted); font-size: 11px; word-break: break-all;">Rendering Godot live snapshot...</span>
+                                        <button type="button" class="btn small-btn btn-open-in-vscode" data-path="${escapeHtml(pathStr)}" style="background: rgba(78,201,176,0.15); border: 1px solid rgba(78,201,176,0.4); border-radius: 4px; cursor: pointer; font-size: 11px; padding: 4px 10px; color: #4ec9b0;">🖼️ Open in Texture Viewer Extension</button>
                                     </div>`;
                                 previewContainer.querySelector('.btn-open-in-vscode').addEventListener('click', () => {
                                     vscode.postMessage({ type: 'openFile', path: pathStr });
                                 });
                             } else {
-                                // Raw PNG/other image formats for textures — render inline
                                 previewContainer.innerHTML = `<img src="${fileUri}" style="max-width: 250px; max-height: 150px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" />`;
                             }
                         } else if (cat === 'sfx' || cat === 'music') {
                             previewContainer.innerHTML = `<audio controls src="${fileUri}" style="width: 100%; max-width: 250px;"></audio>`;
                         } else if (cat === 'glb') {
-                            // GLB files cannot render natively in a webview — open via installed OHZI GLB Viewer extension
+                            // Request snapshot via HTTP REST API from Godot host
+                            const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
+                            fetch(`http://127.0.0.1:${ipcPort}/api/`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ action: 'generateSnapshot', filePath: pathStr, requestId: reqId })
+                            }).then(res => res.json()).then(msg => {
+                                if (msg && msg.base64) {
+                                    previewContainer.innerHTML = `<img src="data:image/png;base64,${msg.base64}" style="max-width: 256px; max-height: 256px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" title="Godot Live Snapshot (256x256)" />`;
+                                }
+                            }).catch(err => {
+                                console.warn('REST IPC snapshot fetch error:', err);
+                            });
+
                             previewContainer.innerHTML = `
                                 <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
-                                    <span style="color: var(--text-muted); font-size: 11px; word-break: break-all;">${escapeHtml(pathStr)}</span>
-                                    <button type="button" class="btn small-btn btn-open-in-vscode" data-path="${escapeHtml(pathStr)}" style="background: rgba(120,120,255,0.15); border: 1px solid rgba(120,120,255,0.4); border-radius: 4px; cursor: pointer; font-size: 11px; padding: 4px 10px; color: #9c9cff;">📦 Open in GLB Viewer</button>
+                                    <span class="snapshot-status-lbl" style="color: var(--text-muted); font-size: 11px; word-break: break-all;">Rendering Godot live 3D snapshot...</span>
+                                    <button type="button" class="btn small-btn btn-open-in-vscode" data-path="${escapeHtml(pathStr)}" style="background: rgba(120,120,255,0.15); border: 1px solid rgba(120,120,255,0.4); border-radius: 4px; cursor: pointer; font-size: 11px; padding: 4px 10px; color: #9c9cff;">📦 Open in GLB Viewer Extension</button>
                                 </div>`;
                             previewContainer.querySelector('.btn-open-in-vscode').addEventListener('click', () => {
                                 vscode.postMessage({ type: 'openFile', path: pathStr });
@@ -4010,6 +4090,9 @@
                     }
                 };
                 window.addEventListener('message', handleResult);
+                if (window.chrome && window.chrome.webview) {
+                    window.chrome.webview.addEventListener('message', handleResult);
+                }
                 vscode.postMessage({
                     type: 'resolvePath',
                     requestId: reqId,

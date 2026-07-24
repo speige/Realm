@@ -405,10 +405,173 @@ public class VSCodeManager
 			_vscodeProcess.Start();
 			AddProcessToJob(_vscodeProcess);
 			GD.Print("VS Code server started successfully.");
+
+			StartIpcHttpListener();
 		}
 		catch (Exception ex)
 		{
 			GD.PrintErr("Failed to start VS Code server: " + ex.Message);
+		}
+	}
+
+	private int _ipcHttpPort = 8092;
+
+	private async void StartIpcHttpListener()
+	{
+		try
+		{
+			var listener = new System.Net.HttpListener();
+			try
+			{
+				listener.Prefixes.Add($"http://127.0.0.1:{_ipcHttpPort}/api/");
+				listener.Start();
+			}
+			catch
+			{
+				_ipcHttpPort = 8093;
+				listener = new System.Net.HttpListener();
+				listener.Prefixes.Add($"http://127.0.0.1:{_ipcHttpPort}/api/");
+				listener.Start();
+			}
+			GD.Print($"[VSCodeManager] HTTP IPC bridge listening on http://127.0.0.1:{_ipcHttpPort}/api/");
+
+			while (true)
+			{
+				var ctx = await listener.GetContextAsync();
+				_ = System.Threading.Tasks.Task.Run(() =>
+				{
+					HandleIpcHttpRequest(ctx);
+				});
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[VSCodeManager] HTTP IPC bridge error: {ex.Message}");
+		}
+	}
+
+	private async void HandleIpcHttpRequest(System.Net.HttpListenerContext ctx)
+	{
+		try
+		{
+			ctx.Response.Headers.Add("Access-Control-Allow-Origin", "*");
+			ctx.Response.Headers.Add("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+			ctx.Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type");
+
+			if (ctx.Request.HttpMethod == "OPTIONS")
+			{
+				ctx.Response.StatusCode = 200;
+				ctx.Response.Close();
+				return;
+			}
+
+			using var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding);
+			string body = await reader.ReadToEndAsync();
+			var node = System.Text.Json.Nodes.JsonNode.Parse(body);
+			string action = node?["action"]?.ToString() ?? node?["type"]?.ToString();
+
+			var responseObj = new System.Text.Json.Nodes.JsonObject();
+
+			if (action == "generateSnapshot")
+			{
+				string filePath = node["filePath"]?.ToString();
+				string requestId = node["requestId"]?.ToString();
+
+				string base64Png = "";
+				var tcs = new System.Threading.Tasks.TaskCompletionSource<string>();
+				Callable.From(async () =>
+				{
+					try
+					{
+						string b64 = "";
+						if (MapEditorHUD.Instance != null)
+						{
+							b64 = await MapEditorHUD.Instance.GenerateAssetSnapshotBase64(filePath);
+						}
+						tcs.TrySetResult(b64);
+					}
+					catch (Exception ex)
+					{
+						GD.PrintErr($"[VSCodeManager] GenerateAssetSnapshotBase64 error: {ex.Message}");
+						tcs.TrySetResult("");
+					}
+				}).CallDeferred();
+
+				base64Png = await tcs.Task;
+
+				responseObj["action"] = "snapshotResult";
+				responseObj["type"] = "snapshotResult";
+				responseObj["requestId"] = requestId;
+				responseObj["filePath"] = filePath;
+				responseObj["base64"] = base64Png;
+			}
+			else if (action == "processRawTexture")
+			{
+				string rawPngPath = node["rawPngPath"]?.ToString();
+				string rawBase64 = node["rawBase64"]?.ToString();
+				string outputKtx2Path = node["outputKtx2Path"]?.ToString();
+				string swatchName = node["swatchName"]?.ToString();
+				string requestId = node["requestId"]?.ToString();
+
+				bool success = false;
+				string errorMsg = "";
+
+				try
+				{
+					string targetPngPath = rawPngPath;
+					if (string.IsNullOrEmpty(targetPngPath) && !string.IsNullOrEmpty(rawBase64))
+					{
+						byte[] pngBytes = Convert.FromBase64String(rawBase64);
+						targetPngPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"realm_tx_{swatchName}_{DateTime.Now.Ticks}.png");
+						System.IO.File.WriteAllBytes(targetPngPath, pngBytes);
+					}
+
+					if (!string.IsNullOrEmpty(targetPngPath) && !string.IsNullOrEmpty(outputKtx2Path))
+					{
+						var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+						string innerErr = "";
+						Callable.From(() =>
+						{
+							try
+							{
+								MapEditorHUD.Instance?.ConvertRawTextureDirect(targetPngPath, outputKtx2Path, swatchName);
+								tcs.TrySetResult(System.IO.File.Exists(outputKtx2Path));
+							}
+							catch (Exception ex)
+							{
+								innerErr = ex.Message;
+								GD.PrintErr($"[VSCodeManager] ConvertRawTextureDirect error: {ex.Message}");
+								tcs.TrySetResult(false);
+							}
+						}).CallDeferred();
+
+						success = await tcs.Task;
+						if (!success && !string.IsNullOrEmpty(innerErr)) errorMsg = innerErr;
+					}
+				}
+				catch (Exception ex)
+				{
+					errorMsg = ex.Message;
+				}
+
+				responseObj["action"] = "processRawTextureResult";
+				responseObj["type"] = "processRawTextureResult";
+				responseObj["requestId"] = requestId;
+				responseObj["success"] = success;
+				responseObj["error"] = errorMsg;
+			}
+
+			string resJson = responseObj.ToJsonString();
+			byte[] resBytes = System.Text.Encoding.UTF8.GetBytes(resJson);
+			ctx.Response.ContentType = "application/json";
+			ctx.Response.ContentLength64 = resBytes.Length;
+			await ctx.Response.OutputStream.WriteAsync(resBytes, 0, resBytes.Length);
+			ctx.Response.Close();
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[VSCodeManager] HandleIpcHttpRequest error: {ex.Message}");
+			try { ctx.Response.StatusCode = 500; ctx.Response.Close(); } catch { }
 		}
 	}
 
@@ -515,33 +678,6 @@ public class VSCodeManager
 			var env = await CoreWebView2Environment.CreateAsync(userDataFolder: cachePath);
 			_controller = await env.CreateCoreWebView2ControllerAsync(_childHwnd);
 			_controller.Bounds = new System.Drawing.Rectangle(0, 0, 800, 600);
-			
-			_controller.CoreWebView2.WebMessageReceived += (sender, args) =>
-			{
-				try
-				{
-					string messageJson = args.TryGetWebMessageAsString();
-					if (string.IsNullOrEmpty(messageJson)) return;
-					var node = System.Text.Json.Nodes.JsonNode.Parse(messageJson);
-					if (node == null) return;
-					string action = node["action"]?.ToString();
-					if (action == "processRawTexture")
-					{
-						string rawPngPath = node["rawPngPath"]?.ToString();
-						string outputKtx2Path = node["outputKtx2Path"]?.ToString();
-						string swatchName = node["swatchName"]?.ToString();
-						if (!string.IsNullOrEmpty(rawPngPath) && !string.IsNullOrEmpty(outputKtx2Path))
-						{
-							MapEditorHUD.Instance?.ConvertRawTextureDirect(rawPngPath, outputKtx2Path, swatchName);
-						}
-					}
-				}
-				catch (Exception ex)
-				{
-					GD.PrintErr($"VSCodeManager WebMessageReceived error: {ex.Message}");
-				}
-			};
-
 			_controller.AcceleratorKeyPressed += (sender, args) =>
 			{
 				if (args.VirtualKey == 0x73) // VK_F4
@@ -557,6 +693,17 @@ public class VSCodeManager
 						PostMessage(_childHwnd, WM_WAKEUP, IntPtr.Zero, IntPtr.Zero);
 					}
 				}
+				else if (args.VirtualKey == 0x7B) // VK_F12
+				{
+					if (args.KeyEventKind == CoreWebView2KeyEventKind.KeyDown)
+					{
+						args.Handled = true;
+						_actionQueue.Enqueue(() =>
+						{
+							_controller?.CoreWebView2?.OpenDevToolsWindow();
+						});
+					}
+				}
 			};
 			
 			string mapFolderRaw = GetMapFolderToOpen(projectRoot);
@@ -567,7 +714,7 @@ public class VSCodeManager
 			string unitsPath = FormatWinPathForUrl(unitsPathRaw);
 			string scriptPath = FormatWinPathForUrl(scriptPathRaw);
 			
-			string targetUrl = $"http://127.0.0.1:{_vscodePort}/?folder={Uri.EscapeDataString(mapFolder)}";
+			string targetUrl = $"http://127.0.0.1:{_vscodePort}/?folder={Uri.EscapeDataString(mapFolder)}&ipcPort={_ipcHttpPort}";
 
 			_controller.CoreWebView2.NavigationCompleted += async (sender, args) =>
 			{

@@ -81,6 +81,12 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         await this.processImportedAssetFile(webviewPanel.webview, e.fileName || e.filePath, e.fileDataBase64, e.assetType, e.options, document);
                     }
                     break;
+                case 'migrateAsset':
+                    await this.handleMigrateAsset(e.fromCategory, e.fromSubCategory, e.key, e.toCategory, e.toSubCategory, document);
+                    break;
+                case 'openDevTools':
+                    vscode.commands.executeCommand('workbench.action.webview.openDeveloperTools');
+                    break;
             }
         });
     }
@@ -252,7 +258,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 if (!metadata.Assets) metadata.Assets = {};
                 if (!metadata.Assets.textures) metadata.Assets.textures = {};
 
-                // Ensure unique name if swatchName already exists
                 let finalSwatchName = swatchName;
                 let counter = 1;
                 while (metadata.Assets.textures[finalSwatchName + '.ktx2']) {
@@ -263,42 +268,90 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 const subDir = path.join(targetDir, 'Assets', 'textures');
                 if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
 
-                const os = require('os');
-                const tempPngPath = path.join(os.tmpdir(), `realm_import_${finalSwatchName}_${Date.now()}.png`);
-                fs.writeFileSync(tempPngPath, fileBytes);
-
                 const outputKtx2Path = path.join(subDir, `${finalSwatchName}.ktx2`);
+                const reqId = 'tx_conv_' + Math.random().toString(36).substring(2, 9);
+                const fileBase64 = fileBytes.toString('base64');
 
-                // Post direct IPC message to Godot host via WebView2
-                webview.postMessage({
-                    type: 'godotIpc',
-                    action: 'processRawTexture',
-                    rawPngPath: tempPngPath,
-                    outputKtx2Path: outputKtx2Path,
-                    swatchName: finalSwatchName
+                // Async IPC event promise waiting for Godot's processRawTextureResult response
+                const conversionResult = await new Promise<{ success: boolean; error?: string }>(async (resolve) => {
+                    // Try direct REST HTTP call to Godot IPC listener first (bypasses iframe webview sandbox limits)
+                    try {
+                        const http = require('http');
+                        const postData = JSON.stringify({
+                            action: 'processRawTexture',
+                            requestId: reqId,
+                            rawBase64: fileBase64,
+                            outputKtx2Path: outputKtx2Path,
+                            swatchName: finalSwatchName
+                        });
+
+                        // Check url query param or fallback ports 8092/8093
+                        const req = http.request({
+                            hostname: '127.0.0.1',
+                            port: 8092,
+                            path: '/api/',
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Content-Length': Buffer.byteLength(postData)
+                            },
+                            timeout: 5000
+                        }, (res: any) => {
+                            let data = '';
+                            res.on('data', (chunk: any) => { data += chunk; });
+                            res.on('end', () => {
+                                try {
+                                    const parsed = JSON.parse(data);
+                                    resolve({ success: !!parsed.success, error: parsed.error });
+                                } catch {
+                                    resolve({ success: false, error: 'Invalid JSON response from Godot REST API' });
+                                }
+                            });
+                        });
+                        req.on('error', () => {
+                            // Fallback to webview postMessage bridge if HTTP listener on 8092 is not reachable
+                            fallbackWebviewIpc();
+                        });
+                        req.write(postData);
+                        req.end();
+                        return;
+                    } catch {
+                        fallbackWebviewIpc();
+                    }
+
+                    function fallbackWebviewIpc() {
+                        const timeout = setTimeout(() => {
+                            webviewSubscription.dispose();
+                            resolve({ success: false, error: 'Conversion request timed out (5s).' });
+                        }, 5000);
+
+                        const webviewSubscription = webview.onDidReceiveMessage((msg: any) => {
+                            if ((msg.action === 'processRawTextureResult' || msg.type === 'processRawTextureResult') && (msg.requestId === reqId || msg.swatchName === finalSwatchName)) {
+                                clearTimeout(timeout);
+                                webviewSubscription.dispose();
+                                resolve({ success: !!msg.success, error: msg.error });
+                            }
+                        });
+
+                        webview.postMessage({
+                            type: 'godotIpc',
+                            action: 'processRawTexture',
+                            requestId: reqId,
+                            rawBase64: fileBase64,
+                            outputKtx2Path: outputKtx2Path,
+                            swatchName: finalSwatchName
+                        });
+                    }
                 });
 
-                // Wait for Godot Map Editor to run EditableTerrain.ProcessAndSaveRawTexture
-                let conversionSuccess = false;
-                for (let i = 0; i < 30; i++) {
-                    if (fs.existsSync(outputKtx2Path)) {
-                        conversionSuccess = true;
-                        break;
-                    }
-                    await new Promise(res => setTimeout(res, 200));
-                }
-
-                if (fs.existsSync(tempPngPath)) {
-                    try { fs.unlinkSync(tempPngPath); } catch {}
-                }
-
-                if (conversionSuccess && fs.existsSync(outputKtx2Path)) {
+                if (conversionResult.success && fs.existsSync(outputKtx2Path)) {
                     const ktx2Bytes = fs.readFileSync(outputKtx2Path);
                     const ktx2Hash = this.computeHashHex(ktx2Bytes);
                     metadata.Assets.textures[finalSwatchName + '.ktx2'] = ktx2Hash;
                     vscode.window.showInformationMessage(`Imported Texture (${finalSwatchName}.ktx2) successfully.`);
                 } else {
-                    vscode.window.showErrorMessage(`Failed to convert texture (${finalSwatchName}) to KTX2. Ensure Godot map editor is running or ktx_tools is installed.`);
+                    const errDetail = conversionResult.error ? `: ${conversionResult.error}` : '.';
+                    vscode.window.showErrorMessage(`Failed to convert texture (${finalSwatchName}) to KTX2${errDetail}`);
                     return;
                 }
             }
@@ -344,6 +397,89 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             await this.updateTextDocument(document, JSON.stringify(freshMetadata, null, 2));
         } catch (err: any) {
             vscode.window.showErrorMessage(`Failed to import asset: ${err.message}`);
+        }
+    }
+
+    private async handleMigrateAsset(
+        fromCategory: string,
+        fromSubCategory: string | undefined,
+        key: string,
+        toCategory: string,
+        toSubCategory: string | undefined,
+        document: vscode.TextDocument
+    ) {
+        try {
+            const targetDir = this.lastOpenedDirectory || path.dirname(document.uri.fsPath);
+            
+            // Helper to get directory path for a category & subcategory
+            const getRelPath = (cat: string, subCat?: string) => {
+                if (cat === 'glb') return path.join('Assets', 'models', (subCat || 'props').toLowerCase());
+                if (cat === 'decals') return path.join('Assets', 'decals');
+                if (cat === 'icons') return path.join('Assets', 'icons');
+                if (cat === 'skyboxes') return path.join('Assets', 'skyboxes');
+                if (cat === 'sfx') return path.join('Assets', 'audio', 'sfx');
+                if (cat === 'music') return path.join('Assets', 'audio', 'music');
+                if (cat === 'vfx_spritesheets') return path.join('Assets', 'vfx');
+                if (cat === 'textures') return path.join('Assets', 'textures');
+                return path.join('Assets', cat);
+            };
+
+            const srcRel = getRelPath(fromCategory, fromSubCategory);
+            const dstRel = getRelPath(toCategory, toSubCategory);
+            const srcAbs = path.join(targetDir, srcRel, key);
+            const dstAbs = path.join(targetDir, dstRel, key);
+
+            // Move file on disk if it exists
+            if (fs.existsSync(srcAbs)) {
+                if (!fs.existsSync(path.dirname(dstAbs))) {
+                    fs.mkdirSync(path.dirname(dstAbs), { recursive: true });
+                }
+                fs.renameSync(srcAbs, dstAbs);
+            }
+
+            // Update JSON document
+            const text = document.getText();
+            let metadata: any = {};
+            if (text.trim()) {
+                try { metadata = JSON.parse(text); } catch {}
+            }
+            if (!metadata.Assets) metadata.Assets = {};
+
+            // Remove old reference
+            let itemVal: any = null;
+            if (fromCategory === 'glb') {
+                if (metadata.Assets.glb && fromSubCategory && metadata.Assets.glb[fromSubCategory]) {
+                    itemVal = metadata.Assets.glb[fromSubCategory][key];
+                    delete metadata.Assets.glb[fromSubCategory][key];
+                    if (Object.keys(metadata.Assets.glb[fromSubCategory]).length === 0) {
+                        delete metadata.Assets.glb[fromSubCategory];
+                    }
+                }
+            } else {
+                if (metadata.Assets[fromCategory]) {
+                    itemVal = metadata.Assets[fromCategory][key];
+                    delete metadata.Assets[fromCategory][key];
+                    if (Object.keys(metadata.Assets[fromCategory]).length === 0) {
+                        delete metadata.Assets[fromCategory];
+                    }
+                }
+            }
+
+            // Insert into new reference
+            if (toCategory === 'glb') {
+                const subCat = (toSubCategory || 'props').toLowerCase();
+                if (!metadata.Assets.glb) metadata.Assets.glb = {};
+                if (!metadata.Assets.glb[subCat]) metadata.Assets.glb[subCat] = {};
+                metadata.Assets.glb[subCat][key] = itemVal || 'hash';
+            } else {
+                if (!metadata.Assets[toCategory]) metadata.Assets[toCategory] = {};
+                metadata.Assets[toCategory][key] = itemVal || 'hash';
+            }
+
+            await this.updateTextDocument(document, JSON.stringify(metadata, null, 2));
+            vscode.window.showInformationMessage(`Migrated asset '${key}' to ${toCategory}${toSubCategory ? '/' + toSubCategory : ''}`);
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`Failed to migrate asset: ${err.message}`);
         }
     }
 
@@ -467,7 +603,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src http://127.0.0.1:* http://localhost:*; img-src ${webview.cspSource} data: https:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="${styleUri}" rel="stylesheet" />
     <title>Realm Map Editor</title>
@@ -493,6 +629,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 <button type="button" id="toggle-lock-btn" class="btn secondary-btn small-btn" title="Lock Editor (Read-Only Mode)">🔓 Lock</button>
                 <button type="button" id="toggle-buttons-btn" class="btn secondary-btn small-btn" title="Toggle Add/Delete Controls">➕ Edit Ops</button>
                 <button type="button" id="toggle-debug-btn" class="btn secondary-btn small-btn" title="Toggle Debug JSON View">🐞 Debug</button>
+                <span style="font-size: 11px; color: var(--text-muted); opacity: 0.8; margin-left: 4px;" title="Press F12 inside editor to open Chromium DevTools console for debugging">💡 F12 DevTools</span>
             </div>
         </div>
         <div class="editor-body">
