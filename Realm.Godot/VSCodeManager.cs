@@ -382,6 +382,8 @@ public class VSCodeManager
 				return;
 			}
 
+			EnsureWorkspaceMapApiDll(projectRoot);
+
 			string serverDataDir = Path.Combine(embedDir, "user-data-dir");
 			string extensionsDir = Path.Combine(serverDataDir, "extensions");
 
@@ -411,6 +413,27 @@ public class VSCodeManager
 		catch (Exception ex)
 		{
 			GD.PrintErr("Failed to start VS Code server: " + ex.Message);
+		}
+	}
+
+	private void EnsureWorkspaceMapApiDll(string projectRoot)
+	{
+		try
+		{
+			string mapFolderRaw = GetMapFolderToOpen(projectRoot);
+			if (!string.IsNullOrEmpty(mapFolderRaw) && Directory.Exists(mapFolderRaw))
+			{
+				string libDir = Path.Combine(mapFolderRaw, "lib");
+				if (!File.Exists(Path.Combine(libDir, "Realm.MapAPI.dll")))
+				{
+					GD.Print("Realm.MapAPI.dll missing in workspace. Running EnsureMapProjectFiles...");
+					GameHost.EnsureMapProjectFiles(mapFolderRaw);
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"Failed to ensure Realm.MapAPI.dll in workspace: {ex.Message}");
 		}
 	}
 
