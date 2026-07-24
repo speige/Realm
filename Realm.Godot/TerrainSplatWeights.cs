@@ -140,7 +140,7 @@ public struct TerrainSplatWeights : IEquatable<TerrainSplatWeights>
 
     public string Serialize()
     {
-        return $"{Index0},{Index1},{Index2},{Index3},{Weight0:F4},{Weight1:F4},{Weight2:F4},{Weight3:F4}";
+        return string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0},{1},{2},{3},{4:F4},{5:F4},{6:F4},{7:F4}", Index0, Index1, Index2, Index3, Weight0, Weight1, Weight2, Weight3);
     }
 
     public static TerrainSplatWeights Deserialize(ReadOnlySpan<char> span)
