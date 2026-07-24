@@ -362,7 +362,7 @@
                 assetInput.addEventListener('change', () => {
                     if (assetInput.files && assetInput.files[0]) {
                         const selectedFile = assetInput.files[0];
-                        if (message.assetType === 'vfx' || message.assetType === 'decal') {
+                        if (message.assetType === 'vfx') {
                             const img = new Image();
                             const url = URL.createObjectURL(selectedFile);
                             img.onload = () => {
@@ -425,6 +425,13 @@
                 });
                 document.body.appendChild(assetInput);
                 assetInput.click();
+                break;
+            case 'godotIpc':
+                if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+                    window.chrome.webview.postMessage(JSON.stringify(message));
+                } else if (window.parent && typeof window.parent.postMessage === 'function') {
+                    window.parent.postMessage(JSON.stringify(message), '*');
+                }
                 break;
             case 'resolvePathResult':
                 const callback = resolveCallbacks[message.requestId];

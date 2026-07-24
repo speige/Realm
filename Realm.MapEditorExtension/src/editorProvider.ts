@@ -78,7 +78,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     break;
                 case 'processImportedAsset':
                     if (e.fileName || e.filePath) {
-                        await this.processImportedAssetFile(e.fileName || e.filePath, e.fileDataBase64, e.assetType, e.options, document);
+                        await this.processImportedAssetFile(webviewPanel.webview, e.fileName || e.filePath, e.fileDataBase64, e.assetType, e.options, document);
                     }
                     break;
             }
@@ -142,6 +142,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     private async processImportedAssetFile(
+        webview: vscode.Webview,
         sourceFileOrName: string,
         fileDataBase64: string | undefined,
         assetType: string,
@@ -261,12 +262,45 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
 
                 const subDir = path.join(targetDir, 'Assets', 'textures');
                 if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
-                const targetRawPng = path.join(subDir, `_temp_import_${finalSwatchName}.png`);
-                fs.writeFileSync(targetRawPng, fileBytes);
 
-                const blake3 = this.computeHashHex(fileBytes);
-                metadata.Assets.textures[finalSwatchName + '.ktx2'] = blake3;
-                vscode.window.showInformationMessage(`Imported Texture (${finalSwatchName}). Godot converts raw texture to PBR KTX2.`);
+                const os = require('os');
+                const tempPngPath = path.join(os.tmpdir(), `realm_import_${finalSwatchName}_${Date.now()}.png`);
+                fs.writeFileSync(tempPngPath, fileBytes);
+
+                const outputKtx2Path = path.join(subDir, `${finalSwatchName}.ktx2`);
+
+                // Post direct IPC message to Godot host via WebView2
+                webview.postMessage({
+                    type: 'godotIpc',
+                    action: 'processRawTexture',
+                    rawPngPath: tempPngPath,
+                    outputKtx2Path: outputKtx2Path,
+                    swatchName: finalSwatchName
+                });
+
+                // Wait for Godot Map Editor to run EditableTerrain.ProcessAndSaveRawTexture
+                let conversionSuccess = false;
+                for (let i = 0; i < 30; i++) {
+                    if (fs.existsSync(outputKtx2Path)) {
+                        conversionSuccess = true;
+                        break;
+                    }
+                    await new Promise(res => setTimeout(res, 200));
+                }
+
+                if (fs.existsSync(tempPngPath)) {
+                    try { fs.unlinkSync(tempPngPath); } catch {}
+                }
+
+                if (conversionSuccess && fs.existsSync(outputKtx2Path)) {
+                    const ktx2Bytes = fs.readFileSync(outputKtx2Path);
+                    const ktx2Hash = this.computeHashHex(ktx2Bytes);
+                    metadata.Assets.textures[finalSwatchName + '.ktx2'] = ktx2Hash;
+                    vscode.window.showInformationMessage(`Imported Texture (${finalSwatchName}.ktx2) successfully.`);
+                } else {
+                    vscode.window.showErrorMessage(`Failed to convert texture (${finalSwatchName}) to KTX2. Ensure Godot map editor is running or ktx_tools is installed.`);
+                    return;
+                }
             }
 
             // Fix race condition: re-read document text AFTER slow file I/O operations
@@ -1015,7 +1049,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import a custom terrain texture image. It will append as a new paint swatch and be converted into PBR KTX2 format with normal & AO maps.</p>
                         <div class="form-row">
                             <div class="form-group">
-                                <button type="button" id="btn-import-texture" class="btn primary-btn">📥 Import Custom Texture...</button>
+                                <button type="button" id="btn-import-texture" class="btn primary-btn">📥 Import Custom Texture</button>
                             </div>
                         </div>
                     </div>
@@ -1034,7 +1068,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                                 </select>
                             </div>
                             <div class="form-group" style="display: flex; align-items: flex-end;">
-                                <button type="button" id="btn-import-glb" class="btn secondary-btn">📥 Import GLB Model...</button>
+                                <button type="button" id="btn-import-glb" class="btn secondary-btn">📥 Import 3D Model</button>
                             </div>
                         </div>
                     </div>
@@ -1043,7 +1077,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         <h3>🌌 Import Skybox Panoramic Image</h3>
                         <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import a 360-degree panoramic HDRI / skybox image (PNG, JPG, EXR, HDR, etc.). Image will convert to PNG format for Godot world environment rendering.</p>
                         <div class="form-row">
-                            <button type="button" id="btn-import-skybox" class="btn secondary-btn">📥 Import Skybox Image...</button>
+                            <button type="button" id="btn-import-skybox" class="btn secondary-btn">📥 Import Skybox</button>
                         </div>
                     </div>
 
@@ -1051,8 +1085,8 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         <h3>🖼️ Import Decal & 2D Icon</h3>
                         <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import decal and UI icon images (PNG, JPG, BMP, etc.). Image will automatically convert to lossless PNG format.</p>
                         <div class="form-row" style="gap: 16px;">
-                            <button type="button" id="btn-import-decal" class="btn secondary-btn">📥 Import PNG Decal...</button>
-                            <button type="button" id="btn-import-icon" class="btn secondary-btn">📥 Import 2D Icon...</button>
+                            <button type="button" id="btn-import-decal" class="btn secondary-btn">📥 Import Decal</button>
+                            <button type="button" id="btn-import-icon" class="btn secondary-btn">📥 Import Icon</button>
                         </div>
                     </div>
 
@@ -1069,7 +1103,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                                 <input type="number" id="vfx-rows-input" value="4" min="1" max="64" />
                             </div>
                             <div class="form-group" style="display: flex; align-items: flex-end;">
-                                <button type="button" id="btn-import-vfx" class="btn secondary-btn">📥 Import VFX Spritesheet...</button>
+                                <button type="button" id="btn-import-vfx" class="btn secondary-btn">📥 Import VFX Spritesheet</button>
                             </div>
                         </div>
                     </div>
@@ -1086,7 +1120,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                                 </select>
                             </div>
                             <div class="form-group" style="display: flex; align-items: flex-end;">
-                                <button type="button" id="btn-import-audio" class="btn secondary-btn">📥 Import Audio File...</button>
+                                <button type="button" id="btn-import-audio" class="btn secondary-btn">📥 Import Audio File</button>
                             </div>
                         </div>
                     </div>

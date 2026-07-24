@@ -516,6 +516,32 @@ public class VSCodeManager
 			_controller = await env.CreateCoreWebView2ControllerAsync(_childHwnd);
 			_controller.Bounds = new System.Drawing.Rectangle(0, 0, 800, 600);
 			
+			_controller.CoreWebView2.WebMessageReceived += (sender, args) =>
+			{
+				try
+				{
+					string messageJson = args.TryGetWebMessageAsString();
+					if (string.IsNullOrEmpty(messageJson)) return;
+					var node = System.Text.Json.Nodes.JsonNode.Parse(messageJson);
+					if (node == null) return;
+					string action = node["action"]?.ToString();
+					if (action == "processRawTexture")
+					{
+						string rawPngPath = node["rawPngPath"]?.ToString();
+						string outputKtx2Path = node["outputKtx2Path"]?.ToString();
+						string swatchName = node["swatchName"]?.ToString();
+						if (!string.IsNullOrEmpty(rawPngPath) && !string.IsNullOrEmpty(outputKtx2Path))
+						{
+							MapEditorHUD.Instance?.ConvertRawTextureDirect(rawPngPath, outputKtx2Path, swatchName);
+						}
+					}
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"VSCodeManager WebMessageReceived error: {ex.Message}");
+				}
+			};
+
 			_controller.AcceleratorKeyPressed += (sender, args) =>
 			{
 				if (args.VirtualKey == 0x73) // VK_F4
@@ -541,8 +567,7 @@ public class VSCodeManager
 			string unitsPath = FormatWinPathForUrl(unitsPathRaw);
 			string scriptPath = FormatWinPathForUrl(scriptPathRaw);
 			
-			string payload = MapWorkspaceService.BuildPayload(mapFolderRaw);
-			string targetUrl = $"http://127.0.0.1:{_vscodePort}/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString(payload)}";
+			string targetUrl = $"http://127.0.0.1:{_vscodePort}/?folder={Uri.EscapeDataString(mapFolder)}";
 
 			_controller.CoreWebView2.NavigationCompleted += async (sender, args) =>
 			{
@@ -687,8 +712,7 @@ public class VSCodeManager
 				string projectRoot = ProjectSettings.GlobalizePath("res://");
 				string mapFolderRaw = GetMapFolderToOpen(projectRoot);
 				string mapFolder = FormatWinPathForUrl(mapFolderRaw);
-				string payload = MapWorkspaceService.BuildPayload(mapFolderRaw);
-				string targetUrl = $"http://127.0.0.1:{_vscodePort}/?folder={Uri.EscapeDataString(mapFolder)}&payload={Uri.EscapeDataString(payload)}";
+				string targetUrl = $"http://127.0.0.1:{_vscodePort}/?folder={Uri.EscapeDataString(mapFolder)}";
 				_controller.CoreWebView2.Navigate(targetUrl);
 
 				_controller.IsVisible = true;

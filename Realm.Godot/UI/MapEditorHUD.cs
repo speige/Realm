@@ -5137,6 +5137,32 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public void ConvertRawTextureDirect(string rawPngPath, string outputKtx2Path, string swatchName)
+	{
+		try
+		{
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+			{
+				GameHost.Instance.GroundTerrain.ProcessAndSaveRawTexture(rawPngPath, outputKtx2Path);
+			}
+
+			if (System.IO.File.Exists(outputKtx2Path))
+			{
+				ReadMetadataAndRefreshTextures();
+				ShowFeedback($"Successfully processed & imported KTX2 texture for {swatchName}!");
+			}
+			else
+			{
+				ShowFeedback($"Failed to generate KTX2 texture at {outputKtx2Path}");
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ConvertRawTextureDirect error: {ex.Message}");
+			ShowFeedback($"Failed to import texture: {ex.Message}");
+		}
+	}
+
 	public void ReadMetadataAndRefreshTextures()
 	{
 		try
@@ -5149,42 +5175,6 @@ public partial class MapEditorHUD : Control
 
 			string texDir = System.IO.Path.Combine(wsPath, "Assets", "textures");
 			System.IO.Directory.CreateDirectory(texDir);
-
-			// Check for pending _temp_import_*.png files written by VS Code extension or web view
-			if (System.IO.Directory.Exists(wsPath))
-			{
-				string[] tempFiles = System.IO.Directory.GetFiles(wsPath, "_temp_import_*.png");
-				foreach (var rawPng in tempFiles)
-				{
-					try
-					{
-						string filename = System.IO.Path.GetFileNameWithoutExtension(rawPng);
-						string swatchName = filename.Replace("_temp_import_", "");
-						string outputKtx2 = System.IO.Path.Combine(texDir, swatchName + ".ktx2");
-
-						if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
-						{
-							GameHost.Instance.GroundTerrain.ProcessAndSaveRawTexture(rawPng, outputKtx2);
-						}
-
-						if (System.IO.File.Exists(outputKtx2))
-						{
-							byte[] ktx2Bytes = System.IO.File.ReadAllBytes(outputKtx2);
-							string blake3 = MapAssetManager.ComputeBlake3(ktx2Bytes);
-							UpdateMetadataJsonAsset("textures", swatchName + ".ktx2", blake3);
-						}
-
-						if (System.IO.File.Exists(rawPng))
-						{
-							System.IO.File.Delete(rawPng);
-						}
-					}
-					catch (Exception ex)
-					{
-						GD.PrintErr($"Failed to convert temp import PNG {rawPng} to KTX2: {ex.Message}");
-					}
-				}
-			}
 
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 			{

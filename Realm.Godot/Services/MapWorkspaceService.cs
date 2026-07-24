@@ -199,24 +199,6 @@ public static class MapWorkspaceService
 		}
 	}
 
-	public static string BuildPayload(string workspaceDir = null)
-	{
-		if (string.IsNullOrEmpty(workspaceDir))
-		{
-			workspaceDir = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-		}
-		string metaPath = Path.Combine(workspaceDir, "metadata.json").Replace("\\", "/");
-		string scriptPath = Path.Combine(workspaceDir, "MapScript.cs").Replace("\\", "/");
-		if (!metaPath.StartsWith("/")) metaPath = "/" + metaPath;
-		if (!scriptPath.StartsWith("/")) scriptPath = "/" + scriptPath;
-
-		return System.Text.Json.JsonSerializer.Serialize(new[]
-		{
-			new[] { "openFile", metaPath },
-			new[] { "openFile", scriptPath }
-		});
-	}
-
 	public static void EnsureSolutionFile(string directory, string mapName)
 	{
 		string slnPath = Path.Combine(directory, "temp_map_workspace.sln");
