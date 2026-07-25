@@ -1126,13 +1126,44 @@ public class {mapName} : IMapScript
 			sourceXml = System.IO.Path.Combine(repoRoot, "Realm.MapAPI", "bin", "Debug", "net10.0", "Realm.MapAPI.xml");
 		}
 
-		if (System.IO.File.Exists(sourceDll))
+		bool TryCopyMapApiDll(string dllPath, string xmlPath)
 		{
-			System.IO.File.Copy(sourceDll, System.IO.Path.Combine(libDir, "Realm.MapAPI.dll"), true);
+			if (System.IO.File.Exists(dllPath))
+			{
+				System.IO.File.Copy(dllPath, System.IO.Path.Combine(libDir, "Realm.MapAPI.dll"), true);
+				if (System.IO.File.Exists(xmlPath))
+					System.IO.File.Copy(xmlPath, System.IO.Path.Combine(libDir, "Realm.MapAPI.xml"), true);
+				return true;
+			}
+			return false;
 		}
-		if (System.IO.File.Exists(sourceXml))
+
+		if (!TryCopyMapApiDll(sourceDll, sourceXml))
 		{
-			System.IO.File.Copy(sourceXml, System.IO.Path.Combine(libDir, "Realm.MapAPI.xml"), true);
+			// Fallback: try from MapTemplate/lib/ (populated by post-build target in Realm.MapAPI.csproj)
+			string templateLib = System.IO.Path.Combine(templateDir, "lib");
+			string templateDll = System.IO.Path.Combine(templateLib, "Realm.MapAPI.dll");
+			string templateXml = System.IO.Path.Combine(templateLib, "Realm.MapAPI.xml");
+			if (!TryCopyMapApiDll(templateDll, templateXml))
+			{
+				// Last resort: auto-build Realm.MapAPI to generate the DLL
+				string mapApiCsproj = System.IO.Path.Combine(repoRoot, "Realm.MapAPI", "Realm.MapAPI.csproj");
+				if (System.IO.File.Exists(mapApiCsproj))
+				{
+					GD.Print("Realm.MapAPI.dll not found. Auto-building Realm.MapAPI...");
+					using var buildProcess = new System.Diagnostics.Process();
+					buildProcess.StartInfo.FileName = "dotnet";
+					buildProcess.StartInfo.Arguments = $"build \"{mapApiCsproj}\" -c Debug";
+					buildProcess.StartInfo.CreateNoWindow = true;
+					buildProcess.StartInfo.UseShellExecute = false;
+					buildProcess.Start();
+					buildProcess.WaitForExit();
+
+					sourceDll = System.IO.Path.Combine(repoRoot, "Realm.MapAPI", "bin", "Debug", "net10.0", "Realm.MapAPI.dll");
+					sourceXml = System.IO.Path.Combine(repoRoot, "Realm.MapAPI", "bin", "Debug", "net10.0", "Realm.MapAPI.xml");
+					TryCopyMapApiDll(sourceDll, sourceXml);
+				}
+			}
 		}
 
 		if (System.IO.File.Exists(templateCsprojPath))
