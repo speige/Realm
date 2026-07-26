@@ -318,6 +318,7 @@ public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLine
 	}
 
 	public TerrainSplatWeights[,] SplatMap { get; private set; }
+	public int CliffTextureIndex { get; set; } = 2;
 
 	public int[,] PathingCodes
 	{
@@ -363,8 +364,10 @@ public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLine
 		public int EndX;
 		public int EndZ;
 		public Vector3[] VerticesCache;
+		public Color[] ColorsCache;
 		public float[] TexIndicesCache;
 		public float[] TexWeightsCache01;
+		public float[] BarycentricCache;
 		public Vector3[] NormalsCache;
 		public Vector2[] UvsCache;
 		public int[] IndicesCache;
@@ -591,51 +594,32 @@ uniform vec4 grid_color_thin = vec4(1.0, 0.9, 0.0, 0.25);
 uniform float grid_spacing = 2.0;
 uniform vec2 terrain_size = vec2(1.0, 1.0);
 
+uniform float macro_scale = 0.035;
+
+uniform float uv_warp_strength = 0.8;
+uniform float macro_strength = 0.15;
+uniform float macro_wall_strength = 2.0;
+uniform float macro_wall_frequency = 4.0;
+uniform float macro_albedo_contrast = 0.20;
+uniform float macro_roughness_contrast = 0.15;
+uniform float macro_normal_strength = 0.15;
+uniform float macro_lacunarity = 2.0;
+uniform float macro_gain = 0.5;
+
+uniform bool wireframe_mode = false;
+
 varying vec4 v_tex_indices;
 varying vec4 v_tex_weights;
 varying vec3 v_world_pos;
 varying vec3 v_world_normal;
-
-void vertex() {
-	v_tex_indices = CUSTOM0;
-	v_tex_weights = CUSTOM1;
-	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	v_world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
-}
-
-vec4 sample_triplanar_array(sampler2DArray tex_array, float layer, vec3 w_pos, vec3 w_norm, float scale) {
-	vec3 abs_norm = abs(w_norm);
-	vec3 blend = pow(abs_norm, vec3(8.0));
-	blend /= max(0.00001, blend.x + blend.y + blend.z);
-	
-	float side_scale_h = scale;
-	float side_scale_v = scale;
-
-	vec2 uv_x = vec2(w_pos.z * side_scale_h, w_pos.y * side_scale_v);
-	vec2 uv_z = vec2(w_pos.x * side_scale_h, w_pos.y * side_scale_v);
-	vec2 uv_y = w_pos.xz * scale;
-
-	// Compute screen-space gradients from world position projections to avoid normal boundary mipmap collapse
-	vec2 dx_x = vec2(dFdx(w_pos.z) * side_scale_h, dFdx(w_pos.y) * side_scale_v);
-	vec2 dy_x = vec2(dFdy(w_pos.z) * side_scale_h, dFdy(w_pos.y) * side_scale_v);
-
-	vec2 dx_z = vec2(dFdx(w_pos.x) * side_scale_h, dFdx(w_pos.y) * side_scale_v);
-	vec2 dy_z = vec2(dFdy(w_pos.x) * side_scale_h, dFdy(w_pos.y) * side_scale_v);
-
-	vec2 dx_y = dFdx(w_pos.xz) * scale;
-	vec2 dy_y = dFdy(w_pos.xz) * scale;
-
-	vec4 cx = textureGrad(tex_array, vec3(uv_x, layer), dx_x, dy_x);
-	vec4 cy = textureGrad(tex_array, vec3(uv_y, layer), dx_y, dy_y);
-	vec4 cz = textureGrad(tex_array, vec3(uv_z, layer), dx_z, dy_z);
-	
-	return cx * blend.x + cy * blend.y + cz * blend.z;
-}
+varying vec3 v_barycentric;
+varying vec4 v_color;
 
 float macro_hash(vec2 p) {
-	p = fract(p * vec2(123.34, 456.21));
-	p += dot(p, p + 45.32);
-	return fract(p.x * p.y);
+	uvec2 q = uvec2(ivec2(p));
+	q = q * uvec2(1597334677u, 3812015801u);
+	uint n = (q.x ^ q.y) * 1597334677u;
+	return float(n) * (1.0 / 4294967295.0);
 }
 
 float macro_noise(vec2 p) {
@@ -652,21 +636,57 @@ float macro_noise(vec2 p) {
 float macro_fbm(vec2 p) {
 	float v = 0.0;
 	float a = 0.5;
+	//macro_octaves hard-coded to 3
+	vec2 shift = vec2(100.0);
 	for (int i = 0; i < 3; i++) {
 		v += a * macro_noise(p);
-		p *= 2.0;
-		a *= 0.5;
+		p = p * macro_lacunarity + shift;
+		a *= macro_gain;
 	}
 	return v;
 }
 
-void fragment() {
-	float tri_scale = 0.25;
+vec4 sample_quad_array(sampler2DArray tex_array, float layer, vec2 uv) {
+	return texture(tex_array, vec3(uv, layer));
+}
 
-	vec4 c0 = sample_triplanar_array(terrain_textures, round(v_tex_indices.x), v_world_pos, v_world_normal, tri_scale);
-	vec4 c1 = sample_triplanar_array(terrain_textures, round(v_tex_indices.y), v_world_pos, v_world_normal, tri_scale);
-	vec4 c2 = sample_triplanar_array(terrain_textures, round(v_tex_indices.z), v_world_pos, v_world_normal, tri_scale);
-	vec4 c3 = sample_triplanar_array(terrain_textures, round(v_tex_indices.w), v_world_pos, v_world_normal, tri_scale);
+void vertex() {
+	v_tex_indices = CUSTOM0;
+	v_tex_weights = CUSTOM1;
+	v_barycentric = CUSTOM2.xyz;
+	v_color = COLOR;
+	
+	vec3 local_norm = normalize(NORMAL);
+	v_world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+
+	if (macro_strength > 0.0) {
+		vec3 fbm_sample_pos = vec3(v_world_pos.x + v_world_pos.y * macro_wall_frequency, v_world_pos.y, v_world_pos.z + v_world_pos.y * macro_wall_frequency);
+		float disp_fbm = (macro_fbm(fbm_sample_pos.xz * macro_scale) - 0.5) * macro_strength;
+
+		VERTEX += local_norm * disp_fbm;
+
+		v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	}
+}
+
+void fragment() {
+	vec2 quad_uv = UV;
+
+	float base_fbm_val = macro_fbm(vec2(v_world_pos.x + v_world_pos.y, v_world_pos.z + v_world_pos.y) * macro_scale);
+
+	vec2 sampled_uv = quad_uv;
+	if (uv_warp_strength > 0.0) {
+		float warp_x = (base_fbm_val - 0.5) * 2.0;
+		float warp_y = (macro_fbm((v_world_pos.xz + vec2(17.3, 31.7)) * macro_scale) - 0.5) * 2.0;
+		vec2 warp_offset = vec2(warp_x, warp_y);
+		sampled_uv += warp_offset * uv_warp_strength * 0.05;
+	}
+
+	vec4 c0 = sample_quad_array(terrain_textures, round(v_tex_indices.x), sampled_uv);
+	vec4 c1 = sample_quad_array(terrain_textures, round(v_tex_indices.y), sampled_uv);
+	vec4 c2 = sample_quad_array(terrain_textures, round(v_tex_indices.z), sampled_uv);
+	vec4 c3 = sample_quad_array(terrain_textures, round(v_tex_indices.w), sampled_uv);
 
 	float gh0 = c0.a;
 	float gh1 = c1.a;
@@ -695,12 +715,9 @@ void fragment() {
 
 	vec3 terrain_color = splat_color;
 
-	float macro_var = mix(0.80, 1.20, macro_fbm(v_world_pos.xz * 0.035));
-	float wall_mask = clamp(1.0 - abs(v_world_normal.y), 0.0, 1.0);
-	float wall_macro = mix(0.82, 1.18, macro_fbm(vec2(v_world_pos.x + v_world_pos.z, v_world_pos.y) * 0.05));
-	macro_var = mix(macro_var, wall_macro, wall_mask);
+	float macro_var = mix(1.0 - macro_albedo_contrast, 1.0 + macro_albedo_contrast, base_fbm_val);
 
-	vec3 final_albedo = terrain_color * macro_var;
+	vec3 final_albedo = terrain_color * macro_var * v_color.rgb;
 	vec3 emission_color = vec3(0.0);
 	
 	if (pathing_visible) {
@@ -769,10 +786,10 @@ void fragment() {
 		}
 	}
 
-	vec4 n0 = sample_triplanar_array(terrain_normals_pbr, v_tex_indices.x, v_world_pos, v_world_normal, tri_scale);
-	vec4 n1 = sample_triplanar_array(terrain_normals_pbr, v_tex_indices.y, v_world_pos, v_world_normal, tri_scale);
-	vec4 n2 = sample_triplanar_array(terrain_normals_pbr, v_tex_indices.z, v_world_pos, v_world_normal, tri_scale);
-	vec4 n3 = sample_triplanar_array(terrain_normals_pbr, v_tex_indices.w, v_world_pos, v_world_normal, tri_scale);
+	vec4 n0 = sample_quad_array(terrain_normals_pbr, round(v_tex_indices.x), sampled_uv);
+	vec4 n1 = sample_quad_array(terrain_normals_pbr, round(v_tex_indices.y), sampled_uv);
+	vec4 n2 = sample_quad_array(terrain_normals_pbr, round(v_tex_indices.z), sampled_uv);
+	vec4 n3 = sample_quad_array(terrain_normals_pbr, round(v_tex_indices.w), sampled_uv);
 	
 	vec2 n0_xy = vec2(n0.r * 2.0 - 1.0, (1.0 - n0.g) * 2.0 - 1.0);
 	vec3 n0_vec = vec3(n0_xy, sqrt(max(0.0, 1.0 - dot(n0_xy, n0_xy))));
@@ -787,9 +804,19 @@ void fragment() {
 	vec3 n3_vec = vec3(n3_xy, sqrt(max(0.0, 1.0 - dot(n3_xy, n3_xy))));
 	
 	vec3 blended_normal_tangent = normalize(n0_vec * w0 + n1_vec * w1 + n2_vec * w2 + n3_vec * w3);
+
+	if (macro_normal_strength > 0.0) {
+		float n_noise_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
+		float n_noise_z = (macro_fbm((v_world_pos.xz + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.0, 0.1)) * macro_scale));
+		vec3 noise_normal = vec3(n_noise_x * macro_normal_strength, n_noise_z * macro_normal_strength, 1.0);
+		blended_normal_tangent = normalize(blended_normal_tangent + noise_normal);
+	}
+
 	float blended_ao = (n0.b * w0 + n1.b * w1 + n2.b * w2 + n3.b * w3);
 	float blended_roughness = (n0.a * w0 + n1.a * w1 + n2.a * w2 + n3.a * w3);
-	float final_roughness = clamp(blended_roughness, 0.5, 1.0);
+
+	float macro_roughness_var = mix(1.0 - macro_roughness_contrast, 1.0 + macro_roughness_contrast, base_fbm_val);
+	float final_roughness = clamp(blended_roughness * macro_roughness_var, 0.05, 1.0);
 
 	vec2 fog_uv = (v_world_pos.xz - fog_world_min) / fog_world_size;
 	float fog_factor = texture(fog_texture, clamp(fog_uv, 0.0, 1.0)).r;
@@ -798,11 +825,22 @@ void fragment() {
 
 	ALBEDO = final_albedo;
 	NORMAL = TANGENT * blended_normal_tangent.x + BINORMAL * blended_normal_tangent.y + NORMAL * blended_normal_tangent.z;
-	AO = mix(1.0, blended_ao, 0.5) * (1.0 - fog_factor * 0.98);
+	AO = blended_ao * (1.0 - fog_factor * 0.98) * v_color.r;
 	ROUGHNESS = mix(final_roughness, 1.0, fog_factor);
 	METALLIC = 0.0;                 
 	SPECULAR = 0.2 * (1.0 - fog_factor * 0.98);                 
 	EMISSION = emission_color;
+
+	if (wireframe_mode) {
+		vec3 bary = v_barycentric;
+		vec3 deltas = fwidth(bary);
+		vec3 bary_edge = smoothstep(vec3(0.0), deltas * 1.5, bary);
+		float min_edge = min(bary_edge.x, min(bary_edge.y, bary_edge.z));
+		float edge_line = 1.0 - min_edge;
+		vec3 wire_col = mix(vec3(0.05, 0.08, 0.12), vec3(0.0, 1.0, 0.8), edge_line);
+		ALBEDO = mix(final_albedo, wire_col, edge_line);
+		EMISSION = wire_col * edge_line * 2.0;
+	}
 }
 ";
 
@@ -1122,6 +1160,14 @@ void fragment() {
 		}
 	}
 
+	public void SetWireframeMode(bool enabled)
+	{
+		if (_material != null)
+		{
+			_material.SetShaderParameter("wireframe_mode", enabled);
+		}
+	}
+
 	public void UpdatePathingTexture()
 	{
 		if (_material == null || PathingCodes == null) return;
@@ -1222,51 +1268,137 @@ void fragment() {
 		chunk.CollisionShape.Scale = new Vector3(Spacing, 1.0f, Spacing);
 	}
 
+	public const int CLIFF_VERTICAL_SUBDIVISIONS = 3;
+
 	private void UpdateChunk(TerrainChunk chunk, bool rebuildPhysics)
 	{
 		int cellWidth = chunk.EndX - chunk.StartX;
 		int cellDepth = chunk.EndZ - chunk.StartZ;
-		int triangleCount = cellWidth * cellDepth * 2;
-		int vertexCount = triangleCount * 3;
 
-		if (chunk.VerticesCache == null || chunk.VerticesCache.Length != vertexCount)
-		{
-			chunk.VerticesCache = new Vector3[vertexCount];
-			chunk.TexIndicesCache = new float[vertexCount * 4];
-			chunk.TexWeightsCache01 = new float[vertexCount * 4];
-			chunk.NormalsCache = new Vector3[vertexCount];
-			chunk.UvsCache = new Vector2[vertexCount];
-			chunk.IndicesCache = new int[vertexCount];
-		}
+		int totalVertices = 0;
+		int totalIndices = 0;
 
-		int vertexIndex = 0;
 		for (int z = chunk.StartZ; z < chunk.EndZ; z++)
 		{
 			for (int x = chunk.StartX; x < chunk.EndX; x++)
 			{
-				ProcessTriangle(chunk, x, z, x + 1, z, x, z + 1, ref vertexIndex);
-				ProcessTriangle(chunk, x + 1, z, x + 1, z + 1, x, z + 1, ref vertexIndex);
+				bool isQuadCliff = IsCliffQuad(x, z);
+				CountTriangleElements(x, z, x + 1, z, x, z + 1, isQuadCliff, ref totalVertices, ref totalIndices);
+				CountTriangleElements(x + 1, z, x + 1, z + 1, x, z + 1, isQuadCliff, ref totalVertices, ref totalIndices);
 			}
+		}
+
+		if (chunk.VerticesCache == null || chunk.VerticesCache.Length < totalVertices)
+		{
+			chunk.VerticesCache = new Vector3[totalVertices];
+			chunk.ColorsCache = new Color[totalVertices];
+			chunk.TexIndicesCache = new float[totalVertices * 4];
+			chunk.TexWeightsCache01 = new float[totalVertices * 4];
+			chunk.BarycentricCache = new float[totalVertices * 4];
+			chunk.NormalsCache = new Vector3[totalVertices];
+			chunk.UvsCache = new Vector2[totalVertices];
+		}
+
+		if (chunk.IndicesCache == null || chunk.IndicesCache.Length < totalIndices)
+		{
+			chunk.IndicesCache = new int[totalIndices];
+		}
+
+		int vertexIndex = 0;
+		int indexIndex = 0;
+
+		for (int z = chunk.StartZ; z < chunk.EndZ; z++)
+		{
+			for (int x = chunk.StartX; x < chunk.EndX; x++)
+			{
+				bool isQuadCliff = IsCliffQuad(x, z);
+				int quadCliffDominantTex = -1;
+				if (isQuadCliff)
+				{
+					TerrainSplatWeights s00 = SplatMap[x, z];
+					TerrainSplatWeights s10 = SplatMap[x + 1, z];
+					TerrainSplatWeights s01 = SplatMap[x, z + 1];
+					TerrainSplatWeights s11 = SplatMap[x + 1, z + 1];
+
+					quadCliffDominantTex = s00.Index0;
+					float maxW = s00.Weight0;
+					void CheckQuadDom(TerrainSplatWeights s)
+					{
+						if (s.Weight0 > maxW) { maxW = s.Weight0; quadCliffDominantTex = s.Index0; }
+						if (s.Weight1 > maxW) { maxW = s.Weight1; quadCliffDominantTex = s.Index1; }
+						if (s.Weight2 > maxW) { maxW = s.Weight2; quadCliffDominantTex = s.Index2; }
+						if (s.Weight3 > maxW) { maxW = s.Weight3; quadCliffDominantTex = s.Index3; }
+					}
+					CheckQuadDom(s00);
+					CheckQuadDom(s10);
+					CheckQuadDom(s01);
+					CheckQuadDom(s11);
+				}
+				ProcessTriangle(chunk, x, z, x + 1, z, x, z + 1, isQuadCliff, quadCliffDominantTex, ref vertexIndex, ref indexIndex);
+				ProcessTriangle(chunk, x + 1, z, x + 1, z + 1, x, z + 1, isQuadCliff, quadCliffDominantTex, ref vertexIndex, ref indexIndex);
+			}
+		}
+
+		Vector3[] finalVertices = chunk.VerticesCache;
+		Color[] finalColors = chunk.ColorsCache;
+		Vector3[] finalNormals = chunk.NormalsCache;
+		Vector2[] finalUvs = chunk.UvsCache;
+		float[] finalTexIndices = chunk.TexIndicesCache;
+		float[] finalTexWeights = chunk.TexWeightsCache01;
+		float[] finalBarycentric = chunk.BarycentricCache;
+		int[] finalIndices = chunk.IndicesCache;
+
+		if (vertexIndex < chunk.VerticesCache.Length)
+		{
+			finalVertices = new Vector3[vertexIndex];
+			Array.Copy(chunk.VerticesCache, finalVertices, vertexIndex);
+
+			finalColors = new Color[vertexIndex];
+			Array.Copy(chunk.ColorsCache, finalColors, vertexIndex);
+
+			finalNormals = new Vector3[vertexIndex];
+			Array.Copy(chunk.NormalsCache, finalNormals, vertexIndex);
+
+			finalUvs = new Vector2[vertexIndex];
+			Array.Copy(chunk.UvsCache, finalUvs, vertexIndex);
+
+			finalTexIndices = new float[vertexIndex * 4];
+			Array.Copy(chunk.TexIndicesCache, finalTexIndices, vertexIndex * 4);
+
+			finalTexWeights = new float[vertexIndex * 4];
+			Array.Copy(chunk.TexWeightsCache01, finalTexWeights, vertexIndex * 4);
+
+			finalBarycentric = new float[vertexIndex * 4];
+			Array.Copy(chunk.BarycentricCache, finalBarycentric, vertexIndex * 4);
+		}
+
+		if (indexIndex < chunk.IndicesCache.Length)
+		{
+			finalIndices = new int[indexIndex];
+			Array.Copy(chunk.IndicesCache, finalIndices, indexIndex);
 		}
 
 		var arrays = new Godot.Collections.Array();
 		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = chunk.VerticesCache;
-		arrays[(int)Mesh.ArrayType.Normal] = chunk.NormalsCache;
-		arrays[(int)Mesh.ArrayType.TexUV] = chunk.UvsCache;
-		arrays[(int)Mesh.ArrayType.Custom0] = chunk.TexIndicesCache;
-		arrays[(int)Mesh.ArrayType.Custom1] = chunk.TexWeightsCache01;
-		arrays[(int)Mesh.ArrayType.Index] = chunk.IndicesCache;
+		arrays[(int)Mesh.ArrayType.Vertex] = finalVertices;
+		arrays[(int)Mesh.ArrayType.Color] = finalColors;
+		arrays[(int)Mesh.ArrayType.Normal] = finalNormals;
+		arrays[(int)Mesh.ArrayType.TexUV] = finalUvs;
+		arrays[(int)Mesh.ArrayType.Custom0] = finalTexIndices;
+		arrays[(int)Mesh.ArrayType.Custom1] = finalTexWeights;
+		arrays[(int)Mesh.ArrayType.Custom2] = finalBarycentric;
+		arrays[(int)Mesh.ArrayType.Index] = finalIndices;
 
 		chunk.ArrayMesh.ClearSurfaces();
-		if (vertexCount > 0)
+		if (vertexIndex > 0)
 		{
 			int custom0Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift;
 			int custom1Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom1Shift;
+			int custom2Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom2Shift;
 			chunk.ArrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays,
 				new Godot.Collections.Array<Godot.Collections.Array>(),
 				null,
-				(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1) | custom0Format | custom1Format));
+				(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1 | Mesh.ArrayFormat.FormatCustom2) | custom0Format | custom1Format | custom2Format));
 		}
 
 		if (rebuildPhysics)
@@ -1275,16 +1407,234 @@ void fragment() {
 		}
 	}
 
+	private bool IsCliffQuad(int x, int z)
+	{
+		float h00 = Heights[x, z];
+		float h10 = Heights[x + 1, z];
+		float h01 = Heights[x, z + 1];
+		float h11 = Heights[x + 1, z + 1];
+
+		float maxH = Math.Max(Math.Max(h00, h10), Math.Max(h01, h11));
+		float minH = Math.Min(Math.Min(h00, h10), Math.Min(h01, h11));
+
+		if (maxH - minH > 0.5f)
+		{
+			return true;
+		}
+
+		return IsCliffTriangle(x, z, x + 1, z, x, z + 1) || IsCliffTriangle(x + 1, z, x + 1, z + 1, x, z + 1);
+	}
+
+	private bool IsCliffTriangle(int x0, int z0, int x1, int z1, int x2, int z2)
+	{
+		float h0 = Heights[x0, z0];
+		float h1 = Heights[x1, z1];
+		float h2 = Heights[x2, z2];
+
+		float maxH = Math.Max(h0, Math.Max(h1, h2));
+		float minH = Math.Min(h0, Math.Min(h1, h2));
+
+		if (maxH - minH > 0.5f)
+		{
+			return true;
+		}
+
+		Vector3 p0 = new Vector3(x0 * Spacing, h0, z0 * Spacing);
+		Vector3 p1 = new Vector3(x1 * Spacing, h1, z1 * Spacing);
+		Vector3 p2 = new Vector3(x2 * Spacing, h2, z2 * Spacing);
+
+		Vector3 edge1 = p1 - p0;
+		Vector3 edge2 = p2 - p0;
+		Vector3 rawNormal = edge2.Cross(edge1).Normalized();
+
+		return Mathf.Abs(rawNormal.Y) < 0.65f;
+	}
+
+	private int GetCliffSubdivisions(int x0, int z0, int x1, int z1, int x2, int z2)
+	{
+		float h0 = Heights[x0, z0];
+		float h1 = Heights[x1, z1];
+		float h2 = Heights[x2, z2];
+		float maxH = Math.Max(h0, Math.Max(h1, h2));
+		float minH = Math.Min(h0, Math.Min(h1, h2));
+		float heightDelta = maxH - minH;
+		// Base spacing is typically 2.0f; scale subdivisions so vertical faces maintain ~1:1 quad aspect ratio
+		int targetSubs = (int)Math.Max(2, Math.Round(heightDelta / Math.Max(0.5f, Spacing)));
+		return Math.Min(16, targetSubs);
+	}
+
+	private void CountTriangleElements(
+		int x0, int z0,
+		int x1, int z1,
+		int x2, int z2,
+		bool isQuadCliff,
+		ref int totalVertices,
+		ref int totalIndices)
+	{
+		bool isVertCliffTri = isQuadCliff && IsCliffTriangle(x0, z0, x1, z1, x2, z2);
+		if (isVertCliffTri)
+		{
+			int subdivisions = GetCliffSubdivisions(x0, z0, x1, z1, x2, z2);
+			int tris = subdivisions * subdivisions;
+			int verts = tris * 3;
+			totalVertices += verts;
+			totalIndices += tris * 3;
+		}
+		else
+		{
+			totalVertices += 3;
+			totalIndices += 3;
+		}
+	}
+
+	private int GetDominantTextureIndex(TerrainSplatWeights s)
+	{
+		int dom = s.Index0;
+		float maxW = s.Weight0;
+		if (s.Weight1 > maxW) { maxW = s.Weight1; dom = s.Index1; }
+		if (s.Weight2 > maxW) { maxW = s.Weight2; dom = s.Index2; }
+		if (s.Weight3 > maxW) { maxW = s.Weight3; dom = s.Index3; }
+		return dom;
+	}
+
+	private bool IsVertexCliff(int vx, int vz)
+	{
+		float h = Heights[vx, vz];
+		for (int dz = -1; dz <= 1; dz++)
+		{
+			for (int dx = -1; dx <= 1; dx++)
+			{
+				if (dx == 0 && dz == 0) continue;
+				int nx = vx + dx;
+				int nz = vz + dz;
+				if (nx >= 0 && nx < Width && nz >= 0 && nz < Depth)
+				{
+					if (Math.Abs(Heights[nx, nz] - h) >= 0.5f)
+					{
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	private TerrainSplatWeights GetNonCliffSplatWeights(int vx, int vz, int quadCliffDomTex, TerrainSplatWeights defaultSplat)
+	{
+		var current = SplatMap[vx, vz];
+		if (!IsVertexCliff(vx, vz))
+		{
+			return current;
+		}
+
+		int cliffTexIndex = quadCliffDomTex >= 0 ? quadCliffDomTex : GetDominantTextureIndex(current);
+		if (GetDominantTextureIndex(current) != cliffTexIndex)
+		{
+			return current;
+		}
+
+		float targetH = Heights[vx, vz];
+		float bestDistSq = float.MaxValue;
+		TerrainSplatWeights bestNeighborSplat = defaultSplat;
+		bool foundNonCliffNeighbor = false;
+
+		for (int radius = 1; radius <= 10; radius++)
+		{
+			for (int dz = -radius; dz <= radius; dz++)
+			{
+				for (int dx = -radius; dx <= radius; dx++)
+				{
+					if (dx == 0 && dz == 0) continue;
+					int nx = vx + dx;
+					int nz = vz + dz;
+					if (nx >= 0 && nx < Width && nz >= 0 && nz < Depth)
+					{
+						if (Math.Abs(Heights[nx, nz] - targetH) < 0.5f)
+						{
+							var nSplat = SplatMap[nx, nz];
+							int nDom = GetDominantTextureIndex(nSplat);
+							if (nDom != cliffTexIndex)
+							{
+								float distSq = dx * dx + dz * dz;
+								if (distSq < bestDistSq)
+								{
+									bestDistSq = distSq;
+									bestNeighborSplat = nSplat;
+									foundNonCliffNeighbor = true;
+								}
+							}
+						}
+					}
+				}
+			}
+			if (foundNonCliffNeighbor) break;
+		}
+
+		if (foundNonCliffNeighbor)
+		{
+			return bestNeighborSplat;
+		}
+
+		var filtered = current;
+		if (filtered.Index0 == cliffTexIndex) filtered.Weight0 = 0f;
+		if (filtered.Index1 == cliffTexIndex) filtered.Weight1 = 0f;
+		if (filtered.Index2 == cliffTexIndex) filtered.Weight2 = 0f;
+		if (filtered.Index3 == cliffTexIndex) filtered.Weight3 = 0f;
+
+		float sum = filtered.Weight0 + filtered.Weight1 + filtered.Weight2 + filtered.Weight3;
+		if (sum > 0.0001f)
+		{
+			filtered.Weight0 /= sum;
+			filtered.Weight1 /= sum;
+			filtered.Weight2 /= sum;
+			filtered.Weight3 /= sum;
+			return filtered;
+		}
+
+		int defaultDom = GetDominantTextureIndex(defaultSplat);
+		if (defaultDom != cliffTexIndex)
+		{
+			return defaultSplat;
+		}
+
+		int fallbackIndex = (cliffTexIndex == 2) ? 0 : 2;
+		return TerrainSplatWeights.CreateSolid(fallbackIndex);
+	}
+
 	private void ProcessTriangle(
 		TerrainChunk chunk,
 		int x0, int z0,
 		int x1, int z1,
 		int x2, int z2,
-		ref int vertexIndex)
+		bool isQuadCliff,
+		int quadCliffDominantTex,
+		ref int vertexIndex,
+		ref int indexIndex)
 	{
+		bool isVertCliffTri = isQuadCliff && IsCliffTriangle(x0, z0, x1, z1, x2, z2);
+
 		var s0 = SplatMap[x0, z0];
 		var s1 = SplatMap[x1, z1];
 		var s2 = SplatMap[x2, z2];
+
+		if (!isVertCliffTri)
+		{
+			TerrainSplatWeights defaultFloorSplat = s0;
+			int dom0 = GetDominantTextureIndex(s0);
+			int dom1 = GetDominantTextureIndex(s1);
+			int dom2 = GetDominantTextureIndex(s2);
+
+			if (quadCliffDominantTex >= 0)
+			{
+				if (dom0 != quadCliffDominantTex) defaultFloorSplat = s0;
+				else if (dom1 != quadCliffDominantTex) defaultFloorSplat = s1;
+				else if (dom2 != quadCliffDominantTex) defaultFloorSplat = s2;
+			}
+
+			s0 = GetNonCliffSplatWeights(x0, z0, quadCliffDominantTex, defaultFloorSplat);
+			s1 = GetNonCliffSplatWeights(x1, z1, quadCliffDominantTex, defaultFloorSplat);
+			s2 = GetNonCliffSplatWeights(x2, z2, quadCliffDominantTex, defaultFloorSplat);
+		}
 
 		var uniqueTexs = new System.Collections.Generic.List<int>();
 		var texWeightsSum = new System.Collections.Generic.List<float>();
@@ -1321,7 +1671,7 @@ void fragment() {
 
 		if (uniqueTexs.Count == 0)
 		{
-			uniqueTexs.Add(3);
+			uniqueTexs.Add(quadCliffDominantTex >= 0 ? quadCliffDominantTex : 3);
 			texWeightsSum.Add(1.0f);
 		}
 
@@ -1346,6 +1696,14 @@ void fragment() {
 			uniqueTexs.Add(uniqueTexs[0]);
 		}
 
+		if (isVertCliffTri && quadCliffDominantTex >= 0)
+		{
+			if (!uniqueTexs.Contains(quadCliffDominantTex))
+			{
+				uniqueTexs[3] = quadCliffDominantTex;
+			}
+		}
+
 		int p0 = uniqueTexs[0];
 		int p1 = uniqueTexs[1];
 		int p2 = uniqueTexs[2];
@@ -1353,88 +1711,223 @@ void fragment() {
 
 		Vector3 faceNormal = GetTriangleFaceNormal(x0, z0, x1, z1, x2, z2);
 
-		PopulateTriangleVertex(chunk, x0, z0, p0, p1, p2, p3, s0, faceNormal, ref vertexIndex);
-		PopulateTriangleVertex(chunk, x1, z1, p0, p1, p2, p3, s1, faceNormal, ref vertexIndex);
-		PopulateTriangleVertex(chunk, x2, z2, p0, p1, p2, p3, s2, faceNormal, ref vertexIndex);
-	}
+		int quadOriginX = Math.Min(x0, Math.Min(x1, x2));
+		int quadOriginZ = Math.Min(z0, Math.Min(z1, z2));
 
-	private Vector3 GetTriangleFaceNormal(int x0, int z0, int x1, int z1, int x2, int z2)
-	{
-		Vector3 p0 = new Vector3(x0 * Spacing, Heights[x0, z0], z0 * Spacing);
-		Vector3 p1 = new Vector3(x1 * Spacing, Heights[x1, z1], z1 * Spacing);
-		Vector3 p2 = new Vector3(x2 * Spacing, Heights[x2, z2], z2 * Spacing);
-
-		Vector3 edge1 = p1 - p0;
-		Vector3 edge2 = p2 - p0;
-		Vector3 normal = edge2.Cross(edge1).Normalized();
-
-		// Hard un-smoothed norm: if slope is vertical (normal.Y < 0.65), snap to pure wall vector
-		if (Mathf.Abs(normal.Y) < 0.65f)
+		if (isVertCliffTri)
 		{
-			Vector3 sideNorm = new Vector3(normal.X, 0.0f, normal.Z);
-			if (sideNorm.LengthSquared() > 0.0001f)
-			{
-				return sideNorm.Normalized();
-			}
+			int subdivisions = GetCliffSubdivisions(x0, z0, x1, z1, x2, z2);
+			SubdivideCliffTriangle(chunk, x0, z0, x1, z1, x2, z2, quadOriginX, quadOriginZ, p0, p1, p2, p3, s0, s1, s2, faceNormal, true, quadCliffDominantTex, subdivisions, ref vertexIndex, ref indexIndex);
 		}
 		else
 		{
-			// Flat horizontal ground surfaces: snap to pure up vector
-			return new Vector3(0.0f, Math.Sign(normal.Y != 0 ? normal.Y : 1.0f), 0.0f);
-		}
+			int baseIndex = vertexIndex;
+			Vector2 quadUV0 = new Vector2(x0 - quadOriginX, z0 - quadOriginZ);
+			Vector2 quadUV1 = new Vector2(x1 - quadOriginX, z1 - quadOriginZ);
+			Vector2 quadUV2 = new Vector2(x2 - quadOriginX, z2 - quadOriginZ);
 
-		return normal;
+			PopulateTriangleVertex(chunk, x0, z0, quadUV0, p0, p1, p2, p3, s0, faceNormal, new Vector3(1f, 0f, 0f), false, quadCliffDominantTex, ref vertexIndex);
+			PopulateTriangleVertex(chunk, x1, z1, quadUV1, p0, p1, p2, p3, s1, faceNormal, new Vector3(0f, 1f, 0f), false, quadCliffDominantTex, ref vertexIndex);
+			PopulateTriangleVertex(chunk, x2, z2, quadUV2, p0, p1, p2, p3, s2, faceNormal, new Vector3(0f, 0f, 1f), false, quadCliffDominantTex, ref vertexIndex);
+
+			chunk.IndicesCache[indexIndex++] = baseIndex;
+			chunk.IndicesCache[indexIndex++] = baseIndex + 1;
+			chunk.IndicesCache[indexIndex++] = baseIndex + 2;
+		}
 	}
 
-	private void PopulateTriangleVertex(
+	private void SubdivideCliffTriangle(
 		TerrainChunk chunk,
-		int x, int z,
+		int x0, int z0,
+		int x1, int z1,
+		int x2, int z2,
+		int quadOriginX, int quadOriginZ,
 		int p0, int p1, int p2, int p3,
-		TerrainSplatWeights srcSplat,
+		TerrainSplatWeights s0,
+		TerrainSplatWeights s1,
+		TerrainSplatWeights s2,
 		Vector3 faceNormal,
+		bool isCliff,
+		int quadCliffDominantTex,
+		int subdivisions,
+		ref int vertexIndex,
+		ref int indexIndex)
+	{
+		int baseVertexOffset = vertexIndex;
+
+		float worldX0 = (x0 - (Width - 1) / 2.0f) * Spacing;
+		float worldZ0 = (z0 - (Depth - 1) / 2.0f) * Spacing;
+		Vector3 pos0 = new Vector3(worldX0, Heights[x0, z0], worldZ0);
+
+		float worldX1 = (x1 - (Width - 1) / 2.0f) * Spacing;
+		float worldZ1 = (z1 - (Depth - 1) / 2.0f) * Spacing;
+		Vector3 pos1 = new Vector3(worldX1, Heights[x1, z1], worldZ1);
+
+		float worldX2 = (x2 - (Width - 1) / 2.0f) * Spacing;
+		float worldZ2 = (z2 - (Depth - 1) / 2.0f) * Spacing;
+		Vector3 pos2 = new Vector3(worldX2, Heights[x2, z2], worldZ2);
+
+		// Compute horizontal axis perpendicular to face normal for planar UV.x, and vertical height for UV.y
+		Vector3 horizDir = new Vector3(-faceNormal.Z, 0f, faceNormal.X);
+		float horizLen = horizDir.Length();
+		if (horizLen > 0.001f) horizDir /= horizLen;
+		else horizDir = Vector3.Right;
+
+		// Use quad-wide minimum height so both triangles in the cliff quad share identical UV.y vertical origin
+		float quadMinY = Math.Min(
+			Math.Min(Heights[quadOriginX, quadOriginZ], Heights[quadOriginX + 1, quadOriginZ]),
+			Math.Min(Heights[quadOriginX, quadOriginZ + 1], Heights[quadOriginX + 1, quadOriginZ + 1])
+		);
+		float quadMaxY = Math.Max(
+			Math.Max(Heights[quadOriginX, quadOriginZ], Heights[quadOriginX + 1, quadOriginZ]),
+			Math.Max(Heights[quadOriginX, quadOriginZ + 1], Heights[quadOriginX + 1, quadOriginZ + 1])
+		);
+
+		float uProj0 = pos0.Dot(horizDir) / Math.Max(0.5f, Spacing);
+		float uProj1 = pos1.Dot(horizDir) / Math.Max(0.5f, Spacing);
+		float uProj2 = pos2.Dot(horizDir) / Math.Max(0.5f, Spacing);
+
+		float minUProj = Math.Min(uProj0, Math.Min(uProj1, uProj2));
+
+		Vector2 uv0 = new Vector2(uProj0 - minUProj, (pos0.Y - quadMinY) / Math.Max(0.5f, Spacing));
+		Vector2 uv1 = new Vector2(uProj1 - minUProj, (pos1.Y - quadMinY) / Math.Max(0.5f, Spacing));
+		Vector2 uv2 = new Vector2(uProj2 - minUProj, (pos2.Y - quadMinY) / Math.Max(0.5f, Spacing));
+
+		for (int i = 0; i < subdivisions; i++)
+		{
+			for (int j = 0; j < subdivisions - i; j++)
+			{
+				int k = subdivisions - 1 - i - j;
+
+				float uA = (float)(i + 1) / subdivisions;
+				float vA = (float)j / subdivisions;
+				float wA = 1.0f - uA - vA;
+				Vector3 posA = pos0 * uA + pos1 * vA + pos2 * wA;
+				Vector2 uvA = uv0 * uA + uv1 * vA + uv2 * wA;
+
+				float uB = (float)i / subdivisions;
+				float vB = (float)(j + 1) / subdivisions;
+				float wB = 1.0f - uB - vB;
+				Vector3 posB = pos0 * uB + pos1 * vB + pos2 * wB;
+				Vector2 uvB = uv0 * uB + uv1 * vB + uv2 * wB;
+
+				float uC = (float)i / subdivisions;
+				float vC = (float)j / subdivisions;
+				float wC = 1.0f - uC - vC;
+				Vector3 posC = pos0 * uC + pos1 * vC + pos2 * wC;
+				Vector2 uvC = uv0 * uC + uv1 * vC + uv2 * wC;
+
+				int baseTriIndex = vertexIndex;
+				PopulateExplicitVertex(chunk, posC, uvC, faceNormal, new Vector3(1f, 0f, 0f), p0, p1, p2, p3, s0, s1, s2, uC, vC, wC, isCliff, quadCliffDominantTex, quadMinY, quadMaxY, ref vertexIndex);
+				PopulateExplicitVertex(chunk, posA, uvA, faceNormal, new Vector3(0f, 1f, 0f), p0, p1, p2, p3, s0, s1, s2, uA, vA, wA, isCliff, quadCliffDominantTex, quadMinY, quadMaxY, ref vertexIndex);
+				PopulateExplicitVertex(chunk, posB, uvB, faceNormal, new Vector3(0f, 0f, 1f), p0, p1, p2, p3, s0, s1, s2, uB, vB, wB, isCliff, quadCliffDominantTex, quadMinY, quadMaxY, ref vertexIndex);
+
+				chunk.IndicesCache[indexIndex++] = baseTriIndex;
+				chunk.IndicesCache[indexIndex++] = baseTriIndex + 1;
+				chunk.IndicesCache[indexIndex++] = baseTriIndex + 2;
+
+				if (i + j < subdivisions - 1)
+				{
+					float uD = (float)(i + 1) / subdivisions;
+					float vD = (float)(j + 1) / subdivisions;
+					float wD = 1.0f - uD - vD;
+					Vector3 posD = pos0 * uD + pos1 * vD + pos2 * wD;
+					Vector2 uvD = uv0 * uD + uv1 * vD + uv2 * wD;
+
+					int baseSubTriIndex = vertexIndex;
+					PopulateExplicitVertex(chunk, posA, uvA, faceNormal, new Vector3(1f, 0f, 0f), p0, p1, p2, p3, s0, s1, s2, uA, vA, wA, isCliff, quadCliffDominantTex, quadMinY, quadMaxY, ref vertexIndex);
+					PopulateExplicitVertex(chunk, posD, uvD, faceNormal, new Vector3(0f, 1f, 0f), p0, p1, p2, p3, s0, s1, s2, uD, vD, wD, isCliff, quadCliffDominantTex, quadMinY, quadMaxY, ref vertexIndex);
+					PopulateExplicitVertex(chunk, posB, uvB, faceNormal, new Vector3(0f, 0f, 1f), p0, p1, p2, p3, s0, s1, s2, uB, vB, wB, isCliff, quadCliffDominantTex, quadMinY, quadMaxY, ref vertexIndex);
+
+					chunk.IndicesCache[indexIndex++] = baseSubTriIndex;
+					chunk.IndicesCache[indexIndex++] = baseSubTriIndex + 1;
+					chunk.IndicesCache[indexIndex++] = baseSubTriIndex + 2;
+				}
+			}
+		}
+	}
+
+	private void PopulateExplicitVertex(
+		TerrainChunk chunk,
+		Vector3 position,
+		Vector2 uv,
+		Vector3 faceNormal,
+		Vector3 barycentric,
+		int p0, int p1, int p2, int p3,
+		TerrainSplatWeights s0,
+		TerrainSplatWeights s1,
+		TerrainSplatWeights s2,
+		float weight0,
+		float weight1,
+		float weight2,
+		bool isCliff,
+		int quadCliffDominantTex,
+		float quadMinY,
+		float quadMaxY,
 		ref int vertexIndex)
 	{
-		float lx = (x - (Width - 1) / 2.0f) * Spacing;
-		float lz = (z - (Depth - 1) / 2.0f) * Spacing;
-		chunk.VerticesCache[vertexIndex] = new Vector3(lx, Heights[x, z], lz);
-
+		chunk.VerticesCache[vertexIndex] = position;
 		chunk.NormalsCache[vertexIndex] = faceNormal;
+		chunk.UvsCache[vertexIndex] = uv;
 
-		chunk.UvsCache[vertexIndex] = new Vector2((float)x / (Width - 1) * 25f, (float)z / (Depth - 1) * 25f);
+		float wallAO = 1.0f;
+		if (isCliff || Math.Abs(faceNormal.Y) < 0.7f)
+		{
+			float wallHeight = quadMaxY - quadMinY;
+			float normY = wallHeight > 0.001f ? Mathf.Clamp((position.Y - quadMinY) / wallHeight, 0f, 1f) : 0.5f;
 
-		chunk.IndicesCache[vertexIndex] = vertexIndex;
+			// Crevice AO at lower base of vertical wall
+			float bottomAO = Mathf.Lerp(0.59f, 1.0f, Mathf.Clamp(normY / 0.44f, 0f, 1f));
+			// Micro-AO gradient at upper top edge of vertical wall face (normal Y < 0.7)
+			float topAO = Mathf.Lerp(0.82f, 1.0f, Mathf.Clamp((1.0f - normY) / 0.30f, 0f, 1f));
+
+			wallAO = Math.Min(bottomAO, topAO);
+		}
+		chunk.ColorsCache[vertexIndex] = new Color(wallAO, wallAO, wallAO, 1.0f);
 
 		float w0 = 0f, w1 = 0f, w2 = 0f, w3 = 0f;
 
-		float GetWeight(int texIndex)
+		if (isCliff)
 		{
-			float sum = 0.0f;
-			if (srcSplat.Index0 == texIndex) sum += srcSplat.Weight0;
-			if (srcSplat.Index1 == texIndex) sum += srcSplat.Weight1;
-			if (srcSplat.Index2 == texIndex) sum += srcSplat.Weight2;
-			if (srcSplat.Index3 == texIndex) sum += srcSplat.Weight3;
-			return sum;
-		}
-
-		w0 = GetWeight(p0);
-		w1 = GetWeight(p1);
-		w2 = GetWeight(p2);
-		w3 = GetWeight(p3);
-
-		float sumW = w0 + w1 + w2 + w3;
-		if (sumW > 0.0001f)
-		{
-			w0 /= sumW;
-			w1 /= sumW;
-			w2 /= sumW;
-			w3 /= sumW;
+			int domTex = quadCliffDominantTex >= 0 ? quadCliffDominantTex : s0.Index0;
+			int cliffSlot = (p0 == domTex) ? 0 : (p1 == domTex) ? 1 : (p2 == domTex) ? 2 : (p3 == domTex) ? 3 : 0;
+			w0 = (cliffSlot == 0) ? 1.0f : 0.0f;
+			w1 = (cliffSlot == 1) ? 1.0f : 0.0f;
+			w2 = (cliffSlot == 2) ? 1.0f : 0.0f;
+			w3 = (cliffSlot == 3) ? 1.0f : 0.0f;
 		}
 		else
 		{
-			w0 = 1.0f;
-			w1 = 0.0f;
-			w2 = 0.0f;
-			w3 = 0.0f;
+			float GetWeight(TerrainSplatWeights srcSplat, int texIndex)
+			{
+				float sum = 0.0f;
+				if (srcSplat.Index0 == texIndex) sum += srcSplat.Weight0;
+				if (srcSplat.Index1 == texIndex) sum += srcSplat.Weight1;
+				if (srcSplat.Index2 == texIndex) sum += srcSplat.Weight2;
+				if (srcSplat.Index3 == texIndex) sum += srcSplat.Weight3;
+				return sum;
+			}
+
+			w0 = GetWeight(s0, p0) * weight0 + GetWeight(s1, p0) * weight1 + GetWeight(s2, p0) * weight2;
+			w1 = GetWeight(s0, p1) * weight0 + GetWeight(s1, p1) * weight1 + GetWeight(s2, p1) * weight2;
+			w2 = GetWeight(s0, p2) * weight0 + GetWeight(s1, p2) * weight1 + GetWeight(s2, p2) * weight2;
+			w3 = GetWeight(s0, p3) * weight0 + GetWeight(s1, p3) * weight1 + GetWeight(s2, p3) * weight2;
+
+			float sumW = w0 + w1 + w2 + w3;
+			if (sumW > 0.0001f)
+			{
+				w0 /= sumW;
+				w1 /= sumW;
+				w2 /= sumW;
+				w3 /= sumW;
+			}
+			else
+			{
+				w0 = 1.0f;
+				w1 = 0.0f;
+				w2 = 0.0f;
+				w3 = 0.0f;
+			}
 		}
 
 		int sIdx = vertexIndex * 4;
@@ -1447,6 +1940,151 @@ void fragment() {
 		chunk.TexWeightsCache01[sIdx + 1] = w1;
 		chunk.TexWeightsCache01[sIdx + 2] = w2;
 		chunk.TexWeightsCache01[sIdx + 3] = w3;
+
+		chunk.BarycentricCache[sIdx + 0] = barycentric.X;
+		chunk.BarycentricCache[sIdx + 1] = barycentric.Y;
+		chunk.BarycentricCache[sIdx + 2] = barycentric.Z;
+		chunk.BarycentricCache[sIdx + 3] = 0.0f;
+
+		vertexIndex++;
+	}
+
+	private float CalculateVertexAO(int x, int z)
+	{
+		float h = Heights[x, z];
+		float minAO = 1.0f;
+		float maxHighlight = 1.0f;
+
+		for (int dz = -2; dz <= 2; dz++)
+		{
+			for (int dx = -2; dx <= 2; dx++)
+			{
+				if (dx == 0 && dz == 0) continue;
+				int nx = x + dx;
+				int nz = z + dz;
+				if (nx >= 0 && nx < Width && nz >= 0 && nz < Depth)
+				{
+					float diff = Heights[nx, nz] - h;
+					float distSq = dx * dx + dz * dz;
+
+					if (diff >= 0.5f)
+					{
+						// Neighbor is higher -> Bottom Crevice Occlusion (darkening ground at base of wall)
+						float ao = (distSq <= 1.5f) ? 0.59f : 0.79f;
+						minAO = Math.Min(minAO, ao);
+					}
+					else if (diff <= -0.5f)
+					{
+						// Neighbor is lower -> Edge Highlight on top horizontal rim (sun-catch / edge wear)
+						float hl = (distSq <= 1.5f) ? 1.18f : 1.08f;
+						maxHighlight = Math.Max(maxHighlight, hl);
+					}
+				}
+			}
+		}
+
+		if (minAO < 1.0f)
+		{
+			return minAO;
+		}
+
+		return maxHighlight;
+	}
+
+	private Vector3 GetTriangleFaceNormal(int x0, int z0, int x1, int z1, int x2, int z2)
+	{
+		Vector3 p0 = new Vector3(x0 * Spacing, Heights[x0, z0], z0 * Spacing);
+		Vector3 p1 = new Vector3(x1 * Spacing, Heights[x1, z1], z1 * Spacing);
+		Vector3 p2 = new Vector3(x2 * Spacing, Heights[x2, z2], z2 * Spacing);
+
+		Vector3 edge1 = p1 - p0;
+		Vector3 edge2 = p2 - p0;
+		return edge2.Cross(edge1).Normalized();
+	}
+
+	private void PopulateTriangleVertex(
+		TerrainChunk chunk,
+		int x, int z,
+		Vector2 quadUV,
+		int p0, int p1, int p2, int p3,
+		TerrainSplatWeights srcSplat,
+		Vector3 faceNormal,
+		Vector3 barycentric,
+		bool isCliff,
+		int quadCliffDominantTex,
+		ref int vertexIndex)
+	{
+		float lx = (x - (Width - 1) / 2.0f) * Spacing;
+		float lz = (z - (Depth - 1) / 2.0f) * Spacing;
+		chunk.VerticesCache[vertexIndex] = new Vector3(lx, Heights[x, z], lz);
+
+		chunk.NormalsCache[vertexIndex] = faceNormal;
+
+		chunk.UvsCache[vertexIndex] = quadUV;
+
+		float vertexAO = CalculateVertexAO(x, z);
+		chunk.ColorsCache[vertexIndex] = new Color(vertexAO, vertexAO, vertexAO, 1.0f);
+
+		float w0 = 0f, w1 = 0f, w2 = 0f, w3 = 0f;
+
+		if (isCliff)
+		{
+			int domTex = quadCliffDominantTex >= 0 ? quadCliffDominantTex : srcSplat.Index0;
+			int cliffSlot = (p0 == domTex) ? 0 : (p1 == domTex) ? 1 : (p2 == domTex) ? 2 : (p3 == domTex) ? 3 : 0;
+			w0 = (cliffSlot == 0) ? 1.0f : 0.0f;
+			w1 = (cliffSlot == 1) ? 1.0f : 0.0f;
+			w2 = (cliffSlot == 2) ? 1.0f : 0.0f;
+			w3 = (cliffSlot == 3) ? 1.0f : 0.0f;
+		}
+		else
+		{
+			float GetWeight(int texIndex)
+			{
+				float sum = 0.0f;
+				if (srcSplat.Index0 == texIndex) sum += srcSplat.Weight0;
+				if (srcSplat.Index1 == texIndex) sum += srcSplat.Weight1;
+				if (srcSplat.Index2 == texIndex) sum += srcSplat.Weight2;
+				if (srcSplat.Index3 == texIndex) sum += srcSplat.Weight3;
+				return sum;
+			}
+
+			w0 = GetWeight(p0);
+			w1 = GetWeight(p1);
+			w2 = GetWeight(p2);
+			w3 = GetWeight(p3);
+
+			float sumW = w0 + w1 + w2 + w3;
+			if (sumW > 0.0001f)
+			{
+				w0 /= sumW;
+				w1 /= sumW;
+				w2 /= sumW;
+				w3 /= sumW;
+			}
+			else
+			{
+				w0 = 1.0f;
+				w1 = 0.0f;
+				w2 = 0.0f;
+				w3 = 0.0f;
+			}
+		}
+
+		int sIdx = vertexIndex * 4;
+		chunk.TexIndicesCache[sIdx + 0] = p0;
+		chunk.TexIndicesCache[sIdx + 1] = p1;
+		chunk.TexIndicesCache[sIdx + 2] = p2;
+		chunk.TexIndicesCache[sIdx + 3] = p3;
+
+		chunk.TexWeightsCache01[sIdx + 0] = w0;
+		chunk.TexWeightsCache01[sIdx + 1] = w1;
+		chunk.TexWeightsCache01[sIdx + 2] = w2;
+		chunk.TexWeightsCache01[sIdx + 3] = w3;
+
+		chunk.BarycentricCache[sIdx + 0] = barycentric.X;
+		chunk.BarycentricCache[sIdx + 1] = barycentric.Y;
+		chunk.BarycentricCache[sIdx + 2] = barycentric.Z;
+		chunk.BarycentricCache[sIdx + 3] = 0.0f;
 
 		vertexIndex++;
 	}

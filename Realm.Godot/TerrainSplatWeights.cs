@@ -31,15 +31,8 @@ public struct TerrainSplatWeights : IEquatable<TerrainSplatWeights>
 
     public static TerrainSplatWeights PaintVertex(TerrainSplatWeights current, int targetTextureIndex, float brushIntensity)
     {
-        float i0 = current.Index0;
-        float i1 = current.Index1;
-        float i2 = current.Index2;
-        float i3 = current.Index3;
-
-        float w0 = current.Weight0;
-        float w1 = current.Weight1;
-        float w2 = current.Weight2;
-        float w3 = current.Weight3;
+        float I = Math.Max(0.0f, Math.Min(1.0f, brushIntensity));
+        if (I <= 0.0001f) return current;
 
         int slotForTarget = -1;
         if (current.Index0 == targetTextureIndex) slotForTarget = 0;
@@ -49,60 +42,53 @@ public struct TerrainSplatWeights : IEquatable<TerrainSplatWeights>
 
         if (slotForTarget < 0)
         {
-            int lowestWeightSlot = 0;
-            float lowestWeight = w0;
-            if (w1 < lowestWeight) { lowestWeight = w1; lowestWeightSlot = 1; }
-            if (w2 < lowestWeight) { lowestWeight = w2; lowestWeightSlot = 2; }
-            if (w3 < lowestWeight) { lowestWeight = w3; lowestWeightSlot = 3; }
-
-            switch (lowestWeightSlot)
+            if (current.Weight0 <= 0.001f) { current.Index0 = targetTextureIndex; current.Weight0 = 0.0f; slotForTarget = 0; }
+            else if (current.Weight1 <= 0.001f) { current.Index1 = targetTextureIndex; current.Weight1 = 0.0f; slotForTarget = 1; }
+            else if (current.Weight2 <= 0.001f) { current.Index2 = targetTextureIndex; current.Weight2 = 0.0f; slotForTarget = 2; }
+            else if (current.Weight3 <= 0.001f) { current.Index3 = targetTextureIndex; current.Weight3 = 0.0f; slotForTarget = 3; }
+            else
             {
-                case 0: i0 = targetTextureIndex; w0 = 0.0f; break;
-                case 1: i1 = targetTextureIndex; w1 = 0.0f; break;
-                case 2: i2 = targetTextureIndex; w2 = 0.0f; break;
-                case 3: i3 = targetTextureIndex; w3 = 0.0f; break;
+                int lowestSlot = 0;
+                float lowestW = current.Weight0;
+                if (current.Weight1 < lowestW) { lowestW = current.Weight1; lowestSlot = 1; }
+                if (current.Weight2 < lowestW) { lowestW = current.Weight2; lowestSlot = 2; }
+                if (current.Weight3 < lowestW) { lowestW = current.Weight3; lowestSlot = 3; }
+
+                if (I > lowestW)
+                {
+                    switch (lowestSlot)
+                    {
+                        case 0: current.Index0 = targetTextureIndex; current.Weight0 = 0.0f; break;
+                        case 1: current.Index1 = targetTextureIndex; current.Weight1 = 0.0f; break;
+                        case 2: current.Index2 = targetTextureIndex; current.Weight2 = 0.0f; break;
+                        case 3: current.Index3 = targetTextureIndex; current.Weight3 = 0.0f; break;
+                    }
+                    slotForTarget = lowestSlot;
+                }
+                else
+                {
+                    return current;
+                }
             }
-            slotForTarget = lowestWeightSlot;
         }
 
-        float I = Math.Max(0.0f, Math.Min(1.0f, brushIntensity));
+        float w0 = current.Weight0 * (slotForTarget == 0 ? 1.0f : (1.0f - I));
+        float w1 = current.Weight1 * (slotForTarget == 1 ? 1.0f : (1.0f - I));
+        float w2 = current.Weight2 * (slotForTarget == 2 ? 1.0f : (1.0f - I));
+        float w3 = current.Weight3 * (slotForTarget == 3 ? 1.0f : (1.0f - I));
 
-        if (slotForTarget == 0)
-        {
-            w0 = w0 + I * (1.0f - w0);
-            w1 = w1 * (1.0f - I);
-            w2 = w2 * (1.0f - I);
-            w3 = w3 * (1.0f - I);
-        }
-        else if (slotForTarget == 1)
-        {
-            w0 = w0 * (1.0f - I);
-            w1 = w1 + I * (1.0f - w1);
-            w2 = w2 * (1.0f - I);
-            w3 = w3 * (1.0f - I);
-        }
-        else if (slotForTarget == 2)
-        {
-            w0 = w0 * (1.0f - I);
-            w1 = w1 * (1.0f - I);
-            w2 = w2 + I * (1.0f - w2);
-            w3 = w3 * (1.0f - I);
-        }
-        else if (slotForTarget == 3)
-        {
-            w0 = w0 * (1.0f - I);
-            w1 = w1 * (1.0f - I);
-            w2 = w2 * (1.0f - I);
-            w3 = w3 + I * (1.0f - w3);
-        }
+        if (slotForTarget == 0) w0 += I * (1.0f - current.Weight0);
+        if (slotForTarget == 1) w1 += I * (1.0f - current.Weight1);
+        if (slotForTarget == 2) w2 += I * (1.0f - current.Weight2);
+        if (slotForTarget == 3) w3 += I * (1.0f - current.Weight3);
 
-        float totalWeight = w0 + w1 + w2 + w3;
-        if (totalWeight > 0.0001f)
+        float sum = w0 + w1 + w2 + w3;
+        if (sum > 0.0001f)
         {
-            w0 /= totalWeight;
-            w1 /= totalWeight;
-            w2 /= totalWeight;
-            w3 /= totalWeight;
+            w0 /= sum;
+            w1 /= sum;
+            w2 /= sum;
+            w3 /= sum;
         }
         else
         {
@@ -112,17 +98,11 @@ public struct TerrainSplatWeights : IEquatable<TerrainSplatWeights>
             w3 = 0.0f;
         }
 
-        return new TerrainSplatWeights
-        {
-            Index0 = (int)i0,
-            Index1 = (int)i1,
-            Index2 = (int)i2,
-            Index3 = (int)i3,
-            Weight0 = w0,
-            Weight1 = w1,
-            Weight2 = w2,
-            Weight3 = w3
-        };
+        current.Weight0 = w0;
+        current.Weight1 = w1;
+        current.Weight2 = w2;
+        current.Weight3 = w3;
+        return current;
     }
 
     public bool Equals(TerrainSplatWeights other)

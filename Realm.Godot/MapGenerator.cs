@@ -377,26 +377,30 @@ public static class MapGenerator
             for (int x = 0; x < width; x++)
             {
                 int myLevel = levels[x, z];
-                bool isBorder = false;
-                for (int dz = -1; dz <= 1; dz++)
-                {
-                    for (int dx = -1; dx <= 1; dx++)
-                    {
-                        int nx = x + dx;
-                        int nz = z + dz;
-                        if (nx >= 0 && nx < width && nz >= 0 && nz < depth)
-                        {
-                            if (levels[nx, nz] != myLevel)
-                            {
-                                isBorder = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (isBorder) break;
-                }
+                float h = host.GroundTerrain.Heights[x, z];
+                float hl = host.GroundTerrain.Heights[Math.Max(0, x - 1), z];
+                float hr = host.GroundTerrain.Heights[Math.Min(width - 1, x + 1), z];
+                float hd = host.GroundTerrain.Heights[x, Math.Max(0, z - 1)];
+                float hu = host.GroundTerrain.Heights[x, Math.Min(depth - 1, z + 1)];
+                float hlu = host.GroundTerrain.Heights[Math.Max(0, x - 1), Math.Min(depth - 1, z + 1)];
+                float hru = host.GroundTerrain.Heights[Math.Min(width - 1, x + 1), Math.Min(depth - 1, z + 1)];
+                float hld = host.GroundTerrain.Heights[Math.Max(0, x - 1), Math.Max(0, z - 1)];
+                float hrd = host.GroundTerrain.Heights[Math.Min(width - 1, x + 1), Math.Max(0, z - 1)];
 
-                if (isBorder)
+                float maxDiff = Math.Max(
+                    Math.Max(
+                        Math.Max(Math.Abs(h - hl), Math.Abs(h - hr)),
+                        Math.Max(Math.Abs(h - hd), Math.Abs(h - hu))
+                    ),
+                    Math.Max(
+                        Math.Max(Math.Abs(h - hlu), Math.Abs(h - hru)),
+                        Math.Max(Math.Abs(h - hld), Math.Abs(h - hrd))
+                    )
+                );
+
+                bool isCliff = maxDiff >= spacing * 0.5f;
+
+                if (isCliff)
                 {
                     host.GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(2);
                 }

@@ -343,10 +343,20 @@ public class EditorService
 								float hr = terrain.Heights[Math.Min(width - 1, x + 1), z];
 								float hd = terrain.Heights[x, Math.Max(0, z - 1)];
 								float hu = terrain.Heights[x, Math.Min(depth - 1, z + 1)];
+								float hlu = terrain.Heights[Math.Max(0, x - 1), Math.Min(depth - 1, z + 1)];
+								float hru = terrain.Heights[Math.Min(width - 1, x + 1), Math.Min(depth - 1, z + 1)];
+								float hld = terrain.Heights[Math.Max(0, x - 1), Math.Max(0, z - 1)];
+								float hrd = terrain.Heights[Math.Min(width - 1, x + 1), Math.Max(0, z - 1)];
 
 								float maxDiff = Mathf.Max(
-									Mathf.Max(Mathf.Abs(h - hl), Mathf.Abs(h - hr)),
-									Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
+									Mathf.Max(
+										Mathf.Max(Mathf.Abs(h - hl), Mathf.Abs(h - hr)),
+										Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
+									),
+									Mathf.Max(
+										Mathf.Max(Mathf.Abs(h - hlu), Mathf.Abs(h - hru)),
+										Mathf.Max(Mathf.Abs(h - hld), Mathf.Abs(h - hrd))
+									)
 								);
 
 								if (maxDiff >= blockLevelHeight * 0.5f)
@@ -402,10 +412,20 @@ public class EditorService
 								float hr = terrain.Heights[Math.Min(width - 1, x + 1), z];
 								float hd = terrain.Heights[x, Math.Max(0, z - 1)];
 								float hu = terrain.Heights[x, Math.Min(depth - 1, z + 1)];
+								float hlu = terrain.Heights[Math.Max(0, x - 1), Math.Min(depth - 1, z + 1)];
+								float hru = terrain.Heights[Math.Min(width - 1, x + 1), Math.Min(depth - 1, z + 1)];
+								float hld = terrain.Heights[Math.Max(0, x - 1), Math.Max(0, z - 1)];
+								float hrd = terrain.Heights[Math.Min(width - 1, x + 1), Math.Max(0, z - 1)];
 
 								float maxDiff = Mathf.Max(
-									Mathf.Max(Mathf.Abs(h - hl), Mathf.Abs(h - hr)),
-									Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
+									Mathf.Max(
+										Mathf.Max(Mathf.Abs(h - hl), Mathf.Abs(h - hr)),
+										Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
+									),
+									Mathf.Max(
+										Mathf.Max(Mathf.Abs(h - hlu), Mathf.Abs(h - hru)),
+										Mathf.Max(Mathf.Abs(h - hld), Mathf.Abs(h - hrd))
+									)
 								);
 
 								int targetIndex = (maxDiff >= blockLevelHeight * 0.5f) ? cliffPaintTextureIndex : paintTextureIndex;
@@ -541,10 +561,20 @@ public class EditorService
 							float hr = terrain.Heights[Math.Min(width - 1, x + 1), z];
 							float hd = terrain.Heights[x, Math.Max(0, z - 1)];
 							float hu = terrain.Heights[x, Math.Min(depth - 1, z + 1)];
+							float hlu = terrain.Heights[Math.Max(0, x - 1), Math.Min(depth - 1, z + 1)];
+							float hru = terrain.Heights[Math.Min(width - 1, x + 1), Math.Min(depth - 1, z + 1)];
+							float hld = terrain.Heights[Math.Max(0, x - 1), Math.Max(0, z - 1)];
+							float hrd = terrain.Heights[Math.Min(width - 1, x + 1), Math.Max(0, z - 1)];
 
 							float maxDiff = Mathf.Max(
-								Mathf.Max(Mathf.Abs(h - hl), Mathf.Abs(h - hr)),
-								Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
+								Mathf.Max(
+									Mathf.Max(Mathf.Abs(h - hl), Mathf.Abs(h - hr)),
+									Mathf.Max(Mathf.Abs(h - hd), Mathf.Abs(h - hu))
+								),
+								Mathf.Max(
+									Mathf.Max(Mathf.Abs(h - hlu), Mathf.Abs(h - hru)),
+									Mathf.Max(Mathf.Abs(h - hld), Mathf.Abs(h - hrd))
+								)
 							);
 
 							int targetIndex = (maxDiff >= spacing * 0.5f) ? cliffPaintTextureIndex : paintTextureIndex;

@@ -198,4 +198,63 @@ public class MapEditorUxTests
         await runner.AwaitMillis(2000);
         Assertions.AssertThat(UI.WasmConsoleWindow.Instance).IsNotNull();
     }
+
+    [TestCase]
+    public async Task RandomGenCustomSeedScreenshot()
+    {
+        //NOTE: there seems to be a race condition in this test, if mesh screenshot is flat run a 2nd time.
+        var field = typeof(MapEditorHUD).GetField("_agreementShownThisSession", BindingFlags.NonPublic | BindingFlags.Static);
+        if (field != null)
+        {
+            field.SetValue(null, true);
+        }
+
+        ISceneRunner runner = ISceneRunner.Load("res://Main.tscn");
+        await runner.AwaitMillis(1500);
+
+        UIManager.Instance.TransitionTo(GameScreen.MapEditorHUD);
+        await runner.AwaitMillis(2500);
+
+        var gameHost = GameHost.Instance;
+        Assertions.AssertThat(gameHost).IsNotNull();
+
+        MapGenerator.GenerateMap(
+            gameHost,
+            hillsDensity: 9,
+            terrainRoughness: 7,
+            mountainHeight: 9,
+            chokeWidth: 7,
+            waterLevel: 9,
+            treeDensity: 8,
+            resourceAbundance: 9,
+            decoDensity: 10,
+            seedString: "246272"
+        );
+
+        await runner.AwaitMillis(2000);
+
+        var camera = gameHost.MainCamera;
+        if (camera != null)
+        {
+            camera.Position = new Vector3(0.0f, 95.0f, 75.0f);
+            camera.RotationDegrees = new Vector3(-55.0f, 0.0f, 0.0f);
+        }
+
+        await runner.AwaitMillis(1000);
+
+        global::Godot.Image image = runner.Scene().GetViewport().GetTexture().GetImage();
+        string tempDir = @"C:\temp\realm_screenshots";
+        Directory.CreateDirectory(tempDir);
+
+        string baseFileName = "terrain_screenshot";
+        int index = 1;
+        string filePath = Path.Combine(tempDir, $"{baseFileName}_{index}.png");
+        while (File.Exists(filePath))
+        {
+            index++;
+            filePath = Path.Combine(tempDir, $"{baseFileName}_{index}.png");
+        }
+
+        image.SavePng(filePath);
+    }    
 }
