@@ -558,9 +558,10 @@ public class SaveLoadService
 				{
 					foreach (var u in saveData.Units)
 					{
+						string cleanUnitId = StripIdPath(u.UnitId);
 						var reqEnt = EcsWorld.Create();
 						EcsWorld.Add(reqEnt, new UnitSpawnRequest(
-							u.UnitId,
+							cleanUnitId,
 							new System.Numerics.Vector3(u.PosX, u.PosY, u.PosZ),
 							u.RotationY,
 							u.Scale,
@@ -573,9 +574,10 @@ public class SaveLoadService
 				{
 					foreach (var p in saveData.Props)
 					{
+						string cleanPropId = StripIdPath(p.PropId);
 						var reqEnt = EcsWorld.Create();
 						EcsWorld.Add(reqEnt, new PropSpawnRequest(
-							p.PropId,
+							cleanPropId,
 							new System.Numerics.Vector3(p.PosX, p.PosY, p.PosZ),
 							p.RotationY,
 							p.Scale
@@ -605,5 +607,16 @@ public class SaveLoadService
 			Console.Error.WriteLine(ex.Message);
 			return false;
 		}
+	}
+
+	/// <summary>
+	/// Some older saves stored full file paths as unit/prop ids. Strip the path
+	/// while preserving the id itself (including dots, e.g. "Unit.v2").
+	/// </summary>
+	private static string StripIdPath(string id)
+	{
+		if (string.IsNullOrEmpty(id)) return id;
+		string directory = Path.GetDirectoryName(id);
+		return string.IsNullOrEmpty(directory) ? id : Path.GetFileName(id);
 	}
 }

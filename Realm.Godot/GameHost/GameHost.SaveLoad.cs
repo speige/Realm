@@ -242,7 +242,6 @@ public partial class GameHost
 			}
 
 			AlignTerrainSplatMapExternal();
-			GroundTerrain.UpdateMeshAndPhysics();
 
 			if (!terrainOnly)
 			{
@@ -276,6 +275,8 @@ public partial class GameHost
 					EcsWorld.Destroy(reqEnt);
 				}
 			}
+
+			GroundTerrain.UpdateMeshAndPhysics(false, true);
 
 			MapEditorHUD.Instance?.RegenerateMinimap();
 
