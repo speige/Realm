@@ -12,6 +12,7 @@ using Realm.Godot.ReplaySystem;
 using Realm.MapAPI;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 
 public partial class GameHost : Node3D, IGameAPI
@@ -1740,7 +1741,7 @@ public class {mapName} : IMapScript
 	void IGameAPI.BroadcastMessage(string message)
 	{
 		string formatted = $"[HOST BROADCAST] {message}";
-		try { System.IO.File.AppendAllText("D:/git/Realm/wasm_debug.log", $"{formatted}\n"); } catch { }
+		GD.Print(formatted);
 		Realm.Godot.WasmRuntime.LogToConsole(formatted);
 		((IGameAPI)this).ShowFeedbackText(message, new System.Numerics.Vector3(0.9f, 0.9f, 0.9f));
 	}
@@ -2494,19 +2495,19 @@ public class {mapName} : IMapScript
 					string binDir = System.IO.Path.Combine(checkDir, "bin");
 					if (System.IO.Directory.Exists(binDir))
 					{
-						PendingMapScriptPath = System.Linq.Enumerable.FirstOrDefault(System.IO.Directory.GetFiles(
+						PendingMapScriptPath = System.IO.Directory.GetFiles(
 							binDir,
 							"CustomMap.wasm",
 							System.IO.SearchOption.AllDirectories
-						));
+						).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
 					}
 					if (string.IsNullOrEmpty(PendingMapScriptPath))
 					{
-						PendingMapScriptPath = System.Linq.Enumerable.FirstOrDefault(System.IO.Directory.GetFiles(
+						PendingMapScriptPath = System.IO.Directory.GetFiles(
 							checkDir,
 							"*.wasm",
 							System.IO.SearchOption.AllDirectories
-						));
+						).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
 					}
 				}
 			}
@@ -2521,7 +2522,7 @@ public class {mapName} : IMapScript
 
 				try
 				{
-					System.IO.File.AppendAllText("D:/git/Realm/wasm_debug.log", $"[{DateTime.Now:HH:mm:ss}] GameHost LoadMapScript: PendingMapScriptPath={PendingMapScriptPath}\n");
+					GD.Print($"[{DateTime.Now:HH:mm:ss}] GameHost LoadMapScript: PendingMapScriptPath={PendingMapScriptPath}");
 					if (PendingMapScriptPath.EndsWith(".wasm", StringComparison.OrdinalIgnoreCase))
 					{
 						string mapNameOnly = System.IO.Path.GetFileNameWithoutExtension(PendingMapScriptPath);
@@ -2567,7 +2568,7 @@ public class {mapName} : IMapScript
 				}
 				catch (Exception ex)
 				{
-					System.IO.File.AppendAllText("D:/git/Realm/wasm_debug.log", $"[{DateTime.Now:HH:mm:ss}] GameHost LoadMapScript failed: {ex}\n");
+					GD.PrintErr($"[{DateTime.Now:HH:mm:ss}] GameHost LoadMapScript failed: {ex}");
 					GD.PrintErr($"Failed to load pending map script from {PendingMapScriptPath}: {ex.Message}");
 				}
 				PendingMapScriptPath = null;
@@ -2756,6 +2757,10 @@ public class {mapName} : IMapScript
 		{
 			if (EcsWorld.IsAlive(attackerEntity) && EcsWorld.IsAlive(targetEntity))
 			{
+				if (GameHost.TryGetUnit3D(attackerEntity, out var attackerUnit3D))
+				{
+					attackerUnit3D.PlayAnimation("Attack");
+				}
 				OnUnitAttacked?.Invoke(GetUnitWrapper(attackerEntity), GetUnitWrapper(targetEntity));
 			}
 		};

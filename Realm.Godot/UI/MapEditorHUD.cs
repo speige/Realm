@@ -2718,7 +2718,7 @@ public partial class MapEditorHUD : Control
 					var compileProcess = new System.Diagnostics.Process();
 					compileProcess.StartInfo.FileName = "dotnet";
 					compileProcess.StartInfo.Arguments = "publish \"CustomMap.csproj\" -c Release -r wasi-wasm";
-					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = "C:\\Users\\devin\\.wasi-sdk\\wasi-sdk-25.0-x86_64-windows";
+					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = WasiSdkResolver.ResolveWasiSdkPath();
 					compileProcess.StartInfo.WorkingDirectory = workspace;
 					compileProcess.StartInfo.CreateNoWindow = true;
 					compileProcess.StartInfo.UseShellExecute = false;
@@ -3286,7 +3286,7 @@ public partial class MapEditorHUD : Control
 						binDir,
 						"*.wasm",
 						System.IO.SearchOption.AllDirectories
-					).FirstOrDefault();
+					).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
 				}
 
 				if (string.IsNullOrEmpty(existingWasm) && !string.IsNullOrEmpty(_currentSourceFolder) && System.IO.Directory.Exists(_currentSourceFolder))
@@ -3298,7 +3298,7 @@ public partial class MapEditorHUD : Control
 							sourceBinDir,
 							"*.wasm",
 							System.IO.SearchOption.AllDirectories
-						).FirstOrDefault();
+						).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
 					}
 				}
 
@@ -3348,7 +3348,7 @@ public partial class MapEditorHUD : Control
 					var compileProcess = new System.Diagnostics.Process();
 					compileProcess.StartInfo.FileName = "dotnet";
 					compileProcess.StartInfo.Arguments = $"publish \"{csproj}\" -c Release -r wasi-wasm";
-					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = "C:\\Users\\devin\\.wasi-sdk\\wasi-sdk-25.0-x86_64-windows";
+					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = WasiSdkResolver.ResolveWasiSdkPath();
 					compileProcess.StartInfo.WorkingDirectory = workspace;
 					compileProcess.StartInfo.CreateNoWindow = true;
 					compileProcess.StartInfo.UseShellExecute = false;
@@ -5032,7 +5032,7 @@ public partial class MapEditorHUD : Control
 					binDir,
 					"*.wasm",
 					System.IO.SearchOption.AllDirectories
-				).FirstOrDefault();
+				).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
 			}
 			if (System.IO.File.Exists(wasmPath))
 			{

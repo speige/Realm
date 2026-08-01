@@ -161,7 +161,7 @@ public class TestWasmMap : IWasmModule
         var compileProcess = new System.Diagnostics.Process();
         compileProcess.StartInfo.FileName = "dotnet";
         compileProcess.StartInfo.Arguments = "publish \"TestWasmMap.csproj\" -c Release -r wasi-wasm";
-        compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = "C:\\Users\\devin\\.wasi-sdk\\wasi-sdk-25.0-x86_64-windows";
+        compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = WasiSdkResolver.ResolveWasiSdkPath();
         compileProcess.StartInfo.WorkingDirectory = tempMapDir;
         compileProcess.StartInfo.CreateNoWindow = true;
         compileProcess.StartInfo.UseShellExecute = false;
@@ -174,7 +174,7 @@ public class TestWasmMap : IWasmModule
             throw new Exception($"Wasm compilation failed (exit code {compileProcess.ExitCode})");
         }
 
-        string wasmPath = Directory.GetFiles(Path.Combine(tempMapDir, "bin"), "*.wasm", SearchOption.AllDirectories).FirstOrDefault();
+        string wasmPath = Directory.GetFiles(Path.Combine(tempMapDir, "bin"), "*.wasm", SearchOption.AllDirectories).OrderByDescending(f => File.GetLastWriteTimeUtc(f)).FirstOrDefault();
         if (string.IsNullOrEmpty(wasmPath) || !File.Exists(wasmPath))
         {
             throw new FileNotFoundException("Compiled WASM file not found in build directory.");
