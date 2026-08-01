@@ -11,6 +11,14 @@ namespace Realm.Ecs.Services;
 
 internal class TerrainNavMeshService
 {
+	// Recast/Detour bake tuning. Smaller cell sizes improve path fidelity but increase bake cost.
+	private const float NavMeshCellSize = 0.15f;
+	private const float NavMeshCellHeight = 0.1f;
+	private const float AgentRadius = 0.1f;
+	private const float AgentHeight = 2.5f;
+	private const float AgentMaxClimb = 0.9f;
+	private const float AgentMaxSlope = 55.0f;
+
 	private readonly WorldAccessor _ecsWorldAccessor;
 
 	public TerrainNavMeshService(WorldAccessor ecsWorldAccessor)
@@ -102,15 +110,16 @@ internal class TerrainNavMeshService
 		{
 			for (int x = 0; x < width; x++)
 			{
-				int pathingCode = state.PathingCodes[x, z];
-				bool isWalkable = (pathingCode & 8) != 0
-					&& (pathingCode & (1 | 2)) == 0; // not SHALLOW_WATER or DEEP_WATER
+				var pathingCode = (TerrainPathingFlags)state.PathingCodes[x, z];
+				bool isWalkable = (pathingCode & TerrainPathingFlags.Ground) != 0
+					&& (pathingCode & (TerrainPathingFlags.ShallowWater | TerrainPathingFlags.DeepWater)) == 0;
 				if (!isWalkable)
 				{
 					float lx = (x - (width - 1) / 2.0f) * spacing;
 					float lz = (z - (depth - 1) / 2.0f) * spacing;
 					float h = state.Heights[x, z];
-					float halfS = spacing * 0.5f;
+					// Slightly smaller than the cell so adjacent unwalkable volumes don't overlap and seal off walkable paths.
+					float halfS = spacing * 0.45f;
 					var vol = new RcConvexVolume
 					{
 						verts = new float[]
@@ -129,18 +138,10 @@ internal class TerrainNavMeshService
 			}
 		}
 
-		float minHeightBrushAdjustment = 5.0f;
-		float maxUnitHeight = 2.5f;
-		float cellSize = minHeightBrushAdjustment / maxUnitHeight / 10.0f;
-		float cellHeight = cellSize * 0.5f;
-		float agentRadius = 0.3f;
-		float agentHeight = 2.5f;
-		float agentMaxClimb = 0.9f;
-		float agentMaxSlope = 45.0f;
 		RcConfig cfg = new RcConfig(
 			RcPartition.WATERSHED,
-			cellSize, cellHeight,
-			agentMaxSlope, agentHeight, agentRadius, agentMaxClimb,
+			NavMeshCellSize, NavMeshCellHeight,
+			AgentMaxSlope, AgentHeight, AgentRadius, AgentMaxClimb,
 			8, 20,
 			3.0f, 1.3f,
 			6,
@@ -173,9 +174,9 @@ internal class TerrainNavMeshService
 			pars.cs = result.Mesh.cs;
 			pars.ch = result.Mesh.ch;
 			pars.buildBvTree = true;
-			pars.walkableHeight = agentHeight;
-			pars.walkableRadius = agentRadius;
-			pars.walkableClimb = agentMaxClimb;
+			pars.walkableHeight = AgentHeight;
+			pars.walkableRadius = AgentRadius;
+			pars.walkableClimb = AgentMaxClimb;
 			pars.polyAreas = new int[result.Mesh.npolys];
 			pars.polyFlags = new int[result.Mesh.npolys];
 
@@ -206,11 +207,11 @@ internal class TerrainNavMeshService
 
 				int xGrid = Math.Clamp((int)Math.Round(avgX / spacing + (width - 1) / 2.0f), 0, width - 1);
 				int zGrid = Math.Clamp((int)Math.Round(avgZ / spacing + (depth - 1) / 2.0f), 0, depth - 1);
-				int pathFlags = state.PathingCodes[xGrid, zGrid];
+				var pathFlags = (TerrainPathingFlags)state.PathingCodes[xGrid, zGrid];
 
-				bool isPolyWalkable = (pathFlags & 8) != 0
-					&& (pathFlags & (16 | 1 | 2)) == 0; // not UNPATHABLE, SHALLOW_WATER, or DEEP_WATER
-				pars.polyFlags[i] = isPolyWalkable ? pathFlags : 0;
+				bool isPolyWalkable = (pathFlags & TerrainPathingFlags.Ground) != 0
+					&& (pathFlags & (TerrainPathingFlags.Unpathable | TerrainPathingFlags.ShallowWater | TerrainPathingFlags.DeepWater)) == 0;
+				pars.polyFlags[i] = isPolyWalkable ? (int)pathFlags : 0;
 			}
 			if (result.MeshDetail != null)
 			{

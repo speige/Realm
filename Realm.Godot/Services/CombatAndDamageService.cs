@@ -385,7 +385,11 @@ internal class CombatAndDamageService
 		}
 		else
 		{
-			if (!EcsWorld.Has<Realm.Ecs.Components.Movement.HoldPosition>(entity) && EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity) && !EcsWorld.Has<Building>(entity))
+			if (EcsWorld.Has<Building>(entity))
+			{
+				_tickActionsToRemoveTarget.Add(entity);
+			}
+			else if (!EcsWorld.Has<Realm.Ecs.Components.Movement.HoldPosition>(entity) && EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity))
 			{
 				_tickActionsToChase.Add((entity, targetPos));
 			}

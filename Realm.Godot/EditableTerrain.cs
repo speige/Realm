@@ -255,11 +255,12 @@ public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLine
 		}
 	}
 
-	public const int PATHING_SHALLOW_WATER = 1;
-	public const int PATHING_DEEP_WATER = 2;
-	public const int PATHING_FLYING = 4;
-	public const int PATHING_GROUND = 8;
-	public const int PATHING_BUILDABLE = 32;
+	public const int PATHING_SHALLOW_WATER = (int)TerrainPathingFlags.ShallowWater;
+	public const int PATHING_DEEP_WATER = (int)TerrainPathingFlags.DeepWater;
+	public const int PATHING_FLYING = (int)TerrainPathingFlags.Flying;
+	public const int PATHING_GROUND = (int)TerrainPathingFlags.Ground;
+	public const int PATHING_UNPATHABLE = (int)TerrainPathingFlags.Unpathable;
+	public const int PATHING_BUILDABLE = (int)TerrainPathingFlags.Buildable;
 
 	public static int GetDefaultPathingCode(float height, float waterHeight, bool waterEnabled)
 	{

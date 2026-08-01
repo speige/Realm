@@ -375,9 +375,6 @@ public class WasmLinkerGenerator : IIncrementalGenerator
 
     private static void EmitEntityPropertyBindings(StringBuilder sb, IPropertySymbol property, string tKebab, INamedTypeSymbol entitySymbol, INamedTypeSymbol gameApiSymbol, ref bool lastWasMultiLine, HashSet<string> definedFunctions)
     {
-        var retKind = ClassifyReturn(property.Type);
-        if (retKind == RetKind.Unsupported) return;
-
         string witBase = tKebab + "-" + ToKebabCase(property.Name);
         string resolver = FindResolverMember(gameApiSymbol, entitySymbol);
 
@@ -389,69 +386,80 @@ public class WasmLinkerGenerator : IIncrementalGenerator
                 sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}-y\", (int id) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); return u != null ? u.{property.Name}.Y : 0f; }});");
             if (definedFunctions.Add($"{witBase}-z"))
                 sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}-z\", (int id) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); return u != null ? u.{property.Name}.Z : 0f; }});");
-        }
-        else
-        {
-            string expr = $"((IGameAPI?)GameHost.Instance)?.{resolver}(id)?.{property.Name}";
-            string mapped;
-            if (retKind == RetKind.EntityReturn || retKind == RetKind.EntityNullableReturn)
-            {
-                IsEntityInterface(property.Type, out var unwrapped);
-                bool targetHasId = unwrapped.GetMembers().Any(m => m is IPropertySymbol p && p.Name == "UniqueId");
-                if (targetHasId)
-                {
-                    mapped = $"{expr}?.UniqueId ?? 0";
-                }
-                else
-                {
-                    string colName = FindCollectionMember(gameApiSymbol, unwrapped);
-                    mapped = $"({expr} != null) ? (((IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf({expr}) ?? -1) : -1";
-                }
-            }
-            else
-            {
-                mapped = retKind switch
-                {
-                    RetKind.BoolReturn => $"({expr} ?? false) ? 1 : 0",
-                    RetKind.DirectFloat => $"{expr} ?? 0f",
-                    RetKind.DirectInt => $"{expr} ?? 0",
-                    RetKind.StringReturn => $"{expr} ?? \"\"",
-                    _ => "0"
-                };
-            }
-
-            if (definedFunctions.Add(witBase))
-            {
-                if (lastWasMultiLine) sb.AppendLine();
-                if (retKind == RetKind.StringReturn)
-                {
-                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}\", (Caller caller, int id, int retArea) => {{ string s = {mapped}; WriteGuestString(caller, retArea, s); }});");
-                }
-                else
-                {
-                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}\", (int id) => {mapped});");
-                }
-                lastWasMultiLine = false;
-            }
 
             if (property.SetMethod != null)
             {
                 string setWitBase = "set-" + witBase;
                 if (definedFunctions.Add(setWitBase))
                 {
-                    if (property.Type.SpecialType == SpecialType.System_Boolean)
-                        sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val != 0; }});");
-                    else if (property.Type.SpecialType == SpecialType.System_Single)
-                        sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, float val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val; }});");
-                    else if (property.Type.SpecialType == SpecialType.System_Int32)
-                        sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val; }});");
-                    else if (property.Type.SpecialType == SpecialType.System_String)
-                        sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (Caller caller, int id, int valPtr, int valLen) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = ReadGuestString(caller, valPtr, valLen); }});");
-                    else if (IsEntityInterface(property.Type, out var unwrapped))
-                    {
-                        string resolverR = FindResolverMember(gameApiSymbol, unwrapped);
-                        sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = ((IGameAPI?)GameHost.Instance)?.{resolverR}(val); }});");
-                    }
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, float valX, float valY, float valZ) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = new System.Numerics.Vector3(valX, valY, valZ); }});");
+                }
+            }
+            return;
+        }
+
+        var retKind = ClassifyReturn(property.Type);
+        if (retKind == RetKind.Unsupported) return;
+
+        string expr = $"((IGameAPI?)GameHost.Instance)?.{resolver}(id)?.{property.Name}";
+        string mapped;
+        if (retKind == RetKind.EntityReturn || retKind == RetKind.EntityNullableReturn)
+        {
+            IsEntityInterface(property.Type, out var unwrapped);
+            bool targetHasId = unwrapped.GetMembers().Any(m => m is IPropertySymbol p && p.Name == "UniqueId");
+            if (targetHasId)
+            {
+                mapped = $"{expr}?.UniqueId ?? 0";
+            }
+            else
+            {
+                string colName = FindCollectionMember(gameApiSymbol, unwrapped);
+                mapped = $"({expr} != null) ? (((IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf({expr}) ?? -1) : -1";
+            }
+        }
+        else
+        {
+            mapped = retKind switch
+            {
+                RetKind.BoolReturn => $"({expr} ?? false) ? 1 : 0",
+                RetKind.DirectFloat => $"{expr} ?? 0f",
+                RetKind.DirectInt => $"{expr} ?? 0",
+                RetKind.StringReturn => $"{expr} ?? \"\"",
+                _ => "0"
+            };
+        }
+
+        if (definedFunctions.Add(witBase))
+        {
+            if (lastWasMultiLine) sb.AppendLine();
+            if (retKind == RetKind.StringReturn)
+            {
+                sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}\", (Caller caller, int id, int retArea) => {{ string s = {mapped}; WriteGuestString(caller, retArea, s); }});");
+            }
+            else
+            {
+                sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}\", (int id) => {mapped});");
+            }
+            lastWasMultiLine = false;
+        }
+
+        if (property.SetMethod != null)
+        {
+            string setWitBase = "set-" + witBase;
+            if (definedFunctions.Add(setWitBase))
+            {
+                if (property.Type.SpecialType == SpecialType.System_Boolean)
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val != 0; }});");
+                else if (property.Type.SpecialType == SpecialType.System_Single)
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, float val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val; }});");
+                else if (property.Type.SpecialType == SpecialType.System_Int32)
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val; }});");
+                else if (property.Type.SpecialType == SpecialType.System_String)
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (Caller caller, int id, int valPtr, int valLen) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = ReadGuestString(caller, valPtr, valLen); }});");
+                else if (IsEntityInterface(property.Type, out var unwrapped))
+                {
+                    string resolverR = FindResolverMember(gameApiSymbol, unwrapped);
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = ((IGameAPI?)GameHost.Instance)?.{resolverR}(val); }});");
                 }
             }
         }

@@ -40,20 +40,12 @@ internal class NavMeshPathfinder
 			query.FindPath(startRef, endRef, startPt, endPt, _filter, _pathCorridorBuffer, out int corridorCount, _pathCorridorBuffer.Length);
 			if (corridorCount > 0)
 			{
-				float straightDist = Vector3.Distance(start, end);
-				if (straightDist < 6.0f && corridorCount > 5)
+				query.FindStraightPath(startPt, endPt, _pathCorridorBuffer, corridorCount, _straightPathBuffer, out int straightPathCount, _straightPathBuffer.Length, 0);
+				pf.WaypointCount = Math.Min(straightPathCount, WaypointBuffer.Length);
+				pf.CurrentWaypointIndex = 0;
+				for (int i = 0; i < pf.WaypointCount; i++)
 				{
-					pf.WaypointCount = 0;
-				}
-				else
-				{
-					query.FindStraightPath(startPt, endPt, _pathCorridorBuffer, corridorCount, _straightPathBuffer, out int straightPathCount, _straightPathBuffer.Length, 0);
-					pf.WaypointCount = Math.Min(straightPathCount, WaypointBuffer.Length);
-					pf.CurrentWaypointIndex = 0;
-					for (int i = 0; i < pf.WaypointCount; i++)
-					{
-						pf.Waypoints[i] = new Vector3(_straightPathBuffer[i].pos.X, _straightPathBuffer[i].pos.Y, _straightPathBuffer[i].pos.Z);
-					}
+					pf.Waypoints[i] = new Vector3(_straightPathBuffer[i].pos.X, _straightPathBuffer[i].pos.Y, _straightPathBuffer[i].pos.Z);
 				}
 			}
 		}

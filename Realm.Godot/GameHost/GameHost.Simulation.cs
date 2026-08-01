@@ -142,6 +142,10 @@ public partial class GameHost
 	private const float BaseConstructionWorkRatePerSecond = 1f / 20f;
 	private float ConstructionWorkRatePerSecond => FastBuildEnabled ? BaseConstructionWorkRatePerSecond * 10f : BaseConstructionWorkRatePerSecond;
 
+	// Units face their attack/heal/build target once they are within this distance,
+	// even while still moving toward it.
+	private const float LookTargetProximityDistance = 5.0f;
+
 	private readonly List<(Entity Worker, BuildTask UpdatedTask)> _pendingBuildTaskUpdates = new();
 	private readonly List<Entity> _completedBuildings = new();
 	private readonly List<(Entity Entity, string? Type, System.Numerics.Vector3 Position, Entity Target)> _pendingQueuedCommands = new();
@@ -467,49 +471,60 @@ public partial class GameHost
 
 				unit3D.Velocity = velVec;
 
+				Vector3 lookTargetPos = Vector3.Zero;
+				bool hasLookTarget = false;
+
+				if (EcsWorld.Has<AttackTarget>(entity))
+				{
+					var targetEnt = EcsWorld.Get<AttackTarget>(entity).Target;
+					if (EcsWorld.IsAlive(targetEnt) && EcsWorld.Has<Position>(targetEnt))
+					{
+						var tPosComp = EcsWorld.Get<Position>(targetEnt);
+						lookTargetPos = new Vector3(tPosComp.Value.X, tPosComp.Value.Y, tPosComp.Value.Z);
+						hasLookTarget = true;
+					}
+				}
+				else if (EcsWorld.Has<HealingTarget>(entity))
+				{
+					var targetEnt = EcsWorld.Get<HealingTarget>(entity).Target;
+					if (EcsWorld.IsAlive(targetEnt) && EcsWorld.Has<Position>(targetEnt))
+					{
+						var tPosComp = EcsWorld.Get<Position>(targetEnt);
+						lookTargetPos = new Vector3(tPosComp.Value.X, tPosComp.Value.Y, tPosComp.Value.Z);
+						hasLookTarget = true;
+					}
+				}
+				else if (EcsWorld.Has<BuildTask>(entity))
+				{
+					var buildTask = EcsWorld.Get<BuildTask>(entity);
+					if (EcsWorld.IsAlive(buildTask.BuildingEntity) && EcsWorld.Has<Position>(buildTask.BuildingEntity))
+					{
+						var bPos = EcsWorld.Get<Position>(buildTask.BuildingEntity);
+						lookTargetPos = new Vector3(bPos.Value.X, bPos.Value.Y, bPos.Value.Z);
+						hasLookTarget = true;
+					}
+				}
+
 				Vector3 dir = unit3D.Velocity;
 				bool hasDir = dir.LengthSquared() > 0.01f;
-				if (!hasDir)
+
+				bool forceLookTarget = false;
+				if (hasLookTarget)
 				{
-					Vector3 lookTargetPos = Vector3.Zero;
-					bool hasLookTarget = false;
+					if (!hasDir) forceLookTarget = true;
+					else
+					{
+					float distToLook = lookTargetPos.DistanceTo(nextPos);
+					if (distToLook < LookTargetProximityDistance) forceLookTarget = true;
+					}
+				}
 
-					if (EcsWorld.Has<AttackTarget>(entity))
-					{
-						var targetEnt = EcsWorld.Get<AttackTarget>(entity).Target;
-						if (EcsWorld.IsAlive(targetEnt) && EcsWorld.Has<Position>(targetEnt))
-						{
-							var tPosComp = EcsWorld.Get<Position>(targetEnt);
-							lookTargetPos = new Vector3(tPosComp.Value.X, tPosComp.Value.Y, tPosComp.Value.Z);
-							hasLookTarget = true;
-						}
-					}
-					else if (EcsWorld.Has<HealingTarget>(entity))
-					{
-						var targetEnt = EcsWorld.Get<HealingTarget>(entity).Target;
-						if (EcsWorld.IsAlive(targetEnt) && EcsWorld.Has<Position>(targetEnt))
-						{
-							var tPosComp = EcsWorld.Get<Position>(targetEnt);
-							lookTargetPos = new Vector3(tPosComp.Value.X, tPosComp.Value.Y, tPosComp.Value.Z);
-							hasLookTarget = true;
-						}
-					}
-					else if (EcsWorld.Has<BuildTask>(entity))
-					{
-						var buildTask = EcsWorld.Get<BuildTask>(entity);
-						if (EcsWorld.IsAlive(buildTask.BuildingEntity) && EcsWorld.Has<Position>(buildTask.BuildingEntity))
-						{
-							var bPos = EcsWorld.Get<Position>(buildTask.BuildingEntity);
-							lookTargetPos = new Vector3(bPos.Value.X, bPos.Value.Y, bPos.Value.Z);
-							hasLookTarget = true;
-						}
-					}
-
-					if (hasLookTarget)
-					{
-						dir = (lookTargetPos - nextPos).Normalized();
-						hasDir = dir.LengthSquared() > 0.01f;
-					}
+				if (forceLookTarget)
+				{
+					dir = (lookTargetPos - nextPos);
+					dir.Y = 0f; // Keep rotation level
+					dir = dir.Normalized();
+					hasDir = dir.LengthSquared() > 0.01f;
 				}
 
 				if (hasDir)
