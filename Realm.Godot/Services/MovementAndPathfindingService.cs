@@ -40,6 +40,11 @@ internal class MovementAndPathfindingService
 	private float _fDelta;
 	private readonly float _collisionCellSize = Realm.Ecs.Common.GameplayConstants.PathfindingGridSize;
 
+	// Fraction of the combined collision radii at which units start being pushed apart.
+	// Lower values let units overlap and clump together more (and squeeze through gaps
+	// narrower than their collision diameter), higher values keep them spread out.
+	private const float CollisionSeparationFactor = 0.45f;
+
 	private readonly Dictionary<long, List<Entity>> _unitGrid = new();
 	private readonly Dictionary<long, List<Entity>> _propGrid = new();
 	private readonly List<List<Entity>> _listPool = new();
@@ -265,7 +270,16 @@ internal class MovementAndPathfindingService
 		{
 			if (_hasTerrainState)
 			{
-				_pathfinder.ComputePath(_currentTerrainState.NavMeshQuery, pathfindStart, pathfindEnd, pathingFlags, ref pf);
+				if (((TerrainPathingFlags)pathingFlags & TerrainPathingFlags.Flying) != 0)
+				{
+					pf.WaypointCount = 1;
+					pf.CurrentWaypointIndex = 0;
+					pf.Waypoints[0] = moveTo.Target;
+				}
+				else
+				{
+					_pathfinder.ComputePath(_currentTerrainState.NavMeshQuery, pathfindStart, pathfindEnd, pathingFlags, ref pf);
+				}
 				pf.Target = moveTo.Target;
 			}
 		}
@@ -380,7 +394,7 @@ internal class MovementAndPathfindingService
 								? EcsWorld.Get<CollisionRadius>(otherEntity).Value 
 								: (EcsWorld.Has<CollisionScale>(otherEntity) ? EcsWorld.Get<CollisionScale>(otherEntity).Value : 1.0f) * 1.2f;
 
-							float minDist = (r1 + r2) * 0.85f;
+							float minDist = (r1 + r2) * CollisionSeparationFactor;
 							var otherPos = EcsWorld.Get<Position>(otherEntity).Value;
 							float ox = nextPos.X - otherPos.X;
 							float oz = nextPos.Z - otherPos.Z;
@@ -419,7 +433,7 @@ internal class MovementAndPathfindingService
 								? EcsWorld.Get<CollisionRadius>(propEntity).Value 
 								: (EcsWorld.Has<CollisionScale>(propEntity) ? EcsWorld.Get<CollisionScale>(propEntity).Value : 1.0f) * 1.5f;
 
-							float minDist = (r1 + r2) * 0.85f;
+							float minDist = (r1 + r2) * CollisionSeparationFactor;
 							var propPos = EcsWorld.Get<Position>(propEntity).Value;
 							float ox = nextPos.X - propPos.X;
 							float oz = nextPos.Z - propPos.Z;
