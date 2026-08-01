@@ -149,7 +149,7 @@ internal class UnitSpawnService
 		else
 		{
 			EcsWorld.Add(entity, new Building());
-			if (id == "tower")
+			if (id.IndexOf("tower", StringComparison.OrdinalIgnoreCase) >= 0)
 			{
 				EcsWorld.Add(entity, new TowerUpgradeLevel(1));
 			}

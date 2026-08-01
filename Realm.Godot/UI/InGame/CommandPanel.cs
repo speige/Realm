@@ -574,7 +574,10 @@ public class CommandPanel
 					items.Add(CreateAbilityItem(ab));
 				}
 			}
-			else if (focusedUnit.UnitId == "tower")
+			else if (focusedUnit.IsBuilding
+				&& GameHost.Instance?.EcsWorld != null
+				&& GameHost.Instance.EcsWorld.IsAlive(focusedUnit.Entity)
+				&& GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Core.TowerUpgradeLevel>(focusedUnit.Entity))
 			{
 				items.Add(new CommandCardItem
 				{
