@@ -194,6 +194,12 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		get
 		{
 			if (!_world.IsAlive(_entity)) return 0f;
+			var statService = ServiceLocator.Get<Realm.Ecs.Services.StatService>();
+			if (statService != null)
+			{
+				float actualDamage = statService.GetStatValue(_entity, new Realm.Ecs.Common.StatId("Attack"));
+				if (actualDamage > 0f) return actualDamage;
+			}
 			if (_world.Has<Attack>(_entity))
 			{
 				return _world.Get<Attack>(_entity).Damage;
@@ -207,6 +213,11 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 			{
 				var atk = _world.Get<Attack>(_entity);
 				_world.Set(_entity, new Attack(value, atk.Range, atk.Cooldown));
+			}
+			if (_world.Has<Realm.Ecs.Components.Stats.Stats>(_entity))
+			{
+				var stats = _world.Get<Realm.Ecs.Components.Stats.Stats>(_entity);
+				stats.Value[new Realm.Ecs.Common.StatId("Attack")] = value;
 			}
 		}
 	}
@@ -238,6 +249,12 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		get
 		{
 			if (!_world.IsAlive(_entity)) return 0f;
+			var statService = ServiceLocator.Get<Realm.Ecs.Services.StatService>();
+			if (statService != null)
+			{
+				float actualArmor = statService.GetStatValue(_entity, new Realm.Ecs.Common.StatId("Armor"));
+				if (actualArmor > 0f) return actualArmor;
+			}
 			if (_world.Has<Armor>(_entity))
 			{
 				return _world.Get<Armor>(_entity).Value;
@@ -251,6 +268,11 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 			{
 				_world.Set(_entity, new Armor(value));
 			}
+			if (_world.Has<Realm.Ecs.Components.Stats.Stats>(_entity))
+			{
+				var stats = _world.Get<Realm.Ecs.Components.Stats.Stats>(_entity);
+				stats.Value[new Realm.Ecs.Common.StatId("Armor")] = value;
+			}
 		}
 	}
 
@@ -259,6 +281,12 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		get
 		{
 			if (!_world.IsAlive(_entity)) return 0f;
+			var statService = ServiceLocator.Get<Realm.Ecs.Services.StatService>();
+			if (statService != null)
+			{
+				float actualSpeed = statService.GetStatValue(_entity, new Realm.Ecs.Common.StatId("MovementSpeed"));
+				if (actualSpeed > 0f) return actualSpeed;
+			}
 			if (_world.Has<MovementStats>(_entity))
 			{
 				return _world.Get<MovementStats>(_entity).Speed;
@@ -272,6 +300,11 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 			{
 				var mv = _world.Get<MovementStats>(_entity);
 				_world.Set(_entity, new MovementStats(value, mv.Acceleration, mv.TurnRate));
+			}
+			if (_world.Has<Realm.Ecs.Components.Stats.Stats>(_entity))
+			{
+				var stats = _world.Get<Realm.Ecs.Components.Stats.Stats>(_entity);
+				stats.Value[new Realm.Ecs.Common.StatId("MovementSpeed")] = value;
 			}
 		}
 	}
