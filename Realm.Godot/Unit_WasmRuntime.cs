@@ -194,7 +194,7 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		get
 		{
 			if (!_world.IsAlive(_entity)) return 0f;
-			var statService = ServiceLocator.Get<Realm.Ecs.Services.StatService>();
+			var statService = ServiceLocator.TryGet<Realm.Ecs.Services.StatService>();
 			if (statService != null)
 			{
 				float actualDamage = statService.GetStatValue(_entity, new Realm.Ecs.Common.StatId("Attack"));
@@ -249,7 +249,7 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		get
 		{
 			if (!_world.IsAlive(_entity)) return 0f;
-			var statService = ServiceLocator.Get<Realm.Ecs.Services.StatService>();
+			var statService = ServiceLocator.TryGet<Realm.Ecs.Services.StatService>();
 			if (statService != null)
 			{
 				float actualArmor = statService.GetStatValue(_entity, new Realm.Ecs.Common.StatId("Armor"));
@@ -281,7 +281,7 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		get
 		{
 			if (!_world.IsAlive(_entity)) return 0f;
-			var statService = ServiceLocator.Get<Realm.Ecs.Services.StatService>();
+			var statService = ServiceLocator.TryGet<Realm.Ecs.Services.StatService>();
 			if (statService != null)
 			{
 				float actualSpeed = statService.GetStatValue(_entity, new Realm.Ecs.Common.StatId("MovementSpeed"));

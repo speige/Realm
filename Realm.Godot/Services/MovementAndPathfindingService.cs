@@ -35,7 +35,7 @@ internal class MovementAndPathfindingService
 	}
 	private readonly NavMeshPathfinder _pathfinder;
 	private readonly TerrainNavMeshService _terrainNavMeshService;
-	private readonly StatService _statService;
+	private readonly StatService? _statService;
 	private static readonly Random Random = new();
 
 	private float _fDelta;
@@ -65,7 +65,7 @@ internal class MovementAndPathfindingService
 		_worldEntity = worldEntity;
 		_pathfinder = pathfinder;
 		_terrainNavMeshService = ServiceLocator.Get<TerrainNavMeshService>();
-		_statService = ServiceLocator.Get<StatService>();
+		_statService = ServiceLocator.TryGet<StatService>();
 		_movementQueryDelegate = MovementQueryAction;
 	}
 
@@ -224,7 +224,7 @@ internal class MovementAndPathfindingService
 			float distMoved = System.Numerics.Vector3.Distance(pos.Value, pf.LastPosition);
 			pf.LastPosition = pos.Value;
 
-			float actualSpeed = _statService.GetStatValue(entity, new Realm.Ecs.Common.StatId("MovementSpeed"));
+			float actualSpeed = _statService != null ? _statService.GetStatValue(entity, new Realm.Ecs.Common.StatId("MovementSpeed")) : 0f;
 			if (actualSpeed <= 0) actualSpeed = stats.Speed; // Fallback if no stats component or if modified to 0
 
 			float expectedDist = actualSpeed * _fDelta;
@@ -318,7 +318,7 @@ internal class MovementAndPathfindingService
 		}
 		else
 		{
-			float actualSpeed = _statService.GetStatValue(entity, new Realm.Ecs.Common.StatId("MovementSpeed"));
+			float actualSpeed = _statService != null ? _statService.GetStatValue(entity, new Realm.Ecs.Common.StatId("MovementSpeed")) : 0f;
 			if (actualSpeed <= 0) actualSpeed = stats.Speed;
 
 			System.Numerics.Vector3 desiredVelocity = System.Numerics.Vector3.Normalize(target - current) * actualSpeed;
