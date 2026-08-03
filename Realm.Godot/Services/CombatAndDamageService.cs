@@ -12,6 +12,7 @@ internal class CombatAndDamageService
 {
 	private readonly WorldAccessor EcsWorldAccessor;
 	private World EcsWorld => EcsWorldAccessor.Current;
+	private readonly StatService? _statService;
 
 	private const float UnderAttackAlertCooldown = 8f;
 
@@ -62,6 +63,7 @@ internal class CombatAndDamageService
 	public CombatAndDamageService(WorldAccessor ecsWorldAccessor)
 	{
 		EcsWorldAccessor = ecsWorldAccessor;
+		_statService = ServiceLocator.TryGet<StatService>();
 		_targetAcquisitionQueryDelegate = TargetAcquisitionQueryAction;
 		_potentialEnemyQueryDelegate = ScanEnemyQueryAction;
 		_combatQueryDelegate = CombatQueryAction;
@@ -319,9 +321,14 @@ internal class CombatAndDamageService
 				}
 
 				var targetHealth = EcsWorld.Get<Health>(target.Target);
-				var targetArmor = EcsWorld.Has<Armor>(target.Target) ? EcsWorld.Get<Armor>(target.Target) : new Armor(0);
 
-				float damage = atk.Damage - targetArmor.Value;
+				float actualDamage = _statService != null ? _statService.GetStatValue(entity, new Realm.Ecs.Common.StatId("Attack")) : 0f;
+				if (actualDamage <= 0) actualDamage = atk.Damage;
+
+				float actualArmor = _statService != null ? _statService.GetStatValue(target.Target, new Realm.Ecs.Common.StatId("Armor")) : 0f;
+				if (actualArmor <= 0 && EcsWorld.Has<Armor>(target.Target)) actualArmor = EcsWorld.Get<Armor>(target.Target).Value;
+
+				float damage = actualDamage - actualArmor;
 				if (damage < 1f) damage = 1f;
 
 				if (EcsWorld.Has<LastAttacker>(target.Target))

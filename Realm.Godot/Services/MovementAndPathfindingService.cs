@@ -35,6 +35,7 @@ internal class MovementAndPathfindingService
 	}
 	private readonly NavMeshPathfinder _pathfinder;
 	private readonly TerrainNavMeshService _terrainNavMeshService;
+	private readonly StatService? _statService;
 	private static readonly Random Random = new();
 
 	private float _fDelta;
@@ -64,6 +65,7 @@ internal class MovementAndPathfindingService
 		_worldEntity = worldEntity;
 		_pathfinder = pathfinder;
 		_terrainNavMeshService = ServiceLocator.Get<TerrainNavMeshService>();
+		_statService = ServiceLocator.TryGet<StatService>();
 		_movementQueryDelegate = MovementQueryAction;
 	}
 
@@ -222,7 +224,10 @@ internal class MovementAndPathfindingService
 			float distMoved = System.Numerics.Vector3.Distance(pos.Value, pf.LastPosition);
 			pf.LastPosition = pos.Value;
 
-			float expectedDist = stats.Speed * _fDelta;
+			float actualSpeed = _statService != null ? _statService.GetStatValue(entity, new Realm.Ecs.Common.StatId("MovementSpeed")) : 0f;
+			if (actualSpeed <= 0) actualSpeed = stats.Speed; // Fallback if no stats component or if modified to 0
+
+			float expectedDist = actualSpeed * _fDelta;
 			if (distMoved < expectedDist * 0.1f)
 			{
 				pf.StuckTime += _fDelta;
@@ -313,7 +318,10 @@ internal class MovementAndPathfindingService
 		}
 		else
 		{
-			System.Numerics.Vector3 desiredVelocity = System.Numerics.Vector3.Normalize(target - current) * stats.Speed;
+			float actualSpeed = _statService != null ? _statService.GetStatValue(entity, new Realm.Ecs.Common.StatId("MovementSpeed")) : 0f;
+			if (actualSpeed <= 0) actualSpeed = stats.Speed;
+
+			System.Numerics.Vector3 desiredVelocity = System.Numerics.Vector3.Normalize(target - current) * actualSpeed;
 			System.Numerics.Vector3 cohesion = System.Numerics.Vector3.Zero;
 			System.Numerics.Vector3 alignment = System.Numerics.Vector3.Zero;
 			System.Numerics.Vector3 separation = System.Numerics.Vector3.Zero;
@@ -355,17 +363,17 @@ internal class MovementAndPathfindingService
 			if (neighborCount > 0)
 			{
 				cohesion = (cohesion / neighborCount) - current;
-				if (cohesion.LengthSquared() > 0.001f) cohesion = System.Numerics.Vector3.Normalize(cohesion) * stats.Speed;
+				if (cohesion.LengthSquared() > 0.001f) cohesion = System.Numerics.Vector3.Normalize(cohesion) * actualSpeed;
 
 				alignment = alignment / neighborCount;
-				if (alignment.LengthSquared() > 0.001f) alignment = System.Numerics.Vector3.Normalize(alignment) * stats.Speed;
+				if (alignment.LengthSquared() > 0.001f) alignment = System.Numerics.Vector3.Normalize(alignment) * actualSpeed;
 
-				if (separation.LengthSquared() > 0.001f) separation = System.Numerics.Vector3.Normalize(separation) * stats.Speed;
+				if (separation.LengthSquared() > 0.001f) separation = System.Numerics.Vector3.Normalize(separation) * actualSpeed;
 
 				steering = desiredVelocity * 0.50f + separation * 0.35f + cohesion * 0.08f + alignment * 0.07f;
 				if (steering.LengthSquared() > 0.001f)
 				{
-					steering = System.Numerics.Vector3.Normalize(steering) * stats.Speed;
+					steering = System.Numerics.Vector3.Normalize(steering) * actualSpeed;
 				}
 			}
 

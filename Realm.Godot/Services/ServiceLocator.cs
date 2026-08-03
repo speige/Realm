@@ -17,4 +17,11 @@ public static class ServiceLocator
 
 		return _provider.GetRequiredService<T>();
 	}
+
+	public static T? TryGet<T>() where T : class
+	{
+		if (_provider == null) return null;
+
+		return _provider.GetService<T>();
+	}
 }

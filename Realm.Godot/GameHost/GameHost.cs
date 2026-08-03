@@ -2446,6 +2446,7 @@ public class {mapName} : IMapScript
 			jsonText = System.IO.File.ReadAllText(globalPath);
 		}
 
+		UnitRegistry.Clear();
 		if (!string.IsNullOrEmpty(jsonText))
 		{
 			try
@@ -2453,12 +2454,11 @@ public class {mapName} : IMapScript
 				var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
 				if (loadedRegistry != null)
 				{
-					UnitRegistry.Clear();
 					foreach (var kvp in loadedRegistry)
 					{
 						UnitRegistry[kvp.Key] = kvp.Value;
 					}
-					return;
+					return; // Success, early exit.
 				}
 			}
 			catch (Exception ex)
@@ -2467,7 +2467,7 @@ public class {mapName} : IMapScript
 			}
 		}
 
-		UnitRegistry.Clear();
+		// Fallback: If no metadata.json exists or it failed to parse, use default values so the game doesn't crash.
 		foreach (var kvp in DefaultRegistryFallback)
 		{
 			UnitRegistry[kvp.Key] = kvp.Value;

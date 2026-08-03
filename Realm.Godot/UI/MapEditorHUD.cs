@@ -2096,7 +2096,7 @@ public partial class MapEditorHUD : Control
 			foreach (var directory in System.IO.Directory.GetDirectories(_tempWorkspacePath))
 			{
 				string name = System.IO.Path.GetFileName(directory);
-				if (name.Equals("bin", StringComparison.OrdinalIgnoreCase) || name.Equals("obj", StringComparison.OrdinalIgnoreCase))
+				if (name.Equals("bin", StringComparison.OrdinalIgnoreCase) || name.Equals("obj", StringComparison.OrdinalIgnoreCase) || name.Equals("lib", StringComparison.OrdinalIgnoreCase))
 				{
 					continue;
 				}
@@ -3341,6 +3341,16 @@ public partial class MapEditorHUD : Control
 						AppendWasmConsoleLog("[INFO] .cs files unchanged since last build. Bypassing compilation using existing WASM binary.");
 						if (skipAttribution) return;
 					}
+				}
+
+				string mapApiDll = System.IO.Path.Combine(workspace, "lib", "Realm.MapAPI.dll");
+				if (!System.IO.File.Exists(mapApiDll))
+				{
+					_wasmHasErrors = true;
+					SetWasmConsoleStatus("❌ WASM Compilation Failed: Realm.MapAPI.dll missing", new Color(1.0f, 0.3f, 0.3f));
+					AppendWasmConsoleLog("[ERROR] Realm.MapAPI.dll is missing from the workspace (expected at lib/Realm.MapAPI.dll).");
+					AppendWasmConsoleLog("[ERROR] The map script cannot compile without the MapAPI assembly. Reopen the map in the editor to restore template files, then retry Test.");
+					return;
 				}
 
 				await System.Threading.Tasks.Task.Run(() =>

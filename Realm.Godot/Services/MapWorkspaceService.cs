@@ -6,10 +6,12 @@ using System.Linq;
 public static class MapWorkspaceService
 {
 	private static string _cachedRepoRoot;
+	private static bool _repoRootResolved;
 
 	private static string GetRepoRoot()
 	{
-		if (_cachedRepoRoot != null) return _cachedRepoRoot;
+		if (_repoRootResolved) return _cachedRepoRoot;
+		_repoRootResolved = true;
 		string baseDir = ProjectSettings.GlobalizePath("res://");
 		var current = new DirectoryInfo(baseDir);
 		while (current != null)
@@ -21,19 +23,15 @@ public static class MapWorkspaceService
 			}
 			current = current.Parent;
 		}
-		_cachedRepoRoot = ProjectSettings.GlobalizePath("res://..").Replace("\\", "/");
-		return _cachedRepoRoot;
+		GD.PushWarning("[MapWorkspaceService] Could not locate the Realm repository (Realm.sln or Realm.MapAPI not found above res://). Template files and the MapAPI DLL will not be available.");
+		return null;
 	}
 
 	private static string FindRootFile(string relativePath)
 	{
 		string repoRoot = GetRepoRoot();
-		string candidate = Path.Combine(repoRoot, relativePath).Replace("\\", "/");
-		if (File.Exists(candidate) || Directory.Exists(candidate))
-		{
-			return candidate;
-		}
-		return candidate;
+		if (repoRoot == null) return null;
+		return Path.Combine(repoRoot, relativePath).Replace("\\", "/");
 	}
 
 	private static string GetSchemaSourcePath()
@@ -41,14 +39,22 @@ public static class MapWorkspaceService
 		return FindRootFile("Realm.MapEditorExtension/map_schema.json");
 	}
 
-	private static string GetApiProjPath()
-	{
-		return FindRootFile("Realm.MapAPI/Realm.MapAPI.csproj");
-	}
-
 	private static string GetTemplatePath(string fileName)
 	{
 		return FindRootFile("MapTemplate/" + fileName);
+	}
+
+	private const string MapApiDllRelativePath = "lib/Realm.MapAPI.dll";
+
+	private static string FindBuiltApiDll()
+	{
+		string repoRoot = GetRepoRoot();
+		if (repoRoot == null) return null;
+		string binDir = Path.Combine(repoRoot, "Realm.MapAPI", "bin");
+		if (!Directory.Exists(binDir)) return null;
+		return Directory.GetFiles(binDir, "Realm.MapAPI.dll", SearchOption.AllDirectories)
+			.OrderByDescending(f => File.GetLastWriteTimeUtc(f))
+			.FirstOrDefault();
 	}
 
 	public static void SetupWorkspace(string directory, string mapName)
@@ -117,26 +123,38 @@ public static class MapWorkspaceService
 
 	public static void EnsureCsproj(string directory, string mapName)
 	{
+		string csprojPath = Path.Combine(directory, $"{mapName}.csproj");
 		var existingCsprojs = Directory.GetFiles(directory, "*.csproj", SearchOption.TopDirectoryOnly);
 		if (existingCsprojs.Length > 0)
 		{
-			return;
+			csprojPath = existingCsprojs[0];
 		}
 
-		string csprojPath = Path.Combine(directory, $"{mapName}.csproj");
-		string apiProjPath = GetApiProjPath();
 		string templatePath = GetTemplatePath("MapScript.csproj");
 
-		if (File.Exists(templatePath))
+		if (!File.Exists(csprojPath))
 		{
+			if (!File.Exists(templatePath))
+			{
+				GD.PushWarning($"[MapWorkspaceService] Could not generate {Path.GetFileName(csprojPath)}: map script template not found at {templatePath ?? "n/a"}");
+				return;
+			}
 			string csprojContent = File.ReadAllText(templatePath);
-			// Replace DLL reference with local project reference when generating workspace in editor
-			csprojContent = System.Text.RegularExpressions.Regex.Replace(csprojContent,
-				@"<ItemGroup>\s*<Reference Include=""Realm\.MapAPI"">.*?</Reference>\s*</ItemGroup>",
-				$"<ItemGroup>\n    <ProjectReference Include=\"{apiProjPath}\" />\n  </ItemGroup>",
-				System.Text.RegularExpressions.RegexOptions.Singleline);
+			csprojContent = NormalizeMapApiReference(csprojContent);
 			File.WriteAllText(csprojPath, csprojContent);
 		}
+		else
+		{
+			string csprojContent = File.ReadAllText(csprojPath);
+			string normalized = NormalizeMapApiReference(csprojContent);
+			if (normalized != csprojContent)
+			{
+				File.WriteAllText(csprojPath, normalized);
+				GD.Print($"[MapWorkspaceService] Repaired MapAPI reference in {Path.GetFileName(csprojPath)} to use the portable relative DLL path.");
+			}
+		}
+
+		EnsureApiLib(directory);
 
 		string targetsTemplate = GetTemplatePath("Directory.Build.targets");
 		string targetsPath = Path.Combine(directory, "Directory.Build.targets");
@@ -146,13 +164,71 @@ public static class MapWorkspaceService
 		}
 	}
 
+	private static string NormalizeMapApiReference(string csprojContent)
+	{
+		csprojContent = System.Text.RegularExpressions.Regex.Replace(csprojContent,
+			@"<ProjectReference\s+Include=""[^""]*Realm\.MapAPI\.csproj""[^>]*/>",
+			$"<Reference Include=\"Realm.MapAPI\">\n      <HintPath>{MapApiDllRelativePath}</HintPath>\n    </Reference>",
+			System.Text.RegularExpressions.RegexOptions.Singleline);
+
+		csprojContent = System.Text.RegularExpressions.Regex.Replace(csprojContent,
+			@"<Reference\s+Include=""Realm\.MapAPI""\s*>.*?</Reference>",
+			$"<Reference Include=\"Realm.MapAPI\">\n      <HintPath>{MapApiDllRelativePath}</HintPath>\n    </Reference>",
+			System.Text.RegularExpressions.RegexOptions.Singleline);
+
+		csprojContent = System.Text.RegularExpressions.Regex.Replace(csprojContent,
+			@"<HintPath>[^<]*Realm\.MapAPI\.dll</HintPath>",
+			$"<HintPath>{MapApiDllRelativePath}</HintPath>",
+			System.Text.RegularExpressions.RegexOptions.Singleline);
+
+		return csprojContent;
+	}
+
+	public static void EnsureApiLib(string directory)
+	{
+		string libDir = Path.Combine(directory, "lib");
+		Directory.CreateDirectory(libDir);
+
+		var candidates = new System.Collections.Generic.List<string>();
+		string builtDll = FindBuiltApiDll();
+		if (builtDll != null) candidates.Add(builtDll);
+		string templateDll = GetTemplatePath("lib/Realm.MapAPI.dll");
+		if (templateDll != null && File.Exists(templateDll)) candidates.Add(templateDll);
+
+		if (candidates.Count == 0)
+		{
+			GD.PushWarning("[MapWorkspaceService] Realm.MapAPI.dll not found (neither the Realm.MapAPI build output nor MapTemplate/lib is available). Map scripts will not compile until a valid DLL is provided.");
+			return;
+		}
+
+		string sourceDll = candidates.OrderByDescending(f => File.GetLastWriteTimeUtc(f)).First();
+		string dllName = Path.GetFileName(sourceDll);
+		foreach (var fileName in new[] { dllName, Path.ChangeExtension(dllName, ".pdb"), Path.ChangeExtension(dllName, ".xml") })
+		{
+			string source = Path.Combine(Path.GetDirectoryName(sourceDll), fileName);
+			if (File.Exists(source))
+			{
+				try
+				{
+					File.Copy(source, Path.Combine(libDir, fileName), true);
+				}
+				catch (IOException)
+				{
+				}
+			}
+		}
+	}
+
 	public static void EnsureMapScript(string directory, string mapName)
 	{
 		string scriptPath = Path.Combine(directory, "MapScript.cs");
 		if (!File.Exists(scriptPath) || new FileInfo(scriptPath).Length == 0)
 		{
-			string template = File.ReadAllText(GetTemplatePath("MapScript.cs"));
-			File.WriteAllText(scriptPath, template.Replace("class MapScript", $"class {mapName}"));
+			string template = GetTemplatePath("MapScript.cs");
+			if (File.Exists(template))
+			{
+				File.WriteAllText(scriptPath, File.ReadAllText(template).Replace("class MapScript", $"class {mapName}"));
+			}
 		}
 	}
 
@@ -161,7 +237,11 @@ public static class MapWorkspaceService
 		string entryPointPath = Path.Combine(directory, "WasmEntryPoint.cs");
 		if (!File.Exists(entryPointPath) || new FileInfo(entryPointPath).Length == 0)
 		{
-			File.Copy(GetTemplatePath("WasmEntryPoint.cs"), entryPointPath);
+			string template = GetTemplatePath("WasmEntryPoint.cs");
+			if (File.Exists(template))
+			{
+				File.Copy(template, entryPointPath);
+			}
 		}
 	}
 
@@ -181,8 +261,10 @@ public static class MapWorkspaceService
 			}
 		}
 
-		// Also copy any template asset files (such as .ktx2 textures in Assets/textures) if not already present
-		string templateAssetsDir = Path.Combine(Path.GetDirectoryName(templateMeta), "Assets");
+		if (File.Exists(templateMeta))
+		{
+			// Also copy any template asset files (such as .ktx2 textures in Assets/textures) if not already present
+			string templateAssetsDir = Path.Combine(Path.GetDirectoryName(templateMeta), "Assets");
 		if (Directory.Exists(templateAssetsDir))
 		{
 			string destAssetsDir = Path.Combine(directory, "Assets");
@@ -197,6 +279,7 @@ public static class MapWorkspaceService
 				}
 			}
 		}
+	}
 	}
 
 	public static void EnsureSolutionFile(string directory, string mapName)

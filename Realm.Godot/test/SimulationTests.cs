@@ -125,6 +125,12 @@ public class SimulationTests
 
         MapWorkspaceService.SetupWorkspace(tempMapDir, "TestWasmMap");
 
+        string generatedCsproj = File.ReadAllText(Path.Combine(tempMapDir, "TestWasmMap.csproj"));
+        Assertions.AssertThat(!generatedCsproj.Contains("C:")).IsTrue();
+        Assertions.AssertThat(generatedCsproj.Contains("lib/Realm.MapAPI.dll")).IsTrue();
+
+        Assertions.AssertThat(File.Exists(Path.Combine(tempMapDir, "lib", "Realm.MapAPI.dll"))).IsTrue();
+
         // Write custom map script that spawns the worker/trees and moves the worker, simulating TestMeleePathingAroundTree via WASM
         string customMapScript = @"
 namespace Realm.Maps;
@@ -403,6 +409,37 @@ public class TestWasmMap : IWasmModule
         {
             throw new Exception($"WASM map script failed to kill all units! Alive units remaining: {aliveUnits}");
         }
+    }
+
+    [TestCase]
+    public void TestEnsureCsprojRepairsStaleAbsoluteReference()
+    {
+        string tempMapDir = Path.Combine(Path.GetTempPath(), "Realm_Simulation_StaleCsprojRepair");
+        if (Directory.Exists(tempMapDir))
+        {
+            try { Directory.Delete(tempMapDir, true); } catch { }
+        }
+        Directory.CreateDirectory(tempMapDir);
+
+        string staleCsproj =
+            "<Project Sdk=\"Microsoft.NET.Sdk\">" + Environment.NewLine +
+            "  <PropertyGroup>" + Environment.NewLine +
+            "    <TargetFramework>net10.0</TargetFramework>" + Environment.NewLine +
+            "  </PropertyGroup>" + Environment.NewLine +
+            "  <ItemGroup>" + Environment.NewLine +
+            "    <ProjectReference Include=\"C:/Users/SomeoneElse/source/repos/Realm/Realm.MapAPI/Realm.MapAPI.csproj\" />" + Environment.NewLine +
+            "  </ItemGroup>" + Environment.NewLine +
+            "</Project>";
+        File.WriteAllText(Path.Combine(tempMapDir, "CustomMap.csproj"), staleCsproj);
+
+        MapWorkspaceService.EnsureCsproj(tempMapDir, "CustomMap");
+
+        string repaired = File.ReadAllText(Path.Combine(tempMapDir, "CustomMap.csproj"));
+        Assertions.AssertThat(!repaired.Contains("C:")).IsTrue();
+        Assertions.AssertThat(!repaired.Contains("ProjectReference")).IsTrue();
+        Assertions.AssertThat(repaired.Contains("lib/Realm.MapAPI.dll")).IsTrue();
+
+        Assertions.AssertThat(File.Exists(Path.Combine(tempMapDir, "lib", "Realm.MapAPI.dll"))).IsTrue();
     }
 }
 

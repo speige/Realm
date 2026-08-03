@@ -41,6 +41,12 @@
 - Only expose safe APIs to map authors to prevent the direct manipulation of Godot nodes or internal C# ECS structures.
 - All map scripting operations should strictly proxy through interfaces (like `IGameAPI` and `IUnit`). Implementations (e.g. `UnitWrapper`) must hide the underlying `Arch.Core.Entity` and raw Godot `Node` references.
 
+### Map Workspaces & WASM Compilation (Portability):
+- The map temp workspace is compiled to WASM via `dotnet publish`. Workspaces and saved map folders MUST be machine-portable: never write absolute paths into generated/saved `.csproj` files.
+- `MapWorkspaceService.EnsureCsproj` always normalizes the `Realm.MapAPI` reference to the relative `<HintPath>lib/Realm.MapAPI.dll</HintPath>` and `EnsureApiLib` copies the DLL (build output preferred, `MapTemplate/lib` as fallback) into the workspace so it is self-contained.
+- `MapTemplate/lib/Realm.MapAPI.{dll,pdb,xml}` is the canonical committed API binary. When changing `Realm.MapAPI` source, rebuild it (`dotnet build Realm.MapAPI`) so the `CopyToMapTemplate` target refreshes `MapTemplate/lib` and commit the updated binaries together with the API changes.
+- Shared map folders are portable when they contain a relative `.csproj` and the `lib/` folder. Saved/opened map folders are auto-repaired by `EnsureCsproj` on the next workspace setup.
+
 ## AI "Vibe" Coding & Maintenance Instructions:
 - Avoid using proprietary or copyrighted terms from other games
 - For fast lookup during queries without breaking the PURE DATA PRINCIPLE, do not put Godot Nodes inside components. Instead, map the relationship using unique entity IDs, or look up corresponding visual nodes via a managed registry outside the ECS system arrays.
