@@ -70,9 +70,6 @@ internal class UnitSpawnService
 				case "ground":
 					flags |= 8;
 					break;
-				case "unpathable":
-					flags |= 16;
-					break;
 			}
 		}
 		return flags;

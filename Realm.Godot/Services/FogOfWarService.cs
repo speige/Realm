@@ -17,18 +17,27 @@ public class FogOfWarService
 	private float _fogUpdateTimer;
 	private Image _fogImage;
 	private ImageTexture _fogTexture;
+	private bool _isEditorFogInitialized;
 
 	public FogOfWarService(WorldAccessor ecsWorldAccessor)
 	{
 		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
+	private Entity _cachedWorldEntity = Entity.Null;
+
 	private Entity FindWorldEntity()
 	{
+		if (_cachedWorldEntity != Entity.Null && EcsWorld.IsAlive(_cachedWorldEntity) && EcsWorld.Has<FogAndWeatherState>(_cachedWorldEntity))
+		{
+			return _cachedWorldEntity;
+		}
+
 		Entity worldEntity = Entity.Null;
 		var query = QueryCache.AllFogAndWeatherStateQuery;
-		EcsWorld.Query(in query, entity => worldEntity = entity);
-		return worldEntity;
+		EcsWorld.Query(in query, (Entity entity) => worldEntity = entity);
+		_cachedWorldEntity = worldEntity;
+		return _cachedWorldEntity;
 	}
 
 	private byte[,] FogGrid
@@ -157,8 +166,9 @@ void fragment() {
 					decal.Visible = true;
 				}
 			}
-			if (GameHost.Instance?.GroundTerrain != null)
+			if (!_isEditorFogInitialized && GameHost.Instance?.GroundTerrain != null)
 			{
+				_isEditorFogInitialized = true;
 				if (_fogImage == null)
 				{
 					_fogImage = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
@@ -176,6 +186,8 @@ void fragment() {
 			}
 			return;
 		}
+
+		_isEditorFogInitialized = false;
 
 		string fogOfWarType = FogOfWarType;
 		if (GodotObject.IsInstanceValid(_fogMeshInstance))
@@ -456,9 +468,17 @@ void fragment() {
 	{
 		if (GodotObject.IsInstanceValid(_fogMeshInstance) && GameHost.Instance?.GroundTerrain != null)
 		{
+			Vector2 targetSize = new Vector2(GameHost.Instance.GroundTerrain.Width * GameHost.Instance.GroundTerrain.QuadSize, GameHost.Instance.GroundTerrain.Depth * GameHost.Instance.GroundTerrain.QuadSize);
+			if (_fogMeshInstance.Mesh is PlaneMesh planeMesh)
 			{
-				var plane = new PlaneMesh();
-				plane.Size = new Vector2(GameHost.Instance.GroundTerrain.Width * GameHost.Instance.GroundTerrain.Spacing, GameHost.Instance.GroundTerrain.Depth * GameHost.Instance.GroundTerrain.Spacing);
+				if (planeMesh.Size != targetSize)
+				{
+					planeMesh.Size = targetSize;
+				}
+			}
+			else
+			{
+				var plane = new PlaneMesh { Size = targetSize };
 				_fogMeshInstance.Mesh = plane;
 			}
 		}

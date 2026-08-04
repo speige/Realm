@@ -43,7 +43,7 @@ namespace Realm.Ecs.Tests
             _world.Dispose();
         }
 
-        private void InitializeTerrain(int width = 64, int depth = 64, float spacing = 2.0f)
+        private void InitializeTerrain(int width = 64, int depth = 64, float quadSize = 2.0f, float cellSize = 0.5f)
         {
             float[,] heights = new float[width, depth];
             int[,] pathingCodes = new int[width, depth];
@@ -55,7 +55,7 @@ namespace Realm.Ecs.Tests
                 }
             }
 
-            var terrainState = new TerrainState(width, depth, spacing, 0.2f, -2.0f, true, heights, pathingCodes, new DotRecast.Detour.DtNavMesh(), new DotRecast.Detour.DtNavMeshQuery(new DotRecast.Detour.DtNavMesh()));
+            var terrainState = new TerrainState(width, depth, quadSize, cellSize, heights, pathingCodes, new DotRecast.Detour.DtNavMesh(), new DotRecast.Detour.DtNavMeshQuery(new DotRecast.Detour.DtNavMesh()));
             _worldEntity = _world.Create(terrainState);
 
             _movementService = new MovementAndPathfindingService(_worldAccessor, _worldEntity, _pathfinder);
@@ -119,8 +119,8 @@ namespace Realm.Ecs.Tests
         {
             int width = 64;
             int depth = 64;
-            float spacing = 2.0f;
-            InitializeTerrain(width, depth, spacing);
+            float quadSize = 2.0f;
+            InitializeTerrain(width, depth, quadSize);
 
             ref var terrain = ref _world.Get<TerrainState>(_worldEntity);
             for (int z = 0; z < depth; z++)
@@ -389,8 +389,8 @@ namespace Realm.Ecs.Tests
         {
             int width = 64;
             int depth = 64;
-            float spacing = 2.0f;
-            InitializeTerrain(width, depth, spacing);
+            float quadSize = 2.0f;
+            InitializeTerrain(width, depth, quadSize);
 
             ref var terrain = ref _world.Get<TerrainState>(_worldEntity);
             for (int z = 0; z < depth; z++)

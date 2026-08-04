@@ -7,7 +7,27 @@ public partial class MapEditorCameraIndicator : Control
 
 	public void SetPoints(Vector2[] points)
 	{
-		_points = points;
+		if (points == null || points.Length < 4) return;
+
+		bool changed = !_hasPoints;
+		if (!changed)
+		{
+			for (int i = 0; i < 4; i++)
+			{
+				if (!Mathf.IsEqualApprox(_points[i].X, points[i].X) || !Mathf.IsEqualApprox(_points[i].Y, points[i].Y))
+				{
+					changed = true;
+					break;
+				}
+			}
+		}
+
+		if (!changed) return;
+
+		for (int i = 0; i < 4; i++)
+		{
+			_points[i] = points[i];
+		}
 		_hasPoints = true;
 		QueueRedraw();
 	}

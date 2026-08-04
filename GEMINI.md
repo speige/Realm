@@ -50,3 +50,4 @@
 ## AI "Vibe" Coding & Maintenance Instructions:
 - Avoid using proprietary or copyrighted terms from other games
 - For fast lookup during queries without breaking the PURE DATA PRINCIPLE, do not put Godot Nodes inside components. Instead, map the relationship using unique entity IDs, or look up corresponding visual nodes via a managed registry outside the ECS system arrays.
+- Always compile code after making changes to ensure there are no errors. Don't run tests unless explicity told to do so

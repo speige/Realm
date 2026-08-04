@@ -7,63 +7,58 @@ using System.Collections.Generic;
 
 public partial class EditableTerrain : StaticBody3D
 {
-public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLinearLuminance = 0.35f, float maxScaleFactor = 2.2f)
-    {
-        int w = sourceImage.GetWidth();
-        int h = sourceImage.GetHeight();
-        int pixelCount = w * h;
-        double totalLinearLuminance = 0.0;
+	public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLinearLuminance = 0.35f, float maxScaleFactor = 2.2f)
+	{
+		int w = sourceImage.GetWidth();
+		int h = sourceImage.GetHeight();
+		int pixelCount = w * h;
+		double totalLinearLuminance = 0.0;
 
-        // 1. Compute Average Physical Luminance in Linear Space
-        for (int y = 0; y < h; y++)
-        {
-            for (int x = 0; x < w; x++)
-            {
-                Color srgbColor = sourceImage.GetPixel(x, y);
-                Color linearColor = srgbColor.SrgbToLinear();
-                
-                // Rec. 709 linear luminance equation
-                float lum = (0.2126f * linearColor.R) + (0.7152f * linearColor.G) + (0.0722f * linearColor.B);
-                totalLinearLuminance += lum;
-            }
-        }
+		for (int y = 0; y < h; y++)
+		{
+			for (int x = 0; x < w; x++)
+			{
+				Color srgbColor = sourceImage.GetPixel(x, y);
+				Color linearColor = srgbColor.SrgbToLinear();
+				float lum = (0.2126f * linearColor.R) + (0.7152f * linearColor.G) + (0.0722f * linearColor.B);
+				totalLinearLuminance += lum;
+			}
+		}
 
-        float avgLuminance = (float)(totalLinearLuminance / pixelCount);
-        if (avgLuminance <= 0.0001f) return sourceImage;
+		float avgLuminance = (float)(totalLinearLuminance / pixelCount);
+		if (avgLuminance <= 0.0001f) return sourceImage;
 
-        // 2. Compute Target Scale Factor (Clamped to prevent extreme distortions)
-        float rawScaleFactor = targetLinearLuminance / avgLuminance;
-        float scaleFactor = Mathf.Min(rawScaleFactor, maxScaleFactor);
+		float rawScaleFactor = targetLinearLuminance / avgLuminance;
+		float scaleFactor = Mathf.Min(rawScaleFactor, maxScaleFactor);
 
-        // 3. Apply Linear Scaling with Color Ratio Preservation
-        Image result = Image.CreateEmpty(w, h, false, sourceImage.GetFormat());
+		Image result = Image.CreateEmpty(w, h, false, sourceImage.GetFormat());
 
-        for (int y = 0; y < h; y++)
-        {
-            for (int x = 0; x < w; x++)
-            {
-                Color srgbColor = sourceImage.GetPixel(x, y);
-                Color linearColor = srgbColor.SrgbToLinear();
+		for (int y = 0; y < h; y++)
+		{
+			for (int x = 0; x < w; x++)
+			{
+				Color srgbColor = sourceImage.GetPixel(x, y);
+				Color linearColor = srgbColor.SrgbToLinear();
 
-                // Multiply Linear RGB by Scale Factor
-                float rLinear = Mathf.Clamp(linearColor.R * scaleFactor, 0.0f, 1.0f);
-                float gLinear = Mathf.Clamp(linearColor.G * scaleFactor, 0.0f, 1.0f);
-                float bLinear = Mathf.Clamp(linearColor.B * scaleFactor, 0.0f, 1.0f);
+				float rLinear = Mathf.Clamp(linearColor.R * scaleFactor, 0.0f, 1.0f);
+				float gLinear = Mathf.Clamp(linearColor.G * scaleFactor, 0.0f, 1.0f);
+				float bLinear = Mathf.Clamp(linearColor.B * scaleFactor, 0.0f, 1.0f);
 
-                Color scaledLinearColor = new Color(rLinear, gLinear, bLinear, srgbColor.A);
-                Color scaledSrgbColor = scaledLinearColor.LinearToSrgb();
+				Color scaledLinearColor = new Color(rLinear, gLinear, bLinear, srgbColor.A);
+				Color scaledSrgbColor = scaledLinearColor.LinearToSrgb();
 
-                result.SetPixel(x, y, scaledSrgbColor);
-            }
-        }
+				result.SetPixel(x, y, scaledSrgbColor);
+			}
+		}
 
-        return result;
-    }
-	
+		return result;
+	}
+
 	public void ProcessAndSaveRawTexture(string rawPngPath, string outputKtx2Path)
 	{
 		var img = Godot.Image.LoadFromFile(rawPngPath);
 		if (img == null) return;
+		img = AutoCropToPowerOfTwoSquare(img);
 		
 		int w = img.GetWidth();
 		int h = img.GetHeight();
@@ -118,15 +113,15 @@ public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLine
 				float ao = 1.0f - Godot.Mathf.Clamp(laplacian * 4.0f, 0.0f, 0.5f);
 				ao *= (0.7f + 0.3f * height);
 				ao = Godot.Mathf.Clamp(ao, 0.0f, 1.0f);
-				
+
 				float r = (normal.X * 0.5f + 0.5f);
 				float g = (normal.Y * 0.5f + 0.5f);
 				float b = ao;
-				
+
 				float contrastHeight = (height - 0.5f) * 1.5f + 0.5f;
 				contrastHeight = Godot.Mathf.Clamp(contrastHeight, 0.0f, 1.0f);
 				float roughness = Godot.Mathf.Lerp(0.5f, 0.8f, contrastHeight);
-				
+
 				layer1.SetPixel(x, y, new Godot.Color(r, g, b, roughness));
 			}
 		}
@@ -187,6 +182,54 @@ public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLine
 		}
 	}
 
+	public const int TargetTextureResolutionBits = 9;
+	public const int TargetTextureResolution = 1 << TargetTextureResolutionBits;
+
+	public static Image AutoCropToPowerOfTwoSquare(Image sourceImg)
+	{
+		if (sourceImg == null) return null;
+		int w = sourceImg.GetWidth();
+		int h = sourceImg.GetHeight();
+		int minDim = Math.Min(w, h);
+		if (minDim <= 0) return sourceImg;
+
+		int powerOfTwo = 1;
+		while ((powerOfTwo << 1) <= minDim)
+		{
+			powerOfTwo <<= 1;
+		}
+
+		if (w == powerOfTwo && h == powerOfTwo)
+		{
+			return sourceImg;
+		}
+
+		int cropX = (w - powerOfTwo) / 2;
+		int cropY = (h - powerOfTwo) / 2;
+
+		return sourceImg.GetRegion(new Rect2I(cropX, cropY, powerOfTwo, powerOfTwo));
+	}
+
+	public static Image ProcessAndResizeImage(Image sourceImg, int targetSize)
+	{
+		if (sourceImg == null) return null;
+		if (sourceImg.GetWidth() == targetSize && sourceImg.GetHeight() == targetSize)
+		{
+			return sourceImg;
+		}
+
+		Image resized = (Image)sourceImg.Duplicate();
+		Image.Interpolation interpolationMode = sourceImg.GetWidth() > targetSize
+			? Image.Interpolation.Lanczos
+			: Image.Interpolation.Cubic;
+
+		resized.Resize(targetSize, targetSize, interpolationMode);
+		return resized;
+	}
+
+	public const float DefaultQuadSize = TerrainState.DefaultQuadSize;
+	public const float DefaultCellSize = TerrainState.DefaultCellSize;
+
 	private TerrainState GetTerrainStateSafe()
 	{
 		if (GameHost.Instance != null && 
@@ -196,7 +239,7 @@ public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLine
 		{
 			return GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
 		}
-		return new TerrainState(126, 126, 2.0f, 0.2f, -2.0f, true, null, null, null, null);
+		return new TerrainState(128, 128, DefaultQuadSize, DefaultCellSize, (TerrainCell[,])null, null, null, null);
 	}
 
 	public float CellSize
@@ -206,14 +249,13 @@ public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLine
 		{
 			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
 			GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-				state.Width, state.Depth, state.Spacing, value, state.WaterHeight, state.WaterEnabled,
-				state.Heights, state.PathingCodes, state.NavMesh, state.NavMeshQuery
+				state.Width, state.Depth, state.QuadSize, value,
+				state.Cells, state.PathingCodes, state.NavMesh, state.NavMeshQuery
 			));
 		}
 	}
 
 	public DtNavMesh NavMesh => GetTerrainStateSafe().NavMesh;
-
 	public DtNavMeshQuery NavMeshQuery => GetTerrainStateSafe().NavMeshQuery;
 
 	public int Width
@@ -223,8 +265,8 @@ public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLine
 		{
 			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
 			GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-				value, state.Depth, state.Spacing, state.CellSize, state.WaterHeight, state.WaterEnabled,
-				state.Heights, state.PathingCodes, state.NavMesh, state.NavMeshQuery
+				value, state.Depth, state.QuadSize, state.CellSize,
+				state.Cells, state.PathingCodes, state.NavMesh, state.NavMeshQuery
 			));
 		}
 	}
@@ -236,59 +278,57 @@ public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLine
 		{
 			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
 			GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-				state.Width, value, state.Spacing, state.CellSize, state.WaterHeight, state.WaterEnabled,
-				state.Heights, state.PathingCodes, state.NavMesh, state.NavMeshQuery
+				state.Width, value, state.QuadSize, state.CellSize,
+				state.Cells, state.PathingCodes, state.NavMesh, state.NavMeshQuery
 			));
 		}
 	}
 
-	public float Spacing
+	public float QuadSize
 	{
-		get => GetTerrainStateSafe().Spacing;
+		get => GetTerrainStateSafe().QuadSize;
 		private set
 		{
 			ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
 			GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-				state.Width, state.Depth, value, state.CellSize, state.WaterHeight, state.WaterEnabled,
-				state.Heights, state.PathingCodes, state.NavMesh, state.NavMeshQuery
+				state.Width, state.Depth, value, state.CellSize,
+				state.Cells, state.PathingCodes, state.NavMesh, state.NavMeshQuery
 			));
 		}
 	}
+
+	public const float TIER_HEIGHT = TerrainCell.TIER_HEIGHT;
+	public static float WATER_DELTA => (GameHost.Instance != null && GameHost.Instance.EditorBlockLevelHeight > 0.001f ? GameHost.Instance.EditorBlockLevelHeight : TIER_HEIGHT) * 0.30f;
 
 	public const int PATHING_SHALLOW_WATER = (int)TerrainPathingFlags.ShallowWater;
 	public const int PATHING_DEEP_WATER = (int)TerrainPathingFlags.DeepWater;
 	public const int PATHING_FLYING = (int)TerrainPathingFlags.Flying;
 	public const int PATHING_GROUND = (int)TerrainPathingFlags.Ground;
-	public const int PATHING_UNPATHABLE = (int)TerrainPathingFlags.Unpathable;
 	public const int PATHING_BUILDABLE = (int)TerrainPathingFlags.Buildable;
 
-	public static int GetDefaultPathingCode(float height, float waterHeight, bool waterEnabled)
+	public static int GetDefaultPathingCode(WaterType waterMode)
 	{
-		if (!waterEnabled)
+		switch (waterMode)
 		{
-			return PATHING_GROUND | PATHING_BUILDABLE | PATHING_FLYING;
+			case WaterType.Shallow:
+				return PATHING_SHALLOW_WATER | PATHING_FLYING;
+			case WaterType.Deep:
+				return PATHING_DEEP_WATER | PATHING_FLYING;
+			case WaterType.None:
+			default:
+				return PATHING_GROUND | PATHING_BUILDABLE | PATHING_FLYING;
 		}
-
-		if (height >= waterHeight)
-		{
-			return PATHING_GROUND | PATHING_BUILDABLE | PATHING_FLYING;
-		}
-
-		float depth = waterHeight - height;
-		if (depth < 4.0f)
-		{
-			return PATHING_SHALLOW_WATER | PATHING_FLYING;
-		}
-
-		return PATHING_DEEP_WATER | PATHING_FLYING;
 	}
 
-	private float[,] _localHeights;
-	private int[,] _localPathingCodes;
-	private float _localWaterHeight = -2.0f;
-	private bool _localWaterEnabled = true;
+	public static int GetDefaultPathingCode(TerrainCell cell)
+	{
+		return GetDefaultPathingCode(cell.WaterMode);
+	}
 
-	public float[,] Heights
+	private TerrainCell[,] _localCells;
+	private int[,] _localPathingCodes;
+
+	public TerrainCell[,] Cells
 	{
 		get
 		{
@@ -297,28 +337,68 @@ public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLine
 				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
 				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
 			{
-				return GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).Heights;
+				ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
+				if (state.Cells == null)
+				{
+					state.Cells = new TerrainCell[state.Width, state.Depth];
+				}
+				return state.Cells;
 			}
-			return _localHeights;
+			if (_localCells == null)
+			{
+				_localCells = new TerrainCell[Width, Depth];
+			}
+			return _localCells;
 		}
-		private set
+		set
 		{
+			_localCells = value;
 			if (GameHost.Instance != null && 
 				GameHost.Instance.EcsWorld != null && 
 				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
 				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
 			{
 				ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
+				int targetWidth = value != null ? value.GetLength(0) : state.Width;
+				int targetDepth = value != null ? value.GetLength(1) : state.Depth;
 				GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-					state.Width, state.Depth, state.Spacing, state.CellSize, state.WaterHeight, state.WaterEnabled,
+					targetWidth, targetDepth, state.QuadSize, state.CellSize,
 					value, state.PathingCodes, state.NavMesh, state.NavMeshQuery
 				));
 			}
-			_localHeights = value;
 		}
 	}
 
-	public TerrainSplatWeights[,] SplatMap { get; private set; }
+	public sbyte[,] MacroTiers
+	{
+		get
+		{
+			var c = Cells;
+			if (c == null) return null;
+			int w = Width;
+			int d = Depth;
+			var result = new sbyte[w, d];
+			for (int z = 0; z < d; z++)
+				for (int x = 0; x < w; x++)
+					result[x, z] = c[x, z].MacroTier;
+			return result;
+		}
+	}
+
+	public float[,] Heights
+	{
+		get => TerrainState.CalculateHeights(Width, Depth, Cells);
+		set => SetHeights(value);
+	}
+
+	public void SetHeights(float[,] heights)
+	{
+		if (heights == null) return;
+		Cells = TerrainState.CalculateCells(Width, Depth, heights);
+	}
+
+	public TerrainSplatWeights[,] SplatMap { get; set; }
+	public TerrainSplatWeights[,] CliffSplatMap { get; set; }
 	public int CliffTextureIndex { get; set; } = 2;
 
 	public int[,] PathingCodes
@@ -330,7 +410,16 @@ public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLine
 				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
 				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
 			{
-				return GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).PathingCodes;
+				ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
+				if (state.PathingCodes == null)
+				{
+					state.PathingCodes = new int[state.Width, state.Depth];
+				}
+				return state.PathingCodes;
+			}
+			if (_localPathingCodes == null)
+			{
+				_localPathingCodes = new int[Width, Depth];
 			}
 			return _localPathingCodes;
 		}
@@ -342,9 +431,11 @@ public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLine
 				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
 			{
 				ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
+				int targetWidth = value != null ? value.GetLength(0) : state.Width;
+				int targetDepth = value != null ? value.GetLength(1) : state.Depth;
 				GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-					state.Width, state.Depth, state.Spacing, state.CellSize, state.WaterHeight, state.WaterEnabled,
-					state.Heights, value, state.NavMesh, state.NavMeshQuery
+					targetWidth, targetDepth, state.QuadSize, state.CellSize,
+					state.Cells, value, state.NavMesh, state.NavMeshQuery
 				));
 			}
 			_localPathingCodes = value;
@@ -368,7 +459,6 @@ public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLine
 		public Color[] ColorsCache;
 		public float[] TexIndicesCache;
 		public float[] TexWeightsCache01;
-		public float[] BarycentricCache;
 		public Vector3[] NormalsCache;
 		public Vector2[] UvsCache;
 		public int[] IndicesCache;
@@ -377,95 +467,27 @@ public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLine
 	
 	private List<TerrainChunk> _chunks = new List<TerrainChunk>();
 	private ShaderMaterial _material;
-	private MeshInstance3D _waterMesh;
-
-	public float WaterHeight
-	{
-		get
-		{
-			if (GameHost.Instance != null && 
-				GameHost.Instance.EcsWorld != null && 
-				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
-				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
-			{
-				return GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).WaterHeight;
-			}
-			return _localWaterHeight;
-		}
-		set
-		{
-			if (GameHost.Instance != null && 
-				GameHost.Instance.EcsWorld != null && 
-				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
-				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
-			{
-				ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
-				GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-					state.Width, state.Depth, state.Spacing, state.CellSize, value, state.WaterEnabled,
-					state.Heights, state.PathingCodes, state.NavMesh, state.NavMeshQuery
-				));
-			}
-			_localWaterHeight = value;
-			UpdateWaterTransform();
-		}
-	}
-
-	public bool WaterEnabled
-	{
-		get
-		{
-			if (GameHost.Instance != null && 
-				GameHost.Instance.EcsWorld != null && 
-				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
-				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
-			{
-				return GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity).WaterEnabled;
-			}
-			return _localWaterEnabled;
-		}
-		set
-		{
-			if (GameHost.Instance != null && 
-				GameHost.Instance.EcsWorld != null && 
-				GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && 
-				GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity))
-			{
-				ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
-				GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-					state.Width, state.Depth, state.Spacing, state.CellSize, state.WaterHeight, value,
-					state.Heights, state.PathingCodes, state.NavMesh, state.NavMeshQuery
-				));
-			}
-			_localWaterEnabled = value;
-			if (_waterMesh != null)
-			{
-				_waterMesh.Visible = value;
-			}
-		}
-	}
+	private MeshInstance3D _shallowWaterMesh;
+	private MeshInstance3D _deepWaterMesh;
+	private ShaderMaterial _shallowWaterMaterial;
+	private ShaderMaterial _deepWaterMaterial;
 
 	private void CreateWater()
 	{
-		if (_waterMesh != null) return;
-
-		_waterMesh = new MeshInstance3D();
-		_waterMesh.Name = "WaterMesh";
-		
-		var plane = new PlaneMesh();
-		plane.Size = new Vector2(Width * Spacing, Depth * Spacing);
-		_waterMesh.Mesh = plane;
+		if (_shallowWaterMesh != null && _deepWaterMesh != null) return;
 
 		var waterShader = new Shader();
 		waterShader.Code = @"
 shader_type spatial;
-render_mode blend_mix, depth_draw_always, cull_disabled;
+render_mode blend_mix;
 
-uniform vec4 shallow_color : source_color = vec4(0.04, 0.16, 0.20, 0.60);
-uniform vec4 deep_color : source_color = vec4(0.015, 0.05, 0.09, 0.95);
-uniform vec4 foam_color : source_color = vec4(0.55, 0.68, 0.72, 0.45);
-uniform float max_depth = 3.5;
-uniform float foam_depth = 0.5;
+uniform vec4 shallow_color : source_color = vec4(0.05, 0.30, 0.38, 0.55);
+uniform vec4 deep_color : source_color = vec4(0.01, 0.06, 0.14, 0.98);
+uniform vec4 foam_color : source_color = vec4(0.85, 0.95, 1.0, 0.85);
+uniform float max_depth = 2.0;
+uniform float foam_depth = 0.6;
 uniform float wave_speed = 1.2;
+
 uniform sampler2D depth_texture : hint_depth_texture, filter_linear;
 
 uniform sampler2D fog_texture : hint_default_white;
@@ -473,25 +495,47 @@ uniform vec2 fog_world_min = vec2(-125.0, -125.0);
 uniform vec2 fog_world_size = vec2(250.0, 250.0);
 
 varying vec3 v_world_pos;
+varying vec3 v_world_normal;
 
 void vertex() {
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	float w1 = sin(v_world_pos.x * 0.3 + TIME * wave_speed * 2.0);
-	float w2 = cos(v_world_pos.z * 0.3 + TIME * wave_speed * 1.5);
-	VERTEX.y += (w1 + w2) * 0.06;
+	v_world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+
+	float is_flat = smoothstep(0.4, 0.8, abs(v_world_normal.y));
+	float w1 = sin(v_world_pos.x * 0.4 + TIME * wave_speed * 1.8);
+	float w2 = cos(v_world_pos.z * 0.4 + TIME * wave_speed * 1.4);
+	VERTEX.y += (w1 + w2) * 0.06 * is_flat;
 }
 
 void fragment() {
-	vec2 uv1 = v_world_pos.xz * 0.12 + vec2(TIME * wave_speed * 0.08, TIME * wave_speed * 0.05);
-	vec2 uv2 = v_world_pos.xz * 0.20 - vec2(TIME * wave_speed * 0.05, TIME * wave_speed * 0.09);
-	
-	float wave1 = sin(uv1.x * 10.0 + uv1.y * 7.0 + TIME * wave_speed * 1.8) * 0.5 + 0.5;
-	float wave2 = cos(uv2.x * 12.0 - uv2.y * 8.0 + TIME * wave_speed * 1.4) * 0.5 + 0.5;
-	float wave = mix(wave1, wave2, 0.5);
-	
-	vec3 wave_normal = normalize(vec3((wave1 - 0.5) * 0.25, 1.0, (wave2 - 0.5) * 0.25));
-	NORMAL = TANGENT * wave_normal.x + BINORMAL * wave_normal.z + NORMAL * wave_normal.y;
+	float flat_factor = smoothstep(0.4, 0.8, abs(v_world_normal.y));
+	float waterfall_factor = 1.0 - flat_factor;
 
+	// --- FLAT WATER SURFACES ---
+	vec2 p1 = v_world_pos.xz * 0.25 + vec2(TIME * wave_speed * 0.12, TIME * wave_speed * 0.08);
+	vec2 p2 = v_world_pos.xz * 0.35 - vec2(TIME * wave_speed * 0.09, TIME * wave_speed * 0.14);
+
+	float n1 = sin(p1.x + sin(p1.y * 1.2)) * 0.5 + 0.5;
+	float n2 = cos(p2.x - cos(p2.y * 1.3)) * 0.5 + 0.5;
+	float combined_wave = (n1 + n2) * 0.5;
+
+	vec3 flat_perturbed_normal = normalize(vec3((n1 - 0.5) * 0.25, 1.0, (n2 - 0.5) * 0.25));
+
+	// --- VERTICAL WATERFALL SHADING ---
+	float flow_x = (v_world_pos.x + v_world_pos.z) * 0.3;
+	float flow_y = v_world_pos.y * 1.2 + TIME * wave_speed * 1.1;
+
+	float streak1 = sin(flow_y * 2.2 + sin(flow_x * 1.8)) * 0.5 + 0.5;
+	float streak2 = cos(flow_y * 4.2 - cos(flow_x * 3.1)) * 0.5 + 0.5;
+	float waterfall_foam_raw = streak1 * 0.5 + streak2 * 0.5;
+	float waterfall_foam = smoothstep(0.25, 0.95, waterfall_foam_raw) * 0.28;
+
+	vec3 wf_normal = normalize(vec3((streak1 - 0.5) * 0.08, (streak2 - 0.5) * 0.08, (streak1 - 0.5) * 0.08));
+
+	vec3 local_normal = mix(wf_normal, flat_perturbed_normal, flat_factor);
+	NORMAL = normalize(TANGENT * local_normal.x + BINORMAL * local_normal.z + NORMAL * local_normal.y);
+
+	// --- DEPTH & SHORELINE CALCULATIONS ---
 	float depth_raw = texture(depth_texture, SCREEN_UV).r;
 	vec4 upos = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, depth_raw, 1.0);
 	float pixel_z = -upos.z / upos.w;
@@ -499,78 +543,319 @@ void fragment() {
 	float water_depth = max(0.0, pixel_z - water_z);
 
 	float depth_factor = clamp(water_depth / max_depth, 0.0, 1.0);
-	vec4 water_col = mix(shallow_color, deep_color, depth_factor);
+	vec4 water_col = mix(shallow_color, deep_color, smoothstep(0.0, 0.85, depth_factor));
 
-	float shore_fade = smoothstep(0.001, 0.05, water_depth);
-	float foam_factor = smoothstep(foam_depth, 0.0, water_depth) * shore_fade;
-	foam_factor = pow(foam_factor, 2.0) * (0.3 + 0.7 * wave);
-	
+	// --- CLEAN SHORELINE FOAM ---
+	float shore_fade = mix(1.0, smoothstep(0.001, 0.02, water_depth), flat_factor);
+	float shore_proximity = (1.0 - smoothstep(0.0, foam_depth, water_depth)) * shore_fade;
+
+	float pulse = sin(water_depth * 18.0 - TIME * wave_speed * 3.5) * 0.5 + 0.5;
+	float flat_foam_mask = smoothstep(0.2, 0.8, shore_proximity * (0.6 + 0.4 * combined_wave) + pulse * shore_proximity * 0.4);
+
+	float final_foam_mask = mix(waterfall_foam, flat_foam_mask, flat_factor);
+
+	// --- FOG OF WAR INTEGRATION ---
 	vec2 fog_uv = (v_world_pos.xz - fog_world_min) / fog_world_size;
 	float fog_factor = texture(fog_texture, clamp(fog_uv, 0.0, 1.0)).r;
 
-	vec3 final_albedo = mix(water_col.rgb, foam_color.rgb, foam_factor * foam_color.a) * (1.0 - fog_factor * 0.98);
+	vec3 final_albedo = mix(water_col.rgb, foam_color.rgb, final_foam_mask * foam_color.a) * (1.0 - fog_factor * 0.98);
 
 	ALBEDO = final_albedo;
-	ALPHA = mix(water_col.a, 1.0, foam_factor * 0.5);
-	ROUGHNESS = mix(0.18, 1.0, fog_factor);
-	METALLIC = 0.05 * (1.0 - fog_factor * 0.98);
-	SPECULAR = 0.25 * (1.0 - fog_factor * 0.98);
+	ALPHA = mix(water_col.a, 0.75, final_foam_mask) * shore_fade;
+
+	ROUGHNESS = mix(mix(0.1, 0.35, waterfall_factor), 0.9, fog_factor);
+	METALLIC = 0.0;
+	SPECULAR = mix(0.05, 0.10, waterfall_factor) * (1.0 - fog_factor * 0.98);
 }
 ";
 
-		var mat = new ShaderMaterial();
-		mat.Shader = waterShader;
-		_waterMesh.MaterialOverride = mat;
-		
-		AddChild(_waterMesh);
-		_waterMesh.Visible = WaterEnabled;
-		UpdateWaterTransform();
+		_shallowWaterMaterial = new ShaderMaterial();
+		_shallowWaterMaterial.Shader = waterShader;
+		_shallowWaterMaterial.SetShaderParameter("shallow_color", new Color(0.05f, 0.30f, 0.35f, 0.50f));
+		_shallowWaterMaterial.SetShaderParameter("deep_color", new Color(0.03f, 0.20f, 0.25f, 0.70f));
+		_shallowWaterMaterial.SetShaderParameter("max_depth", 1.5f);
+
+		_deepWaterMaterial = new ShaderMaterial();
+		_deepWaterMaterial.Shader = waterShader;
+
+		_deepWaterMaterial.SetShaderParameter("shallow_color", new Color(0.02f, 0.12f, 0.28f, 0.70f));
+		_deepWaterMaterial.SetShaderParameter("deep_color", new Color(0.005f, 0.03f, 0.12f, 0.99f));
+		_deepWaterMaterial.SetShaderParameter("max_depth", 1.5f);
+
+		_shallowWaterMesh = new MeshInstance3D();
+		_shallowWaterMesh.Name = "ShallowWaterMesh";
+		_shallowWaterMesh.MaterialOverride = _shallowWaterMaterial;
+		AddChild(_shallowWaterMesh);
+
+		_deepWaterMesh = new MeshInstance3D();
+		_deepWaterMesh.Name = "DeepWaterMesh";
+		_deepWaterMesh.MaterialOverride = _deepWaterMaterial;
+		AddChild(_deepWaterMesh);
+
+		RegenerateWaterMesh();
+	}
+
+	private (float waterY, WaterType waterMode) GetCellWaterInfo(int x, int z, TerrainCell[,] cells, int w, int d)
+	{
+		var cell = cells[x, z];
+		if (cell.WaterMode != WaterType.None)
+		{
+			return ((cell.MacroTier * TerrainCell.TIER_HEIGHT) + WATER_DELTA, cell.WaterMode);
+		}
+
+		float minCornerH = Math.Min(Math.Min(cell.Y_NW, cell.Y_NE), Math.Min(cell.Y_SE, cell.Y_SW));
+		float maxWaterY = -9999f;
+		WaterType bestWaterMode = WaterType.None;
+
+		for (int nz = Math.Max(0, z - 1); nz <= Math.Min(d - 1, z + 1); nz++)
+		{
+			for (int nx = Math.Max(0, x - 1); nx <= Math.Min(w - 1, x + 1); nx++)
+			{
+				if (nx == x && nz == z) continue;
+				var nCell = cells[nx, nz];
+				if (nCell.WaterMode != WaterType.None)
+				{
+					float nWaterY = (nCell.MacroTier * TerrainCell.TIER_HEIGHT) + WATER_DELTA;
+					if (nWaterY > maxWaterY)
+					{
+						maxWaterY = nWaterY;
+						bestWaterMode = nCell.WaterMode;
+					}
+				}
+			}
+		}
+
+		if (bestWaterMode != WaterType.None && minCornerH <= maxWaterY)
+		{
+			return (maxWaterY, bestWaterMode);
+		}
+
+		return (0f, WaterType.None);
+	}
+
+	public void RegenerateWaterMesh()
+	{
+		if (_shallowWaterMesh == null || _deepWaterMesh == null) return;
+
+		var cells = Cells;
+		if (cells == null) return;
+
+		int w = Width;
+		int d = Depth;
+		float quadSize = QuadSize;
+		float halfWQuadSize = (w / 2.0f) * quadSize;
+		float halfDQuadSize = (d / 2.0f) * quadSize;
+
+		List<Vector3> shallowVerts = new();
+		List<Vector3> shallowNorms = new();
+		List<Vector2> shallowUVs = new();
+		List<int> shallowIndices = new();
+
+		List<Vector3> deepVerts = new();
+		List<Vector3> deepNorms = new();
+		List<Vector2> deepUVs = new();
+		List<int> deepIndices = new();
+
+		for (int z = 0; z < d; z++)
+		{
+			for (int x = 0; x < w; x++)
+			{
+				var (waterY1, activeWaterMode1) = GetCellWaterInfo(x, z, cells, w, d);
+				if (activeWaterMode1 == WaterType.None) continue;
+
+				Vector3 nw = new Vector3(x * quadSize - halfWQuadSize, waterY1, z * quadSize - halfDQuadSize);
+				Vector3 ne = new Vector3((x + 1) * quadSize - halfWQuadSize, waterY1, z * quadSize - halfDQuadSize);
+				Vector3 se = new Vector3((x + 1) * quadSize - halfWQuadSize, waterY1, (z + 1) * quadSize - halfDQuadSize);
+				Vector3 sw = new Vector3(x * quadSize - halfWQuadSize, waterY1, (z + 1) * quadSize - halfDQuadSize);
+
+				bool isShallow1 = (activeWaterMode1 == WaterType.Shallow);
+				var targetVerts = isShallow1 ? shallowVerts : deepVerts;
+				var targetNorms = isShallow1 ? shallowNorms : deepNorms;
+				var targetUVs = isShallow1 ? shallowUVs : deepUVs;
+				var targetIndices = isShallow1 ? shallowIndices : deepIndices;
+
+				int baseIdx = targetVerts.Count;
+
+				targetVerts.Add(nw);
+				targetVerts.Add(ne);
+				targetVerts.Add(se);
+				targetVerts.Add(sw);
+
+				Vector3 normal = Vector3.Up;
+				targetNorms.Add(normal);
+				targetNorms.Add(normal);
+				targetNorms.Add(normal);
+				targetNorms.Add(normal);
+
+				targetUVs.Add(new Vector2(0, 0));
+				targetUVs.Add(new Vector2(1, 0));
+				targetUVs.Add(new Vector2(1, 1));
+				targetUVs.Add(new Vector2(0, 1));
+
+				targetIndices.Add(baseIdx + 0);
+				targetIndices.Add(baseIdx + 1);
+				targetIndices.Add(baseIdx + 2);
+
+				targetIndices.Add(baseIdx + 0);
+				targetIndices.Add(baseIdx + 2);
+				targetIndices.Add(baseIdx + 3);
+
+				// Build water ramp wall quads along boundaries between water cells of differing height levels
+				if (x + 1 < w)
+				{
+					var (waterY2, activeWaterMode2) = GetCellWaterInfo(x + 1, z, cells, w, d);
+					if (activeWaterMode2 != WaterType.None && MathF.Abs(waterY1 - waterY2) > 0.01f)
+					{
+						float yMin = MathF.Min(waterY1, waterY2);
+						float yMax = MathF.Max(waterY1, waterY2);
+						float wallX = (x + 1) * quadSize - halfWQuadSize;
+						float z0 = z * quadSize - halfDQuadSize;
+						float z1 = (z + 1) * quadSize - halfDQuadSize;
+
+						bool wallShallow = isShallow1 || (activeWaterMode2 == WaterType.Shallow);
+						var wVerts = wallShallow ? shallowVerts : deepVerts;
+						var wNorms = wallShallow ? shallowNorms : deepNorms;
+						var wUVs = wallShallow ? shallowUVs : deepUVs;
+						var wIndices = wallShallow ? shallowIndices : deepIndices;
+
+						int wBase = wVerts.Count;
+						wVerts.Add(new Vector3(wallX, yMin, z0));
+						wVerts.Add(new Vector3(wallX, yMin, z1));
+						wVerts.Add(new Vector3(wallX, yMax, z1));
+						wVerts.Add(new Vector3(wallX, yMax, z0));
+
+						Vector3 wallNorm = (waterY1 > waterY2) ? Vector3.Right : Vector3.Left;
+						wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm);
+						wUVs.Add(new Vector2(0, 0)); wUVs.Add(new Vector2(1, 0)); wUVs.Add(new Vector2(1, 1)); wUVs.Add(new Vector2(0, 1));
+
+						wIndices.Add(wBase + 0); wIndices.Add(wBase + 1); wIndices.Add(wBase + 2);
+						wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 3);
+						wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 1);
+						wIndices.Add(wBase + 0); wIndices.Add(wBase + 3); wIndices.Add(wBase + 2);
+					}
+				}
+
+				if (z + 1 < d)
+				{
+					var (waterY2, activeWaterMode2) = GetCellWaterInfo(x, z + 1, cells, w, d);
+					if (activeWaterMode2 != WaterType.None && MathF.Abs(waterY1 - waterY2) > 0.01f)
+					{
+						float yMin = MathF.Min(waterY1, waterY2);
+						float yMax = MathF.Max(waterY1, waterY2);
+						float wallZ = (z + 1) * quadSize - halfDQuadSize;
+						float x0 = x * quadSize - halfWQuadSize;
+						float x1 = (x + 1) * quadSize - halfWQuadSize;
+
+						bool wallShallow = isShallow1 || (activeWaterMode2 == WaterType.Shallow);
+						var wVerts = wallShallow ? shallowVerts : deepVerts;
+						var wNorms = wallShallow ? shallowNorms : deepNorms;
+						var wUVs = wallShallow ? shallowUVs : deepUVs;
+						var wIndices = wallShallow ? shallowIndices : deepIndices;
+
+						int wBase = wVerts.Count;
+						wVerts.Add(new Vector3(x0, yMin, wallZ));
+						wVerts.Add(new Vector3(x1, yMin, wallZ));
+						wVerts.Add(new Vector3(x1, yMax, wallZ));
+						wVerts.Add(new Vector3(x0, yMax, wallZ));
+
+						Vector3 wallNorm = (waterY1 > waterY2) ? Vector3.Back : Vector3.Forward;
+						wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm);
+						wUVs.Add(new Vector2(0, 0)); wUVs.Add(new Vector2(1, 0)); wUVs.Add(new Vector2(1, 1)); wUVs.Add(new Vector2(0, 1));
+
+						wIndices.Add(wBase + 0); wIndices.Add(wBase + 1); wIndices.Add(wBase + 2);
+						wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 3);
+						wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 1);
+						wIndices.Add(wBase + 0); wIndices.Add(wBase + 3); wIndices.Add(wBase + 2);
+					}
+				}
+			}
+		}
+
+		UpdateSingleWaterMesh(_shallowWaterMesh, shallowVerts, shallowNorms, shallowUVs, shallowIndices);
+		UpdateSingleWaterMesh(_deepWaterMesh, deepVerts, deepNorms, deepUVs, deepIndices);
+	}
+
+	private void UpdateSingleWaterMesh(MeshInstance3D meshInstance, List<Vector3> verts, List<Vector3> norms, List<Vector2> uvs, List<int> indices)
+	{
+		if (verts.Count == 0)
+		{
+			meshInstance.Mesh = null;
+			return;
+		}
+
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = verts.ToArray();
+		arrays[(int)Mesh.ArrayType.Normal] = norms.ToArray();
+		arrays[(int)Mesh.ArrayType.TexUV] = uvs.ToArray();
+		arrays[(int)Mesh.ArrayType.Index] = indices.ToArray();
+
+		var arrMesh = new ArrayMesh();
+		arrMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+		meshInstance.Mesh = arrMesh;
 	}
 
 	private void UpdateWaterTransform()
 	{
-		if (_waterMesh != null)
-		{
-			_waterMesh.Position = new Vector3(0.0f, WaterHeight, 0.0f);
-		}
+		RegenerateWaterMesh();
 	}
 
 	public void UpdateWaterSize()
 	{
-		if (_waterMesh == null) return;
-		var plane = new PlaneMesh();
-		plane.Size = new Vector2(Width * Spacing, Depth * Spacing);
-		_waterMesh.Mesh = plane;
-		UpdateWaterTransform();
+		RegenerateWaterMesh();
 	}
 
 	public override void _Ready()
 	{
+		var cells = Cells;
+		if (cells == null || cells.GetLength(0) != Width || cells.GetLength(1) != Depth)
+		{
+			var newCells = new TerrainCell[Width, Depth];
+			Cells = newCells;
+			cells = newCells;
+		}
+
+		if (SplatMap == null || SplatMap.GetLength(0) < Width + 1 || SplatMap.GetLength(1) < Depth + 1)
+		{
+			var newSplatMap = new TerrainSplatWeights[Width + 1, Depth + 1];
+			for (int z = 0; z <= Depth; z++)
+			{
+				for (int x = 0; x <= Width; x++)
+				{
+					if (SplatMap != null && x < SplatMap.GetLength(0) && z < SplatMap.GetLength(1))
+						newSplatMap[x, z] = SplatMap[x, z];
+					else
+						newSplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
+				}
+			}
+			SplatMap = newSplatMap;
+		}
+
+		if (CliffSplatMap == null || CliffSplatMap.GetLength(0) < Width + 1 || CliffSplatMap.GetLength(1) < Depth + 1)
+		{
+			var newCliffSplatMap = new TerrainSplatWeights[Width + 1, Depth + 1];
+			for (int z = 0; z <= Depth; z++)
+			{
+				for (int x = 0; x <= Width; x++)
+				{
+					if (CliffSplatMap != null && x < CliffSplatMap.GetLength(0) && z < CliffSplatMap.GetLength(1))
+						newCliffSplatMap[x, z] = CliffSplatMap[x, z];
+					else
+						newCliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(CliffTextureIndex);
+				}
+			}
+			CliffSplatMap = newCliffSplatMap;
+		}
+
 		var state = GetTerrainStateSafe();
-		if (state.Heights == null || state.Heights.GetLength(0) != Width || state.Heights.GetLength(1) != Depth)
-		{
-			var newHeights = new float[Width, Depth];
-			for (int z = 0; z < Depth; z++)
-				for (int x = 0; x < Width; x++)
-					newHeights[x, z] = 0.0f;
-			Heights = newHeights;
-		}
-
-		if (SplatMap == null || SplatMap.GetLength(0) != Width || SplatMap.GetLength(1) != Depth)
-		{
-			SplatMap = new TerrainSplatWeights[Width, Depth];
-			for (int z = 0; z < Depth; z++)
-				for (int x = 0; x < Width; x++)
-					SplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
-		}
-
 		if (state.PathingCodes == null || state.PathingCodes.GetLength(0) != Width || state.PathingCodes.GetLength(1) != Depth)
 		{
 			var newPathing = new int[Width, Depth];
-			var h = Heights;
 			for (int z = 0; z < Depth; z++)
 				for (int x = 0; x < Width; x++)
-					newPathing[x, z] = GetDefaultPathingCode(h[x, z], WaterHeight, WaterEnabled);
+				{
+					newPathing[x, z] = GetDefaultPathingCode(cells[x, z]);
+				}
 			PathingCodes = newPathing;
 		}
 
@@ -595,25 +880,22 @@ uniform vec4 grid_color_thin = vec4(1.0, 0.9, 0.0, 0.25);
 uniform float grid_spacing = 2.0;
 uniform vec2 terrain_size = vec2(1.0, 1.0);
 
+uniform float texture_scale = 0.5;
 uniform float macro_scale = 0.035;
 
 uniform float uv_warp_strength = 0.8;
-uniform float macro_strength = 0.15;
-uniform float macro_wall_strength = 2.0;
-uniform float macro_wall_frequency = 4.0;
 uniform float macro_albedo_contrast = 0.20;
 uniform float macro_roughness_contrast = 0.15;
 uniform float macro_normal_strength = 0.15;
 uniform float macro_lacunarity = 2.0;
 uniform float macro_gain = 0.5;
-
-uniform bool wireframe_mode = false;
+uniform bool enable_stochastic = true;
+uniform vec4 swatch_params[32];
 
 varying vec4 v_tex_indices;
 varying vec4 v_tex_weights;
 varying vec3 v_world_pos;
 varying vec3 v_world_normal;
-varying vec3 v_barycentric;
 varying vec4 v_color;
 
 float macro_hash(vec2 p) {
@@ -637,7 +919,6 @@ float macro_noise(vec2 p) {
 float macro_fbm(vec2 p) {
 	float v = 0.0;
 	float a = 0.5;
-	//macro_octaves hard-coded to 3
 	vec2 shift = vec2(100.0);
 	for (int i = 0; i < 3; i++) {
 		v += a * macro_noise(p);
@@ -651,63 +932,137 @@ vec4 sample_quad_array(sampler2DArray tex_array, float layer, vec2 uv) {
 	return texture(tex_array, vec3(uv, layer));
 }
 
+vec2 stochastic_hash(vec2 p) {
+	uvec2 q = uvec2(ivec2(p));
+	q = q * uvec2(1597334677u, 3812015801u);
+	uint n = (q.x ^ q.y) * 1597334677u;
+	return vec2(float(n & 0xFFFFu), float((n >> 16u) & 0xFFFFu)) * (1.0 / 65535.0);
+}
+
+vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, float tile_mode, float stoch_tile_size) {
+	if (!enable_stochastic || tile_mode < 0.5) {
+		return sample_quad_array(tex_array, layer, uv);
+	}
+
+	vec2 dx = dFdx(uv);
+	vec2 dy = dFdy(uv);
+
+	const float F2 = 0.36602540378;
+	const float G2 = 0.2113248654;
+
+	vec2 stoch_uv = uv / max(0.01, stoch_tile_size);
+	vec2 skew_uv = stoch_uv + (stoch_uv.x + stoch_uv.y) * F2;
+	vec2 i = floor(skew_uv);
+	vec2 f = fract(skew_uv);
+
+	vec2 i0, i1, i2;
+	vec3 w;
+
+	if (f.x > f.y) {
+		i0 = i;
+		i1 = i + vec2(1.0, 0.0);
+		i2 = i + vec2(1.0, 1.0);
+		w = vec3(1.0 - f.x, f.x - f.y, f.y);
+	} else {
+		i0 = i;
+		i1 = i + vec2(0.0, 1.0);
+		i2 = i + vec2(1.0, 1.0);
+		w = vec3(1.0 - f.y, f.y - f.x, f.x);
+	}
+
+	vec2 off0 = stochastic_hash(i0);
+	vec2 off1 = stochastic_hash(i1);
+	vec2 off2 = stochastic_hash(i2);
+
+	vec4 col0 = textureGrad(tex_array, vec3(uv + off0, layer), dx, dy);
+	vec4 col1 = textureGrad(tex_array, vec3(uv + off1, layer), dx, dy);
+	vec4 col2 = textureGrad(tex_array, vec3(uv + off2, layer), dx, dy);
+
+	vec3 mean_color = col0.rgb * w.x + col1.rgb * w.y + col2.rgb * w.z;
+
+	vec3 var0 = (col0.rgb - mean_color) * (col0.rgb - mean_color);
+	vec3 var1 = (col1.rgb - mean_color) * (col1.rgb - mean_color);
+	vec3 var2 = (col2.rgb - mean_color) * (col2.rgb - mean_color);
+	vec3 blended_var = sqrt(var0 * w.x + var1 * w.y + var2 * w.z);
+
+	float target_std_dev = length(blended_var) * 0.5;
+	vec3 final_color = mean_color + (mean_color - vec3(dot(mean_color, vec3(0.299, 0.587, 0.114)))) * target_std_dev;
+	final_color = clamp(final_color, 0.0, 1.0);
+
+	return vec4(final_color, col0.a * w.x + col1.a * w.y + col2.a * w.z);
+}
+
+vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, vec2 uv_y, vec2 uv_z, vec3 weights) {
+	int layer_idx = int(clamp(round(layer), 0.0, 31.0));
+	vec4 params = swatch_params[layer_idx];
+	float tile_mode = params.x;
+	float uv_scale = params.y > 0.001 ? params.y : 1.0;
+	float stoch_tile_size = params.z > 0.001 ? params.z : 1.0;
+
+	vec2 scaled_uv_x = uv_x * uv_scale;
+	vec2 scaled_uv_y = uv_y * uv_scale;
+	vec2 scaled_uv_z = uv_z * uv_scale;
+
+	vec4 col_x = sample_stochastic_layer(tex_array, layer, scaled_uv_x, tile_mode, stoch_tile_size);
+	vec4 col_y = sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size);
+	vec4 col_z = sample_stochastic_layer(tex_array, layer, scaled_uv_z, tile_mode, stoch_tile_size);
+	return col_x * weights.x + col_y * weights.y + col_z * weights.z;
+}
+
 void vertex() {
 	v_tex_indices = CUSTOM0;
 	v_tex_weights = CUSTOM1;
-	v_barycentric = CUSTOM2.xyz;
 	v_color = COLOR;
 	
-	vec3 local_norm = normalize(NORMAL);
 	v_world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-
-	if (macro_strength > 0.0) {
-		vec3 fbm_sample_pos = vec3(v_world_pos.x + v_world_pos.y * macro_wall_frequency, v_world_pos.y, v_world_pos.z + v_world_pos.y * macro_wall_frequency);
-		float disp_fbm = (macro_fbm(fbm_sample_pos.xz * macro_scale) - 0.5) * macro_strength;
-
-		VERTEX += local_norm * disp_fbm;
-
-		v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	}
 }
 
 void fragment() {
-	vec2 quad_uv = UV;
+	vec3 blend_weights = abs(v_world_normal);
+	blend_weights = pow(blend_weights, vec3(4.0));
+	float bw_sum = blend_weights.x + blend_weights.y + blend_weights.z;
+	blend_weights = bw_sum > 0.0001 ? blend_weights / bw_sum : vec3(0.0, 1.0, 0.0);
 
-	float base_fbm_val = macro_fbm(vec2(v_world_pos.x + v_world_pos.y, v_world_pos.z + v_world_pos.y) * macro_scale);
+	float base_fbm_val = macro_fbm(v_world_pos.xz * macro_scale);
 
-	vec2 sampled_uv = quad_uv;
+	vec3 pos_warped = v_world_pos;
 	if (uv_warp_strength > 0.0) {
 		float warp_x = (base_fbm_val - 0.5) * 2.0;
 		float warp_y = (macro_fbm((v_world_pos.xz + vec2(17.3, 31.7)) * macro_scale) - 0.5) * 2.0;
 		vec2 warp_offset = vec2(warp_x, warp_y);
-		sampled_uv += warp_offset * uv_warp_strength * 0.05;
+		pos_warped += vec3(warp_offset.x, warp_offset.y, warp_offset.x) * uv_warp_strength * 0.05 / max(0.001, macro_scale);
 	}
 
-	vec4 c0 = sample_quad_array(terrain_textures, round(v_tex_indices.x), sampled_uv);
-	vec4 c1 = sample_quad_array(terrain_textures, round(v_tex_indices.y), sampled_uv);
-	vec4 c2 = sample_quad_array(terrain_textures, round(v_tex_indices.z), sampled_uv);
-	vec4 c3 = sample_quad_array(terrain_textures, round(v_tex_indices.w), sampled_uv);
+	vec2 uv_x = pos_warped.zy * texture_scale;
+	vec2 uv_y = pos_warped.xz * texture_scale;
+	vec2 uv_z = pos_warped.xy * texture_scale;
 
-	float gh0 = c0.a;
-	float gh1 = c1.a;
-	float gh2 = c2.a;
-	float gh3 = c3.a;
-	
-	float max_gh = max(max(gh0, gh1), max(gh2, gh3));
-	float soft_bias = 0.05;
-	
-	float w0 = max(gh0 - max_gh + blend_softness + soft_bias, 0.0) * v_tex_weights.x;
-	float w1 = max(gh1 - max_gh + blend_softness + soft_bias, 0.0) * v_tex_weights.y;
-	float w2 = max(gh2 - max_gh + blend_softness + soft_bias, 0.0) * v_tex_weights.z;
-	float w3 = max(gh3 - max_gh + blend_softness + soft_bias, 0.0) * v_tex_weights.w;
-	
-	float sum = w0 + w1 + w2 + w3;
-	if (sum > 0.0) {
-		w0 /= sum; w1 /= sum; w2 /= sum; w3 /= sum;
-	} else {
-		w0 = 1.0; w1 = 0.0; w2 = 0.0; w3 = 0.0;
-	}
+	vec4 raw_weights = v_tex_weights;
+	raw_weights.x = raw_weights.x < 0.001 ? 0.0 : raw_weights.x;
+	raw_weights.y = raw_weights.y < 0.001 ? 0.0 : raw_weights.y;
+	raw_weights.z = raw_weights.z < 0.001 ? 0.0 : raw_weights.z;
+	raw_weights.w = raw_weights.w < 0.001 ? 0.0 : raw_weights.w;
+
+	float weight_sum = raw_weights.x + raw_weights.y + raw_weights.z + raw_weights.w;
+	vec4 norm_weights = weight_sum > 0.0001 ? raw_weights / weight_sum : vec4(0.0);
+
+	vec4 c0 = norm_weights.x > 0.0 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
+	vec4 c1 = norm_weights.y > 0.0 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
+	vec4 c2 = norm_weights.z > 0.0 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
+	vec4 c3 = norm_weights.w > 0.0 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
+
+	float height_influence = 0.15;
+	vec4 height_mod = vec4(c0.a, c1.a, c2.a, c3.a) * height_influence;
+	vec4 blended_weights = norm_weights * (vec4(1.0) + height_mod);
+
+	float final_sum = blended_weights.x + blended_weights.y + blended_weights.z + blended_weights.w;
+	vec4 final_weights = final_sum > 0.0001 ? blended_weights / final_sum : vec4(1.0, 0.0, 0.0, 0.0);
+
+	float w0 = final_weights.x;
+	float w1 = final_weights.y;
+	float w2 = final_weights.z;
+	float w3 = final_weights.w;
 	
 	vec3 splat_color = (c0.rgb * w0 +
 	                    c1.rgb * w1 +
@@ -732,7 +1087,7 @@ void fragment() {
 
 		vec4 pathing_color = vec4(0.0);
 		if (box_idx == 0) {
-			if (code == 0 || (code & 16) != 0) {
+			if (code == 0) {
 				pathing_color = vec4(0.9, 0.1, 0.1, 0.75);
 			}
 		} else if (box_idx == 1) {
@@ -787,10 +1142,10 @@ void fragment() {
 		}
 	}
 
-	vec4 n0 = sample_quad_array(terrain_normals_pbr, round(v_tex_indices.x), sampled_uv);
-	vec4 n1 = sample_quad_array(terrain_normals_pbr, round(v_tex_indices.y), sampled_uv);
-	vec4 n2 = sample_quad_array(terrain_normals_pbr, round(v_tex_indices.z), sampled_uv);
-	vec4 n3 = sample_quad_array(terrain_normals_pbr, round(v_tex_indices.w), sampled_uv);
+	vec4 n0 = w0 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
+	vec4 n1 = w1 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
+	vec4 n2 = w2 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
+	vec4 n3 = w3 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
 	
 	vec2 n0_xy = vec2(n0.r * 2.0 - 1.0, (1.0 - n0.g) * 2.0 - 1.0);
 	vec3 n0_vec = vec3(n0_xy, sqrt(max(0.0, 1.0 - dot(n0_xy, n0_xy))));
@@ -831,17 +1186,6 @@ void fragment() {
 	METALLIC = 0.0;                 
 	SPECULAR = 0.2 * (1.0 - fog_factor * 0.98);                 
 	EMISSION = emission_color;
-
-	if (wireframe_mode) {
-		vec3 bary = v_barycentric;
-		vec3 deltas = fwidth(bary);
-		vec3 bary_edge = smoothstep(vec3(0.0), deltas * 1.5, bary);
-		float min_edge = min(bary_edge.x, min(bary_edge.y, bary_edge.z));
-		float edge_line = 1.0 - min_edge;
-		vec3 wire_col = mix(vec3(0.05, 0.08, 0.12), vec3(0.0, 1.0, 0.8), edge_line);
-		ALBEDO = mix(final_albedo, wire_col, edge_line);
-		EMISSION = wire_col * edge_line * 2.0;
-	}
 }
 ";
 
@@ -855,8 +1199,9 @@ void fragment() {
 		var defaultFogTexture = ImageTexture.CreateFromImage(defaultFogImage);
 		_material.SetShaderParameter("fog_texture", defaultFogTexture);
 
-		_material.SetShaderParameter("grid_spacing", Spacing);
-		_material.SetShaderParameter("terrain_size", new Vector2(Width * Spacing, Depth * Spacing));
+		_material.SetShaderParameter("grid_spacing", QuadSize);
+		_material.SetShaderParameter("terrain_size", new Vector2(Width * QuadSize, Depth * QuadSize));
+		_material.SetShaderParameter("texture_scale", 1.0f / QuadSize);
 
 		CreateChunks();
 		CreateWater();
@@ -875,65 +1220,104 @@ void fragment() {
 	private (Image AlbedoHeight, Image NormalRoughness) LoadKtx2LayersDynamic(string ktx2Path)
 	{
 		string globalKtx2Path = Godot.ProjectSettings.GlobalizePath(ktx2Path);
-		string tempOut0 = $"user://temp_ext0_{System.Guid.NewGuid()}.png";
-		string tempOut1 = $"user://temp_ext1_{System.Guid.NewGuid()}.png";
-		string globalTempOut0 = Godot.ProjectSettings.GlobalizePath(tempOut0);
-		string globalTempOut1 = Godot.ProjectSettings.GlobalizePath(tempOut1);
+		string cacheDir = Godot.ProjectSettings.GlobalizePath("user://ktx_layer_cache");
+		System.IO.Directory.CreateDirectory(cacheDir);
+
+		string baseName = System.IO.Path.GetFileNameWithoutExtension(ktx2Path);
+		string globalTempOut0 = System.IO.Path.Combine(cacheDir, $"{baseName}_layer0.png");
+		string globalTempOut1 = System.IO.Path.Combine(cacheDir, $"{baseName}_layer1.png");
+
+		if (System.IO.File.Exists(globalKtx2Path))
+		{
+			DateTime ktxTime = System.IO.File.GetLastWriteTimeUtc(globalKtx2Path);
+			if (System.IO.File.Exists(globalTempOut0) && System.IO.File.Exists(globalTempOut1) &&
+				System.IO.File.GetLastWriteTimeUtc(globalTempOut0) >= ktxTime &&
+				System.IO.File.GetLastWriteTimeUtc(globalTempOut1) >= ktxTime)
+			{
+				var cached0 = Image.LoadFromFile(globalTempOut0);
+				var cached1 = Image.LoadFromFile(globalTempOut1);
+				if (cached0 != null && cached1 != null)
+				{
+					return (cached0, cached1);
+				}
+			}
+		}
+
 		string ktxCmd = GetKtxCmdPath();
-		try
+		var startInfo0 = new System.Diagnostics.ProcessStartInfo
 		{
-			var startInfo0 = new System.Diagnostics.ProcessStartInfo
-			{
-				FileName = ktxCmd,
-				WorkingDirectory = System.IO.Path.GetDirectoryName(ktxCmd),
-				Arguments = $"extract --layer 0 --level 0 --transcode rgba8 \"{globalKtx2Path}\" \"{globalTempOut0}\"",
-				UseShellExecute = false,
-				CreateNoWindow = true,
-				RedirectStandardOutput = true,
-				RedirectStandardError = true
-			};
-			using (var process = System.Diagnostics.Process.Start(startInfo0))
-			{
-				process.WaitForExit();
-				if (process.ExitCode != 0)
-				{
-					string err = process.StandardError.ReadToEnd();
-					throw new System.Exception($"ktx extract layer 0 failed: {err}");
-				}
-			}
-			var startInfo1 = new System.Diagnostics.ProcessStartInfo
-			{
-				FileName = ktxCmd,
-				WorkingDirectory = System.IO.Path.GetDirectoryName(ktxCmd),
-				Arguments = $"extract --layer 1 --level 0 --transcode rgba8 \"{globalKtx2Path}\" \"{globalTempOut1}\"",
-				UseShellExecute = false,
-				CreateNoWindow = true,
-				RedirectStandardOutput = true,
-				RedirectStandardError = true
-			};
-			using (var process = System.Diagnostics.Process.Start(startInfo1))
-			{
-				process.WaitForExit();
-				if (process.ExitCode != 0)
-				{
-					string err = process.StandardError.ReadToEnd();
-					throw new System.Exception($"ktx extract layer 1 failed: {err}");
-				}
-			}
-			var img0 = Image.LoadFromFile(globalTempOut0);
-			var img1 = Image.LoadFromFile(globalTempOut1);
-			return (img0, img1);
-		}
-		finally
+			FileName = ktxCmd,
+			WorkingDirectory = System.IO.Path.GetDirectoryName(ktxCmd),
+			Arguments = $"extract --layer 0 --level 0 --transcode rgba8 \"{globalKtx2Path}\" \"{globalTempOut0}\"",
+			UseShellExecute = false,
+			CreateNoWindow = true,
+			RedirectStandardOutput = true,
+			RedirectStandardError = true
+		};
+		using (var process = System.Diagnostics.Process.Start(startInfo0))
 		{
-			if (System.IO.File.Exists(globalTempOut0)) System.IO.File.Delete(globalTempOut0);
-			if (System.IO.File.Exists(globalTempOut1)) System.IO.File.Delete(globalTempOut1);
+			process.WaitForExit();
+			if (process.ExitCode != 0)
+			{
+				string err = process.StandardError.ReadToEnd();
+				throw new System.Exception($"ktx extract layer 0 failed: {err}");
+			}
 		}
+		var startInfo1 = new System.Diagnostics.ProcessStartInfo
+		{
+			FileName = ktxCmd,
+			WorkingDirectory = System.IO.Path.GetDirectoryName(ktxCmd),
+			Arguments = $"extract --layer 1 --level 0 --transcode rgba8 \"{globalKtx2Path}\" \"{globalTempOut1}\"",
+			UseShellExecute = false,
+			CreateNoWindow = true,
+			RedirectStandardOutput = true,
+			RedirectStandardError = true
+		};
+		using (var process = System.Diagnostics.Process.Start(startInfo1))
+		{
+			process.WaitForExit();
+			if (process.ExitCode != 0)
+			{
+				string err = process.StandardError.ReadToEnd();
+				throw new System.Exception($"ktx extract layer 1 failed: {err}");
+			}
+		}
+		var img0 = Image.LoadFromFile(globalTempOut0);
+		var img1 = Image.LoadFromFile(globalTempOut1);
+		return (img0, img1);
 	}
 
 	private static Texture2DArray? _cachedAlbedoTextureArray;
 	private static Texture2DArray? _cachedNormalRoughnessTextureArray;
 	private static string? _cachedMapDir;
+	private List<string> _loadedTextureList = new List<string>();
+	private Godot.Vector4[] _swatchParamsCache = new Godot.Vector4[32];
+
+	public void UpdateTextureParamDirect(string swatchName, string tileMode, float uvScale, float stochasticTileSize)
+	{
+		if (_material == null) return;
+		string cleanName = System.IO.Path.GetFileNameWithoutExtension(swatchName);
+
+		int targetIndex = -1;
+		for (int i = 0; i < _loadedTextureList.Count && i < 32; i++)
+		{
+			if (string.Equals(_loadedTextureList[i], cleanName, StringComparison.OrdinalIgnoreCase))
+			{
+				targetIndex = i;
+				break;
+			}
+		}
+
+		if (targetIndex >= 0)
+		{
+			float tm = string.Equals(tileMode, "Grid", StringComparison.OrdinalIgnoreCase) ? 0.0f : 1.0f;
+			float uv = Math.Clamp(uvScale, 0.1f, 4.0f);
+			float stoch = Math.Clamp(stochasticTileSize, 0.5f, 3.0f);
+
+			_swatchParamsCache[targetIndex] = new Godot.Vector4(tm, uv, stoch, 0.0f);
+			_material.SetShaderParameter("swatch_params", _swatchParamsCache);
+		}
+	}
 
 	public void ReloadTerrainTextures(bool forceReload = false)
 	{
@@ -943,9 +1327,11 @@ void fragment() {
 			: Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
 
 		var textureList = new List<string>();
+		System.Text.Json.Nodes.JsonObject? texturesObj = null;
 
 		try
 		{
+			GameHost.Instance?.LoadModelYOffsetsFromMetadataJson(mapDir);
 			string metadataPath = System.IO.Path.Combine(mapDir, "metadata.json");
 			if (System.IO.File.Exists(metadataPath))
 			{
@@ -953,7 +1339,6 @@ void fragment() {
 				var root = System.Text.Json.Nodes.JsonNode.Parse(text) as System.Text.Json.Nodes.JsonObject;
 				if (root != null)
 				{
-					System.Text.Json.Nodes.JsonObject? texturesObj = null;
 					if (root.ContainsKey("Assets") && root["Assets"] is System.Text.Json.Nodes.JsonObject assets && assets.ContainsKey("textures") && assets["textures"] is System.Text.Json.Nodes.JsonObject tObj1)
 					{
 						texturesObj = tObj1;
@@ -984,6 +1369,61 @@ void fragment() {
 			}
 		}
 		catch { }
+
+		var swatchParams = new Godot.Vector4[32];
+		for (int i = 0; i < 32; i++)
+		{
+			swatchParams[i] = new Godot.Vector4(1.0f, 1.0f, 1.0f, 0.0f);
+		}
+
+		if (texturesObj != null)
+		{
+			for (int i = 0; i < textureList.Count && i < 32; i++)
+			{
+				string name = textureList[i];
+				System.Text.Json.Nodes.JsonNode? swatchNode = null;
+				foreach (var kvp in texturesObj)
+				{
+					string baseName = System.IO.Path.GetFileNameWithoutExtension(kvp.Key);
+					if (string.Equals(baseName, name, StringComparison.OrdinalIgnoreCase))
+					{
+						swatchNode = kvp.Value;
+						break;
+					}
+				}
+
+				float tileMode = 1.0f;
+				float uvScale = 1.0f;
+				float stochasticTileSize = 1.0f;
+
+				if (swatchNode is System.Text.Json.Nodes.JsonObject sObj)
+				{
+					string tm = sObj["Tile_Mode"]?.ToString() ?? sObj["tile_mode"]?.ToString() ?? "Stochastic";
+					if (string.Equals(tm, "Grid", StringComparison.OrdinalIgnoreCase))
+					{
+						tileMode = 0.0f;
+					}
+
+					string uvStr = sObj["UV_Scale"]?.ToString() ?? sObj["uv_scale"]?.ToString();
+					if (!string.IsNullOrEmpty(uvStr) && float.TryParse(uvStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedUv))
+					{
+						uvScale = Math.Clamp(parsedUv, 0.1f, 4.0f);
+					}
+
+					string stochStr = sObj["Stochastic_Tile_Size"]?.ToString() ?? sObj["stochastic_tile_size"]?.ToString();
+					if (!string.IsNullOrEmpty(stochStr) && float.TryParse(stochStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedStoch))
+					{
+						stochasticTileSize = Math.Clamp(parsedStoch, 0.5f, 3.0f);
+					}
+				}
+
+				swatchParams[i] = new Godot.Vector4(tileMode, uvScale, stochasticTileSize, 0.0f);
+			}
+		}
+
+		_loadedTextureList = textureList;
+		_swatchParamsCache = swatchParams;
+		_material.SetShaderParameter("swatch_params", swatchParams);
 
 		if (!forceReload && _cachedAlbedoTextureArray != null && _cachedNormalRoughnessTextureArray != null && _cachedMapDir == mapDir)
 		{
@@ -1032,43 +1472,41 @@ void fragment() {
 			}
 			if (imgLayer0 == null || imgLayer1 == null)
 			{
-				int fbWidth = texWidth != 0 ? texWidth : 512;
-				int fbHeight = texHeight != 0 ? texHeight : 512;
-				imgLayer0 = Godot.Image.CreateEmpty(fbWidth, fbHeight, false, Godot.Image.Format.Rgba8);
+				imgLayer0 = Godot.Image.CreateEmpty(TargetTextureResolution, TargetTextureResolution, false, Godot.Image.Format.Rgba8);
 				imgLayer0.Fill(new Color(1f, 0f, 1f, 0.99f));
-				imgLayer1 = Godot.Image.CreateEmpty(fbWidth, fbHeight, false, Godot.Image.Format.Rgba8);
+				imgLayer1 = Godot.Image.CreateEmpty(TargetTextureResolution, TargetTextureResolution, false, Godot.Image.Format.Rgba8);
 				imgLayer1.Fill(new Color(0.5f, 0.5f, 1.0f, 0.8f));
 			}
-			if (texWidth == 0)
-			{
-				texWidth = imgLayer0.GetWidth();
-				texHeight = imgLayer0.GetHeight();
-			}
-			else
-			{
-				if (imgLayer0.GetWidth() != texWidth || imgLayer0.GetHeight() != texHeight)
-				{
-					imgLayer0.Resize(texWidth, texHeight);
-				}
-				if (imgLayer1.GetWidth() != texWidth || imgLayer1.GetHeight() != texHeight)
-				{
-					imgLayer1.Resize(texWidth, texHeight);
-				}
-			}
-			if (imgLayer0.GetFormat() != Godot.Image.Format.Rgba8) imgLayer0.Convert(Godot.Image.Format.Rgba8);
-			if (imgLayer1.GetFormat() != Godot.Image.Format.Rgba8) imgLayer1.Convert(Godot.Image.Format.Rgba8);
 
-			var p0 = imgLayer0.GetPixel(0, 0);
-			if (p0.A >= 1.0f) imgLayer0.SetPixel(0, 0, new Color(p0.R, p0.G, p0.B, 0.99f));
-			var p1 = imgLayer1.GetPixel(0, 0);
-			if (p1.A >= 1.0f) imgLayer1.SetPixel(0, 0, new Color(p1.R, p1.G, p1.B, 0.99f));
+			imgLayer0 = AutoCropToPowerOfTwoSquare(imgLayer0);
+			imgLayer1 = AutoCropToPowerOfTwoSquare(imgLayer1);
 
-			imgLayer0.GenerateMipmaps(false);
-			imgLayer1.GenerateMipmaps(true);
-			imgLayer0.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
-			imgLayer1.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
-			albedoHeightImages.Add(imgLayer0);
-			normalRoughnessImages.Add(imgLayer1);
+			List<Image> layer0SubImages = new List<Image>();
+			List<Image> layer1SubImages = new List<Image>();
+
+			layer0SubImages.Add(ProcessAndResizeImage(imgLayer0, TargetTextureResolution));
+			layer1SubImages.Add(ProcessAndResizeImage(imgLayer1, TargetTextureResolution));
+
+			for (int subIdx = 0; subIdx < layer0SubImages.Count; subIdx++)
+			{
+				var sub0 = layer0SubImages[subIdx];
+				var sub1 = layer1SubImages[subIdx];
+
+				if (sub0.GetFormat() != Godot.Image.Format.Rgba8) sub0.Convert(Godot.Image.Format.Rgba8);
+				if (sub1.GetFormat() != Godot.Image.Format.Rgba8) sub1.Convert(Godot.Image.Format.Rgba8);
+
+				var p0 = sub0.GetPixel(0, 0);
+				if (p0.A >= 1.0f) sub0.SetPixel(0, 0, new Color(p0.R, p0.G, p0.B, 0.99f));
+				var p1 = sub1.GetPixel(0, 0);
+				if (p1.A >= 1.0f) sub1.SetPixel(0, 0, new Color(p1.R, p1.G, p1.B, 0.99f));
+
+				sub0.GenerateMipmaps(false);
+				sub1.GenerateMipmaps(true);
+				sub0.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
+				sub1.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
+				albedoHeightImages.Add(sub0);
+				normalRoughnessImages.Add(sub1);
+			}
 		}
 		var albedoTextureArray = new Texture2DArray();
 		albedoTextureArray.CreateFromImages(albedoHeightImages);
@@ -1096,12 +1534,12 @@ void fragment() {
 		_chunkedWidth = w;
 		_chunkedDepth = d;
 
-		for (int z = 0; z < d - 1; z += CHUNK_SIZE)
+		for (int z = 0; z < d; z += CHUNK_SIZE)
 		{
-			for (int x = 0; x < w - 1; x += CHUNK_SIZE)
+			for (int x = 0; x < w; x += CHUNK_SIZE)
 			{
-				int ex = Math.Min(x + CHUNK_SIZE, w - 1);
-				int ez = Math.Min(z + CHUNK_SIZE, d - 1);
+				int ex = Math.Min(x + CHUNK_SIZE, w);
+				int ez = Math.Min(z + CHUNK_SIZE, d);
 				
 				var chunk = new TerrainChunk
 				{
@@ -1121,9 +1559,8 @@ void fragment() {
 				chunk.CollisionShape = new CollisionShape3D();
 				chunk.CollisionShape.Name = $"TerrainCollision_{x}_{z}";
 				
-				// Position collision shape correctly for the chunk
-				float lx = (x + (ex - x) / 2.0f - (w - 1) / 2.0f) * Spacing;
-				float lz = (z + (ez - z) / 2.0f - (d - 1) / 2.0f) * Spacing;
+				float lx = (x + (ex - x) / 2.0f - w / 2.0f) * QuadSize;
+				float lz = (z + (ez - z) / 2.0f - d / 2.0f) * QuadSize;
 				chunk.CollisionShape.Position = new Vector3(lx, 0.0f, lz);
 				
 				AddChild(chunk.CollisionShape);
@@ -1133,15 +1570,25 @@ void fragment() {
 		}
 	}
 
+	private static readonly StringName FogTextureParam = "fog_texture";
+	private ImageTexture _currentFogTexture = null;
+
 	public void SetFogTexture(ImageTexture fogTexture)
 	{
-		if (_material != null && fogTexture != null)
+		if (fogTexture == null || _currentFogTexture == fogTexture) return;
+		_currentFogTexture = fogTexture;
+
+		if (_material != null)
 		{
-			_material.SetShaderParameter("fog_texture", fogTexture);
+			_material.SetShaderParameter(FogTextureParam, fogTexture);
 		}
-		if (_waterMesh?.MaterialOverride is ShaderMaterial waterMat && fogTexture != null)
+		if (_shallowWaterMaterial != null)
 		{
-			waterMat.SetShaderParameter("fog_texture", fogTexture);
+			_shallowWaterMaterial.SetShaderParameter(FogTextureParam, fogTexture);
+		}
+		if (_deepWaterMaterial != null)
+		{
+			_deepWaterMaterial.SetShaderParameter(FogTextureParam, fogTexture);
 		}
 	}
 
@@ -1163,9 +1610,20 @@ void fragment() {
 
 	public void SetWireframeMode(bool enabled)
 	{
-		if (_material != null)
+		Viewport viewport = GetViewport();
+		if (viewport != null)
 		{
-			_material.SetShaderParameter("wireframe_mode", enabled);
+			viewport.DebugDraw = enabled ? Viewport.DebugDrawEnum.Wireframe : Viewport.DebugDrawEnum.Disabled;
+		}
+	}
+
+	public void ToggleWireframeMode()
+	{
+		Viewport viewport = GetViewport();
+		if (viewport != null)
+		{
+			bool isWireframe = viewport.DebugDraw == Viewport.DebugDrawEnum.Wireframe;
+			viewport.DebugDraw = isWireframe ? Viewport.DebugDrawEnum.Disabled : Viewport.DebugDrawEnum.Wireframe;
 		}
 	}
 
@@ -1195,12 +1653,20 @@ void fragment() {
 		int w = Width;
 		int d = Depth;
 
-		if (SplatMap == null || SplatMap.GetLength(0) != w || SplatMap.GetLength(1) != d)
+		if (SplatMap == null || SplatMap.GetLength(0) < w + 1 || SplatMap.GetLength(1) < d + 1)
 		{
-			SplatMap = new TerrainSplatWeights[w, d];
-			for (int z = 0; z < d; z++)
-				for (int x = 0; x < w; x++)
-					SplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
+			var newSplatMap = new TerrainSplatWeights[w + 1, d + 1];
+			for (int z = 0; z <= d; z++)
+			{
+				for (int x = 0; x <= w; x++)
+				{
+					if (SplatMap != null && x < SplatMap.GetLength(0) && z < SplatMap.GetLength(1))
+						newSplatMap[x, z] = SplatMap[x, z];
+					else
+						newSplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
+				}
+			}
+			SplatMap = newSplatMap;
 		}
 
 		if (_chunks.Count == 0 || _chunkedWidth != w || _chunkedDepth != d)
@@ -1208,20 +1674,52 @@ void fragment() {
 			CreateChunks();
 		}
 
+		SanitizeCornerHeights();
+
 		foreach (var chunk in _chunks)
 		{
-			if (affectedRegion.HasValue)
-			{
-				var region = affectedRegion.Value;
-				if (chunk.EndX < region.Position.X || chunk.StartX > region.Position.X + region.Size.X ||
-					chunk.EndZ < region.Position.Y || chunk.StartZ > region.Position.Y + region.Size.Y)
-				{
-					continue;
-				}
-			}
-
-			UpdateChunk(chunk, rebuildPhysics);
+			UpdateChunkMesh(chunk, rebuildPhysics);
 		}
+
+		RegenerateWaterMesh();
+	}
+
+	public void SanitizeCornerHeights()
+	{
+		var cells = Cells;
+		if (cells == null) return;
+
+		int w = Width;
+		int d = Depth;
+
+		for (int gz = 0; gz <= d; gz++)
+		{
+			for (int gx = 0; gx <= w; gx++)
+			{
+				float h = GetGridNodeHeight(gx, gz, cells, w, d);
+
+				if (gx > 0 && gz > 0 && gx - 1 < w && gz - 1 < d) cells[gx - 1, gz - 1].Y_SE = h;
+				if (gx < w && gz > 0 && gz - 1 < d) cells[gx, gz - 1].Y_SW = h;
+				if (gx > 0 && gz < d && gx - 1 < w) cells[gx - 1, gz].Y_NE = h;
+				if (gx < w && gz < d) cells[gx, gz].Y_NW = h;
+			}
+		}
+	}
+
+	public float GetGridNodeHeight(int gx, int gz, TerrainCell[,] cells, int w, int d)
+	{
+		if (cells == null || w <= 0 || d <= 0) return 0f;
+		int cellX = Math.Clamp(gx, 0, w - 1);
+		int cellZ = Math.Clamp(gz, 0, d - 1);
+		if (gx < w && gz < d) return cells[cellX, cellZ].Y_NW;
+		if (gx == w && gz < d) return cells[w - 1, cellZ].Y_NE;
+		if (gx < w && gz == d) return cells[cellX, d - 1].Y_SW;
+		return cells[w - 1, d - 1].Y_SE;
+	}
+
+	public float GetGridNodeHeight(int gx, int gz)
+	{
+		return GetGridNodeHeight(gx, gz, Cells, Width, Depth);
 	}
 
 	public void UpdatePhysics(Rect2I? affectedRegion = null)
@@ -1247,62 +1745,84 @@ void fragment() {
 		int cellWidth = chunk.EndX - chunk.StartX;
 		int cellDepth = chunk.EndZ - chunk.StartZ;
 
-		var heightMapShape = new HeightMapShape3D();
-		heightMapShape.MapWidth = cellWidth + 1;
-		heightMapShape.MapDepth = cellDepth + 1;
-		
 		int mapDataCount = (cellWidth + 1) * (cellDepth + 1);
 		if (chunk.MapDataCache == null || chunk.MapDataCache.Length != mapDataCount)
 		{
 			chunk.MapDataCache = new float[mapDataCount];
 		}
-		
+
+		bool mapDataChanged = false;
+		int idx = 0;
+
 		for (int z = 0; z <= cellDepth; z++)
 		{
 			for (int x = 0; x <= cellWidth; x++)
 			{
-				chunk.MapDataCache[z * (cellWidth + 1) + x] = Heights[chunk.StartX + x, chunk.StartZ + z];
+				int vx = chunk.StartX + x;
+				int vz = chunk.StartZ + z;
+				float h = GetGridNodeHeight(vx, vz);
+
+				if (Math.Abs(chunk.MapDataCache[idx] - h) > 0.0001f)
+				{
+					chunk.MapDataCache[idx] = h;
+					mapDataChanged = true;
+				}
+				idx++;
 			}
 		}
-		heightMapShape.MapData = chunk.MapDataCache;
-		chunk.CollisionShape.Shape = heightMapShape;
-		chunk.CollisionShape.Scale = new Vector3(Spacing, 1.0f, Spacing);
+
+		if (mapDataChanged || chunk.CollisionShape.Shape == null)
+		{
+			var heightMapShape = new HeightMapShape3D();
+			heightMapShape.MapWidth = cellWidth + 1;
+			heightMapShape.MapDepth = cellDepth + 1;
+			heightMapShape.MapData = chunk.MapDataCache;
+
+			chunk.CollisionShape.Shape = heightMapShape;
+
+			float offsetX = (chunk.StartX + cellWidth / 2.0f - Width / 2.0f) * QuadSize;
+			float offsetZ = (chunk.StartZ + cellDepth / 2.0f - Depth / 2.0f) * QuadSize;
+			chunk.CollisionShape.Position = new Vector3(offsetX, 0, offsetZ);
+			chunk.CollisionShape.Scale = new Vector3(QuadSize, 1.0f, QuadSize);
+		}
 	}
 
-	public const int CLIFF_VERTICAL_SUBDIVISIONS = 3;
-
-	private void UpdateChunk(TerrainChunk chunk, bool rebuildPhysics)
+	private void UpdateChunkMesh(TerrainChunk chunk, bool rebuildPhysics)
 	{
-		int cellWidth = chunk.EndX - chunk.StartX;
-		int cellDepth = chunk.EndZ - chunk.StartZ;
+		var cells = Cells;
+		if (cells == null) return;
+		int w = Width;
+		int d = Depth;
+		float quadSize = QuadSize;
+		float halfWQuadSize = (w / 2.0f) * quadSize;
+		float halfDQuadSize = (d / 2.0f) * quadSize;
+		var splatMap = SplatMap;
+		var cliffSplatMap = CliffSplatMap ?? splatMap;
 
-		int totalVertices = 0;
-		int totalIndices = 0;
+		int maxVertices = 0;
+		int maxIndices = 0;
 
 		for (int z = chunk.StartZ; z < chunk.EndZ; z++)
 		{
 			for (int x = chunk.StartX; x < chunk.EndX; x++)
 			{
-				bool isQuadCliff = IsCliffQuad(x, z);
-				CountTriangleElements(x, z, x + 1, z, x, z + 1, isQuadCliff, ref totalVertices, ref totalIndices);
-				CountTriangleElements(x + 1, z, x + 1, z + 1, x, z + 1, isQuadCliff, ref totalVertices, ref totalIndices);
+				CountQuadElements(x, z, cells, w, d, ref maxVertices, ref maxIndices);
 			}
 		}
 
-		if (chunk.VerticesCache == null || chunk.VerticesCache.Length < totalVertices)
+		if (chunk.VerticesCache == null || chunk.VerticesCache.Length < maxVertices)
 		{
-			chunk.VerticesCache = new Vector3[totalVertices];
-			chunk.ColorsCache = new Color[totalVertices];
-			chunk.TexIndicesCache = new float[totalVertices * 4];
-			chunk.TexWeightsCache01 = new float[totalVertices * 4];
-			chunk.BarycentricCache = new float[totalVertices * 4];
-			chunk.NormalsCache = new Vector3[totalVertices];
-			chunk.UvsCache = new Vector2[totalVertices];
+			chunk.VerticesCache = new Vector3[maxVertices];
+			chunk.NormalsCache = new Vector3[maxVertices];
+			chunk.UvsCache = new Vector2[maxVertices];
+			chunk.ColorsCache = new Color[maxVertices];
+			chunk.TexIndicesCache = new float[maxVertices * 4];
+			chunk.TexWeightsCache01 = new float[maxVertices * 4];
 		}
 
-		if (chunk.IndicesCache == null || chunk.IndicesCache.Length < totalIndices)
+		if (chunk.IndicesCache == null || chunk.IndicesCache.Length < maxIndices)
 		{
-			chunk.IndicesCache = new int[totalIndices];
+			chunk.IndicesCache = new int[maxIndices];
 		}
 
 		int vertexIndex = 0;
@@ -1312,33 +1832,11 @@ void fragment() {
 		{
 			for (int x = chunk.StartX; x < chunk.EndX; x++)
 			{
-				bool isQuadCliff = IsCliffQuad(x, z);
-				int quadCliffDominantTex = -1;
-				if (isQuadCliff)
-				{
-					TerrainSplatWeights s00 = SplatMap[x, z];
-					TerrainSplatWeights s10 = SplatMap[x + 1, z];
-					TerrainSplatWeights s01 = SplatMap[x, z + 1];
-					TerrainSplatWeights s11 = SplatMap[x + 1, z + 1];
-
-					quadCliffDominantTex = s00.Index0;
-					float maxW = s00.Weight0;
-					void CheckQuadDom(TerrainSplatWeights s)
-					{
-						if (s.Weight0 > maxW) { maxW = s.Weight0; quadCliffDominantTex = s.Index0; }
-						if (s.Weight1 > maxW) { maxW = s.Weight1; quadCliffDominantTex = s.Index1; }
-						if (s.Weight2 > maxW) { maxW = s.Weight2; quadCliffDominantTex = s.Index2; }
-						if (s.Weight3 > maxW) { maxW = s.Weight3; quadCliffDominantTex = s.Index3; }
-					}
-					CheckQuadDom(s00);
-					CheckQuadDom(s10);
-					CheckQuadDom(s01);
-					CheckQuadDom(s11);
-				}
-				ProcessTriangle(chunk, x, z, x + 1, z, x, z + 1, isQuadCliff, quadCliffDominantTex, ref vertexIndex, ref indexIndex);
-				ProcessTriangle(chunk, x + 1, z, x + 1, z + 1, x, z + 1, isQuadCliff, quadCliffDominantTex, ref vertexIndex, ref indexIndex);
+				ProcessCellQuad(chunk, x, z, cells, w, d, quadSize, halfWQuadSize, halfDQuadSize, splatMap, cliffSplatMap, ref vertexIndex, ref indexIndex);
 			}
 		}
+
+		WeldChunkVertices(chunk, ref vertexIndex, indexIndex);
 
 		Vector3[] finalVertices = chunk.VerticesCache;
 		Color[] finalColors = chunk.ColorsCache;
@@ -1346,7 +1844,6 @@ void fragment() {
 		Vector2[] finalUvs = chunk.UvsCache;
 		float[] finalTexIndices = chunk.TexIndicesCache;
 		float[] finalTexWeights = chunk.TexWeightsCache01;
-		float[] finalBarycentric = chunk.BarycentricCache;
 		int[] finalIndices = chunk.IndicesCache;
 
 		if (vertexIndex < chunk.VerticesCache.Length)
@@ -1368,9 +1865,6 @@ void fragment() {
 
 			finalTexWeights = new float[vertexIndex * 4];
 			Array.Copy(chunk.TexWeightsCache01, finalTexWeights, vertexIndex * 4);
-
-			finalBarycentric = new float[vertexIndex * 4];
-			Array.Copy(chunk.BarycentricCache, finalBarycentric, vertexIndex * 4);
 		}
 
 		if (indexIndex < chunk.IndicesCache.Length)
@@ -1387,7 +1881,6 @@ void fragment() {
 		arrays[(int)Mesh.ArrayType.TexUV] = finalUvs;
 		arrays[(int)Mesh.ArrayType.Custom0] = finalTexIndices;
 		arrays[(int)Mesh.ArrayType.Custom1] = finalTexWeights;
-		arrays[(int)Mesh.ArrayType.Custom2] = finalBarycentric;
 		arrays[(int)Mesh.ArrayType.Index] = finalIndices;
 
 		chunk.ArrayMesh.ClearSurfaces();
@@ -1395,11 +1888,10 @@ void fragment() {
 		{
 			int custom0Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift;
 			int custom1Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom1Shift;
-			int custom2Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom2Shift;
 			chunk.ArrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays,
 				new Godot.Collections.Array<Godot.Collections.Array>(),
 				null,
-				(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1 | Mesh.ArrayFormat.FormatCustom2) | custom0Format | custom1Format | custom2Format));
+				(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1) | custom0Format | custom1Format));
 		}
 
 		if (rebuildPhysics)
@@ -1408,444 +1900,431 @@ void fragment() {
 		}
 	}
 
-	private bool IsCliffQuad(int x, int z)
+	private Vector3 GetWorldPosition(float gridX, float gridZ, float height, float halfWQuadSize, float halfDQuadSize, float quadSize)
 	{
-		float h00 = Heights[x, z];
-		float h10 = Heights[x + 1, z];
-		float h01 = Heights[x, z + 1];
-		float h11 = Heights[x + 1, z + 1];
-
-		float maxH = Math.Max(Math.Max(h00, h10), Math.Max(h01, h11));
-		float minH = Math.Min(Math.Min(h00, h10), Math.Min(h01, h11));
-
-		if (maxH - minH > 0.5f)
-		{
-			return true;
-		}
-
-		return IsCliffTriangle(x, z, x + 1, z, x, z + 1) || IsCliffTriangle(x + 1, z, x + 1, z + 1, x, z + 1);
+		float lx = gridX * quadSize - halfWQuadSize;
+		float lz = gridZ * quadSize - halfDQuadSize;
+		return new Vector3(lx, height, lz);
 	}
 
-	private bool IsCliffTriangle(int x0, int z0, int x1, int z1, int x2, int z2)
+	private Vector3 GetWorldPosition(float gridX, float gridZ, float height)
 	{
-		float h0 = Heights[x0, z0];
-		float h1 = Heights[x1, z1];
-		float h2 = Heights[x2, z2];
-
-		float maxH = Math.Max(h0, Math.Max(h1, h2));
-		float minH = Math.Min(h0, Math.Min(h1, h2));
-
-		if (maxH - minH > 0.5f)
-		{
-			return true;
-		}
-
-		Vector3 p0 = new Vector3(x0 * Spacing, h0, z0 * Spacing);
-		Vector3 p1 = new Vector3(x1 * Spacing, h1, z1 * Spacing);
-		Vector3 p2 = new Vector3(x2 * Spacing, h2, z2 * Spacing);
-
-		Vector3 edge1 = p1 - p0;
-		Vector3 edge2 = p2 - p0;
-		Vector3 rawNormal = edge2.Cross(edge1).Normalized();
-
-		return Mathf.Abs(rawNormal.Y) < 0.65f;
+		return GetWorldPosition(gridX, gridZ, height, (Width / 2.0f) * QuadSize, (Depth / 2.0f) * QuadSize, QuadSize);
 	}
 
-	private int GetCliffSubdivisions(int x0, int z0, int x1, int z1, int x2, int z2)
-	{
-		float h0 = Heights[x0, z0];
-		float h1 = Heights[x1, z1];
-		float h2 = Heights[x2, z2];
-		float maxH = Math.Max(h0, Math.Max(h1, h2));
-		float minH = Math.Min(h0, Math.Min(h1, h2));
-		float heightDelta = maxH - minH;
-		// Base spacing is typically 2.0f; scale subdivisions so vertical faces maintain ~1:1 quad aspect ratio
-		int targetSubs = (int)Math.Max(2, Math.Round(heightDelta / Math.Max(0.5f, Spacing)));
-		return Math.Min(16, targetSubs);
-	}
-
-	private void CountTriangleElements(
-		int x0, int z0,
-		int x1, int z1,
-		int x2, int z2,
-		bool isQuadCliff,
+	private void CountQuadElements(
+		int x, int z,
+		TerrainCell[,] cells,
+		int w, int d,
 		ref int totalVertices,
 		ref int totalIndices)
 	{
-		bool isVertCliffTri = isQuadCliff && IsCliffTriangle(x0, z0, x1, z1, x2, z2);
-		if (isVertCliffTri)
+		if (cells == null) return;
+		int cellW = cells.GetLength(0);
+		int cellD = cells.GetLength(1);
+		if (x < 0 || x >= cellW || z < 0 || z >= cellD) return;
+
+		totalVertices += 12;
+		totalIndices += 12;
+	}
+
+	private (int tex0, int tex1, int tex2, int tex3) GetQuadDominantTextures(TerrainSplatWeights s0, TerrainSplatWeights s1, TerrainSplatWeights s2, TerrainSplatWeights s3)
+	{
+		Span<int> indices = stackalloc int[16];
+		Span<float> weights = stackalloc float[16];
+		int count = 0;
+
+		for (int sIdx = 0; sIdx < 4; sIdx++)
 		{
-			int subdivisions = GetCliffSubdivisions(x0, z0, x1, z1, x2, z2);
-			int tris = subdivisions * subdivisions;
-			int verts = tris * 3;
-			totalVertices += verts;
-			totalIndices += tris * 3;
+			TerrainSplatWeights s = sIdx switch { 0 => s0, 1 => s1, 2 => s2, _ => s3 };
+			for (int k = 0; k < 4; k++)
+			{
+				int idx = k switch { 0 => s.Index0, 1 => s.Index1, 2 => s.Index2, _ => s.Index3 };
+				float w = k switch { 0 => s.Weight0, 1 => s.Weight1, 2 => s.Weight2, _ => s.Weight3 };
+				if (w <= 0.0001f) continue;
+
+				bool found = false;
+				for (int i = 0; i < count; i++)
+				{
+					if (indices[i] == idx)
+					{
+						weights[i] += w;
+						found = true;
+						break;
+					}
+				}
+				if (!found && count < 16)
+				{
+					indices[count] = idx;
+					weights[count] = w;
+					count++;
+				}
+			}
+		}
+
+		if (count == 0)
+		{
+			int defaultTex = s0.Index0;
+			return (defaultTex, defaultTex, defaultTex, defaultTex);
+		}
+
+		for (int i = 0; i < count - 1; i++)
+		{
+			for (int j = i + 1; j < count; j++)
+			{
+				if (weights[j] > weights[i])
+				{
+					float tempW = weights[i];
+					weights[i] = weights[j];
+					weights[j] = tempW;
+
+					int tempIdx = indices[i];
+					indices[i] = indices[j];
+					indices[j] = tempIdx;
+				}
+			}
+		}
+
+		int res0 = indices[0];
+		int res1 = count > 1 ? indices[1] : res0;
+		int res2 = count > 2 ? indices[2] : res0;
+		int res3 = count > 3 ? indices[3] : res0;
+
+		return (res0, res1, res2, res3);
+	}
+
+	private (float w0, float w1, float w2, float w3) GetSplatWeightsForQuad(TerrainSplatWeights s, int tex0, int tex1, int tex2, int tex3)
+	{
+		float GetWeightForTexture(in TerrainSplatWeights splat, int targetTexIndex)
+		{
+			float w = 0.0f;
+			if (splat.Index0 == targetTexIndex) w += splat.Weight0;
+			if (splat.Index1 == targetTexIndex) w += splat.Weight1;
+			if (splat.Index2 == targetTexIndex) w += splat.Weight2;
+			if (splat.Index3 == targetTexIndex) w += splat.Weight3;
+			return w;
+		}
+
+		float w0 = GetWeightForTexture(s, tex0);
+		float w1 = (tex1 != tex0) ? GetWeightForTexture(s, tex1) : 0.0f;
+		float w2 = (tex2 != tex0 && tex2 != tex1) ? GetWeightForTexture(s, tex2) : 0.0f;
+		float w3 = (tex3 != tex0 && tex3 != tex1 && tex3 != tex2) ? GetWeightForTexture(s, tex3) : 0.0f;
+
+		float sumW = w0 + w1 + w2 + w3;
+		if (sumW > 0.0001f)
+		{
+			float invSum = 1.0f / sumW;
+			w0 *= invSum;
+			w1 *= invSum;
+			w2 *= invSum;
+			w3 *= invSum;
 		}
 		else
 		{
-			totalVertices += 3;
-			totalIndices += 3;
+			w0 = 1.0f;
+			w1 = 0.0f;
+			w2 = 0.0f;
+			w3 = 0.0f;
 		}
+
+		return (w0, w1, w2, w3);
 	}
 
-	private int GetDominantTextureIndex(TerrainSplatWeights s)
+	private TerrainSplatWeights BlendSplatWeights(TerrainSplatWeights s0, TerrainSplatWeights s1, TerrainSplatWeights s2, TerrainSplatWeights s3)
 	{
-		int dom = s.Index0;
-		float maxW = s.Weight0;
-		if (s.Weight1 > maxW) { maxW = s.Weight1; dom = s.Index1; }
-		if (s.Weight2 > maxW) { maxW = s.Weight2; dom = s.Index2; }
-		if (s.Weight3 > maxW) { maxW = s.Weight3; dom = s.Index3; }
-		return dom;
-	}
+		var (tex0, tex1, tex2, tex3) = GetQuadDominantTextures(s0, s1, s2, s3);
+		var (w00, w01, w02, w03) = GetSplatWeightsForQuad(s0, tex0, tex1, tex2, tex3);
+		var (w10, w11, w12, w13) = GetSplatWeightsForQuad(s1, tex0, tex1, tex2, tex3);
+		var (w20, w21, w22, w23) = GetSplatWeightsForQuad(s2, tex0, tex1, tex2, tex3);
+		var (w30, w31, w32, w33) = GetSplatWeightsForQuad(s3, tex0, tex1, tex2, tex3);
 
-	private bool IsVertexCliff(int vx, int vz)
-	{
-		float h = Heights[vx, vz];
-		for (int dz = -1; dz <= 1; dz++)
-		{
-			for (int dx = -1; dx <= 1; dx++)
-			{
-				if (dx == 0 && dz == 0) continue;
-				int nx = vx + dx;
-				int nz = vz + dz;
-				if (nx >= 0 && nx < Width && nz >= 0 && nz < Depth)
-				{
-					if (Math.Abs(Heights[nx, nz] - h) >= 0.5f)
-					{
-						return true;
-					}
-				}
-			}
-		}
-		return false;
-	}
+		float avg0 = (w00 + w10 + w20 + w30) * 0.25f;
+		float avg1 = (w01 + w11 + w21 + w31) * 0.25f;
+		float avg2 = (w02 + w12 + w22 + w32) * 0.25f;
+		float avg3 = (w03 + w13 + w23 + w33) * 0.25f;
 
-	private TerrainSplatWeights GetNonCliffSplatWeights(int vx, int vz, int quadCliffDomTex, TerrainSplatWeights defaultSplat)
-	{
-		var current = SplatMap[vx, vz];
-		if (!IsVertexCliff(vx, vz))
-		{
-			return current;
-		}
-
-		int cliffTexIndex = quadCliffDomTex >= 0 ? quadCliffDomTex : GetDominantTextureIndex(current);
-		if (GetDominantTextureIndex(current) != cliffTexIndex)
-		{
-			return current;
-		}
-
-		float targetH = Heights[vx, vz];
-		float bestDistSq = float.MaxValue;
-		TerrainSplatWeights bestNeighborSplat = defaultSplat;
-		bool foundNonCliffNeighbor = false;
-
-		for (int radius = 1; radius <= 10; radius++)
-		{
-			for (int dz = -radius; dz <= radius; dz++)
-			{
-				for (int dx = -radius; dx <= radius; dx++)
-				{
-					if (dx == 0 && dz == 0) continue;
-					int nx = vx + dx;
-					int nz = vz + dz;
-					if (nx >= 0 && nx < Width && nz >= 0 && nz < Depth)
-					{
-						if (Math.Abs(Heights[nx, nz] - targetH) < 0.5f)
-						{
-							var nSplat = SplatMap[nx, nz];
-							int nDom = GetDominantTextureIndex(nSplat);
-							if (nDom != cliffTexIndex)
-							{
-								float distSq = dx * dx + dz * dz;
-								if (distSq < bestDistSq)
-								{
-									bestDistSq = distSq;
-									bestNeighborSplat = nSplat;
-									foundNonCliffNeighbor = true;
-								}
-							}
-						}
-					}
-				}
-			}
-			if (foundNonCliffNeighbor) break;
-		}
-
-		if (foundNonCliffNeighbor)
-		{
-			return bestNeighborSplat;
-		}
-
-		var filtered = current;
-		if (filtered.Index0 == cliffTexIndex) filtered.Weight0 = 0f;
-		if (filtered.Index1 == cliffTexIndex) filtered.Weight1 = 0f;
-		if (filtered.Index2 == cliffTexIndex) filtered.Weight2 = 0f;
-		if (filtered.Index3 == cliffTexIndex) filtered.Weight3 = 0f;
-
-		float sum = filtered.Weight0 + filtered.Weight1 + filtered.Weight2 + filtered.Weight3;
+		float sum = avg0 + avg1 + avg2 + avg3;
 		if (sum > 0.0001f)
 		{
-			filtered.Weight0 /= sum;
-			filtered.Weight1 /= sum;
-			filtered.Weight2 /= sum;
-			filtered.Weight3 /= sum;
-			return filtered;
-		}
-
-		int defaultDom = GetDominantTextureIndex(defaultSplat);
-		if (defaultDom != cliffTexIndex)
-		{
-			return defaultSplat;
-		}
-
-		int fallbackIndex = (cliffTexIndex == 2) ? 0 : 2;
-		return TerrainSplatWeights.CreateSolid(fallbackIndex);
-	}
-
-	private void ProcessTriangle(
-		TerrainChunk chunk,
-		int x0, int z0,
-		int x1, int z1,
-		int x2, int z2,
-		bool isQuadCliff,
-		int quadCliffDominantTex,
-		ref int vertexIndex,
-		ref int indexIndex)
-	{
-		bool isVertCliffTri = isQuadCliff && IsCliffTriangle(x0, z0, x1, z1, x2, z2);
-
-		var s0 = SplatMap[x0, z0];
-		var s1 = SplatMap[x1, z1];
-		var s2 = SplatMap[x2, z2];
-
-		if (!isVertCliffTri)
-		{
-			TerrainSplatWeights defaultFloorSplat = s0;
-			int dom0 = GetDominantTextureIndex(s0);
-			int dom1 = GetDominantTextureIndex(s1);
-			int dom2 = GetDominantTextureIndex(s2);
-
-			if (quadCliffDominantTex >= 0)
-			{
-				if (dom0 != quadCliffDominantTex) defaultFloorSplat = s0;
-				else if (dom1 != quadCliffDominantTex) defaultFloorSplat = s1;
-				else if (dom2 != quadCliffDominantTex) defaultFloorSplat = s2;
-			}
-
-			s0 = GetNonCliffSplatWeights(x0, z0, quadCliffDominantTex, defaultFloorSplat);
-			s1 = GetNonCliffSplatWeights(x1, z1, quadCliffDominantTex, defaultFloorSplat);
-			s2 = GetNonCliffSplatWeights(x2, z2, quadCliffDominantTex, defaultFloorSplat);
-		}
-
-		var uniqueTexs = new System.Collections.Generic.List<int>();
-		var texWeightsSum = new System.Collections.Generic.List<float>();
-
-		void AddTexture(int index, float weight)
-		{
-			if (weight <= 0.0f) return;
-			int idx = uniqueTexs.IndexOf(index);
-			if (idx >= 0)
-			{
-				texWeightsSum[idx] += weight;
-			}
-			else
-			{
-				uniqueTexs.Add(index);
-				texWeightsSum.Add(weight);
-			}
-		}
-
-		AddTexture(s0.Index0, s0.Weight0);
-		AddTexture(s0.Index1, s0.Weight1);
-		AddTexture(s0.Index2, s0.Weight2);
-		AddTexture(s0.Index3, s0.Weight3);
-
-		AddTexture(s1.Index0, s1.Weight0);
-		AddTexture(s1.Index1, s1.Weight1);
-		AddTexture(s1.Index2, s1.Weight2);
-		AddTexture(s1.Index3, s1.Weight3);
-
-		AddTexture(s2.Index0, s2.Weight0);
-		AddTexture(s2.Index1, s2.Weight1);
-		AddTexture(s2.Index2, s2.Weight2);
-		AddTexture(s2.Index3, s2.Weight3);
-
-		if (uniqueTexs.Count == 0)
-		{
-			uniqueTexs.Add(quadCliffDominantTex >= 0 ? quadCliffDominantTex : 3);
-			texWeightsSum.Add(1.0f);
-		}
-
-		while (uniqueTexs.Count > 4)
-		{
-			int lowestIdx = 0;
-			float lowestW = texWeightsSum[0];
-			for (int i = 1; i < uniqueTexs.Count; i++)
-			{
-				if (texWeightsSum[i] < lowestW)
-				{
-					lowestW = texWeightsSum[i];
-					lowestIdx = i;
-				}
-			}
-			uniqueTexs.RemoveAt(lowestIdx);
-			texWeightsSum.RemoveAt(lowestIdx);
-		}
-
-		while (uniqueTexs.Count < 4)
-		{
-			uniqueTexs.Add(uniqueTexs[0]);
-		}
-
-		if (isVertCliffTri && quadCliffDominantTex >= 0)
-		{
-			if (!uniqueTexs.Contains(quadCliffDominantTex))
-			{
-				uniqueTexs[3] = quadCliffDominantTex;
-			}
-		}
-
-		int p0 = uniqueTexs[0];
-		int p1 = uniqueTexs[1];
-		int p2 = uniqueTexs[2];
-		int p3 = uniqueTexs[3];
-
-		Vector3 faceNormal = GetTriangleFaceNormal(x0, z0, x1, z1, x2, z2);
-
-		int quadOriginX = Math.Min(x0, Math.Min(x1, x2));
-		int quadOriginZ = Math.Min(z0, Math.Min(z1, z2));
-
-		if (isVertCliffTri)
-		{
-			int subdivisions = GetCliffSubdivisions(x0, z0, x1, z1, x2, z2);
-			SubdivideCliffTriangle(chunk, x0, z0, x1, z1, x2, z2, quadOriginX, quadOriginZ, p0, p1, p2, p3, s0, s1, s2, faceNormal, true, quadCliffDominantTex, subdivisions, ref vertexIndex, ref indexIndex);
+			float invSum = 1.0f / sum;
+			avg0 *= invSum;
+			avg1 *= invSum;
+			avg2 *= invSum;
+			avg3 *= invSum;
 		}
 		else
 		{
-			int baseIndex = vertexIndex;
-			Vector2 quadUV0 = new Vector2(x0 - quadOriginX, z0 - quadOriginZ);
-			Vector2 quadUV1 = new Vector2(x1 - quadOriginX, z1 - quadOriginZ);
-			Vector2 quadUV2 = new Vector2(x2 - quadOriginX, z2 - quadOriginZ);
-
-			PopulateTriangleVertex(chunk, x0, z0, quadUV0, p0, p1, p2, p3, s0, faceNormal, new Vector3(1f, 0f, 0f), false, quadCliffDominantTex, ref vertexIndex);
-			PopulateTriangleVertex(chunk, x1, z1, quadUV1, p0, p1, p2, p3, s1, faceNormal, new Vector3(0f, 1f, 0f), false, quadCliffDominantTex, ref vertexIndex);
-			PopulateTriangleVertex(chunk, x2, z2, quadUV2, p0, p1, p2, p3, s2, faceNormal, new Vector3(0f, 0f, 1f), false, quadCliffDominantTex, ref vertexIndex);
-
-			chunk.IndicesCache[indexIndex++] = baseIndex;
-			chunk.IndicesCache[indexIndex++] = baseIndex + 1;
-			chunk.IndicesCache[indexIndex++] = baseIndex + 2;
+			avg0 = 1.0f; avg1 = 0f; avg2 = 0f; avg3 = 0f;
 		}
+
+		return new TerrainSplatWeights
+		{
+			Index0 = tex0,
+			Index1 = tex1,
+			Index2 = tex2,
+			Index3 = tex3,
+			Weight0 = avg0,
+			Weight1 = avg1,
+			Weight2 = avg2,
+			Weight3 = avg3
+		};
 	}
 
-	private void SubdivideCliffTriangle(
-		TerrainChunk chunk,
-		int x0, int z0,
-		int x1, int z1,
-		int x2, int z2,
-		int quadOriginX, int quadOriginZ,
-		int p0, int p1, int p2, int p3,
-		TerrainSplatWeights s0,
-		TerrainSplatWeights s1,
-		TerrainSplatWeights s2,
-		Vector3 faceNormal,
-		bool isCliff,
-		int quadCliffDominantTex,
-		int subdivisions,
-		ref int vertexIndex,
-		ref int indexIndex)
+	public static float Smoothstep(float edge0, float edge1, float x)
 	{
-		int baseVertexOffset = vertexIndex;
+		float t = Mathf.Clamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+		return t * t * (3.0f - 2.0f * t);
+	}
 
-		float worldX0 = (x0 - (Width - 1) / 2.0f) * Spacing;
-		float worldZ0 = (z0 - (Depth - 1) / 2.0f) * Spacing;
-		Vector3 pos0 = new Vector3(worldX0, Heights[x0, z0], worldZ0);
+	public static float GetCliffFactor(Vector3 normal)
+	{
+		float ny = Mathf.Clamp(normal.Y, 0.0f, 1.0f);
+		return 1.0f - Smoothstep(0.72f, 0.92f, ny);
+	}
 
-		float worldX1 = (x1 - (Width - 1) / 2.0f) * Spacing;
-		float worldZ1 = (z1 - (Depth - 1) / 2.0f) * Spacing;
-		Vector3 pos1 = new Vector3(worldX1, Heights[x1, z1], worldZ1);
+	private TerrainSplatWeights BlendSplatWeightsWithCliff(in TerrainSplatWeights ground, in TerrainSplatWeights cliff, float cliffFactor)
+	{
+		cliffFactor = Mathf.Clamp(cliffFactor, 0.0f, 1.0f);
+		if (cliffFactor <= 0.001f) return ground;
+		if (cliffFactor >= 0.999f) return cliff;
 
-		float worldX2 = (x2 - (Width - 1) / 2.0f) * Spacing;
-		float worldZ2 = (z2 - (Depth - 1) / 2.0f) * Spacing;
-		Vector3 pos2 = new Vector3(worldX2, Heights[x2, z2], worldZ2);
+		float groundFactor = 1.0f - cliffFactor;
 
-		// Compute horizontal axis perpendicular to face normal for planar UV.x, and vertical height for UV.y
-		Vector3 horizDir = new Vector3(-faceNormal.Z, 0f, faceNormal.X);
-		float horizLen = horizDir.Length();
-		if (horizLen > 0.001f) horizDir /= horizLen;
-		else horizDir = Vector3.Right;
+		int[] indices = new int[8];
+		float[] weights = new float[8];
+		int count = 0;
 
-		// Use quad-wide minimum height so both triangles in the cliff quad share identical UV.y vertical origin
-		float quadMinY = Math.Min(
-			Math.Min(Heights[quadOriginX, quadOriginZ], Heights[quadOriginX + 1, quadOriginZ]),
-			Math.Min(Heights[quadOriginX, quadOriginZ + 1], Heights[quadOriginX + 1, quadOriginZ + 1])
-		);
-		float quadMaxY = Math.Max(
-			Math.Max(Heights[quadOriginX, quadOriginZ], Heights[quadOriginX + 1, quadOriginZ]),
-			Math.Max(Heights[quadOriginX, quadOriginZ + 1], Heights[quadOriginX + 1, quadOriginZ + 1])
-		);
-
-		float uProj0 = pos0.Dot(horizDir) / Math.Max(0.5f, Spacing);
-		float uProj1 = pos1.Dot(horizDir) / Math.Max(0.5f, Spacing);
-		float uProj2 = pos2.Dot(horizDir) / Math.Max(0.5f, Spacing);
-
-		float minUProj = Math.Min(uProj0, Math.Min(uProj1, uProj2));
-
-		Vector2 uv0 = new Vector2(uProj0 - minUProj, (pos0.Y - quadMinY) / Math.Max(0.5f, Spacing));
-		Vector2 uv1 = new Vector2(uProj1 - minUProj, (pos1.Y - quadMinY) / Math.Max(0.5f, Spacing));
-		Vector2 uv2 = new Vector2(uProj2 - minUProj, (pos2.Y - quadMinY) / Math.Max(0.5f, Spacing));
-
-		for (int i = 0; i < subdivisions; i++)
+		for (int sIdx = 0; sIdx < 2; sIdx++)
 		{
-			for (int j = 0; j < subdivisions - i; j++)
+			TerrainSplatWeights splat = sIdx == 0 ? ground : cliff;
+			float factor = sIdx == 0 ? groundFactor : cliffFactor;
+
+			for (int k = 0; k < 4; k++)
 			{
-				int k = subdivisions - 1 - i - j;
+				int idx = k switch { 0 => splat.Index0, 1 => splat.Index1, 2 => splat.Index2, _ => splat.Index3 };
+				float w = (k switch { 0 => splat.Weight0, 1 => splat.Weight1, 2 => splat.Weight2, _ => splat.Weight3 }) * factor;
+				if (w <= 0.0001f) continue;
 
-				float uA = (float)(i + 1) / subdivisions;
-				float vA = (float)j / subdivisions;
-				float wA = 1.0f - uA - vA;
-				Vector3 posA = pos0 * uA + pos1 * vA + pos2 * wA;
-				Vector2 uvA = uv0 * uA + uv1 * vA + uv2 * wA;
-
-				float uB = (float)i / subdivisions;
-				float vB = (float)(j + 1) / subdivisions;
-				float wB = 1.0f - uB - vB;
-				Vector3 posB = pos0 * uB + pos1 * vB + pos2 * wB;
-				Vector2 uvB = uv0 * uB + uv1 * vB + uv2 * wB;
-
-				float uC = (float)i / subdivisions;
-				float vC = (float)j / subdivisions;
-				float wC = 1.0f - uC - vC;
-				Vector3 posC = pos0 * uC + pos1 * vC + pos2 * wC;
-				Vector2 uvC = uv0 * uC + uv1 * vC + uv2 * wC;
-
-				int baseTriIndex = vertexIndex;
-				PopulateExplicitVertex(chunk, posC, uvC, faceNormal, new Vector3(1f, 0f, 0f), p0, p1, p2, p3, s0, s1, s2, uC, vC, wC, isCliff, quadCliffDominantTex, quadMinY, quadMaxY, ref vertexIndex);
-				PopulateExplicitVertex(chunk, posA, uvA, faceNormal, new Vector3(0f, 1f, 0f), p0, p1, p2, p3, s0, s1, s2, uA, vA, wA, isCliff, quadCliffDominantTex, quadMinY, quadMaxY, ref vertexIndex);
-				PopulateExplicitVertex(chunk, posB, uvB, faceNormal, new Vector3(0f, 0f, 1f), p0, p1, p2, p3, s0, s1, s2, uB, vB, wB, isCliff, quadCliffDominantTex, quadMinY, quadMaxY, ref vertexIndex);
-
-				chunk.IndicesCache[indexIndex++] = baseTriIndex;
-				chunk.IndicesCache[indexIndex++] = baseTriIndex + 1;
-				chunk.IndicesCache[indexIndex++] = baseTriIndex + 2;
-
-				if (i + j < subdivisions - 1)
+				bool found = false;
+				for (int i = 0; i < count; i++)
 				{
-					float uD = (float)(i + 1) / subdivisions;
-					float vD = (float)(j + 1) / subdivisions;
-					float wD = 1.0f - uD - vD;
-					Vector3 posD = pos0 * uD + pos1 * vD + pos2 * wD;
-					Vector2 uvD = uv0 * uD + uv1 * vD + uv2 * wD;
-
-					int baseSubTriIndex = vertexIndex;
-					PopulateExplicitVertex(chunk, posA, uvA, faceNormal, new Vector3(1f, 0f, 0f), p0, p1, p2, p3, s0, s1, s2, uA, vA, wA, isCliff, quadCliffDominantTex, quadMinY, quadMaxY, ref vertexIndex);
-					PopulateExplicitVertex(chunk, posD, uvD, faceNormal, new Vector3(0f, 1f, 0f), p0, p1, p2, p3, s0, s1, s2, uD, vD, wD, isCliff, quadCliffDominantTex, quadMinY, quadMaxY, ref vertexIndex);
-					PopulateExplicitVertex(chunk, posB, uvB, faceNormal, new Vector3(0f, 0f, 1f), p0, p1, p2, p3, s0, s1, s2, uB, vB, wB, isCliff, quadCliffDominantTex, quadMinY, quadMaxY, ref vertexIndex);
-
-					chunk.IndicesCache[indexIndex++] = baseSubTriIndex;
-					chunk.IndicesCache[indexIndex++] = baseSubTriIndex + 1;
-					chunk.IndicesCache[indexIndex++] = baseSubTriIndex + 2;
+					if (indices[i] == idx)
+					{
+						weights[i] += w;
+						found = true;
+						break;
+					}
+				}
+				if (!found && count < 8)
+				{
+					indices[count] = idx;
+					weights[count] = w;
+					count++;
 				}
 			}
 		}
+
+		if (count == 0) return ground;
+
+		for (int i = 0; i < count - 1; i++)
+		{
+			for (int j = i + 1; j < count; j++)
+			{
+				if (weights[j] > weights[i])
+				{
+					float tempW = weights[i];
+					weights[i] = weights[j];
+					weights[j] = tempW;
+
+					int tempIdx = indices[i];
+					indices[i] = indices[j];
+					indices[j] = tempIdx;
+				}
+			}
+		}
+
+		int res0 = indices[0];
+		int res1 = count > 1 ? indices[1] : res0;
+		int res2 = count > 2 ? indices[2] : res0;
+		int res3 = count > 3 ? indices[3] : res0;
+
+		float w0 = weights[0];
+		float w1 = count > 1 ? weights[1] : 0.0f;
+		float w2 = count > 2 ? weights[2] : 0.0f;
+		float w3 = count > 3 ? weights[3] : 0.0f;
+
+		float totalW = w0 + w1 + w2 + w3;
+		if (totalW > 0.0001f)
+		{
+			float invW = 1.0f / totalW;
+			w0 *= invW;
+			w1 *= invW;
+			w2 *= invW;
+			w3 *= invW;
+		}
+		else
+		{
+			w0 = 1.0f; w1 = 0.0f; w2 = 0.0f; w3 = 0.0f;
+		}
+
+		return new TerrainSplatWeights
+		{
+			Index0 = res0,
+			Index1 = res1,
+			Index2 = res2,
+			Index3 = res3,
+			Weight0 = w0,
+			Weight1 = w1,
+			Weight2 = w2,
+			Weight3 = w3
+		};
+	}
+
+	private void ProcessCellQuad(
+		TerrainChunk chunk,
+		int x, int z,
+		TerrainCell[,] cells,
+		int w, int d,
+		float quadSize,
+		float halfWQuadSize,
+		float halfDQuadSize,
+		TerrainSplatWeights[,] splatMap,
+		TerrainSplatWeights[,] cliffSplatMap,
+		ref int vertexIndex,
+		ref int indexIndex)
+	{
+		var cell = cells[x, z];
+		sbyte cellMacro = cell.MacroTier;
+
+		float hNW = cell.Y_NW;
+		float hNE = cell.Y_NE;
+		float hSE = cell.Y_SE;
+		float hSW = cell.Y_SW;
+		float hC = cell.CenterHeight;
+
+		Vector3 gPNW = GetWorldPosition(x, z, hNW, halfWQuadSize, halfDQuadSize, quadSize);
+		Vector3 gPNE = GetWorldPosition(x + 1, z, hNE, halfWQuadSize, halfDQuadSize, quadSize);
+		Vector3 gPSE = GetWorldPosition(x + 1, z + 1, hSE, halfWQuadSize, halfDQuadSize, quadSize);
+		Vector3 gPSW = GetWorldPosition(x, z + 1, hSW, halfWQuadSize, halfDQuadSize, quadSize);
+		Vector3 gPC = GetWorldPosition(x + 0.5f, z + 0.5f, hC, halfWQuadSize, halfDQuadSize, quadSize);
+
+		Vector3 normNW = GetVertexNormal(x, z, cells, w, d, quadSize);
+		Vector3 normNE = GetVertexNormal(x + 1, z, cells, w, d, quadSize);
+		Vector3 normSE = GetVertexNormal(x + 1, z + 1, cells, w, d, quadSize);
+		Vector3 normSW = GetVertexNormal(x, z + 1, cells, w, d, quadSize);
+		Vector3 normC = (normNW + normNE + normSE + normSW).Normalized();
+
+		int mapSplatW = splatMap != null ? splatMap.GetLength(0) : 0;
+		int mapSplatD = splatMap != null ? splatMap.GetLength(1) : 0;
+
+		TerrainSplatWeights floorS00 = splatMap != null ? splatMap[Math.Clamp(x, 0, mapSplatW - 1), Math.Clamp(z, 0, mapSplatD - 1)] : default;
+		TerrainSplatWeights floorS10 = splatMap != null ? splatMap[Math.Clamp(x + 1, 0, mapSplatW - 1), Math.Clamp(z, 0, mapSplatD - 1)] : floorS00;
+		TerrainSplatWeights floorS11 = splatMap != null ? splatMap[Math.Clamp(x + 1, 0, mapSplatW - 1), Math.Clamp(z + 1, 0, mapSplatD - 1)] : floorS00;
+		TerrainSplatWeights floorS01 = splatMap != null ? splatMap[Math.Clamp(x, 0, mapSplatW - 1), Math.Clamp(z + 1, 0, mapSplatD - 1)] : floorS00;
+		TerrainSplatWeights floorSC = BlendSplatWeights(floorS00, floorS10, floorS11, floorS01);
+
+		int mapCliffW = cliffSplatMap != null ? cliffSplatMap.GetLength(0) : 0;
+		int mapCliffD = cliffSplatMap != null ? cliffSplatMap.GetLength(1) : 0;
+
+		TerrainSplatWeights cliffS00 = cliffSplatMap != null ? cliffSplatMap[Math.Clamp(x, 0, mapCliffW - 1), Math.Clamp(z, 0, mapCliffD - 1)] : default;
+		TerrainSplatWeights cliffS10 = cliffSplatMap != null ? cliffSplatMap[Math.Clamp(x + 1, 0, mapCliffW - 1), Math.Clamp(z, 0, mapCliffD - 1)] : cliffS00;
+		TerrainSplatWeights cliffS11 = cliffSplatMap != null ? cliffSplatMap[Math.Clamp(x + 1, 0, mapCliffW - 1), Math.Clamp(z + 1, 0, mapCliffD - 1)] : cliffS00;
+		TerrainSplatWeights cliffS01 = cliffSplatMap != null ? cliffSplatMap[Math.Clamp(x, 0, mapCliffW - 1), Math.Clamp(z + 1, 0, mapCliffD - 1)] : cliffS00;
+		TerrainSplatWeights cliffSC = BlendSplatWeights(cliffS00, cliffS10, cliffS11, cliffS01);
+
+		Vector3 triNormN = (gPNE - gPNW).Cross(gPC - gPNW).Normalized();
+		if (triNormN.Y < 0) triNormN = -triNormN;
+		float cliffFactorN = GetCliffFactor(triNormN);
+
+		Vector3 triNormE = (gPSE - gPNE).Cross(gPC - gPNE).Normalized();
+		if (triNormE.Y < 0) triNormE = -triNormE;
+		float cliffFactorE = GetCliffFactor(triNormE);
+
+		Vector3 triNormS = (gPSW - gPSE).Cross(gPC - gPSE).Normalized();
+		if (triNormS.Y < 0) triNormS = -triNormS;
+		float cliffFactorS = GetCliffFactor(triNormS);
+
+		Vector3 triNormW = (gPNW - gPSW).Cross(gPC - gPSW).Normalized();
+		if (triNormW.Y < 0) triNormW = -triNormW;
+		float cliffFactorW = GetCliffFactor(triNormW);
+
+		Vector3 normN0 = triNormN.Y >= 0.999f ? Vector3.Up : triNormN;
+		Vector3 normN1 = normN0, normN2 = normN0;
+
+		Vector3 normE0 = triNormE.Y >= 0.999f ? Vector3.Up : triNormE;
+		Vector3 normE1 = normE0, normE2 = normE0;
+
+		Vector3 normS0 = triNormS.Y >= 0.999f ? Vector3.Up : triNormS;
+		Vector3 normS1 = normS0, normS2 = normS0;
+
+		Vector3 normW0 = triNormW.Y >= 0.999f ? Vector3.Up : triNormW;
+		Vector3 normW1 = normW0, normW2 = normW0;
+
+		Vector2 uvNW = new Vector2(gPNW.X, gPNW.Z);
+		Vector2 uvNE = new Vector2(gPNE.X, gPNE.Z);
+		Vector2 uvSE = new Vector2(gPSE.X, gPSE.Z);
+		Vector2 uvSW = new Vector2(gPSW.X, gPSW.Z);
+		Vector2 uvC = new Vector2(gPC.X, gPC.Z);
+
+		Color col = new Color(1.0f, 1.0f, 1.0f, 1.0f);
+
+		TerrainSplatWeights sN0 = BlendSplatWeightsWithCliff(floorS00, cliffS00, cliffFactorN);
+		TerrainSplatWeights sN1 = BlendSplatWeightsWithCliff(floorS10, cliffS10, cliffFactorN);
+		TerrainSplatWeights sN2 = BlendSplatWeightsWithCliff(floorSC, cliffSC, cliffFactorN);
+
+		TerrainSplatWeights sE0 = BlendSplatWeightsWithCliff(floorS10, cliffS10, cliffFactorE);
+		TerrainSplatWeights sE1 = BlendSplatWeightsWithCliff(floorS11, cliffS11, cliffFactorE);
+		TerrainSplatWeights sE2 = BlendSplatWeightsWithCliff(floorSC, cliffSC, cliffFactorE);
+
+		TerrainSplatWeights sS0 = BlendSplatWeightsWithCliff(floorS11, cliffS11, cliffFactorS);
+		TerrainSplatWeights sS1 = BlendSplatWeightsWithCliff(floorS01, cliffS01, cliffFactorS);
+		TerrainSplatWeights sS2 = BlendSplatWeightsWithCliff(floorSC, cliffSC, cliffFactorS);
+
+		TerrainSplatWeights sW0 = BlendSplatWeightsWithCliff(floorS01, cliffS01, cliffFactorW);
+		TerrainSplatWeights sW1 = BlendSplatWeightsWithCliff(floorS00, cliffS00, cliffFactorW);
+		TerrainSplatWeights sW2 = BlendSplatWeightsWithCliff(floorSC, cliffSC, cliffFactorW);
+
+		var (tex0, tex1, tex2, tex3) = GetQuadDominantTextures(sN0, sE0, sS0, sW0);
+
+		ProcessSubTriangleGround(chunk, gPNW, gPNE, gPC, normN0, normN1, normN2, uvNW, uvNE, uvC, col, col, col, sN0, sN1, sN2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPNE, gPSE, gPC, normE0, normE1, normE2, uvNE, uvSE, uvC, col, col, col, sE0, sE1, sE2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPSE, gPSW, gPC, normS0, normS1, normS2, uvSE, uvSW, uvC, col, col, col, sS0, sS1, sS2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPSW, gPNW, gPC, normW0, normW1, normW2, uvSW, uvNW, uvC, col, col, col, sW0, sW1, sW2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+	}
+
+	private void ProcessCellQuad(
+		TerrainChunk chunk,
+		int x, int z,
+		ref int vertexIndex,
+		ref int indexIndex)
+	{
+		ProcessCellQuad(chunk, x, z, Cells, Width, Depth, QuadSize, (Width / 2.0f) * QuadSize, (Depth / 2.0f) * QuadSize, SplatMap, CliffSplatMap ?? SplatMap, ref vertexIndex, ref indexIndex);
+	}
+
+	private void ProcessSubTriangleGround(
+		TerrainChunk chunk,
+		Vector3 pos0, Vector3 pos1, Vector3 pos2,
+		Vector3 norm0, Vector3 norm1, Vector3 norm2,
+		Vector2 uv0, Vector2 uv1, Vector2 uv2,
+		Color col0, Color col1, Color col2,
+		TerrainSplatWeights s0, TerrainSplatWeights s1, TerrainSplatWeights s2,
+		int tex0, int tex1, int tex2, int tex3,
+		ref int vertexIndex,
+		ref int indexIndex)
+	{
+		int baseIndex = vertexIndex;
+
+		var (w00, w01, w02, w03) = GetSplatWeightsForQuad(s0, tex0, tex1, tex2, tex3);
+		var (w10, w11, w12, w13) = GetSplatWeightsForQuad(s1, tex0, tex1, tex2, tex3);
+		var (w20, w21, w22, w23) = GetSplatWeightsForQuad(s2, tex0, tex1, tex2, tex3);
+
+		PopulateExplicitVertex(chunk, pos0, uv0, norm0, col0, tex0, tex1, tex2, tex3, w00, w01, w02, w03, ref vertexIndex);
+		PopulateExplicitVertex(chunk, pos1, uv1, norm1, col1, tex0, tex1, tex2, tex3, w10, w11, w12, w13, ref vertexIndex);
+		PopulateExplicitVertex(chunk, pos2, uv2, norm2, col2, tex0, tex1, tex2, tex3, w20, w21, w22, w23, ref vertexIndex);
+
+		chunk.IndicesCache[indexIndex++] = baseIndex;
+		chunk.IndicesCache[indexIndex++] = baseIndex + 1;
+		chunk.IndicesCache[indexIndex++] = baseIndex + 2;
 	}
 
 	private void PopulateExplicitVertex(
@@ -1853,239 +2332,26 @@ void fragment() {
 		Vector3 position,
 		Vector2 uv,
 		Vector3 faceNormal,
-		Vector3 barycentric,
-		int p0, int p1, int p2, int p3,
-		TerrainSplatWeights s0,
-		TerrainSplatWeights s1,
-		TerrainSplatWeights s2,
-		float weight0,
-		float weight1,
-		float weight2,
-		bool isCliff,
-		int quadCliffDominantTex,
-		float quadMinY,
-		float quadMaxY,
+		Color color,
+		int tex0, int tex1, int tex2, int tex3,
+		float w0, float w1, float w2, float w3,
 		ref int vertexIndex)
 	{
 		chunk.VerticesCache[vertexIndex] = position;
 		chunk.NormalsCache[vertexIndex] = faceNormal;
 		chunk.UvsCache[vertexIndex] = uv;
-
-		float wallAO = 1.0f;
-		if (isCliff || Math.Abs(faceNormal.Y) < 0.7f)
-		{
-			float wallHeight = quadMaxY - quadMinY;
-			float normY = wallHeight > 0.001f ? Mathf.Clamp((position.Y - quadMinY) / wallHeight, 0f, 1f) : 0.5f;
-
-			// Crevice AO at lower base of vertical wall
-			float bottomAO = Mathf.Lerp(0.59f, 1.0f, Mathf.Clamp(normY / 0.44f, 0f, 1f));
-			// Micro-AO gradient at upper top edge of vertical wall face (normal Y < 0.7)
-			float topAO = Mathf.Lerp(0.82f, 1.0f, Mathf.Clamp((1.0f - normY) / 0.30f, 0f, 1f));
-
-			wallAO = Math.Min(bottomAO, topAO);
-		}
-		chunk.ColorsCache[vertexIndex] = new Color(wallAO, wallAO, wallAO, 1.0f);
-
-		float w0 = 0f, w1 = 0f, w2 = 0f, w3 = 0f;
-
-		if (isCliff)
-		{
-			int domTex = quadCliffDominantTex >= 0 ? quadCliffDominantTex : s0.Index0;
-			int cliffSlot = (p0 == domTex) ? 0 : (p1 == domTex) ? 1 : (p2 == domTex) ? 2 : (p3 == domTex) ? 3 : 0;
-			w0 = (cliffSlot == 0) ? 1.0f : 0.0f;
-			w1 = (cliffSlot == 1) ? 1.0f : 0.0f;
-			w2 = (cliffSlot == 2) ? 1.0f : 0.0f;
-			w3 = (cliffSlot == 3) ? 1.0f : 0.0f;
-		}
-		else
-		{
-			float GetWeight(TerrainSplatWeights srcSplat, int texIndex)
-			{
-				float sum = 0.0f;
-				if (srcSplat.Index0 == texIndex) sum += srcSplat.Weight0;
-				if (srcSplat.Index1 == texIndex) sum += srcSplat.Weight1;
-				if (srcSplat.Index2 == texIndex) sum += srcSplat.Weight2;
-				if (srcSplat.Index3 == texIndex) sum += srcSplat.Weight3;
-				return sum;
-			}
-
-			w0 = GetWeight(s0, p0) * weight0 + GetWeight(s1, p0) * weight1 + GetWeight(s2, p0) * weight2;
-			w1 = GetWeight(s0, p1) * weight0 + GetWeight(s1, p1) * weight1 + GetWeight(s2, p1) * weight2;
-			w2 = GetWeight(s0, p2) * weight0 + GetWeight(s1, p2) * weight1 + GetWeight(s2, p2) * weight2;
-			w3 = GetWeight(s0, p3) * weight0 + GetWeight(s1, p3) * weight1 + GetWeight(s2, p3) * weight2;
-
-			float sumW = w0 + w1 + w2 + w3;
-			if (sumW > 0.0001f)
-			{
-				w0 /= sumW;
-				w1 /= sumW;
-				w2 /= sumW;
-				w3 /= sumW;
-			}
-			else
-			{
-				w0 = 1.0f;
-				w1 = 0.0f;
-				w2 = 0.0f;
-				w3 = 0.0f;
-			}
-		}
+		chunk.ColorsCache[vertexIndex] = color;
 
 		int sIdx = vertexIndex * 4;
-		chunk.TexIndicesCache[sIdx + 0] = p0;
-		chunk.TexIndicesCache[sIdx + 1] = p1;
-		chunk.TexIndicesCache[sIdx + 2] = p2;
-		chunk.TexIndicesCache[sIdx + 3] = p3;
+		chunk.TexIndicesCache[sIdx + 0] = tex0;
+		chunk.TexIndicesCache[sIdx + 1] = tex1;
+		chunk.TexIndicesCache[sIdx + 2] = tex2;
+		chunk.TexIndicesCache[sIdx + 3] = tex3;
 
-		chunk.TexWeightsCache01[sIdx + 0] = w0;
-		chunk.TexWeightsCache01[sIdx + 1] = w1;
-		chunk.TexWeightsCache01[sIdx + 2] = w2;
-		chunk.TexWeightsCache01[sIdx + 3] = w3;
-
-		chunk.BarycentricCache[sIdx + 0] = barycentric.X;
-		chunk.BarycentricCache[sIdx + 1] = barycentric.Y;
-		chunk.BarycentricCache[sIdx + 2] = barycentric.Z;
-		chunk.BarycentricCache[sIdx + 3] = 0.0f;
-
-		vertexIndex++;
-	}
-
-	private float CalculateVertexAO(int x, int z)
-	{
-		float h = Heights[x, z];
-		float minAO = 1.0f;
-		float maxHighlight = 1.0f;
-
-		for (int dz = -2; dz <= 2; dz++)
-		{
-			for (int dx = -2; dx <= 2; dx++)
-			{
-				if (dx == 0 && dz == 0) continue;
-				int nx = x + dx;
-				int nz = z + dz;
-				if (nx >= 0 && nx < Width && nz >= 0 && nz < Depth)
-				{
-					float diff = Heights[nx, nz] - h;
-					float distSq = dx * dx + dz * dz;
-
-					if (diff >= 0.5f)
-					{
-						// Neighbor is higher -> Bottom Crevice Occlusion (darkening ground at base of wall)
-						float ao = (distSq <= 1.5f) ? 0.59f : 0.79f;
-						minAO = Math.Min(minAO, ao);
-					}
-					else if (diff <= -0.5f)
-					{
-						// Neighbor is lower -> Edge Highlight on top horizontal rim (sun-catch / edge wear)
-						float hl = (distSq <= 1.5f) ? 1.18f : 1.08f;
-						maxHighlight = Math.Max(maxHighlight, hl);
-					}
-				}
-			}
-		}
-
-		if (minAO < 1.0f)
-		{
-			return minAO;
-		}
-
-		return maxHighlight;
-	}
-
-	private Vector3 GetTriangleFaceNormal(int x0, int z0, int x1, int z1, int x2, int z2)
-	{
-		Vector3 p0 = new Vector3(x0 * Spacing, Heights[x0, z0], z0 * Spacing);
-		Vector3 p1 = new Vector3(x1 * Spacing, Heights[x1, z1], z1 * Spacing);
-		Vector3 p2 = new Vector3(x2 * Spacing, Heights[x2, z2], z2 * Spacing);
-
-		Vector3 edge1 = p1 - p0;
-		Vector3 edge2 = p2 - p0;
-		return edge2.Cross(edge1).Normalized();
-	}
-
-	private void PopulateTriangleVertex(
-		TerrainChunk chunk,
-		int x, int z,
-		Vector2 quadUV,
-		int p0, int p1, int p2, int p3,
-		TerrainSplatWeights srcSplat,
-		Vector3 faceNormal,
-		Vector3 barycentric,
-		bool isCliff,
-		int quadCliffDominantTex,
-		ref int vertexIndex)
-	{
-		float lx = (x - (Width - 1) / 2.0f) * Spacing;
-		float lz = (z - (Depth - 1) / 2.0f) * Spacing;
-		chunk.VerticesCache[vertexIndex] = new Vector3(lx, Heights[x, z], lz);
-
-		chunk.NormalsCache[vertexIndex] = faceNormal;
-
-		chunk.UvsCache[vertexIndex] = quadUV;
-
-		float vertexAO = CalculateVertexAO(x, z);
-		chunk.ColorsCache[vertexIndex] = new Color(vertexAO, vertexAO, vertexAO, 1.0f);
-
-		float w0 = 0f, w1 = 0f, w2 = 0f, w3 = 0f;
-
-		if (isCliff)
-		{
-			int domTex = quadCliffDominantTex >= 0 ? quadCliffDominantTex : srcSplat.Index0;
-			int cliffSlot = (p0 == domTex) ? 0 : (p1 == domTex) ? 1 : (p2 == domTex) ? 2 : (p3 == domTex) ? 3 : 0;
-			w0 = (cliffSlot == 0) ? 1.0f : 0.0f;
-			w1 = (cliffSlot == 1) ? 1.0f : 0.0f;
-			w2 = (cliffSlot == 2) ? 1.0f : 0.0f;
-			w3 = (cliffSlot == 3) ? 1.0f : 0.0f;
-		}
-		else
-		{
-			float GetWeight(int texIndex)
-			{
-				float sum = 0.0f;
-				if (srcSplat.Index0 == texIndex) sum += srcSplat.Weight0;
-				if (srcSplat.Index1 == texIndex) sum += srcSplat.Weight1;
-				if (srcSplat.Index2 == texIndex) sum += srcSplat.Weight2;
-				if (srcSplat.Index3 == texIndex) sum += srcSplat.Weight3;
-				return sum;
-			}
-
-			w0 = GetWeight(p0);
-			w1 = GetWeight(p1);
-			w2 = GetWeight(p2);
-			w3 = GetWeight(p3);
-
-			float sumW = w0 + w1 + w2 + w3;
-			if (sumW > 0.0001f)
-			{
-				w0 /= sumW;
-				w1 /= sumW;
-				w2 /= sumW;
-				w3 /= sumW;
-			}
-			else
-			{
-				w0 = 1.0f;
-				w1 = 0.0f;
-				w2 = 0.0f;
-				w3 = 0.0f;
-			}
-		}
-
-		int sIdx = vertexIndex * 4;
-		chunk.TexIndicesCache[sIdx + 0] = p0;
-		chunk.TexIndicesCache[sIdx + 1] = p1;
-		chunk.TexIndicesCache[sIdx + 2] = p2;
-		chunk.TexIndicesCache[sIdx + 3] = p3;
-
-		chunk.TexWeightsCache01[sIdx + 0] = w0;
-		chunk.TexWeightsCache01[sIdx + 1] = w1;
-		chunk.TexWeightsCache01[sIdx + 2] = w2;
-		chunk.TexWeightsCache01[sIdx + 3] = w3;
-
-		chunk.BarycentricCache[sIdx + 0] = barycentric.X;
-		chunk.BarycentricCache[sIdx + 1] = barycentric.Y;
-		chunk.BarycentricCache[sIdx + 2] = barycentric.Z;
-		chunk.BarycentricCache[sIdx + 3] = 0.0f;
+		chunk.TexWeightsCache01[sIdx + 0] = w0 > 0.0001f ? w0 : 0.0f;
+		chunk.TexWeightsCache01[sIdx + 1] = w1 > 0.0001f ? w1 : 0.0f;
+		chunk.TexWeightsCache01[sIdx + 2] = w2 > 0.0001f ? w2 : 0.0f;
+		chunk.TexWeightsCache01[sIdx + 3] = w3 > 0.0001f ? w3 : 0.0f;
 
 		vertexIndex++;
 	}
@@ -2105,20 +2371,39 @@ void fragment() {
 
 	public void GetHeightAndNormal(float worldX, float worldZ, out float height, out Vector3 normal)
 	{
-		float halfW = (Width - 1) / 2.0f * Spacing;
-		float halfD = (Depth - 1) / 2.0f * Spacing;
-		float gridX = (worldX + halfW) / Spacing;
-		float gridZ = (worldZ + halfD) / Spacing;
+		var cells = Cells;
+		if (cells == null)
+		{
+			height = 0.0f;
+			normal = Vector3.Up;
+			return;
+		}
+
+		int cellW = cells.GetLength(0);
+		int cellD = cells.GetLength(1);
+		if (cellW <= 0 || cellD <= 0)
+		{
+			height = 0.0f;
+			normal = Vector3.Up;
+			return;
+		}
+
+		float halfW = Width / 2.0f * QuadSize;
+		float halfD = Depth / 2.0f * QuadSize;
+		float gridX = (worldX + halfW) / QuadSize;
+		float gridZ = (worldZ + halfD) / QuadSize;
 		int x0 = (int)Math.Floor(gridX);
 		int z0 = (int)Math.Floor(gridZ);
-		x0 = Math.Max(0, Math.Min(Width - 2, x0));
-		z0 = Math.Max(0, Math.Min(Depth - 2, z0));
-		float tx = gridX - x0;
-		float tz = gridZ - z0;
-		float h00 = Heights[x0, z0];
-		float h10 = Heights[x0 + 1, z0];
-		float h01 = Heights[x0, z0 + 1];
-		float h11 = Heights[x0 + 1, z0 + 1];
+		x0 = Math.Max(0, Math.Min(cellW - 1, x0));
+		z0 = Math.Max(0, Math.Min(cellD - 1, z0));
+		float tx = Math.Clamp(gridX - x0, 0f, 1f);
+		float tz = Math.Clamp(gridZ - z0, 0f, 1f);
+		var cell = cells[x0, z0];
+
+		float h00 = cell.Y_NW;
+		float h10 = cell.Y_NE;
+		float h01 = cell.Y_SW;
+		float h11 = cell.Y_SE;
 		height = (1 - tx) * (1 - tz) * h00 + tx * (1 - tz) * h10 + (1 - tx) * tz * h01 + tx * tz * h11;
 		Vector3 n00 = GetVertexNormal(x0, z0);
 		Vector3 n10 = GetVertexNormal(x0 + 1, z0);
@@ -2127,15 +2412,80 @@ void fragment() {
 		normal = ((1 - tx) * (1 - tz) * n00 + tx * (1 - tz) * n10 + (1 - tx) * tz * n01 + tx * tz * n11).Normalized();
 	}
 
+	private Vector3 GetVertexNormal(int x, int z, TerrainCell[,] cells, int w, int d, float quadSize)
+	{
+		if (cells == null || w <= 0 || d <= 0) return Vector3.Up;
+
+		float h = GetGridNodeHeight(x, z, cells, w, d);
+
+		int clampX = Math.Min(x, w - 1);
+		int clampXPrev = Math.Max(0, x - 1);
+		int clampXNext = Math.Min(x + 1, w - 1);
+		int clampZ = Math.Min(z, d - 1);
+		int clampZPrev = Math.Max(0, z - 1);
+		int clampZNext = Math.Min(z + 1, d - 1);
+
+		bool rightIsCliff = (x < w) && (cells[clampX, clampZ].MacroTier != cells[clampXNext, clampZ].MacroTier) && (Math.Abs(cells[clampX, clampZ].Y_NE - cells[clampXNext, clampZ].Y_NW) > 0.01f || Math.Abs(cells[clampX, clampZ].Y_SE - cells[clampXNext, clampZ].Y_SW) > 0.01f);
+		bool leftIsCliff = (x > 0) && (cells[clampXPrev, clampZ].MacroTier != cells[clampX, clampZ].MacroTier) && (Math.Abs(cells[clampXPrev, clampZ].Y_NE - cells[clampX, clampZ].Y_NW) > 0.01f || Math.Abs(cells[clampXPrev, clampZ].Y_SE - cells[clampX, clampZ].Y_SW) > 0.01f);
+
+		float deltaRight = x < w ? GetGridNodeHeight(x + 1, z, cells, w, d) - h : 0.0f;
+		float deltaLeft = x > 0 ? h - GetGridNodeHeight(x - 1, z, cells, w, d) : 0.0f;
+
+		float dx;
+		if (rightIsCliff && leftIsCliff)
+		{
+			dx = 0.0f;
+		}
+		else if (rightIsCliff)
+		{
+			dx = (x > 0 && !leftIsCliff) ? deltaLeft / quadSize : 0.0f;
+		}
+		else if (leftIsCliff)
+		{
+			dx = (x < w && !rightIsCliff) ? deltaRight / quadSize : 0.0f;
+		}
+		else
+		{
+			dx = (GetGridNodeHeight(Math.Min(w, x + 1), z, cells, w, d) - GetGridNodeHeight(Math.Max(0, x - 1), z, cells, w, d)) / (2.0f * quadSize);
+		}
+
+		bool downIsCliff = (z < d) && (cells[clampX, clampZ].MacroTier != cells[clampX, clampZNext].MacroTier) && (Math.Abs(cells[clampX, clampZ].Y_SW - cells[clampX, clampZNext].Y_NW) > 0.01f || Math.Abs(cells[clampX, clampZ].Y_SE - cells[clampX, clampZNext].Y_NE) > 0.01f);
+		bool upIsCliff = (z > 0) && (cells[clampX, clampZPrev].MacroTier != cells[clampX, clampZ].MacroTier) && (Math.Abs(cells[clampX, clampZPrev].Y_SW - cells[clampX, clampZ].Y_NW) > 0.01f || Math.Abs(cells[clampX, clampZPrev].Y_SE - cells[clampX, clampZ].Y_NE) > 0.01f);
+
+		float deltaDown = z < d ? GetGridNodeHeight(x, z + 1, cells, w, d) - h : 0.0f;
+		float deltaUp = z > 0 ? h - GetGridNodeHeight(x, z - 1, cells, w, d) : 0.0f;
+
+		float dz;
+		if (downIsCliff && upIsCliff)
+		{
+			dz = 0.0f;
+		}
+		else if (downIsCliff)
+		{
+			dz = (z > 0 && !upIsCliff) ? deltaUp / quadSize : 0.0f;
+		}
+		else if (upIsCliff)
+		{
+			dz = (z < d && !downIsCliff) ? deltaDown / quadSize : 0.0f;
+		}
+		else
+		{
+			dz = (GetGridNodeHeight(x, Math.Min(d, z + 1), cells, w, d) - GetGridNodeHeight(x, Math.Max(0, z - 1), cells, w, d)) / (2.0f * quadSize);
+		}
+
+		if (Math.Abs(dx) < 0.0001f && Math.Abs(dz) < 0.0001f)
+		{
+			return Vector3.Up;
+		}
+
+		Vector3 tangentX = new Vector3(quadSize, dx * quadSize, 0.0f).Normalized();
+		Vector3 tangentZ = new Vector3(0.0f, dz * quadSize, quadSize).Normalized();
+		return tangentZ.Cross(tangentX).Normalized();
+	}
+
 	private Vector3 GetVertexNormal(int x, int z)
 	{
-		float hl = Heights[Math.Max(0, x - 1), z];
-		float hr = Heights[Math.Min(Width - 1, x + 1), z];
-		float hd = Heights[x, Math.Max(0, z - 1)];
-		float hu = Heights[x, Math.Min(Depth - 1, z + 1)];
-		Vector3 tangentX = new Vector3(2.0f * Spacing, hr - hl, 0.0f).Normalized();
-		Vector3 tangentZ = new Vector3(0.0f, hu - hd, 2.0f * Spacing).Normalized();
-		return tangentZ.Cross(tangentX).Normalized();
+		return GetVertexNormal(x, z, Cells, Width, Depth, QuadSize);
 	}
 
 	public void ResizeTerrain(int newWidth, int newDepth)
@@ -2143,67 +2493,71 @@ void fragment() {
 		if (GameHost.Instance == null || GameHost.Instance.EcsWorld == null || !GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity)) return;
 		if (!GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity)) return;
 
+		newWidth = Math.Clamp((int)Math.Round(newWidth / 32.0) * 32, 32, 512);
+		newDepth = Math.Clamp((int)Math.Round(newDepth / 32.0) * 32, 32, 512);
+
 		ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
 		
 		int oldWidth = state.Width;
 		int oldDepth = state.Depth;
-		float[,] oldHeights = state.Heights;
+		var oldCells = Cells;
 		int[,] oldPathing = state.PathingCodes;
 		TerrainSplatWeights[,] oldSplatMap = SplatMap;
 
-		float[,] newHeights = new float[newWidth, newDepth];
+		var newCells = new TerrainCell[newWidth, newDepth];
 		int[,] newPathing = new int[newWidth, newDepth];
-		TerrainSplatWeights[,] newSplatMap = new TerrainSplatWeights[newWidth, newDepth];
+		TerrainSplatWeights[,] newSplatMap = new TerrainSplatWeights[newWidth + 1, newDepth + 1];
 
 		int offsetX = (newWidth - oldWidth) / 2;
 		int offsetZ = (newDepth - oldDepth) / 2;
 
-		for (int z = 0; z < newDepth; z++)
+		for (int z = 0; z <= newDepth; z++)
 		{
-			for (int x = 0; x < newWidth; x++)
+			for (int x = 0; x <= newWidth; x++)
 			{
 				int oldX = x - offsetX;
 				int oldZ = z - offsetZ;
-
-				if (oldX >= 0 && oldX < oldWidth && oldZ >= 0 && oldZ < oldDepth)
+				if (x < newWidth && z < newDepth)
 				{
-					if (oldHeights != null) newHeights[x, z] = oldHeights[oldX, oldZ];
-					if (oldPathing != null) newPathing[x, z] = oldPathing[oldX, oldZ];
-					if (oldSplatMap != null) newSplatMap[x, z] = oldSplatMap[oldX, oldZ];
+					if (oldCells != null && oldX >= 0 && oldX < oldWidth && oldZ >= 0 && oldZ < oldDepth)
+					{
+						newCells[x, z] = oldCells[oldX, oldZ];
+					}
+					if (oldPathing != null && oldX >= 0 && oldX < oldWidth && oldZ >= 0 && oldZ < oldDepth)
+					{
+						newPathing[x, z] = oldPathing[oldX, oldZ];
+					}
+					else
+					{
+						newPathing[x, z] = GetDefaultPathingCode(newCells[x, z]);
+					}
+				}
+				if (oldSplatMap != null && oldX >= 0 && oldX < oldSplatMap.GetLength(0) && oldZ >= 0 && oldZ < oldSplatMap.GetLength(1))
+				{
+					newSplatMap[x, z] = oldSplatMap[oldX, oldZ];
 				}
 				else
 				{
-					newHeights[x, z] = 0.0f;
-					newPathing[x, z] = GetDefaultPathingCode(0.0f, state.WaterHeight, state.WaterEnabled);
 					newSplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
 				}
 			}
 		}
 
 		GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-			newWidth,
-			newDepth,
-			state.Spacing,
-			state.CellSize,
-			state.WaterHeight,
-			state.WaterEnabled,
-			newHeights,
-			newPathing,
-			state.NavMesh,
-			state.NavMeshQuery
+			newWidth, newDepth, state.QuadSize, state.CellSize,
+			newCells, newPathing, state.NavMesh, state.NavMeshQuery
 		));
 
-		_localHeights = newHeights;
+		_localCells = newCells;
 		_localPathingCodes = newPathing;
 		SplatMap = newSplatMap;
 		
 		if (_material != null)
 		{
-			_material.SetShaderParameter("terrain_size", new Vector2(newWidth * state.Spacing, newDepth * state.Spacing));
+			_material.SetShaderParameter("terrain_size", new Vector2(newWidth * state.QuadSize, newDepth * state.QuadSize));
 		}
 
 		CreateChunks();
-
 		UpdateWaterSize();
 		UpdateMeshAndPhysics();
 	}
@@ -2213,107 +2567,299 @@ void fragment() {
 		if (GameHost.Instance == null || GameHost.Instance.EcsWorld == null || !GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity)) return;
 		if (!GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity)) return;
 
+		newWidth = Math.Clamp((int)Math.Round(newWidth / 32.0) * 32, 32, 512);
+		newDepth = Math.Clamp((int)Math.Round(newDepth / 32.0) * 32, 32, 512);
+
 		ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
 
 		int oldWidth = state.Width;
 		int oldDepth = state.Depth;
-		float[,] oldHeights = state.Heights;
+		var oldCells = Cells;
 		int[,] oldPathing = state.PathingCodes;
 		TerrainSplatWeights[,] oldSplatMap = SplatMap;
 
-		float[,] newHeights = new float[newWidth, newDepth];
+		var newCells = new TerrainCell[newWidth, newDepth];
 		int[,] newPathing = new int[newWidth, newDepth];
-		TerrainSplatWeights[,] newSplatMap = new TerrainSplatWeights[newWidth, newDepth];
+		TerrainSplatWeights[,] newSplatMap = new TerrainSplatWeights[newWidth + 1, newDepth + 1];
 
-		for (int z = 0; z < newDepth; z++)
+		for (int z = 0; z <= newDepth; z++)
 		{
-			for (int x = 0; x < newWidth; x++)
+			for (int x = 0; x <= newWidth; x++)
 			{
-				float srcX = newWidth > 1 ? x * (oldWidth - 1) / (float)(newWidth - 1) : 0f;
-				float srcZ = newDepth > 1 ? z * (oldDepth - 1) / (float)(newDepth - 1) : 0f;
+				int x0 = oldSplatMap != null ? Math.Clamp((int)Math.Floor(x * (float)(oldSplatMap.GetLength(0) - 1) / newWidth), 0, oldSplatMap.GetLength(0) - 1) : 0;
+				int z0 = oldSplatMap != null ? Math.Clamp((int)Math.Floor(z * (float)(oldSplatMap.GetLength(1) - 1) / newDepth), 0, oldSplatMap.GetLength(1) - 1) : 0;
 
-				int x0 = Math.Clamp((int)Math.Floor(srcX), 0, oldWidth - 1);
-				int z0 = Math.Clamp((int)Math.Floor(srcZ), 0, oldDepth - 1);
-
-				if (oldHeights != null)
+				if (x < newWidth && z < newDepth)
 				{
-					int x1 = Math.Clamp(x0 + 1, 0, oldWidth - 1);
-					int z1 = Math.Clamp(z0 + 1, 0, oldDepth - 1);
-					float tx = srcX - x0;
-					float tz = srcZ - z0;
-					newHeights[x, z] =
-						(1 - tx) * (1 - tz) * oldHeights[x0, z0] +
-						tx * (1 - tz) * oldHeights[x1, z0] +
-						(1 - tx) * tz * oldHeights[x0, z1] +
-						tx * tz * oldHeights[x1, z1];
+					int cellX0 = Math.Clamp((int)Math.Floor(x * (float)oldWidth / newWidth), 0, oldWidth - 1);
+					int cellZ0 = Math.Clamp((int)Math.Floor(z * (float)oldDepth / newDepth), 0, oldDepth - 1);
+					if (oldCells != null) newCells[x, z] = oldCells[cellX0, cellZ0];
+
+					if (oldPathing != null)
+					{
+						newPathing[x, z] = oldPathing[cellX0, cellZ0];
+					}
+					else
+					{
+						newPathing[x, z] = GetDefaultPathingCode(newCells[x, z]);
+					}
 				}
 
 				newSplatMap[x, z] = oldSplatMap != null ? oldSplatMap[x0, z0] : TerrainSplatWeights.CreateSolid(0);
-
-				if (oldPathing != null)
-				{
-					newPathing[x, z] = oldPathing[x0, z0];
-				}
-				else
-				{
-					newPathing[x, z] = GetDefaultPathingCode(newHeights[x, z], state.WaterHeight, state.WaterEnabled);
-				}
 			}
 		}
 
 		GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-			newWidth, newDepth, state.Spacing, state.CellSize, state.WaterHeight, state.WaterEnabled,
-			newHeights, newPathing, state.NavMesh, state.NavMeshQuery
+			newWidth, newDepth, state.QuadSize, state.CellSize,
+			newCells, newPathing, state.NavMesh, state.NavMeshQuery
 		));
 
-		_localHeights = newHeights;
+		_localCells = newCells;
 		_localPathingCodes = newPathing;
 		SplatMap = newSplatMap;
 		
 		if (_material != null)
 		{
-			_material.SetShaderParameter("terrain_size", new Vector2(newWidth * state.Spacing, newDepth * state.Spacing));
+			_material.SetShaderParameter("terrain_size", new Vector2(newWidth * state.QuadSize, newDepth * state.QuadSize));
 		}
 
 		CreateChunks();
-
 		UpdateWaterSize();
 		UpdateMeshAndPhysics();
 	}
 
-	public void RestoreTerrainFromSnapshot(int newWidth, int newDepth, float spacing, float waterHeight, bool waterEnabled, float[,] heights, int[,] pathingCodes, TerrainSplatWeights[,] splatMap)
+	public void RestoreTerrainFromSnapshot(int newWidth, int newDepth, float quadSize, TerrainCell[,] cells, int[,] pathingCodes, TerrainSplatWeights[,] splatMap)
 	{
 		if (GameHost.Instance == null || GameHost.Instance.EcsWorld == null || !GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity)) return;
 		if (!GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity)) return;
 
+		newWidth = Math.Clamp((int)Math.Round(newWidth / 32.0) * 32, 32, 512);
+		newDepth = Math.Clamp((int)Math.Round(newDepth / 32.0) * 32, 32, 512);
+
 		ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
 
-		float[,] clonedHeights = (float[,])heights.Clone();
-		int[,] clonedPathing = (int[,])pathingCodes.Clone();
-		TerrainSplatWeights[,] clonedSplatMap = (TerrainSplatWeights[,])splatMap.Clone();
+		TerrainCell[,] clonedCells = cells != null ? (TerrainCell[,])cells.Clone() : new TerrainCell[newWidth, newDepth];
+		int[,] clonedPathing = pathingCodes != null ? (int[,])pathingCodes.Clone() : new int[newWidth, newDepth];
+		TerrainSplatWeights[,] clonedSplatMap = splatMap != null ? (TerrainSplatWeights[,])splatMap.Clone() : new TerrainSplatWeights[newWidth, newDepth];
 
 		GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
-			newWidth, newDepth, spacing, state.CellSize, waterHeight, waterEnabled,
-			clonedHeights, clonedPathing, state.NavMesh, state.NavMeshQuery
+			newWidth, newDepth, quadSize, state.CellSize,
+			clonedCells, clonedPathing, state.NavMesh, state.NavMeshQuery
 		));
 
-		_localHeights = clonedHeights;
+		_localCells = clonedCells;
 		_localPathingCodes = clonedPathing;
 		SplatMap = clonedSplatMap;
 
-		_localWaterEnabled = waterEnabled;
-		_localWaterHeight = waterHeight;
-		if (_waterMesh != null)
-		{
-			_waterMesh.Visible = waterEnabled;
-		}
-		
-		if (newWidth != Width || newDepth != Depth) {
-			CreateChunks();
-		}
+		CreateChunks();
+		UpdateWaterTransform();
+		UpdateWaterSize();
+		UpdateMeshAndPhysics();
+	}
+
+	public void RestoreTerrainFromSnapshot(int newWidth, int newDepth, float quadSize, float[,] heights, int[,] pathingCodes, TerrainSplatWeights[,] splatMap)
+	{
+		if (GameHost.Instance == null || GameHost.Instance.EcsWorld == null || !GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity)) return;
+		if (!GameHost.Instance.EcsWorld.Has<TerrainState>(GameHost.Instance.WorldEntity)) return;
+
+		newWidth = Math.Clamp((int)Math.Round(newWidth / 32.0) * 32, 32, 512);
+		newDepth = Math.Clamp((int)Math.Round(newDepth / 32.0) * 32, 32, 512);
+
+		ref var state = ref GameHost.Instance.EcsWorld.Get<TerrainState>(GameHost.Instance.WorldEntity);
+
+		float[,] clonedSource = (float[,])heights.Clone();
+		int[,] clonedPathing = pathingCodes != null ? (int[,])pathingCodes.Clone() : new int[newWidth, newDepth];
+		TerrainSplatWeights[,] clonedSplatMap = splatMap != null ? (TerrainSplatWeights[,])splatMap.Clone() : new TerrainSplatWeights[newWidth, newDepth];
+
+		var calculatedCells = TerrainState.CalculateCells(newWidth, newDepth, clonedSource);
+
+		GameHost.Instance.EcsWorld.Set(GameHost.Instance.WorldEntity, new TerrainState(
+			newWidth, newDepth, quadSize, state.CellSize,
+			calculatedCells, clonedPathing, state.NavMesh, state.NavMeshQuery
+		));
+
+		_localCells = calculatedCells;
+		_localPathingCodes = clonedPathing;
+		SplatMap = clonedSplatMap;
+
+		CreateChunks();
 		
 		UpdateWaterTransform();
 		UpdateWaterSize();
 		UpdateMeshAndPhysics();
+	}
+
+	private void WeldChunkVertices(TerrainChunk chunk, ref int vertexIndex, int indexIndex)
+	{
+		if (vertexIndex == 0)
+		{
+			return;
+		}
+
+		Dictionary<TerrainVertexKey, int> vertexMap = new Dictionary<TerrainVertexKey, int>(vertexIndex);
+		int[] remapTable = new int[vertexIndex];
+		int uniqueVertexCount = 0;
+
+		for (int v = 0; v < vertexIndex; v++)
+		{
+			int texIdx = v * 4;
+			TerrainVertexKey key = new TerrainVertexKey(
+				chunk.VerticesCache[v],
+				chunk.NormalsCache[v],
+				chunk.UvsCache[v],
+				chunk.ColorsCache[v],
+				chunk.TexIndicesCache[texIdx],
+				chunk.TexIndicesCache[texIdx + 1],
+				chunk.TexIndicesCache[texIdx + 2],
+				chunk.TexIndicesCache[texIdx + 3],
+				chunk.TexWeightsCache01[texIdx],
+				chunk.TexWeightsCache01[texIdx + 1],
+				chunk.TexWeightsCache01[texIdx + 2],
+				chunk.TexWeightsCache01[texIdx + 3]
+			);
+
+			if (vertexMap.TryGetValue(key, out int existingIndex))
+			{
+				remapTable[v] = existingIndex;
+			}
+			else
+			{
+				int newIndex = uniqueVertexCount++;
+				vertexMap[key] = newIndex;
+				remapTable[v] = newIndex;
+
+				if (newIndex != v)
+				{
+					chunk.VerticesCache[newIndex] = chunk.VerticesCache[v];
+					chunk.NormalsCache[newIndex] = chunk.NormalsCache[v];
+					chunk.UvsCache[newIndex] = chunk.UvsCache[v];
+					chunk.ColorsCache[newIndex] = chunk.ColorsCache[v];
+
+					int newTexIdx = newIndex * 4;
+					chunk.TexIndicesCache[newTexIdx] = chunk.TexIndicesCache[texIdx];
+					chunk.TexIndicesCache[newTexIdx + 1] = chunk.TexIndicesCache[texIdx + 1];
+					chunk.TexIndicesCache[newTexIdx + 2] = chunk.TexIndicesCache[texIdx + 2];
+					chunk.TexIndicesCache[newTexIdx + 3] = chunk.TexIndicesCache[texIdx + 3];
+
+					chunk.TexWeightsCache01[newTexIdx] = chunk.TexWeightsCache01[texIdx];
+					chunk.TexWeightsCache01[newTexIdx + 1] = chunk.TexWeightsCache01[texIdx + 1];
+					chunk.TexWeightsCache01[newTexIdx + 2] = chunk.TexWeightsCache01[texIdx + 2];
+					chunk.TexWeightsCache01[newTexIdx + 3] = chunk.TexWeightsCache01[texIdx + 3];
+				}
+			}
+		}
+
+		for (int i = 0; i < indexIndex; i++)
+		{
+			chunk.IndicesCache[i] = remapTable[chunk.IndicesCache[i]];
+		}
+
+		vertexIndex = uniqueVertexCount;
+	}
+
+	private readonly struct TerrainVertexKey : IEquatable<TerrainVertexKey>
+	{
+		private readonly int _positionX;
+		private readonly int _positionY;
+		private readonly int _positionZ;
+		private readonly int _normalX;
+		private readonly int _normalY;
+		private readonly int _normalZ;
+		private readonly int _textureU;
+		private readonly int _textureV;
+		private readonly int _colorRed;
+		private readonly int _colorGreen;
+		private readonly int _colorBlue;
+		private readonly int _colorAlpha;
+		private readonly int _textureIndex0;
+		private readonly int _textureIndex1;
+		private readonly int _textureIndex2;
+		private readonly int _textureIndex3;
+		private readonly int _weight0;
+		private readonly int _weight1;
+		private readonly int _weight2;
+		private readonly int _weight3;
+
+		public TerrainVertexKey(
+			Vector3 position,
+			Vector3 normal,
+			Vector2 uv,
+			Color color,
+			float textureIndex0, float textureIndex1, float textureIndex2, float textureIndex3,
+			float weight0, float weight1, float weight2, float weight3)
+		{
+			_positionX = (int)MathF.Round(position.X * 2000.0f);
+			_positionY = (int)MathF.Round(position.Y * 2000.0f);
+			_positionZ = (int)MathF.Round(position.Z * 2000.0f);
+			_normalX = (int)MathF.Round(normal.X * 1000.0f);
+			_normalY = (int)MathF.Round(normal.Y * 1000.0f);
+			_normalZ = (int)MathF.Round(normal.Z * 1000.0f);
+			_textureU = (int)MathF.Round(uv.X * 1000.0f);
+			_textureV = (int)MathF.Round(uv.Y * 1000.0f);
+			_colorRed = (int)MathF.Round(color.R * 255.0f);
+			_colorGreen = (int)MathF.Round(color.G * 255.0f);
+			_colorBlue = (int)MathF.Round(color.B * 255.0f);
+			_colorAlpha = (int)MathF.Round(color.A * 255.0f);
+			_textureIndex0 = (int)MathF.Round(textureIndex0);
+			_textureIndex1 = (int)MathF.Round(textureIndex1);
+			_textureIndex2 = (int)MathF.Round(textureIndex2);
+			_textureIndex3 = (int)MathF.Round(textureIndex3);
+			_weight0 = (int)MathF.Round(weight0 * 1000.0f);
+			_weight1 = (int)MathF.Round(weight1 * 1000.0f);
+			_weight2 = (int)MathF.Round(weight2 * 1000.0f);
+			_weight3 = (int)MathF.Round(weight3 * 1000.0f);
+		}
+
+		public bool Equals(TerrainVertexKey other)
+		{
+			return _positionX == other._positionX &&
+				   _positionY == other._positionY &&
+				   _positionZ == other._positionZ &&
+				   _normalX == other._normalX &&
+				   _normalY == other._normalY &&
+				   _normalZ == other._normalZ &&
+				   _textureU == other._textureU &&
+				   _textureV == other._textureV &&
+				   _colorRed == other._colorRed &&
+				   _colorGreen == other._colorGreen &&
+				   _colorBlue == other._colorBlue &&
+				   _colorAlpha == other._colorAlpha &&
+				   _textureIndex0 == other._textureIndex0 &&
+				   _textureIndex1 == other._textureIndex1 &&
+				   _textureIndex2 == other._textureIndex2 &&
+				   _textureIndex3 == other._textureIndex3 &&
+				   _weight0 == other._weight0 &&
+				   _weight1 == other._weight1 &&
+				   _weight2 == other._weight2 &&
+				   _weight3 == other._weight3;
+		}
+
+		public override bool Equals(object? obj)
+		{
+			return obj is TerrainVertexKey other && Equals(other);
+		}
+
+		public override int GetHashCode()
+		{
+			HashCode hashCode = new HashCode();
+			hashCode.Add(_positionX);
+			hashCode.Add(_positionY);
+			hashCode.Add(_positionZ);
+			hashCode.Add(_normalX);
+			hashCode.Add(_normalY);
+			hashCode.Add(_normalZ);
+			hashCode.Add(_textureU);
+			hashCode.Add(_textureV);
+			hashCode.Add(_colorRed);
+			hashCode.Add(_textureIndex0);
+			hashCode.Add(_textureIndex1);
+			hashCode.Add(_textureIndex2);
+			hashCode.Add(_textureIndex3);
+			hashCode.Add(_weight0);
+			hashCode.Add(_weight1);
+			hashCode.Add(_weight2);
+			hashCode.Add(_weight3);
+			return hashCode.ToHashCode();
+		}
 	}
 }

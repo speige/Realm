@@ -1,4 +1,5 @@
 using Godot;
+using Realm.Ecs.Components.Terrain;
 using System;
 
 public class MapEditorBrushSettings
@@ -8,18 +9,15 @@ public class MapEditorBrushSettings
 	private Slider _sldBrushStrength;
 	private Label _lblBrushStrengthValue;
 
-
 	private CheckBox _chkBlockMode;
 	private Slider _sldBlockStep;
 	private Label _lblBlockStepValue;
 
-	private Slider _sldWaterHeight;
-	private Label _lblWaterHeightValue;
-	private CheckBox _chkWaterEnabled;
+	private OptionButton _optWaterMode;
 
 	public MapEditorBrushSettings(Slider sldBrushSize, Label lblBrushSizeValue, Slider sldBrushStrength, Label lblBrushStrengthValue,
 		CheckBox chkBlockMode, Slider sldBlockStep, Label lblBlockStepValue,
-		Slider sldWaterHeight, Label lblWaterHeightValue, CheckBox chkWaterEnabled)
+		OptionButton optWaterMode = null)
 	{
 		_sldBrushSize = sldBrushSize;
 		_lblBrushSizeValue = lblBrushSizeValue;
@@ -29,9 +27,11 @@ public class MapEditorBrushSettings
 		_chkBlockMode = chkBlockMode;
 		_sldBlockStep = sldBlockStep;
 		_lblBlockStepValue = lblBlockStepValue;
-		_sldWaterHeight = sldWaterHeight;
-		_lblWaterHeightValue = lblWaterHeightValue;
-		_chkWaterEnabled = chkWaterEnabled;
+
+		_optWaterMode = optWaterMode;
+
+		_sldBrushSize.Step = 1.0;
+		_sldBrushSize.Rounded = true;
 
 		_sldBrushSize.ValueChanged += (val) =>
 		{
@@ -44,8 +44,6 @@ public class MapEditorBrushSettings
 			_lblBrushStrengthValue.Text = val.ToString("F0");
 			if (GameHost.Instance != null) GameHost.Instance.EditorBrushStrength = (float)val;
 		};
-
-
 
 		if (_chkBlockMode != null)
 		{
@@ -64,52 +62,49 @@ public class MapEditorBrushSettings
 				if (GameHost.Instance != null) GameHost.Instance.EditorBlockLevelHeight = fVal;
 			};
 		}
-
-		if (_sldWaterHeight != null)
-		{
-			_sldWaterHeight.ValueChanged += (val) =>
-			{
-				float fVal = (float)val;
-				_lblWaterHeightValue.Text = fVal.ToString("F1") + "m";
-				if (GameHost.Instance?.GroundTerrain != null) GameHost.Instance.GroundTerrain.WaterHeight = fVal;
-			};
-		}
-
-		if (_chkWaterEnabled != null)
-		{
-			_chkWaterEnabled.Toggled += (buttonPressed) =>
-			{
-				// WaterEnabled is handled by water height
-			};
-		}
 	}
 
 	public void Update(MapEditorHUDViewModel viewModel)
 	{
-		_sldBrushSize.Value = viewModel.BrushSize;
-		_lblBrushSizeValue.Text = viewModel.BrushSize.ToString("F0");
+		if (viewModel == null) return;
 
-		_sldBrushStrength.Value = viewModel.BrushStrength;
-		_lblBrushStrengthValue.Text = viewModel.BrushStrength.ToString("F0");
+		if (!Mathf.IsEqualApprox((float)_sldBrushSize.Value, viewModel.BrushSize))
+		{
+			_sldBrushSize.Value = viewModel.BrushSize;
+			_lblBrushSizeValue.Text = viewModel.BrushSize.ToString("F0");
+		}
 
+		if (!Mathf.IsEqualApprox((float)_sldBrushStrength.Value, viewModel.BrushStrength))
+		{
+			_sldBrushStrength.Value = viewModel.BrushStrength;
+			_lblBrushStrengthValue.Text = viewModel.BrushStrength.ToString("F0");
+		}
 
+		if (_chkBlockMode != null && GameHost.Instance != null)
+		{
+			bool isBlock = GameHost.Instance.EditorBlockMode;
+			if (_chkBlockMode.ButtonPressed != isBlock)
+			{
+				_chkBlockMode.ButtonPressed = isBlock;
+			}
+		}
 
-		if (_chkBlockMode != null) _chkBlockMode.ButtonPressed = GameHost.Instance != null && GameHost.Instance.EditorBlockMode;
 		if (_sldBlockStep != null)
 		{
-			_sldBlockStep.Value = viewModel.BlockStep;
-			_lblBlockStepValue.Text = viewModel.BlockStep.ToString("F1") + "m";
+			if (!Mathf.IsEqualApprox((float)_sldBlockStep.Value, viewModel.BlockStep))
+			{
+				_sldBlockStep.Value = viewModel.BlockStep;
+				_lblBlockStepValue.Text = viewModel.BlockStep.ToString("F1") + "m";
+			}
 		}
 
-		if (_sldWaterHeight != null)
+		if (_optWaterMode != null && GameHost.Instance != null)
 		{
-			_sldWaterHeight.Value = viewModel.WaterHeight;
-			_lblWaterHeightValue.Text = viewModel.WaterHeight.ToString("F1") + "m";
-		}
-
-		if (_chkWaterEnabled != null)
-		{
-			_chkWaterEnabled.ButtonPressed = viewModel.WaterEnabled;
+			int waterModeIdx = (int)GameHost.Instance.EditorWaterMode;
+			if (_optWaterMode.Selected != waterModeIdx)
+			{
+				_optWaterMode.Selected = waterModeIdx;
+			}
 		}
 	}
 }

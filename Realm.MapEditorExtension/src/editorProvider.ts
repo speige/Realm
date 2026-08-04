@@ -1263,7 +1263,15 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     </div>
 
                     <div class="form-section">
-                        <h3>📂 Current Map Assets</h3>
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                            <h3 style="margin: 0;">📂 Current Map Assets</h3>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <label for="asset-type-filter-select" style="font-size: 12px; font-weight: 600; color: var(--text-muted, #858585);">Filter Type:</label>
+                                <select id="asset-type-filter-select" style="background: var(--vscode-input-background, #252526); color: var(--vscode-input-foreground, #cccccc); border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 4px; padding: 2px 8px; font-size: 12px; cursor: pointer;">
+                                    <option value="all">All</option>
+                                </select>
+                            </div>
+                        </div>
                         <div id="assets-metadata-display" class="tag-list-container" style="padding: 12px; font-family: monospace; font-size: 12px; max-height: 250px; overflow-y: auto;">
                             <em>No assets registered yet.</em>
                         </div>

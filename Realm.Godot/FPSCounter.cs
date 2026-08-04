@@ -2,6 +2,8 @@ using Godot;
 
 public partial class FPSCounter : Label
 {
+	private float _updateTimer = 0f;
+
 	public override void _Ready()
 	{
 		AddThemeColorOverride("font_color", new Color(0.15f, 0.65f, 1.0f));
@@ -19,7 +21,12 @@ public partial class FPSCounter : Label
 		}
 		if (Visible)
 		{
-			Text = $"FPS: {Engine.GetFramesPerSecond():F0}";
+			_updateTimer += (float)delta;
+			if (_updateTimer >= 0.25f)
+			{
+				_updateTimer = 0f;
+				Text = $"FPS: {Engine.GetFramesPerSecond():F0}";
+			}
 		}
 	}
 }

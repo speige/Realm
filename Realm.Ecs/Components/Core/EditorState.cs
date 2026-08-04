@@ -1,3 +1,5 @@
+using Realm.Ecs.Components.Terrain;
+
 namespace Realm.Ecs.Components.Core
 {
 	public enum MirrorMode
@@ -22,6 +24,7 @@ namespace Realm.Ecs.Components.Core
 		public string SkyboxPath;
 		public bool HasUnsavedChanges;
 		public MirrorMode MirrorMode;
+		public WaterType WaterMode;
 
 		public EditorState(
 			bool blockMode,
@@ -32,7 +35,8 @@ namespace Realm.Ecs.Components.Core
 			float cameraBoundsBottom,
 			string skyboxPath,
 			bool hasUnsavedChanges,
-			MirrorMode mirrorMode = MirrorMode.None)
+			MirrorMode mirrorMode = MirrorMode.None,
+			WaterType waterMode = WaterType.None)
 		{
 			BlockMode = blockMode;
 			BlockLevelHeight = blockLevelHeight;
@@ -43,6 +47,8 @@ namespace Realm.Ecs.Components.Core
 			SkyboxPath = skyboxPath;
 			HasUnsavedChanges = hasUnsavedChanges;
 			MirrorMode = mirrorMode;
+			WaterMode = waterMode;
 		}
 	}
 }
+

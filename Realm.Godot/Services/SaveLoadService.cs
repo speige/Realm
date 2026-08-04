@@ -126,8 +126,6 @@ public class SaveLoadService
 			var saveData = new MapSaveData();
 			saveData.Width = terrain.Width;
 			saveData.Depth = terrain.Depth;
-			saveData.WaterEnabled = terrain.WaterEnabled;
-			saveData.WaterHeight = terrain.WaterHeight;
 			saveData.CameraBoundsLeft = editor.CameraBoundsLeft;
 			saveData.CameraBoundsRight = editor.CameraBoundsRight;
 			saveData.CameraBoundsTop = editor.CameraBoundsTop;
@@ -145,20 +143,26 @@ public class SaveLoadService
 			}
 
 			string heightsPath = Path.Combine(directory, "terrain_heights.exr");
+			string waterPath = Path.Combine(directory, "terrain_water.exr");
 			string splatIndicesPath = Path.Combine(directory, "terrain_splat_indices.exr");
 			string splatWeightsPath = Path.Combine(directory, "terrain_splat_weights.exr");
 			string pathingPath = Path.Combine(directory, "terrain_pathing.png");
 
-			Image heightsImage = Image.CreateEmpty(width, depth, false, Image.Format.Rf);
+			var cells = terrain.Cells;
+			Image heightsImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgbaf);
+			Image waterImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgbaf);
+
 			for (int z = 0; z < depth; z++)
 			{
 				for (int x = 0; x < width; x++)
 				{
-					float h = terrain.Heights[x, z];
-					heightsImage.SetPixel(x, z, new Color(h, 0f, 0f, 1f));
+					var cell = cells != null ? cells[x, z] : default;
+					heightsImage.SetPixel(x, z, new Color(cell.Y_NW, cell.Y_NE, cell.Y_SE, cell.Y_SW));
+					waterImage.SetPixel(x, z, new Color((float)cell.WaterMode, 0f, 0f, 1f));
 				}
 			}
 			heightsImage.SaveExr(heightsPath);
+			waterImage.SaveExr(waterPath);
 
 			Image pathingImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgba8);
 			for (int z = 0; z < depth; z++)
@@ -171,13 +175,21 @@ public class SaveLoadService
 			}
 			pathingImage.SavePng(pathingPath);
 
-			Image splatIndicesImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgbaf);
-			Image splatWeightsImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgbaf);
-			for (int z = 0; z < depth; z++)
+			int splatW = width;
+			int splatD = depth;
+			if (htmlColors != null && htmlColors.Length == (width + 1) * (depth + 1))
 			{
-				for (int x = 0; x < width; x++)
+				splatW = width + 1;
+				splatD = depth + 1;
+			}
+
+			Image splatIndicesImage = Image.CreateEmpty(splatW, splatD, false, Image.Format.Rgbaf);
+			Image splatWeightsImage = Image.CreateEmpty(splatW, splatD, false, Image.Format.Rgbaf);
+			for (int z = 0; z < splatD; z++)
+			{
+				for (int x = 0; x < splatW; x++)
 				{
-					int idx = z * width + x;
+					int idx = z * splatW + x;
 					string serialized = (htmlColors != null && idx < htmlColors.Length) ? htmlColors[idx] : null;
 					TerrainSplatWeights s = TerrainSplatWeights.Deserialize(serialized);
 
@@ -272,6 +284,8 @@ public class SaveLoadService
 			string json = JsonSerializer.Serialize(saveData);
 			File.WriteAllText(absolutePath, json);
 
+			GameHost.Instance?.SaveModelYOffsetsToMetadataJson(directory);
+
 			foreach (var ent in tempDecals)
 			{
 				if (EcsWorld.IsAlive(ent))
@@ -291,7 +305,8 @@ public class SaveLoadService
 					editor.CameraBoundsBottom,
 					editor.SkyboxPath,
 					false,
-					editor.MirrorMode
+					editor.MirrorMode,
+					editor.WaterMode
 				);
 
 				EcsWorld.Query(in worldQuery2, (Entity entity, ref TerrainState t, ref EditorState e) =>
@@ -318,6 +333,9 @@ public class SaveLoadService
 			string json = File.ReadAllText(absolutePath);
 			var saveData = JsonSerializer.Deserialize<MapSaveData>(json);
 			if (saveData == null) return false;
+
+			string mapDir = Path.GetDirectoryName(absolutePath);
+			GameHost.Instance?.LoadModelYOffsetsFromMetadataJson(mapDir);
 
 			_lastLoadedCoordinates = saveData.Coordinates ?? new List<CoordinateSaveData>();
 
@@ -351,8 +369,8 @@ public class SaveLoadService
 			EcsWorld.Query(in req3, (Entity entity) => req3List.Add(entity));
 			foreach (var ent in req3List) EcsWorld.Destroy(ent);
 
-			int width = saveData.Width > 0 ? saveData.Width : 126;
-			int depth = saveData.Depth > 0 ? saveData.Depth : 126;
+			int width = saveData.Width > 0 ? Math.Clamp((int)Math.Round(saveData.Width / 32.0) * 32, 32, 512) : 128;
+			int depth = saveData.Depth > 0 ? Math.Clamp((int)Math.Round(saveData.Depth / 32.0) * 32, 32, 512) : 128;
 
 			Entity worldEntity = Entity.Null;
 			var worldQuery = Realm.Ecs.Common.QueryCache.AllTerrainStateQuery;
@@ -365,14 +383,14 @@ public class SaveLoadService
 
 			if (!EcsWorld.Has<TerrainState>(worldEntity))
 			{
-				EcsWorld.Add(worldEntity, new TerrainState(width, depth, 2.0f, 5.0f / 2.5f / 10.0f, -2.0f, true, new float[width, depth], new int[width, depth], null, null));
+				EcsWorld.Add(worldEntity, new TerrainState(width, depth, TerrainState.DefaultQuadSize, TerrainState.DefaultCellSize, new TerrainCell[width, depth], new int[width, depth], null, null));
 			}
 			else
 			{
 				ref var ts = ref EcsWorld.Get<TerrainState>(worldEntity);
 				ts.Width = width;
 				ts.Depth = depth;
-				ts.Heights = new float[width, depth];
+				ts.Cells = new TerrainCell[width, depth];
 				ts.PathingCodes = new int[width, depth];
 				EcsWorld.Set(worldEntity, ts);
 			}
@@ -381,42 +399,80 @@ public class SaveLoadService
 			{
 				ref var ts = ref EcsWorld.Get<TerrainState>(worldEntity);
 
-				if (ts.Heights == null)
+				if (ts.Cells == null || ts.Cells.GetLength(0) != width || ts.Cells.GetLength(1) != depth)
 				{
-					ts.Heights = new float[width, depth];
+					ts.Cells = new TerrainCell[width, depth];
 				}
 				if (ts.PathingCodes == null)
 				{
 					ts.PathingCodes = new int[width, depth];
 				}
 
+				if (ts.Cells == null || ts.Cells.GetLength(0) != width || ts.Cells.GetLength(1) != depth)
+				{
+					ts.Cells = new TerrainCell[width, depth];
+				}
+
 				string directory = Path.GetDirectoryName(absolutePath);
 				string heightsPath = Path.Combine(directory, "terrain_heights.exr");
 				bool heightsLoaded = false;
+
 				if (File.Exists(heightsPath))
 				{
 					Image heightsImage = Image.LoadFromFile(heightsPath);
 					if (heightsImage != null)
 					{
-						for (int z = 0; z < depth; z++)
+						heightsImage.Convert(Image.Format.Rgbaf);
+						int imgW = heightsImage.GetWidth();
+						int imgH = heightsImage.GetHeight();
+						ReadOnlySpan<float> floatData = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(heightsImage.GetData());
+
+						if (imgW == width && imgH == depth)
 						{
-							for (int x = 0; x < width; x++)
+							for (int z = 0; z < depth; z++)
 							{
-								int imgX = Math.Clamp(x, 0, heightsImage.GetWidth() - 1);
-								int imgZ = Math.Clamp(z, 0, heightsImage.GetHeight() - 1);
-								ts.Heights[x, z] = heightsImage.GetPixel(imgX, imgZ).R;
+								for (int x = 0; x < width; x++)
+								{
+									int baseIdx = (z * imgW + x) * 4;
+									float yNW = floatData[baseIdx + 0];
+									float yNE = floatData[baseIdx + 1];
+									float ySE = floatData[baseIdx + 2];
+									float ySW = floatData[baseIdx + 3];
+									ts.Cells[x, z] = new TerrainCell(yNW, yNE, ySE, ySW);
+								}
 							}
+							heightsLoaded = true;
 						}
-						heightsLoaded = true;
 					}
 				}
+
 				if (!heightsLoaded)
 				{
-					for (int z = 0; z < depth; z++)
+					ts.Cells = new TerrainCell[width, depth];
+				}
+
+				string waterPath = Path.Combine(directory, "terrain_water.exr");
+				if (File.Exists(waterPath))
+				{
+					Image waterImage = Image.LoadFromFile(waterPath);
+					if (waterImage != null)
 					{
-						for (int x = 0; x < width; x++)
+						waterImage.Convert(Image.Format.Rgbaf);
+						int imgW = waterImage.GetWidth();
+						int imgH = waterImage.GetHeight();
+						ReadOnlySpan<float> waterFloatData = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(waterImage.GetData());
+
+						if (imgW == width && imgH == depth)
 						{
-							ts.Heights[x, z] = 0.0f;
+							for (int z = 0; z < depth; z++)
+							{
+								for (int x = 0; x < width; x++)
+								{
+									int baseIdx = (z * imgW + x) * 4;
+									var wMode = (WaterType)Math.Clamp((int)MathF.Round(waterFloatData[baseIdx + 0]), 0, 2);
+									ts.Cells[x, z].WaterMode = wMode;
+								}
+							}
 						}
 					}
 				}
@@ -428,13 +484,19 @@ public class SaveLoadService
 					Image pathingImage = Image.LoadFromFile(pathingPath);
 					if (pathingImage != null)
 					{
+						pathingImage.Convert(Image.Format.Rgba8);
+						int imgW = pathingImage.GetWidth();
+						int imgH = pathingImage.GetHeight();
+						ReadOnlySpan<byte> byteData = pathingImage.GetData();
+
 						for (int z = 0; z < depth; z++)
 						{
 							for (int x = 0; x < width; x++)
 							{
-								int imgX = Math.Clamp(x, 0, pathingImage.GetWidth() - 1);
-								int imgZ = Math.Clamp(z, 0, pathingImage.GetHeight() - 1);
-								ts.PathingCodes[x, z] = (int)Math.Round(pathingImage.GetPixel(imgX, imgZ).R * 255f);
+								int imgX = Math.Clamp(x, 0, imgW - 1);
+								int imgZ = Math.Clamp(z, 0, imgH - 1);
+								int baseIdx = (imgZ * imgW + imgX) * 4;
+								ts.PathingCodes[x, z] = byteData[baseIdx + 0];
 							}
 						}
 						pathingLoaded = true;
@@ -451,12 +513,6 @@ public class SaveLoadService
 					}
 				}
 
-				ts.WaterEnabled = saveData.WaterEnabled ?? true;
-				if (saveData.WaterHeight.HasValue)
-				{
-					ts.WaterHeight = saveData.WaterHeight.Value;
-				}
-
 				EcsWorld.Set(worldEntity, ts);
 			}
 
@@ -471,28 +527,40 @@ public class SaveLoadService
 				Image splatWeightsImage = Image.LoadFromFile(splatWeightsPath);
 				if (splatIndicesImage != null && splatWeightsImage != null)
 				{
-					loadedColors = new string[width * depth];
-					for (int z = 0; z < depth; z++)
+					splatIndicesImage.Convert(Image.Format.Rgbaf);
+					splatWeightsImage.Convert(Image.Format.Rgbaf);
+					int idxW = splatIndicesImage.GetWidth();
+					int idxH = splatIndicesImage.GetHeight();
+					int wgtW = splatWeightsImage.GetWidth();
+					int wgtH = splatWeightsImage.GetHeight();
+
+					ReadOnlySpan<float> idxData = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(splatIndicesImage.GetData());
+					ReadOnlySpan<float> wgtData = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(splatWeightsImage.GetData());
+
+					int splatW = idxW;
+					int splatD = idxH;
+					loadedColors = new string[splatW * splatD];
+					for (int z = 0; z < splatD; z++)
 					{
-						for (int x = 0; x < width; x++)
+						for (int x = 0; x < splatW; x++)
 						{
-							int imgX = Math.Clamp(x, 0, splatIndicesImage.GetWidth() - 1);
-							int imgZ = Math.Clamp(z, 0, splatIndicesImage.GetHeight() - 1);
-							Color idxPixel = splatIndicesImage.GetPixel(imgX, imgZ);
+							int imgX = Math.Clamp(x, 0, idxW - 1);
+							int imgZ = Math.Clamp(z, 0, idxH - 1);
+							int idxOffset = (imgZ * idxW + imgX) * 4;
 
-							int imgWeightX = Math.Clamp(x, 0, splatWeightsImage.GetWidth() - 1);
-							int imgWeightZ = Math.Clamp(z, 0, splatWeightsImage.GetHeight() - 1);
-							Color weightPixel = splatWeightsImage.GetPixel(imgWeightX, imgWeightZ);
+							int imgWeightX = Math.Clamp(x, 0, wgtW - 1);
+							int imgWeightZ = Math.Clamp(z, 0, wgtH - 1);
+							int weightOffset = (imgWeightZ * wgtW + imgWeightX) * 4;
 
-							int i0 = (int)Math.Round(idxPixel.R);
-							int i1 = (int)Math.Round(idxPixel.G);
-							int i2 = (int)Math.Round(idxPixel.B);
-							int i3 = (int)Math.Round(idxPixel.A);
+							int i0 = (int)Math.Round(idxData[idxOffset + 0]);
+							int i1 = (int)Math.Round(idxData[idxOffset + 1]);
+							int i2 = (int)Math.Round(idxData[idxOffset + 2]);
+							int i3 = (int)Math.Round(idxData[idxOffset + 3]);
 
-							float w0 = weightPixel.R;
-							float w1 = weightPixel.G;
-							float w2 = weightPixel.B;
-							float w3 = weightPixel.A;
+							float w0 = wgtData[weightOffset + 0];
+							float w1 = wgtData[weightOffset + 1];
+							float w2 = wgtData[weightOffset + 2];
+							float w3 = wgtData[weightOffset + 3];
 
 							var s = new TerrainSplatWeights
 							{
@@ -506,7 +574,7 @@ public class SaveLoadService
 								Weight3 = w3
 							};
 
-							loadedColors[z * width + x] = s.Serialize();
+							loadedColors[z * splatW + x] = s.Serialize();
 						}
 					}
 				}
@@ -535,14 +603,15 @@ public class SaveLoadService
 			}
 
 			bool isBlock = true;
-			float step = 4.0f;
+			float step = EditableTerrain.TIER_HEIGHT;
 			float left = saveData.CameraBoundsLeft ?? -95.0f;
 			float right = saveData.CameraBoundsRight ?? 95.0f;
 			float top = saveData.CameraBoundsTop ?? -95.0f;
 			float bottom = saveData.CameraBoundsBottom ?? 125.0f;
 			string skybox = saveData.SkyboxPath ?? "Assets/skyboxes/jade_shrine.png";
 
-			var newEditorState = new EditorState(isBlock, step, left, right, top, bottom, skybox, false);
+			WaterType currentWaterMode = EcsWorld.Has<EditorState>(worldEntity) ? EcsWorld.Get<EditorState>(worldEntity).WaterMode : WaterType.None;
+			var newEditorState = new EditorState(isBlock, step, left, right, top, bottom, skybox, false, MirrorMode.None, currentWaterMode);
 			if (EcsWorld.Has<EditorState>(worldEntity))
 			{
 				EcsWorld.Set(worldEntity, newEditorState);

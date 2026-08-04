@@ -16,12 +16,14 @@ public partial class GameHost
 
 		int width = GroundTerrain.Width;
 		int depth = GroundTerrain.Depth;
-		string[] splatData = new string[width * depth];
-		for (int z = 0; z < depth; z++)
+		int splatW = GroundTerrain.SplatMap.GetLength(0);
+		int splatD = GroundTerrain.SplatMap.GetLength(1);
+		string[] splatData = new string[splatW * splatD];
+		for (int z = 0; z < splatD; z++)
 		{
-			for (int x = 0; x < width; x++)
+			for (int x = 0; x < splatW; x++)
 			{
-				splatData[z * width + x] = GroundTerrain.SplatMap[x, z].Serialize();
+				splatData[z * splatW + x] = GroundTerrain.SplatMap[x, z].Serialize();
 			}
 		}
 
@@ -86,8 +88,8 @@ public partial class GameHost
 			bool success = _saveLoadService.LoadMapFromFile(absolutePath, terrainOnly);
 			if (!success)
 			{
-				int defaultWidth = 126;
-				int defaultDepth = 126;
+				int defaultWidth = 128;
+				int defaultDepth = 128;
 				float[,] defaultHeights = new float[defaultWidth, defaultDepth];
 				int[,] defaultPathing = new int[defaultWidth, defaultDepth];
 				for (int z = 0; z < defaultDepth; z++)
@@ -95,13 +97,13 @@ public partial class GameHost
 					for (int x = 0; x < defaultWidth; x++)
 					{
 						defaultHeights[x, z] = 0.0f;
-						defaultPathing[x, z] = EditableTerrain.GetDefaultPathingCode(0.0f, -2.0f, true);
+						defaultPathing[x, z] = EditableTerrain.GetDefaultPathingCode(WaterType.None);
 					}
 				}
 				if (EcsWorld.Has<TerrainState>(_worldEntity))
 				{
 					ref var ts = ref EcsWorld.Get<TerrainState>(_worldEntity);
-					ts.Heights = defaultHeights;
+					ts.SetHeights(defaultHeights);
 					ts.PathingCodes = defaultPathing;
 					EcsWorld.Set(_worldEntity, ts);
 				}
@@ -116,10 +118,8 @@ public partial class GameHost
 					}
 					GroundTerrain.UpdateMeshAndPhysics();
 				}
-				MapEditorHUD.Instance?.UpdateWaterEnabledExternal(true);
-				MapEditorHUD.Instance?.UpdateWaterHeightExternal(-2.0f);
 				MapEditorHUD.Instance?.UpdateBlockModeExternal(true);
-				MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(4.0f);
+				MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(2.0f);
 				MapEditorHUD.Instance?.UpdateCameraBoundsUI();
 				UpdateCameraBoundsOverlayVisibility();
 				UpdateGridOverlayVisibility();
@@ -168,12 +168,6 @@ public partial class GameHost
 
 			if (!foundWorld) return false;
 
-			GroundTerrain.WaterEnabled = terrain.WaterEnabled;
-			MapEditorHUD.Instance?.UpdateWaterEnabledExternal(terrain.WaterEnabled);
-			
-			GroundTerrain.WaterHeight = terrain.WaterHeight;
-			MapEditorHUD.Instance?.UpdateWaterHeightExternal(terrain.WaterHeight);
-
 			MapEditorHUD.Instance?.UpdateBlockModeExternal(editor.BlockMode);
 			MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(editor.BlockLevelHeight);
 			MapEditorHUD.Instance?.UpdateCameraBoundsUI();
@@ -207,27 +201,39 @@ public partial class GameHost
 				}
 			});
 
-			if (foundColors && colorsState.Colors != null && colorsState.Colors.Length == width * depth)
+			if (foundColors && colorsState.Colors != null)
 			{
-				for (int z = 0; z < depth; z++)
+				int splatW = GroundTerrain.SplatMap.GetLength(0);
+				int splatD = GroundTerrain.SplatMap.GetLength(1);
+				int colorLen = colorsState.Colors.Length;
+
+				for (int z = 0; z < splatD; z++)
 				{
-					for (int x = 0; x < width; x++)
+					for (int x = 0; x < splatW; x++)
 					{
-						string serialized = colorsState.Colors[z * width + x];
-						GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.Deserialize(serialized);
+						int idx;
+						if (colorLen == splatW * splatD)
+						{
+							idx = z * splatW + x;
+						}
+						else
+						{
+							int srcX = System.Math.Clamp(x, 0, width - 1);
+							int srcZ = System.Math.Clamp(z, 0, depth - 1);
+							idx = srcZ * width + srcX;
+						}
+						if (idx < colorLen)
+						{
+							string serialized = colorsState.Colors[idx];
+							GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.Deserialize(serialized);
+						}
 					}
 				}
 			}
 
-			if (terrain.Heights != null && terrain.Heights.Length == width * depth)
+			if (terrain.Cells != null && GroundTerrain != null)
 			{
-				for (int z = 0; z < depth; z++)
-				{
-					for (int x = 0; x < width; x++)
-					{
-						GroundTerrain.Heights[x, z] = terrain.Heights[x, z];
-					}
-				}
+				GroundTerrain.Cells = (Realm.Ecs.Components.Terrain.TerrainCell[,])terrain.Cells.Clone();
 			}
 
 			if (terrain.PathingCodes != null && terrain.PathingCodes.Length == width * depth)

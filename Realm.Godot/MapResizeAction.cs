@@ -1,5 +1,6 @@
 using Godot;
 using System.Collections.Generic;
+using Realm.Ecs.Components.Terrain;
 
 public class SavedUnit
 {
@@ -30,11 +31,34 @@ public class MapStateSnapshot
 {
 	public int Width;
 	public int Depth;
-	public float[,] Heights;
+	public TerrainCell[,] Cells;
+	public float[,] Heights
+	{
+		get
+		{
+			if (Cells == null) return null;
+			int w = Cells.GetLength(0);
+			int d = Cells.GetLength(1);
+			float[,] res = new float[w + 1, d + 1];
+			for (int z = 0; z <= d; z++)
+				for (int x = 0; x <= w; x++)
+				{
+					int cellX = System.Math.Clamp(x, 0, w - 1);
+					int cellZ = System.Math.Clamp(z, 0, d - 1);
+					res[x, z] = Cells[cellX, cellZ].Y_NW;
+				}
+			return res;
+		}
+		set
+		{
+			if (value == null) return;
+			int w = value.GetLength(0) - 1;
+			int d = value.GetLength(1) - 1;
+			Cells = TerrainState.CalculateCells(w, d, value);
+		}
+	}
 	public int[,] PathingCodes;
 	public TerrainSplatWeights[,] SplatMap;
-	public bool WaterEnabled;
-	public float WaterHeight;
 
 	public float CameraBoundsLeft;
 	public float CameraBoundsRight;
@@ -53,11 +77,9 @@ public class MapStateSnapshot
 		var snapshot = new MapStateSnapshot();
 		snapshot.Width = host.GroundTerrain.Width;
 		snapshot.Depth = host.GroundTerrain.Depth;
-		snapshot.Heights = (float[,])host.GroundTerrain.Heights.Clone();
+		snapshot.Cells = (TerrainCell[,])host.GroundTerrain.Cells.Clone();
 		snapshot.PathingCodes = (int[,])host.GroundTerrain.PathingCodes.Clone();
 		snapshot.SplatMap = (TerrainSplatWeights[,])host.GroundTerrain.SplatMap.Clone();
-		snapshot.WaterEnabled = host.GroundTerrain.WaterEnabled;
-		snapshot.WaterHeight = host.GroundTerrain.WaterHeight;
 
 		snapshot.CameraBoundsLeft = host.EditorCameraBoundsLeft;
 		snapshot.CameraBoundsRight = host.EditorCameraBoundsRight;
@@ -165,10 +187,8 @@ public class MapResizeAction : IEditorAction
 		host.GroundTerrain.RestoreTerrainFromSnapshot(
 			snapshot.Width,
 			snapshot.Depth,
-			host.GroundTerrain.Spacing,
-			snapshot.WaterHeight,
-			snapshot.WaterEnabled,
-			snapshot.Heights,
+			host.GroundTerrain.QuadSize,
+			snapshot.Cells,
 			snapshot.PathingCodes,
 			snapshot.SplatMap
 		);

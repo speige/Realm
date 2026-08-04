@@ -46,9 +46,9 @@ public class MapEditorMinimap
 		float xRatio = clickPos.X / _minimapArea.Size.X;
 		float yRatio = clickPos.Y / _minimapArea.Size.Y;
 
-		float spacing = GameHost.Instance.GroundTerrain?.Spacing ?? 2.0f;
-		float physicalWidth = (GameHost.Instance.GroundTerrain?.Width - 1 ?? 125) * spacing;
-		float physicalDepth = (GameHost.Instance.GroundTerrain?.Depth - 1 ?? 125) * spacing;
+		float quadSize = GameHost.Instance.GroundTerrain?.QuadSize ?? 2.0f;
+		float physicalWidth = (GameHost.Instance.GroundTerrain?.Width - 1 ?? 125) * quadSize;
+		float physicalDepth = (GameHost.Instance.GroundTerrain?.Depth - 1 ?? 125) * quadSize;
 
 		float worldX = (xRatio - 0.5f) * physicalWidth;
 		float worldZ = (yRatio - 0.5f) * physicalDepth;
@@ -68,15 +68,28 @@ public class MapEditorMinimap
 		}
 	}
 
+	private Vector3 _lastCameraPos;
+	private Vector3 _lastCameraRot;
+	private readonly Vector2[] _cachedMinimapPoints = new Vector2[4];
+
 	private void UpdateMinimapIndicator()
 	{
 		if (_cameraIndicator == null || _minimapArea == null || GameHost.Instance == null) return;
-		var camera = GameHost.Instance.GetViewport().GetCamera3D();
+		var camera = GameHost.Instance.GetViewport()?.GetCamera3D();
 		if (camera == null) return;
 
-		float spacing = GameHost.Instance.GroundTerrain?.Spacing ?? 2.0f;
-		float physicalWidth = (GameHost.Instance.GroundTerrain?.Width - 1 ?? 125) * spacing;
-		float physicalDepth = (GameHost.Instance.GroundTerrain?.Depth - 1 ?? 125) * spacing;
+		Vector3 camPos = camera.GlobalPosition;
+		Vector3 camRot = camera.GlobalRotation;
+		if ((camPos - _lastCameraPos).LengthSquared() < 0.0001f && (camRot - _lastCameraRot).LengthSquared() < 0.0001f)
+		{
+			return;
+		}
+		_lastCameraPos = camPos;
+		_lastCameraRot = camRot;
+
+		float quadSize = GameHost.Instance.GroundTerrain?.QuadSize ?? 2.0f;
+		float physicalWidth = (GameHost.Instance.GroundTerrain?.Width - 1 ?? 125) * quadSize;
+		float physicalDepth = (GameHost.Instance.GroundTerrain?.Depth - 1 ?? 125) * quadSize;
 
 		var viewport = camera.GetViewport();
 		if (viewport == null) return;
@@ -92,13 +105,12 @@ public class MapEditorMinimap
 		Vector3 pBR = ProjectToGround(camera, bottomRightScreen);
 		Vector3 pBL = ProjectToGround(camera, bottomLeftScreen);
 
-		Vector2[] minimapPoints = new Vector2[4];
-		minimapPoints[0] = WorldToMinimap(pTL, physicalWidth, physicalDepth);
-		minimapPoints[1] = WorldToMinimap(pTR, physicalWidth, physicalDepth);
-		minimapPoints[2] = WorldToMinimap(pBR, physicalWidth, physicalDepth);
-		minimapPoints[3] = WorldToMinimap(pBL, physicalWidth, physicalDepth);
+		_cachedMinimapPoints[0] = WorldToMinimap(pTL, physicalWidth, physicalDepth);
+		_cachedMinimapPoints[1] = WorldToMinimap(pTR, physicalWidth, physicalDepth);
+		_cachedMinimapPoints[2] = WorldToMinimap(pBR, physicalWidth, physicalDepth);
+		_cachedMinimapPoints[3] = WorldToMinimap(pBL, physicalWidth, physicalDepth);
 
-		_cameraIndicator.SetPoints(minimapPoints);
+		_cameraIndicator.SetPoints(_cachedMinimapPoints);
 	}
 
 	private Vector3 ProjectToGround(Camera3D camera, Vector2 screenPos)
@@ -151,9 +163,9 @@ public class MapEditorMinimap
 
 		try
 		{
-			float spacing = GameHost.Instance?.GroundTerrain?.Spacing ?? 2.0f;
-			float physicalWidth = (GameHost.Instance?.GroundTerrain?.Width - 1 ?? 125) * spacing;
-			float physicalDepth = (GameHost.Instance?.GroundTerrain?.Depth - 1 ?? 125) * spacing;
+			float quadSize = GameHost.Instance?.GroundTerrain?.QuadSize ?? 2.0f;
+			float physicalWidth = (GameHost.Instance?.GroundTerrain?.Width - 1 ?? 125) * quadSize;
+			float physicalDepth = (GameHost.Instance?.GroundTerrain?.Depth - 1 ?? 125) * quadSize;
 
 			int viewportWidth = 256;
 			int viewportHeight = 256;

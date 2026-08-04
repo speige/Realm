@@ -13,6 +13,5 @@ internal enum TerrainPathingFlags
 	DeepWater = 1 << 1,
 	Flying = 1 << 2,
 	Ground = 1 << 3,
-	Unpathable = 1 << 4,
 	Buildable = 1 << 5,
 }

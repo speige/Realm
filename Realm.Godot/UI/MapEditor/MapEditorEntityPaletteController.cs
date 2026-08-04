@@ -74,7 +74,7 @@ public class MapEditorEntityPaletteController
 		SetupButton(_btnDecals, "🎨 Decals", () => SelectCategory("Decals"), 12, "Select Decals category");
 		categoryGrid.AddChild(_btnDecals);
 
-		SelectCategory("Characters");
+		SelectCategory("Characters", triggerAddObject: false);
 	}
 
 	private void SetupButton(Button btn, string text, Action onClick, int fontSize = 13, string tooltip = "")
@@ -98,7 +98,7 @@ public class MapEditorEntityPaletteController
 		};
 	}
 
-	public void SelectCategory(string category)
+	public void SelectCategory(string category, bool triggerAddObject = true)
 	{
 		_currentCategory = category;
 
@@ -217,7 +217,10 @@ public class MapEditorEntityPaletteController
 			SelectCategoryItem(0);
 		}
 
-		TriggerAddObjectMode();
+		if (triggerAddObject)
+		{
+			TriggerAddObjectMode();
+		}
 	}
 
 	public void SelectCategoryItem(int index)

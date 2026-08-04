@@ -27,10 +27,21 @@ public class MapEditorInspector
 		_btnInspectorDelete = btnInspectorDelete;
 	}
 
+	private string _lastInspectorTitle = null;
+	private string _lastInspectorPos = null;
+
 	public void Update(MapEditorHUDViewModel viewModel)
 	{
 		if (viewModel == null) return;
-		if (_lblInspectorTitle != null) _lblInspectorTitle.Text = TranslationServer.Translate(viewModel.InspectorTitle);
-		if (_lblInspectorPos != null) _lblInspectorPos.Text = TranslationServer.Translate(viewModel.InspectorPos);
+		if (_lblInspectorTitle != null && viewModel.InspectorTitle != _lastInspectorTitle)
+		{
+			_lastInspectorTitle = viewModel.InspectorTitle;
+			_lblInspectorTitle.Text = TranslationServer.Translate(viewModel.InspectorTitle);
+		}
+		if (_lblInspectorPos != null && viewModel.InspectorPos != _lastInspectorPos)
+		{
+			_lastInspectorPos = viewModel.InspectorPos;
+			_lblInspectorPos.Text = TranslationServer.Translate(viewModel.InspectorPos);
+		}
 	}
 }

@@ -45,16 +45,15 @@ public partial class Decal3D : Decal
 		box.Size = new Vector3(Size.X, 0.5f, Size.Z);
 		_collisionShape.Shape = box;
 		_staticBody.AddChild(_collisionShape);
+
+		SetProcess(false);
 	}
-	
-	public override void _Process(double delta)
+
+	public void UpdateCollisionShape()
 	{
 		if (_collisionShape != null && _collisionShape.Shape is BoxShape3D box)
 		{
-			if (Mathf.Abs(box.Size.X - Size.X) > 0.01f || Mathf.Abs(box.Size.Z - Size.Z) > 0.01f)
-			{
-				box.Size = new Vector3(Size.X, 0.5f, Size.Z);
-			}
+			box.Size = new Vector3(Size.X, 0.5f, Size.Z);
 		}
 	}
 }

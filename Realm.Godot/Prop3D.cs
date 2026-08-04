@@ -23,6 +23,7 @@ public partial class Prop3D : StaticBody3D
 		set
 		{
 			_propId = value;
+			_cachedResolvedModelPath = null;
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
 			{
 				var world = GameHost.Instance.EcsWorld;
@@ -31,6 +32,19 @@ public partial class Prop3D : StaticBody3D
 				else
 					world.Add(Entity, new PropIdentity(value));
 			}
+		}
+	}
+
+	private string _cachedResolvedModelPath;
+	public string ModelAssetPath
+	{
+		get
+		{
+			if (_cachedResolvedModelPath == null)
+			{
+				_cachedResolvedModelPath = ResolvePropModelPath(PropId);
+			}
+			return _cachedResolvedModelPath;
 		}
 	}
 
@@ -252,6 +266,15 @@ public partial class Prop3D : StaticBody3D
 		CreatePropVisual();
 	}
 
+	public void UpdateVisualYOffset(float yOffset)
+	{
+		var visual = GetNodeOrNull<Node3D>("VisualModel");
+		if (visual != null)
+		{
+			visual.Position = new Vector3(visual.Position.X, yOffset, visual.Position.Z);
+		}
+	}
+
 	private void CreatePropVisual()
 	{
 		var visual = new Node3D();
@@ -260,6 +283,9 @@ public partial class Prop3D : StaticBody3D
 		{
 			visual.Scale = new Vector3(3f, 3f, 3f);
 		}
+		string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(PropId) : "";
+		float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
+		visual.Position = new Vector3(0, yOffset, 0);
 		AddChild(visual);
 
 		string modelPath = ResolvePropModelPath(PropId);

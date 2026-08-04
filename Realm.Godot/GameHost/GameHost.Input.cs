@@ -18,9 +18,25 @@ public partial class GameHost
 
 	private InputService _inputService;
 	private PhysicsRayQueryParameters3D? _cachedRaycastQuery;
+	private bool _leftClickInitiatedOverUI = false;
 
 	public override void _UnhandledInput(InputEvent @event)
 	{
+		if (@event is InputEventMouseButton globalMb && globalMb.ButtonIndex == MouseButton.Left)
+		{
+			if (globalMb.Pressed)
+			{
+				if (IsMouseOverUI())
+				{
+					_leftClickInitiatedOverUI = true;
+				}
+			}
+			else
+			{
+				_leftClickInitiatedOverUI = false;
+			}
+		}
+
 		if (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive)
 		{
 			return;
@@ -247,13 +263,13 @@ public partial class GameHost
 							Vector3 spawnPos = hit["position"].AsVector3();
 							if (EditorSnapToGrid && GroundTerrain != null)
 							{
-								float spacing = GroundTerrain.Spacing;
+								float quadSize = GroundTerrain.QuadSize;
 								int width = GroundTerrain.Width;
 								int depth = GroundTerrain.Depth;
-								float fx = Mathf.Round(spawnPos.X / spacing + (width - 1) / 2.0f);
-								spawnPos.X = (Mathf.Clamp(fx, 0, width - 1) - (width - 1) / 2.0f) * spacing;
-								float fz = Mathf.Round(spawnPos.Z / spacing + (depth - 1) / 2.0f);
-								spawnPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * spacing;
+								float fx = Mathf.Round(spawnPos.X / quadSize + (width - 1) / 2.0f);
+								spawnPos.X = (Mathf.Clamp(fx, 0, width - 1) - (width - 1) / 2.0f) * quadSize;
+								float fz = Mathf.Round(spawnPos.Z / quadSize + (depth - 1) / 2.0f);
+								spawnPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * quadSize;
 							}
 							spawnPos.Y = GetTerrainHeightAt(spawnPos);
 							var cop = copiedObj.Value;
@@ -348,13 +364,13 @@ public partial class GameHost
 							spawnPos = hit["position"].AsVector3();
 							if (EditorSnapToGrid && GroundTerrain != null)
 							{
-								float spacing = GroundTerrain.Spacing;
+								float quadSize = GroundTerrain.QuadSize;
 								int width = GroundTerrain.Width;
 								int depth = GroundTerrain.Depth;
-								float fx = Mathf.Round(spawnPos.X / spacing + (width - 1) / 2.0f);
-								spawnPos.X = (Mathf.Clamp(fx, 0, width - 1) - (width - 1) / 2.0f) * spacing;
-								float fz = Mathf.Round(spawnPos.Z / spacing + (depth - 1) / 2.0f);
-								spawnPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * spacing;
+								float fx = Mathf.Round(spawnPos.X / quadSize + (width - 1) / 2.0f);
+								spawnPos.X = (Mathf.Clamp(fx, 0, width - 1) - (width - 1) / 2.0f) * quadSize;
+								float fz = Mathf.Round(spawnPos.Z / quadSize + (depth - 1) / 2.0f);
+								spawnPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * quadSize;
 							}
 						}
 						else
@@ -406,14 +422,14 @@ public partial class GameHost
 				}
 				if (editorKeyEvent.Keycode == Key.Bracketleft)
 				{
-					EditorBrushRadius = Mathf.Max(1.0f, EditorBrushRadius - 1.0f);
+					EditorBrushRadius = Mathf.Max(MIN_BRUSH_RADIUS, EditorBrushRadius - 1.0f);
 					MapEditorHUD.Instance?.UpdateBrushSizeExternal(EditorBrushRadius);
 					GetViewport().SetInputAsHandled();
 					return;
 				}
 				if (editorKeyEvent.Keycode == Key.Bracketright)
 				{
-					EditorBrushRadius = Mathf.Min(25.0f, EditorBrushRadius + 1.0f);
+					EditorBrushRadius = Mathf.Min(MAX_BRUSH_RADIUS, EditorBrushRadius + 1.0f);
 					MapEditorHUD.Instance?.UpdateBrushSizeExternal(EditorBrushRadius);
 					GetViewport().SetInputAsHandled();
 					return;
@@ -447,11 +463,11 @@ public partial class GameHost
 						bool valid = true;
 						if (GroundTerrain != null)
 						{
-							float spacing = GroundTerrain.Spacing;
+							float quadSize = GroundTerrain.QuadSize;
 							int width = GroundTerrain.Width;
 							int depth = GroundTerrain.Depth;
-							float halfW = (width - 1) / 2.0f * spacing;
-							float halfD = (depth - 1) / 2.0f * spacing;
+							float halfW = (width - 1) / 2.0f * quadSize;
+							float halfD = (depth - 1) / 2.0f * quadSize;
 							if (Mathf.Abs(targetPos.X) > halfW || Mathf.Abs(targetPos.Z) > halfD)
 							{
 								valid = false;
@@ -503,14 +519,14 @@ public partial class GameHost
 
 				if (editorKeyEvent.Keycode == Key.Minus)
 				{
-					EditorBrushStrength = Mathf.Max(0.1f, EditorBrushStrength - 0.5f);
+					EditorBrushStrength = Mathf.Max(MIN_BRUSH_STRENGTH, EditorBrushStrength - 0.5f);
 					MapEditorHUD.Instance?.UpdateBrushStrengthExternal(EditorBrushStrength);
 					GetViewport().SetInputAsHandled();
 					return;
 				}
 				if (editorKeyEvent.Keycode == Key.Equal)
 				{
-					EditorBrushStrength = Mathf.Min(10.0f, EditorBrushStrength + 0.5f);
+					EditorBrushStrength = Mathf.Min(MAX_BRUSH_STRENGTH, EditorBrushStrength + 0.5f);
 					MapEditorHUD.Instance?.UpdateBrushStrengthExternal(EditorBrushStrength);
 					GetViewport().SetInputAsHandled();
 					return;
@@ -526,7 +542,7 @@ public partial class GameHost
 						3 => EditorTool.Plateau,
 						4 => EditorTool.Ramp,
 						5 => EditorTool.Noise,
-						6 => EditorTool.PaintGrass,
+						6 => EditorTool.PaintTexture,
 						7 => EditorTool.PlaceProp,
 						_ => EditorTool.None
 					};
@@ -578,10 +594,7 @@ public partial class GameHost
 									 ActiveEditorTool == EditorTool.Lower ||
 									 ActiveEditorTool == EditorTool.Smooth ||
 									 ActiveEditorTool == EditorTool.Plateau ||
-									 ActiveEditorTool == EditorTool.PaintGrass ||
-									 ActiveEditorTool == EditorTool.PaintDirt ||
-									 ActiveEditorTool == EditorTool.PaintRock ||
-									 ActiveEditorTool == EditorTool.PaintSand ||
+									 ActiveEditorTool == EditorTool.PaintTexture ||
 									 ActiveEditorTool == EditorTool.Noise ||
 									 ActiveEditorTool == EditorTool.Ramp ||
 									 ActiveEditorTool == EditorTool.PlacePropClump ||
@@ -592,7 +605,7 @@ public partial class GameHost
 					if (shiftPressed)
 					{
 						float deltaSize = isUp ? 1.0f : -1.0f;
-						EditorBrushRadius = Mathf.Clamp(EditorBrushRadius + deltaSize, 1.0f, 25.0f);
+						EditorBrushRadius = Mathf.Clamp(EditorBrushRadius + deltaSize, MIN_BRUSH_RADIUS, MAX_BRUSH_RADIUS);
 						MapEditorHUD.Instance?.UpdateBrushSizeExternal(EditorBrushRadius);
 						GetViewport().SetInputAsHandled();
 						return;
@@ -600,7 +613,7 @@ public partial class GameHost
 					if (ctrlPressed)
 					{
 						float deltaStr = isUp ? 0.5f : -0.5f;
-						EditorBrushStrength = Mathf.Clamp(EditorBrushStrength + deltaStr, 0.1f, 10.0f);
+						EditorBrushStrength = Mathf.Clamp(EditorBrushStrength + deltaStr, MIN_BRUSH_STRENGTH, MAX_BRUSH_STRENGTH);
 						MapEditorHUD.Instance?.UpdateBrushStrengthExternal(EditorBrushStrength);
 						GetViewport().SetInputAsHandled();
 						return;
@@ -661,7 +674,7 @@ public partial class GameHost
 					}
 					else
 					{
-						EditorPlacementScale = Mathf.Clamp(EditorPlacementScale + scaleDelta, 0.2f, 3.0f);
+						EditorPlacementScale = Mathf.Clamp(EditorPlacementScale + scaleDelta, MIN_PLACEMENT_SCALE, MAX_PLACEMENT_SCALE);
 						MapEditorHUD.Instance?.UpdateScaleExternal(EditorPlacementScale);
 					}
 					GetViewport().SetInputAsHandled();
@@ -724,7 +737,10 @@ public partial class GameHost
 
 			if (@event is InputEventMouseButton editorMouseBtn && editorMouseBtn.Pressed && editorMouseBtn.ButtonIndex == MouseButton.Left)
 			{
-				if (IsMouseOverUI()) return;
+				if (_leftClickInitiatedOverUI || IsMouseOverUI())
+				{
+					return;
+				}
 				
 				var hit = RaycastFromMouse(editorMouseBtn.Position);
 				if (hit != null && hit.ContainsKey("position"))
@@ -733,13 +749,13 @@ public partial class GameHost
 					
 					if (EditorSnapToGrid && GroundTerrain != null)
 					{
-						float spacing = GroundTerrain.Spacing;
+						float quadSize = GroundTerrain.QuadSize;
 						int width = GroundTerrain.Width;
 						int depth = GroundTerrain.Depth;
-						float fx = Mathf.Round(hitPos.X / spacing + (width - 1) / 2.0f);
-						hitPos.X = (Mathf.Clamp(fx, 0, width - 1) - (width - 1) / 2.0f) * spacing;
-						float fz = Mathf.Round(hitPos.Z / spacing + (depth - 1) / 2.0f);
-						hitPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * spacing;
+						float fx = Mathf.Round(hitPos.X / quadSize + (width - 1) / 2.0f);
+						hitPos.X = (Mathf.Clamp(fx, 0, width - 1) - (width - 1) / 2.0f) * quadSize;
+						float fz = Mathf.Round(hitPos.Z / quadSize + (depth - 1) / 2.0f);
+						hitPos.Z = (Mathf.Clamp(fz, 0, depth - 1) - (depth - 1) / 2.0f) * quadSize;
 					}
 					
 					if (ActiveEditorTool == EditorTool.PlaceUnit)
@@ -1035,9 +1051,9 @@ public partial class GameHost
 							{
 								int w = GroundTerrain.Width;
 								int d = GroundTerrain.Depth;
-								float sp = GroundTerrain.Spacing;
-								float fx = hitPos.X / sp + (w - 1) / 2.0f;
-								float fz = hitPos.Z / sp + (d - 1) / 2.0f;
+								float quadSize = GroundTerrain.QuadSize;
+								float fx = hitPos.X / quadSize + (w - 1) / 2.0f;
+								float fz = hitPos.Z / quadSize + (d - 1) / 2.0f;
 								int x = Mathf.Clamp((int)Math.Round(fx), 0, w - 1);
 								int z = Mathf.Clamp((int)Math.Round(fz), 0, d - 1);
 								int sampledIndex = GroundTerrain.SplatMap[x, z].Index0;
@@ -1048,7 +1064,7 @@ public partial class GameHost
 								}
 								else
 								{
-									ActiveEditorTool = EditorTool.PaintGrass;
+									ActiveEditorTool = EditorTool.PaintTexture;
 								}
 								MapEditorHUD.Instance?.ShowFeedbackExternal($"Picked Texture: #{sampledIndex}");
 							}
@@ -1157,14 +1173,14 @@ public partial class GameHost
 									}
 
 									float brushRadius = EditorBrushRadius;
-									float spacing = GroundTerrain.Spacing;
+									float quadSize = GroundTerrain.QuadSize;
 									int width = GroundTerrain.Width;
 									int depth = GroundTerrain.Depth;
 
-									int minGridX = Mathf.Clamp(Mathf.FloorToInt((minX - brushRadius) / spacing + (width - 1) / 2.0f), 0, width - 1);
-									int maxGridX = Mathf.Clamp(Mathf.CeilToInt((maxX + brushRadius) / spacing + (width - 1) / 2.0f), 0, width - 1);
-									int minGridZ = Mathf.Clamp(Mathf.FloorToInt((minZ - brushRadius) / spacing + (depth - 1) / 2.0f), 0, depth - 1);
-									int maxGridZ = Mathf.Clamp(Mathf.CeilToInt((maxZ + brushRadius) / spacing + (depth - 1) / 2.0f), 0, depth - 1);
+									int minGridX = Mathf.Clamp(Mathf.FloorToInt((minX - brushRadius) / quadSize + (width - 1) / 2.0f), 0, width - 1);
+									int maxGridX = Mathf.Clamp(Mathf.CeilToInt((maxX + brushRadius) / quadSize + (width - 1) / 2.0f), 0, width - 1);
+									int minGridZ = Mathf.Clamp(Mathf.FloorToInt((minZ - brushRadius) / quadSize + (depth - 1) / 2.0f), 0, depth - 1);
+									int maxGridZ = Mathf.Clamp(Mathf.CeilToInt((maxZ + brushRadius) / quadSize + (depth - 1) / 2.0f), 0, depth - 1);
 
 									Rect2I affected = new Rect2I(minGridX - 2, minGridZ - 2, maxGridX - minGridX + 4, maxGridZ - minGridZ + 4);
 
@@ -1186,7 +1202,31 @@ public partial class GameHost
 					}
 					else if (ActiveEditorTool == EditorTool.FloodFill)
 					{
-						PerformFloodFill(hitPos, EditorPaintTextureIndex);
+						bool isCliff = false;
+						if (hit != null && hit.ContainsKey("normal"))
+						{
+							Vector3 normal = hit["normal"].AsVector3();
+							if (Mathf.Abs(normal.Y) < 0.6f)
+							{
+								isCliff = true;
+							}
+						}
+						if (!isCliff && GroundTerrain != null && GroundTerrain.Cells != null)
+						{
+							int w = GroundTerrain.Width;
+							int d = GroundTerrain.Depth;
+							float q = GroundTerrain.QuadSize;
+							int cx = Mathf.Clamp((int)Math.Floor(hitPos.X / q + w / 2.0f), 0, w - 1);
+							int cz = Mathf.Clamp((int)Math.Floor(hitPos.Z / q + d / 2.0f), 0, d - 1);
+							var c = GroundTerrain.Cells[cx, cz];
+							float maxH = Mathf.Max(Mathf.Max(c.Y_NW, c.Y_NE), Mathf.Max(c.Y_SW, c.Y_SE));
+							float minH = Mathf.Min(Mathf.Min(c.Y_NW, c.Y_NE), Mathf.Min(c.Y_SW, c.Y_SE));
+							if (maxH - minH > 1.5f)
+							{
+								isCliff = true;
+							}
+						}
+						PerformFloodFill(hitPos, EditorPaintTextureIndex, isCliff);
 						GetViewport().SetInputAsHandled();
 					}
 					else if (ActiveEditorTool == EditorTool.FloodFillPathing)
@@ -1205,8 +1245,8 @@ public partial class GameHost
 					{
 						if (GroundTerrain != null)
 						{
-							float fx = hitPos.X / GroundTerrain.Spacing + (GroundTerrain.Width - 1) / 2.0f;
-							float fz = hitPos.Z / GroundTerrain.Spacing + (GroundTerrain.Depth - 1) / 2.0f;
+							float fx = hitPos.X / GroundTerrain.QuadSize + (GroundTerrain.Width - 1) / 2.0f;
+							float fz = hitPos.Z / GroundTerrain.QuadSize + (GroundTerrain.Depth - 1) / 2.0f;
 							int cx = Mathf.Clamp((int)Math.Round(fx), 0, GroundTerrain.Width - 1);
 							int cz = Mathf.Clamp((int)Math.Round(fz), 0, GroundTerrain.Depth - 1);
 							_editorService.SetSelectionStart(new Vector2I(cx, cz));
@@ -1221,8 +1261,8 @@ public partial class GameHost
 					{
 						if (GroundTerrain != null)
 						{
-							float rfx = hitPos.X / GroundTerrain.Spacing + (GroundTerrain.Width - 1) / 2.0f;
-							float rfz = hitPos.Z / GroundTerrain.Spacing + (GroundTerrain.Depth - 1) / 2.0f;
+							float rfx = hitPos.X / GroundTerrain.QuadSize + (GroundTerrain.Width - 1) / 2.0f;
+							float rfz = hitPos.Z / GroundTerrain.QuadSize + (GroundTerrain.Depth - 1) / 2.0f;
 							int rcx = Mathf.Clamp((int)Math.Round(rfx), 0, GroundTerrain.Width - 1);
 							int rcz = Mathf.Clamp((int)Math.Round(rfz), 0, GroundTerrain.Depth - 1);
 							_editorService.SetSelectionStart(new Vector2I(rcx, rcz));
@@ -1236,8 +1276,8 @@ public partial class GameHost
 					{
 						if (GroundTerrain != null && _editorService.HasCopiedArea)
 						{
-							float fx = hitPos.X / GroundTerrain.Spacing + (GroundTerrain.Width - 1) / 2.0f;
-							float fz = hitPos.Z / GroundTerrain.Spacing + (GroundTerrain.Depth - 1) / 2.0f;
+							float fx = hitPos.X / GroundTerrain.QuadSize + (GroundTerrain.Width - 1) / 2.0f;
+							float fz = hitPos.Z / GroundTerrain.QuadSize + (GroundTerrain.Depth - 1) / 2.0f;
 							int cx = Mathf.Clamp((int)Math.Round(fx), 0, GroundTerrain.Width - 1);
 							int cz = Mathf.Clamp((int)Math.Round(fz), 0, GroundTerrain.Depth - 1);
 							PerformPasteArea(cx, cz, EditorPasteRotation);
@@ -2067,17 +2107,43 @@ public partial class GameHost
 		return null;
 	}
 
-	private Godot.Collections.Dictionary RaycastFromMouse(Vector2 mousePos)
+	public bool TryRaycastFromMousePosition(Vector2 mousePos, out Vector3 position)
 	{
-		var camera = GetViewport().GetCamera3D();
+		position = Vector3.Zero;
+		var camera = GetViewport()?.GetCamera3D();
+		if (camera == null) return false;
+
+		var from = camera.ProjectRayOrigin(mousePos);
+		var to = from + camera.ProjectRayNormal(mousePos) * 1000f;
+
+		var spaceState = GetWorld3D()?.DirectSpaceState;
+		if (spaceState == null) return false;
+
+		_cachedRaycastQuery ??= new PhysicsRayQueryParameters3D();
+		_cachedRaycastQuery.From = from;
+		_cachedRaycastQuery.To = to;
+		var result = spaceState.IntersectRay(_cachedRaycastQuery);
+
+		if (result.Count == 0 || !result.ContainsKey("position")) return false;
+		position = result["position"].AsVector3();
+		return true;
+	}
+
+	public Godot.Collections.Dictionary RaycastFromMouse(Vector2 mousePos)
+	{
+		var camera = GetViewport()?.GetCamera3D();
 		if (camera == null) return null;
 
 		var from = camera.ProjectRayOrigin(mousePos);
 		var to = from + camera.ProjectRayNormal(mousePos) * 1000f;
 
-		var spaceState = GetWorld3D().DirectSpaceState;
-		var query = PhysicsRayQueryParameters3D.Create(from, to);
-		var result = spaceState.IntersectRay(query);
+		var spaceState = GetWorld3D()?.DirectSpaceState;
+		if (spaceState == null) return null;
+
+		_cachedRaycastQuery ??= new PhysicsRayQueryParameters3D();
+		_cachedRaycastQuery.From = from;
+		_cachedRaycastQuery.To = to;
+		var result = spaceState.IntersectRay(_cachedRaycastQuery);
 
 		if (result.Count == 0) return null;
 		return result;
@@ -3625,8 +3691,10 @@ public partial class GameHost
 		var from = new Vector3(minimapWorldPos.X, 200f, minimapWorldPos.Z);
 		var to = new Vector3(minimapWorldPos.X, -100f, minimapWorldPos.Z);
 		var spaceState = GetWorld3D().DirectSpaceState;
-		var query = PhysicsRayQueryParameters3D.Create(from, to);
-		var result = spaceState.IntersectRay(query);
+		_cachedRaycastQuery ??= new PhysicsRayQueryParameters3D();
+		_cachedRaycastQuery.From = from;
+		_cachedRaycastQuery.To = to;
+		var result = spaceState.IntersectRay(_cachedRaycastQuery);
 
 		Unit3D clickedUnit = null;
 		Prop3D clickedProp = null;

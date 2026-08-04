@@ -41,7 +41,7 @@ public class MapEditorTerrainImportService
 
 		int width = terrain.Width;
 		int depth = terrain.Depth;
-		float spacing = terrain.Spacing;
+		float quadSize = terrain.QuadSize;
 
 		float[,] heights = new float[width, depth];
 		splatMap = new TerrainSplatWeights[width, depth];
@@ -104,64 +104,46 @@ public class MapEditorTerrainImportService
 					else type = "stone";
 				}
 
-				float h = 0.0f;
-				int texIdx = 1;
+				sbyte tier = 0;
+				int texIdx = 3;
 				if (type == "water")
 				{
-					h = -2.0f;
-					texIdx = 6;
+					tier = -1;
+					texIdx = 9;
 				}
 				else if (type == "grass")
 				{
-					h = 0.0f;
-					texIdx = 1;
+					tier = 0;
+					texIdx = 3;
 				}
 				else if (type == "forest")
 				{
-					h = 0.0f;
-					texIdx = 1;
+					tier = 0;
+					texIdx = 3;
 					isTreeColored[gx, gz] = true;
 				}
 				else if (type == "cliff")
 				{
-					h = 4.0f;
-					texIdx = 2;
+					tier = 1;
+					texIdx = 0;
 				}
 				else if (type == "stone")
 				{
-					h = 0.0f;
+					tier = 0;
 					texIdx = 3;
 				}
 
-				heights[gx, gz] = h;
+				if (terrain.Cells != null)
+				{
+					float h = tier * EditableTerrain.TIER_HEIGHT;
+					terrain.Cells[gx, gz] = new TerrainCell(h);
+				}
+				heights[gx, gz] = tier * EditableTerrain.TIER_HEIGHT;
 				splatMap[gx, gz] = TerrainSplatWeights.CreateSolid(texIdx);
 			}
 		}
 
-		smoothedHeights = new float[width, depth];
-		int blurRadius = 2;
-		for (int gz = 0; gz < depth; gz++)
-		{
-			for (int gx = 0; gx < width; gx++)
-			{
-				float sum = 0f;
-				int count = 0;
-				for (int dz = -blurRadius; dz <= blurRadius; dz++)
-				{
-					for (int dx = -blurRadius; dx <= blurRadius; dx++)
-					{
-						int nx = gx + dx;
-						int nz = gz + dz;
-						if (nx >= 0 && nx < width && nz >= 0 && nz < depth)
-						{
-							sum += heights[nx, nz];
-							count++;
-						}
-					}
-				}
-				smoothedHeights[gx, gz] = sum / count;
-			}
-		}
+		smoothedHeights = heights;
 
 		var random = new Random();
 		bool[,] visited = new bool[width, depth];
@@ -221,8 +203,8 @@ public class MapEditorTerrainImportService
 						{
 							float offsetX = (random.NextSingle() - 0.5f) * 1.5f;
 							float offsetZ = (random.NextSingle() - 0.5f) * 1.5f;
-							float worldX = (cell.X - (width - 1) / 2.0f) * spacing + offsetX;
-							float worldZ = (cell.Y - (depth - 1) / 2.0f) * spacing + offsetZ;
+							float worldX = (cell.X - (width - 1) / 2.0f) * quadSize + offsetX;
+							float worldZ = (cell.Y - (depth - 1) / 2.0f) * quadSize + offsetZ;
 							float hValue = smoothedHeights[cell.X, cell.Y];
 							float rot = random.NextSingle() * 360f;
 							float scale = 0.8f + random.NextSingle() * 0.4f;

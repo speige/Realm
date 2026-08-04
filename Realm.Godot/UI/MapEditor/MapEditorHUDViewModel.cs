@@ -18,10 +18,9 @@ public class MapEditorHUDViewModel
 	public bool RightPanelExpanded { get; set; } = true;
 	public EditorModule ActiveModule { get; set; } = EditorModule.Terrain;
 
-	public float BrushSize { get; set; } = 5f;
+	public float BrushSize { get; set; } = 2f;
 	public float BrushStrength { get; set; } = 20f;
-	public float BlockStep { get; set; } = 0.5f;
-	public float WaterHeight { get; set; } = -2.0f;
+	public float BlockStep { get; set; } = 3.0f;
 
 	public float PlacementRotate { get; set; } = 0f;
 	public float PlacementScale { get; set; } = 1.0f;
@@ -40,10 +39,9 @@ public class MapEditorHUDViewModel
 	public bool SnapToGrid { get; set; } = false;
 	public bool GridOverlayVisible { get; set; } = false;
 	public bool CameraBoundsOverlayVisible { get; set; } = false;
-	public bool WaterEnabled { get; set; } = false;
 	public string SkyboxSelected { get; set; } = "";
 	public bool PathingOverlayVisible { get; set; } = false;
-	public bool BrushShapeSquare { get; set; } = false;
+	public bool BrushShapeSquare { get; set; } = true;
 
 	public string StatusText { get; set; } = "";
 	public string FeedbackText { get; set; } = "";
@@ -66,7 +64,6 @@ public class MapEditorHUDViewModel
 			BrushSize = GameHost.Instance.EditorBrushRadius;
 			BrushStrength = GameHost.Instance.EditorBrushStrength;
 			BlockStep = GameHost.Instance.EditorBlockLevelHeight;
-			WaterHeight = GameHost.Instance.GroundTerrain != null ? GameHost.Instance.GroundTerrain.WaterHeight : -2.0f;
 
 			PlacementRotate = GameHost.Instance.EditorPlacementRotation;
 			PlacementScale = GameHost.Instance.EditorPlacementScale;
@@ -81,7 +78,6 @@ public class MapEditorHUDViewModel
 			SnapToGrid = GameHost.Instance.EditorSnapToGrid;
 			GridOverlayVisible = GameHost.Instance.EditorGridVisible;
 			CameraBoundsOverlayVisible = GameHost.Instance.EditorCameraBoundsVisible;
-			WaterEnabled = GameHost.Instance.GroundTerrain != null && GameHost.Instance.GroundTerrain.WaterHeight > -100f;
 			PathingOverlayVisible = GameHost.Instance.PathingOverlayVisible;
 			BrushShapeSquare = GameHost.Instance.EditorBrushIsSquare;
 		}

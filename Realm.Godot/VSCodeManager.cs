@@ -583,6 +583,60 @@ public class VSCodeManager
 				responseObj["success"] = success;
 				responseObj["error"] = errorMsg;
 			}
+			else if (action == "reloadMetadata" || action == "updateMetadata")
+			{
+				Callable.From(() =>
+				{
+					if (MapEditorHUD.Instance != null)
+					{
+						MapEditorHUD.Instance.ReadMetadataAndRefreshTextures();
+					}
+					else if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+					{
+						GameHost.Instance.GroundTerrain.ReloadTerrainTextures(true);
+					}
+				}).CallDeferred();
+
+				responseObj["action"] = "reloadMetadataResult";
+				responseObj["type"] = "reloadMetadataResult";
+				responseObj["success"] = true;
+			}
+			else if (action == "updateTextureParam")
+			{
+				string swatchName = node["swatchName"]?.ToString() ?? node["swatch"]?.ToString() ?? "";
+				string tileMode = node["tileMode"]?.ToString() ?? node["Tile_Mode"]?.ToString() ?? "Stochastic";
+				float uvScale = 1.0f;
+				if (node["uvScale"] != null && float.TryParse(node["uvScale"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedUv))
+				{
+					uvScale = parsedUv;
+				}
+				else if (node["UV_Scale"] != null && float.TryParse(node["UV_Scale"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedUv2))
+				{
+					uvScale = parsedUv2;
+				}
+
+				float stochasticTileSize = 1.0f;
+				if (node["stochasticTileSize"] != null && float.TryParse(node["stochasticTileSize"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedStoch))
+				{
+					stochasticTileSize = parsedStoch;
+				}
+				else if (node["Stochastic_Tile_Size"] != null && float.TryParse(node["Stochastic_Tile_Size"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedStoch2))
+				{
+					stochasticTileSize = parsedStoch2;
+				}
+
+				Callable.From(() =>
+				{
+					if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+					{
+						GameHost.Instance.GroundTerrain.UpdateTextureParamDirect(swatchName, tileMode, uvScale, stochasticTileSize);
+					}
+				}).CallDeferred();
+
+				responseObj["action"] = "updateTextureParamResult";
+				responseObj["type"] = "updateTextureParamResult";
+				responseObj["success"] = true;
+			}
 
 			string resJson = responseObj.ToJsonString();
 			byte[] resBytes = System.Text.Encoding.UTF8.GetBytes(resJson);

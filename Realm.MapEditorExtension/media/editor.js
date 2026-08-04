@@ -3786,6 +3786,20 @@
             .replace(/'/g, '&#039;');
     }
 
+    let currentAssetTypeFilter = 'all';
+
+    function formatCategoryName(cat) {
+        if (cat === 'glb') return 'GLB';
+        if (cat === 'vfx_spritesheets') return 'VFX Spritesheets';
+        if (cat === 'sfx') return 'SFX';
+        if (cat === 'music') return 'Music';
+        if (cat === 'skyboxes') return 'Skyboxes';
+        if (cat === 'decals') return 'Decals';
+        if (cat === 'textures') return 'Textures';
+        if (cat === 'icons') return 'Icons';
+        return cat.charAt(0).toUpperCase() + cat.slice(1);
+    }
+
     function renderAssetsMetadata() {
         const display = document.getElementById('assets-metadata-display');
         if (!display) return;
@@ -3811,14 +3825,44 @@
             }
         });
 
-        if (!assets || Object.keys(assets).length === 0) {
+        const filterSelect = document.getElementById('asset-type-filter-select');
+        if (filterSelect) {
+            currentAssetTypeFilter = filterSelect.value || 'all';
+        }
+
+        const availableCategories = Object.keys(assets).filter(k => assets[k] && typeof assets[k] === 'object' && Object.keys(assets[k]).length > 0);
+
+        if (filterSelect) {
+            let selectHtml = `<option value="all" ${currentAssetTypeFilter === 'all' ? 'selected' : ''}>All</option>`;
+            availableCategories.forEach(cat => {
+                selectHtml += `<option value="${cat}" ${currentAssetTypeFilter === cat ? 'selected' : ''}>${escapeHtml(formatCategoryName(cat))}</option>`;
+            });
+            filterSelect.innerHTML = selectHtml;
+
+            if (!filterSelect.getAttribute('data-listener-attached')) {
+                filterSelect.setAttribute('data-listener-attached', 'true');
+                filterSelect.addEventListener('change', (e) => {
+                    currentAssetTypeFilter = e.target.value;
+                    renderAssetsMetadata();
+                });
+            }
+        }
+
+        if (!assets || availableCategories.length === 0) {
             display.innerHTML = '<em>No assets registered in metadata.json yet. Use the buttons above to import assets!</em>';
+            return;
+        }
+
+        const categoriesToRender = availableCategories.filter(cat => currentAssetTypeFilter === 'all' || currentAssetTypeFilter === cat);
+
+        if (categoriesToRender.length === 0) {
+            display.innerHTML = `<em>No assets found matching filter "${escapeHtml(formatCategoryName(currentAssetTypeFilter))}".</em>`;
             return;
         }
 
         let html = '<div class="asset-list" style="display: flex; flex-direction: column; gap: 8px;">';
         
-        Object.keys(assets).forEach(category => {
+        categoriesToRender.forEach(category => {
             const catObj = assets[category];
             if (!catObj || typeof catObj !== 'object') return;
 
@@ -3893,6 +3937,36 @@
                     html += `<button type="button" class="btn small-btn btn-preview-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" data-cols="${cols}" data-rows="${rows}" data-path="${escapeHtml(relAssetPath)}" title="Preview asset" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">👁️ Preview</button>`;
                     html += `<button type="button" class="btn small-btn btn-delete-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" title="Remove asset" style="color: #f44336; background: transparent; border: none; cursor: pointer; font-weight: bold; font-size: 14px; padding: 0 4px;">✕</button>`;
                     html += `</div></div>`;
+                    if (category === 'textures') {
+                        let tileMode = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Tile_Mode || itemVal.tile_mode)) ? (itemVal.Tile_Mode || itemVal.tile_mode) : 'Stochastic';
+                        let uvScale = (typeof itemVal === 'object' && itemVal !== null && (itemVal.UV_Scale !== undefined || itemVal.uv_scale !== undefined)) ? parseFloat(itemVal.UV_Scale ?? itemVal.uv_scale) : 1.0;
+                        if (isNaN(uvScale)) uvScale = 1.0;
+                        let stochTileSize = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Stochastic_Tile_Size !== undefined || itemVal.stochastic_tile_size !== undefined)) ? parseFloat(itemVal.Stochastic_Tile_Size ?? itemVal.stochastic_tile_size) : 1.0;
+                        if (isNaN(stochTileSize)) stochTileSize = 1.0;
+
+                        html += `<div class="texture-stochastic-controls" data-key="${escapeHtml(itemKey)}" style="margin-top: 6px; margin-bottom: 8px; padding: 8px 12px; background: var(--vscode-input-background, #1e1e24); border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.15)); border-left: 4px solid var(--vscode-symbolIcon-propertyForeground, #4ec9b0); border-radius: 6px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">`;
+                        
+                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Controls texture tiling method. 'Stochastic' uses non-repeating procedural triangular grid sampling; 'Grid' uses standard UV tiling." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Tile_Mode:</label>`;
+                        html += `<select class="input-texture-tile-mode" data-key="${escapeHtml(itemKey)}" title="Controls texture tiling method. 'Stochastic' uses non-repeating procedural triangular grid sampling; 'Grid' uses standard UV tiling." style="background: var(--vscode-editor-background, #141416); color: var(--vscode-input-foreground, #ffffff); border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.25)); border-radius: 4px; font-size: 12px; font-weight: 600; padding: 3px 8px; cursor: pointer;">`;
+                        html += `<option value="Stochastic" ${tileMode === 'Stochastic' ? 'selected' : ''}>Stochastic (default)</option>`;
+                        html += `<option value="Grid" ${tileMode === 'Grid' ? 'selected' : ''}>Grid</option>`;
+                        html += `</select>`;
+                        html += `</div>`;
+
+                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Multiplier to scale texture UV coordinates (range 0.1 to 4.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">UV_Scale: <span class="lbl-uv-scale-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${uvScale.toFixed(2)}</span></label>`;
+                        html += `<input type="range" class="input-texture-uv-scale" data-key="${escapeHtml(itemKey)}" min="0.1" max="4.0" step="0.05" value="${uvScale}" title="Multiplier to scale texture UV coordinates (range 0.1 to 4.0)." style="width: 130px; cursor: pointer;" />`;
+                        html += `</div>`;
+
+                        html += `<div class="row-stochastic-tile-size" style="display: ${tileMode === 'Grid' ? 'none' : 'flex'}; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Scale multiplier for procedural stochastic sampling grid cells (range 0.5 to 3.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Stochastic Tile Size: <span class="lbl-stoch-size-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${stochTileSize.toFixed(2)}</span></label>`;
+                        html += `<input type="range" class="input-texture-stoch-size" data-key="${escapeHtml(itemKey)}" min="0.5" max="3.0" step="0.05" value="${stochTileSize}" title="Scale multiplier for procedural stochastic sampling grid cells (range 0.5 to 3.0)." style="width: 130px; cursor: pointer;" />`;
+                        html += `</div>`;
+
+                        html += `</div>`;
+                    }
+
                     html += `<div class="asset-preview-container hidden" style="margin-top: 4px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px; text-align: center;"></div>`;
                     html += `</div>`;
                 });
@@ -3903,6 +3977,111 @@
 
         html += '</div>';
         display.innerHTML = html;
+
+        function updateTextureProperty(itemKey, updateFn) {
+            let container = null;
+            if (units?.Assets?.textures) container = units.Assets.textures;
+            else if (units?.MapProperties?.Assets?.textures) container = units.MapProperties.Assets.textures;
+            else if (units?.textures) container = units.textures;
+            if (!container) {
+                if (!units.Assets) units.Assets = {};
+                if (!units.Assets.textures) units.Assets.textures = {};
+                container = units.Assets.textures;
+            }
+            let itemVal = container[itemKey];
+            if (typeof itemVal !== 'object' || itemVal === null) {
+                itemVal = { hash: String(itemVal || '') };
+            }
+            updateFn(itemVal);
+            container[itemKey] = itemVal;
+            saveChanges();
+            
+            const tileMode = (itemVal.Tile_Mode || itemVal.tile_mode) ?? 'Stochastic';
+            const uvScale = parseFloat(itemVal.UV_Scale ?? itemVal.uv_scale ?? 1.0);
+            const stochTileSize = parseFloat(itemVal.Stochastic_Tile_Size ?? itemVal.stochastic_tile_size ?? 1.0);
+
+            const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
+            fetch(`http://127.0.0.1:${ipcPort}/api/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'updateTextureParam',
+                    swatchName: itemKey,
+                    tileMode: tileMode,
+                    uvScale: uvScale,
+                    stochasticTileSize: stochTileSize
+                })
+            }).catch(() => {});
+        }
+
+        display.querySelectorAll('.input-texture-tile-mode').forEach(sel => {
+            sel.addEventListener('change', (e) => {
+                const key = e.target.getAttribute('data-key');
+                const val = e.target.value;
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const stochRow = parentRow.querySelector('.row-stochastic-tile-size');
+                    if (stochRow) stochRow.style.display = (val === 'Grid') ? 'none' : 'flex';
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.Tile_Mode = val;
+                    itemVal.tile_mode = val;
+                });
+            });
+        });
+
+        display.querySelectorAll('.input-texture-variants').forEach(sel => {
+            sel.addEventListener('change', (e) => {
+                const key = e.target.getAttribute('data-key');
+                const val = (e.target.value === 'true');
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.Variants = val;
+                    itemVal.variants = val;
+                });
+                const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
+                fetch(`http://127.0.0.1:${ipcPort}/api/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'reloadMetadata' })
+                }).catch(() => {});
+            });
+        });
+
+        display.querySelectorAll('.input-texture-uv-scale').forEach(input => {
+            const handleUvChange = (e) => {
+                const key = e.target.getAttribute('data-key');
+                const val = parseFloat(e.target.value);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const lbl = parentRow.querySelector('.lbl-uv-scale-val');
+                    if (lbl) lbl.textContent = val.toFixed(2);
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.UV_Scale = val;
+                    itemVal.uv_scale = val;
+                });
+            };
+            input.addEventListener('input', handleUvChange);
+            input.addEventListener('change', handleUvChange);
+        });
+
+        display.querySelectorAll('.input-texture-stoch-size').forEach(input => {
+            const handleStochChange = (e) => {
+                const key = e.target.getAttribute('data-key');
+                const val = parseFloat(e.target.value);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const lbl = parentRow.querySelector('.lbl-stoch-size-val');
+                    if (lbl) lbl.textContent = val.toFixed(2);
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.Stochastic_Tile_Size = val;
+                    itemVal.stochastic_tile_size = val;
+                });
+            };
+            input.addEventListener('input', handleStochChange);
+            input.addEventListener('change', handleStochChange);
+        });
 
         // Attach migration event handlers
         display.querySelectorAll('.btn-migrate-asset').forEach(btn => {

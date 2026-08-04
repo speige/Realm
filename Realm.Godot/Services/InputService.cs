@@ -605,7 +605,7 @@ internal class InputService
 		return baseRadius * scale;
 	}
 
-	public System.Numerics.Vector3? FindNearestFreePosition(System.Numerics.Vector3 startPos, float checkRadius, float maxSearchDist = 20.0f, float terrainSpacing = 2.0f, int terrainWidth = 256, int terrainDepth = 256)
+	public System.Numerics.Vector3? FindNearestFreePosition(System.Numerics.Vector3 startPos, float checkRadius, float maxSearchDist = 20.0f, float terrainQuadSize = 2.0f, int terrainWidth = 256, int terrainDepth = 256)
 	{
 		if (!IsPositionBlocked(startPos, checkRadius, Entity.Null))
 		{
@@ -628,8 +628,8 @@ internal class InputService
 					startPos.Z + dist * (float)Math.Sin(angle)
 				);
 
-				float halfW = (terrainWidth - 1) / 2.0f * terrainSpacing;
-				float halfD = (terrainDepth - 1) / 2.0f * terrainSpacing;
+				float halfW = (terrainWidth - 1) / 2.0f * terrainQuadSize;
+				float halfD = (terrainDepth - 1) / 2.0f * terrainQuadSize;
 				if (Math.Abs(testPos.X) > halfW || Math.Abs(testPos.Z) > halfD) continue;
 
 				if (!IsPositionBlocked(testPos, checkRadius, Entity.Null))

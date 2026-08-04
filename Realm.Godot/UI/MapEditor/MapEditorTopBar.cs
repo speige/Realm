@@ -39,10 +39,13 @@ public class MapEditorTopBar
 		}
 	}
 
+	private string _lastStatusText = null;
+
 	public void Update(MapEditorHUDViewModel viewModel)
 	{
-		if (_statusLabel != null)
+		if (_statusLabel != null && viewModel != null && viewModel.StatusText != _lastStatusText)
 		{
+			_lastStatusText = viewModel.StatusText;
 			_statusLabel.Text = TranslationServer.Translate(viewModel.StatusText);
 		}
 	}

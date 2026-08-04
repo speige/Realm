@@ -453,7 +453,7 @@ public partial class CameraControl : Camera3D
 
 			float sensFactor = 0.0005f + (GameSettings.MouseSens / 100.0f) * 0.003f;
 			float moveX = -deltaMouse.X * sensFactor * _currentHeight;
-			float moveZ = -deltaMouse.Y * sensFactor * _currentHeight;
+			float moveZ = deltaMouse.Y * sensFactor * _currentHeight;
 
 			Vector3 forwardXZ = -GlobalTransform.Basis.Z;
 			forwardXZ.Y = 0f;
@@ -468,10 +468,16 @@ public partial class CameraControl : Camera3D
 			Vector3 newPos = Position + velocity;
 			if (GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode)
 			{
-				float minX = LimitLeft ?? -MapLimit;
-				float maxX = LimitRight ?? MapLimit;
-				float minZ = LimitTop ?? -MapLimit;
-				float maxZ = LimitBottom ?? (MapLimit + 30f);
+				float rawMinX = LimitLeft ?? -MapLimit;
+				float rawMaxX = LimitRight ?? MapLimit;
+				float rawMinZ = LimitTop ?? -MapLimit;
+				float rawMaxZ = LimitBottom ?? (MapLimit + 30f);
+
+				float minX = Mathf.Min(rawMinX, rawMaxX);
+				float maxX = Mathf.Max(rawMinX, rawMaxX);
+				float minZ = Mathf.Min(rawMinZ, rawMaxZ);
+				float maxZ = Mathf.Max(rawMinZ, rawMaxZ);
+
 				newPos.X = Mathf.Clamp(newPos.X, minX, maxX);
 				newPos.Z = Mathf.Clamp(newPos.Z, minZ, maxZ);
 			}
@@ -482,16 +488,21 @@ public partial class CameraControl : Camera3D
 				float topBound = GameHost.Instance.EditorCameraBoundsTop;
 				float bottomBound = GameHost.Instance.EditorCameraBoundsBottom;
 
-				float rangeX = rightBound - leftBound;
-				float rangeZ = bottomBound - topBound;
+				float boundMinX = Mathf.Min(leftBound, rightBound);
+				float boundMaxX = Mathf.Max(leftBound, rightBound);
+				float boundMinZ = Mathf.Min(topBound, bottomBound);
+				float boundMaxZ = Mathf.Max(topBound, bottomBound);
+
+				float rangeX = boundMaxX - boundMinX;
+				float rangeZ = boundMaxZ - boundMinZ;
 
 				float paddingX = rangeX * 0.25f;
 				float paddingZ = rangeZ * 0.25f;
 
-				float minX = leftBound - paddingX;
-				float maxX = rightBound + paddingX;
-				float minZ = topBound - paddingZ;
-				float maxZ = bottomBound + paddingZ;
+				float minX = boundMinX - paddingX;
+				float maxX = boundMaxX + paddingX;
+				float minZ = boundMinZ - paddingZ;
+				float maxZ = boundMaxZ + paddingZ;
 
 				newPos.X = Mathf.Clamp(newPos.X, minX, maxX);
 				newPos.Z = Mathf.Clamp(newPos.Z, minZ, maxZ);
@@ -506,27 +517,25 @@ public partial class CameraControl : Camera3D
 	{
 		float fDelta = (float)delta;
 
-		MoveSpeed = 10.0f + (GameSettings.ScrollSpeed / 100.0f) * 50.0f;
+		if (!HasCameraState) return;
 
-		// Get current terrain height at camera position (or 0 if terrain not ready)
+		ref var state = ref GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity);
+		state.MoveSpeed = 10.0f + (GameSettings.ScrollSpeed / 100.0f) * 50.0f;
+
 		float terrainHeight = 0.0f;
 		if (GameHost.Instance?.GroundTerrain != null)
 		{
 			GameHost.Instance.GroundTerrain.GetHeightAndNormal(Position.X, Position.Z, out terrainHeight, out _);
 		}
 
-		// Calculate minimum allowable target height so the camera never clips below terrain
-		float minAllowedTargetHeight = terrainHeight + MinZoom;
-		if (_targetHeight < minAllowedTargetHeight)
+		float minAllowedTargetHeight = terrainHeight + state.MinZoom;
+		if (state.TargetHeight < minAllowedTargetHeight)
 		{
-			// Permanently adjust _targetHeight so it stays at the elevated level
-			_targetHeight = minAllowedTargetHeight;
+			state.TargetHeight = minAllowedTargetHeight;
 		}
 
-		_currentHeight = Mathf.Lerp(_currentHeight, _targetHeight, ZoomSpeed * fDelta);
-
-		// Smoothly transition camera Y over a 1-second duration (exponential decay with factor ~3.0)
-		float smoothY = Mathf.Lerp(Position.Y, _targetHeight, 3.0f * fDelta);
+		state.CurrentHeight = Mathf.Lerp(state.CurrentHeight, state.TargetHeight, state.ZoomSpeed * fDelta);
+		float smoothY = Mathf.Lerp(Position.Y, state.TargetHeight, 3.0f * fDelta);
 
 		if (FollowTarget != null && GodotObject.IsInstanceValid(FollowTarget))
 		{
@@ -537,66 +546,63 @@ public partial class CameraControl : Camera3D
 			Position = new Vector3(Position.X, smoothY, Position.Z);
 		}
 
-		if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+		bool isEditor = GameHost.Instance != null && GameHost.Instance.IsMapEditorMode;
+		if (isEditor)
 		{
 			if (Input.IsKeyPressed(Key.Comma))
 			{
-				_targetYaw = (_targetYaw - 90.0f * fDelta + 360.0f) % 360.0f;
+				state.TargetYaw = (state.TargetYaw - 90.0f * fDelta + 360.0f) % 360.0f;
 			}
 			if (Input.IsKeyPressed(Key.Period))
 			{
-				_targetYaw = (_targetYaw + 90.0f * fDelta) % 360.0f;
+				state.TargetYaw = (state.TargetYaw + 90.0f * fDelta) % 360.0f;
 			}
 		}
 
-		bool isEditor = GameHost.Instance != null && GameHost.Instance.IsMapEditorMode;
-		bool isInputBlocked = IsLocked || (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive);
+		bool isInputBlocked = state.IsLocked || (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive);
 
 		if (!isEditor)
 		{
 			if (!isInputBlocked && Input.IsKeyPressed(Key.Insert))
 			{
-				_yawSwing = Mathf.MoveToward(_yawSwing, 90.0f, 45.0f * fDelta);
+				state.YawSwing = Mathf.MoveToward(state.YawSwing, 90.0f, 45.0f * fDelta);
 			}
 			else if (!isInputBlocked && Input.IsKeyPressed(Key.Delete))
 			{
-				_yawSwing = Mathf.MoveToward(_yawSwing, -90.0f, 45.0f * fDelta);
+				state.YawSwing = Mathf.MoveToward(state.YawSwing, -90.0f, 45.0f * fDelta);
 			}
 			else
 			{
-				_yawSwing = Mathf.MoveToward(_yawSwing, 0.0f, 45.0f * fDelta);
+				state.YawSwing = Mathf.MoveToward(state.YawSwing, 0.0f, 45.0f * fDelta);
 			}
 
 			if (!isInputBlocked && Input.IsKeyPressed(Key.Pageup))
 			{
-				_pitchSwing = Mathf.MoveToward(_pitchSwing, 45.0f, 22.5f * fDelta);
+				state.PitchSwing = Mathf.MoveToward(state.PitchSwing, 45.0f, 22.5f * fDelta);
 			}
 			else if (!isInputBlocked && Input.IsKeyPressed(Key.Pagedown))
 			{
-				_pitchSwing = Mathf.MoveToward(_pitchSwing, -45.0f, 22.5f * fDelta);
+				state.PitchSwing = Mathf.MoveToward(state.PitchSwing, -45.0f, 22.5f * fDelta);
 			}
 			else
 			{
-				_pitchSwing = Mathf.MoveToward(_pitchSwing, 0.0f, 22.5f * fDelta);
+				state.PitchSwing = Mathf.MoveToward(state.PitchSwing, 0.0f, 22.5f * fDelta);
 			}
 		}
 		else
 		{
-			_yawSwing = 0.0f;
-			_pitchSwing = 0.0f;
+			state.YawSwing = 0.0f;
+			state.PitchSwing = 0.0f;
 		}
 
-		_currentYaw = Mathf.LerpAngle(Mathf.DegToRad(_currentYaw), Mathf.DegToRad(_targetYaw), 10.0f * fDelta);
-		_currentYaw = Mathf.RadToDeg(_currentYaw);
-		_currentPitch = Mathf.Lerp(_currentPitch, _targetPitch, 10.0f * fDelta);
-		RotationDegrees = new Vector3(_currentPitch + _pitchSwing, _currentYaw + _yawSwing, 0.0f);
+		state.CurrentYaw = Mathf.RadToDeg(Mathf.LerpAngle(Mathf.DegToRad(state.CurrentYaw), Mathf.DegToRad(state.TargetYaw), 10.0f * fDelta));
+		state.CurrentPitch = Mathf.Lerp(state.CurrentPitch, state.TargetPitch, 10.0f * fDelta);
+		RotationDegrees = new Vector3(state.CurrentPitch + state.PitchSwing, state.CurrentYaw + state.YawSwing, 0.0f);
 
-		if (IsLocked || (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive)) return;
-
+		if (state.IsLocked || (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive)) return;
 
 		Vector3 velocity = Vector3.Zero;
-
-		float yawRad = Mathf.DegToRad(_currentYaw);
+		float yawRad = Mathf.DegToRad(state.CurrentYaw);
 		Vector3 arrowForward = new Vector3(-Mathf.Sin(yawRad), 0f, -Mathf.Cos(yawRad));
 		Vector3 arrowRight   = new Vector3( Mathf.Cos(yawRad), 0f, -Mathf.Sin(yawRad));
 
@@ -609,21 +615,21 @@ public partial class CameraControl : Camera3D
 		if (Input.IsKeyPressed(Key.Right))
 			velocity += arrowRight;
 
-		if (EnableEdgePanning && Input.MouseMode == Input.MouseModeEnum.Visible)
+		if (state.EnableEdgePanning && Input.MouseMode == Input.MouseModeEnum.Visible)
 		{
 			Vector2 mousePos = GetViewport().GetMousePosition();
 			Vector2 windowSize = GetViewport().GetVisibleRect().Size;
 
 			if (mousePos.X >= 0 && mousePos.X < windowSize.X && mousePos.Y >= 0 && mousePos.Y < windowSize.Y)
 			{
-				if (mousePos.X < EdgePanMargin)
+				if (mousePos.X < state.EdgePanMargin)
 					velocity -= arrowRight;
-				else if (mousePos.X > windowSize.X - EdgePanMargin)
+				else if (mousePos.X > windowSize.X - state.EdgePanMargin)
 					velocity += arrowRight;
 
-				if (mousePos.Y < EdgePanMargin)
+				if (mousePos.Y < state.EdgePanMargin)
 					velocity += arrowForward;
-				else if (mousePos.Y > windowSize.Y - EdgePanMargin)
+				else if (mousePos.Y > windowSize.Y - state.EdgePanMargin)
 					velocity -= arrowForward;
 			}
 		}
@@ -631,43 +637,54 @@ public partial class CameraControl : Camera3D
 		if (velocity != Vector3.Zero)
 		{
 			FollowTarget = null;
-			velocity = velocity.Normalized() * MoveSpeed * fDelta;
+			velocity = velocity.Normalized() * state.MoveSpeed * fDelta;
 
-			float zoomFactor = _currentHeight / GetMaxZoom();
+			float maxZoom = isEditor ? state.MaxZoom * 5.0f : state.MaxZoom;
+			float zoomFactor = state.CurrentHeight / maxZoom;
 			velocity *= Mathf.Lerp(0.5f, 1.5f, zoomFactor);
 
 			Vector3 newPos = Position + velocity;
-			if (GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode)
+			if (!isEditor)
 			{
-				float minX = LimitLeft ?? -MapLimit;
-				float maxX = LimitRight ?? MapLimit;
-				float minZ = LimitTop ?? -MapLimit;
-				float maxZ = LimitBottom ?? (MapLimit + 30f);
+				float rawMinX = state.LimitLeft ?? -MapLimit;
+				float rawMaxX = state.LimitRight ?? MapLimit;
+				float rawMinZ = state.LimitTop ?? -MapLimit;
+				float rawMaxZ = state.LimitBottom ?? (MapLimit + 30f);
+
+				float minX = Mathf.Min(rawMinX, rawMaxX);
+				float maxX = Mathf.Max(rawMinX, rawMaxX);
+				float minZ = Mathf.Min(rawMinZ, rawMaxZ);
+				float maxZ = Mathf.Max(rawMinZ, rawMaxZ);
+
 				newPos.X = Mathf.Clamp(newPos.X, minX, maxX);
 				newPos.Z = Mathf.Clamp(newPos.Z, minZ, maxZ);
 			}
-			else
+			else if (GameHost.Instance != null)
 			{
 				float leftBound = GameHost.Instance.EditorCameraBoundsLeft;
 				float rightBound = GameHost.Instance.EditorCameraBoundsRight;
 				float topBound = GameHost.Instance.EditorCameraBoundsTop;
 				float bottomBound = GameHost.Instance.EditorCameraBoundsBottom;
 
-				float rangeX = rightBound - leftBound;
-				float rangeZ = bottomBound - topBound;
+				float boundMinX = Mathf.Min(leftBound, rightBound);
+				float boundMaxX = Mathf.Max(leftBound, rightBound);
+				float boundMinZ = Mathf.Min(topBound, bottomBound);
+				float boundMaxZ = Mathf.Max(topBound, bottomBound);
+
+				float rangeX = boundMaxX - boundMinX;
+				float rangeZ = boundMaxZ - boundMinZ;
 
 				float paddingX = rangeX * 0.25f;
 				float paddingZ = rangeZ * 0.25f;
 
-				float minX = leftBound - paddingX;
-				float maxX = rightBound + paddingX;
-				float minZ = topBound - paddingZ;
-				float maxZ = bottomBound + paddingZ;
+				float minX = boundMinX - paddingX;
+				float maxX = boundMaxX + paddingX;
+				float minZ = boundMinZ - paddingZ;
+				float maxZ = boundMaxZ + paddingZ;
 
 				newPos.X = Mathf.Clamp(newPos.X, minX, maxX);
 				newPos.Z = Mathf.Clamp(newPos.Z, minZ, maxZ);
 			}
-
 
 			Position = newPos;
 		}

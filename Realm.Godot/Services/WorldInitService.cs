@@ -31,10 +31,8 @@ public class WorldInitService
 	public Entity SetupWorldEntityComponents(
 		int width,
 		int depth,
-		float spacing,
+		float quadSize,
 		float cellSize,
-		float waterHeight,
-		bool waterEnabled,
 		float[,] heights,
 		int[,] pathingCodes,
 		DtNavMesh navMesh,
@@ -49,13 +47,15 @@ public class WorldInitService
 			worldEntity = EcsWorld.Create();
 		}
 
+		GameHost.Instance?.LoadModelYOffsetsFromMetadataJson();
+
 		AddOrSet(worldEntity, new WorldState(0f, 0, 0f, true));
 		AddOrSet(worldEntity, new ReplayState(0, 500f, 400f, 200f));
 		AddOrSet(worldEntity, new NetworkState(1, 0f, 0, -1, -1, false, 0, 1));
 		AddOrSet(worldEntity, new NetworkMappingState(new(), new(), new()));
 		if (!EcsWorld.Has<EditorState>(worldEntity))
 		{
-			EcsWorld.Add(worldEntity, new EditorState(true, 4.0f, -95.0f, 95.0f, -95.0f, 125.0f, "Assets/skyboxes/jade_shrine.png", false));
+			EcsWorld.Add(worldEntity, new EditorState(true, 3.0f, -95.0f, 95.0f, -95.0f, 125.0f, "Assets/skyboxes/jade_shrine.png", false));
 		}
 		AddOrSet(worldEntity, new InputState(0, null, null, null, false));
 		AddOrSet(worldEntity, new VFXQueue(new System.Collections.Generic.List<VFXRequest>()));
@@ -89,7 +89,7 @@ public class WorldInitService
 		if (EcsWorld.Has<TerrainState>(worldEntity))
 		{
 			ref var existing = ref EcsWorld.Get<TerrainState>(worldEntity);
-			if (heights != null) existing.Heights = heights;
+			if (heights != null) existing.SetHeights(heights);
 			if (pathingCodes != null) existing.PathingCodes = pathingCodes;
 			if (navMesh != null) existing.NavMesh = navMesh;
 			if (navMeshQuery != null) existing.NavMeshQuery = navMeshQuery;
@@ -98,8 +98,8 @@ public class WorldInitService
 		else
 		{
 			EcsWorld.Add(worldEntity, new TerrainState(
-				width, depth, spacing, cellSize, waterHeight, waterEnabled,
-				heights ?? new float[width, depth], pathingCodes ?? new int[width, depth], navMesh, navMeshQuery
+				width, depth, quadSize, cellSize,
+				heights, pathingCodes, navMesh, navMeshQuery
 			));
 		}
 

@@ -378,7 +378,7 @@
         "type": "array",
         "items": {
           "type": "string",
-          "enum": ["shallow_water", "deep_water", "flying", "ground", "unpathable"]
+          "enum": ["shallow_water", "deep_water", "flying", "ground"]
         }
       },
       "StatusEffects": {

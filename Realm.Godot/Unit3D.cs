@@ -164,6 +164,16 @@ public partial class Unit3D : CharacterBody3D
 			{
 				UpdateRallyVisuals();
 			}
+
+			if (!_isSelected)
+			{
+				HidePathVisuals();
+				if (_rallyVisualsContainer != null)
+				{
+					_rallyVisualsContainer.Visible = false;
+				}
+			}
+			SetProcess(_isSelected);
 		}
 	}
 
@@ -208,11 +218,25 @@ public partial class Unit3D : CharacterBody3D
 
 
 		CreateSelectionRing();
+		SetProcess(false);
+	}
+
+	private float _baseModelYOffset = 0f;
+	public float BaseModelYOffset => _baseModelYOffset;
+	public string ModelPath { get; private set; }
+
+	public void UpdateModelYOffset(float yOffset)
+	{
+		if (_modelNode != null)
+		{
+			_modelNode.Position = new Vector3(_modelNode.Position.X, _baseModelYOffset + yOffset, _modelNode.Position.Z);
+		}
 	}
 
 	public void LoadModel(string modelPath)
 	{
 		if (string.IsNullOrEmpty(modelPath)) return;
+		ModelPath = modelPath;
 
 		try
 		{
@@ -254,9 +278,10 @@ public partial class Unit3D : CharacterBody3D
 
 
 				float minY = GetMinY(_modelNode, Transform3D.Identity);
-				
-
-				_modelNode.Position = new Vector3(0f, -minY * _modelNode.Scale.Y, 0f);
+				_baseModelYOffset = -minY * _modelNode.Scale.Y;
+				string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(modelPath) : "";
+				float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
+				_modelNode.Position = new Vector3(0f, _baseModelYOffset + yOffset, 0f);
 
 				if (UnitId == "priest")
 				{

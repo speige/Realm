@@ -7,6 +7,7 @@ using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Resources;
 using Realm.Ecs.Components.Tags;
+using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Services;
 using Realm.Godot.ReplaySystem;
 using Realm.MapAPI;
@@ -22,7 +23,7 @@ public partial class GameHost : Node3D, IGameAPI
 
 	public static GameHost Instance { get; private set; }
 	private readonly NavMeshPathfinder _pathfinder = new();
-	public string ActiveMapName { get; private set; } = "melee";
+	public string ActiveMapName { get; private set; } = "";
 
 	private static readonly JsonSerializerOptions Options = new()
 	{
@@ -230,7 +231,14 @@ public partial class GameHost : Node3D, IGameAPI
 	private EditableTerrain _groundTerrain;
 	public EditableTerrain GroundTerrain
 	{
-		get => _groundTerrain;
+		get
+		{
+			if (_groundTerrain == null && (IsMapEditorMode || IsLoadingMap || (LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted)))
+			{
+				CreateGround();
+			}
+			return _groundTerrain;
+		}
 		private set
 		{
 			_groundTerrain = value;
@@ -253,10 +261,7 @@ public partial class GameHost : Node3D, IGameAPI
 		Lower,
 		Smooth,
 		Plateau,
-		PaintGrass,
-		PaintDirt,
-		PaintRock,
-		PaintSand,
+		PaintTexture,
 		PlaceUnit,
 		PlaceProp,
 		PlaceDecal,
@@ -321,14 +326,40 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 		return _terrainImportService.ImportTerrain(_worldEntity, selectedPath, out smoothedHeights, out splatMap, out treePositions);
 	}
+	public const float MIN_BRUSH_RADIUS = 1.0f;
+	public const float MAX_BRUSH_RADIUS = 20.0f;
+	public const float MIN_BRUSH_STRENGTH = 0.0f;
+	public const float MAX_BRUSH_STRENGTH = 10.0f;
+	public const float MIN_PLACEMENT_SCALE = 0.25f;
+	public const float MAX_PLACEMENT_SCALE = 5.0f;
+	public const float MIN_CLUMP_DENSITY = 1.0f;
+	public const float MAX_CLUMP_DENSITY = 20.0f;
+	public const float MIN_CLUMP_SCALE_VAR = 0.0f;
+	public const float MAX_CLUMP_SCALE_VAR = 1.0f;
+
 	public bool PlaceUnitIsEnemy { get; set; } = false;
-	public float EditorBrushRadius { get; set; } = 6.0f;
-	public float EditorBrushStrength { get; set; } = 3.0f;
+	private float _editorBrushRadius = 2.0f;
+	public float EditorBrushRadius
+	{
+		get => _editorBrushRadius;
+		set => _editorBrushRadius = Mathf.Clamp(value, MIN_BRUSH_RADIUS, MAX_BRUSH_RADIUS);
+	}
+	private float _editorBrushStrength = 3.0f;
+	public float EditorBrushStrength
+	{
+		get => _editorBrushStrength;
+		set => _editorBrushStrength = Mathf.Clamp(value, MIN_BRUSH_STRENGTH, MAX_BRUSH_STRENGTH);
+	}
 	public int EditorPaintTextureIndex { get; set; } = 3;
 	public int EditorCliffPaintTextureIndex { get; set; } = 1;
 	public bool EditorSnapToGrid { get; set; } = false;
 	public float EditorPlacementRotation { get; set; } = 0.0f;
-	public float EditorPlacementScale { get; set; } = 1.0f;
+	private float _editorPlacementScale = 1.0f;
+	public float EditorPlacementScale
+	{
+		get => _editorPlacementScale;
+		set => _editorPlacementScale = Mathf.Clamp(value, MIN_PLACEMENT_SCALE, MAX_PLACEMENT_SCALE);
+	}
 	public enum GridOverlayMode { Off, Mesh }
 	public GridOverlayMode EditorGridMode { get; set; } = GridOverlayMode.Off;
 	public bool EditorGridVisible => EditorGridMode != GridOverlayMode.Off;
@@ -361,9 +392,20 @@ public partial class GameHost : Node3D, IGameAPI
 		get => EcsWorld?.GetFieldOrDefault<EditorState, MirrorMode>(_worldEntity, s => s.MirrorMode, MirrorMode.None) ?? MirrorMode.None;
 		set => EcsWorld?.Mutate<EditorState>(_worldEntity, (ref EditorState s) => s.MirrorMode = value);
 	}
-	public bool EditorBrushIsSquare { get; set; } = false;
-	public float EditorClumpDensity { get; set; } = 5.0f;
-	public float EditorClumpScaleVar { get; set; } = 0.3f;
+	public bool EditorBrushIsSquare { get; set; } = true;
+	private float _editorClumpDensity = 5.0f;
+	public float EditorClumpDensity
+	{
+		get => _editorClumpDensity;
+		set => _editorClumpDensity = Mathf.Clamp(value, MIN_CLUMP_DENSITY, MAX_CLUMP_DENSITY);
+	}
+
+	private float _editorClumpScaleVar = 0.3f;
+	public float EditorClumpScaleVar
+	{
+		get => _editorClumpScaleVar;
+		set => _editorClumpScaleVar = Mathf.Clamp(value, MIN_CLUMP_SCALE_VAR, MAX_CLUMP_SCALE_VAR);
+	}
 	public bool EditorClumpMode { get; set; } = false;
 
 	public bool EditorRandomRotation { get; set; } = false;
@@ -391,6 +433,13 @@ public partial class GameHost : Node3D, IGameAPI
 		get => _editorService.GetBlockLevelHeight(_worldEntity);
 		set => _editorService.SetBlockLevelHeight(_worldEntity, value);
 	}
+
+	public WaterType EditorWaterMode
+	{
+		get => _editorService.GetWaterMode(_worldEntity);
+		set => _editorService.SetWaterMode(_worldEntity, value);
+	}
+
 	private Node? _hoveredEditorObject;
 	private MeshInstance3D? _selectionHighlightMesh;
 	private MeshInstance3D? _coordinatePreviewMesh;
@@ -677,19 +726,17 @@ public partial class GameHost : Node3D, IGameAPI
 
 	private void SetupWorldEntityComponents()
 	{
-		int width = GroundTerrain != null ? GroundTerrain.Width : 126;
-		int depth = GroundTerrain != null ? GroundTerrain.Depth : 126;
-		float spacing = GroundTerrain != null ? GroundTerrain.Spacing : 2.0f;
-		float cellSize = GroundTerrain != null ? GroundTerrain.CellSize : 5.0f / 2.5f / 10.0f;
-		float waterHeight = GroundTerrain != null ? GroundTerrain.WaterHeight : -2.0f;
-		bool waterEnabled = GroundTerrain != null ? GroundTerrain.WaterEnabled : true;
+		int width = GroundTerrain != null ? GroundTerrain.Width : 128;
+		int depth = GroundTerrain != null ? GroundTerrain.Depth : 128;
+		float quadSize = GroundTerrain != null ? GroundTerrain.QuadSize : 2.0f;
+		float cellSize = GroundTerrain != null ? GroundTerrain.CellSize : TerrainState.DefaultCellSize;
 		float[,] heights = GroundTerrain != null ? GroundTerrain.Heights : null;
 		int[,] pathingCodes = GroundTerrain != null ? GroundTerrain.PathingCodes : null;
 		DotRecast.Detour.DtNavMesh navMesh = GroundTerrain != null ? GroundTerrain.NavMesh : null;
 		DotRecast.Detour.DtNavMeshQuery navMeshQuery = GroundTerrain != null ? GroundTerrain.NavMeshQuery : null;
 
 		_worldEntity = _worldInitService.SetupWorldEntityComponents(
-			width, depth, spacing, cellSize, waterHeight, waterEnabled,
+			width, depth, quadSize, cellSize,
 			heights, pathingCodes, navMesh, navMeshQuery
 		);
 	}
@@ -2924,35 +2971,29 @@ public class {mapName} : IMapScript
 		}
 
 
-		string rawMapName = "melee";
-		if (LobbyManager.Instance != null && !string.IsNullOrEmpty(LobbyManager.Instance.ActiveMapName))
-		{
-			rawMapName = LobbyManager.Instance.ActiveMapName;
-		}
-
+		string rawMapName = LobbyManager.Instance?.ActiveMapName ?? "";
 		string mapParamName = rawMapName;
-		if (!rawMapName.StartsWith("user://") && !rawMapName.StartsWith("res://") && !System.IO.Path.IsPathRooted(rawMapName))
+		if (!string.IsNullOrEmpty(rawMapName))
 		{
-			string normalizedMapName = rawMapName.ToLower().Trim();
-			if (!DirAccess.DirExistsAbsolute($"res://Maps/{normalizedMapName}"))
+			if (!rawMapName.StartsWith("user://") && !rawMapName.StartsWith("res://") && !System.IO.Path.IsPathRooted(rawMapName))
 			{
-				if (normalizedMapName.Contains("legion"))
+				string normalizedMapName = rawMapName.ToLower().Trim();
+				if (!DirAccess.DirExistsAbsolute($"res://Maps/{normalizedMapName}"))
 				{
-					normalizedMapName = "legion_td";
+					if (normalizedMapName.Contains("legion"))
+					{
+						normalizedMapName = "legion_td";
+					}
+					else if (normalizedMapName.Contains("defense") || normalizedMapName.Contains("td"))
+					{
+						normalizedMapName = "green_td";
+					}
 				}
-				else if (normalizedMapName.Contains("defense") || normalizedMapName.Contains("td"))
-				{
-					normalizedMapName = "green_td";
-				}
-				else
-				{
-					normalizedMapName = "melee";
-				}
+				mapParamName = normalizedMapName;
 			}
-			mapParamName = normalizedMapName;
-		}
 
-		LoadUnitMetadata(mapParamName);
+			LoadUnitMetadata(mapParamName);
+		}
 
 		bool isGameStarted = LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted;
 		if (isGameStarted || IsMapEditorMode)
@@ -3117,10 +3158,16 @@ public class {mapName} : IMapScript
 			return;
 		}
 
-		string rawMapName = "melee";
-		if (LobbyManager.Instance != null && !string.IsNullOrEmpty(LobbyManager.Instance.ActiveMapName))
+		bool isGameStarted = LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted;
+		if (!isGameStarted)
 		{
-			rawMapName = LobbyManager.Instance.ActiveMapName;
+			return;
+		}
+
+		string rawMapName = LobbyManager.Instance?.ActiveMapName;
+		if (string.IsNullOrEmpty(rawMapName))
+		{
+			return;
 		}
 
 		string terrainPath = "";
@@ -3152,10 +3199,6 @@ public class {mapName} : IMapScript
 				else if (normalizedMapName.Contains("defense") || normalizedMapName.Contains("td"))
 				{
 					normalizedMapName = "green_td";
-				}
-				else
-				{
-					normalizedMapName = "melee";
 				}
 			}
 			terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";

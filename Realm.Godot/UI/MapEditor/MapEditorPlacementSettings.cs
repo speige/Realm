@@ -87,38 +87,75 @@ public class MapEditorPlacementSettings
 
 		if (clumpMode)
 		{
-			if (rotateContainer != null) rotateContainer.Visible = false;
-			if (scaleContainer != null) scaleContainer.Visible = false;
-			_chkRandomRotation.Visible = false;
-			_chkRandomScale.Visible = false;
+			if (rotateContainer != null && rotateContainer.Visible) rotateContainer.Visible = false;
+			if (scaleContainer != null && scaleContainer.Visible) scaleContainer.Visible = false;
+			if (_chkRandomRotation.Visible) _chkRandomRotation.Visible = false;
+			if (_chkRandomScale.Visible) _chkRandomScale.Visible = false;
 		}
 		else
 		{
-			if (rotateContainer != null) rotateContainer.Visible = !randomRotation;
-			if (scaleContainer != null) scaleContainer.Visible = !randomScale;
-			_chkRandomRotation.Visible = true;
-			_chkRandomScale.Visible = true;
+			bool rotVis = !randomRotation;
+			if (rotateContainer != null && rotateContainer.Visible != rotVis) rotateContainer.Visible = rotVis;
+
+			bool scaleVis = !randomScale;
+			if (scaleContainer != null && scaleContainer.Visible != scaleVis) scaleContainer.Visible = scaleVis;
+
+			if (!_chkRandomRotation.Visible) _chkRandomRotation.Visible = true;
+			if (!_chkRandomScale.Visible) _chkRandomScale.Visible = true;
 		}
 	}
 
 	public void Update(MapEditorHUDViewModel viewModel)
 	{
-		_sldPlacementRotate.Value = viewModel.PlacementRotate;
-		_lblPlacementRotateValue.Text = viewModel.PlacementRotate.ToString("F0") + "°";
+		if (viewModel == null) return;
 
-		_sldPlacementScale.Value = viewModel.PlacementScale;
-		_lblPlacementScaleValue.Text = viewModel.PlacementScale.ToString("F1") + "x";
+		if (!Mathf.IsEqualApprox((float)_sldPlacementRotate.Value, viewModel.PlacementRotate))
+		{
+			_sldPlacementRotate.Value = viewModel.PlacementRotate;
+			_lblPlacementRotateValue.Text = viewModel.PlacementRotate.ToString("F0") + "°";
+		}
 
-		_chkRandomRotation.ButtonPressed = viewModel.RandomRotation;
-		_chkRandomScale.ButtonPressed = viewModel.RandomScale;
-		_chkClumpMode.ButtonPressed = viewModel.ClumpMode;
+		if (!Mathf.IsEqualApprox((float)_sldPlacementScale.Value, viewModel.PlacementScale))
+		{
+			_sldPlacementScale.Value = viewModel.PlacementScale;
+			_lblPlacementScaleValue.Text = viewModel.PlacementScale.ToString("F1") + "x";
+		}
 
-		_sldClumpDensity.Value = viewModel.ClumpDensity;
-		_lblClumpDensityValue.Text = viewModel.ClumpDensity.ToString("F0");
+		bool stateChanged = false;
 
-		_sldClumpScaleVar.Value = viewModel.ClumpScaleVar;
-		_lblClumpScaleVarValue.Text = viewModel.ClumpScaleVar.ToString("F2");
+		if (_chkRandomRotation.ButtonPressed != viewModel.RandomRotation)
+		{
+			_chkRandomRotation.ButtonPressed = viewModel.RandomRotation;
+			stateChanged = true;
+		}
 
-		UpdateVisibility();
+		if (_chkRandomScale.ButtonPressed != viewModel.RandomScale)
+		{
+			_chkRandomScale.ButtonPressed = viewModel.RandomScale;
+			stateChanged = true;
+		}
+
+		if (_chkClumpMode.ButtonPressed != viewModel.ClumpMode)
+		{
+			_chkClumpMode.ButtonPressed = viewModel.ClumpMode;
+			stateChanged = true;
+		}
+
+		if (!Mathf.IsEqualApprox((float)_sldClumpDensity.Value, viewModel.ClumpDensity))
+		{
+			_sldClumpDensity.Value = viewModel.ClumpDensity;
+			_lblClumpDensityValue.Text = viewModel.ClumpDensity.ToString("F0");
+		}
+
+		if (!Mathf.IsEqualApprox((float)_sldClumpScaleVar.Value, viewModel.ClumpScaleVar))
+		{
+			_sldClumpScaleVar.Value = viewModel.ClumpScaleVar;
+			_lblClumpScaleVarValue.Text = viewModel.ClumpScaleVar.ToString("F2");
+		}
+
+		if (stateChanged)
+		{
+			UpdateVisibility();
+		}
 	}
 }
