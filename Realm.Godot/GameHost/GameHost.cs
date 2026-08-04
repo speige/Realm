@@ -3461,7 +3461,9 @@ public class {mapName} : IMapScript
 			var spawnOffset = new System.Numerics.Vector3(0f, 0f, 8f);
 			EcsWorld.Add(entity, new BuildingSpawnOffset(spawnOffset));
 
-			float baseRadius = GetOrCalculateObstacleRadius(id, unit3D, isBuilding);
+			float autoDetectedRadius = GetOrCalculateObstacleRadius(id, unit3D, isBuilding);
+			string unitAssetKey = GetModelAssetKey(unit3D);
+			float baseRadius = autoDetectedRadius * GetModelCollisionCircleRatio(unitAssetKey);
 			EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
 		}
 

@@ -134,7 +134,22 @@ public partial class Prop3D : StaticBody3D
 		material.Emission = new Color(1f, 1f, 1f) * 0.3f;
 		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 		_hoverRing.MaterialOverride = material;
+		float ratio = GameHost.Instance != null ? GameHost.Instance.GetModelCollisionCircleRatio(GameHost.Instance.GetModelAssetKey(this)) : 1.0f;
+		_hoverRing.Scale = new Vector3(ratio, 1.0f, ratio);
 		AddChild(_hoverRing);
+	}
+
+	public void UpdateCollisionCircleScale(float ratio)
+	{
+		Vector3 ringScale = new Vector3(ratio, 1.0f, ratio);
+		if (_selectionRing != null)
+		{
+			_selectionRing.Scale = ringScale;
+		}
+		if (_hoverRing != null)
+		{
+			_hoverRing.Scale = ringScale;
+		}
 	}
 
 	public bool IsSelected
@@ -211,6 +226,8 @@ public partial class Prop3D : StaticBody3D
 		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 		
 		_selectionRing.MaterialOverride = material;
+		float ratio = GameHost.Instance != null ? GameHost.Instance.GetModelCollisionCircleRatio(GameHost.Instance.GetModelAssetKey(this)) : 1.0f;
+		_selectionRing.Scale = new Vector3(ratio, 1.0f, ratio);
 		AddChild(_selectionRing);
 	}
 

@@ -380,9 +380,10 @@ internal class MovementAndPathfindingService
 			System.Numerics.Vector3 velocity = steering;
 			System.Numerics.Vector3 nextPos = current + velocity * _fDelta;
 
+			float scale1 = EcsWorld.Has<CollisionScale>(entity) ? EcsWorld.Get<CollisionScale>(entity).Value : 1.0f;
 			float r1 = EcsWorld.Has<CollisionRadius>(entity) 
-				? EcsWorld.Get<CollisionRadius>(entity).Value 
-				: (EcsWorld.Has<CollisionScale>(entity) ? EcsWorld.Get<CollisionScale>(entity).Value : 1.0f) * 1.2f;
+				? EcsWorld.Get<CollisionRadius>(entity).Value * scale1 
+				: scale1 * 1.2f;
 
 			int baseCx = (int)Math.Floor(nextPos.X / _collisionCellSize);
 			int baseCz = (int)Math.Floor(nextPos.Z / _collisionCellSize);
@@ -398,9 +399,10 @@ internal class MovementAndPathfindingService
 						{
 							if (otherEntity == entity) continue;
 
+							float scale2 = EcsWorld.Has<CollisionScale>(otherEntity) ? EcsWorld.Get<CollisionScale>(otherEntity).Value : 1.0f;
 							float r2 = EcsWorld.Has<CollisionRadius>(otherEntity) 
-								? EcsWorld.Get<CollisionRadius>(otherEntity).Value 
-								: (EcsWorld.Has<CollisionScale>(otherEntity) ? EcsWorld.Get<CollisionScale>(otherEntity).Value : 1.0f) * 1.2f;
+								? EcsWorld.Get<CollisionRadius>(otherEntity).Value * scale2 
+								: scale2 * 1.2f;
 
 							float minDist = (r1 + r2) * CollisionSeparationFactor;
 							var otherPos = EcsWorld.Get<Position>(otherEntity).Value;
@@ -437,9 +439,10 @@ internal class MovementAndPathfindingService
 					{
 						foreach (var propEntity in list)
 						{
+							float scaleProp = EcsWorld.Has<CollisionScale>(propEntity) ? EcsWorld.Get<CollisionScale>(propEntity).Value : 1.0f;
 							float r2 = EcsWorld.Has<CollisionRadius>(propEntity) 
-								? EcsWorld.Get<CollisionRadius>(propEntity).Value 
-								: (EcsWorld.Has<CollisionScale>(propEntity) ? EcsWorld.Get<CollisionScale>(propEntity).Value : 1.0f) * 1.5f;
+								? EcsWorld.Get<CollisionRadius>(propEntity).Value * scaleProp 
+								: scaleProp * 1.5f;
 
 							float minDist = (r1 + r2) * CollisionSeparationFactor;
 							var propPos = EcsWorld.Get<Position>(propEntity).Value;

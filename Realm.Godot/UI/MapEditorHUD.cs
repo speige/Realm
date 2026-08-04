@@ -174,6 +174,7 @@ public partial class MapEditorHUD : Control
 	private Control _waterModeBox;
 	private OptionButton _optWaterMode;
 	private HSlider _sldModelYOffset;
+	private HSlider _sldModelGlobalCollisionCircle;
 	private bool _isUpdatingInspectorUI;
 
 	private CheckBox _chkApplyGroundTexture;
@@ -1367,12 +1368,29 @@ public partial class MapEditorHUD : Control
 				_sldModelYOffset.Value = currentOffset;
 				var row = _sldModelYOffset.GetParent() as Control;
 				if (row != null) row.Visible = true;
+
+				if (_sldModelGlobalCollisionCircle != null)
+				{
+					float currentRatio = GameHost.Instance.GetModelCollisionCircleRatio(assetKey);
+					_sldModelGlobalCollisionCircle.Value = currentRatio;
+					var circleRow = _sldModelGlobalCollisionCircle.GetParent() as Control;
+					if (circleRow != null) circleRow.Visible = true;
+				}
+
 				_isUpdatingInspectorUI = false;
 			}
-			else if (_sldModelYOffset != null)
+			else
 			{
-				var row = _sldModelYOffset.GetParent() as Control;
-				if (row != null) row.Visible = false;
+				if (_sldModelYOffset != null)
+				{
+					var row = _sldModelYOffset.GetParent() as Control;
+					if (row != null) row.Visible = false;
+				}
+				if (_sldModelGlobalCollisionCircle != null)
+				{
+					var circleRow = _sldModelGlobalCollisionCircle.GetParent() as Control;
+					if (circleRow != null) circleRow.Visible = false;
+				}
 			}
 		}
 		else
@@ -5147,6 +5165,27 @@ public partial class MapEditorHUD : Control
 			{
 				_isDraggingSlider = false;
 				GameHost.Instance?.FlushModelYOffsetSave();
+				string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+			};
+
+			_sldModelGlobalCollisionCircle = CreateSliderRow(vbox, TranslationServer.Translate("Global Collision Circle"), 0.1f, 5.0f, 0.05f, 1.0f, (val) =>
+			{
+				if (_isUpdatingInspectorUI) return;
+				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
+				{
+					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					if (!string.IsNullOrEmpty(assetKey))
+					{
+						GameHost.Instance.SetModelCollisionCircleRatio(assetKey, val);
+					}
+				}
+			});
+			_sldModelGlobalCollisionCircle.DragStarted += () => _isDraggingSlider = true;
+			_sldModelGlobalCollisionCircle.DragEnded += (valueChanged) =>
+			{
+				_isDraggingSlider = false;
+				GameHost.Instance?.FlushModelCollisionCircleSave();
 				string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 			};

@@ -13,7 +13,9 @@ using System.Linq;
 public partial class GameHost
 {
 	public readonly Dictionary<string, float> ModelYOffsets = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, float> ModelCollisionCircleRatios = new(StringComparer.OrdinalIgnoreCase);
 	private bool _modelYOffsetSavePending = false;
+	private bool _modelCollisionCircleSavePending = false;
 
 	public string NormalizeModelAssetKey(string pathOrId)
 	{
@@ -99,10 +101,97 @@ public partial class GameHost
 
 	public void FlushModelYOffsetSave()
 	{
-		if (_modelYOffsetSavePending)
+		if (_modelYOffsetSavePending || _modelCollisionCircleSavePending)
 		{
 			_modelYOffsetSavePending = false;
+			_modelCollisionCircleSavePending = false;
 			SaveModelYOffsetsToMetadataJson();
+		}
+	}
+
+	public float GetModelCollisionCircleRatio(string assetKey)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(norm) && ModelCollisionCircleRatios.TryGetValue(norm, out float val))
+		{
+			return val;
+		}
+		return 1.0f;
+	}
+
+	public void SetModelCollisionCircleRatio(string assetKey, float ratio)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (string.IsNullOrEmpty(norm)) return;
+
+		ModelCollisionCircleRatios[norm] = ratio;
+		UpdateCollisionRadiiForAsset(norm);
+
+		_modelCollisionCircleSavePending = true;
+		EditorHasUnsavedChanges = true;
+	}
+
+	public void FlushModelCollisionCircleSave()
+	{
+		FlushModelYOffsetSave();
+	}
+
+	public void UpdateCollisionRadiiForAsset(string normAssetKey)
+	{
+		float ratio = GetModelCollisionCircleRatio(normAssetKey);
+
+		foreach (var prop in AllProps)
+		{
+			if (GodotObject.IsInstanceValid(prop) && GetModelAssetKey(prop) == normAssetKey)
+			{
+				prop.UpdateCollisionCircleScale(ratio);
+				if (prop.Entity != default && EcsWorld.IsAlive(prop.Entity))
+				{
+					float autoDetected = GetOrCalculateObstacleRadius(prop.PropId, prop);
+					float baseRadius = autoDetected * ratio;
+					if (EcsWorld.Has<Realm.Ecs.Components.Core.CollisionRadius>(prop.Entity))
+					{
+						EcsWorld.Set(prop.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+					}
+					else
+					{
+						EcsWorld.Add(prop.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+					}
+				}
+			}
+		}
+
+		foreach (var unit in AllUnits)
+		{
+			if (GodotObject.IsInstanceValid(unit) && GetModelAssetKey(unit) == normAssetKey)
+			{
+				unit.UpdateCollisionCircleScale(ratio);
+				if (unit.Entity != default && EcsWorld.IsAlive(unit.Entity))
+				{
+					float autoDetected = GetOrCalculateObstacleRadius(unit.UnitId, unit);
+					float baseRadius = autoDetected * ratio;
+					if (EcsWorld.Has<Realm.Ecs.Components.Core.CollisionRadius>(unit.Entity))
+					{
+						EcsWorld.Set(unit.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+					}
+					else
+					{
+						EcsWorld.Add(unit.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+					}
+				}
+			}
+		}
+
+		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode))
+		{
+			if (_editorPreviewNode is Prop3D previewProp && GetModelAssetKey(previewProp) == normAssetKey)
+			{
+				previewProp.UpdateCollisionCircleScale(ratio);
+			}
+			else if (_editorPreviewNode is Unit3D previewUnit && GetModelAssetKey(previewUnit) == normAssetKey)
+			{
+				previewUnit.UpdateCollisionCircleScale(ratio);
+			}
 		}
 	}
 
@@ -125,6 +214,7 @@ public partial class GameHost
 			if (root == null) return;
 
 			ModelYOffsets.Clear();
+			ModelCollisionCircleRatios.Clear();
 
 			if (root.ContainsKey("ModelOffsets") && root["ModelOffsets"] is System.Text.Json.Nodes.JsonObject offsetsObj)
 			{
@@ -137,6 +227,17 @@ public partial class GameHost
 				}
 			}
 
+			if (root.ContainsKey("ModelCollisionCircleRatios") && root["ModelCollisionCircleRatios"] is System.Text.Json.Nodes.JsonObject circlesObj)
+			{
+				foreach (var kvp in circlesObj)
+				{
+					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), out float val))
+					{
+						ModelCollisionCircleRatios[NormalizeModelAssetKey(kvp.Key)] = val;
+					}
+				}
+			}
+
 			if (root.ContainsKey("Assets") && root["Assets"] is System.Text.Json.Nodes.JsonObject assetsObj && assetsObj.ContainsKey("glb") && assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
 			{
 				foreach (var catKvp in glbObj)
@@ -145,9 +246,16 @@ public partial class GameHost
 					{
 						foreach (var itemKvp in catDict)
 						{
-							if (itemKvp.Value is System.Text.Json.Nodes.JsonObject itemObj && itemObj.ContainsKey("y_offset") && float.TryParse(itemObj["y_offset"]?.ToString(), out float yVal))
+							if (itemKvp.Value is System.Text.Json.Nodes.JsonObject itemObj)
 							{
-								ModelYOffsets[NormalizeModelAssetKey(itemKvp.Key)] = yVal;
+								if (itemObj.ContainsKey("y_offset") && float.TryParse(itemObj["y_offset"]?.ToString(), out float yVal))
+								{
+									ModelYOffsets[NormalizeModelAssetKey(itemKvp.Key)] = yVal;
+								}
+								if (itemObj.ContainsKey("collision_circle_ratio") && float.TryParse(itemObj["collision_circle_ratio"]?.ToString(), out float rVal))
+								{
+									ModelCollisionCircleRatios[NormalizeModelAssetKey(itemKvp.Key)] = rVal;
+								}
 							}
 						}
 					}
@@ -188,6 +296,13 @@ public partial class GameHost
 			}
 			root["ModelOffsets"] = offsetsObj;
 
+			System.Text.Json.Nodes.JsonObject circlesObj = new System.Text.Json.Nodes.JsonObject();
+			foreach (var kvp in ModelCollisionCircleRatios)
+			{
+				circlesObj[kvp.Key] = kvp.Value;
+			}
+			root["ModelCollisionCircleRatios"] = circlesObj;
+
 			if (root.ContainsKey("Assets") && root["Assets"] is System.Text.Json.Nodes.JsonObject assetsObj && assetsObj.ContainsKey("glb") && assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
 			{
 				foreach (var catKvp in glbObj)
@@ -197,21 +312,26 @@ public partial class GameHost
 						foreach (var key in catDict.Select(kvp => kvp.Key).ToList())
 						{
 							string normKey = NormalizeModelAssetKey(key);
-							if (ModelYOffsets.TryGetValue(normKey, out float yVal))
+							bool hasY = ModelYOffsets.TryGetValue(normKey, out float yVal);
+							bool hasRatio = ModelCollisionCircleRatios.TryGetValue(normKey, out float rVal);
+							if (hasY || hasRatio)
 							{
 								var nodeVal = catDict[key];
 								if (nodeVal is System.Text.Json.Nodes.JsonObject itemObj)
 								{
-									itemObj["y_offset"] = yVal;
+									if (hasY) itemObj["y_offset"] = yVal;
+									if (hasRatio) itemObj["collision_circle_ratio"] = rVal;
 								}
 								else if (nodeVal != null)
 								{
 									string hashStr = nodeVal.ToString();
-									catDict[key] = new System.Text.Json.Nodes.JsonObject
+									var newItemObj = new System.Text.Json.Nodes.JsonObject
 									{
-										["hash"] = hashStr,
-										["y_offset"] = yVal
+										["hash"] = hashStr
 									};
+									if (hasY) newItemObj["y_offset"] = yVal;
+									if (hasRatio) newItemObj["collision_circle_ratio"] = rVal;
+									catDict[key] = newItemObj;
 								}
 							}
 						}
@@ -452,7 +572,9 @@ public partial class GameHost
 		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(position.X, position.Y, position.Z)));
 		EcsWorld.Add(entity, new CollisionScale(actualScale));
 
-		float baseRadius = GetOrCalculateObstacleRadius(propId, prop);
+		float autoDetectedRadius = GetOrCalculateObstacleRadius(propId, prop);
+		string propAssetKey = GetModelAssetKey(prop);
+		float baseRadius = autoDetectedRadius * GetModelCollisionCircleRatio(propAssetKey);
 		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
 
 		return prop;
