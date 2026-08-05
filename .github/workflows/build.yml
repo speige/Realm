@@ -44,17 +44,27 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
         run: New-Item -ItemType Directory -Force -Path publish
 
+      - name: Import Godot Assets
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: |
+          $consoleExe = (Get-ChildItem -Path "C:\Users\runneradmin\godot" -Filter "*console.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
+          if (-not $consoleExe) { $consoleExe = "godot" }
+          & $consoleExe --headless --path Realm.Godot --editor --quit
+
       - name: Export Godot Release
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
-        run: godot --headless --path Realm.Godot --export-release "Windows Desktop" "../publish/Realm.Godot.exe"
+        run: |
+          $consoleExe = (Get-ChildItem -Path "C:\Users\runneradmin\godot" -Filter "*console.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
+          if (-not $consoleExe) { $consoleExe = "godot" }
+          & $consoleExe --headless --path Realm.Godot --export-release "Windows Desktop" "$PWD\publish\Realm.Godot.exe"
 
       - name: Create 7z Ultra Archive
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
-        run: 7z a -t7z -m0=lzma2 -mx=9 publish.7z ./publish/*
+        run: 7z a -t7z -m0=lzma2 -mx=9 publish.7z .\publish\*
 
       - name: Upload Published Artifact
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: Realm-Godot-Windows-x64
           path: publish.7z
