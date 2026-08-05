@@ -1652,7 +1652,7 @@ void fragment() {
 		_material.SetShaderParameter("pathing_texture", tex);
 	}
 
-	public void UpdateMeshAndPhysics(bool rebuildPhysics = true, bool rebuildNavMesh = true, Rect2I? affectedRegion = null)
+	public void UpdateMeshAndPhysics(bool rebuildPhysics = true, bool rebuildNavMesh = true, Rect2I? affectedRegion = null, bool rebuildWater = true)
 	{
 		int w = Width;
 		int d = Depth;
@@ -1682,10 +1682,23 @@ void fragment() {
 
 		foreach (var chunk in _chunks)
 		{
+			if (affectedRegion.HasValue)
+			{
+				var region = affectedRegion.Value;
+				if (chunk.EndX < region.Position.X || chunk.StartX > region.Position.X + region.Size.X ||
+					chunk.EndZ < region.Position.Y || chunk.StartZ > region.Position.Y + region.Size.Y)
+				{
+					continue;
+				}
+			}
+
 			UpdateChunkMesh(chunk, rebuildPhysics);
 		}
 
-		RegenerateWaterMesh();
+		if (rebuildWater)
+		{
+			RegenerateWaterMesh();
+		}
 	}
 
 	public void SanitizeCornerHeights()
