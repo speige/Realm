@@ -34,6 +34,7 @@
     <None Remove="MapTemplate\**\*.cs" />
     <None Remove=".godot\**" />
     <None Include="install_vscode.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="vscode_extensions_dist\**\*.*" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\MapTemplate\**\*.*" Exclude="..\MapTemplate\bin\**;..\MapTemplate\obj\**">
       <Link>MapTemplate\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

@@ -4,4 +4,5 @@ bin/
 *.user
 node_modules/
 vscode_embedded/
-GeneratedFiles/
+vscode_extensions_dist
+GeneratedFiles/

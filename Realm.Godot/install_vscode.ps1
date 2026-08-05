@@ -67,33 +67,11 @@ foreach ($pj in $productJsonFiles) {
 Write-Host "Registering editor path with VS Code CLI..."
 & $cliPath version use stable --install-dir $editorDir
 
-$parentDir = (Get-Item $PSScriptRoot).Parent.FullName
-$extSrcDir = Join-Path $parentDir "Realm.MapEditorExtension"
-if (-not (Test-Path $extSrcDir)) {
-    $extSrcDir = Join-Path $PSScriptRoot "Realm.MapEditorExtension"
-}
-if (Test-Path $extSrcDir) {
-    Push-Location $extSrcDir
-    try {
-        if (Get-Command npm -ErrorAction SilentlyContinue) {
-            Write-Host "Running npm install..."
-            cmd.exe /c "npm install"
-            Write-Host "Running npm run compile..."
-            cmd.exe /c "npm run compile"
-        } else {
-            Write-Host "npm not found. Skipping build step and using pre-compiled extension files."
-        }
-    } catch {
-        Write-Warning "Failed to build extension: $_. Using pre-compiled extension files instead."
-    } finally {
-        Pop-Location
-    }
+$extSrc = Join-Path $PSScriptRoot "vscode_extensions_dist\speige.realm-map-editor"
 
-    Write-Host "Copying extension files..."
-    if (Test-Path (Join-Path $extSrcDir "package.json")) { Copy-Item -Path (Join-Path $extSrcDir "package.json") -Destination $extDest -Force }
-    if (Test-Path (Join-Path $extSrcDir "map_schema.json")) { Copy-Item -Path (Join-Path $extSrcDir "map_schema.json") -Destination $extDest -Force }
-    if (Test-Path (Join-Path $extSrcDir "dist")) { Copy-Item -Path (Join-Path $extSrcDir "dist") -Destination $extDest -Recurse -Force }
-    if (Test-Path (Join-Path $extSrcDir "media")) { Copy-Item -Path (Join-Path $extSrcDir "media") -Destination $extDest -Recurse -Force }
+if ($extSrc -and (Test-Path $extSrc)) {
+    Write-Host "Copying pre-compiled extension files..."
+    Copy-Item -Path (Join-Path $extSrc "*") -Destination $extDest -Recurse -Force
 }
 
 $requiredExtensions = @(
