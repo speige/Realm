@@ -56,12 +56,12 @@ public class VSCodeManager
 
 	public bool IsInstalled()
 	{
-		string projectRoot = ProjectSettings.GlobalizePath("res://");
-		string embedDir = Path.Combine(projectRoot, "vscode_embedded");
+		string embedDir = PathUtils.FindPath("vscode_embedded");
 		string binPath = Path.Combine(embedDir, "bin");
 		string exePath = Path.Combine(binPath, "code.exe");
-		string markerPath = Path.Combine(embedDir, "bypass_completed.marker");
-		return File.Exists(exePath) && File.Exists(markerPath);
+		string completedMarkerPath = Path.Combine(embedDir, "install_completed.marker");
+		string bypassMarkerPath = Path.Combine(embedDir, "bypass_completed.marker");
+		return File.Exists(exePath) && (File.Exists(completedMarkerPath) || File.Exists(bypassMarkerPath));
 	}
 
 	public void StartInstallIfNeeded()
@@ -73,13 +73,12 @@ public class VSCodeManager
 				return;
 			}
 
-			string projectRoot = ProjectSettings.GlobalizePath("res://");
-			string embedDir = Path.Combine(projectRoot, "vscode_embedded");
+			string projectRoot = PathUtils.GetProjectRoot();
+			string embedDir = PathUtils.FindPath("vscode_embedded");
 			string binPath = Path.Combine(embedDir, "bin");
 			string exePath = Path.Combine(binPath, "code.exe");
-			string markerPath = Path.Combine(embedDir, "bypass_completed.marker");
 
-			if (File.Exists(exePath) && File.Exists(markerPath))
+			if (IsInstalled())
 			{
 				_installCompleted = true;
 				System.Threading.Tasks.Task.Run(() => InstallMissingExtensions(exePath, embedDir));
@@ -91,26 +90,48 @@ public class VSCodeManager
 			{
 				try
 				{
-					if (!File.Exists(exePath))
+					string scriptPath = PathUtils.FindPath("install_vscode.ps1");
+					if (File.Exists(scriptPath))
 					{
-						string scriptPath = Path.GetFullPath(Path.Combine(projectRoot, "..", "install_vscode.ps1"));
-						if (File.Exists(scriptPath))
+						GD.Print("Starting VS Code self-repairing installation script: " + scriptPath);
+						using (var installProcess = new Process())
 						{
-							using (var installProcess = new Process())
+							installProcess.StartInfo.FileName = "powershell.exe";
+							installProcess.StartInfo.Arguments = $"-ExecutionPolicy Bypass -File \"{scriptPath}\"";
+							installProcess.StartInfo.CreateNoWindow = true;
+							installProcess.StartInfo.UseShellExecute = false;
+							installProcess.StartInfo.RedirectStandardOutput = true;
+							installProcess.StartInfo.RedirectStandardError = true;
+
+							installProcess.OutputDataReceived += (sender, e) =>
 							{
-								installProcess.StartInfo.FileName = "powershell.exe";
-								installProcess.StartInfo.Arguments = $"-ExecutionPolicy Bypass -File \"{scriptPath}\"";
-								installProcess.StartInfo.CreateNoWindow = true;
-								installProcess.StartInfo.UseShellExecute = false;
-								installProcess.Start();
-								installProcess.WaitForExit();
-							}
-						}
-						else
-						{
-							GD.PrintErr("VS Code installer script not found at: " + scriptPath);
+								if (!string.IsNullOrEmpty(e.Data))
+								{
+									GD.Print("[installer] " + e.Data);
+								}
+							};
+							installProcess.ErrorDataReceived += (sender, e) =>
+							{
+								if (!string.IsNullOrEmpty(e.Data))
+								{
+									GD.PrintErr("[installer error] " + e.Data);
+								}
+							};
+
+							installProcess.Start();
+							installProcess.BeginOutputReadLine();
+							installProcess.BeginErrorReadLine();
+							installProcess.WaitForExit();
 						}
 					}
+					else
+					{
+						GD.PrintErr("VS Code installer script not found at: " + scriptPath);
+					}
+
+					embedDir = PathUtils.FindPath("vscode_embedded");
+					binPath = Path.Combine(embedDir, "bin");
+					exePath = Path.Combine(binPath, "code.exe");
 
 					if (File.Exists(exePath))
 					{
@@ -371,8 +392,8 @@ public class VSCodeManager
 	{
 		try
 		{
-			string projectRoot = ProjectSettings.GlobalizePath("res://");
-			string embedDir = Path.Combine(projectRoot, "vscode_embedded");
+			string projectRoot = PathUtils.GetProjectRoot();
+			string embedDir = PathUtils.FindPath("vscode_embedded");
 			string binPath = Path.Combine(embedDir, "bin");
 			string exePath = Path.Combine(binPath, "code.exe");
 
@@ -747,8 +768,8 @@ public class VSCodeManager
 	{
 		try
 		{
-			string projectRoot = ProjectSettings.GlobalizePath("res://");
-			string embedDir = Path.Combine(projectRoot, "vscode_embedded");
+			string projectRoot = PathUtils.GetProjectRoot();
+			string embedDir = PathUtils.FindPath("vscode_embedded");
 			string serverDataDir = Path.Combine(embedDir, "user-data-dir");
 			string cachePath = Path.Combine(serverDataDir, "webview-cache");
 
@@ -933,7 +954,7 @@ public class VSCodeManager
 					return;
 				}
 
-				string projectRoot = ProjectSettings.GlobalizePath("res://");
+				string projectRoot = PathUtils.GetProjectRoot();
 				string mapFolderRaw = GetMapFolderToOpen(projectRoot);
 				string mapFolder = FormatWinPathForUrl(mapFolderRaw);
 				string targetUrl = $"http://127.0.0.1:{_vscodePort}/?folder={Uri.EscapeDataString(mapFolder)}";
@@ -965,7 +986,7 @@ public class VSCodeManager
 
 	public void OpenFile(string relativePath)
 	{
-		string projectRoot = ProjectSettings.GlobalizePath("res://");
+		string projectRoot = PathUtils.GetProjectRoot();
 		string mapFolderRaw = GetMapFolderToOpen(projectRoot);
 		string fullPathRaw = Path.Combine(mapFolderRaw, relativePath);
 
@@ -1399,10 +1420,11 @@ public class VSCodeManager
 			}
 
 			string realmMapEditorId = "speige.realm-map-editor";
-			string srcPath = Path.GetFullPath(Path.Combine(
-				ProjectSettings.GlobalizePath("res://"),
-				"..", "Realm.MapEditorExtension"
-			));
+			string srcPath = PathUtils.FindPath("Realm.MapEditorExtension");
+			if (!Directory.Exists(srcPath))
+			{
+				srcPath = Path.GetFullPath(Path.Combine(PathUtils.GetProjectRoot(), "..", "Realm.MapEditorExtension"));
+			}
 			string dstPath = Path.Combine(extensionsDir, $"{realmMapEditorId}-1.0.0");
 
 			// Always sync compiled extension files on launch so updates take effect without deleting vscode_embedded

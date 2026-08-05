@@ -1055,11 +1055,11 @@ public partial class GameHost : Node3D, IGameAPI
 		string mapDir = System.IO.Path.Combine(globalParentDir, mapName);
 		System.IO.Directory.CreateDirectory(mapDir);
 
-		string projectRoot = ProjectSettings.GlobalizePath("res://");
-		string templateDir = System.IO.Path.Combine(projectRoot, "..", "MapTemplate");
+		string projectRoot = PathUtils.GetProjectRoot();
+		string templateDir = PathUtils.FindPath("MapTemplate");
 		if (!System.IO.Directory.Exists(templateDir))
 		{
-			templateDir = System.IO.Path.Combine(projectRoot, "MapTemplate");
+			templateDir = System.IO.Path.Combine(projectRoot, "..", "MapTemplate");
 		}
 		string templateScriptPath = System.IO.Path.Combine(templateDir, "MapScript.cs");
 
@@ -1139,11 +1139,11 @@ public class {mapName} : IMapScript
 		System.IO.Directory.CreateDirectory(vscodeDir);
 		string vscodeSettingsPath = System.IO.Path.Combine(vscodeDir, "settings.json");
 
-		string projectRoot = ProjectSettings.GlobalizePath("res://");
-		string templateDir = System.IO.Path.Combine(projectRoot, "..", "MapTemplate");
+		string projectRoot = PathUtils.GetProjectRoot();
+		string templateDir = PathUtils.FindPath("MapTemplate");
 		if (!System.IO.Directory.Exists(templateDir))
 		{
-			templateDir = System.IO.Path.Combine(projectRoot, "MapTemplate");
+			templateDir = System.IO.Path.Combine(projectRoot, "..", "MapTemplate");
 		}
 		string templateCsprojPath = System.IO.Path.Combine(templateDir, "MapScript.csproj");
 		string templateTargetsPath = System.IO.Path.Combine(templateDir, "Directory.Build.targets");

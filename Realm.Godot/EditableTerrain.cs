@@ -142,7 +142,11 @@ public partial class EditableTerrain : StaticBody3D
 			System.IO.Directory.CreateDirectory(dir);
 		}
 		
-		string ktxCmd = System.IO.Path.GetFullPath(System.IO.Path.Combine(Godot.ProjectSettings.GlobalizePath("res://"), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
+		string ktxCmd = PathUtils.FindPath("ktx_tools/v5.0.0-rc1/bin/ktx.exe");
+		if (!System.IO.File.Exists(ktxCmd))
+		{
+			ktxCmd = System.IO.Path.GetFullPath(System.IO.Path.Combine(PathUtils.GetProjectRoot(), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
+		}
 		
 		try
 		{
@@ -1214,7 +1218,9 @@ void fragment() {
 
 	private string GetKtxCmdPath()
 	{
-		return System.IO.Path.GetFullPath(System.IO.Path.Combine(Godot.ProjectSettings.GlobalizePath("res://"), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
+		string found = PathUtils.FindPath("ktx_tools/v5.0.0-rc1/bin/ktx.exe");
+		if (System.IO.File.Exists(found)) return found;
+		return System.IO.Path.GetFullPath(System.IO.Path.Combine(PathUtils.GetProjectRoot(), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
 	}
 
 	private (Image AlbedoHeight, Image NormalRoughness) LoadKtx2LayersDynamic(string ktx2Path)
@@ -1434,8 +1440,6 @@ void fragment() {
 
 		var albedoHeightImages = new Godot.Collections.Array<Image>();
 		var normalRoughnessImages = new Godot.Collections.Array<Image>();
-		int texWidth = 0;
-		int texHeight = 0;
 		foreach (var name in textureList)
 		{
 			string ktx2Path = System.IO.Path.Combine(mapDir, "Assets", "textures", name + ".ktx2");

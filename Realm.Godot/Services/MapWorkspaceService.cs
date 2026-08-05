@@ -12,7 +12,7 @@ public static class MapWorkspaceService
 	{
 		if (_repoRootResolved) return _cachedRepoRoot;
 		_repoRootResolved = true;
-		string baseDir = ProjectSettings.GlobalizePath("res://");
+		string baseDir = PathUtils.GetProjectRoot();
 		var current = new DirectoryInfo(baseDir);
 		while (current != null)
 		{
@@ -29,6 +29,12 @@ public static class MapWorkspaceService
 
 	private static string FindRootFile(string relativePath)
 	{
+		string found = PathUtils.FindPath(relativePath);
+		if (File.Exists(found) || Directory.Exists(found))
+		{
+			return found;
+		}
+
 		string repoRoot = GetRepoRoot();
 		if (repoRoot == null) return null;
 		return Path.Combine(repoRoot, relativePath).Replace("\\", "/");

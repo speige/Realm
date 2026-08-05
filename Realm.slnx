@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="Realm.Lobby/Realm.Lobby.csproj" />
+  <Project Path="Realm.Godot/Realm.Godot.csproj" />
+  <Project Path="Realm.Ecs/Realm.Ecs.csproj" />
+  <Project Path="Realm.MapAPI/Realm.MapAPI.csproj" />
+  <Project Path="Realm.MapEditorExtension/Realm.MapEditorExtension.csproj" />
+  <Project Path="Realm.Ecs.Tests/Realm.Ecs.Tests.csproj" />
+  <Project Path="Realm.WasmBindgen/Realm.WasmBindgen.csproj" />
+</Solution>

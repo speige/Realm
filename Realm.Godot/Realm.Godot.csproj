@@ -33,6 +33,23 @@
     <None Remove="Maps\blank_map\**\*.cs" />
     <None Remove="MapTemplate\**\*.cs" />
     <None Remove=".godot\**" />
+    <None Include="install_vscode.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\MapTemplate\**\*.*" Exclude="..\MapTemplate\bin\**;..\MapTemplate\obj\**">
+      <Link>MapTemplate\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\ktx_tools\**\*.*">
+      <Link>ktx_tools\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\Realm.MapEditorExtension\map_schema.json">
+      <Link>Realm.MapEditorExtension\map_schema.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\Realm.MapAPI\wit\game.g.wit">
+      <Link>Realm.MapAPI\wit\game.g.wit</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Blake3" Version="2.2.1" />

@@ -1245,8 +1245,8 @@ public partial class LobbyManager : Node
             {
                 try
                 {
-                    string globalized = ProjectSettings.GlobalizePath("res://Assets/MLModels/toxic-xlm-roberta/model_quantized.onnx");
-                    string globalizedVocab = ProjectSettings.GlobalizePath("res://Assets/MLModels/toxic-xlm-roberta/vocab.bin");
+                    string globalized = PathUtils.GlobalizePath("res://Assets/MLModels/toxic-xlm-roberta/model_quantized.onnx");
+                    string globalizedVocab = PathUtils.GlobalizePath("res://Assets/MLModels/toxic-xlm-roberta/vocab.bin");
                     if (!string.IsNullOrEmpty(globalized) && System.IO.File.Exists(globalized))
                     {
                         modelPath = globalized;

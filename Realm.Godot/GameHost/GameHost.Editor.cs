@@ -1734,6 +1734,13 @@ public partial class GameHost
 		ActiveEditorTool = EditorTool.None;
 		EditorHistoryManager.Clear();
 		
+		if (!MapEditorHUD.ReturningFromTest)
+		{
+			string wsPath = Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+			System.IO.Directory.CreateDirectory(wsPath);
+			MapWorkspaceService.SetupWorkspace(wsPath, "CustomMap");
+		}
+
 		if (MapEditorHUD.ReturningFromTest)
 		{
 			LoadMapFromFile(MapEditorHUD.TempWorkspaceGodotPath + "/terrain.json");

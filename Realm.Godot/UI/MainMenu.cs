@@ -114,6 +114,17 @@ public partial class MainMenu : Control
 		PopulateRunicPillar(GetNode<VBoxContainer>("RightPillar/RuneContainer"));
 
 		CreateVersionSelector();
+
+		if (!PathUtils.IsDevelopmentBuild)
+		{
+			_playButton.Visible = false;
+			_singlePlayerButton.Visible = false;
+			_mapDiscoveryButton.Visible = false;
+			_creatorDiscoveryButton.Visible = false;
+			_replaysButton.Visible = false;
+			_profileButton.Visible = false;
+			_seedNodeButton.Visible = false;
+		}
 	}
 
 	private void CreateVersionSelector()

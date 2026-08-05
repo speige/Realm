@@ -1,0 +1,60 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish Godot build & artifact'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Realm.slnx
+
+      - name: Build
+        run: dotnet build Realm.slnx --configuration Release --no-restore
+
+      - name: Setup Godot
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.7.0
+          use-dotnet: true
+          include-templates: true
+
+      - name: Create Publish Directory
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: New-Item -ItemType Directory -Force -Path publish
+
+      - name: Export Godot Release
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: godot --headless --path Realm.Godot --export-release "Windows Desktop" "../publish/Realm.Godot.exe"
+
+      - name: Create 7z Ultra Archive
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: 7z a -t7z -m0=lzma2 -mx=9 publish.7z ./publish/*
+
+      - name: Upload Published Artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Realm-Godot-Windows-x64
+          path: publish.7z
