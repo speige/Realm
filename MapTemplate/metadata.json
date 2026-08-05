@@ -2,14 +2,54 @@
   "MapProperties": {},
   "Assets": {
     "textures": {
-      "ancient_ruin.ktx2": "376787275c145e4a930da203c934856134c5fb3469ce868117ebdd53fa7b7d6e",
-      "deep_moss.ktx2": "16293262dc02e7d078ffcdfaa70edd963160f8c0d78d51b757e1c5c0d8257128",
-      "grey_slate.ktx2": "2dd4df9fb30a28db31854797ff40e636ba9a6dfb1d40d6559b7783305102eb17",
-      "lava_vein.ktx2": "d0153bad3dac55c7aced8c1a9a5a34894fdde97da98de7eb8cc2d3ae2dd108ac",
-      "mossy_stone.ktx2": "925ccf48d8fb100289da73b728f3d4a44d04aa756e8aaeec66c65bdc90fd6e68",
-      "river_silt.ktx2": "6cd80e922c75307481ba9bf0ee7a72c4f7742db234d8983fb712b42ec4cedc7c",
-      "royal_marble.ktx2": "094ba2d7e3d8fa74488cbaf491894e57bbfc0c9af97b69342d4f2ddc7b993aea",
-      "mist_grove.ktx2": "108a0eea0d6880302184a3ad9fb4a20a2baeb1ce1764fff6c9395c0a20c40fe6"
+      "dead_grass.ktx2": "3ca7998ba2426fee350ef5e52ca9e541dfbe9939cc2bfe86e2e6c3879f8a02d3",
+      "hard_granite.ktx2": {
+        "Stochastic_Tile_Size": 3,
+        "Tile_Mode": "Grid",
+        "UV_Scale": 0.6,
+        "hash": "aed15ffe3315649d09b9671a015a1ed2a1eb9363d1511f10e8315824e4038871",
+        "stochastic_tile_size": 3,
+        "tile_mode": "Grid",
+        "uv_scale": 0.6
+      },
+      "holy_stone.ktx2": {
+        "Stochastic_Tile_Size": 0.5,
+        "Tile_Mode": "Grid",
+        "UV_Scale": 0.65,
+        "hash": "4b3761259a544cbf8b0a298fa6622e77c6142148284bd552a589da243339d96b",
+        "stochastic_tile_size": 0.5,
+        "tile_mode": "Grid",
+        "uv_scale": 0.65
+      },
+      "rocky_cliff.ktx2": {
+        "Stochastic_Tile_Size": 0.5,
+        "Tile_Mode": "Stochastic",
+        "UV_Scale": 1.3,
+        "hash": "a2a9aa83fe022c3a56e2ecb558dff3ab5725a7edc05f8b13434fe865755c50b0",
+        "stochastic_tile_size": 0.5,
+        "tile_mode": "Stochastic",
+        "uv_scale": 1.3
+      },
+      "stone_path.ktx2": {
+        "Stochastic_Tile_Size": 0.95,
+        "Tile_Mode": "Stochastic",
+        "UV_Scale": 0.75,
+        "hash": "9e23595e473b17d2f4163191d70d1aeb506490c09479151da187fcbe3609ae3b",
+        "stochastic_tile_size": 0.95,
+        "tile_mode": "Stochastic",
+        "uv_scale": 0.75
+      },
+      "tundra_frost.ktx2": "4e4a13e9e2d379f83cbb78abbb005d84a3b181a4b5871a8f22ea99705b051ffe",
+      "wild_grass.ktx2": "7c444060c97144e7fae78c10dc13a86f5c58745acbbfef7a40cfb36876801b54",
+      "wild_thicket.ktx2": {
+        "Stochastic_Tile_Size": 0.5,
+        "Tile_Mode": "Stochastic",
+        "UV_Scale": 1.25,
+        "hash": "8be1a5b647ea1b8772d4b4a7ce39a2c10a3dbb7a5fd68698bd2d0e5f427526a5",
+        "stochastic_tile_size": 0.5,
+        "tile_mode": "Stochastic",
+        "uv_scale": 1.25
+      }
     },
     "decals": {
       "acid_drip.png": "e1ae4c43637d45fdfc0a927f1ca214ee7a030e464939219bd2170141600f3c64",
