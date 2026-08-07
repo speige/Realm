@@ -22,18 +22,18 @@ if (Test-Path $oldExtDest) {
 $wasiEmbedDir = Join-Path $godotDir "wasi_sdk_embedded"
 $wasiClang = Join-Path $wasiEmbedDir "bin\clang.exe"
 if ((-not (Test-Path $wasiClang)) -or ((Get-Item $wasiClang).Length -eq 0)) {
-    Write-Host "Downloading WASI SDK 29..."
-    $wasiTar = Join-Path $godotDir "wasi-sdk-29.tar.gz"
-    $wasiUrl = "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-29/wasi-sdk-29.0-x86_64-windows.tar.gz"
+    Write-Host "Downloading WASI SDK 30..."
+    $wasiTar = Join-Path $godotDir "wasi-sdk-30.tar.gz"
+    $wasiUrl = "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-30/wasi-sdk-30.0-x86_64-windows.tar.gz"
     curl.exe -L $wasiUrl -o $wasiTar
     
-    Write-Host "Extracting WASI SDK 29..."
+    Write-Host "Extracting WASI SDK 30..."
     New-Item -ItemType Directory -Force -Path $wasiEmbedDir | Out-Null
     tar.exe -xf $wasiTar -C $wasiEmbedDir --strip-components=1
     if (Test-Path $wasiTar) {
         Remove-Item -Path $wasiTar -Force
     }
-    Write-Host "WASI SDK 29 downloaded and extracted successfully."
+    Write-Host "WASI SDK 30 downloaded and extracted successfully."
 } else {
     Write-Host "WASI SDK verified at $wasiEmbedDir"
 }
