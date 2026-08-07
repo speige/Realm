@@ -253,7 +253,16 @@ public partial class GameHost : Node3D, IGameAPI
 	private readonly List<Vector3> _pathingVerticesCache = new();
 	private readonly List<Color> _pathingColorsCache = new();
 	private readonly List<int> _pathingIndicesCache = new();
-	public bool PathingOverlayVisible { get; set; } = true;
+	private bool _pathingOverlayVisible = true;
+	public bool PathingOverlayVisible
+	{
+		get => _pathingOverlayVisible;
+		set
+		{
+			_pathingOverlayVisible = value;
+			UpdatePathingOverlay();
+		}
+	}
 	public enum EditorTool
 	{
 		None,
@@ -287,6 +296,7 @@ public partial class GameHost : Node3D, IGameAPI
 			_activeEditorTool = value;
 			_editorService?.SetIsPastingObject(false);
 			RebuildAllCoordinatePersistentMeshes();
+			UpdatePathingOverlay();
 		}
 	}
 	public string ActivePlaceId { get; set; } = ""; // "soldier", "tree", etc.
@@ -482,7 +492,16 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool PasteOptionTextures { get; set; } = true;
 	public bool PasteOptionHeights { get; set; } = true;
 	public bool PasteOptionEntities { get; set; } = true;
-	public bool PasteOptionPathing { get; set; } = true;
+	private bool _pasteOptionPathing = true;
+	public bool PasteOptionPathing
+	{
+		get => _pasteOptionPathing;
+		set
+		{
+			_pasteOptionPathing = value;
+			UpdatePathingOverlay();
+		}
+	}
 	public float EditorPasteRotation { get; set; } = 0.0f;
 
 	public Node SelectedEditorObject

@@ -617,20 +617,24 @@ public partial class CameraControl : Camera3D
 
 		if (state.EnableEdgePanning && Input.MouseMode == Input.MouseModeEnum.Visible)
 		{
-			Vector2 mousePos = GetViewport().GetMousePosition();
-			Vector2 windowSize = GetViewport().GetVisibleRect().Size;
-
-			if (mousePos.X >= 0 && mousePos.X < windowSize.X && mousePos.Y >= 0 && mousePos.Y < windowSize.Y)
+			bool isModifyingSlider = isEditor && Input.IsMouseButtonPressed(MouseButton.Left) && IsModifyingHudSlider();
+			if (!isModifyingSlider)
 			{
-				if (mousePos.X < state.EdgePanMargin)
-					velocity -= arrowRight;
-				else if (mousePos.X > windowSize.X - state.EdgePanMargin)
-					velocity += arrowRight;
+				Vector2 mousePos = GetViewport().GetMousePosition();
+				Vector2 windowSize = GetViewport().GetVisibleRect().Size;
 
-				if (mousePos.Y < state.EdgePanMargin)
-					velocity += arrowForward;
-				else if (mousePos.Y > windowSize.Y - state.EdgePanMargin)
-					velocity -= arrowForward;
+				if (mousePos.X >= 0 && mousePos.X < windowSize.X && mousePos.Y >= 0 && mousePos.Y < windowSize.Y)
+				{
+					if (mousePos.X < state.EdgePanMargin)
+						velocity -= arrowRight;
+					else if (mousePos.X > windowSize.X - state.EdgePanMargin)
+						velocity += arrowRight;
+
+					if (mousePos.Y < state.EdgePanMargin)
+						velocity += arrowForward;
+					else if (mousePos.Y > windowSize.Y - state.EdgePanMargin)
+						velocity -= arrowForward;
+				}
 			}
 		}
 
@@ -688,5 +692,32 @@ public partial class CameraControl : Camera3D
 
 			Position = newPos;
 		}
+	}
+
+	private bool IsModifyingHudSlider()
+	{
+		if (!Input.IsMouseButtonPressed(MouseButton.Left))
+		{
+			if (MapEditorHUD.IsDraggingSlider)
+			{
+				MapEditorHUD.IsDraggingSlider = false;
+			}
+			return false;
+		}
+
+		if (MapEditorHUD.IsDraggingSlider) return true;
+
+		Viewport viewport = GetViewport();
+		if (viewport != null)
+		{
+			if (viewport.GuiGetFocusOwner() is Slider) return true;
+			if (viewport.GuiGetHoveredControl() is Slider)
+			{
+				MapEditorHUD.IsDraggingSlider = true;
+				return true;
+			}
+		}
+
+		return false;
 	}
 }

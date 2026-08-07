@@ -3354,7 +3354,10 @@ public partial class GameHost
 
 	public void UpdatePathingOverlay()
 	{
-		bool shouldBeVisible = IsMapEditorMode && PathingOverlayVisible && (ActiveEditorTool == EditorTool.PaintPathing || ActiveEditorTool == EditorTool.FloodFillPathing || ActiveEditorTool == EditorTool.SelectArea || ActiveEditorTool == EditorTool.PasteArea);
+		bool isPathingTool = ActiveEditorTool == EditorTool.PaintPathing || ActiveEditorTool == EditorTool.FloodFillPathing;
+		bool isClipboardTool = ActiveEditorTool == EditorTool.SelectArea || ActiveEditorTool == EditorTool.PasteArea;
+
+		bool shouldBeVisible = IsMapEditorMode && PathingOverlayVisible && (isPathingTool || (isClipboardTool && PasteOptionPathing));
 		
 		if (GroundTerrain != null)
 		{

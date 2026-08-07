@@ -14,6 +14,7 @@ using WaterType = Realm.Ecs.Components.Terrain.WaterType;
 public partial class MapEditorHUD : Control
 {
 	public static MapEditorHUD Instance { get; private set; }
+	public static bool IsDraggingSlider { get; set; } = false;
 	public static bool IsTestMode { get; set; } = false;
 	public static bool ReturningFromTest { get; set; } = false;
 
@@ -343,6 +344,9 @@ public partial class MapEditorHUD : Control
 			_tempWorkspacePath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
 
 			_camera3D = (GameHost.Instance?.MainCamera);
+
+			HookSliders(this);
+			ChildEnteredTree += (node) => HookSliders(node);
 
 		_highlightStyle = new StyleBoxFlat();
 		_highlightStyle.BgColor = new Color(0, 0, 0, 0);
@@ -4644,6 +4648,20 @@ public partial class MapEditorHUD : Control
 		}
 		_lblScalePreviewWidth = null;
 		_lblScalePreviewHeight = null;
+	}
+
+	private void HookSliders(Node parent)
+	{
+		if (parent == null) return;
+		if (parent is Slider slider)
+		{
+			slider.DragStarted += () => IsDraggingSlider = true;
+			slider.DragEnded += (_) => IsDraggingSlider = false;
+		}
+		foreach (Node child in parent.GetChildren())
+		{
+			HookSliders(child);
+		}
 	}
 
 	private void SetupButton(Button btn, string text, Action onClick, int fontSize = 13, string tooltip = "")
