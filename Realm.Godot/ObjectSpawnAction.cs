@@ -11,6 +11,10 @@ public class ObjectSpawnAction : IEditorAction
 	private readonly bool _isEnemy;
 	private Node _spawnedNode;
 
+	public Vector3 Position => _position;
+	public float Scale => _scale;
+	public Node SpawnedNode => _spawnedNode;
+
 	public ObjectSpawnAction(string objectType, string objectId, Vector3 position, float rotationY, float scale, bool isEnemy, Node spawnedNode)
 	{
 		_objectType = objectType;

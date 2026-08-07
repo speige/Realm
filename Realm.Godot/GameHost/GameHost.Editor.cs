@@ -14,6 +14,8 @@ public partial class GameHost
 {
 	public readonly Dictionary<string, float> ModelYOffsets = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, float> ModelCollisionCircleRatios = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, float> ModelBrightness = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, bool> ModelGenerateNormals = new(StringComparer.OrdinalIgnoreCase);
 	private bool _modelYOffsetSavePending = false;
 	private bool _modelCollisionCircleSavePending = false;
 
@@ -131,6 +133,165 @@ public partial class GameHost
 		EditorHasUnsavedChanges = true;
 	}
 
+	public float GetModelBrightness(string assetKey)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(norm) && ModelBrightness.TryGetValue(norm, out float bVal))
+		{
+			return Mathf.Clamp(bVal, 0.0f, 1.0f);
+		}
+		return 1.0f;
+	}
+
+	public void SetModelBrightness(string assetKey, float brightness)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (string.IsNullOrEmpty(norm)) return;
+
+		float k = Mathf.Clamp(brightness, 0.0f, 1.0f);
+		ModelBrightness[norm] = k;
+		UpdateMaterialOverridesForAsset(norm);
+
+		_modelYOffsetSavePending = true;
+		EditorHasUnsavedChanges = true;
+	}
+
+	public bool GetModelGenerateNormals(string assetKey)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(norm) && ModelGenerateNormals.TryGetValue(norm, out bool val))
+		{
+			return val;
+		}
+		return false;
+	}
+
+	public void SetModelGenerateNormals(string assetKey, bool generateNormals)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (string.IsNullOrEmpty(norm)) return;
+
+		ModelGenerateNormals[norm] = generateNormals;
+		UpdateMaterialOverridesForAsset(norm);
+
+		_modelYOffsetSavePending = true;
+		EditorHasUnsavedChanges = true;
+	}
+
+	public void UpdateMaterialOverridesForAsset(string normAssetKey)
+	{
+		if (string.IsNullOrEmpty(normAssetKey)) return;
+
+		float brightness = GetModelBrightness(normAssetKey);
+		bool generateNormals = GetModelGenerateNormals(normAssetKey);
+
+		foreach (var prop in AllProps)
+		{
+			if (GodotObject.IsInstanceValid(prop) && GetModelAssetKey(prop) == normAssetKey)
+			{
+				ApplyMaterialOverridesToNode(prop, brightness, generateNormals);
+			}
+		}
+
+		foreach (var unit in AllUnits)
+		{
+			if (GodotObject.IsInstanceValid(unit) && GetModelAssetKey(unit) == normAssetKey)
+			{
+				ApplyMaterialOverridesToNode(unit, brightness, generateNormals);
+			}
+		}
+
+		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode) && GetModelAssetKey(_editorPreviewNode) == normAssetKey)
+		{
+			ApplyMaterialOverridesToNode(_editorPreviewNode, brightness, generateNormals);
+		}
+	}
+
+	public static void ApplyMaterialOverridesToNode(
+		Node node,
+		float brightness = 1.0f,
+		bool generateNormals = false)
+	{
+		if (node == null || !GodotObject.IsInstanceValid(node)) return;
+
+		var meshNodes = FindMeshInstancesRecursive(node);
+		foreach (var meshInst in meshNodes)
+		{
+			string nameStr = meshInst.Name.ToString();
+			if (nameStr.StartsWith("_selection") || nameStr.StartsWith("_hover") || nameStr.StartsWith("BrushIndicator")) continue;
+
+			if (generateNormals)
+			{
+				if (!meshInst.HasMeta("original_mesh") && meshInst.Mesh != null)
+				{
+					meshInst.SetMeta("original_mesh", meshInst.Mesh);
+				}
+
+				Mesh baseMesh = meshInst.HasMeta("original_mesh") ? meshInst.GetMeta("original_mesh").As<Mesh>() : meshInst.Mesh;
+				if (baseMesh is ArrayMesh arrayMesh)
+				{
+					var toolMesh = new ArrayMesh();
+					var surfaceTool = new SurfaceTool();
+					for (int i = 0; i < arrayMesh.GetSurfaceCount(); i++)
+					{
+						surfaceTool.CreateFrom(arrayMesh, i);
+						surfaceTool.GenerateNormals();
+						toolMesh = surfaceTool.Commit(toolMesh);
+					}
+					meshInst.Mesh = toolMesh;
+				}
+			}
+			else
+			{
+				if (meshInst.HasMeta("original_mesh"))
+				{
+					meshInst.Mesh = meshInst.GetMeta("original_mesh").As<Mesh>();
+				}
+			}
+
+			int surfaceCount = meshInst.Mesh != null ? meshInst.Mesh.GetSurfaceCount() : 0;
+			for (int i = 0; i < surfaceCount; i++)
+			{
+				Material mat = meshInst.GetSurfaceOverrideMaterial(i);
+				if (mat == null && meshInst.Mesh != null)
+				{
+					mat = meshInst.Mesh.SurfaceGetMaterial(i);
+				}
+
+				if (mat is BaseMaterial3D baseMat)
+				{
+					if (meshInst.GetSurfaceOverrideMaterial(i) == null)
+					{
+						baseMat = (BaseMaterial3D)baseMat.Duplicate();
+						meshInst.SetSurfaceOverrideMaterial(i, baseMat);
+					}
+
+					baseMat.AlbedoColor = new Color(brightness, brightness, brightness, baseMat.AlbedoColor.A);
+				}
+			}
+
+			if (meshInst.MaterialOverride is BaseMaterial3D overrideMat)
+			{
+				overrideMat.AlbedoColor = new Color(brightness, brightness, brightness, overrideMat.AlbedoColor.A);
+			}
+		}
+	}
+
+	private static List<MeshInstance3D> FindMeshInstancesRecursive(Node parent)
+	{
+		var list = new List<MeshInstance3D>();
+		if (parent == null) return list;
+		if (parent is MeshInstance3D mi)
+		{
+			list.Add(mi);
+		}
+		foreach (Node child in parent.GetChildren())
+		{
+			list.AddRange(FindMeshInstancesRecursive(child));
+		}
+		return list;
+	}
+
 	public void FlushModelCollisionCircleSave()
 	{
 		FlushModelYOffsetSave();
@@ -215,6 +376,8 @@ public partial class GameHost
 
 			ModelYOffsets.Clear();
 			ModelCollisionCircleRatios.Clear();
+			ModelBrightness.Clear();
+			ModelGenerateNormals.Clear();
 
 			if (root.ContainsKey("ModelOffsets") && root["ModelOffsets"] is System.Text.Json.Nodes.JsonObject offsetsObj)
 			{
@@ -238,6 +401,28 @@ public partial class GameHost
 				}
 			}
 
+			if (root.ContainsKey("ModelBrightness") && root["ModelBrightness"] is System.Text.Json.Nodes.JsonObject mbObj)
+			{
+				foreach (var kvp in mbObj)
+				{
+					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), out float val))
+					{
+						ModelBrightness[NormalizeModelAssetKey(kvp.Key)] = val;
+					}
+				}
+			}
+
+			if (root.ContainsKey("ModelGenerateNormals") && root["ModelGenerateNormals"] is System.Text.Json.Nodes.JsonObject gnObj)
+			{
+				foreach (var kvp in gnObj)
+				{
+					if (kvp.Value != null && bool.TryParse(kvp.Value.ToString(), out bool val))
+					{
+						ModelGenerateNormals[NormalizeModelAssetKey(kvp.Key)] = val;
+					}
+				}
+			}
+
 			if (root.ContainsKey("Assets") && root["Assets"] is System.Text.Json.Nodes.JsonObject assetsObj && assetsObj.ContainsKey("glb") && assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
 			{
 				foreach (var catKvp in glbObj)
@@ -256,10 +441,25 @@ public partial class GameHost
 								{
 									ModelCollisionCircleRatios[NormalizeModelAssetKey(itemKvp.Key)] = rVal;
 								}
+								if (itemObj.ContainsKey("brightness") && float.TryParse(itemObj["brightness"]?.ToString(), out float brightVal))
+								{
+									ModelBrightness[NormalizeModelAssetKey(itemKvp.Key)] = brightVal;
+								}
+								if (itemObj.ContainsKey("generate_normals") && bool.TryParse(itemObj["generate_normals"]?.ToString(), out bool gnVal))
+								{
+									ModelGenerateNormals[NormalizeModelAssetKey(itemKvp.Key)] = gnVal;
+								}
 							}
 						}
 					}
 				}
+			}
+
+			foreach (var key in ModelBrightness.Keys
+				.Concat(ModelGenerateNormals.Keys)
+				.Distinct())
+			{
+				UpdateMaterialOverridesForAsset(key);
 			}
 		}
 		catch (Exception ex)
@@ -290,18 +490,22 @@ public partial class GameHost
 			}
 
 			System.Text.Json.Nodes.JsonObject offsetsObj = new System.Text.Json.Nodes.JsonObject();
-			foreach (var kvp in ModelYOffsets)
-			{
-				offsetsObj[kvp.Key] = kvp.Value;
-			}
+			foreach (var kvp in ModelYOffsets) offsetsObj[kvp.Key] = kvp.Value;
 			root["ModelOffsets"] = offsetsObj;
 
 			System.Text.Json.Nodes.JsonObject circlesObj = new System.Text.Json.Nodes.JsonObject();
-			foreach (var kvp in ModelCollisionCircleRatios)
-			{
-				circlesObj[kvp.Key] = kvp.Value;
-			}
+			foreach (var kvp in ModelCollisionCircleRatios) circlesObj[kvp.Key] = kvp.Value;
 			root["ModelCollisionCircleRatios"] = circlesObj;
+
+
+
+			System.Text.Json.Nodes.JsonObject mbObj = new System.Text.Json.Nodes.JsonObject();
+			foreach (var kvp in ModelBrightness) mbObj[kvp.Key] = kvp.Value;
+			root["ModelBrightness"] = mbObj;
+
+			System.Text.Json.Nodes.JsonObject gnObj = new System.Text.Json.Nodes.JsonObject();
+			foreach (var kvp in ModelGenerateNormals) gnObj[kvp.Key] = kvp.Value;
+			root["ModelGenerateNormals"] = gnObj;
 
 			if (root.ContainsKey("Assets") && root["Assets"] is System.Text.Json.Nodes.JsonObject assetsObj && assetsObj.ContainsKey("glb") && assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
 			{
@@ -314,13 +518,18 @@ public partial class GameHost
 							string normKey = NormalizeModelAssetKey(key);
 							bool hasY = ModelYOffsets.TryGetValue(normKey, out float yVal);
 							bool hasRatio = ModelCollisionCircleRatios.TryGetValue(normKey, out float rVal);
-							if (hasY || hasRatio)
+							bool hasBright = ModelBrightness.TryGetValue(normKey, out float brightVal);
+							bool hasGn = ModelGenerateNormals.TryGetValue(normKey, out bool gnVal);
+
+							if (hasY || hasRatio || hasBright || hasGn)
 							{
 								var nodeVal = catDict[key];
 								if (nodeVal is System.Text.Json.Nodes.JsonObject itemObj)
 								{
 									if (hasY) itemObj["y_offset"] = yVal;
 									if (hasRatio) itemObj["collision_circle_ratio"] = rVal;
+									if (hasBright) itemObj["brightness"] = brightVal;
+									if (hasGn) itemObj["generate_normals"] = gnVal;
 								}
 								else if (nodeVal != null)
 								{
@@ -331,6 +540,8 @@ public partial class GameHost
 									};
 									if (hasY) newItemObj["y_offset"] = yVal;
 									if (hasRatio) newItemObj["collision_circle_ratio"] = rVal;
+									if (hasBright) newItemObj["brightness"] = brightVal;
+									if (hasGn) newItemObj["generate_normals"] = gnVal;
 									catDict[key] = newItemObj;
 								}
 							}
@@ -889,6 +1100,12 @@ public partial class GameHost
 			EcsWorld.Add(entity, new CollisionScale(scale));
 		}
 
+		string unitAssetKey = GetModelAssetKey(unit3D);
+		if (!string.IsNullOrEmpty(unitAssetKey))
+		{
+			UpdateMaterialOverridesForAsset(unitAssetKey);
+		}
+
 		return unit3D;
 	}
 
@@ -925,6 +1142,12 @@ public partial class GameHost
 		EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Prop());
 		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(position.X, position.Y, position.Z)));
 		EcsWorld.Add(entity, new CollisionScale(scale));
+
+		string propAssetKey = GetModelAssetKey(prop);
+		if (!string.IsNullOrEmpty(propAssetKey))
+		{
+			UpdateMaterialOverridesForAsset(propAssetKey);
+		}
 
 		return prop;
 	}
@@ -1247,6 +1470,12 @@ public partial class GameHost
 
 		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode))
 		{
+			if (EditorClumpMode || ActiveEditorTool == EditorTool.PlacePropClump)
+			{
+				_editorPreviewNode.Visible = false;
+				return;
+			}
+
 			if (!_editorService.HasCachedRandom) _editorService.GenerateNewRandomPlacementRotationAndScale();
 			float previewRot = (EditorRandomRotation && !_editorService.IsPastingObject) ? _editorService.CachedRandomRotation : EditorPlacementRotation;
 			float previewScaleVal = (EditorRandomScale && !_editorService.IsPastingObject) ? _editorService.CachedRandomScale : EditorPlacementScale;
@@ -1939,7 +2168,8 @@ public partial class GameHost
 							 ActiveEditorTool == EditorTool.Noise ||
 							 ActiveEditorTool == EditorTool.Ramp ||
 							 ActiveEditorTool == EditorTool.PlacePropClump ||
-							 ActiveEditorTool == EditorTool.PaintPathing;
+							 ActiveEditorTool == EditorTool.PaintPathing ||
+							 ((ActiveEditorTool == EditorTool.PlaceUnit || ActiveEditorTool == EditorTool.PlaceProp || ActiveEditorTool == EditorTool.PlaceDecal) && EditorClumpMode);
 							 
 		_brushIndicatorMesh.Visible = isTerrainTool;
 	}
@@ -1995,20 +2225,26 @@ public partial class GameHost
 
 	private void ApplyGeneralClumpSpawn(Vector3 centerPos)
 	{
+		float autoDetectedRadius = GetOrCalculateObstacleRadius(ActivePlaceId, _editorPreviewNode);
+		string assetKey = GetModelAssetKey(_editorPreviewNode ?? (object)ActivePlaceId);
+		float ratio = GetModelCollisionCircleRatio(assetKey);
+		float assetBaseCollisionRadius = Mathf.Max(0.1f, autoDetectedRadius * ratio);
+
 		var requests = _editorService.BuildClumpSpawnRequests(
 			centerPos,
 			ActiveEditorTool,
 			ActivePlaceId,
 			PlaceUnitIsEnemy,
 			EditorPlacementScale,
-			EditorClumpDensity,
-			EditorClumpScaleVar,
+			EditorClumpCount,
+			EditorClumpScale,
 			EditorBrushRadius,
 			EditorBrushIsSquare,
 			EditorRandomRotation,
 			EditorRandomScale,
 			EditorPlacementRotation,
-			EditorMirrorMode);
+			EditorMirrorMode,
+			assetBaseCollisionRadius);
 
 		foreach (var req in requests)
 		{

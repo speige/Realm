@@ -1199,7 +1199,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 12
-text = "Clump Density"
+text = "Clump Count"
 
 [node name="LblClumpDensityValue" type="Label" parent="RightSlidePanel/RightScroll/AccordionContainer/PlacementAccordion/ContentPlacement/DensityBox/Header"]
 layout_mode = 2
@@ -1223,7 +1223,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 12
-text = "Clump Scale Var"
+text = "Clump Scale Variance"
 
 [node name="LblClumpScaleVarValue" type="Label" parent="RightSlidePanel/RightScroll/AccordionContainer/PlacementAccordion/ContentPlacement/ScaleVarBox/Header"]
 layout_mode = 2

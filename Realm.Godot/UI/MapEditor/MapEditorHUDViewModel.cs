@@ -29,8 +29,10 @@ public class MapEditorHUDViewModel
 	public bool RandomRotation { get; set; } = false;
 	public bool RandomScale { get; set; } = false;
 	public bool ClumpMode { get; set; } = false;
-	public float ClumpDensity { get; set; } = 5f;
-	public float ClumpScaleVar { get; set; } = 0.2f;
+	public float ClumpCount { get; set; } = 5f;
+	public float ClumpDensity { get => ClumpCount; set => ClumpCount = value; }
+	public float ClumpScale { get; set; } = 0.3f;
+	public float ClumpScaleVar { get => ClumpScale; set => ClumpScale = value; }
 
 	public string CurrentCategory { get; set; } = "Characters";
 	public List<string> CategoryFiles { get; } = new();
@@ -72,8 +74,8 @@ public class MapEditorHUDViewModel
 			RandomRotation = GameHost.Instance.EditorRandomRotation;
 			RandomScale = GameHost.Instance.EditorRandomScale;
 			ClumpMode = GameHost.Instance.EditorClumpMode;
-			ClumpDensity = GameHost.Instance.EditorClumpDensity;
-			ClumpScaleVar = GameHost.Instance.EditorClumpScaleVar;
+			ClumpCount = GameHost.Instance.EditorClumpCount;
+			ClumpScale = GameHost.Instance.EditorClumpScale;
 
 			SnapToGrid = GameHost.Instance.EditorSnapToGrid;
 			GridOverlayVisible = GameHost.Instance.EditorGridVisible;

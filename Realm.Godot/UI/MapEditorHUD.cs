@@ -164,6 +164,7 @@ public partial class MapEditorHUD : Control
 	private CheckBox _chkRandomScale;
 	private Button _btnAddObject;
 	private CheckBox _chkClumpMode;
+	private Control _spacingBox;
 	private Control _densityBox;
 	private Control _scaleVarBox;
 	private Control _camBoundsBox;
@@ -173,8 +174,13 @@ public partial class MapEditorHUD : Control
 
 	private Control _waterModeBox;
 	private OptionButton _optWaterMode;
+	private Button _btnHeaderGlobalOverrides;
+	private VBoxContainer _contentGlobalOverrides;
+	private bool _isGlobalOverridesExpanded = true;
 	private HSlider _sldModelYOffset;
 	private HSlider _sldModelGlobalCollisionCircle;
+	private HSlider _sldModelBrightness;
+	private CheckBox _chkModelGenerateNormals;
 	private bool _isUpdatingInspectorUI;
 
 	private CheckBox _chkApplyGroundTexture;
@@ -1083,19 +1089,25 @@ public partial class MapEditorHUD : Control
 		_scaleVarBox = GetNode<Control>("RightSlidePanel/RightScroll/AccordionContainer/PlacementAccordion/ContentPlacement/ScaleVarBox");
 		_sldClumpScaleVar = GetNode<HSlider>("RightSlidePanel/RightScroll/AccordionContainer/PlacementAccordion/ContentPlacement/ScaleVarBox/SldClumpScaleVar");
 		_lblClumpScaleVarValue = GetNode<Label>("RightSlidePanel/RightScroll/AccordionContainer/PlacementAccordion/ContentPlacement/ScaleVarBox/Header/LblClumpScaleVarValue");
+		var lblScaleVarTitle = GetNodeOrNull<Label>("RightSlidePanel/RightScroll/AccordionContainer/PlacementAccordion/ContentPlacement/ScaleVarBox/Header/LblScaleVarTitle");
+		if (lblScaleVarTitle != null) lblScaleVarTitle.Text = TranslationServer.Translate("Clump Scale Variance");
 
 		_chkClumpMode.ButtonPressed = false;
 		_chkClumpMode.Toggled += (toggled) =>
 		{
 			if (_densityBox != null) _densityBox.Visible = toggled;
 			if (_scaleVarBox != null) _scaleVarBox.Visible = toggled;
+			if (GameHost.Instance != null)
+			{
+				UpdateSidebarMorph(GameHost.Instance.ActiveEditorTool);
+			}
 		};
 
 		_sldClumpDensity.ValueChanged += (val) =>
 		{
 			float fVal = (float)val;
 			_lblClumpDensityValue.Text = fVal.ToString("F0");
-			if (GameHost.Instance != null) GameHost.Instance.EditorClumpDensity = fVal;
+			if (GameHost.Instance != null) GameHost.Instance.EditorClumpCount = fVal;
 		};
 		_sldClumpDensity.DragStarted += () => _isDraggingSlider = true;
 		_sldClumpDensity.DragEnded += (valueChanged) => _isDraggingSlider = false;
@@ -1104,7 +1116,7 @@ public partial class MapEditorHUD : Control
 		{
 			float fVal = (float)val;
 			_lblClumpScaleVarValue.Text = fVal.ToString("F2");
-			if (GameHost.Instance != null) GameHost.Instance.EditorClumpScaleVar = fVal;
+			if (GameHost.Instance != null) GameHost.Instance.EditorClumpScale = fVal;
 		};
 		_sldClumpScaleVar.DragStarted += () => _isDraggingSlider = true;
 		_sldClumpScaleVar.DragEnded += (valueChanged) => _isDraggingSlider = false;
@@ -1361,40 +1373,42 @@ public partial class MapEditorHUD : Control
 			}
 
 			string assetKey = GameHost.Instance.GetModelAssetKey(selected);
-			if (!string.IsNullOrEmpty(assetKey) && _sldModelYOffset != null)
+			if (!string.IsNullOrEmpty(assetKey))
 			{
 				_isUpdatingInspectorUI = true;
-				float currentOffset = GameHost.Instance.GetModelYOffset(assetKey);
-				_sldModelYOffset.Value = currentOffset;
-				var row = _sldModelYOffset.GetParent() as Control;
-				if (row != null) row.Visible = true;
 
+				if (_btnHeaderGlobalOverrides != null) _btnHeaderGlobalOverrides.Visible = true;
+				if (_contentGlobalOverrides != null) _contentGlobalOverrides.Visible = _isGlobalOverridesExpanded;
+
+				if (_sldModelYOffset != null)
+				{
+					_sldModelYOffset.Value = GameHost.Instance.GetModelYOffset(assetKey);
+				}
 				if (_sldModelGlobalCollisionCircle != null)
 				{
-					float currentRatio = GameHost.Instance.GetModelCollisionCircleRatio(assetKey);
-					_sldModelGlobalCollisionCircle.Value = currentRatio;
-					var circleRow = _sldModelGlobalCollisionCircle.GetParent() as Control;
-					if (circleRow != null) circleRow.Visible = true;
+					_sldModelGlobalCollisionCircle.Value = GameHost.Instance.GetModelCollisionCircleRatio(assetKey);
+				}
+				if (_sldModelBrightness != null)
+				{
+					_sldModelBrightness.Value = GameHost.Instance.GetModelBrightness(assetKey);
+				}
+				if (_chkModelGenerateNormals != null)
+				{
+					_chkModelGenerateNormals.ButtonPressed = GameHost.Instance.GetModelGenerateNormals(assetKey);
 				}
 
 				_isUpdatingInspectorUI = false;
 			}
 			else
 			{
-				if (_sldModelYOffset != null)
-				{
-					var row = _sldModelYOffset.GetParent() as Control;
-					if (row != null) row.Visible = false;
-				}
-				if (_sldModelGlobalCollisionCircle != null)
-				{
-					var circleRow = _sldModelGlobalCollisionCircle.GetParent() as Control;
-					if (circleRow != null) circleRow.Visible = false;
-				}
+				if (_btnHeaderGlobalOverrides != null) _btnHeaderGlobalOverrides.Visible = false;
+				if (_contentGlobalOverrides != null) _contentGlobalOverrides.Visible = false;
 			}
 		}
 		else
 		{
+			if (_btnHeaderGlobalOverrides != null) _btnHeaderGlobalOverrides.Visible = false;
+			if (_contentGlobalOverrides != null) _contentGlobalOverrides.Visible = false;
 			if (_lblInfoText != null) _lblInfoText.Visible = true;
 			if (_inspectorPanel != null) _inspectorPanel.Visible = false;
 			if (_accordionInspector != null)
@@ -4210,6 +4224,7 @@ public partial class MapEditorHUD : Control
 	{
 		if (_panelRight == null) return;
 
+		bool isClumpActive = _chkClumpMode != null && _chkClumpMode.ButtonPressed;
 		bool isBrush = tool == GameHost.EditorTool.Raise ||
 					   tool == GameHost.EditorTool.Lower ||
 					   tool == GameHost.EditorTool.Smooth ||
@@ -4219,7 +4234,8 @@ public partial class MapEditorHUD : Control
 					   tool == GameHost.EditorTool.Noise ||
 					   tool == GameHost.EditorTool.PaintPathing ||
 					   tool == GameHost.EditorTool.FloodFillPathing ||
-					   tool == GameHost.EditorTool.PlacePropClump;
+					   tool == GameHost.EditorTool.PlacePropClump ||
+					   ((tool == GameHost.EditorTool.PlaceUnit || tool == GameHost.EditorTool.PlaceProp || tool == GameHost.EditorTool.PlaceDecal) && isClumpActive);
 
 		if (_accordionBrush != null)
 		{
@@ -4233,7 +4249,9 @@ public partial class MapEditorHUD : Control
 										 !isTextureMode &&
 										 tool != GameHost.EditorTool.Smooth &&
 										 tool != GameHost.EditorTool.Noise &&
-										 tool != GameHost.EditorTool.Ramp);
+										 tool != GameHost.EditorTool.Ramp &&
+										 tool != GameHost.EditorTool.PlacePropClump &&
+										 !isClumpActive);
 			}
 			UpdateBlockStepVisibility();
 		}
@@ -4292,6 +4310,7 @@ public partial class MapEditorHUD : Control
 		if (_chkClumpMode != null)
 		{
 			_chkClumpMode.Visible = isPlacement;
+			if (_spacingBox != null) _spacingBox.Visible = isPlacement && _chkClumpMode.ButtonPressed;
 			if (_densityBox != null) _densityBox.Visible = isPlacement && _chkClumpMode.ButtonPressed;
 			if (_scaleVarBox != null) _scaleVarBox.Visible = isPlacement && _chkClumpMode.ButtonPressed;
 		}
@@ -4977,6 +4996,10 @@ public partial class MapEditorHUD : Control
 			var tool = GameHost.Instance.ActiveEditorTool;
 			bool blockModeEnabled = (_chkBlockMode != null && _chkBlockMode.ButtonPressed);
 
+			bool isClumpPlacement = tool == GameHost.EditorTool.PlacePropClump ||
+									((tool == GameHost.EditorTool.PlaceUnit || tool == GameHost.EditorTool.PlaceProp || tool == GameHost.EditorTool.PlaceDecal) &&
+									 (_chkClumpMode != null && _chkClumpMode.ButtonPressed));
+
 			if (tool == GameHost.EditorTool.Raise || tool == GameHost.EditorTool.Lower)
 			{
 				strengthParent.Visible = !blockModeEnabled;
@@ -4985,7 +5008,7 @@ public partial class MapEditorHUD : Control
 			{
 				strengthParent.Visible = (tool != GameHost.EditorTool.PaintPathing && 
 										  tool != GameHost.EditorTool.FloodFillPathing &&
-										  tool != GameHost.EditorTool.PlacePropClump &&
+										  !isClumpPlacement &&
 										  tool != GameHost.EditorTool.Plateau &&
 										  tool != GameHost.EditorTool.Ramp);
 			}
@@ -5113,7 +5136,26 @@ public partial class MapEditorHUD : Control
 		var vbox = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox");
 		if (vbox != null)
 		{
-			_sldModelYOffset = CreateSliderRow(vbox, TranslationServer.Translate("Global Y-Offset"), -10.0f, 10.0f, 0.05f, 0.0f, (val) =>
+			_btnHeaderGlobalOverrides = new Button();
+			_btnHeaderGlobalOverrides.Text = "▼ " + TranslationServer.Translate("Global Asset Overrides");
+			_btnHeaderGlobalOverrides.Alignment = HorizontalAlignment.Left;
+			_btnHeaderGlobalOverrides.FocusMode = Control.FocusModeEnum.None;
+			_btnHeaderGlobalOverrides.AddThemeFontSizeOverride("font_size", 12);
+			_btnHeaderGlobalOverrides.Visible = false;
+			vbox.AddChild(_btnHeaderGlobalOverrides);
+
+			_contentGlobalOverrides = new VBoxContainer();
+			_contentGlobalOverrides.Visible = false;
+			vbox.AddChild(_contentGlobalOverrides);
+
+			_btnHeaderGlobalOverrides.Pressed += () =>
+			{
+				_isGlobalOverridesExpanded = !_isGlobalOverridesExpanded;
+				_contentGlobalOverrides.Visible = _isGlobalOverridesExpanded;
+				_btnHeaderGlobalOverrides.Text = (_isGlobalOverridesExpanded ? "▼ " : "▶ ") + TranslationServer.Translate("Global Asset Overrides");
+			};
+
+			_sldModelYOffset = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Y-Offset"), -10.0f, 10.0f, 0.05f, 0.0f, (val) =>
 			{
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
@@ -5134,7 +5176,7 @@ public partial class MapEditorHUD : Control
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 			};
 
-			_sldModelGlobalCollisionCircle = CreateSliderRow(vbox, TranslationServer.Translate("Global Collision Circle"), 0.1f, 5.0f, 0.05f, 1.0f, (val) =>
+			_sldModelGlobalCollisionCircle = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Collision Circle"), 0.1f, 5.0f, 0.05f, 1.0f, (val) =>
 			{
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
@@ -5154,6 +5196,47 @@ public partial class MapEditorHUD : Control
 				string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 			};
+
+
+
+			_sldModelBrightness = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Brightness"), 0.0f, 1.0f, 0.01f, 1.0f, (val) =>
+			{
+				if (_isUpdatingInspectorUI) return;
+				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
+				{
+					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					if (!string.IsNullOrEmpty(assetKey))
+					{
+						GameHost.Instance.SetModelBrightness(assetKey, (float)val);
+					}
+				}
+			});
+			_sldModelBrightness.DragStarted += () => _isDraggingSlider = true;
+			_sldModelBrightness.DragEnded += (valueChanged) =>
+			{
+				_isDraggingSlider = false;
+				GameHost.Instance?.FlushModelYOffsetSave();
+				string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+			};
+
+
+
+			_chkModelGenerateNormals = CreateCheckBoxRow(_contentGlobalOverrides, TranslationServer.Translate("Re-Calculate Normals"), false, (pressed) =>
+			{
+				if (_isUpdatingInspectorUI) return;
+				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
+				{
+					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					if (!string.IsNullOrEmpty(assetKey))
+					{
+						GameHost.Instance.SetModelGenerateNormals(assetKey, pressed);
+						GameHost.Instance.FlushModelYOffsetSave();
+						string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+						_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+					}
+				}
+			});
 		}
 	}
 
@@ -6202,6 +6285,38 @@ Glow/Bloom Intensity: {_tuneBloomIntensity:F2}, Threshold: {_tuneBloomThreshold:
 		return slider;
 	}
 
+	private OptionButton CreateDropdownRow(VBoxContainer parent, string labelText, string[] options, int initialIdx, Action<int> onChanged)
+	{
+		var row = new HBoxContainer();
+
+		var lblName = new Label();
+		lblName.Text = labelText;
+		lblName.CustomMinimumSize = new Vector2(110, 0);
+		lblName.AddThemeFontSizeOverride("font_size", 11);
+		row.AddChild(lblName);
+
+		var opt = new OptionButton();
+		opt.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		opt.CustomMinimumSize = new Vector2(90, 0);
+		opt.AddThemeFontSizeOverride("font_size", 11);
+		for (int i = 0; i < options.Length; i++)
+		{
+			opt.AddItem(options[i], i);
+		}
+		if (initialIdx >= 0 && initialIdx < options.Length)
+		{
+			opt.Select(initialIdx);
+		}
+		opt.ItemSelected += (long index) =>
+		{
+			onChanged((int)index);
+		};
+		row.AddChild(opt);
+
+		parent.AddChild(row);
+		return opt;
+	}
+
 	private HBoxContainer CreateToggleRow(VBoxContainer parent, string labelText, bool initialVal, Action<bool> onChanged)
 	{
 		var row = new HBoxContainer();
@@ -6213,6 +6328,20 @@ Glow/Bloom Intensity: {_tuneBloomIntensity:F2}, Threshold: {_tuneBloomThreshold:
 		row.AddChild(chk);
 		parent.AddChild(row);
 		return row;
+	}
+
+	private CheckBox CreateCheckBoxRow(VBoxContainer parent, string labelText, bool initialVal, Action<bool> onChanged)
+	{
+		var row = new HBoxContainer();
+		var chk = new CheckBox();
+		chk.Text = labelText;
+		chk.ButtonPressed = initialVal;
+		chk.FocusMode = Control.FocusModeEnum.None;
+		chk.AddThemeFontSizeOverride("font_size", 11);
+		chk.Toggled += (bool pressed) => onChanged(pressed);
+		row.AddChild(chk);
+		parent.AddChild(row);
+		return chk;
 	}
 
 	private Label CreateSectionHeader(VBoxContainer parent, string titleText)

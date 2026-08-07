@@ -1114,19 +1114,20 @@ public class EditorService
 		string activePlaceId,
 		bool placeUnitIsEnemy,
 		float placementScale,
-		float clumpDensity,
-		float clumpScaleVar,
+		float clumpCount,
+		float clumpScale,
 		float brushRadius,
 		bool brushIsSquare,
 		bool randomRotation,
 		bool randomScale,
 		float placementRotation,
-		MirrorMode mirrorMode)
+		MirrorMode mirrorMode,
+		float assetBaseCollisionRadius = 0.5f)
 	{
 		if (string.IsNullOrEmpty(activePlaceId)) return new List<EntitySpawnRequest>();
 
 		var requests = new List<EntitySpawnRequest>();
-		int spawnCount = Mathf.Max(1, (int)Math.Round(clumpDensity));
+		int spawnCount = Mathf.Max(1, (int)Math.Round(clumpCount));
 
 		ref var terrain = ref GetTerrainState();
 		float quadSize = terrain.Cells != null ? terrain.QuadSize : 1f;
@@ -1135,57 +1136,115 @@ public class EditorService
 		float halfW = terrainWidth / 2.0f * quadSize;
 		float halfD = terrainDepth / 2.0f * quadSize;
 
+		float baseRadius = Mathf.Max(0.1f, assetBaseCollisionRadius);
+		float autoClumpSpacing = Mathf.Clamp(brushRadius / (1.5f * Mathf.Sqrt(Mathf.Max(1, spawnCount))), 0.5f, 4.0f);
+
+		var existingSessionPoints = new List<(Vector3 Position, float Radius)>();
+		if (_clumpSpawnActionsInSession != null && _clumpSpawnActionsInSession.Count > 0)
+		{
+			foreach (var act in _clumpSpawnActionsInSession)
+			{
+				if (act is ObjectSpawnAction objAct && GodotObject.IsInstanceValid(objAct.SpawnedNode))
+				{
+					float r = baseRadius * objAct.Scale;
+					existingSessionPoints.Add((objAct.Position, r));
+				}
+			}
+		}
+
+		int maxAttemptsPerObject = 30;
+
 		for (int i = 0; i < spawnCount; i++)
 		{
-			float dx = 0.0f;
-			float dz = 0.0f;
-			if (brushIsSquare)
+			bool placed = false;
+			for (int attempt = 0; attempt < maxAttemptsPerObject; attempt++)
 			{
-				dx = (float)(GD.Randf() * 2.0 - 1.0) * brushRadius;
-				dz = (float)(GD.Randf() * 2.0 - 1.0) * brushRadius;
+				float dx = 0.0f;
+				float dz = 0.0f;
+				if (brushIsSquare)
+				{
+					dx = (float)(GD.Randf() * 2.0 - 1.0) * brushRadius;
+					dz = (float)(GD.Randf() * 2.0 - 1.0) * brushRadius;
+				}
+				else
+				{
+					float r = Mathf.Sqrt((float)GD.Randf()) * brushRadius;
+					float theta = (float)(GD.Randf() * Mathf.Pi * 2.0);
+					dx = r * Mathf.Cos(theta);
+					dz = r * Mathf.Sin(theta);
+				}
+
+				Vector3 spawnPos = new Vector3(centerPos.X + dx, centerPos.Y, centerPos.Z + dz);
+				if (terrain.Cells != null)
+				{
+					if (Mathf.Abs(spawnPos.X) > halfW || Mathf.Abs(spawnPos.Z) > halfD) continue;
+				}
+				spawnPos.Y = GetTerrainHeightAt(spawnPos);
+
+				float offsetRange = clumpScale * placementScale;
+				float minScale = Mathf.Max(0.01f, placementScale - offsetRange);
+				float maxScale = placementScale + offsetRange;
+				float scaleVal = minScale + (float)GD.Randf() * (maxScale - minScale);
+
+				float candidateRadius = baseRadius * scaleVal;
+
+				bool collision = false;
+				foreach (var req in requests)
+				{
+					float reqRadius = baseRadius * req.Scale;
+					float minDist = (candidateRadius + reqRadius) * autoClumpSpacing;
+					float distSq = (spawnPos.X - req.Position.X) * (spawnPos.X - req.Position.X) +
+					               (spawnPos.Z - req.Position.Z) * (spawnPos.Z - req.Position.Z);
+					if (distSq < minDist * minDist)
+					{
+						collision = true;
+						break;
+					}
+				}
+
+				if (collision) continue;
+
+				foreach (var sessionPt in existingSessionPoints)
+				{
+					float minDist = (candidateRadius + sessionPt.Radius) * autoClumpSpacing;
+					float distSq = (spawnPos.X - sessionPt.Position.X) * (spawnPos.X - sessionPt.Position.X) +
+					               (spawnPos.Z - sessionPt.Position.Z) * (spawnPos.Z - sessionPt.Position.Z);
+					if (distSq < minDist * minDist)
+					{
+						collision = true;
+						break;
+					}
+				}
+
+				if (collision) continue;
+
+				float rotY = randomRotation ? (float)(GD.Randf() * 360.0) : placementRotation;
+				string spawnType = activeTool == GameHost.EditorTool.PlaceUnit ? "unit"
+					: activeTool == GameHost.EditorTool.PlaceProp ? "prop"
+					: "decal";
+				bool isEnemy = activeTool == GameHost.EditorTool.PlaceUnit && placeUnitIsEnemy;
+
+				requests.Add(new EntitySpawnRequest
+				{
+					Type = spawnType,
+					Id = activePlaceId,
+					Position = spawnPos,
+					Rotation = rotY,
+					Scale = scaleVal,
+					IsEnemy = isEnemy
+				});
+
+				if (mirrorMode != MirrorMode.None)
+				{
+					AddMirroredRequests(requests, spawnType, activePlaceId, spawnPos, rotY, scaleVal, isEnemy, mirrorMode);
+				}
+
+				placed = true;
+				break;
 			}
-			else
+
+			if (!placed && requests.Count > 0)
 			{
-				float r = Mathf.Sqrt((float)GD.Randf()) * brushRadius;
-				float theta = (float)(GD.Randf() * Mathf.Pi * 2.0);
-				dx = r * Mathf.Cos(theta);
-				dz = r * Mathf.Sin(theta);
-			}
-
-			Vector3 spawnPos = new Vector3(centerPos.X + dx, centerPos.Y, centerPos.Z + dz);
-			if (terrain.Cells != null)
-			{
-				if (Mathf.Abs(spawnPos.X) > halfW || Mathf.Abs(spawnPos.Z) > halfD) continue;
-			}
-			spawnPos.Y = GetTerrainHeightAt(spawnPos);
-
-			float scaleVal = placementScale + (float)(GD.Randf() * 2.0 - 1.0) * (clumpScaleVar * 4.0f);
-			scaleVal = Mathf.Clamp(scaleVal, 0.2f, 3.0f);
-
-			float rotY = (float)(GD.Randf() * 360.0);
-			if (randomScale && !_isPastingObject)
-			{
-				scaleVal = 0.2f + (float)(GD.Randf() * 2.8);
-			}
-
-			string spawnType = activeTool == GameHost.EditorTool.PlaceUnit ? "unit"
-				: activeTool == GameHost.EditorTool.PlaceProp ? "prop"
-				: "decal";
-			bool isEnemy = activeTool == GameHost.EditorTool.PlaceUnit && placeUnitIsEnemy;
-
-			requests.Add(new EntitySpawnRequest
-			{
-				Type = spawnType,
-				Id = activePlaceId,
-				Position = spawnPos,
-				Rotation = rotY,
-				Scale = scaleVal,
-				IsEnemy = isEnemy
-			});
-
-			if (mirrorMode != MirrorMode.None)
-			{
-				AddMirroredRequests(requests, spawnType, activePlaceId, spawnPos, rotY, scaleVal, isEnemy, mirrorMode);
 			}
 		}
 

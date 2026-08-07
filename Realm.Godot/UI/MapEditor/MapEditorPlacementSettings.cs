@@ -10,14 +10,14 @@ public class MapEditorPlacementSettings
 	private CheckBox _chkRandomRotation;
 	private CheckBox _chkRandomScale;
 	private CheckBox _chkClumpMode;
-	private Slider _sldClumpDensity;
-	private Label _lblClumpDensityValue;
-	private Slider _sldClumpScaleVar;
-	private Label _lblClumpScaleVarValue;
+	private Slider _sldClumpCount;
+	private Label _lblClumpCountValue;
+	private Slider _sldClumpScale;
+	private Label _lblClumpScaleValue;
 
 	public MapEditorPlacementSettings(Slider sldPlacementRotate, Label lblPlacementRotateValue, Slider sldPlacementScale, Label lblPlacementScaleValue,
 		CheckBox chkRandomRotation, CheckBox chkRandomScale, CheckBox chkClumpMode,
-		Slider sldClumpDensity, Label lblClumpDensityValue, Slider sldClumpScaleVar, Label lblClumpScaleVarValue)
+		Slider sldClumpCount, Label lblClumpCountValue, Slider sldClumpScale, Label lblClumpScaleValue)
 	{
 		_sldPlacementRotate = sldPlacementRotate;
 		_lblPlacementRotateValue = lblPlacementRotateValue;
@@ -26,10 +26,10 @@ public class MapEditorPlacementSettings
 		_chkRandomRotation = chkRandomRotation;
 		_chkRandomScale = chkRandomScale;
 		_chkClumpMode = chkClumpMode;
-		_sldClumpDensity = sldClumpDensity;
-		_lblClumpDensityValue = lblClumpDensityValue;
-		_sldClumpScaleVar = sldClumpScaleVar;
-		_lblClumpScaleVarValue = lblClumpScaleVarValue;
+		_sldClumpCount = sldClumpCount;
+		_lblClumpCountValue = lblClumpCountValue;
+		_sldClumpScale = sldClumpScale;
+		_lblClumpScaleValue = lblClumpScaleValue;
 
 		_sldPlacementRotate.ValueChanged += (val) =>
 		{
@@ -57,52 +57,55 @@ public class MapEditorPlacementSettings
 
 		_chkClumpMode.Toggled += (buttonPressed) =>
 		{
+			if (buttonPressed && !_chkRandomRotation.ButtonPressed)
+			{
+				_chkRandomRotation.ButtonPressed = true;
+				if (GameHost.Instance != null) GameHost.Instance.EditorRandomRotation = true;
+			}
 			if (GameHost.Instance != null) GameHost.Instance.EditorClumpMode = buttonPressed;
 			UpdateVisibility();
 		};
 
-		_sldClumpDensity.ValueChanged += (val) =>
+		if (_sldClumpCount != null)
 		{
-			_lblClumpDensityValue.Text = val.ToString("F0");
-			if (GameHost.Instance != null) GameHost.Instance.EditorClumpDensity = (float)val;
-		};
+			_sldClumpCount.ValueChanged += (val) =>
+			{
+				if (_lblClumpCountValue != null) _lblClumpCountValue.Text = val.ToString("F0");
+				if (GameHost.Instance != null) GameHost.Instance.EditorClumpCount = (float)val;
+			};
+		}
 
-		_sldClumpScaleVar.ValueChanged += (val) =>
+		if (_sldClumpScale != null)
 		{
-			_lblClumpScaleVarValue.Text = val.ToString("F2");
-			if (GameHost.Instance != null) GameHost.Instance.EditorClumpScaleVar = (float)val;
-		};
+			_sldClumpScale.ValueChanged += (val) =>
+			{
+				if (_lblClumpScaleValue != null) _lblClumpScaleValue.Text = val.ToString("F2");
+				if (GameHost.Instance != null) GameHost.Instance.EditorClumpScale = (float)val;
+			};
+		}
 
 		UpdateVisibility();
 	}
 
 	private void UpdateVisibility()
 	{
-		bool clumpMode = _chkClumpMode.ButtonPressed;
 		bool randomRotation = _chkRandomRotation.ButtonPressed;
 		bool randomScale = _chkRandomScale.ButtonPressed;
+		bool isClumpMode = _chkClumpMode.ButtonPressed;
 
 		var rotateContainer = _sldPlacementRotate.GetParent() as Control;
 		var scaleContainer = _sldPlacementScale.GetParent() as Control;
 
-		if (clumpMode)
-		{
-			if (rotateContainer != null && rotateContainer.Visible) rotateContainer.Visible = false;
-			if (scaleContainer != null && scaleContainer.Visible) scaleContainer.Visible = false;
-			if (_chkRandomRotation.Visible) _chkRandomRotation.Visible = false;
-			if (_chkRandomScale.Visible) _chkRandomScale.Visible = false;
-		}
-		else
-		{
-			bool rotVis = !randomRotation;
-			if (rotateContainer != null && rotateContainer.Visible != rotVis) rotateContainer.Visible = rotVis;
+		bool rotVis = !randomRotation;
+		if (rotateContainer != null && rotateContainer.Visible != rotVis) rotateContainer.Visible = rotVis;
 
-			bool scaleVis = !randomScale;
-			if (scaleContainer != null && scaleContainer.Visible != scaleVis) scaleContainer.Visible = scaleVis;
+		bool scaleVis = isClumpMode || !randomScale;
+		if (scaleContainer != null && scaleContainer.Visible != scaleVis) scaleContainer.Visible = scaleVis;
 
-			if (!_chkRandomRotation.Visible) _chkRandomRotation.Visible = true;
-			if (!_chkRandomScale.Visible) _chkRandomScale.Visible = true;
-		}
+		if (!_chkRandomRotation.Visible) _chkRandomRotation.Visible = true;
+		
+		bool chkScaleVis = !isClumpMode;
+		if (_chkRandomScale.Visible != chkScaleVis) _chkRandomScale.Visible = chkScaleVis;
 	}
 
 	public void Update(MapEditorHUDViewModel viewModel)
@@ -141,16 +144,16 @@ public class MapEditorPlacementSettings
 			stateChanged = true;
 		}
 
-		if (!Mathf.IsEqualApprox((float)_sldClumpDensity.Value, viewModel.ClumpDensity))
+		if (_sldClumpCount != null && !Mathf.IsEqualApprox((float)_sldClumpCount.Value, viewModel.ClumpCount))
 		{
-			_sldClumpDensity.Value = viewModel.ClumpDensity;
-			_lblClumpDensityValue.Text = viewModel.ClumpDensity.ToString("F0");
+			_sldClumpCount.Value = viewModel.ClumpCount;
+			if (_lblClumpCountValue != null) _lblClumpCountValue.Text = viewModel.ClumpCount.ToString("F0");
 		}
 
-		if (!Mathf.IsEqualApprox((float)_sldClumpScaleVar.Value, viewModel.ClumpScaleVar))
+		if (_sldClumpScale != null && !Mathf.IsEqualApprox((float)_sldClumpScale.Value, viewModel.ClumpScale))
 		{
-			_sldClumpScaleVar.Value = viewModel.ClumpScaleVar;
-			_lblClumpScaleVarValue.Text = viewModel.ClumpScaleVar.ToString("F2");
+			_sldClumpScale.Value = viewModel.ClumpScale;
+			if (_lblClumpScaleValue != null) _lblClumpScaleValue.Text = viewModel.ClumpScale.ToString("F2");
 		}
 
 		if (stateChanged)

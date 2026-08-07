@@ -332,10 +332,15 @@ public partial class GameHost : Node3D, IGameAPI
 	public const float MAX_BRUSH_STRENGTH = 10.0f;
 	public const float MIN_PLACEMENT_SCALE = 0.25f;
 	public const float MAX_PLACEMENT_SCALE = 5.0f;
-	public const float MIN_CLUMP_DENSITY = 1.0f;
-	public const float MAX_CLUMP_DENSITY = 20.0f;
-	public const float MIN_CLUMP_SCALE_VAR = 0.0f;
-	public const float MAX_CLUMP_SCALE_VAR = 1.0f;
+	public const float MIN_CLUMP_COUNT = 1.0f;
+	public const float MAX_CLUMP_COUNT = 20.0f;
+	public const float MIN_CLUMP_SCALE = 0.0f;
+	public const float MAX_CLUMP_SCALE = 1.0f;
+
+	public const float MIN_CLUMP_DENSITY = MIN_CLUMP_COUNT;
+	public const float MAX_CLUMP_DENSITY = MAX_CLUMP_COUNT;
+	public const float MIN_CLUMP_SCALE_VAR = MIN_CLUMP_SCALE;
+	public const float MAX_CLUMP_SCALE_VAR = MAX_CLUMP_SCALE;
 
 	public bool PlaceUnitIsEnemy { get; set; } = false;
 	private float _editorBrushRadius = 2.0f;
@@ -393,20 +398,42 @@ public partial class GameHost : Node3D, IGameAPI
 		set => EcsWorld?.Mutate<EditorState>(_worldEntity, (ref EditorState s) => s.MirrorMode = value);
 	}
 	public bool EditorBrushIsSquare { get; set; } = true;
-	private float _editorClumpDensity = 5.0f;
-	public float EditorClumpDensity
+
+	private float _editorClumpCount = 5.0f;
+	public float EditorClumpCount
 	{
-		get => _editorClumpDensity;
-		set => _editorClumpDensity = Mathf.Clamp(value, MIN_CLUMP_DENSITY, MAX_CLUMP_DENSITY);
+		get => _editorClumpCount;
+		set => _editorClumpCount = Mathf.Clamp(value, MIN_CLUMP_COUNT, MAX_CLUMP_COUNT);
 	}
 
-	private float _editorClumpScaleVar = 0.3f;
+	public float EditorClumpDensity
+	{
+		get => EditorClumpCount;
+		set => EditorClumpCount = value;
+	}
+
+	private float _editorClumpScale = 0.3f;
+	public float EditorClumpScale
+	{
+		get => _editorClumpScale;
+		set => _editorClumpScale = Mathf.Clamp(value, MIN_CLUMP_SCALE, MAX_CLUMP_SCALE);
+	}
+
 	public float EditorClumpScaleVar
 	{
-		get => _editorClumpScaleVar;
-		set => _editorClumpScaleVar = Mathf.Clamp(value, MIN_CLUMP_SCALE_VAR, MAX_CLUMP_SCALE_VAR);
+		get => EditorClumpScale;
+		set => EditorClumpScale = value;
 	}
-	public bool EditorClumpMode { get; set; } = false;
+	private bool _editorClumpMode = false;
+	public bool EditorClumpMode
+	{
+		get => _editorClumpMode;
+		set
+		{
+			_editorClumpMode = value;
+			UpdateBrushMesh();
+		}
+	}
 
 	public bool EditorRandomRotation { get; set; } = false;
 	public bool EditorRandomScale { get; set; } = false;
