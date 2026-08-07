@@ -1231,7 +1231,10 @@ public class {mapName} : IMapScript
     <NativeLib>Shared</NativeLib>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include=""Realm.MapAPI"">
+	<TrimmerRootAssembly Include=""$(MSBuildProjectName)"" />
+  </ItemGroup>
+  <ItemGroup>
+	<Reference Include=""Realm.MapAPI"">
       <HintPath>lib/Realm.MapAPI.dll</HintPath>
     </Reference>
   </ItemGroup>
@@ -3092,9 +3095,9 @@ public class {mapName} : IMapScript
 		BuildDependencyInjection();
 		ResolveServices();
 
-		if (GroundTerrain != null)
+		if (_groundTerrain != null)
 		{
-			_editorService.SetTerrainSplatMap(GroundTerrain.SplatMap);
+			_editorService.SetTerrainSplatMap(_groundTerrain.SplatMap);
 		}
 
 		InitializeGameEcs();

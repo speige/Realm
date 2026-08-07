@@ -165,9 +165,10 @@ public class TestWasmMap : IWasmModule
 
         // 2. Compile to wasm programmatically using the Editor's compilation setup
         var compileProcess = new System.Diagnostics.Process();
+        string resolvedWasiSdk = WasiSdkResolver.ResolveWasiSdkPath();
         compileProcess.StartInfo.FileName = "dotnet";
-        compileProcess.StartInfo.Arguments = "publish \"TestWasmMap.csproj\" -c Release -r wasi-wasm";
-        compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = WasiSdkResolver.ResolveWasiSdkPath();
+        compileProcess.StartInfo.Arguments = $"publish \"TestWasmMap.csproj\" -c Release -r wasi-wasm -p:WASI_SDK_PATH=\"{resolvedWasiSdk}\"";
+        compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = resolvedWasiSdk;
         compileProcess.StartInfo.WorkingDirectory = tempMapDir;
         compileProcess.StartInfo.CreateNoWindow = true;
         compileProcess.StartInfo.UseShellExecute = false;

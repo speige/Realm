@@ -13,6 +13,9 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>
+    <TrimmerRootAssembly Include="$(MSBuildProjectName)" />
+  </ItemGroup>
+  <ItemGroup>
     <Reference Include="Realm.MapAPI">
       <HintPath>lib/Realm.MapAPI.dll</HintPath>
     </Reference>

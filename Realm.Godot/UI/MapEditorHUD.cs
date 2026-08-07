@@ -1473,46 +1473,6 @@ public partial class MapEditorHUD : Control
 			btnDel.CustomMinimumSize = new Vector2(28, 24);
 			row.AddChild(btnDel);
 		}
-		WriteCoordinatesCsFile();
-	}
-
-	public void WriteCoordinatesCsFile()
-	{
-		if (string.IsNullOrEmpty(_tempWorkspacePath)) return;
-		if (GameHost.Instance == null) return;
-
-		string filePath = System.IO.Path.Combine(_tempWorkspacePath, "Coordinates.cs");
-		var sb = new System.Text.StringBuilder();
-		sb.AppendLine("using Realm.MapAPI;");
-		sb.AppendLine();
-		sb.AppendLine("namespace Realm.Maps;");
-		sb.AppendLine();
-		sb.AppendLine("public static class Coordinates");
-		sb.AppendLine("{");
-
-		foreach (var coord in GameHost.Instance.EditorCoordinates)
-		{
-			string varName = System.Text.RegularExpressions.Regex.Replace(coord.Name, @"[^a-zA-Z0-9_]", "_");
-			if (varName.Length > 0 && char.IsDigit(varName[0])) varName = "_" + varName;
-
-			var invariant = System.Globalization.CultureInfo.InvariantCulture;
-			sb.AppendLine($"    public static readonly Coordinate {varName} = new Coordinate(");
-			sb.AppendLine(string.Format(invariant, "        new System.Numerics.Vector3({0:F2}f, 0f, {1:F2}f),", coord.MinX, coord.MinZ));
-			sb.AppendLine(string.Format(invariant, "        new System.Numerics.Vector3({0:F2}f, 0f, {1:F2}f)", coord.MaxX, coord.MaxZ));
-			sb.AppendLine("    );");
-			sb.AppendLine();
-		}
-
-		sb.AppendLine("}");
-
-		try
-		{
-			System.IO.File.WriteAllText(filePath, sb.ToString());
-		}
-		catch (System.Exception ex)
-		{
-			GD.PrintErr($"Failed to write Coordinates.cs: {ex.Message}");
-		}
 	}
 
 	public void UpdateGridOverlayExternal(GameHost.GridOverlayMode mode)
@@ -2932,10 +2892,11 @@ public partial class MapEditorHUD : Control
 			{
 				await System.Threading.Tasks.Task.Run(() => 
 				{
+					string resolvedWasiSdk = WasiSdkResolver.ResolveWasiSdkPath();
 					var compileProcess = new System.Diagnostics.Process();
 					compileProcess.StartInfo.FileName = "dotnet";
-					compileProcess.StartInfo.Arguments = "publish \"CustomMap.csproj\" -c Release -r wasi-wasm";
-					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = WasiSdkResolver.ResolveWasiSdkPath();
+					compileProcess.StartInfo.Arguments = $"publish \"CustomMap.csproj\" -c Release -r wasi-wasm -p:WASI_SDK_PATH=\"{resolvedWasiSdk}\"";
+					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = resolvedWasiSdk;
 					compileProcess.StartInfo.WorkingDirectory = workspace;
 					compileProcess.StartInfo.CreateNoWindow = true;
 					compileProcess.StartInfo.UseShellExecute = false;
@@ -3572,10 +3533,11 @@ public partial class MapEditorHUD : Control
 
 				await System.Threading.Tasks.Task.Run(() =>
 				{
+					string resolvedWasiSdk = WasiSdkResolver.ResolveWasiSdkPath();
 					var compileProcess = new System.Diagnostics.Process();
 					compileProcess.StartInfo.FileName = "dotnet";
-					compileProcess.StartInfo.Arguments = $"publish \"{csproj}\" -c Release -r wasi-wasm";
-					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = WasiSdkResolver.ResolveWasiSdkPath();
+					compileProcess.StartInfo.Arguments = $"publish \"{csproj}\" -c Release -r wasi-wasm -p:WASI_SDK_PATH=\"{resolvedWasiSdk}\"";
+					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = resolvedWasiSdk;
 					compileProcess.StartInfo.WorkingDirectory = workspace;
 					compileProcess.StartInfo.CreateNoWindow = true;
 					compileProcess.StartInfo.UseShellExecute = false;

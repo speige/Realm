@@ -61,7 +61,13 @@ public class VSCodeManager
 		string exePath = Path.Combine(binPath, "code.exe");
 		string completedMarkerPath = Path.Combine(embedDir, "install_completed.marker");
 		string bypassMarkerPath = Path.Combine(embedDir, "bypass_completed.marker");
-		return File.Exists(exePath) && (File.Exists(completedMarkerPath) || File.Exists(bypassMarkerPath));
+		string wasiDir = PathUtils.FindPath("wasi_sdk_embedded");
+		string wasiClangPath = Path.Combine(wasiDir, "bin", "clang.exe");
+		return File.Exists(exePath)
+			&& (File.Exists(completedMarkerPath) || File.Exists(bypassMarkerPath))
+			&& Directory.Exists(wasiDir)
+			&& File.Exists(wasiClangPath)
+			&& new FileInfo(wasiClangPath).Length > 0;
 	}
 
 	public void StartInstallIfNeeded()
@@ -90,10 +96,10 @@ public class VSCodeManager
 			{
 				try
 				{
-					string scriptPath = PathUtils.FindPath("install_vscode.ps1");
+					string scriptPath = PathUtils.FindPath("install_editor_dependencies.ps1");
 					if (File.Exists(scriptPath))
 					{
-						GD.Print("Starting VS Code self-repairing installation script: " + scriptPath);
+						GD.Print("Starting editor dependencies installation script: " + scriptPath);
 						using (var installProcess = new Process())
 						{
 							installProcess.StartInfo.FileName = "powershell.exe";

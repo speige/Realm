@@ -133,6 +133,24 @@ public interface IUnit
     void Teleport(Vector3 position);
 
     /// <summary>
+    /// Orders the unit to move to the center of the specified coordinate region.
+    /// </summary>
+    /// <param name="destination">The destination coordinate region.</param>
+    void MoveTo(Coordinate destination) => MoveTo(destination.Center);
+
+    /// <summary>
+    /// Orders the unit to attack-move towards the center of the specified coordinate region.
+    /// </summary>
+    /// <param name="destination">The target coordinate region for attack-moving.</param>
+    void AttackMove(Coordinate destination) => AttackMove(destination.Center);
+
+    /// <summary>
+    /// Instantly teleports the unit to the center of the specified coordinate region.
+    /// </summary>
+    /// <param name="position">The target coordinate region to teleport the unit to.</param>
+    void Teleport(Coordinate position) => Teleport(position.Center);
+
+    /// <summary>
     /// Gets or sets the current mana points of the unit.
     /// </summary>
     float Mana { get; set; }

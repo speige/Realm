@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8625;CS8981</NoWarn>
-    <DefaultItemExcludes>$(DefaultItemExcludes);vscode_embedded\**;.vscode\**;.godot\**;Maps\**\obj\**;Maps\**\bin\**;MapTemplate\**\obj\**;MapTemplate\**\bin\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);vscode_embedded\**;wasi_sdk_embedded\**;.vscode\**;.godot\**;Maps\**\obj\**;Maps\**\bin\**;MapTemplate\**\obj\**;MapTemplate\**\bin\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Realm.Ecs\Realm.Ecs.csproj" />
@@ -16,6 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="vscode_embedded\**" />
+    <Compile Remove="wasi_sdk_embedded\**" />
     <Compile Remove=".vscode\**" />
     <Compile Remove="Maps\**\obj\**" />
     <Compile Remove="Maps\**\bin\**" />
@@ -25,6 +26,7 @@
     <Compile Remove="MapTemplate\**\*.cs" />
     <Compile Remove=".godot\**" />
     <None Remove="vscode_embedded\**" />
+    <None Remove="wasi_sdk_embedded\**" />
     <None Remove=".vscode\**" />
     <None Remove="Maps\**\obj\**" />
     <None Remove="Maps\**\bin\**" />
@@ -33,7 +35,7 @@
     <None Remove="Maps\blank_map\**\*.cs" />
     <None Remove="MapTemplate\**\*.cs" />
     <None Remove=".godot\**" />
-    <None Include="install_vscode.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="install_editor_dependencies.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="vscode_extensions_dist\**\*.*" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\MapTemplate\**\*.*" Exclude="..\MapTemplate\bin\**;..\MapTemplate\obj\**">
       <Link>MapTemplate\%(RecursiveDir)%(Filename)%(Extension)</Link>

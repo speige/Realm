@@ -164,9 +164,15 @@ public static class MapWorkspaceService
 
 		string targetsTemplate = GetTemplatePath("Directory.Build.targets");
 		string targetsPath = Path.Combine(directory, "Directory.Build.targets");
-		if (!File.Exists(targetsPath) && File.Exists(targetsTemplate))
+		if (File.Exists(targetsTemplate))
 		{
-			File.Copy(targetsTemplate, targetsPath, true);
+			try
+			{
+				File.Copy(targetsTemplate, targetsPath, true);
+			}
+			catch
+			{
+			}
 		}
 	}
 
@@ -186,6 +192,12 @@ public static class MapWorkspaceService
 			@"<HintPath>[^<]*Realm\.MapAPI\.dll</HintPath>",
 			$"<HintPath>{MapApiDllRelativePath}</HintPath>",
 			System.Text.RegularExpressions.RegexOptions.Singleline);
+
+		if (!csprojContent.Contains("TrimmerRootAssembly"))
+		{
+			csprojContent = csprojContent.Replace("</Project>",
+				"  <ItemGroup>\n    <TrimmerRootAssembly Include=\"$(MSBuildProjectName)\" />\n  </ItemGroup>\n</Project>");
+		}
 
 		return csprojContent;
 	}

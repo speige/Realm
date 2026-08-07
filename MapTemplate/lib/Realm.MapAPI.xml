@@ -824,6 +824,62 @@
             <param name="coordinateName">The name of the coordinate box.</param>
             <returns>True if the position is inside the coordinate box, false otherwise.</returns>
         </member>
+        <member name="M:Realm.MapAPI.IGameAPI.GetCoordinate(System.String)">
+            <summary>
+            Gets the bounding coordinate box drawn in the map editor by name.
+            </summary>
+            <param name="coordinateName">The name of the coordinate box.</param>
+            <returns>A <see cref="T:Realm.MapAPI.Coordinate"/> representing the bounding region.</returns>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.TryGetCoordinate(System.String,Realm.MapAPI.Coordinate@)">
+            <summary>
+            Gets the bounding coordinates of a named coordinate box drawn in the map editor.
+            </summary>
+            <param name="coordinateName">The name of the coordinate box.</param>
+            <param name="coordinate">The resulting coordinate box if found.</param>
+            <returns>True if the coordinate box exists, false otherwise.</returns>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.IsPositionInCoordinate(System.Numerics.Vector3,Realm.MapAPI.Coordinate)">
+            <summary>
+            Checks if a 3D position is inside a coordinate bounding box.
+            </summary>
+            <param name="position">The position to check.</param>
+            <param name="coordinate">The coordinate box to check against.</param>
+            <returns>True if the position is inside the coordinate box, false otherwise.</returns>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.SpawnUnit(System.String,Realm.MapAPI.Coordinate,System.Boolean,System.Boolean)">
+            <summary>
+            Spawns a new unit of the specified type at the center of the given coordinate region.
+            </summary>
+            <param name="unitTypeId">The type identifier of the unit to spawn.</param>
+            <param name="coordinate">The coordinate region whose center will be used as spawn location.</param>
+            <param name="isEnemy">True if the unit belongs to the enemy player.</param>
+            <param name="bypassPopulation">If true, ignores population cap limits.</param>
+            <returns>The spawned <see cref="T:Realm.MapAPI.IUnit"/>.</returns>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.SpawnUnitForPlayer(System.String,Realm.MapAPI.Coordinate,System.Int32)">
+            <summary>
+            Spawns a new unit for a specific player at the center of the given coordinate region.
+            </summary>
+            <param name="unitTypeId">The type identifier of the unit to spawn.</param>
+            <param name="coordinate">The coordinate region whose center will be used as spawn location.</param>
+            <param name="playerIndex">The player index who will own the unit.</param>
+            <returns>The spawned <see cref="T:Realm.MapAPI.IUnit"/>.</returns>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.IssueMoveOrder(Realm.MapAPI.IUnit,Realm.MapAPI.Coordinate)">
+            <summary>
+            Orders a unit to move to the center of the specified coordinate region.
+            </summary>
+            <param name="unit">The unit to order.</param>
+            <param name="destination">The coordinate region to move to.</param>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.IssueAttackMoveOrder(Realm.MapAPI.IUnit,Realm.MapAPI.Coordinate)">
+            <summary>
+            Orders a unit to attack-move to the center of the specified coordinate region.
+            </summary>
+            <param name="unit">The unit to order.</param>
+            <param name="destination">The coordinate region to attack-move towards.</param>
+        </member>
         <member name="M:Realm.MapAPI.IGameAPI.AddUnitTypeAbility(System.String,System.String)">
             <summary>
             Adds an ability to the specified unit type definition.
@@ -1089,6 +1145,24 @@
             Instantly teleports the unit to the specified destination coordinates.
             </summary>
             <param name="position">The coordinates in 3D world space to teleport the unit to.</param>
+        </member>
+        <member name="M:Realm.MapAPI.IUnit.MoveTo(Realm.MapAPI.Coordinate)">
+            <summary>
+            Orders the unit to move to the center of the specified coordinate region.
+            </summary>
+            <param name="destination">The destination coordinate region.</param>
+        </member>
+        <member name="M:Realm.MapAPI.IUnit.AttackMove(Realm.MapAPI.Coordinate)">
+            <summary>
+            Orders the unit to attack-move towards the center of the specified coordinate region.
+            </summary>
+            <param name="destination">The target coordinate region for attack-moving.</param>
+        </member>
+        <member name="M:Realm.MapAPI.IUnit.Teleport(Realm.MapAPI.Coordinate)">
+            <summary>
+            Instantly teleports the unit to the center of the specified coordinate region.
+            </summary>
+            <param name="position">The target coordinate region to teleport the unit to.</param>
         </member>
         <member name="P:Realm.MapAPI.IUnit.Mana">
             <summary>

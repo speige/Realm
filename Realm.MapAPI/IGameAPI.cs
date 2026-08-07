@@ -801,7 +801,7 @@ public interface IGameAPI
 
     /// <summary>
     /// Orders the unit to move to the specified destination without attacking anything en route.
-    /// Unlike <see cref="IssueAttackMoveOrder"/>, this is a pure positional move command.
+    /// Unlike <see cref="IssueAttackMoveOrder(IUnit, Vector3)"/>, this is a pure positional move command.
     /// </summary>
     /// <param name="unit">The unit to command.</param>
     /// <param name="destination">The destination in world coordinates.</param>
@@ -870,6 +870,93 @@ public interface IGameAPI
     /// <param name="coordinateName">The name of the coordinate box.</param>
     /// <returns>True if the position is inside the coordinate box, false otherwise.</returns>
     bool IsPositionInCoordinate(Vector3 position, string coordinateName);
+
+    /// <summary>
+    /// Gets the bounding coordinate box drawn in the map editor by name.
+    /// </summary>
+    /// <param name="coordinateName">The name of the coordinate box.</param>
+    /// <returns>A <see cref="Coordinate"/> representing the bounding region.</returns>
+    Coordinate GetCoordinate(string coordinateName)
+    {
+        return new Coordinate(GetCoordinateMin(coordinateName), GetCoordinateMax(coordinateName));
+    }
+
+    /// <summary>
+    /// Gets the bounding coordinates of a named coordinate box drawn in the map editor.
+    /// </summary>
+    /// <param name="coordinateName">The name of the coordinate box.</param>
+    /// <param name="coordinate">The resulting coordinate box if found.</param>
+    /// <returns>True if the coordinate box exists, false otherwise.</returns>
+    bool TryGetCoordinate(string coordinateName, out Coordinate coordinate)
+    {
+        if (HasCoordinate(coordinateName))
+        {
+            coordinate = GetCoordinate(coordinateName);
+            return true;
+        }
+        coordinate = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if a 3D position is inside a coordinate bounding box.
+    /// </summary>
+    /// <param name="position">The position to check.</param>
+    /// <param name="coordinate">The coordinate box to check against.</param>
+    /// <returns>True if the position is inside the coordinate box, false otherwise.</returns>
+    bool IsPositionInCoordinate(Vector3 position, Coordinate coordinate)
+    {
+        float minX = MathF.Min(coordinate.Min.X, coordinate.Max.X);
+        float maxX = MathF.Max(coordinate.Min.X, coordinate.Max.X);
+        float minZ = MathF.Min(coordinate.Min.Z, coordinate.Max.Z);
+        float maxZ = MathF.Max(coordinate.Min.Z, coordinate.Max.Z);
+        return position.X >= minX && position.X <= maxX && position.Z >= minZ && position.Z <= maxZ;
+    }
+
+    /// <summary>
+    /// Spawns a new unit of the specified type at the center of the given coordinate region.
+    /// </summary>
+    /// <param name="unitTypeId">The type identifier of the unit to spawn.</param>
+    /// <param name="coordinate">The coordinate region whose center will be used as spawn location.</param>
+    /// <param name="isEnemy">True if the unit belongs to the enemy player.</param>
+    /// <param name="bypassPopulation">If true, ignores population cap limits.</param>
+    /// <returns>The spawned <see cref="IUnit"/>.</returns>
+    IUnit SpawnUnit(string unitTypeId, Coordinate coordinate, bool isEnemy, bool bypassPopulation = false)
+    {
+        return SpawnUnit(unitTypeId, coordinate.Center, isEnemy, bypassPopulation);
+    }
+
+    /// <summary>
+    /// Spawns a new unit for a specific player at the center of the given coordinate region.
+    /// </summary>
+    /// <param name="unitTypeId">The type identifier of the unit to spawn.</param>
+    /// <param name="coordinate">The coordinate region whose center will be used as spawn location.</param>
+    /// <param name="playerIndex">The player index who will own the unit.</param>
+    /// <returns>The spawned <see cref="IUnit"/>.</returns>
+    IUnit SpawnUnitForPlayer(string unitTypeId, Coordinate coordinate, int playerIndex)
+    {
+        return SpawnUnitForPlayer(unitTypeId, coordinate.Center, playerIndex);
+    }
+
+    /// <summary>
+    /// Orders a unit to move to the center of the specified coordinate region.
+    /// </summary>
+    /// <param name="unit">The unit to order.</param>
+    /// <param name="destination">The coordinate region to move to.</param>
+    void IssueMoveOrder(IUnit unit, Coordinate destination)
+    {
+        IssueMoveOrder(unit, destination.Center);
+    }
+
+    /// <summary>
+    /// Orders a unit to attack-move to the center of the specified coordinate region.
+    /// </summary>
+    /// <param name="unit">The unit to order.</param>
+    /// <param name="destination">The coordinate region to attack-move towards.</param>
+    void IssueAttackMoveOrder(IUnit unit, Coordinate destination)
+    {
+        IssueAttackMoveOrder(unit, destination.Center);
+    }
 
     /// <summary>
     /// Adds an ability to the specified unit type definition.
