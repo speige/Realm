@@ -1701,12 +1701,12 @@ public partial class GameHost
 		_editorService.TickClumpCooldown(fDelta);
 
 		var mousePos = GetViewport().GetMousePosition();
-		var hit = RaycastFromMouse(mousePos);
+		var terrainHit = RaycastTerrainFromMouse(mousePos);
 		Vector3 hitPos = Vector3.Zero;
 		bool hasHit = false;
-		if (hit != null && hit.ContainsKey("position"))
+		if (terrainHit != null && terrainHit.ContainsKey("position"))
 		{
-			hitPos = hit["position"].AsVector3();
+			hitPos = terrainHit["position"].AsVector3();
 			hasHit = true;
 		}
 		else
@@ -1788,7 +1788,8 @@ public partial class GameHost
 			Node newHovered = null;
 			if (canHover && !IsMouseOverUI())
 			{
-				var collider = (hit != null && hit.ContainsKey("collider")) ? hit["collider"].As<Node>() : null;
+				var objectHit = RaycastFromMouse(mousePos);
+				var collider = (objectHit != null && objectHit.ContainsKey("collider")) ? objectHit["collider"].As<Node>() : null;
 				if (collider != null)
 				{
 					newHovered = FindUnit3DInParentChain(collider);

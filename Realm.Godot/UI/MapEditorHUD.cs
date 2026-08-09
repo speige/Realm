@@ -1218,7 +1218,7 @@ public partial class MapEditorHUD : Control
 		{
 			_viewModel.UpdateFromHost();
 			var mousePos = GetViewport().GetMousePosition();
-			if (GameHost.Instance.TryRaycastFromMousePosition(mousePos, out Vector3 pos))
+			if (GameHost.Instance.TryRaycastTerrainFromMousePosition(mousePos, out Vector3 pos))
 			{
 				if ((pos - _lastRaycastPos).LengthSquared() > 0.01f)
 				{

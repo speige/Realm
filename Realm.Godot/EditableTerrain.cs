@@ -7,6 +7,13 @@ using System.Collections.Generic;
 
 public partial class EditableTerrain : StaticBody3D
 {
+	public const uint TerrainCollisionLayer = 2;
+
+	public EditableTerrain()
+	{
+		CollisionLayer = 1U | TerrainCollisionLayer;
+	}
+
 	public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLinearLuminance = 0.35f, float maxScaleFactor = 2.2f)
 	{
 		int w = sourceImage.GetWidth();
@@ -811,6 +818,7 @@ void fragment() {
 
 	public override void _Ready()
 	{
+		CollisionLayer = 1U | TerrainCollisionLayer;
 		var cells = Cells;
 		if (cells == null || cells.GetLength(0) != Width || cells.GetLength(1) != Depth)
 		{

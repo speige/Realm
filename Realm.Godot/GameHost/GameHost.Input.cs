@@ -257,7 +257,7 @@ public partial class GameHost
 					var copiedObj = _editorService.GetCopiedObject();
 					if (copiedObj != null)
 					{
-						var hit = RaycastFromMouse(GetViewport().GetMousePosition());
+						var hit = RaycastTerrainFromMouse(GetViewport().GetMousePosition());
 						if (hit != null && hit.ContainsKey("position"))
 						{
 							Vector3 spawnPos = hit["position"].AsVector3();
@@ -358,7 +358,7 @@ public partial class GameHost
 					{
 						Node3D selectedNode = SelectedEditorObject as Node3D;
 						Vector3 spawnPos;
-						var hit = RaycastFromMouse(GetViewport().GetMousePosition());
+						var hit = RaycastTerrainFromMouse(GetViewport().GetMousePosition());
 						if (hit != null && hit.ContainsKey("position"))
 						{
 							spawnPos = hit["position"].AsVector3();
@@ -742,10 +742,11 @@ public partial class GameHost
 					return;
 				}
 				
+				var terrainHit = RaycastTerrainFromMouse(editorMouseBtn.Position);
 				var hit = RaycastFromMouse(editorMouseBtn.Position);
-				if (hit != null && hit.ContainsKey("position"))
+				if ((terrainHit != null && terrainHit.ContainsKey("position")) || (hit != null && hit.ContainsKey("position")))
 				{
-					Vector3 hitPos = hit["position"].AsVector3();
+					Vector3 hitPos = (terrainHit != null && terrainHit.ContainsKey("position")) ? terrainHit["position"].AsVector3() : hit["position"].AsVector3();
 					
 					if (EditorSnapToGrid && GroundTerrain != null)
 					{
@@ -2107,7 +2108,12 @@ public partial class GameHost
 		return null;
 	}
 
-	public bool TryRaycastFromMousePosition(Vector2 mousePos, out Vector3 position)
+	public bool TryRaycastTerrainFromMousePosition(Vector2 mousePos, out Vector3 position)
+	{
+		return TryRaycastFromMousePosition(mousePos, out position, EditableTerrain.TerrainCollisionLayer);
+	}
+
+	public bool TryRaycastFromMousePosition(Vector2 mousePos, out Vector3 position, uint collisionMask = uint.MaxValue)
 	{
 		position = Vector3.Zero;
 		var camera = GetViewport()?.GetCamera3D();
@@ -2122,6 +2128,7 @@ public partial class GameHost
 		_cachedRaycastQuery ??= new PhysicsRayQueryParameters3D();
 		_cachedRaycastQuery.From = from;
 		_cachedRaycastQuery.To = to;
+		_cachedRaycastQuery.CollisionMask = collisionMask;
 		var result = spaceState.IntersectRay(_cachedRaycastQuery);
 
 		if (result.Count == 0 || !result.ContainsKey("position")) return false;
@@ -2129,7 +2136,12 @@ public partial class GameHost
 		return true;
 	}
 
-	public Godot.Collections.Dictionary RaycastFromMouse(Vector2 mousePos)
+	public Godot.Collections.Dictionary RaycastTerrainFromMouse(Vector2 mousePos)
+	{
+		return RaycastFromMouse(mousePos, EditableTerrain.TerrainCollisionLayer);
+	}
+
+	public Godot.Collections.Dictionary RaycastFromMouse(Vector2 mousePos, uint collisionMask = uint.MaxValue)
 	{
 		var camera = GetViewport()?.GetCamera3D();
 		if (camera == null) return null;
@@ -2143,6 +2155,7 @@ public partial class GameHost
 		_cachedRaycastQuery ??= new PhysicsRayQueryParameters3D();
 		_cachedRaycastQuery.From = from;
 		_cachedRaycastQuery.To = to;
+		_cachedRaycastQuery.CollisionMask = collisionMask;
 		var result = spaceState.IntersectRay(_cachedRaycastQuery);
 
 		if (result.Count == 0) return null;
