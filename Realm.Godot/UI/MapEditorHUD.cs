@@ -181,6 +181,8 @@ public partial class MapEditorHUD : Control
 	private HSlider _sldModelYOffset;
 	private HSlider _sldModelGlobalCollisionCircle;
 	private HSlider _sldModelBrightness;
+	private HSlider _sldModelColorTint;
+	private ColorPickerButton _cpkModelColorTint;
 	private CheckBox _chkModelGenerateNormals;
 	private bool _isUpdatingInspectorUI;
 
@@ -1395,6 +1397,22 @@ public partial class MapEditorHUD : Control
 				if (_sldModelBrightness != null)
 				{
 					_sldModelBrightness.Value = GameHost.Instance.GetModelBrightness(assetKey);
+				}
+				if (_sldModelColorTint != null || _cpkModelColorTint != null)
+				{
+					Color tint = GameHost.Instance.GetModelColorTint(assetKey);
+					if (_cpkModelColorTint != null) _cpkModelColorTint.Color = tint;
+					if (_sldModelColorTint != null)
+					{
+						if (Mathf.Abs(tint.R - 1.0f) < 0.001f && Mathf.Abs(tint.G - 1.0f) < 0.001f && Mathf.Abs(tint.B - 1.0f) < 0.001f)
+						{
+							_sldModelColorTint.Value = 0.0f;
+						}
+						else
+						{
+							_sldModelColorTint.Value = tint.H;
+						}
+					}
 				}
 				if (_chkModelGenerateNormals != null)
 				{
@@ -5236,6 +5254,70 @@ public partial class MapEditorHUD : Control
 				GameHost.Instance?.FlushModelYOffsetSave();
 				string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+			};
+
+			var tintRow = new HBoxContainer();
+
+			var lblTintName = new Label();
+			lblTintName.Text = TranslationServer.Translate("Color Tinting");
+			lblTintName.CustomMinimumSize = new Vector2(110, 0);
+			lblTintName.AddThemeFontSizeOverride("font_size", 11);
+			tintRow.AddChild(lblTintName);
+
+			_sldModelColorTint = new HSlider();
+			_sldModelColorTint.MinValue = 0.0f;
+			_sldModelColorTint.MaxValue = 1.0f;
+			_sldModelColorTint.Step = 0.01f;
+			_sldModelColorTint.Value = 0.0f;
+			_sldModelColorTint.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+			_sldModelColorTint.CustomMinimumSize = new Vector2(90, 0);
+			_sldModelColorTint.DragStarted += () => _isDraggingSlider = true;
+			_sldModelColorTint.DragEnded += (valueChanged) =>
+			{
+				_isDraggingSlider = false;
+				GameHost.Instance?.FlushModelYOffsetSave();
+				string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+			};
+			tintRow.AddChild(_sldModelColorTint);
+
+			_cpkModelColorTint = new ColorPickerButton();
+			_cpkModelColorTint.CustomMinimumSize = new Vector2(40, 20);
+			_cpkModelColorTint.EditAlpha = false;
+			_cpkModelColorTint.Color = new Color(1.0f, 1.0f, 1.0f);
+			tintRow.AddChild(_cpkModelColorTint);
+
+			_contentGlobalOverrides.AddChild(tintRow);
+
+			_sldModelColorTint.ValueChanged += (double val) =>
+			{
+				if (_isUpdatingInspectorUI) return;
+				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
+				{
+					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					if (!string.IsNullOrEmpty(assetKey))
+					{
+						Color tintColor = (val <= 0.0) ? new Color(1.0f, 1.0f, 1.0f) : Color.FromHsv((float)val, 0.75f, 1.0f);
+						if (_cpkModelColorTint != null) _cpkModelColorTint.Color = tintColor;
+						GameHost.Instance.SetModelColorTint(assetKey, tintColor);
+					}
+				}
+			};
+
+			_cpkModelColorTint.ColorChanged += (Color color) =>
+			{
+				if (_isUpdatingInspectorUI) return;
+				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
+				{
+					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					if (!string.IsNullOrEmpty(assetKey))
+					{
+						GameHost.Instance.SetModelColorTint(assetKey, color);
+						GameHost.Instance.FlushModelYOffsetSave();
+						string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+						_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+					}
+				}
 			};
 
 

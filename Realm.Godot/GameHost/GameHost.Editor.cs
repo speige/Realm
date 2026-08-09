@@ -15,6 +15,7 @@ public partial class GameHost
 	public readonly Dictionary<string, float> ModelYOffsets = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, float> ModelCollisionCircleRatios = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, float> ModelBrightness = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, Color> ModelColorTint = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, bool> ModelGenerateNormals = new(StringComparer.OrdinalIgnoreCase);
 	private bool _modelYOffsetSavePending = false;
 	private bool _modelCollisionCircleSavePending = false;
@@ -54,6 +55,10 @@ public partial class GameHost
 				return NormalizeModelAssetKey(meta.ModelPath);
 			return NormalizeModelAssetKey(unit.UnitId);
 		}
+		if (objOrId is Node node)
+		{
+			return NormalizeModelAssetKey(node.Name.ToString());
+		}
 		if (objOrId is string str)
 		{
 			return NormalizeModelAssetKey(str);
@@ -82,7 +87,7 @@ public partial class GameHost
 		{
 			if (GodotObject.IsInstanceValid(prop) && GetModelAssetKey(prop) == norm)
 			{
-				prop.UpdateVisualYOffset(offset);
+				prop.Position = new Vector3(prop.Position.X, _editorService.GetTerrainHeightAt(prop.Position) + offset, prop.Position.Z);
 			}
 		}
 
@@ -165,6 +170,34 @@ public partial class GameHost
 		EditorHasUnsavedChanges = true;
 	}
 
+	public Color GetModelColorTint(string assetKey)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(norm) && ModelColorTint.TryGetValue(norm, out Color cVal))
+		{
+			return cVal;
+		}
+		return new Color(1.0f, 1.0f, 1.0f);
+	}
+
+	public void SetModelColorTint(string assetKey, Color color)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (string.IsNullOrEmpty(norm)) return;
+
+		Color clamped = new Color(
+			Mathf.Clamp(color.R, 0.0f, 1.0f),
+			Mathf.Clamp(color.G, 0.0f, 1.0f),
+			Mathf.Clamp(color.B, 0.0f, 1.0f),
+			1.0f
+		);
+		ModelColorTint[norm] = clamped;
+		UpdateMaterialOverridesForAsset(norm);
+
+		_modelYOffsetSavePending = true;
+		EditorHasUnsavedChanges = true;
+	}
+
 	public bool GetModelGenerateNormals(string assetKey)
 	{
 		string norm = NormalizeModelAssetKey(assetKey);
@@ -192,13 +225,14 @@ public partial class GameHost
 		if (string.IsNullOrEmpty(normAssetKey)) return;
 
 		float brightness = GetModelBrightness(normAssetKey);
+		Color tint = GetModelColorTint(normAssetKey);
 		bool generateNormals = GetModelGenerateNormals(normAssetKey);
 
 		foreach (var prop in AllProps)
 		{
 			if (GodotObject.IsInstanceValid(prop) && GetModelAssetKey(prop) == normAssetKey)
 			{
-				ApplyMaterialOverridesToNode(prop, brightness, generateNormals);
+				ApplyMaterialOverridesToNode(prop, brightness, tint, generateNormals);
 			}
 		}
 
@@ -206,22 +240,28 @@ public partial class GameHost
 		{
 			if (GodotObject.IsInstanceValid(unit) && GetModelAssetKey(unit) == normAssetKey)
 			{
-				ApplyMaterialOverridesToNode(unit, brightness, generateNormals);
+				ApplyMaterialOverridesToNode(unit, brightness, tint, generateNormals);
 			}
 		}
 
 		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode) && GetModelAssetKey(_editorPreviewNode) == normAssetKey)
 		{
-			ApplyMaterialOverridesToNode(_editorPreviewNode, brightness, generateNormals);
+			ApplyMaterialOverridesToNode(_editorPreviewNode, brightness, tint, generateNormals);
 		}
 	}
 
 	public static void ApplyMaterialOverridesToNode(
 		Node node,
 		float brightness = 1.0f,
+		Color? colorTint = null,
 		bool generateNormals = false)
 	{
 		if (node == null || !GodotObject.IsInstanceValid(node)) return;
+
+		Color tint = colorTint ?? new Color(1.0f, 1.0f, 1.0f);
+		float multR = brightness * tint.R;
+		float multG = brightness * tint.G;
+		float multB = brightness * tint.B;
 
 		var meshNodes = FindMeshInstancesRecursive(node);
 		foreach (var meshInst in meshNodes)
@@ -275,13 +315,13 @@ public partial class GameHost
 						meshInst.SetSurfaceOverrideMaterial(i, baseMat);
 					}
 
-					baseMat.AlbedoColor = new Color(brightness, brightness, brightness, baseMat.AlbedoColor.A);
+					baseMat.AlbedoColor = new Color(multR, multG, multB, baseMat.AlbedoColor.A);
 				}
 			}
 
 			if (meshInst.MaterialOverride is BaseMaterial3D overrideMat)
 			{
-				overrideMat.AlbedoColor = new Color(brightness, brightness, brightness, overrideMat.AlbedoColor.A);
+				overrideMat.AlbedoColor = new Color(multR, multG, multB, overrideMat.AlbedoColor.A);
 			}
 		}
 	}
@@ -1119,10 +1159,11 @@ public partial class GameHost
 		if (!string.IsNullOrEmpty(unitAssetKey))
 		{
 			float brightness = GetModelBrightness(unitAssetKey);
+			Color tint = GetModelColorTint(unitAssetKey);
 			bool generateNormals = GetModelGenerateNormals(unitAssetKey);
-			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals)
+			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals || tint != new Color(1.0f, 1.0f, 1.0f))
 			{
-				ApplyMaterialOverridesToNode(unit3D, brightness, generateNormals);
+				ApplyMaterialOverridesToNode(unit3D, brightness, tint, generateNormals);
 			}
 		}
 
@@ -1167,10 +1208,11 @@ public partial class GameHost
 		if (!string.IsNullOrEmpty(propAssetKey))
 		{
 			float brightness = GetModelBrightness(propAssetKey);
+			Color tint = GetModelColorTint(propAssetKey);
 			bool generateNormals = GetModelGenerateNormals(propAssetKey);
-			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals)
+			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals || tint != new Color(1.0f, 1.0f, 1.0f))
 			{
-				ApplyMaterialOverridesToNode(prop, brightness, generateNormals);
+				ApplyMaterialOverridesToNode(prop, brightness, tint, generateNormals);
 			}
 		}
 
