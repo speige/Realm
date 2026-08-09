@@ -5279,7 +5279,7 @@ public partial class MapEditorHUD : Control
 			var tintRow = new HBoxContainer();
 
 			var lblTintName = new Label();
-			lblTintName.Text = TranslationServer.Translate("Color Tinting");
+			lblTintName.Text = TranslationServer.Translate("Tint");
 			lblTintName.CustomMinimumSize = new Vector2(110, 0);
 			lblTintName.AddThemeFontSizeOverride("font_size", 11);
 			tintRow.AddChild(lblTintName);
