@@ -732,6 +732,7 @@ public partial class GameHost
 
 		EditorCoordinates.Clear();
 		RebuildAllCoordinatePersistentMeshes();
+		HideCoordinateSelectionOutline();
 		MapEditorHUD.Instance?.RefreshCoordinateListExternal();
 
 		MapEditorHUD.Instance?.ClearTempWorkspaceExternal();
@@ -765,6 +766,15 @@ public partial class GameHost
 	{
 		if (GroundTerrain == null) return;
 
+		var positions = new List<Vector3> { worldPos };
+		if (EditorMirrorMode != MirrorMode.None)
+		{
+			foreach (var t in GetMirroredTransforms(worldPos, 0.0f))
+			{
+				positions.Add(t.Position);
+			}
+		}
+
 		int pathingMask = 0;
 		bool pathingAdd = true;
 		if (ActiveEditorTool == EditorTool.PaintPathing && MapEditorHUD.Instance != null)
@@ -776,37 +786,56 @@ public partial class GameHost
 		bool applyGround = MapEditorHUD.Instance?.IsApplyGroundTextureEnabled() ?? true;
 		bool applyCliff = MapEditorHUD.Instance?.IsApplyCliffTextureEnabled() ?? true;
 
-		var result = _editorService.ApplyContinuousTerrainEditing(
-			worldPos, delta,
-			ActiveEditorTool,
-			EditorBrushRadius, EditorBrushStrength,
-			EditorBrushIsSquare,
-			EditorBlockMode, EditorBlockLevelHeight,
-			EditorPaintTextureIndex, EditorCliffPaintTextureIndex,
-			pathingMask, pathingAdd,
-			isFirstClick,
-			applyGround, applyCliff);
+		var frameAffectedRegions = new List<Rect2I>();
+		bool anyHeightsModified = false;
+		bool anyPathingModified = false;
+		bool anyModified = false;
 
-		if (result.HeightsModified || result.SplatModified || result.PathingModified)
+		foreach (var pos in positions)
 		{
-			Rect2I affected = new Rect2I(result.MinX - 2, result.MinZ - 2, result.MaxX - result.MinX + 4, result.MaxZ - result.MinZ + 4);
+			var result = _editorService.ApplyContinuousTerrainEditing(
+				pos, delta,
+				ActiveEditorTool,
+				EditorBrushRadius, EditorBrushStrength,
+				EditorBrushIsSquare,
+				EditorBlockMode, EditorBlockLevelHeight,
+				EditorPaintTextureIndex, EditorCliffPaintTextureIndex,
+				pathingMask, pathingAdd,
+				isFirstClick,
+				applyGround, applyCliff);
 
-			// Accumulate the affected region so the final flush at mouse-release covers the whole stroke.
-			_terrainFlushRegion = _terrainFlushRegion.HasValue ? _terrainFlushRegion.Value.Merge(affected) : affected;
-			_terrainGeometryDirty = true;
+			if (result.HeightsModified || result.SplatModified || result.PathingModified)
+			{
+				Rect2I affected = new Rect2I(result.MinX - 2, result.MinZ - 2, result.MaxX - result.MinX + 4, result.MaxZ - result.MinZ + 4);
 
+				// Accumulate the affected region so the final flush at mouse-release covers the whole stroke.
+				_terrainFlushRegion = _terrainFlushRegion.HasValue ? _terrainFlushRegion.Value.Merge(affected) : affected;
+				_terrainGeometryDirty = true;
+
+				frameAffectedRegions.Add(affected);
+				if (result.HeightsModified) anyHeightsModified = true;
+				if (result.PathingModified) anyPathingModified = true;
+				anyModified = true;
+			}
+		}
+
+		if (anyModified)
+		{
 			// Limit the number of full mesh/water rebuilds while dragging so painting stays smooth
 			// on large maps, while the terrain data itself is updated every frame.
 			long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 			if (isFirstClick || nowMs - _lastTerrainMeshRebuildMs >= TerrainMeshRebuildPeriodMs)
 			{
 				_lastTerrainMeshRebuildMs = nowMs;
-				GroundTerrain.UpdateMeshAndPhysics(false, false, affected, result.HeightsModified); // false for physics rebuild during drag
-				if (result.HeightsModified)
+				GroundTerrain.UpdateMeshAndPhysics(false, false, frameAffectedRegions, anyHeightsModified); // false for physics rebuild during drag
+				if (anyHeightsModified)
 				{
-					AlignAllEntitiesToTerrain(affected);
+					foreach (var affected in frameAffectedRegions)
+					{
+						AlignAllEntitiesToTerrain(affected);
+					}
 				}
-				if (result.PathingModified && PathingOverlayVisible)
+				if (anyPathingModified && PathingOverlayVisible)
 				{
 					RebuildPathingOverlay();
 				}
@@ -1886,13 +1915,6 @@ public partial class GameHost
 
 
 				ApplyContinuousTerrainEditing(hitPos, fDelta, firstClick);
-				if (EditorMirrorMode != MirrorMode.None)
-				{
-					foreach (var t in GetMirroredTransforms(hitPos, 0.0f))
-					{
-						ApplyContinuousTerrainEditing(t.Position, fDelta, firstClick);
-					}
-				}
 			}
 			else
 			{
@@ -2349,17 +2371,18 @@ public partial class GameHost
 		if (GroundTerrain == null || GroundTerrain.SplatMap == null) return;
 		if (indexA == indexB) return;
 
-		int width = GroundTerrain.Width;
-		int depth = GroundTerrain.Depth;
+		int splatW = GroundTerrain.SplatMap.GetLength(0);
+		int splatD = GroundTerrain.SplatMap.GetLength(1);
 
-		float[,] heightsBefore = (float[,])GroundTerrain.Heights.Clone();
+		float[,] heightsBefore = GroundTerrain.Heights != null ? (float[,])GroundTerrain.Heights.Clone() : null;
 		TerrainSplatWeights[,] splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+		TerrainSplatWeights[,] cliffBefore = GroundTerrain.CliffSplatMap != null ? (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone() : null;
 
 		bool anyChanged = false;
 
-		for (int z = 0; z < depth; z++)
+		for (int z = 0; z < splatD; z++)
 		{
-			for (int x = 0; x < width; x++)
+			for (int x = 0; x < splatW; x++)
 			{
 				var s = GroundTerrain.SplatMap[x, z];
 				if (s.Index0 == indexA || s.Index0 == indexB ||
@@ -2380,15 +2403,39 @@ public partial class GameHost
 					};
 					anyChanged = true;
 				}
+
+				if (GroundTerrain.CliffSplatMap != null && x < GroundTerrain.CliffSplatMap.GetLength(0) && z < GroundTerrain.CliffSplatMap.GetLength(1))
+				{
+					var c = GroundTerrain.CliffSplatMap[x, z];
+					if (c.Index0 == indexA || c.Index0 == indexB ||
+						c.Index1 == indexA || c.Index1 == indexB ||
+						c.Index2 == indexA || c.Index2 == indexB ||
+						c.Index3 == indexA || c.Index3 == indexB)
+					{
+						GroundTerrain.CliffSplatMap[x, z] = new TerrainSplatWeights
+						{
+							Index0 = c.Index0 == indexA ? indexB : (c.Index0 == indexB ? indexA : c.Index0),
+							Index1 = c.Index1 == indexA ? indexB : (c.Index1 == indexB ? indexA : c.Index1),
+							Index2 = c.Index2 == indexA ? indexB : (c.Index2 == indexB ? indexA : c.Index2),
+							Index3 = c.Index3 == indexA ? indexB : (c.Index3 == indexB ? indexA : c.Index3),
+							Weight0 = c.Weight0,
+							Weight1 = c.Weight1,
+							Weight2 = c.Weight2,
+							Weight3 = c.Weight3
+						};
+						anyChanged = true;
+					}
+				}
 			}
 		}
 
 		if (anyChanged)
 		{
-			float[,] heightsAfter = (float[,])GroundTerrain.Heights.Clone();
+			float[,] heightsAfter = GroundTerrain.Heights != null ? (float[,])GroundTerrain.Heights.Clone() : null;
 			TerrainSplatWeights[,] splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+			TerrainSplatWeights[,] cliffAfter = GroundTerrain.CliffSplatMap != null ? (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone() : null;
 			
-			var action = new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter);
+			var action = new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter, null, null, cliffBefore, cliffAfter);
 			EditorHistoryManager.RecordAction(action);
 			EditorHasUnsavedChanges = true;
 			
@@ -3045,6 +3092,7 @@ public partial class GameHost
 		var oldCoordinates = new List<EditorCoordinate>(EditorCoordinates);
 		EditorCoordinates.RemoveAll(r => r.Name == coordinateName);
 		RebuildAllCoordinatePersistentMeshes();
+		HideCoordinateSelectionOutline();
 
 		var newCoordinates = new List<EditorCoordinate>(EditorCoordinates);
 		var action = new CoordinateAction(oldCoordinates, newCoordinates);

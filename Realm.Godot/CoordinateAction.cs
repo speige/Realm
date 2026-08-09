@@ -19,6 +19,7 @@ public class CoordinateAction : IEditorAction
 			GameHost.Instance.EditorCoordinates.Clear();
 			GameHost.Instance.EditorCoordinates.AddRange(_oldCoordinates);
 			GameHost.Instance.RebuildAllCoordinatePersistentMeshes();
+			GameHost.Instance.HideCoordinateSelectionOutline();
 			MapEditorHUD.Instance?.RefreshCoordinateListExternal();
 		}
 	}
@@ -30,6 +31,7 @@ public class CoordinateAction : IEditorAction
 			GameHost.Instance.EditorCoordinates.Clear();
 			GameHost.Instance.EditorCoordinates.AddRange(_newCoordinates);
 			GameHost.Instance.RebuildAllCoordinatePersistentMeshes();
+			GameHost.Instance.HideCoordinateSelectionOutline();
 			MapEditorHUD.Instance?.RefreshCoordinateListExternal();
 		}
 	}

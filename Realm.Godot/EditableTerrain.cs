@@ -1662,6 +1662,11 @@ void fragment() {
 
 	public void UpdateMeshAndPhysics(bool rebuildPhysics = true, bool rebuildNavMesh = true, Rect2I? affectedRegion = null, bool rebuildWater = true)
 	{
+		UpdateMeshAndPhysics(rebuildPhysics, rebuildNavMesh, affectedRegion.HasValue ? new[] { affectedRegion.Value } : (IEnumerable<Rect2I>?)null, rebuildWater);
+	}
+
+	public void UpdateMeshAndPhysics(bool rebuildPhysics, bool rebuildNavMesh, IEnumerable<Rect2I>? affectedRegions, bool rebuildWater = true)
+	{
 		int w = Width;
 		int d = Depth;
 
@@ -1690,11 +1695,19 @@ void fragment() {
 
 		foreach (var chunk in _chunks)
 		{
-			if (affectedRegion.HasValue)
+			if (affectedRegions != null)
 			{
-				var region = affectedRegion.Value;
-				if (chunk.EndX < region.Position.X || chunk.StartX > region.Position.X + region.Size.X ||
-					chunk.EndZ < region.Position.Y || chunk.StartZ > region.Position.Y + region.Size.Y)
+				bool intersectsAny = false;
+				foreach (var region in affectedRegions)
+				{
+					if (!(chunk.EndX < region.Position.X || chunk.StartX > region.Position.X + region.Size.X ||
+						  chunk.EndZ < region.Position.Y || chunk.StartZ > region.Position.Y + region.Size.Y))
+					{
+						intersectsAny = true;
+						break;
+					}
+				}
+				if (!intersectsAny)
 				{
 					continue;
 				}
