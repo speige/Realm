@@ -529,7 +529,7 @@ public class VSCodeManager
 
 				string base64Png = "";
 				var tcs = new System.Threading.Tasks.TaskCompletionSource<string>();
-				Callable.From(async () =>
+				async void GenerateSnapshotDeferred()
 				{
 					try
 					{
@@ -545,7 +545,8 @@ public class VSCodeManager
 						GD.PrintErr($"[VSCodeManager] GenerateAssetSnapshotBase64 error: {ex.Message}");
 						tcs.TrySetResult("");
 					}
-				}).CallDeferred();
+				}
+				Callable.From(GenerateSnapshotDeferred).CallDeferred();
 
 				base64Png = await tcs.Task;
 
