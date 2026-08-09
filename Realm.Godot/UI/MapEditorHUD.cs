@@ -2255,8 +2255,15 @@ public partial class MapEditorHUD : Control
 		_tempWorkspacePath = ProjectSettings.GlobalizePath(TempWorkspaceGodotPath);
 		if (!ReturningFromTest)
 		{
-			System.IO.Directory.CreateDirectory(_tempWorkspacePath);
-			MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "CustomMap");
+			try
+			{
+				System.IO.Directory.CreateDirectory(_tempWorkspacePath);
+				MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "CustomMap");
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"Failed initializing temp workspace: {ex.Message}");
+			}
 		}
 
 		string initTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
@@ -2270,15 +2277,28 @@ public partial class MapEditorHUD : Control
 		syncTimer.Timeout += OnSyncTimerTimeout;
 		AddChild(syncTimer);
 
-		// Load properties from map.json
-		LoadMapProperties();
+		try
+		{
+			LoadMapProperties();
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"LoadMapProperties error: {ex.Message}");
+		}
 
 		if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 		{
-			GameHost.Instance.GroundTerrain.ReloadTerrainTextures(false);
+			try
+			{
+				GameHost.Instance.GroundTerrain.ReloadTerrainTextures(false);
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"ReloadTerrainTextures error during workspace init: {ex.Message}. Resetting to blank map.");
+				GameHost.Instance.ClearMapEntirely();
+			}
 		}
 
-		// Check creator registration on editor startup
 		CheckCreatorRegistrationAndPrompt();
 	}
 

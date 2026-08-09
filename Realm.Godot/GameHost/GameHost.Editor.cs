@@ -2054,40 +2054,53 @@ public partial class GameHost
 	public void StartMapEditorMode()
 	{
 		IsMapEditorMode = true;
-		ActiveEditorTool = EditorTool.None;
-		EditorHistoryManager.Clear();
-		
-		if (!MapEditorHUD.ReturningFromTest)
+
+		string wsPath = Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+		try
 		{
-			string wsPath = Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 			System.IO.Directory.CreateDirectory(wsPath);
 			MapWorkspaceService.SetupWorkspace(wsPath, "CustomMap");
 		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"Failed setting up map workspace: {ex.Message}");
+		}
+
+		ActiveEditorTool = EditorTool.None;
+		EditorHistoryManager.Clear();
 
 		if (MapEditorHUD.ReturningFromTest)
 		{
-			LoadMapFromFile(MapEditorHUD.TempWorkspaceGodotPath + "/terrain.json");
-
-			EditorGridMode = MapEditorHUD.SavedGridMode;
-			EditorCameraBoundsVisible = MapEditorHUD.SavedCameraBoundsVisible;
-
-			var camera = MainCamera as CameraControl;
-			if (camera != null)
+			try
 			{
-				camera.Position = MapEditorHUD.SavedCameraPosition;
-				if (EcsWorld != null && EcsWorld.IsAlive(WorldEntity) && EcsWorld.Has<CameraState>(WorldEntity))
+				LoadMapFromFile(MapEditorHUD.TempWorkspaceGodotPath + "/terrain.json");
+
+				EditorGridMode = MapEditorHUD.SavedGridMode;
+				EditorCameraBoundsVisible = MapEditorHUD.SavedCameraBoundsVisible;
+
+				var camera = MainCamera as CameraControl;
+				if (camera != null)
 				{
-					ref var state = ref EcsWorld.Get<CameraState>(WorldEntity);
-					state.TargetHeight = MapEditorHUD.SavedTargetHeight;
-					state.CurrentHeight = MapEditorHUD.SavedTargetHeight;
-					state.TargetYaw = MapEditorHUD.SavedTargetYaw;
-					state.CurrentYaw = MapEditorHUD.SavedTargetYaw;
-					state.TargetPitch = MapEditorHUD.SavedTargetPitch;
-					state.CurrentPitch = MapEditorHUD.SavedTargetPitch;
-					state.IsTopDown = MapEditorHUD.SavedIsTopDown;
-					state.YawSwing = MapEditorHUD.SavedYawSwing;
-					state.PitchSwing = MapEditorHUD.SavedPitchSwing;
+					camera.Position = MapEditorHUD.SavedCameraPosition;
+					if (EcsWorld != null && EcsWorld.IsAlive(WorldEntity) && EcsWorld.Has<CameraState>(WorldEntity))
+					{
+						ref var state = ref EcsWorld.Get<CameraState>(WorldEntity);
+						state.TargetHeight = MapEditorHUD.SavedTargetHeight;
+						state.CurrentHeight = MapEditorHUD.SavedTargetHeight;
+						state.TargetYaw = MapEditorHUD.SavedTargetYaw;
+						state.CurrentYaw = MapEditorHUD.SavedTargetYaw;
+						state.TargetPitch = MapEditorHUD.SavedTargetPitch;
+						state.CurrentPitch = MapEditorHUD.SavedTargetPitch;
+						state.IsTopDown = MapEditorHUD.SavedIsTopDown;
+						state.YawSwing = MapEditorHUD.SavedYawSwing;
+						state.PitchSwing = MapEditorHUD.SavedPitchSwing;
+					}
 				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"Failed loading map state: {ex.Message}. Resetting to blank map.");
+				ClearMapEntirely();
 			}
 		}
 		else
