@@ -19,15 +19,24 @@ public partial class GameHost
 	private bool _modelYOffsetSavePending = false;
 	private bool _modelCollisionCircleSavePending = false;
 
+	private readonly Dictionary<string, string> _normalizedAssetKeyCache = new(StringComparer.OrdinalIgnoreCase);
+
 	public string NormalizeModelAssetKey(string pathOrId)
 	{
 		if (string.IsNullOrEmpty(pathOrId)) return "";
+		if (_normalizedAssetKeyCache.TryGetValue(pathOrId, out string cached))
+		{
+			return cached;
+		}
+
 		string filename = System.IO.Path.GetFileName(pathOrId);
 		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
 		{
 			filename += ".glb";
 		}
-		return filename.ToLowerInvariant();
+		string result = filename.ToLowerInvariant();
+		_normalizedAssetKeyCache[pathOrId] = result;
+		return result;
 	}
 
 	public string GetModelAssetKey(object objOrId)
@@ -277,18 +286,24 @@ public partial class GameHost
 		}
 	}
 
+	private static void FindMeshInstancesRecursive(Node parent, List<MeshInstance3D> result)
+	{
+		if (parent == null) return;
+		if (parent is MeshInstance3D mi)
+		{
+			result.Add(mi);
+		}
+		int childCount = parent.GetChildCount();
+		for (int i = 0; i < childCount; i++)
+		{
+			FindMeshInstancesRecursive(parent.GetChild(i), result);
+		}
+	}
+
 	private static List<MeshInstance3D> FindMeshInstancesRecursive(Node parent)
 	{
 		var list = new List<MeshInstance3D>();
-		if (parent == null) return list;
-		if (parent is MeshInstance3D mi)
-		{
-			list.Add(mi);
-		}
-		foreach (Node child in parent.GetChildren())
-		{
-			list.AddRange(FindMeshInstancesRecursive(child));
-		}
+		FindMeshInstancesRecursive(parent, list);
 		return list;
 	}
 
@@ -1103,7 +1118,12 @@ public partial class GameHost
 		string unitAssetKey = GetModelAssetKey(unit3D);
 		if (!string.IsNullOrEmpty(unitAssetKey))
 		{
-			UpdateMaterialOverridesForAsset(unitAssetKey);
+			float brightness = GetModelBrightness(unitAssetKey);
+			bool generateNormals = GetModelGenerateNormals(unitAssetKey);
+			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals)
+			{
+				ApplyMaterialOverridesToNode(unit3D, brightness, generateNormals);
+			}
 		}
 
 		return unit3D;
@@ -1146,7 +1166,12 @@ public partial class GameHost
 		string propAssetKey = GetModelAssetKey(prop);
 		if (!string.IsNullOrEmpty(propAssetKey))
 		{
-			UpdateMaterialOverridesForAsset(propAssetKey);
+			float brightness = GetModelBrightness(propAssetKey);
+			bool generateNormals = GetModelGenerateNormals(propAssetKey);
+			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals)
+			{
+				ApplyMaterialOverridesToNode(prop, brightness, generateNormals);
+			}
 		}
 
 		return prop;
@@ -2282,9 +2307,9 @@ public partial class GameHost
 			{
 				var s = GroundTerrain.SplatMap[x, z];
 				if (s.Index0 == indexA || s.Index0 == indexB ||
-				    s.Index1 == indexA || s.Index1 == indexB ||
-				    s.Index2 == indexA || s.Index2 == indexB ||
-				    s.Index3 == indexA || s.Index3 == indexB)
+					s.Index1 == indexA || s.Index1 == indexB ||
+					s.Index2 == indexA || s.Index2 == indexB ||
+					s.Index3 == indexA || s.Index3 == indexB)
 				{
 					GroundTerrain.SplatMap[x, z] = new TerrainSplatWeights
 					{

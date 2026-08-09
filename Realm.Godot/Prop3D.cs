@@ -3,6 +3,8 @@ using Godot;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Resources;
 using System;
+using System.Collections.Generic;
+using Realm.Godot.Utils;
 
 public partial class Prop3D : StaticBody3D
 {
@@ -308,26 +310,7 @@ public partial class Prop3D : StaticBody3D
 		string modelPath = ResolvePropModelPath(PropId);
 		try
 		{
-			Node node = null;
-			if (System.IO.File.Exists(modelPath) && !modelPath.StartsWith("res://"))
-			{
-				var doc = new GltfDocument();
-				var state = new GltfState();
-				var err = doc.AppendFromFile(modelPath, state);
-				if (err == Error.Ok)
-				{
-					node = doc.GenerateScene(state);
-				}
-			}
-			else if (ResourceLoader.Exists(modelPath))
-			{
-				var scene = GD.Load<PackedScene>(modelPath);
-				if (scene != null)
-				{
-					node = scene.Instantiate();
-				}
-			}
-
+			Node node = ModelCache.GetModel(modelPath);
 			if (node != null)
 			{
 				visual.AddChild(node);
@@ -339,11 +322,23 @@ public partial class Prop3D : StaticBody3D
 		}
 	}
 
+	private static readonly Dictionary<string, string> _resolvedModelPathCache = new(StringComparer.OrdinalIgnoreCase);
+
 	private string ResolvePropModelPath(string propId)
 	{
 		if (string.IsNullOrEmpty(propId))
 			propId = "wooden_box.glb";
 
+		if (_resolvedModelPathCache.TryGetValue(propId, out string cachedPath))
+			return cachedPath;
+
+		string resolved = ResolvePropModelPathInternal(propId);
+		_resolvedModelPathCache[propId] = resolved;
+		return resolved;
+	}
+
+	private string ResolvePropModelPathInternal(string propId)
+	{
 		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
 		if (propId.StartsWith("res://") || System.IO.File.Exists(propId))
 			return propId;

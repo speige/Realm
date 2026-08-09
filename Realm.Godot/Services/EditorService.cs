@@ -18,6 +18,7 @@ public class EditorService
 	private float _clumpSpawnCooldown;
 	private bool _isDrawingClump;
 	private readonly List<IEditorAction> _clumpSpawnActionsInSession = new();
+	private readonly List<(Vector3 Position, float Radius)> _cachedSessionPoints = new();
 
 	private readonly Dictionary<Vector2I, long> _paintCoordLastTimeMs = new();
 
@@ -1086,11 +1087,17 @@ public class EditorService
 	{
 		_isDrawingClump = true;
 		_clumpSpawnActionsInSession.Clear();
+		_cachedSessionPoints.Clear();
 	}
 
 	public void RecordClumpSpawnAction(IEditorAction action)
 	{
 		_clumpSpawnActionsInSession.Add(action);
+		if (action is ObjectSpawnAction objAct && GodotObject.IsInstanceValid(objAct.SpawnedNode))
+		{
+			float baseRadius = 0.5f;
+			_cachedSessionPoints.Add((objAct.Position, baseRadius * objAct.Scale));
+		}
 	}
 
 	public void SetClumpCooldown(float value)
@@ -1138,19 +1145,6 @@ public class EditorService
 
 		float baseRadius = Mathf.Max(0.1f, assetBaseCollisionRadius);
 		float autoClumpSpacing = Mathf.Clamp(brushRadius / (1.5f * Mathf.Sqrt(Mathf.Max(1, spawnCount))), 0.5f, 4.0f);
-
-		var existingSessionPoints = new List<(Vector3 Position, float Radius)>();
-		if (_clumpSpawnActionsInSession != null && _clumpSpawnActionsInSession.Count > 0)
-		{
-			foreach (var act in _clumpSpawnActionsInSession)
-			{
-				if (act is ObjectSpawnAction objAct && GodotObject.IsInstanceValid(objAct.SpawnedNode))
-				{
-					float r = baseRadius * objAct.Scale;
-					existingSessionPoints.Add((objAct.Position, r));
-				}
-			}
-		}
 
 		int maxAttemptsPerObject = 30;
 
@@ -1204,7 +1198,7 @@ public class EditorService
 
 				if (collision) continue;
 
-				foreach (var sessionPt in existingSessionPoints)
+				foreach (var sessionPt in _cachedSessionPoints)
 				{
 					float minDist = (candidateRadius + sessionPt.Radius) * autoClumpSpacing;
 					float distSq = (spawnPos.X - sessionPt.Position.X) * (spawnPos.X - sessionPt.Position.X) +

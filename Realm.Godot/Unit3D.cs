@@ -255,24 +255,7 @@ public partial class Unit3D : CharacterBody3D
 
 		try
 		{
-			if (System.IO.File.Exists(modelPath) && !modelPath.StartsWith("res://"))
-			{
-				var doc = new GltfDocument();
-				var state = new GltfState();
-				var err = doc.AppendFromFile(modelPath, state);
-				if (err == Error.Ok)
-				{
-					_modelNode = doc.GenerateScene(state) as Node3D;
-				}
-			}
-			else
-			{
-				var packedScene = GD.Load<PackedScene>(modelPath);
-				if (packedScene != null)
-				{
-					_modelNode = packedScene.Instantiate<Node3D>();
-				}
-			}
+			_modelNode = Realm.Godot.Utils.ModelCache.GetModel(modelPath) as Node3D;
 
 			if (_modelNode != null)
 			{
