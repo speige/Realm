@@ -110,8 +110,8 @@ public partial class LobbyBrowser : Control
 		_filterPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
 		_lobbyPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
 		
-		_searchBar.AddThemeStyleboxOverride("normal", UIStyle.CreateTextInput());
-		_searchBar.AddThemeStyleboxOverride("focus", UIStyle.CreateTextInput(true));
+		_searchBar.AddThemeStyleboxOverride("normal", UIStyle.CreateCustomLobbySearchInput(false));
+		_searchBar.AddThemeStyleboxOverride("focus", UIStyle.CreateCustomLobbySearchInput(true));
 
 
 		UIStyle.ApplyTitle(_browserTitle, "CUSTOM LOBBY BROWSER", 36);
@@ -171,17 +171,15 @@ public partial class LobbyBrowser : Control
 
 
 		_searchBar.TextChanged += (text) => ApplyFilters();
-		_searchBar.AddThemeStyleboxOverride("normal", UIStyle.CreateTextInput(false));
-		_searchBar.AddThemeStyleboxOverride("focus", UIStyle.CreateTextInput(true));
-		_searchBar.AddThemeColorOverride("font_color", new Color(0.9f, 0.85f, 0.7f));
+		_searchBar.AddThemeStyleboxOverride("normal", UIStyle.CreateCustomLobbySearchInput(false));
+		_searchBar.AddThemeStyleboxOverride("focus", UIStyle.CreateCustomLobbySearchInput(true));
+		_searchBar.AddThemeFontSizeOverride("font_size", 18);
+		_searchBar.AddThemeColorOverride("font_color", new Color(0.95f, 0.9f, 0.8f));
+		_searchBar.AddThemeColorOverride("font_placeholder_color", new Color(0.65f, 0.6f, 0.5f));
+		_searchBar.AddThemeColorOverride("caret_color", new Color(0.95f, 0.9f, 0.8f));
+		_searchBar.CustomMinimumSize = new Vector2(0, 56);
 		_searchBar.PlaceholderText = "Search Lobbies...";
-		var rawSearchIcon = GD.Load<Texture2D>("res://Assets/UI/search_icon_clean.png");
-		if (rawSearchIcon != null)
-		{
-			var img = rawSearchIcon.GetImage();
-			img.Resize(20, 20, Image.Interpolation.Lanczos);
-			_searchBar.RightIcon = ImageTexture.CreateFromImage(img);
-		}
+		_searchBar.RightIcon = null;
 
 
 		PopulateRunicPillar(GetNode<VBoxContainer>("LeftPillar/RuneContainer"));

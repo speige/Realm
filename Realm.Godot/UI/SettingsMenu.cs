@@ -6,7 +6,7 @@ public partial class SettingsMenu : Control
 	[Export] public bool IsOverlay = false;
 
 	private Panel _bgPanel;
-	private PanelContainer _mainFrame;
+	private Panel _mainFrame;
 	private PanelContainer _videoPanel;
 	private PanelContainer _audioPanel;
 	private PanelContainer _gameplayPanel;
@@ -16,28 +16,30 @@ public partial class SettingsMenu : Control
 	private Label _audioTitle;
 	private Label _gameplayTitle;
 
-
 	private OptionButton _resolutionOpt;
 	private OptionButton _qualityOpt;
 	private OptionButton _windowModeOpt;
 	private OptionButton _vsyncOpt;
-
+	private OptionButton _healthBarsOpt;
+	private OptionButton _languageOpt;
 
 	private HSlider _masterSlider;
 	private HSlider _musicSlider;
 	private HSlider _sfxSlider;
 	private HSlider _voiceSlider;
 
+	private Label _masterValLabel;
+	private Label _musicValLabel;
+	private Label _sfxValLabel;
+	private Label _voiceValLabel;
 
 	private HSlider _scrollSpeedSlider;
 	private HSlider _mouseSensSlider;
 	private HSlider _hudScaleSlider;
-	private CheckBox _displayFpsChk;
-	private CheckBox _recordReplaysChk;
-	private CheckBox _seedMapFilesChk;
-	private OptionButton _healthBarsOpt;
-	private OptionButton _languageOpt;
 
+	private Label _scrollValLabel;
+	private Label _sensValLabel;
+	private Label _hudScaleValLabel;
 
 	private Button _applyBtn;
 	private Button _cancelBtn;
@@ -45,45 +47,49 @@ public partial class SettingsMenu : Control
 
 	public override void _Ready()
 	{
-
 		_bgPanel = GetNodeOrNull<Panel>("Background");
-		_mainFrame = GetNode<PanelContainer>("CenterContainer/MainFrame");
-		_videoPanel = GetNode<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel");
-		_audioPanel = GetNode<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel");
-		_gameplayPanel = GetNode<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel");
+		_mainFrame = GetNode<Panel>("CenterContainer/MainFrame");
+		_videoPanel = GetNode<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel");
+		_audioPanel = GetNode<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel");
+		_gameplayPanel = GetNode<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel");
 
+		_settingsTitle = GetNode<Label>("CenterContainer/MainFrame/TitlePanel/SettingsTitle");
+		_videoTitle = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/TitleBox/HBox/PanelTitle");
+		_audioTitle = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/TitleBox/HBox/PanelTitle");
+		_gameplayTitle = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/TitleBox/HBox/PanelTitle");
 
-		_settingsTitle = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/SettingsTitle");
-		_videoTitle = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/PanelTitle");
-		_audioTitle = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox/PanelTitle");
-		_gameplayTitle = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/PanelTitle");
+		_resolutionOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/ResRow/ResolutionOpt");
+		_qualityOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/QualRow/QualityOpt");
+		_windowModeOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/ModeRow/WindowModeOpt");
+		_vsyncOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/VsyncRow/VsyncOpt");
+		_healthBarsOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/HealthBarsRow/HealthBarsOpt");
+		_languageOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/LanguageRow/LanguageOpt");
 
+		_masterSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/MasterRow/MasterSlider");
+		_musicSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/MusicRow/MusicSlider");
+		_sfxSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/SfxRow/SfxSlider");
+		_voiceSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/VoiceRow/VoiceSlider");
 
-		_resolutionOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/ResolutionOpt");
-		_qualityOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/QualityOpt");
-		_windowModeOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/WindowModeOpt");
-		_vsyncOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/VsyncOpt");
+		_masterValLabel = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/MasterRow/MasterValLabel");
+		_musicValLabel = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/MusicRow/MusicValLabel");
+		_sfxValLabel = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/SfxRow/SfxValLabel");
+		_voiceValLabel = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/VoiceRow/VoiceValLabel");
 
+		_scrollSpeedSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/ScrollRow/ScrollSpeedSlider");
+		_mouseSensSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/SensRow/MouseSensSlider");
+		_hudScaleSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/HudScaleRow/HudScaleSlider");
 
-		_masterSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox/MasterSlider");
-		_musicSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox/MusicSlider");
-		_sfxSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox/SfxSlider");
-		_voiceSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox/VoiceSlider");
-
-
-		_scrollSpeedSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/ScrollSpeedSlider");
-		_mouseSensSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/MouseSensSlider");
-		_hudScaleSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HudScaleSlider");
-		_displayFpsChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/DisplayFpsChk");
-		_recordReplaysChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/RecordReplaysChk");
-		_seedMapFilesChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/SeedMapFilesChk");
-		_healthBarsOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HealthBarsOpt");
-		_languageOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/LanguageOpt");
-
+		_scrollValLabel = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/ScrollRow/ScrollValLabel");
+		_sensValLabel = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/SensRow/SensValLabel");
+		_hudScaleValLabel = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/HudScaleRow/HudScaleValLabel");
 
 		_applyBtn = GetNode<Button>("CenterContainer/MainFrame/VBoxContainer/ButtonsRow/ApplyButton");
 		_cancelBtn = GetNode<Button>("CenterContainer/MainFrame/VBoxContainer/ButtonsRow/CancelButton");
 		_resetBtn = GetNode<Button>("CenterContainer/MainFrame/VBoxContainer/ButtonsRow/ResetButton");
+
+		GetNode<TextureRect>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/TitleBox/HBox/TitleIcon").Texture = GD.Load<Texture2D>("res://Assets/UI/icon_video.svg");
+		GetNode<TextureRect>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/TitleBox/HBox/TitleIcon").Texture = GD.Load<Texture2D>("res://Assets/UI/icon_audio.svg");
+		GetNode<TextureRect>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/TitleBox/HBox/TitleIcon").Texture = GD.Load<Texture2D>("res://Assets/UI/icon_gameplay.svg");
 
 		ApplyThemeStyles();
 		PopulateDropdowns();
@@ -97,76 +103,197 @@ public partial class SettingsMenu : Control
 	{
 		if (_bgPanel != null)
 		{
-			if (IsOverlay)
+			_bgPanel.Visible = true;
+			_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+			if (GetNodeOrNull<ColorRect>("OverlayBg") is ColorRect rect)
 			{
-				_bgPanel.Visible = false;
-				if (GetNodeOrNull<ColorRect>("OverlayBg") is ColorRect rect)
-				{
-					rect.Visible = true;
-				}
-			}
-			else
-			{
-				_bgPanel.Visible = true;
-				_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
-				if (GetNodeOrNull<ColorRect>("OverlayBg") is ColorRect rect)
-				{
-					rect.Visible = false;
-				}
+				rect.Visible = false;
 			}
 		}
 
-		_mainFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel());
-		_videoPanel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
-		_audioPanel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
-		_gameplayPanel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		if (GetNodeOrNull<Panel>("CenterContainer/ShadowPanel") is Panel shadowPanel)
+		{
+			var shadowStyle = new StyleBoxFlat();
+			shadowStyle.BgColor = new Color(0, 0, 0, 0);
+			shadowStyle.ShadowColor = new Color(0, 0, 0, 0.7f);
+			shadowStyle.ShadowSize = 24;
+			shadowStyle.ShadowOffset = new Vector2(0, 14);
+			shadowStyle.CornerRadiusTopLeft = 25;
+			shadowStyle.CornerRadiusTopRight = 25;
+			shadowStyle.CornerRadiusBottomLeft = 25;
+			shadowStyle.CornerRadiusBottomRight = 25;
+			shadowPanel.AddThemeStyleboxOverride("panel", shadowStyle);
+		}
 
-		UIStyle.ApplyTitle(_settingsTitle, "GAME SETTINGS", 32);
-		UIStyle.ApplyTitle(_videoTitle, "VIDEO", 18);
-		UIStyle.ApplyTitle(_audioTitle, "AUDIO", 18);
-		UIStyle.ApplyTitle(_gameplayTitle, "GAMEPLAY", 18);
+		_mainFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateLightStonePanel());
+		_videoPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateLightInnerPanel());
+		_audioPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateLightInnerPanel());
+		_gameplayPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateLightInnerPanel());
 
+		if (GetNodeOrNull<Panel>("CenterContainer/MainFrame/TitlePanel") is Panel titlePanel)
+		{
+			var titleStyle = new StyleBoxFlat();
+			titleStyle.BgColor = new Color(0.24f, 0.21f, 0.18f, 1.0f); // Match configurations background
+			titleStyle.BorderColor = new Color(0.45f, 0.40f, 0.32f, 1.0f); // Bronze/Gold frame
+			titleStyle.SetBorderWidthAll(3);
+			titleStyle.CornerRadiusTopLeft = 8;
+			titleStyle.CornerRadiusTopRight = 8;
+			titleStyle.CornerRadiusBottomLeft = 8;
+			titleStyle.CornerRadiusBottomRight = 8;
+
+			// Beautiful drop shadow
+			titleStyle.ShadowColor = new Color(0, 0, 0, 0.75f);
+			titleStyle.ShadowSize = 12;
+			titleStyle.ShadowOffset = new Vector2(0, 6);
+
+			titlePanel.AddThemeStyleboxOverride("panel", titleStyle);
+		}
+
+		if (GetNodeOrNull<Panel>("CenterContainer/MainFrame/TitlePanel/TitleInnerPanel") is Panel titleInnerPanel)
+		{
+			var innerStyle = new StyleBoxFlat();
+			innerStyle.BgColor = new Color(0.18f, 0.16f, 0.14f, 1.0f); // Match inset color
+			innerStyle.BorderColor = new Color(0.82f, 0.72f, 0.50f, 0.5f); // Thinner semi-transparent gold outline
+			innerStyle.SetBorderWidthAll(1);
+			innerStyle.CornerRadiusTopLeft = 5;
+			innerStyle.CornerRadiusTopRight = 5;
+			innerStyle.CornerRadiusBottomLeft = 5;
+			innerStyle.CornerRadiusBottomRight = 5;
+
+			titleInnerPanel.AddThemeStyleboxOverride("panel", innerStyle);
+		}
+
+		_settingsTitle.Text = TranslationServer.Translate("GAME SETTINGS");
+		_settingsTitle.AddThemeStyleboxOverride("normal", new StyleBoxEmpty());
+		_settingsTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		_settingsTitle.AddThemeColorOverride("font_outline_color", new Color(0.08f, 0.07f, 0.06f));
+		_settingsTitle.AddThemeConstantOverride("outline_size", 4);
+		_settingsTitle.AddThemeColorOverride("font_shadow_color", new Color(0.0f, 0.0f, 0.0f, 0.7f));
+		_settingsTitle.AddThemeConstantOverride("shadow_offset_x", 1);
+		_settingsTitle.AddThemeConstantOverride("shadow_offset_y", 2);
+		_settingsTitle.AddThemeFontSizeOverride("font_size", 26);
+		_settingsTitle.HorizontalAlignment = HorizontalAlignment.Center;
+		_settingsTitle.VerticalAlignment = VerticalAlignment.Center;
+
+		// Create header panel style for VIDEO, AUDIO, and GAMEPLAY title boxes
+		var headerStyle = new StyleBoxFlat();
+		headerStyle.BgColor = new Color(0.12f, 0.11f, 0.10f, 0.6f); // Dark translucent charcoal/bronze
+		headerStyle.BorderColor = new Color(0.40f, 0.35f, 0.28f, 0.7f); // Antique bronze-gold border
+		headerStyle.SetBorderWidthAll(1);
+		headerStyle.CornerRadiusTopLeft = 4;
+		headerStyle.CornerRadiusTopRight = 4;
+		headerStyle.CornerRadiusBottomLeft = 4;
+		headerStyle.CornerRadiusBottomRight = 4;
+		headerStyle.ContentMarginLeft = 14;
+		headerStyle.ContentMarginRight = 14;
+		headerStyle.ContentMarginTop = 8;
+		headerStyle.ContentMarginBottom = 8;
+
+		if (GetNodeOrNull<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/TitleBox") is PanelContainer videoHeader)
+			videoHeader.AddThemeStyleboxOverride("panel", headerStyle);
+
+		if (GetNodeOrNull<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/TitleBox") is PanelContainer audioHeader)
+			audioHeader.AddThemeStyleboxOverride("panel", headerStyle);
+
+		if (GetNodeOrNull<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/TitleBox") is PanelContainer gameplayHeader)
+			gameplayHeader.AddThemeStyleboxOverride("panel", headerStyle);
+
+		_videoTitle.Text = TranslationServer.Translate("VIDEO");
+		_videoTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		_videoTitle.AddThemeFontSizeOverride("font_size", 18);
+		_videoTitle.HorizontalAlignment = HorizontalAlignment.Left;
+		_videoTitle.VerticalAlignment = VerticalAlignment.Center;
+
+		_audioTitle.Text = TranslationServer.Translate("AUDIO");
+		_audioTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		_audioTitle.AddThemeFontSizeOverride("font_size", 18);
+		_audioTitle.HorizontalAlignment = HorizontalAlignment.Left;
+		_audioTitle.VerticalAlignment = VerticalAlignment.Center;
+
+		_gameplayTitle.Text = TranslationServer.Translate("GAMEPLAY");
+		_gameplayTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		_gameplayTitle.AddThemeFontSizeOverride("font_size", 18);
+		_gameplayTitle.HorizontalAlignment = HorizontalAlignment.Left;
+		_gameplayTitle.VerticalAlignment = VerticalAlignment.Center;
 
 		string[] labelPaths = {
-			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/ResLabel",
-			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/QualLabel",
-			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/ModeLabel",
-			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/VsyncLabel",
-			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox/MasterLabel",
-			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox/MusicLabel",
-			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox/SfxLabel",
-			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/AudioPanel/VBox/VoiceLabel",
-			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/ScrollLabel",
-			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/SensLabel",
-			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HudScaleLabel",
-			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/HealthBarsLabel",
-			"CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/GameplayPanel/VBox/LanguageLabel"
+			"CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/ResRow/ResLabel",
+			"CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/QualRow/QualLabel",
+			"CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/ModeRow/ModeLabel",
+			"CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/VsyncRow/VsyncLabel",
+			"CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/HealthBarsRow/HealthBarsLabel",
+			"CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/LanguageRow/LanguageLabel",
+			"CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/MasterRow/MasterLabel",
+			"CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/MusicRow/MusicLabel",
+			"CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/SfxRow/SfxLabel",
+			"CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/VoiceRow/VoiceLabel",
+			"CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/ScrollRow/ScrollLabel",
+			"CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/SensRow/SensLabel",
+			"CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/HudScaleRow/HudScaleLabel"
 		};
 		foreach (var path in labelPaths)
 		{
 			var lbl = GetNode<Label>(path);
 			lbl.Text = TranslationServer.Translate(lbl.Text);
-			lbl.AddThemeColorOverride("font_color", new Color(0.85f, 0.85f, 0.9f));
+			lbl.AddThemeColorOverride("font_color", new Color(0.82f, 0.80f, 0.75f));
 			lbl.AddThemeFontSizeOverride("font_size", 14);
 		}
 
-		UIStyle.ApplyCheckboxStyle(_displayFpsChk);
-		_displayFpsChk.Text = TranslationServer.Translate(_displayFpsChk.Text);
-		UIStyle.ApplyCheckboxStyle(_recordReplaysChk);
-		_recordReplaysChk.Text = TranslationServer.Translate(_recordReplaysChk.Text);
-		UIStyle.ApplyCheckboxStyle(_seedMapFilesChk);
-		_seedMapFilesChk.Text = TranslationServer.Translate(_seedMapFilesChk.Text);
-		_seedMapFilesChk.TooltipText = TranslationServer.Translate(_seedMapFilesChk.TooltipText);
+		string[] valLabelPaths = {
+			"CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/MasterRow/MasterValLabel",
+			"CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/MusicRow/MusicValLabel",
+			"CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/SfxRow/SfxValLabel",
+			"CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/VoiceRow/VoiceValLabel",
+			"CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/ScrollRow/ScrollValLabel",
+			"CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/SensRow/SensValLabel",
+			"CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/HudScaleRow/HudScaleValLabel"
+		};
+		var valLabelStyle = new StyleBoxFlat();
+		valLabelStyle.BgColor = new Color(0.12f, 0.11f, 0.10f, 0.6f); // Dark translucent charcoal/bronze matching subtitles
+		valLabelStyle.BorderColor = new Color(0.40f, 0.35f, 0.28f, 0.7f); // Antique bronze-gold border matching subtitles
+		valLabelStyle.SetBorderWidthAll(1);
+		valLabelStyle.CornerRadiusTopLeft = 4;
+		valLabelStyle.CornerRadiusTopRight = 4;
+		valLabelStyle.CornerRadiusBottomLeft = 4;
+		valLabelStyle.CornerRadiusBottomRight = 4;
+		valLabelStyle.ContentMarginLeft = 6;
+		valLabelStyle.ContentMarginRight = 6;
+		valLabelStyle.ContentMarginTop = 2;
+		valLabelStyle.ContentMarginBottom = 2;
+
+		foreach (var path in valLabelPaths)
+		{
+			var lbl = GetNode<Label>(path);
+			lbl.AddThemeStyleboxOverride("normal", valLabelStyle);
+			lbl.AddThemeColorOverride("font_color", new Color(0.88f, 0.82f, 0.65f));
+			lbl.AddThemeFontSizeOverride("font_size", 14);
+			lbl.HorizontalAlignment = HorizontalAlignment.Center;
+			lbl.VerticalAlignment = VerticalAlignment.Center;
+			lbl.CustomMinimumSize = new Vector2(40, 24);
+		}
+
+		var sepStyle = new StyleBoxFlat();
+		sepStyle.BgColor = new Color(0.42f, 0.38f, 0.33f, 0.6f);
+		sepStyle.ContentMarginTop = 1;
+		sepStyle.ContentMarginBottom = 1;
+
+		var separators = new[] {
+			GetNode<HSeparator>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/Separator"),
+			GetNode<HSeparator>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/Separator"),
+			GetNode<HSeparator>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/Separator")
+		};
+		foreach (var sep in separators)
+		{
+			sep.AddThemeStyleboxOverride("separator", sepStyle);
+		}
 	}
 
 	private void PopulateDropdowns()
 	{
 		_resolutionOpt.Clear();
-		for (int i = 0; i < GameSettings.Resolutions.Count; i++)
-		{
-			var res = GameSettings.Resolutions[i];
-			_resolutionOpt.AddItem($"{res.X} x {res.Y}", i);
-		}
+		_resolutionOpt.AddItem("1920 x 1080", 0);
+		_resolutionOpt.AddItem("1600 x 900", 1);
+		_resolutionOpt.AddItem("1280 x 720", 2);
 
 		_qualityOpt.Clear();
 		_qualityOpt.AddItem(TranslationServer.Translate("Low"), 0);
@@ -200,64 +327,54 @@ public partial class SettingsMenu : Control
 		_languageOpt.AddItem("العربية", 8);
 		_languageOpt.AddItem("हिन्दी", 9);
 
-
 		var dropdowns = new[] { _resolutionOpt, _qualityOpt, _windowModeOpt, _vsyncOpt, _healthBarsOpt, _languageOpt };
 		foreach (var opt in dropdowns)
 		{
 			opt.Flat = false;
-			opt.AddThemeStyleboxOverride("normal", UIStyle.CreateDropdownStyle(false, false));
-			opt.AddThemeStyleboxOverride("hover", UIStyle.CreateDropdownStyle(true, false));
-			opt.AddThemeStyleboxOverride("pressed", UIStyle.CreateDropdownStyle(false, true));
+			opt.AddThemeStyleboxOverride("normal", UIStyle.CreateLightDropdownNormal());
+			opt.AddThemeStyleboxOverride("hover", UIStyle.CreateLightDropdownHover());
+			opt.AddThemeStyleboxOverride("pressed", UIStyle.CreateLightDropdownPressed());
 			opt.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
-			opt.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-			opt.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+			opt.AddThemeColorOverride("font_color", new Color(0.9f, 0.85f, 0.75f));
+			opt.AddThemeColorOverride("font_hover_color", new Color(1.0f, 0.95f, 0.8f));
 			opt.AddThemeColorOverride("font_pressed_color", UIStyle.ColorCyanGlow);
-			opt.AddThemeFontSizeOverride("font_size", 15);
+			opt.AddThemeFontSizeOverride("font_size", 14);
 
 			opt.ItemSelected += (idx) => UIManager.Instance.PlayClickSound();
 			opt.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 		}
-
-		_windowModeOpt.ItemSelected += (idx) =>
-		{
-			if (idx == 0 || idx == 2)
-			{
-				_resolutionOpt.Disabled = true;
-				_resolutionOpt.Select(-1);
-			}
-			else
-			{
-				_resolutionOpt.Disabled = false;
-				_resolutionOpt.Select(GameSettings.ResolutionIdx);
-			}
-		};
-
-		_displayFpsChk.Pressed += () => UIManager.Instance.PlayClickSound();
-		_displayFpsChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
-		_recordReplaysChk.Pressed += () => UIManager.Instance.PlayClickSound();
-		_recordReplaysChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
-		_seedMapFilesChk.Pressed += () => UIManager.Instance.PlayClickSound();
-		_seedMapFilesChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 	}
 
 	private void SetupSliders()
 	{
+		_scrollSpeedSlider.MinValue = 0;
+		_scrollSpeedSlider.MaxValue = 100;
+		_scrollSpeedSlider.Step = 1;
+
+		_mouseSensSlider.MinValue = 0;
+		_mouseSensSlider.MaxValue = 100;
+		_mouseSensSlider.Step = 1;
+
 		_hudScaleSlider.MinValue = 50;
 		_hudScaleSlider.MaxValue = 150;
 		_hudScaleSlider.Step = 5;
 
 		var sliders = new[] { _masterSlider, _musicSlider, _sfxSlider, _voiceSlider, _scrollSpeedSlider, _mouseSensSlider, _hudScaleSlider };
 		
-		var trackStyle = UIStyle.CreateSliderTrack();
-		var fillStyle = UIStyle.CreateSliderFill();
+		var trackStyle = UIStyle.CreateLightSliderTrack();
+		var fillStyle = UIStyle.CreateLightSliderFill();
+
+		var grabberTex = UIStyle.CreateSquareStoneGrabberTexture(false);
+		var grabberHiTex = UIStyle.CreateSquareStoneGrabberTexture(true);
 
 		foreach (var s in sliders)
 		{
 			s.AddThemeStyleboxOverride("slider", trackStyle);
 			s.AddThemeStyleboxOverride("grabber_area", fillStyle);
 			s.AddThemeStyleboxOverride("grabber_area_highlight", fillStyle);
-
+			s.AddThemeIconOverride("grabber", grabberTex);
+			s.AddThemeIconOverride("grabber_highlight", grabberHiTex);
 
 			s.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 			s.DragEnded += (valChanged) => UIManager.Instance.PlayClickSound();
@@ -266,49 +383,99 @@ public partial class SettingsMenu : Control
 		_masterSlider.ValueChanged += (val) =>
 		{
 			GameSettings.MasterVolume = (float)val;
+			_masterValLabel.Text = val.ToString("0");
 			UIManager.Instance.UpdateAudioVolumes();
 		};
 		_musicSlider.ValueChanged += (val) =>
 		{
 			GameSettings.MusicVolume = (float)val;
+			_musicValLabel.Text = val.ToString("0");
 			UIManager.Instance.UpdateAudioVolumes();
 		};
 		_sfxSlider.ValueChanged += (val) =>
 		{
 			GameSettings.SfxVolume = (float)val;
+			_sfxValLabel.Text = val.ToString("0");
 			UIManager.Instance.UpdateAudioVolumes();
 		};
 		_voiceSlider.ValueChanged += (val) =>
 		{
 			GameSettings.VoiceVolume = (float)val;
+			_voiceValLabel.Text = val.ToString("0");
 			UIManager.Instance.UpdateAudioVolumes();
+		};
+		_scrollSpeedSlider.ValueChanged += (val) =>
+		{
+			GameSettings.ScrollSpeed = (float)val;
+			_scrollValLabel.Text = (val / 25.0f).ToString("0.0");
+		};
+		_mouseSensSlider.ValueChanged += (val) =>
+		{
+			GameSettings.MouseSens = (float)val;
+			_sensValLabel.Text = (val / 40.0f).ToString("0.0");
+		};
+		_hudScaleSlider.ValueChanged += (val) =>
+		{
+			GameSettings.HudScale = (float)val;
+			_hudScaleValLabel.Text = ((val - 100.0f) / 100.0f).ToString("0.0");
 		};
 	}
 
 	private void SetupButtons()
 	{
-		SetupSettingsButton(_applyBtn, "APPLY", ApplySettings);
-		SetupSettingsButton(_cancelBtn, "CANCEL", CancelSettings);
-		SetupSettingsButton(_resetBtn, "RESET TO DEFAULT", ResetToDefaults);
+		SetupSettingsButton(_applyBtn, "ᚠ", "APPLY", "ᚠ", ApplySettings);
+		SetupSettingsButton(_cancelBtn, "ᛉ", "CANCEL", "ᛉ", CancelSettings);
+		SetupSettingsButton(_resetBtn, "᚛", "RESET TO DEFAULT", "᚜", ResetToDefaults);
 	}
 
-	private void SetupSettingsButton(Button btn, string text, Action onClick)
+	private void SetupSettingsButton(Button btn, string leftRune, string keyText, string rightRune, Action onClick)
 	{
 		btn.Flat = false;
-		UIStyle.ApplyButtonText(btn, text, 16);
-		
-		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btn.Text = "";
+
+		var leftLbl = btn.GetNode<Label>("HBox/LeftRune");
+		leftLbl.Text = leftRune;
+		leftLbl.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		leftLbl.AddThemeFontSizeOverride("font_size", 14);
+
+		var textLbl = btn.GetNode<Label>("HBox/TextLabel");
+		textLbl.Text = TranslationServer.Translate(keyText);
+		textLbl.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		textLbl.AddThemeFontSizeOverride("font_size", 16);
+
+		var rightLbl = btn.GetNode<Label>("HBox/RightRune");
+		rightLbl.Text = rightRune;
+		rightLbl.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		rightLbl.AddThemeFontSizeOverride("font_size", 14);
+
+		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateLightButtonNormal());
+		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateLightButtonHover());
+		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateLightButtonPressed());
 		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
-		btn.AddThemeConstantOverride("icon_max_width", 0);
+
+		btn.MouseEntered += () =>
+		{
+			UIManager.Instance.PlayHoverSound();
+			textLbl.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		};
+		btn.MouseExited += () =>
+		{
+			textLbl.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		};
+		btn.ButtonDown += () =>
+		{
+			textLbl.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		};
+		btn.ButtonUp += () =>
+		{
+			textLbl.AddThemeColorOverride("font_color", btn.IsHovered() ? UIStyle.ColorGold : UIStyle.ColorGoldDull);
+		};
 
 		btn.Pressed += () => 
 		{
 			UIManager.Instance.PlayClickSound();
 			onClick?.Invoke();
 		};
-		btn.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 	}
 
 	private void LoadCurrentSettings()
@@ -318,16 +485,6 @@ public partial class SettingsMenu : Control
 		_windowModeOpt.Select(GameSettings.WindowModeIdx);
 		_vsyncOpt.Select(GameSettings.VsyncIdx);
 
-		if (GameSettings.WindowModeIdx == 0 || GameSettings.WindowModeIdx == 2)
-		{
-			_resolutionOpt.Disabled = true;
-			_resolutionOpt.Select(-1);
-		}
-		else
-		{
-			_resolutionOpt.Disabled = false;
-		}
-
 		_masterSlider.Value = GameSettings.MasterVolume;
 		_musicSlider.Value = GameSettings.MusicVolume;
 		_sfxSlider.Value = GameSettings.SfxVolume;
@@ -336,9 +493,16 @@ public partial class SettingsMenu : Control
 		_scrollSpeedSlider.Value = GameSettings.ScrollSpeed;
 		_mouseSensSlider.Value = GameSettings.MouseSens;
 		_hudScaleSlider.Value = GameSettings.HudScale;
-		_displayFpsChk.ButtonPressed = GameSettings.DisplayFps;
-		_recordReplaysChk.ButtonPressed = GameSettings.RecordReplays;
-		_seedMapFilesChk.ButtonPressed = GameSettings.SeedMapFiles;
+
+		_masterValLabel.Text = _masterSlider.Value.ToString("0");
+		_musicValLabel.Text = _musicSlider.Value.ToString("0");
+		_sfxValLabel.Text = _sfxSlider.Value.ToString("0");
+		_voiceValLabel.Text = _voiceSlider.Value.ToString("0");
+
+		_scrollValLabel.Text = (_scrollSpeedSlider.Value / 25.0f).ToString("0.0");
+		_sensValLabel.Text = (_mouseSensSlider.Value / 40.0f).ToString("0.0");
+		_hudScaleValLabel.Text = ((_hudScaleSlider.Value - 100.0f) / 100.0f).ToString("0.0");
+
 		int hbIdx = GameSettings.ShowHealthBars switch
 		{
 			"hidden" => 0,
@@ -367,26 +531,24 @@ public partial class SettingsMenu : Control
 
 	private void ApplySettings()
 	{
-		int modeIdx = _windowModeOpt.Selected;
-		if (modeIdx == 1)
+		string resText = _resolutionOpt.GetItemText(_resolutionOpt.Selected);
+		var parts = resText.Split("x");
+		if (parts.Length == 2 && int.TryParse(parts[0].Trim(), out int w) && int.TryParse(parts[1].Trim(), out int h))
 		{
-			int resSel = _resolutionOpt.Selected;
-			if (resSel >= 0 && resSel < GameSettings.Resolutions.Count)
-			{
-				GetWindow().Size = GameSettings.Resolutions[resSel];
-			}
+			GetWindow().Size = new Vector2I(w, h);
 		}
 
-		if (modeIdx == 0) // Fullscreen
+		int modeIdx = _windowModeOpt.Selected;
+		if (modeIdx == 0)
 		{
 			GetWindow().Mode = Window.ModeEnum.ExclusiveFullscreen;
 		}
-		else if (modeIdx == 1) // Windowed
+		else if (modeIdx == 1)
 		{
 			GetWindow().Borderless = false;
 			GetWindow().Mode = Window.ModeEnum.Windowed;
 		}
-		else if (modeIdx == 2) // Borderless
+		else if (modeIdx == 2)
 		{
 			GetWindow().Borderless = true;
 			GetWindow().Mode = Window.ModeEnum.Maximized;
@@ -401,11 +563,7 @@ public partial class SettingsMenu : Control
 			DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
 		}
 
-
-		if (modeIdx == 1)
-		{
-			GameSettings.ResolutionIdx = _resolutionOpt.Selected;
-		}
+		GameSettings.ResolutionIdx = _resolutionOpt.Selected;
 		GameSettings.QualityIdx = _qualityOpt.Selected;
 		GameSettings.WindowModeIdx = _windowModeOpt.Selected;
 		GameSettings.VsyncIdx = _vsyncOpt.Selected;
@@ -418,9 +576,6 @@ public partial class SettingsMenu : Control
 		GameSettings.ScrollSpeed = (float)_scrollSpeedSlider.Value;
 		GameSettings.MouseSens = (float)_mouseSensSlider.Value;
 		GameSettings.HudScale = (float)_hudScaleSlider.Value;
-		GameSettings.DisplayFps = _displayFpsChk.ButtonPressed;
-		GameSettings.RecordReplays = _recordReplaysChk.ButtonPressed;
-		GameSettings.SeedMapFiles = _seedMapFilesChk.ButtonPressed;
 		GameSettings.ShowHealthBars = _healthBarsOpt.Selected switch
 		{
 			0 => "hidden",
@@ -447,13 +602,10 @@ public partial class SettingsMenu : Control
 		LocalizationManager.UpdateLocale(newLang);
 
 		GameSettings.Save();
-		GameSettings.ApplyGraphicsSettings(this);
-
 
 		if (InGameHUD.Instance != null)
 		{
 			InGameHUD.Instance.ApplyHUDScale();
-			InGameHUD.Instance.UpdateFPSVisibility();
 		}
 
 		GD.Print("Settings Applied successfully!");
@@ -464,10 +616,6 @@ public partial class SettingsMenu : Control
 	{
 		GameSettings.Load();
 		UIManager.Instance.UpdateAudioVolumes();
-		if (InGameHUD.Instance != null)
-		{
-			InGameHUD.Instance.UpdateFPSVisibility();
-		}
 		CloseOrTransition();
 	}
 
@@ -487,19 +635,6 @@ public partial class SettingsMenu : Control
 	{
 		GameSettings.ResetToDefaults();
 		LoadCurrentSettings();
-		if (InGameHUD.Instance != null)
-		{
-			InGameHUD.Instance.UpdateFPSVisibility();
-		}
 		GD.Print("Settings reset to defaults.");
-	}
-
-	public override void _UnhandledInput(InputEvent @event)
-	{
-		if (@event is InputEventKey escapeEvent && escapeEvent.Pressed && escapeEvent.Keycode == Key.Escape)
-		{
-			GetViewport().SetInputAsHandled();
-			CancelSettings();
-		}
 	}
 }

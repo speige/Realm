@@ -101,56 +101,54 @@ public static class UIStyle
 	public static StyleBox CreateButtonNormal()
 	{
 		var style = new StyleBoxTexture();
-		style.Texture = GD.Load<Texture2D>("res://Assets/UI/stone_button_premium.png");
-		style.TextureMarginLeft = 30;
-		style.TextureMarginRight = 30;
-		style.TextureMarginTop = 15;
-		style.TextureMarginBottom = 15;
+		style.Texture = GD.Load<Texture2D>("res://Assets/UI/options_menu_button.png");
+		style.TextureMarginLeft = 0;
+		style.TextureMarginRight = 0;
+		style.TextureMarginTop = 0;
+		style.TextureMarginBottom = 0;
 		
 		style.ContentMarginLeft = 20;
 		style.ContentMarginRight = 20;
-		style.ContentMarginTop = 12;
-		style.ContentMarginBottom = 12;
+		style.ContentMarginTop = 10;
+		style.ContentMarginBottom = 10;
 		
-		style.ModulateColor = new Color(0.9f, 0.9f, 0.93f);
+		style.ModulateColor = new Color(1.0f, 1.0f, 1.0f);
 		return style;
 	}
-
 
 	public static StyleBox CreateButtonHover()
 	{
 		var style = new StyleBoxTexture();
-		style.Texture = GD.Load<Texture2D>("res://Assets/UI/stone_button_premium.png");
-		style.TextureMarginLeft = 30;
-		style.TextureMarginRight = 30;
-		style.TextureMarginTop = 15;
-		style.TextureMarginBottom = 15;
+		style.Texture = GD.Load<Texture2D>("res://Assets/UI/options_menu_button.png");
+		style.TextureMarginLeft = 0;
+		style.TextureMarginRight = 0;
+		style.TextureMarginTop = 0;
+		style.TextureMarginBottom = 0;
 		
 		style.ContentMarginLeft = 20;
 		style.ContentMarginRight = 20;
-		style.ContentMarginTop = 12;
-		style.ContentMarginBottom = 12;
+		style.ContentMarginTop = 10;
+		style.ContentMarginBottom = 10;
 		
-		style.ModulateColor = new Color(1.15f, 1.08f, 0.92f); // Golden highlight on hover
+		style.ModulateColor = new Color(1.12f, 1.10f, 0.96f);
 		return style;
 	}
-
 
 	public static StyleBox CreateButtonPressed()
 	{
 		var style = new StyleBoxTexture();
-		style.Texture = GD.Load<Texture2D>("res://Assets/UI/stone_button_premium.png");
-		style.TextureMarginLeft = 30;
-		style.TextureMarginRight = 30;
-		style.TextureMarginTop = 15;
-		style.TextureMarginBottom = 15;
+		style.Texture = GD.Load<Texture2D>("res://Assets/UI/options_menu_button.png");
+		style.TextureMarginLeft = 0;
+		style.TextureMarginRight = 0;
+		style.TextureMarginTop = 0;
+		style.TextureMarginBottom = 0;
 		
 		style.ContentMarginLeft = 20;
 		style.ContentMarginRight = 20;
-		style.ContentMarginTop = 12;
-		style.ContentMarginBottom = 12;
+		style.ContentMarginTop = 10;
+		style.ContentMarginBottom = 10;
 		
-		style.ModulateColor = new Color(0.7f, 0.85f, 1.0f); // Blue neon tint when clicked
+		style.ModulateColor = new Color(0.85f, 0.82f, 0.75f);
 		return style;
 	}
 
@@ -167,6 +165,33 @@ public static class UIStyle
 		style.CornerRadiusBottomRight = 4;
 		return style;
 	}
+
+	public static StyleBox CreateCustomLobbySearchInput(bool hasFocus = false)
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/custom_lobby_search.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.TextureMarginLeft = 50;
+			style.TextureMarginRight = 85;
+			style.TextureMarginTop = 15;
+			style.TextureMarginBottom = 15;
+			style.ContentMarginLeft = 45;
+			style.ContentMarginRight = 85;
+			style.ContentMarginTop = 12;
+			style.ContentMarginBottom = 12;
+			if (hasFocus)
+			{
+				style.ModulateColor = new Color(1.15f, 1.15f, 1.25f);
+			}
+			return style;
+		}
+		return CreateTextInput(hasFocus);
+	}
+
 
 	public static StyleBoxFlat CreateDropdownStyle(bool isHover = false, bool isPressed = false)
 	{
@@ -306,7 +331,247 @@ public static class UIStyle
 		button.Text = TranslationServer.Translate(text);
 		button.AddThemeColorOverride("font_color", ColorGoldDull);
 		button.AddThemeColorOverride("font_hover_color", ColorGold);
-		button.AddThemeColorOverride("font_pressed_color", ColorCyanGlow);
+		button.AddThemeColorOverride("font_pressed_color", ColorGold);
+		button.AddThemeColorOverride("font_focus_color", ColorGold);
 		button.AddThemeFontSizeOverride("font_size", fontSize);
+	}
+
+	public static StyleBox CreateEntranceBgTexture()
+	{
+		var style = new StyleBoxTexture();
+		style.Texture = GD.Load<Texture2D>("res://Assets/UI/menu_entrance_background.png");
+		return style;
+	}
+
+	public static StyleBox CreateLightStonePanel()
+	{
+		var style = new StyleBoxTexture();
+		style.Texture = GD.Load<Texture2D>("res://Assets/UI/stone_panel_background.png");
+		style.TextureMarginLeft = 60;
+		style.TextureMarginRight = 60;
+		style.TextureMarginTop = 60;
+		style.TextureMarginBottom = 60;
+		style.ContentMarginLeft = 32;
+		style.ContentMarginRight = 32;
+		style.ContentMarginTop = 40;
+		style.ContentMarginBottom = 32;
+		return style;
+	}
+
+	public static StyleBox CreateLightInnerPanel()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.35f, 0.33f, 0.30f, 0.7f);
+		style.BorderColor = new Color(0.25f, 0.23f, 0.20f, 0.6f);
+		style.BorderWidthTop = 2;
+		style.BorderWidthBottom = 1;
+		style.BorderWidthLeft = 2;
+		style.BorderWidthRight = 1;
+		style.CornerRadiusTopLeft = 4;
+		style.CornerRadiusTopRight = 4;
+		style.CornerRadiusBottomLeft = 4;
+		style.CornerRadiusBottomRight = 4;
+		style.ContentMarginLeft = 14;
+		style.ContentMarginRight = 14;
+		style.ContentMarginTop = 10;
+		style.ContentMarginBottom = 10;
+		return style;
+	}
+
+	public static StyleBox CreateLightTitleBadge()
+	{
+		var style = new StyleBoxTexture();
+		style.Texture = GD.Load<Texture2D>("res://Assets/UI/title_banner.png");
+		style.TextureMarginLeft = 140;
+		style.TextureMarginRight = 140;
+		style.TextureMarginTop = 20;
+		style.TextureMarginBottom = 20;
+		style.ContentMarginLeft = 45;
+		style.ContentMarginRight = 45;
+		style.ContentMarginTop = 14;
+		style.ContentMarginBottom = 14;
+		return style;
+	}
+
+	public static StyleBox CreateLightButtonNormal()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.13f, 0.15f, 0.18f, 1.0f);
+		style.BorderColor = new Color(0.36f, 0.39f, 0.44f, 1.0f);
+		style.SetBorderWidthAll(3);
+		style.CornerRadiusTopLeft = 24;
+		style.CornerRadiusTopRight = 24;
+		style.CornerRadiusBottomLeft = 24;
+		style.CornerRadiusBottomRight = 24;
+		style.CornerDetail = 1;
+		style.ContentMarginLeft = 32;
+		style.ContentMarginRight = 32;
+		style.ContentMarginTop = 8;
+		style.ContentMarginBottom = 8;
+		style.ShadowColor = new Color(0, 0, 0, 0.75f);
+		style.ShadowSize = 6;
+		style.ShadowOffset = new Vector2(0, 4);
+		return style;
+	}
+
+	public static StyleBox CreateLightButtonHover()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.18f, 0.21f, 0.26f, 1.0f);
+		style.BorderColor = new Color(0.50f, 0.65f, 0.85f, 1.0f);
+		style.SetBorderWidthAll(3);
+		style.CornerRadiusTopLeft = 24;
+		style.CornerRadiusTopRight = 24;
+		style.CornerRadiusBottomLeft = 24;
+		style.CornerRadiusBottomRight = 24;
+		style.CornerDetail = 1;
+		style.ContentMarginLeft = 32;
+		style.ContentMarginRight = 32;
+		style.ContentMarginTop = 8;
+		style.ContentMarginBottom = 8;
+		style.ShadowColor = new Color(0, 0, 0, 0.85f);
+		style.ShadowSize = 8;
+		style.ShadowOffset = new Vector2(0, 5);
+		return style;
+	}
+
+	public static StyleBox CreateLightButtonPressed()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.10f, 0.12f, 0.14f, 1.0f);
+		style.BorderColor = new Color(0.20f, 0.75f, 1.0f, 1.0f);
+		style.SetBorderWidthAll(3);
+		style.CornerRadiusTopLeft = 24;
+		style.CornerRadiusTopRight = 24;
+		style.CornerRadiusBottomLeft = 24;
+		style.CornerRadiusBottomRight = 24;
+		style.CornerDetail = 1;
+		style.ContentMarginLeft = 32;
+		style.ContentMarginRight = 32;
+		style.ContentMarginTop = 8;
+		style.ContentMarginBottom = 8;
+		style.ShadowColor = new Color(0, 0, 0, 0.6f);
+		style.ShadowSize = 3;
+		style.ShadowOffset = new Vector2(0, 2);
+		return style;
+	}
+
+	public static StyleBox CreateLightDropdownNormal()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.20f, 0.19f, 0.18f, 1.0f);
+		style.BorderColor = new Color(0.40f, 0.36f, 0.30f, 1.0f);
+		style.SetBorderWidthAll(1);
+		style.CornerRadiusTopLeft = 3;
+		style.CornerRadiusTopRight = 3;
+		style.CornerRadiusBottomLeft = 3;
+		style.CornerRadiusBottomRight = 3;
+		style.ContentMarginLeft = 10;
+		style.ContentMarginRight = 10;
+		style.ContentMarginTop = 5;
+		style.ContentMarginBottom = 5;
+		return style;
+	}
+
+	public static StyleBox CreateLightDropdownHover()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.26f, 0.25f, 0.23f, 1.0f);
+		style.BorderColor = new Color(0.58f, 0.48f, 0.32f, 1.0f);
+		style.SetBorderWidthAll(1);
+		style.CornerRadiusTopLeft = 3;
+		style.CornerRadiusTopRight = 3;
+		style.CornerRadiusBottomLeft = 3;
+		style.CornerRadiusBottomRight = 3;
+		style.ContentMarginLeft = 10;
+		style.ContentMarginRight = 10;
+		style.ContentMarginTop = 5;
+		style.ContentMarginBottom = 5;
+		return style;
+	}
+
+	public static StyleBox CreateLightDropdownPressed()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.16f, 0.15f, 0.14f, 1.0f);
+		style.BorderColor = new Color(0.15f, 0.65f, 1.0f, 1.0f);
+		style.SetBorderWidthAll(1);
+		style.CornerRadiusTopLeft = 3;
+		style.CornerRadiusTopRight = 3;
+		style.CornerRadiusBottomLeft = 3;
+		style.CornerRadiusBottomRight = 3;
+		style.ContentMarginLeft = 10;
+		style.ContentMarginRight = 10;
+		style.ContentMarginTop = 5;
+		style.ContentMarginBottom = 5;
+		return style;
+	}
+
+	public static StyleBox CreateLightSliderTrack()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.28f, 0.28f, 0.32f, 1.0f);
+		style.BorderColor = new Color(0.20f, 0.20f, 0.22f, 1.0f);
+		style.SetBorderWidthAll(1);
+		style.ExpandMarginTop = 2;
+		style.ExpandMarginBottom = 2;
+		style.CornerRadiusTopLeft = 3;
+		style.CornerRadiusTopRight = 3;
+		style.CornerRadiusBottomLeft = 3;
+		style.CornerRadiusBottomRight = 3;
+		return style;
+	}
+
+	public static StyleBox CreateLightSliderFill()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.38f, 0.38f, 0.42f, 1.0f);
+		style.ExpandMarginTop = 2;
+		style.ExpandMarginBottom = 2;
+		style.CornerRadiusTopLeft = 3;
+		style.CornerRadiusTopRight = 3;
+		style.CornerRadiusBottomLeft = 3;
+		style.CornerRadiusBottomRight = 3;
+		return style;
+	}
+
+	public static Texture2D CreateSquareStoneGrabberTexture(bool highlight)
+	{
+		int size = 20;
+		var img = Image.CreateEmpty(size, size, false, Image.Format.Rgba8);
+		
+		Color border = highlight ? new Color(0.95f, 0.85f, 0.55f) : new Color(0.65f, 0.55f, 0.38f);
+		Color topLight = highlight ? new Color(0.75f, 0.70f, 0.60f) : new Color(0.50f, 0.46f, 0.40f);
+		Color bottomDark = new Color(0.18f, 0.16f, 0.14f);
+		Color fill = highlight ? new Color(0.42f, 0.39f, 0.35f) : new Color(0.32f, 0.30f, 0.27f);
+		Color centerGrip = highlight ? new Color(0.95f, 0.85f, 0.55f) : new Color(0.75f, 0.65f, 0.45f);
+
+		for (int y = 0; y < size; y++)
+		{
+			for (int x = 0; x < size; x++)
+			{
+				if (x == 0 || x == size - 1 || y == 0 || y == size - 1)
+				{
+					img.SetPixel(x, y, border);
+				}
+				else if (x == 1 || y == 1)
+				{
+					img.SetPixel(x, y, topLight);
+				}
+				else if (x == size - 2 || y == size - 2)
+				{
+					img.SetPixel(x, y, bottomDark);
+				}
+				else if ((x >= size / 2 - 1 && x <= size / 2 + 1) && (y >= 5 && y <= size - 6))
+				{
+					img.SetPixel(x, y, centerGrip);
+				}
+				else
+				{
+					img.SetPixel(x, y, fill);
+				}
+			}
+		}
+		return ImageTexture.CreateFromImage(img);
 	}
 }
