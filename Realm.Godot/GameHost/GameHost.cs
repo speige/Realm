@@ -2792,6 +2792,11 @@ public class {mapName} : IMapScript
 
 		EcsWorld = ServiceLocator.Get<World>();
 		CreateGround();
+		if (GetNodeOrNull<PropMultiMeshManager>("PropMultiMeshManager") == null)
+		{
+			var propMultiMeshManager = new PropMultiMeshManager();
+			AddChild(propMultiMeshManager);
+		}
 		SetupWorldEntityComponents();
 
 		if (GroundTerrain != null)

@@ -90,6 +90,7 @@ public partial class GameHost
 				prop.Position = new Vector3(prop.Position.X, _editorService.GetTerrainHeightAt(prop.Position) + offset, prop.Position.Z);
 			}
 		}
+		PropMultiMeshManager.Instance?.MarkDirty(norm);
 
 		foreach (var unit in AllUnits)
 		{
@@ -248,6 +249,9 @@ public partial class GameHost
 		{
 			ApplyMaterialOverridesToNode(_editorPreviewNode, brightness, tint, generateNormals);
 		}
+
+		PropMultiMeshManager.Instance?.UpdateMaterialOverrides(normAssetKey);
+		PropMultiMeshManager.Instance?.MarkDirty(normAssetKey);
 	}
 
 	public static void ApplyMaterialOverridesToNode(
@@ -628,6 +632,7 @@ public partial class GameHost
 		AllUnits.Clear();
 		ClearAllBuildQueueGhosts();
 		AllProps.Clear();
+		PropMultiMeshManager.Instance?.Clear();
 		AllDecals.Clear();
 		ActivePings.Clear();
 		EntityToUnit3D.Clear();
@@ -866,6 +871,7 @@ public partial class GameHost
 		prop.PropId = propId;
 		AddChild(prop);
 		AllProps.Add(prop);
+		PropMultiMeshManager.Instance?.MarkDirty(propId);
 
 		EntityToProp3D[entity] = prop;
 
@@ -1039,6 +1045,7 @@ public partial class GameHost
 				decal.GlobalPosition = pos;
 			}
 		}
+		PropMultiMeshManager.Instance?.MarkAllDirty();
 	}
 
 	private void DeleteObjectAt(Node collider, Vector3 hitPos)
@@ -1068,6 +1075,7 @@ public partial class GameHost
 				{
 					EcsWorld.Destroy(prop.Entity);
 				}
+				PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
 				prop.QueueFree();
 				return;
 			}
@@ -1221,6 +1229,7 @@ public partial class GameHost
 		prop.PropId = propId;
 		AddChild(prop);
 		AllProps.Add(prop);
+		PropMultiMeshManager.Instance?.MarkDirty(propId);
 
 		EntityToProp3D[entity] = prop;
 

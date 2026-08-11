@@ -126,12 +126,14 @@ public partial class GameHost
 	{
 		if (GodotObject.IsInstanceValid(prop))
 		{
+			string propId = prop.PropId;
 			AllProps.Remove(prop);
 			EntityToProp3D.Remove(prop.Entity);
 			if (EcsWorld.IsAlive(prop.Entity))
 			{
 				EcsWorld.Destroy(prop.Entity);
 			}
+			PropMultiMeshManager.Instance?.MarkDirty(propId);
 			prop.QueueFree();
 			RebakeNavMesh();
 		}

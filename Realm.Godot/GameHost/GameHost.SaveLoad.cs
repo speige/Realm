@@ -270,6 +270,7 @@ public partial class GameHost
 					SpawnPropExternalWithParams(req.PropId, new Vector3(req.Position.X, req.Position.Y, req.Position.Z), req.RotationY, req.Scale);
 					EcsWorld.Destroy(reqEnt);
 				}
+				PropMultiMeshManager.Instance?.RebuildAll();
 
 				var decalSpawnQuery = Realm.Ecs.Common.QueryCache.AllDecalSpawnRequestQuery;
 				var decalRequests = new List<Entity>();

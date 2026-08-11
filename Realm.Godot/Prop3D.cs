@@ -296,29 +296,36 @@ public partial class Prop3D : StaticBody3D
 
 	private void CreatePropVisual()
 	{
-		var visual = new Node3D();
-		visual.Name = "VisualModel";
-		if (PropId == "tree" || PropId.Contains("tree"))
+		if (IsPreview)
 		{
-			visual.Scale = new Vector3(3f, 3f, 3f);
-		}
-		string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(PropId) : "";
-		float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
-		visual.Position = new Vector3(0, yOffset, 0);
-		AddChild(visual);
-
-		string modelPath = ResolvePropModelPath(PropId);
-		try
-		{
-			Node node = ModelCache.GetModel(modelPath);
-			if (node != null)
+			var visual = new Node3D();
+			visual.Name = "VisualModel";
+			if (PropId == "tree" || PropId.Contains("tree"))
 			{
-				visual.AddChild(node);
+				visual.Scale = new Vector3(3f, 3f, 3f);
+			}
+			string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(PropId) : "";
+			float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
+			visual.Position = new Vector3(0, yOffset, 0);
+			AddChild(visual);
+
+			string modelPath = ResolvePropModelPath(PropId);
+			try
+			{
+				Node node = ModelCache.GetModel(modelPath);
+				if (node != null)
+				{
+					visual.AddChild(node);
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"Failed to load prop visual for '{PropId}' ({modelPath}): {ex.Message}");
 			}
 		}
-		catch (Exception ex)
+		else
 		{
-			GD.PrintErr($"Failed to load prop visual for '{PropId}' ({modelPath}): {ex.Message}");
+			PropMultiMeshManager.Instance?.MarkDirty(PropId);
 		}
 	}
 
