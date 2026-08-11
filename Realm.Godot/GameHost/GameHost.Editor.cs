@@ -1,6 +1,7 @@
 using Arch.Core;
 using Godot;
 using Realm.Ecs.Common;
+using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Movement;
@@ -415,6 +416,30 @@ public partial class GameHost
 		}
 	}
 
+	private const float MaxSafeModelYOffset = 50f;
+	private const float MinSafeModelCollisionRatio = 0.1f;
+	private const float MaxSafeModelCollisionRatio = 10f;
+
+	private bool IsValidModelYOffset(string assetKey, float val)
+	{
+		if (!float.IsFinite(val) || Math.Abs(val) > MaxSafeModelYOffset)
+		{
+			GD.PushWarning($"Ignoring invalid y_offset {val} for model '{assetKey}' (|offset| > {MaxSafeModelYOffset}).");
+			return false;
+		}
+		return true;
+	}
+
+	private bool IsValidModelCollisionRatio(string assetKey, float val)
+	{
+		if (!float.IsFinite(val) || val < MinSafeModelCollisionRatio || val > MaxSafeModelCollisionRatio)
+		{
+			GD.PushWarning($"Ignoring invalid collision_circle_ratio {val} for model '{assetKey}' (expected {MinSafeModelCollisionRatio}..{MaxSafeModelCollisionRatio}).");
+			return false;
+		}
+		return true;
+	}
+
 	public void LoadModelYOffsetsFromMetadataJson(string directory = null)
 	{
 		try
@@ -442,7 +467,7 @@ public partial class GameHost
 			{
 				foreach (var kvp in offsetsObj)
 				{
-					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), out float val))
+					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), out float val) && IsValidModelYOffset(kvp.Key, val))
 					{
 						ModelYOffsets[NormalizeModelAssetKey(kvp.Key)] = val;
 					}
@@ -453,7 +478,7 @@ public partial class GameHost
 			{
 				foreach (var kvp in circlesObj)
 				{
-					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), out float val))
+					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), out float val) && IsValidModelCollisionRatio(kvp.Key, val))
 					{
 						ModelCollisionCircleRatios[NormalizeModelAssetKey(kvp.Key)] = val;
 					}
@@ -494,11 +519,17 @@ public partial class GameHost
 							{
 								if (itemObj.ContainsKey("y_offset") && float.TryParse(itemObj["y_offset"]?.ToString(), out float yVal))
 								{
-									ModelYOffsets[NormalizeModelAssetKey(itemKvp.Key)] = yVal;
+									if (IsValidModelYOffset(itemKvp.Key, yVal))
+									{
+										ModelYOffsets[NormalizeModelAssetKey(itemKvp.Key)] = yVal;
+									}
 								}
 								if (itemObj.ContainsKey("collision_circle_ratio") && float.TryParse(itemObj["collision_circle_ratio"]?.ToString(), out float rVal))
 								{
-									ModelCollisionCircleRatios[NormalizeModelAssetKey(itemKvp.Key)] = rVal;
+									if (IsValidModelCollisionRatio(itemKvp.Key, rVal))
+									{
+										ModelCollisionCircleRatios[NormalizeModelAssetKey(itemKvp.Key)] = rVal;
+									}
 								}
 								if (itemObj.ContainsKey("brightness") && float.TryParse(itemObj["brightness"]?.ToString(), out float brightVal))
 								{
@@ -694,7 +725,9 @@ public partial class GameHost
 					if (x < width && z < depth)
 					{
 						heights[x, z] = 0.0f;
-						pathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(GroundTerrain.Cells[x, z]);
+						pathingCodes[x, z] = EditableTerrain.CombinePathingWithRoad(
+							EditableTerrain.GetDefaultPathingCode(GroundTerrain.Cells[x, z]),
+							pathingCodes[x, z]);
 					}
 					splatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
 					cliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(GroundTerrain.CliffTextureIndex);
@@ -752,13 +785,10 @@ public partial class GameHost
 		{
 			return MapEditorHUD.Instance.IsMouseOverUI(GetViewport().GetMousePosition());
 		}
-		var mousePos = GetViewport().GetMousePosition();
-		var viewportSize = GetViewport().GetVisibleRect().Size;
 		
-		if (mousePos.Y < 75) return true;
-		if (mousePos.Y > viewportSize.Y - 245) return true;
-		if (mousePos.X < 225 || mousePos.X > viewportSize.X - 225) return true;
-		
+		// In-game HUD relies on Godot's built-in Control input consumption.
+		// If an event reaches _UnhandledInput, it means the UI did not consume it,
+		// so it is a valid world click. Hardcoded bounds here falsely block clicks.
 		return false;
 	}
 
@@ -1126,9 +1156,52 @@ public partial class GameHost
 	
 
 
+	/// <summary>
+	///     Maps a placed model id (e.g. "castle.glb") to its registered unit id (e.g. "castle")
+	///     so editor-placed units get the real metadata instead of generic dynamic stats.
+	/// </summary>
+	private string ResolveUnitId(string unitId)
+	{
+		if (string.IsNullOrEmpty(unitId)) return unitId;
+		if (UnitRegistry.ContainsKey(unitId)) return unitId;
+
+		string cleanName = System.IO.Path.GetFileName(unitId).TrimEnd('\0');
+		if (!cleanName.EndsWith(".glb", StringComparison.OrdinalIgnoreCase)
+			&& !cleanName.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+		{
+			cleanName += ".glb";
+		}
+		string baseName = System.IO.Path.GetFileNameWithoutExtension(cleanName);
+
+		foreach (var kvp in UnitRegistry)
+		{
+			if (string.IsNullOrEmpty(kvp.Key)) continue;
+			string keyName = System.IO.Path.GetFileName(kvp.Key);
+			string keyBase = System.IO.Path.GetFileNameWithoutExtension(keyName);
+			if (string.Equals(keyBase, baseName, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(keyName, cleanName, StringComparison.OrdinalIgnoreCase))
+			{
+				return kvp.Key;
+			}
+
+			string modelPath = !string.IsNullOrEmpty(kvp.Value.ModelPath)
+				? System.IO.Path.GetFileName(kvp.Value.ModelPath)
+				: "";
+			if (string.Equals(modelPath, cleanName, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(System.IO.Path.GetFileNameWithoutExtension(modelPath), baseName, StringComparison.OrdinalIgnoreCase))
+			{
+				return kvp.Key;
+			}
+		}
+
+		return unitId;
+	}
+
 	public Unit3D SpawnUnitExternal(string unitId, Vector3 position, bool isEnemy, float rotationY, float scale)
 	{
-		position.Y = _editorService.GetTerrainHeightAt(position);
+		// Preserve the authored Y (saved maps, pasted/cloned/undone objects). Placement paths
+		// that want feet-on-terrain snap the Y to the terrain before calling this method.
+		unitId = ResolveUnitId(unitId);
 		if (!UnitRegistry.ContainsKey(unitId))
 		{
 			string resolvedModelPath = unitId;
@@ -1166,15 +1239,7 @@ public partial class GameHost
 
 		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
 		
-		string modelPath;
-		if (!string.IsNullOrEmpty(meta.ModelPath) && (FileAccess.FileExists(meta.ModelPath) || System.IO.File.Exists(meta.ModelPath)))
-		{
-			modelPath = meta.ModelPath;
-		}
-		else
-		{
-			modelPath = GetFallbackModelPath(unitId, meta.Speed == 0f);
-		}
+		string modelPath = _unitSpawnService.ResolveModelPath(meta.ModelPath, unitId, meta.Speed == 0f);
 
 		string name = meta.Name;
 		var entity = CreateEcsUnit(unitId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, position, playerOwner);
@@ -1495,6 +1560,11 @@ public partial class GameHost
 		string reqId = ActivePlaceId;
 		bool reqIsEnemy = PlaceUnitIsEnemy;
 
+		if (ActiveEditorTool == EditorTool.PlaceUnit)
+		{
+			reqId = ResolveUnitId(reqId);
+		}
+
 		if (_editorPreviewNode == null || !GodotObject.IsInstanceValid(_editorPreviewNode) || _editorPreviewType != reqType || _editorPreviewId != reqId || _editorPreviewIsEnemy != reqIsEnemy)
 		{
 			ClearEditorPreview();
@@ -1734,6 +1804,60 @@ public partial class GameHost
 		}
 	}
 
+	private Node3D? _editorCoverageOverlayRoot;
+
+	private void UpdateEditorCoverageOverlay()
+	{
+		if (_editorCoverageOverlayRoot == null)
+		{
+			_editorCoverageOverlayRoot = new Node3D();
+			_editorCoverageOverlayRoot.Name = "EditorCoverageOverlay";
+			AddChild(_editorCoverageOverlayRoot);
+		}
+		foreach (Node child in _editorCoverageOverlayRoot.GetChildren())
+		{
+			child.QueueFree();
+		}
+
+		if (!(_selectedEditorObject is Unit3D unit) || !EcsWorld.IsAlive(unit.Entity))
+		{
+			_editorCoverageOverlayRoot.Visible = false;
+			return;
+		}
+
+		float scanRadius = EcsWorld.Has<ScanRadius>(unit.Entity) ? EcsWorld.Get<ScanRadius>(unit.Entity).Value : 0f;
+		float range = EcsWorld.Has<Attack>(unit.Entity) ? EcsWorld.Get<Attack>(unit.Entity).Range : 0f;
+
+		_editorCoverageOverlayRoot.Visible = scanRadius > 0f || range > 0f;
+		if (!_editorCoverageOverlayRoot.Visible) return;
+
+		_editorCoverageOverlayRoot.Position = unit.Position;
+		if (scanRadius > 0f) CreateCoverageRing(scanRadius, new Color(0.3f, 0.7f, 1.0f, 0.6f));
+		if (range > 0f) CreateCoverageRing(range, new Color(1.0f, 0.5f, 0.1f, 0.7f));
+	}
+
+	private void CreateCoverageRing(float radius, Color color)
+	{
+		var meshInstance = new MeshInstance3D();
+		var torusMesh = new TorusMesh();
+		torusMesh.InnerRadius = Mathf.Max(radius - 0.25f, 0.05f);
+		torusMesh.OuterRadius = radius + 0.25f;
+		torusMesh.Rings = 32;
+		meshInstance.Mesh = torusMesh;
+		meshInstance.Position = new Vector3(0, 0.3f, 0);
+		meshInstance.Scale = new Vector3(1f, 0.04f, 1f);
+
+		var material = new StandardMaterial3D();
+		material.AlbedoColor = color;
+		material.EmissionEnabled = true;
+		material.Emission = new Color(color.R, color.G, color.B);
+		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+		meshInstance.MaterialOverride = material;
+
+		_editorCoverageOverlayRoot.AddChild(meshInstance);
+	}
+
 	private void ProcessMapEditorTick(float fDelta)
 	{
 		_editorService.TickClumpCooldown(fDelta);
@@ -1889,12 +2013,14 @@ public partial class GameHost
 						{
 							dragPos = _editorService.SnapToGrid(dragPos);
 						}
-						dragPos.Y = _editorService.GetTerrainHeightAt(dragPos);
+						float authoredYOffset = _dragObjectStartPos.Y - _editorService.GetTerrainHeightAt(_dragObjectStartPos);
+						dragPos.Y = _editorService.GetTerrainHeightAt(dragPos) + (Mathf.Abs(authoredYOffset) < 0.05f ? 0f : authoredYOffset);
 						node3D.Position = dragPos;
 						if (SelectedEditorObject is Unit3D unit && EcsWorld.IsAlive(unit.Entity))
 						{
 							EcsWorld.Set(unit.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
 						}
+						UpdateEditorCoverageOverlay();
 						MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 					}
 				}

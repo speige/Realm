@@ -31,6 +31,8 @@ public partial class GameHost : Node3D, IGameAPI
 		IncludeFields = true
 	};
 
+	private static bool TowerDiagnosticsEnabled = false;
+
 	private AudioService _audioService;
 	private FXService _fxService;
 	private SaveLoadService _saveLoadService;
@@ -228,6 +230,7 @@ public partial class GameHost : Node3D, IGameAPI
 
 	public bool IsMapEditorMode { get; set; }
 	public bool IsLoadingMap { get; set; }
+	public bool IsGameOver { get; private set; }
 	private EditableTerrain _groundTerrain;
 	public EditableTerrain GroundTerrain
 	{
@@ -542,6 +545,7 @@ public partial class GameHost : Node3D, IGameAPI
 				}
 			}
 			MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
+			UpdateEditorCoverageOverlay();
 		}
 	}
 	private Node? _selectedEditorObject;
@@ -600,6 +604,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public string[]? PathingCapabilities { get; set; }
 		public string? MovementType { get; set; }
 		public float? ObstacleRadius { get; set; }
+		public string[]? Targets { get; set; }
 	}
 
 	public static int GetUnitPathingFlags(UnitMetadata meta)
@@ -891,7 +896,7 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 		bool actualIsEnemy = NetworkService.ArePeersEnemies(_localPeerId, ownerPeerId);
 		
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : _unitSpawnService.GetFallbackModelPath(unitTypeId, meta.Speed == 0f);
+		string modelPath = _unitSpawnService.ResolveModelPath(meta.ModelPath, unitTypeId, meta.Speed == 0f);
 
 		string name = actualIsEnemy ? _unitSpawnService.GetEnemyUnitName(unitTypeId, meta.Name) : meta.Name;
 
@@ -976,12 +981,14 @@ public partial class GameHost : Node3D, IGameAPI
 	void IGameAPI.TriggerVictory()
 	{
 		GD.Print("[GameHost] Victory triggered by map script!");
+		IsGameOver = true;
 		UIManager.Instance?.CallDeferred(nameof(UIManager.TransitionTo), (int)GameScreen.GameOver, true);
 	}
 
 	void IGameAPI.TriggerDefeat()
 	{
 		GD.Print("[GameHost] Defeat triggered by map script!");
+		IsGameOver = true;
 		UIManager.Instance?.CallDeferred(nameof(UIManager.TransitionTo), (int)GameScreen.GameOver, false);
 	}
 
@@ -2543,6 +2550,10 @@ public class {mapName} : IMapScript
 		}
 
 		UnitRegistry.Clear();
+		foreach (var kvp in DefaultRegistryFallback)
+		{
+			UnitRegistry[kvp.Key] = kvp.Value;
+		}
 		if (!string.IsNullOrEmpty(jsonText))
 		{
 			try
@@ -2562,17 +2573,12 @@ public class {mapName} : IMapScript
 				GD.PrintErr($"Failed to load custom unit registry: {ex.Message}");
 			}
 		}
-
-		// Fallback: If no metadata.json exists or it failed to parse, use default values so the game doesn't crash.
-		foreach (var kvp in DefaultRegistryFallback)
-		{
-			UnitRegistry[kvp.Key] = kvp.Value;
-		}
 	}
 
 	private void LoadMapScript(string mapName)
 	{
 		_activeMapScript = null;
+		IsGameOver = false;
 
 		string normalizedRaw = mapName.Replace('\\', '/');
 		bool isCustomPath = normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRaw);
@@ -2813,8 +2819,15 @@ public class {mapName} : IMapScript
 		_simulationService = ServiceLocator.Get<SimulationService>();
 		_simulationService.SetRuntimeReferences(AllUnits, AllProps, _castlesList, _definitionManager, _goldResourceId, _woodResourceId, _stoneResourceId, GroundTerrain);
 		_simulationService.Initialize();
+		_simulationService.EditorHeightProvider = p => _editorService.GetTerrainHeightAt(new Vector3(p.X, p.Y, p.Z));
 
 		_simulationService.OnArrowProjectileRequested = (start, target) => SpawnArrowProjectile(new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z));
+		_simulationService.OnTowerFired = entity =>
+		{
+			if (!TowerDiagnosticsEnabled) return;
+			var pos = EcsWorld.Has<Position>(entity) ? EcsWorld.Get<Position>(entity).Value : default;
+			GD.Print($"[TowerDiag] tower fired at X={pos.X:F1} Y={pos.Y:F1} Z={pos.Z:F1}");
+		};
 		_simulationService.OnDamageFlashRequested = entity =>
 		{
 			if (GameHost.TryGetUnit3D(entity, out var unit3D))
@@ -2832,6 +2845,7 @@ public class {mapName} : IMapScript
 		};
 		_simulationService.OnKillUnitRequested = entity =>
 		{
+			_warnedNonFinitePositions.Remove(entity);
 			if (EcsWorld.IsAlive(entity) && GameHost.TryGetUnit3D(entity, out var unit3D))
 			{
 				this.CallDeferred(nameof(KillUnit), unit3D);
@@ -2852,6 +2866,10 @@ public class {mapName} : IMapScript
 					? GetUnitWrapper(attackerEntity)
 					: null;
 				OnUnitDamaged?.Invoke(GetUnitWrapper(targetEntity), attackerWrapper, damage);
+				if (GameHost.TryGetUnit3D(targetEntity, out var targetUnit3D))
+				{
+					_fxService.SpawnDamageNumber(this, targetUnit3D.GlobalPosition, damage);
+				}
 			}
 		};
 		_simulationService.OnUnitAttackedCallback = (attackerEntity, targetEntity) =>
@@ -3146,6 +3164,10 @@ public class {mapName} : IMapScript
 		BuildDependencyInjection();
 		ResolveServices();
 
+		// Do not trigger lazy GroundTerrain creation here: InitializeGameEcs()
+		// builds the ground exactly once (CreateGround at GameHost.cs:2751).
+		// Triggering the getter here previously built the whole 128x128 mesh/water/navmesh
+		// a second time on every _Ready, stalling the main thread at startup.
 		if (_groundTerrain != null)
 		{
 			_editorService.SetTerrainSplatMap(_groundTerrain.SplatMap);
@@ -3462,17 +3484,19 @@ public class {mapName} : IMapScript
 		float attackCooldown = 1.5f;
 		bool isHero = false;
 		int pathingFlags = 8;
+		string[]? targets = null;
 		if (UnitRegistry.TryGetValue(id, out var regMeta))
 		{
 			if (regMeta.ScanRadius > 0) scanRadius = regMeta.ScanRadius;
 			if (regMeta.AttackCooldown > 0) attackCooldown = regMeta.AttackCooldown;
 			isHero = regMeta.IsHero;
 			pathingFlags = GetUnitPathingFlags(regMeta);
+			targets = regMeta.Targets;
 		}
 
 		var entity = _unitSpawnService.CreateEcsUnitEntity(
 			id, name, hp, damage, range, armor, speed, scanRadius, isHero, attackCooldown, pathingFlags, pos, owner,
-			_playerEntity, HasShieldsUpgrade, HasWeaponsUpgrade
+			_playerEntity, HasShieldsUpgrade, HasWeaponsUpgrade, targets
 		);
 
 		OnUnitCreated?.Invoke(GetUnitWrapper(entity));
@@ -3765,6 +3789,11 @@ public class {mapName} : IMapScript
 
 	private void ProcessGameplayTick(float fDelta)
 	{
+		if (IsGameOver)
+		{
+			return;
+		}
+
 		float actualIntervalMs = 0f;
 		if (Multiplayer.MultiplayerPeer == null || Multiplayer.IsServer())
 		{

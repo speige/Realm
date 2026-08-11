@@ -160,6 +160,8 @@ public static class MapWorkspaceService
 			}
 		}
 
+		EnsureTrimmerRoot(csprojPath);
+
 		EnsureApiLib(directory);
 
 		string targetsTemplate = GetTemplatePath("Directory.Build.targets");
@@ -174,6 +176,21 @@ public static class MapWorkspaceService
 			{
 			}
 		}
+	}
+
+	private static void EnsureTrimmerRoot(string csprojPath)
+	{
+		if (string.IsNullOrEmpty(csprojPath) || !File.Exists(csprojPath)) return;
+
+		string content = File.ReadAllText(csprojPath);
+		if (content.Contains("<TrimmerRootAssembly", StringComparison.OrdinalIgnoreCase)) return;
+
+		string root = "  <ItemGroup>\n    <TrimmerRootAssembly Include=\"$(AssemblyName)\" />\n  </ItemGroup>\n";
+		int projectEnd = content.LastIndexOf("</Project>", StringComparison.OrdinalIgnoreCase);
+		content = projectEnd >= 0 ? content.Insert(projectEnd, root) : content + root;
+
+		File.WriteAllText(csprojPath, content);
+		GD.Print($"[MapWorkspaceService] Added TrimmerRootAssembly to {Path.GetFileName(csprojPath)}");
 	}
 
 	private static string NormalizeMapApiReference(string csprojContent)

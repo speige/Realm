@@ -81,6 +81,7 @@ internal class SimulationService
 	private ForEachWithEntity<Realm.Ecs.Components.Core.Cooldowns> _cooldownsQueryDelegate = null!;
 
 	public Action<System.Numerics.Vector3, System.Numerics.Vector3> OnArrowProjectileRequested;
+	public Action<Entity> OnTowerFired;
 	public Action<Entity> OnDamageFlashRequested;
 	public Action<System.Numerics.Vector3, System.Numerics.Vector3> OnHealEffectRequested;
 	public Action<Entity> OnHealFlashRequested;
@@ -113,10 +114,11 @@ internal class SimulationService
 		_pathfinder = pathfinder;
 
 		_movementService = new MovementAndPathfindingService(ecsWorldAccessor, worldEntity, pathfinder);
-		_combatService = new CombatAndDamageService(ecsWorldAccessor);
+		_combatService = new CombatAndDamageService(ecsWorldAccessor, () => GameHost.Instance != null && GameHost.Instance.UnlimitedPowerEnabled, pathfinder);
 		_economyService = new ResourceEconomyService(ecsWorldAccessor);
 
 		_combatService.OnArrowProjectileRequested = (p1, p2) => EnqueueVFXRequest("arrow", p1, p2, 1.0f, 40f);
+		_combatService.OnTowerFired = ent => OnTowerFired?.Invoke(ent);
 		_combatService.OnDamageFlashRequested = ent => {
 			if (EcsWorld.IsAlive(ent) && EcsWorld.Has<Position>(ent))
 				EnqueueVFXRequest("damage_flash", EcsWorld.Get<Position>(ent).Value, EcsWorld.Get<Position>(ent).Value, 1.0f, 0f, ent.Id);
@@ -235,6 +237,13 @@ internal class SimulationService
 		_fDelta = fDelta;
 		_tickArrivedUnits.Clear();
 		_tickAddPathFollow.Clear();
+		_movementService.RefreshTerrainState();
+	}
+
+	public Func<System.Numerics.Vector3, float>? EditorHeightProvider
+	{
+		get => _movementService.EditorHeightProvider;
+		set => _movementService.EditorHeightProvider = value;
 	}
 
 	public void SetDelta(float fDelta)

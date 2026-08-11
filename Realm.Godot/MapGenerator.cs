@@ -503,6 +503,10 @@ public static class MapGenerator
 				if (x < width && z < depth)
 				{
 					pathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(cells[x, z]);
+					if (isPath[x, z])
+					{
+						pathingCodes[x, z] |= EditableTerrain.PATHING_ROAD;
+					}
 				}
 			}
 		}

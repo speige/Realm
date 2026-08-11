@@ -34,7 +34,60 @@ internal class UnitSpawnService
 			if (System.IO.File.Exists(cand)) return cand;
 		}
 
+		string idBase = System.IO.Path.GetFileNameWithoutExtension(unitId).ToLowerInvariant();
+		foreach (var sub in subDirs)
+		{
+			string dir = System.IO.Path.Combine(wsPath, "Assets", "models", sub);
+			if (!System.IO.Directory.Exists(dir)) continue;
+			foreach (var file in System.IO.Directory.GetFiles(dir, "*.glb"))
+			{
+				if (System.IO.Path.GetFileNameWithoutExtension(file).ToLowerInvariant().Contains(idBase))
+				{
+					return file;
+				}
+			}
+		}
+
+		string primaryDir = System.IO.Path.Combine(wsPath, "Assets", "models", primarySub);
+		if (System.IO.Directory.Exists(primaryDir))
+		{
+			var primaryFiles = System.IO.Directory.GetFiles(primaryDir, "*.glb");
+			if (primaryFiles.Length > 0) return primaryFiles[0];
+		}
+		foreach (var sub in subDirs)
+		{
+			string dir = System.IO.Path.Combine(wsPath, "Assets", "models", sub);
+			if (!System.IO.Directory.Exists(dir)) continue;
+			var files = System.IO.Directory.GetFiles(dir, "*.glb");
+			if (files.Length > 0) return files[0];
+		}
+
 		return unitId;
+	}
+
+	public string ResolveModelPath(string? modelPath, string unitId, bool isBuilding)
+	{
+		if (!string.IsNullOrEmpty(modelPath))
+		{
+			if (modelPath.StartsWith("res://") || System.IO.File.Exists(modelPath))
+			{
+				return modelPath;
+			}
+
+			string filename = System.IO.Path.GetFileName(modelPath);
+			if (!string.IsNullOrEmpty(filename))
+			{
+				string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+				string[] subDirs = new[] { "character", "building", "environment", "props" };
+				foreach (var sub in subDirs)
+				{
+					string cand = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
+					if (System.IO.File.Exists(cand)) return cand;
+				}
+			}
+		}
+
+		return GetFallbackModelPath(unitId, isBuilding);
 	}
 
 	public int GetUnitPathingFlags(GameHost.UnitMetadata meta)
@@ -89,13 +142,30 @@ internal class UnitSpawnService
 		};
 	}
 
-	public Entity CreateEcsUnitEntity(string id, string name, float hp, float damage, float range, float armor, float speed, float scanRadius, bool isHero, float attackCooldown, int pathingFlags, Vector3 pos, Realm.Ecs.Common.PlayerEntity owner, Entity playerEntity, bool hasShieldsUpgrade, bool hasWeaponsUpgrade)
+	public Entity CreateEcsUnitEntity(string id, string name, float hp, float damage, float range, float armor, float speed, float scanRadius, bool isHero, float attackCooldown, int pathingFlags, Vector3 pos, Realm.Ecs.Common.PlayerEntity owner, Entity playerEntity, bool hasShieldsUpgrade, bool hasWeaponsUpgrade, string[]? targets = null)
 	{
 		var entity = EcsWorld.Create();
 		EcsWorld.Add(entity, new DefinitionId(id));
 		EcsWorld.Add(entity, new Name(name));
 		EcsWorld.Add(entity, new Position(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));
 		EcsWorld.Add(entity, new Owner(owner));
+
+		bool canTargetAir = true;
+		bool canTargetGround = true;
+		if (targets != null && targets.Length > 0)
+		{
+			bool hasAir = false;
+			bool hasGround = false;
+			foreach (var targetType in targets)
+			{
+				string normalized = targetType.Trim().ToLowerInvariant();
+				if (normalized == "air") hasAir = true;
+				else if (normalized == "ground") hasGround = true;
+			}
+			canTargetAir = hasAir;
+			canTargetGround = hasGround;
+		}
+		EcsWorld.Add(entity, new CombatTargeting(canTargetAir, canTargetGround));
 
 		if (isHero)
 		{

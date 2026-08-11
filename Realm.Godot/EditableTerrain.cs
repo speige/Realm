@@ -316,6 +316,17 @@ public partial class EditableTerrain : StaticBody3D
 	public const int PATHING_FLYING = (int)TerrainPathingFlags.Flying;
 	public const int PATHING_GROUND = (int)TerrainPathingFlags.Ground;
 	public const int PATHING_BUILDABLE = (int)TerrainPathingFlags.Buildable;
+	public const int PATHING_ROAD = (int)TerrainPathingFlags.Road;
+
+	/// <summary>
+	///     Preserves the road-network bit when a cell's pathing code is recomputed from its
+	///     terrain shape (brush edits, water changes, rebuilds). Terrain edits that flatten a
+	///     cell do not destroy the map's road network.
+	/// </summary>
+	public static int CombinePathingWithRoad(int recomputedCode, int previousCode)
+	{
+		return recomputedCode | (previousCode & PATHING_ROAD);
+	}
 
 	public static int GetDefaultPathingCode(WaterType waterMode)
 	{
@@ -1121,6 +1132,10 @@ void fragment() {
 		} else if (box_idx == 5) {
 			if ((code & 32) != 0) {
 				pathing_color = vec4(0.6, 0.2, 0.8, 0.75);
+			}
+		} else if (box_idx == 6) {
+			if ((code & 64) != 0) {
+				pathing_color = vec4(0.85, 0.65, 0.35, 0.75);
 			}
 		}
 

@@ -502,7 +502,9 @@ public class EditorService
 										{
 											if (cell.WaterMode != WaterType.None)
 											{
-												terrain.PathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(cell.WaterMode);
+												terrain.PathingCodes[x, z] = EditableTerrain.CombinePathingWithRoad(
+													EditableTerrain.GetDefaultPathingCode(cell.WaterMode),
+													terrain.PathingCodes[x, z]);
 												result.PathingModified = true;
 											}
 											else
@@ -510,7 +512,9 @@ public class EditorService
 												int defaultPathBefore = EditableTerrain.GetDefaultPathingCode(cell);
 												if (terrain.PathingCodes[x, z] == defaultPathBefore)
 												{
-													terrain.PathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(cell);
+													terrain.PathingCodes[x, z] = EditableTerrain.CombinePathingWithRoad(
+														EditableTerrain.GetDefaultPathingCode(cell),
+														terrain.PathingCodes[x, z]);
 													result.PathingModified = true;
 												}
 											}
@@ -756,7 +760,9 @@ public class EditorService
 										terrain.Cells[cellX, cellZ].WaterMode = _activePlateauWaterMode;
 										if (terrain.PathingCodes != null)
 										{
-											terrain.PathingCodes[cellX, cellZ] = EditableTerrain.GetDefaultPathingCode(terrain.Cells[cellX, cellZ]);
+											terrain.PathingCodes[cellX, cellZ] = EditableTerrain.CombinePathingWithRoad(
+												EditableTerrain.GetDefaultPathingCode(terrain.Cells[cellX, cellZ]),
+												terrain.PathingCodes[cellX, cellZ]);
 											result.PathingModified = true;
 										}
 									}
@@ -766,7 +772,9 @@ public class EditorService
 									int defaultPathBefore = EditableTerrain.GetDefaultPathingCode(terrain.Cells[cellX, cellZ]);
 									if (terrain.PathingCodes[cellX, cellZ] == defaultPathBefore)
 									{
-										terrain.PathingCodes[cellX, cellZ] = EditableTerrain.GetDefaultPathingCode(terrain.Cells[cellX, cellZ]);
+										terrain.PathingCodes[cellX, cellZ] = EditableTerrain.CombinePathingWithRoad(
+											EditableTerrain.GetDefaultPathingCode(terrain.Cells[cellX, cellZ]),
+											terrain.PathingCodes[cellX, cellZ]);
 										result.PathingModified = true;
 									}
 								}
@@ -1307,7 +1315,9 @@ public class EditorService
 							int defaultPathBefore = EditableTerrain.GetDefaultPathingCode(terrain.Cells[cellX, cellZ]);
 							if (terrain.PathingCodes[cellX, cellZ] == defaultPathBefore)
 							{
-								terrain.PathingCodes[cellX, cellZ] = EditableTerrain.GetDefaultPathingCode(terrain.Cells[cellX, cellZ]);
+								terrain.PathingCodes[cellX, cellZ] = EditableTerrain.CombinePathingWithRoad(
+									EditableTerrain.GetDefaultPathingCode(terrain.Cells[cellX, cellZ]),
+									terrain.PathingCodes[cellX, cellZ]);
 							}
 						}
 						SetGridNodeHeight(ref terrain, gridX, gridZ, newHeight);

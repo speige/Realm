@@ -2452,7 +2452,22 @@ public partial class MapEditorHUD : Control
 				System.IO.File.SetAttributes(targetFile, attrs & ~System.IO.FileAttributes.ReadOnly);
 			}
 		}
-		System.IO.File.Copy(sourceFile, targetFile, true);
+
+		// A previous WASM build may still be releasing the target file; retry briefly
+		// so transient file locks do not abort the whole Test copy.
+		const int maxAttempts = 10;
+		for (int attempt = 0; ; attempt++)
+		{
+			try
+			{
+				System.IO.File.Copy(sourceFile, targetFile, true);
+				return;
+			}
+			catch (System.IO.IOException) when (attempt < maxAttempts - 1)
+			{
+				System.Threading.Thread.Sleep(250);
+			}
+		}
 	}
 
 	private void CopyFolderToTempWorkspace(string sourceFolder)
@@ -3552,7 +3567,8 @@ public partial class MapEditorHUD : Control
 							.Where(f => {
 								string rel = f.Substring(dir.Length).TrimStart(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
 								return !rel.StartsWith("bin", System.StringComparison.OrdinalIgnoreCase) && !rel.StartsWith("obj", System.StringComparison.OrdinalIgnoreCase);
-							});
+							})
+							.Concat(System.IO.Directory.GetFiles(dir, "*.csproj", System.IO.SearchOption.TopDirectoryOnly));
 
 						if (csFiles.Any(f => System.IO.File.GetLastWriteTimeUtc(f) > wasmTime))
 						{
@@ -4052,7 +4068,9 @@ public partial class MapEditorHUD : Control
 				GameHost.Instance.GroundTerrain.CliffSplatMap[gx, gz] = TerrainSplatWeights.CreateSolid(GameHost.Instance.EditorCliffPaintTextureIndex);
 
 				var cells = GameHost.Instance.GroundTerrain.Cells;
-				pathingCodes[gx, gz] = cells != null ? EditableTerrain.GetDefaultPathingCode(cells[gx, gz]) : EditableTerrain.GetDefaultPathingCode(WaterType.None);
+				pathingCodes[gx, gz] = EditableTerrain.CombinePathingWithRoad(
+					cells != null ? EditableTerrain.GetDefaultPathingCode(cells[gx, gz]) : EditableTerrain.GetDefaultPathingCode(WaterType.None),
+					pathingCodes[gx, gz]);
 			}
 		}
 

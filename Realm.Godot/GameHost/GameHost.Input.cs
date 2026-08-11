@@ -744,10 +744,32 @@ public partial class GameHost
 				
 				var terrainHit = RaycastTerrainFromMouse(editorMouseBtn.Position);
 				var hit = RaycastFromMouse(editorMouseBtn.Position);
+				bool hasEditHit = false;
+				Vector3 hitPos = Vector3.Zero;
 				if ((terrainHit != null && terrainHit.ContainsKey("position")) || (hit != null && hit.ContainsKey("position")))
 				{
-					Vector3 hitPos = (terrainHit != null && terrainHit.ContainsKey("position")) ? terrainHit["position"].AsVector3() : hit["position"].AsVector3();
-					
+					hitPos = (terrainHit != null && terrainHit.ContainsKey("position")) ? terrainHit["position"].AsVector3() : hit["position"].AsVector3();
+					hasEditHit = true;
+				}
+				else
+				{
+					// Fallback: the ground renderer has no physics collision, so project the
+					// cursor ray onto the Y=0 plane (mirrors ProcessMapEditorTick) so area tools work.
+					var cam = GetViewport().GetCamera3D();
+					if (cam != null)
+					{
+						var from = cam.ProjectRayOrigin(editorMouseBtn.Position);
+						var normal = cam.ProjectRayNormal(editorMouseBtn.Position);
+						if (Mathf.Abs(normal.Y) > 0.0001f)
+						{
+							float t = (0.0f - from.Y) / normal.Y;
+							hitPos = from + normal * t;
+							hasEditHit = true;
+						}
+					}
+				}
+				if (hasEditHit)
+				{
 					if (EditorSnapToGrid && GroundTerrain != null)
 					{
 						float quadSize = GroundTerrain.QuadSize;
@@ -1733,7 +1755,7 @@ public partial class GameHost
 			else if (mouseBtn.ButtonIndex == MouseButton.Right && mouseBtn.Pressed)
 			{
 				GD.Print($"[GameHost] Unhandled right-click press at position: {mouseBtn.Position}");
-				
+
 				if (ActiveBuildingPlacementType != null)
 				{
 					CancelBuildingPlacement();
@@ -3306,7 +3328,15 @@ public partial class GameHost
 
 	public void TrainUnitAtCastle(string unitId)
 	{
-		var meta = UnitRegistry[unitId];
+		if (!UnitRegistry.TryGetValue(unitId, out var meta))
+		{
+			if (InGameHUD.Instance != null)
+			{
+				InGameHUD.Instance.ShowFeedbackText(TranslationServer.Translate("Cannot train unit: Unknown unit type!"), new Color(1f, 0.3f, 0.3f));
+			}
+			UIManager.Instance?.PlayWarningSound();
+			return;
+		}
 		if (InGameHUD.Instance == null) return;
 
 		Unit3D targetCastle = null;
@@ -3591,7 +3621,7 @@ public partial class GameHost
 		}
 		bool actualIsEnemy = NetworkService.ArePeersEnemies(_localPeerId, ownerPeerId);
 		
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(unitId, meta.Speed == 0f);
+		string modelPath = _unitSpawnService.ResolveModelPath(meta.ModelPath, unitId, meta.Speed == 0f);
 
 		string name = actualIsEnemy ? _unitSpawnService.GetEnemyUnitName(unitId, meta.Name) : meta.Name;
 

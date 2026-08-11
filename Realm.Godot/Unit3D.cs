@@ -461,6 +461,10 @@ public partial class Unit3D : CharacterBody3D
 		float minY = float.MaxValue;
 		bool foundMesh = false;
 		GetMinYRecursive(node, currentTransform, ref minY, ref foundMesh);
+		if (!foundMesh)
+		{
+			GD.PushWarning($"[Unit3D] No mesh instances found under model '{Name}' — vertical offset defaults to 0, the unit may sit below the terrain.");
+		}
 		return foundMesh ? minY : 0f;
 	}
 

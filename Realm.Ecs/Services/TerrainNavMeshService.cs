@@ -15,10 +15,17 @@ internal class TerrainNavMeshService
 {
 	// Recast/Detour bake tuning. Smaller cell sizes improve path fidelity but increase bake cost.
 	private const float NavMeshCellHeight = 0.1f;
-	private const float AgentRadius = 0.1f;
-	private const float AgentHeight = 2.5f;
+	private const float NavMeshCellSize = 0.3f;
+	private const float AgentRadius = 0.5f;
+	private const float AgentHeight = 1.5f;
 	private const float AgentMaxClimb = 0.9f;
-	private const float AgentMaxSlope = 55.0f;
+	private const float AgentMaxSlope = 30.0f;
+
+	/// <summary>
+	///     Detour polygon area assigned to ground polys on road cells. The pathfinding filter
+	///     uses this to apply a cheaper traversal cost so routes prefer the road network.
+	/// </summary>
+	public const int RoadPolyArea = 8;
 
 	private readonly WorldAccessor _ecsWorldAccessor;
 
@@ -150,7 +157,7 @@ internal class TerrainNavMeshService
 
 		RcConfig cfg = new RcConfig(
 			RcPartition.WATERSHED,
-			state.CellSize > 0.0001f ? state.CellSize : TerrainState.DefaultCellSize, NavMeshCellHeight,
+			NavMeshCellSize, NavMeshCellHeight,
 			AgentMaxSlope, AgentHeight, AgentRadius, AgentMaxClimb,
 			8, 20,
 			3.0f, 1.3f,
@@ -193,8 +200,6 @@ internal class TerrainNavMeshService
 			Span<System.Numerics.Vector2> polyVerts = stackalloc System.Numerics.Vector2[12];
 			for (int i = 0; i < result.Mesh.npolys; i++)
 			{
-				pars.polyAreas[i] = result.Mesh.areas[i];
-				
 				float sumX = 0f;
 				float sumZ = 0f;
 				int nv = 0;
@@ -221,6 +226,9 @@ internal class TerrainNavMeshService
 
 				bool isPolyWalkable = (pathFlags & TerrainPathingFlags.Ground) != 0
 					&& (pathFlags & (TerrainPathingFlags.ShallowWater | TerrainPathingFlags.DeepWater)) == 0;
+				pars.polyAreas[i] = isPolyWalkable
+					? ((pathFlags & TerrainPathingFlags.Road) != 0 ? RoadPolyArea : result.Mesh.areas[i])
+					: 0;
 				pars.polyFlags[i] = isPolyWalkable ? (int)pathFlags : 0;
 			}
 			if (result.MeshDetail != null)

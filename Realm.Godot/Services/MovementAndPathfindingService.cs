@@ -36,15 +36,23 @@ internal class MovementAndPathfindingService
 	private readonly NavMeshPathfinder _pathfinder;
 	private readonly TerrainNavMeshService _terrainNavMeshService;
 	private readonly StatService? _statService;
-	private static readonly Random Random = new();
 
 	private float _fDelta;
 	private readonly float _collisionCellSize = Realm.Ecs.Common.GameplayConstants.PathfindingGridSize;
 
-	// Fraction of the combined collision radii at which units start being pushed apart.
-	// Lower values let units overlap and clump together more (and squeeze through gaps
-	// narrower than their collision diameter), higher values keep them spread out.
-	private const float CollisionSeparationFactor = 0.45f;
+	// Collision separation factor is defined in GameplayConstants so combat melee reach
+	// can use the same value.
+	private const float StuckEscalationTime = 1.5f;
+
+	// Maximum climb between a unit's current position and the navmesh polygon it snaps
+	// to. Kept low so units are not dragged across terrace/mountain lips (the navmesh
+	// excludes the slope walls themselves, but a wide nearest-poly search can otherwise
+	// pull a unit a whole tier step up a stepped hillside).
+	private const float NavMeshMaxSnapClimb = 0.5f;
+	private static readonly RcVec3f NavMeshSnapExtents = new RcVec3f(1.5f, 2.0f, 1.5f);
+	private const float FlightAltitude = 14.0f;
+	private const float VerticalFollowRate = 30f;
+	private const float DefaultAcceleration = 25f;
 
 	private readonly Dictionary<long, List<Entity>> _unitGrid = new();
 	private readonly Dictionary<long, List<Entity>> _propGrid = new();
@@ -58,6 +66,12 @@ internal class MovementAndPathfindingService
 
 	private TerrainState _currentTerrainState;
 	private bool _hasTerrainState;
+	private Func<System.Numerics.Vector3, float>? _editorHeightProvider;
+	public Func<System.Numerics.Vector3, float>? EditorHeightProvider
+	{
+		get => _editorHeightProvider;
+		set => _editorHeightProvider = value;
+	}
 
 	public MovementAndPathfindingService(WorldAccessor ecsWorldAccessor, Entity worldEntity, NavMeshPathfinder pathfinder)
 	{
@@ -74,11 +88,7 @@ internal class MovementAndPathfindingService
 		_fDelta = delta;
 		_tickArrivedUnits.Clear();
 
-		_hasTerrainState = EcsWorld.IsAlive(ActiveWorldEntity) && EcsWorld.Has<TerrainState>(ActiveWorldEntity);
-		if (_hasTerrainState)
-		{
-			_currentTerrainState = EcsWorld.Get<TerrainState>(ActiveWorldEntity);
-		}
+		RefreshTerrainState();
 
 		RebuildSpatialGrid();
 
@@ -112,7 +122,27 @@ internal class MovementAndPathfindingService
 		}
 	}
 
+	public void RefreshTerrainState()
+	{
+		_hasTerrainState = EcsWorld.IsAlive(ActiveWorldEntity) && EcsWorld.Has<TerrainState>(ActiveWorldEntity);
+		if (_hasTerrainState)
+		{
+			_currentTerrainState = EcsWorld.Get<TerrainState>(ActiveWorldEntity);
+		}
+	}
+
 	public ForEachWithEntity<Position, MoveTo, MovementStats> EditorMovementQueryDelegate => _movementQueryDelegate;
+
+	private static System.Numerics.Vector3 MoveTowards(System.Numerics.Vector3 from, System.Numerics.Vector3 to, float maxDelta)
+	{
+		System.Numerics.Vector3 diff = to - from;
+		float len = diff.Length();
+		if (len <= maxDelta || len <= 0.0001f)
+		{
+			return to;
+		}
+		return from + diff * (maxDelta / len);
+	}
 
 	private long GetCellKey(float x, float z)
 	{
@@ -194,6 +224,7 @@ internal class MovementAndPathfindingService
 			: 8;
 
 		ushort pathingFlags = (ushort)includeFlags;
+		bool isFlying = ((TerrainPathingFlags)pathingFlags & TerrainPathingFlags.Flying) != 0;
 
 		PathFollow pf;
 		bool hasPf = EcsWorld.Has<PathFollow>(entity);
@@ -234,25 +265,11 @@ internal class MovementAndPathfindingService
 				if (pf.StuckTime >= 0.1f)
 				{
 					pf.TimeSinceLastReplan += _fDelta;
-					if (pf.TimeSinceLastReplan >= 0.1f)
+					if (pf.TimeSinceLastReplan >= 1.5f)
 					{
 						pf.TimeSinceLastReplan = 0f;
+						pf.IsJitterReplanned = false;
 						forceReplan = true;
-
-						if (!pf.IsJitterReplanned)
-						{
-							float offsetX1 = (float)(Random.NextDouble() * 0.4 - 0.2);
-							float offsetZ1 = (float)(Random.NextDouble() * 0.4 - 0.2);
-							float offsetX2 = (float)(Random.NextDouble() * 0.4 - 0.2);
-							float offsetZ2 = (float)(Random.NextDouble() * 0.4 - 0.2);
-							pathfindStart += new System.Numerics.Vector3(offsetX1, 0f, offsetZ1);
-							pathfindEnd += new System.Numerics.Vector3(offsetX2, 0f, offsetZ2);
-							pf.IsJitterReplanned = true;
-						}
-						else
-						{
-							pf.IsJitterReplanned = false;
-						}
 					}
 				}
 			}
@@ -294,9 +311,14 @@ internal class MovementAndPathfindingService
 		{
 			target = pf.Waypoints[pf.CurrentWaypointIndex];
 		}
-		float dist = System.Numerics.Vector3.Distance(current, target);
+		float diffX = current.X - target.X;
+		float diffZ = current.Z - target.Z;
+		float horizontalDist = MathF.Sqrt(diffX * diffX + diffZ * diffZ);
 		float arrivalThreshold = Math.Max(0.5f, stats.Speed * _fDelta * 1.2f);
-		if (dist < arrivalThreshold)
+		// Arrival is measured horizontally only: vertical placement is handled by the
+		// navmesh/terrain follow below, so requiring a Y match made units overshoot
+		// waypoints sitting on raised territory and grind against walls/corners.
+		if (horizontalDist < arrivalThreshold)
 		{
 			pf.CurrentWaypointIndex++;
 			if (pf.CurrentWaypointIndex < pf.WaypointCount)
@@ -321,7 +343,20 @@ internal class MovementAndPathfindingService
 			float actualSpeed = _statService != null ? _statService.GetStatValue(entity, new Realm.Ecs.Common.StatId("MovementSpeed")) : 0f;
 			if (actualSpeed <= 0) actualSpeed = stats.Speed;
 
-			System.Numerics.Vector3 desiredVelocity = System.Numerics.Vector3.Normalize(target - current) * actualSpeed;
+			System.Numerics.Vector3 toTarget = target - current;
+			if (isFlying)
+			{
+				toTarget.Y = 0f;
+			}
+			System.Numerics.Vector3 desiredVelocity;
+			if (toTarget.LengthSquared() < 0.000001f)
+			{
+				desiredVelocity = System.Numerics.Vector3.Zero;
+			}
+			else
+			{
+				desiredVelocity = System.Numerics.Vector3.Normalize(toTarget) * actualSpeed;
+			}
 			System.Numerics.Vector3 cohesion = System.Numerics.Vector3.Zero;
 			System.Numerics.Vector3 alignment = System.Numerics.Vector3.Zero;
 			System.Numerics.Vector3 separation = System.Numerics.Vector3.Zero;
@@ -344,7 +379,7 @@ internal class MovementAndPathfindingService
 
 							var otherPos = EcsWorld.Get<Position>(other).Value;
 							float neighborDist = System.Numerics.Vector3.Distance(current, otherPos);
-							if (neighborDist > 0f && neighborDist < 8.0f)
+							if (neighborDist > 0f && neighborDist < 4.0f)
 							{
 								cohesion += otherPos;
 								if (EcsWorld.Has<Velocity>(other))
@@ -370,21 +405,30 @@ internal class MovementAndPathfindingService
 
 				if (separation.LengthSquared() > 0.001f) separation = System.Numerics.Vector3.Normalize(separation) * actualSpeed;
 
-				steering = desiredVelocity * 0.50f + separation * 0.35f + cohesion * 0.08f + alignment * 0.07f;
+				bool stuck = pf.StuckTime >= StuckEscalationTime;
+				float desiredWeight = stuck ? 0.75f : 0.90f;
+				float separationWeight = stuck ? 0.30f : 0.04f;
+				steering = desiredVelocity * desiredWeight + separation * separationWeight + cohesion * 0.04f + alignment * 0.03f;
 				if (steering.LengthSquared() > 0.001f)
 				{
 					steering = System.Numerics.Vector3.Normalize(steering) * actualSpeed;
 				}
 			}
 
-			System.Numerics.Vector3 velocity = steering;
+			System.Numerics.Vector3 currentVelocity = EcsWorld.Has<Velocity>(entity)
+				? EcsWorld.Get<Velocity>(entity).Value
+				: System.Numerics.Vector3.Zero;
+			float accel = stats.Acceleration > 0f ? stats.Acceleration : DefaultAcceleration;
+			System.Numerics.Vector3 velocity = MoveTowards(currentVelocity, steering, accel * _fDelta);
 			System.Numerics.Vector3 nextPos = current + velocity * _fDelta;
 
 			float scale1 = EcsWorld.Has<CollisionScale>(entity) ? EcsWorld.Get<CollisionScale>(entity).Value : 1.0f;
 			float r1 = EcsWorld.Has<CollisionRadius>(entity) 
 				? EcsWorld.Get<CollisionRadius>(entity).Value * scale1 
-				: scale1 * 1.2f;
+				: scale1 * Realm.Ecs.Common.GameplayConstants.DefaultCollisionRadius;
 
+				if (!isFlying)
+			{
 			int baseCx = (int)Math.Floor(nextPos.X / _collisionCellSize);
 			int baseCz = (int)Math.Floor(nextPos.Z / _collisionCellSize);
 
@@ -402,9 +446,9 @@ internal class MovementAndPathfindingService
 							float scale2 = EcsWorld.Has<CollisionScale>(otherEntity) ? EcsWorld.Get<CollisionScale>(otherEntity).Value : 1.0f;
 							float r2 = EcsWorld.Has<CollisionRadius>(otherEntity) 
 								? EcsWorld.Get<CollisionRadius>(otherEntity).Value * scale2 
-								: scale2 * 1.2f;
+								: scale2 * Realm.Ecs.Common.GameplayConstants.DefaultCollisionRadius;
 
-							float minDist = (r1 + r2) * CollisionSeparationFactor;
+							float minDist = (r1 + r2) * Realm.Ecs.Common.GameplayConstants.CollisionSeparationFactor;
 							var otherPos = EcsWorld.Get<Position>(otherEntity).Value;
 							float ox = nextPos.X - otherPos.X;
 							float oz = nextPos.Z - otherPos.Z;
@@ -442,9 +486,9 @@ internal class MovementAndPathfindingService
 							float scaleProp = EcsWorld.Has<CollisionScale>(propEntity) ? EcsWorld.Get<CollisionScale>(propEntity).Value : 1.0f;
 							float r2 = EcsWorld.Has<CollisionRadius>(propEntity) 
 								? EcsWorld.Get<CollisionRadius>(propEntity).Value * scaleProp 
-								: scaleProp * 1.5f;
+								: scaleProp * Realm.Ecs.Common.GameplayConstants.DefaultPropCollisionRadius;
 
-							float minDist = (r1 + r2) * CollisionSeparationFactor;
+							float minDist = (r1 + r2) * Realm.Ecs.Common.GameplayConstants.CollisionSeparationFactor;
 							var propPos = EcsWorld.Get<Position>(propEntity).Value;
 							float ox = nextPos.X - propPos.X;
 							float oz = nextPos.Z - propPos.Z;
@@ -469,26 +513,62 @@ internal class MovementAndPathfindingService
 					}
 				}
 			}
+			}
 
-			if (_hasTerrainState && _currentTerrainState.NavMeshQuery != null)
+			bool snappedToNavMesh = false;
+			float snappedSurfaceY = nextPos.Y;
+			if (_hasTerrainState && _currentTerrainState.NavMeshQuery != null && !isFlying)
 			{
 				var snapPos = new RcVec3f(nextPos.X, nextPos.Y, nextPos.Z);
 				_currentTerrainState.NavMeshQuery.FindNearestPoly(snapPos,
-					NavMeshPathfinder.PathfindingExtents, _pathfinder.Filter,
+					NavMeshSnapExtents, _pathfinder.Filter,
 					out long snapRef, out var snappedPt, out _);
 				if (snapRef != 0)
 				{
-					nextPos.X = snappedPt.X;
-					nextPos.Z = snappedPt.Z;
+					float climb = MathF.Abs(snappedPt.Y - nextPos.Y);
+					if (climb <= NavMeshMaxSnapClimb)
+					{
+						nextPos.X = snappedPt.X;
+						nextPos.Z = snappedPt.Z;
+						snappedToNavMesh = true;
+						snappedSurfaceY = snappedPt.Y;
+					}
 				}
 			}
 
-			float groundHeight = nextPos.Y;
-			if (_hasTerrainState)
+			// When a ground unit is walking on the navmesh, its feet follow the walkable
+			// polygon height rather than the raw terrain interpolation. At the lip of a
+			// stepped hillside the terrain height ramps steeply even where Recast baked a
+			// walkable poly, so following the ramp made units visibly climb/slide along
+			// mountain faces. The navmesh (AgentMaxSlope = 30 degrees) already refuses
+			// steeper slopes, so polygons are a safe surface to stand on.
+			float desiredY;
+			if (isFlying)
 			{
-				_terrainNavMeshService.GetHeightAndNormal(in _currentTerrainState, nextPos.X, nextPos.Z, out groundHeight, out _);
+				desiredY = FlightAltitude;
 			}
-			nextPos.Y = groundHeight;
+			else if (snappedToNavMesh)
+			{
+				desiredY = snappedSurfaceY;
+				velocity.Y = 0f;
+			}
+			else if (_hasTerrainState)
+			{
+				_terrainNavMeshService.GetHeightAndNormal(in _currentTerrainState, nextPos.X, nextPos.Z, out float groundHeight, out _);
+				desiredY = groundHeight;
+				velocity.Y = 0f;
+			}
+			else if (_editorHeightProvider != null)
+			{
+				desiredY = _editorHeightProvider(nextPos);
+				velocity.Y = 0f;
+			}
+			else
+			{
+				desiredY = pos.Value.Y;
+			}
+			float followFactor = Math.Clamp(VerticalFollowRate * _fDelta, 0f, 1f);
+			nextPos.Y = pos.Value.Y + (desiredY - pos.Value.Y) * followFactor;
 			pos.Value = nextPos;
 			if (EcsWorld.Has<Velocity>(entity))
 			{
