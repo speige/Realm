@@ -189,8 +189,13 @@ public partial class UIManager : Control
 		_targetScreen = screen;
 		_isVictory = isVictory;
 
-		if (screen == GameScreen.GameOver || screen == GameScreen.MainMenu)
+		if (screen == GameScreen.GameOver || screen == GameScreen.MainMenu || screen == GameScreen.MapEditorHUD || screen == GameScreen.LobbyBrowser || screen == GameScreen.LobbyRoom || screen == GameScreen.ReplayList)
 		{
+			if (ReplayPlaybackManager.Instance.IsPlayingReplay)
+			{
+				ReplayPlaybackManager.Instance.StopReplay();
+				GameHost.Instance?.ResetWorldAndState();
+			}
 			GameHost.Instance?.StopRecording();
 		}
 

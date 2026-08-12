@@ -551,6 +551,8 @@ public partial class GameHost : Node3D, IGameAPI
 	private Vector3 _dragObjectStartScale;
 	private bool _dragObjectStartIsEnemy;
 	private Vector3 _dragObjectStartHitPos;
+	private Vector2 _dragStartMousePos;
+	private Vector3 _dragStartGroundPos;
 	private bool _dragObjectHasMoved;
 	private Node3D _editorPreviewNode;
 	private string _editorPreviewType = "";
@@ -3140,8 +3142,73 @@ public class {mapName} : IMapScript
 		_fogOfWarService.Initialize(MainNode);
 	}
 
+	public void ResetWorldAndState()
+	{
+		ReplayPlaybackManager.Instance.StopReplay();
+		StopRecording();
+
+		var unitsCopy = new List<Unit3D>(AllUnits);
+		foreach (var unit in unitsCopy)
+		{
+			if (GodotObject.IsInstanceValid(unit))
+			{
+				unit.QueueFree();
+			}
+		}
+		AllUnits.Clear();
+		SelectedUnits.Clear();
+
+		var propsCopy = new List<Prop3D>(AllProps);
+		foreach (var prop in propsCopy)
+		{
+			if (GodotObject.IsInstanceValid(prop))
+			{
+				prop.QueueFree();
+			}
+		}
+		AllProps.Clear();
+
+		var decalsCopy = new List<Decal>(AllDecals);
+		foreach (var decal in decalsCopy)
+		{
+			if (GodotObject.IsInstanceValid(decal))
+			{
+				decal.QueueFree();
+			}
+		}
+		AllDecals.Clear();
+
+		_castlesList.Clear();
+		ActivePings.Clear();
+		ClearAllBuildQueueGhosts();
+
+		if (_controlGroups != null)
+		{
+			for (int i = 0; i < _controlGroups.Length; i++)
+			{
+				_controlGroups[i]?.Clear();
+			}
+		}
+
+		EntityToUnit3D.Clear();
+		EntityToProp3D.Clear();
+		PendingMapScriptPath = null;
+		_activeMapScript = null;
+
+		_editorService?.ResetAllState();
+		_networkService?.Clear();
+		_fogOfWarService?.CleanUp();
+
+		ReinitializeEcsAndServices();
+	}
+
 	private void ReinitializeEcsAndServices()
 	{
+		EntityToUnit3D.Clear();
+		EntityToProp3D.Clear();
+		PendingMapScriptPath = null;
+		_activeMapScript = null;
+
 		EcsWorld?.Dispose();
 		BuildDependencyInjection();
 		ResolveServices();
@@ -3176,11 +3243,12 @@ public class {mapName} : IMapScript
 		}
 
 		if (Instance == this) Instance = null;
+		EntityToUnit3D.Clear();
+		EntityToProp3D.Clear();
+		PendingMapScriptPath = null;
+		_activeMapScript = null;
+
 		EcsWorld?.Dispose();
-		if (OperatingSystem.IsWindows())
-		{
-			VSCodeManager.Instance.CleanUp();
-		}
 		_networkService?.Clear();
 		_fogOfWarService?.CleanUp();
 		StopRecording();

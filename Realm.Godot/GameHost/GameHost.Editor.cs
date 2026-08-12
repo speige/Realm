@@ -1876,7 +1876,8 @@ public partial class GameHost
 
 				if (ActiveEditorTool == EditorTool.SelectMove && _isDraggingObject && GodotObject.IsInstanceValid(SelectedEditorObject))
 				{
-					if (!_dragObjectHasMoved && hitPos.DistanceTo(_dragObjectStartHitPos) > 0.3f)
+					float mouseDistPx = mousePos.DistanceTo(_dragStartMousePos);
+					if (!_dragObjectHasMoved && mouseDistPx > 4.0f)
 					{
 						_dragObjectHasMoved = true;
 					}
@@ -1884,7 +1885,8 @@ public partial class GameHost
 					if (_dragObjectHasMoved)
 					{
 						var node3D = SelectedEditorObject as Node3D;
-						var dragPos = hitPos - (_dragObjectStartHitPos - _dragObjectStartPos);
+						Vector3 delta = hitPos - _dragStartGroundPos;
+						Vector3 dragPos = _dragObjectStartPos + delta;
 						if (EditorSnapToGrid && GroundTerrain != null)
 						{
 							dragPos = _editorService.SnapToGrid(dragPos);
@@ -2084,6 +2086,7 @@ public partial class GameHost
 
 	public void StartMapEditorMode()
 	{
+		Realm.Godot.ReplaySystem.ReplayPlaybackManager.Instance.StopReplay();
 		IsMapEditorMode = true;
 
 		string wsPath = Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
@@ -2131,11 +2134,13 @@ public partial class GameHost
 			catch (Exception ex)
 			{
 				GD.PrintErr($"Failed loading map state: {ex.Message}. Resetting to blank map.");
+				ResetWorldAndState();
 				ClearMapEntirely();
 			}
 		}
 		else
 		{
+			ResetWorldAndState();
 			ClearMapEntirely();
 		}
 		

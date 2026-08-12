@@ -1,11 +1,73 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as http from 'http';
 import { RealmMapEditorProvider } from './editorProvider';
 
 export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(RealmMapEditorProvider.register(context));
     openStartupFiles(context);
+    startGodotIpcListener(context);
+}
+
+function startGodotIpcListener(context: vscode.ExtensionContext): void {
+    const ports = [8092, 8093];
+    const pollInterval = setInterval(async () => {
+        for (const port of ports) {
+            try {
+                const data = await httpGetJson(`http://127.0.0.1:${port}/api/poll`);
+                if (data && Array.isArray(data.commands)) {
+                    for (const cmd of data.commands) {
+                        if (cmd === 'saveAll') {
+                            await handleSaveAllCommand();
+                        }
+                    }
+                }
+            } catch {
+            }
+        }
+    }, 300);
+
+    context.subscriptions.push({
+        dispose: () => clearInterval(pollInterval)
+    });
+}
+
+async function handleSaveAllCommand(): Promise<void> {
+    try {
+        for (const doc of vscode.workspace.textDocuments) {
+            if (doc.isDirty) {
+                await doc.save();
+            }
+        }
+        await vscode.commands.executeCommand('workbench.action.files.saveAll');
+    } catch (err) {
+        console.error('[RealmExtension] Error executing saveAll:', err);
+    }
+}
+
+function httpGetJson(urlStr: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+        const req = http.get(urlStr, (res) => {
+            if (res.statusCode !== 200) {
+                return reject(new Error(`Status ${res.statusCode}`));
+            }
+            let body = '';
+            res.on('data', chunk => body += chunk);
+            res.on('end', () => {
+                try {
+                    resolve(JSON.parse(body));
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        });
+        req.on('error', reject);
+        req.setTimeout(800, () => {
+            req.destroy();
+            reject(new Error('Timeout'));
+        });
+    });
 }
 
 async function openStartupFiles(context: vscode.ExtensionContext): Promise<void> {

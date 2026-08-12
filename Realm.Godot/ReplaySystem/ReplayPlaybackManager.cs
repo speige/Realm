@@ -107,6 +107,7 @@ namespace Realm.Godot.ReplaySystem
 			TotalTicks = 0;
 			CurrentTick = 0;
 			_timer = 0.0f;
+			SpectatorPerspective = -1;
 		}
 
 		public void ApplyInitialFrame()

@@ -1116,8 +1116,10 @@ public partial class GameHost
 							_dragObjectStartPos = (SelectedEditorObject as Node3D).Position;
 							_dragObjectStartRot = (SelectedEditorObject as Node3D).RotationDegrees;
 							_dragObjectStartScale = (SelectedEditorObject as Node3D).Scale;
-							_dragObjectStartIsEnemy = (SelectedEditorObject is Unit3D u) ? u.IsEnemy : false;
-							_dragObjectStartHitPos = hitPos;
+							_dragStartMousePos = editorMouseBtn.Position;
+							Vector3 terrainHitPos = (terrainHit != null && terrainHit.ContainsKey("position")) ? terrainHit["position"].AsVector3() : hitPos;
+							_dragStartGroundPos = terrainHitPos;
+							_dragObjectStartHitPos = terrainHitPos;
 							_dragObjectHasMoved = false;
 						}
 						else

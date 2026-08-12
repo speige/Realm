@@ -1505,6 +1505,7 @@ public partial class LobbyManager : Node
     private void LoadMap(string mapName)
     {
         GD.Print($"[LobbyManager] LoadMap RPC received for: {mapName}");
+        Realm.Godot.ReplaySystem.ReplayPlaybackManager.Instance.StopReplay();
         ActiveMapName = mapName;
 
 

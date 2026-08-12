@@ -5452,13 +5452,15 @@ public partial class MapEditorHUD : Control
 
 			string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 
-			if (!string.IsNullOrEmpty(_currentSourceFolder) && System.IO.Directory.Exists(_currentSourceFolder))
-			{
-				CopyFolderToTempWorkspace(_currentSourceFolder);
-			}
-
 			GameHost.Instance.SaveMapToFile(tempTerrainPath);
 			GameHost.Instance.EditorHasUnsavedChanges = false;
+
+			if (OperatingSystem.IsWindows())
+			{
+				SetWasmConsoleStatus("Auto-saving modified files in VSCode...", UIStyle.ColorCyanGlow);
+				AppendWasmConsoleLog("[VSCode] Requesting auto-save of all open workspace files...");
+				await VSCodeManager.Instance.SaveAllOpenFilesAsync();
+			}
 
 			SetWasmConsoleStatus("Compiling WASM map script...", UIStyle.ColorCyanGlow);
 			AppendWasmConsoleLog("=== WASM COMPILATION PIPELINE STARTED ===");
