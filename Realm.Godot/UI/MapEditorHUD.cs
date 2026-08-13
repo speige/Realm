@@ -338,11 +338,22 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public void UpdateFPSVisibility()
+	{
+		var fpsLabel = (GameHost.Instance != null ? GameHost.Instance.MainNode?.GetNodeOrNull<Label>("CanvasLayer/FPS") : null);
+		if (fpsLabel != null)
+		{
+			fpsLabel.Visible = GameSettings.DisplayFps;
+			fpsLabel.ZIndex = 100;
+		}
+	}
+
 	public override void _Ready()
 	{
 		try
 		{
 			Instance = this;
+			UpdateFPSVisibility();
 			_tempWorkspacePath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
 
 			_camera3D = (GameHost.Instance?.MainCamera);

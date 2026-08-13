@@ -10,6 +10,7 @@ public partial class FPSCounter : Label
 		AddThemeColorOverride("font_outline_color", new Color(0.08f, 0.08f, 0.1f));
 		AddThemeConstantOverride("outline_size", 4);
 		AddThemeFontSizeOverride("font_size", 16);
+		ZIndex = 100;
 		Visible = GameSettings.DisplayFps;
 	}
 

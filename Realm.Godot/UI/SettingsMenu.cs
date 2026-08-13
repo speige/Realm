@@ -455,6 +455,10 @@ public partial class SettingsMenu : Control
 			InGameHUD.Instance.ApplyHUDScale();
 			InGameHUD.Instance.UpdateFPSVisibility();
 		}
+		if (MapEditorHUD.Instance != null)
+		{
+			MapEditorHUD.Instance.UpdateFPSVisibility();
+		}
 
 		GD.Print("Settings Applied successfully!");
 		CloseOrTransition();
@@ -467,6 +471,10 @@ public partial class SettingsMenu : Control
 		if (InGameHUD.Instance != null)
 		{
 			InGameHUD.Instance.UpdateFPSVisibility();
+		}
+		if (MapEditorHUD.Instance != null)
+		{
+			MapEditorHUD.Instance.UpdateFPSVisibility();
 		}
 		CloseOrTransition();
 	}
@@ -490,6 +498,10 @@ public partial class SettingsMenu : Control
 		if (InGameHUD.Instance != null)
 		{
 			InGameHUD.Instance.UpdateFPSVisibility();
+		}
+		if (MapEditorHUD.Instance != null)
+		{
+			MapEditorHUD.Instance.UpdateFPSVisibility();
 		}
 		GD.Print("Settings reset to defaults.");
 	}

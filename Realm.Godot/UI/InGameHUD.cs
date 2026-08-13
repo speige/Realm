@@ -682,6 +682,7 @@ public partial class InGameHUD : Control
 		if (fpsLabel != null)
 		{
 			fpsLabel.Visible = GameSettings.DisplayFps;
+			fpsLabel.ZIndex = 100;
 		}
 	}
 
