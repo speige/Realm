@@ -94,26 +94,18 @@
   ],
   "CustomResources": [
     {
-      "Description": "Harvestable resource deposit.",
-      "GrowthRate": 0,
-      "HarvestRate": 10,
-      "MaxCapacity": 2000,
-      "MaxWorkers": 5,
-      "ModelPath": "fantasy_tree.glb",
-      "Name": "Fantasy_Tree",
+      "UnitId": "coniferous_tree",
+      "Name": "coniferous_tree",
+      "Description": "",
       "PathingType": 255,
-      "UnitId": "Resource_001"
+      "ModelPath": "coniferous_tree.glb"
     },
     {
-      "Description": "Harvestable resource deposit.",
-      "GrowthRate": 0,
-      "HarvestRate": 10,
-      "MaxCapacity": 2000,
-      "MaxWorkers": 5,
-      "ModelPath": "rock_formation.glb",
-      "Name": "Rock_Formation",
+      "UnitId": "crystal_peak",
+      "Name": "crystal_peak",
+      "Description": "",
       "PathingType": 255,
-      "UnitId": "Resource_002"
+      "ModelPath": "crystal_peak.glb"
     }
   ],
   "CustomProps": [
@@ -151,8 +143,14 @@
         "wooden_box.glb": "897e92fb41a141e7ad3c86738a6cec1ab9a4c6b85e7a9f10d20ce77fe5e80ced"
       },
       "resources": {
-        "fantasy_tree.glb": "70feee30d8646ca3aa306f352ee920034791b9544df08306f25bf7cff383f4fe",
-        "rock_formation.glb": "5575947dc231f516519419bdee996f80a0bd195dd19cd5d4321f0e861822dbb8"
+        "coniferous_tree.glb": {
+          "hash": "8652383edbbc5a1d051a5ac6a7b7872a50e853ee2d5e8aae0b180a7027799e87",
+          "default_asset_type": "resources"
+        },
+        "crystal_peak.glb": {
+          "hash": "9a7c6c872d2466b1a8819c4e159bb99c6b80e9837d00aeb26249ee9fac46b106",
+          "default_asset_type": "resources"
+        }
       },
       "units": {
         "adventurer.glb": "543910be92b4f5648731a3458c58c2ab4689e71a1c601cb762900ebc488d145f",
