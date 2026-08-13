@@ -51,6 +51,7 @@
     const copyJsonBtn = document.getElementById('copy-json-btn');
     const expandJsonBtn = document.getElementById('expand-json-btn');
     const duplicateUnitBtn = document.getElementById('duplicate-unit-btn');
+    const deleteUnitBtn = document.getElementById('delete-unit-btn');
     const copyUnitBtn = document.getElementById('copy-unit-btn');
     const pasteUnitBtn = document.getElementById('paste-unit-btn');
 
@@ -631,21 +632,11 @@
                 badges.appendChild(b);
             }
 
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'delete-card-btn';
-            deleteBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></svg>`;
-
-            deleteBtn.addEventListener('click', e => {
-                e.stopPropagation();
-                showDeleteConfirm(name || id, id);
-            });
-
             card.appendChild(header);
             card.appendChild(descDiv);
             if (badges.children.length > 0) {
                 card.appendChild(badges);
             }
-            card.appendChild(deleteBtn);
 
             card.addEventListener('click', () => {
                 selectUnit(id);
@@ -3009,7 +3000,7 @@
     function applyLockState() {
         document.querySelectorAll('input, select, textarea, button').forEach(el => {
             if (el.id === 'toggle-lock-btn') return;
-            if (el.classList.contains('browse-btn') || el.classList.contains('clear-btn') || el.classList.contains('btn-delete') || el.classList.contains('btn-duplicate-item') || el.classList.contains('remove-tag') || el.classList.contains('btn-delete-subitem') || el.classList.contains('add-subitem-btn') || el.classList.contains('copy-subtable-btn') || el.classList.contains('paste-subtable-btn') || el.classList.contains('copy-row-btn') || el.classList.contains('copy-unit-comp-btn') || el.classList.contains('paste-unit-comp-btn') || el.id === 'duplicate-unit-btn' || el.id === 'copy-unit-btn' || el.id === 'paste-unit-btn') {
+            if (el.classList.contains('browse-btn') || el.classList.contains('clear-btn') || el.classList.contains('btn-delete') || el.classList.contains('btn-duplicate-item') || el.classList.contains('remove-tag') || el.classList.contains('btn-delete-subitem') || el.classList.contains('add-subitem-btn') || el.classList.contains('copy-subtable-btn') || el.classList.contains('paste-subtable-btn') || el.classList.contains('copy-row-btn') || el.classList.contains('copy-unit-comp-btn') || el.classList.contains('paste-unit-comp-btn') || el.id === 'duplicate-unit-btn' || el.id === 'delete-unit-btn' || el.id === 'copy-unit-btn' || el.id === 'paste-unit-btn') {
                 el.disabled = isLocked;
             } else {
                 el.readOnly = isLocked;
@@ -3558,6 +3549,14 @@
     if (duplicateUnitBtn) {
         duplicateUnitBtn.addEventListener('click', () => {
             duplicateSelectedUnit();
+        });
+    }
+
+    if (deleteUnitBtn) {
+        deleteUnitBtn.addEventListener('click', () => {
+            if (!selectedUnitId) return;
+            const sourceUnit = getUnitById(selectedUnitId);
+            showDeleteConfirm((sourceUnit && sourceUnit.Name) || selectedUnitId, selectedUnitId);
         });
     }
 

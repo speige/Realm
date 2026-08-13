@@ -726,7 +726,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 <button type="button" class="tab-btn" data-domain="upgrades">🛡️ Upgrades</button>
                 <button type="button" class="tab-btn" data-domain="items">📦 Items</button>
                 <button type="button" class="tab-btn" data-domain="assets">🎨 Assets</button>
-                <button type="button" class="tab-btn" data-domain="properties">⚙️ Map Props</button>
+                <button type="button" class="tab-btn" data-domain="properties">⚙️ Settings</button>
             </div>
             <div class="header-right-actions">
                 <div id="save-status" class="save-status saved" title="Auto-saved to file">● Saved</div>
@@ -771,6 +771,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <button type="button" id="copy-unit-btn" class="btn secondary-btn" title="Copy entity to clipboard">✂️ Copy</button>
                             <button type="button" id="paste-unit-btn" class="btn secondary-btn" title="Paste entity from clipboard">📋 Paste</button>
                             <button type="button" id="duplicate-unit-btn" class="btn secondary-btn">📋 Duplicate</button>
+                            <button type="button" id="delete-unit-btn" class="btn secondary-btn" title="Delete entity">🗑️ Delete</button>
                         </div>
                     </div>
                 </div>
