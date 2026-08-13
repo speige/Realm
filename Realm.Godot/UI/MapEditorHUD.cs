@@ -2311,6 +2311,133 @@ public partial class MapEditorHUD : Control
 		}
 
 		CheckCreatorRegistrationAndPrompt();
+		CheckUnsavedSessionOnLaunch();
+	}
+
+	public static string ComputeDirectoryBlake3(string directoryPath)
+	{
+		if (string.IsNullOrEmpty(directoryPath) || !System.IO.Directory.Exists(directoryPath)) return string.Empty;
+
+		try
+		{
+			var files = System.IO.Directory.GetFiles(directoryPath, "*", System.IO.SearchOption.AllDirectories)
+				.Where(f => {
+					string rel = System.IO.Path.GetRelativePath(directoryPath, f).Replace('\\', '/');
+					string[] parts = rel.Split('/');
+					foreach (var p in parts)
+					{
+						if (p.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+							p.Equals(".vs", StringComparison.OrdinalIgnoreCase) ||
+							p.Equals(".godot", StringComparison.OrdinalIgnoreCase) ||
+							p.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+							p.Equals("obj", StringComparison.OrdinalIgnoreCase))
+						{
+							return false;
+						}
+					}
+					return true;
+				})
+				.OrderBy(f => System.IO.Path.GetRelativePath(directoryPath, f).Replace('\\', '/'), StringComparer.OrdinalIgnoreCase)
+				.ToList();
+
+			using var hasher = Blake3.Hasher.New();
+			byte[] buffer = new byte[16384];
+
+			foreach (var file in files)
+			{
+				try
+				{
+					string relPath = System.IO.Path.GetRelativePath(directoryPath, file).Replace('\\', '/');
+					byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(relPath);
+					hasher.Update(pathBytes);
+
+					using var fs = System.IO.File.OpenRead(file);
+					int read;
+					while ((read = fs.Read(buffer, 0, buffer.Length)) > 0)
+					{
+						hasher.Update(new ReadOnlySpan<byte>(buffer, 0, read));
+					}
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"[ComputeDirectoryBlake3] Error hashing {file}: {ex.Message}");
+				}
+			}
+
+			return hasher.Finalize().ToString();
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[ComputeDirectoryBlake3] Error scanning directory {directoryPath}: {ex.Message}");
+			return string.Empty;
+		}
+	}
+
+	public void SaveCurrentDirectoryBlake3()
+	{
+		if (string.IsNullOrEmpty(_tempWorkspacePath) || !System.IO.Directory.Exists(_tempWorkspacePath)) return;
+		try
+		{
+			string hash = ComputeDirectoryBlake3(_tempWorkspacePath);
+			string saveFile = ProjectSettings.GlobalizePath("user://editor_last_save.txt");
+			System.IO.File.WriteAllText(saveFile, hash);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[SaveCurrentDirectoryBlake3] Error writing editor_last_save.txt: {ex.Message}");
+		}
+	}
+
+	private void CheckUnsavedSessionOnLaunch()
+	{
+		if (ReturningFromTest) return;
+
+		string editorLastSaveFile = ProjectSettings.GlobalizePath("user://editor_last_save.txt");
+		if (!System.IO.File.Exists(editorLastSaveFile))
+		{
+			SaveCurrentDirectoryBlake3();
+			return;
+		}
+
+		string savedHash = System.IO.File.ReadAllText(editorLastSaveFile).Trim();
+		string currentHash = ComputeDirectoryBlake3(_tempWorkspacePath);
+
+		if (!string.IsNullOrEmpty(savedHash) && !currentHash.Equals(savedHash, StringComparison.OrdinalIgnoreCase))
+		{
+			CallDeferred(nameof(ShowUnsavedSessionModal));
+		}
+	}
+
+	private void ShowUnsavedSessionModal()
+	{
+		ShowConfirmationDialog(
+			"There were unsaved changes in last editor session.",
+			onConfirm: () =>
+			{
+				LoadTempWorkspaceMap();
+			},
+			confirmText: "Restore",
+			cancelText: "Discard",
+			onCancel: () =>
+			{
+				GameHost.Instance?.ClearMapEntirely();
+				SaveCurrentDirectoryBlake3();
+			}
+		);
+	}
+
+	private void LoadTempWorkspaceMap()
+	{
+		string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+		LoadMapProperties();
+		ReadMetadataAndRefreshTextures();
+		if (GameHost.Instance != null && System.IO.File.Exists(terrainPath))
+		{
+			GameHost.Instance.LoadMapFromFile(terrainPath);
+		}
+		_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
+		_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+		ShowFeedback(TranslationServer.Translate("Restored map workspace from last session!"));
 	}
 
 	public void ClearTempWorkspaceExternal()
@@ -2319,7 +2446,8 @@ public partial class MapEditorHUD : Control
 
 		try
 		{
-			foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.TopDirectoryOnly))
+			ClearDirectoryReadOnly(_tempWorkspacePath);
+			foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories))
 			{
 				var fileAttributes = System.IO.File.GetAttributes(file);
 				if ((fileAttributes & System.IO.FileAttributes.ReadOnly) == System.IO.FileAttributes.ReadOnly)
@@ -2331,12 +2459,6 @@ public partial class MapEditorHUD : Control
 
 			foreach (var directory in System.IO.Directory.GetDirectories(_tempWorkspacePath))
 			{
-				string name = System.IO.Path.GetFileName(directory);
-				if (name.Equals("bin", StringComparison.OrdinalIgnoreCase) || name.Equals("obj", StringComparison.OrdinalIgnoreCase) || name.Equals("lib", StringComparison.OrdinalIgnoreCase))
-				{
-					continue;
-				}
-				ClearDirectoryReadOnly(directory);
 				System.IO.Directory.Delete(directory, true);
 			}
 		}
@@ -2345,6 +2467,8 @@ public partial class MapEditorHUD : Control
 			GD.PrintErr($"[ClearTempWorkspaceExternal] Error: {ex.Message}");
 		}
 
+		_wasmHasErrors = false;
+		_wasmCompileLogPath = "";
 		_lastTerrainSyncTime = 0;
 		_lastMetadataSyncTime = 0;
 	}
@@ -2549,6 +2673,8 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			await System.Threading.Tasks.Task.Run(() => CopyTempWorkspaceToFolder(targetFolder));
+
+			SaveCurrentDirectoryBlake3();
 
 			ShowFeedback(string.Format(TranslationServer.Translate("Map saved successfully to folder {0}!"), System.IO.Path.GetFileName(targetFolder)));
 		}
@@ -3150,7 +3276,7 @@ public partial class MapEditorHUD : Control
 	}
 
 
-	private void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO")
+	private void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO", Action onCancel = null)
 	{
 		var overlay = new ColorRect();
 		overlay.Name = "ConfirmationOverlay";
@@ -3206,6 +3332,7 @@ public partial class MapEditorHUD : Control
 		SetupButton(btnCancel, TranslationServer.Translate(cancelText), () =>
 		{
 			overlay.QueueFree();
+			onCancel?.Invoke();
 		}, 13);
 		btnCancel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
 		hbox.AddChild(btnCancel);

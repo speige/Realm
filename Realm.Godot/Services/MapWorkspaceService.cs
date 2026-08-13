@@ -77,6 +77,35 @@ public static class MapWorkspaceService
 		EnsureSolutionFile(directory, mapName);
 	}
 
+	public static void CleanWorkspaceBinaries(string directory)
+	{
+		if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory)) return;
+
+		foreach (var folder in new[] { "bin", "obj" })
+		{
+			string targetDir = Path.Combine(directory, folder);
+			if (Directory.Exists(targetDir))
+			{
+				try
+				{
+					foreach (var file in Directory.GetFiles(targetDir, "*", SearchOption.AllDirectories))
+					{
+						var attrs = File.GetAttributes(file);
+						if ((attrs & FileAttributes.ReadOnly) != 0)
+						{
+							File.SetAttributes(file, attrs & ~FileAttributes.ReadOnly);
+						}
+					}
+					Directory.Delete(targetDir, true);
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"[MapWorkspaceService] Failed to clean build folder {folder}: {ex.Message}");
+				}
+			}
+		}
+	}
+
 	public static void GenerateVSCodeConfig(string directory)
 	{
 		string vscodeDir = Path.Combine(directory, ".vscode");

@@ -84,11 +84,56 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 case 'migrateAsset':
                     await this.handleMigrateAsset(e.fromCategory, e.fromSubCategory, e.key, e.toCategory, e.toSubCategory, document);
                     break;
+                case 'deleteAsset':
+                    await this.handleDeleteAsset(e.category, e.subCategory, e.key, document);
+                    break;
                 case 'openDevTools':
                     vscode.commands.executeCommand('workbench.action.webview.openDeveloperTools');
                     break;
             }
         });
+    }
+
+    private async handleDeleteAsset(
+        category: string,
+        subCategory: string | undefined,
+        key: string,
+        document: vscode.TextDocument
+    ) {
+        if (!key) return;
+        const targetDir = path.dirname(document.uri.fsPath);
+        let relPath = '';
+
+        if (category === 'glb' && subCategory) {
+            relPath = path.join('Assets', 'models', subCategory, key);
+        } else if (category === 'decals') {
+            relPath = path.join('Assets', 'decals', key);
+        } else if (category === 'icons') {
+            relPath = path.join('Assets', 'icons', key);
+        } else if (category === 'vfx_spritesheets') {
+            relPath = path.join('Assets', 'vfx', key);
+        } else if (category === 'skyboxes') {
+            relPath = path.join('Assets', 'skyboxes', key);
+        } else if (category === 'textures') {
+            relPath = path.join('Assets', 'textures', key);
+        } else if (category === 'sfx') {
+            relPath = path.join('Assets', 'audio', 'sfx', key);
+        } else if (category === 'music') {
+            relPath = path.join('Assets', 'audio', 'music', key);
+        } else {
+            relPath = path.join('Assets', category, key);
+        }
+
+        const fullPath = path.join(targetDir, relPath);
+        if (fs.existsSync(fullPath)) {
+            try {
+                fs.unlinkSync(fullPath);
+                vscode.window.showInformationMessage(`Deleted asset file: ${relPath}`);
+            } catch (err: any) {
+                console.error(`Failed to delete asset file ${fullPath}:`, err);
+                vscode.window.showErrorMessage(`Failed to delete asset file ${relPath}: ${err.message}`);
+            }
+        }
     }
 
     private get lastOpenedDirectory(): string | undefined {

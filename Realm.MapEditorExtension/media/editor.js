@@ -3841,6 +3841,14 @@
         }
 
         if (deleted) {
+            if (typeof vscode !== 'undefined' && vscode.postMessage) {
+                vscode.postMessage({
+                    type: 'deleteAsset',
+                    category: category,
+                    subCategory: subCategory,
+                    key: key
+                });
+            }
             saveChanges();
             renderAssetsMetadata();
         }
