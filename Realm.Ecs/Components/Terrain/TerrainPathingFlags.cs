@@ -14,4 +14,6 @@ internal enum TerrainPathingFlags
 	Flying = 1 << 2,
 	Ground = 1 << 3,
 	Buildable = 1 << 5,
+	All = 0xFF,
 }
+

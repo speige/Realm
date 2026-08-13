@@ -127,275 +127,185 @@
               }
             }
           }
-        },
-        "CustomAbilities": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["AbilityId", "Name", "Description", "AbilityType"],
-            "properties": {
-              "AbilityId": { "type": "string" },
-              "Name": { "type": "string" },
-              "Description": { "type": "string" },
-              "AbilityType": { "type": "string", "enum": ["target_spell", "instant_spell", "passive"] },
-              "ManaCost": { "type": "number", "minimum": 0 },
-              "Cooldown": { "type": "number", "minimum": 0 },
-              "TargetRange": { "type": "number", "minimum": 0 },
-              "VisualEffect": { "type": "string" },
-              "CastSound": { "type": "string" },
-              "IconPath": { "type": "string" },
-              "AppliedStatusEffects": {
-                "type": "array",
-                "items": { "type": "string" }
-              },
-              "AreaOfEffectRadius": { "type": "number", "minimum": 0 },
-              "Damage": { "type": "number", "minimum": 0 },
-              "Healing": { "type": "number", "minimum": 0 },
-              "SummonedUnitId": { "type": "string" },
-              "SummonCount": { "type": "integer", "minimum": 1 },
-              "SummonDuration": { "type": "number", "minimum": 0 }
-            }
-          }
-        },
-        "CustomUpgrades": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["UpgradeId", "Name", "Description"],
-            "properties": {
-              "UpgradeId": { "type": "string" },
-              "Name": { "type": "string" },
-              "Description": { "type": "string" },
-              "CostGold": { "type": "number", "minimum": 0 },
-              "CostWood": { "type": "number", "minimum": 0 },
-              "CostStone": { "type": "number", "minimum": 0 },
-              "ResearchTime": { "type": "number", "minimum": 0 },
-              "Requirement": { "type": "string" },
-              "MaxLevel": { "type": "integer", "minimum": 1 },
-              "AffectedUnitIds": {
-                "type": "array",
-                "items": { "type": "string" }
-              },
-              "MaxHpBonus": { "type": "number" },
-              "DamageBonus": { "type": "number" },
-              "ArmorBonus": { "type": "number" },
-              "SpeedBonus": { "type": "number" }
-            }
-          }
-        },
-        "CustomItems": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["ItemId", "Name", "Description", "ItemClass"],
-            "properties": {
-              "ItemId": { "type": "string" },
-              "Name": { "type": "string" },
-              "Description": { "type": "string" },
-              "ItemClass": { "type": "string", "enum": ["consumable", "equipment", "quest"] },
-              "CostGold": { "type": "number", "minimum": 0 },
-              "UseAbility": { "type": "string" },
-              "ChargeCount": { "type": "integer", "minimum": 0 },
-              "CooldownLink": { "type": "string" },
-              "CanDrop": { "type": "boolean" },
-              "ItemLevel": { "type": "integer", "minimum": 0 },
-              "IconPath": { "type": "string" },
-              "PassiveStatusEffects": {
-                "type": "array",
-                "items": { "type": "string" }
-              },
-              "GrantedWeapons": {
-                "type": "array",
-                "items": { "type": "string" }
-              },
-              "IsContainer": { "type": "boolean" },
-              "ContainerSize": { "type": "integer", "minimum": 0 },
-              "Requirements": { "type": "string" }
-            }
-          }
-        },
-        "CustomWeapons": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["WeaponId", "Name", "Damage", "Range", "AttackCooldown", "AttackType"],
-            "properties": {
-              "WeaponId": { "type": "string" },
-              "Name": { "type": "string" },
-              "Damage": { "type": "number", "minimum": 0 },
-              "Range": { "type": "number", "minimum": 0 },
-              "AttackCooldown": { "type": "number", "minimum": 0 },
-              "AttackType": { "type": "string", "enum": ["melee", "ranged", "none"] },
-              "ProjectileSpeed": { "type": "number", "minimum": 0 },
-              "VisualEffect": { "type": "string" },
-              "AttackSound": { "type": "string" },
-              "ProjectileModelPath": { "type": "string" },
-              "ImpactVisualEffect": { "type": "string" },
-              "ImpactSound": { "type": "string" }
-            }
-          }
         }
       }
-    }
-  },
-  "additionalProperties": {
-    "type": "object",
-    "required": [
-      "UnitId",
-      "Name",
-      "Description",
-      "MaxHp",
-      "Damage",
-      "Range",
-      "Armor",
-      "Speed",
-      "AttackCooldown",
-      "ScanRadius",
-      "CostGold",
-      "CostWood",
-      "CostStone",
-      "ProductionTime",
-      "PopCost",
-      "AttackType",
-      "ArmorType",
-      "GoldBounty"
-    ],
-    "properties": {
-      "UnitId": {
-        "type": "string"
-      },
-      "Name": {
-        "type": "string"
-      },
-      "Description": {
-        "type": "string"
-      },
-      "MaxHp": {
-        "type": "number",
-        "minimum": 0
-      },
-      "Damage": {
-        "type": "number",
-        "minimum": 0
-      },
-      "Range": {
-        "type": "number",
-        "minimum": 0
-      },
-      "Armor": {
-        "type": "number",
-        "minimum": 0
-      },
-      "Speed": {
-        "type": "number",
-        "minimum": 0
-      },
-      "AttackCooldown": {
-        "type": "number",
-        "minimum": 0
-      },
-      "ScanRadius": {
-        "type": "number",
-        "minimum": 0
-      },
-      "CostGold": {
-        "type": "number",
-        "minimum": 0
-      },
-      "CostWood": {
-        "type": "number",
-        "minimum": 0
-      },
-      "CostStone": {
-        "type": "number",
-        "minimum": 0
-      },
-      "ProductionTime": {
-        "type": "number",
-        "minimum": 0
-      },
-      "PopCost": {
-        "type": "integer",
-        "minimum": 0
-      },
-      "AttackType": {
-        "type": "string",
-        "enum": ["melee", "ranged", "none"]
-      },
-      "ArmorType": {
-        "type": "string",
-        "enum": ["light", "heavy", "building"]
-      },
-      "GoldBounty": {
-        "type": "number",
-        "minimum": 0
-      },
-      "ModelPath": {
-        "type": "string"
-      },
-      "BuildOptions": {
-        "type": "array",
-        "items": {
-          "type": "string"
+    },
+    "CustomUnits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "UnitId",
+          "Name",
+          "Description"
+        ],
+        "properties": {
+          "UnitId": { "type": "string" },
+          "Name": { "type": "string" },
+          "Description": { "type": "string" },
+          "MaxHp": { "type": "number", "minimum": 0 },
+          "Damage": { "type": "number", "minimum": 0 },
+          "Range": { "type": "number", "minimum": 0 },
+          "Armor": { "type": "number", "minimum": 0 },
+          "Speed": { "type": "number", "minimum": 0 },
+          "AttackCooldown": { "type": "number", "minimum": 0 },
+          "ScanRadius": { "type": "number", "minimum": 0 },
+          "CostGold": { "type": "number", "minimum": 0 },
+          "CostWood": { "type": "number", "minimum": 0 },
+          "CostStone": { "type": "number", "minimum": 0 },
+          "ProductionTime": { "type": "number", "minimum": 0 },
+          "PopCost": { "type": "integer", "minimum": 0 },
+          "AttackType": { "type": "string", "enum": ["melee", "ranged", "none"] },
+          "ArmorType": { "type": "string", "enum": ["light", "heavy", "building"] },
+          "GoldBounty": { "type": "number", "minimum": 0 },
+          "ModelPath": { "type": "string" },
+          "BuildOptions": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "IsHero": { "type": "boolean" },
+          "Abilities": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "XpBounty": { "type": "number", "minimum": 0 },
+          "Weapons": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "StartingItems": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "Upgrades": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "PathingType": {
+            "type": "integer",
+            "description": "Bitmask flags (1=ShallowWater, 2=DeepWater, 4=Flying, 8=Ground, 32=Buildable, 255=All)"
+          },
+          "StatusEffects": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "SoundEvents": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "PortraitModelPath": { "type": "string" }
         }
-      },
-      "IsHero": {
-        "type": "boolean"
-      },
-      "Abilities": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
-      "XpBounty": {
-        "type": "number",
-        "minimum": 0
-      },
-      "Weapons": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
-      "StartingItems": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
-      "Upgrades": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
-      "MovementType": {
-        "type": "string",
-        "enum": ["ground", "air", "amphibious", "none"]
-      },
-      "PathingCapabilities": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "enum": ["shallow_water", "deep_water", "flying", "ground"]
-        }
-      },
-      "StatusEffects": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
-      "SoundEvents": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
-      "PortraitModelPath": {
-        "type": "string"
       }
+    },
+    "CustomAbilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["AbilityId", "Name", "Description", "AbilityType"],
+        "properties": {
+          "AbilityId": { "type": "string" },
+          "Name": { "type": "string" },
+          "Description": { "type": "string" },
+          "AbilityType": { "type": "string", "enum": ["target_spell", "instant_spell", "passive"] },
+          "ManaCost": { "type": "number", "minimum": 0 },
+          "Cooldown": { "type": "number", "minimum": 0 },
+          "TargetRange": { "type": "number", "minimum": 0 },
+          "VisualEffect": { "type": "string" },
+          "CastSound": { "type": "string" },
+          "IconPath": { "type": "string" },
+          "AppliedStatusEffects": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "AreaOfEffectRadius": { "type": "number", "minimum": 0 },
+          "Damage": { "type": "number", "minimum": 0 },
+          "Healing": { "type": "number", "minimum": 0 },
+          "SummonedUnitId": { "type": "string" },
+          "SummonCount": { "type": "integer", "minimum": 1 },
+          "SummonDuration": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    "CustomUpgrades": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["UpgradeId", "Name", "Description"],
+        "properties": {
+          "UpgradeId": { "type": "string" },
+          "Name": { "type": "string" },
+          "Description": { "type": "string" },
+          "CostGold": { "type": "number", "minimum": 0 },
+          "CostWood": { "type": "number", "minimum": 0 },
+          "CostStone": { "type": "number", "minimum": 0 },
+          "ResearchTime": { "type": "number", "minimum": 0 },
+          "Requirement": { "type": "string" },
+          "MaxLevel": { "type": "integer", "minimum": 1 },
+          "AffectedUnitIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "MaxHpBonus": { "type": "number" },
+          "DamageBonus": { "type": "number" },
+          "ArmorBonus": { "type": "number" },
+          "SpeedBonus": { "type": "number" }
+        }
+      }
+    },
+    "CustomItems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ItemId", "Name", "Description", "ItemClass"],
+        "properties": {
+          "ItemId": { "type": "string" },
+          "Name": { "type": "string" },
+          "Description": { "type": "string" },
+          "ItemClass": { "type": "string", "enum": ["consumable", "equipment", "quest"] },
+          "CostGold": { "type": "number", "minimum": 0 },
+          "UseAbility": { "type": "string" },
+          "ChargeCount": { "type": "integer", "minimum": 0 },
+          "CooldownLink": { "type": "string" },
+          "CanDrop": { "type": "boolean" },
+          "ItemLevel": { "type": "integer", "minimum": 0 },
+          "IconPath": { "type": "string" },
+          "PassiveStatusEffects": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "GrantedWeapons": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "IsContainer": { "type": "boolean" },
+          "ContainerSize": { "type": "integer", "minimum": 0 },
+          "Requirements": { "type": "string" }
+        }
+      }
+    },
+    "CustomWeapons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["WeaponId", "Name", "Damage", "Range", "AttackCooldown", "AttackType"],
+        "properties": {
+          "WeaponId": { "type": "string" },
+          "Name": { "type": "string" },
+          "Damage": { "type": "number", "minimum": 0 },
+          "Range": { "type": "number", "minimum": 0 },
+          "AttackCooldown": { "type": "number", "minimum": 0 },
+          "AttackType": { "type": "string", "enum": ["melee", "ranged", "none"] },
+          "ProjectileSpeed": { "type": "number", "minimum": 0 },
+          "VisualEffect": { "type": "string" },
+          "AttackSound": { "type": "string" },
+          "ProjectileModelPath": { "type": "string" },
+          "ImpactVisualEffect": { "type": "string" },
+          "ImpactSound": { "type": "string" }
+        }
+      }
+    },
+    "Assets": {
+      "type": "object"
     }
   }
 }

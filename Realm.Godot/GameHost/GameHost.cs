@@ -600,7 +600,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public string[]? Abilities { get; set; }
 		public float XpBounty { get; set; }
 		public string[]? PathingCapabilities { get; set; }
-		public string? MovementType { get; set; }
+		public int PathingType { get; set; }
 		public float? ObstacleRadius { get; set; }
 	}
 
@@ -2378,7 +2378,7 @@ public class {mapName} : IMapScript
 				ArmorType = "light",
 				GoldBounty = 15f,
 				BuildOptions = new[] { "castle", "tower" },
-				PathingCapabilities = new[] { "ground" }
+				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 			}
 		},
 		{
@@ -2401,7 +2401,7 @@ public class {mapName} : IMapScript
 				AttackType = "melee",
 				ArmorType = "heavy",
 				GoldBounty = 20f,
-				PathingCapabilities = new[] { "ground" }
+				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 			}
 		},
 		{
@@ -2424,7 +2424,7 @@ public class {mapName} : IMapScript
 				AttackType = "ranged",
 				ArmorType = "light",
 				GoldBounty = 25f,
-				PathingCapabilities = new[] { "ground" }
+				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 			}
 		},
 		{
@@ -2447,7 +2447,7 @@ public class {mapName} : IMapScript
 				AttackType = "ranged",
 				ArmorType = "light",
 				GoldBounty = 30f,
-				PathingCapabilities = new[] { "ground" }
+				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 			}
 		},
 		{
@@ -2471,7 +2471,7 @@ public class {mapName} : IMapScript
 				ArmorType = "building",
 				GoldBounty = 0f,
 				BuildOptions = new[] { "soldier", "archer", "priest", "worker" },
-				PathingCapabilities = new[] { "ground" },
+				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Buildable,
 				ObstacleRadius = 2.0f
 			}
 		},
@@ -2495,6 +2495,7 @@ public class {mapName} : IMapScript
 				AttackType = "ranged",
 				ArmorType = "building",
 				GoldBounty = 0f,
+				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Buildable,
 				ObstacleRadius = 1.5f
 			}
 		},
@@ -2518,7 +2519,7 @@ public class {mapName} : IMapScript
 				AttackType = "melee",
 				ArmorType = "heavy",
 				GoldBounty = 18f,
-				PathingCapabilities = new[] { "ground", "shallow_water" }
+				PathingType = (int)(Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground | Realm.Ecs.Components.Terrain.TerrainPathingFlags.ShallowWater)
 			}
 		}
 	};
@@ -2549,14 +2550,44 @@ public class {mapName} : IMapScript
 		{
 			try
 			{
-				var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
-				if (loadedRegistry != null)
+				using var doc = System.Text.Json.JsonDocument.Parse(jsonText);
+				if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
 				{
-					foreach (var kvp in loadedRegistry)
+					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
 					{
-						UnitRegistry[kvp.Key] = kvp.Value;
+						var customUnitsList = JsonSerializer.Deserialize<List<UnitMetadata>>(unitsProp.GetRawText(), Options);
+						if (customUnitsList != null && customUnitsList.Count > 0)
+						{
+							foreach (var meta in customUnitsList)
+							{
+								if (!string.IsNullOrEmpty(meta.UnitId))
+								{
+									UnitRegistry[meta.UnitId] = meta;
+								}
+							}
+							return;
+						}
 					}
-					return; // Success, early exit.
+
+					var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
+					if (loadedRegistry != null)
+					{
+						var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+						{
+							"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades", "CustomItems", "CustomUnits", "Assets"
+						};
+						foreach (var kvp in loadedRegistry)
+						{
+							if (!skipKeys.Contains(kvp.Key))
+							{
+								UnitRegistry[kvp.Key] = kvp.Value;
+							}
+						}
+						if (UnitRegistry.Count > 0)
+						{
+							return;
+						}
+					}
 				}
 			}
 			catch (Exception ex)

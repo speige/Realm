@@ -1,5 +1,10 @@
 {
   "MapProperties": {},
+  "CustomUnits": [],
+  "CustomAbilities": [],
+  "CustomUpgrades": [],
+  "CustomItems": [],
+  "CustomWeapons": [],
   "Assets": {
     "textures": {
       "dead_grass.ktx2": "3ca7998ba2426fee350ef5e52ca9e541dfbe9939cc2bfe86e2e6c3879f8a02d3",

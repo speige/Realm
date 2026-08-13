@@ -5781,6 +5781,38 @@ public partial class MapEditorHUD : Control
 				subObj[fileName] = blake3Hash;
 				catObj[subCategory] = subObj;
 				assetsObj[category] = catObj;
+
+				if (category == "glb")
+				{
+					string unitId = System.IO.Path.GetFileNameWithoutExtension(fileName);
+					if (!root.ContainsKey("CustomUnits") || root["CustomUnits"] is not JsonArray)
+					{
+						root["CustomUnits"] = new JsonArray();
+					}
+					JsonArray customUnitsArr = (JsonArray)root["CustomUnits"];
+					bool exists = customUnitsArr.Any(node => node is JsonObject obj && obj.ContainsKey("UnitId") && obj["UnitId"]?.ToString() == unitId);
+					if (!exists)
+					{
+						int defaultPathing = subCategory.ToLowerInvariant() switch
+						{
+							"character" => (int)(Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground | Realm.Ecs.Components.Terrain.TerrainPathingFlags.ShallowWater),
+							"building" => (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Buildable,
+							"environment" => 0xFF,
+							"props" => 0xFF,
+							_ => (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
+						};
+
+						var newUnitObj = new JsonObject
+						{
+							["UnitId"] = unitId,
+							["Name"] = unitId,
+							["Description"] = "",
+							["PathingType"] = defaultPathing,
+							["ModelPath"] = fileName
+						};
+						customUnitsArr.Add(newUnitObj);
+					}
+				}
 			}
 			else
 			{

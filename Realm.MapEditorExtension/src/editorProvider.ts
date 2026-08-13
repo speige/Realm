@@ -192,6 +192,27 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 if (!metadata.Assets.glb) metadata.Assets.glb = {};
                 if (!metadata.Assets.glb[subCategory]) metadata.Assets.glb[subCategory] = {};
                 metadata.Assets.glb[subCategory][baseName] = blake3;
+
+                const unitId = path.basename(fileName, path.extname(fileName));
+                if (!metadata.CustomUnits || !Array.isArray(metadata.CustomUnits)) {
+                    metadata.CustomUnits = [];
+                }
+                const exists = metadata.CustomUnits.some((u: any) => u && u.UnitId === unitId);
+                if (!exists) {
+                    let defaultPathing = 8;
+                    if (subCategory === 'character') defaultPathing = 9;
+                    else if (subCategory === 'building') defaultPathing = 32;
+                    else if (subCategory === 'environment' || subCategory === 'props') defaultPathing = 255;
+
+                    metadata.CustomUnits.push({
+                        UnitId: unitId,
+                        Name: unitId,
+                        Description: '',
+                        PathingType: defaultPathing,
+                        ModelPath: baseName
+                    });
+                }
+
                 vscode.window.showInformationMessage(`Imported GLB Model (${subCategory}): ${baseName}`);
             } else if (assetType === 'decal') {
                 const subDir = path.join(targetDir, 'Assets', 'decals');
@@ -889,13 +910,15 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             </div>
                         </div>
                         <div class="form-group">
-                            <label>Movement Type</label>
-                            <select id="field-MovementType">
-                                <option value="ground">Ground</option>
-                                <option value="air">Air</option>
-                                <option value="amphibious">Amphibious</option>
-                                <option value="none">None</option>
-                            </select>
+                            <label>Pathing Type Flags</label>
+                            <div id="field-PathingType-flags" style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px;">
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="1" /> Shallow Water (1)</label>
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="2" /> Deep Water (2)</label>
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="4" /> Flying (4)</label>
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="8" /> Ground (8)</label>
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="32" /> Buildable (32)</label>
+                            </div>
+                            <input type="hidden" id="field-PathingType" value="8" />
                         </div>
                         <div class="form-group">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">

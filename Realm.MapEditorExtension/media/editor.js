@@ -82,8 +82,19 @@
         ArmorType: document.getElementById('field-ArmorType'),
         GoldBounty: document.getElementById('field-GoldBounty'),
         XpBounty: document.getElementById('field-XpBounty'),
-        MovementType: document.getElementById('field-MovementType')
+        PathingType: document.getElementById('field-PathingType')
     };
+
+    function getCustomUnits() {
+        if (!units.CustomUnits || !Array.isArray(units.CustomUnits)) {
+            units.CustomUnits = [];
+        }
+        return units.CustomUnits;
+    }
+
+    function getUnitById(id) {
+        return getCustomUnits().find(u => u && u.UnitId === id);
+    }
 
     const buildOptionInput = document.getElementById('build-option-input');
     const addBuildOptionBtn = document.getElementById('add-build-option-btn');
@@ -202,10 +213,9 @@
             if (selectedUnitId && !selectedUnitId.startsWith('__')) {
                 selectUnit(selectedUnitId);
             } else {
-                const skipKeys = ['MapProperties', 'CustomWeapons', 'CustomAbilities', 'CustomUpgrades', 'CustomItems', 'Assets'];
-                const firstUnitId = Object.keys(units).find(id => !skipKeys.includes(id));
-                if (firstUnitId) {
-                    selectUnit(firstUnitId);
+                const customUnitsList = getCustomUnits();
+                if (customUnitsList.length > 0) {
+                    selectUnit(customUnitsList[0].UnitId);
                 } else {
                     selectedUnitId = null;
                     showEmptyState();
@@ -247,26 +257,74 @@
                     units.MapProperties = {};
                 }
                 let migrated = false;
-                if (units.CustomWeapons) {
-                    units.MapProperties.CustomWeapons = units.CustomWeapons;
-                    delete units.CustomWeapons;
+                if (units.MapProperties.CustomWeapons) {
+                    units.CustomWeapons = units.MapProperties.CustomWeapons;
+                    delete units.MapProperties.CustomWeapons;
                     migrated = true;
                 }
-                if (units.CustomAbilities) {
-                    units.MapProperties.CustomAbilities = units.CustomAbilities;
-                    delete units.CustomAbilities;
+                if (units.MapProperties.CustomAbilities) {
+                    units.CustomAbilities = units.MapProperties.CustomAbilities;
+                    delete units.MapProperties.CustomAbilities;
                     migrated = true;
                 }
-                if (units.CustomUpgrades) {
-                    units.MapProperties.CustomUpgrades = units.CustomUpgrades;
-                    delete units.CustomUpgrades;
+                if (units.MapProperties.CustomUpgrades) {
+                    units.CustomUpgrades = units.MapProperties.CustomUpgrades;
+                    delete units.MapProperties.CustomUpgrades;
                     migrated = true;
                 }
-                if (units.CustomItems) {
-                    units.MapProperties.CustomItems = units.CustomItems;
-                    delete units.CustomItems;
+                if (units.MapProperties.CustomItems) {
+                    units.CustomItems = units.MapProperties.CustomItems;
+                    delete units.MapProperties.CustomItems;
                     migrated = true;
                 }
+                if (!Array.isArray(units.CustomWeapons)) units.CustomWeapons = units.CustomWeapons || [];
+                if (!Array.isArray(units.CustomAbilities)) units.CustomAbilities = units.CustomAbilities || [];
+                if (!Array.isArray(units.CustomUpgrades)) units.CustomUpgrades = units.CustomUpgrades || [];
+                if (!Array.isArray(units.CustomItems)) units.CustomItems = units.CustomItems || [];
+
+                if (!Array.isArray(units.CustomUnits)) {
+                    units.CustomUnits = [];
+                }
+                const knownTopKeys = [
+                    'MapProperties', 'CustomUnits', 'CustomAbilities', 'CustomItems', 
+                    'CustomUpgrades', 'CustomWeapons', 'Assets', 'ModelOffsets', 
+                    'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelGenerateNormals'
+                ];
+                for (const [key, val] of Object.entries(units)) {
+                    if (!knownTopKeys.includes(key) && val && typeof val === 'object' && !Array.isArray(val) && (val.UnitId || val.MaxHp !== undefined || val.CostGold !== undefined || val.AttackType !== undefined || val.PathingCapabilities || val.MovementType)) {
+                        if (!val.UnitId) val.UnitId = key;
+                        if (!units.CustomUnits.some(u => u.UnitId === val.UnitId)) {
+                            units.CustomUnits.push(val);
+                        }
+                        delete units[key];
+                        migrated = true;
+                    }
+                }
+
+                for (const u of units.CustomUnits) {
+                    if (u.PathingType === undefined || u.PathingType === null) {
+                        if (u.MovementType === 'air' || u.MovementType === 'flying') {
+                            u.PathingType = 4;
+                        } else if (u.MovementType === 'amphibious') {
+                            u.PathingType = 9;
+                        } else if (u.PathingCapabilities && Array.isArray(u.PathingCapabilities)) {
+                            let flags = 0;
+                            u.PathingCapabilities.forEach(c => {
+                                if (c === 'shallow_water') flags |= 1;
+                                else if (c === 'deep_water') flags |= 2;
+                                else if (c === 'flying' || c === 'air') flags |= 4;
+                                else if (c === 'ground') flags |= 8;
+                                else if (c === 'buildable') flags |= 32;
+                            });
+                            u.PathingType = flags || 8;
+                        } else {
+                            u.PathingType = 8;
+                        }
+                    }
+                    delete u.MovementType;
+                    delete u.PathingCapabilities;
+                }
+
                 if (migrated) {
                     saveChanges();
                 }
@@ -286,7 +344,7 @@
                         renderCustomItems();
                     } else if (selectedUnitId === '__custom_assets__') {
                         renderAssetsMetadata();
-                    } else if (selectedUnitId && units[selectedUnitId]) {
+                    } else if (selectedUnitId && getUnitById(selectedUnitId)) {
                         populateForm(selectedUnitId);
                     } else {
                         // Keep current domain tab selection
@@ -457,10 +515,10 @@
         unitListContainer.innerHTML = '';
         const query = searchQuery.toLowerCase();
 
-        const skipKeys = ['MapProperties', 'CustomWeapons', 'CustomAbilities', 'CustomUpgrades', 'CustomItems'];
-        for (const [id, unit] of Object.entries(units)) {
-            if (skipKeys.includes(id)) continue;
-            if (!unit) continue;
+        const customUnitsList = getCustomUnits();
+        for (const unit of customUnitsList) {
+            if (!unit || !unit.UnitId) continue;
+            const id = unit.UnitId;
             const name = unit.Name || '';
             const desc = unit.Description || '';
 
@@ -608,7 +666,7 @@
     }
 
     function populateForm(id) {
-        const unit = units[id];
+        const unit = getUnitById(id);
         if (!unit) {
             showEmptyState();
             return;
@@ -636,6 +694,12 @@
                 element.value = val;
             }
         }
+
+        const pathingVal = unit.PathingType !== undefined ? unit.PathingType : 8;
+        document.querySelectorAll('.pathing-flag-cb').forEach(cb => {
+            const flagVal = parseInt(cb.value, 10);
+            cb.checked = (pathingVal & flagVal) !== 0;
+        });
 
         renderTags('build-options', unit.BuildOptions || []);
         renderTags('abilities', unit.Abilities || []);
@@ -750,7 +814,8 @@
             return;
         }
 
-        if (!selectedUnitId || !units[selectedUnitId]) return;
+        const unit = getUnitById(selectedUnitId);
+        if (!selectedUnitId || !unit) return;
         
         let key;
         if (type === 'build-options') key = 'BuildOptions';
@@ -761,11 +826,11 @@
         else if (type === 'statuseffects') key = 'StatusEffects';
         else if (type === 'soundevents') key = 'SoundEvents';
 
-        if (key && units[selectedUnitId][key]) {
+        if (key && unit[key]) {
             pushToUndoStack();
-            units[selectedUnitId][key].splice(index, 1);
+            unit[key].splice(index, 1);
             saveChanges();
-            renderTags(type, units[selectedUnitId][key]);
+            renderTags(type, unit[key]);
         }
     }
 
@@ -795,18 +860,19 @@
             return;
         }
 
-        if (!selectedUnitId || !units[selectedUnitId] || !inputEl || !key) return;
+        const unit = getUnitById(selectedUnitId);
+        if (!selectedUnitId || !unit || !inputEl || !key) return;
 
         const val = inputEl.value.trim();
         if (val) {
             pushToUndoStack();
-            if (!units[selectedUnitId][key]) {
-                units[selectedUnitId][key] = [];
+            if (!unit[key]) {
+                unit[key] = [];
             }
-            units[selectedUnitId][key].push(val);
+            unit[key].push(val);
             inputEl.value = '';
             saveChanges();
-            renderTags(type, units[selectedUnitId][key]);
+            renderTags(type, unit[key]);
         }
     }
 
@@ -1058,7 +1124,7 @@
     // Custom Weapons
     function renderCustomWeapons() {
         customWeaponsList.innerHTML = '';
-        const list = units.MapProperties.CustomWeapons || [];
+        const list = units.CustomWeapons || [];
 
         const tableContainer = document.createElement('div');
         tableContainer.className = 'spreadsheet-container';
@@ -1189,7 +1255,7 @@
                     pushToUndoStack();
                     cascadeDelete('weapon', targetId);
                     list.splice(idx, 1);
-                    units.MapProperties.CustomWeapons = list;
+                    units.CustomWeapons = list;
                     saveChanges();
                     renderCustomWeapons();
                 }
@@ -1236,7 +1302,7 @@
                 else if (target.classList.contains('weapon-impact-visual')) list[idx].ImpactVisualEffect = val;
                 else if (target.classList.contains('weapon-impact-sound')) list[idx].ImpactSound = val;
 
-                units.MapProperties.CustomWeapons = list;
+                units.CustomWeapons = list;
                 saveChanges();
             });
         });
@@ -1246,7 +1312,7 @@
     // Custom Abilities
     function renderCustomAbilities() {
         customAbilitiesList.innerHTML = '';
-        const list = units.MapProperties.CustomAbilities || [];
+        const list = units.CustomAbilities || [];
         const validation = getValidationErrors();
 
         const tableContainer = document.createElement('div');
@@ -1427,7 +1493,7 @@
                     pushToUndoStack();
                     cascadeDelete('ability', targetId);
                     list.splice(idx, 1);
-                    units.MapProperties.CustomAbilities = list;
+                    units.CustomAbilities = list;
                     saveChanges();
                     renderCustomAbilities();
                 }
@@ -1479,7 +1545,7 @@
                 else if (target.classList.contains('ability-summon-count')) list[idx].SummonCount = parseInt(val, 10) || 1;
                 else if (target.classList.contains('ability-summon-duration')) list[idx].SummonDuration = parseFloat(val) || 0;
 
-                units.MapProperties.CustomAbilities = list;
+                units.CustomAbilities = list;
                 saveChanges();
             });
         });
@@ -1489,7 +1555,7 @@
     // Custom Upgrades
     function renderCustomUpgrades() {
         customUpgradesList.innerHTML = '';
-        const list = units.MapProperties.CustomUpgrades || [];
+        const list = units.CustomUpgrades || [];
         const validation = getValidationErrors();
 
         const tableContainer = document.createElement('div');
@@ -1641,7 +1707,7 @@
                     pushToUndoStack();
                     cascadeDelete('upgrade', targetId);
                     list.splice(idx, 1);
-                    units.MapProperties.CustomUpgrades = list;
+                    units.CustomUpgrades = list;
                     saveChanges();
                     renderCustomUpgrades();
                 }
@@ -1690,7 +1756,7 @@
                 else if (target.classList.contains('upgrade-arm-bonus')) list[idx].ArmorBonus = parseFloat(val) || 0;
                 else if (target.classList.contains('upgrade-spd-bonus')) list[idx].SpeedBonus = parseFloat(val) || 0;
 
-                units.MapProperties.CustomUpgrades = list;
+                units.CustomUpgrades = list;
                 saveChanges();
             });
         });
@@ -1699,7 +1765,7 @@
     // Custom Items
     function renderCustomItems() {
         customItemsList.innerHTML = '';
-        const list = units.MapProperties.CustomItems || [];
+        const list = units.CustomItems || [];
         const validation = getValidationErrors();
 
         const tableContainer = document.createElement('div');
@@ -1898,7 +1964,7 @@
                     pushToUndoStack();
                     cascadeDelete('item', targetId);
                     list.splice(idx, 1);
-                    units.MapProperties.CustomItems = list;
+                    units.CustomItems = list;
                     saveChanges();
                     renderCustomItems();
                 }
@@ -1948,7 +2014,7 @@
                 else if (target.classList.contains('item-containersize')) list[idx].ContainerSize = parseInt(val, 10) || 0;
                 else if (target.classList.contains('item-req')) list[idx].Requirements = val;
 
-                units.MapProperties.CustomItems = list;
+                units.CustomItems = list;
                 saveChanges();
             });
         });
@@ -1958,19 +2024,19 @@
     // --- INLINE SUB-TABLE HANDLERS (AppliedStatusEffects, AffectedUnitIds, PassiveStatusEffects, GrantedWeapons) ---
     function getSubitemArray(type, parentIndex) {
         if (type === 'AppliedStatusEffects') {
-            const item = units.MapProperties.CustomAbilities[parentIndex];
+            const item = units.CustomAbilities[parentIndex];
             if (!item.AppliedStatusEffects) item.AppliedStatusEffects = [];
             return item.AppliedStatusEffects;
         } else if (type === 'AffectedUnitIds') {
-            const item = units.MapProperties.CustomUpgrades[parentIndex];
+            const item = units.CustomUpgrades[parentIndex];
             if (!item.AffectedUnitIds) item.AffectedUnitIds = [];
             return item.AffectedUnitIds;
         } else if (type === 'PassiveStatusEffects') {
-            const item = units.MapProperties.CustomItems[parentIndex];
+            const item = units.CustomItems[parentIndex];
             if (!item.PassiveStatusEffects) item.PassiveStatusEffects = [];
             return item.PassiveStatusEffects;
         } else if (type === 'GrantedWeapons') {
-            const item = units.MapProperties.CustomItems[parentIndex];
+            const item = units.CustomItems[parentIndex];
             if (!item.GrantedWeapons) item.GrantedWeapons = [];
             return item.GrantedWeapons;
         }
@@ -1979,16 +2045,16 @@
 
     function saveSubitemArray(type, parentIndex, arr) {
         if (type === 'AppliedStatusEffects') {
-            units.MapProperties.CustomAbilities[parentIndex].AppliedStatusEffects = arr;
+            units.CustomAbilities[parentIndex].AppliedStatusEffects = arr;
             renderCustomAbilities();
         } else if (type === 'AffectedUnitIds') {
-            units.MapProperties.CustomUpgrades[parentIndex].AffectedUnitIds = arr;
+            units.CustomUpgrades[parentIndex].AffectedUnitIds = arr;
             renderCustomUpgrades();
         } else if (type === 'PassiveStatusEffects') {
-            units.MapProperties.CustomItems[parentIndex].PassiveStatusEffects = arr;
+            units.CustomItems[parentIndex].PassiveStatusEffects = arr;
             renderCustomItems();
         } else if (type === 'GrantedWeapons') {
-            units.MapProperties.CustomItems[parentIndex].GrantedWeapons = arr;
+            units.CustomItems[parentIndex].GrantedWeapons = arr;
             renderCustomItems();
         }
         saveChanges();
@@ -2092,15 +2158,15 @@
     }
 
     function getExistingUnitIds() {
-        const skipKeys = ['MapProperties', 'CustomWeapons', 'CustomAbilities', 'CustomUpgrades', 'CustomItems'];
-        return new Set(Object.keys(units).filter(id => !skipKeys.includes(id)));
+        const customUnitsList = getCustomUnits();
+        return new Set(customUnitsList.map(u => u.UnitId).filter(Boolean));
     }
 
     // --- UNIT COPY / PASTE SYSTEM CLIPBOARD ---
     if (copyUnitBtn) {
         copyUnitBtn.addEventListener('click', () => {
-            if (!selectedUnitId || !units[selectedUnitId]) return;
-            const sourceUnit = units[selectedUnitId];
+            const sourceUnit = getUnitById(selectedUnitId);
+            if (!selectedUnitId || !sourceUnit) return;
             navigator.clipboard.writeText(JSON.stringify({
                 "$realm_editor_type": "unit",
                 "data": sourceUnit
@@ -2127,7 +2193,7 @@
                             "AttackCooldown", "ScanRadius", "CostGold", "CostWood", "CostStone", "ProductionTime",
                             "PopCost", "AttackType", "ArmorType", "GoldBounty", "ModelPath", "BuildOptions",
                             "IsHero", "Abilities", "XpBounty", "Weapons", "StartingItems", "Upgrades",
-                            "MovementType", "StatusEffects", "SoundEvents", "PortraitModelPath"
+                            "PathingType", "StatusEffects", "SoundEvents", "PortraitModelPath"
                         ];
                         const sanitized = {};
                         schemaKeys.forEach(k => {
@@ -2141,7 +2207,7 @@
                         sanitized.UnitId = nextId;
                         sanitized.Name = `${sanitized.Name || 'Pasted Unit'} (Copy)`;
 
-                        units[nextId] = sanitized;
+                        getCustomUnits().push(sanitized);
                         selectUnit(nextId);
                         saveChanges();
                     }
@@ -2159,10 +2225,10 @@
             const type = copyRowBtn.dataset.type;
             const index = parseInt(copyRowBtn.dataset.index, 10);
             let itemData = null;
-            if (type === 'weapon') itemData = units.MapProperties.CustomWeapons[index];
-            else if (type === 'ability') itemData = units.MapProperties.CustomAbilities[index];
-            else if (type === 'upgrade') itemData = units.MapProperties.CustomUpgrades[index];
-            else if (type === 'item') itemData = units.MapProperties.CustomItems[index];
+            if (type === 'weapon') itemData = units.CustomWeapons[index];
+            else if (type === 'ability') itemData = units.CustomAbilities[index];
+            else if (type === 'upgrade') itemData = units.CustomUpgrades[index];
+            else if (type === 'item') itemData = units.CustomItems[index];
 
             if (itemData) {
                 navigator.clipboard.writeText(JSON.stringify({
@@ -2209,33 +2275,34 @@
 
     if (pasteCustomWeaponBtn) {
         pasteCustomWeaponBtn.addEventListener('click', () => {
-            if (!units.MapProperties.CustomWeapons) units.MapProperties.CustomWeapons = [];
-            pasteRowData('weapon', units.MapProperties.CustomWeapons, 'WeaponId', 'Weapon');
+            if (!units.CustomWeapons) units.CustomWeapons = [];
+            pasteRowData('weapon', units.CustomWeapons, 'WeaponId', 'Weapon');
         });
     }
     if (pasteCustomAbilityBtn) {
         pasteCustomAbilityBtn.addEventListener('click', () => {
-            if (!units.MapProperties.CustomAbilities) units.MapProperties.CustomAbilities = [];
-            pasteRowData('ability', units.MapProperties.CustomAbilities, 'AbilityId', 'Ability');
+            if (!units.CustomAbilities) units.CustomAbilities = [];
+            pasteRowData('ability', units.CustomAbilities, 'AbilityId', 'Ability');
         });
     }
     if (pasteCustomUpgradeBtn) {
         pasteCustomUpgradeBtn.addEventListener('click', () => {
-            if (!units.MapProperties.CustomUpgrades) units.MapProperties.CustomUpgrades = [];
-            pasteRowData('upgrade', units.MapProperties.CustomUpgrades, 'UpgradeId', 'Upgrade');
+            if (!units.CustomUpgrades) units.CustomUpgrades = [];
+            pasteRowData('upgrade', units.CustomUpgrades, 'UpgradeId', 'Upgrade');
         });
     }
     if (pasteCustomItemBtn) {
         pasteCustomItemBtn.addEventListener('click', () => {
-            if (!units.MapProperties.CustomItems) units.MapProperties.CustomItems = [];
-            pasteRowData('item', units.MapProperties.CustomItems, 'ItemId', 'Item');
+            if (!units.CustomItems) units.CustomItems = [];
+            pasteRowData('item', units.CustomItems, 'ItemId', 'Item');
         });
     }
 
     // --- COMPONENT LEVEL COPY/PASTE FOR UNIT FORM ---
     function copyUnitComponent(componentKey) {
-        if (!selectedUnitId || !units[selectedUnitId]) return;
-        const arr = units[selectedUnitId][componentKey] || [];
+        const unit = getUnitById(selectedUnitId);
+        if (!selectedUnitId || !unit) return;
+        const arr = unit[componentKey] || [];
         navigator.clipboard.writeText(JSON.stringify({
             "$realm_editor_type": "unit-component-block",
             "componentType": componentKey,
@@ -2245,13 +2312,14 @@
 
     function pasteUnitComponent(componentKey) {
         if (isLocked) return;
-        if (!selectedUnitId || !units[selectedUnitId]) return;
+        const unit = getUnitById(selectedUnitId);
+        if (!selectedUnitId || !unit) return;
         navigator.clipboard.readText().then(text => {
             try {
                 const parsed = JSON.parse(text);
                 if (parsed && parsed.$realm_editor_type === 'unit-component-block' && Array.isArray(parsed.data)) {
                     pushToUndoStack();
-                    units[selectedUnitId][componentKey] = parsed.data;
+                    unit[componentKey] = parsed.data;
                     saveChanges();
                     
                     let tagType = '';
@@ -2367,22 +2435,25 @@
     }
 
     function duplicateSelectedUnit() {
-        if (!selectedUnitId || !units[selectedUnitId]) return;
-        const sourceUnit = units[selectedUnitId];
+        if (!selectedUnitId) return;
+        const sourceUnit = getUnitById(selectedUnitId);
+        if (!sourceUnit) return;
         
-        const nextId = incrementId(selectedUnitId, getExistingUnitIds());
+        const existingIds = getExistingUnitIds();
+        const nextId = generateNextId('Unit', existingIds);
         
         const newUnit = JSON.parse(JSON.stringify(sourceUnit));
         newUnit.UnitId = nextId;
         newUnit.Name = `${sourceUnit.Name || 'New Unit'} (Copy)`;
         
-        units[nextId] = newUnit;
+        if (!Array.isArray(units.CustomUnits)) units.CustomUnits = [];
+        units.CustomUnits.push(newUnit);
         selectUnit(nextId);
         saveChanges();
     }
 
     function duplicateWeapon(index) {
-        const list = units.MapProperties.CustomWeapons || [];
+        const list = units.CustomWeapons || [];
         if (!list[index]) return;
         
         const source = list[index];
@@ -2394,13 +2465,13 @@
         newWeapon.Name = `${source.Name || 'New Weapon'} (Copy)`;
         
         list.splice(index + 1, 0, newWeapon);
-        units.MapProperties.CustomWeapons = list;
+        units.CustomWeapons = list;
         saveChanges();
         renderCustomWeapons();
     }
 
     function duplicateAbility(index) {
-        const list = units.MapProperties.CustomAbilities || [];
+        const list = units.CustomAbilities || [];
         if (!list[index]) return;
         
         const source = list[index];
@@ -2412,13 +2483,13 @@
         newAbility.Name = `${source.Name || 'New Ability'} (Copy)`;
         
         list.splice(index + 1, 0, newAbility);
-        units.MapProperties.CustomAbilities = list;
+        units.CustomAbilities = list;
         saveChanges();
         renderCustomAbilities();
     }
 
     function duplicateUpgrade(index) {
-        const list = units.MapProperties.CustomUpgrades || [];
+        const list = units.CustomUpgrades || [];
         if (!list[index]) return;
         
         const source = list[index];
@@ -2430,13 +2501,13 @@
         newUpgrade.Name = `${source.Name || 'New Upgrade'} (Copy)`;
         
         list.splice(index + 1, 0, newUpgrade);
-        units.MapProperties.CustomUpgrades = list;
+        units.CustomUpgrades = list;
         saveChanges();
         renderCustomUpgrades();
     }
 
     function duplicateItem(index) {
-        const list = units.MapProperties.CustomItems || [];
+        const list = units.CustomItems || [];
         if (!list[index]) return;
         
         const source = list[index];
@@ -2448,7 +2519,7 @@
         newItem.Name = `${source.Name || 'New Item'} (Copy)`;
         
         list.splice(index + 1, 0, newItem);
-        units.MapProperties.CustomItems = list;
+        units.CustomItems = list;
         saveChanges();
         renderCustomItems();
     }
@@ -2471,7 +2542,7 @@
         try {
             pushToUndoStack();
             cascadeDelete('unit', id);
-            delete units[id];
+            units.CustomUnits = (units.CustomUnits || []).filter(u => u && u.UnitId !== id);
             if (selectedUnitId === id) {
                 selectedUnitId = null;
                 showEmptyState();
@@ -2487,7 +2558,8 @@
     addUnitBtn.addEventListener('click', () => {
         const nextId = generateNextId('Unit', getExistingUnitIds());
 
-        units[nextId] = {
+        if (!Array.isArray(units.CustomUnits)) units.CustomUnits = [];
+        units.CustomUnits.push({
             UnitId: nextId,
             Name: 'New Unit',
             Description: 'A new custom unit.',
@@ -2505,8 +2577,9 @@
             PopCost: 1,
             AttackType: 'melee',
             ArmorType: 'light',
-            GoldBounty: 10.0
-        };
+            GoldBounty: 10.0,
+            PathingType: 8
+        });
 
         selectUnit(nextId);
         saveChanges();
@@ -2515,9 +2588,10 @@
     addUnit5Btn.addEventListener('click', () => {
         if (isLocked) return;
         pushToUndoStack();
+        if (!Array.isArray(units.CustomUnits)) units.CustomUnits = [];
         for (let i = 0; i < 5; i++) {
             const nextId = generateNextId('Unit', getExistingUnitIds());
-            units[nextId] = {
+            units.CustomUnits.push({
                 UnitId: nextId,
                 Name: 'New Unit',
                 Description: 'A new custom unit.',
@@ -2535,18 +2609,19 @@
                 PopCost: 1,
                 AttackType: 'melee',
                 ArmorType: 'light',
-                GoldBounty: 10.0
-            };
+                GoldBounty: 10.0,
+                PathingType: 8
+            });
         }
         renderUnitList();
         saveChanges();
     });
 
     addCustomWeaponBtn.addEventListener('click', () => {
-        if (!units.MapProperties.CustomWeapons) {
-            units.MapProperties.CustomWeapons = [];
+        if (!units.CustomWeapons) {
+            units.CustomWeapons = [];
         }
-        const list = units.MapProperties.CustomWeapons;
+        const list = units.CustomWeapons;
         const nextId = generateNextId('Weapon', new Set(list.map(w => w.WeaponId)));
         list.push({
             WeaponId: nextId,
@@ -2556,7 +2631,7 @@
             AttackCooldown: 1.5,
             AttackType: 'melee'
         });
-        units.MapProperties.CustomWeapons = list;
+        units.CustomWeapons = list;
         saveChanges();
         renderCustomWeapons();
     });
@@ -2564,10 +2639,10 @@
     addCustomWeapon5Btn.addEventListener('click', () => {
         if (isLocked) return;
         pushToUndoStack();
-        if (!units.MapProperties.CustomWeapons) {
-            units.MapProperties.CustomWeapons = [];
+        if (!units.CustomWeapons) {
+            units.CustomWeapons = [];
         }
-        const list = units.MapProperties.CustomWeapons;
+        const list = units.CustomWeapons;
         for (let i = 0; i < 5; i++) {
             const nextId = generateNextId('Weapon', new Set(list.map(w => w.WeaponId)));
             list.push({
@@ -2579,16 +2654,16 @@
                 AttackType: 'melee'
             });
         }
-        units.MapProperties.CustomWeapons = list;
+        units.CustomWeapons = list;
         saveChanges();
         renderCustomWeapons();
     });
 
     addCustomAbilityBtn.addEventListener('click', () => {
-        if (!units.MapProperties.CustomAbilities) {
-            units.MapProperties.CustomAbilities = [];
+        if (!units.CustomAbilities) {
+            units.CustomAbilities = [];
         }
-        const list = units.MapProperties.CustomAbilities;
+        const list = units.CustomAbilities;
         const nextId = generateNextId('Ability', new Set(list.map(a => a.AbilityId)));
         list.push({
             AbilityId: nextId,
@@ -2596,7 +2671,7 @@
             Description: 'A new spell effect.',
             AbilityType: 'target_spell'
         });
-        units.MapProperties.CustomAbilities = list;
+        units.CustomAbilities = list;
         saveChanges();
         renderCustomAbilities();
     });
@@ -2604,10 +2679,10 @@
     addCustomAbility5Btn.addEventListener('click', () => {
         if (isLocked) return;
         pushToUndoStack();
-        if (!units.MapProperties.CustomAbilities) {
-            units.MapProperties.CustomAbilities = [];
+        if (!units.CustomAbilities) {
+            units.CustomAbilities = [];
         }
-        const list = units.MapProperties.CustomAbilities;
+        const list = units.CustomAbilities;
         for (let i = 0; i < 5; i++) {
             const nextId = generateNextId('Ability', new Set(list.map(a => a.AbilityId)));
             list.push({
@@ -2617,23 +2692,23 @@
                 AbilityType: 'target_spell'
             });
         }
-        units.MapProperties.CustomAbilities = list;
+        units.CustomAbilities = list;
         saveChanges();
         renderCustomAbilities();
     });
 
     addCustomUpgradeBtn.addEventListener('click', () => {
-        if (!units.MapProperties.CustomUpgrades) {
-            units.MapProperties.CustomUpgrades = [];
+        if (!units.CustomUpgrades) {
+            units.CustomUpgrades = [];
         }
-        const list = units.MapProperties.CustomUpgrades;
+        const list = units.CustomUpgrades;
         const nextId = generateNextId('Upgrade', new Set(list.map(u => u.UpgradeId)));
         list.push({
             UpgradeId: nextId,
             Name: 'New Upgrade',
             Description: 'Increases unit stats.'
         });
-        units.MapProperties.CustomUpgrades = list;
+        units.CustomUpgrades = list;
         saveChanges();
         renderCustomUpgrades();
     });
@@ -2641,10 +2716,10 @@
     addCustomUpgrade5Btn.addEventListener('click', () => {
         if (isLocked) return;
         pushToUndoStack();
-        if (!units.MapProperties.CustomUpgrades) {
-            units.MapProperties.CustomUpgrades = [];
+        if (!units.CustomUpgrades) {
+            units.CustomUpgrades = [];
         }
-        const list = units.MapProperties.CustomUpgrades;
+        const list = units.CustomUpgrades;
         for (let i = 0; i < 5; i++) {
             const nextId = generateNextId('Upgrade', new Set(list.map(u => u.UpgradeId)));
             list.push({
@@ -2653,16 +2728,16 @@
                 Description: 'Increases unit stats.'
             });
         }
-        units.MapProperties.CustomUpgrades = list;
+        units.CustomUpgrades = list;
         saveChanges();
         renderCustomUpgrades();
     });
 
     addCustomItemBtn.addEventListener('click', () => {
-        if (!units.MapProperties.CustomItems) {
-            units.MapProperties.CustomItems = [];
+        if (!units.CustomItems) {
+            units.CustomItems = [];
         }
-        const list = units.MapProperties.CustomItems;
+        const list = units.CustomItems;
         const nextId = generateNextId('Item', new Set(list.map(i => i.ItemId)));
         list.push({
             ItemId: nextId,
@@ -2670,7 +2745,7 @@
             Description: 'A custom inventory item.',
             ItemClass: 'consumable'
         });
-        units.MapProperties.CustomItems = list;
+        units.CustomItems = list;
         saveChanges();
         renderCustomItems();
     });
@@ -2678,10 +2753,10 @@
     addCustomItem5Btn.addEventListener('click', () => {
         if (isLocked) return;
         pushToUndoStack();
-        if (!units.MapProperties.CustomItems) {
-            units.MapProperties.CustomItems = [];
+        if (!units.CustomItems) {
+            units.CustomItems = [];
         }
-        const list = units.MapProperties.CustomItems;
+        const list = units.CustomItems;
         for (let i = 0; i < 5; i++) {
             const nextId = generateNextId('Item', new Set(list.map(i => i.ItemId)));
             list.push({
@@ -2691,7 +2766,7 @@
                 ItemClass: 'consumable'
             });
         }
-        units.MapProperties.CustomItems = list;
+        units.CustomItems = list;
         saveChanges();
         renderCustomItems();
     });
@@ -2958,18 +3033,17 @@
             items: {}
         };
 
-        const skipKeys = ['MapProperties', 'CustomWeapons', 'CustomAbilities', 'CustomUpgrades', 'CustomItems'];
-        const existingUnitIds = new Set(Object.keys(units).filter(id => !skipKeys.includes(id)));
-        const props = units.MapProperties || {};
+        const customUnitsList = getCustomUnits();
+        const existingUnitIds = new Set(customUnitsList.map(u => u.UnitId).filter(Boolean));
         
-        const existingWeaponIds = new Set((props.CustomWeapons || []).map(w => w.WeaponId).filter(Boolean));
-        const existingAbilityIds = new Set((props.CustomAbilities || []).map(a => a.AbilityId).filter(Boolean));
-        const existingUpgradeIds = new Set((props.CustomUpgrades || []).map(u => u.UpgradeId).filter(Boolean));
-        const existingItemIds = new Set((props.CustomItems || []).map(i => i.ItemId).filter(Boolean));
+        const existingWeaponIds = new Set((units.CustomWeapons || []).map(w => w.WeaponId).filter(Boolean));
+        const existingAbilityIds = new Set((units.CustomAbilities || []).map(a => a.AbilityId).filter(Boolean));
+        const existingUpgradeIds = new Set((units.CustomUpgrades || []).map(u => u.UpgradeId).filter(Boolean));
+        const existingItemIds = new Set((units.CustomItems || []).map(i => i.ItemId).filter(Boolean));
 
-        for (const [id, unit] of Object.entries(units)) {
-            if (skipKeys.includes(id)) continue;
-            if (!unit) continue;
+        for (const unit of customUnitsList) {
+            if (!unit || !unit.UnitId) continue;
+            const id = unit.UnitId;
             
             const unitErrors = {};
             if (unit.BuildOptions) {
@@ -3013,7 +3087,7 @@
             }
         }
 
-        (props.CustomAbilities || []).forEach((item, index) => {
+        (units.CustomAbilities || []).forEach((item, index) => {
             const abiErrors = {};
             if (item.SummonedUnitId && !existingUnitIds.has(item.SummonedUnitId)) {
                 abiErrors['SummonedUnitId'] = `Unit ID "${item.SummonedUnitId}" does not exist.`;
@@ -3023,7 +3097,7 @@
             }
         });
 
-        (props.CustomUpgrades || []).forEach((item, index) => {
+        (units.CustomUpgrades || []).forEach((item, index) => {
             const upgErrors = {};
             if (item.AffectedUnitIds) {
                 item.AffectedUnitIds.forEach((targetId, affectedIdx) => {
@@ -3037,7 +3111,7 @@
             }
         });
 
-        (props.CustomItems || []).forEach((item, index) => {
+        (units.CustomItems || []).forEach((item, index) => {
             const itemErrors = {};
             if (item.UseAbility && !existingAbilityIds.has(item.UseAbility)) {
                 itemErrors['UseAbility'] = `Ability ID "${item.UseAbility}" does not exist in Custom Abilities.`;
@@ -3058,29 +3132,28 @@
     }
 
     function getTooltipDetails(type, id) {
-        const props = units.MapProperties || {};
         if (type === 'build-options' || type === 'suggest-units') {
-            const u = units[id];
+            const u = getUnitById(id);
             if (u) {
                 return { title: u.Name || id, desc: u.Description || 'No description.' };
             }
         } else if (type === 'weapons' || type === 'suggest-weapons') {
-            const w = (props.CustomWeapons || []).find(x => x.WeaponId === id);
+            const w = (units.CustomWeapons || []).find(x => x.WeaponId === id);
             if (w) {
                 return { title: w.Name || id, desc: `Damage: ${w.Damage || 0}, Range: ${w.Range || 0}` };
             }
         } else if (type === 'abilities' || type === 'suggest-abilities') {
-            const a = (props.CustomAbilities || []).find(x => x.AbilityId === id);
+            const a = (units.CustomAbilities || []).find(x => x.AbilityId === id);
             if (a) {
                 return { title: a.Name || id, desc: a.Description || 'No description.' };
             }
         } else if (type === 'items' || type === 'suggest-items') {
-            const i = (props.CustomItems || []).find(x => x.ItemId === id);
+            const i = (units.CustomItems || []).find(x => x.ItemId === id);
             if (i) {
                 return { title: i.Name || id, desc: i.Description || 'No description.' };
             }
         } else if (type === 'upgrades' || type === 'suggest-upgrades') {
-            const u = (props.CustomUpgrades || []).find(x => x.UpgradeId === id);
+            const u = (units.CustomUpgrades || []).find(x => x.UpgradeId === id);
             if (u) {
                 return { title: u.Name || id, desc: u.Description || 'No description.' };
             }
@@ -3089,15 +3162,13 @@
     }
 
     function updateDatalists() {
-        const skipKeys = ['MapProperties', 'CustomWeapons', 'CustomAbilities', 'CustomUpgrades', 'CustomItems'];
-        const unitIds = Object.keys(units).filter(id => !skipKeys.includes(id) && units[id]);
-        const props = units.MapProperties || {};
-        const weapons = props.CustomWeapons || [];
-        const abilities = props.CustomAbilities || [];
-        const upgrades = props.CustomUpgrades || [];
-        const items = props.CustomItems || [];
+        const customUnitsList = getCustomUnits();
+        const weapons = units.CustomWeapons || [];
+        const abilities = units.CustomAbilities || [];
+        const upgrades = units.CustomUpgrades || [];
+        const items = units.CustomItems || [];
 
-        populateDatalist('suggest-units', unitIds.map(id => ({ id, name: units[id].Name })));
+        populateDatalist('suggest-units', customUnitsList.map(u => ({ id: u.UnitId, name: u.Name })));
         populateDatalist('suggest-weapons', weapons.map(w => ({ id: w.WeaponId, name: w.Name })));
         populateDatalist('suggest-abilities', abilities.map(a => ({ id: a.AbilityId, name: a.Name })));
         populateDatalist('suggest-upgrades', upgrades.map(u => ({ id: u.UpgradeId, name: u.Name })));
@@ -3127,13 +3198,15 @@
 
         element.addEventListener('change', e => {
             if (isLocked) return;
-            if (!selectedUnitId || !units[selectedUnitId]) return;
+            if (!selectedUnitId) return;
+            const targetUnit = getUnitById(selectedUnitId);
+            if (!targetUnit) return;
 
             const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
 
             if (key === 'UnitId') {
                 const newId = val.trim();
-                if (!newId || (newId !== selectedUnitId && units[newId])) {
+                if (!newId || (newId !== selectedUnitId && getUnitById(newId))) {
                     element.value = selectedUnitId;
                     const inputEvent = new Event('input', { bubbles: true });
                     element.dispatchEvent(inputEvent);
@@ -3149,8 +3222,7 @@
 
                 pushToUndoStack();
                 cascadeRename('unit', selectedUnitId, newId);
-                units[newId] = { ...units[selectedUnitId], UnitId: newId };
-                delete units[selectedUnitId];
+                targetUnit.UnitId = newId;
                 selectedUnitId = newId;
                 editorSubtitle.textContent = `ID: ${newId}`;
                 const breadcrumb = document.getElementById('editor-breadcrumb');
@@ -3175,7 +3247,7 @@
             }
 
             pushToUndoStack();
-            units[selectedUnitId][key] = parsedVal;
+            targetUnit[key] = parsedVal;
             if (key === 'Name') {
                 editorTitle.textContent = parsedVal || 'Edit Unit';
                 renderUnitList();
@@ -3479,57 +3551,19 @@
     function serializeDeterministic(data) {
         if (!data) return '';
         
-        const sortedKeys = Object.keys(data).sort();
         const lines = [];
         lines.push('{');
         
+        // 1. MapProperties
         if (data.MapProperties) {
             lines.push('  "MapProperties": {');
             const props = data.MapProperties;
-            const propKeys = Object.keys(props).sort();
+            const propKeys = Object.keys(props).filter(k => !['CustomWeapons', 'CustomAbilities', 'CustomUpgrades', 'CustomItems'].includes(k)).sort();
             
             propKeys.forEach((pKey, pIdx) => {
                 const pVal = props[pKey];
-                const isLastProp = pIdx === propKeys.length - 1;
-                const comma = isLastProp ? '' : ',';
-                
-                if (pKey === 'CustomWeapons' && Array.isArray(pVal)) {
-                    lines.push('    "CustomWeapons": [');
-                    const sortedWeapons = [...pVal].sort((a, b) => (a.WeaponId || '').localeCompare(b.WeaponId || ''));
-                    sortedWeapons.forEach((w, wIdx) => {
-                        const sortedW = sortObjectKeys(w);
-                        const wLine = `      ${JSON.stringify(sortedW)}${wIdx === sortedWeapons.length - 1 ? '' : ','}`;
-                        lines.push(wLine);
-                    });
-                    lines.push(`    ]${comma}`);
-                } else if (pKey === 'CustomAbilities' && Array.isArray(pVal)) {
-                    lines.push('    "CustomAbilities": [');
-                    const sortedAbis = [...pVal].sort((a, b) => (a.AbilityId || '').localeCompare(b.AbilityId || ''));
-                    sortedAbis.forEach((a, aIdx) => {
-                        const sortedA = sortObjectKeys(a);
-                        const aLine = `      ${JSON.stringify(sortedA)}${aIdx === sortedAbis.length - 1 ? '' : ','}`;
-                        lines.push(aLine);
-                    });
-                    lines.push(`    ]${comma}`);
-                } else if (pKey === 'CustomUpgrades' && Array.isArray(pVal)) {
-                    lines.push('    "CustomUpgrades": [');
-                    const sortedUpgs = [...pVal].sort((a, b) => (a.UpgradeId || '').localeCompare(b.UpgradeId || ''));
-                    sortedUpgs.forEach((u, uIdx) => {
-                        const sortedU = sortObjectKeys(u);
-                        const uLine = `      ${JSON.stringify(sortedU)}${uIdx === sortedUpgs.length - 1 ? '' : ','}`;
-                        lines.push(uLine);
-                    });
-                    lines.push(`    ]${comma}`);
-                } else if (pKey === 'CustomItems' && Array.isArray(pVal)) {
-                    lines.push('    "CustomItems": [');
-                    const sortedItems = [...pVal].sort((a, b) => (a.ItemId || '').localeCompare(b.ItemId || ''));
-                    sortedItems.forEach((item, iIdx) => {
-                        const sortedI = sortObjectKeys(item);
-                        const iLine = `      ${JSON.stringify(sortedI)}${iIdx === sortedItems.length - 1 ? '' : ','}`;
-                        lines.push(iLine);
-                    });
-                    lines.push(`    ]${comma}`);
-                } else if (pKey === 'PlayerSlots' && Array.isArray(pVal)) {
+                const comma = pIdx === propKeys.length - 1 ? '' : ',';
+                if (pKey === 'PlayerSlots' && Array.isArray(pVal)) {
                     lines.push('    "PlayerSlots": [');
                     const sortedSlots = [...pVal].sort((a, b) => (a.SlotId - b.SlotId));
                     sortedSlots.forEach((slot, sIdx) => {
@@ -3555,19 +3589,71 @@
                     lines.push(`    "${pKey}": ${JSON.stringify(pVal)}${comma}`);
                 }
             });
-            
-            const isLastTopKey = sortedKeys.length === 1;
-            lines.push(`  }${isLastTopKey ? '' : ','}`);
+            lines.push('  },');
         }
         
-        const unitKeys = sortedKeys.filter(k => k !== 'MapProperties');
-        unitKeys.forEach((uKey, uIdx) => {
-            const unit = data[uKey];
-            const sortedUnit = sortObjectKeys(unit, uKey);
-            const comma = uIdx === unitKeys.length - 1 ? '' : ',';
-            lines.push(`  "${uKey}": ${JSON.stringify(sortedUnit)}${comma}`);
+        // 2. CustomUnits
+        const unitsList = (data.CustomUnits && Array.isArray(data.CustomUnits)) ? data.CustomUnits : [];
+        const sortedUnits = [...unitsList].sort((a, b) => (a.UnitId || '').localeCompare(b.UnitId || ''));
+        lines.push('  "CustomUnits": [');
+        sortedUnits.forEach((u, uIdx) => {
+            const sortedU = sortObjectKeys(u);
+            const uLine = `    ${JSON.stringify(sortedU)}${uIdx === sortedUnits.length - 1 ? '' : ','}`;
+            lines.push(uLine);
         });
-        
+        lines.push('  ],');
+
+        // 3. CustomAbilities
+        const abisList = (data.CustomAbilities && Array.isArray(data.CustomAbilities)) ? data.CustomAbilities : [];
+        const sortedAbis = [...abisList].sort((a, b) => (a.AbilityId || '').localeCompare(b.AbilityId || ''));
+        lines.push('  "CustomAbilities": [');
+        sortedAbis.forEach((a, aIdx) => {
+            const sortedA = sortObjectKeys(a);
+            const aLine = `    ${JSON.stringify(sortedA)}${aIdx === sortedAbis.length - 1 ? '' : ','}`;
+            lines.push(aLine);
+        });
+        lines.push('  ],');
+
+        // 4. CustomUpgrades
+        const upgsList = (data.CustomUpgrades && Array.isArray(data.CustomUpgrades)) ? data.CustomUpgrades : [];
+        const sortedUpgs = [...upgsList].sort((a, b) => (a.UpgradeId || '').localeCompare(b.UpgradeId || ''));
+        lines.push('  "CustomUpgrades": [');
+        sortedUpgs.forEach((u, uIdx) => {
+            const sortedU = sortObjectKeys(u);
+            const uLine = `    ${JSON.stringify(sortedU)}${uIdx === sortedUpgs.length - 1 ? '' : ','}`;
+            lines.push(uLine);
+        });
+        lines.push('  ],');
+
+        // 5. CustomItems
+        const itemsList = (data.CustomItems && Array.isArray(data.CustomItems)) ? data.CustomItems : [];
+        const sortedItems = [...itemsList].sort((a, b) => (a.ItemId || '').localeCompare(b.ItemId || ''));
+        lines.push('  "CustomItems": [');
+        sortedItems.forEach((item, iIdx) => {
+            const sortedI = sortObjectKeys(item);
+            const iLine = `    ${JSON.stringify(sortedI)}${iIdx === sortedItems.length - 1 ? '' : ','}`;
+            lines.push(iLine);
+        });
+        lines.push('  ],');
+
+        // 6. CustomWeapons
+        const weaponsList = (data.CustomWeapons && Array.isArray(data.CustomWeapons)) ? data.CustomWeapons : [];
+        const sortedWeapons = [...weaponsList].sort((a, b) => (a.WeaponId || '').localeCompare(b.WeaponId || ''));
+        lines.push('  "CustomWeapons": [');
+        sortedWeapons.forEach((w, wIdx) => {
+            const sortedW = sortObjectKeys(w);
+            const wLine = `    ${JSON.stringify(sortedW)}${wIdx === sortedWeapons.length - 1 ? '' : ','}`;
+            lines.push(wLine);
+        });
+        lines.push('  ],');
+
+        // 7. Assets
+        if (data.Assets) {
+            lines.push(`  "Assets": ${JSON.stringify(sortObjectKeys(data.Assets))}`);
+        } else {
+            lines.push('  "Assets": {}');
+        }
+
         lines.push('}');
         return lines.join('\n');
     }
@@ -3602,63 +3688,55 @@
     // --- RECURSIVE CASCADING (RENAME / DELETE REFERENCES) ---
     function cascadeRename(type, oldId, newId) {
         if (type === 'unit') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.BuildOptions) {
                     unit.BuildOptions = unit.BuildOptions.map(b => b === oldId ? newId : b);
                 }
             }
-            const props = units.MapProperties || {};
-            if (props.CustomAbilities) {
-                props.CustomAbilities.forEach(a => {
+            if (units.CustomAbilities) {
+                units.CustomAbilities.forEach(a => {
                     if (a.SummonedUnitId === oldId) a.SummonedUnitId = newId;
                 });
             }
-            if (props.CustomUpgrades) {
-                props.CustomUpgrades.forEach(upg => {
+            if (units.CustomUpgrades) {
+                units.CustomUpgrades.forEach(upg => {
                     if (upg.AffectedUnitIds) {
                         upg.AffectedUnitIds = upg.AffectedUnitIds.map(u => u === oldId ? newId : u);
                     }
                 });
             }
         } else if (type === 'weapon') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.Weapons) {
                     unit.Weapons = unit.Weapons.map(w => w === oldId ? newId : w);
                 }
             }
-            const props = units.MapProperties || {};
-            if (props.CustomItems) {
-                props.CustomItems.forEach(item => {
+            if (units.CustomItems) {
+                units.CustomItems.forEach(item => {
                     if (item.GrantedWeapons) {
                         item.GrantedWeapons = item.GrantedWeapons.map(w => w === oldId ? newId : w);
                     }
                 });
             }
         } else if (type === 'ability') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.Abilities) {
                     unit.Abilities = unit.Abilities.map(a => a === oldId ? newId : a);
                 }
             }
-            const props = units.MapProperties || {};
-            if (props.CustomItems) {
-                props.CustomItems.forEach(item => {
+            if (units.CustomItems) {
+                units.CustomItems.forEach(item => {
                     if (item.UseAbility === oldId) item.UseAbility = newId;
                 });
             }
         } else if (type === 'upgrade') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.Upgrades) {
                     unit.Upgrades = unit.Upgrades.map(u => u === oldId ? newId : u);
                 }
             }
         } else if (type === 'item') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.StartingItems) {
                     unit.StartingItems = unit.StartingItems.map(i => i === oldId ? newId : i);
                 }
@@ -3668,63 +3746,55 @@
 
     function cascadeDelete(type, targetId) {
         if (type === 'unit') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.BuildOptions) {
                     unit.BuildOptions = unit.BuildOptions.filter(b => b !== targetId);
                 }
             }
-            const props = units.MapProperties || {};
-            if (props.CustomAbilities) {
-                props.CustomAbilities.forEach(a => {
+            if (units.CustomAbilities) {
+                units.CustomAbilities.forEach(a => {
                     if (a.SummonedUnitId === targetId) delete a.SummonedUnitId;
                 });
             }
-            if (props.CustomUpgrades) {
-                props.CustomUpgrades.forEach(upg => {
+            if (units.CustomUpgrades) {
+                units.CustomUpgrades.forEach(upg => {
                     if (upg.AffectedUnitIds) {
                         upg.AffectedUnitIds = upg.AffectedUnitIds.filter(u => u !== targetId);
                     }
                 });
             }
         } else if (type === 'weapon') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.Weapons) {
                     unit.Weapons = unit.Weapons.filter(w => w !== targetId);
                 }
             }
-            const props = units.MapProperties || {};
-            if (props.CustomItems) {
-                props.CustomItems.forEach(item => {
+            if (units.CustomItems) {
+                units.CustomItems.forEach(item => {
                     if (item.GrantedWeapons) {
                         item.GrantedWeapons = item.GrantedWeapons.filter(w => w !== targetId);
                     }
                 });
             }
         } else if (type === 'ability') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.Abilities) {
                     unit.Abilities = unit.Abilities.filter(a => a !== targetId);
                 }
             }
-            const props = units.MapProperties || {};
-            if (props.CustomItems) {
-                props.CustomItems.forEach(item => {
+            if (units.CustomItems) {
+                units.CustomItems.forEach(item => {
                     if (item.UseAbility === targetId) delete item.UseAbility;
                 });
             }
         } else if (type === 'upgrade') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.Upgrades) {
                     unit.Upgrades = unit.Upgrades.filter(u => u !== targetId);
                 }
             }
         } else if (type === 'item') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.StartingItems) {
                     unit.StartingItems = unit.StartingItems.filter(i => i !== targetId);
                 }

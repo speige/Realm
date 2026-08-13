@@ -39,40 +39,40 @@ internal class UnitSpawnService
 
 	public int GetUnitPathingFlags(GameHost.UnitMetadata meta)
 	{
-		if (meta.PathingCapabilities == null || meta.PathingCapabilities.Length == 0)
+		if (meta.PathingType != 0)
 		{
-			if (meta.MovementType == "air" || meta.MovementType == "flying")
-			{
-				return 4;
-			}
-			else if (meta.MovementType == "amphibious")
-			{
-				return 8 | 1;
-			}
-			return 8;
+			return meta.PathingType;
 		}
 
-		int flags = 0;
-		foreach (var cap in meta.PathingCapabilities)
+		if (meta.PathingCapabilities != null && meta.PathingCapabilities.Length > 0)
 		{
-			switch (cap.ToLower())
+			int flags = 0;
+			foreach (var cap in meta.PathingCapabilities)
 			{
-				case "shallow_water":
-					flags |= 1;
-					break;
-				case "deep_water":
-					flags |= 2;
-					break;
-				case "flying":
-				case "air":
-					flags |= 4;
-					break;
-				case "ground":
-					flags |= 8;
-					break;
+				switch (cap.ToLower())
+				{
+					case "shallow_water":
+						flags |= 1;
+						break;
+					case "deep_water":
+						flags |= 2;
+						break;
+					case "flying":
+					case "air":
+						flags |= 4;
+						break;
+					case "ground":
+						flags |= 8;
+						break;
+					case "buildable":
+						flags |= 32;
+						break;
+				}
 			}
+			if (flags != 0) return flags;
 		}
-		return flags;
+
+		return 8;
 	}
 
 	public string GetEnemyUnitName(string unitTypeId, string defaultName)
