@@ -1,10 +1,20 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using Realm.Ecs.Components.Core;
+using Realm.Ecs.Components.Meta;
 
 public partial class PropMultiMeshManager : Node3D
 {
 	public static PropMultiMeshManager Instance { get; private set; }
+
+	private struct PropData
+	{
+		public string PropId;
+		public Vector3 Position;
+		public float RotationY;
+		public float Scale;
+	}
 
 	private class MeshSubInfo
 	{
@@ -30,6 +40,9 @@ public partial class PropMultiMeshManager : Node3D
 
 	private readonly Dictionary<string, PropModelGroup> _groups = new(StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _dirtyAssetKeys = new(StringComparer.OrdinalIgnoreCase);
+	private readonly List<PropData> _reusableMatchingPropsData = new();
+	private readonly Dictionary<Vector2I, List<PropData>> _reusableChunkBucketsData = new();
+	private readonly HashSet<string> _reusableKeysToRebuild = new(StringComparer.OrdinalIgnoreCase);
 	private bool _allDirty = false;
 
 	public override void _Ready()
@@ -161,7 +174,21 @@ public partial class PropMultiMeshManager : Node3D
 	private void RebuildAllInternal()
 	{
 		if (GameHost.Instance == null) return;
-		var keysToRebuild = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		_reusableKeysToRebuild.Clear();
+
+		if (GameHost.Instance.EcsWorld != null)
+		{
+			var query = Realm.Ecs.Common.QueryCache.AllPropIdentityAndPositionQuery;
+			GameHost.Instance.EcsWorld.Query(in query, (ref PropIdentity propIdComp) =>
+			{
+				string key = GameHost.Instance.NormalizeModelAssetKey(propIdComp.PropId);
+				if (!string.IsNullOrEmpty(key))
+				{
+					_reusableKeysToRebuild.Add(key);
+				}
+			});
+		}
+
 		foreach (var prop in GameHost.Instance.AllProps)
 		{
 			if (GodotObject.IsInstanceValid(prop) && !prop.IsPreview)
@@ -169,15 +196,17 @@ public partial class PropMultiMeshManager : Node3D
 				string key = GameHost.Instance.GetModelAssetKey(prop);
 				if (!string.IsNullOrEmpty(key))
 				{
-					keysToRebuild.Add(key);
+					_reusableKeysToRebuild.Add(key);
 				}
 			}
 		}
+
 		foreach (var existingKey in _groups.Keys)
 		{
-			keysToRebuild.Add(existingKey);
+			_reusableKeysToRebuild.Add(existingKey);
 		}
-		foreach (var key in keysToRebuild)
+
+		foreach (var key in _reusableKeysToRebuild)
 		{
 			RebuildGroupInternal(key);
 		}
@@ -187,18 +216,51 @@ public partial class PropMultiMeshManager : Node3D
 	{
 		if (GameHost.Instance == null || string.IsNullOrEmpty(normAssetKey)) return;
 
-		var matchingProps = new List<Prop3D>();
+		_reusableMatchingPropsData.Clear();
+
+		if (GameHost.Instance.EcsWorld != null)
+		{
+			var query = Realm.Ecs.Common.QueryCache.AllPropIdentityAndPositionQuery;
+			GameHost.Instance.EcsWorld.Query(in query, (Arch.Core.Entity entity, ref PropIdentity propIdComp, ref Position posComp) =>
+			{
+				if (GameHost.EntityToProp3D.ContainsKey(entity)) return;
+
+				string key = GameHost.Instance.NormalizeModelAssetKey(propIdComp.PropId);
+				if (key == normAssetKey)
+				{
+					float rotY = GameHost.Instance.EcsWorld.Has<RotationY>(entity)
+						? GameHost.Instance.EcsWorld.Get<RotationY>(entity).Value : 0f;
+					float scale = GameHost.Instance.EcsWorld.Has<ModelScale>(entity)
+						? GameHost.Instance.EcsWorld.Get<ModelScale>(entity).Value : 1f;
+
+					_reusableMatchingPropsData.Add(new PropData
+					{
+						PropId = propIdComp.PropId,
+						Position = new Vector3(posComp.Value.X, posComp.Value.Y, posComp.Value.Z),
+						RotationY = rotY,
+						Scale = scale
+					});
+				}
+			});
+		}
+
 		foreach (var prop in GameHost.Instance.AllProps)
 		{
-			if (GodotObject.IsInstanceValid(prop) && !prop.IsPreview && GameHost.Instance.GetModelAssetKey(prop) == normAssetKey)
+			if (GodotObject.IsInstanceValid(prop) && !prop.IsPreview && prop.Visible && GameHost.Instance.GetModelAssetKey(prop) == normAssetKey)
 			{
-				matchingProps.Add(prop);
+				_reusableMatchingPropsData.Add(new PropData
+				{
+					PropId = prop.PropId,
+					Position = prop.Position,
+					RotationY = prop.RotationDegrees.Y,
+					Scale = prop.Scale.X
+				});
 			}
 		}
 
 		if (!_groups.TryGetValue(normAssetKey, out var group))
 		{
-			if (matchingProps.Count == 0) return;
+			if (_reusableMatchingPropsData.Count == 0) return;
 			group = CreateGroupForAsset(normAssetKey);
 			if (group == null) return;
 			_groups[normAssetKey] = group;
@@ -216,17 +278,23 @@ public partial class PropMultiMeshManager : Node3D
 		}
 		float chunkSizeUnits = 16.0f * quadSize;
 
-		var propsByChunk = new Dictionary<Vector2I, List<Prop3D>>();
-		foreach (var prop in matchingProps)
+		foreach (var bucket in _reusableChunkBucketsData.Values)
 		{
+			bucket.Clear();
+		}
+
+		for (int i = 0; i < _reusableMatchingPropsData.Count; i++)
+		{
+			var prop = _reusableMatchingPropsData[i];
 			Vector3 p = prop.Position;
 			int cx = (int)Math.Floor((p.X + halfW) / chunkSizeUnits);
 			int cz = (int)Math.Floor((p.Z + halfD) / chunkSizeUnits);
 			var cKey = new Vector2I(cx, cz);
-			if (!propsByChunk.TryGetValue(cKey, out var list))
+
+			if (!_reusableChunkBucketsData.TryGetValue(cKey, out var list))
 			{
-				list = new List<Prop3D>();
-				propsByChunk[cKey] = list;
+				list = new List<PropData>();
+				_reusableChunkBucketsData[cKey] = list;
 			}
 			list.Add(prop);
 		}
@@ -236,7 +304,7 @@ public partial class PropMultiMeshManager : Node3D
 		// Hide any chunk groups that no longer have props
 		foreach (var kvp in group.ChunkGroups)
 		{
-			if (!propsByChunk.ContainsKey(kvp.Key))
+			if (!_reusableChunkBucketsData.TryGetValue(kvp.Key, out var chunkList) || chunkList.Count == 0)
 			{
 				foreach (var mmNode in kvp.Value.MultiMeshNodes)
 				{
@@ -250,10 +318,11 @@ public partial class PropMultiMeshManager : Node3D
 		}
 
 		// Rebuild active chunk groups
-		foreach (var kvp in propsByChunk)
+		foreach (var kvp in _reusableChunkBucketsData)
 		{
 			Vector2I chunkKey = kvp.Key;
-			List<Prop3D> chunkProps = kvp.Value;
+			List<PropData> chunkProps = kvp.Value;
+			if (chunkProps.Count == 0) continue;
 
 			if (!group.ChunkGroups.TryGetValue(chunkKey, out var chunkGroup))
 			{
@@ -308,7 +377,9 @@ public partial class PropMultiMeshManager : Node3D
 					minPos = minPos.Min(pos);
 					maxPos = maxPos.Max(pos);
 
-					Transform3D propTransform = new Transform3D(prop.Transform.Basis, pos);
+					Basis basis = Basis.Identity.Rotated(Vector3.Up, Mathf.DegToRad(prop.RotationY)).Scaled(Vector3.One * prop.Scale);
+					Transform3D propTransform = new Transform3D(basis, pos);
+
 					if (prop.PropId == "tree" || prop.PropId.Contains("tree"))
 					{
 						propTransform.Basis = propTransform.Basis.Scaled(new Vector3(3f, 3f, 3f));
@@ -459,17 +530,34 @@ public partial class PropMultiMeshManager : Node3D
 
 	private static string ResolveModelPathForAssetKey(string normAssetKey)
 	{
-		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
-		if (normAssetKey.StartsWith("res://") || System.IO.File.Exists(normAssetKey))
-			return normAssetKey;
+		if (string.IsNullOrEmpty(normAssetKey))
+			return "wooden_box.glb";
 
-		string filename = normAssetKey;
-		if (!filename.EndsWith(".glb") && !filename.EndsWith(".gltf"))
+		string targetModel = normAssetKey;
+		if (GameHost.PropRegistry != null && GameHost.PropRegistry.TryGetValue(normAssetKey, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath))
+		{
+			targetModel = propMeta.ModelPath;
+		}
+		else if (GameHost.ResourceRegistry != null && GameHost.ResourceRegistry.TryGetValue(normAssetKey, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath))
+		{
+			targetModel = resMeta.ModelPath;
+		}
+		else if (GameHost.UnitRegistry != null && GameHost.UnitRegistry.TryGetValue(normAssetKey, out var unitMeta) && !string.IsNullOrEmpty(unitMeta.ModelPath))
+		{
+			targetModel = unitMeta.ModelPath;
+		}
+
+		if (targetModel.StartsWith("res://") || System.IO.File.Exists(targetModel))
+			return targetModel;
+
+		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		string filename = System.IO.Path.GetFileName(targetModel);
+		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
 		{
 			filename += ".glb";
 		}
 
-		string[] subDirs = new[] { "props", "environment", "building", "character" };
+		string[] subDirs = new[] { "props", "resources", "buildings", "units" };
 		foreach (var sub in subDirs)
 		{
 			string candidate = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
@@ -481,6 +569,6 @@ public partial class PropMultiMeshManager : Node3D
 		if (System.IO.File.Exists(rootCandidate))
 			return rootCandidate;
 
-		return normAssetKey;
+		return targetModel;
 	}
 }

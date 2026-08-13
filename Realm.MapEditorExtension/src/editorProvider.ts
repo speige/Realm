@@ -227,7 +227,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             }
 
             if (assetType === 'glb') {
-                const subCategory = (extraOptions && extraOptions.category) ? extraOptions.category.toLowerCase() : 'props';
+                let subCategory = (extraOptions && extraOptions.category) ? extraOptions.category.toLowerCase() : 'props';
                 const subDir = path.join(targetDir, 'Assets', 'models', subCategory);
                 if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
                 const baseName = path.basename(fileName, path.extname(fileName)) + '.glb';
@@ -236,20 +236,27 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 const blake3 = this.computeHashHex(fileBytes);
                 if (!metadata.Assets.glb) metadata.Assets.glb = {};
                 if (!metadata.Assets.glb[subCategory]) metadata.Assets.glb[subCategory] = {};
-                metadata.Assets.glb[subCategory][baseName] = blake3;
+                metadata.Assets.glb[subCategory][baseName] = {
+                    hash: blake3,
+                    default_asset_type: subCategory
+                };
 
                 const unitId = path.basename(fileName, path.extname(fileName));
-                if (!metadata.CustomUnits || !Array.isArray(metadata.CustomUnits)) {
-                    metadata.CustomUnits = [];
+                const targetArrayKey = subCategory === 'units' ? 'CustomUnits' :
+                                       subCategory === 'buildings' ? 'CustomBuildings' :
+                                       subCategory === 'resources' ? 'CustomResources' : 'CustomProps';
+
+                if (!metadata[targetArrayKey] || !Array.isArray(metadata[targetArrayKey])) {
+                    metadata[targetArrayKey] = [];
                 }
-                const exists = metadata.CustomUnits.some((u: any) => u && u.UnitId === unitId);
+                const exists = metadata[targetArrayKey].some((u: any) => u && u.UnitId === unitId);
                 if (!exists) {
                     let defaultPathing = 8;
-                    if (subCategory === 'character') defaultPathing = 9;
-                    else if (subCategory === 'building') defaultPathing = 32;
-                    else if (subCategory === 'environment' || subCategory === 'props') defaultPathing = 255;
+                    if (subCategory === 'units') defaultPathing = 9;
+                    else if (subCategory === 'buildings') defaultPathing = 32;
+                    else if (subCategory === 'resources' || subCategory === 'props') defaultPathing = 255;
 
-                    metadata.CustomUnits.push({
+                    metadata[targetArrayKey].push({
                         UnitId: unitId,
                         Name: unitId,
                         Description: '',
@@ -460,6 +467,22 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 }
             }
 
+            // Merge custom entity arrays into freshMetadata if created during GLB import
+            const arrayKeys = ['CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps'];
+            for (const arrKey of arrayKeys) {
+                if (metadata[arrKey] && Array.isArray(metadata[arrKey])) {
+                    if (!freshMetadata[arrKey] || !Array.isArray(freshMetadata[arrKey])) {
+                        freshMetadata[arrKey] = [];
+                    }
+                    for (const item of metadata[arrKey]) {
+                        const exists = freshMetadata[arrKey].some((u: any) => u && u.UnitId === item.UnitId);
+                        if (!exists) {
+                            freshMetadata[arrKey].push(item);
+                        }
+                    }
+                }
+            }
+
             await this.updateTextDocument(document, JSON.stringify(freshMetadata, null, 2));
         } catch (err: any) {
             vscode.window.showErrorMessage(`Failed to import asset: ${err.message}`);
@@ -589,20 +612,34 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             return null;
         }
         
-        let cleanPath = godotPath;
-        if (godotPath.startsWith('res://')) {
-            cleanPath = godotPath.substring(6);
+        let cleanPath = godotPath.trim();
+        if (cleanPath.startsWith('res://')) {
+            cleanPath = cleanPath.substring(6);
         }
-        
+
+        const candidateSubDirs = [
+            '',
+            path.join('Assets', 'models', 'units'),
+            path.join('Assets', 'models', 'buildings'),
+            path.join('Assets', 'models', 'resources'),
+            path.join('Assets', 'models', 'props'),
+            path.join('Assets', 'decals'),
+            path.join('Assets', 'icons'),
+            path.join('Assets', 'textures'),
+            path.join('Assets', 'skyboxes'),
+            path.join('Assets', 'vfx'),
+            path.join('Assets', 'audio', 'sfx')
+        ];
+
         const docDir = path.dirname(documentUri.fsPath);
+        const searchRoots: string[] = [];
+
         let currentDir = docDir;
         while (true) {
+            searchRoots.push(currentDir);
             const projectFile = path.join(currentDir, 'project.godot');
             if (fs.existsSync(projectFile)) {
-                const abs = path.join(currentDir, cleanPath);
-                if (fs.existsSync(abs)) {
-                    return abs;
-                }
+                break;
             }
             const parent = path.dirname(currentDir);
             if (parent === currentDir) {
@@ -610,24 +647,22 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             }
             currentDir = parent;
         }
-        
+
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (workspaceFolders) {
             for (const folder of workspaceFolders) {
-                const godotPathOption1 = path.join(folder.uri.fsPath, cleanPath);
-                if (fs.existsSync(godotPathOption1)) {
-                    return godotPathOption1;
-                }
-                const godotPathOption2 = path.join(folder.uri.fsPath, 'Realm.Godot', cleanPath);
-                if (fs.existsSync(godotPathOption2)) {
-                    return godotPathOption2;
-                }
+                searchRoots.push(folder.uri.fsPath);
+                searchRoots.push(path.join(folder.uri.fsPath, 'Realm.Godot'));
             }
         }
-        
-        const relPath = path.join(docDir, cleanPath);
-        if (fs.existsSync(relPath)) {
-            return relPath;
+
+        for (const root of searchRoots) {
+            for (const subDir of candidateSubDirs) {
+                const fullCandidate = subDir ? path.join(root, subDir, cleanPath) : path.join(root, cleanPath);
+                if (fs.existsSync(fullCandidate)) {
+                    return fullCandidate;
+                }
+            }
         }
         
         return null;
@@ -683,6 +718,9 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             </div>
             <div class="global-tabs">
                 <button type="button" class="tab-btn active" data-domain="units">👥 Units</button>
+                <button type="button" class="tab-btn" data-domain="buildings">🏢 Buildings</button>
+                <button type="button" class="tab-btn" data-domain="resources">🪵 Resources</button>
+                <button type="button" class="tab-btn" data-domain="props">📦 Props</button>
                 <button type="button" class="tab-btn" data-domain="weapons">⚔️ Weapons</button>
                 <button type="button" class="tab-btn" data-domain="abilities">🪄 Abilities</button>
                 <button type="button" class="tab-btn" data-domain="upgrades">🛡️ Upgrades</button>
@@ -704,7 +742,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     <h2>Units List</h2>
                     <div class="add-buttons-group" style="display: flex; gap: 4px;">
                         <button id="add-unit-btn" class="btn primary-btn" style="padding: 4px 8px;" title="Add Unit">+ Add</button>
-                        <button id="add-unit-5-btn" class="btn secondary-btn small-btn" style="padding: 4px 8px;" title="Add 5 Units">+5</button>
                     </div>
                 </div>
                 <div class="search-container">
@@ -727,13 +764,13 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                         <div>
                             <div class="breadcrumb" id="editor-breadcrumb">Units</div>
-                            <h2 id="editor-title">Edit Unit</h2>
-                            <span id="editor-subtitle" class="subtitle">Unit ID</span>
+                            <h2 id="editor-title">Edit Entity</h2>
+                            <span id="editor-subtitle" class="subtitle">ID</span>
                         </div>
                         <div class="header-actions" style="display: flex; gap: 6px;">
-                            <button type="button" id="copy-unit-btn" class="btn secondary-btn" title="Copy unit to clipboard">✂️ Copy Unit</button>
-                            <button type="button" id="paste-unit-btn" class="btn secondary-btn" title="Paste unit from clipboard">📋 Paste Unit</button>
-                            <button type="button" id="duplicate-unit-btn" class="btn secondary-btn">📋 Duplicate Unit</button>
+                            <button type="button" id="copy-unit-btn" class="btn secondary-btn" title="Copy entity to clipboard">✂️ Copy</button>
+                            <button type="button" id="paste-unit-btn" class="btn secondary-btn" title="Paste entity from clipboard">📋 Paste</button>
+                            <button type="button" id="duplicate-unit-btn" class="btn secondary-btn">📋 Duplicate</button>
                         </div>
                     </div>
                 </div>
@@ -741,7 +778,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     <div class="form-section">
                         <h3>General Information</h3>
                         <div class="form-group">
-                            <label for="field-UnitId">Unit ID</label>
+                            <label for="field-UnitId">ID</label>
                             <input type="text" id="field-UnitId" required />
                         </div>
                         <div class="form-group">
@@ -753,11 +790,15 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <textarea id="field-Description" rows="3" required></textarea>
                         </div>
                         <div class="form-group">
-                            <label for="field-ModelPath">Model Path (Optional)</label>
-                            <div class="input-with-browse">
-                                <input type="text" id="field-ModelPath" />
-                                <button type="button" class="btn browse-btn" data-input-id="field-ModelPath" data-file-types="gltf,glb,scn,tscn" title="Browse files">📁</button>
-                                <button type="button" class="btn clear-btn" data-input-id="field-ModelPath" title="Clear path">❌</button>
+                            <label for="field-ModelPath">Model Asset (GLB)</label>
+                            <div class="input-with-browse" style="display: flex; flex-direction: column; gap: 4px;">
+                                <div style="display: flex; gap: 6px; width: 100%;">
+                                    <select id="field-ModelPath" style="flex: 1; min-height: 30px;"></select>
+                                    <button type="button" class="btn clear-btn" data-input-id="field-ModelPath" title="Clear path">❌</button>
+                                </div>
+                                <label style="font-size: 11px; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 4px; margin-top: 2px;">
+                                    <input type="checkbox" id="chk-show-all-glb" style="width: auto; margin: 0;" /> Show all GLB assets
+                                </label>
                             </div>
                         </div>
                         <div class="form-group">
@@ -775,6 +816,58 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     </div>
 
                     <div class="form-section">
+                        <h3>Global Object Overrides</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="field-YOffset">Y-Offset</label>
+                                <input type="number" id="field-YOffset" step="0.05" placeholder="0.0" />
+                            </div>
+                            <div class="form-group">
+                                <label for="field-CollisionCircle">Collision Circle</label>
+                                <input type="number" id="field-CollisionCircle" step="0.05" min="0.1" placeholder="1.0" />
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="field-Brightness">Brightness</label>
+                                <input type="number" id="field-Brightness" step="0.01" min="0" max="2" placeholder="1.0" />
+                            </div>
+                            <div class="form-group">
+                                <label for="field-Tint">Tint Color</label>
+                                <input type="text" id="field-Tint" placeholder="#ffffff" />
+                            </div>
+                        </div>
+                        <div class="form-group checkbox-group" style="margin-top: 6px;">
+                            <input type="checkbox" id="field-RecalculateNormals" />
+                            <label for="field-RecalculateNormals">Re-Calculate Normals</label>
+                        </div>
+                    </div>
+
+                    <div id="section-resource-node-config" class="form-section">
+                        <h3>Resource Deposit Settings</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="field-MaxCapacity">Max Resource Capacity</label>
+                                <input type="number" id="field-MaxCapacity" min="0" step="any" placeholder="2000" />
+                            </div>
+                            <div class="form-group">
+                                <label for="field-HarvestRate">Harvest Yield / Cycle</label>
+                                <input type="number" id="field-HarvestRate" min="0" step="any" placeholder="10" />
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="field-GrowthRate">Regen / Growth Rate (Units/sec)</label>
+                                <input type="number" id="field-GrowthRate" min="0" step="any" placeholder="0.0" />
+                            </div>
+                            <div class="form-group">
+                                <label for="field-MaxWorkers">Max Simultaneous Harvesters</label>
+                                <input type="number" id="field-MaxWorkers" min="1" step="1" placeholder="5" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="section-unit-stats" class="form-section">
                         <h3>Attributes & Stats</h3>
                         <div class="form-row">
                             <div class="form-group">
@@ -812,7 +905,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         </div>
                     </div>
 
-                    <div class="form-section">
+                    <div id="section-unit-costs" class="form-section">
                         <h3>Resource Costs & Production</h3>
                         <div class="form-row">
                             <div class="form-group">
@@ -840,7 +933,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         </div>
                     </div>
 
-                    <div class="form-section">
+                    <div id="section-unit-combat" class="form-section">
                         <h3>Combat Types & Rewards</h3>
                         <div class="form-row">
                             <div class="form-group">
@@ -872,7 +965,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         </div>
                     </div>
 
-                    <div class="form-section">
+                    <div id="section-unit-capabilities" class="form-section">
                         <h3>Lists & Capabilities</h3>
                         <div class="form-group">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
@@ -955,17 +1048,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             </div>
                         </div>
                         <div class="form-group">
-                            <label>Pathing Type Flags</label>
-                            <div id="field-PathingType-flags" style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px;">
-                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="1" /> Shallow Water (1)</label>
-                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="2" /> Deep Water (2)</label>
-                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="4" /> Flying (4)</label>
-                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="8" /> Ground (8)</label>
-                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="32" /> Buildable (32)</label>
-                            </div>
-                            <input type="hidden" id="field-PathingType" value="8" />
-                        </div>
-                        <div class="form-group">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                                 <label style="margin-bottom: 0;">Status Effects / Buffs (Optional)</label>
                                 <div style="display: flex; gap: 4px;">
@@ -996,6 +1078,20 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                                     <button type="button" id="add-soundevent-btn" class="btn secondary-btn">+</button>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <div id="section-pathing-flags" class="form-section">
+                        <h3>Placement & Pathing Flags</h3>
+                        <div class="form-group">
+                            <div id="field-PathingType-flags" style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px;">
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="1" /> Shallow Water (1)</label>
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="2" /> Deep Water (2)</label>
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="4" /> Flying (4)</label>
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="8" /> Ground (8)</label>
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="32" /> Buildable (32)</label>
+                            </div>
+                            <input type="hidden" id="field-PathingType" value="8" />
                         </div>
                     </div>
                 </div>
@@ -1169,7 +1265,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <div id="custom-weapons-list"></div>
                             <div class="add-buttons-row" style="display: flex; gap: 8px;">
                                 <button type="button" id="add-custom-weapon-btn" class="btn secondary-btn">+ Add Custom Weapon</button>
-                                <button type="button" id="add-custom-weapon-5-btn" class="btn secondary-btn small-btn" title="Add 5 Weapons">+5</button>
                                 <button type="button" id="paste-custom-weapon-btn" class="btn secondary-btn" title="Paste Weapon from Clipboard">📋 Paste Weapon</button>
                             </div>
                         </div>
@@ -1190,7 +1285,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <div id="custom-abilities-list"></div>
                             <div class="add-buttons-row" style="display: flex; gap: 8px;">
                                 <button type="button" id="add-custom-ability-btn" class="btn secondary-btn">+ Add Custom Ability</button>
-                                <button type="button" id="add-custom-ability-5-btn" class="btn secondary-btn small-btn" title="Add 5 Abilities">+5</button>
                                 <button type="button" id="paste-custom-ability-btn" class="btn secondary-btn" title="Paste Ability from Clipboard">📋 Paste Ability</button>
                             </div>
                         </div>
@@ -1211,7 +1305,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <div id="custom-upgrades-list"></div>
                             <div class="add-buttons-row" style="display: flex; gap: 8px;">
                                 <button type="button" id="add-custom-upgrade-btn" class="btn secondary-btn">+ Add Custom Upgrade</button>
-                                <button type="button" id="add-custom-upgrade-5-btn" class="btn secondary-btn small-btn" title="Add 5 Upgrades">+5</button>
                                 <button type="button" id="paste-custom-upgrade-btn" class="btn secondary-btn" title="Paste Upgrade from Clipboard">📋 Paste Upgrade</button>
                             </div>
                         </div>
@@ -1232,7 +1325,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <div id="custom-items-list"></div>
                             <div class="add-buttons-row" style="display: flex; gap: 8px;">
                                 <button type="button" id="add-custom-item-btn" class="btn secondary-btn">+ Add Custom Item</button>
-                                <button type="button" id="add-custom-item-5-btn" class="btn secondary-btn small-btn" title="Add 5 Items">+5</button>
                                 <button type="button" id="paste-custom-item-btn" class="btn secondary-btn" title="Paste Item from Clipboard">📋 Paste Item</button>
                             </div>
                         </div>
@@ -1261,14 +1353,14 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
 
                     <div class="form-section">
                         <h3>📦 Import 3D Model (GLB)</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import binary GLB 3D models. Subcategory will categorize BLAKE3 hash in metadata.json under Character, Building, Environment, or Props.</p>
+                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import binary GLB 3D models. Subcategory will categorize BLAKE3 hash in metadata.json under Units, Buildings, Resources, or Props.</p>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="glb-category-select">Category</label>
+                                <label for="glb-category-select">Default Category</label>
                                 <select id="glb-category-select">
-                                    <option value="character">Character</option>
-                                    <option value="building">Building</option>
-                                    <option value="environment">Environment</option>
+                                    <option value="units">Units</option>
+                                    <option value="buildings">Buildings</option>
+                                    <option value="resources">Resources</option>
                                     <option value="props">Props</option>
                                 </select>
                             </div>

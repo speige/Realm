@@ -1389,12 +1389,16 @@ public partial class MapEditorHUD : Control
 				_viewModel.InspectorPos = $"Pos: {pos.X:F2}, {pos.Y:F2}, {pos.Z:F2}\nRot: {rot.Y:F1}° | Scale: {scale.X:F2}x";
 			}
 
-			string assetKey = GameHost.Instance.GetModelAssetKey(selected);
+			string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(selected);
 			if (!string.IsNullOrEmpty(assetKey))
 			{
 				_isUpdatingInspectorUI = true;
 
-				if (_btnHeaderGlobalOverrides != null) _btnHeaderGlobalOverrides.Visible = true;
+				if (_btnHeaderGlobalOverrides != null)
+				{
+					_btnHeaderGlobalOverrides.Text = (_isGlobalOverridesExpanded ? "▼ " : "▶ ") + TranslationServer.Translate("Global Object Overrides");
+					_btnHeaderGlobalOverrides.Visible = true;
+				}
 				if (_contentGlobalOverrides != null) _contentGlobalOverrides.Visible = _isGlobalOverridesExpanded;
 
 				if (_sldModelYOffset != null)
@@ -1774,15 +1778,7 @@ public partial class MapEditorHUD : Control
 		}
 		else
 		{
-			string charactersPath = "res://Assets/3d/Characters";
-			if (FileAccess.FileExists($"{charactersPath}/{id}.glb") || FileAccess.FileExists($"{charactersPath}/{id}.gltf"))
-			{
-				_entityPaletteController?.SelectCategoryItemExternal("Characters", id + ".glb");
-			}
-			else
-			{
-				_entityPaletteController?.SelectCategoryItemExternal("Props", id + ".glb");
-			}
+			_entityPaletteController?.SelectCategoryItemExternal("Units", id + ".glb");
 		}
 	}
 
@@ -5343,7 +5339,7 @@ public partial class MapEditorHUD : Control
 		if (vbox != null)
 		{
 			_btnHeaderGlobalOverrides = new Button();
-			_btnHeaderGlobalOverrides.Text = "▼ " + TranslationServer.Translate("Global Asset Overrides");
+			_btnHeaderGlobalOverrides.Text = "▼ " + TranslationServer.Translate("Global Object Overrides");
 			_btnHeaderGlobalOverrides.Alignment = HorizontalAlignment.Left;
 			_btnHeaderGlobalOverrides.FocusMode = Control.FocusModeEnum.None;
 			_btnHeaderGlobalOverrides.AddThemeFontSizeOverride("font_size", 12);
@@ -5358,7 +5354,7 @@ public partial class MapEditorHUD : Control
 			{
 				_isGlobalOverridesExpanded = !_isGlobalOverridesExpanded;
 				_contentGlobalOverrides.Visible = _isGlobalOverridesExpanded;
-				_btnHeaderGlobalOverrides.Text = (_isGlobalOverridesExpanded ? "▼ " : "▶ ") + TranslationServer.Translate("Global Asset Overrides");
+				_btnHeaderGlobalOverrides.Text = (_isGlobalOverridesExpanded ? "▼ " : "▶ ") + TranslationServer.Translate("Global Object Overrides");
 			};
 
 			_sldModelYOffset = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Y-Offset"), -10.0f, 10.0f, 0.05f, 0.0f, (val) =>
@@ -5366,7 +5362,7 @@ public partial class MapEditorHUD : Control
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
 				{
-					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
 					if (!string.IsNullOrEmpty(assetKey))
 					{
 						GameHost.Instance.SetModelYOffset(assetKey, val);
@@ -5387,7 +5383,7 @@ public partial class MapEditorHUD : Control
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
 				{
-					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
 					if (!string.IsNullOrEmpty(assetKey))
 					{
 						GameHost.Instance.SetModelCollisionCircleRatio(assetKey, val);
@@ -5410,7 +5406,7 @@ public partial class MapEditorHUD : Control
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
 				{
-					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
 					if (!string.IsNullOrEmpty(assetKey))
 					{
 						GameHost.Instance.SetModelBrightness(assetKey, (float)val);
@@ -5464,7 +5460,7 @@ public partial class MapEditorHUD : Control
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
 				{
-					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
 					if (!string.IsNullOrEmpty(assetKey))
 					{
 						Color tintColor = (val <= 0.0) ? new Color(1.0f, 1.0f, 1.0f) : Color.FromHsv((float)val, 0.75f, 1.0f);
@@ -5479,7 +5475,7 @@ public partial class MapEditorHUD : Control
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
 				{
-					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
 					if (!string.IsNullOrEmpty(assetKey))
 					{
 						GameHost.Instance.SetModelColorTint(assetKey, color);
@@ -5497,7 +5493,7 @@ public partial class MapEditorHUD : Control
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
 				{
-					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
 					if (!string.IsNullOrEmpty(assetKey))
 					{
 						GameHost.Instance.SetModelGenerateNormals(assetKey, pressed);
@@ -5945,9 +5941,9 @@ public partial class MapEditorHUD : Control
 					{
 						int defaultPathing = subCategory.ToLowerInvariant() switch
 						{
-							"character" => (int)(Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground | Realm.Ecs.Components.Terrain.TerrainPathingFlags.ShallowWater),
-							"building" => (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Buildable,
-							"environment" => 0xFF,
+							"units" => (int)(Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground | Realm.Ecs.Components.Terrain.TerrainPathingFlags.ShallowWater),
+							"buildings" => (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Buildable,
+							"resources" => 0xFF,
 							"props" => 0xFF,
 							_ => (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 						};
@@ -6079,6 +6075,7 @@ public partial class MapEditorHUD : Control
 			SetupTextureSwatches(false);
 			RefreshSkyboxList();
 			_entityPaletteController?.SelectCategory(_entityPaletteController.CurrentCategory, triggerAddObject: false);
+			GameHost.Instance?.RefreshAllPlacedObjectModels();
 		}
 		catch (Exception ex)
 		{

@@ -18,23 +18,45 @@ internal class UnitSpawnService
 		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
-	public string GetFallbackModelPath(string unitId, bool isBuilding)
+	public string GetFallbackModelPath(string modelPathOrId, bool isBuilding)
 	{
+		if (string.IsNullOrWhiteSpace(modelPathOrId)) return "";
+
+		if (modelPathOrId.StartsWith("res://") && Godot.FileAccess.FileExists(modelPathOrId))
+		{
+			return modelPathOrId;
+		}
+
+		if (System.IO.Path.IsPathRooted(modelPathOrId) && System.IO.File.Exists(modelPathOrId))
+		{
+			return modelPathOrId;
+		}
+
 		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
-		string filename = System.IO.Path.GetFileName(unitId);
-		if (!filename.EndsWith(".glb") && !filename.EndsWith(".gltf")) filename += ".glb";
-		string primarySub = isBuilding ? "building" : "character";
+		string filename = System.IO.Path.GetFileName(modelPathOrId);
+		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+		{
+			filename += ".glb";
+		}
+
+		string primarySub = isBuilding ? "buildings" : "units";
 		string cand = System.IO.Path.Combine(wsPath, "Assets", "models", primarySub, filename);
 		if (System.IO.File.Exists(cand)) return cand;
 
-		string[] subDirs = new[] { "character", "building", "environment", "props" };
+		string[] subDirs = new[] { "units", "buildings", "resources", "props" };
 		foreach (var sub in subDirs)
 		{
 			cand = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
 			if (System.IO.File.Exists(cand)) return cand;
 		}
 
-		return unitId;
+		foreach (var sub in subDirs)
+		{
+			string resCand = $"res://Assets/models/{sub}/{filename}";
+			if (Godot.FileAccess.FileExists(resCand)) return resCand;
+		}
+
+		return modelPathOrId;
 	}
 
 	public int GetUnitPathingFlags(GameHost.UnitMetadata meta)

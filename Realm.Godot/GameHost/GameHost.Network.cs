@@ -138,7 +138,8 @@ public partial class GameHost
 		if (result.NeedsBuildUnit && UnitRegistry.TryGetValue(result.BuildUnitType, out var meta))
 		{
 			var playerOwner = _peerIdToPlayerEntityMap[result.BuildPeerOwner].AsPlayerEntity(EcsWorld);
-			string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(result.BuildUnitType, true);
+			string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : result.BuildUnitType;
+			string modelPath = GetFallbackModelPath(targetModel, true);
 			var bldEntity = CreateEcsUnit(result.BuildUnitType, meta.Name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, 0f, result.BuildPosition, playerOwner);
 			SpawnUnit3D(bldEntity, result.BuildUnitType, modelPath, result.BuildPosition, true, false);
 			RebakeNavMesh();

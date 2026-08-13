@@ -8,9 +8,23 @@ public class MapEditorEntityPaletteController
 	private readonly VBoxContainer _palettesVBox;
 	private readonly Button _btnAddObject;
 
-	private string _currentCategory = "Characters";
+	private string _currentCategory = "Units";
 	private readonly List<string> _categoryFiles = new();
+	private readonly Dictionary<string, string> _idToDisplayName = new(StringComparer.OrdinalIgnoreCase);
 	private OptionButton _optCategoryItems;
+
+	private string GetDisplayNameForId(string file)
+	{
+		if (_idToDisplayName.TryGetValue(file, out var name) && !string.IsNullOrEmpty(name))
+			return name;
+		if (GameHost.UnitRegistry != null && GameHost.UnitRegistry.TryGetValue(file, out var uMeta) && !string.IsNullOrEmpty(uMeta.Name))
+			return uMeta.Name;
+		if (GameHost.PropRegistry != null && GameHost.PropRegistry.TryGetValue(file, out var pMeta) && !string.IsNullOrEmpty(pMeta.Name))
+			return pMeta.Name;
+		if (GameHost.ResourceRegistry != null && GameHost.ResourceRegistry.TryGetValue(file, out var rMeta) && !string.IsNullOrEmpty(rMeta.Name))
+			return rMeta.Name;
+		return System.IO.Path.GetFileNameWithoutExtension(file).Replace("_", " ");
+	}
 
 	private Button _btnChars;
 	private Button _btnBuilds;
@@ -51,7 +65,7 @@ public class MapEditorEntityPaletteController
 
 		_btnChars = new Button();
 		_btnChars.Set("icon_max_width", 0);
-		SetupButton(_btnChars, "👤 Characters", () => SelectCategory("Characters"), 12, "Select Characters category");
+		SetupButton(_btnChars, "👥 Units", () => SelectCategory("Units"), 12, "Select Units category");
 		categoryGrid.AddChild(_btnChars);
 
 		_btnBuilds = new Button();
@@ -61,7 +75,7 @@ public class MapEditorEntityPaletteController
 
 		_btnEnv = new Button();
 		_btnEnv.Set("icon_max_width", 0);
-		SetupButton(_btnEnv, "🌳 Environment", () => SelectCategory("Environment"), 12, "Select Environment category");
+		SetupButton(_btnEnv, "🪵 Resources", () => SelectCategory("Resources"), 12, "Select Resources category");
 		categoryGrid.AddChild(_btnEnv);
 
 		_btnProps = new Button();
@@ -74,7 +88,7 @@ public class MapEditorEntityPaletteController
 		SetupButton(_btnDecals, "🎨 Decals", () => SelectCategory("Decals"), 12, "Select Decals category");
 		categoryGrid.AddChild(_btnDecals);
 
-		SelectCategory("Characters", triggerAddObject: false);
+		SelectCategory("Units", triggerAddObject: false);
 	}
 
 	private void SetupButton(Button btn, string text, Action onClick, int fontSize = 13, string tooltip = "")
@@ -117,13 +131,13 @@ public class MapEditorEntityPaletteController
 		_btnProps.RemoveThemeStyleboxOverride("normal");
 		_btnDecals.RemoveThemeStyleboxOverride("normal");
 
-		if (category == "Characters") _btnChars.AddThemeStyleboxOverride("normal", activeStyle);
+		if (category == "Units" || category == "Characters") _btnChars.AddThemeStyleboxOverride("normal", activeStyle);
 		else _btnChars.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 
 		if (category == "Buildings") _btnBuilds.AddThemeStyleboxOverride("normal", activeStyle);
 		else _btnBuilds.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 
-		if (category == "Environment") _btnEnv.AddThemeStyleboxOverride("normal", activeStyle);
+		if (category == "Resources" || category == "Environment") _btnEnv.AddThemeStyleboxOverride("normal", activeStyle);
 		else _btnEnv.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 
 		if (category == "Props") _btnProps.AddThemeStyleboxOverride("normal", activeStyle);
@@ -133,9 +147,9 @@ public class MapEditorEntityPaletteController
 		else _btnDecals.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 
 		_categoryFiles.Clear();
+		_idToDisplayName.Clear();
 		_optCategoryItems.Clear();
 
-		// Scan temp workspace files and metadata.json for custom assets
 		try
 		{
 			string wsPath = MapEditorHUD.TempWorkspaceGodotPath;
@@ -146,53 +160,56 @@ public class MapEditorEntityPaletteController
 			{
 				string json = System.IO.File.ReadAllText(metadataPath);
 				var rootNode = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
-				if (rootNode != null && rootNode.ContainsKey("Assets") && rootNode["Assets"] is System.Text.Json.Nodes.JsonObject assets)
+				if (rootNode != null)
 				{
-					if (category == "Decals" && assets.ContainsKey("decals") && assets["decals"] is System.Text.Json.Nodes.JsonObject decalsObj)
+					if (category == "Decals")
 					{
-						foreach (var kvp in decalsObj)
+						if (rootNode.ContainsKey("Assets") && rootNode["Assets"] is System.Text.Json.Nodes.JsonObject assets && assets.ContainsKey("decals") && assets["decals"] is System.Text.Json.Nodes.JsonObject decalsObj)
 						{
-							string decalFile = kvp.Key;
-							string relDecalPath = System.IO.Path.Combine("Assets", "decals", decalFile);
-							if (!_categoryFiles.Contains(relDecalPath) && !_categoryFiles.Contains(decalFile))
+							foreach (var kvp in decalsObj)
 							{
-								if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, relDecalPath)))
+								string decalFile = kvp.Key;
+								string relDecalPath = System.IO.Path.Combine("Assets", "decals", decalFile);
+								if (!_categoryFiles.Contains(relDecalPath) && !_categoryFiles.Contains(decalFile))
 								{
-									_categoryFiles.Add(relDecalPath);
-								}
-								else if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, decalFile)))
-								{
-									_categoryFiles.Add(decalFile);
+									if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, relDecalPath)))
+									{
+										_categoryFiles.Add(relDecalPath);
+									}
+									else if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, decalFile)))
+									{
+										_categoryFiles.Add(decalFile);
+									}
 								}
 							}
 						}
 					}
-					else if (assets.ContainsKey("glb") && assets["glb"] is System.Text.Json.Nodes.JsonObject glbRoot)
+					else
 					{
-						string glbCatKey = category switch
+						string primaryArrayKey = category switch
 						{
-							"Characters" => "character",
-							"Buildings" => "building",
-							"Environment" => "environment",
-							"Props" => "props",
-							_ => ""
+							"Units" or "Characters" => "CustomUnits",
+							"Buildings" => "CustomBuildings",
+							"Resources" or "Environment" => "CustomResources",
+							"Props" => "CustomProps",
+							_ => "CustomUnits"
 						};
 
-						if (!string.IsNullOrEmpty(glbCatKey) && glbRoot.ContainsKey(glbCatKey) && glbRoot[glbCatKey] is System.Text.Json.Nodes.JsonObject catObj)
+						if (rootNode.ContainsKey(primaryArrayKey) && rootNode[primaryArrayKey] is System.Text.Json.Nodes.JsonArray primaryArr)
 						{
-							foreach (var kvp in catObj)
+							foreach (var node in primaryArr)
 							{
-								string modelFile = kvp.Key;
-								string relModelPath = System.IO.Path.Combine("Assets", "models", glbCatKey, modelFile);
-								if (!_categoryFiles.Contains(relModelPath) && !_categoryFiles.Contains(modelFile))
+								if (node is System.Text.Json.Nodes.JsonObject uObj && uObj.ContainsKey("UnitId"))
 								{
-									if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, relModelPath)))
+									string uId = uObj["UnitId"]?.ToString() ?? "";
+									string name = uObj.ContainsKey("Name") ? uObj["Name"]?.ToString() ?? "" : "";
+									if (!string.IsNullOrEmpty(uId) && !_categoryFiles.Contains(uId))
 									{
-										_categoryFiles.Add(relModelPath);
-									}
-									else if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, modelFile)))
-									{
-										_categoryFiles.Add(modelFile);
+										_categoryFiles.Add(uId);
+										if (!string.IsNullOrEmpty(name))
+										{
+											_idToDisplayName[uId] = name;
+										}
 									}
 								}
 							}
@@ -203,12 +220,12 @@ public class MapEditorEntityPaletteController
 		}
 		catch { }
 
-		_categoryFiles.Sort();
+		_categoryFiles.Sort((a, b) => string.Compare(GetDisplayNameForId(a), GetDisplayNameForId(b), StringComparison.OrdinalIgnoreCase));
 
 		foreach (var file in _categoryFiles)
 		{
-			string cleanName = System.IO.Path.GetFileNameWithoutExtension(file).Replace("_", " ").ToUpper();
-			_optCategoryItems.AddItem(TranslationServer.Translate(cleanName));
+			string displayName = GetDisplayNameForId(file);
+			_optCategoryItems.AddItem(TranslationServer.Translate(displayName));
 		}
 
 		if (_optCategoryItems.ItemCount > 0)
@@ -228,18 +245,9 @@ public class MapEditorEntityPaletteController
 		if (index >= 0 && index < _categoryFiles.Count)
 		{
 			string selectedFile = _categoryFiles[index];
-			string wsPath = MapEditorHUD.TempWorkspaceGodotPath;
-			string globalWs = Godot.ProjectSettings.GlobalizePath(wsPath);
-
-			string placeId = System.IO.Path.Combine(globalWs, selectedFile);
-			if (!System.IO.File.Exists(placeId))
-			{
-				placeId = selectedFile;
-			}
-
 			if (GameHost.Instance != null)
 			{
-				GameHost.Instance.ActivePlaceId = placeId;
+				GameHost.Instance.ActivePlaceId = selectedFile;
 			}
 		}
 	}
@@ -249,7 +257,7 @@ public class MapEditorEntityPaletteController
 		if (GameHost.Instance == null) return;
 
 		GameHost.EditorTool targetTool = GameHost.EditorTool.PlaceProp;
-		if (_currentCategory == "Characters" || _currentCategory == "Buildings")
+		if (_currentCategory == "Units" || _currentCategory == "Characters" || _currentCategory == "Buildings")
 		{
 			targetTool = GameHost.EditorTool.PlaceUnit;
 		}
@@ -262,22 +270,14 @@ public class MapEditorEntityPaletteController
 		int selectedIndex = _optCategoryItems != null ? _optCategoryItems.Selected : -1;
 		if (selectedIndex >= 0 && selectedIndex < _categoryFiles.Count)
 		{
-			string selectedFile = _categoryFiles[selectedIndex];
-			string wsPath = MapEditorHUD.TempWorkspaceGodotPath;
-			string globalWs = Godot.ProjectSettings.GlobalizePath(wsPath);
-
-			placeId = System.IO.Path.Combine(globalWs, selectedFile);
-			if (!System.IO.File.Exists(placeId))
-			{
-				placeId = selectedFile;
-			}
+			placeId = _categoryFiles[selectedIndex];
 		}
 
 		if (string.IsNullOrEmpty(placeId))
 		{
-			if (targetTool == GameHost.EditorTool.PlaceUnit) placeId = "adventurer.glb";
+			if (targetTool == GameHost.EditorTool.PlaceUnit) placeId = "worker";
 			else if (targetTool == GameHost.EditorTool.PlaceDecal) placeId = "acid_drip.png";
-			else placeId = "wooden_box.glb";
+			else placeId = "wooden_box";
 		}
 
 		_hud.TriggerToolSelection(targetTool, _btnAddObject, placeId);
@@ -306,7 +306,7 @@ public class MapEditorEntityPaletteController
 		else
 		{
 			GameHost.EditorTool targetTool = GameHost.EditorTool.PlaceProp;
-			if (category == "Characters" || category == "Buildings")
+			if (category == "Units" || category == "Characters" || category == "Buildings")
 			{
 				targetTool = GameHost.EditorTool.PlaceUnit;
 			}

@@ -32,6 +32,10 @@ public class ObjectSpawnAction : IEditorAction
 		{
 			GameHost.Instance?.DeleteNodeExternal(_spawnedNode);
 		}
+		else if (_objectType == "prop")
+		{
+			GameHost.Instance?.DeleteStaticPropAtPosition(_objectId, _position);
+		}
 	}
 
 	public void Redo()

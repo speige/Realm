@@ -87,6 +87,29 @@
       "PathingType": 8
     },
     {
+      "UnitId": "turtle",
+      "Name": "Amphibious Turtle",
+      "Description": "Slow but sturdy amphibious beast that can travel on both ground and shallow water.",
+      "MaxHp": 120.0,
+      "Damage": 10.0,
+      "Range": 1.5,
+      "Armor": 4.0,
+      "Speed": 5.0,
+      "AttackCooldown": 1.8,
+      "ScanRadius": 12.0,
+      "CostGold": 90.0,
+      "CostWood": 10.0,
+      "CostStone": 0.0,
+      "ProductionTime": 5.0,
+      "PopCost": 1,
+      "AttackType": "melee",
+      "ArmorType": "heavy",
+      "GoldBounty": 18.0,
+      "PathingType": 9
+    }
+  ],
+  "CustomBuildings": [
+    {
       "UnitId": "castle",
       "Name": "Town Castle",
       "Description": "Your fortress and command center. Produces units and upgrades. Guard it well!",
@@ -128,27 +151,31 @@
       "ArmorType": "building",
       "GoldBounty": 0.0,
       "PathingType": 32
+    }
+  ],
+  "CustomResources": [
+    {
+      "UnitId": "goldmine",
+      "Name": "Gold Mine",
+      "Description": "Gatherable gold resource deposit.",
+      "ModelPath": "goldmine.glb",
+      "PathingType": 255
     },
     {
-      "UnitId": "turtle",
-      "Name": "Amphibious Turtle",
-      "Description": "Slow but sturdy amphibious beast that can travel on both ground and shallow water.",
-      "MaxHp": 120.0,
-      "Damage": 10.0,
-      "Range": 1.5,
-      "Armor": 4.0,
-      "Speed": 5.0,
-      "AttackCooldown": 1.8,
-      "ScanRadius": 12.0,
-      "CostGold": 90.0,
-      "CostWood": 10.0,
-      "CostStone": 0.0,
-      "ProductionTime": 5.0,
-      "PopCost": 1,
-      "AttackType": "melee",
-      "ArmorType": "heavy",
-      "GoldBounty": 18.0,
-      "PathingType": 9
+      "UnitId": "fantasy_tree",
+      "Name": "Forest Tree",
+      "Description": "Harvestable lumber tree.",
+      "ModelPath": "fantasy_tree.glb",
+      "PathingType": 255
+    }
+  ],
+  "CustomProps": [
+    {
+      "UnitId": "wooden_box",
+      "Name": "Wooden Crate",
+      "Description": "Static environmental crate doodad.",
+      "ModelPath": "wooden_box.glb",
+      "PathingType": 255
     }
   ],
   "CustomAbilities": [],

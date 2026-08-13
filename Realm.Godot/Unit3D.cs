@@ -3,9 +3,9 @@ using Godot;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Tags;
 
-public partial class Unit3D : CharacterBody3D
+public partial class Unit3D : Prop3D
 {
-	public Entity Entity { get; set; }
+	private string _unitId = "worker";
 
 	public string UnitId
 	{
@@ -14,10 +14,11 @@ public partial class Unit3D : CharacterBody3D
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity)
 				&& GameHost.Instance.EcsWorld.Has<DefinitionId>(Entity))
 				return GameHost.Instance.EcsWorld.Get<DefinitionId>(Entity).Value;
-			return string.Empty;
+			return _unitId;
 		}
 		set
 		{
+			_unitId = value;
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
 			{
 				var world = GameHost.Instance.EcsWorld;
@@ -27,6 +28,12 @@ public partial class Unit3D : CharacterBody3D
 					world.Add(Entity, new DefinitionId(value));
 			}
 		}
+	}
+
+	public override string PropId
+	{
+		get => UnitId;
+		set => UnitId = value;
 	}
 
 	public bool IsBuilding
@@ -92,95 +99,18 @@ public partial class Unit3D : CharacterBody3D
 	private readonly System.Collections.Generic.List<MeshInstance3D> _rallyMarkersPool = new();
 	private readonly System.Collections.Generic.List<MeshInstance3D> _rallyLinesPool = new();
 
-	private MeshInstance3D _hoverRing;
-	private bool _isHovered = false;
-
-	public bool IsHovered
+	public override bool IsSelected
 	{
-		get => _isHovered;
+		get => base.IsSelected;
 		set
 		{
-			_isHovered = value;
-			if (_hoverRing == null && _isHovered)
-			{
-				CreateHoverRing();
-			}
-			if (_hoverRing != null)
-			{
-				_hoverRing.Visible = _isHovered && !IsSelected;
-			}
-		}
-	}
-
-	private void CreateHoverRing()
-	{
-		_hoverRing = new MeshInstance3D();
-		var torusMesh = new TorusMesh();
-		if (IsBuilding)
-		{
-			torusMesh.InnerRadius = 4.2f;
-			torusMesh.OuterRadius = 4.5f;
-		}
-		else
-		{
-			torusMesh.InnerRadius = 1.2f;
-			torusMesh.OuterRadius = 1.4f;
-		}
-		_hoverRing.Mesh = torusMesh;
-		_hoverRing.Position = new Vector3(0, 0.05f, 0);
-		var material = new StandardMaterial3D();
-		material.AlbedoColor = new Color(1f, 1f, 1f, 0.4f);
-		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-		material.EmissionEnabled = true;
-		material.Emission = new Color(1f, 1f, 1f) * 0.3f;
-		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-		_hoverRing.MaterialOverride = material;
-		float ratio = GameHost.Instance != null ? GameHost.Instance.GetModelCollisionCircleRatio(GameHost.Instance.GetModelAssetKey(this)) : 1.0f;
-		_hoverRing.Scale = new Vector3(ratio, 1.0f, ratio);
-		AddChild(_hoverRing);
-	}
-
-	public void UpdateCollisionCircleScale(float ratio)
-	{
-		Vector3 ringScale = new Vector3(ratio, 1.0f, ratio);
-		if (_selectionRing != null)
-		{
-			_selectionRing.Scale = ringScale;
-		}
-		if (_hoverRing != null)
-		{
-			_hoverRing.Scale = ringScale;
-		}
-	}
-
-	public bool IsSelected
-	{
-		get => _isSelected;
-		set
-		{
-			_isSelected = value;
-			if (_selectionRing != null)
-			{
-				_selectionRing.Visible = _isSelected;
-				if (_selectionRing.MaterialOverride is StandardMaterial3D material)
-				{
-					Color color = IsEnemy ? new Color(0.9f, 0.1f, 0.2f) : new Color(0.1f, 0.9f, 0.2f);
-					material.AlbedoColor = color;
-					material.Emission = color;
-				}
-			}
-
-			if (_hoverRing != null)
-			{
-				_hoverRing.Visible = _isHovered && !_isSelected;
-			}
-
+			base.IsSelected = value;
 			if (IsBuilding && !IsEnemy)
 			{
 				UpdateRallyVisuals();
 			}
 
-			if (!_isSelected)
+			if (!value)
 			{
 				HidePathVisuals();
 				if (_rallyVisualsContainer != null)
@@ -188,25 +118,9 @@ public partial class Unit3D : CharacterBody3D
 					_rallyVisualsContainer.Visible = false;
 				}
 			}
-			SetProcess(_isSelected);
+			SetProcess(value);
 		}
 	}
-
-	public void SetTemporarySelectionHighlight(bool highlight)
-	{
-		if (_selectionRing != null)
-		{
-			_selectionRing.Visible = highlight || _isSelected;
-			if ((highlight || _isSelected) && _selectionRing.MaterialOverride is StandardMaterial3D material)
-			{
-				Color color = IsEnemy ? new Color(0.9f, 0.1f, 0.2f) : new Color(0.1f, 0.9f, 0.2f);
-				material.AlbedoColor = color;
-				material.Emission = color;
-			}
-		}
-	}
-
-	public bool IsPreview { get; set; } = false;
 
 	public override void _Ready()
 	{
@@ -255,6 +169,13 @@ public partial class Unit3D : CharacterBody3D
 
 		try
 		{
+			if (_modelNode != null && GodotObject.IsInstanceValid(_modelNode))
+			{
+				RemoveChild(_modelNode);
+				_modelNode.QueueFree();
+				_modelNode = null;
+			}
+
 			_modelNode = Realm.Godot.Utils.ModelCache.GetModel(modelPath) as Node3D;
 
 			if (_modelNode != null)
@@ -424,36 +345,9 @@ public partial class Unit3D : CharacterBody3D
 		_modelNode = meshInstance;
 	}
 
-	private void CreateSelectionRing()
+	protected override Color GetSelectionRingColor()
 	{
-		_selectionRing = new MeshInstance3D();
-		var torusMesh = new TorusMesh();
-		
-		if (IsBuilding)
-		{
-			torusMesh.InnerRadius = 4.2f;
-			torusMesh.OuterRadius = 4.5f;
-		}
-		else
-		{
-			torusMesh.InnerRadius = 1.2f;
-			torusMesh.OuterRadius = 1.4f;
-		}
-		
-		_selectionRing.Mesh = torusMesh;
-		_selectionRing.Position = new Vector3(0, 0.05f, 0);
-
-		var material = new StandardMaterial3D();
-		material.AlbedoColor = new Color(0.1f, 0.9f, 0.2f); // Neon green
-		material.EmissionEnabled = true;
-		material.Emission = new Color(0.1f, 0.9f, 0.2f);
-		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-		
-		_selectionRing.MaterialOverride = material;
-		float ratio = GameHost.Instance != null ? GameHost.Instance.GetModelCollisionCircleRatio(GameHost.Instance.GetModelAssetKey(this)) : 1.0f;
-		_selectionRing.Scale = new Vector3(ratio, 1.0f, ratio);
-		_selectionRing.Visible = false;
-		AddChild(_selectionRing);
+		return IsEnemy ? new Color(0.9f, 0.1f, 0.2f) : new Color(0.1f, 0.9f, 0.2f);
 	}
 
 	private float GetMinY(Node node, Transform3D currentTransform)
@@ -952,4 +846,8 @@ public partial class Unit3D : CharacterBody3D
 			SetAlphaRecursive(child, alpha);
 		}
 	}
+}
+
+public partial class Building3D : Unit3D
+{
 }

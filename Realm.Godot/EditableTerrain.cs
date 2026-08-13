@@ -1546,6 +1546,21 @@ void fragment() {
 				normalRoughnessImages.Add(sub1);
 			}
 		}
+		if (albedoHeightImages.Count == 0 || normalRoughnessImages.Count == 0)
+		{
+			var fb0 = Godot.Image.CreateEmpty(TargetTextureResolution, TargetTextureResolution, false, Godot.Image.Format.Rgba8);
+			fb0.Fill(new Color(0.2f, 0.5f, 0.2f, 0.99f));
+			fb0.GenerateMipmaps(false);
+			fb0.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
+
+			var fb1 = Godot.Image.CreateEmpty(TargetTextureResolution, TargetTextureResolution, false, Godot.Image.Format.Rgba8);
+			fb1.Fill(new Color(0.5f, 0.5f, 1.0f, 0.8f));
+			fb1.GenerateMipmaps(true);
+			fb1.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
+
+			albedoHeightImages.Add(fb0);
+			normalRoughnessImages.Add(fb1);
+		}
 		var albedoTextureArray = new Texture2DArray();
 		albedoTextureArray.CreateFromImages(albedoHeightImages);
 		var normalTextureArray = new Texture2DArray();

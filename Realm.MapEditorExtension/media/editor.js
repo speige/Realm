@@ -22,30 +22,25 @@
     const customWeaponsForm = document.getElementById('custom-weapons-form');
     const customWeaponsList = document.getElementById('custom-weapons-list');
     const addCustomWeaponBtn = document.getElementById('add-custom-weapon-btn');
-    const addCustomWeapon5Btn = document.getElementById('add-custom-weapon-5-btn');
     const pasteCustomWeaponBtn = document.getElementById('paste-custom-weapon-btn');
 
     const customAbilitiesForm = document.getElementById('custom-abilities-form');
     const customAbilitiesList = document.getElementById('custom-abilities-list');
     const addCustomAbilityBtn = document.getElementById('add-custom-ability-btn');
-    const addCustomAbility5Btn = document.getElementById('add-custom-ability-5-btn');
     const pasteCustomAbilityBtn = document.getElementById('paste-custom-ability-btn');
 
     const customUpgradesForm = document.getElementById('custom-upgrades-form');
     const customUpgradesList = document.getElementById('custom-upgrades-list');
     const addCustomUpgradeBtn = document.getElementById('add-custom-upgrade-btn');
-    const addCustomUpgrade5Btn = document.getElementById('add-custom-upgrade-5-btn');
     const pasteCustomUpgradeBtn = document.getElementById('paste-custom-upgrade-btn');
 
     const customItemsForm = document.getElementById('custom-items-form');
     const customItemsList = document.getElementById('custom-items-list');
     const addCustomItemBtn = document.getElementById('add-custom-item-btn');
-    const addCustomItem5Btn = document.getElementById('add-custom-item-5-btn');
     const pasteCustomItemBtn = document.getElementById('paste-custom-item-btn');
 
     const unitListContainer = document.getElementById('unit-list');
     const addUnitBtn = document.getElementById('add-unit-btn');
-    const addUnit5Btn = document.getElementById('add-unit-5-btn');
     const searchInput = document.getElementById('search-input');
     const editorTitle = document.getElementById('editor-title');
     const editorSubtitle = document.getElementById('editor-subtitle');
@@ -65,6 +60,11 @@
         Description: document.getElementById('field-Description'),
         ModelPath: document.getElementById('field-ModelPath'),
         PortraitModelPath: document.getElementById('field-PortraitModelPath'),
+        YOffset: document.getElementById('field-YOffset'),
+        CollisionCircle: document.getElementById('field-CollisionCircle'),
+        Brightness: document.getElementById('field-Brightness'),
+        Tint: document.getElementById('field-Tint'),
+        RecalculateNormals: document.getElementById('field-RecalculateNormals'),
         IsHero: document.getElementById('field-IsHero'),
         MaxHp: document.getElementById('field-MaxHp'),
         Damage: document.getElementById('field-Damage'),
@@ -82,18 +82,39 @@
         ArmorType: document.getElementById('field-ArmorType'),
         GoldBounty: document.getElementById('field-GoldBounty'),
         XpBounty: document.getElementById('field-XpBounty'),
-        PathingType: document.getElementById('field-PathingType')
+        PathingType: document.getElementById('field-PathingType'),
+        MaxCapacity: document.getElementById('field-MaxCapacity'),
+        HarvestRate: document.getElementById('field-HarvestRate'),
+        GrowthRate: document.getElementById('field-GrowthRate'),
+        MaxWorkers: document.getElementById('field-MaxWorkers')
     };
 
+    function getArrayKeyForDomain(domain) {
+        if (domain === 'buildings') return 'CustomBuildings';
+        if (domain === 'resources') return 'CustomResources';
+        if (domain === 'props') return 'CustomProps';
+        return 'CustomUnits';
+    }
+
+    function getAllEntities() {
+        if (!Array.isArray(units.CustomUnits)) units.CustomUnits = [];
+        if (!Array.isArray(units.CustomBuildings)) units.CustomBuildings = [];
+        if (!Array.isArray(units.CustomResources)) units.CustomResources = [];
+        if (!Array.isArray(units.CustomProps)) units.CustomProps = [];
+        return [
+            ...units.CustomUnits,
+            ...units.CustomBuildings,
+            ...units.CustomResources,
+            ...units.CustomProps
+        ];
+    }
+
     function getCustomUnits() {
-        if (!units.CustomUnits || !Array.isArray(units.CustomUnits)) {
-            units.CustomUnits = [];
-        }
-        return units.CustomUnits;
+        return getAllEntities();
     }
 
     function getUnitById(id) {
-        return getCustomUnits().find(u => u && u.UnitId === id);
+        return getAllEntities().find(u => u && u.UnitId === id);
     }
 
     const buildOptionInput = document.getElementById('build-option-input');
@@ -192,47 +213,74 @@
         // Setup numeric keypress locking
         setupNumericLockOnDynamicInputs();
 
+        document.getElementById('chk-show-all-glb')?.addEventListener('change', () => {
+            const unit = getUnitById(selectedUnitId);
+            populateGlbDropdown(getActiveDomain(), unit ? unit.ModelPath : '');
+        });
+
+        document.getElementById('field-ModelPath')?.addEventListener('change', e => {
+            const unit = getUnitById(selectedUnitId);
+            if (unit) {
+                unit.ModelPath = e.target.value;
+                saveChanges();
+                updateAllThumbnails();
+            }
+        });
+
         // Notify VS Code that frontend is ready
         vscode.postMessage({ type: 'ready' });
     }
 
     // switchTab handles toggling between domains
+    function getActiveDomain() {
+        const activeBtn = document.querySelector('.tab-btn.active');
+        return activeBtn ? activeBtn.dataset.domain : 'units';
+    }
+
+    function matchesDomainCategory(unit, domain) {
+        if (!unit) return false;
+        return true;
+    }
+
     function switchTab(domain) {
         document.querySelectorAll('.tab-btn').forEach(b => {
             b.classList.toggle('active', b.dataset.domain === domain);
         });
 
         const appContainer = document.querySelector('.app-container');
-        if (domain === 'units') {
+        const isEntityDomain = (domain === 'units' || domain === 'buildings' || domain === 'resources' || domain === 'props');
+
+        if (isEntityDomain) {
             appContainer.classList.remove('sidebar-hidden');
+            const headerTitle = document.querySelector('.sidebar-subheader h2');
+            if (headerTitle) {
+                headerTitle.textContent = domain === 'units' ? 'Units List' :
+                                         domain === 'buildings' ? 'Buildings List' :
+                                         domain === 'resources' ? 'Resources List' : 'Props List';
+            }
+            renderUnitList();
+            const matchingUnits = domain === 'buildings' ? (units.CustomBuildings || []) :
+                                  domain === 'resources' ? (units.CustomResources || []) :
+                                  domain === 'props' ? (units.CustomProps || []) :
+                                  (units.CustomUnits || []);
+            if (matchingUnits.length > 0) {
+                if (!selectedUnitId || !matchingUnits.some(u => u.UnitId === selectedUnitId)) {
+                    selectUnit(matchingUnits[0].UnitId);
+                } else {
+                    selectUnit(selectedUnitId);
+                }
+            } else {
+                selectedUnitId = null;
+                showEmptyState();
+            }
         } else {
             appContainer.classList.add('sidebar-hidden');
-        }
-
-        if (domain === 'units') {
-            if (selectedUnitId && !selectedUnitId.startsWith('__')) {
-                selectUnit(selectedUnitId);
-            } else {
-                const customUnitsList = getCustomUnits();
-                if (customUnitsList.length > 0) {
-                    selectUnit(customUnitsList[0].UnitId);
-                } else {
-                    selectedUnitId = null;
-                    showEmptyState();
-                }
-            }
-        } else if (domain === 'weapons') {
-            selectCustomWeapons();
-        } else if (domain === 'abilities') {
-            selectCustomAbilities();
-        } else if (domain === 'upgrades') {
-            selectCustomUpgrades();
-        } else if (domain === 'items') {
-            selectCustomItems();
-        } else if (domain === 'assets') {
-            selectCustomAssets();
-        } else if (domain === 'properties') {
-            selectMapProperties();
+            if (domain === 'weapons') selectCustomWeapons();
+            else if (domain === 'abilities') selectCustomAbilities();
+            else if (domain === 'upgrades') selectCustomUpgrades();
+            else if (domain === 'items') selectCustomItems();
+            else if (domain === 'assets') selectCustomAssets();
+            else if (domain === 'properties') selectMapProperties();
         }
     }
 
@@ -282,47 +330,40 @@
                 if (!Array.isArray(units.CustomUpgrades)) units.CustomUpgrades = units.CustomUpgrades || [];
                 if (!Array.isArray(units.CustomItems)) units.CustomItems = units.CustomItems || [];
 
-                if (!Array.isArray(units.CustomUnits)) {
-                    units.CustomUnits = [];
-                }
+                if (!Array.isArray(units.CustomUnits)) units.CustomUnits = [];
+                if (!Array.isArray(units.CustomBuildings)) units.CustomBuildings = [];
+                if (!Array.isArray(units.CustomResources)) units.CustomResources = [];
+                if (!Array.isArray(units.CustomProps)) units.CustomProps = [];
+
                 const knownTopKeys = [
-                    'MapProperties', 'CustomUnits', 'CustomAbilities', 'CustomItems', 
-                    'CustomUpgrades', 'CustomWeapons', 'Assets', 'ModelOffsets', 
-                    'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelGenerateNormals'
+                    'MapProperties', 'CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps',
+                    'CustomAbilities', 'CustomItems', 'CustomUpgrades', 'CustomWeapons', 'Assets', 
+                    'ModelOffsets', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelGenerateNormals'
                 ];
                 for (const [key, val] of Object.entries(units)) {
                     if (!knownTopKeys.includes(key) && val && typeof val === 'object' && !Array.isArray(val) && (val.UnitId || val.MaxHp !== undefined || val.CostGold !== undefined || val.AttackType !== undefined || val.PathingCapabilities || val.MovementType)) {
                         if (!val.UnitId) val.UnitId = key;
-                        if (!units.CustomUnits.some(u => u.UnitId === val.UnitId)) {
-                            units.CustomUnits.push(val);
-                        }
+                        const armorType = (val.ArmorType || '').toLowerCase();
+                        if (armorType === 'building') units.CustomBuildings.push(val);
+                        else units.CustomUnits.push(val);
                         delete units[key];
                         migrated = true;
                     }
                 }
 
-                for (const u of units.CustomUnits) {
+                for (const u of getAllEntities()) {
                     if (u.PathingType === undefined || u.PathingType === null) {
                         if (u.MovementType === 'air' || u.MovementType === 'flying') {
                             u.PathingType = 4;
                         } else if (u.MovementType === 'amphibious') {
                             u.PathingType = 9;
-                        } else if (u.PathingCapabilities && Array.isArray(u.PathingCapabilities)) {
-                            let flags = 0;
-                            u.PathingCapabilities.forEach(c => {
-                                if (c === 'shallow_water') flags |= 1;
-                                else if (c === 'deep_water') flags |= 2;
-                                else if (c === 'flying' || c === 'air') flags |= 4;
-                                else if (c === 'ground') flags |= 8;
-                                else if (c === 'buildable') flags |= 32;
-                            });
-                            u.PathingType = flags || 8;
                         } else {
-                            u.PathingType = 8;
+                            u.PathingType = (u.ArmorType === 'building') ? 32 : 8;
                         }
                     }
                     delete u.MovementType;
                     delete u.PathingCapabilities;
+                    delete u.DefaultAssetType;
                 }
 
                 if (migrated) {
@@ -514,8 +555,12 @@
     function renderUnitList() {
         unitListContainer.innerHTML = '';
         const query = searchQuery.toLowerCase();
+        const activeDomain = getActiveDomain();
 
-        const customUnitsList = getCustomUnits();
+        const customUnitsList = activeDomain === 'buildings' ? (units.CustomBuildings || []) :
+                                activeDomain === 'resources' ? (units.CustomResources || []) :
+                                activeDomain === 'props' ? (units.CustomProps || []) :
+                                (units.CustomUnits || []);
         for (const unit of customUnitsList) {
             if (!unit || !unit.UnitId) continue;
             const id = unit.UnitId;
@@ -677,9 +722,11 @@
         editorTitle.textContent = unit.Name || id;
         editorSubtitle.textContent = `ID: ${id}`;
         
+        const activeDomain = getActiveDomain();
+        const categoryTitle = activeDomain.charAt(0).toUpperCase() + activeDomain.slice(1);
         const breadcrumb = document.getElementById('editor-breadcrumb');
         if (breadcrumb) {
-            breadcrumb.textContent = `Units > ${id}`;
+            breadcrumb.textContent = `${categoryTitle} > ${id}`;
         }
 
         for (const [key, element] of Object.entries(formFields)) {
@@ -695,11 +742,50 @@
             }
         }
 
-        const pathingVal = unit.PathingType !== undefined ? unit.PathingType : 8;
+        const defaultPathingVal = (activeDomain === 'resources' || activeDomain === 'props') ? 255 : (activeDomain === 'buildings') ? 32 : 8;
+        const pathingVal = unit.PathingType !== undefined ? unit.PathingType : defaultPathingVal;
         document.querySelectorAll('.pathing-flag-cb').forEach(cb => {
             const flagVal = parseInt(cb.value, 10);
             cb.checked = (pathingVal & flagVal) !== 0;
         });
+
+        const resConfigSection = document.getElementById('section-resource-node-config');
+        const unitStatsSection = document.getElementById('section-unit-stats');
+        const unitCostSection = document.getElementById('section-unit-costs');
+        const unitCombatSection = document.getElementById('section-unit-combat');
+        const unitCapabilitiesSection = document.getElementById('section-unit-capabilities');
+        const pathingSection = document.getElementById('section-pathing-flags');
+        const isHeroGroup = document.getElementById('field-IsHero')?.closest('.form-group');
+        const portraitGroup = document.getElementById('field-PortraitModelPath')?.closest('.form-group');
+
+        if (activeDomain === 'props') {
+            if (resConfigSection) resConfigSection.classList.add('hidden');
+            if (unitStatsSection) unitStatsSection.classList.add('hidden');
+            if (unitCostSection) unitCostSection.classList.add('hidden');
+            if (unitCombatSection) unitCombatSection.classList.add('hidden');
+            if (unitCapabilitiesSection) unitCapabilitiesSection.classList.add('hidden');
+            if (pathingSection) pathingSection.classList.remove('hidden');
+            if (isHeroGroup) isHeroGroup.classList.add('hidden');
+            if (portraitGroup) portraitGroup.classList.remove('hidden');
+        } else if (activeDomain === 'resources') {
+            if (resConfigSection) resConfigSection.classList.remove('hidden');
+            if (unitStatsSection) unitStatsSection.classList.add('hidden');
+            if (unitCostSection) unitCostSection.classList.add('hidden');
+            if (unitCombatSection) unitCombatSection.classList.add('hidden');
+            if (unitCapabilitiesSection) unitCapabilitiesSection.classList.add('hidden');
+            if (pathingSection) pathingSection.classList.remove('hidden');
+            if (isHeroGroup) isHeroGroup.classList.add('hidden');
+            if (portraitGroup) portraitGroup.classList.remove('hidden');
+        } else {
+            if (resConfigSection) resConfigSection.classList.add('hidden');
+            if (unitStatsSection) unitStatsSection.classList.remove('hidden');
+            if (unitCostSection) unitCostSection.classList.remove('hidden');
+            if (unitCombatSection) unitCombatSection.classList.remove('hidden');
+            if (unitCapabilitiesSection) unitCapabilitiesSection.classList.remove('hidden');
+            if (pathingSection) pathingSection.classList.remove('hidden');
+            if (isHeroGroup) isHeroGroup.classList.remove('hidden');
+            if (portraitGroup) portraitGroup.classList.remove('hidden');
+        }
 
         renderTags('build-options', unit.BuildOptions || []);
         renderTags('abilities', unit.Abilities || []);
@@ -709,7 +795,54 @@
         renderTags('statuseffects', unit.StatusEffects || []);
         renderTags('soundevents', unit.SoundEvents || []);
         
+        populateGlbDropdown(activeDomain, unit.ModelPath || '');
         updateAllThumbnails();
+    }
+
+    function populateGlbDropdown(domain, currentModelPath) {
+        const select = document.getElementById('field-ModelPath');
+        if (!select) return;
+        select.innerHTML = '';
+
+        const noneOpt = document.createElement('option');
+        noneOpt.value = '';
+        noneOpt.textContent = '-- None (Default Model) --';
+        select.appendChild(noneOpt);
+
+        const showAll = document.getElementById('chk-show-all-glb')?.checked ?? false;
+        const targetCategory = domain === 'units' ? 'units' :
+                              domain === 'buildings' ? 'buildings' :
+                              domain === 'resources' ? 'resources' :
+                              domain === 'props' ? 'props' : null;
+
+        const glbAssets = (units.Assets && units.Assets.glb) ? units.Assets.glb : {};
+        for (const [catKey, catObj] of Object.entries(glbAssets)) {
+            if (!catObj || typeof catObj !== 'object') continue;
+            const normCat = catKey.toLowerCase();
+
+            if (!showAll && targetCategory) {
+                const isMatch = normCat === targetCategory || (targetCategory === 'buildings' && normCat === 'building');
+                if (!isMatch) continue;
+            }
+
+            for (const [fileName, val] of Object.entries(catObj)) {
+                const opt = document.createElement('option');
+                opt.value = fileName;
+                opt.textContent = `${fileName} (${normCat})`;
+                if (fileName === currentModelPath) {
+                    opt.selected = true;
+                }
+                select.appendChild(opt);
+            }
+        }
+
+        if (currentModelPath && ![...select.options].some(o => o.value === currentModelPath)) {
+            const customOpt = document.createElement('option');
+            customOpt.value = currentModelPath;
+            customOpt.textContent = `${currentModelPath} (custom)`;
+            customOpt.selected = true;
+            select.appendChild(customOpt);
+        }
     }
 
     function populateMapProperties() {
@@ -2207,7 +2340,13 @@
                         sanitized.UnitId = nextId;
                         sanitized.Name = `${sanitized.Name || 'Pasted Unit'} (Copy)`;
 
-                        getCustomUnits().push(sanitized);
+                        const domain = getActiveDomain();
+                        const targetArr = domain === 'buildings' ? (units.CustomBuildings = units.CustomBuildings || []) :
+                                          domain === 'resources' ? (units.CustomResources = units.CustomResources || []) :
+                                          domain === 'props' ? (units.CustomProps = units.CustomProps || []) :
+                                          (units.CustomUnits = units.CustomUnits || []);
+
+                        targetArr.push(sanitized);
                         selectUnit(nextId);
                         saveChanges();
                     }
@@ -2440,14 +2579,19 @@
         if (!sourceUnit) return;
         
         const existingIds = getExistingUnitIds();
-        const nextId = generateNextId('Unit', existingIds);
+        const domain = getActiveDomain();
+        const prefix = domain === 'buildings' ? 'Building' : domain === 'resources' ? 'Resource' : domain === 'props' ? 'Prop' : 'Unit';
+        const nextId = generateNextId(prefix, existingIds);
         
         const newUnit = JSON.parse(JSON.stringify(sourceUnit));
         newUnit.UnitId = nextId;
-        newUnit.Name = `${sourceUnit.Name || 'New Unit'} (Copy)`;
+        newUnit.Name = `${sourceUnit.Name || 'New Entity'} (Copy)`;
         
-        if (!Array.isArray(units.CustomUnits)) units.CustomUnits = [];
-        units.CustomUnits.push(newUnit);
+        const targetArr = domain === 'buildings' ? (units.CustomBuildings = units.CustomBuildings || []) :
+                          domain === 'resources' ? (units.CustomResources = units.CustomResources || []) :
+                          domain === 'props' ? (units.CustomProps = units.CustomProps || []) :
+                          (units.CustomUnits = units.CustomUnits || []);
+        targetArr.push(newUnit);
         selectUnit(nextId);
         saveChanges();
     }
@@ -2543,6 +2687,9 @@
             pushToUndoStack();
             cascadeDelete('unit', id);
             units.CustomUnits = (units.CustomUnits || []).filter(u => u && u.UnitId !== id);
+            units.CustomBuildings = (units.CustomBuildings || []).filter(u => u && u.UnitId !== id);
+            units.CustomResources = (units.CustomResources || []).filter(u => u && u.UnitId !== id);
+            units.CustomProps = (units.CustomProps || []).filter(u => u && u.UnitId !== id);
             if (selectedUnitId === id) {
                 selectedUnitId = null;
                 showEmptyState();
@@ -2556,45 +2703,49 @@
     }
 
     addUnitBtn.addEventListener('click', () => {
-        const nextId = generateNextId('Unit', getExistingUnitIds());
+        const domain = getActiveDomain();
+        const defaultType = domain === 'units' ? 'units' :
+                            domain === 'buildings' ? 'buildings' :
+                            domain === 'resources' ? 'resources' :
+                            domain === 'props' ? 'props' : 'units';
+        const defaultArmor = domain === 'buildings' ? 'building' : 'light';
+        const defaultPathing = domain === 'buildings' ? 32 : (domain === 'resources' || domain === 'props') ? 255 : 8;
+
+        const prefix = domain === 'buildings' ? 'Building' : domain === 'resources' ? 'Resource' : domain === 'props' ? 'Prop' : 'Unit';
+        const nextId = generateNextId(prefix, getExistingUnitIds());
 
         if (!Array.isArray(units.CustomUnits)) units.CustomUnits = [];
-        units.CustomUnits.push({
-            UnitId: nextId,
-            Name: 'New Unit',
-            Description: 'A new custom unit.',
-            MaxHp: 100.0,
-            Damage: 10.0,
-            Range: 2.0,
-            Armor: 0.0,
-            Speed: 5.0,
-            AttackCooldown: 1.5,
-            ScanRadius: 10.0,
-            CostGold: 100.0,
-            CostWood: 0.0,
-            CostStone: 0.0,
-            ProductionTime: 10.0,
-            PopCost: 1,
-            AttackType: 'melee',
-            ArmorType: 'light',
-            GoldBounty: 10.0,
-            PathingType: 8
-        });
+        if (!Array.isArray(units.CustomBuildings)) units.CustomBuildings = [];
+        if (!Array.isArray(units.CustomResources)) units.CustomResources = [];
+        if (!Array.isArray(units.CustomProps)) units.CustomProps = [];
 
-        selectUnit(nextId);
-        saveChanges();
-    });
+        const targetArray = domain === 'buildings' ? units.CustomBuildings :
+                            domain === 'resources' ? units.CustomResources :
+                            domain === 'props' ? units.CustomProps : units.CustomUnits;
 
-    addUnit5Btn.addEventListener('click', () => {
-        if (isLocked) return;
-        pushToUndoStack();
-        if (!Array.isArray(units.CustomUnits)) units.CustomUnits = [];
-        for (let i = 0; i < 5; i++) {
-            const nextId = generateNextId('Unit', getExistingUnitIds());
-            units.CustomUnits.push({
+        if (domain === 'props') {
+            targetArray.push({
                 UnitId: nextId,
-                Name: 'New Unit',
-                Description: 'A new custom unit.',
+                Name: `New ${prefix}`,
+                Description: `A decorative ${prefix.toLowerCase()} prop.`,
+                PathingType: defaultPathing
+            });
+        } else if (domain === 'resources') {
+            targetArray.push({
+                UnitId: nextId,
+                Name: `New ${prefix}`,
+                Description: `Harvestable ${prefix.toLowerCase()} deposit.`,
+                MaxCapacity: 2000.0,
+                HarvestRate: 10.0,
+                GrowthRate: 0.0,
+                MaxWorkers: 5,
+                PathingType: defaultPathing
+            });
+        } else {
+            targetArray.push({
+                UnitId: nextId,
+                Name: `New ${prefix}`,
+                Description: `A new ${prefix.toLowerCase()} entity.`,
                 MaxHp: 100.0,
                 Damage: 10.0,
                 Range: 2.0,
@@ -2608,12 +2759,13 @@
                 ProductionTime: 10.0,
                 PopCost: 1,
                 AttackType: 'melee',
-                ArmorType: 'light',
+                ArmorType: defaultArmor,
                 GoldBounty: 10.0,
-                PathingType: 8
+                PathingType: defaultPathing
             });
         }
-        renderUnitList();
+
+        selectUnit(nextId);
         saveChanges();
     });
 
@@ -2636,29 +2788,6 @@
         renderCustomWeapons();
     });
 
-    addCustomWeapon5Btn.addEventListener('click', () => {
-        if (isLocked) return;
-        pushToUndoStack();
-        if (!units.CustomWeapons) {
-            units.CustomWeapons = [];
-        }
-        const list = units.CustomWeapons;
-        for (let i = 0; i < 5; i++) {
-            const nextId = generateNextId('Weapon', new Set(list.map(w => w.WeaponId)));
-            list.push({
-                WeaponId: nextId,
-                Name: 'New Weapon',
-                Damage: 10,
-                Range: 2.0,
-                AttackCooldown: 1.5,
-                AttackType: 'melee'
-            });
-        }
-        units.CustomWeapons = list;
-        saveChanges();
-        renderCustomWeapons();
-    });
-
     addCustomAbilityBtn.addEventListener('click', () => {
         if (!units.CustomAbilities) {
             units.CustomAbilities = [];
@@ -2671,27 +2800,6 @@
             Description: 'A new spell effect.',
             AbilityType: 'target_spell'
         });
-        units.CustomAbilities = list;
-        saveChanges();
-        renderCustomAbilities();
-    });
-
-    addCustomAbility5Btn.addEventListener('click', () => {
-        if (isLocked) return;
-        pushToUndoStack();
-        if (!units.CustomAbilities) {
-            units.CustomAbilities = [];
-        }
-        const list = units.CustomAbilities;
-        for (let i = 0; i < 5; i++) {
-            const nextId = generateNextId('Ability', new Set(list.map(a => a.AbilityId)));
-            list.push({
-                AbilityId: nextId,
-                Name: 'New Ability',
-                Description: 'A new spell effect.',
-                AbilityType: 'target_spell'
-            });
-        }
         units.CustomAbilities = list;
         saveChanges();
         renderCustomAbilities();
@@ -2713,26 +2821,6 @@
         renderCustomUpgrades();
     });
 
-    addCustomUpgrade5Btn.addEventListener('click', () => {
-        if (isLocked) return;
-        pushToUndoStack();
-        if (!units.CustomUpgrades) {
-            units.CustomUpgrades = [];
-        }
-        const list = units.CustomUpgrades;
-        for (let i = 0; i < 5; i++) {
-            const nextId = generateNextId('Upgrade', new Set(list.map(u => u.UpgradeId)));
-            list.push({
-                UpgradeId: nextId,
-                Name: 'New Upgrade',
-                Description: 'Increases unit stats.'
-            });
-        }
-        units.CustomUpgrades = list;
-        saveChanges();
-        renderCustomUpgrades();
-    });
-
     addCustomItemBtn.addEventListener('click', () => {
         if (!units.CustomItems) {
             units.CustomItems = [];
@@ -2745,27 +2833,6 @@
             Description: 'A custom inventory item.',
             ItemClass: 'consumable'
         });
-        units.CustomItems = list;
-        saveChanges();
-        renderCustomItems();
-    });
-
-    addCustomItem5Btn.addEventListener('click', () => {
-        if (isLocked) return;
-        pushToUndoStack();
-        if (!units.CustomItems) {
-            units.CustomItems = [];
-        }
-        const list = units.CustomItems;
-        for (let i = 0; i < 5; i++) {
-            const nextId = generateNextId('Item', new Set(list.map(i => i.ItemId)));
-            list.push({
-                ItemId: nextId,
-                Name: 'New Item',
-                Description: 'A custom inventory item.',
-                ItemClass: 'consumable'
-            });
-        }
         units.CustomItems = list;
         saveChanges();
         renderCustomItems();
@@ -3592,16 +3659,19 @@
             lines.push('  },');
         }
         
-        // 2. CustomUnits
-        const unitsList = (data.CustomUnits && Array.isArray(data.CustomUnits)) ? data.CustomUnits : [];
-        const sortedUnits = [...unitsList].sort((a, b) => (a.UnitId || '').localeCompare(b.UnitId || ''));
-        lines.push('  "CustomUnits": [');
-        sortedUnits.forEach((u, uIdx) => {
-            const sortedU = sortObjectKeys(u);
-            const uLine = `    ${JSON.stringify(sortedU)}${uIdx === sortedUnits.length - 1 ? '' : ','}`;
-            lines.push(uLine);
+        // CustomUnits, CustomBuildings, CustomResources, CustomProps
+        const entityArrays = ['CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps'];
+        entityArrays.forEach(arrKey => {
+            const list = (data[arrKey] && Array.isArray(data[arrKey])) ? data[arrKey] : [];
+            const sorted = [...list].sort((a, b) => (a.UnitId || '').localeCompare(b.UnitId || ''));
+            lines.push(`  "${arrKey}": [`);
+            sorted.forEach((u, uIdx) => {
+                const sortedU = sortObjectKeys(u);
+                const uLine = `    ${JSON.stringify(sortedU)}${uIdx === sorted.length - 1 ? '' : ','}`;
+                lines.push(uLine);
+            });
+            lines.push('  ],');
         });
-        lines.push('  ],');
 
         // 3. CustomAbilities
         const abisList = (data.CustomAbilities && Array.isArray(data.CustomAbilities)) ? data.CustomAbilities : [];
@@ -3960,11 +4030,11 @@
                             html += `<span style="font-family: monospace;">${escapeHtml(itemKey)}</span>`;
                             html += `<div style="display: flex; gap: 6px; align-items: center;">`;
                             html += `<select class="select-migrate-target" style="background: rgba(0,0,0,0.4); color: #ccc; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; font-size: 11px; padding: 1px 4px;">`;
-                            ['character', 'building', 'environment', 'props'].forEach(sc => {
+                            ['units', 'buildings', 'resources', 'props'].forEach(sc => {
                                 html += `<option value="glb:${sc}" ${sc === subCat ? 'selected' : ''}>Model: ${sc}</option>`;
                             });
                             html += `</select>`;
-                            html += `<button type="button" class="btn small-btn btn-migrate-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" title="Migrate Asset Type" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">🔄 Move</button>`;
+                            html += `<button type="button" class="btn small-btn btn-migrate-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" title="Change Default Category" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">🔄 Move</button>`;
                             html += `<button type="button" class="btn small-btn btn-preview-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" data-path="${escapeHtml(relAssetPath)}" title="Preview asset" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">👁️ Preview</button>`;
                             html += `<button type="button" class="btn small-btn btn-delete-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" title="Remove asset" style="color: #f44336; background: transparent; border: none; cursor: pointer; font-weight: bold; font-size: 14px; padding: 0 4px;">✕</button>`;
                             html += `</div></div>`;

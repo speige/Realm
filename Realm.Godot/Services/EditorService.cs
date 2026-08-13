@@ -3,6 +3,7 @@ using Realm.Ecs.Services;
 using Godot;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
+using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Terrain;
 using Realm.Godot.Utils;
 using System;
@@ -1480,6 +1481,33 @@ public class EditorService
 			}
 		}
 
+		if (EcsWorldAccessor.Current != null)
+		{
+			var propQuery = Realm.Ecs.Common.QueryCache.AllPropIdentityAndPositionQuery;
+			var world = EcsWorldAccessor.Current;
+			world.Query(in propQuery, (Arch.Core.Entity entity, ref PropIdentity propIdComp, ref Position posComp) =>
+			{
+				if (GameHost.EntityToProp3D.ContainsKey(entity)) return;
+
+				Vector3 worldPos = new Vector3(posComp.Value.X, posComp.Value.Y, posComp.Value.Z);
+				if (worldPos.X >= minWorldX && worldPos.X <= maxWorldX && worldPos.Z >= minWorldZ && worldPos.Z <= maxWorldZ)
+				{
+					float rotY = world.Has<RotationY>(entity) ? world.Get<RotationY>(entity).Value : 0f;
+					float scale = world.Has<ModelScale>(entity) ? world.Get<ModelScale>(entity).Value : 1f;
+
+					entities.Add(new CopiedEntityInfo
+					{
+						Type = "prop",
+						Id = propIdComp.PropId,
+						RelativePos = worldPos - origin,
+						Rotation = rotY,
+						Scale = scale,
+						IsEnemy = false
+					});
+				}
+			});
+		}
+
 		return entities;
 	}
 
@@ -1767,6 +1795,31 @@ public class EditorService
 					{
 						result.NodesToDelete.Add(n3d);
 					}
+				}
+			}
+
+			if (EcsWorldAccessor.Current != null)
+			{
+				var world = EcsWorldAccessor.Current;
+				var staticPropsToDestroy = new List<(Arch.Core.Entity Entity, string PropId)>();
+				var propQuery = Realm.Ecs.Common.QueryCache.AllPropIdentityAndPositionQuery;
+				world.Query(in propQuery, (Arch.Core.Entity entity, ref PropIdentity propIdComp, ref Position posComp) =>
+				{
+					if (GameHost.EntityToProp3D.ContainsKey(entity)) return;
+					Vector3 wPos = new Vector3(posComp.Value.X, posComp.Value.Y, posComp.Value.Z);
+					if (wPos.X >= minWorldX && wPos.X <= maxWorldX && wPos.Z >= minWorldZ && wPos.Z <= maxWorldZ)
+					{
+						staticPropsToDestroy.Add((entity, propIdComp.PropId));
+					}
+				});
+
+				foreach (var sp in staticPropsToDestroy)
+				{
+					if (world.IsAlive(sp.Entity))
+					{
+						world.Destroy(sp.Entity);
+					}
+					PropMultiMeshManager.Instance?.MarkDirty(sp.PropId);
 				}
 			}
 		}

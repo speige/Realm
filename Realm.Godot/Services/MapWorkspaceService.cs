@@ -331,7 +331,7 @@ public static class MapWorkspaceService
 
 	public static void EnsureSolutionFile(string directory, string mapName)
 	{
-		string slnPath = Path.Combine(directory, "temp_map_workspace.sln");
+		string slnPath = Path.Combine(directory, "temp_map_workspace.slnx");
 		if (!File.Exists(slnPath))
 		{
 			try

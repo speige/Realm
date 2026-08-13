@@ -599,6 +599,12 @@ public partial class GameHost : Node3D, IGameAPI
 		public string ArmorType { get; set; }
 		public float GoldBounty { get; set; }
 		public string ModelPath { get; set; }
+		public string PortraitModelPath { get; set; }
+		public float YOffset { get; set; }
+		public float CollisionCircle { get; set; }
+		public float Brightness { get; set; }
+		public string Tint { get; set; }
+		public bool RecalculateNormals { get; set; }
 		public string[]? BuildOptions { get; set; }
 		public bool IsHero { get; set; }
 		public string[]? Abilities { get; set; }
@@ -606,6 +612,40 @@ public partial class GameHost : Node3D, IGameAPI
 		public string[]? PathingCapabilities { get; set; }
 		public int PathingType { get; set; }
 		public float? ObstacleRadius { get; set; }
+	}
+
+	public struct PropMetadata
+	{
+		public string UnitId { get; set; }
+		public string Name { get; set; }
+		public string Description { get; set; }
+		public string ModelPath { get; set; }
+		public string PortraitModelPath { get; set; }
+		public float YOffset { get; set; }
+		public float CollisionCircle { get; set; }
+		public float Brightness { get; set; }
+		public string Tint { get; set; }
+		public bool RecalculateNormals { get; set; }
+		public int PathingType { get; set; }
+	}
+
+	public struct ResourceMetadata
+	{
+		public string UnitId { get; set; }
+		public string Name { get; set; }
+		public string Description { get; set; }
+		public string ModelPath { get; set; }
+		public string PortraitModelPath { get; set; }
+		public float MaxCapacity { get; set; }
+		public float HarvestRate { get; set; }
+		public float GrowthRate { get; set; }
+		public int MaxWorkers { get; set; }
+		public float YOffset { get; set; }
+		public float CollisionCircle { get; set; }
+		public float Brightness { get; set; }
+		public string Tint { get; set; }
+		public bool RecalculateNormals { get; set; }
+		public int PathingType { get; set; }
 	}
 
 	public static int GetUnitPathingFlags(UnitMetadata meta)
@@ -678,6 +718,8 @@ public partial class GameHost : Node3D, IGameAPI
 
 
 	public static readonly Dictionary<string, UnitMetadata> UnitRegistry = new();
+	public static readonly Dictionary<string, PropMetadata> PropRegistry = new();
+	public static readonly Dictionary<string, ResourceMetadata> ResourceRegistry = new();
 
 	public string GetFallbackModelPath(string unitId, bool isBuilding)
 	{
@@ -897,7 +939,8 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 		bool actualIsEnemy = NetworkService.ArePeersEnemies(_localPeerId, ownerPeerId);
 		
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : _unitSpawnService.GetFallbackModelPath(unitTypeId, meta.Speed == 0f);
+		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitTypeId;
+		string modelPath = _unitSpawnService.GetFallbackModelPath(targetModel, meta.Speed == 0f);
 
 		string name = actualIsEnemy ? _unitSpawnService.GetEnemyUnitName(unitTypeId, meta.Name) : meta.Name;
 
@@ -2528,8 +2571,12 @@ public class {mapName} : IMapScript
 		}
 	};
 
-	private void LoadUnitMetadata(string mapName)
+	public void LoadUnitMetadata(string mapName = null)
 	{
+		if (string.IsNullOrEmpty(mapName))
+		{
+			mapName = !string.IsNullOrEmpty(ActiveMapName) ? ActiveMapName : "temp_map_workspace";
+		}
 		ActiveMapName = mapName;
 		LocalizationManager.CurrentMapName = mapName;
 		LocalizationManager.SetupTranslations();
@@ -2550,6 +2597,10 @@ public class {mapName} : IMapScript
 		}
 
 		UnitRegistry.Clear();
+		PropRegistry.Clear();
+		ResourceRegistry.Clear();
+		Prop3D.ClearModelPathCache();
+
 		if (!string.IsNullOrEmpty(jsonText))
 		{
 			try
@@ -2557,28 +2608,80 @@ public class {mapName} : IMapScript
 				using var doc = System.Text.Json.JsonDocument.Parse(jsonText);
 				if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
 				{
+					bool hasStructuredArrays = false;
+
 					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
 					{
-						var customUnitsList = JsonSerializer.Deserialize<List<UnitMetadata>>(unitsProp.GetRawText(), Options);
-						if (customUnitsList != null && customUnitsList.Count > 0)
+						hasStructuredArrays = true;
+						var list = JsonSerializer.Deserialize<List<UnitMetadata>>(unitsProp.GetRawText(), Options);
+						if (list != null)
 						{
-							foreach (var meta in customUnitsList)
+							foreach (var meta in list)
+							{
+								if (!string.IsNullOrEmpty(meta.UnitId))
+									UnitRegistry[meta.UnitId] = meta;
+							}
+						}
+					}
+
+					if (doc.RootElement.TryGetProperty("CustomBuildings", out var bldProp) && bldProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					{
+						hasStructuredArrays = true;
+						var list = JsonSerializer.Deserialize<List<UnitMetadata>>(bldProp.GetRawText(), Options);
+						if (list != null)
+						{
+							foreach (var meta in list)
+							{
+								if (!string.IsNullOrEmpty(meta.UnitId))
+									UnitRegistry[meta.UnitId] = meta;
+							}
+						}
+					}
+
+					if (doc.RootElement.TryGetProperty("CustomResources", out var resProp) && resProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					{
+						hasStructuredArrays = true;
+						var list = JsonSerializer.Deserialize<List<ResourceMetadata>>(resProp.GetRawText(), Options);
+						if (list != null)
+						{
+							foreach (var meta in list)
 							{
 								if (!string.IsNullOrEmpty(meta.UnitId))
 								{
-									UnitRegistry[meta.UnitId] = meta;
+									var copy = meta;
+									if (copy.PathingType == 0) copy.PathingType = 255;
+									ResourceRegistry[copy.UnitId] = copy;
 								}
 							}
-							return;
 						}
 					}
+
+					if (doc.RootElement.TryGetProperty("CustomProps", out var propProp) && propProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					{
+						hasStructuredArrays = true;
+						var list = JsonSerializer.Deserialize<List<PropMetadata>>(propProp.GetRawText(), Options);
+						if (list != null)
+						{
+							foreach (var meta in list)
+							{
+								if (!string.IsNullOrEmpty(meta.UnitId))
+								{
+									var copy = meta;
+									if (copy.PathingType == 0) copy.PathingType = 255;
+									PropRegistry[copy.UnitId] = copy;
+								}
+							}
+						}
+					}
+
+					if (hasStructuredArrays) return;
 
 					var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
 					if (loadedRegistry != null)
 					{
 						var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 						{
-							"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades", "CustomItems", "CustomUnits", "Assets"
+							"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades", "CustomItems", "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps", "Assets"
 						};
 						foreach (var kvp in loadedRegistry)
 						{

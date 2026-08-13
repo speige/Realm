@@ -34,7 +34,7 @@ public class MapEditorHUDViewModel
 	public float ClumpScale { get; set; } = 0.3f;
 	public float ClumpScaleVar { get => ClumpScale; set => ClumpScale = value; }
 
-	public string CurrentCategory { get; set; } = "Characters";
+	public string CurrentCategory { get; set; } = "Units";
 	public List<string> CategoryFiles { get; } = new();
 	public int SelectedCategoryItemIndex { get; set; } = -1;
 

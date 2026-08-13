@@ -2,7 +2,7 @@ namespace Realm.Maps;
 
 using Realm.MapAPI;
 
-public class MapScript : IWasmModule
+public class CustomMap : IWasmModule
 {
     public void Initialize(IGameAPI api)
     {
