@@ -8,6 +8,13 @@ using System.Collections.Generic;
 public partial class EditableTerrain : StaticBody3D
 {
 	public const uint TerrainCollisionLayer = 2;
+	public static EditableTerrain Instance { get; private set; }
+	public static bool IsMinimapRendering { get; set; } = false;
+
+	public override void _ExitTree()
+	{
+		if (Instance == this) Instance = null;
+	}
 
 	public EditableTerrain()
 	{
@@ -462,6 +469,13 @@ public partial class EditableTerrain : StaticBody3D
 		public MeshInstance3D MeshInstance;
 		public CollisionShape3D CollisionShape;
 		public ArrayMesh ArrayMesh;
+		public ArrayMesh ShallowWaterArrayMesh;
+		public MeshInstance3D ShallowWaterMesh;
+		public ArrayMesh DeepWaterArrayMesh;
+		public MeshInstance3D DeepWaterMesh;
+		public Aabb WorldAabb;
+		public float MinY;
+		public float MaxY;
 		public int StartX;
 		public int StartZ;
 		public int EndX;
@@ -478,14 +492,12 @@ public partial class EditableTerrain : StaticBody3D
 	
 	private List<TerrainChunk> _chunks = new List<TerrainChunk>();
 	private ShaderMaterial _material;
-	private MeshInstance3D _shallowWaterMesh;
-	private MeshInstance3D _deepWaterMesh;
 	private ShaderMaterial _shallowWaterMaterial;
 	private ShaderMaterial _deepWaterMaterial;
 
 	private void CreateWater()
 	{
-		if (_shallowWaterMesh != null && _deepWaterMesh != null) return;
+		if (_shallowWaterMaterial != null && _deepWaterMaterial != null) return;
 
 		var waterShader = new Shader();
 		waterShader.Code = @"
@@ -593,15 +605,11 @@ void fragment() {
 		_deepWaterMaterial.SetShaderParameter("deep_color", new Color(0.005f, 0.03f, 0.12f, 0.99f));
 		_deepWaterMaterial.SetShaderParameter("max_depth", 1.5f);
 
-		_shallowWaterMesh = new MeshInstance3D();
-		_shallowWaterMesh.Name = "ShallowWaterMesh";
-		_shallowWaterMesh.MaterialOverride = _shallowWaterMaterial;
-		AddChild(_shallowWaterMesh);
-
-		_deepWaterMesh = new MeshInstance3D();
-		_deepWaterMesh.Name = "DeepWaterMesh";
-		_deepWaterMesh.MaterialOverride = _deepWaterMaterial;
-		AddChild(_deepWaterMesh);
+		foreach (var chunk in _chunks)
+		{
+			if (chunk.ShallowWaterMesh != null) chunk.ShallowWaterMesh.MaterialOverride = _shallowWaterMaterial;
+			if (chunk.DeepWaterMesh != null) chunk.DeepWaterMesh.MaterialOverride = _deepWaterMaterial;
+		}
 
 		RegenerateWaterMesh();
 	}
@@ -646,8 +654,6 @@ void fragment() {
 
 	public void RegenerateWaterMesh()
 	{
-		if (_shallowWaterMesh == null || _deepWaterMesh == null) return;
-
 		var cells = Cells;
 		if (cells == null) return;
 
@@ -657,142 +663,163 @@ void fragment() {
 		float halfWQuadSize = (w / 2.0f) * quadSize;
 		float halfDQuadSize = (d / 2.0f) * quadSize;
 
-		List<Vector3> shallowVerts = new();
-		List<Vector3> shallowNorms = new();
-		List<Vector2> shallowUVs = new();
-		List<int> shallowIndices = new();
-
-		List<Vector3> deepVerts = new();
-		List<Vector3> deepNorms = new();
-		List<Vector2> deepUVs = new();
-		List<int> deepIndices = new();
-
-		for (int z = 0; z < d; z++)
+		foreach (var chunk in _chunks)
 		{
-			for (int x = 0; x < w; x++)
+			if (chunk.ShallowWaterMesh == null)
 			{
-				var (waterY1, activeWaterMode1) = GetCellWaterInfo(x, z, cells, w, d);
-				if (activeWaterMode1 == WaterType.None) continue;
+				chunk.ShallowWaterArrayMesh = new ArrayMesh();
+				chunk.ShallowWaterMesh = new MeshInstance3D();
+				chunk.ShallowWaterMesh.Name = $"ShallowWaterChunk_{chunk.StartX}_{chunk.StartZ}";
+				chunk.ShallowWaterMesh.Mesh = chunk.ShallowWaterArrayMesh;
+				if (_shallowWaterMaterial != null) chunk.ShallowWaterMesh.MaterialOverride = _shallowWaterMaterial;
+				AddChild(chunk.ShallowWaterMesh);
+			}
 
-				Vector3 nw = new Vector3(x * quadSize - halfWQuadSize, waterY1, z * quadSize - halfDQuadSize);
-				Vector3 ne = new Vector3((x + 1) * quadSize - halfWQuadSize, waterY1, z * quadSize - halfDQuadSize);
-				Vector3 se = new Vector3((x + 1) * quadSize - halfWQuadSize, waterY1, (z + 1) * quadSize - halfDQuadSize);
-				Vector3 sw = new Vector3(x * quadSize - halfWQuadSize, waterY1, (z + 1) * quadSize - halfDQuadSize);
+			if (chunk.DeepWaterMesh == null)
+			{
+				chunk.DeepWaterArrayMesh = new ArrayMesh();
+				chunk.DeepWaterMesh = new MeshInstance3D();
+				chunk.DeepWaterMesh.Name = $"DeepWaterChunk_{chunk.StartX}_{chunk.StartZ}";
+				chunk.DeepWaterMesh.Mesh = chunk.DeepWaterArrayMesh;
+				if (_deepWaterMaterial != null) chunk.DeepWaterMesh.MaterialOverride = _deepWaterMaterial;
+				AddChild(chunk.DeepWaterMesh);
+			}
 
-				bool isShallow1 = (activeWaterMode1 == WaterType.Shallow);
-				var targetVerts = isShallow1 ? shallowVerts : deepVerts;
-				var targetNorms = isShallow1 ? shallowNorms : deepNorms;
-				var targetUVs = isShallow1 ? shallowUVs : deepUVs;
-				var targetIndices = isShallow1 ? shallowIndices : deepIndices;
+			List<Vector3> shallowVerts = new();
+			List<Vector3> shallowNorms = new();
+			List<Vector2> shallowUVs = new();
+			List<int> shallowIndices = new();
 
-				int baseIdx = targetVerts.Count;
+			List<Vector3> deepVerts = new();
+			List<Vector3> deepNorms = new();
+			List<Vector2> deepUVs = new();
+			List<int> deepIndices = new();
 
-				targetVerts.Add(nw);
-				targetVerts.Add(ne);
-				targetVerts.Add(se);
-				targetVerts.Add(sw);
-
-				Vector3 normal = Vector3.Up;
-				targetNorms.Add(normal);
-				targetNorms.Add(normal);
-				targetNorms.Add(normal);
-				targetNorms.Add(normal);
-
-				targetUVs.Add(new Vector2(0, 0));
-				targetUVs.Add(new Vector2(1, 0));
-				targetUVs.Add(new Vector2(1, 1));
-				targetUVs.Add(new Vector2(0, 1));
-
-				targetIndices.Add(baseIdx + 0);
-				targetIndices.Add(baseIdx + 1);
-				targetIndices.Add(baseIdx + 2);
-
-				targetIndices.Add(baseIdx + 0);
-				targetIndices.Add(baseIdx + 2);
-				targetIndices.Add(baseIdx + 3);
-
-				// Build water ramp wall quads along boundaries between water cells of differing height levels
-				if (x + 1 < w)
+			for (int z = chunk.StartZ; z < chunk.EndZ; z++)
+			{
+				for (int x = chunk.StartX; x < chunk.EndX; x++)
 				{
-					var (waterY2, activeWaterMode2) = GetCellWaterInfo(x + 1, z, cells, w, d);
-					if (activeWaterMode2 != WaterType.None && MathF.Abs(waterY1 - waterY2) > 0.01f)
+					var (waterY1, activeWaterMode1) = GetCellWaterInfo(x, z, cells, w, d);
+					if (activeWaterMode1 == WaterType.None) continue;
+
+					Vector3 nw = new Vector3(x * quadSize - halfWQuadSize, waterY1, z * quadSize - halfDQuadSize);
+					Vector3 ne = new Vector3((x + 1) * quadSize - halfWQuadSize, waterY1, z * quadSize - halfDQuadSize);
+					Vector3 se = new Vector3((x + 1) * quadSize - halfWQuadSize, waterY1, (z + 1) * quadSize - halfDQuadSize);
+					Vector3 sw = new Vector3(x * quadSize - halfWQuadSize, waterY1, (z + 1) * quadSize - halfDQuadSize);
+
+					bool isShallow1 = (activeWaterMode1 == WaterType.Shallow);
+					var targetVerts = isShallow1 ? shallowVerts : deepVerts;
+					var targetNorms = isShallow1 ? shallowNorms : deepNorms;
+					var targetUVs = isShallow1 ? shallowUVs : deepUVs;
+					var targetIndices = isShallow1 ? shallowIndices : deepIndices;
+
+					int baseIdx = targetVerts.Count;
+
+					targetVerts.Add(nw);
+					targetVerts.Add(ne);
+					targetVerts.Add(se);
+					targetVerts.Add(sw);
+
+					Vector3 normal = Vector3.Up;
+					targetNorms.Add(normal);
+					targetNorms.Add(normal);
+					targetNorms.Add(normal);
+					targetNorms.Add(normal);
+
+					targetUVs.Add(new Vector2(0, 0));
+					targetUVs.Add(new Vector2(1, 0));
+					targetUVs.Add(new Vector2(1, 1));
+					targetUVs.Add(new Vector2(0, 1));
+
+					targetIndices.Add(baseIdx + 0);
+					targetIndices.Add(baseIdx + 1);
+					targetIndices.Add(baseIdx + 2);
+
+					targetIndices.Add(baseIdx + 0);
+					targetIndices.Add(baseIdx + 2);
+					targetIndices.Add(baseIdx + 3);
+
+					// Build water ramp wall quads along boundaries between water cells of differing height levels
+					if (x + 1 < w)
 					{
-						float yMin = MathF.Min(waterY1, waterY2);
-						float yMax = MathF.Max(waterY1, waterY2);
-						float wallX = (x + 1) * quadSize - halfWQuadSize;
-						float z0 = z * quadSize - halfDQuadSize;
-						float z1 = (z + 1) * quadSize - halfDQuadSize;
+						var (waterY2, activeWaterMode2) = GetCellWaterInfo(x + 1, z, cells, w, d);
+						if (activeWaterMode2 != WaterType.None && MathF.Abs(waterY1 - waterY2) > 0.01f)
+						{
+							float yMin = MathF.Min(waterY1, waterY2);
+							float yMax = MathF.Max(waterY1, waterY2);
+							float wallX = (x + 1) * quadSize - halfWQuadSize;
+							float z0 = z * quadSize - halfDQuadSize;
+							float z1 = (z + 1) * quadSize - halfDQuadSize;
 
-						bool wallShallow = isShallow1 || (activeWaterMode2 == WaterType.Shallow);
-						var wVerts = wallShallow ? shallowVerts : deepVerts;
-						var wNorms = wallShallow ? shallowNorms : deepNorms;
-						var wUVs = wallShallow ? shallowUVs : deepUVs;
-						var wIndices = wallShallow ? shallowIndices : deepIndices;
+							bool wallShallow = isShallow1 || (activeWaterMode2 == WaterType.Shallow);
+							var wVerts = wallShallow ? shallowVerts : deepVerts;
+							var wNorms = wallShallow ? shallowNorms : deepNorms;
+							var wUVs = wallShallow ? shallowUVs : deepUVs;
+							var wIndices = wallShallow ? shallowIndices : deepIndices;
 
-						int wBase = wVerts.Count;
-						wVerts.Add(new Vector3(wallX, yMin, z0));
-						wVerts.Add(new Vector3(wallX, yMin, z1));
-						wVerts.Add(new Vector3(wallX, yMax, z1));
-						wVerts.Add(new Vector3(wallX, yMax, z0));
+							int wBase = wVerts.Count;
+							wVerts.Add(new Vector3(wallX, yMin, z0));
+							wVerts.Add(new Vector3(wallX, yMin, z1));
+							wVerts.Add(new Vector3(wallX, yMax, z1));
+							wVerts.Add(new Vector3(wallX, yMax, z0));
 
-						Vector3 wallNorm = (waterY1 > waterY2) ? Vector3.Right : Vector3.Left;
-						wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm);
-						wUVs.Add(new Vector2(0, 0)); wUVs.Add(new Vector2(1, 0)); wUVs.Add(new Vector2(1, 1)); wUVs.Add(new Vector2(0, 1));
+							Vector3 wallNorm = (waterY1 > waterY2) ? Vector3.Right : Vector3.Left;
+							wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm);
+							wUVs.Add(new Vector2(0, 0)); wUVs.Add(new Vector2(1, 0)); wUVs.Add(new Vector2(1, 1)); wUVs.Add(new Vector2(0, 1));
 
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 1); wIndices.Add(wBase + 2);
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 3);
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 1);
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 3); wIndices.Add(wBase + 2);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 1); wIndices.Add(wBase + 2);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 3);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 1);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 3); wIndices.Add(wBase + 2);
+						}
 					}
-				}
 
-				if (z + 1 < d)
-				{
-					var (waterY2, activeWaterMode2) = GetCellWaterInfo(x, z + 1, cells, w, d);
-					if (activeWaterMode2 != WaterType.None && MathF.Abs(waterY1 - waterY2) > 0.01f)
+					if (z + 1 < d)
 					{
-						float yMin = MathF.Min(waterY1, waterY2);
-						float yMax = MathF.Max(waterY1, waterY2);
-						float wallZ = (z + 1) * quadSize - halfDQuadSize;
-						float x0 = x * quadSize - halfWQuadSize;
-						float x1 = (x + 1) * quadSize - halfWQuadSize;
+						var (waterY2, activeWaterMode2) = GetCellWaterInfo(x, z + 1, cells, w, d);
+						if (activeWaterMode2 != WaterType.None && MathF.Abs(waterY1 - waterY2) > 0.01f)
+						{
+							float yMin = MathF.Min(waterY1, waterY2);
+							float yMax = MathF.Max(waterY1, waterY2);
+							float wallZ = (z + 1) * quadSize - halfDQuadSize;
+							float x0 = x * quadSize - halfWQuadSize;
+							float x1 = (x + 1) * quadSize - halfWQuadSize;
 
-						bool wallShallow = isShallow1 || (activeWaterMode2 == WaterType.Shallow);
-						var wVerts = wallShallow ? shallowVerts : deepVerts;
-						var wNorms = wallShallow ? shallowNorms : deepNorms;
-						var wUVs = wallShallow ? shallowUVs : deepUVs;
-						var wIndices = wallShallow ? shallowIndices : deepIndices;
+							bool wallShallow = isShallow1 || (activeWaterMode2 == WaterType.Shallow);
+							var wVerts = wallShallow ? shallowVerts : deepVerts;
+							var wNorms = wallShallow ? shallowNorms : deepNorms;
+							var wUVs = wallShallow ? shallowUVs : deepUVs;
+							var wIndices = wallShallow ? shallowIndices : deepIndices;
 
-						int wBase = wVerts.Count;
-						wVerts.Add(new Vector3(x0, yMin, wallZ));
-						wVerts.Add(new Vector3(x1, yMin, wallZ));
-						wVerts.Add(new Vector3(x1, yMax, wallZ));
-						wVerts.Add(new Vector3(x0, yMax, wallZ));
+							int wBase = wVerts.Count;
+							wVerts.Add(new Vector3(x0, yMin, wallZ));
+							wVerts.Add(new Vector3(x1, yMin, wallZ));
+							wVerts.Add(new Vector3(x1, yMax, wallZ));
+							wVerts.Add(new Vector3(x0, yMax, wallZ));
 
-						Vector3 wallNorm = (waterY1 > waterY2) ? Vector3.Back : Vector3.Forward;
-						wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm);
-						wUVs.Add(new Vector2(0, 0)); wUVs.Add(new Vector2(1, 0)); wUVs.Add(new Vector2(1, 1)); wUVs.Add(new Vector2(0, 1));
+							Vector3 wallNorm = (waterY1 > waterY2) ? Vector3.Back : Vector3.Forward;
+							wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm);
+							wUVs.Add(new Vector2(0, 0)); wUVs.Add(new Vector2(1, 0)); wUVs.Add(new Vector2(1, 1)); wUVs.Add(new Vector2(0, 1));
 
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 1); wIndices.Add(wBase + 2);
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 3);
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 1);
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 3); wIndices.Add(wBase + 2);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 1); wIndices.Add(wBase + 2);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 3);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 1);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 3); wIndices.Add(wBase + 2);
+						}
 					}
 				}
 			}
-		}
 
-		UpdateSingleWaterMesh(_shallowWaterMesh, shallowVerts, shallowNorms, shallowUVs, shallowIndices);
-		UpdateSingleWaterMesh(_deepWaterMesh, deepVerts, deepNorms, deepUVs, deepIndices);
+			UpdateSingleWaterMesh(chunk.ShallowWaterMesh, chunk.ShallowWaterArrayMesh, shallowVerts, shallowNorms, shallowUVs, shallowIndices);
+			UpdateSingleWaterMesh(chunk.DeepWaterMesh, chunk.DeepWaterArrayMesh, deepVerts, deepNorms, deepUVs, deepIndices);
+		}
 	}
 
-	private void UpdateSingleWaterMesh(MeshInstance3D meshInstance, List<Vector3> verts, List<Vector3> norms, List<Vector2> uvs, List<int> indices)
+	private void UpdateSingleWaterMesh(MeshInstance3D meshInstance, ArrayMesh arrayMesh, List<Vector3> verts, List<Vector3> norms, List<Vector2> uvs, List<int> indices)
 	{
-		if (verts.Count == 0)
-		{
-			meshInstance.Mesh = null;
-			return;
-		}
+		if (meshInstance == null || arrayMesh == null) return;
+		arrayMesh.ClearSurfaces();
+		if (verts.Count == 0) return;
 
 		var arrays = new Godot.Collections.Array();
 		arrays.Resize((int)Mesh.ArrayType.Max);
@@ -801,9 +828,7 @@ void fragment() {
 		arrays[(int)Mesh.ArrayType.TexUV] = uvs.ToArray();
 		arrays[(int)Mesh.ArrayType.Index] = indices.ToArray();
 
-		var arrMesh = new ArrayMesh();
-		arrMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-		meshInstance.Mesh = arrMesh;
+		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
 	}
 
 	private void UpdateWaterTransform()
@@ -818,6 +843,7 @@ void fragment() {
 
 	public override void _Ready()
 	{
+		Instance = this;
 		CollisionLayer = 1U | TerrainCollisionLayer;
 		var cells = Cells;
 		if (cells == null || cells.GetLength(0) != Width || cells.GetLength(1) != Depth)
@@ -1538,6 +1564,8 @@ void fragment() {
 		{
 			if (GodotObject.IsInstanceValid(chunk.MeshInstance)) chunk.MeshInstance.QueueFree();
 			if (GodotObject.IsInstanceValid(chunk.CollisionShape)) chunk.CollisionShape.QueueFree();
+			if (GodotObject.IsInstanceValid(chunk.ShallowWaterMesh)) chunk.ShallowWaterMesh.QueueFree();
+			if (GodotObject.IsInstanceValid(chunk.DeepWaterMesh)) chunk.DeepWaterMesh.QueueFree();
 		}
 		_chunks.Clear();
 
@@ -1567,6 +1595,20 @@ void fragment() {
 				chunk.MeshInstance.Mesh = chunk.ArrayMesh;
 				chunk.MeshInstance.MaterialOverride = _material;
 				AddChild(chunk.MeshInstance);
+
+				chunk.ShallowWaterArrayMesh = new ArrayMesh();
+				chunk.ShallowWaterMesh = new MeshInstance3D();
+				chunk.ShallowWaterMesh.Name = $"ShallowWaterChunk_{x}_{z}";
+				chunk.ShallowWaterMesh.Mesh = chunk.ShallowWaterArrayMesh;
+				if (_shallowWaterMaterial != null) chunk.ShallowWaterMesh.MaterialOverride = _shallowWaterMaterial;
+				AddChild(chunk.ShallowWaterMesh);
+
+				chunk.DeepWaterArrayMesh = new ArrayMesh();
+				chunk.DeepWaterMesh = new MeshInstance3D();
+				chunk.DeepWaterMesh.Name = $"DeepWaterChunk_{x}_{z}";
+				chunk.DeepWaterMesh.Mesh = chunk.DeepWaterArrayMesh;
+				if (_deepWaterMaterial != null) chunk.DeepWaterMesh.MaterialOverride = _deepWaterMaterial;
+				AddChild(chunk.DeepWaterMesh);
 
 				chunk.CollisionShape = new CollisionShape3D();
 				chunk.CollisionShape.Name = $"TerrainCollision_{x}_{z}";
@@ -1932,10 +1974,113 @@ void fragment() {
 				(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1) | custom0Format | custom1Format));
 		}
 
+		float minY = float.MaxValue;
+		float maxY = float.MinValue;
+		for (int i = 0; i < vertexIndex; i++)
+		{
+			float y = finalVertices[i].Y;
+			if (y < minY) minY = y;
+			if (y > maxY) maxY = y;
+		}
+		if (vertexIndex == 0) { minY = -2f; maxY = 2f; }
+		chunk.MinY = minY;
+		chunk.MaxY = maxY;
+
+		float halfW = (w / 2.0f) * quadSize;
+		float halfD = (d / 2.0f) * quadSize;
+		float minX = chunk.StartX * quadSize - halfW;
+		float maxX = chunk.EndX * quadSize - halfW;
+		float minZ = chunk.StartZ * quadSize - halfD;
+		float maxZ = chunk.EndZ * quadSize - halfD;
+		chunk.WorldAabb = new Aabb(new Vector3(minX, minY - 2f, minZ), new Vector3(maxX - minX, Math.Max(0.5f, maxY - minY + 10f), maxZ - minZ));
+		chunk.MeshInstance.CustomAabb = chunk.WorldAabb;
+		if (chunk.ShallowWaterMesh != null) chunk.ShallowWaterMesh.CustomAabb = chunk.WorldAabb;
+		if (chunk.DeepWaterMesh != null) chunk.DeepWaterMesh.CustomAabb = chunk.WorldAabb;
+
 		if (rebuildPhysics)
 		{
 			UpdateChunkPhysics(chunk);
 		}
+	}
+
+	public override void _Process(double delta)
+	{
+		base._Process(delta);
+		UpdateFrustumCulling();
+	}
+
+	private void UpdateFrustumCulling()
+	{
+		if (IsMinimapRendering)
+		{
+			SetAllChunksVisible(true);
+			return;
+		}
+
+		var viewport = GetViewport();
+		if (viewport == null) return;
+		var camera = viewport.GetCamera3D();
+		if (camera == null || !GodotObject.IsInstanceValid(camera)) return;
+
+		if (camera.Projection == Camera3D.ProjectionType.Orthogonal)
+		{
+			SetAllChunksVisible(true);
+			return;
+		}
+
+		var frustum = camera.GetFrustum();
+		if (frustum == null || frustum.Count < 6) return;
+
+		foreach (var chunk in _chunks)
+		{
+			bool visible = IntersectsFrustum(frustum, chunk.WorldAabb);
+			if (GodotObject.IsInstanceValid(chunk.MeshInstance))
+			{
+				chunk.MeshInstance.Visible = visible;
+			}
+			if (GodotObject.IsInstanceValid(chunk.ShallowWaterMesh))
+			{
+				chunk.ShallowWaterMesh.Visible = visible;
+			}
+			if (GodotObject.IsInstanceValid(chunk.DeepWaterMesh))
+			{
+				chunk.DeepWaterMesh.Visible = visible;
+			}
+		}
+	}
+
+	public void SetAllChunksVisible(bool visible)
+	{
+		foreach (var chunk in _chunks)
+		{
+			if (GodotObject.IsInstanceValid(chunk.MeshInstance)) chunk.MeshInstance.Visible = visible;
+			if (GodotObject.IsInstanceValid(chunk.ShallowWaterMesh)) chunk.ShallowWaterMesh.Visible = visible;
+			if (GodotObject.IsInstanceValid(chunk.DeepWaterMesh)) chunk.DeepWaterMesh.Visible = visible;
+		}
+	}
+
+	public static bool IntersectsFrustum(Godot.Collections.Array<Plane> frustumPlanes, Aabb aabb)
+	{
+		aabb = aabb.Grow(1.0f);
+		Vector3 min = aabb.Position;
+		Vector3 max = aabb.End;
+
+		int count = frustumPlanes.Count;
+		for (int i = 0; i < count; i++)
+		{
+			Plane plane = frustumPlanes[i];
+			Vector3 n = new Vector3(
+				plane.Normal.X >= 0 ? min.X : max.X,
+				plane.Normal.Y >= 0 ? min.Y : max.Y,
+				plane.Normal.Z >= 0 ? min.Z : max.Z
+			);
+
+			if (plane.DistanceTo(n) > 0)
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private Vector3 GetWorldPosition(float gridX, float gridZ, float height, float halfWQuadSize, float halfDQuadSize, float quadSize)

@@ -503,6 +503,10 @@ public partial class GameHost
 							{
 								_inputService.SetEntityPosition(unit.Entity, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
 							}
+							else if (node3D is Prop3D prop)
+							{
+								PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
+							}
 							EditorHistoryManager.RecordAction(action);
 							EditorHasUnsavedChanges = true;
 							MapEditorHUD.Instance?.UpdateSelectedObjectInfo();

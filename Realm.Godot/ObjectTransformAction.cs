@@ -37,6 +37,10 @@ public class ObjectTransformAction : IEditorAction
 			{
 				GameHost.Instance?.SetUnitTeamExternal(unit, _beforeIsEnemy);
 			}
+			else if (_targetNode is Prop3D prop)
+			{
+				PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
+			}
 			MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 		}
 	}
@@ -51,6 +55,10 @@ public class ObjectTransformAction : IEditorAction
 			if (_targetNode is Unit3D unit)
 			{
 				GameHost.Instance?.SetUnitTeamExternal(unit, _afterIsEnemy);
+			}
+			else if (_targetNode is Prop3D prop)
+			{
+				PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
 			}
 			MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 		}

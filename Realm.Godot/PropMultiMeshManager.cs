@@ -14,11 +14,18 @@ public partial class PropMultiMeshManager : Node3D
 		public Material MaterialOverride;
 	}
 
+	private class PropChunkGroup
+	{
+		public Vector2I ChunkIndex;
+		public Aabb Bounds;
+		public List<MultiMeshInstance3D> MultiMeshNodes = new();
+	}
+
 	private class PropModelGroup
 	{
 		public string AssetKey;
 		public List<MeshSubInfo> SubMeshes = new();
-		public List<MultiMeshInstance3D> MultiMeshNodes = new();
+		public Dictionary<Vector2I, PropChunkGroup> ChunkGroups = new();
 	}
 
 	private readonly Dictionary<string, PropModelGroup> _groups = new(StringComparer.OrdinalIgnoreCase);
@@ -55,13 +62,16 @@ public partial class PropMultiMeshManager : Node3D
 	{
 		_dirtyAssetKeys.Clear();
 		_allDirty = false;
-		foreach (var kvp in _groups)
+		foreach (var group in _groups.Values)
 		{
-			foreach (var node in kvp.Value.MultiMeshNodes)
+			foreach (var chunkGroup in group.ChunkGroups.Values)
 			{
-				if (GodotObject.IsInstanceValid(node))
+				foreach (var node in chunkGroup.MultiMeshNodes)
 				{
-					node.QueueFree();
+					if (GodotObject.IsInstanceValid(node))
+					{
+						node.QueueFree();
+					}
 				}
 			}
 		}
@@ -75,16 +85,71 @@ public partial class PropMultiMeshManager : Node3D
 			RebuildAllInternal();
 			_allDirty = false;
 			_dirtyAssetKeys.Clear();
-			return;
 		}
-
-		if (_dirtyAssetKeys.Count > 0)
+		else if (_dirtyAssetKeys.Count > 0)
 		{
 			foreach (var key in _dirtyAssetKeys)
 			{
 				RebuildGroupInternal(key);
 			}
 			_dirtyAssetKeys.Clear();
+		}
+
+		UpdateFrustumCulling();
+	}
+
+	private void UpdateFrustumCulling()
+	{
+		if (EditableTerrain.IsMinimapRendering)
+		{
+			SetAllNodesVisible(true);
+			return;
+		}
+
+		var viewport = GetViewport();
+		if (viewport == null) return;
+		var camera = viewport.GetCamera3D();
+		if (camera == null || !GodotObject.IsInstanceValid(camera)) return;
+
+		if (camera.Projection == Camera3D.ProjectionType.Orthogonal)
+		{
+			SetAllNodesVisible(true);
+			return;
+		}
+
+		var frustum = camera.GetFrustum();
+		if (frustum == null || frustum.Count < 6) return;
+
+		foreach (var group in _groups.Values)
+		{
+			foreach (var chunkGroup in group.ChunkGroups.Values)
+			{
+				bool visible = EditableTerrain.IntersectsFrustum(frustum, chunkGroup.Bounds);
+				foreach (var node in chunkGroup.MultiMeshNodes)
+				{
+					if (GodotObject.IsInstanceValid(node))
+					{
+						node.Visible = visible;
+					}
+				}
+			}
+		}
+	}
+
+	public void SetAllNodesVisible(bool visible)
+	{
+		foreach (var group in _groups.Values)
+		{
+			foreach (var chunkGroup in group.ChunkGroups.Values)
+			{
+				foreach (var node in chunkGroup.MultiMeshNodes)
+				{
+					if (GodotObject.IsInstanceValid(node))
+					{
+						node.Visible = visible;
+					}
+				}
+			}
 		}
 	}
 
@@ -139,53 +204,124 @@ public partial class PropMultiMeshManager : Node3D
 			_groups[normAssetKey] = group;
 		}
 
-		int instanceCount = matchingProps.Count;
-		for (int subIdx = 0; subIdx < group.SubMeshes.Count; subIdx++)
+		float quadSize = 1.0f;
+		float halfW = 64.0f;
+		float halfD = 64.0f;
+		var terrain = GameHost.Instance.GroundTerrain;
+		if (terrain != null)
 		{
-			var subInfo = group.SubMeshes[subIdx];
-			var node = group.MultiMeshNodes[subIdx];
-			var mm = node.Multimesh;
+			quadSize = terrain.QuadSize;
+			halfW = (terrain.Width / 2.0f) * quadSize;
+			halfD = (terrain.Depth / 2.0f) * quadSize;
+		}
+		float chunkSizeUnits = 16.0f * quadSize;
 
-			if (instanceCount == 0)
+		var propsByChunk = new Dictionary<Vector2I, List<Prop3D>>();
+		foreach (var prop in matchingProps)
+		{
+			Vector3 p = prop.Position;
+			int cx = (int)Math.Floor((p.X + halfW) / chunkSizeUnits);
+			int cz = (int)Math.Floor((p.Z + halfD) / chunkSizeUnits);
+			var cKey = new Vector2I(cx, cz);
+			if (!propsByChunk.TryGetValue(cKey, out var list))
 			{
-				if (mm != null)
+				list = new List<Prop3D>();
+				propsByChunk[cKey] = list;
+			}
+			list.Add(prop);
+		}
+
+		float yOffset = GameHost.Instance.GetModelYOffset(normAssetKey);
+
+		// Hide any chunk groups that no longer have props
+		foreach (var kvp in group.ChunkGroups)
+		{
+			if (!propsByChunk.ContainsKey(kvp.Key))
+			{
+				foreach (var mmNode in kvp.Value.MultiMeshNodes)
 				{
-					mm.VisibleInstanceCount = 0;
+					if (mmNode.Multimesh != null)
+					{
+						mmNode.Multimesh.VisibleInstanceCount = 0;
+					}
+					mmNode.CustomAabb = new Aabb();
 				}
-				continue;
+			}
+		}
+
+		// Rebuild active chunk groups
+		foreach (var kvp in propsByChunk)
+		{
+			Vector2I chunkKey = kvp.Key;
+			List<Prop3D> chunkProps = kvp.Value;
+
+			if (!group.ChunkGroups.TryGetValue(chunkKey, out var chunkGroup))
+			{
+				chunkGroup = new PropChunkGroup { ChunkIndex = chunkKey };
+				group.ChunkGroups[chunkKey] = chunkGroup;
 			}
 
-			if (mm == null || mm.InstanceCount < instanceCount)
+			Vector3 minPos = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+			Vector3 maxPos = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+			int instanceCount = chunkProps.Count;
+
+			for (int subIdx = 0; subIdx < group.SubMeshes.Count; subIdx++)
 			{
-				int allocated = Math.Max(instanceCount, mm != null ? mm.InstanceCount * 2 : 16);
-				mm = new MultiMesh
+				var subInfo = group.SubMeshes[subIdx];
+				while (chunkGroup.MultiMeshNodes.Count <= subIdx)
 				{
-					TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
-					Mesh = subInfo.Mesh,
-					InstanceCount = allocated
-				};
-				node.Multimesh = mm;
-			}
-
-			mm.VisibleInstanceCount = instanceCount;
-
-			float yOffset = GameHost.Instance.GetModelYOffset(normAssetKey);
-
-			for (int i = 0; i < instanceCount; i++)
-			{
-				var prop = matchingProps[i];
-				Vector3 pos = prop.Position;
-				pos.Y += yOffset;
-
-				Transform3D propTransform = new Transform3D(prop.Transform.Basis, pos);
-
-				if (prop.PropId == "tree" || prop.PropId.Contains("tree"))
-				{
-					propTransform.Basis = propTransform.Basis.Scaled(new Vector3(3f, 3f, 3f));
+					var mmNode = new MultiMeshInstance3D();
+					mmNode.Name = $"MultiMesh_{normAssetKey}_C{chunkKey.X}_{chunkKey.Y}_{chunkGroup.MultiMeshNodes.Count}";
+					AddChild(mmNode);
+					chunkGroup.MultiMeshNodes.Add(mmNode);
 				}
 
-				Transform3D finalXform = propTransform * subInfo.RelativeTransform;
-				mm.SetInstanceTransform(i, finalXform);
+				var node = chunkGroup.MultiMeshNodes[subIdx];
+				var mm = node.Multimesh;
+
+				if (instanceCount == 0)
+				{
+					if (mm != null) mm.VisibleInstanceCount = 0;
+					node.CustomAabb = new Aabb();
+					continue;
+				}
+
+				if (mm == null || mm.InstanceCount < instanceCount)
+				{
+					int allocated = Math.Max(instanceCount, mm != null ? mm.InstanceCount * 2 : 16);
+					mm = new MultiMesh
+					{
+						TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
+						Mesh = subInfo.Mesh,
+						InstanceCount = allocated
+					};
+					node.Multimesh = mm;
+				}
+
+				mm.VisibleInstanceCount = instanceCount;
+
+				for (int i = 0; i < instanceCount; i++)
+				{
+					var prop = chunkProps[i];
+					Vector3 pos = prop.Position;
+					pos.Y += yOffset;
+					minPos = minPos.Min(pos);
+					maxPos = maxPos.Max(pos);
+
+					Transform3D propTransform = new Transform3D(prop.Transform.Basis, pos);
+					if (prop.PropId == "tree" || prop.PropId.Contains("tree"))
+					{
+						propTransform.Basis = propTransform.Basis.Scaled(new Vector3(3f, 3f, 3f));
+					}
+
+					Transform3D finalXform = propTransform * subInfo.RelativeTransform;
+					mm.SetInstanceTransform(i, finalXform);
+				}
+
+				minPos -= new Vector3(0.5f, 0.5f, 0.5f);
+				maxPos += new Vector3(0.5f, 4.0f, 0.5f);
+				chunkGroup.Bounds = new Aabb(minPos, maxPos - minPos);
+				node.CustomAabb = chunkGroup.Bounds;
 			}
 		}
 
@@ -229,12 +365,7 @@ public partial class PropMultiMeshManager : Node3D
 				subInfo.SurfaceMaterials[s] = mi.GetSurfaceOverrideMaterial(s) ?? mi.Mesh.SurfaceGetMaterial(s);
 			}
 
-			var mmNode = new MultiMeshInstance3D();
-			mmNode.Name = $"MultiMesh_{normAssetKey}_{group.SubMeshes.Count}";
-			AddChild(mmNode);
-
 			group.SubMeshes.Add(subInfo);
-			group.MultiMeshNodes.Add(mmNode);
 		}
 
 		prototype.QueueFree();
@@ -258,38 +389,41 @@ public partial class PropMultiMeshManager : Node3D
 		float multG = brightness * tint.G;
 		float multB = brightness * tint.B;
 
-		for (int i = 0; i < group.SubMeshes.Count; i++)
+		foreach (var chunkGroup in group.ChunkGroups.Values)
 		{
-			var subInfo = group.SubMeshes[i];
-			var mmNode = group.MultiMeshNodes[i];
-
-			if (generateNormals && subInfo.Mesh is ArrayMesh arrayMesh)
+			for (int i = 0; i < group.SubMeshes.Count && i < chunkGroup.MultiMeshNodes.Count; i++)
 			{
-				var toolMesh = new ArrayMesh();
-				var surfaceTool = new SurfaceTool();
-				for (int s = 0; s < arrayMesh.GetSurfaceCount(); s++)
+				var subInfo = group.SubMeshes[i];
+				var mmNode = chunkGroup.MultiMeshNodes[i];
+
+				if (generateNormals && subInfo.Mesh is ArrayMesh arrayMesh)
 				{
-					surfaceTool.CreateFrom(arrayMesh, s);
-					surfaceTool.GenerateNormals();
-					toolMesh = surfaceTool.Commit(toolMesh);
+					var toolMesh = new ArrayMesh();
+					var surfaceTool = new SurfaceTool();
+					for (int s = 0; s < arrayMesh.GetSurfaceCount(); s++)
+					{
+						surfaceTool.CreateFrom(arrayMesh, s);
+						surfaceTool.GenerateNormals();
+						toolMesh = surfaceTool.Commit(toolMesh);
+					}
+					if (mmNode.Multimesh != null)
+					{
+						mmNode.Multimesh.Mesh = toolMesh;
+					}
 				}
-				if (mmNode.Multimesh != null)
+
+				Material baseMatToUse = subInfo.MaterialOverride;
+				if (baseMatToUse == null && subInfo.SurfaceMaterials != null && subInfo.SurfaceMaterials.Length > 0)
 				{
-					mmNode.Multimesh.Mesh = toolMesh;
+					baseMatToUse = subInfo.SurfaceMaterials[0];
 				}
-			}
 
-			Material baseMatToUse = subInfo.MaterialOverride;
-			if (baseMatToUse == null && subInfo.SurfaceMaterials != null && subInfo.SurfaceMaterials.Length > 0)
-			{
-				baseMatToUse = subInfo.SurfaceMaterials[0];
-			}
-
-			if (baseMatToUse is BaseMaterial3D baseMat)
-			{
-				var dupMat = (BaseMaterial3D)baseMat.Duplicate();
-				dupMat.AlbedoColor = new Color(multR, multG, multB, dupMat.AlbedoColor.A);
-				mmNode.MaterialOverride = dupMat;
+				if (baseMatToUse is BaseMaterial3D baseMat)
+				{
+					var dupMat = (BaseMaterial3D)baseMat.Duplicate();
+					dupMat.AlbedoColor = new Color(multR, multG, multB, dupMat.AlbedoColor.A);
+					mmNode.MaterialOverride = dupMat;
+				}
 			}
 		}
 	}

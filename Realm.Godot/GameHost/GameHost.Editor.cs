@@ -719,10 +719,7 @@ public partial class GameHost
 		}
 
 		_editorService?.ResetAllState();
-		if (_selectionHighlightMesh != null)
-		{
-			_selectionHighlightMesh.Visible = false;
-		}
+		HideSelectionHighlight();
 
 		EditorHistoryManager.Clear();
 		EditorHasUnsavedChanges = false;
@@ -1313,6 +1310,7 @@ public partial class GameHost
 			{
 				SelectedEditorObject = null;
 			}
+			string propId = prop.PropId;
 			AllProps.Remove(prop);
 			EntityToProp3D.Remove(prop.Entity);
 			if (EcsWorld.IsAlive(prop.Entity))
@@ -1320,6 +1318,7 @@ public partial class GameHost
 				EcsWorld.Destroy(prop.Entity);
 			}
 			prop.QueueFree();
+			PropMultiMeshManager.Instance?.MarkDirty(propId);
 			return;
 		}
 		var decal = (node as Decal) ?? FindDecalInParentChain(node);
@@ -1370,11 +1369,13 @@ public partial class GameHost
 		if (prop != null && GodotObject.IsInstanceValid(prop))
 		{
 			if (prop == _selectedEditorObject || FindProp3DInParentChain(_selectedEditorObject) == prop) SelectedEditorObject = null;
-			var action = new ObjectDeleteAction("prop", prop.PropId, prop.Position, prop.RotationDegrees.Y, prop.Scale.X, false, prop);
+			string propId = prop.PropId;
+			var action = new ObjectDeleteAction("prop", propId, prop.Position, prop.RotationDegrees.Y, prop.Scale.X, false, prop);
 			AllProps.Remove(prop);
 			EntityToProp3D.Remove(prop.Entity);
 			if (EcsWorld.IsAlive(prop.Entity)) EcsWorld.Destroy(prop.Entity);
 			prop.QueueFree();
+			PropMultiMeshManager.Instance?.MarkDirty(propId);
 			return action;
 		}
 
@@ -1452,11 +1453,13 @@ public partial class GameHost
 			else if (closestProp != null && minDistance == closestPropDist)
 			{
 				if (closestProp == _selectedEditorObject) SelectedEditorObject = null;
-				var action = new ObjectDeleteAction("prop", closestProp.PropId, closestProp.Position, closestProp.RotationDegrees.Y, closestProp.Scale.X, false, closestProp);
+				string propId = closestProp.PropId;
+				var action = new ObjectDeleteAction("prop", propId, closestProp.Position, closestProp.RotationDegrees.Y, closestProp.Scale.X, false, closestProp);
 				AllProps.Remove(closestProp);
 				EntityToProp3D.Remove(closestProp.Entity);
 				if (EcsWorld.IsAlive(closestProp.Entity)) EcsWorld.Destroy(closestProp.Entity);
 				closestProp.QueueFree();
+				PropMultiMeshManager.Instance?.MarkDirty(propId);
 				return action;
 			}
 			else if (closestDecal != null && minDistance == closestDecalDist)
@@ -1897,6 +1900,10 @@ public partial class GameHost
 						{
 							EcsWorld.Set(unit.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
 						}
+						else if (SelectedEditorObject is Prop3D prop)
+						{
+							PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
+						}
 						MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 					}
 				}
@@ -1949,6 +1956,10 @@ public partial class GameHost
 						var node3D = SelectedEditorObject as Node3D;
 						bool isUnit = SelectedEditorObject is Unit3D;
 						bool isEnemy = isUnit ? (SelectedEditorObject as Unit3D).IsEnemy : false;
+						if (SelectedEditorObject is Prop3D prop)
+						{
+							PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
+						}
 						if (node3D.Position.DistanceTo(_dragObjectStartPos) > 0.05f)
 						{
 							var action = new ObjectTransformAction(
@@ -2896,6 +2907,17 @@ public partial class GameHost
 			MapEditorHUD.Instance?.ShowFeedbackExternal("Flood filled pathing area");
 			UpdatePathingOverlay();
 		}
+	}
+
+	public void HideSelectionHighlight()
+	{
+		if (_selectionHighlightMesh != null)
+		{
+			_selectionHighlightMesh.Visible = false;
+		}
+		_editorService?.SetIsSelectingArea(false);
+		_editorService?.SetSelectionStart(null);
+		_editorService?.SetSelectionEnd(null);
 	}
 
 	private void CreateSelectionHighlight()

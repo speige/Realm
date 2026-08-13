@@ -738,20 +738,30 @@ public partial class InGameHUD : Control
 			camera.RotationDegrees = new Vector3(-90, 0, 0);
 			viewport.AddChild(camera);
 
-			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-
-			var texture = viewport.GetTexture();
-			if (texture != null)
+			EditableTerrain.IsMinimapRendering = true;
+			EditableTerrain.Instance?.SetAllChunksVisible(true);
+			PropMultiMeshManager.Instance?.SetAllNodesVisible(true);
+			try
 			{
-				var img = texture.GetImage();
-				if (img != null)
-				{
-					var imgTexture = ImageTexture.CreateFromImage(img);
-					minimapBg.Texture = imgTexture;
-				}
-			}
+				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
-			viewport.QueueFree();
+				var texture = viewport.GetTexture();
+				if (texture != null)
+				{
+					var img = texture.GetImage();
+					if (img != null)
+					{
+						var imgTexture = ImageTexture.CreateFromImage(img);
+						minimapBg.Texture = imgTexture;
+					}
+				}
+
+				viewport.QueueFree();
+			}
+			finally
+			{
+				EditableTerrain.IsMinimapRendering = false;
+			}
 		}
 		catch (Exception ex)
 		{

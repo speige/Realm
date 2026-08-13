@@ -295,6 +295,10 @@ public partial class GameHost : Node3D, IGameAPI
 		{
 			_activeEditorTool = value;
 			_editorService?.SetIsPastingObject(false);
+			if (value != EditorTool.SelectArea && value != EditorTool.PasteArea)
+			{
+				HideSelectionHighlight();
+			}
 			RebuildAllCoordinatePersistentMeshes();
 			UpdatePathingOverlay();
 		}

@@ -4434,6 +4434,10 @@ public partial class MapEditorHUD : Control
 				isEnemy, isEnemy
 			);
 			node3D.RotationDegrees = newRot;
+			if (selected is Prop3D propRot)
+			{
+				PropMultiMeshManager.Instance?.MarkDirty(propRot.PropId);
+			}
 			EditorHistoryManager.RecordAction(action);
 			UpdateSelectedObjectInfo();
 			ShowFeedback(string.Format(TranslationServer.Translate("Rotated Object to {0}°"), newRot.Y));
@@ -4460,6 +4464,10 @@ public partial class MapEditorHUD : Control
 				isEnemy, isEnemy
 			);
 			node3D.Scale = newScale;
+			if (selected is Prop3D propScale)
+			{
+				PropMultiMeshManager.Instance?.MarkDirty(propScale.PropId);
+			}
 			EditorHistoryManager.RecordAction(action);
 			UpdateSelectedObjectInfo();
 			ShowFeedback(string.Format(TranslationServer.Translate("Scaled Object to {0:F1}x"), newScaleVal));
@@ -4485,6 +4493,10 @@ public partial class MapEditorHUD : Control
 				isEnemy, isEnemy
 			);
 			node3D.Scale = newScale;
+			if (selected is Prop3D propReset)
+			{
+				PropMultiMeshManager.Instance?.MarkDirty(propReset.PropId);
+			}
 			EditorHistoryManager.RecordAction(action);
 			UpdateSelectedObjectInfo();
 			ShowFeedback(TranslationServer.Translate("Reset Object scale to 1.0x"));
