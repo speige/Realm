@@ -321,9 +321,10 @@ public partial class LobbyRoom : Control
 			flatPressed.BgColor = new Color(0.1f, 0.5f, 0.9f, 0.3f);
 		}
 
-		_startButton.AddThemeStyleboxOverride("normal", normStyle);
-		_startButton.AddThemeStyleboxOverride("hover", hoverStyle);
-		_startButton.AddThemeStyleboxOverride("pressed", pressedStyle);
+		_startButton.CustomMinimumSize = new Vector2(300, 86);
+		_startButton.AddThemeStyleboxOverride("normal", UIStyle.CreateCustomLobbyStartGameButton(false, false));
+		_startButton.AddThemeStyleboxOverride("hover", UIStyle.CreateCustomLobbyStartGameButton(true, false));
+		_startButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateCustomLobbyStartGameButton(false, true));
 		_startButton.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
 		var pressedCallable = Callable.From(OnStartPressed);

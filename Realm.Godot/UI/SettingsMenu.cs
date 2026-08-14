@@ -104,7 +104,35 @@ public partial class SettingsMenu : Control
 		if (_bgPanel != null)
 		{
 			_bgPanel.Visible = true;
-			_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+			Texture2D bgTexture = null;
+			string[] bgPaths = new string[]
+			{
+				"res://Assets/UI/options_bg.png",
+				"res://Assets/UI/options_bg.jpg",
+				"res://Assets/UI/menu_background_with_frame.jpg"
+			};
+
+			foreach (var path in bgPaths)
+			{
+				if (ResourceLoader.Exists(path))
+				{
+					bgTexture = GD.Load<Texture2D>(path);
+					if (bgTexture != null) break;
+				}
+			}
+
+			if (bgTexture != null)
+			{
+				var style = new StyleBoxTexture();
+				style.Texture = bgTexture;
+				_bgPanel.AddThemeStyleboxOverride("panel", style);
+				_bgPanel.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+			}
+			else
+			{
+				_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+			}
+
 			if (GetNodeOrNull<ColorRect>("OverlayBg") is ColorRect rect)
 			{
 				rect.Visible = false;

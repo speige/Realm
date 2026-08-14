@@ -28,6 +28,18 @@ public static class UIStyle
 		return CreateBgTexture("res://Assets/UI/menu_background_with_frame.jpg");
 	}
 
+	public static StyleBox CreateCustomMatchBg()
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/custom_match_bg.jpg");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			return style;
+		}
+		return CreateBgGradient();
+	}
+
 	public static StyleBox CreateBackdropPanel()
 	{
 		var style = new StyleBoxFlat();
@@ -78,6 +90,17 @@ public static class UIStyle
 		}
 		return style;
 	}
+
+	public static StyleBox CreateCustomMatchCardPanel()
+	{
+		var style = new StyleBoxEmpty();
+		style.ContentMarginLeft = 40;
+		style.ContentMarginRight = 40;
+		style.ContentMarginTop = 40;
+		style.ContentMarginBottom = 40;
+		return style;
+	}
+
 
 
 	public static StyleBox CreatePillarPanel(bool isLeft)
@@ -152,6 +175,39 @@ public static class UIStyle
 		return style;
 	}
 
+	public static StyleBox CreateCustomLobbyStartGameButton(bool isHover = false, bool isPressed = false)
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/custom_lobby_start_game.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 0;
+			style.TextureMarginRight = 0;
+			style.TextureMarginTop = 0;
+			style.TextureMarginBottom = 0;
+			style.ContentMarginLeft = 20;
+			style.ContentMarginRight = 20;
+			style.ContentMarginTop = 10;
+			style.ContentMarginBottom = 10;
+			
+			if (isPressed)
+			{
+				style.ModulateColor = new Color(0.85f, 0.85f, 0.9f);
+			}
+			else if (isHover)
+			{
+				style.ModulateColor = new Color(1.18f, 1.18f, 1.25f);
+			}
+			else
+			{
+				style.ModulateColor = Colors.White;
+			}
+			return style;
+		}
+		return isPressed ? CreateButtonPressed() : (isHover ? CreateButtonHover() : CreateButtonNormal());
+	}
+
 
 	public static StyleBoxFlat CreateTextInput(bool hasFocus = false)
 	{
@@ -173,16 +229,14 @@ public static class UIStyle
 		{
 			var style = new StyleBoxTexture();
 			style.Texture = tex;
-			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
-			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
-			style.TextureMarginLeft = 50;
-			style.TextureMarginRight = 85;
-			style.TextureMarginTop = 15;
-			style.TextureMarginBottom = 15;
-			style.ContentMarginLeft = 45;
-			style.ContentMarginRight = 85;
-			style.ContentMarginTop = 12;
-			style.ContentMarginBottom = 12;
+			style.TextureMarginLeft = 0;
+			style.TextureMarginRight = 0;
+			style.TextureMarginTop = 0;
+			style.TextureMarginBottom = 0;
+			style.ContentMarginLeft = 80;
+			style.ContentMarginRight = 100;
+			style.ContentMarginTop = 22;
+			style.ContentMarginBottom = 22;
 			if (hasFocus)
 			{
 				style.ModulateColor = new Color(1.15f, 1.15f, 1.25f);

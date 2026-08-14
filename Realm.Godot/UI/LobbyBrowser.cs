@@ -62,7 +62,7 @@ public partial class LobbyBrowser : Control
 
 		_backButton = GetNode<Button>("BackButton");
 		_refreshButton = GetNode<Button>("RefreshButton");
-		_hostButton = GetNode<Button>("LobbyPanel/VBoxContainer/HostButton");
+		_hostButton = GetNode<Button>("HostButton");
 		_searchBar = GetNode<LineEdit>("SearchBar");
 		_campaignCheck = GetNode<CheckBox>("FilterPanel/VBoxContainer/CampaignCheck");
 		_meleeCheck = GetNode<CheckBox>("FilterPanel/VBoxContainer/MeleeCheck");
@@ -104,11 +104,113 @@ public partial class LobbyBrowser : Control
 
 	private void ApplyStyles()
 	{
-		_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		Texture2D bgTexture = null;
+		string[] bgPaths = new string[]
+		{
+			"res://Assets/UI/custom_lobby_bg.png",
+			"res://Assets/UI/custom_lobby_bg.jpg",
+			"res://Assets/UI/procedural_bg.png",
+			"res://Assets/UI/lobby_bg_forest.png"
+		};
+
+		foreach (var path in bgPaths)
+		{
+			if (ResourceLoader.Exists(path))
+			{
+				bgTexture = GD.Load<Texture2D>(path);
+				if (bgTexture != null) break;
+			}
+		}
+
+		if (bgTexture != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = bgTexture;
+			_bgPanel.AddThemeStyleboxOverride("panel", style);
+			_bgPanel.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+		}
+		else
+		{
+			_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		}
+
 		_leftPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(true));
 		_rightPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(false));
-		_filterPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
-		_lobbyPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+
+		Texture2D filterPanelTex = null;
+		string[] filterPanelPaths = new string[]
+		{
+			"res://Assets/UI/custom_lobby_panel_filter.png",
+			"res://Assets/UI/custom_panel_filter.png",
+			"res://Assets/UI/procedural_filter_panel.png",
+			"res://Assets/UI/lobby_filter_panel.png"
+		};
+
+		foreach (var path in filterPanelPaths)
+		{
+			if (ResourceLoader.Exists(path))
+			{
+				filterPanelTex = GD.Load<Texture2D>(path);
+				if (filterPanelTex != null) break;
+			}
+		}
+
+		if (filterPanelTex != null)
+		{
+			var filterPanelStyle = new StyleBoxTexture();
+			filterPanelStyle.Texture = filterPanelTex;
+			filterPanelStyle.TextureMarginLeft = 40;
+			filterPanelStyle.TextureMarginRight = 40;
+			filterPanelStyle.TextureMarginTop = 40;
+			filterPanelStyle.TextureMarginBottom = 40;
+			filterPanelStyle.ContentMarginLeft = 46;
+			filterPanelStyle.ContentMarginRight = 46;
+			filterPanelStyle.ContentMarginTop = 18;
+			filterPanelStyle.ContentMarginBottom = 30;
+			_filterPanel.AddThemeStyleboxOverride("panel", filterPanelStyle);
+			_filterPanel.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+		}
+		else
+		{
+			_filterPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		}
+
+		Texture2D mainPanelTex = null;
+		string[] mainPanelPaths = new string[]
+		{
+			"res://Assets/UI/custom_lobby_panel_main.png",
+			"res://Assets/UI/procedural_main_panel.png",
+			"res://Assets/UI/lobby_central_panel.png"
+		};
+
+		foreach (var path in mainPanelPaths)
+		{
+			if (ResourceLoader.Exists(path))
+			{
+				mainPanelTex = GD.Load<Texture2D>(path);
+				if (mainPanelTex != null) break;
+			}
+		}
+
+		if (mainPanelTex != null)
+		{
+			var mainPanelStyle = new StyleBoxTexture();
+			mainPanelStyle.Texture = mainPanelTex;
+			mainPanelStyle.TextureMarginLeft = 60;
+			mainPanelStyle.TextureMarginRight = 60;
+			mainPanelStyle.TextureMarginTop = 60;
+			mainPanelStyle.TextureMarginBottom = 60;
+			mainPanelStyle.ContentMarginLeft = 50;
+			mainPanelStyle.ContentMarginRight = 50;
+			mainPanelStyle.ContentMarginTop = 45;
+			mainPanelStyle.ContentMarginBottom = 45;
+			_lobbyPanel.AddThemeStyleboxOverride("panel", mainPanelStyle);
+			_lobbyPanel.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+		}
+		else
+		{
+			_lobbyPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		}
 		
 		_searchBar.AddThemeStyleboxOverride("normal", UIStyle.CreateCustomLobbySearchInput(false));
 		_searchBar.AddThemeStyleboxOverride("focus", UIStyle.CreateCustomLobbySearchInput(true));
@@ -177,7 +279,8 @@ public partial class LobbyBrowser : Control
 		_searchBar.AddThemeColorOverride("font_color", new Color(0.95f, 0.9f, 0.8f));
 		_searchBar.AddThemeColorOverride("font_placeholder_color", new Color(0.65f, 0.6f, 0.5f));
 		_searchBar.AddThemeColorOverride("caret_color", new Color(0.95f, 0.9f, 0.8f));
-		_searchBar.CustomMinimumSize = new Vector2(0, 56);
+		_searchBar.CustomMinimumSize = new Vector2(660, 100);
+		_searchBar.Alignment = HorizontalAlignment.Left;
 		_searchBar.PlaceholderText = "Search Lobbies...";
 		_searchBar.RightIcon = null;
 
@@ -211,11 +314,12 @@ public partial class LobbyBrowser : Control
 	private void SetupHostButton()
 	{
 		_hostButton.Flat = false;
+		_hostButton.CustomMinimumSize = new Vector2(300, 86);
 		UIStyle.ApplyButtonText(_hostButton, "HOST A GAME", 18);
 		
-		_hostButton.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		_hostButton.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		_hostButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		_hostButton.AddThemeStyleboxOverride("normal", UIStyle.CreateCustomLobbyStartGameButton(false, false));
+		_hostButton.AddThemeStyleboxOverride("hover", UIStyle.CreateCustomLobbyStartGameButton(true, false));
+		_hostButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateCustomLobbyStartGameButton(false, true));
 		_hostButton.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
 		_hostButton.Pressed += () => 

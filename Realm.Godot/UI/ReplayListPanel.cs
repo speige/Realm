@@ -42,7 +42,18 @@ public partial class ReplayListPanel : Control
 		_deleteAllBtn.AddThemeColorOverride("font_hover_color", new Color(1.0f, 0.5f, 0.5f));
 		_deleteAllBtn.AddThemeColorOverride("font_pressed_color", new Color(0.9f, 0.3f, 0.3f));
 
-		GetNode<Panel>("Background").AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		var bgTexture = GetNodeOrNull<TextureRect>("BackgroundTexture");
+		if (bgTexture != null)
+		{
+			bgTexture.Texture = GD.Load<Texture2D>("res://Assets/UI/replays_bg.jpg");
+			bgTexture.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+			bgTexture.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
+		}
+		else
+		{
+			var bgPanel = GetNodeOrNull<Panel>("Background");
+			bgPanel?.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		}
 		GetNode<PanelContainer>("CenterContainer/MainFrame").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(false));
 		GetNode<PanelContainer>("CenterContainer/MainFrame/VBox/ListFrame").AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
 

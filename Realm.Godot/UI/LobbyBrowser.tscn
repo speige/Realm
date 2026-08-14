@@ -88,18 +88,17 @@ grow_horizontal = 2
 
 [node name="SearchBar" type="LineEdit" parent="."]
 layout_mode = 0
-offset_left = 550.0
-offset_top = 135.0
-offset_right = 1370.0
-offset_bottom = 180.0
-alignment = 1
+offset_left = 630.0
+offset_top = 120.0
+offset_right = 1290.0
+offset_bottom = 220.0
 
 [node name="FilterPanel" type="PanelContainer" parent="."]
 layout_mode = 0
 offset_left = 130.0
-offset_top = 210.0
+offset_top = 235.0
 offset_right = 370.0
-offset_bottom = 790.0
+offset_bottom = 815.0
 
 [node name="VBoxContainer" type="VBoxContainer" parent="FilterPanel"]
 layout_mode = 2
@@ -109,6 +108,10 @@ theme_override_constants/separation = 16
 layout_mode = 2
 text = "FILTER"
 horizontal_alignment = 1
+
+[node name="FilterSpacer" type="Control" parent="FilterPanel/VBoxContainer"]
+custom_minimum_size = Vector2(0, 135)
+layout_mode = 2
 
 [node name="CampaignCheck" type="CheckBox" parent="FilterPanel/VBoxContainer"]
 layout_mode = 2
@@ -133,9 +136,9 @@ text = "Arcade"
 [node name="LobbyPanel" type="PanelContainer" parent="."]
 layout_mode = 0
 offset_left = 400.0
-offset_top = 210.0
+offset_top = 235.0
 offset_right = 1790.0
-offset_bottom = 790.0
+offset_bottom = 815.0
 
 [node name="VBoxContainer" type="VBoxContainer" parent="LobbyPanel"]
 layout_mode = 2
@@ -180,8 +183,10 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="HostButton" type="Button" parent="LobbyPanel/VBoxContainer"]
-custom_minimumSize = Vector2(300, 60)
-layout_mode = 2
-size_flags_horizontal = 8
+[node name="HostButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 1490.0
+offset_top = 835.0
+offset_right = 1790.0
+offset_bottom = 921.0
 focus_mode = 0
