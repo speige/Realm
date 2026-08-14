@@ -984,9 +984,33 @@ vec2 stochastic_hash(vec2 p) {
 	return vec2(float(n & 0xFFFFu), float((n >> 16u) & 0xFFFFu)) * (1.0 / 65535.0);
 }
 
-vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, float tile_mode, float stoch_tile_size) {
+vec4 sample_semi_grid(sampler2DArray tex_array, float layer, vec2 uv, float blend_width) {
+	if (blend_width <= 0.0001) {
+		return texture(tex_array, vec3(uv, layer));
+	}
+	vec2 f = fract(uv);
+	vec2 edge = smoothstep(vec2(0.0), vec2(blend_width), f) * 
+	            smoothstep(vec2(0.0), vec2(blend_width), vec2(1.0) - f);
+	float center_weight = edge.x * edge.y;
+
+	vec2 dx = dFdx(uv);
+	vec2 dy = dFdy(uv);
+	vec4 col_center = textureGrad(tex_array, vec3(uv, layer), dx, dy);
+
+	if (center_weight > 0.99) {
+		return col_center;
+	}
+
+	vec2 cell = floor(uv);
+	vec2 offset = stochastic_hash(cell);
+	vec4 col_border = textureGrad(tex_array, vec3(uv + offset, layer), dx, dy);
+
+	return mix(col_border, col_center, center_weight);
+}
+
+vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, float tile_mode, float stoch_tile_size, float cross_fade) {
 	if (!enable_stochastic || tile_mode < 0.5) {
-		return sample_quad_array(tex_array, layer, uv);
+		return sample_semi_grid(tex_array, layer, uv, cross_fade);
 	}
 
 	vec2 dx = dFdx(uv);
@@ -1043,18 +1067,19 @@ vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, ve
 	float tile_mode = params.x;
 	float uv_scale = params.y > 0.001 ? params.y : 1.0;
 	float stoch_tile_size = params.z > 0.001 ? params.z : 1.0;
+	float cross_fade = clamp(params.w, 0.0, 0.10);
 
 	vec2 scaled_uv_x = uv_x * uv_scale;
 	vec2 scaled_uv_y = uv_y * uv_scale;
 	vec2 scaled_uv_z = uv_z * uv_scale;
 
 	if (enable_fast_planar && weights.y > 0.90) {
-		return sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size);
+		return sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size, cross_fade);
 	}
 
-	vec4 col_x = sample_stochastic_layer(tex_array, layer, scaled_uv_x, tile_mode, stoch_tile_size);
-	vec4 col_y = sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size);
-	vec4 col_z = sample_stochastic_layer(tex_array, layer, scaled_uv_z, tile_mode, stoch_tile_size);
+	vec4 col_x = sample_stochastic_layer(tex_array, layer, scaled_uv_x, tile_mode, stoch_tile_size, cross_fade);
+	vec4 col_y = sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size, cross_fade);
+	vec4 col_z = sample_stochastic_layer(tex_array, layer, scaled_uv_z, tile_mode, stoch_tile_size, cross_fade);
 	return col_x * weights.x + col_y * weights.y + col_z * weights.z;
 }
 
@@ -1421,7 +1446,7 @@ void fragment() {
 	private List<string> _loadedTextureList = new List<string>();
 	private Godot.Vector4[] _swatchParamsCache = new Godot.Vector4[32];
 
-	public void UpdateTextureParamDirect(string swatchName, string tileMode, float uvScale, float stochasticTileSize)
+	public void UpdateTextureParamDirect(string swatchName, string tileMode, float uvScale, float stochasticTileSize, float crossFade = 5.0f)
 	{
 		if (_material == null) return;
 		string cleanName = System.IO.Path.GetFileNameWithoutExtension(swatchName);
@@ -1441,8 +1466,9 @@ void fragment() {
 			float tm = string.Equals(tileMode, "Grid", StringComparison.OrdinalIgnoreCase) ? 0.0f : 1.0f;
 			float uv = Math.Clamp(uvScale, 0.1f, 4.0f);
 			float stoch = Math.Clamp(stochasticTileSize, 0.5f, 3.0f);
+			float cf = crossFade > 0.10f ? Math.Clamp(crossFade, 0.0f, 10.0f) * 0.01f : Math.Clamp(crossFade, 0.0f, 0.10f);
 
-			_swatchParamsCache[targetIndex] = new Godot.Vector4(tm, uv, stoch, 0.0f);
+			_swatchParamsCache[targetIndex] = new Godot.Vector4(tm, uv, stoch, cf);
 			_material.SetShaderParameter("swatch_params", _swatchParamsCache);
 		}
 	}
@@ -1501,7 +1527,7 @@ void fragment() {
 		var swatchParams = new Godot.Vector4[32];
 		for (int i = 0; i < 32; i++)
 		{
-			swatchParams[i] = new Godot.Vector4(1.0f, 1.0f, 1.0f, 0.0f);
+			swatchParams[i] = new Godot.Vector4(1.0f, 1.0f, 1.0f, 0.05f);
 		}
 
 		if (texturesObj != null)
@@ -1523,6 +1549,7 @@ void fragment() {
 				float tileMode = 1.0f;
 				float uvScale = 1.0f;
 				float stochasticTileSize = 1.0f;
+				float crossFade = 0.05f;
 
 				if (swatchNode is System.Text.Json.Nodes.JsonObject sObj)
 				{
@@ -1543,9 +1570,15 @@ void fragment() {
 					{
 						stochasticTileSize = Math.Clamp(parsedStoch, 0.5f, 3.0f);
 					}
+
+					string cfStr = sObj["Cross_Fade"]?.ToString() ?? sObj["cross_fade"]?.ToString() ?? sObj["Grid_Cross_Fade"]?.ToString() ?? sObj["grid_cross_fade"]?.ToString();
+					if (!string.IsNullOrEmpty(cfStr) && float.TryParse(cfStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCf))
+					{
+						crossFade = parsedCf > 0.10f ? Math.Clamp(parsedCf, 0.0f, 10.0f) * 0.01f : Math.Clamp(parsedCf, 0.0f, 0.10f);
+					}
 				}
 
-				swatchParams[i] = new Godot.Vector4(tileMode, uvScale, stochasticTileSize, 0.0f);
+				swatchParams[i] = new Godot.Vector4(tileMode, uvScale, stochasticTileSize, crossFade);
 			}
 		}
 

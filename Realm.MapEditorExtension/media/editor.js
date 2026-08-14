@@ -4090,6 +4090,8 @@
                         if (isNaN(uvScale)) uvScale = 1.0;
                         let stochTileSize = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Stochastic_Tile_Size !== undefined || itemVal.stochastic_tile_size !== undefined)) ? parseFloat(itemVal.Stochastic_Tile_Size ?? itemVal.stochastic_tile_size) : 1.0;
                         if (isNaN(stochTileSize)) stochTileSize = 1.0;
+                        let crossFade = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Cross_Fade !== undefined || itemVal.cross_fade !== undefined || itemVal.Grid_Cross_Fade !== undefined || itemVal.grid_cross_fade !== undefined)) ? parseFloat(itemVal.Cross_Fade ?? itemVal.cross_fade ?? itemVal.Grid_Cross_Fade ?? itemVal.grid_cross_fade) : 5.0;
+                        if (isNaN(crossFade)) crossFade = 5.0;
 
                         html += `<div class="texture-stochastic-controls" data-key="${escapeHtml(itemKey)}" style="margin-top: 6px; margin-bottom: 8px; padding: 8px 12px; background: var(--vscode-input-background, #1e1e24); border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.15)); border-left: 4px solid var(--vscode-symbolIcon-propertyForeground, #4ec9b0); border-radius: 6px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">`;
                         
@@ -4109,6 +4111,11 @@
                         html += `<div class="row-stochastic-tile-size" style="display: ${tileMode === 'Grid' ? 'none' : 'flex'}; align-items: center; justify-content: space-between; gap: 12px;">`;
                         html += `<label title="Scale multiplier for procedural stochastic sampling grid cells (range 0.5 to 3.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Stochastic Tile Size: <span class="lbl-stoch-size-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${stochTileSize.toFixed(2)}</span></label>`;
                         html += `<input type="range" class="input-texture-stoch-size" data-key="${escapeHtml(itemKey)}" min="0.5" max="3.0" step="0.05" value="${stochTileSize}" title="Scale multiplier for procedural stochastic sampling grid cells (range 0.5 to 3.0)." style="width: 130px; cursor: pointer;" />`;
+                        html += `</div>`;
+
+                        html += `<div class="row-grid-cross-fade" style="display: ${tileMode === 'Grid' ? 'flex' : 'none'}; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Border cross-fade width along tile seams (range 0% to 10% of UV space, default 5%)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Cross-Fade: <span class="lbl-cross-fade-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${crossFade.toFixed(1)}%</span></label>`;
+                        html += `<input type="range" class="input-texture-cross-fade" data-key="${escapeHtml(itemKey)}" min="0" max="10" step="0.5" value="${crossFade}" title="Border cross-fade width along tile seams (range 0% to 10% of UV space, default 5%)." style="width: 130px; cursor: pointer;" />`;
                         html += `</div>`;
 
                         html += `</div>`;
@@ -4146,6 +4153,7 @@
             const tileMode = (itemVal.Tile_Mode || itemVal.tile_mode) ?? 'Stochastic';
             const uvScale = parseFloat(itemVal.UV_Scale ?? itemVal.uv_scale ?? 1.0);
             const stochTileSize = parseFloat(itemVal.Stochastic_Tile_Size ?? itemVal.stochastic_tile_size ?? 1.0);
+            const crossFade = parseFloat(itemVal.Cross_Fade ?? itemVal.cross_fade ?? itemVal.Grid_Cross_Fade ?? itemVal.grid_cross_fade ?? 5.0);
 
             const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
             fetch(`http://127.0.0.1:${ipcPort}/api/`, {
@@ -4156,7 +4164,8 @@
                     swatchName: itemKey,
                     tileMode: tileMode,
                     uvScale: uvScale,
-                    stochasticTileSize: stochTileSize
+                    stochasticTileSize: stochTileSize,
+                    crossFade: crossFade
                 })
             }).catch(() => {});
         }
@@ -4169,6 +4178,8 @@
                 if (parentRow) {
                     const stochRow = parentRow.querySelector('.row-stochastic-tile-size');
                     if (stochRow) stochRow.style.display = (val === 'Grid') ? 'none' : 'flex';
+                    const gridRow = parentRow.querySelector('.row-grid-cross-fade');
+                    if (gridRow) gridRow.style.display = (val === 'Grid') ? 'flex' : 'none';
                 }
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.Tile_Mode = val;
@@ -4228,6 +4239,24 @@
             };
             input.addEventListener('input', handleStochChange);
             input.addEventListener('change', handleStochChange);
+        });
+
+        display.querySelectorAll('.input-texture-cross-fade').forEach(input => {
+            const handleCrossFadeChange = (e) => {
+                const key = e.target.getAttribute('data-key');
+                const val = parseFloat(e.target.value);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const lbl = parentRow.querySelector('.lbl-cross-fade-val');
+                    if (lbl) lbl.textContent = `${val.toFixed(1)}%`;
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.Cross_Fade = val;
+                    itemVal.cross_fade = val;
+                });
+            };
+            input.addEventListener('input', handleCrossFadeChange);
+            input.addEventListener('change', handleCrossFadeChange);
         });
 
         // Attach migration event handlers

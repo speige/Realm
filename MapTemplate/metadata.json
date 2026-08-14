@@ -168,18 +168,22 @@
     "textures": {
       "dead_grass.ktx2": "3ca7998ba2426fee350ef5e52ca9e541dfbe9939cc2bfe86e2e6c3879f8a02d3",
       "hard_granite.ktx2": {
+        "Cross_Fade": 5,
         "Stochastic_Tile_Size": 3,
         "Tile_Mode": "Grid",
         "UV_Scale": 0.6,
+        "cross_fade": 5,
         "hash": "aed15ffe3315649d09b9671a015a1ed2a1eb9363d1511f10e8315824e4038871",
         "stochastic_tile_size": 3,
         "tile_mode": "Grid",
         "uv_scale": 0.6
       },
       "holy_stone.ktx2": {
+        "Cross_Fade": 5,
         "Stochastic_Tile_Size": 0.5,
         "Tile_Mode": "Grid",
         "UV_Scale": 0.65,
+        "cross_fade": 5,
         "hash": "4b3761259a544cbf8b0a298fa6622e77c6142148284bd552a589da243339d96b",
         "stochastic_tile_size": 0.5,
         "tile_mode": "Grid",

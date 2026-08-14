@@ -705,11 +705,25 @@ public class VSCodeManager
 					stochasticTileSize = parsedStoch2;
 				}
 
+				float crossFade = 5.0f;
+				if (node["crossFade"] != null && float.TryParse(node["crossFade"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCrossFade))
+				{
+					crossFade = parsedCrossFade;
+				}
+				else if (node["Cross_Fade"] != null && float.TryParse(node["Cross_Fade"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCrossFade2))
+				{
+					crossFade = parsedCrossFade2;
+				}
+				else if (node["cross_fade"] != null && float.TryParse(node["cross_fade"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCrossFade3))
+				{
+					crossFade = parsedCrossFade3;
+				}
+
 				Callable.From(() =>
 				{
 					if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 					{
-						GameHost.Instance.GroundTerrain.UpdateTextureParamDirect(swatchName, tileMode, uvScale, stochasticTileSize);
+						GameHost.Instance.GroundTerrain.UpdateTextureParamDirect(swatchName, tileMode, uvScale, stochasticTileSize, crossFade);
 					}
 				}).CallDeferred();
 
