@@ -22,30 +22,25 @@
     const customWeaponsForm = document.getElementById('custom-weapons-form');
     const customWeaponsList = document.getElementById('custom-weapons-list');
     const addCustomWeaponBtn = document.getElementById('add-custom-weapon-btn');
-    const addCustomWeapon5Btn = document.getElementById('add-custom-weapon-5-btn');
     const pasteCustomWeaponBtn = document.getElementById('paste-custom-weapon-btn');
 
     const customAbilitiesForm = document.getElementById('custom-abilities-form');
     const customAbilitiesList = document.getElementById('custom-abilities-list');
     const addCustomAbilityBtn = document.getElementById('add-custom-ability-btn');
-    const addCustomAbility5Btn = document.getElementById('add-custom-ability-5-btn');
     const pasteCustomAbilityBtn = document.getElementById('paste-custom-ability-btn');
 
     const customUpgradesForm = document.getElementById('custom-upgrades-form');
     const customUpgradesList = document.getElementById('custom-upgrades-list');
     const addCustomUpgradeBtn = document.getElementById('add-custom-upgrade-btn');
-    const addCustomUpgrade5Btn = document.getElementById('add-custom-upgrade-5-btn');
     const pasteCustomUpgradeBtn = document.getElementById('paste-custom-upgrade-btn');
 
     const customItemsForm = document.getElementById('custom-items-form');
     const customItemsList = document.getElementById('custom-items-list');
     const addCustomItemBtn = document.getElementById('add-custom-item-btn');
-    const addCustomItem5Btn = document.getElementById('add-custom-item-5-btn');
     const pasteCustomItemBtn = document.getElementById('paste-custom-item-btn');
 
     const unitListContainer = document.getElementById('unit-list');
     const addUnitBtn = document.getElementById('add-unit-btn');
-    const addUnit5Btn = document.getElementById('add-unit-5-btn');
     const searchInput = document.getElementById('search-input');
     const editorTitle = document.getElementById('editor-title');
     const editorSubtitle = document.getElementById('editor-subtitle');
@@ -56,6 +51,7 @@
     const copyJsonBtn = document.getElementById('copy-json-btn');
     const expandJsonBtn = document.getElementById('expand-json-btn');
     const duplicateUnitBtn = document.getElementById('duplicate-unit-btn');
+    const deleteUnitBtn = document.getElementById('delete-unit-btn');
     const copyUnitBtn = document.getElementById('copy-unit-btn');
     const pasteUnitBtn = document.getElementById('paste-unit-btn');
 
@@ -65,6 +61,11 @@
         Description: document.getElementById('field-Description'),
         ModelPath: document.getElementById('field-ModelPath'),
         PortraitModelPath: document.getElementById('field-PortraitModelPath'),
+        YOffset: document.getElementById('field-YOffset'),
+        CollisionCircle: document.getElementById('field-CollisionCircle'),
+        Brightness: document.getElementById('field-Brightness'),
+        Tint: document.getElementById('field-Tint'),
+        RecalculateNormals: document.getElementById('field-RecalculateNormals'),
         IsHero: document.getElementById('field-IsHero'),
         MaxHp: document.getElementById('field-MaxHp'),
         Damage: document.getElementById('field-Damage'),
@@ -82,8 +83,40 @@
         ArmorType: document.getElementById('field-ArmorType'),
         GoldBounty: document.getElementById('field-GoldBounty'),
         XpBounty: document.getElementById('field-XpBounty'),
-        MovementType: document.getElementById('field-MovementType')
+        PathingType: document.getElementById('field-PathingType'),
+        MaxCapacity: document.getElementById('field-MaxCapacity'),
+        HarvestRate: document.getElementById('field-HarvestRate'),
+        GrowthRate: document.getElementById('field-GrowthRate'),
+        MaxWorkers: document.getElementById('field-MaxWorkers')
     };
+
+    function getArrayKeyForDomain(domain) {
+        if (domain === 'buildings') return 'CustomBuildings';
+        if (domain === 'resources') return 'CustomResources';
+        if (domain === 'props') return 'CustomProps';
+        return 'CustomUnits';
+    }
+
+    function getAllEntities() {
+        if (!Array.isArray(units.CustomUnits)) units.CustomUnits = [];
+        if (!Array.isArray(units.CustomBuildings)) units.CustomBuildings = [];
+        if (!Array.isArray(units.CustomResources)) units.CustomResources = [];
+        if (!Array.isArray(units.CustomProps)) units.CustomProps = [];
+        return [
+            ...units.CustomUnits,
+            ...units.CustomBuildings,
+            ...units.CustomResources,
+            ...units.CustomProps
+        ];
+    }
+
+    function getCustomUnits() {
+        return getAllEntities();
+    }
+
+    function getUnitById(id) {
+        return getAllEntities().find(u => u && u.UnitId === id);
+    }
 
     const buildOptionInput = document.getElementById('build-option-input');
     const addBuildOptionBtn = document.getElementById('add-build-option-btn');
@@ -181,48 +214,74 @@
         // Setup numeric keypress locking
         setupNumericLockOnDynamicInputs();
 
+        document.getElementById('chk-show-all-glb')?.addEventListener('change', () => {
+            const unit = getUnitById(selectedUnitId);
+            populateGlbDropdown(getActiveDomain(), unit ? unit.ModelPath : '');
+        });
+
+        document.getElementById('field-ModelPath')?.addEventListener('change', e => {
+            const unit = getUnitById(selectedUnitId);
+            if (unit) {
+                unit.ModelPath = e.target.value;
+                saveChanges();
+                updateAllThumbnails();
+            }
+        });
+
         // Notify VS Code that frontend is ready
         vscode.postMessage({ type: 'ready' });
     }
 
     // switchTab handles toggling between domains
+    function getActiveDomain() {
+        const activeBtn = document.querySelector('.tab-btn.active');
+        return activeBtn ? activeBtn.dataset.domain : 'units';
+    }
+
+    function matchesDomainCategory(unit, domain) {
+        if (!unit) return false;
+        return true;
+    }
+
     function switchTab(domain) {
         document.querySelectorAll('.tab-btn').forEach(b => {
             b.classList.toggle('active', b.dataset.domain === domain);
         });
 
         const appContainer = document.querySelector('.app-container');
-        if (domain === 'units') {
+        const isEntityDomain = (domain === 'units' || domain === 'buildings' || domain === 'resources' || domain === 'props');
+
+        if (isEntityDomain) {
             appContainer.classList.remove('sidebar-hidden');
+            const headerTitle = document.querySelector('.sidebar-subheader h2');
+            if (headerTitle) {
+                headerTitle.textContent = domain === 'units' ? 'Units List' :
+                                         domain === 'buildings' ? 'Buildings List' :
+                                         domain === 'resources' ? 'Resources List' : 'Props List';
+            }
+            renderUnitList();
+            const matchingUnits = domain === 'buildings' ? (units.CustomBuildings || []) :
+                                  domain === 'resources' ? (units.CustomResources || []) :
+                                  domain === 'props' ? (units.CustomProps || []) :
+                                  (units.CustomUnits || []);
+            if (matchingUnits.length > 0) {
+                if (!selectedUnitId || !matchingUnits.some(u => u.UnitId === selectedUnitId)) {
+                    selectUnit(matchingUnits[0].UnitId);
+                } else {
+                    selectUnit(selectedUnitId);
+                }
+            } else {
+                selectedUnitId = null;
+                showEmptyState();
+            }
         } else {
             appContainer.classList.add('sidebar-hidden');
-        }
-
-        if (domain === 'units') {
-            if (selectedUnitId && !selectedUnitId.startsWith('__')) {
-                selectUnit(selectedUnitId);
-            } else {
-                const skipKeys = ['MapProperties', 'CustomWeapons', 'CustomAbilities', 'CustomUpgrades', 'CustomItems', 'Assets'];
-                const firstUnitId = Object.keys(units).find(id => !skipKeys.includes(id));
-                if (firstUnitId) {
-                    selectUnit(firstUnitId);
-                } else {
-                    selectedUnitId = null;
-                    showEmptyState();
-                }
-            }
-        } else if (domain === 'weapons') {
-            selectCustomWeapons();
-        } else if (domain === 'abilities') {
-            selectCustomAbilities();
-        } else if (domain === 'upgrades') {
-            selectCustomUpgrades();
-        } else if (domain === 'items') {
-            selectCustomItems();
-        } else if (domain === 'assets') {
-            selectCustomAssets();
-        } else if (domain === 'properties') {
-            selectMapProperties();
+            if (domain === 'weapons') selectCustomWeapons();
+            else if (domain === 'abilities') selectCustomAbilities();
+            else if (domain === 'upgrades') selectCustomUpgrades();
+            else if (domain === 'items') selectCustomItems();
+            else if (domain === 'assets') selectCustomAssets();
+            else if (domain === 'properties') selectMapProperties();
         }
     }
 
@@ -247,26 +306,67 @@
                     units.MapProperties = {};
                 }
                 let migrated = false;
-                if (units.CustomWeapons) {
-                    units.MapProperties.CustomWeapons = units.CustomWeapons;
-                    delete units.CustomWeapons;
+                if (units.MapProperties.CustomWeapons) {
+                    units.CustomWeapons = units.MapProperties.CustomWeapons;
+                    delete units.MapProperties.CustomWeapons;
                     migrated = true;
                 }
-                if (units.CustomAbilities) {
-                    units.MapProperties.CustomAbilities = units.CustomAbilities;
-                    delete units.CustomAbilities;
+                if (units.MapProperties.CustomAbilities) {
+                    units.CustomAbilities = units.MapProperties.CustomAbilities;
+                    delete units.MapProperties.CustomAbilities;
                     migrated = true;
                 }
-                if (units.CustomUpgrades) {
-                    units.MapProperties.CustomUpgrades = units.CustomUpgrades;
-                    delete units.CustomUpgrades;
+                if (units.MapProperties.CustomUpgrades) {
+                    units.CustomUpgrades = units.MapProperties.CustomUpgrades;
+                    delete units.MapProperties.CustomUpgrades;
                     migrated = true;
                 }
-                if (units.CustomItems) {
-                    units.MapProperties.CustomItems = units.CustomItems;
-                    delete units.CustomItems;
+                if (units.MapProperties.CustomItems) {
+                    units.CustomItems = units.MapProperties.CustomItems;
+                    delete units.MapProperties.CustomItems;
                     migrated = true;
                 }
+                if (!Array.isArray(units.CustomWeapons)) units.CustomWeapons = units.CustomWeapons || [];
+                if (!Array.isArray(units.CustomAbilities)) units.CustomAbilities = units.CustomAbilities || [];
+                if (!Array.isArray(units.CustomUpgrades)) units.CustomUpgrades = units.CustomUpgrades || [];
+                if (!Array.isArray(units.CustomItems)) units.CustomItems = units.CustomItems || [];
+
+                if (!Array.isArray(units.CustomUnits)) units.CustomUnits = [];
+                if (!Array.isArray(units.CustomBuildings)) units.CustomBuildings = [];
+                if (!Array.isArray(units.CustomResources)) units.CustomResources = [];
+                if (!Array.isArray(units.CustomProps)) units.CustomProps = [];
+
+                const knownTopKeys = [
+                    'MapProperties', 'CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps',
+                    'CustomAbilities', 'CustomItems', 'CustomUpgrades', 'CustomWeapons', 'Assets', 
+                    'ModelOffsets', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelGenerateNormals'
+                ];
+                for (const [key, val] of Object.entries(units)) {
+                    if (!knownTopKeys.includes(key) && val && typeof val === 'object' && !Array.isArray(val) && (val.UnitId || val.MaxHp !== undefined || val.CostGold !== undefined || val.AttackType !== undefined || val.PathingCapabilities || val.MovementType)) {
+                        if (!val.UnitId) val.UnitId = key;
+                        const armorType = (val.ArmorType || '').toLowerCase();
+                        if (armorType === 'building') units.CustomBuildings.push(val);
+                        else units.CustomUnits.push(val);
+                        delete units[key];
+                        migrated = true;
+                    }
+                }
+
+                for (const u of getAllEntities()) {
+                    if (u.PathingType === undefined || u.PathingType === null) {
+                        if (u.MovementType === 'air' || u.MovementType === 'flying') {
+                            u.PathingType = 4;
+                        } else if (u.MovementType === 'amphibious') {
+                            u.PathingType = 9;
+                        } else {
+                            u.PathingType = (u.ArmorType === 'building') ? 32 : 8;
+                        }
+                    }
+                    delete u.MovementType;
+                    delete u.PathingCapabilities;
+                    delete u.DefaultAssetType;
+                }
+
                 if (migrated) {
                     saveChanges();
                 }
@@ -286,7 +386,7 @@
                         renderCustomItems();
                     } else if (selectedUnitId === '__custom_assets__') {
                         renderAssetsMetadata();
-                    } else if (selectedUnitId && units[selectedUnitId]) {
+                    } else if (selectedUnitId && getUnitById(selectedUnitId)) {
                         populateForm(selectedUnitId);
                     } else {
                         // Keep current domain tab selection
@@ -456,11 +556,15 @@
     function renderUnitList() {
         unitListContainer.innerHTML = '';
         const query = searchQuery.toLowerCase();
+        const activeDomain = getActiveDomain();
 
-        const skipKeys = ['MapProperties', 'CustomWeapons', 'CustomAbilities', 'CustomUpgrades', 'CustomItems'];
-        for (const [id, unit] of Object.entries(units)) {
-            if (skipKeys.includes(id)) continue;
-            if (!unit) continue;
+        const customUnitsList = activeDomain === 'buildings' ? (units.CustomBuildings || []) :
+                                activeDomain === 'resources' ? (units.CustomResources || []) :
+                                activeDomain === 'props' ? (units.CustomProps || []) :
+                                (units.CustomUnits || []);
+        for (const unit of customUnitsList) {
+            if (!unit || !unit.UnitId) continue;
+            const id = unit.UnitId;
             const name = unit.Name || '';
             const desc = unit.Description || '';
 
@@ -528,21 +632,11 @@
                 badges.appendChild(b);
             }
 
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'delete-card-btn';
-            deleteBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></svg>`;
-
-            deleteBtn.addEventListener('click', e => {
-                e.stopPropagation();
-                showDeleteConfirm(name || id, id);
-            });
-
             card.appendChild(header);
             card.appendChild(descDiv);
             if (badges.children.length > 0) {
                 card.appendChild(badges);
             }
-            card.appendChild(deleteBtn);
 
             card.addEventListener('click', () => {
                 selectUnit(id);
@@ -608,7 +702,7 @@
     }
 
     function populateForm(id) {
-        const unit = units[id];
+        const unit = getUnitById(id);
         if (!unit) {
             showEmptyState();
             return;
@@ -619,9 +713,11 @@
         editorTitle.textContent = unit.Name || id;
         editorSubtitle.textContent = `ID: ${id}`;
         
+        const activeDomain = getActiveDomain();
+        const categoryTitle = activeDomain.charAt(0).toUpperCase() + activeDomain.slice(1);
         const breadcrumb = document.getElementById('editor-breadcrumb');
         if (breadcrumb) {
-            breadcrumb.textContent = `Units > ${id}`;
+            breadcrumb.textContent = `${categoryTitle} > ${id}`;
         }
 
         for (const [key, element] of Object.entries(formFields)) {
@@ -637,6 +733,51 @@
             }
         }
 
+        const defaultPathingVal = (activeDomain === 'resources' || activeDomain === 'props') ? 255 : (activeDomain === 'buildings') ? 32 : 8;
+        const pathingVal = unit.PathingType !== undefined ? unit.PathingType : defaultPathingVal;
+        document.querySelectorAll('.pathing-flag-cb').forEach(cb => {
+            const flagVal = parseInt(cb.value, 10);
+            cb.checked = (pathingVal & flagVal) !== 0;
+        });
+
+        const resConfigSection = document.getElementById('section-resource-node-config');
+        const unitStatsSection = document.getElementById('section-unit-stats');
+        const unitCostSection = document.getElementById('section-unit-costs');
+        const unitCombatSection = document.getElementById('section-unit-combat');
+        const unitCapabilitiesSection = document.getElementById('section-unit-capabilities');
+        const pathingSection = document.getElementById('section-pathing-flags');
+        const isHeroGroup = document.getElementById('field-IsHero')?.closest('.form-group');
+        const portraitGroup = document.getElementById('field-PortraitModelPath')?.closest('.form-group');
+
+        if (activeDomain === 'props') {
+            if (resConfigSection) resConfigSection.classList.add('hidden');
+            if (unitStatsSection) unitStatsSection.classList.add('hidden');
+            if (unitCostSection) unitCostSection.classList.add('hidden');
+            if (unitCombatSection) unitCombatSection.classList.add('hidden');
+            if (unitCapabilitiesSection) unitCapabilitiesSection.classList.add('hidden');
+            if (pathingSection) pathingSection.classList.remove('hidden');
+            if (isHeroGroup) isHeroGroup.classList.add('hidden');
+            if (portraitGroup) portraitGroup.classList.remove('hidden');
+        } else if (activeDomain === 'resources') {
+            if (resConfigSection) resConfigSection.classList.remove('hidden');
+            if (unitStatsSection) unitStatsSection.classList.add('hidden');
+            if (unitCostSection) unitCostSection.classList.add('hidden');
+            if (unitCombatSection) unitCombatSection.classList.add('hidden');
+            if (unitCapabilitiesSection) unitCapabilitiesSection.classList.add('hidden');
+            if (pathingSection) pathingSection.classList.remove('hidden');
+            if (isHeroGroup) isHeroGroup.classList.add('hidden');
+            if (portraitGroup) portraitGroup.classList.remove('hidden');
+        } else {
+            if (resConfigSection) resConfigSection.classList.add('hidden');
+            if (unitStatsSection) unitStatsSection.classList.remove('hidden');
+            if (unitCostSection) unitCostSection.classList.remove('hidden');
+            if (unitCombatSection) unitCombatSection.classList.remove('hidden');
+            if (unitCapabilitiesSection) unitCapabilitiesSection.classList.remove('hidden');
+            if (pathingSection) pathingSection.classList.remove('hidden');
+            if (isHeroGroup) isHeroGroup.classList.remove('hidden');
+            if (portraitGroup) portraitGroup.classList.remove('hidden');
+        }
+
         renderTags('build-options', unit.BuildOptions || []);
         renderTags('abilities', unit.Abilities || []);
         renderTags('weapons', unit.Weapons || []);
@@ -645,7 +786,54 @@
         renderTags('statuseffects', unit.StatusEffects || []);
         renderTags('soundevents', unit.SoundEvents || []);
         
+        populateGlbDropdown(activeDomain, unit.ModelPath || '');
         updateAllThumbnails();
+    }
+
+    function populateGlbDropdown(domain, currentModelPath) {
+        const select = document.getElementById('field-ModelPath');
+        if (!select) return;
+        select.innerHTML = '';
+
+        const noneOpt = document.createElement('option');
+        noneOpt.value = '';
+        noneOpt.textContent = '-- None (Default Model) --';
+        select.appendChild(noneOpt);
+
+        const showAll = document.getElementById('chk-show-all-glb')?.checked ?? false;
+        const targetCategory = domain === 'units' ? 'units' :
+                              domain === 'buildings' ? 'buildings' :
+                              domain === 'resources' ? 'resources' :
+                              domain === 'props' ? 'props' : null;
+
+        const glbAssets = (units.Assets && units.Assets.glb) ? units.Assets.glb : {};
+        for (const [catKey, catObj] of Object.entries(glbAssets)) {
+            if (!catObj || typeof catObj !== 'object') continue;
+            const normCat = catKey.toLowerCase();
+
+            if (!showAll && targetCategory) {
+                const isMatch = normCat === targetCategory || (targetCategory === 'buildings' && normCat === 'building');
+                if (!isMatch) continue;
+            }
+
+            for (const [fileName, val] of Object.entries(catObj)) {
+                const opt = document.createElement('option');
+                opt.value = fileName;
+                opt.textContent = `${fileName} (${normCat})`;
+                if (fileName === currentModelPath) {
+                    opt.selected = true;
+                }
+                select.appendChild(opt);
+            }
+        }
+
+        if (currentModelPath && ![...select.options].some(o => o.value === currentModelPath)) {
+            const customOpt = document.createElement('option');
+            customOpt.value = currentModelPath;
+            customOpt.textContent = `${currentModelPath} (custom)`;
+            customOpt.selected = true;
+            select.appendChild(customOpt);
+        }
     }
 
     function populateMapProperties() {
@@ -750,7 +938,8 @@
             return;
         }
 
-        if (!selectedUnitId || !units[selectedUnitId]) return;
+        const unit = getUnitById(selectedUnitId);
+        if (!selectedUnitId || !unit) return;
         
         let key;
         if (type === 'build-options') key = 'BuildOptions';
@@ -761,11 +950,11 @@
         else if (type === 'statuseffects') key = 'StatusEffects';
         else if (type === 'soundevents') key = 'SoundEvents';
 
-        if (key && units[selectedUnitId][key]) {
+        if (key && unit[key]) {
             pushToUndoStack();
-            units[selectedUnitId][key].splice(index, 1);
+            unit[key].splice(index, 1);
             saveChanges();
-            renderTags(type, units[selectedUnitId][key]);
+            renderTags(type, unit[key]);
         }
     }
 
@@ -795,18 +984,19 @@
             return;
         }
 
-        if (!selectedUnitId || !units[selectedUnitId] || !inputEl || !key) return;
+        const unit = getUnitById(selectedUnitId);
+        if (!selectedUnitId || !unit || !inputEl || !key) return;
 
         const val = inputEl.value.trim();
         if (val) {
             pushToUndoStack();
-            if (!units[selectedUnitId][key]) {
-                units[selectedUnitId][key] = [];
+            if (!unit[key]) {
+                unit[key] = [];
             }
-            units[selectedUnitId][key].push(val);
+            unit[key].push(val);
             inputEl.value = '';
             saveChanges();
-            renderTags(type, units[selectedUnitId][key]);
+            renderTags(type, unit[key]);
         }
     }
 
@@ -1058,7 +1248,7 @@
     // Custom Weapons
     function renderCustomWeapons() {
         customWeaponsList.innerHTML = '';
-        const list = units.MapProperties.CustomWeapons || [];
+        const list = units.CustomWeapons || [];
 
         const tableContainer = document.createElement('div');
         tableContainer.className = 'spreadsheet-container';
@@ -1189,7 +1379,7 @@
                     pushToUndoStack();
                     cascadeDelete('weapon', targetId);
                     list.splice(idx, 1);
-                    units.MapProperties.CustomWeapons = list;
+                    units.CustomWeapons = list;
                     saveChanges();
                     renderCustomWeapons();
                 }
@@ -1236,7 +1426,7 @@
                 else if (target.classList.contains('weapon-impact-visual')) list[idx].ImpactVisualEffect = val;
                 else if (target.classList.contains('weapon-impact-sound')) list[idx].ImpactSound = val;
 
-                units.MapProperties.CustomWeapons = list;
+                units.CustomWeapons = list;
                 saveChanges();
             });
         });
@@ -1246,7 +1436,7 @@
     // Custom Abilities
     function renderCustomAbilities() {
         customAbilitiesList.innerHTML = '';
-        const list = units.MapProperties.CustomAbilities || [];
+        const list = units.CustomAbilities || [];
         const validation = getValidationErrors();
 
         const tableContainer = document.createElement('div');
@@ -1427,7 +1617,7 @@
                     pushToUndoStack();
                     cascadeDelete('ability', targetId);
                     list.splice(idx, 1);
-                    units.MapProperties.CustomAbilities = list;
+                    units.CustomAbilities = list;
                     saveChanges();
                     renderCustomAbilities();
                 }
@@ -1479,7 +1669,7 @@
                 else if (target.classList.contains('ability-summon-count')) list[idx].SummonCount = parseInt(val, 10) || 1;
                 else if (target.classList.contains('ability-summon-duration')) list[idx].SummonDuration = parseFloat(val) || 0;
 
-                units.MapProperties.CustomAbilities = list;
+                units.CustomAbilities = list;
                 saveChanges();
             });
         });
@@ -1489,7 +1679,7 @@
     // Custom Upgrades
     function renderCustomUpgrades() {
         customUpgradesList.innerHTML = '';
-        const list = units.MapProperties.CustomUpgrades || [];
+        const list = units.CustomUpgrades || [];
         const validation = getValidationErrors();
 
         const tableContainer = document.createElement('div');
@@ -1641,7 +1831,7 @@
                     pushToUndoStack();
                     cascadeDelete('upgrade', targetId);
                     list.splice(idx, 1);
-                    units.MapProperties.CustomUpgrades = list;
+                    units.CustomUpgrades = list;
                     saveChanges();
                     renderCustomUpgrades();
                 }
@@ -1690,7 +1880,7 @@
                 else if (target.classList.contains('upgrade-arm-bonus')) list[idx].ArmorBonus = parseFloat(val) || 0;
                 else if (target.classList.contains('upgrade-spd-bonus')) list[idx].SpeedBonus = parseFloat(val) || 0;
 
-                units.MapProperties.CustomUpgrades = list;
+                units.CustomUpgrades = list;
                 saveChanges();
             });
         });
@@ -1699,7 +1889,7 @@
     // Custom Items
     function renderCustomItems() {
         customItemsList.innerHTML = '';
-        const list = units.MapProperties.CustomItems || [];
+        const list = units.CustomItems || [];
         const validation = getValidationErrors();
 
         const tableContainer = document.createElement('div');
@@ -1898,7 +2088,7 @@
                     pushToUndoStack();
                     cascadeDelete('item', targetId);
                     list.splice(idx, 1);
-                    units.MapProperties.CustomItems = list;
+                    units.CustomItems = list;
                     saveChanges();
                     renderCustomItems();
                 }
@@ -1948,7 +2138,7 @@
                 else if (target.classList.contains('item-containersize')) list[idx].ContainerSize = parseInt(val, 10) || 0;
                 else if (target.classList.contains('item-req')) list[idx].Requirements = val;
 
-                units.MapProperties.CustomItems = list;
+                units.CustomItems = list;
                 saveChanges();
             });
         });
@@ -1958,19 +2148,19 @@
     // --- INLINE SUB-TABLE HANDLERS (AppliedStatusEffects, AffectedUnitIds, PassiveStatusEffects, GrantedWeapons) ---
     function getSubitemArray(type, parentIndex) {
         if (type === 'AppliedStatusEffects') {
-            const item = units.MapProperties.CustomAbilities[parentIndex];
+            const item = units.CustomAbilities[parentIndex];
             if (!item.AppliedStatusEffects) item.AppliedStatusEffects = [];
             return item.AppliedStatusEffects;
         } else if (type === 'AffectedUnitIds') {
-            const item = units.MapProperties.CustomUpgrades[parentIndex];
+            const item = units.CustomUpgrades[parentIndex];
             if (!item.AffectedUnitIds) item.AffectedUnitIds = [];
             return item.AffectedUnitIds;
         } else if (type === 'PassiveStatusEffects') {
-            const item = units.MapProperties.CustomItems[parentIndex];
+            const item = units.CustomItems[parentIndex];
             if (!item.PassiveStatusEffects) item.PassiveStatusEffects = [];
             return item.PassiveStatusEffects;
         } else if (type === 'GrantedWeapons') {
-            const item = units.MapProperties.CustomItems[parentIndex];
+            const item = units.CustomItems[parentIndex];
             if (!item.GrantedWeapons) item.GrantedWeapons = [];
             return item.GrantedWeapons;
         }
@@ -1979,16 +2169,16 @@
 
     function saveSubitemArray(type, parentIndex, arr) {
         if (type === 'AppliedStatusEffects') {
-            units.MapProperties.CustomAbilities[parentIndex].AppliedStatusEffects = arr;
+            units.CustomAbilities[parentIndex].AppliedStatusEffects = arr;
             renderCustomAbilities();
         } else if (type === 'AffectedUnitIds') {
-            units.MapProperties.CustomUpgrades[parentIndex].AffectedUnitIds = arr;
+            units.CustomUpgrades[parentIndex].AffectedUnitIds = arr;
             renderCustomUpgrades();
         } else if (type === 'PassiveStatusEffects') {
-            units.MapProperties.CustomItems[parentIndex].PassiveStatusEffects = arr;
+            units.CustomItems[parentIndex].PassiveStatusEffects = arr;
             renderCustomItems();
         } else if (type === 'GrantedWeapons') {
-            units.MapProperties.CustomItems[parentIndex].GrantedWeapons = arr;
+            units.CustomItems[parentIndex].GrantedWeapons = arr;
             renderCustomItems();
         }
         saveChanges();
@@ -2092,15 +2282,15 @@
     }
 
     function getExistingUnitIds() {
-        const skipKeys = ['MapProperties', 'CustomWeapons', 'CustomAbilities', 'CustomUpgrades', 'CustomItems'];
-        return new Set(Object.keys(units).filter(id => !skipKeys.includes(id)));
+        const customUnitsList = getCustomUnits();
+        return new Set(customUnitsList.map(u => u.UnitId).filter(Boolean));
     }
 
     // --- UNIT COPY / PASTE SYSTEM CLIPBOARD ---
     if (copyUnitBtn) {
         copyUnitBtn.addEventListener('click', () => {
-            if (!selectedUnitId || !units[selectedUnitId]) return;
-            const sourceUnit = units[selectedUnitId];
+            const sourceUnit = getUnitById(selectedUnitId);
+            if (!selectedUnitId || !sourceUnit) return;
             navigator.clipboard.writeText(JSON.stringify({
                 "$realm_editor_type": "unit",
                 "data": sourceUnit
@@ -2127,7 +2317,7 @@
                             "AttackCooldown", "ScanRadius", "CostGold", "CostWood", "CostStone", "ProductionTime",
                             "PopCost", "AttackType", "ArmorType", "GoldBounty", "ModelPath", "BuildOptions",
                             "IsHero", "Abilities", "XpBounty", "Weapons", "StartingItems", "Upgrades",
-                            "MovementType", "StatusEffects", "SoundEvents", "PortraitModelPath"
+                            "PathingType", "StatusEffects", "SoundEvents", "PortraitModelPath"
                         ];
                         const sanitized = {};
                         schemaKeys.forEach(k => {
@@ -2141,7 +2331,13 @@
                         sanitized.UnitId = nextId;
                         sanitized.Name = `${sanitized.Name || 'Pasted Unit'} (Copy)`;
 
-                        units[nextId] = sanitized;
+                        const domain = getActiveDomain();
+                        const targetArr = domain === 'buildings' ? (units.CustomBuildings = units.CustomBuildings || []) :
+                                          domain === 'resources' ? (units.CustomResources = units.CustomResources || []) :
+                                          domain === 'props' ? (units.CustomProps = units.CustomProps || []) :
+                                          (units.CustomUnits = units.CustomUnits || []);
+
+                        targetArr.push(sanitized);
                         selectUnit(nextId);
                         saveChanges();
                     }
@@ -2159,10 +2355,10 @@
             const type = copyRowBtn.dataset.type;
             const index = parseInt(copyRowBtn.dataset.index, 10);
             let itemData = null;
-            if (type === 'weapon') itemData = units.MapProperties.CustomWeapons[index];
-            else if (type === 'ability') itemData = units.MapProperties.CustomAbilities[index];
-            else if (type === 'upgrade') itemData = units.MapProperties.CustomUpgrades[index];
-            else if (type === 'item') itemData = units.MapProperties.CustomItems[index];
+            if (type === 'weapon') itemData = units.CustomWeapons[index];
+            else if (type === 'ability') itemData = units.CustomAbilities[index];
+            else if (type === 'upgrade') itemData = units.CustomUpgrades[index];
+            else if (type === 'item') itemData = units.CustomItems[index];
 
             if (itemData) {
                 navigator.clipboard.writeText(JSON.stringify({
@@ -2209,33 +2405,34 @@
 
     if (pasteCustomWeaponBtn) {
         pasteCustomWeaponBtn.addEventListener('click', () => {
-            if (!units.MapProperties.CustomWeapons) units.MapProperties.CustomWeapons = [];
-            pasteRowData('weapon', units.MapProperties.CustomWeapons, 'WeaponId', 'Weapon');
+            if (!units.CustomWeapons) units.CustomWeapons = [];
+            pasteRowData('weapon', units.CustomWeapons, 'WeaponId', 'Weapon');
         });
     }
     if (pasteCustomAbilityBtn) {
         pasteCustomAbilityBtn.addEventListener('click', () => {
-            if (!units.MapProperties.CustomAbilities) units.MapProperties.CustomAbilities = [];
-            pasteRowData('ability', units.MapProperties.CustomAbilities, 'AbilityId', 'Ability');
+            if (!units.CustomAbilities) units.CustomAbilities = [];
+            pasteRowData('ability', units.CustomAbilities, 'AbilityId', 'Ability');
         });
     }
     if (pasteCustomUpgradeBtn) {
         pasteCustomUpgradeBtn.addEventListener('click', () => {
-            if (!units.MapProperties.CustomUpgrades) units.MapProperties.CustomUpgrades = [];
-            pasteRowData('upgrade', units.MapProperties.CustomUpgrades, 'UpgradeId', 'Upgrade');
+            if (!units.CustomUpgrades) units.CustomUpgrades = [];
+            pasteRowData('upgrade', units.CustomUpgrades, 'UpgradeId', 'Upgrade');
         });
     }
     if (pasteCustomItemBtn) {
         pasteCustomItemBtn.addEventListener('click', () => {
-            if (!units.MapProperties.CustomItems) units.MapProperties.CustomItems = [];
-            pasteRowData('item', units.MapProperties.CustomItems, 'ItemId', 'Item');
+            if (!units.CustomItems) units.CustomItems = [];
+            pasteRowData('item', units.CustomItems, 'ItemId', 'Item');
         });
     }
 
     // --- COMPONENT LEVEL COPY/PASTE FOR UNIT FORM ---
     function copyUnitComponent(componentKey) {
-        if (!selectedUnitId || !units[selectedUnitId]) return;
-        const arr = units[selectedUnitId][componentKey] || [];
+        const unit = getUnitById(selectedUnitId);
+        if (!selectedUnitId || !unit) return;
+        const arr = unit[componentKey] || [];
         navigator.clipboard.writeText(JSON.stringify({
             "$realm_editor_type": "unit-component-block",
             "componentType": componentKey,
@@ -2245,13 +2442,14 @@
 
     function pasteUnitComponent(componentKey) {
         if (isLocked) return;
-        if (!selectedUnitId || !units[selectedUnitId]) return;
+        const unit = getUnitById(selectedUnitId);
+        if (!selectedUnitId || !unit) return;
         navigator.clipboard.readText().then(text => {
             try {
                 const parsed = JSON.parse(text);
                 if (parsed && parsed.$realm_editor_type === 'unit-component-block' && Array.isArray(parsed.data)) {
                     pushToUndoStack();
-                    units[selectedUnitId][componentKey] = parsed.data;
+                    unit[componentKey] = parsed.data;
                     saveChanges();
                     
                     let tagType = '';
@@ -2367,22 +2565,30 @@
     }
 
     function duplicateSelectedUnit() {
-        if (!selectedUnitId || !units[selectedUnitId]) return;
-        const sourceUnit = units[selectedUnitId];
+        if (!selectedUnitId) return;
+        const sourceUnit = getUnitById(selectedUnitId);
+        if (!sourceUnit) return;
         
-        const nextId = incrementId(selectedUnitId, getExistingUnitIds());
+        const existingIds = getExistingUnitIds();
+        const domain = getActiveDomain();
+        const prefix = domain === 'buildings' ? 'Building' : domain === 'resources' ? 'Resource' : domain === 'props' ? 'Prop' : 'Unit';
+        const nextId = generateNextId(prefix, existingIds);
         
         const newUnit = JSON.parse(JSON.stringify(sourceUnit));
         newUnit.UnitId = nextId;
-        newUnit.Name = `${sourceUnit.Name || 'New Unit'} (Copy)`;
+        newUnit.Name = `${sourceUnit.Name || 'New Entity'} (Copy)`;
         
-        units[nextId] = newUnit;
+        const targetArr = domain === 'buildings' ? (units.CustomBuildings = units.CustomBuildings || []) :
+                          domain === 'resources' ? (units.CustomResources = units.CustomResources || []) :
+                          domain === 'props' ? (units.CustomProps = units.CustomProps || []) :
+                          (units.CustomUnits = units.CustomUnits || []);
+        targetArr.push(newUnit);
         selectUnit(nextId);
         saveChanges();
     }
 
     function duplicateWeapon(index) {
-        const list = units.MapProperties.CustomWeapons || [];
+        const list = units.CustomWeapons || [];
         if (!list[index]) return;
         
         const source = list[index];
@@ -2394,13 +2600,13 @@
         newWeapon.Name = `${source.Name || 'New Weapon'} (Copy)`;
         
         list.splice(index + 1, 0, newWeapon);
-        units.MapProperties.CustomWeapons = list;
+        units.CustomWeapons = list;
         saveChanges();
         renderCustomWeapons();
     }
 
     function duplicateAbility(index) {
-        const list = units.MapProperties.CustomAbilities || [];
+        const list = units.CustomAbilities || [];
         if (!list[index]) return;
         
         const source = list[index];
@@ -2412,13 +2618,13 @@
         newAbility.Name = `${source.Name || 'New Ability'} (Copy)`;
         
         list.splice(index + 1, 0, newAbility);
-        units.MapProperties.CustomAbilities = list;
+        units.CustomAbilities = list;
         saveChanges();
         renderCustomAbilities();
     }
 
     function duplicateUpgrade(index) {
-        const list = units.MapProperties.CustomUpgrades || [];
+        const list = units.CustomUpgrades || [];
         if (!list[index]) return;
         
         const source = list[index];
@@ -2430,13 +2636,13 @@
         newUpgrade.Name = `${source.Name || 'New Upgrade'} (Copy)`;
         
         list.splice(index + 1, 0, newUpgrade);
-        units.MapProperties.CustomUpgrades = list;
+        units.CustomUpgrades = list;
         saveChanges();
         renderCustomUpgrades();
     }
 
     function duplicateItem(index) {
-        const list = units.MapProperties.CustomItems || [];
+        const list = units.CustomItems || [];
         if (!list[index]) return;
         
         const source = list[index];
@@ -2448,7 +2654,7 @@
         newItem.Name = `${source.Name || 'New Item'} (Copy)`;
         
         list.splice(index + 1, 0, newItem);
-        units.MapProperties.CustomItems = list;
+        units.CustomItems = list;
         saveChanges();
         renderCustomItems();
     }
@@ -2471,7 +2677,10 @@
         try {
             pushToUndoStack();
             cascadeDelete('unit', id);
-            delete units[id];
+            units.CustomUnits = (units.CustomUnits || []).filter(u => u && u.UnitId !== id);
+            units.CustomBuildings = (units.CustomBuildings || []).filter(u => u && u.UnitId !== id);
+            units.CustomResources = (units.CustomResources || []).filter(u => u && u.UnitId !== id);
+            units.CustomProps = (units.CustomProps || []).filter(u => u && u.UnitId !== id);
             if (selectedUnitId === id) {
                 selectedUnitId = null;
                 showEmptyState();
@@ -2485,42 +2694,49 @@
     }
 
     addUnitBtn.addEventListener('click', () => {
-        const nextId = generateNextId('Unit', getExistingUnitIds());
+        const domain = getActiveDomain();
+        const defaultType = domain === 'units' ? 'units' :
+                            domain === 'buildings' ? 'buildings' :
+                            domain === 'resources' ? 'resources' :
+                            domain === 'props' ? 'props' : 'units';
+        const defaultArmor = domain === 'buildings' ? 'building' : 'light';
+        const defaultPathing = domain === 'buildings' ? 32 : (domain === 'resources' || domain === 'props') ? 255 : 8;
 
-        units[nextId] = {
-            UnitId: nextId,
-            Name: 'New Unit',
-            Description: 'A new custom unit.',
-            MaxHp: 100.0,
-            Damage: 10.0,
-            Range: 2.0,
-            Armor: 0.0,
-            Speed: 5.0,
-            AttackCooldown: 1.5,
-            ScanRadius: 10.0,
-            CostGold: 100.0,
-            CostWood: 0.0,
-            CostStone: 0.0,
-            ProductionTime: 10.0,
-            PopCost: 1,
-            AttackType: 'melee',
-            ArmorType: 'light',
-            GoldBounty: 10.0
-        };
+        const prefix = domain === 'buildings' ? 'Building' : domain === 'resources' ? 'Resource' : domain === 'props' ? 'Prop' : 'Unit';
+        const nextId = generateNextId(prefix, getExistingUnitIds());
 
-        selectUnit(nextId);
-        saveChanges();
-    });
+        if (!Array.isArray(units.CustomUnits)) units.CustomUnits = [];
+        if (!Array.isArray(units.CustomBuildings)) units.CustomBuildings = [];
+        if (!Array.isArray(units.CustomResources)) units.CustomResources = [];
+        if (!Array.isArray(units.CustomProps)) units.CustomProps = [];
 
-    addUnit5Btn.addEventListener('click', () => {
-        if (isLocked) return;
-        pushToUndoStack();
-        for (let i = 0; i < 5; i++) {
-            const nextId = generateNextId('Unit', getExistingUnitIds());
-            units[nextId] = {
+        const targetArray = domain === 'buildings' ? units.CustomBuildings :
+                            domain === 'resources' ? units.CustomResources :
+                            domain === 'props' ? units.CustomProps : units.CustomUnits;
+
+        if (domain === 'props') {
+            targetArray.push({
                 UnitId: nextId,
-                Name: 'New Unit',
-                Description: 'A new custom unit.',
+                Name: `New ${prefix}`,
+                Description: `A decorative ${prefix.toLowerCase()} prop.`,
+                PathingType: defaultPathing
+            });
+        } else if (domain === 'resources') {
+            targetArray.push({
+                UnitId: nextId,
+                Name: `New ${prefix}`,
+                Description: `Harvestable ${prefix.toLowerCase()} deposit.`,
+                MaxCapacity: 2000.0,
+                HarvestRate: 10.0,
+                GrowthRate: 0.0,
+                MaxWorkers: 5,
+                PathingType: defaultPathing
+            });
+        } else {
+            targetArray.push({
+                UnitId: nextId,
+                Name: `New ${prefix}`,
+                Description: `A new ${prefix.toLowerCase()} entity.`,
                 MaxHp: 100.0,
                 Damage: 10.0,
                 Range: 2.0,
@@ -2534,19 +2750,21 @@
                 ProductionTime: 10.0,
                 PopCost: 1,
                 AttackType: 'melee',
-                ArmorType: 'light',
-                GoldBounty: 10.0
-            };
+                ArmorType: defaultArmor,
+                GoldBounty: 10.0,
+                PathingType: defaultPathing
+            });
         }
-        renderUnitList();
+
+        selectUnit(nextId);
         saveChanges();
     });
 
     addCustomWeaponBtn.addEventListener('click', () => {
-        if (!units.MapProperties.CustomWeapons) {
-            units.MapProperties.CustomWeapons = [];
+        if (!units.CustomWeapons) {
+            units.CustomWeapons = [];
         }
-        const list = units.MapProperties.CustomWeapons;
+        const list = units.CustomWeapons;
         const nextId = generateNextId('Weapon', new Set(list.map(w => w.WeaponId)));
         list.push({
             WeaponId: nextId,
@@ -2556,39 +2774,16 @@
             AttackCooldown: 1.5,
             AttackType: 'melee'
         });
-        units.MapProperties.CustomWeapons = list;
-        saveChanges();
-        renderCustomWeapons();
-    });
-
-    addCustomWeapon5Btn.addEventListener('click', () => {
-        if (isLocked) return;
-        pushToUndoStack();
-        if (!units.MapProperties.CustomWeapons) {
-            units.MapProperties.CustomWeapons = [];
-        }
-        const list = units.MapProperties.CustomWeapons;
-        for (let i = 0; i < 5; i++) {
-            const nextId = generateNextId('Weapon', new Set(list.map(w => w.WeaponId)));
-            list.push({
-                WeaponId: nextId,
-                Name: 'New Weapon',
-                Damage: 10,
-                Range: 2.0,
-                AttackCooldown: 1.5,
-                AttackType: 'melee'
-            });
-        }
-        units.MapProperties.CustomWeapons = list;
+        units.CustomWeapons = list;
         saveChanges();
         renderCustomWeapons();
     });
 
     addCustomAbilityBtn.addEventListener('click', () => {
-        if (!units.MapProperties.CustomAbilities) {
-            units.MapProperties.CustomAbilities = [];
+        if (!units.CustomAbilities) {
+            units.CustomAbilities = [];
         }
-        const list = units.MapProperties.CustomAbilities;
+        const list = units.CustomAbilities;
         const nextId = generateNextId('Ability', new Set(list.map(a => a.AbilityId)));
         list.push({
             AbilityId: nextId,
@@ -2596,73 +2791,32 @@
             Description: 'A new spell effect.',
             AbilityType: 'target_spell'
         });
-        units.MapProperties.CustomAbilities = list;
-        saveChanges();
-        renderCustomAbilities();
-    });
-
-    addCustomAbility5Btn.addEventListener('click', () => {
-        if (isLocked) return;
-        pushToUndoStack();
-        if (!units.MapProperties.CustomAbilities) {
-            units.MapProperties.CustomAbilities = [];
-        }
-        const list = units.MapProperties.CustomAbilities;
-        for (let i = 0; i < 5; i++) {
-            const nextId = generateNextId('Ability', new Set(list.map(a => a.AbilityId)));
-            list.push({
-                AbilityId: nextId,
-                Name: 'New Ability',
-                Description: 'A new spell effect.',
-                AbilityType: 'target_spell'
-            });
-        }
-        units.MapProperties.CustomAbilities = list;
+        units.CustomAbilities = list;
         saveChanges();
         renderCustomAbilities();
     });
 
     addCustomUpgradeBtn.addEventListener('click', () => {
-        if (!units.MapProperties.CustomUpgrades) {
-            units.MapProperties.CustomUpgrades = [];
+        if (!units.CustomUpgrades) {
+            units.CustomUpgrades = [];
         }
-        const list = units.MapProperties.CustomUpgrades;
+        const list = units.CustomUpgrades;
         const nextId = generateNextId('Upgrade', new Set(list.map(u => u.UpgradeId)));
         list.push({
             UpgradeId: nextId,
             Name: 'New Upgrade',
             Description: 'Increases unit stats.'
         });
-        units.MapProperties.CustomUpgrades = list;
-        saveChanges();
-        renderCustomUpgrades();
-    });
-
-    addCustomUpgrade5Btn.addEventListener('click', () => {
-        if (isLocked) return;
-        pushToUndoStack();
-        if (!units.MapProperties.CustomUpgrades) {
-            units.MapProperties.CustomUpgrades = [];
-        }
-        const list = units.MapProperties.CustomUpgrades;
-        for (let i = 0; i < 5; i++) {
-            const nextId = generateNextId('Upgrade', new Set(list.map(u => u.UpgradeId)));
-            list.push({
-                UpgradeId: nextId,
-                Name: 'New Upgrade',
-                Description: 'Increases unit stats.'
-            });
-        }
-        units.MapProperties.CustomUpgrades = list;
+        units.CustomUpgrades = list;
         saveChanges();
         renderCustomUpgrades();
     });
 
     addCustomItemBtn.addEventListener('click', () => {
-        if (!units.MapProperties.CustomItems) {
-            units.MapProperties.CustomItems = [];
+        if (!units.CustomItems) {
+            units.CustomItems = [];
         }
-        const list = units.MapProperties.CustomItems;
+        const list = units.CustomItems;
         const nextId = generateNextId('Item', new Set(list.map(i => i.ItemId)));
         list.push({
             ItemId: nextId,
@@ -2670,28 +2824,7 @@
             Description: 'A custom inventory item.',
             ItemClass: 'consumable'
         });
-        units.MapProperties.CustomItems = list;
-        saveChanges();
-        renderCustomItems();
-    });
-
-    addCustomItem5Btn.addEventListener('click', () => {
-        if (isLocked) return;
-        pushToUndoStack();
-        if (!units.MapProperties.CustomItems) {
-            units.MapProperties.CustomItems = [];
-        }
-        const list = units.MapProperties.CustomItems;
-        for (let i = 0; i < 5; i++) {
-            const nextId = generateNextId('Item', new Set(list.map(i => i.ItemId)));
-            list.push({
-                ItemId: nextId,
-                Name: 'New Item',
-                Description: 'A custom inventory item.',
-                ItemClass: 'consumable'
-            });
-        }
-        units.MapProperties.CustomItems = list;
+        units.CustomItems = list;
         saveChanges();
         renderCustomItems();
     });
@@ -2867,7 +3000,7 @@
     function applyLockState() {
         document.querySelectorAll('input, select, textarea, button').forEach(el => {
             if (el.id === 'toggle-lock-btn') return;
-            if (el.classList.contains('browse-btn') || el.classList.contains('clear-btn') || el.classList.contains('btn-delete') || el.classList.contains('btn-duplicate-item') || el.classList.contains('remove-tag') || el.classList.contains('btn-delete-subitem') || el.classList.contains('add-subitem-btn') || el.classList.contains('copy-subtable-btn') || el.classList.contains('paste-subtable-btn') || el.classList.contains('copy-row-btn') || el.classList.contains('copy-unit-comp-btn') || el.classList.contains('paste-unit-comp-btn') || el.id === 'duplicate-unit-btn' || el.id === 'copy-unit-btn' || el.id === 'paste-unit-btn') {
+            if (el.classList.contains('browse-btn') || el.classList.contains('clear-btn') || el.classList.contains('btn-delete') || el.classList.contains('btn-duplicate-item') || el.classList.contains('remove-tag') || el.classList.contains('btn-delete-subitem') || el.classList.contains('add-subitem-btn') || el.classList.contains('copy-subtable-btn') || el.classList.contains('paste-subtable-btn') || el.classList.contains('copy-row-btn') || el.classList.contains('copy-unit-comp-btn') || el.classList.contains('paste-unit-comp-btn') || el.id === 'duplicate-unit-btn' || el.id === 'delete-unit-btn' || el.id === 'copy-unit-btn' || el.id === 'paste-unit-btn') {
                 el.disabled = isLocked;
             } else {
                 el.readOnly = isLocked;
@@ -2958,18 +3091,17 @@
             items: {}
         };
 
-        const skipKeys = ['MapProperties', 'CustomWeapons', 'CustomAbilities', 'CustomUpgrades', 'CustomItems'];
-        const existingUnitIds = new Set(Object.keys(units).filter(id => !skipKeys.includes(id)));
-        const props = units.MapProperties || {};
+        const customUnitsList = getCustomUnits();
+        const existingUnitIds = new Set(customUnitsList.map(u => u.UnitId).filter(Boolean));
         
-        const existingWeaponIds = new Set((props.CustomWeapons || []).map(w => w.WeaponId).filter(Boolean));
-        const existingAbilityIds = new Set((props.CustomAbilities || []).map(a => a.AbilityId).filter(Boolean));
-        const existingUpgradeIds = new Set((props.CustomUpgrades || []).map(u => u.UpgradeId).filter(Boolean));
-        const existingItemIds = new Set((props.CustomItems || []).map(i => i.ItemId).filter(Boolean));
+        const existingWeaponIds = new Set((units.CustomWeapons || []).map(w => w.WeaponId).filter(Boolean));
+        const existingAbilityIds = new Set((units.CustomAbilities || []).map(a => a.AbilityId).filter(Boolean));
+        const existingUpgradeIds = new Set((units.CustomUpgrades || []).map(u => u.UpgradeId).filter(Boolean));
+        const existingItemIds = new Set((units.CustomItems || []).map(i => i.ItemId).filter(Boolean));
 
-        for (const [id, unit] of Object.entries(units)) {
-            if (skipKeys.includes(id)) continue;
-            if (!unit) continue;
+        for (const unit of customUnitsList) {
+            if (!unit || !unit.UnitId) continue;
+            const id = unit.UnitId;
             
             const unitErrors = {};
             if (unit.BuildOptions) {
@@ -3013,7 +3145,7 @@
             }
         }
 
-        (props.CustomAbilities || []).forEach((item, index) => {
+        (units.CustomAbilities || []).forEach((item, index) => {
             const abiErrors = {};
             if (item.SummonedUnitId && !existingUnitIds.has(item.SummonedUnitId)) {
                 abiErrors['SummonedUnitId'] = `Unit ID "${item.SummonedUnitId}" does not exist.`;
@@ -3023,7 +3155,7 @@
             }
         });
 
-        (props.CustomUpgrades || []).forEach((item, index) => {
+        (units.CustomUpgrades || []).forEach((item, index) => {
             const upgErrors = {};
             if (item.AffectedUnitIds) {
                 item.AffectedUnitIds.forEach((targetId, affectedIdx) => {
@@ -3037,7 +3169,7 @@
             }
         });
 
-        (props.CustomItems || []).forEach((item, index) => {
+        (units.CustomItems || []).forEach((item, index) => {
             const itemErrors = {};
             if (item.UseAbility && !existingAbilityIds.has(item.UseAbility)) {
                 itemErrors['UseAbility'] = `Ability ID "${item.UseAbility}" does not exist in Custom Abilities.`;
@@ -3058,29 +3190,28 @@
     }
 
     function getTooltipDetails(type, id) {
-        const props = units.MapProperties || {};
         if (type === 'build-options' || type === 'suggest-units') {
-            const u = units[id];
+            const u = getUnitById(id);
             if (u) {
                 return { title: u.Name || id, desc: u.Description || 'No description.' };
             }
         } else if (type === 'weapons' || type === 'suggest-weapons') {
-            const w = (props.CustomWeapons || []).find(x => x.WeaponId === id);
+            const w = (units.CustomWeapons || []).find(x => x.WeaponId === id);
             if (w) {
                 return { title: w.Name || id, desc: `Damage: ${w.Damage || 0}, Range: ${w.Range || 0}` };
             }
         } else if (type === 'abilities' || type === 'suggest-abilities') {
-            const a = (props.CustomAbilities || []).find(x => x.AbilityId === id);
+            const a = (units.CustomAbilities || []).find(x => x.AbilityId === id);
             if (a) {
                 return { title: a.Name || id, desc: a.Description || 'No description.' };
             }
         } else if (type === 'items' || type === 'suggest-items') {
-            const i = (props.CustomItems || []).find(x => x.ItemId === id);
+            const i = (units.CustomItems || []).find(x => x.ItemId === id);
             if (i) {
                 return { title: i.Name || id, desc: i.Description || 'No description.' };
             }
         } else if (type === 'upgrades' || type === 'suggest-upgrades') {
-            const u = (props.CustomUpgrades || []).find(x => x.UpgradeId === id);
+            const u = (units.CustomUpgrades || []).find(x => x.UpgradeId === id);
             if (u) {
                 return { title: u.Name || id, desc: u.Description || 'No description.' };
             }
@@ -3089,15 +3220,13 @@
     }
 
     function updateDatalists() {
-        const skipKeys = ['MapProperties', 'CustomWeapons', 'CustomAbilities', 'CustomUpgrades', 'CustomItems'];
-        const unitIds = Object.keys(units).filter(id => !skipKeys.includes(id) && units[id]);
-        const props = units.MapProperties || {};
-        const weapons = props.CustomWeapons || [];
-        const abilities = props.CustomAbilities || [];
-        const upgrades = props.CustomUpgrades || [];
-        const items = props.CustomItems || [];
+        const customUnitsList = getCustomUnits();
+        const weapons = units.CustomWeapons || [];
+        const abilities = units.CustomAbilities || [];
+        const upgrades = units.CustomUpgrades || [];
+        const items = units.CustomItems || [];
 
-        populateDatalist('suggest-units', unitIds.map(id => ({ id, name: units[id].Name })));
+        populateDatalist('suggest-units', customUnitsList.map(u => ({ id: u.UnitId, name: u.Name })));
         populateDatalist('suggest-weapons', weapons.map(w => ({ id: w.WeaponId, name: w.Name })));
         populateDatalist('suggest-abilities', abilities.map(a => ({ id: a.AbilityId, name: a.Name })));
         populateDatalist('suggest-upgrades', upgrades.map(u => ({ id: u.UpgradeId, name: u.Name })));
@@ -3127,13 +3256,15 @@
 
         element.addEventListener('change', e => {
             if (isLocked) return;
-            if (!selectedUnitId || !units[selectedUnitId]) return;
+            if (!selectedUnitId) return;
+            const targetUnit = getUnitById(selectedUnitId);
+            if (!targetUnit) return;
 
             const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
 
             if (key === 'UnitId') {
                 const newId = val.trim();
-                if (!newId || (newId !== selectedUnitId && units[newId])) {
+                if (!newId || (newId !== selectedUnitId && getUnitById(newId))) {
                     element.value = selectedUnitId;
                     const inputEvent = new Event('input', { bubbles: true });
                     element.dispatchEvent(inputEvent);
@@ -3149,8 +3280,7 @@
 
                 pushToUndoStack();
                 cascadeRename('unit', selectedUnitId, newId);
-                units[newId] = { ...units[selectedUnitId], UnitId: newId };
-                delete units[selectedUnitId];
+                targetUnit.UnitId = newId;
                 selectedUnitId = newId;
                 editorSubtitle.textContent = `ID: ${newId}`;
                 const breadcrumb = document.getElementById('editor-breadcrumb');
@@ -3175,7 +3305,7 @@
             }
 
             pushToUndoStack();
-            units[selectedUnitId][key] = parsedVal;
+            targetUnit[key] = parsedVal;
             if (key === 'Name') {
                 editorTitle.textContent = parsedVal || 'Edit Unit';
                 renderUnitList();
@@ -3422,6 +3552,14 @@
         });
     }
 
+    if (deleteUnitBtn) {
+        deleteUnitBtn.addEventListener('click', () => {
+            if (!selectedUnitId) return;
+            const sourceUnit = getUnitById(selectedUnitId);
+            showDeleteConfirm((sourceUnit && sourceUnit.Name) || selectedUnitId, selectedUnitId);
+        });
+    }
+
     if (toggleLockBtn) {
         toggleLockBtn.addEventListener('click', () => {
             isLocked = !isLocked;
@@ -3479,57 +3617,19 @@
     function serializeDeterministic(data) {
         if (!data) return '';
         
-        const sortedKeys = Object.keys(data).sort();
         const lines = [];
         lines.push('{');
         
+        // 1. MapProperties
         if (data.MapProperties) {
             lines.push('  "MapProperties": {');
             const props = data.MapProperties;
-            const propKeys = Object.keys(props).sort();
+            const propKeys = Object.keys(props).filter(k => !['CustomWeapons', 'CustomAbilities', 'CustomUpgrades', 'CustomItems'].includes(k)).sort();
             
             propKeys.forEach((pKey, pIdx) => {
                 const pVal = props[pKey];
-                const isLastProp = pIdx === propKeys.length - 1;
-                const comma = isLastProp ? '' : ',';
-                
-                if (pKey === 'CustomWeapons' && Array.isArray(pVal)) {
-                    lines.push('    "CustomWeapons": [');
-                    const sortedWeapons = [...pVal].sort((a, b) => (a.WeaponId || '').localeCompare(b.WeaponId || ''));
-                    sortedWeapons.forEach((w, wIdx) => {
-                        const sortedW = sortObjectKeys(w);
-                        const wLine = `      ${JSON.stringify(sortedW)}${wIdx === sortedWeapons.length - 1 ? '' : ','}`;
-                        lines.push(wLine);
-                    });
-                    lines.push(`    ]${comma}`);
-                } else if (pKey === 'CustomAbilities' && Array.isArray(pVal)) {
-                    lines.push('    "CustomAbilities": [');
-                    const sortedAbis = [...pVal].sort((a, b) => (a.AbilityId || '').localeCompare(b.AbilityId || ''));
-                    sortedAbis.forEach((a, aIdx) => {
-                        const sortedA = sortObjectKeys(a);
-                        const aLine = `      ${JSON.stringify(sortedA)}${aIdx === sortedAbis.length - 1 ? '' : ','}`;
-                        lines.push(aLine);
-                    });
-                    lines.push(`    ]${comma}`);
-                } else if (pKey === 'CustomUpgrades' && Array.isArray(pVal)) {
-                    lines.push('    "CustomUpgrades": [');
-                    const sortedUpgs = [...pVal].sort((a, b) => (a.UpgradeId || '').localeCompare(b.UpgradeId || ''));
-                    sortedUpgs.forEach((u, uIdx) => {
-                        const sortedU = sortObjectKeys(u);
-                        const uLine = `      ${JSON.stringify(sortedU)}${uIdx === sortedUpgs.length - 1 ? '' : ','}`;
-                        lines.push(uLine);
-                    });
-                    lines.push(`    ]${comma}`);
-                } else if (pKey === 'CustomItems' && Array.isArray(pVal)) {
-                    lines.push('    "CustomItems": [');
-                    const sortedItems = [...pVal].sort((a, b) => (a.ItemId || '').localeCompare(b.ItemId || ''));
-                    sortedItems.forEach((item, iIdx) => {
-                        const sortedI = sortObjectKeys(item);
-                        const iLine = `      ${JSON.stringify(sortedI)}${iIdx === sortedItems.length - 1 ? '' : ','}`;
-                        lines.push(iLine);
-                    });
-                    lines.push(`    ]${comma}`);
-                } else if (pKey === 'PlayerSlots' && Array.isArray(pVal)) {
+                const comma = pIdx === propKeys.length - 1 ? '' : ',';
+                if (pKey === 'PlayerSlots' && Array.isArray(pVal)) {
                     lines.push('    "PlayerSlots": [');
                     const sortedSlots = [...pVal].sort((a, b) => (a.SlotId - b.SlotId));
                     sortedSlots.forEach((slot, sIdx) => {
@@ -3555,19 +3655,74 @@
                     lines.push(`    "${pKey}": ${JSON.stringify(pVal)}${comma}`);
                 }
             });
-            
-            const isLastTopKey = sortedKeys.length === 1;
-            lines.push(`  }${isLastTopKey ? '' : ','}`);
+            lines.push('  },');
         }
         
-        const unitKeys = sortedKeys.filter(k => k !== 'MapProperties');
-        unitKeys.forEach((uKey, uIdx) => {
-            const unit = data[uKey];
-            const sortedUnit = sortObjectKeys(unit, uKey);
-            const comma = uIdx === unitKeys.length - 1 ? '' : ',';
-            lines.push(`  "${uKey}": ${JSON.stringify(sortedUnit)}${comma}`);
+        // CustomUnits, CustomBuildings, CustomResources, CustomProps
+        const entityArrays = ['CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps'];
+        entityArrays.forEach(arrKey => {
+            const list = (data[arrKey] && Array.isArray(data[arrKey])) ? data[arrKey] : [];
+            const sorted = [...list].sort((a, b) => (a.UnitId || '').localeCompare(b.UnitId || ''));
+            lines.push(`  "${arrKey}": [`);
+            sorted.forEach((u, uIdx) => {
+                const sortedU = sortObjectKeys(u);
+                const uLine = `    ${JSON.stringify(sortedU)}${uIdx === sorted.length - 1 ? '' : ','}`;
+                lines.push(uLine);
+            });
+            lines.push('  ],');
         });
-        
+
+        // 3. CustomAbilities
+        const abisList = (data.CustomAbilities && Array.isArray(data.CustomAbilities)) ? data.CustomAbilities : [];
+        const sortedAbis = [...abisList].sort((a, b) => (a.AbilityId || '').localeCompare(b.AbilityId || ''));
+        lines.push('  "CustomAbilities": [');
+        sortedAbis.forEach((a, aIdx) => {
+            const sortedA = sortObjectKeys(a);
+            const aLine = `    ${JSON.stringify(sortedA)}${aIdx === sortedAbis.length - 1 ? '' : ','}`;
+            lines.push(aLine);
+        });
+        lines.push('  ],');
+
+        // 4. CustomUpgrades
+        const upgsList = (data.CustomUpgrades && Array.isArray(data.CustomUpgrades)) ? data.CustomUpgrades : [];
+        const sortedUpgs = [...upgsList].sort((a, b) => (a.UpgradeId || '').localeCompare(b.UpgradeId || ''));
+        lines.push('  "CustomUpgrades": [');
+        sortedUpgs.forEach((u, uIdx) => {
+            const sortedU = sortObjectKeys(u);
+            const uLine = `    ${JSON.stringify(sortedU)}${uIdx === sortedUpgs.length - 1 ? '' : ','}`;
+            lines.push(uLine);
+        });
+        lines.push('  ],');
+
+        // 5. CustomItems
+        const itemsList = (data.CustomItems && Array.isArray(data.CustomItems)) ? data.CustomItems : [];
+        const sortedItems = [...itemsList].sort((a, b) => (a.ItemId || '').localeCompare(b.ItemId || ''));
+        lines.push('  "CustomItems": [');
+        sortedItems.forEach((item, iIdx) => {
+            const sortedI = sortObjectKeys(item);
+            const iLine = `    ${JSON.stringify(sortedI)}${iIdx === sortedItems.length - 1 ? '' : ','}`;
+            lines.push(iLine);
+        });
+        lines.push('  ],');
+
+        // 6. CustomWeapons
+        const weaponsList = (data.CustomWeapons && Array.isArray(data.CustomWeapons)) ? data.CustomWeapons : [];
+        const sortedWeapons = [...weaponsList].sort((a, b) => (a.WeaponId || '').localeCompare(b.WeaponId || ''));
+        lines.push('  "CustomWeapons": [');
+        sortedWeapons.forEach((w, wIdx) => {
+            const sortedW = sortObjectKeys(w);
+            const wLine = `    ${JSON.stringify(sortedW)}${wIdx === sortedWeapons.length - 1 ? '' : ','}`;
+            lines.push(wLine);
+        });
+        lines.push('  ],');
+
+        // 7. Assets
+        if (data.Assets) {
+            lines.push(`  "Assets": ${JSON.stringify(sortObjectKeys(data.Assets))}`);
+        } else {
+            lines.push('  "Assets": {}');
+        }
+
         lines.push('}');
         return lines.join('\n');
     }
@@ -3602,63 +3757,55 @@
     // --- RECURSIVE CASCADING (RENAME / DELETE REFERENCES) ---
     function cascadeRename(type, oldId, newId) {
         if (type === 'unit') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.BuildOptions) {
                     unit.BuildOptions = unit.BuildOptions.map(b => b === oldId ? newId : b);
                 }
             }
-            const props = units.MapProperties || {};
-            if (props.CustomAbilities) {
-                props.CustomAbilities.forEach(a => {
+            if (units.CustomAbilities) {
+                units.CustomAbilities.forEach(a => {
                     if (a.SummonedUnitId === oldId) a.SummonedUnitId = newId;
                 });
             }
-            if (props.CustomUpgrades) {
-                props.CustomUpgrades.forEach(upg => {
+            if (units.CustomUpgrades) {
+                units.CustomUpgrades.forEach(upg => {
                     if (upg.AffectedUnitIds) {
                         upg.AffectedUnitIds = upg.AffectedUnitIds.map(u => u === oldId ? newId : u);
                     }
                 });
             }
         } else if (type === 'weapon') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.Weapons) {
                     unit.Weapons = unit.Weapons.map(w => w === oldId ? newId : w);
                 }
             }
-            const props = units.MapProperties || {};
-            if (props.CustomItems) {
-                props.CustomItems.forEach(item => {
+            if (units.CustomItems) {
+                units.CustomItems.forEach(item => {
                     if (item.GrantedWeapons) {
                         item.GrantedWeapons = item.GrantedWeapons.map(w => w === oldId ? newId : w);
                     }
                 });
             }
         } else if (type === 'ability') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.Abilities) {
                     unit.Abilities = unit.Abilities.map(a => a === oldId ? newId : a);
                 }
             }
-            const props = units.MapProperties || {};
-            if (props.CustomItems) {
-                props.CustomItems.forEach(item => {
+            if (units.CustomItems) {
+                units.CustomItems.forEach(item => {
                     if (item.UseAbility === oldId) item.UseAbility = newId;
                 });
             }
         } else if (type === 'upgrade') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.Upgrades) {
                     unit.Upgrades = unit.Upgrades.map(u => u === oldId ? newId : u);
                 }
             }
         } else if (type === 'item') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.StartingItems) {
                     unit.StartingItems = unit.StartingItems.map(i => i === oldId ? newId : i);
                 }
@@ -3668,63 +3815,55 @@
 
     function cascadeDelete(type, targetId) {
         if (type === 'unit') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.BuildOptions) {
                     unit.BuildOptions = unit.BuildOptions.filter(b => b !== targetId);
                 }
             }
-            const props = units.MapProperties || {};
-            if (props.CustomAbilities) {
-                props.CustomAbilities.forEach(a => {
+            if (units.CustomAbilities) {
+                units.CustomAbilities.forEach(a => {
                     if (a.SummonedUnitId === targetId) delete a.SummonedUnitId;
                 });
             }
-            if (props.CustomUpgrades) {
-                props.CustomUpgrades.forEach(upg => {
+            if (units.CustomUpgrades) {
+                units.CustomUpgrades.forEach(upg => {
                     if (upg.AffectedUnitIds) {
                         upg.AffectedUnitIds = upg.AffectedUnitIds.filter(u => u !== targetId);
                     }
                 });
             }
         } else if (type === 'weapon') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.Weapons) {
                     unit.Weapons = unit.Weapons.filter(w => w !== targetId);
                 }
             }
-            const props = units.MapProperties || {};
-            if (props.CustomItems) {
-                props.CustomItems.forEach(item => {
+            if (units.CustomItems) {
+                units.CustomItems.forEach(item => {
                     if (item.GrantedWeapons) {
                         item.GrantedWeapons = item.GrantedWeapons.filter(w => w !== targetId);
                     }
                 });
             }
         } else if (type === 'ability') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.Abilities) {
                     unit.Abilities = unit.Abilities.filter(a => a !== targetId);
                 }
             }
-            const props = units.MapProperties || {};
-            if (props.CustomItems) {
-                props.CustomItems.forEach(item => {
+            if (units.CustomItems) {
+                units.CustomItems.forEach(item => {
                     if (item.UseAbility === targetId) delete item.UseAbility;
                 });
             }
         } else if (type === 'upgrade') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.Upgrades) {
                     unit.Upgrades = unit.Upgrades.filter(u => u !== targetId);
                 }
             }
         } else if (type === 'item') {
-            for (const [id, unit] of Object.entries(units)) {
-                if (id === 'MapProperties') continue;
+            for (const unit of getCustomUnits()) {
                 if (unit.StartingItems) {
                     unit.StartingItems = unit.StartingItems.filter(i => i !== targetId);
                 }
@@ -3771,6 +3910,14 @@
         }
 
         if (deleted) {
+            if (typeof vscode !== 'undefined' && vscode.postMessage) {
+                vscode.postMessage({
+                    type: 'deleteAsset',
+                    category: category,
+                    subCategory: subCategory,
+                    key: key
+                });
+            }
             saveChanges();
             renderAssetsMetadata();
         }
@@ -3882,11 +4029,11 @@
                             html += `<span style="font-family: monospace;">${escapeHtml(itemKey)}</span>`;
                             html += `<div style="display: flex; gap: 6px; align-items: center;">`;
                             html += `<select class="select-migrate-target" style="background: rgba(0,0,0,0.4); color: #ccc; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; font-size: 11px; padding: 1px 4px;">`;
-                            ['character', 'building', 'environment', 'props'].forEach(sc => {
+                            ['units', 'buildings', 'resources', 'props'].forEach(sc => {
                                 html += `<option value="glb:${sc}" ${sc === subCat ? 'selected' : ''}>Model: ${sc}</option>`;
                             });
                             html += `</select>`;
-                            html += `<button type="button" class="btn small-btn btn-migrate-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" title="Migrate Asset Type" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">🔄 Move</button>`;
+                            html += `<button type="button" class="btn small-btn btn-migrate-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" title="Change Default Category" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">🔄 Move</button>`;
                             html += `<button type="button" class="btn small-btn btn-preview-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" data-path="${escapeHtml(relAssetPath)}" title="Preview asset" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">👁️ Preview</button>`;
                             html += `<button type="button" class="btn small-btn btn-delete-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" title="Remove asset" style="color: #f44336; background: transparent; border: none; cursor: pointer; font-weight: bold; font-size: 14px; padding: 0 4px;">✕</button>`;
                             html += `</div></div>`;
@@ -3943,6 +4090,8 @@
                         if (isNaN(uvScale)) uvScale = 1.0;
                         let stochTileSize = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Stochastic_Tile_Size !== undefined || itemVal.stochastic_tile_size !== undefined)) ? parseFloat(itemVal.Stochastic_Tile_Size ?? itemVal.stochastic_tile_size) : 1.0;
                         if (isNaN(stochTileSize)) stochTileSize = 1.0;
+                        let crossFade = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Cross_Fade !== undefined || itemVal.cross_fade !== undefined || itemVal.Grid_Cross_Fade !== undefined || itemVal.grid_cross_fade !== undefined)) ? parseFloat(itemVal.Cross_Fade ?? itemVal.cross_fade ?? itemVal.Grid_Cross_Fade ?? itemVal.grid_cross_fade) : 5.0;
+                        if (isNaN(crossFade)) crossFade = 5.0;
 
                         html += `<div class="texture-stochastic-controls" data-key="${escapeHtml(itemKey)}" style="margin-top: 6px; margin-bottom: 8px; padding: 8px 12px; background: var(--vscode-input-background, #1e1e24); border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.15)); border-left: 4px solid var(--vscode-symbolIcon-propertyForeground, #4ec9b0); border-radius: 6px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">`;
                         
@@ -3962,6 +4111,11 @@
                         html += `<div class="row-stochastic-tile-size" style="display: ${tileMode === 'Grid' ? 'none' : 'flex'}; align-items: center; justify-content: space-between; gap: 12px;">`;
                         html += `<label title="Scale multiplier for procedural stochastic sampling grid cells (range 0.5 to 3.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Stochastic Tile Size: <span class="lbl-stoch-size-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${stochTileSize.toFixed(2)}</span></label>`;
                         html += `<input type="range" class="input-texture-stoch-size" data-key="${escapeHtml(itemKey)}" min="0.5" max="3.0" step="0.05" value="${stochTileSize}" title="Scale multiplier for procedural stochastic sampling grid cells (range 0.5 to 3.0)." style="width: 130px; cursor: pointer;" />`;
+                        html += `</div>`;
+
+                        html += `<div class="row-grid-cross-fade" style="display: ${tileMode === 'Grid' ? 'flex' : 'none'}; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Border cross-fade width along tile seams (range 0% to 10% of UV space, default 5%)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Cross-Fade: <span class="lbl-cross-fade-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${crossFade.toFixed(1)}%</span></label>`;
+                        html += `<input type="range" class="input-texture-cross-fade" data-key="${escapeHtml(itemKey)}" min="0" max="10" step="0.5" value="${crossFade}" title="Border cross-fade width along tile seams (range 0% to 10% of UV space, default 5%)." style="width: 130px; cursor: pointer;" />`;
                         html += `</div>`;
 
                         html += `</div>`;
@@ -3999,6 +4153,7 @@
             const tileMode = (itemVal.Tile_Mode || itemVal.tile_mode) ?? 'Stochastic';
             const uvScale = parseFloat(itemVal.UV_Scale ?? itemVal.uv_scale ?? 1.0);
             const stochTileSize = parseFloat(itemVal.Stochastic_Tile_Size ?? itemVal.stochastic_tile_size ?? 1.0);
+            const crossFade = parseFloat(itemVal.Cross_Fade ?? itemVal.cross_fade ?? itemVal.Grid_Cross_Fade ?? itemVal.grid_cross_fade ?? 5.0);
 
             const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
             fetch(`http://127.0.0.1:${ipcPort}/api/`, {
@@ -4009,7 +4164,8 @@
                     swatchName: itemKey,
                     tileMode: tileMode,
                     uvScale: uvScale,
-                    stochasticTileSize: stochTileSize
+                    stochasticTileSize: stochTileSize,
+                    crossFade: crossFade
                 })
             }).catch(() => {});
         }
@@ -4022,6 +4178,8 @@
                 if (parentRow) {
                     const stochRow = parentRow.querySelector('.row-stochastic-tile-size');
                     if (stochRow) stochRow.style.display = (val === 'Grid') ? 'none' : 'flex';
+                    const gridRow = parentRow.querySelector('.row-grid-cross-fade');
+                    if (gridRow) gridRow.style.display = (val === 'Grid') ? 'flex' : 'none';
                 }
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.Tile_Mode = val;
@@ -4081,6 +4239,24 @@
             };
             input.addEventListener('input', handleStochChange);
             input.addEventListener('change', handleStochChange);
+        });
+
+        display.querySelectorAll('.input-texture-cross-fade').forEach(input => {
+            const handleCrossFadeChange = (e) => {
+                const key = e.target.getAttribute('data-key');
+                const val = parseFloat(e.target.value);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const lbl = parentRow.querySelector('.lbl-cross-fade-val');
+                    if (lbl) lbl.textContent = `${val.toFixed(1)}%`;
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.Cross_Fade = val;
+                    itemVal.cross_fade = val;
+                });
+            };
+            input.addEventListener('input', handleCrossFadeChange);
+            input.addEventListener('change', handleCrossFadeChange);
         });
 
         // Attach migration event handlers

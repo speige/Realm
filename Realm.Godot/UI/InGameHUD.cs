@@ -84,6 +84,7 @@ public partial class InGameHUD : Control
 	private Button _btnToggleTerrain;
 	private Button _btnPing;
 	private Button _btnCenter;
+	private Button _btnSettings;
 	public bool ShowMinimapTerrain => _viewModel.ShowMinimapTerrain;
 
 
@@ -284,6 +285,30 @@ public partial class InGameHUD : Control
 		_clockLabel.AddThemeFontSizeOverride("font_size", 24);
 		_clockLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		clockBox.AddChild(_clockLabel);
+
+		_btnSettings = new Button();
+		_btnSettings.Name = "BtnSettings";
+		_btnSettings.CustomMinimumSize = new Vector2(40, 40);
+		_btnSettings.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+		_btnSettings.FocusMode = FocusModeEnum.None;
+		_btnSettings.ExpandIcon = true;
+		_btnSettings.Icon = GD.Load<Texture2D>("res://Assets/UI/gear_icon.png");
+		_btnSettings.AddThemeConstantOverride("icon_max_width", 28);
+		_btnSettings.TooltipText = TranslationServer.Translate("Settings (Esc)");
+		_btnSettings.AddThemeStyleboxOverride("normal", UIStyle.CreateHUDButtonStyle(false, false));
+		_btnSettings.AddThemeStyleboxOverride("hover", UIStyle.CreateHUDButtonStyle(true, false));
+		_btnSettings.AddThemeStyleboxOverride("pressed", UIStyle.CreateHUDButtonStyle(false, true));
+		_btnSettings.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		_btnSettings.AddThemeColorOverride("icon_normal_color", UIStyle.ColorGoldDull);
+		_btnSettings.AddThemeColorOverride("icon_hover_color", UIStyle.ColorGold);
+		_btnSettings.AddThemeColorOverride("icon_pressed_color", UIStyle.ColorCyanGlow);
+		_btnSettings.AddThemeColorOverride("icon_focus_color", UIStyle.ColorGoldDull);
+		_btnSettings.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			UIManager.Instance?.OpenSettingsOverlay();
+		};
+		resHBox.AddChild(_btnSettings);
 
 		_unitsContainer = GetNode<HBoxContainer>("BottomConsole/HBox/SelectionFrame/UnitsContainer");
 
@@ -682,6 +707,7 @@ public partial class InGameHUD : Control
 		if (fpsLabel != null)
 		{
 			fpsLabel.Visible = GameSettings.DisplayFps;
+			fpsLabel.ZIndex = 100;
 		}
 	}
 
@@ -738,20 +764,30 @@ public partial class InGameHUD : Control
 			camera.RotationDegrees = new Vector3(-90, 0, 0);
 			viewport.AddChild(camera);
 
-			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-
-			var texture = viewport.GetTexture();
-			if (texture != null)
+			EditableTerrain.IsMinimapRendering = true;
+			EditableTerrain.Instance?.SetAllChunksVisible(true);
+			PropMultiMeshManager.Instance?.SetAllNodesVisible(true);
+			try
 			{
-				var img = texture.GetImage();
-				if (img != null)
-				{
-					var imgTexture = ImageTexture.CreateFromImage(img);
-					minimapBg.Texture = imgTexture;
-				}
-			}
+				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
-			viewport.QueueFree();
+				var texture = viewport.GetTexture();
+				if (texture != null)
+				{
+					var img = texture.GetImage();
+					if (img != null)
+					{
+						var imgTexture = ImageTexture.CreateFromImage(img);
+						minimapBg.Texture = imgTexture;
+					}
+				}
+
+				viewport.QueueFree();
+			}
+			finally
+			{
+				EditableTerrain.IsMinimapRendering = false;
+			}
 		}
 		catch (Exception ex)
 		{

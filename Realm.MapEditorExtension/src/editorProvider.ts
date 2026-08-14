@@ -84,11 +84,56 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 case 'migrateAsset':
                     await this.handleMigrateAsset(e.fromCategory, e.fromSubCategory, e.key, e.toCategory, e.toSubCategory, document);
                     break;
+                case 'deleteAsset':
+                    await this.handleDeleteAsset(e.category, e.subCategory, e.key, document);
+                    break;
                 case 'openDevTools':
                     vscode.commands.executeCommand('workbench.action.webview.openDeveloperTools');
                     break;
             }
         });
+    }
+
+    private async handleDeleteAsset(
+        category: string,
+        subCategory: string | undefined,
+        key: string,
+        document: vscode.TextDocument
+    ) {
+        if (!key) return;
+        const targetDir = path.dirname(document.uri.fsPath);
+        let relPath = '';
+
+        if (category === 'glb' && subCategory) {
+            relPath = path.join('Assets', 'models', subCategory, key);
+        } else if (category === 'decals') {
+            relPath = path.join('Assets', 'decals', key);
+        } else if (category === 'icons') {
+            relPath = path.join('Assets', 'icons', key);
+        } else if (category === 'vfx_spritesheets') {
+            relPath = path.join('Assets', 'vfx', key);
+        } else if (category === 'skyboxes') {
+            relPath = path.join('Assets', 'skyboxes', key);
+        } else if (category === 'textures') {
+            relPath = path.join('Assets', 'textures', key);
+        } else if (category === 'sfx') {
+            relPath = path.join('Assets', 'audio', 'sfx', key);
+        } else if (category === 'music') {
+            relPath = path.join('Assets', 'audio', 'music', key);
+        } else {
+            relPath = path.join('Assets', category, key);
+        }
+
+        const fullPath = path.join(targetDir, relPath);
+        if (fs.existsSync(fullPath)) {
+            try {
+                fs.unlinkSync(fullPath);
+                vscode.window.showInformationMessage(`Deleted asset file: ${relPath}`);
+            } catch (err: any) {
+                console.error(`Failed to delete asset file ${fullPath}:`, err);
+                vscode.window.showErrorMessage(`Failed to delete asset file ${relPath}: ${err.message}`);
+            }
+        }
     }
 
     private get lastOpenedDirectory(): string | undefined {
@@ -115,6 +160,138 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             fieldIndex,
             accept: fileTypes ? fileTypes.map(ext => '.' + ext.replace(/^\./, '')).join(',') : '*'
         });
+    }
+
+    private parseGltfJson(fileBytes: Buffer): any {
+        try {
+            if (fileBytes.length >= 20 && fileBytes.readUInt32LE(0) === 0x46546C67) {
+                let currentOffset = 12;
+                while (currentOffset + 8 <= fileBytes.length) {
+                    const chunkLength = fileBytes.readUInt32LE(currentOffset);
+                    const chunkType = fileBytes.readUInt32LE(currentOffset + 4);
+                    if (chunkType === 0x4E4F534A) {
+                        const jsonBuffer = fileBytes.subarray(currentOffset + 8, currentOffset + 8 + chunkLength);
+                        return JSON.parse(jsonBuffer.toString('utf8'));
+                    }
+                    currentOffset += 8 + chunkLength;
+                }
+            } else {
+                const text = fileBytes.toString('utf8').trim();
+                if (text.startsWith('{')) {
+                    return JSON.parse(text);
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to parse glTF JSON from model:', e);
+        }
+        return null;
+    }
+
+    private getGlbFaceCount(fileBytes: Buffer): number {
+        try {
+            const gltfJson = this.parseGltfJson(fileBytes);
+            if (!gltfJson || !Array.isArray(gltfJson.meshes)) {
+                return 0;
+            }
+
+            const accessors = Array.isArray(gltfJson.accessors) ? gltfJson.accessors : [];
+            let totalFaces = 0;
+
+            for (const mesh of gltfJson.meshes) {
+                if (!mesh || !Array.isArray(mesh.primitives)) continue;
+                for (const prim of mesh.primitives) {
+                    if (!prim) continue;
+                    const mode = prim.mode !== undefined ? prim.mode : 4;
+
+                    let elementCount = 0;
+                    if (prim.indices !== undefined && accessors[prim.indices]) {
+                        elementCount = accessors[prim.indices].count || 0;
+                    } else if (prim.attributes && prim.attributes.POSITION !== undefined && accessors[prim.attributes.POSITION]) {
+                        elementCount = accessors[prim.attributes.POSITION].count || 0;
+                    }
+
+                    if (mode === 4) {
+                        totalFaces += Math.floor(elementCount / 3);
+                    } else if (mode === 5 || mode === 6) {
+                        totalFaces += Math.max(0, elementCount - 2);
+                    }
+                }
+            }
+
+            return totalFaces;
+        } catch (e) {
+            console.warn('Failed to parse face count from 3D model:', e);
+            return 0;
+        }
+    }
+
+    public findPath(relativePath: string, contextPath?: vscode.Uri | string): string | null {
+        if (!relativePath) {
+            return null;
+        }
+
+        let cleanPath = relativePath.trim().replace(/^res:\/\//i, '');
+        cleanPath = cleanPath.replace(/^[/\\]+/, '');
+
+        const searchRoots: string[] = [];
+
+        const addSearchRootAndAncestors = (startPath: string, maxDepth: number = 12) => {
+            try {
+                let currentDir = fs.existsSync(startPath) && fs.statSync(startPath).isDirectory()
+                    ? startPath
+                    : path.dirname(startPath);
+
+                for (let i = 0; i < maxDepth; i++) {
+                    searchRoots.push(currentDir);
+                    const parent = path.dirname(currentDir);
+                    if (!parent || parent === currentDir) {
+                        break;
+                    }
+                    currentDir = parent;
+                }
+            } catch {}
+        };
+
+        if (contextPath) {
+            const initialPath = typeof contextPath === 'string' ? contextPath : contextPath.fsPath;
+            addSearchRootAndAncestors(initialPath);
+        }
+
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (workspaceFolders) {
+            for (const folder of workspaceFolders) {
+                addSearchRootAndAncestors(folder.uri.fsPath);
+            }
+        }
+
+        addSearchRootAndAncestors(__dirname);
+
+        const uniqueRoots = Array.from(new Set(searchRoots));
+        const strippedCleanPath = cleanPath.replace(/^(ThirdPartyBinaries|Realm\.Godot)[/\\]/i, '');
+
+        for (const root of uniqueRoots) {
+            const candidatePaths = [
+                path.join(root, cleanPath),
+                path.join(root, 'ThirdPartyBinaries', strippedCleanPath),
+                path.join(root, 'ThirdPartyBinaries', cleanPath),
+                path.join(root, 'Realm.Godot', cleanPath),
+                path.join(root, 'Realm.Godot', 'ThirdPartyBinaries', strippedCleanPath),
+                path.join(root, 'Realm.Godot', 'ThirdPartyBinaries', cleanPath),
+                path.join(root, 'bin', 'Debug', 'net10.0', cleanPath),
+                path.join(root, 'bin', 'Release', 'net10.0', cleanPath),
+                path.join(root, 'bin', 'Debug', 'net10.0', 'ThirdPartyBinaries', strippedCleanPath),
+                path.join(root, 'bin', 'Release', 'net10.0', 'ThirdPartyBinaries', strippedCleanPath),
+                path.join(root, strippedCleanPath)
+            ];
+
+            for (const candidate of candidatePaths) {
+                if (fs.existsSync(candidate)) {
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
     }
 
     private computeHashHex(buffer: Buffer): string {
@@ -182,16 +359,112 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             }
 
             if (assetType === 'glb') {
-                const subCategory = (extraOptions && extraOptions.category) ? extraOptions.category.toLowerCase() : 'props';
+                let subCategory = (extraOptions && extraOptions.category) ? extraOptions.category.toLowerCase() : 'props';
+                const recommendedFaceCount = subCategory === 'units' ? 6500 : (subCategory === 'buildings' ? 5000 : 850);
+                const faceCount = this.getGlbFaceCount(fileBytes);
+
+                if (faceCount > recommendedFaceCount * 2) {
+                    const warningMessage = `The 3D model "${fileName}" has ${faceCount.toLocaleString()} triangles, which exceeds the recommended limit (${(recommendedFaceCount).toLocaleString()} for ${subCategory}). It is recommended to convert to low-poly before importing.`;
+                    const choice = await vscode.window.showWarningMessage(
+                        warningMessage,
+                        { modal: true },
+                        'Import'
+                    );
+                    if (choice !== 'Import') {
+                        return;
+                    }
+                }
+
+                const originalFileName = path.basename(fileName, path.extname(fileName)) + '.glb';
+                const tempFileName = `temp_${Date.now()}_${originalFileName}`;
+
+                try {
+                    const os = require('os');
+                    const cp = require('child_process');
+                    const tempFolder = fs.mkdtempSync(path.join(os.tmpdir(), 'realm_gltfpack_'));
+                    const tempInputPath = path.join(tempFolder, tempFileName);
+                    const tempOutputPath = path.join(tempFolder, originalFileName);
+
+                    try {
+                        fs.writeFileSync(tempInputPath, fileBytes);
+                        const isWindows = process.platform === 'win32';
+                        const executableNames = isWindows ? ['gltfpack.exe', 'gltfpack'] : ['gltfpack', 'gltfpack.exe'];
+                        let gltfPackExe: string | null = null;
+                        for (const exeName of executableNames) {
+                            gltfPackExe = this.findPath(path.join('ThirdPartyBinaries', exeName), documentDir) ||
+                                          this.findPath(exeName, documentDir);
+                            if (gltfPackExe) {
+                                break;
+                            }
+                        }
+
+                        if (!gltfPackExe) {
+                            gltfPackExe = executableNames[0];
+                        }
+
+                        cp.execFileSync(gltfPackExe, [
+                            '-tc',
+                            '-noq',
+                            '-i', tempInputPath,
+                            '-o', tempOutputPath
+                        ], {
+                            windowsHide: true,
+                            timeout: 60000
+                        });
+
+                        if (fs.existsSync(tempOutputPath)) {
+                            fileBytes = fs.readFileSync(tempOutputPath);
+                        }
+                    } catch (cmdEx) {
+                        console.warn(`gltfpack execution failed, falling back to original GLB: ${cmdEx}`);
+                    } finally {
+                        try {
+                            if (fs.existsSync(tempFolder)) {
+                                fs.rmSync(tempFolder, { recursive: true, force: true });
+                            }
+                        } catch {}
+                    }
+                } catch (tempEx) {
+                    console.warn(`Temp directory handling failed, importing original GLB: ${tempEx}`);
+                }
+
                 const subDir = path.join(targetDir, 'Assets', 'models', subCategory);
                 if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
-                const baseName = path.basename(fileName, path.extname(fileName)) + '.glb';
+                const baseName = originalFileName;
                 const targetPath = path.join(subDir, baseName);
                 fs.writeFileSync(targetPath, fileBytes);
                 const blake3 = this.computeHashHex(fileBytes);
                 if (!metadata.Assets.glb) metadata.Assets.glb = {};
                 if (!metadata.Assets.glb[subCategory]) metadata.Assets.glb[subCategory] = {};
-                metadata.Assets.glb[subCategory][baseName] = blake3;
+                metadata.Assets.glb[subCategory][baseName] = {
+                    hash: blake3,
+                    default_asset_type: subCategory
+                };
+
+                const unitId = path.basename(fileName, path.extname(fileName));
+                const targetArrayKey = subCategory === 'units' ? 'CustomUnits' :
+                                       subCategory === 'buildings' ? 'CustomBuildings' :
+                                       subCategory === 'resources' ? 'CustomResources' : 'CustomProps';
+
+                if (!metadata[targetArrayKey] || !Array.isArray(metadata[targetArrayKey])) {
+                    metadata[targetArrayKey] = [];
+                }
+                const exists = metadata[targetArrayKey].some((u: any) => u && u.UnitId === unitId);
+                if (!exists) {
+                    let defaultPathing = 8;
+                    if (subCategory === 'units') defaultPathing = 9;
+                    else if (subCategory === 'buildings') defaultPathing = 32;
+                    else if (subCategory === 'resources' || subCategory === 'props') defaultPathing = 255;
+
+                    metadata[targetArrayKey].push({
+                        UnitId: unitId,
+                        Name: unitId,
+                        Description: '',
+                        PathingType: defaultPathing,
+                        ModelPath: baseName
+                    });
+                }
+
                 vscode.window.showInformationMessage(`Imported GLB Model (${subCategory}): ${baseName}`);
             } else if (assetType === 'decal') {
                 const subDir = path.join(targetDir, 'Assets', 'decals');
@@ -394,6 +667,22 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 }
             }
 
+            // Merge custom entity arrays into freshMetadata if created during GLB import
+            const arrayKeys = ['CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps'];
+            for (const arrKey of arrayKeys) {
+                if (metadata[arrKey] && Array.isArray(metadata[arrKey])) {
+                    if (!freshMetadata[arrKey] || !Array.isArray(freshMetadata[arrKey])) {
+                        freshMetadata[arrKey] = [];
+                    }
+                    for (const item of metadata[arrKey]) {
+                        const exists = freshMetadata[arrKey].some((u: any) => u && u.UnitId === item.UnitId);
+                        if (!exists) {
+                            freshMetadata[arrKey].push(item);
+                        }
+                    }
+                }
+            }
+
             await this.updateTextDocument(document, JSON.stringify(freshMetadata, null, 2));
         } catch (err: any) {
             vscode.window.showErrorMessage(`Failed to import asset: ${err.message}`);
@@ -523,20 +812,34 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             return null;
         }
         
-        let cleanPath = godotPath;
-        if (godotPath.startsWith('res://')) {
-            cleanPath = godotPath.substring(6);
+        let cleanPath = godotPath.trim();
+        if (cleanPath.startsWith('res://')) {
+            cleanPath = cleanPath.substring(6);
         }
-        
+
+        const candidateSubDirs = [
+            '',
+            path.join('Assets', 'models', 'units'),
+            path.join('Assets', 'models', 'buildings'),
+            path.join('Assets', 'models', 'resources'),
+            path.join('Assets', 'models', 'props'),
+            path.join('Assets', 'decals'),
+            path.join('Assets', 'icons'),
+            path.join('Assets', 'textures'),
+            path.join('Assets', 'skyboxes'),
+            path.join('Assets', 'vfx'),
+            path.join('Assets', 'audio', 'sfx')
+        ];
+
         const docDir = path.dirname(documentUri.fsPath);
+        const searchRoots: string[] = [];
+
         let currentDir = docDir;
         while (true) {
+            searchRoots.push(currentDir);
             const projectFile = path.join(currentDir, 'project.godot');
             if (fs.existsSync(projectFile)) {
-                const abs = path.join(currentDir, cleanPath);
-                if (fs.existsSync(abs)) {
-                    return abs;
-                }
+                break;
             }
             const parent = path.dirname(currentDir);
             if (parent === currentDir) {
@@ -544,24 +847,22 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             }
             currentDir = parent;
         }
-        
+
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (workspaceFolders) {
             for (const folder of workspaceFolders) {
-                const godotPathOption1 = path.join(folder.uri.fsPath, cleanPath);
-                if (fs.existsSync(godotPathOption1)) {
-                    return godotPathOption1;
-                }
-                const godotPathOption2 = path.join(folder.uri.fsPath, 'Realm.Godot', cleanPath);
-                if (fs.existsSync(godotPathOption2)) {
-                    return godotPathOption2;
-                }
+                searchRoots.push(folder.uri.fsPath);
+                searchRoots.push(path.join(folder.uri.fsPath, 'Realm.Godot'));
             }
         }
-        
-        const relPath = path.join(docDir, cleanPath);
-        if (fs.existsSync(relPath)) {
-            return relPath;
+
+        for (const root of searchRoots) {
+        for (const subDir of candidateSubDirs) {
+                const fullCandidate = subDir ? path.join(root, subDir, cleanPath) : path.join(root, cleanPath);
+                if (fs.existsSync(fullCandidate)) {
+                    return fullCandidate;
+                }
+            }
         }
         
         return null;
@@ -617,12 +918,15 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             </div>
             <div class="global-tabs">
                 <button type="button" class="tab-btn active" data-domain="units">👥 Units</button>
+                <button type="button" class="tab-btn" data-domain="buildings">🏢 Buildings</button>
+                <button type="button" class="tab-btn" data-domain="resources">🪵 Resources</button>
+                <button type="button" class="tab-btn" data-domain="props">📦 Props</button>
                 <button type="button" class="tab-btn" data-domain="weapons">⚔️ Weapons</button>
                 <button type="button" class="tab-btn" data-domain="abilities">🪄 Abilities</button>
                 <button type="button" class="tab-btn" data-domain="upgrades">🛡️ Upgrades</button>
                 <button type="button" class="tab-btn" data-domain="items">📦 Items</button>
                 <button type="button" class="tab-btn" data-domain="assets">🎨 Assets</button>
-                <button type="button" class="tab-btn" data-domain="properties">⚙️ Map Props</button>
+                <button type="button" class="tab-btn" data-domain="properties">⚙️ Settings</button>
             </div>
             <div class="header-right-actions">
                 <div id="save-status" class="save-status saved" title="Auto-saved to file">● Saved</div>
@@ -638,7 +942,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     <h2>Units List</h2>
                     <div class="add-buttons-group" style="display: flex; gap: 4px;">
                         <button id="add-unit-btn" class="btn primary-btn" style="padding: 4px 8px;" title="Add Unit">+ Add</button>
-                        <button id="add-unit-5-btn" class="btn secondary-btn small-btn" style="padding: 4px 8px;" title="Add 5 Units">+5</button>
                     </div>
                 </div>
                 <div class="search-container">
@@ -661,13 +964,14 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                         <div>
                             <div class="breadcrumb" id="editor-breadcrumb">Units</div>
-                            <h2 id="editor-title">Edit Unit</h2>
-                            <span id="editor-subtitle" class="subtitle">Unit ID</span>
+                            <h2 id="editor-title">Edit Entity</h2>
+                            <span id="editor-subtitle" class="subtitle">ID</span>
                         </div>
                         <div class="header-actions" style="display: flex; gap: 6px;">
-                            <button type="button" id="copy-unit-btn" class="btn secondary-btn" title="Copy unit to clipboard">✂️ Copy Unit</button>
-                            <button type="button" id="paste-unit-btn" class="btn secondary-btn" title="Paste unit from clipboard">📋 Paste Unit</button>
-                            <button type="button" id="duplicate-unit-btn" class="btn secondary-btn">📋 Duplicate Unit</button>
+                            <button type="button" id="copy-unit-btn" class="btn secondary-btn" title="Copy entity to clipboard">✂️ Copy</button>
+                            <button type="button" id="paste-unit-btn" class="btn secondary-btn" title="Paste entity from clipboard">📋 Paste</button>
+                            <button type="button" id="duplicate-unit-btn" class="btn secondary-btn">📋 Duplicate</button>
+                            <button type="button" id="delete-unit-btn" class="btn secondary-btn" title="Delete entity">🗑️ Delete</button>
                         </div>
                     </div>
                 </div>
@@ -675,7 +979,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     <div class="form-section">
                         <h3>General Information</h3>
                         <div class="form-group">
-                            <label for="field-UnitId">Unit ID</label>
+                            <label for="field-UnitId">ID</label>
                             <input type="text" id="field-UnitId" required />
                         </div>
                         <div class="form-group">
@@ -687,11 +991,15 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <textarea id="field-Description" rows="3" required></textarea>
                         </div>
                         <div class="form-group">
-                            <label for="field-ModelPath">Model Path (Optional)</label>
-                            <div class="input-with-browse">
-                                <input type="text" id="field-ModelPath" />
-                                <button type="button" class="btn browse-btn" data-input-id="field-ModelPath" data-file-types="gltf,glb,scn,tscn" title="Browse files">📁</button>
-                                <button type="button" class="btn clear-btn" data-input-id="field-ModelPath" title="Clear path">❌</button>
+                            <label for="field-ModelPath">Model Asset (GLB)</label>
+                            <div class="input-with-browse" style="display: flex; flex-direction: column; gap: 4px;">
+                                <div style="display: flex; gap: 6px; width: 100%;">
+                                    <select id="field-ModelPath" style="flex: 1; min-height: 30px;"></select>
+                                    <button type="button" class="btn clear-btn" data-input-id="field-ModelPath" title="Clear path">❌</button>
+                                </div>
+                                <label style="font-size: 11px; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 4px; margin-top: 2px;">
+                                    <input type="checkbox" id="chk-show-all-glb" style="width: auto; margin: 0;" /> Show all GLB assets
+                                </label>
                             </div>
                         </div>
                         <div class="form-group">
@@ -709,6 +1017,58 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     </div>
 
                     <div class="form-section">
+                        <h3>Global Object Overrides</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="field-YOffset">Y-Offset</label>
+                                <input type="number" id="field-YOffset" step="0.05" placeholder="0.0" />
+                            </div>
+                            <div class="form-group">
+                                <label for="field-CollisionCircle">Collision Circle</label>
+                                <input type="number" id="field-CollisionCircle" step="0.05" min="0.1" placeholder="1.0" />
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="field-Brightness">Brightness</label>
+                                <input type="number" id="field-Brightness" step="0.01" min="0" max="2" placeholder="1.0" />
+                            </div>
+                            <div class="form-group">
+                                <label for="field-Tint">Tint Color</label>
+                                <input type="text" id="field-Tint" placeholder="#ffffff" />
+                            </div>
+                        </div>
+                        <div class="form-group checkbox-group" style="margin-top: 6px;">
+                            <input type="checkbox" id="field-RecalculateNormals" />
+                            <label for="field-RecalculateNormals">Re-Calculate Normals</label>
+                        </div>
+                    </div>
+
+                    <div id="section-resource-node-config" class="form-section">
+                        <h3>Resource Deposit Settings</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="field-MaxCapacity">Max Resource Capacity</label>
+                                <input type="number" id="field-MaxCapacity" min="0" step="any" placeholder="2000" />
+                            </div>
+                            <div class="form-group">
+                                <label for="field-HarvestRate">Harvest Yield / Cycle</label>
+                                <input type="number" id="field-HarvestRate" min="0" step="any" placeholder="10" />
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="field-GrowthRate">Regen / Growth Rate (Units/sec)</label>
+                                <input type="number" id="field-GrowthRate" min="0" step="any" placeholder="0.0" />
+                            </div>
+                            <div class="form-group">
+                                <label for="field-MaxWorkers">Max Simultaneous Harvesters</label>
+                                <input type="number" id="field-MaxWorkers" min="1" step="1" placeholder="5" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="section-unit-stats" class="form-section">
                         <h3>Attributes & Stats</h3>
                         <div class="form-row">
                             <div class="form-group">
@@ -746,7 +1106,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         </div>
                     </div>
 
-                    <div class="form-section">
+                    <div id="section-unit-costs" class="form-section">
                         <h3>Resource Costs & Production</h3>
                         <div class="form-row">
                             <div class="form-group">
@@ -774,7 +1134,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         </div>
                     </div>
 
-                    <div class="form-section">
+                    <div id="section-unit-combat" class="form-section">
                         <h3>Combat Types & Rewards</h3>
                         <div class="form-row">
                             <div class="form-group">
@@ -806,7 +1166,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         </div>
                     </div>
 
-                    <div class="form-section">
+                    <div id="section-unit-capabilities" class="form-section">
                         <h3>Lists & Capabilities</h3>
                         <div class="form-group">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
@@ -889,15 +1249,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             </div>
                         </div>
                         <div class="form-group">
-                            <label>Movement Type</label>
-                            <select id="field-MovementType">
-                                <option value="ground">Ground</option>
-                                <option value="air">Air</option>
-                                <option value="amphibious">Amphibious</option>
-                                <option value="none">None</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                                 <label style="margin-bottom: 0;">Status Effects / Buffs (Optional)</label>
                                 <div style="display: flex; gap: 4px;">
@@ -928,6 +1279,20 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                                     <button type="button" id="add-soundevent-btn" class="btn secondary-btn">+</button>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <div id="section-pathing-flags" class="form-section">
+                        <h3>Placement & Pathing Flags</h3>
+                        <div class="form-group">
+                            <div id="field-PathingType-flags" style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px;">
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="1" /> Shallow Water (1)</label>
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="2" /> Deep Water (2)</label>
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="4" /> Flying (4)</label>
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="8" /> Ground (8)</label>
+                                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal;"><input type="checkbox" class="pathing-flag-cb" value="32" /> Buildable (32)</label>
+                            </div>
+                            <input type="hidden" id="field-PathingType" value="8" />
                         </div>
                     </div>
                 </div>
@@ -1101,7 +1466,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <div id="custom-weapons-list"></div>
                             <div class="add-buttons-row" style="display: flex; gap: 8px;">
                                 <button type="button" id="add-custom-weapon-btn" class="btn secondary-btn">+ Add Custom Weapon</button>
-                                <button type="button" id="add-custom-weapon-5-btn" class="btn secondary-btn small-btn" title="Add 5 Weapons">+5</button>
                                 <button type="button" id="paste-custom-weapon-btn" class="btn secondary-btn" title="Paste Weapon from Clipboard">📋 Paste Weapon</button>
                             </div>
                         </div>
@@ -1122,7 +1486,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <div id="custom-abilities-list"></div>
                             <div class="add-buttons-row" style="display: flex; gap: 8px;">
                                 <button type="button" id="add-custom-ability-btn" class="btn secondary-btn">+ Add Custom Ability</button>
-                                <button type="button" id="add-custom-ability-5-btn" class="btn secondary-btn small-btn" title="Add 5 Abilities">+5</button>
                                 <button type="button" id="paste-custom-ability-btn" class="btn secondary-btn" title="Paste Ability from Clipboard">📋 Paste Ability</button>
                             </div>
                         </div>
@@ -1143,7 +1506,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <div id="custom-upgrades-list"></div>
                             <div class="add-buttons-row" style="display: flex; gap: 8px;">
                                 <button type="button" id="add-custom-upgrade-btn" class="btn secondary-btn">+ Add Custom Upgrade</button>
-                                <button type="button" id="add-custom-upgrade-5-btn" class="btn secondary-btn small-btn" title="Add 5 Upgrades">+5</button>
                                 <button type="button" id="paste-custom-upgrade-btn" class="btn secondary-btn" title="Paste Upgrade from Clipboard">📋 Paste Upgrade</button>
                             </div>
                         </div>
@@ -1164,7 +1526,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <div id="custom-items-list"></div>
                             <div class="add-buttons-row" style="display: flex; gap: 8px;">
                                 <button type="button" id="add-custom-item-btn" class="btn secondary-btn">+ Add Custom Item</button>
-                                <button type="button" id="add-custom-item-5-btn" class="btn secondary-btn small-btn" title="Add 5 Items">+5</button>
                                 <button type="button" id="paste-custom-item-btn" class="btn secondary-btn" title="Paste Item from Clipboard">📋 Paste Item</button>
                             </div>
                         </div>
@@ -1193,14 +1554,14 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
 
                     <div class="form-section">
                         <h3>📦 Import 3D Model (GLB)</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import binary GLB 3D models. Subcategory will categorize BLAKE3 hash in metadata.json under Character, Building, Environment, or Props.</p>
+                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import binary GLB 3D models. Subcategory will categorize BLAKE3 hash in metadata.json under Units, Buildings, Resources, or Props.</p>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="glb-category-select">Category</label>
+                                <label for="glb-category-select">Default Category</label>
                                 <select id="glb-category-select">
-                                    <option value="character">Character</option>
-                                    <option value="building">Building</option>
-                                    <option value="environment">Environment</option>
+                                    <option value="units">Units</option>
+                                    <option value="buildings">Buildings</option>
+                                    <option value="resources">Resources</option>
                                     <option value="props">Props</option>
                                 </select>
                             </div>

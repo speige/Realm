@@ -213,17 +213,27 @@ public class MapEditorMinimap
 				GameHost.Instance.UpdatePathingOverlay();
 			}
 
-			await _hudNode.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
-
-			var texture = viewport.GetTexture();
-			if (texture != null)
+			EditableTerrain.IsMinimapRendering = true;
+			EditableTerrain.Instance?.SetAllChunksVisible(true);
+			PropMultiMeshManager.Instance?.SetAllNodesVisible(true);
+			try
 			{
-				var img = texture.GetImage();
-				if (img != null)
+				await _hudNode.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+
+				var texture = viewport.GetTexture();
+				if (texture != null)
 				{
-					var imgTexture = ImageTexture.CreateFromImage(img);
-					minimapBg.Texture = imgTexture;
+					var img = texture.GetImage();
+					if (img != null)
+					{
+						var imgTexture = ImageTexture.CreateFromImage(img);
+						minimapBg.Texture = imgTexture;
+					}
 				}
+			}
+			finally
+			{
+				EditableTerrain.IsMinimapRendering = false;
 			}
 
 			if (GameHost.Instance?.BrushIndicatorMesh != null)

@@ -16,6 +16,14 @@ public class VSCodeManager
 	private static VSCodeManager _instance;
 	public static VSCodeManager Instance => _instance ??= new VSCodeManager();
 
+	private VSCodeManager()
+	{
+		if (OperatingSystem.IsWindows())
+		{
+			AppDomain.CurrentDomain.ProcessExit += (s, e) => CleanUp();
+		}
+	}
+
 	private bool _isInstalling = false;
 	private bool _installCompleted = false;
 	private System.Threading.Tasks.Task _installTask;
@@ -500,6 +508,32 @@ public class VSCodeManager
 		}
 	}
 
+	private readonly ConcurrentQueue<string> _pendingExtensionCommands = new ConcurrentQueue<string>();
+
+	public async System.Threading.Tasks.Task SaveAllOpenFilesAsync()
+	{
+		_pendingExtensionCommands.Enqueue("saveAll");
+		_actionQueue.Enqueue(() =>
+		{
+			try
+			{
+				if (_controller != null && _controller.CoreWebView2 != null)
+				{
+					_controller.CoreWebView2.ExecuteScriptAsync(@"
+(function() {
+	try {
+		window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', code: 'KeyS', keyCode: 83, which: 83, ctrlKey: true, altKey: true, bubbles: true }));
+		window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', code: 'KeyS', keyCode: 83, which: 83, ctrlKey: true, bubbles: true }));
+	} catch(e) {}
+})();
+");
+				}
+			}
+			catch { }
+		});
+		await System.Threading.Tasks.Task.Delay(500);
+	}
+
 	private async void HandleIpcHttpRequest(System.Net.HttpListenerContext ctx)
 	{
 		try
@@ -511,6 +545,24 @@ public class VSCodeManager
 			if (ctx.Request.HttpMethod == "OPTIONS")
 			{
 				ctx.Response.StatusCode = 200;
+				ctx.Response.Close();
+				return;
+			}
+
+			if (ctx.Request.HttpMethod == "GET")
+			{
+				var pollResponseObj = new System.Text.Json.Nodes.JsonObject();
+				var commandsArray = new System.Text.Json.Nodes.JsonArray();
+				while (_pendingExtensionCommands.TryDequeue(out var cmd))
+				{
+					commandsArray.Add(cmd);
+				}
+				pollResponseObj["commands"] = commandsArray;
+				string pollResJson = pollResponseObj.ToJsonString();
+				byte[] pollResBytes = System.Text.Encoding.UTF8.GetBytes(pollResJson);
+				ctx.Response.ContentType = "application/json";
+				ctx.Response.ContentLength64 = pollResBytes.Length;
+				await ctx.Response.OutputStream.WriteAsync(pollResBytes, 0, pollResBytes.Length);
 				ctx.Response.Close();
 				return;
 			}
@@ -653,11 +705,25 @@ public class VSCodeManager
 					stochasticTileSize = parsedStoch2;
 				}
 
+				float crossFade = 5.0f;
+				if (node["crossFade"] != null && float.TryParse(node["crossFade"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCrossFade))
+				{
+					crossFade = parsedCrossFade;
+				}
+				else if (node["Cross_Fade"] != null && float.TryParse(node["Cross_Fade"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCrossFade2))
+				{
+					crossFade = parsedCrossFade2;
+				}
+				else if (node["cross_fade"] != null && float.TryParse(node["cross_fade"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCrossFade3))
+				{
+					crossFade = parsedCrossFade3;
+				}
+
 				Callable.From(() =>
 				{
 					if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 					{
-						GameHost.Instance.GroundTerrain.UpdateTextureParamDirect(swatchName, tileMode, uvScale, stochasticTileSize);
+						GameHost.Instance.GroundTerrain.UpdateTextureParamDirect(swatchName, tileMode, uvScale, stochasticTileSize, crossFade);
 					}
 				}).CallDeferred();
 

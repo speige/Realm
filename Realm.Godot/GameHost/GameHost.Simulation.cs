@@ -126,12 +126,14 @@ public partial class GameHost
 	{
 		if (GodotObject.IsInstanceValid(prop))
 		{
+			string propId = prop.PropId;
 			AllProps.Remove(prop);
 			EntityToProp3D.Remove(prop.Entity);
 			if (EcsWorld.IsAlive(prop.Entity))
 			{
 				EcsWorld.Destroy(prop.Entity);
 			}
+			PropMultiMeshManager.Instance?.MarkDirty(propId);
 			prop.QueueFree();
 			RebakeNavMesh();
 		}
@@ -188,7 +190,8 @@ public partial class GameHost
 				string bType = EcsWorld.Get<DefinitionId>(buildTask.BuildingEntity).Value;
 				if (UnitRegistry.TryGetValue(bType, out var m) && !TryGetUnit3D(buildTask.BuildingEntity, out _))
 				{
-					string modelPath = !string.IsNullOrEmpty(m.ModelPath) ? m.ModelPath : GetFallbackModelPath(bType, true);
+					string targetModel = !string.IsNullOrEmpty(m.ModelPath) ? m.ModelPath : bType;
+					string modelPath = GetFallbackModelPath(targetModel, true);
 					SpawnUnit3D(buildTask.BuildingEntity, bType, modelPath, new Godot.Vector3(buildingPos.X, buildingPos.Y, buildingPos.Z), true, false);
 
 					if (TryGetUnit3D(buildTask.BuildingEntity, out var bNode) && GodotObject.IsInstanceValid(bNode))
@@ -420,7 +423,8 @@ public partial class GameHost
 		float buildTime = meta.ProductionTime > 0f ? meta.ProductionTime : 30f;
 
 		var playerOwner = _playerEntity.AsPlayerEntity(EcsWorld);
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(buildType, true);
+		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : buildType;
+		string modelPath = GetFallbackModelPath(targetModel, true);
 
 		var bldEntity = CreateEcsUnit(buildType, meta.Name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, 0f,
 			new Godot.Vector3(targetPos.X, targetPos.Y, targetPos.Z), playerOwner);

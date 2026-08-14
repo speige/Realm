@@ -249,28 +249,7 @@ body {
     border: 1px solid rgba(0, 122, 204, 0.3);
 }
 
-.delete-card-btn {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    opacity: 0;
-    transition: var(--transition);
-    border-radius: 4px;
-    padding: 4px;
-}
 
-.unit-card:hover .delete-card-btn {
-    opacity: 1;
-}
-
-.delete-card-btn:hover {
-    color: var(--danger-color);
-    background-color: rgba(244, 135, 113, 0.1);
-}
 
 .main-content {
     background-color: var(--bg-primary);
@@ -774,7 +753,6 @@ textarea:focus {
 .hide-add-delete #add-unit-btn,
 .hide-add-delete #add-unit-5-btn,
 .hide-add-delete .add-buttons-group,
-.hide-add-delete .delete-card-btn,
 .hide-add-delete .btn-delete,
 .hide-add-delete .btn-duplicate-item,
 .hide-add-delete #add-player-slot-btn,

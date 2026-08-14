@@ -9,11 +9,12 @@ using Realm.Godot.Utils;
 public partial class Prop3D : StaticBody3D
 {
 	public Entity Entity { get; set; }
+	public Vector3 Velocity { get; set; } = Vector3.Zero;
 
 	private string _propId = "tree";
 
 	[Export]
-	public string PropId
+	public virtual string PropId
 	{
 		get
 		{
@@ -141,12 +142,17 @@ public partial class Prop3D : StaticBody3D
 		AddChild(_hoverRing);
 	}
 
-	public void UpdateCollisionCircleScale(float ratio)
+	public virtual void UpdateCollisionCircleScale(float ratio)
 	{
 		Vector3 ringScale = new Vector3(ratio, 1.0f, ratio);
+		if (_selectionRing == null)
+		{
+			CreateSelectionRing();
+		}
 		if (_selectionRing != null)
 		{
 			_selectionRing.Scale = ringScale;
+			_selectionRing.Visible = _isSelected;
 		}
 		if (_hoverRing != null)
 		{
@@ -154,7 +160,7 @@ public partial class Prop3D : StaticBody3D
 		}
 	}
 
-	public bool IsSelected
+	public virtual bool IsSelected
 	{
 		get => _isSelected;
 		set
@@ -175,7 +181,7 @@ public partial class Prop3D : StaticBody3D
 		}
 	}
 
-	public void SetTemporarySelectionHighlight(bool highlight)
+	public virtual void SetTemporarySelectionHighlight(bool highlight)
 	{
 		if (_selectionRing == null && highlight)
 		{
@@ -187,8 +193,14 @@ public partial class Prop3D : StaticBody3D
 		}
 	}
 
-	private void CreateSelectionRing()
+	protected virtual Color GetSelectionRingColor()
 	{
+		return new Color(0.95f, 0.82f, 0.15f);
+	}
+
+	protected virtual void CreateSelectionRing()
+	{
+		if (_selectionRing != null) return;
 		_selectionRing = new MeshInstance3D();
 		var torusMesh = new TorusMesh();
 		
@@ -222,14 +234,16 @@ public partial class Prop3D : StaticBody3D
 		_selectionRing.Position = new Vector3(0, 0.05f, 0);
 
 		var material = new StandardMaterial3D();
-		material.AlbedoColor = new Color(0.95f, 0.82f, 0.15f); // Neon Gold/Yellow
+		Color color = GetSelectionRingColor();
+		material.AlbedoColor = color;
 		material.EmissionEnabled = true;
-		material.Emission = new Color(0.95f, 0.82f, 0.15f);
+		material.Emission = color;
 		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 		
 		_selectionRing.MaterialOverride = material;
 		float ratio = GameHost.Instance != null ? GameHost.Instance.GetModelCollisionCircleRatio(GameHost.Instance.GetModelAssetKey(this)) : 1.0f;
 		_selectionRing.Scale = new Vector3(ratio, 1.0f, ratio);
+		_selectionRing.Visible = _isSelected;
 		AddChild(_selectionRing);
 	}
 
@@ -294,31 +308,55 @@ public partial class Prop3D : StaticBody3D
 		}
 	}
 
+	public void RefreshPropVisual()
+	{
+		var visual = GetNodeOrNull<Node3D>("VisualModel");
+		if (visual != null && GodotObject.IsInstanceValid(visual))
+		{
+			RemoveChild(visual);
+			visual.QueueFree();
+		}
+		CreatePropVisual();
+	}
+
 	private void CreatePropVisual()
 	{
-		var visual = new Node3D();
-		visual.Name = "VisualModel";
-		if (PropId == "tree" || PropId.Contains("tree"))
+		bool isEditor = GameHost.Instance != null && GameHost.Instance.IsMapEditorMode;
+		if (IsPreview || isEditor)
 		{
-			visual.Scale = new Vector3(3f, 3f, 3f);
-		}
-		string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(PropId) : "";
-		float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
-		visual.Position = new Vector3(0, yOffset, 0);
-		AddChild(visual);
-
-		string modelPath = ResolvePropModelPath(PropId);
-		try
-		{
-			Node node = ModelCache.GetModel(modelPath);
-			if (node != null)
+			var visual = GetNodeOrNull<Node3D>("VisualModel");
+			if (visual == null)
 			{
-				visual.AddChild(node);
+				visual = new Node3D();
+				visual.Name = "VisualModel";
+				if (PropId == "tree" || PropId.Contains("tree"))
+				{
+					visual.Scale = new Vector3(3f, 3f, 3f);
+				}
+				string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(PropId) : "";
+				float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
+				visual.Position = new Vector3(0, yOffset, 0);
+				AddChild(visual);
+
+				string modelPath = ResolvePropModelPath(PropId);
+				try
+				{
+					Node node = ModelCache.GetModel(modelPath);
+					if (node != null)
+					{
+						visual.AddChild(node);
+					}
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"Failed to load prop visual for '{PropId}' ({modelPath}): {ex.Message}");
+				}
 			}
 		}
-		catch (Exception ex)
+
+		if (!IsPreview)
 		{
-			GD.PrintErr($"Failed to load prop visual for '{PropId}' ({modelPath}): {ex.Message}");
+			PropMultiMeshManager.Instance?.MarkDirty(PropId);
 		}
 	}
 
@@ -337,19 +375,41 @@ public partial class Prop3D : StaticBody3D
 		return resolved;
 	}
 
+	public static void ClearModelPathCache()
+	{
+		_resolvedModelPathCache.Clear();
+	}
+
 	private string ResolvePropModelPathInternal(string propId)
 	{
-		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
-		if (propId.StartsWith("res://") || System.IO.File.Exists(propId))
-			return propId;
+		if (string.IsNullOrEmpty(propId))
+			propId = "wooden_box.glb";
 
-		string filename = System.IO.Path.GetFileName(propId);
-		if (!filename.EndsWith(".glb") && !filename.EndsWith(".gltf"))
+		string targetModel = propId;
+		if (GameHost.PropRegistry != null && GameHost.PropRegistry.TryGetValue(propId, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath))
+		{
+			targetModel = propMeta.ModelPath;
+		}
+		else if (GameHost.ResourceRegistry != null && GameHost.ResourceRegistry.TryGetValue(propId, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath))
+		{
+			targetModel = resMeta.ModelPath;
+		}
+		else if (GameHost.UnitRegistry != null && GameHost.UnitRegistry.TryGetValue(propId, out var unitMeta) && !string.IsNullOrEmpty(unitMeta.ModelPath))
+		{
+			targetModel = unitMeta.ModelPath;
+		}
+
+		if (targetModel.StartsWith("res://") || System.IO.File.Exists(targetModel))
+			return targetModel;
+
+		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		string filename = System.IO.Path.GetFileName(targetModel);
+		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
 		{
 			filename += ".glb";
 		}
 
-		string[] subDirs = new[] { "props", "environment", "building", "character" };
+		string[] subDirs = new[] { "props", "resources", "buildings", "units" };
 		foreach (var sub in subDirs)
 		{
 			string candidate = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
@@ -362,6 +422,10 @@ public partial class Prop3D : StaticBody3D
 		if (System.IO.File.Exists(rootCandidate))
 			return rootCandidate;
 
-		return propId;
+		return targetModel;
 	}
+}
+
+public partial class Resource3D : Prop3D
+{
 }

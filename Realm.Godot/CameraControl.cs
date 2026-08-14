@@ -398,9 +398,17 @@ public partial class CameraControl : Camera3D
 		Input.MouseMode = Input.MouseModeEnum.Visible;
 	}
 
+	public override void _Notification(int what)
+	{
+		if (what == NotificationApplicationFocusOut)
+		{
+			_isDraggingMouse = false;
+		}
+	}
+
 	public override void _Input(InputEvent @event)
 	{
-		if (IsLocked || (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive)) return;
+		if (IsLocked || (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive) || SettingsMenu.IsOpen) return;
 
 		if (@event is InputEventMouseButton mouseBtn)
 		{
@@ -455,13 +463,9 @@ public partial class CameraControl : Camera3D
 			float moveX = -deltaMouse.X * sensFactor * _currentHeight;
 			float moveZ = deltaMouse.Y * sensFactor * _currentHeight;
 
-			Vector3 forwardXZ = -GlobalTransform.Basis.Z;
-			forwardXZ.Y = 0f;
-			forwardXZ = forwardXZ.Normalized();
-
-			Vector3 rightXZ = GlobalTransform.Basis.X;
-			rightXZ.Y = 0f;
-			rightXZ = rightXZ.Normalized();
+			float yawRad = Mathf.DegToRad(_currentYaw);
+			Vector3 forwardXZ = new Vector3(-Mathf.Sin(yawRad), 0f, -Mathf.Cos(yawRad));
+			Vector3 rightXZ   = new Vector3( Mathf.Cos(yawRad), 0f, -Mathf.Sin(yawRad));
 
 			Vector3 velocity = (rightXZ * moveX) + (forwardXZ * moveZ);
 

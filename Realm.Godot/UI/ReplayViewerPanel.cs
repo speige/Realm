@@ -223,9 +223,11 @@ public partial class ReplayViewerPanel : PanelContainer
 		UIManager.Instance?.PlayClickSound();
 		ReplayPlaybackManager.Instance.StopReplay();
 		GameHost.Instance?.StopRecording();
+		GameHost.Instance?.ResetWorldAndState();
 		if (LobbyManager.Instance != null)
 		{
 			LobbyManager.Instance.IsGameStarted = false;
+			LobbyManager.Instance.ActiveMapName = "";
 		}
 		GetTree().ChangeSceneToFile("res://Main.tscn");
 	}

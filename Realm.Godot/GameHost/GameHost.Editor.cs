@@ -43,10 +43,6 @@ public partial class GameHost
 	public string GetModelAssetKey(object objOrId)
 	{
 		if (objOrId == null) return "";
-		if (objOrId is Prop3D prop)
-		{
-			return NormalizeModelAssetKey(prop.ModelAssetPath);
-		}
 		if (objOrId is Unit3D unit)
 		{
 			if (!string.IsNullOrEmpty(unit.ModelPath))
@@ -55,24 +51,108 @@ public partial class GameHost
 				return NormalizeModelAssetKey(meta.ModelPath);
 			return NormalizeModelAssetKey(unit.UnitId);
 		}
+		if (objOrId is Prop3D prop)
+		{
+			if (PropRegistry.TryGetValue(prop.PropId, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath))
+				return NormalizeModelAssetKey(propMeta.ModelPath);
+			if (ResourceRegistry.TryGetValue(prop.PropId, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath))
+				return NormalizeModelAssetKey(resMeta.ModelPath);
+			if (UnitRegistry.TryGetValue(prop.PropId, out var unitMeta) && !string.IsNullOrEmpty(unitMeta.ModelPath))
+				return NormalizeModelAssetKey(unitMeta.ModelPath);
+			if (!string.IsNullOrEmpty(prop.ModelAssetPath))
+				return NormalizeModelAssetKey(prop.ModelAssetPath);
+			return NormalizeModelAssetKey(prop.PropId);
+		}
+		if (objOrId is string str)
+		{
+			if (PropRegistry.TryGetValue(str, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath))
+				return NormalizeModelAssetKey(propMeta.ModelPath);
+			if (ResourceRegistry.TryGetValue(str, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath))
+				return NormalizeModelAssetKey(resMeta.ModelPath);
+			if (UnitRegistry.TryGetValue(str, out var unitMeta) && !string.IsNullOrEmpty(unitMeta.ModelPath))
+				return NormalizeModelAssetKey(unitMeta.ModelPath);
+			return NormalizeModelAssetKey(str);
+		}
 		if (objOrId is Node node)
 		{
 			return NormalizeModelAssetKey(node.Name.ToString());
 		}
-		if (objOrId is string str)
-		{
-			return NormalizeModelAssetKey(str);
-		}
 		return "";
 	}
 
-	public float GetModelYOffset(string assetKey)
+	public string GetSelectedEntityOrAssetKey(object objOrId)
 	{
-		string norm = NormalizeModelAssetKey(assetKey);
-		if (!string.IsNullOrEmpty(norm) && ModelYOffsets.TryGetValue(norm, out float val))
+		if (objOrId == null) return "";
+		if (objOrId is Unit3D unit)
 		{
-			return val;
+			if (!string.IsNullOrEmpty(unit.UnitId)) return unit.UnitId;
+			return GetModelAssetKey(unit);
 		}
+		if (objOrId is Prop3D prop)
+		{
+			if (!string.IsNullOrEmpty(prop.PropId)) return prop.PropId;
+			return GetModelAssetKey(prop);
+		}
+		if (objOrId is string str) return str;
+		return GetModelAssetKey(objOrId);
+	}
+
+	public bool MatchesEntityOrAssetKey(object objOrId, string targetKey)
+	{
+		if (objOrId == null || string.IsNullOrEmpty(targetKey)) return false;
+		string normTarget = NormalizeModelAssetKey(targetKey);
+
+		if (objOrId is Unit3D unit)
+		{
+			if (!string.IsNullOrEmpty(unit.UnitId) && NormalizeModelAssetKey(unit.UnitId) == normTarget)
+				return true;
+			if (!string.IsNullOrEmpty(unit.ModelPath) && NormalizeModelAssetKey(unit.ModelPath) == normTarget)
+				return true;
+			if (UnitRegistry.TryGetValue(unit.UnitId, out var meta) && !string.IsNullOrEmpty(meta.ModelPath) && NormalizeModelAssetKey(meta.ModelPath) == normTarget)
+				return true;
+		}
+		else if (objOrId is Prop3D prop)
+		{
+			if (!string.IsNullOrEmpty(prop.PropId) && NormalizeModelAssetKey(prop.PropId) == normTarget)
+				return true;
+			if (PropRegistry.TryGetValue(prop.PropId, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath) && NormalizeModelAssetKey(propMeta.ModelPath) == normTarget)
+				return true;
+			if (ResourceRegistry.TryGetValue(prop.PropId, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath) && NormalizeModelAssetKey(resMeta.ModelPath) == normTarget)
+				return true;
+		}
+		else if (objOrId is string str)
+		{
+			if (NormalizeModelAssetKey(str) == normTarget) return true;
+			if (UnitRegistry.TryGetValue(str, out var meta) && !string.IsNullOrEmpty(meta.ModelPath) && NormalizeModelAssetKey(meta.ModelPath) == normTarget)
+				return true;
+			if (PropRegistry.TryGetValue(str, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath) && NormalizeModelAssetKey(propMeta.ModelPath) == normTarget)
+				return true;
+			if (ResourceRegistry.TryGetValue(str, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath) && NormalizeModelAssetKey(resMeta.ModelPath) == normTarget)
+				return true;
+		}
+		return GetModelAssetKey(objOrId) == normTarget;
+	}
+
+	public float GetModelYOffset(object objOrId)
+	{
+		if (objOrId == null) return 0f;
+		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
+		string normPrimary = NormalizeModelAssetKey(primaryKey);
+		if (!string.IsNullOrEmpty(normPrimary) && ModelYOffsets.TryGetValue(normPrimary, out float val1))
+			return val1;
+
+		string assetKey = GetModelAssetKey(objOrId);
+		string normAsset = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(normAsset) && ModelYOffsets.TryGetValue(normAsset, out float val2))
+			return val2;
+
+		if (!string.IsNullOrEmpty(primaryKey))
+		{
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.YOffset != 0f) return meta.YOffset;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.YOffset != 0f) return resMeta.YOffset;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.YOffset != 0f) return propMeta.YOffset;
+		}
+
 		return 0f;
 	}
 
@@ -85,27 +165,28 @@ public partial class GameHost
 
 		foreach (var prop in AllProps)
 		{
-			if (GodotObject.IsInstanceValid(prop) && GetModelAssetKey(prop) == norm)
+			if (GodotObject.IsInstanceValid(prop) && MatchesEntityOrAssetKey(prop, norm))
 			{
 				prop.Position = new Vector3(prop.Position.X, _editorService.GetTerrainHeightAt(prop.Position) + offset, prop.Position.Z);
 			}
 		}
+		PropMultiMeshManager.Instance?.MarkDirty(norm);
 
 		foreach (var unit in AllUnits)
 		{
-			if (GodotObject.IsInstanceValid(unit) && GetModelAssetKey(unit) == norm)
+			if (GodotObject.IsInstanceValid(unit) && MatchesEntityOrAssetKey(unit, norm))
 			{
 				unit.UpdateModelYOffset(offset);
 			}
 		}
 
-		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode))
+		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode) && MatchesEntityOrAssetKey(_editorPreviewNode, norm))
 		{
-			if (_editorPreviewNode is Prop3D previewProp && GetModelAssetKey(previewProp) == norm)
+			if (_editorPreviewNode is Prop3D previewProp)
 			{
 				previewProp.UpdateVisualYOffset(offset);
 			}
-			else if (_editorPreviewNode is Unit3D previewUnit && GetModelAssetKey(previewUnit) == norm)
+			else if (_editorPreviewNode is Unit3D previewUnit)
 			{
 				previewUnit.UpdateModelYOffset(offset);
 			}
@@ -125,13 +206,26 @@ public partial class GameHost
 		}
 	}
 
-	public float GetModelCollisionCircleRatio(string assetKey)
+	public float GetModelCollisionCircleRatio(object objOrId)
 	{
-		string norm = NormalizeModelAssetKey(assetKey);
-		if (!string.IsNullOrEmpty(norm) && ModelCollisionCircleRatios.TryGetValue(norm, out float val))
+		if (objOrId == null) return 1.0f;
+		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
+		string normPrimary = NormalizeModelAssetKey(primaryKey);
+		if (!string.IsNullOrEmpty(normPrimary) && ModelCollisionCircleRatios.TryGetValue(normPrimary, out float val1))
+			return val1;
+
+		string assetKey = GetModelAssetKey(objOrId);
+		string normAsset = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(normAsset) && ModelCollisionCircleRatios.TryGetValue(normAsset, out float val2))
+			return val2;
+
+		if (!string.IsNullOrEmpty(primaryKey))
 		{
-			return val;
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.CollisionCircle > 0f) return meta.CollisionCircle;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.CollisionCircle > 0f) return resMeta.CollisionCircle;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.CollisionCircle > 0f) return propMeta.CollisionCircle;
 		}
+
 		return 1.0f;
 	}
 
@@ -141,19 +235,39 @@ public partial class GameHost
 		if (string.IsNullOrEmpty(norm)) return;
 
 		ModelCollisionCircleRatios[norm] = ratio;
+
+		string modelAsset = GetModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(modelAsset))
+		{
+			ModelCollisionCircleRatios[NormalizeModelAssetKey(modelAsset)] = ratio;
+		}
+
 		UpdateCollisionRadiiForAsset(norm);
 
 		_modelCollisionCircleSavePending = true;
 		EditorHasUnsavedChanges = true;
 	}
 
-	public float GetModelBrightness(string assetKey)
+	public float GetModelBrightness(object objOrId)
 	{
-		string norm = NormalizeModelAssetKey(assetKey);
-		if (!string.IsNullOrEmpty(norm) && ModelBrightness.TryGetValue(norm, out float bVal))
+		if (objOrId == null) return 1.0f;
+		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
+		string normPrimary = NormalizeModelAssetKey(primaryKey);
+		if (!string.IsNullOrEmpty(normPrimary) && ModelBrightness.TryGetValue(normPrimary, out float val1))
+			return Mathf.Clamp(val1, 0.0f, 1.0f);
+
+		string assetKey = GetModelAssetKey(objOrId);
+		string normAsset = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(normAsset) && ModelBrightness.TryGetValue(normAsset, out float val2))
+			return Mathf.Clamp(val2, 0.0f, 1.0f);
+
+		if (!string.IsNullOrEmpty(primaryKey))
 		{
-			return Mathf.Clamp(bVal, 0.0f, 1.0f);
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.Brightness > 0f) return Mathf.Clamp(meta.Brightness, 0.0f, 1.0f);
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.Brightness > 0f) return Mathf.Clamp(resMeta.Brightness, 0.0f, 1.0f);
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.Brightness > 0f) return Mathf.Clamp(propMeta.Brightness, 0.0f, 1.0f);
 		}
+
 		return 1.0f;
 	}
 
@@ -170,13 +284,26 @@ public partial class GameHost
 		EditorHasUnsavedChanges = true;
 	}
 
-	public Color GetModelColorTint(string assetKey)
+	public Color GetModelColorTint(object objOrId)
 	{
-		string norm = NormalizeModelAssetKey(assetKey);
-		if (!string.IsNullOrEmpty(norm) && ModelColorTint.TryGetValue(norm, out Color cVal))
+		if (objOrId == null) return new Color(1.0f, 1.0f, 1.0f);
+		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
+		string normPrimary = NormalizeModelAssetKey(primaryKey);
+		if (!string.IsNullOrEmpty(normPrimary) && ModelColorTint.TryGetValue(normPrimary, out Color c1))
+			return c1;
+
+		string assetKey = GetModelAssetKey(objOrId);
+		string normAsset = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(normAsset) && ModelColorTint.TryGetValue(normAsset, out Color c2))
+			return c2;
+
+		if (!string.IsNullOrEmpty(primaryKey))
 		{
-			return cVal;
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && !string.IsNullOrEmpty(meta.Tint) && Color.HtmlIsValid(meta.Tint)) return Color.FromHtml(meta.Tint);
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && !string.IsNullOrEmpty(resMeta.Tint) && Color.HtmlIsValid(resMeta.Tint)) return Color.FromHtml(resMeta.Tint);
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && !string.IsNullOrEmpty(propMeta.Tint) && Color.HtmlIsValid(propMeta.Tint)) return Color.FromHtml(propMeta.Tint);
 		}
+
 		return new Color(1.0f, 1.0f, 1.0f);
 	}
 
@@ -198,13 +325,26 @@ public partial class GameHost
 		EditorHasUnsavedChanges = true;
 	}
 
-	public bool GetModelGenerateNormals(string assetKey)
+	public bool GetModelGenerateNormals(object objOrId)
 	{
-		string norm = NormalizeModelAssetKey(assetKey);
-		if (!string.IsNullOrEmpty(norm) && ModelGenerateNormals.TryGetValue(norm, out bool val))
+		if (objOrId == null) return false;
+		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
+		string normPrimary = NormalizeModelAssetKey(primaryKey);
+		if (!string.IsNullOrEmpty(normPrimary) && ModelGenerateNormals.TryGetValue(normPrimary, out bool b1))
+			return b1;
+
+		string assetKey = GetModelAssetKey(objOrId);
+		string normAsset = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(normAsset) && ModelGenerateNormals.TryGetValue(normAsset, out bool b2))
+			return b2;
+
+		if (!string.IsNullOrEmpty(primaryKey))
 		{
-			return val;
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta)) return meta.RecalculateNormals;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta)) return resMeta.RecalculateNormals;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.RecalculateNormals;
 		}
+
 		return false;
 	}
 
@@ -230,7 +370,7 @@ public partial class GameHost
 
 		foreach (var prop in AllProps)
 		{
-			if (GodotObject.IsInstanceValid(prop) && GetModelAssetKey(prop) == normAssetKey)
+			if (GodotObject.IsInstanceValid(prop) && MatchesEntityOrAssetKey(prop, normAssetKey))
 			{
 				ApplyMaterialOverridesToNode(prop, brightness, tint, generateNormals);
 			}
@@ -238,15 +378,90 @@ public partial class GameHost
 
 		foreach (var unit in AllUnits)
 		{
-			if (GodotObject.IsInstanceValid(unit) && GetModelAssetKey(unit) == normAssetKey)
+			if (GodotObject.IsInstanceValid(unit) && MatchesEntityOrAssetKey(unit, normAssetKey))
 			{
 				ApplyMaterialOverridesToNode(unit, brightness, tint, generateNormals);
 			}
 		}
 
-		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode) && GetModelAssetKey(_editorPreviewNode) == normAssetKey)
+		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode) && MatchesEntityOrAssetKey(_editorPreviewNode, normAssetKey))
 		{
 			ApplyMaterialOverridesToNode(_editorPreviewNode, brightness, tint, generateNormals);
+		}
+
+		PropMultiMeshManager.Instance?.UpdateMaterialOverrides(normAssetKey);
+		PropMultiMeshManager.Instance?.MarkDirty(normAssetKey);
+	}
+
+	public void ApplyAllGlobalOverridesToObject(object objOrNode)
+	{
+		if (objOrNode == null) return;
+
+		if (objOrNode is Unit3D unit && GodotObject.IsInstanceValid(unit))
+		{
+			float yOffset = GetModelYOffset(unit);
+			if (yOffset != 0f)
+			{
+				unit.Position = new Vector3(unit.Position.X, _editorService.GetTerrainHeightAt(unit.Position) + yOffset, unit.Position.Z);
+				unit.UpdateModelYOffset(yOffset);
+			}
+
+			float circleRatio = GetModelCollisionCircleRatio(unit);
+			unit.UpdateCollisionCircleScale(circleRatio);
+			if (unit.Entity != default && EcsWorld.IsAlive(unit.Entity))
+			{
+				float autoDetected = GetOrCalculateObstacleRadius(unit.UnitId, unit, unit.IsBuilding);
+				float baseRadius = autoDetected * circleRatio;
+				if (EcsWorld.Has<Realm.Ecs.Components.Core.CollisionRadius>(unit.Entity))
+				{
+					EcsWorld.Set(unit.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+				}
+				else
+				{
+					EcsWorld.Add(unit.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+				}
+			}
+
+			float brightness = GetModelBrightness(unit);
+			Color tint = GetModelColorTint(unit);
+			bool generateNormals = GetModelGenerateNormals(unit);
+			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals || tint != new Color(1.0f, 1.0f, 1.0f))
+			{
+				ApplyMaterialOverridesToNode(unit, brightness, tint, generateNormals);
+			}
+		}
+		else if (objOrNode is Prop3D prop && GodotObject.IsInstanceValid(prop))
+		{
+			float yOffset = GetModelYOffset(prop);
+			if (yOffset != 0f)
+			{
+				prop.Position = new Vector3(prop.Position.X, _editorService.GetTerrainHeightAt(prop.Position) + yOffset, prop.Position.Z);
+				prop.UpdateVisualYOffset(yOffset);
+			}
+
+			float circleRatio = GetModelCollisionCircleRatio(prop);
+			prop.UpdateCollisionCircleScale(circleRatio);
+			if (prop.Entity != default && EcsWorld.IsAlive(prop.Entity))
+			{
+				float autoDetected = GetOrCalculateObstacleRadius(prop.PropId, prop);
+				float baseRadius = autoDetected * circleRatio;
+				if (EcsWorld.Has<Realm.Ecs.Components.Core.CollisionRadius>(prop.Entity))
+				{
+					EcsWorld.Set(prop.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+				}
+				else
+				{
+					EcsWorld.Add(prop.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+				}
+			}
+
+			float brightness = GetModelBrightness(prop);
+			Color tint = GetModelColorTint(prop);
+			bool generateNormals = GetModelGenerateNormals(prop);
+			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals || tint != new Color(1.0f, 1.0f, 1.0f))
+			{
+				ApplyMaterialOverridesToNode(prop, brightness, tint, generateNormals);
+			}
 		}
 	}
 
@@ -358,7 +573,7 @@ public partial class GameHost
 
 		foreach (var prop in AllProps)
 		{
-			if (GodotObject.IsInstanceValid(prop) && GetModelAssetKey(prop) == normAssetKey)
+			if (GodotObject.IsInstanceValid(prop) && MatchesEntityOrAssetKey(prop, normAssetKey))
 			{
 				prop.UpdateCollisionCircleScale(ratio);
 				if (prop.Entity != default && EcsWorld.IsAlive(prop.Entity))
@@ -379,7 +594,7 @@ public partial class GameHost
 
 		foreach (var unit in AllUnits)
 		{
-			if (GodotObject.IsInstanceValid(unit) && GetModelAssetKey(unit) == normAssetKey)
+			if (GodotObject.IsInstanceValid(unit) && MatchesEntityOrAssetKey(unit, normAssetKey))
 			{
 				unit.UpdateCollisionCircleScale(ratio);
 				if (unit.Entity != default && EcsWorld.IsAlive(unit.Entity))
@@ -398,13 +613,13 @@ public partial class GameHost
 			}
 		}
 
-		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode))
+		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode) && MatchesEntityOrAssetKey(_editorPreviewNode, normAssetKey))
 		{
-			if (_editorPreviewNode is Prop3D previewProp && GetModelAssetKey(previewProp) == normAssetKey)
+			if (_editorPreviewNode is Prop3D previewProp)
 			{
 				previewProp.UpdateCollisionCircleScale(ratio);
 			}
-			else if (_editorPreviewNode is Unit3D previewUnit && GetModelAssetKey(previewUnit) == normAssetKey)
+			else if (_editorPreviewNode is Unit3D previewUnit)
 			{
 				previewUnit.UpdateCollisionCircleScale(ratio);
 			}
@@ -420,6 +635,7 @@ public partial class GameHost
 			{
 				mapDir = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
 			}
+			LoadUnitMetadata(mapDir);
 			string metadataPath = System.IO.Path.Combine(mapDir, "metadata.json");
 			if (!System.IO.File.Exists(metadataPath)) return;
 
@@ -478,6 +694,42 @@ public partial class GameHost
 				}
 			}
 
+			string[] entityArrays = new[] { "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps" };
+			foreach (var arrKey in entityArrays)
+			{
+				if (root.ContainsKey(arrKey) && root[arrKey] is System.Text.Json.Nodes.JsonArray arr)
+				{
+					foreach (var item in arr)
+					{
+						if (item is System.Text.Json.Nodes.JsonObject uObj && uObj.ContainsKey("UnitId"))
+						{
+							string uId = uObj["UnitId"]?.ToString() ?? "";
+							string normKey = NormalizeModelAssetKey(uId);
+							if (uObj.ContainsKey("YOffset") && float.TryParse(uObj["YOffset"]?.ToString(), out float yVal))
+							{
+								ModelYOffsets[normKey] = yVal;
+							}
+							if (uObj.ContainsKey("CollisionCircle") && float.TryParse(uObj["CollisionCircle"]?.ToString(), out float rVal))
+							{
+								ModelCollisionCircleRatios[normKey] = rVal;
+							}
+							if (uObj.ContainsKey("Brightness") && float.TryParse(uObj["Brightness"]?.ToString(), out float brightVal))
+							{
+								ModelBrightness[normKey] = brightVal;
+							}
+							if (uObj.ContainsKey("Tint") && uObj["Tint"]?.ToString() is string tintStr && !string.IsNullOrEmpty(tintStr))
+							{
+								ModelColorTint[normKey] = Color.FromString(tintStr, new Color(1, 1, 1));
+							}
+							if (uObj.ContainsKey("RecalculateNormals") && bool.TryParse(uObj["RecalculateNormals"]?.ToString(), out bool gnVal))
+							{
+								ModelGenerateNormals[normKey] = gnVal;
+							}
+						}
+					}
+				}
+			}
+
 			if (root.ContainsKey("Assets") && root["Assets"] is System.Text.Json.Nodes.JsonObject assetsObj && assetsObj.ContainsKey("glb") && assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
 			{
 				foreach (var catKvp in glbObj)
@@ -516,10 +768,48 @@ public partial class GameHost
 			{
 				UpdateMaterialOverridesForAsset(key);
 			}
+
+			RefreshAllPlacedObjectModels();
 		}
 		catch (Exception ex)
 		{
 			GD.PrintErr($"LoadModelYOffsetsFromMetadataJson error: {ex.Message}");
+		}
+	}
+
+	public void RefreshAllPlacedObjectModels(string targetId = null)
+	{
+		Prop3D.ClearModelPathCache();
+
+		foreach (var unit in AllUnits)
+		{
+			if (!GodotObject.IsInstanceValid(unit)) continue;
+			if (string.IsNullOrEmpty(targetId) || string.Equals(unit.UnitId, targetId, StringComparison.OrdinalIgnoreCase))
+			{
+				string targetModel = unit.UnitId;
+				bool isBuilding = unit.IsBuilding;
+				if (UnitRegistry.TryGetValue(unit.UnitId, out var meta) && !string.IsNullOrEmpty(meta.ModelPath))
+				{
+					targetModel = meta.ModelPath;
+					if (meta.Speed == 0f) isBuilding = true;
+				}
+				string modelPath = GetFallbackModelPath(targetModel, isBuilding);
+				unit.LoadModel(modelPath);
+			}
+		}
+
+		foreach (var prop in AllProps)
+		{
+			if (!GodotObject.IsInstanceValid(prop)) continue;
+			if (string.IsNullOrEmpty(targetId) || string.Equals(prop.PropId, targetId, StringComparison.OrdinalIgnoreCase))
+			{
+				prop.RefreshPropVisual();
+			}
+		}
+
+		if (!string.IsNullOrEmpty(targetId))
+		{
+			PropMultiMeshManager.Instance?.MarkDirty(targetId);
 		}
 	}
 
@@ -561,6 +851,27 @@ public partial class GameHost
 			System.Text.Json.Nodes.JsonObject gnObj = new System.Text.Json.Nodes.JsonObject();
 			foreach (var kvp in ModelGenerateNormals) gnObj[kvp.Key] = kvp.Value;
 			root["ModelGenerateNormals"] = gnObj;
+
+			string[] entitySaveArrays = new[] { "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps" };
+			foreach (var arrKey in entitySaveArrays)
+			{
+				if (root.ContainsKey(arrKey) && root[arrKey] is System.Text.Json.Nodes.JsonArray arr)
+				{
+					foreach (var item in arr)
+					{
+						if (item is System.Text.Json.Nodes.JsonObject uObj && uObj.ContainsKey("UnitId"))
+						{
+							string uId = uObj["UnitId"]?.ToString() ?? "";
+							string normKey = NormalizeModelAssetKey(uId);
+							if (ModelYOffsets.TryGetValue(normKey, out float yVal)) uObj["YOffset"] = yVal;
+							if (ModelCollisionCircleRatios.TryGetValue(normKey, out float rVal)) uObj["CollisionCircle"] = rVal;
+							if (ModelBrightness.TryGetValue(normKey, out float bVal)) uObj["Brightness"] = bVal;
+							if (ModelColorTint.TryGetValue(normKey, out Color tColor)) uObj["Tint"] = "#" + tColor.ToHtml(false);
+							if (ModelGenerateNormals.TryGetValue(normKey, out bool gnVal)) uObj["RecalculateNormals"] = gnVal;
+						}
+					}
+				}
+			}
 
 			if (root.ContainsKey("Assets") && root["Assets"] is System.Text.Json.Nodes.JsonObject assetsObj && assetsObj.ContainsKey("glb") && assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
 			{
@@ -628,6 +939,7 @@ public partial class GameHost
 		AllUnits.Clear();
 		ClearAllBuildQueueGhosts();
 		AllProps.Clear();
+		PropMultiMeshManager.Instance?.Clear();
 		AllDecals.Clear();
 		ActivePings.Clear();
 		EntityToUnit3D.Clear();
@@ -714,10 +1026,7 @@ public partial class GameHost
 		}
 
 		_editorService?.ResetAllState();
-		if (_selectionHighlightMesh != null)
-		{
-			_selectionHighlightMesh.Visible = false;
-		}
+		HideSelectionHighlight();
 
 		EditorHistoryManager.Clear();
 		EditorHasUnsavedChanges = false;
@@ -743,10 +1052,22 @@ public partial class GameHost
 
 	private bool IsMouseOverUI()
 	{
+		if (SettingsMenu.IsOpen)
+		{
+			return true;
+		}
+
 		if (GodotObject.IsInstanceValid(MapEditorHUD.Instance))
 		{
 			return MapEditorHUD.Instance.IsMouseOverUI(GetViewport().GetMousePosition());
 		}
+
+		var hoveredControl = GetViewport().GuiGetHoveredControl();
+		if (hoveredControl != null && (InGameHUD.Instance == null || hoveredControl != InGameHUD.Instance))
+		{
+			return true;
+		}
+
 		var mousePos = GetViewport().GetMousePosition();
 		var viewportSize = GetViewport().GetVisibleRect().Size;
 		
@@ -844,82 +1165,157 @@ public partial class GameHost
 		}
 	}
 
+	public bool IsStaticPropAsset(string propIdOrEntityId)
+	{
+		if (string.IsNullOrEmpty(propIdOrEntityId)) return false;
+
+		if (PropRegistry.ContainsKey(propIdOrEntityId) || ResourceRegistry.ContainsKey(propIdOrEntityId))
+			return true;
+
+		if (UnitRegistry.TryGetValue(propIdOrEntityId, out var unitMeta))
+		{
+			if (unitMeta.ArmorType == "building") return false;
+			return false;
+		}
+
+		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+		if (System.IO.File.Exists(metadataPath))
+		{
+			try
+			{
+				string json = System.IO.File.ReadAllText(metadataPath);
+				using var doc = System.Text.Json.JsonDocument.Parse(json);
+				if (doc.RootElement.TryGetProperty("Assets", out var assets) && assets.TryGetProperty("glb", out var glb))
+				{
+					foreach (var catProp in glb.EnumerateObject())
+					{
+						string catName = catProp.Name.ToLowerInvariant();
+						if (catProp.Value.ValueKind == System.Text.Json.JsonValueKind.Object)
+						{
+							foreach (var modelProp in catProp.Value.EnumerateObject())
+							{
+								string modelName = modelProp.Name;
+								string modelWithoutExt = System.IO.Path.GetFileNameWithoutExtension(modelName);
+								if (modelName.Equals(propIdOrEntityId, StringComparison.OrdinalIgnoreCase) ||
+									modelWithoutExt.Equals(propIdOrEntityId, StringComparison.OrdinalIgnoreCase))
+								{
+									if (catName == "units" || catName == "buildings") return false;
+									if (catName == "resources" || catName == "props" || catName == "prop") return true;
+								}
+							}
+						}
+					}
+				}
+			}
+			catch { }
+		}
+
+		string filename = System.IO.Path.GetFileName(propIdOrEntityId);
+		if (!filename.EndsWith(".glb") && !filename.EndsWith(".gltf")) filename += ".glb";
+		string[] subDirs = new[] { "resources", "props", "units", "building" };
+		foreach (var sub in subDirs)
+		{
+			string candidate = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
+			if (System.IO.File.Exists(candidate))
+			{
+				return sub == "resources" || sub == "props";
+			}
+		}
+
+		return true;
+	}
+
+	public void DeleteStaticPropAtPosition(string propId, Vector3 hitPos)
+	{
+		if (EcsWorld == null) return;
+		Entity targetEntity = Entity.Null;
+		float minDistance = 2.0f;
+
+		var propQuery = Realm.Ecs.Common.QueryCache.AllPropIdentityAndPositionQuery;
+		EcsWorld.Query(in propQuery, (Entity entity, ref PropIdentity pid, ref Position pos) =>
+		{
+			if (EntityToProp3D.ContainsKey(entity)) return;
+			if (!string.IsNullOrEmpty(propId) && !pid.PropId.Equals(propId, StringComparison.OrdinalIgnoreCase)) return;
+
+			Vector3 wPos = new Vector3(pos.Value.X, pos.Value.Y, pos.Value.Z);
+			float d = wPos.DistanceTo(hitPos);
+			if (d < minDistance)
+			{
+				minDistance = d;
+				targetEntity = entity;
+			}
+		});
+
+		if (targetEntity != Entity.Null && EcsWorld.IsAlive(targetEntity))
+		{
+			string pid = EcsWorld.Get<PropIdentity>(targetEntity).PropId;
+			EcsWorld.Destroy(targetEntity);
+			PropMultiMeshManager.Instance?.MarkDirty(pid);
+		}
+	}
+
 	public Prop3D SpawnPropExternal(string propId, Vector3 position)
 	{
-		float defaultAmount = propId switch
-		{
-			"goldmine" => 2000f,
-			"rock" => 1000f,
-			"tree" => 500f,
-			_ => 0f
-		};
-
-		var entity = EcsWorld.Create();
-		EcsWorld.Add(entity, new PropIdentity(propId));
-		if (defaultAmount > 0f)
-		{
-			EcsWorld.Add(entity, new ResourceNode(Guid.Empty, defaultAmount));
-		}
-
-		var prop = new Prop3D();
-		prop.Entity = entity;
-		prop.PropId = propId;
-		AddChild(prop);
-		AllProps.Add(prop);
-
-		EntityToProp3D[entity] = prop;
-
-		position.Y = _editorService.GetTerrainHeightAt(position);
-		prop.Position = position;
-		
-		float actualScale = 1.0f;
-		if (IsMapEditorMode)
-		{
-			prop.RotationDegrees = new Vector3(0.0f, EditorPlacementRotation, 0.0f);
-			prop.Scale *= EditorPlacementScale;
-			actualScale = EditorPlacementScale;
-		}
-
-		EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Prop());
-		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(position.X, position.Y, position.Z)));
-		EcsWorld.Add(entity, new CollisionScale(actualScale));
-
-		float autoDetectedRadius = GetOrCalculateObstacleRadius(propId, prop);
-		string propAssetKey = GetModelAssetKey(prop);
-		float baseRadius = autoDetectedRadius * GetModelCollisionCircleRatio(propAssetKey);
-		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
-
-		return prop;
+		float rotY = IsMapEditorMode ? EditorPlacementRotation : 0f;
+		float scale = IsMapEditorMode ? EditorPlacementScale : 1f;
+		return SpawnPropExternalWithParams(propId, position, rotY, scale);
 	}
 
 	public Texture2D LoadDecalTexture(string decalId)
 	{
 		if (string.IsNullOrEmpty(decalId)) decalId = "logo";
 
-		string wsPath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
-		string wsDecalPath = System.IO.Path.Combine(wsPath, "Assets", "decals", decalId);
-		if (!System.IO.File.Exists(wsDecalPath) && !decalId.Contains('.'))
+		if (decalId.StartsWith("res://"))
 		{
-			wsDecalPath = System.IO.Path.Combine(wsPath, "Assets", "decals", decalId + ".png");
-		}
-		if (System.IO.File.Exists(wsDecalPath))
-		{
-			var img = Image.LoadFromFile(wsDecalPath);
-			if (img != null) return ImageTexture.CreateFromImage(img);
+			try
+			{
+				if (ResourceLoader.Exists(decalId))
+					return GD.Load<Texture2D>(decalId);
+			}
+			catch { }
 		}
 
-		if (System.IO.File.Exists(decalId) && !decalId.StartsWith("res://"))
+		string filename = System.IO.Path.GetFileName(decalId);
+		string wsPath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+
+		List<string> candidatePaths = new List<string>();
+
+		if (System.IO.Path.IsPathRooted(decalId))
 		{
-			var img = Image.LoadFromFile(decalId);
-			if (img != null)
+			candidatePaths.Add(decalId);
+		}
+		else
+		{
+			candidatePaths.Add(System.IO.Path.Combine(wsPath, "Assets", "decals", filename));
+			candidatePaths.Add(System.IO.Path.Combine(wsPath, decalId));
+			if (!filename.Contains('.'))
 			{
-				return ImageTexture.CreateFromImage(img);
+				candidatePaths.Add(System.IO.Path.Combine(wsPath, "Assets", "decals", filename + ".png"));
+			}
+			candidatePaths.Add(decalId);
+		}
+
+		foreach (var path in candidatePaths)
+		{
+			if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
+			{
+				try
+				{
+					var img = Image.LoadFromFile(path);
+					if (img != null)
+					{
+						return ImageTexture.CreateFromImage(img);
+					}
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"Failed to load decal image from '{path}': {ex.Message}");
+				}
 			}
 		}
 
-		string texPath = GetDecalTexturePath(decalId);
-		var texture = GD.Load<Texture2D>(texPath);
-		return texture ?? GD.Load<Texture2D>("res://icon.svg");
+		return GD.Load<Texture2D>("res://icon.svg");
 	}
 
 	public string GetDecalTexturePath(string decalId)
@@ -928,29 +1324,28 @@ public partial class GameHost
 		{
 			decalId = "logo";
 		}
+		if (decalId.StartsWith("res://")) return decalId;
+
+		string filename = System.IO.Path.GetFileName(decalId);
 		string wsPath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
-		string wsDecalPath = System.IO.Path.Combine(wsPath, "Assets", "decals", decalId);
-		if (!System.IO.File.Exists(wsDecalPath) && !decalId.Contains('.'))
+
+		string candidate1 = System.IO.Path.Combine(wsPath, "Assets", "decals", filename);
+		if (System.IO.File.Exists(candidate1)) return candidate1;
+
+		if (!filename.Contains('.'))
 		{
-			wsDecalPath = System.IO.Path.Combine(wsPath, "Assets", "decals", decalId + ".png");
-		}
-		if (System.IO.File.Exists(wsDecalPath))
-		{
-			return wsDecalPath;
+			string candidate2 = System.IO.Path.Combine(wsPath, "Assets", "decals", filename + ".png");
+			if (System.IO.File.Exists(candidate2)) return candidate2;
 		}
 
-		if (System.IO.File.Exists(decalId) && !decalId.StartsWith("res://"))
+		if (System.IO.Path.IsPathRooted(decalId) && System.IO.File.Exists(decalId))
 		{
 			return decalId;
 		}
-		if (decalId.StartsWith("res://") || decalId.Contains('/') || decalId.Contains('\\'))
-		{
-			if (decalId.EndsWith(".glb") || decalId.EndsWith(".gltf"))
-			{
-				return "res://icon.svg";
-			}
-			return decalId;
-		}
+
+		string candidate3 = System.IO.Path.Combine(wsPath, decalId);
+		if (System.IO.File.Exists(candidate3)) return candidate3;
+
 		return "res://icon.svg";
 	}
 
@@ -1039,6 +1434,7 @@ public partial class GameHost
 				decal.GlobalPosition = pos;
 			}
 		}
+		PropMultiMeshManager.Instance?.MarkAllDirty();
 	}
 
 	private void DeleteObjectAt(Node collider, Vector3 hitPos)
@@ -1068,6 +1464,7 @@ public partial class GameHost
 				{
 					EcsWorld.Destroy(prop.Entity);
 				}
+				PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
 				prop.QueueFree();
 				return;
 			}
@@ -1123,23 +1520,11 @@ public partial class GameHost
 		position.Y = _editorService.GetTerrainHeightAt(position);
 		if (!UnitRegistry.ContainsKey(unitId))
 		{
-			string resolvedModelPath = unitId;
-			if (!unitId.StartsWith("res://") && !System.IO.File.Exists(unitId))
-			{
-				string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
-				string filename = System.IO.Path.GetFileName(unitId);
-				if (!filename.EndsWith(".glb") && !filename.EndsWith(".gltf")) filename += ".glb";
-				string[] subDirs = new[] { "character", "building", "environment", "props" };
-				foreach (var sub in subDirs)
-				{
-					string cand = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
-					if (System.IO.File.Exists(cand))
-					{
-						resolvedModelPath = cand;
-						break;
-					}
-				}
-			}
+			LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace"));
+		}
+		if (!UnitRegistry.ContainsKey(unitId))
+		{
+			string resolvedModelPath = GetFallbackModelPath(unitId, unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower"));
 			var dynamicMeta = new UnitMetadata
 			{
 				Name = System.IO.Path.GetFileNameWithoutExtension(unitId).Replace("_", " "),
@@ -1158,15 +1543,8 @@ public partial class GameHost
 
 		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
 		
-		string modelPath;
-		if (!string.IsNullOrEmpty(meta.ModelPath) && (FileAccess.FileExists(meta.ModelPath) || System.IO.File.Exists(meta.ModelPath)))
-		{
-			modelPath = meta.ModelPath;
-		}
-		else
-		{
-			modelPath = GetFallbackModelPath(unitId, meta.Speed == 0f);
-		}
+		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitId;
+		string modelPath = GetFallbackModelPath(targetModel, meta.Speed == 0f);
 
 		string name = meta.Name;
 		var entity = CreateEcsUnit(unitId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, position, playerOwner);
@@ -1184,17 +1562,7 @@ public partial class GameHost
 			EcsWorld.Add(entity, new CollisionScale(scale));
 		}
 
-		string unitAssetKey = GetModelAssetKey(unit3D);
-		if (!string.IsNullOrEmpty(unitAssetKey))
-		{
-			float brightness = GetModelBrightness(unitAssetKey);
-			Color tint = GetModelColorTint(unitAssetKey);
-			bool generateNormals = GetModelGenerateNormals(unitAssetKey);
-			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals || tint != new Color(1.0f, 1.0f, 1.0f))
-			{
-				ApplyMaterialOverridesToNode(unit3D, brightness, tint, generateNormals);
-			}
-		}
+		ApplyAllGlobalOverridesToObject(unit3D);
 
 		return unit3D;
 	}
@@ -1211,9 +1579,36 @@ public partial class GameHost
 
 		var entity = EcsWorld.Create();
 		EcsWorld.Add(entity, new PropIdentity(propId));
-		if (defaultAmount > 0f)
+		if (ResourceRegistry.TryGetValue(propId, out var meta) && (meta.MaxCapacity > 0f || defaultAmount > 0f))
 		{
-			EcsWorld.Add(entity, new ResourceNode(Guid.Empty, defaultAmount));
+			float amount = meta.MaxCapacity > 0f ? meta.MaxCapacity : defaultAmount;
+			float harvestRate = meta.HarvestRate > 0f ? meta.HarvestRate : 10f;
+			float growthRate = meta.GrowthRate;
+			int maxWorkers = meta.MaxWorkers > 0 ? meta.MaxWorkers : 5;
+			EcsWorld.Add(entity, new ResourceNode(Guid.Empty, amount, amount, harvestRate, growthRate, maxWorkers));
+		}
+		else if (defaultAmount > 0f)
+		{
+			EcsWorld.Add(entity, new ResourceNode(Guid.Empty, defaultAmount, defaultAmount, 10f, 0f, 5));
+		}
+
+		position.Y = _editorService.GetTerrainHeightAt(position);
+
+		EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Prop());
+		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(position.X, position.Y, position.Z)));
+		EcsWorld.Add(entity, new RotationY(rotationY));
+		EcsWorld.Add(entity, new ModelScale(scale));
+		EcsWorld.Add(entity, new CollisionScale(scale));
+
+		string propAssetKey = NormalizeModelAssetKey(propId);
+		float autoDetectedRadius = GetOrCalculateObstacleRadius(propId, null);
+		float baseRadius = autoDetectedRadius * GetModelCollisionCircleRatio(propAssetKey);
+		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+
+		if (!IsMapEditorMode && IsStaticPropAsset(propId))
+		{
+			PropMultiMeshManager.Instance?.MarkDirty(propId);
+			return null;
 		}
 
 		var prop = new Prop3D();
@@ -1221,29 +1616,15 @@ public partial class GameHost
 		prop.PropId = propId;
 		AddChild(prop);
 		AllProps.Add(prop);
+		PropMultiMeshManager.Instance?.MarkDirty(propId);
 
 		EntityToProp3D[entity] = prop;
 
-		position.Y = _editorService.GetTerrainHeightAt(position);
 		prop.Position = position;
 		prop.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
 		prop.Scale = Vector3.One * scale;
 		
-		EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Prop());
-		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(position.X, position.Y, position.Z)));
-		EcsWorld.Add(entity, new CollisionScale(scale));
-
-		string propAssetKey = GetModelAssetKey(prop);
-		if (!string.IsNullOrEmpty(propAssetKey))
-		{
-			float brightness = GetModelBrightness(propAssetKey);
-			Color tint = GetModelColorTint(propAssetKey);
-			bool generateNormals = GetModelGenerateNormals(propAssetKey);
-			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals || tint != new Color(1.0f, 1.0f, 1.0f))
-			{
-				ApplyMaterialOverridesToNode(prop, brightness, tint, generateNormals);
-			}
-		}
+		ApplyAllGlobalOverridesToObject(prop);
 
 		return prop;
 	}
@@ -1304,6 +1685,7 @@ public partial class GameHost
 			{
 				SelectedEditorObject = null;
 			}
+			string propId = prop.PropId;
 			AllProps.Remove(prop);
 			EntityToProp3D.Remove(prop.Entity);
 			if (EcsWorld.IsAlive(prop.Entity))
@@ -1311,6 +1693,7 @@ public partial class GameHost
 				EcsWorld.Destroy(prop.Entity);
 			}
 			prop.QueueFree();
+			PropMultiMeshManager.Instance?.MarkDirty(propId);
 			return;
 		}
 		var decal = (node as Decal) ?? FindDecalInParentChain(node);
@@ -1361,11 +1744,13 @@ public partial class GameHost
 		if (prop != null && GodotObject.IsInstanceValid(prop))
 		{
 			if (prop == _selectedEditorObject || FindProp3DInParentChain(_selectedEditorObject) == prop) SelectedEditorObject = null;
-			var action = new ObjectDeleteAction("prop", prop.PropId, prop.Position, prop.RotationDegrees.Y, prop.Scale.X, false, prop);
+			string propId = prop.PropId;
+			var action = new ObjectDeleteAction("prop", propId, prop.Position, prop.RotationDegrees.Y, prop.Scale.X, false, prop);
 			AllProps.Remove(prop);
 			EntityToProp3D.Remove(prop.Entity);
 			if (EcsWorld.IsAlive(prop.Entity)) EcsWorld.Destroy(prop.Entity);
 			prop.QueueFree();
+			PropMultiMeshManager.Instance?.MarkDirty(propId);
 			return action;
 		}
 
@@ -1398,9 +1783,9 @@ public partial class GameHost
 
 		Prop3D closestProp = null;
 		float closestPropDist = 2.0f;
-		foreach (var child in GetChildren())
+		foreach (var p in AllProps)
 		{
-			if (child is Prop3D p && GodotObject.IsInstanceValid(p))
+			if (GodotObject.IsInstanceValid(p))
 			{
 				float d = p.Position.DistanceTo(hitPos);
 				if (d < closestPropDist)
@@ -1411,22 +1796,49 @@ public partial class GameHost
 			}
 		}
 
+		Entity closestStaticPropEntity = Entity.Null;
+		string closestStaticPropId = null;
+		Vector3 closestStaticPropPos = Vector3.Zero;
+		float closestStaticPropRotY = 0f;
+		float closestStaticPropScale = 1f;
+		float closestStaticPropDist = 2.0f;
+
+		if (EcsWorld != null)
+		{
+			var propQuery = Realm.Ecs.Common.QueryCache.AllPropIdentityAndPositionQuery;
+			EcsWorld.Query(in propQuery, (Entity entity, ref PropIdentity pId, ref Position pPos) =>
+			{
+				if (EntityToProp3D.ContainsKey(entity)) return;
+				Vector3 wPos = new Vector3(pPos.Value.X, pPos.Value.Y, pPos.Value.Z);
+				float d = wPos.DistanceTo(hitPos);
+				if (d < closestStaticPropDist)
+				{
+					closestStaticPropDist = d;
+					closestStaticPropEntity = entity;
+					closestStaticPropId = pId.PropId;
+					closestStaticPropPos = wPos;
+					closestStaticPropRotY = EcsWorld.Has<RotationY>(entity) ? EcsWorld.Get<RotationY>(entity).Value : 0f;
+					closestStaticPropScale = EcsWorld.Has<ModelScale>(entity) ? EcsWorld.Get<ModelScale>(entity).Value : 1f;
+				}
+			});
+		}
+
 		Decal closestDecal = null;
 		float closestDecalDist = 2.0f;
-		foreach (var child in GetChildren())
+		foreach (var decalObj in AllDecals)
 		{
-			if (child is Decal dec && GodotObject.IsInstanceValid(dec))
+			if (GodotObject.IsInstanceValid(decalObj))
 			{
-				float d = dec.GlobalPosition.DistanceTo(hitPos);
+				float d = decalObj.GlobalPosition.DistanceTo(hitPos);
 				if (d < closestDecalDist)
 				{
 					closestDecalDist = d;
-					closestDecal = dec;
+					closestDecal = decalObj;
 				}
 			}
 		}
 
-		float minDistance = Mathf.Min(closestUnitDist, Mathf.Min(closestPropDist, closestDecalDist));
+		float minDistance = Mathf.Min(closestUnitDist, Mathf.Min(closestPropDist, Mathf.Min(closestStaticPropDist, closestDecalDist)));
 		if (minDistance < 2.0f)
 		{
 			if (closestUnit != null && minDistance == closestUnitDist)
@@ -1443,11 +1855,20 @@ public partial class GameHost
 			else if (closestProp != null && minDistance == closestPropDist)
 			{
 				if (closestProp == _selectedEditorObject) SelectedEditorObject = null;
-				var action = new ObjectDeleteAction("prop", closestProp.PropId, closestProp.Position, closestProp.RotationDegrees.Y, closestProp.Scale.X, false, closestProp);
+				string propId = closestProp.PropId;
+				var action = new ObjectDeleteAction("prop", propId, closestProp.Position, closestProp.RotationDegrees.Y, closestProp.Scale.X, false, closestProp);
 				AllProps.Remove(closestProp);
 				EntityToProp3D.Remove(closestProp.Entity);
 				if (EcsWorld.IsAlive(closestProp.Entity)) EcsWorld.Destroy(closestProp.Entity);
 				closestProp.QueueFree();
+				PropMultiMeshManager.Instance?.MarkDirty(propId);
+				return action;
+			}
+			else if (closestStaticPropEntity != Entity.Null && minDistance == closestStaticPropDist)
+			{
+				var action = new ObjectDeleteAction("prop", closestStaticPropId, closestStaticPropPos, closestStaticPropRotY, closestStaticPropScale, false, null);
+				EcsWorld.Destroy(closestStaticPropEntity);
+				PropMultiMeshManager.Instance?.MarkDirty(closestStaticPropId);
 				return action;
 			}
 			else if (closestDecal != null && minDistance == closestDecalDist)
@@ -1498,13 +1919,11 @@ public partial class GameHost
 			{
 				if (!UnitRegistry.ContainsKey(reqId))
 				{
-					string resolvedModelPath = reqId;
-					if (!reqId.StartsWith("res://") && !System.IO.File.Exists(reqId))
-					{
-						resolvedModelPath = (reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower"))
-							? $"res://Assets/3d/Buildings/{reqId}"
-							: $"res://Assets/3d/Characters/{reqId}";
-					}
+					LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace"));
+				}
+				if (!UnitRegistry.ContainsKey(reqId))
+				{
+					string resolvedModelPath = GetFallbackModelPath(reqId, reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower"));
 					var dynamicMeta = new UnitMetadata
 					{
 						Name = System.IO.Path.GetFileNameWithoutExtension(reqId).Replace("_", " "),
@@ -1521,7 +1940,8 @@ public partial class GameHost
 
 				if (UnitRegistry.TryGetValue(reqId, out var meta))
 				{
- 					string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(reqId, meta.Speed == 0f);
+					string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : reqId;
+					string modelPath = GetFallbackModelPath(targetModel, meta.Speed == 0f);
 
 					var previewUnit = new Unit3D();
 					previewUnit.UnitId = reqId;
@@ -1566,6 +1986,8 @@ public partial class GameHost
 
 		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode))
 		{
+			ApplyAllGlobalOverridesToObject(_editorPreviewNode);
+
 			if (EditorClumpMode || ActiveEditorTool == EditorTool.PlacePropClump)
 			{
 				_editorPreviewNode.Visible = false;
@@ -1867,7 +2289,8 @@ public partial class GameHost
 
 				if (ActiveEditorTool == EditorTool.SelectMove && _isDraggingObject && GodotObject.IsInstanceValid(SelectedEditorObject))
 				{
-					if (!_dragObjectHasMoved && hitPos.DistanceTo(_dragObjectStartHitPos) > 0.3f)
+					float mouseDistPx = mousePos.DistanceTo(_dragStartMousePos);
+					if (!_dragObjectHasMoved && mouseDistPx > 4.0f)
 					{
 						_dragObjectHasMoved = true;
 					}
@@ -1875,7 +2298,8 @@ public partial class GameHost
 					if (_dragObjectHasMoved)
 					{
 						var node3D = SelectedEditorObject as Node3D;
-						var dragPos = hitPos - (_dragObjectStartHitPos - _dragObjectStartPos);
+						Vector3 delta = hitPos - _dragStartGroundPos;
+						Vector3 dragPos = _dragObjectStartPos + delta;
 						if (EditorSnapToGrid && GroundTerrain != null)
 						{
 							dragPos = _editorService.SnapToGrid(dragPos);
@@ -1885,6 +2309,10 @@ public partial class GameHost
 						if (SelectedEditorObject is Unit3D unit && EcsWorld.IsAlive(unit.Entity))
 						{
 							EcsWorld.Set(unit.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
+						}
+						else if (SelectedEditorObject is Prop3D prop)
+						{
+							PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
 						}
 						MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 					}
@@ -1938,6 +2366,10 @@ public partial class GameHost
 						var node3D = SelectedEditorObject as Node3D;
 						bool isUnit = SelectedEditorObject is Unit3D;
 						bool isEnemy = isUnit ? (SelectedEditorObject as Unit3D).IsEnemy : false;
+						if (SelectedEditorObject is Prop3D prop && SelectedEditorObject is not Unit3D)
+						{
+							PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
+						}
 						if (node3D.Position.DistanceTo(_dragObjectStartPos) > 0.05f)
 						{
 							var action = new ObjectTransformAction(
@@ -2075,6 +2507,7 @@ public partial class GameHost
 
 	public void StartMapEditorMode()
 	{
+		Realm.Godot.ReplaySystem.ReplayPlaybackManager.Instance.StopReplay();
 		IsMapEditorMode = true;
 
 		string wsPath = Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
@@ -2122,11 +2555,13 @@ public partial class GameHost
 			catch (Exception ex)
 			{
 				GD.PrintErr($"Failed loading map state: {ex.Message}. Resetting to blank map.");
+				ResetWorldAndState();
 				ClearMapEntirely();
 			}
 		}
 		else
 		{
+			ResetWorldAndState();
 			ClearMapEntirely();
 		}
 		
@@ -2884,6 +3319,17 @@ public partial class GameHost
 		}
 	}
 
+	public void HideSelectionHighlight()
+	{
+		if (_selectionHighlightMesh != null)
+		{
+			_selectionHighlightMesh.Visible = false;
+		}
+		_editorService?.SetIsSelectingArea(false);
+		_editorService?.SetSelectionStart(null);
+		_editorService?.SetSelectionEnd(null);
+	}
+
 	private void CreateSelectionHighlight()
 	{
 		if (_selectionHighlightMesh != null) return;
@@ -3090,9 +3536,11 @@ public partial class GameHost
 	public void DeleteCoordinateExternal(string coordinateName)
 	{
 		var oldCoordinates = new List<EditorCoordinate>(EditorCoordinates);
-		EditorCoordinates.RemoveAll(r => r.Name == coordinateName);
-		RebuildAllCoordinatePersistentMeshes();
+		EditorCoordinates.RemoveAll(r => string.Equals(r.Name, coordinateName, StringComparison.OrdinalIgnoreCase));
 		HideCoordinateSelectionOutline();
+		HideSelectionHighlight();
+		HideCoordinatePreviewMesh();
+		RebuildAllCoordinatePersistentMeshes();
 
 		var newCoordinates = new List<EditorCoordinate>(EditorCoordinates);
 		var action = new CoordinateAction(oldCoordinates, newCoordinates);
@@ -3115,7 +3563,6 @@ public partial class GameHost
 		if (ActiveEditorTool != EditorTool.DrawCoordinate)
 		{
 			HideCoordinatePreviewMesh();
-			return;
 		}
 
 		if (GroundTerrain == null || GroundTerrain.Heights == null) return;
@@ -3158,7 +3605,7 @@ public partial class GameHost
 		EditorCoordinate? found = null;
 		foreach (var r in EditorCoordinates)
 		{
-			if (r.Name == coordinateName)
+			if (string.Equals(r.Name, coordinateName, StringComparison.OrdinalIgnoreCase))
 			{
 				found = r;
 				break;
@@ -3202,18 +3649,19 @@ public partial class GameHost
 		float centerZ = (coord.MinZ + coord.MaxZ) / 2.0f;
 		float centerY = GetTerrainHeightAt(new Vector3(centerX, 0f, centerZ));
 
-		var camera = GetViewport().GetCamera3D();
+		var camera = (MainCamera ?? GetViewport()?.GetCamera3D()) as CameraControl;
 		if (camera != null)
 		{
-			camera.GlobalPosition = new Vector3(centerX, centerY, centerZ + 25f);
+			camera.FocusOnPosition(new Vector3(centerX, centerY, centerZ));
 		}
 	}
 
 	public void HideCoordinateSelectionOutline()
 	{
-		if (_coordinateSelectionOutlineMesh != null)
+		if (_coordinateSelectionOutlineMesh != null && GodotObject.IsInstanceValid(_coordinateSelectionOutlineMesh))
 		{
 			_coordinateSelectionOutlineMesh.Visible = false;
+			_coordinateSelectionOutlineMesh.Mesh = null;
 		}
 	}
 

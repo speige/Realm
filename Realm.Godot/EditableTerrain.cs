@@ -8,6 +8,13 @@ using System.Collections.Generic;
 public partial class EditableTerrain : StaticBody3D
 {
 	public const uint TerrainCollisionLayer = 2;
+	public static EditableTerrain Instance { get; private set; }
+	public static bool IsMinimapRendering { get; set; } = false;
+
+	public override void _ExitTree()
+	{
+		if (Instance == this) Instance = null;
+	}
 
 	public EditableTerrain()
 	{
@@ -462,6 +469,13 @@ public partial class EditableTerrain : StaticBody3D
 		public MeshInstance3D MeshInstance;
 		public CollisionShape3D CollisionShape;
 		public ArrayMesh ArrayMesh;
+		public ArrayMesh ShallowWaterArrayMesh;
+		public MeshInstance3D ShallowWaterMesh;
+		public ArrayMesh DeepWaterArrayMesh;
+		public MeshInstance3D DeepWaterMesh;
+		public Aabb WorldAabb;
+		public float MinY;
+		public float MaxY;
 		public int StartX;
 		public int StartZ;
 		public int EndX;
@@ -478,14 +492,13 @@ public partial class EditableTerrain : StaticBody3D
 	
 	private List<TerrainChunk> _chunks = new List<TerrainChunk>();
 	private ShaderMaterial _material;
-	private MeshInstance3D _shallowWaterMesh;
-	private MeshInstance3D _deepWaterMesh;
+	public ShaderMaterial Material => _material;
 	private ShaderMaterial _shallowWaterMaterial;
 	private ShaderMaterial _deepWaterMaterial;
 
 	private void CreateWater()
 	{
-		if (_shallowWaterMesh != null && _deepWaterMesh != null) return;
+		if (_shallowWaterMaterial != null && _deepWaterMaterial != null) return;
 
 		var waterShader = new Shader();
 		waterShader.Code = @"
@@ -593,15 +606,11 @@ void fragment() {
 		_deepWaterMaterial.SetShaderParameter("deep_color", new Color(0.005f, 0.03f, 0.12f, 0.99f));
 		_deepWaterMaterial.SetShaderParameter("max_depth", 1.5f);
 
-		_shallowWaterMesh = new MeshInstance3D();
-		_shallowWaterMesh.Name = "ShallowWaterMesh";
-		_shallowWaterMesh.MaterialOverride = _shallowWaterMaterial;
-		AddChild(_shallowWaterMesh);
-
-		_deepWaterMesh = new MeshInstance3D();
-		_deepWaterMesh.Name = "DeepWaterMesh";
-		_deepWaterMesh.MaterialOverride = _deepWaterMaterial;
-		AddChild(_deepWaterMesh);
+		foreach (var chunk in _chunks)
+		{
+			if (chunk.ShallowWaterMesh != null) chunk.ShallowWaterMesh.MaterialOverride = _shallowWaterMaterial;
+			if (chunk.DeepWaterMesh != null) chunk.DeepWaterMesh.MaterialOverride = _deepWaterMaterial;
+		}
 
 		RegenerateWaterMesh();
 	}
@@ -646,8 +655,6 @@ void fragment() {
 
 	public void RegenerateWaterMesh()
 	{
-		if (_shallowWaterMesh == null || _deepWaterMesh == null) return;
-
 		var cells = Cells;
 		if (cells == null) return;
 
@@ -657,142 +664,163 @@ void fragment() {
 		float halfWQuadSize = (w / 2.0f) * quadSize;
 		float halfDQuadSize = (d / 2.0f) * quadSize;
 
-		List<Vector3> shallowVerts = new();
-		List<Vector3> shallowNorms = new();
-		List<Vector2> shallowUVs = new();
-		List<int> shallowIndices = new();
-
-		List<Vector3> deepVerts = new();
-		List<Vector3> deepNorms = new();
-		List<Vector2> deepUVs = new();
-		List<int> deepIndices = new();
-
-		for (int z = 0; z < d; z++)
+		foreach (var chunk in _chunks)
 		{
-			for (int x = 0; x < w; x++)
+			if (chunk.ShallowWaterMesh == null)
 			{
-				var (waterY1, activeWaterMode1) = GetCellWaterInfo(x, z, cells, w, d);
-				if (activeWaterMode1 == WaterType.None) continue;
+				chunk.ShallowWaterArrayMesh = new ArrayMesh();
+				chunk.ShallowWaterMesh = new MeshInstance3D();
+				chunk.ShallowWaterMesh.Name = $"ShallowWaterChunk_{chunk.StartX}_{chunk.StartZ}";
+				chunk.ShallowWaterMesh.Mesh = chunk.ShallowWaterArrayMesh;
+				if (_shallowWaterMaterial != null) chunk.ShallowWaterMesh.MaterialOverride = _shallowWaterMaterial;
+				AddChild(chunk.ShallowWaterMesh);
+			}
 
-				Vector3 nw = new Vector3(x * quadSize - halfWQuadSize, waterY1, z * quadSize - halfDQuadSize);
-				Vector3 ne = new Vector3((x + 1) * quadSize - halfWQuadSize, waterY1, z * quadSize - halfDQuadSize);
-				Vector3 se = new Vector3((x + 1) * quadSize - halfWQuadSize, waterY1, (z + 1) * quadSize - halfDQuadSize);
-				Vector3 sw = new Vector3(x * quadSize - halfWQuadSize, waterY1, (z + 1) * quadSize - halfDQuadSize);
+			if (chunk.DeepWaterMesh == null)
+			{
+				chunk.DeepWaterArrayMesh = new ArrayMesh();
+				chunk.DeepWaterMesh = new MeshInstance3D();
+				chunk.DeepWaterMesh.Name = $"DeepWaterChunk_{chunk.StartX}_{chunk.StartZ}";
+				chunk.DeepWaterMesh.Mesh = chunk.DeepWaterArrayMesh;
+				if (_deepWaterMaterial != null) chunk.DeepWaterMesh.MaterialOverride = _deepWaterMaterial;
+				AddChild(chunk.DeepWaterMesh);
+			}
 
-				bool isShallow1 = (activeWaterMode1 == WaterType.Shallow);
-				var targetVerts = isShallow1 ? shallowVerts : deepVerts;
-				var targetNorms = isShallow1 ? shallowNorms : deepNorms;
-				var targetUVs = isShallow1 ? shallowUVs : deepUVs;
-				var targetIndices = isShallow1 ? shallowIndices : deepIndices;
+			List<Vector3> shallowVerts = new();
+			List<Vector3> shallowNorms = new();
+			List<Vector2> shallowUVs = new();
+			List<int> shallowIndices = new();
 
-				int baseIdx = targetVerts.Count;
+			List<Vector3> deepVerts = new();
+			List<Vector3> deepNorms = new();
+			List<Vector2> deepUVs = new();
+			List<int> deepIndices = new();
 
-				targetVerts.Add(nw);
-				targetVerts.Add(ne);
-				targetVerts.Add(se);
-				targetVerts.Add(sw);
-
-				Vector3 normal = Vector3.Up;
-				targetNorms.Add(normal);
-				targetNorms.Add(normal);
-				targetNorms.Add(normal);
-				targetNorms.Add(normal);
-
-				targetUVs.Add(new Vector2(0, 0));
-				targetUVs.Add(new Vector2(1, 0));
-				targetUVs.Add(new Vector2(1, 1));
-				targetUVs.Add(new Vector2(0, 1));
-
-				targetIndices.Add(baseIdx + 0);
-				targetIndices.Add(baseIdx + 1);
-				targetIndices.Add(baseIdx + 2);
-
-				targetIndices.Add(baseIdx + 0);
-				targetIndices.Add(baseIdx + 2);
-				targetIndices.Add(baseIdx + 3);
-
-				// Build water ramp wall quads along boundaries between water cells of differing height levels
-				if (x + 1 < w)
+			for (int z = chunk.StartZ; z < chunk.EndZ; z++)
+			{
+				for (int x = chunk.StartX; x < chunk.EndX; x++)
 				{
-					var (waterY2, activeWaterMode2) = GetCellWaterInfo(x + 1, z, cells, w, d);
-					if (activeWaterMode2 != WaterType.None && MathF.Abs(waterY1 - waterY2) > 0.01f)
+					var (waterY1, activeWaterMode1) = GetCellWaterInfo(x, z, cells, w, d);
+					if (activeWaterMode1 == WaterType.None) continue;
+
+					Vector3 nw = new Vector3(x * quadSize - halfWQuadSize, waterY1, z * quadSize - halfDQuadSize);
+					Vector3 ne = new Vector3((x + 1) * quadSize - halfWQuadSize, waterY1, z * quadSize - halfDQuadSize);
+					Vector3 se = new Vector3((x + 1) * quadSize - halfWQuadSize, waterY1, (z + 1) * quadSize - halfDQuadSize);
+					Vector3 sw = new Vector3(x * quadSize - halfWQuadSize, waterY1, (z + 1) * quadSize - halfDQuadSize);
+
+					bool isShallow1 = (activeWaterMode1 == WaterType.Shallow);
+					var targetVerts = isShallow1 ? shallowVerts : deepVerts;
+					var targetNorms = isShallow1 ? shallowNorms : deepNorms;
+					var targetUVs = isShallow1 ? shallowUVs : deepUVs;
+					var targetIndices = isShallow1 ? shallowIndices : deepIndices;
+
+					int baseIdx = targetVerts.Count;
+
+					targetVerts.Add(nw);
+					targetVerts.Add(ne);
+					targetVerts.Add(se);
+					targetVerts.Add(sw);
+
+					Vector3 normal = Vector3.Up;
+					targetNorms.Add(normal);
+					targetNorms.Add(normal);
+					targetNorms.Add(normal);
+					targetNorms.Add(normal);
+
+					targetUVs.Add(new Vector2(0, 0));
+					targetUVs.Add(new Vector2(1, 0));
+					targetUVs.Add(new Vector2(1, 1));
+					targetUVs.Add(new Vector2(0, 1));
+
+					targetIndices.Add(baseIdx + 0);
+					targetIndices.Add(baseIdx + 1);
+					targetIndices.Add(baseIdx + 2);
+
+					targetIndices.Add(baseIdx + 0);
+					targetIndices.Add(baseIdx + 2);
+					targetIndices.Add(baseIdx + 3);
+
+					// Build water ramp wall quads along boundaries between water cells of differing height levels
+					if (x + 1 < w)
 					{
-						float yMin = MathF.Min(waterY1, waterY2);
-						float yMax = MathF.Max(waterY1, waterY2);
-						float wallX = (x + 1) * quadSize - halfWQuadSize;
-						float z0 = z * quadSize - halfDQuadSize;
-						float z1 = (z + 1) * quadSize - halfDQuadSize;
+						var (waterY2, activeWaterMode2) = GetCellWaterInfo(x + 1, z, cells, w, d);
+						if (activeWaterMode2 != WaterType.None && MathF.Abs(waterY1 - waterY2) > 0.01f)
+						{
+							float yMin = MathF.Min(waterY1, waterY2);
+							float yMax = MathF.Max(waterY1, waterY2);
+							float wallX = (x + 1) * quadSize - halfWQuadSize;
+							float z0 = z * quadSize - halfDQuadSize;
+							float z1 = (z + 1) * quadSize - halfDQuadSize;
 
-						bool wallShallow = isShallow1 || (activeWaterMode2 == WaterType.Shallow);
-						var wVerts = wallShallow ? shallowVerts : deepVerts;
-						var wNorms = wallShallow ? shallowNorms : deepNorms;
-						var wUVs = wallShallow ? shallowUVs : deepUVs;
-						var wIndices = wallShallow ? shallowIndices : deepIndices;
+							bool wallShallow = isShallow1 || (activeWaterMode2 == WaterType.Shallow);
+							var wVerts = wallShallow ? shallowVerts : deepVerts;
+							var wNorms = wallShallow ? shallowNorms : deepNorms;
+							var wUVs = wallShallow ? shallowUVs : deepUVs;
+							var wIndices = wallShallow ? shallowIndices : deepIndices;
 
-						int wBase = wVerts.Count;
-						wVerts.Add(new Vector3(wallX, yMin, z0));
-						wVerts.Add(new Vector3(wallX, yMin, z1));
-						wVerts.Add(new Vector3(wallX, yMax, z1));
-						wVerts.Add(new Vector3(wallX, yMax, z0));
+							int wBase = wVerts.Count;
+							wVerts.Add(new Vector3(wallX, yMin, z0));
+							wVerts.Add(new Vector3(wallX, yMin, z1));
+							wVerts.Add(new Vector3(wallX, yMax, z1));
+							wVerts.Add(new Vector3(wallX, yMax, z0));
 
-						Vector3 wallNorm = (waterY1 > waterY2) ? Vector3.Right : Vector3.Left;
-						wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm);
-						wUVs.Add(new Vector2(0, 0)); wUVs.Add(new Vector2(1, 0)); wUVs.Add(new Vector2(1, 1)); wUVs.Add(new Vector2(0, 1));
+							Vector3 wallNorm = (waterY1 > waterY2) ? Vector3.Right : Vector3.Left;
+							wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm);
+							wUVs.Add(new Vector2(0, 0)); wUVs.Add(new Vector2(1, 0)); wUVs.Add(new Vector2(1, 1)); wUVs.Add(new Vector2(0, 1));
 
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 1); wIndices.Add(wBase + 2);
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 3);
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 1);
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 3); wIndices.Add(wBase + 2);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 1); wIndices.Add(wBase + 2);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 3);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 1);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 3); wIndices.Add(wBase + 2);
+						}
 					}
-				}
 
-				if (z + 1 < d)
-				{
-					var (waterY2, activeWaterMode2) = GetCellWaterInfo(x, z + 1, cells, w, d);
-					if (activeWaterMode2 != WaterType.None && MathF.Abs(waterY1 - waterY2) > 0.01f)
+					if (z + 1 < d)
 					{
-						float yMin = MathF.Min(waterY1, waterY2);
-						float yMax = MathF.Max(waterY1, waterY2);
-						float wallZ = (z + 1) * quadSize - halfDQuadSize;
-						float x0 = x * quadSize - halfWQuadSize;
-						float x1 = (x + 1) * quadSize - halfWQuadSize;
+						var (waterY2, activeWaterMode2) = GetCellWaterInfo(x, z + 1, cells, w, d);
+						if (activeWaterMode2 != WaterType.None && MathF.Abs(waterY1 - waterY2) > 0.01f)
+						{
+							float yMin = MathF.Min(waterY1, waterY2);
+							float yMax = MathF.Max(waterY1, waterY2);
+							float wallZ = (z + 1) * quadSize - halfDQuadSize;
+							float x0 = x * quadSize - halfWQuadSize;
+							float x1 = (x + 1) * quadSize - halfWQuadSize;
 
-						bool wallShallow = isShallow1 || (activeWaterMode2 == WaterType.Shallow);
-						var wVerts = wallShallow ? shallowVerts : deepVerts;
-						var wNorms = wallShallow ? shallowNorms : deepNorms;
-						var wUVs = wallShallow ? shallowUVs : deepUVs;
-						var wIndices = wallShallow ? shallowIndices : deepIndices;
+							bool wallShallow = isShallow1 || (activeWaterMode2 == WaterType.Shallow);
+							var wVerts = wallShallow ? shallowVerts : deepVerts;
+							var wNorms = wallShallow ? shallowNorms : deepNorms;
+							var wUVs = wallShallow ? shallowUVs : deepUVs;
+							var wIndices = wallShallow ? shallowIndices : deepIndices;
 
-						int wBase = wVerts.Count;
-						wVerts.Add(new Vector3(x0, yMin, wallZ));
-						wVerts.Add(new Vector3(x1, yMin, wallZ));
-						wVerts.Add(new Vector3(x1, yMax, wallZ));
-						wVerts.Add(new Vector3(x0, yMax, wallZ));
+							int wBase = wVerts.Count;
+							wVerts.Add(new Vector3(x0, yMin, wallZ));
+							wVerts.Add(new Vector3(x1, yMin, wallZ));
+							wVerts.Add(new Vector3(x1, yMax, wallZ));
+							wVerts.Add(new Vector3(x0, yMax, wallZ));
 
-						Vector3 wallNorm = (waterY1 > waterY2) ? Vector3.Back : Vector3.Forward;
-						wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm);
-						wUVs.Add(new Vector2(0, 0)); wUVs.Add(new Vector2(1, 0)); wUVs.Add(new Vector2(1, 1)); wUVs.Add(new Vector2(0, 1));
+							Vector3 wallNorm = (waterY1 > waterY2) ? Vector3.Back : Vector3.Forward;
+							wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm); wNorms.Add(wallNorm);
+							wUVs.Add(new Vector2(0, 0)); wUVs.Add(new Vector2(1, 0)); wUVs.Add(new Vector2(1, 1)); wUVs.Add(new Vector2(0, 1));
 
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 1); wIndices.Add(wBase + 2);
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 3);
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 1);
-						wIndices.Add(wBase + 0); wIndices.Add(wBase + 3); wIndices.Add(wBase + 2);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 1); wIndices.Add(wBase + 2);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 3);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 2); wIndices.Add(wBase + 1);
+							wIndices.Add(wBase + 0); wIndices.Add(wBase + 3); wIndices.Add(wBase + 2);
+						}
 					}
 				}
 			}
-		}
 
-		UpdateSingleWaterMesh(_shallowWaterMesh, shallowVerts, shallowNorms, shallowUVs, shallowIndices);
-		UpdateSingleWaterMesh(_deepWaterMesh, deepVerts, deepNorms, deepUVs, deepIndices);
+			UpdateSingleWaterMesh(chunk.ShallowWaterMesh, chunk.ShallowWaterArrayMesh, shallowVerts, shallowNorms, shallowUVs, shallowIndices);
+			UpdateSingleWaterMesh(chunk.DeepWaterMesh, chunk.DeepWaterArrayMesh, deepVerts, deepNorms, deepUVs, deepIndices);
+		}
 	}
 
-	private void UpdateSingleWaterMesh(MeshInstance3D meshInstance, List<Vector3> verts, List<Vector3> norms, List<Vector2> uvs, List<int> indices)
+	private void UpdateSingleWaterMesh(MeshInstance3D meshInstance, ArrayMesh arrayMesh, List<Vector3> verts, List<Vector3> norms, List<Vector2> uvs, List<int> indices)
 	{
-		if (verts.Count == 0)
-		{
-			meshInstance.Mesh = null;
-			return;
-		}
+		if (meshInstance == null || arrayMesh == null) return;
+		arrayMesh.ClearSurfaces();
+		if (verts.Count == 0) return;
 
 		var arrays = new Godot.Collections.Array();
 		arrays.Resize((int)Mesh.ArrayType.Max);
@@ -801,9 +829,7 @@ void fragment() {
 		arrays[(int)Mesh.ArrayType.TexUV] = uvs.ToArray();
 		arrays[(int)Mesh.ArrayType.Index] = indices.ToArray();
 
-		var arrMesh = new ArrayMesh();
-		arrMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-		meshInstance.Mesh = arrMesh;
+		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
 	}
 
 	private void UpdateWaterTransform()
@@ -818,6 +844,7 @@ void fragment() {
 
 	public override void _Ready()
 	{
+		Instance = this;
 		CollisionLayer = 1U | TerrainCollisionLayer;
 		var cells = Cells;
 		if (cells == null || cells.GetLength(0) != Width || cells.GetLength(1) != Depth)
@@ -901,7 +928,13 @@ uniform float macro_roughness_contrast = 0.15;
 uniform float macro_normal_strength = 0.15;
 uniform float macro_lacunarity = 2.0;
 uniform float macro_gain = 0.5;
+
 uniform bool enable_stochastic = true;
+uniform bool enable_normal_mapping = true;
+uniform bool enable_macro_noise = true;
+uniform bool enable_height_blend = true;
+uniform bool enable_fast_planar = false;
+
 uniform vec4 swatch_params[32];
 
 varying vec4 v_tex_indices;
@@ -951,9 +984,33 @@ vec2 stochastic_hash(vec2 p) {
 	return vec2(float(n & 0xFFFFu), float((n >> 16u) & 0xFFFFu)) * (1.0 / 65535.0);
 }
 
-vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, float tile_mode, float stoch_tile_size) {
+vec4 sample_semi_grid(sampler2DArray tex_array, float layer, vec2 uv, float blend_width) {
+	if (blend_width <= 0.0001) {
+		return texture(tex_array, vec3(uv, layer));
+	}
+	vec2 f = fract(uv);
+	vec2 edge = smoothstep(vec2(0.0), vec2(blend_width), f) * 
+	            smoothstep(vec2(0.0), vec2(blend_width), vec2(1.0) - f);
+	float center_weight = edge.x * edge.y;
+
+	vec2 dx = dFdx(uv);
+	vec2 dy = dFdy(uv);
+	vec4 col_center = textureGrad(tex_array, vec3(uv, layer), dx, dy);
+
+	if (center_weight > 0.99) {
+		return col_center;
+	}
+
+	vec2 cell = floor(uv);
+	vec2 offset = stochastic_hash(cell);
+	vec4 col_border = textureGrad(tex_array, vec3(uv + offset, layer), dx, dy);
+
+	return mix(col_border, col_center, center_weight);
+}
+
+vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, float tile_mode, float stoch_tile_size, float cross_fade) {
 	if (!enable_stochastic || tile_mode < 0.5) {
-		return sample_quad_array(tex_array, layer, uv);
+		return sample_semi_grid(tex_array, layer, uv, cross_fade);
 	}
 
 	vec2 dx = dFdx(uv);
@@ -1010,14 +1067,19 @@ vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, ve
 	float tile_mode = params.x;
 	float uv_scale = params.y > 0.001 ? params.y : 1.0;
 	float stoch_tile_size = params.z > 0.001 ? params.z : 1.0;
+	float cross_fade = clamp(params.w, 0.0, 0.10);
 
 	vec2 scaled_uv_x = uv_x * uv_scale;
 	vec2 scaled_uv_y = uv_y * uv_scale;
 	vec2 scaled_uv_z = uv_z * uv_scale;
 
-	vec4 col_x = sample_stochastic_layer(tex_array, layer, scaled_uv_x, tile_mode, stoch_tile_size);
-	vec4 col_y = sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size);
-	vec4 col_z = sample_stochastic_layer(tex_array, layer, scaled_uv_z, tile_mode, stoch_tile_size);
+	if (enable_fast_planar && weights.y > 0.90) {
+		return sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size, cross_fade);
+	}
+
+	vec4 col_x = sample_stochastic_layer(tex_array, layer, scaled_uv_x, tile_mode, stoch_tile_size, cross_fade);
+	vec4 col_y = sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size, cross_fade);
+	vec4 col_z = sample_stochastic_layer(tex_array, layer, scaled_uv_z, tile_mode, stoch_tile_size, cross_fade);
 	return col_x * weights.x + col_y * weights.y + col_z * weights.z;
 }
 
@@ -1036,14 +1098,17 @@ void fragment() {
 	float bw_sum = blend_weights.x + blend_weights.y + blend_weights.z;
 	blend_weights = bw_sum > 0.0001 ? blend_weights / bw_sum : vec3(0.0, 1.0, 0.0);
 
-	float base_fbm_val = macro_fbm(v_world_pos.xz * macro_scale);
-
 	vec3 pos_warped = v_world_pos;
-	if (uv_warp_strength > 0.0) {
-		float warp_x = (base_fbm_val - 0.5) * 2.0;
-		float warp_y = (macro_fbm((v_world_pos.xz + vec2(17.3, 31.7)) * macro_scale) - 0.5) * 2.0;
-		vec2 warp_offset = vec2(warp_x, warp_y);
-		pos_warped += vec3(warp_offset.x, warp_offset.y, warp_offset.x) * uv_warp_strength * 0.05 / max(0.001, macro_scale);
+	float base_fbm_val = 0.5;
+
+	if (enable_macro_noise) {
+		base_fbm_val = macro_fbm(v_world_pos.xz * macro_scale);
+		if (uv_warp_strength > 0.0) {
+			float warp_x = (base_fbm_val - 0.5) * 2.0;
+			float warp_y = (macro_fbm((v_world_pos.xz + vec2(17.3, 31.7)) * macro_scale) - 0.5) * 2.0;
+			vec2 warp_offset = vec2(warp_x, warp_y);
+			pos_warped += vec3(warp_offset.x, warp_offset.y, warp_offset.x) * uv_warp_strength * 0.05 / max(0.001, macro_scale);
+		}
 	}
 
 	vec2 uv_x = pos_warped.zy * texture_scale;
@@ -1059,31 +1124,40 @@ void fragment() {
 	float weight_sum = raw_weights.x + raw_weights.y + raw_weights.z + raw_weights.w;
 	vec4 norm_weights = weight_sum > 0.0001 ? raw_weights / weight_sum : vec4(0.0);
 
-	vec4 c0 = norm_weights.x > 0.0 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
-	vec4 c1 = norm_weights.y > 0.0 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
-	vec4 c2 = norm_weights.z > 0.0 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
-	vec4 c3 = norm_weights.w > 0.0 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
+	vec3 splat_color = vec3(0.0);
 
-	float height_influence = 0.15;
-	vec4 height_mod = vec4(c0.a, c1.a, c2.a, c3.a) * height_influence;
-	vec4 blended_weights = norm_weights * (vec4(1.0) + height_mod);
+	if (enable_fast_planar && norm_weights.x > 0.98) {
+		vec4 c0 = sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights);
+		splat_color = c0.rgb;
+	} else {
+		vec4 c0 = norm_weights.x > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
+		vec4 c1 = norm_weights.y > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
+		vec4 c2 = norm_weights.z > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
+		vec4 c3 = norm_weights.w > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
 
-	float final_sum = blended_weights.x + blended_weights.y + blended_weights.z + blended_weights.w;
-	vec4 final_weights = final_sum > 0.0001 ? blended_weights / final_sum : vec4(1.0, 0.0, 0.0, 0.0);
-
-	float w0 = final_weights.x;
-	float w1 = final_weights.y;
-	float w2 = final_weights.z;
-	float w3 = final_weights.w;
-	
-	vec3 splat_color = (c0.rgb * w0 +
-	                    c1.rgb * w1 +
-	                    c2.rgb * w2 +
-	                    c3.rgb * w3);
+		if (enable_height_blend) {
+			float height_influence = 0.15;
+			vec4 height_mod = vec4(c0.a, c1.a, c2.a, c3.a) * height_influence;
+			vec4 blended_weights = norm_weights * (vec4(1.0) + height_mod);
+			float final_sum = blended_weights.x + blended_weights.y + blended_weights.z + blended_weights.w;
+			vec4 final_weights = final_sum > 0.0001 ? blended_weights / final_sum : vec4(1.0, 0.0, 0.0, 0.0);
+			splat_color = (c0.rgb * final_weights.x +
+			               c1.rgb * final_weights.y +
+			               c2.rgb * final_weights.z +
+			               c3.rgb * final_weights.w);
+		} else {
+			splat_color = (c0.rgb * norm_weights.x +
+			               c1.rgb * norm_weights.y +
+			               c2.rgb * norm_weights.z +
+			               c3.rgb * norm_weights.w);
+		}
+	}
 
 	vec3 terrain_color = splat_color;
-
-	float macro_var = mix(1.0 - macro_albedo_contrast, 1.0 + macro_albedo_contrast, base_fbm_val);
+	float macro_var = 1.0;
+	if (enable_macro_noise) {
+		macro_var = mix(1.0 - macro_albedo_contrast, 1.0 + macro_albedo_contrast, base_fbm_val);
+	}
 
 	vec3 final_albedo = terrain_color * macro_var * v_color.rgb;
 	vec3 emission_color = vec3(0.0);
@@ -1154,37 +1228,54 @@ void fragment() {
 		}
 	}
 
-	vec4 n0 = w0 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
-	vec4 n1 = w1 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
-	vec4 n2 = w2 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
-	vec4 n3 = w3 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
-	
-	vec2 n0_xy = vec2(n0.r * 2.0 - 1.0, (1.0 - n0.g) * 2.0 - 1.0);
-	vec3 n0_vec = vec3(n0_xy, sqrt(max(0.0, 1.0 - dot(n0_xy, n0_xy))));
-	
-	vec2 n1_xy = vec2(n1.r * 2.0 - 1.0, (1.0 - n1.g) * 2.0 - 1.0);
-	vec3 n1_vec = vec3(n1_xy, sqrt(max(0.0, 1.0 - dot(n1_xy, n1_xy))));
-	
-	vec2 n2_xy = vec2(n2.r * 2.0 - 1.0, (1.0 - n2.g) * 2.0 - 1.0);
-	vec3 n2_vec = vec3(n2_xy, sqrt(max(0.0, 1.0 - dot(n2_xy, n2_xy))));
-	
-	vec2 n3_xy = vec2(n3.r * 2.0 - 1.0, (1.0 - n3.g) * 2.0 - 1.0);
-	vec3 n3_vec = vec3(n3_xy, sqrt(max(0.0, 1.0 - dot(n3_xy, n3_xy))));
-	
-	vec3 blended_normal_tangent = normalize(n0_vec * w0 + n1_vec * w1 + n2_vec * w2 + n3_vec * w3);
+	vec3 blended_normal_tangent = vec3(0.0, 0.0, 1.0);
+	float blended_ao = 1.0;
+	float final_roughness = 0.9;
+	float specular_amt = 0.0;
 
-	if (macro_normal_strength > 0.0) {
-		float n_noise_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
-		float n_noise_z = (macro_fbm((v_world_pos.xz + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.0, 0.1)) * macro_scale));
-		vec3 noise_normal = vec3(n_noise_x * macro_normal_strength, n_noise_z * macro_normal_strength, 1.0);
-		blended_normal_tangent = normalize(blended_normal_tangent + noise_normal);
+	if (enable_normal_mapping) {
+		float w0 = norm_weights.x;
+		float w1 = norm_weights.y;
+		float w2 = norm_weights.z;
+		float w3 = norm_weights.w;
+
+		vec4 n0 = w0 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 n1 = w1 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 n2 = w2 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 n3 = w3 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
+		
+		vec2 n0_xy = vec2(n0.r * 2.0 - 1.0, (1.0 - n0.g) * 2.0 - 1.0);
+		vec3 n0_vec = vec3(n0_xy, sqrt(max(0.0, 1.0 - dot(n0_xy, n0_xy))));
+		
+		vec2 n1_xy = vec2(n1.r * 2.0 - 1.0, (1.0 - n1.g) * 2.0 - 1.0);
+		vec3 n1_vec = vec3(n1_xy, sqrt(max(0.0, 1.0 - dot(n1_xy, n1_xy))));
+		
+		vec2 n2_xy = vec2(n2.r * 2.0 - 1.0, (1.0 - n2.g) * 2.0 - 1.0);
+		vec3 n2_vec = vec3(n2_xy, sqrt(max(0.0, 1.0 - dot(n2_xy, n2_xy))));
+		
+		vec2 n3_xy = vec2(n3.r * 2.0 - 1.0, (1.0 - n3.g) * 2.0 - 1.0);
+		vec3 n3_vec = vec3(n3_xy, sqrt(max(0.0, 1.0 - dot(n3_xy, n3_xy))));
+		
+		blended_normal_tangent = normalize(n0_vec * w0 + n1_vec * w1 + n2_vec * w2 + n3_vec * w3);
+
+		if (enable_macro_noise && macro_normal_strength > 0.0) {
+			float n_noise_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
+			float n_noise_z = (macro_fbm((v_world_pos.xz + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.0, 0.1)) * macro_scale));
+			vec3 noise_normal = vec3(n_noise_x * macro_normal_strength, n_noise_z * macro_normal_strength, 1.0);
+			blended_normal_tangent = normalize(blended_normal_tangent + noise_normal);
+		}
+
+		blended_ao = (n0.b * w0 + n1.b * w1 + n2.b * w2 + n3.b * w3);
+		float blended_roughness = (n0.a * w0 + n1.a * w1 + n2.a * w2 + n3.a * w3);
+
+		if (enable_macro_noise) {
+			float macro_roughness_var = mix(1.0 - macro_roughness_contrast, 1.0 + macro_roughness_contrast, base_fbm_val);
+			final_roughness = clamp(blended_roughness * macro_roughness_var, 0.05, 1.0);
+		} else {
+			final_roughness = clamp(blended_roughness, 0.05, 1.0);
+		}
+		specular_amt = 0.2;
 	}
-
-	float blended_ao = (n0.b * w0 + n1.b * w1 + n2.b * w2 + n3.b * w3);
-	float blended_roughness = (n0.a * w0 + n1.a * w1 + n2.a * w2 + n3.a * w3);
-
-	float macro_roughness_var = mix(1.0 - macro_roughness_contrast, 1.0 + macro_roughness_contrast, base_fbm_val);
-	float final_roughness = clamp(blended_roughness * macro_roughness_var, 0.05, 1.0);
 
 	vec2 fog_uv = (v_world_pos.xz - fog_world_min) / fog_world_size;
 	float fog_factor = texture(fog_texture, clamp(fog_uv, 0.0, 1.0)).r;
@@ -1192,11 +1283,19 @@ void fragment() {
 	emission_color *= (1.0 - fog_factor * 0.98);
 
 	ALBEDO = final_albedo;
-	NORMAL = TANGENT * blended_normal_tangent.x + BINORMAL * blended_normal_tangent.y + NORMAL * blended_normal_tangent.z;
-	AO = blended_ao * (1.0 - fog_factor * 0.98) * v_color.r;
-	ROUGHNESS = mix(final_roughness, 1.0, fog_factor);
-	METALLIC = 0.0;                 
-	SPECULAR = 0.2 * (1.0 - fog_factor * 0.98);                 
+	if (enable_normal_mapping) {
+		NORMAL = TANGENT * blended_normal_tangent.x + BINORMAL * blended_normal_tangent.y + NORMAL * blended_normal_tangent.z;
+		AO = blended_ao * (1.0 - fog_factor * 0.98) * v_color.r;
+		ROUGHNESS = mix(final_roughness, 1.0, fog_factor);
+		METALLIC = 0.0;                 
+		SPECULAR = specular_amt * (1.0 - fog_factor * 0.98);
+	} else {
+		NORMAL = v_world_normal;
+		AO = (1.0 - fog_factor * 0.98) * v_color.r;
+		ROUGHNESS = mix(final_roughness, 1.0, fog_factor);
+		METALLIC = 0.0;
+		SPECULAR = 0.0;
+	}
 	EMISSION = emission_color;
 }
 ";
@@ -1215,12 +1314,52 @@ void fragment() {
 		_material.SetShaderParameter("terrain_size", new Vector2(Width * QuadSize, Depth * QuadSize));
 		_material.SetShaderParameter("texture_scale", 1.0f / QuadSize);
 
+		ApplyQualitySettings(GameSettings.QualityIdx);
+
 		CreateChunks();
 		CreateWater();
 
 		if (GameHost.Instance == null || !GameHost.Instance.IsLoadingMap)
 		{
 			UpdateMeshAndPhysics();
+		}
+	}
+
+	public void ApplyQualitySettings(int qualityIdx)
+	{
+		if (_material == null) return;
+
+		switch (qualityIdx)
+		{
+			case 0:
+				_material.SetShaderParameter("enable_stochastic", true);
+				_material.SetShaderParameter("enable_normal_mapping", false);
+				_material.SetShaderParameter("enable_macro_noise", false);
+				_material.SetShaderParameter("enable_height_blend", false);
+				_material.SetShaderParameter("enable_fast_planar", true);
+				break;
+			case 1:
+				_material.SetShaderParameter("enable_stochastic", true);
+				_material.SetShaderParameter("enable_normal_mapping", true);
+				_material.SetShaderParameter("enable_macro_noise", false);
+				_material.SetShaderParameter("enable_height_blend", false);
+				_material.SetShaderParameter("enable_fast_planar", true);
+				break;
+			case 2:
+				_material.SetShaderParameter("enable_stochastic", true);
+				_material.SetShaderParameter("enable_normal_mapping", true);
+				_material.SetShaderParameter("enable_macro_noise", true);
+				_material.SetShaderParameter("enable_height_blend", true);
+				_material.SetShaderParameter("enable_fast_planar", false);
+				break;
+			case 3:
+			default:
+				_material.SetShaderParameter("enable_stochastic", true);
+				_material.SetShaderParameter("enable_normal_mapping", true);
+				_material.SetShaderParameter("enable_macro_noise", true);
+				_material.SetShaderParameter("enable_height_blend", true);
+				_material.SetShaderParameter("enable_fast_planar", false);
+				break;
 		}
 	}
 
@@ -1307,7 +1446,7 @@ void fragment() {
 	private List<string> _loadedTextureList = new List<string>();
 	private Godot.Vector4[] _swatchParamsCache = new Godot.Vector4[32];
 
-	public void UpdateTextureParamDirect(string swatchName, string tileMode, float uvScale, float stochasticTileSize)
+	public void UpdateTextureParamDirect(string swatchName, string tileMode, float uvScale, float stochasticTileSize, float crossFade = 5.0f)
 	{
 		if (_material == null) return;
 		string cleanName = System.IO.Path.GetFileNameWithoutExtension(swatchName);
@@ -1327,8 +1466,9 @@ void fragment() {
 			float tm = string.Equals(tileMode, "Grid", StringComparison.OrdinalIgnoreCase) ? 0.0f : 1.0f;
 			float uv = Math.Clamp(uvScale, 0.1f, 4.0f);
 			float stoch = Math.Clamp(stochasticTileSize, 0.5f, 3.0f);
+			float cf = crossFade > 0.10f ? Math.Clamp(crossFade, 0.0f, 10.0f) * 0.01f : Math.Clamp(crossFade, 0.0f, 0.10f);
 
-			_swatchParamsCache[targetIndex] = new Godot.Vector4(tm, uv, stoch, 0.0f);
+			_swatchParamsCache[targetIndex] = new Godot.Vector4(tm, uv, stoch, cf);
 			_material.SetShaderParameter("swatch_params", _swatchParamsCache);
 		}
 	}
@@ -1387,7 +1527,7 @@ void fragment() {
 		var swatchParams = new Godot.Vector4[32];
 		for (int i = 0; i < 32; i++)
 		{
-			swatchParams[i] = new Godot.Vector4(1.0f, 1.0f, 1.0f, 0.0f);
+			swatchParams[i] = new Godot.Vector4(1.0f, 1.0f, 1.0f, 0.05f);
 		}
 
 		if (texturesObj != null)
@@ -1409,6 +1549,7 @@ void fragment() {
 				float tileMode = 1.0f;
 				float uvScale = 1.0f;
 				float stochasticTileSize = 1.0f;
+				float crossFade = 0.05f;
 
 				if (swatchNode is System.Text.Json.Nodes.JsonObject sObj)
 				{
@@ -1429,9 +1570,15 @@ void fragment() {
 					{
 						stochasticTileSize = Math.Clamp(parsedStoch, 0.5f, 3.0f);
 					}
+
+					string cfStr = sObj["Cross_Fade"]?.ToString() ?? sObj["cross_fade"]?.ToString() ?? sObj["Grid_Cross_Fade"]?.ToString() ?? sObj["grid_cross_fade"]?.ToString();
+					if (!string.IsNullOrEmpty(cfStr) && float.TryParse(cfStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCf))
+					{
+						crossFade = parsedCf > 0.10f ? Math.Clamp(parsedCf, 0.0f, 10.0f) * 0.01f : Math.Clamp(parsedCf, 0.0f, 0.10f);
+					}
 				}
 
-				swatchParams[i] = new Godot.Vector4(tileMode, uvScale, stochasticTileSize, 0.0f);
+				swatchParams[i] = new Godot.Vector4(tileMode, uvScale, stochasticTileSize, crossFade);
 			}
 		}
 
@@ -1520,6 +1667,21 @@ void fragment() {
 				normalRoughnessImages.Add(sub1);
 			}
 		}
+		if (albedoHeightImages.Count == 0 || normalRoughnessImages.Count == 0)
+		{
+			var fb0 = Godot.Image.CreateEmpty(TargetTextureResolution, TargetTextureResolution, false, Godot.Image.Format.Rgba8);
+			fb0.Fill(new Color(0.2f, 0.5f, 0.2f, 0.99f));
+			fb0.GenerateMipmaps(false);
+			fb0.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
+
+			var fb1 = Godot.Image.CreateEmpty(TargetTextureResolution, TargetTextureResolution, false, Godot.Image.Format.Rgba8);
+			fb1.Fill(new Color(0.5f, 0.5f, 1.0f, 0.8f));
+			fb1.GenerateMipmaps(true);
+			fb1.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
+
+			albedoHeightImages.Add(fb0);
+			normalRoughnessImages.Add(fb1);
+		}
 		var albedoTextureArray = new Texture2DArray();
 		albedoTextureArray.CreateFromImages(albedoHeightImages);
 		var normalTextureArray = new Texture2DArray();
@@ -1538,6 +1700,8 @@ void fragment() {
 		{
 			if (GodotObject.IsInstanceValid(chunk.MeshInstance)) chunk.MeshInstance.QueueFree();
 			if (GodotObject.IsInstanceValid(chunk.CollisionShape)) chunk.CollisionShape.QueueFree();
+			if (GodotObject.IsInstanceValid(chunk.ShallowWaterMesh)) chunk.ShallowWaterMesh.QueueFree();
+			if (GodotObject.IsInstanceValid(chunk.DeepWaterMesh)) chunk.DeepWaterMesh.QueueFree();
 		}
 		_chunks.Clear();
 
@@ -1567,6 +1731,20 @@ void fragment() {
 				chunk.MeshInstance.Mesh = chunk.ArrayMesh;
 				chunk.MeshInstance.MaterialOverride = _material;
 				AddChild(chunk.MeshInstance);
+
+				chunk.ShallowWaterArrayMesh = new ArrayMesh();
+				chunk.ShallowWaterMesh = new MeshInstance3D();
+				chunk.ShallowWaterMesh.Name = $"ShallowWaterChunk_{x}_{z}";
+				chunk.ShallowWaterMesh.Mesh = chunk.ShallowWaterArrayMesh;
+				if (_shallowWaterMaterial != null) chunk.ShallowWaterMesh.MaterialOverride = _shallowWaterMaterial;
+				AddChild(chunk.ShallowWaterMesh);
+
+				chunk.DeepWaterArrayMesh = new ArrayMesh();
+				chunk.DeepWaterMesh = new MeshInstance3D();
+				chunk.DeepWaterMesh.Name = $"DeepWaterChunk_{x}_{z}";
+				chunk.DeepWaterMesh.Mesh = chunk.DeepWaterArrayMesh;
+				if (_deepWaterMaterial != null) chunk.DeepWaterMesh.MaterialOverride = _deepWaterMaterial;
+				AddChild(chunk.DeepWaterMesh);
 
 				chunk.CollisionShape = new CollisionShape3D();
 				chunk.CollisionShape.Name = $"TerrainCollision_{x}_{z}";
@@ -1932,10 +2110,113 @@ void fragment() {
 				(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1) | custom0Format | custom1Format));
 		}
 
+		float minY = float.MaxValue;
+		float maxY = float.MinValue;
+		for (int i = 0; i < vertexIndex; i++)
+		{
+			float y = finalVertices[i].Y;
+			if (y < minY) minY = y;
+			if (y > maxY) maxY = y;
+		}
+		if (vertexIndex == 0) { minY = -2f; maxY = 2f; }
+		chunk.MinY = minY;
+		chunk.MaxY = maxY;
+
+		float halfW = (w / 2.0f) * quadSize;
+		float halfD = (d / 2.0f) * quadSize;
+		float minX = chunk.StartX * quadSize - halfW;
+		float maxX = chunk.EndX * quadSize - halfW;
+		float minZ = chunk.StartZ * quadSize - halfD;
+		float maxZ = chunk.EndZ * quadSize - halfD;
+		chunk.WorldAabb = new Aabb(new Vector3(minX, minY - 2f, minZ), new Vector3(maxX - minX, Math.Max(0.5f, maxY - minY + 10f), maxZ - minZ));
+		chunk.MeshInstance.CustomAabb = chunk.WorldAabb;
+		if (chunk.ShallowWaterMesh != null) chunk.ShallowWaterMesh.CustomAabb = chunk.WorldAabb;
+		if (chunk.DeepWaterMesh != null) chunk.DeepWaterMesh.CustomAabb = chunk.WorldAabb;
+
 		if (rebuildPhysics)
 		{
 			UpdateChunkPhysics(chunk);
 		}
+	}
+
+	public override void _Process(double delta)
+	{
+		base._Process(delta);
+		UpdateFrustumCulling();
+	}
+
+	private void UpdateFrustumCulling()
+	{
+		if (IsMinimapRendering)
+		{
+			SetAllChunksVisible(true);
+			return;
+		}
+
+		var viewport = GetViewport();
+		if (viewport == null) return;
+		var camera = viewport.GetCamera3D();
+		if (camera == null || !GodotObject.IsInstanceValid(camera)) return;
+
+		if (camera.Projection == Camera3D.ProjectionType.Orthogonal)
+		{
+			SetAllChunksVisible(true);
+			return;
+		}
+
+		var frustum = camera.GetFrustum();
+		if (frustum == null || frustum.Count < 6) return;
+
+		foreach (var chunk in _chunks)
+		{
+			bool visible = IntersectsFrustum(frustum, chunk.WorldAabb);
+			if (GodotObject.IsInstanceValid(chunk.MeshInstance))
+			{
+				chunk.MeshInstance.Visible = visible;
+			}
+			if (GodotObject.IsInstanceValid(chunk.ShallowWaterMesh))
+			{
+				chunk.ShallowWaterMesh.Visible = visible;
+			}
+			if (GodotObject.IsInstanceValid(chunk.DeepWaterMesh))
+			{
+				chunk.DeepWaterMesh.Visible = visible;
+			}
+		}
+	}
+
+	public void SetAllChunksVisible(bool visible)
+	{
+		foreach (var chunk in _chunks)
+		{
+			if (GodotObject.IsInstanceValid(chunk.MeshInstance)) chunk.MeshInstance.Visible = visible;
+			if (GodotObject.IsInstanceValid(chunk.ShallowWaterMesh)) chunk.ShallowWaterMesh.Visible = visible;
+			if (GodotObject.IsInstanceValid(chunk.DeepWaterMesh)) chunk.DeepWaterMesh.Visible = visible;
+		}
+	}
+
+	public static bool IntersectsFrustum(Godot.Collections.Array<Plane> frustumPlanes, Aabb aabb)
+	{
+		aabb = aabb.Grow(1.0f);
+		Vector3 min = aabb.Position;
+		Vector3 max = aabb.End;
+
+		int count = frustumPlanes.Count;
+		for (int i = 0; i < count; i++)
+		{
+			Plane plane = frustumPlanes[i];
+			Vector3 n = new Vector3(
+				plane.Normal.X >= 0 ? min.X : max.X,
+				plane.Normal.Y >= 0 ? min.Y : max.Y,
+				plane.Normal.Z >= 0 ? min.Z : max.Z
+			);
+
+			if (plane.DistanceTo(n) > 0)
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private Vector3 GetWorldPosition(float gridX, float gridZ, float height, float halfWQuadSize, float halfDQuadSize, float quadSize)

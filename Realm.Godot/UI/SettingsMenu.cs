@@ -3,6 +3,9 @@ using System;
 
 public partial class SettingsMenu : Control
 {
+	public static SettingsMenu Instance { get; private set; }
+	public static bool IsOpen => Instance != null && GodotObject.IsInstanceValid(Instance) && Instance.IsInsideTree() && Instance.Visible;
+
 	[Export] public bool IsOverlay = false;
 
 	private Panel _bgPanel;
@@ -47,8 +50,25 @@ public partial class SettingsMenu : Control
 
 	public override void _Ready()
 	{
+		Instance = this;
+		MouseFilter = MouseFilterEnum.Stop;
+
 		_bgPanel = GetNodeOrNull<Panel>("Background");
+		if (_bgPanel != null)
+		{
+			_bgPanel.MouseFilter = MouseFilterEnum.Stop;
+		}
+		if (GetNodeOrNull<Control>("OverlayBg") is Control overlay)
+		{
+			overlay.MouseFilter = MouseFilterEnum.Stop;
+		}
+		if (GetNodeOrNull<Control>("CenterContainer") is Control center)
+		{
+			center.MouseFilter = MouseFilterEnum.Stop;
+		}
+
 		_mainFrame = GetNode<Panel>("CenterContainer/MainFrame");
+		_mainFrame.MouseFilter = MouseFilterEnum.Stop;
 		_videoPanel = GetNode<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel");
 		_audioPanel = GetNode<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel");
 		_gameplayPanel = GetNode<PanelContainer>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel");
@@ -593,6 +613,7 @@ public partial class SettingsMenu : Control
 
 		GameSettings.ResolutionIdx = _resolutionOpt.Selected;
 		GameSettings.QualityIdx = _qualityOpt.Selected;
+		GameSettings.DownsamplingIdx = GameSettings.GetDownsamplingIdxForQuality(GameSettings.QualityIdx);
 		GameSettings.WindowModeIdx = _windowModeOpt.Selected;
 		GameSettings.VsyncIdx = _vsyncOpt.Selected;
 
@@ -635,6 +656,10 @@ public partial class SettingsMenu : Control
 		{
 			InGameHUD.Instance.ApplyHUDScale();
 		}
+		if (MapEditorHUD.Instance != null)
+		{
+			MapEditorHUD.Instance.UpdateFPSVisibility();
+		}
 
 		GD.Print("Settings Applied successfully!");
 		CloseOrTransition();
@@ -644,6 +669,14 @@ public partial class SettingsMenu : Control
 	{
 		GameSettings.Load();
 		UIManager.Instance.UpdateAudioVolumes();
+		if (InGameHUD.Instance != null)
+		{
+			InGameHUD.Instance.UpdateFPSVisibility();
+		}
+		if (MapEditorHUD.Instance != null)
+		{
+			MapEditorHUD.Instance.UpdateFPSVisibility();
+		}
 		CloseOrTransition();
 	}
 
@@ -663,6 +696,39 @@ public partial class SettingsMenu : Control
 	{
 		GameSettings.ResetToDefaults();
 		LoadCurrentSettings();
+		if (InGameHUD.Instance != null)
+		{
+			InGameHUD.Instance.UpdateFPSVisibility();
+		}
+		if (MapEditorHUD.Instance != null)
+		{
+			MapEditorHUD.Instance.UpdateFPSVisibility();
+		}
 		GD.Print("Settings reset to defaults.");
+	}
+
+	public override void _ExitTree()
+	{
+		if (Instance == this)
+		{
+			Instance = null;
+		}
+	}
+
+	public override void _GuiInput(InputEvent @event)
+	{
+		if (@event is InputEventMouseButton or InputEventMouseMotion)
+		{
+			GetViewport().SetInputAsHandled();
+		}
+	}
+
+	public override void _UnhandledInput(InputEvent @event)
+	{
+		if (@event is InputEventKey escapeEvent && escapeEvent.Pressed && escapeEvent.Keycode == Key.Escape)
+		{
+			GetViewport().SetInputAsHandled();
+			CancelSettings();
+		}
 	}
 }

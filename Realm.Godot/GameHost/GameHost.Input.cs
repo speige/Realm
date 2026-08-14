@@ -22,6 +22,12 @@ public partial class GameHost
 
 	public override void _UnhandledInput(InputEvent @event)
 	{
+		if (SettingsMenu.IsOpen)
+		{
+			GetViewport().SetInputAsHandled();
+			return;
+		}
+
 		if (@event is InputEventMouseButton globalMb && globalMb.ButtonIndex == MouseButton.Left)
 		{
 			if (globalMb.Pressed)
@@ -503,6 +509,10 @@ public partial class GameHost
 							{
 								_inputService.SetEntityPosition(unit.Entity, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
 							}
+							else if (node3D is Prop3D prop)
+							{
+								PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
+							}
 							EditorHistoryManager.RecordAction(action);
 							EditorHasUnsavedChanges = true;
 							MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
@@ -946,6 +956,39 @@ public partial class GameHost
 									clickedNode = FindProp3DInParentChain(collider);
 								}
 							}
+
+							if (clickedNode == null && EcsWorld != null)
+							{
+								string closestStaticPropId = null;
+								float closestStaticDist = 3.0f;
+								var propQuery = Realm.Ecs.Common.QueryCache.AllPropIdentityAndPositionQuery;
+								EcsWorld.Query(in propQuery, (Arch.Core.Entity entity, ref PropIdentity pId, ref Position pPos) =>
+								{
+									if (EntityToProp3D.ContainsKey(entity)) return;
+									Vector3 wPos = new Vector3(pPos.Value.X, pPos.Value.Y, pPos.Value.Z);
+									float d = wPos.DistanceTo(hitPos);
+									if (d < closestStaticDist)
+									{
+										closestStaticDist = d;
+										closestStaticPropId = pId.PropId;
+									}
+								});
+
+								if (!string.IsNullOrEmpty(closestStaticPropId))
+								{
+									if (MapEditorHUD.Instance != null)
+									{
+										MapEditorHUD.Instance.SelectPickedUnitOrProp(closestStaticPropId, false);
+									}
+									else
+									{
+										ActivePlaceId = closestStaticPropId;
+										ActiveEditorTool = EditorTool.PlaceProp;
+									}
+									GetViewport().SetInputAsHandled();
+									return;
+								}
+							}
 						}
 
 						if (clickedNode == null && (mode == "all" || mode == "decal"))
@@ -1116,8 +1159,10 @@ public partial class GameHost
 							_dragObjectStartPos = (SelectedEditorObject as Node3D).Position;
 							_dragObjectStartRot = (SelectedEditorObject as Node3D).RotationDegrees;
 							_dragObjectStartScale = (SelectedEditorObject as Node3D).Scale;
-							_dragObjectStartIsEnemy = (SelectedEditorObject is Unit3D u) ? u.IsEnemy : false;
-							_dragObjectStartHitPos = hitPos;
+							_dragStartMousePos = editorMouseBtn.Position;
+							Vector3 terrainHitPos = (terrainHit != null && terrainHit.ContainsKey("position")) ? terrainHit["position"].AsVector3() : hitPos;
+							_dragStartGroundPos = terrainHitPos;
+							_dragObjectStartHitPos = terrainHitPos;
 							_dragObjectHasMoved = false;
 						}
 						else
@@ -2999,7 +3044,8 @@ public partial class GameHost
 				else
 				{
 					var playerOwner = _playerEntity.AsPlayerEntity(EcsWorld);
-					string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(type, true);
+					string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : type;
+					string modelPath = GetFallbackModelPath(targetModel, true);
 
 					var bldEntity = CreateEcsUnit(type, meta.Name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, 0f, position, playerOwner);
 					SpawnUnit3D(bldEntity, type, modelPath, position, true, false);
@@ -3591,7 +3637,8 @@ public partial class GameHost
 		}
 		bool actualIsEnemy = NetworkService.ArePeersEnemies(_localPeerId, ownerPeerId);
 		
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : GetFallbackModelPath(unitId, meta.Speed == 0f);
+		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitId;
+		string modelPath = GetFallbackModelPath(targetModel, meta.Speed == 0f);
 
 		string name = actualIsEnemy ? _unitSpawnService.GetEnemyUnitName(unitId, meta.Name) : meta.Name;
 

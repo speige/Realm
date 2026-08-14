@@ -66,6 +66,7 @@ public partial class MapEditorHUD : Control
 	private bool _rightPanelExpanded = true;
 
 	private OptionButton _optModule;
+	private Button _btnSettings;
 	private EditorModule _activeModule = EditorModule.Terrain;
 
 	private VBoxContainer _accordionBrush;
@@ -338,11 +339,22 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public void UpdateFPSVisibility()
+	{
+		var fpsLabel = (GameHost.Instance != null ? GameHost.Instance.MainNode?.GetNodeOrNull<Label>("CanvasLayer/FPS") : null);
+		if (fpsLabel != null)
+		{
+			fpsLabel.Visible = GameSettings.DisplayFps;
+			fpsLabel.ZIndex = 100;
+		}
+	}
+
 	public override void _Ready()
 	{
 		try
 		{
 			Instance = this;
+			UpdateFPSVisibility();
 			_tempWorkspacePath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
 
 			_camera3D = (GameHost.Instance?.MainCamera);
@@ -415,6 +427,12 @@ public partial class MapEditorHUD : Control
 		_optModule.AddItem("🗺️ " + TranslationServer.Translate("COORDINATES"), (int)EditorModule.Coordinates);
 		_optModule.AddItem("📋 " + TranslationServer.Translate("CLIPBOARD"), (int)EditorModule.Clipboard);
 		_optModule.ItemSelected += (index) => SwitchModule((EditorModule)index);
+
+		_btnSettings = GetNodeOrNull<Button>("TopLeftBox/BtnSettings");
+		if (_btnSettings != null)
+		{
+			SetupIconButton(_btnSettings, "res://Assets/UI/gear_icon.png", () => UIManager.Instance?.OpenSettingsOverlay(), "Settings");
+		}
 
 		_statusLabel = GetNode<Label>("TopBar/HBox/StatusLabel");
 		_feedbackLabel = GetNode<Label>("FeedbackLabel");
@@ -1378,12 +1396,16 @@ public partial class MapEditorHUD : Control
 				_viewModel.InspectorPos = $"Pos: {pos.X:F2}, {pos.Y:F2}, {pos.Z:F2}\nRot: {rot.Y:F1}° | Scale: {scale.X:F2}x";
 			}
 
-			string assetKey = GameHost.Instance.GetModelAssetKey(selected);
+			string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(selected);
 			if (!string.IsNullOrEmpty(assetKey))
 			{
 				_isUpdatingInspectorUI = true;
 
-				if (_btnHeaderGlobalOverrides != null) _btnHeaderGlobalOverrides.Visible = true;
+				if (_btnHeaderGlobalOverrides != null)
+				{
+					_btnHeaderGlobalOverrides.Text = (_isGlobalOverridesExpanded ? "▼ " : "▶ ") + TranslationServer.Translate("Global Object Overrides");
+					_btnHeaderGlobalOverrides.Visible = true;
+				}
 				if (_contentGlobalOverrides != null) _contentGlobalOverrides.Visible = _isGlobalOverridesExpanded;
 
 				if (_sldModelYOffset != null)
@@ -1763,15 +1785,7 @@ public partial class MapEditorHUD : Control
 		}
 		else
 		{
-			string charactersPath = "res://Assets/3d/Characters";
-			if (FileAccess.FileExists($"{charactersPath}/{id}.glb") || FileAccess.FileExists($"{charactersPath}/{id}.gltf"))
-			{
-				_entityPaletteController?.SelectCategoryItemExternal("Characters", id + ".glb");
-			}
-			else
-			{
-				_entityPaletteController?.SelectCategoryItemExternal("Props", id + ".glb");
-			}
+			_entityPaletteController?.SelectCategoryItemExternal("Units", id + ".glb");
 		}
 	}
 
@@ -2300,6 +2314,133 @@ public partial class MapEditorHUD : Control
 		}
 
 		CheckCreatorRegistrationAndPrompt();
+		CheckUnsavedSessionOnLaunch();
+	}
+
+	public static string ComputeDirectoryBlake3(string directoryPath)
+	{
+		if (string.IsNullOrEmpty(directoryPath) || !System.IO.Directory.Exists(directoryPath)) return string.Empty;
+
+		try
+		{
+			var files = System.IO.Directory.GetFiles(directoryPath, "*", System.IO.SearchOption.AllDirectories)
+				.Where(f => {
+					string rel = System.IO.Path.GetRelativePath(directoryPath, f).Replace('\\', '/');
+					string[] parts = rel.Split('/');
+					foreach (var p in parts)
+					{
+						if (p.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+							p.Equals(".vs", StringComparison.OrdinalIgnoreCase) ||
+							p.Equals(".godot", StringComparison.OrdinalIgnoreCase) ||
+							p.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+							p.Equals("obj", StringComparison.OrdinalIgnoreCase))
+						{
+							return false;
+						}
+					}
+					return true;
+				})
+				.OrderBy(f => System.IO.Path.GetRelativePath(directoryPath, f).Replace('\\', '/'), StringComparer.OrdinalIgnoreCase)
+				.ToList();
+
+			using var hasher = Blake3.Hasher.New();
+			byte[] buffer = new byte[16384];
+
+			foreach (var file in files)
+			{
+				try
+				{
+					string relPath = System.IO.Path.GetRelativePath(directoryPath, file).Replace('\\', '/');
+					byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(relPath);
+					hasher.Update(pathBytes);
+
+					using var fs = System.IO.File.OpenRead(file);
+					int read;
+					while ((read = fs.Read(buffer, 0, buffer.Length)) > 0)
+					{
+						hasher.Update(new ReadOnlySpan<byte>(buffer, 0, read));
+					}
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"[ComputeDirectoryBlake3] Error hashing {file}: {ex.Message}");
+				}
+			}
+
+			return hasher.Finalize().ToString();
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[ComputeDirectoryBlake3] Error scanning directory {directoryPath}: {ex.Message}");
+			return string.Empty;
+		}
+	}
+
+	public void SaveCurrentDirectoryBlake3()
+	{
+		if (string.IsNullOrEmpty(_tempWorkspacePath) || !System.IO.Directory.Exists(_tempWorkspacePath)) return;
+		try
+		{
+			string hash = ComputeDirectoryBlake3(_tempWorkspacePath);
+			string saveFile = ProjectSettings.GlobalizePath("user://editor_last_save.txt");
+			System.IO.File.WriteAllText(saveFile, hash);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[SaveCurrentDirectoryBlake3] Error writing editor_last_save.txt: {ex.Message}");
+		}
+	}
+
+	private void CheckUnsavedSessionOnLaunch()
+	{
+		if (ReturningFromTest) return;
+
+		string editorLastSaveFile = ProjectSettings.GlobalizePath("user://editor_last_save.txt");
+		if (!System.IO.File.Exists(editorLastSaveFile))
+		{
+			SaveCurrentDirectoryBlake3();
+			return;
+		}
+
+		string savedHash = System.IO.File.ReadAllText(editorLastSaveFile).Trim();
+		string currentHash = ComputeDirectoryBlake3(_tempWorkspacePath);
+
+		if (!string.IsNullOrEmpty(savedHash) && !currentHash.Equals(savedHash, StringComparison.OrdinalIgnoreCase))
+		{
+			CallDeferred(nameof(ShowUnsavedSessionModal));
+		}
+	}
+
+	private void ShowUnsavedSessionModal()
+	{
+		ShowConfirmationDialog(
+			"There were unsaved changes in last editor session.",
+			onConfirm: () =>
+			{
+				LoadTempWorkspaceMap();
+			},
+			confirmText: "Restore",
+			cancelText: "Discard",
+			onCancel: () =>
+			{
+				GameHost.Instance?.ClearMapEntirely();
+				SaveCurrentDirectoryBlake3();
+			}
+		);
+	}
+
+	private void LoadTempWorkspaceMap()
+	{
+		string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+		LoadMapProperties();
+		ReadMetadataAndRefreshTextures();
+		if (GameHost.Instance != null && System.IO.File.Exists(terrainPath))
+		{
+			GameHost.Instance.LoadMapFromFile(terrainPath);
+		}
+		_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
+		_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+		ShowFeedback(TranslationServer.Translate("Restored map workspace from last session!"));
 	}
 
 	public void ClearTempWorkspaceExternal()
@@ -2308,7 +2449,8 @@ public partial class MapEditorHUD : Control
 
 		try
 		{
-			foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.TopDirectoryOnly))
+			ClearDirectoryReadOnly(_tempWorkspacePath);
+			foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories))
 			{
 				var fileAttributes = System.IO.File.GetAttributes(file);
 				if ((fileAttributes & System.IO.FileAttributes.ReadOnly) == System.IO.FileAttributes.ReadOnly)
@@ -2320,12 +2462,6 @@ public partial class MapEditorHUD : Control
 
 			foreach (var directory in System.IO.Directory.GetDirectories(_tempWorkspacePath))
 			{
-				string name = System.IO.Path.GetFileName(directory);
-				if (name.Equals("bin", StringComparison.OrdinalIgnoreCase) || name.Equals("obj", StringComparison.OrdinalIgnoreCase) || name.Equals("lib", StringComparison.OrdinalIgnoreCase))
-				{
-					continue;
-				}
-				ClearDirectoryReadOnly(directory);
 				System.IO.Directory.Delete(directory, true);
 			}
 		}
@@ -2334,6 +2470,8 @@ public partial class MapEditorHUD : Control
 			GD.PrintErr($"[ClearTempWorkspaceExternal] Error: {ex.Message}");
 		}
 
+		_wasmHasErrors = false;
+		_wasmCompileLogPath = "";
 		_lastTerrainSyncTime = 0;
 		_lastMetadataSyncTime = 0;
 	}
@@ -2539,6 +2677,8 @@ public partial class MapEditorHUD : Control
 		{
 			await System.Threading.Tasks.Task.Run(() => CopyTempWorkspaceToFolder(targetFolder));
 
+			SaveCurrentDirectoryBlake3();
+
 			ShowFeedback(string.Format(TranslationServer.Translate("Map saved successfully to folder {0}!"), System.IO.Path.GetFileName(targetFolder)));
 		}
 		catch (Exception ex)
@@ -2644,6 +2784,7 @@ public partial class MapEditorHUD : Control
 					_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
 					_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
 					ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
+					SaveCurrentDirectoryBlake3();
 				}
 				else
 				{
@@ -3139,7 +3280,7 @@ public partial class MapEditorHUD : Control
 	}
 
 
-	private void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO")
+	private void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO", Action onCancel = null)
 	{
 		var overlay = new ColorRect();
 		overlay.Name = "ConfirmationOverlay";
@@ -3195,6 +3336,7 @@ public partial class MapEditorHUD : Control
 		SetupButton(btnCancel, TranslationServer.Translate(cancelText), () =>
 		{
 			overlay.QueueFree();
+			onCancel?.Invoke();
 		}, 13);
 		btnCancel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
 		hbox.AddChild(btnCancel);
@@ -4434,6 +4576,10 @@ public partial class MapEditorHUD : Control
 				isEnemy, isEnemy
 			);
 			node3D.RotationDegrees = newRot;
+			if (selected is Prop3D propRot)
+			{
+				PropMultiMeshManager.Instance?.MarkDirty(propRot.PropId);
+			}
 			EditorHistoryManager.RecordAction(action);
 			UpdateSelectedObjectInfo();
 			ShowFeedback(string.Format(TranslationServer.Translate("Rotated Object to {0}°"), newRot.Y));
@@ -4460,6 +4606,10 @@ public partial class MapEditorHUD : Control
 				isEnemy, isEnemy
 			);
 			node3D.Scale = newScale;
+			if (selected is Prop3D propScale)
+			{
+				PropMultiMeshManager.Instance?.MarkDirty(propScale.PropId);
+			}
 			EditorHistoryManager.RecordAction(action);
 			UpdateSelectedObjectInfo();
 			ShowFeedback(string.Format(TranslationServer.Translate("Scaled Object to {0:F1}x"), newScaleVal));
@@ -4485,6 +4635,10 @@ public partial class MapEditorHUD : Control
 				isEnemy, isEnemy
 			);
 			node3D.Scale = newScale;
+			if (selected is Prop3D propReset)
+			{
+				PropMultiMeshManager.Instance?.MarkDirty(propReset.PropId);
+			}
 			EditorHistoryManager.RecordAction(action);
 			UpdateSelectedObjectInfo();
 			ShowFeedback(TranslationServer.Translate("Reset Object scale to 1.0x"));
@@ -4723,6 +4877,59 @@ public partial class MapEditorHUD : Control
 		};
 	}
 
+	private void SetupIconButton(Button btn, string iconPath, Action onClick, string tooltip = "")
+	{
+		btn.Flat = false;
+		btn.Text = "";
+		btn.Icon = null;
+		btn.CustomMinimumSize = new Vector2(36, 32);
+		btn.FocusMode = FocusModeEnum.None;
+		btn.AddThemeConstantOverride("icon_max_width", 0);
+
+		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+
+		foreach (Node child in btn.GetChildren())
+		{
+			if (child is TextureRect) child.QueueFree();
+		}
+
+		var iconRect = new TextureRect();
+		iconRect.Name = "IconRect";
+		iconRect.Texture = GD.Load<Texture2D>(iconPath);
+		iconRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		iconRect.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
+		iconRect.MouseFilter = MouseFilterEnum.Ignore;
+		iconRect.AnchorLeft = 0;
+		iconRect.AnchorTop = 0;
+		iconRect.AnchorRight = 1;
+		iconRect.AnchorBottom = 1;
+		iconRect.OffsetLeft = 7;
+		iconRect.OffsetTop = 5;
+		iconRect.OffsetRight = -7;
+		iconRect.OffsetBottom = -5;
+		iconRect.Modulate = UIStyle.ColorGoldDull;
+		btn.AddChild(iconRect);
+
+		btn.MouseEntered += () => iconRect.Modulate = UIStyle.ColorGold;
+		btn.MouseExited += () => iconRect.Modulate = UIStyle.ColorGoldDull;
+		btn.ButtonDown += () => iconRect.Modulate = UIStyle.ColorCyanGlow;
+		btn.ButtonUp += () => iconRect.Modulate = btn.IsHovered() ? UIStyle.ColorGold : UIStyle.ColorGoldDull;
+
+		if (!string.IsNullOrEmpty(tooltip))
+		{
+			btn.TooltipText = TranslationServer.Translate(tooltip);
+		}
+
+		btn.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			onClick?.Invoke();
+		};
+	}
+
 	private void SetupTextureSwatches(bool connectEvents = false)
 	{
 		_swatchPaths.Clear();
@@ -4949,6 +5156,11 @@ public partial class MapEditorHUD : Control
 
 	public bool IsMouseOverUI(Vector2 mousePos)
 	{
+		if (SettingsMenu.IsOpen)
+		{
+			return true;
+		}
+
 		if (_minimapController != null && _minimapController.IsDragging)
 		{
 			return true;
@@ -5193,7 +5405,7 @@ public partial class MapEditorHUD : Control
 		if (vbox != null)
 		{
 			_btnHeaderGlobalOverrides = new Button();
-			_btnHeaderGlobalOverrides.Text = "▼ " + TranslationServer.Translate("Global Asset Overrides");
+			_btnHeaderGlobalOverrides.Text = "▼ " + TranslationServer.Translate("Global Object Overrides");
 			_btnHeaderGlobalOverrides.Alignment = HorizontalAlignment.Left;
 			_btnHeaderGlobalOverrides.FocusMode = Control.FocusModeEnum.None;
 			_btnHeaderGlobalOverrides.AddThemeFontSizeOverride("font_size", 12);
@@ -5208,7 +5420,7 @@ public partial class MapEditorHUD : Control
 			{
 				_isGlobalOverridesExpanded = !_isGlobalOverridesExpanded;
 				_contentGlobalOverrides.Visible = _isGlobalOverridesExpanded;
-				_btnHeaderGlobalOverrides.Text = (_isGlobalOverridesExpanded ? "▼ " : "▶ ") + TranslationServer.Translate("Global Asset Overrides");
+				_btnHeaderGlobalOverrides.Text = (_isGlobalOverridesExpanded ? "▼ " : "▶ ") + TranslationServer.Translate("Global Object Overrides");
 			};
 
 			_sldModelYOffset = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Y-Offset"), -10.0f, 10.0f, 0.05f, 0.0f, (val) =>
@@ -5216,7 +5428,7 @@ public partial class MapEditorHUD : Control
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
 				{
-					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
 					if (!string.IsNullOrEmpty(assetKey))
 					{
 						GameHost.Instance.SetModelYOffset(assetKey, val);
@@ -5237,7 +5449,7 @@ public partial class MapEditorHUD : Control
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
 				{
-					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
 					if (!string.IsNullOrEmpty(assetKey))
 					{
 						GameHost.Instance.SetModelCollisionCircleRatio(assetKey, val);
@@ -5260,7 +5472,7 @@ public partial class MapEditorHUD : Control
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
 				{
-					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
 					if (!string.IsNullOrEmpty(assetKey))
 					{
 						GameHost.Instance.SetModelBrightness(assetKey, (float)val);
@@ -5314,7 +5526,7 @@ public partial class MapEditorHUD : Control
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
 				{
-					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
 					if (!string.IsNullOrEmpty(assetKey))
 					{
 						Color tintColor = (val <= 0.0) ? new Color(1.0f, 1.0f, 1.0f) : Color.FromHsv((float)val, 0.75f, 1.0f);
@@ -5329,7 +5541,7 @@ public partial class MapEditorHUD : Control
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
 				{
-					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
 					if (!string.IsNullOrEmpty(assetKey))
 					{
 						GameHost.Instance.SetModelColorTint(assetKey, color);
@@ -5347,7 +5559,7 @@ public partial class MapEditorHUD : Control
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
 				{
-					string assetKey = GameHost.Instance.GetModelAssetKey(GameHost.Instance.SelectedEditorObject);
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
 					if (!string.IsNullOrEmpty(assetKey))
 					{
 						GameHost.Instance.SetModelGenerateNormals(assetKey, pressed);
@@ -5452,13 +5664,15 @@ public partial class MapEditorHUD : Control
 
 			string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 
-			if (!string.IsNullOrEmpty(_currentSourceFolder) && System.IO.Directory.Exists(_currentSourceFolder))
-			{
-				CopyFolderToTempWorkspace(_currentSourceFolder);
-			}
-
 			GameHost.Instance.SaveMapToFile(tempTerrainPath);
 			GameHost.Instance.EditorHasUnsavedChanges = false;
+
+			if (OperatingSystem.IsWindows())
+			{
+				SetWasmConsoleStatus("Auto-saving modified files in VSCode...", UIStyle.ColorCyanGlow);
+				AppendWasmConsoleLog("[VSCode] Requesting auto-save of all open workspace files...");
+				await VSCodeManager.Instance.SaveAllOpenFilesAsync();
+			}
 
 			SetWasmConsoleStatus("Compiling WASM map script...", UIStyle.ColorCyanGlow);
 			AppendWasmConsoleLog("=== WASM COMPILATION PIPELINE STARTED ===");
@@ -5779,6 +5993,38 @@ public partial class MapEditorHUD : Control
 				subObj[fileName] = blake3Hash;
 				catObj[subCategory] = subObj;
 				assetsObj[category] = catObj;
+
+				if (category == "glb")
+				{
+					string unitId = System.IO.Path.GetFileNameWithoutExtension(fileName);
+					if (!root.ContainsKey("CustomUnits") || root["CustomUnits"] is not JsonArray)
+					{
+						root["CustomUnits"] = new JsonArray();
+					}
+					JsonArray customUnitsArr = (JsonArray)root["CustomUnits"];
+					bool exists = customUnitsArr.Any(node => node is JsonObject obj && obj.ContainsKey("UnitId") && obj["UnitId"]?.ToString() == unitId);
+					if (!exists)
+					{
+						int defaultPathing = subCategory.ToLowerInvariant() switch
+						{
+							"units" => (int)(Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground | Realm.Ecs.Components.Terrain.TerrainPathingFlags.ShallowWater),
+							"buildings" => (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Buildable,
+							"resources" => 0xFF,
+							"props" => 0xFF,
+							_ => (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
+						};
+
+						var newUnitObj = new JsonObject
+						{
+							["UnitId"] = unitId,
+							["Name"] = unitId,
+							["Description"] = "",
+							["PathingType"] = defaultPathing,
+							["ModelPath"] = fileName
+						};
+						customUnitsArr.Add(newUnitObj);
+					}
+				}
 			}
 			else
 			{
@@ -5895,6 +6141,7 @@ public partial class MapEditorHUD : Control
 			SetupTextureSwatches(false);
 			RefreshSkyboxList();
 			_entityPaletteController?.SelectCategory(_entityPaletteController.CurrentCategory, triggerAddObject: false);
+			GameHost.Instance?.RefreshAllPlacedObjectModels();
 		}
 		catch (Exception ex)
 		{
@@ -6117,7 +6364,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnHeaderLightingTuning;
 	private VBoxContainer _contentLightingTuning;
 
-	private bool _tuneOverrideDayNight = true;
+	private bool _tuneOverrideDayNight = false;
 
 	private float _tuneSunPitch = 55.0f;
 	private float _tuneSunYaw = 20.0f;
@@ -6306,6 +6553,8 @@ public partial class MapEditorHUD : Control
 			GameHost.Instance.EnvironmentService.OverrideDayNightVisuals = _tuneOverrideDayNight;
 		}
 
+		if (!_tuneOverrideDayNight) return;
+
 		if (sun != null)
 		{
 			sun.RotationDegrees = new Vector3(_tuneSunPitch, _tuneSunYaw, 0f);
@@ -6321,23 +6570,25 @@ public partial class MapEditorHUD : Control
 			env.AmbientLightColor = new Color(_tuneAmbientR, _tuneAmbientG, _tuneAmbientB);
 			env.AmbientLightEnergy = _tuneAmbientEnergy;
 
-			env.FogEnabled = _tuneFogEnabled;
-			env.FogDensity = _tuneFogDensity;
-			env.FogLightColor = new Color(_tuneFogR, _tuneFogG, _tuneFogB);
+			GameSettings.ApplyEnvironmentQuality(env);
 
-			env.SsaoEnabled = _tuneSsaoEnabled;
-			env.SsaoRadius = _tuneSsaoRadius;
-			env.SsaoIntensity = _tuneSsaoIntensity;
+			if (GameSettings.QualityIdx > 0)
+			{
+				env.FogEnabled = _tuneFogEnabled;
+				env.FogDensity = _tuneFogDensity;
+				env.FogLightColor = new Color(_tuneFogR, _tuneFogG, _tuneFogB);
 
-			env.TonemapMode = Godot.Environment.ToneMapper.Aces;
-			env.TonemapExposure = _tuneExposure;
-			env.AdjustmentEnabled = true;
-			env.AdjustmentContrast = _tuneContrast;
-			env.AdjustmentSaturation = _tuneSaturation;
+				env.SsaoEnabled = _tuneSsaoEnabled;
+				env.SsaoRadius = _tuneSsaoRadius;
+				env.SsaoIntensity = _tuneSsaoIntensity;
 
-			env.GlowEnabled = true;
-			env.GlowIntensity = _tuneBloomIntensity;
-			env.GlowBloom = _tuneBloomThreshold;
+				env.TonemapExposure = _tuneExposure;
+				env.AdjustmentContrast = _tuneContrast;
+				env.AdjustmentSaturation = _tuneSaturation;
+
+				env.GlowIntensity = _tuneBloomIntensity;
+				env.GlowBloom = _tuneBloomThreshold;
+			}
 		}
 	}
 

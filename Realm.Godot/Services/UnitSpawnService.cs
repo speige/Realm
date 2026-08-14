@@ -18,61 +18,83 @@ internal class UnitSpawnService
 		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
-	public string GetFallbackModelPath(string unitId, bool isBuilding)
+	public string GetFallbackModelPath(string modelPathOrId, bool isBuilding)
 	{
+		if (string.IsNullOrWhiteSpace(modelPathOrId)) return "";
+
+		if (modelPathOrId.StartsWith("res://") && Godot.FileAccess.FileExists(modelPathOrId))
+		{
+			return modelPathOrId;
+		}
+
+		if (System.IO.Path.IsPathRooted(modelPathOrId) && System.IO.File.Exists(modelPathOrId))
+		{
+			return modelPathOrId;
+		}
+
 		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
-		string filename = System.IO.Path.GetFileName(unitId);
-		if (!filename.EndsWith(".glb") && !filename.EndsWith(".gltf")) filename += ".glb";
-		string primarySub = isBuilding ? "building" : "character";
+		string filename = System.IO.Path.GetFileName(modelPathOrId);
+		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+		{
+			filename += ".glb";
+		}
+
+		string primarySub = isBuilding ? "buildings" : "units";
 		string cand = System.IO.Path.Combine(wsPath, "Assets", "models", primarySub, filename);
 		if (System.IO.File.Exists(cand)) return cand;
 
-		string[] subDirs = new[] { "character", "building", "environment", "props" };
+		string[] subDirs = new[] { "units", "buildings", "resources", "props" };
 		foreach (var sub in subDirs)
 		{
 			cand = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
 			if (System.IO.File.Exists(cand)) return cand;
 		}
 
-		return unitId;
+		foreach (var sub in subDirs)
+		{
+			string resCand = $"res://Assets/models/{sub}/{filename}";
+			if (Godot.FileAccess.FileExists(resCand)) return resCand;
+		}
+
+		return modelPathOrId;
 	}
 
 	public int GetUnitPathingFlags(GameHost.UnitMetadata meta)
 	{
-		if (meta.PathingCapabilities == null || meta.PathingCapabilities.Length == 0)
+		if (meta.PathingType != 0)
 		{
-			if (meta.MovementType == "air" || meta.MovementType == "flying")
-			{
-				return 4;
-			}
-			else if (meta.MovementType == "amphibious")
-			{
-				return 8 | 1;
-			}
-			return 8;
+			return meta.PathingType;
 		}
 
-		int flags = 0;
-		foreach (var cap in meta.PathingCapabilities)
+		if (meta.PathingCapabilities != null && meta.PathingCapabilities.Length > 0)
 		{
-			switch (cap.ToLower())
+			int flags = 0;
+			foreach (var cap in meta.PathingCapabilities)
 			{
-				case "shallow_water":
-					flags |= 1;
-					break;
-				case "deep_water":
-					flags |= 2;
-					break;
-				case "flying":
-				case "air":
-					flags |= 4;
-					break;
-				case "ground":
-					flags |= 8;
-					break;
+				switch (cap.ToLower())
+				{
+					case "shallow_water":
+						flags |= 1;
+						break;
+					case "deep_water":
+						flags |= 2;
+						break;
+					case "flying":
+					case "air":
+						flags |= 4;
+						break;
+					case "ground":
+						flags |= 8;
+						break;
+					case "buildable":
+						flags |= 32;
+						break;
+				}
 			}
+			if (flags != 0) return flags;
 		}
-		return flags;
+
+		return 8;
 	}
 
 	public string GetEnemyUnitName(string unitTypeId, string defaultName)

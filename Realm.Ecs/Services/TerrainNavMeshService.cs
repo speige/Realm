@@ -121,8 +121,7 @@ internal class TerrainNavMeshService
 			for (int x = 0; x < width; x++)
 			{
 				var pathingCode = state.PathingCodes != null ? (TerrainPathingFlags)state.PathingCodes[x, z] : TerrainPathingFlags.Ground | TerrainPathingFlags.Buildable;
-				bool isWalkable = (pathingCode & TerrainPathingFlags.Ground) != 0
-					&& (pathingCode & (TerrainPathingFlags.ShallowWater | TerrainPathingFlags.DeepWater)) == 0;
+				bool isWalkable = pathingCode != TerrainPathingFlags.None;
 				if (!isWalkable)
 				{
 					float lx = (x + 0.5f - width / 2.0f) * quadSize;
@@ -218,10 +217,7 @@ internal class TerrainNavMeshService
 				int xGrid = Math.Clamp((int)Math.Floor(avgX / quadSize + width / 2.0f), 0, width - 1);
 				int zGrid = Math.Clamp((int)Math.Floor(avgZ / quadSize + depth / 2.0f), 0, depth - 1);
 				var pathFlags = state.PathingCodes != null ? (TerrainPathingFlags)state.PathingCodes[xGrid, zGrid] : TerrainPathingFlags.Ground | TerrainPathingFlags.Buildable;
-
-				bool isPolyWalkable = (pathFlags & TerrainPathingFlags.Ground) != 0
-					&& (pathFlags & (TerrainPathingFlags.ShallowWater | TerrainPathingFlags.DeepWater)) == 0;
-				pars.polyFlags[i] = isPolyWalkable ? (int)pathFlags : 0;
+				pars.polyFlags[i] = (int)pathFlags;
 			}
 			if (result.MeshDetail != null)
 			{

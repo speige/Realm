@@ -79,7 +79,8 @@ public partial class GameHost
 		var result = _replayService.SpawnUnitFromReplaySnapshot(snap);
 		if (result.Entity == default) return;
 
-		string modelPath = !string.IsNullOrEmpty(result.ModelPath) ? result.ModelPath : GetFallbackModelPath(snap.UnitId, snap.IsBuilding);
+		string targetModel = !string.IsNullOrEmpty(result.ModelPath) ? result.ModelPath : snap.UnitId;
+		string modelPath = GetFallbackModelPath(targetModel, snap.IsBuilding);
 		SpawnUnit3D(result.Entity, snap.UnitId, modelPath, snap.Position.ToGodot(), snap.IsBuilding, result.IsEnemy);
 	}
 

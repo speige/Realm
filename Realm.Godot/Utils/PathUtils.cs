@@ -125,6 +125,12 @@ public static class PathUtils
 			return globalizedRes;
 		}
 
+		string parentRootPath = Path.GetFullPath(Path.Combine(GetProjectRoot(), "..", normalizedRelative)).Replace("\\", "/");
+		if (File.Exists(parentRootPath) || Directory.Exists(parentRootPath))
+		{
+			return parentRootPath;
+		}
+
 		return primaryPath;
 	}
 

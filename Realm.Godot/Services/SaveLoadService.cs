@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Arch.Core;
 using Godot;
@@ -149,30 +150,54 @@ public class SaveLoadService
 			string pathingPath = Path.Combine(directory, "terrain_pathing.png");
 
 			var cells = terrain.Cells;
-			Image heightsImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgbaf);
-			Image waterImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgbaf);
+			byte[] heightsBytes = new byte[width * depth * 4 * sizeof(float)];
+			Span<float> heightsSpan = MemoryMarshal.Cast<byte, float>(heightsBytes.AsSpan());
+
+			byte[] waterBytes = new byte[width * depth * 4 * sizeof(float)];
+			Span<float> waterSpan = MemoryMarshal.Cast<byte, float>(waterBytes.AsSpan());
 
 			for (int z = 0; z < depth; z++)
 			{
 				for (int x = 0; x < width; x++)
 				{
 					var cell = cells != null ? cells[x, z] : default;
-					heightsImage.SetPixel(x, z, new Color(cell.Y_NW, cell.Y_NE, cell.Y_SE, cell.Y_SW));
-					waterImage.SetPixel(x, z, new Color((float)cell.WaterMode, 0f, 0f, 1f));
+					int baseIdx = (z * width + x) * 4;
+
+					heightsSpan[baseIdx + 0] = cell.Y_NW;
+					heightsSpan[baseIdx + 1] = cell.Y_NE;
+					heightsSpan[baseIdx + 2] = cell.Y_SE;
+					heightsSpan[baseIdx + 3] = cell.Y_SW;
+
+					waterSpan[baseIdx + 0] = (float)cell.WaterMode;
+					waterSpan[baseIdx + 1] = 0f;
+					waterSpan[baseIdx + 2] = 0f;
+					waterSpan[baseIdx + 3] = 1f;
 				}
 			}
+
+			Image heightsImage = Image.CreateFromData(width, depth, false, Image.Format.Rgbaf, heightsBytes);
+			Image waterImage = Image.CreateFromData(width, depth, false, Image.Format.Rgbaf, waterBytes);
 			heightsImage.SaveExr(heightsPath);
 			waterImage.SaveExr(waterPath);
 
-			Image pathingImage = Image.CreateEmpty(width, depth, false, Image.Format.Rgba8);
+			byte[] pathingBytes = new byte[width * depth * 4];
+			Span<byte> pathingSpan = pathingBytes.AsSpan();
+
 			for (int z = 0; z < depth; z++)
 			{
 				for (int x = 0; x < width; x++)
 				{
 					int code = terrain.PathingCodes != null ? terrain.PathingCodes[x, z] : (8 | 4);
-					pathingImage.SetPixel(x, z, new Color(code / 255f, 0f, 0f, 1f));
+					int baseIdx = (z * width + x) * 4;
+
+					pathingSpan[baseIdx + 0] = (byte)code;
+					pathingSpan[baseIdx + 1] = 0;
+					pathingSpan[baseIdx + 2] = 0;
+					pathingSpan[baseIdx + 3] = 255;
 				}
 			}
+
+			Image pathingImage = Image.CreateFromData(width, depth, false, Image.Format.Rgba8, pathingBytes);
 			pathingImage.SavePng(pathingPath);
 
 			int splatW = width;
@@ -183,8 +208,12 @@ public class SaveLoadService
 				splatD = depth + 1;
 			}
 
-			Image splatIndicesImage = Image.CreateEmpty(splatW, splatD, false, Image.Format.Rgbaf);
-			Image splatWeightsImage = Image.CreateEmpty(splatW, splatD, false, Image.Format.Rgbaf);
+			byte[] splatIndicesBytes = new byte[splatW * splatD * 4 * sizeof(float)];
+			Span<float> splatIndicesSpan = MemoryMarshal.Cast<byte, float>(splatIndicesBytes.AsSpan());
+
+			byte[] splatWeightsBytes = new byte[splatW * splatD * 4 * sizeof(float)];
+			Span<float> splatWeightsSpan = MemoryMarshal.Cast<byte, float>(splatWeightsBytes.AsSpan());
+
 			for (int z = 0; z < splatD; z++)
 			{
 				for (int x = 0; x < splatW; x++)
@@ -192,22 +221,22 @@ public class SaveLoadService
 					int idx = z * splatW + x;
 					string serialized = (htmlColors != null && idx < htmlColors.Length) ? htmlColors[idx] : null;
 					TerrainSplatWeights s = TerrainSplatWeights.Deserialize(serialized);
+					int baseIdx = idx * 4;
 
-					splatIndicesImage.SetPixel(x, z, new Color(
-						s.Index0,
-						s.Index1,
-						s.Index2,
-						s.Index3
-					));
+					splatIndicesSpan[baseIdx + 0] = s.Index0;
+					splatIndicesSpan[baseIdx + 1] = s.Index1;
+					splatIndicesSpan[baseIdx + 2] = s.Index2;
+					splatIndicesSpan[baseIdx + 3] = s.Index3;
 
-					splatWeightsImage.SetPixel(x, z, new Color(
-						s.Weight0,
-						s.Weight1,
-						s.Weight2,
-						s.Weight3
-					));
+					splatWeightsSpan[baseIdx + 0] = s.Weight0;
+					splatWeightsSpan[baseIdx + 1] = s.Weight1;
+					splatWeightsSpan[baseIdx + 2] = s.Weight2;
+					splatWeightsSpan[baseIdx + 3] = s.Weight3;
 				}
 			}
+
+			Image splatIndicesImage = Image.CreateFromData(splatW, splatD, false, Image.Format.Rgbaf, splatIndicesBytes);
+			Image splatWeightsImage = Image.CreateFromData(splatW, splatD, false, Image.Format.Rgbaf, splatWeightsBytes);
 			splatIndicesImage.SaveExr(splatIndicesPath);
 			splatWeightsImage.SaveExr(splatWeightsPath);
 

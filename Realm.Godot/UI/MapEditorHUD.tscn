@@ -35,9 +35,9 @@ layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -450.0
+offset_left = -480.0
 offset_top = 15.0
-offset_right = 450.0
+offset_right = 480.0
 offset_bottom = 55.0
 grow_horizontal = 2
 alignment = 1
@@ -82,6 +82,11 @@ text = "🔍 EYEDROPPER"
 
 [node name="OptModule" type="OptionButton" parent="TopLeftBox"]
 custom_minimum_size = Vector2(100, 32)
+layout_mode = 2
+focus_mode = 0
+
+[node name="BtnSettings" type="Button" parent="TopLeftBox"]
+custom_minimum_size = Vector2(36, 32)
 layout_mode = 2
 focus_mode = 0
 

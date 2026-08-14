@@ -295,6 +295,10 @@ public partial class GameHost : Node3D, IGameAPI
 		{
 			_activeEditorTool = value;
 			_editorService?.SetIsPastingObject(false);
+			if (value != EditorTool.SelectArea && value != EditorTool.PasteArea)
+			{
+				HideSelectionHighlight();
+			}
 			RebuildAllCoordinatePersistentMeshes();
 			UpdatePathingOverlay();
 		}
@@ -551,6 +555,8 @@ public partial class GameHost : Node3D, IGameAPI
 	private Vector3 _dragObjectStartScale;
 	private bool _dragObjectStartIsEnemy;
 	private Vector3 _dragObjectStartHitPos;
+	private Vector2 _dragStartMousePos;
+	private Vector3 _dragStartGroundPos;
 	private bool _dragObjectHasMoved;
 	private Node3D _editorPreviewNode;
 	private string _editorPreviewType = "";
@@ -593,13 +599,53 @@ public partial class GameHost : Node3D, IGameAPI
 		public string ArmorType { get; set; }
 		public float GoldBounty { get; set; }
 		public string ModelPath { get; set; }
+		public string PortraitModelPath { get; set; }
+		public float YOffset { get; set; }
+		public float CollisionCircle { get; set; }
+		public float Brightness { get; set; }
+		public string Tint { get; set; }
+		public bool RecalculateNormals { get; set; }
 		public string[]? BuildOptions { get; set; }
 		public bool IsHero { get; set; }
 		public string[]? Abilities { get; set; }
 		public float XpBounty { get; set; }
 		public string[]? PathingCapabilities { get; set; }
-		public string? MovementType { get; set; }
+		public int PathingType { get; set; }
 		public float? ObstacleRadius { get; set; }
+	}
+
+	public struct PropMetadata
+	{
+		public string UnitId { get; set; }
+		public string Name { get; set; }
+		public string Description { get; set; }
+		public string ModelPath { get; set; }
+		public string PortraitModelPath { get; set; }
+		public float YOffset { get; set; }
+		public float CollisionCircle { get; set; }
+		public float Brightness { get; set; }
+		public string Tint { get; set; }
+		public bool RecalculateNormals { get; set; }
+		public int PathingType { get; set; }
+	}
+
+	public struct ResourceMetadata
+	{
+		public string UnitId { get; set; }
+		public string Name { get; set; }
+		public string Description { get; set; }
+		public string ModelPath { get; set; }
+		public string PortraitModelPath { get; set; }
+		public float MaxCapacity { get; set; }
+		public float HarvestRate { get; set; }
+		public float GrowthRate { get; set; }
+		public int MaxWorkers { get; set; }
+		public float YOffset { get; set; }
+		public float CollisionCircle { get; set; }
+		public float Brightness { get; set; }
+		public string Tint { get; set; }
+		public bool RecalculateNormals { get; set; }
+		public int PathingType { get; set; }
 	}
 
 	public static int GetUnitPathingFlags(UnitMetadata meta)
@@ -672,6 +718,8 @@ public partial class GameHost : Node3D, IGameAPI
 
 
 	public static readonly Dictionary<string, UnitMetadata> UnitRegistry = new();
+	public static readonly Dictionary<string, PropMetadata> PropRegistry = new();
+	public static readonly Dictionary<string, ResourceMetadata> ResourceRegistry = new();
 
 	public string GetFallbackModelPath(string unitId, bool isBuilding)
 	{
@@ -891,7 +939,8 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 		bool actualIsEnemy = NetworkService.ArePeersEnemies(_localPeerId, ownerPeerId);
 		
-		string modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : _unitSpawnService.GetFallbackModelPath(unitTypeId, meta.Speed == 0f);
+		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitTypeId;
+		string modelPath = _unitSpawnService.GetFallbackModelPath(targetModel, meta.Speed == 0f);
 
 		string name = actualIsEnemy ? _unitSpawnService.GetEnemyUnitName(unitTypeId, meta.Name) : meta.Name;
 
@@ -2376,7 +2425,7 @@ public class {mapName} : IMapScript
 				ArmorType = "light",
 				GoldBounty = 15f,
 				BuildOptions = new[] { "castle", "tower" },
-				PathingCapabilities = new[] { "ground" }
+				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 			}
 		},
 		{
@@ -2399,7 +2448,7 @@ public class {mapName} : IMapScript
 				AttackType = "melee",
 				ArmorType = "heavy",
 				GoldBounty = 20f,
-				PathingCapabilities = new[] { "ground" }
+				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 			}
 		},
 		{
@@ -2422,7 +2471,7 @@ public class {mapName} : IMapScript
 				AttackType = "ranged",
 				ArmorType = "light",
 				GoldBounty = 25f,
-				PathingCapabilities = new[] { "ground" }
+				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 			}
 		},
 		{
@@ -2445,7 +2494,7 @@ public class {mapName} : IMapScript
 				AttackType = "ranged",
 				ArmorType = "light",
 				GoldBounty = 30f,
-				PathingCapabilities = new[] { "ground" }
+				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 			}
 		},
 		{
@@ -2469,7 +2518,7 @@ public class {mapName} : IMapScript
 				ArmorType = "building",
 				GoldBounty = 0f,
 				BuildOptions = new[] { "soldier", "archer", "priest", "worker" },
-				PathingCapabilities = new[] { "ground" },
+				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Buildable,
 				ObstacleRadius = 2.0f
 			}
 		},
@@ -2493,6 +2542,7 @@ public class {mapName} : IMapScript
 				AttackType = "ranged",
 				ArmorType = "building",
 				GoldBounty = 0f,
+				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Buildable,
 				ObstacleRadius = 1.5f
 			}
 		},
@@ -2516,13 +2566,17 @@ public class {mapName} : IMapScript
 				AttackType = "melee",
 				ArmorType = "heavy",
 				GoldBounty = 18f,
-				PathingCapabilities = new[] { "ground", "shallow_water" }
+				PathingType = (int)(Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground | Realm.Ecs.Components.Terrain.TerrainPathingFlags.ShallowWater)
 			}
 		}
 	};
 
-	private void LoadUnitMetadata(string mapName)
+	public void LoadUnitMetadata(string mapName = null)
 	{
+		if (string.IsNullOrEmpty(mapName))
+		{
+			mapName = !string.IsNullOrEmpty(ActiveMapName) ? ActiveMapName : "temp_map_workspace";
+		}
 		ActiveMapName = mapName;
 		LocalizationManager.CurrentMapName = mapName;
 		LocalizationManager.SetupTranslations();
@@ -2543,18 +2597,104 @@ public class {mapName} : IMapScript
 		}
 
 		UnitRegistry.Clear();
+		PropRegistry.Clear();
+		ResourceRegistry.Clear();
+		Prop3D.ClearModelPathCache();
+
 		if (!string.IsNullOrEmpty(jsonText))
 		{
 			try
 			{
-				var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
-				if (loadedRegistry != null)
+				using var doc = System.Text.Json.JsonDocument.Parse(jsonText);
+				if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
 				{
-					foreach (var kvp in loadedRegistry)
+					bool hasStructuredArrays = false;
+
+					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
 					{
-						UnitRegistry[kvp.Key] = kvp.Value;
+						hasStructuredArrays = true;
+						var list = JsonSerializer.Deserialize<List<UnitMetadata>>(unitsProp.GetRawText(), Options);
+						if (list != null)
+						{
+							foreach (var meta in list)
+							{
+								if (!string.IsNullOrEmpty(meta.UnitId))
+									UnitRegistry[meta.UnitId] = meta;
+							}
+						}
 					}
-					return; // Success, early exit.
+
+					if (doc.RootElement.TryGetProperty("CustomBuildings", out var bldProp) && bldProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					{
+						hasStructuredArrays = true;
+						var list = JsonSerializer.Deserialize<List<UnitMetadata>>(bldProp.GetRawText(), Options);
+						if (list != null)
+						{
+							foreach (var meta in list)
+							{
+								if (!string.IsNullOrEmpty(meta.UnitId))
+									UnitRegistry[meta.UnitId] = meta;
+							}
+						}
+					}
+
+					if (doc.RootElement.TryGetProperty("CustomResources", out var resProp) && resProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					{
+						hasStructuredArrays = true;
+						var list = JsonSerializer.Deserialize<List<ResourceMetadata>>(resProp.GetRawText(), Options);
+						if (list != null)
+						{
+							foreach (var meta in list)
+							{
+								if (!string.IsNullOrEmpty(meta.UnitId))
+								{
+									var copy = meta;
+									if (copy.PathingType == 0) copy.PathingType = 255;
+									ResourceRegistry[copy.UnitId] = copy;
+								}
+							}
+						}
+					}
+
+					if (doc.RootElement.TryGetProperty("CustomProps", out var propProp) && propProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					{
+						hasStructuredArrays = true;
+						var list = JsonSerializer.Deserialize<List<PropMetadata>>(propProp.GetRawText(), Options);
+						if (list != null)
+						{
+							foreach (var meta in list)
+							{
+								if (!string.IsNullOrEmpty(meta.UnitId))
+								{
+									var copy = meta;
+									if (copy.PathingType == 0) copy.PathingType = 255;
+									PropRegistry[copy.UnitId] = copy;
+								}
+							}
+						}
+					}
+
+					if (hasStructuredArrays) return;
+
+					var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
+					if (loadedRegistry != null)
+					{
+						var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+						{
+							"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades", "CustomItems", "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps", "Assets"
+						};
+						foreach (var kvp in loadedRegistry)
+						{
+							if (!skipKeys.Contains(kvp.Key))
+							{
+								UnitRegistry[kvp.Key] = kvp.Value;
+							}
+						}
+						if (UnitRegistry.Count > 0)
+						{
+							return;
+						}
+					}
 				}
 			}
 			catch (Exception ex)
@@ -2792,6 +2932,11 @@ public class {mapName} : IMapScript
 
 		EcsWorld = ServiceLocator.Get<World>();
 		CreateGround();
+		if (GetNodeOrNull<PropMultiMeshManager>("PropMultiMeshManager") == null)
+		{
+			var propMultiMeshManager = new PropMultiMeshManager();
+			AddChild(propMultiMeshManager);
+		}
 		SetupWorldEntityComponents();
 
 		if (GroundTerrain != null)
@@ -3135,8 +3280,73 @@ public class {mapName} : IMapScript
 		_fogOfWarService.Initialize(MainNode);
 	}
 
+	public void ResetWorldAndState()
+	{
+		ReplayPlaybackManager.Instance.StopReplay();
+		StopRecording();
+
+		var unitsCopy = new List<Unit3D>(AllUnits);
+		foreach (var unit in unitsCopy)
+		{
+			if (GodotObject.IsInstanceValid(unit))
+			{
+				unit.QueueFree();
+			}
+		}
+		AllUnits.Clear();
+		SelectedUnits.Clear();
+
+		var propsCopy = new List<Prop3D>(AllProps);
+		foreach (var prop in propsCopy)
+		{
+			if (GodotObject.IsInstanceValid(prop))
+			{
+				prop.QueueFree();
+			}
+		}
+		AllProps.Clear();
+
+		var decalsCopy = new List<Decal>(AllDecals);
+		foreach (var decal in decalsCopy)
+		{
+			if (GodotObject.IsInstanceValid(decal))
+			{
+				decal.QueueFree();
+			}
+		}
+		AllDecals.Clear();
+
+		_castlesList.Clear();
+		ActivePings.Clear();
+		ClearAllBuildQueueGhosts();
+
+		if (_controlGroups != null)
+		{
+			for (int i = 0; i < _controlGroups.Length; i++)
+			{
+				_controlGroups[i]?.Clear();
+			}
+		}
+
+		EntityToUnit3D.Clear();
+		EntityToProp3D.Clear();
+		PendingMapScriptPath = null;
+		_activeMapScript = null;
+
+		_editorService?.ResetAllState();
+		_networkService?.Clear();
+		_fogOfWarService?.CleanUp();
+
+		ReinitializeEcsAndServices();
+	}
+
 	private void ReinitializeEcsAndServices()
 	{
+		EntityToUnit3D.Clear();
+		EntityToProp3D.Clear();
+		PendingMapScriptPath = null;
+		_activeMapScript = null;
+
 		EcsWorld?.Dispose();
 		BuildDependencyInjection();
 		ResolveServices();
@@ -3171,11 +3381,12 @@ public class {mapName} : IMapScript
 		}
 
 		if (Instance == this) Instance = null;
+		EntityToUnit3D.Clear();
+		EntityToProp3D.Clear();
+		PendingMapScriptPath = null;
+		_activeMapScript = null;
+
 		EcsWorld?.Dispose();
-		if (OperatingSystem.IsWindows())
-		{
-			VSCodeManager.Instance.CleanUp();
-		}
 		_networkService?.Clear();
 		_fogOfWarService?.CleanUp();
 		StopRecording();

@@ -417,7 +417,8 @@ public class NetworkService
 		mapping.ServerToClientEntityMap[snap.EntityId] = entity;
 		mapping.ClientToServerEntityMap[entity.Id] = snap.EntityId;
 
-		modelPath = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : getFallbackModelPath(snap.UnitId, snap.IsBuilding);
+		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : snap.UnitId;
+		modelPath = getFallbackModelPath(targetModel, snap.IsBuilding);
 		return entity;
 	}
 

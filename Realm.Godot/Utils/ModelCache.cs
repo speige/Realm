@@ -8,6 +8,73 @@ namespace Realm.Godot.Utils
 	{
 		private static readonly Dictionary<string, PackedScene> _cachedScenes = new(StringComparer.OrdinalIgnoreCase);
 
+		public static string ResolveModelPath(string modelPath)
+		{
+			if (string.IsNullOrEmpty(modelPath)) return null;
+
+			if (System.IO.File.Exists(modelPath))
+			{
+				return modelPath;
+			}
+
+			if (modelPath.StartsWith("res://") || modelPath.StartsWith("user://"))
+			{
+				string globalized = ProjectSettings.GlobalizePath(modelPath);
+				if (System.IO.File.Exists(globalized))
+				{
+					return globalized;
+				}
+				if (ResourceLoader.Exists(modelPath))
+				{
+					return modelPath;
+				}
+			}
+
+			string cleanPath = modelPath.TrimStart('/', '\\');
+
+			string tempWs = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+			if (!string.IsNullOrEmpty(tempWs))
+			{
+				string candTemp = System.IO.Path.Combine(tempWs, cleanPath);
+				if (System.IO.File.Exists(candTemp))
+				{
+					return candTemp;
+				}
+			}
+
+			string activeMap = GameHost.Instance?.ActiveMapName ?? LobbyManager.Instance?.ActiveMapName;
+			if (!string.IsNullOrEmpty(activeMap))
+			{
+				string mapDir = ProjectSettings.GlobalizePath($"user://maps/{activeMap}");
+				string candMap = System.IO.Path.Combine(mapDir, cleanPath);
+				if (System.IO.File.Exists(candMap))
+				{
+					return candMap;
+				}
+			}
+
+			string resDir = ProjectSettings.GlobalizePath("res://");
+			string candRes = System.IO.Path.Combine(resDir, cleanPath);
+			if (System.IO.File.Exists(candRes))
+			{
+				return candRes;
+			}
+			string godotResPath = "res://" + cleanPath.Replace("\\", "/");
+			if (ResourceLoader.Exists(godotResPath))
+			{
+				return godotResPath;
+			}
+
+			string userDir = ProjectSettings.GlobalizePath("user://");
+			string candUser = System.IO.Path.Combine(userDir, cleanPath);
+			if (System.IO.File.Exists(candUser))
+			{
+				return candUser;
+			}
+
+			return modelPath;
+		}
+
 		public static Node GetModel(string modelPath)
 		{
 			if (string.IsNullOrEmpty(modelPath)) return null;
@@ -17,10 +84,20 @@ namespace Realm.Godot.Utils
 				return cachedScene.Instantiate();
 			}
 
-			PackedScene scene = LoadPackedScene(modelPath);
+			string resolvedPath = ResolveModelPath(modelPath);
+			if (!string.IsNullOrEmpty(resolvedPath) && _cachedScenes.TryGetValue(resolvedPath, out var cachedSceneResolved) && GodotObject.IsInstanceValid(cachedSceneResolved))
+			{
+				return cachedSceneResolved.Instantiate();
+			}
+
+			PackedScene scene = LoadPackedScene(resolvedPath ?? modelPath);
 			if (scene != null)
 			{
 				_cachedScenes[modelPath] = scene;
+				if (!string.IsNullOrEmpty(resolvedPath))
+				{
+					_cachedScenes[resolvedPath] = scene;
+				}
 				return scene.Instantiate();
 			}
 
@@ -31,11 +108,21 @@ namespace Realm.Godot.Utils
 		{
 			try
 			{
-				if (System.IO.File.Exists(modelPath) && !modelPath.StartsWith("res://"))
+				string targetPath = modelPath;
+				if (targetPath.StartsWith("res://") || targetPath.StartsWith("user://"))
+				{
+					if (ResourceLoader.Exists(targetPath))
+					{
+						return GD.Load<PackedScene>(targetPath);
+					}
+					targetPath = ProjectSettings.GlobalizePath(targetPath);
+				}
+
+				if (System.IO.File.Exists(targetPath))
 				{
 					var doc = new GltfDocument();
 					var state = new GltfState();
-					var err = doc.AppendFromFile(modelPath, state);
+					var err = doc.AppendFromFile(targetPath, state);
 					if (err == Error.Ok)
 					{
 						Node generatedNode = doc.GenerateScene(state);
@@ -52,9 +139,9 @@ namespace Realm.Godot.Utils
 						}
 					}
 				}
-				else if (ResourceLoader.Exists(modelPath))
+				else if (ResourceLoader.Exists(targetPath))
 				{
-					return GD.Load<PackedScene>(modelPath);
+					return GD.Load<PackedScene>(targetPath);
 				}
 			}
 			catch (Exception ex)

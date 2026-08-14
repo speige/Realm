@@ -1,21 +1,189 @@
 {
   "MapProperties": {},
+  "CustomUnits": [
+    {
+      "Armor": 0,
+      "ArmorType": "light",
+      "AttackCooldown": 1.5,
+      "AttackType": "melee",
+      "CostGold": 100,
+      "CostStone": 0,
+      "CostWood": 0,
+      "Damage": 10,
+      "Description": "A new unit entity.",
+      "GoldBounty": 10,
+      "MaxHp": 100,
+      "ModelPath": "adventurer.glb",
+      "Name": "Adventurer",
+      "PathingType": 8,
+      "PopCost": 1,
+      "ProductionTime": 10,
+      "Range": 2,
+      "ScanRadius": 10,
+      "Speed": 5,
+      "UnitId": "Unit_001"
+    },
+    {
+      "Armor": 0,
+      "ArmorType": "light",
+      "AttackCooldown": 1.5,
+      "AttackType": "melee",
+      "CostGold": 100,
+      "CostStone": 0,
+      "CostWood": 0,
+      "Damage": 10,
+      "Description": "A new unit entity.",
+      "GoldBounty": 10,
+      "MaxHp": 100,
+      "ModelPath": "armored_dragon.glb",
+      "Name": "Armored_Dragon",
+      "PathingType": 8,
+      "PopCost": 1,
+      "ProductionTime": 10,
+      "Range": 2,
+      "ScanRadius": 10,
+      "Speed": 5,
+      "UnitId": "Unit_002"
+    }
+  ],
+  "CustomBuildings": [
+    {
+      "Armor": 0,
+      "ArmorType": "building",
+      "AttackCooldown": 1.5,
+      "AttackType": "melee",
+      "CostGold": 100,
+      "CostStone": 0,
+      "CostWood": 0,
+      "Damage": 10,
+      "Description": "A new building entity.",
+      "GoldBounty": 10,
+      "MaxHp": 100,
+      "ModelPath": "ancient_altar.glb",
+      "Name": "Ancient_Altar",
+      "PathingType": 32,
+      "PopCost": 1,
+      "ProductionTime": 10,
+      "Range": 2,
+      "ScanRadius": 10,
+      "Speed": 5,
+      "UnitId": "Building_001"
+    },
+    {
+      "Armor": 0,
+      "ArmorType": "building",
+      "AttackCooldown": 1.5,
+      "AttackType": "melee",
+      "CostGold": 100,
+      "CostStone": 0,
+      "CostWood": 0,
+      "Damage": 10,
+      "Description": "A new building entity.",
+      "GoldBounty": 10,
+      "MaxHp": 100,
+      "ModelPath": "castle.glb",
+      "Name": "Castle",
+      "PathingType": 32,
+      "PopCost": 1,
+      "ProductionTime": 10,
+      "Range": 2,
+      "ScanRadius": 10,
+      "Speed": 5,
+      "UnitId": "Building_002"
+    }
+  ],
+  "CustomResources": [
+    {
+      "UnitId": "coniferous_tree",
+      "Name": "coniferous_tree",
+      "Description": "",
+      "PathingType": 255,
+      "ModelPath": "coniferous_tree.glb"
+    },
+    {
+      "UnitId": "crystal_peak",
+      "Name": "crystal_peak",
+      "Description": "",
+      "PathingType": 255,
+      "ModelPath": "crystal_peak.glb"
+    }
+  ],
+  "CustomProps": [
+    {
+      "Description": "A decorative prop prop.",
+      "ModelPath": "architectural_components.glb",
+      "Name": "Architectural_Components",
+      "PathingType": 255,
+      "UnitId": "Prop_001"
+    },
+    {
+      "Description": "A decorative prop prop.",
+      "ModelPath": "wooden_box.glb",
+      "Name": "Wooden_Box",
+      "PathingType": 255,
+      "UnitId": "Prop_002"
+    }
+  ],
+  "CustomAbilities": [],
+  "CustomUpgrades": [],
+  "CustomItems": [],
+  "CustomWeapons": [],
   "Assets": {
+    "decals": {
+      "acid_drip.png": "e1ae4c43637d45fdfc0a927f1ca214ee7a030e464939219bd2170141600f3c64",
+      "arcane_spark.png": "b44e0bbea2ed1d70380381a37bec49db7881509c38225688c70b2539de58ad4f"
+    },
+    "glb": {
+      "building": {
+        "ancient_altar.glb": "90e663ae8a33a5b5c264311f0da28b57a7582aa2998cba2272865106c5fec4c2",
+        "castle.glb": "2857417a188864b47bed1a796240dfb0b7f3e2b969db02d8340eaf0c6fe50d16"
+      },
+      "props": {
+        "architectural_components.glb": "636a37bf9d9b379340f2a3c9ec5c63c86c88ccaee7392df6809a2fdf5ead9292",
+        "wooden_box.glb": "897e92fb41a141e7ad3c86738a6cec1ab9a4c6b85e7a9f10d20ce77fe5e80ced"
+      },
+      "resources": {
+        "coniferous_tree.glb": {
+          "hash": "8652383edbbc5a1d051a5ac6a7b7872a50e853ee2d5e8aae0b180a7027799e87",
+          "default_asset_type": "resources"
+        },
+        "crystal_peak.glb": {
+          "hash": "9a7c6c872d2466b1a8819c4e159bb99c6b80e9837d00aeb26249ee9fac46b106",
+          "default_asset_type": "resources"
+        }
+      },
+      "units": {
+        "adventurer.glb": "543910be92b4f5648731a3458c58c2ab4689e71a1c601cb762900ebc488d145f",
+        "armored_dragon.glb": "9602413526348e5867c191ae0c6450b4acb144814e0b2c2e67a0087a9091a6c2"
+      }
+    },
+    "icons": {
+      "victory_flag.png": "9229018b139ea0e269a8e1cb2c1f5130107056ddde81bacbd759a7f74eee51e1",
+      "wood_logs.png": "9282ac3b62682d82e3139f30a384823058b3423ade551a53edcf14092c076d51"
+    },
+    "skyboxes": {
+      "jade_shrine.png": "07d819f01cbbada5d711ca37c3041ecbdf4e91f9db99a0e6348ab7e575a038ed",
+      "star_reach.png": "48cb6f7411f929a3d06d602bb525536894bc5a19681d72282760d359c1af97d0"
+    },
     "textures": {
       "dead_grass.ktx2": "3ca7998ba2426fee350ef5e52ca9e541dfbe9939cc2bfe86e2e6c3879f8a02d3",
       "hard_granite.ktx2": {
+        "Cross_Fade": 5,
         "Stochastic_Tile_Size": 3,
         "Tile_Mode": "Grid",
         "UV_Scale": 0.6,
+        "cross_fade": 5,
         "hash": "aed15ffe3315649d09b9671a015a1ed2a1eb9363d1511f10e8315824e4038871",
         "stochastic_tile_size": 3,
         "tile_mode": "Grid",
         "uv_scale": 0.6
       },
       "holy_stone.ktx2": {
+        "Cross_Fade": 5,
         "Stochastic_Tile_Size": 0.5,
         "Tile_Mode": "Grid",
         "UV_Scale": 0.65,
+        "cross_fade": 5,
         "hash": "4b3761259a544cbf8b0a298fa6622e77c6142148284bd552a589da243339d96b",
         "stochastic_tile_size": 0.5,
         "tile_mode": "Grid",
@@ -51,47 +219,21 @@
         "uv_scale": 1.25
       }
     },
-    "decals": {
-      "acid_drip.png": "e1ae4c43637d45fdfc0a927f1ca214ee7a030e464939219bd2170141600f3c64",
-      "arcane_spark.png": "b44e0bbea2ed1d70380381a37bec49db7881509c38225688c70b2539de58ad4f"
-    },
-    "glb": {
-      "character": {
-        "adventurer.glb": "543910be92b4f5648731a3458c58c2ab4689e71a1c601cb762900ebc488d145f",
-        "armored_dragon.glb": "9602413526348e5867c191ae0c6450b4acb144814e0b2c2e67a0087a9091a6c2"
-      },
-      "building": {
-        "ancient_altar.glb": "90e663ae8a33a5b5c264311f0da28b57a7582aa2998cba2272865106c5fec4c2",
-        "castle.glb": "2857417a188864b47bed1a796240dfb0b7f3e2b969db02d8340eaf0c6fe50d16"
-      },
-      "environment": {
-        "fantasy_tree.glb": "70feee30d8646ca3aa306f352ee920034791b9544df08306f25bf7cff383f4fe",
-        "rock_formation.glb": "5575947dc231f516519419bdee996f80a0bd195dd19cd5d4321f0e861822dbb8"
-      },
-      "props": {
-        "architectural_components.glb": "636a37bf9d9b379340f2a3c9ec5c63c86c88ccaee7392df6809a2fdf5ead9292",
-        "wooden_box.glb": "897e92fb41a141e7ad3c86738a6cec1ab9a4c6b85e7a9f10d20ce77fe5e80ced"
-      }
-    },
-    "skyboxes": {
-      "jade_shrine.png": "07d819f01cbbada5d711ca37c3041ecbdf4e91f9db99a0e6348ab7e575a038ed",
-      "star_reach.png": "48cb6f7411f929a3d06d602bb525536894bc5a19681d72282760d359c1af97d0"
-    },
     "vfx_spritesheets": {
       "arcane_surge_sheet.png": {
-        "hash": "5dc4b22b6c5f4c5c40f91cf4929d04667bae13e642f0ad4813b6b83dd4255059",
         "columns": 4,
+        "hash": "5dc4b22b6c5f4c5c40f91cf4929d04667bae13e642f0ad4813b6b83dd4255059",
         "rows": 4
       },
       "solar_flare_sheet.png": {
-        "hash": "9dc2f9b91f8af2eee0d174fa246ab818fc626201f629a175f173e9b01d9147c1",
         "columns": 4,
+        "hash": "9dc2f9b91f8af2eee0d174fa246ab818fc626201f629a175f173e9b01d9147c1",
         "rows": 4
       }
-    },
-    "icons": {
-      "victory_flag.png": "9229018b139ea0e269a8e1cb2c1f5130107056ddde81bacbd759a7f74eee51e1",
-      "wood_logs.png": "9282ac3b62682d82e3139f30a384823058b3423ade551a53edcf14092c076d51"
     }
-  }
+  },
+  "ModelOffsets": {},
+  "ModelCollisionCircleRatios": {},
+  "ModelBrightness": {},
+  "ModelGenerateNormals": {}
 }
