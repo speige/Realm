@@ -162,6 +162,58 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         });
     }
 
+    private getGlbFaceCount(fileBytes: Buffer): number {
+        try {
+            let gltfJson: any = null;
+            if (fileBytes.length >= 12 && fileBytes.readUInt32LE(0) === 0x46546C67) {
+                const chunkLength = fileBytes.readUInt32LE(8);
+                const chunkType = fileBytes.readUInt32LE(12);
+                if (chunkType === 0x4E4F534A) {
+                    const jsonBuffer = fileBytes.subarray(20, 20 + chunkLength);
+                    gltfJson = JSON.parse(jsonBuffer.toString('utf8'));
+                }
+            } else {
+                const text = fileBytes.toString('utf8').trim();
+                if (text.startsWith('{')) {
+                    gltfJson = JSON.parse(text);
+                }
+            }
+
+            if (!gltfJson || !Array.isArray(gltfJson.meshes)) {
+                return 0;
+            }
+
+            const accessors = Array.isArray(gltfJson.accessors) ? gltfJson.accessors : [];
+            let totalFaces = 0;
+
+            for (const mesh of gltfJson.meshes) {
+                if (!mesh || !Array.isArray(mesh.primitives)) continue;
+                for (const prim of mesh.primitives) {
+                    if (!prim) continue;
+                    const mode = prim.mode !== undefined ? prim.mode : 4;
+
+                    let elementCount = 0;
+                    if (prim.indices !== undefined && accessors[prim.indices]) {
+                        elementCount = accessors[prim.indices].count || 0;
+                    } else if (prim.attributes && prim.attributes.POSITION !== undefined && accessors[prim.attributes.POSITION]) {
+                        elementCount = accessors[prim.attributes.POSITION].count || 0;
+                    }
+
+                    if (mode === 4) {
+                        totalFaces += Math.floor(elementCount / 3);
+                    } else if (mode === 5 || mode === 6) {
+                        totalFaces += Math.max(0, elementCount - 2);
+                    }
+                }
+            }
+
+            return totalFaces;
+        } catch (e) {
+            console.warn('Failed to parse face count from 3D model:', e);
+            return 0;
+        }
+    }
+
     private computeHashHex(buffer: Buffer): string {
         const crypto = require('crypto');
         return crypto.createHash('sha256').update(buffer).digest('hex');
@@ -228,6 +280,22 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
 
             if (assetType === 'glb') {
                 let subCategory = (extraOptions && extraOptions.category) ? extraOptions.category.toLowerCase() : 'props';
+                const recommendedFaceCount = subCategory === 'units' ? 6500 : (subCategory === 'buildings' ? 5000 : 850);
+                const faceCount = this.getGlbFaceCount(fileBytes);
+
+                if (faceCount > recommendedFaceCount * 2) {
+                    const warningMessage = `The 3D model "${fileName}" has ${faceCount.toLocaleString()} triangles, which exceeds the recommended limit (${(recommendedFaceCount).toLocaleString()} for ${subCategory}}). It is recommended to convert to low-poly before importing.`;
+                    const choice = await vscode.window.showWarningMessage(
+                        warningMessage,
+                        { modal: true },
+                        'Import',
+                        'Cancel'
+                    );
+                    if (choice !== 'Import') {
+                        return;
+                    }
+                }
+
                 const subDir = path.join(targetDir, 'Assets', 'models', subCategory);
                 if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
                 const baseName = path.basename(fileName, path.extname(fileName)) + '.glb';
