@@ -178,24 +178,41 @@ public class FXService
 	{
 		var arrow = new MeshInstance3D();
 		var cylinderMesh = new CylinderMesh();
-		cylinderMesh.TopRadius = 0.05f;
-		cylinderMesh.BottomRadius = 0.05f;
-		cylinderMesh.Height = 0.6f;
+		cylinderMesh.TopRadius = 0.22f;
+		cylinderMesh.BottomRadius = 0.22f;
+		cylinderMesh.Height = 1.0f;
 		arrow.Mesh = cylinderMesh;
 		arrow.Position = start + new Vector3(0, 1.2f, 0); 
 
 		var material = new StandardMaterial3D();
-		material.AlbedoColor = new Color(0.9f, 0.8f, 0.4f);
+		material.AlbedoColor = new Color(1.0f, 0.75f, 0.3f);
 		material.EmissionEnabled = true;
-		material.Emission = new Color(0.9f, 0.7f, 0.2f);
+		material.Emission = new Color(3.0f, 1.5f, 0.4f);
+		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 		arrow.MaterialOverride = material;
 
 		Vector3 targetPos = target + new Vector3(0, 1.2f, 0);
-		if (arrow.Position.DistanceTo(targetPos) > 0.1f)
+		Vector3 shotDir = targetPos - arrow.Position;
+		if (shotDir.LengthSquared() > 0.01f)
 		{
-			arrow.LookAtFromPosition(arrow.Position, targetPos, Vector3.Up);
+			Vector3 flatDir = new Vector3(shotDir.X, 0f, shotDir.Z);
+			if (flatDir.LengthSquared() > 0.0001f)
+			{
+				arrow.LookAtFromPosition(arrow.Position, targetPos, Vector3.Up);
+			}
+			else
+			{
+				arrow.LookAtFromPosition(arrow.Position, targetPos + new Vector3(0, 0, 0.001f), Vector3.Up);
+			}
 			arrow.RotateObjectLocal(Vector3.Right, Mathf.DegToRad(90f));
 		}
+
+		var light = new OmniLight3D();
+		light.LightColor = new Color(1.0f, 0.7f, 0.3f);
+		light.LightEnergy = 2.0f;
+		light.OmniRange = 3.0f;
+		light.ShadowEnabled = false;
+		arrow.AddChild(light);
 
 		parent.AddChild(arrow);
 
@@ -203,6 +220,24 @@ public class FXService
 		float travelTime = Mathf.Clamp(start.DistanceTo(target) / 40f, 0.15f, 0.6f);
 		tween.TweenProperty(arrow, "global_position", targetPos, travelTime);
 		tween.Chain().TweenCallback(Callable.From(arrow.QueueFree));
+	}
+
+	public void SpawnDamageNumber(Node3D parent, Vector3 worldPosition, float amount)
+	{
+		var label = new Label3D();
+		label.Text = ((int)Math.Round(amount)).ToString();
+		label.Modulate = new Color(1.0f, 0.85f, 0.3f);
+		label.OutlineModulate = Colors.Black;
+		label.Billboard = BaseMaterial3D.BillboardModeEnum.Enabled;
+		label.Position = worldPosition + new Vector3(0, 1.6f, 0);
+		label.FontSize = 40;
+		parent.AddChild(label);
+
+		var tween = parent.CreateTween();
+		tween.SetParallel(true);
+		tween.TweenProperty(label, "position", label.Position + new Vector3(0, 2.0f, 0), 1.2f);
+		tween.TweenProperty(label, "modulate:a", 0.0f, 1.2f);
+		tween.Chain().TweenCallback(Callable.From(label.QueueFree));
 	}
 
 	public void SpawnTargetIndicator(Node3D parent, Vector3 position, Color color)

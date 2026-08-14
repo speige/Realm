@@ -2,6 +2,7 @@ using Arch.Core;
 using Godot;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Tags;
+using Realm.Ecs.Components.Terrain;
 
 public partial class Unit3D : Prop3D
 {
@@ -224,6 +225,51 @@ public partial class Unit3D : Prop3D
 			GD.PrintErr($"Error loading model {modelPath}: {ex.Message}");
 			CreateFallbackMesh();
 		}
+
+		UpdateDropShadow();
+	}
+
+	/// <summary>
+	///     Adds (or refreshes) a projected drop shadow for flying units so they read clearly
+	///     against the terrain below instead of appearing to float in empty space.
+	/// </summary>
+	private void UpdateDropShadow()
+	{
+		if (GameHost.Instance == null || !GameHost.Instance.IsPathingCapability(Entity, TerrainPathingFlags.Flying))
+		{
+			var oldDecal = GetNodeOrNull<Decal>("DropShadow");
+			if (oldDecal != null)
+			{
+				oldDecal.QueueFree();
+			}
+			return;
+		}
+
+		var existing = GetNodeOrNull<Decal>("DropShadow");
+		if (existing != null)
+		{
+			float updatedRadius = GameHost.Instance.GetOrCalculateObstacleRadius(UnitId, this, IsBuilding) * GameHost.Instance.GetModelCollisionCircleRatio(ModelPath);
+			if (updatedRadius > 0f)
+			{
+				existing.Size = new Vector3(updatedRadius * 2.5f, 3f, updatedRadius * 2.5f);
+			}
+			return;
+		}
+
+		float radius = GameHost.Instance.GetOrCalculateObstacleRadius(UnitId, this, IsBuilding) * GameHost.Instance.GetModelCollisionCircleRatio(ModelPath);
+		if (radius <= 0f) radius = 1f;
+
+		Decal shadowDecal = new Decal();
+		shadowDecal.Name = "DropShadow";
+		shadowDecal.TextureAlbedo = GameHost.Instance.GetSharedShadowGradient();
+		shadowDecal.Size = new Vector3(radius * 2.5f, 3f, radius * 2.5f);
+		shadowDecal.Position = Vector3.Zero;
+		// Decals project along local -Z; tilt the node down so the shadow lands on the terrain.
+		shadowDecal.RotationDegrees = new Vector3(-90f, 0f, 0f);
+		// Project only onto the terrain layer so the shadow does not bleed onto other units.
+		shadowDecal.CullMask = 1;
+
+		AddChild(shadowDecal);
 	}
 
 	public void PlayAnimation(string animName)
@@ -355,6 +401,10 @@ public partial class Unit3D : Prop3D
 		float minY = float.MaxValue;
 		bool foundMesh = false;
 		GetMinYRecursive(node, currentTransform, ref minY, ref foundMesh);
+		if (!foundMesh)
+		{
+			GD.PushWarning($"[Unit3D] No mesh instances found under model '{Name}' — vertical offset defaults to 0, the unit may sit below the terrain.");
+		}
 		return foundMesh ? minY : 0f;
 	}
 

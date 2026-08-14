@@ -111,13 +111,30 @@ internal class UnitSpawnService
 		};
 	}
 
-	public Entity CreateEcsUnitEntity(string id, string name, float hp, float damage, float range, float armor, float speed, float scanRadius, bool isHero, float attackCooldown, int pathingFlags, Vector3 pos, Realm.Ecs.Common.PlayerEntity owner, Entity playerEntity, bool hasShieldsUpgrade, bool hasWeaponsUpgrade)
+	public Entity CreateEcsUnitEntity(string id, string name, float hp, float damage, float range, float armor, float speed, float scanRadius, bool isHero, float attackCooldown, int pathingFlags, Vector3 pos, Realm.Ecs.Common.PlayerEntity owner, Entity playerEntity, bool hasShieldsUpgrade, bool hasWeaponsUpgrade, string[]? targets = null)
 	{
 		var entity = EcsWorld.Create();
 		EcsWorld.Add(entity, new DefinitionId(id));
 		EcsWorld.Add(entity, new Name(name));
 		EcsWorld.Add(entity, new Position(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));
 		EcsWorld.Add(entity, new Owner(owner));
+
+		bool canTargetAir = true;
+		bool canTargetGround = true;
+		if (targets != null && targets.Length > 0)
+		{
+			bool hasAir = false;
+			bool hasGround = false;
+			foreach (var targetType in targets)
+			{
+				string normalized = targetType.Trim().ToLowerInvariant();
+				if (normalized == "air") hasAir = true;
+				else if (normalized == "ground") hasGround = true;
+			}
+			canTargetAir = hasAir;
+			canTargetGround = hasGround;
+		}
+		EcsWorld.Add(entity, new CombatTargeting(canTargetAir, canTargetGround));
 
 		if (isHero)
 		{
