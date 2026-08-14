@@ -45,6 +45,10 @@
       <Link>ktx_tools\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="..\ThirdPartyBinaries\**\*.*">
+      <Link>ThirdPartyBinaries\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="..\Realm.MapEditorExtension\map_schema.json">
       <Link>Realm.MapEditorExtension\map_schema.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

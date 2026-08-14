@@ -162,23 +162,34 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         });
     }
 
-    private getGlbFaceCount(fileBytes: Buffer): number {
+    private parseGltfJson(fileBytes: Buffer): any {
         try {
-            let gltfJson: any = null;
-            if (fileBytes.length >= 12 && fileBytes.readUInt32LE(0) === 0x46546C67) {
-                const chunkLength = fileBytes.readUInt32LE(8);
-                const chunkType = fileBytes.readUInt32LE(12);
-                if (chunkType === 0x4E4F534A) {
-                    const jsonBuffer = fileBytes.subarray(20, 20 + chunkLength);
-                    gltfJson = JSON.parse(jsonBuffer.toString('utf8'));
+            if (fileBytes.length >= 20 && fileBytes.readUInt32LE(0) === 0x46546C67) {
+                let currentOffset = 12;
+                while (currentOffset + 8 <= fileBytes.length) {
+                    const chunkLength = fileBytes.readUInt32LE(currentOffset);
+                    const chunkType = fileBytes.readUInt32LE(currentOffset + 4);
+                    if (chunkType === 0x4E4F534A) {
+                        const jsonBuffer = fileBytes.subarray(currentOffset + 8, currentOffset + 8 + chunkLength);
+                        return JSON.parse(jsonBuffer.toString('utf8'));
+                    }
+                    currentOffset += 8 + chunkLength;
                 }
             } else {
                 const text = fileBytes.toString('utf8').trim();
                 if (text.startsWith('{')) {
-                    gltfJson = JSON.parse(text);
+                    return JSON.parse(text);
                 }
             }
+        } catch (e) {
+            console.warn('Failed to parse glTF JSON from model:', e);
+        }
+        return null;
+    }
 
+    private getGlbFaceCount(fileBytes: Buffer): number {
+        try {
+            const gltfJson = this.parseGltfJson(fileBytes);
             if (!gltfJson || !Array.isArray(gltfJson.meshes)) {
                 return 0;
             }
@@ -212,6 +223,75 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             console.warn('Failed to parse face count from 3D model:', e);
             return 0;
         }
+    }
+
+    public findPath(relativePath: string, contextPath?: vscode.Uri | string): string | null {
+        if (!relativePath) {
+            return null;
+        }
+
+        let cleanPath = relativePath.trim().replace(/^res:\/\//i, '');
+        cleanPath = cleanPath.replace(/^[/\\]+/, '');
+
+        const searchRoots: string[] = [];
+
+        const addSearchRootAndAncestors = (startPath: string, maxDepth: number = 12) => {
+            try {
+                let currentDir = fs.existsSync(startPath) && fs.statSync(startPath).isDirectory()
+                    ? startPath
+                    : path.dirname(startPath);
+
+                for (let i = 0; i < maxDepth; i++) {
+                    searchRoots.push(currentDir);
+                    const parent = path.dirname(currentDir);
+                    if (!parent || parent === currentDir) {
+                        break;
+                    }
+                    currentDir = parent;
+                }
+            } catch {}
+        };
+
+        if (contextPath) {
+            const initialPath = typeof contextPath === 'string' ? contextPath : contextPath.fsPath;
+            addSearchRootAndAncestors(initialPath);
+        }
+
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (workspaceFolders) {
+            for (const folder of workspaceFolders) {
+                addSearchRootAndAncestors(folder.uri.fsPath);
+            }
+        }
+
+        addSearchRootAndAncestors(__dirname);
+
+        const uniqueRoots = Array.from(new Set(searchRoots));
+        const strippedCleanPath = cleanPath.replace(/^(ThirdPartyBinaries|Realm\.Godot)[/\\]/i, '');
+
+        for (const root of uniqueRoots) {
+            const candidatePaths = [
+                path.join(root, cleanPath),
+                path.join(root, 'ThirdPartyBinaries', strippedCleanPath),
+                path.join(root, 'ThirdPartyBinaries', cleanPath),
+                path.join(root, 'Realm.Godot', cleanPath),
+                path.join(root, 'Realm.Godot', 'ThirdPartyBinaries', strippedCleanPath),
+                path.join(root, 'Realm.Godot', 'ThirdPartyBinaries', cleanPath),
+                path.join(root, 'bin', 'Debug', 'net10.0', cleanPath),
+                path.join(root, 'bin', 'Release', 'net10.0', cleanPath),
+                path.join(root, 'bin', 'Debug', 'net10.0', 'ThirdPartyBinaries', strippedCleanPath),
+                path.join(root, 'bin', 'Release', 'net10.0', 'ThirdPartyBinaries', strippedCleanPath),
+                path.join(root, strippedCleanPath)
+            ];
+
+            for (const candidate of candidatePaths) {
+                if (fs.existsSync(candidate)) {
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
     }
 
     private computeHashHex(buffer: Buffer): string {
@@ -284,21 +364,73 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 const faceCount = this.getGlbFaceCount(fileBytes);
 
                 if (faceCount > recommendedFaceCount * 2) {
-                    const warningMessage = `The 3D model "${fileName}" has ${faceCount.toLocaleString()} triangles, which exceeds the recommended limit (${(recommendedFaceCount).toLocaleString()} for ${subCategory}}). It is recommended to convert to low-poly before importing.`;
+                    const warningMessage = `The 3D model "${fileName}" has ${faceCount.toLocaleString()} triangles, which exceeds the recommended limit (${(recommendedFaceCount).toLocaleString()} for ${subCategory}). It is recommended to convert to low-poly before importing.`;
                     const choice = await vscode.window.showWarningMessage(
                         warningMessage,
                         { modal: true },
-                        'Import',
-                        'Cancel'
+                        'Import'
                     );
                     if (choice !== 'Import') {
                         return;
                     }
                 }
 
+                const originalFileName = path.basename(fileName, path.extname(fileName)) + '.glb';
+                const tempFileName = `temp_${Date.now()}_${originalFileName}`;
+
+                try {
+                    const os = require('os');
+                    const cp = require('child_process');
+                    const tempFolder = fs.mkdtempSync(path.join(os.tmpdir(), 'realm_gltfpack_'));
+                    const tempInputPath = path.join(tempFolder, tempFileName);
+                    const tempOutputPath = path.join(tempFolder, originalFileName);
+
+                    try {
+                        fs.writeFileSync(tempInputPath, fileBytes);
+                        const isWindows = process.platform === 'win32';
+                        const executableNames = isWindows ? ['gltfpack.exe', 'gltfpack'] : ['gltfpack', 'gltfpack.exe'];
+                        let gltfPackExe: string | null = null;
+                        for (const exeName of executableNames) {
+                            gltfPackExe = this.findPath(path.join('ThirdPartyBinaries', exeName), documentDir) ||
+                                          this.findPath(exeName, documentDir);
+                            if (gltfPackExe) {
+                                break;
+                            }
+                        }
+
+                        if (!gltfPackExe) {
+                            gltfPackExe = executableNames[0];
+                        }
+
+                        cp.execFileSync(gltfPackExe, [
+                            '-tc',
+                            '-noq',
+                            '-i', tempInputPath,
+                            '-o', tempOutputPath
+                        ], {
+                            windowsHide: true,
+                            timeout: 60000
+                        });
+
+                        if (fs.existsSync(tempOutputPath)) {
+                            fileBytes = fs.readFileSync(tempOutputPath);
+                        }
+                    } catch (cmdEx) {
+                        console.warn(`gltfpack execution failed, falling back to original GLB: ${cmdEx}`);
+                    } finally {
+                        try {
+                            if (fs.existsSync(tempFolder)) {
+                                fs.rmSync(tempFolder, { recursive: true, force: true });
+                            }
+                        } catch {}
+                    }
+                } catch (tempEx) {
+                    console.warn(`Temp directory handling failed, importing original GLB: ${tempEx}`);
+                }
+
                 const subDir = path.join(targetDir, 'Assets', 'models', subCategory);
                 if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
-                const baseName = path.basename(fileName, path.extname(fileName)) + '.glb';
+                const baseName = originalFileName;
                 const targetPath = path.join(subDir, baseName);
                 fs.writeFileSync(targetPath, fileBytes);
                 const blake3 = this.computeHashHex(fileBytes);
@@ -725,7 +857,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         }
 
         for (const root of searchRoots) {
-            for (const subDir of candidateSubDirs) {
+        for (const subDir of candidateSubDirs) {
                 const fullCandidate = subDir ? path.join(root, subDir, cleanPath) : path.join(root, cleanPath);
                 if (fs.existsSync(fullCandidate)) {
                     return fullCandidate;
