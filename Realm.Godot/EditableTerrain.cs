@@ -492,6 +492,7 @@ public partial class EditableTerrain : StaticBody3D
 	
 	private List<TerrainChunk> _chunks = new List<TerrainChunk>();
 	private ShaderMaterial _material;
+	public ShaderMaterial Material => _material;
 	private ShaderMaterial _shallowWaterMaterial;
 	private ShaderMaterial _deepWaterMaterial;
 
@@ -927,7 +928,13 @@ uniform float macro_roughness_contrast = 0.15;
 uniform float macro_normal_strength = 0.15;
 uniform float macro_lacunarity = 2.0;
 uniform float macro_gain = 0.5;
+
 uniform bool enable_stochastic = true;
+uniform bool enable_normal_mapping = true;
+uniform bool enable_macro_noise = true;
+uniform bool enable_height_blend = true;
+uniform bool enable_fast_planar = false;
+
 uniform vec4 swatch_params[32];
 
 varying vec4 v_tex_indices;
@@ -1041,6 +1048,10 @@ vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, ve
 	vec2 scaled_uv_y = uv_y * uv_scale;
 	vec2 scaled_uv_z = uv_z * uv_scale;
 
+	if (enable_fast_planar && weights.y > 0.90) {
+		return sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size);
+	}
+
 	vec4 col_x = sample_stochastic_layer(tex_array, layer, scaled_uv_x, tile_mode, stoch_tile_size);
 	vec4 col_y = sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size);
 	vec4 col_z = sample_stochastic_layer(tex_array, layer, scaled_uv_z, tile_mode, stoch_tile_size);
@@ -1062,14 +1073,17 @@ void fragment() {
 	float bw_sum = blend_weights.x + blend_weights.y + blend_weights.z;
 	blend_weights = bw_sum > 0.0001 ? blend_weights / bw_sum : vec3(0.0, 1.0, 0.0);
 
-	float base_fbm_val = macro_fbm(v_world_pos.xz * macro_scale);
-
 	vec3 pos_warped = v_world_pos;
-	if (uv_warp_strength > 0.0) {
-		float warp_x = (base_fbm_val - 0.5) * 2.0;
-		float warp_y = (macro_fbm((v_world_pos.xz + vec2(17.3, 31.7)) * macro_scale) - 0.5) * 2.0;
-		vec2 warp_offset = vec2(warp_x, warp_y);
-		pos_warped += vec3(warp_offset.x, warp_offset.y, warp_offset.x) * uv_warp_strength * 0.05 / max(0.001, macro_scale);
+	float base_fbm_val = 0.5;
+
+	if (enable_macro_noise) {
+		base_fbm_val = macro_fbm(v_world_pos.xz * macro_scale);
+		if (uv_warp_strength > 0.0) {
+			float warp_x = (base_fbm_val - 0.5) * 2.0;
+			float warp_y = (macro_fbm((v_world_pos.xz + vec2(17.3, 31.7)) * macro_scale) - 0.5) * 2.0;
+			vec2 warp_offset = vec2(warp_x, warp_y);
+			pos_warped += vec3(warp_offset.x, warp_offset.y, warp_offset.x) * uv_warp_strength * 0.05 / max(0.001, macro_scale);
+		}
 	}
 
 	vec2 uv_x = pos_warped.zy * texture_scale;
@@ -1085,31 +1099,40 @@ void fragment() {
 	float weight_sum = raw_weights.x + raw_weights.y + raw_weights.z + raw_weights.w;
 	vec4 norm_weights = weight_sum > 0.0001 ? raw_weights / weight_sum : vec4(0.0);
 
-	vec4 c0 = norm_weights.x > 0.0 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
-	vec4 c1 = norm_weights.y > 0.0 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
-	vec4 c2 = norm_weights.z > 0.0 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
-	vec4 c3 = norm_weights.w > 0.0 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
+	vec3 splat_color = vec3(0.0);
 
-	float height_influence = 0.15;
-	vec4 height_mod = vec4(c0.a, c1.a, c2.a, c3.a) * height_influence;
-	vec4 blended_weights = norm_weights * (vec4(1.0) + height_mod);
+	if (enable_fast_planar && norm_weights.x > 0.98) {
+		vec4 c0 = sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights);
+		splat_color = c0.rgb;
+	} else {
+		vec4 c0 = norm_weights.x > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
+		vec4 c1 = norm_weights.y > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
+		vec4 c2 = norm_weights.z > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
+		vec4 c3 = norm_weights.w > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
 
-	float final_sum = blended_weights.x + blended_weights.y + blended_weights.z + blended_weights.w;
-	vec4 final_weights = final_sum > 0.0001 ? blended_weights / final_sum : vec4(1.0, 0.0, 0.0, 0.0);
-
-	float w0 = final_weights.x;
-	float w1 = final_weights.y;
-	float w2 = final_weights.z;
-	float w3 = final_weights.w;
-	
-	vec3 splat_color = (c0.rgb * w0 +
-	                    c1.rgb * w1 +
-	                    c2.rgb * w2 +
-	                    c3.rgb * w3);
+		if (enable_height_blend) {
+			float height_influence = 0.15;
+			vec4 height_mod = vec4(c0.a, c1.a, c2.a, c3.a) * height_influence;
+			vec4 blended_weights = norm_weights * (vec4(1.0) + height_mod);
+			float final_sum = blended_weights.x + blended_weights.y + blended_weights.z + blended_weights.w;
+			vec4 final_weights = final_sum > 0.0001 ? blended_weights / final_sum : vec4(1.0, 0.0, 0.0, 0.0);
+			splat_color = (c0.rgb * final_weights.x +
+			               c1.rgb * final_weights.y +
+			               c2.rgb * final_weights.z +
+			               c3.rgb * final_weights.w);
+		} else {
+			splat_color = (c0.rgb * norm_weights.x +
+			               c1.rgb * norm_weights.y +
+			               c2.rgb * norm_weights.z +
+			               c3.rgb * norm_weights.w);
+		}
+	}
 
 	vec3 terrain_color = splat_color;
-
-	float macro_var = mix(1.0 - macro_albedo_contrast, 1.0 + macro_albedo_contrast, base_fbm_val);
+	float macro_var = 1.0;
+	if (enable_macro_noise) {
+		macro_var = mix(1.0 - macro_albedo_contrast, 1.0 + macro_albedo_contrast, base_fbm_val);
+	}
 
 	vec3 final_albedo = terrain_color * macro_var * v_color.rgb;
 	vec3 emission_color = vec3(0.0);
@@ -1180,37 +1203,54 @@ void fragment() {
 		}
 	}
 
-	vec4 n0 = w0 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
-	vec4 n1 = w1 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
-	vec4 n2 = w2 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
-	vec4 n3 = w3 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
-	
-	vec2 n0_xy = vec2(n0.r * 2.0 - 1.0, (1.0 - n0.g) * 2.0 - 1.0);
-	vec3 n0_vec = vec3(n0_xy, sqrt(max(0.0, 1.0 - dot(n0_xy, n0_xy))));
-	
-	vec2 n1_xy = vec2(n1.r * 2.0 - 1.0, (1.0 - n1.g) * 2.0 - 1.0);
-	vec3 n1_vec = vec3(n1_xy, sqrt(max(0.0, 1.0 - dot(n1_xy, n1_xy))));
-	
-	vec2 n2_xy = vec2(n2.r * 2.0 - 1.0, (1.0 - n2.g) * 2.0 - 1.0);
-	vec3 n2_vec = vec3(n2_xy, sqrt(max(0.0, 1.0 - dot(n2_xy, n2_xy))));
-	
-	vec2 n3_xy = vec2(n3.r * 2.0 - 1.0, (1.0 - n3.g) * 2.0 - 1.0);
-	vec3 n3_vec = vec3(n3_xy, sqrt(max(0.0, 1.0 - dot(n3_xy, n3_xy))));
-	
-	vec3 blended_normal_tangent = normalize(n0_vec * w0 + n1_vec * w1 + n2_vec * w2 + n3_vec * w3);
+	vec3 blended_normal_tangent = vec3(0.0, 0.0, 1.0);
+	float blended_ao = 1.0;
+	float final_roughness = 0.9;
+	float specular_amt = 0.0;
 
-	if (macro_normal_strength > 0.0) {
-		float n_noise_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
-		float n_noise_z = (macro_fbm((v_world_pos.xz + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.0, 0.1)) * macro_scale));
-		vec3 noise_normal = vec3(n_noise_x * macro_normal_strength, n_noise_z * macro_normal_strength, 1.0);
-		blended_normal_tangent = normalize(blended_normal_tangent + noise_normal);
+	if (enable_normal_mapping) {
+		float w0 = norm_weights.x;
+		float w1 = norm_weights.y;
+		float w2 = norm_weights.z;
+		float w3 = norm_weights.w;
+
+		vec4 n0 = w0 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 n1 = w1 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 n2 = w2 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 n3 = w3 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
+		
+		vec2 n0_xy = vec2(n0.r * 2.0 - 1.0, (1.0 - n0.g) * 2.0 - 1.0);
+		vec3 n0_vec = vec3(n0_xy, sqrt(max(0.0, 1.0 - dot(n0_xy, n0_xy))));
+		
+		vec2 n1_xy = vec2(n1.r * 2.0 - 1.0, (1.0 - n1.g) * 2.0 - 1.0);
+		vec3 n1_vec = vec3(n1_xy, sqrt(max(0.0, 1.0 - dot(n1_xy, n1_xy))));
+		
+		vec2 n2_xy = vec2(n2.r * 2.0 - 1.0, (1.0 - n2.g) * 2.0 - 1.0);
+		vec3 n2_vec = vec3(n2_xy, sqrt(max(0.0, 1.0 - dot(n2_xy, n2_xy))));
+		
+		vec2 n3_xy = vec2(n3.r * 2.0 - 1.0, (1.0 - n3.g) * 2.0 - 1.0);
+		vec3 n3_vec = vec3(n3_xy, sqrt(max(0.0, 1.0 - dot(n3_xy, n3_xy))));
+		
+		blended_normal_tangent = normalize(n0_vec * w0 + n1_vec * w1 + n2_vec * w2 + n3_vec * w3);
+
+		if (enable_macro_noise && macro_normal_strength > 0.0) {
+			float n_noise_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
+			float n_noise_z = (macro_fbm((v_world_pos.xz + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.0, 0.1)) * macro_scale));
+			vec3 noise_normal = vec3(n_noise_x * macro_normal_strength, n_noise_z * macro_normal_strength, 1.0);
+			blended_normal_tangent = normalize(blended_normal_tangent + noise_normal);
+		}
+
+		blended_ao = (n0.b * w0 + n1.b * w1 + n2.b * w2 + n3.b * w3);
+		float blended_roughness = (n0.a * w0 + n1.a * w1 + n2.a * w2 + n3.a * w3);
+
+		if (enable_macro_noise) {
+			float macro_roughness_var = mix(1.0 - macro_roughness_contrast, 1.0 + macro_roughness_contrast, base_fbm_val);
+			final_roughness = clamp(blended_roughness * macro_roughness_var, 0.05, 1.0);
+		} else {
+			final_roughness = clamp(blended_roughness, 0.05, 1.0);
+		}
+		specular_amt = 0.2;
 	}
-
-	float blended_ao = (n0.b * w0 + n1.b * w1 + n2.b * w2 + n3.b * w3);
-	float blended_roughness = (n0.a * w0 + n1.a * w1 + n2.a * w2 + n3.a * w3);
-
-	float macro_roughness_var = mix(1.0 - macro_roughness_contrast, 1.0 + macro_roughness_contrast, base_fbm_val);
-	float final_roughness = clamp(blended_roughness * macro_roughness_var, 0.05, 1.0);
 
 	vec2 fog_uv = (v_world_pos.xz - fog_world_min) / fog_world_size;
 	float fog_factor = texture(fog_texture, clamp(fog_uv, 0.0, 1.0)).r;
@@ -1218,11 +1258,19 @@ void fragment() {
 	emission_color *= (1.0 - fog_factor * 0.98);
 
 	ALBEDO = final_albedo;
-	NORMAL = TANGENT * blended_normal_tangent.x + BINORMAL * blended_normal_tangent.y + NORMAL * blended_normal_tangent.z;
-	AO = blended_ao * (1.0 - fog_factor * 0.98) * v_color.r;
-	ROUGHNESS = mix(final_roughness, 1.0, fog_factor);
-	METALLIC = 0.0;                 
-	SPECULAR = 0.2 * (1.0 - fog_factor * 0.98);                 
+	if (enable_normal_mapping) {
+		NORMAL = TANGENT * blended_normal_tangent.x + BINORMAL * blended_normal_tangent.y + NORMAL * blended_normal_tangent.z;
+		AO = blended_ao * (1.0 - fog_factor * 0.98) * v_color.r;
+		ROUGHNESS = mix(final_roughness, 1.0, fog_factor);
+		METALLIC = 0.0;                 
+		SPECULAR = specular_amt * (1.0 - fog_factor * 0.98);
+	} else {
+		NORMAL = v_world_normal;
+		AO = (1.0 - fog_factor * 0.98) * v_color.r;
+		ROUGHNESS = mix(final_roughness, 1.0, fog_factor);
+		METALLIC = 0.0;
+		SPECULAR = 0.0;
+	}
 	EMISSION = emission_color;
 }
 ";
@@ -1241,12 +1289,52 @@ void fragment() {
 		_material.SetShaderParameter("terrain_size", new Vector2(Width * QuadSize, Depth * QuadSize));
 		_material.SetShaderParameter("texture_scale", 1.0f / QuadSize);
 
+		ApplyQualitySettings(GameSettings.QualityIdx);
+
 		CreateChunks();
 		CreateWater();
 
 		if (GameHost.Instance == null || !GameHost.Instance.IsLoadingMap)
 		{
 			UpdateMeshAndPhysics();
+		}
+	}
+
+	public void ApplyQualitySettings(int qualityIdx)
+	{
+		if (_material == null) return;
+
+		switch (qualityIdx)
+		{
+			case 0:
+				_material.SetShaderParameter("enable_stochastic", true);
+				_material.SetShaderParameter("enable_normal_mapping", false);
+				_material.SetShaderParameter("enable_macro_noise", false);
+				_material.SetShaderParameter("enable_height_blend", false);
+				_material.SetShaderParameter("enable_fast_planar", true);
+				break;
+			case 1:
+				_material.SetShaderParameter("enable_stochastic", true);
+				_material.SetShaderParameter("enable_normal_mapping", true);
+				_material.SetShaderParameter("enable_macro_noise", false);
+				_material.SetShaderParameter("enable_height_blend", false);
+				_material.SetShaderParameter("enable_fast_planar", true);
+				break;
+			case 2:
+				_material.SetShaderParameter("enable_stochastic", true);
+				_material.SetShaderParameter("enable_normal_mapping", true);
+				_material.SetShaderParameter("enable_macro_noise", true);
+				_material.SetShaderParameter("enable_height_blend", true);
+				_material.SetShaderParameter("enable_fast_planar", false);
+				break;
+			case 3:
+			default:
+				_material.SetShaderParameter("enable_stochastic", true);
+				_material.SetShaderParameter("enable_normal_mapping", true);
+				_material.SetShaderParameter("enable_macro_noise", true);
+				_material.SetShaderParameter("enable_height_blend", true);
+				_material.SetShaderParameter("enable_fast_planar", false);
+				break;
 		}
 	}
 

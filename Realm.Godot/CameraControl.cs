@@ -408,7 +408,7 @@ public partial class CameraControl : Camera3D
 
 	public override void _Input(InputEvent @event)
 	{
-		if (IsLocked || (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive)) return;
+		if (IsLocked || (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive) || SettingsMenu.IsOpen) return;
 
 		if (@event is InputEventMouseButton mouseBtn)
 		{

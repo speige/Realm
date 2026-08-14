@@ -1052,10 +1052,22 @@ public partial class GameHost
 
 	private bool IsMouseOverUI()
 	{
+		if (SettingsMenu.IsOpen)
+		{
+			return true;
+		}
+
 		if (GodotObject.IsInstanceValid(MapEditorHUD.Instance))
 		{
 			return MapEditorHUD.Instance.IsMouseOverUI(GetViewport().GetMousePosition());
 		}
+
+		var hoveredControl = GetViewport().GuiGetHoveredControl();
+		if (hoveredControl != null && (InGameHUD.Instance == null || hoveredControl != InGameHUD.Instance))
+		{
+			return true;
+		}
+
 		var mousePos = GetViewport().GetMousePosition();
 		var viewportSize = GetViewport().GetVisibleRect().Size;
 		

@@ -22,6 +22,12 @@ public partial class GameHost
 
 	public override void _UnhandledInput(InputEvent @event)
 	{
+		if (SettingsMenu.IsOpen)
+		{
+			GetViewport().SetInputAsHandled();
+			return;
+		}
+
 		if (@event is InputEventMouseButton globalMb && globalMb.ButtonIndex == MouseButton.Left)
 		{
 			if (globalMb.Pressed)

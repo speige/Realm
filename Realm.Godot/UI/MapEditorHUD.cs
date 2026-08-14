@@ -66,6 +66,7 @@ public partial class MapEditorHUD : Control
 	private bool _rightPanelExpanded = true;
 
 	private OptionButton _optModule;
+	private Button _btnSettings;
 	private EditorModule _activeModule = EditorModule.Terrain;
 
 	private VBoxContainer _accordionBrush;
@@ -426,6 +427,12 @@ public partial class MapEditorHUD : Control
 		_optModule.AddItem("🗺️ " + TranslationServer.Translate("COORDINATES"), (int)EditorModule.Coordinates);
 		_optModule.AddItem("📋 " + TranslationServer.Translate("CLIPBOARD"), (int)EditorModule.Clipboard);
 		_optModule.ItemSelected += (index) => SwitchModule((EditorModule)index);
+
+		_btnSettings = GetNodeOrNull<Button>("TopLeftBox/BtnSettings");
+		if (_btnSettings != null)
+		{
+			SetupIconButton(_btnSettings, "res://Assets/UI/gear_icon.png", () => UIManager.Instance?.OpenSettingsOverlay(), "Settings");
+		}
 
 		_statusLabel = GetNode<Label>("TopBar/HBox/StatusLabel");
 		_feedbackLabel = GetNode<Label>("FeedbackLabel");
@@ -4869,6 +4876,59 @@ public partial class MapEditorHUD : Control
 		};
 	}
 
+	private void SetupIconButton(Button btn, string iconPath, Action onClick, string tooltip = "")
+	{
+		btn.Flat = false;
+		btn.Text = "";
+		btn.Icon = null;
+		btn.CustomMinimumSize = new Vector2(36, 32);
+		btn.FocusMode = FocusModeEnum.None;
+		btn.AddThemeConstantOverride("icon_max_width", 0);
+
+		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+
+		foreach (Node child in btn.GetChildren())
+		{
+			if (child is TextureRect) child.QueueFree();
+		}
+
+		var iconRect = new TextureRect();
+		iconRect.Name = "IconRect";
+		iconRect.Texture = GD.Load<Texture2D>(iconPath);
+		iconRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		iconRect.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
+		iconRect.MouseFilter = MouseFilterEnum.Ignore;
+		iconRect.AnchorLeft = 0;
+		iconRect.AnchorTop = 0;
+		iconRect.AnchorRight = 1;
+		iconRect.AnchorBottom = 1;
+		iconRect.OffsetLeft = 7;
+		iconRect.OffsetTop = 5;
+		iconRect.OffsetRight = -7;
+		iconRect.OffsetBottom = -5;
+		iconRect.Modulate = UIStyle.ColorGoldDull;
+		btn.AddChild(iconRect);
+
+		btn.MouseEntered += () => iconRect.Modulate = UIStyle.ColorGold;
+		btn.MouseExited += () => iconRect.Modulate = UIStyle.ColorGoldDull;
+		btn.ButtonDown += () => iconRect.Modulate = UIStyle.ColorCyanGlow;
+		btn.ButtonUp += () => iconRect.Modulate = btn.IsHovered() ? UIStyle.ColorGold : UIStyle.ColorGoldDull;
+
+		if (!string.IsNullOrEmpty(tooltip))
+		{
+			btn.TooltipText = TranslationServer.Translate(tooltip);
+		}
+
+		btn.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			onClick?.Invoke();
+		};
+	}
+
 	private void SetupTextureSwatches(bool connectEvents = false)
 	{
 		_swatchPaths.Clear();
@@ -5095,6 +5155,11 @@ public partial class MapEditorHUD : Control
 
 	public bool IsMouseOverUI(Vector2 mousePos)
 	{
+		if (SettingsMenu.IsOpen)
+		{
+			return true;
+		}
+
 		if (_minimapController != null && _minimapController.IsDragging)
 		{
 			return true;
@@ -6298,7 +6363,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnHeaderLightingTuning;
 	private VBoxContainer _contentLightingTuning;
 
-	private bool _tuneOverrideDayNight = true;
+	private bool _tuneOverrideDayNight = false;
 
 	private float _tuneSunPitch = 55.0f;
 	private float _tuneSunYaw = 20.0f;
@@ -6487,6 +6552,8 @@ public partial class MapEditorHUD : Control
 			GameHost.Instance.EnvironmentService.OverrideDayNightVisuals = _tuneOverrideDayNight;
 		}
 
+		if (!_tuneOverrideDayNight) return;
+
 		if (sun != null)
 		{
 			sun.RotationDegrees = new Vector3(_tuneSunPitch, _tuneSunYaw, 0f);
@@ -6502,23 +6569,25 @@ public partial class MapEditorHUD : Control
 			env.AmbientLightColor = new Color(_tuneAmbientR, _tuneAmbientG, _tuneAmbientB);
 			env.AmbientLightEnergy = _tuneAmbientEnergy;
 
-			env.FogEnabled = _tuneFogEnabled;
-			env.FogDensity = _tuneFogDensity;
-			env.FogLightColor = new Color(_tuneFogR, _tuneFogG, _tuneFogB);
+			GameSettings.ApplyEnvironmentQuality(env);
 
-			env.SsaoEnabled = _tuneSsaoEnabled;
-			env.SsaoRadius = _tuneSsaoRadius;
-			env.SsaoIntensity = _tuneSsaoIntensity;
+			if (GameSettings.QualityIdx > 0)
+			{
+				env.FogEnabled = _tuneFogEnabled;
+				env.FogDensity = _tuneFogDensity;
+				env.FogLightColor = new Color(_tuneFogR, _tuneFogG, _tuneFogB);
 
-			env.TonemapMode = Godot.Environment.ToneMapper.Aces;
-			env.TonemapExposure = _tuneExposure;
-			env.AdjustmentEnabled = true;
-			env.AdjustmentContrast = _tuneContrast;
-			env.AdjustmentSaturation = _tuneSaturation;
+				env.SsaoEnabled = _tuneSsaoEnabled;
+				env.SsaoRadius = _tuneSsaoRadius;
+				env.SsaoIntensity = _tuneSsaoIntensity;
 
-			env.GlowEnabled = true;
-			env.GlowIntensity = _tuneBloomIntensity;
-			env.GlowBloom = _tuneBloomThreshold;
+				env.TonemapExposure = _tuneExposure;
+				env.AdjustmentContrast = _tuneContrast;
+				env.AdjustmentSaturation = _tuneSaturation;
+
+				env.GlowIntensity = _tuneBloomIntensity;
+				env.GlowBloom = _tuneBloomThreshold;
+			}
 		}
 	}
 

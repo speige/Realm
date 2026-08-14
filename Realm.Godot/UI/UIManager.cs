@@ -429,6 +429,8 @@ public partial class UIManager : Control
 
 	public void OpenSettingsOverlay()
 	{
+		if (SettingsMenu.IsOpen) return;
+
 		var settingsPopup = GD.Load<PackedScene>("res://UI/SettingsMenu.tscn").Instantiate<SettingsMenu>();
 		settingsPopup.IsOverlay = true;
 		AddChild(settingsPopup);
