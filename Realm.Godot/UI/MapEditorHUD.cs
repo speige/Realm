@@ -2784,6 +2784,7 @@ public partial class MapEditorHUD : Control
 					_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
 					_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
 					ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
+					SaveCurrentDirectoryBlake3();
 				}
 				else
 				{
