@@ -2133,7 +2133,7 @@ void fragment() {
 		if (chunk.ShallowWaterMesh != null) chunk.ShallowWaterMesh.CustomAabb = chunk.WorldAabb;
 		if (chunk.DeepWaterMesh != null) chunk.DeepWaterMesh.CustomAabb = chunk.WorldAabb;
 
-		if (rebuildPhysics)
+		if (rebuildPhysics || chunk.CollisionShape.Shape == null)
 		{
 			UpdateChunkPhysics(chunk);
 		}

@@ -228,6 +228,7 @@ public partial class GameHost : Node3D, IGameAPI
 
 	public bool IsMapEditorMode { get; set; }
 	public bool IsLoadingMap { get; set; }
+	public bool IsGameOver { get; private set; }
 	private EditableTerrain _groundTerrain;
 	public EditableTerrain GroundTerrain
 	{
@@ -546,6 +547,7 @@ public partial class GameHost : Node3D, IGameAPI
 				}
 			}
 			MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
+			UpdateEditorCoverageOverlay();
 		}
 	}
 	private Node? _selectedEditorObject;
@@ -612,6 +614,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public string[]? PathingCapabilities { get; set; }
 		public int PathingType { get; set; }
 		public float? ObstacleRadius { get; set; }
+		public string[]? Targets { get; set; }
 	}
 
 	public struct PropMetadata
@@ -1025,12 +1028,14 @@ public partial class GameHost : Node3D, IGameAPI
 	void IGameAPI.TriggerVictory()
 	{
 		GD.Print("[GameHost] Victory triggered by map script!");
+		IsGameOver = true;
 		UIManager.Instance?.CallDeferred(nameof(UIManager.TransitionTo), (int)GameScreen.GameOver, true);
 	}
 
 	void IGameAPI.TriggerDefeat()
 	{
 		GD.Print("[GameHost] Defeat triggered by map script!");
+		IsGameOver = true;
 		UIManager.Instance?.CallDeferred(nameof(UIManager.TransitionTo), (int)GameScreen.GameOver, false);
 	}
 
@@ -2597,6 +2602,10 @@ public class {mapName} : IMapScript
 		}
 
 		UnitRegistry.Clear();
+		foreach (var kvp in DefaultRegistryFallback)
+		{
+			UnitRegistry[kvp.Key] = kvp.Value;
+		}
 		PropRegistry.Clear();
 		ResourceRegistry.Clear();
 		Prop3D.ClearModelPathCache();
@@ -2702,17 +2711,12 @@ public class {mapName} : IMapScript
 				GD.PrintErr($"Failed to load custom unit registry: {ex.Message}");
 			}
 		}
-
-		// Fallback: If no metadata.json exists or it failed to parse, use default values so the game doesn't crash.
-		foreach (var kvp in DefaultRegistryFallback)
-		{
-			UnitRegistry[kvp.Key] = kvp.Value;
-		}
 	}
 
 	private void LoadMapScript(string mapName)
 	{
 		_activeMapScript = null;
+		IsGameOver = false;
 
 		string normalizedRaw = mapName.Replace('\\', '/');
 		bool isCustomPath = normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRaw);
@@ -2953,6 +2957,7 @@ public class {mapName} : IMapScript
 		_simulationService = ServiceLocator.Get<SimulationService>();
 		_simulationService.SetRuntimeReferences(AllUnits, AllProps, _castlesList, _definitionManager, _goldResourceId, _woodResourceId, _stoneResourceId, GroundTerrain);
 		_simulationService.Initialize();
+		_simulationService.EditorHeightProvider = p => _editorService.GetTerrainHeightAt(new Vector3(p.X, p.Y, p.Z));
 
 		_simulationService.OnArrowProjectileRequested = (start, target) => SpawnArrowProjectile(new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z));
 		_simulationService.OnDamageFlashRequested = entity =>
@@ -2972,6 +2977,7 @@ public class {mapName} : IMapScript
 		};
 		_simulationService.OnKillUnitRequested = entity =>
 		{
+			_warnedNonFinitePositions.Remove(entity);
 			if (EcsWorld.IsAlive(entity) && GameHost.TryGetUnit3D(entity, out var unit3D))
 			{
 				this.CallDeferred(nameof(KillUnit), unit3D);
@@ -2992,6 +2998,10 @@ public class {mapName} : IMapScript
 					? GetUnitWrapper(attackerEntity)
 					: null;
 				OnUnitDamaged?.Invoke(GetUnitWrapper(targetEntity), attackerWrapper, damage);
+				if (GameHost.TryGetUnit3D(targetEntity, out var targetUnit3D))
+				{
+					_fxService.SpawnDamageNumber(this, targetUnit3D.GlobalPosition, damage);
+				}
 			}
 		};
 		_simulationService.OnUnitAttackedCallback = (attackerEntity, targetEntity) =>
@@ -3351,6 +3361,10 @@ public class {mapName} : IMapScript
 		BuildDependencyInjection();
 		ResolveServices();
 
+		// Do not trigger lazy GroundTerrain creation here: InitializeGameEcs()
+		// builds the ground exactly once (CreateGround at GameHost.cs:2751).
+		// Triggering the getter here previously built the whole 128x128 mesh/water/navmesh
+		// a second time on every _Ready, stalling the main thread at startup.
 		if (_groundTerrain != null)
 		{
 			_editorService.SetTerrainSplatMap(_groundTerrain.SplatMap);
@@ -3668,17 +3682,19 @@ public class {mapName} : IMapScript
 		float attackCooldown = 1.5f;
 		bool isHero = false;
 		int pathingFlags = 8;
+		string[]? targets = null;
 		if (UnitRegistry.TryGetValue(id, out var regMeta))
 		{
 			if (regMeta.ScanRadius > 0) scanRadius = regMeta.ScanRadius;
 			if (regMeta.AttackCooldown > 0) attackCooldown = regMeta.AttackCooldown;
 			isHero = regMeta.IsHero;
 			pathingFlags = GetUnitPathingFlags(regMeta);
+			targets = regMeta.Targets;
 		}
 
 		var entity = _unitSpawnService.CreateEcsUnitEntity(
 			id, name, hp, damage, range, armor, speed, scanRadius, isHero, attackCooldown, pathingFlags, pos, owner,
-			_playerEntity, HasShieldsUpgrade, HasWeaponsUpgrade
+			_playerEntity, HasShieldsUpgrade, HasWeaponsUpgrade, targets
 		);
 
 		OnUnitCreated?.Invoke(GetUnitWrapper(entity));
@@ -3888,6 +3904,18 @@ public class {mapName} : IMapScript
 			return radius;
 		}
 
+		// Prefer the radius measured at import time (persisted per model key) so custom map
+		// assets get a correct collision footprint without needing code-side collision shapes.
+		if (node != null)
+		{
+			string modelKey = GetModelAssetKey(node);
+			if (!string.IsNullOrEmpty(modelKey) && ModelObstacleRadii.TryGetValue(modelKey, out float measuredRadius) && measuredRadius > 0f)
+			{
+				ObstacleRadiusCache[id] = measuredRadius;
+				return measuredRadius;
+			}
+		}
+
 		float calculatedRadius = 0.5f;
 		if (node != null)
 		{
@@ -3945,6 +3973,86 @@ public class {mapName} : IMapScript
 		return maxRadius;
 	}
 
+	/// <summary>
+	///     Measures the horizontal footprint radius (max corner distance from the origin in the
+	///     XZ plane) of a freshly instantiated model. Used at import time to persist an obstacle
+	///     radius for custom map assets that have no code-side collision shapes.
+	/// </summary>
+	public float MeasureModelRadius(Node3D root)
+	{
+		if (root == null) return 0f;
+		float maxRadius = 0f;
+		MeasureModelRadiusRecursive(root, Transform3D.Identity, ref maxRadius);
+		return maxRadius;
+	}
+
+	private void MeasureModelRadiusRecursive(Node3D node, Transform3D parentXform, ref float maxRadius)
+	{
+		var localXform = parentXform * node.Transform;
+		if (node is MeshInstance3D meshNode && meshNode.Mesh != null)
+		{
+			var aabb = meshNode.Mesh.GetAabb();
+			if (aabb.Size != Vector3.Zero)
+			{
+				for (int i = 0; i < 8; i++)
+				{
+					var corner = localXform * aabb.GetEndpoint(i);
+					float r = Mathf.Sqrt(corner.X * corner.X + corner.Z * corner.Z);
+					if (r > maxRadius) maxRadius = r;
+				}
+			}
+		}
+		foreach (var child in node.GetChildren())
+		{
+			if (child is Node3D child3D)
+			{
+				MeasureModelRadiusRecursive(child3D, localXform, ref maxRadius);
+			}
+		}
+	}
+
+	/// <summary>
+	///     Returns true when the entity's pathing flags include the given capability
+	///     (e.g. <see cref="TerrainPathingFlags.Flying"/>).
+	/// </summary>
+	internal bool IsPathingCapability(Entity entity, TerrainPathingFlags capability)
+	{
+		if (EcsWorld == null || !EcsWorld.IsAlive(entity) || !EcsWorld.Has<PathingFlags>(entity)) return false;
+		int flags = EcsWorld.Get<PathingFlags>(entity).Value;
+		return ((TerrainPathingFlags)flags & capability) != 0;
+	}
+
+	private static ImageTexture _sharedShadowGradient;
+
+	/// <summary>
+	///     Shared radial gradient used by flying-unit drop-shadow decals. One texture is
+	///     generated once and reused by every unit to avoid per-unit allocations.
+	/// </summary>
+	public Texture2D GetSharedShadowGradient()
+	{
+		if (_sharedShadowGradient != null && GodotObject.IsInstanceValid(_sharedShadowGradient))
+		{
+			return _sharedShadowGradient;
+		}
+
+		const int size = 256;
+		var img = Image.CreateEmpty(size, size, false, Image.Format.Rgba8);
+		for (int y = 0; y < size; y++)
+		{
+			for (int x = 0; x < size; x++)
+			{
+				float dx = (x + 0.5f) / size - 0.5f;
+				float dy = (y + 0.5f) / size - 0.5f;
+				float dist = Mathf.Sqrt(dx * dx + dy * dy) * 2f;
+				float alpha = Mathf.Clamp(1f - dist, 0f, 1f);
+				alpha *= alpha;
+				img.SetPixel(x, y, new Color(0f, 0f, 0f, alpha));
+			}
+		}
+		_sharedShadowGradient = ImageTexture.CreateFromImage(img);
+		return _sharedShadowGradient;
+	}
+
 	private List<T> FindChildrenOfType<T>(Node parent) where T : Node
 	{
 		var result = new List<T>();
@@ -3971,6 +4079,11 @@ public class {mapName} : IMapScript
 
 	private void ProcessGameplayTick(float fDelta)
 	{
+		if (IsGameOver)
+		{
+			return;
+		}
+
 		float actualIntervalMs = 0f;
 		if (Multiplayer.MultiplayerPeer == null || Multiplayer.IsServer())
 		{

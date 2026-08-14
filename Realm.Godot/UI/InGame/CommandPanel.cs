@@ -506,7 +506,7 @@ public class CommandPanel
 		{
 			if (focusedUnit.UnitId == "castle")
 			{
-				string[] trainOptions = hasMetadata && meta.BuildOptions != null && meta.BuildOptions.Length > 0 ? meta.BuildOptions : new[] { "soldier", "archer", "priest", "worker" };
+				string[] trainOptions = hasMetadata && meta.BuildOptions != null && meta.BuildOptions.Length > 0 ? meta.BuildOptions : System.Array.Empty<string>();
 				foreach (var opt in trainOptions)
 				{
 					items.Add(CreateTrainOptionItem(opt));

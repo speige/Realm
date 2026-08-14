@@ -255,6 +255,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnInspectorScaleUp;
 	private Button _btnInspectorScaleReset;
 	private Button _btnInspectorDelete;
+	private Button _btnShowCoverage;
 
 	private Button _btnPathingBrush;
 	private Button _btnFloodFillPathing;
@@ -1388,6 +1389,17 @@ public partial class MapEditorHUD : Control
 				typeStr = "DECAL";
 				nameStr = System.IO.Path.GetFileName(decal.Name).ToUpper();
 			}
+
+			if (_btnShowCoverage != null)
+			{
+				bool isUnit = selected is Unit3D;
+				_btnShowCoverage.Visible = isUnit;
+				if (isUnit && GameHost.Instance != null)
+				{
+					_btnShowCoverage.SetPressedNoSignal(GameHost.Instance.EditorCoverageOverlayEnabled);
+					_btnShowCoverage.Text = GameHost.Instance.EditorCoverageOverlayEnabled ? TranslationServer.Translate("◉ VISION/ATTACK RANGES: ON") : TranslationServer.Translate("◉ VISION/ATTACK RANGES: OFF");
+				}
+			}
 			
 			if (_viewModel != null)
 			{
@@ -1453,6 +1465,7 @@ public partial class MapEditorHUD : Control
 		{
 			if (_btnHeaderGlobalOverrides != null) _btnHeaderGlobalOverrides.Visible = false;
 			if (_contentGlobalOverrides != null) _contentGlobalOverrides.Visible = false;
+			if (_btnShowCoverage != null) _btnShowCoverage.Visible = false;
 			if (_lblInfoText != null) _lblInfoText.Visible = true;
 			if (_inspectorPanel != null) _inspectorPanel.Visible = false;
 			if (_accordionInspector != null)
@@ -2590,7 +2603,22 @@ public partial class MapEditorHUD : Control
 				System.IO.File.SetAttributes(targetFile, attrs & ~System.IO.FileAttributes.ReadOnly);
 			}
 		}
-		System.IO.File.Copy(sourceFile, targetFile, true);
+
+		// A previous WASM build may still be releasing the target file; retry briefly
+		// so transient file locks do not abort the whole Test copy.
+		const int maxAttempts = 10;
+		for (int attempt = 0; ; attempt++)
+		{
+			try
+			{
+				System.IO.File.Copy(sourceFile, targetFile, true);
+				return;
+			}
+			catch (System.IO.IOException) when (attempt < maxAttempts - 1)
+			{
+				System.Threading.Thread.Sleep(250);
+			}
+		}
 	}
 
 	private void CopyFolderToTempWorkspace(string sourceFolder)
@@ -3694,7 +3722,8 @@ public partial class MapEditorHUD : Control
 							.Where(f => {
 								string rel = f.Substring(dir.Length).TrimStart(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
 								return !rel.StartsWith("bin", System.StringComparison.OrdinalIgnoreCase) && !rel.StartsWith("obj", System.StringComparison.OrdinalIgnoreCase);
-							});
+							})
+							.Concat(System.IO.Directory.GetFiles(dir, "*.csproj", System.IO.SearchOption.TopDirectoryOnly));
 
 						if (csFiles.Any(f => System.IO.File.GetLastWriteTimeUtc(f) > wasmTime))
 						{
@@ -5401,6 +5430,25 @@ public partial class MapEditorHUD : Control
 		_btnInspectorDelete = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/BtnInspectorDelete");
 		SetupButton(_btnInspectorDelete, "❌ Erase", () => DeleteSelectedObjectAction(), 12, "Erase selected unit, prop, or decal");
 
+		_btnShowCoverage = new Button();
+		_btnShowCoverage.Text = TranslationServer.Translate("◉ VISION/ATTACK RANGES: OFF");
+		_btnShowCoverage.ToggleMode = true;
+		_btnShowCoverage.FocusMode = Control.FocusModeEnum.None;
+		_btnShowCoverage.AddThemeFontSizeOverride("font_size", 11);
+		_btnShowCoverage.ButtonPressed = false;
+		_btnShowCoverage.Toggled += (pressed) =>
+		{
+			if (GameHost.Instance != null)
+			{
+				GameHost.Instance.EditorCoverageOverlayEnabled = pressed;
+				_btnShowCoverage.Text = pressed ? TranslationServer.Translate("◉ VISION/ATTACK RANGES: ON") : TranslationServer.Translate("◉ VISION/ATTACK RANGES: OFF");
+				GameHost.Instance.UpdateEditorCoverageOverlay();
+			}
+		};
+		_btnShowCoverage.Visible = false;
+		var inspectorVBox = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox");
+		inspectorVBox.AddChild(_btnShowCoverage);
+
 		var vbox = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox");
 		if (vbox != null)
 		{
@@ -5444,7 +5492,7 @@ public partial class MapEditorHUD : Control
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 			};
 
-			_sldModelGlobalCollisionCircle = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Collision Circle"), 0.1f, 5.0f, 0.05f, 1.0f, (val) =>
+			_sldModelGlobalCollisionCircle = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Collision Circle"), 0.1f, 10.0f, 0.05f, 1.0f, (val) =>
 			{
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
@@ -5976,6 +6024,34 @@ public partial class MapEditorHUD : Control
 				if (!string.IsNullOrWhiteSpace(text))
 				{
 					root = System.Text.Json.Nodes.JsonNode.Parse(text) as JsonObject ?? new JsonObject();
+				}
+			}
+
+			if (category == "glb" && GameHost.Instance != null)
+			{
+				string normKey = GameHost.Instance.NormalizeModelAssetKey(fileName);
+				if (!GameHost.Instance.ModelObstacleRadii.ContainsKey(normKey))
+				{
+					string modelPath = System.IO.Path.Combine(wsPath, "Assets", "models", subCategory ?? "", fileName);
+					Node3D modelNode = Realm.Godot.Utils.ModelCache.GetModel(modelPath) as Node3D;
+					if (modelNode != null)
+					{
+						float radius = GameHost.Instance.MeasureModelRadius(modelNode);
+						modelNode.Free();
+						if (radius > 0f)
+						{
+							float rounded = (float)Math.Round(radius, 2);
+							GameHost.Instance.ModelObstacleRadii[normKey] = rounded;
+							if (root["ModelObstacleRadii"] is JsonObject radiiObj)
+							{
+								radiiObj[normKey] = rounded;
+							}
+							else
+							{
+								root["ModelObstacleRadii"] = new JsonObject { [normKey] = rounded };
+							}
+						}
+					}
 				}
 			}
 
