@@ -1572,54 +1572,10 @@ public partial class GameHost
 		}
 	}
 	
-
-
-	/// <summary>
-	///     Maps a placed model id (e.g. "castle.glb") to its registered unit id (e.g. "castle")
-	///     so editor-placed units get the real metadata instead of generic dynamic stats.
-	/// </summary>
-	private string ResolveUnitId(string unitId)
-	{
-		if (string.IsNullOrEmpty(unitId)) return unitId;
-		if (UnitRegistry.ContainsKey(unitId)) return unitId;
-
-		string cleanName = System.IO.Path.GetFileName(unitId).TrimEnd('\0');
-		if (!cleanName.EndsWith(".glb", StringComparison.OrdinalIgnoreCase)
-			&& !cleanName.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
-		{
-			cleanName += ".glb";
-		}
-		string baseName = System.IO.Path.GetFileNameWithoutExtension(cleanName);
-
-		foreach (var kvp in UnitRegistry)
-		{
-			if (string.IsNullOrEmpty(kvp.Key)) continue;
-			string keyName = System.IO.Path.GetFileName(kvp.Key);
-			string keyBase = System.IO.Path.GetFileNameWithoutExtension(keyName);
-			if (string.Equals(keyBase, baseName, StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(keyName, cleanName, StringComparison.OrdinalIgnoreCase))
-			{
-				return kvp.Key;
-			}
-
-			string modelPath = !string.IsNullOrEmpty(kvp.Value.ModelPath)
-				? System.IO.Path.GetFileName(kvp.Value.ModelPath)
-				: "";
-			if (string.Equals(modelPath, cleanName, StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(System.IO.Path.GetFileNameWithoutExtension(modelPath), baseName, StringComparison.OrdinalIgnoreCase))
-			{
-				return kvp.Key;
-			}
-		}
-
-		return unitId;
-	}
-
 	public Unit3D SpawnUnitExternal(string unitId, Vector3 position, bool isEnemy, float rotationY, float scale)
 	{
 		// Preserve the authored Y (saved maps, pasted/cloned/undone objects). Placement paths
 		// that want feet-on-terrain snap the Y to the terrain before calling this method.
-		unitId = ResolveUnitId(unitId);
 		if (!UnitRegistry.ContainsKey(unitId))
 		{
 			LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace"));
@@ -2008,11 +1964,6 @@ public partial class GameHost
 		string reqType = ActiveEditorTool.ToString();
 		string reqId = ActivePlaceId;
 		bool reqIsEnemy = PlaceUnitIsEnemy;
-
-		if (ActiveEditorTool == EditorTool.PlaceUnit)
-		{
-			reqId = ResolveUnitId(reqId);
-		}
 
 		if (_editorPreviewNode == null || !GodotObject.IsInstanceValid(_editorPreviewNode) || _editorPreviewType != reqType || _editorPreviewId != reqId || _editorPreviewIsEnemy != reqIsEnemy)
 		{
