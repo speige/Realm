@@ -3645,7 +3645,13 @@ public partial class GameHost
 		var godotPosition = new Vector3(position.X, position.Y, position.Z);
 		var entity = CreateEcsUnit(unitId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, godotPosition, playerOwner);
 
-		var unit3D = SpawnUnit3D(entity, unitId, modelPath, godotPosition, meta.Speed == 0f, actualIsEnemy, isFromQueue);
+		int parentPlayer = actualIsEnemy ? 1 : 0;
+		if (EcsWorld.IsAlive(buildingEntity) && EcsWorld.Has<UnitOwnerPlayer>(buildingEntity))
+		{
+			parentPlayer = EcsWorld.Get<UnitOwnerPlayer>(buildingEntity).PlayerIndex;
+		}
+
+		var unit3D = SpawnUnit3D(entity, unitId, modelPath, godotPosition, meta.Speed == 0f, actualIsEnemy, isFromQueue, parentPlayer);
 
 		if (meta.Speed > 0f)
 		{

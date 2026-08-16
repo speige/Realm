@@ -256,6 +256,12 @@ public class SaveLoadService
 					isEnemy = EcsWorld.Get<Name>(owner.PlayerEntity.Value).Value == "Enemy_AI";
 				}
 
+				int playerIndex = isEnemy ? 1 : 0;
+				if (EcsWorld.Has<UnitOwnerPlayer>(entity))
+				{
+					playerIndex = EcsWorld.Get<UnitOwnerPlayer>(entity).PlayerIndex;
+				}
+
 				saveData.Units.Add(new UnitSaveData
 				{
 					UnitId = defId.Value,
@@ -264,7 +270,8 @@ public class SaveLoadService
 					PosZ = pos.Value.Z,
 					RotationY = rotY,
 					Scale = scale,
-					IsEnemy = isEnemy
+					IsEnemy = isEnemy,
+					Player = playerIndex
 				});
 			});
 
@@ -663,7 +670,8 @@ public class SaveLoadService
 							new System.Numerics.Vector3(u.PosX, u.PosY, u.PosZ),
 							u.RotationY,
 							u.Scale,
-							u.IsEnemy
+							u.IsEnemy,
+							u.Player
 						));
 					}
 				}

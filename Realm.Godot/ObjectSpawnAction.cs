@@ -9,13 +9,14 @@ public class ObjectSpawnAction : IEditorAction
 	private readonly float _rotationY;
 	private readonly float _scale;
 	private readonly bool _isEnemy;
+	private readonly int _player;
 	private Node _spawnedNode;
 
 	public Vector3 Position => _position;
 	public float Scale => _scale;
 	public Node SpawnedNode => _spawnedNode;
 
-	public ObjectSpawnAction(string objectType, string objectId, Vector3 position, float rotationY, float scale, bool isEnemy, Node spawnedNode)
+	public ObjectSpawnAction(string objectType, string objectId, Vector3 position, float rotationY, float scale, bool isEnemy, Node spawnedNode, int player = -1)
 	{
 		_objectType = objectType;
 		_objectId = objectId;
@@ -23,6 +24,7 @@ public class ObjectSpawnAction : IEditorAction
 		_rotationY = rotationY;
 		_scale = scale;
 		_isEnemy = isEnemy;
+		_player = player >= 0 ? player : (isEnemy ? 1 : 0);
 		_spawnedNode = spawnedNode;
 	}
 
@@ -42,7 +44,7 @@ public class ObjectSpawnAction : IEditorAction
 	{
 		if (_objectType == "unit")
 		{
-			_spawnedNode = GameHost.Instance?.SpawnUnitExternal(_objectId, _position, _isEnemy, _rotationY, _scale);
+			_spawnedNode = GameHost.Instance?.SpawnUnitExternal(_objectId, _position, _isEnemy, _rotationY, _scale, _player);
 		}
 		else if (_objectType == "prop")
 		{

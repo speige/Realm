@@ -235,5 +235,6 @@
   "ModelOffsets": {},
   "ModelCollisionCircleRatios": {},
   "ModelBrightness": {},
-  "ModelGenerateNormals": {}
+  "ModelGenerateNormals": {},
+  "ModelIgnorePlayerColor": {}
 }

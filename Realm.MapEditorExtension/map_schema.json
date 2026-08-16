@@ -180,6 +180,7 @@
           "Brightness": { "type": "number", "minimum": 0 },
           "Tint": { "type": "string" },
           "RecalculateNormals": { "type": "boolean" },
+          "IgnorePlayerColor": { "type": "boolean" },
           "MaxCapacity": { "type": "number", "minimum": 0 },
           "HarvestRate": { "type": "number", "minimum": 0 },
           "GrowthRate": { "type": "number", "minimum": 0 },
@@ -331,6 +332,13 @@
     },
     "Assets": {
       "type": "object"
-    }
+    },
+    "ModelOffsets": { "type": "object" },
+    "ModelCollisionCircleRatios": { "type": "object" },
+    "ModelObstacleRadii": { "type": "object" },
+    "ModelBrightness": { "type": "object" },
+    "ModelColorTint": { "type": "object" },
+    "ModelGenerateNormals": { "type": "object" },
+    "ModelIgnorePlayerColor": { "type": "object" }
   }
 }

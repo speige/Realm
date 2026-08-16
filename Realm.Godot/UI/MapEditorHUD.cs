@@ -185,6 +185,7 @@ public partial class MapEditorHUD : Control
 	private HSlider _sldModelColorTint;
 	private ColorPickerButton _cpkModelColorTint;
 	private CheckBox _chkModelGenerateNormals;
+	private CheckBox _chkModelIgnorePlayerColor;
 	private bool _isUpdatingInspectorUI;
 
 	private CheckBox _chkApplyGroundTexture;
@@ -256,6 +257,8 @@ public partial class MapEditorHUD : Control
 	private Button _btnInspectorScaleReset;
 	private Button _btnInspectorDelete;
 	private Button _btnShowCoverage;
+	private HBoxContainer _playerOwnerContainer;
+	private OptionButton _optPlayerOwner;
 
 	private Button _btnPathingBrush;
 	private Button _btnFloodFillPathing;
@@ -1376,18 +1379,33 @@ public partial class MapEditorHUD : Control
 			string typeStr = "";
 			if (selected is Unit3D unit)
 			{
-				typeStr = "UNIT";
+				typeStr = unit.IsBuilding ? "BUILDING" : "UNIT";
 				nameStr = System.IO.Path.GetFileName(unit.UnitId).ToUpper();
+				if (_playerOwnerContainer != null && _optPlayerOwner != null)
+				{
+					_playerOwnerContainer.Visible = true;
+					_isUpdatingInspectorUI = true;
+					int pIdx = Mathf.Clamp(unit.Player, 0, PlayerColorConfig.Palette.Length - 1);
+					_optPlayerOwner.Selected = pIdx;
+					_isUpdatingInspectorUI = false;
+				}
 			}
-			else if (selected is Prop3D prop)
+			else
 			{
-				typeStr = "PROP";
-				nameStr = System.IO.Path.GetFileName(prop.PropId).ToUpper();
-			}
-			else if (selected is Decal decal)
-			{
-				typeStr = "DECAL";
-				nameStr = System.IO.Path.GetFileName(decal.Name).ToUpper();
+				if (_playerOwnerContainer != null)
+				{
+					_playerOwnerContainer.Visible = false;
+				}
+				if (selected is Prop3D prop)
+				{
+					typeStr = "PROP";
+					nameStr = System.IO.Path.GetFileName(prop.PropId).ToUpper();
+				}
+				else if (selected is Decal decal)
+				{
+					typeStr = "DECAL";
+					nameStr = System.IO.Path.GetFileName(decal.Name).ToUpper();
+				}
 			}
 
 			if (_btnShowCoverage != null)
@@ -1452,6 +1470,10 @@ public partial class MapEditorHUD : Control
 				{
 					_chkModelGenerateNormals.ButtonPressed = GameHost.Instance.GetModelGenerateNormals(assetKey);
 				}
+				if (_chkModelIgnorePlayerColor != null)
+				{
+					_chkModelIgnorePlayerColor.ButtonPressed = GameHost.Instance.GetModelIgnorePlayerColor(assetKey);
+				}
 
 				_isUpdatingInspectorUI = false;
 			}
@@ -1463,6 +1485,7 @@ public partial class MapEditorHUD : Control
 		}
 		else
 		{
+			if (_playerOwnerContainer != null) _playerOwnerContainer.Visible = false;
 			if (_btnHeaderGlobalOverrides != null) _btnHeaderGlobalOverrides.Visible = false;
 			if (_contentGlobalOverrides != null) _contentGlobalOverrides.Visible = false;
 			if (_btnShowCoverage != null) _btnShowCoverage.Visible = false;
@@ -5445,9 +5468,43 @@ public partial class MapEditorHUD : Control
 				GameHost.Instance.UpdateEditorCoverageOverlay();
 			}
 		};
-		_btnShowCoverage.Visible = false;
 		var inspectorVBox = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox");
 		inspectorVBox.AddChild(_btnShowCoverage);
+
+		_playerOwnerContainer = new HBoxContainer();
+		_playerOwnerContainer.Name = "PlayerOwnerContainer";
+		_playerOwnerContainer.Visible = false;
+
+		var lblPlayer = new Label();
+		lblPlayer.Text = TranslationServer.Translate("Player");
+		lblPlayer.CustomMinimumSize = new Vector2(50, 0);
+		lblPlayer.AddThemeFontSizeOverride("font_size", 11);
+		_playerOwnerContainer.AddChild(lblPlayer);
+
+		_optPlayerOwner = new OptionButton();
+		_optPlayerOwner.Name = "OptPlayerOwner";
+		_optPlayerOwner.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		_optPlayerOwner.AddThemeFontSizeOverride("font_size", 11);
+
+		for (int i = 0; i < PlayerColorConfig.Palette.Length; i++)
+		{
+			var entry = PlayerColorConfig.Palette[i];
+			_optPlayerOwner.AddItem($"{entry.Index} {entry.Name}", i);
+		}
+
+		_optPlayerOwner.ItemSelected += (long index) =>
+		{
+			if (_isUpdatingInspectorUI) return;
+			if (GameHost.Instance != null && GameHost.Instance.SelectedEditorObject is Unit3D unit && GodotObject.IsInstanceValid(unit))
+			{
+				int playerIndex = (int)index;
+				GameHost.Instance.SetUnitPlayerExternal(unit, playerIndex);
+			}
+		};
+
+		_playerOwnerContainer.AddChild(_optPlayerOwner);
+		inspectorVBox.AddChild(_playerOwnerContainer);
+		inspectorVBox.MoveChild(_playerOwnerContainer, 2);
 
 		var vbox = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox");
 		if (vbox != null)
@@ -5612,6 +5669,23 @@ public partial class MapEditorHUD : Control
 					{
 						GameHost.Instance.SetModelGenerateNormals(assetKey, pressed);
 						GameHost.Instance.FlushModelYOffsetSave();
+						string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+						_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+					}
+				}
+			});
+
+			_chkModelIgnorePlayerColor = CreateCheckBoxRow(_contentGlobalOverrides, TranslationServer.Translate("Ignore Player Color"), false, (pressed) =>
+			{
+				if (_isUpdatingInspectorUI) return;
+				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
+				{
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
+					if (!string.IsNullOrEmpty(assetKey))
+					{
+						GameHost.Instance.SetModelIgnorePlayerColor(assetKey, pressed);
+						GameHost.Instance.FlushModelYOffsetSave();
+						GameHost.Instance.RefreshAllPlacedObjectModels(assetKey);
 						string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 						_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 					}

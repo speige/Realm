@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using NSec.Cryptography;
 using System.Threading.Tasks;
+using Realm.Godot;
 
 
 public partial class LobbyRoom : Control
@@ -45,17 +46,11 @@ public partial class LobbyRoom : Control
 	private List<string> _otherAuthorsList = new List<string>();
 
 
-		private static readonly System.Net.Http.HttpClient _sharedHttpClient = new System.Net.Http.HttpClient();
-	private readonly List<Color> _availableColors = new List<Color>
-	{
-		new Color(0.8f, 0.1f, 0.1f), // Red
-		new Color(0.1f, 0.4f, 0.8f), // Blue
-		new Color(0.1f, 0.7f, 0.2f), // Green
-		new Color(0.1f, 0.7f, 0.7f), // Cyan
-		new Color(0.5f, 0.5f, 0.5f), // Grey
-		new Color(0.6f, 0.2f, 0.8f), // Purple
-		new Color(0.9f, 0.8f, 0.1f)  // Yellow
-	};
+	private static readonly System.Net.Http.HttpClient _sharedHttpClient = new System.Net.Http.HttpClient();
+	public const int NEUTRAL_PLAYER_INDEX = PlayerColorConfig.NEUTRAL_PLAYER_INDEX;
+	public static List<Color> AvailableColors => PlayerColorConfig.AvailableColors;
+	public static Color GetPlayerColor(int playerIndex) => PlayerColorConfig.GetColor(playerIndex);
+	public static string GetPlayerColorName(int playerIndex) => PlayerColorConfig.GetName(playerIndex);
 
 	private List<MapBriefingDetails> _lobbyRoomMaps = new List<MapBriefingDetails>();
 	private readonly string[] _runes = { "ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᚲ", "ᚷ", "ᚹ", "ᚺ", "ᚾ", "ᛁ", "ᛃ", "ᛇ", "ᛈ", "ᛉ", "ᛊ", "ᛏ", "ᛒ", "ᛖ", "ᛗ", "ᛚ", "ᛜ", "ᛞ", "ᛟ" };
@@ -999,8 +994,8 @@ private void UpdateSelectedMapUI()
 			colorBtn.Pressed += () =>
 			{
 				UIManager.Instance.PlayClickSound();
-				int nextIdx = (_availableColors.IndexOf(p.Color) + 1) % _availableColors.Count;
-				p.Color = _availableColors[nextIdx];
+				int nextIdx = (PlayerColorConfig.GetColorIndex(p.Color) + 1) % AvailableColors.Count;
+				p.Color = AvailableColors[nextIdx];
 				colorStyle.BgColor = p.Color;
 				colorBtn.AddThemeStyleboxOverride("normal", colorStyle);
 				

@@ -262,7 +262,7 @@ public partial class GameHost
 				foreach (var reqEnt in unitRequests)
 				{
 					ref var req = ref EcsWorld.Get<UnitSpawnRequest>(reqEnt);
-					SpawnUnitExternal(req.UnitId, new Vector3(req.Position.X, req.Position.Y, req.Position.Z), req.IsEnemy, req.RotationY, req.Scale);
+					SpawnUnitExternal(req.UnitId, new Vector3(req.Position.X, req.Position.Y, req.Position.Z), req.IsEnemy, req.RotationY, req.Scale, req.Player);
 					EcsWorld.Destroy(reqEnt);
 				}
 

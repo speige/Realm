@@ -73,6 +73,78 @@ public partial class Unit3D : Prop3D
 	private readonly System.Collections.Generic.List<MeshInstance3D> _pathMarkersPool = new();
 	private readonly System.Collections.Generic.List<MeshInstance3D> _pathLinesPool = new();
 
+	private int _player = 0;
+
+	public int Player
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity)
+				&& GameHost.Instance.EcsWorld.Has<UnitOwnerPlayer>(Entity))
+				return GameHost.Instance.EcsWorld.Get<UnitOwnerPlayer>(Entity).PlayerIndex;
+			return _player;
+		}
+		set
+		{
+			_player = value;
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.Has<UnitOwnerPlayer>(Entity))
+					world.Set(Entity, new UnitOwnerPlayer(value));
+				else
+					world.Add(Entity, new UnitOwnerPlayer(value));
+			}
+			UpdatePlayerColorVisual();
+		}
+	}
+
+	public int PlayerIndex
+	{
+		get => Player;
+		set => Player = value;
+	}
+
+	public Color PlayerColor { get; private set; } = PlayerColorConfig.GetColor(0);
+
+	public void SetPlayer(int playerIndex)
+	{
+		Player = playerIndex;
+	}
+
+	public void SetPlayerColor(Color color)
+	{
+		PlayerColor = color;
+		if (_modelNode != null && GodotObject.IsInstanceValid(_modelNode))
+		{
+			bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(ModelPath) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
+			if (!ignorePlayerColor)
+			{
+				Realm.Godot.Utils.PlayerColorShaderManager.SetPlayerColor(_modelNode, color);
+			}
+		}
+	}
+
+	public void InterpolatePlayerColor(Color targetColor, float weight)
+	{
+		Color blended = PlayerColor.Lerp(targetColor, weight);
+		SetPlayerColor(blended);
+	}
+
+	public void UpdatePlayerColorVisual()
+	{
+		Color resolvedColor = PlayerColorConfig.GetColor(Player);
+		if (LobbyManager.Instance != null && LobbyManager.Instance.PlayerList.Count > 0)
+		{
+			var matchPlayer = LobbyManager.Instance.PlayerList.Find(x => x.Slot == Player);
+			if (matchPlayer != null)
+			{
+				resolvedColor = matchPlayer.Color;
+			}
+		}
+		SetPlayerColor(resolvedColor);
+	}
+
 	public bool IsEnemy
 	{
 		get
@@ -203,15 +275,11 @@ public partial class Unit3D : Prop3D
 				float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
 				_modelNode.Position = new Vector3(0f, _baseModelYOffset + yOffset, 0f);
 
-				if (UnitId == "priest")
+				bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(modelPath) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
+				if (!ignorePlayerColor)
 				{
-					Color priestColor = IsEnemy ? new Color(0.8f, 0.2f, 0.8f) : new Color(1.0f, 0.85f, 0.2f);
-					ApplyModelTint(priestColor);
-				}
-				else if (UnitId == "worker")
-				{
-					Color workerColor = IsEnemy ? new Color(0.6f, 0.4f, 0.2f) : new Color(0.8f, 0.6f, 0.4f);
-					ApplyModelTint(workerColor);
+					Realm.Godot.Utils.PlayerColorShaderManager.ApplyPlayerColorShader(_modelNode, PlayerColor);
+					UpdatePlayerColorVisual();
 				}
 			}
 			else
@@ -331,34 +399,7 @@ public partial class Unit3D : Prop3D
 
 	public void ApplyModelTint(Color color)
 	{
-		if (_modelNode == null) return;
-		ApplyModelTintRecursive(_modelNode, color);
-	}
-
-	private void ApplyModelTintRecursive(Node node, Color color)
-	{
-		if (node is MeshInstance3D meshInstance)
-		{
-			Material mat = meshInstance.MaterialOverride;
-			if (mat == null && meshInstance.GetActiveMaterial(0) != null)
-			{
-				mat = meshInstance.GetActiveMaterial(0);
-			}
-
-			if (mat is StandardMaterial3D stdMat)
-			{
-				var dupMat = (StandardMaterial3D)stdMat.Duplicate();
-				dupMat.AlbedoColor = color;
-				meshInstance.MaterialOverride = dupMat;
-			}
-		}
-		foreach (var child in node.GetChildren())
-		{
-			if (child is Node childNode)
-			{
-				ApplyModelTintRecursive(childNode, color);
-			}
-		}
+		SetPlayerColor(color);
 	}
 
 

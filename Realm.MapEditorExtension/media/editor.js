@@ -66,6 +66,7 @@
         Brightness: document.getElementById('field-Brightness'),
         Tint: document.getElementById('field-Tint'),
         RecalculateNormals: document.getElementById('field-RecalculateNormals'),
+        IgnorePlayerColor: document.getElementById('field-IgnorePlayerColor'),
         IsHero: document.getElementById('field-IsHero'),
         MaxHp: document.getElementById('field-MaxHp'),
         Damage: document.getElementById('field-Damage'),
@@ -339,7 +340,8 @@
                 const knownTopKeys = [
                     'MapProperties', 'CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps',
                     'CustomAbilities', 'CustomItems', 'CustomUpgrades', 'CustomWeapons', 'Assets', 
-                    'ModelOffsets', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelGenerateNormals'
+                    'ModelOffsets', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelGenerateNormals',
+                    'ModelIgnorePlayerColor'
                 ];
                 for (const [key, val] of Object.entries(units)) {
                     if (!knownTopKeys.includes(key) && val && typeof val === 'object' && !Array.isArray(val) && (val.UnitId || val.MaxHp !== undefined || val.CostGold !== undefined || val.AttackType !== undefined || val.PathingCapabilities || val.MovementType)) {
@@ -4024,10 +4026,20 @@
                         html += `<div style="margin-left: 8px; font-weight: 600; color: var(--text-muted); font-size: 11px; margin-top: 4px;">${escapeHtml(subCat)}</div>`;
                         Object.keys(subObj).forEach(itemKey => {
                             const relAssetPath = `Assets/models/${subCat}/${itemKey}`;
+                            const itemVal = subObj[itemKey];
+                            let isIgnored = false;
+                            if (typeof itemVal === 'object' && itemVal !== null) {
+                                isIgnored = !!(itemVal.ignore_player_color || itemVal.IgnorePlayerColor);
+                            } else if (units?.ModelIgnorePlayerColor && (units.ModelIgnorePlayerColor[itemKey] || units.ModelIgnorePlayerColor[itemKey.toLowerCase()])) {
+                                isIgnored = true;
+                            }
                             html += `<div style="margin-left: 12px; margin-top: 2px;">`;
                             html += `<div class="asset-item-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 4px;">`;
                             html += `<span style="font-family: monospace;">${escapeHtml(itemKey)}</span>`;
                             html += `<div style="display: flex; gap: 6px; align-items: center;">`;
+                            html += `<label style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); cursor: pointer; margin-right: 6px;" title="Skip player-color tinting shader and keep original textures intact">`;
+                            html += `<input type="checkbox" class="chk-ignore-player-color" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" ${isIgnored ? 'checked' : ''} />`;
+                            html += `Ignore Color</label>`;
                             html += `<select class="select-migrate-target" style="background: rgba(0,0,0,0.4); color: #ccc; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; font-size: 11px; padding: 1px 4px;">`;
                             ['units', 'buildings', 'resources', 'props'].forEach(sc => {
                                 html += `<option value="glb:${sc}" ${sc === subCat ? 'selected' : ''}>Model: ${sc}</option>`;
@@ -4289,6 +4301,35 @@
             });
         });
 
+        // Attach ignore player color event handlers
+        display.querySelectorAll('.chk-ignore-player-color').forEach(chk => {
+            chk.addEventListener('change', (e) => {
+                const subCat = e.target.getAttribute('data-subcategory');
+                const key = e.target.getAttribute('data-key');
+                const val = e.target.checked;
+                if (units?.Assets?.glb && units.Assets.glb[subCat]) {
+                    let itemVal = units.Assets.glb[subCat][key];
+                    if (typeof itemVal !== 'object' || itemVal === null) {
+                        itemVal = { hash: String(itemVal || ''), default_asset_type: subCat };
+                    }
+                    if (val) {
+                        itemVal.ignore_player_color = true;
+                    } else {
+                        delete itemVal.ignore_player_color;
+                        delete itemVal.IgnorePlayerColor;
+                    }
+                    units.Assets.glb[subCat][key] = itemVal;
+                }
+                if (!units.ModelIgnorePlayerColor) units.ModelIgnorePlayerColor = {};
+                if (val) {
+                    units.ModelIgnorePlayerColor[key] = true;
+                } else {
+                    delete units.ModelIgnorePlayerColor[key];
+                }
+                saveChanges();
+            });
+        });
+
         // Attach delete event handlers
         display.querySelectorAll('.btn-delete-asset').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -4474,10 +4515,12 @@
             btnGlb.addEventListener('click', () => {
                 const catSelect = document.getElementById('glb-category-select');
                 const category = catSelect ? catSelect.value : 'props';
+                const chkIgnore = document.getElementById('glb-ignore-player-color');
+                const ignorePlayerColor = chkIgnore ? chkIgnore.checked : false;
                 vscode.postMessage({
                     type: 'importAsset',
                     assetType: 'glb',
-                    options: { category }
+                    options: { category, ignorePlayerColor }
                 });
             });
         }

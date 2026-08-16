@@ -434,12 +434,19 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 const targetPath = path.join(subDir, baseName);
                 fs.writeFileSync(targetPath, fileBytes);
                 const blake3 = this.computeHashHex(fileBytes);
+                const ignorePlayerColor = !!(extraOptions && (extraOptions.ignorePlayerColor || extraOptions.ignore_player_color));
                 if (!metadata.Assets.glb) metadata.Assets.glb = {};
                 if (!metadata.Assets.glb[subCategory]) metadata.Assets.glb[subCategory] = {};
                 metadata.Assets.glb[subCategory][baseName] = {
                     hash: blake3,
-                    default_asset_type: subCategory
+                    default_asset_type: subCategory,
+                    ...(ignorePlayerColor ? { ignore_player_color: true } : {})
                 };
+
+                if (!metadata.ModelIgnorePlayerColor) metadata.ModelIgnorePlayerColor = {};
+                if (ignorePlayerColor) {
+                    metadata.ModelIgnorePlayerColor[baseName] = true;
+                }
 
                 const unitId = path.basename(fileName, path.extname(fileName));
                 const targetArrayKey = subCategory === 'units' ? 'CustomUnits' :
@@ -461,7 +468,8 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         Name: unitId,
                         Description: '',
                         PathingType: defaultPathing,
-                        ModelPath: baseName
+                        ModelPath: baseName,
+                        ...(ignorePlayerColor ? { IgnorePlayerColor: true } : {})
                     });
                 }
 
@@ -1042,6 +1050,10 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <input type="checkbox" id="field-RecalculateNormals" />
                             <label for="field-RecalculateNormals">Re-Calculate Normals</label>
                         </div>
+                        <div class="form-group checkbox-group" style="margin-top: 6px;">
+                            <input type="checkbox" id="field-IgnorePlayerColor" />
+                            <label for="field-IgnorePlayerColor">Ignore Player Color</label>
+                        </div>
                     </div>
 
                     <div id="section-resource-node-config" class="form-section">
@@ -1555,7 +1567,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     <div class="form-section">
                         <h3>📦 Import 3D Model (GLB)</h3>
                         <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import binary GLB 3D models. Subcategory will categorize BLAKE3 hash in metadata.json under Units, Buildings, Resources, or Props.</p>
-                        <div class="form-row">
+                        <div class="form-row" style="align-items: flex-end; gap: 16px;">
                             <div class="form-group">
                                 <label for="glb-category-select">Default Category</label>
                                 <select id="glb-category-select">
@@ -1564,6 +1576,10 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                                     <option value="resources">Resources</option>
                                     <option value="props">Props</option>
                                 </select>
+                            </div>
+                            <div class="form-group checkbox-group" style="margin-bottom: 8px;">
+                                <input type="checkbox" id="glb-ignore-player-color" />
+                                <label for="glb-ignore-player-color" title="Skip player color shader and keep original textures intact">Ignore Player Color</label>
                             </div>
                             <div class="form-group" style="display: flex; align-items: flex-end;">
                                 <button type="button" id="btn-import-glb" class="btn secondary-btn">📥 Import 3D Model</button>

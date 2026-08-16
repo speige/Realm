@@ -607,6 +607,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public float Brightness { get; set; }
 		public string Tint { get; set; }
 		public bool RecalculateNormals { get; set; }
+		public bool IgnorePlayerColor { get; set; }
 		public string[]? BuildOptions { get; set; }
 		public bool IsHero { get; set; }
 		public string[]? Abilities { get; set; }
@@ -629,6 +630,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public float Brightness { get; set; }
 		public string Tint { get; set; }
 		public bool RecalculateNormals { get; set; }
+		public bool IgnorePlayerColor { get; set; }
 		public int PathingType { get; set; }
 	}
 
@@ -648,6 +650,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public float Brightness { get; set; }
 		public string Tint { get; set; }
 		public bool RecalculateNormals { get; set; }
+		public bool IgnorePlayerColor { get; set; }
 		public int PathingType { get; set; }
 	}
 
@@ -1866,15 +1869,16 @@ public class {mapName} : IMapScript
 	IUnit IGameAPI.SpawnUnitForPlayer(string unitTypeId, System.Numerics.Vector3 position, int playerIndex)
 	{
 		bool isEnemy = playerIndex != 0;
-		return ((IGameAPI)this).SpawnUnit(unitTypeId, position, isEnemy);
+		var unit = ((IGameAPI)this).SpawnUnit(unitTypeId, position, isEnemy);
+		unit.Player = playerIndex;
+		return unit;
 	}
 
 	IEnumerable<IUnit> IGameAPI.GetUnitsOwnedByPlayer(int playerIndex)
 	{
-		bool isEnemy = playerIndex != 0;
 		foreach (var unit in ((IGameAPI)this).GetAllUnits())
 		{
-			if (unit.IsEnemy == isEnemy) yield return unit;
+			if (unit.Player == playerIndex) yield return unit;
 		}
 	}
 
@@ -2063,7 +2067,7 @@ public class {mapName} : IMapScript
 
 	void IGameAPI.SetUnitOwner(IUnit unit, int playerIndex)
 	{
-		unit.IsEnemy = playerIndex != 0;
+		unit.Player = playerIndex;
 	}
 
 	int IGameAPI.GetPlayerCurrentPopulation(int playerIndex)
@@ -3701,13 +3705,24 @@ public class {mapName} : IMapScript
 		return entity;
 	}
 
-	private Unit3D SpawnUnit3D(Entity entity, string id, string modelPath, Vector3 pos, bool isBuilding, bool isEnemy, bool isFromQueue = false)
+	private Unit3D SpawnUnit3D(Entity entity, string id, string modelPath, Vector3 pos, bool isBuilding, bool isEnemy, bool isFromQueue = false, int player = -1)
 	{
-		EcsWorld.Add(entity, new UnitFaction(isEnemy));
+		int playerIndex = player >= 0 ? player : (isEnemy ? 1 : 0);
+		if (EcsWorld.Has<UnitFaction>(entity))
+			EcsWorld.Set(entity, new UnitFaction(isEnemy));
+		else
+			EcsWorld.Add(entity, new UnitFaction(isEnemy));
+
+		if (EcsWorld.Has<UnitOwnerPlayer>(entity))
+			EcsWorld.Set(entity, new UnitOwnerPlayer(playerIndex));
+		else
+			EcsWorld.Add(entity, new UnitOwnerPlayer(playerIndex));
 
 		var unit3D = new Unit3D();
 		unit3D.Entity = entity;
 		unit3D.Name = $"{id}_{entity.Id}";
+		unit3D.Player = playerIndex;
+		unit3D.IsEnemy = isEnemy;
 
 		if (GigachadEnabled && !isEnemy)
 		{
@@ -3731,6 +3746,7 @@ public class {mapName} : IMapScript
 		AddChild(unit3D);
 		unit3D.Position = pos;
 		unit3D.LoadModel(modelPath);
+		unit3D.UpdatePlayerColorVisual();
 
 		if (isBuilding)
 		{

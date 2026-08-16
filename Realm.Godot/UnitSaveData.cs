@@ -7,4 +7,5 @@ public class UnitSaveData
 	public float RotationY { get; set; }
 	public float Scale { get; set; }
 	public bool IsEnemy { get; set; }
+	public int Player { get; set; }
 }

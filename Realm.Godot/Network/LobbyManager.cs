@@ -98,7 +98,7 @@ public partial class LobbyManager : Node
         public string Name { get; set; } = "";
         public string Faction { get; set; } = "HUMAN";
         public string Team { get; set; } = "Team 1";
-        public Color Color { get; set; } = new Color(0.8f, 0.1f, 0.1f);
+        public Color Color { get; set; } = PlayerColorConfig.GetColor(1);
         public bool IsHost { get; set; }
         public string Latency { get; set; } = "--";
         public string Jitter { get; set; } = "--";
@@ -243,9 +243,19 @@ public partial class LobbyManager : Node
                 try
                 {
                     await Task.Delay(5000);
-                    Callable.From(() => PeerSeederManager.Instance.CheckIdleAndSeedStatus()).CallDeferred();
+                    if (!GodotObject.IsInstanceValid(this) || IsQueuedForDeletion()) break;
+                    if (PeerSeederManager.Instance != null)
+                    {
+                        Callable.From(() =>
+                        {
+                            if (GodotObject.IsInstanceValid(this) && !IsQueuedForDeletion() && PeerSeederManager.Instance != null)
+                            {
+                                PeerSeederManager.Instance.CheckIdleAndSeedStatus();
+                            }
+                        }).CallDeferred();
+                    }
                 }
-                catch { }
+                catch { break; }
             }
         });
     }
@@ -410,7 +420,7 @@ public partial class LobbyManager : Node
             Name = AuthenticatedUsername,
             Faction = "HUMAN",
             Team = "Team 1",
-            Color = new Color(0.8f, 0.1f, 0.1f),
+            Color = PlayerColorConfig.GetColor(1),
             IsHost = true,
             Latency = "0 ms",
             Jitter = "0 ms",
@@ -440,7 +450,7 @@ public partial class LobbyManager : Node
             Name = AuthenticatedUsername,
             Faction = "HUMAN",
             Team = "Team 1",
-            Color = new Color(0.8f, 0.1f, 0.1f),
+            Color = PlayerColorConfig.GetColor(1),
             IsHost = true,
             Latency = "0 ms",
             Jitter = "0 ms",
@@ -630,7 +640,7 @@ public partial class LobbyManager : Node
             Name = AuthenticatedUsername,
             Faction = "HUMAN",
             Team = "Team 1",
-            Color = new Color(0.1f, 0.4f, 0.8f),
+            Color = PlayerColorConfig.GetColor(2),
             IsHost = false,
             BinaryVersion = GameBinaryVersion
         };
@@ -1711,16 +1721,8 @@ public partial class LobbyManager : Node
 
     private Color GetNextColor()
     {
-        Color[] available = new[]
-        {
-            new Color(0.1f, 0.4f, 0.8f), // Blue
-            new Color(0.1f, 0.7f, 0.2f), // Green
-            new Color(0.1f, 0.7f, 0.7f), // Cyan
-            new Color(0.5f, 0.5f, 0.5f), // Grey
-            new Color(0.6f, 0.2f, 0.8f), // Purple
-            new Color(0.9f, 0.8f, 0.1f)  // Yellow
-        };
-        return available[PlayerList.Count % available.Length];
+        int index = (PlayerList.Count % (PlayerColorConfig.Palette.Length - 1)) + 1;
+        return PlayerColorConfig.GetColor(index);
     }
 
     public async Task<int> MeasurePingToRegistryAsync()

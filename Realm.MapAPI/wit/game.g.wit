@@ -145,6 +145,8 @@ interface game-api {
     set-unit-name: func(id: s32, val: string);
     unit-is-enemy: func(id: s32) -> bool;
     set-unit-is-enemy: func(id: s32, val: bool);
+    unit-player: func(id: s32) -> s32;
+    set-unit-player: func(id: s32, val: s32);
     unit-is-building: func(id: s32) -> bool;
     unit-position-x: func(id: s32) -> f32;
     unit-position-y: func(id: s32) -> f32;

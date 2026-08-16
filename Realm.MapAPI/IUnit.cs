@@ -28,6 +28,11 @@ public interface IUnit
     bool IsEnemy { get; set; }
 
     /// <summary>
+    /// Gets or sets the zero-based player slot index (0-24) that owns this unit.
+    /// </summary>
+    int Player { get; set; }
+
+    /// <summary>
     /// Gets a value indicating whether the unit is a structural building.
     /// </summary>
     bool IsBuilding { get; }

@@ -20,6 +20,7 @@ public partial class GameHost
 	public readonly Dictionary<string, float> ModelBrightness = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, Color> ModelColorTint = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, bool> ModelGenerateNormals = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, bool> ModelIgnorePlayerColor = new(StringComparer.OrdinalIgnoreCase);
 	private bool _modelYOffsetSavePending = false;
 	private bool _modelCollisionCircleSavePending = false;
 
@@ -363,6 +364,39 @@ public partial class GameHost
 		EditorHasUnsavedChanges = true;
 	}
 
+	public bool GetModelIgnorePlayerColor(object objOrId)
+	{
+		if (objOrId == null) return false;
+		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
+		string normPrimary = NormalizeModelAssetKey(primaryKey);
+		if (!string.IsNullOrEmpty(normPrimary) && ModelIgnorePlayerColor.TryGetValue(normPrimary, out bool b1))
+			return b1;
+
+		string assetKey = GetModelAssetKey(objOrId);
+		string normAsset = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(normAsset) && ModelIgnorePlayerColor.TryGetValue(normAsset, out bool b2))
+			return b2;
+
+		if (!string.IsNullOrEmpty(primaryKey))
+		{
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.IgnorePlayerColor) return true;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.IgnorePlayerColor) return true;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.IgnorePlayerColor) return true;
+		}
+
+		return false;
+	}
+
+	public void SetModelIgnorePlayerColor(string assetKey, bool ignorePlayerColor)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (string.IsNullOrEmpty(norm)) return;
+
+		ModelIgnorePlayerColor[norm] = ignorePlayerColor;
+		_modelYOffsetSavePending = true;
+		EditorHasUnsavedChanges = true;
+	}
+
 	public void UpdateMaterialOverridesForAsset(string normAssetKey)
 	{
 		if (string.IsNullOrEmpty(normAssetKey)) return;
@@ -480,6 +514,8 @@ public partial class GameHost
 		float multR = brightness * tint.R;
 		float multG = brightness * tint.G;
 		float multB = brightness * tint.B;
+
+		Realm.Godot.Utils.PlayerColorShaderManager.SetBrightnessAndTint(node, brightness, tint);
 
 		var meshNodes = FindMeshInstancesRecursive(node);
 		foreach (var meshInst in meshNodes)
@@ -677,6 +713,7 @@ public partial class GameHost
 			ModelObstacleRadii.Clear();
 			ModelBrightness.Clear();
 			ModelGenerateNormals.Clear();
+			ModelIgnorePlayerColor.Clear();
 
 			if (root.ContainsKey("ModelOffsets") && root["ModelOffsets"] is System.Text.Json.Nodes.JsonObject offsetsObj)
 			{
@@ -733,6 +770,17 @@ public partial class GameHost
 				}
 			}
 
+			if (root.ContainsKey("ModelIgnorePlayerColor") && root["ModelIgnorePlayerColor"] is System.Text.Json.Nodes.JsonObject ipcObj)
+			{
+				foreach (var kvp in ipcObj)
+				{
+					if (kvp.Value != null && bool.TryParse(kvp.Value.ToString(), out bool val))
+					{
+						ModelIgnorePlayerColor[NormalizeModelAssetKey(kvp.Key)] = val;
+					}
+				}
+			}
+
 			string[] entityArrays = new[] { "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps" };
 			foreach (var arrKey in entityArrays)
 			{
@@ -763,6 +811,14 @@ public partial class GameHost
 							if (uObj.ContainsKey("RecalculateNormals") && bool.TryParse(uObj["RecalculateNormals"]?.ToString(), out bool gnVal))
 							{
 								ModelGenerateNormals[normKey] = gnVal;
+							}
+							if (uObj.ContainsKey("IgnorePlayerColor") && bool.TryParse(uObj["IgnorePlayerColor"]?.ToString(), out bool ipcVal))
+							{
+								ModelIgnorePlayerColor[normKey] = ipcVal;
+							}
+							else if (uObj.ContainsKey("ignore_player_color") && bool.TryParse(uObj["ignore_player_color"]?.ToString(), out bool ipcVal2))
+							{
+								ModelIgnorePlayerColor[normKey] = ipcVal2;
 							}
 						}
 					}
@@ -805,6 +861,14 @@ public partial class GameHost
 								{
 									ModelGenerateNormals[NormalizeModelAssetKey(itemKvp.Key)] = gnVal;
 								}
+								if (itemObj.ContainsKey("ignore_player_color") && bool.TryParse(itemObj["ignore_player_color"]?.ToString(), out bool ipcVal))
+								{
+									ModelIgnorePlayerColor[NormalizeModelAssetKey(itemKvp.Key)] = ipcVal;
+								}
+								else if (itemObj.ContainsKey("IgnorePlayerColor") && bool.TryParse(itemObj["IgnorePlayerColor"]?.ToString(), out bool ipcVal2))
+								{
+									ModelIgnorePlayerColor[NormalizeModelAssetKey(itemKvp.Key)] = ipcVal2;
+								}
 							}
 						}
 					}
@@ -813,6 +877,7 @@ public partial class GameHost
 
 			foreach (var key in ModelBrightness.Keys
 				.Concat(ModelGenerateNormals.Keys)
+				.Concat(ModelIgnorePlayerColor.Keys)
 				.Distinct())
 			{
 				UpdateMaterialOverridesForAsset(key);
@@ -905,6 +970,10 @@ public partial class GameHost
 			foreach (var kvp in ModelGenerateNormals) gnObj[kvp.Key] = kvp.Value;
 			root["ModelGenerateNormals"] = gnObj;
 
+			System.Text.Json.Nodes.JsonObject ipcObj = new System.Text.Json.Nodes.JsonObject();
+			foreach (var kvp in ModelIgnorePlayerColor) ipcObj[kvp.Key] = kvp.Value;
+			root["ModelIgnorePlayerColor"] = ipcObj;
+
 			string[] entitySaveArrays = new[] { "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps" };
 			foreach (var arrKey in entitySaveArrays)
 			{
@@ -921,6 +990,7 @@ public partial class GameHost
 							if (ModelBrightness.TryGetValue(normKey, out float bVal)) uObj["Brightness"] = bVal;
 							if (ModelColorTint.TryGetValue(normKey, out Color tColor)) uObj["Tint"] = "#" + tColor.ToHtml(false);
 							if (ModelGenerateNormals.TryGetValue(normKey, out bool gnVal)) uObj["RecalculateNormals"] = gnVal;
+							if (ModelIgnorePlayerColor.TryGetValue(normKey, out bool ipcVal)) uObj["IgnorePlayerColor"] = ipcVal;
 						}
 					}
 				}
@@ -940,8 +1010,9 @@ public partial class GameHost
 							bool hasRadius = ModelObstacleRadii.TryGetValue(normKey, out float radVal);
 							bool hasBright = ModelBrightness.TryGetValue(normKey, out float brightVal);
 							bool hasGn = ModelGenerateNormals.TryGetValue(normKey, out bool gnVal);
+							bool hasIpc = ModelIgnorePlayerColor.TryGetValue(normKey, out bool ipcVal);
 
-							if (hasY || hasRatio || hasRadius || hasBright || hasGn)
+							if (hasY || hasRatio || hasRadius || hasBright || hasGn || hasIpc)
 							{
 								var nodeVal = catDict[key];
 								if (nodeVal is System.Text.Json.Nodes.JsonObject itemObj)
@@ -951,6 +1022,7 @@ public partial class GameHost
 									if (hasRadius) itemObj["collision_radius"] = radVal;
 									if (hasBright) itemObj["brightness"] = brightVal;
 									if (hasGn) itemObj["generate_normals"] = gnVal;
+									if (hasIpc) itemObj["ignore_player_color"] = ipcVal;
 								}
 								else if (nodeVal != null)
 								{
@@ -964,6 +1036,7 @@ public partial class GameHost
 									if (hasRadius) newItemObj["collision_radius"] = radVal;
 									if (hasBright) newItemObj["brightness"] = brightVal;
 									if (hasGn) newItemObj["generate_normals"] = gnVal;
+									if (hasIpc) newItemObj["ignore_player_color"] = ipcVal;
 									catDict[key] = newItemObj;
 								}
 							}
@@ -1572,10 +1645,12 @@ public partial class GameHost
 		}
 	}
 	
-	public Unit3D SpawnUnitExternal(string unitId, Vector3 position, bool isEnemy, float rotationY, float scale)
+	public Unit3D SpawnUnitExternal(string unitId, Vector3 position, bool isEnemy, float rotationY, float scale, int player = -1)
 	{
 		// Preserve the authored Y (saved maps, pasted/cloned/undone objects). Placement paths
 		// that want feet-on-terrain snap the Y to the terrain before calling this method.
+		int playerIndex = player >= 0 ? player : (isEnemy ? 1 : 0);
+		isEnemy = playerIndex != 0;
 		if (!UnitRegistry.ContainsKey(unitId))
 		{
 			LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace"));
@@ -1607,7 +1682,7 @@ public partial class GameHost
 		string name = meta.Name;
 		var entity = CreateEcsUnit(unitId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, position, playerOwner);
 
-		var unit3D = SpawnUnit3D(entity, unitId, modelPath, position, meta.Speed == 0f, isEnemy);
+		var unit3D = SpawnUnit3D(entity, unitId, modelPath, position, meta.Speed == 0f, isEnemy, false, playerIndex);
 		unit3D.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
 		unit3D.Scale = Vector3.One * scale;
 
@@ -1789,7 +1864,7 @@ public partial class GameHost
 		if (unit != null && GodotObject.IsInstanceValid(unit))
 		{
 			if (unit == _selectedEditorObject || FindUnit3DInParentChain(_selectedEditorObject) == unit) SelectedEditorObject = null;
-			var action = new ObjectDeleteAction("unit", unit.UnitId, unit.Position, unit.RotationDegrees.Y, unit.Scale.X, unit.IsEnemy, unit);
+			var action = new ObjectDeleteAction("unit", unit.UnitId, unit.Position, unit.RotationDegrees.Y, unit.Scale.X, unit.IsEnemy, unit, unit.Player);
 			SelectedUnits.Remove(unit);
 			AllUnits.Remove(unit);
 			EntityToUnit3D.Remove(unit.Entity);
@@ -1902,7 +1977,7 @@ public partial class GameHost
 			if (closestUnit != null && minDistance == closestUnitDist)
 			{
 				if (closestUnit == _selectedEditorObject) SelectedEditorObject = null;
-				var action = new ObjectDeleteAction("unit", closestUnit.UnitId, closestUnit.Position, closestUnit.RotationDegrees.Y, closestUnit.Scale.X, closestUnit.IsEnemy, closestUnit);
+				var action = new ObjectDeleteAction("unit", closestUnit.UnitId, closestUnit.Position, closestUnit.RotationDegrees.Y, closestUnit.Scale.X, closestUnit.IsEnemy, closestUnit, closestUnit.Player);
 				SelectedUnits.Remove(closestUnit);
 				AllUnits.Remove(closestUnit);
 				EntityToUnit3D.Remove(closestUnit.Entity);
@@ -2115,12 +2190,19 @@ public partial class GameHost
 		}
 	}
 
-	public void SetUnitTeamExternal(Unit3D unit, bool isEnemy)
+	public void SetUnitPlayerExternal(Unit3D unit, int playerIndex)
 	{
 		if (GodotObject.IsInstanceValid(unit) && EcsWorld.IsAlive(unit.Entity))
 		{
+			bool isEnemy = playerIndex != 0;
 			var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
 			EcsWorld.Set(unit.Entity, new Owner(playerOwner));
+			
+			if (EcsWorld.Has<UnitOwnerPlayer>(unit.Entity))
+				EcsWorld.Set(unit.Entity, new UnitOwnerPlayer(playerIndex));
+			else
+				EcsWorld.Add(unit.Entity, new UnitOwnerPlayer(playerIndex));
+
 			if (UnitRegistry.TryGetValue(unit.UnitId, out var meta))
 			{
 				string name = meta.Name;
@@ -2135,19 +2217,16 @@ public partial class GameHost
 				}
 				EcsWorld.Set(unit.Entity, new Name(name));
 			}
+			unit.Player = playerIndex;
 			unit.IsEnemy = isEnemy;
-			if (unit.UnitId == "priest")
-			{
-				Color priestColor = isEnemy ? new Color(0.8f, 0.2f, 0.8f) : new Color(1.0f, 0.85f, 0.2f);
-				unit.ApplyModelTint(priestColor);
-			}
-			else if (unit.UnitId == "worker")
-			{
-				Color workerColor = isEnemy ? new Color(0.6f, 0.4f, 0.2f) : new Color(0.8f, 0.6f, 0.4f);
-				unit.ApplyModelTint(workerColor);
-			}
+			unit.UpdatePlayerColorVisual();
 			unit.IsSelected = unit.IsSelected;
 		}
+	}
+
+	public void SetUnitTeamExternal(Unit3D unit, bool isEnemy)
+	{
+		SetUnitPlayerExternal(unit, isEnemy ? 1 : 0);
 	}
 
 	private void UpdateDecalSelectionRing(Decal decal, bool selected)
