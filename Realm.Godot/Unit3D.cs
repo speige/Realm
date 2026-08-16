@@ -434,7 +434,7 @@ public partial class Unit3D : Prop3D
 
 	protected override Color GetSelectionRingColor()
 	{
-		return IsEnemy ? new Color(0.9f, 0.1f, 0.2f) : new Color(0.1f, 0.9f, 0.2f);
+		return new Color(0.22f, 0.54f, 0.26f);
 	}
 
 	private float GetMinY(Node node, Transform3D currentTransform)

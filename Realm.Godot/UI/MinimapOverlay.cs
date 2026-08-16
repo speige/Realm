@@ -124,7 +124,7 @@ public partial class MinimapOverlay : Control
 
 			if (unit.IsSelected)
 			{
-				Color selColor = unit.IsEnemy ? new Color(0.9f, 0.1f, 0.2f) : new Color(0.1f, 0.9f, 0.2f);
+				Color selColor = unit.IsEnemy ? new Color(0.9f, 0.1f, 0.2f) : new Color(0.22f, 0.54f, 0.26f);
 				DrawCircle(drawPos, iconSize + 2.5f, selColor, false, 1.2f);
 			}
 		}

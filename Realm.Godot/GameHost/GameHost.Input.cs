@@ -2245,8 +2245,8 @@ public partial class GameHost
 		}
 		else
 		{
-			SpawnTargetIndicator(targetPos, new Color(0.1f, 0.9f, 0.2f));
-			InGameHUD.Instance?.ShowFeedbackText("Command: Move to position", new Color(0.2f, 0.9f, 0.3f));
+			SpawnTargetIndicator(targetPos, new Color(0.22f, 0.54f, 0.26f));
+			InGameHUD.Instance?.ShowFeedbackText("Command: Move to position", new Color(0.22f, 0.54f, 0.26f));
 		}
 
 		var targetIds = new List<int>();

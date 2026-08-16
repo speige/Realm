@@ -1298,8 +1298,8 @@ public partial class InGameHUD : Control
 	{
 		if (_isDrawingDragBox)
 		{
-			DrawRect(new Rect2(_dragStart, _dragEnd - _dragStart), new Color(0.1f, 0.9f, 0.2f, 0.15f), true);
-			DrawRect(new Rect2(_dragStart, _dragEnd - _dragStart), new Color(0.1f, 0.9f, 0.2f, 0.6f), false, 2f);
+			DrawRect(new Rect2(_dragStart, _dragEnd - _dragStart), new Color(0.22f, 0.54f, 0.26f, 0.15f), true);
+			DrawRect(new Rect2(_dragStart, _dragEnd - _dragStart), new Color(0.22f, 0.54f, 0.26f, 0.6f), false, 2f);
 		}
 	}
 

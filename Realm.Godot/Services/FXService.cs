@@ -150,6 +150,8 @@ public class FXService
 	public void SpawnPing3DEffect(Node3D parent, Vector3 position)
 	{
 		var meshInstance = new MeshInstance3D();
+		meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+		meshInstance.GIMode = GeometryInstance3D.GIModeEnum.Disabled;
 		var torusMesh = new TorusMesh();
 		torusMesh.InnerRadius = 2.0f;
 		torusMesh.OuterRadius = 2.4f;
@@ -158,10 +160,11 @@ public class FXService
 
 		var material = new StandardMaterial3D();
 		material.AlbedoColor = new Color(1.0f, 0.1f, 0.1f, 0.8f);
+		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+		material.DisableReceiveShadows = true;
 		material.EmissionEnabled = true;
 		material.Emission = new Color(1.0f, 0.1f, 0.1f);
 		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
 		meshInstance.MaterialOverride = material;
 
 		parent.AddChild(meshInstance);
@@ -243,6 +246,8 @@ public class FXService
 	public void SpawnTargetIndicator(Node3D parent, Vector3 position, Color color)
 	{
 		var meshInstance = new MeshInstance3D();
+		meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+		meshInstance.GIMode = GeometryInstance3D.GIModeEnum.Disabled;
 		var torusMesh = new TorusMesh();
 		torusMesh.InnerRadius = 0.8f;
 		torusMesh.OuterRadius = 1.0f;
@@ -255,6 +260,7 @@ public class FXService
 		material.Emission = color;
 		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+		material.DisableReceiveShadows = true;
 		meshInstance.MaterialOverride = material;
 
 		parent.AddChild(meshInstance);

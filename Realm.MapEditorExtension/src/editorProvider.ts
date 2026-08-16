@@ -359,6 +359,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             }
 
             if (assetType === 'glb') {
+                const originalFileBytes = fileBytes;
                 let subCategory = (extraOptions && extraOptions.category) ? extraOptions.category.toLowerCase() : 'props';
                 const recommendedFaceCount = subCategory === 'units' ? 6500 : (subCategory === 'buildings' ? 5000 : 850);
                 const faceCount = this.getGlbFaceCount(fileBytes);
@@ -440,6 +441,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 metadata.Assets.glb[subCategory][baseName] = {
                     hash: blake3,
                     default_asset_type: subCategory,
+                    generate_normals: true,
                     ...(ignorePlayerColor ? { ignore_player_color: true } : {})
                 };
 
@@ -469,6 +471,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         Description: '',
                         PathingType: defaultPathing,
                         ModelPath: baseName,
+                        RecalculateNormals: true,
                         ...(ignorePlayerColor ? { IgnorePlayerColor: true } : {})
                     });
                 }
@@ -1039,7 +1042,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="field-Brightness">Brightness</label>
-                                <input type="number" id="field-Brightness" step="0.01" min="0" max="2" placeholder="1.0" />
+                                <input type="number" id="field-Brightness" step="0.02" min="0.25" max="1.75" placeholder="1.0" />
                             </div>
                             <div class="form-group">
                                 <label for="field-Tint">Tint Color</label>

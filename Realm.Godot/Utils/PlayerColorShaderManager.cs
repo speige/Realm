@@ -8,9 +8,23 @@ public static class PlayerColorShaderManager
 {
 	private static Shader _sharedShader;
 	private static readonly Dictionary<string, ShaderMaterial> _materialCache = new(StringComparer.Ordinal);
+	private static readonly Dictionary<ulong, Texture2D> _normalizedAlbedoCache = new();
+	private static readonly Dictionary<ulong, bool> _playerMaskCheckCache = new();
+	private static readonly float[] SrgbToLinearLut = new float[256];
 	private static readonly StringName _paramPlayerColor = new("player_color");
 	private static readonly StringName _paramModelBrightness = new("model_brightness");
 	private static readonly StringName _paramModelColorTint = new("model_color_tint");
+
+	private const string ShaderPath = "res://Assets/shaders/player_color_spatial.gdshader";
+
+	static PlayerColorShaderManager()
+	{
+		for (int i = 0; i < 256; i++)
+		{
+			float srgb = i / 255.0f;
+			SrgbToLinearLut[i] = srgb <= 0.04045f ? srgb / 12.92f : MathF.Pow((srgb + 0.055f) / 1.055f, 2.4f);
+		}
+	}
 
 	public static Shader GetOrCreateShader()
 	{
@@ -19,126 +33,289 @@ public static class PlayerColorShaderManager
 			return _sharedShader;
 		}
 
-		if (ResourceLoader.Exists("res://Assets/shaders/player_color_spatial.gdshader"))
+		_sharedShader = GD.Load<Shader>(ShaderPath);
+		return _sharedShader;
+	}
+
+	public static Texture2D GetOrCreateNormalizedAlbedoTexture(Texture2D sourceTexture, float targetLinearLuminance = 0.22f, float minScaleFactor = 0.2f, float maxScaleFactor = 8.0f)
+	{
+		if (sourceTexture == null) return null;
+		ulong id = sourceTexture.GetInstanceId();
+		if (_normalizedAlbedoCache.TryGetValue(id, out var cached) && GodotObject.IsInstanceValid(cached))
 		{
-			_sharedShader = GD.Load<Shader>("res://Assets/shaders/player_color_spatial.gdshader");
-			if (_sharedShader != null) return _sharedShader;
+			return cached;
 		}
 
-		_sharedShader = new Shader
+		var normalized = NormalizeAlbedoTexture(sourceTexture, targetLinearLuminance, minScaleFactor, maxScaleFactor);
+		_normalizedAlbedoCache[id] = normalized;
+		return normalized;
+	}
+
+	public static Texture2D NormalizeAlbedoTexture(Texture2D sourceTexture, float targetLinearLuminance = 0.22f, float minScaleFactor = 0.2f, float maxScaleFactor = 8.0f)
+	{
+		if (sourceTexture == null) return null;
+		Image img = sourceTexture.GetImage();
+		if (img == null) return sourceTexture;
+
+		Image normalizedImg = NormalizeAlbedoImage(img, targetLinearLuminance, minScaleFactor, maxScaleFactor);
+		if (normalizedImg == img)
 		{
-			Code = @"shader_type spatial;
-render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
+			return sourceTexture;
+		}
 
-uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
-uniform sampler2D texture_orm : hint_default_black, filter_linear_mipmap, repeat_enable;
-uniform bool has_orm_texture = false;
-uniform sampler2D texture_normal : hint_normal, filter_linear_mipmap, repeat_enable;
-uniform bool has_normal_texture = false;
-uniform float normal_scale = 1.0;
-uniform sampler2D texture_emission : source_color, hint_default_black, filter_linear_mipmap, repeat_enable;
-uniform bool has_emission_texture = false;
-
-uniform vec4 albedo_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
-uniform vec4 emission_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
-uniform float emission_energy = 1.0;
-uniform float roughness_value : hint_range(0.0, 1.0) = 1.0;
-uniform float metallic_value : hint_range(0.0, 1.0) = 0.0;
-uniform float specular_value : hint_range(0.0, 1.0) = 0.5;
-
-uniform bool use_alpha_blend = false;
-uniform bool use_alpha_scissor = false;
-uniform float alpha_scissor_threshold : hint_range(0.0, 1.0) = 0.5;
-
-uniform vec3 uv1_scale = vec3(1.0, 1.0, 1.0);
-uniform vec3 uv1_offset = vec3(0.0, 0.0, 0.0);
-
-instance uniform vec4 player_color : source_color = vec4(0.620, 0.541, 0.431, 1.0);
-instance uniform float model_brightness : hint_range(0.0, 2.0) = 1.0;
-instance uniform vec4 model_color_tint : source_color = vec4(1.0, 1.0, 1.0, 1.0);
-
-varying vec2 base_uv;
-
-void vertex() {
-	base_uv = UV * uv1_scale.xy + uv1_offset.xy;
-}
-
-vec3 perturb_normal_cotangent(vec3 view_normal, vec3 view_pos, vec2 uv, vec3 normal_sample, float scale) {
-	vec3 map_n = normal_sample * 2.0 - 1.0;
-	map_n.xy *= scale;
-	
-	vec3 dp1 = dFdx(view_pos);
-	vec3 dp2 = dFdy(view_pos);
-	vec2 duv1 = dFdx(uv);
-	vec2 duv2 = dFdy(uv);
-	
-	vec3 dp2perp = cross(dp2, view_normal);
-	vec3 dp1perp = cross(view_normal, dp1);
-	
-	vec3 t = dp2perp * duv1.x + dp1perp * duv2.x;
-	vec3 b = dp2perp * duv1.y + dp1perp * duv2.y;
-	
-	float invmax = inversesqrt(max(dot(t, t), dot(b, b)));
-	mat3 tbn = mat3(t * invmax, b * invmax, view_normal);
-	return normalize(tbn * map_n);
-}
-
-void fragment() {
-	if (!FRONT_FACING) {
-		NORMAL = -NORMAL;
+		return ImageTexture.CreateFromImage(normalizedImg);
 	}
 
-	vec4 albedo_tex = texture(texture_albedo, base_uv);
-	vec3 base_albedo = albedo_tex.rgb * albedo_color.rgb;
-	
-	float player_mask = 0.0;
-	float roughness = roughness_value;
-	float metallic = metallic_value;
+	public static Image NormalizeAlbedoImage(Image sourceImage, float targetLinearLuminance = 0.22f, float minScaleFactor = 0.2f, float maxScaleFactor = 8.0f)
+	{
+		if (sourceImage == null) return null;
 
-	if (has_orm_texture) {
-		vec4 orm_tex = texture(texture_orm, base_uv);
-		player_mask = clamp(orm_tex.r, 0.0, 1.0);
-		roughness *= orm_tex.g;
-		metallic *= orm_tex.b;
+		Image workingImage = (Image)sourceImage.Duplicate();
+		if (workingImage.IsCompressed())
+		{
+			workingImage.Decompress();
+		}
+
+		if (workingImage.HasMipmaps())
+		{
+			workingImage.ClearMipmaps();
+		}
+
+		var fmt = workingImage.GetFormat();
+		if (fmt != Image.Format.Rgba8 && fmt != Image.Format.Rgb8)
+		{
+			workingImage.Convert(Image.Format.Rgba8);
+			fmt = Image.Format.Rgba8;
+		}
+
+		int w = workingImage.GetWidth();
+		int h = workingImage.GetHeight();
+		byte[] data = workingImage.GetData();
+		int channels = fmt == Image.Format.Rgba8 ? 4 : 3;
+
+		double totalLinearLuminance = 0.0;
+		long validPixelCount = 0;
+
+		for (int i = 0; i < data.Length; i += channels)
+		{
+			byte r = data[i];
+			byte g = data[i + 1];
+			byte b = data[i + 2];
+			byte a = channels >= 4 ? data[i + 3] : (byte)255;
+
+			if (a < 13)
+			{
+				continue;
+			}
+
+			if (r == 0 && g == 0 && b == 0)
+			{
+				continue;
+			}
+
+			float rLin = SrgbToLinearLut[r];
+			float gLin = SrgbToLinearLut[g];
+			float bLin = SrgbToLinearLut[b];
+
+			float lum = (0.2126f * rLin) + (0.7152f * gLin) + (0.0722f * bLin);
+			totalLinearLuminance += lum;
+			validPixelCount++;
+		}
+
+		if (validPixelCount == 0)
+		{
+			for (int i = 0; i < data.Length; i += channels)
+			{
+				byte r = data[i];
+				byte g = data[i + 1];
+				byte b = data[i + 2];
+				byte a = channels >= 4 ? data[i + 3] : (byte)255;
+				if (a < 13) continue;
+
+				float rLin = SrgbToLinearLut[r];
+				float gLin = SrgbToLinearLut[g];
+				float bLin = SrgbToLinearLut[b];
+				float lum = (0.2126f * rLin) + (0.7152f * gLin) + (0.0722f * bLin);
+				totalLinearLuminance += lum;
+				validPixelCount++;
+			}
+		}
+
+		if (validPixelCount == 0) return sourceImage;
+
+		float avgLuminance = (float)(totalLinearLuminance / validPixelCount);
+		if (avgLuminance <= 0.0001f) return sourceImage;
+
+		float rawScaleFactor = targetLinearLuminance / avgLuminance;
+		float scaleFactor = Mathf.Clamp(rawScaleFactor, minScaleFactor, maxScaleFactor);
+
+		if (MathF.Abs(scaleFactor - 1.0f) < 0.01f)
+		{
+			return sourceImage;
+		}
+
+		byte[] resultData = new byte[data.Length];
+		for (int i = 0; i < data.Length; i += channels)
+		{
+			byte r = data[i];
+			byte g = data[i + 1];
+			byte b = data[i + 2];
+
+			float rLin = SrgbToLinearLut[r] * scaleFactor;
+			float gLin = SrgbToLinearLut[g] * scaleFactor;
+			float bLin = SrgbToLinearLut[b] * scaleFactor;
+
+			resultData[i] = LinearToSrgbByte(rLin);
+			resultData[i + 1] = LinearToSrgbByte(gLin);
+			resultData[i + 2] = LinearToSrgbByte(bLin);
+
+			if (channels >= 4)
+			{
+				resultData[i + 3] = data[i + 3];
+			}
+		}
+
+		Image result = Image.CreateFromData(w, h, false, fmt, resultData);
+		result.GenerateMipmaps();
+
+		return result;
 	}
 
-	vec3 final_color = mix(base_albedo, player_color.rgb, player_mask);
-	final_color *= model_brightness * model_color_tint.rgb;
-
-	ALBEDO = final_color;
-
-	if (use_alpha_scissor) {
-		ALPHA_SCISSOR_THRESHOLD = alpha_scissor_threshold;
-		ALPHA = albedo_tex.a * albedo_color.a;
-	} else if (use_alpha_blend) {
-		ALPHA = albedo_tex.a * albedo_color.a;
+	[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+	private static byte LinearToSrgbByte(float lin)
+	{
+		if (lin <= 0.0f) return 0;
+		if (lin >= 1.0f) return 255;
+		float srgb = lin <= 0.0031308f ? lin * 12.92f : 1.055f * MathF.Pow(lin, 1.0f / 2.4f) - 0.055f;
+		return (byte)Math.Clamp((int)Math.Round(srgb * 255.0f), 0, 255);
 	}
 
-	ROUGHNESS = roughness;
-	METALLIC = metallic;
-	SPECULAR = specular_value;
+	private static bool CheckHasPlayerMask(Texture2D ormTexture, Material sourceMaterial)
+	{
+		if (ormTexture == null) return false;
 
-	if (has_normal_texture) {
-		vec3 normal_sample = texture(texture_normal, base_uv).rgb;
-		NORMAL = perturb_normal_cotangent(NORMAL, VERTEX, base_uv, normal_sample, normal_scale);
+		if (sourceMaterial is BaseMaterial3D baseMat and not OrmMaterial3D)
+		{
+			if (baseMat.RoughnessTexture != baseMat.MetallicTexture)
+			{
+				return false;
+			}
+		}
+
+		ulong ormId = ormTexture.GetInstanceId();
+		if (_playerMaskCheckCache.TryGetValue(ormId, out bool cached))
+		{
+			return cached;
+		}
+
+		Image img = ormTexture.GetImage();
+		if (img == null)
+		{
+			_playerMaskCheckCache[ormId] = false;
+			return false;
+		}
+
+		if (img.IsCompressed())
+		{
+			img.Decompress();
+		}
+
+		var fmt = img.GetFormat();
+		if (fmt != Image.Format.Rgba8 && fmt != Image.Format.Rgb8 && fmt != Image.Format.R8)
+		{
+			img.Convert(Image.Format.Rgba8);
+			fmt = Image.Format.Rgba8;
+		}
+
+		byte[] data = img.GetData();
+		int channels = fmt == Image.Format.Rgba8 ? 4 : (fmt == Image.Format.Rgb8 ? 3 : 1);
+
+		bool allZero = true;
+		bool all255 = true;
+
+		for (int i = 0; i < data.Length; i += channels)
+		{
+			byte r = data[i];
+			if (r != 0) allZero = false;
+			if (r != 255) all255 = false;
+			if (!allZero && !all255) break;
+		}
+
+		bool isValidMask = !allZero && !all255;
+		_playerMaskCheckCache[ormId] = isValidMask;
+		return isValidMask;
 	}
 
-	if (has_emission_texture) {
-		EMISSION = texture(texture_emission, base_uv).rgb * emission_color.rgb * emission_energy;
-	} else if (emission_color.r > 0.0 || emission_color.g > 0.0 || emission_color.b > 0.0) {
-		EMISSION = emission_color.rgb * emission_energy;
+	public static bool ModelHasPlayerMask(Node rootNode)
+	{
+		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return false;
+		return ModelHasPlayerMaskRecursive(rootNode);
 	}
-}"
-		};
 
-		return _sharedShader;
+	private static bool ModelHasPlayerMaskRecursive(Node node)
+	{
+		if (node is MeshInstance3D meshInst && !IsExcludedMesh(meshInst))
+		{
+			int surfaceCount = meshInst.Mesh != null ? meshInst.Mesh.GetSurfaceCount() : 1;
+			for (int i = 0; i < surfaceCount; i++)
+			{
+				Material srcMat = meshInst.GetSurfaceOverrideMaterial(i);
+				if (srcMat == null && meshInst.Mesh != null)
+				{
+					srcMat = meshInst.Mesh.SurfaceGetMaterial(i);
+				}
+
+				Texture2D ormTexture = null;
+				if (srcMat is OrmMaterial3D ormMat)
+				{
+					ormTexture = ormMat.OrmTexture;
+				}
+				else if (srcMat is BaseMaterial3D baseMat)
+				{
+					ormTexture = baseMat.RoughnessTexture ?? baseMat.MetallicTexture;
+				}
+
+				if (ormTexture != null && CheckHasPlayerMask(ormTexture, srcMat))
+				{
+					return true;
+				}
+			}
+
+			if (meshInst.MaterialOverride != null)
+			{
+				Texture2D ormTexture = null;
+				if (meshInst.MaterialOverride is OrmMaterial3D ormMat)
+				{
+					ormTexture = ormMat.OrmTexture;
+				}
+				else if (meshInst.MaterialOverride is BaseMaterial3D baseMat)
+				{
+					ormTexture = baseMat.RoughnessTexture ?? baseMat.MetallicTexture;
+				}
+
+				if (ormTexture != null && CheckHasPlayerMask(ormTexture, meshInst.MaterialOverride))
+				{
+					return true;
+				}
+			}
+		}
+
+		foreach (var child in node.GetChildren())
+		{
+			if (child is Node childNode && ModelHasPlayerMaskRecursive(childNode))
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	public static ShaderMaterial GetOrCreateShaderMaterial(Material sourceMaterial)
 	{
 		var shader = GetOrCreateShader();
 
-		Texture2D albedoTexture = null;
+		Texture2D rawAlbedoTexture = null;
 		Texture2D ormTexture = null;
 		Texture2D normalTexture = null;
 		Texture2D emissionTexture = null;
@@ -156,7 +333,7 @@ void fragment() {
 
 		if (sourceMaterial is OrmMaterial3D ormMat)
 		{
-			albedoTexture = ormMat.AlbedoTexture;
+			rawAlbedoTexture = ormMat.AlbedoTexture;
 			ormTexture = ormMat.OrmTexture;
 			normalTexture = ormMat.NormalEnabled ? ormMat.NormalTexture : null;
 			emissionTexture = ormMat.EmissionEnabled ? ormMat.EmissionTexture : null;
@@ -180,7 +357,7 @@ void fragment() {
 		}
 		else if (sourceMaterial is BaseMaterial3D baseMat)
 		{
-			albedoTexture = baseMat.AlbedoTexture;
+			rawAlbedoTexture = baseMat.AlbedoTexture;
 			ormTexture = baseMat.RoughnessTexture ?? baseMat.MetallicTexture;
 			normalTexture = baseMat.NormalEnabled ? baseMat.NormalTexture : null;
 			emissionTexture = baseMat.EmissionEnabled ? baseMat.EmissionTexture : null;
@@ -203,12 +380,15 @@ void fragment() {
 			}
 		}
 
+		Texture2D albedoTexture = GetOrCreateNormalizedAlbedoTexture(rawAlbedoTexture);
+		bool hasPlayerMask = CheckHasPlayerMask(ormTexture, sourceMaterial);
+
 		ulong albedoId = albedoTexture != null ? albedoTexture.GetInstanceId() : 0;
 		ulong ormId = ormTexture != null ? ormTexture.GetInstanceId() : 0;
 		ulong normalId = normalTexture != null ? normalTexture.GetInstanceId() : 0;
 		ulong emissionId = emissionTexture != null ? emissionTexture.GetInstanceId() : 0;
 
-		string key = $"{albedoId}_{ormId}_{normalId}_{emissionId}_{albedoColor.ToHtml()}_{emissionColor.ToHtml()}_{emissionEnergy:F2}_{roughness:F2}_{metallic:F2}_{specular:F2}_{uv1Scale.X:F2}_{uv1Scale.Y:F2}_{uv1Offset.X:F2}_{uv1Offset.Y:F2}_{useAlphaBlend}_{useAlphaScissor}_{alphaScissorThreshold:F2}";
+		string key = $"{albedoId}_{ormId}_{hasPlayerMask}_{normalId}_{emissionId}_{albedoColor.ToHtml()}_{emissionColor.ToHtml()}_{emissionEnergy:F2}_{roughness:F2}_{metallic:F2}_{specular:F2}_{uv1Scale.X:F2}_{uv1Scale.Y:F2}_{uv1Offset.X:F2}_{uv1Offset.Y:F2}_{useAlphaBlend}_{useAlphaScissor}_{alphaScissorThreshold:F2}";
 
 		if (_materialCache.TryGetValue(key, out var cached) && GodotObject.IsInstanceValid(cached))
 		{
@@ -228,10 +408,12 @@ void fragment() {
 		{
 			material.SetShaderParameter("texture_orm", ormTexture);
 			material.SetShaderParameter("has_orm_texture", true);
+			material.SetShaderParameter("has_player_mask", hasPlayerMask);
 		}
 		else
 		{
 			material.SetShaderParameter("has_orm_texture", false);
+			material.SetShaderParameter("has_player_mask", false);
 		}
 		if (normalTexture != null)
 		{
@@ -269,6 +451,20 @@ void fragment() {
 		return material;
 	}
 
+	private static bool IsExcludedMesh(MeshInstance3D meshInst)
+	{
+		if (meshInst == null) return true;
+		string nodeName = meshInst.Name.ToString();
+		return nodeName.StartsWith("_selection", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("Selection", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("_hover", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("Hover", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("BrushIndicator", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("DropShadow", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.Contains("SelectionRing", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.Contains("HoverRing", StringComparison.OrdinalIgnoreCase);
+	}
+
 	public static void ApplyPlayerColorShader(Node rootNode, Color playerColor)
 	{
 		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
@@ -279,8 +475,7 @@ void fragment() {
 	{
 		if (node is MeshInstance3D meshInst)
 		{
-			string nodeName = meshInst.Name.ToString();
-			if (!nodeName.StartsWith("_selection") && !nodeName.StartsWith("_hover") && !nodeName.StartsWith("BrushIndicator") && !nodeName.StartsWith("DropShadow"))
+			if (!IsExcludedMesh(meshInst))
 			{
 				int surfaceCount = meshInst.Mesh != null ? meshInst.Mesh.GetSurfaceCount() : 1;
 				for (int i = 0; i < surfaceCount; i++)
@@ -332,8 +527,7 @@ void fragment() {
 	{
 		if (node is MeshInstance3D meshInst)
 		{
-			string nodeName = meshInst.Name.ToString();
-			if (!nodeName.StartsWith("_selection") && !nodeName.StartsWith("_hover") && !nodeName.StartsWith("BrushIndicator") && !nodeName.StartsWith("DropShadow"))
+			if (!IsExcludedMesh(meshInst))
 			{
 				meshInst.SetInstanceShaderParameter(_paramPlayerColor, playerColor);
 			}
@@ -358,8 +552,7 @@ void fragment() {
 	{
 		if (node is MeshInstance3D meshInst)
 		{
-			string nodeName = meshInst.Name.ToString();
-			if (!nodeName.StartsWith("_selection") && !nodeName.StartsWith("_hover") && !nodeName.StartsWith("BrushIndicator") && !nodeName.StartsWith("DropShadow"))
+			if (!IsExcludedMesh(meshInst))
 			{
 				meshInst.SetInstanceShaderParameter(_paramModelBrightness, brightness);
 				meshInst.SetInstanceShaderParameter(_paramModelColorTint, tint);
@@ -378,5 +571,7 @@ void fragment() {
 	public static void ClearCache()
 	{
 		_materialCache.Clear();
+		_normalizedAlbedoCache.Clear();
+		_playerMaskCheckCache.Clear();
 	}
 }

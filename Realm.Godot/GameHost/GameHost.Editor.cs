@@ -11,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using Realm.Godot.Utils;
 
 public partial class GameHost
 {
@@ -258,18 +259,18 @@ public partial class GameHost
 		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
 		string normPrimary = NormalizeModelAssetKey(primaryKey);
 		if (!string.IsNullOrEmpty(normPrimary) && ModelBrightness.TryGetValue(normPrimary, out float val1))
-			return Mathf.Clamp(val1, 0.0f, 1.0f);
+			return Mathf.Clamp(val1, 0.25f, 1.75f);
 
 		string assetKey = GetModelAssetKey(objOrId);
 		string normAsset = NormalizeModelAssetKey(assetKey);
 		if (!string.IsNullOrEmpty(normAsset) && ModelBrightness.TryGetValue(normAsset, out float val2))
-			return Mathf.Clamp(val2, 0.0f, 1.0f);
+			return Mathf.Clamp(val2, 0.25f, 1.75f);
 
 		if (!string.IsNullOrEmpty(primaryKey))
 		{
-			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.Brightness > 0f) return Mathf.Clamp(meta.Brightness, 0.0f, 1.0f);
-			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.Brightness > 0f) return Mathf.Clamp(resMeta.Brightness, 0.0f, 1.0f);
-			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.Brightness > 0f) return Mathf.Clamp(propMeta.Brightness, 0.0f, 1.0f);
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.Brightness > 0f) return Mathf.Clamp(meta.Brightness, 0.25f, 1.75f);
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.Brightness > 0f) return Mathf.Clamp(resMeta.Brightness, 0.25f, 1.75f);
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.Brightness > 0f) return Mathf.Clamp(propMeta.Brightness, 0.25f, 1.75f);
 		}
 
 		return 1.0f;
@@ -280,7 +281,7 @@ public partial class GameHost
 		string norm = NormalizeModelAssetKey(assetKey);
 		if (string.IsNullOrEmpty(norm)) return;
 
-		float k = Mathf.Clamp(brightness, 0.0f, 1.0f);
+		float k = Mathf.Clamp(brightness, 0.25f, 1.75f);
 		ModelBrightness[norm] = k;
 		UpdateMaterialOverridesForAsset(norm);
 
@@ -331,7 +332,7 @@ public partial class GameHost
 
 	public bool GetModelGenerateNormals(object objOrId)
 	{
-		if (objOrId == null) return false;
+		if (objOrId == null) return true;
 		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
 		string normPrimary = NormalizeModelAssetKey(primaryKey);
 		if (!string.IsNullOrEmpty(normPrimary) && ModelGenerateNormals.TryGetValue(normPrimary, out bool b1))
@@ -349,7 +350,7 @@ public partial class GameHost
 			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.RecalculateNormals;
 		}
 
-		return false;
+		return true;
 	}
 
 	public void SetModelGenerateNormals(string assetKey, bool generateNormals)
@@ -382,6 +383,19 @@ public partial class GameHost
 			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.IgnorePlayerColor) return true;
 			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.IgnorePlayerColor) return true;
 			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.IgnorePlayerColor) return true;
+		}
+
+		string lookupKey = !string.IsNullOrEmpty(normPrimary) ? normPrimary : normAsset;
+		if (!string.IsNullOrEmpty(lookupKey))
+		{
+			var modelNode = ModelCache.GetModel(lookupKey) as Node;
+			if (modelNode != null && !PlayerColorShaderManager.ModelHasPlayerMask(modelNode))
+			{
+				ModelIgnorePlayerColor[lookupKey] = true;
+				_modelYOffsetSavePending = true;
+				EditorHasUnsavedChanges = true;
+				return true;
+			}
 		}
 
 		return false;
@@ -521,7 +535,14 @@ public partial class GameHost
 		foreach (var meshInst in meshNodes)
 		{
 			string nameStr = meshInst.Name.ToString();
-			if (nameStr.StartsWith("_selection") || nameStr.StartsWith("_hover") || nameStr.StartsWith("BrushIndicator")) continue;
+			if (nameStr.StartsWith("_selection", StringComparison.OrdinalIgnoreCase)
+				|| nameStr.StartsWith("Selection", StringComparison.OrdinalIgnoreCase)
+				|| nameStr.StartsWith("_hover", StringComparison.OrdinalIgnoreCase)
+				|| nameStr.StartsWith("Hover", StringComparison.OrdinalIgnoreCase)
+				|| nameStr.StartsWith("BrushIndicator", StringComparison.OrdinalIgnoreCase)
+				|| nameStr.StartsWith("DropShadow", StringComparison.OrdinalIgnoreCase)
+				|| nameStr.Contains("SelectionRing", StringComparison.OrdinalIgnoreCase)
+				|| nameStr.Contains("HoverRing", StringComparison.OrdinalIgnoreCase)) continue;
 
 			if (generateNormals)
 			{
@@ -861,13 +882,24 @@ public partial class GameHost
 								{
 									ModelGenerateNormals[NormalizeModelAssetKey(itemKvp.Key)] = gnVal;
 								}
+								string normKey = NormalizeModelAssetKey(itemKvp.Key);
 								if (itemObj.ContainsKey("ignore_player_color") && bool.TryParse(itemObj["ignore_player_color"]?.ToString(), out bool ipcVal))
 								{
-									ModelIgnorePlayerColor[NormalizeModelAssetKey(itemKvp.Key)] = ipcVal;
+									ModelIgnorePlayerColor[normKey] = ipcVal;
 								}
 								else if (itemObj.ContainsKey("IgnorePlayerColor") && bool.TryParse(itemObj["IgnorePlayerColor"]?.ToString(), out bool ipcVal2))
 								{
-									ModelIgnorePlayerColor[NormalizeModelAssetKey(itemKvp.Key)] = ipcVal2;
+									ModelIgnorePlayerColor[normKey] = ipcVal2;
+								}
+								else
+								{
+									var modelNode = ModelCache.GetModel(normKey) as Node;
+									if (modelNode != null && !PlayerColorShaderManager.ModelHasPlayerMask(modelNode))
+									{
+										ModelIgnorePlayerColor[normKey] = true;
+										_modelYOffsetSavePending = true;
+										EditorHasUnsavedChanges = true;
+									}
 								}
 							}
 						}
@@ -2240,16 +2272,19 @@ public partial class GameHost
 		if (selected)
 		{
 			var ring = new MeshInstance3D();
-			ring.Name = "EditorSelectionRing";
+			ring.Name = "_selection_ring_decal";
+			ring.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+			ring.GIMode = GeometryInstance3D.GIModeEnum.Disabled;
 			var torusMesh = new TorusMesh();
 			torusMesh.InnerRadius = 2.5f;
 			torusMesh.OuterRadius = 2.8f;
 			ring.Mesh = torusMesh;
 			ring.Position = new Vector3(0, 0.05f, 0);
 			var material = new StandardMaterial3D();
-			material.AlbedoColor = new Color(0.1f, 0.7f, 0.95f);
-			material.EmissionEnabled = true;
-			material.Emission = new Color(0.1f, 0.7f, 0.95f);
+			material.AlbedoColor = new Color(0.22f, 0.54f, 0.26f);
+			material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+			material.DisableReceiveShadows = true;
+			material.EmissionEnabled = false;
 			material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 			ring.MaterialOverride = material;
 			decal.AddChild(ring);
@@ -2259,7 +2294,7 @@ public partial class GameHost
 	private void UpdateDecalHoverRing(Decal decal, bool hovered)
 	{
 		if (!GodotObject.IsInstanceValid(decal)) return;
-		var existing = decal.GetNodeOrNull<MeshInstance3D>("EditorHoverRing");
+		var existing = decal.GetNodeOrNull<MeshInstance3D>("_hover_ring_decal");
 		if (existing != null)
 		{
 			existing.QueueFree();
@@ -2267,17 +2302,19 @@ public partial class GameHost
 		if (hovered && SelectedEditorObject != decal)
 		{
 			var ring = new MeshInstance3D();
-			ring.Name = "EditorHoverRing";
+			ring.Name = "_hover_ring_decal";
+			ring.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+			ring.GIMode = GeometryInstance3D.GIModeEnum.Disabled;
 			var torusMesh = new TorusMesh();
 			torusMesh.InnerRadius = 2.5f;
 			torusMesh.OuterRadius = 2.8f;
 			ring.Mesh = torusMesh;
 			ring.Position = new Vector3(0, 0.05f, 0);
 			var material = new StandardMaterial3D();
-			material.AlbedoColor = new Color(1.0f, 1.0f, 1.0f, 0.4f);
+			material.AlbedoColor = new Color(0.88f, 0.88f, 0.88f, 0.22f);
 			material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-			material.EmissionEnabled = true;
-			material.Emission = new Color(1.0f, 1.0f, 1.0f) * 0.3f;
+			material.DisableReceiveShadows = true;
+			material.EmissionEnabled = false;
 			material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 			ring.MaterialOverride = material;
 			decal.AddChild(ring);
@@ -2331,6 +2368,8 @@ public partial class GameHost
 	private void CreateCoverageRing(float radius, Color color)
 	{
 		var meshInstance = new MeshInstance3D();
+		meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+		meshInstance.GIMode = GeometryInstance3D.GIModeEnum.Disabled;
 		var torusMesh = new TorusMesh();
 		torusMesh.InnerRadius = Mathf.Max(radius - 0.25f, 0.05f);
 		torusMesh.OuterRadius = radius + 0.25f;
@@ -2341,10 +2380,11 @@ public partial class GameHost
 
 		var material = new StandardMaterial3D();
 		material.AlbedoColor = color;
+		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+		material.DisableReceiveShadows = true;
 		material.EmissionEnabled = true;
 		material.Emission = new Color(color.R, color.G, color.B);
 		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
 		meshInstance.MaterialOverride = material;
 
 		_editorCoverageOverlayRoot.AddChild(meshInstance);

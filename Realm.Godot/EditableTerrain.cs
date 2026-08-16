@@ -23,49 +23,7 @@ public partial class EditableTerrain : StaticBody3D
 
 	public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLinearLuminance = 0.35f, float maxScaleFactor = 2.2f)
 	{
-		int w = sourceImage.GetWidth();
-		int h = sourceImage.GetHeight();
-		int pixelCount = w * h;
-		double totalLinearLuminance = 0.0;
-
-		for (int y = 0; y < h; y++)
-		{
-			for (int x = 0; x < w; x++)
-			{
-				Color srgbColor = sourceImage.GetPixel(x, y);
-				Color linearColor = srgbColor.SrgbToLinear();
-				float lum = (0.2126f * linearColor.R) + (0.7152f * linearColor.G) + (0.0722f * linearColor.B);
-				totalLinearLuminance += lum;
-			}
-		}
-
-		float avgLuminance = (float)(totalLinearLuminance / pixelCount);
-		if (avgLuminance <= 0.0001f) return sourceImage;
-
-		float rawScaleFactor = targetLinearLuminance / avgLuminance;
-		float scaleFactor = Mathf.Min(rawScaleFactor, maxScaleFactor);
-
-		Image result = Image.CreateEmpty(w, h, false, sourceImage.GetFormat());
-
-		for (int y = 0; y < h; y++)
-		{
-			for (int x = 0; x < w; x++)
-			{
-				Color srgbColor = sourceImage.GetPixel(x, y);
-				Color linearColor = srgbColor.SrgbToLinear();
-
-				float rLinear = Mathf.Clamp(linearColor.R * scaleFactor, 0.0f, 1.0f);
-				float gLinear = Mathf.Clamp(linearColor.G * scaleFactor, 0.0f, 1.0f);
-				float bLinear = Mathf.Clamp(linearColor.B * scaleFactor, 0.0f, 1.0f);
-
-				Color scaledLinearColor = new Color(rLinear, gLinear, bLinear, srgbColor.A);
-				Color scaledSrgbColor = scaledLinearColor.LinearToSrgb();
-
-				result.SetPixel(x, y, scaledSrgbColor);
-			}
-		}
-
-		return result;
+		return Realm.Godot.Utils.PlayerColorShaderManager.NormalizeAlbedoImage(sourceImage, targetLinearLuminance, 0.2f, maxScaleFactor);
 	}
 
 	public void ProcessAndSaveRawTexture(string rawPngPath, string outputKtx2Path)

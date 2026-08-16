@@ -5572,7 +5572,7 @@ public partial class MapEditorHUD : Control
 
 
 
-			_sldModelBrightness = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Brightness"), 0.0f, 1.0f, 0.01f, 1.0f, (val) =>
+			_sldModelBrightness = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Brightness"), 0.25f, 1.75f, 0.02f, 1.0f, (val) =>
 			{
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
@@ -5659,7 +5659,7 @@ public partial class MapEditorHUD : Control
 
 
 
-			_chkModelGenerateNormals = CreateCheckBoxRow(_contentGlobalOverrides, TranslationServer.Translate("Re-Calculate Normals"), false, (pressed) =>
+			_chkModelGenerateNormals = CreateCheckBoxRow(_contentGlobalOverrides, TranslationServer.Translate("Re-Calculate Normals"), true, (pressed) =>
 			{
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))

@@ -308,7 +308,7 @@ public static class GameSettings
 
 		if (quality == 0)
 		{
-			env.TonemapMode = Godot.Environment.ToneMapper.Linear;
+			env.TonemapMode = Godot.Environment.ToneMapper.Agx;
 			env.AdjustmentEnabled = false;
 			env.SsaoEnabled = false;
 			env.SsilEnabled = false;
@@ -319,7 +319,7 @@ public static class GameSettings
 		}
 		else
 		{
-			env.TonemapMode = Godot.Environment.ToneMapper.Aces;
+			env.TonemapMode = Godot.Environment.ToneMapper.Agx;
 			env.AdjustmentEnabled = true;
 			env.SsaoEnabled = true;
 			env.SsilEnabled = quality >= 2;

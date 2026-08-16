@@ -4,6 +4,7 @@ render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_sc
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D texture_orm : hint_default_black, filter_linear_mipmap, repeat_enable;
 uniform bool has_orm_texture = false;
+uniform bool has_player_mask = true;
 uniform sampler2D texture_normal : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform bool has_normal_texture = false;
 uniform float normal_scale = 1.0;
@@ -25,7 +26,7 @@ uniform vec3 uv1_scale = vec3(1.0, 1.0, 1.0);
 uniform vec3 uv1_offset = vec3(0.0, 0.0, 0.0);
 
 instance uniform vec4 player_color : source_color = vec4(0.620, 0.541, 0.431, 1.0);
-instance uniform float model_brightness : hint_range(0.0, 2.0) = 1.0;
+instance uniform float model_brightness : hint_range(0.25, 1.75) = 1.0;
 instance uniform vec4 model_color_tint : source_color = vec4(1.0, 1.0, 1.0, 1.0);
 
 varying vec2 base_uv;
@@ -68,13 +69,15 @@ void fragment() {
 
 	if (has_orm_texture) {
 		vec4 orm_tex = texture(texture_orm, base_uv);
-		player_mask = clamp(orm_tex.r, 0.0, 1.0);
+		if (has_player_mask) {
+			player_mask = clamp(orm_tex.r, 0.0, 1.0);
+		}
 		roughness *= orm_tex.g;
 		metallic *= orm_tex.b;
 	}
 
-	vec3 final_color = mix(base_albedo, player_color.rgb, player_mask);
-	final_color *= model_brightness * model_color_tint.rgb;
+	vec3 adjusted_base_albedo = base_albedo * model_brightness * model_color_tint.rgb;
+	vec3 final_color = mix(adjusted_base_albedo, player_color.rgb, player_mask);
 
 	ALBEDO = final_color;
 

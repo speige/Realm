@@ -727,7 +727,11 @@
             
             const val = unit[key];
             if (element.type === 'checkbox') {
-                element.checked = !!val;
+                if (key === 'RecalculateNormals') {
+                    element.checked = val !== undefined ? !!val : true;
+                } else {
+                    element.checked = !!val;
+                }
             } else if (val === undefined || val === null) {
                 element.value = '';
             } else {
@@ -2721,7 +2725,8 @@
                 UnitId: nextId,
                 Name: `New ${prefix}`,
                 Description: `A decorative ${prefix.toLowerCase()} prop.`,
-                PathingType: defaultPathing
+                PathingType: defaultPathing,
+                RecalculateNormals: true
             });
         } else if (domain === 'resources') {
             targetArray.push({
@@ -2732,7 +2737,8 @@
                 HarvestRate: 10.0,
                 GrowthRate: 0.0,
                 MaxWorkers: 5,
-                PathingType: defaultPathing
+                PathingType: defaultPathing,
+                RecalculateNormals: true
             });
         } else {
             targetArray.push({
@@ -2754,7 +2760,8 @@
                 AttackType: 'melee',
                 ArmorType: defaultArmor,
                 GoldBounty: 10.0,
-                PathingType: defaultPathing
+                PathingType: defaultPathing,
+                RecalculateNormals: true
             });
         }
 

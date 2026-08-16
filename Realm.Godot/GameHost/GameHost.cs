@@ -582,6 +582,11 @@ public partial class GameHost : Node3D, IGameAPI
 
 	public struct UnitMetadata
 	{
+		public UnitMetadata()
+		{
+			RecalculateNormals = true;
+		}
+
 		public string UnitId { get; set; }
 		public string Name { get; set; }
 		public string Description { get; set; }
@@ -606,7 +611,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public float CollisionCircle { get; set; }
 		public float Brightness { get; set; }
 		public string Tint { get; set; }
-		public bool RecalculateNormals { get; set; }
+		public bool RecalculateNormals { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; }
 		public string[]? BuildOptions { get; set; }
 		public bool IsHero { get; set; }
@@ -620,6 +625,11 @@ public partial class GameHost : Node3D, IGameAPI
 
 	public struct PropMetadata
 	{
+		public PropMetadata()
+		{
+			RecalculateNormals = true;
+		}
+
 		public string UnitId { get; set; }
 		public string Name { get; set; }
 		public string Description { get; set; }
@@ -629,13 +639,18 @@ public partial class GameHost : Node3D, IGameAPI
 		public float CollisionCircle { get; set; }
 		public float Brightness { get; set; }
 		public string Tint { get; set; }
-		public bool RecalculateNormals { get; set; }
+		public bool RecalculateNormals { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; }
 		public int PathingType { get; set; }
 	}
 
 	public struct ResourceMetadata
 	{
+		public ResourceMetadata()
+		{
+			RecalculateNormals = true;
+		}
+
 		public string UnitId { get; set; }
 		public string Name { get; set; }
 		public string Description { get; set; }
@@ -649,7 +664,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public float CollisionCircle { get; set; }
 		public float Brightness { get; set; }
 		public string Tint { get; set; }
-		public bool RecalculateNormals { get; set; }
+		public bool RecalculateNormals { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; }
 		public int PathingType { get; set; }
 	}
