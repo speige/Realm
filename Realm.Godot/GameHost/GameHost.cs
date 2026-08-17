@@ -2763,7 +2763,7 @@ public class {mapName} : IMapScript
 					{
 						PendingMapScriptPath = System.IO.Directory.GetFiles(
 							binDir,
-							"CustomMap.wasm",
+							"MapScript.wasm",
 							System.IO.SearchOption.AllDirectories
 						).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
 					}
@@ -2792,7 +2792,7 @@ public class {mapName} : IMapScript
 					if (PendingMapScriptPath.EndsWith(".wasm", StringComparison.OrdinalIgnoreCase))
 					{
 						string mapNameOnly = System.IO.Path.GetFileNameWithoutExtension(PendingMapScriptPath);
-						if (mapNameOnly.Equals("CustomMap", StringComparison.OrdinalIgnoreCase))
+						if (mapNameOnly.Equals("MapScript", StringComparison.OrdinalIgnoreCase))
 						{
 							string parentDir = System.IO.Path.GetDirectoryName(PendingMapScriptPath);
 							while (!string.IsNullOrEmpty(parentDir))

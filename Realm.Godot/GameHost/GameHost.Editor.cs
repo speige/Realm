@@ -2779,7 +2779,7 @@ public partial class GameHost
 		try
 		{
 			System.IO.Directory.CreateDirectory(wsPath);
-			MapWorkspaceService.SetupWorkspace(wsPath, "CustomMap");
+			MapWorkspaceService.SetupWorkspace(wsPath, "MapScript");
 		}
 		catch (Exception ex)
 		{

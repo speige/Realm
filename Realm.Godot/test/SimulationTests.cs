@@ -132,7 +132,7 @@ public class SimulationTests
         Assertions.AssertThat(File.Exists(Path.Combine(tempMapDir, "lib", "Realm.MapAPI.dll"))).IsTrue();
 
         // Write custom map script that spawns the worker/trees and moves the worker, simulating TestMeleePathingAroundTree via WASM
-        string customMapScript = @"
+        string mapScript = @"
 namespace Realm.Maps;
 
 using Realm.MapAPI;
@@ -161,7 +161,7 @@ public class TestWasmMap : IWasmModule
     {
     }
 }";
-        File.WriteAllText(Path.Combine(tempMapDir, "MapScript.cs"), customMapScript);
+        File.WriteAllText(Path.Combine(tempMapDir, "MapScript.cs"), mapScript);
 
         // 2. Compile to wasm programmatically using the Editor's compilation setup
         var compileProcess = new System.Diagnostics.Process();
@@ -431,11 +431,11 @@ public class TestWasmMap : IWasmModule
             "    <ProjectReference Include=\"C:/Users/SomeoneElse/source/repos/Realm/Realm.MapAPI/Realm.MapAPI.csproj\" />" + Environment.NewLine +
             "  </ItemGroup>" + Environment.NewLine +
             "</Project>";
-        File.WriteAllText(Path.Combine(tempMapDir, "CustomMap.csproj"), staleCsproj);
+        File.WriteAllText(Path.Combine(tempMapDir, "MapScript.csproj"), staleCsproj);
 
-        MapWorkspaceService.EnsureCsproj(tempMapDir, "CustomMap");
+        MapWorkspaceService.EnsureCsproj(tempMapDir, "MapScript");
 
-        string repaired = File.ReadAllText(Path.Combine(tempMapDir, "CustomMap.csproj"));
+        string repaired = File.ReadAllText(Path.Combine(tempMapDir, "MapScript.csproj"));
         Assertions.AssertThat(!repaired.Contains("C:")).IsTrue();
         Assertions.AssertThat(!repaired.Contains("ProjectReference")).IsTrue();
         Assertions.AssertThat(repaired.Contains("lib/Realm.MapAPI.dll")).IsTrue();

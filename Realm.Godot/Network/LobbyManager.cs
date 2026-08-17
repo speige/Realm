@@ -491,7 +491,7 @@ public partial class LobbyManager : Node
         {
             _mapServer?.Stop();
             _mapServer = new MapDistributionServer();
-            _mapServer.Start(ENetPort + 10, "Realm.CustomMap/map.json");
+            _mapServer.Start(ENetPort + 10, "Realm.MapScript/map.json");
         }
         catch (Exception ex)
         {

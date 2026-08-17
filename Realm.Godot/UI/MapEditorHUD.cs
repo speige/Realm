@@ -2318,7 +2318,7 @@ public partial class MapEditorHUD : Control
 			try
 			{
 				System.IO.Directory.CreateDirectory(_tempWorkspacePath);
-				MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "CustomMap");
+				MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "MapScript");
 			}
 			catch (Exception ex)
 			{
@@ -2540,7 +2540,7 @@ public partial class MapEditorHUD : Control
 		string scriptPath = System.IO.Path.Combine(_tempWorkspacePath, "MapScript.cs");
 		string unitsPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 		System.IO.Directory.CreateDirectory(_tempWorkspacePath);
-		MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "CustomMap");
+		MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "MapScript");
 	}
 
 	private long GetLastWriteTimeSafe(string path)
@@ -3153,7 +3153,7 @@ public partial class MapEditorHUD : Control
 					string resolvedWasiSdk = WasiSdkResolver.ResolveWasiSdkPath();
 					var compileProcess = new System.Diagnostics.Process();
 					compileProcess.StartInfo.FileName = "dotnet";
-					compileProcess.StartInfo.Arguments = $"publish \"CustomMap.csproj\" -c Release -r wasi-wasm -p:WASI_SDK_PATH=\"{resolvedWasiSdk}\"";
+					compileProcess.StartInfo.Arguments = $"publish \"MapScript.csproj\" -c Release -r wasi-wasm -p:WASI_SDK_PATH=\"{resolvedWasiSdk}\"";
 					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = resolvedWasiSdk;
 					compileProcess.StartInfo.WorkingDirectory = workspace;
 					compileProcess.StartInfo.CreateNoWindow = true;
@@ -3702,17 +3702,16 @@ public partial class MapEditorHUD : Control
 				MapWorkspaceService.EnsureCsproj(workspace, System.IO.Path.GetFileName(workspace));
 
 				var csprojFiles = System.IO.Directory.GetFiles(workspace, "*.csproj", System.IO.SearchOption.TopDirectoryOnly);
-				if (csprojFiles.Length == 0)
+				string csproj = csprojFiles.FirstOrDefault(f => System.IO.Path.GetFileName(f).Equals("MapScript.csproj", System.StringComparison.OrdinalIgnoreCase));
+				if (string.IsNullOrWhiteSpace(csproj))
 				{
 					_wasmHasErrors = true;
-					SetWasmConsoleStatus("❌ WASM Compilation Failed: No .csproj found", new Color(1.0f, 0.3f, 0.3f));
-					AppendWasmConsoleLog("[ERROR] No .csproj found in workspace, cannot compile map script");
-					GD.PrintErr("[MapEditorHUD] No .csproj found in workspace, cannot compile map script");
-					return;
+					var errorMessage = "[MapEditorHUD] ERROR: MapScript.csproj not found in workspace, cannot compile map script";
+					SetWasmConsoleStatus("❌ " + errorMessage, new Color(1.0f, 0.3f, 0.3f));
+					AppendWasmConsoleLog(errorMessage);
+					GD.PrintErr(errorMessage);
+					return;					
 				}
-
-				// Pick the first .csproj (prefer CustomMap.csproj)
-				string csproj = csprojFiles.FirstOrDefault(f => System.IO.Path.GetFileName(f).Equals("CustomMap.csproj", System.StringComparison.OrdinalIgnoreCase)) ?? csprojFiles[0];
 
 				// Check if WASM binary already exists and no .cs files have been modified since it was built
 				string binDir = System.IO.Path.Combine(workspace, "bin");
