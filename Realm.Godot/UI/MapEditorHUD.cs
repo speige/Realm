@@ -533,6 +533,16 @@ public partial class MapEditorHUD : Control
 			{
 				var res = GameHost.Instance.CycleTimeOfDay();
 				UpdateLightingTuningSlidersFromPhase(res.TimeOfDayIndex);
+				string timeName = GameHost.Instance.EnvironmentService?.GetTimeOfDayName(res.TimeOfDayIndex) ?? "Day";
+				string icon = res.TimeOfDayIndex switch
+				{
+					0 => "☀️",
+					1 => "🌅",
+					2 => "🌙",
+					3 => "🌄",
+					_ => "☀️"
+				};
+				ShowFeedback(string.Format(TranslationServer.Translate("Lighting: {0} {1}"), icon, TranslationServer.Translate(timeName)));
 			}
 		}, 11, "Cycle map environment lighting (L)");
 
@@ -6707,10 +6717,17 @@ public partial class MapEditorHUD : Control
 
 		if (sun != null)
 		{
+			GameSettings.ApplyDirectionalLightQuality(sun);
 			sun.RotationDegrees = new Vector3(_tuneSunPitch, _tuneSunYaw, 0f);
 			sun.LightEnergy = _tuneSunEnergy;
 			sun.LightColor = new Color(_tuneSunR, _tuneSunG, _tuneSunB);
-			sun.ShadowEnabled = false;
+			sun.LightSpecular = 0.5f;
+			sun.DirectionalShadowMaxDistance = 250.0f;
+			sun.DirectionalShadowBlendSplits = true;
+			sun.DirectionalShadowFadeStart = 0.8f;
+			sun.ShadowBias = 0.03f;
+			sun.ShadowNormalBias = 1.2f;
+			sun.ShadowEnabled = _tuneSunEnergy > 0.05f && GameSettings.QualityIdx > 0;
 		}
 
 		if (worldEnv != null && worldEnv.Environment != null)

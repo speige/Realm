@@ -591,6 +591,23 @@ public partial class GameHost
 					GetViewport().SetInputAsHandled();
 					return;
 				}
+				if (editorKeyEvent.Keycode == Key.L && !ctrlPressed && !shiftPressed)
+				{
+					var res = CycleTimeOfDay();
+					MapEditorHUD.Instance?.UpdateLightingTuningSlidersFromPhase(res.TimeOfDayIndex);
+					string timeName = EnvironmentService?.GetTimeOfDayName(res.TimeOfDayIndex) ?? "Day";
+					string icon = res.TimeOfDayIndex switch
+					{
+						0 => "☀️",
+						1 => "🌅",
+						2 => "🌙",
+						3 => "🌄",
+						_ => "☀️"
+					};
+					MapEditorHUD.Instance?.ShowFeedbackExternal(string.Format(TranslationServer.Translate("Lighting: {0} {1}"), icon, TranslationServer.Translate(timeName)));
+					GetViewport().SetInputAsHandled();
+					return;
+				}
 			}
 
 			if (@event is InputEventMouseButton wheelBtn && wheelBtn.Pressed && (wheelBtn.ButtonIndex == MouseButton.WheelUp || wheelBtn.ButtonIndex == MouseButton.WheelDown))

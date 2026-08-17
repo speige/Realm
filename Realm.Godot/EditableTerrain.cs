@@ -881,8 +881,8 @@ uniform float texture_scale = 0.5;
 uniform float macro_scale = 0.035;
 
 uniform float uv_warp_strength = 0.8;
-uniform float macro_albedo_contrast = 0.20;
-uniform float macro_roughness_contrast = 0.15;
+uniform float macro_albedo_contrast = 0.10;
+uniform float macro_roughness_contrast = 0.08;
 uniform float macro_normal_strength = 0.15;
 uniform float macro_lacunarity = 2.0;
 uniform float macro_gain = 0.5;
@@ -1123,6 +1123,8 @@ void fragment() {
 	}
 
 	vec3 final_albedo = terrain_color * macro_var * v_color.rgb;
+	float terrain_lum = dot(final_albedo, vec3(0.2126, 0.7152, 0.0722));
+	final_albedo = mix(vec3(terrain_lum), final_albedo, 0.82);
 	vec3 emission_color = vec3(0.0);
 	
 	if (pathing_visible) {
