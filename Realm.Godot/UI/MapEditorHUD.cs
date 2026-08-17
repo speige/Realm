@@ -6300,8 +6300,7 @@ public partial class MapEditorHUD : Control
 			}
 			SetupTextureSwatches(false);
 			RefreshSkyboxList();
-			_entityPaletteController?.SelectCategory(_entityPaletteController.CurrentCategory, triggerAddObject: false);
-			GameHost.Instance?.RefreshAllPlacedObjectModels();
+			GameHost.Instance?.LoadModelYOffsetsFromMetadataJson(wsPath);
 		}
 		catch (Exception ex)
 		{

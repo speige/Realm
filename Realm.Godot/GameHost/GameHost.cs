@@ -2620,15 +2620,6 @@ public class {mapName} : IMapScript
 			jsonText = System.IO.File.ReadAllText(globalPath);
 		}
 
-		UnitRegistry.Clear();
-		foreach (var kvp in DefaultRegistryFallback)
-		{
-			UnitRegistry[kvp.Key] = kvp.Value;
-		}
-		PropRegistry.Clear();
-		ResourceRegistry.Clear();
-		Prop3D.ClearModelPathCache();
-
 		if (!string.IsNullOrEmpty(jsonText))
 		{
 			try
@@ -2636,6 +2627,14 @@ public class {mapName} : IMapScript
 				using var doc = System.Text.Json.JsonDocument.Parse(jsonText);
 				if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
 				{
+					var newUnits = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
+					foreach (var kvp in DefaultRegistryFallback)
+					{
+						newUnits[kvp.Key] = kvp.Value;
+					}
+					var newProps = new Dictionary<string, PropMetadata>(StringComparer.OrdinalIgnoreCase);
+					var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
+
 					bool hasStructuredArrays = false;
 
 					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
@@ -2647,7 +2646,7 @@ public class {mapName} : IMapScript
 							foreach (var meta in list)
 							{
 								if (!string.IsNullOrEmpty(meta.UnitId))
-									UnitRegistry[meta.UnitId] = meta;
+									newUnits[meta.UnitId] = meta;
 							}
 						}
 					}
@@ -2661,7 +2660,7 @@ public class {mapName} : IMapScript
 							foreach (var meta in list)
 							{
 								if (!string.IsNullOrEmpty(meta.UnitId))
-									UnitRegistry[meta.UnitId] = meta;
+									newUnits[meta.UnitId] = meta;
 							}
 						}
 					}
@@ -2678,7 +2677,7 @@ public class {mapName} : IMapScript
 								{
 									var copy = meta;
 									if (copy.PathingType == 0) copy.PathingType = 255;
-									ResourceRegistry[copy.UnitId] = copy;
+									newResources[copy.UnitId] = copy;
 								}
 							}
 						}
@@ -2696,33 +2695,41 @@ public class {mapName} : IMapScript
 								{
 									var copy = meta;
 									if (copy.PathingType == 0) copy.PathingType = 255;
-									PropRegistry[copy.UnitId] = copy;
+									newProps[copy.UnitId] = copy;
 								}
 							}
 						}
 					}
 
-					if (hasStructuredArrays) return;
-
-					var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
-					if (loadedRegistry != null)
+					if (!hasStructuredArrays)
 					{
-						var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+						var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
+						if (loadedRegistry != null)
 						{
-							"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades", "CustomItems", "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps", "Assets"
-						};
-						foreach (var kvp in loadedRegistry)
-						{
-							if (!skipKeys.Contains(kvp.Key))
+							var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 							{
-								UnitRegistry[kvp.Key] = kvp.Value;
+								"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades", "CustomItems", "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps", "Assets"
+							};
+							foreach (var kvp in loadedRegistry)
+							{
+								if (!skipKeys.Contains(kvp.Key))
+								{
+									newUnits[kvp.Key] = kvp.Value;
+								}
 							}
 						}
-						if (UnitRegistry.Count > 0)
-						{
-							return;
-						}
 					}
+
+					UnitRegistry.Clear();
+					foreach (var kvp in newUnits) UnitRegistry[kvp.Key] = kvp.Value;
+
+					PropRegistry.Clear();
+					foreach (var kvp in newProps) PropRegistry[kvp.Key] = kvp.Value;
+
+					ResourceRegistry.Clear();
+					foreach (var kvp in newResources) ResourceRegistry[kvp.Key] = kvp.Value;
+
+					Prop3D.ClearModelPathCache();
 				}
 			}
 			catch (Exception ex)
@@ -3733,8 +3740,15 @@ public class {mapName} : IMapScript
 		else
 			EcsWorld.Add(entity, new UnitOwnerPlayer(playerIndex));
 
+		if (EcsWorld.Has<DefinitionId>(entity))
+			EcsWorld.Set(entity, new DefinitionId(id));
+		else
+			EcsWorld.Add(entity, new DefinitionId(id));
+
 		var unit3D = new Unit3D();
 		unit3D.Entity = entity;
+		unit3D.UnitId = id;
+		unit3D.IsBuilding = isBuilding;
 		unit3D.Name = $"{id}_{entity.Id}";
 		unit3D.Player = playerIndex;
 		unit3D.IsEnemy = isEnemy;

@@ -4210,7 +4210,7 @@
             return (h / 6);
         }
 
-        function updateTextureProperty(itemKey, updateFn) {
+        function updateTextureProperty(itemKey, updateFn, shouldSave = true) {
             let container = null;
             if (units?.Assets?.textures) container = units.Assets.textures;
             else if (units?.MapProperties?.Assets?.textures) container = units.MapProperties.Assets.textures;
@@ -4226,7 +4226,9 @@
             }
             updateFn(itemVal);
             container[itemKey] = itemVal;
-            saveChanges();
+            if (shouldSave) {
+                saveChanges();
+            }
             
             const tileMode = (itemVal.Tile_Mode || itemVal.tile_mode) ?? 'Stochastic';
             const uvScale = parseFloat(itemVal.UV_Scale ?? itemVal.uv_scale ?? 1.0);
@@ -4253,7 +4255,7 @@
         }
 
         display.querySelectorAll('.input-texture-brightness').forEach(input => {
-            const handleBrightChange = (e) => {
+            const handleBrightChange = (e, shouldSave) => {
                 const key = e.target.getAttribute('data-key');
                 const val = parseFloat(e.target.value);
                 const parentRow = e.target.closest('.texture-stochastic-controls');
@@ -4264,14 +4266,14 @@
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.Brightness = val;
                     itemVal.brightness = val;
-                });
+                }, shouldSave);
             };
-            input.addEventListener('input', handleBrightChange);
-            input.addEventListener('change', handleBrightChange);
+            input.addEventListener('input', (e) => handleBrightChange(e, false));
+            input.addEventListener('change', (e) => handleBrightChange(e, true));
         });
 
         display.querySelectorAll('.input-texture-tint-slider').forEach(input => {
-            const handleTintSlider = (e) => {
+            const handleTintSlider = (e, shouldSave) => {
                 const key = e.target.getAttribute('data-key');
                 const val = parseFloat(e.target.value);
                 const hex = (val <= 0.0) ? '#ffffff' : hsvToHex(val, 0.75, 1.0);
@@ -4283,14 +4285,14 @@
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.Tint = hex;
                     itemVal.tint = hex;
-                });
+                }, shouldSave);
             };
-            input.addEventListener('input', handleTintSlider);
-            input.addEventListener('change', handleTintSlider);
+            input.addEventListener('input', (e) => handleTintSlider(e, false));
+            input.addEventListener('change', (e) => handleTintSlider(e, true));
         });
 
         display.querySelectorAll('.input-texture-tint-picker').forEach(input => {
-            const handleTintPicker = (e) => {
+            const handleTintPicker = (e, shouldSave) => {
                 const key = e.target.getAttribute('data-key');
                 const hex = e.target.value;
                 const hue = hexToHue(hex);
@@ -4302,10 +4304,10 @@
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.Tint = hex;
                     itemVal.tint = hex;
-                });
+                }, shouldSave);
             };
-            input.addEventListener('input', handleTintPicker);
-            input.addEventListener('change', handleTintPicker);
+            input.addEventListener('input', (e) => handleTintPicker(e, false));
+            input.addEventListener('change', (e) => handleTintPicker(e, true));
         });
 
         display.querySelectorAll('.input-texture-tile-mode').forEach(sel => {
@@ -4322,7 +4324,7 @@
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.Tile_Mode = val;
                     itemVal.tile_mode = val;
-                });
+                }, true);
             });
         });
 
@@ -4333,7 +4335,7 @@
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.Variants = val;
                     itemVal.variants = val;
-                });
+                }, true);
                 const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
                 fetch(`http://127.0.0.1:${ipcPort}/api/`, {
                     method: 'POST',
@@ -4344,7 +4346,7 @@
         });
 
         display.querySelectorAll('.input-texture-uv-scale').forEach(input => {
-            const handleUvChange = (e) => {
+            const handleUvChange = (e, shouldSave) => {
                 const key = e.target.getAttribute('data-key');
                 const val = parseFloat(e.target.value);
                 const parentRow = e.target.closest('.texture-stochastic-controls');
@@ -4355,14 +4357,14 @@
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.UV_Scale = val;
                     itemVal.uv_scale = val;
-                });
+                }, shouldSave);
             };
-            input.addEventListener('input', handleUvChange);
-            input.addEventListener('change', handleUvChange);
+            input.addEventListener('input', (e) => handleUvChange(e, false));
+            input.addEventListener('change', (e) => handleUvChange(e, true));
         });
 
         display.querySelectorAll('.input-texture-stoch-size').forEach(input => {
-            const handleStochChange = (e) => {
+            const handleStochChange = (e, shouldSave) => {
                 const key = e.target.getAttribute('data-key');
                 const val = parseFloat(e.target.value);
                 const parentRow = e.target.closest('.texture-stochastic-controls');
@@ -4373,14 +4375,14 @@
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.Stochastic_Tile_Size = val;
                     itemVal.stochastic_tile_size = val;
-                });
+                }, shouldSave);
             };
-            input.addEventListener('input', handleStochChange);
-            input.addEventListener('change', handleStochChange);
+            input.addEventListener('input', (e) => handleStochChange(e, false));
+            input.addEventListener('change', (e) => handleStochChange(e, true));
         });
 
         display.querySelectorAll('.input-texture-cross-fade').forEach(input => {
-            const handleCrossFadeChange = (e) => {
+            const handleCrossFadeChange = (e, shouldSave) => {
                 const key = e.target.getAttribute('data-key');
                 const val = parseFloat(e.target.value);
                 const parentRow = e.target.closest('.texture-stochastic-controls');
@@ -4391,10 +4393,10 @@
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.Cross_Fade = val;
                     itemVal.cross_fade = val;
-                });
+                }, shouldSave);
             };
-            input.addEventListener('input', handleCrossFadeChange);
-            input.addEventListener('change', handleCrossFadeChange);
+            input.addEventListener('input', (e) => handleCrossFadeChange(e, false));
+            input.addEventListener('change', (e) => handleCrossFadeChange(e, true));
         });
 
         // Attach migration event handlers

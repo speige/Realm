@@ -924,8 +924,6 @@ public partial class GameHost
 			{
 				UpdateMaterialOverridesForAsset(key);
 			}
-
-			RefreshAllPlacedObjectModels();
 		}
 		catch (Exception ex)
 		{
@@ -948,6 +946,18 @@ public partial class GameHost
 				{
 					targetModel = meta.ModelPath;
 					if (meta.Speed == 0f) isBuilding = true;
+				}
+				else if (ResourceRegistry.TryGetValue(unit.UnitId, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath))
+				{
+					targetModel = resMeta.ModelPath;
+				}
+				else if (PropRegistry.TryGetValue(unit.UnitId, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath))
+				{
+					targetModel = propMeta.ModelPath;
+				}
+				else if (!string.IsNullOrEmpty(unit.ModelPath))
+				{
+					targetModel = unit.ModelPath;
 				}
 				string modelPath = GetFallbackModelPath(targetModel, isBuilding);
 				unit.LoadModel(modelPath);

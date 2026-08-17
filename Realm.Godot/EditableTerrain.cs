@@ -1455,7 +1455,6 @@ void fragment() {
 
 		try
 		{
-			GameHost.Instance?.LoadModelYOffsetsFromMetadataJson(mapDir);
 			string metadataPath = System.IO.Path.Combine(mapDir, "metadata.json");
 			if (System.IO.File.Exists(metadataPath))
 			{
