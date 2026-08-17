@@ -80,10 +80,7 @@ public partial class GameHost
 			string absolutePath = ProjectSettings.GlobalizePath(path);
 			CurrentMapDirectory = System.IO.Path.GetDirectoryName(absolutePath);
 
-			if (!terrainOnly && !string.IsNullOrEmpty(CurrentMapDirectory))
-			{
-				MapWorkspaceService.CleanWorkspaceBinaries(CurrentMapDirectory);
-			}
+
 
 			if (clearUnits)
 			{

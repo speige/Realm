@@ -75,6 +75,6 @@ public static class WasiSdkResolver
 
 	private static string NormalizeDirectoryPath(string path)
 	{
-		return Path.GetFullPath(path).Replace("\\", "/");
+		return Path.GetFullPath(path);
 	}
 }

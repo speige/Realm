@@ -2568,7 +2568,7 @@ public partial class MapEditorHUD : Control
 
 	private void OnSyncTimerTimeout()
 	{
-		if (GameHost.Instance == null || _isSyncing) return;
+		if (GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode || IsTestMode || _isSyncing) return;
 		_isSyncing = true;
 		
 		string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
@@ -2814,7 +2814,43 @@ public partial class MapEditorHUD : Control
 
 	public bool LoadMapFolder(string selectedFolder)
 	{
-		return LoadMapFolderAsync(selectedFolder).GetAwaiter().GetResult();
+		if (!System.IO.Directory.Exists(selectedFolder)) return false;
+		_lastUsedFolder = selectedFolder;
+		_currentSourceFolder = selectedFolder;
+
+		ShowFeedback(TranslationServer.Translate("Loading map..."));
+		CopyFolderToTempWorkspace(selectedFolder);
+
+		try
+		{
+			LoadMapProperties();
+			ReadMetadataAndRefreshTextures();
+			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
+
+			if (success)
+			{
+				if (OperatingSystem.IsWindows())
+				{
+					VSCodeManager.Instance.SaveRecentMapDir(selectedFolder);
+				}
+				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+				ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
+				SaveCurrentDirectoryBlake3();
+			}
+			else
+			{
+				ShowFeedback(TranslationServer.Translate("Failed to load map files from folder!"));
+			}
+
+			return success;
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] Failed to load map folder: {ex.Message}");
+			return false;
+		}
 	}
 
 	public async System.Threading.Tasks.Task<bool> LoadMapFolderAsync(string selectedFolder)
@@ -2826,41 +2862,36 @@ public partial class MapEditorHUD : Control
 		ShowFeedback(TranslationServer.Translate("Loading map..."));
 		await System.Threading.Tasks.Task.Run(() => CopyFolderToTempWorkspace(selectedFolder));
 
-		var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
-		Callable.From(() =>
+		try
 		{
-			try
+			LoadMapProperties();
+			ReadMetadataAndRefreshTextures();
+			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
+
+			if (success)
 			{
-				LoadMapProperties();
-				ReadMetadataAndRefreshTextures();
-				string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
-				bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
-
-				if (success)
+				if (OperatingSystem.IsWindows())
 				{
-					if (OperatingSystem.IsWindows())
-					{
-						VSCodeManager.Instance.SaveRecentMapDir(selectedFolder);
-					}
-					_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
-					_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
-					ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
-					SaveCurrentDirectoryBlake3();
+					VSCodeManager.Instance.SaveRecentMapDir(selectedFolder);
 				}
-				else
-				{
-					ShowFeedback(TranslationServer.Translate("Failed to load map files from folder!"));
-				}
-
-				tcs.SetResult(success);
+				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+				ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
+				SaveCurrentDirectoryBlake3();
 			}
-			catch (Exception ex)
+			else
 			{
-				tcs.SetException(ex);
+				ShowFeedback(TranslationServer.Translate("Failed to load map files from folder!"));
 			}
-		}).CallDeferred();
 
-		return await tcs.Task;
+			return success;
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] Failed to load map folder: {ex.Message}");
+			return false;
+		}
 	}
 
 	public async System.Threading.Tasks.Task<string> GenerateAssetSnapshotBase64(string filePath)
@@ -3153,7 +3184,13 @@ public partial class MapEditorHUD : Control
 					string resolvedWasiSdk = WasiSdkResolver.ResolveWasiSdkPath();
 					var compileProcess = new System.Diagnostics.Process();
 					compileProcess.StartInfo.FileName = "dotnet";
-					compileProcess.StartInfo.Arguments = $"publish \"MapScript.csproj\" -c Release -r wasi-wasm -p:WASI_SDK_PATH=\"{resolvedWasiSdk}\"";
+					var csprojFiles = System.IO.Directory.GetFiles(workspace, "*.csproj", System.IO.SearchOption.TopDirectoryOnly);
+					string csprojName = csprojFiles.Length > 0 ? System.IO.Path.GetFileName(csprojFiles[0]) : "MapScript.csproj";
+					if (csprojFiles.Any(f => System.IO.Path.GetFileName(f).Equals("MapScript.csproj", System.StringComparison.OrdinalIgnoreCase)))
+					{
+						csprojName = "MapScript.csproj";
+					}
+					compileProcess.StartInfo.Arguments = $"publish \"{csprojName}\" -c Release -r wasi-wasm -p:WASI_SDK_PATH=\"{resolvedWasiSdk}\"";
 					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = resolvedWasiSdk;
 					compileProcess.StartInfo.WorkingDirectory = workspace;
 					compileProcess.StartInfo.CreateNoWindow = true;
@@ -3412,6 +3449,7 @@ public partial class MapEditorHUD : Control
 	public void AppendWasmConsoleLog(string line)
 	{
 		Realm.Godot.UI.WasmConsoleWindow.Instance.AppendLog(line);
+		GD.Print("[WASM_BUILD] " + line);
 	}
 
 	public void SetWasmConsoleStatus(string statusText, Color color)
@@ -3702,27 +3740,31 @@ public partial class MapEditorHUD : Control
 				MapWorkspaceService.EnsureCsproj(workspace, System.IO.Path.GetFileName(workspace));
 
 				var csprojFiles = System.IO.Directory.GetFiles(workspace, "*.csproj", System.IO.SearchOption.TopDirectoryOnly);
-				string csproj = csprojFiles.FirstOrDefault(f => System.IO.Path.GetFileName(f).Equals("MapScript.csproj", System.StringComparison.OrdinalIgnoreCase));
-				if (string.IsNullOrWhiteSpace(csproj))
+				if (csprojFiles.Length == 0)
 				{
 					_wasmHasErrors = true;
-					var errorMessage = "[MapEditorHUD] ERROR: MapScript.csproj not found in workspace, cannot compile map script";
+					var errorMessage = "[MapEditorHUD] ERROR: No .csproj found in workspace, cannot compile map script";
 					SetWasmConsoleStatus("❌ " + errorMessage, new Color(1.0f, 0.3f, 0.3f));
 					AppendWasmConsoleLog(errorMessage);
 					GD.PrintErr(errorMessage);
 					return;					
 				}
 
+				string csproj = csprojFiles.FirstOrDefault(f => System.IO.Path.GetFileName(f).Equals("MapScript.csproj", System.StringComparison.OrdinalIgnoreCase)) ?? csprojFiles[0];
+
 				// Check if WASM binary already exists and no .cs files have been modified since it was built
 				string binDir = System.IO.Path.Combine(workspace, "bin");
 				string existingWasm = null;
 				if (System.IO.Directory.Exists(binDir))
 				{
-					existingWasm = System.IO.Directory.GetFiles(
+					var wasmFiles = System.IO.Directory.GetFiles(
 						binDir,
 						"*.wasm",
 						System.IO.SearchOption.AllDirectories
-					).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
+					).Where(f => !f.Contains("native") && !f.Contains("obj")).ToList();
+
+					existingWasm = wasmFiles.FirstOrDefault(f => f.Contains("publish"))
+						?? wasmFiles.OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
 				}
 
 				if (string.IsNullOrEmpty(existingWasm) && !string.IsNullOrEmpty(_currentSourceFolder) && System.IO.Directory.Exists(_currentSourceFolder))
@@ -3730,11 +3772,14 @@ public partial class MapEditorHUD : Control
 					string sourceBinDir = System.IO.Path.Combine(_currentSourceFolder, "bin");
 					if (System.IO.Directory.Exists(sourceBinDir))
 					{
-						existingWasm = System.IO.Directory.GetFiles(
+						var wasmFiles = System.IO.Directory.GetFiles(
 							sourceBinDir,
 							"*.wasm",
 							System.IO.SearchOption.AllDirectories
-						).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
+						).Where(f => !f.Contains("native") && !f.Contains("obj")).ToList();
+
+						existingWasm = wasmFiles.FirstOrDefault(f => f.Contains("publish"))
+							?? wasmFiles.OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
 					}
 				}
 
@@ -3793,9 +3838,10 @@ public partial class MapEditorHUD : Control
 				await System.Threading.Tasks.Task.Run(() =>
 				{
 					string resolvedWasiSdk = WasiSdkResolver.ResolveWasiSdkPath();
+					string csprojName = System.IO.Path.GetFileName(csproj);
 					var compileProcess = new System.Diagnostics.Process();
 					compileProcess.StartInfo.FileName = "dotnet";
-					compileProcess.StartInfo.Arguments = $"publish \"{csproj}\" -c Release -r wasi-wasm -p:WASI_SDK_PATH=\"{resolvedWasiSdk}\"";
+					compileProcess.StartInfo.Arguments = $"publish \"{csprojName}\" -c Release -r wasi-wasm -p:WASI_SDK_PATH=\"{resolvedWasiSdk}\"";
 					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = resolvedWasiSdk;
 					compileProcess.StartInfo.WorkingDirectory = workspace;
 					compileProcess.StartInfo.CreateNoWindow = true;
@@ -5823,11 +5869,14 @@ public partial class MapEditorHUD : Control
 			string wasmPath = null;
 			if (System.IO.Directory.Exists(binDir))
 			{
-				wasmPath = System.IO.Directory.GetFiles(
+				var wasmFiles = System.IO.Directory.GetFiles(
 					binDir,
 					"*.wasm",
 					System.IO.SearchOption.AllDirectories
-				).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
+				).Where(f => !f.Contains("native") && !f.Contains("obj")).ToList();
+
+				wasmPath = wasmFiles.FirstOrDefault(f => f.Contains("publish"))
+					?? wasmFiles.OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
 			}
 			if (System.IO.File.Exists(wasmPath))
 			{

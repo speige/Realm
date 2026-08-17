@@ -7,7 +7,7 @@ using Realm.MapAPI;
 
 public class WasmEntryPoint
 {
-    private static IWasmModule? _mapScript;
+    private static IMapScript? _mapScript;
     private static IGameAPI? _gameApi;
 
     private static unsafe string ReadString(nint ptr, int len)
@@ -32,7 +32,7 @@ public class WasmEntryPoint
                     {
                         if ((typeof(IWasmModule).IsAssignableFrom(type) || typeof(IMapScript).IsAssignableFrom(type)) && !type.IsInterface && !type.IsAbstract)
                         {
-                            _mapScript = (IWasmModule)Activator.CreateInstance(type)!;
+                            _mapScript = (IMapScript)Activator.CreateInstance(type)!;
                         }
                     }
                 }

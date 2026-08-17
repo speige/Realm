@@ -299,12 +299,20 @@ public static class MapWorkspaceService
 	public static void EnsureWasmEntryPoint(string directory)
 	{
 		string entryPointPath = Path.Combine(directory, "WasmEntryPoint.cs");
-		if (!File.Exists(entryPointPath) || new FileInfo(entryPointPath).Length == 0)
+		string template = GetTemplatePath("WasmEntryPoint.cs");
+		if (File.Exists(template))
 		{
-			string template = GetTemplatePath("WasmEntryPoint.cs");
-			if (File.Exists(template))
+			if (!File.Exists(entryPointPath) || new FileInfo(entryPointPath).Length == 0)
 			{
 				File.Copy(template, entryPointPath);
+			}
+			else
+			{
+				string existing = File.ReadAllText(entryPointPath);
+				if (existing.Contains("private static IWasmModule? _mapScript;"))
+				{
+					File.Copy(template, entryPointPath, true);
+				}
 			}
 		}
 	}

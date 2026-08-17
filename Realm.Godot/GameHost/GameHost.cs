@@ -979,7 +979,10 @@ public partial class GameHost : Node3D, IGameAPI
 	{
 		var pos = new Vector3(position.X, position.Y, position.Z);
 		var prop = SpawnPropExternal(resourceType, pos);
-		prop.ResourceAmount = amount;
+		if (prop != null)
+		{
+			prop.ResourceAmount = amount;
+		}
 	}
 
 	IEnumerable<IUnit> IGameAPI.GetAllUnits()
@@ -2761,19 +2764,22 @@ public class {mapName} : IMapScript
 					string binDir = System.IO.Path.Combine(checkDir, "bin");
 					if (System.IO.Directory.Exists(binDir))
 					{
-						PendingMapScriptPath = System.IO.Directory.GetFiles(
-							binDir,
-							"MapScript.wasm",
-							System.IO.SearchOption.AllDirectories
-						).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
+						var files = System.IO.Directory.GetFiles(binDir, "*.wasm", System.IO.SearchOption.AllDirectories)
+							.Where(f => !f.Contains("native") && !f.Contains("obj"))
+							.ToList();
+
+						PendingMapScriptPath = files.FirstOrDefault(f => f.Contains("publish") && System.IO.Path.GetFileName(f).Equals("MapScript.wasm", StringComparison.OrdinalIgnoreCase))
+							?? files.FirstOrDefault(f => f.Contains("publish"))
+							?? files.FirstOrDefault(f => System.IO.Path.GetFileName(f).Equals("MapScript.wasm", StringComparison.OrdinalIgnoreCase))
+							?? files.OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
 					}
 					if (string.IsNullOrEmpty(PendingMapScriptPath))
 					{
-						PendingMapScriptPath = System.IO.Directory.GetFiles(
-							checkDir,
-							"*.wasm",
-							System.IO.SearchOption.AllDirectories
-						).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
+						var allWasm = System.IO.Directory.GetFiles(checkDir, "*.wasm", System.IO.SearchOption.AllDirectories)
+							.Where(f => !f.Contains("native") && !f.Contains("obj"))
+							.OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f))
+							.FirstOrDefault();
+						PendingMapScriptPath = allWasm;
 					}
 				}
 			}
@@ -3366,7 +3372,6 @@ public class {mapName} : IMapScript
 
 		EntityToUnit3D.Clear();
 		EntityToProp3D.Clear();
-		PendingMapScriptPath = null;
 		_activeMapScript = null;
 
 		_editorService?.ResetAllState();
@@ -3380,7 +3385,6 @@ public class {mapName} : IMapScript
 	{
 		EntityToUnit3D.Clear();
 		EntityToProp3D.Clear();
-		PendingMapScriptPath = null;
 		_activeMapScript = null;
 
 		EcsWorld?.Dispose();
@@ -3423,7 +3427,6 @@ public class {mapName} : IMapScript
 		if (Instance == this) Instance = null;
 		EntityToUnit3D.Clear();
 		EntityToProp3D.Clear();
-		PendingMapScriptPath = null;
 		_activeMapScript = null;
 
 		EcsWorld?.Dispose();

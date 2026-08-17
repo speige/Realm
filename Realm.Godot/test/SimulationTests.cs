@@ -221,47 +221,34 @@ public class TestWasmMap : IWasmModule
 
         LobbyManager.Instance.PlayerList.Add(playerInfo);
 
-        // 4. Load the scene
+        bool unitCreatedLogged = false;
+        bool moveCommandLogged = false;
+        Action<string> logListener = msg =>
+        {
+            if (msg.Contains("wasm_unit_created")) unitCreatedLogged = true;
+            if (msg.Contains("wasm_move_command_given")) moveCommandLogged = true;
+        };
+        WasmRuntime.OnWasmLog += logListener;
+
         ISceneRunner runner = ISceneRunner.Load("res://Main.tscn");
         await runner.AwaitMillis(1000);
 
         GameHost gameHost = GameHost.Instance;
         if (gameHost == null)
         {
+            WasmRuntime.OnWasmLog -= logListener;
             return;
         }
 
-        // 5. Monitor and verify debug messages from WASM sandbox
-        bool unitCreatedLogged = false;
-        bool moveCommandLogged = false;
-        string logPath = "D:/git/Realm/wasm_debug.log";
-
         for (int i = 0; i < 100; i++)
         {
-            if (File.Exists(logPath))
-            {
-                try
-                {
-                    string logContent = File.ReadAllText(logPath);
-                    if (logContent.Contains("wasm_unit_created"))
-                    {
-                        unitCreatedLogged = true;
-                    }
-                    if (logContent.Contains("wasm_move_command_given"))
-                    {
-                        moveCommandLogged = true;
-                    }
-                }
-                catch (IOException)
-                {
-                }
-            }
             if (unitCreatedLogged && moveCommandLogged)
             {
                 break;
             }
             await runner.AwaitMillis(50);
         }
+        WasmRuntime.OnWasmLog -= logListener;
 
         if (!unitCreatedLogged)
         {
