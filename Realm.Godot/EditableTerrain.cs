@@ -1411,7 +1411,7 @@ void fragment() {
 	private List<string> _loadedTextureList = new List<string>();
 	private Godot.Vector4[] _swatchParamsCache = new Godot.Vector4[32];
 
-	public void UpdateTextureParamDirect(string swatchName, string tileMode, float uvScale, float stochasticTileSize, float crossFade = 5.0f)
+	public void UpdateTextureParamDirect(string swatchName, string tileMode, float uvScale, float stochasticTileSize, float crossFade = 5.0f, float? brightness = null, string? tintStr = null)
 	{
 		if (_material == null) return;
 		string cleanName = System.IO.Path.GetFileNameWithoutExtension(swatchName);
@@ -1435,6 +1435,11 @@ void fragment() {
 
 			_swatchParamsCache[targetIndex] = new Godot.Vector4(tm, uv, stoch, cf);
 			_material.SetShaderParameter("swatch_params", _swatchParamsCache);
+		}
+
+		if (brightness.HasValue || !string.IsNullOrEmpty(tintStr))
+		{
+			ReloadTerrainTextures(true);
 		}
 	}
 
@@ -1562,6 +1567,30 @@ void fragment() {
 		var normalRoughnessImages = new Godot.Collections.Array<Image>();
 		foreach (var name in textureList)
 		{
+			float texBrightness = 1.0f;
+			Color texTint = new Color(1.0f, 1.0f, 1.0f);
+			if (texturesObj != null)
+			{
+				foreach (var kvp in texturesObj)
+				{
+					string baseName = System.IO.Path.GetFileNameWithoutExtension(kvp.Key);
+					if (string.Equals(baseName, name, StringComparison.OrdinalIgnoreCase) && kvp.Value is System.Text.Json.Nodes.JsonObject sObj)
+					{
+						string brightStr = sObj["Brightness"]?.ToString() ?? sObj["brightness"]?.ToString();
+						if (!string.IsNullOrEmpty(brightStr) && float.TryParse(brightStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedBright))
+						{
+							texBrightness = Math.Clamp(parsedBright, 0.25f, 1.75f);
+						}
+						string tintStr = sObj["Tint"]?.ToString() ?? sObj["tint"]?.ToString();
+						if (!string.IsNullOrEmpty(tintStr) && Color.HtmlIsValid(tintStr))
+						{
+							texTint = Color.FromHtml(tintStr);
+						}
+						break;
+					}
+				}
+			}
+
 			string ktx2Path = System.IO.Path.Combine(mapDir, "Assets", "textures", name + ".ktx2");
 			if (!System.IO.File.Exists(ktx2Path))
 			{
@@ -1604,6 +1633,8 @@ void fragment() {
 
 			imgLayer0 = AutoCropToPowerOfTwoSquare(imgLayer0);
 			imgLayer1 = AutoCropToPowerOfTwoSquare(imgLayer1);
+
+			Realm.Godot.Utils.PlayerColorShaderManager.ApplyBrightnessAndTintToAlbedoImage(imgLayer0, texBrightness, texTint);
 
 			List<Image> layer0SubImages = new List<Image>();
 			List<Image> layer1SubImages = new List<Image>();

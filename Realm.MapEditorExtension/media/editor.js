@@ -4104,6 +4104,11 @@
                     html += `<button type="button" class="btn small-btn btn-delete-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" title="Remove asset" style="color: #f44336; background: transparent; border: none; cursor: pointer; font-weight: bold; font-size: 14px; padding: 0 4px;">✕</button>`;
                     html += `</div></div>`;
                     if (category === 'textures') {
+                        let brightness = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Brightness !== undefined || itemVal.brightness !== undefined)) ? parseFloat(itemVal.Brightness ?? itemVal.brightness) : 1.0;
+                        if (isNaN(brightness)) brightness = 1.0;
+                        let tint = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Tint || itemVal.tint)) ? (itemVal.Tint || itemVal.tint) : '#ffffff';
+                        if (!tint.startsWith('#')) tint = '#' + tint;
+                        let tintHue = hexToHue(tint);
                         let tileMode = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Tile_Mode || itemVal.tile_mode)) ? (itemVal.Tile_Mode || itemVal.tile_mode) : 'Stochastic';
                         let uvScale = (typeof itemVal === 'object' && itemVal !== null && (itemVal.UV_Scale !== undefined || itemVal.uv_scale !== undefined)) ? parseFloat(itemVal.UV_Scale ?? itemVal.uv_scale) : 1.0;
                         if (isNaN(uvScale)) uvScale = 1.0;
@@ -4114,6 +4119,19 @@
 
                         html += `<div class="texture-stochastic-controls" data-key="${escapeHtml(itemKey)}" style="margin-top: 6px; margin-bottom: 8px; padding: 8px 12px; background: var(--vscode-input-background, #1e1e24); border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.15)); border-left: 4px solid var(--vscode-symbolIcon-propertyForeground, #4ec9b0); border-radius: 6px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">`;
                         
+                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Albedo brightness multiplier for terrain texture." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Brightness: <span class="lbl-brightness-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${brightness.toFixed(2)}</span></label>`;
+                        html += `<input type="range" class="input-texture-brightness" data-key="${escapeHtml(itemKey)}" min="0.25" max="1.75" step="0.02" value="${brightness}" title="Albedo brightness multiplier for terrain texture (range 0.25 to 1.75)." style="width: 130px; cursor: pointer;" />`;
+                        html += `</div>`;
+
+                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Color tint overlay for terrain texture albedo." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Tint:</label>`;
+                        html += `<div style="display: flex; align-items: center; gap: 6px;">`;
+                        html += `<input type="range" class="input-texture-tint-slider" data-key="${escapeHtml(itemKey)}" min="0.0" max="1.0" step="0.01" value="${tintHue.toFixed(2)}" title="Hue slider for tint" style="width: 80px; cursor: pointer;" />`;
+                        html += `<input type="color" class="input-texture-tint-picker" data-key="${escapeHtml(itemKey)}" value="${tint}" title="Direct RGB tint color picker" style="width: 44px; height: 22px; padding: 0; background: transparent; border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.25)); border-radius: 3px; cursor: pointer;" />`;
+                        html += `</div>`;
+                        html += `</div>`;
+
                         html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
                         html += `<label title="Controls texture tiling method. 'Stochastic' uses non-repeating procedural triangular grid sampling; 'Grid' uses standard UV tiling." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Tile_Mode:</label>`;
                         html += `<select class="input-texture-tile-mode" data-key="${escapeHtml(itemKey)}" title="Controls texture tiling method. 'Stochastic' uses non-repeating procedural triangular grid sampling; 'Grid' uses standard UV tiling." style="background: var(--vscode-editor-background, #141416); color: var(--vscode-input-foreground, #ffffff); border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.25)); border-radius: 4px; font-size: 12px; font-weight: 600; padding: 3px 8px; cursor: pointer;">`;
@@ -4151,6 +4169,47 @@
         html += '</div>';
         display.innerHTML = html;
 
+        function hsvToHex(h, s, v) {
+            let r, g, b;
+            let i = Math.floor(h * 6);
+            let f = h * 6 - i;
+            let p = v * (1 - s);
+            let q = v * (1 - f * s);
+            let t = v * (1 - (1 - f) * s);
+            switch (i % 6) {
+                case 0: r = v; g = t; b = p; break;
+                case 1: r = q; g = v; b = p; break;
+                case 2: r = p; g = v; b = t; break;
+                case 3: r = p; g = q; b = v; break;
+                case 4: r = t; g = p; b = v; break;
+                case 5: r = v; g = p; b = q; break;
+            }
+            const toHex = (x) => {
+                const hex = Math.round(x * 255).toString(16);
+                return hex.length === 1 ? '0' + hex : hex;
+            };
+            return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+        }
+
+        function hexToHue(hex) {
+            if (!hex || typeof hex !== 'string') return 0;
+            hex = hex.replace('#', '');
+            if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+            if (hex.length !== 6) return 0;
+            const r = parseInt(hex.substring(0, 2), 16) / 255;
+            const g = parseInt(hex.substring(2, 4), 16) / 255;
+            const b = parseInt(hex.substring(4, 6), 16) / 255;
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            const d = max - min;
+            if (d < 0.05) return 0;
+            let h;
+            if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+            else if (max === g) h = (b - r) / d + 2;
+            else h = (r - g) / d + 4;
+            return (h / 6);
+        }
+
         function updateTextureProperty(itemKey, updateFn) {
             let container = null;
             if (units?.Assets?.textures) container = units.Assets.textures;
@@ -4173,6 +4232,8 @@
             const uvScale = parseFloat(itemVal.UV_Scale ?? itemVal.uv_scale ?? 1.0);
             const stochTileSize = parseFloat(itemVal.Stochastic_Tile_Size ?? itemVal.stochastic_tile_size ?? 1.0);
             const crossFade = parseFloat(itemVal.Cross_Fade ?? itemVal.cross_fade ?? itemVal.Grid_Cross_Fade ?? itemVal.grid_cross_fade ?? 5.0);
+            const brightness = parseFloat(itemVal.Brightness ?? itemVal.brightness ?? 1.0);
+            const tint = (itemVal.Tint || itemVal.tint) ?? '#ffffff';
 
             const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
             fetch(`http://127.0.0.1:${ipcPort}/api/`, {
@@ -4184,10 +4245,68 @@
                     tileMode: tileMode,
                     uvScale: uvScale,
                     stochasticTileSize: stochTileSize,
-                    crossFade: crossFade
+                    crossFade: crossFade,
+                    brightness: brightness,
+                    tint: tint
                 })
             }).catch(() => {});
         }
+
+        display.querySelectorAll('.input-texture-brightness').forEach(input => {
+            const handleBrightChange = (e) => {
+                const key = e.target.getAttribute('data-key');
+                const val = parseFloat(e.target.value);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const lbl = parentRow.querySelector('.lbl-brightness-val');
+                    if (lbl) lbl.textContent = val.toFixed(2);
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.Brightness = val;
+                    itemVal.brightness = val;
+                });
+            };
+            input.addEventListener('input', handleBrightChange);
+            input.addEventListener('change', handleBrightChange);
+        });
+
+        display.querySelectorAll('.input-texture-tint-slider').forEach(input => {
+            const handleTintSlider = (e) => {
+                const key = e.target.getAttribute('data-key');
+                const val = parseFloat(e.target.value);
+                const hex = (val <= 0.0) ? '#ffffff' : hsvToHex(val, 0.75, 1.0);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const picker = parentRow.querySelector('.input-texture-tint-picker');
+                    if (picker) picker.value = hex;
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.Tint = hex;
+                    itemVal.tint = hex;
+                });
+            };
+            input.addEventListener('input', handleTintSlider);
+            input.addEventListener('change', handleTintSlider);
+        });
+
+        display.querySelectorAll('.input-texture-tint-picker').forEach(input => {
+            const handleTintPicker = (e) => {
+                const key = e.target.getAttribute('data-key');
+                const hex = e.target.value;
+                const hue = hexToHue(hex);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const slider = parentRow.querySelector('.input-texture-tint-slider');
+                    if (slider) slider.value = hue.toFixed(2);
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.Tint = hex;
+                    itemVal.tint = hex;
+                });
+            };
+            input.addEventListener('input', handleTintPicker);
+            input.addEventListener('change', handleTintPicker);
+        });
 
         display.querySelectorAll('.input-texture-tile-mode').forEach(sel => {
             sel.addEventListener('change', (e) => {

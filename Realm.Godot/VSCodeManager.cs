@@ -719,11 +719,23 @@ public class VSCodeManager
 					crossFade = parsedCrossFade3;
 				}
 
+				float? brightness = null;
+				if (node["brightness"] != null && float.TryParse(node["brightness"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedBright))
+				{
+					brightness = parsedBright;
+				}
+				else if (node["Brightness"] != null && float.TryParse(node["Brightness"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedBright2))
+				{
+					brightness = parsedBright2;
+				}
+
+				string? tintStr = node["tint"]?.ToString() ?? node["Tint"]?.ToString();
+
 				Callable.From(() =>
 				{
 					if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 					{
-						GameHost.Instance.GroundTerrain.UpdateTextureParamDirect(swatchName, tileMode, uvScale, stochasticTileSize, crossFade);
+						GameHost.Instance.GroundTerrain.UpdateTextureParamDirect(swatchName, tileMode, uvScale, stochasticTileSize, crossFade, brightness, tintStr);
 					}
 				}).CallDeferred();
 

@@ -568,6 +568,34 @@ public static class PlayerColorShaderManager
 		}
 	}
 
+	public static void ApplyBrightnessAndTintToAlbedoImage(Image img, float brightness, Color tint)
+	{
+		if (img == null) return;
+		if (MathF.Abs(brightness - 1.0f) <= 0.001f && MathF.Abs(tint.R - 1.0f) <= 0.001f && MathF.Abs(tint.G - 1.0f) <= 0.001f && MathF.Abs(tint.B - 1.0f) <= 0.001f)
+		{
+			return;
+		}
+
+		if (img.GetFormat() != Image.Format.Rgba8)
+		{
+			img.Convert(Image.Format.Rgba8);
+		}
+
+		byte[] data = img.GetData();
+		float multR = brightness * tint.R;
+		float multG = brightness * tint.G;
+		float multB = brightness * tint.B;
+
+		for (int i = 0; i < data.Length; i += 4)
+		{
+			data[i]     = (byte)Math.Clamp((int)MathF.Round(data[i]     * multR), 0, 255);
+			data[i + 1] = (byte)Math.Clamp((int)MathF.Round(data[i + 1] * multG), 0, 255);
+			data[i + 2] = (byte)Math.Clamp((int)MathF.Round(data[i + 2] * multB), 0, 255);
+		}
+
+		img.SetData(img.GetWidth(), img.GetHeight(), false, Image.Format.Rgba8, data);
+	}
+
 	public static void ClearCache()
 	{
 		_materialCache.Clear();
