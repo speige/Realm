@@ -1042,7 +1042,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="field-Brightness">Brightness</label>
-                                <input type="number" id="field-Brightness" step="0.02" min="0.25" max="1.75" placeholder="1.0" />
+                                <input type="number" id="field-Brightness" step="0.02" min="0.10" max="1.75" placeholder="1.0" />
                             </div>
                             <div class="form-group">
                                 <label for="field-Tint">Tint Color</label>

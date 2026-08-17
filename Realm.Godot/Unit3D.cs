@@ -118,10 +118,8 @@ public partial class Unit3D : Prop3D
 		if (_modelNode != null && GodotObject.IsInstanceValid(_modelNode))
 		{
 			bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(ModelPath) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
-			if (!ignorePlayerColor)
-			{
-				Realm.Godot.Utils.PlayerColorShaderManager.SetPlayerColor(_modelNode, color);
-			}
+			Realm.Godot.Utils.PlayerColorShaderManager.SetPlayerColor(_modelNode, color);
+			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_modelNode, ignorePlayerColor);
 		}
 	}
 
@@ -133,6 +131,16 @@ public partial class Unit3D : Prop3D
 
 	public void UpdatePlayerColorVisual()
 	{
+		bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(ModelPath) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
+		if (ignorePlayerColor)
+		{
+			if (_modelNode != null && GodotObject.IsInstanceValid(_modelNode))
+			{
+				Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_modelNode, true);
+			}
+			return;
+		}
+
 		Color resolvedColor = PlayerColorConfig.GetColor(Player);
 		if (LobbyManager.Instance != null && LobbyManager.Instance.PlayerList.Count > 0)
 		{
@@ -276,11 +284,17 @@ public partial class Unit3D : Prop3D
 				_modelNode.Position = new Vector3(0f, _baseModelYOffset + yOffset, 0f);
 
 				bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(modelPath) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
+				Realm.Godot.Utils.PlayerColorShaderManager.ApplyPlayerColorShader(_modelNode, PlayerColor, ignorePlayerColor);
 				if (!ignorePlayerColor)
 				{
-					Realm.Godot.Utils.PlayerColorShaderManager.ApplyPlayerColorShader(_modelNode, PlayerColor);
 					UpdatePlayerColorVisual();
 				}
+				else
+				{
+					Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_modelNode, true);
+				}
+
+				GameHost.Instance?.ApplyAllGlobalOverridesToObject(this);
 			}
 			else
 			{

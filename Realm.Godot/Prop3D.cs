@@ -352,6 +352,7 @@ public partial class Prop3D : StaticBody3D
 					if (node != null)
 					{
 						visual.AddChild(node);
+						GameHost.Instance?.ApplyAllGlobalOverridesToObject(this);
 					}
 				}
 				catch (Exception ex)

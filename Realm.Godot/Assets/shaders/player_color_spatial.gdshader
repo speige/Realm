@@ -18,6 +18,10 @@ uniform float roughness_value : hint_range(0.0, 1.0) = 1.0;
 uniform float metallic_value : hint_range(0.0, 1.0) = 0.0;
 uniform float specular_value : hint_range(0.0, 1.0) = 0.5;
 
+uniform float unit_ambient_boost : hint_range(0.0, 0.5) = 0.10;
+uniform float unit_rim_intensity : hint_range(0.0, 1.0) = 0.25;
+uniform float unit_rim_power : hint_range(1.0, 8.0) = 2.5;
+
 uniform bool use_alpha_blend = false;
 uniform bool use_alpha_scissor = false;
 uniform float alpha_scissor_threshold : hint_range(0.0, 1.0) = 0.5;
@@ -26,8 +30,9 @@ uniform vec3 uv1_scale = vec3(1.0, 1.0, 1.0);
 uniform vec3 uv1_offset = vec3(0.0, 0.0, 0.0);
 
 instance uniform vec4 player_color : source_color = vec4(0.620, 0.541, 0.431, 1.0);
-instance uniform float model_brightness : hint_range(0.25, 1.75) = 1.0;
+instance uniform float model_brightness : hint_range(0.10, 1.75) = 1.0;
 instance uniform vec4 model_color_tint : source_color = vec4(1.0, 1.0, 1.0, 1.0);
+instance uniform float ignore_player_color : hint_range(0.0, 1.0) = 0.0;
 
 varying vec2 base_uv;
 
@@ -69,7 +74,7 @@ void fragment() {
 
 	if (has_orm_texture) {
 		vec4 orm_tex = texture(texture_orm, base_uv);
-		if (has_player_mask) {
+		if (has_player_mask && ignore_player_color < 0.5) {
 			player_mask = clamp(orm_tex.r, 0.0, 1.0);
 		}
 		roughness *= orm_tex.g;
@@ -97,9 +102,24 @@ void fragment() {
 		NORMAL = perturb_normal_cotangent(NORMAL, VERTEX, base_uv, normal_sample, normal_scale);
 	}
 
+	// --- Unit Self-Illumination & Rim / Fresnel Shading (RTS Readability & Terrain Separation) ---
+	vec3 world_normal = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
+	float up_factor = clamp(world_normal.y * 0.5 + 0.5, 0.0, 1.0);
+	
+	// Subtle upward ambient boost so units and structures always separate cleanly from the terrain floor
+	vec3 upward_ambient = final_color * (up_factor * unit_ambient_boost + (unit_ambient_boost * 0.4));
+
+	// Subtle Fresnel rim glow along grazing silhouette edges
+	float n_dot_v = clamp(dot(NORMAL, VIEW), 0.0, 1.0);
+	float fresnel = pow(1.0 - n_dot_v, unit_rim_power);
+	vec3 rim_glow = (final_color * 0.6 + vec3(0.4)) * fresnel * unit_rim_intensity;
+
+	vec3 base_emission = vec3(0.0);
 	if (has_emission_texture) {
-		EMISSION = texture(texture_emission, base_uv).rgb * emission_color.rgb * emission_energy;
+		base_emission = texture(texture_emission, base_uv).rgb * emission_color.rgb * emission_energy;
 	} else if (emission_color.r > 0.0 || emission_color.g > 0.0 || emission_color.b > 0.0) {
-		EMISSION = emission_color.rgb * emission_energy;
+		base_emission = emission_color.rgb * emission_energy;
 	}
+
+	EMISSION = base_emission + upward_ambient + rim_glow;
 }

@@ -5582,7 +5582,7 @@ public partial class MapEditorHUD : Control
 
 
 
-			_sldModelBrightness = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Brightness"), 0.25f, 1.75f, 0.02f, 1.0f, (val) =>
+			_sldModelBrightness = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Brightness"), 0.10f, 1.75f, 0.02f, 1.0f, (val) =>
 			{
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))

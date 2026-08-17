@@ -259,18 +259,18 @@ public partial class GameHost
 		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
 		string normPrimary = NormalizeModelAssetKey(primaryKey);
 		if (!string.IsNullOrEmpty(normPrimary) && ModelBrightness.TryGetValue(normPrimary, out float val1))
-			return Mathf.Clamp(val1, 0.25f, 1.75f);
+			return Mathf.Clamp(val1, 0.10f, 1.75f);
 
 		string assetKey = GetModelAssetKey(objOrId);
 		string normAsset = NormalizeModelAssetKey(assetKey);
 		if (!string.IsNullOrEmpty(normAsset) && ModelBrightness.TryGetValue(normAsset, out float val2))
-			return Mathf.Clamp(val2, 0.25f, 1.75f);
+			return Mathf.Clamp(val2, 0.10f, 1.75f);
 
 		if (!string.IsNullOrEmpty(primaryKey))
 		{
-			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.Brightness > 0f) return Mathf.Clamp(meta.Brightness, 0.25f, 1.75f);
-			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.Brightness > 0f) return Mathf.Clamp(resMeta.Brightness, 0.25f, 1.75f);
-			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.Brightness > 0f) return Mathf.Clamp(propMeta.Brightness, 0.25f, 1.75f);
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.Brightness > 0f) return Mathf.Clamp(meta.Brightness, 0.10f, 1.75f);
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.Brightness > 0f) return Mathf.Clamp(resMeta.Brightness, 0.10f, 1.75f);
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.Brightness > 0f) return Mathf.Clamp(propMeta.Brightness, 0.10f, 1.75f);
 		}
 
 		return 1.0f;
@@ -281,7 +281,7 @@ public partial class GameHost
 		string norm = NormalizeModelAssetKey(assetKey);
 		if (string.IsNullOrEmpty(norm)) return;
 
-		float k = Mathf.Clamp(brightness, 0.25f, 1.75f);
+		float k = Mathf.Clamp(brightness, 0.10f, 1.75f);
 		ModelBrightness[norm] = k;
 		UpdateMaterialOverridesForAsset(norm);
 
@@ -409,6 +409,7 @@ public partial class GameHost
 		ModelIgnorePlayerColor[norm] = ignorePlayerColor;
 		_modelYOffsetSavePending = true;
 		EditorHasUnsavedChanges = true;
+		UpdateMaterialOverridesForAsset(norm);
 	}
 
 	public void UpdateMaterialOverridesForAsset(string normAssetKey)
@@ -418,6 +419,7 @@ public partial class GameHost
 		float brightness = GetModelBrightness(normAssetKey);
 		Color tint = GetModelColorTint(normAssetKey);
 		bool generateNormals = GetModelGenerateNormals(normAssetKey);
+		bool ignorePlayerColor = GetModelIgnorePlayerColor(normAssetKey);
 
 		foreach (var prop in AllProps)
 		{
@@ -432,12 +434,18 @@ public partial class GameHost
 			if (GodotObject.IsInstanceValid(unit) && MatchesEntityOrAssetKey(unit, normAssetKey))
 			{
 				ApplyMaterialOverridesToNode(unit, brightness, tint, generateNormals);
+				Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(unit, ignorePlayerColor);
+				if (!ignorePlayerColor)
+				{
+					unit.UpdatePlayerColorVisual();
+				}
 			}
 		}
 
 		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode) && MatchesEntityOrAssetKey(_editorPreviewNode, normAssetKey))
 		{
 			ApplyMaterialOverridesToNode(_editorPreviewNode, brightness, tint, generateNormals);
+			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_editorPreviewNode, ignorePlayerColor);
 		}
 
 		PropMultiMeshManager.Instance?.UpdateMaterialOverrides(normAssetKey);
@@ -476,6 +484,8 @@ public partial class GameHost
 			float brightness = GetModelBrightness(unit);
 			Color tint = GetModelColorTint(unit);
 			bool generateNormals = GetModelGenerateNormals(unit);
+			bool ignorePlayerColor = GetModelIgnorePlayerColor(unit);
+			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(unit, ignorePlayerColor);
 			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals || tint != new Color(1.0f, 1.0f, 1.0f))
 			{
 				ApplyMaterialOverridesToNode(unit, brightness, tint, generateNormals);

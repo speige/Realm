@@ -14,6 +14,7 @@ public static class PlayerColorShaderManager
 	private static readonly StringName _paramPlayerColor = new("player_color");
 	private static readonly StringName _paramModelBrightness = new("model_brightness");
 	private static readonly StringName _paramModelColorTint = new("model_color_tint");
+	private static readonly StringName _paramIgnorePlayerColor = new("ignore_player_color");
 
 	private const string ShaderPath = "res://Assets/shaders/player_color_spatial.gdshader";
 
@@ -465,13 +466,13 @@ public static class PlayerColorShaderManager
 			|| nodeName.Contains("HoverRing", StringComparison.OrdinalIgnoreCase);
 	}
 
-	public static void ApplyPlayerColorShader(Node rootNode, Color playerColor)
+	public static void ApplyPlayerColorShader(Node rootNode, Color playerColor, bool ignorePlayerColor = false)
 	{
 		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
-		ApplyPlayerColorShaderRecursive(rootNode, playerColor);
+		ApplyPlayerColorShaderRecursive(rootNode, playerColor, ignorePlayerColor);
 	}
 
-	private static void ApplyPlayerColorShaderRecursive(Node node, Color playerColor)
+	private static void ApplyPlayerColorShaderRecursive(Node node, Color playerColor, bool ignorePlayerColor = false)
 	{
 		if (node is MeshInstance3D meshInst)
 		{
@@ -505,6 +506,7 @@ public static class PlayerColorShaderManager
 				}
 
 				meshInst.SetInstanceShaderParameter(_paramPlayerColor, playerColor);
+				meshInst.SetInstanceShaderParameter(_paramIgnorePlayerColor, ignorePlayerColor ? 1.0f : 0.0f);
 			}
 		}
 
@@ -512,7 +514,7 @@ public static class PlayerColorShaderManager
 		{
 			if (child is Node childNode)
 			{
-				ApplyPlayerColorShaderRecursive(childNode, playerColor);
+				ApplyPlayerColorShaderRecursive(childNode, playerColor, ignorePlayerColor);
 			}
 		}
 	}
@@ -538,6 +540,31 @@ public static class PlayerColorShaderManager
 			if (child is Node childNode)
 			{
 				SetPlayerColorRecursive(childNode, playerColor);
+			}
+		}
+	}
+
+	public static void SetIgnorePlayerColor(Node rootNode, bool ignorePlayerColor)
+	{
+		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
+		SetIgnorePlayerColorRecursive(rootNode, ignorePlayerColor);
+	}
+
+	private static void SetIgnorePlayerColorRecursive(Node node, bool ignorePlayerColor)
+	{
+		if (node is MeshInstance3D meshInst)
+		{
+			if (!IsExcludedMesh(meshInst))
+			{
+				meshInst.SetInstanceShaderParameter(_paramIgnorePlayerColor, ignorePlayerColor ? 1.0f : 0.0f);
+			}
+		}
+
+		foreach (var child in node.GetChildren())
+		{
+			if (child is Node childNode)
+			{
+				SetIgnorePlayerColorRecursive(childNode, ignorePlayerColor);
 			}
 		}
 	}
