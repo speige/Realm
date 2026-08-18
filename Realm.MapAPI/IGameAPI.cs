@@ -1040,4 +1040,61 @@ public interface IGameAPI
     /// Plays a named visual animation on the unit's 3D model.
     /// </summary>
     void SetUnitAnimation(IUnit unit, string animationName) { }
+
+    /// <summary>
+    /// Orders the unit to move to a world position without attacking along the way.
+    /// Generic alias for <see cref="IssueMoveOrder"/>.
+    /// </summary>
+    void MoveUnit(IUnit unit, Vector3 destination) => IssueMoveOrder(unit, destination);
+
+    /// <summary>
+    /// Returns living units within <paramref name="radius"/> of <paramref name="center"/>.
+    /// Generic alias for <see cref="GetUnitsInRadius(Vector3, float)"/>.
+    /// </summary>
+    IEnumerable<IUnit> GetUnitsInRange(Vector3 center, float radius) =>
+        GetUnitsInRadius(center, radius);
+
+    /// <summary>
+    /// Subtracts <paramref name="damage"/> from the target's health. Kills the target at 0 HP.
+    /// Does not apply armor. Safe to call from any map script.
+    /// </summary>
+    void DealDamage(IUnit attacker, IUnit target, float damage)
+    {
+        if (target == null || target.IsDead || damage <= 0f)
+            return;
+        _ = attacker;
+        float next = target.Health - damage;
+        if (next <= 0f)
+        {
+            target.Health = 0f;
+            KillUnit(target);
+            return;
+        }
+        target.Health = next;
+    }
+
+    /// <summary>
+    /// Spawns a replacement unit of the same type at <paramref name="position"/> for the given player.
+    /// Use this when the previous instance may already be destroyed (typical hero respawn).
+    /// </summary>
+    /// <param name="unitTypeId">The type identifier of the unit to spawn.</param>
+    /// <param name="position">The spawn coordinates in 3D world space.</param>
+    /// <param name="playerIndex">The zero-based player index to own the revived unit.</param>
+    /// <returns>The revived unit instance.</returns>
+    IUnit ReviveUnit(string unitTypeId, Vector3 position, int playerIndex) =>
+        SpawnUnitForPlayer(unitTypeId, position, playerIndex);
+
+    /// <summary>
+    /// Destroys <paramref name="unit"/> and spawns a new copy of its type at <paramref name="position"/> with the same owner player index.
+    /// </summary>
+    /// <param name="unit">The existing unit to replace.</param>
+    /// <param name="position">The spawn coordinates in 3D world space.</param>
+    /// <returns>The revived unit instance.</returns>
+    IUnit ReviveUnit(IUnit unit, Vector3 position)
+    {
+        string typeId = unit.UnitId;
+        int playerIndex = unit.Player;
+        DestroyUnit(unit);
+        return SpawnUnitForPlayer(typeId, position, playerIndex);
+    }
 }
