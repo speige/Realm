@@ -195,7 +195,7 @@ public class EnvironmentService
 			sun.DirectionalShadowFadeStart = 0.8f;
 			sun.ShadowBias = 0.03f;
 			sun.ShadowNormalBias = 1.2f;
-			sun.ShadowEnabled = !GameSettings.DisableShadows && interpSunEnergy > 0.05f && GameSettings.QualityIdx > GraphicsQuality.Low;
+			sun.ShadowEnabled = !GameSettings.DisableShadows && interpSunEnergy > 0.05f;
 			sun.LightColor = interpSunColor;
 			sun.LightEnergy = interpSunEnergy;
 			sun.LightSpecular = 0.5f;

@@ -6811,7 +6811,7 @@ public partial class MapEditorHUD : Control
 			sun.DirectionalShadowFadeStart = 0.8f;
 			sun.ShadowBias = 0.03f;
 			sun.ShadowNormalBias = 1.2f;
-			sun.ShadowEnabled = !GameSettings.DisableShadows && _tuneSunEnergy > 0.05f && GameSettings.QualityIdx > GraphicsQuality.Low;
+			sun.ShadowEnabled = !GameSettings.DisableShadows && _tuneSunEnergy > 0.05f;
 		}
 
 		if (worldEnv != null && worldEnv.Environment != null)
