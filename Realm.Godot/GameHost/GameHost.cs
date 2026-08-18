@@ -706,7 +706,7 @@ public partial class GameHost : Node3D, IGameAPI
 			EcsWorld.Set(_worldEntity, new WorldState(s.GameElapsedTime, s.TimeOfDayIndex, value, s.DayNightCycleEnabled)));
 	}
 
-	private const float TimeOfDayCycleDuration = 90f;
+	public const float TimeOfDayCycleDuration = 90f;
 
 	public const float FireballCooldownMax = 12f;
 	public const float LightningCooldownMax = 18f;

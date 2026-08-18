@@ -3,6 +3,8 @@
   "VIDEO": "VIDEO",
   "Resolution": "Resolución",
   "Graphics Quality": "Calidad Gráfica",
+  "Disable shadows": "Desactivar sombras",
+  "Disable day/night lighting": "Desactivar iluminación día/noche",
   "Window Mode": "Modo de Ventana",
   "V-Sync": "V-Sync",
   "AUDIO": "AUDIO",

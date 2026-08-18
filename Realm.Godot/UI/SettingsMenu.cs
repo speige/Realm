@@ -22,6 +22,8 @@ public partial class SettingsMenu : Control
 
 	private OptionButton _resolutionOpt;
 	private OptionButton _qualityOpt;
+	private CheckBox _disableShadowsChk;
+	private CheckBox _disableDayNightLightingChk;
 	private OptionButton _windowModeOpt;
 	private OptionButton _vsyncOpt;
 
@@ -80,6 +82,8 @@ public partial class SettingsMenu : Control
 
 		_resolutionOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/ResolutionOpt");
 		_qualityOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/QualityOpt");
+		_disableShadowsChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/DisableShadowsChk");
+		_disableDayNightLightingChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/DisableDayNightLightingChk");
 		_windowModeOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/WindowModeOpt");
 		_vsyncOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/ColumnsContainer/VideoPanel/VBox/VsyncOpt");
 
@@ -169,6 +173,10 @@ public partial class SettingsMenu : Control
 			lbl.AddThemeFontSizeOverride("font_size", 14);
 		}
 
+		UIStyle.ApplyCheckboxStyle(_disableShadowsChk);
+		_disableShadowsChk.Text = TranslationServer.Translate(_disableShadowsChk.Text);
+		UIStyle.ApplyCheckboxStyle(_disableDayNightLightingChk);
+		_disableDayNightLightingChk.Text = TranslationServer.Translate(_disableDayNightLightingChk.Text);
 		UIStyle.ApplyCheckboxStyle(_displayFpsChk);
 		_displayFpsChk.Text = TranslationServer.Translate(_displayFpsChk.Text);
 		UIStyle.ApplyCheckboxStyle(_recordReplaysChk);
@@ -252,6 +260,10 @@ public partial class SettingsMenu : Control
 			}
 		};
 
+		_disableShadowsChk.Pressed += () => UIManager.Instance.PlayClickSound();
+		_disableShadowsChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+		_disableDayNightLightingChk.Pressed += () => UIManager.Instance.PlayClickSound();
+		_disableDayNightLightingChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 		_displayFpsChk.Pressed += () => UIManager.Instance.PlayClickSound();
 		_displayFpsChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 		_recordReplaysChk.Pressed += () => UIManager.Instance.PlayClickSound();
@@ -355,6 +367,8 @@ public partial class SettingsMenu : Control
 		_scrollSpeedSlider.Value = GameSettings.ScrollSpeed;
 		_mouseSensSlider.Value = GameSettings.MouseSens;
 		_hudScaleSlider.Value = GameSettings.HudScale;
+		_disableShadowsChk.ButtonPressed = GameSettings.DisableShadows;
+		_disableDayNightLightingChk.ButtonPressed = GameSettings.DisableDayNightLighting;
 		_displayFpsChk.ButtonPressed = GameSettings.DisplayFps;
 		_recordReplaysChk.ButtonPressed = GameSettings.RecordReplays;
 		_seedMapFilesChk.ButtonPressed = GameSettings.SeedMapFiles;
@@ -429,6 +443,8 @@ public partial class SettingsMenu : Control
 		GameSettings.DownsamplingIdx = GameSettings.GetDownsamplingIdxForQuality(GameSettings.QualityIdx);
 		GameSettings.WindowModeIdx = _windowModeOpt.Selected;
 		GameSettings.VsyncIdx = _vsyncOpt.Selected;
+		GameSettings.DisableShadows = _disableShadowsChk.ButtonPressed;
+		GameSettings.DisableDayNightLighting = _disableDayNightLightingChk.ButtonPressed;
 
 		GameSettings.MasterVolume = (float)_masterSlider.Value;
 		GameSettings.MusicVolume = (float)_musicSlider.Value;

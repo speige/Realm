@@ -3,6 +3,8 @@
   "VIDEO": "ВИДЕО",
   "Resolution": "Разрешение",
   "Graphics Quality": "Качество Графики",
+  "Disable shadows": "Отключить тени",
+  "Disable day/night lighting": "Отключить смену дня и ночи",
   "Window Mode": "Оконный Режим",
   "V-Sync": "Вертикальная Синхронизация",
   "AUDIO": "ЗВУК",

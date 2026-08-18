@@ -3,6 +3,8 @@
   "VIDEO": "映像",
   "Resolution": "解像度",
   "Graphics Quality": "グラフィック品質",
+  "Disable shadows": "影を無効化",
+  "Disable day/night lighting": "昼夜の照明を無効化",
   "Window Mode": "ウィンドウモード",
   "V-Sync": "垂直同期",
   "AUDIO": "音声",

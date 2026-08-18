@@ -133,6 +133,10 @@ public class EnvironmentService
 	public void UpdateDayNightVisuals(Node3D host, float progress)
 	{
 		if (OverrideDayNightVisuals) return;
+		if (GameSettings.DisableDayNightLighting)
+		{
+			progress = 0f;
+		}
 
 		var worldEnv = host.GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
 		var sun = host.GetNodeOrNull<DirectionalLight3D>("DirectionalLight3D");
@@ -191,7 +195,7 @@ public class EnvironmentService
 			sun.DirectionalShadowFadeStart = 0.8f;
 			sun.ShadowBias = 0.03f;
 			sun.ShadowNormalBias = 1.2f;
-			sun.ShadowEnabled = interpSunEnergy > 0.05f && GameSettings.QualityIdx > 0;
+			sun.ShadowEnabled = !GameSettings.DisableShadows && interpSunEnergy > 0.05f && GameSettings.QualityIdx > 0;
 			sun.LightColor = interpSunColor;
 			sun.LightEnergy = interpSunEnergy;
 			sun.LightSpecular = 0.5f;

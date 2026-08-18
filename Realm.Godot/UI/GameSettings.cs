@@ -27,6 +27,8 @@ public static class GameSettings
 	public static bool DisplayFps { get; set; } = false;
 	public static bool RecordReplays { get; set; } = false;
 	public static bool SeedMapFiles { get; set; } = true;
+	public static bool DisableShadows { get; set; } = false;
+	public static bool DisableDayNightLighting { get; set; } = false;
 
 	public static void ResetToDefaults()
 	{
@@ -35,6 +37,8 @@ public static class GameSettings
 		DownsamplingIdx = GetDownsamplingIdxForQuality(QualityIdx);
 		WindowModeIdx = 2;
 		VsyncIdx = 0;
+		DisableShadows = false;
+		DisableDayNightLighting = false;
 		MasterVolume = 80f;
 		MusicVolume = 70f;
 		SfxVolume = 90f;
@@ -143,6 +147,8 @@ public static class GameSettings
 				DisplayFps = data.DisplayFps ?? true;
 				RecordReplays = data.RecordReplays ?? false;
 				SeedMapFiles = data.SeedMapFiles ?? true;
+				DisableShadows = data.DisableShadows ?? false;
+				DisableDayNightLighting = data.DisableDayNightLighting ?? false;
 				if (data.ShowHealthBars is JsonElement elem)
 				{
 					if (elem.ValueKind == JsonValueKind.True || elem.ValueKind == JsonValueKind.False)
@@ -190,7 +196,9 @@ public static class GameSettings
 			Language = Language,
 			DisplayFps = DisplayFps,
 			RecordReplays = RecordReplays,
-			SeedMapFiles = SeedMapFiles
+			SeedMapFiles = SeedMapFiles,
+			DisableShadows = DisableShadows,
+			DisableDayNightLighting = DisableDayNightLighting
 		};
 
 		string json = JsonSerializer.Serialize(data);
@@ -298,6 +306,28 @@ public static class GameSettings
 		{
 			terrain.ApplyQualitySettings(QualityIdx);
 		}
+
+		var gameHost = (root != null ? FindNodeInTree<GameHost>(root) : null) ?? GameHost.Instance;
+		if (gameHost != null && GodotObject.IsInstanceValid(gameHost))
+		{
+			if (DisableDayNightLighting)
+			{
+				gameHost.EnvironmentService?.UpdateDayNightVisuals(gameHost, 0f);
+			}
+			else
+			{
+				if (gameHost.EcsWorld != null && gameHost.EcsWorld.IsAlive(gameHost.WorldEntity) && gameHost.EcsWorld.Has<Realm.Ecs.Components.Core.WorldState>(gameHost.WorldEntity))
+				{
+					var state = gameHost.EcsWorld.Get<Realm.Ecs.Components.Core.WorldState>(gameHost.WorldEntity);
+					float progress = state.TimeOfDayTimer / GameHost.TimeOfDayCycleDuration;
+					gameHost.EnvironmentService?.UpdateDayNightVisuals(gameHost, progress);
+				}
+				else
+				{
+					gameHost.EnvironmentService?.UpdateDayNightVisuals(gameHost, 0f);
+				}
+			}
+		}
 	}
 
 	public static void ApplyEnvironmentQuality(Godot.Environment env, int qualityIdx = -1)
@@ -336,7 +366,7 @@ public static class GameSettings
 
 		int quality = qualityIdx >= 0 ? qualityIdx : QualityIdx;
 
-		if (quality == 0)
+		if (DisableShadows || quality == 0)
 		{
 			light.ShadowEnabled = false;
 		}
@@ -383,6 +413,8 @@ public static class GameSettings
 		public bool? DisplayFps { get; set; }
 		public bool? RecordReplays { get; set; }
 		public bool? SeedMapFiles { get; set; }
+		public bool? DisableShadows { get; set; }
+		public bool? DisableDayNightLighting { get; set; }
 	}
 
 	[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
