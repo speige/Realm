@@ -1348,11 +1348,11 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                                 </div>
                             </div>
                             <div class="form-group">
-                                <label for="prop-FogOfWarType">Fog of War Style</label>
-                                <select id="prop-FogOfWarType">
+                                <label for="prop-ShroudType">Shroud Style</label>
+                                <select id="prop-ShroudType">
                                     <option value="visible">Always Visible</option>
-                                    <option value="grey">Grey Mask (Shroud)</option>
-                                    <option value="black">Black (Unexplored)</option>
+                                    <option value="VisionShroud">VisionShroud (Grey Mask)</option>
+                                    <option value="ExplorationShroud">ExplorationShroud (Black Unexplored)</option>
                                 </select>
                             </div>
                         </div>

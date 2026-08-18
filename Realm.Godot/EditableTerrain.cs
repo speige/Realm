@@ -468,9 +468,9 @@ uniform float wave_speed = 1.2;
 
 uniform sampler2D depth_texture : hint_depth_texture, filter_linear;
 
-uniform sampler2D fog_texture : hint_default_white;
-uniform vec2 fog_world_min = vec2(-125.0, -125.0);
-uniform vec2 fog_world_size = vec2(250.0, 250.0);
+uniform sampler2D shroud_texture : hint_default_white;
+uniform vec2 shroud_world_min = vec2(-125.0, -125.0);
+uniform vec2 shroud_world_size = vec2(250.0, 250.0);
 
 varying vec3 v_world_pos;
 varying vec3 v_world_normal;
@@ -532,18 +532,18 @@ void fragment() {
 
 	float final_foam_mask = mix(waterfall_foam, flat_foam_mask, flat_factor);
 
-	// --- FOG OF WAR INTEGRATION ---
-	vec2 fog_uv = (v_world_pos.xz - fog_world_min) / fog_world_size;
-	float fog_factor = texture(fog_texture, clamp(fog_uv, 0.0, 1.0)).r;
+	// --- STRATEGY SHROUD INTEGRATION ---
+	vec2 shroud_uv = (v_world_pos.xz - shroud_world_min) / shroud_world_size;
+	float shroud_factor = texture(shroud_texture, clamp(shroud_uv, 0.0, 1.0)).r;
 
-	vec3 final_albedo = mix(water_col.rgb, foam_color.rgb, final_foam_mask * foam_color.a) * (1.0 - fog_factor * 0.98);
+	vec3 final_albedo = mix(water_col.rgb, foam_color.rgb, final_foam_mask * foam_color.a) * (1.0 - shroud_factor * 0.98);
 
 	ALBEDO = final_albedo;
 	ALPHA = mix(water_col.a, 0.75, final_foam_mask) * shore_fade;
 
-	ROUGHNESS = mix(mix(0.1, 0.35, waterfall_factor), 0.9, fog_factor);
+	ROUGHNESS = mix(mix(0.1, 0.35, waterfall_factor), 0.9, shroud_factor);
 	METALLIC = 0.0;
-	SPECULAR = mix(0.05, 0.10, waterfall_factor) * (1.0 - fog_factor * 0.98);
+	SPECULAR = mix(0.05, 0.10, waterfall_factor) * (1.0 - shroud_factor * 0.98);
 }
 ";
 
@@ -860,9 +860,9 @@ render_mode blend_mix;
 uniform sampler2DArray terrain_textures : source_color;
 uniform sampler2DArray terrain_normals_pbr : hint_default_white;
 uniform float blend_softness = 0.2;
-uniform sampler2D fog_texture : hint_default_white;
-uniform vec2 fog_world_min = vec2(-125.0, -125.0);
-uniform vec2 fog_world_size = vec2(250.0, 250.0);
+uniform sampler2D shroud_texture : hint_default_white;
+uniform vec2 shroud_world_min = vec2(-125.0, -125.0);
+uniform vec2 shroud_world_size = vec2(250.0, 250.0);
 
 uniform sampler2D pathing_texture : hint_default_transparent, filter_nearest;
 uniform bool pathing_visible = false;
@@ -1238,22 +1238,22 @@ void fragment() {
 		specular_amt = 0.2;
 	}
 
-	vec2 fog_uv = (v_world_pos.xz - fog_world_min) / fog_world_size;
-	float fog_factor = texture(fog_texture, clamp(fog_uv, 0.0, 1.0)).r;
-	final_albedo *= (1.0 - fog_factor * 0.98);
-	emission_color *= (1.0 - fog_factor * 0.98);
+	vec2 shroud_uv = (v_world_pos.xz - shroud_world_min) / shroud_world_size;
+	float shroud_factor = texture(shroud_texture, clamp(shroud_uv, 0.0, 1.0)).r;
+	final_albedo *= (1.0 - shroud_factor * 0.98);
+	emission_color *= (1.0 - shroud_factor * 0.98);
 
 	ALBEDO = final_albedo;
 	if (enable_normal_mapping) {
 		NORMAL = normalize(TANGENT * blended_normal_tangent.x + BINORMAL * blended_normal_tangent.y + NORMAL * blended_normal_tangent.z);
-		AO = blended_ao * (1.0 - fog_factor * 0.98) * v_color.r;
-		ROUGHNESS = mix(final_roughness, 1.0, fog_factor);
+		AO = blended_ao * (1.0 - shroud_factor * 0.98) * v_color.r;
+		ROUGHNESS = mix(final_roughness, 1.0, shroud_factor);
 		METALLIC = 0.0;                 
-		SPECULAR = specular_amt * (1.0 - fog_factor * 0.98);
+		SPECULAR = specular_amt * (1.0 - shroud_factor * 0.98);
 	} else {
 		NORMAL = normalize((VIEW_MATRIX * vec4(v_world_normal, 0.0)).xyz);
-		AO = (1.0 - fog_factor * 0.98) * v_color.r;
-		ROUGHNESS = mix(final_roughness, 1.0, fog_factor);
+		AO = (1.0 - shroud_factor * 0.98) * v_color.r;
+		ROUGHNESS = mix(final_roughness, 1.0, shroud_factor);
 		METALLIC = 0.0;
 		SPECULAR = 0.0;
 	}
@@ -1266,10 +1266,10 @@ void fragment() {
 
 		ReloadTerrainTextures();
 
-		var defaultFogImage = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
-		defaultFogImage.Fill(new Color(0f, 0f, 0f, 1f));
-		var defaultFogTexture = ImageTexture.CreateFromImage(defaultFogImage);
-		_material.SetShaderParameter("fog_texture", defaultFogTexture);
+		var defaultShroudImage = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
+		defaultShroudImage.Fill(new Color(0f, 0f, 0f, 1f));
+		var defaultShroudTexture = ImageTexture.CreateFromImage(defaultShroudImage);
+		_material.SetShaderParameter("shroud_texture", defaultShroudTexture);
 
 		_material.SetShaderParameter("grid_spacing", QuadSize);
 		_material.SetShaderParameter("terrain_size", new Vector2(Width * QuadSize, Depth * QuadSize));
@@ -1756,27 +1756,79 @@ void fragment() {
 		}
 	}
 
-	private static readonly StringName FogTextureParam = "fog_texture";
-	private ImageTexture _currentFogTexture = null;
+	private static readonly StringName ShroudTextureParam = "shroud_texture";
+	private ImageTexture _currentShroudTexture = null;
+	private static ImageTexture _clearShroudTexture = null;
 
-	public void SetFogTexture(ImageTexture fogTexture)
+	public static ImageTexture GetClearShroudTexture()
 	{
-		if (fogTexture == null || _currentFogTexture == fogTexture) return;
-		_currentFogTexture = fogTexture;
+		if (_clearShroudTexture == null)
+		{
+			var img = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
+			img.Fill(new Color(0f, 0f, 0f, 1f));
+			_clearShroudTexture = ImageTexture.CreateFromImage(img);
+		}
+		return _clearShroudTexture;
+	}
 
+	public void BeginMinimapCapture()
+	{
+		var clearTex = GetClearShroudTexture();
 		if (_material != null)
 		{
-			_material.SetShaderParameter(FogTextureParam, fogTexture);
+			_material.SetShaderParameter(ShroudTextureParam, clearTex);
 		}
 		if (_shallowWaterMaterial != null)
 		{
-			_shallowWaterMaterial.SetShaderParameter(FogTextureParam, fogTexture);
+			_shallowWaterMaterial.SetShaderParameter(ShroudTextureParam, clearTex);
 		}
 		if (_deepWaterMaterial != null)
 		{
-			_deepWaterMaterial.SetShaderParameter(FogTextureParam, fogTexture);
+			_deepWaterMaterial.SetShaderParameter(ShroudTextureParam, clearTex);
+		}
+		SetAllChunksVisible(true);
+	}
+
+	public void EndMinimapCapture()
+	{
+		if (_currentShroudTexture != null)
+		{
+			if (_material != null)
+			{
+				_material.SetShaderParameter(ShroudTextureParam, _currentShroudTexture);
+			}
+			if (_shallowWaterMaterial != null)
+			{
+				_shallowWaterMaterial.SetShaderParameter(ShroudTextureParam, _currentShroudTexture);
+			}
+			if (_deepWaterMaterial != null)
+			{
+				_deepWaterMaterial.SetShaderParameter(ShroudTextureParam, _currentShroudTexture);
+			}
 		}
 	}
+
+	public void SetShroudTexture(ImageTexture shroudTexture)
+	{
+		if (shroudTexture == null) return;
+		_currentShroudTexture = shroudTexture;
+		if (IsMinimapRendering) return;
+
+		if (_material != null)
+		{
+			_material.SetShaderParameter(ShroudTextureParam, shroudTexture);
+		}
+		if (_shallowWaterMaterial != null)
+		{
+			_shallowWaterMaterial.SetShaderParameter(ShroudTextureParam, shroudTexture);
+		}
+		if (_deepWaterMaterial != null)
+		{
+			_deepWaterMaterial.SetShaderParameter(ShroudTextureParam, shroudTexture);
+		}
+	}
+
+	public void SetFogTexture(ImageTexture fogTexture) => SetShroudTexture(fogTexture);
 
 	public void SetPathingVisible(bool visible)
 	{

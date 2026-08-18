@@ -5831,7 +5831,7 @@ public partial class MapEditorHUD : Control
 		if (GameHost.Instance.AllUnits.Count == 0)
 		{
 			ShowConfirmationDialog(
-				"Warning: You have not placed any units, you won't see anything due to Fog of War.",
+				"Warning: You have not placed any units, you won't see anything due to Shroud.",
 				async () => await ProceedToTestMap(),
 				"Okay",
 				"Cancel"

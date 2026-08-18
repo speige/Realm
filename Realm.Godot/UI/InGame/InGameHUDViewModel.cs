@@ -349,11 +349,12 @@ public class InGameHUDViewModel
 	public float HolyLightCooldown { get; set; }
 
 	public string CurrentWeather { get; set; } = "clear";
-	public string FogOfWarType { get; set; } = "grey";
+	public string ShroudType { get; set; } = "VisionShroud";
 	public bool ShowMinimapTerrain { get; set; } = true;
 	
-	private static readonly byte[,] _emptyFogGrid = new byte[32, 32];
-	public byte[,] FogGrid { get; set; } = _emptyFogGrid;
+	private static readonly byte[,] _emptyShroudGrid = new byte[32, 32];
+	public byte[,] ShroudGrid { get; set; } = _emptyShroudGrid;
+	public byte[,] FogGrid { get => ShroudGrid; set => ShroudGrid = value; }
 
 	public int IdleCount { get; set; }
 

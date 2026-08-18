@@ -37,7 +37,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private EditorService _editorService;
 	private ReplayService _replayService;
 	private SimulationService _simulationService;
-	private FogOfWarService _fogOfWarService;
+	private ShroudService _shroudService;
 	private UnitSpawnService _unitSpawnService;
 	private WorldInitService _worldInitService;
 	private MapPropertiesLoader _mapPropertiesLoader;
@@ -49,7 +49,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public CheatService CheatService => _cheatService;
 	public EnvironmentService EnvironmentService => _environmentService;
 	public SpectatorService SpectatorService => _spectatorService;
-	public FogOfWarService FogOfWarService => _fogOfWarService;
+	public ShroudService ShroudService => _shroudService;
 
 	public bool UnlimitedPowerEnabled { get; set; } = false;
 	public bool GigachadEnabled { get; set; } = false;
@@ -3323,7 +3323,7 @@ public class {mapName} : IMapScript
 			};
 		}
 
-		_fogOfWarService.Initialize(MainNode);
+		_shroudService.Initialize(MainNode);
 	}
 
 	public void ResetWorldAndState()
@@ -3380,7 +3380,7 @@ public class {mapName} : IMapScript
 
 		_editorService?.ResetAllState();
 		_networkService?.Clear();
-		_fogOfWarService?.CleanUp();
+		_shroudService?.CleanUp();
 
 		ReinitializeEcsAndServices();
 	}
@@ -3435,7 +3435,7 @@ public class {mapName} : IMapScript
 
 		EcsWorld?.Dispose();
 		_networkService?.Clear();
-		_fogOfWarService?.CleanUp();
+		_shroudService?.CleanUp();
 		StopRecording();
 	}
 
@@ -3826,14 +3826,17 @@ public class {mapName} : IMapScript
 
 	public override void _Process(double delta)
 	{
-		if (_fogOfWarService != null)
+		if (_shroudService != null)
 		{
 			float fDelta = (float)delta;
 			bool isReplay = Realm.Godot.ReplaySystem.ReplayPlaybackManager.Instance.IsPlayingReplay;
 			bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
 			int spectatorPerspective = InGameHUD.Instance?.LiveSpectatorPerspective ?? -1;
-			_fogOfWarService.Tick(fDelta, AllUnits, AllProps, AllDecals, MainCamera, spectatorPerspective, isReplay, isSpectator);
+			_shroudService.Tick(fDelta, AllUnits, AllProps, AllDecals, spectatorPerspective, isReplay, isSpectator);
 		}
+
+		var worldEnv = MainNode?.GetNodeOrNull<WorldEnvironment>("WorldEnvironment") ?? GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
+		_environmentService?.UpdateEnvironmentalFog(MainCamera, worldEnv);
 	}
 
 	public override void _PhysicsProcess(double delta)

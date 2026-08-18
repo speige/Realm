@@ -152,7 +152,7 @@
         MapDescription: document.getElementById('prop-MapDescription'),
         SuggestedPlayers: document.getElementById('prop-SuggestedPlayers'),
         MinimapImage: document.getElementById('prop-MinimapImage'),
-        FogOfWarType: document.getElementById('prop-FogOfWarType'),
+        ShroudType: document.getElementById('prop-ShroudType'),
         TerrainBaseHeight: document.getElementById('prop-TerrainBaseHeight'),
         ShadowIntensity: document.getElementById('prop-ShadowIntensity'),
         MapWidth: document.getElementById('prop-MapWidth'),
@@ -850,7 +850,7 @@
         for (const [key, element] of Object.entries(mapPropFields)) {
             if (!element) continue;
 
-            const val = props[key];
+            let val = props[key];
             if (element.type === 'checkbox') {
                 element.checked = !!val;
             } else if (val === undefined || val === null) {

@@ -18,9 +18,9 @@
         "MinimapImage": {
           "type": "string"
         },
-        "FogOfWarType": {
+        "ShroudType": {
           "type": "string",
-          "enum": ["visible", "grey", "black"]
+          "enum": ["visible", "VisionShroud", "ExplorationShroud", "grey", "black"]
         },
         "TerrainBaseHeight": {
           "type": "number",

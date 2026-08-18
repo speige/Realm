@@ -43,7 +43,7 @@ public partial class GameHost
 		services.AddSingleton<NetworkService>();
 		services.AddSingleton<TechTreeService>();
 		services.AddSingleton<InputService>();
-		services.AddSingleton<FogOfWarService>();
+		services.AddSingleton<ShroudService>();
 		services.AddSingleton<UnitSpawnService>();
 		services.AddSingleton<WorldInitService>();
 		services.AddSingleton<MapPropertiesLoader>();
@@ -75,7 +75,7 @@ public partial class GameHost
 		_replayService = ServiceLocator.Get<ReplayService>();
 		_networkService = ServiceLocator.Get<NetworkService>();
 		_inputService = ServiceLocator.Get<InputService>();
-		_fogOfWarService = ServiceLocator.Get<FogOfWarService>();
+		_shroudService = ServiceLocator.Get<ShroudService>();
 		_unitSpawnService = ServiceLocator.Get<UnitSpawnService>();
 		_worldInitService = ServiceLocator.Get<WorldInitService>();
 		_mapPropertiesLoader = ServiceLocator.Get<MapPropertiesLoader>();

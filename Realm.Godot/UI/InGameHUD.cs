@@ -90,61 +90,101 @@ public partial class InGameHUD : Control
 
 	private float _fogUpdateTimer = 0f;
 	
-	private static readonly byte[,] _emptyFogGrid = new byte[32, 32];
+	private static readonly byte[,] _emptyShroudGrid = new byte[32, 32];
 
-	public byte[,] FogGrid
+	public byte[,] ShroudGrid
 	{
 		get
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
-				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				var worldEntity = GameHost.Instance.WorldEntity;
+				if (worldEntity != Entity.Null && GameHost.Instance.EcsWorld.IsAlive(worldEntity) && GameHost.Instance.EcsWorld.Has<ShroudState>(worldEntity))
 				{
-					return GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity).FogGrid;
+					return GameHost.Instance.EcsWorld.Get<ShroudState>(worldEntity).ShroudGrid;
+				}
+
+				Entity fallback = Entity.Null;
+				var query = Realm.Ecs.Common.QueryCache.AllShroudStateQuery;
+				GameHost.Instance.EcsWorld.Query(in query, ent => fallback = ent);
+				if (fallback != Entity.Null && GameHost.Instance.EcsWorld.Has<ShroudState>(fallback))
+				{
+					return GameHost.Instance.EcsWorld.Get<ShroudState>(fallback).ShroudGrid;
 				}
 			}
-			return _emptyFogGrid;
+			return _emptyShroudGrid;
 		}
 		set
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
-				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				var worldEntity = GameHost.Instance.WorldEntity;
+				if (worldEntity != Entity.Null && GameHost.Instance.EcsWorld.IsAlive(worldEntity) && GameHost.Instance.EcsWorld.Has<ShroudState>(worldEntity))
 				{
-					ref var state = ref GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity);
-					state.FogGrid = value;
+					ref var state = ref GameHost.Instance.EcsWorld.Get<ShroudState>(worldEntity);
+					state.ShroudGrid = value;
+					return;
+				}
+
+				Entity fallback = Entity.Null;
+				var query = Realm.Ecs.Common.QueryCache.AllShroudStateQuery;
+				GameHost.Instance.EcsWorld.Query(in query, ent => fallback = ent);
+				if (fallback != Entity.Null && GameHost.Instance.EcsWorld.Has<ShroudState>(fallback))
+				{
+					ref var state = ref GameHost.Instance.EcsWorld.Get<ShroudState>(fallback);
+					state.ShroudGrid = value;
 				}
 			}
 		}
 	}
-	private byte[,] _fogGrid { get => FogGrid; set => FogGrid = value; }
+	public byte[,] FogGrid { get => ShroudGrid; set => ShroudGrid = value; }
+	private byte[,] _fogGrid { get => ShroudGrid; set => ShroudGrid = value; }
 
-	public string FogOfWarType
+	public string ShroudType
 	{
 		get
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
-				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				var worldEntity = GameHost.Instance.WorldEntity;
+				if (worldEntity != Entity.Null && GameHost.Instance.EcsWorld.IsAlive(worldEntity) && GameHost.Instance.EcsWorld.Has<ShroudState>(worldEntity))
 				{
-					return GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity).FogOfWarType;
+					return GameHost.Instance.EcsWorld.Get<ShroudState>(worldEntity).ShroudType;
+				}
+
+				Entity fallback = Entity.Null;
+				var query = Realm.Ecs.Common.QueryCache.AllShroudStateQuery;
+				GameHost.Instance.EcsWorld.Query(in query, ent => fallback = ent);
+				if (fallback != Entity.Null && GameHost.Instance.EcsWorld.Has<ShroudState>(fallback))
+				{
+					return GameHost.Instance.EcsWorld.Get<ShroudState>(fallback).ShroudType;
 				}
 			}
-			return "grey";
+			return "VisionShroud";
 		}
 		set
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
-				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				var worldEntity = GameHost.Instance.WorldEntity;
+				if (worldEntity != Entity.Null && GameHost.Instance.EcsWorld.IsAlive(worldEntity) && GameHost.Instance.EcsWorld.Has<ShroudState>(worldEntity))
 				{
-					ref var state = ref GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity);
-					state.FogOfWarType = value;
+					ref var state = ref GameHost.Instance.EcsWorld.Get<ShroudState>(worldEntity);
+					state.ShroudType = value;
+					return;
+				}
+
+				Entity fallback = Entity.Null;
+				var query = Realm.Ecs.Common.QueryCache.AllShroudStateQuery;
+				GameHost.Instance.EcsWorld.Query(in query, ent => fallback = ent);
+				if (fallback != Entity.Null && GameHost.Instance.EcsWorld.Has<ShroudState>(fallback))
+				{
+					ref var state = ref GameHost.Instance.EcsWorld.Get<ShroudState>(fallback);
+					state.ShroudType = value;
 				}
 			}
 		}
 	}
-	private string _fogOfWarType { get => FogOfWarType; set => FogOfWarType = value; }
 
 	private string _currentWeather
 	{
@@ -734,12 +774,12 @@ public partial class InGameHUD : Control
 		var minimapBg = _minimapArea.GetChildCount() > 0 ? _minimapArea.GetChild<TextureRect>(0) : null;
 		if (minimapBg == null) return;
 
-		var fogMesh = GameHost.Instance?.MainNode?.GetNodeOrNull<MeshInstance3D>("3DFogMesh");
+		var shroudMesh = GameHost.Instance?.MainNode?.GetNodeOrNull<MeshInstance3D>("3DShroudMesh") ?? GameHost.Instance?.MainNode?.GetNodeOrNull<MeshInstance3D>("3DFogMesh");
 		bool wasVisible = false;
-		if (fogMesh != null)
+		if (shroudMesh != null)
 		{
-			wasVisible = fogMesh.Visible;
-			fogMesh.Visible = false;
+			wasVisible = shroudMesh.Visible;
+			shroudMesh.Visible = false;
 		}
 
 		bool wasPathingVisible = false;
@@ -747,6 +787,20 @@ public partial class InGameHUD : Control
 		{
 			wasPathingVisible = GameHost.Instance.PathingOverlayMesh.Visible;
 			GameHost.Instance.PathingOverlayMesh.Visible = false;
+		}
+
+		var unitsList = GameHost.Instance?.AllUnits;
+		var unitVisibility = new System.Collections.Generic.List<(Unit3D unit, bool visible)>();
+		if (unitsList != null)
+		{
+			foreach (var u in unitsList)
+			{
+				if (u != null && GodotObject.IsInstanceValid(u))
+				{
+					unitVisibility.Add((u, u.Visible));
+					u.Visible = false;
+				}
+			}
 		}
 
 		try
@@ -765,7 +819,7 @@ public partial class InGameHUD : Control
 			viewport.AddChild(camera);
 
 			EditableTerrain.IsMinimapRendering = true;
-			EditableTerrain.Instance?.SetAllChunksVisible(true);
+			EditableTerrain.Instance?.BeginMinimapCapture();
 			PropMultiMeshManager.Instance?.SetAllNodesVisible(true);
 			try
 			{
@@ -786,6 +840,7 @@ public partial class InGameHUD : Control
 			}
 			finally
 			{
+				EditableTerrain.Instance?.EndMinimapCapture();
 				EditableTerrain.IsMinimapRendering = false;
 			}
 		}
@@ -795,13 +850,20 @@ public partial class InGameHUD : Control
 		}
 		finally
 		{
-			if (fogMesh != null)
+			if (shroudMesh != null && GodotObject.IsInstanceValid(shroudMesh))
 			{
-				fogMesh.Visible = wasVisible;
+				shroudMesh.Visible = wasVisible;
 			}
 			if (GameHost.Instance?.PathingOverlayMesh != null)
 			{
 				GameHost.Instance.PathingOverlayMesh.Visible = wasPathingVisible;
+			}
+			foreach (var (u, vis) in unitVisibility)
+			{
+				if (u != null && GodotObject.IsInstanceValid(u))
+				{
+					u.Visible = vis;
+				}
 			}
 		}
 	}

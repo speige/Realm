@@ -19,7 +19,7 @@ public class EnvironmentService
 	private Entity FindWorldEntity()
 	{
 		Entity worldEntity = Entity.Null;
-		var query = QueryCache.AllFogAndWeatherStateQuery;
+		var query = QueryCache.AllWeatherStateQuery;
 		EcsWorld.Query(in query, entity => worldEntity = entity);
 		return worldEntity;
 	}
@@ -27,9 +27,9 @@ public class EnvironmentService
 	public string GetCurrentWeather()
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<FogAndWeatherState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<WeatherState>(worldEntity))
 		{
-			return EcsWorld.Get<FogAndWeatherState>(worldEntity).CurrentWeather;
+			return EcsWorld.Get<WeatherState>(worldEntity).CurrentWeather;
 		}
 		return "clear";
 	}
@@ -37,9 +37,9 @@ public class EnvironmentService
 	public void SetCurrentWeather(string weather)
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<FogAndWeatherState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<WeatherState>(worldEntity))
 		{
-			ref var state = ref EcsWorld.Get<FogAndWeatherState>(worldEntity);
+			ref var state = ref EcsWorld.Get<WeatherState>(worldEntity);
 			state.CurrentWeather = weather;
 		}
 	}
@@ -47,9 +47,9 @@ public class EnvironmentService
 	public float GetBaseFogDensity()
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<FogAndWeatherState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<WeatherState>(worldEntity))
 		{
-			return EcsWorld.Get<FogAndWeatherState>(worldEntity).BaseFogDensity;
+			return EcsWorld.Get<WeatherState>(worldEntity).BaseFogDensity;
 		}
 		return 0f;
 	}
@@ -57,10 +57,34 @@ public class EnvironmentService
 	public void SetBaseFogDensity(float density)
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<FogAndWeatherState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<WeatherState>(worldEntity))
 		{
-			ref var state = ref EcsWorld.Get<FogAndWeatherState>(worldEntity);
+			ref var state = ref EcsWorld.Get<WeatherState>(worldEntity);
 			state.BaseFogDensity = density;
+		}
+	}
+
+	public void UpdateEnvironmentalFog(Camera3D camera3D, WorldEnvironment worldEnv)
+	{
+		if (worldEnv == null || worldEnv.Environment == null) return;
+
+		if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+		{
+			worldEnv.Environment.FogEnabled = false;
+			return;
+		}
+
+		float baseFogDensity = GetBaseFogDensity();
+		if (GameSettings.QualityIdx > GraphicsQuality.Low && baseFogDensity > 0f && camera3D != null && GodotObject.IsInstanceValid(camera3D))
+		{
+			worldEnv.Environment.FogEnabled = true;
+			float height = camera3D.GlobalPosition.Y;
+			float scale = 18.0f / Mathf.Max(8.0f, height);
+			worldEnv.Environment.FogDensity = baseFogDensity * scale;
+		}
+		else
+		{
+			worldEnv.Environment.FogEnabled = false;
 		}
 	}
 
