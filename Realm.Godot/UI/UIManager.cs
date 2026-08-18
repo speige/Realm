@@ -91,8 +91,8 @@ public partial class UIManager : Control
 		GameSettings.ApplyGraphicsSettings(this);
 		LocalizationManager.SetupTranslations();
 
-		int modeIdx = GameSettings.WindowModeIdx;
-		if (modeIdx != 2)
+		WindowMode modeIdx = GameSettings.WindowModeIdx;
+		if (modeIdx != WindowMode.Borderless)
 		{
 			if (GameSettings.ResolutionIdx >= 0 && GameSettings.ResolutionIdx < GameSettings.Resolutions.Count)
 			{
@@ -100,22 +100,22 @@ public partial class UIManager : Control
 			}
 		}
 
-		if (modeIdx == 0) // Fullscreen
+		if (modeIdx == WindowMode.Fullscreen)
 		{
 			GetWindow().Mode = Window.ModeEnum.ExclusiveFullscreen;
 		}
-		else if (modeIdx == 1) // Windowed
+		else if (modeIdx == WindowMode.Windowed)
 		{
 			GetWindow().Borderless = false;
 			GetWindow().Mode = Window.ModeEnum.Windowed;
 		}
-		else if (modeIdx == 2) // Borderless
+		else if (modeIdx == WindowMode.Borderless)
 		{
 			GetWindow().Borderless = true;
 			GetWindow().Mode = Window.ModeEnum.Maximized;
 		}
 
-		if (GameSettings.VsyncIdx == 0)
+		if (GameSettings.Vsync)
 		{
 			DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Enabled);
 		}

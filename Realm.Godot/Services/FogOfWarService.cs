@@ -214,7 +214,7 @@ void fragment() {
 		}
 
 		float baseFogDensity = BaseFogDensity;
-		if (GameSettings.QualityIdx > 0 && baseFogDensity > 0f && camera3D != null && GodotObject.IsInstanceValid(camera3D))
+		if (GameSettings.QualityIdx > GraphicsQuality.Low && baseFogDensity > 0f && camera3D != null && GodotObject.IsInstanceValid(camera3D))
 		{
 			if (_worldEnv != null && _worldEnv.Environment != null)
 			{

@@ -158,7 +158,7 @@ public class EnvironmentService
 
 		GameSettings.ApplyEnvironmentQuality(env);
 
-		if (GameSettings.QualityIdx > 0)
+		if (GameSettings.QualityIdx > GraphicsQuality.Low)
 		{
 			env.TonemapExposure = Mathf.Lerp(Exposures[phaseIndex], Exposures[nextIndex], t);
 			env.AdjustmentContrast = Mathf.Lerp(Contrasts[phaseIndex], Contrasts[nextIndex], t);
@@ -195,7 +195,7 @@ public class EnvironmentService
 			sun.DirectionalShadowFadeStart = 0.8f;
 			sun.ShadowBias = 0.03f;
 			sun.ShadowNormalBias = 1.2f;
-			sun.ShadowEnabled = !GameSettings.DisableShadows && interpSunEnergy > 0.05f && GameSettings.QualityIdx > 0;
+			sun.ShadowEnabled = !GameSettings.DisableShadows && interpSunEnergy > 0.05f && GameSettings.QualityIdx > GraphicsQuality.Low;
 			sun.LightColor = interpSunColor;
 			sun.LightEnergy = interpSunEnergy;
 			sun.LightSpecular = 0.5f;

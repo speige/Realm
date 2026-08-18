@@ -2,17 +2,106 @@ using Godot;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+
+public enum HealthBarMode
+{
+	Hidden = 0,
+	Visible = 1,
+	Damaged = 2
+}
+
+public enum GameLanguage
+{
+	English = 0,
+	Spanish = 1,
+	French = 2,
+	German = 3,
+	Portuguese = 4,
+	Russian = 5,
+	Chinese = 6,
+	Japanese = 7,
+	Arabic = 8,
+	Hindi = 9
+}
+
+public enum GraphicsQuality
+{
+	Low = 0,
+	Medium = 1,
+	High = 2,
+	Ultra = 3
+}
+
+public enum DownsamplingMode
+{
+	Off = 0,
+	Quality = 1,
+	Performance = 2
+}
+
+public enum WindowMode
+{
+	Fullscreen = 0,
+	Windowed = 1,
+	Borderless = 2
+}
+
+public static class GameLanguageExtensions
+{
+	public static string ToLocaleCode(this GameLanguage language) => language switch
+	{
+		GameLanguage.English => "en",
+		GameLanguage.Spanish => "es",
+		GameLanguage.French => "fr",
+		GameLanguage.German => "de",
+		GameLanguage.Portuguese => "pt",
+		GameLanguage.Russian => "ru",
+		GameLanguage.Chinese => "zh",
+		GameLanguage.Japanese => "ja",
+		GameLanguage.Arabic => "ar",
+		GameLanguage.Hindi => "hi",
+		_ => "en"
+	};
+
+	public static GameLanguage ParseGameLanguage(string code) => code?.ToLowerInvariant() switch
+	{
+		"en" or "english" => GameLanguage.English,
+		"es" or "spanish" => GameLanguage.Spanish,
+		"fr" or "french" => GameLanguage.French,
+		"de" or "german" => GameLanguage.German,
+		"pt" or "portuguese" => GameLanguage.Portuguese,
+		"ru" or "russian" => GameLanguage.Russian,
+		"zh" or "chinese" => GameLanguage.Chinese,
+		"ja" or "japanese" => GameLanguage.Japanese,
+		"ar" or "arabic" => GameLanguage.Arabic,
+		"hi" or "hindi" => GameLanguage.Hindi,
+		_ => GameLanguage.English
+	};
+}
 
 public static class GameSettings
 {
 	private const string SettingsPath = "user://settings.json";
 
+	private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
+	{
+		PropertyNameCaseInsensitive = true,
+		WriteIndented = true,
+		Converters = { new JsonStringEnumConverter() }
+	};
+
 	public static int ResolutionIdx { get; set; } = 0;
 	public static List<Vector2I> Resolutions { get; private set; }
-	public static int QualityIdx { get; set; } = 2; // High
-	public static int DownsamplingIdx { get; set; } = 0; // Off
-	public static int WindowModeIdx { get; set; } = 2; // Borderless
-	public static int VsyncIdx { get; set; } = 0; // On
+	public static GraphicsQuality QualityIdx { get; set; } = GraphicsQuality.High;
+	public static DownsamplingMode DownsamplingIdx { get; set; } = DownsamplingMode.Off;
+	public static WindowMode WindowModeIdx { get; set; } = WindowMode.Borderless;
+	public static bool Vsync { get; set; } = true;
+	public static bool VsyncIdx
+	{
+		get => Vsync;
+		set => Vsync = value;
+	}
 
 	public static float MasterVolume { get; set; } = 80f;
 	public static float MusicVolume { get; set; } = 70f;
@@ -22,8 +111,8 @@ public static class GameSettings
 	public static float ScrollSpeed { get; set; } = 50f;
 	public static float MouseSens { get; set; } = 40f;
 	public static float HudScale { get; set; } = 100f; // 100% default
-	public static string ShowHealthBars { get; set; } = "damaged";
-	public static string Language { get; set; } = "en";
+	public static HealthBarMode ShowHealthBars { get; set; } = HealthBarMode.Damaged;
+	public static GameLanguage Language { get; set; } = GameLanguage.English;
 	public static bool DisplayFps { get; set; } = false;
 	public static bool RecordReplays { get; set; } = false;
 	public static bool SeedMapFiles { get; set; } = true;
@@ -35,8 +124,8 @@ public static class GameSettings
 		ResolutionIdx = 0;
 		QualityIdx = AutoDetectQuality();
 		DownsamplingIdx = GetDownsamplingIdxForQuality(QualityIdx);
-		WindowModeIdx = 2;
-		VsyncIdx = 0;
+		WindowModeIdx = WindowMode.Borderless;
+		Vsync = true;
 		DisableShadows = false;
 		DisableDayNightLighting = false;
 		MasterVolume = 80f;
@@ -46,22 +135,22 @@ public static class GameSettings
 		ScrollSpeed = 50f;
 		MouseSens = 40f;
 		HudScale = 100f;
-		ShowHealthBars = "damaged";
-		Language = "en";
+		ShowHealthBars = HealthBarMode.Damaged;
+		Language = GameLanguage.English;
 		DisplayFps = false;
 		RecordReplays = false;
 		SeedMapFiles = true;
 	}
 
-	public static int GetDownsamplingIdxForQuality(int qualityIdx)
+	public static DownsamplingMode GetDownsamplingIdxForQuality(GraphicsQuality quality)
 	{
-		return qualityIdx switch
+		return quality switch
 		{
-			0 => 3,
-			1 => 2,
-			2 => 0,
-			3 => 0,
-			_ => 0
+			GraphicsQuality.Low => DownsamplingMode.Performance,
+			GraphicsQuality.Medium => DownsamplingMode.Quality,
+			GraphicsQuality.High => DownsamplingMode.Off,
+			GraphicsQuality.Ultra => DownsamplingMode.Off,
+			_ => DownsamplingMode.Off
 		};
 	}
 
@@ -128,14 +217,14 @@ public static class GameSettings
 		string json = file.GetAsText();
 		try
 		{
-			var data = JsonSerializer.Deserialize<SettingsData>(json);
+			var data = JsonSerializer.Deserialize<SettingsData>(json, JsonOptions);
 			if (data != null)
 			{
 				ResolutionIdx = data.ResolutionIdx;
 				QualityIdx = data.QualityIdx;
 				DownsamplingIdx = data.DownsamplingIdx;
 				WindowModeIdx = data.WindowModeIdx;
-				VsyncIdx = data.VsyncIdx;
+				Vsync = data.Vsync;
 				MasterVolume = data.MasterVolume;
 				MusicVolume = data.MusicVolume;
 				SfxVolume = data.SfxVolume;
@@ -143,36 +232,19 @@ public static class GameSettings
 				ScrollSpeed = data.ScrollSpeed;
 				MouseSens = data.MouseSens;
 				HudScale = data.HudScale;
-				Language = data.Language ?? "en";
-				DisplayFps = data.DisplayFps ?? true;
-				RecordReplays = data.RecordReplays ?? false;
-				SeedMapFiles = data.SeedMapFiles ?? true;
-				DisableShadows = data.DisableShadows ?? false;
-				DisableDayNightLighting = data.DisableDayNightLighting ?? false;
-				if (data.ShowHealthBars is JsonElement elem)
-				{
-					if (elem.ValueKind == JsonValueKind.True || elem.ValueKind == JsonValueKind.False)
-					{
-						ShowHealthBars = elem.GetBoolean() ? "damaged" : "hidden";
-					}
-					else if (elem.ValueKind == JsonValueKind.String)
-					{
-						ShowHealthBars = elem.GetString() ?? "damaged";
-					}
-					else
-					{
-						ShowHealthBars = "damaged";
-					}
-				}
-				else
-				{
-					ShowHealthBars = "damaged";
-				}
+				Language = data.Language;
+				DisplayFps = data.DisplayFps;
+				RecordReplays = data.RecordReplays;
+				SeedMapFiles = data.SeedMapFiles;
+				DisableShadows = data.DisableShadows;
+				DisableDayNightLighting = data.DisableDayNightLighting;
+				ShowHealthBars = data.ShowHealthBars;
 			}
 		}
 		catch (System.Exception e)
 		{
 			GD.PrintErr($"Failed to deserialize settings: {e.Message}");
+			ResetToDefaults();
 		}
 	}
 
@@ -184,7 +256,7 @@ public static class GameSettings
 			QualityIdx = QualityIdx,
 			DownsamplingIdx = DownsamplingIdx,
 			WindowModeIdx = WindowModeIdx,
-			VsyncIdx = VsyncIdx,
+			Vsync = Vsync,
 			MasterVolume = MasterVolume,
 			MusicVolume = MusicVolume,
 			SfxVolume = SfxVolume,
@@ -201,7 +273,7 @@ public static class GameSettings
 			DisableDayNightLighting = DisableDayNightLighting
 		};
 
-		string json = JsonSerializer.Serialize(data);
+		string json = JsonSerializer.Serialize(data, JsonOptions);
 		using var file = FileAccess.Open(SettingsPath, FileAccess.ModeFlags.Write);
 		if (file != null)
 		{
@@ -218,25 +290,25 @@ public static class GameSettings
 		{
 			switch (QualityIdx)
 			{
-				case 0:
+				case GraphicsQuality.Low:
 					viewport.Msaa3D = Viewport.Msaa.Disabled;
 					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Disabled;
 					viewport.UseTaa = false;
 					viewport.PositionalShadowAtlasSize = 1024;
 					break;
-				case 1:
+				case GraphicsQuality.Medium:
 					viewport.Msaa3D = Viewport.Msaa.Disabled;
 					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
 					viewport.UseTaa = false;
 					viewport.PositionalShadowAtlasSize = 2048;
 					break;
-				case 2:
+				case GraphicsQuality.High:
 					viewport.Msaa3D = Viewport.Msaa.Msaa2X;
 					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
 					viewport.UseTaa = false;
 					viewport.PositionalShadowAtlasSize = 4096;
 					break;
-				case 3:
+				case GraphicsQuality.Ultra:
 					viewport.Msaa3D = Viewport.Msaa.Msaa4X;
 					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
 					viewport.UseTaa = true;
@@ -246,19 +318,15 @@ public static class GameSettings
 
 			switch (DownsamplingIdx)
 			{
-				case 0:
+				case DownsamplingMode.Off:
 					viewport.Scaling3DMode = Viewport.Scaling3DModeEnum.Bilinear;
 					viewport.Scaling3DScale = 1.0f;
 					break;
-				case 1:
-					viewport.Scaling3DMode = Viewport.Scaling3DModeEnum.Fsr;
-					viewport.Scaling3DScale = 0.85f;
-					break;
-				case 2:
+				case DownsamplingMode.Quality:
 					viewport.Scaling3DMode = Viewport.Scaling3DModeEnum.Fsr;
 					viewport.Scaling3DScale = 0.75f;
 					break;
-				case 3:
+				case DownsamplingMode.Performance:
 					viewport.Scaling3DMode = Viewport.Scaling3DModeEnum.Fsr;
 					viewport.Scaling3DScale = 0.50f;
 					break;
@@ -304,7 +372,7 @@ public static class GameSettings
 		var terrain = (root != null ? FindNodeInTree<EditableTerrain>(root) : null) ?? EditableTerrain.Instance;
 		if (terrain != null && GodotObject.IsInstanceValid(terrain))
 		{
-			terrain.ApplyQualitySettings(QualityIdx);
+			terrain.ApplyQualitySettings((int)QualityIdx);
 		}
 
 		var gameHost = (root != null ? FindNodeInTree<GameHost>(root) : null) ?? GameHost.Instance;
@@ -330,13 +398,11 @@ public static class GameSettings
 		}
 	}
 
-	public static void ApplyEnvironmentQuality(Godot.Environment env, int qualityIdx = -1)
+	public static void ApplyEnvironmentQuality(Godot.Environment env, GraphicsQuality quality = GraphicsQuality.High)
 	{
 		if (env == null || !GodotObject.IsInstanceValid(env)) return;
 
-		int quality = qualityIdx >= 0 ? qualityIdx : QualityIdx;
-
-		if (quality == 0)
+		if (quality == GraphicsQuality.Low)
 		{
 			env.TonemapMode = Godot.Environment.ToneMapper.Agx;
 			env.AdjustmentEnabled = false;
@@ -352,25 +418,23 @@ public static class GameSettings
 			env.TonemapMode = Godot.Environment.ToneMapper.Agx;
 			env.AdjustmentEnabled = true;
 			env.SsaoEnabled = true;
-			env.SsilEnabled = quality >= 2;
-			env.SsrEnabled = quality == 3;
-			env.SdfgiEnabled = quality == 3;
+			env.SsilEnabled = quality >= GraphicsQuality.High;
+			env.SsrEnabled = quality == GraphicsQuality.Ultra;
+			env.SdfgiEnabled = quality == GraphicsQuality.Ultra;
 			env.FogEnabled = true;
 			env.GlowEnabled = true;
 		}
 	}
 
-	public static void ApplyDirectionalLightQuality(DirectionalLight3D light, int qualityIdx = -1)
+	public static void ApplyDirectionalLightQuality(DirectionalLight3D light, GraphicsQuality quality = GraphicsQuality.High)
 	{
 		if (light == null || !GodotObject.IsInstanceValid(light)) return;
 
-		int quality = qualityIdx >= 0 ? qualityIdx : QualityIdx;
-
-		if (DisableShadows || quality == 0)
+		if (DisableShadows || quality == GraphicsQuality.Low)
 		{
 			light.ShadowEnabled = false;
 		}
-		else if (quality == 1)
+		else if (quality == GraphicsQuality.Medium)
 		{
 			light.ShadowEnabled = true;
 			light.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal;
@@ -396,25 +460,25 @@ public static class GameSettings
 
 	private class SettingsData
 	{
-		public int ResolutionIdx { get; set; }
-		public int QualityIdx { get; set; }
-		public int DownsamplingIdx { get; set; }
-		public int WindowModeIdx { get; set; }
-		public int VsyncIdx { get; set; }
-		public float MasterVolume { get; set; }
-		public float MusicVolume { get; set; }
-		public float SfxVolume { get; set; }
-		public float VoiceVolume { get; set; }
-		public float ScrollSpeed { get; set; }
-		public float MouseSens { get; set; }
-		public float HudScale { get; set; }
-		public object ShowHealthBars { get; set; }
-		public string Language { get; set; }
-		public bool? DisplayFps { get; set; }
-		public bool? RecordReplays { get; set; }
-		public bool? SeedMapFiles { get; set; }
-		public bool? DisableShadows { get; set; }
-		public bool? DisableDayNightLighting { get; set; }
+		public int ResolutionIdx { get; set; } = 0;
+		public GraphicsQuality QualityIdx { get; set; } = GraphicsQuality.High;
+		public DownsamplingMode DownsamplingIdx { get; set; } = DownsamplingMode.Off;
+		public WindowMode WindowModeIdx { get; set; } = WindowMode.Borderless;
+		public bool Vsync { get; set; } = true;
+		public float MasterVolume { get; set; } = 80f;
+		public float MusicVolume { get; set; } = 70f;
+		public float SfxVolume { get; set; } = 90f;
+		public float VoiceVolume { get; set; } = 60f;
+		public float ScrollSpeed { get; set; } = 50f;
+		public float MouseSens { get; set; } = 40f;
+		public float HudScale { get; set; } = 100f;
+		public HealthBarMode ShowHealthBars { get; set; } = HealthBarMode.Damaged;
+		public GameLanguage Language { get; set; } = GameLanguage.English;
+		public bool DisplayFps { get; set; } = false;
+		public bool RecordReplays { get; set; } = false;
+		public bool SeedMapFiles { get; set; } = true;
+		public bool DisableShadows { get; set; } = false;
+		public bool DisableDayNightLighting { get; set; } = false;
 	}
 
 	[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -501,17 +565,17 @@ public static class GameSettings
 		return 8.0f;
 	}
 
-	public static int AutoDetectQuality()
+	public static GraphicsQuality AutoDetectQuality()
 	{
 		float vramGb = GetGpuVramGb();
 		if (vramGb <= 3.0f)
 		{
-			return 0;
+			return GraphicsQuality.Low;
 		}
 		if (vramGb <= 6.0f)
 		{
-			return 1;
+			return GraphicsQuality.Medium;
 		}
-		return 2;
+		return GraphicsQuality.High;
 	}
 }

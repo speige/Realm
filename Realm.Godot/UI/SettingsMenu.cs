@@ -345,11 +345,11 @@ public partial class SettingsMenu : Control
 	private void LoadCurrentSettings()
 	{
 		_resolutionOpt.Select(GameSettings.ResolutionIdx);
-		_qualityOpt.Select(GameSettings.QualityIdx);
-		_windowModeOpt.Select(GameSettings.WindowModeIdx);
-		_vsyncOpt.Select(GameSettings.VsyncIdx);
+		_qualityOpt.Select((int)GameSettings.QualityIdx);
+		_windowModeOpt.Select((int)GameSettings.WindowModeIdx);
+		_vsyncOpt.Select(GameSettings.Vsync ? 0 : 1);
 
-		if (GameSettings.WindowModeIdx == 0 || GameSettings.WindowModeIdx == 2)
+		if (GameSettings.WindowModeIdx == WindowMode.Fullscreen || GameSettings.WindowModeIdx == WindowMode.Borderless)
 		{
 			_resolutionOpt.Disabled = true;
 			_resolutionOpt.Select(-1);
@@ -372,36 +372,15 @@ public partial class SettingsMenu : Control
 		_displayFpsChk.ButtonPressed = GameSettings.DisplayFps;
 		_recordReplaysChk.ButtonPressed = GameSettings.RecordReplays;
 		_seedMapFilesChk.ButtonPressed = GameSettings.SeedMapFiles;
-		int hbIdx = GameSettings.ShowHealthBars switch
-		{
-			"hidden" => 0,
-			"visible" => 1,
-			"damaged" => 2,
-			_ => 2
-		};
-		_healthBarsOpt.Select(hbIdx);
-
-		int langIdx = GameSettings.Language switch
-		{
-			"en" => 0,
-			"es" => 1,
-			"fr" => 2,
-			"de" => 3,
-			"pt" => 4,
-			"ru" => 5,
-			"zh" => 6,
-			"ja" => 7,
-			"ar" => 8,
-			"hi" => 9,
-			_ => 0
-		};
-		_languageOpt.Select(langIdx);
+		_healthBarsOpt.Select((int)GameSettings.ShowHealthBars);
+		_languageOpt.Select((int)GameSettings.Language);
 	}
 
 	private void ApplySettings()
 	{
 		int modeIdx = _windowModeOpt.Selected;
-		if (modeIdx == 1)
+		var windowMode = (WindowMode)modeIdx;
+		if (windowMode == WindowMode.Windowed)
 		{
 			int resSel = _resolutionOpt.Selected;
 			if (resSel >= 0 && resSel < GameSettings.Resolutions.Count)
@@ -410,22 +389,23 @@ public partial class SettingsMenu : Control
 			}
 		}
 
-		if (modeIdx == 0) // Fullscreen
+		if (windowMode == WindowMode.Fullscreen)
 		{
 			GetWindow().Mode = Window.ModeEnum.ExclusiveFullscreen;
 		}
-		else if (modeIdx == 1) // Windowed
+		else if (windowMode == WindowMode.Windowed)
 		{
 			GetWindow().Borderless = false;
 			GetWindow().Mode = Window.ModeEnum.Windowed;
 		}
-		else if (modeIdx == 2) // Borderless
+		else if (windowMode == WindowMode.Borderless)
 		{
 			GetWindow().Borderless = true;
 			GetWindow().Mode = Window.ModeEnum.Maximized;
 		}
 
-		if (_vsyncOpt.Selected == 0)
+		bool vsyncEnabled = _vsyncOpt.Selected == 0;
+		if (vsyncEnabled)
 		{
 			DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Enabled);
 		}
@@ -435,14 +415,14 @@ public partial class SettingsMenu : Control
 		}
 
 
-		if (modeIdx == 1)
+		if (windowMode == WindowMode.Windowed)
 		{
 			GameSettings.ResolutionIdx = _resolutionOpt.Selected;
 		}
-		GameSettings.QualityIdx = _qualityOpt.Selected;
+		GameSettings.QualityIdx = (GraphicsQuality)_qualityOpt.Selected;
 		GameSettings.DownsamplingIdx = GameSettings.GetDownsamplingIdxForQuality(GameSettings.QualityIdx);
-		GameSettings.WindowModeIdx = _windowModeOpt.Selected;
-		GameSettings.VsyncIdx = _vsyncOpt.Selected;
+		GameSettings.WindowModeIdx = windowMode;
+		GameSettings.Vsync = vsyncEnabled;
 		GameSettings.DisableShadows = _disableShadowsChk.ButtonPressed;
 		GameSettings.DisableDayNightLighting = _disableDayNightLightingChk.ButtonPressed;
 
@@ -457,28 +437,9 @@ public partial class SettingsMenu : Control
 		GameSettings.DisplayFps = _displayFpsChk.ButtonPressed;
 		GameSettings.RecordReplays = _recordReplaysChk.ButtonPressed;
 		GameSettings.SeedMapFiles = _seedMapFilesChk.ButtonPressed;
-		GameSettings.ShowHealthBars = _healthBarsOpt.Selected switch
-		{
-			0 => "hidden",
-			1 => "visible",
-			2 => "damaged",
-			_ => "damaged"
-		};
+		GameSettings.ShowHealthBars = (HealthBarMode)_healthBarsOpt.Selected;
 
-		string newLang = _languageOpt.Selected switch
-		{
-			0 => "en",
-			1 => "es",
-			2 => "fr",
-			3 => "de",
-			4 => "pt",
-			5 => "ru",
-			6 => "zh",
-			7 => "ja",
-			8 => "ar",
-			9 => "hi",
-			_ => "en"
-		};
+		var newLang = (GameLanguage)_languageOpt.Selected;
 		GameSettings.Language = newLang;
 		LocalizationManager.UpdateLocale(newLang);
 

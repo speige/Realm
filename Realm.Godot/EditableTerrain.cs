@@ -1286,6 +1286,11 @@ void fragment() {
 		}
 	}
 
+	public void ApplyQualitySettings(GraphicsQuality quality)
+	{
+		ApplyQualitySettings((int)quality);
+	}
+
 	public void ApplyQualitySettings(int qualityIdx)
 	{
 		if (_material == null) return;
