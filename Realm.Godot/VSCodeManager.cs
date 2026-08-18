@@ -264,6 +264,12 @@ public class VSCodeManager
 	public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
 	[DllImport("user32.dll")]
+	public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+	[DllImport("user32.dll")]
+	public static extern bool BringWindowToTop(IntPtr hWnd);
+
+	[DllImport("user32.dll")]
 	public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
 	[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "RegisterClassExW")]
@@ -1061,6 +1067,20 @@ public class VSCodeManager
 
 		if (_childHwnd != IntPtr.Zero)
 		{
+			PostMessage(_childHwnd, WM_WAKEUP, IntPtr.Zero, IntPtr.Zero);
+		}
+	}
+
+	public void Focus()
+	{
+		if (_childHwnd != IntPtr.Zero)
+		{
+			_actionQueue.Enqueue(() =>
+			{
+				ShowWindow(_childHwnd, SW_SHOWMAXIMIZED);
+				BringWindowToTop(_childHwnd);
+				SetForegroundWindow(_childHwnd);
+			});
 			PostMessage(_childHwnd, WM_WAKEUP, IntPtr.Zero, IntPtr.Zero);
 		}
 	}

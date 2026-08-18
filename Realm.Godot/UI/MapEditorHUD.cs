@@ -1650,12 +1650,15 @@ public partial class MapEditorHUD : Control
 	{
 		if (OperatingSystem.IsWindows())
 		{
-			bool isVisible = !VSCodeManager.Instance.IsVisible;
-			if (isVisible)
+			if (VSCodeManager.Instance.IsVisible)
+			{
+				VSCodeManager.Instance.Focus();
+			}
+			else
 			{
 				GenerateVSCodeFilesExternal();
+				VSCodeManager.Instance.SetVisible(true);
 			}
-			VSCodeManager.Instance.SetVisible(isVisible);
 		}
 	}
 
