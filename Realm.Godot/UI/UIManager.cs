@@ -1,4 +1,5 @@
 using Godot;
+using System;
 using Realm.Godot.ReplaySystem;
 
 public partial class UIManager : Control
@@ -75,6 +76,8 @@ public partial class UIManager : Control
 		AddChild(_watermark);
 #endif
 
+		GetTree().AutoAcceptQuit = false;
+
 		if (LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted)
 		{
 			TransitionTo(GameScreen.InGameHUD);
@@ -82,6 +85,31 @@ public partial class UIManager : Control
 		else
 		{
 			TransitionTo(GameScreen.MainMenu);
+		}
+	}
+
+	public override void _Notification(int what)
+	{
+		base._Notification(what);
+		if (what == unchecked((int)NotificationWMCloseRequest))
+		{
+			if (MapEditorHUD.Instance != null && GodotObject.IsInstanceValid(MapEditorHUD.Instance) && MapEditorHUD.Instance.IsInsideTree())
+			{
+				MapEditorHUD.Instance.HandleQuitRequest();
+			}
+			else if (MapEditorHUD.IsTestMode && MapEditorHUD.HasUnsavedChangesStatic())
+			{
+				ShowConfirmationDialog(
+					"You haven't saved yet",
+					onConfirm: () => GetTree().Quit(),
+					confirmText: "Quit",
+					cancelText: "Stay"
+				);
+			}
+			else
+			{
+				GetTree().Quit();
+			}
 		}
 	}
 
@@ -447,5 +475,75 @@ public partial class UIManager : Control
 		{
 			GetViewport().SetInputAsHandled();
 		}
+	}
+
+	public void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO", Action onCancel = null)
+	{
+		var overlay = new ColorRect();
+		overlay.Name = "ConfirmationOverlay";
+		overlay.Color = new Color(0, 0, 0, 0.5f);
+		overlay.SetAnchorsPreset(LayoutPreset.FullRect);
+		AddChild(overlay);
+
+		var panel = new PanelContainer();
+		panel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		panel.CustomMinimumSize = new Vector2(400, 200);
+		panel.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		panel.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+
+		var center = new CenterContainer();
+		center.SetAnchorsPreset(LayoutPreset.FullRect);
+		overlay.AddChild(center);
+		center.AddChild(panel);
+
+		var vbox = new VBoxContainer();
+		vbox.AddThemeConstantOverride("separation", 15);
+		panel.AddChild(vbox);
+
+		var lblTitle = new Label();
+		UIStyle.ApplyTitle(lblTitle, TranslationServer.Translate("CONFIRMATION REQUIRED"), 18);
+		lblTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		vbox.AddChild(lblTitle);
+
+		var lblMsg = new Label();
+		lblMsg.Text = TranslationServer.Translate(message);
+		lblMsg.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+		lblMsg.HorizontalAlignment = HorizontalAlignment.Center;
+		lblMsg.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		lblMsg.AddThemeFontSizeOverride("font_size", 13);
+		vbox.AddChild(lblMsg);
+
+		var hbox = new HBoxContainer();
+		hbox.AddThemeConstantOverride("separation", 20);
+		hbox.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		vbox.AddChild(hbox);
+
+		var btnConfirm = new Button();
+		btnConfirm.Set("icon_max_width", 0);
+		UIStyle.ApplyButtonText(btnConfirm, TranslationServer.Translate(confirmText), 13);
+		btnConfirm.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		btnConfirm.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		btnConfirm.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btnConfirm.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		btnConfirm.Pressed += () =>
+		{
+			overlay.QueueFree();
+			onConfirm?.Invoke();
+		};
+		hbox.AddChild(btnConfirm);
+
+		var btnCancel = new Button();
+		btnCancel.Set("icon_max_width", 0);
+		UIStyle.ApplyButtonText(btnCancel, TranslationServer.Translate(cancelText), 13);
+		btnCancel.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		btnCancel.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		btnCancel.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btnCancel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
+		btnCancel.Pressed += () =>
+		{
+			overlay.QueueFree();
+			onCancel?.Invoke();
+		};
+		hbox.AddChild(btnCancel);
 	}
 }

@@ -286,5 +286,8 @@
   "YES": "YES",
   "NO": "NO",
   "Are you sure you want to delete this replay?": "Are you sure you want to delete this replay?",
-  "Are you sure you want to delete all replays?": "Are you sure you want to delete all replays?"
+  "Are you sure you want to delete all replays?": "Are you sure you want to delete all replays?",
+  "You haven't saved yet": "You haven't saved yet",
+  "Stay": "Stay",
+  "Quit": "Quit"
 }

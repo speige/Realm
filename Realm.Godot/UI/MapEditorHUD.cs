@@ -14,6 +14,7 @@ using WaterType = Realm.Ecs.Components.Terrain.WaterType;
 public partial class MapEditorHUD : Control
 {
 	public static MapEditorHUD Instance { get; private set; }
+	public static string CurrentDirectoryBlake3 { get; set; } = string.Empty;
 	public static bool IsDraggingSlider { get; set; } = false;
 	public static bool IsTestMode { get; set; } = false;
 	public static bool ReturningFromTest { get; set; } = false;
@@ -1664,16 +1665,35 @@ public partial class MapEditorHUD : Control
 
 	public void BackToHubAction()
 	{
-		if (GameHost.Instance != null && GameHost.Instance.EditorHasUnsavedChanges)
+		if (HasUnsavedChanges())
 		{
 			ShowConfirmationDialog(
-				"Unsaved changes will be lost. Are you sure you want to exit?",
-				() => UIManager.Instance.TransitionTo(GameScreen.MainMenu)
+				"You haven't saved yet",
+				onConfirm: () => UIManager.Instance.TransitionTo(GameScreen.MainMenu),
+				confirmText: "Quit",
+				cancelText: "Stay"
 			);
 		}
 		else
 		{
 			UIManager.Instance.TransitionTo(GameScreen.MainMenu);
+		}
+	}
+
+	public void HandleQuitRequest()
+	{
+		if (HasUnsavedChanges())
+		{
+			ShowConfirmationDialog(
+				"You haven't saved yet",
+				onConfirm: () => GetTree().Quit(),
+				confirmText: "Quit",
+				cancelText: "Stay"
+			);
+		}
+		else
+		{
+			GetTree().Quit();
 		}
 	}
 
@@ -2425,12 +2445,30 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public static bool HasUnsavedChangesStatic()
+	{
+		string tempPath = ProjectSettings.GlobalizePath(TempWorkspaceGodotPath);
+		if (string.IsNullOrEmpty(tempPath) || !System.IO.Directory.Exists(tempPath))
+		{
+			return false;
+		}
+		if (string.IsNullOrEmpty(CurrentDirectoryBlake3))
+		{
+			return false;
+		}
+		string currentHash = ComputeDirectoryBlake3(tempPath);
+		return !string.Equals(currentHash, CurrentDirectoryBlake3, StringComparison.OrdinalIgnoreCase);
+	}
+
+	public bool HasUnsavedChanges() => HasUnsavedChangesStatic();
+
 	public void SaveCurrentDirectoryBlake3()
 	{
 		if (string.IsNullOrEmpty(_tempWorkspacePath) || !System.IO.Directory.Exists(_tempWorkspacePath)) return;
 		try
 		{
 			string hash = ComputeDirectoryBlake3(_tempWorkspacePath);
+			CurrentDirectoryBlake3 = hash;
 			string saveFile = ProjectSettings.GlobalizePath("user://editor_last_save.txt");
 			System.IO.File.WriteAllText(saveFile, hash);
 		}
@@ -2453,6 +2491,7 @@ public partial class MapEditorHUD : Control
 
 		string savedHash = System.IO.File.ReadAllText(editorLastSaveFile).Trim();
 		string currentHash = ComputeDirectoryBlake3(_tempWorkspacePath);
+		CurrentDirectoryBlake3 = savedHash;
 
 		if (!string.IsNullOrEmpty(savedHash) && !currentHash.Equals(savedHash, StringComparison.OrdinalIgnoreCase))
 		{

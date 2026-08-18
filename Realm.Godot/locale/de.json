@@ -260,5 +260,8 @@
   "YES": "JA",
   "NO": "NEIN",
   "Are you sure you want to delete this replay?": "Sind Sie sicher, dass Sie dieses Replay löschen möchten?",
-  "Are you sure you want to delete all replays?": "Sind Sie sicher, dass Sie alle Replays löschen möchten?"
+  "Are you sure you want to delete all replays?": "Sind Sie sicher, dass Sie alle Replays löschen möchten?",
+  "You haven't saved yet": "Sie haben noch nicht gespeichert",
+  "Stay": "Bleiben",
+  "Quit": "Beenden"
 }

@@ -210,7 +210,24 @@ public partial class GameOver : Control
 		_btnClose.Pressed += () => 
 		{
 			UIManager.Instance.PlayClickSound();
-			UIManager.Instance.TransitionTo(GameScreen.MainMenu);
+			if (MapEditorHUD.IsTestMode && MapEditorHUD.HasUnsavedChangesStatic())
+			{
+				UIManager.Instance.ShowConfirmationDialog(
+					"You haven't saved yet",
+					onConfirm: () =>
+					{
+						MapEditorHUD.IsTestMode = false;
+						UIManager.Instance.TransitionTo(GameScreen.MainMenu);
+					},
+					confirmText: "Quit",
+					cancelText: "Stay"
+				);
+			}
+			else
+			{
+				MapEditorHUD.IsTestMode = false;
+				UIManager.Instance.TransitionTo(GameScreen.MainMenu);
+			}
 		};
 		_btnClose.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 	}

@@ -260,5 +260,8 @@
   "YES": "نعم",
   "NO": "لا",
   "Are you sure you want to delete this replay?": "هل أنت متأكد أنك تريد حذف هذا الإعادة؟",
-  "Are you sure you want to delete all replays?": "هل أنت متأكد أنك تريد حذف جميع الإعادات؟"
+  "Are you sure you want to delete all replays?": "هل أنت متأكد أنك تريد حذف جميع الإعادات؟",
+  "You haven't saved yet": "لم تقم بالحفظ بعد",
+  "Stay": "البقاء",
+  "Quit": "خروج"
 }
