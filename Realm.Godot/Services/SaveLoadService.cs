@@ -250,16 +250,16 @@ public class SaveLoadService
 				float scale = 1f;
 				if (EcsWorld.Has<ModelScale>(entity)) scale = EcsWorld.Get<ModelScale>(entity).Value;
 
-				bool isEnemy = false;
-				if (EcsWorld.IsAlive(owner.PlayerEntity.Value) && EcsWorld.Has<Name>(owner.PlayerEntity.Value))
-				{
-					isEnemy = EcsWorld.Get<Name>(owner.PlayerEntity.Value).Value == "Enemy_AI";
-				}
-
-				int playerIndex = isEnemy ? 1 : 0;
+				int playerIndex = 0;
 				if (EcsWorld.Has<UnitOwnerPlayer>(entity))
 				{
 					playerIndex = EcsWorld.Get<UnitOwnerPlayer>(entity).PlayerIndex;
+				}
+
+				bool isEnemy = NetworkService.ArePlayerIndicesEnemies(GameHost.Instance?.LocalPlayerIndex ?? 0, playerIndex);
+				if (EcsWorld.Has<UnitFaction>(entity))
+				{
+					isEnemy = EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 				}
 
 				saveData.Units.Add(new UnitSaveData

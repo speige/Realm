@@ -165,6 +165,48 @@ public partial class GameHost : Node3D, IGameAPI
 		set => EcsWorld?.Mutate<NetworkMappingState>(_worldEntity, (ref NetworkMappingState s) => s.EnemyPlayerEntity = value);
 	}
 
+	public int LocalPlayerIndex
+	{
+		get
+		{
+			if (_multiplayerActive && LobbyManager.Instance != null && LobbyManager.Instance.PlayerList.Count > 0)
+			{
+				var p = LobbyManager.Instance.PlayerList.Find(x => x.PeerId == _localPeerId);
+				if (p != null) return p.Slot;
+			}
+			return 0;
+		}
+	}
+
+	public Entity GetPlayerEntityForPlayerIndex(int playerIndex)
+	{
+		if (_multiplayerActive && LobbyManager.Instance != null && LobbyManager.Instance.PlayerList.Count > 0)
+		{
+			var p = LobbyManager.Instance.PlayerList.Find(x => x.Slot == playerIndex);
+			if (p != null && _peerIdToPlayerEntityMap != null && _peerIdToPlayerEntityMap.TryGetValue(p.PeerId, out var pe) && EcsWorld.IsAlive(pe))
+			{
+				return pe;
+			}
+		}
+
+		if (playerIndex == 0)
+		{
+			return _playerEntity;
+		}
+
+		if (_enemyPlayerEntity != Entity.Null && EcsWorld.IsAlive(_enemyPlayerEntity))
+		{
+			return _enemyPlayerEntity;
+		}
+
+		return _playerEntity;
+	}
+
+	public bool IsPlayerEnemy(int playerIndex)
+	{
+		return NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, playerIndex);
+	}
+
 	private Entity _worldEntity;
 
 	private int _replayTickCounter
@@ -938,8 +980,6 @@ public partial class GameHost : Node3D, IGameAPI
 		{
 			throw new ArgumentException($"Unit ID '{unitTypeId}' not found in registry.");
 		}
-		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
-
 		int ownerPeerId = _localPeerId;
 		if (isEnemy)
 		{
@@ -959,6 +999,16 @@ public partial class GameHost : Node3D, IGameAPI
 			}
 		}
 		bool actualIsEnemy = NetworkService.ArePeersEnemies(_localPeerId, ownerPeerId);
+		Entity playerOwnerEntity = _playerEntity;
+		if (_peerIdToPlayerEntityMap != null && _peerIdToPlayerEntityMap.TryGetValue(ownerPeerId, out var pe) && EcsWorld.IsAlive(pe))
+		{
+			playerOwnerEntity = pe;
+		}
+		else if (actualIsEnemy && _enemyPlayerEntity != Entity.Null && EcsWorld.IsAlive(_enemyPlayerEntity))
+		{
+			playerOwnerEntity = _enemyPlayerEntity;
+		}
+		var playerOwner = playerOwnerEntity.AsPlayerEntity(EcsWorld);
 		
 		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitTypeId;
 		string modelPath = _unitSpawnService.GetFallbackModelPath(targetModel, meta.Speed == 0f);
@@ -1841,7 +1891,7 @@ public class {mapName} : IMapScript
 
 	IUnit IGameAPI.SpawnUnitForPlayer(string unitTypeId, System.Numerics.Vector3 position, int playerIndex)
 	{
-		bool isEnemy = playerIndex != 0;
+		bool isEnemy = NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, playerIndex);
 		var unit = ((IGameAPI)this).SpawnUnit(unitTypeId, position, isEnemy);
 		unit.Player = playerIndex;
 		return unit;
@@ -1967,12 +2017,11 @@ public class {mapName} : IMapScript
 
 	IEnumerable<IUnit> IGameAPI.GetUnitsOwnedByPlayer(int playerIndex, System.Func<IUnit, bool> filter)
 	{
-		bool isEnemy = playerIndex != 0;
 		var list = new List<IUnit>();
 		foreach (var u in AllUnits)
 		{
 			if (!GodotObject.IsInstanceValid(u) || !EcsWorld.IsAlive(u.Entity)) continue;
-			if (u.IsEnemy != isEnemy) continue;
+			if (u.Player != playerIndex) continue;
 			var w = GetUnitWrapper(u.Entity);
 			if (filter(w)) list.Add(w);
 		}
@@ -3687,11 +3736,12 @@ public class {mapName} : IMapScript
 
 	private Unit3D SpawnUnit3D(Entity entity, string id, string modelPath, Vector3 pos, bool isBuilding, bool isEnemy, bool isFromQueue = false, int player = -1)
 	{
-		int playerIndex = player >= 0 ? player : (isEnemy ? 1 : 0);
+		int playerIndex = player >= 0 ? player : 0;
+		bool actualIsEnemy = player >= 0 ? NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, playerIndex) : isEnemy;
 		if (EcsWorld.Has<UnitFaction>(entity))
-			EcsWorld.Set(entity, new UnitFaction(isEnemy));
+			EcsWorld.Set(entity, new UnitFaction(actualIsEnemy));
 		else
-			EcsWorld.Add(entity, new UnitFaction(isEnemy));
+			EcsWorld.Add(entity, new UnitFaction(actualIsEnemy));
 
 		if (EcsWorld.Has<UnitOwnerPlayer>(entity))
 			EcsWorld.Set(entity, new UnitOwnerPlayer(playerIndex));
@@ -3709,9 +3759,9 @@ public class {mapName} : IMapScript
 		unit3D.IsBuilding = isBuilding;
 		unit3D.Name = $"{id}_{entity.Id}";
 		unit3D.Player = playerIndex;
-		unit3D.IsEnemy = isEnemy;
+		unit3D.IsEnemy = actualIsEnemy;
 
-		if (GigachadEnabled && !isEnemy)
+		if (GigachadEnabled && !actualIsEnemy)
 		{
 			if (EcsWorld.Has<Health>(entity))
 			{

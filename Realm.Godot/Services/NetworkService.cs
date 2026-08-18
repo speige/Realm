@@ -1247,6 +1247,8 @@ public class NetworkService
 
 	public static bool ArePeersEnemies(int peerId1, int peerId2)
 	{
+		if (peerId1 == peerId2) return false;
+
 		if (LobbyManager.Instance == null || LobbyManager.Instance.PlayerList == null || LobbyManager.Instance.PlayerList.Count == 0)
 		{
 			return peerId1 != peerId2;
@@ -1263,5 +1265,34 @@ public class NetworkService
 		}
 
 		return p1.Team != p2.Team;
+	}
+
+	public static bool ArePlayerIndicesEnemies(int playerIndex1, int playerIndex2)
+	{
+		if (playerIndex1 == playerIndex2) return false;
+
+		if (LobbyManager.Instance != null && LobbyManager.Instance.PlayerList != null && LobbyManager.Instance.PlayerList.Count > 0)
+		{
+			var p1 = LobbyManager.Instance.PlayerList.Find(x => x.Slot == playerIndex1);
+			var p2 = LobbyManager.Instance.PlayerList.Find(x => x.Slot == playerIndex2);
+
+			if (p1 != null && p2 != null)
+			{
+				return p1.Team != p2.Team;
+			}
+			if (p1 != null || p2 != null)
+			{
+				string t1 = p1?.Team ?? $"Team {playerIndex1 + 1}";
+				string t2 = p2?.Team ?? $"Team {playerIndex2 + 1}";
+				return t1 != t2;
+			}
+		}
+
+		return playerIndex1 != playerIndex2;
+	}
+
+	public static bool IsPlayerEnemy(int playerIndex, int localPlayerIndex = 0)
+	{
+		return ArePlayerIndicesEnemies(localPlayerIndex, playerIndex);
 	}
 }

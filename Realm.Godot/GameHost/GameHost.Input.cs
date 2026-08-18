@@ -3632,8 +3632,6 @@ public partial class GameHost
 	{
 		if (!UnitRegistry.TryGetValue(unitId, out var meta)) return null;
 
-		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
-
 		int ownerPeerId = _localPeerId;
 		if (isEnemy)
 		{
@@ -3653,7 +3651,17 @@ public partial class GameHost
 			}
 		}
 		bool actualIsEnemy = NetworkService.ArePeersEnemies(_localPeerId, ownerPeerId);
-		
+		Entity playerOwnerEntity = _playerEntity;
+		if (_peerIdToPlayerEntityMap != null && _peerIdToPlayerEntityMap.TryGetValue(ownerPeerId, out var pe) && EcsWorld.IsAlive(pe))
+		{
+			playerOwnerEntity = pe;
+		}
+		else if (actualIsEnemy && _enemyPlayerEntity != Entity.Null && EcsWorld.IsAlive(_enemyPlayerEntity))
+		{
+			playerOwnerEntity = _enemyPlayerEntity;
+		}
+		var playerOwner = playerOwnerEntity.AsPlayerEntity(EcsWorld);
+
 		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitId;
 		string modelPath = GetFallbackModelPath(targetModel, meta.Speed == 0f);
 
@@ -3666,6 +3674,7 @@ public partial class GameHost
 		if (EcsWorld.IsAlive(buildingEntity) && EcsWorld.Has<UnitOwnerPlayer>(buildingEntity))
 		{
 			parentPlayer = EcsWorld.Get<UnitOwnerPlayer>(buildingEntity).PlayerIndex;
+			actualIsEnemy = NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, parentPlayer);
 		}
 
 		var unit3D = SpawnUnit3D(entity, unitId, modelPath, godotPosition, meta.Speed == 0f, actualIsEnemy, isFromQueue, parentPlayer);

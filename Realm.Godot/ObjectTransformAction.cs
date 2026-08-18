@@ -16,7 +16,7 @@ public class ObjectTransformAction : IEditorAction
 	private readonly int _afterPlayer;
 
 	public ObjectTransformAction(Node3D targetNode, Vector3 beforePos, Vector3 afterPos, Vector3 beforeRot, Vector3 afterRot, Vector3 beforeScale, Vector3 afterScale, bool beforeIsEnemy, bool afterIsEnemy)
-		: this(targetNode, beforePos, afterPos, beforeRot, afterRot, beforeScale, afterScale, beforeIsEnemy, afterIsEnemy, beforeIsEnemy ? 1 : 0, afterIsEnemy ? 1 : 0)
+		: this(targetNode, beforePos, afterPos, beforeRot, afterRot, beforeScale, afterScale, beforeIsEnemy, afterIsEnemy, (targetNode as Unit3D)?.Player ?? (beforeIsEnemy ? 1 : 0), (targetNode as Unit3D)?.Player ?? (afterIsEnemy ? 1 : 0))
 	{
 	}
 

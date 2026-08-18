@@ -23,8 +23,8 @@ public class ObjectSpawnAction : IEditorAction
 		_position = position;
 		_rotationY = rotationY;
 		_scale = scale;
-		_isEnemy = isEnemy;
-		_player = player >= 0 ? player : (isEnemy ? 1 : 0);
+		_player = player >= 0 ? player : ((spawnedNode as Unit3D)?.Player ?? 0);
+		_isEnemy = NetworkService.ArePlayerIndicesEnemies(GameHost.Instance?.LocalPlayerIndex ?? 0, _player);
 		_spawnedNode = spawnedNode;
 	}
 

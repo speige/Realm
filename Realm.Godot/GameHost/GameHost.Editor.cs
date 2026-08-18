@@ -1701,8 +1701,8 @@ public partial class GameHost
 	{
 		// Preserve the authored Y (saved maps, pasted/cloned/undone objects). Placement paths
 		// that want feet-on-terrain snap the Y to the terrain before calling this method.
-		int playerIndex = player >= 0 ? player : (isEnemy ? 1 : 0);
-		isEnemy = playerIndex != 0;
+		int playerIndex = player >= 0 ? player : 0;
+		bool actualIsEnemy = player >= 0 ? NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, playerIndex) : isEnemy;
 		if (!UnitRegistry.ContainsKey(unitId))
 		{
 			LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace"));
@@ -1726,7 +1726,7 @@ public partial class GameHost
 
 		if (!UnitRegistry.TryGetValue(unitId, out var meta)) return null;
 
-		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
+		var playerOwner = GetPlayerEntityForPlayerIndex(playerIndex).AsPlayerEntity(EcsWorld);
 		
 		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitId;
 		string modelPath = GetFallbackModelPath(targetModel, meta.Speed == 0f);
@@ -1734,7 +1734,7 @@ public partial class GameHost
 		string name = meta.Name;
 		var entity = CreateEcsUnit(unitId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, position, playerOwner);
 
-		var unit3D = SpawnUnit3D(entity, unitId, modelPath, position, meta.Speed == 0f, isEnemy, false, playerIndex);
+		var unit3D = SpawnUnit3D(entity, unitId, modelPath, position, meta.Speed == 0f, actualIsEnemy, false, playerIndex);
 		unit3D.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
 		unit3D.Scale = Vector3.One * scale;
 
@@ -2246,14 +2246,19 @@ public partial class GameHost
 	{
 		if (GodotObject.IsInstanceValid(unit) && EcsWorld.IsAlive(unit.Entity))
 		{
-			bool isEnemy = playerIndex != 0;
-			var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
+			bool isEnemy = NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, playerIndex);
+			var playerOwner = GetPlayerEntityForPlayerIndex(playerIndex).AsPlayerEntity(EcsWorld);
 			EcsWorld.Set(unit.Entity, new Owner(playerOwner));
 			
 			if (EcsWorld.Has<UnitOwnerPlayer>(unit.Entity))
 				EcsWorld.Set(unit.Entity, new UnitOwnerPlayer(playerIndex));
 			else
 				EcsWorld.Add(unit.Entity, new UnitOwnerPlayer(playerIndex));
+
+			if (EcsWorld.Has<UnitFaction>(unit.Entity))
+				EcsWorld.Set(unit.Entity, new UnitFaction(isEnemy));
+			else
+				EcsWorld.Add(unit.Entity, new UnitFaction(isEnemy));
 
 			if (UnitRegistry.TryGetValue(unit.UnitId, out var meta))
 			{
@@ -2278,7 +2283,16 @@ public partial class GameHost
 
 	public void SetUnitTeamExternal(Unit3D unit, bool isEnemy)
 	{
-		SetUnitPlayerExternal(unit, isEnemy ? 1 : 0);
+		int targetPlayer = isEnemy ? 1 : 0;
+		if (LobbyManager.Instance != null && LobbyManager.Instance.PlayerList.Count > 0)
+		{
+			var enemyPlayer = LobbyManager.Instance.PlayerList.Find(p => NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, p.Slot));
+			if (isEnemy && enemyPlayer != null)
+			{
+				targetPlayer = enemyPlayer.Slot;
+			}
+		}
+		SetUnitPlayerExternal(unit, targetPlayer);
 	}
 
 	private void UpdateDecalSelectionRing(Decal decal, bool selected)

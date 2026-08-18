@@ -14,14 +14,14 @@ namespace Realm.Ecs.Components.Core
 		public bool IsEnemy;
 		public int Player;
 
-		public UnitSpawnRequest(string unitId, Vector3 position, float rotationY, float scale, bool isEnemy, int player = -1)
+		public UnitSpawnRequest(string unitId, Vector3 position, float rotationY, float scale, bool isEnemy, int player = 0)
 		{
 			UnitId = unitId;
 			Position = position;
 			RotationY = rotationY;
 			Scale = scale;
 			IsEnemy = isEnemy;
-			Player = player >= 0 ? player : (isEnemy ? 1 : 0);
+			Player = player >= 0 ? player : 0;
 		}
 	}
 }
