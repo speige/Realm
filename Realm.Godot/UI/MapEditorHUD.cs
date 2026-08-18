@@ -3066,11 +3066,7 @@ public partial class MapEditorHUD : Control
 				{
 					// Custom 2-layer PBR KTX2 files (created via ktx create --layers 2) fail in Image.LoadKtxFromBuffer.
 					// Use ktx.exe extract or Texture2D array loading if available, or extract Layer 0 bytes via ktx_tools.
-					string ktxCmd = PathUtils.FindPath("ktx_tools/v5.0.0-rc1/bin/ktx.exe");
-					if (!System.IO.File.Exists(ktxCmd))
-					{
-						ktxCmd = System.IO.Path.GetFullPath(System.IO.Path.Combine(PathUtils.GetProjectRoot(), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
-					}
+					string ktxCmd = EditableTerrain.GetKtxCmdPath();
 					string tempPng = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"ktx_thumb_{System.Guid.NewGuid()}.png");
 
 					if (System.IO.File.Exists(ktxCmd))
@@ -5972,11 +5968,7 @@ public partial class MapEditorHUD : Control
 				}
 			}
 
-			string ktxCmd = PathUtils.FindPath("ktx_tools/v5.0.0-rc1/bin/ktx.exe");
-			if (!System.IO.File.Exists(ktxCmd))
-			{
-				ktxCmd = System.IO.Path.GetFullPath(System.IO.Path.Combine(PathUtils.GetProjectRoot(), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
-			}
+			string ktxCmd = EditableTerrain.GetKtxCmdPath();
 			try
 			{
 				var startInfo = new System.Diagnostics.ProcessStartInfo

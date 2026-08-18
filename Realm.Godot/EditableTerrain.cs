@@ -114,11 +114,7 @@ public partial class EditableTerrain : StaticBody3D
 			System.IO.Directory.CreateDirectory(dir);
 		}
 		
-		string ktxCmd = PathUtils.FindPath("ktx_tools/v5.0.0-rc1/bin/ktx.exe");
-		if (!System.IO.File.Exists(ktxCmd))
-		{
-			ktxCmd = System.IO.Path.GetFullPath(System.IO.Path.Combine(PathUtils.GetProjectRoot(), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
-		}
+		string ktxCmd = GetKtxCmdPath();
 		
 		try
 		{
@@ -1328,7 +1324,7 @@ void fragment() {
 		}
 	}
 
-	private string GetKtxCmdPath()
+	public static string GetKtxCmdPath()
 	{
 		string found = PathUtils.FindPath("ktx_tools/v5.0.0-rc1/bin/ktx.exe");
 		if (System.IO.File.Exists(found)) return found;
