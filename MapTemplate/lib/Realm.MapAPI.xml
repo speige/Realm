@@ -963,6 +963,42 @@
             Plays a named visual animation on the unit's 3D model.
             </summary>
         </member>
+        <member name="M:Realm.MapAPI.IGameAPI.MoveUnit(Realm.MapAPI.IUnit,System.Numerics.Vector3)">
+            <summary>
+            Orders the unit to move to a world position without attacking along the way.
+            Generic alias for <see cref="M:Realm.MapAPI.IGameAPI.IssueMoveOrder(Realm.MapAPI.IUnit,System.Numerics.Vector3)"/>.
+            </summary>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.GetUnitsInRange(System.Numerics.Vector3,System.Single)">
+            <summary>
+            Returns living units within <paramref name="radius"/> of <paramref name="center"/>.
+            Generic alias for <see cref="M:Realm.MapAPI.IGameAPI.GetUnitsInRadius(System.Numerics.Vector3,System.Single)"/>.
+            </summary>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.DealDamage(Realm.MapAPI.IUnit,Realm.MapAPI.IUnit,System.Single)">
+            <summary>
+            Subtracts <paramref name="damage"/> from the target's health. Kills the target at 0 HP.
+            Does not apply armor. Safe to call from any map script.
+            </summary>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.ReviveUnit(System.String,System.Numerics.Vector3,System.Int32)">
+            <summary>
+            Spawns a replacement unit of the same type at <paramref name="position"/> for the given player.
+            Use this when the previous instance may already be destroyed (typical hero respawn).
+            </summary>
+            <param name="unitTypeId">The type identifier of the unit to spawn.</param>
+            <param name="position">The spawn coordinates in 3D world space.</param>
+            <param name="playerIndex">The zero-based player index to own the revived unit.</param>
+            <returns>The revived unit instance.</returns>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.ReviveUnit(Realm.MapAPI.IUnit,System.Numerics.Vector3)">
+            <summary>
+            Destroys <paramref name="unit"/> and spawns a new copy of its type at <paramref name="position"/> with the same owner player index.
+            </summary>
+            <param name="unit">The existing unit to replace.</param>
+            <param name="position">The spawn coordinates in 3D world space.</param>
+            <returns>The revived unit instance.</returns>
+        </member>
         <member name="T:Realm.MapAPI.IMapScript">
             <summary>
             Defines the base lifecycle methods for map scripts.
