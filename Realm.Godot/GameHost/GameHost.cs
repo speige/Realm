@@ -1266,22 +1266,27 @@ public class {mapName} : IMapScript
 		{
 			templateDir = System.IO.Path.Combine(projectRoot, "..", "MapTemplate");
 		}
-		string templateCsprojPath = System.IO.Path.Combine(templateDir, "MapScript.csproj");
-		string templateTargetsPath = System.IO.Path.Combine(templateDir, "Directory.Build.targets");
-		string templateVscodeSettingsPath = System.IO.Path.Combine(templateDir, ".vscode", "settings.json");
+		string templateCsprojPath = PathUtils.FindPath("MapTemplate/MapScript.csproj");
+		if (!System.IO.File.Exists(templateCsprojPath))
+		{
+			templateCsprojPath = System.IO.Path.Combine(templateDir, "MapScript.csproj");
+		}
+
+		string templateTargetsPath = PathUtils.FindPath("MapTemplate/Directory.Build.targets");
+		if (!System.IO.File.Exists(templateTargetsPath))
+		{
+			templateTargetsPath = System.IO.Path.Combine(templateDir, "Directory.Build.targets");
+		}
+
+		string templateVscodeSettingsPath = PathUtils.FindPath("MapTemplate/.vscode/settings.json");
+		if (!System.IO.File.Exists(templateVscodeSettingsPath))
+		{
+			templateVscodeSettingsPath = System.IO.Path.Combine(templateDir, ".vscode", "settings.json");
+		}
 
 		if (System.IO.File.Exists(templateVscodeSettingsPath))
 		{
-			System.IO.File.Copy(templateVscodeSettingsPath, vscodeSettingsPath, true);
-		}
-		else
-		{
-			string vscodeSettingsContent = @"{
-    ""dotnet.preferCSharpExtension"": true,
-    ""dotnet.server.useOmnisharp"": false,
-    ""dotnet.projects.enableAutomaticRestore"": true
-}
-";
+			string vscodeSettingsContent = System.IO.File.ReadAllText(templateVscodeSettingsPath);
 			System.IO.File.WriteAllText(vscodeSettingsPath, vscodeSettingsContent);
 		}
 
@@ -1337,64 +1342,14 @@ public class {mapName} : IMapScript
 
 		if (System.IO.File.Exists(templateCsprojPath))
 		{
-			System.IO.File.Copy(templateCsprojPath, csprojPath, true);
-		}
-		else
-		{
-			string csprojContent = @"<Project Sdk=""Microsoft.NET.Sdk"">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
-    <WasmGenerateAppBundle>false</WasmGenerateAppBundle>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <NativeLib>Shared</NativeLib>
-  </PropertyGroup>
-  <ItemGroup>
-	<TrimmerRootAssembly Include=""$(MSBuildProjectName)"" />
-  </ItemGroup>
-  <ItemGroup>
-	<Reference Include=""Realm.MapAPI"">
-      <HintPath>lib/Realm.MapAPI.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-  <ItemGroup>
-    <DirectPInvoke Include=""env"" />
-    <LinkerArg Include=""-Wl,--allow-undefined"" />
-  </ItemGroup>
-  <Target Name=""EnableAotLate"" BeforeTargets=""ImportRuntimeIlcPackageTarget;IlcCompile;_ComputeAssembliesToCompileToNative"">
-    <PropertyGroup>
-      <PublishAot>true</PublishAot>
-      <IlcLlvmTarget>wasm32-unknown-wasi</IlcLlvmTarget>
-    </PropertyGroup>
-  </Target>
-  <Target Name=""ClearComponentWit"" BeforeTargets=""LinkNative;LinkNativeLlvm"">
-    <ItemGroup>
-      <WasmComponentTypeWit Remove=""@(WasmComponentTypeWit)"" />
-    </ItemGroup>
-  </Target>
-  <ItemGroup>
-    <PackageReference Include=""Microsoft.DotNet.ILCompiler.LLVM"" Version=""10.0.0-rc.1.26357.1"" />
-    <PackageReference Include=""runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM"" Version=""10.0.0-rc.1.26357.1"" />
-  </ItemGroup>
-</Project>
-";
+			string csprojContent = System.IO.File.ReadAllText(templateCsprojPath);
 			System.IO.File.WriteAllText(csprojPath, csprojContent);
 		}
 
 		string targetsPath = System.IO.Path.Combine(mapDir, "Directory.Build.targets");
 		if (System.IO.File.Exists(templateTargetsPath))
 		{
-			System.IO.File.Copy(templateTargetsPath, targetsPath, true);
-		}
-		else
-		{
-			string targetsContent = @"<Project>
-  <!-- Override Mono WASM SDK target to allow Native AOT build -->
-  <Target Name=""PrepareInputsForWasmBuild"" />
-</Project>
-";
+			string targetsContent = System.IO.File.ReadAllText(templateTargetsPath);
 			System.IO.File.WriteAllText(targetsPath, targetsContent);
 		}
 

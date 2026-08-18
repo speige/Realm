@@ -84,22 +84,39 @@ public class WasmLinkerGenerator : IIncrementalGenerator
         }
 
         // Always write the game.g.wit to the MapAPI folder during compilation
-        try
+        string witContent = GenerateWitContent(gameApiSymbol, entityInterfaces, manualFunctions);
+        string? mapApiWitPath = null;
+        var syntaxTree = compilation.SyntaxTrees.FirstOrDefault(t => !string.IsNullOrEmpty(t.FilePath));
+        if (syntaxTree != null)
         {
-            string witContent = GenerateWitContent(gameApiSymbol, entityInterfaces, manualFunctions);
-            string mapApiWitPath = @"D:\git\Realm\Realm\Realm.MapAPI\wit\game.g.wit";
-            if (System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(mapApiWitPath)))
+            string? dir = System.IO.Path.GetDirectoryName(syntaxTree.FilePath);
+            while (dir != null)
             {
-                System.IO.File.WriteAllText(mapApiWitPath, witContent, Encoding.UTF8);
+                string candidate = System.IO.Path.Combine(dir, "Realm.MapAPI", "wit", "game.g.wit");
+                if (System.IO.File.Exists(candidate) || System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(candidate)))
+                {
+                    mapApiWitPath = candidate;
+                    break;
+                }
+                if (System.IO.Path.GetFileName(dir) == "Realm.MapAPI")
+                {
+                    string candidateInProject = System.IO.Path.Combine(dir, "wit", "game.g.wit");
+                    if (System.IO.File.Exists(candidateInProject) || System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(candidateInProject)))
+                    {
+                        mapApiWitPath = candidateInProject;
+                        break;
+                    }
+                }
+                dir = System.IO.Path.GetDirectoryName(dir);
             }
         }
-        catch (Exception ex)
+        if (string.IsNullOrEmpty(mapApiWitPath))
         {
-            try
-            {
-                System.IO.File.WriteAllText(@"D:\git\Realm\generator_error.txt", ex.ToString());
-            }
-            catch {}
+            throw new Exception(@"[WasmLinkerGenerator] Error: unable to determine path for Realm.MapAPI\wit\game.g.wit");
+        }
+        if (System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(mapApiWitPath)))
+        {
+            System.IO.File.WriteAllText(mapApiWitPath, witContent, Encoding.UTF8);
         }
 
         string assemblyName = compilation.AssemblyName ?? "";
@@ -1097,12 +1114,11 @@ public class WasmLinkerGenerator : IIncrementalGenerator
 
     private static string GenerateWitContent(INamedTypeSymbol gameApiSymbol, HashSet<INamedTypeSymbol> entityInterfaces, string manualFunctions)
     {
-        var witBody = new StringBuilder();
+        var functions = new SortedDictionary<string, string>(StringComparer.Ordinal);
         var propertyAccessorMethods = CollectPropertyAccessorNames(gameApiSymbol);
-        var declared = new HashSet<string>(System.StringComparer.Ordinal);
 
         // Auto-generate IGameAPI members
-        foreach (var member in gameApiSymbol.GetMembers())
+        foreach (var member in gameApiSymbol.GetMembers().OrderBy(m => m.Name, StringComparer.Ordinal))
         {
             if (member is IEventSymbol)
                 continue;
@@ -1111,21 +1127,27 @@ public class WasmLinkerGenerator : IIncrementalGenerator
                 continue;
 
             if (member is IPropertySymbol property)
-                AppendWitProperty(witBody, property, declared);
+                AppendWitProperty(functions, property);
             else if (member is IMethodSymbol method)
             {
                 if (method.MethodKind != MethodKind.Ordinary)
                     continue;
                 if (propertyAccessorMethods.Contains(method.Name))
                     continue;
-                AppendWitMethod(witBody, method, declared);
+                AppendWitMethod(functions, method);
             }
         }
 
         // Auto-generate discovered entity interface members
-        foreach (var entityIface in entityInterfaces)
+        foreach (var entityIface in entityInterfaces.OrderBy(e => e.Name, StringComparer.Ordinal))
         {
-            AppendWitEntityInterface(witBody, entityIface, declared);
+            AppendWitEntityInterface(functions, entityIface);
+        }
+
+        var witBody = new StringBuilder();
+        foreach (var kvp in functions)
+        {
+            witBody.AppendLine($"    {kvp.Key}: {kvp.Value};");
         }
 
         if (!string.IsNullOrEmpty(manualFunctions))
@@ -1170,18 +1192,18 @@ public class WasmLinkerGenerator : IIncrementalGenerator
         return wit.ToString();
     }
 
-    private static void AppendWitEntityInterface(StringBuilder sb, INamedTypeSymbol entitySymbol, HashSet<string> declared)
+    private static void AppendWitEntityInterface(SortedDictionary<string, string> functions, INamedTypeSymbol entitySymbol)
     {
         string tKebab = ToKebabCase(CleanInterfaceName(entitySymbol));
         bool hasUniqueId = entitySymbol.GetMembers().Any(m => m is IPropertySymbol p && p.Name == "UniqueId");
 
         if (!hasUniqueId)
         {
-            AppendFunction(sb, declared, $"{tKebab}-count", "func() -> s32");
+            AppendFunction(functions, $"{tKebab}-count", "func() -> s32");
         }
 
         var propertyAccessors = CollectPropertyAccessorNames(entitySymbol);
-        foreach (var member in entitySymbol.GetMembers())
+        foreach (var member in entitySymbol.GetMembers().OrderBy(m => m.Name, StringComparer.Ordinal))
         {
             if (!member.IsAbstract)
                 continue;
@@ -1194,13 +1216,13 @@ public class WasmLinkerGenerator : IIncrementalGenerator
 
                 if (property.Type.ToDisplayString() == "System.Numerics.Vector3")
                 {
-                    AppendFunction(sb, declared, $"{witBase}-x", "func(id: s32) -> f32");
-                    AppendFunction(sb, declared, $"{witBase}-y", "func(id: s32) -> f32");
-                    AppendFunction(sb, declared, $"{witBase}-z", "func(id: s32) -> f32");
+                    AppendFunction(functions, $"{witBase}-x", "func(id: s32) -> f32");
+                    AppendFunction(functions, $"{witBase}-y", "func(id: s32) -> f32");
+                    AppendFunction(functions, $"{witBase}-z", "func(id: s32) -> f32");
                     
                     if (property.SetMethod != null)
                     {
-                        AppendFunction(sb, declared, $"set-{witBase}", "func(id: s32, val-x: f32, val-y: f32, val-z: f32)");
+                        AppendFunction(functions, $"set-{witBase}", "func(id: s32, val-x: f32, val-y: f32, val-z: f32)");
                     }
                     continue;
                 }
@@ -1212,12 +1234,12 @@ public class WasmLinkerGenerator : IIncrementalGenerator
                     string? witType = RetKindToWit(retKind);
                     if (witType != null)
                     {
-                        AppendFunction(sb, declared, witBase, $"func(id: s32) -> {witType}");
+                        AppendFunction(functions, witBase, $"func(id: s32) -> {witType}");
                         if (property.SetMethod != null)
                         {
                             string? paramType = RetKindToWitParam(retKind);
                             if (paramType != null)
-                                AppendFunction(sb, declared, $"set-{witBase}", $"func(id: s32, val: {paramType})");
+                                AppendFunction(functions, $"set-{witBase}", $"func(id: s32, val: {paramType})");
                         }
                     }
                 }
@@ -1225,12 +1247,12 @@ public class WasmLinkerGenerator : IIncrementalGenerator
             else if (member is IMethodSymbol method && method.MethodKind == MethodKind.Ordinary)
             {
                 if (propertyAccessors.Contains(method.Name)) continue;
-                AppendWitEntityMethod(sb, method, tKebab, declared);
+                AppendWitEntityMethod(functions, method, tKebab);
             }
         }
     }
 
-    private static void AppendWitEntityMethod(StringBuilder sb, IMethodSymbol method, string tKebab, HashSet<string> declared)
+    private static void AppendWitEntityMethod(SortedDictionary<string, string> functions, IMethodSymbol method, string tKebab)
     {
         var retKind = ClassifyReturn(method.ReturnType);
         if (retKind == RetKind.Unsupported && method.ReturnType.ToDisplayString() != "System.Numerics.Vector3" && method.ReturnType.SpecialType != SpecialType.System_Void)
@@ -1258,14 +1280,14 @@ public class WasmLinkerGenerator : IIncrementalGenerator
         string paramsStr = string.Join(", ", witParams);
         if (method.ReturnType.ToDisplayString() == "System.Numerics.Vector3")
         {
-            AppendFunction(sb, declared, $"{witName}-x", $"func({paramsStr}) -> f32");
-            AppendFunction(sb, declared, $"{witName}-y", $"func({paramsStr}) -> f32");
-            AppendFunction(sb, declared, $"{witName}-z", $"func({paramsStr}) -> f32");
+            AppendFunction(functions, $"{witName}-x", $"func({paramsStr}) -> f32");
+            AppendFunction(functions, $"{witName}-y", $"func({paramsStr}) -> f32");
+            AppendFunction(functions, $"{witName}-z", $"func({paramsStr}) -> f32");
         }
         else if (retKind == RetKind.StringListReturn)
         {
-            AppendFunction(sb, declared, $"{witName}-count", $"func({paramsStr}) -> s32");
-            AppendFunction(sb, declared, $"{witName}-get", $"func({paramsStr}, index: s32) -> string");
+            AppendFunction(functions, $"{witName}-count", $"func({paramsStr}) -> s32");
+            AppendFunction(functions, $"{witName}-get", $"func({paramsStr}, index: s32) -> string");
         }
         else
         {
@@ -1273,11 +1295,11 @@ public class WasmLinkerGenerator : IIncrementalGenerator
                 ? ""
                 : $" -> {RetKindToWit(retKind)}";
 
-            AppendFunction(sb, declared, witName, $"func({paramsStr}){retStr}");
+            AppendFunction(functions, witName, $"func({paramsStr}){retStr}");
         }
     }
 
-    private static void AppendWitProperty(StringBuilder sb, IPropertySymbol property, HashSet<string> declared)
+    private static void AppendWitProperty(SortedDictionary<string, string> functions, IPropertySymbol property)
     {
         var retKind = ClassifyReturn(property.Type);
         if (retKind == RetKind.Unsupported)
@@ -1289,17 +1311,17 @@ public class WasmLinkerGenerator : IIncrementalGenerator
             return;
 
         if (property.GetMethod != null)
-            AppendFunction(sb, declared, $"get-{witBase}", $"func() -> {witType}");
+            AppendFunction(functions, $"get-{witBase}", $"func() -> {witType}");
 
         if (property.SetMethod != null)
         {
             string? paramType = RetKindToWitParam(retKind);
             if (paramType != null)
-                AppendFunction(sb, declared, $"set-{witBase}", $"func(val: {paramType})");
+                AppendFunction(functions, $"set-{witBase}", $"func(val: {paramType})");
         }
     }
 
-    private static void AppendWitMethod(StringBuilder sb, IMethodSymbol method, HashSet<string> declared)
+    private static void AppendWitMethod(SortedDictionary<string, string> functions, IMethodSymbol method)
     {
         var retKind = ClassifyReturn(method.ReturnType);
         bool isVector3Ret = method.ReturnType.ToDisplayString() == "System.Numerics.Vector3";
@@ -1323,8 +1345,8 @@ public class WasmLinkerGenerator : IIncrementalGenerator
                 if (paramWit != null) witParams.Add(paramWit);
             }
             string paramsStr = string.Join(", ", witParams);
-            AppendFunction(sb, declared, $"{witName}-count", $"func({paramsStr}) -> s32");
-            AppendFunction(sb, declared, $"{witName}-get", $"func({paramsStr}, index: s32) -> string");
+            AppendFunction(functions, $"{witName}-count", $"func({paramsStr}) -> s32");
+            AppendFunction(functions, $"{witName}-get", $"func({paramsStr}, index: s32) -> string");
             return;
         }
 
@@ -1341,9 +1363,9 @@ public class WasmLinkerGenerator : IIncrementalGenerator
 
         if (isVector3Ret)
         {
-            AppendFunction(sb, declared, $"{witName}-x", $"func({paramsStrCombined}) -> f32");
-            AppendFunction(sb, declared, $"{witName}-y", $"func({paramsStrCombined}) -> f32");
-            AppendFunction(sb, declared, $"{witName}-z", $"func({paramsStrCombined}) -> f32");
+            AppendFunction(functions, $"{witName}-x", $"func({paramsStrCombined}) -> f32");
+            AppendFunction(functions, $"{witName}-y", $"func({paramsStrCombined}) -> f32");
+            AppendFunction(functions, $"{witName}-z", $"func({paramsStrCombined}) -> f32");
         }
         else
         {
@@ -1351,7 +1373,7 @@ public class WasmLinkerGenerator : IIncrementalGenerator
                 ? ""
                 : $" -> {RetKindToWit(retKind)}";
 
-            AppendFunction(sb, declared, witName, $"func({paramsStrCombined}){retStr}");
+            AppendFunction(functions, witName, $"func({paramsStrCombined}){retStr}");
         }
     }
 
@@ -1402,11 +1424,11 @@ public class WasmLinkerGenerator : IIncrementalGenerator
         };
     }
 
-    private static void AppendFunction(StringBuilder sb, HashSet<string> declared, string name, string body)
+    private static void AppendFunction(SortedDictionary<string, string> functions, string name, string body)
     {
-        if (declared.Add(name))
+        if (!functions.ContainsKey(name))
         {
-            sb.AppendLine($"    {name}: {body};");
+            functions.Add(name, body);
         }
     }
 
