@@ -254,9 +254,9 @@ anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 220.0
-offset_top = -540.0
+offset_top = -660.0
 offset_right = 620.0
-offset_bottom = -290.0
+offset_bottom = -410.0
 grow_vertical = 0
 
 [node name="ChatContainer" type="VBoxContainer" parent="ChatPanel"]
