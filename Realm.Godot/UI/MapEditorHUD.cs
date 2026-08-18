@@ -3729,6 +3729,7 @@ public partial class MapEditorHUD : Control
 
 	private async System.Threading.Tasks.Task CompileAndSignMapAsync(string workspace, bool skipAttribution = true)
 	{
+		_wasmHasErrors = false;
 		// 1. Compile triggers
 		try
 		{
@@ -3836,6 +3837,7 @@ public partial class MapEditorHUD : Control
 
 				await System.Threading.Tasks.Task.Run(() =>
 				{
+					bool streamHadErrors = false;
 					string resolvedWasiSdk = WasiSdkResolver.ResolveWasiSdkPath();
 					string csprojName = System.IO.Path.GetFileName(csproj);
 					var compileProcess = new System.Diagnostics.Process();
@@ -3854,7 +3856,7 @@ public partial class MapEditorHUD : Control
 						{
 							if (e.Data.Contains(": error ") || e.Data.Contains("Build FAILED"))
 							{
-								_wasmHasErrors = true;
+								streamHadErrors = true;
 							}
 							AppendWasmConsoleLog(e.Data);
 						}
@@ -3866,7 +3868,7 @@ public partial class MapEditorHUD : Control
 						{
 							if (e.Data.Contains(": error ") || e.Data.Contains("Build FAILED"))
 							{
-								_wasmHasErrors = true;
+								streamHadErrors = true;
 								AppendWasmConsoleLog("[COMPILER ERROR] " + e.Data);
 							}
 							else if (e.Data.Contains(": warning "))
@@ -3885,7 +3887,7 @@ public partial class MapEditorHUD : Control
 					compileProcess.BeginErrorReadLine();
 					compileProcess.WaitForExit();
 
-					if (compileProcess.ExitCode != 0 || _wasmHasErrors)
+					if (compileProcess.ExitCode != 0 || streamHadErrors)
 					{
 						_wasmHasErrors = true;
 						SetWasmConsoleStatus($"❌ WASM Compilation Failed (exit code {compileProcess.ExitCode})", new Color(1.0f, 0.3f, 0.3f));
@@ -5806,6 +5808,7 @@ public partial class MapEditorHUD : Control
 	{
 		if (GameHost.Instance == null) return;
 
+		_wasmHasErrors = false;
 		ShowWasmConsoleModal();
 		Action<string> logHandler = line => AppendWasmConsoleLog(line);
 		Realm.Godot.WasmRuntime.OnWasmLog += logHandler;
