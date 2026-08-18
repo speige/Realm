@@ -94,6 +94,9 @@ public partial class GameHost
 			_clientToServerEntityMap.Remove(unit.Entity.Id);
 		}
 
+		string unitId = unit.UnitId;
+		bool isEnemy = unit.IsEnemy;
+
 		if (EcsWorld.IsAlive(unit.Entity))
 		{
 			EcsWorld.Destroy(unit.Entity);
@@ -105,9 +108,9 @@ public partial class GameHost
 		tween.TweenProperty(unit, "scale", Vector3.Zero, 1.0f);
 		tween.Chain().TweenCallback(Callable.From(unit.QueueFree));
 
-		if (unit.UnitId == "castle")
+		if (unitId == "castle")
 		{
-			if (unit.IsEnemy)
+			if (isEnemy)
 			{
 				GD.Print("[GameHost] Enemy Castle destroyed! Player wins!");
 				Callable.From(() => UIManager.Instance?.TransitionTo(GameScreen.GameOver, true)).CallDeferred();
