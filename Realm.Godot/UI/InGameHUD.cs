@@ -303,12 +303,12 @@ public partial class InGameHUD : Control
 		resHBox.AddChild(popBox);
 		var popTitleLbl = new Label();
 		popTitleLbl.Text = TranslationServer.Translate("SUPPLY");
-		popTitleLbl.AddThemeFontSizeOverride("font_size", 15);
+		popTitleLbl.AddThemeFontSizeOverride("font_size", 11);
 		popTitleLbl.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
 		popBox.AddChild(popTitleLbl);
 		_populationLabel = new Label();
 		_populationLabel.Text = "0 / 20";
-		_populationLabel.AddThemeFontSizeOverride("font_size", 24);
+		_populationLabel.AddThemeFontSizeOverride("font_size", 18);
 		_populationLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		popBox.AddChild(_populationLabel);
 
@@ -317,23 +317,23 @@ public partial class InGameHUD : Control
 		resHBox.AddChild(clockBox);
 		var clockTitleLbl = new Label();
 		clockTitleLbl.Text = TranslationServer.Translate("TIME");
-		clockTitleLbl.AddThemeFontSizeOverride("font_size", 15);
+		clockTitleLbl.AddThemeFontSizeOverride("font_size", 11);
 		clockTitleLbl.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
 		clockBox.AddChild(clockTitleLbl);
 		_clockLabel = new Label();
 		_clockLabel.Text = "0:00";
-		_clockLabel.AddThemeFontSizeOverride("font_size", 24);
+		_clockLabel.AddThemeFontSizeOverride("font_size", 18);
 		_clockLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		clockBox.AddChild(_clockLabel);
 
 		_btnSettings = new Button();
 		_btnSettings.Name = "BtnSettings";
-		_btnSettings.CustomMinimumSize = new Vector2(40, 40);
+		_btnSettings.CustomMinimumSize = new Vector2(32, 32);
 		_btnSettings.SizeFlagsVertical = SizeFlags.ShrinkCenter;
 		_btnSettings.FocusMode = FocusModeEnum.None;
 		_btnSettings.ExpandIcon = true;
 		_btnSettings.Icon = GD.Load<Texture2D>("res://Assets/UI/gear_icon.png");
-		_btnSettings.AddThemeConstantOverride("icon_max_width", 28);
+		_btnSettings.AddThemeConstantOverride("icon_max_width", 22);
 		_btnSettings.TooltipText = TranslationServer.Translate("Settings (Esc)");
 		_btnSettings.AddThemeStyleboxOverride("normal", UIStyle.CreateHUDButtonStyle(false, false));
 		_btnSettings.AddThemeStyleboxOverride("hover", UIStyle.CreateHUDButtonStyle(true, false));
@@ -360,7 +360,7 @@ public partial class InGameHUD : Control
 		{
 			var btn = new Button();
 			btn.Name = $"Unit{i + 1}";
-			btn.CustomMinimumSize = new Vector2(58, 58);
+			btn.CustomMinimumSize = new Vector2(42, 42);
 			btn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 			btn.ExpandIcon = true;
 			btn.FocusMode = FocusModeEnum.None;
@@ -406,14 +406,14 @@ public partial class InGameHUD : Control
 
 		_btnAttack = new Button();
 		_btnAttack.Name = "BtnAttack";
-		_btnAttack.CustomMinimumSize = new Vector2(80, 80);
+		_btnAttack.CustomMinimumSize = new Vector2(44, 44);
 		_btnAttack.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		_btnAttack.SizeFlagsVertical = SizeFlags.ExpandFill;
 		_btnAttack.FocusMode = FocusModeEnum.None;
 
 		_btnPatrol = new Button();
 		_btnPatrol.Name = "BtnPatrol";
-		_btnPatrol.CustomMinimumSize = new Vector2(80, 80);
+		_btnPatrol.CustomMinimumSize = new Vector2(44, 44);
 		_btnPatrol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		_btnPatrol.SizeFlagsVertical = SizeFlags.ExpandFill;
 		_btnPatrol.FocusMode = FocusModeEnum.None;
@@ -454,8 +454,8 @@ public partial class InGameHUD : Control
 		_minimapControls = new VBoxContainer();
 		_minimapControls.SizeFlagsHorizontal = SizeFlags.ShrinkEnd;
 		_minimapControls.SizeFlagsVertical = SizeFlags.ShrinkCenter;
-		_minimapControls.AddThemeConstantOverride("separation", 9);
-		_minimapControls.CustomMinimumSize = new Vector2(60, 0);
+		_minimapControls.AddThemeConstantOverride("separation", 3);
+		_minimapControls.CustomMinimumSize = new Vector2(40, 0);
 		var minimapHBox = GetNode<HBoxContainer>("BottomConsole/HBox");
 		minimapHBox.AddChild(_minimapControls);
 		minimapHBox.MoveChild(_minimapControls, 1);
@@ -991,9 +991,9 @@ public partial class InGameHUD : Control
 		btn.ExpandIcon = true;
 		btn.Icon = GD.Load<Texture2D>(iconPath);
 		btn.TooltipText = tooltip;
-		btn.CustomMinimumSize = new Vector2(70, 70);
+		btn.CustomMinimumSize = new Vector2(44, 44);
 		btn.ClipContents = true;
-		btn.AddThemeConstantOverride("icon_max_width", 62);
+		btn.AddThemeConstantOverride("icon_max_width", 38);
 
 		if (tooltip.StartsWith('[') && tooltip.Contains(']'))
 		{
@@ -1075,8 +1075,8 @@ public partial class InGameHUD : Control
 		_resourceContainer.AddThemeStyleboxOverride("panel", resourceBg);
 
 		var bottomConsoleStyle = UIStyle.CreateStonePanel();
-		bottomConsoleStyle.ContentMarginLeft = 210; 
-		bottomConsoleStyle.ContentMarginRight = 210; 
+		bottomConsoleStyle.ContentMarginLeft = 40; 
+		bottomConsoleStyle.ContentMarginRight = 40; 
 		_bottomConsole.AddThemeStyleboxOverride("panel", bottomConsoleStyle);
 		_minimapFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		_portraitFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
@@ -1106,7 +1106,7 @@ public partial class InGameHUD : Control
 		var topLabels = new[] { _goldLabel, _woodLabel, _stoneLabel };
 		foreach (var lbl in topLabels)
 		{
-			lbl.AddThemeFontSizeOverride("font_size", 27);
+			lbl.AddThemeFontSizeOverride("font_size", 20);
 			lbl.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		}
 		_goldLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
@@ -1227,9 +1227,9 @@ public partial class InGameHUD : Control
 		btn.Icon = GD.Load<Texture2D>(iconPath);
 		string trans = TranslationServer.Translate(tooltip);
 		btn.TooltipText = string.IsNullOrEmpty(trans) ? tooltip : trans;
-		btn.CustomMinimumSize = new Vector2(50, 50);
+		btn.CustomMinimumSize = new Vector2(24, 24);
 		btn.FocusMode = FocusModeEnum.None;
-		btn.AddThemeConstantOverride("icon_max_width", 45);
+		btn.AddThemeConstantOverride("icon_max_width", 20);
 		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateHUDButtonStyle(false, false));
 		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateHUDButtonStyle(true, false));
 		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateHUDButtonStyle(false, true));
@@ -1244,12 +1244,12 @@ public partial class InGameHUD : Control
 		btn.Icon = GD.Load<Texture2D>(iconPath);
 		string trans = TranslationServer.Translate(tooltip);
 		btn.TooltipText = string.IsNullOrEmpty(trans) ? tooltip : trans;
-		btn.CustomMinimumSize = new Vector2(80, 80);
+		btn.CustomMinimumSize = new Vector2(44, 44);
 		btn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		btn.SizeFlagsVertical = SizeFlags.ExpandFill;
 		btn.FocusMode = FocusModeEnum.None;
 		btn.ClipContents = true;
-		btn.AddThemeConstantOverride("icon_max_width", 72);
+		btn.AddThemeConstantOverride("icon_max_width", 38);
 
 		if (tooltip.StartsWith('[') && tooltip.Contains(']'))
 		{
@@ -1304,14 +1304,14 @@ public partial class InGameHUD : Control
 			var btnWeather = new Button();
 			btnWeather.Name = "BtnCycleWeather";
 			btnWeather.Text = TranslationServer.Translate("Cycle Weather");
-			btnWeather.AddThemeFontSizeOverride("font_size", 14);
+			btnWeather.AddThemeFontSizeOverride("font_size", 12);
 			btnWeather.FocusMode = FocusModeEnum.None;
-			// Position it to the right of BtnDefeat (offset_right = 310)
+			// Position it to the right of BtnDefeat (offset_right = 252)
 			btnWeather.SetAnchorsAndOffsetsPreset(LayoutPreset.TopLeft);
-			btnWeather.OffsetLeft = 320;
-			btnWeather.OffsetTop = 10;
-			btnWeather.OffsetRight = 480;
-			btnWeather.OffsetBottom = 45;
+			btnWeather.OffsetLeft = 258;
+			btnWeather.OffsetTop = 6;
+			btnWeather.OffsetRight = 378;
+			btnWeather.OffsetBottom = 36;
 			btnWeather.Pressed += () => CycleWeather();
 			_devPanel.AddChild(btnWeather);
 		}

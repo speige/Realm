@@ -1012,6 +1012,30 @@ public interface IGameAPI
     void AddPlayerTechLevel(int playerIndex, string techId, int delta = 1) { }
 
     /// <summary>
+    /// Registers an ability with display metadata and execution behavior.
+    /// </summary>
+    /// <param name="abilityId">Unique identifier of the ability.</param>
+    /// <param name="displayName">User-facing name of the ability.</param>
+    /// <param name="tooltip">Detailed description displayed on hover.</param>
+    /// <param name="iconPath">Resource path to the ability icon texture.</param>
+    /// <param name="isInstant">True if the ability executes immediately without ground targeting.</param>
+    void RegisterAbility(string abilityId, string displayName, string tooltip, string iconPath = "", bool isInstant = false) { }
+
+    /// <summary>
+    /// Sets whether an ability executes immediately without requiring ground targeting.
+    /// </summary>
+    /// <param name="abilityId">Unique identifier of the ability.</param>
+    /// <param name="isInstant">True if instant cast, false for ground targeting.</param>
+    void SetAbilityInstant(string abilityId, bool isInstant) { }
+
+    /// <summary>
+    /// Sets the visual icon texture path for an ability.
+    /// </summary>
+    /// <param name="abilityId">Unique identifier of the ability.</param>
+    /// <param name="iconPath">Resource path to the icon texture.</param>
+    void SetAbilityIcon(string abilityId, string iconPath) { }
+
+    /// <summary>
     /// Sets the display tooltip for an ability.
     /// </summary>
     void SetAbilityTooltip(string abilityId, string tooltip) { }
