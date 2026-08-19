@@ -933,6 +933,30 @@
             Adds to the research level of a technology upgrade for the specified player slot.
             </summary>
         </member>
+        <member name="M:Realm.MapAPI.IGameAPI.RegisterAbility(System.String,System.String,System.String,System.String,System.Boolean)">
+            <summary>
+            Registers an ability with display metadata and execution behavior.
+            </summary>
+            <param name="abilityId">Unique identifier of the ability.</param>
+            <param name="displayName">User-facing name of the ability.</param>
+            <param name="tooltip">Detailed description displayed on hover.</param>
+            <param name="iconPath">Resource path to the ability icon texture.</param>
+            <param name="isInstant">True if the ability executes immediately without ground targeting.</param>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.SetAbilityInstant(System.String,System.Boolean)">
+            <summary>
+            Sets whether an ability executes immediately without requiring ground targeting.
+            </summary>
+            <param name="abilityId">Unique identifier of the ability.</param>
+            <param name="isInstant">True if instant cast, false for ground targeting.</param>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.SetAbilityIcon(System.String,System.String)">
+            <summary>
+            Sets the visual icon texture path for an ability.
+            </summary>
+            <param name="abilityId">Unique identifier of the ability.</param>
+            <param name="iconPath">Resource path to the icon texture.</param>
+        </member>
         <member name="M:Realm.MapAPI.IGameAPI.SetAbilityTooltip(System.String,System.String)">
             <summary>
             Sets the display tooltip for an ability.

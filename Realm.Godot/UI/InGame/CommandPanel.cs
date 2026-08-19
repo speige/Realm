@@ -713,70 +713,50 @@ public class CommandPanel
 		};
 	}
 
-	private CommandCardItem CreateAbilityItem(string abilityId)
+	private string GetDefaultAbilityIcon(string abilityId)
 	{
-		var hotkey = abilityId switch
-		{
-			"fireball" => Key.Q,
-			"lightning" => Key.W,
-			"holylight" => Key.E,
-			"survivor_buy_healthstone" => Key.R,
-			"survivor_buy_damage" => Key.A,
-			"survivor_buy_range" => Key.S,
-			"survivor_buy_fury" => Key.D,
-			"survivor_buy_multishot" => Key.F,
-			"survivor_heal" => Key.Z,
-			"upgrade_health" => Key.H,
-			_ => Key.None
-		};
-
-		// Los tooltips empiezan con "[X] " como marcador; el sistema de rejilla lo
-		// reemplaza por la tecla real de la posición (Q/W/E/R/A/S/D/F/Z) y dibuja la etiqueta.
-		string iconPath = abilityId switch
+		return abilityId switch
 		{
 			"fireball" => "res://Assets/UI/fire_spell.png",
 			"lightning" => "res://Assets/UI/lightning_spell.png",
 			"holylight" => "res://Assets/UI/magic_upgrade_arrow.png",
-			"survivor_buy_healthstone" => "res://Assets/UI/battle_shield.png",
-			"survivor_buy_damage" => "res://Assets/UI/battle_axe.png",
-			"survivor_buy_range" => "res://Assets/UI/elf_warrior.png",
-			"survivor_buy_fury" => "res://Assets/UI/golden_hammers.png",
-			"survivor_buy_multishot" => "res://Assets/UI/scroll_icon.png",
-			"survivor_heal" => "res://Assets/UI/gold_coin.png",
-			"upgrade_health" => "res://Assets/UI/magic_upgrade_arrow.png",
 			_ => "res://Assets/UI/alliance_flag.png"
 		};
+	}
 
-		string tooltip = abilityId switch
+	private string GetDefaultAbilityTooltip(string abilityId)
+	{
+		return abilityId switch
 		{
-			"fireball" => string.Format(TranslationServer.Translate("[X] Bola de fuego — Daño 50 en área (radio 4), enfriamiento {0}s"), GameHost.FireballCooldownMax),
-			"lightning" => string.Format(TranslationServer.Translate("[X] Rayo — Daño 80 en área (radio 2), enfriamiento {0}s"), GameHost.LightningCooldownMax),
-			"holylight" => string.Format(TranslationServer.Translate("[X] Luz sagrada — Cura 60 en área (radio 4), enfriamiento {0}s"), GameHost.HolyLightCooldownMax),
-			"survivor_buy_healthstone" => "[X] Healthstone — 2000g. +2500 vida máx y regeneración +35/s (única).",
-			"survivor_buy_damage" => "[X] Piedra de Daño — 150g por nivel, máx 5. +25 daño.",
-			"survivor_buy_range" => "[X] Piedra de Alcance — 300g por nivel, máx 3. +8 alcance.",
-			"survivor_buy_fury" => "[X] Furia de Flechas — 200g por nivel, máx 3. +20% de flecha extra.",
-			"survivor_buy_multishot" => "[X] Multidisparo — 1500g. Tus ataques impactan a 3 objetivos cercanos.",
-			"survivor_heal" => "[X] Poción de Restauración — 200g. Cura 600 de vida.",
-			"upgrade_health" => "[H] Mejora de Vida — Mejora de vida de prueba.",
+			"fireball" => string.Format(TranslationServer.Translate("[X] Fireball — Deals 50 area damage (radius 4), cooldown {0}s"), GameHost.FireballCooldownMax),
+			"lightning" => string.Format(TranslationServer.Translate("[X] Lightning — Deals 80 area damage (radius 2), cooldown {0}s"), GameHost.LightningCooldownMax),
+			"holylight" => string.Format(TranslationServer.Translate("[X] Holy Light — Heals 60 area health (radius 4), cooldown {0}s"), GameHost.HolyLightCooldownMax),
 			_ => string.Format(TranslationServer.Translate("Cast {0}"), abilityId.ToUpper())
 		};
+	}
 
-		Action callback = () => GameHost.Instance?.EnterSpellTargeting(abilityId);
+	private CommandCardItem CreateAbilityItem(string abilityId)
+	{
+		var abilityDef = GameHost.Instance?.GetAbilityDefinition(abilityId);
 
-		// Las compras del héroe son instantáneas: no requieren clic en el suelo.
-		if (abilityId.StartsWith("survivor_buy_") || abilityId == "survivor_heal")
+		string iconPath = !string.IsNullOrEmpty(abilityDef?.IconPath)
+			? abilityDef.IconPath
+			: GetDefaultAbilityIcon(abilityId);
+
+		string tooltip = !string.IsNullOrEmpty(abilityDef?.Tooltip)
+			? abilityDef.Tooltip
+			: GetDefaultAbilityTooltip(abilityId);
+
+		bool isInstant = abilityDef != null && abilityDef.IsInstant;
+
+		Action callback;
+		if (isInstant)
 		{
 			callback = () => GameHost.Instance?.CastInstantAbility(abilityId);
 		}
-		else if (abilityId == "upgrade_health")
+		else
 		{
-			callback = () => {
-				if (InGameHUD.Instance != null)
-				{
-					InGameHUD.Instance.ShowFeedbackText(TranslationServer.Translate("Health Upgrade Researched! (Test)"), new Color(0.2f, 0.9f, 0.2f));
-				}
-			};
+			callback = () => GameHost.Instance?.EnterSpellTargeting(abilityId);
 		}
 
 		return new CommandCardItem
@@ -784,7 +764,7 @@ public class CommandPanel
 			Id = abilityId,
 			IconPath = iconPath,
 			Tooltip = tooltip,
-			Hotkey = hotkey,
+			Hotkey = Key.None,
 			Callback = callback
 		};
 	}
