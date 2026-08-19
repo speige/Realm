@@ -31,10 +31,7 @@ canvas_items/debug_run_bar=false
 
 window/size/viewport_width=1920
 window/size/viewport_height=1080
-window/size/window_width_override=1280
-window/size/window_height_override=720
-window/size/mode=0
-window/size/borderless=false
+window/size/mode=3
 window/size/initial_position_type=2
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
