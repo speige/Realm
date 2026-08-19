@@ -113,35 +113,67 @@ public partial class UIManager : Control
 		}
 	}
 
+	public void ApplyWindowSettings(WindowMode mode, int resIdx)
+	{
+		var window = GetWindow();
+		if (window == null) return;
+
+		int screen = DisplayServer.WindowGetCurrentScreen();
+		Rect2I usable = DisplayServer.ScreenGetUsableRect(screen);
+
+		Vector2I targetRes;
+		if (resIdx >= 0 && GameSettings.Resolutions != null && resIdx < GameSettings.Resolutions.Count)
+		{
+			targetRes = GameSettings.Resolutions[resIdx];
+		}
+		else if (GameSettings.ResolutionIdx >= 0 && GameSettings.Resolutions != null && GameSettings.ResolutionIdx < GameSettings.Resolutions.Count)
+		{
+			targetRes = GameSettings.Resolutions[GameSettings.ResolutionIdx];
+		}
+		else if (GameSettings.Resolutions != null && GameSettings.Resolutions.Count > 0)
+		{
+			targetRes = GameSettings.Resolutions[0];
+		}
+		else
+		{
+			targetRes = usable.Size;
+		}
+
+		if (mode == WindowMode.Fullscreen)
+		{
+			window.Mode = Window.ModeEnum.Windowed;
+			window.Borderless = false;
+			window.Mode = Window.ModeEnum.ExclusiveFullscreen;
+		}
+		else if (mode == WindowMode.Borderless)
+		{
+			window.Mode = Window.ModeEnum.Windowed;
+			window.Borderless = true;
+			window.Mode = Window.ModeEnum.Fullscreen;
+		}
+		else if (mode == WindowMode.Windowed)
+		{
+			window.Mode = Window.ModeEnum.Windowed;
+			window.Borderless = false;
+
+			Vector2I deco = window.GetSizeWithDecorations() - window.Size;
+			int padX = deco.X > 0 ? deco.X : 16;
+			int padY = deco.Y > 0 ? deco.Y : 40;
+
+			int safeW = Math.Min(targetRes.X, usable.Size.X - padX);
+			int safeH = Math.Min(targetRes.Y, usable.Size.Y - padY);
+			window.Size = new Vector2I(safeW, safeH);
+			window.MoveToCenter();
+		}
+	}
+
 	private void ApplyStartupSettings()
 	{
 		GameSettings.Load();
 		GameSettings.ApplyGraphicsSettings(this);
 		LocalizationManager.SetupTranslations();
 
-		WindowMode modeIdx = GameSettings.WindowModeIdx;
-		if (modeIdx != WindowMode.Borderless)
-		{
-			if (GameSettings.ResolutionIdx >= 0 && GameSettings.ResolutionIdx < GameSettings.Resolutions.Count)
-			{
-				GetWindow().Size = GameSettings.Resolutions[GameSettings.ResolutionIdx];
-			}
-		}
-
-		if (modeIdx == WindowMode.Fullscreen)
-		{
-			GetWindow().Mode = Window.ModeEnum.ExclusiveFullscreen;
-		}
-		else if (modeIdx == WindowMode.Windowed)
-		{
-			GetWindow().Borderless = false;
-			GetWindow().Mode = Window.ModeEnum.Windowed;
-		}
-		else if (modeIdx == WindowMode.Borderless)
-		{
-			GetWindow().Borderless = true;
-			GetWindow().Mode = Window.ModeEnum.Maximized;
-		}
+		ApplyWindowSettings(GameSettings.WindowModeIdx, GameSettings.ResolutionIdx);
 
 		if (GameSettings.Vsync)
 		{

@@ -380,29 +380,9 @@ public partial class SettingsMenu : Control
 	{
 		int modeIdx = _windowModeOpt.Selected;
 		var windowMode = (WindowMode)modeIdx;
-		if (windowMode == WindowMode.Windowed)
-		{
-			int resSel = _resolutionOpt.Selected;
-			if (resSel >= 0 && resSel < GameSettings.Resolutions.Count)
-			{
-				GetWindow().Size = GameSettings.Resolutions[resSel];
-			}
-		}
+		int resSel = _resolutionOpt.Selected;
 
-		if (windowMode == WindowMode.Fullscreen)
-		{
-			GetWindow().Mode = Window.ModeEnum.ExclusiveFullscreen;
-		}
-		else if (windowMode == WindowMode.Windowed)
-		{
-			GetWindow().Borderless = false;
-			GetWindow().Mode = Window.ModeEnum.Windowed;
-		}
-		else if (windowMode == WindowMode.Borderless)
-		{
-			GetWindow().Borderless = true;
-			GetWindow().Mode = Window.ModeEnum.Maximized;
-		}
+		UIManager.Instance?.ApplyWindowSettings(windowMode, resSel);
 
 		bool vsyncEnabled = _vsyncOpt.Selected == 0;
 		if (vsyncEnabled)
@@ -414,10 +394,9 @@ public partial class SettingsMenu : Control
 			DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
 		}
 
-
-		if (windowMode == WindowMode.Windowed)
+		if (windowMode == WindowMode.Windowed && resSel >= 0)
 		{
-			GameSettings.ResolutionIdx = _resolutionOpt.Selected;
+			GameSettings.ResolutionIdx = resSel;
 		}
 		GameSettings.QualityIdx = (GraphicsQuality)_qualityOpt.Selected;
 		GameSettings.DownsamplingIdx = GameSettings.GetDownsamplingIdxForQuality(GameSettings.QualityIdx);

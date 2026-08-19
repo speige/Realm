@@ -95,7 +95,7 @@ public static class GameSettings
 	public static List<Vector2I> Resolutions { get; private set; }
 	public static GraphicsQuality QualityIdx { get; set; } = GraphicsQuality.High;
 	public static DownsamplingMode DownsamplingIdx { get; set; } = DownsamplingMode.Off;
-	public static WindowMode WindowModeIdx { get; set; } = WindowMode.Borderless;
+	public static WindowMode WindowModeIdx { get; set; } = WindowMode.Windowed;
 	public static bool Vsync { get; set; } = true;
 	public static bool VsyncIdx
 	{
@@ -121,10 +121,11 @@ public static class GameSettings
 
 	public static void ResetToDefaults()
 	{
-		ResolutionIdx = 0;
+		int defaultIdx = Resolutions != null ? Resolutions.FindIndex(r => r == new Vector2I(1280, 720)) : 0;
+		ResolutionIdx = defaultIdx >= 0 ? defaultIdx : 0;
 		QualityIdx = AutoDetectQuality();
 		DownsamplingIdx = GetDownsamplingIdxForQuality(QualityIdx);
-		WindowModeIdx = WindowMode.Borderless;
+		WindowModeIdx = WindowMode.Windowed;
 		Vsync = true;
 		DisableShadows = false;
 		DisableDayNightLighting = false;
@@ -190,6 +191,9 @@ public static class GameSettings
 
 		available.Sort((a, b) => b.X == a.X ? b.Y.CompareTo(a.Y) : b.X.CompareTo(a.X));
 		Resolutions = available;
+
+		int defaultIdx = Resolutions.FindIndex(r => r == new Vector2I(1280, 720));
+		ResolutionIdx = defaultIdx >= 0 ? defaultIdx : 0;
 	}
 
 	static GameSettings()
@@ -239,6 +243,19 @@ public static class GameSettings
 				DisableShadows = data.DisableShadows;
 				DisableDayNightLighting = data.DisableDayNightLighting;
 				ShowHealthBars = data.ShowHealthBars;
+
+				int defaultIdx = Resolutions != null ? Resolutions.FindIndex(r => r == new Vector2I(1280, 720)) : 0;
+				if (Resolutions != null)
+				{
+					if (data.ResolutionIdx <= 0 && WindowModeIdx == WindowMode.Windowed && defaultIdx >= 0)
+					{
+						ResolutionIdx = defaultIdx;
+					}
+					else if (ResolutionIdx < 0 || ResolutionIdx >= Resolutions.Count)
+					{
+						ResolutionIdx = defaultIdx >= 0 ? defaultIdx : 0;
+					}
+				}
 			}
 		}
 		catch (System.Exception e)
@@ -463,7 +480,7 @@ public static class GameSettings
 		public int ResolutionIdx { get; set; } = 0;
 		public GraphicsQuality QualityIdx { get; set; } = GraphicsQuality.High;
 		public DownsamplingMode DownsamplingIdx { get; set; } = DownsamplingMode.Off;
-		public WindowMode WindowModeIdx { get; set; } = WindowMode.Borderless;
+		public WindowMode WindowModeIdx { get; set; } = WindowMode.Windowed;
 		public bool Vsync { get; set; } = true;
 		public float MasterVolume { get; set; } = 80f;
 		public float MusicVolume { get; set; } = 70f;

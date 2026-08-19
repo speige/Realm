@@ -2846,6 +2846,17 @@ public partial class GameHost
 		}
 	}
 
+	// Lanza una habilidad instantánea (compras/mejoras del mapa) usando la unidad
+	// seleccionada como lanzador y su posición como objetivo; sin clic en el suelo.
+	public void CastInstantAbility(string abilityId)
+	{
+		if (SelectedUnits.Count == 0 || !EcsWorld.IsAlive(SelectedUnits[0].Entity)) return;
+		if (!EcsWorld.Has<Position>(SelectedUnits[0].Entity)) return;
+
+		ref var pos = ref EcsWorld.Get<Position>(SelectedUnits[0].Entity);
+		ExecuteSpellCast(abilityId, new Godot.Vector3(pos.Value.X, pos.Value.Y, pos.Value.Z));
+	}
+
 	public void BuyHealingPotion(Entity castleEntity)
 	{
 		float costGold = 50f;

@@ -285,7 +285,7 @@ public class CommandPanel
 	{
 		var tile = new ColorRect();
 		tile.Color = Colors.Black;
-		tile.CustomMinimumSize = new Vector2(80, 80);
+		tile.CustomMinimumSize = new Vector2(44, 44);
 		tile.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 		tile.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 		return tile;
@@ -299,11 +299,11 @@ public class CommandPanel
 		btn.ExpandIcon = true;
 		btn.Icon = GD.Load<Texture2D>("res://Assets/UI/search_icon_clean.png");
 		btn.TooltipText = TranslationServer.Translate("Cycle Abilities / Commands");
-		btn.CustomMinimumSize = new Vector2(80, 80);
+		btn.CustomMinimumSize = new Vector2(44, 44);
 		btn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 		btn.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 		btn.FocusMode = Control.FocusModeEnum.None;
-		btn.AddThemeConstantOverride("icon_max_width", 72);
+		btn.AddThemeConstantOverride("icon_max_width", 38);
 
 		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateHUDButtonStyle(false, false));
 		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateHUDButtonStyle(true, false));
@@ -345,12 +345,12 @@ public class CommandPanel
 		string transTooltip = TranslationServer.Translate(item.Tooltip);
 		btn.TooltipText = string.IsNullOrEmpty(transTooltip) ? item.Tooltip : transTooltip;
 		
-		btn.CustomMinimumSize = new Vector2(80, 80);
+		btn.CustomMinimumSize = new Vector2(44, 44);
 		btn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 		btn.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 		btn.FocusMode = Control.FocusModeEnum.None;
 		btn.ClipContents = true;
-		btn.AddThemeConstantOverride("icon_max_width", 72);
+		btn.AddThemeConstantOverride("icon_max_width", 38);
 
 		if (item.Hotkey != Key.None)
 		{
@@ -718,32 +718,58 @@ public class CommandPanel
 		var hotkey = abilityId switch
 		{
 			"fireball" => Key.Q,
-			"lightning" => Key.E,
-			"holylight" => Key.W,
+			"lightning" => Key.W,
+			"holylight" => Key.E,
+			"survivor_buy_healthstone" => Key.R,
+			"survivor_buy_damage" => Key.A,
+			"survivor_buy_range" => Key.S,
+			"survivor_buy_fury" => Key.D,
+			"survivor_buy_multishot" => Key.F,
+			"survivor_heal" => Key.Z,
 			"upgrade_health" => Key.H,
 			_ => Key.None
 		};
 
+		// Los tooltips empiezan con "[X] " como marcador; el sistema de rejilla lo
+		// reemplaza por la tecla real de la posición (Q/W/E/R/A/S/D/F/Z) y dibuja la etiqueta.
 		string iconPath = abilityId switch
 		{
 			"fireball" => "res://Assets/UI/fire_spell.png",
 			"lightning" => "res://Assets/UI/lightning_spell.png",
 			"holylight" => "res://Assets/UI/magic_upgrade_arrow.png",
+			"survivor_buy_healthstone" => "res://Assets/UI/battle_shield.png",
+			"survivor_buy_damage" => "res://Assets/UI/battle_axe.png",
+			"survivor_buy_range" => "res://Assets/UI/elf_warrior.png",
+			"survivor_buy_fury" => "res://Assets/UI/golden_hammers.png",
+			"survivor_buy_multishot" => "res://Assets/UI/scroll_icon.png",
+			"survivor_heal" => "res://Assets/UI/gold_coin.png",
 			"upgrade_health" => "res://Assets/UI/magic_upgrade_arrow.png",
 			_ => "res://Assets/UI/alliance_flag.png"
 		};
 
 		string tooltip = abilityId switch
 		{
-			"fireball" => string.Format(TranslationServer.Translate("[Q] Cast Fireball — 50 AoE Dmg, {0}s cooldown"), GameHost.FireballCooldownMax),
-			"lightning" => string.Format(TranslationServer.Translate("[E] Cast Lightning — 80 AoE Dmg, {0}s cooldown"), GameHost.LightningCooldownMax),
-			"holylight" => string.Format(TranslationServer.Translate("[W] Cast Holy Light — 60 AoE Heal, {0}s cooldown"), GameHost.HolyLightCooldownMax),
-			"upgrade_health" => TranslationServer.Translate("[H] Upgrade Health — Dummy Health Upgrade"),
+			"fireball" => string.Format(TranslationServer.Translate("[X] Bola de fuego — Daño 50 en área (radio 4), enfriamiento {0}s"), GameHost.FireballCooldownMax),
+			"lightning" => string.Format(TranslationServer.Translate("[X] Rayo — Daño 80 en área (radio 2), enfriamiento {0}s"), GameHost.LightningCooldownMax),
+			"holylight" => string.Format(TranslationServer.Translate("[X] Luz sagrada — Cura 60 en área (radio 4), enfriamiento {0}s"), GameHost.HolyLightCooldownMax),
+			"survivor_buy_healthstone" => "[X] Healthstone — 2000g. +2500 vida máx y regeneración +35/s (única).",
+			"survivor_buy_damage" => "[X] Piedra de Daño — 150g por nivel, máx 5. +25 daño.",
+			"survivor_buy_range" => "[X] Piedra de Alcance — 300g por nivel, máx 3. +8 alcance.",
+			"survivor_buy_fury" => "[X] Furia de Flechas — 200g por nivel, máx 3. +20% de flecha extra.",
+			"survivor_buy_multishot" => "[X] Multidisparo — 1500g. Tus ataques impactan a 3 objetivos cercanos.",
+			"survivor_heal" => "[X] Poción de Restauración — 200g. Cura 600 de vida.",
+			"upgrade_health" => "[H] Mejora de Vida — Mejora de vida de prueba.",
 			_ => string.Format(TranslationServer.Translate("Cast {0}"), abilityId.ToUpper())
 		};
 
 		Action callback = () => GameHost.Instance?.EnterSpellTargeting(abilityId);
-		if (abilityId == "upgrade_health")
+
+		// Las compras del héroe son instantáneas: no requieren clic en el suelo.
+		if (abilityId.StartsWith("survivor_buy_") || abilityId == "survivor_heal")
+		{
+			callback = () => GameHost.Instance?.CastInstantAbility(abilityId);
+		}
+		else if (abilityId == "upgrade_health")
 		{
 			callback = () => {
 				if (InGameHUD.Instance != null)
@@ -798,12 +824,12 @@ public class CommandPanel
 		btn.ExpandIcon = true;
 		btn.Icon = GD.Load<Texture2D>(iconPath);
 		btn.TooltipText = tooltip;
-		btn.CustomMinimumSize = new Vector2(80, 80);
+		btn.CustomMinimumSize = new Vector2(44, 44);
 		btn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 		btn.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 		btn.FocusMode = Control.FocusModeEnum.None;
 		btn.ClipContents = true;
-		btn.AddThemeConstantOverride("icon_max_width", 72);
+		btn.AddThemeConstantOverride("icon_max_width", 38);
 
 		if (tooltip.StartsWith('[') && tooltip.Contains(']'))
 		{

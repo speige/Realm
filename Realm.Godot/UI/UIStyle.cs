@@ -55,10 +55,10 @@ public static class UIStyle
 			style.TextureMarginTop = 32;
 			style.TextureMarginBottom = 32;
 			
-			style.ContentMarginLeft = 48;
-			style.ContentMarginRight = 48;
-			style.ContentMarginTop = 48;
-			style.ContentMarginBottom = 48;
+			style.ContentMarginLeft = 20;
+			style.ContentMarginRight = 20;
+			style.ContentMarginTop = 10;
+			style.ContentMarginBottom = 10;
 			
 			style.ModulateColor = new Color(0.9f, 0.9f, 0.93f, 0.95f); // Slightly lighter for sub-panels
 		}
@@ -69,10 +69,10 @@ public static class UIStyle
 			style.TextureMarginTop = 40;
 			style.TextureMarginBottom = 40;
 			
-			style.ContentMarginLeft = 56;
-			style.ContentMarginRight = 56;
-			style.ContentMarginTop = 56;
-			style.ContentMarginBottom = 56;
+			style.ContentMarginLeft = 24;
+			style.ContentMarginRight = 24;
+			style.ContentMarginTop = 14;
+			style.ContentMarginBottom = 14;
 			
 			style.ModulateColor = new Color(0.72f, 0.72f, 0.75f, 0.98f); // Darker base frame
 		}
