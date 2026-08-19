@@ -606,7 +606,7 @@ Vector3 forwardDir = new Vector3(-Mathf.Sin(unit3D.Rotation.Y), 0f, -Mathf.Cos(u
 				else
 				{
 					float scaleVal = EcsWorld.Has<CollisionScale>(entity) ? EcsWorld.Get<CollisionScale>(entity).Value : 1.0f;
-					unit3D.Scale = Vector3.One * scaleVal;
+					unit3D.Scale = Vector3.One * Mathf.Max(0.01f, scaleVal);
 				}
 
 				unit3D.PlayAnimation(DetermineUnitAnimation(entity));

@@ -198,15 +198,9 @@ public class FXService
 		Vector3 shotDir = targetPos - arrow.Position;
 		if (shotDir.LengthSquared() > 0.01f)
 		{
-			Vector3 flatDir = new Vector3(shotDir.X, 0f, shotDir.Z);
-			if (flatDir.LengthSquared() > 0.0001f)
-			{
-				arrow.LookAtFromPosition(arrow.Position, targetPos, Vector3.Up);
-			}
-			else
-			{
-				arrow.LookAtFromPosition(arrow.Position, targetPos + new Vector3(0, 0, 0.001f), Vector3.Up);
-			}
+			Vector3 direction = shotDir.Normalized();
+			Vector3 upVector = Mathf.Abs(direction.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
+			arrow.LookAtFromPosition(arrow.Position, targetPos, upVector);
 			arrow.RotateObjectLocal(Vector3.Right, Mathf.DegToRad(90f));
 		}
 

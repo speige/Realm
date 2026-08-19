@@ -680,10 +680,10 @@ public partial class Unit3D : Prop3D
 
 			if (length > 0.05f)
 			{
-				line.GlobalPosition = start + diff * 0.5f;
-				line.Scale = new Vector3(1f, 1f, length);
-				var basis = Basis.LookingAt(diff.Normalized(), Vector3.Up);
-				line.GlobalTransform = new Transform3D(basis, line.GlobalPosition);
+				Vector3 direction = diff.Normalized();
+				Vector3 upVector = Mathf.Abs(direction.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
+				var basis = Basis.LookingAt(direction, upVector).Scaled(new Vector3(1f, 1f, length));
+				line.GlobalTransform = new Transform3D(basis, start + diff * 0.5f);
 			}
 			else
 			{
@@ -824,10 +824,10 @@ public partial class Unit3D : Prop3D
 
 			if (length > 0.05f)
 			{
-				line.GlobalPosition = start + diff * 0.5f;
-				line.Scale = new Vector3(1f, 1f, length);
-				var basis = Basis.LookingAt(diff.Normalized(), Vector3.Up);
-				line.GlobalTransform = new Transform3D(basis, line.GlobalPosition);
+				Vector3 direction = diff.Normalized();
+				Vector3 upVector = Mathf.Abs(direction.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
+				var basis = Basis.LookingAt(direction, upVector).Scaled(new Vector3(1f, 1f, length));
+				line.GlobalTransform = new Transform3D(basis, start + diff * 0.5f);
 			}
 			else
 			{

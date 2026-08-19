@@ -377,7 +377,8 @@ public partial class PropMultiMeshManager : Node3D
 					minPos = minPos.Min(pos);
 					maxPos = maxPos.Max(pos);
 
-					Basis basis = Basis.Identity.Rotated(Vector3.Up, Mathf.DegToRad(prop.RotationY)).Scaled(Vector3.One * prop.Scale);
+					float propScale = Mathf.Max(0.01f, prop.Scale);
+					Basis basis = Basis.Identity.Rotated(Vector3.Up, Mathf.DegToRad(prop.RotationY)).Scaled(Vector3.One * propScale);
 					Transform3D propTransform = new Transform3D(basis, pos);
 
 					if (prop.PropId == "tree" || prop.PropId.Contains("tree"))
