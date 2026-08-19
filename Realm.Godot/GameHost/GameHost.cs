@@ -663,6 +663,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public int PathingType { get; set; }
 		public float? ObstacleRadius { get; set; }
 		public string[]? Targets { get; set; }
+		public Dictionary<string, string[]>? Animations { get; set; }
 	}
 
 	public struct PropMetadata

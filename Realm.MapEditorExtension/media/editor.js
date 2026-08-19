@@ -752,6 +752,7 @@
         const unitCombatSection = document.getElementById('section-unit-combat');
         const unitCapabilitiesSection = document.getElementById('section-unit-capabilities');
         const pathingSection = document.getElementById('section-pathing-flags');
+        const unitAnimationsSection = document.getElementById('section-unit-animations');
         const isHeroGroup = document.getElementById('field-IsHero')?.closest('.form-group');
         const portraitGroup = document.getElementById('field-PortraitModelPath')?.closest('.form-group');
 
@@ -761,6 +762,7 @@
             if (unitCostSection) unitCostSection.classList.add('hidden');
             if (unitCombatSection) unitCombatSection.classList.add('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.add('hidden');
+            if (unitAnimationsSection) unitAnimationsSection.classList.add('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.add('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
@@ -770,6 +772,7 @@
             if (unitCostSection) unitCostSection.classList.add('hidden');
             if (unitCombatSection) unitCombatSection.classList.add('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.add('hidden');
+            if (unitAnimationsSection) unitAnimationsSection.classList.add('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.add('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
@@ -779,6 +782,7 @@
             if (unitCostSection) unitCostSection.classList.remove('hidden');
             if (unitCombatSection) unitCombatSection.classList.remove('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.remove('hidden');
+            if (unitAnimationsSection) unitAnimationsSection.classList.remove('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.remove('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
@@ -791,6 +795,7 @@
         renderTags('upgrades', unit.Upgrades || []);
         renderTags('statuseffects', unit.StatusEffects || []);
         renderTags('soundevents', unit.SoundEvents || []);
+        renderUnitAnimations(unit);
         
         populateGlbDropdown(activeDomain, unit.ModelPath || '');
         updateAllThumbnails();
@@ -962,6 +967,148 @@
             saveChanges();
             renderTags(type, unit[key]);
         }
+    }
+
+    const ANIMATION_TYPES = [
+        { key: 'Idle', label: 'Idle', icon: '🧘' },
+        { key: 'Walk', label: 'Walk', icon: '🚶' },
+        { key: 'Attack', label: 'Attack', icon: '⚔️' },
+        { key: 'Death', label: 'Death', icon: '💀' },
+        { key: 'Labor', label: 'Labor', icon: '⚒️' },
+        { key: 'Spell_Cast', label: 'Spell_Cast', icon: '🪄' },
+        { key: 'Dance', label: 'Dance', icon: '💃' }
+    ];
+
+    function renderUnitAnimations(unit) {
+        const container = document.getElementById('unit-animations-container');
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (!unit) return;
+        if (!unit.Animations || typeof unit.Animations !== 'object' || Array.isArray(unit.Animations)) {
+            unit.Animations = {};
+        }
+
+        const table = document.createElement('table');
+        table.className = 'anim-table';
+
+        const thead = document.createElement('thead');
+        thead.innerHTML = `
+            <tr>
+                <th style="width: 140px;">Action Type</th>
+                <th>Configured Animations Array (Random Selection)</th>
+            </tr>
+        `;
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+
+        ANIMATION_TYPES.forEach(animTypeInfo => {
+            const typeKey = animTypeInfo.key;
+            const animList = Array.isArray(unit.Animations[typeKey]) ? unit.Animations[typeKey] : [];
+
+            const tr = document.createElement('tr');
+
+            const tdType = document.createElement('td');
+            tdType.className = 'anim-type-cell';
+            tdType.innerHTML = `<span>${animTypeInfo.icon}</span> <strong>${escapeHtml(animTypeInfo.label)}</strong>`;
+            tr.appendChild(tdType);
+
+            const tdConfig = document.createElement('td');
+
+            const chipsContainer = document.createElement('div');
+            chipsContainer.className = 'anim-chips-container';
+
+            if (animList.length === 0) {
+                const emptySpan = document.createElement('span');
+                emptySpan.style.color = 'var(--text-muted)';
+                emptySpan.style.fontSize = '11px';
+                emptySpan.style.fontStyle = 'italic';
+                emptySpan.textContent = `Default fallback (${typeKey.toLowerCase()}.ranim)`;
+                chipsContainer.appendChild(emptySpan);
+            } else {
+                animList.forEach((animFile, idx) => {
+                    const chip = document.createElement('span');
+                    chip.className = 'anim-chip';
+                    chip.title = `Preview ID: ${typeKey}_${idx}`;
+
+                    const idxBadge = document.createElement('span');
+                    idxBadge.className = 'anim-chip-index';
+                    idxBadge.textContent = `${typeKey}_${idx}`;
+                    chip.appendChild(idxBadge);
+
+                    const nameSpan = document.createElement('span');
+                    nameSpan.textContent = animFile;
+                    chip.appendChild(nameSpan);
+
+                    const removeBtn = document.createElement('span');
+                    removeBtn.className = 'remove-anim';
+                    removeBtn.textContent = '×';
+                    removeBtn.title = 'Remove animation';
+                    removeBtn.addEventListener('click', () => {
+                        if (isLocked) return;
+                        pushToUndoStack();
+                        animList.splice(idx, 1);
+                        if (animList.length === 0) {
+                            delete unit.Animations[typeKey];
+                        } else {
+                            unit.Animations[typeKey] = animList;
+                        }
+                        saveChanges();
+                        renderUnitAnimations(unit);
+                    });
+                    chip.appendChild(removeBtn);
+
+                    chipsContainer.appendChild(chip);
+                });
+            }
+            tdConfig.appendChild(chipsContainer);
+
+            const addRow = document.createElement('div');
+            addRow.className = 'anim-add-row';
+
+            const addInput = document.createElement('input');
+            addInput.type = 'text';
+            addInput.setAttribute('list', 'suggest-animations');
+            addInput.placeholder = `Select or type animation for ${typeKey}...`;
+            addInput.className = 'anim-add-input';
+
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'btn secondary-btn small-btn';
+            addBtn.textContent = '+ Add';
+
+            const doAdd = () => {
+                if (isLocked) return;
+                const val = addInput.value.trim();
+                if (!val) return;
+                pushToUndoStack();
+                if (!Array.isArray(unit.Animations[typeKey])) {
+                    unit.Animations[typeKey] = [];
+                }
+                unit.Animations[typeKey].push(val);
+                saveChanges();
+                renderUnitAnimations(unit);
+            };
+
+            addBtn.addEventListener('click', doAdd);
+            addInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    doAdd();
+                }
+            });
+
+            addRow.appendChild(addInput);
+            addRow.appendChild(addBtn);
+            tdConfig.appendChild(addRow);
+
+            tr.appendChild(tdConfig);
+            tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        container.appendChild(table);
     }
 
     function addTagItem(type) {
@@ -2438,11 +2585,11 @@
     function copyUnitComponent(componentKey) {
         const unit = getUnitById(selectedUnitId);
         if (!selectedUnitId || !unit) return;
-        const arr = unit[componentKey] || [];
+        const val = unit[componentKey] || (componentKey === 'Animations' ? {} : []);
         navigator.clipboard.writeText(JSON.stringify({
             "$realm_editor_type": "unit-component-block",
             "componentType": componentKey,
-            "data": arr
+            "data": val
         }));
     }
 
@@ -2453,11 +2600,16 @@
         navigator.clipboard.readText().then(text => {
             try {
                 const parsed = JSON.parse(text);
-                if (parsed && parsed.$realm_editor_type === 'unit-component-block' && Array.isArray(parsed.data)) {
+                if (parsed && parsed.$realm_editor_type === 'unit-component-block' && parsed.data !== undefined) {
                     pushToUndoStack();
                     unit[componentKey] = parsed.data;
                     saveChanges();
                     
+                    if (componentKey === 'Animations') {
+                        renderUnitAnimations(unit);
+                        return;
+                    }
+
                     let tagType = '';
                     if (componentKey === 'BuildOptions') tagType = 'build-options';
                     else if (componentKey === 'Abilities') tagType = 'abilities';
@@ -3240,6 +3392,12 @@
         populateDatalist('suggest-abilities', abilities.map(a => ({ id: a.AbilityId, name: a.Name })));
         populateDatalist('suggest-upgrades', upgrades.map(u => ({ id: u.UpgradeId, name: u.Name })));
         populateDatalist('suggest-items', items.map(i => ({ id: i.ItemId, name: i.Name })));
+
+        const animAssets = (units.Assets && units.Assets.animations) ? units.Assets.animations : {};
+        const animList = Object.keys(animAssets);
+        const standardDefaults = ['idle.ranim', 'walk.ranim', 'attack.ranim', 'death.ranim', 'labor.ranim', 'spell_cast.ranim'];
+        const allAnimsSet = new Set([...animList, ...standardDefaults]);
+        populateDatalist('suggest-animations', Array.from(allAnimsSet).map(a => ({ id: a, name: a })));
     }
 
     function populateDatalist(id, items) {
@@ -3953,6 +4111,7 @@
         if (cat === 'decals') return 'Decals';
         if (cat === 'textures') return 'Textures';
         if (cat === 'icons') return 'Icons';
+        if (cat === 'animations') return 'Animations';
         return cat.charAt(0).toUpperCase() + cat.slice(1);
     }
 
@@ -3961,7 +4120,7 @@
         if (!display) return;
 
         let assets = {};
-        const candidateKeys = ['textures', 'glb', 'decals', 'icons', 'vfx_spritesheets', 'sfx', 'music', 'skyboxes'];
+        const candidateKeys = ['textures', 'glb', 'decals', 'icons', 'vfx_spritesheets', 'sfx', 'music', 'skyboxes', 'animations'];
 
         // Collect from units.Assets
         if (units?.Assets && typeof units.Assets === 'object') {
@@ -4078,6 +4237,7 @@
                     else if (category === 'textures') relAssetPath = `Assets/textures/${itemKey}`;
                     else if (category === 'sfx') relAssetPath = `Assets/audio/sfx/${itemKey}`;
                     else if (category === 'music') relAssetPath = `Assets/audio/music/${itemKey}`;
+                    else if (category === 'animations') relAssetPath = `Assets/animations/${itemKey}`;
 
                     const canMigrateRawPng = category === 'decals' || category === 'icons' || category === 'skyboxes';
                     const canMigrateAudio = category === 'sfx' || category === 'music';
@@ -4707,6 +4867,17 @@
                     type: 'importAsset',
                     assetType: 'audio',
                     options: { audioType }
+                });
+            });
+        }
+
+        const btnAnim = document.getElementById('btn-import-animation');
+        if (btnAnim) {
+            btnAnim.addEventListener('click', () => {
+                vscode.postMessage({
+                    type: 'importAsset',
+                    assetType: 'animation',
+                    options: {}
                 });
             });
         }

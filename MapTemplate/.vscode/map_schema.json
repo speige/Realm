@@ -219,7 +219,24 @@
             "type": "array",
             "items": { "type": "string" }
           },
-          "PortraitModelPath": { "type": "string" }
+          "PortraitModelPath": { "type": "string" },
+          "Animations": {
+            "type": "object",
+            "description": "Dictionary of animation type enum to array of animation file names",
+            "properties": {
+              "Idle": { "type": "array", "items": { "type": "string" } },
+              "Walk": { "type": "array", "items": { "type": "string" } },
+              "Attack": { "type": "array", "items": { "type": "string" } },
+              "Death": { "type": "array", "items": { "type": "string" } },
+              "Labor": { "type": "array", "items": { "type": "string" } },
+              "Spell_Cast": { "type": "array", "items": { "type": "string" } },
+              "Dance": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
         }
       }
     },

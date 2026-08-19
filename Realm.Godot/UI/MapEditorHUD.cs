@@ -260,6 +260,13 @@ public partial class MapEditorHUD : Control
 	private Button _btnShowCoverage;
 	private HBoxContainer _playerOwnerContainer;
 	private OptionButton _optPlayerOwner;
+	private Button _btnImportAnimation;
+	private PanelContainer _rigStatusContainer;
+	private Label _lblRigStatus;
+	private VBoxContainer _animationPreviewContainer;
+	private OptionButton _optAnimationPreview;
+	private Button _btnPlayAnimationPreview;
+	private Button _btnStopAnimationPreview;
 
 	private Button _btnPathingBrush;
 	private Button _btnFloodFillPathing;
@@ -475,6 +482,11 @@ public partial class MapEditorHUD : Control
 
 		_btnImportMinimap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnImportMinimap");
 		SetupButton(_btnImportMinimap, "🗺️ GEN FROM IMAGE", () => ImportTerrainFromMinimapDialog(), 13, "Import terrain elevations, textures, and trees from a minimap image file");
+
+		_btnImportAnimation = new Button();
+		_btnImportAnimation.Name = "BtnImportAnimation";
+		SetupButton(_btnImportAnimation, "🎬 IMPORT MIXAMO / GLB", () => ImportMixamoOrAnimationDialog(), 13, "Import Mixamo character/animation GLB or .ranim binary animation files");
+		_contentFile.AddChild(_btnImportAnimation);
 
 		_btnHeaderViewport = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/BtnHeaderViewport");
 		_contentViewport = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport");
@@ -1435,6 +1447,51 @@ public partial class MapEditorHUD : Control
 				_viewModel.HasInspectorSelection = true;
 				_viewModel.InspectorTitle = $"SELECTED: {nameStr}\n[{typeStr}]";
 				_viewModel.InspectorPos = $"Pos: {pos.X:F2}, {pos.Y:F2}, {pos.Z:F2}\nRot: {rot.Y:F1}° | Scale: {scale.X:F2}x";
+			}
+
+			if (selected is Unit3D || selected is Prop3D)
+			{
+				Node modelRoot = selected;
+				if (selected is Unit3D unitObj && unitObj.ModelNode != null)
+				{
+					modelRoot = unitObj.ModelNode;
+				}
+				else if (selected is Prop3D propObj)
+				{
+					modelRoot = propObj.GetNodeOrNull<Node3D>("VisualModel") ?? selected;
+				}
+
+				var validation = Realm.Godot.Animation.SkeletonValidator.Validate(modelRoot);
+				if (_rigStatusContainer != null && _lblRigStatus != null)
+				{
+					_rigStatusContainer.Visible = true;
+					if (validation.IsValid)
+					{
+						_lblRigStatus.Text = TranslationServer.Translate("Rig: ✔ Compatible Humanoid");
+						_lblRigStatus.AddThemeColorOverride("font_color", new Color(0.3f, 0.9f, 0.3f));
+					}
+					else if (validation.Skeleton == null)
+					{
+						_lblRigStatus.Text = TranslationServer.Translate("Rig: ✖ Unrigged Mesh");
+						_lblRigStatus.AddThemeColorOverride("font_color", new Color(0.9f, 0.4f, 0.4f));
+					}
+					else
+					{
+						_lblRigStatus.Text = string.Format(TranslationServer.Translate("Rig: ✖ Incompatible ({0})"), string.Join(", ", validation.MissingRequiredBones));
+						_lblRigStatus.AddThemeColorOverride("font_color", new Color(0.9f, 0.4f, 0.4f));
+					}
+				}
+
+				if (_animationPreviewContainer != null && _optAnimationPreview != null)
+				{
+					_animationPreviewContainer.Visible = true;
+					PopulateAnimationPreviewDropdown();
+				}
+			}
+			else
+			{
+				if (_rigStatusContainer != null) _rigStatusContainer.Visible = false;
+				if (_animationPreviewContainer != null) _animationPreviewContainer.Visible = false;
 			}
 
 			string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(selected);
@@ -5601,6 +5658,56 @@ public partial class MapEditorHUD : Control
 		inspectorVBox.AddChild(_playerOwnerContainer);
 		inspectorVBox.MoveChild(_playerOwnerContainer, 2);
 
+		_rigStatusContainer = new PanelContainer();
+		_rigStatusContainer.Name = "RigStatusContainer";
+		_rigStatusContainer.Visible = false;
+		_lblRigStatus = new Label();
+		_lblRigStatus.Name = "LblRigStatus";
+		_lblRigStatus.AddThemeFontSizeOverride("font_size", 11);
+		_lblRigStatus.AutowrapMode = TextServer.AutowrapMode.Word;
+		_rigStatusContainer.AddChild(_lblRigStatus);
+		inspectorVBox.AddChild(_rigStatusContainer);
+
+		_animationPreviewContainer = new VBoxContainer();
+		_animationPreviewContainer.Name = "AnimationPreviewContainer";
+		_animationPreviewContainer.Visible = false;
+
+		var lblAnimHeader = new Label();
+		lblAnimHeader.Text = TranslationServer.Translate("Animation Preview");
+		lblAnimHeader.AddThemeFontSizeOverride("font_size", 11);
+		_animationPreviewContainer.AddChild(lblAnimHeader);
+
+		var animHBox = new HBoxContainer();
+		_optAnimationPreview = new OptionButton();
+		_optAnimationPreview.Name = "OptAnimationPreview";
+		_optAnimationPreview.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		_optAnimationPreview.ClipText = true;
+		_optAnimationPreview.FitToLongestItem = false;
+		_optAnimationPreview.CustomMinimumSize = new Vector2(0, 0);
+		_optAnimationPreview.AddThemeFontSizeOverride("font_size", 11);
+		animHBox.AddChild(_optAnimationPreview);
+
+		_btnPlayAnimationPreview = new Button();
+		_btnPlayAnimationPreview.Name = "BtnPlayAnimationPreview";
+		_btnPlayAnimationPreview.Set("icon_max_width", 0);
+		_btnPlayAnimationPreview.Text = "▶";
+		_btnPlayAnimationPreview.CustomMinimumSize = new Vector2(26, 0);
+		_btnPlayAnimationPreview.FocusMode = Control.FocusModeEnum.None;
+		_btnPlayAnimationPreview.Pressed += () => PlaySelectedAnimationPreviewAction();
+		animHBox.AddChild(_btnPlayAnimationPreview);
+
+		_btnStopAnimationPreview = new Button();
+		_btnStopAnimationPreview.Name = "BtnStopAnimationPreview";
+		_btnStopAnimationPreview.Set("icon_max_width", 0);
+		_btnStopAnimationPreview.Text = "⏹";
+		_btnStopAnimationPreview.CustomMinimumSize = new Vector2(26, 0);
+		_btnStopAnimationPreview.FocusMode = Control.FocusModeEnum.None;
+		_btnStopAnimationPreview.Pressed += () => StopSelectedAnimationPreviewAction();
+		animHBox.AddChild(_btnStopAnimationPreview);
+
+		_animationPreviewContainer.AddChild(animHBox);
+		inspectorVBox.AddChild(_animationPreviewContainer);
+
 		var vbox = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox");
 		if (vbox != null)
 		{
@@ -6394,6 +6501,134 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public void ImportMixamoOrAnimationDialog()
+	{
+		var err = DisplayServer.FileDialogShow(
+			TranslationServer.Translate("Select Mixamo GLB Model or Animation (.glb, .ranim)"),
+			PathUtils.GetProjectRoot(),
+			"",
+			false,
+			DisplayServer.FileDialogMode.OpenFile,
+			new string[] { "*.glb, *.gltf, *.ranim ; 3D Models & Animations" },
+			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) => {
+				if (status && selectedPaths.Length > 0)
+				{
+					string path = selectedPaths[0];
+					string ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
+					if (ext == ".ranim")
+					{
+						ImportAnimationAssetFromExtension(path);
+					}
+					else
+					{
+						ImportGlbAssetFromExtension(path, "units");
+					}
+				}
+			})
+		);
+	}
+
+	public void ImportAnimationAssetFromExtension(string sourceFilePath)
+	{
+		try
+		{
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string ext = System.IO.Path.GetExtension(sourceFilePath).ToLowerInvariant();
+			string animsDir = System.IO.Path.Combine(wsPath, "Assets", "animations");
+			System.IO.Directory.CreateDirectory(animsDir);
+
+			if (ext == ".glb" || ext == ".gltf" || ext == ".fbx")
+			{
+				string originalFileName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
+				var extracted = Realm.Godot.Animation.MixamoAnimationImporter.ExtractAnimationsFromFile(sourceFilePath, originalFileName);
+				if (extracted.Count == 0)
+				{
+					ShowFeedback(TranslationServer.Translate("No animations found in file."));
+					return;
+				}
+
+				int importedCount = 0;
+				int skippedCount = 0;
+				foreach (var (animName, animData) in extracted)
+				{
+					var (savedFileName, blake3, alreadyExisted) = Realm.Godot.Animation.MixamoAnimationImporter.SaveAnimationWithDeduplication(animsDir, animName, animData);
+					UpdateMetadataJsonAsset("animations", savedFileName, blake3);
+					if (alreadyExisted) skippedCount++;
+					else importedCount++;
+				}
+
+				PopulateAnimationPreviewDropdown();
+				if (importedCount > 0)
+				{
+					ShowFeedback(string.Format(TranslationServer.Translate("Successfully imported {0} animation(s) (.ranim)!"), importedCount));
+				}
+				else
+				{
+					ShowFeedback(TranslationServer.Translate("Animation already imported (identical BLAKE3 hash)."));
+				}
+			}
+			else
+			{
+				string fileName = System.IO.Path.GetFileName(sourceFilePath);
+				byte[] sourceBytes = System.IO.File.ReadAllBytes(sourceFilePath);
+				string newHash = MapAssetManager.ComputeBlake3(sourceBytes);
+
+				string baseName = System.IO.Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant();
+				string finalFileName = $"{baseName}.ranim";
+				string targetPath = System.IO.Path.Combine(animsDir, finalFileName);
+
+				if (System.IO.File.Exists(targetPath))
+				{
+					string existingHash = MapAssetManager.ComputeBlake3(System.IO.File.ReadAllBytes(targetPath));
+					if (existingHash.Equals(newHash, StringComparison.OrdinalIgnoreCase))
+					{
+						UpdateMetadataJsonAsset("animations", finalFileName, newHash);
+						PopulateAnimationPreviewDropdown();
+						ShowFeedback(TranslationServer.Translate("Animation already imported (identical BLAKE3 hash)."));
+						return;
+					}
+
+					for (int i = 1; i <= 9999; i++)
+					{
+						string varName = $"{baseName}_{i}.ranim";
+						string varPath = System.IO.Path.Combine(animsDir, varName);
+						if (!System.IO.File.Exists(varPath))
+						{
+							finalFileName = varName;
+							targetPath = varPath;
+							System.IO.File.WriteAllBytes(targetPath, sourceBytes);
+							break;
+						}
+						else
+						{
+							string varHash = MapAssetManager.ComputeBlake3(System.IO.File.ReadAllBytes(varPath));
+							if (varHash.Equals(newHash, StringComparison.OrdinalIgnoreCase))
+							{
+								finalFileName = varName;
+								break;
+							}
+						}
+					}
+				}
+				else
+				{
+					System.IO.File.WriteAllBytes(targetPath, sourceBytes);
+				}
+
+				UpdateMetadataJsonAsset("animations", finalFileName, newHash);
+				PopulateAnimationPreviewDropdown();
+				ShowFeedback(string.Format(TranslationServer.Translate("Imported animation {0}"), finalFileName));
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ImportAnimationAssetFromExtension error: {ex.Message}");
+			ShowFeedback(string.Format(TranslationServer.Translate("Failed to import animation: {0}"), ex.Message));
+		}
+	}
+
 	public void ImportGlbAssetFromExtension(string sourceFilePath, string category)
 	{
 		try
@@ -6403,21 +6638,204 @@ public partial class MapEditorHUD : Control
 				: _tempWorkspacePath;
 			string fileName = System.IO.Path.GetFileName(sourceFilePath);
 			string subCat = category.ToLowerInvariant();
-			string modelsDir = System.IO.Path.Combine(wsPath, "Assets", "models", subCat);
-			System.IO.Directory.CreateDirectory(modelsDir);
-			string targetPath = System.IO.Path.Combine(modelsDir, fileName);
-			System.IO.File.Copy(sourceFilePath, targetPath, true);
 
-			byte[] bytes = System.IO.File.ReadAllBytes(targetPath);
-			string blake3 = MapAssetManager.ComputeBlake3(bytes);
+			var importResult = Realm.Godot.Animation.MixamoAnimationImporter.ImportMixamoGlb(sourceFilePath, wsPath, subCat);
+			if (!importResult.Success)
+			{
+				ShowFeedback(string.Format(TranslationServer.Translate("Failed to import GLB asset: {0}"), importResult.ErrorMessage));
+				return;
+			}
 
-			UpdateMetadataJsonAsset("glb", fileName, blake3, subCategory: category.ToLowerInvariant());
-			ShowFeedback($"Imported GLB asset {fileName} ({category})");
+			byte[] glbBytes = System.IO.File.ReadAllBytes(importResult.StrippedGlbPath);
+			string glbBlake3 = MapAssetManager.ComputeBlake3(glbBytes);
+			UpdateMetadataJsonAsset("glb", fileName, glbBlake3, subCategory: subCat);
+
+			foreach (var animFile in importResult.ExtractedAnimationFiles)
+			{
+				string animPath = System.IO.Path.Combine(wsPath, "Assets", "animations", animFile);
+				if (System.IO.File.Exists(animPath))
+				{
+					byte[] animBytes = System.IO.File.ReadAllBytes(animPath);
+					string animBlake3 = MapAssetManager.ComputeBlake3(animBytes);
+					UpdateMetadataJsonAsset("animations", animFile, animBlake3);
+				}
+			}
+
+			PopulateAnimationPreviewDropdown();
+			if (importResult.ExtractedAnimationFiles.Count > 0)
+			{
+				ShowFeedback(string.Format(TranslationServer.Translate("Imported GLB {0} and extracted {1} .ranim animation(s)"), fileName, importResult.ExtractedAnimationFiles.Count));
+			}
+			else
+			{
+				ShowFeedback(string.Format(TranslationServer.Translate("Imported GLB asset {0} ({1})"), fileName, category));
+			}
 		}
 		catch (Exception ex)
 		{
 			GD.PrintErr($"ImportGlbAssetFromExtension error: {ex.Message}");
-			ShowFeedback($"Failed to import GLB asset: {ex.Message}");
+			ShowFeedback(string.Format(TranslationServer.Translate("Failed to import GLB asset: {0}"), ex.Message));
+		}
+	}
+
+	public void PopulateAnimationPreviewDropdown()
+	{
+		if (_optAnimationPreview == null) return;
+		string currentSelected = _optAnimationPreview.ItemCount > 0 ? _optAnimationPreview.GetItemText(_optAnimationPreview.Selected) : "Idle_0";
+		_optAnimationPreview.Clear();
+
+		var standardAnims = new[] { "Idle", "Walk", "Attack", "Death", "Labor", "Spell_Cast", "Dance" };
+		var animOptions = new List<string>();
+
+		var selected = GameHost.Instance?.SelectedEditorObject;
+		Dictionary<string, string[]>? customAnimations = null;
+		if (selected is Unit3D unit && !string.IsNullOrEmpty(unit.UnitId) && GameHost.UnitRegistry.TryGetValue(unit.UnitId, out var meta))
+		{
+			customAnimations = meta.Animations;
+		}
+
+		foreach (var animType in standardAnims)
+		{
+			if (customAnimations != null && customAnimations.TryGetValue(animType, out var list) && list != null && list.Length > 0)
+			{
+				for (int i = 0; i < list.Length; i++)
+				{
+					animOptions.Add($"{animType}_{i}");
+				}
+			}
+			else
+			{
+				animOptions.Add($"{animType}_0");
+			}
+		}
+
+		int idx = 0;
+		int selectedIdx = 0;
+		foreach (var anim in animOptions)
+		{
+			_optAnimationPreview.AddItem(anim, idx);
+			if (anim.Equals(currentSelected, StringComparison.OrdinalIgnoreCase))
+			{
+				selectedIdx = idx;
+			}
+			idx++;
+		}
+
+		_optAnimationPreview.Selected = selectedIdx;
+	}
+
+	private void PlaySelectedAnimationPreviewAction()
+	{
+		if (GameHost.Instance == null) return;
+		var selected = GameHost.Instance.SelectedEditorObject;
+		if (!GodotObject.IsInstanceValid(selected)) return;
+
+		Node modelRoot = selected;
+		if (selected is Unit3D unit && unit.ModelNode != null)
+		{
+			modelRoot = unit.ModelNode;
+		}
+		else if (selected is Prop3D prop)
+		{
+			modelRoot = prop.GetNodeOrNull<Node3D>("VisualModel") ?? selected;
+		}
+
+		var validation = Realm.Godot.Animation.SkeletonValidator.Validate(modelRoot);
+		if (!validation.IsValid)
+		{
+			ShowFeedback(string.Format(TranslationServer.Translate("Cannot play animation: {0}"), validation.ErrorMessage));
+			return;
+		}
+
+		if (_optAnimationPreview == null || _optAnimationPreview.ItemCount == 0) return;
+		string animName = _optAnimationPreview.GetItemText(_optAnimationPreview.Selected);
+
+		if (selected is Unit3D uObj)
+		{
+			uObj.PlayAnimation(animName);
+			ShowFeedback(string.Format(TranslationServer.Translate("Playing '{0}' on {1}"), animName, selected.Name));
+			return;
+		}
+
+		var player = Realm.Godot.Animation.AnimationRetargetingService.FindOrCreateAnimationPlayer(modelRoot);
+		if (player != null && player.HasAnimation(animName))
+		{
+			player.Play(animName);
+			ShowFeedback(string.Format(TranslationServer.Translate("Playing '{0}' on {1}"), animName, selected.Name));
+			return;
+		}
+
+		int underscoreIdx = animName.LastIndexOf('_');
+		string baseType = underscoreIdx > 0 ? animName.Substring(0, underscoreIdx) : animName;
+		string specificFile = null;
+
+		if (selected is Unit3D u && !string.IsNullOrEmpty(u.UnitId) && GameHost.UnitRegistry.TryGetValue(u.UnitId, out var uMeta) && uMeta.Animations != null)
+		{
+			if (underscoreIdx > 0 && int.TryParse(animName.Substring(underscoreIdx + 1), out int varIdx))
+			{
+				if (uMeta.Animations.TryGetValue(baseType, out var aFiles) && varIdx >= 0 && varIdx < aFiles.Length)
+				{
+					specificFile = aFiles[varIdx];
+				}
+			}
+		}
+
+		string filePath = !string.IsNullOrEmpty(specificFile)
+			? Realm.Godot.Animation.AnimationRetargetingService.ResolveAnimationFilePath(specificFile, selected is Unit3D u2 ? u2.UnitId : null)
+			: Realm.Godot.Animation.AnimationRetargetingService.ResolveAnimationFilePath(animName, selected is Unit3D u3 ? u3.UnitId : null);
+
+		Realm.Godot.Animation.RealmAnimationData animData = null;
+		if (!string.IsNullOrEmpty(filePath))
+		{
+			animData = Realm.Godot.Animation.AnimationRetargetingService.GetOrLoadRanimData(filePath);
+		}
+		else
+		{
+			animData = baseType switch
+			{
+				"Idle" => Realm.Godot.Animation.RealmDefaultAnimations.Idle,
+				"Walk" => Realm.Godot.Animation.RealmDefaultAnimations.Walk,
+				"Attack" => Realm.Godot.Animation.RealmDefaultAnimations.Attack,
+				"Death" => Realm.Godot.Animation.RealmDefaultAnimations.Death,
+				"Labor" => Realm.Godot.Animation.RealmDefaultAnimations.Labor,
+				"Spell_Cast" => Realm.Godot.Animation.RealmDefaultAnimations.Spell_Cast,
+				"Dance" => Realm.Godot.Animation.RealmDefaultAnimations.Dance,
+				_ => null
+			};
+		}
+
+		if (animData == null)
+		{
+			ShowFeedback(string.Format(TranslationServer.Translate("Animation data not found for '{0}'"), animName));
+			return;
+		}
+
+		if (Realm.Godot.Animation.AnimationRetargetingService.RetargetAndBind(animData, modelRoot, animName, out string err))
+		{
+			var animPlayer = Realm.Godot.Animation.AnimationRetargetingService.FindOrCreateAnimationPlayer(modelRoot);
+			if (animPlayer != null)
+			{
+				animPlayer.Play(animName);
+				ShowFeedback(string.Format(TranslationServer.Translate("Playing '{0}' on {1} (RAM Retargeted)"), animName, selected.Name));
+			}
+		}
+		else
+		{
+			ShowFeedback(string.Format(TranslationServer.Translate("Failed to retarget animation: {0}"), err));
+		}
+	}
+
+	private void StopSelectedAnimationPreviewAction()
+	{
+		if (GameHost.Instance == null) return;
+		var selected = GameHost.Instance.SelectedEditorObject;
+		if (!GodotObject.IsInstanceValid(selected)) return;
+
+		var player = Realm.Godot.Animation.AnimationRetargetingService.FindOrCreateAnimationPlayer(selected);
+		if (player != null && player.IsPlaying())
+		{
+			player.Stop(true);
+			ShowFeedback(TranslationServer.Translate("Animation stopped"));
 		}
 	}
 

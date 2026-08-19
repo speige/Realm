@@ -335,23 +335,25 @@ public static class MapWorkspaceService
 
 		if (File.Exists(templateMeta))
 		{
-			// Also copy any template asset files (such as .ktx2 textures in Assets/textures) if not already present
 			string templateAssetsDir = Path.Combine(Path.GetDirectoryName(templateMeta), "Assets");
-		if (Directory.Exists(templateAssetsDir))
-		{
-			string destAssetsDir = Path.Combine(directory, "Assets");
-			foreach (var assetFile in Directory.GetFiles(templateAssetsDir, "*", SearchOption.AllDirectories))
+			if (Directory.Exists(templateAssetsDir))
 			{
-				string relPath = Path.GetRelativePath(templateAssetsDir, assetFile);
-				string destFile = Path.Combine(destAssetsDir, relPath);
-				Directory.CreateDirectory(Path.GetDirectoryName(destFile));
-				if (!File.Exists(destFile))
+				Realm.Godot.Animation.RealmDefaultAnimations.EnsureDefaultTemplateAnimations(templateAssetsDir);
+				string destAssetsDir = Path.Combine(directory, "Assets");
+				foreach (var assetFile in Directory.GetFiles(templateAssetsDir, "*", SearchOption.AllDirectories))
 				{
-					File.Copy(assetFile, destFile, true);
+					string relPath = Path.GetRelativePath(templateAssetsDir, assetFile);
+					string destFile = Path.Combine(destAssetsDir, relPath);
+					Directory.CreateDirectory(Path.GetDirectoryName(destFile));
+					if (!File.Exists(destFile))
+					{
+						File.Copy(assetFile, destFile, true);
+					}
 				}
 			}
 		}
-	}
+
+		Realm.Godot.Animation.RealmDefaultAnimations.EnsureDefaultTemplateAnimations(Path.Combine(directory, "Assets"));
 	}
 
 	public static void EnsureSolutionFile(string directory, string mapName)

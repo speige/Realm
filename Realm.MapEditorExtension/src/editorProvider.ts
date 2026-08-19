@@ -106,6 +106,8 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
 
         if (category === 'glb' && subCategory) {
             relPath = path.join('Assets', 'models', subCategory, key);
+        } else if (category === 'animations') {
+            relPath = path.join('Assets', 'animations', key);
         } else if (category === 'decals') {
             relPath = path.join('Assets', 'decals', key);
         } else if (category === 'icons') {
@@ -314,6 +316,8 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             accept = '.png,.jpg,.jpeg,.bmp,.tga,.webp,.svg';
         } else if (assetType === 'audio') {
             accept = '.ogg,.wav,.mp3,.flac,.aac,.m4a';
+        } else if (assetType === 'animation') {
+            accept = '.ranim,.glb,.gltf,.fbx';
         }
 
         webview.postMessage({
@@ -535,6 +539,161 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 if (!metadata.Assets.skyboxes) metadata.Assets.skyboxes = {};
                 metadata.Assets.skyboxes[baseName] = blake3;
                 vscode.window.showInformationMessage(`Imported Skybox: ${baseName}`);
+            } else if (assetType === 'animation') {
+                const subDir = path.join(targetDir, 'Assets', 'animations');
+                if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+
+                const ext = path.extname(fileName).toLowerCase();
+
+                if (ext === '.ranim') {
+                    const cleanBase = path.basename(fileName, path.extname(fileName)).toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                    let targetFileName = `${cleanBase}.ranim`;
+                    let targetPath = path.join(subDir, targetFileName);
+                    const newHash = this.computeHashHex(fileBytes);
+
+                    if (fs.existsSync(targetPath)) {
+                        const existingHash = this.computeHashHex(fs.readFileSync(targetPath));
+                        if (existingHash.toLowerCase() === newHash.toLowerCase()) {
+                            if (!metadata.Assets.animations) metadata.Assets.animations = {};
+                            metadata.Assets.animations[targetFileName] = newHash;
+                            vscode.window.showInformationMessage(`Animation (${targetFileName}) is already imported (identical BLAKE3 hash).`);
+                        } else {
+                            let counter = 1;
+                            while (fs.existsSync(path.join(subDir, `${cleanBase}_${counter}.ranim`))) {
+                                const varPath = path.join(subDir, `${cleanBase}_${counter}.ranim`);
+                                const varHash = this.computeHashHex(fs.readFileSync(varPath));
+                                if (varHash.toLowerCase() === newHash.toLowerCase()) {
+                                    targetFileName = `${cleanBase}_${counter}.ranim`;
+                                    break;
+                                }
+                                counter++;
+                            }
+                            if (!fs.existsSync(path.join(subDir, `${cleanBase}_${counter}.ranim`))) {
+                                targetFileName = `${cleanBase}_${counter}.ranim`;
+                                targetPath = path.join(subDir, targetFileName);
+                                fs.writeFileSync(targetPath, fileBytes);
+                            }
+                            if (!metadata.Assets.animations) metadata.Assets.animations = {};
+                            metadata.Assets.animations[targetFileName] = newHash;
+                            vscode.window.showInformationMessage(`Imported Animation: ${targetFileName}`);
+                        }
+                    } else {
+                        fs.writeFileSync(targetPath, fileBytes);
+                        if (!metadata.Assets.animations) metadata.Assets.animations = {};
+                        metadata.Assets.animations[targetFileName] = newHash;
+                        vscode.window.showInformationMessage(`Imported Animation: ${targetFileName}`);
+                    }
+                } else if (ext === '.fbx' || ext === '.glb' || ext === '.gltf') {
+                    const reqId = 'anim_conv_' + Math.random().toString(36).substring(2, 9);
+                    const fileBase64 = fileBytes.toString('base64');
+
+                    const conversionResult = await new Promise<{ success: boolean; extractedFiles?: Array<{ fileName: string; hash: string; animName: string }>; error?: string }>(async (resolve) => {
+                        const http = require('http');
+                        const ports = [8092, 8093];
+                        let resolved = false;
+
+                        const postData = JSON.stringify({
+                            action: 'processRawAnimation',
+                            requestId: reqId,
+                            rawBase64: fileBase64,
+                            fileName: fileName,
+                            outputAnimsDir: subDir
+                        });
+
+                        for (const port of ports) {
+                            if (resolved) break;
+                            try {
+                                await new Promise<void>((nextPort) => {
+                                    const req = http.request({
+                                        hostname: '127.0.0.1',
+                                        port: port,
+                                        path: '/api/',
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                            'Content-Length': Buffer.byteLength(postData)
+                                        },
+                                        timeout: 10000
+                                    }, (res: any) => {
+                                        let data = '';
+                                        res.on('data', (chunk: any) => { data += chunk; });
+                                        res.on('end', () => {
+                                            if (!resolved) {
+                                                try {
+                                                    const parsed = JSON.parse(data);
+                                                    resolved = true;
+                                                    resolve({
+                                                        success: !!parsed.success,
+                                                        extractedFiles: parsed.extractedFiles,
+                                                        error: parsed.error
+                                                    });
+                                                } catch {
+                                                    nextPort();
+                                                }
+                                            }
+                                        });
+                                    });
+                                    req.on('error', () => {
+                                        nextPort();
+                                    });
+                                    req.write(postData);
+                                    req.end();
+                                });
+                            } catch {
+                            }
+                        }
+
+                        if (!resolved) {
+                            fallbackWebviewIpc();
+                        }
+
+                        function fallbackWebviewIpc() {
+                            const timeout = setTimeout(() => {
+                                webviewSubscription.dispose();
+                                if (!resolved) {
+                                    resolved = true;
+                                    resolve({ success: false, error: 'Animation conversion timed out (10s). Ensure Godot Editor is open and running.' });
+                                }
+                            }, 10000);
+
+                            const webviewSubscription = webview.onDidReceiveMessage((msg: any) => {
+                                if ((msg.action === 'processRawAnimationResult' || msg.type === 'processRawAnimationResult') && msg.requestId === reqId) {
+                                    clearTimeout(timeout);
+                                    webviewSubscription.dispose();
+                                    if (!resolved) {
+                                        resolved = true;
+                                        resolve({
+                                            success: !!msg.success,
+                                            extractedFiles: msg.extractedFiles,
+                                            error: msg.error
+                                        });
+                                    }
+                                }
+                            });
+
+                            webview.postMessage({
+                                type: 'godotIpc',
+                                action: 'processRawAnimation',
+                                requestId: reqId,
+                                rawBase64: fileBase64,
+                                fileName: fileName,
+                                outputAnimsDir: subDir
+                            });
+                        }
+                    });
+
+                    if (conversionResult.success && conversionResult.extractedFiles && conversionResult.extractedFiles.length > 0) {
+                        if (!metadata.Assets.animations) metadata.Assets.animations = {};
+                        for (const item of conversionResult.extractedFiles) {
+                            metadata.Assets.animations[item.fileName] = item.hash;
+                        }
+                        vscode.window.showInformationMessage(`Successfully imported and converted ${conversionResult.extractedFiles.length} animation(s) (.ranim) from ${fileName}`);
+                    } else {
+                        const errDetail = conversionResult.error ? `: ${conversionResult.error}` : '.';
+                        vscode.window.showErrorMessage(`Failed to convert animation (${fileName}) to .ranim${errDetail}`);
+                        return;
+                    }
+                }
             } else if (assetType === 'texture') {
                 const cleanBase = path.basename(fileName, path.extname(fileName)).toLowerCase().replace(/[^a-z0-9_]/g, '_');
                 let swatchName = cleanBase || 'custom_texture';
@@ -1297,6 +1456,18 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         </div>
                     </div>
 
+                    <div id="section-unit-animations" class="form-section">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <h3 style="margin-bottom: 0;">Unit Animations (Optional)</h3>
+                            <div style="display: flex; gap: 4px;">
+                                <button type="button" class="btn small-btn copy-unit-comp-btn" data-key="Animations" title="Copy Animations block">📋 Copy</button>
+                                <button type="button" class="btn small-btn paste-unit-comp-btn" data-key="Animations" title="Paste Animations block">📥 Paste</button>
+                            </div>
+                        </div>
+                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Configure animation variations for each action type (Idle, Walk, Attack, Death, Labor, Spell_Cast, Dance). In-game actions randomly pick from configured animations.</p>
+                        <div id="unit-animations-container" class="list-editor-container"></div>
+                    </div>
+
                     <div id="section-pathing-flags" class="form-section">
                         <h3>Placement & Pathing Flags</h3>
                         <div class="form-group">
@@ -1639,6 +1810,14 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <div class="form-group" style="display: flex; align-items: flex-end;">
                                 <button type="button" id="btn-import-audio" class="btn secondary-btn">📥 Import Audio File</button>
                             </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>🏃 Import Animation (.ranim / .glb / .fbx)</h3>
+                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import binary animation files (.ranim) or Mixamo animations. Animations can be assigned to Unit actions.</p>
+                        <div class="form-row">
+                            <button type="button" id="btn-import-animation" class="btn secondary-btn">📥 Import Animation File</button>
                         </div>
                     </div>
 

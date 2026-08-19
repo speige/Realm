@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Arch.Core;
 using Godot;
 using Realm.Ecs.Components.Core;
@@ -234,6 +236,7 @@ public partial class Unit3D : Prop3D
 	private float _baseModelYOffset = 0f;
 	public float BaseModelYOffset => _baseModelYOffset;
 	public string ModelPath { get; private set; }
+	public Node3D ModelNode => _modelNode;
 
 	public void UpdateModelYOffset(float yOffset)
 	{
@@ -262,7 +265,8 @@ public partial class Unit3D : Prop3D
 			if (_modelNode != null)
 			{
 				AddChild(_modelNode);
-				_animationPlayer = FindAnimationPlayer(_modelNode);
+				_animationPlayer = Realm.Godot.Animation.AnimationRetargetingService.FindOrCreateAnimationPlayer(_modelNode);
+				Realm.Godot.Animation.AnimationRetargetingService.LoadAndBindUnitAnimations(_modelNode, UnitId, modelPath);
 				SeekToIdleFirstFrame();
 
 
@@ -357,17 +361,27 @@ public partial class Unit3D : Prop3D
 	public void PlayAnimation(string animName)
 	{
 		if (_animationPlayer == null || !GodotObject.IsInstanceValid(_animationPlayer)) return;
+		if (string.IsNullOrEmpty(animName)) return;
 
 		StringName resolved = ResolveAnimationName(animName);
 		if (resolved == null) return;
 
-		if (_currentAnimation == resolved.ToString()) return;
+		if (_currentAnimation == resolved.ToString() && _animationPlayer.IsPlaying()) return;
 
 		_currentAnimation = resolved.ToString();
 
 		var animResource = _animationPlayer.GetAnimation(resolved);
 		if (animResource != null)
-			animResource.LoopMode = Animation.LoopModeEnum.Linear;
+		{
+			if (animName.Equals("Death", System.StringComparison.OrdinalIgnoreCase))
+			{
+				animResource.LoopMode = global::Godot.Animation.LoopModeEnum.None;
+			}
+			else
+			{
+				animResource.LoopMode = global::Godot.Animation.LoopModeEnum.Linear;
+			}
+		}
 
 		_animationPlayer.Play(resolved);
 	}
@@ -382,32 +396,57 @@ public partial class Unit3D : Prop3D
 		_animationPlayer.Stop(true);
 	}
 
-	private AnimationPlayer FindAnimationPlayer(Node root)
-	{
-		if (root is AnimationPlayer ap) return ap;
-		foreach (var child in root.GetChildren())
-		{
-			var found = FindAnimationPlayer(child);
-			if (found != null) return found;
-		}
-		return null;
-	}
-
 	private StringName ResolveAnimationName(string animName)
 	{
 		if (_animationPlayer == null) return null;
+
 		var animations = _animationPlayer.GetAnimationList();
-		string prefixed = $"Armature|Armature|{animName}";
-		foreach (var name in animations)
+
+		if (!animName.Contains('_'))
 		{
-			if (name.ToString().Equals(prefixed, System.StringComparison.OrdinalIgnoreCase))
-				return name;
+			var variants = new List<StringName>();
+			string prefix = $"{animName}_";
+			foreach (var name in animations)
+			{
+				string nameStr = name.ToString();
+				if (nameStr.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+				{
+					variants.Add(name);
+				}
+			}
+
+			if (variants.Count > 0)
+			{
+				int randIdx = Random.Shared.Next(variants.Count);
+				return variants[randIdx];
+			}
 		}
+
+		StringName direct = new StringName(animName);
+		if (_animationPlayer.HasAnimation(direct))
+		{
+			return direct;
+		}
+
 		foreach (var name in animations)
 		{
 			if (name.ToString().Equals(animName, System.StringComparison.OrdinalIgnoreCase))
 				return name;
 		}
+
+		string resolvedPath = Realm.Godot.Animation.AnimationRetargetingService.ResolveAnimationFilePath(animName, UnitId);
+		if (!string.IsNullOrEmpty(resolvedPath))
+		{
+			var animData = Realm.Godot.Animation.AnimationRetargetingService.GetOrLoadRanimData(resolvedPath);
+			if (animData != null && _modelNode != null)
+			{
+				if (Realm.Godot.Animation.AnimationRetargetingService.RetargetAndBind(animData, _modelNode, animName, out _))
+				{
+					return direct;
+				}
+			}
+		}
+
 		return null;
 	}
 

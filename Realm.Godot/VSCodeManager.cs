@@ -669,6 +669,100 @@ public class VSCodeManager
 				responseObj["success"] = success;
 				responseObj["error"] = errorMsg;
 			}
+			else if (action == "processRawAnimation")
+			{
+				string rawFilePath = node["rawFilePath"]?.ToString();
+				string rawBase64 = node["rawBase64"]?.ToString();
+				string outputAnimsDir = node["outputAnimsDir"]?.ToString();
+				string fileName = node["fileName"]?.ToString() ?? "anim";
+				string requestId = node["requestId"]?.ToString();
+
+				bool success = false;
+				string errorMsg = "";
+				var extractedList = new System.Text.Json.Nodes.JsonArray();
+
+				try
+				{
+					string targetSourcePath = rawFilePath;
+					if ((string.IsNullOrEmpty(targetSourcePath) || !System.IO.File.Exists(targetSourcePath)) && !string.IsNullOrEmpty(rawBase64))
+					{
+						byte[] fileBytes = Convert.FromBase64String(rawBase64);
+						string ext = System.IO.Path.GetExtension(fileName);
+						if (string.IsNullOrEmpty(ext)) ext = ".fbx";
+						targetSourcePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"realm_anim_{DateTime.Now.Ticks}{ext}");
+						System.IO.File.WriteAllBytes(targetSourcePath, fileBytes);
+					}
+
+					if (!string.IsNullOrEmpty(targetSourcePath) && System.IO.File.Exists(targetSourcePath))
+					{
+						var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+						string innerErr = "";
+						Callable.From(() =>
+						{
+							try
+							{
+								if (!string.IsNullOrEmpty(outputAnimsDir) && !System.IO.Directory.Exists(outputAnimsDir))
+								{
+									System.IO.Directory.CreateDirectory(outputAnimsDir);
+								}
+
+								var extracted = Realm.Godot.Animation.MixamoAnimationImporter.ExtractAnimationsFromFile(targetSourcePath, fileName);
+								if (extracted == null || extracted.Count == 0)
+								{
+									innerErr = "No animations found in file.";
+									tcs.TrySetResult(false);
+									return;
+								}
+
+								foreach (var (animName, animData) in extracted)
+								{
+									var (savedFileName, blake3, alreadyExisted) = Realm.Godot.Animation.MixamoAnimationImporter.SaveAnimationWithDeduplication(outputAnimsDir, animName, animData);
+
+									var itemObj = new System.Text.Json.Nodes.JsonObject
+									{
+										["fileName"] = savedFileName,
+										["hash"] = blake3,
+										["animName"] = animName,
+										["alreadyExisted"] = alreadyExisted
+									};
+									extractedList.Add(itemObj);
+								}
+
+								if (MapEditorHUD.Instance != null)
+								{
+									MapEditorHUD.Instance.PopulateAnimationPreviewDropdown();
+								}
+
+								tcs.TrySetResult(extractedList.Count > 0);
+							}
+							catch (Exception ex)
+							{
+								innerErr = ex.Message;
+								GD.PrintErr($"[VSCodeManager] processRawAnimation error: {ex.Message}");
+								tcs.TrySetResult(false);
+							}
+						}).CallDeferred();
+
+						success = await tcs.Task;
+						if (!success && !string.IsNullOrEmpty(innerErr)) errorMsg = innerErr;
+					}
+					else
+					{
+						errorMsg = "Source animation file not found.";
+					}
+				}
+				catch (Exception ex)
+				{
+					errorMsg = ex.Message;
+				}
+
+				responseObj["action"] = "processRawAnimationResult";
+				responseObj["type"] = "processRawAnimationResult";
+				responseObj["requestId"] = requestId;
+				responseObj["success"] = success;
+				responseObj["extractedFiles"] = extractedList;
+				responseObj["error"] = errorMsg;
+			}
 			else if (action == "reloadMetadata" || action == "updateMetadata")
 			{
 				Callable.From(() =>
