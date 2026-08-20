@@ -15,4 +15,9 @@ public class AudioService
 	{
 		UIManager.Instance?.CallDeferred(nameof(UIManager.PlayClickSound));
 	}
+
+	public void PlaySound3D(string soundName, Vector3 position)
+	{
+		if (string.IsNullOrEmpty(soundName)) return;
+	}
 }

@@ -343,7 +343,57 @@
           "AttackSound": { "type": "string" },
           "ProjectileModelPath": { "type": "string" },
           "ImpactVisualEffect": { "type": "string" },
-          "ImpactSound": { "type": "string" }
+          "ImpactSound": { "type": "string" },
+          "ArcHeight": { "type": "number" },
+          "HomingWeight": { "type": "number", "minimum": 0, "maximum": 1 },
+          "EaseCurve": { "type": "string", "enum": ["linear", "ease_in", "ease_out", "ease_in_out"] },
+          "TumbleAngularVelocity": {
+            "type": "object",
+            "properties": {
+              "X": { "type": "number" },
+              "Y": { "type": "number" },
+              "Z": { "type": "number" }
+            }
+          },
+          "OrientToTrajectory": { "type": "boolean" },
+          "SpiralRadius": { "type": "number" },
+          "SpiralFrequency": { "type": "number" },
+          "ZigzagAmplitude": { "type": "number" },
+          "ZigzagFrequency": { "type": "number" },
+          "MaxBounces": { "type": "integer", "minimum": 0 },
+          "PierceCount": { "type": "integer", "minimum": 0 },
+          "ShaderEffectType": { "type": "string" },
+          "BaseColor": { "type": "string" },
+          "EmissionColor": { "type": "string" },
+          "EmissionEnergy": { "type": "number" },
+          "FresnelPower": { "type": "number" },
+          "FresnelColor": { "type": "string" },
+          "FresnelFactor": { "type": "number" },
+          "NoiseScale": { "type": "number" },
+          "NoiseTexture": { "type": "string" },
+          "UvScrollSpeed1": {
+            "type": "object",
+            "properties": {
+              "X": { "type": "number" },
+              "Y": { "type": "number" }
+            }
+          },
+          "UvScrollSpeed2": {
+            "type": "object",
+            "properties": {
+              "X": { "type": "number" },
+              "Y": { "type": "number" }
+            }
+          },
+          "ThresholdCutoff": { "type": "number" },
+          "ThresholdSmoothness": { "type": "number" },
+          "RibbonTexture": { "type": "string" },
+          "RibbonColor": { "type": "string" },
+          "RibbonWidth": { "type": "number" },
+          "RibbonLifetime": { "type": "number" },
+          "RibbonTaper": { "type": "boolean" },
+          "RibbonAdditive": { "type": "boolean" },
+          "RibbonScrollSpeed": { "type": "number" }
         }
       }
     },

@@ -1398,6 +1398,7 @@
     
     // Custom Weapons
     function renderCustomWeapons() {
+        updateDatalists();
         customWeaponsList.innerHTML = '';
         const list = units.CustomWeapons || [];
 
@@ -1409,7 +1410,7 @@
             tbodyContent += `
                 <tr class="main-row" data-index="${index}">
                     <td>
-                        <button type="button" class="row-expand-btn" data-target="weapon-detail-${index}">▶</button>
+                        <button type="button" class="row-expand-btn" data-target="weapon-detail-${index}" title="Click to expand/collapse 3D Model, Ballistic Movement, Uber-Shader, and Ribbon Trail FX">▶</button>
                     </td>
                     <td>
                         <input type="text" class="weapon-id" data-index="${index}" value="${item.WeaponId || ''}" required />
@@ -1441,54 +1442,221 @@
                 </tr>
                 <tr class="detail-row hidden" id="weapon-detail-${index}">
                     <td colspan="8">
-                        <div class="detail-container">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Projectile Speed (Optional)</label>
-                                    <input type="number" class="weapon-speed" data-index="${index}" value="${item.ProjectileSpeed || 0}" min="0" step="any" />
-                                </div>
-                                <div class="form-group">
-                                    <label>Visual Effect Model (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="weapon-visual" data-index="${index}" value="${item.VisualEffect || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="weapon-visual" data-index="${index}" data-file-types="gltf,glb,scn,tscn" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
+                        <div class="detail-container weapon-detail-expanded" style="padding: 12px; background: rgba(0,0,0,0.25); border-radius: 6px; display: flex; flex-direction: column; gap: 14px;">
+                            <!-- SECTION 1: GENERAL & AUDIO -->
+                            <div class="weapon-section">
+                                <h4 style="margin: 0 0 8px 0; color: #4ec9b0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">🔊 Audio & Impact Effects</h4>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Attack Sound</label>
+                                        <div class="input-with-browse">
+                                            <input type="text" class="weapon-sound" data-index="${index}" value="${item.AttackSound || ''}" list="suggest-sounds" placeholder="Search imported sound (e.g. arrow_release.ogg)..." />
+                                            <button type="button" class="btn clear-btn" title="Clear sound">❌</button>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Impact Sound</label>
+                                        <div class="input-with-browse">
+                                            <input type="text" class="weapon-impact-sound" data-index="${index}" value="${item.ImpactSound || ''}" list="suggest-sounds" placeholder="Search imported sound (e.g. explosion.ogg)..." />
+                                            <button type="button" class="btn clear-btn" title="Clear sound">❌</button>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Impact Visual Effect</label>
+                                        <div class="input-with-browse">
+                                            <input type="text" class="weapon-impact-visual" data-index="${index}" value="${item.ImpactVisualEffect || ''}" list="suggest-visual-effects" placeholder="Search imported VFX spritesheet (e.g. solar_flare_sheet.png)..." />
+                                            <button type="button" class="btn clear-btn" title="Clear effect">❌</button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Attack Sound (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="weapon-sound" data-index="${index}" value="${item.AttackSound || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="weapon-sound" data-index="${index}" data-file-types="ogg,wav,mp3" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
+
+                            <!-- SECTION 2: PROGRAMMATIC PROJECTILE MOVEMENT -->
+                            <div class="weapon-section" style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
+                                <h4 style="margin: 0 0 8px 0; color: #569cd6; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">🚀 Programmatic Projectile Movement</h4>
+                                <div class="form-row">
+                                    <div class="form-group" style="flex: 2;">
+                                        <label>Projectile 3D Model Path</label>
+                                        <div class="input-with-browse">
+                                            <input type="text" class="weapon-proj-model" data-index="${index}" value="${item.ProjectileModelPath || ''}" list="suggest-projectile-models" placeholder="Search imported 3D model (e.g. Assets/models/projectiles/arrow.glb)..." />
+                                            <button type="button" class="btn clear-btn" title="Clear model">❌</button>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Speed (Units/s)</label>
+                                        <input type="number" class="weapon-speed" data-index="${index}" value="${item.ProjectileSpeed ?? 25}" min="0" step="any" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Ballistic Arc Height</label>
+                                        <input type="number" class="weapon-arc" data-index="${index}" value="${item.ArcHeight ?? 0}" min="0" step="0.1" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Homing Weight (0-1)</label>
+                                        <input type="number" class="weapon-homing" data-index="${index}" value="${item.HomingWeight ?? 0}" min="0" max="1" step="0.05" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Ease Curve</label>
+                                        <select class="weapon-ease" data-index="${index}">
+                                            <option value="linear" ${item.EaseCurve === 'linear' || !item.EaseCurve ? 'selected' : ''}>Linear</option>
+                                            <option value="ease_in" ${item.EaseCurve === 'ease_in' ? 'selected' : ''}>Ease In</option>
+                                            <option value="ease_out" ${item.EaseCurve === 'ease_out' ? 'selected' : ''}>Ease Out</option>
+                                            <option value="ease_in_out" ${item.EaseCurve === 'ease_in_out' ? 'selected' : ''}>Ease In Out</option>
+                                        </select>
                                     </div>
                                 </div>
-                                <div class="form-group">
-                                    <label>Projectile Model Path (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="weapon-proj-model" data-index="${index}" value="${item.ProjectileModelPath || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="weapon-proj-model" data-index="${index}" data-file-types="gltf,glb,scn,tscn" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
+                                <div class="form-row">
+                                    <div class="form-group checkbox-group" style="margin-top: 18px;">
+                                        <input type="checkbox" class="weapon-orient" data-index="${index}" id="weapon-orient-${index}" ${item.OrientToTrajectory !== false ? 'checked' : ''} />
+                                        <label for="weapon-orient-${index}">Orient to Trajectory</label>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Tumble Angular Vel (X, Y, Z)</label>
+                                        <div style="display: flex; gap: 4px;">
+                                            <input type="number" class="weapon-tumble-x" data-index="${index}" value="${(item.TumbleAngularVelocity && item.TumbleAngularVelocity.X !== undefined) ? item.TumbleAngularVelocity.X : 0}" step="0.5" placeholder="X" title="X-axis tumble speed" />
+                                            <input type="number" class="weapon-tumble-y" data-index="${index}" value="${(item.TumbleAngularVelocity && item.TumbleAngularVelocity.Y !== undefined) ? item.TumbleAngularVelocity.Y : 0}" step="0.5" placeholder="Y" title="Y-axis tumble speed" />
+                                            <input type="number" class="weapon-tumble-z" data-index="${index}" value="${(item.TumbleAngularVelocity && item.TumbleAngularVelocity.Z !== undefined) ? item.TumbleAngularVelocity.Z : 0}" step="0.5" placeholder="Z" title="Z-axis tumble speed" />
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Spiral (Radius / Freq)</label>
+                                        <div style="display: flex; gap: 4px;">
+                                            <input type="number" class="weapon-spiral-rad" data-index="${index}" value="${item.SpiralRadius ?? 0}" min="0" step="0.1" placeholder="Radius" title="Spiral Radius" />
+                                            <input type="number" class="weapon-spiral-freq" data-index="${index}" value="${item.SpiralFrequency ?? 0}" min="0" step="0.5" placeholder="Freq" title="Spiral Frequency (Hz)" />
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Zigzag (Amp / Freq)</label>
+                                        <div style="display: flex; gap: 4px;">
+                                            <input type="number" class="weapon-zigzag-amp" data-index="${index}" value="${item.ZigzagAmplitude ?? 0}" min="0" step="0.1" placeholder="Amp" title="Zigzag Amplitude" />
+                                            <input type="number" class="weapon-zigzag-freq" data-index="${index}" value="${item.ZigzagFrequency ?? 0}" min="0" step="0.5" placeholder="Freq" title="Zigzag Frequency (Hz)" />
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Bounces / Pierce</label>
+                                        <div style="display: flex; gap: 4px;">
+                                            <input type="number" class="weapon-max-bounces" data-index="${index}" value="${item.MaxBounces ?? 0}" min="0" step="1" placeholder="Bounces" title="Max Ground Bounces" />
+                                            <input type="number" class="weapon-pierce-count" data-index="${index}" value="${item.PierceCount ?? 0}" min="0" step="1" placeholder="Pierce" title="Pierce Count" />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Impact Visual Effect (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="weapon-impact-visual" data-index="${index}" value="${item.ImpactVisualEffect || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="weapon-impact-visual" data-index="${index}" data-file-types="gltf,glb,scn,tscn" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
+
+                            <!-- SECTION 3: PROCEDURAL UBER-SHADER FX -->
+                            <div class="weapon-section" style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <h4 style="margin: 0; color: #ce9178; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">🎨 Procedural Surface Uber-Shader</h4>
+                                    <div style="display: flex; gap: 6px; align-items: center;">
+                                        <span style="font-size: 11px; color: var(--text-muted);">Quick Presets:</span>
+                                        <button type="button" class="btn small-btn btn-fx-preset" data-index="${index}" data-preset="fire" style="background: rgba(255,80,0,0.25); border: 1px solid rgba(255,80,0,0.5); color: #ffa87d;">🔥 Fire / Lava</button>
+                                        <button type="button" class="btn small-btn btn-fx-preset" data-index="${index}" data-preset="frost" style="background: rgba(0,180,255,0.25); border: 1px solid rgba(0,180,255,0.5); color: #8ee5ff;">❄️ Frost / Ice</button>
+                                        <button type="button" class="btn small-btn btn-fx-preset" data-index="${index}" data-preset="poison" style="background: rgba(0,255,60,0.25); border: 1px solid rgba(0,255,60,0.5); color: #8effaa;">🧪 Poison / Toxic</button>
+                                        <button type="button" class="btn small-btn btn-fx-preset" data-index="${index}" data-preset="arcane" style="background: rgba(180,0,255,0.25); border: 1px solid rgba(180,0,255,0.5); color: #e599ff;">✨ Arcane / Void</button>
+                                        <button type="button" class="btn small-btn btn-fx-preset" data-index="${index}" data-preset="holy" style="background: rgba(255,220,0,0.25); border: 1px solid rgba(255,220,0,0.5); color: #fff28e;">☀️ Holy / Radiant</button>
                                     </div>
                                 </div>
-                                <div class="form-group">
-                                    <label>Impact Sound (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="weapon-impact-sound" data-index="${index}" value="${item.ImpactSound || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="weapon-impact-sound" data-index="${index}" data-file-types="ogg,wav,mp3" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Base Color</label>
+                                        <div style="display: flex; gap: 4px; align-items: center;">
+                                            <input type="color" class="color-picker-input" data-target="weapon-base-col-${index}" value="${formatHex(item.BaseColor || '#261e19')}" style="width: 32px; height: 28px; padding: 0; cursor: pointer; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px;" />
+                                            <input type="text" class="weapon-base-color" id="weapon-base-col-${index}" data-index="${index}" value="${item.BaseColor || '#261e19'}" placeholder="#261e19" />
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Emission Color</label>
+                                        <div style="display: flex; gap: 4px; align-items: center;">
+                                            <input type="color" class="color-picker-input" data-target="weapon-emit-col-${index}" value="${formatHex(item.EmissionColor || '#ff6600')}" style="width: 32px; height: 28px; padding: 0; cursor: pointer; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px;" />
+                                            <input type="text" class="weapon-emission-color" id="weapon-emit-col-${index}" data-index="${index}" value="${item.EmissionColor || '#ff6600'}" placeholder="#ff6600" />
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Emission Energy</label>
+                                        <input type="number" class="weapon-emission-energy" data-index="${index}" value="${item.EmissionEnergy ?? 4.0}" min="0" step="0.5" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Fresnel Color</label>
+                                        <div style="display: flex; gap: 4px; align-items: center;">
+                                            <input type="color" class="color-picker-input" data-target="weapon-fresnel-col-${index}" value="${formatHex(item.FresnelColor || '#ff9933')}" style="width: 32px; height: 28px; padding: 0; cursor: pointer; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px;" />
+                                            <input type="text" class="weapon-fresnel-color" id="weapon-fresnel-col-${index}" data-index="${index}" value="${item.FresnelColor || '#ff9933'}" placeholder="#ff9933" />
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Fresnel Power / Factor</label>
+                                        <div style="display: flex; gap: 4px;">
+                                            <input type="number" class="weapon-fresnel-power" data-index="${index}" value="${item.FresnelPower ?? 3.0}" min="0.1" step="0.2" placeholder="Power" title="Fresnel Power" />
+                                            <input type="number" class="weapon-fresnel-factor" data-index="${index}" value="${item.FresnelFactor ?? 1.5}" min="0" step="0.1" placeholder="Factor" title="Fresnel Factor / Multiplier" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Noise Scale</label>
+                                        <input type="number" class="weapon-noise-scale" data-index="${index}" value="${item.NoiseScale ?? 3.0}" min="0.1" step="0.5" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Noise Texture (Optional)</label>
+                                        <div class="input-with-browse">
+                                            <input type="text" class="weapon-noise-tex" data-index="${index}" value="${item.NoiseTexture || ''}" list="suggest-noise-textures" placeholder="Search imported noise texture (procedural fallback)..." />
+                                            <button type="button" class="btn clear-btn" title="Clear texture">❌</button>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>UV Scroll 1 (X, Y)</label>
+                                        <div style="display: flex; gap: 4px;">
+                                            <input type="number" class="weapon-uv1-x" data-index="${index}" value="${(item.UvScrollSpeed1 && item.UvScrollSpeed1.X !== undefined) ? item.UvScrollSpeed1.X : 0.3}" step="0.05" placeholder="X" />
+                                            <input type="number" class="weapon-uv1-y" data-index="${index}" value="${(item.UvScrollSpeed1 && item.UvScrollSpeed1.Y !== undefined) ? item.UvScrollSpeed1.Y : 0.2}" step="0.05" placeholder="Y" />
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>UV Scroll 2 (X, Y)</label>
+                                        <div style="display: flex; gap: 4px;">
+                                            <input type="number" class="weapon-uv2-x" data-index="${index}" value="${(item.UvScrollSpeed2 && item.UvScrollSpeed2.X !== undefined) ? item.UvScrollSpeed2.X : -0.2}" step="0.05" placeholder="X" />
+                                            <input type="number" class="weapon-uv2-y" data-index="${index}" value="${(item.UvScrollSpeed2 && item.UvScrollSpeed2.Y !== undefined) ? item.UvScrollSpeed2.Y : 0.4}" step="0.05" placeholder="Y" />
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Threshold Cutoff / Smooth</label>
+                                        <div style="display: flex; gap: 4px;">
+                                            <input type="number" class="weapon-thresh-cutoff" data-index="${index}" value="${item.ThresholdCutoff ?? 0.5}" min="0" max="1" step="0.05" placeholder="Cutoff" title="Threshold Cutoff" />
+                                            <input type="number" class="weapon-thresh-smooth" data-index="${index}" value="${item.ThresholdSmoothness ?? 0.1}" min="0.001" max="0.5" step="0.02" placeholder="Smooth" title="Threshold Smoothness" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- SECTION 4: RIBBON TRAIL EMITTER -->
+                            <div class="weapon-section" style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
+                                <h4 style="margin: 0 0 8px 0; color: #dcdcaa; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">🎗️ Ribbon Trail Emitter</h4>
+                                <div class="form-row">
+                                    <div class="form-group" style="flex: 2;">
+                                        <label>Ribbon Texture (KTX2 / PNG)</label>
+                                        <div class="input-with-browse">
+                                            <input type="text" class="weapon-ribbon-tex" data-index="${index}" value="${item.RibbonTexture || ''}" list="suggest-ribbon-textures" placeholder="Search imported ribbon (e.g. Assets/textures/ribbons/fire_ribbon.ktx2)..." />
+                                            <button type="button" class="btn clear-btn" title="Clear texture">❌</button>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Ribbon Color</label>
+                                        <div style="display: flex; gap: 4px; align-items: center;">
+                                            <input type="color" class="color-picker-input" data-target="weapon-ribbon-col-${index}" value="${formatHex(item.RibbonColor || '#ffaa33')}" style="width: 32px; height: 28px; padding: 0; cursor: pointer; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px;" />
+                                            <input type="text" class="weapon-ribbon-color" id="weapon-ribbon-col-${index}" data-index="${index}" value="${item.RibbonColor || '#ffaa33'}" placeholder="#ffaa33" />
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Ribbon Width</label>
+                                        <input type="number" class="weapon-ribbon-width" data-index="${index}" value="${item.RibbonWidth ?? 0.4}" min="0.05" step="0.05" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Ribbon Lifetime (s)</label>
+                                        <input type="number" class="weapon-ribbon-life" data-index="${index}" value="${item.RibbonLifetime ?? 0.5}" min="0.05" step="0.05" />
+                                    </div>
+                                    <div class="form-group checkbox-group" style="margin-top: 18px;">
+                                        <input type="checkbox" class="weapon-ribbon-taper" data-index="${index}" id="weapon-ribbon-taper-${index}" ${item.RibbonTaper !== false ? 'checked' : ''} />
+                                        <label for="weapon-ribbon-taper-${index}">Taper Tail</label>
+                                    </div>
+                                    <div class="form-group checkbox-group" style="margin-top: 18px;">
+                                        <input type="checkbox" class="weapon-ribbon-additive" data-index="${index}" id="weapon-ribbon-additive-${index}" ${item.RibbonAdditive !== false ? 'checked' : ''} />
+                                        <label for="weapon-ribbon-additive-${index}">Additive Blend</label>
                                     </div>
                                 </div>
                             </div>
@@ -1502,7 +1670,7 @@
             <table class="spreadsheet-table">
                 <thead>
                     <tr>
-                        <th style="width: 30px;"></th>
+                        <th style="width: 36px; text-align: center;" title="Expand Projectile FX, Uber-Shader & Ribbon Settings">FX</th>
                         <th>Weapon ID</th>
                         <th>Name</th>
                         <th>Damage</th>
@@ -1544,15 +1712,35 @@
             });
         });
 
+        tableContainer.querySelectorAll('.color-picker-input').forEach(picker => {
+            picker.addEventListener('input', e => {
+                const targetId = picker.getAttribute('data-target');
+                const textInput = document.getElementById(targetId);
+                if (textInput) {
+                    textInput.value = picker.value;
+                    textInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+        });
+
+        tableContainer.querySelectorAll('.btn-fx-preset').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.index, 10);
+                const preset = btn.dataset.preset;
+                applyWeaponFxPreset(idx, preset);
+            });
+        });
+
         tableContainer.querySelectorAll('input, select').forEach(input => {
             input.addEventListener('change', e => {
                 const idx = parseInt(e.target.dataset.index, 10);
+                if (isNaN(idx) || !list[idx]) return;
                 const target = e.target;
-                const val = target.value;
+                const val = target.type === 'checkbox' ? target.checked : target.value;
 
                 if (target.classList.contains('weapon-id')) {
                     const oldId = list[idx].WeaponId;
-                    const newId = val.trim();
+                    const newId = (val + '').trim();
                     if (oldId !== newId) {
                         const dup = list.some((w, index) => index !== idx && w.WeaponId === newId);
                         if (newId && !dup) {
@@ -1576,6 +1764,48 @@
                 else if (target.classList.contains('weapon-proj-model')) list[idx].ProjectileModelPath = val;
                 else if (target.classList.contains('weapon-impact-visual')) list[idx].ImpactVisualEffect = val;
                 else if (target.classList.contains('weapon-impact-sound')) list[idx].ImpactSound = val;
+                else if (target.classList.contains('weapon-arc')) list[idx].ArcHeight = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-homing')) list[idx].HomingWeight = Math.min(1, Math.max(0, parseFloat(val) || 0));
+                else if (target.classList.contains('weapon-ease')) list[idx].EaseCurve = val;
+                else if (target.classList.contains('weapon-orient')) list[idx].OrientToTrajectory = !!target.checked;
+                else if (target.classList.contains('weapon-tumble-x') || target.classList.contains('weapon-tumble-y') || target.classList.contains('weapon-tumble-z')) {
+                    if (!list[idx].TumbleAngularVelocity) list[idx].TumbleAngularVelocity = { X: 0, Y: 0, Z: 0 };
+                    if (target.classList.contains('weapon-tumble-x')) list[idx].TumbleAngularVelocity.X = parseFloat(val) || 0;
+                    if (target.classList.contains('weapon-tumble-y')) list[idx].TumbleAngularVelocity.Y = parseFloat(val) || 0;
+                    if (target.classList.contains('weapon-tumble-z')) list[idx].TumbleAngularVelocity.Z = parseFloat(val) || 0;
+                }
+                else if (target.classList.contains('weapon-spiral-rad')) list[idx].SpiralRadius = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-spiral-freq')) list[idx].SpiralFrequency = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-zigzag-amp')) list[idx].ZigzagAmplitude = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-zigzag-freq')) list[idx].ZigzagFrequency = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-max-bounces')) list[idx].MaxBounces = parseInt(val, 10) || 0;
+                else if (target.classList.contains('weapon-pierce-count')) list[idx].PierceCount = parseInt(val, 10) || 0;
+                else if (target.classList.contains('weapon-base-color')) list[idx].BaseColor = val;
+                else if (target.classList.contains('weapon-emission-color')) list[idx].EmissionColor = val;
+                else if (target.classList.contains('weapon-emission-energy')) list[idx].EmissionEnergy = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-fresnel-color')) list[idx].FresnelColor = val;
+                else if (target.classList.contains('weapon-fresnel-power')) list[idx].FresnelPower = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-fresnel-factor')) list[idx].FresnelFactor = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-noise-scale')) list[idx].NoiseScale = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-noise-tex')) list[idx].NoiseTexture = val;
+                else if (target.classList.contains('weapon-uv1-x') || target.classList.contains('weapon-uv1-y')) {
+                    if (!list[idx].UvScrollSpeed1) list[idx].UvScrollSpeed1 = { X: 0.3, Y: 0.2 };
+                    if (target.classList.contains('weapon-uv1-x')) list[idx].UvScrollSpeed1.X = parseFloat(val) || 0;
+                    if (target.classList.contains('weapon-uv1-y')) list[idx].UvScrollSpeed1.Y = parseFloat(val) || 0;
+                }
+                else if (target.classList.contains('weapon-uv2-x') || target.classList.contains('weapon-uv2-y')) {
+                    if (!list[idx].UvScrollSpeed2) list[idx].UvScrollSpeed2 = { X: -0.2, Y: 0.4 };
+                    if (target.classList.contains('weapon-uv2-x')) list[idx].UvScrollSpeed2.X = parseFloat(val) || 0;
+                    if (target.classList.contains('weapon-uv2-y')) list[idx].UvScrollSpeed2.Y = parseFloat(val) || 0;
+                }
+                else if (target.classList.contains('weapon-thresh-cutoff')) list[idx].ThresholdCutoff = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-thresh-smooth')) list[idx].ThresholdSmoothness = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-ribbon-tex')) list[idx].RibbonTexture = val;
+                else if (target.classList.contains('weapon-ribbon-color')) list[idx].RibbonColor = val;
+                else if (target.classList.contains('weapon-ribbon-width')) list[idx].RibbonWidth = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-ribbon-life')) list[idx].RibbonLifetime = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-ribbon-taper')) list[idx].RibbonTaper = !!target.checked;
+                else if (target.classList.contains('weapon-ribbon-additive')) list[idx].RibbonAdditive = !!target.checked;
 
                 units.CustomWeapons = list;
                 saveChanges();
@@ -2761,6 +2991,126 @@
         renderCustomWeapons();
     }
 
+    function formatHex(col) {
+        if (!col) return '#ffffff';
+        if (col.startsWith('#')) {
+            if (col.length === 7) return col;
+            if (col.length === 4) return '#' + col[1] + col[1] + col[2] + col[2] + col[3] + col[3];
+            if (col.length > 7) return col.substring(0, 7);
+        }
+        return '#ffffff';
+    }
+
+    function applyWeaponFxPreset(index, preset) {
+        const list = units.CustomWeapons || [];
+        if (!list[index]) return;
+        const item = list[index];
+
+        if (preset === 'fire') {
+            item.ShaderEffectType = 'fire';
+            item.BaseColor = '#261e19';
+            item.EmissionColor = '#ff5500';
+            item.EmissionEnergy = 5.0;
+            item.FresnelPower = 2.5;
+            item.FresnelColor = '#ff9922';
+            item.FresnelFactor = 2.0;
+            item.NoiseScale = 3.5;
+            item.UvScrollSpeed1 = { X: 0.4, Y: 0.2 };
+            item.UvScrollSpeed2 = { X: -0.3, Y: 0.4 };
+            item.ThresholdCutoff = 0.45;
+            item.ThresholdSmoothness = 0.1;
+            item.RibbonColor = '#ff7711';
+            item.RibbonWidth = 0.45;
+            item.RibbonLifetime = 0.6;
+            item.RibbonTaper = true;
+            item.RibbonAdditive = true;
+            item.ArcHeight = item.ArcHeight || 3.0;
+            item.TumbleAngularVelocity = item.TumbleAngularVelocity || { X: 3.0, Y: 2.0, Z: 1.0 };
+        } else if (preset === 'frost') {
+            item.ShaderEffectType = 'frost';
+            item.BaseColor = '#0a1c2a';
+            item.EmissionColor = '#33ccff';
+            item.EmissionEnergy = 4.5;
+            item.FresnelPower = 3.0;
+            item.FresnelColor = '#88eeff';
+            item.FresnelFactor = 2.2;
+            item.NoiseScale = 4.0;
+            item.UvScrollSpeed1 = { X: 0.2, Y: 0.5 };
+            item.UvScrollSpeed2 = { X: -0.2, Y: -0.3 };
+            item.ThresholdCutoff = 0.5;
+            item.ThresholdSmoothness = 0.08;
+            item.RibbonColor = '#44ddff';
+            item.RibbonWidth = 0.35;
+            item.RibbonLifetime = 0.5;
+            item.RibbonTaper = true;
+            item.RibbonAdditive = true;
+            item.SpiralRadius = item.SpiralRadius || 0.3;
+            item.SpiralFrequency = item.SpiralFrequency || 2.0;
+        } else if (preset === 'poison') {
+            item.ShaderEffectType = 'poison';
+            item.BaseColor = '#112010';
+            item.EmissionColor = '#33ff33';
+            item.EmissionEnergy = 4.0;
+            item.FresnelPower = 3.5;
+            item.FresnelColor = '#88ff44';
+            item.FresnelFactor = 1.8;
+            item.NoiseScale = 3.0;
+            item.UvScrollSpeed1 = { X: -0.1, Y: 0.4 };
+            item.UvScrollSpeed2 = { X: 0.3, Y: 0.2 };
+            item.ThresholdCutoff = 0.55;
+            item.ThresholdSmoothness = 0.12;
+            item.RibbonColor = '#44ff22';
+            item.RibbonWidth = 0.4;
+            item.RibbonLifetime = 0.5;
+            item.RibbonTaper = true;
+            item.RibbonAdditive = true;
+            item.ZigzagAmplitude = item.ZigzagAmplitude || 0.4;
+            item.ZigzagFrequency = item.ZigzagFrequency || 3.0;
+        } else if (preset === 'arcane') {
+            item.ShaderEffectType = 'arcane';
+            item.BaseColor = '#180a24';
+            item.EmissionColor = '#cc22ff';
+            item.EmissionEnergy = 5.0;
+            item.FresnelPower = 2.8;
+            item.FresnelColor = '#ff66ff';
+            item.FresnelFactor = 2.0;
+            item.NoiseScale = 3.2;
+            item.UvScrollSpeed1 = { X: 0.3, Y: 0.3 };
+            item.UvScrollSpeed2 = { X: -0.4, Y: 0.1 };
+            item.ThresholdCutoff = 0.48;
+            item.ThresholdSmoothness = 0.1;
+            item.RibbonColor = '#dd44ff';
+            item.RibbonWidth = 0.4;
+            item.RibbonLifetime = 0.55;
+            item.RibbonTaper = true;
+            item.RibbonAdditive = true;
+        } else if (preset === 'holy') {
+            item.ShaderEffectType = 'holy';
+            item.BaseColor = '#2b2310';
+            item.EmissionColor = '#ffee44';
+            item.EmissionEnergy = 6.0;
+            item.FresnelPower = 2.0;
+            item.FresnelColor = '#ffffff';
+            item.FresnelFactor = 2.5;
+            item.NoiseScale = 2.5;
+            item.UvScrollSpeed1 = { X: 0.5, Y: 0.5 };
+            item.UvScrollSpeed2 = { X: -0.5, Y: 0.5 };
+            item.ThresholdCutoff = 0.4;
+            item.ThresholdSmoothness = 0.15;
+            item.RibbonColor = '#fff377';
+            item.RibbonWidth = 0.4;
+            item.RibbonLifetime = 0.5;
+            item.RibbonTaper = true;
+            item.RibbonAdditive = true;
+        }
+
+        units.CustomWeapons = list;
+        saveChanges();
+        renderCustomWeapons();
+        const detailRow = document.getElementById(`weapon-detail-${index}`);
+        if (detailRow) detailRow.classList.remove('hidden');
+    }
+
     function duplicateAbility(index) {
         const list = units.CustomAbilities || [];
         if (!list[index]) return;
@@ -2919,6 +3269,16 @@
         saveChanges();
     });
 
+    document.getElementById('btn-expand-all-weapons')?.addEventListener('click', () => {
+        customWeaponsList.querySelectorAll('.detail-row').forEach(row => row.classList.remove('hidden'));
+        customWeaponsList.querySelectorAll('.row-expand-btn').forEach(btn => btn.classList.add('expanded'));
+    });
+
+    document.getElementById('btn-collapse-all-weapons')?.addEventListener('click', () => {
+        customWeaponsList.querySelectorAll('.detail-row').forEach(row => row.classList.add('hidden'));
+        customWeaponsList.querySelectorAll('.row-expand-btn').forEach(btn => btn.classList.remove('expanded'));
+    });
+
     addCustomWeaponBtn.addEventListener('click', () => {
         if (!units.CustomWeapons) {
             units.CustomWeapons = [];
@@ -2929,13 +3289,23 @@
             WeaponId: nextId,
             Name: 'New Weapon',
             Damage: 10,
-            Range: 2.0,
+            Range: 8.0,
             AttackCooldown: 1.5,
-            AttackType: 'melee'
+            AttackType: 'ranged',
+            ProjectileSpeed: 25,
+            ArcHeight: 2.0,
+            OrientToTrajectory: true
         });
         units.CustomWeapons = list;
         saveChanges();
         renderCustomWeapons();
+        // Auto-expand the newly created weapon row
+        const newDetail = document.getElementById(`weapon-detail-${list.length - 1}`);
+        if (newDetail) {
+            newDetail.classList.remove('hidden');
+            const newBtn = customWeaponsList.querySelector(`.row-expand-btn[data-target="weapon-detail-${list.length - 1}"]`);
+            if (newBtn) newBtn.classList.add('expanded');
+        }
     });
 
     addCustomAbilityBtn.addEventListener('click', () => {
@@ -3396,6 +3766,143 @@
         const standardDefaults = new Set(['idle.ranim', 'walk.ranim', 'attack.ranim', 'death.ranim', 'labor.ranim', 'spell_cast.ranim', 'dance.ranim']);
         const customAnims = animList.filter(a => !standardDefaults.has(a.toLowerCase()));
         populateDatalist('suggest-animations', customAnims.map(a => ({ id: a, name: a })));
+
+        // Sounds datalist (suggest-sounds) - strictly imported audio/SFX assets
+        const soundAssets = new Set();
+        ['sfx', 'audio', 'sound', 'sounds'].forEach(k => {
+            if (units.Assets && units.Assets[k] && typeof units.Assets[k] === 'object') {
+                Object.keys(units.Assets[k]).forEach(s => soundAssets.add(s));
+            }
+            if (units.MapProperties?.Assets && units.MapProperties.Assets[k] && typeof units.MapProperties.Assets[k] === 'object') {
+                Object.keys(units.MapProperties.Assets[k]).forEach(s => soundAssets.add(s));
+            }
+        });
+        weapons.forEach(w => {
+            if (w.AttackSound) soundAssets.add(w.AttackSound);
+            if (w.ImpactSound) soundAssets.add(w.ImpactSound);
+        });
+        populateDatalist('suggest-sounds', Array.from(soundAssets).map(s => {
+            const basename = s.split('/').pop() || s;
+            return { id: s, name: basename };
+        }));
+
+        // Visual effects / spritesheets (suggest-visual-effects) - strictly imported VFX spritesheets
+        const vfxAssets = new Set();
+        ['vfx_spritesheets', 'spritesheets', 'vfx', 'decals'].forEach(k => {
+            if (units.Assets && units.Assets[k] && typeof units.Assets[k] === 'object') {
+                Object.keys(units.Assets[k]).forEach(v => vfxAssets.add(v));
+            }
+            if (units.MapProperties?.Assets && units.MapProperties.Assets[k] && typeof units.MapProperties.Assets[k] === 'object') {
+                Object.keys(units.MapProperties.Assets[k]).forEach(v => vfxAssets.add(v));
+            }
+        });
+        weapons.forEach(w => {
+            if (w.ImpactVisualEffect) vfxAssets.add(w.ImpactVisualEffect);
+        });
+        populateDatalist('suggest-visual-effects', Array.from(vfxAssets).map(v => {
+            const basename = v.split('/').pop() || v;
+            return { id: v, name: basename };
+        }));
+
+        // Projectile 3D Models (suggest-projectile-models) - strictly imported GLB projectile models
+        const projectileModels = new Set();
+        const allGlb = (units.Assets && units.Assets.glb) ? units.Assets.glb : {};
+        if (allGlb.projectiles && typeof allGlb.projectiles === 'object') {
+            for (const itemKey of Object.keys(allGlb.projectiles)) {
+                projectileModels.add(`Assets/models/projectiles/${itemKey}`);
+                projectileModels.add(itemKey);
+            }
+        }
+        for (const [subCat, val] of Object.entries(allGlb)) {
+            if (subCat !== 'projectiles' && val && typeof val === 'object') {
+                for (const itemKey of Object.keys(val)) {
+                    projectileModels.add(`Assets/models/${subCat}/${itemKey}`);
+                }
+            } else if (typeof val === 'string') {
+                projectileModels.add(subCat);
+            }
+        }
+        (units.CustomUnits || []).forEach(u => { if (u.ModelPath) projectileModels.add(u.ModelPath); });
+        (units.CustomProps || []).forEach(p => { if (p.ModelPath) projectileModels.add(p.ModelPath); });
+        weapons.forEach(w => { if (w.ProjectileModelPath) projectileModels.add(w.ProjectileModelPath); });
+        populateDatalist('suggest-projectile-models', Array.from(projectileModels).map(m => {
+            const basename = m.split('/').pop() || m;
+            return { id: m, name: basename };
+        }));
+
+        // Ribbon Textures (suggest-ribbon-textures) - strictly imported ribbon textures
+        const ribbonAssets = new Set();
+        ['ribbon_textures', 'ribbons'].forEach(k => {
+            if (units.Assets && units.Assets[k] && typeof units.Assets[k] === 'object') {
+                Object.keys(units.Assets[k]).forEach(t => {
+                    ribbonAssets.add(t);
+                    if (!t.startsWith('Assets/')) {
+                        ribbonAssets.add(`Assets/textures/ribbons/${t}`);
+                    }
+                });
+            }
+            if (units.MapProperties?.Assets && units.MapProperties.Assets[k] && typeof units.MapProperties.Assets[k] === 'object') {
+                Object.keys(units.MapProperties.Assets[k]).forEach(t => {
+                    ribbonAssets.add(t);
+                    if (!t.startsWith('Assets/')) {
+                        ribbonAssets.add(`Assets/textures/ribbons/${t}`);
+                    }
+                });
+            }
+        });
+        if (units.Assets?.textures && typeof units.Assets.textures === 'object') {
+            Object.keys(units.Assets.textures).forEach(t => {
+                if (t.includes('ribbon')) {
+                    ribbonAssets.add(t);
+                    if (!t.startsWith('Assets/')) {
+                        ribbonAssets.add(`Assets/textures/ribbons/${t}`);
+                    }
+                }
+            });
+        }
+        weapons.forEach(w => { if (w.RibbonTexture) ribbonAssets.add(w.RibbonTexture); });
+        populateDatalist('suggest-ribbon-textures', Array.from(ribbonAssets).map(r => {
+            const basename = r.split('/').pop() || r;
+            return { id: r, name: basename };
+        }));
+
+        // Noise Textures (suggest-noise-textures) - strictly imported noise assets + procedural fallback
+        const noiseAssets = new Set([
+            'procedural_simplex_noise'
+        ]);
+        ['noise_textures', 'noise'].forEach(k => {
+            if (units.Assets && units.Assets[k] && typeof units.Assets[k] === 'object') {
+                Object.keys(units.Assets[k]).forEach(t => {
+                    noiseAssets.add(t);
+                    if (!t.startsWith('Assets/')) {
+                        noiseAssets.add(`Assets/textures/noise/${t}`);
+                    }
+                });
+            }
+            if (units.MapProperties?.Assets && units.MapProperties.Assets[k] && typeof units.MapProperties.Assets[k] === 'object') {
+                Object.keys(units.MapProperties.Assets[k]).forEach(t => {
+                    noiseAssets.add(t);
+                    if (!t.startsWith('Assets/')) {
+                        noiseAssets.add(`Assets/textures/noise/${t}`);
+                    }
+                });
+            }
+        });
+        if (units.Assets?.textures && typeof units.Assets.textures === 'object') {
+            Object.keys(units.Assets.textures).forEach(t => {
+                if (t.includes('noise') || t.includes('voronoi') || t.includes('perlin')) {
+                    noiseAssets.add(t);
+                    if (!t.startsWith('Assets/')) {
+                        noiseAssets.add(`Assets/textures/noise/${t}`);
+                    }
+                }
+            });
+        }
+        weapons.forEach(w => { if (w.NoiseTexture) noiseAssets.add(w.NoiseTexture); });
+        populateDatalist('suggest-noise-textures', Array.from(noiseAssets).map(n => {
+            const basename = n.split('/').pop() || n;
+            return { id: n, name: n === 'procedural_simplex_noise' ? 'Procedural Simplex Noise (Shader Default)' : basename };
+        }));
     }
 
     function populateDatalist(id, items) {
@@ -4108,6 +4615,8 @@
         if (cat === 'skyboxes') return 'Skyboxes';
         if (cat === 'decals') return 'Decals';
         if (cat === 'textures') return 'Textures';
+        if (cat === 'ribbon_textures') return 'Ribbon Textures';
+        if (cat === 'noise_textures') return 'Noise Textures';
         if (cat === 'icons') return 'Icons';
         if (cat === 'animations') return 'Animations';
         return cat.charAt(0).toUpperCase() + cat.slice(1);
@@ -4118,7 +4627,7 @@
         if (!display) return;
 
         let assets = {};
-        const candidateKeys = ['textures', 'glb', 'decals', 'icons', 'vfx_spritesheets', 'sfx', 'music', 'skyboxes', 'animations'];
+        const candidateKeys = ['textures', 'ribbon_textures', 'noise_textures', 'glb', 'decals', 'icons', 'vfx_spritesheets', 'sfx', 'music', 'skyboxes', 'animations'];
 
         // Collect from units.Assets
         if (units?.Assets && typeof units.Assets === 'object') {
@@ -4205,7 +4714,7 @@
                             html += `<input type="checkbox" class="chk-ignore-player-color" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" ${isIgnored ? 'checked' : ''} />`;
                             html += `Ignore Color</label>`;
                             html += `<select class="select-migrate-target" style="background: rgba(0,0,0,0.4); color: #ccc; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; font-size: 11px; padding: 1px 4px;">`;
-                            ['units', 'buildings', 'resources', 'props'].forEach(sc => {
+                            ['units', 'buildings', 'resources', 'props', 'projectiles'].forEach(sc => {
                                 html += `<option value="glb:${sc}" ${sc === subCat ? 'selected' : ''}>Model: ${sc}</option>`;
                             });
                             html += `</select>`;
@@ -4791,6 +5300,28 @@
                 vscode.postMessage({
                     type: 'importAsset',
                     assetType: 'texture',
+                    options: {}
+                });
+            });
+        }
+
+        const btnRibbon = document.getElementById('btn-import-ribbon');
+        if (btnRibbon) {
+            btnRibbon.addEventListener('click', () => {
+                vscode.postMessage({
+                    type: 'importAsset',
+                    assetType: 'ribbon',
+                    options: {}
+                });
+            });
+        }
+
+        const btnNoise = document.getElementById('btn-import-noise-texture');
+        if (btnNoise) {
+            btnNoise.addEventListener('click', () => {
+                vscode.postMessage({
+                    type: 'importAsset',
+                    assetType: 'noise_texture',
                     options: {}
                 });
             });

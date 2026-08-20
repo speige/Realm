@@ -310,6 +310,8 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         let accept = '*';
         if (assetType === 'texture') {
             accept = '.png,.jpg,.jpeg,.bmp,.tga,.webp';
+        } else if (assetType === 'ribbon' || assetType === 'ribbon_texture') {
+            accept = '.png,.jpg,.jpeg,.bmp,.tga,.webp,.ktx2';
         } else if (assetType === 'glb') {
             accept = '.glb,.gltf';
         } else if (assetType === 'decal' || assetType === 'vfx' || assetType === 'icon') {
@@ -365,7 +367,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             if (assetType === 'glb') {
                 const originalFileBytes = fileBytes;
                 let subCategory = (extraOptions && extraOptions.category) ? extraOptions.category.toLowerCase() : 'props';
-                const recommendedFaceCount = subCategory === 'units' ? 6500 : (subCategory === 'buildings' ? 5000 : 850);
+                const recommendedFaceCount = subCategory === 'units' ? 6500 : (subCategory === 'buildings' ? 5000 : (subCategory === 'projectiles' || subCategory === 'projectile' ? 800 : 850));
                 const faceCount = this.getGlbFaceCount(fileBytes);
 
                 if (faceCount > recommendedFaceCount * 2) {
@@ -455,29 +457,31 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 }
 
                 const unitId = path.basename(fileName, path.extname(fileName));
-                const targetArrayKey = subCategory === 'units' ? 'CustomUnits' :
-                                       subCategory === 'buildings' ? 'CustomBuildings' :
-                                       subCategory === 'resources' ? 'CustomResources' : 'CustomProps';
+                if (subCategory !== 'projectiles' && subCategory !== 'projectile') {
+                    const targetArrayKey = subCategory === 'units' ? 'CustomUnits' :
+                                           subCategory === 'buildings' ? 'CustomBuildings' :
+                                           subCategory === 'resources' ? 'CustomResources' : 'CustomProps';
 
-                if (!metadata[targetArrayKey] || !Array.isArray(metadata[targetArrayKey])) {
-                    metadata[targetArrayKey] = [];
-                }
-                const exists = metadata[targetArrayKey].some((u: any) => u && u.UnitId === unitId);
-                if (!exists) {
-                    let defaultPathing = 8;
-                    if (subCategory === 'units') defaultPathing = 9;
-                    else if (subCategory === 'buildings') defaultPathing = 32;
-                    else if (subCategory === 'resources' || subCategory === 'props') defaultPathing = 255;
+                    if (!metadata[targetArrayKey] || !Array.isArray(metadata[targetArrayKey])) {
+                        metadata[targetArrayKey] = [];
+                    }
+                    const exists = metadata[targetArrayKey].some((u: any) => u && u.UnitId === unitId);
+                    if (!exists) {
+                        let defaultPathing = 8;
+                        if (subCategory === 'units') defaultPathing = 9;
+                        else if (subCategory === 'buildings') defaultPathing = 32;
+                        else if (subCategory === 'resources' || subCategory === 'props') defaultPathing = 255;
 
-                    metadata[targetArrayKey].push({
-                        UnitId: unitId,
-                        Name: unitId,
-                        Description: '',
-                        PathingType: defaultPathing,
-                        ModelPath: baseName,
-                        RecalculateNormals: true,
-                        ...(ignorePlayerColor ? { IgnorePlayerColor: true } : {})
-                    });
+                        metadata[targetArrayKey].push({
+                            UnitId: unitId,
+                            Name: unitId,
+                            Description: '',
+                            PathingType: defaultPathing,
+                            ModelPath: baseName,
+                            RecalculateNormals: true,
+                            ...(ignorePlayerColor ? { IgnorePlayerColor: true } : {})
+                        });
+                    }
                 }
 
                 vscode.window.showInformationMessage(`Imported GLB Model (${subCategory}): ${baseName}`);
@@ -796,6 +800,222 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     const errDetail = conversionResult.error ? `: ${conversionResult.error}` : '.';
                     vscode.window.showErrorMessage(`Failed to convert texture (${finalSwatchName}) to KTX2${errDetail}`);
                     return;
+                }
+            } else if (assetType === 'ribbon' || assetType === 'ribbon_texture') {
+                const cleanBase = path.basename(fileName, path.extname(fileName)).toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                let ribbonName = cleanBase || 'custom_ribbon';
+
+                if (!metadata.Assets) metadata.Assets = {};
+                if (!metadata.Assets.ribbon_textures) metadata.Assets.ribbon_textures = {};
+
+                let finalRibbonName = ribbonName;
+                let counter = 1;
+                while (metadata.Assets.ribbon_textures[finalRibbonName + '.ktx2']) {
+                    finalRibbonName = `${ribbonName}_${counter}`;
+                    counter++;
+                }
+
+                const subDir = path.join(targetDir, 'Assets', 'textures', 'ribbons');
+                if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+
+                const outputKtx2Path = path.join(subDir, `${finalRibbonName}.ktx2`);
+                const ext = path.extname(fileName).toLowerCase();
+
+                if (ext === '.ktx2') {
+                    fs.writeFileSync(outputKtx2Path, fileBytes);
+                    const blake3 = this.computeHashHex(fileBytes);
+                    metadata.Assets.ribbon_textures[finalRibbonName + '.ktx2'] = blake3;
+                    vscode.window.showInformationMessage(`Imported Ribbon Texture (${finalRibbonName}.ktx2) successfully.`);
+                } else {
+                    const reqId = 'ribbon_conv_' + Math.random().toString(36).substring(2, 9);
+                    const fileBase64 = fileBytes.toString('base64');
+
+                    const conversionResult = await new Promise<{ success: boolean; error?: string }>(async (resolve) => {
+                        try {
+                            const http = require('http');
+                            const postData = JSON.stringify({
+                                action: 'processRawTexture',
+                                requestId: reqId,
+                                rawBase64: fileBase64,
+                                outputKtx2Path: outputKtx2Path,
+                                swatchName: finalRibbonName
+                            });
+
+                            const req = http.request({
+                                hostname: '127.0.0.1',
+                                port: 8092,
+                                path: '/api/',
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Content-Length': Buffer.byteLength(postData)
+                                },
+                                timeout: 5000
+                            }, (res: any) => {
+                                let data = '';
+                                res.on('data', (chunk: any) => { data += chunk; });
+                                res.on('end', () => {
+                                    try {
+                                        const parsed = JSON.parse(data);
+                                        resolve({ success: !!parsed.success, error: parsed.error });
+                                    } catch {
+                                        resolve({ success: false, error: 'Invalid JSON response from Godot REST API' });
+                                    }
+                                });
+                            });
+                            req.on('error', () => {
+                                fallbackWebviewIpc();
+                            });
+                            req.write(postData);
+                            req.end();
+                            return;
+                        } catch {
+                            fallbackWebviewIpc();
+                        }
+
+                        function fallbackWebviewIpc() {
+                            const timeout = setTimeout(() => {
+                                webviewSubscription.dispose();
+                                resolve({ success: false, error: 'Ribbon conversion request timed out (5s).' });
+                            }, 5000);
+
+                            const webviewSubscription = webview.onDidReceiveMessage((msg: any) => {
+                                if ((msg.action === 'processRawTextureResult' || msg.type === 'processRawTextureResult') && (msg.requestId === reqId || msg.swatchName === finalRibbonName)) {
+                                    clearTimeout(timeout);
+                                    webviewSubscription.dispose();
+                                    resolve({ success: !!msg.success, error: msg.error });
+                                }
+                            });
+
+                            webview.postMessage({
+                                type: 'godotIpc',
+                                action: 'processRawTexture',
+                                requestId: reqId,
+                                rawBase64: fileBase64,
+                                outputKtx2Path: outputKtx2Path,
+                                swatchName: finalRibbonName
+                            });
+                        }
+                    });
+
+                    if (conversionResult.success && fs.existsSync(outputKtx2Path)) {
+                        const ktx2Bytes = fs.readFileSync(outputKtx2Path);
+                        const ktx2Hash = this.computeHashHex(ktx2Bytes);
+                        metadata.Assets.ribbon_textures[finalRibbonName + '.ktx2'] = ktx2Hash;
+                        vscode.window.showInformationMessage(`Imported Ribbon Effect Image (${finalRibbonName}.ktx2) successfully.`);
+                    } else {
+                        const errDetail = conversionResult.error ? `: ${conversionResult.error}` : '.';
+                        vscode.window.showErrorMessage(`Failed to convert ribbon image (${finalRibbonName}) to KTX2${errDetail}`);
+                        return;
+                    }
+                }
+            } else if (assetType === 'noise' || assetType === 'noise_texture') {
+                const cleanBase = path.basename(fileName, path.extname(fileName)).toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                let noiseName = cleanBase || 'custom_noise';
+
+                if (!metadata.Assets) metadata.Assets = {};
+                if (!metadata.Assets.noise_textures) metadata.Assets.noise_textures = {};
+
+                let finalNoiseName = noiseName;
+                let counter = 1;
+                while (metadata.Assets.noise_textures[finalNoiseName + '.ktx2']) {
+                    finalNoiseName = `${noiseName}_${counter}`;
+                    counter++;
+                }
+
+                const subDir = path.join(targetDir, 'Assets', 'textures', 'noise');
+                if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+
+                const outputKtx2Path = path.join(subDir, `${finalNoiseName}.ktx2`);
+                const ext = path.extname(fileName).toLowerCase();
+
+                if (ext === '.ktx2') {
+                    fs.writeFileSync(outputKtx2Path, fileBytes);
+                    const blake3 = this.computeHashHex(fileBytes);
+                    metadata.Assets.noise_textures[finalNoiseName + '.ktx2'] = blake3;
+                    vscode.window.showInformationMessage(`Imported Projectile Noise Texture (${finalNoiseName}.ktx2) successfully.`);
+                } else {
+                    const reqId = 'noise_conv_' + Math.random().toString(36).substring(2, 9);
+                    const fileBase64 = fileBytes.toString('base64');
+
+                    const conversionResult = await new Promise<{ success: boolean; error?: string }>(async (resolve) => {
+                        try {
+                            const http = require('http');
+                            const postData = JSON.stringify({
+                                action: 'processRawTexture',
+                                requestId: reqId,
+                                rawBase64: fileBase64,
+                                outputKtx2Path: outputKtx2Path,
+                                swatchName: finalNoiseName
+                            });
+
+                            const req = http.request({
+                                hostname: '127.0.0.1',
+                                port: 8092,
+                                path: '/api/',
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Content-Length': Buffer.byteLength(postData)
+                                },
+                                timeout: 5000
+                            }, (res: any) => {
+                                let data = '';
+                                res.on('data', (chunk: any) => { data += chunk; });
+                                res.on('end', () => {
+                                    try {
+                                        const parsed = JSON.parse(data);
+                                        resolve({ success: !!parsed.success, error: parsed.error });
+                                    } catch {
+                                        resolve({ success: false, error: 'Invalid JSON response from Godot REST API' });
+                                    }
+                                });
+                            });
+                            req.on('error', () => {
+                                fallbackWebviewIpc();
+                            });
+                            req.write(postData);
+                            req.end();
+                            return;
+                        } catch {
+                            fallbackWebviewIpc();
+                        }
+
+                        function fallbackWebviewIpc() {
+                            const timeout = setTimeout(() => {
+                                webviewSubscription.dispose();
+                                resolve({ success: false, error: 'Noise texture conversion request timed out (5s).' });
+                            }, 5000);
+
+                            const webviewSubscription = webview.onDidReceiveMessage((msg: any) => {
+                                if ((msg.action === 'processRawTextureResult' || msg.type === 'processRawTextureResult') && (msg.requestId === reqId || msg.swatchName === finalNoiseName)) {
+                                    clearTimeout(timeout);
+                                    webviewSubscription.dispose();
+                                    resolve({ success: !!msg.success, error: msg.error });
+                                }
+                            });
+
+                            webview.postMessage({
+                                type: 'godotIpc',
+                                action: 'processRawTexture',
+                                requestId: reqId,
+                                rawBase64: fileBase64,
+                                outputKtx2Path: outputKtx2Path,
+                                swatchName: finalNoiseName
+                            });
+                        }
+                    });
+
+                    if (conversionResult.success && fs.existsSync(outputKtx2Path)) {
+                        const ktx2Bytes = fs.readFileSync(outputKtx2Path);
+                        const ktx2Hash = this.computeHashHex(ktx2Bytes);
+                        metadata.Assets.noise_textures[finalNoiseName + '.ktx2'] = ktx2Hash;
+                        vscode.window.showInformationMessage(`Imported Projectile Noise Texture (${finalNoiseName}.ktx2) successfully.`);
+                    } else {
+                        const errDetail = conversionResult.error ? `: ${conversionResult.error}` : '.';
+                        vscode.window.showErrorMessage(`Failed to convert noise texture (${finalNoiseName}) to KTX2${errDetail}`);
+                        return;
+                    }
                 }
             }
 
@@ -1640,10 +1860,16 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             </div>
             <div id="custom-weapons-form" class="editor-form hidden">
                 <div class="form-header">
-                    <div>
-                        <div class="breadcrumb">Map > Custom Weapons</div>
-                        <h2>Custom Weapons</h2>
-                        <span class="subtitle">Combat attack configurations</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <div>
+                            <div class="breadcrumb">Map > Custom Weapons</div>
+                            <h2>Custom Weapons</h2>
+                            <span class="subtitle">Combat attacks, 3D projectile models, procedural surface shaders &amp; ribbon trail FX</span>
+                        </div>
+                        <div style="display: flex; gap: 6px;">
+                            <button type="button" id="btn-expand-all-weapons" class="btn secondary-btn small-btn" title="Expand all projectile FX and detail panels">📂 Expand All FX</button>
+                            <button type="button" id="btn-collapse-all-weapons" class="btn secondary-btn small-btn" title="Collapse all detail panels">📁 Collapse All</button>
+                        </div>
                     </div>
                 </div>
                 <div class="form-scroll-container">
@@ -1739,8 +1965,28 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     </div>
 
                     <div class="form-section">
+                        <h3>🎗️ Import Ribbon Effect Image</h3>
+                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import seamless ribbon trail textures for projectile weapons and visual effects. The image will automatically convert to KTX2 format.</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <button type="button" id="btn-import-ribbon" class="btn secondary-btn">📥 Import Ribbon Effect Image</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>⚡ Import Projectile Noise Texture</h3>
+                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import seamless noise textures for projectile uber-shaders (fire, frost, poison effects). The image will automatically convert to KTX2 format in Assets/textures/noise/.</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <button type="button" id="btn-import-noise-texture" class="btn secondary-btn">📥 Import Projectile Noise Texture</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
                         <h3>📦 Import 3D Model (GLB)</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import binary GLB 3D models. Subcategory will categorize BLAKE3 hash in metadata.json under Units, Buildings, Resources, or Props.</p>
+                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import binary GLB 3D models. Subcategory will categorize BLAKE3 hash in metadata.json under Units, Buildings, Resources, Props, or Projectiles.</p>
                         <div class="form-row" style="align-items: flex-end; gap: 16px;">
                             <div class="form-group">
                                 <label for="glb-category-select">Default Category</label>
@@ -1749,6 +1995,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                                     <option value="buildings">Buildings</option>
                                     <option value="resources">Resources</option>
                                     <option value="props">Props</option>
+                                    <option value="projectiles">Projectiles</option>
                                 </select>
                             </div>
                             <div class="form-group checkbox-group" style="margin-bottom: 8px;">

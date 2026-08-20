@@ -663,7 +663,73 @@ public partial class GameHost : Node3D, IGameAPI
 		public int PathingType { get; set; }
 		public float? ObstacleRadius { get; set; }
 		public string[]? Targets { get; set; }
+		public string[]? Weapons { get; set; }
 		public Dictionary<string, string[]>? Animations { get; set; }
+	}
+
+	public struct WeaponMetadata
+	{
+		public WeaponMetadata()
+		{
+			OrientToTrajectory = true;
+			RibbonTaper = true;
+			RibbonAdditive = true;
+			EmissionEnergy = 4f;
+			FresnelPower = 3f;
+			FresnelFactor = 1.5f;
+			NoiseScale = 3f;
+			ThresholdCutoff = 0.5f;
+			ThresholdSmoothness = 0.1f;
+			RibbonWidth = 0.4f;
+			RibbonLifetime = 0.5f;
+		}
+
+		public string WeaponId { get; set; }
+		public string Name { get; set; }
+		public float Damage { get; set; }
+		public float Range { get; set; }
+		public float AttackCooldown { get; set; }
+		public string AttackType { get; set; }
+		public float ProjectileSpeed { get; set; }
+		public string VisualEffect { get; set; }
+		public string AttackSound { get; set; }
+		public string ProjectileModelPath { get; set; }
+		public string ImpactVisualEffect { get; set; }
+		public string ImpactSound { get; set; }
+
+		public float ArcHeight { get; set; }
+		public float HomingWeight { get; set; }
+		public string EaseCurve { get; set; }
+		public Vector3 TumbleAngularVelocity { get; set; }
+		public bool OrientToTrajectory { get; set; } = true;
+		public float SpiralRadius { get; set; }
+		public float SpiralFrequency { get; set; }
+		public float ZigzagAmplitude { get; set; }
+		public float ZigzagFrequency { get; set; }
+		public int MaxBounces { get; set; }
+		public int PierceCount { get; set; }
+
+		public string ShaderEffectType { get; set; }
+		public string BaseColor { get; set; }
+		public string EmissionColor { get; set; }
+		public float EmissionEnergy { get; set; } = 4f;
+		public float FresnelPower { get; set; } = 3f;
+		public string FresnelColor { get; set; }
+		public float FresnelFactor { get; set; } = 1.5f;
+		public float NoiseScale { get; set; } = 3f;
+		public string NoiseTexture { get; set; }
+		public Vector2 UvScrollSpeed1 { get; set; }
+		public Vector2 UvScrollSpeed2 { get; set; }
+		public float ThresholdCutoff { get; set; } = 0.5f;
+		public float ThresholdSmoothness { get; set; } = 0.1f;
+
+		public string RibbonTexture { get; set; }
+		public string RibbonColor { get; set; }
+		public float RibbonWidth { get; set; } = 0.4f;
+		public float RibbonLifetime { get; set; } = 0.5f;
+		public bool RibbonTaper { get; set; } = true;
+		public bool RibbonAdditive { get; set; } = true;
+		public float RibbonScrollSpeed { get; set; }
 	}
 
 	public struct PropMetadata
@@ -784,6 +850,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public static readonly Dictionary<string, UnitMetadata> UnitRegistry = new();
 	public static readonly Dictionary<string, PropMetadata> PropRegistry = new();
 	public static readonly Dictionary<string, ResourceMetadata> ResourceRegistry = new();
+	public static readonly Dictionary<string, WeaponMetadata> WeaponRegistry = new(StringComparer.OrdinalIgnoreCase);
 
 	public string GetFallbackModelPath(string unitId, bool isBuilding)
 	{
@@ -1653,34 +1720,7 @@ public class {mapName} : IMapScript
 				_replayService.RecordProjectile(projectileTypeId, start, target);
 			}
 			var targetPos = new Vector3(target.X, target.Y, target.Z);
-			if (projectileTypeId == "arrow")
-			{
-				SpawnArrowProjectile(startPos, targetPos);
-			}
-			else
-			{
-				var meshInstance = new MeshInstance3D();
-				var sphereMesh = new SphereMesh();
-				sphereMesh.Radius = 0.25f;
-				sphereMesh.Height = 0.5f;
-				meshInstance.Mesh = sphereMesh;
-				meshInstance.Position = startPos + new Vector3(0, 1.0f, 0);
-
-				var material = new StandardMaterial3D();
-				material.AlbedoColor = new Color(0.9f, 0.8f, 0.2f);
-				material.EmissionEnabled = true;
-				material.Emission = new Color(0.8f, 0.6f, 0.1f);
-				meshInstance.MaterialOverride = material;
-
-				AddChild(meshInstance);
-
-				float dist = startPos.DistanceTo(targetPos);
-				float duration = speed > 0.01f ? dist / speed : 1.0f;
-
-				var tween = CreateTween();
-				tween.TweenProperty(meshInstance, "global_position", targetPos + new Vector3(0, 1.0f, 0), duration);
-				tween.Chain().TweenCallback(Callable.From(meshInstance.QueueFree));
-			}
+			SpawnWeaponProjectile(startPos, targetPos, projectileTypeId);
 		}).CallDeferred();
 	}
 
@@ -2503,6 +2543,7 @@ public class {mapName} : IMapScript
 				AttackType = "ranged",
 				ArmorType = "light",
 				GoldBounty = 25f,
+				Weapons = new[] { "arrow" },
 				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 			}
 		},
@@ -2574,6 +2615,7 @@ public class {mapName} : IMapScript
 				AttackType = "ranged",
 				ArmorType = "building",
 				GoldBounty = 0f,
+				Weapons = new[] { "catapult_rock" },
 				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Buildable,
 				ObstacleRadius = 1.5f
 			}
@@ -2599,6 +2641,121 @@ public class {mapName} : IMapScript
 				ArmorType = "heavy",
 				GoldBounty = 18f,
 				PathingType = (int)(Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground | Realm.Ecs.Components.Terrain.TerrainPathingFlags.ShallowWater)
+			}
+		}
+	};
+
+	private static readonly Dictionary<string, WeaponMetadata> DefaultWeaponFallback = new()
+	{
+		{
+			"arrow", new WeaponMetadata {
+				WeaponId = "arrow",
+				Name = "Arrow",
+				Damage = 12f,
+				Range = 18f,
+				AttackCooldown = 1.2f,
+				AttackType = "ranged",
+				ProjectileSpeed = 35f,
+				OrientToTrajectory = true,
+				RibbonColor = "#ffaa33",
+				RibbonWidth = 0.3f,
+				RibbonLifetime = 0.4f,
+				RibbonTaper = true,
+				RibbonAdditive = true
+			}
+		},
+		{
+			"catapult_rock", new WeaponMetadata {
+				WeaponId = "catapult_rock",
+				Name = "Catapult Rock",
+				Damage = 40f,
+				Range = 22f,
+				AttackCooldown = 3.0f,
+				AttackType = "ranged",
+				ProjectileModelPath = "spiked_orb_projectile.glb",
+				ProjectileSpeed = 20f,
+				ArcHeight = 4.5f,
+				TumbleAngularVelocity = new Vector3(3f, 2f, 1f),
+				OrientToTrajectory = false,
+				ShaderEffectType = "fire",
+				BaseColor = "#261e19",
+				EmissionColor = "#ff5500",
+				EmissionEnergy = 5.0f,
+				FresnelPower = 2.5f,
+				FresnelColor = "#ff9922",
+				FresnelFactor = 2.0f,
+				NoiseScale = 3.5f,
+				UvScrollSpeed1 = new Vector2(0.4f, 0.2f),
+				UvScrollSpeed2 = new Vector2(-0.3f, 0.4f),
+				ThresholdCutoff = 0.45f,
+				ThresholdSmoothness = 0.1f,
+				RibbonColor = "#ff7711",
+				RibbonWidth = 0.45f,
+				RibbonLifetime = 0.6f,
+				RibbonTaper = true,
+				RibbonAdditive = true
+			}
+		},
+		{
+			"frost_bolt", new WeaponMetadata {
+				WeaponId = "frost_bolt",
+				Name = "Frost Bolt",
+				Damage = 18f,
+				Range = 16f,
+				AttackCooldown = 1.5f,
+				AttackType = "ranged",
+				ProjectileSpeed = 28f,
+				OrientToTrajectory = true,
+				SpiralRadius = 0.35f,
+				SpiralFrequency = 2.0f,
+				ShaderEffectType = "frost",
+				BaseColor = "#0a1c2a",
+				EmissionColor = "#33ccff",
+				EmissionEnergy = 4.5f,
+				FresnelPower = 3.0f,
+				FresnelColor = "#88eeff",
+				FresnelFactor = 2.2f,
+				NoiseScale = 4.0f,
+				UvScrollSpeed1 = new Vector2(0.2f, 0.5f),
+				UvScrollSpeed2 = new Vector2(-0.2f, -0.3f),
+				ThresholdCutoff = 0.5f,
+				ThresholdSmoothness = 0.08f,
+				RibbonColor = "#44ddff",
+				RibbonWidth = 0.35f,
+				RibbonLifetime = 0.5f,
+				RibbonTaper = true,
+				RibbonAdditive = true
+			}
+		},
+		{
+			"poison_dart", new WeaponMetadata {
+				WeaponId = "poison_dart",
+				Name = "Poison Dart",
+				Damage = 10f,
+				Range = 15f,
+				AttackCooldown = 1.0f,
+				AttackType = "ranged",
+				ProjectileSpeed = 30f,
+				OrientToTrajectory = true,
+				ZigzagAmplitude = 0.4f,
+				ZigzagFrequency = 3.0f,
+				ShaderEffectType = "poison",
+				BaseColor = "#112010",
+				EmissionColor = "#33ff33",
+				EmissionEnergy = 4.0f,
+				FresnelPower = 3.5f,
+				FresnelColor = "#88ff44",
+				FresnelFactor = 1.8f,
+				NoiseScale = 3.0f,
+				UvScrollSpeed1 = new Vector2(-0.1f, 0.4f),
+				UvScrollSpeed2 = new Vector2(0.3f, 0.2f),
+				ThresholdCutoff = 0.55f,
+				ThresholdSmoothness = 0.12f,
+				RibbonColor = "#44ff22",
+				RibbonWidth = 0.4f,
+				RibbonLifetime = 0.5f,
+				RibbonTaper = true,
+				RibbonAdditive = true
 			}
 		}
 	};
@@ -2642,8 +2799,26 @@ public class {mapName} : IMapScript
 					}
 					var newProps = new Dictionary<string, PropMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
+					var newWeapons = new Dictionary<string, WeaponMetadata>(StringComparer.OrdinalIgnoreCase);
+					foreach (var kvp in DefaultWeaponFallback)
+					{
+						newWeapons[kvp.Key] = kvp.Value;
+					}
 
 					bool hasStructuredArrays = false;
+
+					if (doc.RootElement.TryGetProperty("CustomWeapons", out var weapProp) && weapProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					{
+						var list = JsonSerializer.Deserialize<List<WeaponMetadata>>(weapProp.GetRawText(), Options);
+						if (list != null)
+						{
+							foreach (var meta in list)
+							{
+								if (!string.IsNullOrEmpty(meta.WeaponId))
+									newWeapons[meta.WeaponId] = meta;
+							}
+						}
+					}
 
 					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
 					{
@@ -2736,6 +2911,9 @@ public class {mapName} : IMapScript
 
 					ResourceRegistry.Clear();
 					foreach (var kvp in newResources) ResourceRegistry[kvp.Key] = kvp.Value;
+
+					WeaponRegistry.Clear();
+					foreach (var kvp in newWeapons) WeaponRegistry[kvp.Key] = kvp.Value;
 
 					Prop3D.ClearModelPathCache();
 				}
@@ -2997,6 +3175,7 @@ public class {mapName} : IMapScript
 		_simulationService.EditorHeightProvider = p => _editorService.GetTerrainHeightAt(new Vector3(p.X, p.Y, p.Z));
 
 		_simulationService.OnArrowProjectileRequested = (start, target) => SpawnArrowProjectile(new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z));
+		_simulationService.OnWeaponProjectileRequested = (start, target, weaponId, targetEnt) => SpawnWeaponProjectile(new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z), weaponId, targetEnt);
 		_simulationService.OnDamageFlashRequested = entity =>
 		{
 			if (GameHost.TryGetUnit3D(entity, out var unit3D))
@@ -4237,9 +4416,22 @@ public class {mapName} : IMapScript
 			{
 				SpawnHolyLightEffect(godotPos);
 			}
-			else if (req.EffectTypeId == "arrow")
+			else if (req.EffectTypeId == "arrow" || WeaponRegistry.ContainsKey(req.EffectTypeId) || req.EffectTypeId.StartsWith("proj:"))
 			{
-				SpawnArrowProjectile(godotPos, godotTarget);
+				string weaponId = req.EffectTypeId.StartsWith("proj:") ? req.EffectTypeId.Substring(5) : req.EffectTypeId;
+				Entity targetEnt = Entity.Null;
+				if (req.EntityId != -1)
+				{
+					foreach (var u in AllUnits)
+					{
+						if (u.Entity.Id == req.EntityId)
+						{
+							targetEnt = u.Entity;
+							break;
+						}
+					}
+				}
+				SpawnWeaponProjectile(godotPos, godotTarget, weaponId, targetEnt);
 			}
 			else if (req.EffectTypeId == "heal")
 			{
@@ -4349,12 +4541,20 @@ public class {mapName} : IMapScript
 	{
 		_fxService.SpawnArrowProjectile(this, new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z));
 	}
+	public void SpawnWeaponProjectileForReplay(System.Numerics.Vector3 start, System.Numerics.Vector3 target, string? weaponId = null)
+	{
+		_fxService.SpawnWeaponProjectile(this, new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z), weaponId);
+	}
 	private void SpawnArrowProjectile(Vector3 start, Vector3 target)
 	{
-		_fxService.SpawnArrowProjectile(this, start, target);
+		SpawnWeaponProjectile(start, target, "arrow");
+	}
+	public void SpawnWeaponProjectile(Vector3 start, Vector3 target, string? weaponId = null, Entity targetEntity = default)
+	{
+		_fxService.SpawnWeaponProjectile(this, start, target, weaponId, targetEntity);
 		if (_replayService != null && _replayService.IsRecording)
 		{
-			_replayService.RecordProjectile("arrow", new System.Numerics.Vector3(start.X, start.Y, start.Z), new System.Numerics.Vector3(target.X, target.Y, target.Z));
+			_replayService.RecordProjectile(weaponId ?? "arrow", new System.Numerics.Vector3(start.X, start.Y, start.Z), new System.Numerics.Vector3(target.X, target.Y, target.Z));
 		}
 		if (_multiplayerActive && IsServerActive())
 		{
