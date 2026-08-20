@@ -45,11 +45,29 @@ namespace Realm.Godot.Utils
 			string activeMap = GameHost.Instance?.ActiveMapName ?? LobbyManager.Instance?.ActiveMapName;
 			if (!string.IsNullOrEmpty(activeMap))
 			{
+				if (System.IO.Directory.Exists(activeMap))
+				{
+					string candDirect = System.IO.Path.Combine(activeMap, cleanPath);
+					if (System.IO.File.Exists(candDirect))
+					{
+						return candDirect;
+					}
+				}
 				string mapDir = ProjectSettings.GlobalizePath($"user://maps/{activeMap}");
 				string candMap = System.IO.Path.Combine(mapDir, cleanPath);
 				if (System.IO.File.Exists(candMap))
 				{
 					return candMap;
+				}
+			}
+
+			string currentMapDir = GameHost.Instance?.CurrentMapDirectory;
+			if (!string.IsNullOrEmpty(currentMapDir) && System.IO.Directory.Exists(currentMapDir))
+			{
+				string candCur = System.IO.Path.Combine(currentMapDir, cleanPath);
+				if (System.IO.File.Exists(candCur))
+				{
+					return candCur;
 				}
 			}
 

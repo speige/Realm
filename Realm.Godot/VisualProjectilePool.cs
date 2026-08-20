@@ -11,6 +11,11 @@ public class VisualProjectilePool
 	private readonly List<VisualProjectile3D> _all = new();
 	private const int InitialCapacity = 32;
 
+	public int TotalAllocated => _all.Count;
+	public int AvailableCount => _available.Count;
+	public int ActiveCount => _all.Count - _available.Count;
+	public IReadOnlyList<VisualProjectile3D> AllProjectiles => _all;
+
 	public static VisualProjectile3D Rent(Node3D parent) => Instance.RentInternal(parent);
 	public static void Return(VisualProjectile3D projectile) => Instance.ReturnInternal(projectile);
 

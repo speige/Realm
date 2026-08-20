@@ -362,7 +362,39 @@
           "ZigzagFrequency": { "type": "number" },
           "MaxBounces": { "type": "integer", "minimum": 0 },
           "PierceCount": { "type": "integer", "minimum": 0 },
+          "TurnRateLimit": { "type": "number", "minimum": 0 },
+          "SpeedCurve": { "type": "string", "enum": ["constant", "ease_in", "ease_out", "ease_in_out", "rocket_boost", "burst", "accelerate", "decelerate"] },
+          "Acceleration": { "type": "number" },
+          "MaxLifetime": { "type": "number", "minimum": 0 },
+          "FailsafeRange": { "type": "number", "minimum": 0 },
+          "ScaleCurve": { "type": "string", "enum": ["constant", "grow", "shrink", "grow_shrink", "squash_stretch", "impact_shrink"] },
+          "ForwardAxisPreset": { "type": "string", "enum": ["-Z", "+Z", "+X", "-X", "+Y", "-Y"] },
+          "MeshRotationOffset": {
+            "type": "object",
+            "properties": {
+              "X": { "type": "number" },
+              "Y": { "type": "number" },
+              "Z": { "type": "number" }
+            }
+          },
+          "MeshTranslationOffset": {
+            "type": "object",
+            "properties": {
+              "X": { "type": "number" },
+              "Y": { "type": "number" },
+              "Z": { "type": "number" }
+            }
+          },
+          "MeshScaleOffset": {
+            "type": "object",
+            "properties": {
+              "X": { "type": "number" },
+              "Y": { "type": "number" },
+              "Z": { "type": "number" }
+            }
+          },
           "ShaderEffectType": { "type": "string" },
+          "EmissionMaskSource": { "type": "string", "enum": ["noise", "vertex_color", "fresnel", "texture_alpha"] },
           "BaseColor": { "type": "string" },
           "EmissionColor": { "type": "string" },
           "EmissionEnergy": { "type": "number" },
@@ -387,13 +419,25 @@
           },
           "ThresholdCutoff": { "type": "number" },
           "ThresholdSmoothness": { "type": "number" },
+          "PointLightEnabled": { "type": "boolean" },
+          "PointLightColor": { "type": "string" },
+          "PointLightIntensity": { "type": "number", "minimum": 0 },
+          "PointLightRange": { "type": "number", "minimum": 0 },
           "RibbonTexture": { "type": "string" },
           "RibbonColor": { "type": "string" },
           "RibbonWidth": { "type": "number" },
           "RibbonLifetime": { "type": "number" },
           "RibbonTaper": { "type": "boolean" },
           "RibbonAdditive": { "type": "boolean" },
-          "RibbonScrollSpeed": { "type": "number" }
+          "RibbonScrollSpeed": { "type": "number" },
+          "TrailOffset": {
+            "type": "object",
+            "properties": {
+              "X": { "type": "number" },
+              "Y": { "type": "number" },
+              "Z": { "type": "number" }
+            }
+          }
         }
       }
     },

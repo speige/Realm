@@ -7,8 +7,10 @@ using System;
 public partial class VisualProjectile3D : Node3D
 {
 	private Node3D _meshContainer;
+	private Node3D _visualTransformContainer;
 	private MeshInstance3D _fallbackMeshInstance;
 	private Node3D _customModelInstance;
+	private OmniLight3D _pointLight;
 	private GpuParticles3D _trailEmitter;
 	private RibbonTrailMesh _ribbonMesh;
 	private ParticleProcessMaterial _particleProcessMaterial;
@@ -29,13 +31,29 @@ public partial class VisualProjectile3D : Node3D
 	private float _fadeTimer;
 	private float _fadeDuration;
 
+	private Vector3 _currentFlightPosition;
+	private Vector3 _currentFlightDirection;
 	private Vector3 _tumbleAxis;
 	private float _tumbleSpeed;
 	private string _currentLoadedModelPath;
 	private string _currentLoadedRibbonPath;
 
 	public bool IsActive => _isFlying || _isImpacted;
+	public bool IsFlying => _isFlying;
+	public bool IsImpacted => _isImpacted;
 	public Action<VisualProjectile3D> OnRecycleRequested;
+
+	public Node3D MeshContainer => _meshContainer;
+	public Node3D VisualTransformContainer => _visualTransformContainer;
+	public Node3D CustomModelInstance => _customModelInstance;
+	public MeshInstance3D FallbackMeshInstance => _fallbackMeshInstance;
+	public OmniLight3D PointLight => _pointLight;
+	public GpuParticles3D TrailEmitter => _trailEmitter;
+	public ShaderMaterial UberShaderMaterial => _uberShaderMaterial;
+	public StandardMaterial3D RibbonMaterial => _ribbonMaterial;
+	public GameHost.WeaponMetadata Weapon => _weapon;
+	public float ElapsedFlightTime => _elapsedTime;
+	public float TotalFlightDuration => _totalFlightDuration;
 
 	public override void _Ready()
 	{
@@ -43,18 +61,28 @@ public partial class VisualProjectile3D : Node3D
 		_meshContainer.Name = "MeshContainer";
 		AddChild(_meshContainer);
 
+		_visualTransformContainer = new Node3D();
+		_visualTransformContainer.Name = "VisualTransformContainer";
+		_meshContainer.AddChild(_visualTransformContainer);
+
 		_fallbackMeshInstance = new MeshInstance3D();
 		_fallbackMeshInstance.Name = "FallbackMesh";
 		var sphere = new SphereMesh();
 		sphere.Radius = 0.22f;
 		sphere.Height = 0.44f;
 		_fallbackMeshInstance.Mesh = sphere;
-		_meshContainer.AddChild(_fallbackMeshInstance);
+		_visualTransformContainer.AddChild(_fallbackMeshInstance);
 
 		EnsureSharedShader();
 		_uberShaderMaterial = new ShaderMaterial();
 		_uberShaderMaterial.Shader = _sharedUberShader;
 		_fallbackMeshInstance.MaterialOverride = _uberShaderMaterial;
+
+		_pointLight = new OmniLight3D();
+		_pointLight.Name = "PointLight";
+		_pointLight.ShadowEnabled = false;
+		_pointLight.Visible = false;
+		AddChild(_pointLight);
 
 		SetupTrailEmitter();
 		SetProcess(false);
@@ -158,9 +186,15 @@ public partial class VisualProjectile3D : Node3D
 		_fadeTimer = 0.0f;
 		_fadeDuration = weapon.RibbonLifetime > 0 ? weapon.RibbonLifetime : 0.5f;
 
+		_currentFlightPosition = _startPosition;
+		Vector3 toTarget = _targetPosition - _startPosition;
+		_currentFlightDirection = toTarget.LengthSquared() > 0.001f ? toTarget.Normalized() : Vector3.Forward;
+
 		GlobalPosition = _startPosition;
 		_meshContainer.Visible = true;
 		_meshContainer.Rotation = Vector3.Zero;
+
+		UpdateVisualTransform();
 
 		Vector3 tumble = weapon.TumbleAngularVelocity;
 		if (tumble.LengthSquared() > 0.001f)
@@ -177,12 +211,52 @@ public partial class VisualProjectile3D : Node3D
 		UpdateModel();
 		UpdateShaderMaterial();
 		UpdateRibbonTrail();
+		UpdatePointLight();
 
 		Visible = true;
+		_trailEmitter.Position = _weapon.TrailOffset;
 		_trailEmitter.Restart();
 		_trailEmitter.Emitting = true;
 
 		SetProcess(true);
+	}
+
+	private void UpdateVisualTransform()
+	{
+		_visualTransformContainer.Position = _weapon.MeshTranslationOffset;
+
+		Vector3 baseEuler = GetForwardAxisEulerDegrees(_weapon.ForwardAxisPreset);
+		Vector3 totalEuler = baseEuler + _weapon.MeshRotationOffset;
+		_visualTransformContainer.Rotation = new Vector3(
+			Mathf.DegToRad(totalEuler.X),
+			Mathf.DegToRad(totalEuler.Y),
+			Mathf.DegToRad(totalEuler.Z)
+		);
+
+		Vector3 baseScale = (_weapon.MeshScaleOffset == Vector3.Zero) ? Vector3.One : _weapon.MeshScaleOffset;
+		float initialScaleFactor = CalculateScaleOverLifetime(0.0f, _weapon.ScaleCurve);
+		_visualTransformContainer.Scale = baseScale * initialScaleFactor;
+	}
+
+	private static Vector3 GetForwardAxisEulerDegrees(string preset)
+	{
+		if (string.IsNullOrEmpty(preset)) return Vector3.Zero;
+		switch (preset.Trim().ToUpperInvariant())
+		{
+			case "+Z":
+				return new Vector3(0f, 180f, 0f);
+			case "+X":
+				return new Vector3(0f, -90f, 0f);
+			case "-X":
+				return new Vector3(0f, 90f, 0f);
+			case "+Y":
+				return new Vector3(-90f, 0f, 0f);
+			case "-Y":
+				return new Vector3(90f, 0f, 0f);
+			case "-Z":
+			default:
+				return Vector3.Zero;
+		}
 	}
 
 	private void UpdateModel()
@@ -214,7 +288,7 @@ public partial class VisualProjectile3D : Node3D
 			if (loaded is Node3D node3D)
 			{
 				_customModelInstance = node3D;
-				_meshContainer.AddChild(_customModelInstance);
+				_visualTransformContainer.AddChild(_customModelInstance);
 				_fallbackMeshInstance.Visible = false;
 				ApplyUberMaterialRecursively(_customModelInstance, _uberShaderMaterial);
 			}
@@ -266,6 +340,35 @@ public partial class VisualProjectile3D : Node3D
 		_uberShaderMaterial.SetShaderParameter("uv_scroll_speed_2", _weapon.UvScrollSpeed2);
 		_uberShaderMaterial.SetShaderParameter("threshold_cutoff", _weapon.ThresholdCutoff);
 		_uberShaderMaterial.SetShaderParameter("threshold_smoothness", _weapon.ThresholdSmoothness > 0 ? _weapon.ThresholdSmoothness : 0.1f);
+
+		int maskSource = 0;
+		if (!string.IsNullOrEmpty(_weapon.EmissionMaskSource))
+		{
+			switch (_weapon.EmissionMaskSource.Trim().ToLowerInvariant())
+			{
+				case "vertex_color":
+				case "vertex_color_spikes":
+				case "vertex color / spikes":
+					maskSource = 1;
+					break;
+				case "fresnel":
+				case "fresnel_only":
+				case "fresnel only":
+					maskSource = 2;
+					break;
+				case "texture_alpha":
+				case "texture alpha":
+					maskSource = 3;
+					break;
+				case "noise":
+				case "noise_only":
+				case "noise only":
+				default:
+					maskSource = 0;
+					break;
+			}
+		}
+		_uberShaderMaterial.SetShaderParameter("emission_mask_source", maskSource);
 
 		if (!string.IsNullOrEmpty(_weapon.NoiseTexture))
 		{
@@ -320,6 +423,21 @@ public partial class VisualProjectile3D : Node3D
 		}
 	}
 
+	private void UpdatePointLight()
+	{
+		if (_weapon.PointLightEnabled)
+		{
+			_pointLight.Visible = true;
+			_pointLight.LightColor = ParseColor(_weapon.PointLightColor, new Color(1.0f, 0.7f, 0.3f));
+			_pointLight.LightEnergy = _weapon.PointLightIntensity > 0 ? _weapon.PointLightIntensity : 2.0f;
+			_pointLight.OmniRange = _weapon.PointLightRange > 0 ? _weapon.PointLightRange : 6.0f;
+		}
+		else
+		{
+			_pointLight.Visible = false;
+		}
+	}
+
 	public override void _Process(double delta)
 	{
 		float dt = (float)delta;
@@ -339,9 +457,23 @@ public partial class VisualProjectile3D : Node3D
 
 		if (!_isFlying) return;
 
-		_elapsedTime += dt;
-		float rawT = Mathf.Clamp(_elapsedTime / _totalFlightDuration, 0.0f, 1.0f);
-		float easedT = ApplyEaseCurve(rawT, _weapon.EaseCurve);
+		if (_weapon.MaxLifetime > 0.0f && _elapsedTime >= _weapon.MaxLifetime)
+		{
+			HandleImpact(GlobalPosition);
+			return;
+		}
+
+		if (_weapon.FailsafeRange > 0.0f && GlobalPosition.DistanceTo(_startPosition) >= _weapon.FailsafeRange)
+		{
+			HandleImpact(GlobalPosition);
+			return;
+		}
+
+		if (_elapsedTime >= _totalFlightDuration * 3.0f + 5.0f)
+		{
+			HandleImpact(GlobalPosition);
+			return;
+		}
 
 		Vector3 currentTarget = _initialTargetPosition;
 		if (_targetEntity != default && GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.EcsWorld.IsAlive(_targetEntity))
@@ -353,8 +485,46 @@ public partial class VisualProjectile3D : Node3D
 			}
 		}
 
-		Vector3 effectiveTarget = _initialTargetPosition.Lerp(currentTarget, Mathf.Clamp(_weapon.HomingWeight * easedT, 0.0f, 1.0f));
-		Vector3 basePos = _startPosition.Lerp(effectiveTarget, easedT);
+		float currentSpeed = CalculateSpeed(_speed, _elapsedTime, _totalFlightDuration, _weapon.SpeedCurve, _weapon.Acceleration);
+		_elapsedTime += dt;
+		float rawT = Mathf.Clamp(_elapsedTime / _totalFlightDuration, 0.0f, 1.0f);
+		float easedT = ApplyEaseCurve(rawT, _weapon.EaseCurve);
+
+		if (_weapon.TurnRateLimit > 0.0f && _weapon.HomingWeight > 0.0f)
+		{
+			Vector3 toCurrentTarget = currentTarget - _currentFlightPosition;
+			float distToTarget = toCurrentTarget.Length();
+			if (distToTarget > 0.001f)
+			{
+				Vector3 desiredDir = toCurrentTarget / distToTarget;
+				float maxTurnRadians = Mathf.DegToRad(_weapon.TurnRateLimit) * dt * _weapon.HomingWeight;
+				float angleBetween = _currentFlightDirection.AngleTo(desiredDir);
+				if (angleBetween > 0.0001f)
+				{
+					float step = Mathf.Min(1.0f, maxTurnRadians / angleBetween);
+					_currentFlightDirection = _currentFlightDirection.Slerp(desiredDir, step).Normalized();
+				}
+			}
+
+			_currentFlightPosition += _currentFlightDirection * (currentSpeed * dt);
+
+			if (distToTarget <= Mathf.Max(0.5f, currentSpeed * dt * 1.5f) || rawT >= 1.0f)
+			{
+				HandleImpact(_currentFlightPosition);
+				return;
+			}
+		}
+		else
+		{
+			Vector3 effectiveTarget = _initialTargetPosition.Lerp(currentTarget, Mathf.Clamp(_weapon.HomingWeight * easedT, 0.0f, 1.0f));
+			_currentFlightPosition = _startPosition.Lerp(effectiveTarget, easedT);
+
+			if (rawT >= 1.0f)
+			{
+				HandleImpact(_currentFlightPosition);
+				return;
+			}
+		}
 
 		float arcY = 0.0f;
 		if (_weapon.MaxBounces > 0)
@@ -371,8 +541,7 @@ public partial class VisualProjectile3D : Node3D
 			arcY = 4.0f * _weapon.ArcHeight * rawT * (1.0f - rawT);
 		}
 
-		Vector3 direction = (effectiveTarget - _startPosition);
-		Vector3 forward = direction.LengthSquared() > 0.001f ? direction.Normalized() : Vector3.Forward;
+		Vector3 forward = _currentFlightDirection.LengthSquared() > 0.001f ? _currentFlightDirection.Normalized() : Vector3.Forward;
 		Vector3 right = Mathf.Abs(forward.Dot(Vector3.Up)) > 0.99f ? forward.Cross(Vector3.Right).Normalized() : forward.Cross(Vector3.Up).Normalized();
 		Vector3 up = right.Cross(forward).Normalized();
 
@@ -390,7 +559,7 @@ public partial class VisualProjectile3D : Node3D
 			zigzagOffset = right * (Mathf.Sin(phi) * _weapon.ZigzagAmplitude);
 		}
 
-		Vector3 nextPos = basePos + new Vector3(0, arcY, 0) + spiralOffset + zigzagOffset;
+		Vector3 nextPos = _currentFlightPosition + new Vector3(0, arcY, 0) + spiralOffset + zigzagOffset;
 
 		if (_weapon.OrientToTrajectory)
 		{
@@ -411,10 +580,9 @@ public partial class VisualProjectile3D : Node3D
 
 		_meshContainer.RotateObjectLocal(_tumbleAxis, _tumbleSpeed * dt);
 
-		if (rawT >= 1.0f)
-		{
-			HandleImpact(nextPos);
-		}
+		Vector3 baseScale = (_weapon.MeshScaleOffset == Vector3.Zero) ? Vector3.One : _weapon.MeshScaleOffset;
+		float lifetimeScale = CalculateScaleOverLifetime(rawT, _weapon.ScaleCurve);
+		_visualTransformContainer.Scale = baseScale * lifetimeScale;
 	}
 
 	private void HandleImpact(Vector3 impactPosition)
@@ -424,6 +592,7 @@ public partial class VisualProjectile3D : Node3D
 		_fadeTimer = 0.0f;
 
 		_meshContainer.Visible = false;
+		_pointLight.Visible = false;
 		_trailEmitter.Emitting = false;
 
 		if (!string.IsNullOrEmpty(_weapon.ImpactVisualEffect) && GameHost.Instance != null)
@@ -436,6 +605,64 @@ public partial class VisualProjectile3D : Node3D
 		{
 			var audioService = ServiceLocator.TryGet<AudioService>();
 			audioService?.PlaySound3D(_weapon.ImpactSound, impactPosition);
+		}
+	}
+
+	private static float CalculateSpeed(float baseSpeed, float elapsedTime, float totalDuration, string speedCurve, float acceleration)
+	{
+		float speed = baseSpeed + (acceleration * elapsedTime);
+		if (speed < 0.1f) speed = 0.1f;
+
+		if (string.IsNullOrEmpty(speedCurve) || speedCurve == "constant")
+			return speed;
+
+		float progress = Mathf.Clamp(elapsedTime / Mathf.Max(0.001f, totalDuration), 0.0f, 1.0f);
+
+		switch (speedCurve.ToLowerInvariant())
+		{
+			case "accelerate":
+			case "ease_in":
+				return speed * (0.3f + 1.4f * progress * progress);
+			case "decelerate":
+			case "ease_out":
+				return speed * (1.7f - 1.4f * progress * progress);
+			case "ease_in_out":
+				float smoothProgress = progress * progress * (3.0f - 2.0f * progress);
+				return speed * (0.4f + 1.2f * smoothProgress);
+			case "rocket_boost":
+				return speed * (0.15f + 2.35f * Mathf.Pow(progress, 3.0f));
+			case "burst":
+				return speed * (1.0f + 1.5f * Mathf.Exp(-4.0f * progress));
+			default:
+				return speed;
+		}
+	}
+
+	private static float CalculateScaleOverLifetime(float t, string scaleCurve)
+	{
+		if (string.IsNullOrEmpty(scaleCurve) || scaleCurve == "constant" || scaleCurve == "none")
+			return 1.0f;
+
+		switch (scaleCurve.ToLowerInvariant())
+		{
+			case "grow":
+				return Mathf.Clamp(t * 1.5f, 0.0f, 1.0f);
+			case "shrink":
+				return Mathf.Clamp(1.0f - t, 0.0f, 1.0f);
+			case "grow_shrink":
+				return Mathf.Sin(Mathf.Clamp(t, 0.0f, 1.0f) * Mathf.Pi);
+			case "squash_stretch":
+				if (t < 0.2f)
+					return (t / 0.2f) * 1.2f;
+				else if (t < 0.4f)
+					return 1.2f - ((t - 0.2f) / 0.2f) * 0.2f;
+				else if (t > 0.85f)
+					return Mathf.Max(0.0f, (1.0f - t) / 0.15f);
+				return 1.0f;
+			case "impact_shrink":
+				return t > 0.8f ? Mathf.Clamp((1.0f - t) / 0.2f, 0.0f, 1.0f) : 1.0f;
+			default:
+				return 1.0f;
 		}
 	}
 

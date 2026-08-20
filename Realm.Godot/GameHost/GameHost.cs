@@ -682,6 +682,11 @@ public partial class GameHost : Node3D, IGameAPI
 			ThresholdSmoothness = 0.1f;
 			RibbonWidth = 0.4f;
 			RibbonLifetime = 0.5f;
+			EmissionMaskSource = "noise";
+			ForwardAxisPreset = "-Z";
+			MeshScaleOffset = Vector3.One;
+			PointLightIntensity = 2.0f;
+			PointLightRange = 6.0f;
 		}
 
 		public string WeaponId { get; set; }
@@ -699,9 +704,19 @@ public partial class GameHost : Node3D, IGameAPI
 
 		public float ArcHeight { get; set; }
 		public float HomingWeight { get; set; }
+		public float TurnRateLimit { get; set; }
 		public string EaseCurve { get; set; }
+		public string SpeedCurve { get; set; }
+		public float Acceleration { get; set; }
+		public float MaxLifetime { get; set; }
+		public float FailsafeRange { get; set; }
+		public string ScaleCurve { get; set; }
 		public Vector3 TumbleAngularVelocity { get; set; }
 		public bool OrientToTrajectory { get; set; } = true;
+		public string ForwardAxisPreset { get; set; } = "-Z";
+		public Vector3 MeshRotationOffset { get; set; }
+		public Vector3 MeshTranslationOffset { get; set; }
+		public Vector3 MeshScaleOffset { get; set; } = Vector3.One;
 		public float SpiralRadius { get; set; }
 		public float SpiralFrequency { get; set; }
 		public float ZigzagAmplitude { get; set; }
@@ -710,6 +725,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public int PierceCount { get; set; }
 
 		public string ShaderEffectType { get; set; }
+		public string EmissionMaskSource { get; set; } = "noise";
 		public string BaseColor { get; set; }
 		public string EmissionColor { get; set; }
 		public float EmissionEnergy { get; set; } = 4f;
@@ -723,6 +739,11 @@ public partial class GameHost : Node3D, IGameAPI
 		public float ThresholdCutoff { get; set; } = 0.5f;
 		public float ThresholdSmoothness { get; set; } = 0.1f;
 
+		public bool PointLightEnabled { get; set; }
+		public string PointLightColor { get; set; }
+		public float PointLightIntensity { get; set; } = 2.0f;
+		public float PointLightRange { get; set; } = 6.0f;
+
 		public string RibbonTexture { get; set; }
 		public string RibbonColor { get; set; }
 		public float RibbonWidth { get; set; } = 0.4f;
@@ -730,6 +751,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public bool RibbonTaper { get; set; } = true;
 		public bool RibbonAdditive { get; set; } = true;
 		public float RibbonScrollSpeed { get; set; }
+		public Vector3 TrailOffset { get; set; }
 	}
 
 	public struct PropMetadata

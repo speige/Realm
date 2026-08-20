@@ -1487,12 +1487,41 @@
                                         <input type="number" class="weapon-speed" data-index="${index}" value="${item.ProjectileSpeed ?? 25}" min="0" step="any" />
                                     </div>
                                     <div class="form-group">
+                                        <label>Acceleration</label>
+                                        <input type="number" class="weapon-acceleration" data-index="${index}" value="${item.Acceleration ?? 0}" step="0.5" placeholder="0" title="Acceleration in Units/s²" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Speed Curve</label>
+                                        <select class="weapon-speed-curve" data-index="${index}">
+                                            <option value="constant" ${item.SpeedCurve === 'constant' || !item.SpeedCurve ? 'selected' : ''}>Constant</option>
+                                            <option value="ease_in" ${item.SpeedCurve === 'ease_in' || item.SpeedCurve === 'accelerate' ? 'selected' : ''}>Ease In (Accelerate)</option>
+                                            <option value="ease_out" ${item.SpeedCurve === 'ease_out' || item.SpeedCurve === 'decelerate' ? 'selected' : ''}>Ease Out (Decelerate)</option>
+                                            <option value="ease_in_out" ${item.SpeedCurve === 'ease_in_out' ? 'selected' : ''}>Ease In Out</option>
+                                            <option value="rocket_boost" ${item.SpeedCurve === 'rocket_boost' ? 'selected' : ''}>Rocket Boost</option>
+                                            <option value="burst" ${item.SpeedCurve === 'burst' ? 'selected' : ''}>Burst Then Coast</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
                                         <label>Ballistic Arc Height</label>
                                         <input type="number" class="weapon-arc" data-index="${index}" value="${item.ArcHeight ?? 0}" min="0" step="0.1" />
                                     </div>
+                                </div>
+                                <div class="form-row">
                                     <div class="form-group">
                                         <label>Homing Weight (0-1)</label>
                                         <input type="number" class="weapon-homing" data-index="${index}" value="${item.HomingWeight ?? 0}" min="0" max="1" step="0.05" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Turn Rate Limit (°/s)</label>
+                                        <input type="number" class="weapon-turn-rate" data-index="${index}" value="${item.TurnRateLimit ?? 0}" min="0" step="15" placeholder="0 = infinite" title="Max turn speed in degrees per second for frame-rate independent homing curves" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Max Lifetime (s)</label>
+                                        <input type="number" class="weapon-max-lifetime" data-index="${index}" value="${item.MaxLifetime ?? 0}" min="0" step="0.5" placeholder="0 = auto" title="Despawn timer to prevent infinite looping homing projectiles" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Failsafe Range</label>
+                                        <input type="number" class="weapon-failsafe-range" data-index="${index}" value="${item.FailsafeRange ?? 0}" min="0" step="5" placeholder="0 = auto" title="Max travel distance before despawn failsafe" />
                                     </div>
                                     <div class="form-group">
                                         <label>Ease Curve</label>
@@ -1501,6 +1530,17 @@
                                             <option value="ease_in" ${item.EaseCurve === 'ease_in' ? 'selected' : ''}>Ease In</option>
                                             <option value="ease_out" ${item.EaseCurve === 'ease_out' ? 'selected' : ''}>Ease Out</option>
                                             <option value="ease_in_out" ${item.EaseCurve === 'ease_in_out' ? 'selected' : ''}>Ease In Out</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Scale over Lifetime</label>
+                                        <select class="weapon-scale-curve" data-index="${index}">
+                                            <option value="constant" ${item.ScaleCurve === 'constant' || !item.ScaleCurve ? 'selected' : ''}>Constant (1.0)</option>
+                                            <option value="grow" ${item.ScaleCurve === 'grow' ? 'selected' : ''}>Grow (0.0 -> 1.0)</option>
+                                            <option value="shrink" ${item.ScaleCurve === 'shrink' ? 'selected' : ''}>Shrink (1.0 -> 0.0)</option>
+                                            <option value="grow_shrink" ${item.ScaleCurve === 'grow_shrink' ? 'selected' : ''}>Grow &amp; Shrink (Pulse)</option>
+                                            <option value="squash_stretch" ${item.ScaleCurve === 'squash_stretch' ? 'selected' : ''}>Squash &amp; Stretch (Launch Pop)</option>
+                                            <option value="impact_shrink" ${item.ScaleCurve === 'impact_shrink' ? 'selected' : ''}>Impact Shrink (Shrink on Hit)</option>
                                         </select>
                                     </div>
                                 </div>
@@ -1539,6 +1579,43 @@
                                         </div>
                                     </div>
                                 </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Forward Axis Preset</label>
+                                        <select class="weapon-forward-axis" data-index="${index}">
+                                            <option value="-Z" ${item.ForwardAxisPreset === '-Z' || !item.ForwardAxisPreset ? 'selected' : ''}>-Z (Godot Forward)</option>
+                                            <option value="+Z" ${item.ForwardAxisPreset === '+Z' ? 'selected' : ''}>+Z (Inverted Forward)</option>
+                                            <option value="+X" ${item.ForwardAxisPreset === '+X' ? 'selected' : ''}>+X (Right Forward)</option>
+                                            <option value="-X" ${item.ForwardAxisPreset === '-X' ? 'selected' : ''}>-X (Left Forward)</option>
+                                            <option value="+Y" ${item.ForwardAxisPreset === '+Y' ? 'selected' : ''}>+Y (Upward)</option>
+                                            <option value="-Y" ${item.ForwardAxisPreset === '-Y' ? 'selected' : ''}>-Y (Blender Top/Down)</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Mesh Rotation Offset (° X, Y, Z)</label>
+                                        <div style="display: flex; gap: 4px;">
+                                            <input type="number" class="weapon-rot-x" data-index="${index}" value="${(item.MeshRotationOffset && item.MeshRotationOffset.X !== undefined) ? item.MeshRotationOffset.X : 0}" step="15" placeholder="X°" title="Mesh X rotation offset in degrees" />
+                                            <input type="number" class="weapon-rot-y" data-index="${index}" value="${(item.MeshRotationOffset && item.MeshRotationOffset.Y !== undefined) ? item.MeshRotationOffset.Y : 0}" step="15" placeholder="Y°" title="Mesh Y rotation offset in degrees" />
+                                            <input type="number" class="weapon-rot-z" data-index="${index}" value="${(item.MeshRotationOffset && item.MeshRotationOffset.Z !== undefined) ? item.MeshRotationOffset.Z : 0}" step="15" placeholder="Z°" title="Mesh Z rotation offset in degrees" />
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Mesh Translation Offset (X, Y, Z)</label>
+                                        <div style="display: flex; gap: 4px;">
+                                            <input type="number" class="weapon-trans-x" data-index="${index}" value="${(item.MeshTranslationOffset && item.MeshTranslationOffset.X !== undefined) ? item.MeshTranslationOffset.X : 0}" step="0.1" placeholder="X" title="Pivot offset X" />
+                                            <input type="number" class="weapon-trans-y" data-index="${index}" value="${(item.MeshTranslationOffset && item.MeshTranslationOffset.Y !== undefined) ? item.MeshTranslationOffset.Y : 0}" step="0.1" placeholder="Y" title="Pivot offset Y" />
+                                            <input type="number" class="weapon-trans-z" data-index="${index}" value="${(item.MeshTranslationOffset && item.MeshTranslationOffset.Z !== undefined) ? item.MeshTranslationOffset.Z : 0}" step="0.1" placeholder="Z" title="Pivot offset Z" />
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Mesh Scale Offset (X, Y, Z)</label>
+                                        <div style="display: flex; gap: 4px;">
+                                            <input type="number" class="weapon-scale-x" data-index="${index}" value="${(item.MeshScaleOffset && item.MeshScaleOffset.X !== undefined) ? item.MeshScaleOffset.X : 1}" step="0.1" placeholder="X" title="Scale X" />
+                                            <input type="number" class="weapon-scale-y" data-index="${index}" value="${(item.MeshScaleOffset && item.MeshScaleOffset.Y !== undefined) ? item.MeshScaleOffset.Y : 1}" step="0.1" placeholder="Y" title="Scale Y" />
+                                            <input type="number" class="weapon-scale-z" data-index="${index}" value="${(item.MeshScaleOffset && item.MeshScaleOffset.Z !== undefined) ? item.MeshScaleOffset.Z : 1}" step="0.1" placeholder="Z" title="Scale Z" />
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- SECTION 3: PROCEDURAL UBER-SHADER FX -->
@@ -1555,6 +1632,15 @@
                                     </div>
                                 </div>
                                 <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Emission Mask Source</label>
+                                        <select class="weapon-emission-mask" data-index="${index}">
+                                            <option value="noise" ${item.EmissionMaskSource === 'noise' || !item.EmissionMaskSource ? 'selected' : ''}>Noise Only</option>
+                                            <option value="vertex_color" ${item.EmissionMaskSource === 'vertex_color' || item.EmissionMaskSource === 'vertex_color_spikes' ? 'selected' : ''}>Vertex Color / Spikes</option>
+                                            <option value="fresnel" ${item.EmissionMaskSource === 'fresnel' || item.EmissionMaskSource === 'fresnel_only' ? 'selected' : ''}>Fresnel Only</option>
+                                            <option value="texture_alpha" ${item.EmissionMaskSource === 'texture_alpha' ? 'selected' : ''}>Texture Alpha</option>
+                                        </select>
+                                    </div>
                                     <div class="form-group">
                                         <label>Base Color</label>
                                         <div style="display: flex; gap: 4px; align-items: center;">
@@ -1622,6 +1708,27 @@
                                         </div>
                                     </div>
                                 </div>
+                                <div class="form-row">
+                                    <div class="form-group checkbox-group" style="margin-top: 18px;">
+                                        <input type="checkbox" class="weapon-light-enabled" data-index="${index}" id="weapon-light-enabled-${index}" ${item.PointLightEnabled ? 'checked' : ''} />
+                                        <label for="weapon-light-enabled-${index}">Dynamic Point Light</label>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Light Color</label>
+                                        <div style="display: flex; gap: 4px; align-items: center;">
+                                            <input type="color" class="color-picker-input" data-target="weapon-light-col-${index}" value="${formatHex(item.PointLightColor || '#ffaa33')}" style="width: 32px; height: 28px; padding: 0; cursor: pointer; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px;" />
+                                            <input type="text" class="weapon-light-color" id="weapon-light-col-${index}" data-index="${index}" value="${item.PointLightColor || '#ffaa33'}" placeholder="#ffaa33" />
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Light Intensity</label>
+                                        <input type="number" class="weapon-light-intensity" data-index="${index}" value="${item.PointLightIntensity ?? 2.0}" min="0" step="0.5" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Light Range</label>
+                                        <input type="number" class="weapon-light-range" data-index="${index}" value="${item.PointLightRange ?? 6.0}" min="0.5" step="1.0" />
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- SECTION 4: RIBBON TRAIL EMITTER -->
@@ -1657,6 +1764,16 @@
                                     <div class="form-group checkbox-group" style="margin-top: 18px;">
                                         <input type="checkbox" class="weapon-ribbon-additive" data-index="${index}" id="weapon-ribbon-additive-${index}" ${item.RibbonAdditive !== false ? 'checked' : ''} />
                                         <label for="weapon-ribbon-additive-${index}">Additive Blend</label>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Trail Offset (X, Y, Z)</label>
+                                        <div style="display: flex; gap: 4px;">
+                                            <input type="number" class="weapon-trail-x" data-index="${index}" value="${(item.TrailOffset && item.TrailOffset.X !== undefined) ? item.TrailOffset.X : 0}" step="0.1" placeholder="X" title="Trail Origin Offset X" />
+                                            <input type="number" class="weapon-trail-y" data-index="${index}" value="${(item.TrailOffset && item.TrailOffset.Y !== undefined) ? item.TrailOffset.Y : 0}" step="0.1" placeholder="Y" title="Trail Origin Offset Y" />
+                                            <input type="number" class="weapon-trail-z" data-index="${index}" value="${(item.TrailOffset && item.TrailOffset.Z !== undefined) ? item.TrailOffset.Z : 0}" step="0.1" placeholder="Z" title="Trail Origin Offset Z" />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1717,11 +1834,51 @@
                 const targetId = picker.getAttribute('data-target');
                 const textInput = document.getElementById(targetId);
                 if (textInput) {
-                    textInput.value = picker.value;
+                    const currentVal = textInput.value ? textInput.value.trim() : '';
+                    if (/^#[0-9a-fA-F]{8}$/.test(currentVal)) {
+                        textInput.value = picker.value + currentVal.substring(7, 9);
+                    } else {
+                        textInput.value = picker.value;
+                    }
                     textInput.dispatchEvent(new Event('change', { bubbles: true }));
                 }
             });
         });
+
+        tableContainer.querySelectorAll('.weapon-base-color, .weapon-emission-color, .weapon-fresnel-color, .weapon-light-color, .weapon-ribbon-color').forEach(textInput => {
+            textInput.addEventListener('input', e => {
+                const target = e.target;
+                const rawVal = target.value ? target.value.trim() : '';
+                if (isValidHexColor(rawVal)) {
+                    const picker = target.parentElement ? target.parentElement.querySelector('.color-picker-input') : document.querySelector(`.color-picker-input[data-target="${target.id}"]`);
+                    if (picker) {
+                        picker.value = formatHex(rawVal);
+                    }
+                    target.style.borderColor = '';
+                }
+            });
+        });
+
+        function handleColorFieldChange(target, idx, prop, defaultFallback) {
+            const rawVal = target.value ? target.value.trim() : '';
+            const currentSaved = list[idx][prop] || defaultFallback;
+            const picker = target.parentElement ? target.parentElement.querySelector('.color-picker-input') : document.querySelector(`.color-picker-input[data-target="${target.id}"]`);
+
+            if (!isValidHexColor(rawVal)) {
+                target.value = currentSaved;
+                if (picker) picker.value = formatHex(currentSaved);
+                target.style.borderColor = '#e51400';
+                setTimeout(() => { target.style.borderColor = ''; }, 1000);
+                return false;
+            }
+
+            const normalized = normalizeHexColor(rawVal, currentSaved);
+            list[idx][prop] = normalized;
+            target.value = normalized;
+            target.style.borderColor = '';
+            if (picker) picker.value = formatHex(normalized);
+            return true;
+        }
 
         tableContainer.querySelectorAll('.btn-fx-preset').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1766,6 +1923,31 @@
                 else if (target.classList.contains('weapon-impact-sound')) list[idx].ImpactSound = val;
                 else if (target.classList.contains('weapon-arc')) list[idx].ArcHeight = parseFloat(val) || 0;
                 else if (target.classList.contains('weapon-homing')) list[idx].HomingWeight = Math.min(1, Math.max(0, parseFloat(val) || 0));
+                else if (target.classList.contains('weapon-turn-rate')) list[idx].TurnRateLimit = Math.max(0, parseFloat(val) || 0);
+                else if (target.classList.contains('weapon-speed-curve')) list[idx].SpeedCurve = val;
+                else if (target.classList.contains('weapon-acceleration')) list[idx].Acceleration = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-max-lifetime')) list[idx].MaxLifetime = Math.max(0, parseFloat(val) || 0);
+                else if (target.classList.contains('weapon-failsafe-range')) list[idx].FailsafeRange = Math.max(0, parseFloat(val) || 0);
+                else if (target.classList.contains('weapon-scale-curve')) list[idx].ScaleCurve = val;
+                else if (target.classList.contains('weapon-forward-axis')) list[idx].ForwardAxisPreset = val;
+                else if (target.classList.contains('weapon-rot-x') || target.classList.contains('weapon-rot-y') || target.classList.contains('weapon-rot-z')) {
+                    if (!list[idx].MeshRotationOffset) list[idx].MeshRotationOffset = { X: 0, Y: 0, Z: 0 };
+                    if (target.classList.contains('weapon-rot-x')) list[idx].MeshRotationOffset.X = parseFloat(val) || 0;
+                    if (target.classList.contains('weapon-rot-y')) list[idx].MeshRotationOffset.Y = parseFloat(val) || 0;
+                    if (target.classList.contains('weapon-rot-z')) list[idx].MeshRotationOffset.Z = parseFloat(val) || 0;
+                }
+                else if (target.classList.contains('weapon-trans-x') || target.classList.contains('weapon-trans-y') || target.classList.contains('weapon-trans-z')) {
+                    if (!list[idx].MeshTranslationOffset) list[idx].MeshTranslationOffset = { X: 0, Y: 0, Z: 0 };
+                    if (target.classList.contains('weapon-trans-x')) list[idx].MeshTranslationOffset.X = parseFloat(val) || 0;
+                    if (target.classList.contains('weapon-trans-y')) list[idx].MeshTranslationOffset.Y = parseFloat(val) || 0;
+                    if (target.classList.contains('weapon-trans-z')) list[idx].MeshTranslationOffset.Z = parseFloat(val) || 0;
+                }
+                else if (target.classList.contains('weapon-scale-x') || target.classList.contains('weapon-scale-y') || target.classList.contains('weapon-scale-z')) {
+                    if (!list[idx].MeshScaleOffset) list[idx].MeshScaleOffset = { X: 1, Y: 1, Z: 1 };
+                    if (target.classList.contains('weapon-scale-x')) list[idx].MeshScaleOffset.X = parseFloat(val) || 1;
+                    if (target.classList.contains('weapon-scale-y')) list[idx].MeshScaleOffset.Y = parseFloat(val) || 1;
+                    if (target.classList.contains('weapon-scale-z')) list[idx].MeshScaleOffset.Z = parseFloat(val) || 1;
+                }
                 else if (target.classList.contains('weapon-ease')) list[idx].EaseCurve = val;
                 else if (target.classList.contains('weapon-orient')) list[idx].OrientToTrajectory = !!target.checked;
                 else if (target.classList.contains('weapon-tumble-x') || target.classList.contains('weapon-tumble-y') || target.classList.contains('weapon-tumble-z')) {
@@ -1780,10 +1962,17 @@
                 else if (target.classList.contains('weapon-zigzag-freq')) list[idx].ZigzagFrequency = parseFloat(val) || 0;
                 else if (target.classList.contains('weapon-max-bounces')) list[idx].MaxBounces = parseInt(val, 10) || 0;
                 else if (target.classList.contains('weapon-pierce-count')) list[idx].PierceCount = parseInt(val, 10) || 0;
-                else if (target.classList.contains('weapon-base-color')) list[idx].BaseColor = val;
-                else if (target.classList.contains('weapon-emission-color')) list[idx].EmissionColor = val;
+                else if (target.classList.contains('weapon-emission-mask')) list[idx].EmissionMaskSource = val;
+                else if (target.classList.contains('weapon-base-color')) {
+                    if (!handleColorFieldChange(target, idx, 'BaseColor', '#261e19')) return;
+                }
+                else if (target.classList.contains('weapon-emission-color')) {
+                    if (!handleColorFieldChange(target, idx, 'EmissionColor', '#ff6600')) return;
+                }
                 else if (target.classList.contains('weapon-emission-energy')) list[idx].EmissionEnergy = parseFloat(val) || 0;
-                else if (target.classList.contains('weapon-fresnel-color')) list[idx].FresnelColor = val;
+                else if (target.classList.contains('weapon-fresnel-color')) {
+                    if (!handleColorFieldChange(target, idx, 'FresnelColor', '#ff9933')) return;
+                }
                 else if (target.classList.contains('weapon-fresnel-power')) list[idx].FresnelPower = parseFloat(val) || 0;
                 else if (target.classList.contains('weapon-fresnel-factor')) list[idx].FresnelFactor = parseFloat(val) || 0;
                 else if (target.classList.contains('weapon-noise-scale')) list[idx].NoiseScale = parseFloat(val) || 0;
@@ -1800,12 +1989,26 @@
                 }
                 else if (target.classList.contains('weapon-thresh-cutoff')) list[idx].ThresholdCutoff = parseFloat(val) || 0;
                 else if (target.classList.contains('weapon-thresh-smooth')) list[idx].ThresholdSmoothness = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-light-enabled')) list[idx].PointLightEnabled = !!target.checked;
+                else if (target.classList.contains('weapon-light-color')) {
+                    if (!handleColorFieldChange(target, idx, 'PointLightColor', '#ffaa33')) return;
+                }
+                else if (target.classList.contains('weapon-light-intensity')) list[idx].PointLightIntensity = parseFloat(val) || 0;
+                else if (target.classList.contains('weapon-light-range')) list[idx].PointLightRange = parseFloat(val) || 0;
                 else if (target.classList.contains('weapon-ribbon-tex')) list[idx].RibbonTexture = val;
-                else if (target.classList.contains('weapon-ribbon-color')) list[idx].RibbonColor = val;
+                else if (target.classList.contains('weapon-ribbon-color')) {
+                    if (!handleColorFieldChange(target, idx, 'RibbonColor', '#ffaa33')) return;
+                }
                 else if (target.classList.contains('weapon-ribbon-width')) list[idx].RibbonWidth = parseFloat(val) || 0;
                 else if (target.classList.contains('weapon-ribbon-life')) list[idx].RibbonLifetime = parseFloat(val) || 0;
                 else if (target.classList.contains('weapon-ribbon-taper')) list[idx].RibbonTaper = !!target.checked;
                 else if (target.classList.contains('weapon-ribbon-additive')) list[idx].RibbonAdditive = !!target.checked;
+                else if (target.classList.contains('weapon-trail-x') || target.classList.contains('weapon-trail-y') || target.classList.contains('weapon-trail-z')) {
+                    if (!list[idx].TrailOffset) list[idx].TrailOffset = { X: 0, Y: 0, Z: 0 };
+                    if (target.classList.contains('weapon-trail-x')) list[idx].TrailOffset.X = parseFloat(val) || 0;
+                    if (target.classList.contains('weapon-trail-y')) list[idx].TrailOffset.Y = parseFloat(val) || 0;
+                    if (target.classList.contains('weapon-trail-z')) list[idx].TrailOffset.Z = parseFloat(val) || 0;
+                }
 
                 units.CustomWeapons = list;
                 saveChanges();
@@ -2991,12 +3194,42 @@
         renderCustomWeapons();
     }
 
+    function isValidHexColor(col) {
+        if (!col || typeof col !== 'string') return false;
+        const trimmed = col.trim();
+        return /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(trimmed);
+    }
+
+    function normalizeHexColor(col, fallback) {
+        if (!col || typeof col !== 'string') return fallback || '#ffffff';
+        let trimmed = col.trim();
+        if (!isValidHexColor(trimmed)) {
+            return fallback || '#ffffff';
+        }
+        if (!trimmed.startsWith('#')) {
+            trimmed = '#' + trimmed;
+        }
+        return trimmed.toLowerCase();
+    }
+
     function formatHex(col) {
-        if (!col) return '#ffffff';
-        if (col.startsWith('#')) {
-            if (col.length === 7) return col;
-            if (col.length === 4) return '#' + col[1] + col[1] + col[2] + col[2] + col[3] + col[3];
-            if (col.length > 7) return col.substring(0, 7);
+        if (!col || typeof col !== 'string') return '#ffffff';
+        let trimmed = col.trim();
+        if (!isValidHexColor(trimmed)) return '#ffffff';
+        if (!trimmed.startsWith('#')) {
+            trimmed = '#' + trimmed;
+        }
+        if (/^#[0-9a-fA-F]{3}$/.test(trimmed)) {
+            return ('#' + trimmed[1] + trimmed[1] + trimmed[2] + trimmed[2] + trimmed[3] + trimmed[3]).toLowerCase();
+        }
+        if (/^#[0-9a-fA-F]{4}$/.test(trimmed)) {
+            return ('#' + trimmed[1] + trimmed[1] + trimmed[2] + trimmed[2] + trimmed[3] + trimmed[3]).toLowerCase();
+        }
+        if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) {
+            return trimmed.toLowerCase();
+        }
+        if (/^#[0-9a-fA-F]{8}$/.test(trimmed)) {
+            return trimmed.substring(0, 7).toLowerCase();
         }
         return '#ffffff';
     }
@@ -3008,6 +3241,7 @@
 
         if (preset === 'fire') {
             item.ShaderEffectType = 'fire';
+            item.EmissionMaskSource = 'noise';
             item.BaseColor = '#261e19';
             item.EmissionColor = '#ff5500';
             item.EmissionEnergy = 5.0;
@@ -3026,8 +3260,16 @@
             item.RibbonAdditive = true;
             item.ArcHeight = item.ArcHeight || 3.0;
             item.TumbleAngularVelocity = item.TumbleAngularVelocity || { X: 3.0, Y: 2.0, Z: 1.0 };
+            item.PointLightEnabled = true;
+            item.PointLightColor = '#ff6611';
+            item.PointLightIntensity = 3.0;
+            item.PointLightRange = 8.0;
+            item.SpeedCurve = 'rocket_boost';
+            item.ScaleCurve = 'grow';
+            item.TrailOffset = { X: 0, Y: 0, Z: -0.4 };
         } else if (preset === 'frost') {
             item.ShaderEffectType = 'frost';
+            item.EmissionMaskSource = 'fresnel';
             item.BaseColor = '#0a1c2a';
             item.EmissionColor = '#33ccff';
             item.EmissionEnergy = 4.5;
@@ -3046,8 +3288,15 @@
             item.RibbonAdditive = true;
             item.SpiralRadius = item.SpiralRadius || 0.3;
             item.SpiralFrequency = item.SpiralFrequency || 2.0;
+            item.PointLightEnabled = true;
+            item.PointLightColor = '#44ddff';
+            item.PointLightIntensity = 2.5;
+            item.PointLightRange = 6.0;
+            item.ScaleCurve = 'squash_stretch';
+            item.TrailOffset = { X: 0, Y: 0, Z: -0.3 };
         } else if (preset === 'poison') {
             item.ShaderEffectType = 'poison';
+            item.EmissionMaskSource = 'noise';
             item.BaseColor = '#112010';
             item.EmissionColor = '#33ff33';
             item.EmissionEnergy = 4.0;
@@ -3066,8 +3315,16 @@
             item.RibbonAdditive = true;
             item.ZigzagAmplitude = item.ZigzagAmplitude || 0.4;
             item.ZigzagFrequency = item.ZigzagFrequency || 3.0;
+            item.PointLightEnabled = true;
+            item.PointLightColor = '#33ff33';
+            item.PointLightIntensity = 2.0;
+            item.PointLightRange = 5.0;
+            item.SpeedCurve = 'ease_out';
+            item.ScaleCurve = 'grow_shrink';
+            item.TrailOffset = { X: 0, Y: 0, Z: -0.2 };
         } else if (preset === 'arcane') {
             item.ShaderEffectType = 'arcane';
+            item.EmissionMaskSource = 'noise';
             item.BaseColor = '#180a24';
             item.EmissionColor = '#cc22ff';
             item.EmissionEnergy = 5.0;
@@ -3084,8 +3341,17 @@
             item.RibbonLifetime = 0.55;
             item.RibbonTaper = true;
             item.RibbonAdditive = true;
+            item.PointLightEnabled = true;
+            item.PointLightColor = '#cc33ff';
+            item.PointLightIntensity = 3.5;
+            item.PointLightRange = 7.0;
+            item.SpeedCurve = 'burst';
+            item.ScaleCurve = 'grow_shrink';
+            item.TurnRateLimit = item.TurnRateLimit || 240;
+            item.TrailOffset = { X: 0, Y: 0, Z: -0.3 };
         } else if (preset === 'holy') {
             item.ShaderEffectType = 'holy';
+            item.EmissionMaskSource = 'fresnel';
             item.BaseColor = '#2b2310';
             item.EmissionColor = '#ffee44';
             item.EmissionEnergy = 6.0;
@@ -3102,6 +3368,13 @@
             item.RibbonLifetime = 0.5;
             item.RibbonTaper = true;
             item.RibbonAdditive = true;
+            item.PointLightEnabled = true;
+            item.PointLightColor = '#ffee55';
+            item.PointLightIntensity = 4.0;
+            item.PointLightRange = 9.0;
+            item.SpeedCurve = 'ease_in';
+            item.ScaleCurve = 'impact_shrink';
+            item.TrailOffset = { X: 0, Y: 0, Z: -0.4 };
         }
 
         units.CustomWeapons = list;
