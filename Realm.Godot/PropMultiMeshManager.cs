@@ -191,7 +191,7 @@ public partial class PropMultiMeshManager : Node3D
 
 		foreach (var prop in GameHost.Instance.AllProps)
 		{
-			if (GodotObject.IsInstanceValid(prop) && !prop.IsPreview)
+			if (GodotObject.IsInstanceValid(prop) && !prop.IsPreview && prop.GetNodeOrNull<Node3D>("VisualModel") == null)
 			{
 				string key = GameHost.Instance.GetModelAssetKey(prop);
 				if (!string.IsNullOrEmpty(key))
@@ -246,7 +246,7 @@ public partial class PropMultiMeshManager : Node3D
 
 		foreach (var prop in GameHost.Instance.AllProps)
 		{
-			if (GodotObject.IsInstanceValid(prop) && !prop.IsPreview && prop.Visible && GameHost.Instance.GetModelAssetKey(prop) == normAssetKey)
+			if (GodotObject.IsInstanceValid(prop) && !prop.IsPreview && prop.Visible && prop.GetNodeOrNull<Node3D>("VisualModel") == null && GameHost.Instance.GetModelAssetKey(prop) == normAssetKey)
 			{
 				_reusableMatchingPropsData.Add(new PropData
 				{

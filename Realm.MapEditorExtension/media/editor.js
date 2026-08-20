@@ -1021,9 +1021,7 @@
 
             if (animList.length === 0) {
                 const emptySpan = document.createElement('span');
-                emptySpan.style.color = 'var(--text-muted)';
-                emptySpan.style.fontSize = '11px';
-                emptySpan.style.fontStyle = 'italic';
+                emptySpan.className = 'anim-chips-fallback';
                 emptySpan.textContent = `Default fallback (${typeKey.toLowerCase()}.ranim)`;
                 chipsContainer.appendChild(emptySpan);
             } else {
@@ -3395,9 +3393,9 @@
 
         const animAssets = (units.Assets && units.Assets.animations) ? units.Assets.animations : {};
         const animList = Object.keys(animAssets);
-        const standardDefaults = ['idle.ranim', 'walk.ranim', 'attack.ranim', 'death.ranim', 'labor.ranim', 'spell_cast.ranim'];
-        const allAnimsSet = new Set([...animList, ...standardDefaults]);
-        populateDatalist('suggest-animations', Array.from(allAnimsSet).map(a => ({ id: a, name: a })));
+        const standardDefaults = new Set(['idle.ranim', 'walk.ranim', 'attack.ranim', 'death.ranim', 'labor.ranim', 'spell_cast.ranim', 'dance.ranim']);
+        const customAnims = animList.filter(a => !standardDefaults.has(a.toLowerCase()));
+        populateDatalist('suggest-animations', customAnims.map(a => ({ id: a, name: a })));
     }
 
     function populateDatalist(id, items) {

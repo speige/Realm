@@ -172,7 +172,7 @@ public partial class GameHost
 		{
 			if (GodotObject.IsInstanceValid(prop) && MatchesEntityOrAssetKey(prop, norm))
 			{
-				prop.Position = new Vector3(prop.Position.X, _editorService.GetTerrainHeightAt(prop.Position) + offset, prop.Position.Z);
+				prop.UpdateVisualYOffset(offset);
 			}
 		}
 		PropMultiMeshManager.Instance?.MarkDirty(norm);
@@ -459,11 +459,7 @@ public partial class GameHost
 		if (objOrNode is Unit3D unit && GodotObject.IsInstanceValid(unit))
 		{
 			float yOffset = GetModelYOffset(unit);
-			if (yOffset != 0f)
-			{
-				unit.Position = new Vector3(unit.Position.X, _editorService.GetTerrainHeightAt(unit.Position) + yOffset, unit.Position.Z);
-				unit.UpdateModelYOffset(yOffset);
-			}
+			unit.UpdateModelYOffset(yOffset);
 
 			float circleRatio = GetModelCollisionCircleRatio(unit);
 			unit.UpdateCollisionCircleScale(circleRatio);
@@ -494,11 +490,7 @@ public partial class GameHost
 		else if (objOrNode is Prop3D prop && GodotObject.IsInstanceValid(prop))
 		{
 			float yOffset = GetModelYOffset(prop);
-			if (yOffset != 0f)
-			{
-				prop.Position = new Vector3(prop.Position.X, _editorService.GetTerrainHeightAt(prop.Position) + yOffset, prop.Position.Z);
-				prop.UpdateVisualYOffset(yOffset);
-			}
+			prop.UpdateVisualYOffset(yOffset);
 
 			float circleRatio = GetModelCollisionCircleRatio(prop);
 			prop.UpdateCollisionCircleScale(circleRatio);

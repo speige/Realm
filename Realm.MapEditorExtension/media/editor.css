@@ -1135,7 +1135,8 @@ textarea:focus {
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
-    color: var(--text-muted);
+    color: var(--vscode-foreground, var(--text-primary));
+    opacity: 0.85;
     border-bottom: 1px solid var(--border-color);
 }
 
@@ -1153,11 +1154,16 @@ textarea:focus {
     width: 130px;
     font-weight: 600;
     font-size: 12px;
-    color: var(--vscode-symbolIcon-propertyForeground, #4ec9b0);
+    color: var(--vscode-editor-foreground, var(--text-primary));
     display: flex;
     align-items: center;
     gap: 6px;
     padding-top: 4px;
+}
+
+.anim-type-cell strong {
+    color: var(--vscode-editor-foreground, var(--text-primary));
+    font-weight: 600;
 }
 
 .anim-chips-container {
@@ -1169,31 +1175,38 @@ textarea:focus {
     margin-bottom: 8px;
 }
 
+.anim-chips-fallback {
+    color: var(--vscode-descriptionForeground, #9d9d9d);
+    font-size: 11px;
+    font-style: italic;
+}
+
 .anim-chip {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: rgba(0, 122, 204, 0.15);
-    border: 1px solid rgba(0, 122, 204, 0.35);
+    background: rgba(0, 122, 204, 0.22);
+    border: 1px solid rgba(0, 122, 204, 0.5);
     border-radius: 4px;
-    padding: 2px 8px;
+    padding: 3px 8px;
     font-size: 11px;
     font-family: monospace;
-    color: #e0e0e0;
+    color: var(--vscode-editor-foreground, #ffffff);
 }
 
 .anim-chip-index {
-    font-weight: bold;
-    color: var(--accent);
-    background: rgba(0, 0, 0, 0.25);
-    padding: 1px 4px;
+    font-weight: 700;
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 1px 6px;
     border-radius: 3px;
     font-size: 10px;
+    letter-spacing: 0.3px;
 }
 
 .anim-chip .remove-anim {
     cursor: pointer;
-    color: var(--text-muted);
+    color: var(--vscode-descriptionForeground, #aaaaaa);
     font-weight: bold;
     font-size: 13px;
     line-height: 1;
