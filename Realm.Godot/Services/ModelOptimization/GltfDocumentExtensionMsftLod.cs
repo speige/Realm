@@ -310,7 +310,7 @@ public partial class GltfDocumentExtensionMsftLod : GltfDocumentExtension
 			case 2:
 				meshInstance.VisibilityRangeBegin = 12f * scale;
 				meshInstance.VisibilityRangeEnd = 30f * scale;
-				meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+				meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
 				break;
 			case 3:
 			default:
