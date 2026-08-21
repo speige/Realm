@@ -209,7 +209,10 @@ public partial class Unit3D : Prop3D
 	{
 		if (IsPreview) return;
 
+		SetNotifyTransform(true);
+
 		var collisionShape = new CollisionShape3D();
+		collisionShape.Name = "CollisionShape";
 		if (IsBuilding)
 		{
 			var boxShape = new BoxShape3D();
@@ -231,6 +234,15 @@ public partial class Unit3D : Prop3D
 
 		CreateSelectionRing();
 		SetProcess(false);
+	}
+
+	public override void UpdateLodVisibility()
+	{
+		if (_modelNode != null && GodotObject.IsInstanceValid(_modelNode))
+		{
+			float effectiveScale = Math.Max(0.01f, Scale.Y * _modelNode.Scale.Y);
+			Realm.Godot.Services.ModelOptimization.GltfDocumentExtensionMsftLod.UpdateLodVisibilityRanges(_modelNode, effectiveScale);
+		}
 	}
 
 	private float _baseModelYOffset = 0f;
@@ -280,6 +292,8 @@ public partial class Unit3D : Prop3D
 					_modelNode.Scale = new Vector3(wScale, wScale, wScale);
 				}
 
+				UpdateLodVisibility();
+
 
 				float minY = GetMinY(_modelNode, Transform3D.Identity);
 				_baseModelYOffset = -minY * _modelNode.Scale.Y;
@@ -299,6 +313,21 @@ public partial class Unit3D : Prop3D
 				}
 
 				GameHost.Instance?.ApplyAllGlobalOverridesToObject(this);
+
+				var colShapeNode = GetNodeOrNull<CollisionShape3D>("CollisionShape");
+				if (colShapeNode != null && _modelNode != null)
+				{
+					Aabb modelAabb = GetCombinedAabb(_modelNode);
+					if (modelAabb.Size.LengthSquared() > 0.01f)
+					{
+						var (analShape, analOffset) = Realm.Godot.Services.ModelOptimization.ModelOptimizerService.GenerateAnalyticalCollisionShape(modelAabb, IsBuilding);
+						if (analShape != null)
+						{
+							colShapeNode.Shape = analShape;
+							colShapeNode.Position = analOffset;
+						}
+					}
+				}
 			}
 			else
 			{
@@ -313,6 +342,55 @@ public partial class Unit3D : Prop3D
 		}
 
 		UpdateDropShadow();
+	}
+
+	private Aabb GetCombinedAabb(Node root)
+	{
+		Aabb totalAabb = new Aabb();
+		bool first = true;
+		CollectAabbRecursive(root, Transform3D.Identity, ref totalAabb, ref first);
+		return totalAabb;
+	}
+
+	private void CollectAabbRecursive(Node node, Transform3D currentTransform, ref Aabb totalAabb, ref bool first)
+	{
+		if (node is MeshInstance3D mi && mi.Mesh != null)
+		{
+			Aabb localAabb = mi.Mesh.GetAabb();
+			Vector3[] corners = new Vector3[8]
+			{
+				new Vector3(localAabb.Position.X, localAabb.Position.Y, localAabb.Position.Z),
+				new Vector3(localAabb.Position.X + localAabb.Size.X, localAabb.Position.Y, localAabb.Position.Z),
+				new Vector3(localAabb.Position.X, localAabb.Position.Y + localAabb.Size.Y, localAabb.Position.Z),
+				new Vector3(localAabb.Position.X, localAabb.Position.Y, localAabb.Position.Z + localAabb.Size.Z),
+				new Vector3(localAabb.Position.X + localAabb.Size.X, localAabb.Position.Y + localAabb.Size.Y, localAabb.Position.Z),
+				new Vector3(localAabb.Position.X + localAabb.Size.X, localAabb.Position.Y, localAabb.Position.Z + localAabb.Size.Z),
+				new Vector3(localAabb.Position.X, localAabb.Position.Y + localAabb.Size.Y, localAabb.Position.Z + localAabb.Size.Z),
+				new Vector3(localAabb.Position.X + localAabb.Size.X, localAabb.Position.Y + localAabb.Size.Y, localAabb.Position.Z + localAabb.Size.Z)
+			};
+
+			foreach (var c in corners)
+			{
+				Vector3 transformed = currentTransform * c;
+				if (first)
+				{
+					totalAabb = new Aabb(transformed, Vector3.Zero);
+					first = false;
+				}
+				else
+				{
+					totalAabb = totalAabb.Expand(transformed);
+				}
+			}
+		}
+
+		foreach (var child in node.GetChildren())
+		{
+			if (child is Node3D child3D)
+			{
+				CollectAabbRecursive(child, currentTransform * child3D.Transform, ref totalAabb, ref first);
+			}
+		}
 	}
 
 	/// <summary>

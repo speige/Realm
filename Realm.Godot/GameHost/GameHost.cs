@@ -45,11 +45,13 @@ public partial class GameHost : Node3D, IGameAPI
 	private CheatService _cheatService;
 	private EnvironmentService _environmentService;
 	private SpectatorService _spectatorService;
+	private Realm.Godot.Services.ModelOptimization.ModelOptimizerService _modelOptimizerService;
 
 	public CheatService CheatService => _cheatService;
 	public EnvironmentService EnvironmentService => _environmentService;
 	public SpectatorService SpectatorService => _spectatorService;
 	public ShroudService ShroudService => _shroudService;
+	public Realm.Godot.Services.ModelOptimization.ModelOptimizerService ModelOptimizerService => _modelOptimizerService;
 
 	public bool UnlimitedPowerEnabled { get; set; } = false;
 	public bool GigachadEnabled { get; set; } = false;

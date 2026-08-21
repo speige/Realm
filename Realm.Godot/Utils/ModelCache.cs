@@ -8,6 +8,11 @@ namespace Realm.Godot.Utils
 	{
 		private static readonly Dictionary<string, PackedScene> _cachedScenes = new(StringComparer.OrdinalIgnoreCase);
 
+		static ModelCache()
+		{
+			Realm.Godot.Services.ModelOptimization.GltfDocumentExtensionMsftLod.RegisterExtension();
+		}
+
 		public static string ResolveModelPath(string modelPath)
 		{
 			if (string.IsNullOrEmpty(modelPath)) return null;
@@ -128,6 +133,7 @@ namespace Realm.Godot.Utils
 						Node generatedNode = doc.GenerateScene(state);
 						if (generatedNode != null)
 						{
+							Realm.Godot.Services.ModelOptimization.GltfDocumentExtensionMsftLod.ProcessImportedScene(state, generatedNode);
 							SetOwnerRecursive(generatedNode, generatedNode);
 							var packedScene = new PackedScene();
 							Error packErr = packedScene.Pack(generatedNode);

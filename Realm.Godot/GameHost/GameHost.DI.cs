@@ -51,6 +51,7 @@ public partial class GameHost
 		services.AddSingleton<CheatService>();
 		services.AddSingleton<EnvironmentService>();
 		services.AddSingleton<SpectatorService>();
+		services.AddSingleton<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>();
 		services.AddSingleton<SimulationService>(sp =>
 		{
 			return new SimulationService(sp.GetRequiredService<WorldAccessor>(), Entity.Null, GameHost.Instance?._pathfinder ?? new NavMeshPathfinder());
@@ -83,5 +84,6 @@ public partial class GameHost
 		_cheatService = ServiceLocator.Get<CheatService>();
 		_environmentService = ServiceLocator.Get<EnvironmentService>();
 		_spectatorService = ServiceLocator.Get<SpectatorService>();
+		_modelOptimizerService = ServiceLocator.Get<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>();
 	}
 }

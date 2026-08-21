@@ -6486,6 +6486,29 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationResult OptimizeAndImportGlbDirect(
+		byte[] glbBytes,
+		int maxTextureResolution = 1024,
+		float creaseAngleDegrees = 45.0f,
+		float allowedPixelError = 1.5f,
+		bool forceReDecimate = false,
+		bool useUastc = false)
+	{
+		var optimizer = ServiceLocator.TryGet<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>()
+			?? new Realm.Godot.Services.ModelOptimization.ModelOptimizerService(ServiceLocator.TryGet<Realm.Ecs.Services.WorldAccessor>());
+
+		var options = new Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationOptions
+		{
+			MaxTextureResolution = maxTextureResolution,
+			CreaseAngleDegrees = creaseAngleDegrees,
+			AllowedPixelError = allowedPixelError,
+			ForceReDecimate = forceReDecimate,
+			UseUastc = useUastc
+		};
+
+		return optimizer.OptimizeGlb(glbBytes, options);
+	}
+
 	public void ReadMetadataAndRefreshTextures()
 	{
 		try
