@@ -367,72 +367,138 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             if (assetType === 'glb') {
                 const originalFileBytes = fileBytes;
                 let subCategory = (extraOptions && extraOptions.category) ? extraOptions.category.toLowerCase() : 'props';
-                const recommendedFaceCount = subCategory === 'units' ? 6500 : (subCategory === 'buildings' ? 5000 : (subCategory === 'projectiles' || subCategory === 'projectile' ? 800 : 850));
-                const faceCount = this.getGlbFaceCount(fileBytes);
-
-                if (faceCount > recommendedFaceCount * 2) {
-                    const warningMessage = `The 3D model "${fileName}" has ${faceCount.toLocaleString()} triangles, which exceeds the recommended limit (${(recommendedFaceCount).toLocaleString()} for ${subCategory}). It is recommended to convert to low-poly before importing.`;
-                    const choice = await vscode.window.showWarningMessage(
-                        warningMessage,
-                        { modal: true },
-                        'Import'
-                    );
-                    if (choice !== 'Import') {
-                        return;
-                    }
-                }
-
                 const originalFileName = path.basename(fileName, path.extname(fileName)) + '.glb';
-                const tempFileName = `temp_${Date.now()}_${originalFileName}`;
+                const reqId = 'model_opt_' + Math.random().toString(36).substring(2, 9);
+                const fileBase64 = fileBytes.toString('base64');
 
-                try {
-                    const os = require('os');
-                    const cp = require('child_process');
-                    const tempFolder = fs.mkdtempSync(path.join(os.tmpdir(), 'realm_gltfpack_'));
-                    const tempInputPath = path.join(tempFolder, tempFileName);
-                    const tempOutputPath = path.join(tempFolder, originalFileName);
+                const maxTextureResolution = (extraOptions && extraOptions.maxTextureResolution !== undefined) ? extraOptions.maxTextureResolution : 1024;
+                const creaseAngleDegrees = (extraOptions && extraOptions.creaseAngleDegrees !== undefined) ? extraOptions.creaseAngleDegrees : 45.0;
+                const allowedPixelError = (extraOptions && extraOptions.allowedPixelError !== undefined) ? extraOptions.allowedPixelError : 1.5;
+                const forceReDecimate = !!(extraOptions && (extraOptions.forceReDecimate || extraOptions.force_redecimate));
+                const useUastc = !!(extraOptions && (extraOptions.useUastc || extraOptions.use_uastc));
 
-                    try {
-                        fs.writeFileSync(tempInputPath, fileBytes);
-                        const isWindows = process.platform === 'win32';
-                        const executableNames = isWindows ? ['gltfpack.exe', 'gltfpack'] : ['gltfpack', 'gltfpack.exe'];
-                        let gltfPackExe: string | null = null;
-                        for (const exeName of executableNames) {
-                            gltfPackExe = this.findPath(path.join('ThirdPartyBinaries', exeName), documentDir) ||
-                                          this.findPath(exeName, documentDir);
-                            if (gltfPackExe) {
-                                break;
+                const optimizationResult = await new Promise<{
+                    success: boolean;
+                    optimizedBase64?: string;
+                    originalTriangles?: number;
+                    optimizedTriangles?: number;
+                    lodTriangleCounts?: number[];
+                    reductionRatio?: number;
+                    decimationSkipped?: boolean;
+                    texturesProcessed?: number;
+                    chosenTextureResolution?: number;
+                    error?: string;
+                }>(async (resolve) => {
+                    const http = require('http');
+                    const ports = [8092, 8093];
+                    let resolved = false;
+
+                    const postData = JSON.stringify({
+                        action: 'optimizeModel',
+                        requestId: reqId,
+                        rawBase64: fileBase64,
+                        fileName: fileName,
+                        maxTextureResolution,
+                        creaseAngleDegrees,
+                        allowedPixelError,
+                        forceReDecimate,
+                        useUastc
+                    });
+
+                    for (const port of ports) {
+                        if (resolved) break;
+                        try {
+                            await new Promise<void>((nextPort) => {
+                                const req = http.request({
+                                    hostname: '127.0.0.1',
+                                    port: port,
+                                    path: '/api/',
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Content-Length': Buffer.byteLength(postData)
+                                    },
+                                    timeout: 25000
+                                }, (res: any) => {
+                                    let data = '';
+                                    res.on('data', (chunk: any) => { data += chunk; });
+                                    res.on('end', () => {
+                                        if (!resolved) {
+                                            try {
+                                                const parsed = JSON.parse(data);
+                                                resolved = true;
+                                                resolve(parsed);
+                                            } catch {
+                                                nextPort();
+                                            }
+                                        }
+                                    });
+                                });
+                                req.on('error', () => {
+                                    nextPort();
+                                });
+                                req.write(postData);
+                                req.end();
+                            });
+                        } catch {
+                        }
+                    }
+
+                    if (!resolved) {
+                        fallbackWebviewIpc();
+                    }
+
+                    function fallbackWebviewIpc() {
+                        const timeout = setTimeout(() => {
+                            webviewSubscription.dispose();
+                            if (!resolved) {
+                                resolved = true;
+                                resolve({ success: false, error: 'Optimization timed out. Ensure Godot Editor is open and running.' });
                             }
-                        }
+                        }, 25000);
 
-                        if (!gltfPackExe) {
-                            gltfPackExe = executableNames[0];
-                        }
-
-                        cp.execFileSync(gltfPackExe, [
-                            '-tc',
-                            '-noq',
-                            '-i', tempInputPath,
-                            '-o', tempOutputPath
-                        ], {
-                            windowsHide: true,
-                            timeout: 60000
+                        const webviewSubscription = webview.onDidReceiveMessage((msg: any) => {
+                            if ((msg.action === 'optimizeModelResult' || msg.type === 'optimizeModelResult') && msg.requestId === reqId) {
+                                clearTimeout(timeout);
+                                webviewSubscription.dispose();
+                                if (!resolved) {
+                                    resolved = true;
+                                    resolve(msg);
+                                }
+                            }
                         });
 
-                        if (fs.existsSync(tempOutputPath)) {
-                            fileBytes = fs.readFileSync(tempOutputPath);
-                        }
-                    } catch (cmdEx) {
-                        console.warn(`gltfpack execution failed, falling back to original GLB: ${cmdEx}`);
-                    } finally {
-                        try {
-                            if (fs.existsSync(tempFolder)) {
-                                fs.rmSync(tempFolder, { recursive: true, force: true });
-                            }
-                        } catch {}
+                        webview.postMessage({
+                            type: 'godotIpc',
+                            action: 'optimizeModel',
+                            requestId: reqId,
+                            rawBase64: fileBase64,
+                            fileName: fileName,
+                            maxTextureResolution,
+                            creaseAngleDegrees,
+                            allowedPixelError,
+                            forceReDecimate,
+                            useUastc
+                        });
                     }
-                } catch (tempEx) {
-                    console.warn(`Temp directory handling failed, importing original GLB: ${tempEx}`);
+                });
+
+                if (optimizationResult.success && optimizationResult.optimizedBase64) {
+                    fileBytes = Buffer.from(optimizationResult.optimizedBase64, 'base64');
+                    if (optimizationResult.decimationSkipped) {
+                        vscode.window.showInformationMessage(`Imported GLB (${subCategory}): ${originalFileName} (Decimation skipped: already optimized in Realm).`);
+                    } else {
+                        const origTri = optimizationResult.originalTriangles || 0;
+                        const optTri = optimizationResult.optimizedTriangles || 0;
+                        const pct = (optimizationResult.reductionRatio !== undefined ? (optimizationResult.reductionRatio * 100).toFixed(1) : '100');
+                        const lods = optimizationResult.lodTriangleCounts && optimizationResult.lodTriangleCounts.length > 0
+                            ? ` [LODs: ${optimizationResult.lodTriangleCounts.join('/')}]`
+                            : '';
+                        vscode.window.showInformationMessage(`Imported & Optimized GLB (${subCategory}): ${originalFileName} [${origTri} -> ${optTri} tris${lods}, ${pct}% ratio]`);
+                    }
+                } else {
+                    fileBytes = originalFileBytes;
+                    vscode.window.showInformationMessage(`Imported GLB Model (${subCategory}): ${originalFileName}`);
                 }
 
                 const subDir = path.join(targetDir, 'Assets', 'models', subCategory);

@@ -763,6 +763,94 @@ public class VSCodeManager
 				responseObj["extractedFiles"] = extractedList;
 				responseObj["error"] = errorMsg;
 			}
+			else if (action == "optimizeModel" || action == "processRawGlb")
+			{
+				string rawFilePath = node["rawFilePath"]?.ToString();
+				string rawBase64 = node["rawBase64"]?.ToString();
+				string fileName = node["fileName"]?.ToString() ?? "model.glb";
+				string requestId = node["requestId"]?.ToString();
+
+				float creaseAngleDegrees = node["creaseAngleDegrees"] != null && float.TryParse(node["creaseAngleDegrees"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float cDeg) ? cDeg : 45.0f;
+				int maxTextureResolution = node["maxTextureResolution"] != null && int.TryParse(node["maxTextureResolution"].ToString(), out int mTex) ? mTex : 1024;
+				float allowedPixelError = node["allowedPixelError"] != null && float.TryParse(node["allowedPixelError"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float pErr) ? pErr : 1.5f;
+				bool forceReDecimate = node["forceReDecimate"] != null && bool.TryParse(node["forceReDecimate"].ToString(), out bool fDec) && fDec;
+				bool useUastc = node["useUastc"] != null && bool.TryParse(node["useUastc"].ToString(), out bool uAstc) && uAstc;
+
+				var options = new Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationOptions
+				{
+					AllowedPixelError = allowedPixelError,
+					CreaseAngleDegrees = creaseAngleDegrees,
+					MaxTextureResolution = maxTextureResolution,
+					ForceReDecimate = forceReDecimate,
+					UseUastc = useUastc
+				};
+
+				byte[] glbBytes = null;
+				if (!string.IsNullOrEmpty(rawBase64))
+				{
+					glbBytes = Convert.FromBase64String(rawBase64);
+				}
+				else if (!string.IsNullOrEmpty(rawFilePath) && System.IO.File.Exists(rawFilePath))
+				{
+					glbBytes = System.IO.File.ReadAllBytes(rawFilePath);
+				}
+
+				Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationResult optResult = default;
+				if (glbBytes != null && glbBytes.Length > 0)
+				{
+					var optimizer = ServiceLocator.TryGet<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>() ?? new Realm.Godot.Services.ModelOptimization.ModelOptimizerService(ServiceLocator.TryGet<Realm.Ecs.Services.WorldAccessor>());
+					var tcs = new System.Threading.Tasks.TaskCompletionSource<Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationResult>();
+
+					Callable.From(() =>
+					{
+						try
+						{
+							var res = optimizer.OptimizeGlb(glbBytes, options);
+							tcs.TrySetResult(res);
+						}
+						catch (Exception ex)
+						{
+							tcs.TrySetResult(new Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationResult
+							{
+								Success = false,
+								ErrorMessage = ex.Message,
+								OptimizedGlbBytes = glbBytes
+							});
+						}
+					}).CallDeferred();
+
+					optResult = await tcs.Task;
+				}
+				else
+				{
+					optResult.Success = false;
+					optResult.ErrorMessage = "No GLB file data provided.";
+				}
+
+				responseObj["action"] = "optimizeModelResult";
+				responseObj["type"] = "optimizeModelResult";
+				responseObj["requestId"] = requestId;
+				responseObj["success"] = optResult.Success;
+				responseObj["optimizedBase64"] = optResult.OptimizedGlbBytes != null ? Convert.ToBase64String(optResult.OptimizedGlbBytes) : "";
+				responseObj["originalTriangles"] = optResult.OriginalTriangleCount;
+				responseObj["optimizedTriangles"] = optResult.OptimizedTriangleCount;
+				responseObj["reductionRatio"] = optResult.ReductionRatio;
+				responseObj["decimationSkipped"] = optResult.DecimationSkipped;
+				responseObj["texturesProcessed"] = optResult.TexturesProcessedCount;
+				responseObj["chosenTextureResolution"] = optResult.ChosenTextureResolution;
+
+				if (optResult.LodTriangleCounts != null)
+				{
+					var lodCountsArr = new System.Text.Json.Nodes.JsonArray();
+					foreach (var c in optResult.LodTriangleCounts)
+					{
+						lodCountsArr.Add(c);
+					}
+					responseObj["lodTriangleCounts"] = lodCountsArr;
+				}
+
+				responseObj["error"] = optResult.ErrorMessage ?? "";
+			}
 			else if (action == "reloadMetadata" || action == "updateMetadata")
 			{
 				Callable.From(() =>

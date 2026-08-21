@@ -132,7 +132,44 @@
       "YOffset": 0.7500002
     }
   ],
-  "CustomAbilities": [],
+  "CustomAbilities": [
+    {
+      "AbilityId": "fireball",
+      "Name": "Bola de fuego",
+      "Description": "[X] Bola de fuego — Daño 50 en área (radio 4)",
+      "AbilityType": "target_spell",
+      "IconPath": "res://Assets/UI/fire_spell.png",
+      "ManaCost": 0,
+      "Cooldown": 12,
+      "TargetRange": 12,
+      "AreaOfEffectRadius": 4,
+      "Damage": 50
+    },
+    {
+      "AbilityId": "lightning",
+      "Name": "Rayo",
+      "Description": "[X] Rayo — Daño 80 en área (radio 2)",
+      "AbilityType": "target_spell",
+      "IconPath": "res://Assets/UI/lightning_spell.png",
+      "ManaCost": 0,
+      "Cooldown": 18,
+      "TargetRange": 12,
+      "AreaOfEffectRadius": 2,
+      "Damage": 80
+    },
+    {
+      "AbilityId": "holylight",
+      "Name": "Luz sagrada",
+      "Description": "[X] Luz sagrada — Cura 60 en área (radio 4)",
+      "AbilityType": "target_spell",
+      "IconPath": "res://Assets/UI/magic_upgrade_arrow.png",
+      "ManaCost": 0,
+      "Cooldown": 15,
+      "TargetRange": 12,
+      "AreaOfEffectRadius": 4,
+      "Healing": 60
+    }
+  ],
   "CustomUpgrades": [],
   "CustomItems": [],
   "CustomWeapons": [],

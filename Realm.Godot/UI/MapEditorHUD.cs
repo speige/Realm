@@ -4210,17 +4210,18 @@ public partial class MapEditorHUD : Control
 		{
 			using (var httpClient = new System.Net.Http.HttpClient())
 			{
+				httpClient.Timeout = TimeSpan.FromSeconds(3);
 				var res = await httpClient.GetAsync(seedServerUrl + "/api/creators/check/" + Uri.EscapeDataString(pubKeyStr));
-				if (!res.IsSuccessStatusCode)
+				if (res.StatusCode == System.Net.HttpStatusCode.NotFound)
 				{
-					// Not registered! Show registration prompt
+					// Server responded and explicitly confirmed key is not registered
 					ShowCreatorRegistrationDialog(pubKeyStr, key);
 				}
 			}
 		}
 		catch (Exception ex)
 		{
-			GD.PrintErr($"[MapEditorHUD] Error checking creator registration: {ex.Message}");
+			GD.Print($"[MapEditorHUD] Offline or registry server unreachable, skipping creator registration prompt: {ex.Message}");
 		}
 	}
 
@@ -4277,6 +4278,16 @@ public partial class MapEditorHUD : Control
 		errLabel.AddThemeFontSizeOverride("font_size", 11);
 		vbox.AddChild(errLabel);
 
+		var btnRow = new HBoxContainer();
+		btnRow.AddThemeConstantOverride("separation", 10);
+		btnRow.Alignment = BoxContainer.AlignmentMode.Center;
+
+		var btnCancel = new Button();
+		btnCancel.Text = "Cancel / Skip";
+		btnCancel.CustomMinimumSize = new Vector2(110, 36);
+		btnCancel.Pressed += () => overlay.QueueFree();
+		btnRow.AddChild(btnCancel);
+
 		var btnRegister = new Button();
 		btnRegister.Text = "Register Display Name";
 		btnRegister.CustomMinimumSize = new Vector2(150, 36);
@@ -4312,6 +4323,7 @@ public partial class MapEditorHUD : Control
 				string seedServerUrl = GameHost.Instance != null && GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
 				using (var httpClient = new System.Net.Http.HttpClient())
 				{
+					httpClient.Timeout = TimeSpan.FromSeconds(5);
 					var content = new StringContent(JsonSerializer.Serialize(regPayload), System.Text.Encoding.UTF8, "application/json");
 					var res = await httpClient.PostAsync(seedServerUrl + "/api/creators/register", content);
 					if (res.IsSuccessStatusCode)
@@ -4346,7 +4358,8 @@ public partial class MapEditorHUD : Control
 				btnRegister.Disabled = false;
 			}
 		};
-		vbox.AddChild(btnRegister);
+		btnRow.AddChild(btnRegister);
+		vbox.AddChild(btnRow);
 	}
 
 	public void ImportTerrainFromMinimapDialog()
@@ -6471,6 +6484,29 @@ public partial class MapEditorHUD : Control
 			GD.PrintErr($"ConvertRawTextureDirect error: {ex.Message}");
 			ShowFeedback($"Failed to import texture: {ex.Message}");
 		}
+	}
+
+	public Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationResult OptimizeAndImportGlbDirect(
+		byte[] glbBytes,
+		int maxTextureResolution = 1024,
+		float creaseAngleDegrees = 45.0f,
+		float allowedPixelError = 1.5f,
+		bool forceReDecimate = false,
+		bool useUastc = false)
+	{
+		var optimizer = ServiceLocator.TryGet<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>()
+			?? new Realm.Godot.Services.ModelOptimization.ModelOptimizerService(ServiceLocator.TryGet<Realm.Ecs.Services.WorldAccessor>());
+
+		var options = new Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationOptions
+		{
+			MaxTextureResolution = maxTextureResolution,
+			CreaseAngleDegrees = creaseAngleDegrees,
+			AllowedPixelError = allowedPixelError,
+			ForceReDecimate = forceReDecimate,
+			UseUastc = useUastc
+		};
+
+		return optimizer.OptimizeGlb(glbBytes, options);
 	}
 
 	public void ReadMetadataAndRefreshTextures()

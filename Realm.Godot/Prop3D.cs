@@ -260,6 +260,8 @@ public partial class Prop3D : StaticBody3D
 	{
 		Name = $"Prop_{PropId}_{Guid.NewGuid().ToString().Substring(0, 4)}";
 		
+		SetNotifyTransform(true);
+
 		if (IsPreview)
 		{
 			CreatePropVisual();
@@ -359,12 +361,33 @@ public partial class Prop3D : StaticBody3D
 				{
 					GD.PrintErr($"Failed to load prop visual for '{PropId}' ({modelPath}): {ex.Message}");
 				}
+
+				UpdateLodVisibility();
 			}
 		}
 
 		if (!IsPreview)
 		{
 			PropMultiMeshManager.Instance?.MarkDirty(PropId);
+		}
+	}
+
+	public override void _Notification(int what)
+	{
+		base._Notification(what);
+		if (what == NotificationTransformChanged)
+		{
+			UpdateLodVisibility();
+		}
+	}
+
+	public virtual void UpdateLodVisibility()
+	{
+		var visual = GetNodeOrNull<Node3D>("VisualModel");
+		if (visual != null && GodotObject.IsInstanceValid(visual))
+		{
+			float effectiveScale = Math.Max(0.01f, Scale.Y * visual.Scale.Y);
+			Realm.Godot.Services.ModelOptimization.GltfDocumentExtensionMsftLod.UpdateLodVisibilityRanges(visual, effectiveScale);
 		}
 	}
 

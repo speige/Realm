@@ -45,11 +45,13 @@ public partial class GameHost : Node3D, IGameAPI
 	private CheatService _cheatService;
 	private EnvironmentService _environmentService;
 	private SpectatorService _spectatorService;
+	private Realm.Godot.Services.ModelOptimization.ModelOptimizerService _modelOptimizerService;
 
 	public CheatService CheatService => _cheatService;
 	public EnvironmentService EnvironmentService => _environmentService;
 	public SpectatorService SpectatorService => _spectatorService;
 	public ShroudService ShroudService => _shroudService;
+	public Realm.Godot.Services.ModelOptimization.ModelOptimizerService ModelOptimizerService => _modelOptimizerService;
 
 	public bool UnlimitedPowerEnabled { get; set; } = false;
 	public bool GigachadEnabled { get; set; } = false;
@@ -798,6 +800,16 @@ public partial class GameHost : Node3D, IGameAPI
 		public bool RecalculateNormals { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; }
 		public int PathingType { get; set; }
+	}
+
+	public struct AbilityMetadata
+	{
+		public string AbilityId { get; set; }
+		public string Name { get; set; }
+		public string Description { get; set; }
+		public string AbilityType { get; set; }
+		public string IconPath { get; set; }
+		public float ManaCost { get; set; }
 	}
 
 	public static int GetUnitPathingFlags(UnitMetadata meta)
@@ -2784,6 +2796,7 @@ public class {mapName} : IMapScript
 
 	public void LoadUnitMetadata(string mapName = null)
 	{
+		ResetAbilityCatalog();
 		if (string.IsNullOrEmpty(mapName))
 		{
 			mapName = !string.IsNullOrEmpty(ActiveMapName) ? ActiveMapName : "temp_map_workspace";
@@ -2829,7 +2842,7 @@ public class {mapName} : IMapScript
 
 					bool hasStructuredArrays = false;
 
-					if (doc.RootElement.TryGetProperty("CustomWeapons", out var weapProp) && weapProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					if (doc.RootElement.TryGetProperty("CustomWeapons", out var weapProp) && weapProp.ValueKind == JsonValueKind.Array)
 					{
 						var list = JsonSerializer.Deserialize<List<WeaponMetadata>>(weapProp.GetRawText(), Options);
 						if (list != null)
@@ -2842,7 +2855,7 @@ public class {mapName} : IMapScript
 						}
 					}
 
-					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == JsonValueKind.Array)
 					{
 						hasStructuredArrays = true;
 						var list = JsonSerializer.Deserialize<List<UnitMetadata>>(unitsProp.GetRawText(), Options);
@@ -2856,7 +2869,7 @@ public class {mapName} : IMapScript
 						}
 					}
 
-					if (doc.RootElement.TryGetProperty("CustomBuildings", out var bldProp) && bldProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					if (doc.RootElement.TryGetProperty("CustomBuildings", out var bldProp) && bldProp.ValueKind == JsonValueKind.Array)
 					{
 						hasStructuredArrays = true;
 						var list = JsonSerializer.Deserialize<List<UnitMetadata>>(bldProp.GetRawText(), Options);
@@ -2870,7 +2883,7 @@ public class {mapName} : IMapScript
 						}
 					}
 
-					if (doc.RootElement.TryGetProperty("CustomResources", out var resProp) && resProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					if (doc.RootElement.TryGetProperty("CustomResources", out var resProp) && resProp.ValueKind == JsonValueKind.Array)
 					{
 						hasStructuredArrays = true;
 						var list = JsonSerializer.Deserialize<List<ResourceMetadata>>(resProp.GetRawText(), Options);
@@ -2888,7 +2901,7 @@ public class {mapName} : IMapScript
 						}
 					}
 
-					if (doc.RootElement.TryGetProperty("CustomProps", out var propProp) && propProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					if (doc.RootElement.TryGetProperty("CustomProps", out var propProp) && propProp.ValueKind == JsonValueKind.Array)
 					{
 						hasStructuredArrays = true;
 						var list = JsonSerializer.Deserialize<List<PropMetadata>>(propProp.GetRawText(), Options);
@@ -2903,6 +2916,16 @@ public class {mapName} : IMapScript
 									newProps[copy.UnitId] = copy;
 								}
 							}
+						}
+					}
+
+					if (doc.RootElement.TryGetProperty("CustomAbilities", out var abProp) && abProp.ValueKind == JsonValueKind.Array)
+					{
+						hasStructuredArrays = true;
+						var list = JsonSerializer.Deserialize<List<AbilityMetadata>>(abProp.GetRawText(), Options);
+						if (list != null)
+						{
+							RegisterCustomAbilities(list);
 						}
 					}
 
