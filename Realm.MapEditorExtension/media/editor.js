@@ -3253,8 +3253,13 @@
         const customUnitsList = getCustomUnits();
         const existingUnitIds = new Set(customUnitsList.map(u => u.UnitId).filter(Boolean));
         
+        const builtInAbilities = [
+            { id: 'fireball', name: 'Bola de fuego', desc: '[X] Bola de fuego — Daño 50 en área (radio 4)' },
+            { id: 'lightning', name: 'Rayo', desc: '[X] Rayo — Daño 80 en área (radio 2)' },
+            { id: 'holylight', name: 'Luz sagrada', desc: '[X] Luz sagrada — Cura 60 en área (radio 4)' }
+        ];
         const existingWeaponIds = new Set((units.CustomWeapons || []).map(w => w.WeaponId).filter(Boolean));
-        const existingAbilityIds = new Set((units.CustomAbilities || []).map(a => a.AbilityId).filter(Boolean));
+        const existingAbilityIds = new Set([...builtInAbilities.map(b => b.id), ...(units.CustomAbilities || []).map(a => a.AbilityId).filter(Boolean)]);
         const existingUpgradeIds = new Set((units.CustomUpgrades || []).map(u => u.UpgradeId).filter(Boolean));
         const existingItemIds = new Set((units.CustomItems || []).map(i => i.ItemId).filter(Boolean));
 
@@ -3360,6 +3365,14 @@
                 return { title: w.Name || id, desc: `Damage: ${w.Damage || 0}, Range: ${w.Range || 0}` };
             }
         } else if (type === 'abilities' || type === 'suggest-abilities') {
+            const builtIn = [
+                { id: 'fireball', name: 'Bola de fuego', desc: '[X] Bola de fuego — Daño 50 en área (radio 4)' },
+                { id: 'lightning', name: 'Rayo', desc: '[X] Rayo — Daño 80 en área (radio 2)' },
+                { id: 'holylight', name: 'Luz sagrada', desc: '[X] Luz sagrada — Cura 60 en área (radio 4)' }
+            ].find(b => b.id === id);
+            if (builtIn) {
+                return { title: builtIn.name, desc: builtIn.desc };
+            }
             const a = (units.CustomAbilities || []).find(x => x.AbilityId === id);
             if (a) {
                 return { title: a.Name || id, desc: a.Description || 'No description.' };
@@ -3385,9 +3398,18 @@
         const upgrades = units.CustomUpgrades || [];
         const items = units.CustomItems || [];
 
+        const defaultAbilities = [
+            { id: 'fireball', name: 'Bola de fuego' },
+            { id: 'lightning', name: 'Rayo' },
+            { id: 'holylight', name: 'Luz sagrada' }
+        ];
+
         populateDatalist('suggest-units', customUnitsList.map(u => ({ id: u.UnitId, name: u.Name })));
         populateDatalist('suggest-weapons', weapons.map(w => ({ id: w.WeaponId, name: w.Name })));
-        populateDatalist('suggest-abilities', abilities.map(a => ({ id: a.AbilityId, name: a.Name })));
+        populateDatalist('suggest-abilities', [
+            ...defaultAbilities,
+            ...abilities.map(a => ({ id: a.AbilityId, name: a.Name }))
+        ]);
         populateDatalist('suggest-upgrades', upgrades.map(u => ({ id: u.UpgradeId, name: u.Name })));
         populateDatalist('suggest-items', items.map(i => ({ id: i.ItemId, name: i.Name })));
 

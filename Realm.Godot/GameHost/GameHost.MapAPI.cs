@@ -46,66 +46,37 @@ public partial class GameHost
 				Tooltip = "[X] Luz sagrada — Cura 60 en área (radio 4)",
 				IconPath = "res://Assets/UI/magic_upgrade_arrow.png",
 				IsInstant = false
-			},
-			["survivor_buy_healthstone"] = new AbilityDefinition
-			{
-				Id = "survivor_buy_healthstone",
-				DisplayName = "Healthstone",
-				Tooltip = "[X] Healthstone — 2000g. +2500 vida máx y regeneración +35/s (única).",
-				IconPath = "res://Assets/UI/battle_shield.png",
-				IsInstant = true
-			},
-			["survivor_buy_damage"] = new AbilityDefinition
-			{
-				Id = "survivor_buy_damage",
-				DisplayName = "Piedra de Daño",
-				Tooltip = "[X] Piedra de Daño — 150g por nivel, máx 5. +25 daño.",
-				IconPath = "res://Assets/UI/battle_axe.png",
-				IsInstant = true
-			},
-			["survivor_buy_range"] = new AbilityDefinition
-			{
-				Id = "survivor_buy_range",
-				DisplayName = "Piedra de Alcance",
-				Tooltip = "[X] Piedra de Alcance — 300g por nivel, máx 3. +8 alcance.",
-				IconPath = "res://Assets/UI/elf_warrior.png",
-				IsInstant = true
-			},
-			["survivor_buy_fury"] = new AbilityDefinition
-			{
-				Id = "survivor_buy_fury",
-				DisplayName = "Furia de Flechas",
-				Tooltip = "[X] Furia de Flechas — 200g por nivel, máx 3. +20% de flecha extra.",
-				IconPath = "res://Assets/UI/golden_hammers.png",
-				IsInstant = true
-			},
-			["survivor_buy_multishot"] = new AbilityDefinition
-			{
-				Id = "survivor_buy_multishot",
-				DisplayName = "Multidisparo",
-				Tooltip = "[X] Multidisparo — 1500g. Tus ataques impactan a 3 objetivos cercanos.",
-				IconPath = "res://Assets/UI/scroll_icon.png",
-				IsInstant = true
-			},
-			["survivor_heal"] = new AbilityDefinition
-			{
-				Id = "survivor_heal",
-				DisplayName = "Poción de Restauración",
-				Tooltip = "[X] Poción de Restauración — 200g. Cura 600 de vida.",
-				IconPath = "res://Assets/UI/gold_coin.png",
-				IsInstant = true
-			},
-			["upgrade_health"] = new AbilityDefinition
-			{
-				Id = "upgrade_health",
-				DisplayName = "Mejora de Vida",
-				Tooltip = "[H] Mejora de Vida — Mejora de vida de prueba.",
-				IconPath = "res://Assets/UI/magic_upgrade_arrow.png",
-				IsInstant = true
 			}
 		};
 
 		return catalog;
+	}
+
+	public void ResetAbilityCatalog()
+	{
+		_abilityDefinitions.Clear();
+		foreach (var kvp in CreateDefaultAbilityCatalog())
+		{
+			_abilityDefinitions[kvp.Key] = kvp.Value;
+		}
+	}
+
+	public void RegisterCustomAbilities(List<AbilityMetadata> customAbilities)
+	{
+		if (customAbilities == null) return;
+		foreach (var meta in customAbilities)
+		{
+			if (string.IsNullOrEmpty(meta.AbilityId)) continue;
+			_abilityDefinitions[meta.AbilityId] = new AbilityDefinition
+			{
+				Id = meta.AbilityId,
+				DisplayName = meta.Name ?? "",
+				Tooltip = meta.Description ?? "",
+				IconPath = meta.IconPath ?? "",
+				IsInstant = string.Equals(meta.AbilityType, "instant_spell", StringComparison.OrdinalIgnoreCase),
+				ManaCost = meta.ManaCost
+			};
+		}
 	}
 
 	public AbilityDefinition GetAbilityDefinition(string abilityId)
