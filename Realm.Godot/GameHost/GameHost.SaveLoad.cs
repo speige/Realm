@@ -1,3 +1,4 @@
+using System;
 using Godot;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Terrain;
@@ -68,7 +69,22 @@ public partial class GameHost
 		string absolutePath = ProjectSettings.GlobalizePath(path);
 		CurrentMapDirectory = System.IO.Path.GetDirectoryName(absolutePath);
 
-		_saveLoadService.SaveMapToFile(absolutePath, splatData, unitsData.ToArray(), propsData.ToArray(), decalsData.ToArray(), coordinatesData);
+		string[] cliffSplatData = null;
+		if (GroundTerrain.CliffSplatMap != null)
+		{
+			int cliffW = GroundTerrain.CliffSplatMap.GetLength(0);
+			int cliffD = GroundTerrain.CliffSplatMap.GetLength(1);
+			cliffSplatData = new string[cliffW * cliffD];
+			for (int z = 0; z < cliffD; z++)
+			{
+				for (int x = 0; x < cliffW; x++)
+				{
+					cliffSplatData[z * cliffW + x] = GroundTerrain.CliffSplatMap[x, z].Serialize();
+				}
+			}
+		}
+
+		_saveLoadService.SaveMapToFile(absolutePath, splatData, unitsData.ToArray(), propsData.ToArray(), decalsData.ToArray(), coordinatesData, cliffSplatData);
 	}
 
 	public bool LoadMapFromFile(string customPath = "", bool terrainOnly = false, bool clearUnits = true)
@@ -249,6 +265,60 @@ public partial class GameHost
 				}
 			}
 
+			if (GroundTerrain != null)
+			{
+				string cliffIndicesPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(absolutePath), "terrain_cliff_splat_indices.exr");
+				string cliffWeightsPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(absolutePath), "terrain_cliff_splat_weights.exr");
+				if (System.IO.File.Exists(cliffIndicesPath) && System.IO.File.Exists(cliffWeightsPath))
+				{
+					Image cliffIdxImg = Image.LoadFromFile(cliffIndicesPath);
+					Image cliffWgtImg = Image.LoadFromFile(cliffWeightsPath);
+					if (cliffIdxImg != null && cliffWgtImg != null)
+					{
+						cliffIdxImg.Convert(Image.Format.Rgbaf);
+						cliffWgtImg.Convert(Image.Format.Rgbaf);
+						int cW = cliffIdxImg.GetWidth();
+						int cD = cliffIdxImg.GetHeight();
+						ReadOnlySpan<float> idxData = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(cliffIdxImg.GetData());
+						ReadOnlySpan<float> wgtData = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(cliffWgtImg.GetData());
+						GroundTerrain.CliffSplatMap = new TerrainSplatWeights[cW, cD];
+						for (int z = 0; z < cD; z++)
+						{
+							for (int x = 0; x < cW; x++)
+							{
+								int baseIdx = (z * cW + x) * 4;
+								GroundTerrain.CliffSplatMap[x, z] = new TerrainSplatWeights
+								{
+									Index0 = (int)System.Math.Round(idxData[baseIdx + 0]),
+									Index1 = (int)System.Math.Round(idxData[baseIdx + 1]),
+									Index2 = (int)System.Math.Round(idxData[baseIdx + 2]),
+									Index3 = (int)System.Math.Round(idxData[baseIdx + 3]),
+									Weight0 = wgtData[baseIdx + 0],
+									Weight1 = wgtData[baseIdx + 1],
+									Weight2 = wgtData[baseIdx + 2],
+									Weight3 = wgtData[baseIdx + 3]
+								};
+							}
+						}
+					}
+				}
+				else
+				{
+					int cliffW = width + 1;
+					int cliffD = depth + 1;
+					GroundTerrain.CliffSplatMap = new TerrainSplatWeights[cliffW, cliffD];
+					for (int z = 0; z < cliffD; z++)
+					{
+						for (int x = 0; x < cliffW; x++)
+						{
+							GroundTerrain.CliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(GroundTerrain.CliffTextureIndex);
+						}
+					}
+				}
+
+				_editorService?.SetTerrainSplatMap(GroundTerrain.SplatMap, GroundTerrain.CliffSplatMap);
+			}
+
 			AlignTerrainSplatMapExternal();
 
 			if (!terrainOnly)
@@ -294,6 +364,10 @@ public partial class GameHost
 			EditorCoordinates.AddRange(loadedCoordinates.Select(r => new EditorCoordinate { Name = r.Name, MinX = r.MinX, MinZ = r.MinZ, MaxX = r.MaxX, MaxZ = r.MaxZ }));
 			RebuildAllCoordinatePersistentMeshes();
 			MapEditorHUD.Instance?.RefreshCoordinateListExternal();
+
+			EditorHistoryManager.Clear();
+			EditorHasUnsavedChanges = false;
+			_editorService?.ResetAllState();
 
 			return true;
 		}

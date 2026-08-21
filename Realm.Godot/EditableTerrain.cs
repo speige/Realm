@@ -1912,12 +1912,26 @@ void fragment() {
 			SplatMap = newSplatMap;
 		}
 
+		if (CliffSplatMap == null || CliffSplatMap.GetLength(0) < w + 1 || CliffSplatMap.GetLength(1) < d + 1)
+		{
+			var newCliffSplatMap = new TerrainSplatWeights[w + 1, d + 1];
+			for (int z = 0; z <= d; z++)
+			{
+				for (int x = 0; x <= w; x++)
+				{
+					if (CliffSplatMap != null && x < CliffSplatMap.GetLength(0) && z < CliffSplatMap.GetLength(1))
+						newCliffSplatMap[x, z] = CliffSplatMap[x, z];
+					else
+						newCliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(CliffTextureIndex);
+				}
+			}
+			CliffSplatMap = newCliffSplatMap;
+		}
+
 		if (_chunks.Count == 0 || _chunkedWidth != w || _chunkedDepth != d)
 		{
 			CreateChunks();
 		}
-
-		SanitizeCornerHeights();
 
 		foreach (var chunk in _chunks)
 		{

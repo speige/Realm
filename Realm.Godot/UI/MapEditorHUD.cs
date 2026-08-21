@@ -990,6 +990,7 @@ public partial class MapEditorHUD : Control
 			{
 				_chkApplyCliffTexture.SetPressedNoSignal(true);
 			}
+			UpdateTextureLabels();
 		};
 
 		_chkApplyCliffTexture.Toggled += (toggled) =>
@@ -998,6 +999,7 @@ public partial class MapEditorHUD : Control
 			{
 				_chkApplyGroundTexture.SetPressedNoSignal(true);
 			}
+			UpdateTextureLabels();
 		};
 
 		if (_containerTextureSettings != null && _lblTerrainTexture != null && _lblCliffTexture != null)
@@ -1952,8 +1954,15 @@ public partial class MapEditorHUD : Control
 	{
 		if (index >= 0 && index < _swatchButtons.Count)
 		{
-			HighlightSwatch(_swatchButtons[index]);
-			TriggerToolSelection(GameHost.EditorTool.PaintTexture, _swatchButtons[index]);
+			if (_chkApplyCliffTexture != null && _chkApplyCliffTexture.ButtonPressed && (_chkApplyGroundTexture == null || !_chkApplyGroundTexture.ButtonPressed))
+			{
+				SelectCliffTexture(index);
+			}
+			else
+			{
+				HighlightSwatch(_swatchButtons[index]);
+				TriggerToolSelection(GameHost.EditorTool.PaintTexture, _swatchButtons[index]);
+			}
 		}
 	}
 
@@ -5252,7 +5261,7 @@ public partial class MapEditorHUD : Control
 					{
 						if (mouseEvent.ButtonIndex == MouseButton.Left)
 						{
-							if (Input.IsKeyPressed(Godot.Key.Shift))
+							if (Input.IsKeyPressed(Godot.Key.Shift) || (_chkApplyCliffTexture != null && _chkApplyCliffTexture.ButtonPressed && (_chkApplyGroundTexture == null || !_chkApplyGroundTexture.ButtonPressed)))
 							{
 								SelectCliffTexture(index);
 							}
@@ -5280,6 +5289,12 @@ public partial class MapEditorHUD : Control
 	{
 		if (GameHost.Instance != null)
 		{
+			if (_chkApplyCliffTexture != null && _chkApplyCliffTexture.ButtonPressed && (_chkApplyGroundTexture == null || !_chkApplyGroundTexture.ButtonPressed))
+			{
+				SelectCliffTexture(index);
+				return;
+			}
+
 			GameHost.Instance.EditorPaintTextureIndex = index;
 			HighlightSwatch(swatch);
 
@@ -5303,6 +5318,10 @@ public partial class MapEditorHUD : Control
 			if (GameHost.Instance.GroundTerrain != null)
 			{
 				GameHost.Instance.GroundTerrain.CliffTextureIndex = index;
+			}
+			if (!IsSwatchCompatibleTool(GameHost.Instance.ActiveEditorTool))
+			{
+				TriggerToolSelection(GameHost.EditorTool.PaintTexture, _btnTextureBrush);
 			}
 			UpdateTextureLabels();
 			

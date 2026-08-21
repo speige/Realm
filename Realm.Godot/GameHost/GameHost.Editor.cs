@@ -3141,11 +3141,10 @@ public partial class GameHost
 
 		if (anyChanged)
 		{
-			float[,] heightsAfter = GroundTerrain.Heights != null ? (float[,])GroundTerrain.Heights.Clone() : null;
 			TerrainSplatWeights[,] splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
 			TerrainSplatWeights[,] cliffAfter = GroundTerrain.CliffSplatMap != null ? (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone() : null;
 			
-			var action = new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter, null, null, cliffBefore, cliffAfter);
+			var action = new TerrainModifyAction((Realm.Ecs.Components.Terrain.TerrainCell[,])null, (Realm.Ecs.Components.Terrain.TerrainCell[,])null, splatBefore, splatAfter, null, null, cliffBefore, cliffAfter);
 			EditorHistoryManager.RecordAction(action);
 			EditorHasUnsavedChanges = true;
 			
@@ -3568,10 +3567,9 @@ public partial class GameHost
 		}
 
 		GroundTerrain.UpdateMeshAndPhysics(false, false);
-		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
 		var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
 		var cliffAfter = (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone();
-		var action = new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter, null, null, cliffBefore, cliffAfter);
+		var action = new TerrainModifyAction((Realm.Ecs.Components.Terrain.TerrainCell[,])null, (Realm.Ecs.Components.Terrain.TerrainCell[,])null, splatBefore, splatAfter, null, null, cliffBefore, cliffAfter);
 		EditorHistoryManager.RecordAction(action);
 		EditorHasUnsavedChanges = true;
 		MapEditorHUD.Instance?.ShowFeedbackExternal(result.IsCliff ? "Flood filled cliff face area" : "Flood filled terrain area");
@@ -4068,8 +4066,9 @@ public partial class GameHost
 
 		var (minX, minZ, maxX, maxZ) = _editorService.GetCurrentSelectionBounds();
 
-		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
+		var cellsBefore = (Realm.Ecs.Components.Terrain.TerrainCell[,])GroundTerrain.Cells.Clone();
 		var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+		var cliffBefore = GroundTerrain.CliffSplatMap != null ? (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone() : null;
 		var pathingBefore = (int[,])GroundTerrain.PathingCodes.Clone();
 
 		var node3Ds = new List<Node3D>();
@@ -4104,13 +4103,14 @@ public partial class GameHost
 			if (act != null) deleteActions.Add(act);
 		}
 
-		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
+		var cellsAfter = (Realm.Ecs.Components.Terrain.TerrainCell[,])GroundTerrain.Cells.Clone();
 		var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+		var cliffAfter = GroundTerrain.CliffSplatMap != null ? (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone() : null;
 		var pathingAfter = (int[,])GroundTerrain.PathingCodes.Clone();
 		var actions = new List<IEditorAction>();
 		if (eraseResult.TerrainModified)
 		{
-			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter));
+			actions.Add(new TerrainModifyAction(cellsBefore, cellsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter, cliffBefore, cliffAfter));
 		}
 		if (deleteActions.Count > 0)
 		{
@@ -4134,8 +4134,9 @@ public partial class GameHost
 	{
 		if (GroundTerrain == null || GroundTerrain.Heights == null || GroundTerrain.SplatMap == null || !_editorService.HasCopiedArea) return new List<IEditorAction>();
 
-		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
+		var cellsBefore = (Realm.Ecs.Components.Terrain.TerrainCell[,])GroundTerrain.Cells.Clone();
 		var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+		var cliffBefore = GroundTerrain.CliffSplatMap != null ? (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone() : null;
 		var pathingBefore = (int[,])GroundTerrain.PathingCodes.Clone();
 
 		var pasteResult = _editorService.BuildPasteAreaResult(
@@ -4174,13 +4175,14 @@ public partial class GameHost
 			}
 		}
 
-		var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
+		var cellsAfter = (Realm.Ecs.Components.Terrain.TerrainCell[,])GroundTerrain.Cells.Clone();
 		var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+		var cliffAfter = GroundTerrain.CliffSplatMap != null ? (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone() : null;
 		var pathingAfter = (int[,])GroundTerrain.PathingCodes.Clone();
 		var actions = new List<IEditorAction>();
 		if (pasteResult.TerrainModified)
 		{
-			actions.Add(new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter));
+			actions.Add(new TerrainModifyAction(cellsBefore, cellsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter, cliffBefore, cliffAfter));
 		}
 		if (spawnActions.Count > 0)
 		{

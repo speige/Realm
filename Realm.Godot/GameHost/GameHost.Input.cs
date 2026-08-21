@@ -1201,8 +1201,9 @@ public partial class GameHost
 							Vector3 end = hitPos;
 							if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
 							{
-								var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
+								var cellsBefore = (Realm.Ecs.Components.Terrain.TerrainCell[,])GroundTerrain.Cells.Clone();
 								var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+								var cliffBefore = GroundTerrain.CliffSplatMap != null ? (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone() : null;
 								var pathingBefore = (int[,])GroundTerrain.PathingCodes.Clone();
 								bool modified = ApplyRampInternal(start, end);
 								if (EditorMirrorMode != MirrorMode.None)
@@ -1249,10 +1250,11 @@ public partial class GameHost
 
 									GroundTerrain.UpdateMeshAndPhysics(true, false, affected);
 									AlignAllEntitiesToTerrain(affected);
-									var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
+									var cellsAfter = (Realm.Ecs.Components.Terrain.TerrainCell[,])GroundTerrain.Cells.Clone();
 									var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+									var cliffAfter = GroundTerrain.CliffSplatMap != null ? (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone() : null;
 									var pathingAfter = (int[,])GroundTerrain.PathingCodes.Clone();
-									var action = new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter);
+									var action = new TerrainModifyAction(cellsBefore, cellsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter, cliffBefore, cliffAfter);
 									EditorHistoryManager.RecordAction(action);
 									EditorHasUnsavedChanges = true;
 									UpdatePathingOverlay();
