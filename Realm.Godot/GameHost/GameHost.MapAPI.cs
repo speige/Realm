@@ -21,44 +21,12 @@ public partial class GameHost
 
 	private static Dictionary<string, AbilityDefinition> CreateDefaultAbilityCatalog()
 	{
-		var catalog = new Dictionary<string, AbilityDefinition>(StringComparer.OrdinalIgnoreCase)
-		{
-			["fireball"] = new AbilityDefinition
-			{
-				Id = "fireball",
-				DisplayName = "Bola de fuego",
-				Tooltip = "[X] Bola de fuego — Daño 50 en área (radio 4)",
-				IconPath = "res://Assets/UI/fire_spell.png",
-				IsInstant = false
-			},
-			["lightning"] = new AbilityDefinition
-			{
-				Id = "lightning",
-				DisplayName = "Rayo",
-				Tooltip = "[X] Rayo — Daño 80 en área (radio 2)",
-				IconPath = "res://Assets/UI/lightning_spell.png",
-				IsInstant = false
-			},
-			["holylight"] = new AbilityDefinition
-			{
-				Id = "holylight",
-				DisplayName = "Luz sagrada",
-				Tooltip = "[X] Luz sagrada — Cura 60 en área (radio 4)",
-				IconPath = "res://Assets/UI/magic_upgrade_arrow.png",
-				IsInstant = false
-			}
-		};
-
-		return catalog;
+		return new Dictionary<string, AbilityDefinition>(StringComparer.OrdinalIgnoreCase);
 	}
 
 	public void ResetAbilityCatalog()
 	{
 		_abilityDefinitions.Clear();
-		foreach (var kvp in CreateDefaultAbilityCatalog())
-		{
-			_abilityDefinitions[kvp.Key] = kvp.Value;
-		}
 	}
 
 	public void RegisterCustomAbilities(List<AbilityMetadata> customAbilities)
