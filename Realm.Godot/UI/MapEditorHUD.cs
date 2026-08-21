@@ -2586,6 +2586,7 @@ public partial class MapEditorHUD : Control
 	private void LoadTempWorkspaceMap()
 	{
 		string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+		MapWorkspaceService.EnsureGlbAssetsOptimized(_tempWorkspacePath);
 		LoadMapProperties();
 		ReadMetadataAndRefreshTextures();
 		if (GameHost.Instance != null && System.IO.File.Exists(terrainPath))
@@ -2931,6 +2932,7 @@ public partial class MapEditorHUD : Control
 
 		try
 		{
+			MapWorkspaceService.EnsureGlbAssetsOptimized(_tempWorkspacePath);
 			LoadMapProperties();
 			ReadMetadataAndRefreshTextures();
 			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
@@ -2972,6 +2974,7 @@ public partial class MapEditorHUD : Control
 
 		try
 		{
+			MapWorkspaceService.EnsureGlbAssetsOptimized(_tempWorkspacePath);
 			LoadMapProperties();
 			ReadMetadataAndRefreshTextures();
 			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");

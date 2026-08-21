@@ -95,8 +95,7 @@ public partial class GameHost
 			string path = string.IsNullOrEmpty(customPath) ? "user://terrain.json" : customPath;
 			string absolutePath = ProjectSettings.GlobalizePath(path);
 			CurrentMapDirectory = System.IO.Path.GetDirectoryName(absolutePath);
-
-
+			MapWorkspaceService.EnsureGlbAssetsOptimized(CurrentMapDirectory);
 
 			if (clearUnits)
 			{
