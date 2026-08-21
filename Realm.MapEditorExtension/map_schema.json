@@ -146,6 +146,11 @@
       "type": "array",
       "items": { "$ref": "#/definitions/EntityItem" }
     },
+    "CustomAbilities": { "$ref": "#/definitions/CustomAbilities" },
+    "CustomWeapons": { "$ref": "#/definitions/CustomWeapons" },
+    "CustomUpgrades": { "$ref": "#/definitions/CustomUpgrades" },
+    "CustomItems": { "$ref": "#/definitions/CustomItems" },
+    "Assets": { "$ref": "#/definitions/Assets" }
   },
   "definitions": {
     "EntityItem": {
