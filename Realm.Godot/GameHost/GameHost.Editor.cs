@@ -518,6 +518,13 @@ public partial class GameHost
 		}
 	}
 
+	private static readonly Dictionary<ulong, ArrayMesh> _normalGeneratedMeshCache = new();
+
+	public static void ClearNormalGeneratedMeshCache()
+	{
+		_normalGeneratedMeshCache.Clear();
+	}
+
 	public static void ApplyMaterialOverridesToNode(
 		Node node,
 		float brightness = 1.0f,
@@ -530,8 +537,12 @@ public partial class GameHost
 		float multR = brightness * tint.R;
 		float multG = brightness * tint.G;
 		float multB = brightness * tint.B;
+		bool isDefaultColor = MathF.Abs(brightness - 1.0f) < 0.001f && tint == new Color(1.0f, 1.0f, 1.0f);
 
-		Realm.Godot.Utils.PlayerColorShaderManager.SetBrightnessAndTint(node, brightness, tint);
+		if (!isDefaultColor)
+		{
+			Realm.Godot.Utils.PlayerColorShaderManager.SetBrightnessAndTint(node, brightness, tint);
+		}
 
 		var meshNodes = FindMeshInstancesRecursive(node);
 		foreach (var meshInst in meshNodes)
@@ -556,15 +567,24 @@ public partial class GameHost
 				Mesh baseMesh = meshInst.HasMeta("original_mesh") ? meshInst.GetMeta("original_mesh").As<Mesh>() : meshInst.Mesh;
 				if (baseMesh is ArrayMesh arrayMesh)
 				{
-					var toolMesh = new ArrayMesh();
-					var surfaceTool = new SurfaceTool();
-					for (int i = 0; i < arrayMesh.GetSurfaceCount(); i++)
+					ulong baseId = arrayMesh.GetInstanceId();
+					if (_normalGeneratedMeshCache.TryGetValue(baseId, out var cachedMesh) && GodotObject.IsInstanceValid(cachedMesh))
 					{
-						surfaceTool.CreateFrom(arrayMesh, i);
-						surfaceTool.GenerateNormals();
-						toolMesh = surfaceTool.Commit(toolMesh);
+						meshInst.Mesh = cachedMesh;
 					}
-					meshInst.Mesh = toolMesh;
+					else
+					{
+						var toolMesh = new ArrayMesh();
+						var surfaceTool = new SurfaceTool();
+						for (int i = 0; i < arrayMesh.GetSurfaceCount(); i++)
+						{
+							surfaceTool.CreateFrom(arrayMesh, i);
+							surfaceTool.GenerateNormals();
+							toolMesh = surfaceTool.Commit(toolMesh);
+						}
+						_normalGeneratedMeshCache[baseId] = toolMesh;
+						meshInst.Mesh = toolMesh;
+					}
 				}
 			}
 			else
@@ -575,30 +595,33 @@ public partial class GameHost
 				}
 			}
 
-			int surfaceCount = meshInst.Mesh != null ? meshInst.Mesh.GetSurfaceCount() : 0;
-			for (int i = 0; i < surfaceCount; i++)
+			if (!isDefaultColor)
 			{
-				Material mat = meshInst.GetSurfaceOverrideMaterial(i);
-				if (mat == null && meshInst.Mesh != null)
+				int surfaceCount = meshInst.Mesh != null ? meshInst.Mesh.GetSurfaceCount() : 0;
+				for (int i = 0; i < surfaceCount; i++)
 				{
-					mat = meshInst.Mesh.SurfaceGetMaterial(i);
-				}
-
-				if (mat is BaseMaterial3D baseMat)
-				{
-					if (meshInst.GetSurfaceOverrideMaterial(i) == null)
+					Material mat = meshInst.GetSurfaceOverrideMaterial(i);
+					if (mat == null && meshInst.Mesh != null)
 					{
-						baseMat = (BaseMaterial3D)baseMat.Duplicate();
-						meshInst.SetSurfaceOverrideMaterial(i, baseMat);
+						mat = meshInst.Mesh.SurfaceGetMaterial(i);
 					}
 
-					baseMat.AlbedoColor = new Color(multR, multG, multB, baseMat.AlbedoColor.A);
-				}
-			}
+					if (mat is BaseMaterial3D baseMat)
+					{
+						if (meshInst.GetSurfaceOverrideMaterial(i) == null)
+						{
+							baseMat = (BaseMaterial3D)baseMat.Duplicate();
+							meshInst.SetSurfaceOverrideMaterial(i, baseMat);
+						}
 
-			if (meshInst.MaterialOverride is BaseMaterial3D overrideMat)
-			{
-				overrideMat.AlbedoColor = new Color(multR, multG, multB, overrideMat.AlbedoColor.A);
+						baseMat.AlbedoColor = new Color(multR, multG, multB, baseMat.AlbedoColor.A);
+					}
+				}
+
+				if (meshInst.MaterialOverride is BaseMaterial3D overrideMat)
+				{
+					overrideMat.AlbedoColor = new Color(multR, multG, multB, overrideMat.AlbedoColor.A);
+				}
 			}
 		}
 	}
@@ -1739,8 +1762,6 @@ public partial class GameHost
 			EcsWorld.Add(entity, new CollisionScale(scale));
 		}
 
-		ApplyAllGlobalOverridesToObject(unit3D);
-
 		return unit3D;
 	}
 
@@ -1791,17 +1812,14 @@ public partial class GameHost
 		var prop = new Prop3D();
 		prop.Entity = entity;
 		prop.PropId = propId;
+		prop.Position = position;
+		prop.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
+		prop.Scale = Vector3.One * scale;
 		AddChild(prop);
 		AllProps.Add(prop);
 		PropMultiMeshManager.Instance?.MarkDirty(propId);
 
 		EntityToProp3D[entity] = prop;
-
-		prop.Position = position;
-		prop.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
-		prop.Scale = Vector3.One * scale;
-		
-		ApplyAllGlobalOverridesToObject(prop);
 
 		return prop;
 	}

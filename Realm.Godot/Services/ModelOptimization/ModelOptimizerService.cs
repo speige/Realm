@@ -384,6 +384,87 @@ public class ModelOptimizerService
 		return res;
 	}
 
+	public static bool HasDecimationCompletedFlag(string filePath)
+	{
+		try
+		{
+			if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+			{
+				return false;
+			}
+
+			using var stream = new System.IO.FileStream(filePath, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite);
+			if (stream.Length < 20)
+			{
+				return false;
+			}
+
+			byte[] header = new byte[20];
+			int read = stream.Read(header, 0, 20);
+			if (read < 20)
+			{
+				return false;
+			}
+
+			uint magic = BitConverter.ToUInt32(header, 0);
+			if (magic != 0x46546C67)
+			{
+				return false;
+			}
+
+			uint chunkLength = BitConverter.ToUInt32(header, 12);
+			uint chunkType = BitConverter.ToUInt32(header, 16);
+
+			if (chunkType != 0x4E4F534A)
+			{
+				return false;
+			}
+
+			if (chunkLength > 10 * 1024 * 1024)
+			{
+				return false;
+			}
+
+			byte[] jsonBytes = new byte[chunkLength];
+			int totalRead = 0;
+			while (totalRead < chunkLength)
+			{
+				int bytesRead = stream.Read(jsonBytes, totalRead, (int)chunkLength - totalRead);
+				if (bytesRead <= 0) break;
+				totalRead += bytesRead;
+			}
+
+			if (totalRead < chunkLength)
+			{
+				return false;
+			}
+
+			using var jsonDoc = JsonDocument.Parse(jsonBytes);
+			var root = jsonDoc.RootElement;
+
+			if (root.TryGetProperty("asset", out var assetElement) &&
+				assetElement.TryGetProperty("extras", out var assetExtras) &&
+				assetExtras.TryGetProperty("realm_decimate_completed", out var flag1) &&
+				flag1.GetBoolean())
+			{
+				return true;
+			}
+
+			if (root.TryGetProperty("extras", out var rootExtras) &&
+				rootExtras.TryGetProperty("realm_decimate_completed", out var flag2) &&
+				flag2.GetBoolean())
+			{
+				return true;
+			}
+
+			return false;
+		}
+		catch
+		{
+			return false;
+		}
+	}
+
 	public static bool HasDecimationCompletedFlag(byte[] glbBytes)
 	{
 		try

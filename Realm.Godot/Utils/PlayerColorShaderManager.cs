@@ -572,6 +572,7 @@ public static class PlayerColorShaderManager
 	public static void SetBrightnessAndTint(Node rootNode, float brightness, Color tint)
 	{
 		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
+		if (MathF.Abs(brightness - 1.0f) < 0.001f && tint == new Color(1.0f, 1.0f, 1.0f)) return;
 		SetBrightnessAndTintRecursive(rootNode, brightness, tint);
 	}
 

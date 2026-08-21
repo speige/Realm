@@ -148,10 +148,6 @@ public partial class Prop3D : StaticBody3D
 	public virtual void UpdateCollisionCircleScale(float ratio)
 	{
 		Vector3 ringScale = new Vector3(ratio, 1.0f, ratio);
-		if (_selectionRing == null)
-		{
-			CreateSelectionRing();
-		}
 		if (_selectionRing != null)
 		{
 			_selectionRing.Scale = ringScale;
