@@ -1215,14 +1215,14 @@
             `;
 
             card.querySelector('.btn-delete').addEventListener('click', () => {
-                if (confirm('Are you sure you want to delete this player slot?')) {
+                showCustomConfirmDialog('Are you sure you want to delete this player slot?', () => {
                     pushToUndoStack();
                     list.splice(index, 1);
                     units.MapProperties.PlayerSlots = list;
                     saveChanges();
                     renderPlayerSlots();
                     renderTeams(); // Slot indexes changed, redraw teams checklists
-                }
+                }, 'Delete');
             });
 
             card.querySelectorAll('input, select').forEach(input => {
@@ -1290,13 +1290,13 @@
             `;
 
             card.querySelector('.btn-delete').addEventListener('click', () => {
-                if (confirm('Are you sure you want to delete this team?')) {
+                showCustomConfirmDialog('Are you sure you want to delete this team?', () => {
                     pushToUndoStack();
                     list.splice(index, 1);
                     units.MapProperties.Teams = list;
                     saveChanges();
                     renderTeams();
-                }
+                }, 'Delete');
             });
 
             card.querySelector('.team-name').addEventListener('change', e => {
@@ -1366,13 +1366,13 @@
             `;
 
             card.querySelector('.btn-delete').addEventListener('click', () => {
-                if (confirm('Are you sure you want to delete this changelog entry?')) {
+                showCustomConfirmDialog('Are you sure you want to delete this changelog entry?', () => {
                     pushToUndoStack();
                     list.splice(index, 1);
                     units.MapProperties.Changelog = list;
                     saveChanges();
                     renderChangelog();
-                }
+                }, 'Delete');
             });
 
             card.querySelectorAll('input, textarea').forEach(input => {
@@ -1526,14 +1526,14 @@
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.index, 10);
                 const targetId = list[idx].WeaponId;
-                if (confirm(`Are you sure you want to delete custom weapon "${list[idx].Name || targetId}"?`)) {
+                showCustomConfirmDialog(`Are you sure you want to delete custom weapon "${list[idx].Name || targetId}"?`, () => {
                     pushToUndoStack();
                     cascadeDelete('weapon', targetId);
                     list.splice(idx, 1);
                     units.CustomWeapons = list;
                     saveChanges();
                     renderCustomWeapons();
-                }
+                }, 'Delete');
             });
         });
 
@@ -1764,14 +1764,14 @@
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.index, 10);
                 const targetId = list[idx].AbilityId;
-                if (confirm(`Are you sure you want to delete custom ability "${list[idx].Name || targetId}"?`)) {
+                showCustomConfirmDialog(`Are you sure you want to delete custom ability "${list[idx].Name || targetId}"?`, () => {
                     pushToUndoStack();
                     cascadeDelete('ability', targetId);
                     list.splice(idx, 1);
                     units.CustomAbilities = list;
                     saveChanges();
                     renderCustomAbilities();
-                }
+                }, 'Delete');
             });
         });
 
@@ -1978,14 +1978,14 @@
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.index, 10);
                 const targetId = list[idx].UpgradeId;
-                if (confirm(`Are you sure you want to delete custom upgrade "${list[idx].Name || targetId}"?`)) {
+                showCustomConfirmDialog(`Are you sure you want to delete custom upgrade "${list[idx].Name || targetId}"?`, () => {
                     pushToUndoStack();
                     cascadeDelete('upgrade', targetId);
                     list.splice(idx, 1);
                     units.CustomUpgrades = list;
                     saveChanges();
                     renderCustomUpgrades();
-                }
+                }, 'Delete');
             });
         });
 
@@ -2235,14 +2235,14 @@
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.index, 10);
                 const targetId = list[idx].ItemId;
-                if (confirm(`Are you sure you want to delete custom item "${list[idx].Name || targetId}"?`)) {
+                showCustomConfirmDialog(`Are you sure you want to delete custom item "${list[idx].Name || targetId}"?`, () => {
                     pushToUndoStack();
                     cascadeDelete('item', targetId);
                     list.splice(idx, 1);
                     units.CustomItems = list;
                     saveChanges();
                     renderCustomItems();
-                }
+                }, 'Delete');
             });
         });
 
@@ -2815,17 +2815,21 @@
         renderCustomItems();
     }
 
-    function showDeleteConfirm(displayName, id) {
+    function showCustomConfirmDialog(message, onOk, confirmText = 'Confirm') {
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;';
         const dialog = document.createElement('div');
-        dialog.style.cssText = 'background:var(--bg-secondary,#252526);border:1px solid var(--border-color,#3c3c3c);border-radius:8px;padding:24px;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.5);';
-        dialog.innerHTML = '<p style="margin:0 0 16px 0;color:var(--text-primary,#d4d4d4);font-size:14px;">Are you sure you want to delete unit "' + displayName + '"?</p><div style="display:flex;gap:8px;justify-content:flex-end;"><button id="confirm-cancel" style="padding:8px 16px;border:1px solid var(--border-color,#3c3c3c);border-radius:6px;background:transparent;color:var(--text-primary,#d4d4d4);cursor:pointer;font-weight:600;">Cancel</button><button id="confirm-ok" style="padding:8px 16px;border:none;border-radius:6px;background:var(--danger-color,#f48771);color:#fff;cursor:pointer;font-weight:600;">Delete</button></div>';
+        dialog.style.cssText = 'background:var(--bg-secondary,#252526);border:1px solid var(--border-color,#3c3c3c);border-radius:8px;padding:24px;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.5);';
+        dialog.innerHTML = '<p style="margin:0 0 16px 0;color:var(--text-primary,#d4d4d4);font-size:14px;line-height:1.5;">' + message + '</p><div style="display:flex;gap:8px;justify-content:flex-end;"><button id="confirm-cancel" style="padding:8px 16px;border:1px solid var(--border-color,#3c3c3c);border-radius:6px;background:transparent;color:var(--text-primary,#d4d4d4);cursor:pointer;font-weight:600;">Cancel</button><button id="confirm-ok" style="padding:8px 16px;border:none;border-radius:6px;background:var(--danger-color,#f48771);color:#fff;cursor:pointer;font-weight:600;">' + confirmText + '</button></div>';
         overlay.appendChild(dialog);
         document.body.appendChild(overlay);
-        dialog.querySelector('#confirm-ok').addEventListener('click', function () { overlay.remove(); deleteUnit(id); });
+        dialog.querySelector('#confirm-ok').addEventListener('click', function () { overlay.remove(); onOk(); });
         dialog.querySelector('#confirm-cancel').addEventListener('click', function () { overlay.remove(); });
         overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+    }
+
+    function showDeleteConfirm(displayName, id) {
+        showCustomConfirmDialog('Are you sure you want to delete unit "' + displayName + '"?', () => deleteUnit(id), 'Delete');
     }
 
     function deleteUnit(id) {
@@ -2986,6 +2990,50 @@
         units.CustomItems = list;
         saveChanges();
         renderCustomItems();
+    });
+
+    document.getElementById('prune-entities-btn')?.addEventListener('click', () => {
+        const domain = getActiveDomain();
+        const domainName = domain === 'buildings' ? 'buildings' : domain === 'resources' ? 'resources' : domain === 'props' ? 'props' : 'units';
+        showCustomConfirmDialog(`Are you sure you want to prune all ${domainName} that have never been placed on terrain.json?`, () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: domain });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('prune-weapons-btn')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all weapons not used by any placed units on terrain.json?', () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: 'weapons' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('prune-abilities-btn')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all abilities not used by any placed units on terrain.json?', () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: 'abilities' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('prune-upgrades-btn')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all tech upgrades not used by any placed units on terrain.json?', () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: 'upgrades' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('prune-items-btn')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all items not used by any placed units on terrain.json?', () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: 'items' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('btn-prune-unused-assets')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all unreferenced assets? Unused asset entries will be removed from metadata.json and their files will be deleted from the workspace.', () => {
+            vscode.postMessage({ type: 'pruneUnusedAssets' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('btn-prune-unused-assets-section')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all unreferenced assets? Unused asset entries will be removed from metadata.json and their files will be deleted from the workspace.', () => {
+            vscode.postMessage({ type: 'pruneUnusedAssets' });
+        }, 'Prune Unused');
     });
 
     // --- SYSTEM FILE RESOLVE PATH & THUMBNAIL/AUDIO WARNINGS ---
