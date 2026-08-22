@@ -115,7 +115,7 @@ public partial class MapDiscovery : Control
 		lobbyPanelStyle.ContentMarginLeft = 80;
 		lobbyPanelStyle.ContentMarginRight = 80;
 		lobbyPanelStyle.ContentMarginTop = 130;
-		lobbyPanelStyle.ContentMarginBottom = 50;
+		lobbyPanelStyle.ContentMarginBottom = 65;
 		_mapListPanel.AddThemeStyleboxOverride("panel", lobbyPanelStyle);
 		_mapListPanel.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
 
@@ -133,7 +133,7 @@ public partial class MapDiscovery : Control
 		_discoveryTitle.CustomMinimumSize = new Vector2(300, 40);
 		_discoveryTitle.Size = new Vector2(300, 40);
 		float titleX = _mapListPanel.Position.X + 200.0f;
-		_discoveryTitle.Position = new Vector2(titleX, 222);
+		_discoveryTitle.Position = new Vector2(titleX, _mapListPanel.Position.Y + 30.0f);
 		_discoveryTitle.ZIndex = 1;
 		MoveChild(_discoveryTitle, -1);
 

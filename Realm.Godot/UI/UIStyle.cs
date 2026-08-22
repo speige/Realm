@@ -12,8 +12,10 @@ public static class UIStyle
 	public static readonly Color ColorGoldDull = new Color(0.75f, 0.67f, 0.5f, 1.0f);      // Dull gold
 	
 	public static readonly Color ColorCyanGlow = new Color(0.15f, 0.65f, 1.0f, 1.0f);     // Runic cyan glow
-	public static readonly Color ColorCyanGlowDim = new Color(0.15f, 0.65f, 1.0f, 0.4f);  // Dim cyan
-	
+	public static readonly Color ColorCyanGlowDim = new Color(0.15f, 0.65f, 1.0f, 0.4f);
+
+	public static readonly Font FontNorseBold = GD.Load<Font>("res://Assets/UI/Norse-Bold.otf");
+	public static readonly Font FontCinzelBold = GD.Load<Font>("res://Assets/UI/Cinzel-Bold.ttf");
 
 	public static StyleBox CreateBgTexture(string path)
 	{
@@ -38,6 +40,106 @@ public static class UIStyle
 			return style;
 		}
 		return CreateBgGradient();
+	}
+
+	public static StyleBox CreateCreatorDiscoveryBg()
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/creator_discovery_bg.jpg");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			return style;
+		}
+		return CreateBgGradient();
+	}
+
+	public static StyleBox CreateCreatorDiscoveryPanelStyle()
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/creator_discovery_panel.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+
+			style.TextureMarginLeft = 4;
+			style.TextureMarginRight = 4;
+			style.TextureMarginTop = 4;
+			style.TextureMarginBottom = 4;
+
+			style.ContentMarginLeft = 65;
+			style.ContentMarginRight = 65;
+			style.ContentMarginTop = 50;
+			style.ContentMarginBottom = 50;
+
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+
+			return style;
+		}
+		return CreateBackdropPanel();
+	}
+
+	public static StyleBox CreateCreatorDiscoveryTabButtonStyle(bool isActive, bool isHover = false, bool isPressed = false)
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/creator_discovery_button_option.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+
+			style.TextureMarginLeft = 0;
+			style.TextureMarginRight = 0;
+			style.TextureMarginTop = 0;
+			style.TextureMarginBottom = 0;
+
+			style.ContentMarginLeft = 20;
+			style.ContentMarginRight = 20;
+			style.ContentMarginTop = 10;
+			style.ContentMarginBottom = 10;
+
+			if (isActive)
+			{
+				style.ModulateColor = isPressed
+					? new Color(0.85f, 0.85f, 0.9f)
+					: (isHover ? new Color(1.18f, 1.18f, 1.25f) : Colors.White);
+			}
+			else
+			{
+				style.ModulateColor = isHover
+					? new Color(0.85f, 0.85f, 0.88f, 0.9f)
+					: new Color(0.6f, 0.6f, 0.65f, 0.75f);
+			}
+
+			return style;
+		}
+		return isPressed ? CreateButtonPressed() : (isHover ? CreateButtonHover() : CreateButtonNormal());
+	}
+
+	public static StyleBox CreateCreatorDiscoveryMapFrameStyle()
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/creator_discovery_map.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+
+			style.TextureMarginLeft = 24;
+			style.TextureMarginRight = 24;
+			style.TextureMarginTop = 8;
+			style.TextureMarginBottom = 8;
+
+			style.ContentMarginLeft = 20;
+			style.ContentMarginRight = 20;
+			style.ContentMarginTop = 14;
+			style.ContentMarginBottom = 14;
+
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+
+			return style;
+		}
+		return CreateStonePanel(true);
 	}
 
 	public static StyleBox CreateBackdropPanel()
@@ -89,6 +191,35 @@ public static class UIStyle
 			style.ModulateColor = new Color(0.72f, 0.72f, 0.75f, 0.98f); // Darker base frame
 		}
 		return style;
+	}
+
+	public static StyleBox CreateReplayPanel()
+	{
+		var texture = GD.Load<Texture2D>("res://Assets/UI/replays_panel.png");
+		if (texture != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = texture;
+
+			float marginX = texture.GetWidth() * 0.08f;
+			float marginY = texture.GetHeight() * 0.08f;
+
+			style.TextureMarginLeft = marginX;
+			style.TextureMarginRight = marginX;
+			style.TextureMarginTop = marginY;
+			style.TextureMarginBottom = marginY;
+
+			style.ContentMarginLeft = marginX * 1.3f;
+			style.ContentMarginRight = marginX * 1.3f;
+			style.ContentMarginTop = marginY * 1.3f;
+			style.ContentMarginBottom = marginY * 1.3f;
+
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+
+			return style;
+		}
+		return CreateStonePanel(false);
 	}
 
 	public static StyleBox CreateCustomMatchCardPanel()
@@ -190,6 +321,72 @@ public static class UIStyle
 			style.ContentMarginRight = 20;
 			style.ContentMarginTop = 10;
 			style.ContentMarginBottom = 10;
+			
+			if (isPressed)
+			{
+				style.ModulateColor = new Color(0.85f, 0.85f, 0.9f);
+			}
+			else if (isHover)
+			{
+				style.ModulateColor = new Color(1.18f, 1.18f, 1.25f);
+			}
+			else
+			{
+				style.ModulateColor = Colors.White;
+			}
+			return style;
+		}
+		return isPressed ? CreateButtonPressed() : (isHover ? CreateButtonHover() : CreateButtonNormal());
+	}
+
+	public static StyleBox CreateCustomLobbyBackButton(bool isHover = false, bool isPressed = false)
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/custom_lobby_back_button.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 0;
+			style.TextureMarginRight = 0;
+			style.TextureMarginTop = 0;
+			style.TextureMarginBottom = 0;
+			style.ContentMarginLeft = 0;
+			style.ContentMarginRight = 0;
+			style.ContentMarginTop = 0;
+			style.ContentMarginBottom = 0;
+			
+			if (isPressed)
+			{
+				style.ModulateColor = new Color(0.85f, 0.85f, 0.9f);
+			}
+			else if (isHover)
+			{
+				style.ModulateColor = new Color(1.18f, 1.18f, 1.25f);
+			}
+			else
+			{
+				style.ModulateColor = Colors.White;
+			}
+			return style;
+		}
+		return isPressed ? CreateButtonPressed() : (isHover ? CreateButtonHover() : CreateButtonNormal());
+	}
+
+	public static StyleBox CreateCustomLobbyRechargeButton(bool isHover = false, bool isPressed = false)
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/custom_lobby_recharge_button.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 0;
+			style.TextureMarginRight = 0;
+			style.TextureMarginTop = 0;
+			style.TextureMarginBottom = 0;
+			style.ContentMarginLeft = 0;
+			style.ContentMarginRight = 0;
+			style.ContentMarginTop = 0;
+			style.ContentMarginBottom = 0;
 			
 			if (isPressed)
 			{
@@ -372,6 +569,11 @@ public static class UIStyle
 	public static void ApplyTitle(Label label, string text, int fontSize = 36)
 	{
 		label.Text = TranslationServer.Translate(text);
+		var font = FontNorseBold ?? FontCinzelBold;
+		if (font != null)
+		{
+			label.AddThemeFontOverride("font", font);
+		}
 		label.AddThemeColorOverride("font_color", ColorGold);
 		label.AddThemeColorOverride("font_outline_color", new Color(0.08f, 0.08f, 0.1f));
 		label.AddThemeConstantOverride("outline_size", 8);
@@ -383,6 +585,11 @@ public static class UIStyle
 	public static void ApplyButtonText(Button button, string text, int fontSize = 18)
 	{
 		button.Text = TranslationServer.Translate(text);
+		var font = FontNorseBold ?? FontCinzelBold;
+		if (font != null)
+		{
+			button.AddThemeFontOverride("font", font);
+		}
 		button.AddThemeColorOverride("font_color", ColorGoldDull);
 		button.AddThemeColorOverride("font_hover_color", ColorGold);
 		button.AddThemeColorOverride("font_pressed_color", ColorGold);

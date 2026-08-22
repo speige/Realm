@@ -57,22 +57,26 @@ grow_vertical = 2
 alignment = 1
 
 [node name="BackButton" type="Button" parent="."]
-custom_minimumSize = Vector2(60, 60)
+custom_minimumSize = Vector2(110, 110)
 layout_mode = 0
-offset_left = 130.0
-offset_top = 40.0
-offset_right = 190.0
-offset_bottom = 100.0
+offset_left = 48.0
+offset_top = 14.0
+offset_right = 158.0
+offset_bottom = 124.0
+pivot_offset = Vector2(55, 55)
 focus_mode = 0
 
 [node name="RefreshButton" type="Button" parent="."]
-custom_minimumSize = Vector2(60, 60)
-layout_mode = 0
-offset_left = 1730.0
-offset_top = 40.0
-offset_right = 1790.0
-offset_bottom = 100.0
-pivot_offset = Vector2(30, 30)
+custom_minimumSize = Vector2(110, 110)
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -158.0
+offset_top = 14.0
+offset_right = -48.0
+offset_bottom = 124.0
+pivot_offset = Vector2(55, 55)
 focus_mode = 0
 
 [node name="BrowserTitle" type="Label" parent="."]

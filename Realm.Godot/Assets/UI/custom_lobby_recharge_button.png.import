@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://crhpuimmcmje6"
-path="res://.godot/imported/profile_frame_hover.png-595b06523ae5d52d2d5c85da8d0169d3.ctex"
+uid="uid://du8uu170gncmc"
+path="res://.godot/imported/custom_lobby_recharge_button.png-38076631995d5b6b8f0a45416e9bb139.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/UI/profile_frame_hover.png"
-dest_files=["res://.godot/imported/profile_frame_hover.png-595b06523ae5d52d2d5c85da8d0169d3.ctex"]
+source_file="res://Assets/UI/custom_lobby_recharge_button.png"
+dest_files=["res://.godot/imported/custom_lobby_recharge_button.png-38076631995d5b6b8f0a45416e9bb139.ctex"]
 
 [params]
 

@@ -175,52 +175,74 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="SocialPopover" type="PanelContainer" parent="."]
+[node name="SocialPopover" type="Control" parent="."]
 visible = false
 layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 120.0
-offset_top = -480.0
-offset_right = 460.0
+offset_top = -670.0
+offset_right = 480.0
 offset_bottom = -130.0
 grow_vertical = 0
 
-[node name="PopoverVBox" type="VBoxContainer" parent="SocialPopover"]
+[node name="Background" type="TextureRect" parent="SocialPopover"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="MarginContainer" type="MarginContainer" parent="SocialPopover"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 45
+theme_override_constants/margin_top = 95
+theme_override_constants/margin_right = 45
+theme_override_constants/margin_bottom = 55
+
+[node name="PopoverVBox" type="VBoxContainer" parent="SocialPopover/MarginContainer"]
 layout_mode = 2
 theme_override_constants/separation = 10
 alignment = 1
 
-[node name="DiscordButton" type="Button" parent="SocialPopover/PopoverVBox"]
-custom_minimumSize = Vector2(300, 48)
+[node name="DiscordButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 48)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
 icon = ExtResource("5_discord")
 
-[node name="DonateButton" type="Button" parent="SocialPopover/PopoverVBox"]
-custom_minimumSize = Vector2(300, 48)
+[node name="DonateButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 48)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
 icon = ExtResource("6_donate")
 
-[node name="ContributeButton" type="Button" parent="SocialPopover/PopoverVBox"]
-custom_minimumSize = Vector2(300, 48)
+[node name="ContributeButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 48)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
 icon = ExtResource("11_coding")
 
-[node name="BugReportButton" type="Button" parent="SocialPopover/PopoverVBox"]
-custom_minimumSize = Vector2(300, 48)
+[node name="BugReportButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 48)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
 
-[node name="SeedNodeButton" type="Button" parent="SocialPopover/PopoverVBox"]
-custom_minimumSize = Vector2(300, 48)
+[node name="SeedNodeButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 48)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0

@@ -80,6 +80,7 @@ public partial class LobbyBrowser : Control
 
 
 		ApplyStyles();
+		CenterFpsCounter();
 
 
 		LobbyManager.Instance.NatTestCompleted += UpdateHostButtonState;
@@ -165,7 +166,7 @@ public partial class LobbyBrowser : Control
 			filterPanelStyle.TextureMarginBottom = 40;
 			filterPanelStyle.ContentMarginLeft = 46;
 			filterPanelStyle.ContentMarginRight = 46;
-			filterPanelStyle.ContentMarginTop = 18;
+			filterPanelStyle.ContentMarginTop = 44;
 			filterPanelStyle.ContentMarginBottom = 30;
 			_filterPanel.AddThemeStyleboxOverride("panel", filterPanelStyle);
 			_filterPanel.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
@@ -235,24 +236,8 @@ public partial class LobbyBrowser : Control
 		}
 
 
-		SetupPillarButton(_backButton, "◀", () => UIManager.Instance.TransitionTo(GameScreen.MainMenu));
-		_refreshIcon = new Label();
-		_refreshIcon.Text = "↻";
-		_refreshIcon.HorizontalAlignment = HorizontalAlignment.Center;
-		_refreshIcon.VerticalAlignment = VerticalAlignment.Center;
-		_refreshIcon.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-		_refreshIcon.PivotOffset = new Vector2(30, 30);
-		_refreshIcon.MouseFilter = Control.MouseFilterEnum.Ignore;
-		_refreshIcon.AddThemeFontSizeOverride("font_size", 28);
-		_refreshIcon.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		_refreshButton.AddChild(_refreshIcon);
-
-		_refreshButton.MouseEntered += () => _refreshIcon.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		_refreshButton.MouseExited += () => _refreshIcon.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		_refreshButton.ButtonDown += () => _refreshIcon.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
-		_refreshButton.ButtonUp += () => _refreshIcon.AddThemeColorOverride("font_color", _refreshButton.IsHovered() ? UIStyle.ColorGold : UIStyle.ColorGoldDull);
-
-		SetupPillarButton(_refreshButton, "", TriggerRefresh);
+		SetupBackButton();
+		SetupRefreshButton();
 
 
 		SetupHostButton();
@@ -315,7 +300,8 @@ public partial class LobbyBrowser : Control
 	{
 		_hostButton.Flat = false;
 		_hostButton.CustomMinimumSize = new Vector2(300, 86);
-		UIStyle.ApplyButtonText(_hostButton, "HOST A GAME", 18);
+		UIStyle.ApplyButtonText(_hostButton, "HOST A GAME", 24);
+		_hostButton.AddThemeFontOverride("font", UIStyle.FontNorseBold);
 		
 		_hostButton.AddThemeStyleboxOverride("normal", UIStyle.CreateCustomLobbyStartGameButton(false, false));
 		_hostButton.AddThemeStyleboxOverride("hover", UIStyle.CreateCustomLobbyStartGameButton(true, false));
@@ -328,6 +314,48 @@ public partial class LobbyBrowser : Control
 			UIManager.Instance.TransitionTo(GameScreen.LobbyCreate);
 		};
 		_hostButton.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+	}
+
+	private void SetupBackButton()
+	{
+		_backButton.Flat = false;
+		_backButton.Text = "";
+		_backButton.CustomMinimumSize = new Vector2(110, 110);
+		_backButton.PivotOffset = new Vector2(55, 55);
+		_backButton.AddThemeConstantOverride("icon_max_width", 110);
+
+		_backButton.AddThemeStyleboxOverride("normal", UIStyle.CreateCustomLobbyBackButton(false, false));
+		_backButton.AddThemeStyleboxOverride("hover", UIStyle.CreateCustomLobbyBackButton(true, false));
+		_backButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateCustomLobbyBackButton(false, true));
+		_backButton.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+
+		_backButton.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			UIManager.Instance.TransitionTo(GameScreen.MainMenu);
+		};
+		_backButton.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+	}
+
+	private void SetupRefreshButton()
+	{
+		_refreshButton.Flat = false;
+		_refreshButton.Text = "";
+		_refreshButton.CustomMinimumSize = new Vector2(110, 110);
+		_refreshButton.PivotOffset = new Vector2(55, 55);
+		_refreshButton.AddThemeConstantOverride("icon_max_width", 110);
+
+		_refreshButton.AddThemeStyleboxOverride("normal", UIStyle.CreateCustomLobbyRechargeButton(false, false));
+		_refreshButton.AddThemeStyleboxOverride("hover", UIStyle.CreateCustomLobbyRechargeButton(true, false));
+		_refreshButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateCustomLobbyRechargeButton(false, true));
+		_refreshButton.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+
+		_refreshButton.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			TriggerRefresh();
+		};
+		_refreshButton.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 	}
 
 	private void ShowHostingErrorPopup()
@@ -763,16 +791,45 @@ public partial class LobbyBrowser : Control
 
 	private void TriggerRefresh()
 	{
-		if (_refreshIcon != null && GodotObject.IsInstanceValid(_refreshIcon))
+		if (_refreshButton != null && GodotObject.IsInstanceValid(_refreshButton))
 		{
 			var tween = CreateTween();
-			tween.TweenProperty(_refreshIcon, "rotation", _refreshIcon.Rotation + Mathf.Pi * 2, 0.4f);
+			tween.TweenProperty(_refreshButton, "rotation", _refreshButton.Rotation + Mathf.Pi * 2, 0.4f);
 		}
 		FetchLobbiesFromRegistry();
 	}
 
+	private void CenterFpsCounter()
+	{
+		var fpsLabel = GetTree().Root.FindChild("FPS", recursive: true, owned: false) as Label;
+		if (fpsLabel != null)
+		{
+			fpsLabel.SetAnchorsPreset(Control.LayoutPreset.CenterTop);
+			fpsLabel.OffsetLeft = -60;
+			fpsLabel.OffsetRight = 60;
+			fpsLabel.OffsetTop = 10;
+			fpsLabel.OffsetBottom = 40;
+			fpsLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		}
+	}
+
+	private void RestoreFpsCounter()
+	{
+		var fpsLabel = GetTree().Root.FindChild("FPS", recursive: true, owned: false) as Label;
+		if (fpsLabel != null)
+		{
+			fpsLabel.SetAnchorsPreset(Control.LayoutPreset.TopRight);
+			fpsLabel.OffsetLeft = -160;
+			fpsLabel.OffsetRight = -10;
+			fpsLabel.OffsetTop = 10;
+			fpsLabel.OffsetBottom = 40;
+			fpsLabel.HorizontalAlignment = HorizontalAlignment.Right;
+		}
+	}
+
 	public override void _ExitTree()
 	{
+		RestoreFpsCounter();
 		if (_refreshTimer != null)
 		{
 			_refreshTimer.Timeout -= TriggerRefresh;

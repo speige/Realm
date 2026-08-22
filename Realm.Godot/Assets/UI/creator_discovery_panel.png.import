@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c6fv6mpwm2bfx"
-path="res://.godot/imported/profile_nameplate_hover.png-b81dc3348c0f21a8ac0618cc74dfb841.ctex"
+uid="uid://nontjwqs5di6"
+path="res://.godot/imported/creator_discovery_panel.png-4e5bf9766485ff863d3440540a137997.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/UI/profile_nameplate_hover.png"
-dest_files=["res://.godot/imported/profile_nameplate_hover.png-b81dc3348c0f21a8ac0618cc74dfb841.ctex"]
+source_file="res://Assets/UI/creator_discovery_panel.png"
+dest_files=["res://.godot/imported/creator_discovery_panel.png-4e5bf9766485ff863d3440540a137997.ctex"]
 
 [params]
 

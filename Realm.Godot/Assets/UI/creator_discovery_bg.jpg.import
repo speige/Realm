@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://djjeds6aj088l"
-path="res://.godot/imported/profile_badge_pressed.png-b28b08c285c5f4cac81667219d3d2447.ctex"
+uid="uid://yokmgo4cincc"
+path="res://.godot/imported/creator_discovery_bg.jpg-3971c81bbb13790629c64a702b8e9cfe.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/UI/profile_badge_pressed.png"
-dest_files=["res://.godot/imported/profile_badge_pressed.png-b28b08c285c5f4cac81667219d3d2447.ctex"]
+source_file="res://Assets/UI/creator_discovery_bg.jpg"
+dest_files=["res://.godot/imported/creator_discovery_bg.jpg-3971c81bbb13790629c64a702b8e9cfe.ctex"]
 
 [params]
 

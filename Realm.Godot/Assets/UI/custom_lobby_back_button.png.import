@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://0cyq0i02t3b5"
-path="res://.godot/imported/profile_badge_hover.png-b8153d1f998f80a89cad8ad5c0614454.ctex"
+uid="uid://dcgmvsciadpx0"
+path="res://.godot/imported/custom_lobby_back_button.png-63cdacba09ee51dd9d4977876ea16349.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/UI/profile_badge_hover.png"
-dest_files=["res://.godot/imported/profile_badge_hover.png-b8153d1f998f80a89cad8ad5c0614454.ctex"]
+source_file="res://Assets/UI/custom_lobby_back_button.png"
+dest_files=["res://.godot/imported/custom_lobby_back_button.png-63cdacba09ee51dd9d4977876ea16349.ctex"]
 
 [params]
 

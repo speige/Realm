@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cl1qli366as4k"
-path="res://.godot/imported/profile_frame_pressed.png-f1d8e1793f8971c18803e9ce771acd6e.ctex"
+uid="uid://bsu2oxfkahweg"
+path="res://.godot/imported/creator_discovery_button_option.png-e6cd1dac4cc9750ee19c8b12b8dcba24.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/UI/profile_frame_pressed.png"
-dest_files=["res://.godot/imported/profile_frame_pressed.png-f1d8e1793f8971c18803e9ce771acd6e.ctex"]
+source_file="res://Assets/UI/creator_discovery_button_option.png"
+dest_files=["res://.godot/imported/creator_discovery_button_option.png-e6cd1dac4cc9750ee19c8b12b8dcba24.ctex"]
 
 [params]
 
