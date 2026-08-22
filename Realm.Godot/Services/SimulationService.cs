@@ -113,7 +113,7 @@ internal class SimulationService
 		_pathfinder = pathfinder;
 
 		_movementService = new MovementAndPathfindingService(ecsWorldAccessor, worldEntity, pathfinder);
-		_combatService = new CombatAndDamageService(ecsWorldAccessor);
+		_combatService = new CombatAndDamageService(ecsWorldAccessor, () => GameHost.Instance != null && GameHost.Instance.UnlimitedPowerEnabled, pathfinder);
 		_economyService = new ResourceEconomyService(ecsWorldAccessor);
 
 		_combatService.OnArrowProjectileRequested = (p1, p2) => EnqueueVFXRequest("arrow", p1, p2, 1.0f, 40f);
@@ -235,6 +235,13 @@ internal class SimulationService
 		_fDelta = fDelta;
 		_tickArrivedUnits.Clear();
 		_tickAddPathFollow.Clear();
+		_movementService.RefreshTerrainState();
+	}
+
+	public Func<System.Numerics.Vector3, float>? EditorHeightProvider
+	{
+		get => _movementService.EditorHeightProvider;
+		set => _movementService.EditorHeightProvider = value;
 	}
 
 	public void SetDelta(float fDelta)

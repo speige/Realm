@@ -1,7 +1,10 @@
+using System;
+using System.Collections.Generic;
 using Arch.Core;
 using Godot;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Tags;
+using Realm.Ecs.Components.Terrain;
 
 public partial class Unit3D : Prop3D
 {
@@ -72,6 +75,86 @@ public partial class Unit3D : Prop3D
 	private readonly System.Collections.Generic.List<MeshInstance3D> _pathMarkersPool = new();
 	private readonly System.Collections.Generic.List<MeshInstance3D> _pathLinesPool = new();
 
+	private int _player = 0;
+
+	public int Player
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity)
+				&& GameHost.Instance.EcsWorld.Has<UnitOwnerPlayer>(Entity))
+				return GameHost.Instance.EcsWorld.Get<UnitOwnerPlayer>(Entity).PlayerIndex;
+			return _player;
+		}
+		set
+		{
+			_player = value;
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.Has<UnitOwnerPlayer>(Entity))
+					world.Set(Entity, new UnitOwnerPlayer(value));
+				else
+					world.Add(Entity, new UnitOwnerPlayer(value));
+			}
+			UpdatePlayerColorVisual();
+		}
+	}
+
+	public int PlayerIndex
+	{
+		get => Player;
+		set => Player = value;
+	}
+
+	public Color PlayerColor { get; private set; } = PlayerColorConfig.GetColor(0);
+
+	public void SetPlayer(int playerIndex)
+	{
+		Player = playerIndex;
+	}
+
+	public void SetPlayerColor(Color color)
+	{
+		PlayerColor = color;
+		if (_modelNode != null && GodotObject.IsInstanceValid(_modelNode))
+		{
+			bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(ModelPath) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
+			Realm.Godot.Utils.PlayerColorShaderManager.SetPlayerColor(_modelNode, color);
+			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_modelNode, ignorePlayerColor);
+		}
+	}
+
+	public void InterpolatePlayerColor(Color targetColor, float weight)
+	{
+		Color blended = PlayerColor.Lerp(targetColor, weight);
+		SetPlayerColor(blended);
+	}
+
+	public void UpdatePlayerColorVisual()
+	{
+		bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(ModelPath) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
+		if (ignorePlayerColor)
+		{
+			if (_modelNode != null && GodotObject.IsInstanceValid(_modelNode))
+			{
+				Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_modelNode, true);
+			}
+			return;
+		}
+
+		Color resolvedColor = PlayerColorConfig.GetColor(Player);
+		if (LobbyManager.Instance != null && LobbyManager.Instance.PlayerList.Count > 0)
+		{
+			var matchPlayer = LobbyManager.Instance.PlayerList.Find(x => x.Slot == Player);
+			if (matchPlayer != null)
+			{
+				resolvedColor = matchPlayer.Color;
+			}
+		}
+		SetPlayerColor(resolvedColor);
+	}
+
 	public bool IsEnemy
 	{
 		get
@@ -126,7 +209,10 @@ public partial class Unit3D : Prop3D
 	{
 		if (IsPreview) return;
 
+		SetNotifyTransform(true);
+
 		var collisionShape = new CollisionShape3D();
+		collisionShape.Name = "CollisionShape";
 		if (IsBuilding)
 		{
 			var boxShape = new BoxShape3D();
@@ -150,9 +236,19 @@ public partial class Unit3D : Prop3D
 		SetProcess(false);
 	}
 
+	public override void UpdateLodVisibility()
+	{
+		if (_modelNode != null && GodotObject.IsInstanceValid(_modelNode))
+		{
+			float effectiveScale = Math.Max(0.01f, Scale.Y * _modelNode.Scale.Y);
+			Realm.Godot.Services.ModelOptimization.GltfDocumentExtensionMsftLod.UpdateLodVisibilityRanges(_modelNode, effectiveScale);
+		}
+	}
+
 	private float _baseModelYOffset = 0f;
 	public float BaseModelYOffset => _baseModelYOffset;
 	public string ModelPath { get; private set; }
+	public Node3D ModelNode => _modelNode;
 
 	public void UpdateModelYOffset(float yOffset)
 	{
@@ -181,7 +277,8 @@ public partial class Unit3D : Prop3D
 			if (_modelNode != null)
 			{
 				AddChild(_modelNode);
-				_animationPlayer = FindAnimationPlayer(_modelNode);
+				_animationPlayer = Realm.Godot.Animation.AnimationRetargetingService.FindOrCreateAnimationPlayer(_modelNode);
+				Realm.Godot.Animation.AnimationRetargetingService.LoadAndBindUnitAnimations(_modelNode, UnitId, modelPath);
 				SeekToIdleFirstFrame();
 
 
@@ -195,6 +292,8 @@ public partial class Unit3D : Prop3D
 					_modelNode.Scale = new Vector3(wScale, wScale, wScale);
 				}
 
+				UpdateLodVisibility();
+
 
 				float minY = GetMinY(_modelNode, Transform3D.Identity);
 				_baseModelYOffset = -minY * _modelNode.Scale.Y;
@@ -202,15 +301,32 @@ public partial class Unit3D : Prop3D
 				float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
 				_modelNode.Position = new Vector3(0f, _baseModelYOffset + yOffset, 0f);
 
-				if (UnitId == "priest")
+				bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(modelPath) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
+				Realm.Godot.Utils.PlayerColorShaderManager.ApplyPlayerColorShader(_modelNode, PlayerColor, ignorePlayerColor);
+				if (!ignorePlayerColor)
 				{
-					Color priestColor = IsEnemy ? new Color(0.8f, 0.2f, 0.8f) : new Color(1.0f, 0.85f, 0.2f);
-					ApplyModelTint(priestColor);
+					UpdatePlayerColorVisual();
 				}
-				else if (UnitId == "worker")
+				else
 				{
-					Color workerColor = IsEnemy ? new Color(0.6f, 0.4f, 0.2f) : new Color(0.8f, 0.6f, 0.4f);
-					ApplyModelTint(workerColor);
+					Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_modelNode, true);
+				}
+
+				GameHost.Instance?.ApplyAllGlobalOverridesToObject(this);
+
+				var colShapeNode = GetNodeOrNull<CollisionShape3D>("CollisionShape");
+				if (colShapeNode != null && _modelNode != null)
+				{
+					Aabb modelAabb = GetCombinedAabb(_modelNode);
+					if (modelAabb.Size.LengthSquared() > 0.01f)
+					{
+						var (analShape, analOffset) = Realm.Godot.Services.ModelOptimization.ModelOptimizerService.GenerateAnalyticalCollisionShape(modelAabb, IsBuilding);
+						if (analShape != null)
+						{
+							colShapeNode.Shape = analShape;
+							colShapeNode.Position = analOffset;
+						}
+					}
 				}
 			}
 			else
@@ -224,22 +340,126 @@ public partial class Unit3D : Prop3D
 			GD.PrintErr($"Error loading model {modelPath}: {ex.Message}");
 			CreateFallbackMesh();
 		}
+
+		UpdateDropShadow();
+	}
+
+	private Aabb GetCombinedAabb(Node root)
+	{
+		Aabb totalAabb = new Aabb();
+		bool first = true;
+		CollectAabbRecursive(root, Transform3D.Identity, ref totalAabb, ref first);
+		return totalAabb;
+	}
+
+	private void CollectAabbRecursive(Node node, Transform3D currentTransform, ref Aabb totalAabb, ref bool first)
+	{
+		if (node is MeshInstance3D mi && mi.Mesh != null)
+		{
+			Aabb localAabb = mi.Mesh.GetAabb();
+			Vector3[] corners = new Vector3[8]
+			{
+				new Vector3(localAabb.Position.X, localAabb.Position.Y, localAabb.Position.Z),
+				new Vector3(localAabb.Position.X + localAabb.Size.X, localAabb.Position.Y, localAabb.Position.Z),
+				new Vector3(localAabb.Position.X, localAabb.Position.Y + localAabb.Size.Y, localAabb.Position.Z),
+				new Vector3(localAabb.Position.X, localAabb.Position.Y, localAabb.Position.Z + localAabb.Size.Z),
+				new Vector3(localAabb.Position.X + localAabb.Size.X, localAabb.Position.Y + localAabb.Size.Y, localAabb.Position.Z),
+				new Vector3(localAabb.Position.X + localAabb.Size.X, localAabb.Position.Y, localAabb.Position.Z + localAabb.Size.Z),
+				new Vector3(localAabb.Position.X, localAabb.Position.Y + localAabb.Size.Y, localAabb.Position.Z + localAabb.Size.Z),
+				new Vector3(localAabb.Position.X + localAabb.Size.X, localAabb.Position.Y + localAabb.Size.Y, localAabb.Position.Z + localAabb.Size.Z)
+			};
+
+			foreach (var c in corners)
+			{
+				Vector3 transformed = currentTransform * c;
+				if (first)
+				{
+					totalAabb = new Aabb(transformed, Vector3.Zero);
+					first = false;
+				}
+				else
+				{
+					totalAabb = totalAabb.Expand(transformed);
+				}
+			}
+		}
+
+		foreach (var child in node.GetChildren())
+		{
+			if (child is Node3D child3D)
+			{
+				CollectAabbRecursive(child, currentTransform * child3D.Transform, ref totalAabb, ref first);
+			}
+		}
+	}
+
+	/// <summary>
+	///     Adds (or refreshes) a projected drop shadow for flying units so they read clearly
+	///     against the terrain below instead of appearing to float in empty space.
+	/// </summary>
+	private void UpdateDropShadow()
+	{
+		if (GameHost.Instance == null || !GameHost.Instance.IsPathingCapability(Entity, TerrainPathingFlags.Flying))
+		{
+			var oldDecal = GetNodeOrNull<Decal>("DropShadow");
+			if (oldDecal != null)
+			{
+				oldDecal.QueueFree();
+			}
+			return;
+		}
+
+		var existing = GetNodeOrNull<Decal>("DropShadow");
+		if (existing != null)
+		{
+			float updatedRadius = GameHost.Instance.GetOrCalculateObstacleRadius(UnitId, this, IsBuilding) * GameHost.Instance.GetModelCollisionCircleRatio(ModelPath);
+			if (updatedRadius > 0f)
+			{
+				existing.Size = new Vector3(updatedRadius * 2.5f, 3f, updatedRadius * 2.5f);
+			}
+			return;
+		}
+
+		float radius = GameHost.Instance.GetOrCalculateObstacleRadius(UnitId, this, IsBuilding) * GameHost.Instance.GetModelCollisionCircleRatio(ModelPath);
+		if (radius <= 0f) radius = 1f;
+
+		Decal shadowDecal = new Decal();
+		shadowDecal.Name = "DropShadow";
+		shadowDecal.TextureAlbedo = GameHost.Instance.GetSharedShadowGradient();
+		shadowDecal.Size = new Vector3(radius * 2.5f, 3f, radius * 2.5f);
+		shadowDecal.Position = Vector3.Zero;
+		// Decals project along local -Z; tilt the node down so the shadow lands on the terrain.
+		shadowDecal.RotationDegrees = new Vector3(-90f, 0f, 0f);
+		// Project only onto the terrain layer so the shadow does not bleed onto other units.
+		shadowDecal.CullMask = 1;
+
+		AddChild(shadowDecal);
 	}
 
 	public void PlayAnimation(string animName)
 	{
 		if (_animationPlayer == null || !GodotObject.IsInstanceValid(_animationPlayer)) return;
+		if (string.IsNullOrEmpty(animName)) return;
 
 		StringName resolved = ResolveAnimationName(animName);
 		if (resolved == null) return;
 
-		if (_currentAnimation == resolved.ToString()) return;
+		if (_currentAnimation == resolved.ToString() && _animationPlayer.IsPlaying()) return;
 
 		_currentAnimation = resolved.ToString();
 
 		var animResource = _animationPlayer.GetAnimation(resolved);
 		if (animResource != null)
-			animResource.LoopMode = Animation.LoopModeEnum.Linear;
+		{
+			if (animName.Equals("Death", System.StringComparison.OrdinalIgnoreCase))
+			{
+				animResource.LoopMode = global::Godot.Animation.LoopModeEnum.None;
+			}
+			else
+			{
+				animResource.LoopMode = global::Godot.Animation.LoopModeEnum.Linear;
+			}
+		}
 
 		_animationPlayer.Play(resolved);
 	}
@@ -254,65 +474,63 @@ public partial class Unit3D : Prop3D
 		_animationPlayer.Stop(true);
 	}
 
-	private AnimationPlayer FindAnimationPlayer(Node root)
-	{
-		if (root is AnimationPlayer ap) return ap;
-		foreach (var child in root.GetChildren())
-		{
-			var found = FindAnimationPlayer(child);
-			if (found != null) return found;
-		}
-		return null;
-	}
-
 	private StringName ResolveAnimationName(string animName)
 	{
 		if (_animationPlayer == null) return null;
+
 		var animations = _animationPlayer.GetAnimationList();
-		string prefixed = $"Armature|Armature|{animName}";
-		foreach (var name in animations)
+
+		if (!animName.Contains('_'))
 		{
-			if (name.ToString().Equals(prefixed, System.StringComparison.OrdinalIgnoreCase))
-				return name;
+			var variants = new List<StringName>();
+			string prefix = $"{animName}_";
+			foreach (var name in animations)
+			{
+				string nameStr = name.ToString();
+				if (nameStr.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+				{
+					variants.Add(name);
+				}
+			}
+
+			if (variants.Count > 0)
+			{
+				int randIdx = Random.Shared.Next(variants.Count);
+				return variants[randIdx];
+			}
 		}
+
+		StringName direct = new StringName(animName);
+		if (_animationPlayer.HasAnimation(direct))
+		{
+			return direct;
+		}
+
 		foreach (var name in animations)
 		{
 			if (name.ToString().Equals(animName, System.StringComparison.OrdinalIgnoreCase))
 				return name;
 		}
+
+		string resolvedPath = Realm.Godot.Animation.AnimationRetargetingService.ResolveAnimationFilePath(animName, UnitId);
+		if (!string.IsNullOrEmpty(resolvedPath))
+		{
+			var animData = Realm.Godot.Animation.AnimationRetargetingService.GetOrLoadRanimData(resolvedPath);
+			if (animData != null && _modelNode != null)
+			{
+				if (Realm.Godot.Animation.AnimationRetargetingService.RetargetAndBind(animData, _modelNode, animName, out _))
+				{
+					return direct;
+				}
+			}
+		}
+
 		return null;
 	}
 
 	public void ApplyModelTint(Color color)
 	{
-		if (_modelNode == null) return;
-		ApplyModelTintRecursive(_modelNode, color);
-	}
-
-	private void ApplyModelTintRecursive(Node node, Color color)
-	{
-		if (node is MeshInstance3D meshInstance)
-		{
-			Material mat = meshInstance.MaterialOverride;
-			if (mat == null && meshInstance.GetActiveMaterial(0) != null)
-			{
-				mat = meshInstance.GetActiveMaterial(0);
-			}
-
-			if (mat is StandardMaterial3D stdMat)
-			{
-				var dupMat = (StandardMaterial3D)stdMat.Duplicate();
-				dupMat.AlbedoColor = color;
-				meshInstance.MaterialOverride = dupMat;
-			}
-		}
-		foreach (var child in node.GetChildren())
-		{
-			if (child is Node childNode)
-			{
-				ApplyModelTintRecursive(childNode, color);
-			}
-		}
+		SetPlayerColor(color);
 	}
 
 
@@ -347,7 +565,7 @@ public partial class Unit3D : Prop3D
 
 	protected override Color GetSelectionRingColor()
 	{
-		return IsEnemy ? new Color(0.9f, 0.1f, 0.2f) : new Color(0.1f, 0.9f, 0.2f);
+		return new Color(0.22f, 0.54f, 0.26f);
 	}
 
 	private float GetMinY(Node node, Transform3D currentTransform)
@@ -355,6 +573,10 @@ public partial class Unit3D : Prop3D
 		float minY = float.MaxValue;
 		bool foundMesh = false;
 		GetMinYRecursive(node, currentTransform, ref minY, ref foundMesh);
+		if (!foundMesh)
+		{
+			GD.PushWarning($"[Unit3D] No mesh instances found under model '{Name}' — vertical offset defaults to 0, the unit may sit below the terrain.");
+		}
 		return foundMesh ? minY : 0f;
 	}
 
@@ -575,10 +797,10 @@ public partial class Unit3D : Prop3D
 
 			if (length > 0.05f)
 			{
-				line.GlobalPosition = start + diff * 0.5f;
-				line.Scale = new Vector3(1f, 1f, length);
-				var basis = Basis.LookingAt(diff.Normalized(), Vector3.Up);
-				line.GlobalTransform = new Transform3D(basis, line.GlobalPosition);
+				Vector3 direction = diff.Normalized();
+				Vector3 upVector = Mathf.Abs(direction.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
+				var basis = Basis.LookingAt(direction, upVector).Scaled(new Vector3(1f, 1f, length));
+				line.GlobalTransform = new Transform3D(basis, start + diff * 0.5f);
 			}
 			else
 			{
@@ -719,10 +941,10 @@ public partial class Unit3D : Prop3D
 
 			if (length > 0.05f)
 			{
-				line.GlobalPosition = start + diff * 0.5f;
-				line.Scale = new Vector3(1f, 1f, length);
-				var basis = Basis.LookingAt(diff.Normalized(), Vector3.Up);
-				line.GlobalTransform = new Transform3D(basis, line.GlobalPosition);
+				Vector3 direction = diff.Normalized();
+				Vector3 upVector = Mathf.Abs(direction.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
+				var basis = Basis.LookingAt(direction, upVector).Scaled(new Vector3(1f, 1f, length));
+				line.GlobalTransform = new Transform3D(basis, start + diff * 0.5f);
 			}
 			else
 			{

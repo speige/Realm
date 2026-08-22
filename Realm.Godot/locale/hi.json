@@ -3,6 +3,8 @@
   "VIDEO": "वीडियो",
   "Resolution": "रिज़ॉल्यूशन",
   "Graphics Quality": "ग्राफ़िक्स गुणवत्ता",
+  "Disable shadows": "छाया अक्षम करें",
+  "Disable day/night lighting": "दिन/रात की रोशनी अक्षम करें",
   "Window Mode": "विंडो मोड",
   "V-Sync": "वी-सिंक",
   "AUDIO": "ऑडियो",
@@ -258,5 +260,8 @@
   "YES": "हाँ",
   "NO": "नहीं",
   "Are you sure you want to delete this replay?": "क्या आप वाकई इस रीप्ले को हटाना चाहते हैं?",
-  "Are you sure you want to delete all replays?": "क्या आप वाकई सभी रीप्ले हटाना चाहते हैं?"
+  "Are you sure you want to delete all replays?": "क्या आप वाकई सभी रीप्ले हटाना चाहते हैं?",
+  "You haven't saved yet": "आपने अभी तक सहेजा नहीं है",
+  "Stay": "रुकें",
+  "Quit": "बाहर निकलें"
 }

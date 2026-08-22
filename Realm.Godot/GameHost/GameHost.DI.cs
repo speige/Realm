@@ -43,7 +43,7 @@ public partial class GameHost
 		services.AddSingleton<NetworkService>();
 		services.AddSingleton<TechTreeService>();
 		services.AddSingleton<InputService>();
-		services.AddSingleton<FogOfWarService>();
+		services.AddSingleton<ShroudService>();
 		services.AddSingleton<UnitSpawnService>();
 		services.AddSingleton<WorldInitService>();
 		services.AddSingleton<MapPropertiesLoader>();
@@ -51,6 +51,7 @@ public partial class GameHost
 		services.AddSingleton<CheatService>();
 		services.AddSingleton<EnvironmentService>();
 		services.AddSingleton<SpectatorService>();
+		services.AddSingleton<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>();
 		services.AddSingleton<SimulationService>(sp =>
 		{
 			return new SimulationService(sp.GetRequiredService<WorldAccessor>(), Entity.Null, GameHost.Instance?._pathfinder ?? new NavMeshPathfinder());
@@ -75,7 +76,7 @@ public partial class GameHost
 		_replayService = ServiceLocator.Get<ReplayService>();
 		_networkService = ServiceLocator.Get<NetworkService>();
 		_inputService = ServiceLocator.Get<InputService>();
-		_fogOfWarService = ServiceLocator.Get<FogOfWarService>();
+		_shroudService = ServiceLocator.Get<ShroudService>();
 		_unitSpawnService = ServiceLocator.Get<UnitSpawnService>();
 		_worldInitService = ServiceLocator.Get<WorldInitService>();
 		_mapPropertiesLoader = ServiceLocator.Get<MapPropertiesLoader>();
@@ -83,5 +84,6 @@ public partial class GameHost
 		_cheatService = ServiceLocator.Get<CheatService>();
 		_environmentService = ServiceLocator.Get<EnvironmentService>();
 		_spectatorService = ServiceLocator.Get<SpectatorService>();
+		_modelOptimizerService = ServiceLocator.Get<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>();
 	}
 }

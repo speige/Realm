@@ -160,9 +160,17 @@ public class EditorService
 		EcsWorldAccessor = ecsWorldAccessor;
 	}
 
-	public void SetTerrainSplatMap(TerrainSplatWeights[,] splatMap)
+	public void SetTerrainSplatMap(TerrainSplatWeights[,] splatMap, TerrainSplatWeights[,] cliffSplatMap = null)
 	{
 		_terrainSplatMap = splatMap;
+		if (cliffSplatMap != null)
+		{
+			_terrainCliffSplatMap = cliffSplatMap;
+		}
+		else if (GameHost.Instance?.GroundTerrain?.CliffSplatMap != null)
+		{
+			_terrainCliffSplatMap = GameHost.Instance.GroundTerrain.CliffSplatMap;
+		}
 		if (splatMap != null)
 		{
 			AlignSplatMapSlots(0, 0, splatMap.GetLength(0) - 1, splatMap.GetLength(1) - 1);
@@ -343,6 +351,10 @@ public class EditorService
 		if (_terrainSplatMap == null && GameHost.Instance?.GroundTerrain != null)
 		{
 			_terrainSplatMap = GameHost.Instance.GroundTerrain.SplatMap;
+		}
+		if (_terrainCliffSplatMap == null && GameHost.Instance?.GroundTerrain != null)
+		{
+			_terrainCliffSplatMap = GameHost.Instance.GroundTerrain.CliffSplatMap;
 		}
 		if (_terrainSplatMap == null) return default;
 
@@ -970,75 +982,202 @@ public class EditorService
 		ref var terrain = ref GetTerrainState();
 		var currentCells = terrain.Cells;
 
-		if (_drawMinX <= _drawMaxX && _drawMinZ <= _drawMaxZ && currentCells != null)
+		if (_drawMinX <= _drawMaxX && _drawMinZ <= _drawMaxZ)
 		{
+			bool cellsChanged = false;
+			bool pathingChanged = false;
+			bool splatChanged = false;
+
 			int w = _drawMaxX - _drawMinX + 1;
 			int d = _drawMaxZ - _drawMinZ + 1;
 
-			TerrainCell[,] beforeC = new TerrainCell[w, d];
-			TerrainCell[,] afterC = new TerrainCell[w, d];
-			int[,] beforeP = currentPathing != null ? new int[w, d] : null;
-			int[,] afterP = currentPathing != null ? new int[w, d] : null;
-
-			for (int z = 0; z < d; z++)
+			if (_terrainCellsBefore != null && currentCells != null)
 			{
-				for (int x = 0; x < w; x++)
+				for (int z = 0; z < d && !cellsChanged; z++)
 				{
-					int mapX = _drawMinX + x;
-					int mapZ = _drawMinZ + z;
-					if (_terrainCellsBefore != null && mapX < _terrainCellsBefore.GetLength(0) && mapZ < _terrainCellsBefore.GetLength(1))
+					for (int x = 0; x < w && !cellsChanged; x++)
 					{
-						beforeC[x, z] = _terrainCellsBefore[mapX, mapZ];
-					}
-					if (currentCells != null && mapX < currentCells.GetLength(0) && mapZ < currentCells.GetLength(1))
-					{
-						afterC[x, z] = currentCells[mapX, mapZ];
-					}
-					if (beforeP != null)
-					{
-						beforeP[x, z] = _terrainPathingBefore[mapX, mapZ];
-						afterP[x, z] = currentPathing[mapX, mapZ];
+						int mapX = _drawMinX + x;
+						int mapZ = _drawMinZ + z;
+						if (mapX < _terrainCellsBefore.GetLength(0) && mapZ < _terrainCellsBefore.GetLength(1) &&
+							mapX < currentCells.GetLength(0) && mapZ < currentCells.GetLength(1))
+						{
+							var b = _terrainCellsBefore[mapX, mapZ];
+							var a = currentCells[mapX, mapZ];
+							if (b.Y_NW != a.Y_NW || b.Y_NE != a.Y_NE || b.Y_SE != a.Y_SE || b.Y_SW != a.Y_SW || b.WaterMode != a.WaterMode)
+							{
+								cellsChanged = true;
+							}
+						}
 					}
 				}
 			}
 
-			// Capture node-based splatmaps spanning [_drawMinX - 1 .. _drawMaxX + 2] to include all surrounding node updates
+			if (_terrainPathingBefore != null && currentPathing != null)
+			{
+				for (int z = 0; z < d && !pathingChanged; z++)
+				{
+					for (int x = 0; x < w && !pathingChanged; x++)
+					{
+						int mapX = _drawMinX + x;
+						int mapZ = _drawMinZ + z;
+						if (mapX < _terrainPathingBefore.GetLength(0) && mapZ < _terrainPathingBefore.GetLength(1) &&
+							mapX < currentPathing.GetLength(0) && mapZ < currentPathing.GetLength(1))
+						{
+							if (_terrainPathingBefore[mapX, mapZ] != currentPathing[mapX, mapZ])
+							{
+								pathingChanged = true;
+							}
+						}
+					}
+				}
+			}
+
 			int splatW = currentSplatMap != null ? currentSplatMap.GetLength(0) : terrain.Width + 1;
 			int splatD = currentSplatMap != null ? currentSplatMap.GetLength(1) : terrain.Depth + 1;
+			int splatNodeW = Math.Min(w + 1, splatW - _drawMinX);
+			int splatNodeD = Math.Min(d + 1, splatD - _drawMinZ);
 
-			int minNodeX = Math.Max(0, _drawMinX - 1);
-			int maxNodeX = Math.Min(splatW - 1, _drawMaxX + 2);
-			int minNodeZ = Math.Max(0, _drawMinZ - 1);
-			int maxNodeZ = Math.Min(splatD - 1, _drawMaxZ + 2);
-			int nodeW = maxNodeX - minNodeX + 1;
-			int nodeD = maxNodeZ - minNodeZ + 1;
-
-			TerrainSplatWeights[,] beforeS = currentSplatMap != null ? new TerrainSplatWeights[nodeW, nodeD] : null;
-			TerrainSplatWeights[,] afterS = currentSplatMap != null ? new TerrainSplatWeights[nodeW, nodeD] : null;
-			TerrainSplatWeights[,] beforeCliffS = currentCliffSplatMap != null ? new TerrainSplatWeights[nodeW, nodeD] : null;
-			TerrainSplatWeights[,] afterCliffS = currentCliffSplatMap != null ? new TerrainSplatWeights[nodeW, nodeD] : null;
-
-			for (int z = 0; z < nodeD; z++)
+			if (_terrainSplatMapBefore != null && currentSplatMap != null)
 			{
-				for (int x = 0; x < nodeW; x++)
+				for (int z = 0; z < splatNodeD && !splatChanged; z++)
 				{
-					int mapX = minNodeX + x;
-					int mapZ = minNodeZ + z;
-					if (_terrainSplatMapBefore != null && mapX < _terrainSplatMapBefore.GetLength(0) && mapZ < _terrainSplatMapBefore.GetLength(1))
+					for (int x = 0; x < splatNodeW && !splatChanged; x++)
 					{
-						beforeS[x, z] = _terrainSplatMapBefore[mapX, mapZ];
+						int mapX = _drawMinX + x;
+						int mapZ = _drawMinZ + z;
+						if (mapX < _terrainSplatMapBefore.GetLength(0) && mapZ < _terrainSplatMapBefore.GetLength(1) &&
+							mapX < currentSplatMap.GetLength(0) && mapZ < currentSplatMap.GetLength(1))
+						{
+							var b = _terrainSplatMapBefore[mapX, mapZ];
+							var a = currentSplatMap[mapX, mapZ];
+							if (b.Index0 != a.Index0 || b.Index1 != a.Index1 || b.Index2 != a.Index2 || b.Index3 != a.Index3 ||
+								b.Weight0 != a.Weight0 || b.Weight1 != a.Weight1 || b.Weight2 != a.Weight2 || b.Weight3 != a.Weight3)
+							{
+								splatChanged = true;
+							}
+						}
 					}
-					if (currentSplatMap != null && mapX < currentSplatMap.GetLength(0) && mapZ < currentSplatMap.GetLength(1))
+				}
+			}
+
+			if (!splatChanged && _terrainCliffSplatMapBefore != null && currentCliffSplatMap != null)
+			{
+				for (int z = 0; z < splatNodeD && !splatChanged; z++)
+				{
+					for (int x = 0; x < splatNodeW && !splatChanged; x++)
 					{
-						afterS[x, z] = currentSplatMap[mapX, mapZ];
+						int mapX = _drawMinX + x;
+						int mapZ = _drawMinZ + z;
+						if (mapX < _terrainCliffSplatMapBefore.GetLength(0) && mapZ < _terrainCliffSplatMapBefore.GetLength(1) &&
+							mapX < currentCliffSplatMap.GetLength(0) && mapZ < currentCliffSplatMap.GetLength(1))
+						{
+							var b = _terrainCliffSplatMapBefore[mapX, mapZ];
+							var a = currentCliffSplatMap[mapX, mapZ];
+							if (b.Index0 != a.Index0 || b.Index1 != a.Index1 || b.Index2 != a.Index2 || b.Index3 != a.Index3 ||
+								b.Weight0 != a.Weight0 || b.Weight1 != a.Weight1 || b.Weight2 != a.Weight2 || b.Weight3 != a.Weight3)
+							{
+								splatChanged = true;
+							}
+						}
 					}
-					if (_terrainCliffSplatMapBefore != null && mapX < _terrainCliffSplatMapBefore.GetLength(0) && mapZ < _terrainCliffSplatMapBefore.GetLength(1))
+				}
+			}
+
+			TerrainCell[,] beforeC = null;
+			TerrainCell[,] afterC = null;
+			if (cellsChanged)
+			{
+				beforeC = new TerrainCell[w, d];
+				afterC = new TerrainCell[w, d];
+				for (int z = 0; z < d; z++)
+				{
+					for (int x = 0; x < w; x++)
 					{
-						beforeCliffS[x, z] = _terrainCliffSplatMapBefore[mapX, mapZ];
+						int mapX = _drawMinX + x;
+						int mapZ = _drawMinZ + z;
+						if (_terrainCellsBefore != null && mapX < _terrainCellsBefore.GetLength(0) && mapZ < _terrainCellsBefore.GetLength(1))
+						{
+							beforeC[x, z] = _terrainCellsBefore[mapX, mapZ];
+						}
+						if (currentCells != null && mapX < currentCells.GetLength(0) && mapZ < currentCells.GetLength(1))
+						{
+							afterC[x, z] = currentCells[mapX, mapZ];
+						}
 					}
-					if (currentCliffSplatMap != null && mapX < currentCliffSplatMap.GetLength(0) && mapZ < currentCliffSplatMap.GetLength(1))
+				}
+			}
+
+			int[,] beforeP = null;
+			int[,] afterP = null;
+			if (pathingChanged)
+			{
+				beforeP = new int[w, d];
+				afterP = new int[w, d];
+				for (int z = 0; z < d; z++)
+				{
+					for (int x = 0; x < w; x++)
 					{
-						afterCliffS[x, z] = currentCliffSplatMap[mapX, mapZ];
+						int mapX = _drawMinX + x;
+						int mapZ = _drawMinZ + z;
+						if (_terrainPathingBefore != null && mapX < _terrainPathingBefore.GetLength(0) && mapZ < _terrainPathingBefore.GetLength(1))
+						{
+							beforeP[x, z] = _terrainPathingBefore[mapX, mapZ];
+						}
+						if (currentPathing != null && mapX < currentPathing.GetLength(0) && mapZ < currentPathing.GetLength(1))
+						{
+							afterP[x, z] = currentPathing[mapX, mapZ];
+						}
+					}
+				}
+			}
+
+			TerrainSplatWeights[,] beforeS = null;
+			TerrainSplatWeights[,] afterS = null;
+			TerrainSplatWeights[,] beforeCliffS = null;
+			TerrainSplatWeights[,] afterCliffS = null;
+			if (splatChanged)
+			{
+				if (currentSplatMap != null)
+				{
+					beforeS = new TerrainSplatWeights[splatNodeW, splatNodeD];
+					afterS = new TerrainSplatWeights[splatNodeW, splatNodeD];
+					for (int z = 0; z < splatNodeD; z++)
+					{
+						for (int x = 0; x < splatNodeW; x++)
+						{
+							int mapX = _drawMinX + x;
+							int mapZ = _drawMinZ + z;
+							if (_terrainSplatMapBefore != null && mapX < _terrainSplatMapBefore.GetLength(0) && mapZ < _terrainSplatMapBefore.GetLength(1))
+							{
+								beforeS[x, z] = _terrainSplatMapBefore[mapX, mapZ];
+							}
+							if (mapX < currentSplatMap.GetLength(0) && mapZ < currentSplatMap.GetLength(1))
+							{
+								afterS[x, z] = currentSplatMap[mapX, mapZ];
+							}
+						}
+					}
+				}
+				if (currentCliffSplatMap != null)
+				{
+					beforeCliffS = new TerrainSplatWeights[splatNodeW, splatNodeD];
+					afterCliffS = new TerrainSplatWeights[splatNodeW, splatNodeD];
+					for (int z = 0; z < splatNodeD; z++)
+					{
+						for (int x = 0; x < splatNodeW; x++)
+						{
+							int mapX = _drawMinX + x;
+							int mapZ = _drawMinZ + z;
+							if (_terrainCliffSplatMapBefore != null && mapX < _terrainCliffSplatMapBefore.GetLength(0) && mapZ < _terrainCliffSplatMapBefore.GetLength(1))
+							{
+								beforeCliffS[x, z] = _terrainCliffSplatMapBefore[mapX, mapZ];
+							}
+							if (mapX < currentCliffSplatMap.GetLength(0) && mapZ < currentCliffSplatMap.GetLength(1))
+							{
+								afterCliffS[x, z] = currentCliffSplatMap[mapX, mapZ];
+							}
+						}
 					}
 				}
 			}

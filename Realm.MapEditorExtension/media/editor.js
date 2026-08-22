@@ -66,6 +66,7 @@
         Brightness: document.getElementById('field-Brightness'),
         Tint: document.getElementById('field-Tint'),
         RecalculateNormals: document.getElementById('field-RecalculateNormals'),
+        IgnorePlayerColor: document.getElementById('field-IgnorePlayerColor'),
         IsHero: document.getElementById('field-IsHero'),
         MaxHp: document.getElementById('field-MaxHp'),
         Damage: document.getElementById('field-Damage'),
@@ -151,7 +152,7 @@
         MapDescription: document.getElementById('prop-MapDescription'),
         SuggestedPlayers: document.getElementById('prop-SuggestedPlayers'),
         MinimapImage: document.getElementById('prop-MinimapImage'),
-        FogOfWarType: document.getElementById('prop-FogOfWarType'),
+        ShroudType: document.getElementById('prop-ShroudType'),
         TerrainBaseHeight: document.getElementById('prop-TerrainBaseHeight'),
         ShadowIntensity: document.getElementById('prop-ShadowIntensity'),
         MapWidth: document.getElementById('prop-MapWidth'),
@@ -339,7 +340,8 @@
                 const knownTopKeys = [
                     'MapProperties', 'CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps',
                     'CustomAbilities', 'CustomItems', 'CustomUpgrades', 'CustomWeapons', 'Assets', 
-                    'ModelOffsets', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelGenerateNormals'
+                    'ModelOffsets', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelGenerateNormals',
+                    'ModelIgnorePlayerColor'
                 ];
                 for (const [key, val] of Object.entries(units)) {
                     if (!knownTopKeys.includes(key) && val && typeof val === 'object' && !Array.isArray(val) && (val.UnitId || val.MaxHp !== undefined || val.CostGold !== undefined || val.AttackType !== undefined || val.PathingCapabilities || val.MovementType)) {
@@ -725,7 +727,11 @@
             
             const val = unit[key];
             if (element.type === 'checkbox') {
-                element.checked = !!val;
+                if (key === 'RecalculateNormals') {
+                    element.checked = val !== undefined ? !!val : true;
+                } else {
+                    element.checked = !!val;
+                }
             } else if (val === undefined || val === null) {
                 element.value = '';
             } else {
@@ -746,6 +752,7 @@
         const unitCombatSection = document.getElementById('section-unit-combat');
         const unitCapabilitiesSection = document.getElementById('section-unit-capabilities');
         const pathingSection = document.getElementById('section-pathing-flags');
+        const unitAnimationsSection = document.getElementById('section-unit-animations');
         const isHeroGroup = document.getElementById('field-IsHero')?.closest('.form-group');
         const portraitGroup = document.getElementById('field-PortraitModelPath')?.closest('.form-group');
 
@@ -755,6 +762,7 @@
             if (unitCostSection) unitCostSection.classList.add('hidden');
             if (unitCombatSection) unitCombatSection.classList.add('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.add('hidden');
+            if (unitAnimationsSection) unitAnimationsSection.classList.add('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.add('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
@@ -764,6 +772,7 @@
             if (unitCostSection) unitCostSection.classList.add('hidden');
             if (unitCombatSection) unitCombatSection.classList.add('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.add('hidden');
+            if (unitAnimationsSection) unitAnimationsSection.classList.add('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.add('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
@@ -773,6 +782,7 @@
             if (unitCostSection) unitCostSection.classList.remove('hidden');
             if (unitCombatSection) unitCombatSection.classList.remove('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.remove('hidden');
+            if (unitAnimationsSection) unitAnimationsSection.classList.remove('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.remove('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
@@ -785,6 +795,7 @@
         renderTags('upgrades', unit.Upgrades || []);
         renderTags('statuseffects', unit.StatusEffects || []);
         renderTags('soundevents', unit.SoundEvents || []);
+        renderUnitAnimations(unit);
         
         populateGlbDropdown(activeDomain, unit.ModelPath || '');
         updateAllThumbnails();
@@ -844,7 +855,7 @@
         for (const [key, element] of Object.entries(mapPropFields)) {
             if (!element) continue;
 
-            const val = props[key];
+            let val = props[key];
             if (element.type === 'checkbox') {
                 element.checked = !!val;
             } else if (val === undefined || val === null) {
@@ -958,6 +969,146 @@
         }
     }
 
+    const ANIMATION_TYPES = [
+        { key: 'Idle', label: 'Idle', icon: '🧘' },
+        { key: 'Walk', label: 'Walk', icon: '🚶' },
+        { key: 'Attack', label: 'Attack', icon: '⚔️' },
+        { key: 'Death', label: 'Death', icon: '💀' },
+        { key: 'Labor', label: 'Labor', icon: '⚒️' },
+        { key: 'Spell_Cast', label: 'Spell_Cast', icon: '🪄' },
+        { key: 'Dance', label: 'Dance', icon: '💃' }
+    ];
+
+    function renderUnitAnimations(unit) {
+        const container = document.getElementById('unit-animations-container');
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (!unit) return;
+        if (!unit.Animations || typeof unit.Animations !== 'object' || Array.isArray(unit.Animations)) {
+            unit.Animations = {};
+        }
+
+        const table = document.createElement('table');
+        table.className = 'anim-table';
+
+        const thead = document.createElement('thead');
+        thead.innerHTML = `
+            <tr>
+                <th style="width: 140px;">Action Type</th>
+                <th>Configured Animations Array (Random Selection)</th>
+            </tr>
+        `;
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+
+        ANIMATION_TYPES.forEach(animTypeInfo => {
+            const typeKey = animTypeInfo.key;
+            const animList = Array.isArray(unit.Animations[typeKey]) ? unit.Animations[typeKey] : [];
+
+            const tr = document.createElement('tr');
+
+            const tdType = document.createElement('td');
+            tdType.className = 'anim-type-cell';
+            tdType.innerHTML = `<span>${animTypeInfo.icon}</span> <strong>${escapeHtml(animTypeInfo.label)}</strong>`;
+            tr.appendChild(tdType);
+
+            const tdConfig = document.createElement('td');
+
+            const chipsContainer = document.createElement('div');
+            chipsContainer.className = 'anim-chips-container';
+
+            if (animList.length === 0) {
+                const emptySpan = document.createElement('span');
+                emptySpan.className = 'anim-chips-fallback';
+                emptySpan.textContent = `Default fallback (${typeKey.toLowerCase()}.ranim)`;
+                chipsContainer.appendChild(emptySpan);
+            } else {
+                animList.forEach((animFile, idx) => {
+                    const chip = document.createElement('span');
+                    chip.className = 'anim-chip';
+                    chip.title = `Preview ID: ${typeKey}_${idx}`;
+
+                    const idxBadge = document.createElement('span');
+                    idxBadge.className = 'anim-chip-index';
+                    idxBadge.textContent = `${typeKey}_${idx}`;
+                    chip.appendChild(idxBadge);
+
+                    const nameSpan = document.createElement('span');
+                    nameSpan.textContent = animFile;
+                    chip.appendChild(nameSpan);
+
+                    const removeBtn = document.createElement('span');
+                    removeBtn.className = 'remove-anim';
+                    removeBtn.textContent = '×';
+                    removeBtn.title = 'Remove animation';
+                    removeBtn.addEventListener('click', () => {
+                        if (isLocked) return;
+                        pushToUndoStack();
+                        animList.splice(idx, 1);
+                        if (animList.length === 0) {
+                            delete unit.Animations[typeKey];
+                        } else {
+                            unit.Animations[typeKey] = animList;
+                        }
+                        saveChanges();
+                        renderUnitAnimations(unit);
+                    });
+                    chip.appendChild(removeBtn);
+
+                    chipsContainer.appendChild(chip);
+                });
+            }
+            tdConfig.appendChild(chipsContainer);
+
+            const addRow = document.createElement('div');
+            addRow.className = 'anim-add-row';
+
+            const addInput = document.createElement('input');
+            addInput.type = 'text';
+            addInput.setAttribute('list', 'suggest-animations');
+            addInput.placeholder = `Select or type animation for ${typeKey}...`;
+            addInput.className = 'anim-add-input';
+
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'btn secondary-btn small-btn';
+            addBtn.textContent = '+ Add';
+
+            const doAdd = () => {
+                if (isLocked) return;
+                const val = addInput.value.trim();
+                if (!val) return;
+                pushToUndoStack();
+                if (!Array.isArray(unit.Animations[typeKey])) {
+                    unit.Animations[typeKey] = [];
+                }
+                unit.Animations[typeKey].push(val);
+                saveChanges();
+                renderUnitAnimations(unit);
+            };
+
+            addBtn.addEventListener('click', doAdd);
+            addInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    doAdd();
+                }
+            });
+
+            addRow.appendChild(addInput);
+            addRow.appendChild(addBtn);
+            tdConfig.appendChild(addRow);
+
+            tr.appendChild(tdConfig);
+            tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        container.appendChild(table);
+    }
+
     function addTagItem(type) {
         if (isLocked) return;
 
@@ -1064,14 +1215,14 @@
             `;
 
             card.querySelector('.btn-delete').addEventListener('click', () => {
-                if (confirm('Are you sure you want to delete this player slot?')) {
+                showCustomConfirmDialog('Are you sure you want to delete this player slot?', () => {
                     pushToUndoStack();
                     list.splice(index, 1);
                     units.MapProperties.PlayerSlots = list;
                     saveChanges();
                     renderPlayerSlots();
                     renderTeams(); // Slot indexes changed, redraw teams checklists
-                }
+                }, 'Delete');
             });
 
             card.querySelectorAll('input, select').forEach(input => {
@@ -1139,13 +1290,13 @@
             `;
 
             card.querySelector('.btn-delete').addEventListener('click', () => {
-                if (confirm('Are you sure you want to delete this team?')) {
+                showCustomConfirmDialog('Are you sure you want to delete this team?', () => {
                     pushToUndoStack();
                     list.splice(index, 1);
                     units.MapProperties.Teams = list;
                     saveChanges();
                     renderTeams();
-                }
+                }, 'Delete');
             });
 
             card.querySelector('.team-name').addEventListener('change', e => {
@@ -1215,13 +1366,13 @@
             `;
 
             card.querySelector('.btn-delete').addEventListener('click', () => {
-                if (confirm('Are you sure you want to delete this changelog entry?')) {
+                showCustomConfirmDialog('Are you sure you want to delete this changelog entry?', () => {
                     pushToUndoStack();
                     list.splice(index, 1);
                     units.MapProperties.Changelog = list;
                     saveChanges();
                     renderChangelog();
-                }
+                }, 'Delete');
             });
 
             card.querySelectorAll('input, textarea').forEach(input => {
@@ -1375,14 +1526,14 @@
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.index, 10);
                 const targetId = list[idx].WeaponId;
-                if (confirm(`Are you sure you want to delete custom weapon "${list[idx].Name || targetId}"?`)) {
+                showCustomConfirmDialog(`Are you sure you want to delete custom weapon "${list[idx].Name || targetId}"?`, () => {
                     pushToUndoStack();
                     cascadeDelete('weapon', targetId);
                     list.splice(idx, 1);
                     units.CustomWeapons = list;
                     saveChanges();
                     renderCustomWeapons();
-                }
+                }, 'Delete');
             });
         });
 
@@ -1613,14 +1764,14 @@
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.index, 10);
                 const targetId = list[idx].AbilityId;
-                if (confirm(`Are you sure you want to delete custom ability "${list[idx].Name || targetId}"?`)) {
+                showCustomConfirmDialog(`Are you sure you want to delete custom ability "${list[idx].Name || targetId}"?`, () => {
                     pushToUndoStack();
                     cascadeDelete('ability', targetId);
                     list.splice(idx, 1);
                     units.CustomAbilities = list;
                     saveChanges();
                     renderCustomAbilities();
-                }
+                }, 'Delete');
             });
         });
 
@@ -1827,14 +1978,14 @@
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.index, 10);
                 const targetId = list[idx].UpgradeId;
-                if (confirm(`Are you sure you want to delete custom upgrade "${list[idx].Name || targetId}"?`)) {
+                showCustomConfirmDialog(`Are you sure you want to delete custom upgrade "${list[idx].Name || targetId}"?`, () => {
                     pushToUndoStack();
                     cascadeDelete('upgrade', targetId);
                     list.splice(idx, 1);
                     units.CustomUpgrades = list;
                     saveChanges();
                     renderCustomUpgrades();
-                }
+                }, 'Delete');
             });
         });
 
@@ -2084,14 +2235,14 @@
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.index, 10);
                 const targetId = list[idx].ItemId;
-                if (confirm(`Are you sure you want to delete custom item "${list[idx].Name || targetId}"?`)) {
+                showCustomConfirmDialog(`Are you sure you want to delete custom item "${list[idx].Name || targetId}"?`, () => {
                     pushToUndoStack();
                     cascadeDelete('item', targetId);
                     list.splice(idx, 1);
                     units.CustomItems = list;
                     saveChanges();
                     renderCustomItems();
-                }
+                }, 'Delete');
             });
         });
 
@@ -2432,11 +2583,11 @@
     function copyUnitComponent(componentKey) {
         const unit = getUnitById(selectedUnitId);
         if (!selectedUnitId || !unit) return;
-        const arr = unit[componentKey] || [];
+        const val = unit[componentKey] || (componentKey === 'Animations' ? {} : []);
         navigator.clipboard.writeText(JSON.stringify({
             "$realm_editor_type": "unit-component-block",
             "componentType": componentKey,
-            "data": arr
+            "data": val
         }));
     }
 
@@ -2447,11 +2598,16 @@
         navigator.clipboard.readText().then(text => {
             try {
                 const parsed = JSON.parse(text);
-                if (parsed && parsed.$realm_editor_type === 'unit-component-block' && Array.isArray(parsed.data)) {
+                if (parsed && parsed.$realm_editor_type === 'unit-component-block' && parsed.data !== undefined) {
                     pushToUndoStack();
                     unit[componentKey] = parsed.data;
                     saveChanges();
                     
+                    if (componentKey === 'Animations') {
+                        renderUnitAnimations(unit);
+                        return;
+                    }
+
                     let tagType = '';
                     if (componentKey === 'BuildOptions') tagType = 'build-options';
                     else if (componentKey === 'Abilities') tagType = 'abilities';
@@ -2659,17 +2815,21 @@
         renderCustomItems();
     }
 
-    function showDeleteConfirm(displayName, id) {
+    function showCustomConfirmDialog(message, onOk, confirmText = 'Confirm') {
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;';
         const dialog = document.createElement('div');
-        dialog.style.cssText = 'background:var(--bg-secondary,#252526);border:1px solid var(--border-color,#3c3c3c);border-radius:8px;padding:24px;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.5);';
-        dialog.innerHTML = '<p style="margin:0 0 16px 0;color:var(--text-primary,#d4d4d4);font-size:14px;">Are you sure you want to delete unit "' + displayName + '"?</p><div style="display:flex;gap:8px;justify-content:flex-end;"><button id="confirm-cancel" style="padding:8px 16px;border:1px solid var(--border-color,#3c3c3c);border-radius:6px;background:transparent;color:var(--text-primary,#d4d4d4);cursor:pointer;font-weight:600;">Cancel</button><button id="confirm-ok" style="padding:8px 16px;border:none;border-radius:6px;background:var(--danger-color,#f48771);color:#fff;cursor:pointer;font-weight:600;">Delete</button></div>';
+        dialog.style.cssText = 'background:var(--bg-secondary,#252526);border:1px solid var(--border-color,#3c3c3c);border-radius:8px;padding:24px;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.5);';
+        dialog.innerHTML = '<p style="margin:0 0 16px 0;color:var(--text-primary,#d4d4d4);font-size:14px;line-height:1.5;">' + message + '</p><div style="display:flex;gap:8px;justify-content:flex-end;"><button id="confirm-cancel" style="padding:8px 16px;border:1px solid var(--border-color,#3c3c3c);border-radius:6px;background:transparent;color:var(--text-primary,#d4d4d4);cursor:pointer;font-weight:600;">Cancel</button><button id="confirm-ok" style="padding:8px 16px;border:none;border-radius:6px;background:var(--danger-color,#f48771);color:#fff;cursor:pointer;font-weight:600;">' + confirmText + '</button></div>';
         overlay.appendChild(dialog);
         document.body.appendChild(overlay);
-        dialog.querySelector('#confirm-ok').addEventListener('click', function () { overlay.remove(); deleteUnit(id); });
+        dialog.querySelector('#confirm-ok').addEventListener('click', function () { overlay.remove(); onOk(); });
         dialog.querySelector('#confirm-cancel').addEventListener('click', function () { overlay.remove(); });
         overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+    }
+
+    function showDeleteConfirm(displayName, id) {
+        showCustomConfirmDialog('Are you sure you want to delete unit "' + displayName + '"?', () => deleteUnit(id), 'Delete');
     }
 
     function deleteUnit(id) {
@@ -2719,7 +2879,8 @@
                 UnitId: nextId,
                 Name: `New ${prefix}`,
                 Description: `A decorative ${prefix.toLowerCase()} prop.`,
-                PathingType: defaultPathing
+                PathingType: defaultPathing,
+                RecalculateNormals: true
             });
         } else if (domain === 'resources') {
             targetArray.push({
@@ -2730,7 +2891,8 @@
                 HarvestRate: 10.0,
                 GrowthRate: 0.0,
                 MaxWorkers: 5,
-                PathingType: defaultPathing
+                PathingType: defaultPathing,
+                RecalculateNormals: true
             });
         } else {
             targetArray.push({
@@ -2752,7 +2914,8 @@
                 AttackType: 'melee',
                 ArmorType: defaultArmor,
                 GoldBounty: 10.0,
-                PathingType: defaultPathing
+                PathingType: defaultPathing,
+                RecalculateNormals: true
             });
         }
 
@@ -2827,6 +2990,50 @@
         units.CustomItems = list;
         saveChanges();
         renderCustomItems();
+    });
+
+    document.getElementById('prune-entities-btn')?.addEventListener('click', () => {
+        const domain = getActiveDomain();
+        const domainName = domain === 'buildings' ? 'buildings' : domain === 'resources' ? 'resources' : domain === 'props' ? 'props' : 'units';
+        showCustomConfirmDialog(`Are you sure you want to prune all ${domainName} that have never been placed on terrain.json?`, () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: domain });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('prune-weapons-btn')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all weapons not used by any placed units on terrain.json?', () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: 'weapons' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('prune-abilities-btn')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all abilities not used by any placed units on terrain.json?', () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: 'abilities' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('prune-upgrades-btn')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all tech upgrades not used by any placed units on terrain.json?', () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: 'upgrades' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('prune-items-btn')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all items not used by any placed units on terrain.json?', () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: 'items' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('btn-prune-unused-assets')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all unreferenced assets? Unused asset entries will be removed from metadata.json and their files will be deleted from the workspace.', () => {
+            vscode.postMessage({ type: 'pruneUnusedAssets' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('btn-prune-unused-assets-section')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all unreferenced assets? Unused asset entries will be removed from metadata.json and their files will be deleted from the workspace.', () => {
+            vscode.postMessage({ type: 'pruneUnusedAssets' });
+        }, 'Prune Unused');
     });
 
     // --- SYSTEM FILE RESOLVE PATH & THUMBNAIL/AUDIO WARNINGS ---
@@ -3231,6 +3438,12 @@
         populateDatalist('suggest-abilities', abilities.map(a => ({ id: a.AbilityId, name: a.Name })));
         populateDatalist('suggest-upgrades', upgrades.map(u => ({ id: u.UpgradeId, name: u.Name })));
         populateDatalist('suggest-items', items.map(i => ({ id: i.ItemId, name: i.Name })));
+
+        const animAssets = (units.Assets && units.Assets.animations) ? units.Assets.animations : {};
+        const animList = Object.keys(animAssets);
+        const standardDefaults = new Set(['idle.ranim', 'walk.ranim', 'attack.ranim', 'death.ranim', 'labor.ranim', 'spell_cast.ranim', 'dance.ranim']);
+        const customAnims = animList.filter(a => !standardDefaults.has(a.toLowerCase()));
+        populateDatalist('suggest-animations', customAnims.map(a => ({ id: a, name: a })));
     }
 
     function populateDatalist(id, items) {
@@ -3944,6 +4157,7 @@
         if (cat === 'decals') return 'Decals';
         if (cat === 'textures') return 'Textures';
         if (cat === 'icons') return 'Icons';
+        if (cat === 'animations') return 'Animations';
         return cat.charAt(0).toUpperCase() + cat.slice(1);
     }
 
@@ -3952,7 +4166,7 @@
         if (!display) return;
 
         let assets = {};
-        const candidateKeys = ['textures', 'glb', 'decals', 'icons', 'vfx_spritesheets', 'sfx', 'music', 'skyboxes'];
+        const candidateKeys = ['textures', 'glb', 'decals', 'icons', 'vfx_spritesheets', 'sfx', 'music', 'skyboxes', 'animations'];
 
         // Collect from units.Assets
         if (units?.Assets && typeof units.Assets === 'object') {
@@ -4024,10 +4238,20 @@
                         html += `<div style="margin-left: 8px; font-weight: 600; color: var(--text-muted); font-size: 11px; margin-top: 4px;">${escapeHtml(subCat)}</div>`;
                         Object.keys(subObj).forEach(itemKey => {
                             const relAssetPath = `Assets/models/${subCat}/${itemKey}`;
+                            const itemVal = subObj[itemKey];
+                            let isIgnored = false;
+                            if (typeof itemVal === 'object' && itemVal !== null) {
+                                isIgnored = !!(itemVal.ignore_player_color || itemVal.IgnorePlayerColor);
+                            } else if (units?.ModelIgnorePlayerColor && (units.ModelIgnorePlayerColor[itemKey] || units.ModelIgnorePlayerColor[itemKey.toLowerCase()])) {
+                                isIgnored = true;
+                            }
                             html += `<div style="margin-left: 12px; margin-top: 2px;">`;
                             html += `<div class="asset-item-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 4px;">`;
                             html += `<span style="font-family: monospace;">${escapeHtml(itemKey)}</span>`;
                             html += `<div style="display: flex; gap: 6px; align-items: center;">`;
+                            html += `<label style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); cursor: pointer; margin-right: 6px;" title="Skip player-color tinting shader and keep original textures intact">`;
+                            html += `<input type="checkbox" class="chk-ignore-player-color" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" ${isIgnored ? 'checked' : ''} />`;
+                            html += `Ignore Color</label>`;
                             html += `<select class="select-migrate-target" style="background: rgba(0,0,0,0.4); color: #ccc; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; font-size: 11px; padding: 1px 4px;">`;
                             ['units', 'buildings', 'resources', 'props'].forEach(sc => {
                                 html += `<option value="glb:${sc}" ${sc === subCat ? 'selected' : ''}>Model: ${sc}</option>`;
@@ -4059,6 +4283,7 @@
                     else if (category === 'textures') relAssetPath = `Assets/textures/${itemKey}`;
                     else if (category === 'sfx') relAssetPath = `Assets/audio/sfx/${itemKey}`;
                     else if (category === 'music') relAssetPath = `Assets/audio/music/${itemKey}`;
+                    else if (category === 'animations') relAssetPath = `Assets/animations/${itemKey}`;
 
                     const canMigrateRawPng = category === 'decals' || category === 'icons' || category === 'skyboxes';
                     const canMigrateAudio = category === 'sfx' || category === 'music';
@@ -4085,6 +4310,11 @@
                     html += `<button type="button" class="btn small-btn btn-delete-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" title="Remove asset" style="color: #f44336; background: transparent; border: none; cursor: pointer; font-weight: bold; font-size: 14px; padding: 0 4px;">✕</button>`;
                     html += `</div></div>`;
                     if (category === 'textures') {
+                        let brightness = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Brightness !== undefined || itemVal.brightness !== undefined)) ? parseFloat(itemVal.Brightness ?? itemVal.brightness) : 1.0;
+                        if (isNaN(brightness)) brightness = 1.0;
+                        let tint = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Tint || itemVal.tint)) ? (itemVal.Tint || itemVal.tint) : '#ffffff';
+                        if (!tint.startsWith('#')) tint = '#' + tint;
+                        let tintHue = hexToHue(tint);
                         let tileMode = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Tile_Mode || itemVal.tile_mode)) ? (itemVal.Tile_Mode || itemVal.tile_mode) : 'Stochastic';
                         let uvScale = (typeof itemVal === 'object' && itemVal !== null && (itemVal.UV_Scale !== undefined || itemVal.uv_scale !== undefined)) ? parseFloat(itemVal.UV_Scale ?? itemVal.uv_scale) : 1.0;
                         if (isNaN(uvScale)) uvScale = 1.0;
@@ -4095,6 +4325,19 @@
 
                         html += `<div class="texture-stochastic-controls" data-key="${escapeHtml(itemKey)}" style="margin-top: 6px; margin-bottom: 8px; padding: 8px 12px; background: var(--vscode-input-background, #1e1e24); border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.15)); border-left: 4px solid var(--vscode-symbolIcon-propertyForeground, #4ec9b0); border-radius: 6px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">`;
                         
+                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Albedo brightness multiplier for terrain texture." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Brightness: <span class="lbl-brightness-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${brightness.toFixed(2)}</span></label>`;
+                        html += `<input type="range" class="input-texture-brightness" data-key="${escapeHtml(itemKey)}" min="0.25" max="1.75" step="0.02" value="${brightness}" title="Albedo brightness multiplier for terrain texture (range 0.25 to 1.75)." style="width: 130px; cursor: pointer;" />`;
+                        html += `</div>`;
+
+                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Color tint overlay for terrain texture albedo." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Tint:</label>`;
+                        html += `<div style="display: flex; align-items: center; gap: 6px;">`;
+                        html += `<input type="range" class="input-texture-tint-slider" data-key="${escapeHtml(itemKey)}" min="0.0" max="1.0" step="0.01" value="${tintHue.toFixed(2)}" title="Hue slider for tint" style="width: 80px; cursor: pointer;" />`;
+                        html += `<input type="color" class="input-texture-tint-picker" data-key="${escapeHtml(itemKey)}" value="${tint}" title="Direct RGB tint color picker" style="width: 44px; height: 22px; padding: 0; background: transparent; border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.25)); border-radius: 3px; cursor: pointer;" />`;
+                        html += `</div>`;
+                        html += `</div>`;
+
                         html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
                         html += `<label title="Controls texture tiling method. 'Stochastic' uses non-repeating procedural triangular grid sampling; 'Grid' uses standard UV tiling." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Tile_Mode:</label>`;
                         html += `<select class="input-texture-tile-mode" data-key="${escapeHtml(itemKey)}" title="Controls texture tiling method. 'Stochastic' uses non-repeating procedural triangular grid sampling; 'Grid' uses standard UV tiling." style="background: var(--vscode-editor-background, #141416); color: var(--vscode-input-foreground, #ffffff); border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.25)); border-radius: 4px; font-size: 12px; font-weight: 600; padding: 3px 8px; cursor: pointer;">`;
@@ -4132,7 +4375,48 @@
         html += '</div>';
         display.innerHTML = html;
 
-        function updateTextureProperty(itemKey, updateFn) {
+        function hsvToHex(h, s, v) {
+            let r, g, b;
+            let i = Math.floor(h * 6);
+            let f = h * 6 - i;
+            let p = v * (1 - s);
+            let q = v * (1 - f * s);
+            let t = v * (1 - (1 - f) * s);
+            switch (i % 6) {
+                case 0: r = v; g = t; b = p; break;
+                case 1: r = q; g = v; b = p; break;
+                case 2: r = p; g = v; b = t; break;
+                case 3: r = p; g = q; b = v; break;
+                case 4: r = t; g = p; b = v; break;
+                case 5: r = v; g = p; b = q; break;
+            }
+            const toHex = (x) => {
+                const hex = Math.round(x * 255).toString(16);
+                return hex.length === 1 ? '0' + hex : hex;
+            };
+            return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+        }
+
+        function hexToHue(hex) {
+            if (!hex || typeof hex !== 'string') return 0;
+            hex = hex.replace('#', '');
+            if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+            if (hex.length !== 6) return 0;
+            const r = parseInt(hex.substring(0, 2), 16) / 255;
+            const g = parseInt(hex.substring(2, 4), 16) / 255;
+            const b = parseInt(hex.substring(4, 6), 16) / 255;
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            const d = max - min;
+            if (d < 0.05) return 0;
+            let h;
+            if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+            else if (max === g) h = (b - r) / d + 2;
+            else h = (r - g) / d + 4;
+            return (h / 6);
+        }
+
+        function updateTextureProperty(itemKey, updateFn, shouldSave = true) {
             let container = null;
             if (units?.Assets?.textures) container = units.Assets.textures;
             else if (units?.MapProperties?.Assets?.textures) container = units.MapProperties.Assets.textures;
@@ -4148,12 +4432,16 @@
             }
             updateFn(itemVal);
             container[itemKey] = itemVal;
-            saveChanges();
+            if (shouldSave) {
+                saveChanges();
+            }
             
             const tileMode = (itemVal.Tile_Mode || itemVal.tile_mode) ?? 'Stochastic';
             const uvScale = parseFloat(itemVal.UV_Scale ?? itemVal.uv_scale ?? 1.0);
             const stochTileSize = parseFloat(itemVal.Stochastic_Tile_Size ?? itemVal.stochastic_tile_size ?? 1.0);
             const crossFade = parseFloat(itemVal.Cross_Fade ?? itemVal.cross_fade ?? itemVal.Grid_Cross_Fade ?? itemVal.grid_cross_fade ?? 5.0);
+            const brightness = parseFloat(itemVal.Brightness ?? itemVal.brightness ?? 1.0);
+            const tint = (itemVal.Tint || itemVal.tint) ?? '#ffffff';
 
             const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
             fetch(`http://127.0.0.1:${ipcPort}/api/`, {
@@ -4165,10 +4453,68 @@
                     tileMode: tileMode,
                     uvScale: uvScale,
                     stochasticTileSize: stochTileSize,
-                    crossFade: crossFade
+                    crossFade: crossFade,
+                    brightness: brightness,
+                    tint: tint
                 })
             }).catch(() => {});
         }
+
+        display.querySelectorAll('.input-texture-brightness').forEach(input => {
+            const handleBrightChange = (e, shouldSave) => {
+                const key = e.target.getAttribute('data-key');
+                const val = parseFloat(e.target.value);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const lbl = parentRow.querySelector('.lbl-brightness-val');
+                    if (lbl) lbl.textContent = val.toFixed(2);
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.Brightness = val;
+                    itemVal.brightness = val;
+                }, shouldSave);
+            };
+            input.addEventListener('input', (e) => handleBrightChange(e, false));
+            input.addEventListener('change', (e) => handleBrightChange(e, true));
+        });
+
+        display.querySelectorAll('.input-texture-tint-slider').forEach(input => {
+            const handleTintSlider = (e, shouldSave) => {
+                const key = e.target.getAttribute('data-key');
+                const val = parseFloat(e.target.value);
+                const hex = (val <= 0.0) ? '#ffffff' : hsvToHex(val, 0.75, 1.0);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const picker = parentRow.querySelector('.input-texture-tint-picker');
+                    if (picker) picker.value = hex;
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.Tint = hex;
+                    itemVal.tint = hex;
+                }, shouldSave);
+            };
+            input.addEventListener('input', (e) => handleTintSlider(e, false));
+            input.addEventListener('change', (e) => handleTintSlider(e, true));
+        });
+
+        display.querySelectorAll('.input-texture-tint-picker').forEach(input => {
+            const handleTintPicker = (e, shouldSave) => {
+                const key = e.target.getAttribute('data-key');
+                const hex = e.target.value;
+                const hue = hexToHue(hex);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const slider = parentRow.querySelector('.input-texture-tint-slider');
+                    if (slider) slider.value = hue.toFixed(2);
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.Tint = hex;
+                    itemVal.tint = hex;
+                }, shouldSave);
+            };
+            input.addEventListener('input', (e) => handleTintPicker(e, false));
+            input.addEventListener('change', (e) => handleTintPicker(e, true));
+        });
 
         display.querySelectorAll('.input-texture-tile-mode').forEach(sel => {
             sel.addEventListener('change', (e) => {
@@ -4184,7 +4530,7 @@
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.Tile_Mode = val;
                     itemVal.tile_mode = val;
-                });
+                }, true);
             });
         });
 
@@ -4195,7 +4541,7 @@
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.Variants = val;
                     itemVal.variants = val;
-                });
+                }, true);
                 const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
                 fetch(`http://127.0.0.1:${ipcPort}/api/`, {
                     method: 'POST',
@@ -4206,7 +4552,7 @@
         });
 
         display.querySelectorAll('.input-texture-uv-scale').forEach(input => {
-            const handleUvChange = (e) => {
+            const handleUvChange = (e, shouldSave) => {
                 const key = e.target.getAttribute('data-key');
                 const val = parseFloat(e.target.value);
                 const parentRow = e.target.closest('.texture-stochastic-controls');
@@ -4217,14 +4563,14 @@
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.UV_Scale = val;
                     itemVal.uv_scale = val;
-                });
+                }, shouldSave);
             };
-            input.addEventListener('input', handleUvChange);
-            input.addEventListener('change', handleUvChange);
+            input.addEventListener('input', (e) => handleUvChange(e, false));
+            input.addEventListener('change', (e) => handleUvChange(e, true));
         });
 
         display.querySelectorAll('.input-texture-stoch-size').forEach(input => {
-            const handleStochChange = (e) => {
+            const handleStochChange = (e, shouldSave) => {
                 const key = e.target.getAttribute('data-key');
                 const val = parseFloat(e.target.value);
                 const parentRow = e.target.closest('.texture-stochastic-controls');
@@ -4235,14 +4581,14 @@
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.Stochastic_Tile_Size = val;
                     itemVal.stochastic_tile_size = val;
-                });
+                }, shouldSave);
             };
-            input.addEventListener('input', handleStochChange);
-            input.addEventListener('change', handleStochChange);
+            input.addEventListener('input', (e) => handleStochChange(e, false));
+            input.addEventListener('change', (e) => handleStochChange(e, true));
         });
 
         display.querySelectorAll('.input-texture-cross-fade').forEach(input => {
-            const handleCrossFadeChange = (e) => {
+            const handleCrossFadeChange = (e, shouldSave) => {
                 const key = e.target.getAttribute('data-key');
                 const val = parseFloat(e.target.value);
                 const parentRow = e.target.closest('.texture-stochastic-controls');
@@ -4253,10 +4599,10 @@
                 updateTextureProperty(key, (itemVal) => {
                     itemVal.Cross_Fade = val;
                     itemVal.cross_fade = val;
-                });
+                }, shouldSave);
             };
-            input.addEventListener('input', handleCrossFadeChange);
-            input.addEventListener('change', handleCrossFadeChange);
+            input.addEventListener('input', (e) => handleCrossFadeChange(e, false));
+            input.addEventListener('change', (e) => handleCrossFadeChange(e, true));
         });
 
         // Attach migration event handlers
@@ -4286,6 +4632,35 @@
                     toCategory: toCat,
                     toSubCategory: toSubCat
                 });
+            });
+        });
+
+        // Attach ignore player color event handlers
+        display.querySelectorAll('.chk-ignore-player-color').forEach(chk => {
+            chk.addEventListener('change', (e) => {
+                const subCat = e.target.getAttribute('data-subcategory');
+                const key = e.target.getAttribute('data-key');
+                const val = e.target.checked;
+                if (units?.Assets?.glb && units.Assets.glb[subCat]) {
+                    let itemVal = units.Assets.glb[subCat][key];
+                    if (typeof itemVal !== 'object' || itemVal === null) {
+                        itemVal = { hash: String(itemVal || ''), default_asset_type: subCat };
+                    }
+                    if (val) {
+                        itemVal.ignore_player_color = true;
+                    } else {
+                        delete itemVal.ignore_player_color;
+                        delete itemVal.IgnorePlayerColor;
+                    }
+                    units.Assets.glb[subCat][key] = itemVal;
+                }
+                if (!units.ModelIgnorePlayerColor) units.ModelIgnorePlayerColor = {};
+                if (val) {
+                    units.ModelIgnorePlayerColor[key] = true;
+                } else {
+                    delete units.ModelIgnorePlayerColor[key];
+                }
+                saveChanges();
             });
         });
 
@@ -4474,10 +4849,12 @@
             btnGlb.addEventListener('click', () => {
                 const catSelect = document.getElementById('glb-category-select');
                 const category = catSelect ? catSelect.value : 'props';
+                const chkIgnore = document.getElementById('glb-ignore-player-color');
+                const ignorePlayerColor = chkIgnore ? chkIgnore.checked : false;
                 vscode.postMessage({
                     type: 'importAsset',
                     assetType: 'glb',
-                    options: { category }
+                    options: { category, ignorePlayerColor }
                 });
             });
         }
@@ -4536,6 +4913,17 @@
                     type: 'importAsset',
                     assetType: 'audio',
                     options: { audioType }
+                });
+            });
+        }
+
+        const btnAnim = document.getElementById('btn-import-animation');
+        if (btnAnim) {
+            btnAnim.addEventListener('click', () => {
+                vscode.postMessage({
+                    type: 'importAsset',
+                    assetType: 'animation',
+                    options: {}
                 });
             });
         }

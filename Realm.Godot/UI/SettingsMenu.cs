@@ -21,10 +21,15 @@ public partial class SettingsMenu : Control
 
 	private OptionButton _resolutionOpt;
 	private OptionButton _qualityOpt;
+	private CheckBox _disableShadowsChk;
+	private CheckBox _disableDayNightLightingChk;
 	private OptionButton _windowModeOpt;
 	private OptionButton _vsyncOpt;
 	private OptionButton _healthBarsOpt;
 	private OptionButton _languageOpt;
+	private CheckBox _displayFpsChk;
+	private CheckBox _recordReplaysChk;
+	private CheckBox _seedMapFilesChk;
 
 	private HSlider _masterSlider;
 	private HSlider _musicSlider;
@@ -85,6 +90,9 @@ public partial class SettingsMenu : Control
 		_healthBarsOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/HealthBarsRow/HealthBarsOpt");
 		_languageOpt = GetNode<OptionButton>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/LanguageRow/LanguageOpt");
 
+		_disableShadowsChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/DisableShadowsChk");
+		_disableDayNightLightingChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/DisableDayNightLightingChk");
+
 		_masterSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/MasterRow/MasterSlider");
 		_musicSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/MusicRow/MusicSlider");
 		_sfxSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/SfxRow/SfxSlider");
@@ -94,6 +102,10 @@ public partial class SettingsMenu : Control
 		_musicValLabel = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/MusicRow/MusicValLabel");
 		_sfxValLabel = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/SfxRow/SfxValLabel");
 		_voiceValLabel = GetNode<Label>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/VoiceRow/VoiceValLabel");
+
+		_displayFpsChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/DisplayFpsChk");
+		_recordReplaysChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/RecordReplaysChk");
+		_seedMapFilesChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/SeedMapFilesChk");
 
 		_scrollSpeedSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/ScrollRow/ScrollSpeedSlider");
 		_mouseSensSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/GameplayPanel/VBox/SensRow/MouseSensSlider");
@@ -334,6 +346,18 @@ public partial class SettingsMenu : Control
 		{
 			sep.AddThemeStyleboxOverride("separator", sepStyle);
 		}
+
+		UIStyle.ApplyCheckboxStyle(_disableShadowsChk);
+		_disableShadowsChk.Text = TranslationServer.Translate(_disableShadowsChk.Text);
+		UIStyle.ApplyCheckboxStyle(_disableDayNightLightingChk);
+		_disableDayNightLightingChk.Text = TranslationServer.Translate(_disableDayNightLightingChk.Text);
+		UIStyle.ApplyCheckboxStyle(_displayFpsChk);
+		_displayFpsChk.Text = TranslationServer.Translate(_displayFpsChk.Text);
+		UIStyle.ApplyCheckboxStyle(_recordReplaysChk);
+		_recordReplaysChk.Text = TranslationServer.Translate(_recordReplaysChk.Text);
+		UIStyle.ApplyCheckboxStyle(_seedMapFilesChk);
+		_seedMapFilesChk.Text = TranslationServer.Translate(_seedMapFilesChk.Text);
+		_seedMapFilesChk.TooltipText = TranslationServer.Translate(_seedMapFilesChk.TooltipText);
 	}
 
 	private void PopulateDropdowns()
@@ -392,6 +416,30 @@ public partial class SettingsMenu : Control
 			opt.ItemSelected += (idx) => UIManager.Instance.PlayClickSound();
 			opt.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 		}
+		_windowModeOpt.ItemSelected += (idx) =>
+		{
+			if (idx == 0 || idx == 2)
+			{
+				_resolutionOpt.Disabled = true;
+				_resolutionOpt.Select(-1);
+			}
+			else
+			{
+				_resolutionOpt.Disabled = false;
+				_resolutionOpt.Select(GameSettings.ResolutionIdx);
+			}
+		};
+
+		_disableShadowsChk.Pressed += () => UIManager.Instance.PlayClickSound();
+		_disableShadowsChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+		_disableDayNightLightingChk.Pressed += () => UIManager.Instance.PlayClickSound();
+		_disableDayNightLightingChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+		_displayFpsChk.Pressed += () => UIManager.Instance.PlayClickSound();
+		_displayFpsChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+		_recordReplaysChk.Pressed += () => UIManager.Instance.PlayClickSound();
+		_recordReplaysChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+		_seedMapFilesChk.Pressed += () => UIManager.Instance.PlayClickSound();
+		_seedMapFilesChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 	}
 
 	private void SetupSliders()
@@ -529,9 +577,19 @@ public partial class SettingsMenu : Control
 	private void LoadCurrentSettings()
 	{
 		_resolutionOpt.Select(GameSettings.ResolutionIdx);
-		_qualityOpt.Select(GameSettings.QualityIdx);
-		_windowModeOpt.Select(GameSettings.WindowModeIdx);
-		_vsyncOpt.Select(GameSettings.VsyncIdx);
+		_qualityOpt.Select((int)GameSettings.QualityIdx);
+		_windowModeOpt.Select((int)GameSettings.WindowModeIdx);
+		_vsyncOpt.Select(GameSettings.Vsync ? 0 : 1);
+
+		if (GameSettings.WindowModeIdx == WindowMode.Fullscreen || GameSettings.WindowModeIdx == WindowMode.Borderless)
+		{
+			_resolutionOpt.Disabled = true;
+			_resolutionOpt.Select(-1);
+		}
+		else
+		{
+			_resolutionOpt.Disabled = false;
+		}
 
 		_masterSlider.Value = GameSettings.MasterVolume;
 		_musicSlider.Value = GameSettings.MusicVolume;
@@ -551,58 +609,25 @@ public partial class SettingsMenu : Control
 		_sensValLabel.Text = (_mouseSensSlider.Value / 40.0f).ToString("0.0");
 		_hudScaleValLabel.Text = ((_hudScaleSlider.Value - 100.0f) / 100.0f).ToString("0.0");
 
-		int hbIdx = GameSettings.ShowHealthBars switch
-		{
-			"hidden" => 0,
-			"visible" => 1,
-			"damaged" => 2,
-			_ => 2
-		};
-		_healthBarsOpt.Select(hbIdx);
-
-		int langIdx = GameSettings.Language switch
-		{
-			"en" => 0,
-			"es" => 1,
-			"fr" => 2,
-			"de" => 3,
-			"pt" => 4,
-			"ru" => 5,
-			"zh" => 6,
-			"ja" => 7,
-			"ar" => 8,
-			"hi" => 9,
-			_ => 0
-		};
-		_languageOpt.Select(langIdx);
+		_disableShadowsChk.ButtonPressed = GameSettings.DisableShadows;
+		_disableDayNightLightingChk.ButtonPressed = GameSettings.DisableDayNightLighting;
+		_displayFpsChk.ButtonPressed = GameSettings.DisplayFps;
+		_recordReplaysChk.ButtonPressed = GameSettings.RecordReplays;
+		_seedMapFilesChk.ButtonPressed = GameSettings.SeedMapFiles;
+		_healthBarsOpt.Select((int)GameSettings.ShowHealthBars);
+		_languageOpt.Select((int)GameSettings.Language);
 	}
 
 	private void ApplySettings()
 	{
-		string resText = _resolutionOpt.GetItemText(_resolutionOpt.Selected);
-		var parts = resText.Split("x");
-		if (parts.Length == 2 && int.TryParse(parts[0].Trim(), out int w) && int.TryParse(parts[1].Trim(), out int h))
-		{
-			GetWindow().Size = new Vector2I(w, h);
-		}
-
 		int modeIdx = _windowModeOpt.Selected;
-		if (modeIdx == 0)
-		{
-			GetWindow().Mode = Window.ModeEnum.ExclusiveFullscreen;
-		}
-		else if (modeIdx == 1)
-		{
-			GetWindow().Borderless = false;
-			GetWindow().Mode = Window.ModeEnum.Windowed;
-		}
-		else if (modeIdx == 2)
-		{
-			GetWindow().Borderless = true;
-			GetWindow().Mode = Window.ModeEnum.Maximized;
-		}
+		var windowMode = (WindowMode)modeIdx;
+		int resSel = _resolutionOpt.Selected;
 
-		if (_vsyncOpt.Selected == 0)
+		UIManager.Instance?.ApplyWindowSettings(windowMode, resSel);
+
+		bool vsyncEnabled = _vsyncOpt.Selected == 0;
+		if (vsyncEnabled)
 		{
 			DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Enabled);
 		}
@@ -611,11 +636,16 @@ public partial class SettingsMenu : Control
 			DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
 		}
 
-		GameSettings.ResolutionIdx = _resolutionOpt.Selected;
-		GameSettings.QualityIdx = _qualityOpt.Selected;
+		if (windowMode == WindowMode.Windowed && resSel >= 0)
+		{
+			GameSettings.ResolutionIdx = resSel;
+		}
+		GameSettings.QualityIdx = (GraphicsQuality)_qualityOpt.Selected;
 		GameSettings.DownsamplingIdx = GameSettings.GetDownsamplingIdxForQuality(GameSettings.QualityIdx);
-		GameSettings.WindowModeIdx = _windowModeOpt.Selected;
-		GameSettings.VsyncIdx = _vsyncOpt.Selected;
+		GameSettings.WindowModeIdx = windowMode;
+		GameSettings.Vsync = vsyncEnabled;
+		GameSettings.DisableShadows = _disableShadowsChk.ButtonPressed;
+		GameSettings.DisableDayNightLighting = _disableDayNightLightingChk.ButtonPressed;
 
 		GameSettings.MasterVolume = (float)_masterSlider.Value;
 		GameSettings.MusicVolume = (float)_musicSlider.Value;
@@ -625,36 +655,23 @@ public partial class SettingsMenu : Control
 		GameSettings.ScrollSpeed = (float)_scrollSpeedSlider.Value;
 		GameSettings.MouseSens = (float)_mouseSensSlider.Value;
 		GameSettings.HudScale = (float)_hudScaleSlider.Value;
-		GameSettings.ShowHealthBars = _healthBarsOpt.Selected switch
-		{
-			0 => "hidden",
-			1 => "visible",
-			2 => "damaged",
-			_ => "damaged"
-		};
 
-		string newLang = _languageOpt.Selected switch
-		{
-			0 => "en",
-			1 => "es",
-			2 => "fr",
-			3 => "de",
-			4 => "pt",
-			5 => "ru",
-			6 => "zh",
-			7 => "ja",
-			8 => "ar",
-			9 => "hi",
-			_ => "en"
-		};
+		GameSettings.DisplayFps = _displayFpsChk.ButtonPressed;
+		GameSettings.RecordReplays = _recordReplaysChk.ButtonPressed;
+		GameSettings.SeedMapFiles = _seedMapFilesChk.ButtonPressed;
+		GameSettings.ShowHealthBars = (HealthBarMode)_healthBarsOpt.Selected;
+
+		var newLang = (GameLanguage)_languageOpt.Selected;
 		GameSettings.Language = newLang;
 		LocalizationManager.UpdateLocale(newLang);
 
 		GameSettings.Save();
+		GameSettings.ApplyGraphicsSettings(this);
 
 		if (InGameHUD.Instance != null)
 		{
 			InGameHUD.Instance.ApplyHUDScale();
+			InGameHUD.Instance.UpdateFPSVisibility();
 		}
 		if (MapEditorHUD.Instance != null)
 		{

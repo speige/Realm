@@ -15,22 +15,22 @@ layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -540.0
+offset_left = -340.0
 offset_top = 10.0
-offset_right = 540.0
-offset_bottom = 85.0
+offset_right = 340.0
+offset_bottom = 58.0
 grow_horizontal = 2
 
 [node name="HBox" type="HBoxContainer" parent="ResourceContainer"]
 layout_mode = 2
-theme_override_constants/separation = 60
+theme_override_constants/separation = 24
 alignment = 1
 
 [node name="GoldBox" type="HBoxContainer" parent="ResourceContainer/HBox"]
 layout_mode = 2
 
 [node name="GoldIcon" type="TextureRect" parent="ResourceContainer/HBox/GoldBox"]
-custom_minimum_size = Vector2(42, 42)
+custom_minimum_size = Vector2(28, 28)
 layout_mode = 2
 size_flags_vertical = 4
 expand_mode = 2
@@ -44,7 +44,7 @@ text = "30"
 layout_mode = 2
 
 [node name="WoodIcon" type="TextureRect" parent="ResourceContainer/HBox/WoodBox"]
-custom_minimum_size = Vector2(42, 42)
+custom_minimum_size = Vector2(28, 28)
 layout_mode = 2
 size_flags_vertical = 4
 expand_mode = 2
@@ -58,7 +58,7 @@ text = "39"
 layout_mode = 2
 
 [node name="StoneIcon" type="TextureRect" parent="ResourceContainer/HBox/StoneBox"]
-custom_minimum_size = Vector2(42, 42)
+custom_minimum_size = Vector2(28, 28)
 layout_mode = 2
 size_flags_vertical = 4
 expand_mode = 2
@@ -75,7 +75,7 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 0.0
-offset_top = -400.0
+offset_top = -210.0
 offset_right = 0.0
 offset_bottom = 0.0
 grow_horizontal = 2
@@ -86,7 +86,7 @@ layout_mode = 2
 theme_override_constants/separation = 20
 
 [node name="MinimapFrame" type="PanelContainer" parent="BottomConsole/HBox"]
-custom_minimum_size = Vector2(360, 360)
+custom_minimum_size = Vector2(170, 170)
 layout_mode = 2
 size_flags_vertical = 4
 
@@ -103,7 +103,7 @@ border_width = 2.0
 editor_only = false
 
 [node name="PortraitFrame" type="PanelContainer" parent="BottomConsole/HBox"]
-custom_minimum_size = Vector2(160, 240)
+custom_minimum_size = Vector2(130, 170)
 layout_mode = 2
 size_flags_vertical = 4
 
@@ -112,7 +112,7 @@ layout_mode = 2
 alignment = 1
 
 [node name="PortraitTexture" type="TextureRect" parent="BottomConsole/HBox/PortraitFrame/VBox"]
-custom_minimum_size = Vector2(100, 100)
+custom_minimum_size = Vector2(90, 90)
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
@@ -155,7 +155,7 @@ layout_mode = 2
 focus_mode = 0
 
 [node name="InventoryFrame" type="PanelContainer" parent="BottomConsole/HBox"]
-custom_minimum_size = Vector2(160, 240)
+custom_minimum_size = Vector2(100, 170)
 layout_mode = 2
 size_flags_vertical = 4
 
@@ -166,7 +166,7 @@ theme_override_constants/v_separation = 0
 columns = 2
 
 [node name="CommandFrame" type="PanelContainer" parent="BottomConsole/HBox"]
-custom_minimum_size = Vector2(320, 240)
+custom_minimum_size = Vector2(180, 170)
 layout_mode = 2
 size_flags_vertical = 4
 
@@ -177,28 +177,28 @@ theme_override_constants/v_separation = 0
 columns = 4
 
 [node name="BtnMove" type="Button" parent="BottomConsole/HBox/CommandFrame/GridContainer"]
-custom_minimum_size = Vector2(80, 80)
+custom_minimum_size = Vector2(44, 44)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 focus_mode = 0
 
 [node name="BtnStop" type="Button" parent="BottomConsole/HBox/CommandFrame/GridContainer"]
-custom_minimum_size = Vector2(80, 80)
+custom_minimum_size = Vector2(44, 44)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 focus_mode = 0
 
 [node name="BtnHold" type="Button" parent="BottomConsole/HBox/CommandFrame/GridContainer"]
-custom_minimum_size = Vector2(80, 80)
+custom_minimum_size = Vector2(44, 44)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 focus_mode = 0
 
 [node name="BtnBuild" type="Button" parent="BottomConsole/HBox/CommandFrame/GridContainer"]
-custom_minimum_size = Vector2(80, 80)
+custom_minimum_size = Vector2(44, 44)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
@@ -223,28 +223,28 @@ vertical_alignment = 1
 
 [node name="DevPanel" type="Panel" parent="."]
 layout_mode = 0
-offset_left = 220.0
-offset_top = 10.0
-offset_right = 700.0
-offset_bottom = 75.0
+offset_left = 190.0
+offset_top = 12.0
+offset_right = 580.0
+offset_bottom = 54.0
 
 [node name="BtnVictory" type="Button" parent="DevPanel"]
 layout_mode = 0
-offset_left = 10.0
-offset_top = 10.0
-offset_right = 150.0
-offset_bottom = 45.0
-theme_override_font_sizes/font_size = 14
+offset_left = 6.0
+offset_top = 6.0
+offset_right = 126.0
+offset_bottom = 36.0
+theme_override_font_sizes/font_size = 12
 text = "Trigger Victory"
 focus_mode = 0
 
 [node name="BtnDefeat" type="Button" parent="DevPanel"]
 layout_mode = 0
-offset_left = 170.0
-offset_top = 10.0
-offset_right = 310.0
-offset_bottom = 45.0
-theme_override_font_sizes/font_size = 14
+offset_left = 132.0
+offset_top = 6.0
+offset_right = 252.0
+offset_bottom = 36.0
+theme_override_font_sizes/font_size = 12
 text = "Trigger Defeat"
 focus_mode = 0
 
@@ -254,9 +254,9 @@ anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 220.0
-offset_top = -540.0
+offset_top = -460.0
 offset_right = 620.0
-offset_bottom = -290.0
+offset_bottom = -225.0
 grow_vertical = 0
 
 [node name="ChatContainer" type="VBoxContainer" parent="ChatPanel"]

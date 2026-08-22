@@ -214,7 +214,7 @@ public class MapEditorMinimap
 			}
 
 			EditableTerrain.IsMinimapRendering = true;
-			EditableTerrain.Instance?.SetAllChunksVisible(true);
+			EditableTerrain.Instance?.BeginMinimapCapture();
 			PropMultiMeshManager.Instance?.SetAllNodesVisible(true);
 			try
 			{
@@ -233,6 +233,7 @@ public class MapEditorMinimap
 			}
 			finally
 			{
+				EditableTerrain.Instance?.EndMinimapCapture();
 				EditableTerrain.IsMinimapRendering = false;
 			}
 

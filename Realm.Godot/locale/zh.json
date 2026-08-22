@@ -3,6 +3,8 @@
   "VIDEO": "视频",
   "Resolution": "分辨率",
   "Graphics Quality": "画面质量",
+  "Disable shadows": "禁用阴影",
+  "Disable day/night lighting": "禁用昼夜光照",
   "Window Mode": "窗口模式",
   "V-Sync": "垂直同步",
   "AUDIO": "音频",
@@ -258,5 +260,8 @@
   "YES": "是",
   "NO": "否",
   "Are you sure you want to delete this replay?": "您确定要删除此录像吗？",
-  "Are you sure you want to delete all replays?": "您确定要删除所有录像吗？"
+  "Are you sure you want to delete all replays?": "您确定要删除所有录像吗？",
+  "You haven't saved yet": "您尚未保存",
+  "Stay": "留下",
+  "Quit": "退出"
 }

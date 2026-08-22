@@ -27,22 +27,22 @@ public partial class MinimapOverlay : Control
 			DrawRect(new Rect2(Vector2.Zero, size), UIStyle.ColorBronze, false, 1.5f);
 		}
 
-		if (InGameHUD.Instance != null && InGameHUD.Instance.FogOfWarType != "visible")
+		if (InGameHUD.Instance != null && !string.Equals(InGameHUD.Instance.ShroudType, "visible", System.StringComparison.OrdinalIgnoreCase))
 		{
 			float cellWidth = size.X / 32f;
 			float cellHeight = size.Y / 32f;
-			var grid = InGameHUD.Instance.FogGrid;
+			var grid = InGameHUD.Instance.ShroudGrid;
 			for (int x = 0; x < 32; x++)
 			{
 				for (int z = 0; z < 32; z++)
 				{
 					byte val = grid[x, z];
-					if (val == 0)
+					if (val == Realm.Ecs.Components.Terrain.ShroudState.ExplorationShroud)
 					{
 						var rect = new Rect2(new Vector2(x * cellWidth, z * cellHeight), new Vector2(cellWidth, cellHeight));
 						DrawRect(rect, new Color(0f, 0f, 0f, 1.0f), true);
 					}
-					else if (val == 1)
+					else if (val == Realm.Ecs.Components.Terrain.ShroudState.VisionShroud)
 					{
 						var rect = new Rect2(new Vector2(x * cellWidth, z * cellHeight), new Vector2(cellWidth, cellHeight));
 						DrawRect(rect, new Color(0f, 0f, 0f, 0.33f), true);
@@ -55,11 +55,11 @@ public partial class MinimapOverlay : Control
 		{
 			if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
 
-			if (unit.IsEnemy && InGameHUD.Instance != null && InGameHUD.Instance.FogOfWarType != "visible")
+			if (unit.IsEnemy && InGameHUD.Instance != null && !string.Equals(InGameHUD.Instance.ShroudType, "visible", System.StringComparison.OrdinalIgnoreCase))
 			{
 				int gx = (int)Mathf.Clamp((unit.GlobalPosition.X / 250f + 0.5f) * 32, 0, 31);
 				int gz = (int)Mathf.Clamp((unit.GlobalPosition.Z / 250f + 0.5f) * 32, 0, 31);
-				if (InGameHUD.Instance.FogGrid[gx, gz] != 2)
+				if (InGameHUD.Instance.ShroudGrid[gx, gz] != Realm.Ecs.Components.Terrain.ShroudState.Visible)
 				{
 					continue;
 				}
@@ -124,7 +124,7 @@ public partial class MinimapOverlay : Control
 
 			if (unit.IsSelected)
 			{
-				Color selColor = unit.IsEnemy ? new Color(0.9f, 0.1f, 0.2f) : new Color(0.1f, 0.9f, 0.2f);
+				Color selColor = unit.IsEnemy ? new Color(0.9f, 0.1f, 0.2f) : new Color(0.22f, 0.54f, 0.26f);
 				DrawCircle(drawPos, iconSize + 2.5f, selColor, false, 1.2f);
 			}
 		}

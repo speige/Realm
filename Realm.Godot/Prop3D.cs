@@ -102,6 +102,7 @@ public partial class Prop3D : StaticBody3D
 	private void CreateHoverRing()
 	{
 		_hoverRing = new MeshInstance3D();
+		_hoverRing.Name = "_hover_ring";
 		var torusMesh = new TorusMesh();
 		if (PropId == "goldmine")
 		{
@@ -130,11 +131,13 @@ public partial class Prop3D : StaticBody3D
 		}
 		_hoverRing.Mesh = torusMesh;
 		_hoverRing.Position = new Vector3(0, 0.05f, 0);
+		_hoverRing.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+		_hoverRing.GIMode = GeometryInstance3D.GIModeEnum.Disabled;
 		var material = new StandardMaterial3D();
-		material.AlbedoColor = new Color(1f, 1f, 1f, 0.4f);
+		material.AlbedoColor = new Color(0.88f, 0.88f, 0.88f, 0.22f);
 		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-		material.EmissionEnabled = true;
-		material.Emission = new Color(1f, 1f, 1f) * 0.3f;
+		material.DisableReceiveShadows = true;
+		material.EmissionEnabled = false;
 		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 		_hoverRing.MaterialOverride = material;
 		float ratio = GameHost.Instance != null ? GameHost.Instance.GetModelCollisionCircleRatio(GameHost.Instance.GetModelAssetKey(this)) : 1.0f;
@@ -145,10 +148,6 @@ public partial class Prop3D : StaticBody3D
 	public virtual void UpdateCollisionCircleScale(float ratio)
 	{
 		Vector3 ringScale = new Vector3(ratio, 1.0f, ratio);
-		if (_selectionRing == null)
-		{
-			CreateSelectionRing();
-		}
 		if (_selectionRing != null)
 		{
 			_selectionRing.Scale = ringScale;
@@ -202,6 +201,9 @@ public partial class Prop3D : StaticBody3D
 	{
 		if (_selectionRing != null) return;
 		_selectionRing = new MeshInstance3D();
+		_selectionRing.Name = "_selection_ring";
+		_selectionRing.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+		_selectionRing.GIMode = GeometryInstance3D.GIModeEnum.Disabled;
 		var torusMesh = new TorusMesh();
 		
 		if (PropId == "goldmine")
@@ -236,8 +238,9 @@ public partial class Prop3D : StaticBody3D
 		var material = new StandardMaterial3D();
 		Color color = GetSelectionRingColor();
 		material.AlbedoColor = color;
-		material.EmissionEnabled = true;
-		material.Emission = color;
+		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+		material.DisableReceiveShadows = true;
+		material.EmissionEnabled = false;
 		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 		
 		_selectionRing.MaterialOverride = material;
@@ -253,6 +256,8 @@ public partial class Prop3D : StaticBody3D
 	{
 		Name = $"Prop_{PropId}_{Guid.NewGuid().ToString().Substring(0, 4)}";
 		
+		SetNotifyTransform(true);
+
 		if (IsPreview)
 		{
 			CreatePropVisual();
@@ -345,18 +350,40 @@ public partial class Prop3D : StaticBody3D
 					if (node != null)
 					{
 						visual.AddChild(node);
+						GameHost.Instance?.ApplyAllGlobalOverridesToObject(this);
 					}
 				}
 				catch (Exception ex)
 				{
 					GD.PrintErr($"Failed to load prop visual for '{PropId}' ({modelPath}): {ex.Message}");
 				}
+
+				UpdateLodVisibility();
 			}
 		}
 
 		if (!IsPreview)
 		{
 			PropMultiMeshManager.Instance?.MarkDirty(PropId);
+		}
+	}
+
+	public override void _Notification(int what)
+	{
+		base._Notification(what);
+		if (what == NotificationTransformChanged)
+		{
+			UpdateLodVisibility();
+		}
+	}
+
+	public virtual void UpdateLodVisibility()
+	{
+		var visual = GetNodeOrNull<Node3D>("VisualModel");
+		if (visual != null && GodotObject.IsInstanceValid(visual))
+		{
+			float effectiveScale = Math.Max(0.01f, Scale.Y * visual.Scale.Y);
+			Realm.Godot.Services.ModelOptimization.GltfDocumentExtensionMsftLod.UpdateLodVisibilityRanges(visual, effectiveScale);
 		}
 	}
 

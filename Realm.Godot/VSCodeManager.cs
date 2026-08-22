@@ -264,6 +264,12 @@ public class VSCodeManager
 	public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
 	[DllImport("user32.dll")]
+	public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+	[DllImport("user32.dll")]
+	public static extern bool BringWindowToTop(IntPtr hWnd);
+
+	[DllImport("user32.dll")]
 	public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
 	[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "RegisterClassExW")]
@@ -663,6 +669,188 @@ public class VSCodeManager
 				responseObj["success"] = success;
 				responseObj["error"] = errorMsg;
 			}
+			else if (action == "processRawAnimation")
+			{
+				string rawFilePath = node["rawFilePath"]?.ToString();
+				string rawBase64 = node["rawBase64"]?.ToString();
+				string outputAnimsDir = node["outputAnimsDir"]?.ToString();
+				string fileName = node["fileName"]?.ToString() ?? "anim";
+				string requestId = node["requestId"]?.ToString();
+
+				bool success = false;
+				string errorMsg = "";
+				var extractedList = new System.Text.Json.Nodes.JsonArray();
+
+				try
+				{
+					string targetSourcePath = rawFilePath;
+					if ((string.IsNullOrEmpty(targetSourcePath) || !System.IO.File.Exists(targetSourcePath)) && !string.IsNullOrEmpty(rawBase64))
+					{
+						byte[] fileBytes = Convert.FromBase64String(rawBase64);
+						string ext = System.IO.Path.GetExtension(fileName);
+						if (string.IsNullOrEmpty(ext)) ext = ".fbx";
+						targetSourcePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"realm_anim_{DateTime.Now.Ticks}{ext}");
+						System.IO.File.WriteAllBytes(targetSourcePath, fileBytes);
+					}
+
+					if (!string.IsNullOrEmpty(targetSourcePath) && System.IO.File.Exists(targetSourcePath))
+					{
+						var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+						string innerErr = "";
+						Callable.From(() =>
+						{
+							try
+							{
+								if (!string.IsNullOrEmpty(outputAnimsDir) && !System.IO.Directory.Exists(outputAnimsDir))
+								{
+									System.IO.Directory.CreateDirectory(outputAnimsDir);
+								}
+
+								var extracted = Realm.Godot.Animation.MixamoAnimationImporter.ExtractAnimationsFromFile(targetSourcePath, fileName);
+								if (extracted == null || extracted.Count == 0)
+								{
+									innerErr = "No animations found in file.";
+									tcs.TrySetResult(false);
+									return;
+								}
+
+								foreach (var (animName, animData) in extracted)
+								{
+									var (savedFileName, blake3, alreadyExisted) = Realm.Godot.Animation.MixamoAnimationImporter.SaveAnimationWithDeduplication(outputAnimsDir, animName, animData);
+
+									var itemObj = new System.Text.Json.Nodes.JsonObject
+									{
+										["fileName"] = savedFileName,
+										["hash"] = blake3,
+										["animName"] = animName,
+										["alreadyExisted"] = alreadyExisted
+									};
+									extractedList.Add(itemObj);
+								}
+
+								if (MapEditorHUD.Instance != null)
+								{
+									MapEditorHUD.Instance.PopulateAnimationPreviewDropdown();
+								}
+
+								tcs.TrySetResult(extractedList.Count > 0);
+							}
+							catch (Exception ex)
+							{
+								innerErr = ex.Message;
+								GD.PrintErr($"[VSCodeManager] processRawAnimation error: {ex.Message}");
+								tcs.TrySetResult(false);
+							}
+						}).CallDeferred();
+
+						success = await tcs.Task;
+						if (!success && !string.IsNullOrEmpty(innerErr)) errorMsg = innerErr;
+					}
+					else
+					{
+						errorMsg = "Source animation file not found.";
+					}
+				}
+				catch (Exception ex)
+				{
+					errorMsg = ex.Message;
+				}
+
+				responseObj["action"] = "processRawAnimationResult";
+				responseObj["type"] = "processRawAnimationResult";
+				responseObj["requestId"] = requestId;
+				responseObj["success"] = success;
+				responseObj["extractedFiles"] = extractedList;
+				responseObj["error"] = errorMsg;
+			}
+			else if (action == "optimizeModel" || action == "processRawGlb")
+			{
+				string rawFilePath = node["rawFilePath"]?.ToString();
+				string rawBase64 = node["rawBase64"]?.ToString();
+				string fileName = node["fileName"]?.ToString() ?? "model.glb";
+				string requestId = node["requestId"]?.ToString();
+
+				float creaseAngleDegrees = node["creaseAngleDegrees"] != null && float.TryParse(node["creaseAngleDegrees"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float cDeg) ? cDeg : 45.0f;
+				int maxTextureResolution = node["maxTextureResolution"] != null && int.TryParse(node["maxTextureResolution"].ToString(), out int mTex) ? mTex : 1024;
+				float allowedPixelError = node["allowedPixelError"] != null && float.TryParse(node["allowedPixelError"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float pErr) ? pErr : 1.5f;
+				bool forceReDecimate = node["forceReDecimate"] != null && bool.TryParse(node["forceReDecimate"].ToString(), out bool fDec) && fDec;
+				bool useUastc = node["useUastc"] != null && bool.TryParse(node["useUastc"].ToString(), out bool uAstc) && uAstc;
+
+				var options = new Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationOptions
+				{
+					AllowedPixelError = allowedPixelError,
+					CreaseAngleDegrees = creaseAngleDegrees,
+					MaxTextureResolution = maxTextureResolution,
+					ForceReDecimate = forceReDecimate,
+					UseUastc = useUastc
+				};
+
+				byte[] glbBytes = null;
+				if (!string.IsNullOrEmpty(rawBase64))
+				{
+					glbBytes = Convert.FromBase64String(rawBase64);
+				}
+				else if (!string.IsNullOrEmpty(rawFilePath) && System.IO.File.Exists(rawFilePath))
+				{
+					glbBytes = System.IO.File.ReadAllBytes(rawFilePath);
+				}
+
+				Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationResult optResult = default;
+				if (glbBytes != null && glbBytes.Length > 0)
+				{
+					var optimizer = ServiceLocator.TryGet<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>() ?? new Realm.Godot.Services.ModelOptimization.ModelOptimizerService(ServiceLocator.TryGet<Realm.Ecs.Services.WorldAccessor>());
+					var tcs = new System.Threading.Tasks.TaskCompletionSource<Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationResult>();
+
+					Callable.From(() =>
+					{
+						try
+						{
+							var res = optimizer.OptimizeGlb(glbBytes, options);
+							tcs.TrySetResult(res);
+						}
+						catch (Exception ex)
+						{
+							tcs.TrySetResult(new Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationResult
+							{
+								Success = false,
+								ErrorMessage = ex.Message,
+								OptimizedGlbBytes = glbBytes
+							});
+						}
+					}).CallDeferred();
+
+					optResult = await tcs.Task;
+				}
+				else
+				{
+					optResult.Success = false;
+					optResult.ErrorMessage = "No GLB file data provided.";
+				}
+
+				responseObj["action"] = "optimizeModelResult";
+				responseObj["type"] = "optimizeModelResult";
+				responseObj["requestId"] = requestId;
+				responseObj["success"] = optResult.Success;
+				responseObj["optimizedBase64"] = optResult.OptimizedGlbBytes != null ? Convert.ToBase64String(optResult.OptimizedGlbBytes) : "";
+				responseObj["originalTriangles"] = optResult.OriginalTriangleCount;
+				responseObj["optimizedTriangles"] = optResult.OptimizedTriangleCount;
+				responseObj["reductionRatio"] = optResult.ReductionRatio;
+				responseObj["decimationSkipped"] = optResult.DecimationSkipped;
+				responseObj["texturesProcessed"] = optResult.TexturesProcessedCount;
+				responseObj["chosenTextureResolution"] = optResult.ChosenTextureResolution;
+
+				if (optResult.LodTriangleCounts != null)
+				{
+					var lodCountsArr = new System.Text.Json.Nodes.JsonArray();
+					foreach (var c in optResult.LodTriangleCounts)
+					{
+						lodCountsArr.Add(c);
+					}
+					responseObj["lodTriangleCounts"] = lodCountsArr;
+				}
+
+				responseObj["error"] = optResult.ErrorMessage ?? "";
+			}
 			else if (action == "reloadMetadata" || action == "updateMetadata")
 			{
 				Callable.From(() =>
@@ -719,11 +907,23 @@ public class VSCodeManager
 					crossFade = parsedCrossFade3;
 				}
 
+				float? brightness = null;
+				if (node["brightness"] != null && float.TryParse(node["brightness"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedBright))
+				{
+					brightness = parsedBright;
+				}
+				else if (node["Brightness"] != null && float.TryParse(node["Brightness"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedBright2))
+				{
+					brightness = parsedBright2;
+				}
+
+				string? tintStr = node["tint"]?.ToString() ?? node["Tint"]?.ToString();
+
 				Callable.From(() =>
 				{
 					if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 					{
-						GameHost.Instance.GroundTerrain.UpdateTextureParamDirect(swatchName, tileMode, uvScale, stochasticTileSize, crossFade);
+						GameHost.Instance.GroundTerrain.UpdateTextureParamDirect(swatchName, tileMode, uvScale, stochasticTileSize, crossFade, brightness, tintStr);
 					}
 				}).CallDeferred();
 
@@ -1049,6 +1249,20 @@ public class VSCodeManager
 
 		if (_childHwnd != IntPtr.Zero)
 		{
+			PostMessage(_childHwnd, WM_WAKEUP, IntPtr.Zero, IntPtr.Zero);
+		}
+	}
+
+	public void Focus()
+	{
+		if (_childHwnd != IntPtr.Zero)
+		{
+			_actionQueue.Enqueue(() =>
+			{
+				ShowWindow(_childHwnd, SW_SHOWMAXIMIZED);
+				BringWindowToTop(_childHwnd);
+				SetForegroundWindow(_childHwnd);
+			});
 			PostMessage(_childHwnd, WM_WAKEUP, IntPtr.Zero, IntPtr.Zero);
 		}
 	}

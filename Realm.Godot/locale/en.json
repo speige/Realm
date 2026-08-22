@@ -3,6 +3,8 @@
   "VIDEO": "VIDEO",
   "Resolution": "Resolution",
   "Graphics Quality": "Graphics Quality",
+  "Disable shadows": "Disable shadows",
+  "Disable day/night lighting": "Disable day/night lighting",
   "Window Mode": "Window Mode",
   "V-Sync": "V-Sync",
   "AUDIO": "AUDIO",
@@ -284,5 +286,8 @@
   "YES": "YES",
   "NO": "NO",
   "Are you sure you want to delete this replay?": "Are you sure you want to delete this replay?",
-  "Are you sure you want to delete all replays?": "Are you sure you want to delete all replays?"
+  "Are you sure you want to delete all replays?": "Are you sure you want to delete all replays?",
+  "You haven't saved yet": "You haven't saved yet",
+  "Stay": "Stay",
+  "Quit": "Quit"
 }

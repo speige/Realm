@@ -31,7 +31,8 @@ public class SaveLoadService
 		(Entity Entity, float RotationY, float Scale)[] unitsData,
 		(Entity Entity, float RotationY, float Scale)[] propsData,
 		(string DecalId, System.Numerics.Vector3 Position, float RotationY, float Scale)[] decalsData,
-		List<CoordinateSaveData> coordinatesData = null)
+		List<CoordinateSaveData> coordinatesData = null,
+		string[] cliffHtmlColors = null)
 	{
 		try
 		{
@@ -240,6 +241,44 @@ public class SaveLoadService
 			splatIndicesImage.SaveExr(splatIndicesPath);
 			splatWeightsImage.SaveExr(splatWeightsPath);
 
+			if (cliffHtmlColors != null && cliffHtmlColors.Length == splatW * splatD)
+			{
+				string cliffSplatIndicesPath = Path.Combine(directory, "terrain_cliff_splat_indices.exr");
+				string cliffSplatWeightsPath = Path.Combine(directory, "terrain_cliff_splat_weights.exr");
+
+				byte[] cliffIndicesBytes = new byte[splatW * splatD * 4 * sizeof(float)];
+				Span<float> cliffIndicesSpan = MemoryMarshal.Cast<byte, float>(cliffIndicesBytes.AsSpan());
+
+				byte[] cliffWeightsBytes = new byte[splatW * splatD * 4 * sizeof(float)];
+				Span<float> cliffWeightsSpan = MemoryMarshal.Cast<byte, float>(cliffWeightsBytes.AsSpan());
+
+				for (int z = 0; z < splatD; z++)
+				{
+					for (int x = 0; x < splatW; x++)
+					{
+						int idx = z * splatW + x;
+						string serialized = cliffHtmlColors[idx];
+						TerrainSplatWeights s = TerrainSplatWeights.Deserialize(serialized);
+						int baseIdx = idx * 4;
+
+						cliffIndicesSpan[baseIdx + 0] = s.Index0;
+						cliffIndicesSpan[baseIdx + 1] = s.Index1;
+						cliffIndicesSpan[baseIdx + 2] = s.Index2;
+						cliffIndicesSpan[baseIdx + 3] = s.Index3;
+
+						cliffWeightsSpan[baseIdx + 0] = s.Weight0;
+						cliffWeightsSpan[baseIdx + 1] = s.Weight1;
+						cliffWeightsSpan[baseIdx + 2] = s.Weight2;
+						cliffWeightsSpan[baseIdx + 3] = s.Weight3;
+					}
+				}
+
+				Image cliffIndicesImage = Image.CreateFromData(splatW, splatD, false, Image.Format.Rgbaf, cliffIndicesBytes);
+				Image cliffWeightsImage = Image.CreateFromData(splatW, splatD, false, Image.Format.Rgbaf, cliffWeightsBytes);
+				cliffIndicesImage.SaveExr(cliffSplatIndicesPath);
+				cliffWeightsImage.SaveExr(cliffSplatWeightsPath);
+			}
+
 			saveData.Units = new List<UnitSaveData>();
 			var unitQuery = Realm.Ecs.Common.QueryCache.AllDefinitionIdAndPositionAndOwnerQuery;
 			EcsWorld.Query(in unitQuery, (Entity entity, ref DefinitionId defId, ref Position pos, ref Owner owner) =>
@@ -250,10 +289,16 @@ public class SaveLoadService
 				float scale = 1f;
 				if (EcsWorld.Has<ModelScale>(entity)) scale = EcsWorld.Get<ModelScale>(entity).Value;
 
-				bool isEnemy = false;
-				if (EcsWorld.IsAlive(owner.PlayerEntity.Value) && EcsWorld.Has<Name>(owner.PlayerEntity.Value))
+				int playerIndex = 0;
+				if (EcsWorld.Has<UnitOwnerPlayer>(entity))
 				{
-					isEnemy = EcsWorld.Get<Name>(owner.PlayerEntity.Value).Value == "Enemy_AI";
+					playerIndex = EcsWorld.Get<UnitOwnerPlayer>(entity).PlayerIndex;
+				}
+
+				bool isEnemy = NetworkService.ArePlayerIndicesEnemies(GameHost.Instance?.LocalPlayerIndex ?? 0, playerIndex);
+				if (EcsWorld.Has<UnitFaction>(entity))
+				{
+					isEnemy = EcsWorld.Get<UnitFaction>(entity).IsEnemy;
 				}
 
 				saveData.Units.Add(new UnitSaveData
@@ -264,7 +309,8 @@ public class SaveLoadService
 					PosZ = pos.Value.Z,
 					RotationY = rotY,
 					Scale = scale,
-					IsEnemy = isEnemy
+					IsEnemy = isEnemy,
+					Player = playerIndex
 				});
 			});
 
@@ -663,7 +709,8 @@ public class SaveLoadService
 							new System.Numerics.Vector3(u.PosX, u.PosY, u.PosZ),
 							u.RotationY,
 							u.Scale,
-							u.IsEnemy
+							u.IsEnemy,
+							u.Player
 						));
 					}
 				}

@@ -18,9 +18,9 @@
         "MinimapImage": {
           "type": "string"
         },
-        "FogOfWarType": {
+        "ShroudType": {
           "type": "string",
-          "enum": ["visible", "grey", "black"]
+          "enum": ["visible", "VisionShroud", "ExplorationShroud", "grey", "black"]
         },
         "TerrainBaseHeight": {
           "type": "number",
@@ -146,6 +146,11 @@
       "type": "array",
       "items": { "$ref": "#/definitions/EntityItem" }
     },
+    "CustomAbilities": { "$ref": "#/definitions/CustomAbilities" },
+    "CustomWeapons": { "$ref": "#/definitions/CustomWeapons" },
+    "CustomUpgrades": { "$ref": "#/definitions/CustomUpgrades" },
+    "CustomItems": { "$ref": "#/definitions/CustomItems" },
+    "Assets": { "$ref": "#/definitions/Assets" }
   },
   "definitions": {
     "EntityItem": {
@@ -180,6 +185,7 @@
           "Brightness": { "type": "number", "minimum": 0 },
           "Tint": { "type": "string" },
           "RecalculateNormals": { "type": "boolean" },
+          "IgnorePlayerColor": { "type": "boolean" },
           "MaxCapacity": { "type": "number", "minimum": 0 },
           "HarvestRate": { "type": "number", "minimum": 0 },
           "GrowthRate": { "type": "number", "minimum": 0 },
@@ -218,7 +224,24 @@
             "type": "array",
             "items": { "type": "string" }
           },
-          "PortraitModelPath": { "type": "string" }
+          "PortraitModelPath": { "type": "string" },
+          "Animations": {
+            "type": "object",
+            "description": "Dictionary of animation type enum to array of animation file names",
+            "properties": {
+              "Idle": { "type": "array", "items": { "type": "string" } },
+              "Walk": { "type": "array", "items": { "type": "string" } },
+              "Attack": { "type": "array", "items": { "type": "string" } },
+              "Death": { "type": "array", "items": { "type": "string" } },
+              "Labor": { "type": "array", "items": { "type": "string" } },
+              "Spell_Cast": { "type": "array", "items": { "type": "string" } },
+              "Dance": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
         }
       }
     },
@@ -331,6 +354,13 @@
     },
     "Assets": {
       "type": "object"
-    }
+    },
+    "ModelOffsets": { "type": "object" },
+    "ModelCollisionCircleRatios": { "type": "object" },
+    "ModelObstacleRadii": { "type": "object" },
+    "ModelBrightness": { "type": "object" },
+    "ModelColorTint": { "type": "object" },
+    "ModelGenerateNormals": { "type": "object" },
+    "ModelIgnorePlayerColor": { "type": "object" }
   }
 }

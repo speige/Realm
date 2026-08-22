@@ -19,7 +19,7 @@ public class EnvironmentService
 	private Entity FindWorldEntity()
 	{
 		Entity worldEntity = Entity.Null;
-		var query = QueryCache.AllFogAndWeatherStateQuery;
+		var query = QueryCache.AllWeatherStateQuery;
 		EcsWorld.Query(in query, entity => worldEntity = entity);
 		return worldEntity;
 	}
@@ -27,9 +27,9 @@ public class EnvironmentService
 	public string GetCurrentWeather()
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<FogAndWeatherState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<WeatherState>(worldEntity))
 		{
-			return EcsWorld.Get<FogAndWeatherState>(worldEntity).CurrentWeather;
+			return EcsWorld.Get<WeatherState>(worldEntity).CurrentWeather;
 		}
 		return "clear";
 	}
@@ -37,9 +37,9 @@ public class EnvironmentService
 	public void SetCurrentWeather(string weather)
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<FogAndWeatherState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<WeatherState>(worldEntity))
 		{
-			ref var state = ref EcsWorld.Get<FogAndWeatherState>(worldEntity);
+			ref var state = ref EcsWorld.Get<WeatherState>(worldEntity);
 			state.CurrentWeather = weather;
 		}
 	}
@@ -47,9 +47,9 @@ public class EnvironmentService
 	public float GetBaseFogDensity()
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<FogAndWeatherState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<WeatherState>(worldEntity))
 		{
-			return EcsWorld.Get<FogAndWeatherState>(worldEntity).BaseFogDensity;
+			return EcsWorld.Get<WeatherState>(worldEntity).BaseFogDensity;
 		}
 		return 0f;
 	}
@@ -57,10 +57,34 @@ public class EnvironmentService
 	public void SetBaseFogDensity(float density)
 	{
 		var worldEntity = FindWorldEntity();
-		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<FogAndWeatherState>(worldEntity))
+		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<WeatherState>(worldEntity))
 		{
-			ref var state = ref EcsWorld.Get<FogAndWeatherState>(worldEntity);
+			ref var state = ref EcsWorld.Get<WeatherState>(worldEntity);
 			state.BaseFogDensity = density;
+		}
+	}
+
+	public void UpdateEnvironmentalFog(Camera3D camera3D, WorldEnvironment worldEnv)
+	{
+		if (worldEnv == null || worldEnv.Environment == null) return;
+
+		if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+		{
+			worldEnv.Environment.FogEnabled = false;
+			return;
+		}
+
+		float baseFogDensity = GetBaseFogDensity();
+		if (GameSettings.QualityIdx > GraphicsQuality.Low && baseFogDensity > 0f && camera3D != null && GodotObject.IsInstanceValid(camera3D))
+		{
+			worldEnv.Environment.FogEnabled = true;
+			float height = camera3D.GlobalPosition.Y;
+			float scale = 18.0f / Mathf.Max(8.0f, height);
+			worldEnv.Environment.FogDensity = baseFogDensity * scale;
+		}
+		else
+		{
+			worldEnv.Environment.FogEnabled = false;
 		}
 	}
 
@@ -90,49 +114,53 @@ public class EnvironmentService
 
 	public bool OverrideDayNightVisuals { get; set; } = false;
 
-	// --- Core Day-Night Keyframe Preset Arrays (0=Noon, 1=Dusk, 2=Midnight, 3=Dawn) ---
+	// --- Core Day-Night Keyframe Preset Arrays (0=Noon/Day, 1=Dusk, 2=Midnight/Night, 3=Dawn) ---
 
-	// Directional Sun Angles & Accent Energies (Low energy = Accent rim/shadows only)
-	public static readonly float[] SunPitches       = {  55.0f,  15.0f,  65.0f,  15.0f };
-	public static readonly float[] SunYaws          = {  20.0f,-101.0f, 180.0f,  74.0f };
-	public static readonly float[] SunEnergies      = {   0.80f,  0.45f,   0.05f,  0.50f }; // Subtle accents
+	// Directional Sun Angles & Energies (Key light: creates directional contrast, normal maps & shadows)
+	public static readonly float[] SunPitches       = { -55.0f, -35.0f, -48.0f, -34.0f };
+	public static readonly float[] SunYaws          = {  27.0f,-106.0f, 180.0f,  74.0f };
+	public static readonly float[] SunEnergies      = {   2.10f,  2.20f,   0.75f,  2.10f };
 	public static readonly Color[] SunColors        = {
-		new Color(1.000f, 0.957f, 0.878f), // Noon (Midday Warm White)
-		new Color(1.000f, 0.700f, 0.400f), // Dusk (Golden Amber Rim)
-		new Color(0.450f, 0.650f, 0.950f), // Midnight (Subtle Moonlight)
-		new Color(1.000f, 0.800f, 0.600f)  // Dawn (Soft Sunrise Gold)
+		new Color(1.000f, 0.970f, 0.920f), // Day (Midday Warm Sunlight)
+		new Color(1.000f, 0.600f, 0.240f), // Dusk (Golden Amber Sun)
+		new Color(0.500f, 0.720f, 1.000f), // Night (Subtle Cool Moonlight)
+		new Color(1.000f, 0.840f, 0.650f)  // Dawn (Soft Sunrise Gold)
 	};
 
-	// Locked Universal Ambient Baseline
-	public static readonly float[] AmbientEnergies  = {   3.88f,  2.10f,   1.93f,  2.70f };
+	// Universal Ambient Fill (Soft sky/indirect light fill)
+	public static readonly float[] AmbientEnergies  = {   0.95f,  1.10f,   1.25f,  1.05f };
 	public static readonly Color[] AmbientColors    = {
-		new Color(0.680f, 0.760f, 0.860f), // Noon
-		new Color(0.420f, 0.450f, 0.600f), // Dusk
-		new Color(0.350f, 0.500f, 0.780f), // Midnight
-		new Color(0.520f, 0.620f, 0.750f)  // Dawn
+		new Color(0.520f, 0.620f, 0.780f), // Day (#849EC6)
+		new Color(0.490f, 0.520f, 0.750f), // Dusk (#7C84BF)
+		new Color(0.340f, 0.460f, 0.700f), // Night (#5675B2)
+		new Color(0.500f, 0.580f, 0.780f)  // Dawn (#7F93C6)
 	};
 
-	public static readonly float[] FogDensities     = { 0.0150f, 0.0190f, 0.0190f, 0.0250f };
+	public static readonly float[] FogDensities     = { 0.0080f, 0.0120f, 0.0150f, 0.0120f };
 	public static readonly Color[] FogColors        = {
-		new Color(0.080f, 0.100f, 0.150f),
-		new Color(0.190f, 0.080f, 0.120f),
-		new Color(0.030f, 0.060f, 0.120f),
-		new Color(0.120f, 0.150f, 0.220f)
+		new Color(0.550f, 0.650f, 0.750f),
+		new Color(0.450f, 0.300f, 0.350f),
+		new Color(0.080f, 0.120f, 0.200f),
+		new Color(0.400f, 0.450f, 0.550f)
 	};
 
-	public static readonly float[] SsaoIntensities  = {   0.80f,  0.90f,   1.15f,  0.85f };
-	public static readonly float[] SsaoRadii        = {   1.80f,  1.80f,   1.80f,  1.80f };
+	public static readonly float[] SsaoIntensities  = {   0.90f,  0.70f,   0.50f,  0.60f };
+	public static readonly float[] SsaoRadii        = {   1.50f,  1.50f,   1.50f,  1.50f };
 
-	public static readonly float[] Exposures        = {   1.00f,  1.02f,   1.04f,  1.02f };
-	public static readonly float[] Contrasts        = {   1.10f,  1.08f,   1.04f,  1.08f };
-	public static readonly float[] Saturations      = {   0.98f,  0.92f,   0.88f,  0.96f };
+	public static readonly float[] Exposures        = {   1.10f,  1.12f,   1.06f,  1.10f };
+	public static readonly float[] Contrasts        = {   1.08f,  1.06f,   1.00f,  1.04f };
+	public static readonly float[] Saturations      = {   1.04f,  1.04f,   0.92f,  1.00f };
 
-	public static readonly float[] GlowIntensities  = {   0.60f,  0.70f,   0.80f,  0.65f };
-	public static readonly float[] GlowBlooms       = {   0.12f,  0.10f,   0.10f,  0.11f };
+	public static readonly float[] GlowIntensities  = {   0.20f,  0.25f,   0.30f,  0.20f };
+	public static readonly float[] GlowBlooms       = {   0.08f,  0.06f,   0.06f,  0.08f };
 
 	public void UpdateDayNightVisuals(Node3D host, float progress)
 	{
 		if (OverrideDayNightVisuals) return;
+		if (GameSettings.DisableDayNightLighting)
+		{
+			progress = 0f;
+		}
 
 		var worldEnv = host.GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
 		var sun = host.GetNodeOrNull<DirectionalLight3D>("DirectionalLight3D");
@@ -154,7 +182,7 @@ public class EnvironmentService
 
 		GameSettings.ApplyEnvironmentQuality(env);
 
-		if (GameSettings.QualityIdx > 0)
+		if (GameSettings.QualityIdx > GraphicsQuality.Low)
 		{
 			env.TonemapExposure = Mathf.Lerp(Exposures[phaseIndex], Exposures[nextIndex], t);
 			env.AdjustmentContrast = Mathf.Lerp(Contrasts[phaseIndex], Contrasts[nextIndex], t);
@@ -180,22 +208,21 @@ public class EnvironmentService
 		float radSunPitch = Mathf.LerpAngle(Mathf.DegToRad(SunPitches[phaseIndex]), Mathf.DegToRad(SunPitches[nextIndex]), t);
 		float radSunYaw   = Mathf.LerpAngle(Mathf.DegToRad(SunYaws[phaseIndex]),   Mathf.DegToRad(SunYaws[nextIndex]),   t);
 
-		float interpSunPitch = Mathf.Clamp(Mathf.RadToDeg(radSunPitch), 12.0f, 85.0f);
+		float interpSunPitch = Mathf.RadToDeg(radSunPitch);
 		float interpSunYaw   = Mathf.RadToDeg(radSunYaw);
 
 		if (sun != null)
 		{
 			GameSettings.ApplyDirectionalLightQuality(sun);
-			if (sun.ShadowEnabled)
-			{
-				sun.ShadowEnabled = interpSunEnergy > 0.1f;
-			}
+			sun.DirectionalShadowMaxDistance = 250.0f;
 			sun.DirectionalShadowBlendSplits = true;
-			sun.ShadowBias = 0.04f;
-			sun.ShadowNormalBias = 1.5f;
-			sun.LightColor = new Color(1.0f, 1.0f, 1.0f);
+			sun.DirectionalShadowFadeStart = 0.8f;
+			sun.ShadowBias = 0.03f;
+			sun.ShadowNormalBias = 1.2f;
+			sun.ShadowEnabled = !GameSettings.DisableShadows && interpSunEnergy > 0.05f;
+			sun.LightColor = interpSunColor;
 			sun.LightEnergy = interpSunEnergy;
-			sun.LightSpecular = 0.0f;
+			sun.LightSpecular = 0.5f;
 			sun.RotationDegrees = new Vector3(interpSunPitch, interpSunYaw, 0f);
 		}
 
@@ -204,7 +231,7 @@ public class EnvironmentService
 			?.GetNodeOrNull<DirectionalLight3D>("CharacterFillLight");
 		if (fillLight != null)
 		{
-			float[] fillEnergies = { 0.20f, 0.28f, 0.65f, 0.42f };
+			float[] fillEnergies = { 0.15f, 0.20f, 0.35f, 0.22f };
 			fillLight.LightEnergy = Mathf.Lerp(fillEnergies[phaseIndex], fillEnergies[nextIndex], t);
 		}
 	}

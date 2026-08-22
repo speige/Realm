@@ -23,49 +23,7 @@ public partial class EditableTerrain : StaticBody3D
 
 	public static Image NormalizeAlbedoLuminance(Image sourceImage, float targetLinearLuminance = 0.35f, float maxScaleFactor = 2.2f)
 	{
-		int w = sourceImage.GetWidth();
-		int h = sourceImage.GetHeight();
-		int pixelCount = w * h;
-		double totalLinearLuminance = 0.0;
-
-		for (int y = 0; y < h; y++)
-		{
-			for (int x = 0; x < w; x++)
-			{
-				Color srgbColor = sourceImage.GetPixel(x, y);
-				Color linearColor = srgbColor.SrgbToLinear();
-				float lum = (0.2126f * linearColor.R) + (0.7152f * linearColor.G) + (0.0722f * linearColor.B);
-				totalLinearLuminance += lum;
-			}
-		}
-
-		float avgLuminance = (float)(totalLinearLuminance / pixelCount);
-		if (avgLuminance <= 0.0001f) return sourceImage;
-
-		float rawScaleFactor = targetLinearLuminance / avgLuminance;
-		float scaleFactor = Mathf.Min(rawScaleFactor, maxScaleFactor);
-
-		Image result = Image.CreateEmpty(w, h, false, sourceImage.GetFormat());
-
-		for (int y = 0; y < h; y++)
-		{
-			for (int x = 0; x < w; x++)
-			{
-				Color srgbColor = sourceImage.GetPixel(x, y);
-				Color linearColor = srgbColor.SrgbToLinear();
-
-				float rLinear = Mathf.Clamp(linearColor.R * scaleFactor, 0.0f, 1.0f);
-				float gLinear = Mathf.Clamp(linearColor.G * scaleFactor, 0.0f, 1.0f);
-				float bLinear = Mathf.Clamp(linearColor.B * scaleFactor, 0.0f, 1.0f);
-
-				Color scaledLinearColor = new Color(rLinear, gLinear, bLinear, srgbColor.A);
-				Color scaledSrgbColor = scaledLinearColor.LinearToSrgb();
-
-				result.SetPixel(x, y, scaledSrgbColor);
-			}
-		}
-
-		return result;
+		return Realm.Godot.Utils.PlayerColorShaderManager.NormalizeAlbedoImage(sourceImage, targetLinearLuminance, 0.2f, maxScaleFactor);
 	}
 
 	public void ProcessAndSaveRawTexture(string rawPngPath, string outputKtx2Path)
@@ -116,8 +74,8 @@ public partial class EditableTerrain : StaticBody3D
 				float h12 = layer0.GetPixel(x, ny).A;
 				float h22 = layer0.GetPixel(nx, ny).A;
 				
-				float dx = (h20 + 2.0f * h21 + h22) - (h00 + 2.0f * h01 + h02);
-				float dy = (h02 + 2.0f * h12 + h22) - (h00 + 2.0f * h10 + h20);
+				float dx = ((h20 + 2.0f * h21 + h22) - (h00 + 2.0f * h01 + h02)) / 8.0f;
+				float dy = ((h02 + 2.0f * h12 + h22) - (h00 + 2.0f * h10 + h20)) / 8.0f;
 				float dz = 1.0f / 5.0f;
 				
 				var normal = new Godot.Vector3(-dx, -dy, dz).Normalized();
@@ -134,7 +92,7 @@ public partial class EditableTerrain : StaticBody3D
 
 				float contrastHeight = (height - 0.5f) * 1.5f + 0.5f;
 				contrastHeight = Godot.Mathf.Clamp(contrastHeight, 0.0f, 1.0f);
-				float roughness = Godot.Mathf.Lerp(0.5f, 0.8f, contrastHeight);
+				float roughness = Godot.Mathf.Lerp(0.8f, 0.5f, contrastHeight);
 
 				layer1.SetPixel(x, y, new Godot.Color(r, g, b, roughness));
 			}
@@ -156,11 +114,7 @@ public partial class EditableTerrain : StaticBody3D
 			System.IO.Directory.CreateDirectory(dir);
 		}
 		
-		string ktxCmd = PathUtils.FindPath("ktx_tools/v5.0.0-rc1/bin/ktx.exe");
-		if (!System.IO.File.Exists(ktxCmd))
-		{
-			ktxCmd = System.IO.Path.GetFullPath(System.IO.Path.Combine(PathUtils.GetProjectRoot(), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
-		}
+		string ktxCmd = GetKtxCmdPath();
 		
 		try
 		{
@@ -514,9 +468,9 @@ uniform float wave_speed = 1.2;
 
 uniform sampler2D depth_texture : hint_depth_texture, filter_linear;
 
-uniform sampler2D fog_texture : hint_default_white;
-uniform vec2 fog_world_min = vec2(-125.0, -125.0);
-uniform vec2 fog_world_size = vec2(250.0, 250.0);
+uniform sampler2D shroud_texture : hint_default_white;
+uniform vec2 shroud_world_min = vec2(-125.0, -125.0);
+uniform vec2 shroud_world_size = vec2(250.0, 250.0);
 
 varying vec3 v_world_pos;
 varying vec3 v_world_normal;
@@ -578,18 +532,18 @@ void fragment() {
 
 	float final_foam_mask = mix(waterfall_foam, flat_foam_mask, flat_factor);
 
-	// --- FOG OF WAR INTEGRATION ---
-	vec2 fog_uv = (v_world_pos.xz - fog_world_min) / fog_world_size;
-	float fog_factor = texture(fog_texture, clamp(fog_uv, 0.0, 1.0)).r;
+	// --- STRATEGY SHROUD INTEGRATION ---
+	vec2 shroud_uv = (v_world_pos.xz - shroud_world_min) / shroud_world_size;
+	float shroud_factor = texture(shroud_texture, clamp(shroud_uv, 0.0, 1.0)).r;
 
-	vec3 final_albedo = mix(water_col.rgb, foam_color.rgb, final_foam_mask * foam_color.a) * (1.0 - fog_factor * 0.98);
+	vec3 final_albedo = mix(water_col.rgb, foam_color.rgb, final_foam_mask * foam_color.a) * (1.0 - shroud_factor * 0.98);
 
 	ALBEDO = final_albedo;
 	ALPHA = mix(water_col.a, 0.75, final_foam_mask) * shore_fade;
 
-	ROUGHNESS = mix(mix(0.1, 0.35, waterfall_factor), 0.9, fog_factor);
+	ROUGHNESS = mix(mix(0.1, 0.35, waterfall_factor), 0.9, shroud_factor);
 	METALLIC = 0.0;
-	SPECULAR = mix(0.05, 0.10, waterfall_factor) * (1.0 - fog_factor * 0.98);
+	SPECULAR = mix(0.05, 0.10, waterfall_factor) * (1.0 - shroud_factor * 0.98);
 }
 ";
 
@@ -906,9 +860,9 @@ render_mode blend_mix;
 uniform sampler2DArray terrain_textures : source_color;
 uniform sampler2DArray terrain_normals_pbr : hint_default_white;
 uniform float blend_softness = 0.2;
-uniform sampler2D fog_texture : hint_default_white;
-uniform vec2 fog_world_min = vec2(-125.0, -125.0);
-uniform vec2 fog_world_size = vec2(250.0, 250.0);
+uniform sampler2D shroud_texture : hint_default_white;
+uniform vec2 shroud_world_min = vec2(-125.0, -125.0);
+uniform vec2 shroud_world_size = vec2(250.0, 250.0);
 
 uniform sampler2D pathing_texture : hint_default_transparent, filter_nearest;
 uniform bool pathing_visible = false;
@@ -923,8 +877,8 @@ uniform float texture_scale = 0.5;
 uniform float macro_scale = 0.035;
 
 uniform float uv_warp_strength = 0.8;
-uniform float macro_albedo_contrast = 0.20;
-uniform float macro_roughness_contrast = 0.15;
+uniform float macro_albedo_contrast = 0.10;
+uniform float macro_roughness_contrast = 0.08;
 uniform float macro_normal_strength = 0.15;
 uniform float macro_lacunarity = 2.0;
 uniform float macro_gain = 0.5;
@@ -1008,7 +962,7 @@ vec4 sample_semi_grid(sampler2DArray tex_array, float layer, vec2 uv, float blen
 	return mix(col_border, col_center, center_weight);
 }
 
-vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, float tile_mode, float stoch_tile_size, float cross_fade) {
+vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, float tile_mode, float stoch_tile_size, float cross_fade, bool is_vector_data) {
 	if (!enable_stochastic || tile_mode < 0.5) {
 		return sample_semi_grid(tex_array, layer, uv, cross_fade);
 	}
@@ -1047,6 +1001,10 @@ vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, flo
 	vec4 col1 = textureGrad(tex_array, vec3(uv + off1, layer), dx, dy);
 	vec4 col2 = textureGrad(tex_array, vec3(uv + off2, layer), dx, dy);
 
+	if (is_vector_data) {
+		return col0 * w.x + col1 * w.y + col2 * w.z;
+	}
+
 	vec3 mean_color = col0.rgb * w.x + col1.rgb * w.y + col2.rgb * w.z;
 
 	vec3 var0 = (col0.rgb - mean_color) * (col0.rgb - mean_color);
@@ -1061,7 +1019,7 @@ vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, flo
 	return vec4(final_color, col0.a * w.x + col1.a * w.y + col2.a * w.z);
 }
 
-vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, vec2 uv_y, vec2 uv_z, vec3 weights) {
+vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, vec2 uv_y, vec2 uv_z, vec3 weights, bool is_vector_data) {
 	int layer_idx = int(clamp(round(layer), 0.0, 31.0));
 	vec4 params = swatch_params[layer_idx];
 	float tile_mode = params.x;
@@ -1074,12 +1032,12 @@ vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, ve
 	vec2 scaled_uv_z = uv_z * uv_scale;
 
 	if (enable_fast_planar && weights.y > 0.90) {
-		return sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size, cross_fade);
+		return sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
 	}
 
-	vec4 col_x = sample_stochastic_layer(tex_array, layer, scaled_uv_x, tile_mode, stoch_tile_size, cross_fade);
-	vec4 col_y = sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size, cross_fade);
-	vec4 col_z = sample_stochastic_layer(tex_array, layer, scaled_uv_z, tile_mode, stoch_tile_size, cross_fade);
+	vec4 col_x = sample_stochastic_layer(tex_array, layer, scaled_uv_x, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+	vec4 col_y = sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+	vec4 col_z = sample_stochastic_layer(tex_array, layer, scaled_uv_z, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
 	return col_x * weights.x + col_y * weights.y + col_z * weights.z;
 }
 
@@ -1125,26 +1083,27 @@ void fragment() {
 	vec4 norm_weights = weight_sum > 0.0001 ? raw_weights / weight_sum : vec4(0.0);
 
 	vec3 splat_color = vec3(0.0);
+	vec4 blend_layer_weights = norm_weights;
 
 	if (enable_fast_planar && norm_weights.x > 0.98) {
-		vec4 c0 = sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights);
+		vec4 c0 = sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights, false);
 		splat_color = c0.rgb;
 	} else {
-		vec4 c0 = norm_weights.x > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
-		vec4 c1 = norm_weights.y > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
-		vec4 c2 = norm_weights.z > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
-		vec4 c3 = norm_weights.w > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights) : vec4(0.0);
+		vec4 c0 = norm_weights.x > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights, false) : vec4(0.0);
+		vec4 c1 = norm_weights.y > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights, false) : vec4(0.0);
+		vec4 c2 = norm_weights.z > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights, false) : vec4(0.0);
+		vec4 c3 = norm_weights.w > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights, false) : vec4(0.0);
 
 		if (enable_height_blend) {
 			float height_influence = 0.15;
 			vec4 height_mod = vec4(c0.a, c1.a, c2.a, c3.a) * height_influence;
 			vec4 blended_weights = norm_weights * (vec4(1.0) + height_mod);
 			float final_sum = blended_weights.x + blended_weights.y + blended_weights.z + blended_weights.w;
-			vec4 final_weights = final_sum > 0.0001 ? blended_weights / final_sum : vec4(1.0, 0.0, 0.0, 0.0);
-			splat_color = (c0.rgb * final_weights.x +
-			               c1.rgb * final_weights.y +
-			               c2.rgb * final_weights.z +
-			               c3.rgb * final_weights.w);
+			blend_layer_weights = final_sum > 0.0001 ? blended_weights / final_sum : vec4(1.0, 0.0, 0.0, 0.0);
+			splat_color = (c0.rgb * blend_layer_weights.x +
+			               c1.rgb * blend_layer_weights.y +
+			               c2.rgb * blend_layer_weights.z +
+			               c3.rgb * blend_layer_weights.w);
 		} else {
 			splat_color = (c0.rgb * norm_weights.x +
 			               c1.rgb * norm_weights.y +
@@ -1160,6 +1119,8 @@ void fragment() {
 	}
 
 	vec3 final_albedo = terrain_color * macro_var * v_color.rgb;
+	float terrain_lum = dot(final_albedo, vec3(0.2126, 0.7152, 0.0722));
+	final_albedo = mix(vec3(terrain_lum), final_albedo, 0.82);
 	vec3 emission_color = vec3(0.0);
 	
 	if (pathing_visible) {
@@ -1234,26 +1195,26 @@ void fragment() {
 	float specular_amt = 0.0;
 
 	if (enable_normal_mapping) {
-		float w0 = norm_weights.x;
-		float w1 = norm_weights.y;
-		float w2 = norm_weights.z;
-		float w3 = norm_weights.w;
+		float w0 = blend_layer_weights.x;
+		float w1 = blend_layer_weights.y;
+		float w2 = blend_layer_weights.z;
+		float w3 = blend_layer_weights.w;
 
-		vec4 n0 = w0 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 n1 = w1 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 n2 = w2 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 n3 = w3 > 0.0 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 n0 = w0 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 n1 = w1 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 n2 = w2 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 n3 = w3 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
 		
-		vec2 n0_xy = vec2(n0.r * 2.0 - 1.0, (1.0 - n0.g) * 2.0 - 1.0);
+		vec2 n0_xy = n0.rg * 2.0 - 1.0;
 		vec3 n0_vec = vec3(n0_xy, sqrt(max(0.0, 1.0 - dot(n0_xy, n0_xy))));
 		
-		vec2 n1_xy = vec2(n1.r * 2.0 - 1.0, (1.0 - n1.g) * 2.0 - 1.0);
+		vec2 n1_xy = n1.rg * 2.0 - 1.0;
 		vec3 n1_vec = vec3(n1_xy, sqrt(max(0.0, 1.0 - dot(n1_xy, n1_xy))));
 		
-		vec2 n2_xy = vec2(n2.r * 2.0 - 1.0, (1.0 - n2.g) * 2.0 - 1.0);
+		vec2 n2_xy = n2.rg * 2.0 - 1.0;
 		vec3 n2_vec = vec3(n2_xy, sqrt(max(0.0, 1.0 - dot(n2_xy, n2_xy))));
 		
-		vec2 n3_xy = vec2(n3.r * 2.0 - 1.0, (1.0 - n3.g) * 2.0 - 1.0);
+		vec2 n3_xy = n3.rg * 2.0 - 1.0;
 		vec3 n3_vec = vec3(n3_xy, sqrt(max(0.0, 1.0 - dot(n3_xy, n3_xy))));
 		
 		blended_normal_tangent = normalize(n0_vec * w0 + n1_vec * w1 + n2_vec * w2 + n3_vec * w3);
@@ -1277,22 +1238,22 @@ void fragment() {
 		specular_amt = 0.2;
 	}
 
-	vec2 fog_uv = (v_world_pos.xz - fog_world_min) / fog_world_size;
-	float fog_factor = texture(fog_texture, clamp(fog_uv, 0.0, 1.0)).r;
-	final_albedo *= (1.0 - fog_factor * 0.98);
-	emission_color *= (1.0 - fog_factor * 0.98);
+	vec2 shroud_uv = (v_world_pos.xz - shroud_world_min) / shroud_world_size;
+	float shroud_factor = texture(shroud_texture, clamp(shroud_uv, 0.0, 1.0)).r;
+	final_albedo *= (1.0 - shroud_factor * 0.98);
+	emission_color *= (1.0 - shroud_factor * 0.98);
 
 	ALBEDO = final_albedo;
 	if (enable_normal_mapping) {
-		NORMAL = TANGENT * blended_normal_tangent.x + BINORMAL * blended_normal_tangent.y + NORMAL * blended_normal_tangent.z;
-		AO = blended_ao * (1.0 - fog_factor * 0.98) * v_color.r;
-		ROUGHNESS = mix(final_roughness, 1.0, fog_factor);
+		NORMAL = normalize(TANGENT * blended_normal_tangent.x + BINORMAL * blended_normal_tangent.y + NORMAL * blended_normal_tangent.z);
+		AO = blended_ao * (1.0 - shroud_factor * 0.98) * v_color.r;
+		ROUGHNESS = mix(final_roughness, 1.0, shroud_factor);
 		METALLIC = 0.0;                 
-		SPECULAR = specular_amt * (1.0 - fog_factor * 0.98);
+		SPECULAR = specular_amt * (1.0 - shroud_factor * 0.98);
 	} else {
-		NORMAL = v_world_normal;
-		AO = (1.0 - fog_factor * 0.98) * v_color.r;
-		ROUGHNESS = mix(final_roughness, 1.0, fog_factor);
+		NORMAL = normalize((VIEW_MATRIX * vec4(v_world_normal, 0.0)).xyz);
+		AO = (1.0 - shroud_factor * 0.98) * v_color.r;
+		ROUGHNESS = mix(final_roughness, 1.0, shroud_factor);
 		METALLIC = 0.0;
 		SPECULAR = 0.0;
 	}
@@ -1305,10 +1266,10 @@ void fragment() {
 
 		ReloadTerrainTextures();
 
-		var defaultFogImage = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
-		defaultFogImage.Fill(new Color(0f, 0f, 0f, 1f));
-		var defaultFogTexture = ImageTexture.CreateFromImage(defaultFogImage);
-		_material.SetShaderParameter("fog_texture", defaultFogTexture);
+		var defaultShroudImage = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
+		defaultShroudImage.Fill(new Color(0f, 0f, 0f, 1f));
+		var defaultShroudTexture = ImageTexture.CreateFromImage(defaultShroudImage);
+		_material.SetShaderParameter("shroud_texture", defaultShroudTexture);
 
 		_material.SetShaderParameter("grid_spacing", QuadSize);
 		_material.SetShaderParameter("terrain_size", new Vector2(Width * QuadSize, Depth * QuadSize));
@@ -1323,6 +1284,11 @@ void fragment() {
 		{
 			UpdateMeshAndPhysics();
 		}
+	}
+
+	public void ApplyQualitySettings(GraphicsQuality quality)
+	{
+		ApplyQualitySettings((int)quality);
 	}
 
 	public void ApplyQualitySettings(int qualityIdx)
@@ -1363,7 +1329,7 @@ void fragment() {
 		}
 	}
 
-	private string GetKtxCmdPath()
+	public static string GetKtxCmdPath()
 	{
 		string found = PathUtils.FindPath("ktx_tools/v5.0.0-rc1/bin/ktx.exe");
 		if (System.IO.File.Exists(found)) return found;
@@ -1446,7 +1412,7 @@ void fragment() {
 	private List<string> _loadedTextureList = new List<string>();
 	private Godot.Vector4[] _swatchParamsCache = new Godot.Vector4[32];
 
-	public void UpdateTextureParamDirect(string swatchName, string tileMode, float uvScale, float stochasticTileSize, float crossFade = 5.0f)
+	public void UpdateTextureParamDirect(string swatchName, string tileMode, float uvScale, float stochasticTileSize, float crossFade = 5.0f, float? brightness = null, string? tintStr = null)
 	{
 		if (_material == null) return;
 		string cleanName = System.IO.Path.GetFileNameWithoutExtension(swatchName);
@@ -1471,6 +1437,11 @@ void fragment() {
 			_swatchParamsCache[targetIndex] = new Godot.Vector4(tm, uv, stoch, cf);
 			_material.SetShaderParameter("swatch_params", _swatchParamsCache);
 		}
+
+		if (brightness.HasValue || !string.IsNullOrEmpty(tintStr))
+		{
+			ReloadTerrainTextures(true);
+		}
 	}
 
 	public void ReloadTerrainTextures(bool forceReload = false)
@@ -1485,7 +1456,6 @@ void fragment() {
 
 		try
 		{
-			GameHost.Instance?.LoadModelYOffsetsFromMetadataJson(mapDir);
 			string metadataPath = System.IO.Path.Combine(mapDir, "metadata.json");
 			if (System.IO.File.Exists(metadataPath))
 			{
@@ -1597,6 +1567,30 @@ void fragment() {
 		var normalRoughnessImages = new Godot.Collections.Array<Image>();
 		foreach (var name in textureList)
 		{
+			float texBrightness = 1.0f;
+			Color texTint = new Color(1.0f, 1.0f, 1.0f);
+			if (texturesObj != null)
+			{
+				foreach (var kvp in texturesObj)
+				{
+					string baseName = System.IO.Path.GetFileNameWithoutExtension(kvp.Key);
+					if (string.Equals(baseName, name, StringComparison.OrdinalIgnoreCase) && kvp.Value is System.Text.Json.Nodes.JsonObject sObj)
+					{
+						string brightStr = sObj["Brightness"]?.ToString() ?? sObj["brightness"]?.ToString();
+						if (!string.IsNullOrEmpty(brightStr) && float.TryParse(brightStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedBright))
+						{
+							texBrightness = Math.Clamp(parsedBright, 0.25f, 1.75f);
+						}
+						string tintStr = sObj["Tint"]?.ToString() ?? sObj["tint"]?.ToString();
+						if (!string.IsNullOrEmpty(tintStr) && Color.HtmlIsValid(tintStr))
+						{
+							texTint = Color.FromHtml(tintStr);
+						}
+						break;
+					}
+				}
+			}
+
 			string ktx2Path = System.IO.Path.Combine(mapDir, "Assets", "textures", name + ".ktx2");
 			if (!System.IO.File.Exists(ktx2Path))
 			{
@@ -1639,6 +1633,8 @@ void fragment() {
 
 			imgLayer0 = AutoCropToPowerOfTwoSquare(imgLayer0);
 			imgLayer1 = AutoCropToPowerOfTwoSquare(imgLayer1);
+
+			Realm.Godot.Utils.PlayerColorShaderManager.ApplyBrightnessAndTintToAlbedoImage(imgLayer0, texBrightness, texTint);
 
 			List<Image> layer0SubImages = new List<Image>();
 			List<Image> layer1SubImages = new List<Image>();
@@ -1760,27 +1756,79 @@ void fragment() {
 		}
 	}
 
-	private static readonly StringName FogTextureParam = "fog_texture";
-	private ImageTexture _currentFogTexture = null;
+	private static readonly StringName ShroudTextureParam = "shroud_texture";
+	private ImageTexture _currentShroudTexture = null;
+	private static ImageTexture _clearShroudTexture = null;
 
-	public void SetFogTexture(ImageTexture fogTexture)
+	public static ImageTexture GetClearShroudTexture()
 	{
-		if (fogTexture == null || _currentFogTexture == fogTexture) return;
-		_currentFogTexture = fogTexture;
+		if (_clearShroudTexture == null)
+		{
+			var img = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
+			img.Fill(new Color(0f, 0f, 0f, 1f));
+			_clearShroudTexture = ImageTexture.CreateFromImage(img);
+		}
+		return _clearShroudTexture;
+	}
 
+	public void BeginMinimapCapture()
+	{
+		var clearTex = GetClearShroudTexture();
 		if (_material != null)
 		{
-			_material.SetShaderParameter(FogTextureParam, fogTexture);
+			_material.SetShaderParameter(ShroudTextureParam, clearTex);
 		}
 		if (_shallowWaterMaterial != null)
 		{
-			_shallowWaterMaterial.SetShaderParameter(FogTextureParam, fogTexture);
+			_shallowWaterMaterial.SetShaderParameter(ShroudTextureParam, clearTex);
 		}
 		if (_deepWaterMaterial != null)
 		{
-			_deepWaterMaterial.SetShaderParameter(FogTextureParam, fogTexture);
+			_deepWaterMaterial.SetShaderParameter(ShroudTextureParam, clearTex);
+		}
+		SetAllChunksVisible(true);
+	}
+
+	public void EndMinimapCapture()
+	{
+		if (_currentShroudTexture != null)
+		{
+			if (_material != null)
+			{
+				_material.SetShaderParameter(ShroudTextureParam, _currentShroudTexture);
+			}
+			if (_shallowWaterMaterial != null)
+			{
+				_shallowWaterMaterial.SetShaderParameter(ShroudTextureParam, _currentShroudTexture);
+			}
+			if (_deepWaterMaterial != null)
+			{
+				_deepWaterMaterial.SetShaderParameter(ShroudTextureParam, _currentShroudTexture);
+			}
 		}
 	}
+
+	public void SetShroudTexture(ImageTexture shroudTexture)
+	{
+		if (shroudTexture == null) return;
+		_currentShroudTexture = shroudTexture;
+		if (IsMinimapRendering) return;
+
+		if (_material != null)
+		{
+			_material.SetShaderParameter(ShroudTextureParam, shroudTexture);
+		}
+		if (_shallowWaterMaterial != null)
+		{
+			_shallowWaterMaterial.SetShaderParameter(ShroudTextureParam, shroudTexture);
+		}
+		if (_deepWaterMaterial != null)
+		{
+			_deepWaterMaterial.SetShaderParameter(ShroudTextureParam, shroudTexture);
+		}
+	}
+
+	public void SetFogTexture(ImageTexture fogTexture) => SetShroudTexture(fogTexture);
 
 	public void SetPathingVisible(bool visible)
 	{
@@ -1864,12 +1912,26 @@ void fragment() {
 			SplatMap = newSplatMap;
 		}
 
+		if (CliffSplatMap == null || CliffSplatMap.GetLength(0) < w + 1 || CliffSplatMap.GetLength(1) < d + 1)
+		{
+			var newCliffSplatMap = new TerrainSplatWeights[w + 1, d + 1];
+			for (int z = 0; z <= d; z++)
+			{
+				for (int x = 0; x <= w; x++)
+				{
+					if (CliffSplatMap != null && x < CliffSplatMap.GetLength(0) && z < CliffSplatMap.GetLength(1))
+						newCliffSplatMap[x, z] = CliffSplatMap[x, z];
+					else
+						newCliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(CliffTextureIndex);
+				}
+			}
+			CliffSplatMap = newCliffSplatMap;
+		}
+
 		if (_chunks.Count == 0 || _chunkedWidth != w || _chunkedDepth != d)
 		{
 			CreateChunks();
 		}
-
-		SanitizeCornerHeights();
 
 		foreach (var chunk in _chunks)
 		{
@@ -2133,7 +2195,7 @@ void fragment() {
 		if (chunk.ShallowWaterMesh != null) chunk.ShallowWaterMesh.CustomAabb = chunk.WorldAabb;
 		if (chunk.DeepWaterMesh != null) chunk.DeepWaterMesh.CustomAabb = chunk.WorldAabb;
 
-		if (rebuildPhysics)
+		if (rebuildPhysics || chunk.CollisionShape.Shape == null)
 		{
 			UpdateChunkPhysics(chunk);
 		}

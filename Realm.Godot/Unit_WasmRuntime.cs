@@ -73,6 +73,46 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		}
 	}
 
+	public int Player
+	{
+		get
+		{
+			if (!_world.IsAlive(_entity)) return 0;
+			if (_world.Has<UnitOwnerPlayer>(_entity))
+				return _world.Get<UnitOwnerPlayer>(_entity).PlayerIndex;
+			if (_world.Has<UnitFaction>(_entity))
+				return _world.Get<UnitFaction>(_entity).IsEnemy ? 1 : 0;
+			return 0;
+		}
+		set
+		{
+			if (!_world.IsAlive(_entity)) return;
+			if (_world.Has<UnitOwnerPlayer>(_entity))
+				_world.Set(_entity, new UnitOwnerPlayer(value));
+			else
+				_world.Add(_entity, new UnitOwnerPlayer(value));
+
+			bool isEnemy = value != 0;
+			if (_world.Has<UnitFaction>(_entity))
+				_world.Set(_entity, new UnitFaction(isEnemy));
+			else
+				_world.Add(_entity, new UnitFaction(isEnemy));
+
+			if (_world.Has<Owner>(_entity) && GameHost.Instance != null)
+			{
+				var playerOwner = isEnemy
+					? GameHost.Instance.EnemyEntity.AsPlayerEntity(_world)
+					: GameHost.Instance.PlayerEntity.AsPlayerEntity(_world);
+				_world.Set(_entity, new Owner(playerOwner));
+			}
+
+			if (GameHost.TryGetUnit3D(_entity, out var unit3D) && GodotObject.IsInstanceValid(unit3D))
+			{
+				unit3D.Player = value;
+			}
+		}
+	}
+
 	public bool IsEnemy
 	{
 		get
@@ -95,6 +135,10 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 					? GameHost.Instance.EnemyEntity.AsPlayerEntity(_world)
 					: GameHost.Instance.PlayerEntity.AsPlayerEntity(_world);
 				_world.Set(_entity, new Owner(playerOwner));
+			}
+			if (GameHost.TryGetUnit3D(_entity, out var unit3D) && GodotObject.IsInstanceValid(unit3D))
+			{
+				unit3D.Player = value ? 1 : 0;
 			}
 		}
 	}

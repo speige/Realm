@@ -10,7 +10,9 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "customEditors": [
@@ -46,6 +48,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "ktx2-encoder": "^0.5.3"
+    "ktx2-encoder": "^0.5.3",
+    "parse-exr": "^1.0.2"
   }
 }

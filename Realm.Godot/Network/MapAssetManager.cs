@@ -455,7 +455,7 @@ public static class MapAssetManager
         var newFiles = new Dictionary<string, byte[]>();
 
         string? mapDir = Path.GetDirectoryName(mapPath);
-        if (string.IsNullOrEmpty(mapDir)) mapDir = "Realm.CustomMap";
+        if (string.IsNullOrEmpty(mapDir)) mapDir = "Realm.MapScript";
         
         if (Directory.Exists(mapDir))
         {

@@ -591,6 +591,23 @@ public partial class GameHost
 					GetViewport().SetInputAsHandled();
 					return;
 				}
+				if (editorKeyEvent.Keycode == Key.L && !ctrlPressed && !shiftPressed)
+				{
+					var res = CycleTimeOfDay();
+					MapEditorHUD.Instance?.UpdateLightingTuningSlidersFromPhase(res.TimeOfDayIndex);
+					string timeName = EnvironmentService?.GetTimeOfDayName(res.TimeOfDayIndex) ?? "Day";
+					string icon = res.TimeOfDayIndex switch
+					{
+						0 => "☀️",
+						1 => "🌅",
+						2 => "🌙",
+						3 => "🌄",
+						_ => "☀️"
+					};
+					MapEditorHUD.Instance?.ShowFeedbackExternal(string.Format(TranslationServer.Translate("Lighting: {0} {1}"), icon, TranslationServer.Translate(timeName)));
+					GetViewport().SetInputAsHandled();
+					return;
+				}
 			}
 
 			if (@event is InputEventMouseButton wheelBtn && wheelBtn.Pressed && (wheelBtn.ButtonIndex == MouseButton.WheelUp || wheelBtn.ButtonIndex == MouseButton.WheelDown))
@@ -1184,8 +1201,9 @@ public partial class GameHost
 							Vector3 end = hitPos;
 							if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
 							{
-								var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
+								var cellsBefore = (Realm.Ecs.Components.Terrain.TerrainCell[,])GroundTerrain.Cells.Clone();
 								var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+								var cliffBefore = GroundTerrain.CliffSplatMap != null ? (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone() : null;
 								var pathingBefore = (int[,])GroundTerrain.PathingCodes.Clone();
 								bool modified = ApplyRampInternal(start, end);
 								if (EditorMirrorMode != MirrorMode.None)
@@ -1232,10 +1250,11 @@ public partial class GameHost
 
 									GroundTerrain.UpdateMeshAndPhysics(true, false, affected);
 									AlignAllEntitiesToTerrain(affected);
-									var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
+									var cellsAfter = (Realm.Ecs.Components.Terrain.TerrainCell[,])GroundTerrain.Cells.Clone();
 									var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+									var cliffAfter = GroundTerrain.CliffSplatMap != null ? (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone() : null;
 									var pathingAfter = (int[,])GroundTerrain.PathingCodes.Clone();
-									var action = new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter);
+									var action = new TerrainModifyAction(cellsBefore, cellsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter, cliffBefore, cliffAfter);
 									EditorHistoryManager.RecordAction(action);
 									EditorHasUnsavedChanges = true;
 									UpdatePathingOverlay();
@@ -2245,8 +2264,8 @@ public partial class GameHost
 		}
 		else
 		{
-			SpawnTargetIndicator(targetPos, new Color(0.1f, 0.9f, 0.2f));
-			InGameHUD.Instance?.ShowFeedbackText("Command: Move to position", new Color(0.2f, 0.9f, 0.3f));
+			SpawnTargetIndicator(targetPos, new Color(0.22f, 0.54f, 0.26f));
+			InGameHUD.Instance?.ShowFeedbackText("Command: Move to position", new Color(0.22f, 0.54f, 0.26f));
 		}
 
 		var targetIds = new List<int>();
@@ -2827,6 +2846,17 @@ public partial class GameHost
 				InGameHUD.Instance?.RefreshUI(SelectedUnits);
 			}
 		}
+	}
+
+	// Lanza una habilidad instantánea (compras/mejoras del mapa) usando la unidad
+	// seleccionada como lanzador y su posición como objetivo; sin clic en el suelo.
+	public void CastInstantAbility(string abilityId)
+	{
+		if (SelectedUnits.Count == 0 || !EcsWorld.IsAlive(SelectedUnits[0].Entity)) return;
+		if (!EcsWorld.Has<Position>(SelectedUnits[0].Entity)) return;
+
+		ref var pos = ref EcsWorld.Get<Position>(SelectedUnits[0].Entity);
+		ExecuteSpellCast(abilityId, new Godot.Vector3(pos.Value.X, pos.Value.Y, pos.Value.Z));
 	}
 
 	public void BuyHealingPotion(Entity castleEntity)
@@ -3615,8 +3645,6 @@ public partial class GameHost
 	{
 		if (!UnitRegistry.TryGetValue(unitId, out var meta)) return null;
 
-		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
-
 		int ownerPeerId = _localPeerId;
 		if (isEnemy)
 		{
@@ -3636,7 +3664,17 @@ public partial class GameHost
 			}
 		}
 		bool actualIsEnemy = NetworkService.ArePeersEnemies(_localPeerId, ownerPeerId);
-		
+		Entity playerOwnerEntity = _playerEntity;
+		if (_peerIdToPlayerEntityMap != null && _peerIdToPlayerEntityMap.TryGetValue(ownerPeerId, out var pe) && EcsWorld.IsAlive(pe))
+		{
+			playerOwnerEntity = pe;
+		}
+		else if (actualIsEnemy && _enemyPlayerEntity != Entity.Null && EcsWorld.IsAlive(_enemyPlayerEntity))
+		{
+			playerOwnerEntity = _enemyPlayerEntity;
+		}
+		var playerOwner = playerOwnerEntity.AsPlayerEntity(EcsWorld);
+
 		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitId;
 		string modelPath = GetFallbackModelPath(targetModel, meta.Speed == 0f);
 
@@ -3645,7 +3683,14 @@ public partial class GameHost
 		var godotPosition = new Vector3(position.X, position.Y, position.Z);
 		var entity = CreateEcsUnit(unitId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, godotPosition, playerOwner);
 
-		var unit3D = SpawnUnit3D(entity, unitId, modelPath, godotPosition, meta.Speed == 0f, actualIsEnemy, isFromQueue);
+		int parentPlayer = actualIsEnemy ? 1 : 0;
+		if (EcsWorld.IsAlive(buildingEntity) && EcsWorld.Has<UnitOwnerPlayer>(buildingEntity))
+		{
+			parentPlayer = EcsWorld.Get<UnitOwnerPlayer>(buildingEntity).PlayerIndex;
+			actualIsEnemy = NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, parentPlayer);
+		}
+
+		var unit3D = SpawnUnit3D(entity, unitId, modelPath, godotPosition, meta.Speed == 0f, actualIsEnemy, isFromQueue, parentPlayer);
 
 		if (meta.Speed > 0f)
 		{

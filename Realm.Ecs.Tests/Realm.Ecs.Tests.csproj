@@ -6,6 +6,7 @@
     <IsPackable>false</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>Realm.Ecs.Tests</AssemblyName>
+    <NoWarn>$(NoWarn);CS0649;CS8618</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,6 +23,7 @@
   <ItemGroup>
     <Compile Include="..\Realm.Godot\NavMeshPathfinder.cs" Link="Linked\NavMeshPathfinder.cs" />
     <Compile Include="..\Realm.Godot\Services\MovementAndPathfindingService.cs" Link="Linked\MovementAndPathfindingService.cs" />
+    <Compile Include="..\Realm.Godot\Services\CombatAndDamageService.cs" Link="Linked\CombatAndDamageService.cs" />
     <Compile Include="..\Realm.Godot\Services\ServiceLocator.cs" Link="Linked\ServiceLocator.cs" />
   </ItemGroup>
 </Project>

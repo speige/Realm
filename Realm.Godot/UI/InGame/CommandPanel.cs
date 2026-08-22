@@ -285,7 +285,7 @@ public class CommandPanel
 	{
 		var tile = new ColorRect();
 		tile.Color = Colors.Black;
-		tile.CustomMinimumSize = new Vector2(80, 80);
+		tile.CustomMinimumSize = new Vector2(44, 44);
 		tile.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 		tile.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 		return tile;
@@ -299,11 +299,11 @@ public class CommandPanel
 		btn.ExpandIcon = true;
 		btn.Icon = GD.Load<Texture2D>("res://Assets/UI/search_icon_clean.png");
 		btn.TooltipText = TranslationServer.Translate("Cycle Abilities / Commands");
-		btn.CustomMinimumSize = new Vector2(80, 80);
+		btn.CustomMinimumSize = new Vector2(44, 44);
 		btn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 		btn.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 		btn.FocusMode = Control.FocusModeEnum.None;
-		btn.AddThemeConstantOverride("icon_max_width", 72);
+		btn.AddThemeConstantOverride("icon_max_width", 38);
 
 		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateHUDButtonStyle(false, false));
 		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateHUDButtonStyle(true, false));
@@ -345,12 +345,12 @@ public class CommandPanel
 		string transTooltip = TranslationServer.Translate(item.Tooltip);
 		btn.TooltipText = string.IsNullOrEmpty(transTooltip) ? item.Tooltip : transTooltip;
 		
-		btn.CustomMinimumSize = new Vector2(80, 80);
+		btn.CustomMinimumSize = new Vector2(44, 44);
 		btn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 		btn.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 		btn.FocusMode = Control.FocusModeEnum.None;
 		btn.ClipContents = true;
-		btn.AddThemeConstantOverride("icon_max_width", 72);
+		btn.AddThemeConstantOverride("icon_max_width", 38);
 
 		if (item.Hotkey != Key.None)
 		{
@@ -506,7 +506,7 @@ public class CommandPanel
 		{
 			if (focusedUnit.UnitId == "castle")
 			{
-				string[] trainOptions = hasMetadata && meta.BuildOptions != null && meta.BuildOptions.Length > 0 ? meta.BuildOptions : new[] { "soldier", "archer", "priest", "worker" };
+				string[] trainOptions = hasMetadata && meta.BuildOptions != null && meta.BuildOptions.Length > 0 ? meta.BuildOptions : System.Array.Empty<string>();
 				foreach (var opt in trainOptions)
 				{
 					items.Add(CreateTrainOptionItem(opt));
@@ -713,44 +713,50 @@ public class CommandPanel
 		};
 	}
 
-	private CommandCardItem CreateAbilityItem(string abilityId)
+	private string GetDefaultAbilityIcon(string abilityId)
 	{
-		var hotkey = abilityId switch
-		{
-			"fireball" => Key.Q,
-			"lightning" => Key.E,
-			"holylight" => Key.W,
-			"upgrade_health" => Key.H,
-			_ => Key.None
-		};
-
-		string iconPath = abilityId switch
+		return abilityId switch
 		{
 			"fireball" => "res://Assets/UI/fire_spell.png",
 			"lightning" => "res://Assets/UI/lightning_spell.png",
 			"holylight" => "res://Assets/UI/magic_upgrade_arrow.png",
-			"upgrade_health" => "res://Assets/UI/magic_upgrade_arrow.png",
 			_ => "res://Assets/UI/alliance_flag.png"
 		};
+	}
 
-		string tooltip = abilityId switch
+	private string GetDefaultAbilityTooltip(string abilityId)
+	{
+		return abilityId switch
 		{
-			"fireball" => string.Format(TranslationServer.Translate("[Q] Cast Fireball — 50 AoE Dmg, {0}s cooldown"), GameHost.FireballCooldownMax),
-			"lightning" => string.Format(TranslationServer.Translate("[E] Cast Lightning — 80 AoE Dmg, {0}s cooldown"), GameHost.LightningCooldownMax),
-			"holylight" => string.Format(TranslationServer.Translate("[W] Cast Holy Light — 60 AoE Heal, {0}s cooldown"), GameHost.HolyLightCooldownMax),
-			"upgrade_health" => TranslationServer.Translate("[H] Upgrade Health — Dummy Health Upgrade"),
+			"fireball" => string.Format(TranslationServer.Translate("[X] Fireball — Deals 50 area damage (radius 4), cooldown {0}s"), GameHost.FireballCooldownMax),
+			"lightning" => string.Format(TranslationServer.Translate("[X] Lightning — Deals 80 area damage (radius 2), cooldown {0}s"), GameHost.LightningCooldownMax),
+			"holylight" => string.Format(TranslationServer.Translate("[X] Holy Light — Heals 60 area health (radius 4), cooldown {0}s"), GameHost.HolyLightCooldownMax),
 			_ => string.Format(TranslationServer.Translate("Cast {0}"), abilityId.ToUpper())
 		};
+	}
 
-		Action callback = () => GameHost.Instance?.EnterSpellTargeting(abilityId);
-		if (abilityId == "upgrade_health")
+	private CommandCardItem CreateAbilityItem(string abilityId)
+	{
+		var abilityDef = GameHost.Instance?.GetAbilityDefinition(abilityId);
+
+		string iconPath = !string.IsNullOrEmpty(abilityDef?.IconPath)
+			? abilityDef.IconPath
+			: GetDefaultAbilityIcon(abilityId);
+
+		string tooltip = !string.IsNullOrEmpty(abilityDef?.Tooltip)
+			? abilityDef.Tooltip
+			: GetDefaultAbilityTooltip(abilityId);
+
+		bool isInstant = abilityDef != null && abilityDef.IsInstant;
+
+		Action callback;
+		if (isInstant)
 		{
-			callback = () => {
-				if (InGameHUD.Instance != null)
-				{
-					InGameHUD.Instance.ShowFeedbackText(TranslationServer.Translate("Health Upgrade Researched! (Test)"), new Color(0.2f, 0.9f, 0.2f));
-				}
-			};
+			callback = () => GameHost.Instance?.CastInstantAbility(abilityId);
+		}
+		else
+		{
+			callback = () => GameHost.Instance?.EnterSpellTargeting(abilityId);
 		}
 
 		return new CommandCardItem
@@ -758,7 +764,7 @@ public class CommandPanel
 			Id = abilityId,
 			IconPath = iconPath,
 			Tooltip = tooltip,
-			Hotkey = hotkey,
+			Hotkey = Key.None,
 			Callback = callback
 		};
 	}
@@ -798,12 +804,12 @@ public class CommandPanel
 		btn.ExpandIcon = true;
 		btn.Icon = GD.Load<Texture2D>(iconPath);
 		btn.TooltipText = tooltip;
-		btn.CustomMinimumSize = new Vector2(80, 80);
+		btn.CustomMinimumSize = new Vector2(44, 44);
 		btn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 		btn.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 		btn.FocusMode = Control.FocusModeEnum.None;
 		btn.ClipContents = true;
-		btn.AddThemeConstantOverride("icon_max_width", 72);
+		btn.AddThemeConstantOverride("icon_max_width", 38);
 
 		if (tooltip.StartsWith('[') && tooltip.Contains(']'))
 		{

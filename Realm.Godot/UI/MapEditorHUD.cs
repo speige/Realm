@@ -14,6 +14,7 @@ using WaterType = Realm.Ecs.Components.Terrain.WaterType;
 public partial class MapEditorHUD : Control
 {
 	public static MapEditorHUD Instance { get; private set; }
+	public static string CurrentDirectoryBlake3 { get; set; } = string.Empty;
 	public static bool IsDraggingSlider { get; set; } = false;
 	public static bool IsTestMode { get; set; } = false;
 	public static bool ReturningFromTest { get; set; } = false;
@@ -185,6 +186,7 @@ public partial class MapEditorHUD : Control
 	private HSlider _sldModelColorTint;
 	private ColorPickerButton _cpkModelColorTint;
 	private CheckBox _chkModelGenerateNormals;
+	private CheckBox _chkModelIgnorePlayerColor;
 	private bool _isUpdatingInspectorUI;
 
 	private CheckBox _chkApplyGroundTexture;
@@ -255,6 +257,16 @@ public partial class MapEditorHUD : Control
 	private Button _btnInspectorScaleUp;
 	private Button _btnInspectorScaleReset;
 	private Button _btnInspectorDelete;
+	private Button _btnShowCoverage;
+	private HBoxContainer _playerOwnerContainer;
+	private OptionButton _optPlayerOwner;
+	private Button _btnImportAnimation;
+	private PanelContainer _rigStatusContainer;
+	private Label _lblRigStatus;
+	private VBoxContainer _animationPreviewContainer;
+	private OptionButton _optAnimationPreview;
+	private Button _btnPlayAnimationPreview;
+	private Button _btnStopAnimationPreview;
 
 	private Button _btnPathingBrush;
 	private Button _btnFloodFillPathing;
@@ -471,6 +483,11 @@ public partial class MapEditorHUD : Control
 		_btnImportMinimap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnImportMinimap");
 		SetupButton(_btnImportMinimap, "🗺️ GEN FROM IMAGE", () => ImportTerrainFromMinimapDialog(), 13, "Import terrain elevations, textures, and trees from a minimap image file");
 
+		_btnImportAnimation = new Button();
+		_btnImportAnimation.Name = "BtnImportAnimation";
+		SetupButton(_btnImportAnimation, "🎬 IMPORT MIXAMO / GLB", () => ImportMixamoOrAnimationDialog(), 13, "Import Mixamo character/animation GLB or .ranim binary animation files");
+		_contentFile.AddChild(_btnImportAnimation);
+
 		_btnHeaderViewport = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/BtnHeaderViewport");
 		_contentViewport = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport");
 		StyleAccordionHeader(_btnHeaderViewport);
@@ -529,6 +546,16 @@ public partial class MapEditorHUD : Control
 			{
 				var res = GameHost.Instance.CycleTimeOfDay();
 				UpdateLightingTuningSlidersFromPhase(res.TimeOfDayIndex);
+				string timeName = GameHost.Instance.EnvironmentService?.GetTimeOfDayName(res.TimeOfDayIndex) ?? "Day";
+				string icon = res.TimeOfDayIndex switch
+				{
+					0 => "☀️",
+					1 => "🌅",
+					2 => "🌙",
+					3 => "🌄",
+					_ => "☀️"
+				};
+				ShowFeedback(string.Format(TranslationServer.Translate("Lighting: {0} {1}"), icon, TranslationServer.Translate(timeName)));
 			}
 		}, 11, "Cycle map environment lighting (L)");
 
@@ -963,6 +990,7 @@ public partial class MapEditorHUD : Control
 			{
 				_chkApplyCliffTexture.SetPressedNoSignal(true);
 			}
+			UpdateTextureLabels();
 		};
 
 		_chkApplyCliffTexture.Toggled += (toggled) =>
@@ -971,6 +999,7 @@ public partial class MapEditorHUD : Control
 			{
 				_chkApplyGroundTexture.SetPressedNoSignal(true);
 			}
+			UpdateTextureLabels();
 		};
 
 		if (_containerTextureSettings != null && _lblTerrainTexture != null && _lblCliffTexture != null)
@@ -1375,18 +1404,44 @@ public partial class MapEditorHUD : Control
 			string typeStr = "";
 			if (selected is Unit3D unit)
 			{
-				typeStr = "UNIT";
+				typeStr = unit.IsBuilding ? "BUILDING" : "UNIT";
 				nameStr = System.IO.Path.GetFileName(unit.UnitId).ToUpper();
+				if (_playerOwnerContainer != null && _optPlayerOwner != null)
+				{
+					_playerOwnerContainer.Visible = true;
+					_isUpdatingInspectorUI = true;
+					int pIdx = Mathf.Clamp(unit.Player, 0, PlayerColorConfig.Palette.Length - 1);
+					_optPlayerOwner.Selected = pIdx;
+					_isUpdatingInspectorUI = false;
+				}
 			}
-			else if (selected is Prop3D prop)
+			else
 			{
-				typeStr = "PROP";
-				nameStr = System.IO.Path.GetFileName(prop.PropId).ToUpper();
+				if (_playerOwnerContainer != null)
+				{
+					_playerOwnerContainer.Visible = false;
+				}
+				if (selected is Prop3D prop)
+				{
+					typeStr = "PROP";
+					nameStr = System.IO.Path.GetFileName(prop.PropId).ToUpper();
+				}
+				else if (selected is Decal decal)
+				{
+					typeStr = "DECAL";
+					nameStr = System.IO.Path.GetFileName(decal.Name).ToUpper();
+				}
 			}
-			else if (selected is Decal decal)
+
+			if (_btnShowCoverage != null)
 			{
-				typeStr = "DECAL";
-				nameStr = System.IO.Path.GetFileName(decal.Name).ToUpper();
+				bool isUnit = selected is Unit3D;
+				_btnShowCoverage.Visible = isUnit;
+				if (isUnit && GameHost.Instance != null)
+				{
+					_btnShowCoverage.SetPressedNoSignal(GameHost.Instance.EditorCoverageOverlayEnabled);
+					_btnShowCoverage.Text = GameHost.Instance.EditorCoverageOverlayEnabled ? TranslationServer.Translate("◉ VISION/ATTACK RANGES: ON") : TranslationServer.Translate("◉ VISION/ATTACK RANGES: OFF");
+				}
 			}
 			
 			if (_viewModel != null)
@@ -1394,6 +1449,51 @@ public partial class MapEditorHUD : Control
 				_viewModel.HasInspectorSelection = true;
 				_viewModel.InspectorTitle = $"SELECTED: {nameStr}\n[{typeStr}]";
 				_viewModel.InspectorPos = $"Pos: {pos.X:F2}, {pos.Y:F2}, {pos.Z:F2}\nRot: {rot.Y:F1}° | Scale: {scale.X:F2}x";
+			}
+
+			if (selected is Unit3D || selected is Prop3D)
+			{
+				Node modelRoot = selected;
+				if (selected is Unit3D unitObj && unitObj.ModelNode != null)
+				{
+					modelRoot = unitObj.ModelNode;
+				}
+				else if (selected is Prop3D propObj)
+				{
+					modelRoot = propObj.GetNodeOrNull<Node3D>("VisualModel") ?? selected;
+				}
+
+				var validation = Realm.Godot.Animation.SkeletonValidator.Validate(modelRoot);
+				if (_rigStatusContainer != null && _lblRigStatus != null)
+				{
+					_rigStatusContainer.Visible = true;
+					if (validation.IsValid)
+					{
+						_lblRigStatus.Text = TranslationServer.Translate("Rig: ✔ Compatible Humanoid");
+						_lblRigStatus.AddThemeColorOverride("font_color", new Color(0.3f, 0.9f, 0.3f));
+					}
+					else if (validation.Skeleton == null)
+					{
+						_lblRigStatus.Text = TranslationServer.Translate("Rig: ✖ Unrigged Mesh");
+						_lblRigStatus.AddThemeColorOverride("font_color", new Color(0.9f, 0.4f, 0.4f));
+					}
+					else
+					{
+						_lblRigStatus.Text = string.Format(TranslationServer.Translate("Rig: ✖ Incompatible ({0})"), string.Join(", ", validation.MissingRequiredBones));
+						_lblRigStatus.AddThemeColorOverride("font_color", new Color(0.9f, 0.4f, 0.4f));
+					}
+				}
+
+				if (_animationPreviewContainer != null && _optAnimationPreview != null)
+				{
+					_animationPreviewContainer.Visible = true;
+					PopulateAnimationPreviewDropdown();
+				}
+			}
+			else
+			{
+				if (_rigStatusContainer != null) _rigStatusContainer.Visible = false;
+				if (_animationPreviewContainer != null) _animationPreviewContainer.Visible = false;
 			}
 
 			string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(selected);
@@ -1440,6 +1540,10 @@ public partial class MapEditorHUD : Control
 				{
 					_chkModelGenerateNormals.ButtonPressed = GameHost.Instance.GetModelGenerateNormals(assetKey);
 				}
+				if (_chkModelIgnorePlayerColor != null)
+				{
+					_chkModelIgnorePlayerColor.ButtonPressed = GameHost.Instance.GetModelIgnorePlayerColor(assetKey);
+				}
 
 				_isUpdatingInspectorUI = false;
 			}
@@ -1451,8 +1555,10 @@ public partial class MapEditorHUD : Control
 		}
 		else
 		{
+			if (_playerOwnerContainer != null) _playerOwnerContainer.Visible = false;
 			if (_btnHeaderGlobalOverrides != null) _btnHeaderGlobalOverrides.Visible = false;
 			if (_contentGlobalOverrides != null) _contentGlobalOverrides.Visible = false;
+			if (_btnShowCoverage != null) _btnShowCoverage.Visible = false;
 			if (_lblInfoText != null) _lblInfoText.Visible = true;
 			if (_inspectorPanel != null) _inspectorPanel.Visible = false;
 			if (_accordionInspector != null)
@@ -1604,27 +1710,49 @@ public partial class MapEditorHUD : Control
 	{
 		if (OperatingSystem.IsWindows())
 		{
-			bool isVisible = !VSCodeManager.Instance.IsVisible;
-			if (isVisible)
+			if (VSCodeManager.Instance.IsVisible)
+			{
+				VSCodeManager.Instance.Focus();
+			}
+			else
 			{
 				GenerateVSCodeFilesExternal();
+				VSCodeManager.Instance.SetVisible(true);
 			}
-			VSCodeManager.Instance.SetVisible(isVisible);
 		}
 	}
 
 	public void BackToHubAction()
 	{
-		if (GameHost.Instance != null && GameHost.Instance.EditorHasUnsavedChanges)
+		if (HasUnsavedChanges())
 		{
 			ShowConfirmationDialog(
-				"Unsaved changes will be lost. Are you sure you want to exit?",
-				() => UIManager.Instance.TransitionTo(GameScreen.MainMenu)
+				"You haven't saved yet",
+				onConfirm: () => UIManager.Instance.TransitionTo(GameScreen.MainMenu),
+				confirmText: "Quit",
+				cancelText: "Stay"
 			);
 		}
 		else
 		{
 			UIManager.Instance.TransitionTo(GameScreen.MainMenu);
+		}
+	}
+
+	public void HandleQuitRequest()
+	{
+		if (HasUnsavedChanges())
+		{
+			ShowConfirmationDialog(
+				"You haven't saved yet",
+				onConfirm: () => GetTree().Quit(),
+				confirmText: "Quit",
+				cancelText: "Stay"
+			);
+		}
+		else
+		{
+			GetTree().Quit();
 		}
 	}
 
@@ -1826,8 +1954,15 @@ public partial class MapEditorHUD : Control
 	{
 		if (index >= 0 && index < _swatchButtons.Count)
 		{
-			HighlightSwatch(_swatchButtons[index]);
-			TriggerToolSelection(GameHost.EditorTool.PaintTexture, _swatchButtons[index]);
+			if (_chkApplyCliffTexture != null && _chkApplyCliffTexture.ButtonPressed && (_chkApplyGroundTexture == null || !_chkApplyGroundTexture.ButtonPressed))
+			{
+				SelectCliffTexture(index);
+			}
+			else
+			{
+				HighlightSwatch(_swatchButtons[index]);
+				TriggerToolSelection(GameHost.EditorTool.PaintTexture, _swatchButtons[index]);
+			}
 		}
 	}
 
@@ -2272,7 +2407,7 @@ public partial class MapEditorHUD : Control
 			try
 			{
 				System.IO.Directory.CreateDirectory(_tempWorkspacePath);
-				MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "CustomMap");
+				MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "MapScript");
 			}
 			catch (Exception ex)
 			{
@@ -2376,12 +2511,30 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public static bool HasUnsavedChangesStatic()
+	{
+		string tempPath = ProjectSettings.GlobalizePath(TempWorkspaceGodotPath);
+		if (string.IsNullOrEmpty(tempPath) || !System.IO.Directory.Exists(tempPath))
+		{
+			return false;
+		}
+		if (string.IsNullOrEmpty(CurrentDirectoryBlake3))
+		{
+			return false;
+		}
+		string currentHash = ComputeDirectoryBlake3(tempPath);
+		return !string.Equals(currentHash, CurrentDirectoryBlake3, StringComparison.OrdinalIgnoreCase);
+	}
+
+	public bool HasUnsavedChanges() => HasUnsavedChangesStatic();
+
 	public void SaveCurrentDirectoryBlake3()
 	{
 		if (string.IsNullOrEmpty(_tempWorkspacePath) || !System.IO.Directory.Exists(_tempWorkspacePath)) return;
 		try
 		{
 			string hash = ComputeDirectoryBlake3(_tempWorkspacePath);
+			CurrentDirectoryBlake3 = hash;
 			string saveFile = ProjectSettings.GlobalizePath("user://editor_last_save.txt");
 			System.IO.File.WriteAllText(saveFile, hash);
 		}
@@ -2404,6 +2557,7 @@ public partial class MapEditorHUD : Control
 
 		string savedHash = System.IO.File.ReadAllText(editorLastSaveFile).Trim();
 		string currentHash = ComputeDirectoryBlake3(_tempWorkspacePath);
+		CurrentDirectoryBlake3 = savedHash;
 
 		if (!string.IsNullOrEmpty(savedHash) && !currentHash.Equals(savedHash, StringComparison.OrdinalIgnoreCase))
 		{
@@ -2432,6 +2586,7 @@ public partial class MapEditorHUD : Control
 	private void LoadTempWorkspaceMap()
 	{
 		string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+		MapWorkspaceService.EnsureGlbAssetsOptimized(_tempWorkspacePath);
 		LoadMapProperties();
 		ReadMetadataAndRefreshTextures();
 		if (GameHost.Instance != null && System.IO.File.Exists(terrainPath))
@@ -2494,7 +2649,7 @@ public partial class MapEditorHUD : Control
 		string scriptPath = System.IO.Path.Combine(_tempWorkspacePath, "MapScript.cs");
 		string unitsPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 		System.IO.Directory.CreateDirectory(_tempWorkspacePath);
-		MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "CustomMap");
+		MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "MapScript");
 	}
 
 	private long GetLastWriteTimeSafe(string path)
@@ -2522,7 +2677,7 @@ public partial class MapEditorHUD : Control
 
 	private void OnSyncTimerTimeout()
 	{
-		if (GameHost.Instance == null || _isSyncing) return;
+		if (GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode || IsTestMode || _isSyncing) return;
 		_isSyncing = true;
 		
 		string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
@@ -2590,7 +2745,22 @@ public partial class MapEditorHUD : Control
 				System.IO.File.SetAttributes(targetFile, attrs & ~System.IO.FileAttributes.ReadOnly);
 			}
 		}
-		System.IO.File.Copy(sourceFile, targetFile, true);
+
+		// A previous WASM build may still be releasing the target file; retry briefly
+		// so transient file locks do not abort the whole Test copy.
+		const int maxAttempts = 10;
+		for (int attempt = 0; ; attempt++)
+		{
+			try
+			{
+				System.IO.File.Copy(sourceFile, targetFile, true);
+				return;
+			}
+			catch (System.IO.IOException) when (attempt < maxAttempts - 1)
+			{
+				System.Threading.Thread.Sleep(250);
+			}
+		}
 	}
 
 	private void CopyFolderToTempWorkspace(string sourceFolder)
@@ -2753,7 +2923,44 @@ public partial class MapEditorHUD : Control
 
 	public bool LoadMapFolder(string selectedFolder)
 	{
-		return LoadMapFolderAsync(selectedFolder).GetAwaiter().GetResult();
+		if (!System.IO.Directory.Exists(selectedFolder)) return false;
+		_lastUsedFolder = selectedFolder;
+		_currentSourceFolder = selectedFolder;
+
+		ShowFeedback(TranslationServer.Translate("Loading map..."));
+		CopyFolderToTempWorkspace(selectedFolder);
+
+		try
+		{
+			MapWorkspaceService.EnsureGlbAssetsOptimized(_tempWorkspacePath);
+			LoadMapProperties();
+			ReadMetadataAndRefreshTextures();
+			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
+
+			if (success)
+			{
+				if (OperatingSystem.IsWindows())
+				{
+					VSCodeManager.Instance.SaveRecentMapDir(selectedFolder);
+				}
+				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+				ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
+				SaveCurrentDirectoryBlake3();
+			}
+			else
+			{
+				ShowFeedback(TranslationServer.Translate("Failed to load map files from folder!"));
+			}
+
+			return success;
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] Failed to load map folder: {ex.Message}");
+			return false;
+		}
 	}
 
 	public async System.Threading.Tasks.Task<bool> LoadMapFolderAsync(string selectedFolder)
@@ -2765,41 +2972,37 @@ public partial class MapEditorHUD : Control
 		ShowFeedback(TranslationServer.Translate("Loading map..."));
 		await System.Threading.Tasks.Task.Run(() => CopyFolderToTempWorkspace(selectedFolder));
 
-		var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
-		Callable.From(() =>
+		try
 		{
-			try
+			MapWorkspaceService.EnsureGlbAssetsOptimized(_tempWorkspacePath);
+			LoadMapProperties();
+			ReadMetadataAndRefreshTextures();
+			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
+
+			if (success)
 			{
-				LoadMapProperties();
-				ReadMetadataAndRefreshTextures();
-				string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
-				bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
-
-				if (success)
+				if (OperatingSystem.IsWindows())
 				{
-					if (OperatingSystem.IsWindows())
-					{
-						VSCodeManager.Instance.SaveRecentMapDir(selectedFolder);
-					}
-					_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
-					_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
-					ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
-					SaveCurrentDirectoryBlake3();
+					VSCodeManager.Instance.SaveRecentMapDir(selectedFolder);
 				}
-				else
-				{
-					ShowFeedback(TranslationServer.Translate("Failed to load map files from folder!"));
-				}
-
-				tcs.SetResult(success);
+				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+				ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
+				SaveCurrentDirectoryBlake3();
 			}
-			catch (Exception ex)
+			else
 			{
-				tcs.SetException(ex);
+				ShowFeedback(TranslationServer.Translate("Failed to load map files from folder!"));
 			}
-		}).CallDeferred();
 
-		return await tcs.Task;
+			return success;
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] Failed to load map folder: {ex.Message}");
+			return false;
+		}
 	}
 
 	public async System.Threading.Tasks.Task<string> GenerateAssetSnapshotBase64(string filePath)
@@ -2971,11 +3174,7 @@ public partial class MapEditorHUD : Control
 				{
 					// Custom 2-layer PBR KTX2 files (created via ktx create --layers 2) fail in Image.LoadKtxFromBuffer.
 					// Use ktx.exe extract or Texture2D array loading if available, or extract Layer 0 bytes via ktx_tools.
-					string ktxCmd = PathUtils.FindPath("ktx_tools/v5.0.0-rc1/bin/ktx.exe");
-					if (!System.IO.File.Exists(ktxCmd))
-					{
-						ktxCmd = System.IO.Path.GetFullPath(System.IO.Path.Combine(PathUtils.GetProjectRoot(), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
-					}
+					string ktxCmd = EditableTerrain.GetKtxCmdPath();
 					string tempPng = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"ktx_thumb_{System.Guid.NewGuid()}.png");
 
 					if (System.IO.File.Exists(ktxCmd))
@@ -3092,7 +3291,13 @@ public partial class MapEditorHUD : Control
 					string resolvedWasiSdk = WasiSdkResolver.ResolveWasiSdkPath();
 					var compileProcess = new System.Diagnostics.Process();
 					compileProcess.StartInfo.FileName = "dotnet";
-					compileProcess.StartInfo.Arguments = $"publish \"CustomMap.csproj\" -c Release -r wasi-wasm -p:WASI_SDK_PATH=\"{resolvedWasiSdk}\"";
+					var csprojFiles = System.IO.Directory.GetFiles(workspace, "*.csproj", System.IO.SearchOption.TopDirectoryOnly);
+					string csprojName = csprojFiles.Length > 0 ? System.IO.Path.GetFileName(csprojFiles[0]) : "MapScript.csproj";
+					if (csprojFiles.Any(f => System.IO.Path.GetFileName(f).Equals("MapScript.csproj", System.StringComparison.OrdinalIgnoreCase)))
+					{
+						csprojName = "MapScript.csproj";
+					}
+					compileProcess.StartInfo.Arguments = $"publish \"{csprojName}\" -c Release -r wasi-wasm -p:WASI_SDK_PATH=\"{resolvedWasiSdk}\"";
 					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = resolvedWasiSdk;
 					compileProcess.StartInfo.WorkingDirectory = workspace;
 					compileProcess.StartInfo.CreateNoWindow = true;
@@ -3351,6 +3556,7 @@ public partial class MapEditorHUD : Control
 	public void AppendWasmConsoleLog(string line)
 	{
 		Realm.Godot.UI.WasmConsoleWindow.Instance.AppendLog(line);
+		GD.Print("[WASM_BUILD] " + line);
 	}
 
 	public void SetWasmConsoleStatus(string statusText, Color color)
@@ -3631,6 +3837,7 @@ public partial class MapEditorHUD : Control
 
 	private async System.Threading.Tasks.Task CompileAndSignMapAsync(string workspace, bool skipAttribution = true)
 	{
+		_wasmHasErrors = false;
 		// 1. Compile triggers
 		try
 		{
@@ -3644,25 +3851,28 @@ public partial class MapEditorHUD : Control
 				if (csprojFiles.Length == 0)
 				{
 					_wasmHasErrors = true;
-					SetWasmConsoleStatus("❌ WASM Compilation Failed: No .csproj found", new Color(1.0f, 0.3f, 0.3f));
-					AppendWasmConsoleLog("[ERROR] No .csproj found in workspace, cannot compile map script");
-					GD.PrintErr("[MapEditorHUD] No .csproj found in workspace, cannot compile map script");
-					return;
+					var errorMessage = "[MapEditorHUD] ERROR: No .csproj found in workspace, cannot compile map script";
+					SetWasmConsoleStatus("❌ " + errorMessage, new Color(1.0f, 0.3f, 0.3f));
+					AppendWasmConsoleLog(errorMessage);
+					GD.PrintErr(errorMessage);
+					return;					
 				}
 
-				// Pick the first .csproj (prefer CustomMap.csproj)
-				string csproj = csprojFiles.FirstOrDefault(f => System.IO.Path.GetFileName(f).Equals("CustomMap.csproj", System.StringComparison.OrdinalIgnoreCase)) ?? csprojFiles[0];
+				string csproj = csprojFiles.FirstOrDefault(f => System.IO.Path.GetFileName(f).Equals("MapScript.csproj", System.StringComparison.OrdinalIgnoreCase)) ?? csprojFiles[0];
 
 				// Check if WASM binary already exists and no .cs files have been modified since it was built
 				string binDir = System.IO.Path.Combine(workspace, "bin");
 				string existingWasm = null;
 				if (System.IO.Directory.Exists(binDir))
 				{
-					existingWasm = System.IO.Directory.GetFiles(
+					var wasmFiles = System.IO.Directory.GetFiles(
 						binDir,
 						"*.wasm",
 						System.IO.SearchOption.AllDirectories
-					).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
+					).Where(f => !f.Contains("native") && !f.Contains("obj")).ToList();
+
+					existingWasm = wasmFiles.FirstOrDefault(f => f.Contains("publish"))
+						?? wasmFiles.OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
 				}
 
 				if (string.IsNullOrEmpty(existingWasm) && !string.IsNullOrEmpty(_currentSourceFolder) && System.IO.Directory.Exists(_currentSourceFolder))
@@ -3670,11 +3880,14 @@ public partial class MapEditorHUD : Control
 					string sourceBinDir = System.IO.Path.Combine(_currentSourceFolder, "bin");
 					if (System.IO.Directory.Exists(sourceBinDir))
 					{
-						existingWasm = System.IO.Directory.GetFiles(
+						var wasmFiles = System.IO.Directory.GetFiles(
 							sourceBinDir,
 							"*.wasm",
 							System.IO.SearchOption.AllDirectories
-						).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
+						).Where(f => !f.Contains("native") && !f.Contains("obj")).ToList();
+
+						existingWasm = wasmFiles.FirstOrDefault(f => f.Contains("publish"))
+							?? wasmFiles.OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
 					}
 				}
 
@@ -3694,7 +3907,8 @@ public partial class MapEditorHUD : Control
 							.Where(f => {
 								string rel = f.Substring(dir.Length).TrimStart(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
 								return !rel.StartsWith("bin", System.StringComparison.OrdinalIgnoreCase) && !rel.StartsWith("obj", System.StringComparison.OrdinalIgnoreCase);
-							});
+							})
+							.Concat(System.IO.Directory.GetFiles(dir, "*.csproj", System.IO.SearchOption.TopDirectoryOnly));
 
 						if (csFiles.Any(f => System.IO.File.GetLastWriteTimeUtc(f) > wasmTime))
 						{
@@ -3731,10 +3945,12 @@ public partial class MapEditorHUD : Control
 
 				await System.Threading.Tasks.Task.Run(() =>
 				{
+					bool streamHadErrors = false;
 					string resolvedWasiSdk = WasiSdkResolver.ResolveWasiSdkPath();
+					string csprojName = System.IO.Path.GetFileName(csproj);
 					var compileProcess = new System.Diagnostics.Process();
 					compileProcess.StartInfo.FileName = "dotnet";
-					compileProcess.StartInfo.Arguments = $"publish \"{csproj}\" -c Release -r wasi-wasm -p:WASI_SDK_PATH=\"{resolvedWasiSdk}\"";
+					compileProcess.StartInfo.Arguments = $"publish \"{csprojName}\" -c Release -r wasi-wasm -p:WASI_SDK_PATH=\"{resolvedWasiSdk}\"";
 					compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = resolvedWasiSdk;
 					compileProcess.StartInfo.WorkingDirectory = workspace;
 					compileProcess.StartInfo.CreateNoWindow = true;
@@ -3748,7 +3964,7 @@ public partial class MapEditorHUD : Control
 						{
 							if (e.Data.Contains(": error ") || e.Data.Contains("Build FAILED"))
 							{
-								_wasmHasErrors = true;
+								streamHadErrors = true;
 							}
 							AppendWasmConsoleLog(e.Data);
 						}
@@ -3760,7 +3976,7 @@ public partial class MapEditorHUD : Control
 						{
 							if (e.Data.Contains(": error ") || e.Data.Contains("Build FAILED"))
 							{
-								_wasmHasErrors = true;
+								streamHadErrors = true;
 								AppendWasmConsoleLog("[COMPILER ERROR] " + e.Data);
 							}
 							else if (e.Data.Contains(": warning "))
@@ -3779,7 +3995,7 @@ public partial class MapEditorHUD : Control
 					compileProcess.BeginErrorReadLine();
 					compileProcess.WaitForExit();
 
-					if (compileProcess.ExitCode != 0 || _wasmHasErrors)
+					if (compileProcess.ExitCode != 0 || streamHadErrors)
 					{
 						_wasmHasErrors = true;
 						SetWasmConsoleStatus($"❌ WASM Compilation Failed (exit code {compileProcess.ExitCode})", new Color(1.0f, 0.3f, 0.3f));
@@ -4006,17 +4222,18 @@ public partial class MapEditorHUD : Control
 		{
 			using (var httpClient = new System.Net.Http.HttpClient())
 			{
+				httpClient.Timeout = TimeSpan.FromSeconds(3);
 				var res = await httpClient.GetAsync(seedServerUrl + "/api/creators/check/" + Uri.EscapeDataString(pubKeyStr));
-				if (!res.IsSuccessStatusCode)
+				if (res.StatusCode == System.Net.HttpStatusCode.NotFound)
 				{
-					// Not registered! Show registration prompt
+					// Server responded and explicitly confirmed key is not registered
 					ShowCreatorRegistrationDialog(pubKeyStr, key);
 				}
 			}
 		}
 		catch (Exception ex)
 		{
-			GD.PrintErr($"[MapEditorHUD] Error checking creator registration: {ex.Message}");
+			GD.Print($"[MapEditorHUD] Offline or registry server unreachable, skipping creator registration prompt: {ex.Message}");
 		}
 	}
 
@@ -4073,6 +4290,16 @@ public partial class MapEditorHUD : Control
 		errLabel.AddThemeFontSizeOverride("font_size", 11);
 		vbox.AddChild(errLabel);
 
+		var btnRow = new HBoxContainer();
+		btnRow.AddThemeConstantOverride("separation", 10);
+		btnRow.Alignment = BoxContainer.AlignmentMode.Center;
+
+		var btnCancel = new Button();
+		btnCancel.Text = "Cancel / Skip";
+		btnCancel.CustomMinimumSize = new Vector2(110, 36);
+		btnCancel.Pressed += () => overlay.QueueFree();
+		btnRow.AddChild(btnCancel);
+
 		var btnRegister = new Button();
 		btnRegister.Text = "Register Display Name";
 		btnRegister.CustomMinimumSize = new Vector2(150, 36);
@@ -4108,6 +4335,7 @@ public partial class MapEditorHUD : Control
 				string seedServerUrl = GameHost.Instance != null && GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
 				using (var httpClient = new System.Net.Http.HttpClient())
 				{
+					httpClient.Timeout = TimeSpan.FromSeconds(5);
 					var content = new StringContent(JsonSerializer.Serialize(regPayload), System.Text.Encoding.UTF8, "application/json");
 					var res = await httpClient.PostAsync(seedServerUrl + "/api/creators/register", content);
 					if (res.IsSuccessStatusCode)
@@ -4142,7 +4370,8 @@ public partial class MapEditorHUD : Control
 				btnRegister.Disabled = false;
 			}
 		};
-		vbox.AddChild(btnRegister);
+		btnRow.AddChild(btnRegister);
+		vbox.AddChild(btnRow);
 	}
 
 	public void ImportTerrainFromMinimapDialog()
@@ -5035,7 +5264,7 @@ public partial class MapEditorHUD : Control
 					{
 						if (mouseEvent.ButtonIndex == MouseButton.Left)
 						{
-							if (Input.IsKeyPressed(Godot.Key.Shift))
+							if (Input.IsKeyPressed(Godot.Key.Shift) || (_chkApplyCliffTexture != null && _chkApplyCliffTexture.ButtonPressed && (_chkApplyGroundTexture == null || !_chkApplyGroundTexture.ButtonPressed)))
 							{
 								SelectCliffTexture(index);
 							}
@@ -5063,6 +5292,12 @@ public partial class MapEditorHUD : Control
 	{
 		if (GameHost.Instance != null)
 		{
+			if (_chkApplyCliffTexture != null && _chkApplyCliffTexture.ButtonPressed && (_chkApplyGroundTexture == null || !_chkApplyGroundTexture.ButtonPressed))
+			{
+				SelectCliffTexture(index);
+				return;
+			}
+
 			GameHost.Instance.EditorPaintTextureIndex = index;
 			HighlightSwatch(swatch);
 
@@ -5086,6 +5321,10 @@ public partial class MapEditorHUD : Control
 			if (GameHost.Instance.GroundTerrain != null)
 			{
 				GameHost.Instance.GroundTerrain.CliffTextureIndex = index;
+			}
+			if (!IsSwatchCompatibleTool(GameHost.Instance.ActiveEditorTool))
+			{
+				TriggerToolSelection(GameHost.EditorTool.PaintTexture, _btnTextureBrush);
 			}
 			UpdateTextureLabels();
 			
@@ -5401,6 +5640,109 @@ public partial class MapEditorHUD : Control
 		_btnInspectorDelete = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/BtnInspectorDelete");
 		SetupButton(_btnInspectorDelete, "❌ Erase", () => DeleteSelectedObjectAction(), 12, "Erase selected unit, prop, or decal");
 
+		_btnShowCoverage = new Button();
+		_btnShowCoverage.Text = TranslationServer.Translate("◉ VISION/ATTACK RANGES: OFF");
+		_btnShowCoverage.ToggleMode = true;
+		_btnShowCoverage.FocusMode = Control.FocusModeEnum.None;
+		_btnShowCoverage.AddThemeFontSizeOverride("font_size", 11);
+		_btnShowCoverage.ButtonPressed = false;
+		_btnShowCoverage.Toggled += (pressed) =>
+		{
+			if (GameHost.Instance != null)
+			{
+				GameHost.Instance.EditorCoverageOverlayEnabled = pressed;
+				_btnShowCoverage.Text = pressed ? TranslationServer.Translate("◉ VISION/ATTACK RANGES: ON") : TranslationServer.Translate("◉ VISION/ATTACK RANGES: OFF");
+				GameHost.Instance.UpdateEditorCoverageOverlay();
+			}
+		};
+		var inspectorVBox = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox");
+		inspectorVBox.AddChild(_btnShowCoverage);
+
+		_playerOwnerContainer = new HBoxContainer();
+		_playerOwnerContainer.Name = "PlayerOwnerContainer";
+		_playerOwnerContainer.Visible = false;
+
+		var lblPlayer = new Label();
+		lblPlayer.Text = TranslationServer.Translate("Player");
+		lblPlayer.CustomMinimumSize = new Vector2(50, 0);
+		lblPlayer.AddThemeFontSizeOverride("font_size", 11);
+		_playerOwnerContainer.AddChild(lblPlayer);
+
+		_optPlayerOwner = new OptionButton();
+		_optPlayerOwner.Name = "OptPlayerOwner";
+		_optPlayerOwner.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		_optPlayerOwner.AddThemeFontSizeOverride("font_size", 11);
+
+		for (int i = 0; i < PlayerColorConfig.Palette.Length; i++)
+		{
+			var entry = PlayerColorConfig.Palette[i];
+			_optPlayerOwner.AddItem($"{entry.Index} {entry.Name}", i);
+		}
+
+		_optPlayerOwner.ItemSelected += (long index) =>
+		{
+			if (_isUpdatingInspectorUI) return;
+			if (GameHost.Instance != null && GameHost.Instance.SelectedEditorObject is Unit3D unit && GodotObject.IsInstanceValid(unit))
+			{
+				int playerIndex = (int)index;
+				GameHost.Instance.SetUnitPlayerExternal(unit, playerIndex);
+			}
+		};
+
+		_playerOwnerContainer.AddChild(_optPlayerOwner);
+		inspectorVBox.AddChild(_playerOwnerContainer);
+		inspectorVBox.MoveChild(_playerOwnerContainer, 2);
+
+		_rigStatusContainer = new PanelContainer();
+		_rigStatusContainer.Name = "RigStatusContainer";
+		_rigStatusContainer.Visible = false;
+		_lblRigStatus = new Label();
+		_lblRigStatus.Name = "LblRigStatus";
+		_lblRigStatus.AddThemeFontSizeOverride("font_size", 11);
+		_lblRigStatus.AutowrapMode = TextServer.AutowrapMode.Word;
+		_rigStatusContainer.AddChild(_lblRigStatus);
+		inspectorVBox.AddChild(_rigStatusContainer);
+
+		_animationPreviewContainer = new VBoxContainer();
+		_animationPreviewContainer.Name = "AnimationPreviewContainer";
+		_animationPreviewContainer.Visible = false;
+
+		var lblAnimHeader = new Label();
+		lblAnimHeader.Text = TranslationServer.Translate("Animation Preview");
+		lblAnimHeader.AddThemeFontSizeOverride("font_size", 11);
+		_animationPreviewContainer.AddChild(lblAnimHeader);
+
+		var animHBox = new HBoxContainer();
+		_optAnimationPreview = new OptionButton();
+		_optAnimationPreview.Name = "OptAnimationPreview";
+		_optAnimationPreview.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		_optAnimationPreview.ClipText = true;
+		_optAnimationPreview.FitToLongestItem = false;
+		_optAnimationPreview.CustomMinimumSize = new Vector2(0, 0);
+		_optAnimationPreview.AddThemeFontSizeOverride("font_size", 11);
+		animHBox.AddChild(_optAnimationPreview);
+
+		_btnPlayAnimationPreview = new Button();
+		_btnPlayAnimationPreview.Name = "BtnPlayAnimationPreview";
+		_btnPlayAnimationPreview.Set("icon_max_width", 0);
+		_btnPlayAnimationPreview.Text = "▶";
+		_btnPlayAnimationPreview.CustomMinimumSize = new Vector2(26, 0);
+		_btnPlayAnimationPreview.FocusMode = Control.FocusModeEnum.None;
+		_btnPlayAnimationPreview.Pressed += () => PlaySelectedAnimationPreviewAction();
+		animHBox.AddChild(_btnPlayAnimationPreview);
+
+		_btnStopAnimationPreview = new Button();
+		_btnStopAnimationPreview.Name = "BtnStopAnimationPreview";
+		_btnStopAnimationPreview.Set("icon_max_width", 0);
+		_btnStopAnimationPreview.Text = "⏹";
+		_btnStopAnimationPreview.CustomMinimumSize = new Vector2(26, 0);
+		_btnStopAnimationPreview.FocusMode = Control.FocusModeEnum.None;
+		_btnStopAnimationPreview.Pressed += () => StopSelectedAnimationPreviewAction();
+		animHBox.AddChild(_btnStopAnimationPreview);
+
+		_animationPreviewContainer.AddChild(animHBox);
+		inspectorVBox.AddChild(_animationPreviewContainer);
+
 		var vbox = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox");
 		if (vbox != null)
 		{
@@ -5444,7 +5786,7 @@ public partial class MapEditorHUD : Control
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 			};
 
-			_sldModelGlobalCollisionCircle = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Collision Circle"), 0.1f, 5.0f, 0.05f, 1.0f, (val) =>
+			_sldModelGlobalCollisionCircle = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Collision Circle"), 0.1f, 10.0f, 0.05f, 1.0f, (val) =>
 			{
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
@@ -5467,7 +5809,7 @@ public partial class MapEditorHUD : Control
 
 
 
-			_sldModelBrightness = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Brightness"), 0.0f, 1.0f, 0.01f, 1.0f, (val) =>
+			_sldModelBrightness = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Brightness"), 0.10f, 1.75f, 0.02f, 1.0f, (val) =>
 			{
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
@@ -5554,7 +5896,7 @@ public partial class MapEditorHUD : Control
 
 
 
-			_chkModelGenerateNormals = CreateCheckBoxRow(_contentGlobalOverrides, TranslationServer.Translate("Re-Calculate Normals"), false, (pressed) =>
+			_chkModelGenerateNormals = CreateCheckBoxRow(_contentGlobalOverrides, TranslationServer.Translate("Re-Calculate Normals"), true, (pressed) =>
 			{
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
@@ -5564,6 +5906,23 @@ public partial class MapEditorHUD : Control
 					{
 						GameHost.Instance.SetModelGenerateNormals(assetKey, pressed);
 						GameHost.Instance.FlushModelYOffsetSave();
+						string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+						_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+					}
+				}
+			});
+
+			_chkModelIgnorePlayerColor = CreateCheckBoxRow(_contentGlobalOverrides, TranslationServer.Translate("Ignore Player Color"), false, (pressed) =>
+			{
+				if (_isUpdatingInspectorUI) return;
+				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
+				{
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
+					if (!string.IsNullOrEmpty(assetKey))
+					{
+						GameHost.Instance.SetModelIgnorePlayerColor(assetKey, pressed);
+						GameHost.Instance.FlushModelYOffsetSave();
+						GameHost.Instance.RefreshAllPlacedObjectModels(assetKey);
 						string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 						_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 					}
@@ -5614,7 +5973,7 @@ public partial class MapEditorHUD : Control
 		if (GameHost.Instance.AllUnits.Count == 0)
 		{
 			ShowConfirmationDialog(
-				"Warning: You have not placed any units, you won't see anything due to Fog of War.",
+				"Warning: You have not placed any units, you won't see anything due to Shroud.",
 				async () => await ProceedToTestMap(),
 				"Okay",
 				"Cancel"
@@ -5630,6 +5989,7 @@ public partial class MapEditorHUD : Control
 	{
 		if (GameHost.Instance == null) return;
 
+		_wasmHasErrors = false;
 		ShowWasmConsoleModal();
 		Action<string> logHandler = line => AppendWasmConsoleLog(line);
 		Realm.Godot.WasmRuntime.OnWasmLog += logHandler;
@@ -5692,11 +6052,14 @@ public partial class MapEditorHUD : Control
 			string wasmPath = null;
 			if (System.IO.Directory.Exists(binDir))
 			{
-				wasmPath = System.IO.Directory.GetFiles(
+				var wasmFiles = System.IO.Directory.GetFiles(
 					binDir,
 					"*.wasm",
 					System.IO.SearchOption.AllDirectories
-				).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
+				).Where(f => !f.Contains("native") && !f.Contains("obj")).ToList();
+
+				wasmPath = wasmFiles.FirstOrDefault(f => f.Contains("publish"))
+					?? wasmFiles.OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
 			}
 			if (System.IO.File.Exists(wasmPath))
 			{
@@ -5714,6 +6077,7 @@ public partial class MapEditorHUD : Control
 			SetWasmConsoleStatus("Launching test mode...", UIStyle.ColorCyanGlow);
 			AppendWasmConsoleLog("=== LAUNCHING GAME ENGINE ===");
 
+			UIManager.Instance?.ApplyWindowSettings(GameSettings.WindowModeIdx, GameSettings.ResolutionIdx);
 			GameHost.Instance.ExitMapEditorMode();
 			IsTestMode = true;
 
@@ -5789,11 +6153,7 @@ public partial class MapEditorHUD : Control
 				}
 			}
 
-			string ktxCmd = PathUtils.FindPath("ktx_tools/v5.0.0-rc1/bin/ktx.exe");
-			if (!System.IO.File.Exists(ktxCmd))
-			{
-				ktxCmd = System.IO.Path.GetFullPath(System.IO.Path.Combine(PathUtils.GetProjectRoot(), "..", "ktx_tools", "v5.0.0-rc1", "bin", "ktx.exe"));
-			}
+			string ktxCmd = EditableTerrain.GetKtxCmdPath();
 			try
 			{
 				var startInfo = new System.Diagnostics.ProcessStartInfo
@@ -5979,6 +6339,34 @@ public partial class MapEditorHUD : Control
 				}
 			}
 
+			if (category == "glb" && GameHost.Instance != null)
+			{
+				string normKey = GameHost.Instance.NormalizeModelAssetKey(fileName);
+				if (!GameHost.Instance.ModelObstacleRadii.ContainsKey(normKey))
+				{
+					string modelPath = System.IO.Path.Combine(wsPath, "Assets", "models", subCategory ?? "", fileName);
+					Node3D modelNode = Realm.Godot.Utils.ModelCache.GetModel(modelPath) as Node3D;
+					if (modelNode != null)
+					{
+						float radius = GameHost.Instance.MeasureModelRadius(modelNode);
+						modelNode.Free();
+						if (radius > 0f)
+						{
+							float rounded = (float)Math.Round(radius, 2);
+							GameHost.Instance.ModelObstacleRadii[normKey] = rounded;
+							if (root["ModelObstacleRadii"] is JsonObject radiiObj)
+							{
+								radiiObj[normKey] = rounded;
+							}
+							else
+							{
+								root["ModelObstacleRadii"] = new JsonObject { [normKey] = rounded };
+							}
+						}
+					}
+				}
+			}
+
 			if (!root.ContainsKey("MapProperties")) root["MapProperties"] = new JsonObject();
 			if (!root.ContainsKey("Assets")) root["Assets"] = new JsonObject();
 
@@ -6120,6 +6508,29 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationResult OptimizeAndImportGlbDirect(
+		byte[] glbBytes,
+		int maxTextureResolution = 1024,
+		float creaseAngleDegrees = 45.0f,
+		float allowedPixelError = 1.5f,
+		bool forceReDecimate = false,
+		bool useUastc = false)
+	{
+		var optimizer = ServiceLocator.TryGet<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>()
+			?? new Realm.Godot.Services.ModelOptimization.ModelOptimizerService(ServiceLocator.TryGet<Realm.Ecs.Services.WorldAccessor>());
+
+		var options = new Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationOptions
+		{
+			MaxTextureResolution = maxTextureResolution,
+			CreaseAngleDegrees = creaseAngleDegrees,
+			AllowedPixelError = allowedPixelError,
+			ForceReDecimate = forceReDecimate,
+			UseUastc = useUastc
+		};
+
+		return optimizer.OptimizeGlb(glbBytes, options);
+	}
+
 	public void ReadMetadataAndRefreshTextures()
 	{
 		try
@@ -6140,12 +6551,139 @@ public partial class MapEditorHUD : Control
 			}
 			SetupTextureSwatches(false);
 			RefreshSkyboxList();
-			_entityPaletteController?.SelectCategory(_entityPaletteController.CurrentCategory, triggerAddObject: false);
-			GameHost.Instance?.RefreshAllPlacedObjectModels();
+			GameHost.Instance?.LoadModelYOffsetsFromMetadataJson(wsPath);
 		}
 		catch (Exception ex)
 		{
 			GD.PrintErr($"ReadMetadataAndRefreshTextures error: {ex.Message}");
+		}
+	}
+
+	public void ImportMixamoOrAnimationDialog()
+	{
+		var err = DisplayServer.FileDialogShow(
+			TranslationServer.Translate("Select Mixamo GLB Model or Animation (.glb, .ranim)"),
+			PathUtils.GetProjectRoot(),
+			"",
+			false,
+			DisplayServer.FileDialogMode.OpenFile,
+			new string[] { "*.glb, *.gltf, *.ranim ; 3D Models & Animations" },
+			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) => {
+				if (status && selectedPaths.Length > 0)
+				{
+					string path = selectedPaths[0];
+					string ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
+					if (ext == ".ranim")
+					{
+						ImportAnimationAssetFromExtension(path);
+					}
+					else
+					{
+						ImportGlbAssetFromExtension(path, "units");
+					}
+				}
+			})
+		);
+	}
+
+	public void ImportAnimationAssetFromExtension(string sourceFilePath)
+	{
+		try
+		{
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string ext = System.IO.Path.GetExtension(sourceFilePath).ToLowerInvariant();
+			string animsDir = System.IO.Path.Combine(wsPath, "Assets", "animations");
+			System.IO.Directory.CreateDirectory(animsDir);
+
+			if (ext == ".glb" || ext == ".gltf" || ext == ".fbx")
+			{
+				string originalFileName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
+				var extracted = Realm.Godot.Animation.MixamoAnimationImporter.ExtractAnimationsFromFile(sourceFilePath, originalFileName);
+				if (extracted.Count == 0)
+				{
+					ShowFeedback(TranslationServer.Translate("No animations found in file."));
+					return;
+				}
+
+				int importedCount = 0;
+				int skippedCount = 0;
+				foreach (var (animName, animData) in extracted)
+				{
+					var (savedFileName, blake3, alreadyExisted) = Realm.Godot.Animation.MixamoAnimationImporter.SaveAnimationWithDeduplication(animsDir, animName, animData);
+					UpdateMetadataJsonAsset("animations", savedFileName, blake3);
+					if (alreadyExisted) skippedCount++;
+					else importedCount++;
+				}
+
+				PopulateAnimationPreviewDropdown();
+				if (importedCount > 0)
+				{
+					ShowFeedback(string.Format(TranslationServer.Translate("Successfully imported {0} animation(s) (.ranim)!"), importedCount));
+				}
+				else
+				{
+					ShowFeedback(TranslationServer.Translate("Animation already imported (identical BLAKE3 hash)."));
+				}
+			}
+			else
+			{
+				string fileName = System.IO.Path.GetFileName(sourceFilePath);
+				byte[] sourceBytes = System.IO.File.ReadAllBytes(sourceFilePath);
+				string newHash = MapAssetManager.ComputeBlake3(sourceBytes);
+
+				string baseName = System.IO.Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant();
+				string finalFileName = $"{baseName}.ranim";
+				string targetPath = System.IO.Path.Combine(animsDir, finalFileName);
+
+				if (System.IO.File.Exists(targetPath))
+				{
+					string existingHash = MapAssetManager.ComputeBlake3(System.IO.File.ReadAllBytes(targetPath));
+					if (existingHash.Equals(newHash, StringComparison.OrdinalIgnoreCase))
+					{
+						UpdateMetadataJsonAsset("animations", finalFileName, newHash);
+						PopulateAnimationPreviewDropdown();
+						ShowFeedback(TranslationServer.Translate("Animation already imported (identical BLAKE3 hash)."));
+						return;
+					}
+
+					for (int i = 1; i <= 9999; i++)
+					{
+						string varName = $"{baseName}_{i}.ranim";
+						string varPath = System.IO.Path.Combine(animsDir, varName);
+						if (!System.IO.File.Exists(varPath))
+						{
+							finalFileName = varName;
+							targetPath = varPath;
+							System.IO.File.WriteAllBytes(targetPath, sourceBytes);
+							break;
+						}
+						else
+						{
+							string varHash = MapAssetManager.ComputeBlake3(System.IO.File.ReadAllBytes(varPath));
+							if (varHash.Equals(newHash, StringComparison.OrdinalIgnoreCase))
+							{
+								finalFileName = varName;
+								break;
+							}
+						}
+					}
+				}
+				else
+				{
+					System.IO.File.WriteAllBytes(targetPath, sourceBytes);
+				}
+
+				UpdateMetadataJsonAsset("animations", finalFileName, newHash);
+				PopulateAnimationPreviewDropdown();
+				ShowFeedback(string.Format(TranslationServer.Translate("Imported animation {0}"), finalFileName));
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ImportAnimationAssetFromExtension error: {ex.Message}");
+			ShowFeedback(string.Format(TranslationServer.Translate("Failed to import animation: {0}"), ex.Message));
 		}
 	}
 
@@ -6158,21 +6696,204 @@ public partial class MapEditorHUD : Control
 				: _tempWorkspacePath;
 			string fileName = System.IO.Path.GetFileName(sourceFilePath);
 			string subCat = category.ToLowerInvariant();
-			string modelsDir = System.IO.Path.Combine(wsPath, "Assets", "models", subCat);
-			System.IO.Directory.CreateDirectory(modelsDir);
-			string targetPath = System.IO.Path.Combine(modelsDir, fileName);
-			System.IO.File.Copy(sourceFilePath, targetPath, true);
 
-			byte[] bytes = System.IO.File.ReadAllBytes(targetPath);
-			string blake3 = MapAssetManager.ComputeBlake3(bytes);
+			var importResult = Realm.Godot.Animation.MixamoAnimationImporter.ImportMixamoGlb(sourceFilePath, wsPath, subCat);
+			if (!importResult.Success)
+			{
+				ShowFeedback(string.Format(TranslationServer.Translate("Failed to import GLB asset: {0}"), importResult.ErrorMessage));
+				return;
+			}
 
-			UpdateMetadataJsonAsset("glb", fileName, blake3, subCategory: category.ToLowerInvariant());
-			ShowFeedback($"Imported GLB asset {fileName} ({category})");
+			byte[] glbBytes = System.IO.File.ReadAllBytes(importResult.StrippedGlbPath);
+			string glbBlake3 = MapAssetManager.ComputeBlake3(glbBytes);
+			UpdateMetadataJsonAsset("glb", fileName, glbBlake3, subCategory: subCat);
+
+			foreach (var animFile in importResult.ExtractedAnimationFiles)
+			{
+				string animPath = System.IO.Path.Combine(wsPath, "Assets", "animations", animFile);
+				if (System.IO.File.Exists(animPath))
+				{
+					byte[] animBytes = System.IO.File.ReadAllBytes(animPath);
+					string animBlake3 = MapAssetManager.ComputeBlake3(animBytes);
+					UpdateMetadataJsonAsset("animations", animFile, animBlake3);
+				}
+			}
+
+			PopulateAnimationPreviewDropdown();
+			if (importResult.ExtractedAnimationFiles.Count > 0)
+			{
+				ShowFeedback(string.Format(TranslationServer.Translate("Imported GLB {0} and extracted {1} .ranim animation(s)"), fileName, importResult.ExtractedAnimationFiles.Count));
+			}
+			else
+			{
+				ShowFeedback(string.Format(TranslationServer.Translate("Imported GLB asset {0} ({1})"), fileName, category));
+			}
 		}
 		catch (Exception ex)
 		{
 			GD.PrintErr($"ImportGlbAssetFromExtension error: {ex.Message}");
-			ShowFeedback($"Failed to import GLB asset: {ex.Message}");
+			ShowFeedback(string.Format(TranslationServer.Translate("Failed to import GLB asset: {0}"), ex.Message));
+		}
+	}
+
+	public void PopulateAnimationPreviewDropdown()
+	{
+		if (_optAnimationPreview == null) return;
+		string currentSelected = _optAnimationPreview.ItemCount > 0 ? _optAnimationPreview.GetItemText(_optAnimationPreview.Selected) : "Idle_0";
+		_optAnimationPreview.Clear();
+
+		var standardAnims = new[] { "Idle", "Walk", "Attack", "Death", "Labor", "Spell_Cast", "Dance" };
+		var animOptions = new List<string>();
+
+		var selected = GameHost.Instance?.SelectedEditorObject;
+		Dictionary<string, string[]>? customAnimations = null;
+		if (selected is Unit3D unit && !string.IsNullOrEmpty(unit.UnitId) && GameHost.UnitRegistry.TryGetValue(unit.UnitId, out var meta))
+		{
+			customAnimations = meta.Animations;
+		}
+
+		foreach (var animType in standardAnims)
+		{
+			if (customAnimations != null && customAnimations.TryGetValue(animType, out var list) && list != null && list.Length > 0)
+			{
+				for (int i = 0; i < list.Length; i++)
+				{
+					animOptions.Add($"{animType}_{i}");
+				}
+			}
+			else
+			{
+				animOptions.Add($"{animType}_0");
+			}
+		}
+
+		int idx = 0;
+		int selectedIdx = 0;
+		foreach (var anim in animOptions)
+		{
+			_optAnimationPreview.AddItem(anim, idx);
+			if (anim.Equals(currentSelected, StringComparison.OrdinalIgnoreCase))
+			{
+				selectedIdx = idx;
+			}
+			idx++;
+		}
+
+		_optAnimationPreview.Selected = selectedIdx;
+	}
+
+	private void PlaySelectedAnimationPreviewAction()
+	{
+		if (GameHost.Instance == null) return;
+		var selected = GameHost.Instance.SelectedEditorObject;
+		if (!GodotObject.IsInstanceValid(selected)) return;
+
+		Node modelRoot = selected;
+		if (selected is Unit3D unit && unit.ModelNode != null)
+		{
+			modelRoot = unit.ModelNode;
+		}
+		else if (selected is Prop3D prop)
+		{
+			modelRoot = prop.GetNodeOrNull<Node3D>("VisualModel") ?? selected;
+		}
+
+		var validation = Realm.Godot.Animation.SkeletonValidator.Validate(modelRoot);
+		if (!validation.IsValid)
+		{
+			ShowFeedback(string.Format(TranslationServer.Translate("Cannot play animation: {0}"), validation.ErrorMessage));
+			return;
+		}
+
+		if (_optAnimationPreview == null || _optAnimationPreview.ItemCount == 0) return;
+		string animName = _optAnimationPreview.GetItemText(_optAnimationPreview.Selected);
+
+		if (selected is Unit3D uObj)
+		{
+			uObj.PlayAnimation(animName);
+			ShowFeedback(string.Format(TranslationServer.Translate("Playing '{0}' on {1}"), animName, selected.Name));
+			return;
+		}
+
+		var player = Realm.Godot.Animation.AnimationRetargetingService.FindOrCreateAnimationPlayer(modelRoot);
+		if (player != null && player.HasAnimation(animName))
+		{
+			player.Play(animName);
+			ShowFeedback(string.Format(TranslationServer.Translate("Playing '{0}' on {1}"), animName, selected.Name));
+			return;
+		}
+
+		int underscoreIdx = animName.LastIndexOf('_');
+		string baseType = underscoreIdx > 0 ? animName.Substring(0, underscoreIdx) : animName;
+		string specificFile = null;
+
+		if (selected is Unit3D u && !string.IsNullOrEmpty(u.UnitId) && GameHost.UnitRegistry.TryGetValue(u.UnitId, out var uMeta) && uMeta.Animations != null)
+		{
+			if (underscoreIdx > 0 && int.TryParse(animName.Substring(underscoreIdx + 1), out int varIdx))
+			{
+				if (uMeta.Animations.TryGetValue(baseType, out var aFiles) && varIdx >= 0 && varIdx < aFiles.Length)
+				{
+					specificFile = aFiles[varIdx];
+				}
+			}
+		}
+
+		string filePath = !string.IsNullOrEmpty(specificFile)
+			? Realm.Godot.Animation.AnimationRetargetingService.ResolveAnimationFilePath(specificFile, selected is Unit3D u2 ? u2.UnitId : null)
+			: Realm.Godot.Animation.AnimationRetargetingService.ResolveAnimationFilePath(animName, selected is Unit3D u3 ? u3.UnitId : null);
+
+		Realm.Godot.Animation.RealmAnimationData animData = null;
+		if (!string.IsNullOrEmpty(filePath))
+		{
+			animData = Realm.Godot.Animation.AnimationRetargetingService.GetOrLoadRanimData(filePath);
+		}
+		else
+		{
+			animData = baseType switch
+			{
+				"Idle" => Realm.Godot.Animation.RealmDefaultAnimations.Idle,
+				"Walk" => Realm.Godot.Animation.RealmDefaultAnimations.Walk,
+				"Attack" => Realm.Godot.Animation.RealmDefaultAnimations.Attack,
+				"Death" => Realm.Godot.Animation.RealmDefaultAnimations.Death,
+				"Labor" => Realm.Godot.Animation.RealmDefaultAnimations.Labor,
+				"Spell_Cast" => Realm.Godot.Animation.RealmDefaultAnimations.Spell_Cast,
+				"Dance" => Realm.Godot.Animation.RealmDefaultAnimations.Dance,
+				_ => null
+			};
+		}
+
+		if (animData == null)
+		{
+			ShowFeedback(string.Format(TranslationServer.Translate("Animation data not found for '{0}'"), animName));
+			return;
+		}
+
+		if (Realm.Godot.Animation.AnimationRetargetingService.RetargetAndBind(animData, modelRoot, animName, out string err))
+		{
+			var animPlayer = Realm.Godot.Animation.AnimationRetargetingService.FindOrCreateAnimationPlayer(modelRoot);
+			if (animPlayer != null)
+			{
+				animPlayer.Play(animName);
+				ShowFeedback(string.Format(TranslationServer.Translate("Playing '{0}' on {1} (RAM Retargeted)"), animName, selected.Name));
+			}
+		}
+		else
+		{
+			ShowFeedback(string.Format(TranslationServer.Translate("Failed to retarget animation: {0}"), err));
+		}
+	}
+
+	private void StopSelectedAnimationPreviewAction()
+	{
+		if (GameHost.Instance == null) return;
+		var selected = GameHost.Instance.SelectedEditorObject;
+		if (!GodotObject.IsInstanceValid(selected)) return;
+
+		var player = Realm.Godot.Animation.AnimationRetargetingService.FindOrCreateAnimationPlayer(selected);
+		if (player != null && player.IsPlaying())
+		{
+			player.Stop(true);
+			ShowFeedback(TranslationServer.Translate("Animation stopped"));
 		}
 	}
 
@@ -6557,10 +7278,17 @@ public partial class MapEditorHUD : Control
 
 		if (sun != null)
 		{
+			GameSettings.ApplyDirectionalLightQuality(sun);
 			sun.RotationDegrees = new Vector3(_tuneSunPitch, _tuneSunYaw, 0f);
 			sun.LightEnergy = _tuneSunEnergy;
 			sun.LightColor = new Color(_tuneSunR, _tuneSunG, _tuneSunB);
-			sun.ShadowEnabled = false;
+			sun.LightSpecular = 0.5f;
+			sun.DirectionalShadowMaxDistance = 250.0f;
+			sun.DirectionalShadowBlendSplits = true;
+			sun.DirectionalShadowFadeStart = 0.8f;
+			sun.ShadowBias = 0.03f;
+			sun.ShadowNormalBias = 1.2f;
+			sun.ShadowEnabled = !GameSettings.DisableShadows && _tuneSunEnergy > 0.05f;
 		}
 
 		if (worldEnv != null && worldEnv.Environment != null)
@@ -6572,7 +7300,7 @@ public partial class MapEditorHUD : Control
 
 			GameSettings.ApplyEnvironmentQuality(env);
 
-			if (GameSettings.QualityIdx > 0)
+			if (GameSettings.QualityIdx > GraphicsQuality.Low)
 			{
 				env.FogEnabled = _tuneFogEnabled;
 				env.FogDensity = _tuneFogDensity;

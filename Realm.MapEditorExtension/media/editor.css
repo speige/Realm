@@ -1117,3 +1117,116 @@ textarea:focus {
     font-size: 11px;
     color: #81c784;
 }
+
+/* --- Unit Animations Table --- */
+.anim-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.anim-table th {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--vscode-foreground, var(--text-primary));
+    opacity: 0.85;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.anim-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    vertical-align: top;
+}
+
+.anim-table tr:last-child td {
+    border-bottom: none;
+}
+
+.anim-type-cell {
+    width: 130px;
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--vscode-editor-foreground, var(--text-primary));
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-top: 4px;
+}
+
+.anim-type-cell strong {
+    color: var(--vscode-editor-foreground, var(--text-primary));
+    font-weight: 600;
+}
+
+.anim-chips-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 28px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.anim-chips-fallback {
+    color: var(--vscode-descriptionForeground, #9d9d9d);
+    font-size: 11px;
+    font-style: italic;
+}
+
+.anim-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0, 122, 204, 0.22);
+    border: 1px solid rgba(0, 122, 204, 0.5);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-family: monospace;
+    color: var(--vscode-editor-foreground, #ffffff);
+}
+
+.anim-chip-index {
+    font-weight: 700;
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    letter-spacing: 0.3px;
+}
+
+.anim-chip .remove-anim {
+    cursor: pointer;
+    color: var(--vscode-descriptionForeground, #aaaaaa);
+    font-weight: bold;
+    font-size: 13px;
+    line-height: 1;
+    margin-left: 2px;
+}
+
+.anim-chip .remove-anim:hover {
+    color: var(--danger-color);
+}
+
+.anim-add-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.anim-add-row input {
+    flex: 1;
+    min-width: 140px;
+    padding: 4px 8px;
+    font-size: 12px;
+}
+

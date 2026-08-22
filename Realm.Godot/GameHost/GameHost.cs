@@ -37,7 +37,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private EditorService _editorService;
 	private ReplayService _replayService;
 	private SimulationService _simulationService;
-	private FogOfWarService _fogOfWarService;
+	private ShroudService _shroudService;
 	private UnitSpawnService _unitSpawnService;
 	private WorldInitService _worldInitService;
 	private MapPropertiesLoader _mapPropertiesLoader;
@@ -45,11 +45,13 @@ public partial class GameHost : Node3D, IGameAPI
 	private CheatService _cheatService;
 	private EnvironmentService _environmentService;
 	private SpectatorService _spectatorService;
+	private Realm.Godot.Services.ModelOptimization.ModelOptimizerService _modelOptimizerService;
 
 	public CheatService CheatService => _cheatService;
 	public EnvironmentService EnvironmentService => _environmentService;
 	public SpectatorService SpectatorService => _spectatorService;
-	public FogOfWarService FogOfWarService => _fogOfWarService;
+	public ShroudService ShroudService => _shroudService;
+	public Realm.Godot.Services.ModelOptimization.ModelOptimizerService ModelOptimizerService => _modelOptimizerService;
 
 	public bool UnlimitedPowerEnabled { get; set; } = false;
 	public bool GigachadEnabled { get; set; } = false;
@@ -165,6 +167,48 @@ public partial class GameHost : Node3D, IGameAPI
 		set => EcsWorld?.Mutate<NetworkMappingState>(_worldEntity, (ref NetworkMappingState s) => s.EnemyPlayerEntity = value);
 	}
 
+	public int LocalPlayerIndex
+	{
+		get
+		{
+			if (_multiplayerActive && LobbyManager.Instance != null && LobbyManager.Instance.PlayerList.Count > 0)
+			{
+				var p = LobbyManager.Instance.PlayerList.Find(x => x.PeerId == _localPeerId);
+				if (p != null) return p.Slot;
+			}
+			return 0;
+		}
+	}
+
+	public Entity GetPlayerEntityForPlayerIndex(int playerIndex)
+	{
+		if (_multiplayerActive && LobbyManager.Instance != null && LobbyManager.Instance.PlayerList.Count > 0)
+		{
+			var p = LobbyManager.Instance.PlayerList.Find(x => x.Slot == playerIndex);
+			if (p != null && _peerIdToPlayerEntityMap != null && _peerIdToPlayerEntityMap.TryGetValue(p.PeerId, out var pe) && EcsWorld.IsAlive(pe))
+			{
+				return pe;
+			}
+		}
+
+		if (playerIndex == 0)
+		{
+			return _playerEntity;
+		}
+
+		if (_enemyPlayerEntity != Entity.Null && EcsWorld.IsAlive(_enemyPlayerEntity))
+		{
+			return _enemyPlayerEntity;
+		}
+
+		return _playerEntity;
+	}
+
+	public bool IsPlayerEnemy(int playerIndex)
+	{
+		return NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, playerIndex);
+	}
+
 	private Entity _worldEntity;
 
 	private int _replayTickCounter
@@ -228,6 +272,7 @@ public partial class GameHost : Node3D, IGameAPI
 
 	public bool IsMapEditorMode { get; set; }
 	public bool IsLoadingMap { get; set; }
+	public bool IsGameOver { get; private set; }
 	private EditableTerrain _groundTerrain;
 	public EditableTerrain GroundTerrain
 	{
@@ -546,6 +591,7 @@ public partial class GameHost : Node3D, IGameAPI
 				}
 			}
 			MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
+			UpdateEditorCoverageOverlay();
 		}
 	}
 	private Node? _selectedEditorObject;
@@ -580,6 +626,11 @@ public partial class GameHost : Node3D, IGameAPI
 
 	public struct UnitMetadata
 	{
+		public UnitMetadata()
+		{
+			RecalculateNormals = true;
+		}
+
 		public string UnitId { get; set; }
 		public string Name { get; set; }
 		public string Description { get; set; }
@@ -604,7 +655,8 @@ public partial class GameHost : Node3D, IGameAPI
 		public float CollisionCircle { get; set; }
 		public float Brightness { get; set; }
 		public string Tint { get; set; }
-		public bool RecalculateNormals { get; set; }
+		public bool RecalculateNormals { get; set; } = true;
+		public bool IgnorePlayerColor { get; set; }
 		public string[]? BuildOptions { get; set; }
 		public bool IsHero { get; set; }
 		public string[]? Abilities { get; set; }
@@ -612,10 +664,17 @@ public partial class GameHost : Node3D, IGameAPI
 		public string[]? PathingCapabilities { get; set; }
 		public int PathingType { get; set; }
 		public float? ObstacleRadius { get; set; }
+		public string[]? Targets { get; set; }
+		public Dictionary<string, string[]>? Animations { get; set; }
 	}
 
 	public struct PropMetadata
 	{
+		public PropMetadata()
+		{
+			RecalculateNormals = true;
+		}
+
 		public string UnitId { get; set; }
 		public string Name { get; set; }
 		public string Description { get; set; }
@@ -625,12 +684,18 @@ public partial class GameHost : Node3D, IGameAPI
 		public float CollisionCircle { get; set; }
 		public float Brightness { get; set; }
 		public string Tint { get; set; }
-		public bool RecalculateNormals { get; set; }
+		public bool RecalculateNormals { get; set; } = true;
+		public bool IgnorePlayerColor { get; set; }
 		public int PathingType { get; set; }
 	}
 
 	public struct ResourceMetadata
 	{
+		public ResourceMetadata()
+		{
+			RecalculateNormals = true;
+		}
+
 		public string UnitId { get; set; }
 		public string Name { get; set; }
 		public string Description { get; set; }
@@ -644,8 +709,19 @@ public partial class GameHost : Node3D, IGameAPI
 		public float CollisionCircle { get; set; }
 		public float Brightness { get; set; }
 		public string Tint { get; set; }
-		public bool RecalculateNormals { get; set; }
+		public bool RecalculateNormals { get; set; } = true;
+		public bool IgnorePlayerColor { get; set; }
 		public int PathingType { get; set; }
+	}
+
+	public struct AbilityMetadata
+	{
+		public string AbilityId { get; set; }
+		public string Name { get; set; }
+		public string Description { get; set; }
+		public string AbilityType { get; set; }
+		public string IconPath { get; set; }
+		public float ManaCost { get; set; }
 	}
 
 	public static int GetUnitPathingFlags(UnitMetadata meta)
@@ -685,7 +761,7 @@ public partial class GameHost : Node3D, IGameAPI
 			EcsWorld.Set(_worldEntity, new WorldState(s.GameElapsedTime, s.TimeOfDayIndex, value, s.DayNightCycleEnabled)));
 	}
 
-	private const float TimeOfDayCycleDuration = 90f;
+	public const float TimeOfDayCycleDuration = 90f;
 
 	public const float FireballCooldownMax = 12f;
 	public const float LightningCooldownMax = 18f;
@@ -917,8 +993,6 @@ public partial class GameHost : Node3D, IGameAPI
 		{
 			throw new ArgumentException($"Unit ID '{unitTypeId}' not found in registry.");
 		}
-		var playerOwner = isEnemy ? _enemyPlayerEntity.AsPlayerEntity(EcsWorld) : _playerEntity.AsPlayerEntity(EcsWorld);
-
 		int ownerPeerId = _localPeerId;
 		if (isEnemy)
 		{
@@ -938,6 +1012,16 @@ public partial class GameHost : Node3D, IGameAPI
 			}
 		}
 		bool actualIsEnemy = NetworkService.ArePeersEnemies(_localPeerId, ownerPeerId);
+		Entity playerOwnerEntity = _playerEntity;
+		if (_peerIdToPlayerEntityMap != null && _peerIdToPlayerEntityMap.TryGetValue(ownerPeerId, out var pe) && EcsWorld.IsAlive(pe))
+		{
+			playerOwnerEntity = pe;
+		}
+		else if (actualIsEnemy && _enemyPlayerEntity != Entity.Null && EcsWorld.IsAlive(_enemyPlayerEntity))
+		{
+			playerOwnerEntity = _enemyPlayerEntity;
+		}
+		var playerOwner = playerOwnerEntity.AsPlayerEntity(EcsWorld);
 		
 		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitTypeId;
 		string modelPath = _unitSpawnService.GetFallbackModelPath(targetModel, meta.Speed == 0f);
@@ -958,7 +1042,10 @@ public partial class GameHost : Node3D, IGameAPI
 	{
 		var pos = new Vector3(position.X, position.Y, position.Z);
 		var prop = SpawnPropExternal(resourceType, pos);
-		prop.ResourceAmount = amount;
+		if (prop != null)
+		{
+			prop.ResourceAmount = amount;
+		}
 	}
 
 	IEnumerable<IUnit> IGameAPI.GetAllUnits()
@@ -1025,12 +1112,14 @@ public partial class GameHost : Node3D, IGameAPI
 	void IGameAPI.TriggerVictory()
 	{
 		GD.Print("[GameHost] Victory triggered by map script!");
+		IsGameOver = true;
 		UIManager.Instance?.CallDeferred(nameof(UIManager.TransitionTo), (int)GameScreen.GameOver, true);
 	}
 
 	void IGameAPI.TriggerDefeat()
 	{
 		GD.Print("[GameHost] Defeat triggered by map script!");
+		IsGameOver = true;
 		UIManager.Instance?.CallDeferred(nameof(UIManager.TransitionTo), (int)GameScreen.GameOver, false);
 	}
 
@@ -1240,22 +1329,27 @@ public class {mapName} : IMapScript
 		{
 			templateDir = System.IO.Path.Combine(projectRoot, "..", "MapTemplate");
 		}
-		string templateCsprojPath = System.IO.Path.Combine(templateDir, "MapScript.csproj");
-		string templateTargetsPath = System.IO.Path.Combine(templateDir, "Directory.Build.targets");
-		string templateVscodeSettingsPath = System.IO.Path.Combine(templateDir, ".vscode", "settings.json");
+		string templateCsprojPath = PathUtils.FindPath("MapTemplate/MapScript.csproj");
+		if (!System.IO.File.Exists(templateCsprojPath))
+		{
+			templateCsprojPath = System.IO.Path.Combine(templateDir, "MapScript.csproj");
+		}
+
+		string templateTargetsPath = PathUtils.FindPath("MapTemplate/Directory.Build.targets");
+		if (!System.IO.File.Exists(templateTargetsPath))
+		{
+			templateTargetsPath = System.IO.Path.Combine(templateDir, "Directory.Build.targets");
+		}
+
+		string templateVscodeSettingsPath = PathUtils.FindPath("MapTemplate/.vscode/settings.json");
+		if (!System.IO.File.Exists(templateVscodeSettingsPath))
+		{
+			templateVscodeSettingsPath = System.IO.Path.Combine(templateDir, ".vscode", "settings.json");
+		}
 
 		if (System.IO.File.Exists(templateVscodeSettingsPath))
 		{
-			System.IO.File.Copy(templateVscodeSettingsPath, vscodeSettingsPath, true);
-		}
-		else
-		{
-			string vscodeSettingsContent = @"{
-    ""dotnet.preferCSharpExtension"": true,
-    ""dotnet.server.useOmnisharp"": false,
-    ""dotnet.projects.enableAutomaticRestore"": true
-}
-";
+			string vscodeSettingsContent = System.IO.File.ReadAllText(templateVscodeSettingsPath);
 			System.IO.File.WriteAllText(vscodeSettingsPath, vscodeSettingsContent);
 		}
 
@@ -1311,64 +1405,14 @@ public class {mapName} : IMapScript
 
 		if (System.IO.File.Exists(templateCsprojPath))
 		{
-			System.IO.File.Copy(templateCsprojPath, csprojPath, true);
-		}
-		else
-		{
-			string csprojContent = @"<Project Sdk=""Microsoft.NET.Sdk"">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
-    <WasmGenerateAppBundle>false</WasmGenerateAppBundle>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <NativeLib>Shared</NativeLib>
-  </PropertyGroup>
-  <ItemGroup>
-	<TrimmerRootAssembly Include=""$(MSBuildProjectName)"" />
-  </ItemGroup>
-  <ItemGroup>
-	<Reference Include=""Realm.MapAPI"">
-      <HintPath>lib/Realm.MapAPI.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-  <ItemGroup>
-    <DirectPInvoke Include=""env"" />
-    <LinkerArg Include=""-Wl,--allow-undefined"" />
-  </ItemGroup>
-  <Target Name=""EnableAotLate"" BeforeTargets=""ImportRuntimeIlcPackageTarget;IlcCompile;_ComputeAssembliesToCompileToNative"">
-    <PropertyGroup>
-      <PublishAot>true</PublishAot>
-      <IlcLlvmTarget>wasm32-unknown-wasi</IlcLlvmTarget>
-    </PropertyGroup>
-  </Target>
-  <Target Name=""ClearComponentWit"" BeforeTargets=""LinkNative;LinkNativeLlvm"">
-    <ItemGroup>
-      <WasmComponentTypeWit Remove=""@(WasmComponentTypeWit)"" />
-    </ItemGroup>
-  </Target>
-  <ItemGroup>
-    <PackageReference Include=""Microsoft.DotNet.ILCompiler.LLVM"" Version=""10.0.0-rc.1.26357.1"" />
-    <PackageReference Include=""runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM"" Version=""10.0.0-rc.1.26357.1"" />
-  </ItemGroup>
-</Project>
-";
+			string csprojContent = System.IO.File.ReadAllText(templateCsprojPath);
 			System.IO.File.WriteAllText(csprojPath, csprojContent);
 		}
 
 		string targetsPath = System.IO.Path.Combine(mapDir, "Directory.Build.targets");
 		if (System.IO.File.Exists(templateTargetsPath))
 		{
-			System.IO.File.Copy(templateTargetsPath, targetsPath, true);
-		}
-		else
-		{
-			string targetsContent = @"<Project>
-  <!-- Override Mono WASM SDK target to allow Native AOT build -->
-  <Target Name=""PrepareInputsForWasmBuild"" />
-</Project>
-";
+			string targetsContent = System.IO.File.ReadAllText(templateTargetsPath);
 			System.IO.File.WriteAllText(targetsPath, targetsContent);
 		}
 
@@ -1860,16 +1904,17 @@ public class {mapName} : IMapScript
 
 	IUnit IGameAPI.SpawnUnitForPlayer(string unitTypeId, System.Numerics.Vector3 position, int playerIndex)
 	{
-		bool isEnemy = playerIndex != 0;
-		return ((IGameAPI)this).SpawnUnit(unitTypeId, position, isEnemy);
+		bool isEnemy = NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, playerIndex);
+		var unit = ((IGameAPI)this).SpawnUnit(unitTypeId, position, isEnemy);
+		unit.Player = playerIndex;
+		return unit;
 	}
 
 	IEnumerable<IUnit> IGameAPI.GetUnitsOwnedByPlayer(int playerIndex)
 	{
-		bool isEnemy = playerIndex != 0;
 		foreach (var unit in ((IGameAPI)this).GetAllUnits())
 		{
-			if (unit.IsEnemy == isEnemy) yield return unit;
+			if (unit.Player == playerIndex) yield return unit;
 		}
 	}
 
@@ -1985,12 +2030,11 @@ public class {mapName} : IMapScript
 
 	IEnumerable<IUnit> IGameAPI.GetUnitsOwnedByPlayer(int playerIndex, System.Func<IUnit, bool> filter)
 	{
-		bool isEnemy = playerIndex != 0;
 		var list = new List<IUnit>();
 		foreach (var u in AllUnits)
 		{
 			if (!GodotObject.IsInstanceValid(u) || !EcsWorld.IsAlive(u.Entity)) continue;
-			if (u.IsEnemy != isEnemy) continue;
+			if (u.Player != playerIndex) continue;
 			var w = GetUnitWrapper(u.Entity);
 			if (filter(w)) list.Add(w);
 		}
@@ -2058,7 +2102,7 @@ public class {mapName} : IMapScript
 
 	void IGameAPI.SetUnitOwner(IUnit unit, int playerIndex)
 	{
-		unit.IsEnemy = playerIndex != 0;
+		unit.Player = playerIndex;
 	}
 
 	int IGameAPI.GetPlayerCurrentPopulation(int playerIndex)
@@ -2573,6 +2617,7 @@ public class {mapName} : IMapScript
 
 	public void LoadUnitMetadata(string mapName = null)
 	{
+		ResetAbilityCatalog();
 		if (string.IsNullOrEmpty(mapName))
 		{
 			mapName = !string.IsNullOrEmpty(ActiveMapName) ? ActiveMapName : "temp_map_workspace";
@@ -2596,11 +2641,6 @@ public class {mapName} : IMapScript
 			jsonText = System.IO.File.ReadAllText(globalPath);
 		}
 
-		UnitRegistry.Clear();
-		PropRegistry.Clear();
-		ResourceRegistry.Clear();
-		Prop3D.ClearModelPathCache();
-
 		if (!string.IsNullOrEmpty(jsonText))
 		{
 			try
@@ -2608,9 +2648,17 @@ public class {mapName} : IMapScript
 				using var doc = System.Text.Json.JsonDocument.Parse(jsonText);
 				if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
 				{
+					var newUnits = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
+					foreach (var kvp in DefaultRegistryFallback)
+					{
+						newUnits[kvp.Key] = kvp.Value;
+					}
+					var newProps = new Dictionary<string, PropMetadata>(StringComparer.OrdinalIgnoreCase);
+					var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
+
 					bool hasStructuredArrays = false;
 
-					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == JsonValueKind.Array)
 					{
 						hasStructuredArrays = true;
 						var list = JsonSerializer.Deserialize<List<UnitMetadata>>(unitsProp.GetRawText(), Options);
@@ -2619,12 +2667,12 @@ public class {mapName} : IMapScript
 							foreach (var meta in list)
 							{
 								if (!string.IsNullOrEmpty(meta.UnitId))
-									UnitRegistry[meta.UnitId] = meta;
+									newUnits[meta.UnitId] = meta;
 							}
 						}
 					}
 
-					if (doc.RootElement.TryGetProperty("CustomBuildings", out var bldProp) && bldProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					if (doc.RootElement.TryGetProperty("CustomBuildings", out var bldProp) && bldProp.ValueKind == JsonValueKind.Array)
 					{
 						hasStructuredArrays = true;
 						var list = JsonSerializer.Deserialize<List<UnitMetadata>>(bldProp.GetRawText(), Options);
@@ -2633,12 +2681,12 @@ public class {mapName} : IMapScript
 							foreach (var meta in list)
 							{
 								if (!string.IsNullOrEmpty(meta.UnitId))
-									UnitRegistry[meta.UnitId] = meta;
+									newUnits[meta.UnitId] = meta;
 							}
 						}
 					}
 
-					if (doc.RootElement.TryGetProperty("CustomResources", out var resProp) && resProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					if (doc.RootElement.TryGetProperty("CustomResources", out var resProp) && resProp.ValueKind == JsonValueKind.Array)
 					{
 						hasStructuredArrays = true;
 						var list = JsonSerializer.Deserialize<List<ResourceMetadata>>(resProp.GetRawText(), Options);
@@ -2650,13 +2698,13 @@ public class {mapName} : IMapScript
 								{
 									var copy = meta;
 									if (copy.PathingType == 0) copy.PathingType = 255;
-									ResourceRegistry[copy.UnitId] = copy;
+									newResources[copy.UnitId] = copy;
 								}
 							}
 						}
 					}
 
-					if (doc.RootElement.TryGetProperty("CustomProps", out var propProp) && propProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+					if (doc.RootElement.TryGetProperty("CustomProps", out var propProp) && propProp.ValueKind == JsonValueKind.Array)
 					{
 						hasStructuredArrays = true;
 						var list = JsonSerializer.Deserialize<List<PropMetadata>>(propProp.GetRawText(), Options);
@@ -2668,33 +2716,51 @@ public class {mapName} : IMapScript
 								{
 									var copy = meta;
 									if (copy.PathingType == 0) copy.PathingType = 255;
-									PropRegistry[copy.UnitId] = copy;
+									newProps[copy.UnitId] = copy;
 								}
 							}
 						}
 					}
 
-					if (hasStructuredArrays) return;
-
-					var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
-					if (loadedRegistry != null)
+					if (doc.RootElement.TryGetProperty("CustomAbilities", out var abProp) && abProp.ValueKind == JsonValueKind.Array)
 					{
-						var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+						hasStructuredArrays = true;
+						var list = JsonSerializer.Deserialize<List<AbilityMetadata>>(abProp.GetRawText(), Options);
+						if (list != null)
 						{
-							"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades", "CustomItems", "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps", "Assets"
-						};
-						foreach (var kvp in loadedRegistry)
-						{
-							if (!skipKeys.Contains(kvp.Key))
-							{
-								UnitRegistry[kvp.Key] = kvp.Value;
-							}
-						}
-						if (UnitRegistry.Count > 0)
-						{
-							return;
+							RegisterCustomAbilities(list);
 						}
 					}
+
+					if (!hasStructuredArrays)
+					{
+						var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
+						if (loadedRegistry != null)
+						{
+							var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+							{
+								"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades", "CustomItems", "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps", "Assets"
+							};
+							foreach (var kvp in loadedRegistry)
+							{
+								if (!skipKeys.Contains(kvp.Key))
+								{
+									newUnits[kvp.Key] = kvp.Value;
+								}
+							}
+						}
+					}
+
+					UnitRegistry.Clear();
+					foreach (var kvp in newUnits) UnitRegistry[kvp.Key] = kvp.Value;
+
+					PropRegistry.Clear();
+					foreach (var kvp in newProps) PropRegistry[kvp.Key] = kvp.Value;
+
+					ResourceRegistry.Clear();
+					foreach (var kvp in newResources) ResourceRegistry[kvp.Key] = kvp.Value;
+
+					Prop3D.ClearModelPathCache();
 				}
 			}
 			catch (Exception ex)
@@ -2702,17 +2768,12 @@ public class {mapName} : IMapScript
 				GD.PrintErr($"Failed to load custom unit registry: {ex.Message}");
 			}
 		}
-
-		// Fallback: If no metadata.json exists or it failed to parse, use default values so the game doesn't crash.
-		foreach (var kvp in DefaultRegistryFallback)
-		{
-			UnitRegistry[kvp.Key] = kvp.Value;
-		}
 	}
 
 	private void LoadMapScript(string mapName)
 	{
 		_activeMapScript = null;
+		IsGameOver = false;
 
 		string normalizedRaw = mapName.Replace('\\', '/');
 		bool isCustomPath = normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRaw);
@@ -2731,19 +2792,22 @@ public class {mapName} : IMapScript
 					string binDir = System.IO.Path.Combine(checkDir, "bin");
 					if (System.IO.Directory.Exists(binDir))
 					{
-						PendingMapScriptPath = System.IO.Directory.GetFiles(
-							binDir,
-							"CustomMap.wasm",
-							System.IO.SearchOption.AllDirectories
-						).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
+						var files = System.IO.Directory.GetFiles(binDir, "*.wasm", System.IO.SearchOption.AllDirectories)
+							.Where(f => !f.Contains("native") && !f.Contains("obj"))
+							.ToList();
+
+						PendingMapScriptPath = files.FirstOrDefault(f => f.Contains("publish") && System.IO.Path.GetFileName(f).Equals("MapScript.wasm", StringComparison.OrdinalIgnoreCase))
+							?? files.FirstOrDefault(f => f.Contains("publish"))
+							?? files.FirstOrDefault(f => System.IO.Path.GetFileName(f).Equals("MapScript.wasm", StringComparison.OrdinalIgnoreCase))
+							?? files.OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
 					}
 					if (string.IsNullOrEmpty(PendingMapScriptPath))
 					{
-						PendingMapScriptPath = System.IO.Directory.GetFiles(
-							checkDir,
-							"*.wasm",
-							System.IO.SearchOption.AllDirectories
-						).OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
+						var allWasm = System.IO.Directory.GetFiles(checkDir, "*.wasm", System.IO.SearchOption.AllDirectories)
+							.Where(f => !f.Contains("native") && !f.Contains("obj"))
+							.OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f))
+							.FirstOrDefault();
+						PendingMapScriptPath = allWasm;
 					}
 				}
 			}
@@ -2762,7 +2826,7 @@ public class {mapName} : IMapScript
 					if (PendingMapScriptPath.EndsWith(".wasm", StringComparison.OrdinalIgnoreCase))
 					{
 						string mapNameOnly = System.IO.Path.GetFileNameWithoutExtension(PendingMapScriptPath);
-						if (mapNameOnly.Equals("CustomMap", StringComparison.OrdinalIgnoreCase))
+						if (mapNameOnly.Equals("MapScript", StringComparison.OrdinalIgnoreCase))
 						{
 							string parentDir = System.IO.Path.GetDirectoryName(PendingMapScriptPath);
 							while (!string.IsNullOrEmpty(parentDir))
@@ -2953,6 +3017,7 @@ public class {mapName} : IMapScript
 		_simulationService = ServiceLocator.Get<SimulationService>();
 		_simulationService.SetRuntimeReferences(AllUnits, AllProps, _castlesList, _definitionManager, _goldResourceId, _woodResourceId, _stoneResourceId, GroundTerrain);
 		_simulationService.Initialize();
+		_simulationService.EditorHeightProvider = p => _editorService.GetTerrainHeightAt(new Vector3(p.X, p.Y, p.Z));
 
 		_simulationService.OnArrowProjectileRequested = (start, target) => SpawnArrowProjectile(new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z));
 		_simulationService.OnDamageFlashRequested = entity =>
@@ -2972,6 +3037,7 @@ public class {mapName} : IMapScript
 		};
 		_simulationService.OnKillUnitRequested = entity =>
 		{
+			_warnedNonFinitePositions.Remove(entity);
 			if (EcsWorld.IsAlive(entity) && GameHost.TryGetUnit3D(entity, out var unit3D))
 			{
 				this.CallDeferred(nameof(KillUnit), unit3D);
@@ -2992,6 +3058,10 @@ public class {mapName} : IMapScript
 					? GetUnitWrapper(attackerEntity)
 					: null;
 				OnUnitDamaged?.Invoke(GetUnitWrapper(targetEntity), attackerWrapper, damage);
+				if (GameHost.TryGetUnit3D(targetEntity, out var targetUnit3D))
+				{
+					_fxService.SpawnDamageNumber(this, targetUnit3D.GlobalPosition, damage);
+				}
 			}
 		};
 		_simulationService.OnUnitAttackedCallback = (attackerEntity, targetEntity) =>
@@ -3277,7 +3347,7 @@ public class {mapName} : IMapScript
 			};
 		}
 
-		_fogOfWarService.Initialize(MainNode);
+		_shroudService.Initialize(MainNode);
 	}
 
 	public void ResetWorldAndState()
@@ -3330,12 +3400,11 @@ public class {mapName} : IMapScript
 
 		EntityToUnit3D.Clear();
 		EntityToProp3D.Clear();
-		PendingMapScriptPath = null;
 		_activeMapScript = null;
 
 		_editorService?.ResetAllState();
 		_networkService?.Clear();
-		_fogOfWarService?.CleanUp();
+		_shroudService?.CleanUp();
 
 		ReinitializeEcsAndServices();
 	}
@@ -3344,13 +3413,16 @@ public class {mapName} : IMapScript
 	{
 		EntityToUnit3D.Clear();
 		EntityToProp3D.Clear();
-		PendingMapScriptPath = null;
 		_activeMapScript = null;
 
 		EcsWorld?.Dispose();
 		BuildDependencyInjection();
 		ResolveServices();
 
+		// Do not trigger lazy GroundTerrain creation here: InitializeGameEcs()
+		// builds the ground exactly once (CreateGround at GameHost.cs:2751).
+		// Triggering the getter here previously built the whole 128x128 mesh/water/navmesh
+		// a second time on every _Ready, stalling the main thread at startup.
 		if (_groundTerrain != null)
 		{
 			_editorService.SetTerrainSplatMap(_groundTerrain.SplatMap);
@@ -3383,12 +3455,11 @@ public class {mapName} : IMapScript
 		if (Instance == this) Instance = null;
 		EntityToUnit3D.Clear();
 		EntityToProp3D.Clear();
-		PendingMapScriptPath = null;
 		_activeMapScript = null;
 
 		EcsWorld?.Dispose();
 		_networkService?.Clear();
-		_fogOfWarService?.CleanUp();
+		_shroudService?.CleanUp();
 		StopRecording();
 	}
 
@@ -3668,32 +3739,53 @@ public class {mapName} : IMapScript
 		float attackCooldown = 1.5f;
 		bool isHero = false;
 		int pathingFlags = 8;
+		string[]? targets = null;
 		if (UnitRegistry.TryGetValue(id, out var regMeta))
 		{
 			if (regMeta.ScanRadius > 0) scanRadius = regMeta.ScanRadius;
 			if (regMeta.AttackCooldown > 0) attackCooldown = regMeta.AttackCooldown;
 			isHero = regMeta.IsHero;
 			pathingFlags = GetUnitPathingFlags(regMeta);
+			targets = regMeta.Targets;
 		}
 
 		var entity = _unitSpawnService.CreateEcsUnitEntity(
 			id, name, hp, damage, range, armor, speed, scanRadius, isHero, attackCooldown, pathingFlags, pos, owner,
-			_playerEntity, HasShieldsUpgrade, HasWeaponsUpgrade
+			_playerEntity, HasShieldsUpgrade, HasWeaponsUpgrade, targets
 		);
 
 		OnUnitCreated?.Invoke(GetUnitWrapper(entity));
 		return entity;
 	}
 
-	private Unit3D SpawnUnit3D(Entity entity, string id, string modelPath, Vector3 pos, bool isBuilding, bool isEnemy, bool isFromQueue = false)
+	private Unit3D SpawnUnit3D(Entity entity, string id, string modelPath, Vector3 pos, bool isBuilding, bool isEnemy, bool isFromQueue = false, int player = -1)
 	{
-		EcsWorld.Add(entity, new UnitFaction(isEnemy));
+		int playerIndex = player >= 0 ? player : 0;
+		bool actualIsEnemy = player >= 0 ? NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, playerIndex) : isEnemy;
+		if (EcsWorld.Has<UnitFaction>(entity))
+			EcsWorld.Set(entity, new UnitFaction(actualIsEnemy));
+		else
+			EcsWorld.Add(entity, new UnitFaction(actualIsEnemy));
+
+		if (EcsWorld.Has<UnitOwnerPlayer>(entity))
+			EcsWorld.Set(entity, new UnitOwnerPlayer(playerIndex));
+		else
+			EcsWorld.Add(entity, new UnitOwnerPlayer(playerIndex));
+
+		if (EcsWorld.Has<DefinitionId>(entity))
+			EcsWorld.Set(entity, new DefinitionId(id));
+		else
+			EcsWorld.Add(entity, new DefinitionId(id));
 
 		var unit3D = new Unit3D();
 		unit3D.Entity = entity;
+		unit3D.UnitId = id;
+		unit3D.IsBuilding = isBuilding;
 		unit3D.Name = $"{id}_{entity.Id}";
+		unit3D.Player = playerIndex;
+		unit3D.IsEnemy = actualIsEnemy;
 
-		if (GigachadEnabled && !isEnemy)
+		if (GigachadEnabled && !actualIsEnemy)
 		{
 			if (EcsWorld.Has<Health>(entity))
 			{
@@ -3715,6 +3807,7 @@ public class {mapName} : IMapScript
 		AddChild(unit3D);
 		unit3D.Position = pos;
 		unit3D.LoadModel(modelPath);
+		unit3D.UpdatePlayerColorVisual();
 
 		if (isBuilding)
 		{
@@ -3757,14 +3850,17 @@ public class {mapName} : IMapScript
 
 	public override void _Process(double delta)
 	{
-		if (_fogOfWarService != null)
+		if (_shroudService != null)
 		{
 			float fDelta = (float)delta;
 			bool isReplay = Realm.Godot.ReplaySystem.ReplayPlaybackManager.Instance.IsPlayingReplay;
 			bool isSpectator = LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator";
 			int spectatorPerspective = InGameHUD.Instance?.LiveSpectatorPerspective ?? -1;
-			_fogOfWarService.Tick(fDelta, AllUnits, AllProps, AllDecals, MainCamera, spectatorPerspective, isReplay, isSpectator);
+			_shroudService.Tick(fDelta, AllUnits, AllProps, AllDecals, spectatorPerspective, isReplay, isSpectator);
 		}
+
+		var worldEnv = MainNode?.GetNodeOrNull<WorldEnvironment>("WorldEnvironment") ?? GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
+		_environmentService?.UpdateEnvironmentalFog(MainCamera, worldEnv);
 	}
 
 	public override void _PhysicsProcess(double delta)
@@ -3888,6 +3984,18 @@ public class {mapName} : IMapScript
 			return radius;
 		}
 
+		// Prefer the radius measured at import time (persisted per model key) so custom map
+		// assets get a correct collision footprint without needing code-side collision shapes.
+		if (node != null)
+		{
+			string modelKey = GetModelAssetKey(node);
+			if (!string.IsNullOrEmpty(modelKey) && ModelObstacleRadii.TryGetValue(modelKey, out float measuredRadius) && measuredRadius > 0f)
+			{
+				ObstacleRadiusCache[id] = measuredRadius;
+				return measuredRadius;
+			}
+		}
+
 		float calculatedRadius = 0.5f;
 		if (node != null)
 		{
@@ -3945,6 +4053,86 @@ public class {mapName} : IMapScript
 		return maxRadius;
 	}
 
+	/// <summary>
+	///     Measures the horizontal footprint radius (max corner distance from the origin in the
+	///     XZ plane) of a freshly instantiated model. Used at import time to persist an obstacle
+	///     radius for custom map assets that have no code-side collision shapes.
+	/// </summary>
+	public float MeasureModelRadius(Node3D root)
+	{
+		if (root == null) return 0f;
+		float maxRadius = 0f;
+		MeasureModelRadiusRecursive(root, Transform3D.Identity, ref maxRadius);
+		return maxRadius;
+	}
+
+	private void MeasureModelRadiusRecursive(Node3D node, Transform3D parentXform, ref float maxRadius)
+	{
+		var localXform = parentXform * node.Transform;
+		if (node is MeshInstance3D meshNode && meshNode.Mesh != null)
+		{
+			var aabb = meshNode.Mesh.GetAabb();
+			if (aabb.Size != Vector3.Zero)
+			{
+				for (int i = 0; i < 8; i++)
+				{
+					var corner = localXform * aabb.GetEndpoint(i);
+					float r = Mathf.Sqrt(corner.X * corner.X + corner.Z * corner.Z);
+					if (r > maxRadius) maxRadius = r;
+				}
+			}
+		}
+		foreach (var child in node.GetChildren())
+		{
+			if (child is Node3D child3D)
+			{
+				MeasureModelRadiusRecursive(child3D, localXform, ref maxRadius);
+			}
+		}
+	}
+
+	/// <summary>
+	///     Returns true when the entity's pathing flags include the given capability
+	///     (e.g. <see cref="TerrainPathingFlags.Flying"/>).
+	/// </summary>
+	internal bool IsPathingCapability(Entity entity, TerrainPathingFlags capability)
+	{
+		if (EcsWorld == null || !EcsWorld.IsAlive(entity) || !EcsWorld.Has<PathingFlags>(entity)) return false;
+		int flags = EcsWorld.Get<PathingFlags>(entity).Value;
+		return ((TerrainPathingFlags)flags & capability) != 0;
+	}
+
+	private static ImageTexture _sharedShadowGradient;
+
+	/// <summary>
+	///     Shared radial gradient used by flying-unit drop-shadow decals. One texture is
+	///     generated once and reused by every unit to avoid per-unit allocations.
+	/// </summary>
+	public Texture2D GetSharedShadowGradient()
+	{
+		if (_sharedShadowGradient != null && GodotObject.IsInstanceValid(_sharedShadowGradient))
+		{
+			return _sharedShadowGradient;
+		}
+
+		const int size = 256;
+		var img = Image.CreateEmpty(size, size, false, Image.Format.Rgba8);
+		for (int y = 0; y < size; y++)
+		{
+			for (int x = 0; x < size; x++)
+			{
+				float dx = (x + 0.5f) / size - 0.5f;
+				float dy = (y + 0.5f) / size - 0.5f;
+				float dist = Mathf.Sqrt(dx * dx + dy * dy) * 2f;
+				float alpha = Mathf.Clamp(1f - dist, 0f, 1f);
+				alpha *= alpha;
+				img.SetPixel(x, y, new Color(0f, 0f, 0f, alpha));
+			}
+		}
+		_sharedShadowGradient = ImageTexture.CreateFromImage(img);
+		return _sharedShadowGradient;
+	}
+
 	private List<T> FindChildrenOfType<T>(Node parent) where T : Node
 	{
 		var result = new List<T>();
@@ -3971,6 +4159,11 @@ public class {mapName} : IMapScript
 
 	private void ProcessGameplayTick(float fDelta)
 	{
+		if (IsGameOver)
+		{
+			return;
+		}
+
 		float actualIntervalMs = 0f;
 		if (Multiplayer.MultiplayerPeer == null || Multiplayer.IsServer())
 		{

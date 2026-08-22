@@ -2,6 +2,14 @@ using Godot;
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using Realm.Godot.Services.ModelOptimization;
+using Realm.Godot.Utils;
+using Realm.Godot.Animation;
+using Realm.Ecs.Services;
 
 public static class MapWorkspaceService
 {
@@ -189,6 +197,8 @@ public static class MapWorkspaceService
 			}
 		}
 
+		EnsureTrimmerRoot(csprojPath);
+
 		EnsureApiLib(directory);
 
 		string targetsTemplate = GetTemplatePath("Directory.Build.targets");
@@ -203,6 +213,21 @@ public static class MapWorkspaceService
 			{
 			}
 		}
+	}
+
+	private static void EnsureTrimmerRoot(string csprojPath)
+	{
+		if (string.IsNullOrEmpty(csprojPath) || !File.Exists(csprojPath)) return;
+
+		string content = File.ReadAllText(csprojPath);
+		if (content.Contains("<TrimmerRootAssembly", StringComparison.OrdinalIgnoreCase)) return;
+
+		string root = "  <ItemGroup>\n    <TrimmerRootAssembly Include=\"$(AssemblyName)\" />\n  </ItemGroup>\n";
+		int projectEnd = content.LastIndexOf("</Project>", StringComparison.OrdinalIgnoreCase);
+		content = projectEnd >= 0 ? content.Insert(projectEnd, root) : content + root;
+
+		File.WriteAllText(csprojPath, content);
+		GD.Print($"[MapWorkspaceService] Added TrimmerRootAssembly to {Path.GetFileName(csprojPath)}");
 	}
 
 	private static string NormalizeMapApiReference(string csprojContent)
@@ -282,12 +307,20 @@ public static class MapWorkspaceService
 	public static void EnsureWasmEntryPoint(string directory)
 	{
 		string entryPointPath = Path.Combine(directory, "WasmEntryPoint.cs");
-		if (!File.Exists(entryPointPath) || new FileInfo(entryPointPath).Length == 0)
+		string template = GetTemplatePath("WasmEntryPoint.cs");
+		if (File.Exists(template))
 		{
-			string template = GetTemplatePath("WasmEntryPoint.cs");
-			if (File.Exists(template))
+			if (!File.Exists(entryPointPath) || new FileInfo(entryPointPath).Length == 0)
 			{
 				File.Copy(template, entryPointPath);
+			}
+			else
+			{
+				string existing = File.ReadAllText(entryPointPath);
+				if (existing.Contains("private static IWasmModule? _mapScript;"))
+				{
+					File.Copy(template, entryPointPath, true);
+				}
 			}
 		}
 	}
@@ -310,23 +343,25 @@ public static class MapWorkspaceService
 
 		if (File.Exists(templateMeta))
 		{
-			// Also copy any template asset files (such as .ktx2 textures in Assets/textures) if not already present
 			string templateAssetsDir = Path.Combine(Path.GetDirectoryName(templateMeta), "Assets");
-		if (Directory.Exists(templateAssetsDir))
-		{
-			string destAssetsDir = Path.Combine(directory, "Assets");
-			foreach (var assetFile in Directory.GetFiles(templateAssetsDir, "*", SearchOption.AllDirectories))
+			if (Directory.Exists(templateAssetsDir))
 			{
-				string relPath = Path.GetRelativePath(templateAssetsDir, assetFile);
-				string destFile = Path.Combine(destAssetsDir, relPath);
-				Directory.CreateDirectory(Path.GetDirectoryName(destFile));
-				if (!File.Exists(destFile))
+				Realm.Godot.Animation.RealmDefaultAnimations.EnsureDefaultTemplateAnimations(templateAssetsDir);
+				string destAssetsDir = Path.Combine(directory, "Assets");
+				foreach (var assetFile in Directory.GetFiles(templateAssetsDir, "*", SearchOption.AllDirectories))
 				{
-					File.Copy(assetFile, destFile, true);
+					string relPath = Path.GetRelativePath(templateAssetsDir, assetFile);
+					string destFile = Path.Combine(destAssetsDir, relPath);
+					Directory.CreateDirectory(Path.GetDirectoryName(destFile));
+					if (!File.Exists(destFile))
+					{
+						File.Copy(assetFile, destFile, true);
+					}
 				}
 			}
 		}
-	}
+
+		Realm.Godot.Animation.RealmDefaultAnimations.EnsureDefaultTemplateAnimations(Path.Combine(directory, "Assets"));
 	}
 
 	public static void EnsureSolutionFile(string directory, string mapName)
@@ -361,6 +396,231 @@ public static class MapWorkspaceService
 			catch
 			{
 			}
+		}
+	}
+
+	private static readonly ConcurrentDictionary<string, (DateTime LastWriteTime, bool HasFlag)> _optimizedFlagCache = new(StringComparer.OrdinalIgnoreCase);
+
+	public static void EnsureGlbAssetsOptimized(string workspacePath)
+	{
+		if (string.IsNullOrEmpty(workspacePath) || !Directory.Exists(workspacePath)) return;
+
+		try
+		{
+			string[] glbFiles = Directory.GetFiles(workspacePath, "*.glb", SearchOption.AllDirectories);
+			if (glbFiles.Length == 0) return;
+
+			bool anyReimported = false;
+			ModelOptimizerService optimizer = null;
+			ModelOptimizerService.OptimizationOptions options = default;
+
+			foreach (string glbPath in glbFiles)
+			{
+				string normalized = glbPath.Replace("\\", "/");
+				if (normalized.Contains("/bin/") || normalized.Contains("/obj/") || normalized.Contains("/.git/") || normalized.Contains("/.godot/"))
+				{
+					continue;
+				}
+
+				DateTime lastWrite;
+				try
+				{
+					lastWrite = File.GetLastWriteTimeUtc(glbPath);
+				}
+				catch
+				{
+					continue;
+				}
+
+				if (_optimizedFlagCache.TryGetValue(glbPath, out var cached) && cached.LastWriteTime == lastWrite)
+				{
+					if (cached.HasFlag)
+					{
+						continue;
+					}
+				}
+
+				if (ModelOptimizerService.HasDecimationCompletedFlag(glbPath))
+				{
+					_optimizedFlagCache[glbPath] = (lastWrite, true);
+					continue;
+				}
+
+				if (optimizer == null)
+				{
+					optimizer = ServiceLocator.TryGet<ModelOptimizerService>()
+						?? new ModelOptimizerService(ServiceLocator.TryGet<WorldAccessor>());
+
+					options = new ModelOptimizerService.OptimizationOptions
+					{
+						AllowedPixelError = 1.5f,
+						CreaseAngleDegrees = 45.0f,
+						MaxTextureResolution = 1024,
+						ForceReDecimate = true
+					};
+				}
+
+				byte[] glbBytes = null;
+				try
+				{
+					glbBytes = File.ReadAllBytes(glbPath);
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"[MapWorkspaceService] Failed to read GLB {glbPath}: {ex.Message}");
+					continue;
+				}
+
+				if (glbBytes == null || glbBytes.Length == 0) continue;
+
+				string fileName = Path.GetFileName(glbPath);
+				GD.Print($"[MapWorkspaceService] GLB asset '{fileName}' is missing realm_decimate_completed extras. Re-importing and optimizing into workspace...");
+
+				try
+				{
+					string animsDir = Path.Combine(workspacePath, "Assets", "animations");
+					Directory.CreateDirectory(animsDir);
+					var extractedAnims = MixamoAnimationImporter.ExtractAnimationsFromGlb(glbPath);
+					foreach (var (animName, animData) in extractedAnims)
+					{
+						string animFileName = $"{animName.ToLowerInvariant()}.ranim";
+						string animFilePath = Path.Combine(animsDir, animFileName);
+						if (!File.Exists(animFilePath))
+						{
+							RealmAnimationSerializer.SaveToFile(animFilePath, animData);
+							UpdateMetadataAnimationHash(workspacePath, animFileName, MapAssetManager.ComputeBlake3(File.ReadAllBytes(animFilePath)));
+						}
+					}
+
+					if (extractedAnims.Count > 0)
+					{
+						MixamoAnimationImporter.StripAnimationsFromGlb(glbPath, glbPath);
+						glbBytes = File.ReadAllBytes(glbPath);
+					}
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"[MapWorkspaceService] Animation extraction error for {fileName}: {ex.Message}");
+				}
+
+				var optResult = optimizer.OptimizeGlb(glbBytes, options);
+				if (optResult.Success && optResult.OptimizedGlbBytes != null && optResult.OptimizedGlbBytes.Length > 0)
+				{
+					try
+					{
+						var attrs = File.GetAttributes(glbPath);
+						if ((attrs & FileAttributes.ReadOnly) != 0)
+						{
+							File.SetAttributes(glbPath, attrs & ~FileAttributes.ReadOnly);
+						}
+						File.WriteAllBytes(glbPath, optResult.OptimizedGlbBytes);
+						anyReimported = true;
+
+						DateTime newLastWrite = File.GetLastWriteTimeUtc(glbPath);
+						_optimizedFlagCache[glbPath] = (newLastWrite, true);
+
+						string newHash = MapAssetManager.ComputeBlake3(optResult.OptimizedGlbBytes);
+						UpdateMetadataGlbHash(workspacePath, fileName, newHash);
+
+						GD.Print($"[MapWorkspaceService] Successfully re-imported and optimized {fileName} ({optResult.OriginalTriangleCount} -> {optResult.OptimizedTriangleCount} tris).");
+					}
+					catch (Exception ex)
+					{
+						GD.PrintErr($"[MapWorkspaceService] Failed to write optimized GLB {glbPath}: {ex.Message}");
+					}
+				}
+				else
+				{
+					_optimizedFlagCache[glbPath] = (lastWrite, true);
+					GD.PrintErr($"[MapWorkspaceService] Optimization failed for {fileName}: {optResult.ErrorMessage}");
+				}
+			}
+
+			if (anyReimported)
+			{
+				ModelCache.Clear();
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapWorkspaceService] EnsureGlbAssetsOptimized error: {ex.Message}");
+		}
+	}
+
+	public static void UpdateMetadataGlbHash(string workspacePath, string fileName, string newHash)
+	{
+		try
+		{
+			string metadataPath = Path.Combine(workspacePath, "metadata.json");
+			if (!File.Exists(metadataPath)) return;
+
+			string jsonText = File.ReadAllText(metadataPath);
+			var jsonNode = JsonNode.Parse(jsonText);
+			if (jsonNode is not JsonObject root) return;
+
+			bool modified = false;
+			if (root["Assets"] is JsonObject assetsObj && assetsObj["glb"] is JsonObject glbObj)
+			{
+				foreach (var subCatKvp in glbObj)
+				{
+					if (subCatKvp.Value is JsonObject subCatObj)
+					{
+						if (subCatObj.ContainsKey(fileName))
+						{
+							if (subCatObj[fileName] is JsonObject entryObj && entryObj.ContainsKey("hash"))
+							{
+								entryObj["hash"] = newHash;
+							}
+							else
+							{
+								subCatObj[fileName] = newHash;
+							}
+							modified = true;
+						}
+					}
+				}
+			}
+
+			if (modified)
+			{
+				File.WriteAllText(metadataPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapWorkspaceService] Failed to update metadata.json for {fileName}: {ex.Message}");
+		}
+	}
+
+	public static void UpdateMetadataAnimationHash(string workspacePath, string animFileName, string newHash)
+	{
+		try
+		{
+			string metadataPath = Path.Combine(workspacePath, "metadata.json");
+			if (!File.Exists(metadataPath)) return;
+
+			string jsonText = File.ReadAllText(metadataPath);
+			var jsonNode = JsonNode.Parse(jsonText);
+			if (jsonNode is not JsonObject root) return;
+
+			bool modified = false;
+			if (root["Assets"] is JsonObject assetsObj && assetsObj["animations"] is JsonObject animsObj)
+			{
+				if (animsObj.ContainsKey(animFileName))
+				{
+					animsObj[animFileName] = newHash;
+					modified = true;
+				}
+			}
+
+			if (modified)
+			{
+				File.WriteAllText(metadataPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapWorkspaceService] Failed to update metadata.json for {animFileName}: {ex.Message}");
 		}
 	}
 }

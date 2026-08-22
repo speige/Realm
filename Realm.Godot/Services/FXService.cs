@@ -150,6 +150,8 @@ public class FXService
 	public void SpawnPing3DEffect(Node3D parent, Vector3 position)
 	{
 		var meshInstance = new MeshInstance3D();
+		meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+		meshInstance.GIMode = GeometryInstance3D.GIModeEnum.Disabled;
 		var torusMesh = new TorusMesh();
 		torusMesh.InnerRadius = 2.0f;
 		torusMesh.OuterRadius = 2.4f;
@@ -158,10 +160,11 @@ public class FXService
 
 		var material = new StandardMaterial3D();
 		material.AlbedoColor = new Color(1.0f, 0.1f, 0.1f, 0.8f);
+		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+		material.DisableReceiveShadows = true;
 		material.EmissionEnabled = true;
 		material.Emission = new Color(1.0f, 0.1f, 0.1f);
 		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
 		meshInstance.MaterialOverride = material;
 
 		parent.AddChild(meshInstance);
@@ -178,24 +181,35 @@ public class FXService
 	{
 		var arrow = new MeshInstance3D();
 		var cylinderMesh = new CylinderMesh();
-		cylinderMesh.TopRadius = 0.05f;
-		cylinderMesh.BottomRadius = 0.05f;
-		cylinderMesh.Height = 0.6f;
+		cylinderMesh.TopRadius = 0.22f;
+		cylinderMesh.BottomRadius = 0.22f;
+		cylinderMesh.Height = 1.0f;
 		arrow.Mesh = cylinderMesh;
 		arrow.Position = start + new Vector3(0, 1.2f, 0); 
 
 		var material = new StandardMaterial3D();
-		material.AlbedoColor = new Color(0.9f, 0.8f, 0.4f);
+		material.AlbedoColor = new Color(1.0f, 0.75f, 0.3f);
 		material.EmissionEnabled = true;
-		material.Emission = new Color(0.9f, 0.7f, 0.2f);
+		material.Emission = new Color(3.0f, 1.5f, 0.4f);
+		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 		arrow.MaterialOverride = material;
 
 		Vector3 targetPos = target + new Vector3(0, 1.2f, 0);
-		if (arrow.Position.DistanceTo(targetPos) > 0.1f)
+		Vector3 shotDir = targetPos - arrow.Position;
+		if (shotDir.LengthSquared() > 0.01f)
 		{
-			arrow.LookAtFromPosition(arrow.Position, targetPos, Vector3.Up);
+			Vector3 direction = shotDir.Normalized();
+			Vector3 upVector = Mathf.Abs(direction.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
+			arrow.LookAtFromPosition(arrow.Position, targetPos, upVector);
 			arrow.RotateObjectLocal(Vector3.Right, Mathf.DegToRad(90f));
 		}
+
+		var light = new OmniLight3D();
+		light.LightColor = new Color(1.0f, 0.7f, 0.3f);
+		light.LightEnergy = 2.0f;
+		light.OmniRange = 3.0f;
+		light.ShadowEnabled = false;
+		arrow.AddChild(light);
 
 		parent.AddChild(arrow);
 
@@ -205,9 +219,29 @@ public class FXService
 		tween.Chain().TweenCallback(Callable.From(arrow.QueueFree));
 	}
 
+	public void SpawnDamageNumber(Node3D parent, Vector3 worldPosition, float amount)
+	{
+		var label = new Label3D();
+		label.Text = ((int)Math.Round(amount)).ToString();
+		label.Modulate = new Color(1.0f, 0.85f, 0.3f);
+		label.OutlineModulate = Colors.Black;
+		label.Billboard = BaseMaterial3D.BillboardModeEnum.Enabled;
+		label.Position = worldPosition + new Vector3(0, 1.6f, 0);
+		label.FontSize = 40;
+		parent.AddChild(label);
+
+		var tween = parent.CreateTween();
+		tween.SetParallel(true);
+		tween.TweenProperty(label, "position", label.Position + new Vector3(0, 2.0f, 0), 1.2f);
+		tween.TweenProperty(label, "modulate:a", 0.0f, 1.2f);
+		tween.Chain().TweenCallback(Callable.From(label.QueueFree));
+	}
+
 	public void SpawnTargetIndicator(Node3D parent, Vector3 position, Color color)
 	{
 		var meshInstance = new MeshInstance3D();
+		meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+		meshInstance.GIMode = GeometryInstance3D.GIModeEnum.Disabled;
 		var torusMesh = new TorusMesh();
 		torusMesh.InnerRadius = 0.8f;
 		torusMesh.OuterRadius = 1.0f;
@@ -220,6 +254,7 @@ public class FXService
 		material.Emission = color;
 		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+		material.DisableReceiveShadows = true;
 		meshInstance.MaterialOverride = material;
 
 		parent.AddChild(meshInstance);

@@ -78,6 +78,11 @@ public static class LocalizationManager
 		UpdateLocale(GameSettings.Language);
 	}
 
+	public static void UpdateLocale(GameLanguage language)
+	{
+		UpdateLocale(language.ToLocaleCode());
+	}
+
 	public static void UpdateLocale(string locale)
 	{
 		TranslationServer.SetLocale(locale);

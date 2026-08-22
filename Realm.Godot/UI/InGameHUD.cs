@@ -90,61 +90,101 @@ public partial class InGameHUD : Control
 
 	private float _fogUpdateTimer = 0f;
 	
-	private static readonly byte[,] _emptyFogGrid = new byte[32, 32];
+	private static readonly byte[,] _emptyShroudGrid = new byte[32, 32];
 
-	public byte[,] FogGrid
+	public byte[,] ShroudGrid
 	{
 		get
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
-				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				var worldEntity = GameHost.Instance.WorldEntity;
+				if (worldEntity != Entity.Null && GameHost.Instance.EcsWorld.IsAlive(worldEntity) && GameHost.Instance.EcsWorld.Has<ShroudState>(worldEntity))
 				{
-					return GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity).FogGrid;
+					return GameHost.Instance.EcsWorld.Get<ShroudState>(worldEntity).ShroudGrid;
+				}
+
+				Entity fallback = Entity.Null;
+				var query = Realm.Ecs.Common.QueryCache.AllShroudStateQuery;
+				GameHost.Instance.EcsWorld.Query(in query, ent => fallback = ent);
+				if (fallback != Entity.Null && GameHost.Instance.EcsWorld.Has<ShroudState>(fallback))
+				{
+					return GameHost.Instance.EcsWorld.Get<ShroudState>(fallback).ShroudGrid;
 				}
 			}
-			return _emptyFogGrid;
+			return _emptyShroudGrid;
 		}
 		set
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
-				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				var worldEntity = GameHost.Instance.WorldEntity;
+				if (worldEntity != Entity.Null && GameHost.Instance.EcsWorld.IsAlive(worldEntity) && GameHost.Instance.EcsWorld.Has<ShroudState>(worldEntity))
 				{
-					ref var state = ref GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity);
-					state.FogGrid = value;
+					ref var state = ref GameHost.Instance.EcsWorld.Get<ShroudState>(worldEntity);
+					state.ShroudGrid = value;
+					return;
+				}
+
+				Entity fallback = Entity.Null;
+				var query = Realm.Ecs.Common.QueryCache.AllShroudStateQuery;
+				GameHost.Instance.EcsWorld.Query(in query, ent => fallback = ent);
+				if (fallback != Entity.Null && GameHost.Instance.EcsWorld.Has<ShroudState>(fallback))
+				{
+					ref var state = ref GameHost.Instance.EcsWorld.Get<ShroudState>(fallback);
+					state.ShroudGrid = value;
 				}
 			}
 		}
 	}
-	private byte[,] _fogGrid { get => FogGrid; set => FogGrid = value; }
+	public byte[,] FogGrid { get => ShroudGrid; set => ShroudGrid = value; }
+	private byte[,] _fogGrid { get => ShroudGrid; set => ShroudGrid = value; }
 
-	public string FogOfWarType
+	public string ShroudType
 	{
 		get
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
-				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				var worldEntity = GameHost.Instance.WorldEntity;
+				if (worldEntity != Entity.Null && GameHost.Instance.EcsWorld.IsAlive(worldEntity) && GameHost.Instance.EcsWorld.Has<ShroudState>(worldEntity))
 				{
-					return GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity).FogOfWarType;
+					return GameHost.Instance.EcsWorld.Get<ShroudState>(worldEntity).ShroudType;
+				}
+
+				Entity fallback = Entity.Null;
+				var query = Realm.Ecs.Common.QueryCache.AllShroudStateQuery;
+				GameHost.Instance.EcsWorld.Query(in query, ent => fallback = ent);
+				if (fallback != Entity.Null && GameHost.Instance.EcsWorld.Has<ShroudState>(fallback))
+				{
+					return GameHost.Instance.EcsWorld.Get<ShroudState>(fallback).ShroudType;
 				}
 			}
-			return "grey";
+			return "VisionShroud";
 		}
 		set
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null)
 			{
-				if (GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<FogAndWeatherState>(GameHost.Instance.WorldEntity))
+				var worldEntity = GameHost.Instance.WorldEntity;
+				if (worldEntity != Entity.Null && GameHost.Instance.EcsWorld.IsAlive(worldEntity) && GameHost.Instance.EcsWorld.Has<ShroudState>(worldEntity))
 				{
-					ref var state = ref GameHost.Instance.EcsWorld.Get<FogAndWeatherState>(GameHost.Instance.WorldEntity);
-					state.FogOfWarType = value;
+					ref var state = ref GameHost.Instance.EcsWorld.Get<ShroudState>(worldEntity);
+					state.ShroudType = value;
+					return;
+				}
+
+				Entity fallback = Entity.Null;
+				var query = Realm.Ecs.Common.QueryCache.AllShroudStateQuery;
+				GameHost.Instance.EcsWorld.Query(in query, ent => fallback = ent);
+				if (fallback != Entity.Null && GameHost.Instance.EcsWorld.Has<ShroudState>(fallback))
+				{
+					ref var state = ref GameHost.Instance.EcsWorld.Get<ShroudState>(fallback);
+					state.ShroudType = value;
 				}
 			}
 		}
 	}
-	private string _fogOfWarType { get => FogOfWarType; set => FogOfWarType = value; }
 
 	private string _currentWeather
 	{
@@ -263,12 +303,12 @@ public partial class InGameHUD : Control
 		resHBox.AddChild(popBox);
 		var popTitleLbl = new Label();
 		popTitleLbl.Text = TranslationServer.Translate("SUPPLY");
-		popTitleLbl.AddThemeFontSizeOverride("font_size", 15);
+		popTitleLbl.AddThemeFontSizeOverride("font_size", 11);
 		popTitleLbl.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
 		popBox.AddChild(popTitleLbl);
 		_populationLabel = new Label();
 		_populationLabel.Text = "0 / 20";
-		_populationLabel.AddThemeFontSizeOverride("font_size", 24);
+		_populationLabel.AddThemeFontSizeOverride("font_size", 18);
 		_populationLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		popBox.AddChild(_populationLabel);
 
@@ -277,23 +317,23 @@ public partial class InGameHUD : Control
 		resHBox.AddChild(clockBox);
 		var clockTitleLbl = new Label();
 		clockTitleLbl.Text = TranslationServer.Translate("TIME");
-		clockTitleLbl.AddThemeFontSizeOverride("font_size", 15);
+		clockTitleLbl.AddThemeFontSizeOverride("font_size", 11);
 		clockTitleLbl.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
 		clockBox.AddChild(clockTitleLbl);
 		_clockLabel = new Label();
 		_clockLabel.Text = "0:00";
-		_clockLabel.AddThemeFontSizeOverride("font_size", 24);
+		_clockLabel.AddThemeFontSizeOverride("font_size", 18);
 		_clockLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		clockBox.AddChild(_clockLabel);
 
 		_btnSettings = new Button();
 		_btnSettings.Name = "BtnSettings";
-		_btnSettings.CustomMinimumSize = new Vector2(40, 40);
+		_btnSettings.CustomMinimumSize = new Vector2(32, 32);
 		_btnSettings.SizeFlagsVertical = SizeFlags.ShrinkCenter;
 		_btnSettings.FocusMode = FocusModeEnum.None;
 		_btnSettings.ExpandIcon = true;
 		_btnSettings.Icon = GD.Load<Texture2D>("res://Assets/UI/gear_icon.png");
-		_btnSettings.AddThemeConstantOverride("icon_max_width", 28);
+		_btnSettings.AddThemeConstantOverride("icon_max_width", 22);
 		_btnSettings.TooltipText = TranslationServer.Translate("Settings (Esc)");
 		_btnSettings.AddThemeStyleboxOverride("normal", UIStyle.CreateHUDButtonStyle(false, false));
 		_btnSettings.AddThemeStyleboxOverride("hover", UIStyle.CreateHUDButtonStyle(true, false));
@@ -320,7 +360,7 @@ public partial class InGameHUD : Control
 		{
 			var btn = new Button();
 			btn.Name = $"Unit{i + 1}";
-			btn.CustomMinimumSize = new Vector2(58, 58);
+			btn.CustomMinimumSize = new Vector2(42, 42);
 			btn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 			btn.ExpandIcon = true;
 			btn.FocusMode = FocusModeEnum.None;
@@ -366,14 +406,14 @@ public partial class InGameHUD : Control
 
 		_btnAttack = new Button();
 		_btnAttack.Name = "BtnAttack";
-		_btnAttack.CustomMinimumSize = new Vector2(80, 80);
+		_btnAttack.CustomMinimumSize = new Vector2(44, 44);
 		_btnAttack.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		_btnAttack.SizeFlagsVertical = SizeFlags.ExpandFill;
 		_btnAttack.FocusMode = FocusModeEnum.None;
 
 		_btnPatrol = new Button();
 		_btnPatrol.Name = "BtnPatrol";
-		_btnPatrol.CustomMinimumSize = new Vector2(80, 80);
+		_btnPatrol.CustomMinimumSize = new Vector2(44, 44);
 		_btnPatrol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		_btnPatrol.SizeFlagsVertical = SizeFlags.ExpandFill;
 		_btnPatrol.FocusMode = FocusModeEnum.None;
@@ -414,8 +454,8 @@ public partial class InGameHUD : Control
 		_minimapControls = new VBoxContainer();
 		_minimapControls.SizeFlagsHorizontal = SizeFlags.ShrinkEnd;
 		_minimapControls.SizeFlagsVertical = SizeFlags.ShrinkCenter;
-		_minimapControls.AddThemeConstantOverride("separation", 9);
-		_minimapControls.CustomMinimumSize = new Vector2(60, 0);
+		_minimapControls.AddThemeConstantOverride("separation", 3);
+		_minimapControls.CustomMinimumSize = new Vector2(40, 0);
 		var minimapHBox = GetNode<HBoxContainer>("BottomConsole/HBox");
 		minimapHBox.AddChild(_minimapControls);
 		minimapHBox.MoveChild(_minimapControls, 1);
@@ -734,12 +774,12 @@ public partial class InGameHUD : Control
 		var minimapBg = _minimapArea.GetChildCount() > 0 ? _minimapArea.GetChild<TextureRect>(0) : null;
 		if (minimapBg == null) return;
 
-		var fogMesh = GameHost.Instance?.MainNode?.GetNodeOrNull<MeshInstance3D>("3DFogMesh");
+		var shroudMesh = GameHost.Instance?.MainNode?.GetNodeOrNull<MeshInstance3D>("3DShroudMesh") ?? GameHost.Instance?.MainNode?.GetNodeOrNull<MeshInstance3D>("3DFogMesh");
 		bool wasVisible = false;
-		if (fogMesh != null)
+		if (shroudMesh != null)
 		{
-			wasVisible = fogMesh.Visible;
-			fogMesh.Visible = false;
+			wasVisible = shroudMesh.Visible;
+			shroudMesh.Visible = false;
 		}
 
 		bool wasPathingVisible = false;
@@ -747,6 +787,20 @@ public partial class InGameHUD : Control
 		{
 			wasPathingVisible = GameHost.Instance.PathingOverlayMesh.Visible;
 			GameHost.Instance.PathingOverlayMesh.Visible = false;
+		}
+
+		var unitsList = GameHost.Instance?.AllUnits;
+		var unitVisibility = new System.Collections.Generic.List<(Unit3D unit, bool visible)>();
+		if (unitsList != null)
+		{
+			foreach (var u in unitsList)
+			{
+				if (u != null && GodotObject.IsInstanceValid(u))
+				{
+					unitVisibility.Add((u, u.Visible));
+					u.Visible = false;
+				}
+			}
 		}
 
 		try
@@ -765,7 +819,7 @@ public partial class InGameHUD : Control
 			viewport.AddChild(camera);
 
 			EditableTerrain.IsMinimapRendering = true;
-			EditableTerrain.Instance?.SetAllChunksVisible(true);
+			EditableTerrain.Instance?.BeginMinimapCapture();
 			PropMultiMeshManager.Instance?.SetAllNodesVisible(true);
 			try
 			{
@@ -786,6 +840,7 @@ public partial class InGameHUD : Control
 			}
 			finally
 			{
+				EditableTerrain.Instance?.EndMinimapCapture();
 				EditableTerrain.IsMinimapRendering = false;
 			}
 		}
@@ -795,13 +850,20 @@ public partial class InGameHUD : Control
 		}
 		finally
 		{
-			if (fogMesh != null)
+			if (shroudMesh != null && GodotObject.IsInstanceValid(shroudMesh))
 			{
-				fogMesh.Visible = wasVisible;
+				shroudMesh.Visible = wasVisible;
 			}
 			if (GameHost.Instance?.PathingOverlayMesh != null)
 			{
 				GameHost.Instance.PathingOverlayMesh.Visible = wasPathingVisible;
+			}
+			foreach (var (u, vis) in unitVisibility)
+			{
+				if (u != null && GodotObject.IsInstanceValid(u))
+				{
+					u.Visible = vis;
+				}
 			}
 		}
 	}
@@ -929,9 +991,9 @@ public partial class InGameHUD : Control
 		btn.ExpandIcon = true;
 		btn.Icon = GD.Load<Texture2D>(iconPath);
 		btn.TooltipText = tooltip;
-		btn.CustomMinimumSize = new Vector2(70, 70);
+		btn.CustomMinimumSize = new Vector2(44, 44);
 		btn.ClipContents = true;
-		btn.AddThemeConstantOverride("icon_max_width", 62);
+		btn.AddThemeConstantOverride("icon_max_width", 38);
 
 		if (tooltip.StartsWith('[') && tooltip.Contains(']'))
 		{
@@ -1013,8 +1075,8 @@ public partial class InGameHUD : Control
 		_resourceContainer.AddThemeStyleboxOverride("panel", resourceBg);
 
 		var bottomConsoleStyle = UIStyle.CreateStonePanel();
-		bottomConsoleStyle.ContentMarginLeft = 210; 
-		bottomConsoleStyle.ContentMarginRight = 210; 
+		bottomConsoleStyle.ContentMarginLeft = 40; 
+		bottomConsoleStyle.ContentMarginRight = 40; 
 		_bottomConsole.AddThemeStyleboxOverride("panel", bottomConsoleStyle);
 		_minimapFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		_portraitFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
@@ -1044,7 +1106,7 @@ public partial class InGameHUD : Control
 		var topLabels = new[] { _goldLabel, _woodLabel, _stoneLabel };
 		foreach (var lbl in topLabels)
 		{
-			lbl.AddThemeFontSizeOverride("font_size", 27);
+			lbl.AddThemeFontSizeOverride("font_size", 20);
 			lbl.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		}
 		_goldLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
@@ -1165,9 +1227,9 @@ public partial class InGameHUD : Control
 		btn.Icon = GD.Load<Texture2D>(iconPath);
 		string trans = TranslationServer.Translate(tooltip);
 		btn.TooltipText = string.IsNullOrEmpty(trans) ? tooltip : trans;
-		btn.CustomMinimumSize = new Vector2(50, 50);
+		btn.CustomMinimumSize = new Vector2(24, 24);
 		btn.FocusMode = FocusModeEnum.None;
-		btn.AddThemeConstantOverride("icon_max_width", 45);
+		btn.AddThemeConstantOverride("icon_max_width", 20);
 		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateHUDButtonStyle(false, false));
 		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateHUDButtonStyle(true, false));
 		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateHUDButtonStyle(false, true));
@@ -1182,12 +1244,12 @@ public partial class InGameHUD : Control
 		btn.Icon = GD.Load<Texture2D>(iconPath);
 		string trans = TranslationServer.Translate(tooltip);
 		btn.TooltipText = string.IsNullOrEmpty(trans) ? tooltip : trans;
-		btn.CustomMinimumSize = new Vector2(80, 80);
+		btn.CustomMinimumSize = new Vector2(44, 44);
 		btn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		btn.SizeFlagsVertical = SizeFlags.ExpandFill;
 		btn.FocusMode = FocusModeEnum.None;
 		btn.ClipContents = true;
-		btn.AddThemeConstantOverride("icon_max_width", 72);
+		btn.AddThemeConstantOverride("icon_max_width", 38);
 
 		if (tooltip.StartsWith('[') && tooltip.Contains(']'))
 		{
@@ -1242,14 +1304,14 @@ public partial class InGameHUD : Control
 			var btnWeather = new Button();
 			btnWeather.Name = "BtnCycleWeather";
 			btnWeather.Text = TranslationServer.Translate("Cycle Weather");
-			btnWeather.AddThemeFontSizeOverride("font_size", 14);
+			btnWeather.AddThemeFontSizeOverride("font_size", 12);
 			btnWeather.FocusMode = FocusModeEnum.None;
-			// Position it to the right of BtnDefeat (offset_right = 310)
+			// Position it to the right of BtnDefeat (offset_right = 252)
 			btnWeather.SetAnchorsAndOffsetsPreset(LayoutPreset.TopLeft);
-			btnWeather.OffsetLeft = 320;
-			btnWeather.OffsetTop = 10;
-			btnWeather.OffsetRight = 480;
-			btnWeather.OffsetBottom = 45;
+			btnWeather.OffsetLeft = 258;
+			btnWeather.OffsetTop = 6;
+			btnWeather.OffsetRight = 378;
+			btnWeather.OffsetBottom = 36;
 			btnWeather.Pressed += () => CycleWeather();
 			_devPanel.AddChild(btnWeather);
 		}
@@ -1298,8 +1360,8 @@ public partial class InGameHUD : Control
 	{
 		if (_isDrawingDragBox)
 		{
-			DrawRect(new Rect2(_dragStart, _dragEnd - _dragStart), new Color(0.1f, 0.9f, 0.2f, 0.15f), true);
-			DrawRect(new Rect2(_dragStart, _dragEnd - _dragStart), new Color(0.1f, 0.9f, 0.2f, 0.6f), false, 2f);
+			DrawRect(new Rect2(_dragStart, _dragEnd - _dragStart), new Color(0.22f, 0.54f, 0.26f, 0.15f), true);
+			DrawRect(new Rect2(_dragStart, _dragEnd - _dragStart), new Color(0.22f, 0.54f, 0.26f, 0.6f), false, 2f);
 		}
 	}
 

@@ -3,6 +3,8 @@
   "VIDEO": "ВИДЕО",
   "Resolution": "Разрешение",
   "Graphics Quality": "Качество Графики",
+  "Disable shadows": "Отключить тени",
+  "Disable day/night lighting": "Отключить смену дня и ночи",
   "Window Mode": "Оконный Режим",
   "V-Sync": "Вертикальная Синхронизация",
   "AUDIO": "ЗВУК",
@@ -258,5 +260,8 @@
   "YES": "ДА",
   "NO": "НЕТ",
   "Are you sure you want to delete this replay?": "Вы уверены, что хотите удалить этот повтор?",
-  "Are you sure you want to delete all replays?": "Вы уверены, что хотите удалить все повторы?"
+  "Are you sure you want to delete all replays?": "Вы уверены, что хотите удалить все повторы?",
+  "You haven't saved yet": "Вы ещё не сохранили",
+  "Stay": "Остаться",
+  "Quit": "Выйти"
 }

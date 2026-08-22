@@ -103,7 +103,8 @@ public class WorldInitService
 			));
 		}
 
-		AddOrSet(worldEntity, new FogAndWeatherState(new byte[32, 32], "grey", "clear", 0f));
+		AddOrSet(worldEntity, new ShroudState(new byte[32, 32], "VisionShroud"));
+		AddOrSet(worldEntity, new WeatherState("clear", 0f));
 		AddOrSet(worldEntity, new SpectatorPerspective(-1));
 		AddOrSet(worldEntity, new CountdownState(false, 0f, ""));
 		AddOrSet(worldEntity, new LeaderboardState(false, "", new System.Collections.Generic.Dictionary<string, string>()));

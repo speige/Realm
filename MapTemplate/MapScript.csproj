@@ -21,6 +21,9 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <TrimmerRootAssembly Include="$(AssemblyName)" />
+  </ItemGroup>
+  <ItemGroup>
     <DirectPInvoke Include="env" />
     <LinkerArg Include="-Wl,--allow-undefined" />
   </ItemGroup>

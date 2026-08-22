@@ -51,15 +51,15 @@ public class MapPropertiesLoader
 				{
 					EcsWorld.Mutate<CameraState>(worldEntity, (ref CameraState s) => s.LimitBottom = (float)bottomProp.GetDouble());
 				}
-				if (mapProps.TryGetProperty("FogOfWarType", out var fogTypeProp) && fogTypeProp.ValueKind == System.Text.Json.JsonValueKind.String)
+				if (mapProps.TryGetProperty("ShroudType", out var shroudTypeProp) && shroudTypeProp.ValueKind == System.Text.Json.JsonValueKind.String)
 				{
-					string val = fogTypeProp.GetString() ?? "grey";
-					EcsWorld.Mutate<FogAndWeatherState>(worldEntity, (ref FogAndWeatherState s) => s.FogOfWarType = val);
+					string val = shroudTypeProp.GetString() ?? "VisionShroud";
+					EcsWorld.Mutate<ShroudState>(worldEntity, (ref ShroudState s) => s.ShroudType = val);
 				}
 				if (mapProps.TryGetProperty("WeatherType", out var weatherProp) && weatherProp.ValueKind == System.Text.Json.JsonValueKind.String)
 				{
 					string val = weatherProp.GetString() ?? "clear";
-					EcsWorld.Mutate<FogAndWeatherState>(worldEntity, (ref FogAndWeatherState s) => s.CurrentWeather = val);
+					EcsWorld.Mutate<WeatherState>(worldEntity, (ref WeatherState s) => s.CurrentWeather = val);
 				}
 			}
 		}

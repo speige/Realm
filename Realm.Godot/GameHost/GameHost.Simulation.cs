@@ -6,6 +6,7 @@ using Realm.Ecs.Components.Combat;
 using Realm.Ecs.Components.Tags;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Resources;
+using Realm.Ecs.Components.Terrain;
 using Realm.MapAPI;
 using System;
 using System.Collections.Generic;
@@ -14,6 +15,11 @@ using static Realm.Ecs.Common.ResourceConstants;
 public partial class GameHost
 {
 	private readonly Dictionary<int, Unit_WasmRuntime> _unitWrapperCache = new();
+	private readonly HashSet<Entity> _warnedNonFinitePositions = new();
+
+	// Upper bound for _warnedNonFinitePositions. Once it grows past this, stale warnings for
+	// already-destroyed entities are swept so recycled entity ids get a fresh warning later.
+	private const int WarnedNonFinitePositionsLimit = 512;
 
 	public Unit_WasmRuntime GetUnitWrapper(Entity entity)
 	{
@@ -94,6 +100,9 @@ public partial class GameHost
 			_clientToServerEntityMap.Remove(unit.Entity.Id);
 		}
 
+		string unitId = unit.UnitId;
+		bool isEnemy = unit.IsEnemy;
+
 		if (EcsWorld.IsAlive(unit.Entity))
 		{
 			EcsWorld.Destroy(unit.Entity);
@@ -105,16 +114,18 @@ public partial class GameHost
 		tween.TweenProperty(unit, "scale", Vector3.Zero, 1.0f);
 		tween.Chain().TweenCallback(Callable.From(unit.QueueFree));
 
-		if (unit.UnitId == "castle")
+		if (unitId == "castle")
 		{
-			if (unit.IsEnemy)
+			if (isEnemy)
 			{
 				GD.Print("[GameHost] Enemy Castle destroyed! Player wins!");
+				IsGameOver = true;
 				Callable.From(() => UIManager.Instance?.TransitionTo(GameScreen.GameOver, true)).CallDeferred();
 			}
 			else
 			{
 				GD.Print("[GameHost] Player Castle destroyed! Player loses!");
+				IsGameOver = true;
 				Callable.From(() => UIManager.Instance?.TransitionTo(GameScreen.GameOver, false)).CallDeferred();
 			}
 		}
@@ -454,7 +465,20 @@ public partial class GameHost
 		{
 			if (TryGetUnit3D(entity, out var unit3D) && GodotObject.IsInstanceValid(unit3D))
 			{
-				Vector3 nextPos = new Vector3(pos.Value.X, pos.Value.Y, pos.Value.Z);
+				var posValue = pos.Value;
+				if (!float.IsFinite(posValue.X) || !float.IsFinite(posValue.Y) || !float.IsFinite(posValue.Z))
+				{
+if (_warnedNonFinitePositions.Add(entity))
+				{
+					if (_warnedNonFinitePositions.Count > WarnedNonFinitePositionsLimit)
+					{
+						_warnedNonFinitePositions.RemoveWhere(warned => !EcsWorld.IsAlive(warned));
+					}
+					GD.PushWarning($"[Simulation] Unit '{unit3D.Name}' (entity {entity.Id}) has a non-finite ECS position ({posValue.X}, {posValue.Y}, {posValue.Z}); skipping visual sync.");
+				}
+					return;
+				}
+				Vector3 nextPos = new Vector3(posValue.X, posValue.Y, posValue.Z);
 				unit3D.GlobalPosition = nextPos;
 
 				Vector3 velVec = Vector3.Zero;
@@ -531,29 +555,42 @@ public partial class GameHost
 					hasDir = dir.LengthSquared() > 0.01f;
 				}
 
-				if (hasDir)
+			if (hasDir)
+			{
+				dir = dir.Normalized();
+				float angle = Mathf.Atan2(-dir.X, -dir.Z) + Mathf.Pi;
+				var rot = unit3D.Rotation;
+
+				bool isFlying = EcsWorld.Has<PathingFlags>(entity)
+					&& ((TerrainPathingFlags)EcsWorld.Get<PathingFlags>(entity).Value & TerrainPathingFlags.Flying) != 0;
+				float turnRate = 10f;
+				if (EcsWorld.Has<MovementStats>(entity))
 				{
-					dir = dir.Normalized();
-					float angle = Mathf.Atan2(-dir.X, -dir.Z) + Mathf.Pi;
-					var rot = unit3D.Rotation;
-					rot.Y = Mathf.LerpAngle(rot.Y, angle, 10f * fDelta);
-					unit3D.Rotation = rot;
+					var moveStats = EcsWorld.Get<MovementStats>(entity);
+					if (moveStats.TurnRate > 0f) turnRate = moveStats.TurnRate;
+				}
+				rot.Y = Mathf.LerpAngle(rot.Y, angle, turnRate * fDelta);
+				unit3D.Rotation = rot;
 
-					Vector3 normal = Vector3.Up;
-					if (GroundTerrain != null)
-					{
-						GroundTerrain.GetHeightAndNormal(nextPos.X, nextPos.Z, out _, out normal);
-					}
+				Vector3 normal = Vector3.Up;
+				if (!isFlying && GroundTerrain != null)
+				{
+					GroundTerrain.GetHeightAndNormal(nextPos.X, nextPos.Z, out _, out normal);
+				}
 
-					Vector3 forwardDir = new Vector3(-Mathf.Sin(unit3D.Rotation.Y), 0f, -Mathf.Cos(unit3D.Rotation.Y));
-					Vector3 up = normal.Normalized();
-					Vector3 right = forwardDir.Cross(up).Normalized();
+Vector3 forwardDir = new Vector3(-Mathf.Sin(unit3D.Rotation.Y), 0f, -Mathf.Cos(unit3D.Rotation.Y));
+				Vector3 up = normal.Normalized();
+				Vector3 right = forwardDir.Cross(up);
+				if (right.LengthSquared() > 0.00001f)
+				{
+					right = right.Normalized();
 					Vector3 forwardPerp = right.Cross(up).Normalized();
 					Basis targetBasis = new Basis(right, up, forwardPerp);
 					var qTarget = targetBasis.GetRotationQuaternion();
 					var qCurrent = unit3D.Basis.GetRotationQuaternion();
 					var qLerp = qCurrent.Slerp(qTarget, 10f * fDelta);
 					unit3D.Basis = new Basis(qLerp);
+				}
 				}
 
 				bool isLaborAnimating = (EcsWorld.Has<Gatherer>(entity) && !EcsWorld.Get<Gatherer>(entity).ReturningToBase)
@@ -569,7 +606,7 @@ public partial class GameHost
 				else
 				{
 					float scaleVal = EcsWorld.Has<CollisionScale>(entity) ? EcsWorld.Get<CollisionScale>(entity).Value : 1.0f;
-					unit3D.Scale = Vector3.One * scaleVal;
+					unit3D.Scale = Vector3.One * Mathf.Max(0.01f, scaleVal);
 				}
 
 				unit3D.PlayAnimation(DetermineUnitAnimation(entity));

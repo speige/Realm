@@ -161,17 +161,17 @@ public class CheatService
 		if (lower == "aura")
 		{
 			Entity worldEntity = Entity.Null;
-			var query = QueryCache.AllFogAndWeatherStateQuery;
+			var query = QueryCache.AllShroudStateQuery;
 			EcsWorld.Query(in query, ent => worldEntity = ent);
 
-			if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<FogAndWeatherState>(worldEntity))
+			if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity) && EcsWorld.Has<ShroudState>(worldEntity))
 			{
-				ref var state = ref EcsWorld.Get<FogAndWeatherState>(worldEntity);
-				state.FogOfWarType = "visible";
+				ref var state = ref EcsWorld.Get<ShroudState>(worldEntity);
+				state.ShroudType = "visible";
 			}
-			if (GameHost.Instance?.FogOfWarService != null)
+			if (GameHost.Instance?.ShroudService != null)
 			{
-				GameHost.Instance.FogOfWarService.TriggerImmediateUpdate();
+				GameHost.Instance.ShroudService.TriggerImmediateUpdate();
 			}
 			return (CheatResult.NoCap, 0);
 		}

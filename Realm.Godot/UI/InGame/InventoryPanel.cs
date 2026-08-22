@@ -74,7 +74,7 @@ public class InventoryPanel
 	{
 		var tile = new ColorRect();
 		tile.Color = Colors.Black;
-		tile.CustomMinimumSize = new Vector2(80, 80);
+		tile.CustomMinimumSize = new Vector2(44, 44);
 		tile.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 		tile.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 		return tile;
@@ -91,12 +91,12 @@ public class InventoryPanel
 		string transTooltip = TranslationServer.Translate(tooltip);
 		btn.TooltipText = string.IsNullOrEmpty(transTooltip) ? tooltip : transTooltip;
 		
-		btn.CustomMinimumSize = new Vector2(80, 80);
+		btn.CustomMinimumSize = new Vector2(44, 44);
 		btn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 		btn.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 		btn.FocusMode = Control.FocusModeEnum.None;
 		btn.ClipContents = true;
-		btn.AddThemeConstantOverride("icon_max_width", 72);
+		btn.AddThemeConstantOverride("icon_max_width", 38);
 
 		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateHUDButtonStyle(false, false));
 		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateHUDButtonStyle(true, false));
