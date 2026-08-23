@@ -87,7 +87,7 @@ public partial class GameHost
 		_saveLoadService.SaveMapToFile(absolutePath, splatData, unitsData.ToArray(), propsData.ToArray(), decalsData.ToArray(), coordinatesData, cliffSplatData);
 	}
 
-	public bool LoadMapFromFile(string customPath = "", bool terrainOnly = false, bool clearUnits = true)
+	public bool LoadMapFromFile(string customPath = "", bool terrainOnly = false, bool clearUnits = true, bool ensureGlbOptimized = true)
 	{
 		IsLoadingMap = true;
 		try
@@ -95,7 +95,10 @@ public partial class GameHost
 			string path = string.IsNullOrEmpty(customPath) ? "user://terrain.json" : customPath;
 			string absolutePath = ProjectSettings.GlobalizePath(path);
 			CurrentMapDirectory = System.IO.Path.GetDirectoryName(absolutePath);
-			MapWorkspaceService.EnsureGlbAssetsOptimized(CurrentMapDirectory);
+			if (ensureGlbOptimized)
+			{
+				MapWorkspaceService.EnsureGlbAssetsOptimized(CurrentMapDirectory);
+			}
 
 			if (clearUnits)
 			{
