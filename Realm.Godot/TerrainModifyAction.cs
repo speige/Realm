@@ -169,14 +169,9 @@ public class TerrainModifyAction : IEditorAction
 		{
 			GameHost.Instance.AlignAllEntitiesToTerrainExternal();
 			GameHost.Instance.RebuildGridOverlayMeshExternal();
-			GameHost.Instance.GroundTerrain.BakeNavMesh();
 		}
 		if (pathingChanged)
 		{
-			if (!heightsChanged)
-			{
-				GameHost.Instance.GroundTerrain.BakeNavMesh();
-			}
 			GameHost.Instance.UpdatePathingOverlay();
 		}
 	}
@@ -235,14 +230,9 @@ public class TerrainModifyAction : IEditorAction
 		{
 			GameHost.Instance.AlignAllEntitiesToTerrainExternal();
 			GameHost.Instance.RebuildGridOverlayMeshExternal();
-			GameHost.Instance.GroundTerrain.BakeNavMesh();
 		}
 		if (pathingChanged)
 		{
-			if (!heightsChanged)
-			{
-				GameHost.Instance.GroundTerrain.BakeNavMesh();
-			}
 			GameHost.Instance.UpdatePathingOverlay();
 		}
 	}
