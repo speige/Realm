@@ -2857,7 +2857,7 @@ public partial class GameHost
 		CreateBrushIndicator();
 		UpdateGridOverlayVisibility();
 		InitializeCameraBoundsOverlay();
-		UpdateDayNightVisuals(0.5f);
+		UpdateDayNightVisuals(0.0f);
 	}
 
 	public void ExitMapEditorMode()

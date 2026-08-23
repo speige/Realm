@@ -3008,7 +3008,7 @@ public class {mapName} : IMapScript
 
 		SetupSkybox();
 
-		UpdateDayNightVisuals(0.5f);
+		UpdateDayNightVisuals(0.0f);
 		_definitionManager = ServiceLocator.Get<DefinitionManager>();
 		_goldResourceId = "gold".AsResourceId(_definitionManager);
 		_woodResourceId = "wood".AsResourceId(_definitionManager);

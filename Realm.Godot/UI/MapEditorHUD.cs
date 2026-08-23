@@ -7195,6 +7195,7 @@ public partial class MapEditorHUD : Control
 		_sldBloomIntensity = CreateSliderRow(_contentLightingTuning, "Bloom Intensity", 0f, 2f, 0.05f, _tuneBloomIntensity, val => { _tuneBloomIntensity = val; ApplyLiveLightingTuning(); });
 		_sldBloomThreshold = CreateSliderRow(_contentLightingTuning, "Bloom Threshold", 0f, 1f, 0.02f, _tuneBloomThreshold, val => { _tuneBloomThreshold = val; ApplyLiveLightingTuning(); });
 
+		UpdateLightingTuningSlidersFromPhase(0);
 		ApplyLiveLightingTuning();
 		lightingAccordion.Visible = false;
 	}

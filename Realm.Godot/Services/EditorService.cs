@@ -1968,24 +1968,7 @@ public class EditorService
 
 	private int GetDominantTextureIndex(TerrainSplatWeights splat)
 	{
-		float maxW = splat.Weight0;
-		int idx = splat.Index0;
-		if (splat.Weight1 > maxW)
-		{
-			maxW = splat.Weight1;
-			idx = splat.Index1;
-		}
-		if (splat.Weight2 > maxW)
-		{
-			maxW = splat.Weight2;
-			idx = splat.Index2;
-		}
-		if (splat.Weight3 > maxW)
-		{
-			maxW = splat.Weight3;
-			idx = splat.Index3;
-		}
-		return idx;
+		return splat.GetDominantIndex();
 	}
 
 	private List<Vector2I> GetFloodFillCells(Vector3 clickPos, TerrainSplatWeights[,] splatBefore, int width, int depth, float quadSize, bool[,] visited, bool isCliff)
@@ -1993,11 +1976,14 @@ public class EditorService
 		ref var terrain = ref GetTerrainState();
 		var cells = new List<Vector2I>();
 
+		int splatW = splatBefore.GetLength(0);
+		int splatD = splatBefore.GetLength(1);
+
 		float startFx = clickPos.X / quadSize + width / 2.0f;
 		float startFz = clickPos.Z / quadSize + depth / 2.0f;
-		int clickX = Mathf.Clamp((int)Math.Round(startFx), 0, width - 1);
-		int clickZ = Mathf.Clamp((int)Math.Round(startFz), 0, depth - 1);
-		int startDominantIndex = GetDominantTextureIndex(splatBefore[clickX, clickZ]);
+		int clickX = Mathf.Clamp((int)Math.Round(startFx), 0, splatW - 1);
+		int clickZ = Mathf.Clamp((int)Math.Round(startFz), 0, splatD - 1);
+		int startDominantIndex = splatBefore[clickX, clickZ].GetDominantIndex();
 
 		var queue = new Queue<(int x, int z)>();
 		if (!visited[clickX, clickZ])
@@ -2017,15 +2003,15 @@ public class EditorService
 			{
 				int nextX = currX + dx[i];
 				int nextZ = currZ + dz[i];
-				if (nextX >= 0 && nextX < width && nextZ >= 0 && nextZ < depth)
+				if (nextX >= 0 && nextX < splatW && nextZ >= 0 && nextZ < splatD)
 				{
 					if (!visited[nextX, nextZ])
 					{
-						if (GetDominantTextureIndex(splatBefore[nextX, nextZ]) != startDominantIndex) continue;
+						if (splatBefore[nextX, nextZ].GetDominantIndex() != startDominantIndex) continue;
 						if (!isCliff)
 						{
-							float hCurrent = terrain.Cells != null ? terrain.Cells[Math.Clamp(currX, 0, width - 1), Math.Clamp(currZ, 0, depth - 1)].Y_NW : 0.0f;
-							float hNext = terrain.Cells != null ? terrain.Cells[Math.Clamp(nextX, 0, width - 1), Math.Clamp(nextZ, 0, depth - 1)].Y_NW : 0.0f;
+							float hCurrent = GetGridNodeHeight(in terrain, currX, currZ);
+							float hNext = GetGridNodeHeight(in terrain, nextX, nextZ);
 							if (Mathf.Abs(hNext - hCurrent) >= 1.0f) continue;
 						}
 						visited[nextX, nextZ] = true;
@@ -2050,11 +2036,13 @@ public class EditorService
 		Func<int, int, bool> shouldFillCell)
 	{
 		var cells = new List<Vector2I>();
+		int splatW = splatBefore.GetLength(0);
+		int splatD = splatBefore.GetLength(1);
 
 		float startFx = clickPos.X / quadSize + width / 2.0f;
 		float startFz = clickPos.Z / quadSize + depth / 2.0f;
-		int startX = Mathf.Clamp((int)Mathf.Round(startFx), 0, width - 1);
-		int startZ = Mathf.Clamp((int)Mathf.Round(startFz), 0, depth - 1);
+		int startX = Mathf.Clamp((int)Math.Round(startFx), 0, splatW - 1);
+		int startZ = Mathf.Clamp((int)Math.Round(startFz), 0, splatD - 1);
 
 		if (shouldFillCell(startX, startZ))
 		{
@@ -2068,8 +2056,8 @@ public class EditorService
 			{
 				float mFx = m.X / quadSize + width / 2.0f;
 				float mFz = m.Z / quadSize + depth / 2.0f;
-				int mX = Mathf.Clamp((int)Math.Round(mFx), 0, width - 1);
-				int mZ = Mathf.Clamp((int)Math.Round(mFz), 0, depth - 1);
+				int mX = Mathf.Clamp((int)Math.Round(mFx), 0, splatW - 1);
+				int mZ = Mathf.Clamp((int)Math.Round(mFz), 0, splatD - 1);
 				if (shouldFillCell(mX, mZ))
 				{
 					cells.AddRange(GetFloodFillCells(m, splatBefore, width, depth, quadSize, visited, isCliff));
@@ -2108,8 +2096,11 @@ public class EditorService
 		TerrainSplatWeights[,] targetSplatMap = (isCliff && _terrainCliffSplatMap != null) ? _terrainCliffSplatMap : _terrainSplatMap;
 		int targetTextureIndex = isCliff ? cliffTextureIndex : fillTextureIndex;
 
+		int splatW = targetSplatMap.GetLength(0);
+		int splatD = targetSplatMap.GetLength(1);
+
 		var splatBefore = (TerrainSplatWeights[,])targetSplatMap.Clone();
-		var visited = new bool[width, depth];
+		var visited = new bool[splatW, splatD];
 
 		var cells = GetFloodFillArea(
 			clickPos,
@@ -2120,31 +2111,136 @@ public class EditorService
 			visited,
 			mirrorMode,
 			isCliff,
-			(x, z) => splatBefore[x, z].Index0 != targetTextureIndex
+			(x, z) => !splatBefore[x, z].IsSolid(targetTextureIndex)
 		);
+
+		if (cells.Count == 0) return (null, null, isCliff);
 
 		foreach (var cell in cells)
 		{
 			targetSplatMap[cell.X, cell.Y] = TerrainSplatWeights.CreateSolid(targetTextureIndex);
 		}
 
-		if (cells.Count > 0)
+		int minGridX = splatW;
+		int maxGridX = 0;
+		int minGridZ = splatD;
+		int maxGridZ = 0;
+		foreach (var cell in cells)
 		{
-			int minGridX = width;
-			int maxGridX = 0;
-			int minGridZ = depth;
-			int maxGridZ = 0;
-			foreach (var cell in cells)
-			{
-				if (cell.X < minGridX) minGridX = cell.X;
-				if (cell.X > maxGridX) maxGridX = cell.X;
-				if (cell.Y < minGridZ) minGridZ = cell.Y;
-				if (cell.Y > maxGridZ) maxGridZ = cell.Y;
-			}
-			AlignSplatMapSlots(minGridX - 2, minGridZ - 2, maxGridX + 2, maxGridZ + 2);
+			if (cell.X < minGridX) minGridX = cell.X;
+			if (cell.X > maxGridX) maxGridX = cell.X;
+			if (cell.Y < minGridZ) minGridZ = cell.Y;
+			if (cell.Y > maxGridZ) maxGridZ = cell.Y;
 		}
+		AlignSplatMapSlots(minGridX - 2, minGridZ - 2, maxGridX + 2, maxGridZ + 2);
 
 		return ((float[,])terrain.Heights.Clone(), (TerrainSplatWeights[,])targetSplatMap.Clone(), isCliff);
+	}
+
+	private List<Vector2I> GetFloodFillPathingCells(
+		Vector3 clickPos,
+		TerrainSplatWeights[,] splatBefore,
+		int width,
+		int depth,
+		float quadSize,
+		bool[,] visited)
+	{
+		ref var terrain = ref GetTerrainState();
+		var cells = new List<Vector2I>();
+
+		int splatW = splatBefore != null ? splatBefore.GetLength(0) : 0;
+		int splatD = splatBefore != null ? splatBefore.GetLength(1) : 0;
+
+		float startFx = clickPos.X / quadSize + width / 2.0f;
+		float startFz = clickPos.Z / quadSize + depth / 2.0f;
+		int clickX = Mathf.Clamp((int)Math.Floor(startFx), 0, width - 1);
+		int clickZ = Mathf.Clamp((int)Math.Floor(startFz), 0, depth - 1);
+
+		int startDominantIndex = (splatBefore != null && clickX < splatW && clickZ < splatD)
+			? splatBefore[clickX, clickZ].GetDominantIndex()
+			: 0;
+
+		var queue = new Queue<(int x, int z)>();
+		if (!visited[clickX, clickZ])
+		{
+			queue.Enqueue((clickX, clickZ));
+			visited[clickX, clickZ] = true;
+		}
+
+		while (queue.Count > 0)
+		{
+			var (currX, currZ) = queue.Dequeue();
+			cells.Add(new Vector2I(currX, currZ));
+
+			int[] dx = { 0, 0, -1, 1 };
+			int[] dz = { -1, 1, 0, 0 };
+			for (int i = 0; i < 4; i++)
+			{
+				int nextX = currX + dx[i];
+				int nextZ = currZ + dz[i];
+				if (nextX >= 0 && nextX < width && nextZ >= 0 && nextZ < depth)
+				{
+					if (!visited[nextX, nextZ])
+					{
+						if (splatBefore != null && nextX < splatW && nextZ < splatD)
+						{
+							if (splatBefore[nextX, nextZ].GetDominantIndex() != startDominantIndex) continue;
+						}
+						if (terrain.Cells != null)
+						{
+							float hCurrent = terrain.Cells[currX, currZ].CenterHeight;
+							float hNext = terrain.Cells[nextX, nextZ].CenterHeight;
+							if (Mathf.Abs(hNext - hCurrent) >= 1.0f) continue;
+						}
+						visited[nextX, nextZ] = true;
+						queue.Enqueue((nextX, nextZ));
+					}
+				}
+			}
+		}
+
+		return cells;
+	}
+
+	private List<Vector2I> GetFloodFillPathingArea(
+		Vector3 clickPos,
+		TerrainSplatWeights[,] splatBefore,
+		int width,
+		int depth,
+		float quadSize,
+		bool[,] visited,
+		MirrorMode mirrorMode,
+		Func<int, int, bool> shouldFillCell)
+	{
+		var cells = new List<Vector2I>();
+
+		float startFx = clickPos.X / quadSize + width / 2.0f;
+		float startFz = clickPos.Z / quadSize + depth / 2.0f;
+		int startX = Mathf.Clamp((int)Math.Floor(startFx), 0, width - 1);
+		int startZ = Mathf.Clamp((int)Math.Floor(startFz), 0, depth - 1);
+
+		if (shouldFillCell(startX, startZ))
+		{
+			cells.AddRange(GetFloodFillPathingCells(clickPos, splatBefore, width, depth, quadSize, visited));
+		}
+
+		if (mirrorMode != MirrorMode.None)
+		{
+			var mirrors = GetMirroredPositions(clickPos, mirrorMode);
+			foreach (var m in mirrors)
+			{
+				float mFx = m.X / quadSize + width / 2.0f;
+				float mFz = m.Z / quadSize + depth / 2.0f;
+				int mX = Mathf.Clamp((int)Math.Floor(mFx), 0, width - 1);
+				int mZ = Mathf.Clamp((int)Math.Floor(mFz), 0, depth - 1);
+				if (shouldFillCell(mX, mZ))
+				{
+					cells.AddRange(GetFloodFillPathingCells(m, splatBefore, width, depth, quadSize, visited));
+				}
+			}
+		}
+
+		return cells;
 	}
 
 	public (int[,]? Before, int[,]? After) PerformFloodFillPathing(Vector3 clickPos, int pathingMask, bool pathingAdd, MirrorMode mirrorMode)
@@ -2152,18 +2248,21 @@ public class EditorService
 		ref var terrain = ref GetTerrainState();
 		if (terrain.Cells == null || terrain.PathingCodes == null) return (null, null);
 
+		if (_terrainSplatMap == null && GameHost.Instance?.GroundTerrain != null)
+		{
+			_terrainSplatMap = GameHost.Instance.GroundTerrain.SplatMap;
+		}
+
 		int width = terrain.Width;
 		int depth = terrain.Depth;
 		float quadSize = terrain.QuadSize;
-		var splatBefore = (TerrainSplatWeights[,])_terrainSplatMap.Clone();
+		var splatBefore = _terrainSplatMap != null ? (TerrainSplatWeights[,])_terrainSplatMap.Clone() : null;
 		var pathingBefore = (int[,])terrain.PathingCodes.Clone();
 		var visited = new bool[width, depth];
 
 		var pathingCodes = terrain.PathingCodes;
 
-		int targetValue = pathingAdd ? pathingMask : 0;
-
-		var cells = GetFloodFillArea(
+		var cells = GetFloodFillPathingArea(
 			clickPos,
 			splatBefore,
 			width,
@@ -2171,9 +2270,10 @@ public class EditorService
 			quadSize,
 			visited,
 			mirrorMode,
-			isCliff: false,
-			(x, z) => pathingBefore[x, z] != targetValue
+			(x, z) => pathingAdd ? (pathingBefore[x, z] & pathingMask) != pathingMask : (pathingBefore[x, z] & pathingMask) != 0
 		);
+
+		if (cells.Count == 0) return (null, null);
 
 		foreach (var cell in cells)
 		{
