@@ -1053,8 +1053,9 @@ void vertex() {
 }
 
 void fragment() {
-	vec3 blend_weights = abs(v_world_normal);
-	blend_weights = pow(blend_weights, vec3(4.0));
+	vec3 geom_normal = cross(dFdx(v_world_pos), dFdy(v_world_pos));
+	vec3 triplanar_normal = length(geom_normal) > 0.00001 ? abs(normalize(geom_normal)) : abs(v_world_normal);
+	vec3 blend_weights = pow(triplanar_normal, vec3(4.0));
 	float bw_sum = blend_weights.x + blend_weights.y + blend_weights.z;
 	blend_weights = bw_sum > 0.0001 ? blend_weights / bw_sum : vec3(0.0, 1.0, 0.0);
 
@@ -1067,7 +1068,7 @@ void fragment() {
 			float warp_x = (base_fbm_val - 0.5) * 2.0;
 			float warp_y = (macro_fbm((v_world_pos.xz + vec2(17.3, 31.7)) * macro_scale) - 0.5) * 2.0;
 			vec2 warp_offset = vec2(warp_x, warp_y);
-			pos_warped += vec3(warp_offset.x, warp_offset.y, warp_offset.x) * uv_warp_strength * 0.05 / max(0.001, macro_scale);
+			pos_warped += vec3(warp_offset.x, warp_offset.y, warp_offset.y) * uv_warp_strength * 0.05 / max(0.001, macro_scale);
 		}
 	}
 
@@ -1224,9 +1225,11 @@ void fragment() {
 		blended_normal_tangent = normalize(n0_vec * w0 + n1_vec * w1 + n2_vec * w2 + n3_vec * w3);
 
 		if (enable_macro_noise && macro_normal_strength > 0.0) {
+			float slope_factor = 1.0 - smoothstep(0.5, 0.95, triplanar_normal.y);
+			float effective_macro_normal_strength = macro_normal_strength * mix(1.0, 3.5, slope_factor);
 			float n_noise_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
 			float n_noise_z = (macro_fbm((v_world_pos.xz + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.0, 0.1)) * macro_scale));
-			vec3 noise_normal = vec3(n_noise_x * macro_normal_strength, n_noise_z * macro_normal_strength, 1.0);
+			vec3 noise_normal = vec3(n_noise_x * effective_macro_normal_strength, n_noise_z * effective_macro_normal_strength, 1.0);
 			blended_normal_tangent = normalize(blended_normal_tangent + noise_normal);
 		}
 
@@ -2625,18 +2628,6 @@ void fragment() {
 		if (triNormW.Y < 0) triNormW = -triNormW;
 		float cliffFactorW = GetCliffFactor(triNormW);
 
-		Vector3 normN0 = triNormN.Y >= 0.999f ? Vector3.Up : triNormN;
-		Vector3 normN1 = normN0, normN2 = normN0;
-
-		Vector3 normE0 = triNormE.Y >= 0.999f ? Vector3.Up : triNormE;
-		Vector3 normE1 = normE0, normE2 = normE0;
-
-		Vector3 normS0 = triNormS.Y >= 0.999f ? Vector3.Up : triNormS;
-		Vector3 normS1 = normS0, normS2 = normS0;
-
-		Vector3 normW0 = triNormW.Y >= 0.999f ? Vector3.Up : triNormW;
-		Vector3 normW1 = normW0, normW2 = normW0;
-
 		Vector2 uvNW = new Vector2(gPNW.X, gPNW.Z);
 		Vector2 uvNE = new Vector2(gPNE.X, gPNE.Z);
 		Vector2 uvSE = new Vector2(gPSE.X, gPSE.Z);
@@ -2663,10 +2654,10 @@ void fragment() {
 
 		var (tex0, tex1, tex2, tex3) = GetQuadDominantTextures(sN0, sE0, sS0, sW0);
 
-		ProcessSubTriangleGround(chunk, gPNW, gPNE, gPC, normN0, normN1, normN2, uvNW, uvNE, uvC, col, col, col, sN0, sN1, sN2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
-		ProcessSubTriangleGround(chunk, gPNE, gPSE, gPC, normE0, normE1, normE2, uvNE, uvSE, uvC, col, col, col, sE0, sE1, sE2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
-		ProcessSubTriangleGround(chunk, gPSE, gPSW, gPC, normS0, normS1, normS2, uvSE, uvSW, uvC, col, col, col, sS0, sS1, sS2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
-		ProcessSubTriangleGround(chunk, gPSW, gPNW, gPC, normW0, normW1, normW2, uvSW, uvNW, uvC, col, col, col, sW0, sW1, sW2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPNW, gPNE, gPC, normNW, normNE, normC, uvNW, uvNE, uvC, col, col, col, sN0, sN1, sN2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPNE, gPSE, gPC, normNE, normSE, normC, uvNE, uvSE, uvC, col, col, col, sE0, sE1, sE2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPSE, gPSW, gPC, normSE, normSW, normC, uvSE, uvSW, uvC, col, col, col, sS0, sS1, sS2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPSW, gPNW, gPC, normSW, normNW, normC, uvSW, uvNW, uvC, col, col, col, sW0, sW1, sW2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
 	}
 
 	private void ProcessCellQuad(
