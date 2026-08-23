@@ -26,6 +26,54 @@ public partial class EditableTerrain : StaticBody3D
 		return Realm.Godot.Utils.PlayerColorShaderManager.NormalizeAlbedoImage(sourceImage, targetLinearLuminance, 0.2f, maxScaleFactor);
 	}
 
+	private static float[,] ComputeSeparableBoxBlur(float[,] input, int w, int h, int radius)
+	{
+		float[,] temp = new float[w, h];
+		float[,] result = new float[w, h];
+		int windowSize = 2 * radius + 1;
+		float invWindow = 1.0f / windowSize;
+
+		for (int y = 0; y < h; y++)
+		{
+			float sum = 0.0f;
+			for (int k = -radius; k <= radius; k++)
+			{
+				int px = (k % w + w) % w;
+				sum += input[px, y];
+			}
+			temp[0, y] = sum * invWindow;
+
+			for (int x = 1; x < w; x++)
+			{
+				int removeX = ((x - 1 - radius) % w + w) % w;
+				int addX = ((x + radius) % w + w) % w;
+				sum += input[addX, y] - input[removeX, y];
+				temp[x, y] = sum * invWindow;
+			}
+		}
+
+		for (int x = 0; x < w; x++)
+		{
+			float sum = 0.0f;
+			for (int k = -radius; k <= radius; k++)
+			{
+				int py = (k % h + h) % h;
+				sum += temp[x, py];
+			}
+			result[x, 0] = sum * invWindow;
+
+			for (int y = 1; y < h; y++)
+			{
+				int removeY = ((y - 1 - radius) % h + h) % h;
+				int addY = ((y + radius) % h + h) % h;
+				sum += temp[x, addY] - temp[x, removeY];
+				result[x, y] = sum * invWindow;
+			}
+		}
+
+		return result;
+	}
+
 	public void ProcessAndSaveRawTexture(string rawPngPath, string outputKtx2Path)
 	{
 		var img = Godot.Image.LoadFromFile(rawPngPath);
@@ -43,14 +91,99 @@ public partial class EditableTerrain : StaticBody3D
 		
 		var layer0 = Godot.Image.CreateEmpty(w, h, false, Godot.Image.Format.Rgba8);
 		var layer1 = Godot.Image.CreateEmpty(w, h, false, Godot.Image.Format.Rgba8);
-		
+
+		float[,] luminance = new float[w, h];
 		for (int y = 0; y < h; y++)
 		{
 			for (int x = 0; x < w; x++)
 			{
 				var color = img.GetPixel(x, y);
-				float luma = 0.299f * color.R + 0.587f * color.G + 0.114f * color.B;
-				layer0.SetPixel(x, y, new Godot.Color(color.R, color.G, color.B, luma));
+				luminance[x, y] = 0.299f * color.R + 0.587f * color.G + 0.114f * color.B;
+			}
+		}
+
+		float[,] fineMean = ComputeSeparableBoxBlur(luminance, w, h, 3);
+		float[,] coarseMean = ComputeSeparableBoxBlur(luminance, w, h, 14);
+
+		float[,] rawHeight = new float[w, h];
+		float minH = float.MaxValue;
+		float maxH = float.MinValue;
+
+		for (int y = 0; y < h; y++)
+		{
+			int py = y > 0 ? y - 1 : h - 1;
+			int ny = y < h - 1 ? y + 1 : 0;
+
+			for (int x = 0; x < w; x++)
+			{
+				int px = x > 0 ? x - 1 : w - 1;
+				int nx = x < w - 1 ? x + 1 : 0;
+
+				float lum = luminance[x, y];
+				float highFreq = lum - fineMean[x, y];
+				float midFreq = fineMean[x, y] - coarseMean[x, y];
+
+				float dx = (luminance[nx, y] - luminance[px, y]) * 0.5f;
+				float dy = (luminance[x, ny] - luminance[x, py]) * 0.5f;
+				float gradMag = MathF.Sqrt(dx * dx + dy * dy);
+				float laplacian = luminance[nx, y] + luminance[px, y] + luminance[x, ny] + luminance[x, py] - 4.0f * lum;
+
+				float structuralValue = 0.5f + (highFreq * 2.2f) + (midFreq * 1.4f) + (laplacian * 0.5f) - (gradMag * 0.25f);
+				rawHeight[x, y] = structuralValue;
+
+				if (structuralValue < minH) minH = structuralValue;
+				if (structuralValue > maxH) maxH = structuralValue;
+			}
+		}
+
+		int totalPixels = w * h;
+		int histogramBins = 256;
+		int[] histogram = new int[histogramBins];
+		float range = Math.Max(0.001f, maxH - minH);
+
+		for (int y = 0; y < h; y++)
+		{
+			for (int x = 0; x < w; x++)
+			{
+				int bin = Math.Clamp((int)((rawHeight[x, y] - minH) / range * (histogramBins - 1)), 0, histogramBins - 1);
+				histogram[bin]++;
+			}
+		}
+
+		int lowerThresholdCount = (int)(totalPixels * 0.02f);
+		int upperThresholdCount = (int)(totalPixels * 0.98f);
+		int runningSum = 0;
+		float lowPercentile = minH;
+		float highPercentile = maxH;
+
+		for (int b = 0; b < histogramBins; b++)
+		{
+			runningSum += histogram[b];
+			if (runningSum >= lowerThresholdCount && lowPercentile == minH)
+			{
+				lowPercentile = minH + (b / (float)(histogramBins - 1)) * range;
+			}
+			if (runningSum >= upperThresholdCount)
+			{
+				highPercentile = minH + (b / (float)(histogramBins - 1)) * range;
+				break;
+			}
+		}
+
+		float normRange = Math.Max(0.05f, highPercentile - lowPercentile);
+		float[,] normalizedHeight = new float[w, h];
+
+		for (int y = 0; y < h; y++)
+		{
+			for (int x = 0; x < w; x++)
+			{
+				var color = img.GetPixel(x, y);
+				float rawVal = rawHeight[x, y];
+				float hVal = Math.Clamp((rawVal - lowPercentile) / normRange, 0.0f, 1.0f);
+				float smoothH = hVal * hVal * (3.0f - 2.0f * hVal);
+				float finalH = 0.7f * hVal + 0.3f * smoothH;
+				normalizedHeight[x, y] = finalH;
+				layer0.SetPixel(x, y, new Godot.Color(color.R, color.G, color.B, finalH));
 			}
 		}
 		
@@ -63,36 +196,38 @@ public partial class EditableTerrain : StaticBody3D
 				int py = y > 0 ? y - 1 : h - 1;
 				int ny = y < h - 1 ? y + 1 : 0;
 				
-				float h00 = layer0.GetPixel(px, py).A;
-				float h10 = layer0.GetPixel(x, py).A;
-				float h20 = layer0.GetPixel(nx, py).A;
+				float h00 = normalizedHeight[px, py];
+				float h10 = normalizedHeight[x, py];
+				float h20 = normalizedHeight[nx, py];
 				
-				float h01 = layer0.GetPixel(px, y).A;
-				float h21 = layer0.GetPixel(nx, y).A;
+				float h01 = normalizedHeight[px, y];
+				float h11 = normalizedHeight[x, y];
+				float h21 = normalizedHeight[nx, y];
 				
-				float h02 = layer0.GetPixel(px, ny).A;
-				float h12 = layer0.GetPixel(x, ny).A;
-				float h22 = layer0.GetPixel(nx, ny).A;
+				float h02 = normalizedHeight[px, ny];
+				float h12 = normalizedHeight[x, ny];
+				float h22 = normalizedHeight[nx, ny];
 				
 				float dx = ((h20 + 2.0f * h21 + h22) - (h00 + 2.0f * h01 + h02)) / 8.0f;
 				float dy = ((h02 + 2.0f * h12 + h22) - (h00 + 2.0f * h10 + h20)) / 8.0f;
-				float dz = 1.0f / 5.0f;
+				float dz = 1.0f / 4.0f;
 				
 				var normal = new Godot.Vector3(-dx, -dy, dz).Normalized();
 				
-				float laplacian = (h10 + h01 + h21 + h12) - 4.0f * layer0.GetPixel(x, y).A;
-				float height = layer0.GetPixel(x, y).A;
+				float laplacian = (h10 + h01 + h21 + h12) - 4.0f * h11;
+				float height = h11;
 				float ao = 1.0f - Godot.Mathf.Clamp(laplacian * 4.0f, 0.0f, 0.5f);
-				ao *= (0.7f + 0.3f * height);
+				ao *= (0.65f + 0.35f * height);
 				ao = Godot.Mathf.Clamp(ao, 0.0f, 1.0f);
 
 				float r = (normal.X * 0.5f + 0.5f);
 				float g = (normal.Y * 0.5f + 0.5f);
 				float b = ao;
 
-				float contrastHeight = (height - 0.5f) * 1.5f + 0.5f;
+				float contrastHeight = (height - 0.5f) * 1.4f + 0.5f;
 				contrastHeight = Godot.Mathf.Clamp(contrastHeight, 0.0f, 1.0f);
-				float roughness = Godot.Mathf.Lerp(0.8f, 0.5f, contrastHeight);
+				float highDetail = Math.Abs(luminance[x, y] - fineMean[x, y]);
+				float roughness = Godot.Mathf.Clamp(Godot.Mathf.Lerp(0.85f, 0.45f, contrastHeight) + highDetail * 0.8f, 0.15f, 0.95f);
 
 				layer1.SetPixel(x, y, new Godot.Color(r, g, b, roughness));
 			}
@@ -371,7 +506,19 @@ public partial class EditableTerrain : StaticBody3D
 
 	public TerrainSplatWeights[,] SplatMap { get; set; }
 	public TerrainSplatWeights[,] CliffSplatMap { get; set; }
-	public int CliffTextureIndex { get; set; } = 2;
+	private int _cliffTextureIndex = 2;
+	public int CliffTextureIndex
+	{
+		get => _cliffTextureIndex;
+		set
+		{
+			_cliffTextureIndex = value;
+			if (_material != null)
+			{
+				_material.SetShaderParameter("cliff_texture_index", (float)value);
+			}
+		}
+	}
 
 	public int[,] PathingCodes
 	{
@@ -860,6 +1007,8 @@ render_mode blend_mix;
 uniform sampler2DArray terrain_textures : source_color, filter_linear_mipmap_anisotropic;
 uniform sampler2DArray terrain_normals_pbr : hint_default_white, filter_linear_mipmap_anisotropic;
 uniform float blend_softness = 0.2;
+uniform float cliff_texture_index = 2.0;
+uniform float cliff_blend_smoothness = 0.18;
 uniform sampler2D shroud_texture : hint_default_white;
 uniform vec2 shroud_world_min = vec2(-125.0, -125.0);
 uniform vec2 shroud_world_size = vec2(250.0, 250.0);
@@ -1083,6 +1232,15 @@ void fragment() {
 	vec2 dx_z = dFdx(uv_z);
 	vec2 dy_z = dFdy(uv_z);
 
+	float cliff_mid = 0.65;
+	float cliff_half_width = max(0.02, cliff_blend_smoothness);
+	float slope_cliff_factor = 1.0 - smoothstep(cliff_mid - cliff_half_width, cliff_mid + cliff_half_width, triplanar_normal.y);
+	if (enable_macro_noise) {
+		float rim_noise = (base_fbm_val - 0.5) * 0.15;
+		float rim_mask = smoothstep(0.1, 0.9, slope_cliff_factor) * (1.0 - smoothstep(0.1, 0.9, slope_cliff_factor)) * 4.0;
+		slope_cliff_factor = clamp(slope_cliff_factor + rim_noise * rim_mask, 0.0, 1.0);
+	}
+
 	vec4 raw_weights = v_tex_weights;
 	raw_weights.x = raw_weights.x < 0.001 ? 0.0 : raw_weights.x;
 	raw_weights.y = raw_weights.y < 0.001 ? 0.0 : raw_weights.y;
@@ -1090,34 +1248,123 @@ void fragment() {
 	raw_weights.w = raw_weights.w < 0.001 ? 0.0 : raw_weights.w;
 
 	float weight_sum = raw_weights.x + raw_weights.y + raw_weights.z + raw_weights.w;
-	vec4 norm_weights = weight_sum > 0.0001 ? raw_weights / weight_sum : vec4(0.0);
-
-	vec3 splat_color = vec3(0.0);
-	vec4 blend_layer_weights = norm_weights;
+	vec4 norm_weights = weight_sum > 0.0001 ? raw_weights / weight_sum : vec4(1.0, 0.0, 0.0, 0.0);
 
 	vec4 c0 = norm_weights.x > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
 	vec4 c1 = norm_weights.y > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
 	vec4 c2 = norm_weights.z > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
 	vec4 c3 = norm_weights.w > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
 
+	vec4 blend_layer_weights = norm_weights;
+	vec3 ground_albedo = vec3(0.0);
+
 	if (enable_height_blend) {
-		float height_influence = 0.15;
-		vec4 height_mod = vec4(c0.a, c1.a, c2.a, c3.a) * height_influence;
-		vec4 blended_weights = norm_weights * (vec4(1.0) + height_mod);
-		float final_sum = blended_weights.x + blended_weights.y + blended_weights.z + blended_weights.w;
-		blend_layer_weights = final_sum > 0.0001 ? blended_weights / final_sum : vec4(1.0, 0.0, 0.0, 0.0);
-		splat_color = (c0.rgb * blend_layer_weights.x +
-		               c1.rgb * blend_layer_weights.y +
-		               c2.rgb * blend_layer_weights.z +
-		               c3.rgb * blend_layer_weights.w);
+		float edge_noise = 0.0;
+		if (enable_macro_noise) {
+			float max_w = max(max(norm_weights.x, norm_weights.y), max(norm_weights.z, norm_weights.w));
+			float transition_factor = clamp((1.0 - max_w) * 2.0, 0.0, 1.0);
+			edge_noise = (base_fbm_val - 0.5) * 0.16 * transition_factor;
+		}
+
+		vec4 heights = vec4(c0.a, c1.a, c2.a, c3.a);
+		vec4 noise_offsets = vec4(edge_noise, -edge_noise, edge_noise * 0.75, -edge_noise * 0.75);
+
+		vec4 height_scores = vec4(
+			norm_weights.x > 0.001 ? (norm_weights.x + heights.x * 0.85 + noise_offsets.x) : -100.0,
+			norm_weights.y > 0.001 ? (norm_weights.y + heights.y * 0.85 + noise_offsets.y) : -100.0,
+			norm_weights.z > 0.001 ? (norm_weights.z + heights.z * 0.85 + noise_offsets.z) : -100.0,
+			norm_weights.w > 0.001 ? (norm_weights.w + heights.w * 0.85 + noise_offsets.w) : -100.0
+		);
+
+		float max_score = max(max(height_scores.x, height_scores.y), max(height_scores.z, height_scores.w));
+		float transition_depth = max(0.04, blend_softness);
+
+		vec4 thresholded = max(vec4(0.0), height_scores - vec4(max_score - transition_depth));
+		thresholded *= step(0.001, norm_weights);
+
+		float threshold_sum = thresholded.x + thresholded.y + thresholded.z + thresholded.w;
+		blend_layer_weights = threshold_sum > 0.0001 ? thresholded / threshold_sum : norm_weights;
+
+		ground_albedo = (c0.rgb * blend_layer_weights.x +
+		                 c1.rgb * blend_layer_weights.y +
+		                 c2.rgb * blend_layer_weights.z +
+		                 c3.rgb * blend_layer_weights.w);
 	} else {
-		splat_color = (c0.rgb * norm_weights.x +
-		               c1.rgb * norm_weights.y +
-		               c2.rgb * norm_weights.z +
-		               c3.rgb * norm_weights.w);
+		ground_albedo = (c0.rgb * norm_weights.x +
+		                 c1.rgb * norm_weights.y +
+		                 c2.rgb * norm_weights.z +
+		                 c3.rgb * norm_weights.w);
 	}
 
-	vec3 terrain_color = splat_color;
+	vec3 ground_normal = vec3(0.0, 0.0, 1.0);
+	float ground_ao = 1.0;
+	float ground_roughness = 0.85;
+
+	if (enable_normal_mapping) {
+		float gw0 = blend_layer_weights.x;
+		float gw1 = blend_layer_weights.y;
+		float gw2 = blend_layer_weights.z;
+		float gw3 = blend_layer_weights.w;
+
+		vec4 gn0 = gw0 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 gn1 = gw1 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 gn2 = gw2 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 gn3 = gw3 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+
+		vec2 gn0_xy = gn0.rg * 2.0 - 1.0;
+		vec3 gn0_vec = vec3(gn0_xy, sqrt(max(0.0, 1.0 - dot(gn0_xy, gn0_xy))));
+		vec2 gn1_xy = gn1.rg * 2.0 - 1.0;
+		vec3 gn1_vec = vec3(gn1_xy, sqrt(max(0.0, 1.0 - dot(gn1_xy, gn1_xy))));
+		vec2 gn2_xy = gn2.rg * 2.0 - 1.0;
+		vec3 gn2_vec = vec3(gn2_xy, sqrt(max(0.0, 1.0 - dot(gn2_xy, gn2_xy))));
+		vec2 gn3_xy = gn3.rg * 2.0 - 1.0;
+		vec3 gn3_vec = vec3(gn3_xy, sqrt(max(0.0, 1.0 - dot(gn3_xy, gn3_xy))));
+
+		ground_normal = normalize(gn0_vec * gw0 + gn1_vec * gw1 + gn2_vec * gw2 + gn3_vec * gw3);
+		ground_ao = (gn0.b * gw0 + gn1.b * gw1 + gn2.b * gw2 + gn3.b * gw3);
+		ground_roughness = (gn0.a * gw0 + gn1.a * gw1 + gn2.a * gw2 + gn3.a * gw3);
+	}
+
+	float active_cliff_idx = (v_color.a > 0.001 && v_color.a < 0.999) ? round(v_color.a * 255.0) : cliff_texture_index;
+	vec4 cliff_sample = sample_triplanar_layer(terrain_textures, active_cliff_idx, uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false);
+	vec3 cliff_albedo = cliff_sample.rgb;
+	vec3 cliff_normal = vec3(0.0, 0.0, 1.0);
+	float cliff_ao = 1.0;
+	float cliff_roughness = 0.85;
+
+	if (enable_normal_mapping) {
+		vec4 cn_sample = sample_triplanar_layer(terrain_normals_pbr, active_cliff_idx, uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true);
+		vec2 cn_xy = cn_sample.rg * 2.0 - 1.0;
+		cliff_normal = vec3(cn_xy, sqrt(max(0.0, 1.0 - dot(cn_xy, cn_xy))));
+		cliff_ao = cn_sample.b;
+		cliff_roughness = cn_sample.a;
+	}
+
+	if (enable_macro_noise && macro_normal_strength > 0.0) {
+		float n_noise_y_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
+		float n_noise_y_z = (macro_fbm((v_world_pos.xz + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.0, 0.1)) * macro_scale));
+		vec3 noise_norm_y = vec3(n_noise_y_x, n_noise_y_z, 0.0);
+
+		float n_noise_x_y = (macro_fbm((v_world_pos.zy + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.zy - vec2(0.1, 0.0)) * macro_scale));
+		float n_noise_x_z = (macro_fbm((v_world_pos.zy + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.zy - vec2(0.0, 0.1)) * macro_scale));
+		vec3 noise_norm_x = vec3(n_noise_x_y, n_noise_x_z, 0.0);
+
+		float n_noise_z_x = (macro_fbm((v_world_pos.xy + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xy - vec2(0.1, 0.0)) * macro_scale));
+		float n_noise_z_y = (macro_fbm((v_world_pos.xy + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xy - vec2(0.0, 0.1)) * macro_scale));
+		vec3 noise_norm_z = vec3(n_noise_z_x, n_noise_z_y, 0.0);
+
+		vec3 triplanar_cliff_noise = noise_norm_x * blend_weights.x + noise_norm_y * blend_weights.y + noise_norm_z * blend_weights.z;
+		float effective_cliff_normal_strength = macro_normal_strength * 3.5;
+		cliff_normal = normalize(cliff_normal + vec3(triplanar_cliff_noise.xy * effective_cliff_normal_strength, 0.0));
+
+		ground_normal = normalize(ground_normal + vec3(noise_norm_y.xy * macro_normal_strength, 0.0));
+	}
+
+	vec3 terrain_color = mix(ground_albedo, cliff_albedo, slope_cliff_factor);
+	vec3 blended_normal_tangent = mix(ground_normal, cliff_normal, slope_cliff_factor);
+	float blended_ao = mix(ground_ao, cliff_ao, slope_cliff_factor);
+	float blended_roughness = mix(ground_roughness, cliff_roughness, slope_cliff_factor);
+
 	float macro_var = 1.0;
 	if (enable_macro_noise) {
 		macro_var = mix(1.0 - macro_albedo_contrast, 1.0 + macro_albedo_contrast, base_fbm_val);
@@ -1194,48 +1441,10 @@ void fragment() {
 		}
 	}
 
-	vec3 blended_normal_tangent = vec3(0.0, 0.0, 1.0);
-	float blended_ao = 1.0;
 	float final_roughness = 0.9;
 	float specular_amt = 0.0;
 
 	if (enable_normal_mapping) {
-		float w0 = blend_layer_weights.x;
-		float w1 = blend_layer_weights.y;
-		float w2 = blend_layer_weights.z;
-		float w3 = blend_layer_weights.w;
-
-		vec4 n0 = w0 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 n1 = w1 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 n2 = w2 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 n3 = w3 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		
-		vec2 n0_xy = n0.rg * 2.0 - 1.0;
-		vec3 n0_vec = vec3(n0_xy, sqrt(max(0.0, 1.0 - dot(n0_xy, n0_xy))));
-		
-		vec2 n1_xy = n1.rg * 2.0 - 1.0;
-		vec3 n1_vec = vec3(n1_xy, sqrt(max(0.0, 1.0 - dot(n1_xy, n1_xy))));
-		
-		vec2 n2_xy = n2.rg * 2.0 - 1.0;
-		vec3 n2_vec = vec3(n2_xy, sqrt(max(0.0, 1.0 - dot(n2_xy, n2_xy))));
-		
-		vec2 n3_xy = n3.rg * 2.0 - 1.0;
-		vec3 n3_vec = vec3(n3_xy, sqrt(max(0.0, 1.0 - dot(n3_xy, n3_xy))));
-		
-		blended_normal_tangent = normalize(n0_vec * w0 + n1_vec * w1 + n2_vec * w2 + n3_vec * w3);
-
-		if (enable_macro_noise && macro_normal_strength > 0.0) {
-			float slope_factor = 1.0 - smoothstep(0.5, 0.95, triplanar_normal.y);
-			float effective_macro_normal_strength = macro_normal_strength * mix(1.0, 3.5, slope_factor);
-			float n_noise_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
-			float n_noise_z = (macro_fbm((v_world_pos.xz + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.0, 0.1)) * macro_scale));
-			vec3 noise_normal = vec3(n_noise_x * effective_macro_normal_strength, n_noise_z * effective_macro_normal_strength, 1.0);
-			blended_normal_tangent = normalize(blended_normal_tangent + noise_normal);
-		}
-
-		blended_ao = (n0.b * w0 + n1.b * w1 + n2.b * w2 + n3.b * w3);
-		float blended_roughness = (n0.a * w0 + n1.a * w1 + n2.a * w2 + n3.a * w3);
-
 		if (enable_macro_noise) {
 			float macro_roughness_var = mix(1.0 - macro_roughness_contrast, 1.0 + macro_roughness_contrast, base_fbm_val);
 			final_roughness = clamp(blended_roughness * macro_roughness_var, 0.05, 1.0);
@@ -1281,6 +1490,8 @@ void fragment() {
 		_material.SetShaderParameter("grid_spacing", QuadSize);
 		_material.SetShaderParameter("terrain_size", new Vector2(Width * QuadSize, Depth * QuadSize));
 		_material.SetShaderParameter("texture_scale", 1.0f / QuadSize);
+		_material.SetShaderParameter("cliff_texture_index", (float)CliffTextureIndex);
+		_material.SetShaderParameter("cliff_blend_smoothness", 0.18f);
 
 		ApplyQualitySettings(GameSettings.QualityIdx);
 
@@ -2308,15 +2519,15 @@ void fragment() {
 		totalIndices += 12;
 	}
 
-	private (int tex0, int tex1, int tex2, int tex3) GetQuadDominantTextures(TerrainSplatWeights s0, TerrainSplatWeights s1, TerrainSplatWeights s2, TerrainSplatWeights s3)
+	private (int tex0, int tex1, int tex2, int tex3) GetQuadDominantTextures(ReadOnlySpan<TerrainSplatWeights> splats)
 	{
 		Span<int> indices = stackalloc int[16];
 		Span<float> weights = stackalloc float[16];
 		int count = 0;
 
-		for (int sIdx = 0; sIdx < 4; sIdx++)
+		for (int sIdx = 0; sIdx < splats.Length; sIdx++)
 		{
-			TerrainSplatWeights s = sIdx switch { 0 => s0, 1 => s1, 2 => s2, _ => s3 };
+			TerrainSplatWeights s = splats[sIdx];
 			for (int k = 0; k < 4; k++)
 			{
 				int idx = k switch { 0 => s.Index0, 1 => s.Index1, 2 => s.Index2, _ => s.Index3 };
@@ -2344,7 +2555,7 @@ void fragment() {
 
 		if (count == 0)
 		{
-			int defaultTex = s0.Index0;
+			int defaultTex = splats.Length > 0 ? splats[0].Index0 : 0;
 			return (defaultTex, defaultTex, defaultTex, defaultTex);
 		}
 
@@ -2371,6 +2582,12 @@ void fragment() {
 		int res3 = count > 3 ? indices[3] : res0;
 
 		return (res0, res1, res2, res3);
+	}
+
+	private (int tex0, int tex1, int tex2, int tex3) GetQuadDominantTextures(TerrainSplatWeights s0, TerrainSplatWeights s1, TerrainSplatWeights s2, TerrainSplatWeights s3)
+	{
+		Span<TerrainSplatWeights> splats = stackalloc TerrainSplatWeights[4] { s0, s1, s2, s3 };
+		return GetQuadDominantTextures(splats);
 	}
 
 	private (float w0, float w1, float w2, float w3) GetSplatWeightsForQuad(TerrainSplatWeights s, int tex0, int tex1, int tex2, int tex3)
@@ -2459,105 +2676,7 @@ void fragment() {
 	public static float GetCliffFactor(Vector3 normal)
 	{
 		float ny = Mathf.Clamp(normal.Y, 0.0f, 1.0f);
-		return 1.0f - Smoothstep(0.72f, 0.92f, ny);
-	}
-
-	private TerrainSplatWeights BlendSplatWeightsWithCliff(in TerrainSplatWeights ground, in TerrainSplatWeights cliff, float cliffFactor)
-	{
-		cliffFactor = Mathf.Clamp(cliffFactor, 0.0f, 1.0f);
-		if (cliffFactor <= 0.001f) return ground;
-		if (cliffFactor >= 0.999f) return cliff;
-
-		float groundFactor = 1.0f - cliffFactor;
-
-		int[] indices = new int[8];
-		float[] weights = new float[8];
-		int count = 0;
-
-		for (int sIdx = 0; sIdx < 2; sIdx++)
-		{
-			TerrainSplatWeights splat = sIdx == 0 ? ground : cliff;
-			float factor = sIdx == 0 ? groundFactor : cliffFactor;
-
-			for (int k = 0; k < 4; k++)
-			{
-				int idx = k switch { 0 => splat.Index0, 1 => splat.Index1, 2 => splat.Index2, _ => splat.Index3 };
-				float w = (k switch { 0 => splat.Weight0, 1 => splat.Weight1, 2 => splat.Weight2, _ => splat.Weight3 }) * factor;
-				if (w <= 0.0001f) continue;
-
-				bool found = false;
-				for (int i = 0; i < count; i++)
-				{
-					if (indices[i] == idx)
-					{
-						weights[i] += w;
-						found = true;
-						break;
-					}
-				}
-				if (!found && count < 8)
-				{
-					indices[count] = idx;
-					weights[count] = w;
-					count++;
-				}
-			}
-		}
-
-		if (count == 0) return ground;
-
-		for (int i = 0; i < count - 1; i++)
-		{
-			for (int j = i + 1; j < count; j++)
-			{
-				if (weights[j] > weights[i])
-				{
-					float tempW = weights[i];
-					weights[i] = weights[j];
-					weights[j] = tempW;
-
-					int tempIdx = indices[i];
-					indices[i] = indices[j];
-					indices[j] = tempIdx;
-				}
-			}
-		}
-
-		int res0 = indices[0];
-		int res1 = count > 1 ? indices[1] : res0;
-		int res2 = count > 2 ? indices[2] : res0;
-		int res3 = count > 3 ? indices[3] : res0;
-
-		float w0 = weights[0];
-		float w1 = count > 1 ? weights[1] : 0.0f;
-		float w2 = count > 2 ? weights[2] : 0.0f;
-		float w3 = count > 3 ? weights[3] : 0.0f;
-
-		float totalW = w0 + w1 + w2 + w3;
-		if (totalW > 0.0001f)
-		{
-			float invW = 1.0f / totalW;
-			w0 *= invW;
-			w1 *= invW;
-			w2 *= invW;
-			w3 *= invW;
-		}
-		else
-		{
-			w0 = 1.0f; w1 = 0.0f; w2 = 0.0f; w3 = 0.0f;
-		}
-
-		return new TerrainSplatWeights
-		{
-			Index0 = res0,
-			Index1 = res1,
-			Index2 = res2,
-			Index3 = res3,
-			Weight0 = w0,
-			Weight1 = w1,
-			Weight2 = w2,
-			Weight3 = w3
-		};
+		return 1.0f - Smoothstep(0.70f, 0.90f, ny);
 	}
 
 	private void ProcessCellQuad(
@@ -2605,28 +2724,9 @@ void fragment() {
 
 		int mapCliffW = cliffSplatMap != null ? cliffSplatMap.GetLength(0) : 0;
 		int mapCliffD = cliffSplatMap != null ? cliffSplatMap.GetLength(1) : 0;
-
-		TerrainSplatWeights cliffS00 = cliffSplatMap != null ? cliffSplatMap[Math.Clamp(x, 0, mapCliffW - 1), Math.Clamp(z, 0, mapCliffD - 1)] : default;
-		TerrainSplatWeights cliffS10 = cliffSplatMap != null ? cliffSplatMap[Math.Clamp(x + 1, 0, mapCliffW - 1), Math.Clamp(z, 0, mapCliffD - 1)] : cliffS00;
-		TerrainSplatWeights cliffS11 = cliffSplatMap != null ? cliffSplatMap[Math.Clamp(x + 1, 0, mapCliffW - 1), Math.Clamp(z + 1, 0, mapCliffD - 1)] : cliffS00;
-		TerrainSplatWeights cliffS01 = cliffSplatMap != null ? cliffSplatMap[Math.Clamp(x, 0, mapCliffW - 1), Math.Clamp(z + 1, 0, mapCliffD - 1)] : cliffS00;
-		TerrainSplatWeights cliffSC = BlendSplatWeights(cliffS00, cliffS10, cliffS11, cliffS01);
-
-		Vector3 triNormN = (gPNE - gPNW).Cross(gPC - gPNW).Normalized();
-		if (triNormN.Y < 0) triNormN = -triNormN;
-		float cliffFactorN = GetCliffFactor(triNormN);
-
-		Vector3 triNormE = (gPSE - gPNE).Cross(gPC - gPNE).Normalized();
-		if (triNormE.Y < 0) triNormE = -triNormE;
-		float cliffFactorE = GetCliffFactor(triNormE);
-
-		Vector3 triNormS = (gPSW - gPSE).Cross(gPC - gPSE).Normalized();
-		if (triNormS.Y < 0) triNormS = -triNormS;
-		float cliffFactorS = GetCliffFactor(triNormS);
-
-		Vector3 triNormW = (gPNW - gPSW).Cross(gPC - gPSW).Normalized();
-		if (triNormW.Y < 0) triNormW = -triNormW;
-		float cliffFactorW = GetCliffFactor(triNormW);
+		int cliffTexIdx = (cliffSplatMap != null && mapCliffW > 0 && mapCliffD > 0)
+			? cliffSplatMap[Math.Clamp(x, 0, mapCliffW - 1), Math.Clamp(z, 0, mapCliffD - 1)].Index0
+			: CliffTextureIndex;
 
 		Vector2 uvNW = new Vector2(gPNW.X, gPNW.Z);
 		Vector2 uvNE = new Vector2(gPNE.X, gPNE.Z);
@@ -2634,30 +2734,15 @@ void fragment() {
 		Vector2 uvSW = new Vector2(gPSW.X, gPSW.Z);
 		Vector2 uvC = new Vector2(gPC.X, gPC.Z);
 
-		Color col = new Color(1.0f, 1.0f, 1.0f, 1.0f);
+		float cliffAlpha = (cliffTexIdx >= 0 && cliffTexIdx <= 31) ? (cliffTexIdx / 255.0f) : 1.0f;
+		Color col = new Color(1.0f, 1.0f, 1.0f, cliffAlpha);
 
-		TerrainSplatWeights sN0 = BlendSplatWeightsWithCliff(floorS00, cliffS00, cliffFactorN);
-		TerrainSplatWeights sN1 = BlendSplatWeightsWithCliff(floorS10, cliffS10, cliffFactorN);
-		TerrainSplatWeights sN2 = BlendSplatWeightsWithCliff(floorSC, cliffSC, cliffFactorN);
+		var (tex0, tex1, tex2, tex3) = GetQuadDominantTextures(floorS00, floorS10, floorS11, floorS01);
 
-		TerrainSplatWeights sE0 = BlendSplatWeightsWithCliff(floorS10, cliffS10, cliffFactorE);
-		TerrainSplatWeights sE1 = BlendSplatWeightsWithCliff(floorS11, cliffS11, cliffFactorE);
-		TerrainSplatWeights sE2 = BlendSplatWeightsWithCliff(floorSC, cliffSC, cliffFactorE);
-
-		TerrainSplatWeights sS0 = BlendSplatWeightsWithCliff(floorS11, cliffS11, cliffFactorS);
-		TerrainSplatWeights sS1 = BlendSplatWeightsWithCliff(floorS01, cliffS01, cliffFactorS);
-		TerrainSplatWeights sS2 = BlendSplatWeightsWithCliff(floorSC, cliffSC, cliffFactorS);
-
-		TerrainSplatWeights sW0 = BlendSplatWeightsWithCliff(floorS01, cliffS01, cliffFactorW);
-		TerrainSplatWeights sW1 = BlendSplatWeightsWithCliff(floorS00, cliffS00, cliffFactorW);
-		TerrainSplatWeights sW2 = BlendSplatWeightsWithCliff(floorSC, cliffSC, cliffFactorW);
-
-		var (tex0, tex1, tex2, tex3) = GetQuadDominantTextures(sN0, sE0, sS0, sW0);
-
-		ProcessSubTriangleGround(chunk, gPNW, gPNE, gPC, normNW, normNE, normC, uvNW, uvNE, uvC, col, col, col, sN0, sN1, sN2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
-		ProcessSubTriangleGround(chunk, gPNE, gPSE, gPC, normNE, normSE, normC, uvNE, uvSE, uvC, col, col, col, sE0, sE1, sE2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
-		ProcessSubTriangleGround(chunk, gPSE, gPSW, gPC, normSE, normSW, normC, uvSE, uvSW, uvC, col, col, col, sS0, sS1, sS2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
-		ProcessSubTriangleGround(chunk, gPSW, gPNW, gPC, normSW, normNW, normC, uvSW, uvNW, uvC, col, col, col, sW0, sW1, sW2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPNW, gPNE, gPC, normNW, normNE, normC, uvNW, uvNE, uvC, col, col, col, floorS00, floorS10, floorSC, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPNE, gPSE, gPC, normNE, normSE, normC, uvNE, uvSE, uvC, col, col, col, floorS10, floorS11, floorSC, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPSE, gPSW, gPC, normSE, normSW, normC, uvSE, uvSW, uvC, col, col, col, floorS11, floorS01, floorSC, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPSW, gPNW, gPC, normSW, normNW, normC, uvSW, uvNW, uvC, col, col, col, floorS01, floorS00, floorSC, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
 	}
 
 	private void ProcessCellQuad(
@@ -2756,18 +2841,19 @@ void fragment() {
 			return;
 		}
 
-		float halfW = Width / 2.0f * QuadSize;
-		float halfD = Depth / 2.0f * QuadSize;
-		float gridX = (worldX + halfW) / QuadSize;
-		float gridZ = (worldZ + halfD) / QuadSize;
-		int x0 = (int)Math.Floor(gridX);
-		int z0 = (int)Math.Floor(gridZ);
-		x0 = Math.Max(0, Math.Min(cellW - 1, x0));
-		z0 = Math.Max(0, Math.Min(cellD - 1, z0));
-		float tx = Math.Clamp(gridX - x0, 0f, 1f);
-		float tz = Math.Clamp(gridZ - z0, 0f, 1f);
-		var cell = cells[x0, z0];
+		float halfW = (cellW / 2.0f) * QuadSize;
+		float halfD = (cellD / 2.0f) * QuadSize;
 
+		float localX = (worldX + halfW) / QuadSize;
+		float localZ = (worldZ + halfD) / QuadSize;
+
+		int x0 = Math.Clamp((int)MathF.Floor(localX), 0, cellW - 1);
+		int z0 = Math.Clamp((int)MathF.Floor(localZ), 0, cellD - 1);
+
+		float tx = Math.Clamp(localX - x0, 0.0f, 1.0f);
+		float tz = Math.Clamp(localZ - z0, 0.0f, 1.0f);
+
+		var cell = cells[x0, z0];
 		float h00 = cell.Y_NW;
 		float h10 = cell.Y_NE;
 		float h01 = cell.Y_SW;
@@ -2785,19 +2871,12 @@ void fragment() {
 		if (cells == null || w <= 0 || d <= 0) return Vector3.Up;
 
 		float h = GetGridNodeHeight(x, z, cells, w, d);
-
-		int clampX = Math.Min(x, w - 1);
-		int clampXPrev = Math.Max(0, x - 1);
-		int clampXNext = Math.Min(x + 1, w - 1);
-		int clampZ = Math.Min(z, d - 1);
-		int clampZPrev = Math.Max(0, z - 1);
-		int clampZNext = Math.Min(z + 1, d - 1);
-
-		bool rightIsCliff = (x < w) && (cells[clampX, clampZ].MacroTier != cells[clampXNext, clampZ].MacroTier) && (Math.Abs(cells[clampX, clampZ].Y_NE - cells[clampXNext, clampZ].Y_NW) > 0.01f || Math.Abs(cells[clampX, clampZ].Y_SE - cells[clampXNext, clampZ].Y_SW) > 0.01f);
-		bool leftIsCliff = (x > 0) && (cells[clampXPrev, clampZ].MacroTier != cells[clampX, clampZ].MacroTier) && (Math.Abs(cells[clampXPrev, clampZ].Y_NE - cells[clampX, clampZ].Y_NW) > 0.01f || Math.Abs(cells[clampXPrev, clampZ].Y_SE - cells[clampX, clampZ].Y_SW) > 0.01f);
+		float cliffThreshold = 0.95f * Math.Max(0.1f, quadSize);
 
 		float deltaRight = x < w ? GetGridNodeHeight(x + 1, z, cells, w, d) - h : 0.0f;
 		float deltaLeft = x > 0 ? h - GetGridNodeHeight(x - 1, z, cells, w, d) : 0.0f;
+		bool rightIsCliff = x < w && Math.Abs(deltaRight) >= cliffThreshold;
+		bool leftIsCliff = x > 0 && Math.Abs(deltaLeft) >= cliffThreshold;
 
 		float dx;
 		if (rightIsCliff && leftIsCliff)
@@ -2814,14 +2893,28 @@ void fragment() {
 		}
 		else
 		{
-			dx = (GetGridNodeHeight(Math.Min(w, x + 1), z, cells, w, d) - GetGridNodeHeight(Math.Max(0, x - 1), z, cells, w, d)) / (2.0f * quadSize);
+			if (x > 0 && x < w)
+			{
+				dx = (GetGridNodeHeight(x + 1, z, cells, w, d) - GetGridNodeHeight(x - 1, z, cells, w, d)) / (2.0f * quadSize);
+			}
+			else if (x < w)
+			{
+				dx = deltaRight / quadSize;
+			}
+			else if (x > 0)
+			{
+				dx = deltaLeft / quadSize;
+			}
+			else
+			{
+				dx = 0.0f;
+			}
 		}
-
-		bool downIsCliff = (z < d) && (cells[clampX, clampZ].MacroTier != cells[clampX, clampZNext].MacroTier) && (Math.Abs(cells[clampX, clampZ].Y_SW - cells[clampX, clampZNext].Y_NW) > 0.01f || Math.Abs(cells[clampX, clampZ].Y_SE - cells[clampX, clampZNext].Y_NE) > 0.01f);
-		bool upIsCliff = (z > 0) && (cells[clampX, clampZPrev].MacroTier != cells[clampX, clampZ].MacroTier) && (Math.Abs(cells[clampX, clampZPrev].Y_SW - cells[clampX, clampZ].Y_NW) > 0.01f || Math.Abs(cells[clampX, clampZPrev].Y_SE - cells[clampX, clampZ].Y_NE) > 0.01f);
 
 		float deltaDown = z < d ? GetGridNodeHeight(x, z + 1, cells, w, d) - h : 0.0f;
 		float deltaUp = z > 0 ? h - GetGridNodeHeight(x, z - 1, cells, w, d) : 0.0f;
+		bool downIsCliff = z < d && Math.Abs(deltaDown) >= cliffThreshold;
+		bool upIsCliff = z > 0 && Math.Abs(deltaUp) >= cliffThreshold;
 
 		float dz;
 		if (downIsCliff && upIsCliff)
@@ -2838,7 +2931,22 @@ void fragment() {
 		}
 		else
 		{
-			dz = (GetGridNodeHeight(x, Math.Min(d, z + 1), cells, w, d) - GetGridNodeHeight(x, Math.Max(0, z - 1), cells, w, d)) / (2.0f * quadSize);
+			if (z > 0 && z < d)
+			{
+				dz = (GetGridNodeHeight(x, z + 1, cells, w, d) - GetGridNodeHeight(x, z - 1, cells, w, d)) / (2.0f * quadSize);
+			}
+			else if (z < d)
+			{
+				dz = deltaDown / quadSize;
+			}
+			else if (z > 0)
+			{
+				dz = deltaUp / quadSize;
+			}
+			else
+			{
+				dz = 0.0f;
+			}
 		}
 
 		if (Math.Abs(dx) < 0.0001f && Math.Abs(dz) < 0.0001f)
