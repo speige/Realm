@@ -415,7 +415,7 @@ public class EditorService
 					}
 					else if (activeTool == GameHost.EditorTool.Plateau)
 					{
-						_activeBlockTargetHeight = Math.Clamp(startHeight, -16.0f, 16.0f);
+						_activeBlockTargetHeight = Math.Clamp((float)MathF.Round(startHeight / TerrainCell.TIER_HEIGHT) * TerrainCell.TIER_HEIGHT, -16.0f, 16.0f);
 						_activeBlockTargetWaterMode = startWater;
 					}
 					_activeBlockTargetHeight = Math.Clamp(_activeBlockTargetHeight, -16.0f, 16.0f);
@@ -758,8 +758,13 @@ public class EditorService
 							}
 							else if (activeTool == GameHost.EditorTool.Plateau)
 							{
-								float targetHeight = _activePlateauHeight ?? 0.0f;
-								newH = Mathf.Clamp(Mathf.Lerp(oldH, targetHeight, brushStrength * falloff * delta * 2.0f), -10.0f, 50.0f);
+								if (!_activePlateauHeight.HasValue)
+								{
+									_activePlateauHeight = GetTerrainHeightAt(worldPos);
+									_activePlateauWaterMode = GetWaterModeAt(worldPos);
+								}
+								float targetHeight = _activePlateauHeight.Value;
+								newH = Mathf.Clamp(Mathf.Lerp(oldH, targetHeight, falloff), -10.0f, 50.0f);
 								int cellX = Math.Clamp(x, 0, width - 1);
 								int cellZ = Math.Clamp(z, 0, depth - 1);
 								if (terrain.Cells != null && cellX < terrain.Cells.GetLength(0) && cellZ < terrain.Cells.GetLength(1))
@@ -940,7 +945,8 @@ public class EditorService
 
 		if (activeTool == GameHost.EditorTool.Plateau)
 		{
-			_activePlateauHeight = GetTerrainHeightAt(hitPos);
+			float startHeight = GetTerrainHeightAt(hitPos);
+			_activePlateauHeight = blockMode ? (float)MathF.Round(startHeight / TerrainCell.TIER_HEIGHT) * TerrainCell.TIER_HEIGHT : startHeight;
 			_activePlateauWaterMode = GetWaterModeAt(hitPos);
 		}
 
@@ -960,7 +966,7 @@ public class EditorService
 			}
 			else if (activeTool == GameHost.EditorTool.Plateau)
 			{
-				_activeBlockTargetHeight = startHeight;
+				_activeBlockTargetHeight = (float)MathF.Round(startHeight / TerrainCell.TIER_HEIGHT) * TerrainCell.TIER_HEIGHT;
 				_activeBlockTargetWaterMode = startWater;
 				_hasBlockTargetHeight = true;
 			}
