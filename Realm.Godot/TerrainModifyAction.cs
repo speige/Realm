@@ -159,12 +159,13 @@ public class TerrainModifyAction : IEditorAction
 						GameHost.Instance.GroundTerrain.PathingCodes[_minX + x, _minZ + z] = _beforePathing[x, z];
 		}
 
-		Rect2I affected = new Rect2I(_minX - 2, _minZ - 2, _width + 4, _depth + 4);
-		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics(heightsChanged, false, affected, heightsChanged);
 		if (splatChanged && GameHost.Instance.GroundTerrain.SplatMap != null)
 		{
 			ServiceLocator.Get<EditorService>()?.AlignSplatMapSlots(_minX - 2, _minZ - 2, _minX + _width + 2, _minZ + _depth + 2);
 		}
+
+		Rect2I affected = new Rect2I(_minX - 2, _minZ - 2, _width + 4, _depth + 4);
+		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics(heightsChanged, false, affected, heightsChanged);
 		if (heightsChanged)
 		{
 			GameHost.Instance.AlignAllEntitiesToTerrainExternal();
@@ -220,12 +221,13 @@ public class TerrainModifyAction : IEditorAction
 						GameHost.Instance.GroundTerrain.PathingCodes[_minX + x, _minZ + z] = _afterPathing[x, z];
 		}
 
-		Rect2I affected = new Rect2I(_minX - 2, _minZ - 2, _width + 4, _depth + 4);
-		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics(heightsChanged, false, affected, heightsChanged);
 		if (splatChanged && GameHost.Instance.GroundTerrain.SplatMap != null)
 		{
 			ServiceLocator.Get<EditorService>()?.AlignSplatMapSlots(_minX - 2, _minZ - 2, _minX + _width + 2, _minZ + _depth + 2);
 		}
+
+		Rect2I affected = new Rect2I(_minX - 2, _minZ - 2, _width + 4, _depth + 4);
+		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics(heightsChanged, false, affected, heightsChanged);
 		if (heightsChanged)
 		{
 			GameHost.Instance.AlignAllEntitiesToTerrainExternal();

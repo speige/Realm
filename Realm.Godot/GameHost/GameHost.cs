@@ -338,6 +338,7 @@ public partial class GameHost : Node3D, IGameAPI
 		get => _activeEditorTool;
 		set
 		{
+			FlushTerrainMeshAndPhysics();
 			_activeEditorTool = value;
 			_editorService?.SetIsPastingObject(false);
 			if (value != EditorTool.SelectArea && value != EditorTool.PasteArea)

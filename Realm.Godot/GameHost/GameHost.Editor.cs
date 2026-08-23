@@ -1280,6 +1280,8 @@ public partial class GameHost
 	private long _lastTerrainMeshRebuildMs = long.MinValue;
 	private Rect2I? _terrainFlushRegion;
 	private bool _terrainGeometryDirty;
+	private bool _terrainHeightsDirty;
+	private bool _terrainPathingDirty;
 	private const float TerrainMeshRebuildPeriodMs = 33.3f;
 
 	private void ApplyContinuousTerrainEditing(Vector3 worldPos, float delta, bool isFirstClick = false)
@@ -1306,9 +1308,6 @@ public partial class GameHost
 		bool applyGround = MapEditorHUD.Instance?.IsApplyGroundTextureEnabled() ?? true;
 		bool applyCliff = MapEditorHUD.Instance?.IsApplyCliffTextureEnabled() ?? true;
 
-		var frameAffectedRegions = new List<Rect2I>();
-		bool anyHeightsModified = false;
-		bool anyPathingModified = false;
 		bool anyModified = false;
 
 		foreach (var pos in positions)
@@ -1326,15 +1325,13 @@ public partial class GameHost
 
 			if (result.HeightsModified || result.SplatModified || result.PathingModified)
 			{
-				Rect2I affected = new Rect2I(result.MinX - 2, result.MinZ - 2, result.MaxX - result.MinX + 4, result.MaxZ - result.MinZ + 4);
+				Rect2I affected = new Rect2I(result.MinX - 2, result.MinZ - 2, result.MaxX - result.MinX + 5, result.MaxZ - result.MinZ + 5);
 
-				// Accumulate the affected region so the final flush at mouse-release covers the whole stroke.
+				// Accumulate the affected region so the periodic and final flush covers all modified cells since the last mesh rebuild.
 				_terrainFlushRegion = _terrainFlushRegion.HasValue ? _terrainFlushRegion.Value.Merge(affected) : affected;
 				_terrainGeometryDirty = true;
-
-				frameAffectedRegions.Add(affected);
-				if (result.HeightsModified) anyHeightsModified = true;
-				if (result.PathingModified) anyPathingModified = true;
+				if (result.HeightsModified) _terrainHeightsDirty = true;
+				if (result.PathingModified) _terrainPathingDirty = true;
 				anyModified = true;
 			}
 		}
@@ -1347,20 +1344,47 @@ public partial class GameHost
 			if (isFirstClick || nowMs - _lastTerrainMeshRebuildMs >= TerrainMeshRebuildPeriodMs)
 			{
 				_lastTerrainMeshRebuildMs = nowMs;
-				GroundTerrain.UpdateMeshAndPhysics(false, false, frameAffectedRegions, anyHeightsModified); // false for physics rebuild during drag
-				if (anyHeightsModified)
+				if (_terrainFlushRegion.HasValue)
 				{
-					foreach (var affected in frameAffectedRegions)
+					var flushRegion = _terrainFlushRegion.Value;
+					GroundTerrain.UpdateMeshAndPhysics(false, false, flushRegion, _terrainHeightsDirty); // false for physics rebuild during drag
+					if (_terrainHeightsDirty)
 					{
-						AlignAllEntitiesToTerrain(affected);
+						AlignAllEntitiesToTerrain(flushRegion);
 					}
-				}
-				if (anyPathingModified && PathingOverlayVisible)
-				{
-					RebuildPathingOverlay();
+					if (_terrainPathingDirty && PathingOverlayVisible)
+					{
+						RebuildPathingOverlay();
+					}
+					_terrainFlushRegion = null;
+					_terrainGeometryDirty = false;
+					_terrainHeightsDirty = false;
+					_terrainPathingDirty = false;
 				}
 			}
 			EditorHasUnsavedChanges = true;
+		}
+	}
+
+	public void FlushTerrainMeshAndPhysics()
+	{
+		if (_terrainGeometryDirty && _terrainFlushRegion.HasValue && GroundTerrain != null)
+		{
+			var flushRegion = _terrainFlushRegion.Value;
+			GroundTerrain.UpdateMeshAndPhysics(false, false, flushRegion, _terrainHeightsDirty);
+			if (_terrainHeightsDirty)
+			{
+				AlignAllEntitiesToTerrain(flushRegion);
+			}
+			if (_terrainPathingDirty && PathingOverlayVisible)
+			{
+				RebuildPathingOverlay();
+			}
+			_terrainFlushRegion = null;
+			_terrainGeometryDirty = false;
+			_terrainHeightsDirty = false;
+			_terrainPathingDirty = false;
+			_lastTerrainMeshRebuildMs = long.MinValue;
 		}
 	}
 
@@ -2701,6 +2725,7 @@ public partial class GameHost
 							RebuildGridOverlayMeshExternal();
 							UpdatePathingOverlay();
 						}
+						FlushTerrainMeshAndPhysics();
 						EditorHasUnsavedChanges = true;
 					}
 					else
@@ -2769,20 +2794,13 @@ public partial class GameHost
 										 ActiveEditorTool == EditorTool.PaintPathing;
 					if (isHeightsTool)
 					{
-							GroundTerrain.UpdatePhysics();
+						GroundTerrain.UpdatePhysics();
 						RebuildGridOverlayMeshExternal();
 						UpdatePathingOverlay();
 					}
 
-						// Final flush: guarantee the (throttled) mesh rebuilds caught up with the whole stroke.
-						if (_terrainGeometryDirty)
-						{
-							GroundTerrain.UpdateMeshAndPhysics(false, false, _terrainFlushRegion ?? new Rect2I(0, 0, GroundTerrain.Width, GroundTerrain.Depth));
-							_terrainGeometryDirty = false;
-							_terrainFlushRegion = null;
-							_lastTerrainMeshRebuildMs = long.MinValue;
-						}
-						EditorHasUnsavedChanges = true;
+					FlushTerrainMeshAndPhysics();
+					EditorHasUnsavedChanges = true;
 				}
 				else
 				{
