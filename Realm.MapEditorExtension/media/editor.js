@@ -4470,8 +4470,8 @@
                     if (lbl) lbl.textContent = val.toFixed(2);
                 }
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.Brightness = val;
                     itemVal.brightness = val;
+                    delete itemVal.Brightness;
                 }, shouldSave);
             };
             input.addEventListener('input', (e) => handleBrightChange(e, false));
@@ -4489,8 +4489,8 @@
                     if (picker) picker.value = hex;
                 }
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.Tint = hex;
                     itemVal.tint = hex;
+                    delete itemVal.Tint;
                 }, shouldSave);
             };
             input.addEventListener('input', (e) => handleTintSlider(e, false));
@@ -4508,8 +4508,8 @@
                     if (slider) slider.value = hue.toFixed(2);
                 }
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.Tint = hex;
                     itemVal.tint = hex;
+                    delete itemVal.Tint;
                 }, shouldSave);
             };
             input.addEventListener('input', (e) => handleTintPicker(e, false));
@@ -4528,8 +4528,8 @@
                     if (gridRow) gridRow.style.display = (val === 'Grid') ? 'flex' : 'none';
                 }
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.Tile_Mode = val;
                     itemVal.tile_mode = val;
+                    delete itemVal.Tile_Mode;
                 }, true);
             });
         });
@@ -4539,8 +4539,8 @@
                 const key = e.target.getAttribute('data-key');
                 const val = (e.target.value === 'true');
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.Variants = val;
                     itemVal.variants = val;
+                    delete itemVal.Variants;
                 }, true);
                 const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
                 fetch(`http://127.0.0.1:${ipcPort}/api/`, {
@@ -4561,8 +4561,8 @@
                     if (lbl) lbl.textContent = val.toFixed(2);
                 }
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.UV_Scale = val;
                     itemVal.uv_scale = val;
+                    delete itemVal.UV_Scale;
                 }, shouldSave);
             };
             input.addEventListener('input', (e) => handleUvChange(e, false));
@@ -4579,8 +4579,8 @@
                     if (lbl) lbl.textContent = val.toFixed(2);
                 }
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.Stochastic_Tile_Size = val;
                     itemVal.stochastic_tile_size = val;
+                    delete itemVal.Stochastic_Tile_Size;
                 }, shouldSave);
             };
             input.addEventListener('input', (e) => handleStochChange(e, false));
@@ -4597,8 +4597,10 @@
                     if (lbl) lbl.textContent = `${val.toFixed(1)}%`;
                 }
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.Cross_Fade = val;
                     itemVal.cross_fade = val;
+                    delete itemVal.Cross_Fade;
+                    delete itemVal.Grid_Cross_Fade;
+                    delete itemVal.grid_cross_fade;
                 }, shouldSave);
             };
             input.addEventListener('input', (e) => handleCrossFadeChange(e, false));

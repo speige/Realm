@@ -2936,7 +2936,7 @@ public partial class MapEditorHUD : Control
 			LoadMapProperties();
 			ReadMetadataAndRefreshTextures();
 			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
-			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
+			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath, ensureGlbOptimized: false) ?? false;
 
 			if (success)
 			{
@@ -2974,11 +2974,16 @@ public partial class MapEditorHUD : Control
 
 		try
 		{
-			MapWorkspaceService.EnsureGlbAssetsOptimized(_tempWorkspacePath);
+			await MapWorkspaceService.EnsureGlbAssetsOptimizedCooperativeAsync(_tempWorkspacePath, async (current, total, fileName) =>
+			{
+				ShowFeedback(string.Format(TranslationServer.Translate("Optimizing 3D asset {0}/{1}: {2}..."), current, total, fileName));
+				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+			});
+
 			LoadMapProperties();
 			ReadMetadataAndRefreshTextures();
 			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
-			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
+			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath, ensureGlbOptimized: false) ?? false;
 
 			if (success)
 			{
