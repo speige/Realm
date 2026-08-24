@@ -1246,7 +1246,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 const creaseAngleDegrees = (extraOptions && extraOptions.creaseAngleDegrees !== undefined) ? extraOptions.creaseAngleDegrees : 45.0;
                 const allowedPixelError = (extraOptions && extraOptions.allowedPixelError !== undefined) ? extraOptions.allowedPixelError : 1.5;
                 const forceReDecimate = !!(extraOptions && (extraOptions.forceReDecimate || extraOptions.force_redecimate));
-                const useUastc = !!(extraOptions && (extraOptions.useUastc || extraOptions.use_uastc));
 
                 const optimizationResult = await new Promise<{
                     success: boolean;
@@ -1262,7 +1261,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 }>(async (resolve) => {
                     const http = require('http');
                     const ports = [8092, 8093];
-                    let resolved = false;
 
                     const postData = JSON.stringify({
                         action: 'optimizeModel',
@@ -1272,8 +1270,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         maxTextureResolution,
                         creaseAngleDegrees,
                         allowedPixelError,
-                        forceReDecimate,
-                        useUastc
+                        forceReDecimate
                     });
 
                     for (const port of ports) {
@@ -1348,8 +1345,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             maxTextureResolution,
                             creaseAngleDegrees,
                             allowedPixelError,
-                            forceReDecimate,
-                            useUastc
+                            forceReDecimate
                         });
                     }
                 });
@@ -1379,12 +1375,11 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 fs.writeFileSync(targetPath, fileBytes);
                 const blake3 = this.computeHashHex(fileBytes);
                 const ignorePlayerColor = !!(extraOptions && (extraOptions.ignorePlayerColor || extraOptions.ignore_player_color));
-                if (!metadata.Assets.glb) metadata.Assets.glb = {};
-                if (!metadata.Assets.glb[subCategory]) metadata.Assets.glb[subCategory] = {};
                 metadata.Assets.glb[subCategory][baseName] = {
                     hash: blake3,
                     default_asset_type: subCategory,
-                    generate_normals: true,
+                    normal_mode: 'Flat',
+                    normalize_luminance: true,
                     ...(ignorePlayerColor ? { ignore_player_color: true } : {})
                 };
 
@@ -1414,7 +1409,8 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         Description: '',
                         PathingType: defaultPathing,
                         ModelPath: baseName,
-                        RecalculateNormals: true,
+                        NormalMode: 'Flat',
+                        NormalizeLuminance: true,
                         ...(ignorePlayerColor ? { IgnorePlayerColor: true } : {})
                     });
                 }
@@ -2141,16 +2137,24 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="field-Brightness">Brightness</label>
-                                <input type="number" id="field-Brightness" step="0.02" min="0.10" max="1.75" placeholder="1.0" />
+                                <input type="number" id="field-Brightness" step="0.02" min="0.10" max="2.00" placeholder="0.5" />
                             </div>
                             <div class="form-group">
                                 <label for="field-Tint">Tint Color</label>
                                 <input type="text" id="field-Tint" placeholder="#ffffff" />
                             </div>
                         </div>
+                        <div class="form-group" style="margin-top: 6px;">
+                            <label for="field-NormalMode">Normals</label>
+                            <select id="field-NormalMode">
+                                <option value="Original">Original</option>
+                                <option value="Smooth">Smooth Normals</option>
+                                <option value="Flat" selected>Flat Normals (Default)</option>
+                            </select>
+                        </div>
                         <div class="form-group checkbox-group" style="margin-top: 6px;">
-                            <input type="checkbox" id="field-RecalculateNormals" />
-                            <label for="field-RecalculateNormals">Re-Calculate Normals</label>
+                            <input type="checkbox" id="field-NormalizeLuminance" checked />
+                            <label for="field-NormalizeLuminance">Normalize Luminosity</label>
                         </div>
                         <div class="form-group checkbox-group" style="margin-top: 6px;">
                             <input type="checkbox" id="field-IgnorePlayerColor" />

@@ -65,7 +65,9 @@
         CollisionCircle: document.getElementById('field-CollisionCircle'),
         Brightness: document.getElementById('field-Brightness'),
         Tint: document.getElementById('field-Tint'),
+        NormalMode: document.getElementById('field-NormalMode'),
         RecalculateNormals: document.getElementById('field-RecalculateNormals'),
+        NormalizeLuminance: document.getElementById('field-NormalizeLuminance'),
         IgnorePlayerColor: document.getElementById('field-IgnorePlayerColor'),
         IsHero: document.getElementById('field-IsHero'),
         MaxHp: document.getElementById('field-MaxHp'),
@@ -340,7 +342,7 @@
                 const knownTopKeys = [
                     'MapProperties', 'CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps',
                     'CustomAbilities', 'CustomItems', 'CustomUpgrades', 'CustomWeapons', 'Assets', 
-                    'ModelOffsets', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelGenerateNormals',
+                    'ModelOffsets', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelNormalModes',
                     'ModelIgnorePlayerColor'
                 ];
                 for (const [key, val] of Object.entries(units)) {
@@ -364,6 +366,10 @@
                             u.PathingType = (u.ArmorType === 'building') ? 32 : 8;
                         }
                     }
+                    if (u.NormalMode === undefined || u.NormalMode === null) {
+                        u.NormalMode = 'Flat';
+                    }
+                    delete u.RecalculateNormals;
                     delete u.MovementType;
                     delete u.PathingCapabilities;
                     delete u.DefaultAssetType;
@@ -727,11 +733,15 @@
             
             const val = unit[key];
             if (element.type === 'checkbox') {
-                if (key === 'RecalculateNormals') {
+                if (key === 'NormalizeLuminance') {
                     element.checked = val !== undefined ? !!val : true;
+                } else if (key === 'RecalculateNormals') {
+                    element.checked = val !== undefined ? !!val : (unit.NormalMode === 'Smooth');
                 } else {
                     element.checked = !!val;
                 }
+            } else if (key === 'NormalMode') {
+                element.value = val || unit.NormalMode || 'Flat';
             } else if (val === undefined || val === null) {
                 element.value = '';
             } else {
@@ -2880,7 +2890,9 @@
                 Name: `New ${prefix}`,
                 Description: `A decorative ${prefix.toLowerCase()} prop.`,
                 PathingType: defaultPathing,
-                RecalculateNormals: true
+                Brightness: 0.5,
+                NormalMode: 'Flat',
+                NormalizeLuminance: true
             });
         } else if (domain === 'resources') {
             targetArray.push({
@@ -2892,7 +2904,9 @@
                 GrowthRate: 0.0,
                 MaxWorkers: 5,
                 PathingType: defaultPathing,
-                RecalculateNormals: true
+                Brightness: 0.5,
+                NormalMode: 'Flat',
+                NormalizeLuminance: true
             });
         } else {
             targetArray.push({
@@ -2915,7 +2929,9 @@
                 ArmorType: defaultArmor,
                 GoldBounty: 10.0,
                 PathingType: defaultPathing,
-                RecalculateNormals: true
+                Brightness: 0.5,
+                NormalMode: 'Flat',
+                NormalizeLuminance: true
             });
         }
 

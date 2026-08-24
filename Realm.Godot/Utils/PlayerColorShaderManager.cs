@@ -15,6 +15,7 @@ public static class PlayerColorShaderManager
 	private static readonly StringName _paramModelBrightness = new("model_brightness");
 	private static readonly StringName _paramModelColorTint = new("model_color_tint");
 	private static readonly StringName _paramIgnorePlayerColor = new("ignore_player_color");
+	private static readonly StringName _paramNormalMode = new("normal_mode");
 
 	private const string ShaderPath = "res://Assets/shaders/player_color_spatial.gdshader";
 
@@ -312,7 +313,7 @@ public static class PlayerColorShaderManager
 		return false;
 	}
 
-	public static ShaderMaterial GetOrCreateShaderMaterial(Material sourceMaterial)
+	public static ShaderMaterial GetOrCreateShaderMaterial(Material sourceMaterial, bool normalizeLuminance = true)
 	{
 		var shader = GetOrCreateShader();
 
@@ -381,15 +382,15 @@ public static class PlayerColorShaderManager
 			}
 		}
 
-		Texture2D albedoTexture = GetOrCreateNormalizedAlbedoTexture(rawAlbedoTexture);
+		Texture2D albedoTexture = normalizeLuminance ? GetOrCreateNormalizedAlbedoTexture(rawAlbedoTexture) : rawAlbedoTexture;
 		bool hasPlayerMask = CheckHasPlayerMask(ormTexture, sourceMaterial);
 
-		ulong albedoId = albedoTexture != null ? albedoTexture.GetInstanceId() : 0;
+		ulong rawAlbedoId = rawAlbedoTexture != null ? rawAlbedoTexture.GetInstanceId() : 0;
 		ulong ormId = ormTexture != null ? ormTexture.GetInstanceId() : 0;
 		ulong normalId = normalTexture != null ? normalTexture.GetInstanceId() : 0;
 		ulong emissionId = emissionTexture != null ? emissionTexture.GetInstanceId() : 0;
 
-		string key = $"{albedoId}_{ormId}_{hasPlayerMask}_{normalId}_{emissionId}_{albedoColor.ToHtml()}_{emissionColor.ToHtml()}_{emissionEnergy:F2}_{roughness:F2}_{metallic:F2}_{specular:F2}_{uv1Scale.X:F2}_{uv1Scale.Y:F2}_{uv1Offset.X:F2}_{uv1Offset.Y:F2}_{useAlphaBlend}_{useAlphaScissor}_{alphaScissorThreshold:F2}";
+		string key = $"{rawAlbedoId}_{normalizeLuminance}_{ormId}_{hasPlayerMask}_{normalId}_{emissionId}_{albedoColor.ToHtml()}_{emissionColor.ToHtml()}_{emissionEnergy:F2}_{roughness:F2}_{metallic:F2}_{specular:F2}_{uv1Scale.X:F2}_{uv1Scale.Y:F2}_{uv1Offset.X:F2}_{uv1Offset.Y:F2}_{useAlphaBlend}_{useAlphaScissor}_{alphaScissorThreshold:F2}";
 
 		if (_materialCache.TryGetValue(key, out var cached) && GodotObject.IsInstanceValid(cached))
 		{
@@ -466,13 +467,13 @@ public static class PlayerColorShaderManager
 			|| nodeName.Contains("HoverRing", StringComparison.OrdinalIgnoreCase);
 	}
 
-	public static void ApplyPlayerColorShader(Node rootNode, Color playerColor, bool ignorePlayerColor = false)
+	public static void ApplyPlayerColorShader(Node rootNode, Color playerColor, bool ignorePlayerColor = false, bool normalizeLuminance = true)
 	{
 		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
-		ApplyPlayerColorShaderRecursive(rootNode, playerColor, ignorePlayerColor);
+		ApplyPlayerColorShaderRecursive(rootNode, playerColor, ignorePlayerColor, normalizeLuminance);
 	}
 
-	private static void ApplyPlayerColorShaderRecursive(Node node, Color playerColor, bool ignorePlayerColor = false)
+	private static void ApplyPlayerColorShaderRecursive(Node node, Color playerColor, bool ignorePlayerColor = false, bool normalizeLuminance = true)
 	{
 		if (node is MeshInstance3D meshInst)
 		{
@@ -494,19 +495,20 @@ public static class PlayerColorShaderManager
 
 					if (srcMat is BaseMaterial3D || srcMat == null)
 					{
-						var shaderMat = GetOrCreateShaderMaterial(srcMat);
+						var shaderMat = GetOrCreateShaderMaterial(srcMat, normalizeLuminance);
 						meshInst.SetSurfaceOverrideMaterial(i, shaderMat);
 					}
 				}
 
 				if (meshInst.MaterialOverride != null && !(meshInst.MaterialOverride is ShaderMaterial smOver && smOver.Shader == _sharedShader))
 				{
-					var shaderMat = GetOrCreateShaderMaterial(meshInst.MaterialOverride);
+					var shaderMat = GetOrCreateShaderMaterial(meshInst.MaterialOverride, normalizeLuminance);
 					meshInst.MaterialOverride = shaderMat;
 				}
 
 				meshInst.SetInstanceShaderParameter(_paramPlayerColor, playerColor);
 				meshInst.SetInstanceShaderParameter(_paramIgnorePlayerColor, ignorePlayerColor ? 1.0f : 0.0f);
+				meshInst.SetInstanceShaderParameter(_paramNormalMode, 2.0f);
 			}
 		}
 
@@ -514,7 +516,45 @@ public static class PlayerColorShaderManager
 		{
 			if (child is Node childNode)
 			{
-				ApplyPlayerColorShaderRecursive(childNode, playerColor, ignorePlayerColor);
+				ApplyPlayerColorShaderRecursive(childNode, playerColor, ignorePlayerColor, normalizeLuminance);
+			}
+		}
+	}
+
+	public static void RefreshShaderMaterialsForNode(Node rootNode, bool normalizeLuminance = true)
+	{
+		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
+		RefreshShaderMaterialsRecursive(rootNode, normalizeLuminance);
+	}
+
+	private static void RefreshShaderMaterialsRecursive(Node node, bool normalizeLuminance)
+	{
+		if (node is MeshInstance3D meshInst && !IsExcludedMesh(meshInst))
+		{
+			int surfaceCount = meshInst.Mesh != null ? meshInst.Mesh.GetSurfaceCount() : 1;
+			for (int i = 0; i < surfaceCount; i++)
+			{
+				Material srcMat = meshInst.Mesh != null ? meshInst.Mesh.SurfaceGetMaterial(i) : null;
+				if (srcMat == null) srcMat = meshInst.GetSurfaceOverrideMaterial(i);
+				if (srcMat != null)
+				{
+					var shaderMat = GetOrCreateShaderMaterial(srcMat, normalizeLuminance);
+					meshInst.SetSurfaceOverrideMaterial(i, shaderMat);
+				}
+			}
+
+			if (meshInst.MaterialOverride != null)
+			{
+				var shaderMat = GetOrCreateShaderMaterial(meshInst.MaterialOverride, normalizeLuminance);
+				meshInst.MaterialOverride = shaderMat;
+			}
+		}
+
+		foreach (var child in node.GetChildren())
+		{
+			if (child is Node childNode)
+			{
+				RefreshShaderMaterialsRecursive(childNode, normalizeLuminance);
 			}
 		}
 	}
@@ -592,6 +632,31 @@ public static class PlayerColorShaderManager
 			if (child is Node childNode)
 			{
 				SetBrightnessAndTintRecursive(childNode, brightness, tint);
+			}
+		}
+	}
+
+	public static void SetNormalMode(Node rootNode, float normalMode)
+	{
+		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
+		SetNormalModeRecursive(rootNode, normalMode);
+	}
+
+	private static void SetNormalModeRecursive(Node node, float normalMode)
+	{
+		if (node is MeshInstance3D meshInst)
+		{
+			if (!IsExcludedMesh(meshInst))
+			{
+				meshInst.SetInstanceShaderParameter(_paramNormalMode, normalMode);
+			}
+		}
+
+		foreach (var child in node.GetChildren())
+		{
+			if (child is Node childNode)
+			{
+				SetNormalModeRecursive(childNode, normalMode);
 			}
 		}
 	}

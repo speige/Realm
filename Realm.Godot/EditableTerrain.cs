@@ -1583,7 +1583,7 @@ void fragment() {
 						string brightStr = sObj["Brightness"]?.ToString() ?? sObj["brightness"]?.ToString();
 						if (!string.IsNullOrEmpty(brightStr) && float.TryParse(brightStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedBright))
 						{
-							texBrightness = Math.Clamp(parsedBright, 0.25f, 1.75f);
+							texBrightness = Math.Clamp(parsedBright, 0.10f, 2.0f);
 						}
 						string tintStr = sObj["Tint"]?.ToString() ?? sObj["tint"]?.ToString();
 						if (!string.IsNullOrEmpty(tintStr) && Color.HtmlIsValid(tintStr))

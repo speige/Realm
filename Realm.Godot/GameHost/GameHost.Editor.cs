@@ -20,8 +20,9 @@ public partial class GameHost
 	public readonly Dictionary<string, float> ModelObstacleRadii = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, float> ModelBrightness = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, Color> ModelColorTint = new(StringComparer.OrdinalIgnoreCase);
-	public readonly Dictionary<string, bool> ModelGenerateNormals = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, ModelNormalMode> ModelNormalModes = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, bool> ModelIgnorePlayerColor = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, bool> ModelNormalizeLuminance = new(StringComparer.OrdinalIgnoreCase);
 	private bool _modelYOffsetSavePending = false;
 	private bool _modelCollisionCircleSavePending = false;
 
@@ -268,12 +269,12 @@ public partial class GameHost
 
 		if (!string.IsNullOrEmpty(primaryKey))
 		{
-			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.Brightness > 0f) return Mathf.Clamp(meta.Brightness, 0.10f, 1.75f);
-			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.Brightness > 0f) return Mathf.Clamp(resMeta.Brightness, 0.10f, 1.75f);
-			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.Brightness > 0f) return Mathf.Clamp(propMeta.Brightness, 0.10f, 1.75f);
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.Brightness > 0f) return Mathf.Clamp(meta.Brightness, 0.10f, 2.0f);
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.Brightness > 0f) return Mathf.Clamp(resMeta.Brightness, 0.10f, 2.0f);
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.Brightness > 0f) return Mathf.Clamp(propMeta.Brightness, 0.10f, 2.0f);
 		}
 
-		return 1.0f;
+		return 0.5f;
 	}
 
 	public void SetModelBrightness(string assetKey, float brightness)
@@ -281,7 +282,7 @@ public partial class GameHost
 		string norm = NormalizeModelAssetKey(assetKey);
 		if (string.IsNullOrEmpty(norm)) return;
 
-		float k = Mathf.Clamp(brightness, 0.10f, 1.75f);
+		float k = Mathf.Clamp(brightness, 0.10f, 2.0f);
 		ModelBrightness[norm] = k;
 		UpdateMaterialOverridesForAsset(norm);
 
@@ -330,35 +331,70 @@ public partial class GameHost
 		EditorHasUnsavedChanges = true;
 	}
 
-	public bool GetModelGenerateNormals(object objOrId)
+	public ModelNormalMode GetModelNormalMode(object objOrId)
+	{
+		if (objOrId == null) return ModelNormalMode.Flat;
+		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
+		string normPrimary = NormalizeModelAssetKey(primaryKey);
+		if (!string.IsNullOrEmpty(normPrimary) && ModelNormalModes.TryGetValue(normPrimary, out var m1))
+			return m1;
+
+		string assetKey = GetModelAssetKey(objOrId);
+		string normAsset = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(normAsset) && ModelNormalModes.TryGetValue(normAsset, out var m2))
+			return m2;
+
+		if (!string.IsNullOrEmpty(primaryKey))
+		{
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta)) return meta.NormalMode;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta)) return resMeta.NormalMode;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.NormalMode;
+		}
+
+		return ModelNormalMode.Flat;
+	}
+
+	public void SetModelNormalMode(string assetKey, ModelNormalMode normalMode)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (string.IsNullOrEmpty(norm)) return;
+
+		ModelNormalModes[norm] = normalMode;
+		UpdateMaterialOverridesForAsset(norm);
+
+		_modelYOffsetSavePending = true;
+		EditorHasUnsavedChanges = true;
+	}
+
+	public bool GetModelNormalizeLuminance(object objOrId)
 	{
 		if (objOrId == null) return true;
 		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
 		string normPrimary = NormalizeModelAssetKey(primaryKey);
-		if (!string.IsNullOrEmpty(normPrimary) && ModelGenerateNormals.TryGetValue(normPrimary, out bool b1))
+		if (!string.IsNullOrEmpty(normPrimary) && ModelNormalizeLuminance.TryGetValue(normPrimary, out bool b1))
 			return b1;
 
 		string assetKey = GetModelAssetKey(objOrId);
 		string normAsset = NormalizeModelAssetKey(assetKey);
-		if (!string.IsNullOrEmpty(normAsset) && ModelGenerateNormals.TryGetValue(normAsset, out bool b2))
+		if (!string.IsNullOrEmpty(normAsset) && ModelNormalizeLuminance.TryGetValue(normAsset, out bool b2))
 			return b2;
 
 		if (!string.IsNullOrEmpty(primaryKey))
 		{
-			if (UnitRegistry.TryGetValue(primaryKey, out var meta)) return meta.RecalculateNormals;
-			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta)) return resMeta.RecalculateNormals;
-			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.RecalculateNormals;
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta)) return meta.NormalizeLuminance;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta)) return resMeta.NormalizeLuminance;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.NormalizeLuminance;
 		}
 
 		return true;
 	}
 
-	public void SetModelGenerateNormals(string assetKey, bool generateNormals)
+	public void SetModelNormalizeLuminance(string assetKey, bool normalizeLuminance)
 	{
 		string norm = NormalizeModelAssetKey(assetKey);
 		if (string.IsNullOrEmpty(norm)) return;
 
-		ModelGenerateNormals[norm] = generateNormals;
+		ModelNormalizeLuminance[norm] = normalizeLuminance;
 		UpdateMaterialOverridesForAsset(norm);
 
 		_modelYOffsetSavePending = true;
@@ -418,14 +454,15 @@ public partial class GameHost
 
 		float brightness = GetModelBrightness(normAssetKey);
 		Color tint = GetModelColorTint(normAssetKey);
-		bool generateNormals = GetModelGenerateNormals(normAssetKey);
+		ModelNormalMode normalMode = GetModelNormalMode(normAssetKey);
 		bool ignorePlayerColor = GetModelIgnorePlayerColor(normAssetKey);
+		bool normalizeLuminance = GetModelNormalizeLuminance(normAssetKey);
 
 		foreach (var prop in AllProps)
 		{
 			if (GodotObject.IsInstanceValid(prop) && MatchesEntityOrAssetKey(prop, normAssetKey))
 			{
-				ApplyMaterialOverridesToNode(prop, brightness, tint, generateNormals);
+				ApplyMaterialOverridesToNode(prop, brightness, tint, normalMode, normalizeLuminance);
 			}
 		}
 
@@ -433,7 +470,7 @@ public partial class GameHost
 		{
 			if (GodotObject.IsInstanceValid(unit) && MatchesEntityOrAssetKey(unit, normAssetKey))
 			{
-				ApplyMaterialOverridesToNode(unit, brightness, tint, generateNormals);
+				ApplyMaterialOverridesToNode(unit, brightness, tint, normalMode, normalizeLuminance);
 				Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(unit, ignorePlayerColor);
 				if (!ignorePlayerColor)
 				{
@@ -444,7 +481,7 @@ public partial class GameHost
 
 		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode) && MatchesEntityOrAssetKey(_editorPreviewNode, normAssetKey))
 		{
-			ApplyMaterialOverridesToNode(_editorPreviewNode, brightness, tint, generateNormals);
+			ApplyMaterialOverridesToNode(_editorPreviewNode, brightness, tint, normalMode, normalizeLuminance);
 			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_editorPreviewNode, ignorePlayerColor);
 		}
 
@@ -479,13 +516,11 @@ public partial class GameHost
 
 			float brightness = GetModelBrightness(unit);
 			Color tint = GetModelColorTint(unit);
-			bool generateNormals = GetModelGenerateNormals(unit);
+			ModelNormalMode normalMode = GetModelNormalMode(unit);
 			bool ignorePlayerColor = GetModelIgnorePlayerColor(unit);
+			bool normalizeLuminance = GetModelNormalizeLuminance(unit);
 			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(unit, ignorePlayerColor);
-			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals || tint != new Color(1.0f, 1.0f, 1.0f))
-			{
-				ApplyMaterialOverridesToNode(unit, brightness, tint, generateNormals);
-			}
+			ApplyMaterialOverridesToNode(unit, brightness, tint, normalMode, normalizeLuminance);
 		}
 		else if (objOrNode is Prop3D prop && GodotObject.IsInstanceValid(prop))
 		{
@@ -510,15 +545,13 @@ public partial class GameHost
 
 			float brightness = GetModelBrightness(prop);
 			Color tint = GetModelColorTint(prop);
-			bool generateNormals = GetModelGenerateNormals(prop);
-			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals || tint != new Color(1.0f, 1.0f, 1.0f))
-			{
-				ApplyMaterialOverridesToNode(prop, brightness, tint, generateNormals);
-			}
+			ModelNormalMode normalMode = GetModelNormalMode(prop);
+			bool normalizeLuminance = GetModelNormalizeLuminance(prop);
+			ApplyMaterialOverridesToNode(prop, brightness, tint, normalMode, normalizeLuminance);
 		}
 	}
 
-	private static readonly Dictionary<ulong, ArrayMesh> _normalGeneratedMeshCache = new();
+	private static readonly Dictionary<(ulong MeshId, ModelNormalMode Mode), ArrayMesh> _normalGeneratedMeshCache = new();
 
 	public static void ClearNormalGeneratedMeshCache()
 	{
@@ -527,9 +560,10 @@ public partial class GameHost
 
 	public static void ApplyMaterialOverridesToNode(
 		Node node,
-		float brightness = 1.0f,
+		float brightness = 0.5f,
 		Color? colorTint = null,
-		bool generateNormals = false)
+		ModelNormalMode normalMode = ModelNormalMode.Flat,
+		bool normalizeLuminance = true)
 	{
 		if (node == null || !GodotObject.IsInstanceValid(node)) return;
 
@@ -544,6 +578,9 @@ public partial class GameHost
 			Realm.Godot.Utils.PlayerColorShaderManager.SetBrightnessAndTint(node, brightness, tint);
 		}
 
+		Realm.Godot.Utils.PlayerColorShaderManager.RefreshShaderMaterialsForNode(node, normalizeLuminance);
+		Realm.Godot.Utils.PlayerColorShaderManager.SetNormalMode(node, (float)normalMode);
+
 		var meshNodes = FindMeshInstancesRecursive(node);
 		foreach (var meshInst in meshNodes)
 		{
@@ -557,43 +594,52 @@ public partial class GameHost
 				|| nameStr.Contains("SelectionRing", StringComparison.OrdinalIgnoreCase)
 				|| nameStr.Contains("HoverRing", StringComparison.OrdinalIgnoreCase)) continue;
 
-			if (generateNormals)
+			if (!meshInst.HasMeta("original_mesh") && meshInst.Mesh != null)
 			{
-				if (!meshInst.HasMeta("original_mesh") && meshInst.Mesh != null)
-				{
-					meshInst.SetMeta("original_mesh", meshInst.Mesh);
-				}
+				meshInst.SetMeta("original_mesh", meshInst.Mesh);
+			}
 
-				Mesh baseMesh = meshInst.HasMeta("original_mesh") ? meshInst.GetMeta("original_mesh").As<Mesh>() : meshInst.Mesh;
-				if (baseMesh is ArrayMesh arrayMesh)
-				{
-					ulong baseId = arrayMesh.GetInstanceId();
-					if (_normalGeneratedMeshCache.TryGetValue(baseId, out var cachedMesh) && GodotObject.IsInstanceValid(cachedMesh))
-					{
-						meshInst.Mesh = cachedMesh;
-					}
-					else
-					{
-						var toolMesh = new ArrayMesh();
-						var surfaceTool = new SurfaceTool();
-						for (int i = 0; i < arrayMesh.GetSurfaceCount(); i++)
-						{
-							surfaceTool.CreateFrom(arrayMesh, i);
-							surfaceTool.GenerateNormals();
-							toolMesh = surfaceTool.Commit(toolMesh);
-						}
-						_normalGeneratedMeshCache[baseId] = toolMesh;
-						meshInst.Mesh = toolMesh;
-					}
-				}
-			}
-			else
+			Mesh baseMesh = meshInst.HasMeta("original_mesh") ? meshInst.GetMeta("original_mesh").As<Mesh>() : meshInst.Mesh;
+
+			if (normalMode == ModelNormalMode.Original)
 			{
-				if (meshInst.HasMeta("original_mesh"))
+				if (baseMesh != null)
 				{
-					meshInst.Mesh = meshInst.GetMeta("original_mesh").As<Mesh>();
+					meshInst.Mesh = baseMesh;
 				}
 			}
+			else if (baseMesh is ArrayMesh arrayMesh)
+			{
+				ulong baseId = arrayMesh.GetInstanceId();
+				var cacheKey = (baseId, normalMode);
+				if (_normalGeneratedMeshCache.TryGetValue(cacheKey, out var cachedMesh) && GodotObject.IsInstanceValid(cachedMesh))
+				{
+					meshInst.Mesh = cachedMesh;
+				}
+				else
+				{
+					var toolMesh = new ArrayMesh();
+					for (int i = 0; i < arrayMesh.GetSurfaceCount(); i++)
+					{
+						var surfaceTool = new SurfaceTool();
+						surfaceTool.CreateFrom(arrayMesh, i);
+						if (normalMode == ModelNormalMode.Flat)
+						{
+							surfaceTool.Deindex();
+							surfaceTool.GenerateNormals();
+						}
+						else
+						{
+							surfaceTool.GenerateNormals();
+						}
+						toolMesh = surfaceTool.Commit(toolMesh);
+					}
+					_normalGeneratedMeshCache[cacheKey] = toolMesh;
+					meshInst.Mesh = toolMesh;
+				}
+			}
+
+			meshInst.SetInstanceShaderParameter(new StringName("normal_mode"), (float)normalMode);
 
 			if (!isDefaultColor)
 			{
@@ -758,8 +804,9 @@ public partial class GameHost
 			ModelCollisionCircleRatios.Clear();
 			ModelObstacleRadii.Clear();
 			ModelBrightness.Clear();
-			ModelGenerateNormals.Clear();
+			ModelNormalModes.Clear();
 			ModelIgnorePlayerColor.Clear();
+			ModelNormalizeLuminance.Clear();
 
 			if (root.ContainsKey("ModelOffsets") && root["ModelOffsets"] is System.Text.Json.Nodes.JsonObject offsetsObj)
 			{
@@ -805,13 +852,25 @@ public partial class GameHost
 				}
 			}
 
-			if (root.ContainsKey("ModelGenerateNormals") && root["ModelGenerateNormals"] is System.Text.Json.Nodes.JsonObject gnObj)
+			if (root.ContainsKey("ModelNormalModes") && root["ModelNormalModes"] is System.Text.Json.Nodes.JsonObject nmObj)
 			{
-				foreach (var kvp in gnObj)
+				foreach (var kvp in nmObj)
+				{
+					if (kvp.Value != null && Enum.TryParse<ModelNormalMode>(kvp.Value.ToString(), true, out var modeVal))
+					{
+						string nKey = NormalizeModelAssetKey(kvp.Key);
+						ModelNormalModes[nKey] = modeVal;
+					}
+				}
+			}
+
+			if (root.ContainsKey("ModelNormalizeLuminance") && root["ModelNormalizeLuminance"] is System.Text.Json.Nodes.JsonObject nlObj)
+			{
+				foreach (var kvp in nlObj)
 				{
 					if (kvp.Value != null && bool.TryParse(kvp.Value.ToString(), out bool val))
 					{
-						ModelGenerateNormals[NormalizeModelAssetKey(kvp.Key)] = val;
+						ModelNormalizeLuminance[NormalizeModelAssetKey(kvp.Key)] = val;
 					}
 				}
 			}
@@ -854,9 +913,17 @@ public partial class GameHost
 							{
 								ModelColorTint[normKey] = Color.FromString(tintStr, new Color(1, 1, 1));
 							}
-							if (uObj.ContainsKey("RecalculateNormals") && bool.TryParse(uObj["RecalculateNormals"]?.ToString(), out bool gnVal))
+							if (uObj.ContainsKey("NormalMode") && Enum.TryParse<ModelNormalMode>(uObj["NormalMode"]?.ToString(), true, out var nmVal))
 							{
-								ModelGenerateNormals[normKey] = gnVal;
+								ModelNormalModes[normKey] = nmVal;
+							}
+							else if (!ModelNormalModes.ContainsKey(normKey))
+							{
+								ModelNormalModes[normKey] = ModelNormalMode.Flat;
+							}
+							if (uObj.ContainsKey("NormalizeLuminance") && bool.TryParse(uObj["NormalizeLuminance"]?.ToString(), out bool nlVal))
+							{
+								ModelNormalizeLuminance[normKey] = nlVal;
 							}
 							if (uObj.ContainsKey("IgnorePlayerColor") && bool.TryParse(uObj["IgnorePlayerColor"]?.ToString(), out bool ipcVal))
 							{
@@ -903,11 +970,19 @@ public partial class GameHost
 								{
 									ModelBrightness[NormalizeModelAssetKey(itemKvp.Key)] = brightVal;
 								}
-								if (itemObj.ContainsKey("generate_normals") && bool.TryParse(itemObj["generate_normals"]?.ToString(), out bool gnVal))
-								{
-									ModelGenerateNormals[NormalizeModelAssetKey(itemKvp.Key)] = gnVal;
-								}
 								string normKey = NormalizeModelAssetKey(itemKvp.Key);
+								if (itemObj.ContainsKey("normal_mode") && Enum.TryParse<ModelNormalMode>(itemObj["normal_mode"]?.ToString(), true, out var nmVal))
+								{
+									ModelNormalModes[normKey] = nmVal;
+								}
+								else if (!ModelNormalModes.ContainsKey(normKey))
+								{
+									ModelNormalModes[normKey] = ModelNormalMode.Flat;
+								}
+								if (itemObj.ContainsKey("normalize_luminance") && bool.TryParse(itemObj["normalize_luminance"]?.ToString(), out bool nlVal))
+								{
+									ModelNormalizeLuminance[normKey] = nlVal;
+								}
 								if (itemObj.ContainsKey("ignore_player_color") && bool.TryParse(itemObj["ignore_player_color"]?.ToString(), out bool ipcVal))
 								{
 									ModelIgnorePlayerColor[normKey] = ipcVal;
@@ -933,7 +1008,8 @@ public partial class GameHost
 			}
 
 			foreach (var key in ModelBrightness.Keys
-				.Concat(ModelGenerateNormals.Keys)
+				.Concat(ModelNormalModes.Keys)
+				.Concat(ModelNormalizeLuminance.Keys)
 				.Concat(ModelIgnorePlayerColor.Keys)
 				.Distinct())
 			{
@@ -942,8 +1018,21 @@ public partial class GameHost
 		}
 		catch (Exception ex)
 		{
-			GD.PrintErr($"LoadModelYOffsetsFromMetadataJson error: {ex.Message}");
+			GD.PrintErr($"Failed to load metadata overrides from JSON: {ex.Message}");
 		}
+	}
+
+	public void ClearMapEditorState()
+	{
+		ModelYOffsets.Clear();
+		ModelCollisionCircleRatios.Clear();
+		ModelObstacleRadii.Clear();
+		ModelBrightness.Clear();
+		ModelColorTint.Clear();
+		ModelNormalModes.Clear();
+		ModelNormalizeLuminance.Clear();
+		ModelIgnorePlayerColor.Clear();
+		ClearNormalGeneratedMeshCache();
 	}
 
 	public void RefreshAllPlacedObjectModels(string targetId = null)
@@ -1033,9 +1122,13 @@ public partial class GameHost
 			foreach (var kvp in ModelBrightness) mbObj[kvp.Key] = kvp.Value;
 			root["ModelBrightness"] = mbObj;
 
-			System.Text.Json.Nodes.JsonObject gnObj = new System.Text.Json.Nodes.JsonObject();
-			foreach (var kvp in ModelGenerateNormals) gnObj[kvp.Key] = kvp.Value;
-			root["ModelGenerateNormals"] = gnObj;
+			System.Text.Json.Nodes.JsonObject nmObj = new System.Text.Json.Nodes.JsonObject();
+			foreach (var kvp in ModelNormalModes) nmObj[kvp.Key] = kvp.Value.ToString();
+			root["ModelNormalModes"] = nmObj;
+
+			System.Text.Json.Nodes.JsonObject nlObj = new System.Text.Json.Nodes.JsonObject();
+			foreach (var kvp in ModelNormalizeLuminance) nlObj[kvp.Key] = kvp.Value;
+			root["ModelNormalizeLuminance"] = nlObj;
 
 			System.Text.Json.Nodes.JsonObject ipcObj = new System.Text.Json.Nodes.JsonObject();
 			foreach (var kvp in ModelIgnorePlayerColor) ipcObj[kvp.Key] = kvp.Value;
@@ -1056,7 +1149,11 @@ public partial class GameHost
 							if (ModelCollisionCircleRatios.TryGetValue(normKey, out float rVal)) uObj["CollisionCircle"] = rVal;
 							if (ModelBrightness.TryGetValue(normKey, out float bVal)) uObj["Brightness"] = bVal;
 							if (ModelColorTint.TryGetValue(normKey, out Color tColor)) uObj["Tint"] = "#" + tColor.ToHtml(false);
-							if (ModelGenerateNormals.TryGetValue(normKey, out bool gnVal)) uObj["RecalculateNormals"] = gnVal;
+							if (ModelNormalModes.TryGetValue(normKey, out var nmVal))
+							{
+								uObj["NormalMode"] = nmVal.ToString();
+							}
+							if (ModelNormalizeLuminance.TryGetValue(normKey, out bool nlVal)) uObj["NormalizeLuminance"] = nlVal;
 							if (ModelIgnorePlayerColor.TryGetValue(normKey, out bool ipcVal)) uObj["IgnorePlayerColor"] = ipcVal;
 						}
 					}
@@ -1076,10 +1173,11 @@ public partial class GameHost
 							bool hasRatio = ModelCollisionCircleRatios.TryGetValue(normKey, out float rVal);
 							bool hasRadius = ModelObstacleRadii.TryGetValue(normKey, out float radVal);
 							bool hasBright = ModelBrightness.TryGetValue(normKey, out float brightVal);
-							bool hasGn = ModelGenerateNormals.TryGetValue(normKey, out bool gnVal);
+							bool hasNm = ModelNormalModes.TryGetValue(normKey, out var nmVal);
+							bool hasNl = ModelNormalizeLuminance.TryGetValue(normKey, out bool nlVal);
 							bool hasIpc = ModelIgnorePlayerColor.TryGetValue(normKey, out bool ipcVal);
 
-							if (hasY || hasRatio || hasRadius || hasBright || hasGn || hasIpc)
+							if (hasY || hasRatio || hasRadius || hasBright || hasNm || hasNl || hasIpc)
 							{
 								var nodeVal = catDict[key];
 								if (nodeVal is System.Text.Json.Nodes.JsonObject itemObj)
@@ -1088,7 +1186,8 @@ public partial class GameHost
 									if (hasRatio) itemObj["collision_circle_ratio"] = rVal;
 									if (hasRadius) itemObj["collision_radius"] = radVal;
 									if (hasBright) itemObj["brightness"] = brightVal;
-									if (hasGn) itemObj["generate_normals"] = gnVal;
+									if (hasNm) itemObj["normal_mode"] = nmVal.ToString();
+									if (hasNl) itemObj["normalize_luminance"] = nlVal;
 									if (hasIpc) itemObj["ignore_player_color"] = ipcVal;
 								}
 								else if (nodeVal != null)
@@ -1102,7 +1201,8 @@ public partial class GameHost
 									if (hasRatio) newItemObj["collision_circle_ratio"] = rVal;
 									if (hasRadius) newItemObj["collision_radius"] = radVal;
 									if (hasBright) newItemObj["brightness"] = brightVal;
-									if (hasGn) newItemObj["generate_normals"] = gnVal;
+									if (hasNm) newItemObj["normal_mode"] = nmVal.ToString();
+									if (hasNl) newItemObj["normalize_luminance"] = nlVal;
 									if (hasIpc) newItemObj["ignore_player_color"] = ipcVal;
 									catDict[key] = newItemObj;
 								}

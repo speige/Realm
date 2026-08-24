@@ -302,7 +302,8 @@ public partial class Unit3D : Prop3D
 				_modelNode.Position = new Vector3(0f, _baseModelYOffset + yOffset, 0f);
 
 				bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(modelPath) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
-				Realm.Godot.Utils.PlayerColorShaderManager.ApplyPlayerColorShader(_modelNode, PlayerColor, ignorePlayerColor);
+				bool normalizeLuminance = GameHost.Instance != null && (GameHost.Instance.GetModelNormalizeLuminance(modelPath) || GameHost.Instance.GetModelNormalizeLuminance(UnitId));
+				Realm.Godot.Utils.PlayerColorShaderManager.ApplyPlayerColorShader(_modelNode, PlayerColor, ignorePlayerColor, normalizeLuminance);
 				if (!ignorePlayerColor)
 				{
 					UpdatePlayerColorVisual();

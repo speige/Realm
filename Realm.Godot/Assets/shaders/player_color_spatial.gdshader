@@ -30,9 +30,10 @@ uniform vec3 uv1_scale = vec3(1.0, 1.0, 1.0);
 uniform vec3 uv1_offset = vec3(0.0, 0.0, 0.0);
 
 instance uniform vec4 player_color : source_color = vec4(0.620, 0.541, 0.431, 1.0);
-instance uniform float model_brightness : hint_range(0.10, 1.75) = 1.0;
+instance uniform float model_brightness : hint_range(0.10, 2.0) = 0.5;
 instance uniform vec4 model_color_tint : source_color = vec4(1.0, 1.0, 1.0, 1.0);
 instance uniform float ignore_player_color : hint_range(0.0, 1.0) = 0.0;
+instance uniform float normal_mode : hint_range(0.0, 2.0) = 2.0;
 
 varying vec2 base_uv;
 
@@ -97,7 +98,13 @@ void fragment() {
 	METALLIC = metallic;
 	SPECULAR = specular_value;
 
-	if (has_normal_texture) {
+	if (normal_mode > 1.5) {
+		vec3 face_n = normalize(cross(dFdy(VERTEX), dFdx(VERTEX)));
+		if (dot(face_n, VIEW) < 0.0) {
+			face_n = -face_n;
+		}
+		NORMAL = face_n;
+	} else if (has_normal_texture) {
 		vec3 normal_sample = texture(texture_normal, base_uv).rgb;
 		NORMAL = perturb_normal_cotangent(NORMAL, VERTEX, base_uv, normal_sample, normal_scale);
 	}

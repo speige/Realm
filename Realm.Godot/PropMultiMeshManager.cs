@@ -435,50 +435,78 @@ public partial class PropMultiMeshManager : Node3D
 
 	public void UpdateMaterialOverridesForAsset(string normAssetKey)
 	{
-		if (GameHost.Instance == null || !_groups.TryGetValue(normAssetKey, out var group)) return;
+		if (GameHost.Instance == null) return;
 
-		float brightness = GameHost.Instance.GetModelBrightness(normAssetKey);
-		Color tint = GameHost.Instance.GetModelColorTint(normAssetKey);
-		bool generateNormals = GameHost.Instance.GetModelGenerateNormals(normAssetKey);
-
-		float multR = brightness * tint.R;
-		float multG = brightness * tint.G;
-		float multB = brightness * tint.B;
-
-		foreach (var chunkGroup in group.ChunkGroups.Values)
+		foreach (var group in _groups.Values)
 		{
-			for (int i = 0; i < group.SubMeshes.Count && i < chunkGroup.MultiMeshNodes.Count; i++)
+			if (group == null) continue;
+			if (!string.Equals(group.AssetKey, normAssetKey, StringComparison.OrdinalIgnoreCase)
+				&& !string.Equals(GameHost.Instance.NormalizeModelAssetKey(group.AssetKey), GameHost.Instance.NormalizeModelAssetKey(normAssetKey), StringComparison.OrdinalIgnoreCase)
+				&& !GameHost.Instance.MatchesEntityOrAssetKey(group.AssetKey, normAssetKey))
 			{
-				var subInfo = group.SubMeshes[i];
-				var mmNode = chunkGroup.MultiMeshNodes[i];
+				continue;
+			}
 
-				if (generateNormals && subInfo.Mesh is ArrayMesh arrayMesh)
+			float brightness = GameHost.Instance.GetModelBrightness(group.AssetKey);
+			Color tint = GameHost.Instance.GetModelColorTint(group.AssetKey);
+			GameHost.ModelNormalMode normalMode = GameHost.Instance.GetModelNormalMode(group.AssetKey);
+			bool normalizeLuminance = GameHost.Instance.GetModelNormalizeLuminance(group.AssetKey);
+
+			foreach (var chunkGroup in group.ChunkGroups.Values)
+			{
+				for (int i = 0; i < group.SubMeshes.Count && i < chunkGroup.MultiMeshNodes.Count; i++)
 				{
-					var toolMesh = new ArrayMesh();
-					var surfaceTool = new SurfaceTool();
-					for (int s = 0; s < arrayMesh.GetSurfaceCount(); s++)
+					var subInfo = group.SubMeshes[i];
+					var mmNode = chunkGroup.MultiMeshNodes[i];
+
+					if (subInfo.Mesh is ArrayMesh arrayMesh)
 					{
-						surfaceTool.CreateFrom(arrayMesh, s);
-						surfaceTool.GenerateNormals();
-						toolMesh = surfaceTool.Commit(toolMesh);
+						if (normalMode == GameHost.ModelNormalMode.Original)
+						{
+							if (mmNode.Multimesh != null)
+							{
+								mmNode.Multimesh.Mesh = subInfo.Mesh;
+							}
+						}
+						else
+						{
+							var toolMesh = new ArrayMesh();
+							for (int s = 0; s < arrayMesh.GetSurfaceCount(); s++)
+							{
+								var surfaceTool = new SurfaceTool();
+								surfaceTool.CreateFrom(arrayMesh, s);
+								if (normalMode == GameHost.ModelNormalMode.Flat)
+								{
+									surfaceTool.Deindex();
+									surfaceTool.GenerateNormals();
+								}
+								else
+								{
+									surfaceTool.GenerateNormals();
+								}
+								toolMesh = surfaceTool.Commit(toolMesh);
+							}
+							if (mmNode.Multimesh != null)
+							{
+								mmNode.Multimesh.Mesh = toolMesh;
+							}
+						}
 					}
-					if (mmNode.Multimesh != null)
+
+					Material baseMatToUse = subInfo.MaterialOverride;
+					if (baseMatToUse == null && subInfo.SurfaceMaterials != null && subInfo.SurfaceMaterials.Length > 0)
 					{
-						mmNode.Multimesh.Mesh = toolMesh;
+						baseMatToUse = subInfo.SurfaceMaterials[0];
 					}
-				}
 
-				Material baseMatToUse = subInfo.MaterialOverride;
-				if (baseMatToUse == null && subInfo.SurfaceMaterials != null && subInfo.SurfaceMaterials.Length > 0)
-				{
-					baseMatToUse = subInfo.SurfaceMaterials[0];
-				}
-
-				if (baseMatToUse is BaseMaterial3D baseMat)
-				{
-					var dupMat = (BaseMaterial3D)baseMat.Duplicate();
-					dupMat.AlbedoColor = new Color(multR, multG, multB, dupMat.AlbedoColor.A);
-					mmNode.MaterialOverride = dupMat;
+					if (baseMatToUse != null)
+					{
+						var shaderMat = Realm.Godot.Utils.PlayerColorShaderManager.GetOrCreateShaderMaterial(baseMatToUse, normalizeLuminance);
+						mmNode.MaterialOverride = shaderMat;
+						mmNode.SetInstanceShaderParameter(new StringName("model_brightness"), brightness);
+						mmNode.SetInstanceShaderParameter(new StringName("model_color_tint"), tint);
+						mmNode.SetInstanceShaderParameter(new StringName("normal_mode"), (float)normalMode);
+					}
 				}
 			}
 		}

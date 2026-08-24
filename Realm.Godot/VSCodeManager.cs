@@ -769,20 +769,17 @@ public class VSCodeManager
 				string rawBase64 = node["rawBase64"]?.ToString();
 				string fileName = node["fileName"]?.ToString() ?? "model.glb";
 				string requestId = node["requestId"]?.ToString();
-
 				float creaseAngleDegrees = node["creaseAngleDegrees"] != null && float.TryParse(node["creaseAngleDegrees"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float cDeg) ? cDeg : 45.0f;
 				int maxTextureResolution = node["maxTextureResolution"] != null && int.TryParse(node["maxTextureResolution"].ToString(), out int mTex) ? mTex : 1024;
 				float allowedPixelError = node["allowedPixelError"] != null && float.TryParse(node["allowedPixelError"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float pErr) ? pErr : 1.5f;
 				bool forceReDecimate = node["forceReDecimate"] != null && bool.TryParse(node["forceReDecimate"].ToString(), out bool fDec) && fDec;
-				bool useUastc = node["useUastc"] != null && bool.TryParse(node["useUastc"].ToString(), out bool uAstc) && uAstc;
 
 				var options = new Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationOptions
 				{
 					AllowedPixelError = allowedPixelError,
 					CreaseAngleDegrees = creaseAngleDegrees,
 					MaxTextureResolution = maxTextureResolution,
-					ForceReDecimate = forceReDecimate,
-					UseUastc = useUastc
+					ForceReDecimate = forceReDecimate
 				};
 
 				byte[] glbBytes = null;
