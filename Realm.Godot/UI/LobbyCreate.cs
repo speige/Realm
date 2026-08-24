@@ -26,6 +26,12 @@ public partial class LobbyCreate : Control
 		_leftPillar = GetNode<Panel>("LeftPillar");
 		_rightPillar = GetNode<Panel>("RightPillar");
 		_centralPanel = GetNode<PanelContainer>("CentralPanel");
+
+		var cardBg = GetNode<TextureRect>("CentralPanel/CardBg");
+		cardBg.Texture = GD.Load<Texture2D>("res://Assets/UI/custom_match_card.png");
+		cardBg.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		cardBg.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
+		cardBg.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
 		
 		_backButton = GetNode<Button>("BackButton");
 		_createButton = GetNode<Button>("CentralPanel/ContentContainer/CreateButton");
@@ -66,10 +72,12 @@ public partial class LobbyCreate : Control
 
 	private void ApplyThemeStyles()
 	{
-		_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateCustomMatchBg());
+		_bgPanel.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
 		_leftPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(true));
 		_rightPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(false));
-		_centralPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_centralPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateCustomMatchCardPanel());
+		_centralPanel.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
 		_briefingPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(false));
 
 		UIStyle.ApplyTitle(_titleLabel, LobbyManager.Instance.IsSinglePlayer ? "SINGLE PLAYER" : "CREATE CUSTOM MATCH", 36);
@@ -98,6 +106,7 @@ public partial class LobbyCreate : Control
 	{
 		btn.Flat = false;
 		btn.Text = text;
+		btn.AddThemeConstantOverride("icon_max_width", 0);
 		btn.AddThemeFontSizeOverride("font_size", 24);
 		btn.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		btn.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
@@ -119,11 +128,12 @@ public partial class LobbyCreate : Control
 	private void SetupCreateButton()
 	{
 		_createButton.Flat = false;
+		_createButton.AddThemeConstantOverride("icon_max_width", 0);
 		UIStyle.ApplyButtonText(_createButton, LobbyManager.Instance.IsSinglePlayer ? "START GAME" : "CREATE LOBBY", 18);
 		
-		_createButton.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		_createButton.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		_createButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		_createButton.AddThemeStyleboxOverride("normal", UIStyle.CreateCustomLobbyStartGameButton(false, false));
+		_createButton.AddThemeStyleboxOverride("hover", UIStyle.CreateCustomLobbyStartGameButton(true, false));
+		_createButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateCustomLobbyStartGameButton(false, true));
 		_createButton.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
 		_createButton.Pressed += OnCreatePressed;

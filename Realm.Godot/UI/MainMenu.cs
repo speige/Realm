@@ -18,113 +18,266 @@ public partial class MainMenu : Control
 	private Button _settingsButton;
 	private Button _profileButton;
 	private Button _quitButton;
+	private Button _socialButton;
+	private Control _socialPopoverOverlay;
+	private Control _socialPopover;
 	private Button _discordButton;
 	private Button _donateButton;
-	private Button _socialButton;
-	private Control _socialPopover;
-	private Control _socialPopoverOverlay;
 	private Button _contributeButton;
 	private Button _bugReportButton;
 	private Button _seedNodeButton;
 	private Control _profilePopup;
-
 	private OptionButton _versionDropdown;
 	private Label _outdatedLabel;
+
+	private static Font _norseFont;
+	private static Font _norseBoldFont;
 
 	private readonly string[] _runes = { "ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᚲ", "ᚷ", "ᚹ", "ᚺ", "ᚾ", "ᛁ", "ᛃ", "ᛇ", "ᛈ", "ᛉ", "ᛊ", "ᛏ", "ᛒ", "ᛖ", "ᛗ", "ᛚ", "ᛜ", "ᛞ", "ᛟ" };
 
 	public override void _Ready()
 	{
+		TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
 
+		// Bind nodes
 		_bgPanel = GetNode<Panel>("Background");
+		_norseFont ??= GD.Load<Font>("res://Assets/UI/Norse.otf");
+		_norseBoldFont ??= GD.Load<Font>("res://Assets/UI/Norse-Bold.otf");
 		_leftPillar = GetNode<Panel>("LeftPillar");
 		_rightPillar = GetNode<Panel>("RightPillar");
 		_centralPanel = GetNode<PanelContainer>("CentralPanel");
 		_gameLogo = GetNode<TextureRect>("GameLogo");
+		_gameLogo.Texture = LoadTrimmedTexture("res://Assets/UI/Logo.png");
+		_gameLogo.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+
+		CreateVersionSelector();
 		_playButton = GetNode<Button>("CentralPanel/VBoxContainer/PlayButton");
-		_singlePlayerButton = GetNode<Button>("CentralPanel/VBoxContainer/SinglePlayerButton");
+		_singlePlayerButton = GetNodeOrNull<Button>("CentralPanel/VBoxContainer/SinglePlayerButton");
 		_mapDiscoveryButton = GetNode<Button>("CentralPanel/VBoxContainer/MapDiscoveryButton");
-		_creatorDiscoveryButton = GetNode<Button>("CentralPanel/VBoxContainer/CreatorDiscoveryButton");
+		_creatorDiscoveryButton = GetNodeOrNull<Button>("CentralPanel/VBoxContainer/CreatorDiscoveryButton");
 		_mapEditorButton = GetNode<Button>("CentralPanel/VBoxContainer/MapEditorButton");
-		_replaysButton = GetNode<Button>("CentralPanel/VBoxContainer/ReplaysButton");
+		_replaysButton = GetNodeOrNull<Button>("CentralPanel/VBoxContainer/ReplaysButton");
 		_settingsButton = GetNode<Button>("SettingsButton");
 		_profileButton = GetNode<Button>("ProfileButton");
 		_quitButton = GetNode<Button>("QuitButton");
-		_socialButton = GetNode<Button>("SocialButton");
-		_socialPopover = GetNode<Control>("SocialPopover");
-		_socialPopoverOverlay = GetNode<Control>("SocialPopoverOverlay");
-		_discordButton = GetNode<Button>("SocialPopover/PopoverVBox/DiscordButton");
-		_donateButton = GetNode<Button>("SocialPopover/PopoverVBox/DonateButton");
-		_contributeButton = GetNode<Button>("SocialPopover/PopoverVBox/ContributeButton");
-		_bugReportButton = GetNode<Button>("SocialPopover/PopoverVBox/BugReportButton");
-		_seedNodeButton = GetNode<Button>("SocialPopover/PopoverVBox/SeedNodeButton");
+		_socialButton = GetNodeOrNull<Button>("SocialButton");
+		_socialPopoverOverlay = GetNodeOrNull<Control>("SocialPopoverOverlay");
+		_socialPopover = GetNodeOrNull<Control>("SocialPopover");
+		_discordButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/DiscordButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/DiscordButton");
+		_donateButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/DonateButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/DonateButton");
+		_contributeButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/ContributeButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/ContributeButton");
+		_bugReportButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/BugReportButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/BugReportButton");
+		_seedNodeButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/SeedNodeButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/SeedNodeButton");
 
-
-		_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		// Style background & panels
+		_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateEntranceBgTexture());
 		_leftPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(true));
 		_rightPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(false));
 		_centralPanel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		GetNode<VBoxContainer>("CentralPanel/VBoxContainer").AddThemeConstantOverride("separation", 10);
 
-
-		SetupPlayButton(_playButton, () => {
-			if (LobbyManager.Instance != null) LobbyManager.Instance.IsSinglePlayer = false;
-			UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser);
-		});
-		SetupButton(_singlePlayerButton, "SINGLE PLAYER", () => {
-			if (LobbyManager.Instance != null) LobbyManager.Instance.IsSinglePlayer = true;
-			UIManager.Instance.TransitionTo(GameScreen.LobbyCreate);
-		});
-		SetupButton(_mapDiscoveryButton, "MAP DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.MapDiscovery));
-		SetupButton(_creatorDiscoveryButton, "CREATOR DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.CreatorDiscovery));
-		SetupButton(_mapEditorButton, "MAP EDITOR", () => OnMapEditorPressed());
-		SetupButton(_replaysButton, "REPLAYS", () => UIManager.Instance.TransitionTo(GameScreen.ReplayList));
-		SetupUtilityButton(_settingsButton, "res://Assets/UI/gear_icon.png", () => UIManager.Instance.OpenSettingsOverlay());
-		SetupUtilityButton(_profileButton, "res://Assets/UI/avatar_icon.png", () => ShowProfilePopup());
-		SetupButton(_quitButton, "QUIT GAME", () => GetTree().Quit());
-		SetupUtilityButton(_socialButton, "res://Assets/UI/social_icon.png", () => ToggleSocialPopover());
-		_socialPopover.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		SetupButton(_discordButton, "DISCORD", () => { OS.ShellOpen("https://discord.com/servers/realm"); HideSocialPopover(); });
-		SetupButton(_donateButton, "DONATE", () => { OS.ShellOpen("https://github.com/sponsors/speige"); HideSocialPopover(); });
-		SetupButton(_contributeButton, "CONTRIBUTE", () => { OS.ShellOpen("https://github.com/speige/realm"); HideSocialPopover(); });
-		SetupButton(_bugReportButton, "BUG REPORT", () => { OS.ShellOpen("https://github.com/speige/Realm/issues"); HideSocialPopover(); });
-		SetupButton(_seedNodeButton, "HOST A SEED NODE (ADVANCED)", () => { OS.ShellOpen("https://github.com/speige/Realm/blob/main/Seed_Node_Setup.md"); HideSocialPopover(); });
-
-		_socialPopoverOverlay.GuiInput += (InputEvent @event) =>
+		// Style buttons
+		SetupPlayButton(_playButton, () => UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser));
+		if (_singlePlayerButton != null)
 		{
-			if (@event is InputEventMouseButton mouseEvent && mouseEvent.Pressed && mouseEvent.ButtonIndex == MouseButton.Left)
+			SetupMenuButton(_singlePlayerButton, "SINGLE PLAYER", () =>
 			{
-				HideSocialPopover();
+				if (LobbyManager.Instance != null) LobbyManager.Instance.IsSinglePlayer = true;
+				UIManager.Instance.TransitionTo(GameScreen.LobbyCreate);
+			}, "res://Assets/UI/menu_single_player_button.png");
+			_singlePlayerButton.AddThemeConstantOverride("icon_max_width", 28);
+		}
+		SetupMenuButton(_mapDiscoveryButton, "MAP DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.MapDiscovery), "res://Assets/UI/menu_discovery_button.png");
+		if (_creatorDiscoveryButton != null)
+		{
+			SetupMenuButton(_creatorDiscoveryButton, "CREATOR DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.CreatorDiscovery), "res://Assets/UI/menu_discovery_button.png");
+			_creatorDiscoveryButton.AddThemeConstantOverride("icon_max_width", 28);
+		}
+		SetupMenuButton(_mapEditorButton, "MAP EDITOR", () => OnMapEditorPressed(), "res://Assets/UI/menu_editor_button.png");
+		if (_replaysButton != null)
+		{
+			SetupMenuButton(_replaysButton, "REPLAYS", () => UIManager.Instance.TransitionTo(GameScreen.ReplayList), "res://Assets/UI/menu_replays_button.png");
+			_replaysButton.AddThemeConstantOverride("icon_max_width", 28);
+		}
+		SetupIconButton(_settingsButton, "OPTIONS", "res://Assets/UI/gear_icon.png", () => UIManager.Instance.OpenSettingsOverlay(), new Vector2(22, 22), true);
+		SetupAvatarButton(_profileButton, () => ShowProfilePopup());
+		SetupButton(_quitButton, "QUIT GAME", () => GetTree().Quit());
+
+		if (_socialButton != null && _socialPopover != null && _socialPopoverOverlay != null)
+		{
+			SetupIconButton(_socialButton, "", "res://Assets/UI/social_icon.png", () => ToggleSocialPopover(), new Vector2(32, 32));
+			var popoverBg = _socialPopover.GetNodeOrNull<TextureRect>("Background");
+			if (popoverBg != null)
+			{
+				popoverBg.Texture = LoadTrimmedTexture("res://Assets/UI/menu_popup.png");
+				popoverBg.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+				popoverBg.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+				popoverBg.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
 			}
-		};
 
+			if (_discordButton != null) SetupMenuButton(_discordButton, "DISCORD", () => { OS.ShellOpen("https://discord.com/servers/realm"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png");
+			if (_donateButton != null) SetupMenuButton(_donateButton, "DONATE", () => { OS.ShellOpen("https://github.com/sponsors/speige"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png");
+			if (_contributeButton != null) SetupMenuButton(_contributeButton, "CONTRIBUTE", () => { OS.ShellOpen("https://github.com/speige/realm"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png");
+			if (_bugReportButton != null) SetupMenuButton(_bugReportButton, "BUG REPORT", () => { OS.ShellOpen("https://github.com/speige/Realm/issues"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png");
+			if (_seedNodeButton != null) SetupMenuButton(_seedNodeButton, "HOST A SEED NODE (ADVANCED)", () => { OS.ShellOpen("https://github.com/speige/Realm/blob/main/Seed_Node_Setup.md"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png");
 
-		_socialButton.AddThemeConstantOverride("icon_max_width", 32);
-		_discordButton.AddThemeConstantOverride("icon_max_width", 36);
-		_mapDiscoveryButton.AddThemeConstantOverride("icon_max_width", 36);
-		_creatorDiscoveryButton.AddThemeConstantOverride("icon_max_width", 36);
-		_mapEditorButton.AddThemeConstantOverride("icon_max_width", 36);
-		_replaysButton.AddThemeConstantOverride("icon_max_width", 36);
-		_donateButton.AddThemeConstantOverride("icon_max_width", 36);
-		_contributeButton.AddThemeConstantOverride("icon_max_width", 36);
-		_bugReportButton.AddThemeConstantOverride("icon_max_width", 36);
-		_seedNodeButton.AddThemeConstantOverride("icon_max_width", 36);
+			_socialPopoverOverlay.GuiInput += (@event) =>
+			{
+				if (@event is InputEventMouseButton mouseEvent && mouseEvent.Pressed && mouseEvent.ButtonIndex == MouseButton.Left)
+				{
+					HideSocialPopover();
+				}
+			};
+		}
 
+		_mapDiscoveryButton.AddThemeConstantOverride("icon_max_width", 28);
+		_mapEditorButton.AddThemeConstantOverride("icon_max_width", 28);
+		_playButton.AddThemeConstantOverride("icon_max_width", 28);
 
 		PopulateRunicPillar(GetNode<VBoxContainer>("LeftPillar/RuneContainer"));
 		PopulateRunicPillar(GetNode<VBoxContainer>("RightPillar/RuneContainer"));
+	}
 
-		CreateVersionSelector();
+	private void SetupButton(Button button, string text, Action onClick)
+	{
+		button.Flat = false;
+		button.Text = TranslationServer.Translate(text);
+		button.AddThemeFontOverride("font", _norseBoldFont);
+		button.AddThemeFontSizeOverride("font_size", 18);
 
-		if (!PathUtils.IsDevelopmentBuild)
+		button.AddThemeColorOverride("font_color", Color.FromHtml("#D1C4AE"));
+		button.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		button.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
+		button.AddThemeColorOverride("font_focus_color", UIStyle.ColorGold);
+
+		button.AddThemeColorOverride("font_shadow_color", Color.FromHtml("#8C8171"));
+		button.AddThemeConstantOverride("shadow_offset_x", 0);
+		button.AddThemeConstantOverride("shadow_offset_y", 2);
+		button.AddThemeConstantOverride("icon_max_width", 32);
+		button.AddThemeConstantOverride("h_separation", 2);
+
+		button.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		button.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		button.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+
+		Tween scaleTween = null;
+		button.MouseEntered += () =>
 		{
-			_playButton.Visible = false;
-			_singlePlayerButton.Visible = false;
-			_mapDiscoveryButton.Visible = false;
-			_creatorDiscoveryButton.Visible = false;
-			_replaysButton.Visible = false;
-			_profileButton.Visible = false;
-			_seedNodeButton.Visible = false;
-		}
+			PlayHoverSound();
+			scaleTween?.Kill();
+			scaleTween = button.CreateTween();
+			button.PivotOffset = button.Size / 2;
+			scaleTween.TweenProperty(button, "scale", new Vector2(1.03f, 1.03f), 0.15f)
+				.SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
+		};
+		button.MouseExited += () =>
+		{
+			scaleTween?.Kill();
+			scaleTween = button.CreateTween();
+			scaleTween.TweenProperty(button, "scale", Vector2.One, 0.15f)
+				.SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
+		};
+
+		button.Pressed += () => 
+		{
+			PlayClickSound();
+			onClick?.Invoke();
+		};
+	}
+
+	private void SetupMenuButton(Button button, string text, Action onClick, string texturePath = null, Vector2? minSize = null)
+	{
+		button.Flat = false;
+		button.Icon = null;
+		button.Text = TranslationServer.Translate(text);
+		button.CustomMinimumSize = minSize ?? (texturePath != null ? new Vector2(240, 59) : new Vector2(240, 40));
+
+		button.AddThemeFontOverride("font", _norseBoldFont);
+		button.AddThemeFontSizeOverride("font_size", 20);
+
+		button.AddThemeColorOverride("font_color", Color.FromHtml("#D1C4AE"));
+		button.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		button.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
+		button.AddThemeColorOverride("font_focus_color", UIStyle.ColorGold);
+
+		button.AddThemeColorOverride("font_outline_color", new Color(0.10f, 0.07f, 0.02f, 1.0f));
+		button.AddThemeConstantOverride("outline_size", 8);
+
+		button.AddThemeColorOverride("font_shadow_color", Color.FromHtml("#8C8171"));
+		button.AddThemeConstantOverride("shadow_offset_x", 0);
+		button.AddThemeConstantOverride("shadow_offset_y", 2);
+
+		var normalTexPath = texturePath ?? "res://Assets/UI/menu_button_normal.png";
+		var hoverTexPath = texturePath ?? "res://Assets/UI/menu_button_hover.png";
+		var pressedTexPath = texturePath ?? "res://Assets/UI/menu_button_pressed.png";
+
+		int texMarginLR = texturePath != null ? 0 : 32;
+		int texMarginTB = texturePath != null ? 0 : 10;
+		int contentMarginLR = texturePath != null ? 24 : 32;
+		int contentMarginTB = texturePath != null ? 6 : 10;
+
+		var normalStyle = new StyleBoxTexture();
+		normalStyle.Texture = LoadTrimmedTexture(normalTexPath);
+		normalStyle.TextureMarginLeft = texMarginLR;
+		normalStyle.TextureMarginRight = texMarginLR;
+		normalStyle.TextureMarginTop = texMarginTB;
+		normalStyle.TextureMarginBottom = texMarginTB;
+		normalStyle.ContentMarginLeft = contentMarginLR;
+		normalStyle.ContentMarginRight = contentMarginLR;
+		normalStyle.ContentMarginTop = contentMarginTB;
+		normalStyle.ContentMarginBottom = contentMarginTB;
+
+		var hoverStyle = new StyleBoxTexture();
+		hoverStyle.Texture = LoadTrimmedTexture(hoverTexPath);
+		if (texturePath != null) hoverStyle.ModulateColor = new Color(1.12f, 1.10f, 0.96f);
+		hoverStyle.TextureMarginLeft = texMarginLR;
+		hoverStyle.TextureMarginRight = texMarginLR;
+		hoverStyle.TextureMarginTop = texMarginTB;
+		hoverStyle.TextureMarginBottom = texMarginTB;
+		hoverStyle.ContentMarginLeft = contentMarginLR;
+		hoverStyle.ContentMarginRight = contentMarginLR;
+		hoverStyle.ContentMarginTop = contentMarginTB;
+		hoverStyle.ContentMarginBottom = contentMarginTB;
+
+		var pressedStyle = new StyleBoxTexture();
+		pressedStyle.Texture = LoadTrimmedTexture(pressedTexPath);
+		if (texturePath != null) pressedStyle.ModulateColor = new Color(0.85f, 0.82f, 0.75f);
+		pressedStyle.TextureMarginLeft = texMarginLR;
+		pressedStyle.TextureMarginRight = texMarginLR;
+		pressedStyle.TextureMarginTop = texMarginTB;
+		pressedStyle.TextureMarginBottom = texMarginTB;
+		pressedStyle.ContentMarginLeft = contentMarginLR;
+		pressedStyle.ContentMarginRight = contentMarginLR;
+		pressedStyle.ContentMarginTop = contentMarginTB;
+		pressedStyle.ContentMarginBottom = contentMarginTB;
+
+		button.AddThemeStyleboxOverride("normal", normalStyle);
+		button.AddThemeStyleboxOverride("hover", hoverStyle);
+		button.AddThemeStyleboxOverride("pressed", pressedStyle);
+		button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+
+		button.Pressed += () =>
+		{
+			PlayClickSound();
+			onClick?.Invoke();
+		};
+
+		button.MouseEntered += () => PlayHoverSound();
+	}
+
+	private void ToggleSocialPopover()
+	{
+		if (_socialPopover == null || _socialPopoverOverlay == null) return;
+		bool isVisible = !_socialPopover.Visible;
+		_socialPopover.Visible = isVisible;
+		_socialPopoverOverlay.Visible = isVisible;
+	}
+
+	private void HideSocialPopover()
+	{
+		if (_socialPopover != null) _socialPopover.Visible = false;
+		if (_socialPopoverOverlay != null) _socialPopoverOverlay.Visible = false;
 	}
 
 	private void CreateVersionSelector()
@@ -137,19 +290,24 @@ public partial class MainMenu : Control
 
 		var lbl = new Label();
 		lbl.Text = "Version: ";
-		lbl.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
-		lbl.AddThemeFontSizeOverride("font_size", 14);
+		lbl.AddThemeColorOverride("font_color", Color.FromHtml("#D1C4AE"));
+		lbl.AddThemeFontOverride("font", _norseFont);
+		lbl.AddThemeFontSizeOverride("font_size", 16);
 		lbl.VerticalAlignment = VerticalAlignment.Center;
 		versionBox.AddChild(lbl);
 
 		_versionDropdown = new OptionButton();
-		_versionDropdown.CustomMinimumSize = new Vector2(150, 30);
+		_versionDropdown.CustomMinimumSize = new Vector2(160, 32);
+		_versionDropdown.AddThemeFontOverride("font", _norseFont);
 		_versionDropdown.AddThemeFontSizeOverride("font_size", 14);
+		_versionDropdown.AddThemeColorOverride("font_color", Color.FromHtml("#D1C4AE"));
+		_versionDropdown.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
 		versionBox.AddChild(_versionDropdown);
 
 		_outdatedLabel = new Label();
 		_outdatedLabel.Text = "Outdated";
-		_outdatedLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
+		_outdatedLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.35f, 0.35f));
+		_outdatedLabel.AddThemeFontOverride("font", _norseFont);
 		_outdatedLabel.AddThemeFontSizeOverride("font_size", 14);
 		_outdatedLabel.VerticalAlignment = VerticalAlignment.Center;
 		_outdatedLabel.Visible = false;
@@ -157,8 +315,15 @@ public partial class MainMenu : Control
 
 		var downloadBtn = new Button();
 		downloadBtn.Text = "DOWNLOAD...";
+		downloadBtn.AddThemeFontOverride("font", _norseBoldFont);
 		downloadBtn.AddThemeFontSizeOverride("font_size", 12);
-		downloadBtn.CustomMinimumSize = new Vector2(100, 30);
+		downloadBtn.AddThemeColorOverride("font_color", Color.FromHtml("#D1C4AE"));
+		downloadBtn.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		downloadBtn.CustomMinimumSize = new Vector2(110, 32);
+		downloadBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		downloadBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		downloadBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		downloadBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 		downloadBtn.Pressed += () => OS.ShellOpen("https://github.com/speige/Realm/releases");
 		versionBox.AddChild(downloadBtn);
 
@@ -237,66 +402,69 @@ public partial class MainMenu : Control
 		}
 	}
 
-	private void SetupButton(Button button, string text, Action onClick)
-	{
-		button.Flat = false;
-		UIStyle.ApplyButtonText(button, text, 20);
-		
-
-		button.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		button.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		button.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-		button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
-
-		button.Pressed += () => 
-		{
-			PlayClickSound();
-			onClick?.Invoke();
-		};
-
-		button.MouseEntered += () => PlayHoverSound();
-	}
-
 	private void SetupPlayButton(Button button, Action onClick)
 	{
 		button.Flat = false;
-		button.Text = Tr("PLAY");
-		button.AddThemeFontSizeOverride("font_size", 22);
-		button.AddThemeColorOverride("font_color", new Color(1.0f, 0.92f, 0.7f));
-		button.AddThemeColorOverride("font_hover_color", new Color(1.0f, 1.0f, 0.9f));
-		button.AddThemeColorOverride("font_pressed_color", new Color(0.8f, 0.7f, 0.4f));
-		button.AddThemeConstantOverride("outline_size", 4);
-		button.AddThemeColorOverride("font_outline_color", UIStyle.ColorCyanGlowDim);
+		button.Icon = null;
+		button.CustomMinimumSize = new Vector2(240, 56);
+		button.Text = TranslationServer.Translate("PLAY");
+		
+		button.AddThemeFontOverride("font", _norseBoldFont);
+		button.AddThemeFontSizeOverride("font_size", 20);
 
-		var normalStyle = new StyleBoxTexture();
-		normalStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/play_button_stylized.png");
-		normalStyle.ContentMarginLeft = 24;
-		normalStyle.ContentMarginRight = 24;
-		normalStyle.ContentMarginTop = 12;
-		normalStyle.ContentMarginBottom = 12;
+		button.AddThemeColorOverride("font_color", Color.FromHtml("#D1C4AE"));
+		button.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		button.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
+		button.AddThemeColorOverride("font_focus_color", UIStyle.ColorGold);
 
-		var hoverStyle = new StyleBoxTexture();
-		hoverStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/play_button_stylized.png");
-		hoverStyle.ContentMarginLeft = 24;
-		hoverStyle.ContentMarginRight = 24;
-		hoverStyle.ContentMarginTop = 12;
-		hoverStyle.ContentMarginBottom = 12;
-		hoverStyle.ModulateColor = new Color(1.15f, 1.05f, 0.85f);
+		button.AddThemeColorOverride("font_outline_color", new Color(0.12f, 0.08f, 0.03f, 1.0f));
+		button.AddThemeConstantOverride("outline_size", 8);
 
-		var pressedStyle = new StyleBoxTexture();
-		pressedStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/play_button_stylized.png");
-		pressedStyle.ContentMarginLeft = 26;
-		pressedStyle.ContentMarginRight = 26;
-		pressedStyle.ContentMarginTop = 14;
-		pressedStyle.ContentMarginBottom = 10;
-		pressedStyle.ModulateColor = new Color(0.85f, 0.75f, 0.55f);
+		button.AddThemeColorOverride("font_shadow_color", Color.FromHtml("#8C8171"));
+		button.AddThemeConstantOverride("shadow_offset_x", 0);
+		button.AddThemeConstantOverride("shadow_offset_y", 2);
 
-		button.AddThemeStyleboxOverride("normal", normalStyle);
-		button.AddThemeStyleboxOverride("hover", hoverStyle);
-		button.AddThemeStyleboxOverride("pressed", pressedStyle);
+		var playNormalStyle = new StyleBoxTexture();
+		playNormalStyle.Texture = LoadTrimmedTexture("res://Assets/UI/menu_play_button.png");
+		playNormalStyle.TextureMarginLeft = 0;
+		playNormalStyle.TextureMarginRight = 0;
+		playNormalStyle.TextureMarginTop = 0;
+		playNormalStyle.TextureMarginBottom = 0;
+		playNormalStyle.ContentMarginLeft = 24;
+		playNormalStyle.ContentMarginRight = 24;
+		playNormalStyle.ContentMarginTop = 6;
+		playNormalStyle.ContentMarginBottom = 6;
+
+		var playHoverStyle = new StyleBoxTexture();
+		playHoverStyle.Texture = LoadTrimmedTexture("res://Assets/UI/menu_play_button.png");
+		playHoverStyle.ModulateColor = new Color(1.12f, 1.10f, 0.96f);
+		playHoverStyle.TextureMarginLeft = 0;
+		playHoverStyle.TextureMarginRight = 0;
+		playHoverStyle.TextureMarginTop = 0;
+		playHoverStyle.TextureMarginBottom = 0;
+		playHoverStyle.ContentMarginLeft = 24;
+		playHoverStyle.ContentMarginRight = 24;
+		playHoverStyle.ContentMarginTop = 6;
+		playHoverStyle.ContentMarginBottom = 6;
+
+		var playPressedStyle = new StyleBoxTexture();
+		playPressedStyle.Texture = LoadTrimmedTexture("res://Assets/UI/menu_play_button.png");
+		playPressedStyle.ModulateColor = new Color(0.85f, 0.82f, 0.75f);
+		playPressedStyle.TextureMarginLeft = 0;
+		playPressedStyle.TextureMarginRight = 0;
+		playPressedStyle.TextureMarginTop = 0;
+		playPressedStyle.TextureMarginBottom = 0;
+		playPressedStyle.ContentMarginLeft = 24;
+		playPressedStyle.ContentMarginRight = 24;
+		playPressedStyle.ContentMarginTop = 6;
+		playPressedStyle.ContentMarginBottom = 6;
+
+		button.AddThemeStyleboxOverride("normal", playNormalStyle);
+		button.AddThemeStyleboxOverride("hover", playHoverStyle);
+		button.AddThemeStyleboxOverride("pressed", playPressedStyle);
 		button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
-
+		// Scale-up on hover for premium feel
 		Tween scaleTween = null;
 		button.MouseEntered += () =>
 		{
@@ -322,23 +490,76 @@ public partial class MainMenu : Control
 		};
 	}
 
-		private void SetupUtilityButton(Button button, string iconPath, Action onClick)
+	private void SetupAvatarButton(Button button, Action onClick)
 	{
-		button.Flat = false;
+		button.Flat = true;
 		button.Text = "";
-		button.Icon = GD.Load<Texture2D>(iconPath);
-		button.IconAlignment = HorizontalAlignment.Center;
-		button.ExpandIcon = true;
+		button.FocusMode = FocusModeEnum.None;
 
-		button.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		button.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		button.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		button.AddThemeStyleboxOverride("normal", new StyleBoxEmpty());
+		button.AddThemeStyleboxOverride("hover", new StyleBoxEmpty());
+		button.AddThemeStyleboxOverride("pressed", new StyleBoxEmpty());
 		button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
-		button.AddThemeColorOverride("icon_normal_color", UIStyle.ColorGoldDull);
-		button.AddThemeColorOverride("icon_hover_color", UIStyle.ColorGold);
-		button.AddThemeColorOverride("icon_pressed_color", UIStyle.ColorCyanGlow);
-		button.AddThemeColorOverride("icon_focus_color", UIStyle.ColorGoldDull);
+		// Load custom textures
+		var frameNormal = LoadTrimmedTexture("res://Assets/UI/profile_frame_normal.png");
+		var nameplateNormal = LoadTrimmedTexture("res://Assets/UI/profile_nameplate_normal.png");
+		var badgeNormal = LoadTrimmedTexture("res://Assets/UI/profile_badge_normal.png");
+		var backdropNormal = LoadTrimmedTexture("res://Assets/UI/profile_backdrop_normal.png");
+
+		// Fetch nodes
+		var backdrop = button.GetNode<TextureRect>("Backdrop");
+		var avatar = button.GetNode<TextureRect>("Avatar");
+		var frame = button.GetNode<TextureRect>("Frame");
+		var nameplate = button.GetNode<TextureRect>("Nameplate");
+		var nameLabel = button.GetNode<Label>("Nameplate/Label");
+		var badge = button.GetNode<TextureRect>("Badge");
+		var levelLabel = button.GetNode<Label>("Badge/Label");
+
+		backdrop.Texture = backdropNormal;
+		backdrop.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		backdrop.StretchMode = TextureRect.StretchModeEnum.Scale;
+		backdrop.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+
+		frame.Texture = frameNormal;
+		frame.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		frame.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
+		frame.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+
+		nameplate.Texture = nameplateNormal;
+		nameplate.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		nameplate.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
+		nameplate.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+
+		badge.Texture = badgeNormal;
+		badge.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		badge.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
+		badge.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+
+		avatar.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		avatar.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
+		avatar.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+
+		// Set up dynamic player data
+		nameLabel.Text = "Horald_Topa";
+		levelLabel.Text = "LVL 50";
+
+		// Setup custom fonts & styles for labels
+		var labelFont = new SystemFont();
+		labelFont.FontNames = new string[] { "Cinzel Bold", "Cinzel", "Palatino Linotype", "Georgia", "serif" };
+		labelFont.FontWeight = 700;
+
+		nameLabel.AddThemeFontOverride("font", labelFont);
+		nameLabel.AddThemeFontSizeOverride("font_size", 14);
+		nameLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.85f, 0.65f));
+		nameLabel.AddThemeColorOverride("font_outline_color", new Color(0.05f, 0.05f, 0.05f, 1.0f));
+		nameLabel.AddThemeConstantOverride("outline_size", 6);
+
+		levelLabel.AddThemeFontOverride("font", labelFont);
+		levelLabel.AddThemeFontSizeOverride("font_size", 12);
+		levelLabel.AddThemeColorOverride("font_color", new Color(0.85f, 0.75f, 0.55f));
+		levelLabel.AddThemeColorOverride("font_outline_color", new Color(0.05f, 0.05f, 0.05f, 1.0f));
+		levelLabel.AddThemeConstantOverride("outline_size", 5);
 
 		Tween scaleTween = null;
 		button.MouseEntered += () =>
@@ -346,15 +567,22 @@ public partial class MainMenu : Control
 			PlayHoverSound();
 			scaleTween?.Kill();
 			scaleTween = button.CreateTween();
+			scaleTween.SetParallel(true);
 			button.PivotOffset = button.Size / 2;
-			scaleTween.TweenProperty(button, "scale", new Vector2(1.08f, 1.08f), 0.15f)
+			scaleTween.TweenProperty(button, "scale", new Vector2(1.04f, 1.04f), 0.15f)
+				.SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
+			scaleTween.TweenProperty(button, "modulate", new Color(1.10f, 1.08f, 0.98f), 0.15f)
 				.SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
 		};
+
 		button.MouseExited += () =>
 		{
 			scaleTween?.Kill();
 			scaleTween = button.CreateTween();
+			scaleTween.SetParallel(true);
 			scaleTween.TweenProperty(button, "scale", Vector2.One, 0.15f)
+				.SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
+			scaleTween.TweenProperty(button, "modulate", Colors.White, 0.15f)
 				.SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
 		};
 
@@ -365,22 +593,150 @@ public partial class MainMenu : Control
 		};
 	}
 
-private void ToggleSocialPopover()
+	private void SetupIconButton(Button button, string text, string iconPath, Action onClick, Vector2? iconSize = null, bool rotateOnHover = false)
 	{
-		bool isVisible = !_socialPopover.Visible;
-		_socialPopover.Visible = isVisible;
-		_socialPopoverOverlay.Visible = isVisible;
-	}
+		button.Flat = false;
+		button.Icon = null;
+		button.Text = "";
 
-	private void HideSocialPopover()
-	{
-		_socialPopover.Visible = false;
-		_socialPopoverOverlay.Visible = false;
+		button.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		button.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		button.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+
+		foreach (Node child in button.GetChildren())
+		{
+			if (child.Name == "ButtonContent")
+			{
+				child.QueueFree();
+			}
+		}
+
+		var container = new HBoxContainer();
+		container.Name = "ButtonContent";
+		container.AnchorLeft = 0.0f;
+		container.AnchorRight = 1.0f;
+		container.AnchorTop = 0.0f;
+		container.AnchorBottom = 1.0f;
+		container.Alignment = BoxContainer.AlignmentMode.Center;
+		container.MouseFilter = Control.MouseFilterEnum.Ignore;
+		container.AddThemeConstantOverride("separation", 6);
+
+		button.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+
+		var iconRect = new TextureRect();
+		iconRect.Texture = LoadTrimmedTexture(iconPath);
+		iconRect.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+		iconRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		iconRect.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
+		Vector2 size = iconSize ?? new Vector2(22, 22);
+		iconRect.CustomMinimumSize = size;
+		iconRect.Size = size;
+		iconRect.PivotOffset = size / 2.0f;
+		iconRect.MouseFilter = Control.MouseFilterEnum.Ignore;
+		iconRect.Modulate = UIStyle.ColorGoldDull;
+		container.AddChild(iconRect);
+
+		var label = new Label();
+		label.Text = TranslationServer.Translate(text);
+		label.AddThemeFontOverride("font", _norseBoldFont);
+		label.AddThemeFontSizeOverride("font_size", 18);
+		label.AddThemeColorOverride("font_color", Color.FromHtml("#D1C4AE"));
+		label.AddThemeColorOverride("font_shadow_color", Color.FromHtml("#8C8171"));
+		label.AddThemeConstantOverride("shadow_offset_x", 0);
+		label.AddThemeConstantOverride("shadow_offset_y", 2);
+		label.MouseFilter = Control.MouseFilterEnum.Ignore;
+		container.AddChild(label);
+
+		button.AddChild(container);
+
+		Tween scaleTween = null;
+		Tween rotationTween = null;
+
+		button.MouseEntered += () =>
+		{
+			PlayHoverSound();
+			label.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+			iconRect.Modulate = UIStyle.ColorGold;
+
+			if (rotateOnHover)
+			{
+				rotationTween?.Kill();
+				rotationTween = button.CreateTween();
+				rotationTween.TweenProperty(iconRect, "rotation", Mathf.Pi * 0.25f, 0.3f)
+					.SetTrans(Tween.TransitionType.Quad)
+					.SetEase(Tween.EaseType.Out);
+			}
+
+			scaleTween?.Kill();
+			scaleTween = button.CreateTween();
+			button.PivotOffset = button.Size / 2;
+			scaleTween.TweenProperty(button, "scale", new Vector2(1.03f, 1.03f), 0.15f)
+				.SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
+		};
+
+		button.MouseExited += () =>
+		{
+			label.AddThemeColorOverride("font_color", Color.FromHtml("#D1C4AE"));
+			iconRect.Modulate = UIStyle.ColorGoldDull;
+
+			if (rotateOnHover)
+			{
+				rotationTween?.Kill();
+				rotationTween = button.CreateTween();
+				rotationTween.TweenProperty(iconRect, "rotation", 0.0f, 0.3f)
+					.SetTrans(Tween.TransitionType.Quad)
+					.SetEase(Tween.EaseType.Out);
+			}
+
+			scaleTween?.Kill();
+			scaleTween = button.CreateTween();
+			scaleTween.TweenProperty(button, "scale", Vector2.One, 0.15f)
+				.SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
+		};
+
+		button.ButtonDown += () =>
+		{
+			label.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+			iconRect.Modulate = UIStyle.ColorCyanGlow;
+		};
+
+		button.ButtonUp += () =>
+		{
+			label.AddThemeColorOverride("font_color", button.IsHovered() ? UIStyle.ColorGold : Color.FromHtml("#D1C4AE"));
+			iconRect.Modulate = button.IsHovered() ? UIStyle.ColorGold : UIStyle.ColorGoldDull;
+		};
+
+		button.Pressed += () =>
+		{
+			PlayClickSound();
+			onClick?.Invoke();
+		};
 	}
 
 	private void PopulateRunicPillar(VBoxContainer container)
 	{
 		container.Visible = false;
+	}
+
+	private static Texture2D LoadTrimmedTexture(string resourcePath)
+	{
+		string globalPath = ProjectSettings.GlobalizePath(resourcePath);
+		if (System.IO.File.Exists(globalPath))
+		{
+			var img = Godot.Image.LoadFromFile(globalPath);
+			if (img != null)
+			{
+				var usedRect = img.GetUsedRect();
+				if (usedRect.Size.X > 0 && usedRect.Size.Y > 0 && (usedRect.Size.X < img.GetWidth() || usedRect.Size.Y < img.GetHeight()))
+				{
+					img = img.GetRegion(usedRect);
+				}
+				img.GenerateMipmaps();
+				return ImageTexture.CreateFromImage(img);
+			}
+		}
+		return GD.Load<Texture2D>(resourcePath);
 	}
 
 	private void PlayHoverSound()
@@ -401,101 +757,345 @@ private void ToggleSocialPopover()
 		}
 
 		_profilePopup = new Panel();
-		_profilePopup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-		_profilePopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		_profilePopup.AnchorLeft = 0.0f;
+		_profilePopup.AnchorRight = 1.0f;
+		_profilePopup.AnchorTop = 0.0f;
+		_profilePopup.AnchorBottom = 1.0f;
+		_profilePopup.OffsetLeft = 0.0f;
+		_profilePopup.OffsetRight = 0.0f;
+		_profilePopup.OffsetTop = 0.0f;
+		_profilePopup.OffsetBottom = 0.0f;
+		_profilePopup.GrowHorizontal = Control.GrowDirection.Both;
+		_profilePopup.GrowVertical = Control.GrowDirection.Both;
+
+		Texture2D profileBgTexture = null;
+		string profileBgPath = "res://Assets/UI/player_profile_bg.png";
+		if (ResourceLoader.Exists(profileBgPath))
+		{
+			profileBgTexture = GD.Load<Texture2D>(profileBgPath);
+		}
+
+		if (profileBgTexture != null)
+		{
+			var bgStyle = new StyleBoxTexture();
+			bgStyle.Texture = profileBgTexture;
+			_profilePopup.AddThemeStyleboxOverride("panel", bgStyle);
+			_profilePopup.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+		}
+		else
+		{
+			_profilePopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		}
+
 		AddChild(_profilePopup);
 
+		// Load and patch the background image from the user to remove the Gemini watermark
+		Texture2D cardTexture = null;
+		string targetPath = Godot.ProjectSettings.GlobalizePath("res://Assets/UI/player_profile_card_bg.png");
+		if (System.IO.File.Exists(targetPath))
+		{
+			var img = Godot.Image.LoadFromFile(targetPath);
+			if (img != null)
+			{
+				cardTexture = ImageTexture.CreateFromImage(img);
+			}
+		}
+		else
+		{
+			string sourcePath = "C:/Users/PC/.gemini/antigravity/brain/7d6de9b5-a4f7-4abf-aa25-d40e2dd99176/media__1782780156337.png";
+			if (System.IO.File.Exists(sourcePath))
+			{
+				var img = Godot.Image.LoadFromFile(sourcePath);
+				if (img != null)
+				{
+					int w = img.GetWidth();
+					int h = img.GetHeight();
 
+					// Find the bounding box of the stone frame (ignoring white margins and transparency)
+					int frameLeft = 0;
+					for (int x = 0; x < w; x++)
+					{
+						bool found = false;
+						for (int y = 0; y < h; y++)
+						{
+							Color c = img.GetPixel(x, y);
+							if (c.A > 0.1f && (c.R < 0.98f || c.G < 0.98f || c.B < 0.98f))
+							{
+								found = true;
+								break;
+							}
+						}
+						if (found)
+						{
+							frameLeft = x;
+							break;
+						}
+					}
+
+					int frameRight = w - 1;
+					for (int x = w - 1; x >= 0; x--)
+					{
+						bool found = false;
+						for (int y = 0; y < h; y++)
+						{
+							Color c = img.GetPixel(x, y);
+							if (c.A > 0.1f && (c.R < 0.98f || c.G < 0.98f || c.B < 0.98f))
+							{
+								found = true;
+								break;
+							}
+						}
+						if (found)
+						{
+							frameRight = x;
+							break;
+						}
+					}
+
+					int frameBottom = h - 1;
+					for (int y = h - 1; y >= 0; y--)
+					{
+						bool found = false;
+						for (int x = 0; x < w; x++)
+						{
+							Color c = img.GetPixel(x, y);
+							if (c.A > 0.1f && (c.R < 0.98f || c.G < 0.98f || c.B < 0.98f))
+							{
+								found = true;
+								break;
+							}
+						}
+						if (found)
+						{
+							frameBottom = y;
+							break;
+						}
+					}
+
+					int patchSize = 80;
+					for (int y = 0; y < patchSize; y++)
+					{
+						for (int x = 0; x < patchSize; x++)
+						{
+							int srcX = frameLeft + x;
+							int srcY = frameBottom - patchSize + y;
+							int dstX = frameRight - x;
+							int dstY = frameBottom - patchSize + y;
+
+							if (srcX >= 0 && srcX < w && srcY >= 0 && srcY < h &&
+								dstX >= 0 && dstX < w && dstY >= 0 && dstY < h)
+							{
+								Color pixelColor = img.GetPixel(srcX, srcY);
+								img.SetPixel(dstX, dstY, pixelColor);
+							}
+						}
+					}
+					img.SavePng(targetPath);
+					cardTexture = ImageTexture.CreateFromImage(img);
+				}
+			}
+		}
+
+		var cardStyle = new StyleBoxTexture();
+		if (cardTexture != null)
+		{
+			cardStyle.Texture = cardTexture;
+			cardStyle.TextureMarginLeft = 40;
+			cardStyle.TextureMarginRight = 40;
+			cardStyle.TextureMarginTop = 40;
+			cardStyle.TextureMarginBottom = 40;
+			
+			cardStyle.ContentMarginLeft = 24;
+			cardStyle.ContentMarginRight = 24;
+			cardStyle.ContentMarginTop = 24;
+			cardStyle.ContentMarginBottom = 24;
+		}
+		else
+		{
+			var stonePanel = UIStyle.CreateStonePanel();
+			if (stonePanel is StyleBoxTexture sbt)
+			{
+				cardStyle = sbt;
+			}
+		}
+
+		// Stone card in the center to hold the stats
 		var cardPanel = new Panel();
-		cardPanel.CustomMinimumSize = new Vector2(500, 560);
-		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
-		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel());
+		cardPanel.CustomMinimumSize = new Vector2(600, 700);
+		cardPanel.AnchorLeft = 0.5f;
+		cardPanel.AnchorRight = 0.5f;
+		cardPanel.AnchorTop = 0.5f;
+		cardPanel.AnchorBottom = 0.5f;
+		cardPanel.OffsetLeft = -300.0f;
+		cardPanel.OffsetRight = 300.0f;
+		cardPanel.OffsetTop = -350.0f;
+		cardPanel.OffsetBottom = 350.0f;
+		cardPanel.GrowHorizontal = Control.GrowDirection.Both;
+		cardPanel.GrowVertical = Control.GrowDirection.Both;
+		cardPanel.ClipContents = true;
+		cardPanel.AddThemeStyleboxOverride("panel", cardStyle);
 		_profilePopup.AddChild(cardPanel);
 
+		var marginContainer = new MarginContainer();
+		marginContainer.AnchorLeft = 0.0f;
+		marginContainer.AnchorRight = 1.0f;
+		marginContainer.AnchorTop = 0.0f;
+		marginContainer.AnchorBottom = 1.0f;
+		marginContainer.OffsetLeft = 30.0f;
+		marginContainer.OffsetRight = -30.0f;
+		marginContainer.OffsetTop = 30.0f;
+		marginContainer.OffsetBottom = -30.0f;
+		marginContainer.GrowHorizontal = Control.GrowDirection.Both;
+		marginContainer.GrowVertical = Control.GrowDirection.Both;
+		cardPanel.AddChild(marginContainer);
+
 		var vbox = new VBoxContainer();
-		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-		vbox.CustomMinimumSize = new Vector2(440, 500);
 		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
-		cardPanel.AddChild(vbox);
+		vbox.Alignment = BoxContainer.AlignmentMode.Begin;
+		marginContainer.AddChild(vbox);
 
+		// Top Spacer
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
+
+		// Title
+		var title = new Label();
+		UIStyle.ApplyTitle(title, "PLAYER PROFILE", 26);
+		
+		var titleFont = new SystemFont();
+		titleFont.FontNames = new string[] { "Cinzel Bold", "Cinzel", "Palatino Linotype", "Garamond", "Georgia", "serif" };
+		titleFont.FontWeight = 700;
+		title.AddThemeFontOverride("font", titleFont);
+		title.AddThemeColorOverride("font_color", new Color(0.85f, 0.65f, 0.4f));
+		title.AddThemeFontSizeOverride("font_size", 28);
+		
+		vbox.AddChild(title);
 
 		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
 
-
-		var title = new Label();
-		UIStyle.ApplyTitle(title, "PLAYER PROFILE", 26);
-		vbox.AddChild(title);
-
-		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
-
-
+		// Faction Emblem / Badge Frame (alliance_flag.png)
 		var factionFlag = new TextureRect();
-		factionFlag.Texture = GD.Load<Texture2D>("res://Assets/UI/alliance_flag.png");
+		Texture2D flagTexture = LoadTrimmedTexture("res://Assets/UI/alliance_flag.png");
+		if (flagTexture == null && ResourceLoader.Exists("res://Assets/UI/alliance_flag.png"))
+		{
+			flagTexture = GD.Load<Texture2D>("res://Assets/UI/alliance_flag.png");
+		}
+		if (flagTexture == null)
+		{
+			flagTexture = GD.Load<Texture2D>("res://Assets/UI/profile_frame_normal.png");
+		}
+		factionFlag.Texture = flagTexture;
 		factionFlag.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		factionFlag.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
-		factionFlag.CustomMinimumSize = new Vector2(160, 120);
+		factionFlag.CustomMinimumSize = new Vector2(210, 210);
 		factionFlag.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		factionFlag.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
 		vbox.AddChild(factionFlag);
 
-		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 18) });
 
+		var profileInfoColor = new Color(0.95f, 0.78f, 0.52f);
 
-		var statsText = new Label();
-		var currentUsername = LobbyManager.Instance.AuthenticatedUsername;
-		var currentProvider = LobbyManager.Instance.AuthProvider ?? "None";
-		statsText.Text = $"Username: {currentUsername}\nAuth Provider: {currentProvider}\nMatches Played: 142\nVictories: 89\nDefeats: 53\nWin Rate: 62.7%\nRank: Grand Marshal";
-		statsText.HorizontalAlignment = HorizontalAlignment.Center;
-		statsText.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
-		statsText.AddThemeFontSizeOverride("font_size", 16);
-		vbox.AddChild(statsText);
+		var profileFont = new SystemFont();
+		profileFont.FontNames = new string[] { "Cinzel Bold", "Cinzel", "Palatino Linotype", "Garamond", "Georgia", "serif" };
+		profileFont.FontWeight = 700;
 
-		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
-
-		var oauthHbox = new HBoxContainer();
-		oauthHbox.Alignment = BoxContainer.AlignmentMode.Center;
-		vbox.AddChild(oauthHbox);
-
-		var discordLoginBtn = new Button();
-		discordLoginBtn.AddThemeConstantOverride("icon_max_width", 0);
-		SetupButton(discordLoginBtn, "LOGIN DISCORD", async () =>
+		// Centered profile data rows matching exact distribution
+		var profileDataRows = new (string Key, string Value, Color ValueColor)[]
 		{
-			bool success = await LobbyManager.Instance.StartOAuthFlowAsync("discord");
-			if (success && GodotObject.IsInstanceValid(statsText))
-			{
-				statsText.Text = $"Username: {LobbyManager.Instance.AuthenticatedUsername}\nAuth Provider: {LobbyManager.Instance.AuthProvider}\nMatches Played: 142\nVictories: 89\nDefeats: 53\nWin Rate: 62.7%\nRank: Grand Marshal";
-			}
-		});
-		discordLoginBtn.CustomMinimumSize = new Vector2(180, 40);
-		oauthHbox.AddChild(discordLoginBtn);
+			("Username", "Horald_Topa", profileInfoColor),
+			("Faction", "Human Alliance", profileInfoColor),
+			("Matches Played", "142", profileInfoColor),
+			("Victories", "89", new Color(0.55f, 0.95f, 0.55f)),
+			("Defeats", "53", new Color(0.95f, 0.5f, 0.45f)),
+			("Win Rate", "62.7%", new Color(0.6f, 0.85f, 1.0f)),
+			("Rank", "Grand Marshal", profileInfoColor)
+		};
 
-		var spacer = new Control { CustomMinimumSize = new Vector2(10, 0) };
-		oauthHbox.AddChild(spacer);
-
-		var steamLoginBtn = new Button();
-		steamLoginBtn.AddThemeConstantOverride("icon_max_width", 0);
-		SetupButton(steamLoginBtn, "LOGIN STEAM", async () =>
+		foreach (var row in profileDataRows)
 		{
-			bool success = await LobbyManager.Instance.StartOAuthFlowAsync("steam");
-			if (success && GodotObject.IsInstanceValid(statsText))
-			{
-				statsText.Text = $"Username: {LobbyManager.Instance.AuthenticatedUsername}\nAuth Provider: {LobbyManager.Instance.AuthProvider}\nMatches Played: 142\nVictories: 89\nDefeats: 53\nWin Rate: 62.7%\nRank: Grand Marshal";
-			}
-		});
-		steamLoginBtn.CustomMinimumSize = new Vector2(180, 40);
-		oauthHbox.AddChild(steamLoginBtn);
+			var rowContainer = new HBoxContainer();
+			rowContainer.Alignment = BoxContainer.AlignmentMode.Center;
+			rowContainer.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+			rowContainer.AddThemeConstantOverride("separation", 8);
 
-		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
+			var keyLabel = new Label();
+			keyLabel.Text = TranslationServer.Translate(row.Key) + ":";
+			keyLabel.HorizontalAlignment = HorizontalAlignment.Right;
+			keyLabel.AddThemeFontOverride("font", profileFont);
+			keyLabel.AddThemeColorOverride("font_color", profileInfoColor);
+			keyLabel.AddThemeColorOverride("font_outline_color", new Color(0.02f, 0.02f, 0.04f));
+			keyLabel.AddThemeConstantOverride("outline_size", 4);
+			keyLabel.AddThemeFontSizeOverride("font_size", 23);
+			rowContainer.AddChild(keyLabel);
 
+			var valueLabel = new Label();
+			valueLabel.Text = TranslationServer.Translate(row.Value);
+			valueLabel.HorizontalAlignment = HorizontalAlignment.Left;
+			valueLabel.AddThemeFontOverride("font", profileFont);
+			valueLabel.AddThemeColorOverride("font_color", row.ValueColor);
+			valueLabel.AddThemeColorOverride("font_outline_color", new Color(0.02f, 0.02f, 0.04f));
+			valueLabel.AddThemeConstantOverride("outline_size", 5);
+			valueLabel.AddThemeFontSizeOverride("font_size", 23);
+			rowContainer.AddChild(valueLabel);
 
+			vbox.AddChild(rowContainer);
+			vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 4) });
+		}
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 8) });
+
+		// Back button
 		var backBtn = new Button();
 		SetupButton(backBtn, "BACK", () => 
 		{
 			_profilePopup.QueueFree();
 			_profilePopup = null;
 		});
-		backBtn.CustomMinimumSize = new Vector2(180, 48);
+
+		Texture2D profileBtnTex = null;
+		string profileBtnPath = "res://Assets/UI/player_profile_button.png";
+		if (ResourceLoader.Exists(profileBtnPath))
+		{
+			profileBtnTex = GD.Load<Texture2D>(profileBtnPath);
+		}
+
+		backBtn.CustomMinimumSize = new Vector2(210, 48);
 		backBtn.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		backBtn.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+
+		if (profileBtnTex != null)
+		{
+			var normalStyle = new StyleBoxTexture();
+			normalStyle.Texture = profileBtnTex;
+			normalStyle.TextureMarginLeft = 0;
+			normalStyle.TextureMarginRight = 0;
+			normalStyle.TextureMarginTop = 0;
+			normalStyle.TextureMarginBottom = 0;
+			normalStyle.ContentMarginLeft = 16;
+			normalStyle.ContentMarginRight = 16;
+			normalStyle.ContentMarginTop = 8;
+			normalStyle.ContentMarginBottom = 8;
+
+			var hoverStyle = (StyleBoxTexture)normalStyle.Duplicate();
+			hoverStyle.ModulateColor = new Color(1.15f, 1.15f, 1.2f);
+
+			var pressedStyle = (StyleBoxTexture)normalStyle.Duplicate();
+			pressedStyle.ModulateColor = new Color(0.85f, 0.85f, 0.9f);
+
+			backBtn.AddThemeStyleboxOverride("normal", normalStyle);
+			backBtn.AddThemeStyleboxOverride("hover", hoverStyle);
+			backBtn.AddThemeStyleboxOverride("pressed", pressedStyle);
+			backBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		}
+
+		backBtn.AddThemeFontOverride("font", _norseBoldFont);
+		backBtn.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		backBtn.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		backBtn.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
+		backBtn.AddThemeColorOverride("font_focus_color", UIStyle.ColorGold);
+		backBtn.AddThemeFontSizeOverride("font_size", 18);
+
 		vbox.AddChild(backBtn);
 	}
 
@@ -555,7 +1155,7 @@ private void ToggleSocialPopover()
 		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
 
 		var msg = new Label();
-		msg.Text = Tr("The Map VSCode Editor is currently installing in the background.\nPlease wait for it to complete.");
+		msg.Text = "The Map Data Editor is currently installing in the background.\nPlease wait for it to complete.";
 		msg.HorizontalAlignment = HorizontalAlignment.Center;
 		msg.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
 		msg.AddThemeFontSizeOverride("font_size", 14);

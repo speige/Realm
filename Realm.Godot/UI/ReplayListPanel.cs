@@ -14,11 +14,18 @@ public partial class ReplayListPanel : Control
 
 	public override void _Ready()
 	{
-		_listContainer = GetNode<VBoxContainer>("CenterContainer/MainFrame/VBox/ListFrame/ScrollContainer/ListContainer");
-		_backBtn = GetNode<Button>("CenterContainer/MainFrame/VBox/Header/BackButton");
-		_deleteAllBtn = GetNode<Button>("CenterContainer/MainFrame/VBox/Header/DeleteAllButton");
-		_titleLabel = GetNode<Label>("CenterContainer/MainFrame/VBox/Header/TitleLabel");
-		_noReplaysLabel = GetNode<Label>("CenterContainer/MainFrame/VBox/NoReplaysLabel");
+		_listContainer = GetNodeOrNull<VBoxContainer>("CenterContainer/MainFrame/ContentMargin/VBox/ListFrame/ScrollContainer/ListContainer")
+			?? GetNode<VBoxContainer>("CenterContainer/MainFrame/VBox/ListFrame/ScrollContainer/ListContainer");
+		_backBtn = GetNodeOrNull<Button>("BackButton")
+			?? GetNodeOrNull<Button>("CenterContainer/MainFrame/ContentMargin/VBox/Header/BackButton")
+			?? GetNode<Button>("CenterContainer/MainFrame/VBox/Header/BackButton");
+		_deleteAllBtn = GetNodeOrNull<Button>("CenterContainer/MainFrame/ContentMargin/VBox/Header/DeleteAllButton")
+			?? GetNode<Button>("CenterContainer/MainFrame/VBox/Header/DeleteAllButton");
+		_titleLabel = GetNodeOrNull<Label>("CenterContainer/MainFrame/TitleLabel")
+			?? GetNodeOrNull<Label>("CenterContainer/MainFrame/ContentMargin/VBox/Header/TitleLabel")
+			?? GetNode<Label>("CenterContainer/MainFrame/VBox/Header/TitleLabel");
+		_noReplaysLabel = GetNodeOrNull<Label>("CenterContainer/MainFrame/ContentMargin/VBox/NoReplaysLabel")
+			?? GetNode<Label>("CenterContainer/MainFrame/VBox/NoReplaysLabel");
 
 		_backBtn.Pressed += OnBackPressed;
 		_backBtn.MouseEntered += () => UIManager.Instance?.PlayHoverSound();
@@ -32,6 +39,7 @@ public partial class ReplayListPanel : Control
 		_backBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		_backBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
 		_backBtn.AddThemeConstantOverride("icon_max_width", 0);
+		_backBtn.MouseFilter = Control.MouseFilterEnum.Stop;
 
 		UIStyle.ApplyButtonText(_deleteAllBtn, "DELETE ALL", 14);
 		_deleteAllBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
@@ -42,11 +50,56 @@ public partial class ReplayListPanel : Control
 		_deleteAllBtn.AddThemeColorOverride("font_hover_color", new Color(1.0f, 0.5f, 0.5f));
 		_deleteAllBtn.AddThemeColorOverride("font_pressed_color", new Color(0.9f, 0.3f, 0.3f));
 
-		GetNode<Panel>("Background").AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
-		GetNode<PanelContainer>("CenterContainer/MainFrame").AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(false));
-		GetNode<PanelContainer>("CenterContainer/MainFrame/VBox/ListFrame").AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		var bgTexture = GetNodeOrNull<TextureRect>("BackgroundTexture");
+		if (bgTexture != null)
+		{
+			bgTexture.Texture = GD.Load<Texture2D>("res://Assets/UI/replays_bg.jpg");
+			bgTexture.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+			bgTexture.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
+		}
+		else
+		{
+			var bgPanel = GetNodeOrNull<Panel>("Background");
+			bgPanel?.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		}
+
+		var panelTexture = GetNodeOrNull<TextureRect>("CenterContainer/MainFrame/PanelTexture");
+		if (panelTexture != null)
+		{
+			panelTexture.Texture = GD.Load<Texture2D>("res://Assets/UI/replays_panel.png");
+			panelTexture.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+			panelTexture.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
+			panelTexture.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+		}
+
+		var listFrame = GetNodeOrNull<PanelContainer>("CenterContainer/MainFrame/ContentMargin/VBox/ListFrame")
+			?? GetNodeOrNull<PanelContainer>("CenterContainer/MainFrame/VBox/ListFrame");
+		listFrame?.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+
+		Resized += UpdatePanelSize;
+		UpdatePanelSize();
 
 		PopulateReplaysList();
+	}
+
+	private void UpdatePanelSize()
+	{
+		Vector2 viewportSize = GetViewportRect().Size;
+		float targetAspect = 1.66f;
+		float width = Mathf.Clamp(viewportSize.X * 0.82f, 900f, 1500f);
+		float height = width / targetAspect;
+
+		if (height > viewportSize.Y * 0.85f)
+		{
+			height = viewportSize.Y * 0.85f;
+			width = height * targetAspect;
+		}
+
+		Control mainFrame = GetNodeOrNull<Control>("CenterContainer/MainFrame");
+		if (mainFrame != null)
+		{
+			mainFrame.CustomMinimumSize = new Vector2(width, height);
+		}
 	}
 
 	private void OnBackPressed()
@@ -70,17 +123,20 @@ public partial class ReplayListPanel : Control
 		}
 
 		var files = Directory.GetFiles(replayDir, "*.rep");
+		var listFrame = GetNodeOrNull<PanelContainer>("CenterContainer/MainFrame/ContentMargin/VBox/ListFrame")
+			?? GetNodeOrNull<PanelContainer>("CenterContainer/MainFrame/VBox/ListFrame");
+
 		if (files.Length == 0)
 		{
 			_noReplaysLabel.Visible = true;
 			_deleteAllBtn.Visible = false;
-			GetNode<PanelContainer>("CenterContainer/MainFrame/VBox/ListFrame").Visible = false;
+			if (listFrame != null) listFrame.Visible = false;
 			return;
 		}
 
 		_noReplaysLabel.Visible = false;
 		_deleteAllBtn.Visible = true;
-		GetNode<PanelContainer>("CenterContainer/MainFrame/VBox/ListFrame").Visible = true;
+		if (listFrame != null) listFrame.Visible = true;
 
 		var sortedFiles = new List<string>(files);
 		sortedFiles.Sort((a, b) => File.GetLastWriteTime(b).CompareTo(File.GetLastWriteTime(a)));
@@ -111,7 +167,7 @@ public partial class ReplayListPanel : Control
 		{
 			_noReplaysLabel.Visible = true;
 			_deleteAllBtn.Visible = false;
-			GetNode<PanelContainer>("CenterContainer/MainFrame/VBox/ListFrame").Visible = false;
+			if (listFrame != null) listFrame.Visible = false;
 		}
 	}
 

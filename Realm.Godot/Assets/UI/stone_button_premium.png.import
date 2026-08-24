@@ -16,8 +16,8 @@ dest_files=["res://.godot/imported/stone_button_premium.png-7d7b22a14fc33e2f8205
 [params]
 
 compress/mode=0
-compress/high_quality=false
-compress/lossy_quality=0.7
+compress/high_quality=true
+compress/lossy_quality=1.0
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
