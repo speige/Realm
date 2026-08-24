@@ -80,7 +80,11 @@ public partial class MainMenu : Control
 		SetupPlayButton(_playButton, () => UIManager.Instance.TransitionTo(GameScreen.LobbyBrowser));
 		if (_singlePlayerButton != null)
 		{
-			SetupMenuButton(_singlePlayerButton, "SINGLE PLAYER", () => { }, "res://Assets/UI/menu_single_player_button.png");
+			SetupMenuButton(_singlePlayerButton, "SINGLE PLAYER", () =>
+			{
+				if (LobbyManager.Instance != null) LobbyManager.Instance.IsSinglePlayer = true;
+				UIManager.Instance.TransitionTo(GameScreen.LobbyCreate);
+			}, "res://Assets/UI/menu_single_player_button.png");
 			_singlePlayerButton.AddThemeConstantOverride("icon_max_width", 28);
 		}
 		SetupMenuButton(_mapDiscoveryButton, "MAP DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.MapDiscovery), "res://Assets/UI/menu_discovery_button.png");
