@@ -309,7 +309,7 @@ public static class GameSettings
 			{
 				case GraphicsQuality.Low:
 					viewport.Msaa3D = Viewport.Msaa.Disabled;
-					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Disabled;
+					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
 					viewport.UseTaa = false;
 					viewport.PositionalShadowAtlasSize = 1024;
 					break;
@@ -320,14 +320,14 @@ public static class GameSettings
 					viewport.PositionalShadowAtlasSize = 2048;
 					break;
 				case GraphicsQuality.High:
-					viewport.Msaa3D = Viewport.Msaa.Msaa2X;
+					viewport.Msaa3D = Viewport.Msaa.Disabled;
 					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
 					viewport.UseTaa = false;
-					viewport.PositionalShadowAtlasSize = 4096;
+					viewport.PositionalShadowAtlasSize = 2048;
 					break;
 				case GraphicsQuality.Ultra:
-					viewport.Msaa3D = Viewport.Msaa.Msaa4X;
-					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
+					viewport.Msaa3D = Viewport.Msaa.Disabled;
+					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Disabled;
 					viewport.UseTaa = true;
 					viewport.PositionalShadowAtlasSize = 4096;
 					break;
@@ -455,11 +455,13 @@ public static class GameSettings
 		{
 			light.ShadowEnabled = true;
 			light.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal;
+			light.DirectionalShadowMaxDistance = 200.0f;
 		}
 		else
 		{
 			light.ShadowEnabled = true;
 			light.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Parallel4Splits;
+			light.DirectionalShadowMaxDistance = 200.0f;
 		}
 	}
 

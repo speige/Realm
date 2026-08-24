@@ -214,7 +214,7 @@ public class EnvironmentService
 		if (sun != null)
 		{
 			GameSettings.ApplyDirectionalLightQuality(sun);
-			sun.DirectionalShadowMaxDistance = 250.0f;
+			sun.DirectionalShadowMaxDistance = 200.0f;
 			sun.DirectionalShadowBlendSplits = true;
 			sun.DirectionalShadowFadeStart = 0.8f;
 			sun.ShadowBias = 0.03f;

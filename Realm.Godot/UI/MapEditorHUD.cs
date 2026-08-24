@@ -2936,7 +2936,7 @@ public partial class MapEditorHUD : Control
 			LoadMapProperties();
 			ReadMetadataAndRefreshTextures();
 			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
-			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
+			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath, ensureGlbOptimized: false) ?? false;
 
 			if (success)
 			{
@@ -2974,11 +2974,16 @@ public partial class MapEditorHUD : Control
 
 		try
 		{
-			MapWorkspaceService.EnsureGlbAssetsOptimized(_tempWorkspacePath);
+			await MapWorkspaceService.EnsureGlbAssetsOptimizedCooperativeAsync(_tempWorkspacePath, async (current, total, fileName) =>
+			{
+				ShowFeedback(string.Format(TranslationServer.Translate("Optimizing 3D asset {0}/{1}: {2}..."), current, total, fileName));
+				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+			});
+
 			LoadMapProperties();
 			ReadMetadataAndRefreshTextures();
 			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
-			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
+			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath, ensureGlbOptimized: false) ?? false;
 
 			if (success)
 			{
@@ -7195,6 +7200,7 @@ public partial class MapEditorHUD : Control
 		_sldBloomIntensity = CreateSliderRow(_contentLightingTuning, "Bloom Intensity", 0f, 2f, 0.05f, _tuneBloomIntensity, val => { _tuneBloomIntensity = val; ApplyLiveLightingTuning(); });
 		_sldBloomThreshold = CreateSliderRow(_contentLightingTuning, "Bloom Threshold", 0f, 1f, 0.02f, _tuneBloomThreshold, val => { _tuneBloomThreshold = val; ApplyLiveLightingTuning(); });
 
+		UpdateLightingTuningSlidersFromPhase(0);
 		ApplyLiveLightingTuning();
 		lightingAccordion.Visible = false;
 	}
@@ -7283,7 +7289,7 @@ public partial class MapEditorHUD : Control
 			sun.LightEnergy = _tuneSunEnergy;
 			sun.LightColor = new Color(_tuneSunR, _tuneSunG, _tuneSunB);
 			sun.LightSpecular = 0.5f;
-			sun.DirectionalShadowMaxDistance = 250.0f;
+			sun.DirectionalShadowMaxDistance = 200.0f;
 			sun.DirectionalShadowBlendSplits = true;
 			sun.DirectionalShadowFadeStart = 0.8f;
 			sun.ShadowBias = 0.03f;

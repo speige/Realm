@@ -857,8 +857,8 @@ void fragment() {
 shader_type spatial;
 render_mode blend_mix;
 
-uniform sampler2DArray terrain_textures : source_color;
-uniform sampler2DArray terrain_normals_pbr : hint_default_white;
+uniform sampler2DArray terrain_textures : source_color, filter_linear_mipmap_anisotropic;
+uniform sampler2DArray terrain_normals_pbr : hint_default_white, filter_linear_mipmap_anisotropic;
 uniform float blend_softness = 0.2;
 uniform sampler2D shroud_texture : hint_default_white;
 uniform vec2 shroud_world_min = vec2(-125.0, -125.0);
@@ -891,7 +891,7 @@ uniform bool enable_fast_planar = false;
 
 uniform vec4 swatch_params[32];
 
-varying vec4 v_tex_indices;
+varying flat vec4 v_tex_indices;
 varying vec4 v_tex_weights;
 varying vec3 v_world_pos;
 varying vec3 v_world_normal;
@@ -938,17 +938,15 @@ vec2 stochastic_hash(vec2 p) {
 	return vec2(float(n & 0xFFFFu), float((n >> 16u) & 0xFFFFu)) * (1.0 / 65535.0);
 }
 
-vec4 sample_semi_grid(sampler2DArray tex_array, float layer, vec2 uv, float blend_width) {
+vec4 sample_semi_grid(sampler2DArray tex_array, float layer, vec2 uv, vec2 dx, vec2 dy, float blend_width) {
 	if (blend_width <= 0.0001) {
-		return texture(tex_array, vec3(uv, layer));
+		return textureGrad(tex_array, vec3(uv, layer), dx, dy);
 	}
 	vec2 f = fract(uv);
 	vec2 edge = smoothstep(vec2(0.0), vec2(blend_width), f) * 
 	            smoothstep(vec2(0.0), vec2(blend_width), vec2(1.0) - f);
 	float center_weight = edge.x * edge.y;
 
-	vec2 dx = dFdx(uv);
-	vec2 dy = dFdy(uv);
 	vec4 col_center = textureGrad(tex_array, vec3(uv, layer), dx, dy);
 
 	if (center_weight > 0.99) {
@@ -962,13 +960,10 @@ vec4 sample_semi_grid(sampler2DArray tex_array, float layer, vec2 uv, float blen
 	return mix(col_border, col_center, center_weight);
 }
 
-vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, float tile_mode, float stoch_tile_size, float cross_fade, bool is_vector_data) {
+vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, vec2 dx, vec2 dy, float tile_mode, float stoch_tile_size, float cross_fade, bool is_vector_data) {
 	if (!enable_stochastic || tile_mode < 0.5) {
-		return sample_semi_grid(tex_array, layer, uv, cross_fade);
+		return sample_semi_grid(tex_array, layer, uv, dx, dy, cross_fade);
 	}
-
-	vec2 dx = dFdx(uv);
-	vec2 dy = dFdy(uv);
 
 	const float F2 = 0.36602540378;
 	const float G2 = 0.2113248654;
@@ -1019,7 +1014,7 @@ vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, flo
 	return vec4(final_color, col0.a * w.x + col1.a * w.y + col2.a * w.z);
 }
 
-vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, vec2 uv_y, vec2 uv_z, vec3 weights, bool is_vector_data) {
+vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, vec2 uv_y, vec2 uv_z, vec2 dx_x, vec2 dy_x, vec2 dx_y, vec2 dy_y, vec2 dx_z, vec2 dy_z, vec3 weights, bool is_vector_data) {
 	int layer_idx = int(clamp(round(layer), 0.0, 31.0));
 	vec4 params = swatch_params[layer_idx];
 	float tile_mode = params.x;
@@ -1031,13 +1026,20 @@ vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, ve
 	vec2 scaled_uv_y = uv_y * uv_scale;
 	vec2 scaled_uv_z = uv_z * uv_scale;
 
+	vec2 scaled_dx_x = dx_x * uv_scale;
+	vec2 scaled_dy_x = dy_x * uv_scale;
+	vec2 scaled_dx_y = dx_y * uv_scale;
+	vec2 scaled_dy_y = dy_y * uv_scale;
+	vec2 scaled_dx_z = dx_z * uv_scale;
+	vec2 scaled_dy_z = dy_z * uv_scale;
+
 	if (enable_fast_planar && weights.y > 0.90) {
-		return sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+		return sample_stochastic_layer(tex_array, layer, scaled_uv_y, scaled_dx_y, scaled_dy_y, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
 	}
 
-	vec4 col_x = sample_stochastic_layer(tex_array, layer, scaled_uv_x, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
-	vec4 col_y = sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
-	vec4 col_z = sample_stochastic_layer(tex_array, layer, scaled_uv_z, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+	vec4 col_x = sample_stochastic_layer(tex_array, layer, scaled_uv_x, scaled_dx_x, scaled_dy_x, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+	vec4 col_y = sample_stochastic_layer(tex_array, layer, scaled_uv_y, scaled_dx_y, scaled_dy_y, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+	vec4 col_z = sample_stochastic_layer(tex_array, layer, scaled_uv_z, scaled_dx_z, scaled_dy_z, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
 	return col_x * weights.x + col_y * weights.y + col_z * weights.z;
 }
 
@@ -1073,6 +1075,13 @@ void fragment() {
 	vec2 uv_y = pos_warped.xz * texture_scale;
 	vec2 uv_z = pos_warped.xy * texture_scale;
 
+	vec2 dx_x = dFdx(uv_x);
+	vec2 dy_x = dFdy(uv_x);
+	vec2 dx_y = dFdx(uv_y);
+	vec2 dy_y = dFdy(uv_y);
+	vec2 dx_z = dFdx(uv_z);
+	vec2 dy_z = dFdy(uv_z);
+
 	vec4 raw_weights = v_tex_weights;
 	raw_weights.x = raw_weights.x < 0.001 ? 0.0 : raw_weights.x;
 	raw_weights.y = raw_weights.y < 0.001 ? 0.0 : raw_weights.y;
@@ -1085,31 +1094,26 @@ void fragment() {
 	vec3 splat_color = vec3(0.0);
 	vec4 blend_layer_weights = norm_weights;
 
-	if (enable_fast_planar && norm_weights.x > 0.98) {
-		vec4 c0 = sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights, false);
-		splat_color = c0.rgb;
-	} else {
-		vec4 c0 = norm_weights.x > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights, false) : vec4(0.0);
-		vec4 c1 = norm_weights.y > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights, false) : vec4(0.0);
-		vec4 c2 = norm_weights.z > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights, false) : vec4(0.0);
-		vec4 c3 = norm_weights.w > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights, false) : vec4(0.0);
+	vec4 c0 = norm_weights.x > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+	vec4 c1 = norm_weights.y > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+	vec4 c2 = norm_weights.z > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+	vec4 c3 = norm_weights.w > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
 
-		if (enable_height_blend) {
-			float height_influence = 0.15;
-			vec4 height_mod = vec4(c0.a, c1.a, c2.a, c3.a) * height_influence;
-			vec4 blended_weights = norm_weights * (vec4(1.0) + height_mod);
-			float final_sum = blended_weights.x + blended_weights.y + blended_weights.z + blended_weights.w;
-			blend_layer_weights = final_sum > 0.0001 ? blended_weights / final_sum : vec4(1.0, 0.0, 0.0, 0.0);
-			splat_color = (c0.rgb * blend_layer_weights.x +
-			               c1.rgb * blend_layer_weights.y +
-			               c2.rgb * blend_layer_weights.z +
-			               c3.rgb * blend_layer_weights.w);
-		} else {
-			splat_color = (c0.rgb * norm_weights.x +
-			               c1.rgb * norm_weights.y +
-			               c2.rgb * norm_weights.z +
-			               c3.rgb * norm_weights.w);
-		}
+	if (enable_height_blend) {
+		float height_influence = 0.15;
+		vec4 height_mod = vec4(c0.a, c1.a, c2.a, c3.a) * height_influence;
+		vec4 blended_weights = norm_weights * (vec4(1.0) + height_mod);
+		float final_sum = blended_weights.x + blended_weights.y + blended_weights.z + blended_weights.w;
+		blend_layer_weights = final_sum > 0.0001 ? blended_weights / final_sum : vec4(1.0, 0.0, 0.0, 0.0);
+		splat_color = (c0.rgb * blend_layer_weights.x +
+		               c1.rgb * blend_layer_weights.y +
+		               c2.rgb * blend_layer_weights.z +
+		               c3.rgb * blend_layer_weights.w);
+	} else {
+		splat_color = (c0.rgb * norm_weights.x +
+		               c1.rgb * norm_weights.y +
+		               c2.rgb * norm_weights.z +
+		               c3.rgb * norm_weights.w);
 	}
 
 	vec3 terrain_color = splat_color;
@@ -1200,10 +1204,10 @@ void fragment() {
 		float w2 = blend_layer_weights.z;
 		float w3 = blend_layer_weights.w;
 
-		vec4 n0 = w0 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 n1 = w1 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 n2 = w2 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 n3 = w3 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 n0 = w0 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 n1 = w1 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 n2 = w2 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 n3 = w3 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
 		
 		vec2 n0_xy = n0.rg * 2.0 - 1.0;
 		vec3 n0_vec = vec3(n0_xy, sqrt(max(0.0, 1.0 - dot(n0_xy, n0_xy))));
@@ -1316,7 +1320,7 @@ void fragment() {
 				_material.SetShaderParameter("enable_normal_mapping", true);
 				_material.SetShaderParameter("enable_macro_noise", true);
 				_material.SetShaderParameter("enable_height_blend", true);
-				_material.SetShaderParameter("enable_fast_planar", false);
+				_material.SetShaderParameter("enable_fast_planar", true);
 				break;
 			case 3:
 			default:
@@ -1324,7 +1328,7 @@ void fragment() {
 				_material.SetShaderParameter("enable_normal_mapping", true);
 				_material.SetShaderParameter("enable_macro_noise", true);
 				_material.SetShaderParameter("enable_height_blend", true);
-				_material.SetShaderParameter("enable_fast_planar", false);
+				_material.SetShaderParameter("enable_fast_planar", true);
 				break;
 		}
 	}
@@ -1650,15 +1654,9 @@ void fragment() {
 				if (sub0.GetFormat() != Godot.Image.Format.Rgba8) sub0.Convert(Godot.Image.Format.Rgba8);
 				if (sub1.GetFormat() != Godot.Image.Format.Rgba8) sub1.Convert(Godot.Image.Format.Rgba8);
 
-				var p0 = sub0.GetPixel(0, 0);
-				if (p0.A >= 1.0f) sub0.SetPixel(0, 0, new Color(p0.R, p0.G, p0.B, 0.99f));
-				var p1 = sub1.GetPixel(0, 0);
-				if (p1.A >= 1.0f) sub1.SetPixel(0, 0, new Color(p1.R, p1.G, p1.B, 0.99f));
+				sub0.GenerateMipmaps();
+				sub1.GenerateMipmaps();
 
-				sub0.GenerateMipmaps(false);
-				sub1.GenerateMipmaps(true);
-				sub0.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
-				sub1.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
 				albedoHeightImages.Add(sub0);
 				normalRoughnessImages.Add(sub1);
 			}
@@ -1667,13 +1665,11 @@ void fragment() {
 		{
 			var fb0 = Godot.Image.CreateEmpty(TargetTextureResolution, TargetTextureResolution, false, Godot.Image.Format.Rgba8);
 			fb0.Fill(new Color(0.2f, 0.5f, 0.2f, 0.99f));
-			fb0.GenerateMipmaps(false);
-			fb0.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
+			fb0.GenerateMipmaps();
 
 			var fb1 = Godot.Image.CreateEmpty(TargetTextureResolution, TargetTextureResolution, false, Godot.Image.Format.Rgba8);
 			fb1.Fill(new Color(0.5f, 0.5f, 1.0f, 0.8f));
-			fb1.GenerateMipmaps(true);
-			fb1.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
+			fb1.GenerateMipmaps();
 
 			albedoHeightImages.Add(fb0);
 			normalRoughnessImages.Add(fb1);
@@ -2259,7 +2255,7 @@ void fragment() {
 
 	public static bool IntersectsFrustum(Godot.Collections.Array<Plane> frustumPlanes, Aabb aabb)
 	{
-		aabb = aabb.Grow(1.0f);
+		aabb = aabb.Grow(8.0f);
 		Vector3 min = aabb.Position;
 		Vector3 max = aabb.End;
 

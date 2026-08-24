@@ -326,8 +326,7 @@ public partial class Prop3D : StaticBody3D
 
 	private void CreatePropVisual()
 	{
-		bool isEditor = GameHost.Instance != null && GameHost.Instance.IsMapEditorMode;
-		if (IsPreview || isEditor)
+		if (IsPreview)
 		{
 			var visual = GetNodeOrNull<Node3D>("VisualModel");
 			if (visual == null)
