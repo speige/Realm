@@ -9,3 +9,4 @@ vscode_extensions_dist
 GeneratedFiles/
 TestResults/
 *.trx
+Realm.Lobby/.data
