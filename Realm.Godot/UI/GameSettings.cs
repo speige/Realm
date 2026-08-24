@@ -1,4 +1,5 @@
 using Godot;
+using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -91,11 +92,15 @@ public static class GameSettings
 		Converters = { new JsonStringEnumConverter() }
 	};
 
+	public static readonly Vector2I DefaultFallbackResolution = new Vector2I(1920, 1080);
+
 	public static int ResolutionIdx { get; set; } = 0;
+	public static int WindowedResolutionWidth { get; set; } = 0;
+	public static int WindowedResolutionHeight { get; set; } = 0;
 	public static List<Vector2I> Resolutions { get; private set; }
 	public static GraphicsQuality QualityIdx { get; set; } = GraphicsQuality.High;
 	public static DownsamplingMode DownsamplingIdx { get; set; } = DownsamplingMode.Off;
-	public static WindowMode WindowModeIdx { get; set; } = WindowMode.Windowed;
+	public static WindowMode WindowModeIdx { get; set; } = WindowMode.Fullscreen;
 	public static bool Vsync { get; set; } = true;
 	public static bool VsyncIdx
 	{
@@ -119,13 +124,32 @@ public static class GameSettings
 	public static bool DisableShadows { get; set; } = false;
 	public static bool DisableDayNightLighting { get; set; } = false;
 
+	public static int GetSafeScreenIndex()
+	{
+		int screen = DisplayServer.WindowGetCurrentScreen();
+		if (screen < 0 || screen >= DisplayServer.GetScreenCount())
+		{
+			return 0;
+		}
+		return screen;
+	}
+
 	public static void ResetToDefaults()
 	{
-		int defaultIdx = Resolutions != null ? Resolutions.FindIndex(r => r == new Vector2I(1280, 720)) : 0;
-		ResolutionIdx = defaultIdx >= 0 ? defaultIdx : 0;
+		ResolutionIdx = 0;
+		if (Resolutions != null && Resolutions.Count > 0)
+		{
+			WindowedResolutionWidth = Resolutions[0].X;
+			WindowedResolutionHeight = Resolutions[0].Y;
+		}
+		else
+		{
+			WindowedResolutionWidth = DefaultFallbackResolution.X;
+			WindowedResolutionHeight = DefaultFallbackResolution.Y;
+		}
 		QualityIdx = AutoDetectQuality();
 		DownsamplingIdx = GetDownsamplingIdxForQuality(QualityIdx);
-		WindowModeIdx = WindowMode.Windowed;
+		WindowModeIdx = WindowMode.Fullscreen;
 		Vsync = true;
 		DisableShadows = false;
 		DisableDayNightLighting = false;
@@ -157,7 +181,8 @@ public static class GameSettings
 
 	public static void InitializeResolutions()
 	{
-		Vector2I screenSize = DisplayServer.ScreenGetSize(DisplayServer.WindowGetCurrentScreen());
+		int currentScreen = GetSafeScreenIndex();
+		Vector2I screenSize = DisplayServer.ScreenGetSize(currentScreen);
 		var standardRes = new List<Vector2I>
 		{
 			new Vector2I(3840, 2160),
@@ -189,11 +214,15 @@ public static class GameSettings
 			available.Add(screenSize);
 		}
 
-		available.Sort((a, b) => b.X == a.X ? b.Y.CompareTo(a.Y) : b.X.CompareTo(a.X));
-		Resolutions = available;
+		available.Sort((a, b) =>
+		{
+			long areaA = (long)a.X * a.Y;
+			long areaB = (long)b.X * b.Y;
+			if (areaA != areaB) return areaB.CompareTo(areaA);
+			return b.X.CompareTo(a.X);
+		});
 
-		int defaultIdx = Resolutions.FindIndex(r => r == new Vector2I(1280, 720));
-		ResolutionIdx = defaultIdx >= 0 ? defaultIdx : 0;
+		Resolutions = available;
 	}
 
 	static GameSettings()
@@ -211,6 +240,11 @@ public static class GameSettings
 		{
 			QualityIdx = AutoDetectQuality();
 			DownsamplingIdx = GetDownsamplingIdxForQuality(QualityIdx);
+			if (Resolutions != null && Resolutions.Count > 0)
+			{
+				WindowedResolutionWidth = Resolutions[0].X;
+				WindowedResolutionHeight = Resolutions[0].Y;
+			}
 			Save();
 			return;
 		}
@@ -225,6 +259,8 @@ public static class GameSettings
 			if (data != null)
 			{
 				ResolutionIdx = data.ResolutionIdx;
+				WindowedResolutionWidth = data.WindowedResolutionWidth;
+				WindowedResolutionHeight = data.WindowedResolutionHeight;
 				QualityIdx = data.QualityIdx;
 				DownsamplingIdx = data.DownsamplingIdx;
 				WindowModeIdx = data.WindowModeIdx;
@@ -244,16 +280,27 @@ public static class GameSettings
 				DisableDayNightLighting = data.DisableDayNightLighting;
 				ShowHealthBars = data.ShowHealthBars;
 
-				int defaultIdx = Resolutions != null ? Resolutions.FindIndex(r => r == new Vector2I(1280, 720)) : 0;
-				if (Resolutions != null)
+				if (Resolutions != null && Resolutions.Count > 0)
 				{
-					if (data.ResolutionIdx <= 0 && WindowModeIdx == WindowMode.Windowed && defaultIdx >= 0)
+					if (WindowedResolutionWidth > 0 && WindowedResolutionHeight > 0)
 					{
-						ResolutionIdx = defaultIdx;
+						int matchIndex = Resolutions.FindIndex(r => r.X == WindowedResolutionWidth && r.Y == WindowedResolutionHeight);
+						if (matchIndex >= 0)
+						{
+							ResolutionIdx = matchIndex;
+						}
+						else
+						{
+							ResolutionIdx = Math.Clamp(ResolutionIdx, 0, Resolutions.Count - 1);
+							WindowedResolutionWidth = Resolutions[ResolutionIdx].X;
+							WindowedResolutionHeight = Resolutions[ResolutionIdx].Y;
+						}
 					}
-					else if (ResolutionIdx < 0 || ResolutionIdx >= Resolutions.Count)
+					else
 					{
-						ResolutionIdx = defaultIdx >= 0 ? defaultIdx : 0;
+						ResolutionIdx = Math.Clamp(ResolutionIdx, 0, Resolutions.Count - 1);
+						WindowedResolutionWidth = Resolutions[ResolutionIdx].X;
+						WindowedResolutionHeight = Resolutions[ResolutionIdx].Y;
 					}
 				}
 			}
@@ -270,6 +317,8 @@ public static class GameSettings
 		var data = new SettingsData
 		{
 			ResolutionIdx = ResolutionIdx,
+			WindowedResolutionWidth = WindowedResolutionWidth,
+			WindowedResolutionHeight = WindowedResolutionHeight,
 			QualityIdx = QualityIdx,
 			DownsamplingIdx = DownsamplingIdx,
 			WindowModeIdx = WindowModeIdx,
@@ -480,9 +529,11 @@ public static class GameSettings
 	private class SettingsData
 	{
 		public int ResolutionIdx { get; set; } = 0;
+		public int WindowedResolutionWidth { get; set; } = 0;
+		public int WindowedResolutionHeight { get; set; } = 0;
 		public GraphicsQuality QualityIdx { get; set; } = GraphicsQuality.High;
 		public DownsamplingMode DownsamplingIdx { get; set; } = DownsamplingMode.Off;
-		public WindowMode WindowModeIdx { get; set; } = WindowMode.Windowed;
+		public WindowMode WindowModeIdx { get; set; } = WindowMode.Fullscreen;
 		public bool Vsync { get; set; } = true;
 		public float MasterVolume { get; set; } = 80f;
 		public float MusicVolume { get; set; } = 70f;
