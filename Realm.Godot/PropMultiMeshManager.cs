@@ -450,6 +450,7 @@ public partial class PropMultiMeshManager : Node3D
 			float brightness = GameHost.Instance.GetModelBrightness(group.AssetKey);
 			Color tint = GameHost.Instance.GetModelColorTint(group.AssetKey);
 			GameHost.ModelNormalMode normalMode = GameHost.Instance.GetModelNormalMode(group.AssetKey);
+			bool ignorePlayerColor = GameHost.Instance.GetModelIgnorePlayerColor(group.AssetKey);
 			bool normalizeLuminance = GameHost.Instance.GetModelNormalizeLuminance(group.AssetKey);
 
 			foreach (var chunkGroup in group.ChunkGroups.Values)
@@ -505,6 +506,7 @@ public partial class PropMultiMeshManager : Node3D
 						mmNode.MaterialOverride = shaderMat;
 						mmNode.SetInstanceShaderParameter(new StringName("model_brightness"), brightness);
 						mmNode.SetInstanceShaderParameter(new StringName("model_color_tint"), tint);
+						mmNode.SetInstanceShaderParameter(new StringName("ignore_player_color"), ignorePlayerColor ? 1.0f : 0.0f);
 						mmNode.SetInstanceShaderParameter(new StringName("normal_mode"), (float)normalMode);
 					}
 				}

@@ -691,6 +691,7 @@ public partial class GameHost : Node3D, IGameAPI
 			Brightness = 0.5f;
 			NormalMode = ModelNormalMode.Flat;
 			NormalizeLuminance = true;
+			IgnorePlayerColor = true;
 		}
 
 		public string UnitId { get; set; }
@@ -709,7 +710,7 @@ public partial class GameHost : Node3D, IGameAPI
 			set => NormalMode = value ? ModelNormalMode.Smooth : ModelNormalMode.Flat;
 		}
 		public bool NormalizeLuminance { get; set; } = true;
-		public bool IgnorePlayerColor { get; set; }
+		public bool IgnorePlayerColor { get; set; } = true;
 		public int PathingType { get; set; }
 	}
 
@@ -720,6 +721,7 @@ public partial class GameHost : Node3D, IGameAPI
 			Brightness = 0.5f;
 			NormalMode = ModelNormalMode.Flat;
 			NormalizeLuminance = true;
+			IgnorePlayerColor = true;
 		}
 
 		public string UnitId { get; set; }
@@ -742,7 +744,7 @@ public partial class GameHost : Node3D, IGameAPI
 			set => NormalMode = value ? ModelNormalMode.Smooth : ModelNormalMode.Flat;
 		}
 		public bool NormalizeLuminance { get; set; } = true;
-		public bool IgnorePlayerColor { get; set; }
+		public bool IgnorePlayerColor { get; set; } = true;
 		public int PathingType { get; set; }
 	}
 

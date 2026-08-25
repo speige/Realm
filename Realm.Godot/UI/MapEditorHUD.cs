@@ -6431,12 +6431,21 @@ public partial class MapEditorHUD : Control
 				if (category == "glb")
 				{
 					string unitId = System.IO.Path.GetFileNameWithoutExtension(fileName);
-					if (!root.ContainsKey("CustomUnits") || root["CustomUnits"] is not JsonArray)
+					string targetArrayKey = subCategory.ToLowerInvariant() switch
 					{
-						root["CustomUnits"] = new JsonArray();
+						"units" => "CustomUnits",
+						"buildings" => "CustomBuildings",
+						"resources" => "CustomResources",
+						"props" => "CustomProps",
+						_ => "CustomUnits"
+					};
+
+					if (!root.ContainsKey(targetArrayKey) || root[targetArrayKey] is not JsonArray)
+					{
+						root[targetArrayKey] = new JsonArray();
 					}
-					JsonArray customUnitsArr = (JsonArray)root["CustomUnits"];
-					bool exists = customUnitsArr.Any(node => node is JsonObject obj && obj.ContainsKey("UnitId") && obj["UnitId"]?.ToString() == unitId);
+					JsonArray targetArr = (JsonArray)root[targetArrayKey];
+					bool exists = targetArr.Any(node => node is JsonObject obj && obj.ContainsKey("UnitId") && obj["UnitId"]?.ToString() == unitId);
 					if (!exists)
 					{
 						int defaultPathing = subCategory.ToLowerInvariant() switch
@@ -6448,15 +6457,19 @@ public partial class MapEditorHUD : Control
 							_ => (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 						};
 
+						bool isPropOrRes = subCategory.ToLowerInvariant() == "props" || subCategory.ToLowerInvariant() == "resources";
 						var newUnitObj = new JsonObject
 						{
 							["UnitId"] = unitId,
 							["Name"] = unitId,
 							["Description"] = "",
 							["PathingType"] = defaultPathing,
-							["ModelPath"] = fileName
+							["ModelPath"] = fileName,
+							["NormalMode"] = "Flat",
+							["NormalizeLuminance"] = true,
+							["IgnorePlayerColor"] = isPropOrRes
 						};
-						customUnitsArr.Add(newUnitObj);
+						targetArr.Add(newUnitObj);
 					}
 				}
 			}

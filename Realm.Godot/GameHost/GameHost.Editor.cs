@@ -401,6 +401,50 @@ public partial class GameHost
 		EditorHasUnsavedChanges = true;
 	}
 
+	public bool IsPropOrResourceKey(string key)
+	{
+		if (string.IsNullOrEmpty(key)) return false;
+		string norm = NormalizeModelAssetKey(key);
+
+		if (PropRegistry.ContainsKey(key) || PropRegistry.ContainsKey(norm)) return true;
+		if (ResourceRegistry.ContainsKey(key) || ResourceRegistry.ContainsKey(norm)) return true;
+
+		foreach (var propMeta in PropRegistry.Values)
+		{
+			if (!string.IsNullOrEmpty(propMeta.ModelPath) && NormalizeModelAssetKey(propMeta.ModelPath) == norm)
+				return true;
+			if (!string.IsNullOrEmpty(propMeta.UnitId) && NormalizeModelAssetKey(propMeta.UnitId) == norm)
+				return true;
+		}
+
+		foreach (var resMeta in ResourceRegistry.Values)
+		{
+			if (!string.IsNullOrEmpty(resMeta.ModelPath) && NormalizeModelAssetKey(resMeta.ModelPath) == norm)
+				return true;
+			if (!string.IsNullOrEmpty(resMeta.UnitId) && NormalizeModelAssetKey(resMeta.UnitId) == norm)
+				return true;
+		}
+
+		if (key.Contains("/props/", StringComparison.OrdinalIgnoreCase) || key.Contains("\\props\\", StringComparison.OrdinalIgnoreCase) || key.StartsWith("props/", StringComparison.OrdinalIgnoreCase)) return true;
+		if (key.Contains("/resources/", StringComparison.OrdinalIgnoreCase) || key.Contains("\\resources\\", StringComparison.OrdinalIgnoreCase) || key.StartsWith("resources/", StringComparison.OrdinalIgnoreCase)) return true;
+
+		string resolved = ModelCache.ResolveModelPath(key);
+		if (!string.IsNullOrEmpty(resolved))
+		{
+			if (resolved.Contains("/props/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\props\\", StringComparison.OrdinalIgnoreCase)) return true;
+			if (resolved.Contains("/resources/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\resources\\", StringComparison.OrdinalIgnoreCase)) return true;
+		}
+
+		string resolvedNorm = ModelCache.ResolveModelPath(norm);
+		if (!string.IsNullOrEmpty(resolvedNorm))
+		{
+			if (resolvedNorm.Contains("/props/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\props\\", StringComparison.OrdinalIgnoreCase)) return true;
+			if (resolvedNorm.Contains("/resources/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\resources\\", StringComparison.OrdinalIgnoreCase)) return true;
+		}
+
+		return false;
+	}
+
 	public bool GetModelIgnorePlayerColor(object objOrId)
 	{
 		if (objOrId == null) return false;
@@ -416,9 +460,20 @@ public partial class GameHost
 
 		if (!string.IsNullOrEmpty(primaryKey))
 		{
-			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.IgnorePlayerColor) return true;
-			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.IgnorePlayerColor) return true;
-			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.IgnorePlayerColor) return true;
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta)) return meta.IgnorePlayerColor;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta)) return resMeta.IgnorePlayerColor;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.IgnorePlayerColor;
+		}
+
+		if (!string.IsNullOrEmpty(normAsset))
+		{
+			if (ResourceRegistry.TryGetValue(normAsset, out var resMeta2)) return resMeta2.IgnorePlayerColor;
+			if (PropRegistry.TryGetValue(normAsset, out var propMeta2)) return propMeta2.IgnorePlayerColor;
+		}
+
+		if (objOrId is Prop3D || IsPropOrResourceKey(primaryKey) || IsPropOrResourceKey(normPrimary) || IsPropOrResourceKey(assetKey) || IsPropOrResourceKey(normAsset))
+		{
+			return true;
 		}
 
 		string lookupKey = !string.IsNullOrEmpty(normPrimary) ? normPrimary : normAsset;
@@ -462,7 +517,7 @@ public partial class GameHost
 		{
 			if (GodotObject.IsInstanceValid(prop) && MatchesEntityOrAssetKey(prop, normAssetKey))
 			{
-				ApplyMaterialOverridesToNode(prop, brightness, tint, normalMode, normalizeLuminance);
+				ApplyMaterialOverridesToNode(prop, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor);
 			}
 		}
 
@@ -470,19 +525,12 @@ public partial class GameHost
 		{
 			if (GodotObject.IsInstanceValid(unit) && MatchesEntityOrAssetKey(unit, normAssetKey))
 			{
-				ApplyMaterialOverridesToNode(unit, brightness, tint, normalMode, normalizeLuminance);
-				Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(unit, ignorePlayerColor);
+				ApplyMaterialOverridesToNode(unit, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor);
 				if (!ignorePlayerColor)
 				{
 					unit.UpdatePlayerColorVisual();
 				}
 			}
-		}
-
-		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode) && MatchesEntityOrAssetKey(_editorPreviewNode, normAssetKey))
-		{
-			ApplyMaterialOverridesToNode(_editorPreviewNode, brightness, tint, normalMode, normalizeLuminance);
-			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_editorPreviewNode, ignorePlayerColor);
 		}
 
 		PropMultiMeshManager.Instance?.UpdateMaterialOverrides(normAssetKey);
@@ -514,13 +562,18 @@ public partial class GameHost
 				}
 			}
 
+			if (unit.IsPreview) return;
+
 			float brightness = GetModelBrightness(unit);
 			Color tint = GetModelColorTint(unit);
 			ModelNormalMode normalMode = GetModelNormalMode(unit);
 			bool ignorePlayerColor = GetModelIgnorePlayerColor(unit);
 			bool normalizeLuminance = GetModelNormalizeLuminance(unit);
-			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(unit, ignorePlayerColor);
-			ApplyMaterialOverridesToNode(unit, brightness, tint, normalMode, normalizeLuminance);
+			ApplyMaterialOverridesToNode(unit, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor);
+			if (!ignorePlayerColor)
+			{
+				unit.UpdatePlayerColorVisual();
+			}
 		}
 		else if (objOrNode is Prop3D prop && GodotObject.IsInstanceValid(prop))
 		{
@@ -543,11 +596,14 @@ public partial class GameHost
 				}
 			}
 
+			if (prop.IsPreview) return;
+
 			float brightness = GetModelBrightness(prop);
 			Color tint = GetModelColorTint(prop);
 			ModelNormalMode normalMode = GetModelNormalMode(prop);
+			bool ignorePlayerColor = GetModelIgnorePlayerColor(prop);
 			bool normalizeLuminance = GetModelNormalizeLuminance(prop);
-			ApplyMaterialOverridesToNode(prop, brightness, tint, normalMode, normalizeLuminance);
+			ApplyMaterialOverridesToNode(prop, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor);
 		}
 	}
 
@@ -563,7 +619,8 @@ public partial class GameHost
 		float brightness = 0.5f,
 		Color? colorTint = null,
 		ModelNormalMode normalMode = ModelNormalMode.Flat,
-		bool normalizeLuminance = true)
+		bool normalizeLuminance = true,
+		bool? ignorePlayerColor = null)
 	{
 		if (node == null || !GodotObject.IsInstanceValid(node)) return;
 
@@ -580,6 +637,10 @@ public partial class GameHost
 
 		Realm.Godot.Utils.PlayerColorShaderManager.RefreshShaderMaterialsForNode(node, normalizeLuminance);
 		Realm.Godot.Utils.PlayerColorShaderManager.SetNormalMode(node, (float)normalMode);
+		if (ignorePlayerColor.HasValue)
+		{
+			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(node, ignorePlayerColor.Value);
+		}
 
 		var meshNodes = FindMeshInstancesRecursive(node);
 		foreach (var meshInst in meshNodes)
@@ -640,6 +701,10 @@ public partial class GameHost
 			}
 
 			meshInst.SetInstanceShaderParameter(new StringName("normal_mode"), (float)normalMode);
+			if (ignorePlayerColor.HasValue)
+			{
+				meshInst.SetInstanceShaderParameter(new StringName("ignore_player_color"), ignorePlayerColor.Value ? 1.0f : 0.0f);
+			}
 
 			if (!isDefaultColor)
 			{
@@ -933,6 +998,10 @@ public partial class GameHost
 							{
 								ModelIgnorePlayerColor[normKey] = ipcVal2;
 							}
+							else if (arrKey == "CustomProps" || arrKey == "CustomResources")
+							{
+								ModelIgnorePlayerColor[normKey] = true;
+							}
 						}
 					}
 				}
@@ -990,6 +1059,10 @@ public partial class GameHost
 								else if (itemObj.ContainsKey("IgnorePlayerColor") && bool.TryParse(itemObj["IgnorePlayerColor"]?.ToString(), out bool ipcVal2))
 								{
 									ModelIgnorePlayerColor[normKey] = ipcVal2;
+								}
+								else if (catKvp.Key == "props" || catKvp.Key == "resources" || (itemObj.ContainsKey("default_asset_type") && (itemObj["default_asset_type"]?.ToString() == "props" || itemObj["default_asset_type"]?.ToString() == "resources")))
+								{
+									ModelIgnorePlayerColor[normKey] = true;
 								}
 								else
 								{
