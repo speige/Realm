@@ -6082,7 +6082,10 @@ public partial class MapEditorHUD : Control
 			SetWasmConsoleStatus("Launching test mode...", UIStyle.ColorCyanGlow);
 			AppendWasmConsoleLog("=== LAUNCHING GAME ENGINE ===");
 
-			UIManager.Instance?.ApplyWindowSettings(GameSettings.WindowModeIdx, GameSettings.ResolutionIdx);
+			if (UIManager.Instance != null)
+			{
+				await UIManager.Instance.ApplyWindowSettings(GameSettings.WindowModeIdx, GameSettings.ResolutionIdx);
+			}
 			GameHost.Instance.ExitMapEditorMode();
 			IsTestMode = true;
 
