@@ -7180,10 +7180,12 @@ public partial class MapEditorHUD : Control
 	private HSlider _sldSsaoRadius, _sldSsaoIntensity;
 	private HSlider _sldExposure, _sldContrast, _sldSaturation, _sldBloomIntensity, _sldBloomThreshold;
 	private HSlider _sldCliffJitterStrength, _sldCliffJitterScale, _sldCliffRimNoiseStrength, _sldCliffRimNoiseScale;
+	private HSlider _sldHeightBlendSoftness;
 	private float _tuneCliffJitterStrength = 1.0f;
 	private float _tuneCliffJitterScale = 0.20f;
 	private float _tuneCliffRimNoiseStrength = 0.30f;
 	private float _tuneCliffRimNoiseScale = 0.08f;
+	private float _tuneHeightBlendSoftness = 0.04f;
 
 	private void SetupLightingTuningUI()
 	{
@@ -7263,6 +7265,9 @@ public partial class MapEditorHUD : Control
 		_sldCliffRimNoiseStrength = CreateSliderRow(_contentLightingTuning, "Cliff Rim Str", 0f, 1f, 0.02f, _tuneCliffRimNoiseStrength, val => { _tuneCliffRimNoiseStrength = val; ApplyLiveLightingTuning(); });
 		_sldCliffRimNoiseScale = CreateSliderRow(_contentLightingTuning, "Cliff Rim Scl", 0.01f, 0.5f, 0.005f, _tuneCliffRimNoiseScale, val => { _tuneCliffRimNoiseScale = val; ApplyLiveLightingTuning(); }, "0.00#");
 
+		CreateSectionHeader(_contentLightingTuning, "--- TERRAIN TEXTURE BLENDING ---");
+		_sldHeightBlendSoftness = CreateSliderRow(_contentLightingTuning, "Blend Softness", 0.001f, 0.20f, 0.002f, _tuneHeightBlendSoftness, val => { _tuneHeightBlendSoftness = val; ApplyLiveLightingTuning(); }, "0.00#");
+
 		UpdateLightingTuningSlidersFromPhase(0);
 		ApplyLiveLightingTuning();
 		lightingAccordion.Visible = false;
@@ -7332,6 +7337,7 @@ public partial class MapEditorHUD : Control
 		if (_sldCliffJitterScale != null) _sldCliffJitterScale.Value = _tuneCliffJitterScale;
 		if (_sldCliffRimNoiseStrength != null) _sldCliffRimNoiseStrength.Value = _tuneCliffRimNoiseStrength;
 		if (_sldCliffRimNoiseScale != null) _sldCliffRimNoiseScale.Value = _tuneCliffRimNoiseScale;
+		if (_sldHeightBlendSoftness != null) _sldHeightBlendSoftness.Value = _tuneHeightBlendSoftness;
 
 		ApplyLiveLightingTuning();
 	}
@@ -7349,11 +7355,13 @@ public partial class MapEditorHUD : Control
 			EditableTerrain.Instance.CliffJitterScale = _tuneCliffJitterScale;
 			EditableTerrain.Instance.CliffRimNoiseStrength = _tuneCliffRimNoiseStrength;
 			EditableTerrain.Instance.CliffRimNoiseScale = _tuneCliffRimNoiseScale;
+			EditableTerrain.Instance.BlendSoftness = _tuneHeightBlendSoftness;
 
 			EditableTerrain.Instance.Material.SetShaderParameter("cliff_jitter_strength", _tuneCliffJitterStrength);
 			EditableTerrain.Instance.Material.SetShaderParameter("cliff_jitter_scale", _tuneCliffJitterScale);
 			EditableTerrain.Instance.Material.SetShaderParameter("cliff_rim_noise_strength", _tuneCliffRimNoiseStrength);
 			EditableTerrain.Instance.Material.SetShaderParameter("cliff_rim_noise_scale", _tuneCliffRimNoiseScale);
+			EditableTerrain.Instance.Material.SetShaderParameter("blend_softness", _tuneHeightBlendSoftness);
 		}
 
 		if (GameHost.Instance.EnvironmentService != null)

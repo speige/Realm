@@ -524,6 +524,7 @@ public partial class EditableTerrain : StaticBody3D
 	public float CliffJitterScale { get; set; } = 0.20f;
 	public float CliffRimNoiseStrength { get; set; } = 0.30f;
 	public float CliffRimNoiseScale { get; set; } = 0.08f;
+	public float BlendSoftness { get; set; } = 0.04f;
 
 	public int[,] PathingCodes
 	{
@@ -1012,7 +1013,7 @@ render_mode blend_mix;
 
 uniform sampler2DArray terrain_textures : source_color, filter_linear_mipmap_anisotropic;
 uniform sampler2DArray terrain_normals_pbr : hint_default_white, filter_linear_mipmap_anisotropic;
-uniform float blend_softness = 0.2;
+uniform float blend_softness = 0.04;
 uniform float cliff_texture_index = 2.0;
 uniform float cliff_blend_smoothness = 0.18;
 uniform float cliff_jitter_strength = 1.0;
@@ -1295,27 +1296,31 @@ void fragment() {
 		if (enable_macro_noise) {
 			float max_w = max(max(norm_weights.x, norm_weights.y), max(norm_weights.z, norm_weights.w));
 			float transition_factor = clamp((1.0 - max_w) * 2.0, 0.0, 1.0);
-			edge_noise = (base_fbm_val - 0.5) * 0.16 * transition_factor;
+			edge_noise = (base_fbm_val - 0.5) * 0.12 * transition_factor;
 		}
 
 		vec4 heights = vec4(c0.a, c1.a, c2.a, c3.a);
 		vec4 noise_offsets = vec4(edge_noise, -edge_noise, edge_noise * 0.75, -edge_noise * 0.75);
 
 		vec4 height_scores = vec4(
-			norm_weights.x > 0.001 ? (norm_weights.x + heights.x * 0.85 + noise_offsets.x) : -100.0,
-			norm_weights.y > 0.001 ? (norm_weights.y + heights.y * 0.85 + noise_offsets.y) : -100.0,
-			norm_weights.z > 0.001 ? (norm_weights.z + heights.z * 0.85 + noise_offsets.z) : -100.0,
-			norm_weights.w > 0.001 ? (norm_weights.w + heights.w * 0.85 + noise_offsets.w) : -100.0
+			norm_weights.x > 0.001 ? (norm_weights.x + heights.x + noise_offsets.x) : -100.0,
+			norm_weights.y > 0.001 ? (norm_weights.y + heights.y + noise_offsets.y) : -100.0,
+			norm_weights.z > 0.001 ? (norm_weights.z + heights.z + noise_offsets.z) : -100.0,
+			norm_weights.w > 0.001 ? (norm_weights.w + heights.w + noise_offsets.w) : -100.0
 		);
 
 		float max_score = max(max(height_scores.x, height_scores.y), max(height_scores.z, height_scores.w));
-		float transition_depth = max(0.04, blend_softness);
+		float transition_depth = max(0.001, blend_softness);
 
-		vec4 thresholded = max(vec4(0.0), height_scores - vec4(max_score - transition_depth));
-		thresholded *= step(0.001, norm_weights);
+		vec4 raw_blend = vec4(
+			smoothstep(max_score - transition_depth, max_score, height_scores.x) * step(0.001, norm_weights.x),
+			smoothstep(max_score - transition_depth, max_score, height_scores.y) * step(0.001, norm_weights.y),
+			smoothstep(max_score - transition_depth, max_score, height_scores.z) * step(0.001, norm_weights.z),
+			smoothstep(max_score - transition_depth, max_score, height_scores.w) * step(0.001, norm_weights.w)
+		);
 
-		float threshold_sum = thresholded.x + thresholded.y + thresholded.z + thresholded.w;
-		blend_layer_weights = threshold_sum > 0.0001 ? thresholded / threshold_sum : norm_weights;
+		float blend_sum = raw_blend.x + raw_blend.y + raw_blend.z + raw_blend.w;
+		blend_layer_weights = blend_sum > 0.0001 ? raw_blend / blend_sum : norm_weights;
 
 		ground_albedo = (c0.rgb * blend_layer_weights.x +
 		                 c1.rgb * blend_layer_weights.y +
@@ -1528,6 +1533,7 @@ void fragment() {
 		_material.SetShaderParameter("cliff_jitter_scale", CliffJitterScale);
 		_material.SetShaderParameter("cliff_rim_noise_strength", CliffRimNoiseStrength);
 		_material.SetShaderParameter("cliff_rim_noise_scale", CliffRimNoiseScale);
+		_material.SetShaderParameter("blend_softness", BlendSoftness);
 
 		ApplyQualitySettings(GameSettings.QualityIdx);
 
