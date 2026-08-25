@@ -18,8 +18,6 @@ uniform float roughness_value : hint_range(0.0, 1.0) = 1.0;
 uniform float metallic_value : hint_range(0.0, 1.0) = 0.0;
 uniform float specular_value : hint_range(0.0, 1.0) = 0.5;
 
-uniform float unit_ambient_boost : hint_range(0.0, 0.5) = 0.10;
-uniform float unit_rim_intensity : hint_range(0.0, 1.0) = 0.25;
 uniform float unit_rim_power : hint_range(1.0, 8.0) = 2.5;
 
 uniform bool use_alpha_blend = false;
@@ -34,6 +32,8 @@ instance uniform float model_brightness : hint_range(0.10, 2.0) = 0.5;
 instance uniform vec4 model_color_tint : source_color = vec4(1.0, 1.0, 1.0, 1.0);
 instance uniform float ignore_player_color : hint_range(0.0, 1.0) = 0.0;
 instance uniform float normal_mode : hint_range(0.0, 2.0) = 2.0;
+instance uniform float unit_ambient_boost : hint_range(0.0, 0.5) = 0.0;
+instance uniform float unit_rim_intensity : hint_range(0.0, 1.0) = 0.0;
 
 varying vec2 base_uv;
 

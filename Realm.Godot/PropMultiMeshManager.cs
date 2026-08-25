@@ -508,6 +508,8 @@ public partial class PropMultiMeshManager : Node3D
 						mmNode.SetInstanceShaderParameter(new StringName("model_color_tint"), tint);
 						mmNode.SetInstanceShaderParameter(new StringName("ignore_player_color"), ignorePlayerColor ? 1.0f : 0.0f);
 						mmNode.SetInstanceShaderParameter(new StringName("normal_mode"), (float)normalMode);
+						mmNode.SetInstanceShaderParameter(new StringName("unit_ambient_boost"), 0.0f);
+						mmNode.SetInstanceShaderParameter(new StringName("unit_rim_intensity"), 0.0f);
 					}
 				}
 			}
