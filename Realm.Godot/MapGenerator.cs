@@ -483,7 +483,7 @@ public static class MapGenerator
 
 				if (tier < 0)
 				{
-					host.GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(9);
+					host.GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(4);
 				}
 				else if (tier == 0)
 				{
@@ -491,14 +491,14 @@ public static class MapGenerator
 				}
 				else if (tier == 1 || tier == 2)
 				{
-					host.GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
+					host.GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(2);
 				}
 				else
 				{
-					host.GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(1);
+					host.GroundTerrain.SplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
 				}
 
-				host.GroundTerrain.CliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(host.GroundTerrain.CliffTextureIndex);
+				host.GroundTerrain.CliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(1);
 
 				if (x < width && z < depth)
 				{

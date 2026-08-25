@@ -5334,10 +5334,6 @@ public partial class MapEditorHUD : Control
 		if (GameHost.Instance != null)
 		{
 			GameHost.Instance.EditorCliffPaintTextureIndex = index;
-			if (GameHost.Instance.GroundTerrain != null)
-			{
-				GameHost.Instance.GroundTerrain.CliffTextureIndex = index;
-			}
 			if (!IsSwatchCompatibleTool(GameHost.Instance.ActiveEditorTool))
 			{
 				TriggerToolSelection(GameHost.EditorTool.PaintTexture, _btnTextureBrush);
@@ -7179,12 +7175,11 @@ public partial class MapEditorHUD : Control
 	private HSlider _sldFogDensity, _sldFogR, _sldFogG, _sldFogB;
 	private HSlider _sldSsaoRadius, _sldSsaoIntensity;
 	private HSlider _sldExposure, _sldContrast, _sldSaturation, _sldBloomIntensity, _sldBloomThreshold;
-	private HSlider _sldCliffJitterStrength, _sldCliffJitterScale, _sldCliffRimNoiseStrength, _sldCliffRimNoiseScale;
+	private HSlider _sldCliffJitterStrength, _sldCliffJitterScale, _sldCliffRimNoiseStrength;
 	private HSlider _sldHeightBlendSoftness, _sldBlendNoiseStrength, _sldBlendNoiseScale;
 	private float _tuneCliffJitterStrength = 1.0f;
 	private float _tuneCliffJitterScale = 0.20f;
 	private float _tuneCliffRimNoiseStrength = 0.30f;
-	private float _tuneCliffRimNoiseScale = 0.08f;
 	private float _tuneHeightBlendSoftness = 0.04f;
 	private float _tuneBlendNoiseStrength = 0.22f;
 	private float _tuneBlendNoiseScale = 0.22f;
@@ -7265,7 +7260,6 @@ public partial class MapEditorHUD : Control
 		_sldCliffJitterStrength = CreateSliderRow(_contentLightingTuning, "Cliff Jitter Str", 0f, 2f, 0.02f, _tuneCliffJitterStrength, val => { _tuneCliffJitterStrength = val; ApplyLiveLightingTuning(); });
 		_sldCliffJitterScale = CreateSliderRow(_contentLightingTuning, "Cliff Jitter Scl", 0.01f, 0.5f, 0.005f, _tuneCliffJitterScale, val => { _tuneCliffJitterScale = val; ApplyLiveLightingTuning(); }, "0.00#");
 		_sldCliffRimNoiseStrength = CreateSliderRow(_contentLightingTuning, "Cliff Rim Str", 0f, 1f, 0.02f, _tuneCliffRimNoiseStrength, val => { _tuneCliffRimNoiseStrength = val; ApplyLiveLightingTuning(); });
-		_sldCliffRimNoiseScale = CreateSliderRow(_contentLightingTuning, "Cliff Rim Scl", 0.01f, 0.5f, 0.005f, _tuneCliffRimNoiseScale, val => { _tuneCliffRimNoiseScale = val; ApplyLiveLightingTuning(); }, "0.00#");
 
 		CreateSectionHeader(_contentLightingTuning, "--- TERRAIN TEXTURE BLENDING ---");
 		_sldHeightBlendSoftness = CreateSliderRow(_contentLightingTuning, "Blend Softness", 0.001f, 0.20f, 0.002f, _tuneHeightBlendSoftness, val => { _tuneHeightBlendSoftness = val; ApplyLiveLightingTuning(); }, "0.00#");
@@ -7340,7 +7334,6 @@ public partial class MapEditorHUD : Control
 		if (_sldCliffJitterStrength != null) _sldCliffJitterStrength.Value = _tuneCliffJitterStrength;
 		if (_sldCliffJitterScale != null) _sldCliffJitterScale.Value = _tuneCliffJitterScale;
 		if (_sldCliffRimNoiseStrength != null) _sldCliffRimNoiseStrength.Value = _tuneCliffRimNoiseStrength;
-		if (_sldCliffRimNoiseScale != null) _sldCliffRimNoiseScale.Value = _tuneCliffRimNoiseScale;
 		if (_sldHeightBlendSoftness != null) _sldHeightBlendSoftness.Value = _tuneHeightBlendSoftness;
 		if (_sldBlendNoiseStrength != null) _sldBlendNoiseStrength.Value = _tuneBlendNoiseStrength;
 		if (_sldBlendNoiseScale != null) _sldBlendNoiseScale.Value = _tuneBlendNoiseScale;
@@ -7360,15 +7353,12 @@ public partial class MapEditorHUD : Control
 			EditableTerrain.Instance.CliffJitterStrength = _tuneCliffJitterStrength;
 			EditableTerrain.Instance.CliffJitterScale = _tuneCliffJitterScale;
 			EditableTerrain.Instance.CliffRimNoiseStrength = _tuneCliffRimNoiseStrength;
-			EditableTerrain.Instance.CliffRimNoiseScale = _tuneCliffRimNoiseScale;
 			EditableTerrain.Instance.BlendSoftness = _tuneHeightBlendSoftness;
 			EditableTerrain.Instance.BlendNoiseStrength = _tuneBlendNoiseStrength;
 			EditableTerrain.Instance.BlendNoiseScale = _tuneBlendNoiseScale;
 
 			EditableTerrain.Instance.Material.SetShaderParameter("cliff_jitter_strength", _tuneCliffJitterStrength);
 			EditableTerrain.Instance.Material.SetShaderParameter("cliff_jitter_scale", _tuneCliffJitterScale);
-			EditableTerrain.Instance.Material.SetShaderParameter("cliff_rim_noise_strength", _tuneCliffRimNoiseStrength);
-			EditableTerrain.Instance.Material.SetShaderParameter("cliff_rim_noise_scale", _tuneCliffRimNoiseScale);
 			EditableTerrain.Instance.Material.SetShaderParameter("blend_softness", _tuneHeightBlendSoftness);
 			EditableTerrain.Instance.Material.SetShaderParameter("blend_noise_strength", _tuneBlendNoiseStrength);
 			EditableTerrain.Instance.Material.SetShaderParameter("blend_noise_scale", _tuneBlendNoiseScale);
@@ -7404,24 +7394,20 @@ public partial class MapEditorHUD : Control
 			env.AmbientLightEnergy = _tuneAmbientEnergy;
 
 			GameSettings.ApplyEnvironmentQuality(env);
+			env.FogEnabled = _tuneFogEnabled;
+			env.FogDensity = _tuneFogDensity;
+			env.FogLightColor = new Color(_tuneFogR, _tuneFogG, _tuneFogB);
 
-			if (GameSettings.QualityIdx > GraphicsQuality.Low)
-			{
-				env.FogEnabled = _tuneFogEnabled;
-				env.FogDensity = _tuneFogDensity;
-				env.FogLightColor = new Color(_tuneFogR, _tuneFogG, _tuneFogB);
+			env.SsaoEnabled = _tuneSsaoEnabled;
+			env.SsaoRadius = _tuneSsaoRadius;
+			env.SsaoIntensity = _tuneSsaoIntensity;
 
-				env.SsaoEnabled = _tuneSsaoEnabled;
-				env.SsaoRadius = _tuneSsaoRadius;
-				env.SsaoIntensity = _tuneSsaoIntensity;
+			env.TonemapExposure = _tuneExposure;
+			env.AdjustmentContrast = _tuneContrast;
+			env.AdjustmentSaturation = _tuneSaturation;
 
-				env.TonemapExposure = _tuneExposure;
-				env.AdjustmentContrast = _tuneContrast;
-				env.AdjustmentSaturation = _tuneSaturation;
-
-				env.GlowIntensity = _tuneBloomIntensity;
-				env.GlowBloom = _tuneBloomThreshold;
-			}
+			env.GlowIntensity = _tuneBloomIntensity;
+			env.GlowBloom = _tuneBloomThreshold;
 		}
 	}
 
@@ -7436,7 +7422,7 @@ SSAO Enabled: {_tuneSsaoEnabled}, Radius: {_tuneSsaoRadius:F2}, Intensity: {_tun
 PostProc Exposure: {_tuneExposure:F2}, Contrast: {_tuneContrast:F2}, Saturation: {_tuneSaturation:F2}
 Glow/Bloom Intensity: {_tuneBloomIntensity:F2}, Threshold: {_tuneBloomThreshold:F2}
 Cliff Jitter: Strength={_tuneCliffJitterStrength:F2}, Scale={_tuneCliffJitterScale:F3}
-Cliff Rim Noise: Strength={_tuneCliffRimNoiseStrength:F2}, Scale={_tuneCliffRimNoiseScale:F3}
+Cliff Rim Noise: Strength={_tuneCliffRimNoiseStrength:F2}
 Blend Noise: Strength={_tuneBlendNoiseStrength:F2}, Scale={_tuneBlendNoiseScale:F3}
 ===================================
 ";

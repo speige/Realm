@@ -1379,7 +1379,7 @@ public partial class GameHost
 						pathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(GroundTerrain.Cells[x, z]);
 					}
 					splatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
-					cliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(GroundTerrain.CliffTextureIndex);
+					cliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(1);
 				}
 			}
 

@@ -313,7 +313,7 @@ public partial class GameHost
 					{
 						for (int x = 0; x < cliffW; x++)
 						{
-							GroundTerrain.CliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(GroundTerrain.CliffTextureIndex);
+							GroundTerrain.CliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(1);
 						}
 					}
 				}

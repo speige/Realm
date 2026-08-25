@@ -479,24 +479,10 @@ public partial class EditableTerrain : StaticBody3D
 
 	public TerrainSplatWeights[,] SplatMap { get; set; }
 	public TerrainSplatWeights[,] CliffSplatMap { get; set; }
-	private int _cliffTextureIndex = 2;
-	public int CliffTextureIndex
-	{
-		get => _cliffTextureIndex;
-		set
-		{
-			_cliffTextureIndex = value;
-			if (_material != null)
-			{
-				_material.SetShaderParameter("cliff_texture_index", (float)value);
-			}
-		}
-	}
 
 	public float CliffJitterStrength { get; set; } = 1.0f;
 	public float CliffJitterScale { get; set; } = 0.20f;
 	public float CliffRimNoiseStrength { get; set; } = 0.30f;
-	public float CliffRimNoiseScale { get; set; } = 0.08f;
 	public float BlendSoftness { get; set; } = 0.04f;
 	public float BlendNoiseStrength { get; set; } = 0.22f;
 	public float BlendNoiseScale { get; set; } = 0.22f;
@@ -964,7 +950,7 @@ void fragment() {
 					if (CliffSplatMap != null && x < CliffSplatMap.GetLength(0) && z < CliffSplatMap.GetLength(1))
 						newCliffSplatMap[x, z] = CliffSplatMap[x, z];
 					else
-						newCliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(CliffTextureIndex);
+						newCliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
 				}
 			}
 			CliffSplatMap = newCliffSplatMap;
@@ -992,12 +978,8 @@ uniform sampler2DArray terrain_normals_pbr : hint_default_white, filter_linear_m
 uniform float blend_softness = 0.04;
 uniform float blend_noise_strength = 0.22;
 uniform float blend_noise_scale = 0.22;
-uniform float cliff_texture_index = 2.0;
-uniform float cliff_blend_smoothness = 0.18;
 uniform float cliff_jitter_strength = 1.0;
 uniform float cliff_jitter_scale = 0.20;
-uniform float cliff_rim_noise_strength = 0.30;
-uniform float cliff_rim_noise_scale = 0.08;
 uniform sampler2D shroud_texture : hint_default_white;
 uniform vec2 shroud_world_min = vec2(-125.0, -125.0);
 uniform vec2 shroud_world_size = vec2(250.0, 250.0);
@@ -1021,11 +1003,8 @@ uniform float macro_normal_strength = 0.15;
 uniform float macro_lacunarity = 2.0;
 uniform float macro_gain = 0.5;
 
-uniform bool enable_stochastic = true;
-uniform bool enable_normal_mapping = true;
 uniform bool enable_macro_noise = true;
 uniform bool enable_height_blend = true;
-uniform bool enable_fast_planar = false;
 
 uniform vec4 swatch_params[32];
 uniform vec4 swatch_height_params[32];
@@ -1102,7 +1081,7 @@ vec4 sample_semi_grid(sampler2DArray tex_array, float layer, vec2 uv, vec2 dx, v
 }
 
 vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, vec2 dx, vec2 dy, float tile_mode, float stoch_tile_size, float cross_fade, bool is_vector_data) {
-	if (!enable_stochastic || tile_mode < 0.5) {
+	if (tile_mode < 0.5) {
 		return textureGrad(tex_array, vec3(uv, layer), dx, dy);
 	}
 
@@ -1410,26 +1389,24 @@ void fragment() {
 	float ground_ao = 1.0;
 	float ground_roughness = 0.85;
 
-	if (enable_normal_mapping) {
-		float gw0 = blend_layer_weights.x;
-		float gw1 = blend_layer_weights.y;
-		float gw2 = blend_layer_weights.z;
-		float gw3 = blend_layer_weights.w;
+	float gw0 = blend_layer_weights.x;
+	float gw1 = blend_layer_weights.y;
+	float gw2 = blend_layer_weights.z;
+	float gw3 = blend_layer_weights.w;
 
-		vec4 gn0 = gw0 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 gn1 = gw1 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 gn2 = gw2 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 gn3 = gw3 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+	vec4 gn0 = gw0 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+	vec4 gn1 = gw1 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+	vec4 gn2 = gw2 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+	vec4 gn3 = gw3 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
 
-		vec3 gn0_vec = unpack_triplanar_normal(gn0, vec3(0.0, 1.0, 0.0), geom_normal);
-		vec3 gn1_vec = unpack_triplanar_normal(gn1, vec3(0.0, 1.0, 0.0), geom_normal);
-		vec3 gn2_vec = unpack_triplanar_normal(gn2, vec3(0.0, 1.0, 0.0), geom_normal);
-		vec3 gn3_vec = unpack_triplanar_normal(gn3, vec3(0.0, 1.0, 0.0), geom_normal);
+	vec3 gn0_vec = unpack_triplanar_normal(gn0, vec3(0.0, 1.0, 0.0), geom_normal);
+	vec3 gn1_vec = unpack_triplanar_normal(gn1, vec3(0.0, 1.0, 0.0), geom_normal);
+	vec3 gn2_vec = unpack_triplanar_normal(gn2, vec3(0.0, 1.0, 0.0), geom_normal);
+	vec3 gn3_vec = unpack_triplanar_normal(gn3, vec3(0.0, 1.0, 0.0), geom_normal);
 
-		ground_normal = normalize(gn0_vec * gw0 + gn1_vec * gw1 + gn2_vec * gw2 + gn3_vec * gw3);
-		ground_ao = (gn0.b * gw0 + gn1.b * gw1 + gn2.b * gw2 + gn3.b * gw3);
-		ground_roughness = (gn0.a * gw0 + gn1.a * gw1 + gn2.a * gw2 + gn3.a * gw3);
-	}
+	ground_normal = normalize(gn0_vec * gw0 + gn1_vec * gw1 + gn2_vec * gw2 + gn3_vec * gw3);
+	ground_ao = (gn0.b * gw0 + gn1.b * gw1 + gn2.b * gw2 + gn3.b * gw3);
+	ground_roughness = (gn0.a * gw0 + gn1.a * gw1 + gn2.a * gw2 + gn3.a * gw3);
 
 	vec4 raw_c_weights = v_cliff_tex_weights;
 	raw_c_weights.x = raw_c_weights.x < 0.001 ? 0.0 : raw_c_weights.x;
@@ -1549,26 +1526,24 @@ void fragment() {
 	float cliff_ao = 1.0;
 	float cliff_roughness = 0.85;
 
-	if (enable_normal_mapping) {
-		float cw0 = cliff_blend_weights.x;
-		float cw1 = cliff_blend_weights.y;
-		float cw2 = cliff_blend_weights.z;
-		float cw3 = cliff_blend_weights.w;
+	float cw0 = cliff_blend_weights.x;
+	float cw1 = cliff_blend_weights.y;
+	float cw2 = cliff_blend_weights.z;
+	float cw3 = cliff_blend_weights.w;
 
-		vec4 cn0 = cw0 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 cn1 = cw1 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 cn2 = cw2 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 cn3 = cw3 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+	vec4 cn0 = cw0 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+	vec4 cn1 = cw1 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+	vec4 cn2 = cw2 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+	vec4 cn3 = cw3 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
 
-		vec3 cn0_vec = unpack_triplanar_normal(cn0, get_active_weights(round(v_cliff_tex_indices.x), blend_weights), geom_normal);
-		vec3 cn1_vec = unpack_triplanar_normal(cn1, get_active_weights(round(v_cliff_tex_indices.y), blend_weights), geom_normal);
-		vec3 cn2_vec = unpack_triplanar_normal(cn2, get_active_weights(round(v_cliff_tex_indices.z), blend_weights), geom_normal);
-		vec3 cn3_vec = unpack_triplanar_normal(cn3, get_active_weights(round(v_cliff_tex_indices.w), blend_weights), geom_normal);
+	vec3 cn0_vec = unpack_triplanar_normal(cn0, get_active_weights(round(v_cliff_tex_indices.x), blend_weights), geom_normal);
+	vec3 cn1_vec = unpack_triplanar_normal(cn1, get_active_weights(round(v_cliff_tex_indices.y), blend_weights), geom_normal);
+	vec3 cn2_vec = unpack_triplanar_normal(cn2, get_active_weights(round(v_cliff_tex_indices.z), blend_weights), geom_normal);
+	vec3 cn3_vec = unpack_triplanar_normal(cn3, get_active_weights(round(v_cliff_tex_indices.w), blend_weights), geom_normal);
 
-		cliff_normal = normalize(cn0_vec * cw0 + cn1_vec * cw1 + cn2_vec * cw2 + cn3_vec * cw3);
-		cliff_ao = (cn0.b * cw0 + cn1.b * cw1 + cn2.b * cw2 + cn3.b * cw3);
-		cliff_roughness = (cn0.a * cw0 + cn1.a * cw1 + cn2.a * cw2 + cn3.a * cw3);
-	}
+	cliff_normal = normalize(cn0_vec * cw0 + cn1_vec * cw1 + cn2_vec * cw2 + cn3_vec * cw3);
+	cliff_ao = (cn0.b * cw0 + cn1.b * cw1 + cn2.b * cw2 + cn3.b * cw3);
+	cliff_roughness = (cn0.a * cw0 + cn1.a * cw1 + cn2.a * cw2 + cn3.a * cw3);
 
 	if (enable_macro_noise && macro_normal_strength > 0.0) {
 		float n_noise_y_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
@@ -1674,15 +1649,13 @@ void fragment() {
 	float final_roughness = 0.9;
 	float specular_amt = 0.0;
 
-	if (enable_normal_mapping) {
-		if (enable_macro_noise) {
-			float macro_roughness_var = mix(1.0 - macro_roughness_contrast, 1.0 + macro_roughness_contrast, base_fbm_val);
-			final_roughness = clamp(blended_roughness * macro_roughness_var, 0.05, 1.0);
-		} else {
-			final_roughness = clamp(blended_roughness, 0.05, 1.0);
-		}
-		specular_amt = 0.2;
+	if (enable_macro_noise) {
+		float macro_roughness_var = mix(1.0 - macro_roughness_contrast, 1.0 + macro_roughness_contrast, base_fbm_val);
+		final_roughness = clamp(blended_roughness * macro_roughness_var, 0.05, 1.0);
+	} else {
+		final_roughness = clamp(blended_roughness, 0.05, 1.0);
 	}
+	specular_amt = 0.2;
 
 	vec2 shroud_uv = (v_world_pos.xz - shroud_world_min) / shroud_world_size;
 	float shroud_factor = texture(shroud_texture, clamp(shroud_uv, 0.0, 1.0)).r;
@@ -1690,19 +1663,11 @@ void fragment() {
 	emission_color *= (1.0 - shroud_factor * 0.98);
 
 	ALBEDO = final_albedo;
-	if (enable_normal_mapping) {
-		NORMAL = normalize((VIEW_MATRIX * vec4(blended_world_normal, 0.0)).xyz);
-		AO = blended_ao * (1.0 - shroud_factor * 0.98);
-		ROUGHNESS = mix(final_roughness, 1.0, shroud_factor);
-		METALLIC = 0.0;                 
-		SPECULAR = specular_amt * (1.0 - shroud_factor * 0.98);
-	} else {
-		NORMAL = normalize((VIEW_MATRIX * vec4(geom_normal, 0.0)).xyz);
-		AO = (1.0 - shroud_factor * 0.98);
-		ROUGHNESS = mix(final_roughness, 1.0, shroud_factor);
-		METALLIC = 0.0;
-		SPECULAR = 0.0;
-	}
+	NORMAL = normalize((VIEW_MATRIX * vec4(blended_world_normal, 0.0)).xyz);
+	AO = blended_ao * (1.0 - shroud_factor * 0.98);
+	ROUGHNESS = mix(final_roughness, 1.0, shroud_factor);
+	METALLIC = 0.0;                 
+	SPECULAR = specular_amt * (1.0 - shroud_factor * 0.98);
 	EMISSION = emission_color;
 }
 ";
@@ -1720,12 +1685,8 @@ void fragment() {
 		_material.SetShaderParameter("grid_spacing", QuadSize);
 		_material.SetShaderParameter("terrain_size", new Vector2(Width * QuadSize, Depth * QuadSize));
 		_material.SetShaderParameter("texture_scale", 1.0f / QuadSize);
-		_material.SetShaderParameter("cliff_texture_index", (float)CliffTextureIndex);
-		_material.SetShaderParameter("cliff_blend_smoothness", 0.18f);
 		_material.SetShaderParameter("cliff_jitter_strength", CliffJitterStrength);
 		_material.SetShaderParameter("cliff_jitter_scale", CliffJitterScale);
-		_material.SetShaderParameter("cliff_rim_noise_strength", CliffRimNoiseStrength);
-		_material.SetShaderParameter("cliff_rim_noise_scale", CliffRimNoiseScale);
 		_material.SetShaderParameter("blend_softness", BlendSoftness);
 		_material.SetShaderParameter("blend_noise_strength", BlendNoiseStrength);
 		_material.SetShaderParameter("blend_noise_scale", BlendNoiseScale);
@@ -1753,50 +1714,27 @@ void fragment() {
 		switch (qualityIdx)
 		{
 			case 0:
-				_material.SetShaderParameter("enable_stochastic", true);
-				_material.SetShaderParameter("enable_normal_mapping", false);
 				_material.SetShaderParameter("enable_macro_noise", false);
 				_material.SetShaderParameter("enable_height_blend", false);
-				_material.SetShaderParameter("enable_fast_planar", true);
-				_material.SetShaderParameter("cliff_jitter_strength", 0.0f);
-				_material.SetShaderParameter("cliff_rim_noise_strength", 0.0f);
-				_material.SetShaderParameter("blend_noise_strength", BlendNoiseStrength * 0.5f);
 				break;
 			case 1:
-				_material.SetShaderParameter("enable_stochastic", true);
-				_material.SetShaderParameter("enable_normal_mapping", true);
 				_material.SetShaderParameter("enable_macro_noise", false);
 				_material.SetShaderParameter("enable_height_blend", false);
-				_material.SetShaderParameter("enable_fast_planar", true);
-				_material.SetShaderParameter("cliff_jitter_strength", CliffJitterStrength * 0.5f);
-				_material.SetShaderParameter("cliff_rim_noise_strength", CliffRimNoiseStrength * 0.5f);
-				_material.SetShaderParameter("blend_noise_strength", BlendNoiseStrength * 0.75f);
 				break;
 			case 2:
-				_material.SetShaderParameter("enable_stochastic", true);
-				_material.SetShaderParameter("enable_normal_mapping", true);
 				_material.SetShaderParameter("enable_macro_noise", true);
 				_material.SetShaderParameter("enable_height_blend", true);
-				_material.SetShaderParameter("enable_fast_planar", true);
-				_material.SetShaderParameter("cliff_jitter_strength", CliffJitterStrength);
-				_material.SetShaderParameter("cliff_rim_noise_strength", CliffRimNoiseStrength);
-				_material.SetShaderParameter("blend_noise_strength", BlendNoiseStrength);
 				break;
 			case 3:
 			default:
-				_material.SetShaderParameter("enable_stochastic", true);
-				_material.SetShaderParameter("enable_normal_mapping", true);
 				_material.SetShaderParameter("enable_macro_noise", true);
 				_material.SetShaderParameter("enable_height_blend", true);
-				_material.SetShaderParameter("enable_fast_planar", true);
-				_material.SetShaderParameter("cliff_jitter_strength", CliffJitterStrength);
-				_material.SetShaderParameter("cliff_rim_noise_strength", CliffRimNoiseStrength);
-				_material.SetShaderParameter("blend_noise_strength", BlendNoiseStrength);
 				break;
 		}
 
+		_material.SetShaderParameter("cliff_jitter_strength", CliffJitterStrength);
+		_material.SetShaderParameter("blend_noise_strength", BlendNoiseStrength);
 		_material.SetShaderParameter("cliff_jitter_scale", CliffJitterScale);
-		_material.SetShaderParameter("cliff_rim_noise_scale", CliffRimNoiseScale);
 		_material.SetShaderParameter("blend_noise_scale", BlendNoiseScale);
 	}
 
@@ -2453,10 +2391,7 @@ void fragment() {
 			{
 				for (int x = 0; x <= w; x++)
 				{
-					if (CliffSplatMap != null && x < CliffSplatMap.GetLength(0) && z < CliffSplatMap.GetLength(1))
-						newCliffSplatMap[x, z] = CliffSplatMap[x, z];
-					else
-						newCliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(CliffTextureIndex);
+					newCliffSplatMap[x, z] = CliffSplatMap[x, z];
 				}
 			}
 			CliffSplatMap = newCliffSplatMap;
@@ -3177,9 +3112,7 @@ void fragment() {
 		int mapCliffW = cliffSplatMap != null ? cliffSplatMap.GetLength(0) : 0;
 		int mapCliffD = cliffSplatMap != null ? cliffSplatMap.GetLength(1) : 0;
 
-		TerrainSplatWeights cliffS00 = (cliffSplatMap != null && mapCliffW > 0 && mapCliffD > 0)
-			? cliffSplatMap[Math.Clamp(x, 0, mapCliffW - 1), Math.Clamp(z, 0, mapCliffD - 1)]
-			: TerrainSplatWeights.CreateSolid(CliffTextureIndex);
+		TerrainSplatWeights cliffS00 = cliffSplatMap[Math.Clamp(x, 0, mapCliffW - 1), Math.Clamp(z, 0, mapCliffD - 1)];
 		TerrainSplatWeights cliffS10 = (cliffSplatMap != null && mapCliffW > 0 && mapCliffD > 0)
 			? cliffSplatMap[Math.Clamp(x + 1, 0, mapCliffW - 1), Math.Clamp(z, 0, mapCliffD - 1)]
 			: cliffS00;

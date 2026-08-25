@@ -361,27 +361,15 @@ public static class GameSettings
 			switch (QualityIdx)
 			{
 				case GraphicsQuality.Low:
-					viewport.Msaa3D = Viewport.Msaa.Disabled;
-					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
-					viewport.UseTaa = false;
-					viewport.PositionalShadowAtlasSize = 1024;
+					viewport.PositionalShadowAtlasSize = 512;
 					break;
 				case GraphicsQuality.Medium:
-					viewport.Msaa3D = Viewport.Msaa.Disabled;
-					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
-					viewport.UseTaa = false;
-					viewport.PositionalShadowAtlasSize = 2048;
+					viewport.PositionalShadowAtlasSize = 1024;
 					break;
 				case GraphicsQuality.High:
-					viewport.Msaa3D = Viewport.Msaa.Disabled;
-					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
-					viewport.UseTaa = false;
 					viewport.PositionalShadowAtlasSize = 2048;
 					break;
 				case GraphicsQuality.Ultra:
-					viewport.Msaa3D = Viewport.Msaa.Disabled;
-					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Disabled;
-					viewport.UseTaa = true;
 					viewport.PositionalShadowAtlasSize = 4096;
 					break;
 			}
@@ -389,21 +377,32 @@ public static class GameSettings
 			switch (DownsamplingIdx)
 			{
 				case DownsamplingMode.Off:
-					viewport.Scaling3DMode = Viewport.Scaling3DModeEnum.Bilinear;
 					viewport.Scaling3DScale = 1.0f;
 					break;
 				case DownsamplingMode.Quality:
-					viewport.Scaling3DMode = Viewport.Scaling3DModeEnum.Fsr;
 					viewport.Scaling3DScale = 0.75f;
 					break;
 				case DownsamplingMode.Performance:
-					viewport.Scaling3DMode = Viewport.Scaling3DModeEnum.Fsr;
 					viewport.Scaling3DScale = 0.50f;
 					break;
 				default:
-					viewport.Scaling3DMode = Viewport.Scaling3DModeEnum.Bilinear;
 					viewport.Scaling3DScale = 1.0f;
 					break;
+			}
+
+			viewport.Msaa3D = Viewport.Msaa.Disabled;
+			viewport.Scaling3DMode = Viewport.Scaling3DModeEnum.Bilinear;
+
+			//NOTE: taa is slower but higher quality. upscaling increases FPS but creates pixel shimmer during camera movement unless taa enabled, but FPS is still boosted overall
+			if (viewport.Scaling3DScale != 1.0f || QualityIdx == GraphicsQuality.Ultra)
+			{
+				viewport.UseTaa = true;
+				viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Disabled;
+			}
+			else
+			{
+				viewport.UseTaa = false;
+				viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
 			}
 		}
 
