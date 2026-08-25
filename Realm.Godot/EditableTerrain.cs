@@ -1160,6 +1160,18 @@ vec4 sample_planar_layer(sampler2DArray tex_array, float layer, vec2 uv_y, vec2 
 	return sample_stochastic_layer(tex_array, layer, scaled_uv_y, scaled_dx_y, scaled_dy_y, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
 }
 
+vec3 get_active_weights(float layer, vec3 weights) {
+	int layer_idx = int(clamp(round(layer), 0.0, 31.0));
+	float tile_mode = swatch_params[layer_idx].x;
+	if (tile_mode < 0.5) {
+		float max_w = max(weights.x, max(weights.y, weights.z));
+		if (weights.y >= max_w) return vec3(0.0, 1.0, 0.0);
+		if (weights.x >= max_w) return vec3(1.0, 0.0, 0.0);
+		return vec3(0.0, 0.0, 1.0);
+	}
+	return weights;
+}
+
 vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, vec2 uv_y, vec2 uv_z, vec2 dx_x, vec2 dy_x, vec2 dx_y, vec2 dy_y, vec2 dx_z, vec2 dy_z, vec3 weights, bool is_vector_data) {
 	int layer_idx = int(clamp(round(layer), 0.0, 31.0));
 	vec4 params = swatch_params[layer_idx];
@@ -1179,15 +1191,16 @@ vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, ve
 	vec2 scaled_dx_z = dx_z * uv_scale;
 	vec2 scaled_dy_z = dy_z * uv_scale;
 
-	vec3 active_weights = weights;
-	if (tile_mode < 0.5) {
-		vec3 sharp_w = pow(weights, vec3(8.0));
-		float s_sum = sharp_w.x + sharp_w.y + sharp_w.z;
-		active_weights = s_sum > 0.0001 ? sharp_w / s_sum : weights;
-	}
+	vec3 active_weights = get_active_weights(layer, weights);
 
-	if (enable_fast_planar && active_weights.y > 0.90) {
+	if (active_weights.y > 0.99) {
 		return sample_stochastic_layer(tex_array, layer, scaled_uv_y, scaled_dx_y, scaled_dy_y, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+	}
+	if (active_weights.x > 0.99) {
+		return sample_stochastic_layer(tex_array, layer, scaled_uv_x, scaled_dx_x, scaled_dy_x, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+	}
+	if (active_weights.z > 0.99) {
+		return sample_stochastic_layer(tex_array, layer, scaled_uv_z, scaled_dx_z, scaled_dy_z, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
 	}
 
 	vec4 col_x = sample_stochastic_layer(tex_array, layer, scaled_uv_x, scaled_dx_x, scaled_dy_x, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
@@ -1547,10 +1560,10 @@ void fragment() {
 		vec4 cn2 = cw2 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
 		vec4 cn3 = cw3 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
 
-		vec3 cn0_vec = unpack_triplanar_normal(cn0, blend_weights, geom_normal);
-		vec3 cn1_vec = unpack_triplanar_normal(cn1, blend_weights, geom_normal);
-		vec3 cn2_vec = unpack_triplanar_normal(cn2, blend_weights, geom_normal);
-		vec3 cn3_vec = unpack_triplanar_normal(cn3, blend_weights, geom_normal);
+		vec3 cn0_vec = unpack_triplanar_normal(cn0, get_active_weights(round(v_cliff_tex_indices.x), blend_weights), geom_normal);
+		vec3 cn1_vec = unpack_triplanar_normal(cn1, get_active_weights(round(v_cliff_tex_indices.y), blend_weights), geom_normal);
+		vec3 cn2_vec = unpack_triplanar_normal(cn2, get_active_weights(round(v_cliff_tex_indices.z), blend_weights), geom_normal);
+		vec3 cn3_vec = unpack_triplanar_normal(cn3, get_active_weights(round(v_cliff_tex_indices.w), blend_weights), geom_normal);
 
 		cliff_normal = normalize(cn0_vec * cw0 + cn1_vec * cw1 + cn2_vec * cw2 + cn3_vec * cw3);
 		cliff_ao = (cn0.b * cw0 + cn1.b * cw1 + cn2.b * cw2 + cn3.b * cw3);
