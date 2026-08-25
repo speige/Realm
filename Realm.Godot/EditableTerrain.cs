@@ -106,8 +106,9 @@ public partial class EditableTerrain : StaticBody3D
 		float[,] coarseMean = ComputeSeparableBoxBlur(luminance, w, h, 14);
 
 		float[,] rawHeight = new float[w, h];
-		float minH = float.MaxValue;
-		float maxH = float.MinValue;
+		int totalPixels = w * h;
+		float[] flatHeights = new float[totalPixels];
+		int flatIdx = 0;
 
 		for (int y = 0; y < h; y++)
 		{
@@ -130,47 +131,18 @@ public partial class EditableTerrain : StaticBody3D
 
 				float structuralValue = 0.5f + (highFreq * 2.2f) + (midFreq * 1.4f) + (laplacian * 0.5f) - (gradMag * 0.25f);
 				rawHeight[x, y] = structuralValue;
-
-				if (structuralValue < minH) minH = structuralValue;
-				if (structuralValue > maxH) maxH = structuralValue;
+				flatHeights[flatIdx++] = structuralValue;
 			}
 		}
 
-		int totalPixels = w * h;
-		int histogramBins = 256;
-		int[] histogram = new int[histogramBins];
-		float range = Math.Max(0.001f, maxH - minH);
+		Array.Sort(flatHeights);
+		int p1Index = Math.Clamp((int)(totalPixels * 0.01f), 0, totalPixels - 1);
+		int p99Index = Math.Clamp((int)(totalPixels * 0.99f), 0, totalPixels - 1);
+		float lowPercentile = flatHeights[p1Index];
+		float highPercentile = flatHeights[p99Index];
 
-		for (int y = 0; y < h; y++)
-		{
-			for (int x = 0; x < w; x++)
-			{
-				int bin = Math.Clamp((int)((rawHeight[x, y] - minH) / range * (histogramBins - 1)), 0, histogramBins - 1);
-				histogram[bin]++;
-			}
-		}
-
-		int lowerThresholdCount = (int)(totalPixels * 0.02f);
-		int upperThresholdCount = (int)(totalPixels * 0.98f);
-		int runningSum = 0;
-		float lowPercentile = minH;
-		float highPercentile = maxH;
-
-		for (int b = 0; b < histogramBins; b++)
-		{
-			runningSum += histogram[b];
-			if (runningSum >= lowerThresholdCount && lowPercentile == minH)
-			{
-				lowPercentile = minH + (b / (float)(histogramBins - 1)) * range;
-			}
-			if (runningSum >= upperThresholdCount)
-			{
-				highPercentile = minH + (b / (float)(histogramBins - 1)) * range;
-				break;
-			}
-		}
-
-		float normRange = Math.Max(0.05f, highPercentile - lowPercentile);
+		float normRange = highPercentile - lowPercentile;
+		float invNormRange = normRange > 1e-5f ? 1.0f / normRange : 0.0f;
 		float[,] normalizedHeight = new float[w, h];
 
 		for (int y = 0; y < h; y++)
@@ -179,11 +151,12 @@ public partial class EditableTerrain : StaticBody3D
 			{
 				var color = img.GetPixel(x, y);
 				float rawVal = rawHeight[x, y];
-				float hVal = Math.Clamp((rawVal - lowPercentile) / normRange, 0.0f, 1.0f);
-				float smoothH = hVal * hVal * (3.0f - 2.0f * hVal);
-				float finalH = 0.7f * hVal + 0.3f * smoothH;
-				normalizedHeight[x, y] = finalH;
-				layer0.SetPixel(x, y, new Godot.Color(color.R, color.G, color.B, finalH));
+				float hVal = invNormRange > 0.0f
+					? Math.Clamp((rawVal - lowPercentile) * invNormRange, 0.0f, 1.0f)
+					: 0.5f;
+
+				normalizedHeight[x, y] = hVal;
+				layer0.SetPixel(x, y, new Godot.Color(color.R, color.G, color.B, hVal));
 			}
 		}
 		
