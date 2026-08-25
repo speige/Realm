@@ -498,6 +498,8 @@ public partial class EditableTerrain : StaticBody3D
 	public float CliffRimNoiseStrength { get; set; } = 0.30f;
 	public float CliffRimNoiseScale { get; set; } = 0.08f;
 	public float BlendSoftness { get; set; } = 0.04f;
+	public float BlendNoiseStrength { get; set; } = 0.22f;
+	public float BlendNoiseScale { get; set; } = 0.22f;
 
 	public int[,] PathingCodes
 	{
@@ -987,6 +989,8 @@ render_mode blend_mix;
 uniform sampler2DArray terrain_textures : source_color, filter_linear_mipmap_anisotropic;
 uniform sampler2DArray terrain_normals_pbr : hint_default_white, filter_linear_mipmap_anisotropic;
 uniform float blend_softness = 0.04;
+uniform float blend_noise_strength = 0.22;
+uniform float blend_noise_scale = 0.22;
 uniform float cliff_texture_index = 2.0;
 uniform float cliff_blend_smoothness = 0.18;
 uniform float cliff_jitter_strength = 1.0;
@@ -1257,10 +1261,25 @@ void fragment() {
 	float weight_sum = raw_weights.x + raw_weights.y + raw_weights.z + raw_weights.w;
 	vec4 norm_weights = weight_sum > 0.0001 ? raw_weights / weight_sum : vec4(1.0, 0.0, 0.0, 0.0);
 
-	vec4 c0 = norm_weights.x > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
-	vec4 c1 = norm_weights.y > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
-	vec4 c2 = norm_weights.z > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
-	vec4 c3 = norm_weights.w > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+	float max_incoming_weight = max(max(norm_weights.x, norm_weights.y), max(norm_weights.z, norm_weights.w));
+	float blend_transition_factor = clamp((1.0 - max_incoming_weight) * 2.5, 0.0, 1.0);
+
+	if (blend_noise_strength > 0.0 && blend_transition_factor > 0.001) {
+		vec2 blend_noise_uv = v_world_pos.xz * blend_noise_scale;
+		float noise_ch_a = (macro_noise(blend_noise_uv) * 0.70 + macro_noise(blend_noise_uv * 2.13 + vec2(11.7, 7.3)) * 0.30) - 0.5;
+		float noise_ch_b = (macro_noise(blend_noise_uv + vec2(19.3, 37.7)) * 0.70 + macro_noise(blend_noise_uv * 2.13 + vec2(43.3, 19.7)) * 0.30) - 0.5;
+		vec4 weight_noise_offset = vec4(noise_ch_a, -noise_ch_a, noise_ch_b, -noise_ch_b) * (blend_noise_strength * blend_transition_factor);
+
+		vec4 active_channel_mask = step(vec4(0.001), norm_weights);
+		vec4 perturbed_weights = max(vec4(0.0), norm_weights + weight_noise_offset * active_channel_mask);
+		float perturbed_weight_sum = perturbed_weights.x + perturbed_weights.y + perturbed_weights.z + perturbed_weights.w;
+		norm_weights = perturbed_weight_sum > 0.0001 ? perturbed_weights / perturbed_weight_sum : norm_weights;
+	}
+
+	vec4 c0 = raw_weights.x > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+	vec4 c1 = raw_weights.y > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+	vec4 c2 = raw_weights.z > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+	vec4 c3 = raw_weights.w > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
 
 	vec4 blend_layer_weights = norm_weights;
 	vec3 ground_albedo = vec3(0.0);
@@ -1541,6 +1560,8 @@ void fragment() {
 		_material.SetShaderParameter("cliff_rim_noise_strength", CliffRimNoiseStrength);
 		_material.SetShaderParameter("cliff_rim_noise_scale", CliffRimNoiseScale);
 		_material.SetShaderParameter("blend_softness", BlendSoftness);
+		_material.SetShaderParameter("blend_noise_strength", BlendNoiseStrength);
+		_material.SetShaderParameter("blend_noise_scale", BlendNoiseScale);
 
 		ApplyQualitySettings(GameSettings.QualityIdx);
 
@@ -1572,6 +1593,7 @@ void fragment() {
 				_material.SetShaderParameter("enable_fast_planar", true);
 				_material.SetShaderParameter("cliff_jitter_strength", 0.0f);
 				_material.SetShaderParameter("cliff_rim_noise_strength", 0.0f);
+				_material.SetShaderParameter("blend_noise_strength", BlendNoiseStrength * 0.5f);
 				break;
 			case 1:
 				_material.SetShaderParameter("enable_stochastic", true);
@@ -1581,6 +1603,7 @@ void fragment() {
 				_material.SetShaderParameter("enable_fast_planar", true);
 				_material.SetShaderParameter("cliff_jitter_strength", CliffJitterStrength * 0.5f);
 				_material.SetShaderParameter("cliff_rim_noise_strength", CliffRimNoiseStrength * 0.5f);
+				_material.SetShaderParameter("blend_noise_strength", BlendNoiseStrength * 0.75f);
 				break;
 			case 2:
 				_material.SetShaderParameter("enable_stochastic", true);
@@ -1590,6 +1613,7 @@ void fragment() {
 				_material.SetShaderParameter("enable_fast_planar", true);
 				_material.SetShaderParameter("cliff_jitter_strength", CliffJitterStrength);
 				_material.SetShaderParameter("cliff_rim_noise_strength", CliffRimNoiseStrength);
+				_material.SetShaderParameter("blend_noise_strength", BlendNoiseStrength);
 				break;
 			case 3:
 			default:
@@ -1600,11 +1624,13 @@ void fragment() {
 				_material.SetShaderParameter("enable_fast_planar", true);
 				_material.SetShaderParameter("cliff_jitter_strength", CliffJitterStrength);
 				_material.SetShaderParameter("cliff_rim_noise_strength", CliffRimNoiseStrength);
+				_material.SetShaderParameter("blend_noise_strength", BlendNoiseStrength);
 				break;
 		}
 
 		_material.SetShaderParameter("cliff_jitter_scale", CliffJitterScale);
 		_material.SetShaderParameter("cliff_rim_noise_scale", CliffRimNoiseScale);
+		_material.SetShaderParameter("blend_noise_scale", BlendNoiseScale);
 	}
 
 	public static string GetKtxCmdPath()
