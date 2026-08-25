@@ -1055,6 +1055,7 @@ varying vec4 v_tex_weights;
 varying vec3 v_world_pos;
 varying vec3 v_world_normal;
 varying vec4 v_color;
+varying float v_cliff_factor;
 
 float macro_hash(vec2 p) {
 	ivec2 ip = ivec2(floor(p));
@@ -1211,6 +1212,7 @@ void vertex() {
 
 	vec3 world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float cliff_mask = clamp(CUSTOM2.x, 0.0, 1.0);
+	v_cliff_factor = cliff_mask;
 
 	if (cliff_jitter_strength > 0.0 && cliff_mask > 0.001) {
 		vec2 jitter_uv_x = (world_pos.xz + vec2(world_pos.y * 0.75, world_pos.y * 1.25)) * cliff_jitter_scale;
@@ -1257,16 +1259,19 @@ void fragment() {
 	vec2 dx_z = dFdx(uv_z);
 	vec2 dy_z = dFdy(uv_z);
 
-	float geom_slope_y = triplanar_normal.y;
-	if (cliff_rim_noise_strength > 0.0) {
-		vec2 rim_fbm_uv = (v_world_pos.xz + vec2(v_world_pos.y * 0.47, v_world_pos.y * 0.83)) * cliff_rim_noise_scale;
-		float rim_fbm = (macro_fbm(rim_fbm_uv) - 0.5) * 2.0;
-		geom_slope_y = clamp(geom_slope_y + rim_fbm * cliff_rim_noise_strength, 0.0, 1.0);
-	}
+	float slope_cliff_factor = 0.0;
+	if (v_cliff_factor > 0.001) {
+		float geom_slope_y = triplanar_normal.y;
+		if (cliff_rim_noise_strength > 0.0) {
+			vec2 rim_fbm_uv = (v_world_pos.xz + vec2(v_world_pos.y * 0.47, v_world_pos.y * 0.83)) * cliff_rim_noise_scale;
+			float rim_fbm = (macro_fbm(rim_fbm_uv) - 0.5) * 2.0;
+			geom_slope_y = clamp(geom_slope_y + rim_fbm * cliff_rim_noise_strength, 0.0, 1.0);
+		}
 
-	float cliff_mid = 0.65;
-	float cliff_half_width = max(0.02, cliff_blend_smoothness);
-	float slope_cliff_factor = 1.0 - smoothstep(cliff_mid - cliff_half_width, cliff_mid + cliff_half_width, geom_slope_y);
+		float cliff_mid = 0.65;
+		float cliff_half_width = max(0.02, cliff_blend_smoothness);
+		slope_cliff_factor = (1.0 - smoothstep(cliff_mid - cliff_half_width, cliff_mid + cliff_half_width, geom_slope_y)) * v_cliff_factor;
+	}
 
 	vec4 raw_weights = v_tex_weights;
 	raw_weights.x = raw_weights.x < 0.001 ? 0.0 : raw_weights.x;
@@ -2738,13 +2743,42 @@ void fragment() {
 		if (gz > 0) maxDelta = Math.Max(maxDelta, Math.Abs(h - GetGridNodeHeight(gx, gz - 1, cells, w, d)));
 		if (gz < d) maxDelta = Math.Max(maxDelta, Math.Abs(h - GetGridNodeHeight(gx, gz + 1, cells, w, d)));
 
-		float slopeRatio = maxDelta / Math.Max(0.001f, quadSize);
-		float deltaCliff = Smoothstep(0.20f, 0.75f, slopeRatio);
+		sbyte minTier = sbyte.MaxValue;
+		sbyte maxTier = sbyte.MinValue;
+		int cellCount = 0;
 
-		Vector3 normal = GetVertexNormal(gx, gz, cells, w, d, quadSize);
-		float normalCliff = 1.0f - Smoothstep(0.70f, 0.90f, Math.Clamp(normal.Y, 0.0f, 1.0f));
+		void CheckCell(int cx, int cz)
+		{
+			if (cx >= 0 && cx < w && cz >= 0 && cz < d)
+			{
+				sbyte t = cells[cx, cz].MacroTier;
+				if (t < minTier) minTier = t;
+				if (t > maxTier) maxTier = t;
+				cellCount++;
+			}
+		}
 
-		return Math.Clamp(Math.Max(deltaCliff, normalCliff), 0.0f, 1.0f);
+		CheckCell(gx - 1, gz - 1);
+		CheckCell(gx, gz - 1);
+		CheckCell(gx - 1, gz);
+		CheckCell(gx, gz);
+
+		float tierCliffDeltaThreshold = TerrainCell.TIER_HEIGHT * 0.70f;
+		bool hasTierDifference = cellCount > 1 && (maxTier - minTier) >= 1;
+		bool hasStepHeightDelta = maxDelta >= tierCliffDeltaThreshold;
+
+		if (!hasTierDifference && !hasStepHeightDelta)
+		{
+			return 0.0f;
+		}
+
+		float deltaCliff = Smoothstep(TerrainCell.TIER_HEIGHT * 0.50f, TerrainCell.TIER_HEIGHT * 0.85f, maxDelta);
+		if (hasTierDifference)
+		{
+			deltaCliff = Math.Max(deltaCliff, 1.0f);
+		}
+
+		return Math.Clamp(deltaCliff, 0.0f, 1.0f);
 	}
 
 	private void ProcessCellQuad(
@@ -2786,14 +2820,31 @@ void fragment() {
 		float cliffSE = GetVertexCliffWeight(x + 1, z + 1, cells, w, d, quadSize);
 		float cliffSW = GetVertexCliffWeight(x, z + 1, cells, w, d, quadSize);
 
+		sbyte currentTier = cell.MacroTier;
+		bool bordersDifferentTier = false;
+		if (x > 0 && Math.Abs(cells[x - 1, z].MacroTier - currentTier) >= 1) bordersDifferentTier = true;
+		if (x < w - 1 && Math.Abs(cells[x + 1, z].MacroTier - currentTier) >= 1) bordersDifferentTier = true;
+		if (z > 0 && Math.Abs(cells[x, z - 1].MacroTier - currentTier) >= 1) bordersDifferentTier = true;
+		if (z < d - 1 && Math.Abs(cells[x, z + 1].MacroTier - currentTier) >= 1) bordersDifferentTier = true;
+
 		float maxCenterDelta = Math.Max(
 			Math.Max(Math.Abs(hC - hNW), Math.Abs(hC - hNE)),
 			Math.Max(Math.Abs(hC - hSE), Math.Abs(hC - hSW))
 		);
-		float centerSlopeRatio = maxCenterDelta / Math.Max(0.001f, quadSize * 0.707f);
-		float centerDeltaCliff = Smoothstep(0.20f, 0.75f, centerSlopeRatio);
-		float avgCornerCliff = (cliffNW + cliffNE + cliffSE + cliffSW) * 0.25f;
-		float cliffC = Math.Clamp(Math.Max(centerDeltaCliff, avgCornerCliff), 0.0f, 1.0f);
+		float tierStepThreshold = TerrainCell.TIER_HEIGHT * 0.70f;
+		bool hasInternalStep = maxCenterDelta >= tierStepThreshold;
+
+		float cliffC = 0.0f;
+		if (bordersDifferentTier || hasInternalStep || cliffNW > 0f || cliffNE > 0f || cliffSE > 0f || cliffSW > 0f)
+		{
+			float centerDeltaCliff = Smoothstep(TerrainCell.TIER_HEIGHT * 0.50f, TerrainCell.TIER_HEIGHT * 0.85f, maxCenterDelta);
+			float avgCornerCliff = (cliffNW + cliffNE + cliffSE + cliffSW) * 0.25f;
+			cliffC = Math.Clamp(Math.Max(centerDeltaCliff, avgCornerCliff), 0.0f, 1.0f);
+			if (bordersDifferentTier && (cliffNW > 0f || cliffNE > 0f || cliffSE > 0f || cliffSW > 0f))
+			{
+				cliffC = Math.Max(cliffC, avgCornerCliff);
+			}
+		}
 
 		int mapSplatW = splatMap != null ? splatMap.GetLength(0) : 0;
 		int mapSplatD = splatMap != null ? splatMap.GetLength(1) : 0;
