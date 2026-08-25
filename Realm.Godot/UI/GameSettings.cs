@@ -183,6 +183,10 @@ public static class GameSettings
 	{
 		int currentScreen = GetSafeScreenIndex();
 		Vector2I screenSize = DisplayServer.ScreenGetSize(currentScreen);
+		if (screenSize.X <= 0 || screenSize.Y <= 0)
+		{
+			screenSize = DefaultFallbackResolution;
+		}
 		var standardRes = new List<Vector2I>
 		{
 			new Vector2I(3840, 2160),

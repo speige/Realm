@@ -363,9 +363,15 @@ public partial class SettingsMenu : Control
 	private void PopulateDropdowns()
 	{
 		_resolutionOpt.Clear();
-		_resolutionOpt.AddItem("1920 x 1080", 0);
-		_resolutionOpt.AddItem("1600 x 900", 1);
-		_resolutionOpt.AddItem("1280 x 720", 2);
+		if (GameSettings.Resolutions == null || GameSettings.Resolutions.Count == 0)
+		{
+			GameSettings.InitializeResolutions();
+		}
+		for (int i = 0; i < GameSettings.Resolutions.Count; i++)
+		{
+			var res = GameSettings.Resolutions[i];
+			_resolutionOpt.AddItem($"{res.X} x {res.Y}", i);
+		}
 
 		_qualityOpt.Clear();
 		_qualityOpt.AddItem(TranslationServer.Translate("Low"), 0);
