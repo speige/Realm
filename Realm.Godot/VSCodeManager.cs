@@ -916,11 +916,66 @@ public class VSCodeManager
 
 				string? tintStr = node["tint"]?.ToString() ?? node["Tint"]?.ToString();
 
+				float heightScale = 1.0f;
+				if (node["height_scale"] != null && float.TryParse(node["height_scale"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHs))
+				{
+					heightScale = parsedHs;
+				}
+				else if (node["Height_Scale"] != null && float.TryParse(node["Height_Scale"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHs2))
+				{
+					heightScale = parsedHs2;
+				}
+				else if (node["heightScale"] != null && float.TryParse(node["heightScale"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHs3))
+				{
+					heightScale = parsedHs3;
+				}
+
+				float heightOffset = 0.0f;
+				if (node["height_offset"] != null && float.TryParse(node["height_offset"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHo))
+				{
+					heightOffset = parsedHo;
+				}
+				else if (node["Height_Offset"] != null && float.TryParse(node["Height_Offset"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHo2))
+				{
+					heightOffset = parsedHo2;
+				}
+				else if (node["heightOffset"] != null && float.TryParse(node["heightOffset"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHo3))
+				{
+					heightOffset = parsedHo3;
+				}
+
+				float crevicePower = 1.0f;
+				if (node["crevice_power"] != null && float.TryParse(node["crevice_power"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCp))
+				{
+					crevicePower = parsedCp;
+				}
+				else if (node["Crevice_Power"] != null && float.TryParse(node["Crevice_Power"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCp2))
+				{
+					crevicePower = parsedCp2;
+				}
+				else if (node["crevicePower"] != null && float.TryParse(node["crevicePower"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCp3))
+				{
+					crevicePower = parsedCp3;
+				}
+
+				float edgeNoiseInfluence = 1.0f;
+
 				Callable.From(() =>
 				{
 					if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 					{
-						GameHost.Instance.GroundTerrain.UpdateTextureParamDirect(swatchName, tileMode, uvScale, stochasticTileSize, crossFade, brightness, tintStr);
+						GameHost.Instance.GroundTerrain.UpdateTextureParamDirect(
+							swatchName,
+							tileMode,
+							uvScale,
+							stochasticTileSize,
+							crossFade,
+							brightness,
+							tintStr,
+							heightScale,
+							heightOffset,
+							crevicePower,
+							edgeNoiseInfluence);
 					}
 				}).CallDeferred();
 

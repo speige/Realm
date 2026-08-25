@@ -1023,6 +1023,7 @@ uniform bool enable_height_blend = true;
 uniform bool enable_fast_planar = false;
 
 uniform vec4 swatch_params[32];
+uniform vec4 swatch_height_params[32];
 
 varying flat vec4 v_tex_indices;
 varying vec4 v_tex_weights;
@@ -1275,11 +1276,44 @@ void fragment() {
 		vec4 heights = vec4(c0.a, c1.a, c2.a, c3.a);
 		vec4 noise_offsets = vec4(edge_noise, -edge_noise, edge_noise * 0.75, -edge_noise * 0.75);
 
+		int idx0 = int(clamp(round(v_tex_indices.x), 0.0, 31.0));
+		int idx1 = int(clamp(round(v_tex_indices.y), 0.0, 31.0));
+		int idx2 = int(clamp(round(v_tex_indices.z), 0.0, 31.0));
+		int idx3 = int(clamp(round(v_tex_indices.w), 0.0, 31.0));
+
+		vec4 hp0 = swatch_height_params[idx0];
+		vec4 hp1 = swatch_height_params[idx1];
+		vec4 hp2 = swatch_height_params[idx2];
+		vec4 hp3 = swatch_height_params[idx3];
+
+		vec4 h_scales = vec4(
+			hp0.x > 0.001 ? hp0.x : 1.0,
+			hp1.x > 0.001 ? hp1.x : 1.0,
+			hp2.x > 0.001 ? hp2.x : 1.0,
+			hp3.x > 0.001 ? hp3.x : 1.0
+		);
+
+		vec4 h_biases = vec4(hp0.y, hp1.y, hp2.y, hp3.y);
+
+		vec4 h_powers = vec4(
+			hp0.z > 0.001 ? hp0.z : 1.0,
+			hp1.z > 0.001 ? hp1.z : 1.0,
+			hp2.z > 0.001 ? hp2.z : 1.0,
+			hp3.z > 0.001 ? hp3.z : 1.0
+		);
+
+		vec4 shaped_heights = vec4(
+			pow(clamp(heights.x, 0.0, 1.0), h_powers.x),
+			pow(clamp(heights.y, 0.0, 1.0), h_powers.y),
+			pow(clamp(heights.z, 0.0, 1.0), h_powers.z),
+			pow(clamp(heights.w, 0.0, 1.0), h_powers.w)
+		);
+
 		vec4 height_scores = vec4(
-			norm_weights.x > 0.001 ? (norm_weights.x + heights.x + noise_offsets.x) : -100.0,
-			norm_weights.y > 0.001 ? (norm_weights.y + heights.y + noise_offsets.y) : -100.0,
-			norm_weights.z > 0.001 ? (norm_weights.z + heights.z + noise_offsets.z) : -100.0,
-			norm_weights.w > 0.001 ? (norm_weights.w + heights.w + noise_offsets.w) : -100.0
+			norm_weights.x > 0.001 ? (norm_weights.x + (shaped_heights.x * h_scales.x + h_biases.x) + noise_offsets.x) : -100.0,
+			norm_weights.y > 0.001 ? (norm_weights.y + (shaped_heights.y * h_scales.y + h_biases.y) + noise_offsets.y) : -100.0,
+			norm_weights.z > 0.001 ? (norm_weights.z + (shaped_heights.z * h_scales.z + h_biases.z) + noise_offsets.z) : -100.0,
+			norm_weights.w > 0.001 ? (norm_weights.w + (shaped_heights.w * h_scales.w + h_biases.w) + noise_offsets.w) : -100.0
 		);
 
 		float max_score = max(max(height_scores.x, height_scores.y), max(height_scores.z, height_scores.w));
@@ -1655,8 +1689,20 @@ void fragment() {
 	private static string? _cachedMapDir;
 	private List<string> _loadedTextureList = new List<string>();
 	private Godot.Vector4[] _swatchParamsCache = new Godot.Vector4[32];
+	private Godot.Vector4[] _swatchHeightParamsCache = new Godot.Vector4[32];
 
-	public void UpdateTextureParamDirect(string swatchName, string tileMode, float uvScale, float stochasticTileSize, float crossFade = 5.0f, float? brightness = null, string? tintStr = null)
+	public void UpdateTextureParamDirect(
+		string swatchName,
+		string tileMode,
+		float uvScale,
+		float stochasticTileSize,
+		float crossFade = 5.0f,
+		float? brightness = null,
+		string? tintStr = null,
+		float heightScale = 1.0f,
+		float heightOffset = 0.0f,
+		float crevicePower = 1.0f,
+		float edgeNoiseInfluence = 1.0f)
 	{
 		if (_material == null) return;
 		string cleanName = System.IO.Path.GetFileNameWithoutExtension(swatchName);
@@ -1678,8 +1724,26 @@ void fragment() {
 			float stoch = Math.Clamp(stochasticTileSize, 0.5f, 3.0f);
 			float cf = crossFade > 0.10f ? Math.Clamp(crossFade, 0.0f, 10.0f) * 0.01f : Math.Clamp(crossFade, 0.0f, 0.10f);
 
+			float hs = Math.Clamp(heightScale, 0.1f, 3.0f);
+			float ho = Math.Clamp(heightOffset, -1.0f, 1.0f);
+			float cp = Math.Clamp(crevicePower, 0.5f, 4.0f);
+			float en = 1.0f;
+
 			_swatchParamsCache[targetIndex] = new Godot.Vector4(tm, uv, stoch, cf);
+			_swatchHeightParamsCache[targetIndex] = new Godot.Vector4(hs, ho, cp, en);
+
 			_material.SetShaderParameter("swatch_params", _swatchParamsCache);
+			_material.SetShaderParameter("swatch_height_params", _swatchHeightParamsCache);
+
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Terrain.TerrainState>(GameHost.Instance.WorldEntity))
+			{
+				ref var ts = ref GameHost.Instance.EcsWorld.Get<Realm.Ecs.Components.Terrain.TerrainState>(GameHost.Instance.WorldEntity);
+				if (ts.SwatchConfigs == null || ts.SwatchConfigs.Length != 32)
+				{
+					ts.SwatchConfigs = new Realm.Ecs.Components.Terrain.TerrainSwatchConfig[32];
+				}
+				ts.SwatchConfigs[targetIndex] = new Realm.Ecs.Components.Terrain.TerrainSwatchConfig(hs, ho, cp, en);
+			}
 		}
 
 		if (brightness.HasValue || !string.IsNullOrEmpty(tintStr))
@@ -1739,9 +1803,11 @@ void fragment() {
 		catch { }
 
 		var swatchParams = new Godot.Vector4[32];
+		var swatchHeightParams = new Godot.Vector4[32];
 		for (int i = 0; i < 32; i++)
 		{
 			swatchParams[i] = new Godot.Vector4(1.0f, 1.0f, 1.0f, 0.05f);
+			swatchHeightParams[i] = new Godot.Vector4(1.0f, 0.0f, 1.0f, 1.0f);
 		}
 
 		if (texturesObj != null)
@@ -1764,6 +1830,9 @@ void fragment() {
 				float uvScale = 1.0f;
 				float stochasticTileSize = 1.0f;
 				float crossFade = 0.05f;
+				float heightScale = 1.0f;
+				float heightOffset = 0.0f;
+				float crevicePower = 1.0f;
 
 				if (swatchNode is System.Text.Json.Nodes.JsonObject sObj)
 				{
@@ -1790,15 +1859,51 @@ void fragment() {
 					{
 						crossFade = parsedCf > 0.10f ? Math.Clamp(parsedCf, 0.0f, 10.0f) * 0.01f : Math.Clamp(parsedCf, 0.0f, 0.10f);
 					}
+
+					string hsStr = sObj["Height_Scale"]?.ToString() ?? sObj["height_scale"]?.ToString() ?? sObj["heightScale"]?.ToString();
+					if (!string.IsNullOrEmpty(hsStr) && float.TryParse(hsStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHs))
+					{
+						heightScale = Math.Clamp(parsedHs, 0.1f, 3.0f);
+					}
+
+					string hoStr = sObj["Height_Offset"]?.ToString() ?? sObj["height_offset"]?.ToString() ?? sObj["heightOffset"]?.ToString();
+					if (!string.IsNullOrEmpty(hoStr) && float.TryParse(hoStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHo))
+					{
+						heightOffset = Math.Clamp(parsedHo, -1.0f, 1.0f);
+					}
+
+					string cpStr = sObj["Crevice_Power"]?.ToString() ?? sObj["crevice_power"]?.ToString() ?? sObj["crevicePower"]?.ToString();
+					if (!string.IsNullOrEmpty(cpStr) && float.TryParse(cpStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCp))
+					{
+						crevicePower = Math.Clamp(parsedCp, 0.5f, 4.0f);
+					}
 				}
 
 				swatchParams[i] = new Godot.Vector4(tileMode, uvScale, stochasticTileSize, crossFade);
+				swatchHeightParams[i] = new Godot.Vector4(heightScale, heightOffset, crevicePower, 1.0f);
 			}
 		}
 
 		_loadedTextureList = textureList;
 		_swatchParamsCache = swatchParams;
+		_swatchHeightParamsCache = swatchHeightParams;
 		_material.SetShaderParameter("swatch_params", swatchParams);
+		_material.SetShaderParameter("swatch_height_params", swatchHeightParams);
+
+		if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Terrain.TerrainState>(GameHost.Instance.WorldEntity))
+		{
+			ref var ts = ref GameHost.Instance.EcsWorld.Get<Realm.Ecs.Components.Terrain.TerrainState>(GameHost.Instance.WorldEntity);
+			ts.SwatchConfigs = new Realm.Ecs.Components.Terrain.TerrainSwatchConfig[32];
+			for (int i = 0; i < 32; i++)
+			{
+				ts.SwatchConfigs[i] = new Realm.Ecs.Components.Terrain.TerrainSwatchConfig(
+					swatchHeightParams[i].X,
+					swatchHeightParams[i].Y,
+					swatchHeightParams[i].Z,
+					swatchHeightParams[i].W
+				);
+			}
+		}
 
 		if (!forceReload && _cachedAlbedoTextureArray != null && _cachedNormalRoughnessTextureArray != null && _cachedMapDir == mapDir)
 		{

@@ -16,6 +16,7 @@ namespace Realm.Ecs.Components.Terrain
 		public float CellSize;
 		public TerrainCell[,]? Cells;
 		public int[,]? PathingCodes;
+		public TerrainSwatchConfig[]? SwatchConfigs;
 		public DtNavMesh NavMesh;
 		public DtNavMeshQuery NavMeshQuery;
 
