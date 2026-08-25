@@ -517,7 +517,7 @@ public partial class GameHost
 		{
 			if (GodotObject.IsInstanceValid(prop) && MatchesEntityOrAssetKey(prop, normAssetKey))
 			{
-				ApplyMaterialOverridesToNode(prop, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor);
+				ApplyMaterialOverridesToNode(prop, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor, false);
 			}
 		}
 
@@ -525,7 +525,7 @@ public partial class GameHost
 		{
 			if (GodotObject.IsInstanceValid(unit) && MatchesEntityOrAssetKey(unit, normAssetKey))
 			{
-				ApplyMaterialOverridesToNode(unit, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor);
+				ApplyMaterialOverridesToNode(unit, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor, true);
 				if (!ignorePlayerColor)
 				{
 					unit.UpdatePlayerColorVisual();
@@ -569,7 +569,7 @@ public partial class GameHost
 			ModelNormalMode normalMode = GetModelNormalMode(unit);
 			bool ignorePlayerColor = GetModelIgnorePlayerColor(unit);
 			bool normalizeLuminance = GetModelNormalizeLuminance(unit);
-			ApplyMaterialOverridesToNode(unit, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor);
+			ApplyMaterialOverridesToNode(unit, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor, true);
 			if (!ignorePlayerColor)
 			{
 				unit.UpdatePlayerColorVisual();
@@ -603,7 +603,7 @@ public partial class GameHost
 			ModelNormalMode normalMode = GetModelNormalMode(prop);
 			bool ignorePlayerColor = GetModelIgnorePlayerColor(prop);
 			bool normalizeLuminance = GetModelNormalizeLuminance(prop);
-			ApplyMaterialOverridesToNode(prop, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor);
+			ApplyMaterialOverridesToNode(prop, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor, false);
 		}
 	}
 
@@ -620,9 +620,12 @@ public partial class GameHost
 		Color? colorTint = null,
 		ModelNormalMode normalMode = ModelNormalMode.Flat,
 		bool normalizeLuminance = true,
-		bool? ignorePlayerColor = null)
+		bool? ignorePlayerColor = null,
+		bool? isUnitOrBuilding = null)
 	{
 		if (node == null || !GodotObject.IsInstanceValid(node)) return;
+
+		bool isUnit = isUnitOrBuilding ?? (node is Unit3D || node.GetParent() is Unit3D || node.Owner is Unit3D);
 
 		Color tint = colorTint ?? new Color(1.0f, 1.0f, 1.0f);
 		float multR = brightness * tint.R;
@@ -637,6 +640,7 @@ public partial class GameHost
 
 		Realm.Godot.Utils.PlayerColorShaderManager.RefreshShaderMaterialsForNode(node, normalizeLuminance);
 		Realm.Godot.Utils.PlayerColorShaderManager.SetNormalMode(node, (float)normalMode);
+		Realm.Godot.Utils.PlayerColorShaderManager.SetUnitReadability(node, isUnit);
 		if (ignorePlayerColor.HasValue)
 		{
 			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(node, ignorePlayerColor.Value);
@@ -701,6 +705,8 @@ public partial class GameHost
 			}
 
 			meshInst.SetInstanceShaderParameter(new StringName("normal_mode"), (float)normalMode);
+			meshInst.SetInstanceShaderParameter(new StringName("unit_ambient_boost"), isUnit ? 0.10f : 0.0f);
+			meshInst.SetInstanceShaderParameter(new StringName("unit_rim_intensity"), isUnit ? 0.25f : 0.0f);
 			if (ignorePlayerColor.HasValue)
 			{
 				meshInst.SetInstanceShaderParameter(new StringName("ignore_player_color"), ignorePlayerColor.Value ? 1.0f : 0.0f);

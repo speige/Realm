@@ -4339,6 +4339,14 @@
                         let crossFade = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Cross_Fade !== undefined || itemVal.cross_fade !== undefined || itemVal.Grid_Cross_Fade !== undefined || itemVal.grid_cross_fade !== undefined)) ? parseFloat(itemVal.Cross_Fade ?? itemVal.cross_fade ?? itemVal.Grid_Cross_Fade ?? itemVal.grid_cross_fade) : 5.0;
                         if (isNaN(crossFade)) crossFade = 5.0;
 
+                        let heightScale = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Height_Scale !== undefined || itemVal.height_scale !== undefined || itemVal.heightScale !== undefined)) ? parseFloat(itemVal.Height_Scale ?? itemVal.height_scale ?? itemVal.heightScale) : 1.0;
+                        if (isNaN(heightScale)) heightScale = 1.0;
+                        let heightOffset = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Height_Offset !== undefined || itemVal.height_offset !== undefined || itemVal.heightOffset !== undefined)) ? parseFloat(itemVal.Height_Offset ?? itemVal.height_offset ?? itemVal.heightOffset) : 0.0;
+                        if (isNaN(heightOffset)) heightOffset = 0.0;
+                        let crevicePower = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Crevice_Power !== undefined || itemVal.crevice_power !== undefined || itemVal.crevicePower !== undefined)) ? parseFloat(itemVal.Crevice_Power ?? itemVal.crevice_power ?? itemVal.crevicePower) : 1.0;
+                        if (isNaN(crevicePower)) crevicePower = 1.0;
+                        let edgeNoiseInfluence = 1.0;
+
                         html += `<div class="texture-stochastic-controls" data-key="${escapeHtml(itemKey)}" style="margin-top: 6px; margin-bottom: 8px; padding: 8px 12px; background: var(--vscode-input-background, #1e1e24); border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.15)); border-left: 4px solid var(--vscode-symbolIcon-propertyForeground, #4ec9b0); border-radius: 6px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">`;
                         
                         html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
@@ -4352,6 +4360,21 @@
                         html += `<input type="range" class="input-texture-tint-slider" data-key="${escapeHtml(itemKey)}" min="0.0" max="1.0" step="0.01" value="${tintHue.toFixed(2)}" title="Hue slider for tint" style="width: 80px; cursor: pointer;" />`;
                         html += `<input type="color" class="input-texture-tint-picker" data-key="${escapeHtml(itemKey)}" value="${tint}" title="Direct RGB tint color picker" style="width: 44px; height: 22px; padding: 0; background: transparent; border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.25)); border-radius: 3px; cursor: pointer;" />`;
                         html += `</div>`;
+                        html += `</div>`;
+
+                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Displacement amplitude multiplier for terrain height blending (range 0.1 to 3.0, default 1.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Height Scale: <span class="lbl-height-scale-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${heightScale.toFixed(2)}</span></label>`;
+                        html += `<input type="range" class="input-texture-height-scale" data-key="${escapeHtml(itemKey)}" min="0.1" max="3.0" step="0.05" value="${heightScale}" title="Displacement amplitude multiplier for terrain height blending (range 0.1 to 3.0, default 1.0)." style="width: 130px; cursor: pointer;" />`;
+                        html += `</div>`;
+
+                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Vertical priority elevation bias. Positive values raise layer dominance, negative sink below (range -1.0 to 1.0, default 0.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Height Offset: <span class="lbl-height-offset-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${heightOffset.toFixed(2)}</span></label>`;
+                        html += `<input type="range" class="input-texture-height-offset" data-key="${escapeHtml(itemKey)}" min="-1.0" max="1.0" step="0.02" value="${heightOffset}" title="Vertical priority elevation bias. Positive values raise layer dominance, negative sink below (range -1.0 to 1.0, default 0.0)." style="width: 130px; cursor: pointer;" />`;
+                        html += `</div>`;
+
+                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Crevice power exponent shaping how aggressively low crevices/joints are filled (range 0.5 to 4.0, default 1.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Crevice Power: <span class="lbl-crevice-power-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${crevicePower.toFixed(2)}</span></label>`;
+                        html += `<input type="range" class="input-texture-crevice-power" data-key="${escapeHtml(itemKey)}" min="0.5" max="4.0" step="0.1" value="${crevicePower}" title="Crevice power exponent shaping how aggressively low crevices/joints are filled (range 0.5 to 4.0, default 1.0)." style="width: 130px; cursor: pointer;" />`;
                         html += `</div>`;
 
                         html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
@@ -4458,6 +4481,10 @@
             const crossFade = parseFloat(itemVal.Cross_Fade ?? itemVal.cross_fade ?? itemVal.Grid_Cross_Fade ?? itemVal.grid_cross_fade ?? 5.0);
             const brightness = parseFloat(itemVal.Brightness ?? itemVal.brightness ?? 1.0);
             const tint = (itemVal.Tint || itemVal.tint) ?? '#ffffff';
+            const heightScale = parseFloat(itemVal.Height_Scale ?? itemVal.height_scale ?? itemVal.heightScale ?? 1.0);
+            const heightOffset = parseFloat(itemVal.Height_Offset ?? itemVal.height_offset ?? itemVal.heightOffset ?? 0.0);
+            const crevicePower = parseFloat(itemVal.Crevice_Power ?? itemVal.crevice_power ?? itemVal.crevicePower ?? 1.0);
+            const edgeNoiseInfluence = 1.0;
 
             const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
             fetch(`http://127.0.0.1:${ipcPort}/api/`, {
@@ -4471,10 +4498,71 @@
                     stochasticTileSize: stochTileSize,
                     crossFade: crossFade,
                     brightness: brightness,
-                    tint: tint
+                    tint: tint,
+                    heightScale: heightScale,
+                    heightOffset: heightOffset,
+                    crevicePower: crevicePower,
+                    edgeNoiseInfluence: 1.0
                 })
             }).catch(() => {});
         }
+
+        display.querySelectorAll('.input-texture-height-scale').forEach(input => {
+            const handleHsChange = (e, shouldSave) => {
+                const key = e.target.getAttribute('data-key');
+                const val = parseFloat(e.target.value);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const lbl = parentRow.querySelector('.lbl-height-scale-val');
+                    if (lbl) lbl.textContent = val.toFixed(2);
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.height_scale = val;
+                    delete itemVal.Height_Scale;
+                    delete itemVal.heightScale;
+                }, shouldSave);
+            };
+            input.addEventListener('input', (e) => handleHsChange(e, false));
+            input.addEventListener('change', (e) => handleHsChange(e, true));
+        });
+
+        display.querySelectorAll('.input-texture-height-offset').forEach(input => {
+            const handleHoChange = (e, shouldSave) => {
+                const key = e.target.getAttribute('data-key');
+                const val = parseFloat(e.target.value);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const lbl = parentRow.querySelector('.lbl-height-offset-val');
+                    if (lbl) lbl.textContent = val.toFixed(2);
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.height_offset = val;
+                    delete itemVal.Height_Offset;
+                    delete itemVal.heightOffset;
+                }, shouldSave);
+            };
+            input.addEventListener('input', (e) => handleHoChange(e, false));
+            input.addEventListener('change', (e) => handleHoChange(e, true));
+        });
+
+        display.querySelectorAll('.input-texture-crevice-power').forEach(input => {
+            const handleCpChange = (e, shouldSave) => {
+                const key = e.target.getAttribute('data-key');
+                const val = parseFloat(e.target.value);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const lbl = parentRow.querySelector('.lbl-crevice-power-val');
+                    if (lbl) lbl.textContent = val.toFixed(2);
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.crevice_power = val;
+                    delete itemVal.Crevice_Power;
+                    delete itemVal.crevicePower;
+                }, shouldSave);
+            };
+            input.addEventListener('input', (e) => handleCpChange(e, false));
+            input.addEventListener('change', (e) => handleCpChange(e, true));
+        });
 
         display.querySelectorAll('.input-texture-brightness').forEach(input => {
             const handleBrightChange = (e, shouldSave) => {

@@ -16,6 +16,8 @@ public static class PlayerColorShaderManager
 	private static readonly StringName _paramModelColorTint = new("model_color_tint");
 	private static readonly StringName _paramIgnorePlayerColor = new("ignore_player_color");
 	private static readonly StringName _paramNormalMode = new("normal_mode");
+	private static readonly StringName _paramUnitAmbientBoost = new("unit_ambient_boost");
+	private static readonly StringName _paramUnitRimIntensity = new("unit_rim_intensity");
 
 	private const string ShaderPath = "res://Assets/shaders/player_color_spatial.gdshader";
 
@@ -531,13 +533,13 @@ public static class PlayerColorShaderManager
 			|| nodeName.Contains("HoverRing", StringComparison.OrdinalIgnoreCase);
 	}
 
-	public static void ApplyPlayerColorShader(Node rootNode, Color playerColor, bool ignorePlayerColor = false, bool normalizeLuminance = true)
+	public static void ApplyPlayerColorShader(Node rootNode, Color playerColor, bool ignorePlayerColor = false, bool normalizeLuminance = true, bool isUnitOrBuilding = true)
 	{
 		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
-		ApplyPlayerColorShaderRecursive(rootNode, playerColor, ignorePlayerColor, normalizeLuminance);
+		ApplyPlayerColorShaderRecursive(rootNode, playerColor, ignorePlayerColor, normalizeLuminance, isUnitOrBuilding);
 	}
 
-	private static void ApplyPlayerColorShaderRecursive(Node node, Color playerColor, bool ignorePlayerColor = false, bool normalizeLuminance = true)
+	private static void ApplyPlayerColorShaderRecursive(Node node, Color playerColor, bool ignorePlayerColor = false, bool normalizeLuminance = true, bool isUnitOrBuilding = true)
 	{
 		if (node is MeshInstance3D meshInst)
 		{
@@ -573,6 +575,8 @@ public static class PlayerColorShaderManager
 				meshInst.SetInstanceShaderParameter(_paramPlayerColor, playerColor);
 				meshInst.SetInstanceShaderParameter(_paramIgnorePlayerColor, ignorePlayerColor ? 1.0f : 0.0f);
 				meshInst.SetInstanceShaderParameter(_paramNormalMode, 2.0f);
+				meshInst.SetInstanceShaderParameter(_paramUnitAmbientBoost, isUnitOrBuilding ? 0.10f : 0.0f);
+				meshInst.SetInstanceShaderParameter(_paramUnitRimIntensity, isUnitOrBuilding ? 0.25f : 0.0f);
 			}
 		}
 
@@ -580,7 +584,33 @@ public static class PlayerColorShaderManager
 		{
 			if (child is Node childNode)
 			{
-				ApplyPlayerColorShaderRecursive(childNode, playerColor, ignorePlayerColor, normalizeLuminance);
+				ApplyPlayerColorShaderRecursive(childNode, playerColor, ignorePlayerColor, normalizeLuminance, isUnitOrBuilding);
+			}
+		}
+	}
+
+	public static void SetUnitReadability(Node rootNode, bool isUnitOrBuilding)
+	{
+		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
+		SetUnitReadabilityRecursive(rootNode, isUnitOrBuilding ? 0.10f : 0.0f, isUnitOrBuilding ? 0.25f : 0.0f);
+	}
+
+	private static void SetUnitReadabilityRecursive(Node node, float ambientBoost, float rimIntensity)
+	{
+		if (node is GeometryInstance3D geomInst)
+		{
+			if (!IsExcludedMesh(geomInst))
+			{
+				geomInst.SetInstanceShaderParameter(_paramUnitAmbientBoost, ambientBoost);
+				geomInst.SetInstanceShaderParameter(_paramUnitRimIntensity, rimIntensity);
+			}
+		}
+
+		foreach (var child in node.GetChildren())
+		{
+			if (child is Node childNode)
+			{
+				SetUnitReadabilityRecursive(childNode, ambientBoost, rimIntensity);
 			}
 		}
 	}
