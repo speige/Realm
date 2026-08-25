@@ -520,6 +520,11 @@ public partial class EditableTerrain : StaticBody3D
 		}
 	}
 
+	public float CliffJitterStrength { get; set; } = 1.0f;
+	public float CliffJitterScale { get; set; } = 0.20f;
+	public float CliffRimNoiseStrength { get; set; } = 0.30f;
+	public float CliffRimNoiseScale { get; set; } = 0.08f;
+
 	public int[,] PathingCodes
 	{
 		get
@@ -585,6 +590,7 @@ public partial class EditableTerrain : StaticBody3D
 		public Color[] ColorsCache;
 		public float[] TexIndicesCache;
 		public float[] TexWeightsCache01;
+		public float[] CliffWeightsCache;
 		public Vector3[] NormalsCache;
 		public Vector2[] UvsCache;
 		public int[] IndicesCache;
@@ -1009,6 +1015,10 @@ uniform sampler2DArray terrain_normals_pbr : hint_default_white, filter_linear_m
 uniform float blend_softness = 0.2;
 uniform float cliff_texture_index = 2.0;
 uniform float cliff_blend_smoothness = 0.18;
+uniform float cliff_jitter_strength = 1.0;
+uniform float cliff_jitter_scale = 0.20;
+uniform float cliff_rim_noise_strength = 0.30;
+uniform float cliff_rim_noise_scale = 0.08;
 uniform sampler2D shroud_texture : hint_default_white;
 uniform vec2 shroud_world_min = vec2(-125.0, -125.0);
 uniform vec2 shroud_world_size = vec2(250.0, 250.0);
@@ -1047,7 +1057,8 @@ varying vec3 v_world_normal;
 varying vec4 v_color;
 
 float macro_hash(vec2 p) {
-	uvec2 q = uvec2(ivec2(p));
+	ivec2 ip = ivec2(floor(p));
+	uvec2 q = uvec2(ip);
 	q = q * uvec2(1597334677u, 3812015801u);
 	uint n = (q.x ^ q.y) * 1597334677u;
 	return float(n) * (1.0 / 4294967295.0);
@@ -1081,7 +1092,8 @@ vec4 sample_quad_array(sampler2DArray tex_array, float layer, vec2 uv) {
 }
 
 vec2 stochastic_hash(vec2 p) {
-	uvec2 q = uvec2(ivec2(p));
+	ivec2 ip = ivec2(floor(p));
+	uvec2 q = uvec2(ip);
 	q = q * uvec2(1597334677u, 3812015801u);
 	uint n = (q.x ^ q.y) * 1597334677u;
 	return vec2(float(n & 0xFFFFu), float((n >> 16u) & 0xFFFFu)) * (1.0 / 65535.0);
@@ -1196,9 +1208,22 @@ void vertex() {
 	v_tex_indices = CUSTOM0;
 	v_tex_weights = CUSTOM1;
 	v_color = COLOR;
-	
+
+	vec3 world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float cliff_mask = clamp(CUSTOM2.x, 0.0, 1.0);
+
+	if (cliff_jitter_strength > 0.0 && cliff_mask > 0.001) {
+		vec2 jitter_uv_x = (world_pos.xz + vec2(world_pos.y * 0.75, world_pos.y * 1.25)) * cliff_jitter_scale;
+		vec2 jitter_uv_z = (world_pos.xz + vec2(world_pos.y * 1.35 + 43.1, world_pos.y * 0.65 + 19.7)) * cliff_jitter_scale;
+		float noise_x = (macro_fbm(jitter_uv_x) - 0.5) * 2.0;
+		float noise_z = (macro_fbm(jitter_uv_z) - 0.5) * 2.0;
+		vec3 world_disp = vec3(noise_x, 0.0, noise_z) * (cliff_jitter_strength * cliff_mask);
+		world_pos += world_disp;
+		VERTEX = (inverse(MODEL_MATRIX) * vec4(world_pos, 1.0)).xyz;
+	}
+
 	v_world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
-	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	v_world_pos = world_pos;
 }
 
 void fragment() {
@@ -1232,14 +1257,16 @@ void fragment() {
 	vec2 dx_z = dFdx(uv_z);
 	vec2 dy_z = dFdy(uv_z);
 
+	float geom_slope_y = triplanar_normal.y;
+	if (cliff_rim_noise_strength > 0.0) {
+		vec2 rim_fbm_uv = (v_world_pos.xz + vec2(v_world_pos.y * 0.47, v_world_pos.y * 0.83)) * cliff_rim_noise_scale;
+		float rim_fbm = (macro_fbm(rim_fbm_uv) - 0.5) * 2.0;
+		geom_slope_y = clamp(geom_slope_y + rim_fbm * cliff_rim_noise_strength, 0.0, 1.0);
+	}
+
 	float cliff_mid = 0.65;
 	float cliff_half_width = max(0.02, cliff_blend_smoothness);
-	float slope_cliff_factor = 1.0 - smoothstep(cliff_mid - cliff_half_width, cliff_mid + cliff_half_width, triplanar_normal.y);
-	if (enable_macro_noise) {
-		float rim_noise = (base_fbm_val - 0.5) * 0.15;
-		float rim_mask = smoothstep(0.1, 0.9, slope_cliff_factor) * (1.0 - smoothstep(0.1, 0.9, slope_cliff_factor)) * 4.0;
-		slope_cliff_factor = clamp(slope_cliff_factor + rim_noise * rim_mask, 0.0, 1.0);
-	}
+	float slope_cliff_factor = 1.0 - smoothstep(cliff_mid - cliff_half_width, cliff_mid + cliff_half_width, geom_slope_y);
 
 	vec4 raw_weights = v_tex_weights;
 	raw_weights.x = raw_weights.x < 0.001 ? 0.0 : raw_weights.x;
@@ -1492,6 +1519,10 @@ void fragment() {
 		_material.SetShaderParameter("texture_scale", 1.0f / QuadSize);
 		_material.SetShaderParameter("cliff_texture_index", (float)CliffTextureIndex);
 		_material.SetShaderParameter("cliff_blend_smoothness", 0.18f);
+		_material.SetShaderParameter("cliff_jitter_strength", CliffJitterStrength);
+		_material.SetShaderParameter("cliff_jitter_scale", CliffJitterScale);
+		_material.SetShaderParameter("cliff_rim_noise_strength", CliffRimNoiseStrength);
+		_material.SetShaderParameter("cliff_rim_noise_scale", CliffRimNoiseScale);
 
 		ApplyQualitySettings(GameSettings.QualityIdx);
 
@@ -1521,6 +1552,8 @@ void fragment() {
 				_material.SetShaderParameter("enable_macro_noise", false);
 				_material.SetShaderParameter("enable_height_blend", false);
 				_material.SetShaderParameter("enable_fast_planar", true);
+				_material.SetShaderParameter("cliff_jitter_strength", 0.0f);
+				_material.SetShaderParameter("cliff_rim_noise_strength", 0.0f);
 				break;
 			case 1:
 				_material.SetShaderParameter("enable_stochastic", true);
@@ -1528,6 +1561,8 @@ void fragment() {
 				_material.SetShaderParameter("enable_macro_noise", false);
 				_material.SetShaderParameter("enable_height_blend", false);
 				_material.SetShaderParameter("enable_fast_planar", true);
+				_material.SetShaderParameter("cliff_jitter_strength", CliffJitterStrength * 0.5f);
+				_material.SetShaderParameter("cliff_rim_noise_strength", CliffRimNoiseStrength * 0.5f);
 				break;
 			case 2:
 				_material.SetShaderParameter("enable_stochastic", true);
@@ -1535,6 +1570,8 @@ void fragment() {
 				_material.SetShaderParameter("enable_macro_noise", true);
 				_material.SetShaderParameter("enable_height_blend", true);
 				_material.SetShaderParameter("enable_fast_planar", true);
+				_material.SetShaderParameter("cliff_jitter_strength", CliffJitterStrength);
+				_material.SetShaderParameter("cliff_rim_noise_strength", CliffRimNoiseStrength);
 				break;
 			case 3:
 			default:
@@ -1543,8 +1580,13 @@ void fragment() {
 				_material.SetShaderParameter("enable_macro_noise", true);
 				_material.SetShaderParameter("enable_height_blend", true);
 				_material.SetShaderParameter("enable_fast_planar", true);
+				_material.SetShaderParameter("cliff_jitter_strength", CliffJitterStrength);
+				_material.SetShaderParameter("cliff_rim_noise_strength", CliffRimNoiseStrength);
 				break;
 		}
+
+		_material.SetShaderParameter("cliff_jitter_scale", CliffJitterScale);
+		_material.SetShaderParameter("cliff_rim_noise_scale", CliffRimNoiseScale);
 	}
 
 	public static string GetKtxCmdPath()
@@ -2194,7 +2236,7 @@ void fragment() {
 		}
 	}
 
-	public float GetGridNodeHeight(int gx, int gz, TerrainCell[,] cells, int w, int d)
+	public static float GetGridNodeHeight(int gx, int gz, TerrainCell[,] cells, int w, int d)
 	{
 		if (cells == null || w <= 0 || d <= 0) return 0f;
 		int cellX = Math.Clamp(gx, 0, w - 1);
@@ -2306,6 +2348,7 @@ void fragment() {
 			chunk.ColorsCache = new Color[maxVertices];
 			chunk.TexIndicesCache = new float[maxVertices * 4];
 			chunk.TexWeightsCache01 = new float[maxVertices * 4];
+			chunk.CliffWeightsCache = new float[maxVertices * 4];
 		}
 
 		if (chunk.IndicesCache == null || chunk.IndicesCache.Length < maxIndices)
@@ -2332,6 +2375,7 @@ void fragment() {
 		Vector2[] finalUvs = chunk.UvsCache;
 		float[] finalTexIndices = chunk.TexIndicesCache;
 		float[] finalTexWeights = chunk.TexWeightsCache01;
+		float[] finalCliffWeights = chunk.CliffWeightsCache;
 		int[] finalIndices = chunk.IndicesCache;
 
 		if (vertexIndex < chunk.VerticesCache.Length)
@@ -2353,6 +2397,9 @@ void fragment() {
 
 			finalTexWeights = new float[vertexIndex * 4];
 			Array.Copy(chunk.TexWeightsCache01, finalTexWeights, vertexIndex * 4);
+
+			finalCliffWeights = new float[vertexIndex * 4];
+			Array.Copy(chunk.CliffWeightsCache, finalCliffWeights, vertexIndex * 4);
 		}
 
 		if (indexIndex < chunk.IndicesCache.Length)
@@ -2369,6 +2416,7 @@ void fragment() {
 		arrays[(int)Mesh.ArrayType.TexUV] = finalUvs;
 		arrays[(int)Mesh.ArrayType.Custom0] = finalTexIndices;
 		arrays[(int)Mesh.ArrayType.Custom1] = finalTexWeights;
+		arrays[(int)Mesh.ArrayType.Custom2] = finalCliffWeights;
 		arrays[(int)Mesh.ArrayType.Index] = finalIndices;
 
 		chunk.ArrayMesh.ClearSurfaces();
@@ -2376,10 +2424,11 @@ void fragment() {
 		{
 			int custom0Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift;
 			int custom1Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom1Shift;
+			int custom2Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom2Shift;
 			chunk.ArrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays,
 				new Godot.Collections.Array<Godot.Collections.Array>(),
 				null,
-				(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1) | custom0Format | custom1Format));
+				(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1 | Mesh.ArrayFormat.FormatCustom2) | custom0Format | custom1Format | custom2Format));
 		}
 
 		float minY = float.MaxValue;
@@ -2679,6 +2728,25 @@ void fragment() {
 		return 1.0f - Smoothstep(0.70f, 0.90f, ny);
 	}
 
+	public static float GetVertexCliffWeight(int gx, int gz, TerrainCell[,] cells, int w, int d, float quadSize)
+	{
+		if (cells == null || w <= 0 || d <= 0) return 0f;
+		float h = GetGridNodeHeight(gx, gz, cells, w, d);
+		float maxDelta = 0f;
+		if (gx > 0) maxDelta = Math.Max(maxDelta, Math.Abs(h - GetGridNodeHeight(gx - 1, gz, cells, w, d)));
+		if (gx < w) maxDelta = Math.Max(maxDelta, Math.Abs(h - GetGridNodeHeight(gx + 1, gz, cells, w, d)));
+		if (gz > 0) maxDelta = Math.Max(maxDelta, Math.Abs(h - GetGridNodeHeight(gx, gz - 1, cells, w, d)));
+		if (gz < d) maxDelta = Math.Max(maxDelta, Math.Abs(h - GetGridNodeHeight(gx, gz + 1, cells, w, d)));
+
+		float slopeRatio = maxDelta / Math.Max(0.001f, quadSize);
+		float deltaCliff = Smoothstep(0.20f, 0.75f, slopeRatio);
+
+		Vector3 normal = GetVertexNormal(gx, gz, cells, w, d, quadSize);
+		float normalCliff = 1.0f - Smoothstep(0.70f, 0.90f, Math.Clamp(normal.Y, 0.0f, 1.0f));
+
+		return Math.Clamp(Math.Max(deltaCliff, normalCliff), 0.0f, 1.0f);
+	}
+
 	private void ProcessCellQuad(
 		TerrainChunk chunk,
 		int x, int z,
@@ -2713,6 +2781,20 @@ void fragment() {
 		Vector3 normSW = GetVertexNormal(x, z + 1, cells, w, d, quadSize);
 		Vector3 normC = (normNW + normNE + normSE + normSW).Normalized();
 
+		float cliffNW = GetVertexCliffWeight(x, z, cells, w, d, quadSize);
+		float cliffNE = GetVertexCliffWeight(x + 1, z, cells, w, d, quadSize);
+		float cliffSE = GetVertexCliffWeight(x + 1, z + 1, cells, w, d, quadSize);
+		float cliffSW = GetVertexCliffWeight(x, z + 1, cells, w, d, quadSize);
+
+		float maxCenterDelta = Math.Max(
+			Math.Max(Math.Abs(hC - hNW), Math.Abs(hC - hNE)),
+			Math.Max(Math.Abs(hC - hSE), Math.Abs(hC - hSW))
+		);
+		float centerSlopeRatio = maxCenterDelta / Math.Max(0.001f, quadSize * 0.707f);
+		float centerDeltaCliff = Smoothstep(0.20f, 0.75f, centerSlopeRatio);
+		float avgCornerCliff = (cliffNW + cliffNE + cliffSE + cliffSW) * 0.25f;
+		float cliffC = Math.Clamp(Math.Max(centerDeltaCliff, avgCornerCliff), 0.0f, 1.0f);
+
 		int mapSplatW = splatMap != null ? splatMap.GetLength(0) : 0;
 		int mapSplatD = splatMap != null ? splatMap.GetLength(1) : 0;
 
@@ -2739,10 +2821,10 @@ void fragment() {
 
 		var (tex0, tex1, tex2, tex3) = GetQuadDominantTextures(floorS00, floorS10, floorS11, floorS01);
 
-		ProcessSubTriangleGround(chunk, gPNW, gPNE, gPC, normNW, normNE, normC, uvNW, uvNE, uvC, col, col, col, floorS00, floorS10, floorSC, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
-		ProcessSubTriangleGround(chunk, gPNE, gPSE, gPC, normNE, normSE, normC, uvNE, uvSE, uvC, col, col, col, floorS10, floorS11, floorSC, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
-		ProcessSubTriangleGround(chunk, gPSE, gPSW, gPC, normSE, normSW, normC, uvSE, uvSW, uvC, col, col, col, floorS11, floorS01, floorSC, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
-		ProcessSubTriangleGround(chunk, gPSW, gPNW, gPC, normSW, normNW, normC, uvSW, uvNW, uvC, col, col, col, floorS01, floorS00, floorSC, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPNW, gPNE, gPC, normNW, normNE, normC, uvNW, uvNE, uvC, col, col, col, cliffNW, cliffNE, cliffC, floorS00, floorS10, floorSC, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPNE, gPSE, gPC, normNE, normSE, normC, uvNE, uvSE, uvC, col, col, col, cliffNE, cliffSE, cliffC, floorS10, floorS11, floorSC, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPSE, gPSW, gPC, normSE, normSW, normC, uvSE, uvSW, uvC, col, col, col, cliffSE, cliffSW, cliffC, floorS11, floorS01, floorSC, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPSW, gPNW, gPC, normSW, normNW, normC, uvSW, uvNW, uvC, col, col, col, cliffSW, cliffNW, cliffC, floorS01, floorS00, floorSC, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
 	}
 
 	private void ProcessCellQuad(
@@ -2760,6 +2842,7 @@ void fragment() {
 		Vector3 norm0, Vector3 norm1, Vector3 norm2,
 		Vector2 uv0, Vector2 uv1, Vector2 uv2,
 		Color col0, Color col1, Color col2,
+		float cliff0, float cliff1, float cliff2,
 		TerrainSplatWeights s0, TerrainSplatWeights s1, TerrainSplatWeights s2,
 		int tex0, int tex1, int tex2, int tex3,
 		ref int vertexIndex,
@@ -2771,9 +2854,9 @@ void fragment() {
 		var (w10, w11, w12, w13) = GetSplatWeightsForQuad(s1, tex0, tex1, tex2, tex3);
 		var (w20, w21, w22, w23) = GetSplatWeightsForQuad(s2, tex0, tex1, tex2, tex3);
 
-		PopulateExplicitVertex(chunk, pos0, uv0, norm0, col0, tex0, tex1, tex2, tex3, w00, w01, w02, w03, ref vertexIndex);
-		PopulateExplicitVertex(chunk, pos1, uv1, norm1, col1, tex0, tex1, tex2, tex3, w10, w11, w12, w13, ref vertexIndex);
-		PopulateExplicitVertex(chunk, pos2, uv2, norm2, col2, tex0, tex1, tex2, tex3, w20, w21, w22, w23, ref vertexIndex);
+		PopulateExplicitVertex(chunk, pos0, uv0, norm0, col0, cliff0, tex0, tex1, tex2, tex3, w00, w01, w02, w03, ref vertexIndex);
+		PopulateExplicitVertex(chunk, pos1, uv1, norm1, col1, cliff1, tex0, tex1, tex2, tex3, w10, w11, w12, w13, ref vertexIndex);
+		PopulateExplicitVertex(chunk, pos2, uv2, norm2, col2, cliff2, tex0, tex1, tex2, tex3, w20, w21, w22, w23, ref vertexIndex);
 
 		chunk.IndicesCache[indexIndex++] = baseIndex;
 		chunk.IndicesCache[indexIndex++] = baseIndex + 1;
@@ -2786,6 +2869,7 @@ void fragment() {
 		Vector2 uv,
 		Vector3 faceNormal,
 		Color color,
+		float cliffWeight,
 		int tex0, int tex1, int tex2, int tex3,
 		float w0, float w1, float w2, float w3,
 		ref int vertexIndex)
@@ -2805,6 +2889,11 @@ void fragment() {
 		chunk.TexWeightsCache01[sIdx + 1] = w1 > 0.0001f ? w1 : 0.0f;
 		chunk.TexWeightsCache01[sIdx + 2] = w2 > 0.0001f ? w2 : 0.0f;
 		chunk.TexWeightsCache01[sIdx + 3] = w3 > 0.0001f ? w3 : 0.0f;
+
+		chunk.CliffWeightsCache[sIdx + 0] = cliffWeight;
+		chunk.CliffWeightsCache[sIdx + 1] = 0.0f;
+		chunk.CliffWeightsCache[sIdx + 2] = 0.0f;
+		chunk.CliffWeightsCache[sIdx + 3] = 0.0f;
 
 		vertexIndex++;
 	}
@@ -2866,7 +2955,7 @@ void fragment() {
 		normal = ((1 - tx) * (1 - tz) * n00 + tx * (1 - tz) * n10 + (1 - tx) * tz * n01 + tx * tz * n11).Normalized();
 	}
 
-	private Vector3 GetVertexNormal(int x, int z, TerrainCell[,] cells, int w, int d, float quadSize)
+	public static Vector3 GetVertexNormal(int x, int z, TerrainCell[,] cells, int w, int d, float quadSize)
 	{
 		if (cells == null || w <= 0 || d <= 0) return Vector3.Up;
 
@@ -3184,6 +3273,7 @@ void fragment() {
 				chunk.NormalsCache[v],
 				chunk.UvsCache[v],
 				chunk.ColorsCache[v],
+				chunk.CliffWeightsCache[texIdx],
 				chunk.TexIndicesCache[texIdx],
 				chunk.TexIndicesCache[texIdx + 1],
 				chunk.TexIndicesCache[texIdx + 2],
@@ -3221,6 +3311,11 @@ void fragment() {
 					chunk.TexWeightsCache01[newTexIdx + 1] = chunk.TexWeightsCache01[texIdx + 1];
 					chunk.TexWeightsCache01[newTexIdx + 2] = chunk.TexWeightsCache01[texIdx + 2];
 					chunk.TexWeightsCache01[newTexIdx + 3] = chunk.TexWeightsCache01[texIdx + 3];
+
+					chunk.CliffWeightsCache[newTexIdx] = chunk.CliffWeightsCache[texIdx];
+					chunk.CliffWeightsCache[newTexIdx + 1] = chunk.CliffWeightsCache[texIdx + 1];
+					chunk.CliffWeightsCache[newTexIdx + 2] = chunk.CliffWeightsCache[texIdx + 2];
+					chunk.CliffWeightsCache[newTexIdx + 3] = chunk.CliffWeightsCache[texIdx + 3];
 				}
 			}
 		}
@@ -3247,6 +3342,7 @@ void fragment() {
 		private readonly int _colorGreen;
 		private readonly int _colorBlue;
 		private readonly int _colorAlpha;
+		private readonly int _cliffWeight;
 		private readonly int _textureIndex0;
 		private readonly int _textureIndex1;
 		private readonly int _textureIndex2;
@@ -3261,6 +3357,7 @@ void fragment() {
 			Vector3 normal,
 			Vector2 uv,
 			Color color,
+			float cliffWeight,
 			float textureIndex0, float textureIndex1, float textureIndex2, float textureIndex3,
 			float weight0, float weight1, float weight2, float weight3)
 		{
@@ -3276,6 +3373,7 @@ void fragment() {
 			_colorGreen = (int)MathF.Round(color.G * 255.0f);
 			_colorBlue = (int)MathF.Round(color.B * 255.0f);
 			_colorAlpha = (int)MathF.Round(color.A * 255.0f);
+			_cliffWeight = (int)MathF.Round(cliffWeight * 1000.0f);
 			_textureIndex0 = (int)MathF.Round(textureIndex0);
 			_textureIndex1 = (int)MathF.Round(textureIndex1);
 			_textureIndex2 = (int)MathF.Round(textureIndex2);
@@ -3300,6 +3398,7 @@ void fragment() {
 				   _colorGreen == other._colorGreen &&
 				   _colorBlue == other._colorBlue &&
 				   _colorAlpha == other._colorAlpha &&
+				   _cliffWeight == other._cliffWeight &&
 				   _textureIndex0 == other._textureIndex0 &&
 				   _textureIndex1 == other._textureIndex1 &&
 				   _textureIndex2 == other._textureIndex2 &&
@@ -3327,6 +3426,7 @@ void fragment() {
 			hashCode.Add(_textureU);
 			hashCode.Add(_textureV);
 			hashCode.Add(_colorRed);
+			hashCode.Add(_cliffWeight);
 			hashCode.Add(_textureIndex0);
 			hashCode.Add(_textureIndex1);
 			hashCode.Add(_textureIndex2);

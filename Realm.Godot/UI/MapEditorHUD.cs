@@ -7179,6 +7179,11 @@ public partial class MapEditorHUD : Control
 	private HSlider _sldFogDensity, _sldFogR, _sldFogG, _sldFogB;
 	private HSlider _sldSsaoRadius, _sldSsaoIntensity;
 	private HSlider _sldExposure, _sldContrast, _sldSaturation, _sldBloomIntensity, _sldBloomThreshold;
+	private HSlider _sldCliffJitterStrength, _sldCliffJitterScale, _sldCliffRimNoiseStrength, _sldCliffRimNoiseScale;
+	private float _tuneCliffJitterStrength = 1.0f;
+	private float _tuneCliffJitterScale = 0.20f;
+	private float _tuneCliffRimNoiseStrength = 0.30f;
+	private float _tuneCliffRimNoiseScale = 0.08f;
 
 	private void SetupLightingTuningUI()
 	{
@@ -7252,6 +7257,12 @@ public partial class MapEditorHUD : Control
 		_sldBloomIntensity = CreateSliderRow(_contentLightingTuning, "Bloom Intensity", 0f, 2f, 0.05f, _tuneBloomIntensity, val => { _tuneBloomIntensity = val; ApplyLiveLightingTuning(); });
 		_sldBloomThreshold = CreateSliderRow(_contentLightingTuning, "Bloom Threshold", 0f, 1f, 0.02f, _tuneBloomThreshold, val => { _tuneBloomThreshold = val; ApplyLiveLightingTuning(); });
 
+		CreateSectionHeader(_contentLightingTuning, "--- TERRAIN CLIFFS & SILHOUETTES ---");
+		_sldCliffJitterStrength = CreateSliderRow(_contentLightingTuning, "Cliff Jitter Str", 0f, 2f, 0.02f, _tuneCliffJitterStrength, val => { _tuneCliffJitterStrength = val; ApplyLiveLightingTuning(); });
+		_sldCliffJitterScale = CreateSliderRow(_contentLightingTuning, "Cliff Jitter Scl", 0.01f, 0.5f, 0.005f, _tuneCliffJitterScale, val => { _tuneCliffJitterScale = val; ApplyLiveLightingTuning(); }, "0.00#");
+		_sldCliffRimNoiseStrength = CreateSliderRow(_contentLightingTuning, "Cliff Rim Str", 0f, 1f, 0.02f, _tuneCliffRimNoiseStrength, val => { _tuneCliffRimNoiseStrength = val; ApplyLiveLightingTuning(); });
+		_sldCliffRimNoiseScale = CreateSliderRow(_contentLightingTuning, "Cliff Rim Scl", 0.01f, 0.5f, 0.005f, _tuneCliffRimNoiseScale, val => { _tuneCliffRimNoiseScale = val; ApplyLiveLightingTuning(); }, "0.00#");
+
 		UpdateLightingTuningSlidersFromPhase(0);
 		ApplyLiveLightingTuning();
 		lightingAccordion.Visible = false;
@@ -7317,6 +7328,11 @@ public partial class MapEditorHUD : Control
 		if (_sldBloomIntensity != null) _sldBloomIntensity.Value = _tuneBloomIntensity;
 		if (_sldBloomThreshold != null) _sldBloomThreshold.Value = _tuneBloomThreshold;
 
+		if (_sldCliffJitterStrength != null) _sldCliffJitterStrength.Value = _tuneCliffJitterStrength;
+		if (_sldCliffJitterScale != null) _sldCliffJitterScale.Value = _tuneCliffJitterScale;
+		if (_sldCliffRimNoiseStrength != null) _sldCliffRimNoiseStrength.Value = _tuneCliffRimNoiseStrength;
+		if (_sldCliffRimNoiseScale != null) _sldCliffRimNoiseScale.Value = _tuneCliffRimNoiseScale;
+
 		ApplyLiveLightingTuning();
 	}
 
@@ -7326,6 +7342,19 @@ public partial class MapEditorHUD : Control
 		var host = GameHost.Instance;
 		var worldEnv = host.GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
 		var sun = host.GetNodeOrNull<DirectionalLight3D>("DirectionalLight3D");
+
+		if (EditableTerrain.Instance?.Material != null)
+		{
+			EditableTerrain.Instance.CliffJitterStrength = _tuneCliffJitterStrength;
+			EditableTerrain.Instance.CliffJitterScale = _tuneCliffJitterScale;
+			EditableTerrain.Instance.CliffRimNoiseStrength = _tuneCliffRimNoiseStrength;
+			EditableTerrain.Instance.CliffRimNoiseScale = _tuneCliffRimNoiseScale;
+
+			EditableTerrain.Instance.Material.SetShaderParameter("cliff_jitter_strength", _tuneCliffJitterStrength);
+			EditableTerrain.Instance.Material.SetShaderParameter("cliff_jitter_scale", _tuneCliffJitterScale);
+			EditableTerrain.Instance.Material.SetShaderParameter("cliff_rim_noise_strength", _tuneCliffRimNoiseStrength);
+			EditableTerrain.Instance.Material.SetShaderParameter("cliff_rim_noise_scale", _tuneCliffRimNoiseScale);
+		}
 
 		if (GameHost.Instance.EnvironmentService != null)
 		{
@@ -7388,6 +7417,8 @@ Fog Enabled: {_tuneFogEnabled}, Density: {_tuneFogDensity:F4}, Color: ({_tuneFog
 SSAO Enabled: {_tuneSsaoEnabled}, Radius: {_tuneSsaoRadius:F2}, Intensity: {_tuneSsaoIntensity:F2}
 PostProc Exposure: {_tuneExposure:F2}, Contrast: {_tuneContrast:F2}, Saturation: {_tuneSaturation:F2}
 Glow/Bloom Intensity: {_tuneBloomIntensity:F2}, Threshold: {_tuneBloomThreshold:F2}
+Cliff Jitter: Strength={_tuneCliffJitterStrength:F2}, Scale={_tuneCliffJitterScale:F3}
+Cliff Rim Noise: Strength={_tuneCliffRimNoiseStrength:F2}, Scale={_tuneCliffRimNoiseScale:F3}
 ===================================
 ";
 		GD.Print(report);
