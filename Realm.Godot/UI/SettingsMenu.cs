@@ -363,9 +363,15 @@ public partial class SettingsMenu : Control
 	private void PopulateDropdowns()
 	{
 		_resolutionOpt.Clear();
-		_resolutionOpt.AddItem("1920 x 1080", 0);
-		_resolutionOpt.AddItem("1600 x 900", 1);
-		_resolutionOpt.AddItem("1280 x 720", 2);
+		if (GameSettings.Resolutions == null || GameSettings.Resolutions.Count == 0)
+		{
+			GameSettings.InitializeResolutions();
+		}
+		for (int i = 0; i < GameSettings.Resolutions.Count; i++)
+		{
+			var res = GameSettings.Resolutions[i];
+			_resolutionOpt.AddItem($"{res.X} x {res.Y}", i);
+		}
 
 		_qualityOpt.Clear();
 		_qualityOpt.AddItem(TranslationServer.Translate("Low"), 0);
@@ -418,15 +424,22 @@ public partial class SettingsMenu : Control
 		}
 		_windowModeOpt.ItemSelected += (idx) =>
 		{
-			if (idx == 0 || idx == 2)
+			var mode = (WindowMode)idx;
+			bool isWindowed = mode == WindowMode.Windowed;
+			_resolutionOpt.Disabled = !isWindowed;
+			if (!isWindowed)
 			{
-				_resolutionOpt.Disabled = true;
-				_resolutionOpt.Select(-1);
+				if (GameSettings.Resolutions != null && GameSettings.Resolutions.Count > 0)
+				{
+					_resolutionOpt.Select(0);
+				}
 			}
 			else
 			{
-				_resolutionOpt.Disabled = false;
-				_resolutionOpt.Select(GameSettings.ResolutionIdx);
+				if (GameSettings.Resolutions != null && GameSettings.Resolutions.Count > 0)
+				{
+					_resolutionOpt.Select(Math.Clamp(GameSettings.ResolutionIdx, 0, GameSettings.Resolutions.Count - 1));
+				}
 			}
 		};
 
@@ -576,20 +589,24 @@ public partial class SettingsMenu : Control
 
 	private void LoadCurrentSettings()
 	{
-		_resolutionOpt.Select(GameSettings.ResolutionIdx);
+		bool isWindowed = GameSettings.WindowModeIdx == WindowMode.Windowed;
+		_resolutionOpt.Disabled = !isWindowed;
+
+		if (GameSettings.Resolutions != null && GameSettings.Resolutions.Count > 0)
+		{
+			if (isWindowed)
+			{
+				_resolutionOpt.Select(Math.Clamp(GameSettings.ResolutionIdx, 0, GameSettings.Resolutions.Count - 1));
+			}
+			else
+			{
+				_resolutionOpt.Select(0);
+			}
+		}
+
 		_qualityOpt.Select((int)GameSettings.QualityIdx);
 		_windowModeOpt.Select((int)GameSettings.WindowModeIdx);
 		_vsyncOpt.Select(GameSettings.Vsync ? 0 : 1);
-
-		if (GameSettings.WindowModeIdx == WindowMode.Fullscreen || GameSettings.WindowModeIdx == WindowMode.Borderless)
-		{
-			_resolutionOpt.Disabled = true;
-			_resolutionOpt.Select(-1);
-		}
-		else
-		{
-			_resolutionOpt.Disabled = false;
-		}
 
 		_masterSlider.Value = GameSettings.MasterVolume;
 		_musicSlider.Value = GameSettings.MusicVolume;
@@ -618,68 +635,88 @@ public partial class SettingsMenu : Control
 		_languageOpt.Select((int)GameSettings.Language);
 	}
 
-	private void ApplySettings()
+	private async void ApplySettings()
 	{
-		int modeIdx = _windowModeOpt.Selected;
-		var windowMode = (WindowMode)modeIdx;
-		int resSel = _resolutionOpt.Selected;
+		if (_applyBtn != null) _applyBtn.Disabled = true;
 
-		UIManager.Instance?.ApplyWindowSettings(windowMode, resSel);
-
-		bool vsyncEnabled = _vsyncOpt.Selected == 0;
-		if (vsyncEnabled)
+		try
 		{
-			DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Enabled);
+			int modeIdx = _windowModeOpt.Selected;
+			var windowMode = (WindowMode)modeIdx;
+			int resSel = _resolutionOpt.Selected;
+
+			if (windowMode == WindowMode.Windowed)
+			{
+				if (resSel >= 0 && GameSettings.Resolutions != null && resSel < GameSettings.Resolutions.Count)
+				{
+					GameSettings.ResolutionIdx = resSel;
+					GameSettings.WindowedResolutionWidth = GameSettings.Resolutions[resSel].X;
+					GameSettings.WindowedResolutionHeight = GameSettings.Resolutions[resSel].Y;
+				}
+			}
+			GameSettings.WindowModeIdx = windowMode;
+
+			if (UIManager.Instance != null)
+			{
+				await UIManager.Instance.ApplyWindowSettings(windowMode, GameSettings.ResolutionIdx);
+			}
+
+			bool vsyncEnabled = _vsyncOpt.Selected == 0;
+			if (vsyncEnabled)
+			{
+				DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Enabled);
+			}
+			else
+			{
+				DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
+			}
+
+			GameSettings.QualityIdx = (GraphicsQuality)_qualityOpt.Selected;
+			GameSettings.DownsamplingIdx = GameSettings.GetDownsamplingIdxForQuality(GameSettings.QualityIdx);
+			GameSettings.Vsync = vsyncEnabled;
+			GameSettings.DisableShadows = _disableShadowsChk.ButtonPressed;
+			GameSettings.DisableDayNightLighting = _disableDayNightLightingChk.ButtonPressed;
+
+			GameSettings.MasterVolume = (float)_masterSlider.Value;
+			GameSettings.MusicVolume = (float)_musicSlider.Value;
+			GameSettings.SfxVolume = (float)_sfxSlider.Value;
+			GameSettings.VoiceVolume = (float)_voiceSlider.Value;
+
+			GameSettings.ScrollSpeed = (float)_scrollSpeedSlider.Value;
+			GameSettings.MouseSens = (float)_mouseSensSlider.Value;
+			GameSettings.HudScale = (float)_hudScaleSlider.Value;
+			GameSettings.DisplayFps = _displayFpsChk.ButtonPressed;
+			GameSettings.RecordReplays = _recordReplaysChk.ButtonPressed;
+			GameSettings.SeedMapFiles = _seedMapFilesChk.ButtonPressed;
+			GameSettings.ShowHealthBars = (HealthBarMode)_healthBarsOpt.Selected;
+
+			var newLang = (GameLanguage)_languageOpt.Selected;
+			GameSettings.Language = newLang;
+			LocalizationManager.UpdateLocale(newLang);
+
+			GameSettings.Save();
+			GameSettings.ApplyGraphicsSettings(this);
+
+			if (InGameHUD.Instance != null)
+			{
+				InGameHUD.Instance.ApplyHUDScale();
+				InGameHUD.Instance.UpdateFPSVisibility();
+			}
+			if (MapEditorHUD.Instance != null)
+			{
+				MapEditorHUD.Instance.UpdateFPSVisibility();
+			}
+
+			GD.Print("Settings Applied successfully!");
+			CloseOrTransition();
 		}
-		else
+		finally
 		{
-			DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
+			if (_applyBtn != null && GodotObject.IsInstanceValid(_applyBtn))
+			{
+				_applyBtn.Disabled = false;
+			}
 		}
-
-		if (windowMode == WindowMode.Windowed && resSel >= 0)
-		{
-			GameSettings.ResolutionIdx = resSel;
-		}
-		GameSettings.QualityIdx = (GraphicsQuality)_qualityOpt.Selected;
-		GameSettings.DownsamplingIdx = GameSettings.GetDownsamplingIdxForQuality(GameSettings.QualityIdx);
-		GameSettings.WindowModeIdx = windowMode;
-		GameSettings.Vsync = vsyncEnabled;
-		GameSettings.DisableShadows = _disableShadowsChk.ButtonPressed;
-		GameSettings.DisableDayNightLighting = _disableDayNightLightingChk.ButtonPressed;
-
-		GameSettings.MasterVolume = (float)_masterSlider.Value;
-		GameSettings.MusicVolume = (float)_musicSlider.Value;
-		GameSettings.SfxVolume = (float)_sfxSlider.Value;
-		GameSettings.VoiceVolume = (float)_voiceSlider.Value;
-
-		GameSettings.ScrollSpeed = (float)_scrollSpeedSlider.Value;
-		GameSettings.MouseSens = (float)_mouseSensSlider.Value;
-		GameSettings.HudScale = (float)_hudScaleSlider.Value;
-
-		GameSettings.DisplayFps = _displayFpsChk.ButtonPressed;
-		GameSettings.RecordReplays = _recordReplaysChk.ButtonPressed;
-		GameSettings.SeedMapFiles = _seedMapFilesChk.ButtonPressed;
-		GameSettings.ShowHealthBars = (HealthBarMode)_healthBarsOpt.Selected;
-
-		var newLang = (GameLanguage)_languageOpt.Selected;
-		GameSettings.Language = newLang;
-		LocalizationManager.UpdateLocale(newLang);
-
-		GameSettings.Save();
-		GameSettings.ApplyGraphicsSettings(this);
-
-		if (InGameHUD.Instance != null)
-		{
-			InGameHUD.Instance.ApplyHUDScale();
-			InGameHUD.Instance.UpdateFPSVisibility();
-		}
-		if (MapEditorHUD.Instance != null)
-		{
-			MapEditorHUD.Instance.UpdateFPSVisibility();
-		}
-
-		GD.Print("Settings Applied successfully!");
-		CloseOrTransition();
 	}
 
 	private void CancelSettings()
