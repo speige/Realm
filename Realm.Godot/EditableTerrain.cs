@@ -1006,6 +1006,7 @@ uniform float macro_gain = 0.5;
 uniform bool enable_macro_noise = true;
 uniform bool enable_height_blend = true;
 uniform bool enable_normal_mapping = true;
+uniform float specular_amt = 0.2;
 
 uniform vec4 swatch_params[32];
 uniform vec4 swatch_height_params[32];
@@ -1232,19 +1233,7 @@ void vertex() {
 }
 
 void fragment() {
-	vec3 dX = dFdx(v_world_pos);
-	vec3 dY = dFdy(v_world_pos);
-	vec3 geom_normal = cross(dY, dX);
-	float geom_len = length(geom_normal);
-	geom_normal = geom_len > 0.00001 ? (geom_normal / geom_len) : vec3(0.0, 1.0, 0.0);
-	if (geom_normal.y < 0.0 && abs(geom_normal.y) > 0.001) {
-		geom_normal = -geom_normal;
-	}
-
-	vec3 triplanar_normal = abs(geom_normal);
-	vec3 blend_weights = pow(triplanar_normal, vec3(4.0));
-	float bw_sum = blend_weights.x + blend_weights.y + blend_weights.z;
-	blend_weights = bw_sum > 0.0001 ? blend_weights / bw_sum : vec3(0.0, 1.0, 0.0);
+	vec3 geom_normal = normalize(v_world_normal);
 
 	vec3 pos_warped = v_world_pos;
 	float base_fbm_val = 0.5;
@@ -1259,365 +1248,402 @@ void fragment() {
 		}
 	}
 
-	vec2 uv_x = pos_warped.zy * texture_scale;
-	vec2 uv_y = pos_warped.xz * texture_scale;
-	vec2 uv_z = pos_warped.xy * texture_scale;
-
-	vec2 dx_x = dFdx(uv_x);
-	vec2 dy_x = dFdy(uv_x);
-	vec2 dx_y = dFdx(uv_y);
-	vec2 dy_y = dFdy(uv_y);
-	vec2 dx_z = dFdx(uv_z);
-	vec2 dy_z = dFdy(uv_z);
-
 	float slope_cliff_factor = v_cliff_factor > 0.5 ? 1.0 : 0.0;
 
-	vec4 raw_weights = v_tex_weights;
-	raw_weights.x = raw_weights.x < 0.001 ? 0.0 : raw_weights.x;
-	raw_weights.y = raw_weights.y < 0.001 ? 0.0 : raw_weights.y;
-	raw_weights.z = raw_weights.z < 0.001 ? 0.0 : raw_weights.z;
-	raw_weights.w = raw_weights.w < 0.001 ? 0.0 : raw_weights.w;
+	vec3 terrain_color = vec3(0.0);
+	vec3 blended_world_normal = geom_normal;
+	float blended_ao = 1.0;
+	float blended_roughness = 0.85;
 
-	float weight_sum = raw_weights.x + raw_weights.y + raw_weights.z + raw_weights.w;
-	vec4 norm_weights = weight_sum > 0.0001 ? raw_weights / weight_sum : vec4(1.0, 0.0, 0.0, 0.0);
+	if (slope_cliff_factor < 0.5) {
+		// --- GROUND PIPELINE ---
+		vec2 uv_y = pos_warped.xz * texture_scale;
+		vec2 dx_y = dFdx(uv_y);
+		vec2 dy_y = dFdy(uv_y);
 
-	float max_incoming_weight = max(max(norm_weights.x, norm_weights.y), max(norm_weights.z, norm_weights.w));
-	float blend_transition_factor = clamp((1.0 - max_incoming_weight) * 2.5, 0.0, 1.0);
+		vec4 raw_weights = v_tex_weights;
+		raw_weights.x = raw_weights.x < 0.001 ? 0.0 : raw_weights.x;
+		raw_weights.y = raw_weights.y < 0.001 ? 0.0 : raw_weights.y;
+		raw_weights.z = raw_weights.z < 0.001 ? 0.0 : raw_weights.z;
+		raw_weights.w = raw_weights.w < 0.001 ? 0.0 : raw_weights.w;
 
-	if (blend_noise_strength > 0.0 && blend_transition_factor > 0.001) {
-		vec2 blend_noise_uv = v_world_pos.xz * blend_noise_scale;
-		float noise_ch_a = (macro_noise(blend_noise_uv) * 0.70 + macro_noise(blend_noise_uv * 2.13 + vec2(11.7, 7.3)) * 0.30) - 0.5;
-		float noise_ch_b = (macro_noise(blend_noise_uv + vec2(19.3, 37.7)) * 0.70 + macro_noise(blend_noise_uv * 2.13 + vec2(43.3, 19.7)) * 0.30) - 0.5;
-		vec4 weight_noise_offset = vec4(noise_ch_a, -noise_ch_a, noise_ch_b, -noise_ch_b) * (blend_noise_strength * blend_transition_factor);
+		float weight_sum = raw_weights.x + raw_weights.y + raw_weights.z + raw_weights.w;
+		vec4 norm_weights = weight_sum > 0.0001 ? raw_weights / weight_sum : vec4(1.0, 0.0, 0.0, 0.0);
 
-		vec4 active_channel_mask = step(vec4(0.001), norm_weights);
-		vec4 perturbed_weights = max(vec4(0.0), norm_weights + weight_noise_offset * active_channel_mask);
-		float perturbed_weight_sum = perturbed_weights.x + perturbed_weights.y + perturbed_weights.z + perturbed_weights.w;
-		norm_weights = perturbed_weight_sum > 0.0001 ? perturbed_weights / perturbed_weight_sum : norm_weights;
-	}
+		float max_incoming_weight = max(max(norm_weights.x, norm_weights.y), max(norm_weights.z, norm_weights.w));
+		float blend_transition_factor = clamp((1.0 - max_incoming_weight) * 2.5, 0.0, 1.0);
 
-	vec4 c0 = raw_weights.x > 0.001 ? sample_planar_layer(terrain_textures, round(v_tex_indices.x), uv_y, dx_y, dy_y, false) : vec4(0.0);
-	vec4 c1 = raw_weights.y > 0.001 ? sample_planar_layer(terrain_textures, round(v_tex_indices.y), uv_y, dx_y, dy_y, false) : vec4(0.0);
-	vec4 c2 = raw_weights.z > 0.001 ? sample_planar_layer(terrain_textures, round(v_tex_indices.z), uv_y, dx_y, dy_y, false) : vec4(0.0);
-	vec4 c3 = raw_weights.w > 0.001 ? sample_planar_layer(terrain_textures, round(v_tex_indices.w), uv_y, dx_y, dy_y, false) : vec4(0.0);
+		if (blend_noise_strength > 0.0 && blend_transition_factor > 0.001) {
+			vec2 blend_noise_uv = v_world_pos.xz * blend_noise_scale;
+			float noise_ch_a = (macro_noise(blend_noise_uv) * 0.70 + macro_noise(blend_noise_uv * 2.13 + vec2(11.7, 7.3)) * 0.30) - 0.5;
+			float noise_ch_b = (macro_noise(blend_noise_uv + vec2(19.3, 37.7)) * 0.70 + macro_noise(blend_noise_uv * 2.13 + vec2(43.3, 19.7)) * 0.30) - 0.5;
+			vec4 weight_noise_offset = vec4(noise_ch_a, -noise_ch_a, noise_ch_b, -noise_ch_b) * (blend_noise_strength * blend_transition_factor);
 
-	vec4 blend_layer_weights = norm_weights;
-	vec3 ground_albedo = vec3(0.0);
-
-	if (enable_height_blend) {
-		float edge_noise = 0.0;
-		if (enable_macro_noise) {
-			float max_w = max(max(norm_weights.x, norm_weights.y), max(norm_weights.z, norm_weights.w));
-			float transition_factor = clamp((1.0 - max_w) * 2.0, 0.0, 1.0);
-			edge_noise = (base_fbm_val - 0.5) * 0.12 * transition_factor;
+			vec4 active_channel_mask = step(vec4(0.001), norm_weights);
+			vec4 perturbed_weights = max(vec4(0.0), norm_weights + weight_noise_offset * active_channel_mask);
+			float perturbed_weight_sum = perturbed_weights.x + perturbed_weights.y + perturbed_weights.z + perturbed_weights.w;
+			norm_weights = perturbed_weight_sum > 0.0001 ? perturbed_weights / perturbed_weight_sum : norm_weights;
 		}
 
-		vec4 heights = vec4(c0.a, c1.a, c2.a, c3.a);
-		vec4 noise_offsets = vec4(edge_noise, -edge_noise, edge_noise * 0.75, -edge_noise * 0.75);
+		vec4 c0 = raw_weights.x > 0.001 ? sample_planar_layer(terrain_textures, round(v_tex_indices.x), uv_y, dx_y, dy_y, false) : vec4(0.0);
+		vec4 c1 = raw_weights.y > 0.001 ? sample_planar_layer(terrain_textures, round(v_tex_indices.y), uv_y, dx_y, dy_y, false) : vec4(0.0);
+		vec4 c2 = raw_weights.z > 0.001 ? sample_planar_layer(terrain_textures, round(v_tex_indices.z), uv_y, dx_y, dy_y, false) : vec4(0.0);
+		vec4 c3 = raw_weights.w > 0.001 ? sample_planar_layer(terrain_textures, round(v_tex_indices.w), uv_y, dx_y, dy_y, false) : vec4(0.0);
 
-		int idx0 = int(clamp(round(v_tex_indices.x), 0.0, 31.0));
-		int idx1 = int(clamp(round(v_tex_indices.y), 0.0, 31.0));
-		int idx2 = int(clamp(round(v_tex_indices.z), 0.0, 31.0));
-		int idx3 = int(clamp(round(v_tex_indices.w), 0.0, 31.0));
+		vec4 blend_layer_weights = norm_weights;
+		vec3 ground_albedo = vec3(0.0);
 
-		vec4 hp0 = swatch_height_params[idx0];
-		vec4 hp1 = swatch_height_params[idx1];
-		vec4 hp2 = swatch_height_params[idx2];
-		vec4 hp3 = swatch_height_params[idx3];
+		if (enable_height_blend) {
+			float edge_noise = 0.0;
+			if (enable_macro_noise) {
+				float max_w = max(max(norm_weights.x, norm_weights.y), max(norm_weights.z, norm_weights.w));
+				float transition_factor = clamp((1.0 - max_w) * 2.0, 0.0, 1.0);
+				edge_noise = (base_fbm_val - 0.5) * 0.12 * transition_factor;
+			}
 
-		vec4 h_scales = vec4(
-			hp0.x > 0.001 ? hp0.x : 1.0,
-			hp1.x > 0.001 ? hp1.x : 1.0,
-			hp2.x > 0.001 ? hp2.x : 1.0,
-			hp3.x > 0.001 ? hp3.x : 1.0
-		);
+			vec4 heights = vec4(c0.a, c1.a, c2.a, c3.a);
+			vec4 noise_offsets = vec4(edge_noise, -edge_noise, edge_noise * 0.75, -edge_noise * 0.75);
 
-		vec4 h_biases = vec4(hp0.y, hp1.y, hp2.y, hp3.y);
+			int idx0 = int(clamp(round(v_tex_indices.x), 0.0, 31.0));
+			int idx1 = int(clamp(round(v_tex_indices.y), 0.0, 31.0));
+			int idx2 = int(clamp(round(v_tex_indices.z), 0.0, 31.0));
+			int idx3 = int(clamp(round(v_tex_indices.w), 0.0, 31.0));
 
-		vec4 h_powers = vec4(
-			hp0.z > 0.001 ? hp0.z : 1.0,
-			hp1.z > 0.001 ? hp1.z : 1.0,
-			hp2.z > 0.001 ? hp2.z : 1.0,
-			hp3.z > 0.001 ? hp3.z : 1.0
-		);
+			vec4 hp0 = swatch_height_params[idx0];
+			vec4 hp1 = swatch_height_params[idx1];
+			vec4 hp2 = swatch_height_params[idx2];
+			vec4 hp3 = swatch_height_params[idx3];
 
-		vec4 shaped_heights = vec4(
-			pow(clamp(heights.x, 0.0, 1.0), h_powers.x),
-			pow(clamp(heights.y, 0.0, 1.0), h_powers.y),
-			pow(clamp(heights.z, 0.0, 1.0), h_powers.z),
-			pow(clamp(heights.w, 0.0, 1.0), h_powers.w)
-		);
+			vec4 h_scales = vec4(
+				hp0.x > 0.001 ? hp0.x : 1.0,
+				hp1.x > 0.001 ? hp1.x : 1.0,
+				hp2.x > 0.001 ? hp2.x : 1.0,
+				hp3.x > 0.001 ? hp3.x : 1.0
+			);
 
-		vec4 scaled_ground_heights = vec4(
-			shaped_heights.x * h_scales.x + h_biases.x,
-			shaped_heights.y * h_scales.y + h_biases.y,
-			shaped_heights.z * h_scales.z + h_biases.z,
-			shaped_heights.w * h_scales.w + h_biases.w
-		);
+			vec4 h_biases = vec4(hp0.y, hp1.y, hp2.y, hp3.y);
 
-		vec4 height_scores = vec4(
-			norm_weights.x > 0.001 ? (norm_weights.x + scaled_ground_heights.x + noise_offsets.x) : -100.0,
-			norm_weights.y > 0.001 ? (norm_weights.y + scaled_ground_heights.y + noise_offsets.y) : -100.0,
-			norm_weights.z > 0.001 ? (norm_weights.z + scaled_ground_heights.z + noise_offsets.z) : -100.0,
-			norm_weights.w > 0.001 ? (norm_weights.w + scaled_ground_heights.w + noise_offsets.w) : -100.0
-		);
+			vec4 h_powers = vec4(
+				hp0.z > 0.001 ? hp0.z : 1.0,
+				hp1.z > 0.001 ? hp1.z : 1.0,
+				hp2.z > 0.001 ? hp2.z : 1.0,
+				hp3.z > 0.001 ? hp3.z : 1.0
+			);
 
-		float max_score = max(max(height_scores.x, height_scores.y), max(height_scores.z, height_scores.w));
-		float transition_depth = max(0.001, blend_softness);
+			vec4 shaped_heights = vec4(
+				pow(clamp(heights.x, 0.0, 1.0), h_powers.x),
+				pow(clamp(heights.y, 0.0, 1.0), h_powers.y),
+				pow(clamp(heights.z, 0.0, 1.0), h_powers.z),
+				pow(clamp(heights.w, 0.0, 1.0), h_powers.w)
+			);
 
-		vec4 raw_blend = vec4(
-			smoothstep(max_score - transition_depth, max_score, height_scores.x) * step(0.001, norm_weights.x),
-			smoothstep(max_score - transition_depth, max_score, height_scores.y) * step(0.001, norm_weights.y),
-			smoothstep(max_score - transition_depth, max_score, height_scores.z) * step(0.001, norm_weights.z),
-			smoothstep(max_score - transition_depth, max_score, height_scores.w) * step(0.001, norm_weights.w)
-		);
+			vec4 scaled_ground_heights = vec4(
+				shaped_heights.x * h_scales.x + h_biases.x,
+				shaped_heights.y * h_scales.y + h_biases.y,
+				shaped_heights.z * h_scales.z + h_biases.z,
+				shaped_heights.w * h_scales.w + h_biases.w
+			);
 
-		float blend_sum = raw_blend.x + raw_blend.y + raw_blend.z + raw_blend.w;
-		blend_layer_weights = blend_sum > 0.0001 ? raw_blend / blend_sum : norm_weights;
+			vec4 height_scores = vec4(
+				norm_weights.x > 0.001 ? (norm_weights.x + scaled_ground_heights.x + noise_offsets.x) : -100.0,
+				norm_weights.y > 0.001 ? (norm_weights.y + scaled_ground_heights.y + noise_offsets.y) : -100.0,
+				norm_weights.z > 0.001 ? (norm_weights.z + scaled_ground_heights.z + noise_offsets.z) : -100.0,
+				norm_weights.w > 0.001 ? (norm_weights.w + scaled_ground_heights.w + noise_offsets.w) : -100.0
+			);
 
-		ground_albedo = (c0.rgb * blend_layer_weights.x +
-		                 c1.rgb * blend_layer_weights.y +
-		                 c2.rgb * blend_layer_weights.z +
-		                 c3.rgb * blend_layer_weights.w);
-	} else {
-		ground_albedo = (c0.rgb * norm_weights.x +
-		                 c1.rgb * norm_weights.y +
-		                 c2.rgb * norm_weights.z +
-		                 c3.rgb * norm_weights.w);
-	}
+			float max_score = max(max(height_scores.x, height_scores.y), max(height_scores.z, height_scores.w));
+			float transition_depth = max(0.001, blend_softness);
 
-	vec3 ground_normal = geom_normal;
-	float ground_ao = 1.0;
-	float ground_roughness = 0.85;
+			vec4 raw_blend = vec4(
+				smoothstep(max_score - transition_depth, max_score, height_scores.x) * step(0.001, norm_weights.x),
+				smoothstep(max_score - transition_depth, max_score, height_scores.y) * step(0.001, norm_weights.y),
+				smoothstep(max_score - transition_depth, max_score, height_scores.z) * step(0.001, norm_weights.z),
+				smoothstep(max_score - transition_depth, max_score, height_scores.w) * step(0.001, norm_weights.w)
+			);
 
-	float gw0 = blend_layer_weights.x;
-	float gw1 = blend_layer_weights.y;
-	float gw2 = blend_layer_weights.z;
-	float gw3 = blend_layer_weights.w;
+			float blend_sum = raw_blend.x + raw_blend.y + raw_blend.z + raw_blend.w;
+			blend_layer_weights = blend_sum > 0.0001 ? raw_blend / blend_sum : norm_weights;
 
-	if (enable_normal_mapping) {
-		vec4 gn0 = gw0 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 gn1 = gw1 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 gn2 = gw2 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 gn3 = gw3 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
-
-		vec3 gn0_vec = unpack_triplanar_normal(gn0, vec3(0.0, 1.0, 0.0), geom_normal);
-		vec3 gn1_vec = unpack_triplanar_normal(gn1, vec3(0.0, 1.0, 0.0), geom_normal);
-		vec3 gn2_vec = unpack_triplanar_normal(gn2, vec3(0.0, 1.0, 0.0), geom_normal);
-		vec3 gn3_vec = unpack_triplanar_normal(gn3, vec3(0.0, 1.0, 0.0), geom_normal);
-
-		ground_normal = normalize(gn0_vec * gw0 + gn1_vec * gw1 + gn2_vec * gw2 + gn3_vec * gw3);
-		ground_ao = (gn0.b * gw0 + gn1.b * gw1 + gn2.b * gw2 + gn3.b * gw3);
-		ground_roughness = (gn0.a * gw0 + gn1.a * gw1 + gn2.a * gw2 + gn3.a * gw3);
-	} else {
-		float max_gw = max(max(gw0, gw1), max(gw2, gw3));
-		float dom_layer = round(v_tex_indices.x);
-		if (gw1 >= max_gw) dom_layer = round(v_tex_indices.y);
-		else if (gw2 >= max_gw) dom_layer = round(v_tex_indices.z);
-		else if (gw3 >= max_gw) dom_layer = round(v_tex_indices.w);
-
-		int dom_idx = int(clamp(dom_layer, 0.0, 31.0));
-		float uv_scale = swatch_params[dom_idx].y > 0.001 ? swatch_params[dom_idx].y : 1.0;
-		vec2 dom_uv = uv_y * uv_scale;
-		vec2 dom_dx = dx_y * uv_scale;
-		vec2 dom_dy = dy_y * uv_scale;
-
-		vec4 gn = textureGrad(terrain_normals_pbr, vec3(dom_uv, dom_layer), dom_dx, dom_dy);
-		ground_normal = unpack_triplanar_normal(gn, vec3(0.0, 1.0, 0.0), geom_normal);
-		ground_ao = gn.b;
-		ground_roughness = gn.a;
-	}
-
-	vec4 raw_c_weights = v_cliff_tex_weights;
-	raw_c_weights.x = raw_c_weights.x < 0.001 ? 0.0 : raw_c_weights.x;
-	raw_c_weights.y = raw_c_weights.y < 0.001 ? 0.0 : raw_c_weights.y;
-	raw_c_weights.z = raw_c_weights.z < 0.001 ? 0.0 : raw_c_weights.z;
-	raw_c_weights.w = raw_c_weights.w < 0.001 ? 0.0 : raw_c_weights.w;
-
-	float c_weight_sum = raw_c_weights.x + raw_c_weights.y + raw_c_weights.z + raw_c_weights.w;
-	vec4 norm_c_weights = c_weight_sum > 0.0001 ? raw_c_weights / c_weight_sum : vec4(1.0, 0.0, 0.0, 0.0);
-
-	float max_c_weight = max(max(norm_c_weights.x, norm_c_weights.y), max(norm_c_weights.z, norm_c_weights.w));
-	float c_transition_factor = clamp((1.0 - max_c_weight) * 2.5, 0.0, 1.0);
-
-	if (blend_noise_strength > 0.0 && c_transition_factor > 0.001) {
-		vec2 c_noise_uv = v_world_pos.xz * blend_noise_scale + vec2(43.7, 19.3);
-		float noise_c_a = (macro_noise(c_noise_uv) * 0.70 + macro_noise(c_noise_uv * 2.13 + vec2(11.7, 7.3)) * 0.30) - 0.5;
-		float noise_c_b = (macro_noise(c_noise_uv + vec2(19.3, 37.7)) * 0.70 + macro_noise(c_noise_uv * 2.13 + vec2(43.3, 19.7)) * 0.30) - 0.5;
-		vec4 c_noise_offset = vec4(noise_c_a, -noise_c_a, noise_c_b, -noise_c_b) * (blend_noise_strength * c_transition_factor);
-
-		vec4 c_channel_mask = step(vec4(0.001), norm_c_weights);
-		vec4 perturbed_c_weights = max(vec4(0.0), norm_c_weights + c_noise_offset * c_channel_mask);
-		float perturbed_c_sum = perturbed_c_weights.x + perturbed_c_weights.y + perturbed_c_weights.z + perturbed_c_weights.w;
-		norm_c_weights = perturbed_c_sum > 0.0001 ? perturbed_c_weights / perturbed_c_sum : norm_c_weights;
-	}
-
-	vec4 cliff0 = raw_c_weights.x > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_cliff_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
-	vec4 cliff1 = raw_c_weights.y > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_cliff_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
-	vec4 cliff2 = raw_c_weights.z > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_cliff_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
-	vec4 cliff3 = raw_c_weights.w > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_cliff_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
-
-	vec4 cliff_blend_weights = norm_c_weights;
-	vec3 cliff_albedo = vec3(0.0);
-
-	if (enable_height_blend) {
-		float cliff_edge_noise = 0.0;
-		if (enable_macro_noise) {
-			float max_w = max(max(norm_c_weights.x, norm_c_weights.y), max(norm_c_weights.z, norm_c_weights.w));
-			float transition_factor = clamp((1.0 - max_w) * 2.0, 0.0, 1.0);
-			cliff_edge_noise = (base_fbm_val - 0.5) * 0.12 * transition_factor;
+			ground_albedo = (c0.rgb * blend_layer_weights.x +
+			                 c1.rgb * blend_layer_weights.y +
+			                 c2.rgb * blend_layer_weights.z +
+			                 c3.rgb * blend_layer_weights.w);
+		} else {
+			ground_albedo = (c0.rgb * norm_weights.x +
+			                 c1.rgb * norm_weights.y +
+			                 c2.rgb * norm_weights.z +
+			                 c3.rgb * norm_weights.w);
 		}
 
-		vec4 c_heights = vec4(cliff0.a, cliff1.a, cliff2.a, cliff3.a);
-		vec4 c_noise_offsets = vec4(cliff_edge_noise, -cliff_edge_noise, cliff_edge_noise * 0.75, -cliff_edge_noise * 0.75);
+		vec3 ground_normal = geom_normal;
+		float ground_ao = 1.0;
+		float ground_roughness = 0.85;
 
-		int c_idx0 = int(clamp(round(v_cliff_tex_indices.x), 0.0, 31.0));
-		int c_idx1 = int(clamp(round(v_cliff_tex_indices.y), 0.0, 31.0));
-		int c_idx2 = int(clamp(round(v_cliff_tex_indices.z), 0.0, 31.0));
-		int c_idx3 = int(clamp(round(v_cliff_tex_indices.w), 0.0, 31.0));
+		float gw0 = blend_layer_weights.x;
+		float gw1 = blend_layer_weights.y;
+		float gw2 = blend_layer_weights.z;
+		float gw3 = blend_layer_weights.w;
 
-		vec4 c_hp0 = swatch_height_params[c_idx0];
-		vec4 c_hp1 = swatch_height_params[c_idx1];
-		vec4 c_hp2 = swatch_height_params[c_idx2];
-		vec4 c_hp3 = swatch_height_params[c_idx3];
+		if (enable_normal_mapping) {
+			vec4 gn0 = gw0 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+			vec4 gn1 = gw1 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+			vec4 gn2 = gw2 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+			vec4 gn3 = gw3 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
 
-		vec4 c_h_scales = vec4(
-			c_hp0.x > 0.001 ? c_hp0.x : 1.0,
-			c_hp1.x > 0.001 ? c_hp1.x : 1.0,
-			c_hp2.x > 0.001 ? c_hp2.x : 1.0,
-			c_hp3.x > 0.001 ? c_hp3.x : 1.0
-		);
+			vec3 gn0_vec = unpack_triplanar_normal(gn0, vec3(0.0, 1.0, 0.0), geom_normal);
+			vec3 gn1_vec = unpack_triplanar_normal(gn1, vec3(0.0, 1.0, 0.0), geom_normal);
+			vec3 gn2_vec = unpack_triplanar_normal(gn2, vec3(0.0, 1.0, 0.0), geom_normal);
+			vec3 gn3_vec = unpack_triplanar_normal(gn3, vec3(0.0, 1.0, 0.0), geom_normal);
 
-		vec4 c_h_biases = vec4(c_hp0.y, c_hp1.y, c_hp2.y, c_hp3.y);
+			ground_normal = normalize(gn0_vec * gw0 + gn1_vec * gw1 + gn2_vec * gw2 + gn3_vec * gw3);
+			ground_ao = (gn0.b * gw0 + gn1.b * gw1 + gn2.b * gw2 + gn3.b * gw3);
+			ground_roughness = (gn0.a * gw0 + gn1.a * gw1 + gn2.a * gw2 + gn3.a * gw3);
+		} else {
+			float max_gw = max(max(gw0, gw1), max(gw2, gw3));
+			float dom_layer = round(v_tex_indices.x);
+			if (gw1 >= max_gw) dom_layer = round(v_tex_indices.y);
+			else if (gw2 >= max_gw) dom_layer = round(v_tex_indices.z);
+			else if (gw3 >= max_gw) dom_layer = round(v_tex_indices.w);
 
-		vec4 c_h_powers = vec4(
-			c_hp0.z > 0.001 ? c_hp0.z : 1.0,
-			c_hp1.z > 0.001 ? c_hp1.z : 1.0,
-			c_hp2.z > 0.001 ? c_hp2.z : 1.0,
-			c_hp3.z > 0.001 ? c_hp3.z : 1.0
-		);
+			int dom_idx = int(clamp(dom_layer, 0.0, 31.0));
+			float uv_scale = swatch_params[dom_idx].y > 0.001 ? swatch_params[dom_idx].y : 1.0;
+			vec2 dom_uv = uv_y * uv_scale;
+			vec2 dom_dx = dx_y * uv_scale;
+			vec2 dom_dy = dy_y * uv_scale;
 
-		vec4 c_shaped_heights = vec4(
-			pow(clamp(c_heights.x, 0.0, 1.0), c_h_powers.x),
-			pow(clamp(c_heights.y, 0.0, 1.0), c_h_powers.y),
-			pow(clamp(c_heights.z, 0.0, 1.0), c_h_powers.z),
-			pow(clamp(c_heights.w, 0.0, 1.0), c_h_powers.w)
-		);
-
-		vec4 scaled_cliff_heights = vec4(
-			c_shaped_heights.x * c_h_scales.x + c_h_biases.x,
-			c_shaped_heights.y * c_h_scales.y + c_h_biases.y,
-			c_shaped_heights.z * c_h_scales.z + c_h_biases.z,
-			c_shaped_heights.w * c_h_scales.w + c_h_biases.w
-		);
-
-		vec4 c_height_scores = vec4(
-			norm_c_weights.x > 0.001 ? (norm_c_weights.x + scaled_cliff_heights.x + c_noise_offsets.x) : -100.0,
-			norm_c_weights.y > 0.001 ? (norm_c_weights.y + scaled_cliff_heights.y + c_noise_offsets.y) : -100.0,
-			norm_c_weights.z > 0.001 ? (norm_c_weights.z + scaled_cliff_heights.z + c_noise_offsets.z) : -100.0,
-			norm_c_weights.w > 0.001 ? (norm_c_weights.w + scaled_cliff_heights.w + c_noise_offsets.w) : -100.0
-		);
-
-		float max_c_score = max(max(c_height_scores.x, c_height_scores.y), max(c_height_scores.z, c_height_scores.w));
-		float c_transition_depth = max(0.001, blend_softness);
-
-		vec4 raw_c_blend = vec4(
-			smoothstep(max_c_score - c_transition_depth, max_c_score, c_height_scores.x) * step(0.001, norm_c_weights.x),
-			smoothstep(max_c_score - c_transition_depth, max_c_score, c_height_scores.y) * step(0.001, norm_c_weights.y),
-			smoothstep(max_c_score - c_transition_depth, max_c_score, c_height_scores.z) * step(0.001, norm_c_weights.z),
-			smoothstep(max_c_score - c_transition_depth, max_c_score, c_height_scores.w) * step(0.001, norm_c_weights.w)
-		);
-
-		float c_blend_sum = raw_c_blend.x + raw_c_blend.y + raw_c_blend.z + raw_c_blend.w;
-		cliff_blend_weights = c_blend_sum > 0.0001 ? raw_c_blend / c_blend_sum : norm_c_weights;
-
-		cliff_albedo = (cliff0.rgb * cliff_blend_weights.x +
-		                cliff1.rgb * cliff_blend_weights.y +
-		                cliff2.rgb * cliff_blend_weights.z +
-		                cliff3.rgb * cliff_blend_weights.w);
-	} else {
-		cliff_albedo = (cliff0.rgb * norm_c_weights.x +
-		                cliff1.rgb * norm_c_weights.y +
-		                cliff2.rgb * norm_c_weights.z +
-		                cliff3.rgb * norm_c_weights.w);
-	}
-
-	vec3 cliff_normal = geom_normal;
-	float cliff_ao = 1.0;
-	float cliff_roughness = 0.85;
-
-	float cw0 = cliff_blend_weights.x;
-	float cw1 = cliff_blend_weights.y;
-	float cw2 = cliff_blend_weights.z;
-	float cw3 = cliff_blend_weights.w;
-
-	if (enable_normal_mapping) {
-		vec4 cn0 = cw0 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 cn1 = cw1 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 cn2 = cw2 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 cn3 = cw3 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-
-		vec3 cn0_vec = unpack_triplanar_normal(cn0, get_active_weights(round(v_cliff_tex_indices.x), blend_weights), geom_normal);
-		vec3 cn1_vec = unpack_triplanar_normal(cn1, get_active_weights(round(v_cliff_tex_indices.y), blend_weights), geom_normal);
-		vec3 cn2_vec = unpack_triplanar_normal(cn2, get_active_weights(round(v_cliff_tex_indices.z), blend_weights), geom_normal);
-		vec3 cn3_vec = unpack_triplanar_normal(cn3, get_active_weights(round(v_cliff_tex_indices.w), blend_weights), geom_normal);
-
-		cliff_normal = normalize(cn0_vec * cw0 + cn1_vec * cw1 + cn2_vec * cw2 + cn3_vec * cw3);
-		cliff_ao = (cn0.b * cw0 + cn1.b * cw1 + cn2.b * cw2 + cn3.b * cw3);
-		cliff_roughness = (cn0.a * cw0 + cn1.a * cw1 + cn2.a * cw2 + cn3.a * cw3);
-	} else {
-		float max_cw = max(max(cw0, cw1), max(cw2, cw3));
-		float dom_c_layer = round(v_cliff_tex_indices.x);
-		if (cw1 >= max_cw) dom_c_layer = round(v_cliff_tex_indices.y);
-		else if (cw2 >= max_cw) dom_c_layer = round(v_cliff_tex_indices.z);
-		else if (cw3 >= max_cw) dom_c_layer = round(v_cliff_tex_indices.w);
-
-		int dom_c_idx = int(clamp(dom_c_layer, 0.0, 31.0));
-		float c_uv_scale = swatch_params[dom_c_idx].y > 0.001 ? swatch_params[dom_c_idx].y : 1.0;
-
-		vec2 c_uv = uv_y * c_uv_scale;
-		vec2 c_dx = dx_y * c_uv_scale;
-		vec2 c_dy = dy_y * c_uv_scale;
-		if (blend_weights.x > blend_weights.y && blend_weights.x > blend_weights.z) {
-			c_uv = uv_x * c_uv_scale;
-			c_dx = dx_x * c_uv_scale;
-			c_dy = dy_x * c_uv_scale;
-		} else if (blend_weights.z > blend_weights.y) {
-			c_uv = uv_z * c_uv_scale;
-			c_dx = dx_z * c_uv_scale;
-			c_dy = dy_z * c_uv_scale;
+			vec4 gn = textureGrad(terrain_normals_pbr, vec3(dom_uv, dom_layer), dom_dx, dom_dy);
+			ground_normal = unpack_triplanar_normal(gn, vec3(0.0, 1.0, 0.0), geom_normal);
+			ground_ao = gn.b;
+			ground_roughness = gn.a;
 		}
 
-		vec4 cn = textureGrad(terrain_normals_pbr, vec3(c_uv, dom_c_layer), c_dx, c_dy);
-		cliff_normal = unpack_triplanar_normal(cn, get_active_weights(dom_c_layer, blend_weights), geom_normal);
-		cliff_ao = cn.b;
-		cliff_roughness = cn.a;
+		if (enable_macro_noise && macro_normal_strength > 0.0) {
+			float n_noise_y_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
+			float n_noise_y_z = (macro_fbm((v_world_pos.xz + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.0, 0.1)) * macro_scale));
+			vec3 noise_norm_y = vec3(n_noise_y_x, 0.0, n_noise_y_z);
+			ground_normal = normalize(ground_normal + noise_norm_y * macro_normal_strength);
+		}
+
+		terrain_color = ground_albedo;
+		blended_world_normal = ground_normal;
+		blended_ao = ground_ao;
+		blended_roughness = ground_roughness;
+	} else {
+		// --- CLIFF PIPELINE ---
+		vec3 dX = dFdx(v_world_pos);
+		vec3 dY = dFdy(v_world_pos);
+		vec3 cliff_geom_normal = cross(dY, dX);
+		float geom_len = length(cliff_geom_normal);
+		cliff_geom_normal = geom_len > 0.00001 ? (cliff_geom_normal / geom_len) : geom_normal;
+		if (cliff_geom_normal.y < 0.0 && abs(cliff_geom_normal.y) > 0.001) {
+			cliff_geom_normal = -cliff_geom_normal;
+		}
+
+		vec3 triplanar_normal = abs(cliff_geom_normal);
+		vec3 blend_weights = pow(triplanar_normal, vec3(4.0));
+		float bw_sum = blend_weights.x + blend_weights.y + blend_weights.z;
+		blend_weights = bw_sum > 0.0001 ? blend_weights / bw_sum : vec3(0.0, 1.0, 0.0);
+
+		vec2 uv_x = pos_warped.zy * texture_scale;
+		vec2 uv_y = pos_warped.xz * texture_scale;
+		vec2 uv_z = pos_warped.xy * texture_scale;
+
+		vec2 dx_x = dFdx(uv_x);
+		vec2 dy_x = dFdy(uv_x);
+		vec2 dx_y = dFdx(uv_y);
+		vec2 dy_y = dFdy(uv_y);
+		vec2 dx_z = dFdx(uv_z);
+		vec2 dy_z = dFdy(uv_z);
+
+		vec4 raw_c_weights = v_cliff_tex_weights;
+		raw_c_weights.x = raw_c_weights.x < 0.001 ? 0.0 : raw_c_weights.x;
+		raw_c_weights.y = raw_c_weights.y < 0.001 ? 0.0 : raw_c_weights.y;
+		raw_c_weights.z = raw_c_weights.z < 0.001 ? 0.0 : raw_c_weights.z;
+		raw_c_weights.w = raw_c_weights.w < 0.001 ? 0.0 : raw_c_weights.w;
+
+		float c_weight_sum = raw_c_weights.x + raw_c_weights.y + raw_c_weights.z + raw_c_weights.w;
+		vec4 norm_c_weights = c_weight_sum > 0.0001 ? raw_c_weights / c_weight_sum : vec4(1.0, 0.0, 0.0, 0.0);
+
+		float max_c_weight = max(max(norm_c_weights.x, norm_c_weights.y), max(norm_c_weights.z, norm_c_weights.w));
+		float c_transition_factor = clamp((1.0 - max_c_weight) * 2.5, 0.0, 1.0);
+
+		if (blend_noise_strength > 0.0 && c_transition_factor > 0.001) {
+			vec2 c_noise_uv = v_world_pos.xz * blend_noise_scale + vec2(43.7, 19.3);
+			float noise_c_a = (macro_noise(c_noise_uv) * 0.70 + macro_noise(c_noise_uv * 2.13 + vec2(11.7, 7.3)) * 0.30) - 0.5;
+			float noise_c_b = (macro_noise(c_noise_uv + vec2(19.3, 37.7)) * 0.70 + macro_noise(c_noise_uv * 2.13 + vec2(43.3, 19.7)) * 0.30) - 0.5;
+			vec4 c_noise_offset = vec4(noise_c_a, -noise_c_a, noise_c_b, -noise_c_b) * (blend_noise_strength * c_transition_factor);
+
+			vec4 c_channel_mask = step(vec4(0.001), norm_c_weights);
+			vec4 perturbed_c_weights = max(vec4(0.0), norm_c_weights + c_noise_offset * c_channel_mask);
+			float perturbed_c_sum = perturbed_c_weights.x + perturbed_c_weights.y + perturbed_c_weights.z + perturbed_c_weights.w;
+			norm_c_weights = perturbed_c_sum > 0.0001 ? perturbed_c_weights / perturbed_c_sum : norm_c_weights;
+		}
+
+		vec4 cliff0 = raw_c_weights.x > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_cliff_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+		vec4 cliff1 = raw_c_weights.y > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_cliff_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+		vec4 cliff2 = raw_c_weights.z > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_cliff_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+		vec4 cliff3 = raw_c_weights.w > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_cliff_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+
+		vec4 cliff_blend_weights = norm_c_weights;
+		vec3 cliff_albedo = vec3(0.0);
+
+		if (enable_height_blend) {
+			float cliff_edge_noise = 0.0;
+			if (enable_macro_noise) {
+				float max_w = max(max(norm_c_weights.x, norm_c_weights.y), max(norm_c_weights.z, norm_c_weights.w));
+				float transition_factor = clamp((1.0 - max_w) * 2.0, 0.0, 1.0);
+				cliff_edge_noise = (base_fbm_val - 0.5) * 0.12 * transition_factor;
+			}
+
+			vec4 c_heights = vec4(cliff0.a, cliff1.a, cliff2.a, cliff3.a);
+			vec4 c_noise_offsets = vec4(cliff_edge_noise, -cliff_edge_noise, cliff_edge_noise * 0.75, -cliff_edge_noise * 0.75);
+
+			int c_idx0 = int(clamp(round(v_cliff_tex_indices.x), 0.0, 31.0));
+			int c_idx1 = int(clamp(round(v_cliff_tex_indices.y), 0.0, 31.0));
+			int c_idx2 = int(clamp(round(v_cliff_tex_indices.z), 0.0, 31.0));
+			int c_idx3 = int(clamp(round(v_cliff_tex_indices.w), 0.0, 31.0));
+
+			vec4 c_hp0 = swatch_height_params[c_idx0];
+			vec4 c_hp1 = swatch_height_params[c_idx1];
+			vec4 c_hp2 = swatch_height_params[c_idx2];
+			vec4 c_hp3 = swatch_height_params[c_idx3];
+
+			vec4 c_h_scales = vec4(
+				c_hp0.x > 0.001 ? c_hp0.x : 1.0,
+				c_hp1.x > 0.001 ? c_hp1.x : 1.0,
+				c_hp2.x > 0.001 ? c_hp2.x : 1.0,
+				c_hp3.x > 0.001 ? c_hp3.x : 1.0
+			);
+
+			vec4 c_h_biases = vec4(c_hp0.y, c_hp1.y, c_hp2.y, c_hp3.y);
+
+			vec4 c_h_powers = vec4(
+				c_hp0.z > 0.001 ? c_hp0.z : 1.0,
+				c_hp1.z > 0.001 ? c_hp1.z : 1.0,
+				c_hp2.z > 0.001 ? c_hp2.z : 1.0,
+				c_hp3.z > 0.001 ? c_hp3.z : 1.0
+			);
+
+			vec4 c_shaped_heights = vec4(
+				pow(clamp(c_heights.x, 0.0, 1.0), c_h_powers.x),
+				pow(clamp(c_heights.y, 0.0, 1.0), c_h_powers.y),
+				pow(clamp(c_heights.z, 0.0, 1.0), c_h_powers.z),
+				pow(clamp(c_heights.w, 0.0, 1.0), c_h_powers.w)
+			);
+
+			vec4 scaled_cliff_heights = vec4(
+				c_shaped_heights.x * c_h_scales.x + c_h_biases.x,
+				c_shaped_heights.y * c_h_scales.y + c_h_biases.y,
+				c_shaped_heights.z * c_h_scales.z + c_h_biases.z,
+				c_shaped_heights.w * c_h_scales.w + c_h_biases.w
+			);
+
+			vec4 c_height_scores = vec4(
+				norm_c_weights.x > 0.001 ? (norm_c_weights.x + scaled_cliff_heights.x + c_noise_offsets.x) : -100.0,
+				norm_c_weights.y > 0.001 ? (norm_c_weights.y + scaled_cliff_heights.y + c_noise_offsets.y) : -100.0,
+				norm_c_weights.z > 0.001 ? (norm_c_weights.z + scaled_cliff_heights.z + c_noise_offsets.z) : -100.0,
+				norm_c_weights.w > 0.001 ? (norm_c_weights.w + scaled_cliff_heights.w + c_noise_offsets.w) : -100.0
+			);
+
+			float max_c_score = max(max(c_height_scores.x, c_height_scores.y), max(c_height_scores.z, c_height_scores.w));
+			float c_transition_depth = max(0.001, blend_softness);
+
+			vec4 raw_c_blend = vec4(
+				smoothstep(max_c_score - c_transition_depth, max_c_score, c_height_scores.x) * step(0.001, norm_c_weights.x),
+				smoothstep(max_c_score - c_transition_depth, max_c_score, c_height_scores.y) * step(0.001, norm_c_weights.y),
+				smoothstep(max_c_score - c_transition_depth, max_c_score, c_height_scores.z) * step(0.001, norm_c_weights.z),
+				smoothstep(max_c_score - c_transition_depth, max_c_score, c_height_scores.w) * step(0.001, norm_c_weights.w)
+			);
+
+			float c_blend_sum = raw_c_blend.x + raw_c_blend.y + raw_c_blend.z + raw_c_blend.w;
+			cliff_blend_weights = c_blend_sum > 0.0001 ? raw_c_blend / c_blend_sum : norm_c_weights;
+
+			cliff_albedo = (cliff0.rgb * cliff_blend_weights.x +
+			                cliff1.rgb * cliff_blend_weights.y +
+			                cliff2.rgb * cliff_blend_weights.z +
+			                cliff3.rgb * cliff_blend_weights.w);
+		} else {
+			cliff_albedo = (cliff0.rgb * norm_c_weights.x +
+			                cliff1.rgb * norm_c_weights.y +
+			                cliff2.rgb * norm_c_weights.z +
+			                cliff3.rgb * norm_c_weights.w);
+		}
+
+		vec3 cliff_normal = cliff_geom_normal;
+		float cliff_ao = 1.0;
+		float cliff_roughness = 0.85;
+
+		float cw0 = cliff_blend_weights.x;
+		float cw1 = cliff_blend_weights.y;
+		float cw2 = cliff_blend_weights.z;
+		float cw3 = cliff_blend_weights.w;
+
+		if (enable_normal_mapping) {
+			vec4 cn0 = cw0 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+			vec4 cn1 = cw1 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+			vec4 cn2 = cw2 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+			vec4 cn3 = cw3 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+
+			vec3 cn0_vec = unpack_triplanar_normal(cn0, get_active_weights(round(v_cliff_tex_indices.x), blend_weights), cliff_geom_normal);
+			vec3 cn1_vec = unpack_triplanar_normal(cn1, get_active_weights(round(v_cliff_tex_indices.y), blend_weights), cliff_geom_normal);
+			vec3 cn2_vec = unpack_triplanar_normal(cn2, get_active_weights(round(v_cliff_tex_indices.z), blend_weights), cliff_geom_normal);
+			vec3 cn3_vec = unpack_triplanar_normal(cn3, get_active_weights(round(v_cliff_tex_indices.w), blend_weights), cliff_geom_normal);
+
+			cliff_normal = normalize(cn0_vec * cw0 + cn1_vec * cw1 + cn2_vec * cw2 + cn3_vec * cw3);
+			cliff_ao = (cn0.b * cw0 + cn1.b * cw1 + cn2.b * cw2 + cn3.b * cw3);
+			cliff_roughness = (cn0.a * cw0 + cn1.a * cw1 + cn2.a * cw2 + cn3.a * cw3);
+		} else {
+			float max_cw = max(max(cw0, cw1), max(cw2, cw3));
+			float dom_c_layer = round(v_cliff_tex_indices.x);
+			if (cw1 >= max_cw) dom_c_layer = round(v_cliff_tex_indices.y);
+			else if (cw2 >= max_cw) dom_c_layer = round(v_cliff_tex_indices.z);
+			else if (cw3 >= max_cw) dom_c_layer = round(v_cliff_tex_indices.w);
+
+			int dom_c_idx = int(clamp(dom_c_layer, 0.0, 31.0));
+			float c_uv_scale = swatch_params[dom_c_idx].y > 0.001 ? swatch_params[dom_c_idx].y : 1.0;
+
+			vec2 c_uv = uv_y * c_uv_scale;
+			vec2 c_dx = dx_y * c_uv_scale;
+			vec2 c_dy = dy_y * c_uv_scale;
+			if (blend_weights.x > blend_weights.y && blend_weights.x > blend_weights.z) {
+				c_uv = uv_x * c_uv_scale;
+				c_dx = dx_x * c_uv_scale;
+				c_dy = dy_x * c_uv_scale;
+			} else if (blend_weights.z > blend_weights.y) {
+				c_uv = uv_z * c_uv_scale;
+				c_dx = dx_z * c_uv_scale;
+				c_dy = dy_z * c_uv_scale;
+			}
+
+			vec4 cn = textureGrad(terrain_normals_pbr, vec3(c_uv, dom_c_layer), c_dx, c_dy);
+			cliff_normal = unpack_triplanar_normal(cn, get_active_weights(dom_c_layer, blend_weights), cliff_geom_normal);
+			cliff_ao = cn.b;
+			cliff_roughness = cn.a;
+		}
+
+		if (enable_macro_noise && macro_normal_strength > 0.0) {
+			float n_noise_y_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
+			float n_noise_y_z = (macro_fbm((v_world_pos.xz + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.0, 0.1)) * macro_scale));
+			vec3 noise_norm_y = vec3(n_noise_y_x, 0.0, n_noise_y_z);
+
+			float n_noise_x_y = (macro_fbm((v_world_pos.zy + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.zy - vec2(0.1, 0.0)) * macro_scale));
+			float n_noise_x_z = (macro_fbm((v_world_pos.zy + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.zy - vec2(0.0, 0.1)) * macro_scale));
+			vec3 noise_norm_x = vec3(0.0, n_noise_x_z, n_noise_x_y);
+
+			float n_noise_z_x = (macro_fbm((v_world_pos.xy + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xy - vec2(0.1, 0.0)) * macro_scale));
+			float n_noise_z_y = (macro_fbm((v_world_pos.xy + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xy - vec2(0.0, 0.1)) * macro_scale));
+			vec3 noise_norm_z = vec3(n_noise_z_x, n_noise_z_y, 0.0);
+
+			vec3 triplanar_cliff_noise = noise_norm_x * blend_weights.x + noise_norm_y * blend_weights.y + noise_norm_z * blend_weights.z;
+			float effective_cliff_normal_strength = macro_normal_strength * 3.5;
+			cliff_normal = normalize(cliff_normal + triplanar_cliff_noise * effective_cliff_normal_strength);
+		}
+
+		terrain_color = cliff_albedo;
+		blended_world_normal = cliff_normal;
+		blended_ao = cliff_ao;
+		blended_roughness = cliff_roughness;
 	}
-
-	if (enable_macro_noise && macro_normal_strength > 0.0) {
-		float n_noise_y_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
-		float n_noise_y_z = (macro_fbm((v_world_pos.xz + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.0, 0.1)) * macro_scale));
-		vec3 noise_norm_y = vec3(n_noise_y_x, 0.0, n_noise_y_z);
-
-		float n_noise_x_y = (macro_fbm((v_world_pos.zy + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.zy - vec2(0.1, 0.0)) * macro_scale));
-		float n_noise_x_z = (macro_fbm((v_world_pos.zy + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.zy - vec2(0.0, 0.1)) * macro_scale));
-		vec3 noise_norm_x = vec3(0.0, n_noise_x_z, n_noise_x_y);
-
-		float n_noise_z_x = (macro_fbm((v_world_pos.xy + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xy - vec2(0.1, 0.0)) * macro_scale));
-		float n_noise_z_y = (macro_fbm((v_world_pos.xy + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xy - vec2(0.0, 0.1)) * macro_scale));
-		vec3 noise_norm_z = vec3(n_noise_z_x, n_noise_z_y, 0.0);
-
-		vec3 triplanar_cliff_noise = noise_norm_x * blend_weights.x + noise_norm_y * blend_weights.y + noise_norm_z * blend_weights.z;
-		float effective_cliff_normal_strength = macro_normal_strength * 3.5;
-		cliff_normal = normalize(cliff_normal + triplanar_cliff_noise * effective_cliff_normal_strength);
-
-		ground_normal = normalize(ground_normal + noise_norm_y * macro_normal_strength);
-	}
-
-	vec3 terrain_color = mix(ground_albedo, cliff_albedo, slope_cliff_factor);
-	vec3 blended_world_normal = normalize(mix(ground_normal, cliff_normal, slope_cliff_factor));
-	float blended_ao = mix(ground_ao, cliff_ao, slope_cliff_factor);
-	float blended_roughness = mix(ground_roughness, cliff_roughness, slope_cliff_factor);
 
 	float macro_var = 1.0;
 	if (enable_macro_noise) {
@@ -1696,7 +1722,6 @@ void fragment() {
 	}
 
 	float final_roughness = 0.9;
-	float specular_amt = 0.0;
 
 	if (enable_macro_noise) {
 		float macro_roughness_var = mix(1.0 - macro_roughness_contrast, 1.0 + macro_roughness_contrast, base_fbm_val);
@@ -1704,7 +1729,6 @@ void fragment() {
 	} else {
 		final_roughness = clamp(blended_roughness, 0.05, 1.0);
 	}
-	specular_amt = 0.2;
 
 	vec2 shroud_uv = (v_world_pos.xz - shroud_world_min) / shroud_world_size;
 	float shroud_factor = texture(shroud_texture, clamp(shroud_uv, 0.0, 1.0)).r;
@@ -1766,22 +1790,26 @@ void fragment() {
 				_material.SetShaderParameter("enable_macro_noise", false);
 				_material.SetShaderParameter("enable_height_blend", false);
 				_material.SetShaderParameter("enable_normal_mapping", false);
+				_material.SetShaderParameter("specular_amt", 0.0f);
 				break;
 			case 1:
 				_material.SetShaderParameter("enable_macro_noise", false);
 				_material.SetShaderParameter("enable_height_blend", false);
 				_material.SetShaderParameter("enable_normal_mapping", false);
+				_material.SetShaderParameter("specular_amt", 0.0f);
 				break;
 			case 2:
 				_material.SetShaderParameter("enable_macro_noise", true);
 				_material.SetShaderParameter("enable_height_blend", true);
 				_material.SetShaderParameter("enable_normal_mapping", true);
+				_material.SetShaderParameter("specular_amt", 0.2f);
 				break;
 			case 3:
 			default:
 				_material.SetShaderParameter("enable_macro_noise", true);
 				_material.SetShaderParameter("enable_height_blend", true);
 				_material.SetShaderParameter("enable_normal_mapping", true);
+				_material.SetShaderParameter("specular_amt", 0.2f);
 				break;
 		}
 
