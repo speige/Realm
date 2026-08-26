@@ -471,49 +471,41 @@ public static class GameSettings
 	{
 		if (env == null || !GodotObject.IsInstanceValid(env)) return;
 
-		if (quality == GraphicsQuality.Low)
-		{
-			env.TonemapMode = Godot.Environment.ToneMapper.Agx;
-			env.AdjustmentEnabled = false;
-			env.SsaoEnabled = false;
-			env.SsilEnabled = false;
-			env.SsrEnabled = false;
-			env.SdfgiEnabled = false;
-			env.FogEnabled = false;
-			env.GlowEnabled = false;
-		}
-		else
-		{
-			env.TonemapMode = Godot.Environment.ToneMapper.Agx;
-			env.AdjustmentEnabled = true;
-			env.SsaoEnabled = true;
-			env.SsilEnabled = quality >= GraphicsQuality.High;
-			env.SsrEnabled = quality == GraphicsQuality.Ultra;
-			env.SdfgiEnabled = quality == GraphicsQuality.Ultra;
-			env.FogEnabled = true;
-			env.GlowEnabled = true;
-		}
+		env.TonemapMode = Godot.Environment.ToneMapper.Agx;
+		env.AdjustmentEnabled = true;
+		env.SsaoEnabled = quality > GraphicsQuality.Low;
+		env.SsilEnabled = quality >= GraphicsQuality.High;
+		env.SsrEnabled = quality == GraphicsQuality.Ultra;
+		env.SdfgiEnabled = quality == GraphicsQuality.Ultra;
+		env.FogEnabled = true;
+		env.GlowEnabled = quality > GraphicsQuality.Low;
 	}
 
 	public static void ApplyDirectionalLightQuality(DirectionalLight3D light, GraphicsQuality quality = GraphicsQuality.High)
 	{
 		if (light == null || !GodotObject.IsInstanceValid(light)) return;
 
-		if (DisableShadows || quality == GraphicsQuality.Low)
+		light.ShadowEnabled = !GameSettings.DisableShadows && light.LightEnergy > 0.05f;
+		if (!light.ShadowEnabled) {
+			return;
+		}
+
+		light.DirectionalShadowMaxDistance = 200.0f;
+		if (quality == GraphicsQuality.Low)
 		{
-			light.ShadowEnabled = false;
+			light.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal;
 		}
 		else if (quality == GraphicsQuality.Medium)
 		{
-			light.ShadowEnabled = true;
 			light.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal;
-			light.DirectionalShadowMaxDistance = 200.0f;
+		}
+		else if (quality == GraphicsQuality.High)
+		{
+			light.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Parallel2Splits;
 		}
 		else
 		{
-			light.ShadowEnabled = true;
 			light.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Parallel4Splits;
-			light.DirectionalShadowMaxDistance = 200.0f;
 		}
 	}
 

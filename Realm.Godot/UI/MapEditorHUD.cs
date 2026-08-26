@@ -7267,7 +7267,6 @@ public partial class MapEditorHUD : Control
 		_sldBlendNoiseScale = CreateSliderRow(_contentLightingTuning, "Blend Noise Scl", 0.01f, 0.5f, 0.005f, _tuneBlendNoiseScale, val => { _tuneBlendNoiseScale = val; ApplyLiveLightingTuning(); }, "0.00#");
 
 		UpdateLightingTuningSlidersFromPhase(0);
-		ApplyLiveLightingTuning();
 		lightingAccordion.Visible = false;
 	}
 
@@ -7337,8 +7336,6 @@ public partial class MapEditorHUD : Control
 		if (_sldHeightBlendSoftness != null) _sldHeightBlendSoftness.Value = _tuneHeightBlendSoftness;
 		if (_sldBlendNoiseStrength != null) _sldBlendNoiseStrength.Value = _tuneBlendNoiseStrength;
 		if (_sldBlendNoiseScale != null) _sldBlendNoiseScale.Value = _tuneBlendNoiseScale;
-
-		ApplyLiveLightingTuning();
 	}
 
 	private void ApplyLiveLightingTuning()
@@ -7373,17 +7370,15 @@ public partial class MapEditorHUD : Control
 
 		if (sun != null)
 		{
-			GameSettings.ApplyDirectionalLightQuality(sun);
 			sun.RotationDegrees = new Vector3(_tuneSunPitch, _tuneSunYaw, 0f);
 			sun.LightEnergy = _tuneSunEnergy;
 			sun.LightColor = new Color(_tuneSunR, _tuneSunG, _tuneSunB);
 			sun.LightSpecular = 0.5f;
-			sun.DirectionalShadowMaxDistance = 200.0f;
 			sun.DirectionalShadowBlendSplits = true;
 			sun.DirectionalShadowFadeStart = 0.8f;
 			sun.ShadowBias = 0.03f;
 			sun.ShadowNormalBias = 1.2f;
-			sun.ShadowEnabled = !GameSettings.DisableShadows && _tuneSunEnergy > 0.05f;
+			GameSettings.ApplyDirectionalLightQuality(sun);
 		}
 
 		if (worldEnv != null && worldEnv.Environment != null)
@@ -7393,7 +7388,8 @@ public partial class MapEditorHUD : Control
 			env.AmbientLightColor = new Color(_tuneAmbientR, _tuneAmbientG, _tuneAmbientB);
 			env.AmbientLightEnergy = _tuneAmbientEnergy;
 
-			GameSettings.ApplyEnvironmentQuality(env);
+			GameSettings.ApplyEnvironmentQuality(env, GameSettings.QualityIdx);
+
 			env.FogEnabled = _tuneFogEnabled;
 			env.FogDensity = _tuneFogDensity;
 			env.FogLightColor = new Color(_tuneFogR, _tuneFogG, _tuneFogB);

@@ -75,10 +75,17 @@ public class EnvironmentService
 		}
 
 		float baseFogDensity = GetBaseFogDensity();
-		worldEnv.Environment.FogEnabled = true;
-		float height = camera3D.GlobalPosition.Y;
-		float scale = 18.0f / Mathf.Max(8.0f, height);
-		worldEnv.Environment.FogDensity = baseFogDensity * scale;
+		if (baseFogDensity > 0f && camera3D != null && GodotObject.IsInstanceValid(camera3D))
+		{
+			worldEnv.Environment.FogEnabled = true;
+			float height = camera3D.GlobalPosition.Y;
+			float scale = 18.0f / Mathf.Max(8.0f, height);
+			worldEnv.Environment.FogDensity = baseFogDensity * scale;
+		}
+		else
+		{
+			worldEnv.Environment.FogEnabled = false;
+		}
 	}
 
 	public string CycleWeather()
@@ -173,23 +180,26 @@ public class EnvironmentService
 		env.AmbientLightColor = AmbientColors[phaseIndex].Lerp(AmbientColors[nextIndex], t);
 		env.AmbientLightEnergy = Mathf.Lerp(AmbientEnergies[phaseIndex], AmbientEnergies[nextIndex], t);
 
-		GameSettings.ApplyEnvironmentQuality(env);
+		GameSettings.ApplyEnvironmentQuality(env, GameSettings.QualityIdx);
+
+		if (GameSettings.QualityIdx > GraphicsQuality.Low)
+		{
+			env.SsaoRadius = Mathf.Lerp(SsaoRadii[phaseIndex], SsaoRadii[nextIndex], t);
+			env.SsaoIntensity = Mathf.Lerp(SsaoIntensities[phaseIndex], SsaoIntensities[nextIndex], t);
+			env.SsaoDetail = 0.5f;
+
+			env.GlowIntensity = Mathf.Lerp(GlowIntensities[phaseIndex], GlowIntensities[nextIndex], t);
+			env.GlowStrength = 0.90f;
+			env.GlowBloom = Mathf.Lerp(GlowBlooms[phaseIndex], GlowBlooms[nextIndex], t);
+			env.GlowBlendMode = Godot.Environment.GlowBlendModeEnum.Additive;
+		}
 
 		env.TonemapExposure = Mathf.Lerp(Exposures[phaseIndex], Exposures[nextIndex], t);
 		env.AdjustmentContrast = Mathf.Lerp(Contrasts[phaseIndex], Contrasts[nextIndex], t);
 		env.AdjustmentSaturation = Mathf.Lerp(Saturations[phaseIndex], Saturations[nextIndex], t);
 
-		env.SsaoRadius = Mathf.Lerp(SsaoRadii[phaseIndex], SsaoRadii[nextIndex], t);
-		env.SsaoIntensity = Mathf.Lerp(SsaoIntensities[phaseIndex], SsaoIntensities[nextIndex], t);
-		env.SsaoDetail = 0.5f;
-
 		env.FogLightColor = FogColors[phaseIndex].Lerp(FogColors[nextIndex], t);
 		env.FogDensity = Mathf.Lerp(FogDensities[phaseIndex], FogDensities[nextIndex], t);
-
-		env.GlowIntensity = Mathf.Lerp(GlowIntensities[phaseIndex], GlowIntensities[nextIndex], t);
-		env.GlowStrength = 0.90f;
-		env.GlowBloom = Mathf.Lerp(GlowBlooms[phaseIndex], GlowBlooms[nextIndex], t);
-		env.GlowBlendMode = Godot.Environment.GlowBlendModeEnum.Additive;
 
 		// --- 3. Primary Directional Accent Light ---
 		Color interpSunColor = SunColors[phaseIndex].Lerp(SunColors[nextIndex], t);
@@ -203,17 +213,15 @@ public class EnvironmentService
 
 		if (sun != null)
 		{
-			GameSettings.ApplyDirectionalLightQuality(sun);
-			sun.DirectionalShadowMaxDistance = 200.0f;
 			sun.DirectionalShadowBlendSplits = true;
 			sun.DirectionalShadowFadeStart = 0.8f;
 			sun.ShadowBias = 0.03f;
 			sun.ShadowNormalBias = 1.2f;
-			sun.ShadowEnabled = !GameSettings.DisableShadows && interpSunEnergy > 0.05f;
 			sun.LightColor = interpSunColor;
 			sun.LightEnergy = interpSunEnergy;
 			sun.LightSpecular = 0.5f;
 			sun.RotationDegrees = new Vector3(interpSunPitch, interpSunYaw, 0f);
+			GameSettings.ApplyDirectionalLightQuality(sun, GameSettings.QualityIdx);
 		}
 
 		// --- 5. Character Fill Light ---
