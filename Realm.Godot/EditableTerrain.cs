@@ -559,6 +559,8 @@ public partial class EditableTerrain : StaticBody3D
 		public Vector2[] UvsCache;
 		public int[] IndicesCache;
 		public float[] MapDataCache;
+		public Dictionary<TerrainVertexKey, int> WeldVertexMap;
+		public int[] WeldRemapTable;
 	}
 	
 	private List<TerrainChunk> _chunks = new List<TerrainChunk>();
@@ -3661,8 +3663,22 @@ void fragment() {
 			return;
 		}
 
-		Dictionary<TerrainVertexKey, int> vertexMap = new Dictionary<TerrainVertexKey, int>(vertexIndex);
-		int[] remapTable = new int[vertexIndex];
+		if (chunk.WeldVertexMap == null)
+		{
+			chunk.WeldVertexMap = new Dictionary<TerrainVertexKey, int>(vertexIndex);
+		}
+		else
+		{
+			chunk.WeldVertexMap.Clear();
+		}
+
+		if (chunk.WeldRemapTable == null || chunk.WeldRemapTable.Length < vertexIndex)
+		{
+			chunk.WeldRemapTable = new int[Math.Max(vertexIndex, chunk.WeldRemapTable != null ? chunk.WeldRemapTable.Length * 2 : 1024)];
+		}
+
+		var vertexMap = chunk.WeldVertexMap;
+		var remapTable = chunk.WeldRemapTable;
 		int uniqueVertexCount = 0;
 
 		for (int v = 0; v < vertexIndex; v++)
@@ -3769,6 +3785,9 @@ void fragment() {
 		private readonly int _cw2;
 		private readonly int _cw3;
 
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static int FastRound(float v, float scale) => (int)(v * scale + (v >= 0f ? 0.5f : -0.5f));
+
 		public TerrainVertexKey(
 			Vector3 position,
 			Vector3 normal,
@@ -3779,32 +3798,32 @@ void fragment() {
 			float cTex0, float cTex1, float cTex2, float cTex3,
 			float cw0, float cw1, float cw2, float cw3)
 		{
-			_positionX = (int)MathF.Round(position.X * 2000.0f);
-			_positionY = (int)MathF.Round(position.Y * 2000.0f);
-			_positionZ = (int)MathF.Round(position.Z * 2000.0f);
-			_normalX = (int)MathF.Round(normal.X * 1000.0f);
-			_normalY = (int)MathF.Round(normal.Y * 1000.0f);
-			_normalZ = (int)MathF.Round(normal.Z * 1000.0f);
-			_textureU = (int)MathF.Round(uv.X * 1000.0f);
-			_textureV = (int)MathF.Round(uv.Y * 1000.0f);
-			_colorAlpha = (int)MathF.Round(color.A * 1000.0f);
-			_quadCliff = (int)MathF.Round(color.R);
-			_gTex0 = (int)MathF.Round(gTex0);
-			_gTex1 = (int)MathF.Round(gTex1);
-			_gTex2 = (int)MathF.Round(gTex2);
-			_gTex3 = (int)MathF.Round(gTex3);
-			_gw0 = (int)MathF.Round(gw0 * 1000.0f);
-			_gw1 = (int)MathF.Round(gw1 * 1000.0f);
-			_gw2 = (int)MathF.Round(gw2 * 1000.0f);
-			_gw3 = (int)MathF.Round(gw3 * 1000.0f);
-			_cTex0 = (int)MathF.Round(cTex0);
-			_cTex1 = (int)MathF.Round(cTex1);
-			_cTex2 = (int)MathF.Round(cTex2);
-			_cTex3 = (int)MathF.Round(cTex3);
-			_cw0 = (int)MathF.Round(cw0 * 1000.0f);
-			_cw1 = (int)MathF.Round(cw1 * 1000.0f);
-			_cw2 = (int)MathF.Round(cw2 * 1000.0f);
-			_cw3 = (int)MathF.Round(cw3 * 1000.0f);
+			_positionX = FastRound(position.X, 2000.0f);
+			_positionY = FastRound(position.Y, 2000.0f);
+			_positionZ = FastRound(position.Z, 2000.0f);
+			_normalX = FastRound(normal.X, 1000.0f);
+			_normalY = FastRound(normal.Y, 1000.0f);
+			_normalZ = FastRound(normal.Z, 1000.0f);
+			_textureU = FastRound(uv.X, 1000.0f);
+			_textureV = FastRound(uv.Y, 1000.0f);
+			_colorAlpha = FastRound(color.A, 1000.0f);
+			_quadCliff = (int)(color.R + (color.R >= 0f ? 0.5f : -0.5f));
+			_gTex0 = (int)(gTex0 + (gTex0 >= 0f ? 0.5f : -0.5f));
+			_gTex1 = (int)(gTex1 + (gTex1 >= 0f ? 0.5f : -0.5f));
+			_gTex2 = (int)(gTex2 + (gTex2 >= 0f ? 0.5f : -0.5f));
+			_gTex3 = (int)(gTex3 + (gTex3 >= 0f ? 0.5f : -0.5f));
+			_gw0 = FastRound(gw0, 1000.0f);
+			_gw1 = FastRound(gw1, 1000.0f);
+			_gw2 = FastRound(gw2, 1000.0f);
+			_gw3 = FastRound(gw3, 1000.0f);
+			_cTex0 = (int)(cTex0 + (cTex0 >= 0f ? 0.5f : -0.5f));
+			_cTex1 = (int)(cTex1 + (cTex1 >= 0f ? 0.5f : -0.5f));
+			_cTex2 = (int)(cTex2 + (cTex2 >= 0f ? 0.5f : -0.5f));
+			_cTex3 = (int)(cTex3 + (cTex3 >= 0f ? 0.5f : -0.5f));
+			_cw0 = FastRound(cw0, 1000.0f);
+			_cw1 = FastRound(cw1, 1000.0f);
+			_cw2 = FastRound(cw2, 1000.0f);
+			_cw3 = FastRound(cw3, 1000.0f);
 		}
 
 		public bool Equals(TerrainVertexKey other)
@@ -3844,22 +3863,25 @@ void fragment() {
 
 		public override int GetHashCode()
 		{
-			HashCode hashCode = new HashCode();
-			hashCode.Add(_positionX);
-			hashCode.Add(_positionY);
-			hashCode.Add(_positionZ);
-			hashCode.Add(_normalX);
-			hashCode.Add(_normalY);
-			hashCode.Add(_normalZ);
-			hashCode.Add(_textureU);
-			hashCode.Add(_textureV);
-			hashCode.Add(_colorAlpha);
-			hashCode.Add(_quadCliff);
-			hashCode.Add(_gTex0);
-			hashCode.Add(_gw0);
-			hashCode.Add(_cTex0);
-			hashCode.Add(_cw0);
-			return hashCode.ToHashCode();
+			unchecked
+			{
+				int hash = 17;
+				hash = hash * 31 + _positionX;
+				hash = hash * 31 + _positionY;
+				hash = hash * 31 + _positionZ;
+				hash = hash * 31 + _normalX;
+				hash = hash * 31 + _normalY;
+				hash = hash * 31 + _normalZ;
+				hash = hash * 31 + _textureU;
+				hash = hash * 31 + _textureV;
+				hash = hash * 31 + _colorAlpha;
+				hash = hash * 31 + _quadCliff;
+				hash = hash * 31 + _gTex0;
+				hash = hash * 31 + _gw0;
+				hash = hash * 31 + _cTex0;
+				hash = hash * 31 + _cw0;
+				return hash;
+			}
 		}
 	}
 }

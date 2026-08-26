@@ -8,6 +8,7 @@ using Realm.Ecs.Components.Terrain;
 using Realm.Godot.Utils;
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 public class EditorService
 {
@@ -1663,7 +1664,8 @@ public class EditorService
 		{
 			for (int x = 0; x < w; x++)
 			{
-				newCells[x, z] = _copiedArea.Cells[x, d - 1 - z];
+				var srcCell = _copiedArea.Cells[x, d - 1 - z];
+				newCells[x, z] = MirrorCell(in srcCell, MirrorMode.Vertical);
 				newSplatMap[x, z] = _copiedArea.SplatMap[x, d - 1 - z];
 				if (newPathing != null)
 				{
@@ -1702,7 +1704,8 @@ public class EditorService
 		{
 			for (int x = 0; x < w; x++)
 			{
-				newCells[x, z] = _copiedArea.Cells[w - 1 - x, z];
+				var srcCell = _copiedArea.Cells[w - 1 - x, z];
+				newCells[x, z] = MirrorCell(in srcCell, MirrorMode.Horizontal);
 				newSplatMap[x, z] = _copiedArea.SplatMap[w - 1 - x, z];
 				if (newPathing != null)
 				{
@@ -1789,8 +1792,12 @@ public class EditorService
 					dZ = (pasteDepth - pasteWidth) / 2;
 				}
 
-				PasteCellRotated(sx, sz, rotX, rotZ, startX + dX, startZ + dZ, width, depth, pasteHeights, pasteTextures, pastePathing, mirrorMode, ref terrain, ref modified, ref pathingModified);
+				PasteCellRotated(sx, sz, rotX, rotZ, startX + dX, startZ + dZ, width, depth, pasteHeights, pasteTextures, pastePathing, mirrorMode, rotSteps, ref terrain, ref modified, ref pathingModified);
 			}
+		}
+		if (modified && pasteHeights)
+		{
+			SanitizeCornerHeights(ref terrain);
 		}
 		if (modified && pasteTextures)
 		{
@@ -1878,29 +1885,26 @@ public class EditorService
 
 		if (pasteHeights || pasteTextures || (pastePathing && terrain.PathingCodes != null))
 		{
-			for (int sz = 0; sz <= selDepth; sz++)
+			for (int sz = 0; sz < selDepth; sz++)
 			{
-				for (int sx = 0; sx <= selWidth; sx++)
+				for (int sx = 0; sx < selWidth; sx++)
 				{
 					int targetX = minX + sx;
 					int targetZ = minZ + sz;
-					if (targetX >= 0 && targetX <= width && targetZ >= 0 && targetZ <= depth)
+					if (targetX >= 0 && targetX < width && targetZ >= 0 && targetZ < depth)
 					{
-						if (pasteHeights)
+						if (pasteHeights && terrain.Cells != null)
 						{
-							if (targetX < width && targetZ < depth && terrain.Cells != null)
-							{
-								terrain.Cells[targetX, targetZ] = default;
-							}
+							terrain.Cells[targetX, targetZ] = default;
 						}
-						if (sx < selWidth && sz < selDepth && targetX < width && targetZ < depth)
+						if (pasteTextures && _terrainSplatMap != null)
 						{
-							if (pasteTextures) _terrainSplatMap[targetX, targetZ] = TerrainSplatWeights.CreateSolid(3);
-							if (pastePathing && terrain.PathingCodes != null)
-							{
-								terrain.PathingCodes[targetX, targetZ] = EditableTerrain.PATHING_GROUND | EditableTerrain.PATHING_FLYING;
-								pathingModified = true;
-							}
+							_terrainSplatMap[targetX, targetZ] = TerrainSplatWeights.CreateSolid(3);
+						}
+						if (pastePathing && terrain.PathingCodes != null)
+						{
+							terrain.PathingCodes[targetX, targetZ] = EditableTerrain.PATHING_GROUND | EditableTerrain.PATHING_FLYING;
+							pathingModified = true;
 						}
 						terrainModified = true;
 					}
@@ -1909,6 +1913,10 @@ public class EditorService
 			if (terrainModified && pasteTextures)
 			{
 				AlignSplatMapSlots(minX - 2, minZ - 2, maxX + 2, maxZ + 2);
+			}
+			if (terrainModified && pasteHeights)
+			{
+				SanitizeCornerHeights(ref terrain);
 			}
 		}
 
@@ -2444,6 +2452,63 @@ public class EditorService
 		return list;
 	}
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static TerrainCell RotateCell(in TerrainCell cell, int rotSteps)
+	{
+		rotSteps = (rotSteps % 4 + 4) % 4;
+		switch (rotSteps)
+		{
+			case 1:
+				return new TerrainCell(cell.Y_SW, cell.Y_NW, cell.Y_NE, cell.Y_SE, cell.WaterMode);
+			case 2:
+				return new TerrainCell(cell.Y_SE, cell.Y_SW, cell.Y_NW, cell.Y_NE, cell.WaterMode);
+			case 3:
+				return new TerrainCell(cell.Y_NE, cell.Y_SE, cell.Y_SW, cell.Y_NW, cell.WaterMode);
+			case 0:
+			default:
+				return cell;
+		}
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static TerrainCell MirrorCell(in TerrainCell cell, MirrorMode mode)
+	{
+		switch (mode)
+		{
+			case MirrorMode.Horizontal:
+				return new TerrainCell(cell.Y_NE, cell.Y_NW, cell.Y_SW, cell.Y_SE, cell.WaterMode);
+			case MirrorMode.Vertical:
+				return new TerrainCell(cell.Y_SW, cell.Y_SE, cell.Y_NE, cell.Y_NW, cell.WaterMode);
+			case MirrorMode.Both:
+				return new TerrainCell(cell.Y_SE, cell.Y_SW, cell.Y_NW, cell.Y_NE, cell.WaterMode);
+			case MirrorMode.None:
+			default:
+				return cell;
+		}
+	}
+
+	private void SanitizeCornerHeights(ref TerrainState terrain)
+	{
+		var cells = terrain.Cells;
+		if (cells == null) return;
+
+		int w = terrain.Width;
+		int d = terrain.Depth;
+
+		for (int gz = 0; gz <= d; gz++)
+		{
+			for (int gx = 0; gx <= w; gx++)
+			{
+				float h = GetGridNodeHeight(in terrain, gx, gz);
+
+				if (gx > 0 && gz > 0 && gx - 1 < w && gz - 1 < d) cells[gx - 1, gz - 1].Y_SE = h;
+				if (gx < w && gz > 0 && gz - 1 < d) cells[gx, gz - 1].Y_SW = h;
+				if (gx > 0 && gz < d && gx - 1 < w) cells[gx - 1, gz].Y_NE = h;
+				if (gx < w && gz < d) cells[gx, gz].Y_NW = h;
+			}
+		}
+	}
+
 	private void PasteCellRotated(
 		int srcX, int srcZ,
 		int rotX, int rotZ,
@@ -2451,6 +2516,7 @@ public class EditorService
 		int width, int depth,
 		bool pasteHeights, bool pasteTextures, bool pastePathing,
 		MirrorMode mirrorMode,
+		int rotSteps,
 		ref TerrainState terrain,
 		ref bool modified,
 		ref bool pathingModified)
@@ -2461,11 +2527,17 @@ public class EditorService
 		var cells = terrain.Cells;
 		var srcCells = _copiedArea.Cells;
 
+		TerrainCell rotatedCell = default;
+		if (pasteHeights && srcCells != null && srcX < _copiedArea.Width && srcZ < _copiedArea.Depth)
+		{
+			rotatedCell = RotateCell(in srcCells[srcX, srcZ], rotSteps);
+		}
+
 		if (targetX >= 0 && targetX < width && targetZ >= 0 && targetZ < depth && srcX < _copiedArea.Width && srcZ < _copiedArea.Depth)
 		{
 			if (pasteHeights && srcCells != null)
 			{
-				cells[targetX, targetZ] = srcCells[srcX, srcZ];
+				cells[targetX, targetZ] = rotatedCell;
 			}
 			if (pasteTextures) _terrainSplatMap[targetX, targetZ] = _copiedArea.SplatMap[srcX, srcZ];
 			if (pastePathing && _copiedArea.Pathing != null && terrain.PathingCodes != null)
@@ -2484,7 +2556,7 @@ public class EditorService
 			{
 				if (pasteHeights && srcCells != null)
 				{
-					cells[mx, mz] = srcCells[srcX, srcZ];
+					cells[mx, mz] = MirrorCell(in rotatedCell, MirrorMode.Horizontal);
 				}
 				if (pasteTextures) _terrainSplatMap[mx, mz] = _copiedArea.SplatMap[srcX, srcZ];
 				if (pastePathing && _copiedArea.Pathing != null && terrain.PathingCodes != null)
@@ -2504,7 +2576,7 @@ public class EditorService
 			{
 				if (pasteHeights && srcCells != null)
 				{
-					cells[mx, mz] = srcCells[srcX, srcZ];
+					cells[mx, mz] = MirrorCell(in rotatedCell, MirrorMode.Vertical);
 				}
 				if (pasteTextures) _terrainSplatMap[mx, mz] = _copiedArea.SplatMap[srcX, srcZ];
 				if (pastePathing && _copiedArea.Pathing != null && terrain.PathingCodes != null)
@@ -2524,7 +2596,7 @@ public class EditorService
 			{
 				if (pasteHeights && srcCells != null)
 				{
-					cells[mx, mz] = srcCells[srcX, srcZ];
+					cells[mx, mz] = MirrorCell(in rotatedCell, MirrorMode.Both);
 				}
 				if (pasteTextures) _terrainSplatMap[mx, mz] = _copiedArea.SplatMap[srcX, srcZ];
 				if (pastePathing && _copiedArea.Pathing != null && terrain.PathingCodes != null)

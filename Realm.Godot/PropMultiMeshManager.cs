@@ -35,6 +35,8 @@ public partial class PropMultiMeshManager : Node3D
 		public Vector2I ChunkIndex;
 		public Aabb Bounds;
 		public List<MultiMeshInstance3D> MultiMeshNodes = new();
+		public int LastInstanceCount = -1;
+		public ulong LastDataHash = 0;
 	}
 
 	private class PropModelGroup
@@ -43,6 +45,13 @@ public partial class PropMultiMeshManager : Node3D
 		public List<MeshSubInfo> SubMeshes = new();
 		public Dictionary<Vector2I, PropChunkGroup> ChunkGroups = new();
 	}
+
+	private static readonly StringName _snModelBrightness = new("model_brightness");
+	private static readonly StringName _snModelColorTint = new("model_color_tint");
+	private static readonly StringName _snIgnorePlayerColor = new("ignore_player_color");
+	private static readonly StringName _snNormalMode = new("normal_mode");
+	private static readonly StringName _snUnitAmbientBoost = new("unit_ambient_boost");
+	private static readonly StringName _snUnitRimIntensity = new("unit_rim_intensity");
 
 	private readonly Dictionary<string, PropModelGroup> _groups = new(StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _dirtyAssetKeys = new(StringComparer.OrdinalIgnoreCase);
@@ -272,13 +281,18 @@ public partial class PropMultiMeshManager : Node3D
 		{
 			if (!_reusableChunkBucketsData.TryGetValue(kvp.Key, out var chunkList) || chunkList.Count == 0)
 			{
-				foreach (var mmNode in kvp.Value.MultiMeshNodes)
+				if (kvp.Value.LastInstanceCount != 0)
 				{
-					if (mmNode.Multimesh != null)
+					kvp.Value.LastInstanceCount = 0;
+					kvp.Value.LastDataHash = 0;
+					foreach (var mmNode in kvp.Value.MultiMeshNodes)
 					{
-						mmNode.Multimesh.VisibleInstanceCount = 0;
+						if (mmNode.Multimesh != null)
+						{
+							mmNode.Multimesh.VisibleInstanceCount = 0;
+						}
+						mmNode.CustomAabb = new Aabb();
 					}
-					mmNode.CustomAabb = new Aabb();
 				}
 			}
 		}
@@ -296,9 +310,49 @@ public partial class PropMultiMeshManager : Node3D
 				group.ChunkGroups[chunkKey] = chunkGroup;
 			}
 
+			int instanceCount = chunkProps.Count;
+
+			ulong dataHash = 14695981039346656037UL;
+			for (int i = 0; i < instanceCount; i++)
+			{
+				var prop = chunkProps[i];
+				dataHash ^= (ulong)prop.Position.X.GetHashCode();
+				dataHash *= 1099511628211UL;
+				dataHash ^= (ulong)prop.Position.Y.GetHashCode();
+				dataHash *= 1099511628211UL;
+				dataHash ^= (ulong)prop.Position.Z.GetHashCode();
+				dataHash *= 1099511628211UL;
+				dataHash ^= (ulong)prop.RotationY.GetHashCode();
+				dataHash *= 1099511628211UL;
+				dataHash ^= (ulong)prop.Scale.GetHashCode();
+				dataHash *= 1099511628211UL;
+			}
+			dataHash ^= (ulong)yOffset.GetHashCode();
+
+			bool allMeshesMatch = chunkGroup.MultiMeshNodes.Count >= group.SubMeshes.Count;
+			if (allMeshesMatch)
+			{
+				for (int subIdx = 0; subIdx < group.SubMeshes.Count; subIdx++)
+				{
+					var node = chunkGroup.MultiMeshNodes[subIdx];
+					if (node.Multimesh == null || node.Multimesh.Mesh != group.SubMeshes[subIdx].Mesh || node.Multimesh.VisibleInstanceCount != instanceCount)
+					{
+						allMeshesMatch = false;
+						break;
+					}
+				}
+			}
+
+			if (allMeshesMatch && chunkGroup.LastInstanceCount == instanceCount && chunkGroup.LastDataHash == dataHash)
+			{
+				continue;
+			}
+
+			chunkGroup.LastInstanceCount = instanceCount;
+			chunkGroup.LastDataHash = dataHash;
+
 			Vector3 minPos = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
 			Vector3 maxPos = new Vector3(float.MinValue, float.MinValue, float.MinValue);
-			int instanceCount = chunkProps.Count;
 
 			for (int i = 0; i < instanceCount; i++)
 			{
@@ -500,12 +554,12 @@ public partial class PropMultiMeshManager : Node3D
 					{
 						var shaderMat = Realm.Godot.Utils.PlayerColorShaderManager.GetOrCreateShaderMaterial(baseMatToUse, normalizeLuminance);
 						mmNode.MaterialOverride = shaderMat;
-						mmNode.SetInstanceShaderParameter(new StringName("model_brightness"), brightness);
-						mmNode.SetInstanceShaderParameter(new StringName("model_color_tint"), tint);
-						mmNode.SetInstanceShaderParameter(new StringName("ignore_player_color"), ignorePlayerColor ? 1.0f : 0.0f);
-						mmNode.SetInstanceShaderParameter(new StringName("normal_mode"), (float)normalMode);
-						mmNode.SetInstanceShaderParameter(new StringName("unit_ambient_boost"), 0.0f);
-						mmNode.SetInstanceShaderParameter(new StringName("unit_rim_intensity"), 0.0f);
+						mmNode.SetInstanceShaderParameter(_snModelBrightness, brightness);
+						mmNode.SetInstanceShaderParameter(_snModelColorTint, tint);
+						mmNode.SetInstanceShaderParameter(_snIgnorePlayerColor, ignorePlayerColor ? 1.0f : 0.0f);
+						mmNode.SetInstanceShaderParameter(_snNormalMode, (float)normalMode);
+						mmNode.SetInstanceShaderParameter(_snUnitAmbientBoost, 0.0f);
+						mmNode.SetInstanceShaderParameter(_snUnitRimIntensity, 0.0f);
 					}
 				}
 			}

@@ -1818,33 +1818,52 @@ public partial class GameHost
 			{
 				var pos = unit.GlobalPosition;
 				if (!IsInRegion(pos)) continue;
-				pos.Y = _editorService.GetTerrainHeightAt(pos);
-				unit.GlobalPosition = pos;
-				if (EcsWorld.IsAlive(unit.Entity))
+				float targetY = _editorService.GetTerrainHeightAt(pos);
+				if (MathF.Abs(pos.Y - targetY) > 0.001f)
 				{
-					EcsWorld.Set(unit.Entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));
+					pos.Y = targetY;
+					unit.GlobalPosition = pos;
+					if (EcsWorld.IsAlive(unit.Entity))
+					{
+						EcsWorld.Set(unit.Entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));
+					}
 				}
 			}
 		}
 
+		bool anyPropMoved = false;
 		foreach (var child in GetChildren())
 		{
 			if (child is Prop3D prop && GodotObject.IsInstanceValid(prop))
 			{
 				var pos = prop.GlobalPosition;
 				if (!IsInRegion(pos)) continue;
-				pos.Y = _editorService.GetTerrainHeightAt(pos);
-				prop.GlobalPosition = pos;
+				float targetY = _editorService.GetTerrainHeightAt(pos);
+				if (MathF.Abs(pos.Y - targetY) > 0.001f)
+				{
+					pos.Y = targetY;
+					prop.GlobalPosition = pos;
+					anyPropMoved = true;
+					PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
+				}
 			}
 			else if (child is Decal decal && GodotObject.IsInstanceValid(decal))
 			{
 				var pos = decal.GlobalPosition;
 				if (!IsInRegion(pos)) continue;
-				pos.Y = _editorService.GetTerrainHeightAt(pos);
-				decal.GlobalPosition = pos;
+				float targetY = _editorService.GetTerrainHeightAt(pos);
+				if (MathF.Abs(pos.Y - targetY) > 0.001f)
+				{
+					pos.Y = targetY;
+					decal.GlobalPosition = pos;
+				}
 			}
 		}
-		PropMultiMeshManager.Instance?.MarkAllDirty();
+
+		if (!affectedRegion.HasValue && anyPropMoved)
+		{
+			PropMultiMeshManager.Instance?.MarkAllDirty();
+		}
 	}
 
 	private void DeleteObjectAt(Node collider, Vector3 hitPos)
@@ -2292,9 +2311,9 @@ public partial class GameHost
 		return null;
 	}
 
-	public void AlignAllEntitiesToTerrainExternal()
+	public void AlignAllEntitiesToTerrainExternal(Rect2I? affectedRegion = null)
 	{
-		AlignAllEntitiesToTerrain();
+		AlignAllEntitiesToTerrain(affectedRegion);
 	}
 
 	private void UpdateEditorPreview(Vector3 position)
@@ -4346,12 +4365,13 @@ public partial class GameHost
 
 		if (eraseResult.TerrainModified)
 		{
-			GroundTerrain.UpdateMeshAndPhysics(eraseResult.HeightsModified, false);
+			Rect2I affected = new Rect2I(minX - 2, minZ - 2, maxX - minX + 4, maxZ - minZ + 4);
 			if (eraseResult.HeightsModified)
 			{
-				Rect2I affected = new Rect2I(minX - 2, minZ - 2, maxX - minX + 4, maxZ - minZ + 4);
+				GroundTerrain.SanitizeCornerHeights();
 				AlignAllEntitiesToTerrain(affected);
 			}
+			GroundTerrain.UpdateMeshAndPhysics(eraseResult.HeightsModified, false, affected, eraseResult.HeightsModified);
 			if (eraseResult.PathingModified)
 			{
 				UpdatePathingOverlay();
@@ -4409,11 +4429,16 @@ public partial class GameHost
 
 		if (pasteResult.TerrainModified)
 		{
-			GroundTerrain.UpdateMeshAndPhysics(pasteResult.HeightsModified, false);
+			int pasteW = Math.Max(_editorService.CopiedAreaWidth, _editorService.CopiedAreaDepth);
+			int pasteD = pasteW;
+			Rect2I affected = new Rect2I(startX - 2, startZ - 2, pasteW + 4, pasteD + 4);
+
 			if (pasteResult.HeightsModified)
 			{
-				AlignAllEntitiesToTerrain();
+				GroundTerrain.SanitizeCornerHeights();
+				AlignAllEntitiesToTerrain(affected);
 			}
+			GroundTerrain.UpdateMeshAndPhysics(pasteResult.HeightsModified, false, affected, pasteResult.HeightsModified);
 			if (pasteResult.PathingModified)
 			{
 				UpdatePathingOverlay();

@@ -129,6 +129,11 @@ void fragment() {
 	{
 		if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
 		{
+			if (_isEditorShroudInitialized)
+			{
+				return;
+			}
+
 			if (GodotObject.IsInstanceValid(_shroudMeshInstance) && _shroudMeshInstance.Visible)
 			{
 				_shroudMeshInstance.Visible = false;
@@ -154,7 +159,7 @@ void fragment() {
 					decal.Visible = true;
 				}
 			}
-			if (!_isEditorShroudInitialized && GameHost.Instance?.GroundTerrain != null)
+			if (GameHost.Instance?.GroundTerrain != null)
 			{
 				_isEditorShroudInitialized = true;
 				if (_shroudImage == null)
