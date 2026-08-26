@@ -238,6 +238,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnPlateau;
 	private Button _btnRamp;
 	private Button _btnMirrorMode;
+	private Button _btnPlacementMirrorMode;
 	private Button _btnClumpBrush;
 	private HSlider _sldClumpDensity;
 	private Label _lblClumpDensityValue;
@@ -1132,6 +1133,14 @@ public partial class MapEditorHUD : Control
 			}
 		}, 11, "Toggle snapping objects and placements to the grid");
 
+		_btnPlacementMirrorMode = new Button();
+		_btnPlacementMirrorMode.Name = "BtnPlacementMirrorMode";
+		SetupButton(_btnPlacementMirrorMode, "🪞 MIRROR: NONE", () => CycleMirrorMode(), 10, "Cycle terrain and object mirroring symmetry mode");
+		if (_contentPlacement != null)
+		{
+			_contentPlacement.AddChild(_btnPlacementMirrorMode);
+			_contentPlacement.MoveChild(_btnPlacementMirrorMode, _btnToggleSnap.GetIndex() + 1);
+		}
 
 		_chkRandomRotation = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/PlacementAccordion/ContentPlacement/ChkRandomRotation");
 		_chkRandomScale = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/PlacementAccordion/ContentPlacement/ChkRandomScale");
@@ -4502,7 +4511,7 @@ public partial class MapEditorHUD : Control
 
 	public void UpdateMirrorButtonText()
 	{
-		if (_btnMirrorMode == null || GameHost.Instance == null) return;
+		if (GameHost.Instance == null) return;
 		string modeText = GameHost.Instance.EditorMirrorMode switch
 		{
 			MirrorMode.None => TranslationServer.Translate("🪞 MIRROR: NONE"),
@@ -4511,7 +4520,14 @@ public partial class MapEditorHUD : Control
 			MirrorMode.Both => TranslationServer.Translate("🪞 MIRROR: BOTH"),
 			_ => TranslationServer.Translate("🪞 MIRROR: NONE")
 		};
-		_btnMirrorMode.Text = modeText;
+		if (_btnMirrorMode != null)
+		{
+			_btnMirrorMode.Text = modeText;
+		}
+		if (_btnPlacementMirrorMode != null)
+		{
+			_btnPlacementMirrorMode.Text = modeText;
+		}
 	}
 
 	private void RebuildHUDLayout()
