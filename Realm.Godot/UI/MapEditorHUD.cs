@@ -6605,6 +6605,8 @@ public partial class MapEditorHUD : Control
 			SetupTextureSwatches(false);
 			RefreshSkyboxList();
 			GameHost.Instance?.LoadModelYOffsetsFromMetadataJson(wsPath);
+			GameHost.Instance?.LoadUnitMetadata(wsPath);
+			_entityPaletteController?.SelectCategory(_entityPaletteController.CurrentCategory, triggerAddObject: false);
 		}
 		catch (Exception ex)
 		{
@@ -6772,6 +6774,8 @@ public partial class MapEditorHUD : Control
 				}
 			}
 
+			GameHost.Instance?.LoadUnitMetadata(wsPath);
+			_entityPaletteController?.SelectCategory(_entityPaletteController.CurrentCategory, triggerAddObject: false);
 			PopulateAnimationPreviewDropdown();
 			if (importResult.ExtractedAnimationFiles.Count > 0)
 			{

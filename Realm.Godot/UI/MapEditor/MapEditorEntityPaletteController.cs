@@ -146,6 +146,12 @@ public class MapEditorEntityPaletteController
 		if (category == "Decals") _btnDecals.AddThemeStyleboxOverride("normal", activeStyle);
 		else _btnDecals.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 
+		string previousSelectedId = null;
+		if (_optCategoryItems != null && _optCategoryItems.Selected >= 0 && _optCategoryItems.Selected < _categoryFiles.Count)
+		{
+			previousSelectedId = _categoryFiles[_optCategoryItems.Selected];
+		}
+
 		_categoryFiles.Clear();
 		_idToDisplayName.Clear();
 		_optCategoryItems.Clear();
@@ -214,6 +220,43 @@ public class MapEditorEntityPaletteController
 								}
 							}
 						}
+
+						string subCat = category switch
+						{
+							"Units" or "Characters" => "units",
+							"Buildings" => "buildings",
+							"Resources" or "Environment" => "resources",
+							"Props" => "props",
+							_ => "units"
+						};
+
+						if (rootNode.ContainsKey("Assets") && rootNode["Assets"] is System.Text.Json.Nodes.JsonObject assets &&
+							assets.ContainsKey("glb") && assets["glb"] is System.Text.Json.Nodes.JsonObject glbObj &&
+							glbObj.ContainsKey(subCat) && glbObj[subCat] is System.Text.Json.Nodes.JsonObject subCatGlbs)
+						{
+							foreach (var kvp in subCatGlbs)
+							{
+								string modelFile = kvp.Key;
+								string uId = System.IO.Path.GetFileNameWithoutExtension(modelFile);
+								if (!string.IsNullOrEmpty(uId) && !_categoryFiles.Contains(uId))
+								{
+									_categoryFiles.Add(uId);
+								}
+							}
+						}
+
+						string modelDir = System.IO.Path.Combine(globalWs, "Assets", "models", subCat);
+						if (System.IO.Directory.Exists(modelDir))
+						{
+							foreach (var file in System.IO.Directory.GetFiles(modelDir, "*.glb"))
+							{
+								string uId = System.IO.Path.GetFileNameWithoutExtension(file);
+								if (!string.IsNullOrEmpty(uId) && !_categoryFiles.Contains(uId))
+								{
+									_categoryFiles.Add(uId);
+								}
+							}
+						}
 					}
 				}
 			}
@@ -230,8 +273,14 @@ public class MapEditorEntityPaletteController
 
 		if (_optCategoryItems.ItemCount > 0)
 		{
-			_optCategoryItems.Selected = 0;
-			SelectCategoryItem(0);
+			int targetIndex = 0;
+			if (!string.IsNullOrEmpty(previousSelectedId))
+			{
+				int found = _categoryFiles.FindIndex(f => f.Equals(previousSelectedId, StringComparison.OrdinalIgnoreCase));
+				if (found >= 0) targetIndex = found;
+			}
+			_optCategoryItems.Selected = targetIndex;
+			SelectCategoryItem(targetIndex);
 		}
 
 		if (triggerAddObject)

@@ -289,32 +289,33 @@ public partial class GltfDocumentExtensionMsftLod : GltfDocumentExtension
 			return;
 		}
 
-		meshInstance.VisibilityRangeFadeMode = GeometryInstance3D.VisibilityRangeFadeModeEnum.Disabled;
-		meshInstance.VisibilityRangeBeginMargin = 0f;
-		meshInstance.VisibilityRangeEndMargin = 0f;
-
 		float scale = Math.Max(0.01f, scaleMultiplier);
+		float margin = 2.0f * scale;
+
+		meshInstance.VisibilityRangeFadeMode = GeometryInstance3D.VisibilityRangeFadeModeEnum.Disabled;
+		meshInstance.VisibilityRangeBeginMargin = margin;
+		meshInstance.VisibilityRangeEndMargin = margin;
 
 		switch (lodLevel)
 		{
 			case 0:
 				meshInstance.VisibilityRangeBegin = 0f;
-				meshInstance.VisibilityRangeEnd = 4f * scale;
+				meshInstance.VisibilityRangeEnd = 25f * scale;
 				meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
 				break;
 			case 1:
-				meshInstance.VisibilityRangeBegin = 4f * scale;
-				meshInstance.VisibilityRangeEnd = 12f * scale;
+				meshInstance.VisibilityRangeBegin = 25f * scale;
+				meshInstance.VisibilityRangeEnd = 50f * scale;
 				meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
 				break;
 			case 2:
-				meshInstance.VisibilityRangeBegin = 12f * scale;
-				meshInstance.VisibilityRangeEnd = 30f * scale;
+				meshInstance.VisibilityRangeBegin = 50f * scale;
+				meshInstance.VisibilityRangeEnd = 85f * scale;
 				meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
 				break;
 			case 3:
 			default:
-				meshInstance.VisibilityRangeBegin = 30f * scale;
+				meshInstance.VisibilityRangeBegin = 85f * scale;
 				meshInstance.VisibilityRangeEnd = 0f;
 				meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
 				break;

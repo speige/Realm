@@ -23,6 +23,11 @@ public partial class PropMultiMeshManager : Node3D
 		public Material[] SurfaceMaterials;
 		public Material MaterialOverride;
 		public GeometryInstance3D.ShadowCastingSetting CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
+		public float VisibilityRangeBegin = 0f;
+		public float VisibilityRangeEnd = 0f;
+		public float VisibilityRangeBeginMargin = 2.0f;
+		public float VisibilityRangeEndMargin = 2.0f;
+		public GeometryInstance3D.VisibilityRangeFadeModeEnum VisibilityRangeFadeMode = GeometryInstance3D.VisibilityRangeFadeModeEnum.Disabled;
 	}
 
 	private class PropChunkGroup
@@ -107,46 +112,6 @@ public partial class PropMultiMeshManager : Node3D
 				RebuildGroupInternal(key);
 			}
 			_dirtyAssetKeys.Clear();
-		}
-
-		UpdateFrustumCulling();
-	}
-
-	private void UpdateFrustumCulling()
-	{
-		if (EditableTerrain.IsMinimapRendering)
-		{
-			SetAllNodesVisible(true);
-			return;
-		}
-
-		var viewport = GetViewport();
-		if (viewport == null) return;
-		var camera = viewport.GetCamera3D();
-		if (camera == null || !GodotObject.IsInstanceValid(camera)) return;
-
-		if (camera.Projection == Camera3D.ProjectionType.Orthogonal)
-		{
-			SetAllNodesVisible(true);
-			return;
-		}
-
-		var frustum = camera.GetFrustum();
-		if (frustum == null || frustum.Count < 6) return;
-
-		foreach (var group in _groups.Values)
-		{
-			foreach (var chunkGroup in group.ChunkGroups.Values)
-			{
-				bool visible = EditableTerrain.IntersectsFrustum(frustum, chunkGroup.Bounds);
-				foreach (var node in chunkGroup.MultiMeshNodes)
-				{
-					if (GodotObject.IsInstanceValid(node))
-					{
-						node.Visible = visible;
-					}
-				}
-			}
 		}
 	}
 
@@ -335,6 +300,26 @@ public partial class PropMultiMeshManager : Node3D
 			Vector3 maxPos = new Vector3(float.MinValue, float.MinValue, float.MinValue);
 			int instanceCount = chunkProps.Count;
 
+			for (int i = 0; i < instanceCount; i++)
+			{
+				var prop = chunkProps[i];
+				Vector3 pos = prop.Position;
+				pos.Y += yOffset;
+				minPos = minPos.Min(pos);
+				maxPos = maxPos.Max(pos);
+			}
+
+			float extraRadius = 2.0f;
+			float extraHeight = 4.0f;
+			if (normAssetKey == "tree" || normAssetKey.Contains("tree"))
+			{
+				extraRadius = 4.0f;
+				extraHeight = 12.0f;
+			}
+			minPos -= new Vector3(extraRadius, 1.0f, extraRadius);
+			maxPos += new Vector3(extraRadius, extraHeight, extraRadius);
+			chunkGroup.Bounds = new Aabb(minPos, maxPos - minPos);
+
 			for (int subIdx = 0; subIdx < group.SubMeshes.Count; subIdx++)
 			{
 				var subInfo = group.SubMeshes[subIdx];
@@ -349,6 +334,12 @@ public partial class PropMultiMeshManager : Node3D
 
 				var node = chunkGroup.MultiMeshNodes[subIdx];
 				node.CastShadow = subInfo.CastShadow;
+				node.VisibilityRangeBegin = subInfo.VisibilityRangeBegin;
+				node.VisibilityRangeEnd = subInfo.VisibilityRangeEnd;
+				node.VisibilityRangeFadeMode = subInfo.VisibilityRangeFadeMode;
+				node.VisibilityRangeBeginMargin = subInfo.VisibilityRangeBeginMargin;
+				node.VisibilityRangeEndMargin = subInfo.VisibilityRangeEndMargin;
+				node.CustomAabb = chunkGroup.Bounds;
 				node.Visible = true;
 				var mm = node.Multimesh;
 
@@ -360,7 +351,7 @@ public partial class PropMultiMeshManager : Node3D
 					continue;
 				}
 
-				if (mm == null || mm.InstanceCount < instanceCount)
+				if (mm == null || mm.InstanceCount < instanceCount || mm.Mesh != subInfo.Mesh)
 				{
 					int allocated = Math.Max(instanceCount, mm != null ? mm.InstanceCount * 2 : 16);
 					mm = new MultiMesh
@@ -379,8 +370,6 @@ public partial class PropMultiMeshManager : Node3D
 					var prop = chunkProps[i];
 					Vector3 pos = prop.Position;
 					pos.Y += yOffset;
-					minPos = minPos.Min(pos);
-					maxPos = maxPos.Max(pos);
 
 					float propScale = Mathf.Max(0.01f, prop.Scale);
 					Basis basis = Basis.Identity.Rotated(Vector3.Up, Mathf.DegToRad(prop.RotationY)).Scaled(Vector3.One * propScale);
@@ -394,11 +383,17 @@ public partial class PropMultiMeshManager : Node3D
 					Transform3D finalXform = propTransform * subInfo.RelativeTransform;
 					mm.SetInstanceTransform(i, finalXform);
 				}
+			}
 
-				minPos -= new Vector3(8.0f, 2.0f, 8.0f);
-				maxPos += new Vector3(8.0f, 30.0f, 8.0f);
-				chunkGroup.Bounds = new Aabb(minPos, maxPos - minPos);
-				node.CustomAabb = chunkGroup.Bounds;
+			for (int extra = group.SubMeshes.Count; extra < chunkGroup.MultiMeshNodes.Count; extra++)
+			{
+				var extraNode = chunkGroup.MultiMeshNodes[extra];
+				if (extraNode.Multimesh != null)
+				{
+					extraNode.Multimesh.VisibleInstanceCount = 0;
+				}
+				extraNode.CustomAabb = new Aabb();
+				extraNode.Visible = false;
 			}
 		}
 
@@ -411,6 +406,9 @@ public partial class PropMultiMeshManager : Node3D
 		Node prototype = Realm.Godot.Utils.ModelCache.GetModel(modelPath);
 		if (prototype == null) return null;
 
+		float scaleMultiplier = 1.0f;
+		Realm.Godot.Services.ModelOptimization.GltfDocumentExtensionMsftLod.UpdateLodVisibilityRanges(prototype, scaleMultiplier);
+
 		var meshNodes = new List<MeshInstance3D>();
 		FindMeshInstancesRecursive(prototype, meshNodes);
 
@@ -422,30 +420,23 @@ public partial class PropMultiMeshManager : Node3D
 
 		var group = new PropModelGroup { AssetKey = normAssetKey };
 
-		bool hasLod0 = false;
-		foreach (var mi in meshNodes)
-		{
-			string n = mi.Name.ToString();
-			if (n.EndsWith("_LOD0", StringComparison.OrdinalIgnoreCase) || n.EndsWith("LOD0", StringComparison.OrdinalIgnoreCase))
-			{
-				hasLod0 = true;
-				break;
-			}
-		}
-
 		foreach (var mi in meshNodes)
 		{
 			if (mi.Mesh == null) continue;
 			string nameStr = mi.Name.ToString();
 			if (nameStr.StartsWith("_selection") || nameStr.StartsWith("_hover")) continue;
-			if (hasLod0 && !nameStr.EndsWith("_LOD0", StringComparison.OrdinalIgnoreCase) && !nameStr.EndsWith("LOD0", StringComparison.OrdinalIgnoreCase)) continue;
 
 			var subInfo = new MeshSubInfo
 			{
 				Mesh = mi.Mesh,
 				RelativeTransform = GetRelativeTransform(mi, prototype),
 				MaterialOverride = mi.MaterialOverride,
-				CastShadow = mi.CastShadow
+				CastShadow = mi.CastShadow,
+				VisibilityRangeBegin = mi.VisibilityRangeBegin,
+				VisibilityRangeEnd = mi.VisibilityRangeEnd,
+				VisibilityRangeBeginMargin = mi.VisibilityRangeBeginMargin,
+				VisibilityRangeEndMargin = mi.VisibilityRangeEndMargin,
+				VisibilityRangeFadeMode = mi.VisibilityRangeFadeMode
 			};
 
 			int surfaceCount = mi.Mesh.GetSurfaceCount();

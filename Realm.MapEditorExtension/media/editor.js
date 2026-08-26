@@ -484,13 +484,8 @@
                                     if (blob) {
                                         const r = new FileReader();
                                         r.onload = () => {
-                                            const arrayBuffer = r.result;
-                                            const bytes = new Uint8Array(arrayBuffer);
-                                            let binaryString = '';
-                                            for (let i = 0; i < bytes.byteLength; i++) {
-                                                binaryString += String.fromCharCode(bytes[i]);
-                                            }
-                                            const base64Data = btoa(binaryString);
+                                            const dataUrl = r.result;
+                                            const base64Data = typeof dataUrl === 'string' ? (dataUrl.split(',')[1] || '') : '';
                                             const baseName = selectedFile.name.substring(0, selectedFile.name.lastIndexOf('.')) || selectedFile.name;
                                             vscode.postMessage({
                                                 type: 'processImportedAsset',
@@ -500,7 +495,7 @@
                                                 options: message.extraOptions
                                             });
                                         };
-                                        r.readAsArrayBuffer(blob);
+                                        r.readAsDataURL(blob);
                                     }
                                 }, 'image/png');
                             };
@@ -511,13 +506,8 @@
                         } else {
                             const reader = new FileReader();
                             reader.onload = () => {
-                                const arrayBuffer = reader.result;
-                                const bytes = new Uint8Array(arrayBuffer);
-                                let binaryString = '';
-                                for (let i = 0; i < bytes.byteLength; i++) {
-                                    binaryString += String.fromCharCode(bytes[i]);
-                                }
-                                const base64Data = btoa(binaryString);
+                                const dataUrl = reader.result;
+                                const base64Data = typeof dataUrl === 'string' ? (dataUrl.split(',')[1] || '') : '';
                                 vscode.postMessage({
                                     type: 'processImportedAsset',
                                     fileName: selectedFile.name,
@@ -526,13 +516,14 @@
                                     options: message.extraOptions
                                 });
                             };
-                            reader.readAsArrayBuffer(selectedFile);
+                            reader.readAsDataURL(selectedFile);
                         }
                     }
                     assetInput.remove();
                 });
                 document.body.appendChild(assetInput);
                 assetInput.click();
+                break;
             case 'resolvePathResult':
                 const callback = resolveCallbacks[message.requestId];
                 if (callback) {
