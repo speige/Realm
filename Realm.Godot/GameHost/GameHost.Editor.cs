@@ -636,8 +636,9 @@ public partial class GameHost
 				surfaceTool.Deindex();
 				surfaceTool.GenerateNormals();
 			}
-			else
+			else if (normalMode == ModelNormalMode.Smooth)
 			{
+				surfaceTool.Index();
 				surfaceTool.GenerateNormals();
 			}
 			toolMesh = surfaceTool.Commit(toolMesh);
