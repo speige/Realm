@@ -953,7 +953,7 @@ void fragment() {
 					if (CliffSplatMap != null && x < CliffSplatMap.GetLength(0) && z < CliffSplatMap.GetLength(1))
 						newCliffSplatMap[x, z] = CliffSplatMap[x, z];
 					else
-						newCliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
+						newCliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(1);
 				}
 			}
 			CliffSplatMap = newCliffSplatMap;

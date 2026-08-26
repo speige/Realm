@@ -28,7 +28,8 @@ public partial class GameHost : Node3D, IGameAPI
 	private static readonly JsonSerializerOptions Options = new()
 	{
 		PropertyNameCaseInsensitive = true,
-		IncludeFields = true
+		IncludeFields = true,
+		Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
 	};
 
 	private AudioService _audioService;
