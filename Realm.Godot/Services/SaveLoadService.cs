@@ -188,7 +188,7 @@ public class SaveLoadService
 			{
 				for (int x = 0; x < width; x++)
 				{
-					int code = terrain.PathingCodes != null ? terrain.PathingCodes[x, z] : (8 | 4);
+					int code = terrain.PathingCodes != null ? terrain.PathingCodes[x, z] : EditableTerrain.GetDefaultPathingCode(Realm.Ecs.Components.Terrain.WaterType.None);
 					int baseIdx = (z * width + x) * 4;
 
 					pathingSpan[baseIdx + 0] = (byte)code;
@@ -583,7 +583,7 @@ public class SaveLoadService
 					{
 						for (int x = 0; x < width; x++)
 						{
-							ts.PathingCodes[x, z] = 8 | 4;
+							ts.PathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(Realm.Ecs.Components.Terrain.WaterType.None);
 						}
 					}
 				}

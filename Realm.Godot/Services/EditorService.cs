@@ -86,23 +86,6 @@ public class EditorService
 		public int Width;
 		public int Depth;
 		public TerrainCell[,] Cells;
-		public float[,] Heights
-		{
-			get
-			{
-				if (Cells == null) return null;
-				int w = Cells.GetLength(0);
-				int d = Cells.GetLength(1);
-				return Realm.Ecs.Components.Terrain.TerrainState.CalculateHeights(w, d, Cells);
-			}
-			set
-			{
-				if (value == null) return;
-				int w = value.GetLength(0);
-				int d = value.GetLength(1);
-				Cells = Realm.Ecs.Components.Terrain.TerrainState.CalculateCells(w, d, value);
-			}
-		}
 		public TerrainSplatWeights[,] SplatMap;
 		public int[,] Pathing;
 		public List<CopiedEntityInfo> Entities;
@@ -645,9 +628,14 @@ public class EditorService
 				int splatD = _terrainSplatMap.GetLength(1);
 				int intensityLevel = Math.Clamp((int)MathF.Round(brushStrength), 0, 10);
 
-				for (int z = 0; z < splatD; z++)
+				int minPaintX = Math.Clamp((int)Math.Floor((worldPos.X - brushRadius) / quadSize + width / 2.0f), 0, splatW - 1);
+				int maxPaintX = Math.Clamp((int)Math.Ceiling((worldPos.X + brushRadius) / quadSize + width / 2.0f), 0, splatW - 1);
+				int minPaintZ = Math.Clamp((int)Math.Floor((worldPos.Z - brushRadius) / quadSize + depth / 2.0f), 0, splatD - 1);
+				int maxPaintZ = Math.Clamp((int)Math.Ceiling((worldPos.Z + brushRadius) / quadSize + depth / 2.0f), 0, splatD - 1);
+
+				for (int z = minPaintZ; z <= maxPaintZ; z++)
 				{
-					for (int x = 0; x < splatW; x++)
+					for (int x = minPaintX; x <= maxPaintX; x++)
 					{
 						float vx = (x - width / 2.0f) * quadSize;
 						float vz = (z - depth / 2.0f) * quadSize;
@@ -717,9 +705,14 @@ public class EditorService
 		else
 		{
 			long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-			for (int z = 0; z <= depth; z++)
+			int minGX = Math.Clamp((int)Math.Floor((worldPos.X - brushRadius) / quadSize + width / 2.0f), 0, width);
+			int maxGX = Math.Clamp((int)Math.Ceiling((worldPos.X + brushRadius) / quadSize + width / 2.0f), 0, width);
+			int minGZ = Math.Clamp((int)Math.Floor((worldPos.Z - brushRadius) / quadSize + depth / 2.0f), 0, depth);
+			int maxGZ = Math.Clamp((int)Math.Ceiling((worldPos.Z + brushRadius) / quadSize + depth / 2.0f), 0, depth);
+
+			for (int z = minGZ; z <= maxGZ; z++)
 			{
-				for (int x = 0; x <= width; x++)
+				for (int x = minGX; x <= maxGX; x++)
 				{
 					float vx = (x - width / 2.0f) * quadSize;
 					float vz = (z - depth / 2.0f) * quadSize;
@@ -927,9 +920,9 @@ public class EditorService
 		GameHost.EditorTool activeTool,
 		bool blockMode,
 		float blockLevelHeight,
-		float[,] currentHeights,
-		TerrainSplatWeights[,] currentSplatMap,
-		int[,] currentPathing,
+		float[,] currentHeights = null,
+		TerrainSplatWeights[,] currentSplatMap = null,
+		int[,] currentPathing = null,
 		TerrainSplatWeights[,] currentCliffSplatMap = null)
 	{
 		ref var terrain = ref GetTerrainState();
@@ -974,9 +967,9 @@ public class EditorService
 	}
 
 	public TerrainModifyAction EndTerrainDraw(
-		float[,] currentHeights,
-		TerrainSplatWeights[,] currentSplatMap,
-		int[,] currentPathing,
+		float[,] currentHeights = null,
+		TerrainSplatWeights[,] currentSplatMap = null,
+		int[,] currentPathing = null,
 		TerrainSplatWeights[,] currentCliffSplatMap = null)
 	{
 		_isDrawingTerrain = false;
@@ -2140,7 +2133,7 @@ public class EditorService
 		}
 		AlignSplatMapSlots(minGridX - 2, minGridZ - 2, maxGridX + 2, maxGridZ + 2);
 
-		return ((float[,])terrain.Heights.Clone(), (TerrainSplatWeights[,])targetSplatMap.Clone(), isCliff);
+		return (null, (TerrainSplatWeights[,])targetSplatMap.Clone(), isCliff);
 	}
 
 	private List<Vector2I> GetFloodFillPathingCells(

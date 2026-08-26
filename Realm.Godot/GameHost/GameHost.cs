@@ -934,14 +934,14 @@ public partial class GameHost : Node3D, IGameAPI
 		int depth = GroundTerrain != null ? GroundTerrain.Depth : 128;
 		float quadSize = GroundTerrain != null ? GroundTerrain.QuadSize : 2.0f;
 		float cellSize = GroundTerrain != null ? GroundTerrain.CellSize : TerrainState.DefaultCellSize;
-		float[,] heights = GroundTerrain != null ? GroundTerrain.Heights : null;
+		var cells = GroundTerrain != null ? GroundTerrain.Cells : null;
 		int[,] pathingCodes = GroundTerrain != null ? GroundTerrain.PathingCodes : null;
 		DotRecast.Detour.DtNavMesh navMesh = GroundTerrain != null ? GroundTerrain.NavMesh : null;
 		DotRecast.Detour.DtNavMeshQuery navMeshQuery = GroundTerrain != null ? GroundTerrain.NavMeshQuery : null;
 
 		_worldEntity = _worldInitService.SetupWorldEntityComponents(
 			width, depth, quadSize, cellSize,
-			heights, pathingCodes, navMesh, navMeshQuery
+			cells, pathingCodes, navMesh, navMeshQuery
 		);
 	}
 

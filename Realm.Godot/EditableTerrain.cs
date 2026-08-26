@@ -4,6 +4,7 @@ using DotRecast.Detour;
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 public partial class EditableTerrain : StaticBody3D
 {
@@ -2534,17 +2535,19 @@ void fragment() {
 		}
 	}
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static float GetGridNodeHeight(int gx, int gz, TerrainCell[,] cells, int w, int d)
 	{
 		if (cells == null || w <= 0 || d <= 0) return 0f;
+		if ((uint)gx < (uint)w && (uint)gz < (uint)d) return cells[gx, gz].Y_NW;
 		int cellX = Math.Clamp(gx, 0, w - 1);
 		int cellZ = Math.Clamp(gz, 0, d - 1);
-		if (gx < w && gz < d) return cells[cellX, cellZ].Y_NW;
-		if (gx == w && gz < d) return cells[w - 1, cellZ].Y_NE;
-		if (gx < w && gz == d) return cells[cellX, d - 1].Y_SW;
+		if (gx >= w && gz < d) return cells[w - 1, cellZ].Y_NE;
+		if (gx < w && gz >= d) return cells[cellX, d - 1].Y_SW;
 		return cells[w - 1, d - 1].Y_SE;
 	}
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public float GetGridNodeHeight(int gx, int gz)
 	{
 		return GetGridNodeHeight(gx, gz, Cells, Width, Depth);
@@ -2771,6 +2774,10 @@ void fragment() {
 		UpdateFrustumCulling();
 	}
 
+	private Vector3 _lastFrustumCamPos;
+	private Vector3 _lastFrustumCamRot;
+	private readonly Plane[] _cachedFrustumPlanes = new Plane[6];
+
 	private void UpdateFrustumCulling()
 	{
 		if (IsMinimapRendering)
@@ -2790,21 +2797,36 @@ void fragment() {
 			return;
 		}
 
+		Vector3 camPos = camera.GlobalPosition;
+		Vector3 camRot = camera.GlobalRotation;
+		if ((camPos - _lastFrustumCamPos).LengthSquared() < 0.0001f && (camRot - _lastFrustumCamRot).LengthSquared() < 0.0001f)
+		{
+			return;
+		}
+		_lastFrustumCamPos = camPos;
+		_lastFrustumCamRot = camRot;
+
 		var frustum = camera.GetFrustum();
 		if (frustum == null || frustum.Count < 6) return;
 
+		for (int i = 0; i < 6; i++)
+		{
+			_cachedFrustumPlanes[i] = frustum[i];
+		}
+
+		ReadOnlySpan<Plane> planesSpan = _cachedFrustumPlanes;
 		foreach (var chunk in _chunks)
 		{
-			bool visible = IntersectsFrustum(frustum, chunk.WorldAabb);
-			if (GodotObject.IsInstanceValid(chunk.MeshInstance))
+			bool visible = IntersectsFrustum(planesSpan, chunk.WorldAabb);
+			if (GodotObject.IsInstanceValid(chunk.MeshInstance) && chunk.MeshInstance.Visible != visible)
 			{
 				chunk.MeshInstance.Visible = visible;
 			}
-			if (GodotObject.IsInstanceValid(chunk.ShallowWaterMesh))
+			if (GodotObject.IsInstanceValid(chunk.ShallowWaterMesh) && chunk.ShallowWaterMesh.Visible != visible)
 			{
 				chunk.ShallowWaterMesh.Visible = visible;
 			}
-			if (GodotObject.IsInstanceValid(chunk.DeepWaterMesh))
+			if (GodotObject.IsInstanceValid(chunk.DeepWaterMesh) && chunk.DeepWaterMesh.Visible != visible)
 			{
 				chunk.DeepWaterMesh.Visible = visible;
 			}
@@ -2815,22 +2837,22 @@ void fragment() {
 	{
 		foreach (var chunk in _chunks)
 		{
-			if (GodotObject.IsInstanceValid(chunk.MeshInstance)) chunk.MeshInstance.Visible = visible;
-			if (GodotObject.IsInstanceValid(chunk.ShallowWaterMesh)) chunk.ShallowWaterMesh.Visible = visible;
-			if (GodotObject.IsInstanceValid(chunk.DeepWaterMesh)) chunk.DeepWaterMesh.Visible = visible;
+			if (GodotObject.IsInstanceValid(chunk.MeshInstance) && chunk.MeshInstance.Visible != visible) chunk.MeshInstance.Visible = visible;
+			if (GodotObject.IsInstanceValid(chunk.ShallowWaterMesh) && chunk.ShallowWaterMesh.Visible != visible) chunk.ShallowWaterMesh.Visible = visible;
+			if (GodotObject.IsInstanceValid(chunk.DeepWaterMesh) && chunk.DeepWaterMesh.Visible != visible) chunk.DeepWaterMesh.Visible = visible;
 		}
 	}
 
-	public static bool IntersectsFrustum(Godot.Collections.Array<Plane> frustumPlanes, Aabb aabb)
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static bool IntersectsFrustum(ReadOnlySpan<Plane> frustumPlanes, Aabb aabb)
 	{
 		aabb = aabb.Grow(8.0f);
 		Vector3 min = aabb.Position;
 		Vector3 max = aabb.End;
 
-		int count = frustumPlanes.Count;
-		for (int i = 0; i < count; i++)
+		for (int i = 0; i < frustumPlanes.Length; i++)
 		{
-			Plane plane = frustumPlanes[i];
+			ref readonly Plane plane = ref frustumPlanes[i];
 			Vector3 n = new Vector3(
 				plane.Normal.X >= 0 ? min.X : max.X,
 				plane.Normal.Y >= 0 ? min.Y : max.Y,
@@ -2843,6 +2865,14 @@ void fragment() {
 			}
 		}
 		return true;
+	}
+
+	public static bool IntersectsFrustum(Godot.Collections.Array<Plane> frustumPlanes, Aabb aabb)
+	{
+		if (frustumPlanes == null || frustumPlanes.Count == 0) return true;
+		Span<Plane> span = stackalloc Plane[Math.Min(frustumPlanes.Count, 32)];
+		for (int i = 0; i < span.Length; i++) span[i] = frustumPlanes[i];
+		return IntersectsFrustum((ReadOnlySpan<Plane>)span, aabb);
 	}
 
 	private Vector3 GetWorldPosition(float gridX, float gridZ, float height, float halfWQuadSize, float halfDQuadSize, float quadSize)

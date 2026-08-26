@@ -1977,35 +1977,52 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	private bool _lastBrushShapeIsSquare;
+	private bool _hasLastBrushShape;
 	public void UpdateBrushShapeExternal(bool isSquare)
 	{
+		if (_hasLastBrushShape && _lastBrushShapeIsSquare == isSquare) return;
+		_hasLastBrushShape = true;
+		_lastBrushShapeIsSquare = isSquare;
 		if (_btnBrushShape != null)
 		{
 			_btnBrushShape.Text = isSquare ? "🔳 BRUSH: SQUARE" : "⚪ BRUSH: CIRCLE";
 		}
 	}
 
+	private float _lastRotationExternal = float.NaN;
 	public void UpdateRotationExternal(float angle)
 	{
+		if (Mathf.IsEqualApprox(_lastRotationExternal, angle)) return;
+		_lastRotationExternal = angle;
 		if (_lblPlacementRotateValue != null) _lblPlacementRotateValue.Text = angle.ToString("F0") + "°";
-		if (_sldPlacementRotate != null) _sldPlacementRotate.Value = angle;
+		if (_sldPlacementRotate != null && !Mathf.IsEqualApprox((float)_sldPlacementRotate.Value, angle)) _sldPlacementRotate.Value = angle;
 	}
 
+	private float _lastPasteRotationExternal = float.NaN;
 	public void UpdatePasteRotationExternal(float angle)
 	{
+		if (Mathf.IsEqualApprox(_lastPasteRotationExternal, angle)) return;
+		_lastPasteRotationExternal = angle;
 		if (_lblPasteRotation != null) _lblPasteRotation.Text = angle.ToString("F0") + "°";
-		if (_sldPasteRotation != null) _sldPasteRotation.Value = angle;
+		if (_sldPasteRotation != null && !Mathf.IsEqualApprox((float)_sldPasteRotation.Value, angle)) _sldPasteRotation.Value = angle;
 	}
 
+	private float _lastScaleExternal = float.NaN;
 	public void UpdateScaleExternal(float scale)
 	{
+		if (Mathf.IsEqualApprox(_lastScaleExternal, scale)) return;
+		_lastScaleExternal = scale;
 		if (_lblPlacementScaleValue != null) _lblPlacementScaleValue.Text = scale.ToString("F1") + "x";
-		if (_sldPlacementScale != null) _sldPlacementScale.Value = scale;
+		if (_sldPlacementScale != null && !Mathf.IsEqualApprox((float)_sldPlacementScale.Value, scale)) _sldPlacementScale.Value = scale;
 	}
 
+	private float _lastBrushSizeExternal = float.NaN;
 	public void UpdateBrushSizeExternal(float size)
 	{
-		if (_sldBrushSize != null)
+		if (Mathf.IsEqualApprox(_lastBrushSizeExternal, size)) return;
+		_lastBrushSizeExternal = size;
+		if (_sldBrushSize != null && !Mathf.IsEqualApprox((float)_sldBrushSize.Value, size))
 		{
 			_sldBrushSize.Value = Mathf.Round(size);
 		}
@@ -4430,15 +4447,16 @@ public partial class MapEditorHUD : Control
 			pathingCodes = new int[width, depth];
 		}
 
+		GameHost.Instance.GroundTerrain.SetHeights(smoothedHeights);
+		var cells = GameHost.Instance.GroundTerrain.Cells;
+
 		for (int gz = 0; gz < depth; gz++)
 		{
 			for (int gx = 0; gx < width; gx++)
 			{
-				GameHost.Instance.GroundTerrain.Heights[gx, gz] = smoothedHeights[gx, gz];
 				GameHost.Instance.GroundTerrain.SplatMap[gx, gz] = splatMap[gx, gz];
 				GameHost.Instance.GroundTerrain.CliffSplatMap[gx, gz] = TerrainSplatWeights.CreateSolid(GameHost.Instance.EditorCliffPaintTextureIndex);
 
-				var cells = GameHost.Instance.GroundTerrain.Cells;
 				pathingCodes[gx, gz] = cells != null ? EditableTerrain.GetDefaultPathingCode(cells[gx, gz]) : EditableTerrain.GetDefaultPathingCode(WaterType.None);
 			}
 		}

@@ -514,7 +514,7 @@ public static class MapGenerator
 		host.AlignTerrainSplatMapExternal();
 		host.GroundTerrain.UpdateMeshAndPhysics();
 
-		Vector3 p1Base = GridToWorld(sites[0].X, sites[0].Y, width, depth, quadSize, host.GroundTerrain.Heights[sites[0].X, sites[0].Y]);
+		Vector3 p1Base = GridToWorld(sites[0].X, sites[0].Y, width, depth, quadSize, host.GroundTerrain.GetGridNodeHeight(sites[0].X, sites[0].Y));
 		host.SpawnUnitExternal("castle", p1Base, false, 0f, 1.0f);
 		host.SpawnUnitExternal("adventurer", p1Base + new Vector3(-6f, 0f, -6f), false, 45f, 1.0f);
 		host.SpawnUnitExternal("adventurer", p1Base + new Vector3(-6f, 0f, 6f), false, 135f, 1.0f);
@@ -522,7 +522,7 @@ public static class MapGenerator
 		host.SpawnUnitExternal("armored_battlelord", p1Base + new Vector3(8f, 0f, 8f), false, 225f, 1.0f);
 		host.SpawnUnitExternal("armored_battlelord", p1Base + new Vector3(0f, 0f, 10f), false, 180f, 1.0f);
 
-		Vector3 p2Base = GridToWorld(sites[1].X, sites[1].Y, width, depth, quadSize, host.GroundTerrain.Heights[sites[1].X, sites[1].Y]);
+		Vector3 p2Base = GridToWorld(sites[1].X, sites[1].Y, width, depth, quadSize, host.GroundTerrain.GetGridNodeHeight(sites[1].X, sites[1].Y));
 		host.SpawnUnitExternal("castle", p2Base, true, 180f, 1.0f);
 		host.SpawnUnitExternal("adventurer", p2Base + new Vector3(-6f, 0f, -6f), true, 45f, 1.0f);
 		host.SpawnUnitExternal("adventurer", p2Base + new Vector3(-6f, 0f, 6f), true, 135f, 1.0f);
@@ -530,18 +530,18 @@ public static class MapGenerator
 		host.SpawnUnitExternal("armored_battlelord", p2Base + new Vector3(-8f, 0f, -8f), true, 45f, 1.0f);
 		host.SpawnUnitExternal("armored_battlelord", p2Base + new Vector3(0f, 0f, -10f), true, 0f, 1.0f);
 
-		Vector3 g1 = GridToWorld(28, 20, width, depth, quadSize, host.GroundTerrain.Heights[28, 20]);
+		Vector3 g1 = GridToWorld(28, 20, width, depth, quadSize, host.GroundTerrain.GetGridNodeHeight(28, 20));
 		host.SpawnPropExternalWithParams("goldmine", g1, 0f, 1.0f);
 
-		Vector3 g2 = GridToWorld(98, 106, width, depth, quadSize, host.GroundTerrain.Heights[98, 106]);
+		Vector3 g2 = GridToWorld(98, 106, width, depth, quadSize, host.GroundTerrain.GetGridNodeHeight(98, 106));
 		host.SpawnPropExternalWithParams("goldmine", g2, 180f, 1.0f);
 
-		Vector3 gMid = GridToWorld(sites[2].X, sites[2].Y, width, depth, quadSize, host.GroundTerrain.Heights[sites[2].X, sites[2].Y]);
+		Vector3 gMid = GridToWorld(sites[2].X, sites[2].Y, width, depth, quadSize, host.GroundTerrain.GetGridNodeHeight(sites[2].X, sites[2].Y));
 		host.SpawnPropExternalWithParams("goldmine", gMid, 90f, 1.0f);
 
 		for (int i = 3; i < sites.Length; i++)
 		{
-			Vector3 expPos = GridToWorld(sites[i].X, sites[i].Y, width, depth, quadSize, host.GroundTerrain.Heights[sites[i].X, sites[i].Y]);
+			Vector3 expPos = GridToWorld(sites[i].X, sites[i].Y, width, depth, quadSize, host.GroundTerrain.GetGridNodeHeight(sites[i].X, sites[i].Y));
 			host.SpawnPropExternalWithParams("goldmine", expPos, (float)(random.NextDouble() * 360.0), 1.0f);
 		}
 
@@ -597,7 +597,7 @@ public static class MapGenerator
 			{
 				if (tiers[gx, gz] >= 0 && tiers[gx, gz] <= 2 && pathDist[gx, gz] > 4f)
 				{
-					worldPos.Y = host.GroundTerrain.Heights[gx, gz];
+					worldPos.Y = host.GroundTerrain.GetGridNodeHeight(gx, gz);
 					float rot = (float)(random.NextDouble() * 360.0);
 					float scale = 0.8f + (float)(random.NextDouble() * 0.4);
 					host.SpawnPropExternalWithParams("tree", worldPos, rot, scale);
@@ -616,7 +616,7 @@ public static class MapGenerator
 			{
 				if (tiers[gx, gz] >= 0 && pathDist[gx, gz] > 2f)
 				{
-					worldPos.Y = host.GroundTerrain.Heights[gx, gz];
+					worldPos.Y = host.GroundTerrain.GetGridNodeHeight(gx, gz);
 					float rot = (float)(random.NextDouble() * 360.0);
 					float scale = 0.7f + (float)(random.NextDouble() * 0.6);
 					string propId = decoIds[random.Next(decoIds.Length)];

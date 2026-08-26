@@ -137,6 +137,7 @@ public partial class GameHost
 						}
 					}
 					GroundTerrain.UpdateMeshAndPhysics();
+					GroundTerrain.UpdatePathingTexture();
 				}
 				MapEditorHUD.Instance?.UpdateBlockModeExternal(true);
 				MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(2.0f);
