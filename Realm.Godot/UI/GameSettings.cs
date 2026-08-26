@@ -34,13 +34,6 @@ public enum GraphicsQuality
 	Ultra = 3
 }
 
-public enum DownsamplingMode
-{
-	Off = 0,
-	Quality = 1,
-	Performance = 2
-}
-
 public enum WindowMode
 {
 	Fullscreen = 0,
@@ -99,7 +92,6 @@ public static class GameSettings
 	public static int WindowedResolutionHeight { get; set; } = 0;
 	public static List<Vector2I> Resolutions { get; private set; }
 	public static GraphicsQuality QualityIdx { get; set; } = GraphicsQuality.High;
-	public static DownsamplingMode DownsamplingIdx { get; set; } = DownsamplingMode.Off;
 	public static WindowMode WindowModeIdx { get; set; } = WindowMode.Fullscreen;
 	public static bool Vsync { get; set; } = true;
 	public static bool VsyncIdx
@@ -148,7 +140,6 @@ public static class GameSettings
 			WindowedResolutionHeight = DefaultFallbackResolution.Y;
 		}
 		QualityIdx = AutoDetectQuality();
-		DownsamplingIdx = GetDownsamplingIdxForQuality(QualityIdx);
 		WindowModeIdx = WindowMode.Fullscreen;
 		Vsync = true;
 		DisableShadows = false;
@@ -165,18 +156,6 @@ public static class GameSettings
 		DisplayFps = false;
 		RecordReplays = false;
 		SeedMapFiles = true;
-	}
-
-	public static DownsamplingMode GetDownsamplingIdxForQuality(GraphicsQuality quality)
-	{
-		return quality switch
-		{
-			GraphicsQuality.Low => DownsamplingMode.Performance,
-			GraphicsQuality.Medium => DownsamplingMode.Quality,
-			GraphicsQuality.High => DownsamplingMode.Off,
-			GraphicsQuality.Ultra => DownsamplingMode.Off,
-			_ => DownsamplingMode.Off
-		};
 	}
 
 	public static void InitializeResolutions()
@@ -243,7 +222,6 @@ public static class GameSettings
 		if (!FileAccess.FileExists(SettingsPath))
 		{
 			QualityIdx = AutoDetectQuality();
-			DownsamplingIdx = GetDownsamplingIdxForQuality(QualityIdx);
 			if (Resolutions != null && Resolutions.Count > 0)
 			{
 				WindowedResolutionWidth = Resolutions[0].X;
@@ -266,7 +244,6 @@ public static class GameSettings
 				WindowedResolutionWidth = data.WindowedResolutionWidth;
 				WindowedResolutionHeight = data.WindowedResolutionHeight;
 				QualityIdx = data.QualityIdx;
-				DownsamplingIdx = data.DownsamplingIdx;
 				WindowModeIdx = data.WindowModeIdx;
 				Vsync = data.Vsync;
 				MasterVolume = data.MasterVolume;
@@ -324,7 +301,6 @@ public static class GameSettings
 			WindowedResolutionWidth = WindowedResolutionWidth,
 			WindowedResolutionHeight = WindowedResolutionHeight,
 			QualityIdx = QualityIdx,
-			DownsamplingIdx = DownsamplingIdx,
 			WindowModeIdx = WindowModeIdx,
 			Vsync = Vsync,
 			MasterVolume = MasterVolume,
@@ -361,50 +337,30 @@ public static class GameSettings
 			switch (QualityIdx)
 			{
 				case GraphicsQuality.Low:
-					viewport.Msaa3D = Viewport.Msaa.Disabled;
-					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
+					viewport.PositionalShadowAtlasSize = 512;
 					viewport.UseTaa = false;
-					viewport.PositionalShadowAtlasSize = 1024;
+					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Disabled;
 					break;
 				case GraphicsQuality.Medium:
-					viewport.Msaa3D = Viewport.Msaa.Disabled;
-					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
+					viewport.PositionalShadowAtlasSize = 1024;
 					viewport.UseTaa = false;
-					viewport.PositionalShadowAtlasSize = 2048;
+					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
 					break;
 				case GraphicsQuality.High:
-					viewport.Msaa3D = Viewport.Msaa.Disabled;
-					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
-					viewport.UseTaa = false;
 					viewport.PositionalShadowAtlasSize = 2048;
+					viewport.UseTaa = false;
+					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Fxaa;
 					break;
 				case GraphicsQuality.Ultra:
-					viewport.Msaa3D = Viewport.Msaa.Disabled;
-					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Disabled;
-					viewport.UseTaa = true;
 					viewport.PositionalShadowAtlasSize = 4096;
+					viewport.UseTaa = QualityIdx == GraphicsQuality.Ultra;
+					viewport.ScreenSpaceAA = Viewport.ScreenSpaceAAEnum.Disabled;
 					break;
 			}
 
-			switch (DownsamplingIdx)
-			{
-				case DownsamplingMode.Off:
-					viewport.Scaling3DMode = Viewport.Scaling3DModeEnum.Bilinear;
-					viewport.Scaling3DScale = 1.0f;
-					break;
-				case DownsamplingMode.Quality:
-					viewport.Scaling3DMode = Viewport.Scaling3DModeEnum.Fsr;
-					viewport.Scaling3DScale = 0.75f;
-					break;
-				case DownsamplingMode.Performance:
-					viewport.Scaling3DMode = Viewport.Scaling3DModeEnum.Fsr;
-					viewport.Scaling3DScale = 0.50f;
-					break;
-				default:
-					viewport.Scaling3DMode = Viewport.Scaling3DModeEnum.Bilinear;
-					viewport.Scaling3DScale = 1.0f;
-					break;
-			}
+			viewport.Scaling3DScale = 1.0f;
+			viewport.Msaa3D = Viewport.Msaa.Disabled;
+			viewport.Scaling3DMode = Viewport.Scaling3DModeEnum.Bilinear;
 		}
 
 		WorldEnvironment worldEnv = null;
@@ -472,49 +428,41 @@ public static class GameSettings
 	{
 		if (env == null || !GodotObject.IsInstanceValid(env)) return;
 
-		if (quality == GraphicsQuality.Low)
-		{
-			env.TonemapMode = Godot.Environment.ToneMapper.Agx;
-			env.AdjustmentEnabled = false;
-			env.SsaoEnabled = false;
-			env.SsilEnabled = false;
-			env.SsrEnabled = false;
-			env.SdfgiEnabled = false;
-			env.FogEnabled = false;
-			env.GlowEnabled = false;
-		}
-		else
-		{
-			env.TonemapMode = Godot.Environment.ToneMapper.Agx;
-			env.AdjustmentEnabled = true;
-			env.SsaoEnabled = true;
-			env.SsilEnabled = quality >= GraphicsQuality.High;
-			env.SsrEnabled = quality == GraphicsQuality.Ultra;
-			env.SdfgiEnabled = quality == GraphicsQuality.Ultra;
-			env.FogEnabled = true;
-			env.GlowEnabled = true;
-		}
+		env.TonemapMode = Godot.Environment.ToneMapper.Agx;
+		env.AdjustmentEnabled = true;
+		env.SsaoEnabled = quality > GraphicsQuality.Low;
+		env.SsilEnabled = quality >= GraphicsQuality.High;
+		env.SsrEnabled = quality == GraphicsQuality.Ultra;
+		env.SdfgiEnabled = quality == GraphicsQuality.Ultra;
+		env.FogEnabled = true;
+		env.GlowEnabled = quality > GraphicsQuality.Low;
 	}
 
 	public static void ApplyDirectionalLightQuality(DirectionalLight3D light, GraphicsQuality quality = GraphicsQuality.High)
 	{
 		if (light == null || !GodotObject.IsInstanceValid(light)) return;
 
-		if (DisableShadows || quality == GraphicsQuality.Low)
+		light.ShadowEnabled = !GameSettings.DisableShadows && light.LightEnergy > 0.05f;
+		if (!light.ShadowEnabled) {
+			return;
+		}
+
+		light.DirectionalShadowMaxDistance = 200.0f;
+		if (quality == GraphicsQuality.Low)
 		{
-			light.ShadowEnabled = false;
+			light.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal;
 		}
 		else if (quality == GraphicsQuality.Medium)
 		{
-			light.ShadowEnabled = true;
 			light.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal;
-			light.DirectionalShadowMaxDistance = 200.0f;
+		}
+		else if (quality == GraphicsQuality.High)
+		{
+			light.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Parallel2Splits;
 		}
 		else
 		{
-			light.ShadowEnabled = true;
 			light.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Parallel4Splits;
-			light.DirectionalShadowMaxDistance = 200.0f;
 		}
 	}
 
@@ -536,7 +484,6 @@ public static class GameSettings
 		public int WindowedResolutionWidth { get; set; } = 0;
 		public int WindowedResolutionHeight { get; set; } = 0;
 		public GraphicsQuality QualityIdx { get; set; } = GraphicsQuality.High;
-		public DownsamplingMode DownsamplingIdx { get; set; } = DownsamplingMode.Off;
 		public WindowMode WindowModeIdx { get; set; } = WindowMode.Fullscreen;
 		public bool Vsync { get; set; } = true;
 		public float MasterVolume { get; set; } = 80f;

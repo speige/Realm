@@ -23,6 +23,11 @@ public partial class PropMultiMeshManager : Node3D
 		public Material[] SurfaceMaterials;
 		public Material MaterialOverride;
 		public GeometryInstance3D.ShadowCastingSetting CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
+		public float VisibilityRangeBegin = 0f;
+		public float VisibilityRangeEnd = 0f;
+		public float VisibilityRangeBeginMargin = 2.0f;
+		public float VisibilityRangeEndMargin = 2.0f;
+		public GeometryInstance3D.VisibilityRangeFadeModeEnum VisibilityRangeFadeMode = GeometryInstance3D.VisibilityRangeFadeModeEnum.Disabled;
 	}
 
 	private class PropChunkGroup
@@ -30,6 +35,8 @@ public partial class PropMultiMeshManager : Node3D
 		public Vector2I ChunkIndex;
 		public Aabb Bounds;
 		public List<MultiMeshInstance3D> MultiMeshNodes = new();
+		public int LastInstanceCount = -1;
+		public ulong LastDataHash = 0;
 	}
 
 	private class PropModelGroup
@@ -38,6 +45,13 @@ public partial class PropMultiMeshManager : Node3D
 		public List<MeshSubInfo> SubMeshes = new();
 		public Dictionary<Vector2I, PropChunkGroup> ChunkGroups = new();
 	}
+
+	private static readonly StringName _snModelBrightness = new("model_brightness");
+	private static readonly StringName _snModelColorTint = new("model_color_tint");
+	private static readonly StringName _snIgnorePlayerColor = new("ignore_player_color");
+	private static readonly StringName _snNormalMode = new("normal_mode");
+	private static readonly StringName _snUnitAmbientBoost = new("unit_ambient_boost");
+	private static readonly StringName _snUnitRimIntensity = new("unit_rim_intensity");
 
 	private readonly Dictionary<string, PropModelGroup> _groups = new(StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _dirtyAssetKeys = new(StringComparer.OrdinalIgnoreCase);
@@ -108,12 +122,6 @@ public partial class PropMultiMeshManager : Node3D
 			}
 			_dirtyAssetKeys.Clear();
 		}
-
-		UpdateFrustumCulling();
-	}
-
-	private void UpdateFrustumCulling()
-	{
 	}
 
 	public void SetAllNodesVisible(bool visible)
@@ -273,13 +281,18 @@ public partial class PropMultiMeshManager : Node3D
 		{
 			if (!_reusableChunkBucketsData.TryGetValue(kvp.Key, out var chunkList) || chunkList.Count == 0)
 			{
-				foreach (var mmNode in kvp.Value.MultiMeshNodes)
+				if (kvp.Value.LastInstanceCount != 0)
 				{
-					if (mmNode.Multimesh != null)
+					kvp.Value.LastInstanceCount = 0;
+					kvp.Value.LastDataHash = 0;
+					foreach (var mmNode in kvp.Value.MultiMeshNodes)
 					{
-						mmNode.Multimesh.VisibleInstanceCount = 0;
+						if (mmNode.Multimesh != null)
+						{
+							mmNode.Multimesh.VisibleInstanceCount = 0;
+						}
+						mmNode.CustomAabb = new Aabb();
 					}
-					mmNode.CustomAabb = new Aabb();
 				}
 			}
 		}
@@ -297,9 +310,69 @@ public partial class PropMultiMeshManager : Node3D
 				group.ChunkGroups[chunkKey] = chunkGroup;
 			}
 
+			int instanceCount = chunkProps.Count;
+
+			ulong dataHash = 14695981039346656037UL;
+			for (int i = 0; i < instanceCount; i++)
+			{
+				var prop = chunkProps[i];
+				dataHash ^= (ulong)prop.Position.X.GetHashCode();
+				dataHash *= 1099511628211UL;
+				dataHash ^= (ulong)prop.Position.Y.GetHashCode();
+				dataHash *= 1099511628211UL;
+				dataHash ^= (ulong)prop.Position.Z.GetHashCode();
+				dataHash *= 1099511628211UL;
+				dataHash ^= (ulong)prop.RotationY.GetHashCode();
+				dataHash *= 1099511628211UL;
+				dataHash ^= (ulong)prop.Scale.GetHashCode();
+				dataHash *= 1099511628211UL;
+			}
+			dataHash ^= (ulong)yOffset.GetHashCode();
+
+			bool allMeshesMatch = chunkGroup.MultiMeshNodes.Count >= group.SubMeshes.Count;
+			if (allMeshesMatch)
+			{
+				for (int subIdx = 0; subIdx < group.SubMeshes.Count; subIdx++)
+				{
+					var node = chunkGroup.MultiMeshNodes[subIdx];
+					if (node.Multimesh == null || node.Multimesh.Mesh != group.SubMeshes[subIdx].Mesh || node.Multimesh.VisibleInstanceCount != instanceCount)
+					{
+						allMeshesMatch = false;
+						break;
+					}
+				}
+			}
+
+			if (allMeshesMatch && chunkGroup.LastInstanceCount == instanceCount && chunkGroup.LastDataHash == dataHash)
+			{
+				continue;
+			}
+
+			chunkGroup.LastInstanceCount = instanceCount;
+			chunkGroup.LastDataHash = dataHash;
+
 			Vector3 minPos = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
 			Vector3 maxPos = new Vector3(float.MinValue, float.MinValue, float.MinValue);
-			int instanceCount = chunkProps.Count;
+
+			for (int i = 0; i < instanceCount; i++)
+			{
+				var prop = chunkProps[i];
+				Vector3 pos = prop.Position;
+				pos.Y += yOffset;
+				minPos = minPos.Min(pos);
+				maxPos = maxPos.Max(pos);
+			}
+
+			float extraRadius = 2.0f;
+			float extraHeight = 4.0f;
+			if (normAssetKey == "tree" || normAssetKey.Contains("tree"))
+			{
+				extraRadius = 4.0f;
+				extraHeight = 12.0f;
+			}
+			minPos -= new Vector3(extraRadius, 1.0f, extraRadius);
+			maxPos += new Vector3(extraRadius, extraHeight, extraRadius);
+			chunkGroup.Bounds = new Aabb(minPos, maxPos - minPos);
 
 			for (int subIdx = 0; subIdx < group.SubMeshes.Count; subIdx++)
 			{
@@ -315,6 +388,12 @@ public partial class PropMultiMeshManager : Node3D
 
 				var node = chunkGroup.MultiMeshNodes[subIdx];
 				node.CastShadow = subInfo.CastShadow;
+				node.VisibilityRangeBegin = subInfo.VisibilityRangeBegin;
+				node.VisibilityRangeEnd = subInfo.VisibilityRangeEnd;
+				node.VisibilityRangeFadeMode = subInfo.VisibilityRangeFadeMode;
+				node.VisibilityRangeBeginMargin = subInfo.VisibilityRangeBeginMargin;
+				node.VisibilityRangeEndMargin = subInfo.VisibilityRangeEndMargin;
+				node.CustomAabb = chunkGroup.Bounds;
 				node.Visible = true;
 				var mm = node.Multimesh;
 
@@ -326,7 +405,7 @@ public partial class PropMultiMeshManager : Node3D
 					continue;
 				}
 
-				if (mm == null || mm.InstanceCount < instanceCount)
+				if (mm == null || mm.InstanceCount < instanceCount || mm.Mesh != subInfo.Mesh)
 				{
 					int allocated = Math.Max(instanceCount, mm != null ? mm.InstanceCount * 2 : 16);
 					mm = new MultiMesh
@@ -345,8 +424,6 @@ public partial class PropMultiMeshManager : Node3D
 					var prop = chunkProps[i];
 					Vector3 pos = prop.Position;
 					pos.Y += yOffset;
-					minPos = minPos.Min(pos);
-					maxPos = maxPos.Max(pos);
 
 					float propScale = Mathf.Max(0.01f, prop.Scale);
 					Basis basis = Basis.Identity.Rotated(Vector3.Up, Mathf.DegToRad(prop.RotationY)).Scaled(Vector3.One * propScale);
@@ -360,11 +437,17 @@ public partial class PropMultiMeshManager : Node3D
 					Transform3D finalXform = propTransform * subInfo.RelativeTransform;
 					mm.SetInstanceTransform(i, finalXform);
 				}
+			}
 
-				minPos -= new Vector3(8.0f, 2.0f, 8.0f);
-				maxPos += new Vector3(8.0f, 30.0f, 8.0f);
-				chunkGroup.Bounds = new Aabb(minPos, maxPos - minPos);
-				node.CustomAabb = chunkGroup.Bounds;
+			for (int extra = group.SubMeshes.Count; extra < chunkGroup.MultiMeshNodes.Count; extra++)
+			{
+				var extraNode = chunkGroup.MultiMeshNodes[extra];
+				if (extraNode.Multimesh != null)
+				{
+					extraNode.Multimesh.VisibleInstanceCount = 0;
+				}
+				extraNode.CustomAabb = new Aabb();
+				extraNode.Visible = false;
 			}
 		}
 
@@ -377,6 +460,9 @@ public partial class PropMultiMeshManager : Node3D
 		Node prototype = Realm.Godot.Utils.ModelCache.GetModel(modelPath);
 		if (prototype == null) return null;
 
+		float scaleMultiplier = 1.0f;
+		Realm.Godot.Services.ModelOptimization.GltfDocumentExtensionMsftLod.UpdateLodVisibilityRanges(prototype, scaleMultiplier);
+
 		var meshNodes = new List<MeshInstance3D>();
 		FindMeshInstancesRecursive(prototype, meshNodes);
 
@@ -388,30 +474,23 @@ public partial class PropMultiMeshManager : Node3D
 
 		var group = new PropModelGroup { AssetKey = normAssetKey };
 
-		bool hasLod0 = false;
-		foreach (var mi in meshNodes)
-		{
-			string n = mi.Name.ToString();
-			if (n.EndsWith("_LOD0", StringComparison.OrdinalIgnoreCase) || n.EndsWith("LOD0", StringComparison.OrdinalIgnoreCase))
-			{
-				hasLod0 = true;
-				break;
-			}
-		}
-
 		foreach (var mi in meshNodes)
 		{
 			if (mi.Mesh == null) continue;
 			string nameStr = mi.Name.ToString();
 			if (nameStr.StartsWith("_selection") || nameStr.StartsWith("_hover")) continue;
-			if (hasLod0 && !nameStr.EndsWith("_LOD0", StringComparison.OrdinalIgnoreCase) && !nameStr.EndsWith("LOD0", StringComparison.OrdinalIgnoreCase)) continue;
 
 			var subInfo = new MeshSubInfo
 			{
 				Mesh = mi.Mesh,
 				RelativeTransform = GetRelativeTransform(mi, prototype),
 				MaterialOverride = mi.MaterialOverride,
-				CastShadow = mi.CastShadow
+				CastShadow = mi.CastShadow,
+				VisibilityRangeBegin = mi.VisibilityRangeBegin,
+				VisibilityRangeEnd = mi.VisibilityRangeEnd,
+				VisibilityRangeBeginMargin = mi.VisibilityRangeBeginMargin,
+				VisibilityRangeEndMargin = mi.VisibilityRangeEndMargin,
+				VisibilityRangeFadeMode = mi.VisibilityRangeFadeMode
 			};
 
 			int surfaceCount = mi.Mesh.GetSurfaceCount();
@@ -460,38 +539,9 @@ public partial class PropMultiMeshManager : Node3D
 					var subInfo = group.SubMeshes[i];
 					var mmNode = chunkGroup.MultiMeshNodes[i];
 
-					if (subInfo.Mesh is ArrayMesh arrayMesh)
+					if (subInfo.Mesh is ArrayMesh arrayMesh && mmNode.Multimesh != null)
 					{
-						if (normalMode == GameHost.ModelNormalMode.Original)
-						{
-							if (mmNode.Multimesh != null)
-							{
-								mmNode.Multimesh.Mesh = subInfo.Mesh;
-							}
-						}
-						else
-						{
-							var toolMesh = new ArrayMesh();
-							for (int s = 0; s < arrayMesh.GetSurfaceCount(); s++)
-							{
-								var surfaceTool = new SurfaceTool();
-								surfaceTool.CreateFrom(arrayMesh, s);
-								if (normalMode == GameHost.ModelNormalMode.Flat)
-								{
-									surfaceTool.Deindex();
-									surfaceTool.GenerateNormals();
-								}
-								else
-								{
-									surfaceTool.GenerateNormals();
-								}
-								toolMesh = surfaceTool.Commit(toolMesh);
-							}
-							if (mmNode.Multimesh != null)
-							{
-								mmNode.Multimesh.Mesh = toolMesh;
-							}
-						}
+						mmNode.Multimesh.Mesh = GameHost.GetOrCreateNormalMesh(arrayMesh, normalMode);
 					}
 
 					Material baseMatToUse = subInfo.MaterialOverride;
@@ -504,12 +554,12 @@ public partial class PropMultiMeshManager : Node3D
 					{
 						var shaderMat = Realm.Godot.Utils.PlayerColorShaderManager.GetOrCreateShaderMaterial(baseMatToUse, normalizeLuminance);
 						mmNode.MaterialOverride = shaderMat;
-						mmNode.SetInstanceShaderParameter(new StringName("model_brightness"), brightness);
-						mmNode.SetInstanceShaderParameter(new StringName("model_color_tint"), tint);
-						mmNode.SetInstanceShaderParameter(new StringName("ignore_player_color"), ignorePlayerColor ? 1.0f : 0.0f);
-						mmNode.SetInstanceShaderParameter(new StringName("normal_mode"), (float)normalMode);
-						mmNode.SetInstanceShaderParameter(new StringName("unit_ambient_boost"), 0.0f);
-						mmNode.SetInstanceShaderParameter(new StringName("unit_rim_intensity"), 0.0f);
+						mmNode.SetInstanceShaderParameter(_snModelBrightness, brightness);
+						mmNode.SetInstanceShaderParameter(_snModelColorTint, tint);
+						mmNode.SetInstanceShaderParameter(_snIgnorePlayerColor, ignorePlayerColor ? 1.0f : 0.0f);
+						mmNode.SetInstanceShaderParameter(_snNormalMode, (float)normalMode);
+						mmNode.SetInstanceShaderParameter(_snUnitAmbientBoost, 0.0f);
+						mmNode.SetInstanceShaderParameter(_snUnitRimIntensity, 0.0f);
 					}
 				}
 			}

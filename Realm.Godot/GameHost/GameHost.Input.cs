@@ -1083,16 +1083,17 @@ public partial class GameHost
 								EditorBlockLevelHeight = sampledHeight;
 								MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(sampledHeight);
 								float avgHeight = 0f;
-								if (GroundTerrain != null && GroundTerrain.Heights != null)
+								if (GroundTerrain != null && GroundTerrain.Cells != null)
 								{
 									int w = GroundTerrain.Width;
 									int d = GroundTerrain.Depth;
+									var cells = GroundTerrain.Cells;
 									float sum = 0f;
 									for (int z = 0; z < d; z++)
 									{
 										for (int x = 0; x < w; x++)
 										{
-											sum += GroundTerrain.Heights[x, z];
+											sum += cells[x, z].CenterHeight;
 										}
 									}
 									avgHeight = sum / (w * d);
@@ -1201,7 +1202,7 @@ public partial class GameHost
 						{
 							Vector3 start = _editorService.RampStartPos.Value;
 							Vector3 end = hitPos;
-							if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
+							if (GroundTerrain != null && GroundTerrain.Cells != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
 							{
 								var cellsBefore = (Realm.Ecs.Components.Terrain.TerrainCell[,])GroundTerrain.Cells.Clone();
 								var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();

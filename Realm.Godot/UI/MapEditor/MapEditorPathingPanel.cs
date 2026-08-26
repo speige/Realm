@@ -36,13 +36,14 @@ public class MapEditorPathingPanel
 
 	public void Update(MapEditorHUDViewModel viewModel)
 	{
-		if (_chkShallowWater != null) _chkShallowWater.ButtonPressed = viewModel.ShallowWater;
-		if (_chkDeepWater != null) _chkDeepWater.ButtonPressed = viewModel.DeepWater;
-		if (_chkFlying != null) _chkFlying.ButtonPressed = viewModel.Flying;
-		if (_chkGround != null) _chkGround.ButtonPressed = viewModel.Ground;
-		if (_chkBuildable != null) _chkBuildable.ButtonPressed = viewModel.Buildable;
+		if (viewModel == null) return;
+		if (_chkShallowWater != null && _chkShallowWater.ButtonPressed != viewModel.ShallowWater) _chkShallowWater.ButtonPressed = viewModel.ShallowWater;
+		if (_chkDeepWater != null && _chkDeepWater.ButtonPressed != viewModel.DeepWater) _chkDeepWater.ButtonPressed = viewModel.DeepWater;
+		if (_chkFlying != null && _chkFlying.ButtonPressed != viewModel.Flying) _chkFlying.ButtonPressed = viewModel.Flying;
+		if (_chkGround != null && _chkGround.ButtonPressed != viewModel.Ground) _chkGround.ButtonPressed = viewModel.Ground;
+		if (_chkBuildable != null && _chkBuildable.ButtonPressed != viewModel.Buildable) _chkBuildable.ButtonPressed = viewModel.Buildable;
 		
-		if (_optPathingMode != null && viewModel.PathingModeIndex < _optPathingMode.ItemCount)
+		if (_optPathingMode != null && _optPathingMode.Selected != viewModel.PathingModeIndex && viewModel.PathingModeIndex < _optPathingMode.ItemCount)
 		{
 			_optPathingMode.Selected = viewModel.PathingModeIndex;
 		}

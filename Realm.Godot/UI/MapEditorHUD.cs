@@ -238,6 +238,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnPlateau;
 	private Button _btnRamp;
 	private Button _btnMirrorMode;
+	private Button _btnPlacementMirrorMode;
 	private Button _btnClumpBrush;
 	private HSlider _sldClumpDensity;
 	private Label _lblClumpDensityValue;
@@ -1132,6 +1133,14 @@ public partial class MapEditorHUD : Control
 			}
 		}, 11, "Toggle snapping objects and placements to the grid");
 
+		_btnPlacementMirrorMode = new Button();
+		_btnPlacementMirrorMode.Name = "BtnPlacementMirrorMode";
+		SetupButton(_btnPlacementMirrorMode, "🪞 MIRROR: NONE", () => CycleMirrorMode(), 10, "Cycle terrain and object mirroring symmetry mode");
+		if (_contentPlacement != null)
+		{
+			_contentPlacement.AddChild(_btnPlacementMirrorMode);
+			_contentPlacement.MoveChild(_btnPlacementMirrorMode, _btnToggleSnap.GetIndex() + 1);
+		}
 
 		_chkRandomRotation = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/PlacementAccordion/ContentPlacement/ChkRandomRotation");
 		_chkRandomScale = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/PlacementAccordion/ContentPlacement/ChkRandomScale");
@@ -1977,35 +1986,52 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	private bool _lastBrushShapeIsSquare;
+	private bool _hasLastBrushShape;
 	public void UpdateBrushShapeExternal(bool isSquare)
 	{
+		if (_hasLastBrushShape && _lastBrushShapeIsSquare == isSquare) return;
+		_hasLastBrushShape = true;
+		_lastBrushShapeIsSquare = isSquare;
 		if (_btnBrushShape != null)
 		{
 			_btnBrushShape.Text = isSquare ? "🔳 BRUSH: SQUARE" : "⚪ BRUSH: CIRCLE";
 		}
 	}
 
+	private float _lastRotationExternal = float.NaN;
 	public void UpdateRotationExternal(float angle)
 	{
+		if (Mathf.IsEqualApprox(_lastRotationExternal, angle)) return;
+		_lastRotationExternal = angle;
 		if (_lblPlacementRotateValue != null) _lblPlacementRotateValue.Text = angle.ToString("F0") + "°";
-		if (_sldPlacementRotate != null) _sldPlacementRotate.Value = angle;
+		if (_sldPlacementRotate != null && !Mathf.IsEqualApprox((float)_sldPlacementRotate.Value, angle)) _sldPlacementRotate.Value = angle;
 	}
 
+	private float _lastPasteRotationExternal = float.NaN;
 	public void UpdatePasteRotationExternal(float angle)
 	{
+		if (Mathf.IsEqualApprox(_lastPasteRotationExternal, angle)) return;
+		_lastPasteRotationExternal = angle;
 		if (_lblPasteRotation != null) _lblPasteRotation.Text = angle.ToString("F0") + "°";
-		if (_sldPasteRotation != null) _sldPasteRotation.Value = angle;
+		if (_sldPasteRotation != null && !Mathf.IsEqualApprox((float)_sldPasteRotation.Value, angle)) _sldPasteRotation.Value = angle;
 	}
 
+	private float _lastScaleExternal = float.NaN;
 	public void UpdateScaleExternal(float scale)
 	{
+		if (Mathf.IsEqualApprox(_lastScaleExternal, scale)) return;
+		_lastScaleExternal = scale;
 		if (_lblPlacementScaleValue != null) _lblPlacementScaleValue.Text = scale.ToString("F1") + "x";
-		if (_sldPlacementScale != null) _sldPlacementScale.Value = scale;
+		if (_sldPlacementScale != null && !Mathf.IsEqualApprox((float)_sldPlacementScale.Value, scale)) _sldPlacementScale.Value = scale;
 	}
 
+	private float _lastBrushSizeExternal = float.NaN;
 	public void UpdateBrushSizeExternal(float size)
 	{
-		if (_sldBrushSize != null)
+		if (Mathf.IsEqualApprox(_lastBrushSizeExternal, size)) return;
+		_lastBrushSizeExternal = size;
+		if (_sldBrushSize != null && !Mathf.IsEqualApprox((float)_sldBrushSize.Value, size))
 		{
 			_sldBrushSize.Value = Mathf.Round(size);
 		}
@@ -4430,15 +4456,16 @@ public partial class MapEditorHUD : Control
 			pathingCodes = new int[width, depth];
 		}
 
+		GameHost.Instance.GroundTerrain.SetHeights(smoothedHeights);
+		var cells = GameHost.Instance.GroundTerrain.Cells;
+
 		for (int gz = 0; gz < depth; gz++)
 		{
 			for (int gx = 0; gx < width; gx++)
 			{
-				GameHost.Instance.GroundTerrain.Heights[gx, gz] = smoothedHeights[gx, gz];
 				GameHost.Instance.GroundTerrain.SplatMap[gx, gz] = splatMap[gx, gz];
 				GameHost.Instance.GroundTerrain.CliffSplatMap[gx, gz] = TerrainSplatWeights.CreateSolid(GameHost.Instance.EditorCliffPaintTextureIndex);
 
-				var cells = GameHost.Instance.GroundTerrain.Cells;
 				pathingCodes[gx, gz] = cells != null ? EditableTerrain.GetDefaultPathingCode(cells[gx, gz]) : EditableTerrain.GetDefaultPathingCode(WaterType.None);
 			}
 		}
@@ -4484,7 +4511,7 @@ public partial class MapEditorHUD : Control
 
 	public void UpdateMirrorButtonText()
 	{
-		if (_btnMirrorMode == null || GameHost.Instance == null) return;
+		if (GameHost.Instance == null) return;
 		string modeText = GameHost.Instance.EditorMirrorMode switch
 		{
 			MirrorMode.None => TranslationServer.Translate("🪞 MIRROR: NONE"),
@@ -4493,7 +4520,14 @@ public partial class MapEditorHUD : Control
 			MirrorMode.Both => TranslationServer.Translate("🪞 MIRROR: BOTH"),
 			_ => TranslationServer.Translate("🪞 MIRROR: NONE")
 		};
-		_btnMirrorMode.Text = modeText;
+		if (_btnMirrorMode != null)
+		{
+			_btnMirrorMode.Text = modeText;
+		}
+		if (_btnPlacementMirrorMode != null)
+		{
+			_btnPlacementMirrorMode.Text = modeText;
+		}
 	}
 
 	private void RebuildHUDLayout()
@@ -5334,10 +5368,6 @@ public partial class MapEditorHUD : Control
 		if (GameHost.Instance != null)
 		{
 			GameHost.Instance.EditorCliffPaintTextureIndex = index;
-			if (GameHost.Instance.GroundTerrain != null)
-			{
-				GameHost.Instance.GroundTerrain.CliffTextureIndex = index;
-			}
 			if (!IsSwatchCompatibleTool(GameHost.Instance.ActiveEditorTool))
 			{
 				TriggerToolSelection(GameHost.EditorTool.PaintTexture, _btnTextureBrush);
@@ -6609,6 +6639,8 @@ public partial class MapEditorHUD : Control
 			SetupTextureSwatches(false);
 			RefreshSkyboxList();
 			GameHost.Instance?.LoadModelYOffsetsFromMetadataJson(wsPath);
+			GameHost.Instance?.LoadUnitMetadata(wsPath);
+			_entityPaletteController?.SelectCategory(_entityPaletteController.CurrentCategory, triggerAddObject: false);
 		}
 		catch (Exception ex)
 		{
@@ -6776,6 +6808,8 @@ public partial class MapEditorHUD : Control
 				}
 			}
 
+			GameHost.Instance?.LoadUnitMetadata(wsPath);
+			_entityPaletteController?.SelectCategory(_entityPaletteController.CurrentCategory, triggerAddObject: false);
 			PopulateAnimationPreviewDropdown();
 			if (importResult.ExtractedAnimationFiles.Count > 0)
 			{
@@ -7179,12 +7213,11 @@ public partial class MapEditorHUD : Control
 	private HSlider _sldFogDensity, _sldFogR, _sldFogG, _sldFogB;
 	private HSlider _sldSsaoRadius, _sldSsaoIntensity;
 	private HSlider _sldExposure, _sldContrast, _sldSaturation, _sldBloomIntensity, _sldBloomThreshold;
-	private HSlider _sldCliffJitterStrength, _sldCliffJitterScale, _sldCliffRimNoiseStrength, _sldCliffRimNoiseScale;
+	private HSlider _sldCliffJitterStrength, _sldCliffJitterScale, _sldCliffRimNoiseStrength;
 	private HSlider _sldHeightBlendSoftness, _sldBlendNoiseStrength, _sldBlendNoiseScale;
 	private float _tuneCliffJitterStrength = 1.0f;
 	private float _tuneCliffJitterScale = 0.20f;
 	private float _tuneCliffRimNoiseStrength = 0.30f;
-	private float _tuneCliffRimNoiseScale = 0.08f;
 	private float _tuneHeightBlendSoftness = 0.04f;
 	private float _tuneBlendNoiseStrength = 0.22f;
 	private float _tuneBlendNoiseScale = 0.22f;
@@ -7265,7 +7298,6 @@ public partial class MapEditorHUD : Control
 		_sldCliffJitterStrength = CreateSliderRow(_contentLightingTuning, "Cliff Jitter Str", 0f, 2f, 0.02f, _tuneCliffJitterStrength, val => { _tuneCliffJitterStrength = val; ApplyLiveLightingTuning(); });
 		_sldCliffJitterScale = CreateSliderRow(_contentLightingTuning, "Cliff Jitter Scl", 0.01f, 0.5f, 0.005f, _tuneCliffJitterScale, val => { _tuneCliffJitterScale = val; ApplyLiveLightingTuning(); }, "0.00#");
 		_sldCliffRimNoiseStrength = CreateSliderRow(_contentLightingTuning, "Cliff Rim Str", 0f, 1f, 0.02f, _tuneCliffRimNoiseStrength, val => { _tuneCliffRimNoiseStrength = val; ApplyLiveLightingTuning(); });
-		_sldCliffRimNoiseScale = CreateSliderRow(_contentLightingTuning, "Cliff Rim Scl", 0.01f, 0.5f, 0.005f, _tuneCliffRimNoiseScale, val => { _tuneCliffRimNoiseScale = val; ApplyLiveLightingTuning(); }, "0.00#");
 
 		CreateSectionHeader(_contentLightingTuning, "--- TERRAIN TEXTURE BLENDING ---");
 		_sldHeightBlendSoftness = CreateSliderRow(_contentLightingTuning, "Blend Softness", 0.001f, 0.20f, 0.002f, _tuneHeightBlendSoftness, val => { _tuneHeightBlendSoftness = val; ApplyLiveLightingTuning(); }, "0.00#");
@@ -7273,7 +7305,6 @@ public partial class MapEditorHUD : Control
 		_sldBlendNoiseScale = CreateSliderRow(_contentLightingTuning, "Blend Noise Scl", 0.01f, 0.5f, 0.005f, _tuneBlendNoiseScale, val => { _tuneBlendNoiseScale = val; ApplyLiveLightingTuning(); }, "0.00#");
 
 		UpdateLightingTuningSlidersFromPhase(0);
-		ApplyLiveLightingTuning();
 		lightingAccordion.Visible = false;
 	}
 
@@ -7340,12 +7371,9 @@ public partial class MapEditorHUD : Control
 		if (_sldCliffJitterStrength != null) _sldCliffJitterStrength.Value = _tuneCliffJitterStrength;
 		if (_sldCliffJitterScale != null) _sldCliffJitterScale.Value = _tuneCliffJitterScale;
 		if (_sldCliffRimNoiseStrength != null) _sldCliffRimNoiseStrength.Value = _tuneCliffRimNoiseStrength;
-		if (_sldCliffRimNoiseScale != null) _sldCliffRimNoiseScale.Value = _tuneCliffRimNoiseScale;
 		if (_sldHeightBlendSoftness != null) _sldHeightBlendSoftness.Value = _tuneHeightBlendSoftness;
 		if (_sldBlendNoiseStrength != null) _sldBlendNoiseStrength.Value = _tuneBlendNoiseStrength;
 		if (_sldBlendNoiseScale != null) _sldBlendNoiseScale.Value = _tuneBlendNoiseScale;
-
-		ApplyLiveLightingTuning();
 	}
 
 	private void ApplyLiveLightingTuning()
@@ -7360,15 +7388,12 @@ public partial class MapEditorHUD : Control
 			EditableTerrain.Instance.CliffJitterStrength = _tuneCliffJitterStrength;
 			EditableTerrain.Instance.CliffJitterScale = _tuneCliffJitterScale;
 			EditableTerrain.Instance.CliffRimNoiseStrength = _tuneCliffRimNoiseStrength;
-			EditableTerrain.Instance.CliffRimNoiseScale = _tuneCliffRimNoiseScale;
 			EditableTerrain.Instance.BlendSoftness = _tuneHeightBlendSoftness;
 			EditableTerrain.Instance.BlendNoiseStrength = _tuneBlendNoiseStrength;
 			EditableTerrain.Instance.BlendNoiseScale = _tuneBlendNoiseScale;
 
 			EditableTerrain.Instance.Material.SetShaderParameter("cliff_jitter_strength", _tuneCliffJitterStrength);
 			EditableTerrain.Instance.Material.SetShaderParameter("cliff_jitter_scale", _tuneCliffJitterScale);
-			EditableTerrain.Instance.Material.SetShaderParameter("cliff_rim_noise_strength", _tuneCliffRimNoiseStrength);
-			EditableTerrain.Instance.Material.SetShaderParameter("cliff_rim_noise_scale", _tuneCliffRimNoiseScale);
 			EditableTerrain.Instance.Material.SetShaderParameter("blend_softness", _tuneHeightBlendSoftness);
 			EditableTerrain.Instance.Material.SetShaderParameter("blend_noise_strength", _tuneBlendNoiseStrength);
 			EditableTerrain.Instance.Material.SetShaderParameter("blend_noise_scale", _tuneBlendNoiseScale);
@@ -7383,17 +7408,15 @@ public partial class MapEditorHUD : Control
 
 		if (sun != null)
 		{
-			GameSettings.ApplyDirectionalLightQuality(sun);
 			sun.RotationDegrees = new Vector3(_tuneSunPitch, _tuneSunYaw, 0f);
 			sun.LightEnergy = _tuneSunEnergy;
 			sun.LightColor = new Color(_tuneSunR, _tuneSunG, _tuneSunB);
 			sun.LightSpecular = 0.5f;
-			sun.DirectionalShadowMaxDistance = 200.0f;
 			sun.DirectionalShadowBlendSplits = true;
 			sun.DirectionalShadowFadeStart = 0.8f;
 			sun.ShadowBias = 0.03f;
 			sun.ShadowNormalBias = 1.2f;
-			sun.ShadowEnabled = !GameSettings.DisableShadows && _tuneSunEnergy > 0.05f;
+			GameSettings.ApplyDirectionalLightQuality(sun);
 		}
 
 		if (worldEnv != null && worldEnv.Environment != null)
@@ -7403,25 +7426,22 @@ public partial class MapEditorHUD : Control
 			env.AmbientLightColor = new Color(_tuneAmbientR, _tuneAmbientG, _tuneAmbientB);
 			env.AmbientLightEnergy = _tuneAmbientEnergy;
 
-			GameSettings.ApplyEnvironmentQuality(env);
+			GameSettings.ApplyEnvironmentQuality(env, GameSettings.QualityIdx);
 
-			if (GameSettings.QualityIdx > GraphicsQuality.Low)
-			{
-				env.FogEnabled = _tuneFogEnabled;
-				env.FogDensity = _tuneFogDensity;
-				env.FogLightColor = new Color(_tuneFogR, _tuneFogG, _tuneFogB);
+			env.FogEnabled = _tuneFogEnabled;
+			env.FogDensity = _tuneFogDensity;
+			env.FogLightColor = new Color(_tuneFogR, _tuneFogG, _tuneFogB);
 
-				env.SsaoEnabled = _tuneSsaoEnabled;
-				env.SsaoRadius = _tuneSsaoRadius;
-				env.SsaoIntensity = _tuneSsaoIntensity;
+			env.SsaoEnabled = _tuneSsaoEnabled;
+			env.SsaoRadius = _tuneSsaoRadius;
+			env.SsaoIntensity = _tuneSsaoIntensity;
 
-				env.TonemapExposure = _tuneExposure;
-				env.AdjustmentContrast = _tuneContrast;
-				env.AdjustmentSaturation = _tuneSaturation;
+			env.TonemapExposure = _tuneExposure;
+			env.AdjustmentContrast = _tuneContrast;
+			env.AdjustmentSaturation = _tuneSaturation;
 
-				env.GlowIntensity = _tuneBloomIntensity;
-				env.GlowBloom = _tuneBloomThreshold;
-			}
+			env.GlowIntensity = _tuneBloomIntensity;
+			env.GlowBloom = _tuneBloomThreshold;
 		}
 	}
 
@@ -7436,7 +7456,7 @@ SSAO Enabled: {_tuneSsaoEnabled}, Radius: {_tuneSsaoRadius:F2}, Intensity: {_tun
 PostProc Exposure: {_tuneExposure:F2}, Contrast: {_tuneContrast:F2}, Saturation: {_tuneSaturation:F2}
 Glow/Bloom Intensity: {_tuneBloomIntensity:F2}, Threshold: {_tuneBloomThreshold:F2}
 Cliff Jitter: Strength={_tuneCliffJitterStrength:F2}, Scale={_tuneCliffJitterScale:F3}
-Cliff Rim Noise: Strength={_tuneCliffRimNoiseStrength:F2}, Scale={_tuneCliffRimNoiseScale:F3}
+Cliff Rim Noise: Strength={_tuneCliffRimNoiseStrength:F2}
 Blend Noise: Strength={_tuneBlendNoiseStrength:F2}, Scale={_tuneBlendNoiseScale:F3}
 ===================================
 ";

@@ -1,3 +1,6 @@
+using System;
+using System.Runtime.CompilerServices;
+
 namespace Realm.Ecs.Components.Terrain
 {
 	public enum WaterType : byte
@@ -21,35 +24,29 @@ namespace Realm.Ecs.Components.Terrain
 		private float _centerHeight;
 		public float CenterHeight
 		{
-			get
-			{
-				return _centerHeight;
-			}
+			[MethodImpl(MethodImplOptions.AggressiveInlining)]
+			get => _centerHeight;
 		}
-
 
 		private sbyte _macroTier;
 		public sbyte MacroTier
 		{
-			get
-			{
-				return _macroTier;
-			}
+			[MethodImpl(MethodImplOptions.AggressiveInlining)]
+			get => _macroTier;
 		}
 
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		private void UpdateCalculations()
 		{
-			_centerHeight = Math.Clamp((Y_NW + Y_NE + Y_SE + Y_SW) * .25f, MIN_Y, MAX_Y);
+			_centerHeight = Math.Clamp((_yNW + _yNE + _ySE + _ySW) * 0.25f, MIN_Y, MAX_Y);
 			_macroTier = (sbyte)Math.Clamp((int)MathF.Round(_centerHeight / TIER_HEIGHT), MIN_MACRO_TIER, MAX_MACRO_TIER);
 		}
 
 		private float _yNW;
 		public float Y_NW
 		{
-			get
-			{
-				return _yNW;
-			}
+			[MethodImpl(MethodImplOptions.AggressiveInlining)]
+			get => _yNW;
 			set
 			{
 				_yNW = Math.Clamp(value, MIN_Y, MAX_Y);
@@ -60,10 +57,8 @@ namespace Realm.Ecs.Components.Terrain
 		private float _yNE;
 		public float Y_NE
 		{
-			get
-			{
-				return _yNE;
-			}
+			[MethodImpl(MethodImplOptions.AggressiveInlining)]
+			get => _yNE;
 			set
 			{
 				_yNE = Math.Clamp(value, MIN_Y, MAX_Y);
@@ -74,10 +69,8 @@ namespace Realm.Ecs.Components.Terrain
 		private float _ySE;
 		public float Y_SE
 		{
-			get
-			{
-				return _ySE;
-			}
+			[MethodImpl(MethodImplOptions.AggressiveInlining)]
+			get => _ySE;
 			set
 			{
 				_ySE = Math.Clamp(value, MIN_Y, MAX_Y);
@@ -88,24 +81,25 @@ namespace Realm.Ecs.Components.Terrain
 		private float _ySW;
 		public float Y_SW
 		{
-			get
-			{
-				return _ySW;
-			}
+			[MethodImpl(MethodImplOptions.AggressiveInlining)]
+			get => _ySW;
 			set
 			{
 				_ySW = Math.Clamp(value, MIN_Y, MAX_Y);
 				UpdateCalculations();
 			}
 		}
+
 		public WaterType WaterMode;
 
 		public TerrainCell(float nw, float ne, float se, float sw, WaterType waterMode = WaterType.None)
 		{
-			Y_NW = nw;
-			Y_NE = ne;
-			Y_SE = se;
-			Y_SW = sw;
+			_yNW = Math.Clamp(nw, MIN_Y, MAX_Y);
+			_yNE = Math.Clamp(ne, MIN_Y, MAX_Y);
+			_ySE = Math.Clamp(se, MIN_Y, MAX_Y);
+			_ySW = Math.Clamp(sw, MIN_Y, MAX_Y);
+			_centerHeight = Math.Clamp((_yNW + _yNE + _ySE + _ySW) * 0.25f, MIN_Y, MAX_Y);
+			_macroTier = (sbyte)Math.Clamp((int)MathF.Round(_centerHeight / TIER_HEIGHT), MIN_MACRO_TIER, MAX_MACRO_TIER);
 			WaterMode = waterMode;
 		}
 

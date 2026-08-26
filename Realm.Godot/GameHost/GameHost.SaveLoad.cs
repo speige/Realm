@@ -137,6 +137,7 @@ public partial class GameHost
 						}
 					}
 					GroundTerrain.UpdateMeshAndPhysics();
+					GroundTerrain.UpdatePathingTexture();
 				}
 				MapEditorHUD.Instance?.UpdateBlockModeExternal(true);
 				MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(2.0f);
@@ -313,7 +314,7 @@ public partial class GameHost
 					{
 						for (int x = 0; x < cliffW; x++)
 						{
-							GroundTerrain.CliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(GroundTerrain.CliffTextureIndex);
+							GroundTerrain.CliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(1);
 						}
 					}
 				}

@@ -129,32 +129,37 @@ void fragment() {
 	{
 		if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
 		{
-			if (GodotObject.IsInstanceValid(_shroudMeshInstance))
+			if (_isEditorShroudInitialized)
+			{
+				return;
+			}
+
+			if (GodotObject.IsInstanceValid(_shroudMeshInstance) && _shroudMeshInstance.Visible)
 			{
 				_shroudMeshInstance.Visible = false;
 			}
 			foreach (var unit in allUnits)
 			{
-				if (unit != null && GodotObject.IsInstanceValid(unit))
+				if (unit != null && GodotObject.IsInstanceValid(unit) && !unit.Visible)
 				{
 					unit.Visible = true;
 				}
 			}
 			foreach (var prop in allProps)
 			{
-				if (prop != null && GodotObject.IsInstanceValid(prop))
+				if (prop != null && GodotObject.IsInstanceValid(prop) && !prop.Visible)
 				{
 					prop.Visible = true;
 				}
 			}
 			foreach (var decal in allDecals)
 			{
-				if (decal != null && GodotObject.IsInstanceValid(decal))
+				if (decal != null && GodotObject.IsInstanceValid(decal) && !decal.Visible)
 				{
 					decal.Visible = true;
 				}
 			}
-			if (!_isEditorShroudInitialized && GameHost.Instance?.GroundTerrain != null)
+			if (GameHost.Instance?.GroundTerrain != null)
 			{
 				_isEditorShroudInitialized = true;
 				if (_shroudImage == null)
@@ -240,15 +245,15 @@ void fragment() {
 				ShroudGrid = shroudGrid;
 
 				foreach (var unit in allUnits)
-					if (unit != null && GodotObject.IsInstanceValid(unit))
+					if (unit != null && GodotObject.IsInstanceValid(unit) && !unit.Visible)
 						unit.Visible = true;
 
 				foreach (var prop in allProps)
-					if (prop != null && GodotObject.IsInstanceValid(prop))
+					if (prop != null && GodotObject.IsInstanceValid(prop) && !prop.Visible)
 						prop.Visible = true;
 
 				foreach (var decal in allDecals)
-					if (decal != null && GodotObject.IsInstanceValid(decal))
+					if (decal != null && GodotObject.IsInstanceValid(decal) && !decal.Visible)
 						decal.Visible = true;
 
 				Update3DShroudMesh();
@@ -297,16 +302,21 @@ void fragment() {
 				{
 					if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
 					int ownerId = GameHost.Instance.GetOwnerPeerId(unit.Entity);
+					bool shouldBeVisible;
 					if (ownerId == targetOwnerId)
 					{
-						unit.Visible = true;
+						shouldBeVisible = true;
 					}
 					else
 					{
 						Vector3 pos = unit.GlobalPosition;
 						int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
 						int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-						unit.Visible = (ShroudGrid[gx, gz] == ShroudState.Visible);
+						shouldBeVisible = (shroudGrid[gx, gz] == ShroudState.Visible);
+					}
+					if (unit.Visible != shouldBeVisible)
+					{
+						unit.Visible = shouldBeVisible;
 					}
 				}
 
@@ -316,7 +326,11 @@ void fragment() {
 					Vector3 pos = prop.GlobalPosition;
 					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
 					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-					prop.Visible = (ShroudGrid[gx, gz] != ShroudState.ExplorationShroud);
+					bool shouldBeVisible = (shroudGrid[gx, gz] != ShroudState.ExplorationShroud);
+					if (prop.Visible != shouldBeVisible)
+					{
+						prop.Visible = shouldBeVisible;
+					}
 				}
 
 				foreach (var decal in allDecals)
@@ -325,7 +339,11 @@ void fragment() {
 					Vector3 pos = decal.GlobalPosition;
 					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
 					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-					decal.Visible = (ShroudGrid[gx, gz] != ShroudState.ExplorationShroud);
+					bool shouldBeVisible = (shroudGrid[gx, gz] != ShroudState.ExplorationShroud);
+					if (decal.Visible != shouldBeVisible)
+					{
+						decal.Visible = shouldBeVisible;
+					}
 				}
 
 				Update3DShroudMesh();
@@ -344,15 +362,15 @@ void fragment() {
 			ShroudGrid = shroudGrid;
 
 			foreach (var unit in allUnits)
-				if (unit != null && GodotObject.IsInstanceValid(unit))
+				if (unit != null && GodotObject.IsInstanceValid(unit) && !unit.Visible)
 					unit.Visible = true;
 
 			foreach (var prop in allProps)
-				if (prop != null && GodotObject.IsInstanceValid(prop))
+				if (prop != null && GodotObject.IsInstanceValid(prop) && !prop.Visible)
 					prop.Visible = true;
 
 			foreach (var decal in allDecals)
-				if (decal != null && GodotObject.IsInstanceValid(decal))
+				if (decal != null && GodotObject.IsInstanceValid(decal) && !decal.Visible)
 					decal.Visible = true;
 
 			Update3DShroudMesh();
@@ -402,16 +420,22 @@ void fragment() {
 			foreach (var unit in allUnits)
 			{
 				if (unit == null || !GodotObject.IsInstanceValid(unit)) continue;
+				bool shouldBeVisible;
 				if (!unit.IsEnemy)
 				{
-					unit.Visible = true;
-					continue;
+					shouldBeVisible = true;
 				}
-
-				Vector3 pos = unit.GlobalPosition;
-				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-				unit.Visible = (ShroudGrid[gx, gz] == ShroudState.Visible);
+				else
+				{
+					Vector3 pos = unit.GlobalPosition;
+					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
+					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+					shouldBeVisible = (shroudGrid[gx, gz] == ShroudState.Visible);
+				}
+				if (unit.Visible != shouldBeVisible)
+				{
+					unit.Visible = shouldBeVisible;
+				}
 			}
 
 			foreach (var prop in allProps)
@@ -420,7 +444,11 @@ void fragment() {
 				Vector3 pos = prop.GlobalPosition;
 				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
 				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-				prop.Visible = (ShroudGrid[gx, gz] != ShroudState.ExplorationShroud);
+				bool shouldBeVisible = (shroudGrid[gx, gz] != ShroudState.ExplorationShroud);
+				if (prop.Visible != shouldBeVisible)
+				{
+					prop.Visible = shouldBeVisible;
+				}
 			}
 
 			foreach (var decal in allDecals)
@@ -429,7 +457,11 @@ void fragment() {
 				Vector3 pos = decal.GlobalPosition;
 				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
 				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-				decal.Visible = (ShroudGrid[gx, gz] != ShroudState.ExplorationShroud);
+				bool shouldBeVisible = (shroudGrid[gx, gz] != ShroudState.ExplorationShroud);
+				if (decal.Visible != shouldBeVisible)
+				{
+					decal.Visible = shouldBeVisible;
+				}
 			}
 
 			Update3DShroudMesh();

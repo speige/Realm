@@ -722,6 +722,8 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
 
             const newText = JSON.stringify(metadata, null, 2);
             await this.updateTextDocument(document, newText);
+            await document.save();
+            this.notifyGodotReloadMetadata();
             webview.postMessage({
                 type: 'update',
                 text: newText
@@ -996,6 +998,8 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             const removedCount = initialCount - finalCount;
             const newText = JSON.stringify(metadata, null, 2);
             await this.updateTextDocument(document, newText);
+            await document.save();
+            this.notifyGodotReloadMetadata();
             webview.postMessage({
                 type: 'update',
                 text: newText
@@ -1261,6 +1265,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 }>(async (resolve) => {
                     const http = require('http');
                     const ports = [8092, 8093];
+                    let resolved = false;
 
                     const postData = JSON.stringify({
                         action: 'optimizeModel',
@@ -1375,6 +1380,11 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 fs.writeFileSync(targetPath, fileBytes);
                 const blake3 = this.computeHashHex(fileBytes);
                 const ignorePlayerColor = !!(extraOptions && (extraOptions.ignorePlayerColor || extraOptions.ignore_player_color));
+
+                if (!metadata.Assets) metadata.Assets = {};
+                if (!metadata.Assets.glb) metadata.Assets.glb = {};
+                if (!metadata.Assets.glb[subCategory]) metadata.Assets.glb[subCategory] = {};
+
                 metadata.Assets.glb[subCategory][baseName] = {
                     hash: blake3,
                     default_asset_type: subCategory,
@@ -1788,7 +1798,14 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 }
             }
 
-            await this.updateTextDocument(document, JSON.stringify(freshMetadata, null, 2));
+            const finalText = JSON.stringify(freshMetadata, null, 2);
+            await this.updateTextDocument(document, finalText);
+            await document.save();
+            this.notifyGodotReloadMetadata();
+            webview.postMessage({
+                type: 'update',
+                text: finalText
+            });
         } catch (err: any) {
             vscode.window.showErrorMessage(`Failed to import asset: ${err.message}`);
         }
@@ -1870,7 +1887,10 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 metadata.Assets[toCategory][key] = itemVal || 'hash';
             }
 
-            await this.updateTextDocument(document, JSON.stringify(metadata, null, 2));
+            const finalText = JSON.stringify(metadata, null, 2);
+            await this.updateTextDocument(document, finalText);
+            await document.save();
+            this.notifyGodotReloadMetadata();
             vscode.window.showInformationMessage(`Migrated asset '${key}' to ${toCategory}${toSubCategory ? '/' + toSubCategory : ''}`);
         } catch (err: any) {
             vscode.window.showErrorMessage(`Failed to migrate asset: ${err.message}`);
@@ -1993,6 +2013,31 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         } catch (err) {
             console.error('updateTextDocument error:', err);
             return false;
+        }
+    }
+
+    private notifyGodotReloadMetadata(): void {
+        const http = require('http');
+        const ports = [8092, 8093];
+        const postData = JSON.stringify({ action: 'reloadMetadata' });
+        for (const port of ports) {
+            try {
+                const req = http.request({
+                    hostname: '127.0.0.1',
+                    port: port,
+                    path: '/api/',
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Content-Length': Buffer.byteLength(postData)
+                    },
+                    timeout: 1000
+                }, () => {});
+                req.on('error', () => {});
+                req.write(postData);
+                req.end();
+            } catch {
+            }
         }
     }
 
