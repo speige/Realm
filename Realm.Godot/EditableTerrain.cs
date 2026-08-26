@@ -1005,6 +1005,7 @@ uniform float macro_gain = 0.5;
 
 uniform bool enable_macro_noise = true;
 uniform bool enable_height_blend = true;
+uniform bool enable_normal_mapping = true;
 
 uniform vec4 swatch_params[32];
 uniform vec4 swatch_height_params[32];
@@ -1394,19 +1395,38 @@ void fragment() {
 	float gw2 = blend_layer_weights.z;
 	float gw3 = blend_layer_weights.w;
 
-	vec4 gn0 = gw0 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
-	vec4 gn1 = gw1 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
-	vec4 gn2 = gw2 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
-	vec4 gn3 = gw3 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+	if (enable_normal_mapping) {
+		vec4 gn0 = gw0 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 gn1 = gw1 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 gn2 = gw2 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 gn3 = gw3 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
 
-	vec3 gn0_vec = unpack_triplanar_normal(gn0, vec3(0.0, 1.0, 0.0), geom_normal);
-	vec3 gn1_vec = unpack_triplanar_normal(gn1, vec3(0.0, 1.0, 0.0), geom_normal);
-	vec3 gn2_vec = unpack_triplanar_normal(gn2, vec3(0.0, 1.0, 0.0), geom_normal);
-	vec3 gn3_vec = unpack_triplanar_normal(gn3, vec3(0.0, 1.0, 0.0), geom_normal);
+		vec3 gn0_vec = unpack_triplanar_normal(gn0, vec3(0.0, 1.0, 0.0), geom_normal);
+		vec3 gn1_vec = unpack_triplanar_normal(gn1, vec3(0.0, 1.0, 0.0), geom_normal);
+		vec3 gn2_vec = unpack_triplanar_normal(gn2, vec3(0.0, 1.0, 0.0), geom_normal);
+		vec3 gn3_vec = unpack_triplanar_normal(gn3, vec3(0.0, 1.0, 0.0), geom_normal);
 
-	ground_normal = normalize(gn0_vec * gw0 + gn1_vec * gw1 + gn2_vec * gw2 + gn3_vec * gw3);
-	ground_ao = (gn0.b * gw0 + gn1.b * gw1 + gn2.b * gw2 + gn3.b * gw3);
-	ground_roughness = (gn0.a * gw0 + gn1.a * gw1 + gn2.a * gw2 + gn3.a * gw3);
+		ground_normal = normalize(gn0_vec * gw0 + gn1_vec * gw1 + gn2_vec * gw2 + gn3_vec * gw3);
+		ground_ao = (gn0.b * gw0 + gn1.b * gw1 + gn2.b * gw2 + gn3.b * gw3);
+		ground_roughness = (gn0.a * gw0 + gn1.a * gw1 + gn2.a * gw2 + gn3.a * gw3);
+	} else {
+		float max_gw = max(max(gw0, gw1), max(gw2, gw3));
+		float dom_layer = round(v_tex_indices.x);
+		if (gw1 >= max_gw) dom_layer = round(v_tex_indices.y);
+		else if (gw2 >= max_gw) dom_layer = round(v_tex_indices.z);
+		else if (gw3 >= max_gw) dom_layer = round(v_tex_indices.w);
+
+		int dom_idx = int(clamp(dom_layer, 0.0, 31.0));
+		float uv_scale = swatch_params[dom_idx].y > 0.001 ? swatch_params[dom_idx].y : 1.0;
+		vec2 dom_uv = uv_y * uv_scale;
+		vec2 dom_dx = dx_y * uv_scale;
+		vec2 dom_dy = dy_y * uv_scale;
+
+		vec4 gn = textureGrad(terrain_normals_pbr, vec3(dom_uv, dom_layer), dom_dx, dom_dy);
+		ground_normal = unpack_triplanar_normal(gn, vec3(0.0, 1.0, 0.0), geom_normal);
+		ground_ao = gn.b;
+		ground_roughness = gn.a;
+	}
 
 	vec4 raw_c_weights = v_cliff_tex_weights;
 	raw_c_weights.x = raw_c_weights.x < 0.001 ? 0.0 : raw_c_weights.x;
@@ -1531,19 +1551,48 @@ void fragment() {
 	float cw2 = cliff_blend_weights.z;
 	float cw3 = cliff_blend_weights.w;
 
-	vec4 cn0 = cw0 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-	vec4 cn1 = cw1 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-	vec4 cn2 = cw2 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-	vec4 cn3 = cw3 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+	if (enable_normal_mapping) {
+		vec4 cn0 = cw0 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 cn1 = cw1 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 cn2 = cw2 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+		vec4 cn3 = cw3 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
 
-	vec3 cn0_vec = unpack_triplanar_normal(cn0, get_active_weights(round(v_cliff_tex_indices.x), blend_weights), geom_normal);
-	vec3 cn1_vec = unpack_triplanar_normal(cn1, get_active_weights(round(v_cliff_tex_indices.y), blend_weights), geom_normal);
-	vec3 cn2_vec = unpack_triplanar_normal(cn2, get_active_weights(round(v_cliff_tex_indices.z), blend_weights), geom_normal);
-	vec3 cn3_vec = unpack_triplanar_normal(cn3, get_active_weights(round(v_cliff_tex_indices.w), blend_weights), geom_normal);
+		vec3 cn0_vec = unpack_triplanar_normal(cn0, get_active_weights(round(v_cliff_tex_indices.x), blend_weights), geom_normal);
+		vec3 cn1_vec = unpack_triplanar_normal(cn1, get_active_weights(round(v_cliff_tex_indices.y), blend_weights), geom_normal);
+		vec3 cn2_vec = unpack_triplanar_normal(cn2, get_active_weights(round(v_cliff_tex_indices.z), blend_weights), geom_normal);
+		vec3 cn3_vec = unpack_triplanar_normal(cn3, get_active_weights(round(v_cliff_tex_indices.w), blend_weights), geom_normal);
 
-	cliff_normal = normalize(cn0_vec * cw0 + cn1_vec * cw1 + cn2_vec * cw2 + cn3_vec * cw3);
-	cliff_ao = (cn0.b * cw0 + cn1.b * cw1 + cn2.b * cw2 + cn3.b * cw3);
-	cliff_roughness = (cn0.a * cw0 + cn1.a * cw1 + cn2.a * cw2 + cn3.a * cw3);
+		cliff_normal = normalize(cn0_vec * cw0 + cn1_vec * cw1 + cn2_vec * cw2 + cn3_vec * cw3);
+		cliff_ao = (cn0.b * cw0 + cn1.b * cw1 + cn2.b * cw2 + cn3.b * cw3);
+		cliff_roughness = (cn0.a * cw0 + cn1.a * cw1 + cn2.a * cw2 + cn3.a * cw3);
+	} else {
+		float max_cw = max(max(cw0, cw1), max(cw2, cw3));
+		float dom_c_layer = round(v_cliff_tex_indices.x);
+		if (cw1 >= max_cw) dom_c_layer = round(v_cliff_tex_indices.y);
+		else if (cw2 >= max_cw) dom_c_layer = round(v_cliff_tex_indices.z);
+		else if (cw3 >= max_cw) dom_c_layer = round(v_cliff_tex_indices.w);
+
+		int dom_c_idx = int(clamp(dom_c_layer, 0.0, 31.0));
+		float c_uv_scale = swatch_params[dom_c_idx].y > 0.001 ? swatch_params[dom_c_idx].y : 1.0;
+
+		vec2 c_uv = uv_y * c_uv_scale;
+		vec2 c_dx = dx_y * c_uv_scale;
+		vec2 c_dy = dy_y * c_uv_scale;
+		if (blend_weights.x > blend_weights.y && blend_weights.x > blend_weights.z) {
+			c_uv = uv_x * c_uv_scale;
+			c_dx = dx_x * c_uv_scale;
+			c_dy = dy_x * c_uv_scale;
+		} else if (blend_weights.z > blend_weights.y) {
+			c_uv = uv_z * c_uv_scale;
+			c_dx = dx_z * c_uv_scale;
+			c_dy = dy_z * c_uv_scale;
+		}
+
+		vec4 cn = textureGrad(terrain_normals_pbr, vec3(c_uv, dom_c_layer), c_dx, c_dy);
+		cliff_normal = unpack_triplanar_normal(cn, get_active_weights(dom_c_layer, blend_weights), geom_normal);
+		cliff_ao = cn.b;
+		cliff_roughness = cn.a;
+	}
 
 	if (enable_macro_noise && macro_normal_strength > 0.0) {
 		float n_noise_y_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
@@ -1716,19 +1765,23 @@ void fragment() {
 			case 0:
 				_material.SetShaderParameter("enable_macro_noise", false);
 				_material.SetShaderParameter("enable_height_blend", false);
+				_material.SetShaderParameter("enable_normal_mapping", false);
 				break;
 			case 1:
 				_material.SetShaderParameter("enable_macro_noise", false);
 				_material.SetShaderParameter("enable_height_blend", false);
+				_material.SetShaderParameter("enable_normal_mapping", false);
 				break;
 			case 2:
 				_material.SetShaderParameter("enable_macro_noise", true);
 				_material.SetShaderParameter("enable_height_blend", true);
+				_material.SetShaderParameter("enable_normal_mapping", true);
 				break;
 			case 3:
 			default:
 				_material.SetShaderParameter("enable_macro_noise", true);
 				_material.SetShaderParameter("enable_height_blend", true);
+				_material.SetShaderParameter("enable_normal_mapping", true);
 				break;
 		}
 
