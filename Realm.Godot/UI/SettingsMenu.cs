@@ -672,7 +672,6 @@ public partial class SettingsMenu : Control
 			}
 
 			GameSettings.QualityIdx = (GraphicsQuality)_qualityOpt.Selected;
-			GameSettings.DownsamplingIdx = GameSettings.GetDownsamplingIdxForQuality(GameSettings.QualityIdx);
 			GameSettings.Vsync = vsyncEnabled;
 			GameSettings.DisableShadows = _disableShadowsChk.ButtonPressed;
 			GameSettings.DisableDayNightLighting = _disableDayNightLightingChk.ButtonPressed;
