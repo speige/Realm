@@ -70,10 +70,10 @@ public class ModelOptimizerService
 		{
 			return new LodTierConfig[]
 			{
-				new LodTierConfig(0, "LOD0", 800, CalculateTargetErrorFromScreenHeight(800, allowedPixelError), 0.94f, 1.00f, 4, true, 0f, 25f),
-				new LodTierConfig(1, "LOD1", 250, CalculateTargetErrorFromScreenHeight(250, allowedPixelError), 0.87f, 0.50f, 2, true, 25f, 50f),
-				new LodTierConfig(2, "LOD2", 100, CalculateTargetErrorFromScreenHeight(100, allowedPixelError), 0.78f, 0.25f, 1, true, 50f, 85f),
-				new LodTierConfig(3, "LOD3", 35, CalculateTargetErrorFromScreenHeight(35, allowedPixelError), 0.68f, 0.10f, 1, true, 85f, 250f)
+				new LodTierConfig(0, "LOD0", 800, CalculateTargetErrorFromScreenHeight(800, allowedPixelError), 0.94f, 1.00f, 4, true, 0f, 45f),
+				new LodTierConfig(1, "LOD1", 250, CalculateTargetErrorFromScreenHeight(250, allowedPixelError), 0.87f, 0.50f, 2, true, 45f, 90f),
+				new LodTierConfig(2, "LOD2", 100, CalculateTargetErrorFromScreenHeight(100, allowedPixelError), 0.78f, 0.25f, 1, true, 90f, 150f),
+				new LodTierConfig(3, "LOD3", 35, CalculateTargetErrorFromScreenHeight(35, allowedPixelError), 0.68f, 0.10f, 1, true, 150f, 0f)
 			};
 		}
 	}
@@ -306,7 +306,7 @@ public class ModelOptimizerService
 				masterMeshInst.Name = $"{masterBaseName}_LOD0";
 				masterMeshInst.Mesh = lodMeshes[0];
 				masterMeshInst.VisibilityRangeBegin = options.LodTiers[0].VisibilityRangeBegin;
-				masterMeshInst.VisibilityRangeEnd = options.LodTiers[0].VisibilityRangeEnd;
+				masterMeshInst.VisibilityRangeEnd = (options.LodTiers.Length <= 1) ? 0f : options.LodTiers[0].VisibilityRangeEnd;
 				masterMeshInst.VisibilityRangeBeginMargin = 2.0f;
 				masterMeshInst.VisibilityRangeEndMargin = 2.0f;
 				masterMeshInst.VisibilityRangeFadeMode = GeometryInstance3D.VisibilityRangeFadeModeEnum.Disabled;
@@ -325,7 +325,7 @@ public class ModelOptimizerService
 						Skin = masterMeshInst.Skin,
 						Skeleton = masterMeshInst.Skeleton,
 						VisibilityRangeBegin = options.LodTiers[t].VisibilityRangeBegin,
-						VisibilityRangeEnd = options.LodTiers[t].VisibilityRangeEnd,
+						VisibilityRangeEnd = (t == options.LodTiers.Length - 1) ? 0f : options.LodTiers[t].VisibilityRangeEnd,
 						VisibilityRangeBeginMargin = 2.0f,
 						VisibilityRangeEndMargin = 2.0f,
 						VisibilityRangeFadeMode = GeometryInstance3D.VisibilityRangeFadeModeEnum.Disabled,
