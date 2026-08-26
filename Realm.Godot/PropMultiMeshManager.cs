@@ -114,6 +114,40 @@ public partial class PropMultiMeshManager : Node3D
 
 	private void UpdateFrustumCulling()
 	{
+		if (EditableTerrain.IsMinimapRendering)
+		{
+			SetAllNodesVisible(true);
+			return;
+		}
+
+		var viewport = GetViewport();
+		if (viewport == null) return;
+		var camera = viewport.GetCamera3D();
+		if (camera == null || !GodotObject.IsInstanceValid(camera)) return;
+
+		if (camera.Projection == Camera3D.ProjectionType.Orthogonal)
+		{
+			SetAllNodesVisible(true);
+			return;
+		}
+
+		var frustum = camera.GetFrustum();
+		if (frustum == null || frustum.Count < 6) return;
+
+		foreach (var group in _groups.Values)
+		{
+			foreach (var chunkGroup in group.ChunkGroups.Values)
+			{
+				bool visible = EditableTerrain.IntersectsFrustum(frustum, chunkGroup.Bounds);
+				foreach (var node in chunkGroup.MultiMeshNodes)
+				{
+					if (GodotObject.IsInstanceValid(node))
+					{
+						node.Visible = visible;
+					}
+				}
+			}
+		}
 	}
 
 	public void SetAllNodesVisible(bool visible)
