@@ -614,6 +614,38 @@ public partial class GameHost
 		_normalGeneratedMeshCache.Clear();
 	}
 
+	public static ArrayMesh GetOrCreateNormalMesh(ArrayMesh arrayMesh, ModelNormalMode normalMode)
+	{
+		if (arrayMesh == null) return null;
+		if (normalMode == ModelNormalMode.Original) return arrayMesh;
+
+		ulong baseId = arrayMesh.GetInstanceId();
+		var cacheKey = (baseId, normalMode);
+		if (_normalGeneratedMeshCache.TryGetValue(cacheKey, out var cachedMesh) && GodotObject.IsInstanceValid(cachedMesh))
+		{
+			return cachedMesh;
+		}
+
+		var toolMesh = new ArrayMesh();
+		for (int i = 0; i < arrayMesh.GetSurfaceCount(); i++)
+		{
+			var surfaceTool = new SurfaceTool();
+			surfaceTool.CreateFrom(arrayMesh, i);
+			if (normalMode == ModelNormalMode.Flat)
+			{
+				surfaceTool.Deindex();
+				surfaceTool.GenerateNormals();
+			}
+			else
+			{
+				surfaceTool.GenerateNormals();
+			}
+			toolMesh = surfaceTool.Commit(toolMesh);
+		}
+		_normalGeneratedMeshCache[cacheKey] = toolMesh;
+		return toolMesh;
+	}
+
 	public static void ApplyMaterialOverridesToNode(
 		Node node,
 		float brightness = 0.5f,
@@ -675,33 +707,7 @@ public partial class GameHost
 			}
 			else if (baseMesh is ArrayMesh arrayMesh)
 			{
-				ulong baseId = arrayMesh.GetInstanceId();
-				var cacheKey = (baseId, normalMode);
-				if (_normalGeneratedMeshCache.TryGetValue(cacheKey, out var cachedMesh) && GodotObject.IsInstanceValid(cachedMesh))
-				{
-					meshInst.Mesh = cachedMesh;
-				}
-				else
-				{
-					var toolMesh = new ArrayMesh();
-					for (int i = 0; i < arrayMesh.GetSurfaceCount(); i++)
-					{
-						var surfaceTool = new SurfaceTool();
-						surfaceTool.CreateFrom(arrayMesh, i);
-						if (normalMode == ModelNormalMode.Flat)
-						{
-							surfaceTool.Deindex();
-							surfaceTool.GenerateNormals();
-						}
-						else
-						{
-							surfaceTool.GenerateNormals();
-						}
-						toolMesh = surfaceTool.Commit(toolMesh);
-					}
-					_normalGeneratedMeshCache[cacheKey] = toolMesh;
-					meshInst.Mesh = toolMesh;
-				}
+				meshInst.Mesh = GetOrCreateNormalMesh(arrayMesh, normalMode);
 			}
 
 			meshInst.SetInstanceShaderParameter(new StringName("normal_mode"), (float)normalMode);

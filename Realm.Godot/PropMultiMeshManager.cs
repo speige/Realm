@@ -494,38 +494,9 @@ public partial class PropMultiMeshManager : Node3D
 					var subInfo = group.SubMeshes[i];
 					var mmNode = chunkGroup.MultiMeshNodes[i];
 
-					if (subInfo.Mesh is ArrayMesh arrayMesh)
+					if (subInfo.Mesh is ArrayMesh arrayMesh && mmNode.Multimesh != null)
 					{
-						if (normalMode == GameHost.ModelNormalMode.Original)
-						{
-							if (mmNode.Multimesh != null)
-							{
-								mmNode.Multimesh.Mesh = subInfo.Mesh;
-							}
-						}
-						else
-						{
-							var toolMesh = new ArrayMesh();
-							for (int s = 0; s < arrayMesh.GetSurfaceCount(); s++)
-							{
-								var surfaceTool = new SurfaceTool();
-								surfaceTool.CreateFrom(arrayMesh, s);
-								if (normalMode == GameHost.ModelNormalMode.Flat)
-								{
-									surfaceTool.Deindex();
-									surfaceTool.GenerateNormals();
-								}
-								else
-								{
-									surfaceTool.GenerateNormals();
-								}
-								toolMesh = surfaceTool.Commit(toolMesh);
-							}
-							if (mmNode.Multimesh != null)
-							{
-								mmNode.Multimesh.Mesh = toolMesh;
-							}
-						}
+						mmNode.Multimesh.Mesh = GameHost.GetOrCreateNormalMesh(arrayMesh, normalMode);
 					}
 
 					Material baseMatToUse = subInfo.MaterialOverride;
