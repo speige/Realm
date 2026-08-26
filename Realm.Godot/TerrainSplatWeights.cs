@@ -14,6 +14,37 @@ public struct TerrainSplatWeights : IEquatable<TerrainSplatWeights>
     public float Weight2;
     public float Weight3;
 
+    public int GetDominantIndex()
+    {
+        float maxW = Weight0;
+        int idx = Index0;
+        if (Weight1 > maxW)
+        {
+            maxW = Weight1;
+            idx = Index1;
+        }
+        if (Weight2 > maxW)
+        {
+            maxW = Weight2;
+            idx = Index2;
+        }
+        if (Weight3 > maxW)
+        {
+            maxW = Weight3;
+            idx = Index3;
+        }
+        return idx;
+    }
+
+    public bool IsSolid(int textureIndex)
+    {
+        if (Index0 == textureIndex && Weight0 >= 0.999f) return true;
+        if (Index1 == textureIndex && Weight1 >= 0.999f) return true;
+        if (Index2 == textureIndex && Weight2 >= 0.999f) return true;
+        if (Index3 == textureIndex && Weight3 >= 0.999f) return true;
+        return false;
+    }
+
     public static TerrainSplatWeights CreateSolid(int textureIndex)
     {
         return new TerrainSplatWeights

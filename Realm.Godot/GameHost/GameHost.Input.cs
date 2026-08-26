@@ -1083,16 +1083,17 @@ public partial class GameHost
 								EditorBlockLevelHeight = sampledHeight;
 								MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(sampledHeight);
 								float avgHeight = 0f;
-								if (GroundTerrain != null && GroundTerrain.Heights != null)
+								if (GroundTerrain != null && GroundTerrain.Cells != null)
 								{
 									int w = GroundTerrain.Width;
 									int d = GroundTerrain.Depth;
+									var cells = GroundTerrain.Cells;
 									float sum = 0f;
 									for (int z = 0; z < d; z++)
 									{
 										for (int x = 0; x < w; x++)
 										{
-											sum += GroundTerrain.Heights[x, z];
+											sum += cells[x, z].CenterHeight;
 										}
 									}
 									avgHeight = sum / (w * d);
@@ -1113,11 +1114,13 @@ public partial class GameHost
 								int w = GroundTerrain.Width;
 								int d = GroundTerrain.Depth;
 								float quadSize = GroundTerrain.QuadSize;
-								float fx = hitPos.X / quadSize + (w - 1) / 2.0f;
-								float fz = hitPos.Z / quadSize + (d - 1) / 2.0f;
-								int x = Mathf.Clamp((int)Math.Round(fx), 0, w - 1);
-								int z = Mathf.Clamp((int)Math.Round(fz), 0, d - 1);
-								int sampledIndex = GroundTerrain.SplatMap[x, z].Index0;
+								float fx = hitPos.X / quadSize + w / 2.0f;
+								float fz = hitPos.Z / quadSize + d / 2.0f;
+								int splatW = GroundTerrain.SplatMap != null ? GroundTerrain.SplatMap.GetLength(0) : w + 1;
+								int splatD = GroundTerrain.SplatMap != null ? GroundTerrain.SplatMap.GetLength(1) : d + 1;
+								int x = Mathf.Clamp((int)Math.Round(fx), 0, splatW - 1);
+								int z = Mathf.Clamp((int)Math.Round(fz), 0, splatD - 1);
+								int sampledIndex = GroundTerrain.SplatMap != null ? GroundTerrain.SplatMap[x, z].GetDominantIndex() : 0;
 								EditorPaintTextureIndex = sampledIndex;
 								if (MapEditorHUD.Instance != null)
 								{
@@ -1199,10 +1202,11 @@ public partial class GameHost
 						{
 							Vector3 start = _editorService.RampStartPos.Value;
 							Vector3 end = hitPos;
-							if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
+							if (GroundTerrain != null && GroundTerrain.Cells != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
 							{
-								var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
+								var cellsBefore = (Realm.Ecs.Components.Terrain.TerrainCell[,])GroundTerrain.Cells.Clone();
 								var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+								var cliffBefore = GroundTerrain.CliffSplatMap != null ? (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone() : null;
 								var pathingBefore = (int[,])GroundTerrain.PathingCodes.Clone();
 								bool modified = ApplyRampInternal(start, end);
 								if (EditorMirrorMode != MirrorMode.None)
@@ -1249,10 +1253,11 @@ public partial class GameHost
 
 									GroundTerrain.UpdateMeshAndPhysics(true, false, affected);
 									AlignAllEntitiesToTerrain(affected);
-									var heightsAfter = (float[,])GroundTerrain.Heights.Clone();
+									var cellsAfter = (Realm.Ecs.Components.Terrain.TerrainCell[,])GroundTerrain.Cells.Clone();
 									var splatAfter = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
+									var cliffAfter = GroundTerrain.CliffSplatMap != null ? (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone() : null;
 									var pathingAfter = (int[,])GroundTerrain.PathingCodes.Clone();
-									var action = new TerrainModifyAction(heightsBefore, heightsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter);
+									var action = new TerrainModifyAction(cellsBefore, cellsAfter, splatBefore, splatAfter, pathingBefore, pathingAfter, cliffBefore, cliffAfter);
 									EditorHistoryManager.RecordAction(action);
 									EditorHasUnsavedChanges = true;
 									UpdatePathingOverlay();

@@ -111,13 +111,18 @@ public class TerrainModifyAction : IEditorAction
 		int d = heights.GetLength(1);
 		int cellW = Math.Max(1, w - 1);
 		int cellD = Math.Max(1, d - 1);
-		return TerrainState.CalculateCells(cellW, cellD, heights);
+		var existingCells = GameHost.Instance?.GroundTerrain?.Cells;
+		return TerrainState.CalculateCells(cellW, cellD, heights, existingCells);
 	}
 
 	public void Undo()
 	{
 		if (GameHost.Instance?.GroundTerrain == null) return;
 		var cells = GameHost.Instance.GroundTerrain.Cells;
+
+		bool heightsChanged = _beforeCells != null;
+		bool pathingChanged = _beforePathing != null;
+		bool splatChanged = _beforeSplatMap != null || _beforeCliffSplatMap != null;
 
 		if (_beforeCells != null && cells != null)
 		{
@@ -154,19 +159,20 @@ public class TerrainModifyAction : IEditorAction
 						GameHost.Instance.GroundTerrain.PathingCodes[_minX + x, _minZ + z] = _beforePathing[x, z];
 		}
 
-		Rect2I affected = new Rect2I(_minX - 2, _minZ - 2, _width + 4, _depth + 4);
-		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics(true, false, affected);
-		if ((_beforeSplatMap != null || _beforeCliffSplatMap != null) && GameHost.Instance.GroundTerrain.SplatMap != null)
+		if (splatChanged && GameHost.Instance.GroundTerrain.SplatMap != null)
 		{
 			ServiceLocator.Get<EditorService>()?.AlignSplatMapSlots(_minX - 2, _minZ - 2, _minX + _width + 2, _minZ + _depth + 2);
 		}
-		GameHost.Instance.AlignAllEntitiesToTerrainExternal();
-		GameHost.Instance.RebuildGridOverlayMeshExternal();
-		if (_beforeCells != null || _beforePathing != null)
+
+		Rect2I affected = new Rect2I(_minX - 2, _minZ - 2, _width + 4, _depth + 4);
+		if (heightsChanged)
 		{
-			GameHost.Instance.GroundTerrain.BakeNavMesh();
+			GameHost.Instance.GroundTerrain.SanitizeCornerHeights();
+			GameHost.Instance.AlignAllEntitiesToTerrainExternal(affected);
+			GameHost.Instance.RebuildGridOverlayMeshExternal();
 		}
-		if (_beforePathing != null)
+		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics(heightsChanged, false, affected, heightsChanged);
+		if (pathingChanged)
 		{
 			GameHost.Instance.UpdatePathingOverlay();
 		}
@@ -176,6 +182,10 @@ public class TerrainModifyAction : IEditorAction
 	{
 		if (GameHost.Instance?.GroundTerrain == null) return;
 		var cells = GameHost.Instance.GroundTerrain.Cells;
+
+		bool heightsChanged = _afterCells != null;
+		bool pathingChanged = _afterPathing != null;
+		bool splatChanged = _afterSplatMap != null || _afterCliffSplatMap != null;
 
 		if (_afterCells != null && cells != null)
 		{
@@ -212,19 +222,20 @@ public class TerrainModifyAction : IEditorAction
 						GameHost.Instance.GroundTerrain.PathingCodes[_minX + x, _minZ + z] = _afterPathing[x, z];
 		}
 
-		Rect2I affected = new Rect2I(_minX - 2, _minZ - 2, _width + 4, _depth + 4);
-		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics(true, false, affected);
-		if (_afterSplatMap != null && GameHost.Instance.GroundTerrain.SplatMap != null)
+		if (splatChanged && GameHost.Instance.GroundTerrain.SplatMap != null)
 		{
 			ServiceLocator.Get<EditorService>()?.AlignSplatMapSlots(_minX - 2, _minZ - 2, _minX + _width + 2, _minZ + _depth + 2);
 		}
-		GameHost.Instance.AlignAllEntitiesToTerrainExternal();
-		GameHost.Instance.RebuildGridOverlayMeshExternal();
-		if (_afterCells != null || _afterPathing != null)
+
+		Rect2I affected = new Rect2I(_minX - 2, _minZ - 2, _width + 4, _depth + 4);
+		if (heightsChanged)
 		{
-			GameHost.Instance.GroundTerrain.BakeNavMesh();
+			GameHost.Instance.GroundTerrain.SanitizeCornerHeights();
+			GameHost.Instance.AlignAllEntitiesToTerrainExternal(affected);
+			GameHost.Instance.RebuildGridOverlayMeshExternal();
 		}
-		if (_afterPathing != null)
+		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics(heightsChanged, false, affected, heightsChanged);
+		if (pathingChanged)
 		{
 			GameHost.Instance.UpdatePathingOverlay();
 		}

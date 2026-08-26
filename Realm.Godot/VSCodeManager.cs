@@ -769,20 +769,17 @@ public class VSCodeManager
 				string rawBase64 = node["rawBase64"]?.ToString();
 				string fileName = node["fileName"]?.ToString() ?? "model.glb";
 				string requestId = node["requestId"]?.ToString();
-
 				float creaseAngleDegrees = node["creaseAngleDegrees"] != null && float.TryParse(node["creaseAngleDegrees"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float cDeg) ? cDeg : 45.0f;
 				int maxTextureResolution = node["maxTextureResolution"] != null && int.TryParse(node["maxTextureResolution"].ToString(), out int mTex) ? mTex : 1024;
 				float allowedPixelError = node["allowedPixelError"] != null && float.TryParse(node["allowedPixelError"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float pErr) ? pErr : 1.5f;
 				bool forceReDecimate = node["forceReDecimate"] != null && bool.TryParse(node["forceReDecimate"].ToString(), out bool fDec) && fDec;
-				bool useUastc = node["useUastc"] != null && bool.TryParse(node["useUastc"].ToString(), out bool uAstc) && uAstc;
 
 				var options = new Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationOptions
 				{
 					AllowedPixelError = allowedPixelError,
 					CreaseAngleDegrees = creaseAngleDegrees,
 					MaxTextureResolution = maxTextureResolution,
-					ForceReDecimate = forceReDecimate,
-					UseUastc = useUastc
+					ForceReDecimate = forceReDecimate
 				};
 
 				byte[] glbBytes = null;
@@ -919,11 +916,66 @@ public class VSCodeManager
 
 				string? tintStr = node["tint"]?.ToString() ?? node["Tint"]?.ToString();
 
+				float heightScale = 1.0f;
+				if (node["height_scale"] != null && float.TryParse(node["height_scale"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHs))
+				{
+					heightScale = parsedHs;
+				}
+				else if (node["Height_Scale"] != null && float.TryParse(node["Height_Scale"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHs2))
+				{
+					heightScale = parsedHs2;
+				}
+				else if (node["heightScale"] != null && float.TryParse(node["heightScale"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHs3))
+				{
+					heightScale = parsedHs3;
+				}
+
+				float heightOffset = 0.0f;
+				if (node["height_offset"] != null && float.TryParse(node["height_offset"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHo))
+				{
+					heightOffset = parsedHo;
+				}
+				else if (node["Height_Offset"] != null && float.TryParse(node["Height_Offset"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHo2))
+				{
+					heightOffset = parsedHo2;
+				}
+				else if (node["heightOffset"] != null && float.TryParse(node["heightOffset"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHo3))
+				{
+					heightOffset = parsedHo3;
+				}
+
+				float crevicePower = 1.0f;
+				if (node["crevice_power"] != null && float.TryParse(node["crevice_power"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCp))
+				{
+					crevicePower = parsedCp;
+				}
+				else if (node["Crevice_Power"] != null && float.TryParse(node["Crevice_Power"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCp2))
+				{
+					crevicePower = parsedCp2;
+				}
+				else if (node["crevicePower"] != null && float.TryParse(node["crevicePower"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCp3))
+				{
+					crevicePower = parsedCp3;
+				}
+
+				float edgeNoiseInfluence = 1.0f;
+
 				Callable.From(() =>
 				{
 					if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 					{
-						GameHost.Instance.GroundTerrain.UpdateTextureParamDirect(swatchName, tileMode, uvScale, stochasticTileSize, crossFade, brightness, tintStr);
+						GameHost.Instance.GroundTerrain.UpdateTextureParamDirect(
+							swatchName,
+							tileMode,
+							uvScale,
+							stochasticTileSize,
+							crossFade,
+							brightness,
+							tintStr,
+							heightScale,
+							heightOffset,
+							crevicePower,
+							edgeNoiseInfluence);
 					}
 				}).CallDeferred();
 

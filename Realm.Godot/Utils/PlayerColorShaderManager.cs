@@ -15,6 +15,9 @@ public static class PlayerColorShaderManager
 	private static readonly StringName _paramModelBrightness = new("model_brightness");
 	private static readonly StringName _paramModelColorTint = new("model_color_tint");
 	private static readonly StringName _paramIgnorePlayerColor = new("ignore_player_color");
+	private static readonly StringName _paramNormalMode = new("normal_mode");
+	private static readonly StringName _paramUnitAmbientBoost = new("unit_ambient_boost");
+	private static readonly StringName _paramUnitRimIntensity = new("unit_rim_intensity");
 
 	private const string ShaderPath = "res://Assets/shaders/player_color_spatial.gdshader";
 
@@ -191,7 +194,7 @@ public static class PlayerColorShaderManager
 		return (byte)Math.Clamp((int)Math.Round(srgb * 255.0f), 0, 255);
 	}
 
-	private static bool CheckHasPlayerMask(Texture2D ormTexture, Material sourceMaterial)
+	internal static bool CheckHasPlayerMask(Texture2D ormTexture, Material sourceMaterial)
 	{
 		if (ormTexture == null) return false;
 
@@ -216,33 +219,53 @@ public static class PlayerColorShaderManager
 			return false;
 		}
 
-		if (img.IsCompressed())
+		Image workingImg = (Image)img.Duplicate();
+		if (workingImg.IsCompressed())
 		{
-			img.Decompress();
+			workingImg.Decompress();
 		}
 
-		var fmt = img.GetFormat();
+		if (workingImg.HasMipmaps())
+		{
+			workingImg.ClearMipmaps();
+		}
+
+		var fmt = workingImg.GetFormat();
 		if (fmt != Image.Format.Rgba8 && fmt != Image.Format.Rgb8 && fmt != Image.Format.R8)
 		{
-			img.Convert(Image.Format.Rgba8);
+			workingImg.Convert(Image.Format.Rgba8);
 			fmt = Image.Format.Rgba8;
 		}
 
-		byte[] data = img.GetData();
+		byte[] data = workingImg.GetData();
 		int channels = fmt == Image.Format.Rgba8 ? 4 : (fmt == Image.Format.Rgb8 ? 3 : 1);
+		int totalPixels = workingImg.GetWidth() * workingImg.GetHeight();
+		if (totalPixels == 0)
+		{
+			_playerMaskCheckCache[ormId] = false;
+			return false;
+		}
 
-		bool allZero = true;
-		bool all255 = true;
+		long lowCount = 0;
+		long highCount = 0;
 
 		for (int i = 0; i < data.Length; i += channels)
 		{
 			byte r = data[i];
-			if (r != 0) allZero = false;
-			if (r != 255) all255 = false;
-			if (!allZero && !all255) break;
+			if (r <= 32)
+			{
+				lowCount++;
+			}
+			else if (r >= 96)
+			{
+				highCount++;
+			}
 		}
 
-		bool isValidMask = !allZero && !all255;
+		double lowRatio = (double)lowCount / totalPixels;
+		double highRatio = (double)highCount / totalPixels;
+
+		bool isValidMask = lowRatio >= 0.05 && highRatio >= 0.005;
 		_playerMaskCheckCache[ormId] = isValidMask;
 		return isValidMask;
 	}
@@ -275,6 +298,11 @@ public static class PlayerColorShaderManager
 				{
 					ormTexture = baseMat.RoughnessTexture ?? baseMat.MetallicTexture;
 				}
+				else if (srcMat is ShaderMaterial sm)
+				{
+					var ormVar = sm.GetShaderParameter("texture_orm");
+					ormTexture = ormVar.VariantType != Variant.Type.Nil ? ormVar.As<Texture2D>() : null;
+				}
 
 				if (ormTexture != null && CheckHasPlayerMask(ormTexture, srcMat))
 				{
@@ -292,6 +320,11 @@ public static class PlayerColorShaderManager
 				else if (meshInst.MaterialOverride is BaseMaterial3D baseMat)
 				{
 					ormTexture = baseMat.RoughnessTexture ?? baseMat.MetallicTexture;
+				}
+				else if (meshInst.MaterialOverride is ShaderMaterial sm)
+				{
+					var ormVar = sm.GetShaderParameter("texture_orm");
+					ormTexture = ormVar.VariantType != Variant.Type.Nil ? ormVar.As<Texture2D>() : null;
 				}
 
 				if (ormTexture != null && CheckHasPlayerMask(ormTexture, meshInst.MaterialOverride))
@@ -312,7 +345,7 @@ public static class PlayerColorShaderManager
 		return false;
 	}
 
-	public static ShaderMaterial GetOrCreateShaderMaterial(Material sourceMaterial)
+	public static ShaderMaterial GetOrCreateShaderMaterial(Material sourceMaterial, bool normalizeLuminance = true)
 	{
 		var shader = GetOrCreateShader();
 
@@ -380,16 +413,50 @@ public static class PlayerColorShaderManager
 				alphaScissorThreshold = baseMat.AlphaScissorThreshold;
 			}
 		}
+		else if (sourceMaterial is ShaderMaterial sm)
+		{
+			var rawTexVar = sm.GetShaderParameter("texture_albedo");
+			rawAlbedoTexture = rawTexVar.VariantType != Variant.Type.Nil ? rawTexVar.As<Texture2D>() : null;
+			var ormTexVar = sm.GetShaderParameter("texture_orm");
+			ormTexture = ormTexVar.VariantType != Variant.Type.Nil ? ormTexVar.As<Texture2D>() : null;
+			var normTexVar = sm.GetShaderParameter("texture_normal");
+			normalTexture = normTexVar.VariantType != Variant.Type.Nil ? normTexVar.As<Texture2D>() : null;
+			var emissTexVar = sm.GetShaderParameter("texture_emission");
+			emissionTexture = emissTexVar.VariantType != Variant.Type.Nil ? emissTexVar.As<Texture2D>() : null;
 
-		Texture2D albedoTexture = GetOrCreateNormalizedAlbedoTexture(rawAlbedoTexture);
+			var albColVar = sm.GetShaderParameter("albedo_color");
+			if (albColVar.VariantType != Variant.Type.Nil) albedoColor = albColVar.As<Color>();
+			var emissColVar = sm.GetShaderParameter("emission_color");
+			if (emissColVar.VariantType != Variant.Type.Nil) emissionColor = emissColVar.As<Color>();
+			var emissEnVar = sm.GetShaderParameter("emission_energy");
+			if (emissEnVar.VariantType != Variant.Type.Nil) emissionEnergy = emissEnVar.As<float>();
+			var roughVar = sm.GetShaderParameter("roughness_value");
+			if (roughVar.VariantType != Variant.Type.Nil) roughness = roughVar.As<float>();
+			var metVar = sm.GetShaderParameter("metallic_value");
+			if (metVar.VariantType != Variant.Type.Nil) metallic = metVar.As<float>();
+			var specVar = sm.GetShaderParameter("specular_value");
+			if (specVar.VariantType != Variant.Type.Nil) specular = specVar.As<float>();
+			var uvScaleVar = sm.GetShaderParameter("uv1_scale");
+			if (uvScaleVar.VariantType != Variant.Type.Nil) uv1Scale = uvScaleVar.As<Vector3>();
+			var uvOffsetVar = sm.GetShaderParameter("uv1_offset");
+			if (uvOffsetVar.VariantType != Variant.Type.Nil) uv1Offset = uvOffsetVar.As<Vector3>();
+			var alphaBlendVar = sm.GetShaderParameter("use_alpha_blend");
+			if (alphaBlendVar.VariantType != Variant.Type.Nil) useAlphaBlend = alphaBlendVar.As<bool>();
+			var alphaScissorVar = sm.GetShaderParameter("use_alpha_scissor");
+			if (alphaScissorVar.VariantType != Variant.Type.Nil) useAlphaScissor = alphaScissorVar.As<bool>();
+			var alphaThresholdVar = sm.GetShaderParameter("alpha_scissor_threshold");
+			if (alphaThresholdVar.VariantType != Variant.Type.Nil) alphaScissorThreshold = alphaThresholdVar.As<float>();
+		}
+
+		Texture2D albedoTexture = normalizeLuminance ? GetOrCreateNormalizedAlbedoTexture(rawAlbedoTexture) : rawAlbedoTexture;
 		bool hasPlayerMask = CheckHasPlayerMask(ormTexture, sourceMaterial);
 
-		ulong albedoId = albedoTexture != null ? albedoTexture.GetInstanceId() : 0;
+		ulong rawAlbedoId = rawAlbedoTexture != null ? rawAlbedoTexture.GetInstanceId() : 0;
 		ulong ormId = ormTexture != null ? ormTexture.GetInstanceId() : 0;
 		ulong normalId = normalTexture != null ? normalTexture.GetInstanceId() : 0;
 		ulong emissionId = emissionTexture != null ? emissionTexture.GetInstanceId() : 0;
 
-		string key = $"{albedoId}_{ormId}_{hasPlayerMask}_{normalId}_{emissionId}_{albedoColor.ToHtml()}_{emissionColor.ToHtml()}_{emissionEnergy:F2}_{roughness:F2}_{metallic:F2}_{specular:F2}_{uv1Scale.X:F2}_{uv1Scale.Y:F2}_{uv1Offset.X:F2}_{uv1Offset.Y:F2}_{useAlphaBlend}_{useAlphaScissor}_{alphaScissorThreshold:F2}";
+		string key = $"{rawAlbedoId}_{normalizeLuminance}_{ormId}_{hasPlayerMask}_{normalId}_{emissionId}_{albedoColor.ToHtml()}_{emissionColor.ToHtml()}_{emissionEnergy:F2}_{roughness:F2}_{metallic:F2}_{specular:F2}_{uv1Scale.X:F2}_{uv1Scale.Y:F2}_{uv1Offset.X:F2}_{uv1Offset.Y:F2}_{useAlphaBlend}_{useAlphaScissor}_{alphaScissorThreshold:F2}";
 
 		if (_materialCache.TryGetValue(key, out var cached) && GodotObject.IsInstanceValid(cached))
 		{
@@ -452,10 +519,10 @@ public static class PlayerColorShaderManager
 		return material;
 	}
 
-	private static bool IsExcludedMesh(MeshInstance3D meshInst)
+	private static bool IsExcludedMesh(GeometryInstance3D geomInst)
 	{
-		if (meshInst == null) return true;
-		string nodeName = meshInst.Name.ToString();
+		if (geomInst == null) return true;
+		string nodeName = geomInst.Name.ToString();
 		return nodeName.StartsWith("_selection", StringComparison.OrdinalIgnoreCase)
 			|| nodeName.StartsWith("Selection", StringComparison.OrdinalIgnoreCase)
 			|| nodeName.StartsWith("_hover", StringComparison.OrdinalIgnoreCase)
@@ -466,13 +533,13 @@ public static class PlayerColorShaderManager
 			|| nodeName.Contains("HoverRing", StringComparison.OrdinalIgnoreCase);
 	}
 
-	public static void ApplyPlayerColorShader(Node rootNode, Color playerColor, bool ignorePlayerColor = false)
+	public static void ApplyPlayerColorShader(Node rootNode, Color playerColor, bool ignorePlayerColor = false, bool normalizeLuminance = true, bool isUnitOrBuilding = true)
 	{
 		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
-		ApplyPlayerColorShaderRecursive(rootNode, playerColor, ignorePlayerColor);
+		ApplyPlayerColorShaderRecursive(rootNode, playerColor, ignorePlayerColor, normalizeLuminance, isUnitOrBuilding);
 	}
 
-	private static void ApplyPlayerColorShaderRecursive(Node node, Color playerColor, bool ignorePlayerColor = false)
+	private static void ApplyPlayerColorShaderRecursive(Node node, Color playerColor, bool ignorePlayerColor = false, bool normalizeLuminance = true, bool isUnitOrBuilding = true)
 	{
 		if (node is MeshInstance3D meshInst)
 		{
@@ -494,19 +561,22 @@ public static class PlayerColorShaderManager
 
 					if (srcMat is BaseMaterial3D || srcMat == null)
 					{
-						var shaderMat = GetOrCreateShaderMaterial(srcMat);
+						var shaderMat = GetOrCreateShaderMaterial(srcMat, normalizeLuminance);
 						meshInst.SetSurfaceOverrideMaterial(i, shaderMat);
 					}
 				}
 
-				if (meshInst.MaterialOverride != null && !(meshInst.MaterialOverride is ShaderMaterial smOver && smOver.Shader == _sharedShader))
+				if (meshInst.MaterialOverride is ShaderMaterial smOver && smOver.Shader == _sharedShader)
 				{
-					var shaderMat = GetOrCreateShaderMaterial(meshInst.MaterialOverride);
+					var shaderMat = GetOrCreateShaderMaterial(meshInst.MaterialOverride, normalizeLuminance);
 					meshInst.MaterialOverride = shaderMat;
 				}
 
 				meshInst.SetInstanceShaderParameter(_paramPlayerColor, playerColor);
 				meshInst.SetInstanceShaderParameter(_paramIgnorePlayerColor, ignorePlayerColor ? 1.0f : 0.0f);
+				meshInst.SetInstanceShaderParameter(_paramNormalMode, 2.0f);
+				meshInst.SetInstanceShaderParameter(_paramUnitAmbientBoost, isUnitOrBuilding ? 0.10f : 0.0f);
+				meshInst.SetInstanceShaderParameter(_paramUnitRimIntensity, isUnitOrBuilding ? 0.25f : 0.0f);
 			}
 		}
 
@@ -514,7 +584,71 @@ public static class PlayerColorShaderManager
 		{
 			if (child is Node childNode)
 			{
-				ApplyPlayerColorShaderRecursive(childNode, playerColor, ignorePlayerColor);
+				ApplyPlayerColorShaderRecursive(childNode, playerColor, ignorePlayerColor, normalizeLuminance, isUnitOrBuilding);
+			}
+		}
+	}
+
+	public static void SetUnitReadability(Node rootNode, bool isUnitOrBuilding)
+	{
+		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
+		SetUnitReadabilityRecursive(rootNode, isUnitOrBuilding ? 0.10f : 0.0f, isUnitOrBuilding ? 0.25f : 0.0f);
+	}
+
+	private static void SetUnitReadabilityRecursive(Node node, float ambientBoost, float rimIntensity)
+	{
+		if (node is GeometryInstance3D geomInst)
+		{
+			if (!IsExcludedMesh(geomInst))
+			{
+				geomInst.SetInstanceShaderParameter(_paramUnitAmbientBoost, ambientBoost);
+				geomInst.SetInstanceShaderParameter(_paramUnitRimIntensity, rimIntensity);
+			}
+		}
+
+		foreach (var child in node.GetChildren())
+		{
+			if (child is Node childNode)
+			{
+				SetUnitReadabilityRecursive(childNode, ambientBoost, rimIntensity);
+			}
+		}
+	}
+
+	public static void RefreshShaderMaterialsForNode(Node rootNode, bool normalizeLuminance = true)
+	{
+		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
+		RefreshShaderMaterialsRecursive(rootNode, normalizeLuminance);
+	}
+
+	private static void RefreshShaderMaterialsRecursive(Node node, bool normalizeLuminance)
+	{
+		if (node is MeshInstance3D meshInst && !IsExcludedMesh(meshInst))
+		{
+			int surfaceCount = meshInst.Mesh != null ? meshInst.Mesh.GetSurfaceCount() : 1;
+			for (int i = 0; i < surfaceCount; i++)
+			{
+				Material srcMat = meshInst.Mesh != null ? meshInst.Mesh.SurfaceGetMaterial(i) : null;
+				if (srcMat == null) srcMat = meshInst.GetSurfaceOverrideMaterial(i);
+				if (srcMat != null)
+				{
+					var shaderMat = GetOrCreateShaderMaterial(srcMat, normalizeLuminance);
+					meshInst.SetSurfaceOverrideMaterial(i, shaderMat);
+				}
+			}
+
+			if (meshInst.MaterialOverride is ShaderMaterial smOver && smOver.Shader == _sharedShader)
+			{
+				var shaderMat = GetOrCreateShaderMaterial(meshInst.MaterialOverride, normalizeLuminance);
+				meshInst.MaterialOverride = shaderMat;
+			}
+		}
+
+		foreach (var child in node.GetChildren())
+		{
+			if (child is Node childNode)
+			{
+				RefreshShaderMaterialsRecursive(childNode, normalizeLuminance);
 			}
 		}
 	}
@@ -527,11 +661,11 @@ public static class PlayerColorShaderManager
 
 	private static void SetPlayerColorRecursive(Node node, Color playerColor)
 	{
-		if (node is MeshInstance3D meshInst)
+		if (node is GeometryInstance3D geomInst)
 		{
-			if (!IsExcludedMesh(meshInst))
+			if (!IsExcludedMesh(geomInst))
 			{
-				meshInst.SetInstanceShaderParameter(_paramPlayerColor, playerColor);
+				geomInst.SetInstanceShaderParameter(_paramPlayerColor, playerColor);
 			}
 		}
 
@@ -552,11 +686,11 @@ public static class PlayerColorShaderManager
 
 	private static void SetIgnorePlayerColorRecursive(Node node, bool ignorePlayerColor)
 	{
-		if (node is MeshInstance3D meshInst)
+		if (node is GeometryInstance3D geomInst)
 		{
-			if (!IsExcludedMesh(meshInst))
+			if (!IsExcludedMesh(geomInst))
 			{
-				meshInst.SetInstanceShaderParameter(_paramIgnorePlayerColor, ignorePlayerColor ? 1.0f : 0.0f);
+				geomInst.SetInstanceShaderParameter(_paramIgnorePlayerColor, ignorePlayerColor ? 1.0f : 0.0f);
 			}
 		}
 
@@ -572,17 +706,18 @@ public static class PlayerColorShaderManager
 	public static void SetBrightnessAndTint(Node rootNode, float brightness, Color tint)
 	{
 		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
+		if (MathF.Abs(brightness - 1.0f) < 0.001f && tint == new Color(1.0f, 1.0f, 1.0f)) return;
 		SetBrightnessAndTintRecursive(rootNode, brightness, tint);
 	}
 
 	private static void SetBrightnessAndTintRecursive(Node node, float brightness, Color tint)
 	{
-		if (node is MeshInstance3D meshInst)
+		if (node is GeometryInstance3D geomInst)
 		{
-			if (!IsExcludedMesh(meshInst))
+			if (!IsExcludedMesh(geomInst))
 			{
-				meshInst.SetInstanceShaderParameter(_paramModelBrightness, brightness);
-				meshInst.SetInstanceShaderParameter(_paramModelColorTint, tint);
+				geomInst.SetInstanceShaderParameter(_paramModelBrightness, brightness);
+				geomInst.SetInstanceShaderParameter(_paramModelColorTint, tint);
 			}
 		}
 
@@ -591,6 +726,31 @@ public static class PlayerColorShaderManager
 			if (child is Node childNode)
 			{
 				SetBrightnessAndTintRecursive(childNode, brightness, tint);
+			}
+		}
+	}
+
+	public static void SetNormalMode(Node rootNode, float normalMode)
+	{
+		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
+		SetNormalModeRecursive(rootNode, normalMode);
+	}
+
+	private static void SetNormalModeRecursive(Node node, float normalMode)
+	{
+		if (node is GeometryInstance3D geomInst)
+		{
+			if (!IsExcludedMesh(geomInst))
+			{
+				geomInst.SetInstanceShaderParameter(_paramNormalMode, normalMode);
+			}
+		}
+
+		foreach (var child in node.GetChildren())
+		{
+			if (child is Node childNode)
+			{
+				SetNormalModeRecursive(childNode, normalMode);
 			}
 		}
 	}

@@ -185,7 +185,8 @@ public partial class MapEditorHUD : Control
 	private HSlider _sldModelBrightness;
 	private HSlider _sldModelColorTint;
 	private ColorPickerButton _cpkModelColorTint;
-	private CheckBox _chkModelGenerateNormals;
+	private OptionButton _optModelNormalMode;
+	private CheckBox _chkModelNormalizeLuminance;
 	private CheckBox _chkModelIgnorePlayerColor;
 	private bool _isUpdatingInspectorUI;
 
@@ -237,6 +238,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnPlateau;
 	private Button _btnRamp;
 	private Button _btnMirrorMode;
+	private Button _btnPlacementMirrorMode;
 	private Button _btnClumpBrush;
 	private HSlider _sldClumpDensity;
 	private Label _lblClumpDensityValue;
@@ -990,6 +992,7 @@ public partial class MapEditorHUD : Control
 			{
 				_chkApplyCliffTexture.SetPressedNoSignal(true);
 			}
+			UpdateTextureLabels();
 		};
 
 		_chkApplyCliffTexture.Toggled += (toggled) =>
@@ -998,6 +1001,7 @@ public partial class MapEditorHUD : Control
 			{
 				_chkApplyGroundTexture.SetPressedNoSignal(true);
 			}
+			UpdateTextureLabels();
 		};
 
 		if (_containerTextureSettings != null && _lblTerrainTexture != null && _lblCliffTexture != null)
@@ -1129,6 +1133,14 @@ public partial class MapEditorHUD : Control
 			}
 		}, 11, "Toggle snapping objects and placements to the grid");
 
+		_btnPlacementMirrorMode = new Button();
+		_btnPlacementMirrorMode.Name = "BtnPlacementMirrorMode";
+		SetupButton(_btnPlacementMirrorMode, "🪞 MIRROR: NONE", () => CycleMirrorMode(), 10, "Cycle terrain and object mirroring symmetry mode");
+		if (_contentPlacement != null)
+		{
+			_contentPlacement.AddChild(_btnPlacementMirrorMode);
+			_contentPlacement.MoveChild(_btnPlacementMirrorMode, _btnToggleSnap.GetIndex() + 1);
+		}
 
 		_chkRandomRotation = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/PlacementAccordion/ContentPlacement/ChkRandomRotation");
 		_chkRandomScale = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/PlacementAccordion/ContentPlacement/ChkRandomScale");
@@ -1508,15 +1520,21 @@ public partial class MapEditorHUD : Control
 
 				if (_sldModelYOffset != null)
 				{
-					_sldModelYOffset.Value = GameHost.Instance.GetModelYOffset(assetKey);
+					float val = GameHost.Instance.GetModelYOffset(assetKey);
+					_sldModelYOffset.Value = val;
+					UpdateSliderLabel(_sldModelYOffset, val);
 				}
 				if (_sldModelGlobalCollisionCircle != null)
 				{
-					_sldModelGlobalCollisionCircle.Value = GameHost.Instance.GetModelCollisionCircleRatio(assetKey);
+					float val = GameHost.Instance.GetModelCollisionCircleRatio(assetKey);
+					_sldModelGlobalCollisionCircle.Value = val;
+					UpdateSliderLabel(_sldModelGlobalCollisionCircle, val);
 				}
 				if (_sldModelBrightness != null)
 				{
-					_sldModelBrightness.Value = GameHost.Instance.GetModelBrightness(assetKey);
+					float val = GameHost.Instance.GetModelBrightness(assetKey);
+					_sldModelBrightness.Value = val;
+					UpdateSliderLabel(_sldModelBrightness, val);
 				}
 				if (_sldModelColorTint != null || _cpkModelColorTint != null)
 				{
@@ -1534,9 +1552,13 @@ public partial class MapEditorHUD : Control
 						}
 					}
 				}
-				if (_chkModelGenerateNormals != null)
+				if (_optModelNormalMode != null)
 				{
-					_chkModelGenerateNormals.ButtonPressed = GameHost.Instance.GetModelGenerateNormals(assetKey);
+					_optModelNormalMode.Selected = (int)GameHost.Instance.GetModelNormalMode(assetKey);
+				}
+				if (_chkModelNormalizeLuminance != null)
+				{
+					_chkModelNormalizeLuminance.ButtonPressed = GameHost.Instance.GetModelNormalizeLuminance(assetKey);
 				}
 				if (_chkModelIgnorePlayerColor != null)
 				{
@@ -1952,40 +1974,64 @@ public partial class MapEditorHUD : Control
 	{
 		if (index >= 0 && index < _swatchButtons.Count)
 		{
-			HighlightSwatch(_swatchButtons[index]);
-			TriggerToolSelection(GameHost.EditorTool.PaintTexture, _swatchButtons[index]);
+			if (_chkApplyCliffTexture != null && _chkApplyCliffTexture.ButtonPressed && (_chkApplyGroundTexture == null || !_chkApplyGroundTexture.ButtonPressed))
+			{
+				SelectCliffTexture(index);
+			}
+			else
+			{
+				HighlightSwatch(_swatchButtons[index]);
+				TriggerToolSelection(GameHost.EditorTool.PaintTexture, _swatchButtons[index]);
+			}
 		}
 	}
 
+	private bool _lastBrushShapeIsSquare;
+	private bool _hasLastBrushShape;
 	public void UpdateBrushShapeExternal(bool isSquare)
 	{
+		if (_hasLastBrushShape && _lastBrushShapeIsSquare == isSquare) return;
+		_hasLastBrushShape = true;
+		_lastBrushShapeIsSquare = isSquare;
 		if (_btnBrushShape != null)
 		{
 			_btnBrushShape.Text = isSquare ? "🔳 BRUSH: SQUARE" : "⚪ BRUSH: CIRCLE";
 		}
 	}
 
+	private float _lastRotationExternal = float.NaN;
 	public void UpdateRotationExternal(float angle)
 	{
+		if (Mathf.IsEqualApprox(_lastRotationExternal, angle)) return;
+		_lastRotationExternal = angle;
 		if (_lblPlacementRotateValue != null) _lblPlacementRotateValue.Text = angle.ToString("F0") + "°";
-		if (_sldPlacementRotate != null) _sldPlacementRotate.Value = angle;
+		if (_sldPlacementRotate != null && !Mathf.IsEqualApprox((float)_sldPlacementRotate.Value, angle)) _sldPlacementRotate.Value = angle;
 	}
 
+	private float _lastPasteRotationExternal = float.NaN;
 	public void UpdatePasteRotationExternal(float angle)
 	{
+		if (Mathf.IsEqualApprox(_lastPasteRotationExternal, angle)) return;
+		_lastPasteRotationExternal = angle;
 		if (_lblPasteRotation != null) _lblPasteRotation.Text = angle.ToString("F0") + "°";
-		if (_sldPasteRotation != null) _sldPasteRotation.Value = angle;
+		if (_sldPasteRotation != null && !Mathf.IsEqualApprox((float)_sldPasteRotation.Value, angle)) _sldPasteRotation.Value = angle;
 	}
 
+	private float _lastScaleExternal = float.NaN;
 	public void UpdateScaleExternal(float scale)
 	{
+		if (Mathf.IsEqualApprox(_lastScaleExternal, scale)) return;
+		_lastScaleExternal = scale;
 		if (_lblPlacementScaleValue != null) _lblPlacementScaleValue.Text = scale.ToString("F1") + "x";
-		if (_sldPlacementScale != null) _sldPlacementScale.Value = scale;
+		if (_sldPlacementScale != null && !Mathf.IsEqualApprox((float)_sldPlacementScale.Value, scale)) _sldPlacementScale.Value = scale;
 	}
 
+	private float _lastBrushSizeExternal = float.NaN;
 	public void UpdateBrushSizeExternal(float size)
 	{
-		if (_sldBrushSize != null)
+		if (Mathf.IsEqualApprox(_lastBrushSizeExternal, size)) return;
+		_lastBrushSizeExternal = size;
+		if (_sldBrushSize != null && !Mathf.IsEqualApprox((float)_sldBrushSize.Value, size))
 		{
 			_sldBrushSize.Value = Mathf.Round(size);
 		}
@@ -2577,6 +2623,7 @@ public partial class MapEditorHUD : Control
 	private void LoadTempWorkspaceMap()
 	{
 		string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+		MapWorkspaceService.EnsureGlbAssetsOptimized(_tempWorkspacePath);
 		LoadMapProperties();
 		ReadMetadataAndRefreshTextures();
 		if (GameHost.Instance != null && System.IO.File.Exists(terrainPath))
@@ -2922,10 +2969,11 @@ public partial class MapEditorHUD : Control
 
 		try
 		{
+			MapWorkspaceService.EnsureGlbAssetsOptimized(_tempWorkspacePath);
 			LoadMapProperties();
 			ReadMetadataAndRefreshTextures();
 			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
-			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
+			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath, ensureGlbOptimized: false) ?? false;
 
 			if (success)
 			{
@@ -2963,10 +3011,16 @@ public partial class MapEditorHUD : Control
 
 		try
 		{
+			await MapWorkspaceService.EnsureGlbAssetsOptimizedCooperativeAsync(_tempWorkspacePath, async (current, total, fileName) =>
+			{
+				ShowFeedback(string.Format(TranslationServer.Translate("Optimizing 3D asset {0}/{1}: {2}..."), current, total, fileName));
+				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+			});
+
 			LoadMapProperties();
 			ReadMetadataAndRefreshTextures();
 			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
-			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath) ?? false;
+			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath, ensureGlbOptimized: false) ?? false;
 
 			if (success)
 			{
@@ -4402,15 +4456,16 @@ public partial class MapEditorHUD : Control
 			pathingCodes = new int[width, depth];
 		}
 
+		GameHost.Instance.GroundTerrain.SetHeights(smoothedHeights);
+		var cells = GameHost.Instance.GroundTerrain.Cells;
+
 		for (int gz = 0; gz < depth; gz++)
 		{
 			for (int gx = 0; gx < width; gx++)
 			{
-				GameHost.Instance.GroundTerrain.Heights[gx, gz] = smoothedHeights[gx, gz];
 				GameHost.Instance.GroundTerrain.SplatMap[gx, gz] = splatMap[gx, gz];
 				GameHost.Instance.GroundTerrain.CliffSplatMap[gx, gz] = TerrainSplatWeights.CreateSolid(GameHost.Instance.EditorCliffPaintTextureIndex);
 
-				var cells = GameHost.Instance.GroundTerrain.Cells;
 				pathingCodes[gx, gz] = cells != null ? EditableTerrain.GetDefaultPathingCode(cells[gx, gz]) : EditableTerrain.GetDefaultPathingCode(WaterType.None);
 			}
 		}
@@ -4456,7 +4511,7 @@ public partial class MapEditorHUD : Control
 
 	public void UpdateMirrorButtonText()
 	{
-		if (_btnMirrorMode == null || GameHost.Instance == null) return;
+		if (GameHost.Instance == null) return;
 		string modeText = GameHost.Instance.EditorMirrorMode switch
 		{
 			MirrorMode.None => TranslationServer.Translate("🪞 MIRROR: NONE"),
@@ -4465,7 +4520,14 @@ public partial class MapEditorHUD : Control
 			MirrorMode.Both => TranslationServer.Translate("🪞 MIRROR: BOTH"),
 			_ => TranslationServer.Translate("🪞 MIRROR: NONE")
 		};
-		_btnMirrorMode.Text = modeText;
+		if (_btnMirrorMode != null)
+		{
+			_btnMirrorMode.Text = modeText;
+		}
+		if (_btnPlacementMirrorMode != null)
+		{
+			_btnPlacementMirrorMode.Text = modeText;
+		}
 	}
 
 	private void RebuildHUDLayout()
@@ -5252,7 +5314,7 @@ public partial class MapEditorHUD : Control
 					{
 						if (mouseEvent.ButtonIndex == MouseButton.Left)
 						{
-							if (Input.IsKeyPressed(Godot.Key.Shift))
+							if (Input.IsKeyPressed(Godot.Key.Shift) || (_chkApplyCliffTexture != null && _chkApplyCliffTexture.ButtonPressed && (_chkApplyGroundTexture == null || !_chkApplyGroundTexture.ButtonPressed)))
 							{
 								SelectCliffTexture(index);
 							}
@@ -5280,6 +5342,12 @@ public partial class MapEditorHUD : Control
 	{
 		if (GameHost.Instance != null)
 		{
+			if (_chkApplyCliffTexture != null && _chkApplyCliffTexture.ButtonPressed && (_chkApplyGroundTexture == null || !_chkApplyGroundTexture.ButtonPressed))
+			{
+				SelectCliffTexture(index);
+				return;
+			}
+
 			GameHost.Instance.EditorPaintTextureIndex = index;
 			HighlightSwatch(swatch);
 
@@ -5300,9 +5368,9 @@ public partial class MapEditorHUD : Control
 		if (GameHost.Instance != null)
 		{
 			GameHost.Instance.EditorCliffPaintTextureIndex = index;
-			if (GameHost.Instance.GroundTerrain != null)
+			if (!IsSwatchCompatibleTool(GameHost.Instance.ActiveEditorTool))
 			{
-				GameHost.Instance.GroundTerrain.CliffTextureIndex = index;
+				TriggerToolSelection(GameHost.EditorTool.PaintTexture, _btnTextureBrush);
 			}
 			UpdateTextureLabels();
 			
@@ -5754,7 +5822,7 @@ public partial class MapEditorHUD : Control
 						GameHost.Instance.SetModelYOffset(assetKey, val);
 					}
 				}
-			});
+			}, "0.0#", 70f);
 			_sldModelYOffset.DragStarted += () => _isDraggingSlider = true;
 			_sldModelYOffset.DragEnded += (valueChanged) =>
 			{
@@ -5775,7 +5843,7 @@ public partial class MapEditorHUD : Control
 						GameHost.Instance.SetModelCollisionCircleRatio(assetKey, val);
 					}
 				}
-			});
+			}, "0.0#", 70f);
 			_sldModelGlobalCollisionCircle.DragStarted += () => _isDraggingSlider = true;
 			_sldModelGlobalCollisionCircle.DragEnded += (valueChanged) =>
 			{
@@ -5785,9 +5853,7 @@ public partial class MapEditorHUD : Control
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 			};
 
-
-
-			_sldModelBrightness = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Brightness"), 0.10f, 1.75f, 0.02f, 1.0f, (val) =>
+			_sldModelBrightness = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Brightness"), 0.10f, 2.0f, 0.02f, 0.5f, (val) =>
 			{
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
@@ -5798,7 +5864,7 @@ public partial class MapEditorHUD : Control
 						GameHost.Instance.SetModelBrightness(assetKey, (float)val);
 					}
 				}
-			});
+			}, "0.0#", 70f);
 			_sldModelBrightness.DragStarted += () => _isDraggingSlider = true;
 			_sldModelBrightness.DragEnded += (valueChanged) =>
 			{
@@ -5812,7 +5878,7 @@ public partial class MapEditorHUD : Control
 
 			var lblTintName = new Label();
 			lblTintName.Text = TranslationServer.Translate("Tint");
-			lblTintName.CustomMinimumSize = new Vector2(110, 0);
+			lblTintName.CustomMinimumSize = new Vector2(70, 0);
 			lblTintName.AddThemeFontSizeOverride("font_size", 11);
 			tintRow.AddChild(lblTintName);
 
@@ -5822,7 +5888,6 @@ public partial class MapEditorHUD : Control
 			_sldModelColorTint.Step = 0.01f;
 			_sldModelColorTint.Value = 0.0f;
 			_sldModelColorTint.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-			_sldModelColorTint.CustomMinimumSize = new Vector2(90, 0);
 			_sldModelColorTint.DragStarted += () => _isDraggingSlider = true;
 			_sldModelColorTint.DragEnded += (valueChanged) =>
 			{
@@ -5834,7 +5899,7 @@ public partial class MapEditorHUD : Control
 			tintRow.AddChild(_sldModelColorTint);
 
 			_cpkModelColorTint = new ColorPickerButton();
-			_cpkModelColorTint.CustomMinimumSize = new Vector2(40, 20);
+			_cpkModelColorTint.CustomMinimumSize = new Vector2(30, 20);
 			_cpkModelColorTint.EditAlpha = false;
 			_cpkModelColorTint.Color = new Color(1.0f, 1.0f, 1.0f);
 			tintRow.AddChild(_cpkModelColorTint);
@@ -5872,9 +5937,21 @@ public partial class MapEditorHUD : Control
 				}
 			};
 
+			var normalRow = new HBoxContainer();
+			var lblNormalName = new Label();
+			lblNormalName.Text = TranslationServer.Translate("Normals");
+			lblNormalName.CustomMinimumSize = new Vector2(70, 0);
+			lblNormalName.AddThemeFontSizeOverride("font_size", 11);
+			normalRow.AddChild(lblNormalName);
 
-
-			_chkModelGenerateNormals = CreateCheckBoxRow(_contentGlobalOverrides, TranslationServer.Translate("Re-Calculate Normals"), true, (pressed) =>
+			_optModelNormalMode = new OptionButton();
+			_optModelNormalMode.FitToLongestItem = false;
+			_optModelNormalMode.AddItem(TranslationServer.Translate("Original"), 0);
+			_optModelNormalMode.AddItem(TranslationServer.Translate("Smooth Normals"), 1);
+			_optModelNormalMode.AddItem(TranslationServer.Translate("Flat Normals"), 2);
+			_optModelNormalMode.Selected = 2;
+			_optModelNormalMode.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+			_optModelNormalMode.ItemSelected += (long index) =>
 			{
 				if (_isUpdatingInspectorUI) return;
 				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
@@ -5882,7 +5959,25 @@ public partial class MapEditorHUD : Control
 					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
 					if (!string.IsNullOrEmpty(assetKey))
 					{
-						GameHost.Instance.SetModelGenerateNormals(assetKey, pressed);
+						GameHost.Instance.SetModelNormalMode(assetKey, (GameHost.ModelNormalMode)(int)index);
+						GameHost.Instance.FlushModelYOffsetSave();
+						string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+						_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+					}
+				}
+			};
+			normalRow.AddChild(_optModelNormalMode);
+			_contentGlobalOverrides.AddChild(normalRow);
+
+			_chkModelNormalizeLuminance = CreateCheckBoxRow(_contentGlobalOverrides, TranslationServer.Translate("Normalize Luminosity"), true, (pressed) =>
+			{
+				if (_isUpdatingInspectorUI) return;
+				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
+				{
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
+					if (!string.IsNullOrEmpty(assetKey))
+					{
+						GameHost.Instance.SetModelNormalizeLuminance(assetKey, pressed);
 						GameHost.Instance.FlushModelYOffsetSave();
 						string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 						_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
@@ -6055,7 +6150,10 @@ public partial class MapEditorHUD : Control
 			SetWasmConsoleStatus("Launching test mode...", UIStyle.ColorCyanGlow);
 			AppendWasmConsoleLog("=== LAUNCHING GAME ENGINE ===");
 
-			UIManager.Instance?.ApplyWindowSettings(GameSettings.WindowModeIdx, GameSettings.ResolutionIdx);
+			if (UIManager.Instance != null)
+			{
+				await UIManager.Instance.ApplyWindowSettings(GameSettings.WindowModeIdx, GameSettings.ResolutionIdx);
+			}
 			GameHost.Instance.ExitMapEditorMode();
 			IsTestMode = true;
 
@@ -6363,12 +6461,21 @@ public partial class MapEditorHUD : Control
 				if (category == "glb")
 				{
 					string unitId = System.IO.Path.GetFileNameWithoutExtension(fileName);
-					if (!root.ContainsKey("CustomUnits") || root["CustomUnits"] is not JsonArray)
+					string targetArrayKey = subCategory.ToLowerInvariant() switch
 					{
-						root["CustomUnits"] = new JsonArray();
+						"units" => "CustomUnits",
+						"buildings" => "CustomBuildings",
+						"resources" => "CustomResources",
+						"props" => "CustomProps",
+						_ => "CustomUnits"
+					};
+
+					if (!root.ContainsKey(targetArrayKey) || root[targetArrayKey] is not JsonArray)
+					{
+						root[targetArrayKey] = new JsonArray();
 					}
-					JsonArray customUnitsArr = (JsonArray)root["CustomUnits"];
-					bool exists = customUnitsArr.Any(node => node is JsonObject obj && obj.ContainsKey("UnitId") && obj["UnitId"]?.ToString() == unitId);
+					JsonArray targetArr = (JsonArray)root[targetArrayKey];
+					bool exists = targetArr.Any(node => node is JsonObject obj && obj.ContainsKey("UnitId") && obj["UnitId"]?.ToString() == unitId);
 					if (!exists)
 					{
 						int defaultPathing = subCategory.ToLowerInvariant() switch
@@ -6380,15 +6487,19 @@ public partial class MapEditorHUD : Control
 							_ => (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 						};
 
+						bool isPropOrRes = subCategory.ToLowerInvariant() == "props" || subCategory.ToLowerInvariant() == "resources";
 						var newUnitObj = new JsonObject
 						{
 							["UnitId"] = unitId,
 							["Name"] = unitId,
 							["Description"] = "",
 							["PathingType"] = defaultPathing,
-							["ModelPath"] = fileName
+							["ModelPath"] = fileName,
+							["NormalMode"] = "Flat",
+							["NormalizeLuminance"] = true,
+							["IgnorePlayerColor"] = isPropOrRes
 						};
-						customUnitsArr.Add(newUnitObj);
+						targetArr.Add(newUnitObj);
 					}
 				}
 			}
@@ -6491,8 +6602,7 @@ public partial class MapEditorHUD : Control
 		int maxTextureResolution = 1024,
 		float creaseAngleDegrees = 45.0f,
 		float allowedPixelError = 1.5f,
-		bool forceReDecimate = false,
-		bool useUastc = false)
+		bool forceReDecimate = false)
 	{
 		var optimizer = ServiceLocator.TryGet<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>()
 			?? new Realm.Godot.Services.ModelOptimization.ModelOptimizerService(ServiceLocator.TryGet<Realm.Ecs.Services.WorldAccessor>());
@@ -6502,8 +6612,7 @@ public partial class MapEditorHUD : Control
 			MaxTextureResolution = maxTextureResolution,
 			CreaseAngleDegrees = creaseAngleDegrees,
 			AllowedPixelError = allowedPixelError,
-			ForceReDecimate = forceReDecimate,
-			UseUastc = useUastc
+			ForceReDecimate = forceReDecimate
 		};
 
 		return optimizer.OptimizeGlb(glbBytes, options);
@@ -6530,6 +6639,8 @@ public partial class MapEditorHUD : Control
 			SetupTextureSwatches(false);
 			RefreshSkyboxList();
 			GameHost.Instance?.LoadModelYOffsetsFromMetadataJson(wsPath);
+			GameHost.Instance?.LoadUnitMetadata(wsPath);
+			_entityPaletteController?.SelectCategory(_entityPaletteController.CurrentCategory, triggerAddObject: false);
 		}
 		catch (Exception ex)
 		{
@@ -6697,6 +6808,8 @@ public partial class MapEditorHUD : Control
 				}
 			}
 
+			GameHost.Instance?.LoadUnitMetadata(wsPath);
+			_entityPaletteController?.SelectCategory(_entityPaletteController.CurrentCategory, triggerAddObject: false);
 			PopulateAnimationPreviewDropdown();
 			if (importResult.ExtractedAnimationFiles.Count > 0)
 			{
@@ -7100,6 +7213,14 @@ public partial class MapEditorHUD : Control
 	private HSlider _sldFogDensity, _sldFogR, _sldFogG, _sldFogB;
 	private HSlider _sldSsaoRadius, _sldSsaoIntensity;
 	private HSlider _sldExposure, _sldContrast, _sldSaturation, _sldBloomIntensity, _sldBloomThreshold;
+	private HSlider _sldCliffJitterStrength, _sldCliffJitterScale, _sldCliffRimNoiseStrength;
+	private HSlider _sldHeightBlendSoftness, _sldBlendNoiseStrength, _sldBlendNoiseScale;
+	private float _tuneCliffJitterStrength = 1.0f;
+	private float _tuneCliffJitterScale = 0.20f;
+	private float _tuneCliffRimNoiseStrength = 0.30f;
+	private float _tuneHeightBlendSoftness = 0.04f;
+	private float _tuneBlendNoiseStrength = 0.22f;
+	private float _tuneBlendNoiseScale = 0.22f;
 
 	private void SetupLightingTuningUI()
 	{
@@ -7173,7 +7294,17 @@ public partial class MapEditorHUD : Control
 		_sldBloomIntensity = CreateSliderRow(_contentLightingTuning, "Bloom Intensity", 0f, 2f, 0.05f, _tuneBloomIntensity, val => { _tuneBloomIntensity = val; ApplyLiveLightingTuning(); });
 		_sldBloomThreshold = CreateSliderRow(_contentLightingTuning, "Bloom Threshold", 0f, 1f, 0.02f, _tuneBloomThreshold, val => { _tuneBloomThreshold = val; ApplyLiveLightingTuning(); });
 
-		ApplyLiveLightingTuning();
+		CreateSectionHeader(_contentLightingTuning, "--- TERRAIN CLIFFS & SILHOUETTES ---");
+		_sldCliffJitterStrength = CreateSliderRow(_contentLightingTuning, "Cliff Jitter Str", 0f, 2f, 0.02f, _tuneCliffJitterStrength, val => { _tuneCliffJitterStrength = val; ApplyLiveLightingTuning(); });
+		_sldCliffJitterScale = CreateSliderRow(_contentLightingTuning, "Cliff Jitter Scl", 0.01f, 0.5f, 0.005f, _tuneCliffJitterScale, val => { _tuneCliffJitterScale = val; ApplyLiveLightingTuning(); }, "0.00#");
+		_sldCliffRimNoiseStrength = CreateSliderRow(_contentLightingTuning, "Cliff Rim Str", 0f, 1f, 0.02f, _tuneCliffRimNoiseStrength, val => { _tuneCliffRimNoiseStrength = val; ApplyLiveLightingTuning(); });
+
+		CreateSectionHeader(_contentLightingTuning, "--- TERRAIN TEXTURE BLENDING ---");
+		_sldHeightBlendSoftness = CreateSliderRow(_contentLightingTuning, "Blend Softness", 0.001f, 0.20f, 0.002f, _tuneHeightBlendSoftness, val => { _tuneHeightBlendSoftness = val; ApplyLiveLightingTuning(); }, "0.00#");
+		_sldBlendNoiseStrength = CreateSliderRow(_contentLightingTuning, "Blend Noise Str", 0f, 1f, 0.02f, _tuneBlendNoiseStrength, val => { _tuneBlendNoiseStrength = val; ApplyLiveLightingTuning(); });
+		_sldBlendNoiseScale = CreateSliderRow(_contentLightingTuning, "Blend Noise Scl", 0.01f, 0.5f, 0.005f, _tuneBlendNoiseScale, val => { _tuneBlendNoiseScale = val; ApplyLiveLightingTuning(); }, "0.00#");
+
+		UpdateLightingTuningSlidersFromPhase(0);
 		lightingAccordion.Visible = false;
 	}
 
@@ -7237,7 +7368,12 @@ public partial class MapEditorHUD : Control
 		if (_sldBloomIntensity != null) _sldBloomIntensity.Value = _tuneBloomIntensity;
 		if (_sldBloomThreshold != null) _sldBloomThreshold.Value = _tuneBloomThreshold;
 
-		ApplyLiveLightingTuning();
+		if (_sldCliffJitterStrength != null) _sldCliffJitterStrength.Value = _tuneCliffJitterStrength;
+		if (_sldCliffJitterScale != null) _sldCliffJitterScale.Value = _tuneCliffJitterScale;
+		if (_sldCliffRimNoiseStrength != null) _sldCliffRimNoiseStrength.Value = _tuneCliffRimNoiseStrength;
+		if (_sldHeightBlendSoftness != null) _sldHeightBlendSoftness.Value = _tuneHeightBlendSoftness;
+		if (_sldBlendNoiseStrength != null) _sldBlendNoiseStrength.Value = _tuneBlendNoiseStrength;
+		if (_sldBlendNoiseScale != null) _sldBlendNoiseScale.Value = _tuneBlendNoiseScale;
 	}
 
 	private void ApplyLiveLightingTuning()
@@ -7246,6 +7382,22 @@ public partial class MapEditorHUD : Control
 		var host = GameHost.Instance;
 		var worldEnv = host.GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
 		var sun = host.GetNodeOrNull<DirectionalLight3D>("DirectionalLight3D");
+
+		if (EditableTerrain.Instance?.Material != null)
+		{
+			EditableTerrain.Instance.CliffJitterStrength = _tuneCliffJitterStrength;
+			EditableTerrain.Instance.CliffJitterScale = _tuneCliffJitterScale;
+			EditableTerrain.Instance.CliffRimNoiseStrength = _tuneCliffRimNoiseStrength;
+			EditableTerrain.Instance.BlendSoftness = _tuneHeightBlendSoftness;
+			EditableTerrain.Instance.BlendNoiseStrength = _tuneBlendNoiseStrength;
+			EditableTerrain.Instance.BlendNoiseScale = _tuneBlendNoiseScale;
+
+			EditableTerrain.Instance.Material.SetShaderParameter("cliff_jitter_strength", _tuneCliffJitterStrength);
+			EditableTerrain.Instance.Material.SetShaderParameter("cliff_jitter_scale", _tuneCliffJitterScale);
+			EditableTerrain.Instance.Material.SetShaderParameter("blend_softness", _tuneHeightBlendSoftness);
+			EditableTerrain.Instance.Material.SetShaderParameter("blend_noise_strength", _tuneBlendNoiseStrength);
+			EditableTerrain.Instance.Material.SetShaderParameter("blend_noise_scale", _tuneBlendNoiseScale);
+		}
 
 		if (GameHost.Instance.EnvironmentService != null)
 		{
@@ -7256,17 +7408,15 @@ public partial class MapEditorHUD : Control
 
 		if (sun != null)
 		{
-			GameSettings.ApplyDirectionalLightQuality(sun);
 			sun.RotationDegrees = new Vector3(_tuneSunPitch, _tuneSunYaw, 0f);
 			sun.LightEnergy = _tuneSunEnergy;
 			sun.LightColor = new Color(_tuneSunR, _tuneSunG, _tuneSunB);
 			sun.LightSpecular = 0.5f;
-			sun.DirectionalShadowMaxDistance = 250.0f;
 			sun.DirectionalShadowBlendSplits = true;
 			sun.DirectionalShadowFadeStart = 0.8f;
 			sun.ShadowBias = 0.03f;
 			sun.ShadowNormalBias = 1.2f;
-			sun.ShadowEnabled = !GameSettings.DisableShadows && _tuneSunEnergy > 0.05f;
+			GameSettings.ApplyDirectionalLightQuality(sun);
 		}
 
 		if (worldEnv != null && worldEnv.Environment != null)
@@ -7276,25 +7426,22 @@ public partial class MapEditorHUD : Control
 			env.AmbientLightColor = new Color(_tuneAmbientR, _tuneAmbientG, _tuneAmbientB);
 			env.AmbientLightEnergy = _tuneAmbientEnergy;
 
-			GameSettings.ApplyEnvironmentQuality(env);
+			GameSettings.ApplyEnvironmentQuality(env, GameSettings.QualityIdx);
 
-			if (GameSettings.QualityIdx > GraphicsQuality.Low)
-			{
-				env.FogEnabled = _tuneFogEnabled;
-				env.FogDensity = _tuneFogDensity;
-				env.FogLightColor = new Color(_tuneFogR, _tuneFogG, _tuneFogB);
+			env.FogEnabled = _tuneFogEnabled;
+			env.FogDensity = _tuneFogDensity;
+			env.FogLightColor = new Color(_tuneFogR, _tuneFogG, _tuneFogB);
 
-				env.SsaoEnabled = _tuneSsaoEnabled;
-				env.SsaoRadius = _tuneSsaoRadius;
-				env.SsaoIntensity = _tuneSsaoIntensity;
+			env.SsaoEnabled = _tuneSsaoEnabled;
+			env.SsaoRadius = _tuneSsaoRadius;
+			env.SsaoIntensity = _tuneSsaoIntensity;
 
-				env.TonemapExposure = _tuneExposure;
-				env.AdjustmentContrast = _tuneContrast;
-				env.AdjustmentSaturation = _tuneSaturation;
+			env.TonemapExposure = _tuneExposure;
+			env.AdjustmentContrast = _tuneContrast;
+			env.AdjustmentSaturation = _tuneSaturation;
 
-				env.GlowIntensity = _tuneBloomIntensity;
-				env.GlowBloom = _tuneBloomThreshold;
-			}
+			env.GlowIntensity = _tuneBloomIntensity;
+			env.GlowBloom = _tuneBloomThreshold;
 		}
 	}
 
@@ -7308,6 +7455,9 @@ Fog Enabled: {_tuneFogEnabled}, Density: {_tuneFogDensity:F4}, Color: ({_tuneFog
 SSAO Enabled: {_tuneSsaoEnabled}, Radius: {_tuneSsaoRadius:F2}, Intensity: {_tuneSsaoIntensity:F2}
 PostProc Exposure: {_tuneExposure:F2}, Contrast: {_tuneContrast:F2}, Saturation: {_tuneSaturation:F2}
 Glow/Bloom Intensity: {_tuneBloomIntensity:F2}, Threshold: {_tuneBloomThreshold:F2}
+Cliff Jitter: Strength={_tuneCliffJitterStrength:F2}, Scale={_tuneCliffJitterScale:F3}
+Cliff Rim Noise: Strength={_tuneCliffRimNoiseStrength:F2}
+Blend Noise: Strength={_tuneBlendNoiseStrength:F2}, Scale={_tuneBlendNoiseScale:F3}
 ===================================
 ";
 		GD.Print(report);
@@ -7323,13 +7473,13 @@ Glow/Bloom Intensity: {_tuneBloomIntensity:F2}, Threshold: {_tuneBloomThreshold:
 		return $"{ir:X2}{ig:X2}{ib:X2}";
 	}
 
-	private HSlider CreateSliderRow(VBoxContainer parent, string labelText, float min, float max, float step, float initialVal, Action<float> onChanged)
+	private HSlider CreateSliderRow(VBoxContainer parent, string labelText, float min, float max, float step, float initialVal, Action<float> onChanged, string format = "0.0#", float labelWidth = 70f)
 	{
 		var row = new HBoxContainer();
 		
 		var lblName = new Label();
 		lblName.Text = labelText;
-		lblName.CustomMinimumSize = new Vector2(110, 0);
+		lblName.CustomMinimumSize = new Vector2(labelWidth, 0);
 		lblName.AddThemeFontSizeOverride("font_size", 11);
 		row.AddChild(lblName);
 
@@ -7339,27 +7489,42 @@ Glow/Bloom Intensity: {_tuneBloomIntensity:F2}, Threshold: {_tuneBloomThreshold:
 		slider.Step = step;
 		slider.Value = initialVal;
 		slider.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-		slider.CustomMinimumSize = new Vector2(90, 0);
 		slider.DragStarted += () => _isDraggingSlider = true;
 		slider.DragEnded += (valueChanged) => _isDraggingSlider = false;
 		row.AddChild(slider);
 
 		var lblVal = new Label();
-		lblVal.Text = initialVal.ToString("0.00");
-		lblVal.CustomMinimumSize = new Vector2(40, 0);
+		lblVal.Text = initialVal.ToString(format, System.Globalization.CultureInfo.InvariantCulture);
+		lblVal.CustomMinimumSize = new Vector2(34, 0);
 		lblVal.HorizontalAlignment = HorizontalAlignment.Right;
 		lblVal.AddThemeFontSizeOverride("font_size", 11);
 		row.AddChild(lblVal);
 
+		slider.SetMeta("val_label", lblVal);
+		slider.SetMeta("val_format", format);
+
 		slider.ValueChanged += (double val) =>
 		{
 			float fVal = (float)val;
-			lblVal.Text = fVal.ToString("0.00");
+			lblVal.Text = fVal.ToString(format, System.Globalization.CultureInfo.InvariantCulture);
 			onChanged(fVal);
 		};
 
 		parent.AddChild(row);
 		return slider;
+	}
+
+	private void UpdateSliderLabel(Slider slider, float val)
+	{
+		if (slider != null && slider.HasMeta("val_label"))
+		{
+			var lbl = slider.GetMeta("val_label").As<Label>();
+			if (lbl != null && GodotObject.IsInstanceValid(lbl))
+			{
+				string format = slider.HasMeta("val_format") ? slider.GetMeta("val_format").AsString() : "0.0#";
+				lbl.Text = val.ToString(format, System.Globalization.CultureInfo.InvariantCulture);
+			}
+		}
 	}
 
 	private OptionButton CreateDropdownRow(VBoxContainer parent, string labelText, string[] options, int initialIdx, Action<int> onChanged)

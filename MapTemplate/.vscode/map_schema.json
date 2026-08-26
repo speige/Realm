@@ -184,7 +184,9 @@
           "CollisionCircle": { "type": "number", "minimum": 0 },
           "Brightness": { "type": "number", "minimum": 0 },
           "Tint": { "type": "string" },
+          "NormalMode": { "type": "string", "enum": ["Original", "Smooth", "Flat"] },
           "RecalculateNormals": { "type": "boolean" },
+          "NormalizeLuminance": { "type": "boolean" },
           "IgnorePlayerColor": { "type": "boolean" },
           "MaxCapacity": { "type": "number", "minimum": 0 },
           "HarvestRate": { "type": "number", "minimum": 0 },
@@ -454,7 +456,7 @@
     "ModelObstacleRadii": { "type": "object" },
     "ModelBrightness": { "type": "object" },
     "ModelColorTint": { "type": "object" },
-    "ModelGenerateNormals": { "type": "object" },
+    "ModelNormalModes": { "type": "object" },
     "ModelIgnorePlayerColor": { "type": "object" }
   }
 }

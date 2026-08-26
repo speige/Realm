@@ -16,6 +16,7 @@ namespace Realm.Ecs.Components.Terrain
 		public float CellSize;
 		public TerrainCell[,]? Cells;
 		public int[,]? PathingCodes;
+		public TerrainSwatchConfig[]? SwatchConfigs;
 		public DtNavMesh NavMesh;
 		public DtNavMeshQuery NavMeshQuery;
 
@@ -27,22 +28,19 @@ namespace Realm.Ecs.Components.Terrain
 			int w = System.Math.Max(1, width);
 			int d = System.Math.Max(1, depth);
 			float[,] result = new float[w + 1, d + 1];
-			for (int z = 0; z <= d; z++)
+			for (int z = 0; z < d; z++)
 			{
-				for (int x = 0; x <= w; x++)
+				for (int x = 0; x < w; x++)
 				{
-					int cellX = System.Math.Clamp(x, 0, w - 1);
-					int cellZ = System.Math.Clamp(z, 0, d - 1);
-					if (x < w && z < d)
-						result[x, z] = cells[cellX, cellZ].Y_NW;
-					else if (x == w && z < d)
-						result[x, z] = cells[w - 1, cellZ].Y_NE;
-					else if (x < w && z == d)
-						result[x, z] = cells[cellX, d - 1].Y_SW;
-					else
-						result[x, z] = cells[w - 1, d - 1].Y_SE;
+					result[x, z] = cells[x, z].Y_NW;
 				}
+				result[w, z] = cells[w - 1, z].Y_NE;
 			}
+			for (int x = 0; x < w; x++)
+			{
+				result[x, d] = cells[x, d - 1].Y_SW;
+			}
+			result[w, d] = cells[w - 1, d - 1].Y_SE;
 			return result;
 		}
 
@@ -55,14 +53,17 @@ namespace Realm.Ecs.Components.Terrain
 			var cells = new TerrainCell[width, depth];
 			int sW = heights.GetLength(0);
 			int sD = heights.GetLength(1);
+			int existingW = existingCells != null ? existingCells.GetLength(0) : 0;
+			int existingD = existingCells != null ? existingCells.GetLength(1) : 0;
+
 			for (int z = 0; z < depth; z++)
 			{
+				int z0 = System.Math.Clamp(z, 0, sD - 1);
+				int z1 = System.Math.Clamp(z + 1, 0, sD - 1);
 				for (int x = 0; x < width; x++)
 				{
 					int x0 = System.Math.Clamp(x, 0, sW - 1);
 					int x1 = System.Math.Clamp(x + 1, 0, sW - 1);
-					int z0 = System.Math.Clamp(z, 0, sD - 1);
-					int z1 = System.Math.Clamp(z + 1, 0, sD - 1);
 
 					float nw = heights[x0, z0];
 					float ne = heights[x1, z0];
@@ -70,7 +71,7 @@ namespace Realm.Ecs.Components.Terrain
 					float se = heights[x1, z1];
 
 					WaterType wMode = WaterType.None;
-					if (existingCells != null && x < existingCells.GetLength(0) && z < existingCells.GetLength(1))
+					if (x < existingW && z < existingD)
 					{
 						wMode = existingCells[x, z].WaterMode;
 					}

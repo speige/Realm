@@ -148,10 +148,6 @@ public partial class Prop3D : StaticBody3D
 	public virtual void UpdateCollisionCircleScale(float ratio)
 	{
 		Vector3 ringScale = new Vector3(ratio, 1.0f, ratio);
-		if (_selectionRing == null)
-		{
-			CreateSelectionRing();
-		}
 		if (_selectionRing != null)
 		{
 			_selectionRing.Scale = ringScale;
@@ -330,8 +326,7 @@ public partial class Prop3D : StaticBody3D
 
 	private void CreatePropVisual()
 	{
-		bool isEditor = GameHost.Instance != null && GameHost.Instance.IsMapEditorMode;
-		if (IsPreview || isEditor)
+		if (IsPreview)
 		{
 			var visual = GetNodeOrNull<Node3D>("VisualModel");
 			if (visual == null)
@@ -354,7 +349,10 @@ public partial class Prop3D : StaticBody3D
 					if (node != null)
 					{
 						visual.AddChild(node);
-						GameHost.Instance?.ApplyAllGlobalOverridesToObject(this);
+						if (!IsPreview)
+						{
+							GameHost.Instance?.ApplyAllGlobalOverridesToObject(this);
+						}
 					}
 				}
 				catch (Exception ex)

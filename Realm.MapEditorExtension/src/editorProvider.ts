@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import parseExrModule from 'parse-exr';
+const parseExr: (buffer: ArrayBuffer) => any = (parseExrModule as any).default || parseExrModule;
 
 export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
     public static register(context: vscode.ExtensionContext): vscode.Disposable {
@@ -87,6 +89,12 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 case 'deleteAsset':
                     await this.handleDeleteAsset(e.category, e.subCategory, e.key, document);
                     break;
+                case 'pruneUnusedAssets':
+                    await this.handlePruneUnusedAssets(webviewPanel.webview, document);
+                    break;
+                case 'pruneDomain':
+                    await this.handlePruneDomain(webviewPanel.webview, e.domain, document);
+                    break;
                 case 'openDevTools':
                     vscode.commands.executeCommand('workbench.action.webview.openDeveloperTools');
                     break;
@@ -135,6 +143,875 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 console.error(`Failed to delete asset file ${fullPath}:`, err);
                 vscode.window.showErrorMessage(`Failed to delete asset file ${relPath}: ${err.message}`);
             }
+        }
+    }
+
+    private async handlePruneUnusedAssets(webview: vscode.Webview, document: vscode.TextDocument) {
+        try {
+            let metadata: any;
+            try {
+                metadata = JSON.parse(document.getText());
+            } catch (err) {
+                vscode.window.showErrorMessage('Cannot prune assets: metadata.json is invalid JSON.');
+                return;
+            }
+
+            const targetDir = path.dirname(document.uri.fsPath);
+            const referencedAssets = new Set<string>();
+
+            function addRef(val: any) {
+                if (!val || typeof val !== 'string') return;
+                const trimmed = val.trim().toLowerCase();
+                if (!trimmed) return;
+                referencedAssets.add(trimmed);
+                const normalized = trimmed.replace(/\\/g, '/');
+                referencedAssets.add(normalized);
+                const clean = normalized.replace(/^(res:\/\/|user:\/\/|assets\/)/i, '');
+                referencedAssets.add(clean);
+                const baseName = path.basename(normalized);
+                referencedAssets.add(baseName);
+                const withoutExt = baseName.replace(/\.[^/.]+$/, '');
+                if (withoutExt) referencedAssets.add(withoutExt);
+            }
+
+            function scanCsScripts(dir: string) {
+                if (!fs.existsSync(dir)) return;
+                try {
+                    const entries = fs.readdirSync(dir, { withFileTypes: true });
+                    for (const entry of entries) {
+                        if (entry.isDirectory()) {
+                            if (['bin', 'obj', '.godot', '.git', 'lib', 'node_modules'].includes(entry.name.toLowerCase())) {
+                                continue;
+                            }
+                            scanCsScripts(path.join(dir, entry.name));
+                        } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.cs')) {
+                            try {
+                                const content = fs.readFileSync(path.join(dir, entry.name), 'utf8');
+                                const strRegex = /"([^"\\]*(?:\\.[^"\\]*)*)"/g;
+                                let match;
+                                while ((match = strRegex.exec(content)) !== null) {
+                                    const val = match[1];
+                                    if (val && val.length < 200) {
+                                        addRef(val);
+                                    }
+                                }
+                            } catch {
+                            }
+                        }
+                    }
+                } catch {
+                }
+            }
+
+            function collectEntityRefs(entityList: any[]) {
+                if (!Array.isArray(entityList)) return;
+                for (const item of entityList) {
+                    if (!item || typeof item !== 'object') continue;
+                    addRef(item.UnitId);
+                    addRef(item.PropId);
+                    addRef(item.Name);
+                    addRef(item.ModelPath);
+                    addRef(item.PortraitModelPath);
+                    addRef(item.IconPath);
+                    addRef(item.Icon);
+                    addRef(item.DropModelPath);
+                    addRef(item.MissileModelPath);
+                    addRef(item.ProjectileModelPath);
+                    addRef(item.ProjectileModel);
+                    addRef(item.EffectModel);
+                    addRef(item.VfxPath);
+                    addRef(item.Vfx);
+                    addRef(item.Spritesheet);
+                    addRef(item.SoundEvent);
+                    addRef(item.FireSound);
+                    addRef(item.HitSound);
+                    addRef(item.ImpactSound);
+                    addRef(item.CastSound);
+                    addRef(item.Sound);
+
+                    if (item.Animations && typeof item.Animations === 'object') {
+                        for (const animKey of Object.keys(item.Animations)) {
+                            const animVal = item.Animations[animKey];
+                            if (Array.isArray(animVal)) {
+                                animVal.forEach(a => addRef(a));
+                            } else if (typeof animVal === 'string') {
+                                addRef(animVal);
+                            }
+                        }
+                    }
+
+                    if (Array.isArray(item.SoundEvents)) {
+                        item.SoundEvents.forEach(s => addRef(s));
+                    }
+                }
+            }
+
+            collectEntityRefs(metadata.CustomUnits);
+            collectEntityRefs(metadata.CustomBuildings);
+            collectEntityRefs(metadata.CustomResources);
+            collectEntityRefs(metadata.CustomProps);
+            collectEntityRefs(metadata.CustomWeapons);
+            collectEntityRefs(metadata.CustomAbilities);
+            collectEntityRefs(metadata.CustomUpgrades);
+            collectEntityRefs(metadata.CustomItems);
+
+            if (metadata.MapProperties && typeof metadata.MapProperties === 'object') {
+                const mp = metadata.MapProperties;
+                addRef(mp.MinimapImage);
+                addRef(mp.LoadingImage);
+                addRef(mp.LoadingMusic);
+                addRef(mp.BackgroundMusic);
+                addRef(mp.SkyboxPath);
+                addRef(mp.SkyboxImage);
+                addRef(mp.Skybox);
+                addRef(mp.EnvironmentSkybox);
+            }
+
+            const terrainPath = path.join(targetDir, 'terrain.json');
+            if (fs.existsSync(terrainPath)) {
+                try {
+                    const terrainData = JSON.parse(fs.readFileSync(terrainPath, 'utf8'));
+                    addRef(terrainData.SkyboxPath);
+                    if (Array.isArray(terrainData.Units)) {
+                        terrainData.Units.forEach((u: any) => {
+                            if (u) {
+                                addRef(u.UnitId);
+                                addRef(u.Name);
+                                addRef(u.ModelPath);
+                            }
+                        });
+                    }
+                    if (Array.isArray(terrainData.Props)) {
+                        terrainData.Props.forEach((p: any) => {
+                            if (p) {
+                                addRef(p.PropId);
+                                addRef(p.Name);
+                                addRef(p.ModelPath);
+                            }
+                        });
+                    }
+                    if (Array.isArray(terrainData.Decals)) {
+                        terrainData.Decals.forEach((d: any) => {
+                            if (d) {
+                                addRef(d.DecalId);
+                                addRef(d.Name);
+                            }
+                        });
+                    }
+                } catch {
+                }
+            }
+
+            // Scan any C# map scripts in workspace
+            scanCsScripts(targetDir);
+
+            function isReferenced(fileName: string, subCategory?: string): boolean {
+                if (!fileName) return false;
+                const trimmed = fileName.trim().toLowerCase();
+                if (referencedAssets.has(trimmed)) return true;
+                const norm = trimmed.replace(/\\/g, '/');
+                if (referencedAssets.has(norm)) return true;
+                const baseName = path.basename(norm);
+                if (referencedAssets.has(baseName)) return true;
+                const withoutExt = baseName.replace(/\.[^/.]+$/, '');
+                if (withoutExt && referencedAssets.has(withoutExt)) return true;
+                if (subCategory) {
+                    const subCatLower = subCategory.toLowerCase();
+                    const subNorm = `${subCatLower}/${baseName}`;
+                    if (referencedAssets.has(subNorm)) return true;
+                    const modelNorm = `models/${subCatLower}/${baseName}`;
+                    if (referencedAssets.has(modelNorm)) return true;
+                    const assetNorm = `assets/models/${subCatLower}/${baseName}`;
+                    if (referencedAssets.has(assetNorm)) return true;
+                }
+                return false;
+            }
+
+            function decodeFloat16(val: number): number {
+                const s = (val & 0x8000) >> 15;
+                const e = (val & 0x7C00) >> 10;
+                const f = val & 0x03FF;
+                if (e === 0) {
+                    return (s ? -1 : 1) * Math.pow(2, -14) * (f / 1024);
+                } else if (e === 0x1F) {
+                    return f ? NaN : ((s ? -1 : 1) * Infinity);
+                }
+                return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / 1024);
+            }
+
+            function getExrFloatChannels(exr: any): { width: number; height: number; r: Float32Array; g: Float32Array; b: Float32Array; a: Float32Array } {
+                const width = exr.width;
+                const height = exr.height;
+                const numPixels = width * height;
+                const r = new Float32Array(numPixels);
+                const g = new Float32Array(numPixels);
+                const b = new Float32Array(numPixels);
+                const a = new Float32Array(numPixels);
+
+                const isF32 = exr.data instanceof Float32Array;
+                const raw = exr.data;
+
+                for (let i = 0; i < numPixels; i++) {
+                    const offset = i * 4;
+                    if (isF32) {
+                        r[i] = raw[offset + 0];
+                        g[i] = raw[offset + 1];
+                        b[i] = raw[offset + 2];
+                        a[i] = raw[offset + 3];
+                    } else {
+                        r[i] = decodeFloat16(raw[offset + 0]);
+                        g[i] = decodeFloat16(raw[offset + 1]);
+                        b[i] = decodeFloat16(raw[offset + 2]);
+                        a[i] = decodeFloat16(raw[offset + 3]);
+                    }
+                }
+
+                return { width, height, r, g, b, a };
+            }
+
+            function writeUncompressedExr(width: number, height: number, rArr: Float32Array, gArr: Float32Array, bArr: Float32Array, aArr: Float32Array): Buffer {
+                const headerParts: Buffer[] = [];
+
+                const magicVer = Buffer.alloc(8);
+                magicVer.writeUInt32LE(0x01312f76, 0);
+                magicVer.writeUInt32LE(2, 4);
+                headerParts.push(magicVer);
+
+                function writeAttr(name: string, type: string, size: number, valBuf: Buffer): Buffer {
+                    const nameBuf = Buffer.from(name + '\0', 'utf8');
+                    const typeBuf = Buffer.from(type + '\0', 'utf8');
+                    const sizeBuf = Buffer.alloc(4);
+                    sizeBuf.writeInt32LE(size, 0);
+                    return Buffer.concat([nameBuf, typeBuf, sizeBuf, valBuf]);
+                }
+
+                const channelNames = ['A', 'B', 'G', 'R'];
+                const chEntries: Buffer[] = [];
+                for (const ch of channelNames) {
+                    const chNameBuf = Buffer.from(ch + '\0', 'utf8');
+                    const chDesc = Buffer.alloc(16);
+                    chDesc.writeInt32LE(2, 0); // pixelType = 2 (FLOAT)
+                    chDesc.writeUInt8(0, 4);   // pLinear
+                    chDesc.writeUInt8(0, 5);   // reserved 0
+                    chDesc.writeUInt8(0, 6);   // reserved 1
+                    chDesc.writeUInt8(0, 7);   // reserved 2
+                    chDesc.writeInt32LE(1, 8); // xSampling = 1
+                    chDesc.writeInt32LE(1, 12);// ySampling = 1
+                    chEntries.push(Buffer.concat([chNameBuf, chDesc]));
+                }
+                chEntries.push(Buffer.from([0]));
+                const chListBuf = Buffer.concat(chEntries);
+                headerParts.push(writeAttr('channels', 'chlist', chListBuf.length, chListBuf));
+
+                headerParts.push(writeAttr('compression', 'compression', 1, Buffer.from([0])));
+
+                const dwBuf = Buffer.alloc(16);
+                dwBuf.writeInt32LE(0, 0);
+                dwBuf.writeInt32LE(0, 4);
+                dwBuf.writeInt32LE(width - 1, 8);
+                dwBuf.writeInt32LE(height - 1, 12);
+                headerParts.push(writeAttr('dataWindow', 'box2i', 16, dwBuf));
+                headerParts.push(writeAttr('displayWindow', 'box2i', 16, dwBuf));
+                headerParts.push(writeAttr('lineOrder', 'lineOrder', 1, Buffer.from([0])));
+
+                const parBuf = Buffer.alloc(4);
+                parBuf.writeFloatLE(1.0, 0);
+                headerParts.push(writeAttr('pixelAspectRatio', 'float', 4, parBuf));
+
+                const swcBuf = Buffer.alloc(8);
+                swcBuf.writeFloatLE(0.0, 0);
+                swcBuf.writeFloatLE(0.0, 4);
+                headerParts.push(writeAttr('screenWindowCenter', 'v2f', 8, swcBuf));
+                headerParts.push(writeAttr('screenWindowWidth', 'float', 4, parBuf));
+
+                headerParts.push(Buffer.from([0]));
+
+                const headerBuf = Buffer.concat(headerParts);
+                const scanlineTableOffset = headerBuf.length;
+                const scanlineTableSize = height * 8;
+                const firstScanlineOffset = scanlineTableOffset + scanlineTableSize;
+                const scanlineDataSize = width * 4 * 4;
+                const scanlineTotalSize = 8 + scanlineDataSize;
+
+                const scanlineTable = Buffer.alloc(scanlineTableSize);
+                for (let y = 0; y < height; y++) {
+                    scanlineTable.writeBigUInt64LE(BigInt(firstScanlineOffset + y * scanlineTotalSize), y * 8);
+                }
+
+                const channelArrays: { [key: string]: Float32Array } = {
+                    A: aArr,
+                    B: bArr,
+                    G: gArr,
+                    R: rArr
+                };
+
+                const scanlines: Buffer[] = [];
+                for (let y = 0; y < height; y++) {
+                    const slHead = Buffer.alloc(8);
+                    slHead.writeInt32LE(y, 0);
+                    slHead.writeInt32LE(scanlineDataSize, 4);
+
+                    const chBuffers: Buffer[] = [];
+                    for (const ch of channelNames) {
+                        const arr = channelArrays[ch];
+                        const f32 = new Float32Array(width);
+                        for (let x = 0; x < width; x++) {
+                            f32[x] = arr[y * width + x];
+                        }
+                        chBuffers.push(Buffer.from(f32.buffer, f32.byteOffset, f32.byteLength));
+                    }
+                    scanlines.push(Buffer.concat([slHead, ...chBuffers]));
+                }
+
+                return Buffer.concat([headerBuf, scanlineTable, ...scanlines]);
+            }
+
+            let prunedAssetsCount = 0;
+            let deletedFilesCount = 0;
+
+            const assetsObj = metadata.Assets;
+            if (assetsObj && typeof assetsObj === 'object') {
+                if (assetsObj.glb && typeof assetsObj.glb === 'object') {
+                    for (const subCat of Object.keys(assetsObj.glb)) {
+                        const subObj = assetsObj.glb[subCat];
+                        if (subObj && typeof subObj === 'object') {
+                            for (const fileName of Object.keys(subObj)) {
+                                if (!isReferenced(fileName, subCat)) {
+                                    delete subObj[fileName];
+                                    prunedAssetsCount++;
+                                    if (metadata.ModelIgnorePlayerColor && metadata.ModelIgnorePlayerColor[fileName]) {
+                                        delete metadata.ModelIgnorePlayerColor[fileName];
+                                    }
+                                    if (metadata.ModelObstacleRadii && metadata.ModelObstacleRadii[fileName]) {
+                                        delete metadata.ModelObstacleRadii[fileName];
+                                    }
+                                    const filePath = path.join(targetDir, 'Assets', 'models', subCat, fileName);
+                                    if (fs.existsSync(filePath)) {
+                                        try {
+                                            fs.unlinkSync(filePath);
+                                            deletedFilesCount++;
+                                        } catch (err: any) {
+                                            console.error(`Failed to delete ${filePath}:`, err);
+                                        }
+                                    }
+                                }
+                            }
+                            if (Object.keys(subObj).length === 0) {
+                                delete assetsObj.glb[subCat];
+                            }
+                        }
+                    }
+                    if (Object.keys(assetsObj.glb).length === 0) {
+                        delete assetsObj.glb;
+                    }
+                }
+
+                // Process terrain textures with EXR splat inspection & index remapping
+                const usedTextureIndices = new Set<number>();
+                let splatFilesPresent = false;
+
+                const splatIndicesPath = path.join(targetDir, 'terrain_splat_indices.exr');
+                const splatWeightsPath = path.join(targetDir, 'terrain_splat_weights.exr');
+                const cliffIndicesPath = path.join(targetDir, 'terrain_cliff_splat_indices.exr');
+                const cliffWeightsPath = path.join(targetDir, 'terrain_cliff_splat_weights.exr');
+
+                function scanSplatExrs(indicesFile: string, weightsFile: string) {
+                    if (fs.existsSync(indicesFile) && fs.existsSync(weightsFile)) {
+                        try {
+                            splatFilesPresent = true;
+                            const idxBuf = fs.readFileSync(indicesFile);
+                            const wgtBuf = fs.readFileSync(weightsFile);
+                            const idxExr = parseExr(idxBuf.buffer.slice(idxBuf.byteOffset, idxBuf.byteOffset + idxBuf.byteLength));
+                            const wgtExr = parseExr(wgtBuf.buffer.slice(wgtBuf.byteOffset, wgtBuf.byteOffset + wgtBuf.byteLength));
+                            const idxFloats = getExrFloatChannels(idxExr);
+                            const wgtFloats = getExrFloatChannels(wgtExr);
+
+                            const total = idxFloats.width * idxFloats.height;
+                            for (let i = 0; i < total; i++) {
+                                if (wgtFloats.r[i] > 0.001) usedTextureIndices.add(Math.round(idxFloats.r[i]));
+                                if (wgtFloats.g[i] > 0.001) usedTextureIndices.add(Math.round(idxFloats.g[i]));
+                                if (wgtFloats.b[i] > 0.001) usedTextureIndices.add(Math.round(idxFloats.b[i]));
+                                if (wgtFloats.a[i] > 0.001) usedTextureIndices.add(Math.round(idxFloats.a[i]));
+                            }
+
+                            return { idxFloats, wgtFloats };
+                        } catch (e: any) {
+                            console.error(`Failed to parse splat EXR files ${indicesFile}/${weightsFile}:`, e);
+                        }
+                    }
+                    return null;
+                }
+
+                const groundSplats = scanSplatExrs(splatIndicesPath, splatWeightsPath);
+                const cliffSplats = scanSplatExrs(cliffIndicesPath, cliffWeightsPath);
+
+                if (assetsObj.textures && typeof assetsObj.textures === 'object') {
+                    const texturesObj = assetsObj.textures;
+                    const origKeys = Object.keys(texturesObj);
+                    const newTexturesObj: { [key: string]: any } = {};
+                    const indexRemap: { [oldIdx: number]: number } = {};
+                    let hasShift = false;
+
+                    for (let oldIdx = 0; oldIdx < origKeys.length; oldIdx++) {
+                        const fileName = origKeys[oldIdx];
+                        const isUsedByExr = splatFilesPresent ? usedTextureIndices.has(oldIdx) : false;
+                        const isUsedByRef = isReferenced(fileName, 'textures');
+
+                        if (isUsedByExr || isUsedByRef) {
+                            const newIdx = Object.keys(newTexturesObj).length;
+                            newTexturesObj[fileName] = texturesObj[fileName];
+                            indexRemap[oldIdx] = newIdx;
+                            if (newIdx !== oldIdx) {
+                                hasShift = true;
+                            }
+                        } else {
+                            prunedAssetsCount++;
+                            indexRemap[oldIdx] = 0;
+                            hasShift = true;
+                            const filePath = path.join(targetDir, 'Assets', 'textures', fileName);
+                            if (fs.existsSync(filePath)) {
+                                try {
+                                    fs.unlinkSync(filePath);
+                                    deletedFilesCount++;
+                                } catch (err: any) {
+                                    console.error(`Failed to delete ${filePath}:`, err);
+                                }
+                            }
+                        }
+                    }
+
+                    if (hasShift) {
+                        if (groundSplats) {
+                            const { idxFloats } = groundSplats;
+                            const total = idxFloats.width * idxFloats.height;
+                            for (let i = 0; i < total; i++) {
+                                const oldR = Math.round(idxFloats.r[i]);
+                                if (indexRemap[oldR] !== undefined) idxFloats.r[i] = indexRemap[oldR];
+
+                                const oldG = Math.round(idxFloats.g[i]);
+                                if (indexRemap[oldG] !== undefined) idxFloats.g[i] = indexRemap[oldG];
+
+                                const oldB = Math.round(idxFloats.b[i]);
+                                if (indexRemap[oldB] !== undefined) idxFloats.b[i] = indexRemap[oldB];
+
+                                const oldA = Math.round(idxFloats.a[i]);
+                                if (indexRemap[oldA] !== undefined) idxFloats.a[i] = indexRemap[oldA];
+                            }
+                            const outBuf = writeUncompressedExr(
+                                idxFloats.width,
+                                idxFloats.height,
+                                idxFloats.r,
+                                idxFloats.g,
+                                idxFloats.b,
+                                idxFloats.a
+                            );
+                            fs.writeFileSync(splatIndicesPath, outBuf);
+                        }
+
+                        if (cliffSplats) {
+                            const { idxFloats } = cliffSplats;
+                            const total = idxFloats.width * idxFloats.height;
+                            for (let i = 0; i < total; i++) {
+                                const oldR = Math.round(idxFloats.r[i]);
+                                if (indexRemap[oldR] !== undefined) idxFloats.r[i] = indexRemap[oldR];
+
+                                const oldG = Math.round(idxFloats.g[i]);
+                                if (indexRemap[oldG] !== undefined) idxFloats.g[i] = indexRemap[oldG];
+
+                                const oldB = Math.round(idxFloats.b[i]);
+                                if (indexRemap[oldB] !== undefined) idxFloats.b[i] = indexRemap[oldB];
+
+                                const oldA = Math.round(idxFloats.a[i]);
+                                if (indexRemap[oldA] !== undefined) idxFloats.a[i] = indexRemap[oldA];
+                            }
+                            const outBuf = writeUncompressedExr(
+                                idxFloats.width,
+                                idxFloats.height,
+                                idxFloats.r,
+                                idxFloats.g,
+                                idxFloats.b,
+                                idxFloats.a
+                            );
+                            fs.writeFileSync(cliffIndicesPath, outBuf);
+                        }
+                    }
+
+                    assetsObj.textures = newTexturesObj;
+                    if (Object.keys(assetsObj.textures).length === 0) {
+                        delete assetsObj.textures;
+                    }
+                }
+
+                const flatCategories: { [key: string]: string } = {
+                    animations: path.join('Assets', 'animations'),
+                    decals: path.join('Assets', 'decals'),
+                    icons: path.join('Assets', 'icons'),
+                    vfx_spritesheets: path.join('Assets', 'vfx'),
+                    vfx: path.join('Assets', 'vfx'),
+                    skyboxes: path.join('Assets', 'skyboxes'),
+                    skybox: path.join('Assets', 'skyboxes'),
+                    sfx: path.join('Assets', 'audio', 'sfx'),
+                    music: path.join('Assets', 'audio', 'music')
+                };
+
+                for (const cat of Object.keys(flatCategories)) {
+                    if (assetsObj[cat] && typeof assetsObj[cat] === 'object') {
+                        const catObj = assetsObj[cat];
+                        for (const fileName of Object.keys(catObj)) {
+                            if (!isReferenced(fileName)) {
+                                delete catObj[fileName];
+                                prunedAssetsCount++;
+                                const relDir = flatCategories[cat];
+                                const filePath = path.join(targetDir, relDir, fileName);
+                                if (fs.existsSync(filePath)) {
+                                    try {
+                                        fs.unlinkSync(filePath);
+                                        deletedFilesCount++;
+                                    } catch (err: any) {
+                                        console.error(`Failed to delete ${filePath}:`, err);
+                                    }
+                                }
+                            }
+                        }
+                        if (Object.keys(catObj).length === 0) {
+                            delete assetsObj[cat];
+                        }
+                    }
+                }
+            }
+
+            const assetDirChecks: { subDir: string; category?: string }[] = [
+                { subDir: path.join('Assets', 'models', 'units'), category: 'units' },
+                { subDir: path.join('Assets', 'models', 'buildings'), category: 'buildings' },
+                { subDir: path.join('Assets', 'models', 'resources'), category: 'resources' },
+                { subDir: path.join('Assets', 'models', 'props'), category: 'props' },
+                { subDir: path.join('Assets', 'animations') },
+                { subDir: path.join('Assets', 'decals') },
+                { subDir: path.join('Assets', 'icons') },
+                { subDir: path.join('Assets', 'vfx') },
+                { subDir: path.join('Assets', 'skyboxes') },
+                { subDir: path.join('Assets', 'textures'), category: 'textures' },
+                { subDir: path.join('Assets', 'audio', 'sfx') },
+                { subDir: path.join('Assets', 'audio', 'music') }
+            ];
+
+            for (const { subDir, category } of assetDirChecks) {
+                const fullDir = path.join(targetDir, subDir);
+                if (fs.existsSync(fullDir)) {
+                    try {
+                        const entries = fs.readdirSync(fullDir, { withFileTypes: true });
+                        for (const entry of entries) {
+                            if (entry.isFile()) {
+                                const fileName = entry.name;
+                                const isKeptTexture = category === 'textures' && assetsObj && assetsObj.textures && assetsObj.textures[fileName];
+                                if (!isKeptTexture && !isReferenced(fileName, category)) {
+                                    const fullFilePath = path.join(fullDir, fileName);
+                                    try {
+                                        fs.unlinkSync(fullFilePath);
+                                        deletedFilesCount++;
+                                    } catch (err) {
+                                        console.error(`Failed to delete ${fullFilePath}:`, err);
+                                    }
+                                }
+                            }
+                        }
+                    } catch {
+                    }
+                }
+            }
+
+            const newText = JSON.stringify(metadata, null, 2);
+            await this.updateTextDocument(document, newText);
+            await document.save();
+            this.notifyGodotReloadMetadata();
+            webview.postMessage({
+                type: 'update',
+                text: newText
+            });
+
+            if (prunedAssetsCount > 0 || deletedFilesCount > 0) {
+                vscode.window.showInformationMessage(`Pruned ${prunedAssetsCount} unreferenced asset metadata entry(s) and deleted ${deletedFilesCount} unreferenced file(s).`);
+            } else {
+                vscode.window.showInformationMessage('No unreferenced assets found. Everything is currently in use.');
+            }
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`Failed to prune unused assets: ${err.message}`);
+        }
+    }
+
+    private async handlePruneDomain(webview: vscode.Webview, domain: string, document: vscode.TextDocument) {
+        try {
+            let metadata: any;
+            try {
+                metadata = JSON.parse(document.getText());
+            } catch (err) {
+                vscode.window.showErrorMessage(`Cannot prune ${domain}: metadata.json is invalid JSON.`);
+                return;
+            }
+
+            const targetDir = path.dirname(document.uri.fsPath);
+            const terrainPath = path.join(targetDir, 'terrain.json');
+            if (!fs.existsSync(terrainPath)) {
+                vscode.window.showWarningMessage(`Cannot prune ${domain}: terrain.json not found in map folder.`);
+                return;
+            }
+
+            let terrainData: any;
+            try {
+                terrainData = JSON.parse(fs.readFileSync(terrainPath, 'utf8'));
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`Cannot prune ${domain}: failed to parse terrain.json: ${err.message}`);
+                return;
+            }
+
+            const placedIds = new Set<string>();
+
+            function addIdentifier(val: any) {
+                if (!val || typeof val !== 'string') return;
+                const trimmed = val.trim().toLowerCase();
+                if (!trimmed) return;
+                placedIds.add(trimmed);
+                const normalized = trimmed.replace(/\\/g, '/');
+                placedIds.add(normalized);
+                const clean = normalized.replace(/^(res:\/\/|user:\/\/|assets\/)/i, '');
+                placedIds.add(clean);
+                const baseName = path.basename(normalized);
+                placedIds.add(baseName);
+                const withoutExt = baseName.replace(/\.[^/.]+$/, '');
+                if (withoutExt) placedIds.add(withoutExt);
+            }
+
+            function scanCsScripts(dir: string) {
+                if (!fs.existsSync(dir)) return;
+                try {
+                    const entries = fs.readdirSync(dir, { withFileTypes: true });
+                    for (const entry of entries) {
+                        if (entry.isDirectory()) {
+                            if (['bin', 'obj', '.godot', '.git', 'lib', 'node_modules'].includes(entry.name.toLowerCase())) {
+                                continue;
+                            }
+                            scanCsScripts(path.join(dir, entry.name));
+                        } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.cs')) {
+                            try {
+                                const content = fs.readFileSync(path.join(dir, entry.name), 'utf8');
+                                const strRegex = /"([^"\\]*(?:\\.[^"\\]*)*)"/g;
+                                let match;
+                                while ((match = strRegex.exec(content)) !== null) {
+                                    const val = match[1];
+                                    if (val && val.length < 200) {
+                                        addIdentifier(val);
+                                    }
+                                }
+                            } catch {
+                            }
+                        }
+                    }
+                } catch {
+                }
+            }
+
+            // 1. Gather all placed IDs from terrain.json (Units, Props, Decals)
+            if (Array.isArray(terrainData.Units)) {
+                terrainData.Units.forEach((u: any) => {
+                    if (u) {
+                        addIdentifier(u.UnitId);
+                        addIdentifier(u.Name);
+                        addIdentifier(u.ModelPath);
+                    }
+                });
+            }
+            if (Array.isArray(terrainData.Props)) {
+                terrainData.Props.forEach((p: any) => {
+                    if (p) {
+                        addIdentifier(p.PropId);
+                        addIdentifier(p.Name);
+                        addIdentifier(p.ModelPath);
+                    }
+                });
+            }
+            if (Array.isArray(terrainData.Decals)) {
+                terrainData.Decals.forEach((d: any) => {
+                    if (d) {
+                        addIdentifier(d.DecalId);
+                        addIdentifier(d.Name);
+                    }
+                });
+            }
+
+            // 2. Gather all string literals from C# scripts in the map workspace
+            scanCsScripts(targetDir);
+
+            // 3. Helper to test if an entity or item matches any placed identifier
+            function isEntityReferenced(item: any): boolean {
+                if (!item || typeof item !== 'object') return false;
+                const candidates = [
+                    item.UnitId,
+                    item.PropId,
+                    item.WeaponId,
+                    item.AbilityId,
+                    item.UpgradeId,
+                    item.ItemId,
+                    item.Name,
+                    item.ModelPath,
+                    item.DropModelPath,
+                    item.PortraitModelPath,
+                    item.MissileModelPath,
+                    item.ProjectileModelPath,
+                    item.ProjectileModel,
+                    item.EffectModel
+                ];
+                for (const c of candidates) {
+                    if (c && typeof c === 'string') {
+                        const trimmed = c.trim().toLowerCase();
+                        if (placedIds.has(trimmed)) return true;
+                        const normalized = trimmed.replace(/\\/g, '/');
+                        if (placedIds.has(normalized)) return true;
+                        const clean = normalized.replace(/^(res:\/\/|user:\/\/|assets\/)/i, '');
+                        if (placedIds.has(clean)) return true;
+                        const baseName = path.basename(normalized);
+                        if (placedIds.has(baseName)) return true;
+                        const withoutExt = baseName.replace(/\.[^/.]+$/, '');
+                        if (withoutExt && placedIds.has(withoutExt)) return true;
+                    }
+                }
+                return false;
+            }
+
+            // 4. Transitive expansion: add build options, weapons, abilities, upgrades, items of referenced entities
+            let expanded = true;
+            let loopCount = 0;
+            while (expanded && loopCount < 50) {
+                expanded = false;
+                loopCount++;
+                const prevSize = placedIds.size;
+
+                const allEntities = [
+                    ...(metadata.CustomUnits || []),
+                    ...(metadata.CustomBuildings || []),
+                    ...(metadata.CustomResources || []),
+                    ...(metadata.CustomProps || [])
+                ];
+
+                for (const entity of allEntities) {
+                    if (isEntityReferenced(entity)) {
+                        addIdentifier(entity.UnitId);
+                        addIdentifier(entity.Name);
+                        addIdentifier(entity.ModelPath);
+
+                        if (Array.isArray(entity.BuildOptions)) {
+                            entity.BuildOptions.forEach((opt: string) => addIdentifier(opt));
+                        }
+                        if (Array.isArray(entity.Weapons)) {
+                            entity.Weapons.forEach((w: string) => addIdentifier(w));
+                        }
+                        if (Array.isArray(entity.Abilities)) {
+                            entity.Abilities.forEach((a: string) => addIdentifier(a));
+                        }
+                        if (Array.isArray(entity.Upgrades)) {
+                            entity.Upgrades.forEach((u: string) => addIdentifier(u));
+                        }
+                        if (Array.isArray(entity.StartingItems)) {
+                            entity.StartingItems.forEach((i: string) => addIdentifier(i));
+                        }
+                        if (Array.isArray(entity.Items)) {
+                            entity.Items.forEach((i: string) => addIdentifier(i));
+                        }
+                    }
+                }
+
+                if (Array.isArray(metadata.CustomAbilities)) {
+                    for (const abi of metadata.CustomAbilities) {
+                        if (isEntityReferenced(abi)) {
+                            addIdentifier(abi.AbilityId);
+                            addIdentifier(abi.Name);
+                            if (abi.SummonedUnitId) addIdentifier(abi.SummonedUnitId);
+                            if (Array.isArray(abi.GrantedWeapons)) abi.GrantedWeapons.forEach((w: string) => addIdentifier(w));
+                        }
+                    }
+                }
+
+                if (Array.isArray(metadata.CustomUpgrades)) {
+                    for (const up of metadata.CustomUpgrades) {
+                        if (isEntityReferenced(up)) {
+                            addIdentifier(up.UpgradeId);
+                            addIdentifier(up.Name);
+                            if (Array.isArray(up.GrantedWeapons)) up.GrantedWeapons.forEach((w: string) => addIdentifier(w));
+                            if (Array.isArray(up.AffectedUnitIds)) up.AffectedUnitIds.forEach((uid: string) => addIdentifier(uid));
+                        }
+                    }
+                }
+
+                if (Array.isArray(metadata.CustomItems)) {
+                    for (const itm of metadata.CustomItems) {
+                        if (isEntityReferenced(itm)) {
+                            addIdentifier(itm.ItemId);
+                            addIdentifier(itm.Name);
+                            if (Array.isArray(itm.Abilities)) itm.Abilities.forEach((a: string) => addIdentifier(a));
+                            if (Array.isArray(itm.GrantedWeapons)) itm.GrantedWeapons.forEach((w: string) => addIdentifier(w));
+                        }
+                    }
+                }
+
+                if (placedIds.size > prevSize) {
+                    expanded = true;
+                }
+            }
+
+            // 5. Filter target domain
+            let initialCount = 0;
+            let finalCount = 0;
+
+            if (domain === 'units') {
+                initialCount = (metadata.CustomUnits || []).length;
+                metadata.CustomUnits = (metadata.CustomUnits || []).filter((u: any) => isEntityReferenced(u));
+                finalCount = metadata.CustomUnits.length;
+            } else if (domain === 'buildings') {
+                initialCount = (metadata.CustomBuildings || []).length;
+                metadata.CustomBuildings = (metadata.CustomBuildings || []).filter((b: any) => isEntityReferenced(b));
+                finalCount = metadata.CustomBuildings.length;
+            } else if (domain === 'resources') {
+                initialCount = (metadata.CustomResources || []).length;
+                metadata.CustomResources = (metadata.CustomResources || []).filter((r: any) => isEntityReferenced(r));
+                finalCount = metadata.CustomResources.length;
+            } else if (domain === 'props') {
+                initialCount = (metadata.CustomProps || []).length;
+                metadata.CustomProps = (metadata.CustomProps || []).filter((p: any) => isEntityReferenced(p));
+                finalCount = metadata.CustomProps.length;
+            } else if (domain === 'weapons') {
+                initialCount = (metadata.CustomWeapons || []).length;
+                metadata.CustomWeapons = (metadata.CustomWeapons || []).filter((w: any) => isEntityReferenced(w));
+                finalCount = metadata.CustomWeapons.length;
+            } else if (domain === 'abilities') {
+                initialCount = (metadata.CustomAbilities || []).length;
+                metadata.CustomAbilities = (metadata.CustomAbilities || []).filter((a: any) => isEntityReferenced(a));
+                finalCount = metadata.CustomAbilities.length;
+            } else if (domain === 'upgrades') {
+                initialCount = (metadata.CustomUpgrades || []).length;
+                metadata.CustomUpgrades = (metadata.CustomUpgrades || []).filter((u: any) => isEntityReferenced(u));
+                finalCount = metadata.CustomUpgrades.length;
+            } else if (domain === 'items') {
+                initialCount = (metadata.CustomItems || []).length;
+                metadata.CustomItems = (metadata.CustomItems || []).filter((i: any) => isEntityReferenced(i));
+                finalCount = metadata.CustomItems.length;
+            }
+
+            const removedCount = initialCount - finalCount;
+            const newText = JSON.stringify(metadata, null, 2);
+            await this.updateTextDocument(document, newText);
+            await document.save();
+            this.notifyGodotReloadMetadata();
+            webview.postMessage({
+                type: 'update',
+                text: newText
+            });
+
+            if (removedCount > 0) {
+                vscode.window.showInformationMessage(`Pruned ${removedCount} unplaced item(s) from ${domain}.`);
+            } else {
+                vscode.window.showInformationMessage(`No unplaced items found in ${domain}. All items are placed or referenced on terrain.`);
+            }
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`Failed to prune ${domain}: ${err.message}`);
         }
     }
 
@@ -375,7 +1252,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 const creaseAngleDegrees = (extraOptions && extraOptions.creaseAngleDegrees !== undefined) ? extraOptions.creaseAngleDegrees : 45.0;
                 const allowedPixelError = (extraOptions && extraOptions.allowedPixelError !== undefined) ? extraOptions.allowedPixelError : 1.5;
                 const forceReDecimate = !!(extraOptions && (extraOptions.forceReDecimate || extraOptions.force_redecimate));
-                const useUastc = !!(extraOptions && (extraOptions.useUastc || extraOptions.use_uastc));
 
                 const optimizationResult = await new Promise<{
                     success: boolean;
@@ -401,8 +1277,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         maxTextureResolution,
                         creaseAngleDegrees,
                         allowedPixelError,
-                        forceReDecimate,
-                        useUastc
+                        forceReDecimate
                     });
 
                     for (const port of ports) {
@@ -477,8 +1352,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             maxTextureResolution,
                             creaseAngleDegrees,
                             allowedPixelError,
-                            forceReDecimate,
-                            useUastc
+                            forceReDecimate
                         });
                     }
                 });
@@ -508,12 +1382,16 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 fs.writeFileSync(targetPath, fileBytes);
                 const blake3 = this.computeHashHex(fileBytes);
                 const ignorePlayerColor = !!(extraOptions && (extraOptions.ignorePlayerColor || extraOptions.ignore_player_color));
+
+                if (!metadata.Assets) metadata.Assets = {};
                 if (!metadata.Assets.glb) metadata.Assets.glb = {};
                 if (!metadata.Assets.glb[subCategory]) metadata.Assets.glb[subCategory] = {};
+
                 metadata.Assets.glb[subCategory][baseName] = {
                     hash: blake3,
                     default_asset_type: subCategory,
-                    generate_normals: true,
+                    normal_mode: 'Flat',
+                    normalize_luminance: true,
                     ...(ignorePlayerColor ? { ignore_player_color: true } : {})
                 };
 
@@ -538,16 +1416,16 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         else if (subCategory === 'buildings') defaultPathing = 32;
                         else if (subCategory === 'resources' || subCategory === 'props') defaultPathing = 255;
 
-                        metadata[targetArrayKey].push({
-                            UnitId: unitId,
-                            Name: unitId,
-                            Description: '',
-                            PathingType: defaultPathing,
-                            ModelPath: baseName,
-                            RecalculateNormals: true,
-                            ...(ignorePlayerColor ? { IgnorePlayerColor: true } : {})
-                        });
-                    }
+                    metadata[targetArrayKey].push({
+                        UnitId: unitId,
+                        Name: unitId,
+                        Description: '',
+                        PathingType: defaultPathing,
+                        ModelPath: baseName,
+                        NormalMode: 'Flat',
+                        NormalizeLuminance: true,
+                        ...(ignorePlayerColor ? { IgnorePlayerColor: true } : {})
+                    });
                 }
 
                 vscode.window.showInformationMessage(`Imported GLB Model (${subCategory}): ${baseName}`);
@@ -1139,7 +2017,14 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 }
             }
 
-            await this.updateTextDocument(document, JSON.stringify(freshMetadata, null, 2));
+            const finalText = JSON.stringify(freshMetadata, null, 2);
+            await this.updateTextDocument(document, finalText);
+            await document.save();
+            this.notifyGodotReloadMetadata();
+            webview.postMessage({
+                type: 'update',
+                text: finalText
+            });
         } catch (err: any) {
             vscode.window.showErrorMessage(`Failed to import asset: ${err.message}`);
         }
@@ -1221,7 +2106,10 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 metadata.Assets[toCategory][key] = itemVal || 'hash';
             }
 
-            await this.updateTextDocument(document, JSON.stringify(metadata, null, 2));
+            const finalText = JSON.stringify(metadata, null, 2);
+            await this.updateTextDocument(document, finalText);
+            await document.save();
+            this.notifyGodotReloadMetadata();
             vscode.window.showInformationMessage(`Migrated asset '${key}' to ${toCategory}${toSubCategory ? '/' + toSubCategory : ''}`);
         } catch (err: any) {
             vscode.window.showErrorMessage(`Failed to migrate asset: ${err.message}`);
@@ -1347,6 +2235,31 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         }
     }
 
+    private notifyGodotReloadMetadata(): void {
+        const http = require('http');
+        const ports = [8092, 8093];
+        const postData = JSON.stringify({ action: 'reloadMetadata' });
+        for (const port of ports) {
+            try {
+                const req = http.request({
+                    hostname: '127.0.0.1',
+                    port: port,
+                    path: '/api/',
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Content-Length': Buffer.byteLength(postData)
+                    },
+                    timeout: 1000
+                }, () => {});
+                req.on('error', () => {});
+                req.write(postData);
+                req.end();
+            } catch {
+            }
+        }
+    }
+
     private getHtmlForWebview(webview: vscode.Webview): string {
         const scriptUri = webview.asWebviewUri(vscode.Uri.file(
             path.join(this.context.extensionPath, 'media', 'editor.js')
@@ -1398,6 +2311,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     <h2>Units List</h2>
                     <div class="add-buttons-group" style="display: flex; gap: 4px;">
                         <button id="add-unit-btn" class="btn primary-btn" style="padding: 4px 8px;" title="Add Unit">+ Add</button>
+                        <button type="button" id="prune-entities-btn" class="btn secondary-btn" style="padding: 4px 8px;" title="Prune items never placed on terrain.json">✂️ Prune Unused</button>
                     </div>
                 </div>
                 <div class="search-container">
@@ -1487,16 +2401,24 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="field-Brightness">Brightness</label>
-                                <input type="number" id="field-Brightness" step="0.02" min="0.10" max="1.75" placeholder="1.0" />
+                                <input type="number" id="field-Brightness" step="0.02" min="0.10" max="2.00" placeholder="0.5" />
                             </div>
                             <div class="form-group">
                                 <label for="field-Tint">Tint Color</label>
                                 <input type="text" id="field-Tint" placeholder="#ffffff" />
                             </div>
                         </div>
+                        <div class="form-group" style="margin-top: 6px;">
+                            <label for="field-NormalMode">Normals</label>
+                            <select id="field-NormalMode">
+                                <option value="Original">Original</option>
+                                <option value="Smooth">Smooth Normals</option>
+                                <option value="Flat" selected>Flat Normals (Default)</option>
+                            </select>
+                        </div>
                         <div class="form-group checkbox-group" style="margin-top: 6px;">
-                            <input type="checkbox" id="field-RecalculateNormals" />
-                            <label for="field-RecalculateNormals">Re-Calculate Normals</label>
+                            <input type="checkbox" id="field-NormalizeLuminance" checked />
+                            <label for="field-NormalizeLuminance">Normalize Luminosity</label>
                         </div>
                         <div class="form-group checkbox-group" style="margin-top: 6px;">
                             <input type="checkbox" id="field-IgnorePlayerColor" />
@@ -1945,6 +2867,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <div class="add-buttons-row" style="display: flex; gap: 8px;">
                                 <button type="button" id="add-custom-weapon-btn" class="btn secondary-btn">+ Add Custom Weapon</button>
                                 <button type="button" id="paste-custom-weapon-btn" class="btn secondary-btn" title="Paste Weapon from Clipboard">📋 Paste Weapon</button>
+                                <button type="button" id="prune-weapons-btn" class="btn secondary-btn" title="Prune weapons never used by placed units on terrain.json">✂️ Prune Unused</button>
                             </div>
                         </div>
                     </div>
@@ -1965,6 +2888,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <div class="add-buttons-row" style="display: flex; gap: 8px;">
                                 <button type="button" id="add-custom-ability-btn" class="btn secondary-btn">+ Add Custom Ability</button>
                                 <button type="button" id="paste-custom-ability-btn" class="btn secondary-btn" title="Paste Ability from Clipboard">📋 Paste Ability</button>
+                                <button type="button" id="prune-abilities-btn" class="btn secondary-btn" title="Prune abilities never used by placed units on terrain.json">✂️ Prune Unused</button>
                             </div>
                         </div>
                     </div>
@@ -1985,6 +2909,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <div class="add-buttons-row" style="display: flex; gap: 8px;">
                                 <button type="button" id="add-custom-upgrade-btn" class="btn secondary-btn">+ Add Custom Upgrade</button>
                                 <button type="button" id="paste-custom-upgrade-btn" class="btn secondary-btn" title="Paste Upgrade from Clipboard">📋 Paste Upgrade</button>
+                                <button type="button" id="prune-upgrades-btn" class="btn secondary-btn" title="Prune upgrades never used by placed units on terrain.json">✂️ Prune Unused</button>
                             </div>
                         </div>
                     </div>
@@ -2005,6 +2930,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <div class="add-buttons-row" style="display: flex; gap: 8px;">
                                 <button type="button" id="add-custom-item-btn" class="btn secondary-btn">+ Add Custom Item</button>
                                 <button type="button" id="paste-custom-item-btn" class="btn secondary-btn" title="Paste Item from Clipboard">📋 Paste Item</button>
+                                <button type="button" id="prune-items-btn" class="btn secondary-btn" title="Prune items never used by placed units on terrain.json">✂️ Prune Unused</button>
                             </div>
                         </div>
                     </div>
@@ -2013,10 +2939,15 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             
             <div id="custom-assets-form" class="editor-form hidden">
                 <div class="form-header">
-                    <div>
-                        <div class="breadcrumb">Map > Assets Manager</div>
-                        <h2>Assets Manager</h2>
-                        <span class="subtitle">Import and manage textures, 3D models, decals, VFX, and audio</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <div>
+                            <div class="breadcrumb">Map > Assets Manager</div>
+                            <h2>Assets Manager</h2>
+                            <span class="subtitle">Import and manage textures, 3D models, decals, VFX, and audio</span>
+                        </div>
+                        <div>
+                            <button type="button" id="btn-prune-unused-assets" class="btn secondary-btn" title="Prune unused assets unreferenced by metadata.json & delete files from workspace">✂️ Prune Unused</button>
+                        </div>
                     </div>
                 </div>
                 <div class="form-scroll-container">
@@ -2138,6 +3069,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                             <h3 style="margin: 0;">📂 Current Map Assets</h3>
                             <div style="display: flex; align-items: center; gap: 8px;">
+                                <button type="button" id="btn-prune-unused-assets-section" class="btn secondary-btn small-btn" title="Prune unused assets unreferenced by metadata.json & delete files from workspace">✂️ Prune Unused</button>
                                 <label for="asset-type-filter-select" style="font-size: 12px; font-weight: 600; color: var(--text-muted, #858585);">Filter Type:</label>
                                 <select id="asset-type-filter-select" style="background: var(--vscode-input-background, #252526); color: var(--vscode-input-foreground, #cccccc); border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 4px; padding: 2px 8px; font-size: 12px; cursor: pointer;">
                                     <option value="all">All</option>

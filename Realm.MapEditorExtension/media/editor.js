@@ -65,7 +65,9 @@
         CollisionCircle: document.getElementById('field-CollisionCircle'),
         Brightness: document.getElementById('field-Brightness'),
         Tint: document.getElementById('field-Tint'),
+        NormalMode: document.getElementById('field-NormalMode'),
         RecalculateNormals: document.getElementById('field-RecalculateNormals'),
+        NormalizeLuminance: document.getElementById('field-NormalizeLuminance'),
         IgnorePlayerColor: document.getElementById('field-IgnorePlayerColor'),
         IsHero: document.getElementById('field-IsHero'),
         MaxHp: document.getElementById('field-MaxHp'),
@@ -340,7 +342,7 @@
                 const knownTopKeys = [
                     'MapProperties', 'CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps',
                     'CustomAbilities', 'CustomItems', 'CustomUpgrades', 'CustomWeapons', 'Assets', 
-                    'ModelOffsets', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelGenerateNormals',
+                    'ModelOffsets', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelNormalModes',
                     'ModelIgnorePlayerColor'
                 ];
                 for (const [key, val] of Object.entries(units)) {
@@ -364,6 +366,10 @@
                             u.PathingType = (u.ArmorType === 'building') ? 32 : 8;
                         }
                     }
+                    if (u.NormalMode === undefined || u.NormalMode === null) {
+                        u.NormalMode = 'Flat';
+                    }
+                    delete u.RecalculateNormals;
                     delete u.MovementType;
                     delete u.PathingCapabilities;
                     delete u.DefaultAssetType;
@@ -478,13 +484,8 @@
                                     if (blob) {
                                         const r = new FileReader();
                                         r.onload = () => {
-                                            const arrayBuffer = r.result;
-                                            const bytes = new Uint8Array(arrayBuffer);
-                                            let binaryString = '';
-                                            for (let i = 0; i < bytes.byteLength; i++) {
-                                                binaryString += String.fromCharCode(bytes[i]);
-                                            }
-                                            const base64Data = btoa(binaryString);
+                                            const dataUrl = r.result;
+                                            const base64Data = typeof dataUrl === 'string' ? (dataUrl.split(',')[1] || '') : '';
                                             const baseName = selectedFile.name.substring(0, selectedFile.name.lastIndexOf('.')) || selectedFile.name;
                                             vscode.postMessage({
                                                 type: 'processImportedAsset',
@@ -494,7 +495,7 @@
                                                 options: message.extraOptions
                                             });
                                         };
-                                        r.readAsArrayBuffer(blob);
+                                        r.readAsDataURL(blob);
                                     }
                                 }, 'image/png');
                             };
@@ -505,13 +506,8 @@
                         } else {
                             const reader = new FileReader();
                             reader.onload = () => {
-                                const arrayBuffer = reader.result;
-                                const bytes = new Uint8Array(arrayBuffer);
-                                let binaryString = '';
-                                for (let i = 0; i < bytes.byteLength; i++) {
-                                    binaryString += String.fromCharCode(bytes[i]);
-                                }
-                                const base64Data = btoa(binaryString);
+                                const dataUrl = reader.result;
+                                const base64Data = typeof dataUrl === 'string' ? (dataUrl.split(',')[1] || '') : '';
                                 vscode.postMessage({
                                     type: 'processImportedAsset',
                                     fileName: selectedFile.name,
@@ -520,13 +516,14 @@
                                     options: message.extraOptions
                                 });
                             };
-                            reader.readAsArrayBuffer(selectedFile);
+                            reader.readAsDataURL(selectedFile);
                         }
                     }
                     assetInput.remove();
                 });
                 document.body.appendChild(assetInput);
                 assetInput.click();
+                break;
             case 'resolvePathResult':
                 const callback = resolveCallbacks[message.requestId];
                 if (callback) {
@@ -727,11 +724,15 @@
             
             const val = unit[key];
             if (element.type === 'checkbox') {
-                if (key === 'RecalculateNormals') {
+                if (key === 'NormalizeLuminance') {
                     element.checked = val !== undefined ? !!val : true;
+                } else if (key === 'RecalculateNormals') {
+                    element.checked = val !== undefined ? !!val : (unit.NormalMode === 'Smooth');
                 } else {
                     element.checked = !!val;
                 }
+            } else if (key === 'NormalMode') {
+                element.value = val || unit.NormalMode || 'Flat';
             } else if (val === undefined || val === null) {
                 element.value = '';
             } else {
@@ -1215,14 +1216,14 @@
             `;
 
             card.querySelector('.btn-delete').addEventListener('click', () => {
-                if (confirm('Are you sure you want to delete this player slot?')) {
+                showCustomConfirmDialog('Are you sure you want to delete this player slot?', () => {
                     pushToUndoStack();
                     list.splice(index, 1);
                     units.MapProperties.PlayerSlots = list;
                     saveChanges();
                     renderPlayerSlots();
                     renderTeams(); // Slot indexes changed, redraw teams checklists
-                }
+                }, 'Delete');
             });
 
             card.querySelectorAll('input, select').forEach(input => {
@@ -1290,13 +1291,13 @@
             `;
 
             card.querySelector('.btn-delete').addEventListener('click', () => {
-                if (confirm('Are you sure you want to delete this team?')) {
+                showCustomConfirmDialog('Are you sure you want to delete this team?', () => {
                     pushToUndoStack();
                     list.splice(index, 1);
                     units.MapProperties.Teams = list;
                     saveChanges();
                     renderTeams();
-                }
+                }, 'Delete');
             });
 
             card.querySelector('.team-name').addEventListener('change', e => {
@@ -1366,13 +1367,13 @@
             `;
 
             card.querySelector('.btn-delete').addEventListener('click', () => {
-                if (confirm('Are you sure you want to delete this changelog entry?')) {
+                showCustomConfirmDialog('Are you sure you want to delete this changelog entry?', () => {
                     pushToUndoStack();
                     list.splice(index, 1);
                     units.MapProperties.Changelog = list;
                     saveChanges();
                     renderChangelog();
-                }
+                }, 'Delete');
             });
 
             card.querySelectorAll('input, textarea').forEach(input => {
@@ -1811,14 +1812,14 @@
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.index, 10);
                 const targetId = list[idx].WeaponId;
-                if (confirm(`Are you sure you want to delete custom weapon "${list[idx].Name || targetId}"?`)) {
+                showCustomConfirmDialog(`Are you sure you want to delete custom weapon "${list[idx].Name || targetId}"?`, () => {
                     pushToUndoStack();
                     cascadeDelete('weapon', targetId);
                     list.splice(idx, 1);
                     units.CustomWeapons = list;
                     saveChanges();
                     renderCustomWeapons();
-                }
+                }, 'Delete');
             });
         });
 
@@ -2197,14 +2198,14 @@
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.index, 10);
                 const targetId = list[idx].AbilityId;
-                if (confirm(`Are you sure you want to delete custom ability "${list[idx].Name || targetId}"?`)) {
+                showCustomConfirmDialog(`Are you sure you want to delete custom ability "${list[idx].Name || targetId}"?`, () => {
                     pushToUndoStack();
                     cascadeDelete('ability', targetId);
                     list.splice(idx, 1);
                     units.CustomAbilities = list;
                     saveChanges();
                     renderCustomAbilities();
-                }
+                }, 'Delete');
             });
         });
 
@@ -2411,14 +2412,14 @@
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.index, 10);
                 const targetId = list[idx].UpgradeId;
-                if (confirm(`Are you sure you want to delete custom upgrade "${list[idx].Name || targetId}"?`)) {
+                showCustomConfirmDialog(`Are you sure you want to delete custom upgrade "${list[idx].Name || targetId}"?`, () => {
                     pushToUndoStack();
                     cascadeDelete('upgrade', targetId);
                     list.splice(idx, 1);
                     units.CustomUpgrades = list;
                     saveChanges();
                     renderCustomUpgrades();
-                }
+                }, 'Delete');
             });
         });
 
@@ -2668,14 +2669,14 @@
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.index, 10);
                 const targetId = list[idx].ItemId;
-                if (confirm(`Are you sure you want to delete custom item "${list[idx].Name || targetId}"?`)) {
+                showCustomConfirmDialog(`Are you sure you want to delete custom item "${list[idx].Name || targetId}"?`, () => {
                     pushToUndoStack();
                     cascadeDelete('item', targetId);
                     list.splice(idx, 1);
                     units.CustomItems = list;
                     saveChanges();
                     renderCustomItems();
-                }
+                }, 'Delete');
             });
         });
 
@@ -3438,17 +3439,21 @@
         renderCustomItems();
     }
 
-    function showDeleteConfirm(displayName, id) {
+    function showCustomConfirmDialog(message, onOk, confirmText = 'Confirm') {
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;';
         const dialog = document.createElement('div');
-        dialog.style.cssText = 'background:var(--bg-secondary,#252526);border:1px solid var(--border-color,#3c3c3c);border-radius:8px;padding:24px;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.5);';
-        dialog.innerHTML = '<p style="margin:0 0 16px 0;color:var(--text-primary,#d4d4d4);font-size:14px;">Are you sure you want to delete unit "' + displayName + '"?</p><div style="display:flex;gap:8px;justify-content:flex-end;"><button id="confirm-cancel" style="padding:8px 16px;border:1px solid var(--border-color,#3c3c3c);border-radius:6px;background:transparent;color:var(--text-primary,#d4d4d4);cursor:pointer;font-weight:600;">Cancel</button><button id="confirm-ok" style="padding:8px 16px;border:none;border-radius:6px;background:var(--danger-color,#f48771);color:#fff;cursor:pointer;font-weight:600;">Delete</button></div>';
+        dialog.style.cssText = 'background:var(--bg-secondary,#252526);border:1px solid var(--border-color,#3c3c3c);border-radius:8px;padding:24px;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.5);';
+        dialog.innerHTML = '<p style="margin:0 0 16px 0;color:var(--text-primary,#d4d4d4);font-size:14px;line-height:1.5;">' + message + '</p><div style="display:flex;gap:8px;justify-content:flex-end;"><button id="confirm-cancel" style="padding:8px 16px;border:1px solid var(--border-color,#3c3c3c);border-radius:6px;background:transparent;color:var(--text-primary,#d4d4d4);cursor:pointer;font-weight:600;">Cancel</button><button id="confirm-ok" style="padding:8px 16px;border:none;border-radius:6px;background:var(--danger-color,#f48771);color:#fff;cursor:pointer;font-weight:600;">' + confirmText + '</button></div>';
         overlay.appendChild(dialog);
         document.body.appendChild(overlay);
-        dialog.querySelector('#confirm-ok').addEventListener('click', function () { overlay.remove(); deleteUnit(id); });
+        dialog.querySelector('#confirm-ok').addEventListener('click', function () { overlay.remove(); onOk(); });
         dialog.querySelector('#confirm-cancel').addEventListener('click', function () { overlay.remove(); });
         overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+    }
+
+    function showDeleteConfirm(displayName, id) {
+        showCustomConfirmDialog('Are you sure you want to delete unit "' + displayName + '"?', () => deleteUnit(id), 'Delete');
     }
 
     function deleteUnit(id) {
@@ -3499,7 +3504,9 @@
                 Name: `New ${prefix}`,
                 Description: `A decorative ${prefix.toLowerCase()} prop.`,
                 PathingType: defaultPathing,
-                RecalculateNormals: true
+                Brightness: 0.5,
+                NormalMode: 'Flat',
+                NormalizeLuminance: true
             });
         } else if (domain === 'resources') {
             targetArray.push({
@@ -3511,7 +3518,9 @@
                 GrowthRate: 0.0,
                 MaxWorkers: 5,
                 PathingType: defaultPathing,
-                RecalculateNormals: true
+                Brightness: 0.5,
+                NormalMode: 'Flat',
+                NormalizeLuminance: true
             });
         } else {
             targetArray.push({
@@ -3534,7 +3543,9 @@
                 ArmorType: defaultArmor,
                 GoldBounty: 10.0,
                 PathingType: defaultPathing,
-                RecalculateNormals: true
+                Brightness: 0.5,
+                NormalMode: 'Flat',
+                NormalizeLuminance: true
             });
         }
 
@@ -3629,6 +3640,50 @@
         units.CustomItems = list;
         saveChanges();
         renderCustomItems();
+    });
+
+    document.getElementById('prune-entities-btn')?.addEventListener('click', () => {
+        const domain = getActiveDomain();
+        const domainName = domain === 'buildings' ? 'buildings' : domain === 'resources' ? 'resources' : domain === 'props' ? 'props' : 'units';
+        showCustomConfirmDialog(`Are you sure you want to prune all ${domainName} that have never been placed on terrain.json?`, () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: domain });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('prune-weapons-btn')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all weapons not used by any placed units on terrain.json?', () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: 'weapons' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('prune-abilities-btn')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all abilities not used by any placed units on terrain.json?', () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: 'abilities' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('prune-upgrades-btn')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all tech upgrades not used by any placed units on terrain.json?', () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: 'upgrades' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('prune-items-btn')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all items not used by any placed units on terrain.json?', () => {
+            vscode.postMessage({ type: 'pruneDomain', domain: 'items' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('btn-prune-unused-assets')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all unreferenced assets? Unused asset entries will be removed from metadata.json and their files will be deleted from the workspace.', () => {
+            vscode.postMessage({ type: 'pruneUnusedAssets' });
+        }, 'Prune Unused');
+    });
+
+    document.getElementById('btn-prune-unused-assets-section')?.addEventListener('click', () => {
+        showCustomConfirmDialog('Are you sure you want to prune all unreferenced assets? Unused asset entries will be removed from metadata.json and their files will be deleted from the workspace.', () => {
+            vscode.postMessage({ type: 'pruneUnusedAssets' });
+        }, 'Prune Unused');
     });
 
     // --- SYSTEM FILE RESOLVE PATH & THUMBNAIL/AUDIO WARNINGS ---
@@ -5057,6 +5112,14 @@
                         let crossFade = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Cross_Fade !== undefined || itemVal.cross_fade !== undefined || itemVal.Grid_Cross_Fade !== undefined || itemVal.grid_cross_fade !== undefined)) ? parseFloat(itemVal.Cross_Fade ?? itemVal.cross_fade ?? itemVal.Grid_Cross_Fade ?? itemVal.grid_cross_fade) : 5.0;
                         if (isNaN(crossFade)) crossFade = 5.0;
 
+                        let heightScale = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Height_Scale !== undefined || itemVal.height_scale !== undefined || itemVal.heightScale !== undefined)) ? parseFloat(itemVal.Height_Scale ?? itemVal.height_scale ?? itemVal.heightScale) : 1.0;
+                        if (isNaN(heightScale)) heightScale = 1.0;
+                        let heightOffset = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Height_Offset !== undefined || itemVal.height_offset !== undefined || itemVal.heightOffset !== undefined)) ? parseFloat(itemVal.Height_Offset ?? itemVal.height_offset ?? itemVal.heightOffset) : 0.0;
+                        if (isNaN(heightOffset)) heightOffset = 0.0;
+                        let crevicePower = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Crevice_Power !== undefined || itemVal.crevice_power !== undefined || itemVal.crevicePower !== undefined)) ? parseFloat(itemVal.Crevice_Power ?? itemVal.crevice_power ?? itemVal.crevicePower) : 1.0;
+                        if (isNaN(crevicePower)) crevicePower = 1.0;
+                        let edgeNoiseInfluence = 1.0;
+
                         html += `<div class="texture-stochastic-controls" data-key="${escapeHtml(itemKey)}" style="margin-top: 6px; margin-bottom: 8px; padding: 8px 12px; background: var(--vscode-input-background, #1e1e24); border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.15)); border-left: 4px solid var(--vscode-symbolIcon-propertyForeground, #4ec9b0); border-radius: 6px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">`;
                         
                         html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
@@ -5070,6 +5133,21 @@
                         html += `<input type="range" class="input-texture-tint-slider" data-key="${escapeHtml(itemKey)}" min="0.0" max="1.0" step="0.01" value="${tintHue.toFixed(2)}" title="Hue slider for tint" style="width: 80px; cursor: pointer;" />`;
                         html += `<input type="color" class="input-texture-tint-picker" data-key="${escapeHtml(itemKey)}" value="${tint}" title="Direct RGB tint color picker" style="width: 44px; height: 22px; padding: 0; background: transparent; border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.25)); border-radius: 3px; cursor: pointer;" />`;
                         html += `</div>`;
+                        html += `</div>`;
+
+                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Displacement amplitude multiplier for terrain height blending (range 0.1 to 3.0, default 1.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Height Scale: <span class="lbl-height-scale-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${heightScale.toFixed(2)}</span></label>`;
+                        html += `<input type="range" class="input-texture-height-scale" data-key="${escapeHtml(itemKey)}" min="0.1" max="3.0" step="0.05" value="${heightScale}" title="Displacement amplitude multiplier for terrain height blending (range 0.1 to 3.0, default 1.0)." style="width: 130px; cursor: pointer;" />`;
+                        html += `</div>`;
+
+                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Vertical priority elevation bias. Positive values raise layer dominance, negative sink below (range -1.0 to 1.0, default 0.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Height Offset: <span class="lbl-height-offset-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${heightOffset.toFixed(2)}</span></label>`;
+                        html += `<input type="range" class="input-texture-height-offset" data-key="${escapeHtml(itemKey)}" min="-1.0" max="1.0" step="0.02" value="${heightOffset}" title="Vertical priority elevation bias. Positive values raise layer dominance, negative sink below (range -1.0 to 1.0, default 0.0)." style="width: 130px; cursor: pointer;" />`;
+                        html += `</div>`;
+
+                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
+                        html += `<label title="Crevice power exponent shaping how aggressively low crevices/joints are filled (range 0.5 to 4.0, default 1.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Crevice Power: <span class="lbl-crevice-power-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${crevicePower.toFixed(2)}</span></label>`;
+                        html += `<input type="range" class="input-texture-crevice-power" data-key="${escapeHtml(itemKey)}" min="0.5" max="4.0" step="0.1" value="${crevicePower}" title="Crevice power exponent shaping how aggressively low crevices/joints are filled (range 0.5 to 4.0, default 1.0)." style="width: 130px; cursor: pointer;" />`;
                         html += `</div>`;
 
                         html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
@@ -5176,6 +5254,10 @@
             const crossFade = parseFloat(itemVal.Cross_Fade ?? itemVal.cross_fade ?? itemVal.Grid_Cross_Fade ?? itemVal.grid_cross_fade ?? 5.0);
             const brightness = parseFloat(itemVal.Brightness ?? itemVal.brightness ?? 1.0);
             const tint = (itemVal.Tint || itemVal.tint) ?? '#ffffff';
+            const heightScale = parseFloat(itemVal.Height_Scale ?? itemVal.height_scale ?? itemVal.heightScale ?? 1.0);
+            const heightOffset = parseFloat(itemVal.Height_Offset ?? itemVal.height_offset ?? itemVal.heightOffset ?? 0.0);
+            const crevicePower = parseFloat(itemVal.Crevice_Power ?? itemVal.crevice_power ?? itemVal.crevicePower ?? 1.0);
+            const edgeNoiseInfluence = 1.0;
 
             const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
             fetch(`http://127.0.0.1:${ipcPort}/api/`, {
@@ -5189,10 +5271,71 @@
                     stochasticTileSize: stochTileSize,
                     crossFade: crossFade,
                     brightness: brightness,
-                    tint: tint
+                    tint: tint,
+                    heightScale: heightScale,
+                    heightOffset: heightOffset,
+                    crevicePower: crevicePower,
+                    edgeNoiseInfluence: 1.0
                 })
             }).catch(() => {});
         }
+
+        display.querySelectorAll('.input-texture-height-scale').forEach(input => {
+            const handleHsChange = (e, shouldSave) => {
+                const key = e.target.getAttribute('data-key');
+                const val = parseFloat(e.target.value);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const lbl = parentRow.querySelector('.lbl-height-scale-val');
+                    if (lbl) lbl.textContent = val.toFixed(2);
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.height_scale = val;
+                    delete itemVal.Height_Scale;
+                    delete itemVal.heightScale;
+                }, shouldSave);
+            };
+            input.addEventListener('input', (e) => handleHsChange(e, false));
+            input.addEventListener('change', (e) => handleHsChange(e, true));
+        });
+
+        display.querySelectorAll('.input-texture-height-offset').forEach(input => {
+            const handleHoChange = (e, shouldSave) => {
+                const key = e.target.getAttribute('data-key');
+                const val = parseFloat(e.target.value);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const lbl = parentRow.querySelector('.lbl-height-offset-val');
+                    if (lbl) lbl.textContent = val.toFixed(2);
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.height_offset = val;
+                    delete itemVal.Height_Offset;
+                    delete itemVal.heightOffset;
+                }, shouldSave);
+            };
+            input.addEventListener('input', (e) => handleHoChange(e, false));
+            input.addEventListener('change', (e) => handleHoChange(e, true));
+        });
+
+        display.querySelectorAll('.input-texture-crevice-power').forEach(input => {
+            const handleCpChange = (e, shouldSave) => {
+                const key = e.target.getAttribute('data-key');
+                const val = parseFloat(e.target.value);
+                const parentRow = e.target.closest('.texture-stochastic-controls');
+                if (parentRow) {
+                    const lbl = parentRow.querySelector('.lbl-crevice-power-val');
+                    if (lbl) lbl.textContent = val.toFixed(2);
+                }
+                updateTextureProperty(key, (itemVal) => {
+                    itemVal.crevice_power = val;
+                    delete itemVal.Crevice_Power;
+                    delete itemVal.crevicePower;
+                }, shouldSave);
+            };
+            input.addEventListener('input', (e) => handleCpChange(e, false));
+            input.addEventListener('change', (e) => handleCpChange(e, true));
+        });
 
         display.querySelectorAll('.input-texture-brightness').forEach(input => {
             const handleBrightChange = (e, shouldSave) => {
@@ -5204,8 +5347,8 @@
                     if (lbl) lbl.textContent = val.toFixed(2);
                 }
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.Brightness = val;
                     itemVal.brightness = val;
+                    delete itemVal.Brightness;
                 }, shouldSave);
             };
             input.addEventListener('input', (e) => handleBrightChange(e, false));
@@ -5223,8 +5366,8 @@
                     if (picker) picker.value = hex;
                 }
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.Tint = hex;
                     itemVal.tint = hex;
+                    delete itemVal.Tint;
                 }, shouldSave);
             };
             input.addEventListener('input', (e) => handleTintSlider(e, false));
@@ -5242,8 +5385,8 @@
                     if (slider) slider.value = hue.toFixed(2);
                 }
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.Tint = hex;
                     itemVal.tint = hex;
+                    delete itemVal.Tint;
                 }, shouldSave);
             };
             input.addEventListener('input', (e) => handleTintPicker(e, false));
@@ -5262,8 +5405,8 @@
                     if (gridRow) gridRow.style.display = (val === 'Grid') ? 'flex' : 'none';
                 }
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.Tile_Mode = val;
                     itemVal.tile_mode = val;
+                    delete itemVal.Tile_Mode;
                 }, true);
             });
         });
@@ -5273,8 +5416,8 @@
                 const key = e.target.getAttribute('data-key');
                 const val = (e.target.value === 'true');
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.Variants = val;
                     itemVal.variants = val;
+                    delete itemVal.Variants;
                 }, true);
                 const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
                 fetch(`http://127.0.0.1:${ipcPort}/api/`, {
@@ -5295,8 +5438,8 @@
                     if (lbl) lbl.textContent = val.toFixed(2);
                 }
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.UV_Scale = val;
                     itemVal.uv_scale = val;
+                    delete itemVal.UV_Scale;
                 }, shouldSave);
             };
             input.addEventListener('input', (e) => handleUvChange(e, false));
@@ -5313,8 +5456,8 @@
                     if (lbl) lbl.textContent = val.toFixed(2);
                 }
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.Stochastic_Tile_Size = val;
                     itemVal.stochastic_tile_size = val;
+                    delete itemVal.Stochastic_Tile_Size;
                 }, shouldSave);
             };
             input.addEventListener('input', (e) => handleStochChange(e, false));
@@ -5331,8 +5474,10 @@
                     if (lbl) lbl.textContent = `${val.toFixed(1)}%`;
                 }
                 updateTextureProperty(key, (itemVal) => {
-                    itemVal.Cross_Fade = val;
                     itemVal.cross_fade = val;
+                    delete itemVal.Cross_Fade;
+                    delete itemVal.Grid_Cross_Fade;
+                    delete itemVal.grid_cross_fade;
                 }, shouldSave);
             };
             input.addEventListener('input', (e) => handleCrossFadeChange(e, false));

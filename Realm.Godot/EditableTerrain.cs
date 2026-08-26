@@ -4,6 +4,7 @@ using DotRecast.Detour;
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 public partial class EditableTerrain : StaticBody3D
 {
@@ -26,6 +27,54 @@ public partial class EditableTerrain : StaticBody3D
 		return Realm.Godot.Utils.PlayerColorShaderManager.NormalizeAlbedoImage(sourceImage, targetLinearLuminance, 0.2f, maxScaleFactor);
 	}
 
+	private static float[,] ComputeSeparableBoxBlur(float[,] input, int w, int h, int radius)
+	{
+		float[,] temp = new float[w, h];
+		float[,] result = new float[w, h];
+		int windowSize = 2 * radius + 1;
+		float invWindow = 1.0f / windowSize;
+
+		for (int y = 0; y < h; y++)
+		{
+			float sum = 0.0f;
+			for (int k = -radius; k <= radius; k++)
+			{
+				int px = (k % w + w) % w;
+				sum += input[px, y];
+			}
+			temp[0, y] = sum * invWindow;
+
+			for (int x = 1; x < w; x++)
+			{
+				int removeX = ((x - 1 - radius) % w + w) % w;
+				int addX = ((x + radius) % w + w) % w;
+				sum += input[addX, y] - input[removeX, y];
+				temp[x, y] = sum * invWindow;
+			}
+		}
+
+		for (int x = 0; x < w; x++)
+		{
+			float sum = 0.0f;
+			for (int k = -radius; k <= radius; k++)
+			{
+				int py = (k % h + h) % h;
+				sum += temp[x, py];
+			}
+			result[x, 0] = sum * invWindow;
+
+			for (int y = 1; y < h; y++)
+			{
+				int removeY = ((y - 1 - radius) % h + h) % h;
+				int addY = ((y + radius) % h + h) % h;
+				sum += temp[x, addY] - temp[x, removeY];
+				result[x, y] = sum * invWindow;
+			}
+		}
+
+		return result;
+	}
+
 	public void ProcessAndSaveRawTexture(string rawPngPath, string outputKtx2Path)
 	{
 		var img = Godot.Image.LoadFromFile(rawPngPath);
@@ -43,14 +92,72 @@ public partial class EditableTerrain : StaticBody3D
 		
 		var layer0 = Godot.Image.CreateEmpty(w, h, false, Godot.Image.Format.Rgba8);
 		var layer1 = Godot.Image.CreateEmpty(w, h, false, Godot.Image.Format.Rgba8);
-		
+
+		float[,] luminance = new float[w, h];
 		for (int y = 0; y < h; y++)
 		{
 			for (int x = 0; x < w; x++)
 			{
 				var color = img.GetPixel(x, y);
-				float luma = 0.299f * color.R + 0.587f * color.G + 0.114f * color.B;
-				layer0.SetPixel(x, y, new Godot.Color(color.R, color.G, color.B, luma));
+				luminance[x, y] = 0.299f * color.R + 0.587f * color.G + 0.114f * color.B;
+			}
+		}
+
+		float[,] fineMean = ComputeSeparableBoxBlur(luminance, w, h, 3);
+		float[,] coarseMean = ComputeSeparableBoxBlur(luminance, w, h, 14);
+
+		float[,] rawHeight = new float[w, h];
+		int totalPixels = w * h;
+		float[] flatHeights = new float[totalPixels];
+		int flatIdx = 0;
+
+		for (int y = 0; y < h; y++)
+		{
+			int py = y > 0 ? y - 1 : h - 1;
+			int ny = y < h - 1 ? y + 1 : 0;
+
+			for (int x = 0; x < w; x++)
+			{
+				int px = x > 0 ? x - 1 : w - 1;
+				int nx = x < w - 1 ? x + 1 : 0;
+
+				float lum = luminance[x, y];
+				float highFreq = lum - fineMean[x, y];
+				float midFreq = fineMean[x, y] - coarseMean[x, y];
+
+				float dx = (luminance[nx, y] - luminance[px, y]) * 0.5f;
+				float dy = (luminance[x, ny] - luminance[x, py]) * 0.5f;
+				float gradMag = MathF.Sqrt(dx * dx + dy * dy);
+				float laplacian = luminance[nx, y] + luminance[px, y] + luminance[x, ny] + luminance[x, py] - 4.0f * lum;
+
+				float structuralValue = 0.5f + (highFreq * 2.2f) + (midFreq * 1.4f) + (laplacian * 0.5f) - (gradMag * 0.25f);
+				rawHeight[x, y] = structuralValue;
+				flatHeights[flatIdx++] = structuralValue;
+			}
+		}
+
+		Array.Sort(flatHeights);
+		int p1Index = Math.Clamp((int)(totalPixels * 0.01f), 0, totalPixels - 1);
+		int p99Index = Math.Clamp((int)(totalPixels * 0.99f), 0, totalPixels - 1);
+		float lowPercentile = flatHeights[p1Index];
+		float highPercentile = flatHeights[p99Index];
+
+		float normRange = highPercentile - lowPercentile;
+		float invNormRange = normRange > 1e-5f ? 1.0f / normRange : 0.0f;
+		float[,] normalizedHeight = new float[w, h];
+
+		for (int y = 0; y < h; y++)
+		{
+			for (int x = 0; x < w; x++)
+			{
+				var color = img.GetPixel(x, y);
+				float rawVal = rawHeight[x, y];
+				float hVal = invNormRange > 0.0f
+					? Math.Clamp((rawVal - lowPercentile) * invNormRange, 0.0f, 1.0f)
+					: 0.5f;
+
+				normalizedHeight[x, y] = hVal;
+				layer0.SetPixel(x, y, new Godot.Color(color.R, color.G, color.B, hVal));
 			}
 		}
 		
@@ -63,36 +170,38 @@ public partial class EditableTerrain : StaticBody3D
 				int py = y > 0 ? y - 1 : h - 1;
 				int ny = y < h - 1 ? y + 1 : 0;
 				
-				float h00 = layer0.GetPixel(px, py).A;
-				float h10 = layer0.GetPixel(x, py).A;
-				float h20 = layer0.GetPixel(nx, py).A;
+				float h00 = normalizedHeight[px, py];
+				float h10 = normalizedHeight[x, py];
+				float h20 = normalizedHeight[nx, py];
 				
-				float h01 = layer0.GetPixel(px, y).A;
-				float h21 = layer0.GetPixel(nx, y).A;
+				float h01 = normalizedHeight[px, y];
+				float h11 = normalizedHeight[x, y];
+				float h21 = normalizedHeight[nx, y];
 				
-				float h02 = layer0.GetPixel(px, ny).A;
-				float h12 = layer0.GetPixel(x, ny).A;
-				float h22 = layer0.GetPixel(nx, ny).A;
+				float h02 = normalizedHeight[px, ny];
+				float h12 = normalizedHeight[x, ny];
+				float h22 = normalizedHeight[nx, ny];
 				
 				float dx = ((h20 + 2.0f * h21 + h22) - (h00 + 2.0f * h01 + h02)) / 8.0f;
 				float dy = ((h02 + 2.0f * h12 + h22) - (h00 + 2.0f * h10 + h20)) / 8.0f;
-				float dz = 1.0f / 5.0f;
+				float dz = 1.0f / 4.0f;
 				
 				var normal = new Godot.Vector3(-dx, -dy, dz).Normalized();
 				
-				float laplacian = (h10 + h01 + h21 + h12) - 4.0f * layer0.GetPixel(x, y).A;
-				float height = layer0.GetPixel(x, y).A;
+				float laplacian = (h10 + h01 + h21 + h12) - 4.0f * h11;
+				float height = h11;
 				float ao = 1.0f - Godot.Mathf.Clamp(laplacian * 4.0f, 0.0f, 0.5f);
-				ao *= (0.7f + 0.3f * height);
+				ao *= (0.65f + 0.35f * height);
 				ao = Godot.Mathf.Clamp(ao, 0.0f, 1.0f);
 
 				float r = (normal.X * 0.5f + 0.5f);
 				float g = (normal.Y * 0.5f + 0.5f);
 				float b = ao;
 
-				float contrastHeight = (height - 0.5f) * 1.5f + 0.5f;
+				float contrastHeight = (height - 0.5f) * 1.4f + 0.5f;
 				contrastHeight = Godot.Mathf.Clamp(contrastHeight, 0.0f, 1.0f);
-				float roughness = Godot.Mathf.Lerp(0.8f, 0.5f, contrastHeight);
+				float highDetail = Math.Abs(luminance[x, y] - fineMean[x, y]);
+				float roughness = Godot.Mathf.Clamp(Godot.Mathf.Lerp(0.85f, 0.45f, contrastHeight) + highDetail * 0.8f, 0.15f, 0.95f);
 
 				layer1.SetPixel(x, y, new Godot.Color(r, g, b, roughness));
 			}
@@ -371,7 +480,13 @@ public partial class EditableTerrain : StaticBody3D
 
 	public TerrainSplatWeights[,] SplatMap { get; set; }
 	public TerrainSplatWeights[,] CliffSplatMap { get; set; }
-	public int CliffTextureIndex { get; set; } = 2;
+
+	public float CliffJitterStrength { get; set; } = 1.0f;
+	public float CliffJitterScale { get; set; } = 0.20f;
+	public float CliffRimNoiseStrength { get; set; } = 0.30f;
+	public float BlendSoftness { get; set; } = 0.04f;
+	public float BlendNoiseStrength { get; set; } = 0.22f;
+	public float BlendNoiseScale { get; set; } = 0.22f;
 
 	public int[,] PathingCodes
 	{
@@ -438,10 +553,14 @@ public partial class EditableTerrain : StaticBody3D
 		public Color[] ColorsCache;
 		public float[] TexIndicesCache;
 		public float[] TexWeightsCache01;
+		public float[] CliffIndicesCache;
+		public float[] CliffWeightsCache;
 		public Vector3[] NormalsCache;
 		public Vector2[] UvsCache;
 		public int[] IndicesCache;
 		public float[] MapDataCache;
+		public Dictionary<TerrainVertexKey, int> WeldVertexMap;
+		public int[] WeldRemapTable;
 	}
 	
 	private List<TerrainChunk> _chunks = new List<TerrainChunk>();
@@ -834,7 +953,7 @@ void fragment() {
 					if (CliffSplatMap != null && x < CliffSplatMap.GetLength(0) && z < CliffSplatMap.GetLength(1))
 						newCliffSplatMap[x, z] = CliffSplatMap[x, z];
 					else
-						newCliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(CliffTextureIndex);
+						newCliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
 				}
 			}
 			CliffSplatMap = newCliffSplatMap;
@@ -857,9 +976,13 @@ void fragment() {
 shader_type spatial;
 render_mode blend_mix;
 
-uniform sampler2DArray terrain_textures : source_color;
-uniform sampler2DArray terrain_normals_pbr : hint_default_white;
-uniform float blend_softness = 0.2;
+uniform sampler2DArray terrain_textures : source_color, filter_linear_mipmap_anisotropic;
+uniform sampler2DArray terrain_normals_pbr : hint_default_white, filter_linear_mipmap_anisotropic;
+uniform float blend_softness = 0.04;
+uniform float blend_noise_strength = 0.22;
+uniform float blend_noise_scale = 0.22;
+uniform float cliff_jitter_strength = 1.0;
+uniform float cliff_jitter_scale = 0.20;
 uniform sampler2D shroud_texture : hint_default_white;
 uniform vec2 shroud_world_min = vec2(-125.0, -125.0);
 uniform vec2 shroud_world_size = vec2(250.0, 250.0);
@@ -883,22 +1006,26 @@ uniform float macro_normal_strength = 0.15;
 uniform float macro_lacunarity = 2.0;
 uniform float macro_gain = 0.5;
 
-uniform bool enable_stochastic = true;
-uniform bool enable_normal_mapping = true;
 uniform bool enable_macro_noise = true;
 uniform bool enable_height_blend = true;
-uniform bool enable_fast_planar = false;
+uniform bool enable_normal_mapping = true;
+uniform float specular_amt = 0.2;
 
 uniform vec4 swatch_params[32];
+uniform vec4 swatch_height_params[32];
 
-varying vec4 v_tex_indices;
+varying flat vec4 v_tex_indices;
 varying vec4 v_tex_weights;
+varying flat vec4 v_cliff_tex_indices;
+varying vec4 v_cliff_tex_weights;
 varying vec3 v_world_pos;
 varying vec3 v_world_normal;
 varying vec4 v_color;
+varying flat float v_cliff_factor;
 
 float macro_hash(vec2 p) {
-	uvec2 q = uvec2(ivec2(p));
+	ivec2 ip = ivec2(floor(p));
+	uvec2 q = uvec2(ip);
 	q = q * uvec2(1597334677u, 3812015801u);
 	uint n = (q.x ^ q.y) * 1597334677u;
 	return float(n) * (1.0 / 4294967295.0);
@@ -907,22 +1034,19 @@ float macro_hash(vec2 p) {
 float macro_noise(vec2 p) {
 	vec2 i = floor(p);
 	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	float a = macro_hash(i);
-	float b = macro_hash(i + vec2(1.0, 0.0));
-	float c = macro_hash(i + vec2(0.0, 1.0));
-	float d = macro_hash(i + vec2(1.0, 1.0));
-	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+	vec2 u = f * f * (3.0 - 2.0 * f);
+	return mix(mix(macro_hash(i + vec2(0.0, 0.0)), macro_hash(i + vec2(1.0, 0.0)), u.x),
+	           mix(macro_hash(i + vec2(0.0, 1.0)), macro_hash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
 
 float macro_fbm(vec2 p) {
 	float v = 0.0;
 	float a = 0.5;
-	vec2 shift = vec2(100.0);
-	for (int i = 0; i < 3; i++) {
+	mat2 rot = mat2(vec2(0.8, -0.6), vec2(0.6, 0.8));
+	for (int i = 0; i < 4; ++i) {
 		v += a * macro_noise(p);
-		p = p * macro_lacunarity + shift;
-		a *= macro_gain;
+		p = rot * p * 2.0 + vec2(100.0);
+		a *= 0.5;
 	}
 	return v;
 }
@@ -932,23 +1056,22 @@ vec4 sample_quad_array(sampler2DArray tex_array, float layer, vec2 uv) {
 }
 
 vec2 stochastic_hash(vec2 p) {
-	uvec2 q = uvec2(ivec2(p));
+	ivec2 ip = ivec2(floor(p));
+	uvec2 q = uvec2(ip);
 	q = q * uvec2(1597334677u, 3812015801u);
 	uint n = (q.x ^ q.y) * 1597334677u;
 	return vec2(float(n & 0xFFFFu), float((n >> 16u) & 0xFFFFu)) * (1.0 / 65535.0);
 }
 
-vec4 sample_semi_grid(sampler2DArray tex_array, float layer, vec2 uv, float blend_width) {
+vec4 sample_semi_grid(sampler2DArray tex_array, float layer, vec2 uv, vec2 dx, vec2 dy, float blend_width) {
 	if (blend_width <= 0.0001) {
-		return texture(tex_array, vec3(uv, layer));
+		return textureGrad(tex_array, vec3(uv, layer), dx, dy);
 	}
 	vec2 f = fract(uv);
 	vec2 edge = smoothstep(vec2(0.0), vec2(blend_width), f) * 
 	            smoothstep(vec2(0.0), vec2(blend_width), vec2(1.0) - f);
 	float center_weight = edge.x * edge.y;
 
-	vec2 dx = dFdx(uv);
-	vec2 dy = dFdy(uv);
 	vec4 col_center = textureGrad(tex_array, vec3(uv, layer), dx, dy);
 
 	if (center_weight > 0.99) {
@@ -962,13 +1085,10 @@ vec4 sample_semi_grid(sampler2DArray tex_array, float layer, vec2 uv, float blen
 	return mix(col_border, col_center, center_weight);
 }
 
-vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, float tile_mode, float stoch_tile_size, float cross_fade, bool is_vector_data) {
-	if (!enable_stochastic || tile_mode < 0.5) {
-		return sample_semi_grid(tex_array, layer, uv, cross_fade);
+vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, vec2 dx, vec2 dy, float tile_mode, float stoch_tile_size, float cross_fade, bool is_vector_data) {
+	if (tile_mode < 0.5) {
+		return textureGrad(tex_array, vec3(uv, layer), dx, dy);
 	}
-
-	vec2 dx = dFdx(uv);
-	vec2 dy = dFdy(uv);
 
 	const float F2 = 0.36602540378;
 	const float G2 = 0.2113248654;
@@ -1006,20 +1126,37 @@ vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, flo
 	}
 
 	vec3 mean_color = col0.rgb * w.x + col1.rgb * w.y + col2.rgb * w.z;
-
-	vec3 var0 = (col0.rgb - mean_color) * (col0.rgb - mean_color);
-	vec3 var1 = (col1.rgb - mean_color) * (col1.rgb - mean_color);
-	vec3 var2 = (col2.rgb - mean_color) * (col2.rgb - mean_color);
-	vec3 blended_var = sqrt(var0 * w.x + var1 * w.y + var2 * w.z);
-
-	float target_std_dev = length(blended_var) * 0.5;
-	vec3 final_color = mean_color + (mean_color - vec3(dot(mean_color, vec3(0.299, 0.587, 0.114)))) * target_std_dev;
-	final_color = clamp(final_color, 0.0, 1.0);
-
-	return vec4(final_color, col0.a * w.x + col1.a * w.y + col2.a * w.z);
+	return vec4(mean_color, col0.a * w.x + col1.a * w.y + col2.a * w.z);
 }
 
-vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, vec2 uv_y, vec2 uv_z, vec3 weights, bool is_vector_data) {
+vec4 sample_planar_layer(sampler2DArray tex_array, float layer, vec2 uv_y, vec2 dx_y, vec2 dy_y, bool is_vector_data) {
+	int layer_idx = int(clamp(round(layer), 0.0, 31.0));
+	vec4 params = swatch_params[layer_idx];
+	float tile_mode = params.x;
+	float uv_scale = params.y > 0.001 ? params.y : 1.0;
+	float stoch_tile_size = params.z > 0.001 ? params.z : 1.0;
+	float cross_fade = clamp(params.w, 0.0, 0.10);
+
+	vec2 scaled_uv_y = uv_y * uv_scale;
+	vec2 scaled_dx_y = dx_y * uv_scale;
+	vec2 scaled_dy_y = dy_y * uv_scale;
+
+	return sample_stochastic_layer(tex_array, layer, scaled_uv_y, scaled_dx_y, scaled_dy_y, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+}
+
+vec3 get_active_weights(float layer, vec3 weights) {
+	int layer_idx = int(clamp(round(layer), 0.0, 31.0));
+	float tile_mode = swatch_params[layer_idx].x;
+	if (tile_mode < 0.5) {
+		float max_w = max(weights.x, max(weights.y, weights.z));
+		if (weights.y >= max_w) return vec3(0.0, 1.0, 0.0);
+		if (weights.x >= max_w) return vec3(1.0, 0.0, 0.0);
+		return vec3(0.0, 0.0, 1.0);
+	}
+	return weights;
+}
+
+vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, vec2 uv_y, vec2 uv_z, vec2 dx_x, vec2 dy_x, vec2 dx_y, vec2 dy_y, vec2 dx_z, vec2 dy_z, vec3 weights, bool is_vector_data) {
 	int layer_idx = int(clamp(round(layer), 0.0, 31.0));
 	vec4 params = swatch_params[layer_idx];
 	float tile_mode = params.x;
@@ -1031,30 +1168,75 @@ vec4 sample_triplanar_layer(sampler2DArray tex_array, float layer, vec2 uv_x, ve
 	vec2 scaled_uv_y = uv_y * uv_scale;
 	vec2 scaled_uv_z = uv_z * uv_scale;
 
-	if (enable_fast_planar && weights.y > 0.90) {
-		return sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+	vec2 scaled_dx_x = dx_x * uv_scale;
+	vec2 scaled_dy_x = dy_x * uv_scale;
+	vec2 scaled_dx_y = dx_y * uv_scale;
+	vec2 scaled_dy_y = dy_y * uv_scale;
+	vec2 scaled_dx_z = dx_z * uv_scale;
+	vec2 scaled_dy_z = dy_z * uv_scale;
+
+	vec3 active_weights = get_active_weights(layer, weights);
+
+	if (active_weights.y > 0.99) {
+		return sample_stochastic_layer(tex_array, layer, scaled_uv_y, scaled_dx_y, scaled_dy_y, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+	}
+	if (active_weights.x > 0.99) {
+		return sample_stochastic_layer(tex_array, layer, scaled_uv_x, scaled_dx_x, scaled_dy_x, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+	}
+	if (active_weights.z > 0.99) {
+		return sample_stochastic_layer(tex_array, layer, scaled_uv_z, scaled_dx_z, scaled_dy_z, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
 	}
 
-	vec4 col_x = sample_stochastic_layer(tex_array, layer, scaled_uv_x, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
-	vec4 col_y = sample_stochastic_layer(tex_array, layer, scaled_uv_y, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
-	vec4 col_z = sample_stochastic_layer(tex_array, layer, scaled_uv_z, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
-	return col_x * weights.x + col_y * weights.y + col_z * weights.z;
+	vec4 col_x = sample_stochastic_layer(tex_array, layer, scaled_uv_x, scaled_dx_x, scaled_dy_x, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+	vec4 col_y = sample_stochastic_layer(tex_array, layer, scaled_uv_y, scaled_dx_y, scaled_dy_y, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+	vec4 col_z = sample_stochastic_layer(tex_array, layer, scaled_uv_z, scaled_dx_z, scaled_dy_z, tile_mode, stoch_tile_size, cross_fade, is_vector_data);
+	return col_x * active_weights.x + col_y * active_weights.y + col_z * active_weights.z;
+}
+
+vec3 unpack_triplanar_normal(vec4 norm_pbr, vec3 blend_w, vec3 geom_norm) {
+	vec2 t_xy = norm_pbr.rg * 2.0 - 1.0;
+	float t_z = sqrt(max(0.0, 1.0 - dot(t_xy, t_xy)));
+
+	vec3 sign_n = sign(geom_norm);
+	sign_n.x = sign_n.x == 0.0 ? 1.0 : sign_n.x;
+	sign_n.y = sign_n.y == 0.0 ? 1.0 : sign_n.y;
+	sign_n.z = sign_n.z == 0.0 ? 1.0 : sign_n.z;
+
+	vec3 n_x = vec3(t_z * sign_n.x, t_xy.y, t_xy.x * sign_n.x);
+	vec3 n_y = vec3(t_xy.x, t_z * sign_n.y, t_xy.y);
+	vec3 n_z = vec3(t_xy.x * sign_n.z, t_xy.y, t_z * sign_n.z);
+
+	vec3 world_n = n_x * blend_w.x + n_y * blend_w.y + n_z * blend_w.z;
+	return normalize(world_n);
 }
 
 void vertex() {
 	v_tex_indices = CUSTOM0;
 	v_tex_weights = CUSTOM1;
-	v_color = COLOR;
-	
+	v_cliff_tex_indices = CUSTOM2;
+	v_cliff_tex_weights = CUSTOM3;
+	v_color = vec4(1.0, 1.0, 1.0, 1.0);
+	v_cliff_factor = COLOR.r;
+
+	vec3 world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float cliff_mask = clamp(COLOR.a, 0.0, 1.0);
+
+	if (cliff_jitter_strength > 0.0 && cliff_mask > 0.001) {
+		vec2 jitter_uv_x = (world_pos.xz + vec2(world_pos.y * 0.75, world_pos.y * 1.25)) * cliff_jitter_scale;
+		vec2 jitter_uv_z = (world_pos.xz + vec2(world_pos.y * 1.35 + 43.1, world_pos.y * 0.65 + 19.7)) * cliff_jitter_scale;
+		float noise_x = (macro_fbm(jitter_uv_x) - 0.5) * 2.0;
+		float noise_z = (macro_fbm(jitter_uv_z) - 0.5) * 2.0;
+		vec3 world_disp = vec3(noise_x, 0.0, noise_z) * (cliff_jitter_strength * cliff_mask);
+		world_pos += world_disp;
+		VERTEX = (inverse(MODEL_MATRIX) * vec4(world_pos, 1.0)).xyz;
+	}
+
 	v_world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
-	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	v_world_pos = world_pos;
 }
 
 void fragment() {
-	vec3 blend_weights = abs(v_world_normal);
-	blend_weights = pow(blend_weights, vec3(4.0));
-	float bw_sum = blend_weights.x + blend_weights.y + blend_weights.z;
-	blend_weights = bw_sum > 0.0001 ? blend_weights / bw_sum : vec3(0.0, 1.0, 0.0);
+	vec3 geom_normal = normalize(v_world_normal);
 
 	vec3 pos_warped = v_world_pos;
 	float base_fbm_val = 0.5;
@@ -1065,54 +1247,407 @@ void fragment() {
 			float warp_x = (base_fbm_val - 0.5) * 2.0;
 			float warp_y = (macro_fbm((v_world_pos.xz + vec2(17.3, 31.7)) * macro_scale) - 0.5) * 2.0;
 			vec2 warp_offset = vec2(warp_x, warp_y);
-			pos_warped += vec3(warp_offset.x, warp_offset.y, warp_offset.x) * uv_warp_strength * 0.05 / max(0.001, macro_scale);
+			pos_warped += vec3(warp_offset.x, warp_offset.y, warp_offset.y) * uv_warp_strength * 0.05 / max(0.001, macro_scale);
 		}
 	}
 
-	vec2 uv_x = pos_warped.zy * texture_scale;
-	vec2 uv_y = pos_warped.xz * texture_scale;
-	vec2 uv_z = pos_warped.xy * texture_scale;
+	float slope_cliff_factor = v_cliff_factor > 0.5 ? 1.0 : 0.0;
 
-	vec4 raw_weights = v_tex_weights;
-	raw_weights.x = raw_weights.x < 0.001 ? 0.0 : raw_weights.x;
-	raw_weights.y = raw_weights.y < 0.001 ? 0.0 : raw_weights.y;
-	raw_weights.z = raw_weights.z < 0.001 ? 0.0 : raw_weights.z;
-	raw_weights.w = raw_weights.w < 0.001 ? 0.0 : raw_weights.w;
+	vec3 terrain_color = vec3(0.0);
+	vec3 blended_world_normal = geom_normal;
+	float blended_ao = 1.0;
+	float blended_roughness = 0.85;
 
-	float weight_sum = raw_weights.x + raw_weights.y + raw_weights.z + raw_weights.w;
-	vec4 norm_weights = weight_sum > 0.0001 ? raw_weights / weight_sum : vec4(0.0);
+	if (slope_cliff_factor < 0.5) {
+		// --- GROUND PIPELINE ---
+		vec2 uv_y = pos_warped.xz * texture_scale;
+		vec2 dx_y = dFdx(uv_y);
+		vec2 dy_y = dFdy(uv_y);
 
-	vec3 splat_color = vec3(0.0);
-	vec4 blend_layer_weights = norm_weights;
+		vec4 raw_weights = v_tex_weights;
+		raw_weights.x = raw_weights.x < 0.001 ? 0.0 : raw_weights.x;
+		raw_weights.y = raw_weights.y < 0.001 ? 0.0 : raw_weights.y;
+		raw_weights.z = raw_weights.z < 0.001 ? 0.0 : raw_weights.z;
+		raw_weights.w = raw_weights.w < 0.001 ? 0.0 : raw_weights.w;
 
-	if (enable_fast_planar && norm_weights.x > 0.98) {
-		vec4 c0 = sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights, false);
-		splat_color = c0.rgb;
-	} else {
-		vec4 c0 = norm_weights.x > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights, false) : vec4(0.0);
-		vec4 c1 = norm_weights.y > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights, false) : vec4(0.0);
-		vec4 c2 = norm_weights.z > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights, false) : vec4(0.0);
-		vec4 c3 = norm_weights.w > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights, false) : vec4(0.0);
+		float weight_sum = raw_weights.x + raw_weights.y + raw_weights.z + raw_weights.w;
+		vec4 norm_weights = weight_sum > 0.0001 ? raw_weights / weight_sum : vec4(1.0, 0.0, 0.0, 0.0);
+
+		float max_incoming_weight = max(max(norm_weights.x, norm_weights.y), max(norm_weights.z, norm_weights.w));
+		float blend_transition_factor = clamp((1.0 - max_incoming_weight) * 2.5, 0.0, 1.0);
+
+		if (blend_noise_strength > 0.0 && blend_transition_factor > 0.001) {
+			vec2 blend_noise_uv = v_world_pos.xz * blend_noise_scale;
+			float noise_ch_a = (macro_noise(blend_noise_uv) * 0.70 + macro_noise(blend_noise_uv * 2.13 + vec2(11.7, 7.3)) * 0.30) - 0.5;
+			float noise_ch_b = (macro_noise(blend_noise_uv + vec2(19.3, 37.7)) * 0.70 + macro_noise(blend_noise_uv * 2.13 + vec2(43.3, 19.7)) * 0.30) - 0.5;
+			vec4 weight_noise_offset = vec4(noise_ch_a, -noise_ch_a, noise_ch_b, -noise_ch_b) * (blend_noise_strength * blend_transition_factor);
+
+			vec4 active_channel_mask = step(vec4(0.001), norm_weights);
+			vec4 perturbed_weights = max(vec4(0.0), norm_weights + weight_noise_offset * active_channel_mask);
+			float perturbed_weight_sum = perturbed_weights.x + perturbed_weights.y + perturbed_weights.z + perturbed_weights.w;
+			norm_weights = perturbed_weight_sum > 0.0001 ? perturbed_weights / perturbed_weight_sum : norm_weights;
+		}
+
+		vec4 c0 = raw_weights.x > 0.001 ? sample_planar_layer(terrain_textures, round(v_tex_indices.x), uv_y, dx_y, dy_y, false) : vec4(0.0);
+		vec4 c1 = raw_weights.y > 0.001 ? sample_planar_layer(terrain_textures, round(v_tex_indices.y), uv_y, dx_y, dy_y, false) : vec4(0.0);
+		vec4 c2 = raw_weights.z > 0.001 ? sample_planar_layer(terrain_textures, round(v_tex_indices.z), uv_y, dx_y, dy_y, false) : vec4(0.0);
+		vec4 c3 = raw_weights.w > 0.001 ? sample_planar_layer(terrain_textures, round(v_tex_indices.w), uv_y, dx_y, dy_y, false) : vec4(0.0);
+
+		vec4 blend_layer_weights = norm_weights;
+		vec3 ground_albedo = vec3(0.0);
 
 		if (enable_height_blend) {
-			float height_influence = 0.15;
-			vec4 height_mod = vec4(c0.a, c1.a, c2.a, c3.a) * height_influence;
-			vec4 blended_weights = norm_weights * (vec4(1.0) + height_mod);
-			float final_sum = blended_weights.x + blended_weights.y + blended_weights.z + blended_weights.w;
-			blend_layer_weights = final_sum > 0.0001 ? blended_weights / final_sum : vec4(1.0, 0.0, 0.0, 0.0);
-			splat_color = (c0.rgb * blend_layer_weights.x +
-			               c1.rgb * blend_layer_weights.y +
-			               c2.rgb * blend_layer_weights.z +
-			               c3.rgb * blend_layer_weights.w);
+			float edge_noise = 0.0;
+			if (enable_macro_noise) {
+				float max_w = max(max(norm_weights.x, norm_weights.y), max(norm_weights.z, norm_weights.w));
+				float transition_factor = clamp((1.0 - max_w) * 2.0, 0.0, 1.0);
+				edge_noise = (base_fbm_val - 0.5) * 0.12 * transition_factor;
+			}
+
+			vec4 heights = vec4(c0.a, c1.a, c2.a, c3.a);
+			vec4 noise_offsets = vec4(edge_noise, -edge_noise, edge_noise * 0.75, -edge_noise * 0.75);
+
+			int idx0 = int(clamp(round(v_tex_indices.x), 0.0, 31.0));
+			int idx1 = int(clamp(round(v_tex_indices.y), 0.0, 31.0));
+			int idx2 = int(clamp(round(v_tex_indices.z), 0.0, 31.0));
+			int idx3 = int(clamp(round(v_tex_indices.w), 0.0, 31.0));
+
+			vec4 hp0 = swatch_height_params[idx0];
+			vec4 hp1 = swatch_height_params[idx1];
+			vec4 hp2 = swatch_height_params[idx2];
+			vec4 hp3 = swatch_height_params[idx3];
+
+			vec4 h_scales = vec4(
+				hp0.x > 0.001 ? hp0.x : 1.0,
+				hp1.x > 0.001 ? hp1.x : 1.0,
+				hp2.x > 0.001 ? hp2.x : 1.0,
+				hp3.x > 0.001 ? hp3.x : 1.0
+			);
+
+			vec4 h_biases = vec4(hp0.y, hp1.y, hp2.y, hp3.y);
+
+			vec4 h_powers = vec4(
+				hp0.z > 0.001 ? hp0.z : 1.0,
+				hp1.z > 0.001 ? hp1.z : 1.0,
+				hp2.z > 0.001 ? hp2.z : 1.0,
+				hp3.z > 0.001 ? hp3.z : 1.0
+			);
+
+			vec4 shaped_heights = vec4(
+				pow(clamp(heights.x, 0.0, 1.0), h_powers.x),
+				pow(clamp(heights.y, 0.0, 1.0), h_powers.y),
+				pow(clamp(heights.z, 0.0, 1.0), h_powers.z),
+				pow(clamp(heights.w, 0.0, 1.0), h_powers.w)
+			);
+
+			vec4 scaled_ground_heights = vec4(
+				shaped_heights.x * h_scales.x + h_biases.x,
+				shaped_heights.y * h_scales.y + h_biases.y,
+				shaped_heights.z * h_scales.z + h_biases.z,
+				shaped_heights.w * h_scales.w + h_biases.w
+			);
+
+			vec4 height_scores = vec4(
+				norm_weights.x > 0.001 ? (norm_weights.x + scaled_ground_heights.x + noise_offsets.x) : -100.0,
+				norm_weights.y > 0.001 ? (norm_weights.y + scaled_ground_heights.y + noise_offsets.y) : -100.0,
+				norm_weights.z > 0.001 ? (norm_weights.z + scaled_ground_heights.z + noise_offsets.z) : -100.0,
+				norm_weights.w > 0.001 ? (norm_weights.w + scaled_ground_heights.w + noise_offsets.w) : -100.0
+			);
+
+			float max_score = max(max(height_scores.x, height_scores.y), max(height_scores.z, height_scores.w));
+			float transition_depth = max(0.001, blend_softness);
+
+			vec4 raw_blend = vec4(
+				smoothstep(max_score - transition_depth, max_score, height_scores.x) * step(0.001, norm_weights.x),
+				smoothstep(max_score - transition_depth, max_score, height_scores.y) * step(0.001, norm_weights.y),
+				smoothstep(max_score - transition_depth, max_score, height_scores.z) * step(0.001, norm_weights.z),
+				smoothstep(max_score - transition_depth, max_score, height_scores.w) * step(0.001, norm_weights.w)
+			);
+
+			float blend_sum = raw_blend.x + raw_blend.y + raw_blend.z + raw_blend.w;
+			blend_layer_weights = blend_sum > 0.0001 ? raw_blend / blend_sum : norm_weights;
+
+			ground_albedo = (c0.rgb * blend_layer_weights.x +
+			                 c1.rgb * blend_layer_weights.y +
+			                 c2.rgb * blend_layer_weights.z +
+			                 c3.rgb * blend_layer_weights.w);
 		} else {
-			splat_color = (c0.rgb * norm_weights.x +
-			               c1.rgb * norm_weights.y +
-			               c2.rgb * norm_weights.z +
-			               c3.rgb * norm_weights.w);
+			ground_albedo = (c0.rgb * norm_weights.x +
+			                 c1.rgb * norm_weights.y +
+			                 c2.rgb * norm_weights.z +
+			                 c3.rgb * norm_weights.w);
 		}
+
+		vec3 ground_normal = geom_normal;
+		float ground_ao = 1.0;
+		float ground_roughness = 0.85;
+
+		float gw0 = blend_layer_weights.x;
+		float gw1 = blend_layer_weights.y;
+		float gw2 = blend_layer_weights.z;
+		float gw3 = blend_layer_weights.w;
+
+		if (enable_normal_mapping) {
+			vec4 gn0 = gw0 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+			vec4 gn1 = gw1 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+			vec4 gn2 = gw2 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+			vec4 gn3 = gw3 > 0.001 ? sample_planar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_y, dx_y, dy_y, true) : vec4(0.5, 0.5, 1.0, 1.0);
+
+			vec3 gn0_vec = unpack_triplanar_normal(gn0, vec3(0.0, 1.0, 0.0), geom_normal);
+			vec3 gn1_vec = unpack_triplanar_normal(gn1, vec3(0.0, 1.0, 0.0), geom_normal);
+			vec3 gn2_vec = unpack_triplanar_normal(gn2, vec3(0.0, 1.0, 0.0), geom_normal);
+			vec3 gn3_vec = unpack_triplanar_normal(gn3, vec3(0.0, 1.0, 0.0), geom_normal);
+
+			ground_normal = normalize(gn0_vec * gw0 + gn1_vec * gw1 + gn2_vec * gw2 + gn3_vec * gw3);
+			ground_ao = (gn0.b * gw0 + gn1.b * gw1 + gn2.b * gw2 + gn3.b * gw3);
+			ground_roughness = (gn0.a * gw0 + gn1.a * gw1 + gn2.a * gw2 + gn3.a * gw3);
+		} else {
+			float max_gw = max(max(gw0, gw1), max(gw2, gw3));
+			float dom_layer = round(v_tex_indices.x);
+			if (gw1 >= max_gw) dom_layer = round(v_tex_indices.y);
+			else if (gw2 >= max_gw) dom_layer = round(v_tex_indices.z);
+			else if (gw3 >= max_gw) dom_layer = round(v_tex_indices.w);
+
+			int dom_idx = int(clamp(dom_layer, 0.0, 31.0));
+			float uv_scale = swatch_params[dom_idx].y > 0.001 ? swatch_params[dom_idx].y : 1.0;
+			vec2 dom_uv = uv_y * uv_scale;
+			vec2 dom_dx = dx_y * uv_scale;
+			vec2 dom_dy = dy_y * uv_scale;
+
+			vec4 gn = textureGrad(terrain_normals_pbr, vec3(dom_uv, dom_layer), dom_dx, dom_dy);
+			ground_normal = unpack_triplanar_normal(gn, vec3(0.0, 1.0, 0.0), geom_normal);
+			ground_ao = gn.b;
+			ground_roughness = gn.a;
+		}
+
+		if (enable_macro_noise && macro_normal_strength > 0.0) {
+			float n_noise_y_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
+			float n_noise_y_z = (macro_fbm((v_world_pos.xz + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.0, 0.1)) * macro_scale));
+			vec3 noise_norm_y = vec3(n_noise_y_x, 0.0, n_noise_y_z);
+			ground_normal = normalize(ground_normal + noise_norm_y * macro_normal_strength);
+		}
+
+		terrain_color = ground_albedo;
+		blended_world_normal = ground_normal;
+		blended_ao = ground_ao;
+		blended_roughness = ground_roughness;
+	} else {
+		// --- CLIFF PIPELINE ---
+		vec3 dX = dFdx(v_world_pos);
+		vec3 dY = dFdy(v_world_pos);
+		vec3 cliff_geom_normal = cross(dY, dX);
+		float geom_len = length(cliff_geom_normal);
+		cliff_geom_normal = geom_len > 0.00001 ? (cliff_geom_normal / geom_len) : geom_normal;
+		if (cliff_geom_normal.y < 0.0 && abs(cliff_geom_normal.y) > 0.001) {
+			cliff_geom_normal = -cliff_geom_normal;
+		}
+
+		vec3 triplanar_normal = abs(cliff_geom_normal);
+		vec3 blend_weights = pow(triplanar_normal, vec3(4.0));
+		float bw_sum = blend_weights.x + blend_weights.y + blend_weights.z;
+		blend_weights = bw_sum > 0.0001 ? blend_weights / bw_sum : vec3(0.0, 1.0, 0.0);
+
+		vec2 uv_x = pos_warped.zy * texture_scale;
+		vec2 uv_y = pos_warped.xz * texture_scale;
+		vec2 uv_z = pos_warped.xy * texture_scale;
+
+		vec2 dx_x = dFdx(uv_x);
+		vec2 dy_x = dFdy(uv_x);
+		vec2 dx_y = dFdx(uv_y);
+		vec2 dy_y = dFdy(uv_y);
+		vec2 dx_z = dFdx(uv_z);
+		vec2 dy_z = dFdy(uv_z);
+
+		vec4 raw_c_weights = v_cliff_tex_weights;
+		raw_c_weights.x = raw_c_weights.x < 0.001 ? 0.0 : raw_c_weights.x;
+		raw_c_weights.y = raw_c_weights.y < 0.001 ? 0.0 : raw_c_weights.y;
+		raw_c_weights.z = raw_c_weights.z < 0.001 ? 0.0 : raw_c_weights.z;
+		raw_c_weights.w = raw_c_weights.w < 0.001 ? 0.0 : raw_c_weights.w;
+
+		float c_weight_sum = raw_c_weights.x + raw_c_weights.y + raw_c_weights.z + raw_c_weights.w;
+		vec4 norm_c_weights = c_weight_sum > 0.0001 ? raw_c_weights / c_weight_sum : vec4(1.0, 0.0, 0.0, 0.0);
+
+		float max_c_weight = max(max(norm_c_weights.x, norm_c_weights.y), max(norm_c_weights.z, norm_c_weights.w));
+		float c_transition_factor = clamp((1.0 - max_c_weight) * 2.5, 0.0, 1.0);
+
+		if (blend_noise_strength > 0.0 && c_transition_factor > 0.001) {
+			vec2 c_noise_uv = v_world_pos.xz * blend_noise_scale + vec2(43.7, 19.3);
+			float noise_c_a = (macro_noise(c_noise_uv) * 0.70 + macro_noise(c_noise_uv * 2.13 + vec2(11.7, 7.3)) * 0.30) - 0.5;
+			float noise_c_b = (macro_noise(c_noise_uv + vec2(19.3, 37.7)) * 0.70 + macro_noise(c_noise_uv * 2.13 + vec2(43.3, 19.7)) * 0.30) - 0.5;
+			vec4 c_noise_offset = vec4(noise_c_a, -noise_c_a, noise_c_b, -noise_c_b) * (blend_noise_strength * c_transition_factor);
+
+			vec4 c_channel_mask = step(vec4(0.001), norm_c_weights);
+			vec4 perturbed_c_weights = max(vec4(0.0), norm_c_weights + c_noise_offset * c_channel_mask);
+			float perturbed_c_sum = perturbed_c_weights.x + perturbed_c_weights.y + perturbed_c_weights.z + perturbed_c_weights.w;
+			norm_c_weights = perturbed_c_sum > 0.0001 ? perturbed_c_weights / perturbed_c_sum : norm_c_weights;
+		}
+
+		vec4 cliff0 = raw_c_weights.x > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_cliff_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+		vec4 cliff1 = raw_c_weights.y > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_cliff_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+		vec4 cliff2 = raw_c_weights.z > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_cliff_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+		vec4 cliff3 = raw_c_weights.w > 0.001 ? sample_triplanar_layer(terrain_textures, round(v_cliff_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, false) : vec4(0.0);
+
+		vec4 cliff_blend_weights = norm_c_weights;
+		vec3 cliff_albedo = vec3(0.0);
+
+		if (enable_height_blend) {
+			float cliff_edge_noise = 0.0;
+			if (enable_macro_noise) {
+				float max_w = max(max(norm_c_weights.x, norm_c_weights.y), max(norm_c_weights.z, norm_c_weights.w));
+				float transition_factor = clamp((1.0 - max_w) * 2.0, 0.0, 1.0);
+				cliff_edge_noise = (base_fbm_val - 0.5) * 0.12 * transition_factor;
+			}
+
+			vec4 c_heights = vec4(cliff0.a, cliff1.a, cliff2.a, cliff3.a);
+			vec4 c_noise_offsets = vec4(cliff_edge_noise, -cliff_edge_noise, cliff_edge_noise * 0.75, -cliff_edge_noise * 0.75);
+
+			int c_idx0 = int(clamp(round(v_cliff_tex_indices.x), 0.0, 31.0));
+			int c_idx1 = int(clamp(round(v_cliff_tex_indices.y), 0.0, 31.0));
+			int c_idx2 = int(clamp(round(v_cliff_tex_indices.z), 0.0, 31.0));
+			int c_idx3 = int(clamp(round(v_cliff_tex_indices.w), 0.0, 31.0));
+
+			vec4 c_hp0 = swatch_height_params[c_idx0];
+			vec4 c_hp1 = swatch_height_params[c_idx1];
+			vec4 c_hp2 = swatch_height_params[c_idx2];
+			vec4 c_hp3 = swatch_height_params[c_idx3];
+
+			vec4 c_h_scales = vec4(
+				c_hp0.x > 0.001 ? c_hp0.x : 1.0,
+				c_hp1.x > 0.001 ? c_hp1.x : 1.0,
+				c_hp2.x > 0.001 ? c_hp2.x : 1.0,
+				c_hp3.x > 0.001 ? c_hp3.x : 1.0
+			);
+
+			vec4 c_h_biases = vec4(c_hp0.y, c_hp1.y, c_hp2.y, c_hp3.y);
+
+			vec4 c_h_powers = vec4(
+				c_hp0.z > 0.001 ? c_hp0.z : 1.0,
+				c_hp1.z > 0.001 ? c_hp1.z : 1.0,
+				c_hp2.z > 0.001 ? c_hp2.z : 1.0,
+				c_hp3.z > 0.001 ? c_hp3.z : 1.0
+			);
+
+			vec4 c_shaped_heights = vec4(
+				pow(clamp(c_heights.x, 0.0, 1.0), c_h_powers.x),
+				pow(clamp(c_heights.y, 0.0, 1.0), c_h_powers.y),
+				pow(clamp(c_heights.z, 0.0, 1.0), c_h_powers.z),
+				pow(clamp(c_heights.w, 0.0, 1.0), c_h_powers.w)
+			);
+
+			vec4 scaled_cliff_heights = vec4(
+				c_shaped_heights.x * c_h_scales.x + c_h_biases.x,
+				c_shaped_heights.y * c_h_scales.y + c_h_biases.y,
+				c_shaped_heights.z * c_h_scales.z + c_h_biases.z,
+				c_shaped_heights.w * c_h_scales.w + c_h_biases.w
+			);
+
+			vec4 c_height_scores = vec4(
+				norm_c_weights.x > 0.001 ? (norm_c_weights.x + scaled_cliff_heights.x + c_noise_offsets.x) : -100.0,
+				norm_c_weights.y > 0.001 ? (norm_c_weights.y + scaled_cliff_heights.y + c_noise_offsets.y) : -100.0,
+				norm_c_weights.z > 0.001 ? (norm_c_weights.z + scaled_cliff_heights.z + c_noise_offsets.z) : -100.0,
+				norm_c_weights.w > 0.001 ? (norm_c_weights.w + scaled_cliff_heights.w + c_noise_offsets.w) : -100.0
+			);
+
+			float max_c_score = max(max(c_height_scores.x, c_height_scores.y), max(c_height_scores.z, c_height_scores.w));
+			float c_transition_depth = max(0.001, blend_softness);
+
+			vec4 raw_c_blend = vec4(
+				smoothstep(max_c_score - c_transition_depth, max_c_score, c_height_scores.x) * step(0.001, norm_c_weights.x),
+				smoothstep(max_c_score - c_transition_depth, max_c_score, c_height_scores.y) * step(0.001, norm_c_weights.y),
+				smoothstep(max_c_score - c_transition_depth, max_c_score, c_height_scores.z) * step(0.001, norm_c_weights.z),
+				smoothstep(max_c_score - c_transition_depth, max_c_score, c_height_scores.w) * step(0.001, norm_c_weights.w)
+			);
+
+			float c_blend_sum = raw_c_blend.x + raw_c_blend.y + raw_c_blend.z + raw_c_blend.w;
+			cliff_blend_weights = c_blend_sum > 0.0001 ? raw_c_blend / c_blend_sum : norm_c_weights;
+
+			cliff_albedo = (cliff0.rgb * cliff_blend_weights.x +
+			                cliff1.rgb * cliff_blend_weights.y +
+			                cliff2.rgb * cliff_blend_weights.z +
+			                cliff3.rgb * cliff_blend_weights.w);
+		} else {
+			cliff_albedo = (cliff0.rgb * norm_c_weights.x +
+			                cliff1.rgb * norm_c_weights.y +
+			                cliff2.rgb * norm_c_weights.z +
+			                cliff3.rgb * norm_c_weights.w);
+		}
+
+		vec3 cliff_normal = cliff_geom_normal;
+		float cliff_ao = 1.0;
+		float cliff_roughness = 0.85;
+
+		float cw0 = cliff_blend_weights.x;
+		float cw1 = cliff_blend_weights.y;
+		float cw2 = cliff_blend_weights.z;
+		float cw3 = cliff_blend_weights.w;
+
+		if (enable_normal_mapping) {
+			vec4 cn0 = cw0 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.x), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+			vec4 cn1 = cw1 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.y), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+			vec4 cn2 = cw2 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.z), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+			vec4 cn3 = cw3 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_cliff_tex_indices.w), uv_x, uv_y, uv_z, dx_x, dy_x, dx_y, dy_y, dx_z, dy_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
+
+			vec3 cn0_vec = unpack_triplanar_normal(cn0, get_active_weights(round(v_cliff_tex_indices.x), blend_weights), cliff_geom_normal);
+			vec3 cn1_vec = unpack_triplanar_normal(cn1, get_active_weights(round(v_cliff_tex_indices.y), blend_weights), cliff_geom_normal);
+			vec3 cn2_vec = unpack_triplanar_normal(cn2, get_active_weights(round(v_cliff_tex_indices.z), blend_weights), cliff_geom_normal);
+			vec3 cn3_vec = unpack_triplanar_normal(cn3, get_active_weights(round(v_cliff_tex_indices.w), blend_weights), cliff_geom_normal);
+
+			cliff_normal = normalize(cn0_vec * cw0 + cn1_vec * cw1 + cn2_vec * cw2 + cn3_vec * cw3);
+			cliff_ao = (cn0.b * cw0 + cn1.b * cw1 + cn2.b * cw2 + cn3.b * cw3);
+			cliff_roughness = (cn0.a * cw0 + cn1.a * cw1 + cn2.a * cw2 + cn3.a * cw3);
+		} else {
+			float max_cw = max(max(cw0, cw1), max(cw2, cw3));
+			float dom_c_layer = round(v_cliff_tex_indices.x);
+			if (cw1 >= max_cw) dom_c_layer = round(v_cliff_tex_indices.y);
+			else if (cw2 >= max_cw) dom_c_layer = round(v_cliff_tex_indices.z);
+			else if (cw3 >= max_cw) dom_c_layer = round(v_cliff_tex_indices.w);
+
+			int dom_c_idx = int(clamp(dom_c_layer, 0.0, 31.0));
+			float c_uv_scale = swatch_params[dom_c_idx].y > 0.001 ? swatch_params[dom_c_idx].y : 1.0;
+
+			vec2 c_uv = uv_y * c_uv_scale;
+			vec2 c_dx = dx_y * c_uv_scale;
+			vec2 c_dy = dy_y * c_uv_scale;
+			if (blend_weights.x > blend_weights.y && blend_weights.x > blend_weights.z) {
+				c_uv = uv_x * c_uv_scale;
+				c_dx = dx_x * c_uv_scale;
+				c_dy = dy_x * c_uv_scale;
+			} else if (blend_weights.z > blend_weights.y) {
+				c_uv = uv_z * c_uv_scale;
+				c_dx = dx_z * c_uv_scale;
+				c_dy = dy_z * c_uv_scale;
+			}
+
+			vec4 cn = textureGrad(terrain_normals_pbr, vec3(c_uv, dom_c_layer), c_dx, c_dy);
+			cliff_normal = unpack_triplanar_normal(cn, get_active_weights(dom_c_layer, blend_weights), cliff_geom_normal);
+			cliff_ao = cn.b;
+			cliff_roughness = cn.a;
+		}
+
+		if (enable_macro_noise && macro_normal_strength > 0.0) {
+			float n_noise_y_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
+			float n_noise_y_z = (macro_fbm((v_world_pos.xz + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.0, 0.1)) * macro_scale));
+			vec3 noise_norm_y = vec3(n_noise_y_x, 0.0, n_noise_y_z);
+
+			float n_noise_x_y = (macro_fbm((v_world_pos.zy + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.zy - vec2(0.1, 0.0)) * macro_scale));
+			float n_noise_x_z = (macro_fbm((v_world_pos.zy + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.zy - vec2(0.0, 0.1)) * macro_scale));
+			vec3 noise_norm_x = vec3(0.0, n_noise_x_z, n_noise_x_y);
+
+			float n_noise_z_x = (macro_fbm((v_world_pos.xy + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xy - vec2(0.1, 0.0)) * macro_scale));
+			float n_noise_z_y = (macro_fbm((v_world_pos.xy + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xy - vec2(0.0, 0.1)) * macro_scale));
+			vec3 noise_norm_z = vec3(n_noise_z_x, n_noise_z_y, 0.0);
+
+			vec3 triplanar_cliff_noise = noise_norm_x * blend_weights.x + noise_norm_y * blend_weights.y + noise_norm_z * blend_weights.z;
+			float effective_cliff_normal_strength = macro_normal_strength * 3.5;
+			cliff_normal = normalize(cliff_normal + triplanar_cliff_noise * effective_cliff_normal_strength);
+		}
+
+		terrain_color = cliff_albedo;
+		blended_world_normal = cliff_normal;
+		blended_ao = cliff_ao;
+		blended_roughness = cliff_roughness;
 	}
 
-	vec3 terrain_color = splat_color;
 	float macro_var = 1.0;
 	if (enable_macro_noise) {
 		macro_var = mix(1.0 - macro_albedo_contrast, 1.0 + macro_albedo_contrast, base_fbm_val);
@@ -1189,53 +1724,13 @@ void fragment() {
 		}
 	}
 
-	vec3 blended_normal_tangent = vec3(0.0, 0.0, 1.0);
-	float blended_ao = 1.0;
 	float final_roughness = 0.9;
-	float specular_amt = 0.0;
 
-	if (enable_normal_mapping) {
-		float w0 = blend_layer_weights.x;
-		float w1 = blend_layer_weights.y;
-		float w2 = blend_layer_weights.z;
-		float w3 = blend_layer_weights.w;
-
-		vec4 n0 = w0 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.x), uv_x, uv_y, uv_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 n1 = w1 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.y), uv_x, uv_y, uv_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 n2 = w2 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.z), uv_x, uv_y, uv_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		vec4 n3 = w3 > 0.001 ? sample_triplanar_layer(terrain_normals_pbr, round(v_tex_indices.w), uv_x, uv_y, uv_z, blend_weights, true) : vec4(0.5, 0.5, 1.0, 1.0);
-		
-		vec2 n0_xy = n0.rg * 2.0 - 1.0;
-		vec3 n0_vec = vec3(n0_xy, sqrt(max(0.0, 1.0 - dot(n0_xy, n0_xy))));
-		
-		vec2 n1_xy = n1.rg * 2.0 - 1.0;
-		vec3 n1_vec = vec3(n1_xy, sqrt(max(0.0, 1.0 - dot(n1_xy, n1_xy))));
-		
-		vec2 n2_xy = n2.rg * 2.0 - 1.0;
-		vec3 n2_vec = vec3(n2_xy, sqrt(max(0.0, 1.0 - dot(n2_xy, n2_xy))));
-		
-		vec2 n3_xy = n3.rg * 2.0 - 1.0;
-		vec3 n3_vec = vec3(n3_xy, sqrt(max(0.0, 1.0 - dot(n3_xy, n3_xy))));
-		
-		blended_normal_tangent = normalize(n0_vec * w0 + n1_vec * w1 + n2_vec * w2 + n3_vec * w3);
-
-		if (enable_macro_noise && macro_normal_strength > 0.0) {
-			float n_noise_x = (macro_fbm((v_world_pos.xz + vec2(0.1, 0.0)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.1, 0.0)) * macro_scale));
-			float n_noise_z = (macro_fbm((v_world_pos.xz + vec2(0.0, 0.1)) * macro_scale) - macro_fbm((v_world_pos.xz - vec2(0.0, 0.1)) * macro_scale));
-			vec3 noise_normal = vec3(n_noise_x * macro_normal_strength, n_noise_z * macro_normal_strength, 1.0);
-			blended_normal_tangent = normalize(blended_normal_tangent + noise_normal);
-		}
-
-		blended_ao = (n0.b * w0 + n1.b * w1 + n2.b * w2 + n3.b * w3);
-		float blended_roughness = (n0.a * w0 + n1.a * w1 + n2.a * w2 + n3.a * w3);
-
-		if (enable_macro_noise) {
-			float macro_roughness_var = mix(1.0 - macro_roughness_contrast, 1.0 + macro_roughness_contrast, base_fbm_val);
-			final_roughness = clamp(blended_roughness * macro_roughness_var, 0.05, 1.0);
-		} else {
-			final_roughness = clamp(blended_roughness, 0.05, 1.0);
-		}
-		specular_amt = 0.2;
+	if (enable_macro_noise) {
+		float macro_roughness_var = mix(1.0 - macro_roughness_contrast, 1.0 + macro_roughness_contrast, base_fbm_val);
+		final_roughness = clamp(blended_roughness * macro_roughness_var, 0.05, 1.0);
+	} else {
+		final_roughness = clamp(blended_roughness, 0.05, 1.0);
 	}
 
 	vec2 shroud_uv = (v_world_pos.xz - shroud_world_min) / shroud_world_size;
@@ -1244,19 +1739,11 @@ void fragment() {
 	emission_color *= (1.0 - shroud_factor * 0.98);
 
 	ALBEDO = final_albedo;
-	if (enable_normal_mapping) {
-		NORMAL = normalize(TANGENT * blended_normal_tangent.x + BINORMAL * blended_normal_tangent.y + NORMAL * blended_normal_tangent.z);
-		AO = blended_ao * (1.0 - shroud_factor * 0.98) * v_color.r;
-		ROUGHNESS = mix(final_roughness, 1.0, shroud_factor);
-		METALLIC = 0.0;                 
-		SPECULAR = specular_amt * (1.0 - shroud_factor * 0.98);
-	} else {
-		NORMAL = normalize((VIEW_MATRIX * vec4(v_world_normal, 0.0)).xyz);
-		AO = (1.0 - shroud_factor * 0.98) * v_color.r;
-		ROUGHNESS = mix(final_roughness, 1.0, shroud_factor);
-		METALLIC = 0.0;
-		SPECULAR = 0.0;
-	}
+	NORMAL = normalize((VIEW_MATRIX * vec4(blended_world_normal, 0.0)).xyz);
+	AO = blended_ao * (1.0 - shroud_factor * 0.98);
+	ROUGHNESS = mix(final_roughness, 1.0, shroud_factor);
+	METALLIC = 0.0;                 
+	SPECULAR = specular_amt * (1.0 - shroud_factor * 0.98);
 	EMISSION = emission_color;
 }
 ";
@@ -1274,6 +1761,11 @@ void fragment() {
 		_material.SetShaderParameter("grid_spacing", QuadSize);
 		_material.SetShaderParameter("terrain_size", new Vector2(Width * QuadSize, Depth * QuadSize));
 		_material.SetShaderParameter("texture_scale", 1.0f / QuadSize);
+		_material.SetShaderParameter("cliff_jitter_strength", CliffJitterStrength);
+		_material.SetShaderParameter("cliff_jitter_scale", CliffJitterScale);
+		_material.SetShaderParameter("blend_softness", BlendSoftness);
+		_material.SetShaderParameter("blend_noise_strength", BlendNoiseStrength);
+		_material.SetShaderParameter("blend_noise_scale", BlendNoiseScale);
 
 		ApplyQualitySettings(GameSettings.QualityIdx);
 
@@ -1298,35 +1790,36 @@ void fragment() {
 		switch (qualityIdx)
 		{
 			case 0:
-				_material.SetShaderParameter("enable_stochastic", true);
-				_material.SetShaderParameter("enable_normal_mapping", false);
 				_material.SetShaderParameter("enable_macro_noise", false);
 				_material.SetShaderParameter("enable_height_blend", false);
-				_material.SetShaderParameter("enable_fast_planar", true);
+				_material.SetShaderParameter("enable_normal_mapping", false);
+				_material.SetShaderParameter("specular_amt", 0.0f);
 				break;
 			case 1:
-				_material.SetShaderParameter("enable_stochastic", true);
-				_material.SetShaderParameter("enable_normal_mapping", true);
 				_material.SetShaderParameter("enable_macro_noise", false);
 				_material.SetShaderParameter("enable_height_blend", false);
-				_material.SetShaderParameter("enable_fast_planar", true);
+				_material.SetShaderParameter("enable_normal_mapping", false);
+				_material.SetShaderParameter("specular_amt", 0.0f);
 				break;
 			case 2:
-				_material.SetShaderParameter("enable_stochastic", true);
-				_material.SetShaderParameter("enable_normal_mapping", true);
 				_material.SetShaderParameter("enable_macro_noise", true);
 				_material.SetShaderParameter("enable_height_blend", true);
-				_material.SetShaderParameter("enable_fast_planar", false);
+				_material.SetShaderParameter("enable_normal_mapping", true);
+				_material.SetShaderParameter("specular_amt", 0.2f);
 				break;
 			case 3:
 			default:
-				_material.SetShaderParameter("enable_stochastic", true);
-				_material.SetShaderParameter("enable_normal_mapping", true);
 				_material.SetShaderParameter("enable_macro_noise", true);
 				_material.SetShaderParameter("enable_height_blend", true);
-				_material.SetShaderParameter("enable_fast_planar", false);
+				_material.SetShaderParameter("enable_normal_mapping", true);
+				_material.SetShaderParameter("specular_amt", 0.2f);
 				break;
 		}
+
+		_material.SetShaderParameter("cliff_jitter_strength", CliffJitterStrength);
+		_material.SetShaderParameter("blend_noise_strength", BlendNoiseStrength);
+		_material.SetShaderParameter("cliff_jitter_scale", CliffJitterScale);
+		_material.SetShaderParameter("blend_noise_scale", BlendNoiseScale);
 	}
 
 	public static string GetKtxCmdPath()
@@ -1411,8 +1904,20 @@ void fragment() {
 	private static string? _cachedMapDir;
 	private List<string> _loadedTextureList = new List<string>();
 	private Godot.Vector4[] _swatchParamsCache = new Godot.Vector4[32];
+	private Godot.Vector4[] _swatchHeightParamsCache = new Godot.Vector4[32];
 
-	public void UpdateTextureParamDirect(string swatchName, string tileMode, float uvScale, float stochasticTileSize, float crossFade = 5.0f, float? brightness = null, string? tintStr = null)
+	public void UpdateTextureParamDirect(
+		string swatchName,
+		string tileMode,
+		float uvScale,
+		float stochasticTileSize,
+		float crossFade = 5.0f,
+		float? brightness = null,
+		string? tintStr = null,
+		float heightScale = 1.0f,
+		float heightOffset = 0.0f,
+		float crevicePower = 1.0f,
+		float edgeNoiseInfluence = 1.0f)
 	{
 		if (_material == null) return;
 		string cleanName = System.IO.Path.GetFileNameWithoutExtension(swatchName);
@@ -1434,8 +1939,26 @@ void fragment() {
 			float stoch = Math.Clamp(stochasticTileSize, 0.5f, 3.0f);
 			float cf = crossFade > 0.10f ? Math.Clamp(crossFade, 0.0f, 10.0f) * 0.01f : Math.Clamp(crossFade, 0.0f, 0.10f);
 
+			float hs = Math.Clamp(heightScale, 0.1f, 3.0f);
+			float ho = Math.Clamp(heightOffset, -1.0f, 1.0f);
+			float cp = Math.Clamp(crevicePower, 0.5f, 4.0f);
+			float en = 1.0f;
+
 			_swatchParamsCache[targetIndex] = new Godot.Vector4(tm, uv, stoch, cf);
+			_swatchHeightParamsCache[targetIndex] = new Godot.Vector4(hs, ho, cp, en);
+
 			_material.SetShaderParameter("swatch_params", _swatchParamsCache);
+			_material.SetShaderParameter("swatch_height_params", _swatchHeightParamsCache);
+
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Terrain.TerrainState>(GameHost.Instance.WorldEntity))
+			{
+				ref var ts = ref GameHost.Instance.EcsWorld.Get<Realm.Ecs.Components.Terrain.TerrainState>(GameHost.Instance.WorldEntity);
+				if (ts.SwatchConfigs == null || ts.SwatchConfigs.Length != 32)
+				{
+					ts.SwatchConfigs = new Realm.Ecs.Components.Terrain.TerrainSwatchConfig[32];
+				}
+				ts.SwatchConfigs[targetIndex] = new Realm.Ecs.Components.Terrain.TerrainSwatchConfig(hs, ho, cp, en);
+			}
 		}
 
 		if (brightness.HasValue || !string.IsNullOrEmpty(tintStr))
@@ -1495,9 +2018,11 @@ void fragment() {
 		catch { }
 
 		var swatchParams = new Godot.Vector4[32];
+		var swatchHeightParams = new Godot.Vector4[32];
 		for (int i = 0; i < 32; i++)
 		{
 			swatchParams[i] = new Godot.Vector4(1.0f, 1.0f, 1.0f, 0.05f);
+			swatchHeightParams[i] = new Godot.Vector4(1.0f, 0.0f, 1.0f, 1.0f);
 		}
 
 		if (texturesObj != null)
@@ -1520,6 +2045,9 @@ void fragment() {
 				float uvScale = 1.0f;
 				float stochasticTileSize = 1.0f;
 				float crossFade = 0.05f;
+				float heightScale = 1.0f;
+				float heightOffset = 0.0f;
+				float crevicePower = 1.0f;
 
 				if (swatchNode is System.Text.Json.Nodes.JsonObject sObj)
 				{
@@ -1546,15 +2074,51 @@ void fragment() {
 					{
 						crossFade = parsedCf > 0.10f ? Math.Clamp(parsedCf, 0.0f, 10.0f) * 0.01f : Math.Clamp(parsedCf, 0.0f, 0.10f);
 					}
+
+					string hsStr = sObj["Height_Scale"]?.ToString() ?? sObj["height_scale"]?.ToString() ?? sObj["heightScale"]?.ToString();
+					if (!string.IsNullOrEmpty(hsStr) && float.TryParse(hsStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHs))
+					{
+						heightScale = Math.Clamp(parsedHs, 0.1f, 3.0f);
+					}
+
+					string hoStr = sObj["Height_Offset"]?.ToString() ?? sObj["height_offset"]?.ToString() ?? sObj["heightOffset"]?.ToString();
+					if (!string.IsNullOrEmpty(hoStr) && float.TryParse(hoStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHo))
+					{
+						heightOffset = Math.Clamp(parsedHo, -1.0f, 1.0f);
+					}
+
+					string cpStr = sObj["Crevice_Power"]?.ToString() ?? sObj["crevice_power"]?.ToString() ?? sObj["crevicePower"]?.ToString();
+					if (!string.IsNullOrEmpty(cpStr) && float.TryParse(cpStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCp))
+					{
+						crevicePower = Math.Clamp(parsedCp, 0.5f, 4.0f);
+					}
 				}
 
 				swatchParams[i] = new Godot.Vector4(tileMode, uvScale, stochasticTileSize, crossFade);
+				swatchHeightParams[i] = new Godot.Vector4(heightScale, heightOffset, crevicePower, 1.0f);
 			}
 		}
 
 		_loadedTextureList = textureList;
 		_swatchParamsCache = swatchParams;
+		_swatchHeightParamsCache = swatchHeightParams;
 		_material.SetShaderParameter("swatch_params", swatchParams);
+		_material.SetShaderParameter("swatch_height_params", swatchHeightParams);
+
+		if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.EcsWorld.IsAlive(GameHost.Instance.WorldEntity) && GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Terrain.TerrainState>(GameHost.Instance.WorldEntity))
+		{
+			ref var ts = ref GameHost.Instance.EcsWorld.Get<Realm.Ecs.Components.Terrain.TerrainState>(GameHost.Instance.WorldEntity);
+			ts.SwatchConfigs = new Realm.Ecs.Components.Terrain.TerrainSwatchConfig[32];
+			for (int i = 0; i < 32; i++)
+			{
+				ts.SwatchConfigs[i] = new Realm.Ecs.Components.Terrain.TerrainSwatchConfig(
+					swatchHeightParams[i].X,
+					swatchHeightParams[i].Y,
+					swatchHeightParams[i].Z,
+					swatchHeightParams[i].W
+				);
+			}
+		}
 
 		if (!forceReload && _cachedAlbedoTextureArray != null && _cachedNormalRoughnessTextureArray != null && _cachedMapDir == mapDir)
 		{
@@ -1579,7 +2143,7 @@ void fragment() {
 						string brightStr = sObj["Brightness"]?.ToString() ?? sObj["brightness"]?.ToString();
 						if (!string.IsNullOrEmpty(brightStr) && float.TryParse(brightStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedBright))
 						{
-							texBrightness = Math.Clamp(parsedBright, 0.25f, 1.75f);
+							texBrightness = Math.Clamp(parsedBright, 0.10f, 2.0f);
 						}
 						string tintStr = sObj["Tint"]?.ToString() ?? sObj["tint"]?.ToString();
 						if (!string.IsNullOrEmpty(tintStr) && Color.HtmlIsValid(tintStr))
@@ -1650,15 +2214,9 @@ void fragment() {
 				if (sub0.GetFormat() != Godot.Image.Format.Rgba8) sub0.Convert(Godot.Image.Format.Rgba8);
 				if (sub1.GetFormat() != Godot.Image.Format.Rgba8) sub1.Convert(Godot.Image.Format.Rgba8);
 
-				var p0 = sub0.GetPixel(0, 0);
-				if (p0.A >= 1.0f) sub0.SetPixel(0, 0, new Color(p0.R, p0.G, p0.B, 0.99f));
-				var p1 = sub1.GetPixel(0, 0);
-				if (p1.A >= 1.0f) sub1.SetPixel(0, 0, new Color(p1.R, p1.G, p1.B, 0.99f));
+				sub0.GenerateMipmaps();
+				sub1.GenerateMipmaps();
 
-				sub0.GenerateMipmaps(false);
-				sub1.GenerateMipmaps(true);
-				sub0.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
-				sub1.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
 				albedoHeightImages.Add(sub0);
 				normalRoughnessImages.Add(sub1);
 			}
@@ -1667,13 +2225,11 @@ void fragment() {
 		{
 			var fb0 = Godot.Image.CreateEmpty(TargetTextureResolution, TargetTextureResolution, false, Godot.Image.Format.Rgba8);
 			fb0.Fill(new Color(0.2f, 0.5f, 0.2f, 0.99f));
-			fb0.GenerateMipmaps(false);
-			fb0.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
+			fb0.GenerateMipmaps();
 
 			var fb1 = Godot.Image.CreateEmpty(TargetTextureResolution, TargetTextureResolution, false, Godot.Image.Format.Rgba8);
 			fb1.Fill(new Color(0.5f, 0.5f, 1.0f, 0.8f));
-			fb1.GenerateMipmaps(true);
-			fb1.Compress(Godot.Image.CompressMode.S3Tc, Godot.Image.CompressSource.Generic);
+			fb1.GenerateMipmaps();
 
 			albedoHeightImages.Add(fb0);
 			normalRoughnessImages.Add(fb1);
@@ -1912,12 +2468,23 @@ void fragment() {
 			SplatMap = newSplatMap;
 		}
 
+		if (CliffSplatMap == null || CliffSplatMap.GetLength(0) < w + 1 || CliffSplatMap.GetLength(1) < d + 1)
+		{
+			var newCliffSplatMap = new TerrainSplatWeights[w + 1, d + 1];
+			for (int z = 0; z <= d; z++)
+			{
+				for (int x = 0; x <= w; x++)
+				{
+					newCliffSplatMap[x, z] = CliffSplatMap[x, z];
+				}
+			}
+			CliffSplatMap = newCliffSplatMap;
+		}
+
 		if (_chunks.Count == 0 || _chunkedWidth != w || _chunkedDepth != d)
 		{
 			CreateChunks();
 		}
-
-		SanitizeCornerHeights();
 
 		foreach (var chunk in _chunks)
 		{
@@ -1970,17 +2537,19 @@ void fragment() {
 		}
 	}
 
-	public float GetGridNodeHeight(int gx, int gz, TerrainCell[,] cells, int w, int d)
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static float GetGridNodeHeight(int gx, int gz, TerrainCell[,] cells, int w, int d)
 	{
 		if (cells == null || w <= 0 || d <= 0) return 0f;
+		if ((uint)gx < (uint)w && (uint)gz < (uint)d) return cells[gx, gz].Y_NW;
 		int cellX = Math.Clamp(gx, 0, w - 1);
 		int cellZ = Math.Clamp(gz, 0, d - 1);
-		if (gx < w && gz < d) return cells[cellX, cellZ].Y_NW;
-		if (gx == w && gz < d) return cells[w - 1, cellZ].Y_NE;
-		if (gx < w && gz == d) return cells[cellX, d - 1].Y_SW;
+		if (gx >= w && gz < d) return cells[w - 1, cellZ].Y_NE;
+		if (gx < w && gz >= d) return cells[cellX, d - 1].Y_SW;
 		return cells[w - 1, d - 1].Y_SE;
 	}
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public float GetGridNodeHeight(int gx, int gz)
 	{
 		return GetGridNodeHeight(gx, gz, Cells, Width, Depth);
@@ -2082,6 +2651,8 @@ void fragment() {
 			chunk.ColorsCache = new Color[maxVertices];
 			chunk.TexIndicesCache = new float[maxVertices * 4];
 			chunk.TexWeightsCache01 = new float[maxVertices * 4];
+			chunk.CliffIndicesCache = new float[maxVertices * 4];
+			chunk.CliffWeightsCache = new float[maxVertices * 4];
 		}
 
 		if (chunk.IndicesCache == null || chunk.IndicesCache.Length < maxIndices)
@@ -2108,6 +2679,8 @@ void fragment() {
 		Vector2[] finalUvs = chunk.UvsCache;
 		float[] finalTexIndices = chunk.TexIndicesCache;
 		float[] finalTexWeights = chunk.TexWeightsCache01;
+		float[] finalCliffIndices = chunk.CliffIndicesCache;
+		float[] finalCliffWeights = chunk.CliffWeightsCache;
 		int[] finalIndices = chunk.IndicesCache;
 
 		if (vertexIndex < chunk.VerticesCache.Length)
@@ -2129,6 +2702,12 @@ void fragment() {
 
 			finalTexWeights = new float[vertexIndex * 4];
 			Array.Copy(chunk.TexWeightsCache01, finalTexWeights, vertexIndex * 4);
+
+			finalCliffIndices = new float[vertexIndex * 4];
+			Array.Copy(chunk.CliffIndicesCache, finalCliffIndices, vertexIndex * 4);
+
+			finalCliffWeights = new float[vertexIndex * 4];
+			Array.Copy(chunk.CliffWeightsCache, finalCliffWeights, vertexIndex * 4);
 		}
 
 		if (indexIndex < chunk.IndicesCache.Length)
@@ -2145,6 +2724,8 @@ void fragment() {
 		arrays[(int)Mesh.ArrayType.TexUV] = finalUvs;
 		arrays[(int)Mesh.ArrayType.Custom0] = finalTexIndices;
 		arrays[(int)Mesh.ArrayType.Custom1] = finalTexWeights;
+		arrays[(int)Mesh.ArrayType.Custom2] = finalCliffIndices;
+		arrays[(int)Mesh.ArrayType.Custom3] = finalCliffWeights;
 		arrays[(int)Mesh.ArrayType.Index] = finalIndices;
 
 		chunk.ArrayMesh.ClearSurfaces();
@@ -2152,10 +2733,12 @@ void fragment() {
 		{
 			int custom0Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift;
 			int custom1Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom1Shift;
+			int custom2Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom2Shift;
+			int custom3Format = (int)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom3Shift;
 			chunk.ArrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays,
 				new Godot.Collections.Array<Godot.Collections.Array>(),
 				null,
-				(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1) | custom0Format | custom1Format));
+				(Mesh.ArrayFormat)((int)(Mesh.ArrayFormat.FormatCustom0 | Mesh.ArrayFormat.FormatCustom1 | Mesh.ArrayFormat.FormatCustom2 | Mesh.ArrayFormat.FormatCustom3) | custom0Format | custom1Format | custom2Format | custom3Format));
 		}
 
 		float minY = float.MaxValue;
@@ -2193,6 +2776,10 @@ void fragment() {
 		UpdateFrustumCulling();
 	}
 
+	private Vector3 _lastFrustumCamPos;
+	private Vector3 _lastFrustumCamRot;
+	private readonly Plane[] _cachedFrustumPlanes = new Plane[6];
+
 	private void UpdateFrustumCulling()
 	{
 		if (IsMinimapRendering)
@@ -2212,21 +2799,36 @@ void fragment() {
 			return;
 		}
 
+		Vector3 camPos = camera.GlobalPosition;
+		Vector3 camRot = camera.GlobalRotation;
+		if ((camPos - _lastFrustumCamPos).LengthSquared() < 0.0001f && (camRot - _lastFrustumCamRot).LengthSquared() < 0.0001f)
+		{
+			return;
+		}
+		_lastFrustumCamPos = camPos;
+		_lastFrustumCamRot = camRot;
+
 		var frustum = camera.GetFrustum();
 		if (frustum == null || frustum.Count < 6) return;
 
+		for (int i = 0; i < 6; i++)
+		{
+			_cachedFrustumPlanes[i] = frustum[i];
+		}
+
+		ReadOnlySpan<Plane> planesSpan = _cachedFrustumPlanes;
 		foreach (var chunk in _chunks)
 		{
-			bool visible = IntersectsFrustum(frustum, chunk.WorldAabb);
-			if (GodotObject.IsInstanceValid(chunk.MeshInstance))
+			bool visible = IntersectsFrustum(planesSpan, chunk.WorldAabb);
+			if (GodotObject.IsInstanceValid(chunk.MeshInstance) && chunk.MeshInstance.Visible != visible)
 			{
 				chunk.MeshInstance.Visible = visible;
 			}
-			if (GodotObject.IsInstanceValid(chunk.ShallowWaterMesh))
+			if (GodotObject.IsInstanceValid(chunk.ShallowWaterMesh) && chunk.ShallowWaterMesh.Visible != visible)
 			{
 				chunk.ShallowWaterMesh.Visible = visible;
 			}
-			if (GodotObject.IsInstanceValid(chunk.DeepWaterMesh))
+			if (GodotObject.IsInstanceValid(chunk.DeepWaterMesh) && chunk.DeepWaterMesh.Visible != visible)
 			{
 				chunk.DeepWaterMesh.Visible = visible;
 			}
@@ -2237,22 +2839,22 @@ void fragment() {
 	{
 		foreach (var chunk in _chunks)
 		{
-			if (GodotObject.IsInstanceValid(chunk.MeshInstance)) chunk.MeshInstance.Visible = visible;
-			if (GodotObject.IsInstanceValid(chunk.ShallowWaterMesh)) chunk.ShallowWaterMesh.Visible = visible;
-			if (GodotObject.IsInstanceValid(chunk.DeepWaterMesh)) chunk.DeepWaterMesh.Visible = visible;
+			if (GodotObject.IsInstanceValid(chunk.MeshInstance) && chunk.MeshInstance.Visible != visible) chunk.MeshInstance.Visible = visible;
+			if (GodotObject.IsInstanceValid(chunk.ShallowWaterMesh) && chunk.ShallowWaterMesh.Visible != visible) chunk.ShallowWaterMesh.Visible = visible;
+			if (GodotObject.IsInstanceValid(chunk.DeepWaterMesh) && chunk.DeepWaterMesh.Visible != visible) chunk.DeepWaterMesh.Visible = visible;
 		}
 	}
 
-	public static bool IntersectsFrustum(Godot.Collections.Array<Plane> frustumPlanes, Aabb aabb)
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static bool IntersectsFrustum(ReadOnlySpan<Plane> frustumPlanes, Aabb aabb)
 	{
-		aabb = aabb.Grow(1.0f);
+		aabb = aabb.Grow(8.0f);
 		Vector3 min = aabb.Position;
 		Vector3 max = aabb.End;
 
-		int count = frustumPlanes.Count;
-		for (int i = 0; i < count; i++)
+		for (int i = 0; i < frustumPlanes.Length; i++)
 		{
-			Plane plane = frustumPlanes[i];
+			ref readonly Plane plane = ref frustumPlanes[i];
 			Vector3 n = new Vector3(
 				plane.Normal.X >= 0 ? min.X : max.X,
 				plane.Normal.Y >= 0 ? min.Y : max.Y,
@@ -2265,6 +2867,14 @@ void fragment() {
 			}
 		}
 		return true;
+	}
+
+	public static bool IntersectsFrustum(Godot.Collections.Array<Plane> frustumPlanes, Aabb aabb)
+	{
+		if (frustumPlanes == null || frustumPlanes.Count == 0) return true;
+		Span<Plane> span = stackalloc Plane[Math.Min(frustumPlanes.Count, 32)];
+		for (int i = 0; i < span.Length; i++) span[i] = frustumPlanes[i];
+		return IntersectsFrustum((ReadOnlySpan<Plane>)span, aabb);
 	}
 
 	private Vector3 GetWorldPosition(float gridX, float gridZ, float height, float halfWQuadSize, float halfDQuadSize, float quadSize)
@@ -2295,15 +2905,15 @@ void fragment() {
 		totalIndices += 12;
 	}
 
-	private (int tex0, int tex1, int tex2, int tex3) GetQuadDominantTextures(TerrainSplatWeights s0, TerrainSplatWeights s1, TerrainSplatWeights s2, TerrainSplatWeights s3)
+	private (int tex0, int tex1, int tex2, int tex3) GetQuadDominantTextures(ReadOnlySpan<TerrainSplatWeights> splats)
 	{
 		Span<int> indices = stackalloc int[16];
 		Span<float> weights = stackalloc float[16];
 		int count = 0;
 
-		for (int sIdx = 0; sIdx < 4; sIdx++)
+		for (int sIdx = 0; sIdx < splats.Length; sIdx++)
 		{
-			TerrainSplatWeights s = sIdx switch { 0 => s0, 1 => s1, 2 => s2, _ => s3 };
+			TerrainSplatWeights s = splats[sIdx];
 			for (int k = 0; k < 4; k++)
 			{
 				int idx = k switch { 0 => s.Index0, 1 => s.Index1, 2 => s.Index2, _ => s.Index3 };
@@ -2331,7 +2941,7 @@ void fragment() {
 
 		if (count == 0)
 		{
-			int defaultTex = s0.Index0;
+			int defaultTex = splats.Length > 0 ? splats[0].Index0 : 0;
 			return (defaultTex, defaultTex, defaultTex, defaultTex);
 		}
 
@@ -2358,6 +2968,12 @@ void fragment() {
 		int res3 = count > 3 ? indices[3] : res0;
 
 		return (res0, res1, res2, res3);
+	}
+
+	private (int tex0, int tex1, int tex2, int tex3) GetQuadDominantTextures(TerrainSplatWeights s0, TerrainSplatWeights s1, TerrainSplatWeights s2, TerrainSplatWeights s3)
+	{
+		Span<TerrainSplatWeights> splats = stackalloc TerrainSplatWeights[4] { s0, s1, s2, s3 };
+		return GetQuadDominantTextures(splats);
 	}
 
 	private (float w0, float w1, float w2, float w3) GetSplatWeightsForQuad(TerrainSplatWeights s, int tex0, int tex1, int tex2, int tex3)
@@ -2437,6 +3053,45 @@ void fragment() {
 		};
 	}
 
+	private TerrainSplatWeights BlendSplatWeights(TerrainSplatWeights s0, TerrainSplatWeights s1, TerrainSplatWeights s2)
+	{
+		var (tex0, tex1, tex2, tex3) = GetQuadDominantTextures(s0, s1, s2, s0);
+		var (w00, w01, w02, w03) = GetSplatWeightsForQuad(s0, tex0, tex1, tex2, tex3);
+		var (w10, w11, w12, w13) = GetSplatWeightsForQuad(s1, tex0, tex1, tex2, tex3);
+		var (w20, w21, w22, w23) = GetSplatWeightsForQuad(s2, tex0, tex1, tex2, tex3);
+
+		float avg0 = (w00 + w10 + w20) / 3.0f;
+		float avg1 = (w01 + w11 + w21) / 3.0f;
+		float avg2 = (w02 + w12 + w22) / 3.0f;
+		float avg3 = (w03 + w13 + w23) / 3.0f;
+
+		float sum = avg0 + avg1 + avg2 + avg3;
+		if (sum > 0.0001f)
+		{
+			float invSum = 1.0f / sum;
+			avg0 *= invSum;
+			avg1 *= invSum;
+			avg2 *= invSum;
+			avg3 *= invSum;
+		}
+		else
+		{
+			avg0 = 1.0f; avg1 = 0f; avg2 = 0f; avg3 = 0f;
+		}
+
+		return new TerrainSplatWeights
+		{
+			Index0 = tex0,
+			Index1 = tex1,
+			Index2 = tex2,
+			Index3 = tex3,
+			Weight0 = avg0,
+			Weight1 = avg1,
+			Weight2 = avg2,
+			Weight3 = avg3
+		};
+	}
+
 	public static float Smoothstep(float edge0, float edge1, float x)
 	{
 		float t = Mathf.Clamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
@@ -2446,105 +3101,55 @@ void fragment() {
 	public static float GetCliffFactor(Vector3 normal)
 	{
 		float ny = Mathf.Clamp(normal.Y, 0.0f, 1.0f);
-		return 1.0f - Smoothstep(0.72f, 0.92f, ny);
+		return 1.0f - Smoothstep(0.70f, 0.90f, ny);
 	}
 
-	private TerrainSplatWeights BlendSplatWeightsWithCliff(in TerrainSplatWeights ground, in TerrainSplatWeights cliff, float cliffFactor)
+	public static float GetVertexCliffWeight(int gx, int gz, TerrainCell[,] cells, int w, int d, float quadSize)
 	{
-		cliffFactor = Mathf.Clamp(cliffFactor, 0.0f, 1.0f);
-		if (cliffFactor <= 0.001f) return ground;
-		if (cliffFactor >= 0.999f) return cliff;
+		if (cells == null || w <= 0 || d <= 0) return 0f;
+		float h = GetGridNodeHeight(gx, gz, cells, w, d);
+		float maxDelta = 0f;
+		if (gx > 0) maxDelta = Math.Max(maxDelta, Math.Abs(h - GetGridNodeHeight(gx - 1, gz, cells, w, d)));
+		if (gx < w) maxDelta = Math.Max(maxDelta, Math.Abs(h - GetGridNodeHeight(gx + 1, gz, cells, w, d)));
+		if (gz > 0) maxDelta = Math.Max(maxDelta, Math.Abs(h - GetGridNodeHeight(gx, gz - 1, cells, w, d)));
+		if (gz < d) maxDelta = Math.Max(maxDelta, Math.Abs(h - GetGridNodeHeight(gx, gz + 1, cells, w, d)));
 
-		float groundFactor = 1.0f - cliffFactor;
+		sbyte minTier = sbyte.MaxValue;
+		sbyte maxTier = sbyte.MinValue;
+		int cellCount = 0;
 
-		int[] indices = new int[8];
-		float[] weights = new float[8];
-		int count = 0;
-
-		for (int sIdx = 0; sIdx < 2; sIdx++)
+		void CheckCell(int cx, int cz)
 		{
-			TerrainSplatWeights splat = sIdx == 0 ? ground : cliff;
-			float factor = sIdx == 0 ? groundFactor : cliffFactor;
-
-			for (int k = 0; k < 4; k++)
+			if (cx >= 0 && cx < w && cz >= 0 && cz < d)
 			{
-				int idx = k switch { 0 => splat.Index0, 1 => splat.Index1, 2 => splat.Index2, _ => splat.Index3 };
-				float w = (k switch { 0 => splat.Weight0, 1 => splat.Weight1, 2 => splat.Weight2, _ => splat.Weight3 }) * factor;
-				if (w <= 0.0001f) continue;
-
-				bool found = false;
-				for (int i = 0; i < count; i++)
-				{
-					if (indices[i] == idx)
-					{
-						weights[i] += w;
-						found = true;
-						break;
-					}
-				}
-				if (!found && count < 8)
-				{
-					indices[count] = idx;
-					weights[count] = w;
-					count++;
-				}
+				sbyte t = cells[cx, cz].MacroTier;
+				if (t < minTier) minTier = t;
+				if (t > maxTier) maxTier = t;
+				cellCount++;
 			}
 		}
 
-		if (count == 0) return ground;
+		CheckCell(gx - 1, gz - 1);
+		CheckCell(gx, gz - 1);
+		CheckCell(gx - 1, gz);
+		CheckCell(gx, gz);
 
-		for (int i = 0; i < count - 1; i++)
+		float tierCliffDeltaThreshold = TerrainCell.TIER_HEIGHT * 0.70f;
+		bool hasTierDifference = cellCount > 1 && (maxTier - minTier) >= 1;
+		bool hasStepHeightDelta = maxDelta >= tierCliffDeltaThreshold;
+
+		if (!hasTierDifference && !hasStepHeightDelta)
 		{
-			for (int j = i + 1; j < count; j++)
-			{
-				if (weights[j] > weights[i])
-				{
-					float tempW = weights[i];
-					weights[i] = weights[j];
-					weights[j] = tempW;
-
-					int tempIdx = indices[i];
-					indices[i] = indices[j];
-					indices[j] = tempIdx;
-				}
-			}
+			return 0.0f;
 		}
 
-		int res0 = indices[0];
-		int res1 = count > 1 ? indices[1] : res0;
-		int res2 = count > 2 ? indices[2] : res0;
-		int res3 = count > 3 ? indices[3] : res0;
-
-		float w0 = weights[0];
-		float w1 = count > 1 ? weights[1] : 0.0f;
-		float w2 = count > 2 ? weights[2] : 0.0f;
-		float w3 = count > 3 ? weights[3] : 0.0f;
-
-		float totalW = w0 + w1 + w2 + w3;
-		if (totalW > 0.0001f)
+		float deltaCliff = Smoothstep(TerrainCell.TIER_HEIGHT * 0.50f, TerrainCell.TIER_HEIGHT * 0.85f, maxDelta);
+		if (hasTierDifference)
 		{
-			float invW = 1.0f / totalW;
-			w0 *= invW;
-			w1 *= invW;
-			w2 *= invW;
-			w3 *= invW;
-		}
-		else
-		{
-			w0 = 1.0f; w1 = 0.0f; w2 = 0.0f; w3 = 0.0f;
+			deltaCliff = Math.Max(deltaCliff, 1.0f);
 		}
 
-		return new TerrainSplatWeights
-		{
-			Index0 = res0,
-			Index1 = res1,
-			Index2 = res2,
-			Index3 = res3,
-			Weight0 = w0,
-			Weight1 = w1,
-			Weight2 = w2,
-			Weight3 = w3
-		};
+		return Math.Clamp(deltaCliff, 0.0f, 1.0f);
 	}
 
 	private void ProcessCellQuad(
@@ -2581,6 +3186,33 @@ void fragment() {
 		Vector3 normSW = GetVertexNormal(x, z + 1, cells, w, d, quadSize);
 		Vector3 normC = (normNW + normNE + normSE + normSW).Normalized();
 
+		sbyte currentTier = cell.MacroTier;
+		bool bordersDifferentTier = false;
+		if (x > 0 && Math.Abs(cells[x - 1, z].MacroTier - currentTier) >= 1) bordersDifferentTier = true;
+		if (x < w - 1 && Math.Abs(cells[x + 1, z].MacroTier - currentTier) >= 1) bordersDifferentTier = true;
+		if (z > 0 && Math.Abs(cells[x, z - 1].MacroTier - currentTier) >= 1) bordersDifferentTier = true;
+		if (z < d - 1 && Math.Abs(cells[x, z + 1].MacroTier - currentTier) >= 1) bordersDifferentTier = true;
+
+		float cliffNW = GetVertexCliffWeight(x, z, cells, w, d, quadSize);
+		float cliffNE = GetVertexCliffWeight(x + 1, z, cells, w, d, quadSize);
+		float cliffSE = GetVertexCliffWeight(x + 1, z + 1, cells, w, d, quadSize);
+		float cliffSW = GetVertexCliffWeight(x, z + 1, cells, w, d, quadSize);
+		float cliffC = (cliffNW + cliffNE + cliffSE + cliffSW) * 0.25f;
+
+		float maxDelta = Math.Max(
+			Math.Max(Math.Abs(hNW - hNE), Math.Abs(hNE - hSE)),
+			Math.Max(Math.Abs(hSE - hSW), Math.Abs(hSW - hNW))
+		);
+		float maxCenterDelta = Math.Max(
+			Math.Max(Math.Abs(hC - hNW), Math.Abs(hC - hNE)),
+			Math.Max(Math.Abs(hC - hSE), Math.Abs(hC - hSW))
+		);
+		float totalQuadDelta = Math.Max(maxDelta, maxCenterDelta);
+
+		float tierStepThreshold = TerrainCell.TIER_HEIGHT * 0.70f;
+		bool isCliffQuad = (bordersDifferentTier && totalQuadDelta >= tierStepThreshold * 0.5f) || totalQuadDelta >= tierStepThreshold;
+		float quadCliffWeight = isCliffQuad ? 1.0f : 0.0f;
+
 		int mapSplatW = splatMap != null ? splatMap.GetLength(0) : 0;
 		int mapSplatD = splatMap != null ? splatMap.GetLength(1) : 0;
 
@@ -2593,39 +3225,22 @@ void fragment() {
 		int mapCliffW = cliffSplatMap != null ? cliffSplatMap.GetLength(0) : 0;
 		int mapCliffD = cliffSplatMap != null ? cliffSplatMap.GetLength(1) : 0;
 
-		TerrainSplatWeights cliffS00 = cliffSplatMap != null ? cliffSplatMap[Math.Clamp(x, 0, mapCliffW - 1), Math.Clamp(z, 0, mapCliffD - 1)] : default;
-		TerrainSplatWeights cliffS10 = cliffSplatMap != null ? cliffSplatMap[Math.Clamp(x + 1, 0, mapCliffW - 1), Math.Clamp(z, 0, mapCliffD - 1)] : cliffS00;
-		TerrainSplatWeights cliffS11 = cliffSplatMap != null ? cliffSplatMap[Math.Clamp(x + 1, 0, mapCliffW - 1), Math.Clamp(z + 1, 0, mapCliffD - 1)] : cliffS00;
-		TerrainSplatWeights cliffS01 = cliffSplatMap != null ? cliffSplatMap[Math.Clamp(x, 0, mapCliffW - 1), Math.Clamp(z + 1, 0, mapCliffD - 1)] : cliffS00;
+		TerrainSplatWeights cliffS00 = cliffSplatMap[Math.Clamp(x, 0, mapCliffW - 1), Math.Clamp(z, 0, mapCliffD - 1)];
+		TerrainSplatWeights cliffS10 = (cliffSplatMap != null && mapCliffW > 0 && mapCliffD > 0)
+			? cliffSplatMap[Math.Clamp(x + 1, 0, mapCliffW - 1), Math.Clamp(z, 0, mapCliffD - 1)]
+			: cliffS00;
+		TerrainSplatWeights cliffS11 = (cliffSplatMap != null && mapCliffW > 0 && mapCliffD > 0)
+			? cliffSplatMap[Math.Clamp(x + 1, 0, mapCliffW - 1), Math.Clamp(z + 1, 0, mapCliffD - 1)]
+			: cliffS00;
+		TerrainSplatWeights cliffS01 = (cliffSplatMap != null && mapCliffW > 0 && mapCliffD > 0)
+			? cliffSplatMap[Math.Clamp(x, 0, mapCliffW - 1), Math.Clamp(z + 1, 0, mapCliffD - 1)]
+			: cliffS00;
 		TerrainSplatWeights cliffSC = BlendSplatWeights(cliffS00, cliffS10, cliffS11, cliffS01);
 
-		Vector3 triNormN = (gPNE - gPNW).Cross(gPC - gPNW).Normalized();
-		if (triNormN.Y < 0) triNormN = -triNormN;
-		float cliffFactorN = GetCliffFactor(triNormN);
-
-		Vector3 triNormE = (gPSE - gPNE).Cross(gPC - gPNE).Normalized();
-		if (triNormE.Y < 0) triNormE = -triNormE;
-		float cliffFactorE = GetCliffFactor(triNormE);
-
-		Vector3 triNormS = (gPSW - gPSE).Cross(gPC - gPSE).Normalized();
-		if (triNormS.Y < 0) triNormS = -triNormS;
-		float cliffFactorS = GetCliffFactor(triNormS);
-
-		Vector3 triNormW = (gPNW - gPSW).Cross(gPC - gPSW).Normalized();
-		if (triNormW.Y < 0) triNormW = -triNormW;
-		float cliffFactorW = GetCliffFactor(triNormW);
-
-		Vector3 normN0 = triNormN.Y >= 0.999f ? Vector3.Up : triNormN;
-		Vector3 normN1 = normN0, normN2 = normN0;
-
-		Vector3 normE0 = triNormE.Y >= 0.999f ? Vector3.Up : triNormE;
-		Vector3 normE1 = normE0, normE2 = normE0;
-
-		Vector3 normS0 = triNormS.Y >= 0.999f ? Vector3.Up : triNormS;
-		Vector3 normS1 = normS0, normS2 = normS0;
-
-		Vector3 normW0 = triNormW.Y >= 0.999f ? Vector3.Up : triNormW;
-		Vector3 normW1 = normW0, normW2 = normW0;
+		int cliffTex0 = BlendSplatWeights(cliffS00, cliffS10, cliffSC).GetDominantIndex();
+		int cliffTex1 = BlendSplatWeights(cliffS10, cliffS11, cliffSC).GetDominantIndex();
+		int cliffTex2 = BlendSplatWeights(cliffS11, cliffS01, cliffSC).GetDominantIndex();
+		int cliffTex3 = BlendSplatWeights(cliffS01, cliffS00, cliffSC).GetDominantIndex();
 
 		Vector2 uvNW = new Vector2(gPNW.X, gPNW.Z);
 		Vector2 uvNE = new Vector2(gPNE.X, gPNE.Z);
@@ -2635,28 +3250,13 @@ void fragment() {
 
 		Color col = new Color(1.0f, 1.0f, 1.0f, 1.0f);
 
-		TerrainSplatWeights sN0 = BlendSplatWeightsWithCliff(floorS00, cliffS00, cliffFactorN);
-		TerrainSplatWeights sN1 = BlendSplatWeightsWithCliff(floorS10, cliffS10, cliffFactorN);
-		TerrainSplatWeights sN2 = BlendSplatWeightsWithCliff(floorSC, cliffSC, cliffFactorN);
+		var (gTex0, gTex1, gTex2, gTex3) = GetQuadDominantTextures(floorS00, floorS10, floorS11, floorS01);
+		var (cTex0, cTex1, cTex2, cTex3) = GetQuadDominantTextures(cliffS00, cliffS10, cliffS11, cliffS01);
 
-		TerrainSplatWeights sE0 = BlendSplatWeightsWithCliff(floorS10, cliffS10, cliffFactorE);
-		TerrainSplatWeights sE1 = BlendSplatWeightsWithCliff(floorS11, cliffS11, cliffFactorE);
-		TerrainSplatWeights sE2 = BlendSplatWeightsWithCliff(floorSC, cliffSC, cliffFactorE);
-
-		TerrainSplatWeights sS0 = BlendSplatWeightsWithCliff(floorS11, cliffS11, cliffFactorS);
-		TerrainSplatWeights sS1 = BlendSplatWeightsWithCliff(floorS01, cliffS01, cliffFactorS);
-		TerrainSplatWeights sS2 = BlendSplatWeightsWithCliff(floorSC, cliffSC, cliffFactorS);
-
-		TerrainSplatWeights sW0 = BlendSplatWeightsWithCliff(floorS01, cliffS01, cliffFactorW);
-		TerrainSplatWeights sW1 = BlendSplatWeightsWithCliff(floorS00, cliffS00, cliffFactorW);
-		TerrainSplatWeights sW2 = BlendSplatWeightsWithCliff(floorSC, cliffSC, cliffFactorW);
-
-		var (tex0, tex1, tex2, tex3) = GetQuadDominantTextures(sN0, sE0, sS0, sW0);
-
-		ProcessSubTriangleGround(chunk, gPNW, gPNE, gPC, normN0, normN1, normN2, uvNW, uvNE, uvC, col, col, col, sN0, sN1, sN2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
-		ProcessSubTriangleGround(chunk, gPNE, gPSE, gPC, normE0, normE1, normE2, uvNE, uvSE, uvC, col, col, col, sE0, sE1, sE2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
-		ProcessSubTriangleGround(chunk, gPSE, gPSW, gPC, normS0, normS1, normS2, uvSE, uvSW, uvC, col, col, col, sS0, sS1, sS2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
-		ProcessSubTriangleGround(chunk, gPSW, gPNW, gPC, normW0, normW1, normW2, uvSW, uvNW, uvC, col, col, col, sW0, sW1, sW2, tex0, tex1, tex2, tex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPNW, gPNE, gPC, normNW, normNE, normC, uvNW, uvNE, uvC, cliffNW, cliffNE, cliffC, quadCliffWeight, floorS00, floorS10, floorSC, gTex0, gTex1, gTex2, gTex3, cliffS00, cliffS10, cliffSC, cTex0, cTex1, cTex2, cTex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPNE, gPSE, gPC, normNE, normSE, normC, uvNE, uvSE, uvC, cliffNE, cliffSE, cliffC, quadCliffWeight, floorS10, floorS11, floorSC, gTex0, gTex1, gTex2, gTex3, cliffS10, cliffS11, cliffSC, cTex0, cTex1, cTex2, cTex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPSE, gPSW, gPC, normSE, normSW, normC, uvSE, uvSW, uvC, cliffSE, cliffSW, cliffC, quadCliffWeight, floorS11, floorS01, floorSC, gTex0, gTex1, gTex2, gTex3, cliffS11, cliffS01, cliffSC, cTex0, cTex1, cTex2, cTex3, ref vertexIndex, ref indexIndex);
+		ProcessSubTriangleGround(chunk, gPSW, gPNW, gPC, normSW, normNW, normC, uvSW, uvNW, uvC, cliffSW, cliffNW, cliffC, quadCliffWeight, floorS01, floorS00, floorSC, gTex0, gTex1, gTex2, gTex3, cliffS01, cliffS00, cliffSC, cTex0, cTex1, cTex2, cTex3, ref vertexIndex, ref indexIndex);
 	}
 
 	private void ProcessCellQuad(
@@ -2673,21 +3273,28 @@ void fragment() {
 		Vector3 pos0, Vector3 pos1, Vector3 pos2,
 		Vector3 norm0, Vector3 norm1, Vector3 norm2,
 		Vector2 uv0, Vector2 uv1, Vector2 uv2,
-		Color col0, Color col1, Color col2,
-		TerrainSplatWeights s0, TerrainSplatWeights s1, TerrainSplatWeights s2,
-		int tex0, int tex1, int tex2, int tex3,
+		float cliff0, float cliff1, float cliff2,
+		float quadCliff,
+		TerrainSplatWeights gS0, TerrainSplatWeights gS1, TerrainSplatWeights gS2,
+		int gTex0, int gTex1, int gTex2, int gTex3,
+		TerrainSplatWeights cS0, TerrainSplatWeights cS1, TerrainSplatWeights cS2,
+		int cTex0, int cTex1, int cTex2, int cTex3,
 		ref int vertexIndex,
 		ref int indexIndex)
 	{
 		int baseIndex = vertexIndex;
 
-		var (w00, w01, w02, w03) = GetSplatWeightsForQuad(s0, tex0, tex1, tex2, tex3);
-		var (w10, w11, w12, w13) = GetSplatWeightsForQuad(s1, tex0, tex1, tex2, tex3);
-		var (w20, w21, w22, w23) = GetSplatWeightsForQuad(s2, tex0, tex1, tex2, tex3);
+		var (gw00, gw01, gw02, gw03) = GetSplatWeightsForQuad(gS0, gTex0, gTex1, gTex2, gTex3);
+		var (gw10, gw11, gw12, gw13) = GetSplatWeightsForQuad(gS1, gTex0, gTex1, gTex2, gTex3);
+		var (gw20, gw21, gw22, gw23) = GetSplatWeightsForQuad(gS2, gTex0, gTex1, gTex2, gTex3);
 
-		PopulateExplicitVertex(chunk, pos0, uv0, norm0, col0, tex0, tex1, tex2, tex3, w00, w01, w02, w03, ref vertexIndex);
-		PopulateExplicitVertex(chunk, pos1, uv1, norm1, col1, tex0, tex1, tex2, tex3, w10, w11, w12, w13, ref vertexIndex);
-		PopulateExplicitVertex(chunk, pos2, uv2, norm2, col2, tex0, tex1, tex2, tex3, w20, w21, w22, w23, ref vertexIndex);
+		var (cw00, cw01, cw02, cw03) = GetSplatWeightsForQuad(cS0, cTex0, cTex1, cTex2, cTex3);
+		var (cw10, cw11, cw12, cw13) = GetSplatWeightsForQuad(cS1, cTex0, cTex1, cTex2, cTex3);
+		var (cw20, cw21, cw22, cw23) = GetSplatWeightsForQuad(cS2, cTex0, cTex1, cTex2, cTex3);
+
+		PopulateExplicitVertex(chunk, pos0, uv0, norm0, cliff0, quadCliff, gTex0, gTex1, gTex2, gTex3, gw00, gw01, gw02, gw03, cTex0, cTex1, cTex2, cTex3, cw00, cw01, cw02, cw03, ref vertexIndex);
+		PopulateExplicitVertex(chunk, pos1, uv1, norm1, cliff1, quadCliff, gTex0, gTex1, gTex2, gTex3, gw10, gw11, gw12, gw13, cTex0, cTex1, cTex2, cTex3, cw10, cw11, cw12, cw13, ref vertexIndex);
+		PopulateExplicitVertex(chunk, pos2, uv2, norm2, cliff2, quadCliff, gTex0, gTex1, gTex2, gTex3, gw20, gw21, gw22, gw23, cTex0, cTex1, cTex2, cTex3, cw20, cw21, cw22, cw23, ref vertexIndex);
 
 		chunk.IndicesCache[indexIndex++] = baseIndex;
 		chunk.IndicesCache[indexIndex++] = baseIndex + 1;
@@ -2699,26 +3306,39 @@ void fragment() {
 		Vector3 position,
 		Vector2 uv,
 		Vector3 faceNormal,
-		Color color,
-		int tex0, int tex1, int tex2, int tex3,
-		float w0, float w1, float w2, float w3,
+		float cliffWeight,
+		float quadCliffWeight,
+		int gTex0, int gTex1, int gTex2, int gTex3,
+		float gw0, float gw1, float gw2, float gw3,
+		int cTex0, int cTex1, int cTex2, int cTex3,
+		float cw0, float cw1, float cw2, float cw3,
 		ref int vertexIndex)
 	{
 		chunk.VerticesCache[vertexIndex] = position;
 		chunk.NormalsCache[vertexIndex] = faceNormal;
 		chunk.UvsCache[vertexIndex] = uv;
-		chunk.ColorsCache[vertexIndex] = color;
+		chunk.ColorsCache[vertexIndex] = new Color(quadCliffWeight, 1.0f, 1.0f, cliffWeight);
 
 		int sIdx = vertexIndex * 4;
-		chunk.TexIndicesCache[sIdx + 0] = tex0;
-		chunk.TexIndicesCache[sIdx + 1] = tex1;
-		chunk.TexIndicesCache[sIdx + 2] = tex2;
-		chunk.TexIndicesCache[sIdx + 3] = tex3;
+		chunk.TexIndicesCache[sIdx + 0] = gTex0;
+		chunk.TexIndicesCache[sIdx + 1] = gTex1;
+		chunk.TexIndicesCache[sIdx + 2] = gTex2;
+		chunk.TexIndicesCache[sIdx + 3] = gTex3;
 
-		chunk.TexWeightsCache01[sIdx + 0] = w0 > 0.0001f ? w0 : 0.0f;
-		chunk.TexWeightsCache01[sIdx + 1] = w1 > 0.0001f ? w1 : 0.0f;
-		chunk.TexWeightsCache01[sIdx + 2] = w2 > 0.0001f ? w2 : 0.0f;
-		chunk.TexWeightsCache01[sIdx + 3] = w3 > 0.0001f ? w3 : 0.0f;
+		chunk.TexWeightsCache01[sIdx + 0] = gw0 > 0.0001f ? gw0 : 0.0f;
+		chunk.TexWeightsCache01[sIdx + 1] = gw1 > 0.0001f ? gw1 : 0.0f;
+		chunk.TexWeightsCache01[sIdx + 2] = gw2 > 0.0001f ? gw2 : 0.0f;
+		chunk.TexWeightsCache01[sIdx + 3] = gw3 > 0.0001f ? gw3 : 0.0f;
+
+		chunk.CliffIndicesCache[sIdx + 0] = cTex0;
+		chunk.CliffIndicesCache[sIdx + 1] = cTex1;
+		chunk.CliffIndicesCache[sIdx + 2] = cTex2;
+		chunk.CliffIndicesCache[sIdx + 3] = cTex3;
+
+		chunk.CliffWeightsCache[sIdx + 0] = cw0 > 0.0001f ? cw0 : 0.0f;
+		chunk.CliffWeightsCache[sIdx + 1] = cw1 > 0.0001f ? cw1 : 0.0f;
+		chunk.CliffWeightsCache[sIdx + 2] = cw2 > 0.0001f ? cw2 : 0.0f;
+		chunk.CliffWeightsCache[sIdx + 3] = cw3 > 0.0001f ? cw3 : 0.0f;
 
 		vertexIndex++;
 	}
@@ -2755,18 +3375,19 @@ void fragment() {
 			return;
 		}
 
-		float halfW = Width / 2.0f * QuadSize;
-		float halfD = Depth / 2.0f * QuadSize;
-		float gridX = (worldX + halfW) / QuadSize;
-		float gridZ = (worldZ + halfD) / QuadSize;
-		int x0 = (int)Math.Floor(gridX);
-		int z0 = (int)Math.Floor(gridZ);
-		x0 = Math.Max(0, Math.Min(cellW - 1, x0));
-		z0 = Math.Max(0, Math.Min(cellD - 1, z0));
-		float tx = Math.Clamp(gridX - x0, 0f, 1f);
-		float tz = Math.Clamp(gridZ - z0, 0f, 1f);
-		var cell = cells[x0, z0];
+		float halfW = (cellW / 2.0f) * QuadSize;
+		float halfD = (cellD / 2.0f) * QuadSize;
 
+		float localX = (worldX + halfW) / QuadSize;
+		float localZ = (worldZ + halfD) / QuadSize;
+
+		int x0 = Math.Clamp((int)MathF.Floor(localX), 0, cellW - 1);
+		int z0 = Math.Clamp((int)MathF.Floor(localZ), 0, cellD - 1);
+
+		float tx = Math.Clamp(localX - x0, 0.0f, 1.0f);
+		float tz = Math.Clamp(localZ - z0, 0.0f, 1.0f);
+
+		var cell = cells[x0, z0];
 		float h00 = cell.Y_NW;
 		float h10 = cell.Y_NE;
 		float h01 = cell.Y_SW;
@@ -2779,65 +3400,44 @@ void fragment() {
 		normal = ((1 - tx) * (1 - tz) * n00 + tx * (1 - tz) * n10 + (1 - tx) * tz * n01 + tx * tz * n11).Normalized();
 	}
 
-	private Vector3 GetVertexNormal(int x, int z, TerrainCell[,] cells, int w, int d, float quadSize)
+	public static Vector3 GetVertexNormal(int x, int z, TerrainCell[,] cells, int w, int d, float quadSize)
 	{
 		if (cells == null || w <= 0 || d <= 0) return Vector3.Up;
 
-		float h = GetGridNodeHeight(x, z, cells, w, d);
-
-		int clampX = Math.Min(x, w - 1);
-		int clampXPrev = Math.Max(0, x - 1);
-		int clampXNext = Math.Min(x + 1, w - 1);
-		int clampZ = Math.Min(z, d - 1);
-		int clampZPrev = Math.Max(0, z - 1);
-		int clampZNext = Math.Min(z + 1, d - 1);
-
-		bool rightIsCliff = (x < w) && (cells[clampX, clampZ].MacroTier != cells[clampXNext, clampZ].MacroTier) && (Math.Abs(cells[clampX, clampZ].Y_NE - cells[clampXNext, clampZ].Y_NW) > 0.01f || Math.Abs(cells[clampX, clampZ].Y_SE - cells[clampXNext, clampZ].Y_SW) > 0.01f);
-		bool leftIsCliff = (x > 0) && (cells[clampXPrev, clampZ].MacroTier != cells[clampX, clampZ].MacroTier) && (Math.Abs(cells[clampXPrev, clampZ].Y_NE - cells[clampX, clampZ].Y_NW) > 0.01f || Math.Abs(cells[clampXPrev, clampZ].Y_SE - cells[clampX, clampZ].Y_SW) > 0.01f);
-
-		float deltaRight = x < w ? GetGridNodeHeight(x + 1, z, cells, w, d) - h : 0.0f;
-		float deltaLeft = x > 0 ? h - GetGridNodeHeight(x - 1, z, cells, w, d) : 0.0f;
-
 		float dx;
-		if (rightIsCliff && leftIsCliff)
+		if (x > 0 && x < w)
+		{
+			dx = (GetGridNodeHeight(x + 1, z, cells, w, d) - GetGridNodeHeight(x - 1, z, cells, w, d)) / (2.0f * quadSize);
+		}
+		else if (x < w)
+		{
+			dx = (GetGridNodeHeight(x + 1, z, cells, w, d) - GetGridNodeHeight(x, z, cells, w, d)) / quadSize;
+		}
+		else if (x > 0)
+		{
+			dx = (GetGridNodeHeight(x, z, cells, w, d) - GetGridNodeHeight(x - 1, z, cells, w, d)) / quadSize;
+		}
+		else
 		{
 			dx = 0.0f;
 		}
-		else if (rightIsCliff)
-		{
-			dx = (x > 0 && !leftIsCliff) ? deltaLeft / quadSize : 0.0f;
-		}
-		else if (leftIsCliff)
-		{
-			dx = (x < w && !rightIsCliff) ? deltaRight / quadSize : 0.0f;
-		}
-		else
-		{
-			dx = (GetGridNodeHeight(Math.Min(w, x + 1), z, cells, w, d) - GetGridNodeHeight(Math.Max(0, x - 1), z, cells, w, d)) / (2.0f * quadSize);
-		}
-
-		bool downIsCliff = (z < d) && (cells[clampX, clampZ].MacroTier != cells[clampX, clampZNext].MacroTier) && (Math.Abs(cells[clampX, clampZ].Y_SW - cells[clampX, clampZNext].Y_NW) > 0.01f || Math.Abs(cells[clampX, clampZ].Y_SE - cells[clampX, clampZNext].Y_NE) > 0.01f);
-		bool upIsCliff = (z > 0) && (cells[clampX, clampZPrev].MacroTier != cells[clampX, clampZ].MacroTier) && (Math.Abs(cells[clampX, clampZPrev].Y_SW - cells[clampX, clampZ].Y_NW) > 0.01f || Math.Abs(cells[clampX, clampZPrev].Y_SE - cells[clampX, clampZ].Y_NE) > 0.01f);
-
-		float deltaDown = z < d ? GetGridNodeHeight(x, z + 1, cells, w, d) - h : 0.0f;
-		float deltaUp = z > 0 ? h - GetGridNodeHeight(x, z - 1, cells, w, d) : 0.0f;
 
 		float dz;
-		if (downIsCliff && upIsCliff)
+		if (z > 0 && z < d)
 		{
-			dz = 0.0f;
+			dz = (GetGridNodeHeight(x, z + 1, cells, w, d) - GetGridNodeHeight(x, z - 1, cells, w, d)) / (2.0f * quadSize);
 		}
-		else if (downIsCliff)
+		else if (z < d)
 		{
-			dz = (z > 0 && !upIsCliff) ? deltaUp / quadSize : 0.0f;
+			dz = (GetGridNodeHeight(x, z + 1, cells, w, d) - GetGridNodeHeight(x, z, cells, w, d)) / quadSize;
 		}
-		else if (upIsCliff)
+		else if (z > 0)
 		{
-			dz = (z < d && !downIsCliff) ? deltaDown / quadSize : 0.0f;
+			dz = (GetGridNodeHeight(x, z, cells, w, d) - GetGridNodeHeight(x, z - 1, cells, w, d)) / quadSize;
 		}
 		else
 		{
-			dz = (GetGridNodeHeight(x, Math.Min(d, z + 1), cells, w, d) - GetGridNodeHeight(x, Math.Max(0, z - 1), cells, w, d)) / (2.0f * quadSize);
+			dz = 0.0f;
 		}
 
 		if (Math.Abs(dx) < 0.0001f && Math.Abs(dz) < 0.0001f)
@@ -3063,8 +3663,22 @@ void fragment() {
 			return;
 		}
 
-		Dictionary<TerrainVertexKey, int> vertexMap = new Dictionary<TerrainVertexKey, int>(vertexIndex);
-		int[] remapTable = new int[vertexIndex];
+		if (chunk.WeldVertexMap == null)
+		{
+			chunk.WeldVertexMap = new Dictionary<TerrainVertexKey, int>(vertexIndex);
+		}
+		else
+		{
+			chunk.WeldVertexMap.Clear();
+		}
+
+		if (chunk.WeldRemapTable == null || chunk.WeldRemapTable.Length < vertexIndex)
+		{
+			chunk.WeldRemapTable = new int[Math.Max(vertexIndex, chunk.WeldRemapTable != null ? chunk.WeldRemapTable.Length * 2 : 1024)];
+		}
+
+		var vertexMap = chunk.WeldVertexMap;
+		var remapTable = chunk.WeldRemapTable;
 		int uniqueVertexCount = 0;
 
 		for (int v = 0; v < vertexIndex; v++)
@@ -3082,7 +3696,15 @@ void fragment() {
 				chunk.TexWeightsCache01[texIdx],
 				chunk.TexWeightsCache01[texIdx + 1],
 				chunk.TexWeightsCache01[texIdx + 2],
-				chunk.TexWeightsCache01[texIdx + 3]
+				chunk.TexWeightsCache01[texIdx + 3],
+				chunk.CliffIndicesCache[texIdx],
+				chunk.CliffIndicesCache[texIdx + 1],
+				chunk.CliffIndicesCache[texIdx + 2],
+				chunk.CliffIndicesCache[texIdx + 3],
+				chunk.CliffWeightsCache[texIdx],
+				chunk.CliffWeightsCache[texIdx + 1],
+				chunk.CliffWeightsCache[texIdx + 2],
+				chunk.CliffWeightsCache[texIdx + 3]
 			);
 
 			if (vertexMap.TryGetValue(key, out int existingIndex))
@@ -3112,6 +3734,16 @@ void fragment() {
 					chunk.TexWeightsCache01[newTexIdx + 1] = chunk.TexWeightsCache01[texIdx + 1];
 					chunk.TexWeightsCache01[newTexIdx + 2] = chunk.TexWeightsCache01[texIdx + 2];
 					chunk.TexWeightsCache01[newTexIdx + 3] = chunk.TexWeightsCache01[texIdx + 3];
+
+					chunk.CliffIndicesCache[newTexIdx] = chunk.CliffIndicesCache[texIdx];
+					chunk.CliffIndicesCache[newTexIdx + 1] = chunk.CliffIndicesCache[texIdx + 1];
+					chunk.CliffIndicesCache[newTexIdx + 2] = chunk.CliffIndicesCache[texIdx + 2];
+					chunk.CliffIndicesCache[newTexIdx + 3] = chunk.CliffIndicesCache[texIdx + 3];
+
+					chunk.CliffWeightsCache[newTexIdx] = chunk.CliffWeightsCache[texIdx];
+					chunk.CliffWeightsCache[newTexIdx + 1] = chunk.CliffWeightsCache[texIdx + 1];
+					chunk.CliffWeightsCache[newTexIdx + 2] = chunk.CliffWeightsCache[texIdx + 2];
+					chunk.CliffWeightsCache[newTexIdx + 3] = chunk.CliffWeightsCache[texIdx + 3];
 				}
 			}
 		}
@@ -3134,47 +3766,64 @@ void fragment() {
 		private readonly int _normalZ;
 		private readonly int _textureU;
 		private readonly int _textureV;
-		private readonly int _colorRed;
-		private readonly int _colorGreen;
-		private readonly int _colorBlue;
 		private readonly int _colorAlpha;
-		private readonly int _textureIndex0;
-		private readonly int _textureIndex1;
-		private readonly int _textureIndex2;
-		private readonly int _textureIndex3;
-		private readonly int _weight0;
-		private readonly int _weight1;
-		private readonly int _weight2;
-		private readonly int _weight3;
+		private readonly int _quadCliff;
+		private readonly int _gTex0;
+		private readonly int _gTex1;
+		private readonly int _gTex2;
+		private readonly int _gTex3;
+		private readonly int _gw0;
+		private readonly int _gw1;
+		private readonly int _gw2;
+		private readonly int _gw3;
+		private readonly int _cTex0;
+		private readonly int _cTex1;
+		private readonly int _cTex2;
+		private readonly int _cTex3;
+		private readonly int _cw0;
+		private readonly int _cw1;
+		private readonly int _cw2;
+		private readonly int _cw3;
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static int FastRound(float v, float scale) => (int)(v * scale + (v >= 0f ? 0.5f : -0.5f));
 
 		public TerrainVertexKey(
 			Vector3 position,
 			Vector3 normal,
 			Vector2 uv,
 			Color color,
-			float textureIndex0, float textureIndex1, float textureIndex2, float textureIndex3,
-			float weight0, float weight1, float weight2, float weight3)
+			float gTex0, float gTex1, float gTex2, float gTex3,
+			float gw0, float gw1, float gw2, float gw3,
+			float cTex0, float cTex1, float cTex2, float cTex3,
+			float cw0, float cw1, float cw2, float cw3)
 		{
-			_positionX = (int)MathF.Round(position.X * 2000.0f);
-			_positionY = (int)MathF.Round(position.Y * 2000.0f);
-			_positionZ = (int)MathF.Round(position.Z * 2000.0f);
-			_normalX = (int)MathF.Round(normal.X * 1000.0f);
-			_normalY = (int)MathF.Round(normal.Y * 1000.0f);
-			_normalZ = (int)MathF.Round(normal.Z * 1000.0f);
-			_textureU = (int)MathF.Round(uv.X * 1000.0f);
-			_textureV = (int)MathF.Round(uv.Y * 1000.0f);
-			_colorRed = (int)MathF.Round(color.R * 255.0f);
-			_colorGreen = (int)MathF.Round(color.G * 255.0f);
-			_colorBlue = (int)MathF.Round(color.B * 255.0f);
-			_colorAlpha = (int)MathF.Round(color.A * 255.0f);
-			_textureIndex0 = (int)MathF.Round(textureIndex0);
-			_textureIndex1 = (int)MathF.Round(textureIndex1);
-			_textureIndex2 = (int)MathF.Round(textureIndex2);
-			_textureIndex3 = (int)MathF.Round(textureIndex3);
-			_weight0 = (int)MathF.Round(weight0 * 1000.0f);
-			_weight1 = (int)MathF.Round(weight1 * 1000.0f);
-			_weight2 = (int)MathF.Round(weight2 * 1000.0f);
-			_weight3 = (int)MathF.Round(weight3 * 1000.0f);
+			_positionX = FastRound(position.X, 2000.0f);
+			_positionY = FastRound(position.Y, 2000.0f);
+			_positionZ = FastRound(position.Z, 2000.0f);
+			_normalX = FastRound(normal.X, 1000.0f);
+			_normalY = FastRound(normal.Y, 1000.0f);
+			_normalZ = FastRound(normal.Z, 1000.0f);
+			_textureU = FastRound(uv.X, 1000.0f);
+			_textureV = FastRound(uv.Y, 1000.0f);
+			_colorAlpha = FastRound(color.A, 1000.0f);
+			_quadCliff = (int)(color.R + (color.R >= 0f ? 0.5f : -0.5f));
+			_gTex0 = (int)(gTex0 + (gTex0 >= 0f ? 0.5f : -0.5f));
+			_gTex1 = (int)(gTex1 + (gTex1 >= 0f ? 0.5f : -0.5f));
+			_gTex2 = (int)(gTex2 + (gTex2 >= 0f ? 0.5f : -0.5f));
+			_gTex3 = (int)(gTex3 + (gTex3 >= 0f ? 0.5f : -0.5f));
+			_gw0 = FastRound(gw0, 1000.0f);
+			_gw1 = FastRound(gw1, 1000.0f);
+			_gw2 = FastRound(gw2, 1000.0f);
+			_gw3 = FastRound(gw3, 1000.0f);
+			_cTex0 = (int)(cTex0 + (cTex0 >= 0f ? 0.5f : -0.5f));
+			_cTex1 = (int)(cTex1 + (cTex1 >= 0f ? 0.5f : -0.5f));
+			_cTex2 = (int)(cTex2 + (cTex2 >= 0f ? 0.5f : -0.5f));
+			_cTex3 = (int)(cTex3 + (cTex3 >= 0f ? 0.5f : -0.5f));
+			_cw0 = FastRound(cw0, 1000.0f);
+			_cw1 = FastRound(cw1, 1000.0f);
+			_cw2 = FastRound(cw2, 1000.0f);
+			_cw3 = FastRound(cw3, 1000.0f);
 		}
 
 		public bool Equals(TerrainVertexKey other)
@@ -3187,18 +3836,24 @@ void fragment() {
 				   _normalZ == other._normalZ &&
 				   _textureU == other._textureU &&
 				   _textureV == other._textureV &&
-				   _colorRed == other._colorRed &&
-				   _colorGreen == other._colorGreen &&
-				   _colorBlue == other._colorBlue &&
 				   _colorAlpha == other._colorAlpha &&
-				   _textureIndex0 == other._textureIndex0 &&
-				   _textureIndex1 == other._textureIndex1 &&
-				   _textureIndex2 == other._textureIndex2 &&
-				   _textureIndex3 == other._textureIndex3 &&
-				   _weight0 == other._weight0 &&
-				   _weight1 == other._weight1 &&
-				   _weight2 == other._weight2 &&
-				   _weight3 == other._weight3;
+				   _quadCliff == other._quadCliff &&
+				   _gTex0 == other._gTex0 &&
+				   _gTex1 == other._gTex1 &&
+				   _gTex2 == other._gTex2 &&
+				   _gTex3 == other._gTex3 &&
+				   _gw0 == other._gw0 &&
+				   _gw1 == other._gw1 &&
+				   _gw2 == other._gw2 &&
+				   _gw3 == other._gw3 &&
+				   _cTex0 == other._cTex0 &&
+				   _cTex1 == other._cTex1 &&
+				   _cTex2 == other._cTex2 &&
+				   _cTex3 == other._cTex3 &&
+				   _cw0 == other._cw0 &&
+				   _cw1 == other._cw1 &&
+				   _cw2 == other._cw2 &&
+				   _cw3 == other._cw3;
 		}
 
 		public override bool Equals(object? obj)
@@ -3208,25 +3863,25 @@ void fragment() {
 
 		public override int GetHashCode()
 		{
-			HashCode hashCode = new HashCode();
-			hashCode.Add(_positionX);
-			hashCode.Add(_positionY);
-			hashCode.Add(_positionZ);
-			hashCode.Add(_normalX);
-			hashCode.Add(_normalY);
-			hashCode.Add(_normalZ);
-			hashCode.Add(_textureU);
-			hashCode.Add(_textureV);
-			hashCode.Add(_colorRed);
-			hashCode.Add(_textureIndex0);
-			hashCode.Add(_textureIndex1);
-			hashCode.Add(_textureIndex2);
-			hashCode.Add(_textureIndex3);
-			hashCode.Add(_weight0);
-			hashCode.Add(_weight1);
-			hashCode.Add(_weight2);
-			hashCode.Add(_weight3);
-			return hashCode.ToHashCode();
+			unchecked
+			{
+				int hash = 17;
+				hash = hash * 31 + _positionX;
+				hash = hash * 31 + _positionY;
+				hash = hash * 31 + _positionZ;
+				hash = hash * 31 + _normalX;
+				hash = hash * 31 + _normalY;
+				hash = hash * 31 + _normalZ;
+				hash = hash * 31 + _textureU;
+				hash = hash * 31 + _textureV;
+				hash = hash * 31 + _colorAlpha;
+				hash = hash * 31 + _quadCliff;
+				hash = hash * 31 + _gTex0;
+				hash = hash * 31 + _gw0;
+				hash = hash * 31 + _cTex0;
+				hash = hash * 31 + _cw0;
+				return hash;
+			}
 		}
 	}
 }

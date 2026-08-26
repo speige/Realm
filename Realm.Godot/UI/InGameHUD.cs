@@ -1173,7 +1173,10 @@ public partial class InGameHUD : Control
 
 		if (_btnSelectIdle != null)
 		{
-			_btnSelectIdle.TooltipText = $"{TranslationServer.Translate("Select All Idle Units [F1]")} ({_viewModel.IdleCount} {TranslationServer.Translate("Idle")})";
+			if (_lastIdleCount != _viewModel.IdleCount)
+			{
+				_btnSelectIdle.TooltipText = $"{TranslationServer.Translate("Select All Idle Units [F1]")} ({_viewModel.IdleCount} {TranslationServer.Translate("Idle")})";
+			}
 
 			if (_viewModel.IdleCount > 0)
 			{
@@ -1194,7 +1197,6 @@ public partial class InGameHUD : Control
 		}
 
 		_minimapPanelController?.UpdateMinimapIndicator();
-		_portraitPanelController?.Update(_viewModel);
 
 		_controlGroupsUIController?.Update();
 	}

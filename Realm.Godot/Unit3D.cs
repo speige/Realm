@@ -301,18 +301,22 @@ public partial class Unit3D : Prop3D
 				float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
 				_modelNode.Position = new Vector3(0f, _baseModelYOffset + yOffset, 0f);
 
-				bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(modelPath) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
-				Realm.Godot.Utils.PlayerColorShaderManager.ApplyPlayerColorShader(_modelNode, PlayerColor, ignorePlayerColor);
-				if (!ignorePlayerColor)
+				if (!IsPreview)
 				{
-					UpdatePlayerColorVisual();
-				}
-				else
-				{
-					Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_modelNode, true);
-				}
+					bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(modelPath) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
+					bool normalizeLuminance = GameHost.Instance != null && (GameHost.Instance.GetModelNormalizeLuminance(modelPath) || GameHost.Instance.GetModelNormalizeLuminance(UnitId));
+					Realm.Godot.Utils.PlayerColorShaderManager.ApplyPlayerColorShader(_modelNode, PlayerColor, ignorePlayerColor, normalizeLuminance);
+					if (!ignorePlayerColor)
+					{
+						UpdatePlayerColorVisual();
+					}
+					else
+					{
+						Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_modelNode, true);
+					}
 
-				GameHost.Instance?.ApplyAllGlobalOverridesToObject(this);
+					GameHost.Instance?.ApplyAllGlobalOverridesToObject(this);
+				}
 
 				var colShapeNode = GetNodeOrNull<CollisionShape3D>("CollisionShape");
 				if (colShapeNode != null && _modelNode != null)

@@ -1,8 +1,7 @@
 using Godot;
 using System;
-using System.Linq;
-using System.Text.Json;
 using System.Collections.Generic;
+using System.Linq;
 
 public partial class MapDiscovery : Control
 {
@@ -17,17 +16,22 @@ public partial class MapDiscovery : Control
 	private LineEdit _searchBar;
 	private GridContainer _mapGrid;
 
-
+	// Category buttons
 	private Button _btnAll;
 	private Button _btnFeatured;
 	private Button _btnTD;
 	private Button _btnMelee;
 	private Button _btnCampaign;
-	private Button _btnAssetPacks;
 
 	private MapData[] _allMaps;
 	private string _selectedCategory = "All";
 	private string _searchQuery = "";
+
+	private static readonly Font FontMedieval = GD.Load<Font>("res://Assets/UI/BlackwoodCastle.ttf");
+	private static readonly Font FontCinzel = GD.Load<Font>("res://Assets/UI/Norse-Bold.otf");
+	private static readonly Font FontMedievalShadow = GD.Load<Font>("res://Assets/UI/BlackwoodCastle-Shadow.ttf");
+	private static readonly Font FontOutfit = GD.Load<Font>("res://Assets/UI/Norse-Bold.otf");
+	private static readonly Font FontNorseBold = GD.Load<Font>("res://Assets/UI/Norse-Bold.otf");
 
 	public override void _Ready()
 	{
@@ -48,64 +52,172 @@ public partial class MapDiscovery : Control
 		_btnTD = GetNode<Button>("FilterPanel/VBoxContainer/CatTD");
 		_btnMelee = GetNode<Button>("FilterPanel/VBoxContainer/CatMelee");
 		_btnCampaign = GetNode<Button>("FilterPanel/VBoxContainer/CatCampaign");
-		_btnAssetPacks = GetNode<Button>("FilterPanel/VBoxContainer/CatAssetPacks");
 
-
-		_allMaps = Array.Empty<MapData>();
+		_allMaps = MapData.GetDummyMaps();
 
 		ApplyStyles();
 		RegisterEvents();
-		LoadMapsFromServer();
+		RenderMapGrid();
 	}
 
 	private void ApplyStyles()
 	{
-		_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		Texture2D bgTexture = null;
+		string[] bgPaths = new string[]
+		{
+			"res://Assets/UI/procedural_bg.png",
+			"res://Assets/UI/map_discovery_bg_rpg_grey2.jpg",
+			"res://Assets/UI/map_discovery_bg_fortress2.jpg"
+		};
+
+		foreach (var path in bgPaths)
+		{
+			if (ResourceLoader.Exists(path))
+			{
+				bgTexture = GD.Load<Texture2D>(path);
+				if (bgTexture != null) break;
+			}
+		}
+
+		if (bgTexture != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = bgTexture;
+			_bgPanel.AddThemeStyleboxOverride("panel", style);
+			_bgPanel.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+		}
+		else
+		{
+			_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		}
 		_leftPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(true));
 		_rightPillar.AddThemeStyleboxOverride("panel", UIStyle.CreatePillarPanel(false));
-		_filterPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
-		_mapListPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
 
-		UIStyle.ApplyTitle(_discoveryTitle, "MAP DISCOVERY", 36);
+		var filterPanelStyle = new StyleBoxTexture();
+		filterPanelStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/procedural_filter_panel.png");
+		filterPanelStyle.TextureMarginLeft = 0;
+		filterPanelStyle.TextureMarginRight = 0;
+		filterPanelStyle.TextureMarginTop = 0;
+		filterPanelStyle.TextureMarginBottom = 0;
+		filterPanelStyle.ContentMarginLeft = 55;
+		filterPanelStyle.ContentMarginRight = 55;
+		filterPanelStyle.ContentMarginTop = 60;
+		filterPanelStyle.ContentMarginBottom = 24;
+		_filterPanel.AddThemeStyleboxOverride("panel", filterPanelStyle);
+		_filterPanel.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
 
-		SetupPillarButton(_backButton, "◀ BACK", () => UIManager.Instance.TransitionTo(GameScreen.MainMenu));
+		var lobbyPanelStyle = new StyleBoxTexture();
+		lobbyPanelStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/procedural_main_panel.png");
+		lobbyPanelStyle.TextureMarginLeft = 0;
+		lobbyPanelStyle.TextureMarginRight = 0;
+		lobbyPanelStyle.TextureMarginTop = 0;
+		lobbyPanelStyle.TextureMarginBottom = 0;
+		lobbyPanelStyle.ContentMarginLeft = 80;
+		lobbyPanelStyle.ContentMarginRight = 80;
+		lobbyPanelStyle.ContentMarginTop = 130;
+		lobbyPanelStyle.ContentMarginBottom = 65;
+		_mapListPanel.AddThemeStyleboxOverride("panel", lobbyPanelStyle);
+		_mapListPanel.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
 
-		_searchBar.AddThemeStyleboxOverride("normal", UIStyle.CreateDropdownStyle(false, false));
-		_searchBar.AddThemeStyleboxOverride("focus", UIStyle.CreateDropdownStyle(true, false));
-		_searchBar.PlaceholderText = "Search maps...";
-		_searchBar.Alignment = HorizontalAlignment.Center;
-		_searchBar.AddThemeFontSizeOverride("font_size", 14);
+		_discoveryTitle.Text = TranslationServer.Translate("MAP DISCOVERY");
+		_discoveryTitle.AddThemeFontOverride("font", FontNorseBold);
+		_discoveryTitle.AddThemeFontSizeOverride("font_size", 24);
+		_discoveryTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		_discoveryTitle.AddThemeColorOverride("font_outline_color", new Color(0.06f, 0.06f, 0.08f));
+		_discoveryTitle.AddThemeConstantOverride("outline_size", 8);
+		_discoveryTitle.HorizontalAlignment = HorizontalAlignment.Center;
+		_discoveryTitle.VerticalAlignment = VerticalAlignment.Center;
+		_discoveryTitle.AddThemeStyleboxOverride("normal", new StyleBoxEmpty());
+
+		_discoveryTitle.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+		_discoveryTitle.CustomMinimumSize = new Vector2(300, 40);
+		_discoveryTitle.Size = new Vector2(300, 40);
+		float titleX = _mapListPanel.Position.X + 200.0f;
+		_discoveryTitle.Position = new Vector2(titleX, _mapListPanel.Position.Y + 30.0f);
+		_discoveryTitle.ZIndex = 1;
+		MoveChild(_discoveryTitle, -1);
+
+		_backButton.Text = TranslationServer.Translate("MAIN MENU");
+		_backButton.AddThemeFontOverride("font", FontNorseBold);
+		_backButton.AddThemeFontSizeOverride("font_size", 18);
+		_backButton.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		_backButton.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		_backButton.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
+		_backButton.AddThemeColorOverride("font_focus_color", UIStyle.ColorGold);
+		_backButton.Icon = null;
+
+		_backButton.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		_backButton.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		_backButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		_backButton.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		_backButton.TextureFilter = CanvasItem.TextureFilterEnum.Linear;
+
+		_backButton.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+		_backButton.CustomMinimumSize = new Vector2(190, 52);
+		_backButton.Size = new Vector2(190, 52);
+		_backButton.Position = new Vector2(1590, 50);
+		_backButton.ZIndex = 1;
+
+		_backButton.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			UIManager.Instance.TransitionTo(GameScreen.MainMenu);
+		};
+		_backButton.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+
+		var searchStyle = new StyleBoxTexture();
+		searchStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/procedural_search_bar.png");
+		searchStyle.TextureMarginLeft = 0;
+		searchStyle.TextureMarginRight = 0;
+		searchStyle.TextureMarginTop = 0;
+		searchStyle.TextureMarginBottom = 0;
+		searchStyle.ContentMarginLeft = 24;
+		searchStyle.ContentMarginRight = 24;
+		searchStyle.ContentMarginTop = 0;
+		searchStyle.ContentMarginBottom = 0;
+
+		_searchBar.AddThemeStyleboxOverride("normal", searchStyle);
+		_searchBar.AddThemeStyleboxOverride("focus", searchStyle);
+		_searchBar.AddThemeFontOverride("font", FontNorseBold);
+		_searchBar.AddThemeFontSizeOverride("font_size", 17);
+		_searchBar.AddThemeColorOverride("font_color", new Color(0.95f, 0.9f, 0.8f));
+		_searchBar.AddThemeColorOverride("font_placeholder_color", new Color(0.6f, 0.55f, 0.45f));
+		_searchBar.AddThemeColorOverride("caret_color", new Color(0.95f, 0.9f, 0.8f));
+		_searchBar.PlaceholderText = TranslationServer.Translate("Search maps... ");
+		_searchBar.Alignment = HorizontalAlignment.Left;
+		_searchBar.RightIcon = null;
+		_searchBar.CustomMinimumSize = new Vector2(0, 56);
+
+		var container = GetNode<VBoxContainer>("FilterPanel/VBoxContainer");
+		if (container != null && !container.HasNode("SearchLabel"))
+		{
+			var searchLabel = new Label();
+			searchLabel.Name = "SearchLabel";
+			searchLabel.Text = TranslationServer.Translate("Search");
+			searchLabel.AddThemeFontOverride("font", FontNorseBold);
+			searchLabel.AddThemeFontSizeOverride("font_size", 20);
+			searchLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+			searchLabel.HorizontalAlignment = HorizontalAlignment.Center;
+			container.AddChild(searchLabel);
+			container.MoveChild(searchLabel, 0);
+		}
 
 		SetupCategoryButton(_btnAll, "ALL MAPS", "All");
 		SetupCategoryButton(_btnFeatured, "FEATURED", "Featured");
 		SetupCategoryButton(_btnTD, "TOWER DEFENSE", "TD");
 		SetupCategoryButton(_btnMelee, "MELEE", "Melee");
 		SetupCategoryButton(_btnCampaign, "CAMPAIGN", "Campaign");
-		SetupCategoryButton(_btnAssetPacks, "ASSET PACKS", "Asset Packs");
-		
-		UpdateButtonHighlight();
-	}
 
-	private void SetupPillarButton(Button button, string text, Action onClick)
-	{
-		UIStyle.ApplyButtonText(button, text, 18);
-		button.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		button.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		button.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-		button.Pressed += () =>
-		{
-			UIManager.Instance.PlayClickSound();
-			onClick?.Invoke();
-		};
-		button.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+		UpdateButtonHighlight();
 	}
 
 	private void SetupCategoryButton(Button button, string text, string categoryValue)
 	{
-		UIStyle.ApplyButtonText(button, text, 14);
-		button.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		button.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		button.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		button.Text = TranslationServer.Translate(text);
+		button.AddThemeFontOverride("font", FontNorseBold);
+		button.AddThemeFontSizeOverride("font_size", 17);
+		button.CustomMinimumSize = new Vector2(0, 52);
+		button.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
 		
 		button.Pressed += () =>
 		{
@@ -124,18 +236,76 @@ public partial class MapDiscovery : Control
 		HighlightButton(_btnTD, _selectedCategory == "TD");
 		HighlightButton(_btnMelee, _selectedCategory == "Melee");
 		HighlightButton(_btnCampaign, _selectedCategory == "Campaign");
-		HighlightButton(_btnAssetPacks, _selectedCategory == "Asset Packs");
 	}
 
 	private void HighlightButton(Button button, bool highlight)
 	{
+		button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		button.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+		
 		if (highlight)
 		{
-			button.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+			button.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+			button.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+			button.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
+			button.AddThemeColorOverride("font_focus_color", UIStyle.ColorGold);
+			
+			var activeStyle = new StyleBoxTexture();
+			activeStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/procedural_btn_normal_selected.png");
+			activeStyle.TextureMarginLeft = 0;
+			activeStyle.TextureMarginRight = 0;
+			activeStyle.TextureMarginTop = 0;
+			activeStyle.TextureMarginBottom = 0;
+			activeStyle.ContentMarginLeft = 16;
+			activeStyle.ContentMarginRight = 16;
+			activeStyle.ContentMarginTop = 10;
+			activeStyle.ContentMarginBottom = 10;
+			
+			var activeHover = (StyleBoxTexture)activeStyle.Duplicate();
+			activeHover.ModulateColor = new Color(1.1f, 1.1f, 1.15f);
+			
+			var activePressed = (StyleBoxTexture)activeStyle.Duplicate();
+			activePressed.ModulateColor = new Color(0.8f, 0.8f, 0.85f);
+			
+			button.AddThemeStyleboxOverride("normal", activeStyle);
+			button.AddThemeStyleboxOverride("hover", activeHover);
+			button.AddThemeStyleboxOverride("pressed", activePressed);
 		}
 		else
 		{
 			button.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+			button.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+			button.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
+			button.AddThemeColorOverride("font_focus_color", UIStyle.ColorGold);
+			
+			var normalStyle = new StyleBoxTexture();
+			normalStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/procedural_btn_normal.png");
+			normalStyle.TextureMarginLeft = 0;
+			normalStyle.TextureMarginRight = 0;
+			normalStyle.TextureMarginTop = 0;
+			normalStyle.TextureMarginBottom = 0;
+			normalStyle.ContentMarginLeft = 16;
+			normalStyle.ContentMarginRight = 16;
+			normalStyle.ContentMarginTop = 10;
+			normalStyle.ContentMarginBottom = 10;
+			
+			var hoverStyle = new StyleBoxTexture();
+			hoverStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/procedural_btn_normal_hover.png");
+			hoverStyle.TextureMarginLeft = 0;
+			hoverStyle.TextureMarginRight = 0;
+			hoverStyle.TextureMarginTop = 0;
+			hoverStyle.TextureMarginBottom = 0;
+			hoverStyle.ContentMarginLeft = 16;
+			hoverStyle.ContentMarginRight = 16;
+			hoverStyle.ContentMarginTop = 10;
+			hoverStyle.ContentMarginBottom = 10;
+			
+			var pressedStyle = (StyleBoxTexture)hoverStyle.Duplicate();
+			pressedStyle.ModulateColor = new Color(0.85f, 0.85f, 0.9f);
+			
+			button.AddThemeStyleboxOverride("normal", normalStyle);
+			button.AddThemeStyleboxOverride("hover", hoverStyle);
+			button.AddThemeStyleboxOverride("pressed", pressedStyle);
 		}
 	}
 
@@ -150,12 +320,10 @@ public partial class MapDiscovery : Control
 
 	private void RenderMapGrid()
 	{
-
 		foreach (Node child in _mapGrid.GetChildren())
 		{
 			child.QueueFree();
 		}
-
 
 		var filtered = _allMaps.AsEnumerable();
 
@@ -165,17 +333,11 @@ public partial class MapDiscovery : Control
 			{
 				filtered = filtered.Where(m => m.RatingStars >= 4.5f);
 			}
-			else if (_selectedCategory == "Asset Packs")
-			{
-				filtered = filtered.Where(m => m.Genre != null && m.Genre.Contains("Asset Pack"));
-			}
 			else
 			{
-				filtered = filtered.Where(m => (m.Genre != null && m.Genre.Contains(_selectedCategory)) || (m.Features != null && m.Features.Contains(_selectedCategory)) || (m.MapId != null && m.MapId.Contains(_selectedCategory)));
+				filtered = filtered.Where(m => m.Genre.Contains(_selectedCategory) || m.Features.Contains(_selectedCategory) || m.MapId.Contains(_selectedCategory));
 			}
 		}
-		
-		filtered = filtered.Where(m => m.Title != null && !m.Title.Contains("[Beta-Testing]"));
 
 		if (!string.IsNullOrEmpty(_searchQuery))
 		{
@@ -189,7 +351,7 @@ public partial class MapDiscovery : Control
 		if (list.Count == 0)
 		{
 			var noMapsLabel = new Label();
-			noMapsLabel.Text = Tr("No maps found matching criteria.");
+			noMapsLabel.Text = TranslationServer.Translate("No maps found matching criteria.");
 			noMapsLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
 			noMapsLabel.AddThemeFontSizeOverride("font_size", 16);
 			_mapGrid.AddChild(noMapsLabel);
@@ -203,22 +365,34 @@ public partial class MapDiscovery : Control
 		}
 	}
 
-	private PanelContainer CreateMapCard(MapData map)
+	private Control CreateMapCard(MapData map)
 	{
 		var card = new PanelContainer();
-		card.CustomMinimumSize = new Vector2(620, 250);
-		card.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+		card.CustomMinimumSize = new Vector2(560, 220);
+		card.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+		
+		var cardStyle = new StyleBoxTexture();
+		cardStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/procedural_card_bg.png");
+		cardStyle.TextureMarginLeft = 0;
+		cardStyle.TextureMarginRight = 0;
+		cardStyle.TextureMarginTop = 0;
+		cardStyle.TextureMarginBottom = 0;
+		cardStyle.ContentMarginLeft = 32;
+		cardStyle.ContentMarginRight = 32;
+		cardStyle.ContentMarginTop = 38;
+		cardStyle.ContentMarginBottom = 26;
+		card.AddThemeStyleboxOverride("panel", cardStyle);
 
 		var hBox = new HBoxContainer();
 		hBox.AddThemeConstantOverride("separation", 16);
 		card.AddChild(hBox);
 
-
 		var thumbnail = new TextureRect();
-		thumbnail.CustomMinimumSize = new Vector2(220, 175);
+		thumbnail.CustomMinimumSize = new Vector2(150, 110);
 		thumbnail.SizeFlagsVertical = SizeFlags.ShrinkCenter;
 		thumbnail.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		thumbnail.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
+		thumbnail.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
 		if (FileAccess.FileExists(map.ThumbnailPath))
 		{
 			thumbnail.Texture = GD.Load<Texture2D>(map.ThumbnailPath);
@@ -229,71 +403,66 @@ public partial class MapDiscovery : Control
 		}
 		hBox.AddChild(thumbnail);
 
-
-		var panelWrapper = new PanelContainer();
-		panelWrapper.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		panelWrapper.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
-		hBox.AddChild(panelWrapper);
-
 		var vBox = new VBoxContainer();
 		vBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		vBox.AddThemeConstantOverride("separation", 4);
-		panelWrapper.AddChild(vBox);
+		vBox.SizeFlagsVertical = SizeFlags.ExpandFill;
+		vBox.AddThemeConstantOverride("separation", 2);
+		hBox.AddChild(vBox);
 
+		var headerBox = new HBoxContainer();
+		headerBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vBox.AddChild(headerBox);
 
 		var title = new Label();
 		title.Text = map.Title;
+		title.AddThemeFontOverride("font", FontNorseBold);
 		title.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		title.AddThemeFontSizeOverride("font_size", 22);
-		vBox.AddChild(title);
+		title.AddThemeFontSizeOverride("font_size", 18);
+		title.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		headerBox.AddChild(title);
 
+		var ratingLabel = new Label();
+		ratingLabel.Text = $"★ {map.RatingStars:F1}";
+		ratingLabel.AddThemeFontOverride("font", FontNorseBold);
+		ratingLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		ratingLabel.AddThemeFontSizeOverride("font_size", 15);
+		headerBox.AddChild(ratingLabel);
 
 		var creator = new Label();
 		creator.Text = $"By: {map.Creator}  •  {map.Genre}";
+		creator.AddThemeFontOverride("font", FontNorseBold);
 		creator.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		creator.AddThemeFontSizeOverride("font_size", 14);
+		creator.AddThemeFontSizeOverride("font_size", 12);
 		vBox.AddChild(creator);
-
-
-		var ratingBox = new HBoxContainer();
-		vBox.AddChild(ratingBox);
-		int fullStars = (int)Math.Round(map.RatingStars);
-		var starsLabel = new Label();
-		string starsStr = "";
-		for (int i = 0; i < 5; i++)
-		{
-			starsStr += i < fullStars ? "★" : "☆";
-		}
-		starsLabel.Text = $"{starsStr} ({map.RatingStars}/5)";
-		starsLabel.AddThemeColorOverride("font_color", UIStyle.ColorBronze);
-		starsLabel.AddThemeFontSizeOverride("font_size", 15);
-		ratingBox.AddChild(starsLabel);
-
 
 		var desc = new Label();
 		desc.Text = map.Description;
 		desc.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-		desc.MaxLinesVisible = 3;
 		desc.SizeFlagsVertical = SizeFlags.ExpandFill;
-		desc.AddThemeColorOverride("font_color", new Color(0.85f, 0.85f, 0.9f));
-		desc.AddThemeFontSizeOverride("font_size", 14);
+		desc.AddThemeFontOverride("font", FontNorseBold);
+		desc.AddThemeColorOverride("font_color", new Color(0.92f, 0.92f, 0.94f));
+		desc.AddThemeFontSizeOverride("font_size", 12);
 		vBox.AddChild(desc);
 
-
 		var footer = new HBoxContainer();
+		footer.Alignment = BoxContainer.AlignmentMode.End;
 		vBox.AddChild(footer);
 
-		var filler = new Control();
-		filler.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		footer.AddChild(filler);
-
 		var btnDetails = new Button();
-		btnDetails.CustomMinimumSize = new Vector2(140, 40);
-		btnDetails.SizeFlagsVertical = SizeFlags.ShrinkEnd;
-		UIStyle.ApplyButtonText(btnDetails, "DETAILS", 14);
+		btnDetails.CustomMinimumSize = new Vector2(110, 32);
+		btnDetails.Text = TranslationServer.Translate("DETAILS");
+		btnDetails.AddThemeFontOverride("font", FontNorseBold);
+		btnDetails.AddThemeFontSizeOverride("font_size", 14);
+		btnDetails.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		btnDetails.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		btnDetails.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
+		btnDetails.AddThemeColorOverride("font_focus_color", UIStyle.ColorGold);
 		btnDetails.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		btnDetails.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		btnDetails.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btnDetails.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		btnDetails.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+
 		btnDetails.Pressed += () =>
 		{
 			UIManager.Instance.PlayClickSound();
@@ -303,35 +472,5 @@ public partial class MapDiscovery : Control
 		footer.AddChild(btnDetails);
 
 		return card;
-	}
-
-	private async void LoadMapsFromServer()
-	{
-		string seedServerUrl = GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
-		try
-		{
-			using (var httpClient = new System.Net.Http.HttpClient())
-			{
-				var res = await httpClient.GetAsync(seedServerUrl + "/api/maps/discovery");
-				if (res.IsSuccessStatusCode)
-				{
-					string json = await res.Content.ReadAsStringAsync();
-					var maps = JsonSerializer.Deserialize<MapData[]>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-					if (maps != null && maps.Length > 0)
-					{
-						_allMaps = maps;
-						RenderMapGrid();
-						return;
-					}
-				}
-			}
-		}
-		catch (Exception ex)
-		{
-			GD.PrintErr($"[MapDiscovery] Failed to load discovery maps: {ex.Message}");
-		}
-
-		_allMaps = MapData.GetDummyMaps();
-		RenderMapGrid();
 	}
 }

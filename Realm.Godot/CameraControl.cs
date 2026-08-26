@@ -538,8 +538,13 @@ public partial class CameraControl : Camera3D
 			state.TargetHeight = minAllowedTargetHeight;
 		}
 
-		state.CurrentHeight = Mathf.Lerp(state.CurrentHeight, state.TargetHeight, state.ZoomSpeed * fDelta);
-		float smoothY = Mathf.Lerp(Position.Y, state.TargetHeight, 3.0f * fDelta);
+		float zoomRate = state.ZoomSpeed > 0.01f ? (state.ZoomSpeed * 0.55f) : 5.5f;
+		float smoothY = Mathf.Lerp(Position.Y, state.TargetHeight, zoomRate * fDelta);
+		if (Mathf.Abs(smoothY - state.TargetHeight) < 0.015f)
+		{
+			smoothY = state.TargetHeight;
+		}
+		state.CurrentHeight = smoothY;
 
 		if (FollowTarget != null && GodotObject.IsInstanceValid(FollowTarget))
 		{

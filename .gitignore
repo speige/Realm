@@ -9,3 +9,6 @@ vscode_extensions_dist
 GeneratedFiles/
 TestResults/
 *.trx
+Realm.Lobby/.data
+pnpm-lock.yaml
+pnpm-workspace.yaml

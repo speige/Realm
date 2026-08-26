@@ -338,6 +338,7 @@ public partial class GameHost : Node3D, IGameAPI
 		get => _activeEditorTool;
 		set
 		{
+			FlushTerrainMeshAndPhysics();
 			_activeEditorTool = value;
 			_editorService?.SetIsPastingObject(false);
 			if (value != EditorTool.SelectArea && value != EditorTool.PasteArea)
@@ -624,11 +625,20 @@ public partial class GameHost : Node3D, IGameAPI
 	}
 
 
+	public enum ModelNormalMode
+	{
+		Original = 0,
+		Smooth = 1,
+		Flat = 2
+	}
+
 	public struct UnitMetadata
 	{
 		public UnitMetadata()
 		{
-			RecalculateNormals = true;
+			Brightness = 0.5f;
+			NormalMode = ModelNormalMode.Flat;
+			NormalizeLuminance = true;
 		}
 
 		public string UnitId { get; set; }
@@ -644,8 +654,8 @@ public partial class GameHost : Node3D, IGameAPI
 		public float CostGold { get; set; }
 		public float CostWood { get; set; }
 		public float CostStone { get; set; }
-		public float ProductionTime { get; set; }
 		public int   PopCost { get; set; }
+		public float ProductionTime { get; set; }
 		public string AttackType { get; set; }
 		public string ArmorType { get; set; }
 		public float GoldBounty { get; set; }
@@ -653,9 +663,15 @@ public partial class GameHost : Node3D, IGameAPI
 		public string PortraitModelPath { get; set; }
 		public float YOffset { get; set; }
 		public float CollisionCircle { get; set; }
-		public float Brightness { get; set; }
+		public float Brightness { get; set; } = 0.5f;
 		public string Tint { get; set; }
-		public bool RecalculateNormals { get; set; } = true;
+		public ModelNormalMode NormalMode { get; set; } = ModelNormalMode.Flat;
+		public bool RecalculateNormals
+		{
+			get => NormalMode == ModelNormalMode.Smooth;
+			set => NormalMode = value ? ModelNormalMode.Smooth : ModelNormalMode.Flat;
+		}
+		public bool NormalizeLuminance { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; }
 		public string[]? BuildOptions { get; set; }
 		public bool IsHero { get; set; }
@@ -760,7 +776,10 @@ public partial class GameHost : Node3D, IGameAPI
 	{
 		public PropMetadata()
 		{
-			RecalculateNormals = true;
+			Brightness = 0.5f;
+			NormalMode = ModelNormalMode.Flat;
+			NormalizeLuminance = true;
+			IgnorePlayerColor = true;
 		}
 
 		public string UnitId { get; set; }
@@ -770,10 +789,16 @@ public partial class GameHost : Node3D, IGameAPI
 		public string PortraitModelPath { get; set; }
 		public float YOffset { get; set; }
 		public float CollisionCircle { get; set; }
-		public float Brightness { get; set; }
+		public float Brightness { get; set; } = 0.5f;
 		public string Tint { get; set; }
-		public bool RecalculateNormals { get; set; } = true;
-		public bool IgnorePlayerColor { get; set; }
+		public ModelNormalMode NormalMode { get; set; } = ModelNormalMode.Flat;
+		public bool RecalculateNormals
+		{
+			get => NormalMode == ModelNormalMode.Smooth;
+			set => NormalMode = value ? ModelNormalMode.Smooth : ModelNormalMode.Flat;
+		}
+		public bool NormalizeLuminance { get; set; } = true;
+		public bool IgnorePlayerColor { get; set; } = true;
 		public int PathingType { get; set; }
 	}
 
@@ -781,7 +806,10 @@ public partial class GameHost : Node3D, IGameAPI
 	{
 		public ResourceMetadata()
 		{
-			RecalculateNormals = true;
+			Brightness = 0.5f;
+			NormalMode = ModelNormalMode.Flat;
+			NormalizeLuminance = true;
+			IgnorePlayerColor = true;
 		}
 
 		public string UnitId { get; set; }
@@ -795,10 +823,16 @@ public partial class GameHost : Node3D, IGameAPI
 		public int MaxWorkers { get; set; }
 		public float YOffset { get; set; }
 		public float CollisionCircle { get; set; }
-		public float Brightness { get; set; }
+		public float Brightness { get; set; } = 0.5f;
 		public string Tint { get; set; }
-		public bool RecalculateNormals { get; set; } = true;
-		public bool IgnorePlayerColor { get; set; }
+		public ModelNormalMode NormalMode { get; set; } = ModelNormalMode.Flat;
+		public bool RecalculateNormals
+		{
+			get => NormalMode == ModelNormalMode.Smooth;
+			set => NormalMode = value ? ModelNormalMode.Smooth : ModelNormalMode.Flat;
+		}
+		public bool NormalizeLuminance { get; set; } = true;
+		public bool IgnorePlayerColor { get; set; } = true;
 		public int PathingType { get; set; }
 	}
 
@@ -989,14 +1023,14 @@ public partial class GameHost : Node3D, IGameAPI
 		int depth = GroundTerrain != null ? GroundTerrain.Depth : 128;
 		float quadSize = GroundTerrain != null ? GroundTerrain.QuadSize : 2.0f;
 		float cellSize = GroundTerrain != null ? GroundTerrain.CellSize : TerrainState.DefaultCellSize;
-		float[,] heights = GroundTerrain != null ? GroundTerrain.Heights : null;
+		var cells = GroundTerrain != null ? GroundTerrain.Cells : null;
 		int[,] pathingCodes = GroundTerrain != null ? GroundTerrain.PathingCodes : null;
 		DotRecast.Detour.DtNavMesh navMesh = GroundTerrain != null ? GroundTerrain.NavMesh : null;
 		DotRecast.Detour.DtNavMeshQuery navMeshQuery = GroundTerrain != null ? GroundTerrain.NavMeshQuery : null;
 
 		_worldEntity = _worldInitService.SetupWorldEntityComponents(
 			width, depth, quadSize, cellSize,
-			heights, pathingCodes, navMesh, navMeshQuery
+			cells, pathingCodes, navMesh, navMeshQuery
 		);
 	}
 
@@ -3208,7 +3242,7 @@ public class {mapName} : IMapScript
 
 		SetupSkybox();
 
-		UpdateDayNightVisuals(0.5f);
+		UpdateDayNightVisuals(0.0f);
 		_definitionManager = ServiceLocator.Get<DefinitionManager>();
 		_goldResourceId = "gold".AsResourceId(_definitionManager);
 		_woodResourceId = "wood".AsResourceId(_definitionManager);
