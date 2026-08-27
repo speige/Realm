@@ -19,7 +19,7 @@ public class FXService
 		SpawnSpritesheetEffect(parent, "Assets/vfx/arcane_surge_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.035f, 6f);
 	}
 
-	public void SpawnSpritesheetEffect(Node3D parent, string texturePath, Vector3 worldPosition, int columns, int rows, float secondsPerFrame, float sizeInWorldUnits)
+	public void SpawnSpritesheetEffect(Node parent, string texturePath, Vector3 worldPosition, int columns, int rows, float secondsPerFrame, float sizeInWorldUnits)
 	{
 		Texture2D? texture = null;
 		string fullPath = texturePath;
@@ -177,46 +177,39 @@ public class FXService
 		tween.Chain().TweenCallback(Callable.From(meshInstance.QueueFree));
 	}
 
-	public void SpawnArrowProjectile(Node3D parent, Vector3 start, Vector3 target)
+	public void SpawnWeaponProjectile(Node3D parent, Vector3 start, Vector3 target, string weaponId = null, Arch.Core.Entity targetEntity = default)
 	{
-		var arrow = new MeshInstance3D();
-		var cylinderMesh = new CylinderMesh();
-		cylinderMesh.TopRadius = 0.22f;
-		cylinderMesh.BottomRadius = 0.22f;
-		cylinderMesh.Height = 1.0f;
-		arrow.Mesh = cylinderMesh;
-		arrow.Position = start + new Vector3(0, 1.2f, 0); 
-
-		var material = new StandardMaterial3D();
-		material.AlbedoColor = new Color(1.0f, 0.75f, 0.3f);
-		material.EmissionEnabled = true;
-		material.Emission = new Color(3.0f, 1.5f, 0.4f);
-		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-		arrow.MaterialOverride = material;
-
-		Vector3 targetPos = target + new Vector3(0, 1.2f, 0);
-		Vector3 shotDir = targetPos - arrow.Position;
-		if (shotDir.LengthSquared() > 0.01f)
+		GameHost.WeaponMetadata weaponMeta = default;
+		bool hasWeapon = false;
+		if (!string.IsNullOrEmpty(weaponId) && GameHost.WeaponRegistry.TryGetValue(weaponId, out var registeredWeapon))
 		{
-			Vector3 direction = shotDir.Normalized();
-			Vector3 upVector = Mathf.Abs(direction.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
-			arrow.LookAtFromPosition(arrow.Position, targetPos, upVector);
-			arrow.RotateObjectLocal(Vector3.Right, Mathf.DegToRad(90f));
+			weaponMeta = registeredWeapon;
+			hasWeapon = true;
+		}
+		else if (GameHost.WeaponRegistry.TryGetValue("arrow", out var defaultArrow))
+		{
+			weaponMeta = defaultArrow;
+			hasWeapon = true;
 		}
 
-		var light = new OmniLight3D();
-		light.LightColor = new Color(1.0f, 0.7f, 0.3f);
-		light.LightEnergy = 2.0f;
-		light.OmniRange = 3.0f;
-		light.ShadowEnabled = false;
-		arrow.AddChild(light);
+		var projectile = VisualProjectilePool.Rent(parent);
 
-		parent.AddChild(arrow);
+		Vector3 spawnPos = start + new Vector3(0, 1.2f, 0);
+		Vector3 targetPos = target + new Vector3(0, 1.2f, 0);
 
-		var tween = parent.CreateTween();
-		float travelTime = Mathf.Clamp(start.DistanceTo(target) / 40f, 0.15f, 0.6f);
-		tween.TweenProperty(arrow, "global_position", targetPos, travelTime);
-		tween.Chain().TweenCallback(Callable.From(arrow.QueueFree));
+		if (hasWeapon)
+		{
+			projectile.Initialize(weaponMeta, spawnPos, targetPos, targetEntity, p => VisualProjectilePool.Return(p));
+		}
+		else
+		{
+			projectile.Initialize("arrow", spawnPos, targetPos, targetEntity, p => VisualProjectilePool.Return(p));
+		}
+	}
+
+	public void SpawnArrowProjectile(Node3D parent, Vector3 start, Vector3 target)
+	{
+		SpawnWeaponProjectile(parent, start, target, "arrow");
 	}
 
 	public void SpawnDamageNumber(Node3D parent, Vector3 worldPosition, float amount)

@@ -81,6 +81,7 @@ internal class SimulationService
 	private ForEachWithEntity<Realm.Ecs.Components.Core.Cooldowns> _cooldownsQueryDelegate = null!;
 
 	public Action<System.Numerics.Vector3, System.Numerics.Vector3> OnArrowProjectileRequested;
+	public Action<System.Numerics.Vector3, System.Numerics.Vector3, string?, Entity>? OnWeaponProjectileRequested;
 	public Action<Entity> OnDamageFlashRequested;
 	public Action<System.Numerics.Vector3, System.Numerics.Vector3> OnHealEffectRequested;
 	public Action<Entity> OnHealFlashRequested;
@@ -117,6 +118,15 @@ internal class SimulationService
 		_economyService = new ResourceEconomyService(ecsWorldAccessor);
 
 		_combatService.OnArrowProjectileRequested = (p1, p2) => EnqueueVFXRequest("arrow", p1, p2, 1.0f, 40f);
+		_combatService.UnitWeaponsProvider = defId => {
+			if (GameHost.UnitRegistry.TryGetValue(defId, out var meta))
+				return meta.Weapons;
+			return null;
+		};
+		_combatService.OnWeaponProjectileRequested = (p1, p2, weaponId, targetEnt) => {
+			EnqueueVFXRequest(weaponId ?? "arrow", p1, p2, 1.0f, 40f, targetEnt.Id);
+			OnWeaponProjectileRequested?.Invoke(p1, p2, weaponId, targetEnt);
+		};
 		_combatService.OnDamageFlashRequested = ent => {
 			if (EcsWorld.IsAlive(ent) && EcsWorld.Has<Position>(ent))
 				EnqueueVFXRequest("damage_flash", EcsWorld.Get<Position>(ent).Value, EcsWorld.Get<Position>(ent).Value, 1.0f, 0f, ent.Id);

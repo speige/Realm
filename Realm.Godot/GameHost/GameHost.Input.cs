@@ -746,6 +746,11 @@ public partial class GameHost
 
 			if (@event is InputEventMouseButton releaseEvent && !releaseEvent.Pressed && releaseEvent.ButtonIndex == MouseButton.Left)
 			{
+				if (FloatingDialogBase.HasAnyDialogOpen)
+				{
+					return;
+				}
+
 				if (_editorService.IsSelectingArea)
 				{
 					_editorService.SetIsSelectingArea(false);
@@ -764,7 +769,7 @@ public partial class GameHost
 
 			if (@event is InputEventMouseButton editorMouseBtn && editorMouseBtn.Pressed && editorMouseBtn.ButtonIndex == MouseButton.Left)
 			{
-				if (_leftClickInitiatedOverUI || IsMouseOverUI())
+				if (_leftClickInitiatedOverUI || IsMouseOverUI() || FloatingDialogBase.HasAnyDialogOpen)
 				{
 					return;
 				}

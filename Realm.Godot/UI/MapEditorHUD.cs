@@ -38,6 +38,7 @@ public partial class MapEditorHUD : Control
 
 	public static float SavedBrushRadius = 2f;
 	public static float SavedBrushStrength = 0.5f;
+	public static float SavedTextureIntensity = 10f;
 
 	private static string _lastUsedFolder = "";
 	private static string _currentSourceFolder = "";
@@ -177,18 +178,15 @@ public partial class MapEditorHUD : Control
 
 	private Control _waterModeBox;
 	private OptionButton _optWaterMode;
-	private Button _btnHeaderGlobalOverrides;
-	private VBoxContainer _contentGlobalOverrides;
-	private bool _isGlobalOverridesExpanded = true;
-	private HSlider _sldModelScale;
-	private HSlider _sldModelYOffset;
-	private HSlider _sldModelGlobalCollisionCircle;
-	private HSlider _sldModelBrightness;
-	private HSlider _sldModelColorTint;
-	private ColorPickerButton _cpkModelColorTint;
-	private OptionButton _optModelNormalMode;
-	private CheckBox _chkModelNormalizeLuminance;
-	private CheckBox _chkModelIgnorePlayerColor;
+	private GlobalObjectOverridesDialog _globalOverridesDialog;
+	private AnimationPreviewDialog _animationPreviewDialog;
+	private WeaponVfxDialog _weaponVfxDialog;
+	private ModelPickerDialog _modelPickerDialog;
+	private AbilityVfxDialog _abilityVfxDialog;
+	private AssetManagerDialog _assetManagerDialog;
+	private Button _btnOpenGlobalOverrides;
+	private Button _btnOpenAnimationPreview;
+	private Button _btnAssetsManager;
 	private bool _isUpdatingInspectorUI;
 
 	private CheckBox _chkApplyGroundTexture;
@@ -266,10 +264,6 @@ public partial class MapEditorHUD : Control
 	private Button _btnImportAnimation;
 	private PanelContainer _rigStatusContainer;
 	private Label _lblRigStatus;
-	private VBoxContainer _animationPreviewContainer;
-	private OptionButton _optAnimationPreview;
-	private Button _btnPlayAnimationPreview;
-	private Button _btnStopAnimationPreview;
 
 	private Button _btnPathingBrush;
 	private Button _btnFloodFillPathing;
@@ -333,12 +327,15 @@ public partial class MapEditorHUD : Control
 	public const string TempWorkspaceGodotPath = "user://temp_map_workspace";
 
 	private string _tempWorkspacePath;
+	public string TempWorkspacePath => _tempWorkspacePath;
+	private EditorService _editorService;
 	private long _lastTerrainSyncTime = 0;
 	private long _lastMetadataSyncTime = 0;
 	private bool _isSyncing = false;
 
 	public override void _ExitTree()
 	{
+		_editorService?.StopWorkspaceWatcher();
 		CloseWasmConsoleModal();
 		if (Instance == this)
 		{
@@ -369,6 +366,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			Instance = this;
+			_editorService = ServiceLocator.TryGet<EditorService>();
 			UpdateFPSVisibility();
 			_tempWorkspacePath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
 
@@ -486,10 +484,10 @@ public partial class MapEditorHUD : Control
 		_btnImportMinimap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnImportMinimap");
 		SetupButton(_btnImportMinimap, "🗺️ GEN FROM IMAGE", () => ImportTerrainFromMinimapDialog(), 13, "Import terrain elevations, textures, and trees from a minimap image file");
 
-		_btnImportAnimation = new Button();
-		_btnImportAnimation.Name = "BtnImportAnimation";
-		SetupButton(_btnImportAnimation, "🎬 IMPORT MIXAMO / GLB", () => ImportMixamoOrAnimationDialog(), 13, "Import Mixamo character/animation GLB or .ranim binary animation files");
-		_contentFile.AddChild(_btnImportAnimation);
+		_btnAssetsManager = new Button();
+		_btnAssetsManager.Name = "BtnAssetsManager";
+		SetupButton(_btnAssetsManager, "📦 " + TranslationServer.Translate("ASSETS"), () => _assetManagerDialog?.OpenDialog(), 13, "Open Map Assets Manager & Importer");
+		_contentFile.AddChild(_btnAssetsManager);
 
 		_btnHeaderViewport = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/BtnHeaderViewport");
 		_contentViewport = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport");
@@ -1462,16 +1460,13 @@ public partial class MapEditorHUD : Control
 				_viewModel.InspectorPos = $"Pos: {pos.X:F2}, {pos.Y:F2}, {pos.Z:F2}\nRot: {rot.Y:F1}° | Scale: {scale.X:F2}x";
 			}
 
-			if (selected is Unit3D || selected is Prop3D)
+			bool isUnitCharacter = (selected is Unit3D unitObj && !unitObj.IsBuilding);
+			if (isUnitCharacter)
 			{
 				Node modelRoot = selected;
-				if (selected is Unit3D unitObj && unitObj.ModelNode != null)
+				if (selected is Unit3D uObj && uObj.ModelNode != null)
 				{
-					modelRoot = unitObj.ModelNode;
-				}
-				else if (selected is Prop3D propObj)
-				{
-					modelRoot = propObj.GetNodeOrNull<Node3D>("VisualModel") ?? selected;
+					modelRoot = uObj.ModelNode;
 				}
 
 				var validation = Realm.Godot.Animation.SkeletonValidator.Validate(modelRoot);
@@ -1495,96 +1490,41 @@ public partial class MapEditorHUD : Control
 					}
 				}
 
-				if (_animationPreviewContainer != null && _optAnimationPreview != null)
+				if (_btnOpenAnimationPreview != null)
 				{
-					_animationPreviewContainer.Visible = true;
-					PopulateAnimationPreviewDropdown();
+					_btnOpenAnimationPreview.Visible = true;
+					_btnOpenAnimationPreview.Disabled = !validation.IsValid;
+					_btnOpenAnimationPreview.TooltipText = validation.IsValid
+						? TranslationServer.Translate("Open animation preview turntable dialog")
+						: TranslationServer.Translate("Animation preview is only available for compatible rigged meshes.");
 				}
 			}
 			else
 			{
 				if (_rigStatusContainer != null) _rigStatusContainer.Visible = false;
-				if (_animationPreviewContainer != null) _animationPreviewContainer.Visible = false;
+				if (_btnOpenAnimationPreview != null) _btnOpenAnimationPreview.Visible = false;
 			}
 
 			string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(selected);
 			if (!string.IsNullOrEmpty(assetKey))
 			{
-				_isUpdatingInspectorUI = true;
-
-				if (_btnHeaderGlobalOverrides != null)
+				if (_btnOpenGlobalOverrides != null)
 				{
-					_btnHeaderGlobalOverrides.Text = (_isGlobalOverridesExpanded ? "▼ " : "▶ ") + TranslationServer.Translate("Global Object Overrides");
-					_btnHeaderGlobalOverrides.Visible = true;
+					_btnOpenGlobalOverrides.Visible = true;
+					_btnOpenGlobalOverrides.TooltipText = string.Format(TranslationServer.Translate("Edit global model scale, offsets, and shaders for {0}"), assetKey);
 				}
-				if (_contentGlobalOverrides != null) _contentGlobalOverrides.Visible = _isGlobalOverridesExpanded;
-
-				if (_sldModelScale != null)
-				{
-					float val = GameHost.Instance.GetModelScale(selected);
-					_sldModelScale.Value = val;
-					UpdateSliderLabel(_sldModelScale, val);
-				}
-				if (_sldModelYOffset != null)
-				{
-					float val = GameHost.Instance.GetModelYOffset(assetKey);
-					_sldModelYOffset.Value = val;
-					UpdateSliderLabel(_sldModelYOffset, val);
-				}
-				if (_sldModelGlobalCollisionCircle != null)
-				{
-					float val = GameHost.Instance.GetModelCollisionCircleRatio(assetKey);
-					_sldModelGlobalCollisionCircle.Value = val;
-					UpdateSliderLabel(_sldModelGlobalCollisionCircle, val);
-				}
-				if (_sldModelBrightness != null)
-				{
-					float val = GameHost.Instance.GetModelBrightness(assetKey);
-					_sldModelBrightness.Value = val;
-					UpdateSliderLabel(_sldModelBrightness, val);
-				}
-				if (_sldModelColorTint != null || _cpkModelColorTint != null)
-				{
-					Color tint = GameHost.Instance.GetModelColorTint(assetKey);
-					if (_cpkModelColorTint != null) _cpkModelColorTint.Color = tint;
-					if (_sldModelColorTint != null)
-					{
-						if (Mathf.Abs(tint.R - 1.0f) < 0.001f && Mathf.Abs(tint.G - 1.0f) < 0.001f && Mathf.Abs(tint.B - 1.0f) < 0.001f)
-						{
-							_sldModelColorTint.Value = 0.0f;
-						}
-						else
-						{
-							_sldModelColorTint.Value = tint.H;
-						}
-					}
-				}
-				if (_optModelNormalMode != null)
-				{
-					_optModelNormalMode.Selected = (int)GameHost.Instance.GetModelNormalMode(assetKey);
-				}
-				if (_chkModelNormalizeLuminance != null)
-				{
-					_chkModelNormalizeLuminance.ButtonPressed = GameHost.Instance.GetModelNormalizeLuminance(assetKey);
-				}
-				if (_chkModelIgnorePlayerColor != null)
-				{
-					_chkModelIgnorePlayerColor.ButtonPressed = GameHost.Instance.GetModelIgnorePlayerColor(assetKey);
-				}
-
-				_isUpdatingInspectorUI = false;
 			}
 			else
 			{
-				if (_btnHeaderGlobalOverrides != null) _btnHeaderGlobalOverrides.Visible = false;
-				if (_contentGlobalOverrides != null) _contentGlobalOverrides.Visible = false;
+				if (_btnOpenGlobalOverrides != null) _btnOpenGlobalOverrides.Visible = false;
 			}
 		}
 		else
 		{
 			if (_playerOwnerContainer != null) _playerOwnerContainer.Visible = false;
-			if (_btnHeaderGlobalOverrides != null) _btnHeaderGlobalOverrides.Visible = false;
-			if (_contentGlobalOverrides != null) _contentGlobalOverrides.Visible = false;
+			if (_btnOpenGlobalOverrides != null) _btnOpenGlobalOverrides.Visible = false;
+			if (_btnOpenAnimationPreview != null) _btnOpenAnimationPreview.Visible = false;
+			if (_rigStatusContainer != null) _rigStatusContainer.Visible = false;
 			if (_btnShowCoverage != null) _btnShowCoverage.Visible = false;
 			if (_lblInfoText != null) _lblInfoText.Visible = true;
 			if (_inspectorPanel != null) _inspectorPanel.Visible = false;
@@ -2349,18 +2289,19 @@ public partial class MapEditorHUD : Control
 				_sldBrushStrength.MinValue = 0.0;
 				_sldBrushStrength.MaxValue = 10.0;
 				_sldBrushStrength.Step = 1.0;
+				_sldBrushStrength.Value = SavedTextureIntensity;
+				if (_lblBrushStrengthValue != null) _lblBrushStrengthValue.Text = SavedTextureIntensity.ToString("F0");
+				if (GameHost.Instance != null) GameHost.Instance.EditorBrushStrength = SavedTextureIntensity;
 			}
 			else
 			{
 				_sldBrushStrength.MinValue = 0.5;
 				_sldBrushStrength.MaxValue = 10.0;
 				_sldBrushStrength.Step = 0.5;
-				if (_sldBrushStrength.Value < 0.5)
-				{
-					_sldBrushStrength.Value = 0.5;
-					if (_lblBrushStrengthValue != null) _lblBrushStrengthValue.Text = "0.5";
-					if (GameHost.Instance != null) GameHost.Instance.EditorBrushStrength = 0.5f;
-				}
+				float restoredStrength = Math.Max(0.5f, SavedBrushStrength);
+				_sldBrushStrength.Value = restoredStrength;
+				if (_lblBrushStrengthValue != null) _lblBrushStrengthValue.Text = restoredStrength.ToString("F1");
+				if (GameHost.Instance != null) GameHost.Instance.EditorBrushStrength = restoredStrength;
 			}
 		}
 
@@ -2463,6 +2404,7 @@ public partial class MapEditorHUD : Control
 		string initMetadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 		_lastTerrainSyncTime = GetMaxTerrainWriteTime(initTerrainPath);
 		_lastMetadataSyncTime = GetLastWriteTimeSafe(initMetadataPath);
+		_editorService?.StartWorkspaceWatcher(_tempWorkspacePath);
 
 		var syncTimer = new Godot.Timer();
 		syncTimer.WaitTime = 1.0f;
@@ -2748,13 +2690,6 @@ public partial class MapEditorHUD : Control
 			
 			GameHost.Instance.EditorHasUnsavedChanges = false;
 		}
-		else if (GameHost.Instance.EditorHasUnsavedChanges)
-		{
-			GameHost.Instance.SaveMapToFile(terrainPath);
-			GameHost.Instance.EditorHasUnsavedChanges = false;
-			_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
-			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
-		}
 		
 		_isSyncing = false;
 	}
@@ -2990,6 +2925,7 @@ public partial class MapEditorHUD : Control
 				}
 				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+				_editorService?.StartWorkspaceWatcher(_tempWorkspacePath);
 				ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
 				SaveCurrentDirectoryBlake3();
 			}
@@ -3037,6 +2973,7 @@ public partial class MapEditorHUD : Control
 				}
 				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+				_editorService?.StartWorkspaceWatcher(_tempWorkspacePath);
 				ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
 				SaveCurrentDirectoryBlake3();
 			}
@@ -3114,7 +3051,10 @@ public partial class MapEditorHUD : Control
 						AddChild(vp);
 
 						// Force transform propagation across scene tree
-						scene.PropagateNotification((int)Godot.Node3D.NotificationTransformChanged);
+						if (scene.IsInsideTree())
+						{
+							scene.PropagateNotification((int)Godot.Node3D.NotificationTransformChanged);
+						}
 
 						// Scale scene to standard unit box so camera framing is consistent
 						Godot.Aabb totalAabb = new Godot.Aabb();
@@ -3534,7 +3474,7 @@ public partial class MapEditorHUD : Control
 	}
 
 
-	private void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO", Action onCancel = null)
+	public void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO", Action onCancel = null)
 	{
 		var overlay = new ColorRect();
 		overlay.Name = "ConfirmationOverlay";
@@ -5128,17 +5068,23 @@ public partial class MapEditorHUD : Control
 		_lblScalePreviewHeight = null;
 	}
 
+	private readonly HashSet<ulong> _hookedSliderInstanceIds = new();
+
 	private void HookSliders(Node parent)
 	{
 		if (parent == null) return;
 		if (parent is Slider slider)
 		{
-			slider.DragStarted += () => IsDraggingSlider = true;
-			slider.DragEnded += (_) => IsDraggingSlider = false;
+			if (_hookedSliderInstanceIds.Add(slider.GetInstanceId()))
+			{
+				slider.DragStarted += () => IsDraggingSlider = true;
+				slider.DragEnded += (_) => IsDraggingSlider = false;
+			}
 		}
-		foreach (Node child in parent.GetChildren())
+		int childCount = parent.GetChildCount();
+		for (int i = 0; i < childCount; i++)
 		{
-			HookSliders(child);
+			HookSliders(parent.GetChild(i));
 		}
 	}
 
@@ -5756,279 +5702,297 @@ public partial class MapEditorHUD : Control
 		_rigStatusContainer.AddChild(_lblRigStatus);
 		inspectorVBox.AddChild(_rigStatusContainer);
 
-		_animationPreviewContainer = new VBoxContainer();
-		_animationPreviewContainer.Name = "AnimationPreviewContainer";
-		_animationPreviewContainer.Visible = false;
+		_globalOverridesDialog = new GlobalObjectOverridesDialog(this);
+		_animationPreviewDialog = new AnimationPreviewDialog(this);
+		_weaponVfxDialog = new WeaponVfxDialog(this);
+		_modelPickerDialog = new ModelPickerDialog(this);
+		_abilityVfxDialog = new AbilityVfxDialog(this);
+		_assetManagerDialog = new AssetManagerDialog(this);
 
-		var lblAnimHeader = new Label();
-		lblAnimHeader.Text = TranslationServer.Translate("Animation Preview");
-		lblAnimHeader.AddThemeFontSizeOverride("font_size", 11);
-		_animationPreviewContainer.AddChild(lblAnimHeader);
-
-		var animHBox = new HBoxContainer();
-		_optAnimationPreview = new OptionButton();
-		_optAnimationPreview.Name = "OptAnimationPreview";
-		_optAnimationPreview.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-		_optAnimationPreview.ClipText = true;
-		_optAnimationPreview.FitToLongestItem = false;
-		_optAnimationPreview.CustomMinimumSize = new Vector2(0, 0);
-		_optAnimationPreview.AddThemeFontSizeOverride("font_size", 11);
-		animHBox.AddChild(_optAnimationPreview);
-
-		_btnPlayAnimationPreview = new Button();
-		_btnPlayAnimationPreview.Name = "BtnPlayAnimationPreview";
-		_btnPlayAnimationPreview.Set("icon_max_width", 0);
-		_btnPlayAnimationPreview.Text = "▶";
-		_btnPlayAnimationPreview.CustomMinimumSize = new Vector2(26, 0);
-		_btnPlayAnimationPreview.FocusMode = Control.FocusModeEnum.None;
-		_btnPlayAnimationPreview.Pressed += () => PlaySelectedAnimationPreviewAction();
-		animHBox.AddChild(_btnPlayAnimationPreview);
-
-		_btnStopAnimationPreview = new Button();
-		_btnStopAnimationPreview.Name = "BtnStopAnimationPreview";
-		_btnStopAnimationPreview.Set("icon_max_width", 0);
-		_btnStopAnimationPreview.Text = "⏹";
-		_btnStopAnimationPreview.CustomMinimumSize = new Vector2(26, 0);
-		_btnStopAnimationPreview.FocusMode = Control.FocusModeEnum.None;
-		_btnStopAnimationPreview.Pressed += () => StopSelectedAnimationPreviewAction();
-		animHBox.AddChild(_btnStopAnimationPreview);
-
-		_animationPreviewContainer.AddChild(animHBox);
-		inspectorVBox.AddChild(_animationPreviewContainer);
-
-		var vbox = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox");
-		if (vbox != null)
+		_btnOpenAnimationPreview = new Button();
+		_btnOpenAnimationPreview.Name = "BtnOpenAnimationPreview";
+		_btnOpenAnimationPreview.Set("icon_max_width", 0);
+		_btnOpenAnimationPreview.Text = "✏️ " + TranslationServer.Translate("Preview Animations...");
+		_btnOpenAnimationPreview.AddThemeFontSizeOverride("font_size", 11);
+		_btnOpenAnimationPreview.FocusMode = Control.FocusModeEnum.None;
+		_btnOpenAnimationPreview.CustomMinimumSize = new Vector2(0, 28);
+		_btnOpenAnimationPreview.Visible = false;
+		_btnOpenAnimationPreview.Pressed += () =>
 		{
-			_btnHeaderGlobalOverrides = new Button();
-			_btnHeaderGlobalOverrides.Text = "▼ " + TranslationServer.Translate("Global Object Overrides");
-			_btnHeaderGlobalOverrides.Alignment = HorizontalAlignment.Left;
-			_btnHeaderGlobalOverrides.FocusMode = Control.FocusModeEnum.None;
-			_btnHeaderGlobalOverrides.AddThemeFontSizeOverride("font_size", 12);
-			_btnHeaderGlobalOverrides.Visible = false;
-			vbox.AddChild(_btnHeaderGlobalOverrides);
-
-			_contentGlobalOverrides = new VBoxContainer();
-			_contentGlobalOverrides.Visible = false;
-			vbox.AddChild(_contentGlobalOverrides);
-
-			_btnHeaderGlobalOverrides.Pressed += () =>
+			if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
 			{
-				_isGlobalOverridesExpanded = !_isGlobalOverridesExpanded;
-				_contentGlobalOverrides.Visible = _isGlobalOverridesExpanded;
-				_btnHeaderGlobalOverrides.Text = (_isGlobalOverridesExpanded ? "▼ " : "▶ ") + TranslationServer.Translate("Global Object Overrides");
-			};
+				_animationPreviewDialog?.OpenForObject(GameHost.Instance.SelectedEditorObject);
+			}
+		};
+		inspectorVBox.AddChild(_btnOpenAnimationPreview);
 
-			_sldModelScale = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Scale"), 0.1f, 10.0f, 0.05f, 1.0f, (val) =>
+		_btnOpenGlobalOverrides = new Button();
+		_btnOpenGlobalOverrides.Name = "BtnOpenGlobalOverrides";
+		_btnOpenGlobalOverrides.Set("icon_max_width", 0);
+		_btnOpenGlobalOverrides.Text = "✏️ " + TranslationServer.Translate("Global Overrides...");
+		_btnOpenGlobalOverrides.AddThemeFontSizeOverride("font_size", 11);
+		_btnOpenGlobalOverrides.FocusMode = Control.FocusModeEnum.None;
+		_btnOpenGlobalOverrides.CustomMinimumSize = new Vector2(0, 28);
+		_btnOpenGlobalOverrides.Visible = false;
+		_btnOpenGlobalOverrides.Pressed += () =>
+		{
+			if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
 			{
-				if (_isUpdatingInspectorUI) return;
-				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
+				_globalOverridesDialog?.OpenForObject(GameHost.Instance.SelectedEditorObject);
+			}
+		};
+		inspectorVBox.AddChild(_btnOpenGlobalOverrides);
+	}
+
+	public WeaponVfxDialog WeaponVfxDialog => _weaponVfxDialog;
+
+	public void OpenWeaponVfxDialog(string weaponId, GameHost.WeaponMetadata weapon, Action<GameHost.WeaponMetadata> onApplied = null)
+	{
+		if (_weaponVfxDialog == null)
+		{
+			_weaponVfxDialog = new WeaponVfxDialog(this);
+		}
+		_weaponVfxDialog.OpenForWeapon(weaponId, weapon, onApplied);
+	}
+
+	public void SaveCustomWeaponToMetadata(string weaponId, GameHost.WeaponMetadata weapon)
+	{
+		try
+		{
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metadataPath)) return;
+
+			string jsonStr = System.IO.File.ReadAllText(metadataPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
+			if (root == null) return;
+
+			var weaponsArray = root["CustomWeapons"]?.AsArray();
+			if (weaponsArray == null)
+			{
+				weaponsArray = new System.Text.Json.Nodes.JsonArray();
+				root["CustomWeapons"] = weaponsArray;
+			}
+
+			bool found = false;
+			var weaponJson = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(weapon, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+
+			for (int i = 0; i < weaponsArray.Count; i++)
+			{
+				var wObj = weaponsArray[i]?.AsObject();
+				if (wObj != null && (wObj["WeaponId"]?.ToString() == weaponId || wObj["weaponId"]?.ToString() == weaponId))
 				{
-					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
-					if (!string.IsNullOrEmpty(assetKey))
+					weaponsArray[i] = weaponJson;
+					found = true;
+					break;
+				}
+			}
+
+			if (!found && weaponJson != null)
+			{
+				weaponsArray.Add(weaponJson);
+			}
+
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] SaveCustomWeaponToMetadata error: {ex.Message}");
+		}
+	}
+
+	public void SaveCustomUnitAnimations(string unitId, Dictionary<string, string[]> animations)
+	{
+		try
+		{
+			if (string.IsNullOrEmpty(unitId)) return;
+
+			if (GameHost.UnitRegistry.TryGetValue(unitId, out var uMeta))
+			{
+				uMeta.Animations = animations;
+				GameHost.UnitRegistry[unitId] = uMeta;
+			}
+
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metadataPath)) return;
+
+			string jsonStr = System.IO.File.ReadAllText(metadataPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
+			if (root == null) return;
+
+			var unitsArray = root["CustomUnits"]?.AsArray() ?? root["Units"]?.AsArray();
+			if (unitsArray != null)
+			{
+				for (int i = 0; i < unitsArray.Count; i++)
+				{
+					var uObj = unitsArray[i]?.AsObject();
+					if (uObj != null && (uObj["UnitId"]?.ToString() == unitId || uObj["unitId"]?.ToString() == unitId || uObj["Id"]?.ToString() == unitId))
 					{
-						GameHost.Instance.SetModelScale(assetKey, val);
+						var animJson = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(animations, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+						uObj["Animations"] = animJson;
+						break;
 					}
 				}
-			}, "0.0#", 70f);
-			_sldModelScale.DragStarted += () => _isDraggingSlider = true;
-			_sldModelScale.DragEnded += (valueChanged) =>
+			}
+
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] SaveCustomUnitAnimations error: {ex.Message}");
+		}
+	}
+
+	public void OpenModelPickerDialog(string entityId, string fieldName, string domain, string currentPath, Action<string> onApplied = null)
+	{
+		if (_modelPickerDialog == null)
+		{
+			_modelPickerDialog = new ModelPickerDialog(this);
+		}
+		_modelPickerDialog.OpenForEntity(entityId, fieldName, domain, currentPath, onApplied);
+	}
+
+	public void OpenAnimationPreviewDialog(string unitId, string modelPath = null)
+	{
+		if (_animationPreviewDialog == null)
+		{
+			_animationPreviewDialog = new AnimationPreviewDialog(this);
+		}
+		_animationPreviewDialog.OpenForUnitId(unitId, modelPath);
+	}
+
+	public void SaveEntityModelPathToMetadata(string entityId, string fieldName, string domain, string newModelPath)
+	{
+		try
+		{
+			if (string.IsNullOrEmpty(entityId)) return;
+
+			fieldName = string.IsNullOrEmpty(fieldName) ? "ModelPath" : fieldName;
+			domain = string.IsNullOrEmpty(domain) ? "units" : domain;
+
+			if (domain.Equals("units", StringComparison.OrdinalIgnoreCase) && GameHost.UnitRegistry.TryGetValue(entityId, out var uMeta))
 			{
-				_isDraggingSlider = false;
-				GameHost.Instance?.FlushModelYOffsetSave();
-				string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
-				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+				if (fieldName == "PortraitModelPath")
+				{
+					uMeta.PortraitModelPath = newModelPath;
+				}
+				else
+				{
+					uMeta.ModelPath = newModelPath;
+				}
+				GameHost.UnitRegistry[entityId] = uMeta;
+			}
+
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metadataPath)) return;
+
+			string jsonStr = System.IO.File.ReadAllText(metadataPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
+			if (root == null) return;
+
+			string targetArrayKey = domain.ToLowerInvariant() switch
+			{
+				"units" => "CustomUnits",
+				"buildings" => "CustomBuildings",
+				"resources" => "CustomResources",
+				"props" => "CustomProps",
+				_ => "CustomUnits"
 			};
 
-			_sldModelYOffset = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Y-Offset"), -10.0f, 10.0f, 0.05f, 0.0f, (val) =>
+			var targetArray = root[targetArrayKey]?.AsArray();
+			if (targetArray == null)
 			{
-				if (_isUpdatingInspectorUI) return;
-				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
+				string fallbackKey = domain.ToLowerInvariant() switch
 				{
-					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
-					if (!string.IsNullOrEmpty(assetKey))
+					"units" => "Units",
+					"buildings" => "Buildings",
+					"resources" => "Resources",
+					"props" => "Props",
+					_ => "Units"
+				};
+				targetArray = root[fallbackKey]?.AsArray();
+			}
+
+			if (targetArray != null)
+			{
+				for (int i = 0; i < targetArray.Count; i++)
+				{
+					var obj = targetArray[i]?.AsObject();
+					if (obj != null && (obj["UnitId"]?.ToString() == entityId || obj["unitId"]?.ToString() == entityId || obj["Id"]?.ToString() == entityId))
 					{
-						GameHost.Instance.SetModelYOffset(assetKey, val);
+						obj[fieldName] = newModelPath;
+						break;
 					}
 				}
-			}, "0.0#", 70f);
-			_sldModelYOffset.DragStarted += () => _isDraggingSlider = true;
-			_sldModelYOffset.DragEnded += (valueChanged) =>
-			{
-				_isDraggingSlider = false;
-				GameHost.Instance?.FlushModelYOffsetSave();
-				string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
-				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
-			};
+			}
 
-			_sldModelGlobalCollisionCircle = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Collision Circle"), 0.1f, 10.0f, 0.05f, 1.0f, (val) =>
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] SaveEntityModelPathToMetadata error: {ex.Message}");
+		}
+	}
+
+	public void OpenAbilityVfxDialog(string abilityId, System.Text.Json.Nodes.JsonObject abilityData, Action<System.Text.Json.Nodes.JsonObject> onApplied = null)
+	{
+		if (_abilityVfxDialog == null)
+		{
+			_abilityVfxDialog = new AbilityVfxDialog(this);
+		}
+		_abilityVfxDialog.OpenForAbility(abilityId, abilityData, onApplied);
+	}
+
+	public void SaveCustomAbilityVfxToMetadata(string abilityId, string visualEffect, string castSound, string iconPath, float aoeRadius)
+	{
+		try
+		{
+			if (string.IsNullOrEmpty(abilityId)) return;
+
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metadataPath)) return;
+
+			string jsonStr = System.IO.File.ReadAllText(metadataPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
+			if (root == null) return;
+
+			var abiArray = root["CustomAbilities"]?.AsArray() ?? root["Abilities"]?.AsArray();
+			if (abiArray != null)
 			{
-				if (_isUpdatingInspectorUI) return;
-				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
+				for (int i = 0; i < abiArray.Count; i++)
 				{
-					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
-					if (!string.IsNullOrEmpty(assetKey))
+					var obj = abiArray[i]?.AsObject();
+					if (obj != null && (obj["AbilityId"]?.ToString() == abilityId || obj["abilityId"]?.ToString() == abilityId || obj["Id"]?.ToString() == abilityId))
 					{
-						GameHost.Instance.SetModelCollisionCircleRatio(assetKey, val);
+						obj["VisualEffect"] = visualEffect;
+						obj["CastSound"] = castSound;
+						obj["IconPath"] = iconPath;
+						obj["AreaOfEffectRadius"] = aoeRadius;
+						break;
 					}
 				}
-			}, "0.0#", 70f);
-			_sldModelGlobalCollisionCircle.DragStarted += () => _isDraggingSlider = true;
-			_sldModelGlobalCollisionCircle.DragEnded += (valueChanged) =>
-			{
-				_isDraggingSlider = false;
-				GameHost.Instance?.FlushModelCollisionCircleSave();
-				string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
-				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
-			};
+			}
 
-			_sldModelBrightness = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Brightness"), 0.10f, 2.0f, 0.02f, 0.5f, (val) =>
-			{
-				if (_isUpdatingInspectorUI) return;
-				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
-				{
-					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
-					if (!string.IsNullOrEmpty(assetKey))
-					{
-						GameHost.Instance.SetModelBrightness(assetKey, (float)val);
-					}
-				}
-			}, "0.0#", 70f);
-			_sldModelBrightness.DragStarted += () => _isDraggingSlider = true;
-			_sldModelBrightness.DragEnded += (valueChanged) =>
-			{
-				_isDraggingSlider = false;
-				GameHost.Instance?.FlushModelYOffsetSave();
-				string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
-				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
-			};
-
-			var tintRow = new HBoxContainer();
-
-			var lblTintName = new Label();
-			lblTintName.Text = TranslationServer.Translate("Tint");
-			lblTintName.CustomMinimumSize = new Vector2(70, 0);
-			lblTintName.AddThemeFontSizeOverride("font_size", 11);
-			tintRow.AddChild(lblTintName);
-
-			_sldModelColorTint = new HSlider();
-			_sldModelColorTint.MinValue = 0.0f;
-			_sldModelColorTint.MaxValue = 1.0f;
-			_sldModelColorTint.Step = 0.01f;
-			_sldModelColorTint.Value = 0.0f;
-			_sldModelColorTint.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-			_sldModelColorTint.DragStarted += () => _isDraggingSlider = true;
-			_sldModelColorTint.DragEnded += (valueChanged) =>
-			{
-				_isDraggingSlider = false;
-				GameHost.Instance?.FlushModelYOffsetSave();
-				string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
-				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
-			};
-			tintRow.AddChild(_sldModelColorTint);
-
-			_cpkModelColorTint = new ColorPickerButton();
-			_cpkModelColorTint.CustomMinimumSize = new Vector2(30, 20);
-			_cpkModelColorTint.EditAlpha = false;
-			_cpkModelColorTint.Color = new Color(1.0f, 1.0f, 1.0f);
-			tintRow.AddChild(_cpkModelColorTint);
-
-			_contentGlobalOverrides.AddChild(tintRow);
-
-			_sldModelColorTint.ValueChanged += (double val) =>
-			{
-				if (_isUpdatingInspectorUI) return;
-				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
-				{
-					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
-					if (!string.IsNullOrEmpty(assetKey))
-					{
-						Color tintColor = (val <= 0.0) ? new Color(1.0f, 1.0f, 1.0f) : Color.FromHsv((float)val, 0.75f, 1.0f);
-						if (_cpkModelColorTint != null) _cpkModelColorTint.Color = tintColor;
-						GameHost.Instance.SetModelColorTint(assetKey, tintColor);
-					}
-				}
-			};
-
-			_cpkModelColorTint.ColorChanged += (Color color) =>
-			{
-				if (_isUpdatingInspectorUI) return;
-				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
-				{
-					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
-					if (!string.IsNullOrEmpty(assetKey))
-					{
-						GameHost.Instance.SetModelColorTint(assetKey, color);
-						GameHost.Instance.FlushModelYOffsetSave();
-						string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
-						_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
-					}
-				}
-			};
-
-			var normalRow = new HBoxContainer();
-			var lblNormalName = new Label();
-			lblNormalName.Text = TranslationServer.Translate("Normals");
-			lblNormalName.CustomMinimumSize = new Vector2(70, 0);
-			lblNormalName.AddThemeFontSizeOverride("font_size", 11);
-			normalRow.AddChild(lblNormalName);
-
-			_optModelNormalMode = new OptionButton();
-			_optModelNormalMode.FitToLongestItem = false;
-			_optModelNormalMode.AddItem(TranslationServer.Translate("Original"), 0);
-			_optModelNormalMode.AddItem(TranslationServer.Translate("Smooth Normals"), 1);
-			_optModelNormalMode.AddItem(TranslationServer.Translate("Flat Normals"), 2);
-			_optModelNormalMode.Selected = 2;
-			_optModelNormalMode.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-			_optModelNormalMode.ItemSelected += (long index) =>
-			{
-				if (_isUpdatingInspectorUI) return;
-				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
-				{
-					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
-					if (!string.IsNullOrEmpty(assetKey))
-					{
-						GameHost.Instance.SetModelNormalMode(assetKey, (GameHost.ModelNormalMode)(int)index);
-						GameHost.Instance.FlushModelYOffsetSave();
-						string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
-						_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
-					}
-				}
-			};
-			normalRow.AddChild(_optModelNormalMode);
-			_contentGlobalOverrides.AddChild(normalRow);
-
-			_chkModelNormalizeLuminance = CreateCheckBoxRow(_contentGlobalOverrides, TranslationServer.Translate("Normalize Luminosity"), true, (pressed) =>
-			{
-				if (_isUpdatingInspectorUI) return;
-				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
-				{
-					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
-					if (!string.IsNullOrEmpty(assetKey))
-					{
-						GameHost.Instance.SetModelNormalizeLuminance(assetKey, pressed);
-						GameHost.Instance.FlushModelYOffsetSave();
-						string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
-						_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
-					}
-				}
-			});
-
-			_chkModelIgnorePlayerColor = CreateCheckBoxRow(_contentGlobalOverrides, TranslationServer.Translate("Ignore Player Color"), false, (pressed) =>
-			{
-				if (_isUpdatingInspectorUI) return;
-				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
-				{
-					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
-					if (!string.IsNullOrEmpty(assetKey))
-					{
-						GameHost.Instance.SetModelIgnorePlayerColor(assetKey, pressed);
-						GameHost.Instance.FlushModelYOffsetSave();
-						GameHost.Instance.RefreshAllPlacedObjectModels(assetKey);
-						string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
-						_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
-					}
-				}
-			});
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] SaveCustomAbilityVfxToMetadata error: {ex.Message}");
 		}
 	}
 
@@ -6038,6 +6002,10 @@ public partial class MapEditorHUD : Control
 		{
 			if (keyEvent.Keycode == Godot.Key.Tab)
 			{
+				if (FloatingDialogBase.HasAnyDialogOpen)
+				{
+					return;
+				}
 				GetViewport().SetInputAsHandled();
 				return;
 			}
@@ -6590,7 +6558,7 @@ public partial class MapEditorHUD : Control
 			}
 
 			root["Assets"] = assetsObj;
-			System.IO.File.WriteAllText(metadataPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 		}
 		catch (Exception ex)
 		{
@@ -6894,163 +6862,6 @@ public partial class MapEditorHUD : Control
 
 	public void PopulateAnimationPreviewDropdown()
 	{
-		if (_optAnimationPreview == null) return;
-		string currentSelected = _optAnimationPreview.ItemCount > 0 ? _optAnimationPreview.GetItemText(_optAnimationPreview.Selected) : "Idle_0";
-		_optAnimationPreview.Clear();
-
-		var standardAnims = new[] { "Idle", "Walk", "Attack", "Death", "Labor", "Spell_Cast", "Dance" };
-		var animOptions = new List<string>();
-
-		var selected = GameHost.Instance?.SelectedEditorObject;
-		Dictionary<string, string[]>? customAnimations = null;
-		if (selected is Unit3D unit && !string.IsNullOrEmpty(unit.UnitId) && GameHost.UnitRegistry.TryGetValue(unit.UnitId, out var meta))
-		{
-			customAnimations = meta.Animations;
-		}
-
-		foreach (var animType in standardAnims)
-		{
-			if (customAnimations != null && customAnimations.TryGetValue(animType, out var list) && list != null && list.Length > 0)
-			{
-				for (int i = 0; i < list.Length; i++)
-				{
-					animOptions.Add($"{animType}_{i}");
-				}
-			}
-			else
-			{
-				animOptions.Add($"{animType}_0");
-			}
-		}
-
-		int idx = 0;
-		int selectedIdx = 0;
-		foreach (var anim in animOptions)
-		{
-			_optAnimationPreview.AddItem(anim, idx);
-			if (anim.Equals(currentSelected, StringComparison.OrdinalIgnoreCase))
-			{
-				selectedIdx = idx;
-			}
-			idx++;
-		}
-
-		_optAnimationPreview.Selected = selectedIdx;
-	}
-
-	private void PlaySelectedAnimationPreviewAction()
-	{
-		if (GameHost.Instance == null) return;
-		var selected = GameHost.Instance.SelectedEditorObject;
-		if (!GodotObject.IsInstanceValid(selected)) return;
-
-		Node modelRoot = selected;
-		if (selected is Unit3D unit && unit.ModelNode != null)
-		{
-			modelRoot = unit.ModelNode;
-		}
-		else if (selected is Prop3D prop)
-		{
-			modelRoot = prop.GetNodeOrNull<Node3D>("VisualModel") ?? selected;
-		}
-
-		var validation = Realm.Godot.Animation.SkeletonValidator.Validate(modelRoot);
-		if (!validation.IsValid)
-		{
-			ShowFeedback(string.Format(TranslationServer.Translate("Cannot play animation: {0}"), validation.ErrorMessage));
-			return;
-		}
-
-		if (_optAnimationPreview == null || _optAnimationPreview.ItemCount == 0) return;
-		string animName = _optAnimationPreview.GetItemText(_optAnimationPreview.Selected);
-
-		if (selected is Unit3D uObj)
-		{
-			uObj.PlayAnimation(animName);
-			ShowFeedback(string.Format(TranslationServer.Translate("Playing '{0}' on {1}"), animName, selected.Name));
-			return;
-		}
-
-		var player = Realm.Godot.Animation.AnimationRetargetingService.FindOrCreateAnimationPlayer(modelRoot);
-		if (player != null && player.HasAnimation(animName))
-		{
-			player.Play(animName);
-			ShowFeedback(string.Format(TranslationServer.Translate("Playing '{0}' on {1}"), animName, selected.Name));
-			return;
-		}
-
-		int underscoreIdx = animName.LastIndexOf('_');
-		string baseType = underscoreIdx > 0 ? animName.Substring(0, underscoreIdx) : animName;
-		string specificFile = null;
-
-		if (selected is Unit3D u && !string.IsNullOrEmpty(u.UnitId) && GameHost.UnitRegistry.TryGetValue(u.UnitId, out var uMeta) && uMeta.Animations != null)
-		{
-			if (underscoreIdx > 0 && int.TryParse(animName.Substring(underscoreIdx + 1), out int varIdx))
-			{
-				if (uMeta.Animations.TryGetValue(baseType, out var aFiles) && varIdx >= 0 && varIdx < aFiles.Length)
-				{
-					specificFile = aFiles[varIdx];
-				}
-			}
-		}
-
-		string filePath = !string.IsNullOrEmpty(specificFile)
-			? Realm.Godot.Animation.AnimationRetargetingService.ResolveAnimationFilePath(specificFile, selected is Unit3D u2 ? u2.UnitId : null)
-			: Realm.Godot.Animation.AnimationRetargetingService.ResolveAnimationFilePath(animName, selected is Unit3D u3 ? u3.UnitId : null);
-
-		Realm.Godot.Animation.RealmAnimationData animData = null;
-		if (!string.IsNullOrEmpty(filePath))
-		{
-			animData = Realm.Godot.Animation.AnimationRetargetingService.GetOrLoadRanimData(filePath);
-		}
-		else
-		{
-			animData = baseType switch
-			{
-				"Idle" => Realm.Godot.Animation.RealmDefaultAnimations.Idle,
-				"Walk" => Realm.Godot.Animation.RealmDefaultAnimations.Walk,
-				"Attack" => Realm.Godot.Animation.RealmDefaultAnimations.Attack,
-				"Death" => Realm.Godot.Animation.RealmDefaultAnimations.Death,
-				"Labor" => Realm.Godot.Animation.RealmDefaultAnimations.Labor,
-				"Spell_Cast" => Realm.Godot.Animation.RealmDefaultAnimations.Spell_Cast,
-				"Dance" => Realm.Godot.Animation.RealmDefaultAnimations.Dance,
-				_ => null
-			};
-		}
-
-		if (animData == null)
-		{
-			ShowFeedback(string.Format(TranslationServer.Translate("Animation data not found for '{0}'"), animName));
-			return;
-		}
-
-		if (Realm.Godot.Animation.AnimationRetargetingService.RetargetAndBind(animData, modelRoot, animName, out string err))
-		{
-			var animPlayer = Realm.Godot.Animation.AnimationRetargetingService.FindOrCreateAnimationPlayer(modelRoot);
-			if (animPlayer != null)
-			{
-				animPlayer.Play(animName);
-				ShowFeedback(string.Format(TranslationServer.Translate("Playing '{0}' on {1} (RAM Retargeted)"), animName, selected.Name));
-			}
-		}
-		else
-		{
-			ShowFeedback(string.Format(TranslationServer.Translate("Failed to retarget animation: {0}"), err));
-		}
-	}
-
-	private void StopSelectedAnimationPreviewAction()
-	{
-		if (GameHost.Instance == null) return;
-		var selected = GameHost.Instance.SelectedEditorObject;
-		if (!GodotObject.IsInstanceValid(selected)) return;
-
-		var player = Realm.Godot.Animation.AnimationRetargetingService.FindOrCreateAnimationPlayer(selected);
-		if (player != null && player.IsPlaying())
-		{
-			player.Stop(true);
-			ShowFeedback(TranslationServer.Translate("Animation stopped"));
-		}
 	}
 
 	public void ImportDecalAssetFromExtension(string sourceFilePath)

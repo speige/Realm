@@ -22,13 +22,13 @@
     </ItemGroup>
 
     <!-- 1. Copy to Godot project source tree for git & distribution -->
-    <Copy SourceFiles="@(DistFiles)" DestinationFolder="../Realm.Godot/vscode_extensions_dist/speige.realm-map-editor/dist/%(RecursiveDir)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(MediaFiles)" DestinationFolder="../Realm.Godot/vscode_extensions_dist/speige.realm-map-editor/media/%(RecursiveDir)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(RootFiles)" DestinationFolder="../Realm.Godot/vscode_extensions_dist/speige.realm-map-editor/" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(DistFiles)" DestinationFiles="@(DistFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_extensions_dist/speige.realm-map-editor/dist/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(MediaFiles)" DestinationFiles="@(MediaFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_extensions_dist/speige.realm-map-editor/media/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(RootFiles)" DestinationFiles="@(RootFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_extensions_dist/speige.realm-map-editor/%(Filename)%(Extension)')" />
 
     <!-- 2. Auto-update installed extension inside user-data-dir/extensions if present -->
-    <Copy SourceFiles="@(DistFiles)" DestinationFolder="../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0/dist/%(RecursiveDir)" SkipUnchangedFiles="true" Condition="Exists('../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0')" />
-    <Copy SourceFiles="@(MediaFiles)" DestinationFolder="../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0/media/%(RecursiveDir)" SkipUnchangedFiles="true" Condition="Exists('../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0')" />
-    <Copy SourceFiles="@(RootFiles)" DestinationFolder="../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0/" SkipUnchangedFiles="true" Condition="Exists('../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0')" />
+    <Copy SourceFiles="@(DistFiles)" DestinationFiles="@(DistFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0/dist/%(RecursiveDir)%(Filename)%(Extension)')" Condition="Exists('$(MSBuildProjectDirectory)/../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0')" />
+    <Copy SourceFiles="@(MediaFiles)" DestinationFiles="@(MediaFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0/media/%(RecursiveDir)%(Filename)%(Extension)')" Condition="Exists('$(MSBuildProjectDirectory)/../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0')" />
+    <Copy SourceFiles="@(RootFiles)" DestinationFiles="@(RootFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0/%(Filename)%(Extension)')" Condition="Exists('$(MSBuildProjectDirectory)/../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0')" />
   </Target>
 </Project>

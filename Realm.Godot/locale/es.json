@@ -263,5 +263,10 @@
   "Are you sure you want to delete all replays?": "¿Estás seguro de que deseas eliminar todas las repeticiones?",
   "You haven't saved yet": "Aún no has guardado",
   "Stay": "Quedarse",
-  "Quit": "Salir"
+  "Quit": "Salir",
+  "metadata.json updated externally — reloaded.": "metadata.json actualizado externamente — recargado.",
+  "terrain.json updated externally — reloaded.": "terrain.json actualizado externamente — recargado.",
+  "External edits detected in metadata.json. Reload external changes or keep current dialog changes?": "¿Se detectaron cambios externos en metadata.json. ¿Recargar cambios externos o mantener los cambios del diálogo?",
+  "RELOAD": "RECARGAR",
+  "KEEP CHANGES": "MANTENER CAMBIOS"
 }

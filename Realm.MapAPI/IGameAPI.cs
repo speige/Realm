@@ -1067,7 +1067,7 @@ public interface IGameAPI
 
     /// <summary>
     /// Orders the unit to move to a world position without attacking along the way.
-    /// Generic alias for <see cref="IssueMoveOrder"/>.
+    /// Generic alias for <see cref="IssueMoveOrder(IUnit, Vector3)"/>.
     /// </summary>
     void MoveUnit(IUnit unit, Vector3 destination) => IssueMoveOrder(unit, destination);
 

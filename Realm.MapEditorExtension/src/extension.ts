@@ -6,8 +6,86 @@ import { RealmMapEditorProvider } from './editorProvider';
 
 export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(RealmMapEditorProvider.register(context));
+
+    context.subscriptions.push(
+        vscode.workspace.onWillSaveTextDocument(event => {
+            const fileName = path.basename(event.document.fileName).toLowerCase();
+            if (fileName === 'metadata.json' || fileName === 'terrain.json') {
+                event.waitUntil((async () => {
+                    try {
+                        const content = event.document.getText();
+                        const response = await sendGodotIpc({
+                            action: 'formatAndSaveJson',
+                            filePath: event.document.uri.fsPath,
+                            content: content
+                        });
+
+                        if (response && response.success && typeof response.formattedContent === 'string') {
+                            const fullRange = new vscode.Range(
+                                event.document.positionAt(0),
+                                event.document.positionAt(content.length)
+                            );
+                            return [vscode.TextEdit.replace(fullRange, response.formattedContent)];
+                        }
+                    } catch (err) {
+                        console.error('[RealmExtension] onWillSaveTextDocument IPC error:', err);
+                    }
+                    return [];
+                })());
+            }
+        })
+    );
+
     openStartupFiles(context);
     startGodotIpcListener(context);
+}
+
+export function sendGodotIpc(payload: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+        const ports = [8092, 8093];
+        const postData = JSON.stringify(payload);
+
+        const attemptNext = (portIndex: number) => {
+            if (portIndex >= ports.length) {
+                return reject(new Error('Could not connect to Godot IPC bridge on ports 8092 or 8093'));
+            }
+            const port = ports[portIndex];
+            const req = http.request({
+                hostname: '127.0.0.1',
+                port: port,
+                path: '/api/',
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(postData)
+                }
+            }, (res) => {
+                let body = '';
+                res.on('data', chunk => body += chunk);
+                res.on('end', () => {
+                    try {
+                        resolve(JSON.parse(body));
+                    } catch {
+                        resolve({ success: res.statusCode === 200, raw: body });
+                    }
+                });
+            });
+
+            req.on('error', () => {
+                attemptNext(portIndex + 1);
+            });
+
+            req.setTimeout(3000, () => {
+                try { req.destroy(); } catch {}
+                attemptNext(portIndex + 1);
+            });
+
+            req.write(postData);
+            req.end();
+        };
+
+        attemptNext(0);
+    });
 }
 
 function startGodotIpcListener(context: vscode.ExtensionContext): void {

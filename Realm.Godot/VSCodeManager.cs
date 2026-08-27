@@ -577,10 +577,111 @@ public class VSCodeManager
 			string body = await reader.ReadToEndAsync();
 			var node = System.Text.Json.Nodes.JsonNode.Parse(body);
 			string action = node?["action"]?.ToString() ?? node?["type"]?.ToString();
-
 			var responseObj = new System.Text.Json.Nodes.JsonObject();
 
-			if (action == "generateSnapshot")
+			if (action == "openVfxDialog")
+			{
+				string weaponId = node["weaponId"]?.ToString() ?? "";
+				var weaponDataNode = node["weaponData"];
+
+				Callable.From(() =>
+				{
+					GameHost.WeaponMetadata meta = default;
+					if (!string.IsNullOrEmpty(weaponId) && GameHost.WeaponRegistry.TryGetValue(weaponId, out var existing))
+					{
+						meta = existing;
+					}
+					else if (weaponDataNode != null)
+					{
+						try
+						{
+							meta = System.Text.Json.JsonSerializer.Deserialize<GameHost.WeaponMetadata>(
+								weaponDataNode.ToJsonString(),
+								new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+							);
+						}
+						catch (Exception ex)
+						{
+							GD.PrintErr($"[VSCodeManager] openVfxDialog deserialize error: {ex.Message}");
+						}
+					}
+
+					if (MapEditorHUD.Instance != null)
+					{
+						MapEditorHUD.Instance.OpenWeaponVfxDialog(weaponId, meta, (updatedMeta) =>
+						{
+							MapEditorHUD.Instance.SaveCustomWeaponToMetadata(weaponId, updatedMeta);
+						});
+					}
+				}).CallDeferred();
+
+				responseObj["action"] = "openVfxDialogResult";
+				responseObj["success"] = true;
+			}
+			else if (action == "openModelPicker")
+			{
+				string entityId = node["unitId"]?.ToString() ?? node["entityId"]?.ToString() ?? "";
+				string fieldName = node["field"]?.ToString() ?? "ModelPath";
+				string domain = node["domain"]?.ToString() ?? "units";
+				string currentPath = node["currentPath"]?.ToString() ?? "";
+
+				Callable.From(() =>
+				{
+					if (MapEditorHUD.Instance != null)
+					{
+						MapEditorHUD.Instance.OpenModelPickerDialog(entityId, fieldName, domain, currentPath, (updatedPath) =>
+						{
+							MapEditorHUD.Instance.SaveEntityModelPathToMetadata(entityId, fieldName, domain, updatedPath);
+						});
+					}
+				}).CallDeferred();
+
+				responseObj["action"] = "openModelPickerResult";
+				responseObj["success"] = true;
+			}
+			else if (action == "openAbilityVfxDialog")
+			{
+				string abilityId = node["abilityId"]?.ToString() ?? "";
+				var abilityDataNode = node["abilityData"] as System.Text.Json.Nodes.JsonObject;
+
+				Callable.From(() =>
+				{
+					if (MapEditorHUD.Instance != null)
+					{
+						MapEditorHUD.Instance.OpenAbilityVfxDialog(abilityId, abilityDataNode, (updatedData) =>
+						{
+							if (updatedData != null)
+							{
+								string vfx = updatedData["VisualEffect"]?.ToString() ?? "";
+								string sound = updatedData["CastSound"]?.ToString() ?? "";
+								string icon = updatedData["IconPath"]?.ToString() ?? "";
+								float aoe = updatedData["AreaOfEffectRadius"] != null ? (float)updatedData["AreaOfEffectRadius"] : 0f;
+								MapEditorHUD.Instance.SaveCustomAbilityVfxToMetadata(abilityId, vfx, sound, icon, aoe);
+							}
+						});
+					}
+				}).CallDeferred();
+
+				responseObj["action"] = "openAbilityVfxDialogResult";
+				responseObj["success"] = true;
+			}
+			else if (action == "openAnimationStudio" || action == "openAnimationPreview" || action == "openEditAnimations")
+			{
+				string unitId = node["unitId"]?.ToString() ?? node["entityId"]?.ToString() ?? "";
+				string modelPath = node["modelPath"]?.ToString() ?? "";
+
+				Callable.From(() =>
+				{
+					if (MapEditorHUD.Instance != null)
+					{
+						MapEditorHUD.Instance.OpenAnimationPreviewDialog(unitId, modelPath);
+					}
+				}).CallDeferred();
+
+				responseObj["action"] = "openAnimationStudioResult";
+				responseObj["success"] = true;
+			}
+			else if (action == "generateSnapshot")
 			{
 				string filePath = node["filePath"]?.ToString();
 				string requestId = node["requestId"]?.ToString();
@@ -848,6 +949,73 @@ public class VSCodeManager
 
 				responseObj["error"] = optResult.ErrorMessage ?? "";
 			}
+			else if (action == "formatAndSaveJson" || action == "saveJsonFile" || action == "saveMetadata" || action == "saveTerrain")
+			{
+				string filePath = node["filePath"]?.ToString() ?? "";
+				string content = node["content"]?.ToString() ?? node["text"]?.ToString() ?? "";
+				string requestId = node["requestId"]?.ToString() ?? "";
+
+				if (string.IsNullOrEmpty(filePath))
+				{
+					string wsPath = MapEditorHUD.Instance?.TempWorkspacePath ?? Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+					filePath = System.IO.Path.Combine(wsPath, action == "saveTerrain" ? "terrain.json" : "metadata.json");
+				}
+				else if (!System.IO.Path.IsPathRooted(filePath))
+				{
+					string wsPath = MapEditorHUD.Instance?.TempWorkspacePath ?? Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+					filePath = System.IO.Path.Combine(wsPath, filePath);
+				}
+
+				bool success = false;
+				string errorMsg = "";
+				string formattedContent = "";
+
+				try
+				{
+					formattedContent = MapJsonFormatter.FormatJson(content);
+					EditorService.LastInternalSaveTimeUtc = DateTime.UtcNow;
+					MapJsonFormatter.SaveFormattedJson(filePath, formattedContent);
+					success = true;
+
+					string fileName = System.IO.Path.GetFileName(filePath).ToLowerInvariant();
+					Callable.From(() =>
+					{
+						if (fileName == "metadata.json")
+						{
+							if (MapEditorHUD.Instance != null)
+							{
+								MapEditorHUD.Instance.ReadMetadataAndRefreshTextures();
+								MapEditorHUD.Instance.ShowFeedback(TranslationServer.Translate("metadata.json updated externally — reloaded."));
+							}
+							else if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+							{
+								GameHost.Instance.GroundTerrain.ReloadTerrainTextures(true);
+							}
+						}
+						else if (fileName == "terrain.json")
+						{
+							if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+							{
+								GameHost.Instance.LoadMapFromFile(filePath);
+								MapEditorHUD.Instance?.ShowFeedback(TranslationServer.Translate("terrain.json updated externally — reloaded."));
+							}
+						}
+					}).CallDeferred();
+				}
+				catch (Exception ex)
+				{
+					errorMsg = ex.Message;
+					GD.PrintErr($"[VSCodeManager] formatAndSaveJson error: {ex.Message}");
+				}
+
+				responseObj["action"] = "formatAndSaveJsonResult";
+				responseObj["type"] = "formatAndSaveJsonResult";
+				responseObj["requestId"] = requestId;
+				responseObj["success"] = success;
+				responseObj["filePath"] = filePath;
+				responseObj["formattedContent"] = formattedContent;
+				responseObj["error"] = errorMsg;
+			}
 			else if (action == "reloadMetadata" || action == "updateMetadata")
 			{
 				Callable.From(() =>
@@ -855,6 +1023,7 @@ public class VSCodeManager
 					if (MapEditorHUD.Instance != null)
 					{
 						MapEditorHUD.Instance.ReadMetadataAndRefreshTextures();
+						MapEditorHUD.Instance.ShowFeedback(TranslationServer.Translate("metadata.json updated externally — reloaded."));
 					}
 					else if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 					{

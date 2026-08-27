@@ -1074,20 +1074,18 @@ vec4 sample_semi_grid(sampler2DArray tex_array, float layer, vec2 uv, vec2 dx, v
 
 	vec4 col_center = textureGrad(tex_array, vec3(uv, layer), dx, dy);
 
-	if (center_weight > 0.99) {
+	if (center_weight > 0.999) {
 		return col_center;
 	}
 
-	vec2 cell = floor(uv);
-	vec2 offset = stochastic_hash(cell);
-	vec4 col_border = textureGrad(tex_array, vec3(uv + offset, layer), dx, dy);
+	vec4 col_border = textureGrad(tex_array, vec3(uv + vec2(0.5, 0.5), layer), dx, dy);
 
 	return mix(col_border, col_center, center_weight);
 }
 
 vec4 sample_stochastic_layer(sampler2DArray tex_array, float layer, vec2 uv, vec2 dx, vec2 dy, float tile_mode, float stoch_tile_size, float cross_fade, bool is_vector_data) {
 	if (tile_mode < 0.5) {
-		return textureGrad(tex_array, vec3(uv, layer), dx, dy);
+		return sample_semi_grid(tex_array, layer, uv, dx, dy, cross_fade);
 	}
 
 	const float F2 = 0.36602540378;
@@ -1906,12 +1904,27 @@ void fragment() {
 	private Godot.Vector4[] _swatchParamsCache = new Godot.Vector4[32];
 	private Godot.Vector4[] _swatchHeightParamsCache = new Godot.Vector4[32];
 
+	public class SwatchLiveConfig
+	{
+		public float? TileMode { get; set; }
+		public float? UvScale { get; set; }
+		public float? StochasticTileSize { get; set; }
+		public float? CrossFade { get; set; }
+		public float? Brightness { get; set; }
+		public Color? Tint { get; set; }
+		public float? HeightScale { get; set; }
+		public float? HeightOffset { get; set; }
+		public float? CrevicePower { get; set; }
+	}
+
+	private static readonly Dictionary<string, SwatchLiveConfig> _liveSwatchOverrides = new(StringComparer.OrdinalIgnoreCase);
+
 	public void UpdateTextureParamDirect(
 		string swatchName,
 		string tileMode,
 		float uvScale,
 		float stochasticTileSize,
-		float crossFade = 5.0f,
+		float crossFade = 0.0f,
 		float? brightness = null,
 		string? tintStr = null,
 		float heightScale = 1.0f,
@@ -1921,6 +1934,35 @@ void fragment() {
 	{
 		if (_material == null) return;
 		string cleanName = System.IO.Path.GetFileNameWithoutExtension(swatchName);
+
+		float tm = string.Equals(tileMode, "Grid", StringComparison.OrdinalIgnoreCase) ? 0.0f : 1.0f;
+		float uv = Math.Clamp(uvScale, 0.1f, 4.0f);
+		float stoch = Math.Clamp(stochasticTileSize, 0.5f, 3.0f);
+		float cf = Math.Clamp(crossFade, 0.0f, 10.0f) * 0.01f;
+
+		float hs = Math.Clamp(heightScale, 0.1f, 3.0f);
+		float ho = Math.Clamp(heightOffset, -1.0f, 1.0f);
+		float cp = Math.Clamp(crevicePower, 0.5f, 4.0f);
+		float en = 1.0f;
+
+		Color? parsedTint = null;
+		if (!string.IsNullOrEmpty(tintStr) && Color.HtmlIsValid(tintStr))
+		{
+			parsedTint = Color.FromHtml(tintStr);
+		}
+
+		_liveSwatchOverrides[cleanName] = new SwatchLiveConfig
+		{
+			TileMode = tm,
+			UvScale = uv,
+			StochasticTileSize = stoch,
+			CrossFade = cf,
+			Brightness = brightness,
+			Tint = parsedTint,
+			HeightScale = hs,
+			HeightOffset = ho,
+			CrevicePower = cp
+		};
 
 		int targetIndex = -1;
 		for (int i = 0; i < _loadedTextureList.Count && i < 32; i++)
@@ -1934,16 +1976,6 @@ void fragment() {
 
 		if (targetIndex >= 0)
 		{
-			float tm = string.Equals(tileMode, "Grid", StringComparison.OrdinalIgnoreCase) ? 0.0f : 1.0f;
-			float uv = Math.Clamp(uvScale, 0.1f, 4.0f);
-			float stoch = Math.Clamp(stochasticTileSize, 0.5f, 3.0f);
-			float cf = crossFade > 0.10f ? Math.Clamp(crossFade, 0.0f, 10.0f) * 0.01f : Math.Clamp(crossFade, 0.0f, 0.10f);
-
-			float hs = Math.Clamp(heightScale, 0.1f, 3.0f);
-			float ho = Math.Clamp(heightOffset, -1.0f, 1.0f);
-			float cp = Math.Clamp(crevicePower, 0.5f, 4.0f);
-			float en = 1.0f;
-
 			_swatchParamsCache[targetIndex] = new Godot.Vector4(tm, uv, stoch, cf);
 			_swatchHeightParamsCache[targetIndex] = new Godot.Vector4(hs, ho, cp, en);
 
@@ -1961,7 +1993,7 @@ void fragment() {
 			}
 		}
 
-		if (brightness.HasValue || !string.IsNullOrEmpty(tintStr))
+		if (brightness.HasValue || parsedTint.HasValue)
 		{
 			ReloadTerrainTextures(true);
 		}
@@ -2094,6 +2126,17 @@ void fragment() {
 					}
 				}
 
+				if (_liveSwatchOverrides.TryGetValue(name, out var liveOver))
+				{
+					if (liveOver.TileMode.HasValue) tileMode = liveOver.TileMode.Value;
+					if (liveOver.UvScale.HasValue) uvScale = liveOver.UvScale.Value;
+					if (liveOver.StochasticTileSize.HasValue) stochasticTileSize = liveOver.StochasticTileSize.Value;
+					if (liveOver.CrossFade.HasValue) crossFade = liveOver.CrossFade.Value;
+					if (liveOver.HeightScale.HasValue) heightScale = liveOver.HeightScale.Value;
+					if (liveOver.HeightOffset.HasValue) heightOffset = liveOver.HeightOffset.Value;
+					if (liveOver.CrevicePower.HasValue) crevicePower = liveOver.CrevicePower.Value;
+				}
+
 				swatchParams[i] = new Godot.Vector4(tileMode, uvScale, stochasticTileSize, crossFade);
 				swatchHeightParams[i] = new Godot.Vector4(heightScale, heightOffset, crevicePower, 1.0f);
 			}
@@ -2153,6 +2196,12 @@ void fragment() {
 						break;
 					}
 				}
+			}
+
+			if (_liveSwatchOverrides.TryGetValue(name, out var liveImgOver))
+			{
+				if (liveImgOver.Brightness.HasValue) texBrightness = liveImgOver.Brightness.Value;
+				if (liveImgOver.Tint.HasValue) texTint = liveImgOver.Tint.Value;
 			}
 
 			string ktx2Path = System.IO.Path.Combine(mapDir, "Assets", "textures", name + ".ktx2");

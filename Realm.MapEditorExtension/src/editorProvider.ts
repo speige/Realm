@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import parseExrModule from 'parse-exr';
+import { sendGodotIpc } from './extension';
 const parseExr: (buffer: ArrayBuffer) => any = (parseExrModule as any).default || parseExrModule;
 
 export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
@@ -58,7 +59,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     }
                     break;
                 case 'browseFile':
-                    await this.handleBrowseFile(webviewPanel.webview, e.fieldId, e.fieldClass, e.fieldIndex, e.fileTypes, document.uri);
+                    await this.handleBrowseFile(webviewPanel.webview, e.fieldId, e.fieldClass, e.fieldIndex, e.fileTypes, document.uri, e.assetType);
                     break;
                 case 'openFile':
                     const absFile = this.resolveGodotPath(e.path, document.uri);
@@ -737,14 +738,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 }
             }
 
-            const newText = JSON.stringify(metadata, null, 2);
-            await this.updateTextDocument(document, newText);
-            await document.save();
-            this.notifyGodotReloadMetadata();
-            webview.postMessage({
-                type: 'update',
-                text: newText
-            });
+            await this.saveMetadataViaGodotIpc(document, metadata, webview);
 
             if (prunedAssetsCount > 0 || deletedFilesCount > 0) {
                 vscode.window.showInformationMessage(`Pruned ${prunedAssetsCount} unreferenced asset metadata entry(s) and deleted ${deletedFilesCount} unreferenced file(s).`);
@@ -1013,14 +1007,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             }
 
             const removedCount = initialCount - finalCount;
-            const newText = JSON.stringify(metadata, null, 2);
-            await this.updateTextDocument(document, newText);
-            await document.save();
-            this.notifyGodotReloadMetadata();
-            webview.postMessage({
-                type: 'update',
-                text: newText
-            });
+            await this.saveMetadataViaGodotIpc(document, metadata, webview);
 
             if (removedCount > 0) {
                 vscode.window.showInformationMessage(`Pruned ${removedCount} unplaced item(s) from ${domain}.`);
@@ -1046,7 +1033,8 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         fieldClass: string | null,
         fieldIndex: number | null,
         fileTypes?: string[],
-        documentUri?: vscode.Uri
+        documentUri?: vscode.Uri,
+        assetType?: string
     ) {
         // Direct HTML file dialog trigger (avoids vscode.window.showOpenDialog text prompt in web mode)
         webview.postMessage({
@@ -1054,6 +1042,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             fieldId,
             fieldClass,
             fieldIndex,
+            assetType,
             accept: fileTypes ? fileTypes.map(ext => '.' + ext.replace(/^\./, '')).join(',') : '*'
         });
     }
@@ -1359,6 +1348,8 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         let accept = '*';
         if (assetType === 'texture') {
             accept = '.png,.jpg,.jpeg,.bmp,.tga,.webp';
+        } else if (assetType === 'ribbon' || assetType === 'ribbon_texture') {
+            accept = '.png,.jpg,.jpeg,.bmp,.tga,.webp,.ktx2';
         } else if (assetType === 'glb') {
             accept = '.glb,.gltf';
         } else if (assetType === 'decal' || assetType === 'vfx' || assetType === 'icon') {
@@ -1587,32 +1578,34 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 }
 
                 const unitId = path.basename(fileName, path.extname(fileName));
-                const targetArrayKey = subCategory === 'units' ? 'CustomUnits' :
-                                       subCategory === 'buildings' ? 'CustomBuildings' :
-                                       subCategory === 'resources' ? 'CustomResources' : 'CustomProps';
+                if (subCategory !== 'projectiles' && subCategory !== 'projectile') {
+                    const targetArrayKey = subCategory === 'units' ? 'CustomUnits' :
+                                           subCategory === 'buildings' ? 'CustomBuildings' :
+                                           subCategory === 'resources' ? 'CustomResources' : 'CustomProps';
 
-                if (!metadata[targetArrayKey] || !Array.isArray(metadata[targetArrayKey])) {
-                    metadata[targetArrayKey] = [];
-                }
-                const exists = metadata[targetArrayKey].some((u: any) => u && u.UnitId === unitId);
-                if (!exists) {
-                    let defaultPathing = 8;
-                    if (subCategory === 'units') defaultPathing = 9;
-                    else if (subCategory === 'buildings') defaultPathing = 32;
-                    else if (subCategory === 'resources' || subCategory === 'props') defaultPathing = 255;
+                    if (!metadata[targetArrayKey] || !Array.isArray(metadata[targetArrayKey])) {
+                        metadata[targetArrayKey] = [];
+                    }
+                    const exists = metadata[targetArrayKey].some((u: any) => u && u.UnitId === unitId);
+                    if (!exists) {
+                        let defaultPathing = 8;
+                        if (subCategory === 'units') defaultPathing = 9;
+                        else if (subCategory === 'buildings') defaultPathing = 32;
+                        else if (subCategory === 'resources' || subCategory === 'props') defaultPathing = 255;
 
-                    metadata[targetArrayKey].push({
-                        UnitId: unitId,
-                        Name: unitId,
-                        Description: '',
-                        Scale: defaultScale,
-                        YOffset: defaultYOffset,
-                        PathingType: defaultPathing,
-                        ModelPath: baseName,
-                        NormalMode: 'Flat',
-                        NormalizeLuminance: true,
-                        ...(ignorePlayerColor ? { IgnorePlayerColor: true } : {})
-                    });
+                        metadata[targetArrayKey].push({
+                            UnitId: unitId,
+                            Name: unitId,
+                            Description: '',
+                            Scale: defaultScale,
+                            YOffset: defaultYOffset,
+                            PathingType: defaultPathing,
+                            ModelPath: baseName,
+                            NormalMode: 'Flat',
+                            NormalizeLuminance: true,
+                            ...(ignorePlayerColor ? { IgnorePlayerColor: true } : {})
+                        });
+                    }
                 }
 
                 vscode.window.showInformationMessage(`Imported GLB Model (${subCategory}): ${baseName}`);
@@ -1932,6 +1925,222 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     vscode.window.showErrorMessage(`Failed to convert texture (${finalSwatchName}) to KTX2${errDetail}`);
                     return;
                 }
+            } else if (assetType === 'ribbon' || assetType === 'ribbon_texture') {
+                const cleanBase = path.basename(fileName, path.extname(fileName)).toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                let ribbonName = cleanBase || 'custom_ribbon';
+
+                if (!metadata.Assets) metadata.Assets = {};
+                if (!metadata.Assets.ribbon_textures) metadata.Assets.ribbon_textures = {};
+
+                let finalRibbonName = ribbonName;
+                let counter = 1;
+                while (metadata.Assets.ribbon_textures[finalRibbonName + '.ktx2']) {
+                    finalRibbonName = `${ribbonName}_${counter}`;
+                    counter++;
+                }
+
+                const subDir = path.join(targetDir, 'Assets', 'textures', 'ribbons');
+                if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+
+                const outputKtx2Path = path.join(subDir, `${finalRibbonName}.ktx2`);
+                const ext = path.extname(fileName).toLowerCase();
+
+                if (ext === '.ktx2') {
+                    fs.writeFileSync(outputKtx2Path, fileBytes);
+                    const blake3 = this.computeHashHex(fileBytes);
+                    metadata.Assets.ribbon_textures[finalRibbonName + '.ktx2'] = blake3;
+                    vscode.window.showInformationMessage(`Imported Ribbon Texture (${finalRibbonName}.ktx2) successfully.`);
+                } else {
+                    const reqId = 'ribbon_conv_' + Math.random().toString(36).substring(2, 9);
+                    const fileBase64 = fileBytes.toString('base64');
+
+                    const conversionResult = await new Promise<{ success: boolean; error?: string }>(async (resolve) => {
+                        try {
+                            const http = require('http');
+                            const postData = JSON.stringify({
+                                action: 'processRawTexture',
+                                requestId: reqId,
+                                rawBase64: fileBase64,
+                                outputKtx2Path: outputKtx2Path,
+                                swatchName: finalRibbonName
+                            });
+
+                            const req = http.request({
+                                hostname: '127.0.0.1',
+                                port: 8092,
+                                path: '/api/',
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Content-Length': Buffer.byteLength(postData)
+                                },
+                                timeout: 5000
+                            }, (res: any) => {
+                                let data = '';
+                                res.on('data', (chunk: any) => { data += chunk; });
+                                res.on('end', () => {
+                                    try {
+                                        const parsed = JSON.parse(data);
+                                        resolve({ success: !!parsed.success, error: parsed.error });
+                                    } catch {
+                                        resolve({ success: false, error: 'Invalid JSON response from Godot REST API' });
+                                    }
+                                });
+                            });
+                            req.on('error', () => {
+                                fallbackWebviewIpc();
+                            });
+                            req.write(postData);
+                            req.end();
+                            return;
+                        } catch {
+                            fallbackWebviewIpc();
+                        }
+
+                        function fallbackWebviewIpc() {
+                            const timeout = setTimeout(() => {
+                                webviewSubscription.dispose();
+                                resolve({ success: false, error: 'Ribbon conversion request timed out (5s).' });
+                            }, 5000);
+
+                            const webviewSubscription = webview.onDidReceiveMessage((msg: any) => {
+                                if ((msg.action === 'processRawTextureResult' || msg.type === 'processRawTextureResult') && (msg.requestId === reqId || msg.swatchName === finalRibbonName)) {
+                                    clearTimeout(timeout);
+                                    webviewSubscription.dispose();
+                                    resolve({ success: !!msg.success, error: msg.error });
+                                }
+                            });
+
+                            webview.postMessage({
+                                type: 'godotIpc',
+                                action: 'processRawTexture',
+                                requestId: reqId,
+                                rawBase64: fileBase64,
+                                outputKtx2Path: outputKtx2Path,
+                                swatchName: finalRibbonName
+                            });
+                        }
+                    });
+
+                    if (conversionResult.success && fs.existsSync(outputKtx2Path)) {
+                        const ktx2Bytes = fs.readFileSync(outputKtx2Path);
+                        const ktx2Hash = this.computeHashHex(ktx2Bytes);
+                        metadata.Assets.ribbon_textures[finalRibbonName + '.ktx2'] = ktx2Hash;
+                        vscode.window.showInformationMessage(`Imported Ribbon Effect Image (${finalRibbonName}.ktx2) successfully.`);
+                    } else {
+                        const errDetail = conversionResult.error ? `: ${conversionResult.error}` : '.';
+                        vscode.window.showErrorMessage(`Failed to convert ribbon image (${finalRibbonName}) to KTX2${errDetail}`);
+                        return;
+                    }
+                }
+            } else if (assetType === 'noise' || assetType === 'noise_texture') {
+                const cleanBase = path.basename(fileName, path.extname(fileName)).toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                let noiseName = cleanBase || 'custom_noise';
+
+                if (!metadata.Assets) metadata.Assets = {};
+                if (!metadata.Assets.noise_textures) metadata.Assets.noise_textures = {};
+
+                let finalNoiseName = noiseName;
+                let counter = 1;
+                while (metadata.Assets.noise_textures[finalNoiseName + '.ktx2']) {
+                    finalNoiseName = `${noiseName}_${counter}`;
+                    counter++;
+                }
+
+                const subDir = path.join(targetDir, 'Assets', 'textures', 'noise');
+                if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+
+                const outputKtx2Path = path.join(subDir, `${finalNoiseName}.ktx2`);
+                const ext = path.extname(fileName).toLowerCase();
+
+                if (ext === '.ktx2') {
+                    fs.writeFileSync(outputKtx2Path, fileBytes);
+                    const blake3 = this.computeHashHex(fileBytes);
+                    metadata.Assets.noise_textures[finalNoiseName + '.ktx2'] = blake3;
+                    vscode.window.showInformationMessage(`Imported Projectile Noise Texture (${finalNoiseName}.ktx2) successfully.`);
+                } else {
+                    const reqId = 'noise_conv_' + Math.random().toString(36).substring(2, 9);
+                    const fileBase64 = fileBytes.toString('base64');
+
+                    const conversionResult = await new Promise<{ success: boolean; error?: string }>(async (resolve) => {
+                        try {
+                            const http = require('http');
+                            const postData = JSON.stringify({
+                                action: 'processRawTexture',
+                                requestId: reqId,
+                                rawBase64: fileBase64,
+                                outputKtx2Path: outputKtx2Path,
+                                swatchName: finalNoiseName
+                            });
+
+                            const req = http.request({
+                                hostname: '127.0.0.1',
+                                port: 8092,
+                                path: '/api/',
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Content-Length': Buffer.byteLength(postData)
+                                },
+                                timeout: 5000
+                            }, (res: any) => {
+                                let data = '';
+                                res.on('data', (chunk: any) => { data += chunk; });
+                                res.on('end', () => {
+                                    try {
+                                        const parsed = JSON.parse(data);
+                                        resolve({ success: !!parsed.success, error: parsed.error });
+                                    } catch {
+                                        resolve({ success: false, error: 'Invalid JSON response from Godot REST API' });
+                                    }
+                                });
+                            });
+                            req.on('error', () => {
+                                fallbackWebviewIpc();
+                            });
+                            req.write(postData);
+                            req.end();
+                            return;
+                        } catch {
+                            fallbackWebviewIpc();
+                        }
+
+                        function fallbackWebviewIpc() {
+                            const timeout = setTimeout(() => {
+                                webviewSubscription.dispose();
+                                resolve({ success: false, error: 'Noise texture conversion request timed out (5s).' });
+                            }, 5000);
+
+                            const webviewSubscription = webview.onDidReceiveMessage((msg: any) => {
+                                if ((msg.action === 'processRawTextureResult' || msg.type === 'processRawTextureResult') && (msg.requestId === reqId || msg.swatchName === finalNoiseName)) {
+                                    clearTimeout(timeout);
+                                    webviewSubscription.dispose();
+                                    resolve({ success: !!msg.success, error: msg.error });
+                                }
+                            });
+
+                            webview.postMessage({
+                                type: 'godotIpc',
+                                action: 'processRawTexture',
+                                requestId: reqId,
+                                rawBase64: fileBase64,
+                                outputKtx2Path: outputKtx2Path,
+                                swatchName: finalNoiseName
+                            });
+                        }
+                    });
+
+                    if (conversionResult.success && fs.existsSync(outputKtx2Path)) {
+                        const ktx2Bytes = fs.readFileSync(outputKtx2Path);
+                        const ktx2Hash = this.computeHashHex(ktx2Bytes);
+                        metadata.Assets.noise_textures[finalNoiseName + '.ktx2'] = ktx2Hash;
+                        vscode.window.showInformationMessage(`Imported Projectile Noise Texture (${finalNoiseName}.ktx2) successfully.`);
+                    } else {
+                        const errDetail = conversionResult.error ? `: ${conversionResult.error}` : '.';
+                        vscode.window.showErrorMessage(`Failed to convert noise texture (${finalNoiseName}) to KTX2${errDetail}`);
+                        return;
+                    }
+                }
             }
 
             // Fix race condition: re-read document text AFTER slow file I/O operations
@@ -1988,14 +2197,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 }
             }
 
-            const finalText = JSON.stringify(freshMetadata, null, 2);
-            await this.updateTextDocument(document, finalText);
-            await document.save();
-            this.notifyGodotReloadMetadata();
-            webview.postMessage({
-                type: 'update',
-                text: finalText
-            });
+            await this.saveMetadataViaGodotIpc(document, freshMetadata, webview);
         } catch (err: any) {
             vscode.window.showErrorMessage(`Failed to import asset: ${err.message}`);
         }
@@ -2077,10 +2279,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 metadata.Assets[toCategory][key] = itemVal || 'hash';
             }
 
-            const finalText = JSON.stringify(metadata, null, 2);
-            await this.updateTextDocument(document, finalText);
-            await document.save();
-            this.notifyGodotReloadMetadata();
+            await this.saveMetadataViaGodotIpc(document, metadata);
             vscode.window.showInformationMessage(`Migrated asset '${key}' to ${toCategory}${toSubCategory ? '/' + toSubCategory : ''}`);
         } catch (err: any) {
             vscode.window.showErrorMessage(`Failed to migrate asset: ${err.message}`);
@@ -2206,29 +2405,43 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         }
     }
 
-    private notifyGodotReloadMetadata(): void {
-        const http = require('http');
-        const ports = [8092, 8093];
-        const postData = JSON.stringify({ action: 'reloadMetadata' });
-        for (const port of ports) {
-            try {
-                const req = http.request({
-                    hostname: '127.0.0.1',
-                    port: port,
-                    path: '/api/',
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Content-Length': Buffer.byteLength(postData)
-                    },
-                    timeout: 1000
-                }, () => {});
-                req.on('error', () => {});
-                req.write(postData);
-                req.end();
-            } catch {
+    private async saveMetadataViaGodotIpc(document: vscode.TextDocument, metadata: any, webview?: vscode.Webview): Promise<void> {
+        const rawJson = typeof metadata === 'string' ? metadata : JSON.stringify(metadata);
+        try {
+            const response = await sendGodotIpc({
+                action: 'formatAndSaveJson',
+                filePath: document.uri.fsPath,
+                content: rawJson
+            });
+
+            if (response && response.success && typeof response.formattedContent === 'string') {
+                await this.updateTextDocument(document, response.formattedContent);
+                if (webview) {
+                    webview.postMessage({
+                        type: 'update',
+                        text: response.formattedContent
+                    });
+                }
+                return;
             }
+        } catch (err) {
+            console.error('[RealmExtension] saveMetadataViaGodotIpc failed, falling back:', err);
         }
+
+        const fallbackText = typeof metadata === 'string' ? metadata : JSON.stringify(metadata, null, 2);
+        await this.updateTextDocument(document, fallbackText);
+        await document.save();
+        this.notifyGodotReloadMetadata();
+        if (webview) {
+            webview.postMessage({
+                type: 'update',
+                text: fallbackText
+            });
+        }
+    }
+
+    private notifyGodotReloadMetadata(): void {
+        sendGodotIpc({ action: 'reloadMetadata' }).catch(() => {});
     }
 
     private getHtmlForWebview(webview: vscode.Webview): string {
@@ -2265,7 +2478,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 <button type="button" class="tab-btn" data-domain="abilities">🪄 Abilities</button>
                 <button type="button" class="tab-btn" data-domain="upgrades">🛡️ Upgrades</button>
                 <button type="button" class="tab-btn" data-domain="items">📦 Items</button>
-                <button type="button" class="tab-btn" data-domain="assets">🎨 Assets</button>
                 <button type="button" class="tab-btn" data-domain="properties">⚙️ Settings</button>
             </div>
             <div class="header-right-actions">
@@ -2309,6 +2521,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <span id="editor-subtitle" class="subtitle">ID</span>
                         </div>
                         <div class="header-actions" style="display: flex; gap: 6px;">
+                            <button type="button" id="edit-animations-btn" class="btn secondary-btn" title="Open Unit Animation Studio in Godot">🎬 Edit Animations</button>
                             <button type="button" id="copy-unit-btn" class="btn secondary-btn" title="Copy entity to clipboard">✂️ Copy</button>
                             <button type="button" id="paste-unit-btn" class="btn secondary-btn" title="Paste entity from clipboard">📋 Paste</button>
                             <button type="button" id="duplicate-unit-btn" class="btn secondary-btn">📋 Duplicate</button>
@@ -2332,23 +2545,17 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <textarea id="field-Description" rows="3" required></textarea>
                         </div>
                         <div class="form-group">
-                            <label for="field-ModelPath">Model Asset (GLB)</label>
-                            <div class="input-with-browse" style="display: flex; flex-direction: column; gap: 4px;">
-                                <div style="display: flex; gap: 6px; width: 100%;">
-                                    <select id="field-ModelPath" style="flex: 1; min-height: 30px;"></select>
-                                    <button type="button" class="btn clear-btn" data-input-id="field-ModelPath" title="Clear path">❌</button>
-                                </div>
-                                <label style="font-size: 11px; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 4px; margin-top: 2px;">
-                                    <input type="checkbox" id="chk-show-all-glb" style="width: auto; margin: 0;" /> Show all GLB assets
-                                </label>
+                            <label>Model Asset (GLB)</label>
+                            <div class="input-with-browse" style="display: flex; gap: 6px; width: 100%; align-items: center;">
+                                <span id="field-ModelPath" class="readonly-model-label" style="flex: 1; min-height: 28px; padding: 4px 8px; background: var(--vscode-input-background, #1e1e1e); border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 2px; color: var(--vscode-input-foreground, #cccccc); display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px;">(None)</span>
+                                <button type="button" class="btn edit-model-btn" data-field="ModelPath" title="Edit Model Asset in Godot">✏️</button>
                             </div>
                         </div>
                         <div class="form-group">
-                            <label for="field-PortraitModelPath">Portrait Model Path (Optional)</label>
-                            <div class="input-with-browse">
-                                <input type="text" id="field-PortraitModelPath" />
-                                <button type="button" class="btn browse-btn" data-input-id="field-PortraitModelPath" data-file-types="gltf,glb,scn,tscn" title="Browse files">📁</button>
-                                <button type="button" class="btn clear-btn" data-input-id="field-PortraitModelPath" title="Clear path">❌</button>
+                            <label>Portrait Model Path (Optional)</label>
+                            <div class="input-with-browse" style="display: flex; gap: 6px; width: 100%; align-items: center;">
+                                <span id="field-PortraitModelPath" class="readonly-model-label" style="flex: 1; min-height: 28px; padding: 4px 8px; background: var(--vscode-input-background, #1e1e1e); border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 2px; color: var(--vscode-input-foreground, #cccccc); display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px;">(None)</span>
+                                <button type="button" class="btn edit-model-btn" data-field="PortraitModelPath" title="Edit Portrait Model in Godot">✏️</button>
                             </div>
                         </div>
                         <div class="form-group checkbox-group">
@@ -2357,47 +2564,14 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         </div>
                     </div>
 
-                    <div class="form-section">
-                        <h3>Global Object Overrides</h3>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="field-Scale">Scale</label>
-                                <input type="number" id="field-Scale" step="0.05" min="0.05" max="20.0" placeholder="1.0" />
+                    <div id="section-unit-animations" class="form-section">
+                        <h3>Unit Animations</h3>
+                        <div style="display: flex; align-items: center; justify-content: space-between; background: var(--vscode-input-background, #1e1e1e); border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 4px; padding: 10px 14px;">
+                            <div>
+                                <span style="font-weight: 600; font-size: 13px;">Rigged Animations (.ranim)</span>
+                                <p style="margin: 3px 0 0 0; font-size: 12px; opacity: 0.75;">Live preview and configure Idle, Walk, Attack, Death, and Spell casting animations in Godot.</p>
                             </div>
-                            <div class="form-group">
-                                <label for="field-YOffset">Y-Offset</label>
-                                <input type="number" id="field-YOffset" step="0.05" placeholder="0.0" />
-                            </div>
-                            <div class="form-group">
-                                <label for="field-CollisionCircle">Collision Circle</label>
-                                <input type="number" id="field-CollisionCircle" step="0.05" min="0.1" placeholder="1.0" />
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="field-Brightness">Brightness</label>
-                                <input type="number" id="field-Brightness" step="0.02" min="0.10" max="2.00" placeholder="0.5" />
-                            </div>
-                            <div class="form-group">
-                                <label for="field-Tint">Tint Color</label>
-                                <input type="text" id="field-Tint" placeholder="#ffffff" />
-                            </div>
-                        </div>
-                        <div class="form-group" style="margin-top: 6px;">
-                            <label for="field-NormalMode">Normals</label>
-                            <select id="field-NormalMode">
-                                <option value="Original">Original</option>
-                                <option value="Smooth">Smooth Normals</option>
-                                <option value="Flat" selected>Flat Normals (Default)</option>
-                            </select>
-                        </div>
-                        <div class="form-group checkbox-group" style="margin-top: 6px;">
-                            <input type="checkbox" id="field-NormalizeLuminance" checked />
-                            <label for="field-NormalizeLuminance">Normalize Luminosity</label>
-                        </div>
-                        <div class="form-group checkbox-group" style="margin-top: 6px;">
-                            <input type="checkbox" id="field-IgnorePlayerColor" />
-                            <label for="field-IgnorePlayerColor">Ignore Player Color</label>
+                            <button type="button" id="edit-animations-body-btn" class="btn secondary-btn" style="white-space: nowrap;" title="Open Unit Animation Studio in Godot">🎬 Edit Animations</button>
                         </div>
                     </div>
 
@@ -2639,18 +2813,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         </div>
                     </div>
 
-                    <div id="section-unit-animations" class="form-section">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                            <h3 style="margin-bottom: 0;">Unit Animations (Optional)</h3>
-                            <div style="display: flex; gap: 4px;">
-                                <button type="button" class="btn small-btn copy-unit-comp-btn" data-key="Animations" title="Copy Animations block">📋 Copy</button>
-                                <button type="button" class="btn small-btn paste-unit-comp-btn" data-key="Animations" title="Paste Animations block">📥 Paste</button>
-                            </div>
-                        </div>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Configure animation variations for each action type (Idle, Walk, Attack, Death, Labor, Spell_Cast, Dance). In-game actions randomly pick from configured animations.</p>
-                        <div id="unit-animations-container" class="list-editor-container"></div>
-                    </div>
-
                     <div id="section-pathing-flags" class="form-section">
                         <h3>Placement & Pathing Flags</h3>
                         <div class="form-group">
@@ -2823,10 +2985,16 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             </div>
             <div id="custom-weapons-form" class="editor-form hidden">
                 <div class="form-header">
-                    <div>
-                        <div class="breadcrumb">Map > Custom Weapons</div>
-                        <h2>Custom Weapons</h2>
-                        <span class="subtitle">Combat attack configurations</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <div>
+                            <div class="breadcrumb">Map > Custom Weapons</div>
+                            <h2>Custom Weapons</h2>
+                            <span class="subtitle">Combat attacks, 3D projectile models, procedural surface shaders &amp; ribbon trail FX</span>
+                        </div>
+                        <div style="display: flex; gap: 6px;">
+                            <button type="button" id="btn-expand-all-weapons" class="btn secondary-btn small-btn" title="Expand all projectile FX and detail panels">📂 Expand All FX</button>
+                            <button type="button" id="btn-collapse-all-weapons" class="btn secondary-btn small-btn" title="Collapse all detail panels">📁 Collapse All</button>
+                        </div>
                     </div>
                 </div>
                 <div class="form-scroll-container">
@@ -2901,131 +3069,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                                 <button type="button" id="paste-custom-item-btn" class="btn secondary-btn" title="Paste Item from Clipboard">📋 Paste Item</button>
                                 <button type="button" id="prune-items-btn" class="btn secondary-btn" title="Prune items never used by placed units on terrain.json">✂️ Prune Unused</button>
                             </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div id="custom-assets-form" class="editor-form hidden">
-                <div class="form-header">
-                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                        <div>
-                            <div class="breadcrumb">Map > Assets Manager</div>
-                            <h2>Assets Manager</h2>
-                            <span class="subtitle">Import and manage textures, 3D models, decals, VFX, and audio</span>
-                        </div>
-                        <div>
-                            <button type="button" id="btn-prune-unused-assets" class="btn secondary-btn" title="Prune unused assets unreferenced by metadata.json & delete files from workspace">✂️ Prune Unused</button>
-                        </div>
-                    </div>
-                </div>
-                <div class="form-scroll-container">
-                    <div class="form-section">
-                        <h3>🎨 Import Terrain Texture</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import a custom terrain texture image. It will append as a new paint swatch and be converted into PBR KTX2 format with normal & AO maps.</p>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <button type="button" id="btn-import-texture" class="btn primary-btn">📥 Import Custom Texture</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>📦 Import 3D Model (GLB)</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import binary GLB 3D models. Subcategory will categorize BLAKE3 hash in metadata.json under Units, Buildings, Resources, or Props.</p>
-                        <div class="form-row" style="align-items: flex-end; gap: 16px;">
-                            <div class="form-group">
-                                <label for="glb-category-select">Default Category</label>
-                                <select id="glb-category-select">
-                                    <option value="units">Units</option>
-                                    <option value="buildings">Buildings</option>
-                                    <option value="resources">Resources</option>
-                                    <option value="props">Props</option>
-                                </select>
-                            </div>
-                            <div class="form-group checkbox-group" style="margin-bottom: 8px;">
-                                <input type="checkbox" id="glb-ignore-player-color" />
-                                <label for="glb-ignore-player-color" title="Skip player color shader and keep original textures intact">Ignore Player Color</label>
-                            </div>
-                            <div class="form-group" style="display: flex; align-items: flex-end;">
-                                <button type="button" id="btn-import-glb" class="btn secondary-btn">📥 Import 3D Model</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>🌌 Import Skybox Panoramic Image</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import a 360-degree panoramic HDRI / skybox image (PNG, JPG, EXR, HDR, etc.). Image will convert to PNG format for Godot world environment rendering.</p>
-                        <div class="form-row">
-                            <button type="button" id="btn-import-skybox" class="btn secondary-btn">📥 Import Skybox</button>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>🖼️ Import Decal & 2D Icon</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import decal and UI icon images (PNG, JPG, BMP, etc.). Image will automatically convert to lossless PNG format.</p>
-                        <div class="form-row" style="gap: 16px;">
-                            <button type="button" id="btn-import-decal" class="btn secondary-btn">📥 Import Decal</button>
-                            <button type="button" id="btn-import-icon" class="btn secondary-btn">📥 Import Icon</button>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>💥 Import VFX Spritesheet</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import animated VFX spritesheet. Specify grid frame counts for columns and rows.</p>
-                        <div class="form-row" style="gap: 16px;">
-                            <div class="form-group" style="width: 80px;">
-                                <label for="vfx-cols-input">Columns</label>
-                                <input type="number" id="vfx-cols-input" value="4" min="1" max="64" />
-                            </div>
-                            <div class="form-group" style="width: 80px;">
-                                <label for="vfx-rows-input">Rows</label>
-                                <input type="number" id="vfx-rows-input" value="4" min="1" max="64" />
-                            </div>
-                            <div class="form-group" style="display: flex; align-items: flex-end;">
-                                <button type="button" id="btn-import-vfx" class="btn secondary-btn">📥 Import VFX Spritesheet</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>🎵 Import Audio (Sound Effects / Music)</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import audio files (MP3, WAV, FLAC, OGG, etc.). Audio will automatically convert to OGG Vorbis format.</p>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="audio-type-select">Audio Type</label>
-                                <select id="audio-type-select">
-                                    <option value="sfx">Sound Effect (SFX)</option>
-                                    <option value="music">Music</option>
-                                </select>
-                            </div>
-                            <div class="form-group" style="display: flex; align-items: flex-end;">
-                                <button type="button" id="btn-import-audio" class="btn secondary-btn">📥 Import Audio File</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>🏃 Import Animation (.ranim / .glb / .fbx)</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import binary animation files (.ranim) or Mixamo animations. Animations can be assigned to Unit actions.</p>
-                        <div class="form-row">
-                            <button type="button" id="btn-import-animation" class="btn secondary-btn">📥 Import Animation File</button>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                            <h3 style="margin: 0;">📂 Current Map Assets</h3>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <button type="button" id="btn-prune-unused-assets-section" class="btn secondary-btn small-btn" title="Prune unused assets unreferenced by metadata.json & delete files from workspace">✂️ Prune Unused</button>
-                                <label for="asset-type-filter-select" style="font-size: 12px; font-weight: 600; color: var(--text-muted, #858585);">Filter Type:</label>
-                                <select id="asset-type-filter-select" style="background: var(--vscode-input-background, #252526); color: var(--vscode-input-foreground, #cccccc); border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 4px; padding: 2px 8px; font-size: 12px; cursor: pointer;">
-                                    <option value="all">All</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div id="assets-metadata-display" class="tag-list-container" style="padding: 12px; font-family: monospace; font-size: 12px; max-height: 250px; overflow-y: auto;">
-                            <em>No assets registered yet.</em>
                         </div>
                     </div>
                 </div>

@@ -41,8 +41,18 @@ public class MapEditorBrushSettings
 
 		_sldBrushStrength.ValueChanged += (val) =>
 		{
-			_lblBrushStrengthValue.Text = val.ToString("F0");
-			if (GameHost.Instance != null) GameHost.Instance.EditorBrushStrength = (float)val;
+			float fVal = (float)val;
+			if (GameHost.Instance != null && GameHost.Instance.ActiveEditorTool == GameHost.EditorTool.PaintTexture)
+			{
+				MapEditorHUD.SavedTextureIntensity = fVal;
+				_lblBrushStrengthValue.Text = fVal.ToString("F0");
+			}
+			else
+			{
+				MapEditorHUD.SavedBrushStrength = fVal;
+				_lblBrushStrengthValue.Text = fVal.ToString("F1");
+			}
+			if (GameHost.Instance != null) GameHost.Instance.EditorBrushStrength = fVal;
 		};
 
 		if (_chkBlockMode != null)

@@ -22,7 +22,7 @@ namespace Realm.Ecs.Components.Terrain
 
 		public float[,]? Heights => CalculateHeights(Width, Depth, Cells);
 
-		public static float[,]? CalculateHeights(int width, int depth, TerrainCell[,] cells)
+		public static float[,]? CalculateHeights(int width, int depth, TerrainCell[,]? cells)
 		{
 			if (cells == null) return null;
 			int w = System.Math.Max(1, width);
@@ -44,7 +44,7 @@ namespace Realm.Ecs.Components.Terrain
 			return result;
 		}
 
-		public static TerrainCell[,]? CalculateCells(int width, int depth, float[,] heights, TerrainCell[,] existingCells = null)
+		public static TerrainCell[,]? CalculateCells(int width, int depth, float[,]? heights, TerrainCell[,]? existingCells = null)
 		{
 			if (heights == null)
 			{
@@ -71,7 +71,7 @@ namespace Realm.Ecs.Components.Terrain
 					float se = heights[x1, z1];
 
 					WaterType wMode = WaterType.None;
-					if (x < existingW && z < existingD)
+					if (existingCells != null && x < existingW && z < existingD)
 					{
 						wMode = existingCells[x, z].WaterMode;
 					}
@@ -82,7 +82,7 @@ namespace Realm.Ecs.Components.Terrain
 			return cells;
 		}
 
-		public void SetHeights(float[,] heights)
+		public void SetHeights(float[,]? heights)
 		{
 			if (heights == null) return;
 			Cells = CalculateCells(Width, Depth, heights, Cells);
@@ -93,8 +93,8 @@ namespace Realm.Ecs.Components.Terrain
 			int depth,
 			float quadSize,
 			float cellSize,
-			TerrainCell[,] cells,
-			int[,] pathingCodes,
+			TerrainCell[,]? cells,
+			int[,]? pathingCodes,
 			DtNavMesh navMesh,
 			DtNavMeshQuery navMeshQuery)
 		{
@@ -106,6 +106,7 @@ namespace Realm.Ecs.Components.Terrain
 			PathingCodes = pathingCodes;
 			NavMesh = navMesh;
 			NavMeshQuery = navMeshQuery;
+			SwatchConfigs = null;
 		}
 
 		public TerrainState(
@@ -113,8 +114,8 @@ namespace Realm.Ecs.Components.Terrain
 			int depth,
 			float quadSize,
 			float cellSize,
-			float[,] heights,
-			int[,] pathingCodes,
+			float[,]? heights,
+			int[,]? pathingCodes,
 			DtNavMesh navMesh,
 			DtNavMeshQuery navMeshQuery)
 		{
@@ -125,6 +126,7 @@ namespace Realm.Ecs.Components.Terrain
 			PathingCodes = pathingCodes;
 			NavMesh = navMesh;
 			NavMeshQuery = navMeshQuery;
+			SwatchConfigs = null;
 			Cells = (heights != null) ? CalculateCells(width, depth, heights) : null;
 		}
 	}
