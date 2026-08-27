@@ -3,6 +3,7 @@ using System.IO;
 using CommandLine;
 using Realm.Shared;
 using Realm.Shared.Animation;
+using Realm.Shared.Metadata;
 using Realm.Shared.Textures;
 
 namespace Realm.Tools.Cli;
@@ -73,16 +74,209 @@ public class FbxToRanimOptions
 	public bool Recursive { get; set; }
 }
 
+[Verb("metadata_read", HelpText = "Extract and display embedded metadata from .glb, .png, .ktx2, .ranim, or .ogg files.")]
+public class MetadataReadOptions
+{
+	[Option('i', "input", Required = true, HelpText = "Path to asset file or directory containing asset files.")]
+	public string Input { get; set; } = string.Empty;
+
+	[Option('o', "output", Required = false, HelpText = "Output destination file to write extracted JSON.")]
+	public string? Output { get; set; }
+
+	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
+	public bool Recursive { get; set; }
+}
+
+[Verb("metadata_add", HelpText = "Embed metadata JSON into .glb, .png, .ktx2, .ranim, or .ogg files.")]
+public class MetadataAddOptions
+{
+	[Option('i', "input", Required = true, HelpText = "Path to asset file or directory containing asset files.")]
+	public string Input { get; set; } = string.Empty;
+
+	[Option('d', "data", Required = true, HelpText = "JSON string or path to JSON file containing metadata to embed.")]
+	public string Data { get; set; } = string.Empty;
+
+	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
+	public bool Recursive { get; set; }
+}
+
+[Verb("metadata_remove", HelpText = "Remove embedded metadata from .glb, .png, .ktx2, .ranim, or .ogg files.")]
+public class MetadataRemoveOptions
+{
+	[Option('i', "input", Required = true, HelpText = "Path to asset file or directory containing asset files.")]
+	public string Input { get; set; } = string.Empty;
+
+	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
+	public bool Recursive { get; set; }
+}
+
 public static class Program
 {
 	public static int Main(string[] args)
 	{
-		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, FbxToRanimOptions>(args)
+		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, FbxToRanimOptions, MetadataReadOptions, MetadataAddOptions, MetadataRemoveOptions>(args)
 			.MapResult(
 				(GlbOptimizeOptions options) => ExecuteGlbOptimize(options),
 				(TextureConvertOptions options) => ExecuteTextureConvert(options),
 				(FbxToRanimOptions options) => ExecuteFbxToRanim(options),
+				(MetadataReadOptions options) => ExecuteMetadataRead(options),
+				(MetadataAddOptions options) => ExecuteMetadataAdd(options),
+				(MetadataRemoveOptions options) => ExecuteMetadataRemove(options),
 				errors => 1);
+	}
+
+	private static int ExecuteMetadataRead(MetadataReadOptions options)
+	{
+		if (File.Exists(options.Input))
+		{
+			string? meta = RealmMetadataHelper.ExtractMetadata(options.Input);
+			if (meta == null)
+			{
+				Console.WriteLine($"No embedded Realm metadata found in: {options.Input}");
+				return 0;
+			}
+
+			Console.WriteLine($"Metadata for {options.Input}:");
+			Console.WriteLine(meta);
+
+			if (!string.IsNullOrEmpty(options.Output))
+			{
+				string? dir = Path.GetDirectoryName(options.Output);
+				if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+				File.WriteAllText(options.Output, meta);
+				Console.WriteLine($"Saved metadata to: {options.Output}");
+			}
+			return 0;
+		}
+		else if (Directory.Exists(options.Input))
+		{
+			var searchOpt = options.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+			string[] files = Directory.GetFiles(options.Input, "*.*", searchOpt);
+			int foundCount = 0;
+			foreach (var file in files)
+			{
+				string? meta = RealmMetadataHelper.ExtractMetadata(file);
+				if (meta != null)
+				{
+					Console.WriteLine($"--- {file} ---");
+					Console.WriteLine(meta);
+					foundCount++;
+				}
+			}
+			Console.WriteLine($"Extracted metadata from {foundCount} file(s).");
+			return 0;
+		}
+		else
+		{
+			Console.Error.WriteLine($"Error: Input path does not exist: {options.Input}");
+			return 1;
+		}
+	}
+
+	private static int ExecuteMetadataAdd(MetadataAddOptions options)
+	{
+		string jsonContent = options.Data;
+		if (File.Exists(options.Data))
+		{
+			jsonContent = File.ReadAllText(options.Data);
+		}
+
+		if (File.Exists(options.Input))
+		{
+			bool success = RealmMetadataHelper.AddMetadata(options.Input, jsonContent);
+			if (success)
+			{
+				Console.WriteLine($"Successfully added metadata to: {options.Input}");
+				return 0;
+			}
+			else
+			{
+				Console.Error.WriteLine($"Failed to add metadata to: {options.Input}");
+				return 1;
+			}
+		}
+		else if (Directory.Exists(options.Input))
+		{
+			var searchOpt = options.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+			string[] files = Directory.GetFiles(options.Input, "*.*", searchOpt);
+			int successCount = 0;
+			int failCount = 0;
+
+			foreach (var file in files)
+			{
+				string ext = Path.GetExtension(file).ToLowerInvariant();
+				if (ext is not (".glb" or ".png" or ".ktx2" or ".ktx" or ".ranim" or ".ogg")) continue;
+
+				if (RealmMetadataHelper.AddMetadata(file, jsonContent))
+				{
+					Console.WriteLine($"Added metadata to: {file}");
+					successCount++;
+				}
+				else
+				{
+					Console.Error.WriteLine($"Failed to add metadata to: {file}");
+					failCount++;
+				}
+			}
+
+			Console.WriteLine($"Finished adding metadata. {successCount} succeeded, {failCount} failed.");
+			return failCount > 0 ? 1 : 0;
+		}
+		else
+		{
+			Console.Error.WriteLine($"Error: Input path does not exist: {options.Input}");
+			return 1;
+		}
+	}
+
+	private static int ExecuteMetadataRemove(MetadataRemoveOptions options)
+	{
+		if (File.Exists(options.Input))
+		{
+			bool success = RealmMetadataHelper.RemoveMetadata(options.Input);
+			if (success)
+			{
+				Console.WriteLine($"Successfully removed metadata from: {options.Input}");
+				return 0;
+			}
+			else
+			{
+				Console.Error.WriteLine($"Failed to remove metadata from: {options.Input}");
+				return 1;
+			}
+		}
+		else if (Directory.Exists(options.Input))
+		{
+			var searchOpt = options.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+			string[] files = Directory.GetFiles(options.Input, "*.*", searchOpt);
+			int successCount = 0;
+			int failCount = 0;
+
+			foreach (var file in files)
+			{
+				string ext = Path.GetExtension(file).ToLowerInvariant();
+				if (ext is not (".glb" or ".png" or ".ktx2" or ".ktx" or ".ranim" or ".ogg")) continue;
+
+				if (RealmMetadataHelper.RemoveMetadata(file))
+				{
+					Console.WriteLine($"Removed metadata from: {file}");
+					successCount++;
+				}
+				else
+				{
+					Console.Error.WriteLine($"Failed to remove metadata from: {file}");
+					failCount++;
+				}
+			}
+
+			Console.WriteLine($"Finished removing metadata. {successCount} succeeded, {failCount} failed.");
+			return failCount > 0 ? 1 : 0;
+		}
+		else
+		{
+			Console.Error.WriteLine($"Error: Input path does not exist: {options.Input}");
+			return 1;
+		}
 	}
 
 	private static int ExecuteTextureConvert(TextureConvertOptions options)
