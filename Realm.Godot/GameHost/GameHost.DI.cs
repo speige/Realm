@@ -52,6 +52,7 @@ public partial class GameHost
 		services.AddSingleton<EnvironmentService>();
 		services.AddSingleton<SpectatorService>();
 		services.AddSingleton<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>();
+		services.AddSingleton<AssetIndexService>();
 		services.AddSingleton<SimulationService>(sp =>
 		{
 			return new SimulationService(sp.GetRequiredService<WorldAccessor>(), Entity.Null, GameHost.Instance?._pathfinder ?? new NavMeshPathfinder());
