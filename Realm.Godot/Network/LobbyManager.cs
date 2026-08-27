@@ -50,20 +50,22 @@ public partial class LobbyManager : Node
 
     private static string GetGameBinaryVersion()
     {
+        var defaultVersionString = "0.0.1_Pre-Alpha";
         try
         {
-            if (OS.HasFeature("editor"))
+            if (!OS.HasFeature("editor"))
             {
-                var assembly = typeof(LobbyManager).Assembly;
-                if (!string.IsNullOrEmpty(assembly.Location))
+                return defaultVersionString;
+            }
+
+            var assembly = typeof(LobbyManager).Assembly;
+            if (!string.IsNullOrEmpty(assembly.Location))
+            {
+                var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
+                if (!string.IsNullOrEmpty(versionInfo.ProductVersion))
                 {
-                    var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
-                    if (!string.IsNullOrEmpty(versionInfo.ProductVersion))
-                    {
-                        return versionInfo.ProductVersion.Trim();
-                    }
+                    return versionInfo.ProductVersion.Trim();
                 }
-                return "0.0.1_Pre-Alpha";
             }
 
             string exePath = OS.GetExecutablePath();
@@ -87,7 +89,7 @@ public partial class LobbyManager : Node
             GD.PrintErr($"Failed to read version from executable: {ex.Message}");
         }
 
-        return "0.0.1_Pre-Alpha";
+        return defaultVersionString;
     }
 
 

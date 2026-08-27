@@ -136,6 +136,17 @@ public partial class MainMenu : Control
 
 		PopulateRunicPillar(GetNode<VBoxContainer>("LeftPillar/RuneContainer"));
 		PopulateRunicPillar(GetNode<VBoxContainer>("RightPillar/RuneContainer"));
+
+		if (!PathUtils.IsDevelopmentBuild)
+		{
+			if (_playButton != null) _playButton.Visible = false;
+			if (_singlePlayerButton != null) _singlePlayerButton.Visible = false;
+			if (_mapDiscoveryButton != null) _mapDiscoveryButton.Visible = false;
+			if (_creatorDiscoveryButton != null) _creatorDiscoveryButton.Visible = false;
+			if (_replaysButton != null) _replaysButton.Visible = false;
+			if (_profileButton != null) _profileButton.Visible = false;
+			if (_seedNodeButton != null) _seedNodeButton.Visible = false;
+		}
 	}
 
 	private void SetupButton(Button button, string text, Action onClick)
