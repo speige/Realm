@@ -6,6 +6,12 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <Version>0.1.0-alpha</Version>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,9 +23,19 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="..\ThirdPartyBinaries\**\*.*">
+      <Link>ThirdPartyBinaries\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </EmbeddedResource>
     <None Include="..\ThirdPartyBinaries\**\*.*">
       <Link>ThirdPartyBinaries\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+  <Target Name="PublishSingleFileAfterBuild" AfterTargets="Build" Condition="'$(IsPublishingSingleFile)' != 'true'">
+    <MSBuild Projects="$(MSBuildProjectFullPath)"
+             Targets="Publish"
+             Properties="PublishDir=$(TargetDir)publish\;Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);IsPublishingSingleFile=true" />
+    <Copy SourceFiles="$(TargetDir)publish\$(AssemblyName).exe" DestinationFolder="$(TargetDir)" Condition="Exists('$(TargetDir)publish\$(AssemblyName).exe')" />
+  </Target>
 </Project>

@@ -40,7 +40,6 @@ public static class NativeToolRunner
 			}
 		}
 
-		// Check PATH
 		var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
 		var pathSeparator = isWindows ? ';' : ':';
 		foreach (var dir in pathEnv.Split(pathSeparator, StringSplitOptions.RemoveEmptyEntries))
@@ -51,6 +50,52 @@ public static class NativeToolRunner
 				_cachedGltfPackPath = Path.GetFullPath(candidate);
 				return _cachedGltfPackPath;
 			}
+		}
+
+		try
+		{
+			string tempDir = Path.Combine(Path.GetTempPath(), "realm_tools_bin");
+			string tempExe = Path.Combine(tempDir, exeName);
+			if (File.Exists(tempExe) && new FileInfo(tempExe).Length > 0)
+			{
+				_cachedGltfPackPath = tempExe;
+				return _cachedGltfPackPath;
+			}
+
+			var asm = typeof(NativeToolRunner).Assembly;
+			Stream? stream = asm.GetManifestResourceStream("Realm.AssetPipeline.ThirdPartyBinaries.gltfpack.exe");
+			if (stream == null)
+			{
+				foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+				{
+					stream = a.GetManifestResourceStream("Realm.Tools.Cli.ThirdPartyBinaries.gltfpack.exe");
+					if (stream != null) break;
+					var names = a.GetManifestResourceNames();
+					foreach (var name in names)
+					{
+						if (name.EndsWith("gltfpack.exe", StringComparison.OrdinalIgnoreCase))
+						{
+							stream = a.GetManifestResourceStream(name);
+							break;
+						}
+					}
+					if (stream != null) break;
+				}
+			}
+
+			if (stream != null)
+			{
+				Directory.CreateDirectory(tempDir);
+				using (var fileStream = File.Create(tempExe))
+				{
+					stream.CopyTo(fileStream);
+				}
+				_cachedGltfPackPath = tempExe;
+				return _cachedGltfPackPath;
+			}
+		}
+		catch
+		{
 		}
 
 		return null;
