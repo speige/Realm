@@ -10,5 +10,3 @@ GeneratedFiles/
 TestResults/
 *.trx
 Realm.Lobby/.data
-pnpm-lock.yaml
-pnpm-workspace.yaml
