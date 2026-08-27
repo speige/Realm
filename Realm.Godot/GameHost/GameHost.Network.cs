@@ -142,7 +142,6 @@ public partial class GameHost
 			string modelPath = GetFallbackModelPath(targetModel, true);
 			var bldEntity = CreateEcsUnit(result.BuildUnitType, meta.Name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, 0f, result.BuildPosition, playerOwner);
 			SpawnUnit3D(bldEntity, result.BuildUnitType, modelPath, result.BuildPosition, true, false);
-			RebakeNavMesh();
 		}
 
 		if (result.NeedsSpellEffect)

@@ -64,7 +64,9 @@ public partial class GameHost
 		}
 		if (unit.IsBuilding)
 		{
-			RebakeNavMesh();
+			float radius = EcsWorld.Has<CollisionRadius>(unit.Entity) ? EcsWorld.Get<CollisionRadius>(unit.Entity).Value : 2.0f;
+			var unitPos = EcsWorld.Has<Position>(unit.Entity) ? EcsWorld.Get<Position>(unit.Entity).Value : new System.Numerics.Vector3(unit.Position.X, unit.Position.Y, unit.Position.Z);
+			UncarveObstacle(unitPos, radius);
 		}
 
 		if (unit.IsEnemy && UnitRegistry.TryGetValue(unit.UnitId, out var bountyMeta) && bountyMeta.GoldBounty > 0f)
@@ -139,6 +141,8 @@ public partial class GameHost
 		if (GodotObject.IsInstanceValid(prop))
 		{
 			string propId = prop.PropId;
+			float radius = EcsWorld.Has<CollisionRadius>(prop.Entity) ? EcsWorld.Get<CollisionRadius>(prop.Entity).Value : 1.0f;
+			var propPos = EcsWorld.Has<Position>(prop.Entity) ? EcsWorld.Get<Position>(prop.Entity).Value : new System.Numerics.Vector3(prop.Position.X, prop.Position.Y, prop.Position.Z);
 			AllProps.Remove(prop);
 			EntityToProp3D.Remove(prop.Entity);
 			if (EcsWorld.IsAlive(prop.Entity))
@@ -147,7 +151,7 @@ public partial class GameHost
 			}
 			PropMultiMeshManager.Instance?.MarkDirty(propId);
 			prop.QueueFree();
-			RebakeNavMesh();
+			UncarveObstacle(propPos, radius);
 		}
 	}
 
@@ -466,7 +470,12 @@ public partial class GameHost
 		EcsWorld.Add(bldEntity, new ConstructionState(buildTime));
 		EcsWorld.Add(bldEntity, new UnderConstruction());
 
-		// Removing immediate SpawnUnit3D so it spawns when worker arrives
+		float bldRadius = GetOrCalculateObstacleRadius(buildType, null, true);
+		if (!EcsWorld.Has<Realm.Ecs.Components.Core.CollisionRadius>(bldEntity))
+		{
+			EcsWorld.Add(bldEntity, new Realm.Ecs.Components.Core.CollisionRadius(bldRadius));
+		}
+		CarveObstacle(targetPos, bldRadius);
 
 		var buildTask = new BuildTask(bldEntity, buildTime);
 		if (EcsWorld.Has<BuildTask>(workerEntity))

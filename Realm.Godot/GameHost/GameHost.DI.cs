@@ -85,5 +85,6 @@ public partial class GameHost
 		_environmentService = ServiceLocator.Get<EnvironmentService>();
 		_spectatorService = ServiceLocator.Get<SpectatorService>();
 		_modelOptimizerService = ServiceLocator.Get<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>();
+		_terrainNavMeshService = ServiceLocator.Get<TerrainNavMeshService>();
 	}
 }

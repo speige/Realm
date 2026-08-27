@@ -47,6 +47,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private EnvironmentService _environmentService;
 	private SpectatorService _spectatorService;
 	private Realm.Godot.Services.ModelOptimization.ModelOptimizerService _modelOptimizerService;
+	private TerrainNavMeshService _terrainNavMeshService;
 
 	public CheatService CheatService => _cheatService;
 	public EnvironmentService EnvironmentService => _environmentService;
@@ -4074,6 +4075,10 @@ public class {mapName} : IMapScript
 			string unitAssetKey = GetModelAssetKey(unit3D);
 			float baseRadius = autoDetectedRadius * GetModelCollisionCircleRatio(unitAssetKey);
 			EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+			if (!IsMapEditorMode)
+			{
+				CarveObstacle(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z), baseRadius);
+			}
 		}
 
 		if (IsMapEditorMode)
@@ -4221,6 +4226,24 @@ public class {mapName} : IMapScript
 		if (IsServerActive() && GroundTerrain != null)
 		{
 			GroundTerrain.BakeNavMesh();
+		}
+	}
+
+	public void CarveObstacle(System.Numerics.Vector3 pos, float radius)
+	{
+		if (EcsWorld != null && EcsWorld.IsAlive(WorldEntity) && EcsWorld.Has<TerrainState>(WorldEntity))
+		{
+			ref var state = ref EcsWorld.Get<TerrainState>(WorldEntity);
+			_terrainNavMeshService?.CarveObstacle(ref state, pos, radius);
+		}
+	}
+
+	public void UncarveObstacle(System.Numerics.Vector3 pos, float radius)
+	{
+		if (EcsWorld != null && EcsWorld.IsAlive(WorldEntity) && EcsWorld.Has<TerrainState>(WorldEntity))
+		{
+			ref var state = ref EcsWorld.Get<TerrainState>(WorldEntity);
+			_terrainNavMeshService?.UncarveObstacle(ref state, pos, radius);
 		}
 	}
 
