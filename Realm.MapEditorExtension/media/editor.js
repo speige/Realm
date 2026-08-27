@@ -13,64 +13,6 @@
     let isInternalChange = false;
     let resolveCallbacks = {};
     let resolveCallbackId = 0;
-    let pendingMinYCallbacks = {};
-
-    function getDomainDefaultScale(domain) {
-        if (domain === 'resources') {
-            return 2.75;
-        }
-        if (domain === 'buildings') {
-            return 1.5;
-        }
-        if (domain === 'props') {
-            return 1.25;
-        }
-
-        return 1.0;
-    }
-
-    function getAutoCalculatedYOffsetDirect(modelPath, scale, domain) {
-        if (!modelPath) return 0.0;
-        const normPath = modelPath.trim();
-        const baseName = normPath.split(/[/\\]/).pop();
-
-        if (units.Assets && units.Assets.glb) {
-            for (const catObj of Object.values(units.Assets.glb)) {
-                if (catObj && typeof catObj === 'object') {
-                    const entry = catObj[normPath] || catObj[baseName];
-                    if (entry && typeof entry === 'object') {
-                        if (entry.min_y !== undefined && entry.min_y !== null) {
-                            return entry.min_y < 0 ? parseFloat((-entry.min_y * scale).toFixed(4)) : 0.0;
-                        }
-                        if (entry.y_offset !== undefined && entry.y_offset !== null) {
-                            return parseFloat(entry.y_offset);
-                        }
-                    }
-                }
-            }
-        }
-
-        if (units.ModelOffsets) {
-            if (units.ModelOffsets[normPath] !== undefined) return parseFloat(units.ModelOffsets[normPath]);
-            if (units.ModelOffsets[baseName] !== undefined) return parseFloat(units.ModelOffsets[baseName]);
-        }
-
-        return null;
-    }
-
-    function requestModelMinY(modelPath, callback) {
-        if (!modelPath || typeof vscode === 'undefined' || !vscode.postMessage) {
-            if (callback) callback(null);
-            return;
-        }
-        const reqId = 'miny_' + Math.random().toString(36).substring(2, 9);
-        pendingMinYCallbacks[reqId] = callback;
-        vscode.postMessage({
-            type: 'getModelMinY',
-            requestId: reqId,
-            modelPath: modelPath
-        });
-    }
 
     // DOM Elements
     const emptyState = document.getElementById('empty-state');
@@ -119,15 +61,6 @@
         Description: document.getElementById('field-Description'),
         ModelPath: document.getElementById('field-ModelPath'),
         PortraitModelPath: document.getElementById('field-PortraitModelPath'),
-        Scale: document.getElementById('field-Scale'),
-        YOffset: document.getElementById('field-YOffset'),
-        CollisionCircle: document.getElementById('field-CollisionCircle'),
-        Brightness: document.getElementById('field-Brightness'),
-        Tint: document.getElementById('field-Tint'),
-        NormalMode: document.getElementById('field-NormalMode'),
-        RecalculateNormals: document.getElementById('field-RecalculateNormals'),
-        NormalizeLuminance: document.getElementById('field-NormalizeLuminance'),
-        IgnorePlayerColor: document.getElementById('field-IgnorePlayerColor'),
         IsHero: document.getElementById('field-IsHero'),
         MaxHp: document.getElementById('field-MaxHp'),
         Damage: document.getElementById('field-Damage'),
@@ -152,12 +85,7 @@
         MaxWorkers: document.getElementById('field-MaxWorkers')
     };
 
-    function getArrayKeyForDomain(domain) {
-        if (domain === 'buildings') return 'CustomBuildings';
-        if (domain === 'resources') return 'CustomResources';
-        if (domain === 'props') return 'CustomProps';
-        return 'CustomUnits';
-    }
+
 
     function getAllEntities() {
         if (!Array.isArray(units.CustomUnits)) units.CustomUnits = [];
@@ -329,10 +257,7 @@
         return activeBtn ? activeBtn.dataset.domain : 'units';
     }
 
-    function matchesDomainCategory(unit, domain) {
-        if (!unit) return false;
-        return true;
-    }
+
 
     function switchTab(domain) {
         document.querySelectorAll('.tab-btn').forEach(b => {
@@ -497,21 +422,6 @@
                 updateAllThumbnails();
                 updateDatalists();
                 break;
-            case 'browseFileResult':
-                let targetInput = null;
-                if (message.fieldId) {
-                    targetInput = document.getElementById(message.fieldId);
-                } else if (message.fieldClass) {
-                    const selector = `input.${message.fieldClass.split(' ').join('.')}[data-index="${message.fieldIndex}"]`;
-                    targetInput = document.querySelector(selector);
-                }
-                if (targetInput) {
-                    targetInput.value = message.path;
-                    const event = new Event('change', { bubbles: true });
-                    targetInput.dispatchEvent(event);
-                    updateThumbnailForInput(targetInput);
-                }
-                break;
             case 'browseFileFallback':
                 const fileInput = document.createElement('input');
                 fileInput.type = 'file';
@@ -530,38 +440,14 @@
                             targetInp = document.querySelector(selector);
                         }
 
-                        if (message.fieldClass === 'item-icon' || message.assetType === 'icon') {
-                            const reader = new FileReader();
-                            reader.onload = () => {
-                                const dataUrl = reader.result;
-                                const base64Data = typeof dataUrl === 'string' ? (dataUrl.split(',')[1] || '') : '';
-                                const baseName = selectedFile.name.substring(0, selectedFile.name.lastIndexOf('.')) || selectedFile.name;
-                                const iconFileName = baseName + '.png';
-                                vscode.postMessage({
-                                    type: 'processImportedAsset',
-                                    fileName: iconFileName,
-                                    fileDataBase64: base64Data,
-                                    assetType: 'icon',
-                                    options: {}
-                                });
-                                if (targetInp) {
-                                    targetInp.value = iconFileName;
-                                    const evt = new Event('change', { bubbles: true });
-                                    targetInp.dispatchEvent(evt);
-                                    updateThumbnailForInput(targetInp);
-                                    if (message.fieldIndex !== null && message.fieldIndex !== undefined) {
-                                        updateItemIconPreview(message.fieldIndex);
-                                    }
-                                }
-                            };
-                            reader.readAsDataURL(selectedFile);
-                        } else {
-                            let filePath = selectedFile.name;
-                            if (targetInp) {
-                                targetInp.value = filePath;
-                                const evt = new Event('change', { bubbles: true });
-                                targetInp.dispatchEvent(evt);
-                                updateThumbnailForInput(targetInp);
+                        let filePath = selectedFile.name;
+                        if (targetInp) {
+                            targetInp.value = filePath;
+                            const evt = new Event('change', { bubbles: true });
+                            targetInp.dispatchEvent(evt);
+                            updateThumbnailForInput(targetInp);
+                            if (message.fieldIndex !== null && message.fieldIndex !== undefined && message.fieldClass === 'item-icon') {
+                                updateItemIconPreview(message.fieldIndex);
                             }
                         }
                     }
@@ -570,82 +456,11 @@
                 document.body.appendChild(fileInput);
                 fileInput.click();
                 break;
-            case 'importAssetFallback':
-                const assetInput = document.createElement('input');
-                assetInput.type = 'file';
-                if (message.accept) {
-                    assetInput.accept = message.accept;
-                }
-                assetInput.style.display = 'none';
-                assetInput.addEventListener('change', () => {
-                    if (assetInput.files && assetInput.files[0]) {
-                        const selectedFile = assetInput.files[0];
-                        if (message.assetType === 'vfx') {
-                            const img = new Image();
-                            const url = URL.createObjectURL(selectedFile);
-                            img.onload = () => {
-                                const canvas = document.createElement('canvas');
-                                canvas.width = img.width;
-                                canvas.height = img.height;
-                                const ctx = canvas.getContext('2d');
-                                ctx.drawImage(img, 0, 0);
-                                canvas.toBlob((blob) => {
-                                    URL.revokeObjectURL(url);
-                                    if (blob) {
-                                        const r = new FileReader();
-                                        r.onload = () => {
-                                            const dataUrl = r.result;
-                                            const base64Data = typeof dataUrl === 'string' ? (dataUrl.split(',')[1] || '') : '';
-                                            const baseName = selectedFile.name.substring(0, selectedFile.name.lastIndexOf('.')) || selectedFile.name;
-                                            vscode.postMessage({
-                                                type: 'processImportedAsset',
-                                                fileName: baseName + '.png',
-                                                fileDataBase64: base64Data,
-                                                assetType: message.assetType,
-                                                options: message.extraOptions
-                                            });
-                                        };
-                                        r.readAsDataURL(blob);
-                                    }
-                                }, 'image/png');
-                            };
-                            img.onerror = () => {
-                                URL.revokeObjectURL(url);
-                            };
-                            img.src = url;
-                        } else {
-                            const reader = new FileReader();
-                            reader.onload = () => {
-                                const dataUrl = reader.result;
-                                const base64Data = typeof dataUrl === 'string' ? (dataUrl.split(',')[1] || '') : '';
-                                vscode.postMessage({
-                                    type: 'processImportedAsset',
-                                    fileName: selectedFile.name,
-                                    fileDataBase64: base64Data,
-                                    assetType: message.assetType,
-                                    options: message.extraOptions
-                                });
-                            };
-                            reader.readAsDataURL(selectedFile);
-                        }
-                    }
-                    assetInput.remove();
-                });
-                document.body.appendChild(assetInput);
-                assetInput.click();
-                break;
             case 'resolvePathResult':
                 const callback = resolveCallbacks[message.requestId];
                 if (callback) {
                     callback(message.uri);
                     delete resolveCallbacks[message.requestId];
-                }
-                break;
-            case 'getModelMinYResult':
-                const minYCallback = pendingMinYCallbacks[message.requestId];
-                if (minYCallback) {
-                    minYCallback(message.minY);
-                    delete pendingMinYCallbacks[message.requestId];
                 }
                 break;
         }
@@ -813,8 +628,6 @@
         customAbilitiesForm.classList.add('hidden');
         customUpgradesForm.classList.add('hidden');
         customItemsForm.classList.add('hidden');
-        const customAssetsForm = document.getElementById('custom-assets-form');
-        if (customAssetsForm) customAssetsForm.classList.add('hidden');
     }
 
     function populateForm(id) {
@@ -841,31 +654,10 @@
             
             const val = unit[key];
             if (element.type === 'checkbox') {
-                if (key === 'NormalizeLuminance') {
-                    element.checked = val !== undefined ? !!val : true;
-                } else if (key === 'RecalculateNormals') {
-                    element.checked = val !== undefined ? !!val : (unit.NormalMode === 'Smooth');
-                } else {
-                    element.checked = !!val;
-                }
+                element.checked = !!val;
             } else if (element.tagName === 'SPAN' || element.tagName === 'LABEL' || element.tagName === 'DIV' || key === 'ModelPath' || key === 'PortraitModelPath') {
                 element.textContent = val || '(None)';
                 element.title = val || '';
-            } else if (key === 'NormalMode') {
-                element.value = val || unit.NormalMode || 'Flat';
-            } else if (key === 'Scale') {
-                const defaultScale = getDomainDefaultScale(activeDomain);
-                element.value = (val !== undefined && val !== null && val !== '') ? val : defaultScale;
-            } else if (key === 'YOffset') {
-                if (val !== undefined && val !== null && val !== '') {
-                    element.value = val;
-                } else if (unit.ModelPath) {
-                    const scale = (unit.Scale !== undefined && unit.Scale > 0) ? unit.Scale : getDomainDefaultScale(activeDomain);
-                    const autoY = getAutoCalculatedYOffsetDirect(unit.ModelPath, scale, activeDomain);
-                    element.value = autoY !== null ? autoY : 0.0;
-                } else {
-                    element.value = '';
-                }
             } else if (val === undefined || val === null) {
                 element.value = '';
             } else {
@@ -1724,10 +1516,6 @@
                 else if (target.classList.contains('ability-cooldown')) list[idx].Cooldown = parseFloat(val) || 0;
                 else if (target.classList.contains('ability-range')) list[idx].TargetRange = parseFloat(val) || 0;
                 else if (target.classList.contains('ability-desc')) list[idx].Description = val;
-                else if (target.classList.contains('ability-visual')) list[idx].VisualEffect = val;
-                else if (target.classList.contains('ability-sound')) list[idx].CastSound = val;
-                else if (target.classList.contains('ability-icon')) list[idx].IconPath = val;
-                else if (target.classList.contains('ability-aoe')) list[idx].AreaOfEffectRadius = parseFloat(val) || 0;
                 else if (target.classList.contains('ability-damage')) list[idx].Damage = parseFloat(val) || 0;
                 else if (target.classList.contains('ability-healing')) list[idx].Healing = parseFloat(val) || 0;
                 else if (target.classList.contains('ability-summon-id')) list[idx].SummonedUnitId = val;
@@ -2688,196 +2476,6 @@
         renderCustomWeapons();
     }
 
-    function isValidHexColor(col) {
-        if (!col || typeof col !== 'string') return false;
-        const trimmed = col.trim();
-        return /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(trimmed);
-    }
-
-    function normalizeHexColor(col, fallback) {
-        if (!col || typeof col !== 'string') return fallback || '#ffffff';
-        let trimmed = col.trim();
-        if (!isValidHexColor(trimmed)) {
-            return fallback || '#ffffff';
-        }
-        if (!trimmed.startsWith('#')) {
-            trimmed = '#' + trimmed;
-        }
-        return trimmed.toLowerCase();
-    }
-
-    function formatHex(col) {
-        if (!col || typeof col !== 'string') return '#ffffff';
-        let trimmed = col.trim();
-        if (!isValidHexColor(trimmed)) return '#ffffff';
-        if (!trimmed.startsWith('#')) {
-            trimmed = '#' + trimmed;
-        }
-        if (/^#[0-9a-fA-F]{3}$/.test(trimmed)) {
-            return ('#' + trimmed[1] + trimmed[1] + trimmed[2] + trimmed[2] + trimmed[3] + trimmed[3]).toLowerCase();
-        }
-        if (/^#[0-9a-fA-F]{4}$/.test(trimmed)) {
-            return ('#' + trimmed[1] + trimmed[1] + trimmed[2] + trimmed[2] + trimmed[3] + trimmed[3]).toLowerCase();
-        }
-        if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) {
-            return trimmed.toLowerCase();
-        }
-        if (/^#[0-9a-fA-F]{8}$/.test(trimmed)) {
-            return trimmed.substring(0, 7).toLowerCase();
-        }
-        return '#ffffff';
-    }
-
-    function applyWeaponFxPreset(index, preset) {
-        const list = units.CustomWeapons || [];
-        if (!list[index]) return;
-        const item = list[index];
-
-        if (preset === 'fire') {
-            item.ShaderEffectType = 'fire';
-            item.EmissionMaskSource = 'noise';
-            item.BaseColor = '#261e19';
-            item.EmissionColor = '#ff5500';
-            item.EmissionEnergy = 5.0;
-            item.FresnelPower = 2.5;
-            item.FresnelColor = '#ff9922';
-            item.FresnelFactor = 2.0;
-            item.NoiseScale = 3.5;
-            item.UvScrollSpeed1 = { X: 0.4, Y: 0.2 };
-            item.UvScrollSpeed2 = { X: -0.3, Y: 0.4 };
-            item.ThresholdCutoff = 0.45;
-            item.ThresholdSmoothness = 0.1;
-            item.RibbonColor = '#ff7711';
-            item.RibbonWidth = 0.45;
-            item.RibbonLifetime = 0.6;
-            item.RibbonTaper = true;
-            item.RibbonAdditive = true;
-            item.ArcHeight = item.ArcHeight || 3.0;
-            item.TumbleAngularVelocity = item.TumbleAngularVelocity || { X: 3.0, Y: 2.0, Z: 1.0 };
-            item.PointLightEnabled = true;
-            item.PointLightColor = '#ff6611';
-            item.PointLightIntensity = 3.0;
-            item.PointLightRange = 8.0;
-            item.SpeedCurve = 'rocket_boost';
-            item.ScaleCurve = 'grow';
-            item.TrailOffset = { X: 0, Y: 0, Z: -0.4 };
-        } else if (preset === 'frost') {
-            item.ShaderEffectType = 'frost';
-            item.EmissionMaskSource = 'fresnel';
-            item.BaseColor = '#0a1c2a';
-            item.EmissionColor = '#33ccff';
-            item.EmissionEnergy = 4.5;
-            item.FresnelPower = 3.0;
-            item.FresnelColor = '#88eeff';
-            item.FresnelFactor = 2.2;
-            item.NoiseScale = 4.0;
-            item.UvScrollSpeed1 = { X: 0.2, Y: 0.5 };
-            item.UvScrollSpeed2 = { X: -0.2, Y: -0.3 };
-            item.ThresholdCutoff = 0.5;
-            item.ThresholdSmoothness = 0.08;
-            item.RibbonColor = '#44ddff';
-            item.RibbonWidth = 0.35;
-            item.RibbonLifetime = 0.5;
-            item.RibbonTaper = true;
-            item.RibbonAdditive = true;
-            item.SpiralRadius = item.SpiralRadius || 0.3;
-            item.SpiralFrequency = item.SpiralFrequency || 2.0;
-            item.PointLightEnabled = true;
-            item.PointLightColor = '#44ddff';
-            item.PointLightIntensity = 2.5;
-            item.PointLightRange = 6.0;
-            item.ScaleCurve = 'squash_stretch';
-            item.TrailOffset = { X: 0, Y: 0, Z: -0.3 };
-        } else if (preset === 'poison') {
-            item.ShaderEffectType = 'poison';
-            item.EmissionMaskSource = 'noise';
-            item.BaseColor = '#112010';
-            item.EmissionColor = '#33ff33';
-            item.EmissionEnergy = 4.0;
-            item.FresnelPower = 3.5;
-            item.FresnelColor = '#88ff44';
-            item.FresnelFactor = 1.8;
-            item.NoiseScale = 3.0;
-            item.UvScrollSpeed1 = { X: -0.1, Y: 0.4 };
-            item.UvScrollSpeed2 = { X: 0.3, Y: 0.2 };
-            item.ThresholdCutoff = 0.55;
-            item.ThresholdSmoothness = 0.12;
-            item.RibbonColor = '#44ff22';
-            item.RibbonWidth = 0.4;
-            item.RibbonLifetime = 0.5;
-            item.RibbonTaper = true;
-            item.RibbonAdditive = true;
-            item.ZigzagAmplitude = item.ZigzagAmplitude || 0.4;
-            item.ZigzagFrequency = item.ZigzagFrequency || 3.0;
-            item.PointLightEnabled = true;
-            item.PointLightColor = '#33ff33';
-            item.PointLightIntensity = 2.0;
-            item.PointLightRange = 5.0;
-            item.SpeedCurve = 'ease_out';
-            item.ScaleCurve = 'grow_shrink';
-            item.TrailOffset = { X: 0, Y: 0, Z: -0.2 };
-        } else if (preset === 'arcane') {
-            item.ShaderEffectType = 'arcane';
-            item.EmissionMaskSource = 'noise';
-            item.BaseColor = '#180a24';
-            item.EmissionColor = '#cc22ff';
-            item.EmissionEnergy = 5.0;
-            item.FresnelPower = 2.8;
-            item.FresnelColor = '#ff66ff';
-            item.FresnelFactor = 2.0;
-            item.NoiseScale = 3.2;
-            item.UvScrollSpeed1 = { X: 0.3, Y: 0.3 };
-            item.UvScrollSpeed2 = { X: -0.4, Y: 0.1 };
-            item.ThresholdCutoff = 0.48;
-            item.ThresholdSmoothness = 0.1;
-            item.RibbonColor = '#dd44ff';
-            item.RibbonWidth = 0.4;
-            item.RibbonLifetime = 0.55;
-            item.RibbonTaper = true;
-            item.RibbonAdditive = true;
-            item.PointLightEnabled = true;
-            item.PointLightColor = '#cc33ff';
-            item.PointLightIntensity = 3.5;
-            item.PointLightRange = 7.0;
-            item.SpeedCurve = 'burst';
-            item.ScaleCurve = 'grow_shrink';
-            item.TurnRateLimit = item.TurnRateLimit || 240;
-            item.TrailOffset = { X: 0, Y: 0, Z: -0.3 };
-        } else if (preset === 'holy') {
-            item.ShaderEffectType = 'holy';
-            item.EmissionMaskSource = 'fresnel';
-            item.BaseColor = '#2b2310';
-            item.EmissionColor = '#ffee44';
-            item.EmissionEnergy = 6.0;
-            item.FresnelPower = 2.0;
-            item.FresnelColor = '#ffffff';
-            item.FresnelFactor = 2.5;
-            item.NoiseScale = 2.5;
-            item.UvScrollSpeed1 = { X: 0.5, Y: 0.5 };
-            item.UvScrollSpeed2 = { X: -0.5, Y: 0.5 };
-            item.ThresholdCutoff = 0.4;
-            item.ThresholdSmoothness = 0.15;
-            item.RibbonColor = '#fff377';
-            item.RibbonWidth = 0.4;
-            item.RibbonLifetime = 0.5;
-            item.RibbonTaper = true;
-            item.RibbonAdditive = true;
-            item.PointLightEnabled = true;
-            item.PointLightColor = '#ffee55';
-            item.PointLightIntensity = 4.0;
-            item.PointLightRange = 9.0;
-            item.SpeedCurve = 'ease_in';
-            item.ScaleCurve = 'impact_shrink';
-            item.TrailOffset = { X: 0, Y: 0, Z: -0.4 };
-        }
-
-        units.CustomWeapons = list;
-        saveChanges();
-        renderCustomWeapons();
-        const detailRow = document.getElementById(`weapon-detail-${index}`);
-        if (detailRow) detailRow.classList.remove('hidden');
-    }
-
     function duplicateAbility(index) {
         const list = units.CustomAbilities || [];
         if (!list[index]) return;
@@ -2991,28 +2589,12 @@
                             domain === 'resources' ? units.CustomResources :
                             domain === 'props' ? units.CustomProps : units.CustomUnits;
 
-        const defaultScale = getDomainDefaultScale(domain);
-
         let defaultModelPath = '';
-        let defaultYOffset = 0.0;
         const glbAssets = (units.Assets && units.Assets.glb) ? units.Assets.glb : {};
         const catGlbs = glbAssets[domain] || (domain === 'buildings' ? glbAssets['building'] : null) || {};
         const glbKeys = Object.keys(catGlbs);
         if (glbKeys.length > 0) {
             defaultModelPath = glbKeys[0];
-            const directY = getAutoCalculatedYOffsetDirect(defaultModelPath, defaultScale, domain);
-            defaultYOffset = directY !== null ? directY : parseFloat((1.0 * defaultScale).toFixed(4));
-        }
-
-        if (defaultModelPath && defaultYOffset > 0) {
-            if (!units.ModelOffsets) units.ModelOffsets = {};
-            if (units.ModelOffsets[defaultModelPath] === undefined) {
-                units.ModelOffsets[defaultModelPath] = defaultYOffset;
-            }
-            if (!units.ModelScales) units.ModelScales = {};
-            if (units.ModelScales[defaultModelPath] === undefined) {
-                units.ModelScales[defaultModelPath] = defaultScale;
-            }
         }
 
         if (domain === 'props') {
@@ -3021,12 +2603,7 @@
                 Name: `New ${prefix}`,
                 Description: `A decorative ${prefix.toLowerCase()} prop.`,
                 ModelPath: defaultModelPath,
-                Scale: defaultScale,
-                YOffset: defaultYOffset,
-                PathingType: defaultPathing,
-                Brightness: 0.5,
-                NormalMode: 'Flat',
-                NormalizeLuminance: true
+                PathingType: defaultPathing
             });
         } else if (domain === 'resources') {
             targetArray.push({
@@ -3034,16 +2611,11 @@
                 Name: `New ${prefix}`,
                 Description: `Harvestable ${prefix.toLowerCase()} deposit.`,
                 ModelPath: defaultModelPath,
-                Scale: defaultScale,
-                YOffset: defaultYOffset,
                 MaxCapacity: 2000.0,
                 HarvestRate: 10.0,
                 GrowthRate: 0.0,
                 MaxWorkers: 5,
-                PathingType: defaultPathing,
-                Brightness: 0.5,
-                NormalMode: 'Flat',
-                NormalizeLuminance: true
+                PathingType: defaultPathing
             });
         } else if (domain === 'buildings') {
             targetArray.push({
@@ -3051,8 +2623,6 @@
                 Name: `New ${prefix}`,
                 Description: `A new ${prefix.toLowerCase()} entity.`,
                 ModelPath: defaultModelPath,
-                Scale: defaultScale,
-                YOffset: defaultYOffset,
                 MaxHp: 1000.0,
                 Damage: 0.0,
                 Range: 0.0,
@@ -3068,10 +2638,7 @@
                 AttackType: 'none',
                 ArmorType: defaultArmor,
                 GoldBounty: 0.0,
-                PathingType: defaultPathing,
-                Brightness: 0.5,
-                NormalMode: 'Flat',
-                NormalizeLuminance: true
+                PathingType: defaultPathing
             });
         } else {
             targetArray.push({
@@ -3079,8 +2646,6 @@
                 Name: `New ${prefix}`,
                 Description: `A new ${prefix.toLowerCase()} entity.`,
                 ModelPath: defaultModelPath,
-                Scale: defaultScale,
-                YOffset: defaultYOffset,
                 MaxHp: 100.0,
                 Damage: 10.0,
                 Range: 2.0,
@@ -3096,25 +2661,12 @@
                 AttackType: 'melee',
                 ArmorType: defaultArmor,
                 GoldBounty: 10.0,
-                PathingType: defaultPathing,
-                Brightness: 0.5,
-                NormalMode: 'Flat',
-                NormalizeLuminance: true
+                PathingType: defaultPathing
             });
         }
 
         selectUnit(nextId);
         saveChanges();
-    });
-
-    document.getElementById('btn-expand-all-weapons')?.addEventListener('click', () => {
-        customWeaponsList.querySelectorAll('.detail-row').forEach(row => row.classList.remove('hidden'));
-        customWeaponsList.querySelectorAll('.row-expand-btn').forEach(btn => btn.classList.add('expanded'));
-    });
-
-    document.getElementById('btn-collapse-all-weapons')?.addEventListener('click', () => {
-        customWeaponsList.querySelectorAll('.detail-row').forEach(row => row.classList.add('hidden'));
-        customWeaponsList.querySelectorAll('.row-expand-btn').forEach(btn => btn.classList.remove('expanded'));
     });
 
     addCustomWeaponBtn.addEventListener('click', () => {
@@ -3137,13 +2689,6 @@
         units.CustomWeapons = list;
         saveChanges();
         renderCustomWeapons();
-        // Auto-expand the newly created weapon row
-        const newDetail = document.getElementById(`weapon-detail-${list.length - 1}`);
-        if (newDetail) {
-            newDetail.classList.remove('hidden');
-            const newBtn = customWeaponsList.querySelector(`.row-expand-btn[data-target="weapon-detail-${list.length - 1}"]`);
-            if (newBtn) newBtn.classList.add('expanded');
-        }
     });
 
     addCustomAbilityBtn.addEventListener('click', () => {
@@ -3228,17 +2773,7 @@
         }, 'Prune Unused');
     });
 
-    document.getElementById('btn-prune-unused-assets')?.addEventListener('click', () => {
-        showCustomConfirmDialog('Are you sure you want to prune all unreferenced assets? Unused asset entries will be removed from metadata.json and their files will be deleted from the workspace.', () => {
-            vscode.postMessage({ type: 'pruneUnusedAssets' });
-        }, 'Prune Unused');
-    });
 
-    document.getElementById('btn-prune-unused-assets-section')?.addEventListener('click', () => {
-        showCustomConfirmDialog('Are you sure you want to prune all unreferenced assets? Unused asset entries will be removed from metadata.json and their files will be deleted from the workspace.', () => {
-            vscode.postMessage({ type: 'pruneUnusedAssets' });
-        }, 'Prune Unused');
-    });
 
     // --- SYSTEM FILE RESOLVE PATH & THUMBNAIL/AUDIO WARNINGS ---
     function resolvePath(path, callback) {
@@ -3300,10 +2835,9 @@
         
         // Supported extensions:
         const isImage = /\.(png|jpg|jpeg|gif|svg|bmp|webp|tga|dds)$/i.test(val);
-        const is3DModel = /\.(glb|gltf|scn|tscn)$/i.test(val);
         const isAudio = /\.(ogg|wav|mp3)$/i.test(val);
         
-        if (!isImage && !is3DModel && !isAudio) {
+        if (!isImage && !isAudio) {
             thumbContainer.innerHTML = '';
             inputEl.classList.remove('input-warning');
             removeWarningText(inputEl);
@@ -3324,8 +2858,6 @@
                             <span>🔊 Audio Event: ${val.split('/').pop()}</span>
                         </div>
                     `;
-                } else {
-                    thumbContainer.innerHTML = '';
                 }
             } else {
                 thumbContainer.innerHTML = `<span class="thumbnail-error">Asset file not found</span>`;
@@ -3376,7 +2908,7 @@
             document.getElementById('prop-LoadingMusic')
         ];
         
-        document.querySelectorAll('.weapon-visual, .weapon-proj-model, .weapon-impact-visual, .weapon-sound, .weapon-impact-sound, .ability-visual, .ability-sound, .ability-icon, .item-icon').forEach(input => {
+        document.querySelectorAll('.item-icon').forEach(input => {
             imageInputs.push(input);
         });
         
@@ -3662,149 +3194,6 @@
         populateDatalist('suggest-upgrades', upgrades.map(u => ({ id: u.UpgradeId, name: u.Name })));
         populateDatalist('suggest-items', items.map(i => ({ id: i.ItemId, name: i.Name })));
 
-        const animAssets = (units.Assets && units.Assets.animations) ? units.Assets.animations : {};
-        const animList = Object.keys(animAssets);
-        const standardDefaults = new Set(['idle.ranim', 'walk.ranim', 'attack.ranim', 'death.ranim', 'labor.ranim', 'spell_cast.ranim', 'dance.ranim']);
-        const customAnims = animList.filter(a => !standardDefaults.has(a.toLowerCase()));
-        populateDatalist('suggest-animations', customAnims.map(a => ({ id: a, name: a })));
-
-        // Sounds datalist (suggest-sounds) - strictly imported audio/SFX assets
-        const soundAssets = new Set();
-        ['sfx', 'audio', 'sound', 'sounds'].forEach(k => {
-            if (units.Assets && units.Assets[k] && typeof units.Assets[k] === 'object') {
-                Object.keys(units.Assets[k]).forEach(s => soundAssets.add(s));
-            }
-            if (units.MapProperties?.Assets && units.MapProperties.Assets[k] && typeof units.MapProperties.Assets[k] === 'object') {
-                Object.keys(units.MapProperties.Assets[k]).forEach(s => soundAssets.add(s));
-            }
-        });
-        weapons.forEach(w => {
-            if (w.AttackSound) soundAssets.add(w.AttackSound);
-            if (w.ImpactSound) soundAssets.add(w.ImpactSound);
-        });
-        populateDatalist('suggest-sounds', Array.from(soundAssets).map(s => {
-            const basename = s.split('/').pop() || s;
-            return { id: s, name: basename };
-        }));
-
-        // Visual effects / spritesheets (suggest-visual-effects) - strictly imported VFX spritesheets
-        const vfxAssets = new Set();
-        ['vfx_spritesheets', 'spritesheets', 'vfx', 'decals'].forEach(k => {
-            if (units.Assets && units.Assets[k] && typeof units.Assets[k] === 'object') {
-                Object.keys(units.Assets[k]).forEach(v => vfxAssets.add(v));
-            }
-            if (units.MapProperties?.Assets && units.MapProperties.Assets[k] && typeof units.MapProperties.Assets[k] === 'object') {
-                Object.keys(units.MapProperties.Assets[k]).forEach(v => vfxAssets.add(v));
-            }
-        });
-        weapons.forEach(w => {
-            if (w.ImpactVisualEffect) vfxAssets.add(w.ImpactVisualEffect);
-        });
-        populateDatalist('suggest-visual-effects', Array.from(vfxAssets).map(v => {
-            const basename = v.split('/').pop() || v;
-            return { id: v, name: basename };
-        }));
-
-        // Projectile 3D Models (suggest-projectile-models) - strictly imported GLB projectile models
-        const projectileModels = new Set();
-        const allGlb = (units.Assets && units.Assets.glb) ? units.Assets.glb : {};
-        if (allGlb.projectiles && typeof allGlb.projectiles === 'object') {
-            for (const itemKey of Object.keys(allGlb.projectiles)) {
-                projectileModels.add(`Assets/models/projectiles/${itemKey}`);
-                projectileModels.add(itemKey);
-            }
-        }
-        for (const [subCat, val] of Object.entries(allGlb)) {
-            if (subCat !== 'projectiles' && val && typeof val === 'object') {
-                for (const itemKey of Object.keys(val)) {
-                    projectileModels.add(`Assets/models/${subCat}/${itemKey}`);
-                }
-            } else if (typeof val === 'string') {
-                projectileModels.add(subCat);
-            }
-        }
-        (units.CustomUnits || []).forEach(u => { if (u.ModelPath) projectileModels.add(u.ModelPath); });
-        (units.CustomProps || []).forEach(p => { if (p.ModelPath) projectileModels.add(p.ModelPath); });
-        weapons.forEach(w => { if (w.ProjectileModelPath) projectileModels.add(w.ProjectileModelPath); });
-        populateDatalist('suggest-projectile-models', Array.from(projectileModels).map(m => {
-            const basename = m.split('/').pop() || m;
-            return { id: m, name: basename };
-        }));
-
-        // Ribbon Textures (suggest-ribbon-textures) - strictly imported ribbon textures
-        const ribbonAssets = new Set();
-        ['ribbon_textures', 'ribbons'].forEach(k => {
-            if (units.Assets && units.Assets[k] && typeof units.Assets[k] === 'object') {
-                Object.keys(units.Assets[k]).forEach(t => {
-                    ribbonAssets.add(t);
-                    if (!t.startsWith('Assets/')) {
-                        ribbonAssets.add(`Assets/textures/ribbons/${t}`);
-                    }
-                });
-            }
-            if (units.MapProperties?.Assets && units.MapProperties.Assets[k] && typeof units.MapProperties.Assets[k] === 'object') {
-                Object.keys(units.MapProperties.Assets[k]).forEach(t => {
-                    ribbonAssets.add(t);
-                    if (!t.startsWith('Assets/')) {
-                        ribbonAssets.add(`Assets/textures/ribbons/${t}`);
-                    }
-                });
-            }
-        });
-        if (units.Assets?.textures && typeof units.Assets.textures === 'object') {
-            Object.keys(units.Assets.textures).forEach(t => {
-                if (t.includes('ribbon')) {
-                    ribbonAssets.add(t);
-                    if (!t.startsWith('Assets/')) {
-                        ribbonAssets.add(`Assets/textures/ribbons/${t}`);
-                    }
-                }
-            });
-        }
-        weapons.forEach(w => { if (w.RibbonTexture) ribbonAssets.add(w.RibbonTexture); });
-        populateDatalist('suggest-ribbon-textures', Array.from(ribbonAssets).map(r => {
-            const basename = r.split('/').pop() || r;
-            return { id: r, name: basename };
-        }));
-
-        // Noise Textures (suggest-noise-textures) - strictly imported noise assets + procedural fallback
-        const noiseAssets = new Set([
-            'procedural_simplex_noise'
-        ]);
-        ['noise_textures', 'noise'].forEach(k => {
-            if (units.Assets && units.Assets[k] && typeof units.Assets[k] === 'object') {
-                Object.keys(units.Assets[k]).forEach(t => {
-                    noiseAssets.add(t);
-                    if (!t.startsWith('Assets/')) {
-                        noiseAssets.add(`Assets/textures/noise/${t}`);
-                    }
-                });
-            }
-            if (units.MapProperties?.Assets && units.MapProperties.Assets[k] && typeof units.MapProperties.Assets[k] === 'object') {
-                Object.keys(units.MapProperties.Assets[k]).forEach(t => {
-                    noiseAssets.add(t);
-                    if (!t.startsWith('Assets/')) {
-                        noiseAssets.add(`Assets/textures/noise/${t}`);
-                    }
-                });
-            }
-        });
-        if (units.Assets?.textures && typeof units.Assets.textures === 'object') {
-            Object.keys(units.Assets.textures).forEach(t => {
-                if (t.includes('noise') || t.includes('voronoi') || t.includes('perlin')) {
-                    noiseAssets.add(t);
-                    if (!t.startsWith('Assets/')) {
-                        noiseAssets.add(`Assets/textures/noise/${t}`);
-                    }
-                }
-            });
-        }
-        weapons.forEach(w => { if (w.NoiseTexture) noiseAssets.add(w.NoiseTexture); });
-        populateDatalist('suggest-noise-textures', Array.from(noiseAssets).map(n => {
-            const basename = n.split('/').pop() || n;
-            return { id: n, name: n === 'procedural_simplex_noise' ? 'Procedural Simplex Noise (Shader Default)' : basename };
-        }));
-
         // Icons datalist (suggest-icons) - strictly imported *.png under Assets/icons
         const iconAssets = new Set();
         ['icons', 'icon'].forEach(k => {
@@ -3904,38 +3293,6 @@
 
             pushToUndoStack();
             targetUnit[key] = parsedVal;
-            if (key === 'Scale') {
-                const newScale = parsedVal;
-                if (targetUnit.ModelPath && newScale > 0) {
-                    const directY = getAutoCalculatedYOffsetDirect(targetUnit.ModelPath, newScale, getActiveDomain());
-                    if (directY !== null) {
-                        targetUnit.YOffset = directY;
-                        if (formFields.YOffset) formFields.YOffset.value = directY;
-                        if (!units.ModelOffsets) units.ModelOffsets = {};
-                        units.ModelOffsets[targetUnit.ModelPath] = directY;
-                    } else {
-                        requestModelMinY(targetUnit.ModelPath, (minY) => {
-                            if (minY !== null) {
-                                const autoY = minY < 0 ? parseFloat((-minY * newScale).toFixed(4)) : 0.0;
-                                targetUnit.YOffset = autoY;
-                                if (formFields.YOffset && selectedUnitId === targetUnit.UnitId) {
-                                    formFields.YOffset.value = autoY;
-                                }
-                                if (!units.ModelOffsets) units.ModelOffsets = {};
-                                units.ModelOffsets[targetUnit.ModelPath] = autoY;
-                                saveChanges();
-                            }
-                        });
-                    }
-                }
-                if (!units.ModelScales) units.ModelScales = {};
-                if (targetUnit.ModelPath) units.ModelScales[targetUnit.ModelPath] = newScale;
-            } else if (key === 'YOffset') {
-                if (targetUnit.ModelPath) {
-                    if (!units.ModelOffsets) units.ModelOffsets = {};
-                    units.ModelOffsets[targetUnit.ModelPath] = parsedVal;
-                }
-            }
             if (key === 'Name') {
                 editorTitle.textContent = parsedVal || 'Edit Unit';
                 renderUnitList();
