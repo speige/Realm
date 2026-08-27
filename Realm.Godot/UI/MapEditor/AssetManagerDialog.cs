@@ -39,10 +39,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private OptionButton _optAssetCategory;
 	private Label _lblModelTypeDescription;
 	private Button _btnImportAsset;
+	private Button _btnConvertMixamo;
 	private Button _btnPruneUnused;
 	private LineEdit _txtSearchFilter;
 	private VBoxContainer _listVBox;
-	private FileDialog _fileDialog;
 
 	private SpritesheetAssetEditDialog _spritesheetEditDialog;
 	private TerrainTextureEditDialog _textureEditDialog;
@@ -74,13 +74,6 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		_audioPlayer = new AudioStreamPlayer();
 		AddChild(_audioPlayer);
-
-		_fileDialog = new FileDialog();
-		_fileDialog.FileMode = FileDialog.FileModeEnum.OpenFile;
-		_fileDialog.Access = FileDialog.AccessEnum.Filesystem;
-		_fileDialog.UseNativeDialog = true;
-		_fileDialog.FileSelected += OnImportFileSelected;
-		AddChild(_fileDialog);
 
 		BuildControls();
 		SetFooterCloseOnly();
@@ -252,6 +245,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		catRow.AddChild(_optAssetCategory);
 
 		_btnImportAsset = AddButton(catRow, "📥 " + TranslationServer.Translate("Import Asset..."), () => OpenImportFileDialog(), "Import a new asset for the selected category", 11, new Vector2(120, 26));
+		_btnConvertMixamo = AddButton(catRow, "🔄 " + TranslationServer.Translate("Convert Mixamo FBX/GLB to .ranim..."), () => OpenConvertMixamoDialog(), "Convert Mixamo .fbx or .glb animations to .ranim files", 11, new Vector2(240, 26));
+		_btnConvertMixamo.Visible = false;
 		_btnPruneUnused = AddButton(catRow, "🧹 " + TranslationServer.Translate("Prune Unused"), () => PruneUnusedAssets(), "Remove assets not referenced anywhere in the map", 11, new Vector2(110, 26));
 
 		BodyContainer.AddChild(catRow);
@@ -360,6 +355,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 
 		bool isRanim = _currentCategory == "animations";
+		if (_btnConvertMixamo != null)
+		{
+			_btnConvertMixamo.Visible = isRanim;
+		}
 		if (_ranimBaseModelRow != null)
 		{
 			_ranimBaseModelRow.Visible = isRanim;
@@ -1195,24 +1194,105 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private void OpenImportFileDialog()
 	{
-		_fileDialog.Filters = IsGlbCategory(_currentCategory, out _)
-			? new[] { "*.glb, *.gltf ; 3D Models" }
+		var extensions = IsGlbCategory(_currentCategory, out _)
+			? new[] { ".glb", ".gltf" }
 			: _currentCategory switch
 			{
-				"textures" => new[] { "*.ktx2, *.png, *.jpg, *.jpeg, *.bmp, *.tga, *.webp ; Terrain Textures" },
-				"vfx_spritesheets" => new[] { "*.png, *.jpg, *.jpeg, *.webp ; Spritesheets" },
-				"animations" => new[] { "*.ranim, *.glb, *.gltf, *.fbx ; Animation Files" },
-				"sfx" => new[] { "*.ogg, *.wav, *.mp3 ; Sound Effects" },
-				"music" => new[] { "*.ogg, *.wav, *.mp3 ; Music Tracks" },
-				"icons" => new[] { "*.png, *.jpg, *.jpeg, *.svg ; Icons" },
-				"decals" => new[] { "*.png, *.jpg, *.jpeg, *.webp ; Decals" },
-				"ribbon_textures" => new[] { "*.png, *.jpg, *.jpeg, *.ktx2 ; Ribbon Textures" },
-				"noise_textures" => new[] { "*.png, *.jpg, *.jpeg, *.ktx2 ; Noise Textures" },
-				"skyboxes" => new[] { "*.png, *.jpg, *.jpeg, *.webp, *.hdr ; Skybox Panoramas" },
-				_ => new[] { "*.* ; All Files" }
+				"textures" => new[] { ".ktx2", ".png", ".jpg", ".jpeg", ".bmp", ".tga", ".webp" },
+				"vfx_spritesheets" => new[] { ".png", ".jpg", ".jpeg", ".webp" },
+				"animations" => new[] { ".ranim" },
+				"sfx" => new[] { ".ogg", ".wav", ".mp3" },
+				"music" => new[] { ".ogg", ".wav", ".mp3" },
+				"icons" => new[] { ".png", ".jpg", ".jpeg", ".svg" },
+				"decals" => new[] { ".png", ".jpg", ".jpeg", ".webp" },
+				"ribbon_textures" => new[] { ".png", ".jpg", ".jpeg", ".ktx2" },
+				"noise_textures" => new[] { ".png", ".jpg", ".jpeg", ".ktx2" },
+				"skyboxes" => new[] { ".png", ".jpg", ".jpeg", ".webp", ".hdr" },
+				_ => Array.Empty<string>()
 			};
 
-		_fileDialog.PopupCentered(new Vector2I(800, 500));
+		Hud?.OpenAssetBrowser($"Import Asset ({_currentCategory})", extensions, OnImportFileSelected);
+	}
+
+	private void OpenConvertMixamoDialog()
+	{
+		var err = DisplayServer.FileDialogShow(
+			TranslationServer.Translate("Select Mixamo FBX or GLB File to Convert to .ranim"),
+			PathUtils.GetProjectRoot(),
+			"",
+			false,
+			DisplayServer.FileDialogMode.OpenFile,
+			new[] { "*.fbx,*.glb,*.gltf ; 3D Animation Files (*.fbx, *.glb, *.gltf)" },
+			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) =>
+			{
+				if (status && selectedPaths.Length > 0)
+				{
+					string sourceFilePath = selectedPaths[0];
+					ConvertMixamoFileToRanim(sourceFilePath);
+				}
+			})
+		);
+	}
+
+	private void ConvertMixamoFileToRanim(string sourceFilePath)
+	{
+		if (string.IsNullOrEmpty(sourceFilePath) || !File.Exists(sourceFilePath)) return;
+
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string animsDir = Path.Combine(wsPath, "Assets", "animations");
+		Directory.CreateDirectory(animsDir);
+
+		try
+		{
+			string originalFileName = Path.GetFileNameWithoutExtension(sourceFilePath);
+			var extracted = Realm.Godot.Animation.MixamoAnimationImporter.ExtractAnimationsFromFile(sourceFilePath, originalFileName);
+			if (extracted.Count == 0)
+			{
+				Hud?.ShowFeedback(TranslationServer.Translate("No skeletal animations found in the selected file."));
+				return;
+			}
+
+			string metaPath = Path.Combine(wsPath, "metadata.json");
+			JsonObject root = File.Exists(metaPath)
+				? (JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject() ?? new JsonObject())
+				: new JsonObject();
+
+			if (!root.ContainsKey("Assets") || root["Assets"] == null) root["Assets"] = new JsonObject();
+			var assetsObj = root["Assets"].AsObject();
+			if (!assetsObj.ContainsKey("animations") || assetsObj["animations"] == null) assetsObj["animations"] = new JsonObject();
+			var animsObj = assetsObj["animations"].AsObject();
+
+			int importedCount = 0;
+			int skippedCount = 0;
+
+			foreach (var (animName, animData) in extracted)
+			{
+				var (savedFileName, blake3, alreadyExisted) = Realm.Godot.Animation.MixamoAnimationImporter.SaveAnimationWithDeduplication(animsDir, animName, animData);
+				animsObj[savedFileName] = blake3;
+				if (alreadyExisted) skippedCount++;
+				else importedCount++;
+			}
+
+			File.WriteAllText(metaPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+
+			AssetIndexService.Instance.RescanDirectory(animsDir);
+
+			RefreshAssetList();
+
+			if (importedCount > 0)
+			{
+				Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Successfully converted and imported {0} .ranim animation(s)!"), importedCount));
+			}
+			else
+			{
+				Hud?.ShowFeedback(TranslationServer.Translate("Animation(s) already existed in map workspace (identical BLAKE3 hash)."));
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[AssetManagerDialog] ConvertMixamoFileToRanim error: {ex.Message}");
+			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Error converting animation: {0}"), ex.Message));
+		}
 	}
 
 	private void OnImportFileSelected(string sourceFilePath)

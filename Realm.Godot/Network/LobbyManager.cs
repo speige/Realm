@@ -50,16 +50,41 @@ public partial class LobbyManager : Node
 
     private static string GetGameBinaryVersion()
     {
-        var defaultVersionString = "0.0.1_Pre-Alpha";
+        const string defaultVersionString = "0.0.1_Pre-Alpha";
         try
         {
-            if (!OS.HasFeature("editor"))
+            var assembly = typeof(LobbyManager).Assembly;
+
+            var infoVerAttr = (System.Reflection.AssemblyInformationalVersionAttribute)System.Attribute.GetCustomAttribute(
+                assembly, typeof(System.Reflection.AssemblyInformationalVersionAttribute));
+            if (infoVerAttr != null && !string.IsNullOrWhiteSpace(infoVerAttr.InformationalVersion))
             {
-                return defaultVersionString;
+                string infoVer = infoVerAttr.InformationalVersion;
+                int plusIdx = infoVer.IndexOf('+');
+                if (plusIdx > 0)
+                {
+                    infoVer = infoVer.Substring(0, plusIdx);
+                }
+                if (!string.IsNullOrWhiteSpace(infoVer))
+                {
+                    return infoVer.Trim();
+                }
             }
 
-            var assembly = typeof(LobbyManager).Assembly;
-            if (!string.IsNullOrEmpty(assembly.Location))
+            var ver = assembly.GetName().Version;
+            if (ver != null && (ver.Major > 0 || ver.Minor > 0 || ver.Build > 0))
+            {
+                return $"v{ver.Major}.{ver.Minor}.{Math.Max(0, ver.Build)}";
+            }
+
+            var fileVerAttr = (System.Reflection.AssemblyFileVersionAttribute)System.Attribute.GetCustomAttribute(
+                assembly, typeof(System.Reflection.AssemblyFileVersionAttribute));
+            if (fileVerAttr != null && !string.IsNullOrWhiteSpace(fileVerAttr.Version))
+            {
+                return $"v{fileVerAttr.Version.Trim()}";
+            }
+
+            if (!string.IsNullOrEmpty(assembly.Location) && System.IO.File.Exists(assembly.Location))
             {
                 var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
                 if (!string.IsNullOrEmpty(versionInfo.ProductVersion))
@@ -67,26 +92,10 @@ public partial class LobbyManager : Node
                     return versionInfo.ProductVersion.Trim();
                 }
             }
-
-            string exePath = OS.GetExecutablePath();
-            if (!string.IsNullOrEmpty(exePath))
-            {
-                var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(exePath);
-                string version = versionInfo.ProductVersion;
-                if (!string.IsNullOrEmpty(version))
-                {
-                    return version.Trim();
-                }
-                version = versionInfo.FileVersion;
-                if (!string.IsNullOrEmpty(version))
-                {
-                    return version.Trim();
-                }
-            }
         }
         catch (Exception ex)
         {
-            GD.PrintErr($"Failed to read version from executable: {ex.Message}");
+            GD.PrintErr($"Failed to read version from assembly: {ex.Message}");
         }
 
         return defaultVersionString;

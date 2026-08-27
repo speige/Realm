@@ -270,7 +270,7 @@ internal class SimulationService
 		ResourceId goldResourceId,
 		ResourceId woodResourceId,
 		ResourceId stoneResourceId,
-		EditableTerrain groundTerrain)
+		RuntimeTerrain groundTerrain)
 	{
 		_economyService.SetRuntimeReferences(definitionManager, goldResourceId, woodResourceId, stoneResourceId);
 	}
@@ -715,13 +715,29 @@ internal class SimulationService
 
 		if (!isEnemy)
 		{
-			if (EcsWorld.Has<MoveTo>(entity) && EcsWorld.Has<MovementStats>(entity))
+			if ((EcsWorld.Has<MoveTo>(entity) || EcsWorld.Has<Follow>(entity)) && EcsWorld.Has<MovementStats>(entity))
 			{
-				var moveTo = EcsWorld.Get<MoveTo>(entity);
 				var stats = EcsWorld.Get<MovementStats>(entity);
-				System.Numerics.Vector3 dest = moveTo.Target;
+				System.Numerics.Vector3 dest;
+				if (EcsWorld.Has<MoveTo>(entity))
+				{
+					dest = EcsWorld.Get<MoveTo>(entity).Target;
+				}
+				else
+				{
+					var follow = EcsWorld.Get<Follow>(entity);
+					if (EcsWorld.IsAlive(follow.Target) && EcsWorld.Has<Position>(follow.Target))
+					{
+						dest = EcsWorld.Get<Position>(follow.Target).Value;
+					}
+					else
+					{
+						dest = currentPos;
+					}
+				}
+
 				float distToDest = System.Numerics.Vector3.Distance(currentPos, dest);
-				if (distToDest > 0.05f)
+				if (distToDest > (EcsWorld.Has<Follow>(entity) ? 3.0f : 0.05f))
 				{
 					System.Numerics.Vector3 dir = System.Numerics.Vector3.Normalize(dest - currentPos);
 					float step = stats.Speed * _fDelta;
@@ -731,11 +747,14 @@ internal class SimulationService
 				}
 				else
 				{
-					finalPos = dest;
+					finalPos = EcsWorld.Has<Follow>(entity) ? currentPos : dest;
 					finalVel = System.Numerics.Vector3.Zero;
-					EcsWorld.Remove<MoveTo>(entity);
+					if (EcsWorld.Has<MoveTo>(entity))
+					{
+						EcsWorld.Remove<MoveTo>(entity);
+					}
 				}
-				Console.WriteLine($"[CLIENT_ESTIMATED] Unit={entity.Id} Pos={finalPos} Target={moveTo.Target}");
+				Console.WriteLine($"[CLIENT_ESTIMATED] Unit={entity.Id} Pos={finalPos} Target={dest}");
 			}
 			else
 			{

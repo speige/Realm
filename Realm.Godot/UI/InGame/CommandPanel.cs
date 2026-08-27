@@ -13,6 +13,39 @@ public class CommandPanel
 		_commandGrid = commandGrid;
 	}
 
+	private static Texture2D s_whiteTexture;
+	private static readonly string[] s_integerStrings = CreateIntegerStringCache();
+
+	private static string[] CreateIntegerStringCache()
+	{
+		var arr = new string[1000];
+		for (int i = 0; i < arr.Length; i++)
+		{
+			arr[i] = i.ToString();
+		}
+		return arr;
+	}
+
+	private static string GetCachedIntegerString(int value)
+	{
+		if (value >= 0 && value < s_integerStrings.Length)
+		{
+			return s_integerStrings[value];
+		}
+		return value.ToString();
+	}
+
+	private static Texture2D GetOrCreateWhiteTexture()
+	{
+		if (s_whiteTexture == null)
+		{
+			var img = Image.CreateEmpty(8, 8, false, Image.Format.Rgba8);
+			img.Fill(Colors.White);
+			s_whiteTexture = ImageTexture.CreateFromImage(img);
+		}
+		return s_whiteTexture;
+	}
+
 	public class CommandCardItem
 	{
 		public string Id { get; set; }
@@ -22,6 +55,9 @@ public class CommandPanel
 		public Key Hotkey { get; set; }
 		public Func<bool> IsDisabled { get; set; }
 		public Func<string> GetButtonText { get; set; }
+		public string AbilityId { get; set; }
+		public Entity CasterEntity { get; set; } = Entity.Null;
+		public float ManaCost { get; set; } = 0f;
 	}
 
 	private int _pageIndex = 0;
@@ -90,15 +126,116 @@ public class CommandPanel
 					{
 						btn.Text = newText;
 					}
-					bool disabled = item.IsDisabled?.Invoke() ?? false;
-					if (btn.Disabled != disabled)
+
+					if (!string.IsNullOrEmpty(item.AbilityId))
 					{
-						btn.Disabled = disabled;
-						btn.Modulate = disabled ? new Color(0.5f, 0.5f, 0.5f, 0.7f) : Colors.White;
+						UpdateAbilityButtonVisuals(btn, item);
+					}
+					else
+					{
+						bool disabled = item.IsDisabled?.Invoke() ?? false;
+						if (btn.Disabled != disabled)
+						{
+							btn.Disabled = disabled;
+							btn.Modulate = disabled ? new Color(0.5f, 0.5f, 0.5f, 0.7f) : Colors.White;
+						}
 					}
 				}
 			}
 		}
+	}
+
+	private void UpdateAbilityButtonVisuals(Button btn, CommandCardItem item)
+	{
+		float cdRemaining = 0f;
+		float maxCd = 10f;
+		float currentMana = float.MaxValue;
+		float manaCost = item.ManaCost;
+
+		var world = GameHost.Instance?.EcsWorld;
+		if (world != null)
+		{
+			var caster = item.CasterEntity != Entity.Null && world.IsAlive(item.CasterEntity) ? item.CasterEntity : _lastFocusedEntity;
+			if (caster != Entity.Null && world.IsAlive(caster))
+			{
+				if (world.Has<Realm.Ecs.Components.Core.Mana>(caster))
+				{
+					currentMana = world.Get<Realm.Ecs.Components.Core.Mana>(caster).Current;
+				}
+
+				if (world.Has<Realm.Ecs.Components.Core.Cooldowns>(caster))
+				{
+					var cds = world.Get<Realm.Ecs.Components.Core.Cooldowns>(caster).Value;
+					if (cds.TryGetValue(item.AbilityId, out float val))
+					{
+						cdRemaining = val;
+					}
+				}
+
+				if (world.Has<Realm.Ecs.Components.Core.SpellCooldowns>(caster))
+				{
+					var scd = world.Get<Realm.Ecs.Components.Core.SpellCooldowns>(caster);
+					if (item.AbilityId == "fireball") cdRemaining = Math.Max(cdRemaining, scd.FireballCooldown);
+					else if (item.AbilityId == "lightning") cdRemaining = Math.Max(cdRemaining, scd.LightningCooldown);
+					else if (item.AbilityId == "holylight") cdRemaining = Math.Max(cdRemaining, scd.HolyLightCooldown);
+				}
+			}
+
+			if (cdRemaining <= 0f && GameHost.Instance != null)
+			{
+				if (item.AbilityId == "fireball") cdRemaining = GameHost.Instance.FireballCooldown;
+				else if (item.AbilityId == "lightning") cdRemaining = GameHost.Instance.LightningCooldown;
+				else if (item.AbilityId == "holylight") cdRemaining = GameHost.Instance.HolyLightCooldown;
+			}
+		}
+
+		var abilityDef = GameHost.Instance?.GetAbilityDefinition(item.AbilityId);
+		if (abilityDef != null && abilityDef.Cooldown > 0f)
+		{
+			maxCd = abilityDef.Cooldown;
+		}
+		else
+		{
+			maxCd = Math.Max(10f, cdRemaining);
+		}
+		if (abilityDef != null && abilityDef.ManaCost > 0f)
+		{
+			manaCost = abilityDef.ManaCost;
+		}
+
+		var manaLabel = btn.GetNodeOrNull<Label>("ManaCostLabel");
+		if (manaLabel != null)
+		{
+			string manaText = manaCost > 0f ? GetCachedIntegerString((int)manaCost) : "";
+			if (manaLabel.Text != manaText) manaLabel.Text = manaText;
+		}
+
+		var sweep = btn.GetNodeOrNull<TextureProgressBar>("CooldownSweep");
+		if (sweep != null)
+		{
+			bool onCd = cdRemaining > 0f;
+			if (sweep.Visible != onCd) sweep.Visible = onCd;
+			if (onCd)
+			{
+				double sweepVal = Math.Clamp((cdRemaining / maxCd) * 100.0, 0.0, 100.0);
+				if (Math.Abs(sweep.Value - sweepVal) > 0.4) sweep.Value = sweepVal;
+			}
+		}
+
+		var cdLabel = btn.GetNodeOrNull<Label>("CooldownLabel");
+		if (cdLabel != null)
+		{
+			string cdText = cdRemaining > 1.0f ? GetCachedIntegerString((int)Math.Ceiling(cdRemaining)) : "";
+			if (cdLabel.Text != cdText) cdLabel.Text = cdText;
+		}
+
+		bool onCooldown = cdRemaining > 0f;
+		bool notEnoughMana = currentMana < manaCost;
+		bool disabled = onCooldown || notEnoughMana || (item.IsDisabled?.Invoke() ?? false);
+		if (btn.Disabled != disabled) btn.Disabled = disabled;
+
+		Color targetModulate = notEnoughMana ? new Color(0.5f, 0.5f, 0.5f, 0.7f) : Colors.White;
+		if (btn.Modulate != targetModulate) btn.Modulate = targetModulate;
 	}
 
 	public void Update(InGameHUDViewModel viewModel)
@@ -374,16 +511,67 @@ public class CommandPanel
 		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateHUDButtonStyle(false, true));
 		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 
-		bool disabled = item.IsDisabled?.Invoke() ?? false;
-		if (disabled)
+		if (!string.IsNullOrEmpty(item.AbilityId))
 		{
-			btn.Disabled = true;
-			btn.Modulate = new Color(0.5f, 0.5f, 0.5f, 0.7f);
+			var sweep = new TextureProgressBar();
+			sweep.Name = "CooldownSweep";
+			sweep.FillMode = (int)TextureProgressBar.FillModeEnum.CounterClockwise;
+			sweep.NinePatchStretch = true;
+			sweep.TextureProgress = GetOrCreateWhiteTexture();
+			sweep.TintProgress = new Color(0f, 0f, 0f, 0.65f);
+			sweep.MinValue = 0.0;
+			sweep.MaxValue = 100.0;
+			sweep.Value = 0.0;
+			sweep.Visible = false;
+			sweep.MouseFilter = Control.MouseFilterEnum.Ignore;
+			sweep.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+			btn.AddChild(sweep);
+
+			var cdLabel = new Label();
+			cdLabel.Name = "CooldownLabel";
+			cdLabel.Text = "";
+			cdLabel.AddThemeFontSizeOverride("font_size", 14);
+			cdLabel.AddThemeColorOverride("font_color", Colors.White);
+			cdLabel.AddThemeColorOverride("font_outline_color", new Color(0f, 0f, 0f, 0.95f));
+			cdLabel.AddThemeConstantOverride("outline_size", 4);
+			cdLabel.HorizontalAlignment = HorizontalAlignment.Center;
+			cdLabel.VerticalAlignment = VerticalAlignment.Center;
+			cdLabel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+			cdLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
+			btn.AddChild(cdLabel);
+
+			if (item.ManaCost > 0f)
+			{
+				var manaLabel = new Label();
+				manaLabel.Name = "ManaCostLabel";
+				manaLabel.Text = GetCachedIntegerString((int)item.ManaCost);
+				manaLabel.AddThemeFontSizeOverride("font_size", 10);
+				manaLabel.AddThemeColorOverride("font_color", new Color(0.4f, 0.75f, 1.0f));
+				manaLabel.AddThemeColorOverride("font_outline_color", new Color(0f, 0f, 0f, 0.9f));
+				manaLabel.AddThemeConstantOverride("outline_size", 4);
+				manaLabel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.TopRight);
+				manaLabel.OffsetRight = -4;
+				manaLabel.OffsetTop = 3;
+				manaLabel.GrowHorizontal = Control.GrowDirection.Begin;
+				manaLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
+				btn.AddChild(manaLabel);
+			}
+
+			UpdateAbilityButtonVisuals(btn, item);
 		}
 		else
 		{
-			btn.Disabled = false;
-			btn.Modulate = Colors.White;
+			bool disabled = item.IsDisabled?.Invoke() ?? false;
+			if (disabled)
+			{
+				btn.Disabled = true;
+				btn.Modulate = new Color(0.5f, 0.5f, 0.5f, 0.7f);
+			}
+			else
+			{
+				btn.Disabled = false;
+				btn.Modulate = Colors.White;
+			}
 		}
 
 		btn.Pressed += () => {
@@ -496,7 +684,7 @@ public class CommandPanel
 
 				foreach (var ab in focusedUnit.Abilities)
 				{
-					items.Add(CreateAbilityItem(ab));
+					items.Add(CreateAbilityItem(ab, focusedUnit.Entity));
 				}
 
 
@@ -571,7 +759,7 @@ public class CommandPanel
 
 				foreach (var ab in focusedUnit.Abilities)
 				{
-					items.Add(CreateAbilityItem(ab));
+					items.Add(CreateAbilityItem(ab, focusedUnit.Entity));
 				}
 			}
 			else if (focusedUnit.IsBuilding
@@ -608,7 +796,7 @@ public class CommandPanel
 
 				foreach (var ab in focusedUnit.Abilities)
 				{
-					items.Add(CreateAbilityItem(ab));
+					items.Add(CreateAbilityItem(ab, focusedUnit.Entity));
 				}
 			}
 			else
@@ -622,7 +810,7 @@ public class CommandPanel
 				}
 				foreach (var ab in focusedUnit.Abilities)
 				{
-					items.Add(CreateAbilityItem(ab));
+					items.Add(CreateAbilityItem(ab, focusedUnit.Entity));
 				}
 			}
 		}
@@ -715,27 +903,15 @@ public class CommandPanel
 
 	private string GetDefaultAbilityIcon(string abilityId)
 	{
-		return abilityId switch
-		{
-			"fireball" => "res://Assets/UI/fire_spell.png",
-			"lightning" => "res://Assets/UI/lightning_spell.png",
-			"holylight" => "res://Assets/UI/magic_upgrade_arrow.png",
-			_ => "res://Assets/UI/alliance_flag.png"
-		};
+		return "res://Assets/UI/alliance_flag.png";
 	}
 
 	private string GetDefaultAbilityTooltip(string abilityId)
 	{
-		return abilityId switch
-		{
-			"fireball" => string.Format(TranslationServer.Translate("[X] Fireball — Deals 50 area damage (radius 4), cooldown {0}s"), GameHost.FireballCooldownMax),
-			"lightning" => string.Format(TranslationServer.Translate("[X] Lightning — Deals 80 area damage (radius 2), cooldown {0}s"), GameHost.LightningCooldownMax),
-			"holylight" => string.Format(TranslationServer.Translate("[X] Holy Light — Heals 60 area health (radius 4), cooldown {0}s"), GameHost.HolyLightCooldownMax),
-			_ => string.Format(TranslationServer.Translate("Cast {0}"), abilityId.ToUpper())
-		};
+		return string.Format(TranslationServer.Translate("Cast {0}"), abilityId.ToUpper());
 	}
 
-	private CommandCardItem CreateAbilityItem(string abilityId)
+	private CommandCardItem CreateAbilityItem(string abilityId, Entity casterEntity)
 	{
 		var abilityDef = GameHost.Instance?.GetAbilityDefinition(abilityId);
 
@@ -747,6 +923,7 @@ public class CommandPanel
 			? abilityDef.Tooltip
 			: GetDefaultAbilityTooltip(abilityId);
 
+		float manaCost = abilityDef?.ManaCost ?? 0f;
 		bool isInstant = abilityDef != null && abilityDef.IsInstant;
 
 		Action callback;
@@ -762,10 +939,42 @@ public class CommandPanel
 		return new CommandCardItem
 		{
 			Id = abilityId,
+			AbilityId = abilityId,
+			CasterEntity = casterEntity,
+			ManaCost = manaCost,
 			IconPath = iconPath,
 			Tooltip = tooltip,
 			Hotkey = Key.None,
-			Callback = callback
+			Callback = callback,
+			IsDisabled = () => {
+				if (GameHost.Instance?.EcsWorld == null) return false;
+				var world = GameHost.Instance.EcsWorld;
+				if (casterEntity != Entity.Null && world.IsAlive(casterEntity))
+				{
+					if (world.Has<Realm.Ecs.Components.Core.Mana>(casterEntity))
+					{
+						if (world.Get<Realm.Ecs.Components.Core.Mana>(casterEntity).Current < manaCost) return true;
+					}
+					if (world.Has<Realm.Ecs.Components.Core.Cooldowns>(casterEntity))
+					{
+						if (world.Get<Realm.Ecs.Components.Core.Cooldowns>(casterEntity).Value.TryGetValue(abilityId, out float cd) && cd > 0f) return true;
+					}
+					if (world.Has<Realm.Ecs.Components.Core.SpellCooldowns>(casterEntity))
+					{
+						var scd = world.Get<Realm.Ecs.Components.Core.SpellCooldowns>(casterEntity);
+						if (abilityId == "fireball" && scd.FireballCooldown > 0f) return true;
+						if (abilityId == "lightning" && scd.LightningCooldown > 0f) return true;
+						if (abilityId == "holylight" && scd.HolyLightCooldown > 0f) return true;
+					}
+				}
+				if (GameHost.Instance != null)
+				{
+					if (abilityId == "fireball" && GameHost.Instance.FireballCooldown > 0f) return true;
+					if (abilityId == "lightning" && GameHost.Instance.LightningCooldown > 0f) return true;
+					if (abilityId == "holylight" && GameHost.Instance.HolyLightCooldown > 0f) return true;
+				}
+				return false;
+			}
 		};
 	}
 

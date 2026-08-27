@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Godot;
+using Realm.Shared;
 using Realm.Ecs.Services;
 using Realm.Godot.Utils;
 
@@ -467,6 +468,11 @@ public class ModelOptimizerService
 
 	public static bool HasDecimationCompletedFlag(byte[] glbBytes)
 	{
+		if (GlbManifestUtils.HasOptimizationFlag(glbBytes))
+		{
+			return true;
+		}
+
 		try
 		{
 			if (glbBytes == null || glbBytes.Length < 20)
@@ -1914,96 +1920,12 @@ public class ModelOptimizerService
 
 	public static byte[] SanitizeGlbMaterialsBeforeGltfpack(byte[] glbBytes)
 	{
-		try
-		{
-			if (glbBytes == null || glbBytes.Length < 20) return glbBytes;
-			uint magic = BitConverter.ToUInt32(glbBytes, 0);
-			if (magic != 0x46546C67) return glbBytes;
-
-			int currentOffset = 12;
-			uint jsonChunkLength = BitConverter.ToUInt32(glbBytes, currentOffset);
-			uint jsonChunkType = BitConverter.ToUInt32(glbBytes, currentOffset + 4);
-			if (jsonChunkType != 0x4E4F534A) return glbBytes;
-
-			string jsonString = System.Text.Encoding.UTF8.GetString(glbBytes, currentOffset + 8, (int)jsonChunkLength);
-			var jsonNode = JsonNode.Parse(jsonString);
-			if (jsonNode == null) return glbBytes;
-
-			var rootObj = jsonNode.AsObject();
-			if (rootObj.ContainsKey("materials") && rootObj["materials"] is JsonArray matArray)
-			{
-				foreach (var matNode in matArray)
-				{
-					if (matNode is JsonObject matObj && matObj.ContainsKey("pbrMetallicRoughness") && matObj["pbrMetallicRoughness"] is JsonObject pbrObj)
-					{
-						if (pbrObj.ContainsKey("baseColorTexture"))
-						{
-							pbrObj["baseColorFactor"] = new JsonArray(1.0, 1.0, 1.0, 1.0);
-						}
-					}
-				}
-			}
-
-			byte[] newJsonBytes = System.Text.Encoding.UTF8.GetBytes(jsonNode.ToJsonString());
-			int paddedJsonLength = (newJsonBytes.Length + 3) & ~3;
-			byte[] paddedJson = new byte[paddedJsonLength];
-			Array.Copy(newJsonBytes, paddedJson, newJsonBytes.Length);
-			for (int i = newJsonBytes.Length; i < paddedJsonLength; i++)
-			{
-				paddedJson[i] = 0x20;
-			}
-
-			int binChunkStart = currentOffset + 8 + (int)jsonChunkLength;
-			int binChunkRemaining = glbBytes.Length - binChunkStart;
-
-			using var ms = new MemoryStream();
-			using var writer = new BinaryWriter(ms);
-
-			writer.Write(magic);
-			writer.Write(BitConverter.ToUInt32(glbBytes, 4));
-			uint newTotalLength = 12 + 8 + (uint)paddedJsonLength + (uint)binChunkRemaining;
-			writer.Write(newTotalLength);
-
-			writer.Write((uint)paddedJsonLength);
-			writer.Write(0x4E4F534A);
-			writer.Write(paddedJson);
-
-			if (binChunkRemaining > 0)
-			{
-				writer.Write(glbBytes, binChunkStart, binChunkRemaining);
-			}
-
-			return ms.ToArray();
-		}
-		catch
-		{
-			return glbBytes;
-		}
+		return GlbManifestUtils.SanitizeMaterials(glbBytes);
 	}
 
 	private static string FindGltfPackPath()
 	{
-		string[] candidatePaths = new string[]
-		{
-			Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ThirdPartyBinaries", "gltfpack.exe"),
-			Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ThirdPartyBinaries", "gltfpack"),
-			Path.Combine(PathUtils.GetProjectRoot(), "ThirdPartyBinaries", "gltfpack.exe"),
-			Path.Combine(PathUtils.GetProjectRoot(), "ThirdPartyBinaries", "gltfpack"),
-			Path.Combine(PathUtils.GetProjectRoot(), "..", "ThirdPartyBinaries", "gltfpack.exe"),
-			Path.Combine(PathUtils.GetProjectRoot(), "..", "ThirdPartyBinaries", "gltfpack"),
-			"gltfpack.exe",
-			"gltfpack"
-		};
-
-		foreach (var path in candidatePaths)
-		{
-			if (File.Exists(path))
-			{
-				return Path.GetFullPath(path);
-			}
-		}
-
-		return "gltfpack.exe";
+		return NativeToolRunner.FindGltfPackPath() ?? "gltfpack.exe";
 	}
 
 	public static byte[] ApplyKhrTextureBasisu(byte[] glbBytes, int maxTextureResolution = 1024)

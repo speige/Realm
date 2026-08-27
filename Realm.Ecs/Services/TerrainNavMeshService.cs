@@ -5,6 +5,7 @@ using DotRecast.Recast;
 using DotRecast.Recast.Geom;
 using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
+using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Terrain;
 using System;
 using System.Collections.Generic;
@@ -21,10 +22,370 @@ internal class TerrainNavMeshService
 	private const float AgentMaxSlope = 55.0f;
 
 	private readonly WorldAccessor _ecsWorldAccessor;
+	private readonly ForEachWithEntity<Position, MoveTo, PathFollow> _invalidatePathsDelegate;
+	private System.Numerics.Vector3 _invalidateCenter;
+	private float _invalidateRadiusSq;
+
+	private readonly ForEachWithEntity<Position, CollisionRadius> _checkOtherObstaclesDelegate;
+	private float _checkCellX;
+	private float _checkCellZ;
+	private bool _isCellBlockedByOtherObstacle;
 
 	public TerrainNavMeshService(WorldAccessor ecsWorldAccessor)
 	{
 		_ecsWorldAccessor = ecsWorldAccessor;
+		_invalidatePathsDelegate = InvalidatePathsQueryAction;
+		_checkOtherObstaclesDelegate = CheckOtherObstaclesQueryAction;
+	}
+
+	private void InvalidatePathsQueryAction(Entity entity, ref Position pos, ref MoveTo moveTo, ref PathFollow pf)
+	{
+		if (pf.WaypointCount <= 0) return;
+
+		float dx = pos.Value.X - _invalidateCenter.X;
+		float dz = pos.Value.Z - _invalidateCenter.Z;
+		if (dx * dx + dz * dz <= _invalidateRadiusSq)
+		{
+			pf.WaypointCount = 0;
+			pf.HasValidCorridor = false;
+			pf.TimeSinceLastReplan = 10f;
+			return;
+		}
+
+		for (int i = pf.CurrentWaypointIndex; i < pf.WaypointCount; i++)
+		{
+			var wp = pf.Waypoints[i];
+			float wx = wp.X - _invalidateCenter.X;
+			float wz = wp.Z - _invalidateCenter.Z;
+			if (wx * wx + wz * wz <= _invalidateRadiusSq)
+			{
+				pf.WaypointCount = 0;
+				pf.HasValidCorridor = false;
+				pf.TimeSinceLastReplan = 10f;
+				return;
+			}
+		}
+	}
+
+	public void InvalidateIntersectingPaths(System.Numerics.Vector3 center, float radius)
+	{
+		_invalidateCenter = center;
+		_invalidateRadiusSq = radius * radius;
+		_ecsWorldAccessor.Current.Query(in QueryCache.AllPositionAndMoveToAndPathFollowNoneDeadQuery, _invalidatePathsDelegate);
+	}
+
+	private void CheckOtherObstaclesQueryAction(Entity entity, ref Position pos, ref CollisionRadius colRad)
+	{
+		if (_isCellBlockedByOtherObstacle) return;
+		float scale = _ecsWorldAccessor.Current.Has<CollisionScale>(entity) ? _ecsWorldAccessor.Current.Get<CollisionScale>(entity).Value : 1.0f;
+		float radius = colRad.Value * scale;
+		float dx = _checkCellX - pos.Value.X;
+		float dz = _checkCellZ - pos.Value.Z;
+		if (dx * dx + dz * dz <= radius * radius)
+		{
+			_isCellBlockedByOtherObstacle = true;
+		}
+	}
+
+	private bool IsPointCoveredByAnyObstacle(float px, float pz)
+	{
+		_checkCellX = px;
+		_checkCellZ = pz;
+		_isCellBlockedByOtherObstacle = false;
+		_ecsWorldAccessor.Current.Query(in QueryCache.AllPositionAndCollisionRadiusQuery, _checkOtherObstaclesDelegate);
+		return _isCellBlockedByOtherObstacle;
+	}
+
+	public void CarveObstacle(ref TerrainState state, System.Numerics.Vector3 pos, float radius)
+	{
+		if (state.NavMesh == null) return;
+		int width = state.Width;
+		int depth = state.Depth;
+		float quadSize = state.QuadSize;
+		float halfW = width / 2.0f * quadSize;
+		float halfD = depth / 2.0f * quadSize;
+
+		int minX = Math.Clamp((int)Math.Floor((pos.X - radius + halfW) / quadSize), 0, width - 1);
+		int maxX = Math.Clamp((int)Math.Ceiling((pos.X + radius + halfW) / quadSize), 0, width - 1);
+		int minZ = Math.Clamp((int)Math.Floor((pos.Z - radius + halfD) / quadSize), 0, depth - 1);
+		int maxZ = Math.Clamp((int)Math.Ceiling((pos.Z + radius + halfD) / quadSize), 0, depth - 1);
+
+		if (state.PathingCodes != null)
+		{
+			for (int z = minZ; z <= maxZ; z++)
+			{
+				for (int x = minX; x <= maxX; x++)
+				{
+					float lx = (x + 0.5f - width / 2.0f) * quadSize;
+					float lz = (z + 0.5f - depth / 2.0f) * quadSize;
+					float dx = lx - pos.X;
+					float dz = lz - pos.Z;
+					if (dx * dx + dz * dz <= radius * radius)
+					{
+						state.PathingCodes[x, z] &= ~(int)(TerrainPathingFlags.Ground | TerrainPathingFlags.Buildable);
+					}
+				}
+			}
+		}
+
+		int maxTiles = state.NavMesh.GetMaxTiles();
+		float effRadiusSq = (radius + quadSize * 0.5f) * (radius + quadSize * 0.5f);
+		for (int t = 0; t < maxTiles; t++)
+		{
+			var tile = state.NavMesh.GetTile(t);
+			if (tile?.data?.header == null) continue;
+			long polyRefBase = state.NavMesh.GetPolyRefBase(tile);
+			for (int p = 0; p < tile.data.header.polyCount; p++)
+			{
+				var poly = tile.data.polys[p];
+				float sumX = 0f;
+				float sumZ = 0f;
+				int nv = poly.vertCount;
+				for (int j = 0; j < nv; j++)
+				{
+					int vIdx = poly.verts[j];
+					sumX += tile.data.verts[vIdx * 3];
+					sumZ += tile.data.verts[vIdx * 3 + 2];
+				}
+				float avgX = nv > 0 ? sumX / nv : 0f;
+				float avgZ = nv > 0 ? sumZ / nv : 0f;
+				float dx = avgX - pos.X;
+				float dz = avgZ - pos.Z;
+				if (dx * dx + dz * dz <= effRadiusSq)
+				{
+					long polyRef = polyRefBase | (long)p;
+					state.NavMesh.SetPolyFlags(polyRef, 0);
+					state.NavMesh.SetPolyArea(polyRef, (char)0);
+				}
+			}
+		}
+
+		InvalidateIntersectingPaths(pos, radius + quadSize * 1.5f);
+	}
+
+	public void CarveObstacleBox(ref TerrainState state, System.Numerics.Vector3 pos, float halfWidth, float halfDepth)
+	{
+		if (state.NavMesh == null) return;
+		int width = state.Width;
+		int depth = state.Depth;
+		float quadSize = state.QuadSize;
+		float halfW = width / 2.0f * quadSize;
+		float halfD = depth / 2.0f * quadSize;
+
+		int minX = Math.Clamp((int)Math.Floor((pos.X - halfWidth + halfW) / quadSize), 0, width - 1);
+		int maxX = Math.Clamp((int)Math.Ceiling((pos.X + halfWidth + halfW) / quadSize), 0, width - 1);
+		int minZ = Math.Clamp((int)Math.Floor((pos.Z - halfDepth + halfD) / quadSize), 0, depth - 1);
+		int maxZ = Math.Clamp((int)Math.Ceiling((pos.Z + halfDepth + halfD) / quadSize), 0, depth - 1);
+
+		if (state.PathingCodes != null)
+		{
+			for (int z = minZ; z <= maxZ; z++)
+			{
+				for (int x = minX; x <= maxX; x++)
+				{
+					float lx = (x + 0.5f - width / 2.0f) * quadSize;
+					float lz = (z + 0.5f - depth / 2.0f) * quadSize;
+					if (Math.Abs(lx - pos.X) <= halfWidth && Math.Abs(lz - pos.Z) <= halfDepth)
+					{
+						state.PathingCodes[x, z] &= ~(int)(TerrainPathingFlags.Ground | TerrainPathingFlags.Buildable);
+					}
+				}
+			}
+		}
+
+		int maxTiles = state.NavMesh.GetMaxTiles();
+		for (int t = 0; t < maxTiles; t++)
+		{
+			var tile = state.NavMesh.GetTile(t);
+			if (tile?.data?.header == null) continue;
+			long polyRefBase = state.NavMesh.GetPolyRefBase(tile);
+			for (int p = 0; p < tile.data.header.polyCount; p++)
+			{
+				var poly = tile.data.polys[p];
+				float sumX = 0f;
+				float sumZ = 0f;
+				int nv = poly.vertCount;
+				for (int j = 0; j < nv; j++)
+				{
+					int vIdx = poly.verts[j];
+					sumX += tile.data.verts[vIdx * 3];
+					sumZ += tile.data.verts[vIdx * 3 + 2];
+				}
+				float avgX = nv > 0 ? sumX / nv : 0f;
+				float avgZ = nv > 0 ? sumZ / nv : 0f;
+				if (Math.Abs(avgX - pos.X) <= halfWidth + quadSize * 0.5f && Math.Abs(avgZ - pos.Z) <= halfDepth + quadSize * 0.5f)
+				{
+					long polyRef = polyRefBase | (long)p;
+					state.NavMesh.SetPolyFlags(polyRef, 0);
+					state.NavMesh.SetPolyArea(polyRef, (char)0);
+				}
+			}
+		}
+
+		float maxDim = Math.Max(halfWidth, halfDepth);
+		InvalidateIntersectingPaths(pos, maxDim + quadSize * 1.5f);
+	}
+
+	public void UncarveObstacle(ref TerrainState state, System.Numerics.Vector3 pos, float radius)
+	{
+		if (state.NavMesh == null) return;
+		int width = state.Width;
+		int depth = state.Depth;
+		float quadSize = state.QuadSize;
+		float halfW = width / 2.0f * quadSize;
+		float halfD = depth / 2.0f * quadSize;
+
+		int minX = Math.Clamp((int)Math.Floor((pos.X - radius + halfW) / quadSize), 0, width - 1);
+		int maxX = Math.Clamp((int)Math.Ceiling((pos.X + radius + halfW) / quadSize), 0, width - 1);
+		int minZ = Math.Clamp((int)Math.Floor((pos.Z - radius + halfD) / quadSize), 0, depth - 1);
+		int maxZ = Math.Clamp((int)Math.Ceiling((pos.Z + radius + halfD) / quadSize), 0, depth - 1);
+
+		if (state.PathingCodes != null)
+		{
+			for (int z = minZ; z <= maxZ; z++)
+			{
+				for (int x = minX; x <= maxX; x++)
+				{
+					float lx = (x + 0.5f - width / 2.0f) * quadSize;
+					float lz = (z + 0.5f - depth / 2.0f) * quadSize;
+					float dx = lx - pos.X;
+					float dz = lz - pos.Z;
+					if (dx * dx + dz * dz <= radius * radius)
+					{
+						if (!IsPointCoveredByAnyObstacle(lx, lz))
+						{
+							var waterMode = state.Cells != null ? state.Cells[x, z].WaterMode : WaterType.None;
+							int defaultPath = waterMode switch
+							{
+								WaterType.Shallow => (int)(TerrainPathingFlags.ShallowWater | TerrainPathingFlags.Flying),
+								WaterType.Deep => (int)(TerrainPathingFlags.DeepWater | TerrainPathingFlags.Flying),
+								_ => (int)(TerrainPathingFlags.Ground | TerrainPathingFlags.Buildable | TerrainPathingFlags.Flying)
+							};
+							state.PathingCodes[x, z] = defaultPath;
+						}
+					}
+				}
+			}
+		}
+
+		int maxTiles = state.NavMesh.GetMaxTiles();
+		float effRadiusSq = (radius + quadSize * 0.5f) * (radius + quadSize * 0.5f);
+		for (int t = 0; t < maxTiles; t++)
+		{
+			var tile = state.NavMesh.GetTile(t);
+			if (tile?.data?.header == null) continue;
+			long polyRefBase = state.NavMesh.GetPolyRefBase(tile);
+			for (int p = 0; p < tile.data.header.polyCount; p++)
+			{
+				var poly = tile.data.polys[p];
+				float sumX = 0f;
+				float sumZ = 0f;
+				int nv = poly.vertCount;
+				for (int j = 0; j < nv; j++)
+				{
+					int vIdx = poly.verts[j];
+					sumX += tile.data.verts[vIdx * 3];
+					sumZ += tile.data.verts[vIdx * 3 + 2];
+				}
+				float avgX = nv > 0 ? sumX / nv : 0f;
+				float avgZ = nv > 0 ? sumZ / nv : 0f;
+				float dx = avgX - pos.X;
+				float dz = avgZ - pos.Z;
+				if (dx * dx + dz * dz <= effRadiusSq)
+				{
+					if (!IsPointCoveredByAnyObstacle(avgX, avgZ))
+					{
+						int xGrid = Math.Clamp((int)Math.Floor(avgX / quadSize + width / 2.0f), 0, width - 1);
+						int zGrid = Math.Clamp((int)Math.Floor(avgZ / quadSize + depth / 2.0f), 0, depth - 1);
+						var pathFlags = state.PathingCodes != null ? (TerrainPathingFlags)state.PathingCodes[xGrid, zGrid] : TerrainPathingFlags.Ground | TerrainPathingFlags.Buildable;
+						long polyRef = polyRefBase | (long)p;
+						state.NavMesh.SetPolyFlags(polyRef, (int)pathFlags);
+						state.NavMesh.SetPolyArea(polyRef, (char)1);
+					}
+				}
+			}
+		}
+
+		InvalidateIntersectingPaths(pos, radius + quadSize * 2f);
+	}
+
+	public void UncarveObstacleBox(ref TerrainState state, System.Numerics.Vector3 pos, float halfWidth, float halfDepth)
+	{
+		if (state.NavMesh == null) return;
+		int width = state.Width;
+		int depth = state.Depth;
+		float quadSize = state.QuadSize;
+		float halfW = width / 2.0f * quadSize;
+		float halfD = depth / 2.0f * quadSize;
+
+		int minX = Math.Clamp((int)Math.Floor((pos.X - halfWidth + halfW) / quadSize), 0, width - 1);
+		int maxX = Math.Clamp((int)Math.Ceiling((pos.X + halfWidth + halfW) / quadSize), 0, width - 1);
+		int minZ = Math.Clamp((int)Math.Floor((pos.Z - halfDepth + halfD) / quadSize), 0, depth - 1);
+		int maxZ = Math.Clamp((int)Math.Ceiling((pos.Z + halfDepth + halfD) / quadSize), 0, depth - 1);
+
+		if (state.PathingCodes != null)
+		{
+			for (int z = minZ; z <= maxZ; z++)
+			{
+				for (int x = minX; x <= maxX; x++)
+				{
+					float lx = (x + 0.5f - width / 2.0f) * quadSize;
+					float lz = (z + 0.5f - depth / 2.0f) * quadSize;
+					if (Math.Abs(lx - pos.X) <= halfWidth && Math.Abs(lz - pos.Z) <= halfDepth)
+					{
+						if (!IsPointCoveredByAnyObstacle(lx, lz))
+						{
+							var waterMode = state.Cells != null ? state.Cells[x, z].WaterMode : WaterType.None;
+							int defaultPath = waterMode switch
+							{
+								WaterType.Shallow => (int)(TerrainPathingFlags.ShallowWater | TerrainPathingFlags.Flying),
+								WaterType.Deep => (int)(TerrainPathingFlags.DeepWater | TerrainPathingFlags.Flying),
+								_ => (int)(TerrainPathingFlags.Ground | TerrainPathingFlags.Buildable | TerrainPathingFlags.Flying)
+							};
+							state.PathingCodes[x, z] = defaultPath;
+						}
+					}
+				}
+			}
+		}
+
+		int maxTiles = state.NavMesh.GetMaxTiles();
+		for (int t = 0; t < maxTiles; t++)
+		{
+			var tile = state.NavMesh.GetTile(t);
+			if (tile?.data?.header == null) continue;
+			long polyRefBase = state.NavMesh.GetPolyRefBase(tile);
+			for (int p = 0; p < tile.data.header.polyCount; p++)
+			{
+				var poly = tile.data.polys[p];
+				float sumX = 0f;
+				float sumZ = 0f;
+				int nv = poly.vertCount;
+				for (int j = 0; j < nv; j++)
+				{
+					int vIdx = poly.verts[j];
+					sumX += tile.data.verts[vIdx * 3];
+					sumZ += tile.data.verts[vIdx * 3 + 2];
+				}
+				float avgX = nv > 0 ? sumX / nv : 0f;
+				float avgZ = nv > 0 ? sumZ / nv : 0f;
+				if (Math.Abs(avgX - pos.X) <= halfWidth + quadSize * 0.5f && Math.Abs(avgZ - pos.Z) <= halfDepth + quadSize * 0.5f)
+				{
+					if (!IsPointCoveredByAnyObstacle(avgX, avgZ))
+					{
+						int xGrid = Math.Clamp((int)Math.Floor(avgX / quadSize + width / 2.0f), 0, width - 1);
+						int zGrid = Math.Clamp((int)Math.Floor(avgZ / quadSize + depth / 2.0f), 0, depth - 1);
+						var pathFlags = state.PathingCodes != null ? (TerrainPathingFlags)state.PathingCodes[xGrid, zGrid] : TerrainPathingFlags.Ground | TerrainPathingFlags.Buildable;
+						long polyRef = polyRefBase | (long)p;
+						state.NavMesh.SetPolyFlags(polyRef, (int)pathFlags);
+						state.NavMesh.SetPolyArea(polyRef, (char)1);
+					}
+				}
+			}
+		}
+
+		float maxDim = Math.Max(halfWidth, halfDepth);
+		InvalidateIntersectingPaths(pos, maxDim + quadSize * 2f);
 	}
 
 	public void BakeNavMesh(ref TerrainState state)

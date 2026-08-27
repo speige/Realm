@@ -106,7 +106,9 @@ public class NetworkService
 		       EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(entity) ||
 		       EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity) ||
 		       EcsWorld.Has<Realm.Ecs.Components.Movement.Patrol>(entity) ||
-		       EcsWorld.Has<Gatherer>(entity);
+		       EcsWorld.Has<Gatherer>(entity) ||
+		       EcsWorld.Has<WaypointQueue>(entity) ||
+		       (EcsWorld.Has<BuildQueue>(entity) && EcsWorld.Get<BuildQueue>(entity).Count > 0);
 	}
 
 	private void EnqueueCommand(Entity entity, string type, System.Numerics.Vector3 position, Entity target = default)

@@ -169,7 +169,7 @@ public partial class GameHost
 					child.QueueFree();
 				}
 
-				var terrainNode = new EditableTerrain();
+				var terrainNode = IsMapEditorMode ? (RuntimeTerrain)new EditableTerrain() : new RuntimeTerrain();
 				terrainNode.Name = "Ground";
 				AddChild(terrainNode);
 				GroundTerrain = terrainNode;

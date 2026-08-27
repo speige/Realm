@@ -2134,6 +2134,7 @@ public partial class GameHost
 		{
 			SelectedUnits.Add(unit);
 			unit.IsSelected = true;
+			_audioService?.PlayUnitSound(unit.UnitId, UnitSoundEvent.Select, unit.GlobalPosition);
 			OnUnitSelected?.Invoke(GetUnitWrapper(unit.Entity));
 		}
 	}
@@ -2294,6 +2295,12 @@ public partial class GameHost
 			_inputService.IssueMoveCommand(selectedEntities, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
 		}
 
+		if (selectedEntities.Count > 0)
+		{
+			var primaryUnit = SelectedUnits[0];
+			_audioService?.PlayUnitSound(primaryUnit.UnitId, UnitSoundEvent.MoveOrder, primaryUnit.GlobalPosition);
+		}
+
 		if (_multiplayerActive && !Multiplayer.IsServer())
 		{
 			QueueClientCommand(isQueued ? "move_queued" : "move", targetIds, targetPos, 0, "");
@@ -2321,6 +2328,12 @@ public partial class GameHost
 		}
 
 		_inputService.IssueAttackCommand(selectedEntities, target.Entity, isQueued);
+
+		if (selectedEntities.Count > 0)
+		{
+			var primaryUnit = SelectedUnits[0];
+			_audioService?.PlayUnitSound(primaryUnit.UnitId, UnitSoundEvent.AttackOrder, primaryUnit.GlobalPosition);
+		}
 
 		if (_multiplayerActive && !Multiplayer.IsServer())
 		{
@@ -2782,8 +2795,11 @@ public partial class GameHost
 		if (SelectedUnits.Count > 0 && EcsWorld.IsAlive(SelectedUnits[0].Entity))
 		{
 			caster = GetUnitWrapper(SelectedUnits[0].Entity);
+			_audioService?.PlayUnitSound(SelectedUnits[0].UnitId, UnitSoundEvent.SpellCast, position);
 		}
 		OnSpellCast?.Invoke(caster, spellId, new System.Numerics.Vector3(position.X, position.Y, position.Z));
+
+		Entity casterEntity = SelectedUnits.Count > 0 && EcsWorld.IsAlive(SelectedUnits[0].Entity) ? SelectedUnits[0].Entity : Entity.Null;
 
 		if (spellId == "fireball")
 		{
@@ -2793,7 +2809,7 @@ public partial class GameHost
 				return;
 			}
 
-			if (_inputService.TryExecuteSpellCast(_playerEntity, spellId, out float maxCd))
+			if (_inputService.TryExecuteSpellCast(_playerEntity, casterEntity, spellId, out float maxCd))
 			{
 				SpawnFireblastEffect(position);
 				SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
@@ -2816,7 +2832,7 @@ public partial class GameHost
 				return;
 			}
 
-			if (_inputService.TryExecuteSpellCast(_playerEntity, spellId, out float maxCd))
+			if (_inputService.TryExecuteSpellCast(_playerEntity, casterEntity, spellId, out float maxCd))
 			{
 				SpawnLightningEffect(position);
 				SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
@@ -2839,7 +2855,7 @@ public partial class GameHost
 				return;
 			}
 
-			if (_inputService.TryExecuteSpellCast(_playerEntity, spellId, out float maxCd))
+			if (_inputService.TryExecuteSpellCast(_playerEntity, casterEntity, spellId, out float maxCd))
 			{
 				SpawnHolyLightEffect(position);
 				SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
@@ -3042,7 +3058,7 @@ public partial class GameHost
 
 				if (firstWorker != null)
 				{
-					if (shiftHeld && EcsWorld.Has<BuildTask>(firstWorker.Entity))
+					if (shiftHeld && (_inputService.IsUnitActive(firstWorker.Entity) || EcsWorld.Has<BuildQueue>(firstWorker.Entity)))
 					{
 						if (!EcsWorld.Has<BuildQueue>(firstWorker.Entity))
 							EcsWorld.Add(firstWorker.Entity, new BuildQueue());
@@ -3062,7 +3078,7 @@ public partial class GameHost
 						{
 							if (EcsWorld.IsAlive(unit.Entity))
 							{
-								if (shiftHeld && EcsWorld.Has<BuildTask>(unit.Entity))
+								if (shiftHeld && (_inputService.IsUnitActive(unit.Entity) || EcsWorld.Has<BuildQueue>(unit.Entity)))
 								{
 									if (!EcsWorld.Has<BuildQueue>(unit.Entity))
 										EcsWorld.Add(unit.Entity, new BuildQueue());
@@ -3624,8 +3640,6 @@ public partial class GameHost
 				return Array.Exists(meta.Abilities, a => a == abilityId);
 			}
 		}
-		if (abilityId == "holylight") return unit.UnitId == "priest";
-		if (abilityId == "fireball" || abilityId == "lightning") return unit.UnitId == "tower";
 		return false;
 	}
 
@@ -3739,7 +3753,7 @@ public partial class GameHost
 		{
 			if (unit.IsBuilding || unit.IsEnemy || unit.UnitId != "worker") continue;
 
-			if (shiftHeld && EcsWorld.Has<BuildTask>(unit.Entity))
+			if (shiftHeld && (_inputService.IsUnitActive(unit.Entity) || EcsWorld.Has<BuildQueue>(unit.Entity)))
 			{
 				if (!EcsWorld.Has<BuildQueue>(unit.Entity))
 					EcsWorld.Add(unit.Entity, new BuildQueue());

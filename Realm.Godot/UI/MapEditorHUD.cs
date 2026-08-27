@@ -184,6 +184,7 @@ public partial class MapEditorHUD : Control
 	private ModelPickerDialog _modelPickerDialog;
 	private AbilityVfxDialog _abilityVfxDialog;
 	private AssetManagerDialog _assetManagerDialog;
+	private AssetBrowserDialog _assetBrowserDialog;
 	private Button _btnOpenGlobalOverrides;
 	private Button _btnOpenAnimationPreview;
 	private Button _btnAssetsManager;
@@ -483,6 +484,7 @@ public partial class MapEditorHUD : Control
 
 		_btnImportMinimap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnImportMinimap");
 		SetupButton(_btnImportMinimap, "🗺️ GEN FROM IMAGE", () => ImportTerrainFromMinimapDialog(), 13, "Import terrain elevations, textures, and trees from a minimap image file");
+
 
 		_btnAssetsManager = new Button();
 		_btnAssetsManager.Name = "BtnAssetsManager";
@@ -4129,22 +4131,18 @@ public partial class MapEditorHUD : Control
 		vbox.AddChild(btnRow);
 	}
 
+	public void OpenAssetBrowser(string title, IEnumerable<string> allowedExtensions, Action<string> onAssetSelected)
+	{
+		if (_assetBrowserDialog == null)
+		{
+			_assetBrowserDialog = new AssetBrowserDialog(this);
+		}
+		_assetBrowserDialog.OpenForImport(title, allowedExtensions, onAssetSelected);
+	}
+
 	public void ImportTerrainFromMinimapDialog()
 	{
-		var err = DisplayServer.FileDialogShow(
-			TranslationServer.Translate("Select Minimap Image to Import Terrain"),
-			PathUtils.GetProjectRoot(),
-			"",
-			false,
-			DisplayServer.FileDialogMode.OpenFile,
-			new string[] { "*.png, *.jpg, *.jpeg, *.webp, *.gif ; Images" },
-			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) => {
-				if (status && selectedPaths.Length > 0)
-				{
-					ImportTerrainFromMinimapPath(selectedPaths[0]);
-				}
-			})
-		);
+		OpenAssetBrowser("Select Minimap Image to Import Terrain", new[] { ".png", ".jpg", ".jpeg", ".webp", ".gif" }, ImportTerrainFromMinimapPath);
 	}
 
 	private void ImportTerrainFromMinimapPath(string selectedPath)
@@ -5530,6 +5528,7 @@ public partial class MapEditorHUD : Control
 		_modelPickerDialog = new ModelPickerDialog(this);
 		_abilityVfxDialog = new AbilityVfxDialog(this);
 		_assetManagerDialog = new AssetManagerDialog(this);
+		_assetBrowserDialog = new AssetBrowserDialog(this);
 
 		_btnOpenAnimationPreview = new Button();
 		_btnOpenAnimationPreview.Name = "BtnOpenAnimationPreview";
@@ -6094,29 +6093,11 @@ public partial class MapEditorHUD : Control
 			ShowFeedback(TranslationServer.Translate("Please select a texture slot first"));
 			return;
 		}
-		var err = DisplayServer.FileDialogShow(
-			TranslationServer.Translate("Import Texture Image"),
-			GetInitialDirectory(),
-			"",
-			false,
-			DisplayServer.FileDialogMode.OpenFile,
-			new string[] { "*.png", "*.jpg", "*.jpeg" },
-			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) => {
-				if (status && selectedPaths.Length > 0)
-				{
-					string imagePath = selectedPaths[0];
-					ImportTextureFile(imagePath, selectedIdx);
-				}
-				else
-				{
-					ShowFeedback(TranslationServer.Translate("Import cancelled"));
-				}
-			})
-		);
-		if (err != Error.Ok)
+
+		OpenAssetBrowser("Import Texture Image", new[] { ".ktx2", ".png", ".jpg", ".jpeg", ".webp" }, imagePath =>
 		{
-			ShowFeedback(TranslationServer.Translate("Failed to show file dialog"));
-		}
+			ImportTextureFile(imagePath, selectedIdx);
+		});
 	}
 
 	private void ImportTextureFile(string imagePath, int index)
@@ -6546,29 +6527,10 @@ public partial class MapEditorHUD : Control
 
 	public void ImportMixamoOrAnimationDialog()
 	{
-		var err = DisplayServer.FileDialogShow(
-			TranslationServer.Translate("Select Mixamo GLB Model or Animation (.glb, .ranim)"),
-			PathUtils.GetProjectRoot(),
-			"",
-			false,
-			DisplayServer.FileDialogMode.OpenFile,
-			new string[] { "*.glb, *.gltf, *.ranim ; 3D Models & Animations" },
-			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) => {
-				if (status && selectedPaths.Length > 0)
-				{
-					string path = selectedPaths[0];
-					string ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
-					if (ext == ".ranim")
-					{
-						ImportAnimationAssetFromExtension(path);
-					}
-					else
-					{
-						ImportGlbAssetFromExtension(path, "units");
-					}
-				}
-			})
-		);
+		OpenAssetBrowser("Select Animation (.ranim)", new[] { ".ranim" }, path =>
+		{
+			ImportAnimationAssetFromExtension(path);
+		});
 	}
 
 	public void ImportAnimationAssetFromExtension(string sourceFilePath)

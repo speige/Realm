@@ -47,6 +47,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private EnvironmentService _environmentService;
 	private SpectatorService _spectatorService;
 	private Realm.Godot.Services.ModelOptimization.ModelOptimizerService _modelOptimizerService;
+	private TerrainNavMeshService _terrainNavMeshService;
 
 	public CheatService CheatService => _cheatService;
 	public EnvironmentService EnvironmentService => _environmentService;
@@ -274,8 +275,8 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool IsMapEditorMode { get; set; }
 	public bool IsLoadingMap { get; set; }
 	public bool IsGameOver { get; private set; }
-	private EditableTerrain _groundTerrain;
-	public EditableTerrain GroundTerrain
+	private RuntimeTerrain _groundTerrain;
+	public RuntimeTerrain GroundTerrain
 	{
 		get
 		{
@@ -685,6 +686,18 @@ public partial class GameHost : Node3D, IGameAPI
 		public string[]? Targets { get; set; }
 		public string[]? Weapons { get; set; }
 		public Dictionary<string, string[]>? Animations { get; set; }
+		public UnitSoundsMetadata? Sounds { get; set; }
+	}
+
+	public struct UnitSoundsMetadata
+	{
+		public string[]? OnSelect { get; set; }
+		public string[]? OnMoveOrder { get; set; }
+		public string[]? OnAttackOrder { get; set; }
+		public string[]? OnWounded { get; set; }
+		public string[]? OnDeath { get; set; }
+		public string[]? OnReady { get; set; }
+		public string[]? OnSpellCast { get; set; }
 	}
 
 	public struct WeaponMetadata
@@ -848,6 +861,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public string AbilityType { get; set; }
 		public string IconPath { get; set; }
 		public float ManaCost { get; set; }
+		public float Cooldown { get; set; }
 	}
 
 	public static int GetUnitPathingFlags(UnitMetadata meta)
@@ -3317,6 +3331,7 @@ public class {mapName} : IMapScript
 				if (GameHost.TryGetUnit3D(targetEntity, out var targetUnit3D))
 				{
 					_fxService.SpawnDamageNumber(this, targetUnit3D.GlobalPosition, damage);
+					_audioService?.PlayUnitSound(targetUnit3D.UnitId, UnitSoundEvent.Wounded, targetUnit3D.GlobalPosition);
 				}
 			}
 		};
@@ -3498,17 +3513,6 @@ public class {mapName} : IMapScript
 			if (!rawMapName.StartsWith("user://") && !rawMapName.StartsWith("res://") && !System.IO.Path.IsPathRooted(rawMapName))
 			{
 				string normalizedMapName = rawMapName.ToLower().Trim();
-				if (!DirAccess.DirExistsAbsolute($"res://Maps/{normalizedMapName}"))
-				{
-					if (normalizedMapName.Contains("legion"))
-					{
-						normalizedMapName = "legion_td";
-					}
-					else if (normalizedMapName.Contains("defense") || normalizedMapName.Contains("td"))
-					{
-						normalizedMapName = "green_td";
-					}
-				}
 				mapParamName = normalizedMapName;
 			}
 
@@ -3777,21 +3781,25 @@ public class {mapName} : IMapScript
 			string normalizedMapName = rawMapName.ToLower().Trim();
 			string mapDir = $"res://Maps/{normalizedMapName}";
 			string checkDir = ProjectSettings.GlobalizePath(mapDir);
-			if (!System.IO.Directory.Exists(checkDir))
+			if (System.IO.Directory.Exists(checkDir))
 			{
-				if (normalizedMapName.Contains("legion"))
+				terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
+			}
+			else
+			{
+				string userDir = ProjectSettings.GlobalizePath($"user://maps/{normalizedMapName}");
+				if (System.IO.Directory.Exists(userDir))
 				{
-					normalizedMapName = "legion_td";
+					terrainPath = $"user://maps/{normalizedMapName}/terrain.json";
 				}
-				else if (normalizedMapName.Contains("defense") || normalizedMapName.Contains("td"))
+				else
 				{
-					normalizedMapName = "green_td";
+					terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
 				}
 			}
-			terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
 		}
 
-		var activeTerrainNode = new EditableTerrain();
+		var activeTerrainNode = new RuntimeTerrain();
 		activeTerrainNode.Name = "Ground";
 		AddChild(activeTerrainNode);
 		GroundTerrain = activeTerrainNode;
@@ -4074,6 +4082,10 @@ public class {mapName} : IMapScript
 			string unitAssetKey = GetModelAssetKey(unit3D);
 			float baseRadius = autoDetectedRadius * GetModelCollisionCircleRatio(unitAssetKey);
 			EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+			if (!IsMapEditorMode)
+			{
+				CarveObstacle(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z), baseRadius);
+			}
 		}
 
 		if (IsMapEditorMode)
@@ -4221,6 +4233,24 @@ public class {mapName} : IMapScript
 		if (IsServerActive() && GroundTerrain != null)
 		{
 			GroundTerrain.BakeNavMesh();
+		}
+	}
+
+	public void CarveObstacle(System.Numerics.Vector3 pos, float radius)
+	{
+		if (EcsWorld != null && EcsWorld.IsAlive(WorldEntity) && EcsWorld.Has<TerrainState>(WorldEntity))
+		{
+			ref var state = ref EcsWorld.Get<TerrainState>(WorldEntity);
+			_terrainNavMeshService?.CarveObstacle(ref state, pos, radius);
+		}
+	}
+
+	public void UncarveObstacle(System.Numerics.Vector3 pos, float radius)
+	{
+		if (EcsWorld != null && EcsWorld.IsAlive(WorldEntity) && EcsWorld.Has<TerrainState>(WorldEntity))
+		{
+			ref var state = ref EcsWorld.Get<TerrainState>(WorldEntity);
+			_terrainNavMeshService?.UncarveObstacle(ref state, pos, radius);
 		}
 	}
 

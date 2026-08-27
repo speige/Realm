@@ -6,6 +6,7 @@ using Realm.Ecs.Components.Resources;
 using Realm.Ecs.Components.Tags;
 using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Components.Stats;
+using Realm.Ecs.Services;
 
 namespace Realm.Ecs.Common;
 
@@ -66,4 +67,5 @@ public static class QueryCache
     public static readonly QueryDescription AllBuildingAndConstructionStateAndOwnerNoneDeadQuery = new QueryDescription().WithAll<Building, ConstructionState, Owner>().WithNone<Dead>();
     public static readonly QueryDescription AllBuildQueueNoneDeadQuery = new QueryDescription().WithAll<BuildQueue>().WithNone<Dead>();
     public static readonly QueryDescription AllIdleMovableQuery = new QueryDescription().WithAll<Owner, Movable>().WithNone<Dead, Building, MoveTo, AttackTarget, AttackMove, Patrol, Follow, HealingTarget>();
+    public static readonly QueryDescription AllPositionAndMoveToAndPathFollowNoneDeadQuery = new QueryDescription().WithAll<Position, MoveTo, PathFollow>().WithNone<Dead>();
 }
