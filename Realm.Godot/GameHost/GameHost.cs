@@ -861,6 +861,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public string AbilityType { get; set; }
 		public string IconPath { get; set; }
 		public float ManaCost { get; set; }
+		public float Cooldown { get; set; }
 	}
 
 	public static int GetUnitPathingFlags(UnitMetadata meta)
@@ -3512,17 +3513,6 @@ public class {mapName} : IMapScript
 			if (!rawMapName.StartsWith("user://") && !rawMapName.StartsWith("res://") && !System.IO.Path.IsPathRooted(rawMapName))
 			{
 				string normalizedMapName = rawMapName.ToLower().Trim();
-				if (!DirAccess.DirExistsAbsolute($"res://Maps/{normalizedMapName}"))
-				{
-					if (normalizedMapName.Contains("legion"))
-					{
-						normalizedMapName = "legion_td";
-					}
-					else if (normalizedMapName.Contains("defense") || normalizedMapName.Contains("td"))
-					{
-						normalizedMapName = "green_td";
-					}
-				}
 				mapParamName = normalizedMapName;
 			}
 
@@ -3791,18 +3781,22 @@ public class {mapName} : IMapScript
 			string normalizedMapName = rawMapName.ToLower().Trim();
 			string mapDir = $"res://Maps/{normalizedMapName}";
 			string checkDir = ProjectSettings.GlobalizePath(mapDir);
-			if (!System.IO.Directory.Exists(checkDir))
+			if (System.IO.Directory.Exists(checkDir))
 			{
-				if (normalizedMapName.Contains("legion"))
+				terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
+			}
+			else
+			{
+				string userDir = ProjectSettings.GlobalizePath($"user://maps/{normalizedMapName}");
+				if (System.IO.Directory.Exists(userDir))
 				{
-					normalizedMapName = "legion_td";
+					terrainPath = $"user://maps/{normalizedMapName}/terrain.json";
 				}
-				else if (normalizedMapName.Contains("defense") || normalizedMapName.Contains("td"))
+				else
 				{
-					normalizedMapName = "green_td";
+					terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
 				}
 			}
-			terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
 		}
 
 		var activeTerrainNode = new RuntimeTerrain();

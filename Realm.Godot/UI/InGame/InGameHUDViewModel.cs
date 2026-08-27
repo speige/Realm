@@ -699,30 +699,6 @@ public class InGameHUDViewModel
 						{
 							info.Abilities.AddRange(regMeta.Abilities);
 						}
-						else
-						{
-							if (u.UnitId == "priest")
-							{
-								info.Abilities.Add("holylight");
-							}
-							else if (u.UnitId == "tower" || u.UnitId == "spelltower")
-							{
-								info.Abilities.Add("fireball");
-								info.Abilities.Add("lightning");
-							}
-						}
-					}
-					else
-					{
-						if (u.UnitId == "priest")
-						{
-							info.Abilities.Add("holylight");
-						}
-						else if (u.UnitId == "tower" || u.UnitId == "spelltower")
-						{
-							info.Abilities.Add("fireball");
-							info.Abilities.Add("lightning");
-						}
 					}
 				}
 			}

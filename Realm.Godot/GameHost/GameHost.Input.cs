@@ -3640,8 +3640,6 @@ public partial class GameHost
 				return Array.Exists(meta.Abilities, a => a == abilityId);
 			}
 		}
-		if (abilityId == "holylight") return unit.UnitId == "priest";
-		if (abilityId == "fireball" || abilityId == "lightning") return unit.UnitId == "tower";
 		return false;
 	}
 

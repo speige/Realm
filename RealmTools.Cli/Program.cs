@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using Realm.AssetPipeline;
 
-namespace Realm.AssetPipeline.Cli;
+namespace RealmTools.Cli;
 
 public static class Program
 {
@@ -194,8 +194,8 @@ public static class Program
 
 	private static void PrintHelp()
 	{
-		Console.WriteLine("Realm Asset Pipeline CLI");
-		Console.WriteLine("Usage: realm-asset-pipeline [options]");
+		Console.WriteLine("RealmTools CLI");
+		Console.WriteLine("Usage: realm-tools [options]");
 		Console.WriteLine("Options:");
 		Console.WriteLine("  -i, --input <path>         Path to .glb file or folder containing assets (required)");
 		Console.WriteLine("  -o, --output <path>        Output destination file or directory");

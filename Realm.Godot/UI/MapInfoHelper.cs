@@ -8,40 +8,48 @@ public static class MapInfoHelper
 	public static List<MapBriefingDetails> GetAvailableMaps()
 	{
 		var maps = new List<MapBriefingDetails>();
-		using var dir = DirAccess.Open("res://Maps");
-		if (dir != null)
+		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		void ScanDir(string basePath)
 		{
-			dir.ListDirBegin();
-			string dirName = dir.GetNext();
-			while (dirName != "")
+			using var dir = DirAccess.Open(basePath);
+			if (dir != null)
 			{
-				if (dir.CurrentIsDir() && !dirName.StartsWith("."))
+				dir.ListDirBegin();
+				string dirName = dir.GetNext();
+				while (dirName != "")
 				{
-					maps.Add(LoadMapDetails(dirName));
+					if (dir.CurrentIsDir() && !dirName.StartsWith(".") && seen.Add(dirName))
+					{
+						maps.Add(LoadMapDetails(dirName, basePath));
+					}
+					dirName = dir.GetNext();
 				}
-				dirName = dir.GetNext();
-			}
-			dir.ListDirEnd();
-		}
-		
-		if (maps.Count == 0)
-		{
-			foreach (var name in new[] { "green_td", "melee", "legion_td" })
-			{
-				maps.Add(LoadMapDetails(name));
+				dir.ListDirEnd();
 			}
 		}
+
+		ScanDir("res://Maps");
+		ScanDir("user://maps");
 		
 		maps.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.OrdinalIgnoreCase));
 		return maps;
 	}
 
-	public static MapBriefingDetails LoadMapDetails(string mapFolder)
+	public static MapBriefingDetails LoadMapDetails(string mapFolder, string basePath = "res://Maps")
 	{
 		string displayName = FormatMapDisplayName(mapFolder);
 		string description = "Map info - Situate in [color=#ff5555]" + displayName + "[/color], a treacherous valley once controlled by ancient lords. Guard the gates and gather resources to secure the valley. Supports melee conflict and co-op campaign modes. Defeat enemy bases to win.";
 		
-		string path = $"res://Maps/{mapFolder}/map.json";
+		string path = $"{basePath}/{mapFolder}/map.json";
+		if (!FileAccess.FileExists(path))
+		{
+			path = $"user://maps/{mapFolder}/map.json";
+		}
+		if (!FileAccess.FileExists(path))
+		{
+			path = $"res://Maps/{mapFolder}/map.json";
+		}
 		if (FileAccess.FileExists(path))
 		{
 			using var file = FileAccess.Open(path, FileAccess.ModeFlags.Read);

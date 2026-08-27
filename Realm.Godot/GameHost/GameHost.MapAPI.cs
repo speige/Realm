@@ -13,6 +13,7 @@ public class AbilityDefinition
 	public int GridX { get; set; } = -1;
 	public int GridY { get; set; } = -1;
 	public float ManaCost { get; set; } = 0f;
+	public float Cooldown { get; set; } = 0f;
 }
 
 public partial class GameHost
@@ -42,7 +43,8 @@ public partial class GameHost
 				Tooltip = meta.Description ?? "",
 				IconPath = meta.IconPath ?? "",
 				IsInstant = string.Equals(meta.AbilityType, "instant_spell", StringComparison.OrdinalIgnoreCase),
-				ManaCost = meta.ManaCost
+				ManaCost = meta.ManaCost,
+				Cooldown = meta.Cooldown
 			};
 		}
 	}

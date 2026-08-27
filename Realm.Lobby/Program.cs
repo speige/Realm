@@ -140,12 +140,9 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
 
     var db = context.RequestServices.GetRequiredService<DataStoreService>();
 
-    bool isDefault = req.Map.Equals("melee", StringComparison.OrdinalIgnoreCase) || 
-                     req.Map.Equals("green_td", StringComparison.OrdinalIgnoreCase) || 
-                     req.Map.Equals("legion_td", StringComparison.OrdinalIgnoreCase) ||
-                     req.Map.Equals("Melee Battlefield", StringComparison.OrdinalIgnoreCase);
-
-    if (!isDefault)
+    bool isCustom = !string.IsNullOrEmpty(req.Signature) || !string.IsNullOrEmpty(req.PublicKey) || !string.IsNullOrEmpty(req.MapHash);
+
+    if (isCustom)
     {
         if (string.IsNullOrEmpty(req.Signature) || string.IsNullOrEmpty(req.PublicKey) || string.IsNullOrEmpty(req.MapHash))
         {
@@ -184,7 +181,7 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
     string mapVersion = req.MapVersion ?? "1.0";
     string compositeKey = $"{req.Map}_{mapVersion}";
     var stats = db.Get<MapStats>("map_stats", compositeKey);
-    bool isGreenlit = isDefault || (stats != null && stats.IsGreenlit);
+    bool isGreenlit = !isCustom || (stats != null && stats.IsGreenlit);
 
     if (!isGreenlit) {
         string author = "Unknown";

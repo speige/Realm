@@ -17,7 +17,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Realm.AssetPipeline\Realm.AssetPipeline.csproj" />
     <ProjectReference Include="..\Realm.Ecs\Realm.Ecs.csproj" />
   </ItemGroup>
 

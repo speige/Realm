@@ -651,11 +651,15 @@ internal class InputService
 
 	public bool TryExecuteSpellCast(Entity playerEntity, Entity casterEntity, string spellId, out float cooldownMax)
 	{
-		cooldownMax = 0f;
-		if (spellId == "fireball") cooldownMax = 8.0f;
-		else if (spellId == "lightning") cooldownMax = 12.0f;
-		else if (spellId == "holylight") cooldownMax = 15.0f;
-		else cooldownMax = 10.0f;
+		cooldownMax = 10.0f;
+		if (GameHost.Instance != null)
+		{
+			var def = GameHost.Instance.GetAbilityDefinition(spellId);
+			if (def != null && def.Cooldown > 0f)
+			{
+				cooldownMax = def.Cooldown;
+			}
+		}
 
 		if (casterEntity != Entity.Null && EcsWorld.IsAlive(casterEntity))
 		{

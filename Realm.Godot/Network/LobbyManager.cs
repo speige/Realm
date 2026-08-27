@@ -50,7 +50,7 @@ public partial class LobbyManager : Node
 
     private static string GetGameBinaryVersion()
     {
-        const string defaultVersionString = "v0.1.0-alpha";
+        const string defaultVersionString = "0.0.1_Pre-Alpha";
         try
         {
             var assembly = typeof(LobbyManager).Assembly;

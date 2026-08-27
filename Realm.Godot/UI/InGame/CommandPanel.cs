@@ -189,12 +189,15 @@ public class CommandPanel
 			}
 		}
 
-		if (item.AbilityId == "fireball") maxCd = GameHost.FireballCooldownMax;
-		else if (item.AbilityId == "lightning") maxCd = GameHost.LightningCooldownMax;
-		else if (item.AbilityId == "holylight") maxCd = GameHost.HolyLightCooldownMax;
-		else maxCd = Math.Max(10f, cdRemaining);
-
 		var abilityDef = GameHost.Instance?.GetAbilityDefinition(item.AbilityId);
+		if (abilityDef != null && abilityDef.Cooldown > 0f)
+		{
+			maxCd = abilityDef.Cooldown;
+		}
+		else
+		{
+			maxCd = Math.Max(10f, cdRemaining);
+		}
 		if (abilityDef != null && abilityDef.ManaCost > 0f)
 		{
 			manaCost = abilityDef.ManaCost;
@@ -900,24 +903,12 @@ public class CommandPanel
 
 	private string GetDefaultAbilityIcon(string abilityId)
 	{
-		return abilityId switch
-		{
-			"fireball" => "res://Assets/UI/fire_spell.png",
-			"lightning" => "res://Assets/UI/lightning_spell.png",
-			"holylight" => "res://Assets/UI/magic_upgrade_arrow.png",
-			_ => "res://Assets/UI/alliance_flag.png"
-		};
+		return "res://Assets/UI/alliance_flag.png";
 	}
 
 	private string GetDefaultAbilityTooltip(string abilityId)
 	{
-		return abilityId switch
-		{
-			"fireball" => string.Format(TranslationServer.Translate("[X] Fireball — Deals 50 area damage (radius 4), cooldown {0}s"), GameHost.FireballCooldownMax),
-			"lightning" => string.Format(TranslationServer.Translate("[X] Lightning — Deals 80 area damage (radius 2), cooldown {0}s"), GameHost.LightningCooldownMax),
-			"holylight" => string.Format(TranslationServer.Translate("[X] Holy Light — Heals 60 area health (radius 4), cooldown {0}s"), GameHost.HolyLightCooldownMax),
-			_ => string.Format(TranslationServer.Translate("Cast {0}"), abilityId.ToUpper())
-		};
+		return string.Format(TranslationServer.Translate("Cast {0}"), abilityId.ToUpper());
 	}
 
 	private CommandCardItem CreateAbilityItem(string abilityId, Entity casterEntity)
