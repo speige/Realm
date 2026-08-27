@@ -38,6 +38,7 @@ public partial class MapEditorHUD : Control
 
 	public static float SavedBrushRadius = 2f;
 	public static float SavedBrushStrength = 0.5f;
+	public static float SavedTextureIntensity = 10f;
 
 	private static string _lastUsedFolder = "";
 	private static string _currentSourceFolder = "";
@@ -182,8 +183,10 @@ public partial class MapEditorHUD : Control
 	private WeaponVfxDialog _weaponVfxDialog;
 	private ModelPickerDialog _modelPickerDialog;
 	private AbilityVfxDialog _abilityVfxDialog;
+	private AssetManagerDialog _assetManagerDialog;
 	private Button _btnOpenGlobalOverrides;
 	private Button _btnOpenAnimationPreview;
+	private Button _btnAssetsManager;
 	private bool _isUpdatingInspectorUI;
 
 	private CheckBox _chkApplyGroundTexture;
@@ -477,10 +480,10 @@ public partial class MapEditorHUD : Control
 		_btnImportMinimap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnImportMinimap");
 		SetupButton(_btnImportMinimap, "🗺️ GEN FROM IMAGE", () => ImportTerrainFromMinimapDialog(), 13, "Import terrain elevations, textures, and trees from a minimap image file");
 
-		_btnImportAnimation = new Button();
-		_btnImportAnimation.Name = "BtnImportAnimation";
-		SetupButton(_btnImportAnimation, "🎬 IMPORT MIXAMO / GLB", () => ImportMixamoOrAnimationDialog(), 13, "Import Mixamo character/animation GLB or .ranim binary animation files");
-		_contentFile.AddChild(_btnImportAnimation);
+		_btnAssetsManager = new Button();
+		_btnAssetsManager.Name = "BtnAssetsManager";
+		SetupButton(_btnAssetsManager, "📦 " + TranslationServer.Translate("ASSETS"), () => _assetManagerDialog?.OpenDialog(), 13, "Open Map Assets Manager & Importer");
+		_contentFile.AddChild(_btnAssetsManager);
 
 		_btnHeaderViewport = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/BtnHeaderViewport");
 		_contentViewport = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport");
@@ -2282,18 +2285,19 @@ public partial class MapEditorHUD : Control
 				_sldBrushStrength.MinValue = 0.0;
 				_sldBrushStrength.MaxValue = 10.0;
 				_sldBrushStrength.Step = 1.0;
+				_sldBrushStrength.Value = SavedTextureIntensity;
+				if (_lblBrushStrengthValue != null) _lblBrushStrengthValue.Text = SavedTextureIntensity.ToString("F0");
+				if (GameHost.Instance != null) GameHost.Instance.EditorBrushStrength = SavedTextureIntensity;
 			}
 			else
 			{
 				_sldBrushStrength.MinValue = 0.5;
 				_sldBrushStrength.MaxValue = 10.0;
 				_sldBrushStrength.Step = 0.5;
-				if (_sldBrushStrength.Value < 0.5)
-				{
-					_sldBrushStrength.Value = 0.5;
-					if (_lblBrushStrengthValue != null) _lblBrushStrengthValue.Text = "0.5";
-					if (GameHost.Instance != null) GameHost.Instance.EditorBrushStrength = 0.5f;
-				}
+				float restoredStrength = Math.Max(0.5f, SavedBrushStrength);
+				_sldBrushStrength.Value = restoredStrength;
+				if (_lblBrushStrengthValue != null) _lblBrushStrengthValue.Text = restoredStrength.ToString("F1");
+				if (GameHost.Instance != null) GameHost.Instance.EditorBrushStrength = restoredStrength;
 			}
 		}
 
@@ -3047,7 +3051,10 @@ public partial class MapEditorHUD : Control
 						AddChild(vp);
 
 						// Force transform propagation across scene tree
-						scene.PropagateNotification((int)Godot.Node3D.NotificationTransformChanged);
+						if (scene.IsInsideTree())
+						{
+							scene.PropagateNotification((int)Godot.Node3D.NotificationTransformChanged);
+						}
 
 						// Scale scene to standard unit box so camera framing is consistent
 						Godot.Aabb totalAabb = new Godot.Aabb();
@@ -5700,6 +5707,7 @@ public partial class MapEditorHUD : Control
 		_weaponVfxDialog = new WeaponVfxDialog(this);
 		_modelPickerDialog = new ModelPickerDialog(this);
 		_abilityVfxDialog = new AbilityVfxDialog(this);
+		_assetManagerDialog = new AssetManagerDialog(this);
 
 		_btnOpenAnimationPreview = new Button();
 		_btnOpenAnimationPreview.Name = "BtnOpenAnimationPreview";
@@ -5847,6 +5855,15 @@ public partial class MapEditorHUD : Control
 			_modelPickerDialog = new ModelPickerDialog(this);
 		}
 		_modelPickerDialog.OpenForEntity(entityId, fieldName, domain, currentPath, onApplied);
+	}
+
+	public void OpenAnimationPreviewDialog(string unitId, string modelPath = null)
+	{
+		if (_animationPreviewDialog == null)
+		{
+			_animationPreviewDialog = new AnimationPreviewDialog(this);
+		}
+		_animationPreviewDialog.OpenForUnitId(unitId, modelPath);
 	}
 
 	public void SaveEntityModelPathToMetadata(string entityId, string fieldName, string domain, string newModelPath)

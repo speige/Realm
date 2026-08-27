@@ -2487,7 +2487,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 <button type="button" class="tab-btn" data-domain="abilities">🪄 Abilities</button>
                 <button type="button" class="tab-btn" data-domain="upgrades">🛡️ Upgrades</button>
                 <button type="button" class="tab-btn" data-domain="items">📦 Items</button>
-                <button type="button" class="tab-btn" data-domain="assets">🎨 Assets</button>
                 <button type="button" class="tab-btn" data-domain="properties">⚙️ Settings</button>
             </div>
             <div class="header-right-actions">
@@ -2531,6 +2530,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <span id="editor-subtitle" class="subtitle">ID</span>
                         </div>
                         <div class="header-actions" style="display: flex; gap: 6px;">
+                            <button type="button" id="edit-animations-btn" class="btn secondary-btn" title="Open Unit Animation Studio in Godot">🎬 Edit Animations</button>
                             <button type="button" id="copy-unit-btn" class="btn secondary-btn" title="Copy entity to clipboard">✂️ Copy</button>
                             <button type="button" id="paste-unit-btn" class="btn secondary-btn" title="Paste entity from clipboard">📋 Paste</button>
                             <button type="button" id="duplicate-unit-btn" class="btn secondary-btn">📋 Duplicate</button>
@@ -2554,22 +2554,33 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <textarea id="field-Description" rows="3" required></textarea>
                         </div>
                         <div class="form-group">
-                            <label for="field-ModelPath">Model Asset (GLB)</label>
+                            <label>Model Asset (GLB)</label>
                             <div class="input-with-browse" style="display: flex; gap: 6px; width: 100%; align-items: center;">
-                                <input type="text" id="field-ModelPath" readonly placeholder="None" style="flex: 1; min-height: 30px; background: var(--vscode-input-background, #1e1e1e); cursor: default;" />
+                                <span id="field-ModelPath" class="readonly-model-label" style="flex: 1; min-height: 28px; padding: 4px 8px; background: var(--vscode-input-background, #1e1e1e); border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 2px; color: var(--vscode-input-foreground, #cccccc); display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px;">(None)</span>
                                 <button type="button" class="btn edit-model-btn" data-field="ModelPath" title="Edit Model Asset in Godot">✏️</button>
                             </div>
                         </div>
                         <div class="form-group">
-                            <label for="field-PortraitModelPath">Portrait Model Path (Optional)</label>
+                            <label>Portrait Model Path (Optional)</label>
                             <div class="input-with-browse" style="display: flex; gap: 6px; width: 100%; align-items: center;">
-                                <input type="text" id="field-PortraitModelPath" readonly placeholder="None" style="flex: 1; min-height: 30px; background: var(--vscode-input-background, #1e1e1e); cursor: default;" />
+                                <span id="field-PortraitModelPath" class="readonly-model-label" style="flex: 1; min-height: 28px; padding: 4px 8px; background: var(--vscode-input-background, #1e1e1e); border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 2px; color: var(--vscode-input-foreground, #cccccc); display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px;">(None)</span>
                                 <button type="button" class="btn edit-model-btn" data-field="PortraitModelPath" title="Edit Portrait Model in Godot">✏️</button>
                             </div>
                         </div>
                         <div class="form-group checkbox-group">
                             <input type="checkbox" id="field-IsHero" />
                             <label for="field-IsHero">Is Hero</label>
+                        </div>
+                    </div>
+
+                    <div id="section-unit-animations" class="form-section">
+                        <h3>Unit Animations</h3>
+                        <div style="display: flex; align-items: center; justify-content: space-between; background: var(--vscode-input-background, #1e1e1e); border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 4px; padding: 10px 14px;">
+                            <div>
+                                <span style="font-weight: 600; font-size: 13px;">Rigged Animations (.ranim)</span>
+                                <p style="margin: 3px 0 0 0; font-size: 12px; opacity: 0.75;">Live preview and configure Idle, Walk, Attack, Death, and Spell casting animations in Godot.</p>
+                            </div>
+                            <button type="button" id="edit-animations-body-btn" class="btn secondary-btn" style="white-space: nowrap;" title="Open Unit Animation Studio in Godot">🎬 Edit Animations</button>
                         </div>
                     </div>
 
@@ -3067,152 +3078,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                                 <button type="button" id="paste-custom-item-btn" class="btn secondary-btn" title="Paste Item from Clipboard">📋 Paste Item</button>
                                 <button type="button" id="prune-items-btn" class="btn secondary-btn" title="Prune items never used by placed units on terrain.json">✂️ Prune Unused</button>
                             </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div id="custom-assets-form" class="editor-form hidden">
-                <div class="form-header">
-                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                        <div>
-                            <div class="breadcrumb">Map > Assets Manager</div>
-                            <h2>Assets Manager</h2>
-                            <span class="subtitle">Import and manage textures, 3D models, decals, VFX, and audio</span>
-                        </div>
-                        <div>
-                            <button type="button" id="btn-prune-unused-assets" class="btn secondary-btn" title="Prune unused assets unreferenced by metadata.json & delete files from workspace">✂️ Prune Unused</button>
-                        </div>
-                    </div>
-                </div>
-                <div class="form-scroll-container">
-                    <div class="form-section">
-                        <h3>🎨 Import Terrain Texture</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import a custom terrain texture image. It will append as a new paint swatch and be converted into PBR KTX2 format with normal & AO maps.</p>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <button type="button" id="btn-import-texture" class="btn primary-btn">📥 Import Custom Texture</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>🎗️ Import Ribbon Effect Image</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import seamless ribbon trail textures for projectile weapons and visual effects. The image will automatically convert to KTX2 format.</p>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <button type="button" id="btn-import-ribbon" class="btn secondary-btn">📥 Import Ribbon Effect Image</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>⚡ Import Projectile Noise Texture</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import seamless noise textures for projectile uber-shaders (fire, frost, poison effects). The image will automatically convert to KTX2 format in Assets/textures/noise/.</p>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <button type="button" id="btn-import-noise-texture" class="btn secondary-btn">📥 Import Projectile Noise Texture</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>📦 Import 3D Model (GLB)</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import binary GLB 3D models. Subcategory will categorize BLAKE3 hash in metadata.json under Units, Buildings, Resources, Props, or Projectiles.</p>
-                        <div class="form-row" style="align-items: flex-end; gap: 16px;">
-                            <div class="form-group">
-                                <label for="glb-category-select">Default Category</label>
-                                <select id="glb-category-select">
-                                    <option value="units">Units</option>
-                                    <option value="buildings">Buildings</option>
-                                    <option value="resources">Resources</option>
-                                    <option value="props">Props</option>
-                                    <option value="projectiles">Projectiles</option>
-                                </select>
-                            </div>
-                            <div class="form-group checkbox-group" style="margin-bottom: 8px;">
-                                <input type="checkbox" id="glb-ignore-player-color" />
-                                <label for="glb-ignore-player-color" title="Skip player color shader and keep original textures intact">Ignore Player Color</label>
-                            </div>
-                            <div class="form-group" style="display: flex; align-items: flex-end;">
-                                <button type="button" id="btn-import-glb" class="btn secondary-btn">📥 Import 3D Model</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>🌌 Import Skybox Panoramic Image</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import a 360-degree panoramic HDRI / skybox image (PNG, JPG, EXR, HDR, etc.). Image will convert to PNG format for Godot world environment rendering.</p>
-                        <div class="form-row">
-                            <button type="button" id="btn-import-skybox" class="btn secondary-btn">📥 Import Skybox</button>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>🖼️ Import Decal & 2D Icon</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import decal and UI icon images (PNG, JPG, BMP, etc.). Image will automatically convert to lossless PNG format.</p>
-                        <div class="form-row" style="gap: 16px;">
-                            <button type="button" id="btn-import-decal" class="btn secondary-btn">📥 Import Decal</button>
-                            <button type="button" id="btn-import-icon" class="btn secondary-btn">📥 Import Icon</button>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>💥 Import VFX Spritesheet</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import animated VFX spritesheet. Specify grid frame counts for columns and rows.</p>
-                        <div class="form-row" style="gap: 16px;">
-                            <div class="form-group" style="width: 80px;">
-                                <label for="vfx-cols-input">Columns</label>
-                                <input type="number" id="vfx-cols-input" value="4" min="1" max="64" />
-                            </div>
-                            <div class="form-group" style="width: 80px;">
-                                <label for="vfx-rows-input">Rows</label>
-                                <input type="number" id="vfx-rows-input" value="4" min="1" max="64" />
-                            </div>
-                            <div class="form-group" style="display: flex; align-items: flex-end;">
-                                <button type="button" id="btn-import-vfx" class="btn secondary-btn">📥 Import VFX Spritesheet</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>🎵 Import Audio (Sound Effects / Music)</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import audio files (MP3, WAV, FLAC, OGG, etc.). Audio will automatically convert to OGG Vorbis format.</p>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="audio-type-select">Audio Type</label>
-                                <select id="audio-type-select">
-                                    <option value="sfx">Sound Effect (SFX)</option>
-                                    <option value="music">Music</option>
-                                </select>
-                            </div>
-                            <div class="form-group" style="display: flex; align-items: flex-end;">
-                                <button type="button" id="btn-import-audio" class="btn secondary-btn">📥 Import Audio File</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>🏃 Import Animation (.ranim / .glb / .fbx)</h3>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Import binary animation files (.ranim) or Mixamo animations. Animations can be assigned to Unit actions.</p>
-                        <div class="form-row">
-                            <button type="button" id="btn-import-animation" class="btn secondary-btn">📥 Import Animation File</button>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                            <h3 style="margin: 0;">📂 Current Map Assets</h3>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <button type="button" id="btn-prune-unused-assets-section" class="btn secondary-btn small-btn" title="Prune unused assets unreferenced by metadata.json & delete files from workspace">✂️ Prune Unused</button>
-                                <label for="asset-type-filter-select" style="font-size: 12px; font-weight: 600; color: var(--text-muted, #858585);">Filter Type:</label>
-                                <select id="asset-type-filter-select" style="background: var(--vscode-input-background, #252526); color: var(--vscode-input-foreground, #cccccc); border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 4px; padding: 2px 8px; font-size: 12px; cursor: pointer;">
-                                    <option value="all">All</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div id="assets-metadata-display" class="tag-list-container" style="padding: 12px; font-family: monospace; font-size: 12px; max-height: 250px; overflow-y: auto;">
-                            <em>No assets registered yet.</em>
                         </div>
                     </div>
                 </div>

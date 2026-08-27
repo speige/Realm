@@ -83,6 +83,20 @@ public partial class FloatingDialogBase : PanelContainer
 		FooterHBox.AddChild(ApplyButton);
 	}
 
+	public void SetFooterCloseOnly(string closeText = "CLOSE")
+	{
+		if (CancelButton != null) CancelButton.Visible = false;
+		if (ApplyButton != null) ApplyButton.Visible = false;
+
+		var btnClose = new Button();
+		btnClose.Set("icon_max_width", 0);
+		btnClose.Text = TranslationServer.Translate(closeText);
+		btnClose.CustomMinimumSize = new Vector2(90, 30);
+		btnClose.FocusMode = FocusModeEnum.None;
+		btnClose.Pressed += () => CloseDialog();
+		FooterHBox.AddChild(btnClose);
+	}
+
 	public override void _Notification(int what)
 	{
 		base._Notification(what);
@@ -167,8 +181,57 @@ public partial class FloatingDialogBase : PanelContainer
 
 	public virtual void ApplyAndClose()
 	{
+		CommitPendingInputFocus();
 		OnApply();
 		CloseDialog();
+	}
+
+	protected void CommitPendingInputFocus()
+	{
+		try
+		{
+			var focusOwner = GetViewport()?.GuiGetFocusOwner();
+			if (focusOwner != null && IsAncestorOf(focusOwner))
+			{
+				focusOwner.ReleaseFocus();
+			}
+		}
+		catch { }
+
+		CommitInputsRecursive(this);
+	}
+
+	private void CommitInputsRecursive(Node node)
+	{
+		if (node == null) return;
+
+		if (node is SpinBox spinBox)
+		{
+			try
+			{
+				spinBox.Apply();
+				var lineEdit = spinBox.GetLineEdit();
+				if (lineEdit != null && double.TryParse(lineEdit.Text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double parsedVal))
+				{
+					spinBox.Value = Math.Clamp(parsedVal, spinBox.MinValue, spinBox.MaxValue);
+				}
+			}
+			catch { }
+		}
+		else if (node is LineEdit lineEdit)
+		{
+			try
+			{
+				lineEdit.ReleaseFocus();
+			}
+			catch { }
+		}
+
+		int count = node.GetChildCount();
+		for (int i = 0; i < count; i++)
+		{
+			CommitInputsRecursive(node.GetChild(i));
+		}
 	}
 
 	public virtual void CancelAndClose()
@@ -609,13 +672,16 @@ public partial class FloatingDialogBase : PanelContainer
 
 		var currentFilteredItems = new List<string>();
 
-		void ShowAssetPopup()
+		void ShowAssetPopup(bool showAll = false)
 		{
 			popup.Clear();
 			currentFilteredItems.Clear();
 
 			var allItems = itemsProvider(includeAllFolders);
-			string query = txt.Text?.Trim().ToLowerInvariant() ?? "";
+			string currentText = txt.Text?.Trim() ?? "";
+			string query = (showAll || allItems.Contains(currentText))
+				? ""
+				: currentText.ToLowerInvariant();
 
 			var matched = string.IsNullOrEmpty(query)
 				? allItems
@@ -623,7 +689,7 @@ public partial class FloatingDialogBase : PanelContainer
 
 			if (matched.Count == 0)
 			{
-				popup.AddItem(TranslationServer.Translate("No matching assets found in metadata.json"), 0);
+				popup.AddItem(TranslationServer.Translate("No matching assets found"), 0);
 				popup.SetItemDisabled(0, true);
 			}
 			else
@@ -648,7 +714,7 @@ public partial class FloatingDialogBase : PanelContainer
 			popup.Popup();
 		}
 
-		btnDropdown.Pressed += () => ShowAssetPopup();
+		btnDropdown.Pressed += () => ShowAssetPopup(true);
 
 		popup.IdPressed += (long id) =>
 		{
@@ -675,6 +741,12 @@ public partial class FloatingDialogBase : PanelContainer
 
 		if (!System.IO.File.Exists(metadataPath))
 		{
+			string tPath = PathUtils.FindPath("MapTemplate/metadata.json");
+			if (System.IO.File.Exists(tPath)) metadataPath = tPath;
+		}
+
+		if (!System.IO.File.Exists(metadataPath))
+		{
 			return new List<string>();
 		}
 
@@ -687,9 +759,9 @@ public partial class FloatingDialogBase : PanelContainer
 				var assetsObj = root["Assets"]?.AsObject() ?? (root["MapProperties"]?["Assets"]?.AsObject());
 				if (assetsObj != null)
 				{
-					if (category == "audio" || category == "sound" || category == "sfx")
+					if (category == "audio" || category == "sound" || category == "sfx" || category == "music")
 					{
-						foreach (var key in new[] { "audio", "sfx", "sound", "sounds" })
+						foreach (var key in new[] { "sfx", "music", "audio", "sound", "sounds" })
 						{
 							if (assetsObj[key] is System.Text.Json.Nodes.JsonObject sObj)
 							{
@@ -703,13 +775,29 @@ public partial class FloatingDialogBase : PanelContainer
 							}
 						}
 					}
-					else if (category == "vfx")
+					else if (category == "vfx" || category == "vfx_spritesheets" || category == "spritesheets")
 					{
-						foreach (var key in new[] { "vfx", "vfx_spritesheets", "spritesheets", "decals" })
+						foreach (var key in new[] { "vfx_spritesheets", "vfx", "spritesheets" })
 						{
 							if (assetsObj[key] is System.Text.Json.Nodes.JsonObject vObj)
 							{
 								foreach (var prop in vObj)
+								{
+									if (!string.IsNullOrWhiteSpace(prop.Key))
+									{
+										result.Add(prop.Key);
+									}
+								}
+							}
+						}
+					}
+					else if (category == "decals" || category == "decal")
+					{
+						foreach (var key in new[] { "decals", "decal" })
+						{
+							if (assetsObj[key] is System.Text.Json.Nodes.JsonObject dObj)
+							{
+								foreach (var prop in dObj)
 								{
 									if (!string.IsNullOrWhiteSpace(prop.Key))
 									{
@@ -753,9 +841,9 @@ public partial class FloatingDialogBase : PanelContainer
 							}
 						}
 					}
-					else if (category == "ribbons")
+					else if (category == "ribbons" || category == "ribbon_textures")
 					{
-						foreach (var key in new[] { "ribbons", "ribbon_textures", "textures" })
+						foreach (var key in new[] { "ribbon_textures", "ribbons" })
 						{
 							if (assetsObj[key] is System.Text.Json.Nodes.JsonObject rObj)
 							{
@@ -795,7 +883,7 @@ public partial class FloatingDialogBase : PanelContainer
 					}
 					else if (category == "icons" || category == "icon")
 					{
-						foreach (var key in new[] { "icons", "ui", "textures" })
+						foreach (var key in new[] { "icons", "ui" })
 						{
 							if (assetsObj[key] is System.Text.Json.Nodes.JsonObject iObj)
 							{
@@ -809,9 +897,9 @@ public partial class FloatingDialogBase : PanelContainer
 							}
 						}
 					}
-					else if (category == "noise")
+					else if (category == "noise" || category == "noise_textures")
 					{
-						foreach (var key in new[] { "noise", "textures" })
+						foreach (var key in new[] { "noise_textures", "noise" })
 						{
 							if (assetsObj[key] is System.Text.Json.Nodes.JsonObject nObj)
 							{
@@ -828,6 +916,22 @@ public partial class FloatingDialogBase : PanelContainer
 											result.Add($"Assets/textures/{prop.Key}");
 											result.Add(prop.Key);
 										}
+									}
+								}
+							}
+						}
+					}
+					else if (category == "textures")
+					{
+						foreach (var key in new[] { "textures" })
+						{
+							if (assetsObj[key] is System.Text.Json.Nodes.JsonObject tObj)
+							{
+								foreach (var prop in tObj)
+								{
+									if (!string.IsNullOrWhiteSpace(prop.Key))
+									{
+										result.Add(prop.Key);
 									}
 								}
 							}
@@ -873,7 +977,7 @@ public partial class FloatingDialogBase : PanelContainer
 	}
 
 	public SubViewportContainer Add3DViewportContainer(
-		VBoxContainer parent,
+		Control parent,
 		Vector2 minSize,
 		out SubViewport subViewport,
 		out Camera3D camera,

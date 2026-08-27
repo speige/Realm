@@ -282,10 +282,10 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 
 		InitWorkingAnimations();
 		ClearPreviewModel();
-		SetupPreviewModel(modelRoot);
-
 		OpenDialog();
 		ResetCameraDefault();
+
+		SetupPreviewModel(modelRoot);
 
 		SelectFirstAvailableOrAssignedAnimation();
 		RebuildActionListUI();
@@ -296,8 +296,50 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		_currentUnitId = unitId;
 		TitleLabel.Text = $"{TranslationServer.Translate("Unit Animation Studio")} - {unitId}";
 
+		if (string.IsNullOrEmpty(modelPath) && !string.IsNullOrEmpty(unitId))
+		{
+			if (GameHost.UnitRegistry.TryGetValue(unitId, out var uMeta) && !string.IsNullOrEmpty(uMeta.ModelPath))
+			{
+				modelPath = uMeta.ModelPath;
+			}
+			else
+			{
+				try
+				{
+					string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+					string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+					if (!System.IO.File.Exists(metadataPath))
+					{
+						string tPath = PathUtils.FindPath("MapTemplate/metadata.json");
+						if (System.IO.File.Exists(tPath)) metadataPath = tPath;
+					}
+					if (System.IO.File.Exists(metadataPath))
+					{
+						string json = System.IO.File.ReadAllText(metadataPath);
+						var root = System.Text.Json.Nodes.JsonNode.Parse(json)?.AsObject();
+						var customUnits = root?["CustomUnits"]?.AsArray();
+						if (customUnits != null)
+						{
+							foreach (var uNode in customUnits)
+							{
+								if (uNode?["UnitId"]?.ToString() == unitId)
+								{
+									modelPath = uNode["ModelPath"]?.ToString();
+									break;
+								}
+							}
+						}
+					}
+				}
+				catch { }
+			}
+		}
+
 		InitWorkingAnimations();
 		ClearPreviewModel();
+
+		OpenDialog();
+		ResetCameraDefault();
 
 		Node3D loadedModel = null;
 		if (!string.IsNullOrEmpty(modelPath))
@@ -310,9 +352,6 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		{
 			SetupPreviewModel(loadedModel);
 		}
-
-		OpenDialog();
-		ResetCameraDefault();
 
 		SelectFirstAvailableOrAssignedAnimation();
 		RebuildActionListUI();
@@ -331,6 +370,58 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 				_workingAnimations[kvp.Key] = list;
 				_initialAnimations[kvp.Key] = new List<string>(list);
 			}
+		}
+
+		if (_workingAnimations.Count == 0 && !string.IsNullOrEmpty(_currentUnitId))
+		{
+			try
+			{
+				string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+				string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+				if (!System.IO.File.Exists(metadataPath))
+				{
+					string tPath = PathUtils.FindPath("MapTemplate/metadata.json");
+					if (System.IO.File.Exists(tPath)) metadataPath = tPath;
+				}
+				if (System.IO.File.Exists(metadataPath))
+				{
+					string json = System.IO.File.ReadAllText(metadataPath);
+					var root = System.Text.Json.Nodes.JsonNode.Parse(json)?.AsObject();
+					var customUnits = root?["CustomUnits"]?.AsArray();
+					if (customUnits != null)
+					{
+						foreach (var uNode in customUnits)
+						{
+							if (uNode?["UnitId"]?.ToString() == _currentUnitId)
+							{
+								var anims = uNode["Animations"]?.AsObject();
+								if (anims != null)
+								{
+									foreach (var prop in anims)
+									{
+										var list = new List<string>();
+										if (prop.Value is System.Text.Json.Nodes.JsonArray arr)
+										{
+											foreach (var item in arr)
+											{
+												if (item != null) list.Add(item.ToString());
+											}
+										}
+										else if (prop.Value != null)
+										{
+											list.Add(prop.Value.ToString());
+										}
+										_workingAnimations[prop.Key] = list;
+										_initialAnimations[prop.Key] = new List<string>(list);
+									}
+								}
+								break;
+							}
+						}
+					}
+				}
+			}
+			catch { }
 		}
 	}
 
@@ -515,7 +606,10 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		_subViewport.AddChild(clonedNode);
 		_previewModelRoot = clonedNode;
 
-		_previewModelRoot.PropagateNotification((int)Node3D.NotificationTransformChanged);
+		if (_previewModelRoot.IsInsideTree())
+		{
+			_previewModelRoot.PropagateNotification((int)Node3D.NotificationTransformChanged);
+		}
 
 		FrameCameraOnModel(_previewModelRoot);
 

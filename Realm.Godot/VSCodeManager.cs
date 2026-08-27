@@ -665,6 +665,22 @@ public class VSCodeManager
 				responseObj["action"] = "openAbilityVfxDialogResult";
 				responseObj["success"] = true;
 			}
+			else if (action == "openAnimationStudio" || action == "openAnimationPreview" || action == "openEditAnimations")
+			{
+				string unitId = node["unitId"]?.ToString() ?? node["entityId"]?.ToString() ?? "";
+				string modelPath = node["modelPath"]?.ToString() ?? "";
+
+				Callable.From(() =>
+				{
+					if (MapEditorHUD.Instance != null)
+					{
+						MapEditorHUD.Instance.OpenAnimationPreviewDialog(unitId, modelPath);
+					}
+				}).CallDeferred();
+
+				responseObj["action"] = "openAnimationStudioResult";
+				responseObj["success"] = true;
+			}
 			else if (action == "generateSnapshot")
 			{
 				string filePath = node["filePath"]?.ToString();

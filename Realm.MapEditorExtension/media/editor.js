@@ -284,6 +284,7 @@
                 const unit = getUnitById(selectedUnitId);
                 if (!unit) return;
                 const currentPath = unit[field] || '';
+                const domain = getActiveDomain();
                 const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
                 fetch(`http://127.0.0.1:${ipcPort}/api/`, {
                     method: 'POST',
@@ -292,12 +293,31 @@
                         action: 'openModelPicker',
                         entityId: unit.UnitId || unit.Id || selectedUnitId,
                         field: field,
-                        domain: activeDomain,
+                        domain: domain,
                         currentPath: currentPath
                     })
                 }).catch(() => {});
             }
         });
+
+        // Animation Studio button listener
+        function triggerOpenAnimationStudio() {
+            const unit = getUnitById(selectedUnitId);
+            if (!unit) return;
+            const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
+            fetch(`http://127.0.0.1:${ipcPort}/api/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'openAnimationStudio',
+                    unitId: unit.UnitId || unit.Id || selectedUnitId,
+                    modelPath: unit.ModelPath || ''
+                })
+            }).catch(() => {});
+        }
+
+        document.getElementById('edit-animations-btn')?.addEventListener('click', triggerOpenAnimationStudio);
+        document.getElementById('edit-animations-body-btn')?.addEventListener('click', triggerOpenAnimationStudio);
 
         // Notify VS Code that frontend is ready
         vscode.postMessage({ type: 'ready' });
@@ -351,7 +371,6 @@
             else if (domain === 'abilities') selectCustomAbilities();
             else if (domain === 'upgrades') selectCustomUpgrades();
             else if (domain === 'items') selectCustomItems();
-            else if (domain === 'assets') selectCustomAssets();
             else if (domain === 'properties') selectMapProperties();
         }
     }
@@ -447,7 +466,6 @@
                     saveChanges();
                 }
 
-                renderAssetsMetadata();
                 if (serializeDeterministic(units) !== oldUnitsStr) {
                     renderUnitList();
                     if (selectedUnitId === '__map_properties__') {
@@ -460,8 +478,6 @@
                         renderCustomUpgrades();
                     } else if (selectedUnitId === '__custom_items__') {
                         renderCustomItems();
-                    } else if (selectedUnitId === '__custom_assets__') {
-                        renderAssetsMetadata();
                     } else if (selectedUnitId && getUnitById(selectedUnitId)) {
                         populateForm(selectedUnitId);
                     } else {
@@ -474,8 +490,6 @@
                             showEmptyState();
                         }
                     }
-                } else if (selectedUnitId === '__custom_assets__') {
-                    renderAssetsMetadata();
                 }
                 updateDebugJson();
                 updateCatalogCardErrors();
@@ -834,6 +848,9 @@
                 } else {
                     element.checked = !!val;
                 }
+            } else if (element.tagName === 'SPAN' || element.tagName === 'LABEL' || element.tagName === 'DIV' || key === 'ModelPath' || key === 'PortraitModelPath') {
+                element.textContent = val || '(None)';
+                element.title = val || '';
             } else if (key === 'NormalMode') {
                 element.value = val || unit.NormalMode || 'Flat';
             } else if (key === 'Scale') {
@@ -868,6 +885,8 @@
         const unitCostSection = document.getElementById('section-unit-costs');
         const unitCombatSection = document.getElementById('section-unit-combat');
         const unitCapabilitiesSection = document.getElementById('section-unit-capabilities');
+        const animSection = document.getElementById('section-unit-animations');
+        const editAnimationsBtn = document.getElementById('edit-animations-btn');
         const pathingSection = document.getElementById('section-pathing-flags');
         const isHeroGroup = document.getElementById('field-IsHero')?.closest('.form-group');
         const portraitGroup = document.getElementById('field-PortraitModelPath')?.closest('.form-group');
@@ -878,6 +897,8 @@
             if (unitCostSection) unitCostSection.classList.add('hidden');
             if (unitCombatSection) unitCombatSection.classList.add('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.add('hidden');
+            if (animSection) animSection.classList.add('hidden');
+            if (editAnimationsBtn) editAnimationsBtn.classList.add('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.add('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
@@ -887,15 +908,31 @@
             if (unitCostSection) unitCostSection.classList.add('hidden');
             if (unitCombatSection) unitCombatSection.classList.add('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.add('hidden');
+            if (animSection) animSection.classList.add('hidden');
+            if (editAnimationsBtn) editAnimationsBtn.classList.add('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.add('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
-        } else {
+        } else if (activeDomain === 'buildings') {
             if (resConfigSection) resConfigSection.classList.add('hidden');
             if (unitStatsSection) unitStatsSection.classList.remove('hidden');
             if (unitCostSection) unitCostSection.classList.remove('hidden');
             if (unitCombatSection) unitCombatSection.classList.remove('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.remove('hidden');
+            if (animSection) animSection.classList.add('hidden');
+            if (editAnimationsBtn) editAnimationsBtn.classList.add('hidden');
+            if (pathingSection) pathingSection.classList.remove('hidden');
+            if (isHeroGroup) isHeroGroup.classList.remove('hidden');
+            if (portraitGroup) portraitGroup.classList.remove('hidden');
+        } else {
+            // units
+            if (resConfigSection) resConfigSection.classList.add('hidden');
+            if (unitStatsSection) unitStatsSection.classList.remove('hidden');
+            if (unitCostSection) unitCostSection.classList.remove('hidden');
+            if (unitCombatSection) unitCombatSection.classList.remove('hidden');
+            if (unitCapabilitiesSection) unitCapabilitiesSection.classList.remove('hidden');
+            if (animSection) animSection.classList.remove('hidden');
+            if (editAnimationsBtn) editAnimationsBtn.classList.remove('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.remove('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
@@ -1488,6 +1525,9 @@
                     <td>
                         <button type="button" class="row-expand-btn" data-target="ability-detail-${index}">▶</button>
                     </td>
+                    <td style="text-align: center; width: 40px;">
+                        <button type="button" class="btn small-btn edit-ability-vfx-btn" data-index="${index}" title="Edit Ability VFX & Audio in Godot">✏️</button>
+                    </td>
                     <td>
                         <input type="text" class="ability-id" data-index="${index}" value="${item.AbilityId || ''}" required />
                     </td>
@@ -1511,14 +1551,13 @@
                         <input type="number" class="ability-range" data-index="${index}" value="${item.TargetRange || 0}" min="0" step="any" />
                     </td>
                     <td class="actions-cell">
-                        <button type="button" class="btn small-btn edit-ability-vfx-btn" data-index="${index}" title="Edit Ability VFX & Audio in Godot">✏️</button>
                         <button type="button" class="btn small-btn copy-row-btn" data-type="ability" data-index="${index}" title="Copy Ability Block">📋</button>
                         <button type="button" class="btn-duplicate-item small-btn" data-index="${index}" title="Duplicate Ability">👯</button>
                         <button type="button" class="btn-delete" data-index="${index}">&times;</button>
                     </td>
                 </tr>
                 <tr class="detail-row hidden" id="ability-detail-${index}">
-                    <td colspan="8">
+                    <td colspan="9">
                         <div class="detail-container">
                             <div class="form-group">
                                 <label>Description</label>
@@ -1595,6 +1634,7 @@
                 <thead>
                     <tr>
                         <th style="width: 30px;"></th>
+                        <th style="width: 40px; text-align: center;">VFX</th>
                         <th>Ability ID</th>
                         <th>Name</th>
                         <th>Type</th>
@@ -1605,7 +1645,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    ${tbodyContent || '<tr><td colspan="8" class="no-slots-info">No abilities defined. Click "+ Add Custom Ability" below.</td></tr>'}
+                    ${tbodyContent || '<tr><td colspan="9" class="no-slots-info">No abilities defined. Click "+ Add Custom Ability" below.</td></tr>'}
                 </tbody>
             </table>
         `;
@@ -3810,7 +3850,7 @@
 
     // --- EVENT WRAPPERS FOR FORM FIELDS (UNIT AND MAP PROPS) ---
     for (const [key, element] of Object.entries(formFields)) {
-        if (!element) continue;
+        if (!element || (element.tagName !== 'INPUT' && element.tagName !== 'SELECT' && element.tagName !== 'TEXTAREA')) continue;
 
         element.addEventListener('change', e => {
             if (isLocked) return;
@@ -4462,972 +4502,6 @@
             }
         }
     }
-
-    function selectCustomAssets() {
-        selectedUnitId = '__custom_assets__';
-        hideAllForms();
-        const customAssetsForm = document.getElementById('custom-assets-form');
-        if (customAssetsForm) {
-            customAssetsForm.classList.remove('hidden');
-        }
-        renderAssetsMetadata();
-    }
-
-    function removeAsset(category, key, subCategory) {
-        if (!units) return;
-
-        let deleted = false;
-        const containers = [
-            units.Assets,
-            units.MapProperties?.Assets,
-            units
-        ].filter(c => c && typeof c === 'object');
-
-        for (const targetObj of containers) {
-            if (subCategory && targetObj[category] && targetObj[category][subCategory] && key in targetObj[category][subCategory]) {
-                delete targetObj[category][subCategory][key];
-                if (Object.keys(targetObj[category][subCategory]).length === 0) {
-                    delete targetObj[category][subCategory];
-                }
-                deleted = true;
-                break;
-            } else if (targetObj[category] && key in targetObj[category]) {
-                delete targetObj[category][key];
-                if (Object.keys(targetObj[category]).length === 0) {
-                    delete targetObj[category];
-                }
-                deleted = true;
-                break;
-            }
-        }
-
-        if (deleted) {
-            if (typeof vscode !== 'undefined' && vscode.postMessage) {
-                vscode.postMessage({
-                    type: 'deleteAsset',
-                    category: category,
-                    subCategory: subCategory,
-                    key: key
-                });
-            }
-            saveChanges();
-            renderAssetsMetadata();
-        }
-    }
-
-    function escapeHtml(str) {
-        if (!str) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
-
-    let currentAssetTypeFilter = 'all';
-
-    function formatCategoryName(cat) {
-        if (cat === 'glb') return 'GLB';
-        if (cat === 'vfx_spritesheets') return 'VFX Spritesheets';
-        if (cat === 'sfx') return 'SFX';
-        if (cat === 'music') return 'Music';
-        if (cat === 'skyboxes') return 'Skyboxes';
-        if (cat === 'decals') return 'Decals';
-        if (cat === 'textures') return 'Textures';
-        if (cat === 'ribbon_textures') return 'Ribbon Textures';
-        if (cat === 'noise_textures') return 'Noise Textures';
-        if (cat === 'icons') return 'Icons';
-        if (cat === 'animations') return 'Animations';
-        return cat.charAt(0).toUpperCase() + cat.slice(1);
-    }
-
-    function renderAssetsMetadata() {
-        const display = document.getElementById('assets-metadata-display');
-        if (!display) return;
-
-        let assets = {};
-        const candidateKeys = ['textures', 'ribbon_textures', 'noise_textures', 'glb', 'decals', 'icons', 'vfx_spritesheets', 'sfx', 'music', 'skyboxes', 'animations'];
-
-        // Collect from units.Assets
-        if (units?.Assets && typeof units.Assets === 'object') {
-            Object.assign(assets, units.Assets);
-        }
-        // Collect from units.MapProperties.Assets
-        if (units?.MapProperties?.Assets && typeof units.MapProperties.Assets === 'object') {
-            Object.assign(assets, units.MapProperties.Assets);
-        }
-        // Collect candidate keys directly on units root or MapProperties root
-        candidateKeys.forEach(k => {
-            if (units && units[k] && typeof units[k] === 'object' && Object.keys(units[k]).length > 0) {
-                assets[k] = Object.assign({}, assets[k] || {}, units[k]);
-            }
-            if (units?.MapProperties && units.MapProperties[k] && typeof units.MapProperties[k] === 'object' && Object.keys(units.MapProperties[k]).length > 0) {
-                assets[k] = Object.assign({}, assets[k] || {}, units.MapProperties[k]);
-            }
-        });
-
-        const filterSelect = document.getElementById('asset-type-filter-select');
-        if (filterSelect) {
-            currentAssetTypeFilter = filterSelect.value || 'all';
-        }
-
-        const availableCategories = Object.keys(assets).filter(k => assets[k] && typeof assets[k] === 'object' && Object.keys(assets[k]).length > 0);
-
-        if (filterSelect) {
-            let selectHtml = `<option value="all" ${currentAssetTypeFilter === 'all' ? 'selected' : ''}>All</option>`;
-            availableCategories.forEach(cat => {
-                selectHtml += `<option value="${cat}" ${currentAssetTypeFilter === cat ? 'selected' : ''}>${escapeHtml(formatCategoryName(cat))}</option>`;
-            });
-            filterSelect.innerHTML = selectHtml;
-
-            if (!filterSelect.getAttribute('data-listener-attached')) {
-                filterSelect.setAttribute('data-listener-attached', 'true');
-                filterSelect.addEventListener('change', (e) => {
-                    currentAssetTypeFilter = e.target.value;
-                    renderAssetsMetadata();
-                });
-            }
-        }
-
-        if (!assets || availableCategories.length === 0) {
-            display.innerHTML = '<em>No assets registered in metadata.json yet. Use the buttons above to import assets!</em>';
-            return;
-        }
-
-        const categoriesToRender = availableCategories.filter(cat => currentAssetTypeFilter === 'all' || currentAssetTypeFilter === cat);
-
-        if (categoriesToRender.length === 0) {
-            display.innerHTML = `<em>No assets found matching filter "${escapeHtml(formatCategoryName(currentAssetTypeFilter))}".</em>`;
-            return;
-        }
-
-        let html = '<div class="asset-list" style="display: flex; flex-direction: column; gap: 8px;">';
-        
-        categoriesToRender.forEach(category => {
-            const catObj = assets[category];
-            if (!catObj || typeof catObj !== 'object') return;
-
-            html += `<div class="asset-category" style="margin-bottom: 8px;">`;
-            html += `<div style="font-weight: bold; color: var(--vscode-symbolIcon-propertyForeground, #4ec9b0); margin-bottom: 4px; text-transform: uppercase; font-size: 11px;">${escapeHtml(category)}</div>`;
-
-            const isSubCategorized = category === 'glb';
-            if (isSubCategorized) {
-                Object.keys(catObj).forEach(subCat => {
-                    const subObj = catObj[subCat];
-                    if (typeof subObj === 'object' && subObj !== null) {
-                        html += `<div style="margin-left: 8px; font-weight: 600; color: var(--text-muted); font-size: 11px; margin-top: 4px;">${escapeHtml(subCat)}</div>`;
-                        Object.keys(subObj).forEach(itemKey => {
-                            const relAssetPath = `Assets/models/${subCat}/${itemKey}`;
-                            const itemVal = subObj[itemKey];
-                            let isIgnored = false;
-                            if (typeof itemVal === 'object' && itemVal !== null) {
-                                isIgnored = !!(itemVal.ignore_player_color || itemVal.IgnorePlayerColor);
-                            } else if (units?.ModelIgnorePlayerColor && (units.ModelIgnorePlayerColor[itemKey] || units.ModelIgnorePlayerColor[itemKey.toLowerCase()])) {
-                                isIgnored = true;
-                            }
-                            html += `<div style="margin-left: 12px; margin-top: 2px;">`;
-                            html += `<div class="asset-item-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 4px;">`;
-                            html += `<span style="font-family: monospace;">${escapeHtml(itemKey)}</span>`;
-                            html += `<div style="display: flex; gap: 6px; align-items: center;">`;
-                            html += `<label style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); cursor: pointer; margin-right: 6px;" title="Skip player-color tinting shader and keep original textures intact">`;
-                            html += `<input type="checkbox" class="chk-ignore-player-color" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" ${isIgnored ? 'checked' : ''} />`;
-                            html += `Ignore Color</label>`;
-                            html += `<select class="select-migrate-target" style="background: rgba(0,0,0,0.4); color: #ccc; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; font-size: 11px; padding: 1px 4px;">`;
-                            ['units', 'buildings', 'resources', 'props', 'projectiles'].forEach(sc => {
-                                html += `<option value="glb:${sc}" ${sc === subCat ? 'selected' : ''}>Model: ${sc}</option>`;
-                            });
-                            html += `</select>`;
-                            html += `<button type="button" class="btn small-btn btn-migrate-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" title="Change Default Category" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">🔄 Move</button>`;
-                            html += `<button type="button" class="btn small-btn btn-preview-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" data-path="${escapeHtml(relAssetPath)}" title="Preview asset" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">👁️ Preview</button>`;
-                            html += `<button type="button" class="btn small-btn btn-delete-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" title="Remove asset" style="color: #f44336; background: transparent; border: none; cursor: pointer; font-weight: bold; font-size: 14px; padding: 0 4px;">✕</button>`;
-                            html += `</div></div>`;
-                            html += `<div class="asset-preview-container hidden" style="margin-top: 4px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px; text-align: center;"></div>`;
-                            html += `</div>`;
-                        });
-                    }
-                });
-            } else {
-                Object.keys(catObj).forEach(itemKey => {
-                    let relAssetPath = `Assets/${category}/${itemKey}`;
-                    let itemVal = catObj[itemKey];
-                    let cols = 4, rows = 4;
-                    if (typeof itemVal === 'object' && itemVal !== null) {
-                        cols = itemVal.columns || 4;
-                        rows = itemVal.rows || 4;
-                    }
-
-                    if (category === 'vfx_spritesheets') relAssetPath = `Assets/vfx/${itemKey}`;
-                    else if (category === 'skyboxes') relAssetPath = `Assets/skyboxes/${itemKey}`;
-                    else if (category === 'decals') relAssetPath = `Assets/decals/${itemKey}`;
-                    else if (category === 'icons') relAssetPath = `Assets/icons/${itemKey}`;
-                    else if (category === 'textures') relAssetPath = `Assets/textures/${itemKey}`;
-                    else if (category === 'sfx') relAssetPath = `Assets/audio/sfx/${itemKey}`;
-                    else if (category === 'music') relAssetPath = `Assets/audio/music/${itemKey}`;
-                    else if (category === 'animations') relAssetPath = `Assets/animations/${itemKey}`;
-
-                    const canMigrateRawPng = category === 'decals' || category === 'icons' || category === 'skyboxes';
-                    const canMigrateAudio = category === 'sfx' || category === 'music';
-
-                    html += `<div style="margin-top: 2px;">`;
-                    html += `<div class="asset-item-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 4px;">`;
-                    html += `<span style="font-family: monospace;">${escapeHtml(itemKey)}</span>`;
-                    html += `<div style="display: flex; gap: 6px; align-items: center;">`;
-                    if (canMigrateRawPng) {
-                        html += `<select class="select-migrate-target" style="background: rgba(0,0,0,0.4); color: #ccc; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; font-size: 11px; padding: 1px 4px;">`;
-                        html += `<option value="decals" ${category === 'decals' ? 'selected' : ''}>Decal</option>`;
-                        html += `<option value="icons" ${category === 'icons' ? 'selected' : ''}>Icon</option>`;
-                        html += `<option value="skyboxes" ${category === 'skyboxes' ? 'selected' : ''}>Skybox</option>`;
-                        html += `</select>`;
-                        html += `<button type="button" class="btn small-btn btn-migrate-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" title="Migrate Asset Type" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">🔄 Move</button>`;
-                    } else if (canMigrateAudio) {
-                        html += `<select class="select-migrate-target" style="background: rgba(0,0,0,0.4); color: #ccc; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; font-size: 11px; padding: 1px 4px;">`;
-                        html += `<option value="sfx" ${category === 'sfx' ? 'selected' : ''}>Audio: SFX</option>`;
-                        html += `<option value="music" ${category === 'music' ? 'selected' : ''}>Audio: Music</option>`;
-                        html += `</select>`;
-                        html += `<button type="button" class="btn small-btn btn-migrate-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" title="Migrate Asset Type" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">🔄 Move</button>`;
-                    }
-                    html += `<button type="button" class="btn small-btn btn-preview-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" data-cols="${cols}" data-rows="${rows}" data-path="${escapeHtml(relAssetPath)}" title="Preview asset" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">👁️ Preview</button>`;
-                    html += `<button type="button" class="btn small-btn btn-delete-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" title="Remove asset" style="color: #f44336; background: transparent; border: none; cursor: pointer; font-weight: bold; font-size: 14px; padding: 0 4px;">✕</button>`;
-                    html += `</div></div>`;
-                    if (category === 'textures') {
-                        let brightness = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Brightness !== undefined || itemVal.brightness !== undefined)) ? parseFloat(itemVal.Brightness ?? itemVal.brightness) : 1.0;
-                        if (isNaN(brightness)) brightness = 1.0;
-                        let tint = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Tint || itemVal.tint)) ? (itemVal.Tint || itemVal.tint) : '#ffffff';
-                        if (!tint.startsWith('#')) tint = '#' + tint;
-                        let tintHue = hexToHue(tint);
-                        let tileMode = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Tile_Mode || itemVal.tile_mode)) ? (itemVal.Tile_Mode || itemVal.tile_mode) : 'Stochastic';
-                        let uvScale = (typeof itemVal === 'object' && itemVal !== null && (itemVal.UV_Scale !== undefined || itemVal.uv_scale !== undefined)) ? parseFloat(itemVal.UV_Scale ?? itemVal.uv_scale) : 1.0;
-                        if (isNaN(uvScale)) uvScale = 1.0;
-                        let stochTileSize = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Stochastic_Tile_Size !== undefined || itemVal.stochastic_tile_size !== undefined)) ? parseFloat(itemVal.Stochastic_Tile_Size ?? itemVal.stochastic_tile_size) : 1.0;
-                        if (isNaN(stochTileSize)) stochTileSize = 1.0;
-                        let crossFade = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Cross_Fade !== undefined || itemVal.cross_fade !== undefined || itemVal.Grid_Cross_Fade !== undefined || itemVal.grid_cross_fade !== undefined)) ? parseFloat(itemVal.Cross_Fade ?? itemVal.cross_fade ?? itemVal.Grid_Cross_Fade ?? itemVal.grid_cross_fade) : 5.0;
-                        if (isNaN(crossFade)) crossFade = 5.0;
-
-                        let heightScale = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Height_Scale !== undefined || itemVal.height_scale !== undefined || itemVal.heightScale !== undefined)) ? parseFloat(itemVal.Height_Scale ?? itemVal.height_scale ?? itemVal.heightScale) : 1.0;
-                        if (isNaN(heightScale)) heightScale = 1.0;
-                        let heightOffset = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Height_Offset !== undefined || itemVal.height_offset !== undefined || itemVal.heightOffset !== undefined)) ? parseFloat(itemVal.Height_Offset ?? itemVal.height_offset ?? itemVal.heightOffset) : 0.0;
-                        if (isNaN(heightOffset)) heightOffset = 0.0;
-                        let crevicePower = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Crevice_Power !== undefined || itemVal.crevice_power !== undefined || itemVal.crevicePower !== undefined)) ? parseFloat(itemVal.Crevice_Power ?? itemVal.crevice_power ?? itemVal.crevicePower) : 1.0;
-                        if (isNaN(crevicePower)) crevicePower = 1.0;
-                        let edgeNoiseInfluence = 1.0;
-
-                        html += `<div class="texture-stochastic-controls" data-key="${escapeHtml(itemKey)}" style="margin-top: 6px; margin-bottom: 8px; padding: 8px 12px; background: var(--vscode-input-background, #1e1e24); border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.15)); border-left: 4px solid var(--vscode-symbolIcon-propertyForeground, #4ec9b0); border-radius: 6px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">`;
-                        
-                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Albedo brightness multiplier for terrain texture." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Brightness: <span class="lbl-brightness-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${brightness.toFixed(2)}</span></label>`;
-                        html += `<input type="range" class="input-texture-brightness" data-key="${escapeHtml(itemKey)}" min="0.25" max="1.75" step="0.02" value="${brightness}" title="Albedo brightness multiplier for terrain texture (range 0.25 to 1.75)." style="width: 130px; cursor: pointer;" />`;
-                        html += `</div>`;
-
-                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Color tint overlay for terrain texture albedo." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Tint:</label>`;
-                        html += `<div style="display: flex; align-items: center; gap: 6px;">`;
-                        html += `<input type="range" class="input-texture-tint-slider" data-key="${escapeHtml(itemKey)}" min="0.0" max="1.0" step="0.01" value="${tintHue.toFixed(2)}" title="Hue slider for tint" style="width: 80px; cursor: pointer;" />`;
-                        html += `<input type="color" class="input-texture-tint-picker" data-key="${escapeHtml(itemKey)}" value="${tint}" title="Direct RGB tint color picker" style="width: 44px; height: 22px; padding: 0; background: transparent; border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.25)); border-radius: 3px; cursor: pointer;" />`;
-                        html += `</div>`;
-                        html += `</div>`;
-
-                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Displacement amplitude multiplier for terrain height blending (range 0.1 to 3.0, default 1.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Height Scale: <span class="lbl-height-scale-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${heightScale.toFixed(2)}</span></label>`;
-                        html += `<input type="range" class="input-texture-height-scale" data-key="${escapeHtml(itemKey)}" min="0.1" max="3.0" step="0.05" value="${heightScale}" title="Displacement amplitude multiplier for terrain height blending (range 0.1 to 3.0, default 1.0)." style="width: 130px; cursor: pointer;" />`;
-                        html += `</div>`;
-
-                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Vertical priority elevation bias. Positive values raise layer dominance, negative sink below (range -1.0 to 1.0, default 0.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Height Offset: <span class="lbl-height-offset-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${heightOffset.toFixed(2)}</span></label>`;
-                        html += `<input type="range" class="input-texture-height-offset" data-key="${escapeHtml(itemKey)}" min="-1.0" max="1.0" step="0.02" value="${heightOffset}" title="Vertical priority elevation bias. Positive values raise layer dominance, negative sink below (range -1.0 to 1.0, default 0.0)." style="width: 130px; cursor: pointer;" />`;
-                        html += `</div>`;
-
-                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Crevice power exponent shaping how aggressively low crevices/joints are filled (range 0.5 to 4.0, default 1.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Crevice Power: <span class="lbl-crevice-power-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${crevicePower.toFixed(2)}</span></label>`;
-                        html += `<input type="range" class="input-texture-crevice-power" data-key="${escapeHtml(itemKey)}" min="0.5" max="4.0" step="0.1" value="${crevicePower}" title="Crevice power exponent shaping how aggressively low crevices/joints are filled (range 0.5 to 4.0, default 1.0)." style="width: 130px; cursor: pointer;" />`;
-                        html += `</div>`;
-
-                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Controls texture tiling method. 'Stochastic' uses non-repeating procedural triangular grid sampling; 'Grid' uses standard UV tiling." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Tile_Mode:</label>`;
-                        html += `<select class="input-texture-tile-mode" data-key="${escapeHtml(itemKey)}" title="Controls texture tiling method. 'Stochastic' uses non-repeating procedural triangular grid sampling; 'Grid' uses standard UV tiling." style="background: var(--vscode-editor-background, #141416); color: var(--vscode-input-foreground, #ffffff); border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.25)); border-radius: 4px; font-size: 12px; font-weight: 600; padding: 3px 8px; cursor: pointer;">`;
-                        html += `<option value="Stochastic" ${tileMode === 'Stochastic' ? 'selected' : ''}>Stochastic (default)</option>`;
-                        html += `<option value="Grid" ${tileMode === 'Grid' ? 'selected' : ''}>Grid</option>`;
-                        html += `</select>`;
-                        html += `</div>`;
-
-                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Multiplier to scale texture UV coordinates (range 0.1 to 4.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">UV_Scale: <span class="lbl-uv-scale-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${uvScale.toFixed(2)}</span></label>`;
-                        html += `<input type="range" class="input-texture-uv-scale" data-key="${escapeHtml(itemKey)}" min="0.1" max="4.0" step="0.05" value="${uvScale}" title="Multiplier to scale texture UV coordinates (range 0.1 to 4.0)." style="width: 130px; cursor: pointer;" />`;
-                        html += `</div>`;
-
-                        html += `<div class="row-stochastic-tile-size" style="display: ${tileMode === 'Grid' ? 'none' : 'flex'}; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Scale multiplier for procedural stochastic sampling grid cells (range 0.5 to 3.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Stochastic Tile Size: <span class="lbl-stoch-size-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${stochTileSize.toFixed(2)}</span></label>`;
-                        html += `<input type="range" class="input-texture-stoch-size" data-key="${escapeHtml(itemKey)}" min="0.5" max="3.0" step="0.05" value="${stochTileSize}" title="Scale multiplier for procedural stochastic sampling grid cells (range 0.5 to 3.0)." style="width: 130px; cursor: pointer;" />`;
-                        html += `</div>`;
-
-                        html += `<div class="row-grid-cross-fade" style="display: ${tileMode === 'Grid' ? 'flex' : 'none'}; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Border cross-fade width along tile seams (range 0% to 10% of UV space, default 5%)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Cross-Fade: <span class="lbl-cross-fade-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${crossFade.toFixed(1)}%</span></label>`;
-                        html += `<input type="range" class="input-texture-cross-fade" data-key="${escapeHtml(itemKey)}" min="0" max="10" step="0.5" value="${crossFade}" title="Border cross-fade width along tile seams (range 0% to 10% of UV space, default 5%)." style="width: 130px; cursor: pointer;" />`;
-                        html += `</div>`;
-
-                        html += `</div>`;
-                    }
-
-                    html += `<div class="asset-preview-container hidden" style="margin-top: 4px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px; text-align: center;"></div>`;
-                    html += `</div>`;
-                });
-            }
-
-            html += `</div>`;
-        });
-
-        html += '</div>';
-        display.innerHTML = html;
-
-        function hsvToHex(h, s, v) {
-            let r, g, b;
-            let i = Math.floor(h * 6);
-            let f = h * 6 - i;
-            let p = v * (1 - s);
-            let q = v * (1 - f * s);
-            let t = v * (1 - (1 - f) * s);
-            switch (i % 6) {
-                case 0: r = v; g = t; b = p; break;
-                case 1: r = q; g = v; b = p; break;
-                case 2: r = p; g = v; b = t; break;
-                case 3: r = p; g = q; b = v; break;
-                case 4: r = t; g = p; b = v; break;
-                case 5: r = v; g = p; b = q; break;
-            }
-            const toHex = (x) => {
-                const hex = Math.round(x * 255).toString(16);
-                return hex.length === 1 ? '0' + hex : hex;
-            };
-            return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-        }
-
-        function hexToHue(hex) {
-            if (!hex || typeof hex !== 'string') return 0;
-            hex = hex.replace('#', '');
-            if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-            if (hex.length !== 6) return 0;
-            const r = parseInt(hex.substring(0, 2), 16) / 255;
-            const g = parseInt(hex.substring(2, 4), 16) / 255;
-            const b = parseInt(hex.substring(4, 6), 16) / 255;
-            const max = Math.max(r, g, b);
-            const min = Math.min(r, g, b);
-            const d = max - min;
-            if (d < 0.05) return 0;
-            let h;
-            if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
-            else if (max === g) h = (b - r) / d + 2;
-            else h = (r - g) / d + 4;
-            return (h / 6);
-        }
-
-        function updateTextureProperty(itemKey, updateFn, shouldSave = true) {
-            let container = null;
-            if (units?.Assets?.textures) container = units.Assets.textures;
-            else if (units?.MapProperties?.Assets?.textures) container = units.MapProperties.Assets.textures;
-            else if (units?.textures) container = units.textures;
-            if (!container) {
-                if (!units.Assets) units.Assets = {};
-                if (!units.Assets.textures) units.Assets.textures = {};
-                container = units.Assets.textures;
-            }
-            let itemVal = container[itemKey];
-            if (typeof itemVal !== 'object' || itemVal === null) {
-                itemVal = { hash: String(itemVal || '') };
-            }
-            updateFn(itemVal);
-            container[itemKey] = itemVal;
-            if (shouldSave) {
-                saveChanges();
-            }
-            
-            const tileMode = (itemVal.Tile_Mode || itemVal.tile_mode) ?? 'Stochastic';
-            const uvScale = parseFloat(itemVal.UV_Scale ?? itemVal.uv_scale ?? 1.0);
-            const stochTileSize = parseFloat(itemVal.Stochastic_Tile_Size ?? itemVal.stochastic_tile_size ?? 1.0);
-            const crossFade = parseFloat(itemVal.Cross_Fade ?? itemVal.cross_fade ?? itemVal.Grid_Cross_Fade ?? itemVal.grid_cross_fade ?? 5.0);
-            const brightness = parseFloat(itemVal.Brightness ?? itemVal.brightness ?? 1.0);
-            const tint = (itemVal.Tint || itemVal.tint) ?? '#ffffff';
-            const heightScale = parseFloat(itemVal.Height_Scale ?? itemVal.height_scale ?? itemVal.heightScale ?? 1.0);
-            const heightOffset = parseFloat(itemVal.Height_Offset ?? itemVal.height_offset ?? itemVal.heightOffset ?? 0.0);
-            const crevicePower = parseFloat(itemVal.Crevice_Power ?? itemVal.crevice_power ?? itemVal.crevicePower ?? 1.0);
-            const edgeNoiseInfluence = 1.0;
-
-            const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
-            fetch(`http://127.0.0.1:${ipcPort}/api/`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'updateTextureParam',
-                    swatchName: itemKey,
-                    tileMode: tileMode,
-                    uvScale: uvScale,
-                    stochasticTileSize: stochTileSize,
-                    crossFade: crossFade,
-                    brightness: brightness,
-                    tint: tint,
-                    heightScale: heightScale,
-                    heightOffset: heightOffset,
-                    crevicePower: crevicePower,
-                    edgeNoiseInfluence: 1.0
-                })
-            }).catch(() => {});
-        }
-
-        display.querySelectorAll('.input-texture-height-scale').forEach(input => {
-            const handleHsChange = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const val = parseFloat(e.target.value);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const lbl = parentRow.querySelector('.lbl-height-scale-val');
-                    if (lbl) lbl.textContent = val.toFixed(2);
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.height_scale = val;
-                    delete itemVal.Height_Scale;
-                    delete itemVal.heightScale;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleHsChange(e, false));
-            input.addEventListener('change', (e) => handleHsChange(e, true));
-        });
-
-        display.querySelectorAll('.input-texture-height-offset').forEach(input => {
-            const handleHoChange = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const val = parseFloat(e.target.value);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const lbl = parentRow.querySelector('.lbl-height-offset-val');
-                    if (lbl) lbl.textContent = val.toFixed(2);
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.height_offset = val;
-                    delete itemVal.Height_Offset;
-                    delete itemVal.heightOffset;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleHoChange(e, false));
-            input.addEventListener('change', (e) => handleHoChange(e, true));
-        });
-
-        display.querySelectorAll('.input-texture-crevice-power').forEach(input => {
-            const handleCpChange = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const val = parseFloat(e.target.value);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const lbl = parentRow.querySelector('.lbl-crevice-power-val');
-                    if (lbl) lbl.textContent = val.toFixed(2);
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.crevice_power = val;
-                    delete itemVal.Crevice_Power;
-                    delete itemVal.crevicePower;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleCpChange(e, false));
-            input.addEventListener('change', (e) => handleCpChange(e, true));
-        });
-
-        display.querySelectorAll('.input-texture-brightness').forEach(input => {
-            const handleBrightChange = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const val = parseFloat(e.target.value);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const lbl = parentRow.querySelector('.lbl-brightness-val');
-                    if (lbl) lbl.textContent = val.toFixed(2);
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.brightness = val;
-                    delete itemVal.Brightness;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleBrightChange(e, false));
-            input.addEventListener('change', (e) => handleBrightChange(e, true));
-        });
-
-        display.querySelectorAll('.input-texture-tint-slider').forEach(input => {
-            const handleTintSlider = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const val = parseFloat(e.target.value);
-                const hex = (val <= 0.0) ? '#ffffff' : hsvToHex(val, 0.75, 1.0);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const picker = parentRow.querySelector('.input-texture-tint-picker');
-                    if (picker) picker.value = hex;
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.tint = hex;
-                    delete itemVal.Tint;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleTintSlider(e, false));
-            input.addEventListener('change', (e) => handleTintSlider(e, true));
-        });
-
-        display.querySelectorAll('.input-texture-tint-picker').forEach(input => {
-            const handleTintPicker = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const hex = e.target.value;
-                const hue = hexToHue(hex);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const slider = parentRow.querySelector('.input-texture-tint-slider');
-                    if (slider) slider.value = hue.toFixed(2);
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.tint = hex;
-                    delete itemVal.Tint;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleTintPicker(e, false));
-            input.addEventListener('change', (e) => handleTintPicker(e, true));
-        });
-
-        display.querySelectorAll('.input-texture-tile-mode').forEach(sel => {
-            sel.addEventListener('change', (e) => {
-                const key = e.target.getAttribute('data-key');
-                const val = e.target.value;
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const stochRow = parentRow.querySelector('.row-stochastic-tile-size');
-                    if (stochRow) stochRow.style.display = (val === 'Grid') ? 'none' : 'flex';
-                    const gridRow = parentRow.querySelector('.row-grid-cross-fade');
-                    if (gridRow) gridRow.style.display = (val === 'Grid') ? 'flex' : 'none';
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.tile_mode = val;
-                    delete itemVal.Tile_Mode;
-                }, true);
-            });
-        });
-
-        display.querySelectorAll('.input-texture-variants').forEach(sel => {
-            sel.addEventListener('change', (e) => {
-                const key = e.target.getAttribute('data-key');
-                const val = (e.target.value === 'true');
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.variants = val;
-                    delete itemVal.Variants;
-                }, true);
-                const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
-                fetch(`http://127.0.0.1:${ipcPort}/api/`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'reloadMetadata' })
-                }).catch(() => {});
-            });
-        });
-
-        display.querySelectorAll('.input-texture-uv-scale').forEach(input => {
-            const handleUvChange = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const val = parseFloat(e.target.value);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const lbl = parentRow.querySelector('.lbl-uv-scale-val');
-                    if (lbl) lbl.textContent = val.toFixed(2);
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.uv_scale = val;
-                    delete itemVal.UV_Scale;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleUvChange(e, false));
-            input.addEventListener('change', (e) => handleUvChange(e, true));
-        });
-
-        display.querySelectorAll('.input-texture-stoch-size').forEach(input => {
-            const handleStochChange = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const val = parseFloat(e.target.value);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const lbl = parentRow.querySelector('.lbl-stoch-size-val');
-                    if (lbl) lbl.textContent = val.toFixed(2);
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.stochastic_tile_size = val;
-                    delete itemVal.Stochastic_Tile_Size;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleStochChange(e, false));
-            input.addEventListener('change', (e) => handleStochChange(e, true));
-        });
-
-        display.querySelectorAll('.input-texture-cross-fade').forEach(input => {
-            const handleCrossFadeChange = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const val = parseFloat(e.target.value);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const lbl = parentRow.querySelector('.lbl-cross-fade-val');
-                    if (lbl) lbl.textContent = `${val.toFixed(1)}%`;
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.cross_fade = val;
-                    delete itemVal.Cross_Fade;
-                    delete itemVal.Grid_Cross_Fade;
-                    delete itemVal.grid_cross_fade;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleCrossFadeChange(e, false));
-            input.addEventListener('change', (e) => handleCrossFadeChange(e, true));
-        });
-
-        // Attach migration event handlers
-        display.querySelectorAll('.btn-migrate-asset').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const target = e.currentTarget;
-                const cat = target.getAttribute('data-category');
-                const subCat = target.getAttribute('data-subcategory');
-                const key = target.getAttribute('data-key');
-                const row = target.closest('.asset-item-row');
-                const sel = row ? row.querySelector('.select-migrate-target') : null;
-                if (!sel) return;
-                const val = sel.value; // e.g. "glb:character", "decals", "icons", "sfx"
-                let toCat = val;
-                let toSubCat = undefined;
-                if (val.includes(':')) {
-                    const parts = val.split(':');
-                    toCat = parts[0];
-                    toSubCat = parts[1];
-                }
-                if (cat === toCat && subCat === toSubCat) return;
-                vscode.postMessage({
-                    type: 'migrateAsset',
-                    fromCategory: cat,
-                    fromSubCategory: subCat,
-                    key: key,
-                    toCategory: toCat,
-                    toSubCategory: toSubCat
-                });
-            });
-        });
-
-        // Attach ignore player color event handlers
-        display.querySelectorAll('.chk-ignore-player-color').forEach(chk => {
-            chk.addEventListener('change', (e) => {
-                const subCat = e.target.getAttribute('data-subcategory');
-                const key = e.target.getAttribute('data-key');
-                const val = e.target.checked;
-                if (units?.Assets?.glb && units.Assets.glb[subCat]) {
-                    let itemVal = units.Assets.glb[subCat][key];
-                    if (typeof itemVal !== 'object' || itemVal === null) {
-                        itemVal = { hash: String(itemVal || ''), default_asset_type: subCat };
-                    }
-                    if (val) {
-                        itemVal.ignore_player_color = true;
-                    } else {
-                        delete itemVal.ignore_player_color;
-                        delete itemVal.IgnorePlayerColor;
-                    }
-                    units.Assets.glb[subCat][key] = itemVal;
-                }
-                if (!units.ModelIgnorePlayerColor) units.ModelIgnorePlayerColor = {};
-                if (val) {
-                    units.ModelIgnorePlayerColor[key] = true;
-                } else {
-                    delete units.ModelIgnorePlayerColor[key];
-                }
-                saveChanges();
-            });
-        });
-
-        // Attach delete event handlers
-        display.querySelectorAll('.btn-delete-asset').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const target = e.currentTarget;
-                const cat = target.getAttribute('data-category');
-                const subCat = target.getAttribute('data-subcategory');
-                const key = target.getAttribute('data-key');
-                if (cat && key) {
-                    removeAsset(cat, key, subCat);
-                }
-            });
-        });
-
-        // Attach preview event handlers
-        display.querySelectorAll('.btn-preview-asset').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const target = e.currentTarget;
-                const cat = target.getAttribute('data-category');
-                const pathStr = target.getAttribute('data-path');
-                const cols = parseInt(target.getAttribute('data-cols'), 10) || 4;
-                const rows = parseInt(target.getAttribute('data-rows'), 10) || 4;
-                const parentRow = target.closest('div[style*="margin-top"]');
-                const previewContainer = parentRow ? parentRow.querySelector('.asset-preview-container') : null;
-                if (!previewContainer) return;
-
-                if (!previewContainer.classList.contains('hidden')) {
-                    previewContainer.classList.add('hidden');
-                    previewContainer.innerHTML = '';
-                    if (previewContainer._animInterval) {
-                        clearInterval(previewContainer._animInterval);
-                        previewContainer._animInterval = null;
-                    }
-                    return;
-                }
-
-                previewContainer.classList.remove('hidden');
-                previewContainer.innerHTML = '<span style="color: var(--text-muted); font-size: 11px;">Loading preview...</span>';
-
-                const reqId = 'preview_' + Math.random().toString(36).substring(2, 9);
-
-                const handleResult = (evt) => {
-                    const msg = evt.data || (evt.detail ? evt.detail : null);
-                    if (!msg) return;
-                    if ((msg.action === 'snapshotResult' || msg.type === 'snapshotResult' || msg.type === 'requestGodotSnapshot') && (msg.requestId === reqId || msg.filePath === pathStr)) {
-                        if (msg.base64) {
-                            if (previewContainer._snapshotTimeout) clearTimeout(previewContainer._snapshotTimeout);
-                            previewContainer.innerHTML = `<img src="data:image/png;base64,${msg.base64}" style="max-width: 256px; max-height: 256px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" title="Godot Live Snapshot (256x256)" />`;
-                            window.removeEventListener('message', handleResult);
-                            if (window.chrome && window.chrome.webview) window.chrome.webview.removeEventListener('message', handleResult);
-                            return;
-                        }
-                    }
-                    if (msg.type === 'resolvePathResult' && msg.requestId === reqId) {
-                        const fileUri = msg.uri;
-                        if (!fileUri) {
-                            previewContainer.innerHTML = '<span style="color: #f44336; font-size: 11px;">File not found</span>';
-                            return;
-                        }
-
-                        if (cat === 'vfx_spritesheets') {
-                            const img = new Image();
-                            img.crossOrigin = 'anonymous';
-                            img.onload = () => {
-                                const canvas = document.createElement('canvas');
-                                const frameWidth = Math.floor(img.width / cols);
-                                const frameHeight = Math.floor(img.height / rows);
-                                canvas.width = frameWidth;
-                                canvas.height = frameHeight;
-                                canvas.style.maxWidth = '200px';
-                                canvas.style.maxHeight = '200px';
-                                canvas.style.border = '1px solid rgba(255,255,255,0.2)';
-                                canvas.style.borderRadius = '4px';
-
-                                const ctx = canvas.getContext('2d');
-                                let currentFrame = 0;
-                                const totalFrames = cols * rows;
-
-                                const renderFrame = () => {
-                                    const col = currentFrame % cols;
-                                    const row = Math.floor(currentFrame / cols);
-                                    ctx.clearRect(0, 0, frameWidth, frameHeight);
-                                    ctx.drawImage(img, col * frameWidth, row * frameHeight, frameWidth, frameHeight, 0, 0, frameWidth, frameHeight);
-                                    currentFrame = (currentFrame + 1) % totalFrames;
-                                };
-
-                                renderFrame();
-                                previewContainer.innerHTML = '';
-                                previewContainer.appendChild(canvas);
-                                if (previewContainer._animInterval) clearInterval(previewContainer._animInterval);
-                                previewContainer._animInterval = setInterval(renderFrame, 80);
-                            };
-                            img.onerror = () => {
-                                previewContainer.innerHTML = '<span style="color: #f44336; font-size: 11px;">Failed to load image</span>';
-                            };
-                            img.src = fileUri;
-                        } else if (cat === 'decals' || cat === 'icons' || cat === 'skyboxes') {
-                            previewContainer.innerHTML = `<img src="${fileUri}" style="max-width: 250px; max-height: 150px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" />`;
-                        } else if (cat === 'textures') {
-                            const isKtx2 = pathStr && pathStr.toLowerCase().endsWith('.ktx2');
-                            if (isKtx2) {
-                                // Request snapshot via HTTP REST API from Godot host
-                                const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
-                                fetch(`http://127.0.0.1:${ipcPort}/api/`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ action: 'generateSnapshot', filePath: pathStr, requestId: reqId })
-                                }).then(res => res.json()).then(msg => {
-                                    if (msg && msg.base64) {
-                                        previewContainer.innerHTML = `<img src="data:image/png;base64,${msg.base64}" style="max-width: 256px; max-height: 256px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" title="Godot Live Snapshot (256x256)" />`;
-                                    }
-                                }).catch(err => {
-                                    console.warn('REST IPC snapshot fetch error:', err);
-                                });
-
-                                previewContainer.innerHTML = `
-                                    <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
-                                        <span class="snapshot-status-lbl" style="color: var(--text-muted); font-size: 11px; word-break: break-all;">Rendering Godot live snapshot...</span>
-                                        <button type="button" class="btn small-btn btn-open-in-vscode" data-path="${escapeHtml(pathStr)}" style="background: rgba(78,201,176,0.15); border: 1px solid rgba(78,201,176,0.4); border-radius: 4px; cursor: pointer; font-size: 11px; padding: 4px 10px; color: #4ec9b0;">🖼️ Open in Texture Viewer Extension</button>
-                                    </div>`;
-                                previewContainer.querySelector('.btn-open-in-vscode').addEventListener('click', () => {
-                                    vscode.postMessage({ type: 'openFile', path: pathStr });
-                                });
-                            } else {
-                                previewContainer.innerHTML = `<img src="${fileUri}" style="max-width: 250px; max-height: 150px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" />`;
-                            }
-                        } else if (cat === 'sfx' || cat === 'music') {
-                            previewContainer.innerHTML = `<audio controls src="${fileUri}" style="width: 100%; max-width: 250px;"></audio>`;
-                        } else if (cat === 'glb') {
-                            // Request snapshot via HTTP REST API from Godot host
-                            const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
-                            fetch(`http://127.0.0.1:${ipcPort}/api/`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ action: 'generateSnapshot', filePath: pathStr, requestId: reqId })
-                            }).then(res => res.json()).then(msg => {
-                                if (msg && msg.base64) {
-                                    previewContainer.innerHTML = `<img src="data:image/png;base64,${msg.base64}" style="max-width: 256px; max-height: 256px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" title="Godot Live Snapshot (256x256)" />`;
-                                }
-                            }).catch(err => {
-                                console.warn('REST IPC snapshot fetch error:', err);
-                            });
-
-                            previewContainer.innerHTML = `
-                                <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
-                                    <span class="snapshot-status-lbl" style="color: var(--text-muted); font-size: 11px; word-break: break-all;">Rendering Godot live 3D snapshot...</span>
-                                    <button type="button" class="btn small-btn btn-open-in-vscode" data-path="${escapeHtml(pathStr)}" style="background: rgba(120,120,255,0.15); border: 1px solid rgba(120,120,255,0.4); border-radius: 4px; cursor: pointer; font-size: 11px; padding: 4px 10px; color: #9c9cff;">📦 Open in GLB Viewer Extension</button>
-                                </div>`;
-                            previewContainer.querySelector('.btn-open-in-vscode').addEventListener('click', () => {
-                                vscode.postMessage({ type: 'openFile', path: pathStr });
-                            });
-                        } else {
-                            previewContainer.innerHTML = `<span style="color: var(--text-muted); font-size: 11px;">Asset path: ${escapeHtml(fileUri)}</span>`;
-                        }
-                    }
-                };
-                window.addEventListener('message', handleResult);
-                if (window.chrome && window.chrome.webview) {
-                    window.chrome.webview.addEventListener('message', handleResult);
-                }
-                vscode.postMessage({
-                    type: 'resolvePath',
-                    requestId: reqId,
-                    path: pathStr
-                });
-            });
-        });
-    }
-
-    function setupAssetImportListeners() {
-        const btnTexture = document.getElementById('btn-import-texture');
-        if (btnTexture) {
-            btnTexture.addEventListener('click', () => {
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'texture',
-                    options: {}
-                });
-            });
-        }
-
-        const btnRibbon = document.getElementById('btn-import-ribbon');
-        if (btnRibbon) {
-            btnRibbon.addEventListener('click', () => {
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'ribbon',
-                    options: {}
-                });
-            });
-        }
-
-        const btnNoise = document.getElementById('btn-import-noise-texture');
-        if (btnNoise) {
-            btnNoise.addEventListener('click', () => {
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'noise_texture',
-                    options: {}
-                });
-            });
-        }
-
-        const btnGlb = document.getElementById('btn-import-glb');
-        if (btnGlb) {
-            btnGlb.addEventListener('click', () => {
-                const catSelect = document.getElementById('glb-category-select');
-                const category = catSelect ? catSelect.value : 'props';
-                const chkIgnore = document.getElementById('glb-ignore-player-color');
-                const ignorePlayerColor = chkIgnore ? chkIgnore.checked : false;
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'glb',
-                    options: { category, ignorePlayerColor }
-                });
-            });
-        }
-
-        const btnSkybox = document.getElementById('btn-import-skybox');
-        if (btnSkybox) {
-            btnSkybox.addEventListener('click', () => {
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'skybox'
-                });
-            });
-        }
-
-        const btnDecal = document.getElementById('btn-import-decal');
-        if (btnDecal) {
-            btnDecal.addEventListener('click', () => {
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'decal'
-                });
-            });
-        }
-
-        const btnIcon = document.getElementById('btn-import-icon');
-        if (btnIcon) {
-            btnIcon.addEventListener('click', () => {
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'icon'
-                });
-            });
-        }
-
-        const btnVfx = document.getElementById('btn-import-vfx');
-        if (btnVfx) {
-            btnVfx.addEventListener('click', () => {
-                const colsInput = document.getElementById('vfx-cols-input');
-                const rowsInput = document.getElementById('vfx-rows-input');
-                const columns = colsInput ? parseInt(colsInput.value, 10) || 4 : 4;
-                const rows = rowsInput ? parseInt(rowsInput.value, 10) || 4 : 4;
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'vfx',
-                    options: { columns, rows }
-                });
-            });
-        }
-
-        const btnAudio = document.getElementById('btn-import-audio');
-        if (btnAudio) {
-            btnAudio.addEventListener('click', () => {
-                const audioSelect = document.getElementById('audio-type-select');
-                const audioType = audioSelect ? audioSelect.value : 'sfx';
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'audio',
-                    options: { audioType }
-                });
-            });
-        }
-
-        const btnAnim = document.getElementById('btn-import-animation');
-        if (btnAnim) {
-            btnAnim.addEventListener('click', () => {
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'animation',
-                    options: {}
-                });
-            });
-        }
-    }
-
-    // Call setupAssetImportListeners inside init
-    const originalInit = init;
-    init = function() {
-        originalInit();
-        setupAssetImportListeners();
-    };
 
     init();
 })();

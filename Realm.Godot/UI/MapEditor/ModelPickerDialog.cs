@@ -259,7 +259,10 @@ public partial class ModelPickerDialog : FloatingDialogBase
 
 			_subViewport.AddChild(cloned);
 			_previewModelRoot = cloned;
-			_previewModelRoot.PropagateNotification((int)Node3D.NotificationTransformChanged);
+			if (_previewModelRoot.IsInsideTree())
+			{
+				_previewModelRoot.PropagateNotification((int)Node3D.NotificationTransformChanged);
+			}
 
 			FrameCameraOnModel(_previewModelRoot);
 
