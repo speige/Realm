@@ -340,12 +340,14 @@ public partial class FloatingDialogBase : PanelContainer
 		VBoxContainer parent,
 		string labelText,
 		bool initialValue,
-		Action<bool> onChanged)
+		Action<bool> onChanged,
+		string tooltip = "")
 	{
 		var chk = new CheckBox();
 		chk.Text = labelText;
 		chk.ButtonPressed = initialValue;
 		chk.AddThemeFontSizeOverride("font_size", 11);
+		if (!string.IsNullOrEmpty(tooltip)) chk.TooltipText = tooltip;
 		chk.Toggled += (pressed) => onChanged(pressed);
 		parent.AddChild(chk);
 		return chk;
@@ -665,7 +667,7 @@ public partial class FloatingDialogBase : PanelContainer
 		return (txt, (val) => txt.Text = val ?? string.Empty);
 	}
 
-	public static List<string> ScanAvailableAssets(string category, bool includeAllFolders = false)
+	public static List<string> ScanAvailableAssets(string category, bool includeAllFolders = false, string subFolder = null)
 	{
 		var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
@@ -719,54 +721,33 @@ public partial class FloatingDialogBase : PanelContainer
 					}
 					else if (category == "models" || category == "glb")
 					{
-						if (assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
+						string defaultFolder = !string.IsNullOrEmpty(subFolder) ? subFolder : "projectiles";
+						foreach (var modelKey in new[] { "glb", "models" })
 						{
-							foreach (var sub in glbObj)
+							if (assetsObj[modelKey] is System.Text.Json.Nodes.JsonObject glbObj)
 							{
-								if (sub.Value is System.Text.Json.Nodes.JsonObject subObj)
+								foreach (var sub in glbObj)
 								{
-									if (includeAllFolders || sub.Key.Equals("projectiles", StringComparison.OrdinalIgnoreCase))
+									bool matches = includeAllFolders || sub.Key.Equals(defaultFolder, StringComparison.OrdinalIgnoreCase);
+									if (sub.Value is System.Text.Json.Nodes.JsonObject subObj)
 									{
-										foreach (var prop in subObj)
+										if (matches)
 										{
-											if (!string.IsNullOrWhiteSpace(prop.Key))
+											foreach (var prop in subObj)
 											{
-												result.Add($"Assets/models/{sub.Key}/{prop.Key}");
+												if (!string.IsNullOrWhiteSpace(prop.Key))
+												{
+													result.Add($"Assets/models/{sub.Key}/{prop.Key}");
+												}
 											}
 										}
 									}
-								}
-								else if (!string.IsNullOrWhiteSpace(sub.Key))
-								{
-									if (includeAllFolders || sub.Key.Contains("projectile", StringComparison.OrdinalIgnoreCase))
+									else if (!string.IsNullOrWhiteSpace(sub.Key))
 									{
-										result.Add(sub.Key);
-									}
-								}
-							}
-						}
-						else if (assetsObj["models"] is System.Text.Json.Nodes.JsonObject modelsObj)
-						{
-							foreach (var sub in modelsObj)
-							{
-								if (sub.Value is System.Text.Json.Nodes.JsonObject subObj)
-								{
-									if (includeAllFolders || sub.Key.Equals("projectiles", StringComparison.OrdinalIgnoreCase))
-									{
-										foreach (var prop in subObj)
+										if (includeAllFolders || sub.Key.Contains(defaultFolder, StringComparison.OrdinalIgnoreCase))
 										{
-											if (!string.IsNullOrWhiteSpace(prop.Key))
-											{
-												result.Add($"Assets/models/{sub.Key}/{prop.Key}");
-											}
+											result.Add(sub.Key);
 										}
-									}
-								}
-								else if (!string.IsNullOrWhiteSpace(sub.Key))
-								{
-									if (includeAllFolders || sub.Key.Contains("projectile", StringComparison.OrdinalIgnoreCase))
-									{
-										result.Add(sub.Key);
 									}
 								}
 							}
@@ -791,6 +772,38 @@ public partial class FloatingDialogBase : PanelContainer
 											result.Add($"Assets/textures/ribbons/{prop.Key}");
 											result.Add(prop.Key);
 										}
+									}
+								}
+							}
+						}
+					}
+					else if (category == "animations" || category == "ranim")
+					{
+						foreach (var key in new[] { "animations", "ranim", "anim" })
+						{
+							if (assetsObj[key] is System.Text.Json.Nodes.JsonObject aObj)
+							{
+								foreach (var prop in aObj)
+								{
+									if (!string.IsNullOrWhiteSpace(prop.Key))
+									{
+										result.Add(prop.Key);
+									}
+								}
+							}
+						}
+					}
+					else if (category == "icons" || category == "icon")
+					{
+						foreach (var key in new[] { "icons", "ui", "textures" })
+						{
+							if (assetsObj[key] is System.Text.Json.Nodes.JsonObject iObj)
+							{
+								foreach (var prop in iObj)
+								{
+									if (!string.IsNullOrWhiteSpace(prop.Key))
+									{
+										result.Add(prop.Key);
 									}
 								}
 							}

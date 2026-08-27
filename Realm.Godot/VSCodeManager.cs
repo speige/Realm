@@ -618,6 +618,53 @@ public class VSCodeManager
 				responseObj["action"] = "openVfxDialogResult";
 				responseObj["success"] = true;
 			}
+			else if (action == "openModelPicker")
+			{
+				string entityId = node["unitId"]?.ToString() ?? node["entityId"]?.ToString() ?? "";
+				string fieldName = node["field"]?.ToString() ?? "ModelPath";
+				string domain = node["domain"]?.ToString() ?? "units";
+				string currentPath = node["currentPath"]?.ToString() ?? "";
+
+				Callable.From(() =>
+				{
+					if (MapEditorHUD.Instance != null)
+					{
+						MapEditorHUD.Instance.OpenModelPickerDialog(entityId, fieldName, domain, currentPath, (updatedPath) =>
+						{
+							MapEditorHUD.Instance.SaveEntityModelPathToMetadata(entityId, fieldName, domain, updatedPath);
+						});
+					}
+				}).CallDeferred();
+
+				responseObj["action"] = "openModelPickerResult";
+				responseObj["success"] = true;
+			}
+			else if (action == "openAbilityVfxDialog")
+			{
+				string abilityId = node["abilityId"]?.ToString() ?? "";
+				var abilityDataNode = node["abilityData"] as System.Text.Json.Nodes.JsonObject;
+
+				Callable.From(() =>
+				{
+					if (MapEditorHUD.Instance != null)
+					{
+						MapEditorHUD.Instance.OpenAbilityVfxDialog(abilityId, abilityDataNode, (updatedData) =>
+						{
+							if (updatedData != null)
+							{
+								string vfx = updatedData["VisualEffect"]?.ToString() ?? "";
+								string sound = updatedData["CastSound"]?.ToString() ?? "";
+								string icon = updatedData["IconPath"]?.ToString() ?? "";
+								float aoe = updatedData["AreaOfEffectRadius"] != null ? (float)updatedData["AreaOfEffectRadius"] : 0f;
+								MapEditorHUD.Instance.SaveCustomAbilityVfxToMetadata(abilityId, vfx, sound, icon, aoe);
+							}
+						});
+					}
+				}).CallDeferred();
+
+				responseObj["action"] = "openAbilityVfxDialogResult";
+				responseObj["success"] = true;
+			}
 			else if (action == "generateSnapshot")
 			{
 				string filePath = node["filePath"]?.ToString();

@@ -58,7 +58,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     }
                     break;
                 case 'browseFile':
-                    await this.handleBrowseFile(webviewPanel.webview, e.fieldId, e.fieldClass, e.fieldIndex, e.fileTypes, document.uri);
+                    await this.handleBrowseFile(webviewPanel.webview, e.fieldId, e.fieldClass, e.fieldIndex, e.fileTypes, document.uri, e.assetType);
                     break;
                 case 'openFile':
                     const absFile = this.resolveGodotPath(e.path, document.uri);
@@ -1046,7 +1046,8 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         fieldClass: string | null,
         fieldIndex: number | null,
         fileTypes?: string[],
-        documentUri?: vscode.Uri
+        documentUri?: vscode.Uri,
+        assetType?: string
     ) {
         // Direct HTML file dialog trigger (avoids vscode.window.showOpenDialog text prompt in web mode)
         webview.postMessage({
@@ -1054,6 +1055,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             fieldId,
             fieldClass,
             fieldIndex,
+            assetType,
             accept: fileTypes ? fileTypes.map(ext => '.' + ext.replace(/^\./, '')).join(',') : '*'
         });
     }
@@ -2553,71 +2555,21 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         </div>
                         <div class="form-group">
                             <label for="field-ModelPath">Model Asset (GLB)</label>
-                            <div class="input-with-browse" style="display: flex; flex-direction: column; gap: 4px;">
-                                <div style="display: flex; gap: 6px; width: 100%;">
-                                    <select id="field-ModelPath" style="flex: 1; min-height: 30px;"></select>
-                                    <button type="button" class="btn clear-btn" data-input-id="field-ModelPath" title="Clear path">❌</button>
-                                </div>
-                                <label style="font-size: 11px; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 4px; margin-top: 2px;">
-                                    <input type="checkbox" id="chk-show-all-glb" style="width: auto; margin: 0;" /> Show all GLB assets
-                                </label>
+                            <div class="input-with-browse" style="display: flex; gap: 6px; width: 100%; align-items: center;">
+                                <input type="text" id="field-ModelPath" readonly placeholder="None" style="flex: 1; min-height: 30px; background: var(--vscode-input-background, #1e1e1e); cursor: default;" />
+                                <button type="button" class="btn edit-model-btn" data-field="ModelPath" title="Edit Model Asset in Godot">✏️</button>
                             </div>
                         </div>
                         <div class="form-group">
                             <label for="field-PortraitModelPath">Portrait Model Path (Optional)</label>
-                            <div class="input-with-browse">
-                                <input type="text" id="field-PortraitModelPath" />
-                                <button type="button" class="btn browse-btn" data-input-id="field-PortraitModelPath" data-file-types="gltf,glb,scn,tscn" title="Browse files">📁</button>
-                                <button type="button" class="btn clear-btn" data-input-id="field-PortraitModelPath" title="Clear path">❌</button>
+                            <div class="input-with-browse" style="display: flex; gap: 6px; width: 100%; align-items: center;">
+                                <input type="text" id="field-PortraitModelPath" readonly placeholder="None" style="flex: 1; min-height: 30px; background: var(--vscode-input-background, #1e1e1e); cursor: default;" />
+                                <button type="button" class="btn edit-model-btn" data-field="PortraitModelPath" title="Edit Portrait Model in Godot">✏️</button>
                             </div>
                         </div>
                         <div class="form-group checkbox-group">
                             <input type="checkbox" id="field-IsHero" />
                             <label for="field-IsHero">Is Hero</label>
-                        </div>
-                    </div>
-
-                    <div class="form-section">
-                        <h3>Global Object Overrides</h3>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="field-Scale">Scale</label>
-                                <input type="number" id="field-Scale" step="0.05" min="0.05" max="20.0" placeholder="1.0" />
-                            </div>
-                            <div class="form-group">
-                                <label for="field-YOffset">Y-Offset</label>
-                                <input type="number" id="field-YOffset" step="0.05" placeholder="0.0" />
-                            </div>
-                            <div class="form-group">
-                                <label for="field-CollisionCircle">Collision Circle</label>
-                                <input type="number" id="field-CollisionCircle" step="0.05" min="0.1" placeholder="1.0" />
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="field-Brightness">Brightness</label>
-                                <input type="number" id="field-Brightness" step="0.02" min="0.10" max="2.00" placeholder="0.5" />
-                            </div>
-                            <div class="form-group">
-                                <label for="field-Tint">Tint Color</label>
-                                <input type="text" id="field-Tint" placeholder="#ffffff" />
-                            </div>
-                        </div>
-                        <div class="form-group" style="margin-top: 6px;">
-                            <label for="field-NormalMode">Normals</label>
-                            <select id="field-NormalMode">
-                                <option value="Original">Original</option>
-                                <option value="Smooth">Smooth Normals</option>
-                                <option value="Flat" selected>Flat Normals (Default)</option>
-                            </select>
-                        </div>
-                        <div class="form-group checkbox-group" style="margin-top: 6px;">
-                            <input type="checkbox" id="field-NormalizeLuminance" checked />
-                            <label for="field-NormalizeLuminance">Normalize Luminosity</label>
-                        </div>
-                        <div class="form-group checkbox-group" style="margin-top: 6px;">
-                            <input type="checkbox" id="field-IgnorePlayerColor" />
-                            <label for="field-IgnorePlayerColor">Ignore Player Color</label>
                         </div>
                     </div>
 
@@ -2857,18 +2809,6 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                                 </div>
                             </div>
                         </div>
-                    </div>
-
-                    <div id="section-unit-animations" class="form-section">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                            <h3 style="margin-bottom: 0;">Unit Animations (Optional)</h3>
-                            <div style="display: flex; gap: 4px;">
-                                <button type="button" class="btn small-btn copy-unit-comp-btn" data-key="Animations" title="Copy Animations block">📋 Copy</button>
-                                <button type="button" class="btn small-btn paste-unit-comp-btn" data-key="Animations" title="Paste Animations block">📥 Paste</button>
-                            </div>
-                        </div>
-                        <p class="desc" style="margin-bottom: 12px; color: var(--text-muted);">Configure animation variations for each action type (Idle, Walk, Attack, Death, Labor, Spell_Cast, Dance). In-game actions randomly pick from configured animations.</p>
-                        <div id="unit-animations-container" class="list-editor-container"></div>
                     </div>
 
                     <div id="section-pathing-flags" class="form-section">

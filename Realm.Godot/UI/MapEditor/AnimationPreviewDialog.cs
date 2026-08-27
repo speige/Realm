@@ -2,9 +2,32 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using Realm.Godot.Animation;
+using Realm.Godot.Utils;
 
 public partial class AnimationPreviewDialog : FloatingDialogBase
 {
+	private static readonly string[] StandardActionTypes = new[]
+	{
+		"Idle",
+		"Walk",
+		"Attack",
+		"Death",
+		"Labor",
+		"Spell_Cast",
+		"Dance"
+	};
+
+	private static readonly Dictionary<string, string> ActionIcons = new()
+	{
+		{ "Idle", "💤" },
+		{ "Walk", "🚶" },
+		{ "Attack", "⚔️" },
+		{ "Death", "💀" },
+		{ "Labor", "⚒️" },
+		{ "Spell_Cast", "🪄" },
+		{ "Dance", "💃" }
+	};
+
 	private SubViewportContainer _viewportContainer;
 	private SubViewport _subViewport;
 	private Camera3D _camera;
@@ -12,17 +35,19 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 	private Node3D _previewModelRoot;
 	private AnimationPlayer _animPlayer;
 
-	private OptionButton _optAnimations;
-	private Button _btnPlay;
-	private Button _btnPause;
-	private Button _btnStop;
-	private HSlider _sldSpeed;
-	private Label _lblSpeedVal;
+	private LineEdit _txtPreviewRanim;
+	private Action<string> _setPreviewRanimValue;
+	private OptionButton _optTargetAction;
+	private VBoxContainer _actionListContainer;
 
 	private Node _sourceSelectedObject;
 	private string _currentUnitId = "";
+	private string _currentPreviewRanim = "";
 	private float _currentSpeed = 1.0f;
 	private bool _isUpdatingUI;
+
+	private Dictionary<string, List<string>> _workingAnimations = new(StringComparer.OrdinalIgnoreCase);
+	private Dictionary<string, List<string>> _initialAnimations = new(StringComparer.OrdinalIgnoreCase);
 
 	private Vector3 _modelCenter = Vector3.Zero;
 	private Vector3 _targetPosition = Vector3.Zero;
@@ -38,30 +63,29 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 	private Vector2 _lastMousePosition;
 
 	public AnimationPreviewDialog(MapEditorHUD hud)
-		: base(hud, TranslationServer.Translate("Animation Preview"), new Vector2(380, 500))
+		: base(hud, TranslationServer.Translate("Unit Animation Studio"), new Vector2(500, 720))
 	{
-		ApplyButton.Text = TranslationServer.Translate("CLOSE");
-		CancelButton.Visible = false;
-
 		BuildControls();
 	}
 
 	private void BuildControls()
 	{
-		_viewportContainer = Add3DViewportContainer(BodyContainer, new Vector2(360, 240), out _subViewport, out _camera, out _light);
+		_viewportContainer = Add3DViewportContainer(BodyContainer, new Vector2(480, 220), out _subViewport, out _camera, out _light);
 		_viewportContainer.GuiInput += OnViewportGuiInput;
 		_viewportContainer.MouseDefaultCursorShape = CursorShape.Cross;
 
-		var controlsVBox = new VBoxContainer();
-		controlsVBox.AddThemeConstantOverride("separation", 6);
-		BodyContainer.AddChild(controlsVBox);
+		var topControlsVBox = new VBoxContainer();
+		topControlsVBox.AddThemeConstantOverride("separation", 6);
+		BodyContainer.AddChild(topControlsVBox);
 
+		// CAMERA TOOLBAR
 		var presetRow = new HBoxContainer();
 		presetRow.AddThemeConstantOverride("separation", 4);
 
 		var lblPreset = new Label();
 		lblPreset.Text = TranslationServer.Translate("Camera:");
-		lblPreset.AddThemeFontSizeOverride("font_size", 11);
+		lblPreset.AddThemeFontSizeOverride("font_size", 10);
+		lblPreset.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		presetRow.AddChild(lblPreset);
 
 		AddButton(presetRow, TranslationServer.Translate("Front"), () => SetCameraPreset(0f, 0f), "View model from front", 10, new Vector2(0, 22));
@@ -71,61 +95,72 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		AddButton(presetRow, TranslationServer.Translate("Top"), () => SetCameraPreset(0f, 85f), "Top-down view", 10, new Vector2(0, 22));
 		AddButton(presetRow, TranslationServer.Translate("⟲ Reset"), () => ResetCameraDefault(), "Reset camera zoom and position to default", 10, new Vector2(0, 22));
 
-		controlsVBox.AddChild(presetRow);
+		var spacer = new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+		presetRow.AddChild(spacer);
 
-		AddLabel(controlsVBox, TranslationServer.Translate("LMB: Orbit • RMB/MMB: Pan • Scroll: Zoom"), 10, UIStyle.ColorGoldDull);
+		AddButton(presetRow, "▶ " + TranslationServer.Translate("Play"), () => PlayCurrentPreview(), "Play Animation", 10, new Vector2(0, 22));
+		AddButton(presetRow, "⏸ " + TranslationServer.Translate("Pause"), () => PauseAnimation(), "Pause Animation", 10, new Vector2(0, 22));
+		AddButton(presetRow, "⏹ " + TranslationServer.Translate("Stop"), () => StopAnimation(), "Stop Animation", 10, new Vector2(0, 22));
 
-		var animRow = new HBoxContainer();
-		animRow.AddThemeConstantOverride("separation", 6);
+		topControlsVBox.AddChild(presetRow);
 
-		var lblAnim = new Label();
-		lblAnim.Text = TranslationServer.Translate("Animation:");
-		lblAnim.CustomMinimumSize = new Vector2(80, 0);
-		lblAnim.AddThemeFontSizeOverride("font_size", 11);
-		animRow.AddChild(lblAnim);
+		// TOP AUTO-COMPLETE DROPDOWN FOR PREVIEWING ANY .RANIM FILE
+		var animInputSection = new VBoxContainer();
+		animInputSection.AddThemeConstantOverride("separation", 4);
 
-		_optAnimations = new OptionButton();
-		_optAnimations.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-		_optAnimations.AddThemeFontSizeOverride("font_size", 11);
-		_optAnimations.ClipText = true;
-		_optAnimations.FitToLongestItem = false;
-		_optAnimations.ItemSelected += (index) =>
-		{
-			if (_isUpdatingUI) return;
-			PlaySelectedAnimation();
-		};
-		animRow.AddChild(_optAnimations);
-		controlsVBox.AddChild(animRow);
+		AddSectionHeader(animInputSection, "🎬 " + TranslationServer.Translate("ANIMATION PREVIEW & ASSIGNMENT"), new Color(0.35f, 0.75f, 0.9f));
 
-		var btnRow = new HBoxContainer();
-		btnRow.AddThemeConstantOverride("separation", 8);
-
-		_btnPlay = AddButton(btnRow, "▶", () => PlaySelectedAnimation(), "Play Animation", 11, new Vector2(36, 26));
-		_btnPause = AddButton(btnRow, "⏸", () =>
-		{
-			if (_animPlayer != null && _animPlayer.IsPlaying())
+		(_txtPreviewRanim, _setPreviewRanimValue) = AddAssetFilterDropdown(
+			animInputSection,
+			TranslationServer.Translate("Preview .ranim:"),
+			_currentPreviewRanim,
+			(all) => ScanAvailableAssets("animations", all),
+			(val) =>
 			{
-				_animPlayer.Pause();
-			}
-		}, "Pause Animation", 11, new Vector2(36, 26));
-		_btnStop = AddButton(btnRow, "⏹", () =>
-		{
-			if (_animPlayer != null)
-			{
-				_animPlayer.Stop(true);
-			}
-		}, "Stop Animation", 11, new Vector2(36, 26));
+				_currentPreviewRanim = val ?? string.Empty;
+				if (!string.IsNullOrWhiteSpace(_currentPreviewRanim))
+				{
+					PlayAnimationFile(_currentPreviewRanim);
+				}
+			},
+			TranslationServer.Translate("Select or search .ranim asset from metadata..."),
+			130f
+		);
 
-		controlsVBox.AddChild(btnRow);
+		// ADD TO ACTION ROW
+		var addActionRow = new HBoxContainer();
+		addActionRow.AddThemeConstantOverride("separation", 6);
 
-		(_sldSpeed, _lblSpeedVal) = AddSlider(controlsVBox, TranslationServer.Translate("Speed:"), 0.25f, 2.0f, 0.05f, 1.0f, (val) =>
+		var lblAssign = new Label();
+		lblAssign.Text = TranslationServer.Translate("Assign to Action:");
+		lblAssign.CustomMinimumSize = new Vector2(130, 0);
+		lblAssign.AddThemeFontSizeOverride("font_size", 11);
+		addActionRow.AddChild(lblAssign);
+
+		_optTargetAction = new OptionButton();
+		_optTargetAction.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		_optTargetAction.AddThemeFontSizeOverride("font_size", 11);
+		for (int i = 0; i < StandardActionTypes.Length; i++)
 		{
-			_currentSpeed = val;
-			if (_animPlayer != null)
-			{
-				_animPlayer.SpeedScale = _currentSpeed;
-			}
-		}, "0.00x", 80.0f);
+			string act = StandardActionTypes[i];
+			string icon = ActionIcons.TryGetValue(act, out var ic) ? ic : "⚡";
+			_optTargetAction.AddItem($"{icon} {act}", i);
+		}
+		addActionRow.AddChild(_optTargetAction);
+
+		AddButton(addActionRow, "+ " + TranslationServer.Translate("Add to Action"), () => AddCurrentPreviewToSelectedAction(), "Add previewed animation into action's random array list", 11, new Vector2(120, 26));
+
+		animInputSection.AddChild(addActionRow);
+		topControlsVBox.AddChild(animInputSection);
+
+		// ACTION TYPES & CONFIGURED ANIMATIONS LIST
+		AddSectionHeader(BodyContainer, "📋 " + TranslationServer.Translate("CONFIGURED UNIT ANIMATIONS (RANDOM SELECTION)"), new Color(0.85f, 0.75f, 0.4f));
+
+		var scrollBody = CreateScrollBody(250);
+		_actionListContainer = new VBoxContainer();
+		_actionListContainer.AddThemeConstantOverride("separation", 10);
+		_actionListContainer.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		scrollBody.AddChild(_actionListContainer);
 	}
 
 	private void OnViewportGuiInput(InputEvent @event)
@@ -243,15 +278,213 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 			return;
 		}
 
-		TitleLabel.Text = $"{TranslationServer.Translate("Animation Preview")} - {selectedObject.Name}";
+		TitleLabel.Text = $"{TranslationServer.Translate("Unit Animation Studio")} - {selectedObject.Name}";
 
+		InitWorkingAnimations();
 		ClearPreviewModel();
 		SetupPreviewModel(modelRoot);
-		PopulateAnimationDropdown();
 
 		OpenDialog();
+		ResetCameraDefault();
 
-		PlaySelectedAnimation();
+		SelectFirstAvailableOrAssignedAnimation();
+		RebuildActionListUI();
+	}
+
+	public void OpenForUnitId(string unitId, string modelPath = null)
+	{
+		_currentUnitId = unitId;
+		TitleLabel.Text = $"{TranslationServer.Translate("Unit Animation Studio")} - {unitId}";
+
+		InitWorkingAnimations();
+		ClearPreviewModel();
+
+		Node3D loadedModel = null;
+		if (!string.IsNullOrEmpty(modelPath))
+		{
+			var loaded = ModelCache.GetModel(modelPath);
+			if (loaded is Node3D node3D) loadedModel = node3D;
+		}
+
+		if (loadedModel != null)
+		{
+			SetupPreviewModel(loadedModel);
+		}
+
+		OpenDialog();
+		ResetCameraDefault();
+
+		SelectFirstAvailableOrAssignedAnimation();
+		RebuildActionListUI();
+	}
+
+	private void InitWorkingAnimations()
+	{
+		_workingAnimations.Clear();
+		_initialAnimations.Clear();
+
+		if (!string.IsNullOrEmpty(_currentUnitId) && GameHost.UnitRegistry.TryGetValue(_currentUnitId, out var uMeta) && uMeta.Animations != null)
+		{
+			foreach (var kvp in uMeta.Animations)
+			{
+				var list = new List<string>(kvp.Value ?? Array.Empty<string>());
+				_workingAnimations[kvp.Key] = list;
+				_initialAnimations[kvp.Key] = new List<string>(list);
+			}
+		}
+	}
+
+	private void SelectFirstAvailableOrAssignedAnimation()
+	{
+		// Try to find the first assigned animation, or first available from metadata
+		foreach (var act in StandardActionTypes)
+		{
+			if (_workingAnimations.TryGetValue(act, out var list) && list.Count > 0)
+			{
+				_currentPreviewRanim = list[0];
+				_setPreviewRanimValue?.Invoke(_currentPreviewRanim);
+				PlayAnimationFile(_currentPreviewRanim);
+				return;
+			}
+		}
+
+		var allAvailable = ScanAvailableAssets("animations");
+		if (allAvailable.Count > 0)
+		{
+			_currentPreviewRanim = allAvailable[0];
+			_setPreviewRanimValue?.Invoke(_currentPreviewRanim);
+			PlayAnimationFile(_currentPreviewRanim);
+		}
+	}
+
+	private void RebuildActionListUI()
+	{
+		if (_actionListContainer == null) return;
+
+		foreach (Node child in _actionListContainer.GetChildren())
+		{
+			child.QueueFree();
+		}
+
+		foreach (string actionType in StandardActionTypes)
+		{
+			var actionCard = new PanelContainer();
+			actionCard.AddThemeStyleboxOverride("panel", UIStyle.CreateLightInnerPanel());
+
+			var cardVBox = new VBoxContainer();
+			cardVBox.AddThemeConstantOverride("separation", 6);
+			actionCard.AddChild(cardVBox);
+
+			var headerRow = new HBoxContainer();
+			headerRow.AddThemeConstantOverride("separation", 6);
+
+			string icon = ActionIcons.TryGetValue(actionType, out var ic) ? ic : "⚡";
+			var lblHeader = new Label();
+			lblHeader.Text = $"{icon} {actionType}";
+			lblHeader.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+			lblHeader.AddThemeFontSizeOverride("font_size", 12);
+			lblHeader.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+			headerRow.AddChild(lblHeader);
+
+			_workingAnimations.TryGetValue(actionType, out var animList);
+			int count = animList?.Count ?? 0;
+			var countBadge = new Label();
+			countBadge.Text = count == 1 ? "1 anim" : $"{count} anims";
+			countBadge.AddThemeColorOverride("font_color", count > 0 ? UIStyle.ColorCyanGlow : UIStyle.ColorGoldDull);
+			countBadge.AddThemeFontSizeOverride("font_size", 10);
+			headerRow.AddChild(countBadge);
+
+			cardVBox.AddChild(headerRow);
+
+			if (animList == null || animList.Count == 0)
+			{
+				var fallbackLbl = new Label();
+				fallbackLbl.Text = TranslationServer.Translate($"[Default fallback: {actionType.ToLowerInvariant()}.ranim]");
+				fallbackLbl.AddThemeColorOverride("font_color", new Color(0.6f, 0.6f, 0.65f, 0.7f));
+				fallbackLbl.AddThemeFontSizeOverride("font_size", 11);
+				cardVBox.AddChild(fallbackLbl);
+			}
+			else
+			{
+				for (int i = 0; i < animList.Count; i++)
+				{
+					int index = i;
+					string animFile = animList[i];
+
+					var itemRow = new HBoxContainer();
+					itemRow.AddThemeConstantOverride("separation", 6);
+
+					var badge = new Label();
+					badge.Text = $"{actionType}_{index}";
+					badge.CustomMinimumSize = new Vector2(65, 0);
+					badge.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+					badge.AddThemeFontSizeOverride("font_size", 10);
+					itemRow.AddChild(badge);
+
+					var nameLbl = new Label();
+					nameLbl.Text = animFile;
+					nameLbl.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+					nameLbl.AddThemeFontSizeOverride("font_size", 11);
+					nameLbl.ClipText = true;
+					itemRow.AddChild(nameLbl);
+
+					AddButton(itemRow, "▶ " + TranslationServer.Translate("Preview"), () =>
+					{
+						_currentPreviewRanim = animFile;
+						_setPreviewRanimValue?.Invoke(animFile);
+						PlayAnimationFile(animFile);
+					}, "Preview this animation on loop", 10, new Vector2(65, 22));
+
+					AddButton(itemRow, "✕ " + TranslationServer.Translate("Remove"), () =>
+					{
+						RemoveAnimationFromAction(actionType, index);
+					}, "Remove this animation from action array", 10, new Vector2(65, 22));
+
+					cardVBox.AddChild(itemRow);
+				}
+			}
+
+			_actionListContainer.AddChild(actionCard);
+		}
+	}
+
+	private void AddCurrentPreviewToSelectedAction()
+	{
+		string animFile = _currentPreviewRanim?.Trim() ?? string.Empty;
+		if (string.IsNullOrEmpty(animFile))
+		{
+			Hud?.ShowFeedback(TranslationServer.Translate("Please select or type an animation in the preview field first."));
+			return;
+		}
+
+		int selectedActionIdx = _optTargetAction != null ? _optTargetAction.Selected : 0;
+		if (selectedActionIdx < 0 || selectedActionIdx >= StandardActionTypes.Length) selectedActionIdx = 0;
+		string actionType = StandardActionTypes[selectedActionIdx];
+
+		if (!_workingAnimations.TryGetValue(actionType, out var list) || list == null)
+		{
+			list = new List<string>();
+			_workingAnimations[actionType] = list;
+		}
+
+		list.Add(animFile);
+		Hud?.ShowFeedback(TranslationServer.Translate($"Added {animFile} to {actionType}"));
+		RebuildActionListUI();
+	}
+
+	private void RemoveAnimationFromAction(string actionType, int index)
+	{
+		if (_workingAnimations.TryGetValue(actionType, out var list) && list != null && index >= 0 && index < list.Count)
+		{
+			string removed = list[index];
+			list.RemoveAt(index);
+			if (list.Count == 0)
+			{
+				_workingAnimations.Remove(actionType);
+			}
+			Hud?.ShowFeedback(TranslationServer.Translate($"Removed {removed} from {actionType}"));
+			RebuildActionListUI();
+		}
 	}
 
 	private void ClearPreviewModel()
@@ -362,55 +595,39 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		ResetCameraDefault();
 	}
 
-	private void PopulateAnimationDropdown()
+	private void PlayCurrentPreview()
 	{
-		_isUpdatingUI = true;
-		_optAnimations.Clear();
-
-		var animations = new List<string>
+		if (!string.IsNullOrEmpty(_currentPreviewRanim))
 		{
-			"Idle_0",
-			"Walk_0",
-			"Attack_0",
-			"Death_0",
-			"Labor_0",
-			"Spell_Cast_0",
-			"Dance_0"
-		};
-
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-		string animDir = System.IO.Path.Combine(wsPath, "Assets", "animations");
-		if (System.IO.Directory.Exists(animDir))
-		{
-			foreach (var file in System.IO.Directory.GetFiles(animDir, "*.ranim"))
-			{
-				string animName = System.IO.Path.GetFileNameWithoutExtension(file);
-				if (!animations.Contains(animName))
-				{
-					animations.Add(animName);
-				}
-			}
+			PlayAnimationFile(_currentPreviewRanim);
 		}
-
-		for (int i = 0; i < animations.Count; i++)
-		{
-			_optAnimations.AddItem(animations[i], i);
-		}
-
-		_optAnimations.Selected = 0;
-		_isUpdatingUI = false;
 	}
 
-	private void PlaySelectedAnimation()
+	private void PauseAnimation()
 	{
-		if (_previewModelRoot == null || !GodotObject.IsInstanceValid(_previewModelRoot)) return;
-		if (_optAnimations == null || _optAnimations.ItemCount == 0) return;
+		if (_animPlayer != null && _animPlayer.IsPlaying())
+		{
+			_animPlayer.Pause();
+		}
+	}
 
-		string animName = _optAnimations.GetItemText(_optAnimations.Selected);
-		if (string.IsNullOrEmpty(animName)) return;
+	private void StopAnimation()
+	{
+		if (_animPlayer != null)
+		{
+			_animPlayer.Stop(true);
+		}
+	}
+
+	public void PlayAnimationFile(string animFileName)
+	{
+		if (string.IsNullOrEmpty(animFileName)) return;
+		if (_previewModelRoot == null || !GodotObject.IsInstanceValid(_previewModelRoot)) return;
 
 		_animPlayer = AnimationRetargetingService.FindOrCreateAnimationPlayer(_previewModelRoot);
 		if (_animPlayer == null) return;
+
+		string animName = System.IO.Path.GetFileNameWithoutExtension(animFileName);
 
 		if (_animPlayer.HasAnimation(animName))
 		{
@@ -421,25 +638,7 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 			return;
 		}
 
-		int underscoreIdx = animName.LastIndexOf('_');
-		string baseType = underscoreIdx > 0 ? animName.Substring(0, underscoreIdx) : animName;
-		string specificFile = null;
-
-		if (!string.IsNullOrEmpty(_currentUnitId) && GameHost.UnitRegistry.TryGetValue(_currentUnitId, out var uMeta) && uMeta.Animations != null)
-		{
-			if (underscoreIdx > 0 && int.TryParse(animName.Substring(underscoreIdx + 1), out int varIdx))
-			{
-				if (uMeta.Animations.TryGetValue(baseType, out var aFiles) && varIdx >= 0 && varIdx < aFiles.Length)
-				{
-					specificFile = aFiles[varIdx];
-				}
-			}
-		}
-
-		string filePath = !string.IsNullOrEmpty(specificFile)
-			? AnimationRetargetingService.ResolveAnimationFilePath(specificFile, _currentUnitId)
-			: AnimationRetargetingService.ResolveAnimationFilePath(animName, _currentUnitId);
-
+		string filePath = AnimationRetargetingService.ResolveAnimationFilePath(animFileName, _currentUnitId);
 		RealmAnimationData animData = null;
 		if (!string.IsNullOrEmpty(filePath))
 		{
@@ -447,7 +646,7 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		}
 		else
 		{
-			animData = baseType switch
+			animData = animName switch
 			{
 				"Idle" => RealmDefaultAnimations.Idle,
 				"Walk" => RealmDefaultAnimations.Walk,
@@ -476,10 +675,24 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		}
 	}
 
-	public override void CloseDialog()
+	protected override void OnApply()
 	{
+		if (!string.IsNullOrEmpty(_currentUnitId))
+		{
+			var finalDict = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+			foreach (var kvp in _workingAnimations)
+			{
+				if (kvp.Value != null && kvp.Value.Count > 0)
+				{
+					finalDict[kvp.Key] = kvp.Value.ToArray();
+				}
+			}
+
+			Hud?.SaveCustomUnitAnimations(_currentUnitId, finalDict);
+			Hud?.ShowFeedback(TranslationServer.Translate("Unit animations applied successfully."));
+		}
+
 		ClearPreviewModel();
-		base.CloseDialog();
 	}
 
 	protected override void OnCancel()
@@ -487,8 +700,9 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		ClearPreviewModel();
 	}
 
-	protected override void OnApply()
+	public override void CloseDialog()
 	{
 		ClearPreviewModel();
+		base.CloseDialog();
 	}
 }

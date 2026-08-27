@@ -180,6 +180,8 @@ public partial class MapEditorHUD : Control
 	private GlobalObjectOverridesDialog _globalOverridesDialog;
 	private AnimationPreviewDialog _animationPreviewDialog;
 	private WeaponVfxDialog _weaponVfxDialog;
+	private ModelPickerDialog _modelPickerDialog;
+	private AbilityVfxDialog _abilityVfxDialog;
 	private Button _btnOpenGlobalOverrides;
 	private Button _btnOpenAnimationPreview;
 	private bool _isUpdatingInspectorUI;
@@ -1451,16 +1453,13 @@ public partial class MapEditorHUD : Control
 				_viewModel.InspectorPos = $"Pos: {pos.X:F2}, {pos.Y:F2}, {pos.Z:F2}\nRot: {rot.Y:F1}° | Scale: {scale.X:F2}x";
 			}
 
-			if (selected is Unit3D || selected is Prop3D)
+			bool isUnitCharacter = (selected is Unit3D unitObj && !unitObj.IsBuilding);
+			if (isUnitCharacter)
 			{
 				Node modelRoot = selected;
-				if (selected is Unit3D unitObj && unitObj.ModelNode != null)
+				if (selected is Unit3D uObj && uObj.ModelNode != null)
 				{
-					modelRoot = unitObj.ModelNode;
-				}
-				else if (selected is Prop3D propObj)
-				{
-					modelRoot = propObj.GetNodeOrNull<Node3D>("VisualModel") ?? selected;
+					modelRoot = uObj.ModelNode;
 				}
 
 				var validation = Realm.Godot.Animation.SkeletonValidator.Validate(modelRoot);
@@ -5062,17 +5061,23 @@ public partial class MapEditorHUD : Control
 		_lblScalePreviewHeight = null;
 	}
 
+	private readonly HashSet<ulong> _hookedSliderInstanceIds = new();
+
 	private void HookSliders(Node parent)
 	{
 		if (parent == null) return;
 		if (parent is Slider slider)
 		{
-			slider.DragStarted += () => IsDraggingSlider = true;
-			slider.DragEnded += (_) => IsDraggingSlider = false;
+			if (_hookedSliderInstanceIds.Add(slider.GetInstanceId()))
+			{
+				slider.DragStarted += () => IsDraggingSlider = true;
+				slider.DragEnded += (_) => IsDraggingSlider = false;
+			}
 		}
-		foreach (Node child in parent.GetChildren())
+		int childCount = parent.GetChildCount();
+		for (int i = 0; i < childCount; i++)
 		{
-			HookSliders(child);
+			HookSliders(parent.GetChild(i));
 		}
 	}
 
@@ -5693,6 +5698,8 @@ public partial class MapEditorHUD : Control
 		_globalOverridesDialog = new GlobalObjectOverridesDialog(this);
 		_animationPreviewDialog = new AnimationPreviewDialog(this);
 		_weaponVfxDialog = new WeaponVfxDialog(this);
+		_modelPickerDialog = new ModelPickerDialog(this);
+		_abilityVfxDialog = new AbilityVfxDialog(this);
 
 		_btnOpenAnimationPreview = new Button();
 		_btnOpenAnimationPreview.Name = "BtnOpenAnimationPreview";
@@ -5784,6 +5791,189 @@ public partial class MapEditorHUD : Control
 		catch (Exception ex)
 		{
 			GD.PrintErr($"[MapEditorHUD] SaveCustomWeaponToMetadata error: {ex.Message}");
+		}
+	}
+
+	public void SaveCustomUnitAnimations(string unitId, Dictionary<string, string[]> animations)
+	{
+		try
+		{
+			if (string.IsNullOrEmpty(unitId)) return;
+
+			if (GameHost.UnitRegistry.TryGetValue(unitId, out var uMeta))
+			{
+				uMeta.Animations = animations;
+				GameHost.UnitRegistry[unitId] = uMeta;
+			}
+
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metadataPath)) return;
+
+			string jsonStr = System.IO.File.ReadAllText(metadataPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
+			if (root == null) return;
+
+			var unitsArray = root["CustomUnits"]?.AsArray() ?? root["Units"]?.AsArray();
+			if (unitsArray != null)
+			{
+				for (int i = 0; i < unitsArray.Count; i++)
+				{
+					var uObj = unitsArray[i]?.AsObject();
+					if (uObj != null && (uObj["UnitId"]?.ToString() == unitId || uObj["unitId"]?.ToString() == unitId || uObj["Id"]?.ToString() == unitId))
+					{
+						var animJson = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(animations, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+						uObj["Animations"] = animJson;
+						break;
+					}
+				}
+			}
+
+			System.IO.File.WriteAllText(metadataPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] SaveCustomUnitAnimations error: {ex.Message}");
+		}
+	}
+
+	public void OpenModelPickerDialog(string entityId, string fieldName, string domain, string currentPath, Action<string> onApplied = null)
+	{
+		if (_modelPickerDialog == null)
+		{
+			_modelPickerDialog = new ModelPickerDialog(this);
+		}
+		_modelPickerDialog.OpenForEntity(entityId, fieldName, domain, currentPath, onApplied);
+	}
+
+	public void SaveEntityModelPathToMetadata(string entityId, string fieldName, string domain, string newModelPath)
+	{
+		try
+		{
+			if (string.IsNullOrEmpty(entityId)) return;
+
+			fieldName = string.IsNullOrEmpty(fieldName) ? "ModelPath" : fieldName;
+			domain = string.IsNullOrEmpty(domain) ? "units" : domain;
+
+			if (domain.Equals("units", StringComparison.OrdinalIgnoreCase) && GameHost.UnitRegistry.TryGetValue(entityId, out var uMeta))
+			{
+				if (fieldName == "PortraitModelPath")
+				{
+					uMeta.PortraitModelPath = newModelPath;
+				}
+				else
+				{
+					uMeta.ModelPath = newModelPath;
+				}
+				GameHost.UnitRegistry[entityId] = uMeta;
+			}
+
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metadataPath)) return;
+
+			string jsonStr = System.IO.File.ReadAllText(metadataPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
+			if (root == null) return;
+
+			string targetArrayKey = domain.ToLowerInvariant() switch
+			{
+				"units" => "CustomUnits",
+				"buildings" => "CustomBuildings",
+				"resources" => "CustomResources",
+				"props" => "CustomProps",
+				_ => "CustomUnits"
+			};
+
+			var targetArray = root[targetArrayKey]?.AsArray();
+			if (targetArray == null)
+			{
+				string fallbackKey = domain.ToLowerInvariant() switch
+				{
+					"units" => "Units",
+					"buildings" => "Buildings",
+					"resources" => "Resources",
+					"props" => "Props",
+					_ => "Units"
+				};
+				targetArray = root[fallbackKey]?.AsArray();
+			}
+
+			if (targetArray != null)
+			{
+				for (int i = 0; i < targetArray.Count; i++)
+				{
+					var obj = targetArray[i]?.AsObject();
+					if (obj != null && (obj["UnitId"]?.ToString() == entityId || obj["unitId"]?.ToString() == entityId || obj["Id"]?.ToString() == entityId))
+					{
+						obj[fieldName] = newModelPath;
+						break;
+					}
+				}
+			}
+
+			System.IO.File.WriteAllText(metadataPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] SaveEntityModelPathToMetadata error: {ex.Message}");
+		}
+	}
+
+	public void OpenAbilityVfxDialog(string abilityId, System.Text.Json.Nodes.JsonObject abilityData, Action<System.Text.Json.Nodes.JsonObject> onApplied = null)
+	{
+		if (_abilityVfxDialog == null)
+		{
+			_abilityVfxDialog = new AbilityVfxDialog(this);
+		}
+		_abilityVfxDialog.OpenForAbility(abilityId, abilityData, onApplied);
+	}
+
+	public void SaveCustomAbilityVfxToMetadata(string abilityId, string visualEffect, string castSound, string iconPath, float aoeRadius)
+	{
+		try
+		{
+			if (string.IsNullOrEmpty(abilityId)) return;
+
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metadataPath)) return;
+
+			string jsonStr = System.IO.File.ReadAllText(metadataPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
+			if (root == null) return;
+
+			var abiArray = root["CustomAbilities"]?.AsArray() ?? root["Abilities"]?.AsArray();
+			if (abiArray != null)
+			{
+				for (int i = 0; i < abiArray.Count; i++)
+				{
+					var obj = abiArray[i]?.AsObject();
+					if (obj != null && (obj["AbilityId"]?.ToString() == abilityId || obj["abilityId"]?.ToString() == abilityId || obj["Id"]?.ToString() == abilityId))
+					{
+						obj["VisualEffect"] = visualEffect;
+						obj["CastSound"] = castSound;
+						obj["IconPath"] = iconPath;
+						obj["AreaOfEffectRadius"] = aoeRadius;
+						break;
+					}
+				}
+			}
+
+			System.IO.File.WriteAllText(metadataPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] SaveCustomAbilityVfxToMetadata error: {ex.Message}");
 		}
 	}
 

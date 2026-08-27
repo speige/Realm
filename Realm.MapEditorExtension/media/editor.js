@@ -276,43 +276,26 @@
         // Setup numeric keypress locking
         setupNumericLockOnDynamicInputs();
 
-        document.getElementById('chk-show-all-glb')?.addEventListener('change', () => {
-            const unit = getUnitById(selectedUnitId);
-            populateGlbDropdown(getActiveDomain(), unit ? unit.ModelPath : '');
-        });
-
-        document.getElementById('field-ModelPath')?.addEventListener('change', e => {
-            const unit = getUnitById(selectedUnitId);
-            if (unit) {
-                const newModelPath = e.target.value;
-                unit.ModelPath = newModelPath;
-                const domain = getActiveDomain();
-                const scale = (unit.Scale !== undefined && unit.Scale > 0) ? unit.Scale : getDomainDefaultScale(domain);
-
-                if (newModelPath) {
-                    const directY = getAutoCalculatedYOffsetDirect(newModelPath, scale, domain);
-                    if (directY !== null) {
-                        unit.YOffset = directY;
-                        if (formFields.YOffset) formFields.YOffset.value = directY;
-                        if (!units.ModelOffsets) units.ModelOffsets = {};
-                        units.ModelOffsets[newModelPath] = directY;
-                    } else {
-                        requestModelMinY(newModelPath, (minY) => {
-                            if (minY !== null) {
-                                const autoY = minY < 0 ? parseFloat((-minY * scale).toFixed(4)) : 0.0;
-                                unit.YOffset = autoY;
-                                if (formFields.YOffset && selectedUnitId === unit.UnitId) {
-                                    formFields.YOffset.value = autoY;
-                                }
-                                if (!units.ModelOffsets) units.ModelOffsets = {};
-                                units.ModelOffsets[newModelPath] = autoY;
-                                saveChanges();
-                            }
-                        });
-                    }
-                }
-                saveChanges();
-                updateAllThumbnails();
+        // Model Picker button listener
+        document.addEventListener('click', e => {
+            const btn = e.target.closest('.edit-model-btn');
+            if (btn) {
+                const field = btn.dataset.field || 'ModelPath';
+                const unit = getUnitById(selectedUnitId);
+                if (!unit) return;
+                const currentPath = unit[field] || '';
+                const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
+                fetch(`http://127.0.0.1:${ipcPort}/api/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'openModelPicker',
+                        entityId: unit.UnitId || unit.Id || selectedUnitId,
+                        field: field,
+                        domain: activeDomain,
+                        currentPath: currentPath
+                    })
+                }).catch(() => {});
             }
         });
 
@@ -525,7 +508,6 @@
                 fileInput.addEventListener('change', () => {
                     if (fileInput.files && fileInput.files[0]) {
                         const selectedFile = fileInput.files[0];
-                        let filePath = selectedFile.name;
                         let targetInp = null;
                         if (message.fieldId) {
                             targetInp = document.getElementById(message.fieldId);
@@ -533,11 +515,40 @@
                             const selector = `input.${message.fieldClass.split(' ').join('.')}[data-index="${message.fieldIndex}"]`;
                             targetInp = document.querySelector(selector);
                         }
-                        if (targetInp) {
-                            targetInp.value = filePath;
-                            const evt = new Event('change', { bubbles: true });
-                            targetInp.dispatchEvent(evt);
-                            updateThumbnailForInput(targetInp);
+
+                        if (message.fieldClass === 'item-icon' || message.assetType === 'icon') {
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                                const dataUrl = reader.result;
+                                const base64Data = typeof dataUrl === 'string' ? (dataUrl.split(',')[1] || '') : '';
+                                const baseName = selectedFile.name.substring(0, selectedFile.name.lastIndexOf('.')) || selectedFile.name;
+                                const iconFileName = baseName + '.png';
+                                vscode.postMessage({
+                                    type: 'processImportedAsset',
+                                    fileName: iconFileName,
+                                    fileDataBase64: base64Data,
+                                    assetType: 'icon',
+                                    options: {}
+                                });
+                                if (targetInp) {
+                                    targetInp.value = iconFileName;
+                                    const evt = new Event('change', { bubbles: true });
+                                    targetInp.dispatchEvent(evt);
+                                    updateThumbnailForInput(targetInp);
+                                    if (message.fieldIndex !== null && message.fieldIndex !== undefined) {
+                                        updateItemIconPreview(message.fieldIndex);
+                                    }
+                                }
+                            };
+                            reader.readAsDataURL(selectedFile);
+                        } else {
+                            let filePath = selectedFile.name;
+                            if (targetInp) {
+                                targetInp.value = filePath;
+                                const evt = new Event('change', { bubbles: true });
+                                targetInp.dispatchEvent(evt);
+                                updateThumbnailForInput(targetInp);
+                            }
                         }
                     }
                     fileInput.remove();
@@ -858,7 +869,6 @@
         const unitCombatSection = document.getElementById('section-unit-combat');
         const unitCapabilitiesSection = document.getElementById('section-unit-capabilities');
         const pathingSection = document.getElementById('section-pathing-flags');
-        const unitAnimationsSection = document.getElementById('section-unit-animations');
         const isHeroGroup = document.getElementById('field-IsHero')?.closest('.form-group');
         const portraitGroup = document.getElementById('field-PortraitModelPath')?.closest('.form-group');
 
@@ -868,7 +878,6 @@
             if (unitCostSection) unitCostSection.classList.add('hidden');
             if (unitCombatSection) unitCombatSection.classList.add('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.add('hidden');
-            if (unitAnimationsSection) unitAnimationsSection.classList.add('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.add('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
@@ -878,7 +887,6 @@
             if (unitCostSection) unitCostSection.classList.add('hidden');
             if (unitCombatSection) unitCombatSection.classList.add('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.add('hidden');
-            if (unitAnimationsSection) unitAnimationsSection.classList.add('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.add('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
@@ -888,7 +896,6 @@
             if (unitCostSection) unitCostSection.classList.remove('hidden');
             if (unitCombatSection) unitCombatSection.classList.remove('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.remove('hidden');
-            if (unitAnimationsSection) unitAnimationsSection.classList.remove('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.remove('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
@@ -901,56 +908,8 @@
         renderTags('upgrades', unit.Upgrades || []);
         renderTags('statuseffects', unit.StatusEffects || []);
         renderTags('soundevents', unit.SoundEvents || []);
-        renderUnitAnimations(unit);
         
-        populateGlbDropdown(activeDomain, unit.ModelPath || '');
         updateAllThumbnails();
-    }
-
-    function populateGlbDropdown(domain, currentModelPath) {
-        const select = document.getElementById('field-ModelPath');
-        if (!select) return;
-        select.innerHTML = '';
-
-        const noneOpt = document.createElement('option');
-        noneOpt.value = '';
-        noneOpt.textContent = '-- None (Default Model) --';
-        select.appendChild(noneOpt);
-
-        const showAll = document.getElementById('chk-show-all-glb')?.checked ?? false;
-        const targetCategory = domain === 'units' ? 'units' :
-                              domain === 'buildings' ? 'buildings' :
-                              domain === 'resources' ? 'resources' :
-                              domain === 'props' ? 'props' : null;
-
-        const glbAssets = (units.Assets && units.Assets.glb) ? units.Assets.glb : {};
-        for (const [catKey, catObj] of Object.entries(glbAssets)) {
-            if (!catObj || typeof catObj !== 'object') continue;
-            const normCat = catKey.toLowerCase();
-
-            if (!showAll && targetCategory) {
-                const isMatch = normCat === targetCategory || (targetCategory === 'buildings' && normCat === 'building');
-                if (!isMatch) continue;
-            }
-
-            for (const [fileName, val] of Object.entries(catObj)) {
-                const opt = document.createElement('option');
-                opt.value = fileName;
-                opt.textContent = `${fileName} (${normCat})`;
-                if (fileName === currentModelPath) {
-                    opt.selected = true;
-                }
-                select.appendChild(opt);
-            }
-        }
-
-        if (currentModelPath && ![...select.options].some(o => o.value === currentModelPath)) {
-            const customOpt = document.createElement('option');
-            customOpt.value = currentModelPath;
-            customOpt.textContent = `${currentModelPath} (custom)`;
-            customOpt.selected = true;
-            select.appendChild(customOpt);
-        }
     }
 
     function populateMapProperties() {
@@ -1073,146 +1032,6 @@
             saveChanges();
             renderTags(type, unit[key]);
         }
-    }
-
-    const ANIMATION_TYPES = [
-        { key: 'Idle', label: 'Idle', icon: '🧘' },
-        { key: 'Walk', label: 'Walk', icon: '🚶' },
-        { key: 'Attack', label: 'Attack', icon: '⚔️' },
-        { key: 'Death', label: 'Death', icon: '💀' },
-        { key: 'Labor', label: 'Labor', icon: '⚒️' },
-        { key: 'Spell_Cast', label: 'Spell_Cast', icon: '🪄' },
-        { key: 'Dance', label: 'Dance', icon: '💃' }
-    ];
-
-    function renderUnitAnimations(unit) {
-        const container = document.getElementById('unit-animations-container');
-        if (!container) return;
-        container.innerHTML = '';
-
-        if (!unit) return;
-        if (!unit.Animations || typeof unit.Animations !== 'object' || Array.isArray(unit.Animations)) {
-            unit.Animations = {};
-        }
-
-        const table = document.createElement('table');
-        table.className = 'anim-table';
-
-        const thead = document.createElement('thead');
-        thead.innerHTML = `
-            <tr>
-                <th style="width: 140px;">Action Type</th>
-                <th>Configured Animations Array (Random Selection)</th>
-            </tr>
-        `;
-        table.appendChild(thead);
-
-        const tbody = document.createElement('tbody');
-
-        ANIMATION_TYPES.forEach(animTypeInfo => {
-            const typeKey = animTypeInfo.key;
-            const animList = Array.isArray(unit.Animations[typeKey]) ? unit.Animations[typeKey] : [];
-
-            const tr = document.createElement('tr');
-
-            const tdType = document.createElement('td');
-            tdType.className = 'anim-type-cell';
-            tdType.innerHTML = `<span>${animTypeInfo.icon}</span> <strong>${escapeHtml(animTypeInfo.label)}</strong>`;
-            tr.appendChild(tdType);
-
-            const tdConfig = document.createElement('td');
-
-            const chipsContainer = document.createElement('div');
-            chipsContainer.className = 'anim-chips-container';
-
-            if (animList.length === 0) {
-                const emptySpan = document.createElement('span');
-                emptySpan.className = 'anim-chips-fallback';
-                emptySpan.textContent = `Default fallback (${typeKey.toLowerCase()}.ranim)`;
-                chipsContainer.appendChild(emptySpan);
-            } else {
-                animList.forEach((animFile, idx) => {
-                    const chip = document.createElement('span');
-                    chip.className = 'anim-chip';
-                    chip.title = `Preview ID: ${typeKey}_${idx}`;
-
-                    const idxBadge = document.createElement('span');
-                    idxBadge.className = 'anim-chip-index';
-                    idxBadge.textContent = `${typeKey}_${idx}`;
-                    chip.appendChild(idxBadge);
-
-                    const nameSpan = document.createElement('span');
-                    nameSpan.textContent = animFile;
-                    chip.appendChild(nameSpan);
-
-                    const removeBtn = document.createElement('span');
-                    removeBtn.className = 'remove-anim';
-                    removeBtn.textContent = '×';
-                    removeBtn.title = 'Remove animation';
-                    removeBtn.addEventListener('click', () => {
-                        if (isLocked) return;
-                        pushToUndoStack();
-                        animList.splice(idx, 1);
-                        if (animList.length === 0) {
-                            delete unit.Animations[typeKey];
-                        } else {
-                            unit.Animations[typeKey] = animList;
-                        }
-                        saveChanges();
-                        renderUnitAnimations(unit);
-                    });
-                    chip.appendChild(removeBtn);
-
-                    chipsContainer.appendChild(chip);
-                });
-            }
-            tdConfig.appendChild(chipsContainer);
-
-            const addRow = document.createElement('div');
-            addRow.className = 'anim-add-row';
-
-            const addInput = document.createElement('input');
-            addInput.type = 'text';
-            addInput.setAttribute('list', 'suggest-animations');
-            addInput.placeholder = `Select or type animation for ${typeKey}...`;
-            addInput.className = 'anim-add-input';
-
-            const addBtn = document.createElement('button');
-            addBtn.type = 'button';
-            addBtn.className = 'btn secondary-btn small-btn';
-            addBtn.textContent = '+ Add';
-
-            const doAdd = () => {
-                if (isLocked) return;
-                const val = addInput.value.trim();
-                if (!val) return;
-                pushToUndoStack();
-                if (!Array.isArray(unit.Animations[typeKey])) {
-                    unit.Animations[typeKey] = [];
-                }
-                unit.Animations[typeKey].push(val);
-                saveChanges();
-                renderUnitAnimations(unit);
-            };
-
-            addBtn.addEventListener('click', doAdd);
-            addInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    doAdd();
-                }
-            });
-
-            addRow.appendChild(addInput);
-            addRow.appendChild(addBtn);
-            tdConfig.appendChild(addRow);
-
-            tr.appendChild(tdConfig);
-            tbody.appendChild(tr);
-        });
-
-        table.appendChild(tbody);
-        container.appendChild(table);
     }
 
     function addTagItem(type) {
@@ -1692,6 +1511,7 @@
                         <input type="number" class="ability-range" data-index="${index}" value="${item.TargetRange || 0}" min="0" step="any" />
                     </td>
                     <td class="actions-cell">
+                        <button type="button" class="btn small-btn edit-ability-vfx-btn" data-index="${index}" title="Edit Ability VFX & Audio in Godot">✏️</button>
                         <button type="button" class="btn small-btn copy-row-btn" data-type="ability" data-index="${index}" title="Copy Ability Block">📋</button>
                         <button type="button" class="btn-duplicate-item small-btn" data-index="${index}" title="Duplicate Ability">👯</button>
                         <button type="button" class="btn-delete" data-index="${index}">&times;</button>
@@ -1703,38 +1523,6 @@
                             <div class="form-group">
                                 <label>Description</label>
                                 <textarea class="ability-desc" data-index="${index}" rows="2">${item.Description || ''}</textarea>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Visual Effect Model (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="ability-visual" data-index="${index}" value="${item.VisualEffect || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="ability-visual" data-index="${index}" data-file-types="gltf,glb,scn,tscn" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label>Cast Sound (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="ability-sound" data-index="${index}" value="${item.CastSound || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="ability-sound" data-index="${index}" data-file-types="ogg,wav,mp3" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Icon Path (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="ability-icon" data-index="${index}" value="${item.IconPath || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="ability-icon" data-index="${index}" data-file-types="png,jpg,jpeg,svg,tga,dds" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label>Area of Effect Radius</label>
-                                    <input type="number" class="ability-aoe" data-index="${index}" value="${item.AreaOfEffectRadius || 0}" min="0" step="any" />
-                                </div>
                             </div>
                             <div class="form-row">
                                 <div class="form-group">
@@ -1838,6 +1626,26 @@
                     saveChanges();
                     renderCustomAbilities();
                 }, 'Delete');
+            });
+        });
+
+        // Bind ability VFX pencil button
+        tableContainer.querySelectorAll('.edit-ability-vfx-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.index, 10);
+                const item = list[idx];
+                if (!item) return;
+                const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
+                fetch(`http://127.0.0.1:${ipcPort}/api/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'openAbilityVfxDialog',
+                        abilityId: item.AbilityId || '',
+                        abilityIndex: idx,
+                        abilityData: item
+                    })
+                }).catch(() => {});
             });
         });
 
@@ -2174,9 +1982,13 @@
                                 </div>
                                 <div class="form-group">
                                     <label>Icon Path (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="item-icon" data-index="${index}" value="${item.IconPath || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="item-icon" data-index="${index}" data-file-types="png,jpg,jpeg,svg,tga,dds" title="Browse files">📁</button>
+                                    <div class="input-with-browse" style="display: flex; gap: 6px; align-items: center;">
+                                        <div class="item-icon-preview" data-index="${index}" style="width: 28px; height: 28px; border: 1px solid var(--vscode-input-border, #3c3c3c); background: var(--vscode-input-background, #1e1e1e); border-radius: 4px; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;" title="Selected Icon Preview">
+                                            <img class="item-icon-img" data-index="${index}" style="width: 100%; height: 100%; object-fit: contain; ${item.IconPath ? '' : 'display: none;'}" alt="" />
+                                            <span class="item-icon-placeholder" data-index="${index}" style="font-size: 13px; opacity: 0.4; ${item.IconPath ? 'display: none;' : ''}">🖼️</span>
+                                        </div>
+                                        <input type="text" class="item-icon" list="suggest-icons" data-index="${index}" value="${item.IconPath || ''}" placeholder="e.g. wood_logs.png" style="flex: 1;" />
+                                        <button type="button" class="btn browse-btn" data-class="item-icon" data-index="${index}" data-asset-type="icon" data-file-types="png" title="Browse / Import Icon">📁</button>
                                         <button type="button" class="btn clear-btn" title="Clear path">❌</button>
                                     </div>
                                 </div>
@@ -2350,7 +2162,10 @@
                 else if (target.classList.contains('item-charges')) list[idx].ChargeCount = parseInt(val, 10) || 0;
                 else if (target.classList.contains('item-cooldown-link')) list[idx].CooldownLink = val;
                 else if (target.classList.contains('item-candrop')) list[idx].CanDrop = val;
-                else if (target.classList.contains('item-icon')) list[idx].IconPath = val;
+                else if (target.classList.contains('item-icon')) {
+                    list[idx].IconPath = val;
+                    updateItemIconPreview(idx);
+                }
                 else if (target.classList.contains('item-iscontainer')) list[idx].IsContainer = val;
                 else if (target.classList.contains('item-containersize')) list[idx].ContainerSize = parseInt(val, 10) || 0;
                 else if (target.classList.contains('item-req')) list[idx].Requirements = val;
@@ -2359,6 +2174,18 @@
                 saveChanges();
             });
         });
+
+        tableContainer.querySelectorAll('.item-icon').forEach(input => {
+            input.addEventListener('input', e => {
+                const idx = parseInt(e.target.dataset.index, 10);
+                updateItemIconPreview(idx);
+            });
+        });
+
+        list.forEach((_, index) => {
+            updateItemIconPreview(index);
+        });
+
         updateAllThumbnails();
     }
 
@@ -2668,12 +2495,6 @@
                     pushToUndoStack();
                     unit[componentKey] = parsed.data;
                     saveChanges();
-                    
-                    if (componentKey === 'Animations') {
-                        renderUnitAnimations(unit);
-                        return;
-                    }
-
                     let tagType = '';
                     if (componentKey === 'BuildOptions') tagType = 'build-options';
                     else if (componentKey === 'Abilities') tagType = 'abilities';
@@ -3457,27 +3278,14 @@
                 removeWarningText(inputEl);
                 if (isImage) {
                     thumbContainer.innerHTML = `<img src="${uri}" class="thumbnail-preview-img" alt="Preview" />`;
-                } else if (is3DModel) {
-                    thumbContainer.innerHTML = `
-                        <div class="model-preview-box" title="Click to open 3D model in VS Code">
-                            <span>📦 View Model (${val.split('/').pop()})</span>
-                        </div>
-                    `;
-                    const previewBox = thumbContainer.querySelector('.model-preview-box');
-                    if (previewBox) {
-                        previewBox.addEventListener('click', () => {
-                            vscode.postMessage({
-                                type: 'openFile',
-                                path: val
-                            });
-                        });
-                    }
                 } else if (isAudio) {
                     thumbContainer.innerHTML = `
                         <div class="audio-preview-box">
                             <span>🔊 Audio Event: ${val.split('/').pop()}</span>
                         </div>
                     `;
+                } else {
+                    thumbContainer.innerHTML = '';
                 }
             } else {
                 thumbContainer.innerHTML = `<span class="thumbnail-error">Asset file not found</span>`;
@@ -3487,13 +3295,45 @@
         });
     }
 
+    function updateItemIconPreview(index) {
+        const row = document.getElementById(`item-detail-${index}`);
+        if (!row) return;
+        const input = row.querySelector('.item-icon');
+        const img = row.querySelector('.item-icon-img');
+        const placeholder = row.querySelector('.item-icon-placeholder');
+        if (!input || !img || !placeholder) return;
+        const val = input.value.trim();
+        if (!val) {
+            img.style.display = 'none';
+            img.src = '';
+            placeholder.style.display = '';
+            input.classList.remove('input-warning');
+            removeWarningText(input);
+            return;
+        }
+        resolvePath(val, uri => {
+            if (input.value.trim() !== val) return;
+            if (uri) {
+                img.src = uri;
+                img.style.display = '';
+                placeholder.style.display = 'none';
+                input.classList.remove('input-warning');
+                removeWarningText(input);
+            } else {
+                img.style.display = 'none';
+                img.src = '';
+                placeholder.style.display = '';
+                input.classList.add('input-warning');
+                addWarningText(input, `Icon file "${val}" not found in the game directories.`);
+            }
+        });
+    }
+
     function updateAllThumbnails() {
         const imageInputs = [
             document.getElementById('prop-MinimapImage'),
             document.getElementById('prop-LoadingImage'),
-            document.getElementById('prop-LoadingMusic'),
-            document.getElementById('field-ModelPath'),
-            document.getElementById('field-PortraitModelPath')
+            document.getElementById('prop-LoadingMusic')
         ];
         
         document.querySelectorAll('.weapon-visual, .weapon-proj-model, .weapon-impact-visual, .weapon-sound, .weapon-impact-sound, .ability-visual, .ability-sound, .ability-icon, .item-icon').forEach(input => {
@@ -3924,6 +3764,31 @@
             const basename = n.split('/').pop() || n;
             return { id: n, name: n === 'procedural_simplex_noise' ? 'Procedural Simplex Noise (Shader Default)' : basename };
         }));
+
+        // Icons datalist (suggest-icons) - strictly imported *.png under Assets/icons
+        const iconAssets = new Set();
+        ['icons', 'icon'].forEach(k => {
+            if (units.Assets && units.Assets[k] && typeof units.Assets[k] === 'object') {
+                Object.keys(units.Assets[k]).forEach(i => {
+                    if (i.toLowerCase().endsWith('.png')) iconAssets.add(i);
+                });
+            }
+            if (units.MapProperties?.Assets && units.MapProperties.Assets[k] && typeof units.MapProperties.Assets[k] === 'object') {
+                Object.keys(units.MapProperties.Assets[k]).forEach(i => {
+                    if (i.toLowerCase().endsWith('.png')) iconAssets.add(i);
+                });
+            }
+        });
+        items.forEach(i => {
+            if (i.IconPath && i.IconPath.toLowerCase().endsWith('.png')) iconAssets.add(i.IconPath);
+        });
+        abilities.forEach(a => {
+            if (a.IconPath && a.IconPath.toLowerCase().endsWith('.png')) iconAssets.add(a.IconPath);
+        });
+        populateDatalist('suggest-icons', Array.from(iconAssets).map(icon => {
+            const basename = icon.split('/').pop() || icon;
+            return { id: icon, name: basename };
+        }));
     }
 
     function populateDatalist(id, items) {
@@ -4178,6 +4043,7 @@
             const fieldClass = btn.dataset.class;
             const fieldIndex = btn.dataset.index !== undefined ? parseInt(btn.dataset.index, 10) : null;
             const fileTypesStr = btn.dataset.fileTypes;
+            const assetType = btn.dataset.assetType;
             const fileTypes = fileTypesStr ? fileTypesStr.split(',') : undefined;
 
             vscode.postMessage({
@@ -4185,6 +4051,7 @@
                 fieldId: inputId,
                 fieldClass: fieldClass,
                 fieldIndex: fieldIndex,
+                assetType: assetType,
                 fileTypes: fileTypes
             });
         }
