@@ -2033,14 +2033,69 @@ void fragment() {
 
 					if (texturesObj != null)
 					{
-						var baseSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+						var parsedItems = new List<(string BaseName, string Key, int SwatchIndex, System.Text.Json.Nodes.JsonNode? Node, int OrderIndex)>();
+						int order = 0;
 						foreach (var kvp in texturesObj)
 						{
 							string baseName = System.IO.Path.GetFileNameWithoutExtension(kvp.Key);
-							if (!baseSet.Contains(baseName))
+							int sIdx = -1;
+							if (kvp.Value is System.Text.Json.Nodes.JsonObject sObj)
 							{
-								baseSet.Add(baseName);
-								textureList.Add(baseName);
+								if (sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
+								{
+									sIdx = parsed;
+								}
+								else if (sObj.TryGetPropertyValue("swatch_index", out var idxNode2) && idxNode2 != null && int.TryParse(idxNode2.ToString(), out int parsed2))
+								{
+									sIdx = parsed2;
+								}
+								else if (sObj.TryGetPropertyValue("SwatchIndex", out var idxNode3) && idxNode3 != null && int.TryParse(idxNode3.ToString(), out int parsed3))
+								{
+									sIdx = parsed3;
+								}
+							}
+							parsedItems.Add((baseName, kvp.Key, sIdx, kvp.Value, order++));
+						}
+
+						var usedIndices = new HashSet<int>();
+						foreach (var item in parsedItems)
+						{
+							if (item.SwatchIndex >= 0)
+							{
+								usedIndices.Add(item.SwatchIndex);
+							}
+						}
+
+						int nextFree = 0;
+						for (int i = 0; i < parsedItems.Count; i++)
+						{
+							var item = parsedItems[i];
+							if (item.SwatchIndex < 0)
+							{
+								while (usedIndices.Contains(nextFree))
+								{
+									nextFree++;
+								}
+								item.SwatchIndex = nextFree;
+								usedIndices.Add(nextFree);
+								parsedItems[i] = item;
+							}
+						}
+
+						parsedItems.Sort((a, b) =>
+						{
+							int cmp = a.SwatchIndex.CompareTo(b.SwatchIndex);
+							if (cmp != 0) return cmp;
+							return a.OrderIndex.CompareTo(b.OrderIndex);
+						});
+
+						var baseSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+						foreach (var item in parsedItems)
+						{
+							if (!baseSet.Contains(item.BaseName))
+							{
+								baseSet.Add(item.BaseName);
+								textureList.Add(item.BaseName);
 							}
 						}
 					}
@@ -3576,6 +3631,81 @@ void fragment() {
 		CreateChunks();
 		UpdateWaterSize();
 		UpdateMeshAndPhysics();
+	}
+
+	public void RemapSplatIndices(IReadOnlyDictionary<int, int> remap)
+	{
+		if (remap == null || remap.Count == 0) return;
+
+		bool splatChanged = false;
+		if (SplatMap != null)
+		{
+			int sw = SplatMap.GetLength(0);
+			int sd = SplatMap.GetLength(1);
+			for (int z = 0; z < sd; z++)
+			{
+				for (int x = 0; x < sw; x++)
+				{
+					var s = SplatMap[x, z];
+					int i0 = remap.TryGetValue(s.Index0, out int r0) ? r0 : s.Index0;
+					int i1 = remap.TryGetValue(s.Index1, out int r1) ? r1 : s.Index1;
+					int i2 = remap.TryGetValue(s.Index2, out int r2) ? r2 : s.Index2;
+					int i3 = remap.TryGetValue(s.Index3, out int r3) ? r3 : s.Index3;
+					if (i0 != s.Index0 || i1 != s.Index1 || i2 != s.Index2 || i3 != s.Index3)
+					{
+						SplatMap[x, z] = new TerrainSplatWeights
+						{
+							Index0 = i0,
+							Index1 = i1,
+							Index2 = i2,
+							Index3 = i3,
+							Weight0 = s.Weight0,
+							Weight1 = s.Weight1,
+							Weight2 = s.Weight2,
+							Weight3 = s.Weight3
+						};
+						splatChanged = true;
+					}
+				}
+			}
+		}
+
+		if (CliffSplatMap != null)
+		{
+			int cw = CliffSplatMap.GetLength(0);
+			int cd = CliffSplatMap.GetLength(1);
+			for (int z = 0; z < cd; z++)
+			{
+				for (int x = 0; x < cw; x++)
+				{
+					var c = CliffSplatMap[x, z];
+					int i0 = remap.TryGetValue(c.Index0, out int r0) ? r0 : c.Index0;
+					int i1 = remap.TryGetValue(c.Index1, out int r1) ? r1 : c.Index1;
+					int i2 = remap.TryGetValue(c.Index2, out int r2) ? r2 : c.Index2;
+					int i3 = remap.TryGetValue(c.Index3, out int r3) ? r3 : c.Index3;
+					if (i0 != c.Index0 || i1 != c.Index1 || i2 != c.Index2 || i3 != c.Index3)
+					{
+						CliffSplatMap[x, z] = new TerrainSplatWeights
+						{
+							Index0 = i0,
+							Index1 = i1,
+							Index2 = i2,
+							Index3 = i3,
+							Weight0 = c.Weight0,
+							Weight1 = c.Weight1,
+							Weight2 = c.Weight2,
+							Weight3 = c.Weight3
+						};
+						splatChanged = true;
+					}
+				}
+			}
+		}
+
+		if (splatChanged)
+		{
+			UpdateMeshAndPhysics(false, false);
+		}
 	}
 
 	public void ScaleTerrainData(int newWidth, int newDepth)

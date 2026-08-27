@@ -5164,6 +5164,7 @@ public partial class MapEditorHUD : Control
 
 	private void SetupTextureSwatches(bool connectEvents = false)
 	{
+		_swatchTextureCache.Clear();
 		_swatchPaths.Clear();
 		_swatchDisplayNames.Clear();
 		_swatchColors.Clear();
@@ -5197,15 +5198,70 @@ public partial class MapEditorHUD : Control
 
 					if (texturesObj != null)
 					{
+						var parsedItems = new List<(string BaseName, string Filename, int SwatchIndex, int OrderIndex)>();
+						int order = 0;
 						foreach (var kvp in texturesObj)
 						{
 							string filename = kvp.Key;
 							string baseName = System.IO.Path.GetFileNameWithoutExtension(filename);
-							if (!_swatchDisplayNames.Any(n => n.Equals(baseName, StringComparison.OrdinalIgnoreCase)))
+							int sIdx = -1;
+							if (kvp.Value is JsonObject sObj)
 							{
-								string cleanDisplayName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(baseName.Replace("_", " "));
+								if (sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
+								{
+									sIdx = parsed;
+								}
+								else if (sObj.TryGetPropertyValue("swatch_index", out var idxNode2) && idxNode2 != null && int.TryParse(idxNode2.ToString(), out int parsed2))
+								{
+									sIdx = parsed2;
+								}
+								else if (sObj.TryGetPropertyValue("SwatchIndex", out var idxNode3) && idxNode3 != null && int.TryParse(idxNode3.ToString(), out int parsed3))
+								{
+									sIdx = parsed3;
+								}
+							}
+							parsedItems.Add((baseName, filename, sIdx, order++));
+						}
+
+						var usedIndices = new HashSet<int>();
+						foreach (var item in parsedItems)
+						{
+							if (item.SwatchIndex >= 0)
+							{
+								usedIndices.Add(item.SwatchIndex);
+							}
+						}
+
+						int nextFree = 0;
+						for (int i = 0; i < parsedItems.Count; i++)
+						{
+							var item = parsedItems[i];
+							if (item.SwatchIndex < 0)
+							{
+								while (usedIndices.Contains(nextFree))
+								{
+									nextFree++;
+								}
+								item.SwatchIndex = nextFree;
+								usedIndices.Add(nextFree);
+								parsedItems[i] = item;
+							}
+						}
+
+						parsedItems.Sort((a, b) =>
+						{
+							int cmp = a.SwatchIndex.CompareTo(b.SwatchIndex);
+							if (cmp != 0) return cmp;
+							return a.OrderIndex.CompareTo(b.OrderIndex);
+						});
+
+						foreach (var item in parsedItems)
+						{
+							if (!_swatchDisplayNames.Any(n => n.Equals(item.BaseName, StringComparison.OrdinalIgnoreCase)))
+							{
+								string cleanDisplayName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(item.BaseName.Replace("_", " "));
 								_swatchDisplayNames.Add(cleanDisplayName);
-								_swatchPaths.Add(System.IO.Path.Combine(wsPath, filename));
+								_swatchPaths.Add(System.IO.Path.Combine(wsPath, item.Filename));
 								_swatchColors.Add(new Color(0.6f, 0.6f, 0.6f));
 							}
 						}
@@ -6540,7 +6596,48 @@ public partial class MapEditorHUD : Control
 			{
 				if (!assetsObj.ContainsKey(category)) assetsObj[category] = new JsonObject();
 				JsonObject catObj = assetsObj[category] as JsonObject ?? new JsonObject();
-				if (columns > 0 && rows > 0)
+				if (category == "textures")
+				{
+					int swatchIdx = -1;
+					if (catObj.ContainsKey(fileName) && catObj[fileName] is JsonObject existingObj)
+					{
+						if (existingObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsedIdx))
+						{
+							swatchIdx = parsedIdx;
+						}
+					}
+
+					if (swatchIdx < 0)
+					{
+						int maxIdx = -1;
+						foreach (var kvp in catObj)
+						{
+							if (kvp.Value is JsonObject o && o.TryGetPropertyValue("swatchIndex", out var n) && n != null && int.TryParse(n.ToString(), out int p))
+							{
+								if (p > maxIdx) maxIdx = p;
+							}
+						}
+						swatchIdx = maxIdx + 1;
+					}
+
+					JsonObject texEntry;
+					if (catObj.ContainsKey(fileName) && catObj[fileName] is JsonObject existingEntry)
+					{
+						texEntry = existingEntry;
+						texEntry["hash"] = blake3Hash;
+						texEntry["swatchIndex"] = swatchIdx;
+					}
+					else
+					{
+						texEntry = new JsonObject
+						{
+							["hash"] = blake3Hash,
+							["swatchIndex"] = swatchIdx
+						};
+					}
+					catObj[fileName] = texEntry;
+				}
+				else if (columns > 0 && rows > 0)
 				{
 					var metaObj = new JsonObject
 					{

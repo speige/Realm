@@ -749,10 +749,54 @@ public static class MapWorkspaceService
 
 			void CleanTexturesObject(JsonObject texturesObj)
 			{
+				var entriesToConvert = new List<(string Key, string Hash)>();
+				foreach (var kvp in texturesObj)
+				{
+					if (kvp.Value is JsonValue val && val.TryGetValue<string>(out string hashStr))
+					{
+						entriesToConvert.Add((kvp.Key, hashStr));
+					}
+				}
+
+				foreach (var (k, h) in entriesToConvert)
+				{
+					var o = new JsonObject
+					{
+						["hash"] = h
+					};
+					texturesObj[k] = o;
+					modified = true;
+				}
+
+				var usedIndices = new HashSet<int>();
 				foreach (var kvp in texturesObj)
 				{
 					if (kvp.Value is JsonObject texObj)
 					{
+						if (texObj.ContainsKey("swatch_index"))
+						{
+							if (!texObj.ContainsKey("swatchIndex"))
+							{
+								texObj["swatchIndex"] = texObj["swatch_index"]?.DeepClone();
+							}
+							texObj.Remove("swatch_index");
+							modified = true;
+						}
+						if (texObj.ContainsKey("SwatchIndex"))
+						{
+							if (!texObj.ContainsKey("swatchIndex"))
+							{
+								texObj["swatchIndex"] = texObj["SwatchIndex"]?.DeepClone();
+							}
+							texObj.Remove("SwatchIndex");
+							modified = true;
+						}
+
+						if (texObj.TryGetPropertyValue("swatchIndex", out var sIdxNode) && sIdxNode != null && int.TryParse(sIdxNode.ToString(), out int parsedIdx) && parsedIdx >= 0)
+						{
+							usedIndices.Add(parsedIdx);
+						}
+
 						if (texObj.ContainsKey("Tile_Mode"))
 						{
 							if (!texObj.ContainsKey("tile_mode"))
@@ -823,6 +867,25 @@ public static class MapWorkspaceService
 								texObj["cross_fade"] = texObj["Grid_Cross_Fade"]?.DeepClone();
 							}
 							texObj.Remove("Grid_Cross_Fade");
+							modified = true;
+						}
+					}
+				}
+
+				int nextAvailable = 0;
+				foreach (var kvp in texturesObj)
+				{
+					if (kvp.Value is JsonObject texObj)
+					{
+						bool hasValidIdx = texObj.TryGetPropertyValue("swatchIndex", out var sIdxNode) && sIdxNode != null && int.TryParse(sIdxNode.ToString(), out int parsedIdx) && parsedIdx >= 0;
+						if (!hasValidIdx)
+						{
+							while (usedIndices.Contains(nextAvailable))
+							{
+								nextAvailable++;
+							}
+							texObj["swatchIndex"] = nextAvailable;
+							usedIndices.Add(nextAvailable);
 							modified = true;
 						}
 					}

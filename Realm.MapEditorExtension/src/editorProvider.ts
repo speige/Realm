@@ -162,6 +162,186 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 vscode.window.showErrorMessage(`Failed to delete asset file ${relPath}: ${err.message}`);
             }
         }
+
+        if (category === 'textures') {
+            try {
+                const metadata = JSON.parse(document.getText());
+                const texObj = metadata.Assets?.textures || metadata.textures;
+                if (texObj && texObj[key]) {
+                    const deletedVal = texObj[key];
+                    const deletedIdx = typeof deletedVal === 'object' && deletedVal !== null && typeof deletedVal.swatchIndex === 'number'
+                        ? deletedVal.swatchIndex
+                        : -1;
+                    delete texObj[key];
+
+                    if (deletedIdx >= 0) {
+                        const indexRemap: { [oldIdx: number]: number } = {};
+                        indexRemap[deletedIdx] = 0;
+
+                        for (const k of Object.keys(texObj)) {
+                            const val = texObj[k];
+                            if (typeof val === 'object' && val !== null && typeof val.swatchIndex === 'number') {
+                                if (val.swatchIndex > deletedIdx) {
+                                    const newIdx = val.swatchIndex - 1;
+                                    indexRemap[val.swatchIndex] = newIdx;
+                                    val.swatchIndex = newIdx;
+                                }
+                            }
+                        }
+
+                        const splatIndicesPath = path.join(targetDir, 'terrain_splat_indices.exr');
+                        const splatWeightsPath = path.join(targetDir, 'terrain_splat_weights.exr');
+                        const cliffIndicesPath = path.join(targetDir, 'terrain_cliff_splat_indices.exr');
+                        const cliffWeightsPath = path.join(targetDir, 'terrain_cliff_splat_weights.exr');
+
+                        const remapExrFile = (filePath: string) => {
+                            if (fs.existsSync(filePath)) {
+                                try {
+                                    const idxBuf = fs.readFileSync(filePath);
+                                    const idxExr = parseExr(idxBuf.buffer.slice(idxBuf.byteOffset, idxBuf.byteOffset + idxBuf.byteLength));
+                                    const isF32 = idxExr.data instanceof Float32Array;
+                                    const raw = idxExr.data;
+                                    const total = idxExr.width * idxExr.height;
+                                    const r = new Float32Array(total);
+                                    const g = new Float32Array(total);
+                                    const b = new Float32Array(total);
+                                    const a = new Float32Array(total);
+
+                                    const decodeF16 = (val: number): number => {
+                                        const s = (val & 0x8000) >> 15;
+                                        const e = (val & 0x7C00) >> 10;
+                                        const f = val & 0x03FF;
+                                        if (e === 0) return (s ? -1 : 1) * Math.pow(2, -14) * (f / 1024);
+                                        if (e === 0x1F) return f ? NaN : ((s ? -1 : 1) * Infinity);
+                                        return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / 1024);
+                                    };
+
+                                    for (let i = 0; i < total; i++) {
+                                        const offset = i * 4;
+                                        r[i] = isF32 ? raw[offset + 0] : decodeF16(raw[offset + 0]);
+                                        g[i] = isF32 ? raw[offset + 1] : decodeF16(raw[offset + 1]);
+                                        b[i] = isF32 ? raw[offset + 2] : decodeF16(raw[offset + 2]);
+                                        a[i] = isF32 ? raw[offset + 3] : decodeF16(raw[offset + 3]);
+
+                                        const oldR = Math.round(r[i]);
+                                        if (indexRemap[oldR] !== undefined) r[i] = indexRemap[oldR];
+                                        const oldG = Math.round(g[i]);
+                                        if (indexRemap[oldG] !== undefined) g[i] = indexRemap[oldG];
+                                        const oldB = Math.round(b[i]);
+                                        if (indexRemap[oldB] !== undefined) b[i] = indexRemap[oldB];
+                                        const oldA = Math.round(a[i]);
+                                        if (indexRemap[oldA] !== undefined) a[i] = indexRemap[oldA];
+                                    }
+
+                                    const headerParts: Buffer[] = [];
+                                    const magicVer = Buffer.alloc(8);
+                                    magicVer.writeUInt32LE(0x01312f76, 0);
+                                    magicVer.writeUInt32LE(2, 4);
+                                    headerParts.push(magicVer);
+
+                                    const writeAttr = (name: string, type: string, size: number, valBuf: Buffer): Buffer => {
+                                        const nameBuf = Buffer.from(name + '\0', 'utf8');
+                                        const typeBuf = Buffer.from(type + '\0', 'utf8');
+                                        const sizeBuf = Buffer.alloc(4);
+                                        sizeBuf.writeInt32LE(size, 0);
+                                        return Buffer.concat([nameBuf, typeBuf, sizeBuf, valBuf]);
+                                    };
+
+                                    const channelNames = ['A', 'B', 'G', 'R'];
+                                    const chEntries: Buffer[] = [];
+                                    for (const ch of channelNames) {
+                                        const chNameBuf = Buffer.from(ch + '\0', 'utf8');
+                                        const chDesc = Buffer.alloc(16);
+                                        chDesc.writeInt32LE(2, 0);
+                                        chDesc.writeUInt8(0, 4);
+                                        chDesc.writeUInt8(0, 5);
+                                        chDesc.writeUInt8(0, 6);
+                                        chDesc.writeUInt8(0, 7);
+                                        chDesc.writeInt32LE(1, 8);
+                                        chDesc.writeInt32LE(1, 12);
+                                        chEntries.push(Buffer.concat([chNameBuf, chDesc]));
+                                    }
+                                    chEntries.push(Buffer.from([0]));
+                                    const chListBuf = Buffer.concat(chEntries);
+                                    headerParts.push(writeAttr('channels', 'chlist', chListBuf.length, chListBuf));
+                                    headerParts.push(writeAttr('compression', 'compression', 1, Buffer.from([0])));
+
+                                    const dwBuf = Buffer.alloc(16);
+                                    dwBuf.writeInt32LE(0, 0);
+                                    dwBuf.writeInt32LE(0, 4);
+                                    dwBuf.writeInt32LE(idxExr.width - 1, 8);
+                                    dwBuf.writeInt32LE(idxExr.height - 1, 12);
+                                    headerParts.push(writeAttr('dataWindow', 'box2i', 16, dwBuf));
+                                    headerParts.push(writeAttr('displayWindow', 'box2i', 16, dwBuf));
+                                    headerParts.push(writeAttr('lineOrder', 'lineOrder', 1, Buffer.from([0])));
+
+                                    const parBuf = Buffer.alloc(4);
+                                    parBuf.writeFloatLE(1.0, 0);
+                                    headerParts.push(writeAttr('pixelAspectRatio', 'float', 4, parBuf));
+
+                                    const swcBuf = Buffer.alloc(8);
+                                    swcBuf.writeFloatLE(0.0, 0);
+                                    swcBuf.writeFloatLE(0.0, 4);
+                                    headerParts.push(writeAttr('screenWindowCenter', 'v2f', 8, swcBuf));
+                                    headerParts.push(writeAttr('screenWindowWidth', 'float', 4, parBuf));
+                                    headerParts.push(Buffer.from([0]));
+
+                                    const headerBuf = Buffer.concat(headerParts);
+                                    const scanlineTableOffset = headerBuf.length;
+                                    const scanlineTableSize = idxExr.height * 8;
+                                    const firstScanlineOffset = scanlineTableOffset + scanlineTableSize;
+                                    const scanlineDataSize = idxExr.width * 4 * 4;
+                                    const scanlineTotalSize = 8 + scanlineDataSize;
+
+                                    const scanlineTable = Buffer.alloc(scanlineTableSize);
+                                    for (let y = 0; y < idxExr.height; y++) {
+                                        scanlineTable.writeBigUInt64LE(BigInt(firstScanlineOffset + y * scanlineTotalSize), y * 8);
+                                    }
+
+                                    const channelArrays: { [key: string]: Float32Array } = { A: a, B: b, G: g, R: r };
+                                    const scanlineBlocks: Buffer[] = [];
+                                    for (let y = 0; y < idxExr.height; y++) {
+                                        const blockHeader = Buffer.alloc(8);
+                                        blockHeader.writeInt32LE(y, 0);
+                                        blockHeader.writeInt32LE(scanlineDataSize, 4);
+
+                                        const channelBuffers: Buffer[] = [];
+                                        for (const ch of channelNames) {
+                                            const arr = channelArrays[ch];
+                                            const rowOffset = y * idxExr.width;
+                                            const rowBuf = Buffer.alloc(idxExr.width * 4);
+                                            for (let x = 0; x < idxExr.width; x++) {
+                                                rowBuf.writeFloatLE(arr[rowOffset + x], x * 4);
+                                            }
+                                            channelBuffers.push(rowBuf);
+                                        }
+                                        scanlineBlocks.push(Buffer.concat([blockHeader, ...channelBuffers]));
+                                    }
+
+                                    const outBuf = Buffer.concat([headerBuf, scanlineTable, ...scanlineBlocks]);
+                                    fs.writeFileSync(filePath, outBuf);
+                                } catch (e: any) {
+                                    console.error(`Failed to remap EXR file ${filePath}:`, e);
+                                }
+                            }
+                        };
+
+                        remapExrFile(splatIndicesPath);
+                        remapExrFile(cliffIndicesPath);
+                    }
+
+                    const edit = new vscode.WorkspaceEdit();
+                    edit.replace(
+                        document.uri,
+                        new vscode.Range(0, 0, document.lineCount, 0),
+                        JSON.stringify(metadata, null, 2)
+                    );
+                    await vscode.workspace.applyEdit(edit);
+                }
+            } catch (err) {
+                console.error('Error updating metadata during texture deletion:', err);
+            }
+        }
     }
 
     private async handlePruneUnusedAssets(webview: vscode.Webview, document: vscode.TextDocument) {
@@ -570,21 +750,22 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     const indexRemap: { [oldIdx: number]: number } = {};
                     let hasShift = false;
 
-                    for (let oldIdx = 0; oldIdx < origKeys.length; oldIdx++) {
-                        const fileName = origKeys[oldIdx];
-                        const isUsedByExr = splatFilesPresent ? usedTextureIndices.has(oldIdx) : false;
+                    const keptTextures: { key: string; oldSwatchIdx: number; val: any }[] = [];
+
+                    for (let i = 0; i < origKeys.length; i++) {
+                        const fileName = origKeys[i];
+                        const val = texturesObj[fileName];
+                        const oldSwatchIdx = typeof val === 'object' && val !== null && typeof val.swatchIndex === 'number' ? val.swatchIndex : i;
+                        const isUsedByExr = splatFilesPresent ? (oldSwatchIdx >= 0 && usedTextureIndices.has(oldSwatchIdx)) : false;
                         const isUsedByRef = isReferenced(fileName, 'textures');
 
                         if (isUsedByExr || isUsedByRef) {
-                            const newIdx = Object.keys(newTexturesObj).length;
-                            newTexturesObj[fileName] = texturesObj[fileName];
-                            indexRemap[oldIdx] = newIdx;
-                            if (newIdx !== oldIdx) {
-                                hasShift = true;
-                            }
+                            keptTextures.push({ key: fileName, oldSwatchIdx, val });
                         } else {
                             prunedAssetsCount++;
-                            indexRemap[oldIdx] = 0;
+                            if (oldSwatchIdx >= 0) {
+                                indexRemap[oldSwatchIdx] = 0;
+                            }
                             hasShift = true;
                             const filePath = path.join(targetDir, 'Assets', 'textures', fileName);
                             if (fs.existsSync(filePath)) {
@@ -595,6 +776,26 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                                     console.error(`Failed to delete ${filePath}:`, err);
                                 }
                             }
+                        }
+                    }
+
+                    keptTextures.sort((a, b) => a.oldSwatchIdx - b.oldSwatchIdx);
+                    for (let newIdx = 0; newIdx < keptTextures.length; newIdx++) {
+                        const { key, oldSwatchIdx, val } = keptTextures[newIdx];
+                        if (oldSwatchIdx >= 0) {
+                            indexRemap[oldSwatchIdx] = newIdx;
+                        }
+                        if (oldSwatchIdx !== newIdx) {
+                            hasShift = true;
+                        }
+                        if (typeof val === 'object' && val !== null) {
+                            val.swatchIndex = newIdx;
+                            newTexturesObj[key] = val;
+                        } else {
+                            newTexturesObj[key] = {
+                                hash: val,
+                                swatchIndex: newIdx
+                            };
                         }
                     }
 
@@ -1918,7 +2119,17 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 if (conversionResult.success && fs.existsSync(outputKtx2Path)) {
                     const ktx2Bytes = fs.readFileSync(outputKtx2Path);
                     const ktx2Hash = this.computeHashHex(ktx2Bytes);
-                    metadata.Assets.textures[finalSwatchName + '.ktx2'] = ktx2Hash;
+                    let maxIdx = -1;
+                    for (const k of Object.keys(metadata.Assets.textures)) {
+                        const val = metadata.Assets.textures[k];
+                        const idx = typeof val === 'object' && val !== null && typeof val.swatchIndex === 'number' ? val.swatchIndex : -1;
+                        if (idx > maxIdx) maxIdx = idx;
+                    }
+                    const nextIdx = maxIdx + 1;
+                    metadata.Assets.textures[finalSwatchName + '.ktx2'] = {
+                        hash: ktx2Hash,
+                        swatchIndex: nextIdx
+                    };
                     vscode.window.showInformationMessage(`Imported Texture (${finalSwatchName}.ktx2) successfully.`);
                 } else {
                     const errDetail = conversionResult.error ? `: ${conversionResult.error}` : '.';

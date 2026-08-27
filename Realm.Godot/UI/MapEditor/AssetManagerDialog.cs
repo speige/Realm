@@ -1336,7 +1336,25 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				}
 
 				if (!assetsObj.ContainsKey("textures") || assetsObj["textures"] == null) assetsObj["textures"] = new JsonObject();
-				assetsObj["textures"].AsObject()[destFileName] = hash;
+				var texDict = assetsObj["textures"].AsObject();
+				int nextSwatchIdx = 0;
+				foreach (var kvp in texDict)
+				{
+					int curIdx = -1;
+					if (kvp.Value is JsonObject sObj && sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsedIdx))
+					{
+						curIdx = parsedIdx;
+					}
+					if (curIdx >= nextSwatchIdx)
+					{
+						nextSwatchIdx = curIdx + 1;
+					}
+				}
+				texDict[destFileName] = new JsonObject
+				{
+					["hash"] = hash,
+					["swatchIndex"] = nextSwatchIdx
+				};
 			}
 			else if (_currentCategory == "vfx_spritesheets")
 			{
@@ -1667,8 +1685,14 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			if (root != null && root["Assets"]?["textures"]?[key] is JsonNode node)
 			{
 				string hash = node is JsonObject o && o.ContainsKey("hash") ? o["hash"]?.ToString() : (node is JsonValue v ? v.ToString() : "");
+				int swatchIdx = -1;
+				if (node is JsonObject sObj && sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsedIdx))
+				{
+					swatchIdx = parsedIdx;
+				}
 				var newObj = new JsonObject();
 				if (!string.IsNullOrEmpty(hash)) newObj["hash"] = hash;
+				if (swatchIdx >= 0) newObj["swatchIndex"] = swatchIdx;
 				foreach (var prop in updatedData)
 				{
 					newObj[prop.Key] = prop.Value?.DeepClone();
@@ -1732,12 +1756,50 @@ public partial class AssetManagerDialog : FloatingDialogBase
 									}
 								}
 							}
+							else if (category == "textures" && assetsObj["textures"] is JsonObject texturesObj)
+							{
+								int deletedIdx = -1;
+								if (texturesObj.ContainsKey(key) && texturesObj[key] is JsonObject delObj)
+								{
+									if (delObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
+									{
+										deletedIdx = parsed;
+									}
+								}
+								texturesObj.Remove(key);
+								string p = Path.Combine(wsPath, "Assets", "textures", key);
+								if (File.Exists(p)) File.Delete(p);
+
+								if (deletedIdx >= 0)
+								{
+									var remap = new Dictionary<int, int>();
+									remap[deletedIdx] = 0;
+
+									foreach (var kvp in texturesObj)
+									{
+										if (kvp.Value is JsonObject sObj)
+										{
+											if (sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsedIdx))
+											{
+												if (parsedIdx > deletedIdx)
+												{
+													int newIdx = parsedIdx - 1;
+													sObj["swatchIndex"] = newIdx;
+													remap[parsedIdx] = newIdx;
+												}
+											}
+										}
+									}
+
+									GameHost.Instance?.GroundTerrain?.RemapSplatIndices(remap);
+									SaveLoadService.RemapSplatExrFiles(wsPath, remap);
+								}
+							}
 							else
 							{
 								assetsObj[category]?.AsObject()?.Remove(key);
 								string sub = category switch
 								{
-									"textures" => "textures",
 									"vfx_spritesheets" => "vfx",
 									"animations" => "animations",
 									"sfx" => Path.Combine("audio", "sfx"),
@@ -1754,6 +1816,11 @@ public partial class AssetManagerDialog : FloatingDialogBase
 							}
 
 							MapJsonFormatter.SaveFormattedJson(metaPath, root);
+							if (category == "textures")
+							{
+								GameHost.Instance?.GroundTerrain?.ReloadTerrainTextures(true);
+								Hud?.ReadMetadataAndRefreshTextures();
+							}
 							RefreshAssetList();
 							ClearPreview();
 							Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Deleted asset {0}."), key));
@@ -1952,13 +2019,110 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					}
 				}
 			}
+			else if (_currentCategory == "textures")
+			{
+				if (assetsObj["textures"] is JsonObject texObj)
+				{
+					var usedIndices = new HashSet<int>();
+					if (GameHost.Instance?.GroundTerrain != null)
+					{
+						var splatMap = GameHost.Instance.GroundTerrain.SplatMap;
+						if (splatMap != null)
+						{
+							int sw = splatMap.GetLength(0);
+							int sd = splatMap.GetLength(1);
+							for (int z = 0; z < sd; z++)
+							{
+								for (int x = 0; x < sw; x++)
+								{
+									var s = splatMap[x, z];
+									if (s.Weight0 > 0.001f) usedIndices.Add(s.Index0);
+									if (s.Weight1 > 0.001f) usedIndices.Add(s.Index1);
+									if (s.Weight2 > 0.001f) usedIndices.Add(s.Index2);
+									if (s.Weight3 > 0.001f) usedIndices.Add(s.Index3);
+								}
+							}
+						}
+
+						var cliffSplat = GameHost.Instance.GroundTerrain.CliffSplatMap;
+						if (cliffSplat != null)
+						{
+							int cw = cliffSplat.GetLength(0);
+							int cd = cliffSplat.GetLength(1);
+							for (int z = 0; z < cd; z++)
+							{
+								for (int x = 0; x < cw; x++)
+								{
+									var c = cliffSplat[x, z];
+									if (c.Weight0 > 0.001f) usedIndices.Add(c.Index0);
+									if (c.Weight1 > 0.001f) usedIndices.Add(c.Index1);
+									if (c.Weight2 > 0.001f) usedIndices.Add(c.Index2);
+									if (c.Weight3 > 0.001f) usedIndices.Add(c.Index3);
+								}
+							}
+						}
+					}
+
+					var keptEntries = new List<(string Key, int OldSwatchIdx, JsonObject Obj)>();
+					var indexRemap = new Dictionary<int, int>();
+
+					foreach (var itemProp in texObj.ToList())
+					{
+						int swatchIdx = -1;
+						if (itemProp.Value is JsonObject sObj && sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
+						{
+							swatchIdx = parsed;
+						}
+
+						bool isUsed = referenced.Contains(itemProp.Key) || referenced.Contains(Path.GetFileNameWithoutExtension(itemProp.Key));
+						if (!isUsed && swatchIdx >= 0 && usedIndices.Contains(swatchIdx))
+						{
+							isUsed = true;
+						}
+
+						if (isUsed)
+						{
+							var keptObj = itemProp.Value as JsonObject ?? new JsonObject();
+							keptEntries.Add((itemProp.Key, swatchIdx, keptObj));
+						}
+						else
+						{
+							texObj.Remove(itemProp.Key);
+							string p = Path.Combine(wsPath, "Assets", "textures", itemProp.Key);
+							if (File.Exists(p)) File.Delete(p);
+							if (swatchIdx >= 0)
+							{
+								indexRemap[swatchIdx] = 0;
+							}
+							prunedCount++;
+						}
+					}
+
+					keptEntries.Sort((a, b) => a.OldSwatchIdx.CompareTo(b.OldSwatchIdx));
+					for (int i = 0; i < keptEntries.Count; i++)
+					{
+						var entry = keptEntries[i];
+						int newIdx = i;
+						if (entry.OldSwatchIdx >= 0)
+						{
+							indexRemap[entry.OldSwatchIdx] = newIdx;
+						}
+						entry.Obj["swatchIndex"] = newIdx;
+					}
+
+					if (prunedCount > 0)
+					{
+						GameHost.Instance?.GroundTerrain?.RemapSplatIndices(indexRemap);
+						SaveLoadService.RemapSplatExrFiles(wsPath, indexRemap);
+					}
+				}
+			}
 			else
 			{
 				if (assetsObj[_currentCategory] is JsonObject catObj)
 				{
 					string subDir = _currentCategory switch
 					{
-						"textures" => "textures",
 						"vfx_spritesheets" => "vfx",
 						"animations" => "animations",
 						"sfx" => Path.Combine("audio", "sfx"),
@@ -1987,6 +2151,11 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			if (prunedCount > 0)
 			{
 				MapJsonFormatter.SaveFormattedJson(metaPath, root);
+				if (_currentCategory == "textures")
+				{
+					GameHost.Instance?.GroundTerrain?.ReloadTerrainTextures(true);
+					Hud?.ReadMetadataAndRefreshTextures();
+				}
 				RefreshAssetList();
 				ClearPreview();
 				Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Pruned {0} unused asset(s) from {1}."), prunedCount, GetCategoryDisplayName(_currentCategory)));
