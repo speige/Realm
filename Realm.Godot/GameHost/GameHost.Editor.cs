@@ -223,6 +223,34 @@ public partial class GameHost
 			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.Scale > 0f) return propMeta.Scale;
 		}
 
+		if (!string.IsNullOrEmpty(normAsset))
+		{
+			if (UnitRegistry.TryGetValue(normAsset, out var meta2) && meta2.Scale > 0f) return meta2.Scale;
+			if (ResourceRegistry.TryGetValue(normAsset, out var resMeta2) && resMeta2.Scale > 0f) return resMeta2.Scale;
+			if (PropRegistry.TryGetValue(normAsset, out var propMeta2) && propMeta2.Scale > 0f) return propMeta2.Scale;
+		}
+
+		if (objOrId is Unit3D unit && GodotObject.IsInstanceValid(unit))
+		{
+			if (unit.IsResource) return 2.75f;
+			if (unit.IsBuilding) return 1.5f;
+			return 1.0f;
+		}
+
+		if (!string.IsNullOrEmpty(primaryKey))
+		{
+			if (ResourceRegistry.ContainsKey(primaryKey)) return 2.75f;
+			if (UnitRegistry.TryGetValue(primaryKey, out var u)) return u.Speed == 0f ? 1.5f : 1.0f;
+			if (PropRegistry.ContainsKey(primaryKey)) return 1.25f;
+		}
+
+		if (!string.IsNullOrEmpty(normAsset))
+		{
+			if (ResourceRegistry.ContainsKey(normAsset)) return 2.75f;
+			if (UnitRegistry.TryGetValue(normAsset, out var u)) return u.Speed == 0f ? 1.5f : 1.0f;
+			if (PropRegistry.ContainsKey(normAsset)) return 1.25f;
+		}
+
 		return 1.0f;
 	}
 
@@ -1081,6 +1109,26 @@ public partial class GameHost
 							else if (uObj.ContainsKey("ModelScale") && float.TryParse(uObj["ModelScale"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float msVal) && msVal > 0f)
 							{
 								ModelScales[normKey] = msVal;
+							}
+							else if (!ModelScales.ContainsKey(normKey))
+							{
+								float defaultScale = arrKey switch
+								{
+									"CustomResources" => 2.75f,
+									"CustomBuildings" => 1.2f,
+									"CustomProps" => 1.0f,
+									"CustomUnits" => 1.5f,
+									_ => 1.5f
+								};
+								ModelScales[normKey] = defaultScale;
+							}
+							if (uObj.ContainsKey("ModelPath") && uObj["ModelPath"]?.ToString() is string mPath && !string.IsNullOrEmpty(mPath))
+							{
+								string normModel = NormalizeModelAssetKey(mPath);
+								if (ModelScales.TryGetValue(normKey, out float assignedScale) && !ModelScales.ContainsKey(normModel))
+								{
+									ModelScales[normModel] = assignedScale;
+								}
 							}
 							if (uObj.ContainsKey("CollisionCircle") && float.TryParse(uObj["CollisionCircle"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float rVal))
 							{
@@ -2081,6 +2129,7 @@ public partial class GameHost
 		if (!UnitRegistry.ContainsKey(unitId))
 		{
 			string resolvedModelPath = GetFallbackModelPath(unitId, unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower"));
+			bool isBld = unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower");
 			var dynamicMeta = new UnitMetadata
 			{
 				Name = System.IO.Path.GetFileNameWithoutExtension(unitId).Replace("_", " "),
@@ -2088,7 +2137,8 @@ public partial class GameHost
 				Damage = 10f,
 				Range = 2f,
 				Armor = 2f,
-				Speed = (unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower")) ? 0f : 6.0f,
+				Speed = isBld ? 0f : 6.0f,
+				Scale = isBld ? 1.2f : 1.5f,
 				ProductionTime = 10f,
 				ModelPath = resolvedModelPath
 			};
@@ -2475,6 +2525,7 @@ public partial class GameHost
 				if (!UnitRegistry.ContainsKey(reqId))
 				{
 					string resolvedModelPath = GetFallbackModelPath(reqId, reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower"));
+					bool isBld = reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower");
 					var dynamicMeta = new UnitMetadata
 					{
 						Name = System.IO.Path.GetFileNameWithoutExtension(reqId).Replace("_", " "),
@@ -2482,7 +2533,8 @@ public partial class GameHost
 						Damage = 10f,
 						Range = 2f,
 						Armor = 2f,
-						Speed = (reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower")) ? 0f : 6.0f,
+						Speed = isBld ? 0f : 6.0f,
+						Scale = isBld ? 1.2f : 1.5f,
 						ProductionTime = 10f,
 						ModelPath = resolvedModelPath
 					};

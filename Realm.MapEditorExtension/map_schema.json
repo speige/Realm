@@ -180,6 +180,7 @@
           "ArmorType": { "type": "string", "enum": ["light", "heavy", "building"] },
           "GoldBounty": { "type": "number", "minimum": 0 },
           "ModelPath": { "type": "string" },
+          "Scale": { "type": "number", "minimum": 0 },
           "YOffset": { "type": "number" },
           "CollisionCircle": { "type": "number", "minimum": 0 },
           "Brightness": { "type": "number", "minimum": 0 },

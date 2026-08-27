@@ -1521,7 +1521,7 @@ public partial class MapEditorHUD : Control
 
 				if (_sldModelScale != null)
 				{
-					float val = GameHost.Instance.GetModelScale(assetKey);
+					float val = GameHost.Instance.GetModelScale(selected);
 					_sldModelScale.Value = val;
 					UpdateSliderLabel(_sldModelScale, val);
 				}
@@ -6515,12 +6515,43 @@ public partial class MapEditorHUD : Control
 							_ => (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 						};
 
+						float defaultScale = subCategory.ToLowerInvariant() switch
+						{
+							"resources" => 2.75f,
+							"buildings" => 1.5f,
+							"props" => 1.25f,
+							"units" => 1.0f,
+							_ => 1.0f
+						};
+
+						float defaultYOffset = 0.0f;
+						string modelFullPath = System.IO.Path.Combine(wsPath, "Assets", "models", subCategory, fileName);
+						if (System.IO.File.Exists(modelFullPath))
+						{
+							try
+							{
+								var modelNode = Realm.Godot.Utils.ModelCache.GetModel(modelFullPath) as Node3D;
+								if (modelNode != null)
+								{
+									float minY = Unit3D.GetMinY(modelNode, Transform3D.Identity);
+									if (minY < 0f)
+									{
+										defaultYOffset = (float)Math.Round(-minY * defaultScale, 4);
+									}
+									modelNode.QueueFree();
+								}
+							}
+							catch { }
+						}
+
 						bool isPropOrRes = subCategory.ToLowerInvariant() == "props" || subCategory.ToLowerInvariant() == "resources";
 						var newUnitObj = new JsonObject
 						{
 							["UnitId"] = unitId,
 							["Name"] = unitId,
 							["Description"] = "",
+							["Scale"] = defaultScale,
+							["YOffset"] = defaultYOffset,
 							["PathingType"] = defaultPathing,
 							["ModelPath"] = fileName,
 							["NormalMode"] = "Flat",
@@ -6528,6 +6559,12 @@ public partial class MapEditorHUD : Control
 							["IgnorePlayerColor"] = isPropOrRes
 						};
 						targetArr.Add(newUnitObj);
+
+						if (!root.ContainsKey("ModelOffsets") || root["ModelOffsets"] is not JsonObject) root["ModelOffsets"] = new JsonObject();
+						((JsonObject)root["ModelOffsets"])[fileName] = defaultYOffset;
+
+						if (!root.ContainsKey("ModelScales") || root["ModelScales"] is not JsonObject) root["ModelScales"] = new JsonObject();
+						((JsonObject)root["ModelScales"])[fileName] = defaultScale;
 					}
 				}
 			}

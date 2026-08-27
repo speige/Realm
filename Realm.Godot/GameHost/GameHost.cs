@@ -690,7 +690,6 @@ public partial class GameHost : Node3D, IGameAPI
 	{
 		public PropMetadata()
 		{
-			Scale = 1.0f;
 			Brightness = 0.5f;
 			NormalMode = ModelNormalMode.Flat;
 			NormalizeLuminance = true;
@@ -702,7 +701,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public string Description { get; set; }
 		public string ModelPath { get; set; }
 		public string PortraitModelPath { get; set; }
-		public float Scale { get; set; } = 1.0f;
+		public float Scale { get; set; } = 1.25f;
 		public float YOffset { get; set; }
 		public float CollisionCircle { get; set; }
 		public float Brightness { get; set; } = 0.5f;
@@ -722,7 +721,6 @@ public partial class GameHost : Node3D, IGameAPI
 	{
 		public ResourceMetadata()
 		{
-			Scale = 1.0f;
 			Brightness = 0.5f;
 			NormalMode = ModelNormalMode.Flat;
 			NormalizeLuminance = true;
@@ -738,7 +736,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public float HarvestRate { get; set; }
 		public float GrowthRate { get; set; }
 		public int MaxWorkers { get; set; }
-		public float Scale { get; set; } = 1.0f;
+		public float Scale { get; set; } = 2.75f;
 		public float YOffset { get; set; }
 		public float CollisionCircle { get; set; }
 		public float Brightness { get; set; } = 0.5f;
@@ -2505,6 +2503,7 @@ public class {mapName} : IMapScript
 				CostStone = 0f,
 				ProductionTime = 4.0f,
 				PopCost = 1,
+				Scale = 1.5f,
 				AttackType = "melee",
 				ArmorType = "light",
 				GoldBounty = 15f,
@@ -2529,6 +2528,7 @@ public class {mapName} : IMapScript
 				CostStone = 0f,
 				ProductionTime = 5.0f,
 				PopCost = 1,
+				Scale = 1.5f,
 				AttackType = "melee",
 				ArmorType = "heavy",
 				GoldBounty = 20f,
@@ -2552,6 +2552,7 @@ public class {mapName} : IMapScript
 				CostStone = 0f,
 				ProductionTime = 7.0f,
 				PopCost = 1,
+				Scale = 1.5f,
 				AttackType = "ranged",
 				ArmorType = "light",
 				GoldBounty = 25f,
@@ -2575,6 +2576,7 @@ public class {mapName} : IMapScript
 				CostStone = 0f,
 				ProductionTime = 8.0f,
 				PopCost = 1,
+				Scale = 1.5f,
 				AttackType = "ranged",
 				ArmorType = "light",
 				GoldBounty = 30f,
@@ -2598,6 +2600,7 @@ public class {mapName} : IMapScript
 				CostStone = 200f,
 				ProductionTime = 15.0f,
 				PopCost = 0,
+				Scale = 1.2f,
 				AttackType = "none",
 				ArmorType = "building",
 				GoldBounty = 0f,
@@ -2623,6 +2626,7 @@ public class {mapName} : IMapScript
 				CostStone = 100f,
 				ProductionTime = 10.0f,
 				PopCost = 0,
+				Scale = 1.2f,
 				AttackType = "ranged",
 				ArmorType = "building",
 				GoldBounty = 0f,
@@ -2647,6 +2651,7 @@ public class {mapName} : IMapScript
 				CostStone = 0f,
 				ProductionTime = 5.0f,
 				PopCost = 1,
+				Scale = 1.5f,
 				AttackType = "melee",
 				ArmorType = "heavy",
 				GoldBounty = 18f,
@@ -2707,7 +2712,11 @@ public class {mapName} : IMapScript
 							foreach (var meta in list)
 							{
 								if (!string.IsNullOrEmpty(meta.UnitId))
-									newUnits[meta.UnitId] = meta;
+								{
+									var copy = meta;
+									if (copy.Scale <= 0f) copy.Scale = 1.0f;
+									newUnits[copy.UnitId] = copy;
+								}
 							}
 						}
 					}
@@ -2721,7 +2730,11 @@ public class {mapName} : IMapScript
 							foreach (var meta in list)
 							{
 								if (!string.IsNullOrEmpty(meta.UnitId))
-									newUnits[meta.UnitId] = meta;
+								{
+									var copy = meta;
+									if (copy.Scale <= 0f) copy.Scale = 1.5f;
+									newUnits[copy.UnitId] = copy;
+								}
 							}
 						}
 					}
@@ -2737,6 +2750,7 @@ public class {mapName} : IMapScript
 								if (!string.IsNullOrEmpty(meta.UnitId))
 								{
 									var copy = meta;
+									if (copy.Scale <= 0f) copy.Scale = 2.75f;
 									if (copy.PathingType == 0) copy.PathingType = 255;
 									newResources[copy.UnitId] = copy;
 								}
@@ -2755,6 +2769,7 @@ public class {mapName} : IMapScript
 								if (!string.IsNullOrEmpty(meta.UnitId))
 								{
 									var copy = meta;
+									if (copy.Scale <= 0f) copy.Scale = 1.25f;
 									if (copy.PathingType == 0) copy.PathingType = 255;
 									newProps[copy.UnitId] = copy;
 								}

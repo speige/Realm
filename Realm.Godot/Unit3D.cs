@@ -286,9 +286,7 @@ public partial class Unit3D : Prop3D
 	{
 		if (_modelNode != null && GodotObject.IsInstanceValid(_modelNode))
 		{
-			float baseScale = IsResource ? 2.75f : (IsBuilding ? 1.2f : 1.5f);
-			float finalScale = baseScale * globalScale;
-			_modelNode.Scale = new Vector3(finalScale, finalScale, finalScale);
+			_modelNode.Scale = new Vector3(globalScale, globalScale, globalScale);
 			float minY = GetMinY(_modelNode, Transform3D.Identity);
 			_baseModelYOffset = -minY * _modelNode.Scale.Y;
 			string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(ModelPath ?? UnitId) : "";
@@ -321,11 +319,9 @@ public partial class Unit3D : Prop3D
 				Realm.Godot.Animation.AnimationRetargetingService.LoadAndBindUnitAnimations(_modelNode, UnitId, modelPath);
 				SeekToIdleFirstFrame();
 
-				float baseScale = IsResource ? 2.75f : (IsBuilding ? 1.2f : 1.5f);
 				string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(modelPath) : "";
-				float globalScale = GameHost.Instance != null ? GameHost.Instance.GetModelScale(assetKey) : 1.0f;
-				float finalScale = baseScale * globalScale;
-				_modelNode.Scale = new Vector3(finalScale, finalScale, finalScale);
+				float globalScale = GameHost.Instance != null ? GameHost.Instance.GetModelScale(this) : 1.0f;
+				_modelNode.Scale = new Vector3(globalScale, globalScale, globalScale);
 
 				UpdateLodVisibility();
 
@@ -605,19 +601,16 @@ public partial class Unit3D : Prop3D
 		return new Color(0.22f, 0.54f, 0.26f);
 	}
 
-	private float GetMinY(Node node, Transform3D currentTransform)
+	public static float GetMinY(Node node, Transform3D currentTransform = default)
 	{
+		if (currentTransform == default) currentTransform = Transform3D.Identity;
 		float minY = float.MaxValue;
 		bool foundMesh = false;
 		GetMinYRecursive(node, currentTransform, ref minY, ref foundMesh);
-		if (!foundMesh)
-		{
-			GD.PushWarning($"[Unit3D] No mesh instances found under model '{Name}' — vertical offset defaults to 0, the unit may sit below the terrain.");
-		}
 		return foundMesh ? minY : 0f;
 	}
 
-	private void GetMinYRecursive(Node node, Transform3D currentTransform, ref float minY, ref bool foundMesh)
+	public static void GetMinYRecursive(Node node, Transform3D currentTransform, ref float minY, ref bool foundMesh)
 	{
 		if (node is MeshInstance3D meshInstance)
 		{

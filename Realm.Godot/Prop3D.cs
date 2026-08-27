@@ -330,7 +330,7 @@ public partial class Prop3D : StaticBody3D
 				visual.Name = "VisualModel";
 				string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(PropId) : "";
 				float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
-				float globalScale = GameHost.Instance != null ? GameHost.Instance.GetModelScale(assetKey) : 1.0f;
+				float globalScale = GameHost.Instance != null ? GameHost.Instance.GetModelScale(this) : 1.0f;
 				visual.Position = new Vector3(0, yOffset, 0);
 				visual.Scale = new Vector3(globalScale, globalScale, globalScale);
 				AddChild(visual);

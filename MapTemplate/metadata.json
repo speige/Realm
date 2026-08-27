@@ -31,6 +31,7 @@
       "PathingType": 9,
       "RecalculateNormals": true,
       "UnitId": "fantasy_warrior_unit_1",
+      "Scale": 1.5,
       "NormalMode": "Flat"
     },
     {
@@ -63,6 +64,7 @@
       "PathingType": 9,
       "RecalculateNormals": true,
       "UnitId": "orc_warrior_7",
+      "Scale": 1.5,
       "NormalMode": "Flat"
     }
   ],
@@ -75,6 +77,7 @@
       "PathingType": 32,
       "RecalculateNormals": true,
       "UnitId": "ice_castle_1",
+      "Scale": 1.2,
       "NormalMode": "Flat"
     },
     {
@@ -85,6 +88,7 @@
       "PathingType": 32,
       "RecalculateNormals": true,
       "UnitId": "timber_framed_house",
+      "Scale": 1.2,
       "NormalMode": "Flat"
     }
   ],
@@ -98,7 +102,8 @@
       "PathingType": 255,
       "RecalculateNormals": true,
       "UnitId": "coniferous_tree_1",
-      "YOffset": 3.0000002,
+      "Scale": 2.75,
+      "YOffset": 2.75,
       "NormalMode": "Flat"
     },
     {
@@ -110,7 +115,8 @@
       "PathingType": 255,
       "RecalculateNormals": true,
       "UnitId": "palm_tree",
-      "YOffset": 3.15,
+      "Scale": 2.75,
+      "YOffset": 2.75,
       "NormalMode": "Flat"
     }
   ],
@@ -124,6 +130,7 @@
       "PathingType": 255,
       "RecalculateNormals": true,
       "UnitId": "crystal_cluster_5",
+      "Scale": 1.0,
       "YOffset": 1.0500002,
       "NormalMode": "Flat"
     },
@@ -136,6 +143,7 @@
       "PathingType": 255,
       "RecalculateNormals": true,
       "UnitId": "spiked_wooden_stake",
+      "Scale": 1.0,
       "YOffset": 0.7500002,
       "NormalMode": "Flat"
     }
@@ -297,12 +305,21 @@
     }
   },
   "ModelOffsets": {
-    "coniferous_tree_1.glb": 3.0000002,
-    "palm_tree.glb": 3.15,
+    "coniferous_tree_1.glb": 2.75,
+    "palm_tree.glb": 2.75,
     "crystal_cluster_5.glb": 1.0500002,
     "spiked_wooden_stake.glb": 0.7500002
   },
-  "ModelScales": {},
+  "ModelScales": {
+    "fantasy_warrior_unit_1.glb": 1.5,
+    "orc_warrior_7.glb": 1.5,
+    "ice_castle_1.glb": 1.2,
+    "timber_framed_house.glb": 1.2,
+    "coniferous_tree_1.glb": 2.75,
+    "palm_tree.glb": 2.75,
+    "crystal_cluster_5.glb": 1.0,
+    "spiked_wooden_stake.glb": 1.0
+  },
   "ModelCollisionCircleRatios": {
     "coniferous_tree_1.glb": 0.3,
     "palm_tree.glb": 0.25,

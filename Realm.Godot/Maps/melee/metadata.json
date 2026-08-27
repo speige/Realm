@@ -17,6 +17,7 @@
       "CostStone": 0.0,
       "ProductionTime": 4.0,
       "PopCost": 1,
+      "Scale": 1.5,
       "AttackType": "melee",
       "ArmorType": "light",
       "GoldBounty": 15.0,
@@ -39,6 +40,7 @@
       "CostStone": 0.0,
       "ProductionTime": 5.0,
       "PopCost": 1,
+      "Scale": 1.5,
       "AttackType": "melee",
       "ArmorType": "heavy",
       "GoldBounty": 20.0,
@@ -60,6 +62,7 @@
       "CostStone": 0.0,
       "ProductionTime": 7.0,
       "PopCost": 1,
+      "Scale": 1.5,
       "AttackType": "ranged",
       "ArmorType": "light",
       "GoldBounty": 25.0,
@@ -81,6 +84,7 @@
       "CostStone": 0.0,
       "ProductionTime": 8.0,
       "PopCost": 1,
+      "Scale": 1.5,
       "AttackType": "ranged",
       "ArmorType": "light",
       "GoldBounty": 30.0,
@@ -102,6 +106,7 @@
       "CostStone": 0.0,
       "ProductionTime": 5.0,
       "PopCost": 1,
+      "Scale": 1.5,
       "AttackType": "melee",
       "ArmorType": "heavy",
       "GoldBounty": 18.0,
@@ -125,6 +130,7 @@
       "CostStone": 200.0,
       "ProductionTime": 15.0,
       "PopCost": 0,
+      "Scale": 1.2,
       "AttackType": "none",
       "ArmorType": "building",
       "GoldBounty": 0.0,
@@ -147,6 +153,7 @@
       "CostStone": 100.0,
       "ProductionTime": 10.0,
       "PopCost": 0,
+      "Scale": 1.2,
       "AttackType": "ranged",
       "ArmorType": "building",
       "GoldBounty": 0.0,
@@ -159,6 +166,7 @@
       "Name": "Gold Mine",
       "Description": "Gatherable gold resource deposit.",
       "ModelPath": "goldmine.glb",
+      "Scale": 2.75,
       "PathingType": 255
     },
     {
@@ -166,6 +174,7 @@
       "Name": "Forest Tree",
       "Description": "Harvestable lumber tree.",
       "ModelPath": "fantasy_tree.glb",
+      "Scale": 2.75,
       "PathingType": 255
     }
   ],
@@ -175,6 +184,7 @@
       "Name": "Wooden Crate",
       "Description": "Static environmental crate doodad.",
       "ModelPath": "wooden_box.glb",
+      "Scale": 1.0,
       "PathingType": 255
     }
   ],
