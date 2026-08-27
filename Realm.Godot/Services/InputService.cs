@@ -88,7 +88,9 @@ internal class InputService
 		       EcsWorld.Has<AttackMove>(entity) ||
 		       EcsWorld.Has<Follow>(entity) ||
 		       EcsWorld.Has<Patrol>(entity) ||
-		       EcsWorld.Has<Gatherer>(entity);
+		       EcsWorld.Has<Gatherer>(entity) ||
+		       EcsWorld.Has<WaypointQueue>(entity) ||
+		       (EcsWorld.Has<BuildQueue>(entity) && EcsWorld.Get<BuildQueue>(entity).Count > 0);
 	}
 
 	public void EnqueueCommand(Entity entity, string type, System.Numerics.Vector3 position, Entity target = default)

@@ -244,11 +244,16 @@ public partial class GameHost
 					if (EcsWorld.Has<BuildQueue>(workerEntity))
 					{
 						ref var buildQueue = ref EcsWorld.Get<BuildQueue>(workerEntity);
-						if (buildQueue.TryDequeue(out string nextType, out var nextPos, out Arch.Core.Entity nextTarget))
+						bool startedNext = false;
+						while (buildQueue.TryDequeue(out string? nextType, out var nextPos, out Arch.Core.Entity nextTarget))
 						{
-							ExecuteQueuedCommand(workerEntity, nextType, nextPos, nextTarget);
+							if (ExecuteQueuedCommand(workerEntity, nextType, nextPos, nextTarget))
+							{
+								startedNext = true;
+								break;
+							}
 						}
-						else
+						if (!startedNext && buildQueue.Count == 0)
 						{
 							EcsWorld.Remove<BuildQueue>(workerEntity);
 						}
@@ -328,7 +333,24 @@ public partial class GameHost
 				}
 				else
 				{
-					ExecuteQueuedCommand(cmd.Entity, cmd.Type, cmd.Position, cmd.Target);
+					bool success = ExecuteQueuedCommand(cmd.Entity, cmd.Type, cmd.Position, cmd.Target);
+					while (!success && EcsWorld.Has<BuildQueue>(cmd.Entity))
+					{
+						ref var q = ref EcsWorld.Get<BuildQueue>(cmd.Entity);
+						if (q.TryDequeue(out string? nextType, out var nextPos, out Arch.Core.Entity nextTarget))
+						{
+							success = ExecuteQueuedCommand(cmd.Entity, nextType, nextPos, nextTarget);
+						}
+						else
+						{
+							EcsWorld.Remove<BuildQueue>(cmd.Entity);
+							break;
+						}
+					}
+					if (!success && EcsWorld.Has<BuildQueue>(cmd.Entity) && EcsWorld.Get<BuildQueue>(cmd.Entity).Count == 0)
+					{
+						EcsWorld.Remove<BuildQueue>(cmd.Entity);
+					}
 				}
 			}
 		}
@@ -673,58 +695,77 @@ Vector3 forwardDir = new Vector3(-Mathf.Sin(unit3D.Rotation.Y), 0f, -Mathf.Cos(u
 		return "Idle";
 	}
 
-	internal void ExecuteQueuedCommand(Entity entity, string? commandType, System.Numerics.Vector3 targetPos, Entity targetEntity)
+	internal bool ExecuteQueuedCommand(Entity entity, string? commandType, System.Numerics.Vector3 targetPos, Entity targetEntity)
 	{
 		if (commandType == "move")
 		{
 			var moveTo = new MoveTo(targetPos);
-			EcsWorld.Add(entity, moveTo);
+			if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+			else EcsWorld.Add(entity, moveTo);
+			return true;
 		}
 		else if (commandType == "attack")
 		{
-			if (EcsWorld.IsAlive(targetEntity))
+			if (targetEntity != Entity.Null && EcsWorld.IsAlive(targetEntity))
 			{
 				var attackTarget = new AttackTarget(targetEntity);
-				EcsWorld.Add(entity, attackTarget);
+				if (EcsWorld.Has<AttackTarget>(entity)) EcsWorld.Set(entity, attackTarget);
+				else EcsWorld.Add(entity, attackTarget);
+				return true;
 			}
+			return false;
 		}
 		else if (commandType == "attackmove")
 		{
 			var attackMove = new AttackMove(targetPos);
-			EcsWorld.Add(entity, attackMove);
+			if (EcsWorld.Has<AttackMove>(entity)) EcsWorld.Set(entity, attackMove);
+			else EcsWorld.Add(entity, attackMove);
+
 			var moveTo = new MoveTo(targetPos);
-			EcsWorld.Add(entity, moveTo);
+			if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+			else EcsWorld.Add(entity, moveTo);
+			return true;
 		}
 		else if (commandType == "follow")
 		{
-			if (EcsWorld.IsAlive(targetEntity))
+			if (targetEntity != Entity.Null && EcsWorld.IsAlive(targetEntity))
 			{
 				if (EcsWorld.Has<DefinitionId>(entity) && EcsWorld.Get<DefinitionId>(entity).Value == "priest")
 				{
 					var healTarget = new HealingTarget(targetEntity);
-					EcsWorld.Add(entity, healTarget);
+					if (EcsWorld.Has<HealingTarget>(entity)) EcsWorld.Set(entity, healTarget);
+					else EcsWorld.Add(entity, healTarget);
 				}
 				else
 				{
 					var follow = new Follow(targetEntity);
-					EcsWorld.Add(entity, follow);
+					if (EcsWorld.Has<Follow>(entity)) EcsWorld.Set(entity, follow);
+					else EcsWorld.Add(entity, follow);
 				}
+				return true;
 			}
+			return false;
 		}
 		else if (commandType == "patrol")
 		{
 			var unitPos = EcsWorld.Has<Position>(entity) ? EcsWorld.Get<Position>(entity).Value : System.Numerics.Vector3.Zero;
 			var patrol = new Patrol(unitPos, targetPos);
-			EcsWorld.Add(entity, patrol);
+			if (EcsWorld.Has<Patrol>(entity)) EcsWorld.Set(entity, patrol);
+			else EcsWorld.Add(entity, patrol);
+
 			var moveTo = new MoveTo(targetPos);
-			EcsWorld.Add(entity, moveTo);
+			if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+			else EcsWorld.Add(entity, moveTo);
+			return true;
 		}
 		else if (commandType == "gather")
 		{
-			if (EcsWorld.IsAlive(targetEntity))
+			if (targetEntity != Entity.Null && EcsWorld.IsAlive(targetEntity))
 			{
-				string propId = EcsWorld.Has<DefinitionId>(targetEntity) ? EcsWorld.Get<DefinitionId>(targetEntity).Value : "";
-				string resType = propId switch
+				string propId = EcsWorld.Has<PropIdentity>(targetEntity)
+					? EcsWorld.Get<PropIdentity>(targetEntity).PropId
+					: (EcsWorld.Has<DefinitionId>(targetEntity) ? EcsWorld.Get<DefinitionId>(targetEntity).Value : "");
+				string? resType = propId switch
 				{
 					"goldmine" => "gold",
 					"tree" => "wood",
@@ -735,27 +776,40 @@ Vector3 forwardDir = new Vector3(-Mathf.Sin(unit3D.Rotation.Y), 0f, -Mathf.Cos(u
 				if (resType != null)
 				{
 					var gatherer = new Gatherer(resType, targetEntity);
-					EcsWorld.Add(entity, gatherer);
+					if (EcsWorld.Has<Gatherer>(entity)) EcsWorld.Set(entity, gatherer);
+					else EcsWorld.Add(entity, gatherer);
+
 					var moveTo = new MoveTo(targetPos);
-					EcsWorld.Add(entity, moveTo);
+					if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+					else EcsWorld.Add(entity, moveTo);
+					return true;
 				}
 			}
+			return false;
 		}
 		else
 		{
 			if (targetEntity != Entity.Null && EcsWorld.IsAlive(targetEntity) && EcsWorld.Has<ConstructionState>(targetEntity))
 			{
 				var cState = EcsWorld.Get<ConstructionState>(targetEntity);
-				var newTask = new BuildTask(targetEntity, cState.TotalBuildTime);
-				newTask.Progress = cState.Progress;
-				EcsWorld.Add(entity, newTask);
+				var newTask = new BuildTask(targetEntity, cState.TotalBuildTime)
+				{
+					Progress = cState.Progress
+				};
+				if (EcsWorld.Has<BuildTask>(entity)) EcsWorld.Set(entity, newTask);
+				else EcsWorld.Add(entity, newTask);
+
 				var moveTo = new MoveTo(new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
-				EcsWorld.Add(entity, moveTo);
+				if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+				else EcsWorld.Add(entity, moveTo);
+				return true;
 			}
-			else
+			else if (!string.IsNullOrEmpty(commandType) && UnitRegistry.ContainsKey(commandType))
 			{
 				AssignBuildTaskToWorker(entity, commandType, targetPos);
+				return true;
 			}
+			return false;
 		}
 	}
 }

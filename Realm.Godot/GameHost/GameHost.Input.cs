@@ -3042,7 +3042,7 @@ public partial class GameHost
 
 				if (firstWorker != null)
 				{
-					if (shiftHeld && EcsWorld.Has<BuildTask>(firstWorker.Entity))
+					if (shiftHeld && (_inputService.IsUnitActive(firstWorker.Entity) || EcsWorld.Has<BuildQueue>(firstWorker.Entity)))
 					{
 						if (!EcsWorld.Has<BuildQueue>(firstWorker.Entity))
 							EcsWorld.Add(firstWorker.Entity, new BuildQueue());
@@ -3062,7 +3062,7 @@ public partial class GameHost
 						{
 							if (EcsWorld.IsAlive(unit.Entity))
 							{
-								if (shiftHeld && EcsWorld.Has<BuildTask>(unit.Entity))
+								if (shiftHeld && (_inputService.IsUnitActive(unit.Entity) || EcsWorld.Has<BuildQueue>(unit.Entity)))
 								{
 									if (!EcsWorld.Has<BuildQueue>(unit.Entity))
 										EcsWorld.Add(unit.Entity, new BuildQueue());
@@ -3739,7 +3739,7 @@ public partial class GameHost
 		{
 			if (unit.IsBuilding || unit.IsEnemy || unit.UnitId != "worker") continue;
 
-			if (shiftHeld && EcsWorld.Has<BuildTask>(unit.Entity))
+			if (shiftHeld && (_inputService.IsUnitActive(unit.Entity) || EcsWorld.Has<BuildQueue>(unit.Entity)))
 			{
 				if (!EcsWorld.Has<BuildQueue>(unit.Entity))
 					EcsWorld.Add(unit.Entity, new BuildQueue());
