@@ -302,6 +302,7 @@
     "crystal_cluster_5.glb": 1.0500002,
     "spiked_wooden_stake.glb": 0.7500002
   },
+  "ModelScales": {},
   "ModelCollisionCircleRatios": {
     "coniferous_tree_1.glb": 0.3,
     "palm_tree.glb": 0.25,

@@ -662,6 +662,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public float GoldBounty { get; set; }
 		public string ModelPath { get; set; }
 		public string PortraitModelPath { get; set; }
+		public float Scale { get; set; } = 1.0f;
 		public float YOffset { get; set; }
 		public float CollisionCircle { get; set; }
 		public float Brightness { get; set; } = 0.5f;
@@ -689,6 +690,7 @@ public partial class GameHost : Node3D, IGameAPI
 	{
 		public PropMetadata()
 		{
+			Scale = 1.0f;
 			Brightness = 0.5f;
 			NormalMode = ModelNormalMode.Flat;
 			NormalizeLuminance = true;
@@ -700,6 +702,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public string Description { get; set; }
 		public string ModelPath { get; set; }
 		public string PortraitModelPath { get; set; }
+		public float Scale { get; set; } = 1.0f;
 		public float YOffset { get; set; }
 		public float CollisionCircle { get; set; }
 		public float Brightness { get; set; } = 0.5f;
@@ -719,6 +722,7 @@ public partial class GameHost : Node3D, IGameAPI
 	{
 		public ResourceMetadata()
 		{
+			Scale = 1.0f;
 			Brightness = 0.5f;
 			NormalMode = ModelNormalMode.Flat;
 			NormalizeLuminance = true;
@@ -734,6 +738,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public float HarvestRate { get; set; }
 		public float GrowthRate { get; set; }
 		public int MaxWorkers { get; set; }
+		public float Scale { get; set; } = 1.0f;
 		public float YOffset { get; set; }
 		public float CollisionCircle { get; set; }
 		public float Brightness { get; set; } = 0.5f;

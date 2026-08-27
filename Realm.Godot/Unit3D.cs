@@ -39,17 +39,21 @@ public partial class Unit3D : Prop3D
 		set => UnitId = value;
 	}
 
+	private bool _isBuilding;
 	public bool IsBuilding
 	{
 		get
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && Entity != default && GameHost.Instance.EcsWorld.IsAlive(Entity))
 				return GameHost.Instance.EcsWorld.Has<Building>(Entity);
-			return false;
+			if (GameHost.UnitRegistry != null && !string.IsNullOrEmpty(UnitId) && GameHost.UnitRegistry.TryGetValue(UnitId, out var meta))
+				return meta.Speed == 0f;
+			return _isBuilding;
 		}
 		set
 		{
-			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
+			_isBuilding = value;
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && Entity != default && GameHost.Instance.EcsWorld.IsAlive(Entity))
 			{
 				var world = GameHost.Instance.EcsWorld;
 				if (value)
@@ -63,6 +67,26 @@ public partial class Unit3D : Prop3D
 						world.Remove<Building>(Entity);
 				}
 			}
+		}
+	}
+
+	private bool _isResource;
+	public bool IsResource
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && Entity != default && GameHost.Instance.EcsWorld.IsAlive(Entity))
+			{
+				if (GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Resources.ResourceNode>(Entity))
+					return true;
+			}
+			if (GameHost.ResourceRegistry != null && !string.IsNullOrEmpty(UnitId) && GameHost.ResourceRegistry.ContainsKey(UnitId))
+				return true;
+			return _isResource;
+		}
+		set
+		{
+			_isResource = value;
 		}
 	}
 
@@ -258,6 +282,22 @@ public partial class Unit3D : Prop3D
 		}
 	}
 
+	public void UpdateModelScale(float globalScale)
+	{
+		if (_modelNode != null && GodotObject.IsInstanceValid(_modelNode))
+		{
+			float baseScale = IsResource ? 2.75f : (IsBuilding ? 1.2f : 1.5f);
+			float finalScale = baseScale * globalScale;
+			_modelNode.Scale = new Vector3(finalScale, finalScale, finalScale);
+			float minY = GetMinY(_modelNode, Transform3D.Identity);
+			_baseModelYOffset = -minY * _modelNode.Scale.Y;
+			string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(ModelPath ?? UnitId) : "";
+			float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
+			_modelNode.Position = new Vector3(0f, _baseModelYOffset + yOffset, 0f);
+			UpdateLodVisibility();
+		}
+	}
+
 	public void LoadModel(string modelPath)
 	{
 		if (string.IsNullOrEmpty(modelPath)) return;
@@ -281,23 +321,16 @@ public partial class Unit3D : Prop3D
 				Realm.Godot.Animation.AnimationRetargetingService.LoadAndBindUnitAnimations(_modelNode, UnitId, modelPath);
 				SeekToIdleFirstFrame();
 
-
-				if (IsBuilding)
-				{
-					_modelNode.Scale = new Vector3(1.2f, 1.2f, 1.2f);
-				}
-				else
-				{
-					float wScale = (UnitId == "worker") ? 0.9f : 1.5f;
-					_modelNode.Scale = new Vector3(wScale, wScale, wScale);
-				}
+				float baseScale = IsResource ? 2.75f : (IsBuilding ? 1.2f : 1.5f);
+				string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(modelPath) : "";
+				float globalScale = GameHost.Instance != null ? GameHost.Instance.GetModelScale(assetKey) : 1.0f;
+				float finalScale = baseScale * globalScale;
+				_modelNode.Scale = new Vector3(finalScale, finalScale, finalScale);
 
 				UpdateLodVisibility();
 
-
 				float minY = GetMinY(_modelNode, Transform3D.Identity);
 				_baseModelYOffset = -minY * _modelNode.Scale.Y;
-				string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(modelPath) : "";
 				float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
 				_modelNode.Position = new Vector3(0f, _baseModelYOffset + yOffset, 0f);
 

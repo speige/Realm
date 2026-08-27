@@ -180,6 +180,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnHeaderGlobalOverrides;
 	private VBoxContainer _contentGlobalOverrides;
 	private bool _isGlobalOverridesExpanded = true;
+	private HSlider _sldModelScale;
 	private HSlider _sldModelYOffset;
 	private HSlider _sldModelGlobalCollisionCircle;
 	private HSlider _sldModelBrightness;
@@ -1518,6 +1519,12 @@ public partial class MapEditorHUD : Control
 				}
 				if (_contentGlobalOverrides != null) _contentGlobalOverrides.Visible = _isGlobalOverridesExpanded;
 
+				if (_sldModelScale != null)
+				{
+					float val = GameHost.Instance.GetModelScale(assetKey);
+					_sldModelScale.Value = val;
+					UpdateSliderLabel(_sldModelScale, val);
+				}
 				if (_sldModelYOffset != null)
 				{
 					float val = GameHost.Instance.GetModelYOffset(assetKey);
@@ -5809,6 +5816,27 @@ public partial class MapEditorHUD : Control
 				_isGlobalOverridesExpanded = !_isGlobalOverridesExpanded;
 				_contentGlobalOverrides.Visible = _isGlobalOverridesExpanded;
 				_btnHeaderGlobalOverrides.Text = (_isGlobalOverridesExpanded ? "▼ " : "▶ ") + TranslationServer.Translate("Global Object Overrides");
+			};
+
+			_sldModelScale = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Scale"), 0.1f, 10.0f, 0.05f, 1.0f, (val) =>
+			{
+				if (_isUpdatingInspectorUI) return;
+				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
+				{
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
+					if (!string.IsNullOrEmpty(assetKey))
+					{
+						GameHost.Instance.SetModelScale(assetKey, val);
+					}
+				}
+			}, "0.0#", 70f);
+			_sldModelScale.DragStarted += () => _isDraggingSlider = true;
+			_sldModelScale.DragEnded += (valueChanged) =>
+			{
+				_isDraggingSlider = false;
+				GameHost.Instance?.FlushModelYOffsetSave();
+				string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 			};
 
 			_sldModelYOffset = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Y-Offset"), -10.0f, 10.0f, 0.05f, 0.0f, (val) =>

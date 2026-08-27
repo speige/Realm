@@ -278,6 +278,7 @@ public partial class PropMultiMeshManager : Node3D
 		}
 
 		float yOffset = GameHost.Instance.GetModelYOffset(normAssetKey);
+		float globalModelScale = GameHost.Instance.GetModelScale(normAssetKey);
 
 		// Hide any chunk groups that no longer have props
 		foreach (var kvp in group.ChunkGroups)
@@ -333,6 +334,8 @@ public partial class PropMultiMeshManager : Node3D
 				dataHash *= 1099511628211UL;
 			}
 			dataHash ^= (ulong)yOffset.GetHashCode();
+			dataHash *= 1099511628211UL;
+			dataHash ^= (ulong)globalModelScale.GetHashCode();
 
 			bool allMeshesMatch = chunkGroup.MultiMeshNodes.Count >= group.SubMeshes.Count;
 			if (allMeshesMatch)
@@ -373,12 +376,8 @@ public partial class PropMultiMeshManager : Node3D
 					Vector3 pos = prop.Position;
 					pos.Y += yOffset;
 
-					float propScale = Mathf.Max(0.01f, prop.Scale);
+					float propScale = Mathf.Max(0.01f, prop.Scale * globalModelScale);
 					Basis basis = Basis.Identity.Rotated(Vector3.Up, Mathf.DegToRad(prop.RotationY)).Scaled(Vector3.One * propScale);
-					if (prop.PropId == "tree" || prop.PropId.Contains("tree") || normAssetKey.Contains("tree"))
-					{
-						basis = basis.Scaled(new Vector3(3f, 3f, 3f));
-					}
 					Transform3D propTransform = new Transform3D(basis, pos);
 					Transform3D finalXform = propTransform * subInfo.RelativeTransform;
 
@@ -471,14 +470,9 @@ public partial class PropMultiMeshManager : Node3D
 					Vector3 pos = prop.Position;
 					pos.Y += yOffset;
 
-					float propScale = Mathf.Max(0.01f, prop.Scale);
+					float propScale = Mathf.Max(0.01f, prop.Scale * globalModelScale);
 					Basis basis = Basis.Identity.Rotated(Vector3.Up, Mathf.DegToRad(prop.RotationY)).Scaled(Vector3.One * propScale);
 					Transform3D propTransform = new Transform3D(basis, pos);
-
-					if (prop.PropId == "tree" || prop.PropId.Contains("tree") || normAssetKey.Contains("tree"))
-					{
-						propTransform.Basis = propTransform.Basis.Scaled(new Vector3(3f, 3f, 3f));
-					}
 
 					Transform3D finalXform = propTransform * subInfo.RelativeTransform;
 					mm.SetInstanceTransform(i, finalXform);
@@ -506,7 +500,8 @@ public partial class PropMultiMeshManager : Node3D
 		Node prototype = Realm.Godot.Utils.ModelCache.GetModel(modelPath);
 		if (prototype == null) return null;
 
-		float scaleMultiplier = 1.0f;
+		float globalModelScale = GameHost.Instance != null ? GameHost.Instance.GetModelScale(normAssetKey) : 1.0f;
+		float scaleMultiplier = Math.Max(0.01f, globalModelScale);
 		Realm.Godot.Services.ModelOptimization.GltfDocumentExtensionMsftLod.UpdateLodVisibilityRanges(prototype, scaleMultiplier);
 
 		var meshNodes = new List<MeshInstance3D>();
