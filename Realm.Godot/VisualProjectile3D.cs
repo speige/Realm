@@ -6,17 +6,32 @@ using System;
 
 public partial class VisualProjectile3D : Node3D
 {
+	private struct TrailPoint
+	{
+		public Vector3 Position;
+		public float Age;
+	}
+
+	private const int MaxTrailPoints = 128;
+	private readonly TrailPoint[] _trailPoints = new TrailPoint[MaxTrailPoints];
+	private int _trailPointCount;
+
 	private Node3D _meshContainer;
 	private Node3D _visualTransformContainer;
 	private MeshInstance3D _fallbackMeshInstance;
 	private Node3D _customModelInstance;
 	private OmniLight3D _pointLight;
 	private GpuParticles3D _trailEmitter;
-	private RibbonTrailMesh _ribbonMesh;
-	private ParticleProcessMaterial _particleProcessMaterial;
+	private ImmediateMesh _ribbonImmediateMesh;
+	private MeshInstance3D _ribbonMeshInstance;
 	private StandardMaterial3D _ribbonMaterial;
 	private ShaderMaterial _uberShaderMaterial;
 	private static Shader _sharedUberShader;
+
+	public static void ClearSharedShaderCache()
+	{
+		_sharedUberShader = null;
+	}
 
 	private GameHost.WeaponMetadata _weapon;
 	private Vector3 _startPosition;
@@ -49,6 +64,7 @@ public partial class VisualProjectile3D : Node3D
 	public MeshInstance3D FallbackMeshInstance => _fallbackMeshInstance;
 	public OmniLight3D PointLight => _pointLight;
 	public GpuParticles3D TrailEmitter => _trailEmitter;
+	public MeshInstance3D RibbonMeshInstance => _ribbonMeshInstance;
 	public ShaderMaterial UberShaderMaterial => _uberShaderMaterial;
 	public StandardMaterial3D RibbonMaterial => _ribbonMaterial;
 	public GameHost.WeaponMetadata Weapon => _weapon;
@@ -85,14 +101,34 @@ public partial class VisualProjectile3D : Node3D
 		AddChild(_pointLight);
 
 		SetupTrailEmitter();
+		SetupRibbonMeshInstance();
 		SetProcess(false);
 	}
 
 	private static void EnsureSharedShader()
 	{
-		if (_sharedUberShader == null || !GodotObject.IsInstanceValid(_sharedUberShader))
+		if (_sharedUberShader == null)
 		{
-			if (ResourceLoader.Exists("res://Assets/shaders/projectile_fx.gdshader"))
+			string shaderCode = "";
+			if (FileAccess.FileExists("res://Assets/shaders/projectile_fx.gdshader"))
+			{
+				using var fa = FileAccess.Open("res://Assets/shaders/projectile_fx.gdshader", FileAccess.ModeFlags.Read);
+				shaderCode = fa?.GetAsText() ?? "";
+			}
+			else if (System.IO.File.Exists("Assets/shaders/projectile_fx.gdshader"))
+			{
+				shaderCode = System.IO.File.ReadAllText("Assets/shaders/projectile_fx.gdshader");
+			}
+			else if (System.IO.File.Exists("Realm.Godot/Assets/shaders/projectile_fx.gdshader"))
+			{
+				shaderCode = System.IO.File.ReadAllText("Realm.Godot/Assets/shaders/projectile_fx.gdshader");
+			}
+
+			if (!string.IsNullOrEmpty(shaderCode))
+			{
+				_sharedUberShader = new Shader { Code = shaderCode };
+			}
+			else
 			{
 				_sharedUberShader = GD.Load<Shader>("res://Assets/shaders/projectile_fx.gdshader");
 			}
@@ -103,45 +139,37 @@ public partial class VisualProjectile3D : Node3D
 	{
 		_trailEmitter = new GpuParticles3D();
 		_trailEmitter.Name = "RibbonTrailEmitter";
-		_trailEmitter.Amount = 48;
+		_trailEmitter.Amount = 1;
 		_trailEmitter.Lifetime = 0.5f;
 		_trailEmitter.Explosiveness = 0.0f;
 		_trailEmitter.Randomness = 0.0f;
 		_trailEmitter.FixedFps = 60;
 		_trailEmitter.FractDelta = true;
 		_trailEmitter.LocalCoords = false;
-		_trailEmitter.VisibilityAabb = new Aabb(new Vector3(-50, -50, -50), new Vector3(100, 100, 100));
+		_trailEmitter.Emitting = false;
+		_trailEmitter.Visible = false;
+		AddChild(_trailEmitter);
+	}
 
-		_particleProcessMaterial = new ParticleProcessMaterial();
-		_particleProcessMaterial.ParticleFlagDisableZ = false;
-		_particleProcessMaterial.Gravity = Vector3.Zero;
-		_particleProcessMaterial.Spread = 0.0f;
-		_particleProcessMaterial.InitialVelocityMin = 0.0f;
-		_particleProcessMaterial.InitialVelocityMax = 0.0f;
-
-		_ribbonMesh = new RibbonTrailMesh();
-		_ribbonMesh.Size = 0.4f;
-		_ribbonMesh.Sections = 12;
-		_ribbonMesh.SectionLength = 0.35f;
-
-		var taperCurve = new Curve();
-		taperCurve.AddPoint(new Vector2(0.0f, 1.0f));
-		taperCurve.AddPoint(new Vector2(1.0f, 0.0f));
-		_ribbonMesh.Curve = taperCurve;
+	private void SetupRibbonMeshInstance()
+	{
+		_ribbonImmediateMesh = new ImmediateMesh();
+		_ribbonMeshInstance = new MeshInstance3D();
+		_ribbonMeshInstance.Name = "RibbonMeshInstance";
+		_ribbonMeshInstance.Mesh = _ribbonImmediateMesh;
 
 		_ribbonMaterial = new StandardMaterial3D();
 		_ribbonMaterial.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
 		_ribbonMaterial.BlendMode = BaseMaterial3D.BlendModeEnum.Add;
 		_ribbonMaterial.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 		_ribbonMaterial.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
-		_ribbonMaterial.UseParticleTrails = true;
+		_ribbonMaterial.TextureFilter = BaseMaterial3D.TextureFilterEnum.Linear;
 
-		_ribbonMesh.Material = _ribbonMaterial;
-		_trailEmitter.DrawPass1 = _ribbonMesh;
-		_trailEmitter.ProcessMaterial = _particleProcessMaterial;
-		_trailEmitter.Emitting = false;
-
-		AddChild(_trailEmitter);
+		_ribbonMeshInstance.MaterialOverride = _ribbonMaterial;
+		AddChild(_ribbonMeshInstance);
+		_ribbonMeshInstance.TopLevel = true;
+		_ribbonMeshInstance.Position = Vector3.Zero;
+		_ribbonMeshInstance.Rotation = Vector3.Zero;
 	}
 
 	public void Initialize(GameHost.WeaponMetadata weapon, Vector3 start, Vector3 target, Entity targetEntity = default, Action<VisualProjectile3D> recycleCallback = null)
@@ -213,11 +241,16 @@ public partial class VisualProjectile3D : Node3D
 		UpdateRibbonTrail();
 		UpdatePointLight();
 
-		Visible = true;
-		_trailEmitter.Position = _weapon.TrailOffset;
-		_trailEmitter.Restart();
-		_trailEmitter.Emitting = true;
+		_trailPointCount = 0;
+		_ribbonImmediateMesh?.ClearSurfaces();
+		if (_ribbonMeshInstance != null)
+		{
+			_ribbonMeshInstance.Visible = true;
+			_ribbonMeshInstance.GlobalPosition = Vector3.Zero;
+			_ribbonMeshInstance.GlobalRotation = Vector3.Zero;
+		}
 
+		Visible = true;
 		SetProcess(true);
 	}
 
@@ -271,6 +304,7 @@ public partial class VisualProjectile3D : Node3D
 			}
 			_currentLoadedModelPath = null;
 			_fallbackMeshInstance.Visible = true;
+			_uberShaderMaterial.SetShaderParameter("use_albedo_texture", false);
 			_fallbackMeshInstance.MaterialOverride = _uberShaderMaterial;
 			return;
 		}
@@ -290,56 +324,47 @@ public partial class VisualProjectile3D : Node3D
 				_customModelInstance = node3D;
 				_visualTransformContainer.AddChild(_customModelInstance);
 				_fallbackMeshInstance.Visible = false;
-				ApplyUberMaterialRecursively(_customModelInstance, _uberShaderMaterial);
+				ApplyUberMaterialRecursively(_customModelInstance);
 			}
 			else
 			{
 				_fallbackMeshInstance.Visible = true;
+				_uberShaderMaterial.SetShaderParameter("use_albedo_texture", false);
 				_fallbackMeshInstance.MaterialOverride = _uberShaderMaterial;
 			}
 		}
 		else
 		{
 			_fallbackMeshInstance.Visible = false;
-			ApplyUberMaterialRecursively(_customModelInstance, _uberShaderMaterial);
+			ApplyUberMaterialRecursively(_customModelInstance);
 		}
 	}
 
-	private void ApplyUberMaterialRecursively(Node node, Material material)
-	{
-		if (node is MeshInstance3D meshInst)
-		{
-			meshInst.MaterialOverride = material;
-		}
-		foreach (Node child in node.GetChildren())
-		{
-			ApplyUberMaterialRecursively(child, material);
-		}
-	}
-
-	private void UpdateShaderMaterial()
+	private void ConfigureShaderMaterial(ShaderMaterial mat, Texture2D albedoTex)
 	{
 		EnsureSharedShader();
-		if (_uberShaderMaterial.Shader == null)
+		if (mat.Shader == null)
 		{
-			_uberShaderMaterial.Shader = _sharedUberShader;
+			mat.Shader = _sharedUberShader;
 		}
 
 		Color baseCol = ParseColor(_weapon.BaseColor, new Color(0.15f, 0.12f, 0.1f));
 		Color emissiveCol = ParseColor(_weapon.EmissionColor, new Color(1.0f, 0.4f, 0.05f));
 		Color fresnelCol = ParseColor(_weapon.FresnelColor, new Color(1.0f, 0.6f, 0.1f));
 
-		_uberShaderMaterial.SetShaderParameter("base_color", baseCol);
-		_uberShaderMaterial.SetShaderParameter("emission_color", emissiveCol);
-		_uberShaderMaterial.SetShaderParameter("emission_energy", _weapon.EmissionEnergy > 0 ? _weapon.EmissionEnergy : 4.0f);
-		_uberShaderMaterial.SetShaderParameter("fresnel_power", _weapon.FresnelPower > 0 ? _weapon.FresnelPower : 3.0f);
-		_uberShaderMaterial.SetShaderParameter("fresnel_color", fresnelCol);
-		_uberShaderMaterial.SetShaderParameter("fresnel_factor", _weapon.FresnelFactor > 0 ? _weapon.FresnelFactor : 1.5f);
-		_uberShaderMaterial.SetShaderParameter("noise_scale", _weapon.NoiseScale > 0 ? _weapon.NoiseScale : 3.0f);
-		_uberShaderMaterial.SetShaderParameter("uv_scroll_speed_1", _weapon.UvScrollSpeed1);
-		_uberShaderMaterial.SetShaderParameter("uv_scroll_speed_2", _weapon.UvScrollSpeed2);
-		_uberShaderMaterial.SetShaderParameter("threshold_cutoff", _weapon.ThresholdCutoff);
-		_uberShaderMaterial.SetShaderParameter("threshold_smoothness", _weapon.ThresholdSmoothness > 0 ? _weapon.ThresholdSmoothness : 0.1f);
+		bool effectEnabled = !string.Equals(_weapon.ShaderEffectType, "none", StringComparison.OrdinalIgnoreCase);
+		mat.SetShaderParameter("effect_enabled", effectEnabled);
+		mat.SetShaderParameter("base_color", baseCol);
+		mat.SetShaderParameter("emission_color", emissiveCol);
+		mat.SetShaderParameter("emission_energy", _weapon.EmissionEnergy);
+		mat.SetShaderParameter("fresnel_power", _weapon.FresnelPower > 0.01f ? _weapon.FresnelPower : 3.0f);
+		mat.SetShaderParameter("fresnel_color", fresnelCol);
+		mat.SetShaderParameter("fresnel_factor", _weapon.FresnelFactor);
+		mat.SetShaderParameter("noise_scale", _weapon.NoiseScale > 0.01f ? _weapon.NoiseScale : 3.0f);
+		mat.SetShaderParameter("uv_scroll_speed_1", _weapon.UvScrollSpeed1);
+		mat.SetShaderParameter("uv_scroll_speed_2", _weapon.UvScrollSpeed2);
+		mat.SetShaderParameter("threshold_cutoff", _weapon.ThresholdCutoff);
+		mat.SetShaderParameter("threshold_smoothness", _weapon.ThresholdSmoothness > 0.001f ? _weapon.ThresholdSmoothness : 0.1f);
 
 		int maskSource = 0;
 		if (!string.IsNullOrEmpty(_weapon.EmissionMaskSource))
@@ -349,6 +374,7 @@ public partial class VisualProjectile3D : Node3D
 				case "vertex_color":
 				case "vertex_color_spikes":
 				case "vertex color / spikes":
+				case "spikes":
 					maskSource = 1;
 					break;
 				case "fresnel":
@@ -368,52 +394,101 @@ public partial class VisualProjectile3D : Node3D
 					break;
 			}
 		}
-		_uberShaderMaterial.SetShaderParameter("emission_mask_source", maskSource);
+		mat.SetShaderParameter("emission_mask_source", maskSource);
 
 		if (!string.IsNullOrEmpty(_weapon.NoiseTexture))
 		{
 			var tex = LoadTextureSafe(_weapon.NoiseTexture);
 			if (tex != null)
 			{
-				_uberShaderMaterial.SetShaderParameter("noise_texture", tex);
-				_uberShaderMaterial.SetShaderParameter("use_procedural_noise", false);
+				mat.SetShaderParameter("noise_texture", tex);
+				mat.SetShaderParameter("use_procedural_noise", false);
 			}
 			else
 			{
-				_uberShaderMaterial.SetShaderParameter("use_procedural_noise", true);
+				mat.SetShaderParameter("use_procedural_noise", true);
 			}
 		}
 		else
 		{
-			_uberShaderMaterial.SetShaderParameter("use_procedural_noise", true);
+			mat.SetShaderParameter("use_procedural_noise", true);
+		}
+
+		if (albedoTex != null)
+		{
+			mat.SetShaderParameter("albedo_texture", albedoTex);
+			mat.SetShaderParameter("use_albedo_texture", true);
+		}
+		else
+		{
+			mat.SetShaderParameter("use_albedo_texture", false);
+		}
+	}
+
+	private void ApplyUberMaterialRecursively(Node node)
+	{
+		if (node is MeshInstance3D meshInst)
+		{
+			Texture2D albedoTex = null;
+			Color albedoColor = Colors.White;
+
+			int surfCount = meshInst.Mesh?.GetSurfaceCount() ?? 0;
+			for (int s = 0; s < surfCount; s++)
+			{
+				var surfMat = meshInst.GetSurfaceOverrideMaterial(s) ?? meshInst.Mesh?.SurfaceGetMaterial(s);
+				if (surfMat is BaseMaterial3D baseMat)
+				{
+					if (baseMat.AlbedoTexture != null)
+					{
+						albedoTex = baseMat.AlbedoTexture;
+					}
+					albedoColor = baseMat.AlbedoColor;
+					if (albedoTex != null) break;
+				}
+			}
+
+			if (string.Equals(_weapon.ShaderEffectType, "none", StringComparison.OrdinalIgnoreCase))
+			{
+				meshInst.MaterialOverride = null;
+			}
+			else
+			{
+				var matInstance = meshInst.MaterialOverride as ShaderMaterial ?? new ShaderMaterial();
+				ConfigureShaderMaterial(matInstance, albedoTex);
+				meshInst.MaterialOverride = matInstance;
+			}
+		}
+
+		foreach (Node child in node.GetChildren())
+		{
+			ApplyUberMaterialRecursively(child);
+		}
+	}
+
+	private void UpdateShaderMaterial()
+	{
+		ConfigureShaderMaterial(_uberShaderMaterial, null);
+
+		if (_customModelInstance != null && GodotObject.IsInstanceValid(_customModelInstance))
+		{
+			ApplyUberMaterialRecursively(_customModelInstance);
 		}
 	}
 
 	private void UpdateRibbonTrail()
 	{
 		Color ribbonCol = ParseColor(_weapon.RibbonColor, new Color(1.0f, 0.65f, 0.2f));
-		float width = _weapon.RibbonWidth > 0 ? _weapon.RibbonWidth : 0.4f;
-		float lifetime = _weapon.RibbonLifetime > 0 ? _weapon.RibbonLifetime : 0.5f;
 
-		_trailEmitter.Lifetime = lifetime;
-		_ribbonMesh.Size = width;
-
-		if (_weapon.RibbonTaper)
+		if (_weapon.RibbonAdditive)
 		{
-			var taperCurve = new Curve();
-			taperCurve.AddPoint(new Vector2(0.0f, 1.0f));
-			taperCurve.AddPoint(new Vector2(1.0f, 0.0f));
-			_ribbonMesh.Curve = taperCurve;
+			_ribbonMaterial.AlbedoColor = new Color(ribbonCol.R * 2.2f, ribbonCol.G * 2.2f, ribbonCol.B * 2.2f, ribbonCol.A);
+			_ribbonMaterial.BlendMode = BaseMaterial3D.BlendModeEnum.Add;
 		}
 		else
 		{
-			_ribbonMesh.Curve = null;
+			_ribbonMaterial.AlbedoColor = ribbonCol;
+			_ribbonMaterial.BlendMode = BaseMaterial3D.BlendModeEnum.Mix;
 		}
-
-		_ribbonMaterial.AlbedoColor = ribbonCol;
-		_ribbonMaterial.EmissionEnabled = true;
-		_ribbonMaterial.Emission = ribbonCol;
-		_ribbonMaterial.BlendMode = _weapon.RibbonAdditive ? BaseMaterial3D.BlendModeEnum.Add : BaseMaterial3D.BlendModeEnum.Mix;
 
 		if (!string.IsNullOrEmpty(_weapon.RibbonTexture) && _weapon.RibbonTexture != _currentLoadedRibbonPath)
 		{
@@ -421,16 +496,22 @@ public partial class VisualProjectile3D : Node3D
 			var tex = LoadTextureSafe(_weapon.RibbonTexture);
 			_ribbonMaterial.AlbedoTexture = tex;
 		}
+		else if (string.IsNullOrEmpty(_weapon.RibbonTexture))
+		{
+			_currentLoadedRibbonPath = null;
+			_ribbonMaterial.AlbedoTexture = null;
+		}
 	}
 
 	private void UpdatePointLight()
 	{
-		if (_weapon.PointLightEnabled)
+		if (_weapon.PointLightEnabled && _weapon.PointLightIntensity > 0.01f)
 		{
 			_pointLight.Visible = true;
 			_pointLight.LightColor = ParseColor(_weapon.PointLightColor, new Color(1.0f, 0.7f, 0.3f));
-			_pointLight.LightEnergy = _weapon.PointLightIntensity > 0 ? _weapon.PointLightIntensity : 2.0f;
+			_pointLight.LightEnergy = _weapon.PointLightIntensity;
 			_pointLight.OmniRange = _weapon.PointLightRange > 0 ? _weapon.PointLightRange : 6.0f;
+			_pointLight.OmniAttenuation = 2.0f;
 		}
 		else
 		{
@@ -448,12 +529,21 @@ public partial class VisualProjectile3D : Node3D
 			_isImpacted = false;
 			_isFlying = true;
 			_meshContainer.Visible = true;
-			_pointLight.Visible = _weapon.PointLightEnabled;
-			_trailEmitter.Emitting = true;
+			_pointLight.Visible = _weapon.PointLightEnabled && _weapon.PointLightIntensity > 0.01f;
+			if (_ribbonMeshInstance != null) _ribbonMeshInstance.Visible = true;
 			SetProcess(true);
 		}
 
-		AdvanceSimulation(deltaSeconds);
+		float sign = Mathf.Sign(deltaSeconds);
+		float remaining = Mathf.Abs(deltaSeconds);
+		float maxSubStep = 1.0f / 60.0f;
+
+		while (remaining > 0.0001f)
+		{
+			float subDt = Mathf.Min(maxSubStep, remaining) * sign;
+			AdvanceSimulation(subDt);
+			remaining -= Mathf.Abs(subDt);
+		}
 	}
 
 	public override void _Process(double delta)
@@ -465,7 +555,6 @@ public partial class VisualProjectile3D : Node3D
 
 	public void AdvanceSimulation(float dt)
 	{
-
 		if (_isImpacted)
 		{
 			_fadeTimer += dt;
@@ -474,6 +563,7 @@ public partial class VisualProjectile3D : Node3D
 				SetProcess(false);
 				_isImpacted = false;
 				Visible = false;
+				if (_ribbonMeshInstance != null) _ribbonMeshInstance.Visible = false;
 				OnRecycleRequested?.Invoke(this);
 			}
 			return;
@@ -607,6 +697,120 @@ public partial class VisualProjectile3D : Node3D
 		Vector3 baseScale = (_weapon.MeshScaleOffset == Vector3.Zero) ? Vector3.One : _weapon.MeshScaleOffset;
 		float lifetimeScale = CalculateScaleOverLifetime(rawT, _weapon.ScaleCurve);
 		_visualTransformContainer.Scale = baseScale * lifetimeScale;
+
+		Vector3 trailPos = GlobalPosition + GlobalTransform.Basis * _weapon.TrailOffset;
+		UpdateTrail(dt, trailPos);
+	}
+
+	private void UpdateTrail(float dt, Vector3 currentPos)
+	{
+		float lifetime = _weapon.RibbonLifetime > 0 ? _weapon.RibbonLifetime : 0.5f;
+
+		int validCount = 0;
+		for (int i = 0; i < _trailPointCount; i++)
+		{
+			_trailPoints[i].Age += dt;
+			if (_trailPoints[i].Age <= lifetime)
+			{
+				_trailPoints[validCount] = _trailPoints[i];
+				validCount++;
+			}
+		}
+		_trailPointCount = validCount;
+
+		if (_isFlying)
+		{
+			bool addNew = true;
+			if (_trailPointCount > 0)
+			{
+				float distSq = _trailPoints[0].Position.DistanceSquaredTo(currentPos);
+				if (distSq < 0.0001f)
+				{
+					_trailPoints[0].Position = currentPos;
+					_trailPoints[0].Age = 0.0f;
+					addNew = false;
+				}
+			}
+
+			if (addNew)
+			{
+				int moveCount = Math.Min(_trailPointCount, MaxTrailPoints - 1);
+				for (int i = moveCount; i > 0; i--)
+				{
+					_trailPoints[i] = _trailPoints[i - 1];
+				}
+				_trailPoints[0] = new TrailPoint
+				{
+					Position = currentPos,
+					Age = 0.0f
+				};
+				_trailPointCount = Math.Min(_trailPointCount + 1, MaxTrailPoints);
+			}
+		}
+
+		RedrawRibbonMesh(lifetime);
+	}
+
+	private void RedrawRibbonMesh(float lifetime)
+	{
+		if (_ribbonImmediateMesh == null) return;
+		_ribbonImmediateMesh.ClearSurfaces();
+		if (_trailPointCount < 2) return;
+
+		Camera3D camera = GetViewport()?.GetCamera3D();
+		Vector3 camPos = camera != null && GodotObject.IsInstanceValid(camera) ? camera.GlobalPosition : (GlobalPosition + new Vector3(0, 5, 10));
+
+		float baseWidth = _weapon.RibbonWidth > 0 ? _weapon.RibbonWidth : 0.4f;
+		Color baseCol = ParseColor(_weapon.RibbonColor, new Color(1.0f, 0.65f, 0.2f));
+
+		_ribbonImmediateMesh.SurfaceBegin(Mesh.PrimitiveType.TriangleStrip, _ribbonMaterial);
+
+		for (int i = 0; i < _trailPointCount; i++)
+		{
+			Vector3 p = _trailPoints[i].Position;
+			float t = Mathf.Clamp(_trailPoints[i].Age / lifetime, 0.0f, 1.0f);
+
+			Vector3 forward;
+			if (i == 0)
+			{
+				forward = (_trailPoints[0].Position - _trailPoints[1].Position).Normalized();
+			}
+			else if (i == _trailPointCount - 1)
+			{
+				forward = (_trailPoints[i - 1].Position - _trailPoints[i].Position).Normalized();
+			}
+			else
+			{
+				forward = (_trailPoints[i - 1].Position - _trailPoints[i + 1].Position).Normalized();
+			}
+
+			if (forward.LengthSquared() < 0.001f) forward = Vector3.Forward;
+
+			Vector3 viewDir = (p - camPos).Normalized();
+			Vector3 side = forward.Cross(viewDir).Normalized();
+			if (side.LengthSquared() < 0.001f)
+			{
+				side = forward.Cross(Vector3.Up).Normalized();
+				if (side.LengthSquared() < 0.001f) side = Vector3.Right;
+			}
+
+			float width = baseWidth * (_weapon.RibbonTaper ? (1.0f - t) : 1.0f);
+			Vector3 halfSide = side * (width * 0.5f);
+
+			float u = t + (_weapon.RibbonScrollSpeed * _elapsedTime);
+			float alpha = 1.0f - t;
+			Color vertColor = new Color(baseCol.R, baseCol.G, baseCol.B, baseCol.A * alpha);
+
+			_ribbonImmediateMesh.SurfaceSetColor(vertColor);
+			_ribbonImmediateMesh.SurfaceSetUV(new Vector2(u, 0.0f));
+			_ribbonImmediateMesh.SurfaceAddVertex(p - halfSide);
+
+			_ribbonImmediateMesh.SurfaceSetColor(vertColor);
+			_ribbonImmediateMesh.SurfaceSetUV(new Vector2(u, 1.0f));
+			_ribbonImmediateMesh.SurfaceAddVertex(p + halfSide);
+		}
+
+		_ribbonImmediateMesh.SurfaceEnd();
 	}
 
 	private void HandleImpact(Vector3 impactPosition)
@@ -617,7 +821,8 @@ public partial class VisualProjectile3D : Node3D
 
 		_meshContainer.Visible = false;
 		_pointLight.Visible = false;
-		_trailEmitter.Emitting = false;
+		if (_ribbonMeshInstance != null) _ribbonMeshInstance.Visible = false;
+		_ribbonImmediateMesh?.ClearSurfaces();
 
 		if (!string.IsNullOrEmpty(_weapon.ImpactVisualEffect) && GameHost.Instance != null)
 		{

@@ -5744,6 +5744,8 @@ public partial class MapEditorHUD : Control
 		inspectorVBox.AddChild(_btnOpenGlobalOverrides);
 	}
 
+	public WeaponVfxDialog WeaponVfxDialog => _weaponVfxDialog;
+
 	public void OpenWeaponVfxDialog(string weaponId, GameHost.WeaponMetadata weapon, Action<GameHost.WeaponMetadata> onApplied = null)
 	{
 		if (_weaponVfxDialog == null)

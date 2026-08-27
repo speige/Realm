@@ -11,6 +11,11 @@ public partial class WeaponVfxDialog : FloatingDialogBase
 	private AudioStreamPlayer _sfxPlayer;
 	private VisualProjectile3D _previewProjectile;
 
+	public SubViewport PreviewSubViewport => _subViewport;
+	public VisualProjectile3D PreviewProjectile => _previewProjectile;
+	public Camera3D PreviewCamera => _camera;
+	public DirectionalLight3D PreviewLight => _light;
+
 	private GameHost.WeaponMetadata _initialWeapon;
 	private GameHost.WeaponMetadata _currentWeapon;
 	private string _weaponId = "";
@@ -371,7 +376,7 @@ public partial class WeaponVfxDialog : FloatingDialogBase
 			RestartPreviewProjectile();
 		}, "0.0", 140f);
 
-		AddSlider(scrollBody, TranslationServer.Translate("Fresnel Factor"), 0.1f, 5.0f, 0.1f, _currentWeapon.FresnelFactor > 0 ? _currentWeapon.FresnelFactor : 1.5f, (val) =>
+		AddSlider(scrollBody, TranslationServer.Translate("Fresnel Factor"), 0.0f, 5.0f, 0.1f, _currentWeapon.FresnelFactor, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentWeapon.FresnelFactor = val;
@@ -442,7 +447,7 @@ public partial class WeaponVfxDialog : FloatingDialogBase
 			RestartPreviewProjectile();
 		}, 140f);
 
-		AddSlider(scrollBody, TranslationServer.Translate("Light Intensity"), 0f, 10f, 0.5f, _currentWeapon.PointLightIntensity > 0 ? _currentWeapon.PointLightIntensity : 2.0f, (val) =>
+		AddSlider(scrollBody, TranslationServer.Translate("Light Intensity"), 0f, 10f, 0.5f, _currentWeapon.PointLightIntensity, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentWeapon.PointLightIntensity = val;
@@ -532,7 +537,7 @@ public partial class WeaponVfxDialog : FloatingDialogBase
 		RestartPreviewProjectile();
 	}
 
-	private void SetPlaybackPaused(bool paused)
+	public void SetPlaybackPaused(bool paused)
 	{
 		_isPlaybackPaused = paused;
 		if (_previewProjectile != null && GodotObject.IsInstanceValid(_previewProjectile))
@@ -545,7 +550,7 @@ public partial class WeaponVfxDialog : FloatingDialogBase
 		}
 	}
 
-	private void StepFrame(float deltaSeconds)
+	public void StepFrame(float deltaSeconds)
 	{
 		SetPlaybackPaused(true);
 		if (_previewProjectile == null || !GodotObject.IsInstanceValid(_previewProjectile))
@@ -608,7 +613,7 @@ public partial class WeaponVfxDialog : FloatingDialogBase
 		RestartPreviewProjectile();
 	}
 
-	private void RestartPreviewProjectile()
+	public void RestartPreviewProjectile()
 	{
 		if (_previewProjectile != null && GodotObject.IsInstanceValid(_previewProjectile))
 		{

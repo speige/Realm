@@ -998,14 +998,14 @@ public partial class FloatingDialogBase : PanelContainer
 		env.BackgroundMode = Godot.Environment.BGMode.Color;
 		env.BackgroundColor = new Color(0.11f, 0.13f, 0.17f);
 		env.AmbientLightSource = Godot.Environment.AmbientSource.Color;
-		env.AmbientLightColor = new Color(0.65f, 0.65f, 0.70f);
-		env.AmbientLightEnergy = 1.0f;
+		env.AmbientLightColor = new Color(0.60f, 0.60f, 0.65f);
+		env.AmbientLightEnergy = 0.75f;
 		world.Environment = env;
 		subViewport.World3D = world;
 
 		light = new DirectionalLight3D();
-		light.RotationDegrees = new Vector3(-45, 45, 0);
-		light.LightEnergy = 1.2f;
+		light.RotationDegrees = new Vector3(-30, 30, 0);
+		light.LightEnergy = 0.75f;
 		subViewport.AddChild(light);
 
 		camera = new Camera3D();
