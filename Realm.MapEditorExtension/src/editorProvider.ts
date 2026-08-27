@@ -75,6 +75,23 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         uri: webviewUri
                     });
                     break;
+                case 'getModelMinY': {
+                    const modelAbsPath = this.resolveGodotPath(e.modelPath, document.uri);
+                    let detectedMinY: number | null = null;
+                    if (modelAbsPath && fs.existsSync(modelAbsPath)) {
+                        try {
+                            const glbBytes = fs.readFileSync(modelAbsPath);
+                            detectedMinY = this.computeGlbMinY(glbBytes);
+                        } catch { }
+                    }
+                    webviewPanel.webview.postMessage({
+                        type: 'getModelMinYResult',
+                        requestId: e.requestId,
+                        modelPath: e.modelPath,
+                        minY: detectedMinY
+                    });
+                    break;
+                }
                 case 'importAsset':
                     await this.handleImportAsset(webviewPanel.webview, e.assetType, e.options, document);
                     break;
@@ -1104,6 +1121,161 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         }
     }
 
+    public computeGlbMinY(fileBytes: Buffer): number | null {
+        try {
+            const gltf = this.parseGltfJson(fileBytes);
+            if (!gltf) return null;
+
+            function multiplyMat4(out: number[], a: number[], b: number[]): number[] {
+                const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+                const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+                const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+                const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+                let b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3];
+                out[0] = b0*a00 + b1*a10 + b2*a20 + b3*a30;
+                out[1] = b0*a01 + b1*a11 + b2*a21 + b3*a31;
+                out[2] = b0*a02 + b1*a12 + b2*a22 + b3*a32;
+                out[3] = b0*a03 + b1*a13 + b2*a23 + b3*a33;
+                b0 = b[4]; b1 = b[5]; b2 = b[6]; b3 = b[7];
+                out[4] = b0*a00 + b1*a10 + b2*a20 + b3*a30;
+                out[5] = b0*a01 + b1*a11 + b2*a21 + b3*a31;
+                out[6] = b0*a02 + b1*a12 + b2*a22 + b3*a32;
+                out[7] = b0*a03 + b1*a13 + b2*a23 + b3*a33;
+                b0 = b[8]; b1 = b[9]; b2 = b[10]; b3 = b[11];
+                out[8] = b0*a00 + b1*a10 + b2*a20 + b3*a30;
+                out[9] = b0*a01 + b1*a11 + b2*a21 + b3*a31;
+                out[10] = b0*a02 + b1*a12 + b2*a22 + b3*a32;
+                out[11] = b0*a03 + b1*a13 + b2*a23 + b3*a33;
+                b0 = b[12]; b1 = b[13]; b2 = b[14]; b3 = b[15];
+                out[12] = b0*a00 + b1*a10 + b2*a20 + b3*a30;
+                out[13] = b0*a01 + b1*a11 + b2*a21 + b3*a31;
+                out[14] = b0*a02 + b1*a12 + b2*a22 + b3*a32;
+                out[15] = b0*a03 + b1*a13 + b2*a23 + b3*a33;
+                return out;
+            }
+
+            function getNodeMatrix(node: any): number[] {
+                if (node.matrix && Array.isArray(node.matrix) && node.matrix.length === 16) {
+                    return [...node.matrix];
+                }
+                const m = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+                const t = node.translation || [0,0,0];
+                const r = node.rotation || [0,0,0,1];
+                const s = node.scale || [1,1,1];
+
+                const x = r[0], y = r[1], z = r[2], w = r[3];
+                const x2 = x + x, y2 = y + y, z2 = z + z;
+                const xx = x * x2, xy = x * y2, xz = x * z2;
+                const yy = y * y2, yz = y * z2, zz = z * z2;
+                const wx = w * x2, wy = w * y2, wz = w * z2;
+
+                m[0] = (1 - (yy + zz)) * s[0];
+                m[1] = (xy + wz) * s[0];
+                m[2] = (xz - wy) * s[0];
+                m[3] = 0;
+
+                m[4] = (xy - wz) * s[1];
+                m[5] = (1 - (xx + zz)) * s[1];
+                m[6] = (yz + wx) * s[1];
+                m[7] = 0;
+
+                m[8] = (xz + wy) * s[2];
+                m[9] = (yz - wx) * s[2];
+                m[10] = (1 - (xx + yy)) * s[2];
+                m[11] = 0;
+
+                m[12] = t[0];
+                m[13] = t[1];
+                m[14] = t[2];
+                m[15] = 1;
+
+                return m;
+            }
+
+            let globalMinY = Infinity;
+            let found = false;
+
+            function processNode(nodeIdx: number, parentMat: number[] | null) {
+                const node = gltf.nodes ? gltf.nodes[nodeIdx] : null;
+                if (!node) return;
+                const localMat = getNodeMatrix(node);
+                const worldMat = parentMat ? multiplyMat4([], parentMat, localMat) : localMat;
+
+                if (node.mesh !== undefined && gltf.meshes && gltf.meshes[node.mesh]) {
+                    const mesh = gltf.meshes[node.mesh];
+                    if (Array.isArray(mesh.primitives)) {
+                        for (const prim of mesh.primitives) {
+                            if (prim && prim.attributes && prim.attributes.POSITION !== undefined && gltf.accessors) {
+                                const acc = gltf.accessors[prim.attributes.POSITION];
+                                if (acc && Array.isArray(acc.min) && Array.isArray(acc.max)) {
+                                    const min = acc.min;
+                                    const max = acc.max;
+                                    const corners = [
+                                        [min[0], min[1], min[2]],
+                                        [max[0], min[1], min[2]],
+                                        [min[0], max[1], min[2]],
+                                        [min[0], min[1], max[2]],
+                                        [max[0], max[1], min[2]],
+                                        [max[0], min[1], max[2]],
+                                        [min[0], max[1], max[2]],
+                                        [max[0], max[1], max[2]]
+                                    ];
+                                    for (const [cx, cy, cz] of corners) {
+                                        const y = cx * worldMat[1] + cy * worldMat[5] + cz * worldMat[9] + worldMat[13];
+                                        if (y < globalMinY) {
+                                            globalMinY = y;
+                                            found = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (Array.isArray(node.children)) {
+                    for (const childIdx of node.children) {
+                        processNode(childIdx, worldMat);
+                    }
+                }
+            }
+
+            if (Array.isArray(gltf.scenes) && gltf.scenes.length > 0) {
+                const scene = gltf.scenes[gltf.scene || 0];
+                if (scene && Array.isArray(scene.nodes)) {
+                    for (const rootNodeIdx of scene.nodes) {
+                        processNode(rootNodeIdx, null);
+                    }
+                }
+            } else if (Array.isArray(gltf.nodes)) {
+                for (let i = 0; i < gltf.nodes.length; i++) {
+                    processNode(i, null);
+                }
+            }
+
+            if (!found && Array.isArray(gltf.meshes) && Array.isArray(gltf.accessors)) {
+                for (const mesh of gltf.meshes) {
+                    if (!mesh || !Array.isArray(mesh.primitives)) continue;
+                    for (const prim of mesh.primitives) {
+                        if (prim && prim.attributes && prim.attributes.POSITION !== undefined) {
+                            const acc = gltf.accessors[prim.attributes.POSITION];
+                            if (acc && Array.isArray(acc.min) && acc.min.length >= 2) {
+                                if (acc.min[1] < globalMinY) {
+                                    globalMinY = acc.min[1];
+                                    found = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return found ? globalMinY : null;
+        } catch {
+            return null;
+        }
+    }
+
     public findPath(relativePath: string, contextPath?: vscode.Uri | string): string | null {
         if (!relativePath) {
             return null;
@@ -1387,13 +1559,29 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 if (!metadata.Assets.glb) metadata.Assets.glb = {};
                 if (!metadata.Assets.glb[subCategory]) metadata.Assets.glb[subCategory] = {};
 
+                const defaultScale = subCategory === 'resources' ? 2.75 :
+                                     subCategory === 'buildings' ? 1.5 :
+                                     subCategory === 'props' ? 1.25 : 1.0;
+
+                const rawMinY = this.computeGlbMinY(fileBytes);
+                const defaultYOffset = (rawMinY !== null && rawMinY < 0) ? parseFloat((-rawMinY * defaultScale).toFixed(4)) : 0.0;
+
                 metadata.Assets.glb[subCategory][baseName] = {
                     hash: blake3,
                     default_asset_type: subCategory,
+                    min_y: rawMinY !== null ? rawMinY : 0.0,
+                    y_offset: defaultYOffset,
+                    scale: defaultScale,
                     normal_mode: 'Flat',
                     normalize_luminance: true,
                     ...(ignorePlayerColor ? { ignore_player_color: true } : {})
                 };
+
+                if (!metadata.ModelOffsets) metadata.ModelOffsets = {};
+                metadata.ModelOffsets[baseName] = defaultYOffset;
+
+                if (!metadata.ModelScales) metadata.ModelScales = {};
+                metadata.ModelScales[baseName] = defaultScale;
 
                 if (!metadata.ModelIgnorePlayerColor) metadata.ModelIgnorePlayerColor = {};
                 if (ignorePlayerColor) {
@@ -1420,6 +1608,8 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         UnitId: unitId,
                         Name: unitId,
                         Description: '',
+                        Scale: defaultScale,
+                        YOffset: defaultYOffset,
                         PathingType: defaultPathing,
                         ModelPath: baseName,
                         NormalMode: 'Flat',
@@ -2389,6 +2579,10 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                     <div class="form-section">
                         <h3>Global Object Overrides</h3>
                         <div class="form-row">
+                            <div class="form-group">
+                                <label for="field-Scale">Scale</label>
+                                <input type="number" id="field-Scale" step="0.05" min="0.05" max="20.0" placeholder="1.0" />
+                            </div>
                             <div class="form-group">
                                 <label for="field-YOffset">Y-Offset</label>
                                 <input type="number" id="field-YOffset" step="0.05" placeholder="0.0" />

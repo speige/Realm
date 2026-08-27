@@ -180,6 +180,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnHeaderGlobalOverrides;
 	private VBoxContainer _contentGlobalOverrides;
 	private bool _isGlobalOverridesExpanded = true;
+	private HSlider _sldModelScale;
 	private HSlider _sldModelYOffset;
 	private HSlider _sldModelGlobalCollisionCircle;
 	private HSlider _sldModelBrightness;
@@ -1518,6 +1519,12 @@ public partial class MapEditorHUD : Control
 				}
 				if (_contentGlobalOverrides != null) _contentGlobalOverrides.Visible = _isGlobalOverridesExpanded;
 
+				if (_sldModelScale != null)
+				{
+					float val = GameHost.Instance.GetModelScale(selected);
+					_sldModelScale.Value = val;
+					UpdateSliderLabel(_sldModelScale, val);
+				}
 				if (_sldModelYOffset != null)
 				{
 					float val = GameHost.Instance.GetModelYOffset(assetKey);
@@ -5811,6 +5818,27 @@ public partial class MapEditorHUD : Control
 				_btnHeaderGlobalOverrides.Text = (_isGlobalOverridesExpanded ? "▼ " : "▶ ") + TranslationServer.Translate("Global Object Overrides");
 			};
 
+			_sldModelScale = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Scale"), 0.1f, 10.0f, 0.05f, 1.0f, (val) =>
+			{
+				if (_isUpdatingInspectorUI) return;
+				if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
+				{
+					string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(GameHost.Instance.SelectedEditorObject);
+					if (!string.IsNullOrEmpty(assetKey))
+					{
+						GameHost.Instance.SetModelScale(assetKey, val);
+					}
+				}
+			}, "0.0#", 70f);
+			_sldModelScale.DragStarted += () => _isDraggingSlider = true;
+			_sldModelScale.DragEnded += (valueChanged) =>
+			{
+				_isDraggingSlider = false;
+				GameHost.Instance?.FlushModelYOffsetSave();
+				string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+			};
+
 			_sldModelYOffset = CreateSliderRow(_contentGlobalOverrides, TranslationServer.Translate("Y-Offset"), -10.0f, 10.0f, 0.05f, 0.0f, (val) =>
 			{
 				if (_isUpdatingInspectorUI) return;
@@ -6487,12 +6515,43 @@ public partial class MapEditorHUD : Control
 							_ => (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 						};
 
+						float defaultScale = subCategory.ToLowerInvariant() switch
+						{
+							"resources" => 2.75f,
+							"buildings" => 1.5f,
+							"props" => 1.25f,
+							"units" => 1.0f,
+							_ => 1.0f
+						};
+
+						float defaultYOffset = 0.0f;
+						string modelFullPath = System.IO.Path.Combine(wsPath, "Assets", "models", subCategory, fileName);
+						if (System.IO.File.Exists(modelFullPath))
+						{
+							try
+							{
+								var modelNode = Realm.Godot.Utils.ModelCache.GetModel(modelFullPath) as Node3D;
+								if (modelNode != null)
+								{
+									float minY = Unit3D.GetMinY(modelNode, Transform3D.Identity);
+									if (minY < 0f)
+									{
+										defaultYOffset = (float)Math.Round(-minY * defaultScale, 4);
+									}
+									modelNode.QueueFree();
+								}
+							}
+							catch { }
+						}
+
 						bool isPropOrRes = subCategory.ToLowerInvariant() == "props" || subCategory.ToLowerInvariant() == "resources";
 						var newUnitObj = new JsonObject
 						{
 							["UnitId"] = unitId,
 							["Name"] = unitId,
 							["Description"] = "",
+							["Scale"] = defaultScale,
+							["YOffset"] = defaultYOffset,
 							["PathingType"] = defaultPathing,
 							["ModelPath"] = fileName,
 							["NormalMode"] = "Flat",
@@ -6500,6 +6559,12 @@ public partial class MapEditorHUD : Control
 							["IgnorePlayerColor"] = isPropOrRes
 						};
 						targetArr.Add(newUnitObj);
+
+						if (!root.ContainsKey("ModelOffsets") || root["ModelOffsets"] is not JsonObject) root["ModelOffsets"] = new JsonObject();
+						((JsonObject)root["ModelOffsets"])[fileName] = defaultYOffset;
+
+						if (!root.ContainsKey("ModelScales") || root["ModelScales"] is not JsonObject) root["ModelScales"] = new JsonObject();
+						((JsonObject)root["ModelScales"])[fileName] = defaultScale;
 					}
 				}
 			}

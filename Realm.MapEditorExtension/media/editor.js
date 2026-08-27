@@ -13,6 +13,64 @@
     let isInternalChange = false;
     let resolveCallbacks = {};
     let resolveCallbackId = 0;
+    let pendingMinYCallbacks = {};
+
+    function getDomainDefaultScale(domain) {
+        if (domain === 'resources') {
+            return 2.75;
+        }
+        if (domain === 'buildings') {
+            return 1.5;
+        }
+        if (domain === 'props') {
+            return 1.25;
+        }
+
+        return 1.0;
+    }
+
+    function getAutoCalculatedYOffsetDirect(modelPath, scale, domain) {
+        if (!modelPath) return 0.0;
+        const normPath = modelPath.trim();
+        const baseName = normPath.split(/[/\\]/).pop();
+
+        if (units.Assets && units.Assets.glb) {
+            for (const catObj of Object.values(units.Assets.glb)) {
+                if (catObj && typeof catObj === 'object') {
+                    const entry = catObj[normPath] || catObj[baseName];
+                    if (entry && typeof entry === 'object') {
+                        if (entry.min_y !== undefined && entry.min_y !== null) {
+                            return entry.min_y < 0 ? parseFloat((-entry.min_y * scale).toFixed(4)) : 0.0;
+                        }
+                        if (entry.y_offset !== undefined && entry.y_offset !== null) {
+                            return parseFloat(entry.y_offset);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (units.ModelOffsets) {
+            if (units.ModelOffsets[normPath] !== undefined) return parseFloat(units.ModelOffsets[normPath]);
+            if (units.ModelOffsets[baseName] !== undefined) return parseFloat(units.ModelOffsets[baseName]);
+        }
+
+        return null;
+    }
+
+    function requestModelMinY(modelPath, callback) {
+        if (!modelPath || typeof vscode === 'undefined' || !vscode.postMessage) {
+            if (callback) callback(null);
+            return;
+        }
+        const reqId = 'miny_' + Math.random().toString(36).substring(2, 9);
+        pendingMinYCallbacks[reqId] = callback;
+        vscode.postMessage({
+            type: 'getModelMinY',
+            requestId: reqId,
+            modelPath: modelPath
+        });
+    }
 
     // DOM Elements
     const emptyState = document.getElementById('empty-state');
@@ -61,6 +119,7 @@
         Description: document.getElementById('field-Description'),
         ModelPath: document.getElementById('field-ModelPath'),
         PortraitModelPath: document.getElementById('field-PortraitModelPath'),
+        Scale: document.getElementById('field-Scale'),
         YOffset: document.getElementById('field-YOffset'),
         CollisionCircle: document.getElementById('field-CollisionCircle'),
         Brightness: document.getElementById('field-Brightness'),
@@ -225,7 +284,33 @@
         document.getElementById('field-ModelPath')?.addEventListener('change', e => {
             const unit = getUnitById(selectedUnitId);
             if (unit) {
-                unit.ModelPath = e.target.value;
+                const newModelPath = e.target.value;
+                unit.ModelPath = newModelPath;
+                const domain = getActiveDomain();
+                const scale = (unit.Scale !== undefined && unit.Scale > 0) ? unit.Scale : getDomainDefaultScale(domain);
+
+                if (newModelPath) {
+                    const directY = getAutoCalculatedYOffsetDirect(newModelPath, scale, domain);
+                    if (directY !== null) {
+                        unit.YOffset = directY;
+                        if (formFields.YOffset) formFields.YOffset.value = directY;
+                        if (!units.ModelOffsets) units.ModelOffsets = {};
+                        units.ModelOffsets[newModelPath] = directY;
+                    } else {
+                        requestModelMinY(newModelPath, (minY) => {
+                            if (minY !== null) {
+                                const autoY = minY < 0 ? parseFloat((-minY * scale).toFixed(4)) : 0.0;
+                                unit.YOffset = autoY;
+                                if (formFields.YOffset && selectedUnitId === unit.UnitId) {
+                                    formFields.YOffset.value = autoY;
+                                }
+                                if (!units.ModelOffsets) units.ModelOffsets = {};
+                                units.ModelOffsets[newModelPath] = autoY;
+                                saveChanges();
+                            }
+                        });
+                    }
+                }
                 saveChanges();
                 updateAllThumbnails();
             }
@@ -342,7 +427,7 @@
                 const knownTopKeys = [
                     'MapProperties', 'CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps',
                     'CustomAbilities', 'CustomItems', 'CustomUpgrades', 'CustomWeapons', 'Assets', 
-                    'ModelOffsets', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelNormalModes',
+                    'ModelOffsets', 'ModelScales', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelNormalModes',
                     'ModelIgnorePlayerColor'
                 ];
                 for (const [key, val] of Object.entries(units)) {
@@ -529,6 +614,13 @@
                 if (callback) {
                     callback(message.uri);
                     delete resolveCallbacks[message.requestId];
+                }
+                break;
+            case 'getModelMinYResult':
+                const minYCallback = pendingMinYCallbacks[message.requestId];
+                if (minYCallback) {
+                    minYCallback(message.minY);
+                    delete pendingMinYCallbacks[message.requestId];
                 }
                 break;
         }
@@ -733,6 +825,19 @@
                 }
             } else if (key === 'NormalMode') {
                 element.value = val || unit.NormalMode || 'Flat';
+            } else if (key === 'Scale') {
+                const defaultScale = getDomainDefaultScale(activeDomain);
+                element.value = (val !== undefined && val !== null && val !== '') ? val : defaultScale;
+            } else if (key === 'YOffset') {
+                if (val !== undefined && val !== null && val !== '') {
+                    element.value = val;
+                } else if (unit.ModelPath) {
+                    const scale = (unit.Scale !== undefined && unit.Scale > 0) ? unit.Scale : getDomainDefaultScale(activeDomain);
+                    const autoY = getAutoCalculatedYOffsetDirect(unit.ModelPath, scale, activeDomain);
+                    element.value = autoY !== null ? autoY : 0.0;
+                } else {
+                    element.value = '';
+                }
             } else if (val === undefined || val === null) {
                 element.value = '';
             } else {
@@ -3498,11 +3603,38 @@
                             domain === 'resources' ? units.CustomResources :
                             domain === 'props' ? units.CustomProps : units.CustomUnits;
 
+        const defaultScale = getDomainDefaultScale(domain);
+
+        let defaultModelPath = '';
+        let defaultYOffset = 0.0;
+        const glbAssets = (units.Assets && units.Assets.glb) ? units.Assets.glb : {};
+        const catGlbs = glbAssets[domain] || (domain === 'buildings' ? glbAssets['building'] : null) || {};
+        const glbKeys = Object.keys(catGlbs);
+        if (glbKeys.length > 0) {
+            defaultModelPath = glbKeys[0];
+            const directY = getAutoCalculatedYOffsetDirect(defaultModelPath, defaultScale, domain);
+            defaultYOffset = directY !== null ? directY : parseFloat((1.0 * defaultScale).toFixed(4));
+        }
+
+        if (defaultModelPath && defaultYOffset > 0) {
+            if (!units.ModelOffsets) units.ModelOffsets = {};
+            if (units.ModelOffsets[defaultModelPath] === undefined) {
+                units.ModelOffsets[defaultModelPath] = defaultYOffset;
+            }
+            if (!units.ModelScales) units.ModelScales = {};
+            if (units.ModelScales[defaultModelPath] === undefined) {
+                units.ModelScales[defaultModelPath] = defaultScale;
+            }
+        }
+
         if (domain === 'props') {
             targetArray.push({
                 UnitId: nextId,
                 Name: `New ${prefix}`,
                 Description: `A decorative ${prefix.toLowerCase()} prop.`,
+                ModelPath: defaultModelPath,
+                Scale: defaultScale,
+                YOffset: defaultYOffset,
                 PathingType: defaultPathing,
                 Brightness: 0.5,
                 NormalMode: 'Flat',
@@ -3513,10 +3645,41 @@
                 UnitId: nextId,
                 Name: `New ${prefix}`,
                 Description: `Harvestable ${prefix.toLowerCase()} deposit.`,
+                ModelPath: defaultModelPath,
+                Scale: defaultScale,
+                YOffset: defaultYOffset,
                 MaxCapacity: 2000.0,
                 HarvestRate: 10.0,
                 GrowthRate: 0.0,
                 MaxWorkers: 5,
+                PathingType: defaultPathing,
+                Brightness: 0.5,
+                NormalMode: 'Flat',
+                NormalizeLuminance: true
+            });
+        } else if (domain === 'buildings') {
+            targetArray.push({
+                UnitId: nextId,
+                Name: `New ${prefix}`,
+                Description: `A new ${prefix.toLowerCase()} entity.`,
+                ModelPath: defaultModelPath,
+                Scale: defaultScale,
+                YOffset: defaultYOffset,
+                MaxHp: 1000.0,
+                Damage: 0.0,
+                Range: 0.0,
+                Armor: 10.0,
+                Speed: 0.0,
+                AttackCooldown: 0.0,
+                ScanRadius: 10.0,
+                CostGold: 200.0,
+                CostWood: 100.0,
+                CostStone: 50.0,
+                ProductionTime: 15.0,
+                PopCost: 0,
+                AttackType: 'none',
+                ArmorType: defaultArmor,
+                GoldBounty: 0.0,
                 PathingType: defaultPathing,
                 Brightness: 0.5,
                 NormalMode: 'Flat',
@@ -3527,6 +3690,9 @@
                 UnitId: nextId,
                 Name: `New ${prefix}`,
                 Description: `A new ${prefix.toLowerCase()} entity.`,
+                ModelPath: defaultModelPath,
+                Scale: defaultScale,
+                YOffset: defaultYOffset,
                 MaxHp: 100.0,
                 Damage: 10.0,
                 Range: 2.0,
@@ -4306,6 +4472,38 @@
 
             pushToUndoStack();
             targetUnit[key] = parsedVal;
+            if (key === 'Scale') {
+                const newScale = parsedVal;
+                if (targetUnit.ModelPath && newScale > 0) {
+                    const directY = getAutoCalculatedYOffsetDirect(targetUnit.ModelPath, newScale, getActiveDomain());
+                    if (directY !== null) {
+                        targetUnit.YOffset = directY;
+                        if (formFields.YOffset) formFields.YOffset.value = directY;
+                        if (!units.ModelOffsets) units.ModelOffsets = {};
+                        units.ModelOffsets[targetUnit.ModelPath] = directY;
+                    } else {
+                        requestModelMinY(targetUnit.ModelPath, (minY) => {
+                            if (minY !== null) {
+                                const autoY = minY < 0 ? parseFloat((-minY * newScale).toFixed(4)) : 0.0;
+                                targetUnit.YOffset = autoY;
+                                if (formFields.YOffset && selectedUnitId === targetUnit.UnitId) {
+                                    formFields.YOffset.value = autoY;
+                                }
+                                if (!units.ModelOffsets) units.ModelOffsets = {};
+                                units.ModelOffsets[targetUnit.ModelPath] = autoY;
+                                saveChanges();
+                            }
+                        });
+                    }
+                }
+                if (!units.ModelScales) units.ModelScales = {};
+                if (targetUnit.ModelPath) units.ModelScales[targetUnit.ModelPath] = newScale;
+            } else if (key === 'YOffset') {
+                if (targetUnit.ModelPath) {
+                    if (!units.ModelOffsets) units.ModelOffsets = {};
+                    units.ModelOffsets[targetUnit.ModelPath] = parsedVal;
+                }
+            }
             if (key === 'Name') {
                 editorTitle.textContent = parsedVal || 'Edit Unit';
                 renderUnitList();

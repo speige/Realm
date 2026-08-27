@@ -119,11 +119,6 @@ public partial class Prop3D : StaticBody3D
 			torusMesh.InnerRadius = 1.0f;
 			torusMesh.OuterRadius = 1.2f;
 		}
-		else if (PropId == "tree" || PropId.Contains("tree"))
-		{
-			torusMesh.InnerRadius = 3.6f;
-			torusMesh.OuterRadius = 4.2f;
-		}
 		else
 		{
 			torusMesh.InnerRadius = 1.2f;
@@ -221,11 +216,6 @@ public partial class Prop3D : StaticBody3D
 			torusMesh.InnerRadius = 1.0f;
 			torusMesh.OuterRadius = 1.2f;
 		}
-		else if (PropId == "tree" || PropId.Contains("tree"))
-		{
-			torusMesh.InnerRadius = 3.6f;
-			torusMesh.OuterRadius = 4.2f;
-		}
 		else
 		{
 			torusMesh.InnerRadius = 1.2f;
@@ -289,11 +279,6 @@ public partial class Prop3D : StaticBody3D
 			boxShape.Size = new Vector3(0.5f, 6.0f, 2.0f);
 			collisionShape.Position = new Vector3(0.8f, 3.0f, 0);
 		}
-		else if (PropId == "tree" || PropId.Contains("tree"))
-		{
-			boxShape.Size = new Vector3(4.5f, 13.5f, 4.5f);
-			collisionShape.Position = new Vector3(0, 6.75f, 0);
-		}
 		else
 		{
 			boxShape.Size = new Vector3(1.5f, 4.5f, 1.5f);
@@ -310,6 +295,16 @@ public partial class Prop3D : StaticBody3D
 		if (visual != null)
 		{
 			visual.Position = new Vector3(visual.Position.X, yOffset, visual.Position.Z);
+		}
+	}
+
+	public void UpdateVisualScale(float globalScale)
+	{
+		var visual = GetNodeOrNull<Node3D>("VisualModel");
+		if (visual != null && GodotObject.IsInstanceValid(visual))
+		{
+			visual.Scale = new Vector3(globalScale, globalScale, globalScale);
+			UpdateLodVisibility();
 		}
 	}
 
@@ -333,13 +328,11 @@ public partial class Prop3D : StaticBody3D
 			{
 				visual = new Node3D();
 				visual.Name = "VisualModel";
-				if (PropId == "tree" || PropId.Contains("tree"))
-				{
-					visual.Scale = new Vector3(3f, 3f, 3f);
-				}
 				string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(PropId) : "";
 				float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
+				float globalScale = GameHost.Instance != null ? GameHost.Instance.GetModelScale(this) : 1.0f;
 				visual.Position = new Vector3(0, yOffset, 0);
+				visual.Scale = new Vector3(globalScale, globalScale, globalScale);
 				AddChild(visual);
 
 				string modelPath = ResolvePropModelPath(PropId);

@@ -766,105 +766,129 @@ public partial class InGameHUD : Control
 		}
 	}
 
+	private bool _isGeneratingMinimap = false;
+	private bool _minimapNeedsRegen = false;
+
 	public async void RegenerateMinimapBackground()
 	{
-		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-
-		var minimapBg = _minimapArea.GetChildCount() > 0 ? _minimapArea.GetChild<TextureRect>(0) : null;
-		if (minimapBg == null) return;
-
-		var shroudMesh = GameHost.Instance?.MainNode?.GetNodeOrNull<MeshInstance3D>("3DShroudMesh") ?? GameHost.Instance?.MainNode?.GetNodeOrNull<MeshInstance3D>("3DFogMesh");
-		bool wasVisible = false;
-		if (shroudMesh != null)
+		if (_isGeneratingMinimap)
 		{
-			wasVisible = shroudMesh.Visible;
-			shroudMesh.Visible = false;
+			_minimapNeedsRegen = true;
+			return;
 		}
-
-		bool wasPathingVisible = false;
-		if (GameHost.Instance?.PathingOverlayMesh != null)
-		{
-			wasPathingVisible = GameHost.Instance.PathingOverlayMesh.Visible;
-			GameHost.Instance.PathingOverlayMesh.Visible = false;
-		}
-
-		var unitsList = GameHost.Instance?.AllUnits;
-		var unitVisibility = new System.Collections.Generic.List<(Unit3D unit, bool visible)>();
-		if (unitsList != null)
-		{
-			foreach (var u in unitsList)
-			{
-				if (u != null && GodotObject.IsInstanceValid(u))
-				{
-					unitVisibility.Add((u, u.Visible));
-					u.Visible = false;
-				}
-			}
-		}
+		_isGeneratingMinimap = true;
 
 		try
 		{
-			var viewport = new SubViewport();
-			viewport.Size = new Vector2I(256, 256);
-			viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Once;
-			AddChild(viewport);
-
-			var camera = new Camera3D();
-			camera.Projection = Camera3D.ProjectionType.Orthogonal;
-			camera.Size = 250f;
-			camera.Far = 200f;
-			camera.Position = new Vector3(0, 100, 0);
-			camera.RotationDegrees = new Vector3(-90, 0, 0);
-			viewport.AddChild(camera);
-
-			EditableTerrain.IsMinimapRendering = true;
-			EditableTerrain.Instance?.BeginMinimapCapture();
-			PropMultiMeshManager.Instance?.SetAllNodesVisible(true);
-			try
+			do
 			{
+				_minimapNeedsRegen = false;
+				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
-				var texture = viewport.GetTexture();
-				if (texture != null)
+				var minimapBg = _minimapArea.GetChildCount() > 0 ? _minimapArea.GetChild<TextureRect>(0) : null;
+				if (minimapBg == null) return;
+
+				var shroudMesh = GameHost.Instance?.MainNode?.GetNodeOrNull<MeshInstance3D>("3DShroudMesh") ?? GameHost.Instance?.MainNode?.GetNodeOrNull<MeshInstance3D>("3DFogMesh");
+				bool wasVisible = false;
+				if (shroudMesh != null)
 				{
-					var img = texture.GetImage();
-					if (img != null)
+					wasVisible = shroudMesh.Visible;
+					shroudMesh.Visible = false;
+				}
+
+				bool wasPathingVisible = false;
+				if (GameHost.Instance?.PathingOverlayMesh != null)
+				{
+					wasPathingVisible = GameHost.Instance.PathingOverlayMesh.Visible;
+					GameHost.Instance.PathingOverlayMesh.Visible = false;
+				}
+
+				var unitsList = GameHost.Instance?.AllUnits;
+				var unitVisibility = new System.Collections.Generic.List<(Unit3D unit, bool visible)>();
+				if (unitsList != null)
+				{
+					foreach (var u in unitsList)
 					{
-						var imgTexture = ImageTexture.CreateFromImage(img);
-						minimapBg.Texture = imgTexture;
+						if (u != null && GodotObject.IsInstanceValid(u))
+						{
+							unitVisibility.Add((u, u.Visible));
+							u.Visible = false;
+						}
 					}
 				}
 
-				viewport.QueueFree();
-			}
-			finally
-			{
-				EditableTerrain.Instance?.EndMinimapCapture();
-				EditableTerrain.IsMinimapRendering = false;
-			}
-		}
-		catch (Exception ex)
-		{
-			GD.PrintErr($"Failed to dynamically capture terrain minimap: {ex.Message}");
+				SubViewport viewport = null;
+				try
+				{
+					viewport = new SubViewport();
+					viewport.Size = new Vector2I(256, 256);
+					viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Once;
+					AddChild(viewport);
+
+					var camera = new Camera3D();
+					camera.Projection = Camera3D.ProjectionType.Orthogonal;
+					camera.Size = 250f;
+					camera.Far = 200f;
+					camera.Position = new Vector3(0, 100, 0);
+					camera.RotationDegrees = new Vector3(-90, 0, 0);
+					viewport.AddChild(camera);
+
+					EditableTerrain.IsMinimapRendering = true;
+					EditableTerrain.Instance?.BeginMinimapCapture();
+					PropMultiMeshManager.Instance?.SetAllNodesVisible(true);
+					try
+					{
+						await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+
+						var texture = viewport.GetTexture();
+						if (texture != null)
+						{
+							var img = texture.GetImage();
+							if (img != null)
+							{
+								var imgTexture = ImageTexture.CreateFromImage(img);
+								minimapBg.Texture = imgTexture;
+							}
+						}
+					}
+					finally
+					{
+						EditableTerrain.Instance?.EndMinimapCapture();
+						EditableTerrain.IsMinimapRendering = false;
+					}
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"Failed to dynamically capture terrain minimap: {ex.Message}");
+				}
+				finally
+				{
+					if (viewport != null && GodotObject.IsInstanceValid(viewport))
+					{
+						viewport.QueueFree();
+					}
+					if (shroudMesh != null && GodotObject.IsInstanceValid(shroudMesh))
+					{
+						shroudMesh.Visible = wasVisible;
+					}
+					if (GameHost.Instance?.PathingOverlayMesh != null)
+					{
+						GameHost.Instance.PathingOverlayMesh.Visible = wasPathingVisible;
+					}
+					foreach (var (u, vis) in unitVisibility)
+					{
+						if (u != null && GodotObject.IsInstanceValid(u))
+						{
+							u.Visible = vis;
+						}
+					}
+				}
+			} while (_minimapNeedsRegen);
 		}
 		finally
 		{
-			if (shroudMesh != null && GodotObject.IsInstanceValid(shroudMesh))
-			{
-				shroudMesh.Visible = wasVisible;
-			}
-			if (GameHost.Instance?.PathingOverlayMesh != null)
-			{
-				GameHost.Instance.PathingOverlayMesh.Visible = wasPathingVisible;
-			}
-			foreach (var (u, vis) in unitVisibility)
-			{
-				if (u != null && GodotObject.IsInstanceValid(u))
-				{
-					u.Visible = vis;
-				}
-			}
+			_isGeneratingMinimap = false;
 		}
 	}
 

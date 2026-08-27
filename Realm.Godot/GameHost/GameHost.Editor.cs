@@ -16,6 +16,7 @@ using Realm.Godot.Utils;
 public partial class GameHost
 {
 	public readonly Dictionary<string, float> ModelYOffsets = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, float> ModelScales = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, float> ModelCollisionCircleRatios = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, float> ModelObstacleRadii = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, float> ModelBrightness = new(StringComparer.OrdinalIgnoreCase);
@@ -195,6 +196,98 @@ public partial class GameHost
 			else if (_editorPreviewNode is Unit3D previewUnit)
 			{
 				previewUnit.UpdateModelYOffset(offset);
+			}
+		}
+
+		_modelYOffsetSavePending = true;
+		EditorHasUnsavedChanges = true;
+	}
+
+	public float GetModelScale(object objOrId)
+	{
+		if (objOrId == null) return 1.0f;
+		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
+		string normPrimary = NormalizeModelAssetKey(primaryKey);
+		if (!string.IsNullOrEmpty(normPrimary) && ModelScales.TryGetValue(normPrimary, out float val1) && val1 > 0f)
+			return val1;
+
+		string assetKey = GetModelAssetKey(objOrId);
+		string normAsset = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(normAsset) && ModelScales.TryGetValue(normAsset, out float val2) && val2 > 0f)
+			return val2;
+
+		if (!string.IsNullOrEmpty(primaryKey))
+		{
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.Scale > 0f) return meta.Scale;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.Scale > 0f) return resMeta.Scale;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.Scale > 0f) return propMeta.Scale;
+		}
+
+		if (!string.IsNullOrEmpty(normAsset))
+		{
+			if (UnitRegistry.TryGetValue(normAsset, out var meta2) && meta2.Scale > 0f) return meta2.Scale;
+			if (ResourceRegistry.TryGetValue(normAsset, out var resMeta2) && resMeta2.Scale > 0f) return resMeta2.Scale;
+			if (PropRegistry.TryGetValue(normAsset, out var propMeta2) && propMeta2.Scale > 0f) return propMeta2.Scale;
+		}
+
+		if (objOrId is Unit3D unit && GodotObject.IsInstanceValid(unit))
+		{
+			if (unit.IsResource) return 2.75f;
+			if (unit.IsBuilding) return 1.5f;
+			return 1.0f;
+		}
+
+		if (!string.IsNullOrEmpty(primaryKey))
+		{
+			if (ResourceRegistry.ContainsKey(primaryKey)) return 2.75f;
+			if (UnitRegistry.TryGetValue(primaryKey, out var u)) return u.Speed == 0f ? 1.5f : 1.0f;
+			if (PropRegistry.ContainsKey(primaryKey)) return 1.25f;
+		}
+
+		if (!string.IsNullOrEmpty(normAsset))
+		{
+			if (ResourceRegistry.ContainsKey(normAsset)) return 2.75f;
+			if (UnitRegistry.TryGetValue(normAsset, out var u)) return u.Speed == 0f ? 1.5f : 1.0f;
+			if (PropRegistry.ContainsKey(normAsset)) return 1.25f;
+		}
+
+		return 1.0f;
+	}
+
+	public void SetModelScale(string assetKey, float scale)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (string.IsNullOrEmpty(norm)) return;
+
+		float clampedScale = Mathf.Clamp(scale, 0.05f, 20.0f);
+		ModelScales[norm] = clampedScale;
+
+		foreach (var prop in AllProps)
+		{
+			if (GodotObject.IsInstanceValid(prop) && MatchesEntityOrAssetKey(prop, norm))
+			{
+				prop.UpdateVisualScale(clampedScale);
+			}
+		}
+		PropMultiMeshManager.Instance?.MarkDirty(norm);
+
+		foreach (var unit in AllUnits)
+		{
+			if (GodotObject.IsInstanceValid(unit) && MatchesEntityOrAssetKey(unit, norm))
+			{
+				unit.UpdateModelScale(clampedScale);
+			}
+		}
+
+		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode) && MatchesEntityOrAssetKey(_editorPreviewNode, norm))
+		{
+			if (_editorPreviewNode is Prop3D previewProp)
+			{
+				previewProp.UpdateVisualScale(clampedScale);
+			}
+			else if (_editorPreviewNode is Unit3D previewUnit)
+			{
+				previewUnit.UpdateModelScale(clampedScale);
 			}
 		}
 
@@ -543,6 +636,9 @@ public partial class GameHost
 
 		if (objOrNode is Unit3D unit && GodotObject.IsInstanceValid(unit))
 		{
+			float globalScale = GetModelScale(unit);
+			unit.UpdateModelScale(globalScale);
+
 			float yOffset = GetModelYOffset(unit);
 			unit.UpdateModelYOffset(yOffset);
 
@@ -577,6 +673,9 @@ public partial class GameHost
 		}
 		else if (objOrNode is Prop3D prop && GodotObject.IsInstanceValid(prop))
 		{
+			float globalScale = GetModelScale(prop);
+			prop.UpdateVisualScale(globalScale);
+
 			float yOffset = GetModelYOffset(prop);
 			prop.UpdateVisualYOffset(yOffset);
 
@@ -838,12 +937,24 @@ public partial class GameHost
 	private const float MaxSafeModelYOffset = 50f;
 	private const float MinSafeModelCollisionRatio = 0.1f;
 	private const float MaxSafeModelCollisionRatio = 10f;
+	private const float MinSafeModelScale = 0.01f;
+	private const float MaxSafeModelScale = 20f;
 
 	private bool IsValidModelYOffset(string assetKey, float val)
 	{
 		if (!float.IsFinite(val) || Math.Abs(val) > MaxSafeModelYOffset)
 		{
 			GD.PushWarning($"Ignoring invalid y_offset {val} for model '{assetKey}' (|offset| > {MaxSafeModelYOffset}).");
+			return false;
+		}
+		return true;
+	}
+
+	private bool IsValidModelScale(string assetKey, float val)
+	{
+		if (!float.IsFinite(val) || val < MinSafeModelScale || val > MaxSafeModelScale)
+		{
+			GD.PushWarning($"Ignoring invalid scale {val} for model '{assetKey}' (expected {MinSafeModelScale}..{MaxSafeModelScale}).");
 			return false;
 		}
 		return true;
@@ -879,6 +990,7 @@ public partial class GameHost
 			if (root == null) return;
 
 			ModelYOffsets.Clear();
+			ModelScales.Clear();
 			ModelCollisionCircleRatios.Clear();
 			ModelObstacleRadii.Clear();
 			ModelBrightness.Clear();
@@ -893,6 +1005,17 @@ public partial class GameHost
 					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float val) && IsValidModelYOffset(kvp.Key, val))
 					{
 						ModelYOffsets[NormalizeModelAssetKey(kvp.Key)] = val;
+					}
+				}
+			}
+
+			if (root.ContainsKey("ModelScales") && root["ModelScales"] is System.Text.Json.Nodes.JsonObject scalesObj)
+			{
+				foreach (var kvp in scalesObj)
+				{
+					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float val) && IsValidModelScale(kvp.Key, val))
+					{
+						ModelScales[NormalizeModelAssetKey(kvp.Key)] = val;
 					}
 				}
 			}
@@ -979,6 +1102,34 @@ public partial class GameHost
 							{
 								ModelYOffsets[normKey] = yVal;
 							}
+							if (uObj.ContainsKey("Scale") && float.TryParse(uObj["Scale"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float sVal) && sVal > 0f)
+							{
+								ModelScales[normKey] = sVal;
+							}
+							else if (uObj.ContainsKey("ModelScale") && float.TryParse(uObj["ModelScale"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float msVal) && msVal > 0f)
+							{
+								ModelScales[normKey] = msVal;
+							}
+							else if (!ModelScales.ContainsKey(normKey))
+							{
+								float defaultScale = arrKey switch
+								{
+									"CustomResources" => 2.75f,
+									"CustomBuildings" => 1.2f,
+									"CustomProps" => 1.0f,
+									"CustomUnits" => 1.5f,
+									_ => 1.5f
+								};
+								ModelScales[normKey] = defaultScale;
+							}
+							if (uObj.ContainsKey("ModelPath") && uObj["ModelPath"]?.ToString() is string mPath && !string.IsNullOrEmpty(mPath))
+							{
+								string normModel = NormalizeModelAssetKey(mPath);
+								if (ModelScales.TryGetValue(normKey, out float assignedScale) && !ModelScales.ContainsKey(normModel))
+								{
+									ModelScales[normModel] = assignedScale;
+								}
+							}
 							if (uObj.ContainsKey("CollisionCircle") && float.TryParse(uObj["CollisionCircle"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float rVal))
 							{
 								ModelCollisionCircleRatios[normKey] = rVal;
@@ -1035,6 +1186,20 @@ public partial class GameHost
 									if (IsValidModelYOffset(itemKvp.Key, yVal))
 									{
 										ModelYOffsets[NormalizeModelAssetKey(itemKvp.Key)] = yVal;
+									}
+								}
+								if (itemObj.ContainsKey("scale") && float.TryParse(itemObj["scale"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float sVal))
+								{
+									if (IsValidModelScale(itemKvp.Key, sVal))
+									{
+										ModelScales[NormalizeModelAssetKey(itemKvp.Key)] = sVal;
+									}
+								}
+								else if (itemObj.ContainsKey("model_scale") && float.TryParse(itemObj["model_scale"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float msVal))
+								{
+									if (IsValidModelScale(itemKvp.Key, msVal))
+									{
+										ModelScales[NormalizeModelAssetKey(itemKvp.Key)] = msVal;
 									}
 								}
 								if (itemObj.ContainsKey("collision_circle_ratio") && float.TryParse(itemObj["collision_circle_ratio"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float rVal))
@@ -1111,6 +1276,7 @@ public partial class GameHost
 	public void ClearMapEditorState()
 	{
 		ModelYOffsets.Clear();
+		ModelScales.Clear();
 		ModelCollisionCircleRatios.Clear();
 		ModelObstacleRadii.Clear();
 		ModelBrightness.Clear();
@@ -1194,6 +1360,10 @@ public partial class GameHost
 			foreach (var kvp in ModelYOffsets) offsetsObj[kvp.Key] = kvp.Value;
 			root["ModelOffsets"] = offsetsObj;
 
+			System.Text.Json.Nodes.JsonObject scalesObj = new System.Text.Json.Nodes.JsonObject();
+			foreach (var kvp in ModelScales) scalesObj[kvp.Key] = kvp.Value;
+			root["ModelScales"] = scalesObj;
+
 			System.Text.Json.Nodes.JsonObject circlesObj = new System.Text.Json.Nodes.JsonObject();
 			foreach (var kvp in ModelCollisionCircleRatios) circlesObj[kvp.Key] = kvp.Value;
 			root["ModelCollisionCircleRatios"] = circlesObj;
@@ -1232,6 +1402,7 @@ public partial class GameHost
 							string uId = uObj["UnitId"]?.ToString() ?? "";
 							string normKey = NormalizeModelAssetKey(uId);
 							if (ModelYOffsets.TryGetValue(normKey, out float yVal)) uObj["YOffset"] = yVal;
+							if (ModelScales.TryGetValue(normKey, out float sVal)) uObj["Scale"] = sVal;
 							if (ModelCollisionCircleRatios.TryGetValue(normKey, out float rVal)) uObj["CollisionCircle"] = rVal;
 							if (ModelBrightness.TryGetValue(normKey, out float bVal)) uObj["Brightness"] = bVal;
 							if (ModelColorTint.TryGetValue(normKey, out Color tColor)) uObj["Tint"] = "#" + tColor.ToHtml(false);
@@ -1256,6 +1427,7 @@ public partial class GameHost
 						{
 							string normKey = NormalizeModelAssetKey(key);
 							bool hasY = ModelYOffsets.TryGetValue(normKey, out float yVal);
+							bool hasScale = ModelScales.TryGetValue(normKey, out float sVal);
 							bool hasRatio = ModelCollisionCircleRatios.TryGetValue(normKey, out float rVal);
 							bool hasRadius = ModelObstacleRadii.TryGetValue(normKey, out float radVal);
 							bool hasBright = ModelBrightness.TryGetValue(normKey, out float brightVal);
@@ -1263,12 +1435,13 @@ public partial class GameHost
 							bool hasNl = ModelNormalizeLuminance.TryGetValue(normKey, out bool nlVal);
 							bool hasIpc = ModelIgnorePlayerColor.TryGetValue(normKey, out bool ipcVal);
 
-							if (hasY || hasRatio || hasRadius || hasBright || hasNm || hasNl || hasIpc)
+							if (hasY || hasScale || hasRatio || hasRadius || hasBright || hasNm || hasNl || hasIpc)
 							{
 								var nodeVal = catDict[key];
 								if (nodeVal is System.Text.Json.Nodes.JsonObject itemObj)
 								{
 									if (hasY) itemObj["y_offset"] = yVal;
+									if (hasScale) itemObj["scale"] = sVal;
 									if (hasRatio) itemObj["collision_circle_ratio"] = rVal;
 									if (hasRadius) itemObj["collision_radius"] = radVal;
 									if (hasBright) itemObj["brightness"] = brightVal;
@@ -1284,6 +1457,7 @@ public partial class GameHost
 										["hash"] = hashStr
 									};
 									if (hasY) newItemObj["y_offset"] = yVal;
+									if (hasScale) newItemObj["scale"] = sVal;
 									if (hasRatio) newItemObj["collision_circle_ratio"] = rVal;
 									if (hasRadius) newItemObj["collision_radius"] = radVal;
 									if (hasBright) newItemObj["brightness"] = brightVal;
@@ -1955,6 +2129,7 @@ public partial class GameHost
 		if (!UnitRegistry.ContainsKey(unitId))
 		{
 			string resolvedModelPath = GetFallbackModelPath(unitId, unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower"));
+			bool isBld = unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower");
 			var dynamicMeta = new UnitMetadata
 			{
 				Name = System.IO.Path.GetFileNameWithoutExtension(unitId).Replace("_", " "),
@@ -1962,7 +2137,8 @@ public partial class GameHost
 				Damage = 10f,
 				Range = 2f,
 				Armor = 2f,
-				Speed = (unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower")) ? 0f : 6.0f,
+				Speed = isBld ? 0f : 6.0f,
+				Scale = isBld ? 1.2f : 1.5f,
 				ProductionTime = 10f,
 				ModelPath = resolvedModelPath
 			};
@@ -2349,6 +2525,7 @@ public partial class GameHost
 				if (!UnitRegistry.ContainsKey(reqId))
 				{
 					string resolvedModelPath = GetFallbackModelPath(reqId, reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower"));
+					bool isBld = reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower");
 					var dynamicMeta = new UnitMetadata
 					{
 						Name = System.IO.Path.GetFileNameWithoutExtension(reqId).Replace("_", " "),
@@ -2356,7 +2533,8 @@ public partial class GameHost
 						Damage = 10f,
 						Range = 2f,
 						Armor = 2f,
-						Speed = (reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower")) ? 0f : 6.0f,
+						Speed = isBld ? 0f : 6.0f,
+						Scale = isBld ? 1.2f : 1.5f,
 						ProductionTime = 10f,
 						ModelPath = resolvedModelPath
 					};

@@ -77,8 +77,11 @@ public partial class PropMultiMeshManager : Node3D
 	public void MarkDirty(string assetKeyOrPropId)
 	{
 		if (string.IsNullOrEmpty(assetKeyOrPropId)) return;
-		string normKey = GameHost.Instance != null ? GameHost.Instance.NormalizeModelAssetKey(assetKeyOrPropId) : assetKeyOrPropId.ToLowerInvariant();
-		_dirtyAssetKeys.Add(normKey);
+		string normKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(assetKeyOrPropId) : assetKeyOrPropId.ToLowerInvariant();
+		if (!string.IsNullOrEmpty(normKey))
+		{
+			_dirtyAssetKeys.Add(normKey);
+		}
 	}
 
 	public void MarkAllDirty()
@@ -156,7 +159,7 @@ public partial class PropMultiMeshManager : Node3D
 			var query = Realm.Ecs.Common.QueryCache.AllPropIdentityAndPositionQuery;
 			GameHost.Instance.EcsWorld.Query(in query, (ref PropIdentity propIdComp) =>
 			{
-				string key = GameHost.Instance.NormalizeModelAssetKey(propIdComp.PropId);
+				string key = GameHost.Instance.GetModelAssetKey(propIdComp.PropId);
 				if (!string.IsNullOrEmpty(key))
 				{
 					_reusableKeysToRebuild.Add(key);
@@ -200,7 +203,7 @@ public partial class PropMultiMeshManager : Node3D
 			{
 				if (GameHost.EntityToProp3D.ContainsKey(entity)) return;
 
-				string key = GameHost.Instance.NormalizeModelAssetKey(propIdComp.PropId);
+				string key = GameHost.Instance.GetModelAssetKey(propIdComp.PropId);
 				if (key == normAssetKey)
 				{
 					float rotY = GameHost.Instance.EcsWorld.Has<RotationY>(entity)
@@ -275,6 +278,7 @@ public partial class PropMultiMeshManager : Node3D
 		}
 
 		float yOffset = GameHost.Instance.GetModelYOffset(normAssetKey);
+		float globalModelScale = GameHost.Instance.GetModelScale(normAssetKey);
 
 		// Hide any chunk groups that no longer have props
 		foreach (var kvp in group.ChunkGroups)
@@ -298,6 +302,8 @@ public partial class PropMultiMeshManager : Node3D
 		}
 
 		// Rebuild active chunk groups
+		GameHost.ModelNormalMode normalMode = GameHost.Instance.GetModelNormalMode(normAssetKey);
+
 		foreach (var kvp in _reusableChunkBucketsData)
 		{
 			Vector2I chunkKey = kvp.Key;
@@ -328,6 +334,8 @@ public partial class PropMultiMeshManager : Node3D
 				dataHash *= 1099511628211UL;
 			}
 			dataHash ^= (ulong)yOffset.GetHashCode();
+			dataHash *= 1099511628211UL;
+			dataHash ^= (ulong)globalModelScale.GetHashCode();
 
 			bool allMeshesMatch = chunkGroup.MultiMeshNodes.Count >= group.SubMeshes.Count;
 			if (allMeshesMatch)
@@ -335,7 +343,9 @@ public partial class PropMultiMeshManager : Node3D
 				for (int subIdx = 0; subIdx < group.SubMeshes.Count; subIdx++)
 				{
 					var node = chunkGroup.MultiMeshNodes[subIdx];
-					if (node.Multimesh == null || node.Multimesh.Mesh != group.SubMeshes[subIdx].Mesh || node.Multimesh.VisibleInstanceCount != instanceCount)
+					var subInfo = group.SubMeshes[subIdx];
+					Mesh targetMesh = (subInfo.Mesh is ArrayMesh am) ? GameHost.GetOrCreateNormalMesh(am, normalMode) : subInfo.Mesh;
+					if (node.Multimesh == null || node.Multimesh.Mesh != targetMesh || node.Multimesh.VisibleInstanceCount != instanceCount)
 					{
 						allMeshesMatch = false;
 						break;
@@ -351,28 +361,61 @@ public partial class PropMultiMeshManager : Node3D
 			chunkGroup.LastInstanceCount = instanceCount;
 			chunkGroup.LastDataHash = dataHash;
 
-			Vector3 minPos = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
-			Vector3 maxPos = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+			Aabb totalAabb = new Aabb();
+			bool hasAabb = false;
 
-			for (int i = 0; i < instanceCount; i++)
+			for (int subIdx = 0; subIdx < group.SubMeshes.Count; subIdx++)
 			{
-				var prop = chunkProps[i];
-				Vector3 pos = prop.Position;
-				pos.Y += yOffset;
-				minPos = minPos.Min(pos);
-				maxPos = maxPos.Max(pos);
+				var subInfo = group.SubMeshes[subIdx];
+				if (subInfo.Mesh == null) continue;
+				Aabb meshAabb = subInfo.Mesh.GetAabb();
+
+				for (int i = 0; i < instanceCount; i++)
+				{
+					var prop = chunkProps[i];
+					Vector3 pos = prop.Position;
+					pos.Y += yOffset;
+
+					float propScale = Mathf.Max(0.01f, prop.Scale * globalModelScale);
+					Basis basis = Basis.Identity.Rotated(Vector3.Up, Mathf.DegToRad(prop.RotationY)).Scaled(Vector3.One * propScale);
+					Transform3D propTransform = new Transform3D(basis, pos);
+					Transform3D finalXform = propTransform * subInfo.RelativeTransform;
+
+					Vector3 aMin = meshAabb.Position;
+					Vector3 aMax = meshAabb.End;
+					Vector3 p0 = finalXform * new Vector3(aMin.X, aMin.Y, aMin.Z);
+					Vector3 p1 = finalXform * new Vector3(aMax.X, aMin.Y, aMin.Z);
+					Vector3 p2 = finalXform * new Vector3(aMin.X, aMax.Y, aMin.Z);
+					Vector3 p3 = finalXform * new Vector3(aMax.X, aMax.Y, aMin.Z);
+					Vector3 p4 = finalXform * new Vector3(aMin.X, aMin.Y, aMax.Z);
+					Vector3 p5 = finalXform * new Vector3(aMax.X, aMin.Y, aMax.Z);
+					Vector3 p6 = finalXform * new Vector3(aMin.X, aMax.Y, aMax.Z);
+					Vector3 p7 = finalXform * new Vector3(aMax.X, aMax.Y, aMax.Z);
+
+					Vector3 instMin = p0.Min(p1).Min(p2).Min(p3).Min(p4).Min(p5).Min(p6).Min(p7);
+					Vector3 instMax = p0.Max(p1).Max(p2).Max(p3).Max(p4).Max(p5).Max(p6).Max(p7);
+					Aabb instanceAabb = new Aabb(instMin, instMax - instMin);
+
+					if (!hasAabb)
+					{
+						totalAabb = instanceAabb;
+						hasAabb = true;
+					}
+					else
+					{
+						totalAabb = totalAabb.Merge(instanceAabb);
+					}
+				}
 			}
 
-			float extraRadius = 2.0f;
-			float extraHeight = 4.0f;
-			if (normAssetKey == "tree" || normAssetKey.Contains("tree"))
+			if (!hasAabb)
 			{
-				extraRadius = 4.0f;
-				extraHeight = 12.0f;
+				Vector3 fallbackPos = chunkProps.Count > 0 ? chunkProps[0].Position : Vector3.Zero;
+				totalAabb = new Aabb(fallbackPos - new Vector3(4f, 4f, 4f), new Vector3(8f, 8f, 8f));
 			}
-			minPos -= new Vector3(extraRadius, 1.0f, extraRadius);
-			maxPos += new Vector3(extraRadius, extraHeight, extraRadius);
-			chunkGroup.Bounds = new Aabb(minPos, maxPos - minPos);
+
+			totalAabb = totalAabb.Grow(2.0f);
+			chunkGroup.Bounds = totalAabb;
 
 			for (int subIdx = 0; subIdx < group.SubMeshes.Count; subIdx++)
 			{
@@ -405,13 +448,15 @@ public partial class PropMultiMeshManager : Node3D
 					continue;
 				}
 
-				if (mm == null || mm.InstanceCount < instanceCount || mm.Mesh != subInfo.Mesh)
+				Mesh targetMesh = (subInfo.Mesh is ArrayMesh am) ? GameHost.GetOrCreateNormalMesh(am, normalMode) : subInfo.Mesh;
+
+				if (mm == null || mm.InstanceCount < instanceCount || mm.Mesh != targetMesh)
 				{
-					int allocated = Math.Max(instanceCount, mm != null ? mm.InstanceCount * 2 : 16);
+					int allocated = Math.Max(instanceCount + 16, 16);
 					mm = new MultiMesh
 					{
 						TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
-						Mesh = subInfo.Mesh,
+						Mesh = targetMesh,
 						InstanceCount = allocated
 					};
 					node.Multimesh = mm;
@@ -425,14 +470,9 @@ public partial class PropMultiMeshManager : Node3D
 					Vector3 pos = prop.Position;
 					pos.Y += yOffset;
 
-					float propScale = Mathf.Max(0.01f, prop.Scale);
+					float propScale = Mathf.Max(0.01f, prop.Scale * globalModelScale);
 					Basis basis = Basis.Identity.Rotated(Vector3.Up, Mathf.DegToRad(prop.RotationY)).Scaled(Vector3.One * propScale);
 					Transform3D propTransform = new Transform3D(basis, pos);
-
-					if (prop.PropId == "tree" || prop.PropId.Contains("tree"))
-					{
-						propTransform.Basis = propTransform.Basis.Scaled(new Vector3(3f, 3f, 3f));
-					}
 
 					Transform3D finalXform = propTransform * subInfo.RelativeTransform;
 					mm.SetInstanceTransform(i, finalXform);
@@ -460,7 +500,8 @@ public partial class PropMultiMeshManager : Node3D
 		Node prototype = Realm.Godot.Utils.ModelCache.GetModel(modelPath);
 		if (prototype == null) return null;
 
-		float scaleMultiplier = 1.0f;
+		float globalModelScale = GameHost.Instance != null ? GameHost.Instance.GetModelScale(normAssetKey) : 1.0f;
+		float scaleMultiplier = Math.Max(0.01f, globalModelScale);
 		Realm.Godot.Services.ModelOptimization.GltfDocumentExtensionMsftLod.UpdateLodVisibilityRanges(prototype, scaleMultiplier);
 
 		var meshNodes = new List<MeshInstance3D>();
@@ -501,6 +542,16 @@ public partial class PropMultiMeshManager : Node3D
 			}
 
 			group.SubMeshes.Add(subInfo);
+		}
+
+		if (group.SubMeshes.Count == 1)
+		{
+			group.SubMeshes[0].VisibilityRangeBegin = 0f;
+			group.SubMeshes[0].VisibilityRangeEnd = 0f;
+		}
+		else if (group.SubMeshes.Count > 1)
+		{
+			group.SubMeshes[^1].VisibilityRangeEnd = 0f;
 		}
 
 		prototype.QueueFree();
@@ -617,7 +668,9 @@ public partial class PropMultiMeshManager : Node3D
 		if (targetModel.StartsWith("res://") || System.IO.File.Exists(targetModel))
 			return targetModel;
 
-		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		string wsPath = GameHost.Instance != null && !string.IsNullOrEmpty(GameHost.Instance.CurrentMapDirectory)
+			? GameHost.Instance.CurrentMapDirectory
+			: Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
 		string filename = System.IO.Path.GetFileName(targetModel);
 		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
 		{

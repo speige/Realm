@@ -122,8 +122,6 @@ public partial class GltfDocumentExtensionMsftLod : GltfDocumentExtension
 
 				if (masterInstance != null)
 				{
-					ApplyLodSettings(masterInstance, 0);
-
 					Node parentNode = masterInstance.GetParent() ?? root;
 
 					if (companionLodNodes.TryGetValue(prefix, out var lodDict))
@@ -142,11 +140,7 @@ public partial class GltfDocumentExtensionMsftLod : GltfDocumentExtension
 							}
 
 							MeshInstance3D existingLodInstance = FindMeshInstanceByNameOrIndex(meshInstances, lodNodeName, lodNodeIndex);
-							if (existingLodInstance != null && existingLodInstance != masterInstance)
-							{
-								ApplyLodSettings(existingLodInstance, lodLevel);
-							}
-							else
+							if (existingLodInstance == null || existingLodInstance == masterInstance)
 							{
 								int meshIndex = lodGltfNode.Mesh;
 								if (meshIndex >= 0 && meshIndex < gltfMeshes.Count)
@@ -184,7 +178,6 @@ public partial class GltfDocumentExtensionMsftLod : GltfDocumentExtension
 											newLodInstance.Skeleton = masterInstance.Skeleton;
 										}
 
-										ApplyLodSettings(newLodInstance, lodLevel);
 										parentNode.AddChild(newLodInstance);
 										newLodInstance.Owner = root;
 										meshInstances.Add(newLodInstance);
@@ -258,31 +251,62 @@ public partial class GltfDocumentExtensionMsftLod : GltfDocumentExtension
 		return instances[0];
 	}
 
+	private static (string Prefix, int Level)? TryParseLodInfo(string name)
+	{
+		if (string.IsNullOrEmpty(name)) return null;
+
+		if (name.EndsWith("_LOD0", StringComparison.OrdinalIgnoreCase))
+			return (name.Substring(0, name.Length - 5), 0);
+		if (name.EndsWith("LOD0", StringComparison.OrdinalIgnoreCase))
+			return (name.Substring(0, name.Length - 4), 0);
+
+		int lodIdx = name.LastIndexOf("_LOD", StringComparison.OrdinalIgnoreCase);
+		int tagLen = 4;
+		if (lodIdx < 0)
+		{
+			lodIdx = name.LastIndexOf("LOD", StringComparison.OrdinalIgnoreCase);
+			tagLen = 3;
+		}
+
+		if (lodIdx >= 0 && lodIdx + tagLen < name.Length && int.TryParse(name.Substring(lodIdx + tagLen), out int level))
+		{
+			return (name.Substring(0, lodIdx), level);
+		}
+
+		return null;
+	}
+
 	private static void ConfigureExistingLodNodes(List<MeshInstance3D> meshInstances)
 	{
+		var maxLodPerPrefix = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 		foreach (var mi in meshInstances)
 		{
-			string name = mi.Name.ToString();
-			if (name.EndsWith("_LOD0", StringComparison.OrdinalIgnoreCase) || name.EndsWith("LOD0", StringComparison.OrdinalIgnoreCase))
+			var info = TryParseLodInfo(mi.Name.ToString());
+			if (info.HasValue)
 			{
-				ApplyLodSettings(mi, 0);
+				string p = info.Value.Prefix;
+				int l = info.Value.Level;
+				if (!maxLodPerPrefix.TryGetValue(p, out int currMax) || l > currMax)
+				{
+					maxLodPerPrefix[p] = l;
+				}
 			}
-			else if (name.EndsWith("_LOD1", StringComparison.OrdinalIgnoreCase) || name.EndsWith("LOD1", StringComparison.OrdinalIgnoreCase))
+		}
+
+		foreach (var mi in meshInstances)
+		{
+			var info = TryParseLodInfo(mi.Name.ToString());
+			if (info.HasValue)
 			{
-				ApplyLodSettings(mi, 1);
-			}
-			else if (name.EndsWith("_LOD2", StringComparison.OrdinalIgnoreCase) || name.EndsWith("LOD2", StringComparison.OrdinalIgnoreCase))
-			{
-				ApplyLodSettings(mi, 2);
-			}
-			else if (name.EndsWith("_LOD3", StringComparison.OrdinalIgnoreCase) || name.EndsWith("LOD3", StringComparison.OrdinalIgnoreCase))
-			{
-				ApplyLodSettings(mi, 3);
+				int level = info.Value.Level;
+				int maxLevel = maxLodPerPrefix.TryGetValue(info.Value.Prefix, out int ml) ? ml : 0;
+				bool isLast = (level >= maxLevel);
+				ApplyLodSettings(mi, level, isLast, 1.0f);
 			}
 		}
 	}
 
-	public static void ApplyLodSettings(MeshInstance3D meshInstance, int lodLevel, float scaleMultiplier = 1.0f)
+	public static void ApplyLodSettings(MeshInstance3D meshInstance, int lodLevel, bool isLastLod = false, float scaleMultiplier = 1.0f)
 	{
 		if (meshInstance == null)
 		{
@@ -295,29 +319,38 @@ public partial class GltfDocumentExtensionMsftLod : GltfDocumentExtension
 		meshInstance.VisibilityRangeFadeMode = GeometryInstance3D.VisibilityRangeFadeModeEnum.Disabled;
 		meshInstance.VisibilityRangeBeginMargin = margin;
 		meshInstance.VisibilityRangeEndMargin = margin;
+		meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
+
+		if (isLastLod || lodLevel >= 3)
+		{
+			meshInstance.VisibilityRangeBegin = lodLevel switch
+			{
+				0 => 0f,
+				1 => 45f * scale,
+				2 => 90f * scale,
+				_ => 150f * scale
+			};
+			meshInstance.VisibilityRangeEnd = 0f;
+			return;
+		}
 
 		switch (lodLevel)
 		{
 			case 0:
 				meshInstance.VisibilityRangeBegin = 0f;
-				meshInstance.VisibilityRangeEnd = 25f * scale;
-				meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
+				meshInstance.VisibilityRangeEnd = 45f * scale;
 				break;
 			case 1:
-				meshInstance.VisibilityRangeBegin = 25f * scale;
-				meshInstance.VisibilityRangeEnd = 50f * scale;
-				meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
+				meshInstance.VisibilityRangeBegin = 45f * scale;
+				meshInstance.VisibilityRangeEnd = 90f * scale;
 				break;
 			case 2:
-				meshInstance.VisibilityRangeBegin = 50f * scale;
-				meshInstance.VisibilityRangeEnd = 85f * scale;
-				meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
+				meshInstance.VisibilityRangeBegin = 90f * scale;
+				meshInstance.VisibilityRangeEnd = 150f * scale;
 				break;
-			case 3:
 			default:
-				meshInstance.VisibilityRangeBegin = 85f * scale;
+				meshInstance.VisibilityRangeBegin = 150f * scale;
 				meshInstance.VisibilityRangeEnd = 0f;
-				meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
 				break;
 		}
 	}
@@ -332,24 +365,30 @@ public partial class GltfDocumentExtensionMsftLod : GltfDocumentExtension
 		var meshInstances = new List<MeshInstance3D>();
 		CollectMeshInstances(rootNode, meshInstances);
 
+		var maxLodPerPrefix = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 		foreach (var mi in meshInstances)
 		{
-			string name = mi.Name.ToString();
-			if (name.EndsWith("_LOD0", StringComparison.OrdinalIgnoreCase) || name.EndsWith("LOD0", StringComparison.OrdinalIgnoreCase))
+			var info = TryParseLodInfo(mi.Name.ToString());
+			if (info.HasValue)
 			{
-				ApplyLodSettings(mi, 0, scaleMultiplier);
+				string p = info.Value.Prefix;
+				int l = info.Value.Level;
+				if (!maxLodPerPrefix.TryGetValue(p, out int currMax) || l > currMax)
+				{
+					maxLodPerPrefix[p] = l;
+				}
 			}
-			else if (name.EndsWith("_LOD1", StringComparison.OrdinalIgnoreCase) || name.EndsWith("LOD1", StringComparison.OrdinalIgnoreCase))
+		}
+
+		foreach (var mi in meshInstances)
+		{
+			var info = TryParseLodInfo(mi.Name.ToString());
+			if (info.HasValue)
 			{
-				ApplyLodSettings(mi, 1, scaleMultiplier);
-			}
-			else if (name.EndsWith("_LOD2", StringComparison.OrdinalIgnoreCase) || name.EndsWith("LOD2", StringComparison.OrdinalIgnoreCase))
-			{
-				ApplyLodSettings(mi, 2, scaleMultiplier);
-			}
-			else if (name.EndsWith("_LOD3", StringComparison.OrdinalIgnoreCase) || name.EndsWith("LOD3", StringComparison.OrdinalIgnoreCase))
-			{
-				ApplyLodSettings(mi, 3, scaleMultiplier);
+				int level = info.Value.Level;
+				int maxLevel = maxLodPerPrefix.TryGetValue(info.Value.Prefix, out int ml) ? ml : 0;
+				bool isLast = (level >= maxLevel);
+				ApplyLodSettings(mi, level, isLast, scaleMultiplier);
 			}
 		}
 	}
