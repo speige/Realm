@@ -56,6 +56,8 @@ public partial class GameHost
 			_unitWrapperCache.Remove(id);
 		}
 
+		_audioService?.PlayUnitSound(unit.UnitId, UnitSoundEvent.Death, unit.GlobalPosition);
+
 		SelectedUnits.Remove(unit);
 		AllUnits.Remove(unit);
 		if (unit.UnitId == "castle")

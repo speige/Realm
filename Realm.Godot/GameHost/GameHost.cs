@@ -686,6 +686,18 @@ public partial class GameHost : Node3D, IGameAPI
 		public string[]? Targets { get; set; }
 		public string[]? Weapons { get; set; }
 		public Dictionary<string, string[]>? Animations { get; set; }
+		public UnitSoundsMetadata? Sounds { get; set; }
+	}
+
+	public struct UnitSoundsMetadata
+	{
+		public string[]? OnSelect { get; set; }
+		public string[]? OnMoveOrder { get; set; }
+		public string[]? OnAttackOrder { get; set; }
+		public string[]? OnWounded { get; set; }
+		public string[]? OnDeath { get; set; }
+		public string[]? OnReady { get; set; }
+		public string[]? OnSpellCast { get; set; }
 	}
 
 	public struct WeaponMetadata
@@ -3318,6 +3330,7 @@ public class {mapName} : IMapScript
 				if (GameHost.TryGetUnit3D(targetEntity, out var targetUnit3D))
 				{
 					_fxService.SpawnDamageNumber(this, targetUnit3D.GlobalPosition, damage);
+					_audioService?.PlayUnitSound(targetUnit3D.UnitId, UnitSoundEvent.Wounded, targetUnit3D.GlobalPosition);
 				}
 			}
 		};

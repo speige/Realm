@@ -2134,6 +2134,7 @@ public partial class GameHost
 		{
 			SelectedUnits.Add(unit);
 			unit.IsSelected = true;
+			_audioService?.PlayUnitSound(unit.UnitId, UnitSoundEvent.Select, unit.GlobalPosition);
 			OnUnitSelected?.Invoke(GetUnitWrapper(unit.Entity));
 		}
 	}
@@ -2294,6 +2295,12 @@ public partial class GameHost
 			_inputService.IssueMoveCommand(selectedEntities, new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
 		}
 
+		if (selectedEntities.Count > 0)
+		{
+			var primaryUnit = SelectedUnits[0];
+			_audioService?.PlayUnitSound(primaryUnit.UnitId, UnitSoundEvent.MoveOrder, primaryUnit.GlobalPosition);
+		}
+
 		if (_multiplayerActive && !Multiplayer.IsServer())
 		{
 			QueueClientCommand(isQueued ? "move_queued" : "move", targetIds, targetPos, 0, "");
@@ -2321,6 +2328,12 @@ public partial class GameHost
 		}
 
 		_inputService.IssueAttackCommand(selectedEntities, target.Entity, isQueued);
+
+		if (selectedEntities.Count > 0)
+		{
+			var primaryUnit = SelectedUnits[0];
+			_audioService?.PlayUnitSound(primaryUnit.UnitId, UnitSoundEvent.AttackOrder, primaryUnit.GlobalPosition);
+		}
 
 		if (_multiplayerActive && !Multiplayer.IsServer())
 		{
@@ -2782,6 +2795,7 @@ public partial class GameHost
 		if (SelectedUnits.Count > 0 && EcsWorld.IsAlive(SelectedUnits[0].Entity))
 		{
 			caster = GetUnitWrapper(SelectedUnits[0].Entity);
+			_audioService?.PlayUnitSound(SelectedUnits[0].UnitId, UnitSoundEvent.SpellCast, position);
 		}
 		OnSpellCast?.Invoke(caster, spellId, new System.Numerics.Vector3(position.X, position.Y, position.Z));
 
