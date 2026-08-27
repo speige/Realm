@@ -5,5 +5,6 @@
   <Project Path="Realm.MapAPI/Realm.MapAPI.csproj" />
   <Project Path="Realm.MapEditorExtension/Realm.MapEditorExtension.csproj" />
   <Project Path="Realm.Ecs.Tests/Realm.Ecs.Tests.csproj" />
+  <Project Path="Realm.Tools.Cli/Realm.Tools.Cli.csproj" />
   <Project Path="Realm.WasmBindgen/Realm.WasmBindgen.csproj" />
 </Solution>
