@@ -16,7 +16,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.WasmBindgen", "..\Rea
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.AssetPipeline", "..\Realm.AssetPipeline\Realm.AssetPipeline.csproj", "{A1111111-2222-3333-4444-555555555551}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RealmTools.Cli", "..\RealmTools.Cli\RealmTools.Cli.csproj", "{A1111111-2222-3333-4444-555555555552}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.Tools.Cli", "..\Realm.Tools.Cli\Realm.Tools.Cli.csproj", "{A1111111-2222-3333-4444-555555555552}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
