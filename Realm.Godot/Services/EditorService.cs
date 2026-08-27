@@ -8,7 +8,9 @@ using Realm.Ecs.Components.Terrain;
 using Realm.Godot.Utils;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 public class EditorService
 {
@@ -2845,5 +2847,168 @@ public class EditorService
 		if (current.Weight1 <= 0.001f) { current.Index1 = index; current.Weight1 = 0.0f; splatMatrix[x, z] = current; return; }
 		if (current.Weight2 <= 0.001f) { current.Index2 = index; current.Weight2 = 0.0f; splatMatrix[x, z] = current; return; }
 		if (current.Weight3 <= 0.001f) { current.Index3 = index; current.Weight3 = 0.0f; splatMatrix[x, z] = current; return; }
+	}
+
+	private FileSystemWatcher? _workspaceWatcher;
+	private string? _watchedDirectory;
+	private System.Threading.Timer? _debounceTimer;
+	private readonly object _watcherLock = new();
+	private long _lastProcessedMetadataWriteTime;
+	private long _lastProcessedTerrainWriteTime;
+	public static DateTime LastInternalSaveTimeUtc { get; set; } = DateTime.MinValue;
+
+	public void StartWorkspaceWatcher(string directory, Action? onMetadataChanged = null, Action? onTerrainChanged = null)
+	{
+		lock (_watcherLock)
+		{
+			StopWorkspaceWatcher();
+
+			if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+			{
+				return;
+			}
+
+			_watchedDirectory = directory;
+			try
+			{
+				_workspaceWatcher = new FileSystemWatcher(directory)
+				{
+					NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
+					IncludeSubdirectories = false,
+					EnableRaisingEvents = true
+				};
+
+				_workspaceWatcher.Changed += (s, e) => OnWorkspaceFileChanged(e.FullPath, onMetadataChanged, onTerrainChanged);
+				_workspaceWatcher.Created += (s, e) => OnWorkspaceFileChanged(e.FullPath, onMetadataChanged, onTerrainChanged);
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[EditorService] Failed to start FileSystemWatcher on {directory}: {ex.Message}");
+			}
+		}
+	}
+
+	public void StopWorkspaceWatcher()
+	{
+		lock (_watcherLock)
+		{
+			if (_workspaceWatcher != null)
+			{
+				_workspaceWatcher.EnableRaisingEvents = false;
+				_workspaceWatcher.Dispose();
+				_workspaceWatcher = null;
+			}
+			_debounceTimer?.Dispose();
+			_debounceTimer = null;
+		}
+	}
+
+	private void OnWorkspaceFileChanged(string fullPath, Action? onMetadataChanged, Action? onTerrainChanged)
+	{
+		string fileName = Path.GetFileName(fullPath).ToLowerInvariant();
+		if (fileName != "metadata.json" && fileName != "terrain.json")
+		{
+			return;
+		}
+
+		lock (_watcherLock)
+		{
+			_debounceTimer?.Dispose();
+			_debounceTimer = new System.Threading.Timer(_ =>
+			{
+				ProcessDebouncedFileChange(fullPath, fileName, onMetadataChanged, onTerrainChanged);
+			}, null, 150, Timeout.Infinite);
+		}
+	}
+
+	private void ProcessDebouncedFileChange(string fullPath, string fileName, Action? onMetadataChanged, Action? onTerrainChanged)
+	{
+		try
+		{
+			if (!File.Exists(fullPath)) return;
+
+			if ((DateTime.UtcNow - LastInternalSaveTimeUtc).TotalMilliseconds < 1500)
+			{
+				return;
+			}
+
+			long writeTime = File.GetLastWriteTimeUtc(fullPath).Ticks;
+
+			if (fileName == "metadata.json")
+			{
+				if (writeTime <= _lastProcessedMetadataWriteTime) return;
+				_lastProcessedMetadataWriteTime = writeTime;
+
+				Callable.From(() =>
+				{
+					HandleExternalMetadataChange(fullPath, onMetadataChanged);
+				}).CallDeferred();
+			}
+			else if (fileName == "terrain.json")
+			{
+				if (writeTime <= _lastProcessedTerrainWriteTime) return;
+				_lastProcessedTerrainWriteTime = writeTime;
+
+				Callable.From(() =>
+				{
+					HandleExternalTerrainChange(fullPath, onTerrainChanged);
+				}).CallDeferred();
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[EditorService] ProcessDebouncedFileChange error: {ex.Message}");
+		}
+	}
+
+	private void HandleExternalMetadataChange(string fullPath, Action? customCallback)
+	{
+		if (FloatingDialogBase.HasAnyDialogOpen)
+		{
+			MapEditorHUD.Instance?.ShowConfirmationDialog(
+				"External edits detected in metadata.json. Reload external changes or keep current dialog changes?",
+				onConfirm: () =>
+				{
+					ExecuteMetadataReload(fullPath, customCallback);
+				},
+				confirmText: "RELOAD",
+				cancelText: "KEEP CHANGES"
+			);
+		}
+		else
+		{
+			ExecuteMetadataReload(fullPath, customCallback);
+		}
+	}
+
+	private void ExecuteMetadataReload(string fullPath, Action? customCallback)
+	{
+		try
+		{
+			string dir = Path.GetDirectoryName(fullPath);
+			GameHost.Instance?.LoadUnitMetadata(dir);
+			GameHost.Instance?.LoadModelYOffsetsFromMetadataJson(dir);
+			MapEditorHUD.Instance?.ReadMetadataAndRefreshTextures();
+			MapEditorHUD.Instance?.ShowFeedback(TranslationServer.Translate("metadata.json updated externally — reloaded."));
+			customCallback?.Invoke();
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[EditorService] ExecuteMetadataReload error: {ex.Message}");
+		}
+	}
+
+	private void HandleExternalTerrainChange(string fullPath, Action? customCallback)
+	{
+		try
+		{
+			GameHost.Instance?.LoadMapFromFile(fullPath);
+			MapEditorHUD.Instance?.ShowFeedback(TranslationServer.Translate("terrain.json updated externally — reloaded."));
+			customCallback?.Invoke();
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[EditorService] HandleExternalTerrainChange error: {ex.Message}");
+		}
 	}
 }

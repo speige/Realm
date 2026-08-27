@@ -290,5 +290,10 @@
   "You haven't saved yet": "You haven't saved yet",
   "Stay": "Stay",
   "Quit": "Quit",
-  "NOTE: unavailable on your current graphics preset": "NOTE: unavailable on your current graphics preset"
+  "NOTE: unavailable on your current graphics preset": "NOTE: unavailable on your current graphics preset",
+  "metadata.json updated externally — reloaded.": "metadata.json updated externally — reloaded.",
+  "terrain.json updated externally — reloaded.": "terrain.json updated externally — reloaded.",
+  "External edits detected in metadata.json. Reload external changes or keep current dialog changes?": "External edits detected in metadata.json. Reload external changes or keep current dialog changes?",
+  "RELOAD": "RELOAD",
+  "KEEP CHANGES": "KEEP CHANGES"
 }

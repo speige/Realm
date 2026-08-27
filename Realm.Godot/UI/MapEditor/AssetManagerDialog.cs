@@ -1262,7 +1262,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				assetsObj[_currentCategory].AsObject()[fileName] = hash;
 			}
 
-			File.WriteAllText(metaPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+			MapJsonFormatter.SaveFormattedJson(metaPath, root);
 			RefreshAssetList();
 			LoadPreviewForAsset(_currentCategory, fileName);
 			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Imported asset {0} successfully."), fileName));
@@ -1318,7 +1318,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			{
 				vfxObj["columns"] = columns;
 				vfxObj["rows"] = rows;
-				File.WriteAllText(metaPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+				MapJsonFormatter.SaveFormattedJson(metaPath, root);
 			}
 		}
 		catch (Exception ex)
@@ -1346,7 +1346,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					newObj[prop.Key] = prop.Value?.DeepClone();
 				}
 				root["Assets"]["textures"][key] = newObj;
-				File.WriteAllText(metaPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+				MapJsonFormatter.SaveFormattedJson(metaPath, root);
 			}
 		}
 		catch (Exception ex)

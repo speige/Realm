@@ -106,7 +106,7 @@ public class TerrainTextureUndoAction : IEditorAction
 								sObj["UV_Scale"] = snapshot.UvScale;
 								sObj["Stochastic_Tile_Size"] = snapshot.StochasticTileSize;
 								sObj["Cross_Fade"] = snapshot.CrossFade;
-								File.WriteAllText(metadataPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+								MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 								break;
 							}
 						}

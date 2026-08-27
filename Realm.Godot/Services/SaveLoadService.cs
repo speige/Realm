@@ -357,7 +357,7 @@ public class SaveLoadService
 			});
 
 			string json = JsonSerializer.Serialize(saveData);
-			File.WriteAllText(absolutePath, json);
+			MapJsonFormatter.SaveFormattedJson(absolutePath, json);
 
 			GameHost.Instance?.SaveModelYOffsetsToMetadataJson(directory);
 

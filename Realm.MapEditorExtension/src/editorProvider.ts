@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import parseExrModule from 'parse-exr';
+import { sendGodotIpc } from './extension';
 const parseExr: (buffer: ArrayBuffer) => any = (parseExrModule as any).default || parseExrModule;
 
 export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
@@ -737,14 +738,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 }
             }
 
-            const newText = JSON.stringify(metadata, null, 2);
-            await this.updateTextDocument(document, newText);
-            await document.save();
-            this.notifyGodotReloadMetadata();
-            webview.postMessage({
-                type: 'update',
-                text: newText
-            });
+            await this.saveMetadataViaGodotIpc(document, metadata, webview);
 
             if (prunedAssetsCount > 0 || deletedFilesCount > 0) {
                 vscode.window.showInformationMessage(`Pruned ${prunedAssetsCount} unreferenced asset metadata entry(s) and deleted ${deletedFilesCount} unreferenced file(s).`);
@@ -1013,14 +1007,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             }
 
             const removedCount = initialCount - finalCount;
-            const newText = JSON.stringify(metadata, null, 2);
-            await this.updateTextDocument(document, newText);
-            await document.save();
-            this.notifyGodotReloadMetadata();
-            webview.postMessage({
-                type: 'update',
-                text: newText
-            });
+            await this.saveMetadataViaGodotIpc(document, metadata, webview);
 
             if (removedCount > 0) {
                 vscode.window.showInformationMessage(`Pruned ${removedCount} unplaced item(s) from ${domain}.`);
@@ -2210,14 +2197,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 }
             }
 
-            const finalText = JSON.stringify(freshMetadata, null, 2);
-            await this.updateTextDocument(document, finalText);
-            await document.save();
-            this.notifyGodotReloadMetadata();
-            webview.postMessage({
-                type: 'update',
-                text: finalText
-            });
+            await this.saveMetadataViaGodotIpc(document, freshMetadata, webview);
         } catch (err: any) {
             vscode.window.showErrorMessage(`Failed to import asset: ${err.message}`);
         }
@@ -2299,10 +2279,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 metadata.Assets[toCategory][key] = itemVal || 'hash';
             }
 
-            const finalText = JSON.stringify(metadata, null, 2);
-            await this.updateTextDocument(document, finalText);
-            await document.save();
-            this.notifyGodotReloadMetadata();
+            await this.saveMetadataViaGodotIpc(document, metadata);
             vscode.window.showInformationMessage(`Migrated asset '${key}' to ${toCategory}${toSubCategory ? '/' + toSubCategory : ''}`);
         } catch (err: any) {
             vscode.window.showErrorMessage(`Failed to migrate asset: ${err.message}`);
@@ -2428,29 +2405,43 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         }
     }
 
-    private notifyGodotReloadMetadata(): void {
-        const http = require('http');
-        const ports = [8092, 8093];
-        const postData = JSON.stringify({ action: 'reloadMetadata' });
-        for (const port of ports) {
-            try {
-                const req = http.request({
-                    hostname: '127.0.0.1',
-                    port: port,
-                    path: '/api/',
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Content-Length': Buffer.byteLength(postData)
-                    },
-                    timeout: 1000
-                }, () => {});
-                req.on('error', () => {});
-                req.write(postData);
-                req.end();
-            } catch {
+    private async saveMetadataViaGodotIpc(document: vscode.TextDocument, metadata: any, webview?: vscode.Webview): Promise<void> {
+        const rawJson = typeof metadata === 'string' ? metadata : JSON.stringify(metadata);
+        try {
+            const response = await sendGodotIpc({
+                action: 'formatAndSaveJson',
+                filePath: document.uri.fsPath,
+                content: rawJson
+            });
+
+            if (response && response.success && typeof response.formattedContent === 'string') {
+                await this.updateTextDocument(document, response.formattedContent);
+                if (webview) {
+                    webview.postMessage({
+                        type: 'update',
+                        text: response.formattedContent
+                    });
+                }
+                return;
             }
+        } catch (err) {
+            console.error('[RealmExtension] saveMetadataViaGodotIpc failed, falling back:', err);
         }
+
+        const fallbackText = typeof metadata === 'string' ? metadata : JSON.stringify(metadata, null, 2);
+        await this.updateTextDocument(document, fallbackText);
+        await document.save();
+        this.notifyGodotReloadMetadata();
+        if (webview) {
+            webview.postMessage({
+                type: 'update',
+                text: fallbackText
+            });
+        }
+    }
+
+    private notifyGodotReloadMetadata(): void {
+        sendGodotIpc({ action: 'reloadMetadata' }).catch(() => {});
     }
 
     private getHtmlForWebview(webview: vscode.Webview): string {

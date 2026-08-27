@@ -327,12 +327,15 @@ public partial class MapEditorHUD : Control
 	public const string TempWorkspaceGodotPath = "user://temp_map_workspace";
 
 	private string _tempWorkspacePath;
+	public string TempWorkspacePath => _tempWorkspacePath;
+	private EditorService _editorService;
 	private long _lastTerrainSyncTime = 0;
 	private long _lastMetadataSyncTime = 0;
 	private bool _isSyncing = false;
 
 	public override void _ExitTree()
 	{
+		_editorService?.StopWorkspaceWatcher();
 		CloseWasmConsoleModal();
 		if (Instance == this)
 		{
@@ -363,6 +366,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			Instance = this;
+			_editorService = ServiceLocator.TryGet<EditorService>();
 			UpdateFPSVisibility();
 			_tempWorkspacePath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
 
@@ -2400,6 +2404,7 @@ public partial class MapEditorHUD : Control
 		string initMetadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 		_lastTerrainSyncTime = GetMaxTerrainWriteTime(initTerrainPath);
 		_lastMetadataSyncTime = GetLastWriteTimeSafe(initMetadataPath);
+		_editorService?.StartWorkspaceWatcher(_tempWorkspacePath);
 
 		var syncTimer = new Godot.Timer();
 		syncTimer.WaitTime = 1.0f;
@@ -2685,13 +2690,6 @@ public partial class MapEditorHUD : Control
 			
 			GameHost.Instance.EditorHasUnsavedChanges = false;
 		}
-		else if (GameHost.Instance.EditorHasUnsavedChanges)
-		{
-			GameHost.Instance.SaveMapToFile(terrainPath);
-			GameHost.Instance.EditorHasUnsavedChanges = false;
-			_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
-			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
-		}
 		
 		_isSyncing = false;
 	}
@@ -2927,6 +2925,7 @@ public partial class MapEditorHUD : Control
 				}
 				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+				_editorService?.StartWorkspaceWatcher(_tempWorkspacePath);
 				ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
 				SaveCurrentDirectoryBlake3();
 			}
@@ -2974,6 +2973,7 @@ public partial class MapEditorHUD : Control
 				}
 				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+				_editorService?.StartWorkspaceWatcher(_tempWorkspacePath);
 				ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
 				SaveCurrentDirectoryBlake3();
 			}
@@ -3474,7 +3474,7 @@ public partial class MapEditorHUD : Control
 	}
 
 
-	private void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO", Action onCancel = null)
+	public void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO", Action onCancel = null)
 	{
 		var overlay = new ColorRect();
 		overlay.Name = "ConfirmationOverlay";
@@ -5793,7 +5793,7 @@ public partial class MapEditorHUD : Control
 				weaponsArray.Add(weaponJson);
 			}
 
-			System.IO.File.WriteAllText(metadataPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 		}
 		catch (Exception ex)
@@ -5839,7 +5839,7 @@ public partial class MapEditorHUD : Control
 				}
 			}
 
-			System.IO.File.WriteAllText(metadataPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 		}
 		catch (Exception ex)
@@ -5934,7 +5934,7 @@ public partial class MapEditorHUD : Control
 				}
 			}
 
-			System.IO.File.WriteAllText(metadataPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 		}
 		catch (Exception ex)
@@ -5985,7 +5985,7 @@ public partial class MapEditorHUD : Control
 				}
 			}
 
-			System.IO.File.WriteAllText(metadataPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 		}
 		catch (Exception ex)
@@ -6556,7 +6556,7 @@ public partial class MapEditorHUD : Control
 			}
 
 			root["Assets"] = assetsObj;
-			System.IO.File.WriteAllText(metadataPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 		}
 		catch (Exception ex)
 		{

@@ -338,7 +338,7 @@ public static class MapWorkspaceService
 			}
 			else
 			{
-				File.WriteAllText(metadataPath, "{}");
+				MapJsonFormatter.SaveFormattedJson(metadataPath, "{}");
 			}
 		}
 
@@ -844,7 +844,7 @@ public static class MapWorkspaceService
 
 			if (modified)
 			{
-				File.WriteAllText(metadataPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+				MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 			}
 		}
 		catch (Exception ex)
@@ -889,7 +889,7 @@ public static class MapWorkspaceService
 
 			if (modified)
 			{
-				File.WriteAllText(metadataPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+				MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 			}
 		}
 		catch (Exception ex)
@@ -921,7 +921,7 @@ public static class MapWorkspaceService
 
 			if (modified)
 			{
-				File.WriteAllText(metadataPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+				MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 			}
 		}
 		catch (Exception ex)

@@ -1398,8 +1398,8 @@ public class {mapName} : IMapScript
 ";
 		}
 		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "MapScript.cs"), scriptContent);
-		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "metadata.json"), "{}");
-		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "terrain.json"), "{}");
+		MapJsonFormatter.SaveFormattedJson(System.IO.Path.Combine(mapDir, "metadata.json"), "{}");
+		MapJsonFormatter.SaveFormattedJson(System.IO.Path.Combine(mapDir, "terrain.json"), "{}");
 
 		EnsureMapProjectFiles(mapDir);
 	}
