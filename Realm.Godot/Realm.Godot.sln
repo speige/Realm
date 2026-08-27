@@ -14,6 +14,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.MapEditorExtension", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.WasmBindgen", "..\Realm.WasmBindgen\Realm.WasmBindgen.csproj", "{474CD144-54ED-EBE6-6A8D-9B8462DD43B6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.AssetPipeline", "..\Realm.AssetPipeline\Realm.AssetPipeline.csproj", "{A1111111-2222-3333-4444-555555555551}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.AssetPipeline.Cli", "..\Realm.AssetPipeline.Cli\Realm.AssetPipeline.Cli.csproj", "{A1111111-2222-3333-4444-555555555552}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -44,6 +48,14 @@ Global
 		{474CD144-54ED-EBE6-6A8D-9B8462DD43B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{474CD144-54ED-EBE6-6A8D-9B8462DD43B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{474CD144-54ED-EBE6-6A8D-9B8462DD43B6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1111111-2222-3333-4444-555555555551}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1111111-2222-3333-4444-555555555551}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1111111-2222-3333-4444-555555555551}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1111111-2222-3333-4444-555555555551}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1111111-2222-3333-4444-555555555552}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1111111-2222-3333-4444-555555555552}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1111111-2222-3333-4444-555555555552}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1111111-2222-3333-4444-555555555552}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -13,6 +13,7 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);vscode_embedded\**;wasi_sdk_embedded\**;.vscode\**;.godot\**;Maps\**\obj\**;Maps\**\bin\**;MapTemplate\**\obj\**;MapTemplate\**\bin\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Realm.AssetPipeline\Realm.AssetPipeline.csproj" />
     <ProjectReference Include="..\Realm.Ecs\Realm.Ecs.csproj" />
     <ProjectReference Include="..\Realm.MapAPI\Realm.MapAPI.csproj" />
   </ItemGroup>
