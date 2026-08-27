@@ -7,6 +7,7 @@ using Realm.Ecs.Components.Tags;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Resources;
 using Realm.Ecs.Components.Terrain;
+using Realm.Ecs.Components.Meta;
 using Realm.MapAPI;
 using System;
 using System.Collections.Generic;
@@ -510,7 +511,7 @@ if (_warnedNonFinitePositions.Add(entity))
 					velVec = new Vector3(vel.Value.X, vel.Value.Y, vel.Value.Z);
 				}
 
-				if (!EcsWorld.Has<MoveTo>(entity))
+				if (!EcsWorld.Has<MoveTo>(entity) && !EcsWorld.Has<Follow>(entity) && !EcsWorld.Has<InterpolationTarget>(entity))
 				{
 					velVec = Vector3.Zero;
 					if (EcsWorld.Has<Velocity>(entity))
@@ -544,6 +545,16 @@ if (_warnedNonFinitePositions.Add(entity))
 						hasLookTarget = true;
 					}
 				}
+				else if (EcsWorld.Has<Follow>(entity))
+				{
+					var targetEnt = EcsWorld.Get<Follow>(entity).Target;
+					if (EcsWorld.IsAlive(targetEnt) && EcsWorld.Has<Position>(targetEnt))
+					{
+						var tPosComp = EcsWorld.Get<Position>(targetEnt);
+						lookTargetPos = new Vector3(tPosComp.Value.X, tPosComp.Value.Y, tPosComp.Value.Z);
+						hasLookTarget = true;
+					}
+				}
 				else if (EcsWorld.Has<BuildTask>(entity))
 				{
 					var buildTask = EcsWorld.Get<BuildTask>(entity);
@@ -564,8 +575,8 @@ if (_warnedNonFinitePositions.Add(entity))
 					if (!hasDir) forceLookTarget = true;
 					else
 					{
-					float distToLook = lookTargetPos.DistanceTo(nextPos);
-					if (distToLook < LookTargetProximityDistance) forceLookTarget = true;
+						float distToLook = lookTargetPos.DistanceTo(nextPos);
+						if (distToLook < LookTargetProximityDistance || EcsWorld.Has<Follow>(entity)) forceLookTarget = true;
 					}
 				}
 
@@ -577,42 +588,57 @@ if (_warnedNonFinitePositions.Add(entity))
 					hasDir = dir.LengthSquared() > 0.01f;
 				}
 
-			if (hasDir)
-			{
-				dir = dir.Normalized();
-				float angle = Mathf.Atan2(-dir.X, -dir.Z) + Mathf.Pi;
-				var rot = unit3D.Rotation;
-
-				bool isFlying = EcsWorld.Has<PathingFlags>(entity)
-					&& ((TerrainPathingFlags)EcsWorld.Get<PathingFlags>(entity).Value & TerrainPathingFlags.Flying) != 0;
-				float turnRate = 10f;
-				if (EcsWorld.Has<MovementStats>(entity))
+				if (hasDir)
 				{
-					var moveStats = EcsWorld.Get<MovementStats>(entity);
-					if (moveStats.TurnRate > 0f) turnRate = moveStats.TurnRate;
-				}
-				rot.Y = Mathf.LerpAngle(rot.Y, angle, turnRate * fDelta);
-				unit3D.Rotation = rot;
+					dir = dir.Normalized();
+					float angle = Mathf.Atan2(-dir.X, -dir.Z) + Mathf.Pi;
+					var rot = unit3D.Rotation;
 
-				Vector3 normal = Vector3.Up;
-				if (!isFlying && GroundTerrain != null)
-				{
-					GroundTerrain.GetHeightAndNormal(nextPos.X, nextPos.Z, out _, out normal);
-				}
+					bool isFlying = EcsWorld.Has<PathingFlags>(entity)
+						&& ((TerrainPathingFlags)EcsWorld.Get<PathingFlags>(entity).Value & TerrainPathingFlags.Flying) != 0;
+					float turnRate = 10f;
+					if (EcsWorld.Has<MovementStats>(entity))
+					{
+						var moveStats = EcsWorld.Get<MovementStats>(entity);
+						if (moveStats.TurnRate > 0f) turnRate = moveStats.TurnRate;
+					}
+					rot.Y = Mathf.LerpAngle(rot.Y, angle, turnRate * fDelta);
+					unit3D.Rotation = rot;
+					if (EcsWorld.Has<RotationY>(entity))
+					{
+						EcsWorld.Set(entity, new RotationY(rot.Y));
+					}
 
-Vector3 forwardDir = new Vector3(-Mathf.Sin(unit3D.Rotation.Y), 0f, -Mathf.Cos(unit3D.Rotation.Y));
-				Vector3 up = normal.Normalized();
-				Vector3 right = forwardDir.Cross(up);
-				if (right.LengthSquared() > 0.00001f)
-				{
-					right = right.Normalized();
-					Vector3 forwardPerp = right.Cross(up).Normalized();
-					Basis targetBasis = new Basis(right, up, forwardPerp);
-					var qTarget = targetBasis.GetRotationQuaternion();
-					var qCurrent = unit3D.Basis.GetRotationQuaternion();
-					var qLerp = qCurrent.Slerp(qTarget, 10f * fDelta);
-					unit3D.Basis = new Basis(qLerp);
+					Vector3 normal = Vector3.Up;
+					if (!isFlying && GroundTerrain != null)
+					{
+						GroundTerrain.GetHeightAndNormal(nextPos.X, nextPos.Z, out _, out normal);
+					}
+
+					Vector3 forwardDir = new Vector3(-Mathf.Sin(unit3D.Rotation.Y), 0f, -Mathf.Cos(unit3D.Rotation.Y));
+					Vector3 up = normal.Normalized();
+					Vector3 right = forwardDir.Cross(up);
+					if (right.LengthSquared() > 0.00001f)
+					{
+						right = right.Normalized();
+						Vector3 forwardPerp = right.Cross(up).Normalized();
+						Basis targetBasis = new Basis(right, up, forwardPerp);
+						var qTarget = targetBasis.GetRotationQuaternion();
+						var qCurrent = unit3D.Basis.GetRotationQuaternion();
+						var qLerp = qCurrent.Slerp(qTarget, 10f * fDelta);
+						unit3D.Basis = new Basis(qLerp);
+					}
 				}
+				else if (EcsWorld.Has<InterpolationTarget>(entity))
+				{
+					var interp = EcsWorld.Get<InterpolationTarget>(entity);
+					var rot = unit3D.Rotation;
+					rot.Y = Mathf.LerpAngle(rot.Y, interp.RotationY, 10f * fDelta);
+					unit3D.Rotation = rot;
+					if (EcsWorld.Has<RotationY>(entity))
+					{
+						EcsWorld.Set(entity, new RotationY(rot.Y));
+					}
 				}
 
 				bool isLaborAnimating = (EcsWorld.Has<Gatherer>(entity) && !EcsWorld.Get<Gatherer>(entity).ReturningToBase)
