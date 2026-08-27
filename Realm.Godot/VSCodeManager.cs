@@ -577,10 +577,48 @@ public class VSCodeManager
 			string body = await reader.ReadToEndAsync();
 			var node = System.Text.Json.Nodes.JsonNode.Parse(body);
 			string action = node?["action"]?.ToString() ?? node?["type"]?.ToString();
-
 			var responseObj = new System.Text.Json.Nodes.JsonObject();
 
-			if (action == "generateSnapshot")
+			if (action == "openVfxDialog")
+			{
+				string weaponId = node["weaponId"]?.ToString() ?? "";
+				var weaponDataNode = node["weaponData"];
+
+				Callable.From(() =>
+				{
+					GameHost.WeaponMetadata meta = default;
+					if (!string.IsNullOrEmpty(weaponId) && GameHost.WeaponRegistry.TryGetValue(weaponId, out var existing))
+					{
+						meta = existing;
+					}
+					else if (weaponDataNode != null)
+					{
+						try
+						{
+							meta = System.Text.Json.JsonSerializer.Deserialize<GameHost.WeaponMetadata>(
+								weaponDataNode.ToJsonString(),
+								new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+							);
+						}
+						catch (Exception ex)
+						{
+							GD.PrintErr($"[VSCodeManager] openVfxDialog deserialize error: {ex.Message}");
+						}
+					}
+
+					if (MapEditorHUD.Instance != null)
+					{
+						MapEditorHUD.Instance.OpenWeaponVfxDialog(weaponId, meta, (updatedMeta) =>
+						{
+							MapEditorHUD.Instance.SaveCustomWeaponToMetadata(weaponId, updatedMeta);
+						});
+					}
+				}).CallDeferred();
+
+				responseObj["action"] = "openVfxDialogResult";
+				responseObj["success"] = true;
+			}
+			else if (action == "generateSnapshot")
 			{
 				string filePath = node["filePath"]?.ToString();
 				string requestId = node["requestId"]?.ToString();

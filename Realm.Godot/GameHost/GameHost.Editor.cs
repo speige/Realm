@@ -2967,7 +2967,7 @@ public partial class GameHost
 				}
 			}
 
-			if (Input.IsMouseButtonPressed(MouseButton.Left) && !_leftClickInitiatedOverUI && !IsMouseOverUI())
+			if (Input.IsMouseButtonPressed(MouseButton.Left) && !_leftClickInitiatedOverUI && !IsMouseOverUI() && !FloatingDialogBase.HasAnyDialogOpen)
 			{
 				if ((ActiveEditorTool == EditorTool.PlaceUnit || ActiveEditorTool == EditorTool.PlaceProp || ActiveEditorTool == EditorTool.PlaceDecal) && EditorClumpMode)
 				{

@@ -84,102 +84,61 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 
 	private void BuildControls()
 	{
-		var descLabel = new Label();
-		descLabel.Text = TranslationServer.Translate("Modify visual and collision settings for all instances of this model.");
-		descLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		descLabel.AddThemeFontSizeOverride("font_size", 11);
-		descLabel.AutowrapMode = TextServer.AutowrapMode.Word;
-		BodyContainer.AddChild(descLabel);
+		AddDescription(BodyContainer, TranslationServer.Translate("Modify visual and collision settings for all instances of this model."));
 
 		var grid = new VBoxContainer();
 		grid.AddThemeConstantOverride("separation", 6);
 		BodyContainer.AddChild(grid);
 
-		(_sldScale, _lblScaleValue) = CreateSliderField(grid, TranslationServer.Translate("Scale"), 0.1f, 10.0f, 0.05f, (val) =>
+		(_sldScale, _lblScaleValue) = AddSlider(grid, TranslationServer.Translate("Scale"), 0.1f, 10.0f, 0.05f, 1.0f, (val) =>
 		{
 			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
 			GameHost.Instance.SetModelScale(_currentAssetKey, val);
 		});
 
-		(_sldYOffset, _lblYOffsetValue) = CreateSliderField(grid, TranslationServer.Translate("Y-Offset"), -10.0f, 10.0f, 0.05f, (val) =>
+		(_sldYOffset, _lblYOffsetValue) = AddSlider(grid, TranslationServer.Translate("Y-Offset"), -10.0f, 10.0f, 0.05f, 0.0f, (val) =>
 		{
 			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
 			GameHost.Instance.SetModelYOffset(_currentAssetKey, val);
 		});
 
-		(_sldCollisionCircle, _lblCollisionCircleValue) = CreateSliderField(grid, TranslationServer.Translate("Collision Circle"), 0.1f, 10.0f, 0.05f, (val) =>
+		(_sldCollisionCircle, _lblCollisionCircleValue) = AddSlider(grid, TranslationServer.Translate("Collision Circle"), 0.1f, 10.0f, 0.05f, 1.0f, (val) =>
 		{
 			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
 			GameHost.Instance.SetModelCollisionCircleRatio(_currentAssetKey, val);
 		});
 
-		(_sldBrightness, _lblBrightnessValue) = CreateSliderField(grid, TranslationServer.Translate("Brightness"), 0.10f, 2.0f, 0.02f, (val) =>
+		(_sldBrightness, _lblBrightnessValue) = AddSlider(grid, TranslationServer.Translate("Brightness"), 0.10f, 2.0f, 0.02f, 0.5f, (val) =>
 		{
 			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
 			GameHost.Instance.SetModelBrightness(_currentAssetKey, val);
 		});
 
-		var tintRow = new HBoxContainer();
-		var lblTint = new Label();
-		lblTint.Text = TranslationServer.Translate("Tint");
-		lblTint.CustomMinimumSize = new Vector2(110, 0);
-		lblTint.AddThemeFontSizeOverride("font_size", 11);
-		tintRow.AddChild(lblTint);
-
-		_sldColorTint = new HSlider();
-		_sldColorTint.MinValue = 0.0f;
-		_sldColorTint.MaxValue = 1.0f;
-		_sldColorTint.Step = 0.01f;
-		_sldColorTint.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-		tintRow.AddChild(_sldColorTint);
-
-		_cpkColorTint = new ColorPickerButton();
-		_cpkColorTint.CustomMinimumSize = new Vector2(36, 22);
-		_cpkColorTint.EditAlpha = false;
-		tintRow.AddChild(_cpkColorTint);
-		grid.AddChild(tintRow);
-
-		_sldColorTint.ValueChanged += (double val) =>
-		{
-			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
-			Color tintColor = (val <= 0.0) ? new Color(1.0f, 1.0f, 1.0f) : Color.FromHsv((float)val, 0.75f, 1.0f);
-			_cpkColorTint.Color = tintColor;
-			GameHost.Instance.SetModelColorTint(_currentAssetKey, tintColor);
-		};
-
-		_cpkColorTint.ColorChanged += (Color color) =>
+		(_cpkColorTint, _sldColorTint) = AddColorPicker(grid, TranslationServer.Translate("Tint"), Colors.White, (color) =>
 		{
 			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
 			GameHost.Instance.SetModelColorTint(_currentAssetKey, color);
+		});
+
+		string[] normalOptions = new[]
+		{
+			TranslationServer.Translate("Original").ToString(),
+			TranslationServer.Translate("Smooth Normals").ToString(),
+			TranslationServer.Translate("Flat Normals").ToString()
 		};
-
-		var normalRow = new HBoxContainer();
-		var lblNormal = new Label();
-		lblNormal.Text = TranslationServer.Translate("Normals");
-		lblNormal.CustomMinimumSize = new Vector2(110, 0);
-		lblNormal.AddThemeFontSizeOverride("font_size", 11);
-		normalRow.AddChild(lblNormal);
-
-		_optNormalMode = new OptionButton();
-		_optNormalMode.AddItem(TranslationServer.Translate("Original"), 0);
-		_optNormalMode.AddItem(TranslationServer.Translate("Smooth Normals"), 1);
-		_optNormalMode.AddItem(TranslationServer.Translate("Flat Normals"), 2);
-		_optNormalMode.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-		_optNormalMode.ItemSelected += (long index) =>
+		_optNormalMode = AddOptionDropdown(grid, TranslationServer.Translate("Normals"), normalOptions, 2, (idx) =>
 		{
 			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
-			GameHost.Instance.SetModelNormalMode(_currentAssetKey, (GameHost.ModelNormalMode)(int)index);
-		};
-		normalRow.AddChild(_optNormalMode);
-		grid.AddChild(normalRow);
+			GameHost.Instance.SetModelNormalMode(_currentAssetKey, (GameHost.ModelNormalMode)idx);
+		});
 
-		_chkNormalizeLuminance = CreateCheckBox(grid, TranslationServer.Translate("Normalize Luminosity"), (pressed) =>
+		_chkNormalizeLuminance = AddCheckBox(grid, TranslationServer.Translate("Normalize Luminosity"), true, (pressed) =>
 		{
 			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
 			GameHost.Instance.SetModelNormalizeLuminance(_currentAssetKey, pressed);
 		});
 
-		_chkIgnorePlayerColor = CreateCheckBox(grid, TranslationServer.Translate("Ignore Player Color"), (pressed) =>
+		_chkIgnorePlayerColor = AddCheckBox(grid, TranslationServer.Translate("Ignore Player Color"), false, (pressed) =>
 		{
 			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
 			GameHost.Instance.SetModelIgnorePlayerColor(_currentAssetKey, pressed);
@@ -280,48 +239,5 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 		GameHost.Instance.RefreshAllPlacedObjectModels(_currentAssetKey);
 		GameHost.Instance.FlushModelYOffsetSave();
 		GameHost.Instance.FlushModelCollisionCircleSave();
-	}
-
-	private (HSlider Slider, Label ValueLabel) CreateSliderField(VBoxContainer parent, string labelText, float min, float max, float step, Action<float> onChanged)
-	{
-		var row = new HBoxContainer();
-
-		var lbl = new Label();
-		lbl.Text = labelText;
-		lbl.CustomMinimumSize = new Vector2(110, 0);
-		lbl.AddThemeFontSizeOverride("font_size", 11);
-		row.AddChild(lbl);
-
-		var slider = new HSlider();
-		slider.MinValue = min;
-		slider.MaxValue = max;
-		slider.Step = step;
-		slider.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-		row.AddChild(slider);
-
-		var valLbl = new Label();
-		valLbl.Text = "0.00";
-		valLbl.CustomMinimumSize = new Vector2(40, 0);
-		valLbl.AddThemeFontSizeOverride("font_size", 11);
-		row.AddChild(valLbl);
-
-		slider.ValueChanged += (double val) =>
-		{
-			valLbl.Text = ((float)val).ToString("0.00");
-			onChanged((float)val);
-		};
-
-		parent.AddChild(row);
-		return (slider, valLbl);
-	}
-
-	private CheckBox CreateCheckBox(VBoxContainer parent, string labelText, Action<bool> onChanged)
-	{
-		var chk = new CheckBox();
-		chk.Text = labelText;
-		chk.AddThemeFontSizeOverride("font_size", 11);
-		chk.Toggled += (pressed) => onChanged(pressed);
-		parent.AddChild(chk);
-		return chk;
 	}
 }

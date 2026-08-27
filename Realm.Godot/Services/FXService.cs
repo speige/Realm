@@ -19,7 +19,7 @@ public class FXService
 		SpawnSpritesheetEffect(parent, "Assets/vfx/arcane_surge_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.035f, 6f);
 	}
 
-	public void SpawnSpritesheetEffect(Node3D parent, string texturePath, Vector3 worldPosition, int columns, int rows, float secondsPerFrame, float sizeInWorldUnits)
+	public void SpawnSpritesheetEffect(Node parent, string texturePath, Vector3 worldPosition, int columns, int rows, float secondsPerFrame, float sizeInWorldUnits)
 	{
 		Texture2D? texture = null;
 		string fullPath = texturePath;

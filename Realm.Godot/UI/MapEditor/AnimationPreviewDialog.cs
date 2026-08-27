@@ -48,39 +48,9 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 
 	private void BuildControls()
 	{
-		_viewportContainer = new SubViewportContainer();
-		_viewportContainer.CustomMinimumSize = new Vector2(360, 240);
-		_viewportContainer.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-		_viewportContainer.Stretch = true;
+		_viewportContainer = Add3DViewportContainer(BodyContainer, new Vector2(360, 240), out _subViewport, out _camera, out _light);
 		_viewportContainer.GuiInput += OnViewportGuiInput;
 		_viewportContainer.MouseDefaultCursorShape = CursorShape.Cross;
-
-		_subViewport = new SubViewport();
-		_subViewport.Size = new Vector2I(360, 240);
-		_subViewport.TransparentBg = false;
-		_subViewport.OwnWorld3D = true;
-
-		var world = new World3D();
-		var env = new Godot.Environment();
-		env.BackgroundMode = Godot.Environment.BGMode.Color;
-		env.BackgroundColor = new Color(0.11f, 0.13f, 0.17f);
-		env.AmbientLightSource = Godot.Environment.AmbientSource.Color;
-		env.AmbientLightColor = new Color(0.65f, 0.65f, 0.70f);
-		env.AmbientLightEnergy = 1.0f;
-		world.Environment = env;
-		_subViewport.World3D = world;
-
-		_light = new DirectionalLight3D();
-		_light.RotationDegrees = new Vector3(-45, 45, 0);
-		_light.LightEnergy = 1.2f;
-		_subViewport.AddChild(_light);
-
-		_camera = new Camera3D();
-		_camera.Position = new Vector3(0, 1.2f, 2.8f);
-		_subViewport.AddChild(_camera);
-
-		_viewportContainer.AddChild(_subViewport);
-		BodyContainer.AddChild(_viewportContainer);
 
 		var controlsVBox = new VBoxContainer();
 		controlsVBox.AddThemeConstantOverride("separation", 6);
@@ -94,20 +64,16 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		lblPreset.AddThemeFontSizeOverride("font_size", 11);
 		presetRow.AddChild(lblPreset);
 
-		AddCameraPresetButton(presetRow, TranslationServer.Translate("Front"), () => SetCameraPreset(0f, 0f), "View model from front");
-		AddCameraPresetButton(presetRow, TranslationServer.Translate("Side"), () => SetCameraPreset(90f, 0f), "View model from side");
-		AddCameraPresetButton(presetRow, TranslationServer.Translate("Back"), () => SetCameraPreset(180f, 0f), "View model from back");
-		AddCameraPresetButton(presetRow, TranslationServer.Translate("Iso"), () => SetCameraPreset(45f, 25f), "Isometric 3/4 view");
-		AddCameraPresetButton(presetRow, TranslationServer.Translate("Top"), () => SetCameraPreset(0f, 85f), "Top-down view");
-		AddCameraPresetButton(presetRow, TranslationServer.Translate("⟲ Reset"), () => ResetCameraDefault(), "Reset camera zoom and position to default");
+		AddButton(presetRow, TranslationServer.Translate("Front"), () => SetCameraPreset(0f, 0f), "View model from front", 10, new Vector2(0, 22));
+		AddButton(presetRow, TranslationServer.Translate("Side"), () => SetCameraPreset(90f, 0f), "View model from side", 10, new Vector2(0, 22));
+		AddButton(presetRow, TranslationServer.Translate("Back"), () => SetCameraPreset(180f, 0f), "View model from back", 10, new Vector2(0, 22));
+		AddButton(presetRow, TranslationServer.Translate("Iso"), () => SetCameraPreset(45f, 25f), "Isometric 3/4 view", 10, new Vector2(0, 22));
+		AddButton(presetRow, TranslationServer.Translate("Top"), () => SetCameraPreset(0f, 85f), "Top-down view", 10, new Vector2(0, 22));
+		AddButton(presetRow, TranslationServer.Translate("⟲ Reset"), () => ResetCameraDefault(), "Reset camera zoom and position to default", 10, new Vector2(0, 22));
 
 		controlsVBox.AddChild(presetRow);
 
-		var lblHint = new Label();
-		lblHint.Text = TranslationServer.Translate("LMB: Orbit • RMB/MMB: Pan • Scroll: Zoom");
-		lblHint.AddThemeFontSizeOverride("font_size", 10);
-		lblHint.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		controlsVBox.AddChild(lblHint);
+		AddLabel(controlsVBox, TranslationServer.Translate("LMB: Orbit • RMB/MMB: Pan • Scroll: Zoom"), 10, UIStyle.ColorGoldDull);
 
 		var animRow = new HBoxContainer();
 		animRow.AddThemeConstantOverride("separation", 6);
@@ -134,90 +100,32 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		var btnRow = new HBoxContainer();
 		btnRow.AddThemeConstantOverride("separation", 8);
 
-		_btnPlay = new Button();
-		_btnPlay.Set("icon_max_width", 0);
-		_btnPlay.Text = "▶";
-		_btnPlay.CustomMinimumSize = new Vector2(36, 26);
-		_btnPlay.FocusMode = FocusModeEnum.None;
-		_btnPlay.Pressed += () => PlaySelectedAnimation();
-		btnRow.AddChild(_btnPlay);
-
-		_btnPause = new Button();
-		_btnPause.Set("icon_max_width", 0);
-		_btnPause.Text = "⏸";
-		_btnPause.CustomMinimumSize = new Vector2(36, 26);
-		_btnPause.FocusMode = FocusModeEnum.None;
-		_btnPause.Pressed += () =>
+		_btnPlay = AddButton(btnRow, "▶", () => PlaySelectedAnimation(), "Play Animation", 11, new Vector2(36, 26));
+		_btnPause = AddButton(btnRow, "⏸", () =>
 		{
 			if (_animPlayer != null && _animPlayer.IsPlaying())
 			{
 				_animPlayer.Pause();
 			}
-		};
-		btnRow.AddChild(_btnPause);
-
-		_btnStop = new Button();
-		_btnStop.Set("icon_max_width", 0);
-		_btnStop.Text = "⏹";
-		_btnStop.CustomMinimumSize = new Vector2(36, 26);
-		_btnStop.FocusMode = FocusModeEnum.None;
-		_btnStop.Pressed += () =>
+		}, "Pause Animation", 11, new Vector2(36, 26));
+		_btnStop = AddButton(btnRow, "⏹", () =>
 		{
 			if (_animPlayer != null)
 			{
 				_animPlayer.Stop(true);
 			}
-		};
-		btnRow.AddChild(_btnStop);
+		}, "Stop Animation", 11, new Vector2(36, 26));
 
 		controlsVBox.AddChild(btnRow);
 
-		var speedRow = new HBoxContainer();
-		speedRow.AddThemeConstantOverride("separation", 6);
-
-		var lblSpeed = new Label();
-		lblSpeed.Text = TranslationServer.Translate("Speed:");
-		lblSpeed.CustomMinimumSize = new Vector2(80, 0);
-		lblSpeed.AddThemeFontSizeOverride("font_size", 11);
-		speedRow.AddChild(lblSpeed);
-
-		_sldSpeed = new HSlider();
-		_sldSpeed.MinValue = 0.25f;
-		_sldSpeed.MaxValue = 2.0f;
-		_sldSpeed.Step = 0.05f;
-		_sldSpeed.Value = 1.0f;
-		_sldSpeed.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-		_sldSpeed.ValueChanged += (val) =>
+		(_sldSpeed, _lblSpeedVal) = AddSlider(controlsVBox, TranslationServer.Translate("Speed:"), 0.25f, 2.0f, 0.05f, 1.0f, (val) =>
 		{
-			_currentSpeed = (float)val;
-			_lblSpeedVal.Text = $"{_currentSpeed:0.00}x";
+			_currentSpeed = val;
 			if (_animPlayer != null)
 			{
 				_animPlayer.SpeedScale = _currentSpeed;
 			}
-		};
-		speedRow.AddChild(_sldSpeed);
-
-		_lblSpeedVal = new Label();
-		_lblSpeedVal.Text = "1.00x";
-		_lblSpeedVal.CustomMinimumSize = new Vector2(45, 0);
-		_lblSpeedVal.AddThemeFontSizeOverride("font_size", 11);
-		speedRow.AddChild(_lblSpeedVal);
-
-		controlsVBox.AddChild(speedRow);
-	}
-
-	private void AddCameraPresetButton(HBoxContainer parent, string text, Action onClick, string tooltip)
-	{
-		var btn = new Button();
-		btn.Set("icon_max_width", 0);
-		btn.Text = text;
-		btn.AddThemeFontSizeOverride("font_size", 10);
-		btn.CustomMinimumSize = new Vector2(0, 22);
-		btn.FocusMode = FocusModeEnum.None;
-		btn.TooltipText = TranslationServer.Translate(tooltip);
-		btn.Pressed += onClick;
-		parent.AddChild(btn);
+		}, "0.00x", 80.0f);
 	}
 
 	private void OnViewportGuiInput(InputEvent @event)
@@ -306,8 +214,9 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 			cosYaw * cosPitch
 		) * _cameraDistance;
 
-		_camera.Position = _targetPosition + offset;
-		_camera.LookAt(_targetPosition, Vector3.Up);
+		Vector3 newPos = _targetPosition + offset;
+		_camera.Position = newPos;
+		_camera.LookAtFromPosition(newPos, _targetPosition, Vector3.Up);
 	}
 
 	public void OpenForObject(Node selectedObject)

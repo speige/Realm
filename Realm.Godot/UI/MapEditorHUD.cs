@@ -179,6 +179,7 @@ public partial class MapEditorHUD : Control
 	private OptionButton _optWaterMode;
 	private GlobalObjectOverridesDialog _globalOverridesDialog;
 	private AnimationPreviewDialog _animationPreviewDialog;
+	private WeaponVfxDialog _weaponVfxDialog;
 	private Button _btnOpenGlobalOverrides;
 	private Button _btnOpenAnimationPreview;
 	private bool _isUpdatingInspectorUI;
@@ -5691,6 +5692,7 @@ public partial class MapEditorHUD : Control
 
 		_globalOverridesDialog = new GlobalObjectOverridesDialog(this);
 		_animationPreviewDialog = new AnimationPreviewDialog(this);
+		_weaponVfxDialog = new WeaponVfxDialog(this);
 
 		_btnOpenAnimationPreview = new Button();
 		_btnOpenAnimationPreview.Name = "BtnOpenAnimationPreview";
@@ -5727,12 +5729,74 @@ public partial class MapEditorHUD : Control
 		inspectorVBox.AddChild(_btnOpenGlobalOverrides);
 	}
 
+	public void OpenWeaponVfxDialog(string weaponId, GameHost.WeaponMetadata weapon, Action<GameHost.WeaponMetadata> onApplied = null)
+	{
+		if (_weaponVfxDialog == null)
+		{
+			_weaponVfxDialog = new WeaponVfxDialog(this);
+		}
+		_weaponVfxDialog.OpenForWeapon(weaponId, weapon, onApplied);
+	}
+
+	public void SaveCustomWeaponToMetadata(string weaponId, GameHost.WeaponMetadata weapon)
+	{
+		try
+		{
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metadataPath)) return;
+
+			string jsonStr = System.IO.File.ReadAllText(metadataPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
+			if (root == null) return;
+
+			var weaponsArray = root["CustomWeapons"]?.AsArray();
+			if (weaponsArray == null)
+			{
+				weaponsArray = new System.Text.Json.Nodes.JsonArray();
+				root["CustomWeapons"] = weaponsArray;
+			}
+
+			bool found = false;
+			var weaponJson = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(weapon, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+
+			for (int i = 0; i < weaponsArray.Count; i++)
+			{
+				var wObj = weaponsArray[i]?.AsObject();
+				if (wObj != null && (wObj["WeaponId"]?.ToString() == weaponId || wObj["weaponId"]?.ToString() == weaponId))
+				{
+					weaponsArray[i] = weaponJson;
+					found = true;
+					break;
+				}
+			}
+
+			if (!found && weaponJson != null)
+			{
+				weaponsArray.Add(weaponJson);
+			}
+
+			System.IO.File.WriteAllText(metadataPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] SaveCustomWeaponToMetadata error: {ex.Message}");
+		}
+	}
+
 	public override void _Input(InputEvent @event)
 	{
 		if (@event is InputEventKey keyEvent)
 		{
 			if (keyEvent.Keycode == Godot.Key.Tab)
 			{
+				if (FloatingDialogBase.HasAnyDialogOpen)
+				{
+					return;
+				}
 				GetViewport().SetInputAsHandled();
 				return;
 			}

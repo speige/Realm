@@ -438,9 +438,33 @@ public partial class VisualProjectile3D : Node3D
 		}
 	}
 
+	public float TimeScale { get; set; } = 1.0f;
+	public bool IsPaused { get; set; } = false;
+
+	public void StepSimulation(float deltaSeconds)
+	{
+		if (_isImpacted && deltaSeconds < 0.0f)
+		{
+			_isImpacted = false;
+			_isFlying = true;
+			_meshContainer.Visible = true;
+			_pointLight.Visible = _weapon.PointLightEnabled;
+			_trailEmitter.Emitting = true;
+			SetProcess(true);
+		}
+
+		AdvanceSimulation(deltaSeconds);
+	}
+
 	public override void _Process(double delta)
 	{
-		float dt = (float)delta;
+		if (IsPaused) return;
+		float dt = (float)delta * TimeScale;
+		AdvanceSimulation(dt);
+	}
+
+	public void AdvanceSimulation(float dt)
+	{
 
 		if (_isImpacted)
 		{
@@ -598,7 +622,7 @@ public partial class VisualProjectile3D : Node3D
 		if (!string.IsNullOrEmpty(_weapon.ImpactVisualEffect) && GameHost.Instance != null)
 		{
 			var fxService = ServiceLocator.TryGet<FXService>();
-			fxService?.SpawnSpritesheetEffect(GetParent<Node3D>() ?? this, _weapon.ImpactVisualEffect, impactPosition, 4, 4, 0.04f, 4.0f);
+			fxService?.SpawnSpritesheetEffect(GetParent() ?? this, _weapon.ImpactVisualEffect, impactPosition, 4, 4, 0.04f, 4.0f);
 		}
 
 		if (!string.IsNullOrEmpty(_weapon.ImpactSound))
