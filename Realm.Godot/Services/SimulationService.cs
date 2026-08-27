@@ -270,7 +270,7 @@ internal class SimulationService
 		ResourceId goldResourceId,
 		ResourceId woodResourceId,
 		ResourceId stoneResourceId,
-		EditableTerrain groundTerrain)
+		RuntimeTerrain groundTerrain)
 	{
 		_economyService.SetRuntimeReferences(definitionManager, goldResourceId, woodResourceId, stoneResourceId);
 	}

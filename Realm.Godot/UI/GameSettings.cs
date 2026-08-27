@@ -395,7 +395,7 @@ public static class GameSettings
 			ApplyDirectionalLightQuality(light, QualityIdx);
 		}
 
-		var terrain = (root != null ? FindNodeInTree<EditableTerrain>(root) : null) ?? EditableTerrain.Instance;
+		var terrain = (root != null ? FindNodeInTree<RuntimeTerrain>(root) : null) ?? RuntimeTerrain.Instance;
 		if (terrain != null && GodotObject.IsInstanceValid(terrain))
 		{
 			terrain.ApplyQualitySettings((int)QualityIdx);

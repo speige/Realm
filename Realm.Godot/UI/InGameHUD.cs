@@ -834,8 +834,8 @@ public partial class InGameHUD : Control
 					camera.RotationDegrees = new Vector3(-90, 0, 0);
 					viewport.AddChild(camera);
 
-					EditableTerrain.IsMinimapRendering = true;
-					EditableTerrain.Instance?.BeginMinimapCapture();
+					RuntimeTerrain.IsMinimapRendering = true;
+					RuntimeTerrain.Instance?.BeginMinimapCapture();
 					PropMultiMeshManager.Instance?.SetAllNodesVisible(true);
 					try
 					{
@@ -854,8 +854,8 @@ public partial class InGameHUD : Control
 					}
 					finally
 					{
-						EditableTerrain.Instance?.EndMinimapCapture();
-						EditableTerrain.IsMinimapRendering = false;
+						RuntimeTerrain.Instance?.EndMinimapCapture();
+						RuntimeTerrain.IsMinimapRendering = false;
 					}
 				}
 				catch (Exception ex)

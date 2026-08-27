@@ -274,8 +274,8 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool IsMapEditorMode { get; set; }
 	public bool IsLoadingMap { get; set; }
 	public bool IsGameOver { get; private set; }
-	private EditableTerrain _groundTerrain;
-	public EditableTerrain GroundTerrain
+	private RuntimeTerrain _groundTerrain;
+	public RuntimeTerrain GroundTerrain
 	{
 		get
 		{
@@ -3791,7 +3791,7 @@ public class {mapName} : IMapScript
 			terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
 		}
 
-		var activeTerrainNode = new EditableTerrain();
+		var activeTerrainNode = new RuntimeTerrain();
 		activeTerrainNode.Name = "Ground";
 		AddChild(activeTerrainNode);
 		GroundTerrain = activeTerrainNode;
