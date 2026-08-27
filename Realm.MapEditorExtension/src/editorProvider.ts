@@ -1604,18 +1604,19 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         else if (subCategory === 'buildings') defaultPathing = 32;
                         else if (subCategory === 'resources' || subCategory === 'props') defaultPathing = 255;
 
-                    metadata[targetArrayKey].push({
-                        UnitId: unitId,
-                        Name: unitId,
-                        Description: '',
-                        Scale: defaultScale,
-                        YOffset: defaultYOffset,
-                        PathingType: defaultPathing,
-                        ModelPath: baseName,
-                        NormalMode: 'Flat',
-                        NormalizeLuminance: true,
-                        ...(ignorePlayerColor ? { IgnorePlayerColor: true } : {})
-                    });
+                        metadata[targetArrayKey].push({
+                            UnitId: unitId,
+                            Name: unitId,
+                            Description: '',
+                            Scale: defaultScale,
+                            YOffset: defaultYOffset,
+                            PathingType: defaultPathing,
+                            ModelPath: baseName,
+                            NormalMode: 'Flat',
+                            NormalizeLuminance: true,
+                            ...(ignorePlayerColor ? { IgnorePlayerColor: true } : {})
+                        });
+                    }
                 }
 
                 vscode.window.showInformationMessage(`Imported GLB Model (${subCategory}): ${baseName}`);
