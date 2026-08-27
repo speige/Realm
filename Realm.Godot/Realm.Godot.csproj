@@ -2,6 +2,8 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <TargetFramework Condition=" '$(GodotTargetPlatform)' == 'android' ">net9.0</TargetFramework>
+    <Version>0.1.0-alpha</Version>
+    <InformationalVersion>v0.1.0-alpha</InformationalVersion>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>

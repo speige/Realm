@@ -59,7 +59,7 @@ public partial class UIManager : Control
 
 #if DEBUG
 		_watermark = new Label();
-		_watermark.Text = $"Realm {LobbyManager.GameBinaryVersion}";
+		_watermark.Text = string.Format(TranslationServer.Translate("Realm {0}"), LobbyManager.GameBinaryVersion);
 		_watermark.AddThemeColorOverride("font_color", new Color(1.0f, 1.0f, 1.0f, 0.5f));
 		_watermark.AddThemeColorOverride("font_outline_color", new Color(0.0f, 0.0f, 0.0f, 0.8f));
 		_watermark.AddThemeConstantOverride("outline_size", 4);
