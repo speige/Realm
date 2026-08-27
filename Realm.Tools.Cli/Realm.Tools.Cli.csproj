@@ -19,7 +19,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Realm.AssetPipeline\Realm.AssetPipeline.csproj" />
+    <Compile Remove="AssetGeneration_Program.cs" />
+    <None Remove="AssetGeneration_Program.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Realm.Shared\Realm.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>

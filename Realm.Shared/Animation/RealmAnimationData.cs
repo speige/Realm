@@ -2,7 +2,7 @@ using MemoryPack;
 using System;
 using System.IO;
 
-namespace Realm.AssetPipeline.Animation;
+namespace Realm.Shared.Animation;
 
 public enum RealmAnimationLoopMode : byte
 {

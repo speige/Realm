@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace Realm.AssetPipeline.Animation;
+namespace Realm.Shared.Animation;
 
 public class MixamoFbxConversionResult
 {

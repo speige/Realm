@@ -1,9 +1,9 @@
 using System;
 using System.IO;
 using CommandLine;
-using Realm.AssetPipeline;
-using Realm.AssetPipeline.Animation;
-using Realm.AssetPipeline.Textures;
+using Realm.Shared;
+using Realm.Shared.Animation;
+using Realm.Shared.Textures;
 
 namespace Realm.Tools.Cli;
 

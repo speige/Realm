@@ -4,7 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Godot;
-using Realm.AssetPipeline;
+using Realm.Shared;
 using Realm.Ecs.Services;
 using Realm.Godot.Utils;
 

@@ -1,4 +1,4 @@
-namespace Realm.AssetPipeline;
+namespace Realm.Shared;
 
 public struct OptimizationResult
 {

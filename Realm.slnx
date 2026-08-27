@@ -7,4 +7,5 @@
   <Project Path="Realm.Ecs.Tests/Realm.Ecs.Tests.csproj" />
   <Project Path="Realm.Tools.Cli/Realm.Tools.Cli.csproj" />
   <Project Path="Realm.WasmBindgen/Realm.WasmBindgen.csproj" />
+  <Project Path="Realm.Shared/Realm.Shared.csproj" />
 </Solution>

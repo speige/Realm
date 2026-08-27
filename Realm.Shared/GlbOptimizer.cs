@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Nodes;
 
-namespace Realm.AssetPipeline;
+namespace Realm.Shared;
 
 public class GlbOptimizer
 {

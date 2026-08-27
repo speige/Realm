@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Realm.AssetPipeline.Animation;
+namespace Realm.Shared.Animation;
 
 public enum HumanoidBone
 {

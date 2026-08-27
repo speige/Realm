@@ -14,7 +14,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.MapEditorExtension", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.WasmBindgen", "..\Realm.WasmBindgen\Realm.WasmBindgen.csproj", "{474CD144-54ED-EBE6-6A8D-9B8462DD43B6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.AssetPipeline", "..\Realm.AssetPipeline\Realm.AssetPipeline.csproj", "{A1111111-2222-3333-4444-555555555551}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.Shared", "..\Realm.Shared\Realm.Shared.csproj", "{A1111111-2222-3333-4444-555555555551}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Realm.Tools.Cli", "..\Realm.Tools.Cli\Realm.Tools.Cli.csproj", "{A1111111-2222-3333-4444-555555555552}"
 EndProject

@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace Realm.AssetPipeline.Textures;
+namespace Realm.Shared.Textures;
 
 public class TextureConversionResult
 {

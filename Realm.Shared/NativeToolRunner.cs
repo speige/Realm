@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 
-namespace Realm.AssetPipeline;
+namespace Realm.Shared;
 
 public static class NativeToolRunner
 {
@@ -63,7 +63,7 @@ public static class NativeToolRunner
 			}
 
 			var asm = typeof(NativeToolRunner).Assembly;
-			Stream? stream = asm.GetManifestResourceStream("Realm.AssetPipeline.ThirdPartyBinaries.gltfpack.exe");
+			Stream? stream = asm.GetManifestResourceStream("Realm.Shared.ThirdPartyBinaries.gltfpack.exe");
 			if (stream == null)
 			{
 				foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
