@@ -2785,6 +2785,8 @@ public partial class GameHost
 		}
 		OnSpellCast?.Invoke(caster, spellId, new System.Numerics.Vector3(position.X, position.Y, position.Z));
 
+		Entity casterEntity = SelectedUnits.Count > 0 && EcsWorld.IsAlive(SelectedUnits[0].Entity) ? SelectedUnits[0].Entity : Entity.Null;
+
 		if (spellId == "fireball")
 		{
 			if (FireballCooldown > 0)
@@ -2793,7 +2795,7 @@ public partial class GameHost
 				return;
 			}
 
-			if (_inputService.TryExecuteSpellCast(_playerEntity, spellId, out float maxCd))
+			if (_inputService.TryExecuteSpellCast(_playerEntity, casterEntity, spellId, out float maxCd))
 			{
 				SpawnFireblastEffect(position);
 				SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
@@ -2816,7 +2818,7 @@ public partial class GameHost
 				return;
 			}
 
-			if (_inputService.TryExecuteSpellCast(_playerEntity, spellId, out float maxCd))
+			if (_inputService.TryExecuteSpellCast(_playerEntity, casterEntity, spellId, out float maxCd))
 			{
 				SpawnLightningEffect(position);
 				SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
@@ -2839,7 +2841,7 @@ public partial class GameHost
 				return;
 			}
 
-			if (_inputService.TryExecuteSpellCast(_playerEntity, spellId, out float maxCd))
+			if (_inputService.TryExecuteSpellCast(_playerEntity, casterEntity, spellId, out float maxCd))
 			{
 				SpawnHolyLightEffect(position);
 				SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));

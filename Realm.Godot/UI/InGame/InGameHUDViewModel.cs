@@ -679,12 +679,38 @@ public class InGameHUDViewModel
 
 			if (entityChanged || info.Abilities.Count == 0)
 			{
-				if (GameHost.UnitRegistry.TryGetValue(u.UnitId, out var regMeta))
+				info.Abilities.Clear();
+				var ecsWorld = GameHost.Instance?.EcsWorld;
+				if (ecsWorld != null && ecsWorld.IsAlive(u.Entity) && ecsWorld.Has<Realm.Ecs.Components.Core.AbilityState>(u.Entity))
 				{
-					info.Description = regMeta.Description;
-					if (regMeta.Abilities != null)
+					var state = ecsWorld.Get<Realm.Ecs.Components.Core.AbilityState>(u.Entity);
+					if (state.Abilities != null && state.Abilities.Count > 0)
 					{
-						info.Abilities.AddRange(regMeta.Abilities);
+						info.Abilities.AddRange(state.Abilities);
+					}
+				}
+
+				if (info.Abilities.Count == 0)
+				{
+					if (GameHost.UnitRegistry.TryGetValue(u.UnitId, out var regMeta))
+					{
+						info.Description = regMeta.Description;
+						if (regMeta.Abilities != null && regMeta.Abilities.Length > 0)
+						{
+							info.Abilities.AddRange(regMeta.Abilities);
+						}
+						else
+						{
+							if (u.UnitId == "priest")
+							{
+								info.Abilities.Add("holylight");
+							}
+							else if (u.UnitId == "tower" || u.UnitId == "spelltower")
+							{
+								info.Abilities.Add("fireball");
+								info.Abilities.Add("lightning");
+							}
+						}
 					}
 					else
 					{
@@ -692,23 +718,11 @@ public class InGameHUDViewModel
 						{
 							info.Abilities.Add("holylight");
 						}
-						else if (u.UnitId == "tower")
+						else if (u.UnitId == "tower" || u.UnitId == "spelltower")
 						{
 							info.Abilities.Add("fireball");
 							info.Abilities.Add("lightning");
 						}
-					}
-				}
-				else
-				{
-					if (u.UnitId == "priest")
-					{
-						info.Abilities.Add("holylight");
-					}
-					else if (u.UnitId == "tower")
-					{
-						info.Abilities.Add("fireball");
-						info.Abilities.Add("lightning");
 					}
 				}
 			}
