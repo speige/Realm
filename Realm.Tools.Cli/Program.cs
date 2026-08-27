@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using CommandLine;
 using Realm.AssetPipeline;
+using Realm.AssetPipeline.Animation;
+using Realm.AssetPipeline.Textures;
 
 namespace Realm.Tools.Cli;
 
@@ -33,14 +35,116 @@ public class GlbOptimizeOptions
 	public bool Force { get; set; }
 }
 
+[Verb("texture_convert", HelpText = "Convert textures between PNG (albedo) and KTX2 format.")]
+public class TextureConvertOptions
+{
+	[Option('i', "input", Required = true, HelpText = "Path to input .png / .ktx2 file or directory.")]
+	public string Input { get; set; } = string.Empty;
+
+	[Option('o', "output", Required = false, HelpText = "Output destination file or directory.")]
+	public string? Output { get; set; }
+
+	[Option('m', "mode", Required = false, Default = "auto", HelpText = "Conversion mode: auto (default), to_ktx2, to_png, extract, encode.")]
+	public string Mode { get; set; } = "auto";
+
+	[Option("format", Required = false, Default = "R8G8B8A8_UNORM", HelpText = "KTX2 compression format (default: R8G8B8A8_UNORM).")]
+	public string Format { get; set; } = "R8G8B8A8_UNORM";
+
+	[Option("in-place", Required = false, Default = false, HelpText = "Write output alongside input file.")]
+	public bool InPlace { get; set; }
+
+	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
+	public bool Recursive { get; set; }
+
+	[Option("no-mipmaps", Required = false, Default = false, HelpText = "Disable mipmap generation.")]
+	public bool NoMipmaps { get; set; }
+}
+
+[Verb("fbx_to_ranim", HelpText = "Convert Mixamo FBX skeletal animation files to .ranim format.")]
+public class FbxToRanimOptions
+{
+	[Option('i', "input", Required = true, HelpText = "Path to input .fbx file or directory containing .fbx files.")]
+	public string Input { get; set; } = string.Empty;
+
+	[Option('o', "output", Required = false, HelpText = "Output destination .ranim file or directory.")]
+	public string? Output { get; set; }
+
+	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
+	public bool Recursive { get; set; }
+}
+
 public static class Program
 {
 	public static int Main(string[] args)
 	{
-		return Parser.Default.ParseArguments(args, typeof(GlbOptimizeOptions))
+		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, FbxToRanimOptions>(args)
 			.MapResult(
 				(GlbOptimizeOptions options) => ExecuteGlbOptimize(options),
+				(TextureConvertOptions options) => ExecuteTextureConvert(options),
+				(FbxToRanimOptions options) => ExecuteFbxToRanim(options),
 				errors => 1);
+	}
+
+	private static int ExecuteTextureConvert(TextureConvertOptions options)
+	{
+		if (File.Exists(options.Input))
+		{
+			string target = options.InPlace || string.IsNullOrEmpty(options.Output)
+				? Path.ChangeExtension(options.Input, options.Input.EndsWith(".ktx2", StringComparison.OrdinalIgnoreCase) ? ".png" : ".ktx2")
+				: options.Output;
+
+			var res = TextureConverter.ConvertTextureFile(options.Input, target, options.Mode);
+			if (res.Success)
+			{
+				Console.WriteLine($"Successfully converted: {options.Input} -> {target}");
+				return 0;
+			}
+			else
+			{
+				Console.Error.WriteLine($"Failed to convert {options.Input}: {res.ErrorMessage}");
+				return 1;
+			}
+		}
+		else if (Directory.Exists(options.Input))
+		{
+			return TextureConverter.ConvertTextureDirectory(options.Input, options.Output, options.Mode, options.Recursive);
+		}
+		else
+		{
+			Console.Error.WriteLine($"Error: Input path does not exist: {options.Input}");
+			return 1;
+		}
+	}
+
+	private static int ExecuteFbxToRanim(FbxToRanimOptions options)
+	{
+		if (File.Exists(options.Input))
+		{
+			string target = string.IsNullOrEmpty(options.Output)
+				? Path.ChangeExtension(options.Input, ".ranim")
+				: options.Output;
+
+			var res = MixamoFbxConverter.ConvertFbxFile(options.Input, target);
+			if (res.Success)
+			{
+				Console.WriteLine($"Successfully converted: {options.Input} -> {res.OutputPath} ({string.Join(", ", res.ConvertedAnimationNames)})");
+				return 0;
+			}
+			else
+			{
+				Console.Error.WriteLine($"Failed to convert {options.Input}: {res.ErrorMessage}");
+				return 1;
+			}
+		}
+		else if (Directory.Exists(options.Input))
+		{
+			return MixamoFbxConverter.ConvertFbxDirectory(options.Input, options.Output, options.Recursive);
+		}
+		else
+		{
+			Console.Error.WriteLine($"Error: Input path does not exist: {options.Input}");
+			return 1;
+		}
 	}
 
 	private static int ExecuteGlbOptimize(GlbOptimizeOptions options)
