@@ -37,6 +37,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private HBoxContainer _cameraPresetRow;
 
 	private OptionButton _optAssetCategory;
+	private Label _lblModelTypeDescription;
 	private Button _btnImportAsset;
 	private Button _btnPruneUnused;
 	private LineEdit _txtSearchFilter;
@@ -45,8 +46,9 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private SpritesheetAssetEditDialog _spritesheetEditDialog;
 	private TerrainTextureEditDialog _textureEditDialog;
+	private ChangeAssetTypeDialog _changeTypeDialog;
 
-	private string _currentCategory = "glb";
+	private string _currentCategory = "glb_units";
 	private string _searchFilter = "";
 	private string _currentPreviewAssetKey = "";
 	private string _currentPreviewAssetCategory = "";
@@ -68,6 +70,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	{
 		_spritesheetEditDialog = new SpritesheetAssetEditDialog(hud);
 		_textureEditDialog = new TerrainTextureEditDialog(hud);
+		_changeTypeDialog = new ChangeAssetTypeDialog(hud);
 
 		_audioPlayer = new AudioStreamPlayer();
 		AddChild(_audioPlayer);
@@ -210,28 +213,36 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		_optAssetCategory = new OptionButton();
 		_optAssetCategory.AddThemeFontSizeOverride("font_size", 11);
 		_optAssetCategory.CustomMinimumSize = new Vector2(170, 26);
-		_optAssetCategory.AddItem("3D Models (GLB)", 0);
-		_optAssetCategory.SetItemMetadata(0, "glb");
-		_optAssetCategory.AddItem("Terrain Textures", 1);
-		_optAssetCategory.SetItemMetadata(1, "textures");
-		_optAssetCategory.AddItem("VFX Spritesheets", 2);
-		_optAssetCategory.SetItemMetadata(2, "vfx_spritesheets");
-		_optAssetCategory.AddItem("Animations (.ranim)", 3);
-		_optAssetCategory.SetItemMetadata(3, "animations");
-		_optAssetCategory.AddItem("Sound Effects (SFX)", 4);
-		_optAssetCategory.SetItemMetadata(4, "sfx");
-		_optAssetCategory.AddItem("Music", 5);
-		_optAssetCategory.SetItemMetadata(5, "music");
-		_optAssetCategory.AddItem("Icons (2D UI)", 6);
-		_optAssetCategory.SetItemMetadata(6, "icons");
-		_optAssetCategory.AddItem("Decals", 7);
-		_optAssetCategory.SetItemMetadata(7, "decals");
-		_optAssetCategory.AddItem("Ribbon Textures", 8);
-		_optAssetCategory.SetItemMetadata(8, "ribbon_textures");
-		_optAssetCategory.AddItem("Noise Textures", 9);
-		_optAssetCategory.SetItemMetadata(9, "noise_textures");
-		_optAssetCategory.AddItem("Skyboxes", 10);
-		_optAssetCategory.SetItemMetadata(10, "skyboxes");
+		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (units)"), 0);
+		_optAssetCategory.SetItemMetadata(0, "glb_units");
+		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (buildings)"), 1);
+		_optAssetCategory.SetItemMetadata(1, "glb_buildings");
+		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (resources)"), 2);
+		_optAssetCategory.SetItemMetadata(2, "glb_resources");
+		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (props)"), 3);
+		_optAssetCategory.SetItemMetadata(3, "glb_props");
+		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (projectiles)"), 4);
+		_optAssetCategory.SetItemMetadata(4, "glb_projectiles");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Terrain Textures"), 5);
+		_optAssetCategory.SetItemMetadata(5, "textures");
+		_optAssetCategory.AddItem(TranslationServer.Translate("VFX Spritesheets"), 6);
+		_optAssetCategory.SetItemMetadata(6, "vfx_spritesheets");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Animations (.ranim)"), 7);
+		_optAssetCategory.SetItemMetadata(7, "animations");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Sound Effects (SFX)"), 8);
+		_optAssetCategory.SetItemMetadata(8, "sfx");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Music"), 9);
+		_optAssetCategory.SetItemMetadata(9, "music");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Icons"), 10);
+		_optAssetCategory.SetItemMetadata(10, "icons");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Decals"), 11);
+		_optAssetCategory.SetItemMetadata(11, "decals");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Ribbon Textures"), 12);
+		_optAssetCategory.SetItemMetadata(12, "ribbon_textures");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Noise Textures"), 13);
+		_optAssetCategory.SetItemMetadata(13, "noise_textures");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Skyboxes"), 14);
+		_optAssetCategory.SetItemMetadata(14, "skyboxes");
 
 		_optAssetCategory.ItemSelected += (idx) =>
 		{
@@ -244,6 +255,13 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		_btnPruneUnused = AddButton(catRow, "🧹 " + TranslationServer.Translate("Prune Unused"), () => PruneUnusedAssets(), "Remove assets not referenced anywhere in the map", 11, new Vector2(110, 26));
 
 		BodyContainer.AddChild(catRow);
+
+		_lblModelTypeDescription = new Label();
+		_lblModelTypeDescription.AddThemeFontSizeOverride("font_size", 10);
+		_lblModelTypeDescription.AddThemeColorOverride("font_color", new Color(0.7f, 0.75f, 0.85f));
+		_lblModelTypeDescription.AutowrapMode = TextServer.AutowrapMode.Word;
+		_lblModelTypeDescription.Visible = false;
+		BodyContainer.AddChild(_lblModelTypeDescription);
 
 		// 5. SEARCH FILTER INPUT
 		var searchRow = new HBoxContainer();
@@ -292,6 +310,22 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		_simRoot.AddChild(_vfxSprite);
 	}
 
+	private static bool IsGlbCategory(string category, out string subCategory)
+	{
+		if (!string.IsNullOrEmpty(category) && category.StartsWith("glb_", StringComparison.OrdinalIgnoreCase))
+		{
+			subCategory = category.Substring(4).ToLowerInvariant();
+			return true;
+		}
+		if (!string.IsNullOrEmpty(category) && category.Equals("glb", StringComparison.OrdinalIgnoreCase))
+		{
+			subCategory = "props";
+			return true;
+		}
+		subCategory = string.Empty;
+		return false;
+	}
+
 	public override void OpenDialog()
 	{
 		base.OpenDialog();
@@ -302,6 +336,28 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private void SetCurrentCategory(string category)
 	{
 		_currentCategory = category;
+
+		if (_lblModelTypeDescription != null)
+		{
+			if (IsGlbCategory(_currentCategory, out string glbSub))
+			{
+				_lblModelTypeDescription.Visible = true;
+				_lblModelTypeDescription.Text = glbSub switch
+				{
+					"units" => TranslationServer.Translate("Units: Controllable characters, heroes, monsters, and mobile entities."),
+					"buildings" => TranslationServer.Translate("Buildings: Player bases, towers, barracks, and stationary structures."),
+					"resources" => TranslationServer.Translate("Resources: Harvestable nodes, trees, gold mines, and gatherable objects."),
+					"props" => TranslationServer.Translate("Props: Static environmental decorations, rocks, clutter, and obstacles."),
+					"projectiles" => TranslationServer.Translate("Projectiles: Arrows, missiles, spell effects, and ballistic models."),
+					_ => ""
+				};
+			}
+			else
+			{
+				_lblModelTypeDescription.Visible = false;
+				_lblModelTypeDescription.Text = "";
+			}
+		}
 
 		bool isRanim = _currentCategory == "animations";
 		if (_ranimBaseModelRow != null)
@@ -324,7 +380,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		var items = GetAssetsForCategory(_currentCategory);
 		if (items.Count > 0)
 		{
-			LoadPreviewForAsset(_currentCategory, items[0].Key);
+			LoadPreviewForAsset(_currentCategory, items[0].Key, items[0].SubCategory);
 		}
 		else
 		{
@@ -386,7 +442,21 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			var assetsObj = root?["Assets"]?.AsObject();
 			if (assetsObj == null) return result;
 
-			if (category == "glb")
+			if (IsGlbCategory(category, out string glbSub))
+			{
+				var glbObj = assetsObj["glb"]?.AsObject();
+				if (glbObj != null)
+				{
+					if (glbObj[glbSub] is JsonObject subCatObj)
+					{
+						foreach (var model in subCatObj)
+						{
+							result.Add(new AssetItemInfo { Category = category, SubCategory = glbSub, Key = model.Key, ExtraData = model.Value });
+						}
+					}
+				}
+			}
+			else if (category == "glb")
 			{
 				var glbObj = assetsObj["glb"]?.AsObject();
 				if (glbObj != null)
@@ -531,8 +601,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		hBox.AddThemeConstantOverride("separation", 8);
 
 		var lblName = new Label();
-		string displayName = string.IsNullOrEmpty(subCategory) ? key : $"{key} ({subCategory})";
-		lblName.Text = displayName;
+		lblName.Text = key;
 		lblName.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 		lblName.AddThemeFontSizeOverride("font_size", 11);
 		hBox.AddChild(lblName);
@@ -581,7 +650,22 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			hBox.AddChild(btnEdit);
 		}
 
-		// Action 4: Delete Button
+		// Action 4: Change Type Button (3D Models only)
+		if (IsGlbCategory(category, out string glbSubCat) || category == "glb")
+		{
+			var btnChangeType = new Button();
+			btnChangeType.Set("icon_max_width", 0);
+			btnChangeType.Text = "🔄";
+			btnChangeType.AddThemeFontSizeOverride("font_size", 11);
+			btnChangeType.FocusMode = FocusModeEnum.None;
+			btnChangeType.CustomMinimumSize = new Vector2(26, 22);
+			btnChangeType.TooltipText = TranslationServer.Translate("Change Asset Type");
+			string rowSub = !string.IsNullOrEmpty(subCategory) ? subCategory : glbSubCat;
+			btnChangeType.Pressed += () => OpenChangeTypeDialog(category, key, rowSub);
+			hBox.AddChild(btnChangeType);
+		}
+
+		// Action 5: Delete Button
 		var btnDelete = new Button();
 		btnDelete.Set("icon_max_width", 0);
 		btnDelete.Text = "❌";
@@ -605,16 +689,16 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		Clear3DModelPreview();
 		StopCurrentAudio();
 
-		if (category == "glb" || category == "animations" || category == "vfx_spritesheets")
+		if (IsGlbCategory(category, out string glbSub) || category == "animations" || category == "vfx_spritesheets")
 		{
 			_viewportContainer.Visible = true;
 			_preview2DContainer.Visible = false;
 			_previewAudioContainer.Visible = false;
-			if (_cameraPresetRow != null) _cameraPresetRow.Visible = (category == "glb" || category == "animations");
+			if (_cameraPresetRow != null) _cameraPresetRow.Visible = (IsGlbCategory(category, out _) || category == "animations");
 
-			if (category == "glb")
+			if (IsGlbCategory(category, out glbSub))
 			{
-				Load3DGlbModel(key, subCategory);
+				Load3DGlbModel(key, !string.IsNullOrEmpty(subCategory) ? subCategory : glbSub);
 			}
 			else if (category == "animations")
 			{
@@ -1111,21 +1195,22 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private void OpenImportFileDialog()
 	{
-		_fileDialog.Filters = _currentCategory switch
-		{
-			"glb" => new[] { "*.glb, *.gltf ; 3D Models" },
-			"textures" => new[] { "*.ktx2, *.png, *.jpg, *.jpeg, *.bmp, *.tga, *.webp ; Terrain Textures" },
-			"vfx_spritesheets" => new[] { "*.png, *.jpg, *.jpeg, *.webp ; Spritesheets" },
-			"animations" => new[] { "*.ranim, *.glb, *.gltf, *.fbx ; Animation Files" },
-			"sfx" => new[] { "*.ogg, *.wav, *.mp3 ; Sound Effects" },
-			"music" => new[] { "*.ogg, *.wav, *.mp3 ; Music Tracks" },
-			"icons" => new[] { "*.png, *.jpg, *.jpeg, *.svg ; 2D Icons" },
-			"decals" => new[] { "*.png, *.jpg, *.jpeg, *.webp ; Decals" },
-			"ribbon_textures" => new[] { "*.png, *.jpg, *.jpeg, *.ktx2 ; Ribbon Textures" },
-			"noise_textures" => new[] { "*.png, *.jpg, *.jpeg, *.ktx2 ; Noise Textures" },
-			"skyboxes" => new[] { "*.png, *.jpg, *.jpeg, *.webp, *.hdr ; Skybox Panoramas" },
-			_ => new[] { "*.* ; All Files" }
-		};
+		_fileDialog.Filters = IsGlbCategory(_currentCategory, out _)
+			? new[] { "*.glb, *.gltf ; 3D Models" }
+			: _currentCategory switch
+			{
+				"textures" => new[] { "*.ktx2, *.png, *.jpg, *.jpeg, *.bmp, *.tga, *.webp ; Terrain Textures" },
+				"vfx_spritesheets" => new[] { "*.png, *.jpg, *.jpeg, *.webp ; Spritesheets" },
+				"animations" => new[] { "*.ranim, *.glb, *.gltf, *.fbx ; Animation Files" },
+				"sfx" => new[] { "*.ogg, *.wav, *.mp3 ; Sound Effects" },
+				"music" => new[] { "*.ogg, *.wav, *.mp3 ; Music Tracks" },
+				"icons" => new[] { "*.png, *.jpg, *.jpeg, *.svg ; Icons" },
+				"decals" => new[] { "*.png, *.jpg, *.jpeg, *.webp ; Decals" },
+				"ribbon_textures" => new[] { "*.png, *.jpg, *.jpeg, *.ktx2 ; Ribbon Textures" },
+				"noise_textures" => new[] { "*.png, *.jpg, *.jpeg, *.ktx2 ; Noise Textures" },
+				"skyboxes" => new[] { "*.png, *.jpg, *.jpeg, *.webp, *.hdr ; Skybox Panoramas" },
+				_ => new[] { "*.* ; All Files" }
+			};
 
 		_fileDialog.PopupCentered(new Vector2I(800, 500));
 	}
@@ -1150,17 +1235,84 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			byte[] fileBytes = File.ReadAllBytes(sourceFilePath);
 			string hash = ComputeHashHex(fileBytes);
 
-			if (_currentCategory == "glb")
+			if (IsGlbCategory(_currentCategory, out string subCategory))
 			{
-				string destDir = Path.Combine(wsPath, "Assets", "models", "props");
+				string destDir = Path.Combine(wsPath, "Assets", "models", subCategory);
 				Directory.CreateDirectory(destDir);
 				string destPath = Path.Combine(destDir, fileName);
 				File.Copy(sourceFilePath, destPath, true);
 
 				if (!assetsObj.ContainsKey("glb") || assetsObj["glb"] == null) assetsObj["glb"] = new JsonObject();
 				var glbObj = assetsObj["glb"].AsObject();
-				if (!glbObj.ContainsKey("props") || glbObj["props"] == null) glbObj["props"] = new JsonObject();
-				glbObj["props"].AsObject()[fileName] = hash;
+				if (!glbObj.ContainsKey(subCategory) || glbObj[subCategory] == null) glbObj[subCategory] = new JsonObject();
+				glbObj[subCategory].AsObject()[fileName] = hash;
+
+				string unitId = Path.GetFileNameWithoutExtension(fileName);
+				string targetArrayKey = subCategory switch
+				{
+					"units" => "CustomUnits",
+					"buildings" => "CustomBuildings",
+					"resources" => "CustomResources",
+					"props" => "CustomProps",
+					_ => null
+				};
+
+				if (targetArrayKey != null)
+				{
+					if (!root.ContainsKey(targetArrayKey) || root[targetArrayKey] == null) root[targetArrayKey] = new JsonArray();
+					var targetArray = root[targetArrayKey].AsArray();
+					bool exists = false;
+					foreach (var item in targetArray)
+					{
+						if (item is JsonObject uObj && (uObj["UnitId"]?.ToString() == unitId || uObj["ModelPath"]?.ToString() == fileName))
+						{
+							exists = true;
+							break;
+						}
+					}
+
+					if (!exists)
+					{
+						float defaultScale = subCategory switch
+						{
+							"resources" => 2.75f,
+							"buildings" => 1.5f,
+							"props" => 1.25f,
+							"units" => 1.0f,
+							_ => 1.0f
+						};
+
+						int defaultPathing = subCategory switch
+						{
+							"units" => 9,
+							"buildings" => 32,
+							"resources" => 255,
+							"props" => 255,
+							_ => 9
+						};
+
+						var defaultEntity = new JsonObject
+						{
+							["UnitId"] = unitId,
+							["Name"] = unitId,
+							["Description"] = "",
+							["ModelPath"] = fileName,
+							["Scale"] = defaultScale,
+							["YOffset"] = 0.0f,
+							["PathingType"] = defaultPathing,
+							["NormalMode"] = "Flat",
+							["NormalizeLuminance"] = true,
+							["Animations"] = new JsonObject()
+						};
+
+						if (subCategory == "resources" || subCategory == "props")
+						{
+							defaultEntity["IgnorePlayerColor"] = true;
+						}
+
+						targetArray.Add(defaultEntity);
+					}
+				}
 			}
 			else if (_currentCategory == "textures")
 			{
@@ -1274,6 +1426,182 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 	}
 
+	private void OpenChangeTypeDialog(string category, string key, string currentSubCategory)
+	{
+		_changeTypeDialog.OpenForAsset(key, currentSubCategory, (targetSubCategory) =>
+		{
+			MoveGlbAssetType(key, currentSubCategory, targetSubCategory);
+		});
+	}
+
+	private void MoveGlbAssetType(string key, string fromSubCat, string toSubCat)
+	{
+		if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(fromSubCat) || string.IsNullOrEmpty(toSubCat)) return;
+		if (fromSubCat.Equals(toSubCat, StringComparison.OrdinalIgnoreCase)) return;
+
+		try
+		{
+			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+			string srcDir = Path.Combine(wsPath, "Assets", "models", fromSubCat);
+			string srcPath = Path.Combine(srcDir, key);
+			string dstDir = Path.Combine(wsPath, "Assets", "models", toSubCat);
+			Directory.CreateDirectory(dstDir);
+			string dstPath = Path.Combine(dstDir, key);
+
+			if (File.Exists(srcPath))
+			{
+				if (!srcPath.Equals(dstPath, StringComparison.OrdinalIgnoreCase))
+				{
+					File.Copy(srcPath, dstPath, true);
+					File.Delete(srcPath);
+				}
+			}
+			else if (!File.Exists(dstPath))
+			{
+				foreach (var candidateSub in new[] { "units", "buildings", "resources", "props", "projectiles" })
+				{
+					string candidatePath = Path.Combine(wsPath, "Assets", "models", candidateSub, key);
+					if (File.Exists(candidatePath))
+					{
+						File.Copy(candidatePath, dstPath, true);
+						File.Delete(candidatePath);
+						break;
+					}
+				}
+			}
+
+			string hash = "";
+			if (File.Exists(dstPath))
+			{
+				hash = ComputeHashHex(File.ReadAllBytes(dstPath));
+			}
+
+			string metaPath = Path.Combine(wsPath, "metadata.json");
+			JsonObject root = File.Exists(metaPath)
+				? (JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject() ?? new JsonObject())
+				: new JsonObject();
+
+			if (!root.ContainsKey("Assets") || root["Assets"] == null) root["Assets"] = new JsonObject();
+			if (!root["Assets"].AsObject().ContainsKey("glb") || root["Assets"]["glb"] == null) root["Assets"]["glb"] = new JsonObject();
+			var glbObj = root["Assets"]["glb"].AsObject();
+
+			JsonNode existingMeta = null;
+			if (glbObj.ContainsKey(fromSubCat) && glbObj[fromSubCat] is JsonObject fromObj && fromObj.ContainsKey(key))
+			{
+				existingMeta = fromObj[key]?.DeepClone();
+				fromObj.Remove(key);
+			}
+
+			if (!glbObj.ContainsKey(toSubCat) || glbObj[toSubCat] == null) glbObj[toSubCat] = new JsonObject();
+			glbObj[toSubCat].AsObject()[key] = existingMeta ?? (JsonNode)hash;
+
+			string unitId = Path.GetFileNameWithoutExtension(key);
+
+			// Remove from old custom entity array
+			string oldArrayKey = fromSubCat switch
+			{
+				"units" => "CustomUnits",
+				"buildings" => "CustomBuildings",
+				"resources" => "CustomResources",
+				"props" => "CustomProps",
+				_ => null
+			};
+
+			if (oldArrayKey != null && root.ContainsKey(oldArrayKey) && root[oldArrayKey] is JsonArray oldArr)
+			{
+				for (int i = oldArr.Count - 1; i >= 0; i--)
+				{
+					if (oldArr[i] is JsonObject uObj)
+					{
+						string uId = uObj["UnitId"]?.ToString() ?? "";
+						string mPath = uObj["ModelPath"]?.ToString() ?? "";
+						if (uId.Equals(unitId, StringComparison.OrdinalIgnoreCase) || mPath.Equals(key, StringComparison.OrdinalIgnoreCase))
+						{
+							oldArr.RemoveAt(i);
+						}
+					}
+				}
+			}
+
+			// Add to new custom entity array
+			string newArrayKey = toSubCat switch
+			{
+				"units" => "CustomUnits",
+				"buildings" => "CustomBuildings",
+				"resources" => "CustomResources",
+				"props" => "CustomProps",
+				_ => null
+			};
+
+			if (newArrayKey != null)
+			{
+				if (!root.ContainsKey(newArrayKey) || root[newArrayKey] == null) root[newArrayKey] = new JsonArray();
+				var newArr = root[newArrayKey].AsArray();
+				bool exists = false;
+				foreach (var item in newArr)
+				{
+					if (item is JsonObject uObj && (uObj["UnitId"]?.ToString() == unitId || uObj["ModelPath"]?.ToString() == key))
+					{
+						exists = true;
+						break;
+					}
+				}
+
+				if (!exists)
+				{
+					float defaultScale = toSubCat switch
+					{
+						"resources" => 2.75f,
+						"buildings" => 1.5f,
+						"props" => 1.25f,
+						"units" => 1.0f,
+						_ => 1.0f
+					};
+
+					int defaultPathing = toSubCat switch
+					{
+						"units" => 9,
+						"buildings" => 32,
+						"resources" => 255,
+						"props" => 255,
+						_ => 9
+					};
+
+					var defaultEntity = new JsonObject
+					{
+						["UnitId"] = unitId,
+						["Name"] = unitId,
+						["Description"] = "",
+						["ModelPath"] = key,
+						["Scale"] = defaultScale,
+						["YOffset"] = 0.0f,
+						["PathingType"] = defaultPathing,
+						["NormalMode"] = "Flat",
+						["NormalizeLuminance"] = true,
+						["Animations"] = new JsonObject()
+					};
+
+					if (toSubCat == "resources" || toSubCat == "props")
+					{
+						defaultEntity["IgnorePlayerColor"] = true;
+					}
+
+					newArr.Add(defaultEntity);
+				}
+			}
+
+			MapJsonFormatter.SaveFormattedJson(metaPath, root);
+			RefreshAssetList();
+			ClearPreview();
+			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Changed asset '{0}' type from {1} to {2}."), key, fromSubCat, toSubCat));
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[AssetManagerDialog] MoveGlbAssetType error: {ex.Message}");
+			Hud?.ShowFeedback($"Change type error: {ex.Message}");
+		}
+	}
+
 	private void OpenEditSubDialog(string category, string key, JsonNode extraData)
 	{
 		if (category == "vfx_spritesheets")
@@ -1371,11 +1699,38 @@ public partial class AssetManagerDialog : FloatingDialogBase
 						var assetsObj = root?["Assets"]?.AsObject();
 						if (assetsObj != null)
 						{
-							if (category == "glb")
+							if (IsGlbCategory(category, out string glbSub) || category == "glb")
 							{
-								assetsObj["glb"]?[subCategory]?.AsObject()?.Remove(key);
-								string p = Path.Combine(wsPath, "Assets", "models", subCategory ?? "props", key);
+								string targetSub = !string.IsNullOrEmpty(subCategory) ? subCategory : glbSub;
+								assetsObj["glb"]?[targetSub]?.AsObject()?.Remove(key);
+								string p = Path.Combine(wsPath, "Assets", "models", targetSub ?? "props", key);
 								if (File.Exists(p)) File.Delete(p);
+
+								string oldArrayKey = targetSub switch
+								{
+									"units" => "CustomUnits",
+									"buildings" => "CustomBuildings",
+									"resources" => "CustomResources",
+									"props" => "CustomProps",
+									_ => null
+								};
+
+								if (oldArrayKey != null && root.ContainsKey(oldArrayKey) && root[oldArrayKey] is JsonArray oldArr)
+								{
+									string unitId = Path.GetFileNameWithoutExtension(key);
+									for (int i = oldArr.Count - 1; i >= 0; i--)
+									{
+										if (oldArr[i] is JsonObject uObj)
+										{
+											string uId = uObj["UnitId"]?.ToString() ?? "";
+											string mPath = uObj["ModelPath"]?.ToString() ?? "";
+											if (uId.Equals(unitId, StringComparison.OrdinalIgnoreCase) || mPath.Equals(key, StringComparison.OrdinalIgnoreCase))
+											{
+												oldArr.RemoveAt(i);
+											}
+										}
+									}
+								}
 							}
 							else
 							{
@@ -1398,7 +1753,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								if (File.Exists(p)) File.Delete(p);
 							}
 
-							File.WriteAllText(metaPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+							MapJsonFormatter.SaveFormattedJson(metaPath, root);
 							RefreshAssetList();
 							ClearPreview();
 							Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Deleted asset {0}."), key));
@@ -1415,13 +1770,18 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private string GetCategoryDisplayName(string cat) => cat switch
 	{
+		"glb_units" => TranslationServer.Translate("3D Models (units)"),
+		"glb_buildings" => TranslationServer.Translate("3D Models (buildings)"),
+		"glb_resources" => TranslationServer.Translate("3D Models (resources)"),
+		"glb_props" => TranslationServer.Translate("3D Models (props)"),
+		"glb_projectiles" => TranslationServer.Translate("3D Models (projectiles)"),
 		"glb" => TranslationServer.Translate("3D Models (GLB)"),
 		"textures" => TranslationServer.Translate("Terrain Textures"),
 		"vfx_spritesheets" => TranslationServer.Translate("VFX Spritesheets"),
 		"animations" => TranslationServer.Translate("Animations (.ranim)"),
 		"sfx" => TranslationServer.Translate("Sound Effects (SFX)"),
 		"music" => TranslationServer.Translate("Music"),
-		"icons" => TranslationServer.Translate("Icons (2D UI)"),
+		"icons" => TranslationServer.Translate("Icons"),
 		"decals" => TranslationServer.Translate("Decals"),
 		"ribbon_textures" => TranslationServer.Translate("Ribbon Textures"),
 		"noise_textures" => TranslationServer.Translate("Noise Textures"),
@@ -1554,7 +1914,23 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			int prunedCount = 0;
 			var assetsObj = root["Assets"].AsObject();
 
-			if (_currentCategory == "glb")
+			if (IsGlbCategory(_currentCategory, out string glbSub))
+			{
+				if (assetsObj["glb"] is JsonObject glbObj && glbObj[glbSub] is JsonObject subObj)
+				{
+					foreach (var modelProp in subObj.ToList())
+					{
+						if (!referenced.Contains(modelProp.Key) && !referenced.Contains(Path.GetFileNameWithoutExtension(modelProp.Key)))
+						{
+							subObj.Remove(modelProp.Key);
+							string p = Path.Combine(wsPath, "Assets", "models", glbSub, modelProp.Key);
+							if (File.Exists(p)) File.Delete(p);
+							prunedCount++;
+						}
+					}
+				}
+			}
+			else if (_currentCategory == "glb")
 			{
 				if (assetsObj["glb"] is JsonObject glbObj)
 				{
@@ -1610,7 +1986,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 			if (prunedCount > 0)
 			{
-				File.WriteAllText(metaPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+				MapJsonFormatter.SaveFormattedJson(metaPath, root);
 				RefreshAssetList();
 				ClearPreview();
 				Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Pruned {0} unused asset(s) from {1}."), prunedCount, GetCategoryDisplayName(_currentCategory)));
