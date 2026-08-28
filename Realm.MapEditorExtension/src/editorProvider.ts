@@ -486,6 +486,60 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     private getHtmlForWebview(webview: vscode.Webview): string {
+        let detectedLocale = 'en';
+        let activeDict: Record<string, string> = {};
+        let enDict: Record<string, string> = {};
+
+        try {
+            const appData = process.env.APPDATA || path.join(require('os').homedir(), 'AppData', 'Roaming');
+            const userDir = path.join(appData, 'Godot', 'app_userdata', 'Realm');
+            const locFile = path.join(userDir, 'realm-locale.txt');
+            if (fs.existsSync(locFile)) {
+                detectedLocale = fs.readFileSync(locFile, 'utf8').trim() || 'en';
+            }
+            const dictFile = path.join(userDir, 'realm-locale-dict.json');
+            if (fs.existsSync(dictFile)) {
+                activeDict = JSON.parse(fs.readFileSync(dictFile, 'utf8'));
+            }
+            const enFile = path.join(userDir, 'realm-locale-en.json');
+            if (fs.existsSync(enFile)) {
+                enDict = JSON.parse(fs.readFileSync(enFile, 'utf8'));
+            }
+        } catch {
+        }
+
+        if (Object.keys(activeDict).length === 0 || Object.keys(enDict).length === 0) {
+            const searchDirs: string[] = [
+                path.join(this.context.extensionPath, '..', 'Realm.Godot', 'locale'),
+                path.join(this.context.extensionPath, 'locale'),
+                path.join(process.cwd(), 'Realm.Godot', 'locale'),
+            ];
+            if (vscode.workspace.workspaceFolders) {
+                for (const wf of vscode.workspace.workspaceFolders) {
+                    searchDirs.push(path.join(wf.uri.fsPath, 'Realm.Godot', 'locale'));
+                    searchDirs.push(path.join(wf.uri.fsPath, '..', 'Realm.Godot', 'locale'));
+                }
+            }
+
+            for (const dir of searchDirs) {
+                if (fs.existsSync(dir)) {
+                    try {
+                        const enFile = path.join(dir, 'en.json');
+                        if (fs.existsSync(enFile) && Object.keys(enDict).length === 0) {
+                            enDict = JSON.parse(fs.readFileSync(enFile, 'utf8'));
+                        }
+                        const activeFile = path.join(dir, `${detectedLocale}.json`);
+                        if (fs.existsSync(activeFile) && Object.keys(activeDict).length === 0) {
+                            activeDict = JSON.parse(fs.readFileSync(activeFile, 'utf8'));
+                        }
+                    } catch {}
+                }
+                if (Object.keys(enDict).length > 0 && Object.keys(activeDict).length > 0) {
+                    break;
+                }
+            }
+        }
+
         const scriptUri = webview.asWebviewUri(vscode.Uri.file(
             path.join(this.context.extensionPath, 'media', 'editor.js')
         ));
@@ -1124,6 +1178,11 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         </div>
         </div>
     </div>
+    <script nonce="${nonce}">
+        window.REALM_LOCALE = "${detectedLocale}";
+        window.REALM_I18N = ${JSON.stringify(activeDict)};
+        window.REALM_EN_FALLBACK = ${JSON.stringify(enDict)};
+    </script>
     <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

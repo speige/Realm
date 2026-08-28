@@ -1,6 +1,76 @@
 (function () {
     const vscode = acquireVsCodeApi();
 
+    let currentLocale = window.REALM_LOCALE || (new URLSearchParams(window.location.search).get('realmLocale')) || 'en';
+
+    function getI18nDict() {
+        return window.REALM_I18N || window.REALM_EN_FALLBACK || {};
+    }
+
+    function t(key, fallback) {
+        const dict = getI18nDict();
+        return (dict && dict[key])
+            ?? fallback
+            ?? (window.REALM_EN_FALLBACK && window.REALM_EN_FALLBACK[key])
+            ?? key;
+    }
+
+    function applyTranslationsToDom() {
+        const appTitle = document.querySelector('.app-title-group h1');
+        if (appTitle) appTitle.textContent = t('Realm Map Editor');
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            const domain = btn.dataset.domain;
+            if (domain === 'units') btn.textContent = t('👥 Units');
+            else if (domain === 'buildings') btn.textContent = t('🏢 Buildings');
+            else if (domain === 'resources') btn.textContent = t('🪵 Resources');
+            else if (domain === 'props') btn.textContent = t('📦 Props');
+            else if (domain === 'weapons') btn.textContent = t('⚔️ Weapons');
+            else if (domain === 'abilities') btn.textContent = t('🪄 Abilities');
+            else if (domain === 'upgrades') btn.textContent = t('🛡️ Upgrades');
+            else if (domain === 'items') btn.textContent = t('📦 Items');
+            else if (domain === 'properties') btn.textContent = t('⚙️ Settings');
+        });
+
+        const saveStatus = document.getElementById('save-status');
+        if (saveStatus) {
+            saveStatus.textContent = saveStatus.classList.contains('unsaved') ? t('● Unsaved Changes') : t('● Saved');
+            saveStatus.title = t('Auto-saved to file');
+        }
+        const lockBtn = document.getElementById('toggle-lock-btn');
+        if (lockBtn) {
+            lockBtn.textContent = isLocked ? t('🔒 Unlock') : t('🔓 Lock');
+            lockBtn.title = isLocked ? t('Unlock Editor (Edit Mode)') : t('Lock Editor (Read-Only Mode)');
+        }
+        const editOpsBtn = document.getElementById('toggle-buttons-btn');
+        if (editOpsBtn) {
+            editOpsBtn.textContent = t('➕ Edit Ops');
+            editOpsBtn.title = t('Toggle Add/Delete Controls');
+        }
+        const debugBtn = document.getElementById('toggle-debug-btn');
+        if (debugBtn) {
+            debugBtn.textContent = t('🐞 Debug');
+            debugBtn.title = t('Toggle Debug JSON View');
+        }
+
+        const addBtn = document.getElementById('add-unit-btn');
+        if (addBtn) addBtn.textContent = t('+ Add');
+        const pruneBtn = document.getElementById('prune-entities-btn');
+        if (pruneBtn) {
+            pruneBtn.textContent = t('✂️ Prune Unused');
+            pruneBtn.title = t('Prune items never placed on terrain.json');
+        }
+
+        const copyBtn = document.getElementById('copy-unit-btn');
+        if (copyBtn) { copyBtn.textContent = t('✂️ Copy'); copyBtn.title = t('Copy entity to clipboard'); }
+        const pasteBtn = document.getElementById('paste-unit-btn');
+        if (pasteBtn) { pasteBtn.textContent = t('📋 Paste'); pasteBtn.title = t('Paste entity from clipboard'); }
+        const duplicateBtn = document.getElementById('duplicate-unit-btn');
+        if (duplicateBtn) { duplicateBtn.textContent = t('📑 Duplicate'); duplicateBtn.title = t('Duplicate selected entity'); }
+        const deleteBtn = document.getElementById('delete-unit-btn');
+        if (deleteBtn) { deleteBtn.textContent = t('🗑️ Delete'); deleteBtn.title = t('Delete selected entity'); }
+    }
+
     let units = {};
     let selectedUnitId = null;
     let searchQuery = '';
@@ -171,8 +241,28 @@
     const changelogList = document.getElementById('changelog-list');
 
     function init() {
+        applyTranslationsToDom();
         // Switch to the units tab by default
         switchTab('units');
+
+        try {
+            const ipcPortMatch = window.location.search.match(/ipcPort=(\d+)/);
+            const ipcPort = ipcPortMatch ? ipcPortMatch[1] : 8092;
+            fetch(`http://127.0.0.1:${ipcPort}/api/locale`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.dictionary) {
+                        window.REALM_I18N = data.dictionary;
+                    }
+                    if (data && data.locale) {
+                        currentLocale = data.locale;
+                    }
+                    applyTranslationsToDom();
+                    switchTab(getActiveDomain());
+                    if (typeof renderUnitList === 'function') renderUnitList();
+                })
+                .catch(() => {});
+        } catch (e) {}
 
         // Setup global tab event listeners
         document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -304,6 +394,17 @@
     window.addEventListener('message', event => {
         const message = event.data;
         switch (message.type) {
+            case 'updateLocale':
+                if (message.realmLocale) {
+                    currentLocale = message.realmLocale;
+                }
+                if (message.dictionary) {
+                    window.REALM_I18N = message.dictionary;
+                }
+                applyTranslationsToDom();
+                if (typeof renderUnitList === 'function') renderUnitList();
+                if (typeof switchTab === 'function') switchTab(getActiveDomain());
+                break;
             case 'update':
                 const oldUnitsStr = serializeDeterministic(units);
                 if (message.text !== oldUnitsStr) {

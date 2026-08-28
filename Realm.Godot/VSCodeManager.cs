@@ -386,6 +386,51 @@ public class VSCodeManager
 		}
 	}
 
+	private void SaveCurrentLocaleToFile()
+	{
+		try
+		{
+			string dir = ProjectSettings.GlobalizePath("user://");
+			if (!Directory.Exists(dir))
+			{
+				Directory.CreateDirectory(dir);
+			}
+			string code = GameSettings.Language.ToLocaleCode();
+			File.WriteAllText(Path.Combine(dir, "realm-locale.txt"), code);
+
+			var activeDict = LocalizationManager.GetDictionary(code);
+			File.WriteAllText(Path.Combine(dir, "realm-locale-dict.json"), System.Text.Json.JsonSerializer.Serialize(activeDict));
+
+			var enDict = LocalizationManager.GetDictionary("en");
+			File.WriteAllText(Path.Combine(dir, "realm-locale-en.json"), System.Text.Json.JsonSerializer.Serialize(enDict));
+		}
+		catch { }
+	}
+
+	private void OnLanguageChanged(GameLanguage newLanguage)
+	{
+		SaveCurrentLocaleToFile();
+		string code = newLanguage.ToLocaleCode();
+		var dict = LocalizationManager.GetDictionary(code);
+		string dictJson = System.Text.Json.JsonSerializer.Serialize(dict);
+		_actionQueue.Enqueue(() =>
+		{
+			try
+			{
+				if (_controller != null && _controller.CoreWebView2 != null)
+				{
+					string js = $"window.postMessage({{ type: 'updateLocale', realmLocale: '{code}', dictionary: {dictJson} }}, '*');";
+					_controller.CoreWebView2.ExecuteScriptAsync(js);
+				}
+			}
+			catch { }
+		});
+		if (_childHwnd != IntPtr.Zero)
+		{
+			PostMessage(_childHwnd, WM_WAKEUP, IntPtr.Zero, IntPtr.Zero);
+		}
+	}
+
 	public void Initialize(Control containerControl)
 	{
 		if (_isInitialized)
@@ -393,6 +438,10 @@ public class VSCodeManager
 			_containerControl = containerControl;
 			return;
 		}
+
+		LocalizationManager.LanguageChanged -= OnLanguageChanged;
+		LocalizationManager.LanguageChanged += OnLanguageChanged;
+		SaveCurrentLocaleToFile();
 
 		_containerControl = containerControl;
 		int windowId = containerControl.GetWindow().GetWindowId();
@@ -557,6 +606,22 @@ public class VSCodeManager
 
 			if (ctx.Request.HttpMethod == "GET")
 			{
+				if (ctx.Request.Url != null && ctx.Request.Url.AbsolutePath.EndsWith("/locale"))
+				{
+					string locCode = GameSettings.Language.ToLocaleCode();
+					var dict = LocalizationManager.GetDictionary(locCode);
+					var locObj = new System.Text.Json.Nodes.JsonObject();
+					locObj["locale"] = locCode;
+					locObj["dictionary"] = System.Text.Json.JsonSerializer.SerializeToNode(dict);
+					string locJson = locObj.ToJsonString();
+					byte[] locBytes = System.Text.Encoding.UTF8.GetBytes(locJson);
+					ctx.Response.ContentType = "application/json";
+					ctx.Response.ContentLength64 = locBytes.Length;
+					await ctx.Response.OutputStream.WriteAsync(locBytes, 0, locBytes.Length);
+					ctx.Response.Close();
+					return;
+				}
+
 				var pollResponseObj = new System.Text.Json.Nodes.JsonObject();
 				var commandsArray = new System.Text.Json.Nodes.JsonArray();
 				while (_pendingExtensionCommands.TryDequeue(out var cmd))
