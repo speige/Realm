@@ -7035,6 +7035,7 @@ public partial class MapEditorHUD : Control
 		overlay.Color = new Color(0, 0, 0, 0.75f);
 		overlay.SetAnchorsPreset(LayoutPreset.FullRect);
 		overlay.MouseFilter = Control.MouseFilterEnum.Stop;
+		overlay.ZIndex = 1000;
 		AddChild(overlay);
 
 		var center = new CenterContainer();
@@ -7042,81 +7043,123 @@ public partial class MapEditorHUD : Control
 		overlay.AddChild(center);
 
 		var panel = new PanelContainer();
-		panel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		panel.CustomMinimumSize = new Vector2(1050, 780);
+		panel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		panel.CustomMinimumSize = new Vector2(1024, 762);
 		center.AddChild(panel);
 
-		var margin = new MarginContainer();
-		margin.AddThemeConstantOverride("margin_top", 20);
-		margin.AddThemeConstantOverride("margin_bottom", 20);
-		margin.AddThemeConstantOverride("margin_left", 25);
-		margin.AddThemeConstantOverride("margin_right", 25);
-		panel.AddChild(margin);
+		var bgTexRect = new TextureRect();
+		bgTexRect.Texture = GD.Load<Texture2D>("res://Assets/UI/map_editor_agreement.png");
+		bgTexRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		bgTexRect.StretchMode = TextureRect.StretchModeEnum.Scale;
+		bgTexRect.SetAnchorsPreset(LayoutPreset.FullRect);
+		panel.AddChild(bgTexRect);
 
-		var vbox = new VBoxContainer();
-		vbox.AddThemeConstantOverride("separation", 15);
-		margin.AddChild(vbox);
+		var contentOverlay = new Control();
+		contentOverlay.SetAnchorsPreset(LayoutPreset.FullRect);
+		panel.AddChild(contentOverlay);
 
+		// Top Title Header
 		var lblTitle = new Label();
-		UIStyle.ApplyTitle(lblTitle, "Realm Creator Agreement", 18);
-		lblTitle.Text = "Realm Creator Agreement";
+		UIStyle.ApplyTitle(lblTitle, "Realm Creator Agreement", 20);
+		lblTitle.Text = TranslationServer.Translate("Realm Creator Agreement").ToString().ToUpperInvariant();
 		lblTitle.HorizontalAlignment = HorizontalAlignment.Center;
-		vbox.AddChild(lblTitle);
+		lblTitle.Position = new Vector2(140, 48);
+		lblTitle.Size = new Vector2(744, 30);
+		contentOverlay.AddChild(lblTitle);
 
-		var richText = new RichTextLabel();
-		richText.BbcodeEnabled = true;
-		richText.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		richText.SizeFlagsVertical = SizeFlags.ExpandFill;
-		richText.CustomMinimumSize = new Vector2(975, 570);
-		richText.ScrollActive = true;
-		richText.AddThemeColorOverride("default_color", new Color(0.9f, 0.9f, 0.95f));
-		richText.AddThemeFontSizeOverride("normal_font_size", 13);
-		richText.AddThemeFontSizeOverride("bold_font_size", 13);
+		// Intro Line 1 & Line 2
+		var lblIntro1 = new Label();
+		lblIntro1.Text = TranslationServer.Translate("By publishing content on Realm, you grant us permission to host, distribute, and display your map so people can play it.");
+		lblIntro1.HorizontalAlignment = HorizontalAlignment.Left;
+		lblIntro1.AddThemeFontSizeOverride("font_size", 12);
+		lblIntro1.AddThemeColorOverride("font_color", new Color(0.18f, 0.15f, 0.12f));
+		lblIntro1.Position = new Vector2(120, 112);
+		lblIntro1.Size = new Vector2(784, 20);
+		contentOverlay.AddChild(lblIntro1);
 
-		string agreementText = 
-			"By publishing content on Realm, you grant us permission to host, distribute, and display your map so people can play it.\n\n" +
-			"We want Realm to be a thriving, collaborative arcade. Please respect these rules:\n\n" +
-			"[color=#d4af37][b]- Your Work is Yours[/b][/color]\n" +
-			"You retain full ownership of your original creations. You aren't signing away your copyright to anyone.\n\n" +
-			"[color=#d4af37][b]- Collaboration[/b][/color]\n" +
-			"By publishing your content on Realm, you allow other creators to open and learn from your work. You also grant them permission to adapt, build upon, and incorporate it into their own creations, provided those new works remain exclusively within the Realm platform.\n\n" +
-			"[color=#d4af37][b]- Give Credit[/b][/color]\n" +
-			"If you import another creator's work, they still own the original. Never claim their work as your own.\n\n" +
-			"[color=#d4af37][b]- Monetization[/b][/color]\n" +
-			"You may ask for donations from your player base, but you may not offer any differences in gameplay compared to non-paying users, other than cosmetic rewards. Pay-to-win is not allowed.\n\n" +
-			"[color=#d4af37][b]- Going Solo[/b][/color]\n" +
-			"Want to turn your map into a standalone game? Go for it! However, you can only take your original work with you. You must remove and re-create any official Realm assets as well as content you imported from other Realm users, unless you obtain their explicit written permission.\n\n" +
-			"[color=#d4af37][b]- No Plagiarism or Piracy[/b][/color]\n" +
-			"Do not upload content you didn’t make or don't have the rights to use. This includes trademarked content from other video games, movies, music, and media.";
+		var lblIntro2 = new Label();
+		lblIntro2.Text = TranslationServer.Translate("We want Realm to be a thriving, collaborative arcade. Please respect these rules:");
+		lblIntro2.HorizontalAlignment = HorizontalAlignment.Left;
+		lblIntro2.AddThemeFontSizeOverride("font_size", 12);
+		lblIntro2.AddThemeColorOverride("font_color", new Color(0.18f, 0.15f, 0.12f));
+		lblIntro2.Position = new Vector2(120, 132);
+		lblIntro2.Size = new Vector2(784, 20);
+		contentOverlay.AddChild(lblIntro2);
 
-		richText.Text = agreementText;
-		vbox.AddChild(richText);
+		// Helper to place text rule card at exact X, Y coordinates
+		void AddRuleTextBox(string title, string desc, float posX, float posY, float width, float height)
+		{
+			var textVBox = new VBoxContainer();
+			textVBox.Position = new Vector2(posX, posY);
+			textVBox.Size = new Vector2(width, height);
+			textVBox.AddThemeConstantOverride("separation", 2);
 
-		var hbox = new HBoxContainer();
-		hbox.AddThemeConstantOverride("separation", 40);
-		hbox.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
-		vbox.AddChild(hbox);
+			var lblTitle = new Label();
+			lblTitle.Text = TranslationServer.Translate(title);
+			lblTitle.AddThemeFontSizeOverride("font_size", 15);
+			lblTitle.AddThemeColorOverride("font_color", new Color(0.72f, 0.35f, 0.12f));
+			lblTitle.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+			textVBox.AddChild(lblTitle);
 
+			var lblDesc = new Label();
+			lblDesc.Text = TranslationServer.Translate(desc);
+			lblDesc.AddThemeFontSizeOverride("font_size", 11);
+			lblDesc.AddThemeColorOverride("font_color", new Color(0.22f, 0.18f, 0.15f));
+			lblDesc.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+			lblDesc.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+			textVBox.AddChild(lblDesc);
+
+			contentOverlay.AddChild(textVBox);
+		}
+
+		// Row 1
+		AddRuleTextBox("Your Work is Yours", 
+			"You retain full ownership of your original creations. You aren't signing away your copyright to anyone.",
+			252, 185, 235, 125);
+
+		AddRuleTextBox("Monetization", 
+			"You may ask for donations from your player base, but you may not offer any differences in gameplay compared to non-paying users, other than cosmetic rewards. Pay-to-win is not allowed.",
+			655, 185, 240, 125);
+
+		// Row 2
+		AddRuleTextBox("Collaboration", 
+			"By publishing your content on Realm, you allow other creators to open and learn from your work. You also grant them permission to adapt, build upon, and incorporate it into their own creations, provided those new works remain exclusively within the Realm platform.",
+			252, 338, 235, 135);
+
+		AddRuleTextBox("Going Solo", 
+			"Want to turn your map into a standalone game? Go for it! However, you can only take your original work with you. You must remove and re-create any official Realm assets as well as content you imported from other Realm users, unless you obtain their explicit written permission.",
+			655, 338, 240, 135);
+
+		// Row 3
+		AddRuleTextBox("Give Credit", 
+			"If you import another creator's work, they still own the original. Never claim their work as your own.",
+			252, 518, 235, 125);
+
+		AddRuleTextBox("No Plagiarism or Piracy", 
+			"Do not upload content you didn’t make or don't have the rights to use. This includes trademarked content from other video games, movies, music, and media.",
+			655, 518, 240, 125);
+
+		// Bottom Buttons (Accept & Quit)
 		var btnAccept = new Button();
 		btnAccept.Set("icon_max_width", 0);
-		SetupButton(btnAccept, "Accept", () =>
+		SetupOptionButton(btnAccept, "Accept", () =>
 		{
 			overlay.QueueFree();
 		}, 13);
-		btnAccept.Text = "Accept";
-		btnAccept.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
-		hbox.AddChild(btnAccept);
+		btnAccept.Position = new Vector2(300, 692);
+		btnAccept.Size = new Vector2(165, 42);
+		contentOverlay.AddChild(btnAccept);
 
 		var btnQuit = new Button();
 		btnQuit.Set("icon_max_width", 0);
-		SetupButton(btnQuit, "Quit", () =>
+		SetupOptionButton(btnQuit, "Quit", () =>
 		{
 			overlay.QueueFree();
 			UIManager.Instance?.TransitionTo(GameScreen.MainMenu);
 		}, 13);
-		btnQuit.Text = "Quit";
-		btnQuit.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
-		hbox.AddChild(btnQuit);
+		btnQuit.Position = new Vector2(558, 692);
+		btnQuit.Size = new Vector2(165, 42);
+		contentOverlay.AddChild(btnQuit);
 	}
 
 	private void InitializeInspectorPanel()

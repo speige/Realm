@@ -142,6 +142,28 @@ public static class UIStyle
 		return CreateStonePanel(true);
 	}
 
+	public static StyleBox CreateAgreementPanel()
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/map_editor_agreement.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 32;
+			style.TextureMarginRight = 32;
+			style.TextureMarginTop = 32;
+			style.TextureMarginBottom = 32;
+			style.ContentMarginLeft = 35;
+			style.ContentMarginRight = 35;
+			style.ContentMarginTop = 35;
+			style.ContentMarginBottom = 35;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			return style;
+		}
+		return CreateStonePanel(true);
+	}
+
 	public static StyleBox CreateBackdropPanel()
 	{
 		var style = new StyleBoxFlat();
