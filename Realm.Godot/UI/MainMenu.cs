@@ -163,7 +163,6 @@ public partial class MainMenu : Control
 		if (_socialPopover != null) _socialPopover.Visible = false;
 		if (_socialPopoverOverlay != null) _socialPopoverOverlay.Visible = false;
 	}
-	}
 
 	private void SetupButton(Button button, string text, Action onClick)
 	{
@@ -291,20 +290,6 @@ public partial class MainMenu : Control
 		};
 
 		button.MouseEntered += () => PlayHoverSound();
-	}
-
-	private void ToggleSocialPopover()
-	{
-		if (_socialPopover == null || _socialPopoverOverlay == null) return;
-		bool isVisible = !_socialPopover.Visible;
-		_socialPopover.Visible = isVisible;
-		_socialPopoverOverlay.Visible = isVisible;
-	}
-
-	private void HideSocialPopover()
-	{
-		if (_socialPopover != null) _socialPopover.Visible = false;
-		if (_socialPopoverOverlay != null) _socialPopoverOverlay.Visible = false;
 	}
 
 	private void CreateVersionSelector()

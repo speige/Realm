@@ -717,7 +717,6 @@ public partial class SettingsMenu : Control
 			}
 		}
 	}
-	}
 
 	private void CancelSettings()
 	{
