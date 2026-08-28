@@ -1,3 +1,4 @@
+using System;
 using Godot;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -78,9 +79,12 @@ public static class LocalizationManager
 		UpdateLocale(GameSettings.Language);
 	}
 
+	public static event Action<GameLanguage> LanguageChanged;
+
 	public static void UpdateLocale(GameLanguage language)
 	{
 		UpdateLocale(language.ToLocaleCode());
+		LanguageChanged?.Invoke(language);
 	}
 
 	public static void UpdateLocale(string locale)
@@ -94,7 +98,34 @@ public static class LocalizationManager
 		}
 	}
 
-	private static bool IsLocaleRtl(string locale)
+	public static Dictionary<string, string> GetDictionary(string locale)
+	{
+		var dict = new Dictionary<string, string>();
+		string basePath = $"res://locale/{locale}.json";
+		if (FileAccess.FileExists(basePath))
+		{
+			using var file = FileAccess.Open(basePath, FileAccess.ModeFlags.Read);
+			if (file != null)
+			{
+				try
+				{
+					var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(file.GetAsText());
+					if (parsed != null)
+					{
+						foreach (var kvp in parsed) dict[kvp.Key] = kvp.Value;
+					}
+				}
+				catch { }
+			}
+		}
+		if (dict.Count == 0 && locale != "en")
+		{
+			return GetDictionary("en");
+		}
+		return dict;
+	}
+
+	public static bool IsLocaleRtl(string locale)
 	{
 		return locale == "ar";
 	}

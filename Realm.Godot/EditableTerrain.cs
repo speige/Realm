@@ -152,7 +152,7 @@ public partial class EditableTerrain : RuntimeTerrain
 			{
 				FileName = ktxCmd,
 				WorkingDirectory = ktxDir,
-				Arguments = $"create --format R8G8B8A8_UNORM --layers 2 --encode uastc --generate-mipmap \"{globalTempL0}\" \"{globalTempL1}\" \"{globalOutput}\"",
+				Arguments = $"create --format R8G8B8A8_UNORM --layers 2 --encode basis-lz --generate-mipmap \"{globalTempL0}\" \"{globalTempL1}\" \"{globalOutput}\"",
 				UseShellExecute = false,
 				CreateNoWindow = true,
 				RedirectStandardOutput = true,

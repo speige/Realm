@@ -47,7 +47,7 @@ public static class TextureConverter
 		}
 
 		string mipmapFlag = generateMipmaps ? "--generate-mipmap" : "";
-		string args = $"create --format {format} --encode uastc {mipmapFlag} \"{inputPngPath}\" \"{outputKtx2Path}\"";
+		string args = $"create --format {format} --encode basis-lz {mipmapFlag} \"{inputPngPath}\" \"{outputKtx2Path}\"";
 
 		var runResult = NativeToolRunner.RunTool(ktxTool, args);
 		if (runResult.ExitCode == 0 && File.Exists(outputKtx2Path))
