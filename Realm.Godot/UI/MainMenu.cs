@@ -91,7 +91,7 @@ public partial class MainMenu : Control
 		SetupMenuButton(_mapDiscoveryButton, "MAP DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.MapDiscovery), "res://Assets/UI/menu_discovery_button.png");
 		if (_creatorDiscoveryButton != null)
 		{
-			SetupMenuButton(_creatorDiscoveryButton, "CREATOR DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.CreatorDiscovery), "res://Assets/UI/menu_discovery_button.png");
+			SetupMenuButton(_creatorDiscoveryButton, "CREATOR DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.CreatorDiscovery), "res://Assets/UI/menu_creator_button.png");
 			_creatorDiscoveryButton.AddThemeConstantOverride("icon_max_width", 28);
 		}
 		SetupMenuButton(_mapEditorButton, "MAP EDITOR", () => OnMapEditorPressed(), "res://Assets/UI/menu_editor_button.png");

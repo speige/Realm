@@ -129,6 +129,7 @@ offset_right = 325.0
 grow_vertical = 2
 
 [node name="LeftTabButton" type="Button" parent="LeftSlidePanel"]
+visible = false
 custom_minimum_size = Vector2(30, 120)
 layout_mode = 1
 anchors_preset = 6
@@ -157,6 +158,8 @@ offset_right = -10.0
 offset_bottom = -10.0
 grow_horizontal = 2
 grow_vertical = 2
+horizontal_scroll_mode = 3
+vertical_scroll_mode = 3
 
 [node name="LeftVBox" type="VBoxContainer" parent="LeftSlidePanel/LeftScroll"]
 layout_mode = 2
@@ -476,6 +479,7 @@ grow_horizontal = 0
 grow_vertical = 2
 
 [node name="RightTabButton" type="Button" parent="RightSlidePanel"]
+visible = false
 custom_minimum_size = Vector2(30, 120)
 layout_mode = 1
 anchors_preset = 4
@@ -500,6 +504,8 @@ offset_right = -10.0
 offset_bottom = -10.0
 grow_horizontal = 2
 grow_vertical = 2
+horizontal_scroll_mode = 3
+vertical_scroll_mode = 3
 
 [node name="AccordionContainer" type="VBoxContainer" parent="RightSlidePanel/RightScroll"]
 layout_mode = 2
@@ -850,7 +856,7 @@ text = "Cliff Face Texture"
 layout_mode = 2
 theme_override_constants/h_separation = 6
 theme_override_constants/v_separation = 6
-columns = 4
+columns = 5
 
 [node name="Swatch1" type="Button" parent="RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerTexture/GridSwatches"]
 custom_minimum_size = Vector2(48, 48)

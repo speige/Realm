@@ -92,15 +92,32 @@ public partial class MapEditorHUD : Control
 	private Button _btnHeaderViewport;
 	private VBoxContainer _contentViewport;
 	
+	private class CardDragData
+	{
+		public Control CardNode;
+		public Button HeaderButton;
+		public Control ContentControl;
+		public string TitleText;
+		public bool IsDragging;
+		public bool HasMovedSincePress;
+		public Vector2 DragStartMousePos;
+		public Vector2 CardStartPos;
+	}
 
+	private readonly Dictionary<Control, CardDragData> _cardDragMap = new();
+	private Button _btnResetLayout;
+
+	private VBoxContainer _accordionFile;
+	private Button _btnHeaderFile;
+	private Control _contentFile;
+
+	private VBoxContainer _accordionMapSettings;
+	private Button _btnHeaderMapSettings;
+	private Control _contentMapSettings;
 	
 	private VBoxContainer _accordionInspector;
 	private Button _btnHeaderInspector;
 	private VBoxContainer _contentInspector;
-	private Button _btnHeaderFile;
-	private Control _contentFile;
-	private Button _btnHeaderMapSettings;
-	private Control _contentMapSettings;
 
 	private VBoxContainer _containerTextureSettings;
 	private VBoxContainer _containerPathingSettings;
@@ -289,6 +306,12 @@ public partial class MapEditorHUD : Control
 
 	private Button _activeToolButton = null;
 	private StyleBoxFlat _highlightStyle;
+
+	private Control _cardRaise, _cardLower, _cardSmooth, _cardPlateau, _cardRamp, _cardNoise;
+	private Control _cardTextureBrush, _cardFloodFill;
+	private Control _cardPathingBrush, _cardFloodFillPathing;
+	private Control _cardAddObject, _cardSelectMove, _cardDeleteObject;
+	private Control _cardSelectArea, _cardCut, _cardCopy, _cardPaste, _cardEraseArea, _cardMirrorHorizontally, _cardMirrorVertically;
 	private Label _lblInfoText;
 	private Label _lblTerrainTexture;
 	private Label _lblCliffTexture;
@@ -378,13 +401,31 @@ public partial class MapEditorHUD : Control
 			ChildEnteredTree += (node) => HookSliders(node);
 
 		_highlightStyle = new StyleBoxFlat();
-		_highlightStyle.BgColor = new Color(0, 0, 0, 0);
-		_highlightStyle.BorderColor = UIStyle.ColorCyanGlow;
-		_highlightStyle.SetBorderWidthAll(3);
-		_highlightStyle.CornerRadiusTopLeft = 4;
-		_highlightStyle.CornerRadiusTopRight = 4;
-		_highlightStyle.CornerRadiusBottomLeft = 4;
-		_highlightStyle.CornerRadiusBottomRight = 4;
+		_highlightStyle.BgColor = new Color(0.35f, 0.28f, 0.18f, 0.95f);
+		_highlightStyle.BorderColor = UIStyle.ColorGold;
+		_highlightStyle.SetBorderWidthAll(2);
+		_highlightStyle.CornerRadiusTopLeft = 6;
+		_highlightStyle.CornerRadiusTopRight = 6;
+		_highlightStyle.CornerRadiusBottomLeft = 6;
+		_highlightStyle.CornerRadiusBottomRight = 6;
+		_highlightStyle.ContentMarginLeft = 4;
+		_highlightStyle.ContentMarginRight = 4;
+		_highlightStyle.ContentMarginTop = 4;
+		_highlightStyle.ContentMarginBottom = 4;
+
+		var panelTex = GD.Load<Texture2D>("res://Assets/UI/map_editor_panel.png");
+		if (panelTex != null)
+		{
+			var frameRect = new TextureRect();
+			frameRect.Name = "MapEditorScreenFrame";
+			frameRect.Texture = panelTex;
+			frameRect.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+			frameRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+			frameRect.StretchMode = TextureRect.StretchModeEnum.Scale;
+			frameRect.MouseFilter = Control.MouseFilterEnum.Ignore;
+			AddChild(frameRect);
+			MoveChild(frameRect, 0);
+		}
 
 		_leftPillar = new Panel();
 		_rightPillar = new Panel();
@@ -400,24 +441,35 @@ public partial class MapEditorHUD : Control
 		_panelLeft = GetNode<Panel>("LeftSlidePanel");
 		_panelRight = GetNode<Panel>("RightSlidePanel");
 
-		_btnLeftTab = GetNode<Button>("LeftSlidePanel/LeftTabButton");
-		_btnLeftTab.Pressed += ToggleLeftPanel;
+		_btnLeftTab = GetNodeOrNull<Button>("LeftSlidePanel/LeftTabButton");
+		if (_btnLeftTab != null)
+		{
+			_btnLeftTab.Visible = false;
+			_btnLeftTab.Pressed += ToggleLeftPanel;
+		}
 
-		_btnRightTab = GetNode<Button>("RightSlidePanel/RightTabButton");
-		_btnRightTab.Pressed += ToggleRightPanel;
+		_btnRightTab = GetNodeOrNull<Button>("RightSlidePanel/RightTabButton");
+		if (_btnRightTab != null)
+		{
+			_btnRightTab.Visible = false;
+			_btnRightTab.Pressed += ToggleRightPanel;
+		}
 
 		_btnBackToHub = GetNode<Button>("TopLeftBox/BtnBack");
-		SetupButton(_btnBackToHub, "🚪 BACK TO HUB", () => BackToHubAction(), 13, "Exit editor and return to game lobby");
+		SetupButton(_btnBackToHub, "\uf2f5 BACK TO HUB", () => BackToHubAction(), 13, "Exit editor and return to game lobby");
+		StyleMapEditorTopButton(_btnBackToHub);
 
 		var btnHelp = GetNode<Button>("TopLeftBox/BtnHelp");
-		SetupButton(btnHelp, "❓ HELP / HOTKEYS", () => ToggleHelpPanelExternal(), 13, "Toggle the hotkeys and editor guide overlay (H)");
+		SetupButton(btnHelp, "\uf059 HELP / HOTKEYS", () => ToggleHelpPanelExternal(), 13, "Toggle the hotkeys and editor guide overlay (H)");
+		StyleMapEditorTopButton(btnHelp);
 
 		if (OperatingSystem.IsWindows())
 		{
 			GenerateVSCodeFilesExternal();
 			VSCodeManager.Instance.Initialize(this);
 			_btnVSCode = GetNode<Button>("TopLeftBox/BtnVSCode");
-			SetupButton(_btnVSCode, "💻 CODE & DATA", () => ToggleVSCodeEditor(), 13, "Toggle the embedded VSCode editor");
+			SetupButton(_btnVSCode, "\uf121 CODE & DATA", () => ToggleVSCodeEditor(), 13, "Toggle the embedded VSCode editor");
+			StyleMapEditorTopButton(_btnVSCode);
 		}
 		else
 		{
@@ -425,54 +477,88 @@ public partial class MapEditorHUD : Control
 		}
 
 		_btnUndo = GetNode<Button>("TopLeftBox/BtnUndo");
-		SetupButton(_btnUndo, "↩️ UNDO", () => UndoAction(), 13, "Undo the last action (Ctrl+Z)");
+		SetupButton(_btnUndo, "\uf0e2 UNDO", () => UndoAction(), 13, "Undo the last action (Ctrl+Z)");
+		StyleMapEditorTopButton(_btnUndo);
 
 		_btnRedo = GetNode<Button>("TopLeftBox/BtnRedo");
-		SetupButton(_btnRedo, "↪️ REDO", () => RedoAction(), 13, "Redo the last undone action (Ctrl+Y)");
+		SetupButton(_btnRedo, "\uf01e REDO", () => RedoAction(), 13, "Redo the last undone action (Ctrl+Y)");
+		StyleMapEditorTopButton(_btnRedo);
 
 		_btnEyedropper = GetNode<Button>("TopLeftBox/BtnEyedropper");
-		SetupButton(_btnEyedropper, "🔍 EYEDROPPER", () => TriggerToolSelection(GameHost.EditorTool.Eyedropper, _btnEyedropper), 14, "Pick / sample entities, terrain height (Shift+Click), or vertex color under cursor (I)");
-		UIStyle.ApplyButtonText(_btnEyedropper, "🔍 EYEDROPPER", 13);
+		SetupButton(_btnEyedropper, "\uf1fb EYEDROPPER", () => TriggerToolSelection(GameHost.EditorTool.Eyedropper, _btnEyedropper), 13, "Pick / sample entities, terrain height (Shift+Click), or vertex color under cursor (I)");
+		StyleMapEditorTopButton(_btnEyedropper);
 
 		_optModule = GetNode<OptionButton>("TopLeftBox/OptModule");
-		_optModule.AddItem("⛰️ " + TranslationServer.Translate("TERRAIN"), (int)EditorModule.Terrain);
-		_optModule.AddItem("🎨 " + TranslationServer.Translate("TEXTURE"), (int)EditorModule.TextureDeco);
-		_optModule.AddItem("🧭 " + TranslationServer.Translate("PATHING"), (int)EditorModule.Pathing);
-		_optModule.AddItem("💂 " + TranslationServer.Translate("OBJECTS"), (int)EditorModule.Objects);
-		_optModule.AddItem("🗺️ " + TranslationServer.Translate("COORDINATES"), (int)EditorModule.Coordinates);
-		_optModule.AddItem("📋 " + TranslationServer.Translate("CLIPBOARD"), (int)EditorModule.Clipboard);
+		StyleOptionButtonPopup(_optModule);
+		_optModule.AddItem("\uf6e8 " + TranslationServer.Translate("TERRAIN"), (int)EditorModule.Terrain);
+		_optModule.AddItem("\uf1fc " + TranslationServer.Translate("TEXTURE"), (int)EditorModule.TextureDeco);
+		_optModule.AddItem("\uf4d7 " + TranslationServer.Translate("PATHING"), (int)EditorModule.Pathing);
+		_optModule.AddItem("\uf1b2 " + TranslationServer.Translate("OBJECTS"), (int)EditorModule.Objects);
+		_optModule.AddItem("\uf303 " + TranslationServer.Translate("COORDINATES"), (int)EditorModule.Coordinates);
+		_optModule.AddItem("\uf0ea " + TranslationServer.Translate("CLIPBOARD"), (int)EditorModule.Clipboard);
 		_optModule.ItemSelected += (index) => SwitchModule((EditorModule)index);
+		StyleMapEditorTopButton(_optModule);
 
 		_btnSettings = GetNodeOrNull<Button>("TopLeftBox/BtnSettings");
 		if (_btnSettings != null)
 		{
 			SetupIconButton(_btnSettings, "res://Assets/UI/gear_icon.png", () => UIManager.Instance?.OpenSettingsOverlay(), "Settings");
+			StyleMapEditorTopButton(_btnSettings);
+		}
+
+		var topLeftBox = GetNodeOrNull<HBoxContainer>("TopLeftBox");
+		if (topLeftBox != null)
+		{
+			_btnResetLayout = new Button();
+			_btnResetLayout.Name = "BtnResetLayout";
+			SetupButton(_btnResetLayout, "\uf08d RESET LAYOUT", () => ResetAllPanelPositions(), 12, "Reset all floating panels back to default sidebar positions");
+			StyleMapEditorTopButton(_btnResetLayout);
+			topLeftBox.AddChild(_btnResetLayout);
+			if (_btnSettings != null)
+			{
+				topLeftBox.MoveChild(_btnResetLayout, _btnSettings.GetIndex());
+			}
 		}
 
 		_statusLabel = GetNode<Label>("TopBar/HBox/StatusLabel");
 		_feedbackLabel = GetNode<Label>("FeedbackLabel");
 		_feedbackLabel.Modulate = new Color(1, 1, 1, 0);
 
+		var leftScroll = GetNodeOrNull<ScrollContainer>("LeftSlidePanel/LeftScroll");
+		if (leftScroll != null)
+		{
+			leftScroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
+			leftScroll.VerticalScrollMode = ScrollContainer.ScrollMode.Disabled;
+		}
+
+		var rightScroll = GetNodeOrNull<ScrollContainer>("RightSlidePanel/RightScroll");
+		if (rightScroll != null)
+		{
+			rightScroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
+			rightScroll.VerticalScrollMode = ScrollContainer.ScrollMode.Disabled;
+		}
+
 		// Left Accordions
+		_accordionFile = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion");
 		_btnHeaderFile = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/BtnHeaderFile");
 		_contentFile = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile");
 		StyleAccordionHeader(_btnHeaderFile);
-		SetupMutualAccordion(_btnHeaderFile, _contentFile, TranslationServer.Translate("File"));
+		SetupAccordion(_btnHeaderFile, _contentFile, TranslationServer.Translate("File"));
 
 		_btnLoad = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnLoad");
-		SetupButton(_btnLoad, "📂 LOAD", () => LoadMapAction(), 13, "Load heights, colors, and entities from a saved json file (Ctrl+O)");
+		SetupOptionButton(_btnLoad, "\uf07c LOAD", () => LoadMapAction(), 13, "Load heights, colors, and entities from a saved json file (Ctrl+O)");
 
 		_btnSave = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnSave");
-		SetupButton(_btnSave, "💾 SAVE", () => SaveMapActionExternal(), 13, "Save current heightmap, textures, and entities (Ctrl+S)");
+		SetupOptionButton(_btnSave, "\uf0c7 SAVE", () => SaveMapActionExternal(), 13, "Save current heightmap, textures, and entities (Ctrl+S)");
 
 		_btnTestMap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnTestMap");
-		SetupButton(_btnTestMap, "🎮 TEST", () => TestMapAction(), 13, "Launch single-player mode on the current editor map");
+		SetupOptionButton(_btnTestMap, "\uf11b TEST", () => TestMapAction(), 13, "Launch single-player mode on the current editor map");
 
 		_btnPublish = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnPublish");
-		SetupButton(_btnPublish, "📜 PUBLISH", () => PublishMapActionExternal(), 13, "Publish/export map to custom map registry");
+		SetupOptionButton(_btnPublish, "\uf093 PUBLISH", () => PublishMapActionExternal(), 13, "Publish/export map to custom map registry");
 
 		_btnResetMap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnResetMap");
-		SetupButton(_btnResetMap, "🧹 RESET TO BLANK MAP", () =>
+		SetupOptionButton(_btnResetMap, "\uf12d RESET MAP", () =>
 		{
 			ShowConfirmationDialog(
 				"Are you sure you want to clear the entire map? This will delete all placed entities and reset terrain heights.",
@@ -481,21 +567,26 @@ public partial class MapEditorHUD : Control
 		}, 13, "Clear all terrain heights, colors, and placed entities");
 
 		_btnGenerateMap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnGenerateMap");
-		SetupButton(_btnGenerateMap, "🎲 RANDOM GEN", () => _generationDialog.Show(), 13, "Open random terrain generator settings modal");
+		SetupOptionButton(_btnGenerateMap, "\uf522 RANDOM GEN", () => _generationDialog.Show(), 13, "Open random terrain generator settings modal");
 
 		_btnImportMinimap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnImportMinimap");
-		SetupButton(_btnImportMinimap, "🗺️ GEN FROM IMAGE", () => ImportTerrainFromMinimapDialog(), 13, "Import terrain elevations, textures, and trees from a minimap image file");
-
+		SetupOptionButton(_btnImportMinimap, "\uf279 FROM IMAGE", () => ImportTerrainFromMinimapDialog(), 13, "Import terrain elevations, textures, and trees from a minimap image file");
 
 		_btnAssetsManager = new Button();
 		_btnAssetsManager.Name = "BtnAssetsManager";
 		SetupButton(_btnAssetsManager, "📦 " + TranslationServer.Translate("ASSETS"), () => _assetManagerDialog?.OpenDialog(), 13, "Open Map Assets Manager & Importer");
 		_contentFile.AddChild(_btnAssetsManager);
 
+		_btnImportAnimation = new Button();
+		_btnImportAnimation.Name = "BtnImportAnimation";
+		SetupOptionButton(_btnImportAnimation, "\uf1c8 MIXAMO / GLB", () => ImportMixamoOrAnimationDialog(), 13, "Import Mixamo character/animation GLB or .ranim binary animation files");
+		_contentFile.AddChild(_btnImportAnimation);
+
+		_accordionViewport = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion");
 		_btnHeaderViewport = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/BtnHeaderViewport");
 		_contentViewport = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport");
 		StyleAccordionHeader(_btnHeaderViewport);
-		SetupMutualAccordion(_btnHeaderViewport, _contentViewport, TranslationServer.Translate("Viewport & Navigation"));
+		SetupAccordion(_btnHeaderViewport, _contentViewport, TranslationServer.Translate("Viewport & Navigation"));
 
 		InitializeTempWorkspace();
 
@@ -503,7 +594,7 @@ public partial class MapEditorHUD : Control
 
 
 		_btnToggleGrid = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnToggleGrid");
-		SetupButton(_btnToggleGrid, "🌐 GRID OVERLAY: OFF", () =>
+		SetupButton(_btnToggleGrid, "\uf84c", () =>
 		{
 			if (GameHost.Instance != null)
 			{
@@ -516,10 +607,10 @@ public partial class MapEditorHUD : Control
 				GameHost.Instance.UpdateGridOverlayVisibility();
 				UpdateGridOverlayExternal(GameHost.Instance.EditorGridMode);
 			}
-		}, 10, "Toggle rendering of the overlay alignment grid lines (V)");
+		}, 12, "Toggle alignment grid lines overlay (V)");
 
 		_btnToggleCameraBounds = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnToggleCameraBounds");
-		SetupButton(_btnToggleCameraBounds, "📹 CAM BOUNDS: OFF", () =>
+		SetupButton(_btnToggleCameraBounds, "\uf06e", () =>
 		{
 			if (GameHost.Instance != null)
 			{
@@ -527,25 +618,25 @@ public partial class MapEditorHUD : Control
 				GameHost.Instance.UpdateCameraBoundsOverlayVisibility();
 				UpdateCameraBoundsOverlayExternal(GameHost.Instance.EditorCameraBoundsVisible);
 			}
-		}, 10, "Toggle rendering of the camera bounds overlay");
+		}, 12, "Toggle camera bounds overlay (B)");
 
 		_btnRotate = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnRotate");
-		SetupButton(_btnRotate, "🔄 Rotate", () =>
+		SetupButton(_btnRotate, "\uf01e", () =>
 		{
 			UIManager.Instance?.PlayClickSound();
 			var camera = (GameHost.Instance?.MainCamera as CameraControl);
 			camera?.Rotate90Degrees();
-		}, 13, "Rotate camera 90 degrees");
+		}, 12, "Rotate camera 90 degrees (R)");
 
 		_btnCameraAngle = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnCameraAngle");
-		SetupButton(_btnCameraAngle, "📐 Tilt", () =>
+		SetupButton(_btnCameraAngle, "\uf1b2", () =>
 		{
 			var camera = (GameHost.Instance?.MainCamera as CameraControl);
 			camera?.ToggleTopDown();
-		}, 11, "Toggle top-down vs perspective angle (C)");
+		}, 12, "Toggle perspective vs top-down angle (C)");
 
 		_btnSkybox = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnSkybox");
-		SetupButton(_btnSkybox, "☀️ Cycle Lighting", () => {
+		SetupButton(_btnSkybox, "\uf185", () => {
 			if (GameHost.Instance != null)
 			{
 				var res = GameHost.Instance.CycleTimeOfDay();
@@ -561,30 +652,31 @@ public partial class MapEditorHUD : Control
 				};
 				ShowFeedback(string.Format(TranslationServer.Translate("Lighting: {0} {1}"), icon, TranslationServer.Translate(timeName)));
 			}
-		}, 11, "Cycle map environment lighting (L)");
+		}, 12, "Cycle map environment lighting (L)");
 
 		_btnZoomIn = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnZoomIn");
-		_btnZoomIn.Pressed += () =>
+		SetupButton(_btnZoomIn, "\uf00e", () =>
 		{
 			UIManager.Instance?.PlayClickSound();
 			(GameHost.Instance?.MainCamera as CameraControl)?.ZoomIn();
-		};
+		}, 12, "Zoom camera in (+)");
 
 		_btnZoomOut = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnZoomOut");
-		_btnZoomOut.Pressed += () =>
+		SetupButton(_btnZoomOut, "\uf010", () =>
 		{
 			UIManager.Instance?.PlayClickSound();
 			(GameHost.Instance?.MainCamera as CameraControl)?.ZoomOut();
-		};
+		}, 12, "Zoom camera out (-)");
 
 		_minimapFrame = GetNode<PanelContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/MinimapFrame");
 		_minimapArea = GetNode<Control>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/MinimapFrame/MinimapArea");
 		_cameraIndicator = GetNode<MapEditorCameraIndicator>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/MinimapFrame/MinimapArea/CameraIndicator");
 
+		_accordionMapSettings = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion");
 		_btnHeaderMapSettings = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/BtnHeaderMapSettings");
 		_contentMapSettings = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings");
 		StyleAccordionHeader(_btnHeaderMapSettings);
-		SetupMutualAccordion(_btnHeaderMapSettings, _contentMapSettings, TranslationServer.Translate("Map Settings"));
+		SetupAccordion(_btnHeaderMapSettings, _contentMapSettings, TranslationServer.Translate("Map Settings"));
 
 
 
@@ -594,7 +686,7 @@ public partial class MapEditorHUD : Control
 		_lblCamTopVal = GetNode<Label>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/LblCamTopVal");
 		_lblCamBottomVal = GetNode<Label>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/LblCamBottomVal");
 
-		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnLeftDec"), "⬅️", () => {
+		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnLeftDec"), "\uf060", () => {
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
 				EnsureCameraBoundsVisible();
 				float minX = -GameHost.Instance.GroundTerrain.Width;
@@ -603,7 +695,7 @@ public partial class MapEditorHUD : Control
 				UpdateCameraBoundsUI();
 			}
 		}, 10, "Move Left boundary further left (West)");
-		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnLeftInc"), "➡️", () => {
+		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnLeftInc"), "\uf061", () => {
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
 				EnsureCameraBoundsVisible();
 				float maxX = GameHost.Instance.EditorCameraBoundsRight;
@@ -612,7 +704,7 @@ public partial class MapEditorHUD : Control
 				UpdateCameraBoundsUI();
 			}
 		}, 10, "Move Left boundary further right (East)");
-		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnRightDec"), "⬅️", () => {
+		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnRightDec"), "\uf060", () => {
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
 				EnsureCameraBoundsVisible();
 				float minX = GameHost.Instance.EditorCameraBoundsLeft;
@@ -621,7 +713,7 @@ public partial class MapEditorHUD : Control
 				UpdateCameraBoundsUI();
 			}
 		}, 10, "Move Right boundary further left (West)");
-		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnRightInc"), "➡️", () => {
+		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnRightInc"), "\uf061", () => {
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
 				EnsureCameraBoundsVisible();
 				float maxX = (float)GameHost.Instance.GroundTerrain.Width;
@@ -630,7 +722,7 @@ public partial class MapEditorHUD : Control
 				UpdateCameraBoundsUI();
 			}
 		}, 10, "Move Right boundary further right (East)");
-		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnTopDec"), "⬅️", () => {
+		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnTopDec"), "\uf060", () => {
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
 				EnsureCameraBoundsVisible();
 				float minZ = -GameHost.Instance.GroundTerrain.Depth;
@@ -639,7 +731,7 @@ public partial class MapEditorHUD : Control
 				UpdateCameraBoundsUI();
 			}
 		}, 10, "Move Top boundary further North (Up)");
-		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnTopInc"), "➡️", () => {
+		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnTopInc"), "\uf061", () => {
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
 				EnsureCameraBoundsVisible();
 				float maxZ = GameHost.Instance.EditorCameraBoundsBottom;
@@ -648,7 +740,7 @@ public partial class MapEditorHUD : Control
 				UpdateCameraBoundsUI();
 			}
 		}, 10, "Move Top boundary further South (Down)");
-		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnBottomDec"), "⬅️", () => {
+		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnBottomDec"), "\uf060", () => {
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
 				EnsureCameraBoundsVisible();
 				float minZ = GameHost.Instance.EditorCameraBoundsTop;
@@ -657,7 +749,7 @@ public partial class MapEditorHUD : Control
 				UpdateCameraBoundsUI();
 			}
 		}, 10, "Move Bottom boundary further North (Up)");
-		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnBottomInc"), "➡️", () => {
+		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnBottomInc"), "\uf061", () => {
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
 				EnsureCameraBoundsVisible();
 				float maxZ = (float)GameHost.Instance.GroundTerrain.Depth;
@@ -670,7 +762,7 @@ public partial class MapEditorHUD : Control
 		_lblMapWidthVal = GetNode<Label>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/LblMapWidthVal");
 		_lblMapHeightVal = GetNode<Label>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/LblMapHeightVal");
 
-		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/BtnWidthDec"), "➖", () => {
+		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/BtnWidthDec"), "\uf068", () => {
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
 				int w = GameHost.Instance.GroundTerrain.Width;
 				if (w > 32) {
@@ -680,7 +772,7 @@ public partial class MapEditorHUD : Control
 				}
 			}
 		}, 10, "Decrease map tile columns (West)");
-		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/BtnWidthInc"), "➕", () => {
+		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/BtnWidthInc"), "\uf067", () => {
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
 				int w = GameHost.Instance.GroundTerrain.Width;
 				if (w < 512) {
@@ -690,7 +782,7 @@ public partial class MapEditorHUD : Control
 				}
 			}
 		}, 10, "Increase map tile columns (East)");
-		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/BtnHeightDec"), "➖", () => {
+		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/BtnHeightDec"), "\uf068", () => {
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
 				int d = GameHost.Instance.GroundTerrain.Depth;
 				if (d > 32) {
@@ -700,7 +792,7 @@ public partial class MapEditorHUD : Control
 				}
 			}
 		}, 10, "Decrease map tile rows (North)");
-		SetupButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/BtnHeightInc"), "➕", () => {
+		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/BtnHeightInc"), "\uf067", () => {
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
 				int d = GameHost.Instance.GroundTerrain.Depth;
 				if (d < 512) {
@@ -714,7 +806,7 @@ public partial class MapEditorHUD : Control
 		UpdateCameraBoundsUI();
 
 		var btnScaleMap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/BtnScaleMap");
-		SetupButton(btnScaleMap, "⚖ SCALE MAP", () =>
+		SetupOptionButton(btnScaleMap, "\uf07e SCALE MAP", () =>
 		{
 			if (GameHost.Instance?.GroundTerrain != null)
 			{
@@ -778,58 +870,59 @@ public partial class MapEditorHUD : Control
 		_panelClipboard = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelClipboard");
 
 		_btnRaise = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelTerrainVBox/BtnRaise");
-		SetupButton(_btnRaise, "⛰️ Raise", () => TriggerToolSelection(GameHost.EditorTool.Raise, _btnRaise), 11, "Elevate terrain height (1)");
+		_cardRaise = CreateToolCard(_btnRaise, "\uf062", "Raise", () => TriggerToolSelection(GameHost.EditorTool.Raise, _btnRaise), "Elevate terrain height (1)");
 
 		_btnLower = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelTerrainVBox/BtnLower");
-		SetupButton(_btnLower, "🕳️ Lower", () => TriggerToolSelection(GameHost.EditorTool.Lower, _btnLower), 11, "Lower terrain height (2)");
+		_cardLower = CreateToolCard(_btnLower, "\uf063", "Lower", () => TriggerToolSelection(GameHost.EditorTool.Lower, _btnLower), "Lower terrain height (2)");
 
 		_btnSmooth = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelTerrainVBox/BtnSmooth");
-		SetupButton(_btnSmooth, "✨ Smooth", () => TriggerToolSelection(GameHost.EditorTool.Smooth, _btnSmooth), 11, "Smooth terrain height (3)");
+		_cardSmooth = CreateToolCard(_btnSmooth, "\uf043", "Smooth", () => TriggerToolSelection(GameHost.EditorTool.Smooth, _btnSmooth), "Smooth terrain height (3)");
 
 		_btnPlateau = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelTerrainVBox/BtnPlateau");
-		SetupButton(_btnPlateau, "🥞 Plateau", () => TriggerToolSelection(GameHost.EditorTool.Plateau, _btnPlateau), 11, "Flatten terrain to cursor height on click (5)");
+		_cardPlateau = CreateToolCard(_btnPlateau, "\uf0c8", "Flatten", () => TriggerToolSelection(GameHost.EditorTool.Plateau, _btnPlateau), "Flatten terrain to cursor height on click (5)");
 
 		_btnRamp = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelTerrainVBox/BtnRamp");
-		SetupButton(_btnRamp, "📐 Ramp", () => TriggerToolSelection(GameHost.EditorTool.Ramp, _btnRamp), 11, "Create ramp between two points (6)");
+		_cardRamp = CreateToolCard(_btnRamp, "\uf542", "Ramp", () => TriggerToolSelection(GameHost.EditorTool.Ramp, _btnRamp), "Create ramp between two points (6)");
 
 		_btnNoise = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelTerrainVBox/BtnNoise");
-		SetupButton(_btnNoise, "🎲 Roughen", () => TriggerToolSelection(GameHost.EditorTool.Noise, _btnNoise), 11, "Add random height variations/noise to the terrain under the brush (7)");
+		_cardNoise = CreateToolCard(_btnNoise, "\uf6d9", "Noise", () => TriggerToolSelection(GameHost.EditorTool.Noise, _btnNoise), "Add random height variations/noise to terrain (7)");
 
 		_btnTextureBrush = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelDecoVBox/BtnTextureBrush");
-		SetupButton(_btnTextureBrush, "🎨 Paint", () => TriggerToolSelection(GameHost.EditorTool.PaintTexture, _btnTextureBrush), 11, "Paint terrain texture (8)");
+		_cardTextureBrush = CreateToolCard(_btnTextureBrush, "\uf1fc", "Paint", () => TriggerToolSelection(GameHost.EditorTool.PaintTexture, _btnTextureBrush), "Paint terrain texture (8)");
 
 		_btnFloodFill = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelDecoVBox/BtnFloodFill");
-		SetupButton(_btnFloodFill, "🪣 Flood Fill", () => TriggerToolSelection(GameHost.EditorTool.FloodFill, _btnFloodFill), 11, "Flood fill terrain texture");
+		_cardFloodFill = CreateToolCard(_btnFloodFill, "\uf576", "Flood Fill", () => TriggerToolSelection(GameHost.EditorTool.FloodFill, _btnFloodFill), "Flood fill terrain texture");
 
 		_btnSelectArea = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelClipboard/BtnSelectArea");
-		SetupButton(_btnSelectArea, "🔲 Select Area", () => TriggerToolSelection(GameHost.EditorTool.SelectArea, _btnSelectArea), 11, "Select rectangular area");
+		_cardSelectArea = CreateToolCard(_btnSelectArea, "\uf065", "Select Area", () => TriggerToolSelection(GameHost.EditorTool.SelectArea, _btnSelectArea), "Select rectangular area");
 
 		_btnPathingBrush = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelPathingVBox/BtnPathingBrush");
-		SetupButton(_btnPathingBrush, "🧭 Paint", () => TriggerToolSelection(GameHost.EditorTool.PaintPathing, _btnPathingBrush), 11, "Paint pathing attributes onto the terrain map");
+		_cardPathingBrush = CreateToolCard(_btnPathingBrush, "\uf54b", "Brush", () => TriggerToolSelection(GameHost.EditorTool.PaintPathing, _btnPathingBrush), "Paint pathing attributes onto the terrain map");
 
 		_btnFloodFillPathing = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelPathingVBox/BtnFloodFillPathing");
-		SetupButton(_btnFloodFillPathing, "🪣 Flood Fill", () => TriggerToolSelection(GameHost.EditorTool.FloodFillPathing, _btnFloodFillPathing), 11, "Flood fill pathing attributes onto the terrain map");
+		_cardFloodFillPathing = CreateToolCard(_btnFloodFillPathing, "\uf576", "Flood Fill", () => TriggerToolSelection(GameHost.EditorTool.FloodFillPathing, _btnFloodFillPathing), "Flood fill pathing attributes onto the terrain map");
 
 		_btnAddObject = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelObjectsVBox/BtnAddObject");
-		SetupButton(_btnAddObject, "➕ Add Object", () => _entityPaletteController?.TriggerAddObjectMode(), 11, "Place units, props, or decals");
+		_cardAddObject = CreateToolCard(_btnAddObject, "\uf1b2", "Add Object", () => _entityPaletteController?.TriggerAddObjectMode(), "Place units, props, or decals");
 
 		_btnSelectMove = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelObjectsVBox/BtnSelectMove");
-		SetupButton(_btnSelectMove, "🖱️ Select / Move", () => TriggerToolSelection(GameHost.EditorTool.SelectMove, _btnSelectMove), 11, "Select and move units, props, or decals");
+		_cardSelectMove = CreateToolCard(_btnSelectMove, "\uf0b2", "Select/Move", () => TriggerToolSelection(GameHost.EditorTool.SelectMove, _btnSelectMove), "Select and move units, props, or decals");
 
 		_btnDeleteObject = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelObjectsVBox/BtnDeleteObject");
-		SetupButton(_btnDeleteObject, "❌ Erase Object", () =>
+		_cardDeleteObject = CreateToolCard(_btnDeleteObject, "\uf12d", "Erase", () =>
 		{
 			if (GodotObject.IsInstanceValid(GameHost.Instance?.SelectedEditorObject))
 				DeleteSelectedObjectAction();
 			else
 				TriggerToolSelection(GameHost.EditorTool.DeleteObject, _btnDeleteObject);
-		}, 11, "Erase units, props, or decals");
+		}, "Erase units, props, or decals");
 
 		_btnDrawCoordinate = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelCoordinatesVBox/BtnDrawCoordinate");
-		SetupButton(_btnDrawCoordinate, "🗺️ Draw Coordinate", () => TriggerToolSelection(GameHost.EditorTool.DrawCoordinate, _btnDrawCoordinate), 11, "Drag to define a named coordinate box exposed as C# variables");
+		SetupButton(_btnDrawCoordinate, "\uf303 DRAW COORD", () => TriggerToolSelection(GameHost.EditorTool.DrawCoordinate, _btnDrawCoordinate), 11, "Drag to define a named coordinate box exposed as C# variables");
 
 		_txtCoordinateName = GetNode<LineEdit>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelCoordinatesVBox/CoordinateNameRow/TxtCoordinateName");
 		_btnCommitCoordinate = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelCoordinatesVBox/BtnCommitCoordinate");
+		SetupButton(_btnCommitCoordinate, "\uf00c COMMIT", null, 11, "Create named coordinate");
 		_btnCommitCoordinate.Pressed += () =>
 		{
 			if (_pendingCoordinateMinX == _pendingCoordinateMaxX && _pendingCoordinateMinZ == _pendingCoordinateMaxZ)
@@ -854,22 +947,22 @@ public partial class MapEditorHUD : Control
 		_coordinateListVBox = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelCoordinatesVBox/CoordinateListVBox");
 
 		_btnCopy = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelClipboard/BtnCopy");
-		SetupButton(_btnCopy, "📋 COPY", () => GameHost.Instance?.PerformCopyAreaExternal(), 13, "Copy selected area to clipboard (Ctrl+C)");
+		_cardCopy = CreateToolCard(_btnCopy, "\uf0c5", "Copy", () => GameHost.Instance?.PerformCopyAreaExternal(), "Copy selected area to clipboard (Ctrl+C)");
 
 		_btnPaste = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelClipboard/BtnPaste");
-		SetupButton(_btnPaste, "📋 PASTE", () => TriggerToolSelection(GameHost.EditorTool.PasteArea, _btnPaste), 13, "Paste clipboard contents onto terrain (Ctrl+V)");
+		_cardPaste = CreateToolCard(_btnPaste, "\uf0ea", "Paste", () => TriggerToolSelection(GameHost.EditorTool.PasteArea, _btnPaste), "Paste clipboard contents onto terrain (Ctrl+V)");
 
 		_btnCut = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelClipboard/BtnCut");
-		SetupButton(_btnCut, "✂️ CUT", () => GameHost.Instance?.PerformCutAreaExternal(), 13, "Cut selected area to clipboard (Ctrl+X)");
+		_cardCut = CreateToolCard(_btnCut, "\uf0c4", "Cut", () => GameHost.Instance?.PerformCutAreaExternal(), "Cut selected area to clipboard (Ctrl+X)");
 
 		_btnEraseArea = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelClipboard/BtnEraseArea");
-		SetupButton(_btnEraseArea, "🧹 ERASE SELECTED AREA", () => GameHost.Instance?.PerformEraseAreaExternal(), 13, "Erase heights, textures and objects within selection (Delete)");
+		_cardEraseArea = CreateToolCard(_btnEraseArea, "\uf12d", "Erase Area", () => GameHost.Instance?.PerformEraseAreaExternal(), "Erase heights, textures and objects within selection (Delete)");
 
 		_btnMirrorHorizontally = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelClipboard/BtnMirrorHorizontally");
-		SetupButton(_btnMirrorHorizontally, TranslationServer.Translate("MIRROR HORIZONTALLY"), () => GameHost.Instance?.PerformMirrorSelectionHorizontallyExternal(), 13, "Mirror selection horizontally");
+		_cardMirrorHorizontally = CreateToolCard(_btnMirrorHorizontally, "\uf07e", "Mirror H", () => GameHost.Instance?.PerformMirrorSelectionHorizontallyExternal(), "Mirror selection horizontally");
 
 		_btnMirrorVertically = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolAccordion/ContentTool/PanelClipboard/BtnMirrorVertically");
-		SetupButton(_btnMirrorVertically, TranslationServer.Translate("MIRROR VERTICALLY"), () => GameHost.Instance?.PerformMirrorSelectionVerticallyExternal(), 13, "Mirror selection vertically");
+		_cardMirrorVertically = CreateToolCard(_btnMirrorVertically, "\uf07d", "Mirror V", () => GameHost.Instance?.PerformMirrorSelectionVerticallyExternal(), "Mirror selection vertically");
 
 		_accordionBrush = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/BrushAccordion");
 		_btnHeaderBrush = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/BrushAccordion/BtnHeaderBrush");
@@ -888,7 +981,7 @@ public partial class MapEditorHUD : Control
 		_sldBrushStrength.DragEnded += (valueChanged) => _isDraggingSlider = false;
 
 		_btnBrushShape = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/BrushAccordion/ContentBrush/BtnBrushShape");
-		SetupButton(_btnBrushShape, "🔳 BRUSH: SQUARE", () =>
+		SetupOptionButton(_btnBrushShape, "\uf0c8 BRUSH: SQUARE", () =>
 		{
 			if (GameHost.Instance != null)
 			{
@@ -899,7 +992,7 @@ public partial class MapEditorHUD : Control
 		}, 11, "Toggle brush shape between circular and square (B)");
 
 		_btnMirrorMode = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/BrushAccordion/ContentBrush/BtnMirrorMode");
-		SetupButton(_btnMirrorMode, "🪞 MIRROR: NONE", () => CycleMirrorMode(), 10, "Cycle terrain and object mirroring symmetry mode");
+		SetupOptionButton(_btnMirrorMode, "\uf05e MIRROR: NONE", () => CycleMirrorMode(), 10, "Cycle terrain and object mirroring symmetry mode");
 
 		_chkBlockMode = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/BrushAccordion/ContentBrush/ChkBlockMode");
 		_chkBlockMode.Toggled += (toggled) =>
@@ -1034,7 +1127,7 @@ public partial class MapEditorHUD : Control
 		}
 		
 		var btnTextureSwap = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerTexture/BtnTextureSwap");
-		SetupButton(btnTextureSwap, "🔄 SWAP TEXTURES (GLOBAL)", () =>
+		SetupOptionButton(btnTextureSwap, "\uf021 SWAP TEXTURES (GLOBAL)", () =>
 		{
 			if (GameHost.Instance != null)
 			{
@@ -1126,7 +1219,7 @@ public partial class MapEditorHUD : Control
 		_lblPlacementScaleValue = GetNode<Label>("RightSlidePanel/RightScroll/AccordionContainer/PlacementAccordion/ContentPlacement/PlacementScaleBox/Header/LblPlacementScaleValue");
 		
 		_btnToggleSnap = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/PlacementAccordion/ContentPlacement/BtnToggleSnap");
-		SetupButton(_btnToggleSnap, "🔲 SNAP TO GRID: OFF", () =>
+		SetupOptionButton(_btnToggleSnap, "\uf0ce SNAP TO GRID: OFF", () =>
 		{
 			if (GameHost.Instance != null)
 			{
@@ -1213,6 +1306,17 @@ public partial class MapEditorHUD : Control
 		_minimapController = new MapEditorMinimap(_minimapFrame, _minimapArea, _cameraIndicator, this);
 		RegenerateMinimap();
 
+		MakeCardDraggable(_accordionFile, _btnHeaderFile, _contentFile, "File");
+		MakeCardDraggable(_accordionViewport, _btnHeaderViewport, _contentViewport, "Viewport & Navigation");
+		MakeCardDraggable(_accordionMapSettings, _btnHeaderMapSettings, _contentMapSettings, "Map Settings");
+		MakeCardDraggable(_accordionTool, _btnHeaderTool, _contentTool, "Tool");
+		MakeCardDraggable(_accordionBrush, _btnHeaderBrush, _contentBrush, "Global Brush Properties");
+		MakeCardDraggable(_accordionToolSettings, _btnHeaderToolSettings, _contentToolSettings, "Tool Settings");
+		MakeCardDraggable(_accordionPlacement, _btnHeaderPlacement, _contentPlacement, "Placement Config");
+		MakeCardDraggable(_accordionInspector, _btnHeaderInspector, _contentInspector, "Selected Object Inspector");
+
+		RestructurePanelLayouts();
+
 		if (GameHost.Instance != null)
 		{
 			UpdateRotationExternal(GameHost.Instance.EditorPlacementRotation);
@@ -1227,9 +1331,16 @@ public partial class MapEditorHUD : Control
 			ShowAgreementModal();
 		}
 
-		foreach (Control child in _contentFile.GetChildren())
+		var targetFileBox = GetContentTarget(_contentFile);
+		if (targetFileBox != null)
 		{
-			child.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+			foreach (Node child in targetFileBox.GetChildren())
+			{
+				if (child is Control ctrl)
+				{
+					ctrl.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+				}
+			}
 		}
 
 		if (ReturningFromTest)
@@ -1357,34 +1468,181 @@ public partial class MapEditorHUD : Control
 
 	private void ApplyThemeStyles()
 	{
-		if (_panelLeft != null) _panelLeft.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(false));
-		if (_panelRight != null) _panelRight.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(false));
+		if (_panelLeft != null) _panelLeft.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		if (_panelRight != null) _panelRight.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+
+		var leftVBox = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox");
+		if (leftVBox != null) leftVBox.AddThemeConstantOverride("separation", 14);
+
+		var rightVBox = GetNodeOrNull<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer");
+		if (rightVBox != null) rightVBox.AddThemeConstantOverride("separation", 14);
+
+		if (_accordionFile != null) _accordionFile.CustomMinimumSize = new Vector2(260, 0);
+		if (_accordionViewport != null) _accordionViewport.CustomMinimumSize = new Vector2(260, 0);
+		if (_accordionMapSettings != null) _accordionMapSettings.CustomMinimumSize = new Vector2(260, 0);
+		if (_accordionTool != null) _accordionTool.CustomMinimumSize = new Vector2(260, 0);
+		if (_accordionBrush != null) _accordionBrush.CustomMinimumSize = new Vector2(260, 0);
+		if (_accordionToolSettings != null) _accordionToolSettings.CustomMinimumSize = new Vector2(260, 0);
+		if (_accordionPlacement != null) _accordionPlacement.CustomMinimumSize = new Vector2(260, 0);
+		if (_accordionInspector != null) _accordionInspector.CustomMinimumSize = new Vector2(260, 0);
+
+		ApplyCardPanelStyle(_accordionFile);
+		ApplyCardPanelStyle(_accordionViewport);
+		ApplyCardPanelStyle(_accordionMapSettings);
+		ApplyCardPanelStyle(_accordionTool);
+		ApplyCardPanelStyle(_accordionBrush);
+		ApplyCardPanelStyle(_accordionToolSettings);
+		ApplyCardPanelStyle(_accordionPlacement);
+		ApplyCardPanelStyle(_accordionInspector);
+
+		StyleContentBox(_contentFile);
+		StyleContentBox(_contentViewport);
+		StyleContentBox(_contentMapSettings);
+		StyleContentBox(_contentTool);
+		StyleContentBox(_contentBrush);
+		StyleContentBox(_contentToolSettings);
+		StyleContentBox(_contentPlacement);
+		StyleContentBox(_contentInspector);
+
+		SetupCardScrollContainer(_contentFile, 300f);
+		SetupCardScrollContainer(_contentViewport, 0f, false);
+		SetupCardScrollContainer(_contentMapSettings, 320f);
+		SetupCardScrollContainer(_contentTool, 320f);
+		SetupCardScrollContainer(_contentBrush, 300f);
+		SetupCardScrollContainer(_contentToolSettings, 320f);
+		SetupCardScrollContainer(_contentPlacement, 320f);
+		SetupCardScrollContainer(_contentInspector, 300f);
+
+		StyleRowButton(_btnLoad);
+		StyleRowButton(_btnSave);
+		StyleRowButton(_btnTestMap);
+		StyleRowButton(_btnPublish);
+		StyleRowButton(_btnResetMap);
+		StyleRowButton(_btnGenerateMap);
+		StyleRowButton(_btnImportMinimap);
+		StyleRowButton(_btnImportAnimation);
+
+		StyleRowButton(_btnRaise);
+		StyleRowButton(_btnLower);
+		StyleRowButton(_btnSmooth);
+		StyleRowButton(_btnPlateau);
+		StyleRowButton(_btnRamp);
+		StyleRowButton(_btnNoise);
+		StyleRowButton(_btnTextureBrush);
+		StyleRowButton(_btnFloodFill);
+		StyleRowButton(_btnPathingBrush);
+		StyleRowButton(_btnFloodFillPathing);
+		StyleRowButton(_btnAddObject);
+		StyleRowButton(_btnSelectMove);
+		StyleRowButton(_btnDeleteObject);
+		StyleRowButton(_btnDrawCoordinate);
+		StyleRowButton(_btnCommitCoordinate);
+		StyleRowButton(_btnSelectArea);
+		StyleRowButton(_btnCut);
+		StyleRowButton(_btnCopy);
+		StyleRowButton(_btnPaste);
+		StyleRowButton(_btnEraseArea);
+		StyleRowButton(_btnMirrorHorizontally);
+		StyleRowButton(_btnMirrorVertically);
+
+		StyleRowButton(_btnInspectorRotLeft);
+		StyleRowButton(_btnInspectorRotRight);
+		StyleRowButton(_btnInspectorScaleDown);
+		StyleRowButton(_btnInspectorScaleUp);
+		StyleRowButton(_btnInspectorScaleReset);
+		StyleRowButton(_btnInspectorDelete);
+
+		StyleValueBadge(_lblBrushSizeValue);
+		StyleValueBadge(_lblBrushStrengthValue);
+		StyleValueBadge(_lblBlockStepValue);
+		StyleValueBadge(_lblPlacementRotateValue);
+		StyleValueBadge(_lblPlacementScaleValue);
+		StyleValueBadge(_lblClumpDensityValue);
+		StyleValueBadge(_lblClumpScaleVarValue);
+		StyleValueBadge(_lblPasteRotation);
+		StyleValueBadge(_lblCamLeftVal);
+		StyleValueBadge(_lblCamRightVal);
+		StyleValueBadge(_lblCamTopVal);
+		StyleValueBadge(_lblCamBottomVal);
+		StyleValueBadge(_lblMapWidthVal);
+		StyleValueBadge(_lblMapHeightVal);
+
+		StyleCheckBoxRow(_chkBlockMode);
+		StyleCheckBoxRow(_chkShallowWater);
+		StyleCheckBoxRow(_chkDeepWater);
+		StyleCheckBoxRow(_chkFlying);
+		StyleCheckBoxRow(_chkGround);
+		StyleCheckBoxRow(_chkBuildable);
+		StyleCheckBoxRow(_chkRandomRotation);
+		StyleCheckBoxRow(_chkRandomScale);
+		StyleCheckBoxRow(_chkClumpMode);
+
+		StyleSubContainer(_camBoundsBox, "Camera Boundaries");
+		var mapSizeBox = GetContentTarget(_contentMapSettings)?.GetNodeOrNull<Control>("MapSizeBox") ?? _contentMapSettings?.GetNodeOrNull<Control>("MapSizeBox");
+		StyleSubContainer(mapSizeBox, "Map Grid Dimensions");
+		StyleSubContainer(_containerTextureSettings, "Texture Paint Palette");
+		StyleSubContainer(_containerPathingSettings, "Pathing Masks");
+		StyleSubContainer(_containerPlacementSettings, "Placement Controls");
+		StyleSubContainer(_densityBox, "Clump Density");
+		StyleSubContainer(_scaleVarBox, "Scale Variance");
+		StyleSubContainer(_containerEyedropperSettings, "Eyedropper Sample Filter");
+		StyleSubContainer(_containerPasteSettings, "Paste Options");
+		StyleSubContainer(_containerCategorySelector, "Entity Categories");
 
 		var topBar = GetNode<PanelContainer>("TopBar");
 		topBar.SetAnchorsPreset(LayoutPreset.CenterBottom);
 		topBar.GrowHorizontal = GrowDirection.Both;
 		topBar.GrowVertical = GrowDirection.Begin;
-		topBar.OffsetLeft = -250;
-		topBar.OffsetRight = 250;
-		topBar.OffsetTop = -70;
-		topBar.OffsetBottom = -10;
+		topBar.OffsetLeft = -260;
+		topBar.OffsetRight = 260;
+		topBar.OffsetTop = -65;
+		topBar.OffsetBottom = -12;
 
 		GetNode<Label>("TopBar/HBox/TitleLabel").Visible = false;
 
-		var alphaStyle = new StyleBoxFlat();
-		alphaStyle.BgColor = new Color(0.12f, 0.12f, 0.12f, 0.6f);
-		alphaStyle.BorderColor = UIStyle.ColorCyanGlow;
-		alphaStyle.SetBorderWidthAll(2);
-		alphaStyle.CornerRadiusTopLeft = 6;
-		alphaStyle.CornerRadiusTopRight = 6;
-		alphaStyle.CornerRadiusBottomLeft = 6;
-		alphaStyle.CornerRadiusBottomRight = 6;
-		topBar.AddThemeStyleboxOverride("panel", alphaStyle);
+		var posTexture = GD.Load<Texture2D>("res://Assets/UI/map_editor_pos.png");
+		if (posTexture != null)
+		{
+			var posStyle = new StyleBoxTexture();
+			posStyle.Texture = posTexture;
+			posStyle.TextureMarginLeft = 0;
+			posStyle.TextureMarginRight = 0;
+			posStyle.TextureMarginTop = 0;
+			posStyle.TextureMarginBottom = 0;
+			posStyle.ContentMarginLeft = 16;
+			posStyle.ContentMarginRight = 16;
+			posStyle.ContentMarginTop = 6;
+			posStyle.ContentMarginBottom = 6;
+			topBar.AddThemeStyleboxOverride("panel", posStyle);
+		}
+		else
+		{
+			var alphaStyle = new StyleBoxFlat();
+			alphaStyle.BgColor = new Color(0.12f, 0.12f, 0.12f, 0.6f);
+			alphaStyle.BorderColor = UIStyle.ColorCyanGlow;
+			alphaStyle.SetBorderWidthAll(2);
+			alphaStyle.CornerRadiusTopLeft = 6;
+			alphaStyle.CornerRadiusTopRight = 6;
+			alphaStyle.CornerRadiusBottomLeft = 6;
+			alphaStyle.CornerRadiusBottomRight = 6;
+			topBar.AddThemeStyleboxOverride("panel", alphaStyle);
+		}
 
 		var hBox = GetNode<HBoxContainer>("TopBar/HBox");
 		hBox.Alignment = BoxContainer.AlignmentMode.Center;
 
-		_statusLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		if (_statusLabel != null)
+		{
+			_statusLabel.HorizontalAlignment = HorizontalAlignment.Center;
+			_statusLabel.VerticalAlignment = VerticalAlignment.Center;
+			_statusLabel.AddThemeFontSizeOverride("font_size", 13);
+			_statusLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+			var fontStatus = GetFontAwesomeFont();
+			if (fontStatus != null)
+			{
+				_statusLabel.AddThemeFontOverride("font", fontStatus);
+			}
+		}
 
 		UIStyle.ApplyTitle(_feedbackLabel, "", 24);
 	}
@@ -1554,7 +1812,7 @@ public partial class MapEditorHUD : Control
 	{
 		if (_btnToggleSnap != null)
 		{
-			_btnToggleSnap.Text = snap ? "🔲 SNAP TO GRID: ON" : "🔲 SNAP TO GRID: OFF";
+			_btnToggleSnap.Text = snap ? TranslationServer.Translate("\uf0ce SNAP TO GRID: ON") : TranslationServer.Translate("\uf0ce SNAP TO GRID: OFF");
 		}
 	}
 
@@ -1613,12 +1871,15 @@ public partial class MapEditorHUD : Control
 	{
 		if (_btnToggleGrid != null)
 		{
-			_btnToggleGrid.Text = mode switch
+			_btnToggleGrid.Text = "🌐";
+			string statusStr = mode switch
 			{
-				GameHost.GridOverlayMode.Off => "🌐 GRID OVERLAY: OFF",
-				GameHost.GridOverlayMode.Mesh => "🌐 GRID OVERLAY: ON",
-				_ => "🌐 GRID OVERLAY: OFF"
+				GameHost.GridOverlayMode.Off => "OFF",
+				GameHost.GridOverlayMode.Mesh => "ON",
+				_ => "OFF"
 			};
+			_btnToggleGrid.TooltipText = TranslationServer.Translate($"Grid Overlay: {statusStr} (V)");
+			_btnToggleGrid.Modulate = mode != GameHost.GridOverlayMode.Off ? new Color(1.3f, 1.15f, 0.7f) : new Color(1f, 1f, 1f);
 		}
 	}
 
@@ -1626,7 +1887,9 @@ public partial class MapEditorHUD : Control
 	{
 		if (_btnToggleCameraBounds != null)
 		{
-			_btnToggleCameraBounds.Text = visible ? "📹 CAM BOUNDS: ON" : "📹 CAM BOUNDS: OFF";
+			_btnToggleCameraBounds.Text = "📹";
+			_btnToggleCameraBounds.TooltipText = TranslationServer.Translate($"Camera Bounds: {(visible ? "ON" : "OFF")} (B)");
+			_btnToggleCameraBounds.Modulate = visible ? new Color(1.3f, 1.15f, 0.7f) : new Color(1f, 1f, 1f);
 		}
 	}
 
@@ -1945,7 +2208,7 @@ public partial class MapEditorHUD : Control
 		_lastBrushShapeIsSquare = isSquare;
 		if (_btnBrushShape != null)
 		{
-			_btnBrushShape.Text = isSquare ? "🔳 BRUSH: SQUARE" : "⚪ BRUSH: CIRCLE";
+			_btnBrushShape.Text = isSquare ? TranslationServer.Translate("\uf0c8 BRUSH: SQUARE") : TranslationServer.Translate("\uf111 BRUSH: CIRCLE");
 		}
 	}
 
@@ -2178,6 +2441,11 @@ public partial class MapEditorHUD : Control
 		if (_activeToolButton != null)
 		{
 			_activeToolButton.RemoveThemeStyleboxOverride("normal");
+			if (_activeToolButton.GetParent() is Control oldParent)
+			{
+				Label cardLbl = oldParent.GetNodeOrNull<Label>("ToolCardLabel");
+				if (cardLbl != null) cardLbl.RemoveThemeColorOverride("font_color");
+			}
 		}
 
 		_activeToolButton = btn;
@@ -2190,6 +2458,11 @@ public partial class MapEditorHUD : Control
 			else
 			{
 				_activeToolButton.AddThemeStyleboxOverride("normal", _highlightStyle);
+				if (_activeToolButton.GetParent() is Control newParent)
+				{
+					Label cardLbl = newParent.GetNodeOrNull<Label>("ToolCardLabel");
+					if (cardLbl != null) cardLbl.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+				}
 				HighlightSwatch(null);
 			}
 		}
@@ -2249,13 +2522,7 @@ public partial class MapEditorHUD : Control
 		{
 			_activeModule = targetModule;
 			UpdateModuleSwitchButtons();
-			if (_panelTerrainVBox != null) _panelTerrainVBox.Visible = (targetModule == EditorModule.Terrain);
-			if (_panelDecoVBox != null) _panelDecoVBox.Visible = (targetModule == EditorModule.TextureDeco);
-			if (_panelEnv != null) _panelEnv.Visible = (targetModule == EditorModule.TextureDeco);
-			if (_panelPathingVBox != null) _panelPathingVBox.Visible = (targetModule == EditorModule.Pathing);
-			if (_panelCoordinatesVBox != null) _panelCoordinatesVBox.Visible = (targetModule == EditorModule.Coordinates);
-			if (_panelObjects != null) _panelObjects.Visible = (targetModule == EditorModule.Objects);
-			if (_panelClipboard != null) _panelClipboard.Visible = (targetModule == EditorModule.Clipboard);
+			UpdatePanelVisibilityForModule(targetModule);
 		}
 
 		if (tool == GameHost.EditorTool.PaintPathing || tool == GameHost.EditorTool.FloodFillPathing)
@@ -3247,8 +3514,10 @@ public partial class MapEditorHUD : Control
 	{
 		var overlay = new ColorRect();
 		overlay.Name = "ConfirmationOverlay";
-		overlay.Color = new Color(0, 0, 0, 0.5f);
+		overlay.Color = new Color(0, 0, 0, 0.65f);
 		overlay.SetAnchorsPreset(LayoutPreset.FullRect);
+		overlay.MouseFilter = Control.MouseFilterEnum.Stop;
+		overlay.ZIndex = 1000;
 		AddChild(overlay);
 
 		var panel = new PanelContainer();
@@ -3340,8 +3609,10 @@ public partial class MapEditorHUD : Control
 
 		_helpOverlayPanel = new ColorRect();
 		_helpOverlayPanel.Name = "HelpOverlayPanel";
-		_helpOverlayPanel.Color = new Color(0, 0, 0, 0.6f);
+		_helpOverlayPanel.Color = new Color(0, 0, 0, 0.65f);
 		_helpOverlayPanel.SetAnchorsPreset(LayoutPreset.FullRect);
+		_helpOverlayPanel.MouseFilter = Control.MouseFilterEnum.Stop;
+		_helpOverlayPanel.ZIndex = 1000;
 		AddChild(_helpOverlayPanel);
 
 		var center = new CenterContainer();
@@ -4226,11 +4497,11 @@ public partial class MapEditorHUD : Control
 		if (GameHost.Instance == null) return;
 		string modeText = GameHost.Instance.EditorMirrorMode switch
 		{
-			MirrorMode.None => TranslationServer.Translate("🪞 MIRROR: NONE"),
-			MirrorMode.Vertical => TranslationServer.Translate("🪞 MIRROR: VERTICAL"),
-			MirrorMode.Horizontal => TranslationServer.Translate("🪞 MIRROR: HORIZONTAL"),
-			MirrorMode.Both => TranslationServer.Translate("🪞 MIRROR: BOTH"),
-			_ => TranslationServer.Translate("🪞 MIRROR: NONE")
+			MirrorMode.None => TranslationServer.Translate("\uf05e MIRROR: NONE"),
+			MirrorMode.Vertical => TranslationServer.Translate("\uf07d MIRROR: VERTICAL"),
+			MirrorMode.Horizontal => TranslationServer.Translate("\uf07e MIRROR: HORIZONTAL"),
+			MirrorMode.Both => TranslationServer.Translate("\uf00a MIRROR: BOTH"),
+			_ => TranslationServer.Translate("\uf05e MIRROR: NONE")
 		};
 		if (_btnMirrorMode != null)
 		{
@@ -4246,6 +4517,112 @@ public partial class MapEditorHUD : Control
 	{
 	}
 
+	private void UpdatePanelVisibilityForModule(EditorModule module)
+	{
+		if (_accordionFile == null) _accordionFile = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion");
+		if (_accordionViewport == null) _accordionViewport = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion");
+		if (_accordionMapSettings == null) _accordionMapSettings = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion");
+
+		if (_accordionFile != null) _accordionFile.Visible = true;
+		if (_accordionViewport != null) _accordionViewport.Visible = true;
+		if (_accordionMapSettings != null) _accordionMapSettings.Visible = true;
+
+		bool showTool = true;
+		bool showBrush = (module == EditorModule.Terrain || module == EditorModule.TextureDeco || module == EditorModule.Pathing);
+		bool showToolSettings = (module == EditorModule.Terrain || module == EditorModule.TextureDeco || module == EditorModule.Pathing || module == EditorModule.Objects || module == EditorModule.Clipboard);
+		bool showPlacement = (module == EditorModule.Objects || module == EditorModule.Clipboard);
+
+		bool hasSelectedObject = (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject));
+		bool showInspector = (module == EditorModule.Objects) || (hasSelectedObject && GameHost.Instance?.ActiveEditorTool == GameHost.EditorTool.SelectMove);
+
+		if (_accordionTool != null) _accordionTool.Visible = showTool;
+		if (_accordionBrush != null) _accordionBrush.Visible = showBrush;
+		if (_accordionToolSettings != null) _accordionToolSettings.Visible = showToolSettings;
+		if (_accordionPlacement != null) _accordionPlacement.Visible = showPlacement;
+		if (_accordionInspector != null) _accordionInspector.Visible = showInspector;
+
+		if (_panelTerrainVBox != null) _panelTerrainVBox.Visible = (module == EditorModule.Terrain);
+		if (_panelDecoVBox != null) _panelDecoVBox.Visible = (module == EditorModule.TextureDeco);
+		if (_panelPathingVBox != null) _panelPathingVBox.Visible = (module == EditorModule.Pathing);
+		if (_panelCoordinatesVBox != null) _panelCoordinatesVBox.Visible = (module == EditorModule.Coordinates);
+		if (_panelObjects != null) _panelObjects.Visible = (module == EditorModule.Objects);
+		if (_panelClipboard != null) _panelClipboard.Visible = (module == EditorModule.Clipboard);
+
+		if (_containerTextureSettings != null) _containerTextureSettings.Visible = (module == EditorModule.Terrain || module == EditorModule.TextureDeco);
+		if (_panelEnv != null) _panelEnv.Visible = (module == EditorModule.TextureDeco);
+		if (_containerPathingSettings != null) _containerPathingSettings.Visible = (module == EditorModule.Pathing);
+		if (_containerPasteSettings != null) _containerPasteSettings.Visible = (module == EditorModule.Clipboard);
+		if (_containerCategorySelector != null) _containerCategorySelector.Visible = (module == EditorModule.Objects);
+
+		if (showTool && _contentTool != null)
+		{
+			_contentTool.Visible = true;
+			if (_btnHeaderTool != null) _btnHeaderTool.Text = TranslationServer.Translate("Tool").ToString().ToUpperInvariant() + "  ▼";
+		}
+		if (showBrush && _contentBrush != null)
+		{
+			_contentBrush.Visible = true;
+			if (_btnHeaderBrush != null) _btnHeaderBrush.Text = TranslationServer.Translate("Global Brush Properties").ToString().ToUpperInvariant() + "  ▼";
+		}
+		if (showToolSettings && _contentToolSettings != null)
+		{
+			_contentToolSettings.Visible = true;
+			if (_btnHeaderToolSettings != null) _btnHeaderToolSettings.Text = TranslationServer.Translate("Tool Settings").ToString().ToUpperInvariant() + "  ▼";
+		}
+		if (showPlacement && _contentPlacement != null)
+		{
+			_contentPlacement.Visible = true;
+			if (_btnHeaderPlacement != null) _btnHeaderPlacement.Text = TranslationServer.Translate("Placement Config").ToString().ToUpperInvariant() + "  ▼";
+		}
+
+		_accordionContainer?.QueueSort();
+		RefreshCardScrollStates();
+	}
+
+	private void RefreshCardScrollStates()
+	{
+		UpdateCardScrollState(_contentFile, 300f);
+		UpdateCardScrollState(_contentViewport, 0f, false);
+		UpdateCardScrollState(_contentMapSettings, 320f);
+		UpdateCardScrollState(_contentTool, 320f);
+		UpdateCardScrollState(_contentBrush, 300f);
+		UpdateCardScrollState(_contentToolSettings, 320f);
+		UpdateCardScrollState(_contentPlacement, 320f);
+		UpdateCardScrollState(_contentInspector, 300f);
+	}
+
+	private void UpdateCardScrollState(Control contentControl, float maxHeight = 300f, bool allowExpandBtn = true)
+	{
+		if (contentControl == null) return;
+		ScrollContainer scroll = contentControl.GetNodeOrNull<ScrollContainer>("CardScroll");
+		if (scroll == null) return;
+
+		var targetInner = scroll.GetNodeOrNull<VBoxContainer>("InnerVBox");
+		if (targetInner != null)
+		{
+			targetInner.ForceUpdateTransform();
+			float minH = targetInner.GetCombinedMinimumSize().Y;
+			Button expandBtn = contentControl.GetNodeOrNull<Button>("BtnExpandHeight");
+
+			if (!allowExpandBtn)
+			{
+				if (expandBtn != null) expandBtn.Visible = false;
+				scroll.CustomMinimumSize = new Vector2(245, minH);
+				return;
+			}
+
+			if (minH > maxHeight)
+			{
+				if (expandBtn != null) expandBtn.Visible = true;
+			}
+			else
+			{
+				if (expandBtn != null) expandBtn.Visible = false;
+				scroll.CustomMinimumSize = new Vector2(245, minH);
+			}
+		}
+	}
+
 	public void SwitchModule(EditorModule module)
 	{
 		_activeModule = module;
@@ -4256,13 +4633,7 @@ public partial class MapEditorHUD : Control
 			GameHost.Instance?.HideCoordinateSelectionOutline();
 		}
 
-		if (_panelTerrainVBox != null) _panelTerrainVBox.Visible = (module == EditorModule.Terrain);
-		if (_panelDecoVBox != null) _panelDecoVBox.Visible = (module == EditorModule.TextureDeco);
-		if (_panelEnv != null) _panelEnv.Visible = (module == EditorModule.TextureDeco);
-		if (_panelPathingVBox != null) _panelPathingVBox.Visible = (module == EditorModule.Pathing);
-		if (_panelCoordinatesVBox != null) _panelCoordinatesVBox.Visible = (module == EditorModule.Coordinates);
-		if (_panelObjects != null) _panelObjects.Visible = (module == EditorModule.Objects);
-		if (_panelClipboard != null) _panelClipboard.Visible = (module == EditorModule.Clipboard);
+		UpdatePanelVisibilityForModule(module);
 
 		if (GameHost.Instance != null)
 		{
@@ -4302,56 +4673,1214 @@ public partial class MapEditorHUD : Control
 
 	private void SetupAccordion(Button headerBtn, Control contentControl, string titleText)
 	{
-		headerBtn.Text = (contentControl.Visible ? "▼ " : "▶ ") + titleText;
-		headerBtn.Pressed += () =>
+		string upperTitle = TranslationServer.Translate(titleText).ToString().ToUpperInvariant();
+		headerBtn.Text = upperTitle + (contentControl.Visible ? "  \uf0d7" : "  \uf0da");
+		var font = GetFontAwesomeFont();
+		if (font != null)
 		{
-			contentControl.Visible = !contentControl.Visible;
-			headerBtn.Text = (contentControl.Visible ? "▼ " : "▶ ") + titleText;
-			UIManager.Instance?.PlayClickSound();
-		};
-	}
-
-	private void SetupMutualAccordion(Button headerBtn, Control contentControl, string titleText)
-	{
-		headerBtn.Text = (contentControl.Visible ? "▼ " : "▶ ") + titleText;
-		headerBtn.Pressed += () =>
-		{
-			contentControl.Visible = !contentControl.Visible;
-			headerBtn.Text = (contentControl.Visible ? "▼ " : "▶ ") + titleText;
-			if (contentControl.Visible)
-			{
-				if (headerBtn != _btnHeaderFile && _contentFile != null)
-				{
-					_contentFile.Visible = false;
-					_btnHeaderFile.Text = "▶ " + TranslationServer.Translate("File");
-				}
-				if (headerBtn != _btnHeaderViewport && _contentViewport != null)
-				{
-					_contentViewport.Visible = false;
-					_btnHeaderViewport.Text = "▶ " + TranslationServer.Translate("Viewport & Navigation");
-				}
-				if (headerBtn != _btnHeaderMapSettings && _contentMapSettings != null)
-				{
-					_contentMapSettings.Visible = false;
-					_btnHeaderMapSettings.Text = "▶ " + TranslationServer.Translate("Map Settings");
-				}
-			}
-			UIManager.Instance?.PlayClickSound();
-		};
+			headerBtn.AddThemeFontOverride("font", font);
+		}
+		StyleSubContainer(contentControl);
 	}
 
 	private void StyleAccordionHeader(Button btn)
 	{
+		if (btn == null) return;
 		btn.Flat = false;
-		btn.CustomMinimumSize = new Vector2(0, 32);
-		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		btn.CustomMinimumSize = new Vector2(0, 36);
+
+		var font = GetFontAwesomeFont();
+		if (font != null)
+		{
+			btn.AddThemeFontOverride("font", font);
+		}
+
+		var headerTex = GD.Load<Texture2D>("res://Assets/UI/map_editor_options_header.png");
+		if (headerTex != null)
+		{
+			var headerNormal = new StyleBoxTexture();
+			headerNormal.Texture = headerTex;
+			headerNormal.TextureMarginLeft = 0;
+			headerNormal.TextureMarginRight = 0;
+			headerNormal.TextureMarginTop = 0;
+			headerNormal.TextureMarginBottom = 0;
+			headerNormal.ContentMarginLeft = 12;
+			headerNormal.ContentMarginRight = 12;
+			headerNormal.ContentMarginTop = 6;
+			headerNormal.ContentMarginBottom = 6;
+
+			var headerHover = new StyleBoxTexture();
+			headerHover.Texture = headerTex;
+			headerHover.ModulateColor = new Color(1.2f, 1.15f, 0.9f, 1.0f);
+			headerHover.TextureMarginLeft = 0;
+			headerHover.TextureMarginRight = 0;
+			headerHover.TextureMarginTop = 0;
+			headerHover.TextureMarginBottom = 0;
+			headerHover.ContentMarginLeft = 12;
+			headerHover.ContentMarginRight = 12;
+			headerHover.ContentMarginTop = 6;
+			headerHover.ContentMarginBottom = 6;
+
+			btn.AddThemeStyleboxOverride("normal", headerNormal);
+			btn.AddThemeStyleboxOverride("hover", headerHover);
+			btn.AddThemeStyleboxOverride("pressed", headerHover);
+		}
+		else
+		{
+			var headerNormal = new StyleBoxFlat();
+			headerNormal.BgColor = new Color(0.18f, 0.16f, 0.14f, 0.95f);
+			headerNormal.BorderColor = new Color(0.40f, 0.34f, 0.24f, 0.9f);
+			headerNormal.SetBorderWidthAll(1);
+			headerNormal.CornerRadiusTopLeft = 4;
+			headerNormal.CornerRadiusTopRight = 4;
+			headerNormal.CornerRadiusBottomLeft = 2;
+			headerNormal.CornerRadiusBottomRight = 2;
+			headerNormal.ContentMarginLeft = 10;
+			headerNormal.ContentMarginRight = 10;
+
+			btn.AddThemeStyleboxOverride("normal", headerNormal);
+			btn.AddThemeStyleboxOverride("hover", headerNormal);
+			btn.AddThemeStyleboxOverride("pressed", headerNormal);
+		}
+
 		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
 		btn.AddThemeFontSizeOverride("font_size", 12);
 		btn.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		btn.AddThemeColorOverride("font_hover_color", new Color(1f, 0.9f, 0.7f));
+		btn.AddThemeColorOverride("font_hover_color", new Color(1f, 0.95f, 0.8f));
 		btn.Alignment = HorizontalAlignment.Left;
+	}
+
+	private void ApplyCardPanelStyle(Control accordionNode)
+	{
+		if (accordionNode == null) return;
+
+		var cardStyle = new StyleBoxFlat();
+		cardStyle.BgColor = new Color(0.12f, 0.11f, 0.10f, 0.94f);
+		cardStyle.BorderColor = new Color(0.38f, 0.32f, 0.22f, 0.85f);
+		cardStyle.SetBorderWidthAll(1);
+		cardStyle.CornerRadiusTopLeft = 5;
+		cardStyle.CornerRadiusTopRight = 5;
+		cardStyle.CornerRadiusBottomLeft = 5;
+		cardStyle.CornerRadiusBottomRight = 5;
+		cardStyle.ContentMarginLeft = 8;
+		cardStyle.ContentMarginRight = 8;
+		cardStyle.ContentMarginTop = 6;
+		cardStyle.ContentMarginBottom = 8;
+
+		Panel bgPanel = accordionNode.GetNodeOrNull<Panel>("CardBG");
+		if (bgPanel == null)
+		{
+			bgPanel = new Panel();
+			bgPanel.Name = "CardBG";
+			bgPanel.ShowBehindParent = true;
+			bgPanel.MouseFilter = Control.MouseFilterEnum.Ignore;
+			bgPanel.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+			accordionNode.AddChild(bgPanel);
+			accordionNode.MoveChild(bgPanel, 0);
+		}
+		bgPanel.AddThemeStyleboxOverride("panel", cardStyle);
+	}
+
+	private void StyleContentBox(Control contentControl)
+	{
+		if (contentControl == null) return;
+
+		var contentStyle = new StyleBoxFlat();
+		contentStyle.BgColor = new Color(0.10f, 0.09f, 0.08f, 0.95f);
+		contentStyle.BorderColor = new Color(0.38f, 0.32f, 0.22f, 0.85f);
+		contentStyle.SetBorderWidthAll(1);
+		contentStyle.BorderWidthTop = 0;
+		contentStyle.CornerRadiusBottomLeft = 4;
+		contentStyle.CornerRadiusBottomRight = 4;
+		contentStyle.ContentMarginLeft = 6;
+		contentStyle.ContentMarginRight = 6;
+		contentStyle.ContentMarginTop = 6;
+		contentStyle.ContentMarginBottom = 8;
+
+		if (contentControl is PanelContainer pc)
+		{
+			pc.AddThemeStyleboxOverride("panel", contentStyle);
+		}
+		else if (contentControl is VBoxContainer vbox)
+		{
+			vbox.AddThemeConstantOverride("separation", 2);
+
+			Panel bgPanel = vbox.GetNodeOrNull<Panel>("ContentBG");
+			if (bgPanel == null)
+			{
+				bgPanel = new Panel();
+				bgPanel.Name = "ContentBG";
+				bgPanel.ShowBehindParent = true;
+				bgPanel.MouseFilter = Control.MouseFilterEnum.Ignore;
+				bgPanel.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+				vbox.AddChild(bgPanel);
+				vbox.MoveChild(bgPanel, 0);
+			}
+			bgPanel.AddThemeStyleboxOverride("panel", contentStyle);
+		}
+	}
+
+	private void StyleRowButton(Button btn)
+	{
+		if (btn == null) return;
+		btn.Flat = false;
+		btn.CustomMinimumSize = new Vector2(0, 32);
+
+		var rowNormal = new StyleBoxFlat();
+		rowNormal.BgColor = new Color(0.14f, 0.13f, 0.11f, 0.4f);
+		rowNormal.BorderColor = new Color(0.24f, 0.21f, 0.17f, 0.5f);
+		rowNormal.BorderWidthBottom = 1;
+		rowNormal.ContentMarginLeft = 10;
+		rowNormal.ContentMarginRight = 10;
+
+		var rowHover = new StyleBoxFlat();
+		rowHover.BgColor = new Color(0.25f, 0.22f, 0.18f, 0.9f);
+		rowHover.BorderColor = UIStyle.ColorGold;
+		rowHover.BorderWidthBottom = 1;
+		rowHover.ContentMarginLeft = 10;
+		rowHover.ContentMarginRight = 10;
+
+		var rowPressed = new StyleBoxFlat();
+		rowPressed.BgColor = new Color(0.30f, 0.26f, 0.20f, 0.95f);
+		rowPressed.BorderColor = UIStyle.ColorGold;
+		rowPressed.SetBorderWidthAll(1);
+		rowPressed.ContentMarginLeft = 10;
+		rowPressed.ContentMarginRight = 10;
+
+		btn.AddThemeStyleboxOverride("normal", rowNormal);
+		btn.AddThemeStyleboxOverride("hover", rowHover);
+		btn.AddThemeStyleboxOverride("pressed", rowPressed);
+		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		btn.AddThemeFontSizeOverride("font_size", 12);
+		btn.AddThemeColorOverride("font_color", new Color(0.92f, 0.88f, 0.82f));
+		btn.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		btn.Alignment = HorizontalAlignment.Left;
+	}
+
+	private Control GetContentTarget(Control contentControl)
+	{
+		if (contentControl == null) return null;
+		var inner = contentControl.GetNodeOrNull<Control>("CardScroll/InnerVBox");
+		return inner ?? contentControl;
+	}
+
+	private void SetupCardScrollContainer(Control contentControl, float maxHeight = 300f, bool allowExpandBtn = true)
+	{
+		if (contentControl == null) return;
+
+		contentControl.CustomMinimumSize = new Vector2(245, 0);
+
+		ScrollContainer scroll = contentControl.GetNodeOrNull<ScrollContainer>("CardScroll");
+		if (scroll == null)
+		{
+			scroll = new ScrollContainer();
+			scroll.Name = "CardScroll";
+			scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
+			scroll.VerticalScrollMode = ScrollContainer.ScrollMode.Auto;
+			scroll.CustomMinimumSize = new Vector2(245, 0);
+
+			var innerVBox = new VBoxContainer();
+			innerVBox.Name = "InnerVBox";
+			innerVBox.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+			innerVBox.AddThemeConstantOverride("separation", 2);
+
+			var children = new Godot.Collections.Array<Node>(contentControl.GetChildren());
+			foreach (Node child in children)
+			{
+				if (child is Panel && child.Name == "ContentBG") continue;
+				contentControl.RemoveChild(child);
+				innerVBox.AddChild(child);
+			}
+
+			scroll.AddChild(innerVBox);
+			contentControl.AddChild(scroll);
+		}
+
+		var targetInner = scroll.GetNodeOrNull<VBoxContainer>("InnerVBox");
+		if (targetInner != null)
+		{
+			targetInner.ForceUpdateTransform();
+			float minH = targetInner.GetCombinedMinimumSize().Y;
+			Button expandBtn = contentControl.GetNodeOrNull<Button>("BtnExpandHeight");
+
+			if (!allowExpandBtn)
+			{
+				if (expandBtn != null) expandBtn.Visible = false;
+				scroll.CustomMinimumSize = new Vector2(245, minH);
+				return;
+			}
+			if (minH > maxHeight)
+			{
+				if (expandBtn == null)
+				{
+					expandBtn = new Button();
+					expandBtn.Name = "BtnExpandHeight";
+					expandBtn.Flat = false;
+					expandBtn.CustomMinimumSize = new Vector2(0, 24);
+
+					var btnStyle = new StyleBoxFlat();
+					btnStyle.BgColor = new Color(0.16f, 0.14f, 0.12f, 0.85f);
+					btnStyle.BorderColor = new Color(0.38f, 0.32f, 0.22f, 0.6f);
+					btnStyle.SetBorderWidthAll(1);
+					btnStyle.CornerRadiusBottomLeft = 4;
+					btnStyle.CornerRadiusBottomRight = 4;
+
+					expandBtn.AddThemeStyleboxOverride("normal", btnStyle);
+					expandBtn.AddThemeStyleboxOverride("hover", btnStyle);
+					expandBtn.AddThemeStyleboxOverride("pressed", btnStyle);
+					expandBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+					expandBtn.AddThemeFontSizeOverride("font_size", 11);
+					expandBtn.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+					expandBtn.Alignment = HorizontalAlignment.Center;
+					expandBtn.TooltipText = "Expand panel height to view all options without scrolling";
+
+					bool isFull = false;
+					expandBtn.Text = "\uf078 EXPAND FULL";
+					var fontExp = GetFontAwesomeFont();
+					if (fontExp != null) expandBtn.AddThemeFontOverride("font", fontExp);
+					expandBtn.Pressed += () =>
+					{
+						isFull = !isFull;
+						if (isFull)
+						{
+							targetInner.ForceUpdateTransform();
+							float fullH = targetInner.GetCombinedMinimumSize().Y + 12f;
+							scroll.CustomMinimumSize = new Vector2(245, fullH);
+							expandBtn.Text = "\uf077 COMPACT VIEW";
+						}
+						else
+						{
+							scroll.CustomMinimumSize = new Vector2(245, maxHeight);
+							expandBtn.Text = "\uf078 EXPAND FULL";
+						}
+						(contentControl as Container)?.QueueSort();
+						(contentControl.GetParent() as Container)?.QueueSort();
+						(contentControl.GetParent()?.GetParent() as Container)?.QueueSort();
+
+						var leftVBox = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox");
+						leftVBox?.ForceUpdateTransform();
+						leftVBox?.QueueSort();
+
+						var rightVBox = GetNodeOrNull<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer");
+						rightVBox?.ForceUpdateTransform();
+						rightVBox?.QueueSort();
+
+						UIManager.Instance?.PlayClickSound();
+					};
+
+					contentControl.AddChild(expandBtn);
+				}
+				if (expandBtn.Text != "🔼 COMPACT VIEW")
+				{
+					scroll.CustomMinimumSize = new Vector2(245, maxHeight);
+				}
+				expandBtn.Visible = true;
+			}
+			else
+			{
+				scroll.CustomMinimumSize = new Vector2(245, minH);
+				if (expandBtn != null) expandBtn.Visible = false;
+			}
+		}
+	}
+
+	private void StyleSubContainer(Control boxNode, string headerText = null)
+	{
+		if (boxNode == null) return;
+
+		var boxStyle = new StyleBoxFlat();
+		boxStyle.BgColor = new Color(0.13f, 0.12f, 0.10f, 0.7f);
+		boxStyle.BorderColor = new Color(0.32f, 0.27f, 0.20f, 0.6f);
+		boxStyle.SetBorderWidthAll(1);
+		boxStyle.CornerRadiusTopLeft = 4;
+		boxStyle.CornerRadiusTopRight = 4;
+		boxStyle.CornerRadiusBottomLeft = 4;
+		boxStyle.CornerRadiusBottomRight = 4;
+		boxStyle.ContentMarginLeft = 10;
+		boxStyle.ContentMarginRight = 14;
+		boxStyle.ContentMarginTop = 6;
+		boxStyle.ContentMarginBottom = 6;
+
+		if (boxNode is PanelContainer pc)
+		{
+			pc.AddThemeStyleboxOverride("panel", boxStyle);
+		}
+		else if (boxNode is VBoxContainer vbox)
+		{
+			vbox.AddThemeConstantOverride("separation", 4);
+			Panel bgPanel = vbox.GetNodeOrNull<Panel>("SubBoxBG");
+			if (bgPanel == null)
+			{
+				bgPanel = new Panel();
+				bgPanel.Name = "SubBoxBG";
+				bgPanel.ShowBehindParent = true;
+				bgPanel.MouseFilter = Control.MouseFilterEnum.Ignore;
+				bgPanel.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+				vbox.AddChild(bgPanel);
+				vbox.MoveChild(bgPanel, 0);
+			}
+			bgPanel.AddThemeStyleboxOverride("panel", boxStyle);
+		}
+
+		if (!string.IsNullOrEmpty(headerText))
+		{
+			Label lblHeader = boxNode.GetNodeOrNull<Label>("Header/LblSubTitle");
+			if (lblHeader == null)
+			{
+				var headerBox = boxNode.GetNodeOrNull<Control>("Header");
+				if (headerBox != null)
+				{
+					lblHeader = headerBox.GetNodeOrNull<Label>("LblSubTitle");
+				}
+			}
+			if (lblHeader != null)
+			{
+				lblHeader.Text = headerText.ToUpperInvariant();
+				lblHeader.AddThemeFontSizeOverride("font_size", 10);
+				lblHeader.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+			}
+		}
+	}
+
+	private void StyleValueBadge(Label lbl)
+	{
+		if (lbl == null) return;
+		var badgeStyle = new StyleBoxFlat();
+		badgeStyle.BgColor = new Color(0.18f, 0.16f, 0.13f, 0.95f);
+		badgeStyle.BorderColor = UIStyle.ColorGold;
+		badgeStyle.SetBorderWidthAll(1);
+		badgeStyle.CornerRadiusTopLeft = 3;
+		badgeStyle.CornerRadiusTopRight = 3;
+		badgeStyle.CornerRadiusBottomLeft = 3;
+		badgeStyle.CornerRadiusBottomRight = 3;
+		badgeStyle.ContentMarginLeft = 6;
+		badgeStyle.ContentMarginRight = 6;
+		badgeStyle.ContentMarginTop = 2;
+		badgeStyle.ContentMarginBottom = 2;
+
+		lbl.AddThemeStyleboxOverride("normal", badgeStyle);
+		lbl.AddThemeFontSizeOverride("font_size", 11);
+		lbl.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		lbl.HorizontalAlignment = HorizontalAlignment.Center;
+		lbl.VerticalAlignment = VerticalAlignment.Center;
+	}
+
+	private void StyleCheckBoxRow(CheckBox chk)
+	{
+		if (chk == null) return;
+		chk.CustomMinimumSize = new Vector2(0, 28);
+		chk.AddThemeFontSizeOverride("font_size", 11);
+		chk.AddThemeColorOverride("font_color", new Color(0.88f, 0.84f, 0.78f));
+		chk.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		chk.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
+	}
+
+	private FontVariation _faFontVariation;
+	private FontVariation GetFontAwesomeFont()
+	{
+		if (_faFontVariation == null)
+		{
+			try
+			{
+				var faFont = GD.Load<FontFile>("res://Assets/UI/fa-solid-900.ttf");
+				if (faFont != null)
+				{
+					_faFontVariation = new FontVariation();
+					_faFontVariation.Fallbacks = new Godot.Collections.Array<Font> { faFont };
+				}
+			}
+			catch
+			{
+				_faFontVariation = null;
+			}
+		}
+		return _faFontVariation;
+	}
+
+	private void StyleMapEditorTopButton(Button btn)
+	{
+		if (btn == null) return;
+		var tex = GD.Load<Texture2D>("res://Assets/UI/map_editor_button.png");
+		if (tex != null)
+		{
+			var normalStyle = new StyleBoxTexture();
+			normalStyle.Texture = tex;
+			normalStyle.TextureMarginLeft = 0;
+			normalStyle.TextureMarginRight = 0;
+			normalStyle.TextureMarginTop = 0;
+			normalStyle.TextureMarginBottom = 0;
+			normalStyle.ContentMarginLeft = 12;
+			normalStyle.ContentMarginRight = 12;
+			normalStyle.ContentMarginTop = 6;
+			normalStyle.ContentMarginBottom = 6;
+
+			var hoverStyle = new StyleBoxTexture();
+			hoverStyle.Texture = tex;
+			hoverStyle.ModulateColor = new Color(1.25f, 1.2f, 1.0f, 1.0f);
+			hoverStyle.TextureMarginLeft = 0;
+			hoverStyle.TextureMarginRight = 0;
+			hoverStyle.TextureMarginTop = 0;
+			hoverStyle.TextureMarginBottom = 0;
+			hoverStyle.ContentMarginLeft = 12;
+			hoverStyle.ContentMarginRight = 12;
+			hoverStyle.ContentMarginTop = 6;
+			hoverStyle.ContentMarginBottom = 6;
+
+			var pressedStyle = new StyleBoxTexture();
+			pressedStyle.Texture = tex;
+			pressedStyle.ModulateColor = new Color(0.85f, 0.8f, 0.7f, 1.0f);
+			pressedStyle.TextureMarginLeft = 0;
+			pressedStyle.TextureMarginRight = 0;
+			pressedStyle.TextureMarginTop = 0;
+			pressedStyle.TextureMarginBottom = 0;
+			pressedStyle.ContentMarginLeft = 12;
+			pressedStyle.ContentMarginRight = 12;
+			pressedStyle.ContentMarginTop = 6;
+			pressedStyle.ContentMarginBottom = 6;
+
+			btn.AddThemeStyleboxOverride("normal", normalStyle);
+			btn.AddThemeStyleboxOverride("hover", hoverStyle);
+			btn.AddThemeStyleboxOverride("pressed", pressedStyle);
+		}
+		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+	}
+
+	private void StyleGridButton(Button btn)
+	{
+		if (btn == null) return;
+		btn.Flat = false;
+		btn.CustomMinimumSize = new Vector2(105, 30);
+		btn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+		var font = GetFontAwesomeFont();
+		if (font != null)
+		{
+			btn.AddThemeFontOverride("font", font);
+		}
+
+		var btnNormal = new StyleBoxFlat();
+		btnNormal.BgColor = new Color(0.15f, 0.14f, 0.12f, 0.75f);
+		btnNormal.BorderColor = new Color(0.32f, 0.27f, 0.20f, 0.6f);
+		btnNormal.SetBorderWidthAll(1);
+		btnNormal.CornerRadiusTopLeft = 3;
+		btnNormal.CornerRadiusTopRight = 3;
+		btnNormal.CornerRadiusBottomLeft = 3;
+		btnNormal.CornerRadiusBottomRight = 3;
+		btnNormal.ContentMarginLeft = 4;
+		btnNormal.ContentMarginRight = 4;
+
+		var btnHover = new StyleBoxFlat();
+		btnHover.BgColor = new Color(0.26f, 0.23f, 0.18f, 0.95f);
+		btnHover.BorderColor = UIStyle.ColorGold;
+		btnHover.SetBorderWidthAll(1);
+		btnHover.CornerRadiusTopLeft = 3;
+		btnHover.CornerRadiusTopRight = 3;
+		btnHover.CornerRadiusBottomLeft = 3;
+		btnHover.CornerRadiusBottomRight = 3;
+		btnHover.ContentMarginLeft = 4;
+		btnHover.ContentMarginRight = 4;
+
+		var btnPressed = new StyleBoxFlat();
+		btnPressed.BgColor = new Color(0.32f, 0.28f, 0.21f, 0.98f);
+		btnPressed.BorderColor = UIStyle.ColorGold;
+		btnPressed.SetBorderWidthAll(1);
+
+		btn.AddThemeStyleboxOverride("normal", btnNormal);
+		btn.AddThemeStyleboxOverride("hover", btnHover);
+		btn.AddThemeStyleboxOverride("pressed", btnPressed);
+		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		btn.AddThemeFontSizeOverride("font_size", 11);
+		btn.AddThemeColorOverride("font_color", new Color(0.92f, 0.88f, 0.82f));
+		btn.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		btn.Alignment = HorizontalAlignment.Center;
+	}
+
+	private void StyleIconButton(Button btn, string iconText, string tooltipText)
+	{
+		if (btn == null) return;
+		btn.Text = iconText;
+		btn.TooltipText = tooltipText;
+		btn.Flat = false;
+		btn.CustomMinimumSize = new Vector2(30, 30);
+		btn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+		var font = GetFontAwesomeFont();
+		if (font != null)
+		{
+			btn.AddThemeFontOverride("font", font);
+		}
+
+		var btnNormal = new StyleBoxFlat();
+		btnNormal.BgColor = new Color(0.16f, 0.15f, 0.13f, 0.85f);
+		btnNormal.BorderColor = new Color(0.38f, 0.32f, 0.24f, 0.7f);
+		btnNormal.SetBorderWidthAll(1);
+		btnNormal.CornerRadiusTopLeft = 4;
+		btnNormal.CornerRadiusTopRight = 4;
+		btnNormal.CornerRadiusBottomLeft = 4;
+		btnNormal.CornerRadiusBottomRight = 4;
+
+		var btnHover = new StyleBoxFlat();
+		btnHover.BgColor = new Color(0.28f, 0.25f, 0.19f, 0.95f);
+		btnHover.BorderColor = UIStyle.ColorGold;
+		btnHover.SetBorderWidthAll(1);
+		btnHover.CornerRadiusTopLeft = 4;
+		btnHover.CornerRadiusTopRight = 4;
+		btnHover.CornerRadiusBottomLeft = 4;
+		btnHover.CornerRadiusBottomRight = 4;
+
+		var btnPressed = new StyleBoxFlat();
+		btnPressed.BgColor = new Color(0.35f, 0.30f, 0.22f, 0.98f);
+		btnPressed.BorderColor = UIStyle.ColorGold;
+		btnPressed.SetBorderWidthAll(1);
+
+		btn.AddThemeStyleboxOverride("normal", btnNormal);
+		btn.AddThemeStyleboxOverride("hover", btnHover);
+		btn.AddThemeStyleboxOverride("pressed", btnPressed);
+		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		btn.AddThemeFontSizeOverride("font_size", 14);
+		btn.AddThemeColorOverride("font_color", new Color(0.95f, 0.90f, 0.82f));
+		btn.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		btn.Alignment = HorizontalAlignment.Center;
+	}
+
+	private Control CreateToolCard(Button btn, string iconGlyph, string labelText, Action onClick, string tooltip = "")
+	{
+		if (btn == null) return new Control();
+
+		btn.Text = iconGlyph;
+		btn.TooltipText = tooltip;
+		btn.Flat = false;
+		btn.CustomMinimumSize = new Vector2(52, 52);
+		btn.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+		btn.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+
+		var font = GetFontAwesomeFont();
+		if (font != null)
+		{
+			btn.AddThemeFontOverride("font", font);
+		}
+
+		var btnNormal = new StyleBoxFlat();
+		btnNormal.BgColor = new Color(0.16f, 0.15f, 0.13f, 0.90f);
+		btnNormal.BorderColor = new Color(0.42f, 0.36f, 0.26f, 0.85f);
+		btnNormal.SetBorderWidthAll(2);
+		btnNormal.CornerRadiusTopLeft = 6;
+		btnNormal.CornerRadiusTopRight = 6;
+		btnNormal.CornerRadiusBottomLeft = 6;
+		btnNormal.CornerRadiusBottomRight = 6;
+		btnNormal.ContentMarginLeft = 4;
+		btnNormal.ContentMarginRight = 4;
+		btnNormal.ContentMarginTop = 4;
+		btnNormal.ContentMarginBottom = 4;
+
+		var btnHover = new StyleBoxFlat();
+		btnHover.BgColor = new Color(0.28f, 0.24f, 0.18f, 0.96f);
+		btnHover.BorderColor = UIStyle.ColorGold;
+		btnHover.SetBorderWidthAll(2);
+		btnHover.CornerRadiusTopLeft = 6;
+		btnHover.CornerRadiusTopRight = 6;
+		btnHover.CornerRadiusBottomLeft = 6;
+		btnHover.CornerRadiusBottomRight = 6;
+		btnHover.ContentMarginLeft = 4;
+		btnHover.ContentMarginRight = 4;
+		btnHover.ContentMarginTop = 4;
+		btnHover.ContentMarginBottom = 4;
+
+		var btnPressed = new StyleBoxFlat();
+		btnPressed.BgColor = new Color(0.36f, 0.30f, 0.20f, 0.98f);
+		btnPressed.BorderColor = UIStyle.ColorGold;
+		btnPressed.SetBorderWidthAll(2);
+		btnPressed.CornerRadiusTopLeft = 6;
+		btnPressed.CornerRadiusTopRight = 6;
+		btnPressed.CornerRadiusBottomLeft = 6;
+		btnPressed.CornerRadiusBottomRight = 6;
+
+		btn.AddThemeStyleboxOverride("normal", btnNormal);
+		btn.AddThemeStyleboxOverride("hover", btnHover);
+		btn.AddThemeStyleboxOverride("pressed", btnPressed);
+		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		btn.AddThemeFontSizeOverride("font_size", 20);
+		btn.AddThemeColorOverride("font_color", new Color(0.95f, 0.90f, 0.82f));
+		btn.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+
+		if (onClick != null)
+		{
+			btn.Pressed += onClick;
+		}
+
+		var lbl = new Label();
+		lbl.Name = "ToolCardLabel";
+		lbl.Text = labelText;
+		lbl.HorizontalAlignment = HorizontalAlignment.Center;
+		lbl.AddThemeFontSizeOverride("font_size", 10);
+		lbl.AddThemeColorOverride("font_color", new Color(0.88f, 0.84f, 0.78f));
+
+		var card = new VBoxContainer();
+		card.Name = "ToolCard_" + btn.Name;
+		card.AddThemeConstantOverride("separation", 3);
+		card.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		card.Alignment = BoxContainer.AlignmentMode.Center;
+
+		if (btn.GetParent() != null)
+		{
+			btn.GetParent().RemoveChild(btn);
+		}
+		card.AddChild(btn);
+		card.AddChild(lbl);
+
+		return card;
+	}
+
+	private void RestructurePanelLayouts()
+	{
+		// 1. File Panel
+		var targetFile = GetContentTarget(_contentFile);
+		if (targetFile != null)
+		{
+			var fileGrid1 = new GridContainer();
+			fileGrid1.Columns = 2;
+			fileGrid1.AddThemeConstantOverride("h_separation", 6);
+			fileGrid1.AddThemeConstantOverride("v_separation", 6);
+			fileGrid1.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+			SafeReparent(_btnLoad, fileGrid1);
+			SafeReparent(_btnSave, fileGrid1);
+			SafeReparent(_btnTestMap, fileGrid1);
+			SafeReparent(_btnPublish, fileGrid1);
+
+			var fileGrid2 = new GridContainer();
+			fileGrid2.Columns = 2;
+			fileGrid2.AddThemeConstantOverride("h_separation", 6);
+			fileGrid2.AddThemeConstantOverride("v_separation", 6);
+			fileGrid2.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+			SafeReparent(_btnGenerateMap, fileGrid2);
+			SafeReparent(_btnImportMinimap, fileGrid2);
+			SafeReparent(_btnImportAnimation, fileGrid2);
+			SafeReparent(_btnResetMap, fileGrid2);
+
+			var fileBox1 = new VBoxContainer();
+			fileBox1.Name = "BoxFileOps";
+			fileBox1.AddChild(fileGrid1);
+			StyleSubContainer(fileBox1, "File Operations");
+
+			var fileBox2 = new VBoxContainer();
+			fileBox2.Name = "BoxGenOps";
+			fileBox2.AddChild(fileGrid2);
+			StyleSubContainer(fileBox2, "Generation & Imports");
+
+			targetFile.AddChild(fileBox1);
+			targetFile.AddChild(fileBox2);
+		}
+
+		// 2. Viewport Panel
+		var targetViewport = GetContentTarget(_contentViewport);
+		if (targetViewport != null)
+		{
+			if (_minimapFrame != null)
+			{
+				SafeReparent(_minimapFrame, targetViewport);
+			}
+
+			var vpRow = new HBoxContainer();
+			vpRow.Name = "ViewportIconRow";
+			vpRow.AddThemeConstantOverride("separation", 4);
+			vpRow.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+			StyleIconButton(_btnToggleGrid, "\uf84c", "Toggle alignment grid lines overlay (V)");
+			StyleIconButton(_btnToggleCameraBounds, "\uf06e", "Toggle camera bounds overlay (B)");
+			StyleIconButton(_btnRotate, "\uf01e", "Rotate camera 90 degrees (R)");
+			StyleIconButton(_btnCameraAngle, "\uf1b2", "Toggle perspective vs top-down angle (C)");
+			StyleIconButton(_btnSkybox, "\uf185", "Cycle map environment lighting (L)");
+			StyleIconButton(_btnZoomIn, "\uf00e", "Zoom camera in (+)");
+			StyleIconButton(_btnZoomOut, "\uf010", "Zoom camera out (-)");
+
+			SafeReparent(_btnToggleGrid, vpRow);
+			SafeReparent(_btnToggleCameraBounds, vpRow);
+			SafeReparent(_btnRotate, vpRow);
+			SafeReparent(_btnCameraAngle, vpRow);
+			SafeReparent(_btnSkybox, vpRow);
+			SafeReparent(_btnZoomIn, vpRow);
+			SafeReparent(_btnZoomOut, vpRow);
+
+			var vpBox = new VBoxContainer();
+			vpBox.Name = "BoxViewportToolbar";
+			vpBox.AddChild(vpRow);
+			StyleSubContainer(vpBox, "Navigation Bar");
+
+			targetViewport.AddChild(vpBox);
+		}
+
+		// 3. Terrain Tools
+		if (_panelTerrainVBox != null)
+		{
+			var terrainGrid = new GridContainer();
+			terrainGrid.Columns = 3;
+			terrainGrid.AddThemeConstantOverride("h_separation", 6);
+			terrainGrid.AddThemeConstantOverride("v_separation", 8);
+			terrainGrid.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+			SafeReparent(_cardRaise ?? (Control)_btnRaise, terrainGrid);
+			SafeReparent(_cardLower ?? (Control)_btnLower, terrainGrid);
+			SafeReparent(_cardSmooth ?? (Control)_btnSmooth, terrainGrid);
+			SafeReparent(_cardPlateau ?? (Control)_btnPlateau, terrainGrid);
+			SafeReparent(_cardRamp ?? (Control)_btnRamp, terrainGrid);
+			SafeReparent(_cardNoise ?? (Control)_btnNoise, terrainGrid);
+
+			_panelTerrainVBox.AddChild(terrainGrid);
+			StyleSubContainer(_panelTerrainVBox, "Terrain Elevation");
+		}
+
+		// 4. Deco Tools
+		if (_panelDecoVBox != null)
+		{
+			var decoGrid = new GridContainer();
+			decoGrid.Columns = 3;
+			decoGrid.AddThemeConstantOverride("h_separation", 6);
+			decoGrid.AddThemeConstantOverride("v_separation", 8);
+			decoGrid.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+			SafeReparent(_cardTextureBrush ?? (Control)_btnTextureBrush, decoGrid);
+			SafeReparent(_cardFloodFill ?? (Control)_btnFloodFill, decoGrid);
+
+			_panelDecoVBox.AddChild(decoGrid);
+			StyleSubContainer(_panelDecoVBox, "Texture Actions");
+		}
+
+		// 5. Pathing Tools
+		if (_panelPathingVBox != null)
+		{
+			var pathGrid = new GridContainer();
+			pathGrid.Columns = 3;
+			pathGrid.AddThemeConstantOverride("h_separation", 6);
+			pathGrid.AddThemeConstantOverride("v_separation", 8);
+			pathGrid.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+			SafeReparent(_cardPathingBrush ?? (Control)_btnPathingBrush, pathGrid);
+			SafeReparent(_cardFloodFillPathing ?? (Control)_btnFloodFillPathing, pathGrid);
+
+			_panelPathingVBox.AddChild(pathGrid);
+			StyleSubContainer(_panelPathingVBox, "Pathing Actions");
+		}
+
+		// 6. Object Tools
+		if (_panelObjects != null)
+		{
+			var objGrid = new GridContainer();
+			objGrid.Columns = 3;
+			objGrid.AddThemeConstantOverride("h_separation", 6);
+			objGrid.AddThemeConstantOverride("v_separation", 8);
+			objGrid.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+			SafeReparent(_cardSelectMove ?? (Control)_btnSelectMove, objGrid);
+			SafeReparent(_cardAddObject ?? (Control)_btnAddObject, objGrid);
+			SafeReparent(_cardDeleteObject ?? (Control)_btnDeleteObject, objGrid);
+
+			_panelObjects.AddChild(objGrid);
+			StyleSubContainer(_panelObjects, "Object Placement");
+		}
+
+		// 7. Clipboard Tools
+		if (_panelClipboard != null)
+		{
+			var clipGrid = new GridContainer();
+			clipGrid.Columns = 3;
+			clipGrid.AddThemeConstantOverride("h_separation", 6);
+			clipGrid.AddThemeConstantOverride("v_separation", 8);
+			clipGrid.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+			SafeReparent(_cardSelectArea ?? (Control)_btnSelectArea, clipGrid);
+			SafeReparent(_cardCut ?? (Control)_btnCut, clipGrid);
+			SafeReparent(_cardCopy ?? (Control)_btnCopy, clipGrid);
+			SafeReparent(_cardPaste ?? (Control)_btnPaste, clipGrid);
+			SafeReparent(_cardEraseArea ?? (Control)_btnEraseArea, clipGrid);
+			SafeReparent(_cardMirrorHorizontally ?? (Control)_btnMirrorHorizontally, clipGrid);
+			SafeReparent(_cardMirrorVertically ?? (Control)_btnMirrorVertically, clipGrid);
+
+			_panelClipboard.AddChild(clipGrid);
+			StyleSubContainer(_panelClipboard, "Clipboard Actions");
+		}
+
+		// 8. Inspector Transform
+		var targetInspector = GetContentTarget(_contentInspector);
+		if (targetInspector != null)
+		{
+			var inspGrid = new GridContainer();
+			inspGrid.Columns = 2;
+			inspGrid.AddThemeConstantOverride("h_separation", 6);
+			inspGrid.AddThemeConstantOverride("v_separation", 6);
+			inspGrid.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+			SafeReparent(_btnInspectorRotLeft, inspGrid);
+			SafeReparent(_btnInspectorRotRight, inspGrid);
+			SafeReparent(_btnInspectorScaleDown, inspGrid);
+			SafeReparent(_btnInspectorScaleUp, inspGrid);
+			SafeReparent(_btnInspectorScaleReset, inspGrid);
+			SafeReparent(_btnInspectorDelete, inspGrid);
+
+			var inspBox = new VBoxContainer();
+			inspBox.AddChild(inspGrid);
+			StyleSubContainer(inspBox, "Transform Controls");
+			targetInspector.AddChild(inspBox);
+		}
+
+		// 9. Global Brush Properties Panel
+		if (_contentBrush != null)
+		{
+			StyleSubContainer(_contentBrush, "Brush Properties");
+
+			StyleValueBadge(_lblBrushSizeValue);
+			StyleValueBadge(_lblBrushStrengthValue);
+			StyleValueBadge(_lblBlockStepValue);
+
+			var shapeMirrorGrid = _contentBrush.GetNodeOrNull<GridContainer>("ShapeMirrorGrid");
+			if (shapeMirrorGrid == null && _btnBrushShape != null && _btnMirrorMode != null)
+			{
+				shapeMirrorGrid = new GridContainer();
+				shapeMirrorGrid.Name = "ShapeMirrorGrid";
+				shapeMirrorGrid.Columns = 2;
+				shapeMirrorGrid.AddThemeConstantOverride("h_separation", 6);
+				shapeMirrorGrid.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+				SafeReparent(_btnBrushShape, shapeMirrorGrid);
+				SafeReparent(_btnMirrorMode, shapeMirrorGrid);
+
+				var strengthBox = _contentBrush.GetNodeOrNull<Control>("BrushStrengthBox");
+				int insertIdx = strengthBox != null ? strengthBox.GetIndex() + 1 : 2;
+				_contentBrush.AddChild(shapeMirrorGrid);
+				_contentBrush.MoveChild(shapeMirrorGrid, insertIdx);
+			}
+
+			if (_btnBrushShape != null)
+			{
+				_btnBrushShape.CustomMinimumSize = new Vector2(0, 32);
+				_btnBrushShape.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+				_btnBrushShape.AddThemeFontSizeOverride("font_size", 10);
+			}
+			if (_btnMirrorMode != null)
+			{
+				_btnMirrorMode.CustomMinimumSize = new Vector2(0, 32);
+				_btnMirrorMode.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+				_btnMirrorMode.AddThemeFontSizeOverride("font_size", 10);
+			}
+		}
+
+		// 10. Tool Settings Panel
+		if (_containerTextureSettings != null)
+		{
+			StyleSubContainer(_containerTextureSettings, "Texture Palette & Settings");
+
+			if (_rowGroundTexture != null)
+			{
+				var groundStyle = new StyleBoxFlat();
+				groundStyle.BgColor = new Color(0.12f, 0.16f, 0.20f, 0.85f);
+				groundStyle.BorderColor = new Color(0.20f, 0.65f, 0.95f, 0.85f); // Blue Ground accent
+				groundStyle.SetBorderWidthAll(1);
+				groundStyle.CornerRadiusTopLeft = 4;
+				groundStyle.CornerRadiusTopRight = 4;
+				groundStyle.CornerRadiusBottomLeft = 4;
+				groundStyle.CornerRadiusBottomRight = 4;
+				groundStyle.ContentMarginLeft = 8;
+				groundStyle.ContentMarginRight = 8;
+				groundStyle.ContentMarginTop = 4;
+				groundStyle.ContentMarginBottom = 4;
+
+				var panelGround = _rowGroundTexture.GetNodeOrNull<Panel>("RowBG");
+				if (panelGround == null)
+				{
+					panelGround = new Panel();
+					panelGround.Name = "RowBG";
+					panelGround.ShowBehindParent = true;
+					panelGround.MouseFilter = Control.MouseFilterEnum.Ignore;
+					panelGround.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+					_rowGroundTexture.AddChild(panelGround);
+					_rowGroundTexture.MoveChild(panelGround, 0);
+				}
+				panelGround.AddThemeStyleboxOverride("panel", groundStyle);
+			}
+
+			if (_rowCliffTexture != null)
+			{
+				var cliffStyle = new StyleBoxFlat();
+				cliffStyle.BgColor = new Color(0.18f, 0.14f, 0.10f, 0.85f);
+				cliffStyle.BorderColor = new Color(0.95f, 0.55f, 0.15f, 0.85f); // Orange Cliff accent
+				cliffStyle.SetBorderWidthAll(1);
+				cliffStyle.CornerRadiusTopLeft = 4;
+				cliffStyle.CornerRadiusTopRight = 4;
+				cliffStyle.CornerRadiusBottomLeft = 4;
+				cliffStyle.CornerRadiusBottomRight = 4;
+				cliffStyle.ContentMarginLeft = 8;
+				cliffStyle.ContentMarginRight = 8;
+				cliffStyle.ContentMarginTop = 4;
+				cliffStyle.ContentMarginBottom = 4;
+
+				var panelCliff = _rowCliffTexture.GetNodeOrNull<Panel>("RowBG");
+				if (panelCliff == null)
+				{
+					panelCliff = new Panel();
+					panelCliff.Name = "RowBG";
+					panelCliff.ShowBehindParent = true;
+					panelCliff.MouseFilter = Control.MouseFilterEnum.Ignore;
+					panelCliff.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+					_rowCliffTexture.AddChild(panelCliff);
+					_rowCliffTexture.MoveChild(panelCliff, 0);
+				}
+				panelCliff.AddThemeStyleboxOverride("panel", cliffStyle);
+			}
+
+			if (_lblTerrainTexture != null)
+			{
+				_lblTerrainTexture.AddThemeFontSizeOverride("font_size", 11);
+				_lblTerrainTexture.AddThemeColorOverride("font_color", new Color(0.40f, 0.80f, 1.0f));
+			}
+
+			if (_lblCliffTexture != null)
+			{
+				_lblCliffTexture.AddThemeFontSizeOverride("font_size", 11);
+				_lblCliffTexture.AddThemeColorOverride("font_color", new Color(1.0f, 0.70f, 0.30f));
+			}
+		}
+
+		if (_containerPathingSettings != null)
+		{
+			StyleSubContainer(_containerPathingSettings, "Pathing Properties");
+		}
+
+		if (_containerPasteSettings != null)
+		{
+			StyleSubContainer(_containerPasteSettings, "Paste Options");
+			StyleValueBadge(_lblPasteRotation);
+		}
+
+		if (_containerEyedropperSettings != null)
+		{
+			StyleSubContainer(_containerEyedropperSettings, "Eyedropper Settings");
+		}
+
+		// 11. Map Settings Panel Restructuring
+		var targetMapSettings = GetContentTarget(_contentMapSettings);
+		if (targetMapSettings != null)
+		{
+			var mapTypeBox = targetMapSettings.GetNodeOrNull<Control>("MapTypeBox");
+			if (mapTypeBox != null) StyleSubContainer(mapTypeBox, "Map Type");
+
+			var skyboxBox = targetMapSettings.GetNodeOrNull<Control>("SkyboxBox");
+			if (skyboxBox != null) StyleSubContainer(skyboxBox, "Environment / Skybox");
+
+			var mapTagsBox = targetMapSettings.GetNodeOrNull<Control>("MapTagsBox");
+			if (mapTagsBox != null)
+			{
+				var tagGrid = mapTagsBox.GetNodeOrNull<GridContainer>("TagGrid");
+				if (tagGrid == null)
+				{
+					tagGrid = new GridContainer();
+					tagGrid.Name = "TagGrid";
+					tagGrid.Columns = 2;
+					tagGrid.AddThemeConstantOverride("h_separation", 6);
+					tagGrid.AddThemeConstantOverride("v_separation", 4);
+					tagGrid.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+					var chkTD = mapTagsBox.GetNodeOrNull<Control>("ChkTagTD");
+					var chkCamp = mapTagsBox.GetNodeOrNull<Control>("ChkTagCampaign");
+					var chkMel = mapTagsBox.GetNodeOrNull<Control>("ChkTagMelee");
+					var chkCoop = mapTagsBox.GetNodeOrNull<Control>("ChkTagCoop");
+					var chkTut = mapTagsBox.GetNodeOrNull<Control>("ChkTagTutorial");
+
+					SafeReparent(chkTD, tagGrid);
+					SafeReparent(chkCamp, tagGrid);
+					SafeReparent(chkMel, tagGrid);
+					SafeReparent(chkCoop, tagGrid);
+					SafeReparent(chkTut, tagGrid);
+
+					mapTagsBox.AddChild(tagGrid);
+				}
+				StyleSubContainer(mapTagsBox, "Map Tags & Category");
+			}
+
+			var camBoundsBox = targetMapSettings.GetNodeOrNull<Control>("CamBoundsBox");
+			if (camBoundsBox != null)
+			{
+				StyleSubContainer(camBoundsBox, "Camera Boundaries");
+				StyleValueBadge(_lblCamLeftVal);
+				StyleValueBadge(_lblCamRightVal);
+				StyleValueBadge(_lblCamTopVal);
+				StyleValueBadge(_lblCamBottomVal);
+			}
+
+			var mapSizeBox = targetMapSettings.GetNodeOrNull<Control>("MapSizeBox");
+			if (mapSizeBox != null)
+			{
+				StyleSubContainer(mapSizeBox, "Map Dimensions");
+				StyleValueBadge(_lblMapWidthVal);
+				StyleValueBadge(_lblMapHeightVal);
+			}
+		}
+
+		// 12. Apply Procedural RTS Button Style to all Option Panel Buttons
+		Control[] allOptionContents = new Control[]
+		{
+			_contentFile, _contentViewport, _contentMapSettings, _contentTool,
+			_contentBrush, _contentToolSettings, _contentPlacement, _contentInspector, _contentLightingTuning
+		};
+		foreach (var content in allOptionContents)
+		{
+			StyleOptionButtonsInContainer(content);
+		}
+	}
+
+	private void MakeCardDraggable(Control cardNode, Button headerBtn, Control contentControl = null, string titleText = null)
+	{
+		if (cardNode == null || headerBtn == null) return;
+
+		var data = new CardDragData
+		{
+			CardNode = cardNode,
+			HeaderButton = headerBtn,
+			ContentControl = contentControl,
+			TitleText = titleText
+		};
+		_cardDragMap[cardNode] = data;
+
+		headerBtn.GuiInput += (@event) =>
+		{
+			if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
+			{
+				if (mb.Pressed)
+				{
+					if (mb.DoubleClick)
+					{
+						data.IsDragging = false;
+						data.HasMovedSincePress = false;
+						ResetSingleCardPosition(cardNode);
+						ShowFeedback(TranslationServer.Translate("Card position reset to panel layout."));
+						return;
+					}
+					data.IsDragging = true;
+					data.HasMovedSincePress = false;
+					data.DragStartMousePos = mb.GlobalPosition;
+					data.CardStartPos = cardNode.GlobalPosition;
+				}
+				else
+				{
+					if (data.IsDragging)
+					{
+						bool moved = data.HasMovedSincePress;
+						data.IsDragging = false;
+						data.HasMovedSincePress = false;
+
+						if (!moved && contentControl != null)
+						{
+							ToggleAccordionState(headerBtn, contentControl, titleText);
+						}
+					}
+				}
+			}
+			else if (@event is InputEventMouseMotion mm && data.IsDragging)
+			{
+				Vector2 delta = mm.GlobalPosition - data.DragStartMousePos;
+				if (!data.HasMovedSincePress && delta.LengthSquared() > 16.0f)
+				{
+					data.HasMovedSincePress = true;
+					if (!cardNode.TopLevel)
+					{
+						cardNode.TopLevel = true;
+						cardNode.GlobalPosition = data.CardStartPos;
+					}
+					cardNode.MoveToFront();
+				}
+
+				if (data.HasMovedSincePress)
+				{
+					Vector2 targetPos = data.CardStartPos + delta;
+					Vector2 viewportSize = GetViewportRect().Size;
+					float maxX = Mathf.Max(0, viewportSize.X - cardNode.Size.X);
+					float maxY = Mathf.Max(0, viewportSize.Y - cardNode.Size.Y);
+
+					cardNode.GlobalPosition = new Vector2(
+						Mathf.Clamp(targetPos.X, 0, maxX),
+						Mathf.Clamp(targetPos.Y, 0, maxY)
+					);
+				}
+			}
+		};
+	}
+
+	private void ToggleAccordionState(Button headerBtn, Control contentControl, string titleText)
+	{
+		if (headerBtn == null || contentControl == null) return;
+		contentControl.Visible = !contentControl.Visible;
+		if (!string.IsNullOrEmpty(titleText))
+		{
+			string upperTitle = TranslationServer.Translate(titleText).ToString().ToUpperInvariant();
+			headerBtn.Text = upperTitle + (contentControl.Visible ? "  \uf0d7" : "  \uf0da");
+		}
+
+		var cardParent = headerBtn.GetParent() as Control;
+		if (cardParent != null)
+		{
+			cardParent.ForceUpdateTransform();
+			(cardParent as Container)?.QueueSort();
+
+			var sidebarContainer = cardParent.GetParent() as Container;
+			if (sidebarContainer != null)
+			{
+				sidebarContainer.ForceUpdateTransform();
+				sidebarContainer.QueueSort();
+			}
+		}
+
+		var leftVBox = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox");
+		leftVBox?.ForceUpdateTransform();
+		leftVBox?.QueueSort();
+
+		var rightVBox = GetNodeOrNull<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer");
+		rightVBox?.ForceUpdateTransform();
+		rightVBox?.QueueSort();
+
+		UIManager.Instance?.PlayClickSound();
+	}
+
+	private void ResetSingleCardPosition(Control cardNode)
+	{
+		if (cardNode == null) return;
+		if (_cardDragMap.TryGetValue(cardNode, out var data))
+		{
+			data.IsDragging = false;
+			data.HasMovedSincePress = false;
+		}
+		cardNode.TopLevel = false;
+		cardNode.Position = Vector2.Zero;
+
+		var parentContainer = cardNode.GetParent() as Container;
+		if (parentContainer != null)
+		{
+			parentContainer.QueueSort();
+		}
+		var leftVBox = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox");
+		leftVBox?.QueueSort();
+
+		var rightVBox = GetNodeOrNull<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer");
+		rightVBox?.QueueSort();
+	}
+
+	public void ResetAllPanelPositions()
+	{
+		ResetSingleCardPosition(_accordionFile);
+		ResetSingleCardPosition(_accordionViewport);
+		ResetSingleCardPosition(_accordionMapSettings);
+		ResetSingleCardPosition(_accordionTool);
+		ResetSingleCardPosition(_accordionBrush);
+		ResetSingleCardPosition(_accordionToolSettings);
+		ResetSingleCardPosition(_accordionPlacement);
+		ResetSingleCardPosition(_accordionInspector);
+
+		var leftVBox = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox");
+		leftVBox?.QueueSort();
+
+		var rightVBox = GetNodeOrNull<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer");
+		rightVBox?.QueueSort();
+
+		ShowFeedback(TranslationServer.Translate("All panel positions reset to default layout."));
 	}
 
 	private void ToggleLeftPanel()
@@ -4685,6 +6214,7 @@ public partial class MapEditorHUD : Control
 		_scaleMapDialog.CustomMinimumSize = new Vector2(320, 0);
 		_scaleMapDialog.GrowHorizontal = Control.GrowDirection.Both;
 		_scaleMapDialog.GrowVertical = Control.GrowDirection.Both;
+		_scaleMapDialog.ZIndex = 1000;
 		AddChild(_scaleMapDialog);
 		_scaleMapDialog.MoveToFront();
 
@@ -4727,7 +6257,7 @@ public partial class MapEditorHUD : Control
 
 		var btnW_Dec = new Button();
 		btnW_Dec.Set("icon_max_width", 0);
-		SetupButton(btnW_Dec, "➖", () =>
+		SetupOptionButton(btnW_Dec, "\uf068", () =>
 		{
 			if (_scaleDialogTargetWidth > 32)
 			{
@@ -4740,7 +6270,7 @@ public partial class MapEditorHUD : Control
 
 		var btnW_Inc = new Button();
 		btnW_Inc.Set("icon_max_width", 0);
-		SetupButton(btnW_Inc, "➕", () =>
+		SetupOptionButton(btnW_Inc, "\uf067", () =>
 		{
 			if (_scaleDialogTargetWidth < 512)
 			{
@@ -4761,7 +6291,7 @@ public partial class MapEditorHUD : Control
 
 		var btnH_Dec = new Button();
 		btnH_Dec.Set("icon_max_width", 0);
-		SetupButton(btnH_Dec, "➖", () =>
+		SetupOptionButton(btnH_Dec, "\uf068", () =>
 		{
 			if (_scaleDialogTargetDepth > 32)
 			{
@@ -4774,7 +6304,7 @@ public partial class MapEditorHUD : Control
 
 		var btnH_Inc = new Button();
 		btnH_Inc.Set("icon_max_width", 0);
-		SetupButton(btnH_Inc, "➕", () =>
+		SetupOptionButton(btnH_Inc, "\uf067", () =>
 		{
 			if (_scaleDialogTargetDepth < 512)
 			{
@@ -4855,7 +6385,13 @@ public partial class MapEditorHUD : Control
 
 	private void SetupButton(Button btn, string text, Action onClick, int fontSize = 13, string tooltip = "")
 	{
-		btn.Text = TranslationServer.Translate(text);
+		if (btn == null) return;
+		btn.Text = text;
+		var font = GetFontAwesomeFont();
+		if (font != null)
+		{
+			btn.AddThemeFontOverride("font", font);
+		}
 		btn.CustomMinimumSize = new Vector2(0, 32);
 		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
@@ -4925,6 +6461,103 @@ public partial class MapEditorHUD : Control
 			UIManager.Instance?.PlayClickSound();
 			onClick?.Invoke();
 		};
+	}
+
+	private void SetupOptionButton(Button btn, string text, Action onClick, int fontSize = 11, string tooltip = "")
+	{
+		if (btn == null) return;
+		btn.Text = text;
+		var font = GetFontAwesomeFont();
+		if (font != null)
+		{
+			btn.AddThemeFontOverride("font", font);
+		}
+		btn.CustomMinimumSize = new Vector2(0, 30);
+		btn.AddThemeStyleboxOverride("normal", UIStyle.CreateOptionButtonNormal());
+		btn.AddThemeStyleboxOverride("hover", UIStyle.CreateOptionButtonHover());
+		btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateOptionButtonPressed());
+		btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		btn.AddThemeFontSizeOverride("font_size", fontSize);
+		btn.AddThemeColorOverride("font_color", new Color(0.95f, 0.90f, 0.82f));
+		btn.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		btn.FocusMode = FocusModeEnum.None;
+		if (!string.IsNullOrEmpty(tooltip))
+		{
+			btn.TooltipText = TranslationServer.Translate(tooltip);
+		}
+		if (onClick != null)
+		{
+			btn.Pressed += () =>
+			{
+				UIManager.Instance?.PlayClickSound();
+				onClick?.Invoke();
+			};
+		}
+	}
+
+	private void StyleOptionButtonPopup(OptionButton optBtn)
+	{
+		if (optBtn == null) return;
+		var font = GetFontAwesomeFont();
+		if (font != null)
+		{
+			optBtn.AddThemeFontOverride("font", font);
+		}
+
+		var popup = optBtn.GetPopup();
+		if (popup != null)
+		{
+			if (font != null)
+			{
+				popup.AddThemeFontOverride("font", font);
+			}
+			popup.AddThemeFontSizeOverride("font_size", 12);
+
+			var popupStyle = new StyleBoxFlat();
+			popupStyle.BgColor = new Color(0.14f, 0.13f, 0.11f, 0.98f);
+			popupStyle.BorderColor = UIStyle.ColorGold;
+			popupStyle.SetBorderWidthAll(1);
+			popupStyle.CornerRadiusTopLeft = 4;
+			popupStyle.CornerRadiusTopRight = 4;
+			popupStyle.CornerRadiusBottomLeft = 4;
+			popupStyle.CornerRadiusBottomRight = 4;
+			popupStyle.ContentMarginLeft = 8;
+			popupStyle.ContentMarginRight = 8;
+			popupStyle.ContentMarginTop = 6;
+			popupStyle.ContentMarginBottom = 6;
+
+			popup.AddThemeStyleboxOverride("panel", popupStyle);
+			popup.AddThemeColorOverride("font_color", new Color(0.92f, 0.88f, 0.82f));
+			popup.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		}
+	}
+
+	private void StyleOptionButtonsInContainer(Control container)
+	{
+		if (container == null) return;
+		foreach (Node child in container.GetChildren())
+		{
+			if (child is OptionButton optBtn)
+			{
+				StyleOptionButtonPopup(optBtn);
+			}
+			else if (child is Button btn && !btn.Name.ToString().StartsWith("BtnHeader"))
+			{
+				if (btn.CustomMinimumSize.X != 52 || btn.CustomMinimumSize.Y != 52)
+				{
+					btn.AddThemeStyleboxOverride("normal", UIStyle.CreateOptionButtonNormal());
+					btn.AddThemeStyleboxOverride("hover", UIStyle.CreateOptionButtonHover());
+					btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateOptionButtonPressed());
+					btn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+					btn.AddThemeColorOverride("font_color", new Color(0.95f, 0.90f, 0.82f));
+					btn.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+				}
+			}
+			else if (child is Control subContainer)
+			{
+				StyleOptionButtonsInContainer(subContainer);
+			}
+		}
 	}
 
 	private void SetupTextureSwatches(bool connectEvents = false)
@@ -5038,6 +6671,10 @@ public partial class MapEditorHUD : Control
 
 		if (_gridSwatches != null)
 		{
+			if (_gridSwatches is GridContainer gridSwatchesContainer)
+			{
+				gridSwatchesContainer.Columns = 5;
+			}
 			foreach (Node child in _gridSwatches.GetChildren())
 			{
 				_gridSwatches.RemoveChild(child);
@@ -5052,7 +6689,7 @@ public partial class MapEditorHUD : Control
 				btn.Flat = false;
 				btn.ExpandIcon = true;
 				btn.FocusMode = FocusModeEnum.None;
-				btn.CustomMinimumSize = new Vector2(46, 46);
+				btn.CustomMinimumSize = new Vector2(40, 40);
 				btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 				btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 				btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
@@ -5220,6 +6857,23 @@ public partial class MapEditorHUD : Control
 			return true;
 		}
 
+		if (_helpOverlayPanel != null && _helpOverlayPanel.IsVisibleInTree())
+		{
+			return true;
+		}
+		if (GetNodeOrNull<Control>("ConfirmationOverlay") != null)
+		{
+			return true;
+		}
+		if (GetNodeOrNull<Control>("GenerationOverlay") != null)
+		{
+			return true;
+		}
+		if (_scaleMapDialog != null && _scaleMapDialog.IsVisibleInTree())
+		{
+			return true;
+		}
+
 		if (_minimapController != null && _minimapController.IsDragging)
 		{
 			return true;
@@ -5253,11 +6907,43 @@ public partial class MapEditorHUD : Control
 		{
 			return true;
 		}
-		if (_leftPanelExpanded && _panelLeft != null && _panelLeft.Visible && mousePos.X < _panelLeft.Size.X)
+
+		// Check all option cards in _cardDragMap
+		foreach (var kvp in _cardDragMap)
+		{
+			var card = kvp.Key;
+			if (GodotObject.IsInstanceValid(card) && card.IsVisibleInTree())
+			{
+				if (card.GetGlobalRect().HasPoint(mousePos))
+				{
+					return true;
+				}
+			}
+		}
+
+		// Check all option content containers
+		Control[] optionContents = new Control[]
+		{
+			_contentFile, _contentViewport, _contentMapSettings, _contentTool,
+			_contentBrush, _contentToolSettings, _contentPlacement, _contentInspector, _contentLightingTuning
+		};
+		foreach (var content in optionContents)
+		{
+			if (GodotObject.IsInstanceValid(content) && content.IsVisibleInTree())
+			{
+				if (content.GetGlobalRect().HasPoint(mousePos))
+				{
+					return true;
+				}
+			}
+		}
+
+		// Check side panels
+		if (_leftPanelExpanded && _panelLeft != null && _panelLeft.IsVisibleInTree() && _panelLeft.GetGlobalRect().HasPoint(mousePos))
 		{
 			return true;
 		}
-		if (_rightPanelExpanded && _panelRight != null && _panelRight.Visible && mousePos.X > GetViewportRect().Size.X - _panelRight.Size.X)
+		if (_rightPanelExpanded && _panelRight != null && _panelRight.IsVisibleInTree() && _panelRight.GetGlobalRect().HasPoint(mousePos))
 		{
 			return true;
 		}
@@ -5440,28 +7126,30 @@ public partial class MapEditorHUD : Control
 		_lblInspectorPos = GetNode<Label>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/LblInspectorPos");
 		
 		_btnInspectorRotLeft = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/Grid/BtnInspectorRotLeft");
-		SetupButton(_btnInspectorRotLeft, "🔄 Rot -15°", () => RotateSelectedObjectAction(-15f), 11, "Rotate object counter-clockwise");
+		SetupButton(_btnInspectorRotLeft, "\uf0e2 ROT -15°", () => RotateSelectedObjectAction(-15f), 11, "Rotate object counter-clockwise");
 
 		_btnInspectorRotRight = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/Grid/BtnInspectorRotRight");
-		SetupButton(_btnInspectorRotRight, "🔄 Rot +15°", () => RotateSelectedObjectAction(15f), 11, "Rotate object clockwise");
+		SetupButton(_btnInspectorRotRight, "\uf01e ROT +15°", () => RotateSelectedObjectAction(15f), 11, "Rotate object clockwise");
 
 		_btnInspectorScaleDown = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/Grid/BtnInspectorScaleDown");
-		SetupButton(_btnInspectorScaleDown, "➖ Scale Down", () => ScaleSelectedObjectAction(0.9f), 11, "Shrink object size by 10%");
+		SetupButton(_btnInspectorScaleDown, "\uf068 SCALE DOWN", () => ScaleSelectedObjectAction(0.9f), 11, "Shrink object size by 10%");
 
 		_btnInspectorScaleUp = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/Grid/BtnInspectorScaleUp");
-		SetupButton(_btnInspectorScaleUp, "➕ Scale Up", () => ScaleSelectedObjectAction(1.1f), 11, "Enlarge object size by 10%");
+		SetupButton(_btnInspectorScaleUp, "\uf067 SCALE UP", () => ScaleSelectedObjectAction(1.1f), 11, "Enlarge object size by 10%");
 
 		_btnInspectorScaleReset = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/BtnInspectorScaleReset");
-		SetupButton(_btnInspectorScaleReset, "📐 Reset Scale", () => ScaleSelectedObjectAction(-1f), 12, "Reset object scale size to 1.0x");
+		SetupButton(_btnInspectorScaleReset, "\uf0e2 RESET SCALE", () => ScaleSelectedObjectAction(-1f), 12, "Reset object scale size to 1.0x");
 
 		_btnCenter = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/BtnCenter");
-		SetupButton(_btnCenter, "🎯 Locate Object", () => LocateSelectedObjectAction(), 12, "Center camera on selected object");
+		SetupButton(_btnCenter, "\uf140 LOCATE OBJECT", () => LocateSelectedObjectAction(), 12, "Center camera on selected object");
 
 		_btnInspectorDelete = GetNode<Button>("RightSlidePanel/RightScroll/AccordionContainer/InspectorAccordion/ContentInspector/InspectorPanel/VBox/BtnInspectorDelete");
-		SetupButton(_btnInspectorDelete, "❌ Erase", () => DeleteSelectedObjectAction(), 12, "Erase selected unit, prop, or decal");
+		SetupButton(_btnInspectorDelete, "\uf2ed ERASE", () => DeleteSelectedObjectAction(), 12, "Erase selected unit, prop, or decal");
 
 		_btnShowCoverage = new Button();
-		_btnShowCoverage.Text = TranslationServer.Translate("◉ VISION/ATTACK RANGES: OFF");
+		_btnShowCoverage.Text = TranslationServer.Translate("\uf06e RANGES: OFF");
+		var fontCoverage = GetFontAwesomeFont();
+		if (fontCoverage != null) _btnShowCoverage.AddThemeFontOverride("font", fontCoverage);
 		_btnShowCoverage.ToggleMode = true;
 		_btnShowCoverage.FocusMode = Control.FocusModeEnum.None;
 		_btnShowCoverage.AddThemeFontSizeOverride("font_size", 11);
@@ -5471,7 +7159,7 @@ public partial class MapEditorHUD : Control
 			if (GameHost.Instance != null)
 			{
 				GameHost.Instance.EditorCoverageOverlayEnabled = pressed;
-				_btnShowCoverage.Text = pressed ? TranslationServer.Translate("◉ VISION/ATTACK RANGES: ON") : TranslationServer.Translate("◉ VISION/ATTACK RANGES: OFF");
+				_btnShowCoverage.Text = pressed ? TranslationServer.Translate("\uf06e RANGES: ON") : TranslationServer.Translate("\uf06e RANGES: OFF");
 				GameHost.Instance.UpdateEditorCoverageOverlay();
 			}
 		};

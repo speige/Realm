@@ -306,6 +306,57 @@ public static class UIStyle
 		return style;
 	}
 
+	public static StyleBox CreateOptionButtonNormal()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.18f, 0.16f, 0.14f, 0.95f);
+		style.BorderColor = new Color(0.42f, 0.36f, 0.26f, 0.85f);
+		style.SetBorderWidthAll(1);
+		style.CornerRadiusTopLeft = 4;
+		style.CornerRadiusTopRight = 4;
+		style.CornerRadiusBottomLeft = 4;
+		style.CornerRadiusBottomRight = 4;
+		style.ContentMarginLeft = 8;
+		style.ContentMarginRight = 8;
+		style.ContentMarginTop = 5;
+		style.ContentMarginBottom = 5;
+		return style;
+	}
+
+	public static StyleBox CreateOptionButtonHover()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.28f, 0.24f, 0.18f, 0.98f);
+		style.BorderColor = ColorGold;
+		style.SetBorderWidthAll(1);
+		style.CornerRadiusTopLeft = 4;
+		style.CornerRadiusTopRight = 4;
+		style.CornerRadiusBottomLeft = 4;
+		style.CornerRadiusBottomRight = 4;
+		style.ContentMarginLeft = 8;
+		style.ContentMarginRight = 8;
+		style.ContentMarginTop = 5;
+		style.ContentMarginBottom = 5;
+		return style;
+	}
+
+	public static StyleBox CreateOptionButtonPressed()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.36f, 0.30f, 0.20f, 0.98f);
+		style.BorderColor = ColorGold;
+		style.SetBorderWidthAll(1);
+		style.CornerRadiusTopLeft = 4;
+		style.CornerRadiusTopRight = 4;
+		style.CornerRadiusBottomLeft = 4;
+		style.CornerRadiusBottomRight = 4;
+		style.ContentMarginLeft = 8;
+		style.ContentMarginRight = 8;
+		style.ContentMarginTop = 5;
+		style.ContentMarginBottom = 5;
+		return style;
+	}
+
 	public static StyleBox CreateCustomLobbyStartGameButton(bool isHover = false, bool isPressed = false)
 	{
 		var tex = GD.Load<Texture2D>("res://Assets/UI/custom_lobby_start_game.png");
