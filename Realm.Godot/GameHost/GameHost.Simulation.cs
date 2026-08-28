@@ -7,6 +7,7 @@ using Realm.Ecs.Components.Tags;
 using Realm.Ecs.Components.Movement;
 using Realm.Ecs.Components.Resources;
 using Realm.Ecs.Components.Terrain;
+using Realm.Ecs.Components.Meta;
 using Realm.MapAPI;
 using System;
 using System.Collections.Generic;
@@ -55,6 +56,8 @@ public partial class GameHost
 			_unitWrapperCache.Remove(id);
 		}
 
+		_audioService?.PlayUnitSound(unit.UnitId, UnitSoundEvent.Death, unit.GlobalPosition);
+
 		SelectedUnits.Remove(unit);
 		AllUnits.Remove(unit);
 		if (unit.UnitId == "castle")
@@ -63,7 +66,9 @@ public partial class GameHost
 		}
 		if (unit.IsBuilding)
 		{
-			RebakeNavMesh();
+			float radius = EcsWorld.Has<CollisionRadius>(unit.Entity) ? EcsWorld.Get<CollisionRadius>(unit.Entity).Value : 2.0f;
+			var unitPos = EcsWorld.Has<Position>(unit.Entity) ? EcsWorld.Get<Position>(unit.Entity).Value : new System.Numerics.Vector3(unit.Position.X, unit.Position.Y, unit.Position.Z);
+			UncarveObstacle(unitPos, radius);
 		}
 
 		if (unit.IsEnemy && UnitRegistry.TryGetValue(unit.UnitId, out var bountyMeta) && bountyMeta.GoldBounty > 0f)
@@ -138,6 +143,8 @@ public partial class GameHost
 		if (GodotObject.IsInstanceValid(prop))
 		{
 			string propId = prop.PropId;
+			float radius = EcsWorld.Has<CollisionRadius>(prop.Entity) ? EcsWorld.Get<CollisionRadius>(prop.Entity).Value : 1.0f;
+			var propPos = EcsWorld.Has<Position>(prop.Entity) ? EcsWorld.Get<Position>(prop.Entity).Value : new System.Numerics.Vector3(prop.Position.X, prop.Position.Y, prop.Position.Z);
 			AllProps.Remove(prop);
 			EntityToProp3D.Remove(prop.Entity);
 			if (EcsWorld.IsAlive(prop.Entity))
@@ -146,7 +153,7 @@ public partial class GameHost
 			}
 			PropMultiMeshManager.Instance?.MarkDirty(propId);
 			prop.QueueFree();
-			RebakeNavMesh();
+			UncarveObstacle(propPos, radius);
 		}
 	}
 
@@ -244,11 +251,16 @@ public partial class GameHost
 					if (EcsWorld.Has<BuildQueue>(workerEntity))
 					{
 						ref var buildQueue = ref EcsWorld.Get<BuildQueue>(workerEntity);
-						if (buildQueue.TryDequeue(out string nextType, out var nextPos, out Arch.Core.Entity nextTarget))
+						bool startedNext = false;
+						while (buildQueue.TryDequeue(out string? nextType, out var nextPos, out Arch.Core.Entity nextTarget))
 						{
-							ExecuteQueuedCommand(workerEntity, nextType, nextPos, nextTarget);
+							if (ExecuteQueuedCommand(workerEntity, nextType, nextPos, nextTarget))
+							{
+								startedNext = true;
+								break;
+							}
 						}
-						else
+						if (!startedNext && buildQueue.Count == 0)
 						{
 							EcsWorld.Remove<BuildQueue>(workerEntity);
 						}
@@ -328,7 +340,24 @@ public partial class GameHost
 				}
 				else
 				{
-					ExecuteQueuedCommand(cmd.Entity, cmd.Type, cmd.Position, cmd.Target);
+					bool success = ExecuteQueuedCommand(cmd.Entity, cmd.Type, cmd.Position, cmd.Target);
+					while (!success && EcsWorld.Has<BuildQueue>(cmd.Entity))
+					{
+						ref var q = ref EcsWorld.Get<BuildQueue>(cmd.Entity);
+						if (q.TryDequeue(out string? nextType, out var nextPos, out Arch.Core.Entity nextTarget))
+						{
+							success = ExecuteQueuedCommand(cmd.Entity, nextType, nextPos, nextTarget);
+						}
+						else
+						{
+							EcsWorld.Remove<BuildQueue>(cmd.Entity);
+							break;
+						}
+					}
+					if (!success && EcsWorld.Has<BuildQueue>(cmd.Entity) && EcsWorld.Get<BuildQueue>(cmd.Entity).Count == 0)
+					{
+						EcsWorld.Remove<BuildQueue>(cmd.Entity);
+					}
 				}
 			}
 		}
@@ -443,7 +472,12 @@ public partial class GameHost
 		EcsWorld.Add(bldEntity, new ConstructionState(buildTime));
 		EcsWorld.Add(bldEntity, new UnderConstruction());
 
-		// Removing immediate SpawnUnit3D so it spawns when worker arrives
+		float bldRadius = GetOrCalculateObstacleRadius(buildType, null, true);
+		if (!EcsWorld.Has<Realm.Ecs.Components.Core.CollisionRadius>(bldEntity))
+		{
+			EcsWorld.Add(bldEntity, new Realm.Ecs.Components.Core.CollisionRadius(bldRadius));
+		}
+		CarveObstacle(targetPos, bldRadius);
 
 		var buildTask = new BuildTask(bldEntity, buildTime);
 		if (EcsWorld.Has<BuildTask>(workerEntity))
@@ -488,7 +522,7 @@ if (_warnedNonFinitePositions.Add(entity))
 					velVec = new Vector3(vel.Value.X, vel.Value.Y, vel.Value.Z);
 				}
 
-				if (!EcsWorld.Has<MoveTo>(entity))
+				if (!EcsWorld.Has<MoveTo>(entity) && !EcsWorld.Has<Follow>(entity) && !EcsWorld.Has<InterpolationTarget>(entity))
 				{
 					velVec = Vector3.Zero;
 					if (EcsWorld.Has<Velocity>(entity))
@@ -522,6 +556,16 @@ if (_warnedNonFinitePositions.Add(entity))
 						hasLookTarget = true;
 					}
 				}
+				else if (EcsWorld.Has<Follow>(entity))
+				{
+					var targetEnt = EcsWorld.Get<Follow>(entity).Target;
+					if (EcsWorld.IsAlive(targetEnt) && EcsWorld.Has<Position>(targetEnt))
+					{
+						var tPosComp = EcsWorld.Get<Position>(targetEnt);
+						lookTargetPos = new Vector3(tPosComp.Value.X, tPosComp.Value.Y, tPosComp.Value.Z);
+						hasLookTarget = true;
+					}
+				}
 				else if (EcsWorld.Has<BuildTask>(entity))
 				{
 					var buildTask = EcsWorld.Get<BuildTask>(entity);
@@ -542,8 +586,8 @@ if (_warnedNonFinitePositions.Add(entity))
 					if (!hasDir) forceLookTarget = true;
 					else
 					{
-					float distToLook = lookTargetPos.DistanceTo(nextPos);
-					if (distToLook < LookTargetProximityDistance) forceLookTarget = true;
+						float distToLook = lookTargetPos.DistanceTo(nextPos);
+						if (distToLook < LookTargetProximityDistance || EcsWorld.Has<Follow>(entity)) forceLookTarget = true;
 					}
 				}
 
@@ -555,42 +599,57 @@ if (_warnedNonFinitePositions.Add(entity))
 					hasDir = dir.LengthSquared() > 0.01f;
 				}
 
-			if (hasDir)
-			{
-				dir = dir.Normalized();
-				float angle = Mathf.Atan2(-dir.X, -dir.Z) + Mathf.Pi;
-				var rot = unit3D.Rotation;
-
-				bool isFlying = EcsWorld.Has<PathingFlags>(entity)
-					&& ((TerrainPathingFlags)EcsWorld.Get<PathingFlags>(entity).Value & TerrainPathingFlags.Flying) != 0;
-				float turnRate = 10f;
-				if (EcsWorld.Has<MovementStats>(entity))
+				if (hasDir)
 				{
-					var moveStats = EcsWorld.Get<MovementStats>(entity);
-					if (moveStats.TurnRate > 0f) turnRate = moveStats.TurnRate;
-				}
-				rot.Y = Mathf.LerpAngle(rot.Y, angle, turnRate * fDelta);
-				unit3D.Rotation = rot;
+					dir = dir.Normalized();
+					float angle = Mathf.Atan2(-dir.X, -dir.Z) + Mathf.Pi;
+					var rot = unit3D.Rotation;
 
-				Vector3 normal = Vector3.Up;
-				if (!isFlying && GroundTerrain != null)
-				{
-					GroundTerrain.GetHeightAndNormal(nextPos.X, nextPos.Z, out _, out normal);
-				}
+					bool isFlying = EcsWorld.Has<PathingFlags>(entity)
+						&& ((TerrainPathingFlags)EcsWorld.Get<PathingFlags>(entity).Value & TerrainPathingFlags.Flying) != 0;
+					float turnRate = 10f;
+					if (EcsWorld.Has<MovementStats>(entity))
+					{
+						var moveStats = EcsWorld.Get<MovementStats>(entity);
+						if (moveStats.TurnRate > 0f) turnRate = moveStats.TurnRate;
+					}
+					rot.Y = Mathf.LerpAngle(rot.Y, angle, turnRate * fDelta);
+					unit3D.Rotation = rot;
+					if (EcsWorld.Has<RotationY>(entity))
+					{
+						EcsWorld.Set(entity, new RotationY(rot.Y));
+					}
 
-Vector3 forwardDir = new Vector3(-Mathf.Sin(unit3D.Rotation.Y), 0f, -Mathf.Cos(unit3D.Rotation.Y));
-				Vector3 up = normal.Normalized();
-				Vector3 right = forwardDir.Cross(up);
-				if (right.LengthSquared() > 0.00001f)
-				{
-					right = right.Normalized();
-					Vector3 forwardPerp = right.Cross(up).Normalized();
-					Basis targetBasis = new Basis(right, up, forwardPerp);
-					var qTarget = targetBasis.GetRotationQuaternion();
-					var qCurrent = unit3D.Basis.GetRotationQuaternion();
-					var qLerp = qCurrent.Slerp(qTarget, 10f * fDelta);
-					unit3D.Basis = new Basis(qLerp);
+					Vector3 normal = Vector3.Up;
+					if (!isFlying && GroundTerrain != null)
+					{
+						GroundTerrain.GetHeightAndNormal(nextPos.X, nextPos.Z, out _, out normal);
+					}
+
+					Vector3 forwardDir = new Vector3(-Mathf.Sin(unit3D.Rotation.Y), 0f, -Mathf.Cos(unit3D.Rotation.Y));
+					Vector3 up = normal.Normalized();
+					Vector3 right = forwardDir.Cross(up);
+					if (right.LengthSquared() > 0.00001f)
+					{
+						right = right.Normalized();
+						Vector3 forwardPerp = right.Cross(up).Normalized();
+						Basis targetBasis = new Basis(right, up, forwardPerp);
+						var qTarget = targetBasis.GetRotationQuaternion();
+						var qCurrent = unit3D.Basis.GetRotationQuaternion();
+						var qLerp = qCurrent.Slerp(qTarget, 10f * fDelta);
+						unit3D.Basis = new Basis(qLerp);
+					}
 				}
+				else if (EcsWorld.Has<InterpolationTarget>(entity))
+				{
+					var interp = EcsWorld.Get<InterpolationTarget>(entity);
+					var rot = unit3D.Rotation;
+					rot.Y = Mathf.LerpAngle(rot.Y, interp.RotationY, 10f * fDelta);
+					unit3D.Rotation = rot;
+					if (EcsWorld.Has<RotationY>(entity))
+					{
+						EcsWorld.Set(entity, new RotationY(rot.Y));
+					}
 				}
 
 				bool isLaborAnimating = (EcsWorld.Has<Gatherer>(entity) && !EcsWorld.Get<Gatherer>(entity).ReturningToBase)
@@ -673,58 +732,77 @@ Vector3 forwardDir = new Vector3(-Mathf.Sin(unit3D.Rotation.Y), 0f, -Mathf.Cos(u
 		return "Idle";
 	}
 
-	internal void ExecuteQueuedCommand(Entity entity, string? commandType, System.Numerics.Vector3 targetPos, Entity targetEntity)
+	internal bool ExecuteQueuedCommand(Entity entity, string? commandType, System.Numerics.Vector3 targetPos, Entity targetEntity)
 	{
 		if (commandType == "move")
 		{
 			var moveTo = new MoveTo(targetPos);
-			EcsWorld.Add(entity, moveTo);
+			if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+			else EcsWorld.Add(entity, moveTo);
+			return true;
 		}
 		else if (commandType == "attack")
 		{
-			if (EcsWorld.IsAlive(targetEntity))
+			if (targetEntity != Entity.Null && EcsWorld.IsAlive(targetEntity))
 			{
 				var attackTarget = new AttackTarget(targetEntity);
-				EcsWorld.Add(entity, attackTarget);
+				if (EcsWorld.Has<AttackTarget>(entity)) EcsWorld.Set(entity, attackTarget);
+				else EcsWorld.Add(entity, attackTarget);
+				return true;
 			}
+			return false;
 		}
 		else if (commandType == "attackmove")
 		{
 			var attackMove = new AttackMove(targetPos);
-			EcsWorld.Add(entity, attackMove);
+			if (EcsWorld.Has<AttackMove>(entity)) EcsWorld.Set(entity, attackMove);
+			else EcsWorld.Add(entity, attackMove);
+
 			var moveTo = new MoveTo(targetPos);
-			EcsWorld.Add(entity, moveTo);
+			if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+			else EcsWorld.Add(entity, moveTo);
+			return true;
 		}
 		else if (commandType == "follow")
 		{
-			if (EcsWorld.IsAlive(targetEntity))
+			if (targetEntity != Entity.Null && EcsWorld.IsAlive(targetEntity))
 			{
 				if (EcsWorld.Has<DefinitionId>(entity) && EcsWorld.Get<DefinitionId>(entity).Value == "priest")
 				{
 					var healTarget = new HealingTarget(targetEntity);
-					EcsWorld.Add(entity, healTarget);
+					if (EcsWorld.Has<HealingTarget>(entity)) EcsWorld.Set(entity, healTarget);
+					else EcsWorld.Add(entity, healTarget);
 				}
 				else
 				{
 					var follow = new Follow(targetEntity);
-					EcsWorld.Add(entity, follow);
+					if (EcsWorld.Has<Follow>(entity)) EcsWorld.Set(entity, follow);
+					else EcsWorld.Add(entity, follow);
 				}
+				return true;
 			}
+			return false;
 		}
 		else if (commandType == "patrol")
 		{
 			var unitPos = EcsWorld.Has<Position>(entity) ? EcsWorld.Get<Position>(entity).Value : System.Numerics.Vector3.Zero;
 			var patrol = new Patrol(unitPos, targetPos);
-			EcsWorld.Add(entity, patrol);
+			if (EcsWorld.Has<Patrol>(entity)) EcsWorld.Set(entity, patrol);
+			else EcsWorld.Add(entity, patrol);
+
 			var moveTo = new MoveTo(targetPos);
-			EcsWorld.Add(entity, moveTo);
+			if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+			else EcsWorld.Add(entity, moveTo);
+			return true;
 		}
 		else if (commandType == "gather")
 		{
-			if (EcsWorld.IsAlive(targetEntity))
+			if (targetEntity != Entity.Null && EcsWorld.IsAlive(targetEntity))
 			{
-				string propId = EcsWorld.Has<DefinitionId>(targetEntity) ? EcsWorld.Get<DefinitionId>(targetEntity).Value : "";
-				string resType = propId switch
+				string propId = EcsWorld.Has<PropIdentity>(targetEntity)
+					? EcsWorld.Get<PropIdentity>(targetEntity).PropId
+					: (EcsWorld.Has<DefinitionId>(targetEntity) ? EcsWorld.Get<DefinitionId>(targetEntity).Value : "");
+				string? resType = propId switch
 				{
 					"goldmine" => "gold",
 					"tree" => "wood",
@@ -735,27 +813,40 @@ Vector3 forwardDir = new Vector3(-Mathf.Sin(unit3D.Rotation.Y), 0f, -Mathf.Cos(u
 				if (resType != null)
 				{
 					var gatherer = new Gatherer(resType, targetEntity);
-					EcsWorld.Add(entity, gatherer);
+					if (EcsWorld.Has<Gatherer>(entity)) EcsWorld.Set(entity, gatherer);
+					else EcsWorld.Add(entity, gatherer);
+
 					var moveTo = new MoveTo(targetPos);
-					EcsWorld.Add(entity, moveTo);
+					if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+					else EcsWorld.Add(entity, moveTo);
+					return true;
 				}
 			}
+			return false;
 		}
 		else
 		{
 			if (targetEntity != Entity.Null && EcsWorld.IsAlive(targetEntity) && EcsWorld.Has<ConstructionState>(targetEntity))
 			{
 				var cState = EcsWorld.Get<ConstructionState>(targetEntity);
-				var newTask = new BuildTask(targetEntity, cState.TotalBuildTime);
-				newTask.Progress = cState.Progress;
-				EcsWorld.Add(entity, newTask);
+				var newTask = new BuildTask(targetEntity, cState.TotalBuildTime)
+				{
+					Progress = cState.Progress
+				};
+				if (EcsWorld.Has<BuildTask>(entity)) EcsWorld.Set(entity, newTask);
+				else EcsWorld.Add(entity, newTask);
+
 				var moveTo = new MoveTo(new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
-				EcsWorld.Add(entity, moveTo);
+				if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
+				else EcsWorld.Add(entity, moveTo);
+				return true;
 			}
-			else
+			else if (!string.IsNullOrEmpty(commandType) && UnitRegistry.ContainsKey(commandType))
 			{
 				AssignBuildTaskToWorker(entity, commandType, targetPos);
+				return true;
 			}
+			return false;
 		}
 	}
 }

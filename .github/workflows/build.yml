@@ -61,13 +61,50 @@ jobs:
           if (-not $consoleExe) { $consoleExe = "godot" }
           & $consoleExe --headless --path Realm.Godot --export-release "Windows Desktop" "$PWD\publish\Realm.Godot.exe"
 
+      - name: Copy Realm.Tools.Cli to Publish Directory
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: |
+          $cliPath = "Realm.Tools.Cli\bin\Release\net10.0\win-x64\publish\Realm.Tools.Cli.exe"
+          if (-not (Test-Path $cliPath)) {
+            $cliPath = (Get-ChildItem -Path "Realm.Tools.Cli\bin\Release" -Filter "Realm.Tools.Cli.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName)
+          }
+          Copy-Item -Path $cliPath -Destination "$PWD\publish\Realm.Tools.Cli.exe" -Force
+
       - name: Create 7z Ultra Archive
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
-        run: 7z a -t7z -m0=lzma2 -mx=9 publish.7z .\publish\*
+        id: create_archive
+        run: |
+          $osPlatform = "Windows"
+          $systemArchitecture = "x64"
+          $rawVersion = ""
+          $exePath = "$PWD\publish\Realm.Godot.exe"
+          if (Test-Path $exePath) {
+            $rawVersion = (Get-Item $exePath).VersionInfo.ProductVersion
+            if (-not $rawVersion -or $rawVersion.Trim() -eq "") {
+              $rawVersion = (Get-Item $exePath).VersionInfo.FileVersion
+            }
+          }
+          if (-not $rawVersion -or $rawVersion.Trim() -eq "") {
+            $dllPath = Get-ChildItem -Path "$PWD\publish" -Filter "Realm.Godot.dll" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+            if ($dllPath -and (Test-Path $dllPath)) {
+              $rawVersion = (Get-Item $dllPath).VersionInfo.ProductVersion
+              if (-not $rawVersion -or $rawVersion.Trim() -eq "") {
+                $rawVersion = (Get-Item $dllPath).VersionInfo.FileVersion
+              }
+            }
+          }
+          if (-not $rawVersion -or $rawVersion.Trim() -eq "") {
+            $rawVersion = "0.0.1_Pre-Alpha"
+          }
+          $version = $rawVersion.Split('+')[0].Trim()
+          $archiveName = "Realm-${osPlatform}-${systemArchitecture}_${version}.7z"
+          7z a -t7z -m0=lzma2 -mx=9 $archiveName .\publish\*
+          echo "ARCHIVE_NAME=$archiveName" >> $env:GITHUB_ENV
+          echo "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
 
       - name: Upload Published Artifact
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
         uses: actions/upload-artifact@v6
         with:
-          name: Realm-Godot-Windows-x64
-          path: publish.7z
+          name: ${{ env.ARCHIVE_NAME || 'Realm-Windows-x64' }}
+          path: ${{ env.ARCHIVE_NAME || '*.7z' }}

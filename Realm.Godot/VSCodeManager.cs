@@ -386,6 +386,51 @@ public class VSCodeManager
 		}
 	}
 
+	private void SaveCurrentLocaleToFile()
+	{
+		try
+		{
+			string dir = ProjectSettings.GlobalizePath("user://");
+			if (!Directory.Exists(dir))
+			{
+				Directory.CreateDirectory(dir);
+			}
+			string code = GameSettings.Language.ToLocaleCode();
+			File.WriteAllText(Path.Combine(dir, "realm-locale.txt"), code);
+
+			var activeDict = LocalizationManager.GetDictionary(code);
+			File.WriteAllText(Path.Combine(dir, "realm-locale-dict.json"), System.Text.Json.JsonSerializer.Serialize(activeDict));
+
+			var enDict = LocalizationManager.GetDictionary("en");
+			File.WriteAllText(Path.Combine(dir, "realm-locale-en.json"), System.Text.Json.JsonSerializer.Serialize(enDict));
+		}
+		catch { }
+	}
+
+	private void OnLanguageChanged(GameLanguage newLanguage)
+	{
+		SaveCurrentLocaleToFile();
+		string code = newLanguage.ToLocaleCode();
+		var dict = LocalizationManager.GetDictionary(code);
+		string dictJson = System.Text.Json.JsonSerializer.Serialize(dict);
+		_actionQueue.Enqueue(() =>
+		{
+			try
+			{
+				if (_controller != null && _controller.CoreWebView2 != null)
+				{
+					string js = $"window.postMessage({{ type: 'updateLocale', realmLocale: '{code}', dictionary: {dictJson} }}, '*');";
+					_controller.CoreWebView2.ExecuteScriptAsync(js);
+				}
+			}
+			catch { }
+		});
+		if (_childHwnd != IntPtr.Zero)
+		{
+			PostMessage(_childHwnd, WM_WAKEUP, IntPtr.Zero, IntPtr.Zero);
+		}
+	}
+
 	public void Initialize(Control containerControl)
 	{
 		if (_isInitialized)
@@ -393,6 +438,10 @@ public class VSCodeManager
 			_containerControl = containerControl;
 			return;
 		}
+
+		LocalizationManager.LanguageChanged -= OnLanguageChanged;
+		LocalizationManager.LanguageChanged += OnLanguageChanged;
+		SaveCurrentLocaleToFile();
 
 		_containerControl = containerControl;
 		int windowId = containerControl.GetWindow().GetWindowId();
@@ -557,6 +606,22 @@ public class VSCodeManager
 
 			if (ctx.Request.HttpMethod == "GET")
 			{
+				if (ctx.Request.Url != null && ctx.Request.Url.AbsolutePath.EndsWith("/locale"))
+				{
+					string locCode = GameSettings.Language.ToLocaleCode();
+					var dict = LocalizationManager.GetDictionary(locCode);
+					var locObj = new System.Text.Json.Nodes.JsonObject();
+					locObj["locale"] = locCode;
+					locObj["dictionary"] = System.Text.Json.JsonSerializer.SerializeToNode(dict);
+					string locJson = locObj.ToJsonString();
+					byte[] locBytes = System.Text.Encoding.UTF8.GetBytes(locJson);
+					ctx.Response.ContentType = "application/json";
+					ctx.Response.ContentLength64 = locBytes.Length;
+					await ctx.Response.OutputStream.WriteAsync(locBytes, 0, locBytes.Length);
+					ctx.Response.Close();
+					return;
+				}
+
 				var pollResponseObj = new System.Text.Json.Nodes.JsonObject();
 				var commandsArray = new System.Text.Json.Nodes.JsonArray();
 				while (_pendingExtensionCommands.TryDequeue(out var cmd))
@@ -577,279 +642,176 @@ public class VSCodeManager
 			string body = await reader.ReadToEndAsync();
 			var node = System.Text.Json.Nodes.JsonNode.Parse(body);
 			string action = node?["action"]?.ToString() ?? node?["type"]?.ToString();
-
 			var responseObj = new System.Text.Json.Nodes.JsonObject();
 
-			if (action == "generateSnapshot")
+			if (action == "openVfxDialog")
 			{
-				string filePath = node["filePath"]?.ToString();
-				string requestId = node["requestId"]?.ToString();
+				string weaponId = node["weaponId"]?.ToString() ?? "";
+				var weaponDataNode = node["weaponData"];
 
-				string base64Png = "";
-				var tcs = new System.Threading.Tasks.TaskCompletionSource<string>();
-				async void GenerateSnapshotDeferred()
+				Callable.From(() =>
 				{
-					try
+					GameHost.WeaponMetadata meta = default;
+					if (!string.IsNullOrEmpty(weaponId) && GameHost.WeaponRegistry.TryGetValue(weaponId, out var existing))
 					{
-						string b64 = "";
-						if (MapEditorHUD.Instance != null)
-						{
-							b64 = await MapEditorHUD.Instance.GenerateAssetSnapshotBase64(filePath);
-						}
-						tcs.TrySetResult(b64);
+						meta = existing;
 					}
-					catch (Exception ex)
-					{
-						GD.PrintErr($"[VSCodeManager] GenerateAssetSnapshotBase64 error: {ex.Message}");
-						tcs.TrySetResult("");
-					}
-				}
-				Callable.From(GenerateSnapshotDeferred).CallDeferred();
-
-				base64Png = await tcs.Task;
-
-				responseObj["action"] = "snapshotResult";
-				responseObj["type"] = "snapshotResult";
-				responseObj["requestId"] = requestId;
-				responseObj["filePath"] = filePath;
-				responseObj["base64"] = base64Png;
-			}
-			else if (action == "processRawTexture")
-			{
-				string rawPngPath = node["rawPngPath"]?.ToString();
-				string rawBase64 = node["rawBase64"]?.ToString();
-				string outputKtx2Path = node["outputKtx2Path"]?.ToString();
-				string swatchName = node["swatchName"]?.ToString();
-				string requestId = node["requestId"]?.ToString();
-
-				bool success = false;
-				string errorMsg = "";
-
-				try
-				{
-					string targetPngPath = rawPngPath;
-					if (string.IsNullOrEmpty(targetPngPath) && !string.IsNullOrEmpty(rawBase64))
-					{
-						byte[] pngBytes = Convert.FromBase64String(rawBase64);
-						targetPngPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"realm_tx_{swatchName}_{DateTime.Now.Ticks}.png");
-						System.IO.File.WriteAllBytes(targetPngPath, pngBytes);
-					}
-
-					if (!string.IsNullOrEmpty(targetPngPath) && !string.IsNullOrEmpty(outputKtx2Path))
-					{
-						var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
-						string innerErr = "";
-						Callable.From(() =>
-						{
-							try
-							{
-								MapEditorHUD.Instance?.ConvertRawTextureDirect(targetPngPath, outputKtx2Path, swatchName);
-								tcs.TrySetResult(System.IO.File.Exists(outputKtx2Path));
-							}
-							catch (Exception ex)
-							{
-								innerErr = ex.Message;
-								GD.PrintErr($"[VSCodeManager] ConvertRawTextureDirect error: {ex.Message}");
-								tcs.TrySetResult(false);
-							}
-						}).CallDeferred();
-
-						success = await tcs.Task;
-						if (!success && !string.IsNullOrEmpty(innerErr)) errorMsg = innerErr;
-					}
-				}
-				catch (Exception ex)
-				{
-					errorMsg = ex.Message;
-				}
-
-				responseObj["action"] = "processRawTextureResult";
-				responseObj["type"] = "processRawTextureResult";
-				responseObj["requestId"] = requestId;
-				responseObj["success"] = success;
-				responseObj["error"] = errorMsg;
-			}
-			else if (action == "processRawAnimation")
-			{
-				string rawFilePath = node["rawFilePath"]?.ToString();
-				string rawBase64 = node["rawBase64"]?.ToString();
-				string outputAnimsDir = node["outputAnimsDir"]?.ToString();
-				string fileName = node["fileName"]?.ToString() ?? "anim";
-				string requestId = node["requestId"]?.ToString();
-
-				bool success = false;
-				string errorMsg = "";
-				var extractedList = new System.Text.Json.Nodes.JsonArray();
-
-				try
-				{
-					string targetSourcePath = rawFilePath;
-					if ((string.IsNullOrEmpty(targetSourcePath) || !System.IO.File.Exists(targetSourcePath)) && !string.IsNullOrEmpty(rawBase64))
-					{
-						byte[] fileBytes = Convert.FromBase64String(rawBase64);
-						string ext = System.IO.Path.GetExtension(fileName);
-						if (string.IsNullOrEmpty(ext)) ext = ".fbx";
-						targetSourcePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"realm_anim_{DateTime.Now.Ticks}{ext}");
-						System.IO.File.WriteAllBytes(targetSourcePath, fileBytes);
-					}
-
-					if (!string.IsNullOrEmpty(targetSourcePath) && System.IO.File.Exists(targetSourcePath))
-					{
-						var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
-						string innerErr = "";
-						Callable.From(() =>
-						{
-							try
-							{
-								if (!string.IsNullOrEmpty(outputAnimsDir) && !System.IO.Directory.Exists(outputAnimsDir))
-								{
-									System.IO.Directory.CreateDirectory(outputAnimsDir);
-								}
-
-								var extracted = Realm.Godot.Animation.MixamoAnimationImporter.ExtractAnimationsFromFile(targetSourcePath, fileName);
-								if (extracted == null || extracted.Count == 0)
-								{
-									innerErr = "No animations found in file.";
-									tcs.TrySetResult(false);
-									return;
-								}
-
-								foreach (var (animName, animData) in extracted)
-								{
-									var (savedFileName, blake3, alreadyExisted) = Realm.Godot.Animation.MixamoAnimationImporter.SaveAnimationWithDeduplication(outputAnimsDir, animName, animData);
-
-									var itemObj = new System.Text.Json.Nodes.JsonObject
-									{
-										["fileName"] = savedFileName,
-										["hash"] = blake3,
-										["animName"] = animName,
-										["alreadyExisted"] = alreadyExisted
-									};
-									extractedList.Add(itemObj);
-								}
-
-								if (MapEditorHUD.Instance != null)
-								{
-									MapEditorHUD.Instance.PopulateAnimationPreviewDropdown();
-								}
-
-								tcs.TrySetResult(extractedList.Count > 0);
-							}
-							catch (Exception ex)
-							{
-								innerErr = ex.Message;
-								GD.PrintErr($"[VSCodeManager] processRawAnimation error: {ex.Message}");
-								tcs.TrySetResult(false);
-							}
-						}).CallDeferred();
-
-						success = await tcs.Task;
-						if (!success && !string.IsNullOrEmpty(innerErr)) errorMsg = innerErr;
-					}
-					else
-					{
-						errorMsg = "Source animation file not found.";
-					}
-				}
-				catch (Exception ex)
-				{
-					errorMsg = ex.Message;
-				}
-
-				responseObj["action"] = "processRawAnimationResult";
-				responseObj["type"] = "processRawAnimationResult";
-				responseObj["requestId"] = requestId;
-				responseObj["success"] = success;
-				responseObj["extractedFiles"] = extractedList;
-				responseObj["error"] = errorMsg;
-			}
-			else if (action == "optimizeModel" || action == "processRawGlb")
-			{
-				string rawFilePath = node["rawFilePath"]?.ToString();
-				string rawBase64 = node["rawBase64"]?.ToString();
-				string fileName = node["fileName"]?.ToString() ?? "model.glb";
-				string requestId = node["requestId"]?.ToString();
-
-				float creaseAngleDegrees = node["creaseAngleDegrees"] != null && float.TryParse(node["creaseAngleDegrees"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float cDeg) ? cDeg : 45.0f;
-				int maxTextureResolution = node["maxTextureResolution"] != null && int.TryParse(node["maxTextureResolution"].ToString(), out int mTex) ? mTex : 1024;
-				float allowedPixelError = node["allowedPixelError"] != null && float.TryParse(node["allowedPixelError"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float pErr) ? pErr : 1.5f;
-				bool forceReDecimate = node["forceReDecimate"] != null && bool.TryParse(node["forceReDecimate"].ToString(), out bool fDec) && fDec;
-				bool useUastc = node["useUastc"] != null && bool.TryParse(node["useUastc"].ToString(), out bool uAstc) && uAstc;
-
-				var options = new Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationOptions
-				{
-					AllowedPixelError = allowedPixelError,
-					CreaseAngleDegrees = creaseAngleDegrees,
-					MaxTextureResolution = maxTextureResolution,
-					ForceReDecimate = forceReDecimate,
-					UseUastc = useUastc
-				};
-
-				byte[] glbBytes = null;
-				if (!string.IsNullOrEmpty(rawBase64))
-				{
-					glbBytes = Convert.FromBase64String(rawBase64);
-				}
-				else if (!string.IsNullOrEmpty(rawFilePath) && System.IO.File.Exists(rawFilePath))
-				{
-					glbBytes = System.IO.File.ReadAllBytes(rawFilePath);
-				}
-
-				Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationResult optResult = default;
-				if (glbBytes != null && glbBytes.Length > 0)
-				{
-					var optimizer = ServiceLocator.TryGet<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>() ?? new Realm.Godot.Services.ModelOptimization.ModelOptimizerService(ServiceLocator.TryGet<Realm.Ecs.Services.WorldAccessor>());
-					var tcs = new System.Threading.Tasks.TaskCompletionSource<Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationResult>();
-
-					Callable.From(() =>
+					else if (weaponDataNode != null)
 					{
 						try
 						{
-							var res = optimizer.OptimizeGlb(glbBytes, options);
-							tcs.TrySetResult(res);
+							meta = System.Text.Json.JsonSerializer.Deserialize<GameHost.WeaponMetadata>(
+								weaponDataNode.ToJsonString(),
+								new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+							);
 						}
 						catch (Exception ex)
 						{
-							tcs.TrySetResult(new Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationResult
+							GD.PrintErr($"[VSCodeManager] openVfxDialog deserialize error: {ex.Message}");
+						}
+					}
+
+					if (MapEditorHUD.Instance != null)
+					{
+						MapEditorHUD.Instance.OpenWeaponVfxDialog(weaponId, meta, (updatedMeta) =>
+						{
+							MapEditorHUD.Instance.SaveCustomWeaponToMetadata(weaponId, updatedMeta);
+						});
+					}
+				}).CallDeferred();
+
+				responseObj["action"] = "openVfxDialogResult";
+				responseObj["success"] = true;
+			}
+			else if (action == "openModelPicker")
+			{
+				string entityId = node["unitId"]?.ToString() ?? node["entityId"]?.ToString() ?? "";
+				string fieldName = node["field"]?.ToString() ?? "ModelPath";
+				string domain = node["domain"]?.ToString() ?? "units";
+				string currentPath = node["currentPath"]?.ToString() ?? "";
+
+				Callable.From(() =>
+				{
+					if (MapEditorHUD.Instance != null)
+					{
+						MapEditorHUD.Instance.OpenModelPickerDialog(entityId, fieldName, domain, currentPath, (updatedPath) =>
+						{
+							MapEditorHUD.Instance.SaveEntityModelPathToMetadata(entityId, fieldName, domain, updatedPath);
+						});
+					}
+				}).CallDeferred();
+
+				responseObj["action"] = "openModelPickerResult";
+				responseObj["success"] = true;
+			}
+			else if (action == "openAbilityVfxDialog")
+			{
+				string abilityId = node["abilityId"]?.ToString() ?? "";
+				var abilityDataNode = node["abilityData"] as System.Text.Json.Nodes.JsonObject;
+
+				Callable.From(() =>
+				{
+					if (MapEditorHUD.Instance != null)
+					{
+						MapEditorHUD.Instance.OpenAbilityVfxDialog(abilityId, abilityDataNode, (updatedData) =>
+						{
+							if (updatedData != null)
 							{
-								Success = false,
-								ErrorMessage = ex.Message,
-								OptimizedGlbBytes = glbBytes
-							});
+								string vfx = updatedData["VisualEffect"]?.ToString() ?? "";
+								string sound = updatedData["CastSound"]?.ToString() ?? "";
+								string icon = updatedData["IconPath"]?.ToString() ?? "";
+								float aoe = updatedData["AreaOfEffectRadius"] != null ? (float)updatedData["AreaOfEffectRadius"] : 0f;
+								MapEditorHUD.Instance.SaveCustomAbilityVfxToMetadata(abilityId, vfx, sound, icon, aoe);
+							}
+						});
+					}
+				}).CallDeferred();
+
+				responseObj["action"] = "openAbilityVfxDialogResult";
+				responseObj["success"] = true;
+			}
+			else if (action == "openAnimationStudio" || action == "openAnimationPreview" || action == "openEditAnimations")
+			{
+				string unitId = node["unitId"]?.ToString() ?? node["entityId"]?.ToString() ?? "";
+				string modelPath = node["modelPath"]?.ToString() ?? "";
+
+				Callable.From(() =>
+				{
+					if (MapEditorHUD.Instance != null)
+					{
+						MapEditorHUD.Instance.OpenAnimationPreviewDialog(unitId, modelPath);
+					}
+				}).CallDeferred();
+
+				responseObj["action"] = "openAnimationStudioResult";
+				responseObj["success"] = true;
+			}
+			else if (action == "formatAndSaveJson" || action == "saveJsonFile" || action == "saveMetadata" || action == "saveTerrain")
+			{
+				string filePath = node["filePath"]?.ToString() ?? "";
+				string content = node["content"]?.ToString() ?? node["text"]?.ToString() ?? "";
+				string requestId = node["requestId"]?.ToString() ?? "";
+
+				if (string.IsNullOrEmpty(filePath))
+				{
+					string wsPath = MapEditorHUD.Instance?.TempWorkspacePath ?? Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+					filePath = System.IO.Path.Combine(wsPath, action == "saveTerrain" ? "terrain.json" : "metadata.json");
+				}
+				else if (!System.IO.Path.IsPathRooted(filePath))
+				{
+					string wsPath = MapEditorHUD.Instance?.TempWorkspacePath ?? Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+					filePath = System.IO.Path.Combine(wsPath, filePath);
+				}
+
+				bool success = false;
+				string errorMsg = "";
+				string formattedContent = "";
+
+				try
+				{
+					formattedContent = MapJsonFormatter.FormatJson(content);
+					EditorService.LastInternalSaveTimeUtc = DateTime.UtcNow;
+					MapJsonFormatter.SaveFormattedJson(filePath, formattedContent);
+					success = true;
+
+					string fileName = System.IO.Path.GetFileName(filePath).ToLowerInvariant();
+					Callable.From(() =>
+					{
+						if (fileName == "metadata.json")
+						{
+							if (MapEditorHUD.Instance != null)
+							{
+								MapEditorHUD.Instance.ReadMetadataAndRefreshTextures();
+								MapEditorHUD.Instance.ShowFeedback(TranslationServer.Translate("metadata.json updated externally — reloaded."));
+							}
+							else if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+							{
+								GameHost.Instance.GroundTerrain.ReloadTerrainTextures(true);
+							}
+						}
+						else if (fileName == "terrain.json")
+						{
+							if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+							{
+								GameHost.Instance.LoadMapFromFile(filePath);
+								MapEditorHUD.Instance?.ShowFeedback(TranslationServer.Translate("terrain.json updated externally — reloaded."));
+							}
 						}
 					}).CallDeferred();
-
-					optResult = await tcs.Task;
 				}
-				else
+				catch (Exception ex)
 				{
-					optResult.Success = false;
-					optResult.ErrorMessage = "No GLB file data provided.";
+					errorMsg = ex.Message;
+					GD.PrintErr($"[VSCodeManager] formatAndSaveJson error: {ex.Message}");
 				}
 
-				responseObj["action"] = "optimizeModelResult";
-				responseObj["type"] = "optimizeModelResult";
+				responseObj["action"] = "formatAndSaveJsonResult";
+				responseObj["type"] = "formatAndSaveJsonResult";
 				responseObj["requestId"] = requestId;
-				responseObj["success"] = optResult.Success;
-				responseObj["optimizedBase64"] = optResult.OptimizedGlbBytes != null ? Convert.ToBase64String(optResult.OptimizedGlbBytes) : "";
-				responseObj["originalTriangles"] = optResult.OriginalTriangleCount;
-				responseObj["optimizedTriangles"] = optResult.OptimizedTriangleCount;
-				responseObj["reductionRatio"] = optResult.ReductionRatio;
-				responseObj["decimationSkipped"] = optResult.DecimationSkipped;
-				responseObj["texturesProcessed"] = optResult.TexturesProcessedCount;
-				responseObj["chosenTextureResolution"] = optResult.ChosenTextureResolution;
-
-				if (optResult.LodTriangleCounts != null)
-				{
-					var lodCountsArr = new System.Text.Json.Nodes.JsonArray();
-					foreach (var c in optResult.LodTriangleCounts)
-					{
-						lodCountsArr.Add(c);
-					}
-					responseObj["lodTriangleCounts"] = lodCountsArr;
-				}
-
-				responseObj["error"] = optResult.ErrorMessage ?? "";
+				responseObj["success"] = success;
+				responseObj["filePath"] = filePath;
+				responseObj["formattedContent"] = formattedContent;
+				responseObj["error"] = errorMsg;
 			}
 			else if (action == "reloadMetadata" || action == "updateMetadata")
 			{
@@ -858,6 +820,7 @@ public class VSCodeManager
 					if (MapEditorHUD.Instance != null)
 					{
 						MapEditorHUD.Instance.ReadMetadataAndRefreshTextures();
+						MapEditorHUD.Instance.ShowFeedback(TranslationServer.Translate("metadata.json updated externally — reloaded."));
 					}
 					else if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 					{
@@ -867,68 +830,6 @@ public class VSCodeManager
 
 				responseObj["action"] = "reloadMetadataResult";
 				responseObj["type"] = "reloadMetadataResult";
-				responseObj["success"] = true;
-			}
-			else if (action == "updateTextureParam")
-			{
-				string swatchName = node["swatchName"]?.ToString() ?? node["swatch"]?.ToString() ?? "";
-				string tileMode = node["tileMode"]?.ToString() ?? node["Tile_Mode"]?.ToString() ?? "Stochastic";
-				float uvScale = 1.0f;
-				if (node["uvScale"] != null && float.TryParse(node["uvScale"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedUv))
-				{
-					uvScale = parsedUv;
-				}
-				else if (node["UV_Scale"] != null && float.TryParse(node["UV_Scale"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedUv2))
-				{
-					uvScale = parsedUv2;
-				}
-
-				float stochasticTileSize = 1.0f;
-				if (node["stochasticTileSize"] != null && float.TryParse(node["stochasticTileSize"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedStoch))
-				{
-					stochasticTileSize = parsedStoch;
-				}
-				else if (node["Stochastic_Tile_Size"] != null && float.TryParse(node["Stochastic_Tile_Size"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedStoch2))
-				{
-					stochasticTileSize = parsedStoch2;
-				}
-
-				float crossFade = 5.0f;
-				if (node["crossFade"] != null && float.TryParse(node["crossFade"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCrossFade))
-				{
-					crossFade = parsedCrossFade;
-				}
-				else if (node["Cross_Fade"] != null && float.TryParse(node["Cross_Fade"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCrossFade2))
-				{
-					crossFade = parsedCrossFade2;
-				}
-				else if (node["cross_fade"] != null && float.TryParse(node["cross_fade"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCrossFade3))
-				{
-					crossFade = parsedCrossFade3;
-				}
-
-				float? brightness = null;
-				if (node["brightness"] != null && float.TryParse(node["brightness"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedBright))
-				{
-					brightness = parsedBright;
-				}
-				else if (node["Brightness"] != null && float.TryParse(node["Brightness"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedBright2))
-				{
-					brightness = parsedBright2;
-				}
-
-				string? tintStr = node["tint"]?.ToString() ?? node["Tint"]?.ToString();
-
-				Callable.From(() =>
-				{
-					if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
-					{
-						GameHost.Instance.GroundTerrain.UpdateTextureParamDirect(swatchName, tileMode, uvScale, stochasticTileSize, crossFade, brightness, tintStr);
-					}
-				}).CallDeferred();
-
-				responseObj["action"] = "updateTextureParamResult";
-				responseObj["type"] = "updateTextureParamResult";
 				responseObj["success"] = true;
 			}
 

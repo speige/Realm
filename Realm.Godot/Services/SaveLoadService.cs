@@ -188,7 +188,7 @@ public class SaveLoadService
 			{
 				for (int x = 0; x < width; x++)
 				{
-					int code = terrain.PathingCodes != null ? terrain.PathingCodes[x, z] : (8 | 4);
+					int code = terrain.PathingCodes != null ? terrain.PathingCodes[x, z] : EditableTerrain.GetDefaultPathingCode(Realm.Ecs.Components.Terrain.WaterType.None);
 					int baseIdx = (z * width + x) * 4;
 
 					pathingSpan[baseIdx + 0] = (byte)code;
@@ -357,7 +357,7 @@ public class SaveLoadService
 			});
 
 			string json = JsonSerializer.Serialize(saveData);
-			File.WriteAllText(absolutePath, json);
+			MapJsonFormatter.SaveFormattedJson(absolutePath, json);
 
 			GameHost.Instance?.SaveModelYOffsetsToMetadataJson(directory);
 
@@ -583,7 +583,7 @@ public class SaveLoadService
 					{
 						for (int x = 0; x < width; x++)
 						{
-							ts.PathingCodes[x, z] = 8 | 4;
+							ts.PathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(Realm.Ecs.Components.Terrain.WaterType.None);
 						}
 					}
 				}
@@ -754,14 +754,60 @@ public class SaveLoadService
 		}
 	}
 
-	/// <summary>
-	/// Some older saves stored full file paths as unit/prop ids. Strip the path
-	/// while preserving the id itself (including dots, e.g. "Unit.v2").
-	/// </summary>
 	private static string StripIdPath(string id)
 	{
 		if (string.IsNullOrEmpty(id)) return id;
 		string directory = Path.GetDirectoryName(id);
 		return string.IsNullOrEmpty(directory) ? id : Path.GetFileName(id);
 	}
+
+	public static void RemapSplatExrFiles(string mapDirectory, IReadOnlyDictionary<int, int> remap)
+	{
+		if (string.IsNullOrEmpty(mapDirectory) || remap == null || remap.Count == 0) return;
+
+		string[] indicesFiles = new[]
+		{
+			Path.Combine(mapDirectory, "terrain_splat_indices.exr"),
+			Path.Combine(mapDirectory, "terrain_cliff_splat_indices.exr")
+		};
+
+		foreach (string file in indicesFiles)
+		{
+			if (File.Exists(file))
+			{
+				try
+				{
+					var img = Image.LoadFromFile(file);
+					if (img != null)
+					{
+						img.Convert(Image.Format.Rgbaf);
+						int w = img.GetWidth();
+						int h = img.GetHeight();
+						byte[] data = img.GetData();
+						Span<float> floats = MemoryMarshal.Cast<byte, float>(data.AsSpan());
+						bool modified = false;
+						for (int i = 0; i < floats.Length; i++)
+						{
+							int oldIdx = (int)MathF.Round(floats[i]);
+							if (remap.TryGetValue(oldIdx, out int newIdx) && newIdx != oldIdx)
+							{
+								floats[i] = newIdx;
+								modified = true;
+							}
+						}
+						if (modified)
+						{
+							var updatedImg = Image.CreateFromData(w, h, false, Image.Format.Rgbaf, data);
+							updatedImg.SaveExr(file);
+						}
+					}
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"[SaveLoadService] Failed to remap splat EXR {file}: {ex.Message}");
+				}
+			}
+		}
+	}
 }
+

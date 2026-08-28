@@ -1,6 +1,76 @@
 (function () {
     const vscode = acquireVsCodeApi();
 
+    let currentLocale = window.REALM_LOCALE || (new URLSearchParams(window.location.search).get('realmLocale')) || 'en';
+
+    function getI18nDict() {
+        return window.REALM_I18N || window.REALM_EN_FALLBACK || {};
+    }
+
+    function t(key, fallback) {
+        const dict = getI18nDict();
+        return (dict && dict[key])
+            ?? fallback
+            ?? (window.REALM_EN_FALLBACK && window.REALM_EN_FALLBACK[key])
+            ?? key;
+    }
+
+    function applyTranslationsToDom() {
+        const appTitle = document.querySelector('.app-title-group h1');
+        if (appTitle) appTitle.textContent = t('Realm Map Editor');
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            const domain = btn.dataset.domain;
+            if (domain === 'units') btn.textContent = t('👥 Units');
+            else if (domain === 'buildings') btn.textContent = t('🏢 Buildings');
+            else if (domain === 'resources') btn.textContent = t('🪵 Resources');
+            else if (domain === 'props') btn.textContent = t('📦 Props');
+            else if (domain === 'weapons') btn.textContent = t('⚔️ Weapons');
+            else if (domain === 'abilities') btn.textContent = t('🪄 Abilities');
+            else if (domain === 'upgrades') btn.textContent = t('🛡️ Upgrades');
+            else if (domain === 'items') btn.textContent = t('📦 Items');
+            else if (domain === 'properties') btn.textContent = t('⚙️ Settings');
+        });
+
+        const saveStatus = document.getElementById('save-status');
+        if (saveStatus) {
+            saveStatus.textContent = saveStatus.classList.contains('unsaved') ? t('● Unsaved Changes') : t('● Saved');
+            saveStatus.title = t('Auto-saved to file');
+        }
+        const lockBtn = document.getElementById('toggle-lock-btn');
+        if (lockBtn) {
+            lockBtn.textContent = isLocked ? t('🔒 Unlock') : t('🔓 Lock');
+            lockBtn.title = isLocked ? t('Unlock Editor (Edit Mode)') : t('Lock Editor (Read-Only Mode)');
+        }
+        const editOpsBtn = document.getElementById('toggle-buttons-btn');
+        if (editOpsBtn) {
+            editOpsBtn.textContent = t('➕ Edit Ops');
+            editOpsBtn.title = t('Toggle Add/Delete Controls');
+        }
+        const debugBtn = document.getElementById('toggle-debug-btn');
+        if (debugBtn) {
+            debugBtn.textContent = t('🐞 Debug');
+            debugBtn.title = t('Toggle Debug JSON View');
+        }
+
+        const addBtn = document.getElementById('add-unit-btn');
+        if (addBtn) addBtn.textContent = t('+ Add');
+        const pruneBtn = document.getElementById('prune-entities-btn');
+        if (pruneBtn) {
+            pruneBtn.textContent = t('✂️ Prune Unused');
+            pruneBtn.title = t('Prune items never placed on terrain.json');
+        }
+
+        const copyBtn = document.getElementById('copy-unit-btn');
+        if (copyBtn) { copyBtn.textContent = t('✂️ Copy'); copyBtn.title = t('Copy entity to clipboard'); }
+        const pasteBtn = document.getElementById('paste-unit-btn');
+        if (pasteBtn) { pasteBtn.textContent = t('📋 Paste'); pasteBtn.title = t('Paste entity from clipboard'); }
+        const duplicateBtn = document.getElementById('duplicate-unit-btn');
+        if (duplicateBtn) { duplicateBtn.textContent = t('📑 Duplicate'); duplicateBtn.title = t('Duplicate selected entity'); }
+        const deleteBtn = document.getElementById('delete-unit-btn');
+        if (deleteBtn) { deleteBtn.textContent = t('🗑️ Delete'); deleteBtn.title = t('Delete selected entity'); }
+    }
+
     let units = {};
     let selectedUnitId = null;
     let searchQuery = '';
@@ -61,12 +131,6 @@
         Description: document.getElementById('field-Description'),
         ModelPath: document.getElementById('field-ModelPath'),
         PortraitModelPath: document.getElementById('field-PortraitModelPath'),
-        YOffset: document.getElementById('field-YOffset'),
-        CollisionCircle: document.getElementById('field-CollisionCircle'),
-        Brightness: document.getElementById('field-Brightness'),
-        Tint: document.getElementById('field-Tint'),
-        RecalculateNormals: document.getElementById('field-RecalculateNormals'),
-        IgnorePlayerColor: document.getElementById('field-IgnorePlayerColor'),
         IsHero: document.getElementById('field-IsHero'),
         MaxHp: document.getElementById('field-MaxHp'),
         Damage: document.getElementById('field-Damage'),
@@ -91,12 +155,7 @@
         MaxWorkers: document.getElementById('field-MaxWorkers')
     };
 
-    function getArrayKeyForDomain(domain) {
-        if (domain === 'buildings') return 'CustomBuildings';
-        if (domain === 'resources') return 'CustomResources';
-        if (domain === 'props') return 'CustomProps';
-        return 'CustomUnits';
-    }
+
 
     function getAllEntities() {
         if (!Array.isArray(units.CustomUnits)) units.CustomUnits = [];
@@ -182,8 +241,28 @@
     const changelogList = document.getElementById('changelog-list');
 
     function init() {
+        applyTranslationsToDom();
         // Switch to the units tab by default
         switchTab('units');
+
+        try {
+            const ipcPortMatch = window.location.search.match(/ipcPort=(\d+)/);
+            const ipcPort = ipcPortMatch ? ipcPortMatch[1] : 8092;
+            fetch(`http://127.0.0.1:${ipcPort}/api/locale`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.dictionary) {
+                        window.REALM_I18N = data.dictionary;
+                    }
+                    if (data && data.locale) {
+                        currentLocale = data.locale;
+                    }
+                    applyTranslationsToDom();
+                    switchTab(getActiveDomain());
+                    if (typeof renderUnitList === 'function') renderUnitList();
+                })
+                .catch(() => {});
+        } catch (e) {}
 
         // Setup global tab event listeners
         document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -215,19 +294,48 @@
         // Setup numeric keypress locking
         setupNumericLockOnDynamicInputs();
 
-        document.getElementById('chk-show-all-glb')?.addEventListener('change', () => {
-            const unit = getUnitById(selectedUnitId);
-            populateGlbDropdown(getActiveDomain(), unit ? unit.ModelPath : '');
-        });
-
-        document.getElementById('field-ModelPath')?.addEventListener('change', e => {
-            const unit = getUnitById(selectedUnitId);
-            if (unit) {
-                unit.ModelPath = e.target.value;
-                saveChanges();
-                updateAllThumbnails();
+        // Model Picker button listener
+        document.addEventListener('click', e => {
+            const btn = e.target.closest('.edit-model-btn');
+            if (btn) {
+                const field = btn.dataset.field || 'ModelPath';
+                const unit = getUnitById(selectedUnitId);
+                if (!unit) return;
+                const currentPath = unit[field] || '';
+                const domain = getActiveDomain();
+                const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
+                fetch(`http://127.0.0.1:${ipcPort}/api/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'openModelPicker',
+                        entityId: unit.UnitId || unit.Id || selectedUnitId,
+                        field: field,
+                        domain: domain,
+                        currentPath: currentPath
+                    })
+                }).catch(() => {});
             }
         });
+
+        // Animation Studio button listener
+        function triggerOpenAnimationStudio() {
+            const unit = getUnitById(selectedUnitId);
+            if (!unit) return;
+            const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
+            fetch(`http://127.0.0.1:${ipcPort}/api/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'openAnimationStudio',
+                    unitId: unit.UnitId || unit.Id || selectedUnitId,
+                    modelPath: unit.ModelPath || ''
+                })
+            }).catch(() => {});
+        }
+
+        document.getElementById('edit-animations-btn')?.addEventListener('click', triggerOpenAnimationStudio);
+        document.getElementById('edit-animations-body-btn')?.addEventListener('click', triggerOpenAnimationStudio);
 
         // Notify VS Code that frontend is ready
         vscode.postMessage({ type: 'ready' });
@@ -239,10 +347,7 @@
         return activeBtn ? activeBtn.dataset.domain : 'units';
     }
 
-    function matchesDomainCategory(unit, domain) {
-        if (!unit) return false;
-        return true;
-    }
+
 
     function switchTab(domain) {
         document.querySelectorAll('.tab-btn').forEach(b => {
@@ -281,7 +386,6 @@
             else if (domain === 'abilities') selectCustomAbilities();
             else if (domain === 'upgrades') selectCustomUpgrades();
             else if (domain === 'items') selectCustomItems();
-            else if (domain === 'assets') selectCustomAssets();
             else if (domain === 'properties') selectMapProperties();
         }
     }
@@ -290,6 +394,17 @@
     window.addEventListener('message', event => {
         const message = event.data;
         switch (message.type) {
+            case 'updateLocale':
+                if (message.realmLocale) {
+                    currentLocale = message.realmLocale;
+                }
+                if (message.dictionary) {
+                    window.REALM_I18N = message.dictionary;
+                }
+                applyTranslationsToDom();
+                if (typeof renderUnitList === 'function') renderUnitList();
+                if (typeof switchTab === 'function') switchTab(getActiveDomain());
+                break;
             case 'update':
                 const oldUnitsStr = serializeDeterministic(units);
                 if (message.text !== oldUnitsStr) {
@@ -340,7 +455,7 @@
                 const knownTopKeys = [
                     'MapProperties', 'CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps',
                     'CustomAbilities', 'CustomItems', 'CustomUpgrades', 'CustomWeapons', 'Assets', 
-                    'ModelOffsets', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelGenerateNormals',
+                    'ModelOffsets', 'ModelScales', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelNormalModes',
                     'ModelIgnorePlayerColor'
                 ];
                 for (const [key, val] of Object.entries(units)) {
@@ -364,6 +479,10 @@
                             u.PathingType = (u.ArmorType === 'building') ? 32 : 8;
                         }
                     }
+                    if (u.NormalMode === undefined || u.NormalMode === null) {
+                        u.NormalMode = 'Flat';
+                    }
+                    delete u.RecalculateNormals;
                     delete u.MovementType;
                     delete u.PathingCapabilities;
                     delete u.DefaultAssetType;
@@ -373,7 +492,6 @@
                     saveChanges();
                 }
 
-                renderAssetsMetadata();
                 if (serializeDeterministic(units) !== oldUnitsStr) {
                     renderUnitList();
                     if (selectedUnitId === '__map_properties__') {
@@ -386,8 +504,6 @@
                         renderCustomUpgrades();
                     } else if (selectedUnitId === '__custom_items__') {
                         renderCustomItems();
-                    } else if (selectedUnitId === '__custom_assets__') {
-                        renderAssetsMetadata();
                     } else if (selectedUnitId && getUnitById(selectedUnitId)) {
                         populateForm(selectedUnitId);
                     } else {
@@ -400,29 +516,12 @@
                             showEmptyState();
                         }
                     }
-                } else if (selectedUnitId === '__custom_assets__') {
-                    renderAssetsMetadata();
                 }
                 updateDebugJson();
                 updateCatalogCardErrors();
                 applyLockState();
                 updateAllThumbnails();
                 updateDatalists();
-                break;
-            case 'browseFileResult':
-                let targetInput = null;
-                if (message.fieldId) {
-                    targetInput = document.getElementById(message.fieldId);
-                } else if (message.fieldClass) {
-                    const selector = `input.${message.fieldClass.split(' ').join('.')}[data-index="${message.fieldIndex}"]`;
-                    targetInput = document.querySelector(selector);
-                }
-                if (targetInput) {
-                    targetInput.value = message.path;
-                    const event = new Event('change', { bubbles: true });
-                    targetInput.dispatchEvent(event);
-                    updateThumbnailForInput(targetInput);
-                }
                 break;
             case 'browseFileFallback':
                 const fileInput = document.createElement('input');
@@ -434,7 +533,6 @@
                 fileInput.addEventListener('change', () => {
                     if (fileInput.files && fileInput.files[0]) {
                         const selectedFile = fileInput.files[0];
-                        let filePath = selectedFile.name;
                         let targetInp = null;
                         if (message.fieldId) {
                             targetInp = document.getElementById(message.fieldId);
@@ -442,11 +540,16 @@
                             const selector = `input.${message.fieldClass.split(' ').join('.')}[data-index="${message.fieldIndex}"]`;
                             targetInp = document.querySelector(selector);
                         }
+
+                        let filePath = selectedFile.name;
                         if (targetInp) {
                             targetInp.value = filePath;
                             const evt = new Event('change', { bubbles: true });
                             targetInp.dispatchEvent(evt);
                             updateThumbnailForInput(targetInp);
+                            if (message.fieldIndex !== null && message.fieldIndex !== undefined && message.fieldClass === 'item-icon') {
+                                updateItemIconPreview(message.fieldIndex);
+                            }
                         }
                     }
                     fileInput.remove();
@@ -454,79 +557,6 @@
                 document.body.appendChild(fileInput);
                 fileInput.click();
                 break;
-            case 'importAssetFallback':
-                const assetInput = document.createElement('input');
-                assetInput.type = 'file';
-                if (message.accept) {
-                    assetInput.accept = message.accept;
-                }
-                assetInput.style.display = 'none';
-                assetInput.addEventListener('change', () => {
-                    if (assetInput.files && assetInput.files[0]) {
-                        const selectedFile = assetInput.files[0];
-                        if (message.assetType === 'vfx') {
-                            const img = new Image();
-                            const url = URL.createObjectURL(selectedFile);
-                            img.onload = () => {
-                                const canvas = document.createElement('canvas');
-                                canvas.width = img.width;
-                                canvas.height = img.height;
-                                const ctx = canvas.getContext('2d');
-                                ctx.drawImage(img, 0, 0);
-                                canvas.toBlob((blob) => {
-                                    URL.revokeObjectURL(url);
-                                    if (blob) {
-                                        const r = new FileReader();
-                                        r.onload = () => {
-                                            const arrayBuffer = r.result;
-                                            const bytes = new Uint8Array(arrayBuffer);
-                                            let binaryString = '';
-                                            for (let i = 0; i < bytes.byteLength; i++) {
-                                                binaryString += String.fromCharCode(bytes[i]);
-                                            }
-                                            const base64Data = btoa(binaryString);
-                                            const baseName = selectedFile.name.substring(0, selectedFile.name.lastIndexOf('.')) || selectedFile.name;
-                                            vscode.postMessage({
-                                                type: 'processImportedAsset',
-                                                fileName: baseName + '.png',
-                                                fileDataBase64: base64Data,
-                                                assetType: message.assetType,
-                                                options: message.extraOptions
-                                            });
-                                        };
-                                        r.readAsArrayBuffer(blob);
-                                    }
-                                }, 'image/png');
-                            };
-                            img.onerror = () => {
-                                URL.revokeObjectURL(url);
-                            };
-                            img.src = url;
-                        } else {
-                            const reader = new FileReader();
-                            reader.onload = () => {
-                                const arrayBuffer = reader.result;
-                                const bytes = new Uint8Array(arrayBuffer);
-                                let binaryString = '';
-                                for (let i = 0; i < bytes.byteLength; i++) {
-                                    binaryString += String.fromCharCode(bytes[i]);
-                                }
-                                const base64Data = btoa(binaryString);
-                                vscode.postMessage({
-                                    type: 'processImportedAsset',
-                                    fileName: selectedFile.name,
-                                    fileDataBase64: base64Data,
-                                    assetType: message.assetType,
-                                    options: message.extraOptions
-                                });
-                            };
-                            reader.readAsArrayBuffer(selectedFile);
-                        }
-                    }
-                    assetInput.remove();
-                });
-                document.body.appendChild(assetInput);
-                assetInput.click();
             case 'resolvePathResult':
                 const callback = resolveCallbacks[message.requestId];
                 if (callback) {
@@ -699,8 +729,6 @@
         customAbilitiesForm.classList.add('hidden');
         customUpgradesForm.classList.add('hidden');
         customItemsForm.classList.add('hidden');
-        const customAssetsForm = document.getElementById('custom-assets-form');
-        if (customAssetsForm) customAssetsForm.classList.add('hidden');
     }
 
     function populateForm(id) {
@@ -727,11 +755,10 @@
             
             const val = unit[key];
             if (element.type === 'checkbox') {
-                if (key === 'RecalculateNormals') {
-                    element.checked = val !== undefined ? !!val : true;
-                } else {
-                    element.checked = !!val;
-                }
+                element.checked = !!val;
+            } else if (element.tagName === 'SPAN' || element.tagName === 'LABEL' || element.tagName === 'DIV' || key === 'ModelPath' || key === 'PortraitModelPath') {
+                element.textContent = val || '(None)';
+                element.title = val || '';
             } else if (val === undefined || val === null) {
                 element.value = '';
             } else {
@@ -751,8 +778,9 @@
         const unitCostSection = document.getElementById('section-unit-costs');
         const unitCombatSection = document.getElementById('section-unit-combat');
         const unitCapabilitiesSection = document.getElementById('section-unit-capabilities');
+        const animSection = document.getElementById('section-unit-animations');
+        const editAnimationsBtn = document.getElementById('edit-animations-btn');
         const pathingSection = document.getElementById('section-pathing-flags');
-        const unitAnimationsSection = document.getElementById('section-unit-animations');
         const isHeroGroup = document.getElementById('field-IsHero')?.closest('.form-group');
         const portraitGroup = document.getElementById('field-PortraitModelPath')?.closest('.form-group');
 
@@ -762,7 +790,8 @@
             if (unitCostSection) unitCostSection.classList.add('hidden');
             if (unitCombatSection) unitCombatSection.classList.add('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.add('hidden');
-            if (unitAnimationsSection) unitAnimationsSection.classList.add('hidden');
+            if (animSection) animSection.classList.add('hidden');
+            if (editAnimationsBtn) editAnimationsBtn.classList.add('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.add('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
@@ -772,17 +801,31 @@
             if (unitCostSection) unitCostSection.classList.add('hidden');
             if (unitCombatSection) unitCombatSection.classList.add('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.add('hidden');
-            if (unitAnimationsSection) unitAnimationsSection.classList.add('hidden');
+            if (animSection) animSection.classList.add('hidden');
+            if (editAnimationsBtn) editAnimationsBtn.classList.add('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.add('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
-        } else {
+        } else if (activeDomain === 'buildings') {
             if (resConfigSection) resConfigSection.classList.add('hidden');
             if (unitStatsSection) unitStatsSection.classList.remove('hidden');
             if (unitCostSection) unitCostSection.classList.remove('hidden');
             if (unitCombatSection) unitCombatSection.classList.remove('hidden');
             if (unitCapabilitiesSection) unitCapabilitiesSection.classList.remove('hidden');
-            if (unitAnimationsSection) unitAnimationsSection.classList.remove('hidden');
+            if (animSection) animSection.classList.add('hidden');
+            if (editAnimationsBtn) editAnimationsBtn.classList.add('hidden');
+            if (pathingSection) pathingSection.classList.remove('hidden');
+            if (isHeroGroup) isHeroGroup.classList.remove('hidden');
+            if (portraitGroup) portraitGroup.classList.remove('hidden');
+        } else {
+            // units
+            if (resConfigSection) resConfigSection.classList.add('hidden');
+            if (unitStatsSection) unitStatsSection.classList.remove('hidden');
+            if (unitCostSection) unitCostSection.classList.remove('hidden');
+            if (unitCombatSection) unitCombatSection.classList.remove('hidden');
+            if (unitCapabilitiesSection) unitCapabilitiesSection.classList.remove('hidden');
+            if (animSection) animSection.classList.remove('hidden');
+            if (editAnimationsBtn) editAnimationsBtn.classList.remove('hidden');
             if (pathingSection) pathingSection.classList.remove('hidden');
             if (isHeroGroup) isHeroGroup.classList.remove('hidden');
             if (portraitGroup) portraitGroup.classList.remove('hidden');
@@ -795,56 +838,8 @@
         renderTags('upgrades', unit.Upgrades || []);
         renderTags('statuseffects', unit.StatusEffects || []);
         renderTags('soundevents', unit.SoundEvents || []);
-        renderUnitAnimations(unit);
         
-        populateGlbDropdown(activeDomain, unit.ModelPath || '');
         updateAllThumbnails();
-    }
-
-    function populateGlbDropdown(domain, currentModelPath) {
-        const select = document.getElementById('field-ModelPath');
-        if (!select) return;
-        select.innerHTML = '';
-
-        const noneOpt = document.createElement('option');
-        noneOpt.value = '';
-        noneOpt.textContent = '-- None (Default Model) --';
-        select.appendChild(noneOpt);
-
-        const showAll = document.getElementById('chk-show-all-glb')?.checked ?? false;
-        const targetCategory = domain === 'units' ? 'units' :
-                              domain === 'buildings' ? 'buildings' :
-                              domain === 'resources' ? 'resources' :
-                              domain === 'props' ? 'props' : null;
-
-        const glbAssets = (units.Assets && units.Assets.glb) ? units.Assets.glb : {};
-        for (const [catKey, catObj] of Object.entries(glbAssets)) {
-            if (!catObj || typeof catObj !== 'object') continue;
-            const normCat = catKey.toLowerCase();
-
-            if (!showAll && targetCategory) {
-                const isMatch = normCat === targetCategory || (targetCategory === 'buildings' && normCat === 'building');
-                if (!isMatch) continue;
-            }
-
-            for (const [fileName, val] of Object.entries(catObj)) {
-                const opt = document.createElement('option');
-                opt.value = fileName;
-                opt.textContent = `${fileName} (${normCat})`;
-                if (fileName === currentModelPath) {
-                    opt.selected = true;
-                }
-                select.appendChild(opt);
-            }
-        }
-
-        if (currentModelPath && ![...select.options].some(o => o.value === currentModelPath)) {
-            const customOpt = document.createElement('option');
-            customOpt.value = currentModelPath;
-            customOpt.textContent = `${currentModelPath} (custom)`;
-            customOpt.selected = true;
-            select.appendChild(customOpt);
-        }
     }
 
     function populateMapProperties() {
@@ -967,146 +962,6 @@
             saveChanges();
             renderTags(type, unit[key]);
         }
-    }
-
-    const ANIMATION_TYPES = [
-        { key: 'Idle', label: 'Idle', icon: '🧘' },
-        { key: 'Walk', label: 'Walk', icon: '🚶' },
-        { key: 'Attack', label: 'Attack', icon: '⚔️' },
-        { key: 'Death', label: 'Death', icon: '💀' },
-        { key: 'Labor', label: 'Labor', icon: '⚒️' },
-        { key: 'Spell_Cast', label: 'Spell_Cast', icon: '🪄' },
-        { key: 'Dance', label: 'Dance', icon: '💃' }
-    ];
-
-    function renderUnitAnimations(unit) {
-        const container = document.getElementById('unit-animations-container');
-        if (!container) return;
-        container.innerHTML = '';
-
-        if (!unit) return;
-        if (!unit.Animations || typeof unit.Animations !== 'object' || Array.isArray(unit.Animations)) {
-            unit.Animations = {};
-        }
-
-        const table = document.createElement('table');
-        table.className = 'anim-table';
-
-        const thead = document.createElement('thead');
-        thead.innerHTML = `
-            <tr>
-                <th style="width: 140px;">Action Type</th>
-                <th>Configured Animations Array (Random Selection)</th>
-            </tr>
-        `;
-        table.appendChild(thead);
-
-        const tbody = document.createElement('tbody');
-
-        ANIMATION_TYPES.forEach(animTypeInfo => {
-            const typeKey = animTypeInfo.key;
-            const animList = Array.isArray(unit.Animations[typeKey]) ? unit.Animations[typeKey] : [];
-
-            const tr = document.createElement('tr');
-
-            const tdType = document.createElement('td');
-            tdType.className = 'anim-type-cell';
-            tdType.innerHTML = `<span>${animTypeInfo.icon}</span> <strong>${escapeHtml(animTypeInfo.label)}</strong>`;
-            tr.appendChild(tdType);
-
-            const tdConfig = document.createElement('td');
-
-            const chipsContainer = document.createElement('div');
-            chipsContainer.className = 'anim-chips-container';
-
-            if (animList.length === 0) {
-                const emptySpan = document.createElement('span');
-                emptySpan.className = 'anim-chips-fallback';
-                emptySpan.textContent = `Default fallback (${typeKey.toLowerCase()}.ranim)`;
-                chipsContainer.appendChild(emptySpan);
-            } else {
-                animList.forEach((animFile, idx) => {
-                    const chip = document.createElement('span');
-                    chip.className = 'anim-chip';
-                    chip.title = `Preview ID: ${typeKey}_${idx}`;
-
-                    const idxBadge = document.createElement('span');
-                    idxBadge.className = 'anim-chip-index';
-                    idxBadge.textContent = `${typeKey}_${idx}`;
-                    chip.appendChild(idxBadge);
-
-                    const nameSpan = document.createElement('span');
-                    nameSpan.textContent = animFile;
-                    chip.appendChild(nameSpan);
-
-                    const removeBtn = document.createElement('span');
-                    removeBtn.className = 'remove-anim';
-                    removeBtn.textContent = '×';
-                    removeBtn.title = 'Remove animation';
-                    removeBtn.addEventListener('click', () => {
-                        if (isLocked) return;
-                        pushToUndoStack();
-                        animList.splice(idx, 1);
-                        if (animList.length === 0) {
-                            delete unit.Animations[typeKey];
-                        } else {
-                            unit.Animations[typeKey] = animList;
-                        }
-                        saveChanges();
-                        renderUnitAnimations(unit);
-                    });
-                    chip.appendChild(removeBtn);
-
-                    chipsContainer.appendChild(chip);
-                });
-            }
-            tdConfig.appendChild(chipsContainer);
-
-            const addRow = document.createElement('div');
-            addRow.className = 'anim-add-row';
-
-            const addInput = document.createElement('input');
-            addInput.type = 'text';
-            addInput.setAttribute('list', 'suggest-animations');
-            addInput.placeholder = `Select or type animation for ${typeKey}...`;
-            addInput.className = 'anim-add-input';
-
-            const addBtn = document.createElement('button');
-            addBtn.type = 'button';
-            addBtn.className = 'btn secondary-btn small-btn';
-            addBtn.textContent = '+ Add';
-
-            const doAdd = () => {
-                if (isLocked) return;
-                const val = addInput.value.trim();
-                if (!val) return;
-                pushToUndoStack();
-                if (!Array.isArray(unit.Animations[typeKey])) {
-                    unit.Animations[typeKey] = [];
-                }
-                unit.Animations[typeKey].push(val);
-                saveChanges();
-                renderUnitAnimations(unit);
-            };
-
-            addBtn.addEventListener('click', doAdd);
-            addInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    doAdd();
-                }
-            });
-
-            addRow.appendChild(addInput);
-            addRow.appendChild(addBtn);
-            tdConfig.appendChild(addRow);
-
-            tr.appendChild(tdConfig);
-            tbody.appendChild(tr);
-        });
-
-        table.appendChild(tbody);
-        container.appendChild(table);
     }
 
     function addTagItem(type) {
@@ -1398,6 +1253,7 @@
     
     // Custom Weapons
     function renderCustomWeapons() {
+        updateDatalists();
         customWeaponsList.innerHTML = '';
         const list = units.CustomWeapons || [];
 
@@ -1408,8 +1264,8 @@
         list.forEach((item, index) => {
             tbodyContent += `
                 <tr class="main-row" data-index="${index}">
-                    <td>
-                        <button type="button" class="row-expand-btn" data-target="weapon-detail-${index}">▶</button>
+                    <td style="text-align: center;">
+                        <button type="button" class="btn small-btn edit-weapon-vfx-btn" data-index="${index}" title="Edit Visual & Audio Effects in Godot Dialog">✏️</button>
                     </td>
                     <td>
                         <input type="text" class="weapon-id" data-index="${index}" value="${item.WeaponId || ''}" required />
@@ -1439,62 +1295,6 @@
                         <button type="button" class="btn-delete" data-index="${index}">&times;</button>
                     </td>
                 </tr>
-                <tr class="detail-row hidden" id="weapon-detail-${index}">
-                    <td colspan="8">
-                        <div class="detail-container">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Projectile Speed (Optional)</label>
-                                    <input type="number" class="weapon-speed" data-index="${index}" value="${item.ProjectileSpeed || 0}" min="0" step="any" />
-                                </div>
-                                <div class="form-group">
-                                    <label>Visual Effect Model (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="weapon-visual" data-index="${index}" value="${item.VisualEffect || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="weapon-visual" data-index="${index}" data-file-types="gltf,glb,scn,tscn" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Attack Sound (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="weapon-sound" data-index="${index}" value="${item.AttackSound || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="weapon-sound" data-index="${index}" data-file-types="ogg,wav,mp3" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label>Projectile Model Path (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="weapon-proj-model" data-index="${index}" value="${item.ProjectileModelPath || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="weapon-proj-model" data-index="${index}" data-file-types="gltf,glb,scn,tscn" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Impact Visual Effect (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="weapon-impact-visual" data-index="${index}" value="${item.ImpactVisualEffect || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="weapon-impact-visual" data-index="${index}" data-file-types="gltf,glb,scn,tscn" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label>Impact Sound (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="weapon-impact-sound" data-index="${index}" value="${item.ImpactSound || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="weapon-impact-sound" data-index="${index}" data-file-types="ogg,wav,mp3" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </td>
-                </tr>
             `;
         });
 
@@ -1502,7 +1302,7 @@
             <table class="spreadsheet-table">
                 <thead>
                     <tr>
-                        <th style="width: 30px;"></th>
+                        <th style="width: 42px; text-align: center;" title="Edit Visual & Audio Effects in Godot Dialog">VFX</th>
                         <th>Weapon ID</th>
                         <th>Name</th>
                         <th>Damage</th>
@@ -1520,6 +1320,26 @@
 
         customWeaponsList.appendChild(tableContainer);
         setupNumericLockOnDynamicInputs();
+
+        // Bind weapon VFX pencil button
+        tableContainer.querySelectorAll('.edit-weapon-vfx-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.index, 10);
+                const item = list[idx];
+                if (!item) return;
+                const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
+                fetch(`http://127.0.0.1:${ipcPort}/api/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'openVfxDialog',
+                        weaponId: item.WeaponId || '',
+                        weaponIndex: idx,
+                        weaponData: item
+                    })
+                }).catch(() => {});
+            });
+        });
 
         // Bind weapon listeners
         tableContainer.querySelectorAll('.btn-delete').forEach(btn => {
@@ -1547,12 +1367,13 @@
         tableContainer.querySelectorAll('input, select').forEach(input => {
             input.addEventListener('change', e => {
                 const idx = parseInt(e.target.dataset.index, 10);
+                if (isNaN(idx) || !list[idx]) return;
                 const target = e.target;
-                const val = target.value;
+                const val = target.type === 'checkbox' ? target.checked : target.value;
 
                 if (target.classList.contains('weapon-id')) {
                     const oldId = list[idx].WeaponId;
-                    const newId = val.trim();
+                    const newId = (val + '').trim();
                     if (oldId !== newId) {
                         const dup = list.some((w, index) => index !== idx && w.WeaponId === newId);
                         if (newId && !dup) {
@@ -1570,12 +1391,6 @@
                 else if (target.classList.contains('weapon-range')) list[idx].Range = parseFloat(val) || 0;
                 else if (target.classList.contains('weapon-cooldown')) list[idx].AttackCooldown = parseFloat(val) || 0;
                 else if (target.classList.contains('weapon-type')) list[idx].AttackType = val;
-                else if (target.classList.contains('weapon-speed')) list[idx].ProjectileSpeed = parseFloat(val) || 0;
-                else if (target.classList.contains('weapon-visual')) list[idx].VisualEffect = val;
-                else if (target.classList.contains('weapon-sound')) list[idx].AttackSound = val;
-                else if (target.classList.contains('weapon-proj-model')) list[idx].ProjectileModelPath = val;
-                else if (target.classList.contains('weapon-impact-visual')) list[idx].ImpactVisualEffect = val;
-                else if (target.classList.contains('weapon-impact-sound')) list[idx].ImpactSound = val;
 
                 units.CustomWeapons = list;
                 saveChanges();
@@ -1602,6 +1417,9 @@
                 <tr class="main-row" data-index="${index}">
                     <td>
                         <button type="button" class="row-expand-btn" data-target="ability-detail-${index}">▶</button>
+                    </td>
+                    <td style="text-align: center; width: 40px;">
+                        <button type="button" class="btn small-btn edit-ability-vfx-btn" data-index="${index}" title="Edit Ability VFX & Audio in Godot">✏️</button>
                     </td>
                     <td>
                         <input type="text" class="ability-id" data-index="${index}" value="${item.AbilityId || ''}" required />
@@ -1632,43 +1450,11 @@
                     </td>
                 </tr>
                 <tr class="detail-row hidden" id="ability-detail-${index}">
-                    <td colspan="8">
+                    <td colspan="9">
                         <div class="detail-container">
                             <div class="form-group">
                                 <label>Description</label>
                                 <textarea class="ability-desc" data-index="${index}" rows="2">${item.Description || ''}</textarea>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Visual Effect Model (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="ability-visual" data-index="${index}" value="${item.VisualEffect || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="ability-visual" data-index="${index}" data-file-types="gltf,glb,scn,tscn" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label>Cast Sound (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="ability-sound" data-index="${index}" value="${item.CastSound || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="ability-sound" data-index="${index}" data-file-types="ogg,wav,mp3" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Icon Path (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="ability-icon" data-index="${index}" value="${item.IconPath || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="ability-icon" data-index="${index}" data-file-types="png,jpg,jpeg,svg,tga,dds" title="Browse files">📁</button>
-                                        <button type="button" class="btn clear-btn" title="Clear path">❌</button>
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label>Area of Effect Radius</label>
-                                    <input type="number" class="ability-aoe" data-index="${index}" value="${item.AreaOfEffectRadius || 0}" min="0" step="any" />
-                                </div>
                             </div>
                             <div class="form-row">
                                 <div class="form-group">
@@ -1741,6 +1527,7 @@
                 <thead>
                     <tr>
                         <th style="width: 30px;"></th>
+                        <th style="width: 40px; text-align: center;">VFX</th>
                         <th>Ability ID</th>
                         <th>Name</th>
                         <th>Type</th>
@@ -1751,7 +1538,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    ${tbodyContent || '<tr><td colspan="8" class="no-slots-info">No abilities defined. Click "+ Add Custom Ability" below.</td></tr>'}
+                    ${tbodyContent || '<tr><td colspan="9" class="no-slots-info">No abilities defined. Click "+ Add Custom Ability" below.</td></tr>'}
                 </tbody>
             </table>
         `;
@@ -1772,6 +1559,26 @@
                     saveChanges();
                     renderCustomAbilities();
                 }, 'Delete');
+            });
+        });
+
+        // Bind ability VFX pencil button
+        tableContainer.querySelectorAll('.edit-ability-vfx-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.index, 10);
+                const item = list[idx];
+                if (!item) return;
+                const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
+                fetch(`http://127.0.0.1:${ipcPort}/api/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'openAbilityVfxDialog',
+                        abilityId: item.AbilityId || '',
+                        abilityIndex: idx,
+                        abilityData: item
+                    })
+                }).catch(() => {});
             });
         });
 
@@ -1810,10 +1617,6 @@
                 else if (target.classList.contains('ability-cooldown')) list[idx].Cooldown = parseFloat(val) || 0;
                 else if (target.classList.contains('ability-range')) list[idx].TargetRange = parseFloat(val) || 0;
                 else if (target.classList.contains('ability-desc')) list[idx].Description = val;
-                else if (target.classList.contains('ability-visual')) list[idx].VisualEffect = val;
-                else if (target.classList.contains('ability-sound')) list[idx].CastSound = val;
-                else if (target.classList.contains('ability-icon')) list[idx].IconPath = val;
-                else if (target.classList.contains('ability-aoe')) list[idx].AreaOfEffectRadius = parseFloat(val) || 0;
                 else if (target.classList.contains('ability-damage')) list[idx].Damage = parseFloat(val) || 0;
                 else if (target.classList.contains('ability-healing')) list[idx].Healing = parseFloat(val) || 0;
                 else if (target.classList.contains('ability-summon-id')) list[idx].SummonedUnitId = val;
@@ -2108,9 +1911,13 @@
                                 </div>
                                 <div class="form-group">
                                     <label>Icon Path (Optional)</label>
-                                    <div class="input-with-browse">
-                                        <input type="text" class="item-icon" data-index="${index}" value="${item.IconPath || ''}" />
-                                        <button type="button" class="btn browse-btn" data-class="item-icon" data-index="${index}" data-file-types="png,jpg,jpeg,svg,tga,dds" title="Browse files">📁</button>
+                                    <div class="input-with-browse" style="display: flex; gap: 6px; align-items: center;">
+                                        <div class="item-icon-preview" data-index="${index}" style="width: 28px; height: 28px; border: 1px solid var(--vscode-input-border, #3c3c3c); background: var(--vscode-input-background, #1e1e1e); border-radius: 4px; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;" title="Selected Icon Preview">
+                                            <img class="item-icon-img" data-index="${index}" style="width: 100%; height: 100%; object-fit: contain; ${item.IconPath ? '' : 'display: none;'}" alt="" />
+                                            <span class="item-icon-placeholder" data-index="${index}" style="font-size: 13px; opacity: 0.4; ${item.IconPath ? 'display: none;' : ''}">🖼️</span>
+                                        </div>
+                                        <input type="text" class="item-icon" list="suggest-icons" data-index="${index}" value="${item.IconPath || ''}" placeholder="e.g. wood_logs.png" style="flex: 1;" />
+                                        <button type="button" class="btn browse-btn" data-class="item-icon" data-index="${index}" data-asset-type="icon" data-file-types="png" title="Browse / Import Icon">📁</button>
                                         <button type="button" class="btn clear-btn" title="Clear path">❌</button>
                                     </div>
                                 </div>
@@ -2284,7 +2091,10 @@
                 else if (target.classList.contains('item-charges')) list[idx].ChargeCount = parseInt(val, 10) || 0;
                 else if (target.classList.contains('item-cooldown-link')) list[idx].CooldownLink = val;
                 else if (target.classList.contains('item-candrop')) list[idx].CanDrop = val;
-                else if (target.classList.contains('item-icon')) list[idx].IconPath = val;
+                else if (target.classList.contains('item-icon')) {
+                    list[idx].IconPath = val;
+                    updateItemIconPreview(idx);
+                }
                 else if (target.classList.contains('item-iscontainer')) list[idx].IsContainer = val;
                 else if (target.classList.contains('item-containersize')) list[idx].ContainerSize = parseInt(val, 10) || 0;
                 else if (target.classList.contains('item-req')) list[idx].Requirements = val;
@@ -2293,6 +2103,18 @@
                 saveChanges();
             });
         });
+
+        tableContainer.querySelectorAll('.item-icon').forEach(input => {
+            input.addEventListener('input', e => {
+                const idx = parseInt(e.target.dataset.index, 10);
+                updateItemIconPreview(idx);
+            });
+        });
+
+        list.forEach((_, index) => {
+            updateItemIconPreview(index);
+        });
+
         updateAllThumbnails();
     }
 
@@ -2602,12 +2424,6 @@
                     pushToUndoStack();
                     unit[componentKey] = parsed.data;
                     saveChanges();
-                    
-                    if (componentKey === 'Animations') {
-                        renderUnitAnimations(unit);
-                        return;
-                    }
-
                     let tagType = '';
                     if (componentKey === 'BuildOptions') tagType = 'build-options';
                     else if (componentKey === 'Abilities') tagType = 'abilities';
@@ -2874,31 +2690,63 @@
                             domain === 'resources' ? units.CustomResources :
                             domain === 'props' ? units.CustomProps : units.CustomUnits;
 
+        let defaultModelPath = '';
+        const glbAssets = (units.Assets && units.Assets.glb) ? units.Assets.glb : {};
+        const catGlbs = glbAssets[domain] || (domain === 'buildings' ? glbAssets['building'] : null) || {};
+        const glbKeys = Object.keys(catGlbs);
+        if (glbKeys.length > 0) {
+            defaultModelPath = glbKeys[0];
+        }
+
         if (domain === 'props') {
             targetArray.push({
                 UnitId: nextId,
                 Name: `New ${prefix}`,
                 Description: `A decorative ${prefix.toLowerCase()} prop.`,
-                PathingType: defaultPathing,
-                RecalculateNormals: true
+                ModelPath: defaultModelPath,
+                PathingType: defaultPathing
             });
         } else if (domain === 'resources') {
             targetArray.push({
                 UnitId: nextId,
                 Name: `New ${prefix}`,
                 Description: `Harvestable ${prefix.toLowerCase()} deposit.`,
+                ModelPath: defaultModelPath,
                 MaxCapacity: 2000.0,
                 HarvestRate: 10.0,
                 GrowthRate: 0.0,
                 MaxWorkers: 5,
-                PathingType: defaultPathing,
-                RecalculateNormals: true
+                PathingType: defaultPathing
+            });
+        } else if (domain === 'buildings') {
+            targetArray.push({
+                UnitId: nextId,
+                Name: `New ${prefix}`,
+                Description: `A new ${prefix.toLowerCase()} entity.`,
+                ModelPath: defaultModelPath,
+                MaxHp: 1000.0,
+                Damage: 0.0,
+                Range: 0.0,
+                Armor: 10.0,
+                Speed: 0.0,
+                AttackCooldown: 0.0,
+                ScanRadius: 10.0,
+                CostGold: 200.0,
+                CostWood: 100.0,
+                CostStone: 50.0,
+                ProductionTime: 15.0,
+                PopCost: 0,
+                AttackType: 'none',
+                ArmorType: defaultArmor,
+                GoldBounty: 0.0,
+                PathingType: defaultPathing
             });
         } else {
             targetArray.push({
                 UnitId: nextId,
                 Name: `New ${prefix}`,
                 Description: `A new ${prefix.toLowerCase()} entity.`,
+                ModelPath: defaultModelPath,
                 MaxHp: 100.0,
                 Damage: 10.0,
                 Range: 2.0,
@@ -2914,8 +2762,7 @@
                 AttackType: 'melee',
                 ArmorType: defaultArmor,
                 GoldBounty: 10.0,
-                PathingType: defaultPathing,
-                RecalculateNormals: true
+                PathingType: defaultPathing
             });
         }
 
@@ -2933,9 +2780,12 @@
             WeaponId: nextId,
             Name: 'New Weapon',
             Damage: 10,
-            Range: 2.0,
+            Range: 8.0,
             AttackCooldown: 1.5,
-            AttackType: 'melee'
+            AttackType: 'ranged',
+            ProjectileSpeed: 25,
+            ArcHeight: 2.0,
+            OrientToTrajectory: true
         });
         units.CustomWeapons = list;
         saveChanges();
@@ -3024,17 +2874,7 @@
         }, 'Prune Unused');
     });
 
-    document.getElementById('btn-prune-unused-assets')?.addEventListener('click', () => {
-        showCustomConfirmDialog('Are you sure you want to prune all unreferenced assets? Unused asset entries will be removed from metadata.json and their files will be deleted from the workspace.', () => {
-            vscode.postMessage({ type: 'pruneUnusedAssets' });
-        }, 'Prune Unused');
-    });
 
-    document.getElementById('btn-prune-unused-assets-section')?.addEventListener('click', () => {
-        showCustomConfirmDialog('Are you sure you want to prune all unreferenced assets? Unused asset entries will be removed from metadata.json and their files will be deleted from the workspace.', () => {
-            vscode.postMessage({ type: 'pruneUnusedAssets' });
-        }, 'Prune Unused');
-    });
 
     // --- SYSTEM FILE RESOLVE PATH & THUMBNAIL/AUDIO WARNINGS ---
     function resolvePath(path, callback) {
@@ -3096,10 +2936,9 @@
         
         // Supported extensions:
         const isImage = /\.(png|jpg|jpeg|gif|svg|bmp|webp|tga|dds)$/i.test(val);
-        const is3DModel = /\.(glb|gltf|scn|tscn)$/i.test(val);
         const isAudio = /\.(ogg|wav|mp3)$/i.test(val);
         
-        if (!isImage && !is3DModel && !isAudio) {
+        if (!isImage && !isAudio) {
             thumbContainer.innerHTML = '';
             inputEl.classList.remove('input-warning');
             removeWarningText(inputEl);
@@ -3114,21 +2953,6 @@
                 removeWarningText(inputEl);
                 if (isImage) {
                     thumbContainer.innerHTML = `<img src="${uri}" class="thumbnail-preview-img" alt="Preview" />`;
-                } else if (is3DModel) {
-                    thumbContainer.innerHTML = `
-                        <div class="model-preview-box" title="Click to open 3D model in VS Code">
-                            <span>📦 View Model (${val.split('/').pop()})</span>
-                        </div>
-                    `;
-                    const previewBox = thumbContainer.querySelector('.model-preview-box');
-                    if (previewBox) {
-                        previewBox.addEventListener('click', () => {
-                            vscode.postMessage({
-                                type: 'openFile',
-                                path: val
-                            });
-                        });
-                    }
                 } else if (isAudio) {
                     thumbContainer.innerHTML = `
                         <div class="audio-preview-box">
@@ -3144,16 +2968,48 @@
         });
     }
 
+    function updateItemIconPreview(index) {
+        const row = document.getElementById(`item-detail-${index}`);
+        if (!row) return;
+        const input = row.querySelector('.item-icon');
+        const img = row.querySelector('.item-icon-img');
+        const placeholder = row.querySelector('.item-icon-placeholder');
+        if (!input || !img || !placeholder) return;
+        const val = input.value.trim();
+        if (!val) {
+            img.style.display = 'none';
+            img.src = '';
+            placeholder.style.display = '';
+            input.classList.remove('input-warning');
+            removeWarningText(input);
+            return;
+        }
+        resolvePath(val, uri => {
+            if (input.value.trim() !== val) return;
+            if (uri) {
+                img.src = uri;
+                img.style.display = '';
+                placeholder.style.display = 'none';
+                input.classList.remove('input-warning');
+                removeWarningText(input);
+            } else {
+                img.style.display = 'none';
+                img.src = '';
+                placeholder.style.display = '';
+                input.classList.add('input-warning');
+                addWarningText(input, `Icon file "${val}" not found in the game directories.`);
+            }
+        });
+    }
+
     function updateAllThumbnails() {
         const imageInputs = [
             document.getElementById('prop-MinimapImage'),
             document.getElementById('prop-LoadingImage'),
-            document.getElementById('prop-LoadingMusic'),
-            document.getElementById('field-ModelPath'),
-            document.getElementById('field-PortraitModelPath')
+            document.getElementById('prop-LoadingMusic')
         ];
         
-        document.querySelectorAll('.weapon-visual, .weapon-proj-model, .weapon-impact-visual, .weapon-sound, .weapon-impact-sound, .ability-visual, .ability-sound, .ability-icon, .item-icon').forEach(input => {
+        document.querySelectorAll('.item-icon').forEach(input => {
             imageInputs.push(input);
         });
         
@@ -3439,11 +3295,30 @@
         populateDatalist('suggest-upgrades', upgrades.map(u => ({ id: u.UpgradeId, name: u.Name })));
         populateDatalist('suggest-items', items.map(i => ({ id: i.ItemId, name: i.Name })));
 
-        const animAssets = (units.Assets && units.Assets.animations) ? units.Assets.animations : {};
-        const animList = Object.keys(animAssets);
-        const standardDefaults = new Set(['idle.ranim', 'walk.ranim', 'attack.ranim', 'death.ranim', 'labor.ranim', 'spell_cast.ranim', 'dance.ranim']);
-        const customAnims = animList.filter(a => !standardDefaults.has(a.toLowerCase()));
-        populateDatalist('suggest-animations', customAnims.map(a => ({ id: a, name: a })));
+        // Icons datalist (suggest-icons) - strictly imported *.png under Assets/icons
+        const iconAssets = new Set();
+        ['icons', 'icon'].forEach(k => {
+            if (units.Assets && units.Assets[k] && typeof units.Assets[k] === 'object') {
+                Object.keys(units.Assets[k]).forEach(i => {
+                    if (i.toLowerCase().endsWith('.png')) iconAssets.add(i);
+                });
+            }
+            if (units.MapProperties?.Assets && units.MapProperties.Assets[k] && typeof units.MapProperties.Assets[k] === 'object') {
+                Object.keys(units.MapProperties.Assets[k]).forEach(i => {
+                    if (i.toLowerCase().endsWith('.png')) iconAssets.add(i);
+                });
+            }
+        });
+        items.forEach(i => {
+            if (i.IconPath && i.IconPath.toLowerCase().endsWith('.png')) iconAssets.add(i.IconPath);
+        });
+        abilities.forEach(a => {
+            if (a.IconPath && a.IconPath.toLowerCase().endsWith('.png')) iconAssets.add(a.IconPath);
+        });
+        populateDatalist('suggest-icons', Array.from(iconAssets).map(icon => {
+            const basename = icon.split('/').pop() || icon;
+            return { id: icon, name: basename };
+        }));
     }
 
     function populateDatalist(id, items) {
@@ -3465,7 +3340,7 @@
 
     // --- EVENT WRAPPERS FOR FORM FIELDS (UNIT AND MAP PROPS) ---
     for (const [key, element] of Object.entries(formFields)) {
-        if (!element) continue;
+        if (!element || (element.tagName !== 'INPUT' && element.tagName !== 'SELECT' && element.tagName !== 'TEXTAREA')) continue;
 
         element.addEventListener('change', e => {
             if (isLocked) return;
@@ -3666,6 +3541,7 @@
             const fieldClass = btn.dataset.class;
             const fieldIndex = btn.dataset.index !== undefined ? parseInt(btn.dataset.index, 10) : null;
             const fileTypesStr = btn.dataset.fileTypes;
+            const assetType = btn.dataset.assetType;
             const fileTypes = fileTypesStr ? fileTypesStr.split(',') : undefined;
 
             vscode.postMessage({
@@ -3673,6 +3549,7 @@
                 fieldId: inputId,
                 fieldClass: fieldClass,
                 fieldIndex: fieldIndex,
+                assetType: assetType,
                 fileTypes: fileTypes
             });
         }
@@ -4083,860 +3960,6 @@
             }
         }
     }
-
-    function selectCustomAssets() {
-        selectedUnitId = '__custom_assets__';
-        hideAllForms();
-        const customAssetsForm = document.getElementById('custom-assets-form');
-        if (customAssetsForm) {
-            customAssetsForm.classList.remove('hidden');
-        }
-        renderAssetsMetadata();
-    }
-
-    function removeAsset(category, key, subCategory) {
-        if (!units) return;
-
-        let deleted = false;
-        const containers = [
-            units.Assets,
-            units.MapProperties?.Assets,
-            units
-        ].filter(c => c && typeof c === 'object');
-
-        for (const targetObj of containers) {
-            if (subCategory && targetObj[category] && targetObj[category][subCategory] && key in targetObj[category][subCategory]) {
-                delete targetObj[category][subCategory][key];
-                if (Object.keys(targetObj[category][subCategory]).length === 0) {
-                    delete targetObj[category][subCategory];
-                }
-                deleted = true;
-                break;
-            } else if (targetObj[category] && key in targetObj[category]) {
-                delete targetObj[category][key];
-                if (Object.keys(targetObj[category]).length === 0) {
-                    delete targetObj[category];
-                }
-                deleted = true;
-                break;
-            }
-        }
-
-        if (deleted) {
-            if (typeof vscode !== 'undefined' && vscode.postMessage) {
-                vscode.postMessage({
-                    type: 'deleteAsset',
-                    category: category,
-                    subCategory: subCategory,
-                    key: key
-                });
-            }
-            saveChanges();
-            renderAssetsMetadata();
-        }
-    }
-
-    function escapeHtml(str) {
-        if (!str) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
-
-    let currentAssetTypeFilter = 'all';
-
-    function formatCategoryName(cat) {
-        if (cat === 'glb') return 'GLB';
-        if (cat === 'vfx_spritesheets') return 'VFX Spritesheets';
-        if (cat === 'sfx') return 'SFX';
-        if (cat === 'music') return 'Music';
-        if (cat === 'skyboxes') return 'Skyboxes';
-        if (cat === 'decals') return 'Decals';
-        if (cat === 'textures') return 'Textures';
-        if (cat === 'icons') return 'Icons';
-        if (cat === 'animations') return 'Animations';
-        return cat.charAt(0).toUpperCase() + cat.slice(1);
-    }
-
-    function renderAssetsMetadata() {
-        const display = document.getElementById('assets-metadata-display');
-        if (!display) return;
-
-        let assets = {};
-        const candidateKeys = ['textures', 'glb', 'decals', 'icons', 'vfx_spritesheets', 'sfx', 'music', 'skyboxes', 'animations'];
-
-        // Collect from units.Assets
-        if (units?.Assets && typeof units.Assets === 'object') {
-            Object.assign(assets, units.Assets);
-        }
-        // Collect from units.MapProperties.Assets
-        if (units?.MapProperties?.Assets && typeof units.MapProperties.Assets === 'object') {
-            Object.assign(assets, units.MapProperties.Assets);
-        }
-        // Collect candidate keys directly on units root or MapProperties root
-        candidateKeys.forEach(k => {
-            if (units && units[k] && typeof units[k] === 'object' && Object.keys(units[k]).length > 0) {
-                assets[k] = Object.assign({}, assets[k] || {}, units[k]);
-            }
-            if (units?.MapProperties && units.MapProperties[k] && typeof units.MapProperties[k] === 'object' && Object.keys(units.MapProperties[k]).length > 0) {
-                assets[k] = Object.assign({}, assets[k] || {}, units.MapProperties[k]);
-            }
-        });
-
-        const filterSelect = document.getElementById('asset-type-filter-select');
-        if (filterSelect) {
-            currentAssetTypeFilter = filterSelect.value || 'all';
-        }
-
-        const availableCategories = Object.keys(assets).filter(k => assets[k] && typeof assets[k] === 'object' && Object.keys(assets[k]).length > 0);
-
-        if (filterSelect) {
-            let selectHtml = `<option value="all" ${currentAssetTypeFilter === 'all' ? 'selected' : ''}>All</option>`;
-            availableCategories.forEach(cat => {
-                selectHtml += `<option value="${cat}" ${currentAssetTypeFilter === cat ? 'selected' : ''}>${escapeHtml(formatCategoryName(cat))}</option>`;
-            });
-            filterSelect.innerHTML = selectHtml;
-
-            if (!filterSelect.getAttribute('data-listener-attached')) {
-                filterSelect.setAttribute('data-listener-attached', 'true');
-                filterSelect.addEventListener('change', (e) => {
-                    currentAssetTypeFilter = e.target.value;
-                    renderAssetsMetadata();
-                });
-            }
-        }
-
-        if (!assets || availableCategories.length === 0) {
-            display.innerHTML = '<em>No assets registered in metadata.json yet. Use the buttons above to import assets!</em>';
-            return;
-        }
-
-        const categoriesToRender = availableCategories.filter(cat => currentAssetTypeFilter === 'all' || currentAssetTypeFilter === cat);
-
-        if (categoriesToRender.length === 0) {
-            display.innerHTML = `<em>No assets found matching filter "${escapeHtml(formatCategoryName(currentAssetTypeFilter))}".</em>`;
-            return;
-        }
-
-        let html = '<div class="asset-list" style="display: flex; flex-direction: column; gap: 8px;">';
-        
-        categoriesToRender.forEach(category => {
-            const catObj = assets[category];
-            if (!catObj || typeof catObj !== 'object') return;
-
-            html += `<div class="asset-category" style="margin-bottom: 8px;">`;
-            html += `<div style="font-weight: bold; color: var(--vscode-symbolIcon-propertyForeground, #4ec9b0); margin-bottom: 4px; text-transform: uppercase; font-size: 11px;">${escapeHtml(category)}</div>`;
-
-            const isSubCategorized = category === 'glb';
-            if (isSubCategorized) {
-                Object.keys(catObj).forEach(subCat => {
-                    const subObj = catObj[subCat];
-                    if (typeof subObj === 'object' && subObj !== null) {
-                        html += `<div style="margin-left: 8px; font-weight: 600; color: var(--text-muted); font-size: 11px; margin-top: 4px;">${escapeHtml(subCat)}</div>`;
-                        Object.keys(subObj).forEach(itemKey => {
-                            const relAssetPath = `Assets/models/${subCat}/${itemKey}`;
-                            const itemVal = subObj[itemKey];
-                            let isIgnored = false;
-                            if (typeof itemVal === 'object' && itemVal !== null) {
-                                isIgnored = !!(itemVal.ignore_player_color || itemVal.IgnorePlayerColor);
-                            } else if (units?.ModelIgnorePlayerColor && (units.ModelIgnorePlayerColor[itemKey] || units.ModelIgnorePlayerColor[itemKey.toLowerCase()])) {
-                                isIgnored = true;
-                            }
-                            html += `<div style="margin-left: 12px; margin-top: 2px;">`;
-                            html += `<div class="asset-item-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 4px;">`;
-                            html += `<span style="font-family: monospace;">${escapeHtml(itemKey)}</span>`;
-                            html += `<div style="display: flex; gap: 6px; align-items: center;">`;
-                            html += `<label style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); cursor: pointer; margin-right: 6px;" title="Skip player-color tinting shader and keep original textures intact">`;
-                            html += `<input type="checkbox" class="chk-ignore-player-color" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" ${isIgnored ? 'checked' : ''} />`;
-                            html += `Ignore Color</label>`;
-                            html += `<select class="select-migrate-target" style="background: rgba(0,0,0,0.4); color: #ccc; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; font-size: 11px; padding: 1px 4px;">`;
-                            ['units', 'buildings', 'resources', 'props'].forEach(sc => {
-                                html += `<option value="glb:${sc}" ${sc === subCat ? 'selected' : ''}>Model: ${sc}</option>`;
-                            });
-                            html += `</select>`;
-                            html += `<button type="button" class="btn small-btn btn-migrate-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" title="Change Default Category" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">🔄 Move</button>`;
-                            html += `<button type="button" class="btn small-btn btn-preview-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" data-path="${escapeHtml(relAssetPath)}" title="Preview asset" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">👁️ Preview</button>`;
-                            html += `<button type="button" class="btn small-btn btn-delete-asset" data-category="${escapeHtml(category)}" data-subcategory="${escapeHtml(subCat)}" data-key="${escapeHtml(itemKey)}" title="Remove asset" style="color: #f44336; background: transparent; border: none; cursor: pointer; font-weight: bold; font-size: 14px; padding: 0 4px;">✕</button>`;
-                            html += `</div></div>`;
-                            html += `<div class="asset-preview-container hidden" style="margin-top: 4px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px; text-align: center;"></div>`;
-                            html += `</div>`;
-                        });
-                    }
-                });
-            } else {
-                Object.keys(catObj).forEach(itemKey => {
-                    let relAssetPath = `Assets/${category}/${itemKey}`;
-                    let itemVal = catObj[itemKey];
-                    let cols = 4, rows = 4;
-                    if (typeof itemVal === 'object' && itemVal !== null) {
-                        cols = itemVal.columns || 4;
-                        rows = itemVal.rows || 4;
-                    }
-
-                    if (category === 'vfx_spritesheets') relAssetPath = `Assets/vfx/${itemKey}`;
-                    else if (category === 'skyboxes') relAssetPath = `Assets/skyboxes/${itemKey}`;
-                    else if (category === 'decals') relAssetPath = `Assets/decals/${itemKey}`;
-                    else if (category === 'icons') relAssetPath = `Assets/icons/${itemKey}`;
-                    else if (category === 'textures') relAssetPath = `Assets/textures/${itemKey}`;
-                    else if (category === 'sfx') relAssetPath = `Assets/audio/sfx/${itemKey}`;
-                    else if (category === 'music') relAssetPath = `Assets/audio/music/${itemKey}`;
-                    else if (category === 'animations') relAssetPath = `Assets/animations/${itemKey}`;
-
-                    const canMigrateRawPng = category === 'decals' || category === 'icons' || category === 'skyboxes';
-                    const canMigrateAudio = category === 'sfx' || category === 'music';
-
-                    html += `<div style="margin-top: 2px;">`;
-                    html += `<div class="asset-item-row" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 4px;">`;
-                    html += `<span style="font-family: monospace;">${escapeHtml(itemKey)}</span>`;
-                    html += `<div style="display: flex; gap: 6px; align-items: center;">`;
-                    if (canMigrateRawPng) {
-                        html += `<select class="select-migrate-target" style="background: rgba(0,0,0,0.4); color: #ccc; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; font-size: 11px; padding: 1px 4px;">`;
-                        html += `<option value="decals" ${category === 'decals' ? 'selected' : ''}>Decal</option>`;
-                        html += `<option value="icons" ${category === 'icons' ? 'selected' : ''}>Icon</option>`;
-                        html += `<option value="skyboxes" ${category === 'skyboxes' ? 'selected' : ''}>Skybox</option>`;
-                        html += `</select>`;
-                        html += `<button type="button" class="btn small-btn btn-migrate-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" title="Migrate Asset Type" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">🔄 Move</button>`;
-                    } else if (canMigrateAudio) {
-                        html += `<select class="select-migrate-target" style="background: rgba(0,0,0,0.4); color: #ccc; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; font-size: 11px; padding: 1px 4px;">`;
-                        html += `<option value="sfx" ${category === 'sfx' ? 'selected' : ''}>Audio: SFX</option>`;
-                        html += `<option value="music" ${category === 'music' ? 'selected' : ''}>Audio: Music</option>`;
-                        html += `</select>`;
-                        html += `<button type="button" class="btn small-btn btn-migrate-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" title="Migrate Asset Type" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">🔄 Move</button>`;
-                    }
-                    html += `<button type="button" class="btn small-btn btn-preview-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" data-cols="${cols}" data-rows="${rows}" data-path="${escapeHtml(relAssetPath)}" title="Preview asset" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 2px 6px; color: #fff;">👁️ Preview</button>`;
-                    html += `<button type="button" class="btn small-btn btn-delete-asset" data-category="${escapeHtml(category)}" data-key="${escapeHtml(itemKey)}" title="Remove asset" style="color: #f44336; background: transparent; border: none; cursor: pointer; font-weight: bold; font-size: 14px; padding: 0 4px;">✕</button>`;
-                    html += `</div></div>`;
-                    if (category === 'textures') {
-                        let brightness = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Brightness !== undefined || itemVal.brightness !== undefined)) ? parseFloat(itemVal.Brightness ?? itemVal.brightness) : 1.0;
-                        if (isNaN(brightness)) brightness = 1.0;
-                        let tint = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Tint || itemVal.tint)) ? (itemVal.Tint || itemVal.tint) : '#ffffff';
-                        if (!tint.startsWith('#')) tint = '#' + tint;
-                        let tintHue = hexToHue(tint);
-                        let tileMode = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Tile_Mode || itemVal.tile_mode)) ? (itemVal.Tile_Mode || itemVal.tile_mode) : 'Stochastic';
-                        let uvScale = (typeof itemVal === 'object' && itemVal !== null && (itemVal.UV_Scale !== undefined || itemVal.uv_scale !== undefined)) ? parseFloat(itemVal.UV_Scale ?? itemVal.uv_scale) : 1.0;
-                        if (isNaN(uvScale)) uvScale = 1.0;
-                        let stochTileSize = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Stochastic_Tile_Size !== undefined || itemVal.stochastic_tile_size !== undefined)) ? parseFloat(itemVal.Stochastic_Tile_Size ?? itemVal.stochastic_tile_size) : 1.0;
-                        if (isNaN(stochTileSize)) stochTileSize = 1.0;
-                        let crossFade = (typeof itemVal === 'object' && itemVal !== null && (itemVal.Cross_Fade !== undefined || itemVal.cross_fade !== undefined || itemVal.Grid_Cross_Fade !== undefined || itemVal.grid_cross_fade !== undefined)) ? parseFloat(itemVal.Cross_Fade ?? itemVal.cross_fade ?? itemVal.Grid_Cross_Fade ?? itemVal.grid_cross_fade) : 5.0;
-                        if (isNaN(crossFade)) crossFade = 5.0;
-
-                        html += `<div class="texture-stochastic-controls" data-key="${escapeHtml(itemKey)}" style="margin-top: 6px; margin-bottom: 8px; padding: 8px 12px; background: var(--vscode-input-background, #1e1e24); border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.15)); border-left: 4px solid var(--vscode-symbolIcon-propertyForeground, #4ec9b0); border-radius: 6px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">`;
-                        
-                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Albedo brightness multiplier for terrain texture." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Brightness: <span class="lbl-brightness-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${brightness.toFixed(2)}</span></label>`;
-                        html += `<input type="range" class="input-texture-brightness" data-key="${escapeHtml(itemKey)}" min="0.25" max="1.75" step="0.02" value="${brightness}" title="Albedo brightness multiplier for terrain texture (range 0.25 to 1.75)." style="width: 130px; cursor: pointer;" />`;
-                        html += `</div>`;
-
-                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Color tint overlay for terrain texture albedo." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Tint:</label>`;
-                        html += `<div style="display: flex; align-items: center; gap: 6px;">`;
-                        html += `<input type="range" class="input-texture-tint-slider" data-key="${escapeHtml(itemKey)}" min="0.0" max="1.0" step="0.01" value="${tintHue.toFixed(2)}" title="Hue slider for tint" style="width: 80px; cursor: pointer;" />`;
-                        html += `<input type="color" class="input-texture-tint-picker" data-key="${escapeHtml(itemKey)}" value="${tint}" title="Direct RGB tint color picker" style="width: 44px; height: 22px; padding: 0; background: transparent; border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.25)); border-radius: 3px; cursor: pointer;" />`;
-                        html += `</div>`;
-                        html += `</div>`;
-
-                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Controls texture tiling method. 'Stochastic' uses non-repeating procedural triangular grid sampling; 'Grid' uses standard UV tiling." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Tile_Mode:</label>`;
-                        html += `<select class="input-texture-tile-mode" data-key="${escapeHtml(itemKey)}" title="Controls texture tiling method. 'Stochastic' uses non-repeating procedural triangular grid sampling; 'Grid' uses standard UV tiling." style="background: var(--vscode-editor-background, #141416); color: var(--vscode-input-foreground, #ffffff); border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.25)); border-radius: 4px; font-size: 12px; font-weight: 600; padding: 3px 8px; cursor: pointer;">`;
-                        html += `<option value="Stochastic" ${tileMode === 'Stochastic' ? 'selected' : ''}>Stochastic (default)</option>`;
-                        html += `<option value="Grid" ${tileMode === 'Grid' ? 'selected' : ''}>Grid</option>`;
-                        html += `</select>`;
-                        html += `</div>`;
-
-                        html += `<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Multiplier to scale texture UV coordinates (range 0.1 to 4.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">UV_Scale: <span class="lbl-uv-scale-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${uvScale.toFixed(2)}</span></label>`;
-                        html += `<input type="range" class="input-texture-uv-scale" data-key="${escapeHtml(itemKey)}" min="0.1" max="4.0" step="0.05" value="${uvScale}" title="Multiplier to scale texture UV coordinates (range 0.1 to 4.0)." style="width: 130px; cursor: pointer;" />`;
-                        html += `</div>`;
-
-                        html += `<div class="row-stochastic-tile-size" style="display: ${tileMode === 'Grid' ? 'none' : 'flex'}; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Scale multiplier for procedural stochastic sampling grid cells (range 0.5 to 3.0)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Stochastic Tile Size: <span class="lbl-stoch-size-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${stochTileSize.toFixed(2)}</span></label>`;
-                        html += `<input type="range" class="input-texture-stoch-size" data-key="${escapeHtml(itemKey)}" min="0.5" max="3.0" step="0.05" value="${stochTileSize}" title="Scale multiplier for procedural stochastic sampling grid cells (range 0.5 to 3.0)." style="width: 130px; cursor: pointer;" />`;
-                        html += `</div>`;
-
-                        html += `<div class="row-grid-cross-fade" style="display: ${tileMode === 'Grid' ? 'flex' : 'none'}; align-items: center; justify-content: space-between; gap: 12px;">`;
-                        html += `<label title="Border cross-fade width along tile seams (range 0% to 10% of UV space, default 5%)." style="font-size: 12px; color: var(--vscode-foreground, #f0f0f0); font-weight: 600;">Cross-Fade: <span class="lbl-cross-fade-val" style="font-family: monospace; color: #4ec9b0; background: rgba(78, 201, 176, 0.15); border: 1px solid rgba(78, 201, 176, 0.3); border-radius: 3px; padding: 1px 6px; font-weight: 700; font-size: 12px;">${crossFade.toFixed(1)}%</span></label>`;
-                        html += `<input type="range" class="input-texture-cross-fade" data-key="${escapeHtml(itemKey)}" min="0" max="10" step="0.5" value="${crossFade}" title="Border cross-fade width along tile seams (range 0% to 10% of UV space, default 5%)." style="width: 130px; cursor: pointer;" />`;
-                        html += `</div>`;
-
-                        html += `</div>`;
-                    }
-
-                    html += `<div class="asset-preview-container hidden" style="margin-top: 4px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px; text-align: center;"></div>`;
-                    html += `</div>`;
-                });
-            }
-
-            html += `</div>`;
-        });
-
-        html += '</div>';
-        display.innerHTML = html;
-
-        function hsvToHex(h, s, v) {
-            let r, g, b;
-            let i = Math.floor(h * 6);
-            let f = h * 6 - i;
-            let p = v * (1 - s);
-            let q = v * (1 - f * s);
-            let t = v * (1 - (1 - f) * s);
-            switch (i % 6) {
-                case 0: r = v; g = t; b = p; break;
-                case 1: r = q; g = v; b = p; break;
-                case 2: r = p; g = v; b = t; break;
-                case 3: r = p; g = q; b = v; break;
-                case 4: r = t; g = p; b = v; break;
-                case 5: r = v; g = p; b = q; break;
-            }
-            const toHex = (x) => {
-                const hex = Math.round(x * 255).toString(16);
-                return hex.length === 1 ? '0' + hex : hex;
-            };
-            return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-        }
-
-        function hexToHue(hex) {
-            if (!hex || typeof hex !== 'string') return 0;
-            hex = hex.replace('#', '');
-            if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-            if (hex.length !== 6) return 0;
-            const r = parseInt(hex.substring(0, 2), 16) / 255;
-            const g = parseInt(hex.substring(2, 4), 16) / 255;
-            const b = parseInt(hex.substring(4, 6), 16) / 255;
-            const max = Math.max(r, g, b);
-            const min = Math.min(r, g, b);
-            const d = max - min;
-            if (d < 0.05) return 0;
-            let h;
-            if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
-            else if (max === g) h = (b - r) / d + 2;
-            else h = (r - g) / d + 4;
-            return (h / 6);
-        }
-
-        function updateTextureProperty(itemKey, updateFn, shouldSave = true) {
-            let container = null;
-            if (units?.Assets?.textures) container = units.Assets.textures;
-            else if (units?.MapProperties?.Assets?.textures) container = units.MapProperties.Assets.textures;
-            else if (units?.textures) container = units.textures;
-            if (!container) {
-                if (!units.Assets) units.Assets = {};
-                if (!units.Assets.textures) units.Assets.textures = {};
-                container = units.Assets.textures;
-            }
-            let itemVal = container[itemKey];
-            if (typeof itemVal !== 'object' || itemVal === null) {
-                itemVal = { hash: String(itemVal || '') };
-            }
-            updateFn(itemVal);
-            container[itemKey] = itemVal;
-            if (shouldSave) {
-                saveChanges();
-            }
-            
-            const tileMode = (itemVal.Tile_Mode || itemVal.tile_mode) ?? 'Stochastic';
-            const uvScale = parseFloat(itemVal.UV_Scale ?? itemVal.uv_scale ?? 1.0);
-            const stochTileSize = parseFloat(itemVal.Stochastic_Tile_Size ?? itemVal.stochastic_tile_size ?? 1.0);
-            const crossFade = parseFloat(itemVal.Cross_Fade ?? itemVal.cross_fade ?? itemVal.Grid_Cross_Fade ?? itemVal.grid_cross_fade ?? 5.0);
-            const brightness = parseFloat(itemVal.Brightness ?? itemVal.brightness ?? 1.0);
-            const tint = (itemVal.Tint || itemVal.tint) ?? '#ffffff';
-
-            const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
-            fetch(`http://127.0.0.1:${ipcPort}/api/`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'updateTextureParam',
-                    swatchName: itemKey,
-                    tileMode: tileMode,
-                    uvScale: uvScale,
-                    stochasticTileSize: stochTileSize,
-                    crossFade: crossFade,
-                    brightness: brightness,
-                    tint: tint
-                })
-            }).catch(() => {});
-        }
-
-        display.querySelectorAll('.input-texture-brightness').forEach(input => {
-            const handleBrightChange = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const val = parseFloat(e.target.value);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const lbl = parentRow.querySelector('.lbl-brightness-val');
-                    if (lbl) lbl.textContent = val.toFixed(2);
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.brightness = val;
-                    delete itemVal.Brightness;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleBrightChange(e, false));
-            input.addEventListener('change', (e) => handleBrightChange(e, true));
-        });
-
-        display.querySelectorAll('.input-texture-tint-slider').forEach(input => {
-            const handleTintSlider = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const val = parseFloat(e.target.value);
-                const hex = (val <= 0.0) ? '#ffffff' : hsvToHex(val, 0.75, 1.0);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const picker = parentRow.querySelector('.input-texture-tint-picker');
-                    if (picker) picker.value = hex;
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.tint = hex;
-                    delete itemVal.Tint;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleTintSlider(e, false));
-            input.addEventListener('change', (e) => handleTintSlider(e, true));
-        });
-
-        display.querySelectorAll('.input-texture-tint-picker').forEach(input => {
-            const handleTintPicker = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const hex = e.target.value;
-                const hue = hexToHue(hex);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const slider = parentRow.querySelector('.input-texture-tint-slider');
-                    if (slider) slider.value = hue.toFixed(2);
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.tint = hex;
-                    delete itemVal.Tint;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleTintPicker(e, false));
-            input.addEventListener('change', (e) => handleTintPicker(e, true));
-        });
-
-        display.querySelectorAll('.input-texture-tile-mode').forEach(sel => {
-            sel.addEventListener('change', (e) => {
-                const key = e.target.getAttribute('data-key');
-                const val = e.target.value;
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const stochRow = parentRow.querySelector('.row-stochastic-tile-size');
-                    if (stochRow) stochRow.style.display = (val === 'Grid') ? 'none' : 'flex';
-                    const gridRow = parentRow.querySelector('.row-grid-cross-fade');
-                    if (gridRow) gridRow.style.display = (val === 'Grid') ? 'flex' : 'none';
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.tile_mode = val;
-                    delete itemVal.Tile_Mode;
-                }, true);
-            });
-        });
-
-        display.querySelectorAll('.input-texture-variants').forEach(sel => {
-            sel.addEventListener('change', (e) => {
-                const key = e.target.getAttribute('data-key');
-                const val = (e.target.value === 'true');
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.variants = val;
-                    delete itemVal.Variants;
-                }, true);
-                const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
-                fetch(`http://127.0.0.1:${ipcPort}/api/`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'reloadMetadata' })
-                }).catch(() => {});
-            });
-        });
-
-        display.querySelectorAll('.input-texture-uv-scale').forEach(input => {
-            const handleUvChange = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const val = parseFloat(e.target.value);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const lbl = parentRow.querySelector('.lbl-uv-scale-val');
-                    if (lbl) lbl.textContent = val.toFixed(2);
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.uv_scale = val;
-                    delete itemVal.UV_Scale;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleUvChange(e, false));
-            input.addEventListener('change', (e) => handleUvChange(e, true));
-        });
-
-        display.querySelectorAll('.input-texture-stoch-size').forEach(input => {
-            const handleStochChange = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const val = parseFloat(e.target.value);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const lbl = parentRow.querySelector('.lbl-stoch-size-val');
-                    if (lbl) lbl.textContent = val.toFixed(2);
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.stochastic_tile_size = val;
-                    delete itemVal.Stochastic_Tile_Size;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleStochChange(e, false));
-            input.addEventListener('change', (e) => handleStochChange(e, true));
-        });
-
-        display.querySelectorAll('.input-texture-cross-fade').forEach(input => {
-            const handleCrossFadeChange = (e, shouldSave) => {
-                const key = e.target.getAttribute('data-key');
-                const val = parseFloat(e.target.value);
-                const parentRow = e.target.closest('.texture-stochastic-controls');
-                if (parentRow) {
-                    const lbl = parentRow.querySelector('.lbl-cross-fade-val');
-                    if (lbl) lbl.textContent = `${val.toFixed(1)}%`;
-                }
-                updateTextureProperty(key, (itemVal) => {
-                    itemVal.cross_fade = val;
-                    delete itemVal.Cross_Fade;
-                    delete itemVal.Grid_Cross_Fade;
-                    delete itemVal.grid_cross_fade;
-                }, shouldSave);
-            };
-            input.addEventListener('input', (e) => handleCrossFadeChange(e, false));
-            input.addEventListener('change', (e) => handleCrossFadeChange(e, true));
-        });
-
-        // Attach migration event handlers
-        display.querySelectorAll('.btn-migrate-asset').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const target = e.currentTarget;
-                const cat = target.getAttribute('data-category');
-                const subCat = target.getAttribute('data-subcategory');
-                const key = target.getAttribute('data-key');
-                const row = target.closest('.asset-item-row');
-                const sel = row ? row.querySelector('.select-migrate-target') : null;
-                if (!sel) return;
-                const val = sel.value; // e.g. "glb:character", "decals", "icons", "sfx"
-                let toCat = val;
-                let toSubCat = undefined;
-                if (val.includes(':')) {
-                    const parts = val.split(':');
-                    toCat = parts[0];
-                    toSubCat = parts[1];
-                }
-                if (cat === toCat && subCat === toSubCat) return;
-                vscode.postMessage({
-                    type: 'migrateAsset',
-                    fromCategory: cat,
-                    fromSubCategory: subCat,
-                    key: key,
-                    toCategory: toCat,
-                    toSubCategory: toSubCat
-                });
-            });
-        });
-
-        // Attach ignore player color event handlers
-        display.querySelectorAll('.chk-ignore-player-color').forEach(chk => {
-            chk.addEventListener('change', (e) => {
-                const subCat = e.target.getAttribute('data-subcategory');
-                const key = e.target.getAttribute('data-key');
-                const val = e.target.checked;
-                if (units?.Assets?.glb && units.Assets.glb[subCat]) {
-                    let itemVal = units.Assets.glb[subCat][key];
-                    if (typeof itemVal !== 'object' || itemVal === null) {
-                        itemVal = { hash: String(itemVal || ''), default_asset_type: subCat };
-                    }
-                    if (val) {
-                        itemVal.ignore_player_color = true;
-                    } else {
-                        delete itemVal.ignore_player_color;
-                        delete itemVal.IgnorePlayerColor;
-                    }
-                    units.Assets.glb[subCat][key] = itemVal;
-                }
-                if (!units.ModelIgnorePlayerColor) units.ModelIgnorePlayerColor = {};
-                if (val) {
-                    units.ModelIgnorePlayerColor[key] = true;
-                } else {
-                    delete units.ModelIgnorePlayerColor[key];
-                }
-                saveChanges();
-            });
-        });
-
-        // Attach delete event handlers
-        display.querySelectorAll('.btn-delete-asset').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const target = e.currentTarget;
-                const cat = target.getAttribute('data-category');
-                const subCat = target.getAttribute('data-subcategory');
-                const key = target.getAttribute('data-key');
-                if (cat && key) {
-                    removeAsset(cat, key, subCat);
-                }
-            });
-        });
-
-        // Attach preview event handlers
-        display.querySelectorAll('.btn-preview-asset').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const target = e.currentTarget;
-                const cat = target.getAttribute('data-category');
-                const pathStr = target.getAttribute('data-path');
-                const cols = parseInt(target.getAttribute('data-cols'), 10) || 4;
-                const rows = parseInt(target.getAttribute('data-rows'), 10) || 4;
-                const parentRow = target.closest('div[style*="margin-top"]');
-                const previewContainer = parentRow ? parentRow.querySelector('.asset-preview-container') : null;
-                if (!previewContainer) return;
-
-                if (!previewContainer.classList.contains('hidden')) {
-                    previewContainer.classList.add('hidden');
-                    previewContainer.innerHTML = '';
-                    if (previewContainer._animInterval) {
-                        clearInterval(previewContainer._animInterval);
-                        previewContainer._animInterval = null;
-                    }
-                    return;
-                }
-
-                previewContainer.classList.remove('hidden');
-                previewContainer.innerHTML = '<span style="color: var(--text-muted); font-size: 11px;">Loading preview...</span>';
-
-                const reqId = 'preview_' + Math.random().toString(36).substring(2, 9);
-
-                const handleResult = (evt) => {
-                    const msg = evt.data || (evt.detail ? evt.detail : null);
-                    if (!msg) return;
-                    if ((msg.action === 'snapshotResult' || msg.type === 'snapshotResult' || msg.type === 'requestGodotSnapshot') && (msg.requestId === reqId || msg.filePath === pathStr)) {
-                        if (msg.base64) {
-                            if (previewContainer._snapshotTimeout) clearTimeout(previewContainer._snapshotTimeout);
-                            previewContainer.innerHTML = `<img src="data:image/png;base64,${msg.base64}" style="max-width: 256px; max-height: 256px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" title="Godot Live Snapshot (256x256)" />`;
-                            window.removeEventListener('message', handleResult);
-                            if (window.chrome && window.chrome.webview) window.chrome.webview.removeEventListener('message', handleResult);
-                            return;
-                        }
-                    }
-                    if (msg.type === 'resolvePathResult' && msg.requestId === reqId) {
-                        const fileUri = msg.uri;
-                        if (!fileUri) {
-                            previewContainer.innerHTML = '<span style="color: #f44336; font-size: 11px;">File not found</span>';
-                            return;
-                        }
-
-                        if (cat === 'vfx_spritesheets') {
-                            const img = new Image();
-                            img.crossOrigin = 'anonymous';
-                            img.onload = () => {
-                                const canvas = document.createElement('canvas');
-                                const frameWidth = Math.floor(img.width / cols);
-                                const frameHeight = Math.floor(img.height / rows);
-                                canvas.width = frameWidth;
-                                canvas.height = frameHeight;
-                                canvas.style.maxWidth = '200px';
-                                canvas.style.maxHeight = '200px';
-                                canvas.style.border = '1px solid rgba(255,255,255,0.2)';
-                                canvas.style.borderRadius = '4px';
-
-                                const ctx = canvas.getContext('2d');
-                                let currentFrame = 0;
-                                const totalFrames = cols * rows;
-
-                                const renderFrame = () => {
-                                    const col = currentFrame % cols;
-                                    const row = Math.floor(currentFrame / cols);
-                                    ctx.clearRect(0, 0, frameWidth, frameHeight);
-                                    ctx.drawImage(img, col * frameWidth, row * frameHeight, frameWidth, frameHeight, 0, 0, frameWidth, frameHeight);
-                                    currentFrame = (currentFrame + 1) % totalFrames;
-                                };
-
-                                renderFrame();
-                                previewContainer.innerHTML = '';
-                                previewContainer.appendChild(canvas);
-                                if (previewContainer._animInterval) clearInterval(previewContainer._animInterval);
-                                previewContainer._animInterval = setInterval(renderFrame, 80);
-                            };
-                            img.onerror = () => {
-                                previewContainer.innerHTML = '<span style="color: #f44336; font-size: 11px;">Failed to load image</span>';
-                            };
-                            img.src = fileUri;
-                        } else if (cat === 'decals' || cat === 'icons' || cat === 'skyboxes') {
-                            previewContainer.innerHTML = `<img src="${fileUri}" style="max-width: 250px; max-height: 150px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" />`;
-                        } else if (cat === 'textures') {
-                            const isKtx2 = pathStr && pathStr.toLowerCase().endsWith('.ktx2');
-                            if (isKtx2) {
-                                // Request snapshot via HTTP REST API from Godot host
-                                const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
-                                fetch(`http://127.0.0.1:${ipcPort}/api/`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ action: 'generateSnapshot', filePath: pathStr, requestId: reqId })
-                                }).then(res => res.json()).then(msg => {
-                                    if (msg && msg.base64) {
-                                        previewContainer.innerHTML = `<img src="data:image/png;base64,${msg.base64}" style="max-width: 256px; max-height: 256px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" title="Godot Live Snapshot (256x256)" />`;
-                                    }
-                                }).catch(err => {
-                                    console.warn('REST IPC snapshot fetch error:', err);
-                                });
-
-                                previewContainer.innerHTML = `
-                                    <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
-                                        <span class="snapshot-status-lbl" style="color: var(--text-muted); font-size: 11px; word-break: break-all;">Rendering Godot live snapshot...</span>
-                                        <button type="button" class="btn small-btn btn-open-in-vscode" data-path="${escapeHtml(pathStr)}" style="background: rgba(78,201,176,0.15); border: 1px solid rgba(78,201,176,0.4); border-radius: 4px; cursor: pointer; font-size: 11px; padding: 4px 10px; color: #4ec9b0;">🖼️ Open in Texture Viewer Extension</button>
-                                    </div>`;
-                                previewContainer.querySelector('.btn-open-in-vscode').addEventListener('click', () => {
-                                    vscode.postMessage({ type: 'openFile', path: pathStr });
-                                });
-                            } else {
-                                previewContainer.innerHTML = `<img src="${fileUri}" style="max-width: 250px; max-height: 150px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" />`;
-                            }
-                        } else if (cat === 'sfx' || cat === 'music') {
-                            previewContainer.innerHTML = `<audio controls src="${fileUri}" style="width: 100%; max-width: 250px;"></audio>`;
-                        } else if (cat === 'glb') {
-                            // Request snapshot via HTTP REST API from Godot host
-                            const ipcPort = new URLSearchParams(window.location.search).get('ipcPort') || '8092';
-                            fetch(`http://127.0.0.1:${ipcPort}/api/`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ action: 'generateSnapshot', filePath: pathStr, requestId: reqId })
-                            }).then(res => res.json()).then(msg => {
-                                if (msg && msg.base64) {
-                                    previewContainer.innerHTML = `<img src="data:image/png;base64,${msg.base64}" style="max-width: 256px; max-height: 256px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" title="Godot Live Snapshot (256x256)" />`;
-                                }
-                            }).catch(err => {
-                                console.warn('REST IPC snapshot fetch error:', err);
-                            });
-
-                            previewContainer.innerHTML = `
-                                <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
-                                    <span class="snapshot-status-lbl" style="color: var(--text-muted); font-size: 11px; word-break: break-all;">Rendering Godot live 3D snapshot...</span>
-                                    <button type="button" class="btn small-btn btn-open-in-vscode" data-path="${escapeHtml(pathStr)}" style="background: rgba(120,120,255,0.15); border: 1px solid rgba(120,120,255,0.4); border-radius: 4px; cursor: pointer; font-size: 11px; padding: 4px 10px; color: #9c9cff;">📦 Open in GLB Viewer Extension</button>
-                                </div>`;
-                            previewContainer.querySelector('.btn-open-in-vscode').addEventListener('click', () => {
-                                vscode.postMessage({ type: 'openFile', path: pathStr });
-                            });
-                        } else {
-                            previewContainer.innerHTML = `<span style="color: var(--text-muted); font-size: 11px;">Asset path: ${escapeHtml(fileUri)}</span>`;
-                        }
-                    }
-                };
-                window.addEventListener('message', handleResult);
-                if (window.chrome && window.chrome.webview) {
-                    window.chrome.webview.addEventListener('message', handleResult);
-                }
-                vscode.postMessage({
-                    type: 'resolvePath',
-                    requestId: reqId,
-                    path: pathStr
-                });
-            });
-        });
-    }
-
-    function setupAssetImportListeners() {
-        const btnTexture = document.getElementById('btn-import-texture');
-        if (btnTexture) {
-            btnTexture.addEventListener('click', () => {
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'texture',
-                    options: {}
-                });
-            });
-        }
-
-        const btnGlb = document.getElementById('btn-import-glb');
-        if (btnGlb) {
-            btnGlb.addEventListener('click', () => {
-                const catSelect = document.getElementById('glb-category-select');
-                const category = catSelect ? catSelect.value : 'props';
-                const chkIgnore = document.getElementById('glb-ignore-player-color');
-                const ignorePlayerColor = chkIgnore ? chkIgnore.checked : false;
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'glb',
-                    options: { category, ignorePlayerColor }
-                });
-            });
-        }
-
-        const btnSkybox = document.getElementById('btn-import-skybox');
-        if (btnSkybox) {
-            btnSkybox.addEventListener('click', () => {
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'skybox'
-                });
-            });
-        }
-
-        const btnDecal = document.getElementById('btn-import-decal');
-        if (btnDecal) {
-            btnDecal.addEventListener('click', () => {
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'decal'
-                });
-            });
-        }
-
-        const btnIcon = document.getElementById('btn-import-icon');
-        if (btnIcon) {
-            btnIcon.addEventListener('click', () => {
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'icon'
-                });
-            });
-        }
-
-        const btnVfx = document.getElementById('btn-import-vfx');
-        if (btnVfx) {
-            btnVfx.addEventListener('click', () => {
-                const colsInput = document.getElementById('vfx-cols-input');
-                const rowsInput = document.getElementById('vfx-rows-input');
-                const columns = colsInput ? parseInt(colsInput.value, 10) || 4 : 4;
-                const rows = rowsInput ? parseInt(rowsInput.value, 10) || 4 : 4;
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'vfx',
-                    options: { columns, rows }
-                });
-            });
-        }
-
-        const btnAudio = document.getElementById('btn-import-audio');
-        if (btnAudio) {
-            btnAudio.addEventListener('click', () => {
-                const audioSelect = document.getElementById('audio-type-select');
-                const audioType = audioSelect ? audioSelect.value : 'sfx';
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'audio',
-                    options: { audioType }
-                });
-            });
-        }
-
-        const btnAnim = document.getElementById('btn-import-animation');
-        if (btnAnim) {
-            btnAnim.addEventListener('click', () => {
-                vscode.postMessage({
-                    type: 'importAsset',
-                    assetType: 'animation',
-                    options: {}
-                });
-            });
-        }
-    }
-
-    // Call setupAssetImportListeners inside init
-    const originalInit = init;
-    init = function() {
-        originalInit();
-        setupAssetImportListeners();
-    };
 
     init();
 })();

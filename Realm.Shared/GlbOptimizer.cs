@@ -1,0 +1,195 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text.Json.Nodes;
+
+namespace Realm.Shared;
+
+public class GlbOptimizer
+{
+	public bool IsOptimized(byte[] glbBytes)
+	{
+		return GlbManifestUtils.HasOptimizationFlag(glbBytes);
+	}
+
+	public bool IsOptimized(string filePath)
+	{
+		if (!File.Exists(filePath)) return false;
+		byte[] bytes = File.ReadAllBytes(filePath);
+		return IsOptimized(bytes);
+	}
+
+	public GlbMetadata GetMetadata(byte[] glbBytes)
+	{
+		var meta = new GlbMetadata();
+		var (json, _, _) = GlbManifestUtils.ParseGlb(glbBytes);
+		if (json is not JsonObject root) return meta;
+
+		meta.IsOptimized = GlbManifestUtils.HasOptimizationFlag(glbBytes);
+
+		if (root.TryGetPropertyValue("extras", out var extrasVal) && extrasVal is JsonObject extras)
+		{
+			if (extras.TryGetPropertyValue("realm_version", out var verVal))
+			{
+				meta.RealmVersion = verVal?.GetValue<string>();
+			}
+		}
+
+		if (root.TryGetPropertyValue("meshes", out var meshVal) && meshVal is JsonArray meshes)
+		{
+			meta.MeshCount = meshes.Count;
+		}
+
+		if (root.TryGetPropertyValue("nodes", out var nodeVal) && nodeVal is JsonArray nodes)
+		{
+			meta.NodeCount = nodes.Count;
+		}
+
+		if (root.TryGetPropertyValue("materials", out var matVal) && matVal is JsonArray mats)
+		{
+			meta.MaterialCount = mats.Count;
+		}
+
+		if (root.TryGetPropertyValue("images", out var imgVal) && imgVal is JsonArray imgs)
+		{
+			meta.ImageCount = imgs.Count;
+		}
+
+		return meta;
+	}
+
+	public OptimizationResult Optimize(byte[] glbBytes, OptimizationOptions options = default)
+	{
+		var result = new OptimizationResult
+		{
+			Success = false,
+			OriginalSize = glbBytes?.Length ?? 0,
+			OptimizedSize = glbBytes?.Length ?? 0,
+			OutputGlbBytes = glbBytes
+		};
+
+		if (glbBytes == null || glbBytes.Length == 0)
+		{
+			result.ErrorMessage = "Empty or null GLB buffer.";
+			return result;
+		}
+
+		if (!options.ForceReDecimate && IsOptimized(glbBytes))
+		{
+			result.Success = true;
+			result.DecimationSkipped = true;
+			result.OptimizedSize = glbBytes.Length;
+			return result;
+		}
+
+		byte[] sanitized = GlbManifestUtils.SanitizeMaterials(glbBytes);
+
+		var (toolSuccess, toolBytes, toolError) = NativeToolRunner.RunGltfPack(
+			sanitized,
+			options.SimplificationRatio,
+			options.MaxTextureResolution,
+			options.CompressTextures
+		);
+
+		byte[] workingBytes = (toolSuccess && toolBytes != null && toolBytes.Length > 0)
+			? toolBytes
+			: sanitized;
+
+		byte[] finalBytes = GlbManifestUtils.InjectOptimizationMetadata(
+			workingBytes,
+			new Dictionary<string, object>
+			{
+				{ "original_size", result.OriginalSize },
+				{ "simplification_ratio", options.SimplificationRatio }
+			}
+		);
+
+		result.Success = true;
+		result.OutputGlbBytes = finalBytes;
+		result.OptimizedSize = finalBytes.Length;
+		return result;
+	}
+
+	public OptimizationResult OptimizeFile(string inputPath, string? outputPath = null, OptimizationOptions options = default)
+	{
+		if (!File.Exists(inputPath))
+		{
+			return new OptimizationResult
+			{
+				Success = false,
+				ErrorMessage = $"Input file does not exist: {inputPath}"
+			};
+		}
+
+		byte[] inputBytes = File.ReadAllBytes(inputPath);
+		var result = Optimize(inputBytes, options);
+
+		if (result.Success && result.OutputGlbBytes != null)
+		{
+			string target = string.IsNullOrEmpty(outputPath) ? inputPath : outputPath;
+			string? dir = Path.GetDirectoryName(target);
+			if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+			{
+				Directory.CreateDirectory(dir);
+			}
+
+			File.WriteAllBytes(target, result.OutputGlbBytes);
+			result.OutputFilePath = target;
+		}
+
+		return result;
+	}
+
+	public UnoptimizationResult Unoptimize(byte[] glbBytes)
+	{
+		var result = new UnoptimizationResult
+		{
+			Success = false,
+			OutputGlbBytes = glbBytes
+		};
+
+		if (glbBytes == null || glbBytes.Length == 0)
+		{
+			result.ErrorMessage = "Empty or null GLB buffer.";
+			return result;
+		}
+
+		bool wasOpt = IsOptimized(glbBytes);
+		var (strippedBytes, wasModified) = GlbManifestUtils.StripOptimizationMetadata(glbBytes);
+
+		result.Success = true;
+		result.WasOptimized = wasOpt;
+		result.OutputGlbBytes = strippedBytes;
+		return result;
+	}
+
+	public UnoptimizationResult UnoptimizeFile(string inputPath, string? outputPath = null)
+	{
+		if (!File.Exists(inputPath))
+		{
+			return new UnoptimizationResult
+			{
+				Success = false,
+				ErrorMessage = $"Input file does not exist: {inputPath}"
+			};
+		}
+
+		byte[] inputBytes = File.ReadAllBytes(inputPath);
+		var result = Unoptimize(inputBytes);
+
+		if (result.Success && result.OutputGlbBytes != null)
+		{
+			string target = string.IsNullOrEmpty(outputPath) ? inputPath : outputPath;
+			string? dir = Path.GetDirectoryName(target);
+			if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+			{
+				Directory.CreateDirectory(dir);
+			}
+
+			File.WriteAllBytes(target, result.OutputGlbBytes);
+			result.OutputFilePath = target;
+		}
+
+		return result;
+	}
+}

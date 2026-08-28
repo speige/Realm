@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using GdUnit4;
 using Godot;
 using Realm.Ecs.Services;
+using Realm.Shared;
 
 [TestSuite]
 [RequireGodotRuntime]
@@ -42,7 +43,7 @@ public class SimulationTests
             Latency = "0 ms",
             Jitter = "0 ms",
             PacketLoss = "0%",
-            BinaryVersion = LobbyManager.GameBinaryVersion
+            BinaryVersion = RealmVersion.GameBinaryVersion
         };
 
         PropertyInfo localPlayerProp = typeof(LobbyManager).GetProperty("LocalPlayer", BindingFlags.Public | BindingFlags.Instance);
@@ -213,7 +214,7 @@ public class TestWasmMap : IWasmModule
             Latency = "0 ms",
             Jitter = "0 ms",
             PacketLoss = "0%",
-            BinaryVersion = LobbyManager.GameBinaryVersion
+            BinaryVersion = RealmVersion.GameBinaryVersion
         };
 
         PropertyInfo localPlayerProp = typeof(LobbyManager).GetProperty("LocalPlayer", BindingFlags.Public | BindingFlags.Instance);

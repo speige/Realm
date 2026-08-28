@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Threading;
+using Realm.Shared;
 
 namespace Realm.Godot.ReplaySystem
 {
@@ -123,7 +124,7 @@ namespace Realm.Godot.ReplaySystem
 					Magic = "REALMREP",
 					Version = 1,
 					MapName = _mapName,
-					GameVersion = LobbyManager.GameBinaryVersion,
+					GameVersion = RealmVersion.GameBinaryVersion,
 					Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
 					Players = _players
 				};

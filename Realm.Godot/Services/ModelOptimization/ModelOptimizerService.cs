@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Godot;
+using Realm.Shared;
 using Realm.Ecs.Services;
 using Realm.Godot.Utils;
 
@@ -70,10 +71,10 @@ public class ModelOptimizerService
 		{
 			return new LodTierConfig[]
 			{
-				new LodTierConfig(0, "LOD0", 800, CalculateTargetErrorFromScreenHeight(800, allowedPixelError), 0.94f, 1.00f, 4, true, 0f, 4f),
-				new LodTierConfig(1, "LOD1", 250, CalculateTargetErrorFromScreenHeight(250, allowedPixelError), 0.87f, 0.50f, 2, true, 4f, 12f),
-				new LodTierConfig(2, "LOD2", 100, CalculateTargetErrorFromScreenHeight(100, allowedPixelError), 0.78f, 0.25f, 1, true, 12f, 30f),
-				new LodTierConfig(3, "LOD3", 35, CalculateTargetErrorFromScreenHeight(35, allowedPixelError), 0.68f, 0.10f, 1, true, 30f, 250f)
+				new LodTierConfig(0, "LOD0", 800, CalculateTargetErrorFromScreenHeight(800, allowedPixelError), 0.94f, 1.00f, 4, true, 0f, 45f),
+				new LodTierConfig(1, "LOD1", 250, CalculateTargetErrorFromScreenHeight(250, allowedPixelError), 0.87f, 0.50f, 2, true, 45f, 90f),
+				new LodTierConfig(2, "LOD2", 100, CalculateTargetErrorFromScreenHeight(100, allowedPixelError), 0.78f, 0.25f, 1, true, 90f, 150f),
+				new LodTierConfig(3, "LOD3", 35, CalculateTargetErrorFromScreenHeight(35, allowedPixelError), 0.68f, 0.10f, 1, true, 150f, 0f)
 			};
 		}
 	}
@@ -84,7 +85,6 @@ public class ModelOptimizerService
 		public float CreaseAngleDegrees { get; set; } = 45.0f;
 		public int MaxTextureResolution { get; set; } = 1024;
 		public bool ForceReDecimate { get; set; } = false;
-		public bool UseUastc { get; set; } = false;
 		public LodTierConfig[] LodTiers { get; set; } = null;
 
 		public OptimizationOptions()
@@ -109,6 +109,7 @@ public class ModelOptimizerService
 	public struct RawVertexData
 	{
 		public Vector3 Position;
+		public Vector3 Normal;
 		public Vector2 UV;
 		public Vector4 BoneIndices;
 		public Vector4 BoneWeights;
@@ -192,7 +193,7 @@ public class ModelOptimizerService
 			List<MeshInstance3D> meshInstances = FindAllMeshInstances(rootScene);
 			if (meshInstances.Count == 0)
 			{
-				byte[] fallbackBytes = ExportSceneToGlb(rootScene, true, options.MaxTextureResolution, originalImageNames, options.UseUastc);
+				byte[] fallbackBytes = ExportSceneToGlb(rootScene, true, options.MaxTextureResolution, originalImageNames);
 				rootScene.Free();
 				result.Success = true;
 				result.OptimizedGlbBytes = fallbackBytes ?? glbBytes;
@@ -211,7 +212,7 @@ public class ModelOptimizerService
 
 			if (alreadyDecimated || totalOriginalTriangles < 12)
 			{
-				byte[] exportedBytes = ExportSceneToGlb(rootScene, true, options.MaxTextureResolution, originalImageNames, options.UseUastc);
+				byte[] exportedBytes = ExportSceneToGlb(rootScene, true, options.MaxTextureResolution, originalImageNames);
 				rootScene.Free();
 				result.Success = true;
 				result.OptimizedGlbBytes = exportedBytes ?? glbBytes;
@@ -306,9 +307,9 @@ public class ModelOptimizerService
 				masterMeshInst.Name = $"{masterBaseName}_LOD0";
 				masterMeshInst.Mesh = lodMeshes[0];
 				masterMeshInst.VisibilityRangeBegin = options.LodTiers[0].VisibilityRangeBegin;
-				masterMeshInst.VisibilityRangeEnd = options.LodTiers[0].VisibilityRangeEnd;
-				masterMeshInst.VisibilityRangeBeginMargin = 0f;
-				masterMeshInst.VisibilityRangeEndMargin = 0f;
+				masterMeshInst.VisibilityRangeEnd = (options.LodTiers.Length <= 1) ? 0f : options.LodTiers[0].VisibilityRangeEnd;
+				masterMeshInst.VisibilityRangeBeginMargin = 2.0f;
+				masterMeshInst.VisibilityRangeEndMargin = 2.0f;
 				masterMeshInst.VisibilityRangeFadeMode = GeometryInstance3D.VisibilityRangeFadeModeEnum.Disabled;
 				masterMeshInst.CastShadow = options.LodTiers[0].CastShadow ? GeometryInstance3D.ShadowCastingSetting.On : GeometryInstance3D.ShadowCastingSetting.Off;
 
@@ -325,9 +326,9 @@ public class ModelOptimizerService
 						Skin = masterMeshInst.Skin,
 						Skeleton = masterMeshInst.Skeleton,
 						VisibilityRangeBegin = options.LodTiers[t].VisibilityRangeBegin,
-						VisibilityRangeEnd = options.LodTiers[t].VisibilityRangeEnd,
-						VisibilityRangeBeginMargin = 0f,
-						VisibilityRangeEndMargin = 0f,
+						VisibilityRangeEnd = (t == options.LodTiers.Length - 1) ? 0f : options.LodTiers[t].VisibilityRangeEnd,
+						VisibilityRangeBeginMargin = 2.0f,
+						VisibilityRangeEndMargin = 2.0f,
 						VisibilityRangeFadeMode = GeometryInstance3D.VisibilityRangeFadeModeEnum.Disabled,
 						CastShadow = options.LodTiers[t].CastShadow ? GeometryInstance3D.ShadowCastingSetting.On : GeometryInstance3D.ShadowCastingSetting.Off
 					};
@@ -356,7 +357,7 @@ public class ModelOptimizerService
 			result.LodTriangleCounts = lodTotalTriangles;
 			result.ReductionRatio = totalOriginalTriangles > 0 ? ((float)totalOptimizedMasterTriangles / totalOriginalTriangles) : 1.0f;
 
-			byte[] finalGlbBytes = ExportSceneToGlb(rootScene, true, options.MaxTextureResolution, originalImageNames, options.UseUastc);
+			byte[] finalGlbBytes = ExportSceneToGlb(rootScene, true, options.MaxTextureResolution, originalImageNames);
 			rootScene.Free();
 
 			if (finalGlbBytes != null && finalGlbBytes.Length > 0)
@@ -467,6 +468,11 @@ public class ModelOptimizerService
 
 	public static bool HasDecimationCompletedFlag(byte[] glbBytes)
 	{
+		if (GlbManifestUtils.HasOptimizationFlag(glbBytes))
+		{
+			return true;
+		}
+
 		try
 		{
 			if (glbBytes == null || glbBytes.Length < 20)
@@ -856,6 +862,7 @@ public class ModelOptimizerService
 				{
 					if (stdMat.AlbedoTexture is Texture2D albedoTex)
 					{
+						stdMat.AlbedoColor = new Color(1f, 1f, 1f, 1f);
 						var albedoImg = albedoTex.GetImage();
 						if (albedoImg != null)
 						{
@@ -955,6 +962,7 @@ public class ModelOptimizerService
 				{
 					if (ormMat.AlbedoTexture is Texture2D albedoTex)
 					{
+						ormMat.AlbedoColor = new Color(1f, 1f, 1f, 1f);
 						var albedoImg = albedoTex.GetImage();
 						if (albedoImg != null)
 						{
@@ -1013,6 +1021,11 @@ public class ModelOptimizerService
 
 		bool wasPowerOfTwo = IsPowerOfTwo(w) && IsPowerOfTwo(h);
 		Image.Interpolation defaultFilter = wasPowerOfTwo ? Image.Interpolation.Bilinear : Image.Interpolation.Lanczos;
+
+		if (textureType == TextureType.Albedo && targetW == w && targetH == h && wasPowerOfTwo && !src.IsCompressed())
+		{
+			return src;
+		}
 
 		Image working = (Image)src.Duplicate();
 		if (working.IsCompressed())
@@ -1229,6 +1242,7 @@ public class ModelOptimizerService
 				continue;
 			}
 
+			Vector3[] normalArray = arrays.Count > (int)Mesh.ArrayType.Normal ? arrays[(int)Mesh.ArrayType.Normal].AsVector3Array() : null;
 			Vector2[] uvArray = arrays.Count > (int)Mesh.ArrayType.TexUV ? arrays[(int)Mesh.ArrayType.TexUV].AsVector2Array() : null;
 			float[] boneWeights = arrays.Count > (int)Mesh.ArrayType.Weights ? arrays[(int)Mesh.ArrayType.Weights].AsFloat32Array() : null;
 			int[] boneIndices = arrays.Count > (int)Mesh.ArrayType.Bones ? arrays[(int)Mesh.ArrayType.Bones].AsInt32Array() : null;
@@ -1247,6 +1261,7 @@ public class ModelOptimizerService
 			for (int i = 0; i < vertexCount; i++)
 			{
 				vertices[i].Position = posArray[i];
+				vertices[i].Normal = (normalArray != null && i < normalArray.Length) ? normalArray[i] : Vector3.Up;
 				vertices[i].UV = (uvArray != null && i < uvArray.Length) ? uvArray[i] : Vector2.Zero;
 				vertices[i].Color = (colorArray != null && i < colorArray.Length) ? colorArray[i] : Colors.White;
 
@@ -1693,7 +1708,7 @@ public class ModelOptimizerService
 				Vector3 e02 = p2 - p0;
 				Vector3 e12 = p2 - p1;
 
-				Vector3 fn = e02.Cross(e01);
+				Vector3 fn = e01.Cross(e02);
 				float len = fn.Length();
 				faceNormals[t] = len > 0.000001f ? (fn / len) : Vector3.Up;
 
@@ -1786,7 +1801,7 @@ public class ModelOptimizerService
 				{
 					int vertexIdx = (int)surf.Indices[t * 3 + c];
 					var v = surf.Vertices[vertexIdx];
-					Vector3 computedNormal = cornerNormals[t, c];
+					Vector3 computedNormal = v.Normal.LengthSquared() > 0.001f ? v.Normal : cornerNormals[t, c];
 
 					st.SetNormal(computedNormal);
 					st.SetUV(v.UV);
@@ -1873,21 +1888,22 @@ public class ModelOptimizerService
 		Node rootScene,
 		bool embedCompletedFlag = true,
 		int maxTextureResolution = 1024,
-		List<string> originalImageNames = null,
-		bool useUastc = false)
+		List<string> originalImageNames = null)
 	{
 		try
 		{
 			var doc = new GltfDocument();
 			var state = new GltfState();
 
+			ApplyAlbedoGammaCompensation(rootScene);
 			SetOwnerRecursive(rootScene, rootScene);
 			doc.AppendFromScene(rootScene, state);
 
 			byte[] glbBytes = doc.GenerateBuffer(state);
 			if (glbBytes != null && glbBytes.Length > 0)
 			{
-				glbBytes = ApplyKhrTextureBasisu(glbBytes, maxTextureResolution, useUastc);
+				glbBytes = SanitizeGlbMaterialsBeforeGltfpack(glbBytes);
+				glbBytes = ApplyKhrTextureBasisu(glbBytes, maxTextureResolution);
 				if (embedCompletedFlag)
 				{
 					glbBytes = EmbedMsftLodAndFlags(glbBytes, originalImageNames);
@@ -1902,32 +1918,17 @@ public class ModelOptimizerService
 		}
 	}
 
-	private static string FindGltfPackPath()
+	public static byte[] SanitizeGlbMaterialsBeforeGltfpack(byte[] glbBytes)
 	{
-		string[] candidatePaths = new string[]
-		{
-			Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ThirdPartyBinaries", "gltfpack.exe"),
-			Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ThirdPartyBinaries", "gltfpack"),
-			Path.Combine(PathUtils.GetProjectRoot(), "ThirdPartyBinaries", "gltfpack.exe"),
-			Path.Combine(PathUtils.GetProjectRoot(), "ThirdPartyBinaries", "gltfpack"),
-			Path.Combine(PathUtils.GetProjectRoot(), "..", "ThirdPartyBinaries", "gltfpack.exe"),
-			Path.Combine(PathUtils.GetProjectRoot(), "..", "ThirdPartyBinaries", "gltfpack"),
-			"gltfpack.exe",
-			"gltfpack"
-		};
-
-		foreach (var path in candidatePaths)
-		{
-			if (File.Exists(path))
-			{
-				return Path.GetFullPath(path);
-			}
-		}
-
-		return "gltfpack.exe";
+		return GlbManifestUtils.SanitizeMaterials(glbBytes);
 	}
 
-	public static byte[] ApplyKhrTextureBasisu(byte[] glbBytes, int maxTextureResolution = 1024, bool useUastc = false)
+	private static string FindGltfPackPath()
+	{
+		return NativeToolRunner.FindGltfPackPath() ?? "gltfpack.exe";
+	}
+
+	public static byte[] ApplyKhrTextureBasisu(byte[] glbBytes, int maxTextureResolution = 1024)
 	{
 		if (glbBytes == null || glbBytes.Length == 0)
 		{
@@ -1949,11 +1950,10 @@ public class ModelOptimizerService
 		{
 			File.WriteAllBytes(tempInput, glbBytes);
 
-			string compressionFlag = useUastc ? "-tu" : "-tc";
 			var psi = new System.Diagnostics.ProcessStartInfo
 			{
 				FileName = gltfpackPath,
-				Arguments = $"-i \"{tempInput}\" -o \"{tempOutput}\" {compressionFlag} -tl {maxTextureResolution} -kn -km -ke -noq",
+				Arguments = $"-i \"{tempInput}\" -o \"{tempOutput}\" -tc -tl {maxTextureResolution} -kn -km -ke -noq",
 				CreateNoWindow = true,
 				UseShellExecute = false,
 				RedirectStandardOutput = true,
@@ -1992,6 +1992,86 @@ public class ModelOptimizerService
 		}
 
 		return glbBytes;
+	}
+
+	private static readonly byte[] GammaCompensationLookupTable = BuildGammaCompensationLookupTable();
+
+	private static byte[] BuildGammaCompensationLookupTable()
+	{
+		byte[] lookupTable = new byte[256];
+		for (int i = 0; i < 256; i++)
+		{
+			float normalized = i / 255.0f;
+			float compensated = MathF.Pow(normalized, 1.0f / 2.2f);
+			lookupTable[i] = (byte)Math.Clamp((int)MathF.Round(compensated * 255.0f), 0, 255);
+		}
+		return lookupTable;
+	}
+
+	public static void ApplyAlbedoGammaCompensation(Node rootScene)
+	{
+		var meshInstances = FindAllMeshInstances(rootScene);
+		var processedMaterials = new HashSet<Material>();
+
+		foreach (var meshInst in meshInstances)
+		{
+			int surfaceCount = meshInst.Mesh != null ? meshInst.Mesh.GetSurfaceCount() : 0;
+			for (int s = 0; s < surfaceCount; s++)
+			{
+				var mat = meshInst.GetSurfaceOverrideMaterial(s) ?? meshInst.Mesh?.SurfaceGetMaterial(s);
+				if (mat is StandardMaterial3D stdMat && processedMaterials.Add(stdMat))
+				{
+					if (stdMat.AlbedoTexture is Texture2D albedoTex)
+					{
+						var img = albedoTex.GetImage();
+						if (img != null)
+						{
+							var compensated = CompensateAlbedoGamma(img);
+							stdMat.AlbedoTexture = ImageTexture.CreateFromImage(compensated);
+						}
+					}
+				}
+				else if (mat is OrmMaterial3D ormMat && processedMaterials.Add(ormMat))
+				{
+					if (ormMat.AlbedoTexture is Texture2D albedoTex)
+					{
+						var img = albedoTex.GetImage();
+						if (img != null)
+						{
+							var compensated = CompensateAlbedoGamma(img);
+							ormMat.AlbedoTexture = ImageTexture.CreateFromImage(compensated);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	public static Image CompensateAlbedoGamma(Image source)
+	{
+		Image working = (Image)source.Duplicate();
+		if (working.IsCompressed())
+		{
+			working.Decompress();
+		}
+		if (working.GetFormat() != Image.Format.Rgba8 && working.GetFormat() != Image.Format.Rgb8)
+		{
+			working.Convert(Image.Format.Rgba8);
+		}
+
+		byte[] data = working.GetData();
+		int bytesPerPixel = working.GetFormat() == Image.Format.Rgba8 ? 4 : 3;
+
+		for (int i = 0; i < data.Length; i += bytesPerPixel)
+		{
+			data[i] = GammaCompensationLookupTable[data[i]];
+			data[i + 1] = GammaCompensationLookupTable[data[i + 1]];
+			data[i + 2] = GammaCompensationLookupTable[data[i + 2]];
+		}
+
+		var result = Image.CreateEmpty(working.GetWidth(), working.GetHeight(), working.HasMipmaps(), working.GetFormat());
+		result.SetData(working.GetWidth(), working.GetHeight(), working.HasMipmaps(), working.GetFormat(), data);
+		return result;
 	}
 
 	private static void SetOwnerRecursive(Node node, Node owner)

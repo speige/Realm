@@ -12,11 +12,11 @@ using System.Threading.Tasks;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using SharpToken;
+using Realm.Shared;
 
 public partial class LobbyManager : Node
 {
     public static LobbyManager Instance { get; private set; }
-    public static readonly string GameBinaryVersion = GetGameBinaryVersion();
     public bool IsSinglePlayer { get; set; } = false;
 
     private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
@@ -47,49 +47,6 @@ public partial class LobbyManager : Node
 
         return System.IO.Path.Combine(baseDir, "versions", targetVersion, fileName);
     }
-
-    private static string GetGameBinaryVersion()
-    {
-        try
-        {
-            if (OS.HasFeature("editor"))
-            {
-                var assembly = typeof(LobbyManager).Assembly;
-                if (!string.IsNullOrEmpty(assembly.Location))
-                {
-                    var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
-                    if (!string.IsNullOrEmpty(versionInfo.ProductVersion))
-                    {
-                        return versionInfo.ProductVersion.Trim();
-                    }
-                }
-                return "0.0.1_Pre-Alpha";
-            }
-
-            string exePath = OS.GetExecutablePath();
-            if (!string.IsNullOrEmpty(exePath))
-            {
-                var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(exePath);
-                string version = versionInfo.ProductVersion;
-                if (!string.IsNullOrEmpty(version))
-                {
-                    return version.Trim();
-                }
-                version = versionInfo.FileVersion;
-                if (!string.IsNullOrEmpty(version))
-                {
-                    return version.Trim();
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            GD.PrintErr($"Failed to read version from executable: {ex.Message}");
-        }
-
-        return "0.0.1_Pre-Alpha";
-    }
-
 
     public class PlayerInfo
     {
@@ -425,7 +382,7 @@ public partial class LobbyManager : Node
             Latency = "0 ms",
             Jitter = "0 ms",
             PacketLoss = "0%",
-            BinaryVersion = GameBinaryVersion
+            BinaryVersion = RealmVersion.GameBinaryVersion
         };
         PlayerList.Add(LocalPlayer);
         
@@ -455,7 +412,7 @@ public partial class LobbyManager : Node
             Latency = "0 ms",
             Jitter = "0 ms",
             PacketLoss = "0%",
-            BinaryVersion = GameBinaryVersion
+            BinaryVersion = RealmVersion.GameBinaryVersion
         };
         PlayerList.Add(LocalPlayer);
 
@@ -548,7 +505,7 @@ public partial class LobbyManager : Node
                 MaxPlayers = MaxPlayers,
                 SlotsUsed = PlayerList.Count,
                 HostPingBaseline = hostPingBaseline,
-                GameVersion = GameBinaryVersion,
+                GameVersion = RealmVersion.GameBinaryVersion,
                 LocalIP = localIpAddress,
                 MapVersion = mapVersion,
                 Signature = signature,
@@ -642,7 +599,7 @@ public partial class LobbyManager : Node
             Team = "Team 1",
             Color = PlayerColorConfig.GetColor(2),
             IsHost = false,
-            BinaryVersion = GameBinaryVersion
+            BinaryVersion = RealmVersion.GameBinaryVersion
         };
 
 
@@ -916,7 +873,7 @@ public partial class LobbyManager : Node
                 Team = "Team 1",
                 Color = GetNextColor(),
                 IsHost = false,
-                BinaryVersion = GameBinaryVersion
+                BinaryVersion = RealmVersion.GameBinaryVersion
             };
             PlayerList.Add(newPlayer);
             SendChatMessage("System", string.Format(Tr("{0} joined the lobby."), newPlayer.Name));
@@ -1670,7 +1627,7 @@ public partial class LobbyManager : Node
                 Latency = "0 ms",
                 Jitter = "0 ms",
                 PacketLoss = "0%",
-                BinaryVersion = GameBinaryVersion
+                BinaryVersion = RealmVersion.GameBinaryVersion
             };
             PlayerList.Add(botPlayer);
             BroadcastPlayerList();

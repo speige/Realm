@@ -28,7 +28,8 @@ public partial class GameHost : Node3D, IGameAPI
 	private static readonly JsonSerializerOptions Options = new()
 	{
 		PropertyNameCaseInsensitive = true,
-		IncludeFields = true
+		IncludeFields = true,
+		Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
 	};
 
 	private AudioService _audioService;
@@ -46,6 +47,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private EnvironmentService _environmentService;
 	private SpectatorService _spectatorService;
 	private Realm.Godot.Services.ModelOptimization.ModelOptimizerService _modelOptimizerService;
+	private TerrainNavMeshService _terrainNavMeshService;
 
 	public CheatService CheatService => _cheatService;
 	public EnvironmentService EnvironmentService => _environmentService;
@@ -273,8 +275,8 @@ public partial class GameHost : Node3D, IGameAPI
 	public bool IsMapEditorMode { get; set; }
 	public bool IsLoadingMap { get; set; }
 	public bool IsGameOver { get; private set; }
-	private EditableTerrain _groundTerrain;
-	public EditableTerrain GroundTerrain
+	private RuntimeTerrain _groundTerrain;
+	public RuntimeTerrain GroundTerrain
 	{
 		get
 		{
@@ -625,11 +627,20 @@ public partial class GameHost : Node3D, IGameAPI
 	}
 
 
+	public enum ModelNormalMode
+	{
+		Original = 0,
+		Smooth = 1,
+		Flat = 2
+	}
+
 	public struct UnitMetadata
 	{
 		public UnitMetadata()
 		{
-			RecalculateNormals = true;
+			Brightness = 0.5f;
+			NormalMode = ModelNormalMode.Flat;
+			NormalizeLuminance = true;
 		}
 
 		public string UnitId { get; set; }
@@ -645,18 +656,25 @@ public partial class GameHost : Node3D, IGameAPI
 		public float CostGold { get; set; }
 		public float CostWood { get; set; }
 		public float CostStone { get; set; }
-		public float ProductionTime { get; set; }
 		public int   PopCost { get; set; }
+		public float ProductionTime { get; set; }
 		public string AttackType { get; set; }
 		public string ArmorType { get; set; }
 		public float GoldBounty { get; set; }
 		public string ModelPath { get; set; }
 		public string PortraitModelPath { get; set; }
+		public float Scale { get; set; } = 1.0f;
 		public float YOffset { get; set; }
 		public float CollisionCircle { get; set; }
-		public float Brightness { get; set; }
+		public float Brightness { get; set; } = 0.5f;
 		public string Tint { get; set; }
-		public bool RecalculateNormals { get; set; } = true;
+		public ModelNormalMode NormalMode { get; set; } = ModelNormalMode.Flat;
+		public bool RecalculateNormals
+		{
+			get => NormalMode == ModelNormalMode.Smooth;
+			set => NormalMode = value ? ModelNormalMode.Smooth : ModelNormalMode.Flat;
+		}
+		public bool NormalizeLuminance { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; }
 		public string[]? BuildOptions { get; set; }
 		public bool IsHero { get; set; }
@@ -666,14 +684,117 @@ public partial class GameHost : Node3D, IGameAPI
 		public int PathingType { get; set; }
 		public float? ObstacleRadius { get; set; }
 		public string[]? Targets { get; set; }
+		public string[]? Weapons { get; set; }
 		public Dictionary<string, string[]>? Animations { get; set; }
+		public UnitSoundsMetadata? Sounds { get; set; }
+	}
+
+	public struct UnitSoundsMetadata
+	{
+		public string[]? OnSelect { get; set; }
+		public string[]? OnMoveOrder { get; set; }
+		public string[]? OnAttackOrder { get; set; }
+		public string[]? OnWounded { get; set; }
+		public string[]? OnDeath { get; set; }
+		public string[]? OnReady { get; set; }
+		public string[]? OnSpellCast { get; set; }
+	}
+
+	public struct WeaponMetadata
+	{
+		public WeaponMetadata()
+		{
+			OrientToTrajectory = true;
+			RibbonTaper = true;
+			RibbonAdditive = true;
+			EmissionEnergy = 4f;
+			FresnelPower = 3f;
+			FresnelFactor = 1.5f;
+			NoiseScale = 3f;
+			ThresholdCutoff = 0.5f;
+			ThresholdSmoothness = 0.1f;
+			RibbonWidth = 0.4f;
+			RibbonLifetime = 0.5f;
+			EmissionMaskSource = "noise";
+			ForwardAxisPreset = "-Z";
+			MeshScaleOffset = Vector3.One;
+			PointLightIntensity = 2.0f;
+			PointLightRange = 6.0f;
+		}
+
+		public string WeaponId { get; set; }
+		public string Name { get; set; }
+		public float Damage { get; set; }
+		public float Range { get; set; }
+		public float AttackCooldown { get; set; }
+		public string AttackType { get; set; }
+		public float ProjectileSpeed { get; set; }
+		public string VisualEffect { get; set; }
+		public string AttackSound { get; set; }
+		public string ProjectileModelPath { get; set; }
+		public string ImpactVisualEffect { get; set; }
+		public string ImpactSound { get; set; }
+
+		public float ArcHeight { get; set; }
+		public float HomingWeight { get; set; }
+		public float TurnRateLimit { get; set; }
+		public string EaseCurve { get; set; }
+		public string SpeedCurve { get; set; }
+		public float Acceleration { get; set; }
+		public float MaxLifetime { get; set; }
+		public float FailsafeRange { get; set; }
+		public string ScaleCurve { get; set; }
+		public Vector3 TumbleAngularVelocity { get; set; }
+		public bool OrientToTrajectory { get; set; } = true;
+		public string ForwardAxisPreset { get; set; } = "-Z";
+		public Vector3 MeshRotationOffset { get; set; }
+		public Vector3 MeshTranslationOffset { get; set; }
+		public Vector3 MeshScaleOffset { get; set; } = Vector3.One;
+		public float SpiralRadius { get; set; }
+		public float SpiralFrequency { get; set; }
+		public float ZigzagAmplitude { get; set; }
+		public float ZigzagFrequency { get; set; }
+		public int MaxBounces { get; set; }
+		public int PierceCount { get; set; }
+
+		public string ShaderEffectType { get; set; }
+		public string EmissionMaskSource { get; set; } = "noise";
+		public string BaseColor { get; set; }
+		public string EmissionColor { get; set; }
+		public float EmissionEnergy { get; set; } = 4f;
+		public float FresnelPower { get; set; } = 3f;
+		public string FresnelColor { get; set; }
+		public float FresnelFactor { get; set; } = 1.5f;
+		public float NoiseScale { get; set; } = 3f;
+		public string NoiseTexture { get; set; }
+		public Vector2 UvScrollSpeed1 { get; set; }
+		public Vector2 UvScrollSpeed2 { get; set; }
+		public float ThresholdCutoff { get; set; } = 0.5f;
+		public float ThresholdSmoothness { get; set; } = 0.1f;
+
+		public bool PointLightEnabled { get; set; }
+		public string PointLightColor { get; set; }
+		public float PointLightIntensity { get; set; } = 2.0f;
+		public float PointLightRange { get; set; } = 6.0f;
+
+		public string RibbonTexture { get; set; }
+		public string RibbonColor { get; set; }
+		public float RibbonWidth { get; set; } = 0.4f;
+		public float RibbonLifetime { get; set; } = 0.5f;
+		public bool RibbonTaper { get; set; } = true;
+		public bool RibbonAdditive { get; set; } = true;
+		public float RibbonScrollSpeed { get; set; }
+		public Vector3 TrailOffset { get; set; }
 	}
 
 	public struct PropMetadata
 	{
 		public PropMetadata()
 		{
-			RecalculateNormals = true;
+			Brightness = 0.5f;
+			NormalMode = ModelNormalMode.Flat;
+			NormalizeLuminance = true;
+			IgnorePlayerColor = true;
 		}
 
 		public string UnitId { get; set; }
@@ -681,12 +802,19 @@ public partial class GameHost : Node3D, IGameAPI
 		public string Description { get; set; }
 		public string ModelPath { get; set; }
 		public string PortraitModelPath { get; set; }
+		public float Scale { get; set; } = 1.25f;
 		public float YOffset { get; set; }
 		public float CollisionCircle { get; set; }
-		public float Brightness { get; set; }
+		public float Brightness { get; set; } = 0.5f;
 		public string Tint { get; set; }
-		public bool RecalculateNormals { get; set; } = true;
-		public bool IgnorePlayerColor { get; set; }
+		public ModelNormalMode NormalMode { get; set; } = ModelNormalMode.Flat;
+		public bool RecalculateNormals
+		{
+			get => NormalMode == ModelNormalMode.Smooth;
+			set => NormalMode = value ? ModelNormalMode.Smooth : ModelNormalMode.Flat;
+		}
+		public bool NormalizeLuminance { get; set; } = true;
+		public bool IgnorePlayerColor { get; set; } = true;
 		public int PathingType { get; set; }
 	}
 
@@ -694,7 +822,10 @@ public partial class GameHost : Node3D, IGameAPI
 	{
 		public ResourceMetadata()
 		{
-			RecalculateNormals = true;
+			Brightness = 0.5f;
+			NormalMode = ModelNormalMode.Flat;
+			NormalizeLuminance = true;
+			IgnorePlayerColor = true;
 		}
 
 		public string UnitId { get; set; }
@@ -706,12 +837,19 @@ public partial class GameHost : Node3D, IGameAPI
 		public float HarvestRate { get; set; }
 		public float GrowthRate { get; set; }
 		public int MaxWorkers { get; set; }
+		public float Scale { get; set; } = 2.75f;
 		public float YOffset { get; set; }
 		public float CollisionCircle { get; set; }
-		public float Brightness { get; set; }
+		public float Brightness { get; set; } = 0.5f;
 		public string Tint { get; set; }
-		public bool RecalculateNormals { get; set; } = true;
-		public bool IgnorePlayerColor { get; set; }
+		public ModelNormalMode NormalMode { get; set; } = ModelNormalMode.Flat;
+		public bool RecalculateNormals
+		{
+			get => NormalMode == ModelNormalMode.Smooth;
+			set => NormalMode = value ? ModelNormalMode.Smooth : ModelNormalMode.Flat;
+		}
+		public bool NormalizeLuminance { get; set; } = true;
+		public bool IgnorePlayerColor { get; set; } = true;
 		public int PathingType { get; set; }
 	}
 
@@ -723,6 +861,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public string AbilityType { get; set; }
 		public string IconPath { get; set; }
 		public float ManaCost { get; set; }
+		public float Cooldown { get; set; }
 	}
 
 	public static int GetUnitPathingFlags(UnitMetadata meta)
@@ -797,6 +936,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public static readonly Dictionary<string, UnitMetadata> UnitRegistry = new();
 	public static readonly Dictionary<string, PropMetadata> PropRegistry = new();
 	public static readonly Dictionary<string, ResourceMetadata> ResourceRegistry = new();
+	public static readonly Dictionary<string, WeaponMetadata> WeaponRegistry = new(StringComparer.OrdinalIgnoreCase);
 
 	public string GetFallbackModelPath(string unitId, bool isBuilding)
 	{
@@ -901,14 +1041,14 @@ public partial class GameHost : Node3D, IGameAPI
 		int depth = GroundTerrain != null ? GroundTerrain.Depth : 128;
 		float quadSize = GroundTerrain != null ? GroundTerrain.QuadSize : 2.0f;
 		float cellSize = GroundTerrain != null ? GroundTerrain.CellSize : TerrainState.DefaultCellSize;
-		float[,] heights = GroundTerrain != null ? GroundTerrain.Heights : null;
+		var cells = GroundTerrain != null ? GroundTerrain.Cells : null;
 		int[,] pathingCodes = GroundTerrain != null ? GroundTerrain.PathingCodes : null;
 		DotRecast.Detour.DtNavMesh navMesh = GroundTerrain != null ? GroundTerrain.NavMesh : null;
 		DotRecast.Detour.DtNavMeshQuery navMeshQuery = GroundTerrain != null ? GroundTerrain.NavMeshQuery : null;
 
 		_worldEntity = _worldInitService.SetupWorldEntityComponents(
 			width, depth, quadSize, cellSize,
-			heights, pathingCodes, navMesh, navMeshQuery
+			cells, pathingCodes, navMesh, navMeshQuery
 		);
 	}
 
@@ -1272,8 +1412,8 @@ public class {mapName} : IMapScript
 ";
 		}
 		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "MapScript.cs"), scriptContent);
-		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "metadata.json"), "{}");
-		System.IO.File.WriteAllText(System.IO.Path.Combine(mapDir, "terrain.json"), "{}");
+		MapJsonFormatter.SaveFormattedJson(System.IO.Path.Combine(mapDir, "metadata.json"), "{}");
+		MapJsonFormatter.SaveFormattedJson(System.IO.Path.Combine(mapDir, "terrain.json"), "{}");
 
 		EnsureMapProjectFiles(mapDir);
 	}
@@ -1666,34 +1806,7 @@ public class {mapName} : IMapScript
 				_replayService.RecordProjectile(projectileTypeId, start, target);
 			}
 			var targetPos = new Vector3(target.X, target.Y, target.Z);
-			if (projectileTypeId == "arrow")
-			{
-				SpawnArrowProjectile(startPos, targetPos);
-			}
-			else
-			{
-				var meshInstance = new MeshInstance3D();
-				var sphereMesh = new SphereMesh();
-				sphereMesh.Radius = 0.25f;
-				sphereMesh.Height = 0.5f;
-				meshInstance.Mesh = sphereMesh;
-				meshInstance.Position = startPos + new Vector3(0, 1.0f, 0);
-
-				var material = new StandardMaterial3D();
-				material.AlbedoColor = new Color(0.9f, 0.8f, 0.2f);
-				material.EmissionEnabled = true;
-				material.Emission = new Color(0.8f, 0.6f, 0.1f);
-				meshInstance.MaterialOverride = material;
-
-				AddChild(meshInstance);
-
-				float dist = startPos.DistanceTo(targetPos);
-				float duration = speed > 0.01f ? dist / speed : 1.0f;
-
-				var tween = CreateTween();
-				tween.TweenProperty(meshInstance, "global_position", targetPos + new Vector3(0, 1.0f, 0), duration);
-				tween.Chain().TweenCallback(Callable.From(meshInstance.QueueFree));
-			}
+			SpawnWeaponProjectile(startPos, targetPos, projectileTypeId);
 		}).CallDeferred();
 	}
 
@@ -2466,6 +2579,7 @@ public class {mapName} : IMapScript
 				CostStone = 0f,
 				ProductionTime = 4.0f,
 				PopCost = 1,
+				Scale = 1.5f,
 				AttackType = "melee",
 				ArmorType = "light",
 				GoldBounty = 15f,
@@ -2490,6 +2604,7 @@ public class {mapName} : IMapScript
 				CostStone = 0f,
 				ProductionTime = 5.0f,
 				PopCost = 1,
+				Scale = 1.5f,
 				AttackType = "melee",
 				ArmorType = "heavy",
 				GoldBounty = 20f,
@@ -2513,9 +2628,11 @@ public class {mapName} : IMapScript
 				CostStone = 0f,
 				ProductionTime = 7.0f,
 				PopCost = 1,
+				Scale = 1.5f,
 				AttackType = "ranged",
 				ArmorType = "light",
 				GoldBounty = 25f,
+				Weapons = new[] { "arrow" },
 				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 			}
 		},
@@ -2536,6 +2653,7 @@ public class {mapName} : IMapScript
 				CostStone = 0f,
 				ProductionTime = 8.0f,
 				PopCost = 1,
+				Scale = 1.5f,
 				AttackType = "ranged",
 				ArmorType = "light",
 				GoldBounty = 30f,
@@ -2559,6 +2677,7 @@ public class {mapName} : IMapScript
 				CostStone = 200f,
 				ProductionTime = 15.0f,
 				PopCost = 0,
+				Scale = 1.2f,
 				AttackType = "none",
 				ArmorType = "building",
 				GoldBounty = 0f,
@@ -2584,9 +2703,11 @@ public class {mapName} : IMapScript
 				CostStone = 100f,
 				ProductionTime = 10.0f,
 				PopCost = 0,
+				Scale = 1.2f,
 				AttackType = "ranged",
 				ArmorType = "building",
 				GoldBounty = 0f,
+				Weapons = new[] { "catapult_rock" },
 				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Buildable,
 				ObstacleRadius = 1.5f
 			}
@@ -2608,10 +2729,126 @@ public class {mapName} : IMapScript
 				CostStone = 0f,
 				ProductionTime = 5.0f,
 				PopCost = 1,
+				Scale = 1.5f,
 				AttackType = "melee",
 				ArmorType = "heavy",
 				GoldBounty = 18f,
 				PathingType = (int)(Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground | Realm.Ecs.Components.Terrain.TerrainPathingFlags.ShallowWater)
+			}
+		}
+	};
+
+	private static readonly Dictionary<string, WeaponMetadata> DefaultWeaponFallback = new()
+	{
+		{
+			"arrow", new WeaponMetadata {
+				WeaponId = "arrow",
+				Name = "Arrow",
+				Damage = 12f,
+				Range = 18f,
+				AttackCooldown = 1.2f,
+				AttackType = "ranged",
+				ProjectileSpeed = 35f,
+				OrientToTrajectory = true,
+				RibbonColor = "#ffaa33",
+				RibbonWidth = 0.3f,
+				RibbonLifetime = 0.4f,
+				RibbonTaper = true,
+				RibbonAdditive = true
+			}
+		},
+		{
+			"catapult_rock", new WeaponMetadata {
+				WeaponId = "catapult_rock",
+				Name = "Catapult Rock",
+				Damage = 40f,
+				Range = 22f,
+				AttackCooldown = 3.0f,
+				AttackType = "ranged",
+				ProjectileModelPath = "spiked_orb_projectile.glb",
+				ProjectileSpeed = 20f,
+				ArcHeight = 4.5f,
+				TumbleAngularVelocity = new Vector3(3f, 2f, 1f),
+				OrientToTrajectory = false,
+				ShaderEffectType = "fire",
+				BaseColor = "#261e19",
+				EmissionColor = "#ff5500",
+				EmissionEnergy = 5.0f,
+				FresnelPower = 2.5f,
+				FresnelColor = "#ff9922",
+				FresnelFactor = 2.0f,
+				NoiseScale = 3.5f,
+				UvScrollSpeed1 = new Vector2(0.4f, 0.2f),
+				UvScrollSpeed2 = new Vector2(-0.3f, 0.4f),
+				ThresholdCutoff = 0.45f,
+				ThresholdSmoothness = 0.1f,
+				RibbonColor = "#ff7711",
+				RibbonWidth = 0.45f,
+				RibbonLifetime = 0.6f,
+				RibbonTaper = true,
+				RibbonAdditive = true
+			}
+		},
+		{
+			"frost_bolt", new WeaponMetadata {
+				WeaponId = "frost_bolt",
+				Name = "Frost Bolt",
+				Damage = 18f,
+				Range = 16f,
+				AttackCooldown = 1.5f,
+				AttackType = "ranged",
+				ProjectileSpeed = 28f,
+				OrientToTrajectory = true,
+				SpiralRadius = 0.35f,
+				SpiralFrequency = 2.0f,
+				ShaderEffectType = "frost",
+				BaseColor = "#0a1c2a",
+				EmissionColor = "#33ccff",
+				EmissionEnergy = 4.5f,
+				FresnelPower = 3.0f,
+				FresnelColor = "#88eeff",
+				FresnelFactor = 2.2f,
+				NoiseScale = 4.0f,
+				UvScrollSpeed1 = new Vector2(0.2f, 0.5f),
+				UvScrollSpeed2 = new Vector2(-0.2f, -0.3f),
+				ThresholdCutoff = 0.5f,
+				ThresholdSmoothness = 0.08f,
+				RibbonColor = "#44ddff",
+				RibbonWidth = 0.35f,
+				RibbonLifetime = 0.5f,
+				RibbonTaper = true,
+				RibbonAdditive = true
+			}
+		},
+		{
+			"poison_dart", new WeaponMetadata {
+				WeaponId = "poison_dart",
+				Name = "Poison Dart",
+				Damage = 10f,
+				Range = 15f,
+				AttackCooldown = 1.0f,
+				AttackType = "ranged",
+				ProjectileSpeed = 30f,
+				OrientToTrajectory = true,
+				ZigzagAmplitude = 0.4f,
+				ZigzagFrequency = 3.0f,
+				ShaderEffectType = "poison",
+				BaseColor = "#112010",
+				EmissionColor = "#33ff33",
+				EmissionEnergy = 4.0f,
+				FresnelPower = 3.5f,
+				FresnelColor = "#88ff44",
+				FresnelFactor = 1.8f,
+				NoiseScale = 3.0f,
+				UvScrollSpeed1 = new Vector2(-0.1f, 0.4f),
+				UvScrollSpeed2 = new Vector2(0.3f, 0.2f),
+				ThresholdCutoff = 0.55f,
+				ThresholdSmoothness = 0.12f,
+				RibbonColor = "#44ff22",
+				RibbonWidth = 0.4f,
+				RibbonLifetime = 0.5f,
+				RibbonTaper = true,
+				RibbonAdditive = true
 			}
 		}
 	};
@@ -2656,8 +2893,26 @@ public class {mapName} : IMapScript
 					}
 					var newProps = new Dictionary<string, PropMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
+					var newWeapons = new Dictionary<string, WeaponMetadata>(StringComparer.OrdinalIgnoreCase);
+					foreach (var kvp in DefaultWeaponFallback)
+					{
+						newWeapons[kvp.Key] = kvp.Value;
+					}
 
 					bool hasStructuredArrays = false;
+
+					if (doc.RootElement.TryGetProperty("CustomWeapons", out var weapProp) && weapProp.ValueKind == JsonValueKind.Array)
+					{
+						var list = JsonSerializer.Deserialize<List<WeaponMetadata>>(weapProp.GetRawText(), Options);
+						if (list != null)
+						{
+							foreach (var meta in list)
+							{
+								if (!string.IsNullOrEmpty(meta.WeaponId))
+									newWeapons[meta.WeaponId] = meta;
+							}
+						}
+					}
 
 					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == JsonValueKind.Array)
 					{
@@ -2668,7 +2923,11 @@ public class {mapName} : IMapScript
 							foreach (var meta in list)
 							{
 								if (!string.IsNullOrEmpty(meta.UnitId))
-									newUnits[meta.UnitId] = meta;
+								{
+									var copy = meta;
+									if (copy.Scale <= 0f) copy.Scale = 1.0f;
+									newUnits[copy.UnitId] = copy;
+								}
 							}
 						}
 					}
@@ -2682,7 +2941,11 @@ public class {mapName} : IMapScript
 							foreach (var meta in list)
 							{
 								if (!string.IsNullOrEmpty(meta.UnitId))
-									newUnits[meta.UnitId] = meta;
+								{
+									var copy = meta;
+									if (copy.Scale <= 0f) copy.Scale = 1.5f;
+									newUnits[copy.UnitId] = copy;
+								}
 							}
 						}
 					}
@@ -2698,6 +2961,7 @@ public class {mapName} : IMapScript
 								if (!string.IsNullOrEmpty(meta.UnitId))
 								{
 									var copy = meta;
+									if (copy.Scale <= 0f) copy.Scale = 2.75f;
 									if (copy.PathingType == 0) copy.PathingType = 255;
 									newResources[copy.UnitId] = copy;
 								}
@@ -2716,6 +2980,7 @@ public class {mapName} : IMapScript
 								if (!string.IsNullOrEmpty(meta.UnitId))
 								{
 									var copy = meta;
+									if (copy.Scale <= 0f) copy.Scale = 1.25f;
 									if (copy.PathingType == 0) copy.PathingType = 255;
 									newProps[copy.UnitId] = copy;
 								}
@@ -2760,6 +3025,9 @@ public class {mapName} : IMapScript
 
 					ResourceRegistry.Clear();
 					foreach (var kvp in newResources) ResourceRegistry[kvp.Key] = kvp.Value;
+
+					WeaponRegistry.Clear();
+					foreach (var kvp in newWeapons) WeaponRegistry[kvp.Key] = kvp.Value;
 
 					Prop3D.ClearModelPathCache();
 				}
@@ -3021,6 +3289,7 @@ public class {mapName} : IMapScript
 		_simulationService.EditorHeightProvider = p => _editorService.GetTerrainHeightAt(new Vector3(p.X, p.Y, p.Z));
 
 		_simulationService.OnArrowProjectileRequested = (start, target) => SpawnArrowProjectile(new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z));
+		_simulationService.OnWeaponProjectileRequested = (start, target, weaponId, targetEnt) => SpawnWeaponProjectile(new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z), weaponId, targetEnt);
 		_simulationService.OnDamageFlashRequested = entity =>
 		{
 			if (GameHost.TryGetUnit3D(entity, out var unit3D))
@@ -3062,6 +3331,7 @@ public class {mapName} : IMapScript
 				if (GameHost.TryGetUnit3D(targetEntity, out var targetUnit3D))
 				{
 					_fxService.SpawnDamageNumber(this, targetUnit3D.GlobalPosition, damage);
+					_audioService?.PlayUnitSound(targetUnit3D.UnitId, UnitSoundEvent.Wounded, targetUnit3D.GlobalPosition);
 				}
 			}
 		};
@@ -3243,17 +3513,6 @@ public class {mapName} : IMapScript
 			if (!rawMapName.StartsWith("user://") && !rawMapName.StartsWith("res://") && !System.IO.Path.IsPathRooted(rawMapName))
 			{
 				string normalizedMapName = rawMapName.ToLower().Trim();
-				if (!DirAccess.DirExistsAbsolute($"res://Maps/{normalizedMapName}"))
-				{
-					if (normalizedMapName.Contains("legion"))
-					{
-						normalizedMapName = "legion_td";
-					}
-					else if (normalizedMapName.Contains("defense") || normalizedMapName.Contains("td"))
-					{
-						normalizedMapName = "green_td";
-					}
-				}
 				mapParamName = normalizedMapName;
 			}
 
@@ -3522,21 +3781,25 @@ public class {mapName} : IMapScript
 			string normalizedMapName = rawMapName.ToLower().Trim();
 			string mapDir = $"res://Maps/{normalizedMapName}";
 			string checkDir = ProjectSettings.GlobalizePath(mapDir);
-			if (!System.IO.Directory.Exists(checkDir))
+			if (System.IO.Directory.Exists(checkDir))
 			{
-				if (normalizedMapName.Contains("legion"))
+				terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
+			}
+			else
+			{
+				string userDir = ProjectSettings.GlobalizePath($"user://maps/{normalizedMapName}");
+				if (System.IO.Directory.Exists(userDir))
 				{
-					normalizedMapName = "legion_td";
+					terrainPath = $"user://maps/{normalizedMapName}/terrain.json";
 				}
-				else if (normalizedMapName.Contains("defense") || normalizedMapName.Contains("td"))
+				else
 				{
-					normalizedMapName = "green_td";
+					terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
 				}
 			}
-			terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
 		}
 
-		var activeTerrainNode = new EditableTerrain();
+		var activeTerrainNode = new RuntimeTerrain();
 		activeTerrainNode.Name = "Ground";
 		AddChild(activeTerrainNode);
 		GroundTerrain = activeTerrainNode;
@@ -3819,6 +4082,10 @@ public class {mapName} : IMapScript
 			string unitAssetKey = GetModelAssetKey(unit3D);
 			float baseRadius = autoDetectedRadius * GetModelCollisionCircleRatio(unitAssetKey);
 			EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+			if (!IsMapEditorMode)
+			{
+				CarveObstacle(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z), baseRadius);
+			}
 		}
 
 		if (IsMapEditorMode)
@@ -3966,6 +4233,24 @@ public class {mapName} : IMapScript
 		if (IsServerActive() && GroundTerrain != null)
 		{
 			GroundTerrain.BakeNavMesh();
+		}
+	}
+
+	public void CarveObstacle(System.Numerics.Vector3 pos, float radius)
+	{
+		if (EcsWorld != null && EcsWorld.IsAlive(WorldEntity) && EcsWorld.Has<TerrainState>(WorldEntity))
+		{
+			ref var state = ref EcsWorld.Get<TerrainState>(WorldEntity);
+			_terrainNavMeshService?.CarveObstacle(ref state, pos, radius);
+		}
+	}
+
+	public void UncarveObstacle(System.Numerics.Vector3 pos, float radius)
+	{
+		if (EcsWorld != null && EcsWorld.IsAlive(WorldEntity) && EcsWorld.Has<TerrainState>(WorldEntity))
+		{
+			ref var state = ref EcsWorld.Get<TerrainState>(WorldEntity);
+			_terrainNavMeshService?.UncarveObstacle(ref state, pos, radius);
 		}
 	}
 
@@ -4261,9 +4546,22 @@ public class {mapName} : IMapScript
 			{
 				SpawnHolyLightEffect(godotPos);
 			}
-			else if (req.EffectTypeId == "arrow")
+			else if (req.EffectTypeId == "arrow" || WeaponRegistry.ContainsKey(req.EffectTypeId) || req.EffectTypeId.StartsWith("proj:"))
 			{
-				SpawnArrowProjectile(godotPos, godotTarget);
+				string weaponId = req.EffectTypeId.StartsWith("proj:") ? req.EffectTypeId.Substring(5) : req.EffectTypeId;
+				Entity targetEnt = Entity.Null;
+				if (req.EntityId != -1)
+				{
+					foreach (var u in AllUnits)
+					{
+						if (u.Entity.Id == req.EntityId)
+						{
+							targetEnt = u.Entity;
+							break;
+						}
+					}
+				}
+				SpawnWeaponProjectile(godotPos, godotTarget, weaponId, targetEnt);
 			}
 			else if (req.EffectTypeId == "heal")
 			{
@@ -4373,12 +4671,20 @@ public class {mapName} : IMapScript
 	{
 		_fxService.SpawnArrowProjectile(this, new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z));
 	}
+	public void SpawnWeaponProjectileForReplay(System.Numerics.Vector3 start, System.Numerics.Vector3 target, string? weaponId = null)
+	{
+		_fxService.SpawnWeaponProjectile(this, new Vector3(start.X, start.Y, start.Z), new Vector3(target.X, target.Y, target.Z), weaponId);
+	}
 	private void SpawnArrowProjectile(Vector3 start, Vector3 target)
 	{
-		_fxService.SpawnArrowProjectile(this, start, target);
+		SpawnWeaponProjectile(start, target, "arrow");
+	}
+	public void SpawnWeaponProjectile(Vector3 start, Vector3 target, string? weaponId = null, Entity targetEntity = default)
+	{
+		_fxService.SpawnWeaponProjectile(this, start, target, weaponId, targetEntity);
 		if (_replayService != null && _replayService.IsRecording)
 		{
-			_replayService.RecordProjectile("arrow", new System.Numerics.Vector3(start.X, start.Y, start.Z), new System.Numerics.Vector3(target.X, target.Y, target.Z));
+			_replayService.RecordProjectile(weaponId ?? "arrow", new System.Numerics.Vector3(start.X, start.Y, start.Z), new System.Numerics.Vector3(target.X, target.Y, target.Z));
 		}
 		if (_multiplayerActive && IsServerActive())
 		{

@@ -137,6 +137,7 @@ public partial class GameHost
 						}
 					}
 					GroundTerrain.UpdateMeshAndPhysics();
+					GroundTerrain.UpdatePathingTexture();
 				}
 				MapEditorHUD.Instance?.UpdateBlockModeExternal(true);
 				MapEditorHUD.Instance?.UpdateBlockLevelHeightExternal(2.0f);
@@ -168,7 +169,7 @@ public partial class GameHost
 					child.QueueFree();
 				}
 
-				var terrainNode = new EditableTerrain();
+				var terrainNode = IsMapEditorMode ? (RuntimeTerrain)new EditableTerrain() : new RuntimeTerrain();
 				terrainNode.Name = "Ground";
 				AddChild(terrainNode);
 				GroundTerrain = terrainNode;
@@ -313,7 +314,7 @@ public partial class GameHost
 					{
 						for (int x = 0; x < cliffW; x++)
 						{
-							GroundTerrain.CliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(GroundTerrain.CliffTextureIndex);
+							GroundTerrain.CliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(1);
 						}
 					}
 				}

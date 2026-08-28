@@ -143,118 +143,150 @@ public class MapEditorMinimap
 		return new Vector2(xRatio * _minimapArea.Size.X, yRatio * _minimapArea.Size.Y);
 	}
 
+	private bool _isGeneratingMinimap = false;
+	private bool _needsRegen = false;
+
 	public void RegenerateMinimap()
 	{
+		if (_isGeneratingMinimap)
+		{
+			_needsRegen = true;
+			return;
+		}
 		GenerateDynamicMinimap();
 	}
 
 	private async void GenerateDynamicMinimap()
 	{
-		if (_hudNode == null || !GodotObject.IsInstanceValid(_hudNode)) return;
-		var tree = _hudNode.GetTree();
-		if (tree == null) return;
-
-		await _hudNode.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
-		await _hudNode.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
-
-		if (_minimapArea == null) return;
-		var minimapBg = _minimapArea.GetChildCount() > 0 ? _minimapArea.GetChild<TextureRect>(0) : null;
-		if (minimapBg == null) return;
+		if (_isGeneratingMinimap)
+		{
+			_needsRegen = true;
+			return;
+		}
+		_isGeneratingMinimap = true;
 
 		try
 		{
-			float quadSize = GameHost.Instance?.GroundTerrain?.QuadSize ?? 2.0f;
-			float physicalWidth = (GameHost.Instance?.GroundTerrain?.Width - 1 ?? 125) * quadSize;
-			float physicalDepth = (GameHost.Instance?.GroundTerrain?.Depth - 1 ?? 125) * quadSize;
-
-			int viewportWidth = 256;
-			int viewportHeight = 256;
-
-			if (physicalWidth >= physicalDepth && physicalWidth > 0.0f)
+			do
 			{
-				viewportHeight = Mathf.Max(16, Mathf.RoundToInt(256f * physicalDepth / physicalWidth));
-			}
-			else if (physicalDepth > physicalWidth && physicalDepth > 0.0f)
-			{
-				viewportWidth = Mathf.Max(16, Mathf.RoundToInt(256f * physicalWidth / physicalDepth));
-			}
+				_needsRegen = false;
+				if (_hudNode == null || !GodotObject.IsInstanceValid(_hudNode)) return;
+				var tree = _hudNode.GetTree();
+				if (tree == null) return;
 
-			var viewport = new SubViewport();
-			viewport.Size = new Vector2I(viewportWidth, viewportHeight);
-			viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Once;
-			viewport.DebugDraw = Viewport.DebugDrawEnum.Unshaded;
-			_hudNode.AddChild(viewport);
-
-			var camera = new Camera3D();
-			camera.Projection = Camera3D.ProjectionType.Orthogonal;
-			camera.KeepAspect = Camera3D.KeepAspectEnum.Height;
-			camera.Size = physicalDepth;
-			camera.Far = 200f;
-			camera.Position = new Vector3(0, 100, 0);
-			camera.RotationDegrees = new Vector3(-90, 0, 0);
-			viewport.AddChild(camera);
-
-			bool wasVisible = false;
-			if (GameHost.Instance?.BrushIndicatorMesh != null)
-			{
-				wasVisible = GameHost.Instance.BrushIndicatorMesh.Visible;
-				GameHost.Instance.BrushIndicatorMesh.Visible = false;
-			}
-
-			var wasGridMode = GameHost.GridOverlayMode.Off;
-			bool wasPathingVisible = false;
-			if (GameHost.Instance != null)
-			{
-				wasGridMode = GameHost.Instance.EditorGridMode;
-				wasPathingVisible = GameHost.Instance.PathingOverlayVisible;
-				GameHost.Instance.EditorGridMode = GameHost.GridOverlayMode.Off;
-				GameHost.Instance.PathingOverlayVisible = false;
-				GameHost.Instance.UpdateGridOverlayVisibility();
-				GameHost.Instance.UpdatePathingOverlay();
-			}
-
-			EditableTerrain.IsMinimapRendering = true;
-			EditableTerrain.Instance?.BeginMinimapCapture();
-			PropMultiMeshManager.Instance?.SetAllNodesVisible(true);
-			try
-			{
+				await _hudNode.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
 				await _hudNode.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
 
-				var texture = viewport.GetTexture();
-				if (texture != null)
+				if (_minimapArea == null) return;
+				var minimapBg = _minimapArea.GetChildCount() > 0 ? _minimapArea.GetChild<TextureRect>(0) : null;
+				if (minimapBg == null) return;
+
+				SubViewport viewport = null;
+				try
 				{
-					var img = texture.GetImage();
-					if (img != null)
+					float quadSize = GameHost.Instance?.GroundTerrain?.QuadSize ?? 2.0f;
+					float physicalWidth = (GameHost.Instance?.GroundTerrain?.Width - 1 ?? 125) * quadSize;
+					float physicalDepth = (GameHost.Instance?.GroundTerrain?.Depth - 1 ?? 125) * quadSize;
+
+					int viewportWidth = 256;
+					int viewportHeight = 256;
+
+					if (physicalWidth >= physicalDepth && physicalWidth > 0.0f)
 					{
-						var imgTexture = ImageTexture.CreateFromImage(img);
-						minimapBg.Texture = imgTexture;
+						viewportHeight = Mathf.Max(16, Mathf.RoundToInt(256f * physicalDepth / physicalWidth));
+					}
+					else if (physicalDepth > physicalWidth && physicalDepth > 0.0f)
+					{
+						viewportWidth = Mathf.Max(16, Mathf.RoundToInt(256f * physicalWidth / physicalDepth));
+					}
+
+					viewport = new SubViewport();
+					viewport.Size = new Vector2I(viewportWidth, viewportHeight);
+					viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Once;
+					viewport.DebugDraw = Viewport.DebugDrawEnum.Unshaded;
+					_hudNode.AddChild(viewport);
+
+					var camera = new Camera3D();
+					camera.Projection = Camera3D.ProjectionType.Orthogonal;
+					camera.KeepAspect = Camera3D.KeepAspectEnum.Height;
+					camera.Size = physicalDepth;
+					camera.Far = 200f;
+					camera.Position = new Vector3(0, 100, 0);
+					camera.RotationDegrees = new Vector3(-90, 0, 0);
+					viewport.AddChild(camera);
+
+					bool wasVisible = false;
+					if (GameHost.Instance?.BrushIndicatorMesh != null)
+					{
+						wasVisible = GameHost.Instance.BrushIndicatorMesh.Visible;
+						GameHost.Instance.BrushIndicatorMesh.Visible = false;
+					}
+
+					var wasGridMode = GameHost.GridOverlayMode.Off;
+					bool wasPathingVisible = false;
+					if (GameHost.Instance != null)
+					{
+						wasGridMode = GameHost.Instance.EditorGridMode;
+						wasPathingVisible = GameHost.Instance.PathingOverlayVisible;
+						GameHost.Instance.EditorGridMode = GameHost.GridOverlayMode.Off;
+						GameHost.Instance.PathingOverlayVisible = false;
+						GameHost.Instance.UpdateGridOverlayVisibility();
+						GameHost.Instance.UpdatePathingOverlay();
+					}
+
+					EditableTerrain.IsMinimapRendering = true;
+					EditableTerrain.Instance?.BeginMinimapCapture();
+					PropMultiMeshManager.Instance?.SetAllNodesVisible(true);
+					try
+					{
+						await _hudNode.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+
+						var texture = viewport.GetTexture();
+						if (texture != null)
+						{
+							var img = texture.GetImage();
+							if (img != null)
+							{
+								var imgTexture = ImageTexture.CreateFromImage(img);
+								minimapBg.Texture = imgTexture;
+							}
+						}
+					}
+					finally
+					{
+						EditableTerrain.Instance?.EndMinimapCapture();
+						EditableTerrain.IsMinimapRendering = false;
+					}
+
+					if (GameHost.Instance?.BrushIndicatorMesh != null)
+					{
+						GameHost.Instance.BrushIndicatorMesh.Visible = wasVisible;
+					}
+
+					if (GameHost.Instance != null)
+					{
+						GameHost.Instance.EditorGridMode = wasGridMode;
+						GameHost.Instance.PathingOverlayVisible = wasPathingVisible;
+						GameHost.Instance.UpdateGridOverlayVisibility();
+						GameHost.Instance.UpdatePathingOverlay();
 					}
 				}
-			}
-			finally
-			{
-				EditableTerrain.Instance?.EndMinimapCapture();
-				EditableTerrain.IsMinimapRendering = false;
-			}
-
-			if (GameHost.Instance?.BrushIndicatorMesh != null)
-			{
-				GameHost.Instance.BrushIndicatorMesh.Visible = wasVisible;
-			}
-
-			if (GameHost.Instance != null)
-			{
-				GameHost.Instance.EditorGridMode = wasGridMode;
-				GameHost.Instance.PathingOverlayVisible = wasPathingVisible;
-				GameHost.Instance.UpdateGridOverlayVisibility();
-				GameHost.Instance.UpdatePathingOverlay();
-			}
-
-			viewport.QueueFree();
+				finally
+				{
+					if (viewport != null && GodotObject.IsInstanceValid(viewport))
+					{
+						viewport.QueueFree();
+					}
+				}
+			} while (_needsRegen);
 		}
 		catch (Exception ex)
 		{
 			GD.PrintErr($"Failed to dynamically capture terrain minimap: {ex.Message}");
+		}
+		finally
+		{
+			_isGeneratingMinimap = false;
 		}
 	}
 

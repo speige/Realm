@@ -3,6 +3,7 @@ using Realm.Godot.ReplaySystem;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Realm.Shared;
 
 public partial class ReplayListPanel : Control
 {
@@ -354,9 +355,9 @@ public partial class ReplayListPanel : Control
 
 		int totalTicks;
 		var header = ReplayPlaybackManager.ReadReplayHeader(path, out totalTicks);
-		if (header != null && !string.IsNullOrEmpty(header.GameVersion) && header.GameVersion != LobbyManager.GameBinaryVersion)
+		if (header != null && !string.IsNullOrEmpty(header.GameVersion) && header.GameVersion != RealmVersion.GameBinaryVersion)
 		{
-			ShowVersionMismatchPopup(header.GameVersion, LobbyManager.GameBinaryVersion, path);
+			ShowVersionMismatchPopup(header.GameVersion, RealmVersion.GameBinaryVersion, path);
 			return;
 		}
 

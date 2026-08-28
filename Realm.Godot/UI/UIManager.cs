@@ -1,6 +1,8 @@
 using Godot;
 using System;
+using System.Threading.Tasks;
 using Realm.Godot.ReplaySystem;
+using Realm.Shared;
 
 public partial class UIManager : Control
 {
@@ -39,7 +41,7 @@ public partial class UIManager : Control
 	private AudioStreamPlayer _musicPlayer;
 	private AudioStreamPlayer _sfxPlayer;
 
-	public override void _Ready()
+	public override async void _Ready()
 	{
 		Instance = this;
 		MouseFilter = MouseFilterEnum.Ignore;
@@ -51,14 +53,14 @@ public partial class UIManager : Control
 		_sfxPlayer = new AudioStreamPlayer();
 		AddChild(_sfxPlayer);
 
-		ApplyStartupSettings();
+		await ApplyStartupSettings();
 
 
 		CreateFadeOverlay();
 
 #if DEBUG
 		_watermark = new Label();
-		_watermark.Text = $"Realm {LobbyManager.GameBinaryVersion}";
+		_watermark.Text = string.Format(TranslationServer.Translate("Realm {0}"), RealmVersion.GameBinaryVersion);
 		_watermark.AddThemeColorOverride("font_color", new Color(1.0f, 1.0f, 1.0f, 0.5f));
 		_watermark.AddThemeColorOverride("font_outline_color", new Color(0.0f, 0.0f, 0.0f, 0.8f));
 		_watermark.AddThemeConstantOverride("outline_size", 4);
@@ -113,67 +115,110 @@ public partial class UIManager : Control
 		}
 	}
 
-	public void ApplyWindowSettings(WindowMode mode, int resIdx)
+	private bool _isApplyingWindowSettings = false;
+
+	public async Task ApplyWindowSettings(WindowMode mode, int resIdx)
 	{
-		var window = GetWindow();
-		if (window == null) return;
+		if (_isApplyingWindowSettings) return;
+		_isApplyingWindowSettings = true;
 
-		int screen = DisplayServer.WindowGetCurrentScreen();
-		Rect2I usable = DisplayServer.ScreenGetUsableRect(screen);
+		try
+		{
+			var tree = GetTree();
+			if (tree == null) return;
 
-		Vector2I targetRes;
-		if (resIdx >= 0 && GameSettings.Resolutions != null && resIdx < GameSettings.Resolutions.Count)
-		{
-			targetRes = GameSettings.Resolutions[resIdx];
-		}
-		else if (GameSettings.ResolutionIdx >= 0 && GameSettings.Resolutions != null && GameSettings.ResolutionIdx < GameSettings.Resolutions.Count)
-		{
-			targetRes = GameSettings.Resolutions[GameSettings.ResolutionIdx];
-		}
-		else if (GameSettings.Resolutions != null && GameSettings.Resolutions.Count > 0)
-		{
-			targetRes = GameSettings.Resolutions[0];
-		}
-		else
-		{
-			targetRes = usable.Size;
-		}
+			int currentScreen = GameSettings.GetSafeScreenIndex();
+			Vector2I screenSize = DisplayServer.ScreenGetSize(currentScreen);
+			Rect2I usable = DisplayServer.ScreenGetUsableRect(currentScreen);
 
-		if (mode == WindowMode.Fullscreen)
-		{
-			window.Mode = Window.ModeEnum.Windowed;
-			window.Borderless = false;
-			window.Mode = Window.ModeEnum.ExclusiveFullscreen;
-		}
-		else if (mode == WindowMode.Borderless)
-		{
-			window.Mode = Window.ModeEnum.Windowed;
-			window.Borderless = true;
-			window.Mode = Window.ModeEnum.Fullscreen;
-		}
-		else if (mode == WindowMode.Windowed)
-		{
-			window.Mode = Window.ModeEnum.Windowed;
-			window.Borderless = false;
+			Vector2I targetRes;
+			if (resIdx >= 0 && GameSettings.Resolutions != null && resIdx < GameSettings.Resolutions.Count)
+			{
+				targetRes = GameSettings.Resolutions[resIdx];
+			}
+			else if (GameSettings.ResolutionIdx >= 0 && GameSettings.Resolutions != null && GameSettings.ResolutionIdx < GameSettings.Resolutions.Count)
+			{
+				targetRes = GameSettings.Resolutions[GameSettings.ResolutionIdx];
+			}
+			else if (GameSettings.Resolutions != null && GameSettings.Resolutions.Count > 0)
+			{
+				targetRes = GameSettings.Resolutions[0];
+			}
+			else
+			{
+				targetRes = screenSize;
+			}
 
-			Vector2I deco = window.GetSizeWithDecorations() - window.Size;
-			int padX = deco.X > 0 ? deco.X : 16;
-			int padY = deco.Y > 0 ? deco.Y : 40;
+			var currentMode = DisplayServer.WindowGetMode();
 
-			int safeW = Math.Min(targetRes.X, usable.Size.X - padX);
-			int safeH = Math.Min(targetRes.Y, usable.Size.Y - padY);
-			window.Size = new Vector2I(safeW, safeH);
-			window.MoveToCenter();
+			switch (mode)
+			{
+				case WindowMode.Fullscreen:
+					DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Borderless, false);
+					DisplayServer.WindowSetMode(DisplayServer.WindowMode.ExclusiveFullscreen);
+					break;
+
+				case WindowMode.Borderless:
+					if (currentMode != DisplayServer.WindowMode.Windowed)
+					{
+						DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+						await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+						await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+					}
+
+					currentScreen = GameSettings.GetSafeScreenIndex();
+					screenSize = DisplayServer.ScreenGetSize(currentScreen);
+					Vector2I screenPos = DisplayServer.ScreenGetPosition(currentScreen);
+
+					DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Borderless, true);
+					DisplayServer.WindowSetPosition(screenPos);
+					DisplayServer.WindowSetSize(screenSize);
+					break;
+
+				case WindowMode.Windowed:
+				default:
+					if (currentMode != DisplayServer.WindowMode.Windowed)
+					{
+						DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+						await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+						await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+					}
+
+					currentScreen = GameSettings.GetSafeScreenIndex();
+					usable = DisplayServer.ScreenGetUsableRect(currentScreen);
+
+					DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Borderless, false);
+
+					if (targetRes.X >= usable.Size.X || targetRes.Y >= usable.Size.Y)
+					{
+						DisplayServer.WindowSetMode(DisplayServer.WindowMode.Maximized);
+					}
+					else
+					{
+						DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+						Vector2I windowedPos = usable.Position + (usable.Size - targetRes) / 2;
+						windowedPos.X = Math.Max(windowedPos.X, usable.Position.X);
+						windowedPos.Y = Math.Max(windowedPos.Y, usable.Position.Y);
+
+						DisplayServer.WindowSetSize(targetRes);
+						DisplayServer.WindowSetPosition(windowedPos);
+					}
+					break;
+			}
+		}
+		finally
+		{
+			_isApplyingWindowSettings = false;
 		}
 	}
 
-	private void ApplyStartupSettings()
+	private async Task ApplyStartupSettings()
 	{
 		GameSettings.Load();
 		GameSettings.ApplyGraphicsSettings(this);
 		LocalizationManager.SetupTranslations();
 
-		ApplyWindowSettings(GameSettings.WindowModeIdx, GameSettings.ResolutionIdx);
+		await ApplyWindowSettings(GameSettings.WindowModeIdx, GameSettings.ResolutionIdx);
 
 		if (GameSettings.Vsync)
 		{

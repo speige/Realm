@@ -1,8 +1,13 @@
+using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using GdUnit4;
 using Godot;
+using Realm.Ecs.Services;
+using Realm.Godot.Utils;
+using Realm.Shared;
 
 namespace Realm.Godot.Tests;
 
@@ -946,5 +951,324 @@ public class MapEditorUxTests
         Directory.CreateDirectory(artifactDir);
         string artifactFilePath = Path.Combine(artifactDir, "map_edge_tall_step_cliff_reproduction.png");
         image.SavePng(artifactFilePath);
+    }
+
+    [TestCase]
+    public async Task TestCustomWeaponProjectileLayersAndVisualRendering()
+    {
+        if (LobbyManager.Instance == null)
+        {
+            return;
+        }
+
+        // Prevent creator agreement modal from blocking test
+        var agreementField = typeof(MapEditorHUD).GetField("_agreementShownThisSession", BindingFlags.NonPublic | BindingFlags.Static);
+        agreementField?.SetValue(null, true);
+
+        // 1. Setup temp map workspace
+        string tempMapDir = Path.Combine(Path.GetTempPath(), "Realm_CustomProjectile_TestMap");
+        if (Directory.Exists(tempMapDir))
+        {
+            try { Directory.Delete(tempMapDir, true); } catch { }
+        }
+        Directory.CreateDirectory(tempMapDir);
+
+        MapWorkspaceService.SetupWorkspace(tempMapDir, "CustomProjMap");
+
+        // 2. Prepare Asset folders and copy assets
+        string projectilesDir = Path.Combine(tempMapDir, "Assets", "models", "projectiles");
+        string ribbonsDir = Path.Combine(tempMapDir, "Assets", "textures", "ribbons");
+        Directory.CreateDirectory(projectilesDir);
+        Directory.CreateDirectory(ribbonsDir);
+
+        string srcGlb = FindAssetInWorkspace("spiked_orb_projectile.glb");
+        string srcRibbon = FindAssetInWorkspace("void_whisper_shadow_veil.png");
+
+        Assertions.AssertThat(File.Exists(srcGlb)).IsTrue();
+        Assertions.AssertThat(File.Exists(srcRibbon)).IsTrue();
+
+        File.Copy(srcGlb, Path.Combine(projectilesDir, "spiked_orb_projectile.glb"), true);
+        File.Copy(srcRibbon, Path.Combine(ribbonsDir, "void_whisper_shadow_veil.png"), true);
+
+        // 3. Write metadata.json with custom weapon (Layer 1: spiked orb model, Layer 2: fireball preset, Layer 3: void_whisper ribbon)
+        // and 2 custom units (Ranged Caster vs Target Dummy)
+        string metadataJson = @"
+{
+  ""MapProperties"": {
+    ""MapName"": ""CustomProjMap"",
+    ""Author"": ""TestAuthor"",
+    ""Description"": ""Custom Projectile 3-Layer Test""
+  },
+  ""CustomWeapons"": [
+    {
+      ""WeaponId"": ""spiked_fireball_weapon"",
+      ""Name"": ""Spiked Fireball Launcher"",
+      ""Damage"": 30.0,
+      ""Range"": 20.0,
+      ""AttackCooldown"": 0.8,
+      ""ProjectileSpeed"": 16.0,
+      ""ProjectileModelPath"": ""Assets/models/projectiles/spiked_orb_projectile.glb"",
+      ""ArcHeight"": 3.5,
+      ""HomingWeight"": 0.25,
+      ""TumbleAngularVelocity"": { ""X"": 4.0, ""Y"": 3.0, ""Z"": 1.5 },
+      ""ShaderEffectType"": ""fire"",
+      ""BaseColor"": ""#261e19"",
+      ""EmissionColor"": ""#ff5500"",
+      ""EmissionEnergy"": 5.0,
+      ""FresnelPower"": 2.5,
+      ""FresnelColor"": ""#ff9922"",
+      ""FresnelFactor"": 2.0,
+      ""NoiseScale"": 3.5,
+      ""UvScrollSpeed1"": { ""X"": 0.4, ""Y"": 0.2 },
+      ""UvScrollSpeed2"": { ""X"": -0.3, ""Y"": 0.4 },
+      ""ThresholdCutoff"": 0.45,
+      ""ThresholdSmoothness"": 0.1,
+      ""RibbonTexture"": ""Assets/textures/ribbons/void_whisper_shadow_veil.png"",
+      ""RibbonColor"": ""#ff7711"",
+      ""RibbonWidth"": 0.45,
+      ""RibbonLifetime"": 0.6,
+      ""RibbonTaper"": true,
+      ""RibbonAdditive"": true
+    }
+  ],
+  ""CustomUnits"": [
+    {
+      ""UnitId"": ""fire_orb_mage"",
+      ""Name"": ""Fire Orb Mage"",
+      ""MaxHp"": 250.0,
+      ""Damage"": 30.0,
+      ""Range"": 20.0,
+      ""AttackCooldown"": 0.8,
+      ""Speed"": 6.0,
+      ""ScanRadius"": 30.0,
+      ""ModelPath"": ""Assets/models/units/soldier.glb"",
+      ""Weapons"": [""spiked_fireball_weapon""]
+    },
+    {
+      ""UnitId"": ""enemy_training_dummy"",
+      ""Name"": ""Enemy Training Dummy"",
+      ""MaxHp"": 600.0,
+      ""Damage"": 0.0,
+      ""Range"": 0.0,
+      ""Speed"": 0.0,
+      ""ScanRadius"": 0.0,
+      ""ModelPath"": ""Assets/models/units/worker.glb""
+    }
+  ],
+  ""Assets"": {
+    ""glb"": {
+      ""projectiles"": {
+        ""spiked_orb_projectile.glb"": ""local_hash""
+      }
+    },
+    ""ribbon_textures"": {
+      ""void_whisper_shadow_veil.png"": ""local_hash""
+    }
+  }
+}";
+        File.WriteAllText(Path.Combine(tempMapDir, "metadata.json"), metadataJson);
+
+        // 4. Write MapScript.cs that spawns the 2 enemy units
+        string mapScript = @"
+namespace Realm.Maps;
+
+using Realm.MapAPI;
+using System.Numerics;
+
+public class CustomProjMap : IWasmModule
+{
+    public void Initialize(IGameAPI api)
+    {
+        // Unit 1: Ranged attacker (Player, isEnemy = false)
+        var caster = api.SpawnUnit(""fire_orb_mage"", new Vector3(-8f, 0f, 0f), false);
+        // Unit 2: Enemy target dummy (Enemy, isEnemy = true)
+        var dummy = api.SpawnUnit(""enemy_training_dummy"", new Vector3(8f, 0f, 0f), true);
+        api.BroadcastMessage(""units_spawned"");
+    }
+
+    public void Update(IGameAPI api, float delta)
+    {
+    }
+}";
+        File.WriteAllText(Path.Combine(tempMapDir, "MapScript.cs"), mapScript);
+
+        // 5. Compile to WASM using wasi-sdk
+        var compileProcess = new System.Diagnostics.Process();
+        string resolvedWasiSdk = WasiSdkResolver.ResolveWasiSdkPath();
+        compileProcess.StartInfo.FileName = "dotnet";
+        compileProcess.StartInfo.Arguments = $"publish \"CustomProjMap.csproj\" -c Release -r wasi-wasm -p:WASI_SDK_PATH=\"{resolvedWasiSdk}\"";
+        compileProcess.StartInfo.EnvironmentVariables["WASI_SDK_PATH"] = resolvedWasiSdk;
+        compileProcess.StartInfo.WorkingDirectory = tempMapDir;
+        compileProcess.StartInfo.CreateNoWindow = true;
+        compileProcess.StartInfo.UseShellExecute = false;
+        compileProcess.Start();
+        compileProcess.WaitForExit();
+        if (compileProcess.ExitCode != 0)
+        {
+            throw new System.Exception($"Wasm compilation failed (exit code {compileProcess.ExitCode})");
+        }
+
+        string wasmPath = Directory.GetFiles(Path.Combine(tempMapDir, "bin"), "*.wasm", SearchOption.AllDirectories).OrderByDescending(f => File.GetLastWriteTimeUtc(f)).FirstOrDefault();
+        Assertions.AssertThat(!string.IsNullOrEmpty(wasmPath) && File.Exists(wasmPath)).IsTrue();
+
+        // 6. Configure LobbyManager & GameHost to launch game with custom map
+        LobbyManager.Instance.IsSinglePlayer = true;
+        PropertyInfo isHostProp = typeof(LobbyManager).GetProperty("IsHost", BindingFlags.Public | BindingFlags.Instance);
+        isHostProp?.SetValue(LobbyManager.Instance, true);
+        LobbyManager.Instance.IsGameStarted = true;
+        LobbyManager.Instance.ActiveMapName = tempMapDir;
+        GameHost.PendingMapScriptPath = wasmPath;
+
+        LobbyManager.Instance.PlayerList.Clear();
+        LobbyManager.PlayerInfo playerInfo = new LobbyManager.PlayerInfo
+        {
+            PeerId = 1,
+            Slot = 0,
+            Name = LobbyManager.Instance.AuthenticatedUsername,
+            Faction = "HUMAN",
+            Team = "Team 1",
+            Color = new global::Godot.Color(0.2f, 0.6f, 1.0f),
+            IsHost = true,
+            BinaryVersion = RealmVersion.GameBinaryVersion
+        };
+        PropertyInfo localPlayerProp = typeof(LobbyManager).GetProperty("LocalPlayer", BindingFlags.Public | BindingFlags.Instance);
+        localPlayerProp?.SetValue(LobbyManager.Instance, playerInfo);
+        LobbyManager.Instance.PlayerList.Add(playerInfo);
+
+        // 7. Launch Main.tscn Scene Runner
+        ISceneRunner runner = ISceneRunner.Load("res://Main.tscn");
+        await runner.AwaitMillis(1500);
+
+        GameHost gameHost = GameHost.Instance;
+        Assertions.AssertThat(gameHost).IsNotNull();
+
+        var sw = new StringWriter();
+        sw.WriteLine("=== CUSTOM WEAPON PROJECTILE DIAGNOSTICS ===");
+        sw.WriteLine($"UnitRegistry Count: {GameHost.UnitRegistry.Count}");
+        sw.WriteLine($"WeaponRegistry Count: {GameHost.WeaponRegistry.Count}");
+        sw.WriteLine($"Has fire_orb_mage in UnitRegistry: {GameHost.UnitRegistry.ContainsKey("fire_orb_mage")}");
+        sw.WriteLine($"Has spiked_fireball_weapon in WeaponRegistry: {GameHost.WeaponRegistry.ContainsKey("spiked_fireball_weapon")}");
+
+        Assertions.AssertThat(GameHost.UnitRegistry.ContainsKey("fire_orb_mage")).IsTrue();
+        Assertions.AssertThat(GameHost.WeaponRegistry.ContainsKey("spiked_fireball_weapon")).IsTrue();
+
+        var registeredWeapon = GameHost.WeaponRegistry["spiked_fireball_weapon"];
+        sw.WriteLine($"Weapon Name: {registeredWeapon.Name}");
+        sw.WriteLine($"Weapon ProjectileModelPath: {registeredWeapon.ProjectileModelPath}");
+        sw.WriteLine($"Weapon ShaderEffectType: {registeredWeapon.ShaderEffectType}");
+        sw.WriteLine($"Weapon EmissionColor: {registeredWeapon.EmissionColor}");
+        sw.WriteLine($"Weapon RibbonTexture: {registeredWeapon.RibbonTexture}");
+
+        // Wait for combat ticks and projectile to spawn
+        bool projectileObserved = false;
+        VisualProjectile3D activeProjectile = null;
+
+        for (int frame = 0; frame < 30; frame++)
+        {
+            await runner.AwaitMillis(100);
+
+            var pool = VisualProjectilePool.Instance;
+            foreach (var proj in pool.AllProjectiles)
+            {
+                if (proj != null && proj.IsActive)
+                {
+                    projectileObserved = true;
+                    activeProjectile = proj;
+                    break;
+                }
+            }
+
+            if (projectileObserved) break;
+        }
+
+        sw.WriteLine($"Projectile Observed during combat: {projectileObserved}");
+        Assertions.AssertThat(projectileObserved).IsTrue();
+        Assertions.AssertThat(activeProjectile).IsNotNull();
+
+        if (activeProjectile != null)
+        {
+            // LAYER 1 DIAGNOSTICS: Mesh Container & Model
+            sw.WriteLine("--- LAYER 1: 3D MODEL & MESH CONTAINER ---");
+            sw.WriteLine($"MeshContainer visible: {activeProjectile.MeshContainer?.Visible}");
+            sw.WriteLine($"CustomModelInstance null: {activeProjectile.CustomModelInstance == null}");
+            if (activeProjectile.CustomModelInstance != null)
+            {
+                sw.WriteLine($"CustomModelInstance Name: {activeProjectile.CustomModelInstance.Name}");
+                sw.WriteLine($"CustomModelInstance Child Count: {activeProjectile.CustomModelInstance.GetChildCount()}");
+            }
+            sw.WriteLine($"FallbackMeshInstance visible: {activeProjectile.FallbackMeshInstance?.Visible}");
+            sw.WriteLine($"Projectile Position: {activeProjectile.GlobalPosition}");
+            sw.WriteLine($"IsFlying: {activeProjectile.IsFlying}");
+            sw.WriteLine($"ElapsedFlightTime: {activeProjectile.ElapsedFlightTime:F2} / {activeProjectile.TotalFlightDuration:F2}");
+
+            // LAYER 2 DIAGNOSTICS: Custom Uber Shader & Parameters
+            sw.WriteLine("--- LAYER 2: UBER-SHADER MATERIAL ---");
+            var shaderMat = activeProjectile.UberShaderMaterial;
+            sw.WriteLine($"UberShaderMaterial null: {shaderMat == null}");
+            if (shaderMat != null)
+            {
+                sw.WriteLine($"Shader Attached: {shaderMat.Shader != null}");
+                sw.WriteLine($"base_color: {shaderMat.GetShaderParameter("base_color")}");
+                sw.WriteLine($"emission_color: {shaderMat.GetShaderParameter("emission_color")}");
+                sw.WriteLine($"emission_energy: {shaderMat.GetShaderParameter("emission_energy")}");
+                sw.WriteLine($"fresnel_color: {shaderMat.GetShaderParameter("fresnel_color")}");
+                sw.WriteLine($"fresnel_factor: {shaderMat.GetShaderParameter("fresnel_factor")}");
+                sw.WriteLine($"noise_scale: {shaderMat.GetShaderParameter("noise_scale")}");
+                sw.WriteLine($"threshold_cutoff: {shaderMat.GetShaderParameter("threshold_cutoff")}");
+            }
+
+            // LAYER 3 DIAGNOSTICS: Ribbon Trail Emitter & Material
+            sw.WriteLine("--- LAYER 3: RIBBON TRAIL EMITTER ---");
+            var trail = activeProjectile.TrailEmitter;
+            var ribbonMat = activeProjectile.RibbonMaterial;
+            sw.WriteLine($"TrailEmitter null: {trail == null}");
+            sw.WriteLine($"TrailEmitter Emitting: {trail?.Emitting}");
+            sw.WriteLine($"RibbonMaterial null: {ribbonMat == null}");
+            if (ribbonMat != null)
+            {
+                sw.WriteLine($"Ribbon AlbedoColor: {ribbonMat.AlbedoColor}");
+                sw.WriteLine($"Ribbon Emission: {ribbonMat.Emission}");
+                sw.WriteLine($"Ribbon AlbedoTexture null: {ribbonMat.AlbedoTexture == null}");
+                if (ribbonMat.AlbedoTexture != null)
+                {
+                    sw.WriteLine($"Ribbon AlbedoTexture Size: {ribbonMat.AlbedoTexture.GetWidth()}x{ribbonMat.AlbedoTexture.GetHeight()}");
+                }
+            }
+        }
+
+        string tempScreenshotsDir = Path.Combine(Path.GetTempPath(), "Realm_Projectile_Screenshots");
+        Directory.CreateDirectory(tempScreenshotsDir);
+        string screenshotPath = Path.Combine(tempScreenshotsDir, "custom_projectile_in_flight.png");
+        global::Godot.Image screenshot = runner.Scene().GetViewport().GetTexture().GetImage();
+        screenshot.SavePng(screenshotPath);
+        sw.WriteLine($"Screenshot saved to: {screenshotPath}");
+
+        string diagPath = Path.Combine(tempScreenshotsDir, "projectile_diagnostics.txt");
+        File.WriteAllText(diagPath, sw.ToString());
+        GD.Print(sw.ToString());
+
+        // Assertions verifying Layer 1, 2, and 3
+        Assertions.AssertThat(activeProjectile.MeshContainer).IsNotNull();
+        Assertions.AssertThat(activeProjectile.UberShaderMaterial).IsNotNull();
+        Assertions.AssertThat(activeProjectile.TrailEmitter).IsNotNull();
+        Assertions.AssertThat(activeProjectile.RibbonMaterial).IsNotNull();
+        Assertions.AssertThat(activeProjectile.RibbonMaterial.AlbedoTexture).IsNotNull();
+    }
+
+    private static string FindAssetInWorkspace(string filename)
+    {
+        string[] candidates = new[]
+        {
+            Path.GetFullPath(filename),
+            Path.GetFullPath(Path.Combine("..", filename)),
+            Path.GetFullPath(Path.Combine("..", "..", filename)),
+            Path.GetFullPath(Path.Combine("Realm.Godot", filename)),
+            Path.GetFullPath(Path.Combine("Assets", filename))
+        };
+        foreach (var c in candidates)
+        {
+            if (File.Exists(c)) return c;
+        }
+        return filename;
     }
 }

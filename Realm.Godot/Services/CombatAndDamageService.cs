@@ -159,6 +159,8 @@ internal class CombatAndDamageService
 	private readonly List<(Entity Target, Entity Attacker)> _aoeLastAttackerList = new();
 
 	public Action<System.Numerics.Vector3, System.Numerics.Vector3>? OnArrowProjectileRequested;
+	public Action<System.Numerics.Vector3, System.Numerics.Vector3, string?, Entity>? OnWeaponProjectileRequested;
+	public Func<string, string[]?>? UnitWeaponsProvider;
 	public Action<Entity>? OnDamageFlashRequested;
 	public Action<System.Numerics.Vector3, System.Numerics.Vector3>? OnHealEffectRequested;
 	public Action<Entity>? OnHealFlashRequested;
@@ -672,7 +674,17 @@ internal class CombatAndDamageService
 
 				if (atk.Range > 3f)
 				{
-					OnArrowProjectileRequested?.Invoke(currentPos, targetPos);
+					string? weaponId = null;
+					if (EcsWorld.Has<DefinitionId>(entity))
+					{
+						var defId = EcsWorld.Get<DefinitionId>(entity).Value;
+						var weapons = UnitWeaponsProvider?.Invoke(defId);
+						if (weapons != null && weapons.Length > 0)
+						{
+							weaponId = weapons[0];
+						}
+					}
+					OnWeaponProjectileRequested?.Invoke(currentPos, targetPos, weaponId, target.Target);
 				}
 
 				if (newHp <= 0)

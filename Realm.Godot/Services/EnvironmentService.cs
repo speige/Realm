@@ -75,7 +75,7 @@ public class EnvironmentService
 		}
 
 		float baseFogDensity = GetBaseFogDensity();
-		if (GameSettings.QualityIdx > GraphicsQuality.Low && baseFogDensity > 0f && camera3D != null && GodotObject.IsInstanceValid(camera3D))
+		if (baseFogDensity > 0f && camera3D != null && GodotObject.IsInstanceValid(camera3D))
 		{
 			worldEnv.Environment.FogEnabled = true;
 			float height = camera3D.GlobalPosition.Y;
@@ -117,23 +117,23 @@ public class EnvironmentService
 	// --- Core Day-Night Keyframe Preset Arrays (0=Noon/Day, 1=Dusk, 2=Midnight/Night, 3=Dawn) ---
 
 	// Directional Sun Angles & Energies (Key light: creates directional contrast, normal maps & shadows)
-	public static readonly float[] SunPitches       = { -55.0f, -35.0f, -48.0f, -34.0f };
-	public static readonly float[] SunYaws          = {  27.0f,-106.0f, 180.0f,  74.0f };
-	public static readonly float[] SunEnergies      = {   2.10f,  2.20f,   0.75f,  2.10f };
+	public static readonly float[] SunPitches       = { -58.0f, -45.0f, -50.0f, -45.0f };
+	public static readonly float[] SunYaws          = {  29.0f,-115.0f, 155.0f,  95.0f };
+	public static readonly float[] SunEnergies      = {   2.50f,  1.50f,   0.50f,  2.70f };
 	public static readonly Color[] SunColors        = {
-		new Color(1.000f, 0.970f, 0.920f), // Day (Midday Warm Sunlight)
-		new Color(1.000f, 0.600f, 0.240f), // Dusk (Golden Amber Sun)
-		new Color(0.500f, 0.720f, 1.000f), // Night (Subtle Cool Moonlight)
-		new Color(1.000f, 0.840f, 0.650f)  // Dawn (Soft Sunrise Gold)
+		new Color(1.000f, 0.980f, 0.940f), // Day (Midday Warm Sunlight)
+		new Color(1.000f, 0.700f, 0.380f), // Dusk (Golden Amber Sun)
+		new Color(0.700f, 0.880f, 1.000f), // Night (Subtle Cool Moonlight)
+		new Color(1.000f, 0.880f, 0.720f)  // Dawn (Soft Sunrise Gold)
 	};
 
 	// Universal Ambient Fill (Soft sky/indirect light fill)
-	public static readonly float[] AmbientEnergies  = {   0.95f,  1.10f,   1.25f,  1.05f };
+	public static readonly float[] AmbientEnergies  = {   0.80f,  0.80f,   0.95f,  0.90f };
 	public static readonly Color[] AmbientColors    = {
-		new Color(0.520f, 0.620f, 0.780f), // Day (#849EC6)
-		new Color(0.490f, 0.520f, 0.750f), // Dusk (#7C84BF)
-		new Color(0.340f, 0.460f, 0.700f), // Night (#5675B2)
-		new Color(0.500f, 0.580f, 0.780f)  // Dawn (#7F93C6)
+		new Color(0.480f, 0.580f, 0.740f), // Day (#7A93BC)
+		new Color(0.420f, 0.460f, 0.720f), // Dusk (#6B75B7)
+		new Color(0.280f, 0.420f, 0.850f), // Night (#476BD8)
+		new Color(0.580f, 0.540f, 0.840f)  // Dawn (#9389D6)
 	};
 
 	public static readonly float[] FogDensities     = { 0.0080f, 0.0120f, 0.0150f, 0.0120f };
@@ -144,15 +144,15 @@ public class EnvironmentService
 		new Color(0.400f, 0.450f, 0.550f)
 	};
 
-	public static readonly float[] SsaoIntensities  = {   0.90f,  0.70f,   0.50f,  0.60f };
-	public static readonly float[] SsaoRadii        = {   1.50f,  1.50f,   1.50f,  1.50f };
+	public static readonly float[] SsaoIntensities  = {   0.40f,  0.30f,   0.20f,  0.30f };
+	public static readonly float[] SsaoRadii        = {   1.20f,  1.20f,   1.00f,  1.10f };
 
-	public static readonly float[] Exposures        = {   1.10f,  1.12f,   1.06f,  1.10f };
-	public static readonly float[] Contrasts        = {   1.08f,  1.06f,   1.00f,  1.04f };
-	public static readonly float[] Saturations      = {   1.04f,  1.04f,   0.92f,  1.00f };
+	public static readonly float[] Exposures        = {   1.18f,  1.14f,   1.14f,  1.18f };
+	public static readonly float[] Contrasts        = {   1.02f,  1.02f,   1.00f,  1.02f };
+	public static readonly float[] Saturations      = {   1.06f,  0.98f,   1.06f,  1.04f };
 
-	public static readonly float[] GlowIntensities  = {   0.20f,  0.25f,   0.30f,  0.20f };
-	public static readonly float[] GlowBlooms       = {   0.08f,  0.06f,   0.06f,  0.08f };
+	public static readonly float[] GlowIntensities  = {   0.15f,  0.30f,   0.25f,  0.20f };
+	public static readonly float[] GlowBlooms       = {   0.14f,  0.14f,   0.08f,  0.10f };
 
 	public void UpdateDayNightVisuals(Node3D host, float progress)
 	{
@@ -180,26 +180,26 @@ public class EnvironmentService
 		env.AmbientLightColor = AmbientColors[phaseIndex].Lerp(AmbientColors[nextIndex], t);
 		env.AmbientLightEnergy = Mathf.Lerp(AmbientEnergies[phaseIndex], AmbientEnergies[nextIndex], t);
 
-		GameSettings.ApplyEnvironmentQuality(env);
+		GameSettings.ApplyEnvironmentQuality(env, GameSettings.QualityIdx);
 
 		if (GameSettings.QualityIdx > GraphicsQuality.Low)
 		{
-			env.TonemapExposure = Mathf.Lerp(Exposures[phaseIndex], Exposures[nextIndex], t);
-			env.AdjustmentContrast = Mathf.Lerp(Contrasts[phaseIndex], Contrasts[nextIndex], t);
-			env.AdjustmentSaturation = Mathf.Lerp(Saturations[phaseIndex], Saturations[nextIndex], t);
-
 			env.SsaoRadius = Mathf.Lerp(SsaoRadii[phaseIndex], SsaoRadii[nextIndex], t);
 			env.SsaoIntensity = Mathf.Lerp(SsaoIntensities[phaseIndex], SsaoIntensities[nextIndex], t);
 			env.SsaoDetail = 0.5f;
-
-			env.FogLightColor = FogColors[phaseIndex].Lerp(FogColors[nextIndex], t);
-			env.FogDensity = Mathf.Lerp(FogDensities[phaseIndex], FogDensities[nextIndex], t);
 
 			env.GlowIntensity = Mathf.Lerp(GlowIntensities[phaseIndex], GlowIntensities[nextIndex], t);
 			env.GlowStrength = 0.90f;
 			env.GlowBloom = Mathf.Lerp(GlowBlooms[phaseIndex], GlowBlooms[nextIndex], t);
 			env.GlowBlendMode = Godot.Environment.GlowBlendModeEnum.Additive;
 		}
+
+		env.TonemapExposure = Mathf.Lerp(Exposures[phaseIndex], Exposures[nextIndex], t);
+		env.AdjustmentContrast = Mathf.Lerp(Contrasts[phaseIndex], Contrasts[nextIndex], t);
+		env.AdjustmentSaturation = Mathf.Lerp(Saturations[phaseIndex], Saturations[nextIndex], t);
+
+		env.FogLightColor = FogColors[phaseIndex].Lerp(FogColors[nextIndex], t);
+		env.FogDensity = Mathf.Lerp(FogDensities[phaseIndex], FogDensities[nextIndex], t);
 
 		// --- 3. Primary Directional Accent Light ---
 		Color interpSunColor = SunColors[phaseIndex].Lerp(SunColors[nextIndex], t);
@@ -213,17 +213,15 @@ public class EnvironmentService
 
 		if (sun != null)
 		{
-			GameSettings.ApplyDirectionalLightQuality(sun);
-			sun.DirectionalShadowMaxDistance = 200.0f;
 			sun.DirectionalShadowBlendSplits = true;
 			sun.DirectionalShadowFadeStart = 0.8f;
 			sun.ShadowBias = 0.03f;
 			sun.ShadowNormalBias = 1.2f;
-			sun.ShadowEnabled = !GameSettings.DisableShadows && interpSunEnergy > 0.05f;
 			sun.LightColor = interpSunColor;
 			sun.LightEnergy = interpSunEnergy;
 			sun.LightSpecular = 0.5f;
 			sun.RotationDegrees = new Vector3(interpSunPitch, interpSunYaw, 0f);
+			GameSettings.ApplyDirectionalLightQuality(sun, GameSettings.QualityIdx);
 		}
 
 		// --- 5. Character Fill Light ---

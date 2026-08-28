@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using Realm.Shared;
 
 public partial class MainMenu : Control
 {
@@ -136,6 +137,32 @@ public partial class MainMenu : Control
 
 		PopulateRunicPillar(GetNode<VBoxContainer>("LeftPillar/RuneContainer"));
 		PopulateRunicPillar(GetNode<VBoxContainer>("RightPillar/RuneContainer"));
+
+		if (!PathUtils.IsDevelopmentBuild)
+		{
+			if (_playButton != null) _playButton.Visible = false;
+			if (_singlePlayerButton != null) _singlePlayerButton.Visible = false;
+			if (_mapDiscoveryButton != null) _mapDiscoveryButton.Visible = false;
+			if (_creatorDiscoveryButton != null) _creatorDiscoveryButton.Visible = false;
+			if (_replaysButton != null) _replaysButton.Visible = false;
+			if (_profileButton != null) _profileButton.Visible = false;
+			if (_seedNodeButton != null) _seedNodeButton.Visible = false;
+		}
+	}
+
+	private void ToggleSocialPopover()
+	{
+		if (_socialPopover == null || _socialPopoverOverlay == null) return;
+		bool isVisible = !_socialPopover.Visible;
+		_socialPopover.Visible = isVisible;
+		_socialPopoverOverlay.Visible = isVisible;
+	}
+
+	private void HideSocialPopover()
+	{
+		if (_socialPopover != null) _socialPopover.Visible = false;
+		if (_socialPopoverOverlay != null) _socialPopoverOverlay.Visible = false;
+	}
 	}
 
 	private void SetupButton(Button button, string text, Action onClick)
@@ -347,7 +374,7 @@ public partial class MainMenu : Control
 					string latestTag = tagProp.GetString() ?? "";
 					if (latestTag.StartsWith("v")) latestTag = latestTag.Substring(1);
 					
-					if (latestTag != LobbyManager.GameBinaryVersion)
+					if (latestTag != RealmVersion.GameBinaryVersion)
 					{
 						_outdatedLabel.Visible = true;
 					}
@@ -363,7 +390,7 @@ public partial class MainMenu : Control
 	private void PopulateVersionDropdown()
 	{
 		_versionDropdown.Clear();
-		_versionDropdown.AddItem(LobbyManager.GameBinaryVersion);
+		_versionDropdown.AddItem(RealmVersion.GameBinaryVersion);
 		_versionDropdown.SetItemMetadata(0, "current");
 
 		if (!OS.HasFeature("editor"))
@@ -376,7 +403,7 @@ public partial class MainMenu : Control
 				foreach (var dir in dirs)
 				{
 					string ver = System.IO.Path.GetFileName(dir);
-					if (ver != LobbyManager.GameBinaryVersion)
+					if (ver != RealmVersion.GameBinaryVersion)
 					{
 						_versionDropdown.AddItem(ver);
 						_versionDropdown.SetItemMetadata(_versionDropdown.ItemCount - 1, ver);

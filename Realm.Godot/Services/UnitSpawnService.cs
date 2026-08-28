@@ -43,7 +43,7 @@ internal class UnitSpawnService
 		string cand = System.IO.Path.Combine(wsPath, "Assets", "models", primarySub, filename);
 		if (System.IO.File.Exists(cand)) return cand;
 
-		string[] subDirs = new[] { "units", "buildings", "resources", "props" };
+		string[] subDirs = new[] { "units", "buildings", "resources", "props", "projectiles" };
 		foreach (var sub in subDirs)
 		{
 			cand = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);

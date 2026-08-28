@@ -180,11 +180,14 @@
           "ArmorType": { "type": "string", "enum": ["light", "heavy", "building"] },
           "GoldBounty": { "type": "number", "minimum": 0 },
           "ModelPath": { "type": "string" },
+          "Scale": { "type": "number", "minimum": 0 },
           "YOffset": { "type": "number" },
           "CollisionCircle": { "type": "number", "minimum": 0 },
           "Brightness": { "type": "number", "minimum": 0 },
           "Tint": { "type": "string" },
+          "NormalMode": { "type": "string", "enum": ["Original", "Smooth", "Flat"] },
           "RecalculateNormals": { "type": "boolean" },
+          "NormalizeLuminance": { "type": "boolean" },
           "IgnorePlayerColor": { "type": "boolean" },
           "MaxCapacity": { "type": "number", "minimum": 0 },
           "HarvestRate": { "type": "number", "minimum": 0 },
@@ -348,7 +351,101 @@
           "AttackSound": { "type": "string" },
           "ProjectileModelPath": { "type": "string" },
           "ImpactVisualEffect": { "type": "string" },
-          "ImpactSound": { "type": "string" }
+          "ImpactSound": { "type": "string" },
+          "ArcHeight": { "type": "number" },
+          "HomingWeight": { "type": "number", "minimum": 0, "maximum": 1 },
+          "EaseCurve": { "type": "string", "enum": ["linear", "ease_in", "ease_out", "ease_in_out"] },
+          "TumbleAngularVelocity": {
+            "type": "object",
+            "properties": {
+              "X": { "type": "number" },
+              "Y": { "type": "number" },
+              "Z": { "type": "number" }
+            }
+          },
+          "OrientToTrajectory": { "type": "boolean" },
+          "SpiralRadius": { "type": "number" },
+          "SpiralFrequency": { "type": "number" },
+          "ZigzagAmplitude": { "type": "number" },
+          "ZigzagFrequency": { "type": "number" },
+          "MaxBounces": { "type": "integer", "minimum": 0 },
+          "PierceCount": { "type": "integer", "minimum": 0 },
+          "TurnRateLimit": { "type": "number", "minimum": 0 },
+          "SpeedCurve": { "type": "string", "enum": ["constant", "ease_in", "ease_out", "ease_in_out", "rocket_boost", "burst", "accelerate", "decelerate"] },
+          "Acceleration": { "type": "number" },
+          "MaxLifetime": { "type": "number", "minimum": 0 },
+          "FailsafeRange": { "type": "number", "minimum": 0 },
+          "ScaleCurve": { "type": "string", "enum": ["constant", "grow", "shrink", "grow_shrink", "squash_stretch", "impact_shrink"] },
+          "ForwardAxisPreset": { "type": "string", "enum": ["-Z", "+Z", "+X", "-X", "+Y", "-Y"] },
+          "MeshRotationOffset": {
+            "type": "object",
+            "properties": {
+              "X": { "type": "number" },
+              "Y": { "type": "number" },
+              "Z": { "type": "number" }
+            }
+          },
+          "MeshTranslationOffset": {
+            "type": "object",
+            "properties": {
+              "X": { "type": "number" },
+              "Y": { "type": "number" },
+              "Z": { "type": "number" }
+            }
+          },
+          "MeshScaleOffset": {
+            "type": "object",
+            "properties": {
+              "X": { "type": "number" },
+              "Y": { "type": "number" },
+              "Z": { "type": "number" }
+            }
+          },
+          "ShaderEffectType": { "type": "string" },
+          "EmissionMaskSource": { "type": "string", "enum": ["noise", "vertex_color", "fresnel", "texture_alpha"] },
+          "BaseColor": { "type": "string" },
+          "EmissionColor": { "type": "string" },
+          "EmissionEnergy": { "type": "number" },
+          "FresnelPower": { "type": "number" },
+          "FresnelColor": { "type": "string" },
+          "FresnelFactor": { "type": "number" },
+          "NoiseScale": { "type": "number" },
+          "NoiseTexture": { "type": "string" },
+          "UvScrollSpeed1": {
+            "type": "object",
+            "properties": {
+              "X": { "type": "number" },
+              "Y": { "type": "number" }
+            }
+          },
+          "UvScrollSpeed2": {
+            "type": "object",
+            "properties": {
+              "X": { "type": "number" },
+              "Y": { "type": "number" }
+            }
+          },
+          "ThresholdCutoff": { "type": "number" },
+          "ThresholdSmoothness": { "type": "number" },
+          "PointLightEnabled": { "type": "boolean" },
+          "PointLightColor": { "type": "string" },
+          "PointLightIntensity": { "type": "number", "minimum": 0 },
+          "PointLightRange": { "type": "number", "minimum": 0 },
+          "RibbonTexture": { "type": "string" },
+          "RibbonColor": { "type": "string" },
+          "RibbonWidth": { "type": "number" },
+          "RibbonLifetime": { "type": "number" },
+          "RibbonTaper": { "type": "boolean" },
+          "RibbonAdditive": { "type": "boolean" },
+          "RibbonScrollSpeed": { "type": "number" },
+          "TrailOffset": {
+            "type": "object",
+            "properties": {
+              "X": { "type": "number" },
+              "Y": { "type": "number" },
+              "Z": { "type": "number" }
+            }
+          }
         }
       }
     },
@@ -360,7 +457,7 @@
     "ModelObstacleRadii": { "type": "object" },
     "ModelBrightness": { "type": "object" },
     "ModelColorTint": { "type": "object" },
-    "ModelGenerateNormals": { "type": "object" },
+    "ModelNormalModes": { "type": "object" },
     "ModelIgnorePlayerColor": { "type": "object" }
   }
 }

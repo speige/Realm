@@ -16,12 +16,14 @@ using Realm.Godot.Utils;
 public partial class GameHost
 {
 	public readonly Dictionary<string, float> ModelYOffsets = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, float> ModelScales = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, float> ModelCollisionCircleRatios = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, float> ModelObstacleRadii = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, float> ModelBrightness = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, Color> ModelColorTint = new(StringComparer.OrdinalIgnoreCase);
-	public readonly Dictionary<string, bool> ModelGenerateNormals = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, ModelNormalMode> ModelNormalModes = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, bool> ModelIgnorePlayerColor = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, bool> ModelNormalizeLuminance = new(StringComparer.OrdinalIgnoreCase);
 	private bool _modelYOffsetSavePending = false;
 	private bool _modelCollisionCircleSavePending = false;
 
@@ -201,6 +203,98 @@ public partial class GameHost
 		EditorHasUnsavedChanges = true;
 	}
 
+	public float GetModelScale(object objOrId)
+	{
+		if (objOrId == null) return 1.0f;
+		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
+		string normPrimary = NormalizeModelAssetKey(primaryKey);
+		if (!string.IsNullOrEmpty(normPrimary) && ModelScales.TryGetValue(normPrimary, out float val1) && val1 > 0f)
+			return val1;
+
+		string assetKey = GetModelAssetKey(objOrId);
+		string normAsset = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(normAsset) && ModelScales.TryGetValue(normAsset, out float val2) && val2 > 0f)
+			return val2;
+
+		if (!string.IsNullOrEmpty(primaryKey))
+		{
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.Scale > 0f) return meta.Scale;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.Scale > 0f) return resMeta.Scale;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.Scale > 0f) return propMeta.Scale;
+		}
+
+		if (!string.IsNullOrEmpty(normAsset))
+		{
+			if (UnitRegistry.TryGetValue(normAsset, out var meta2) && meta2.Scale > 0f) return meta2.Scale;
+			if (ResourceRegistry.TryGetValue(normAsset, out var resMeta2) && resMeta2.Scale > 0f) return resMeta2.Scale;
+			if (PropRegistry.TryGetValue(normAsset, out var propMeta2) && propMeta2.Scale > 0f) return propMeta2.Scale;
+		}
+
+		if (objOrId is Unit3D unit && GodotObject.IsInstanceValid(unit))
+		{
+			if (unit.IsResource) return 2.75f;
+			if (unit.IsBuilding) return 1.5f;
+			return 1.0f;
+		}
+
+		if (!string.IsNullOrEmpty(primaryKey))
+		{
+			if (ResourceRegistry.ContainsKey(primaryKey)) return 2.75f;
+			if (UnitRegistry.TryGetValue(primaryKey, out var u)) return u.Speed == 0f ? 1.5f : 1.0f;
+			if (PropRegistry.ContainsKey(primaryKey)) return 1.25f;
+		}
+
+		if (!string.IsNullOrEmpty(normAsset))
+		{
+			if (ResourceRegistry.ContainsKey(normAsset)) return 2.75f;
+			if (UnitRegistry.TryGetValue(normAsset, out var u)) return u.Speed == 0f ? 1.5f : 1.0f;
+			if (PropRegistry.ContainsKey(normAsset)) return 1.25f;
+		}
+
+		return 1.0f;
+	}
+
+	public void SetModelScale(string assetKey, float scale)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (string.IsNullOrEmpty(norm)) return;
+
+		float clampedScale = Mathf.Clamp(scale, 0.05f, 20.0f);
+		ModelScales[norm] = clampedScale;
+
+		foreach (var prop in AllProps)
+		{
+			if (GodotObject.IsInstanceValid(prop) && MatchesEntityOrAssetKey(prop, norm))
+			{
+				prop.UpdateVisualScale(clampedScale);
+			}
+		}
+		PropMultiMeshManager.Instance?.MarkDirty(norm);
+
+		foreach (var unit in AllUnits)
+		{
+			if (GodotObject.IsInstanceValid(unit) && MatchesEntityOrAssetKey(unit, norm))
+			{
+				unit.UpdateModelScale(clampedScale);
+			}
+		}
+
+		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode) && MatchesEntityOrAssetKey(_editorPreviewNode, norm))
+		{
+			if (_editorPreviewNode is Prop3D previewProp)
+			{
+				previewProp.UpdateVisualScale(clampedScale);
+			}
+			else if (_editorPreviewNode is Unit3D previewUnit)
+			{
+				previewUnit.UpdateModelScale(clampedScale);
+			}
+		}
+
+		_modelYOffsetSavePending = true;
+		EditorHasUnsavedChanges = true;
+	}
+
 	public void FlushModelYOffsetSave()
 	{
 		if (_modelYOffsetSavePending || _modelCollisionCircleSavePending)
@@ -268,12 +362,12 @@ public partial class GameHost
 
 		if (!string.IsNullOrEmpty(primaryKey))
 		{
-			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.Brightness > 0f) return Mathf.Clamp(meta.Brightness, 0.10f, 1.75f);
-			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.Brightness > 0f) return Mathf.Clamp(resMeta.Brightness, 0.10f, 1.75f);
-			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.Brightness > 0f) return Mathf.Clamp(propMeta.Brightness, 0.10f, 1.75f);
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.Brightness > 0f) return Mathf.Clamp(meta.Brightness, 0.10f, 2.0f);
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.Brightness > 0f) return Mathf.Clamp(resMeta.Brightness, 0.10f, 2.0f);
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.Brightness > 0f) return Mathf.Clamp(propMeta.Brightness, 0.10f, 2.0f);
 		}
 
-		return 1.0f;
+		return 0.5f;
 	}
 
 	public void SetModelBrightness(string assetKey, float brightness)
@@ -281,7 +375,7 @@ public partial class GameHost
 		string norm = NormalizeModelAssetKey(assetKey);
 		if (string.IsNullOrEmpty(norm)) return;
 
-		float k = Mathf.Clamp(brightness, 0.10f, 1.75f);
+		float k = Mathf.Clamp(brightness, 0.10f, 2.0f);
 		ModelBrightness[norm] = k;
 		UpdateMaterialOverridesForAsset(norm);
 
@@ -330,39 +424,118 @@ public partial class GameHost
 		EditorHasUnsavedChanges = true;
 	}
 
-	public bool GetModelGenerateNormals(object objOrId)
+	public ModelNormalMode GetModelNormalMode(object objOrId)
+	{
+		if (objOrId == null) return ModelNormalMode.Flat;
+		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
+		string normPrimary = NormalizeModelAssetKey(primaryKey);
+		if (!string.IsNullOrEmpty(normPrimary) && ModelNormalModes.TryGetValue(normPrimary, out var m1))
+			return m1;
+
+		string assetKey = GetModelAssetKey(objOrId);
+		string normAsset = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(normAsset) && ModelNormalModes.TryGetValue(normAsset, out var m2))
+			return m2;
+
+		if (!string.IsNullOrEmpty(primaryKey))
+		{
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta)) return meta.NormalMode;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta)) return resMeta.NormalMode;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.NormalMode;
+		}
+
+		return ModelNormalMode.Flat;
+	}
+
+	public void SetModelNormalMode(string assetKey, ModelNormalMode normalMode)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (string.IsNullOrEmpty(norm)) return;
+
+		ModelNormalModes[norm] = normalMode;
+		UpdateMaterialOverridesForAsset(norm);
+
+		_modelYOffsetSavePending = true;
+		EditorHasUnsavedChanges = true;
+	}
+
+	public bool GetModelNormalizeLuminance(object objOrId)
 	{
 		if (objOrId == null) return true;
 		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
 		string normPrimary = NormalizeModelAssetKey(primaryKey);
-		if (!string.IsNullOrEmpty(normPrimary) && ModelGenerateNormals.TryGetValue(normPrimary, out bool b1))
+		if (!string.IsNullOrEmpty(normPrimary) && ModelNormalizeLuminance.TryGetValue(normPrimary, out bool b1))
 			return b1;
 
 		string assetKey = GetModelAssetKey(objOrId);
 		string normAsset = NormalizeModelAssetKey(assetKey);
-		if (!string.IsNullOrEmpty(normAsset) && ModelGenerateNormals.TryGetValue(normAsset, out bool b2))
+		if (!string.IsNullOrEmpty(normAsset) && ModelNormalizeLuminance.TryGetValue(normAsset, out bool b2))
 			return b2;
 
 		if (!string.IsNullOrEmpty(primaryKey))
 		{
-			if (UnitRegistry.TryGetValue(primaryKey, out var meta)) return meta.RecalculateNormals;
-			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta)) return resMeta.RecalculateNormals;
-			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.RecalculateNormals;
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta)) return meta.NormalizeLuminance;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta)) return resMeta.NormalizeLuminance;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.NormalizeLuminance;
 		}
 
 		return true;
 	}
 
-	public void SetModelGenerateNormals(string assetKey, bool generateNormals)
+	public void SetModelNormalizeLuminance(string assetKey, bool normalizeLuminance)
 	{
 		string norm = NormalizeModelAssetKey(assetKey);
 		if (string.IsNullOrEmpty(norm)) return;
 
-		ModelGenerateNormals[norm] = generateNormals;
+		ModelNormalizeLuminance[norm] = normalizeLuminance;
 		UpdateMaterialOverridesForAsset(norm);
 
 		_modelYOffsetSavePending = true;
 		EditorHasUnsavedChanges = true;
+	}
+
+	public bool IsPropOrResourceKey(string key)
+	{
+		if (string.IsNullOrEmpty(key)) return false;
+		string norm = NormalizeModelAssetKey(key);
+
+		if (PropRegistry.ContainsKey(key) || PropRegistry.ContainsKey(norm)) return true;
+		if (ResourceRegistry.ContainsKey(key) || ResourceRegistry.ContainsKey(norm)) return true;
+
+		foreach (var propMeta in PropRegistry.Values)
+		{
+			if (!string.IsNullOrEmpty(propMeta.ModelPath) && NormalizeModelAssetKey(propMeta.ModelPath) == norm)
+				return true;
+			if (!string.IsNullOrEmpty(propMeta.UnitId) && NormalizeModelAssetKey(propMeta.UnitId) == norm)
+				return true;
+		}
+
+		foreach (var resMeta in ResourceRegistry.Values)
+		{
+			if (!string.IsNullOrEmpty(resMeta.ModelPath) && NormalizeModelAssetKey(resMeta.ModelPath) == norm)
+				return true;
+			if (!string.IsNullOrEmpty(resMeta.UnitId) && NormalizeModelAssetKey(resMeta.UnitId) == norm)
+				return true;
+		}
+
+		if (key.Contains("/props/", StringComparison.OrdinalIgnoreCase) || key.Contains("\\props\\", StringComparison.OrdinalIgnoreCase) || key.StartsWith("props/", StringComparison.OrdinalIgnoreCase)) return true;
+		if (key.Contains("/resources/", StringComparison.OrdinalIgnoreCase) || key.Contains("\\resources\\", StringComparison.OrdinalIgnoreCase) || key.StartsWith("resources/", StringComparison.OrdinalIgnoreCase)) return true;
+
+		string resolved = ModelCache.ResolveModelPath(key);
+		if (!string.IsNullOrEmpty(resolved))
+		{
+			if (resolved.Contains("/props/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\props\\", StringComparison.OrdinalIgnoreCase)) return true;
+			if (resolved.Contains("/resources/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\resources\\", StringComparison.OrdinalIgnoreCase)) return true;
+		}
+
+		string resolvedNorm = ModelCache.ResolveModelPath(norm);
+		if (!string.IsNullOrEmpty(resolvedNorm))
+		{
+			if (resolvedNorm.Contains("/props/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\props\\", StringComparison.OrdinalIgnoreCase)) return true;
+			if (resolvedNorm.Contains("/resources/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\resources\\", StringComparison.OrdinalIgnoreCase)) return true;
+		}
+
+		return false;
 	}
 
 	public bool GetModelIgnorePlayerColor(object objOrId)
@@ -380,9 +553,20 @@ public partial class GameHost
 
 		if (!string.IsNullOrEmpty(primaryKey))
 		{
-			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && meta.IgnorePlayerColor) return true;
-			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && resMeta.IgnorePlayerColor) return true;
-			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && propMeta.IgnorePlayerColor) return true;
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta)) return meta.IgnorePlayerColor;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta)) return resMeta.IgnorePlayerColor;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.IgnorePlayerColor;
+		}
+
+		if (!string.IsNullOrEmpty(normAsset))
+		{
+			if (ResourceRegistry.TryGetValue(normAsset, out var resMeta2)) return resMeta2.IgnorePlayerColor;
+			if (PropRegistry.TryGetValue(normAsset, out var propMeta2)) return propMeta2.IgnorePlayerColor;
+		}
+
+		if (objOrId is Prop3D || IsPropOrResourceKey(primaryKey) || IsPropOrResourceKey(normPrimary) || IsPropOrResourceKey(assetKey) || IsPropOrResourceKey(normAsset))
+		{
+			return true;
 		}
 
 		string lookupKey = !string.IsNullOrEmpty(normPrimary) ? normPrimary : normAsset;
@@ -418,14 +602,15 @@ public partial class GameHost
 
 		float brightness = GetModelBrightness(normAssetKey);
 		Color tint = GetModelColorTint(normAssetKey);
-		bool generateNormals = GetModelGenerateNormals(normAssetKey);
+		ModelNormalMode normalMode = GetModelNormalMode(normAssetKey);
 		bool ignorePlayerColor = GetModelIgnorePlayerColor(normAssetKey);
+		bool normalizeLuminance = GetModelNormalizeLuminance(normAssetKey);
 
 		foreach (var prop in AllProps)
 		{
 			if (GodotObject.IsInstanceValid(prop) && MatchesEntityOrAssetKey(prop, normAssetKey))
 			{
-				ApplyMaterialOverridesToNode(prop, brightness, tint, generateNormals);
+				ApplyMaterialOverridesToNode(prop, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor, false);
 			}
 		}
 
@@ -433,19 +618,12 @@ public partial class GameHost
 		{
 			if (GodotObject.IsInstanceValid(unit) && MatchesEntityOrAssetKey(unit, normAssetKey))
 			{
-				ApplyMaterialOverridesToNode(unit, brightness, tint, generateNormals);
-				Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(unit, ignorePlayerColor);
+				ApplyMaterialOverridesToNode(unit, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor, true);
 				if (!ignorePlayerColor)
 				{
 					unit.UpdatePlayerColorVisual();
 				}
 			}
-		}
-
-		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode) && MatchesEntityOrAssetKey(_editorPreviewNode, normAssetKey))
-		{
-			ApplyMaterialOverridesToNode(_editorPreviewNode, brightness, tint, generateNormals);
-			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_editorPreviewNode, ignorePlayerColor);
 		}
 
 		PropMultiMeshManager.Instance?.UpdateMaterialOverrides(normAssetKey);
@@ -458,6 +636,9 @@ public partial class GameHost
 
 		if (objOrNode is Unit3D unit && GodotObject.IsInstanceValid(unit))
 		{
+			float globalScale = GetModelScale(unit);
+			unit.UpdateModelScale(globalScale);
+
 			float yOffset = GetModelYOffset(unit);
 			unit.UpdateModelYOffset(yOffset);
 
@@ -477,18 +658,24 @@ public partial class GameHost
 				}
 			}
 
+			if (unit.IsPreview) return;
+
 			float brightness = GetModelBrightness(unit);
 			Color tint = GetModelColorTint(unit);
-			bool generateNormals = GetModelGenerateNormals(unit);
+			ModelNormalMode normalMode = GetModelNormalMode(unit);
 			bool ignorePlayerColor = GetModelIgnorePlayerColor(unit);
-			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(unit, ignorePlayerColor);
-			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals || tint != new Color(1.0f, 1.0f, 1.0f))
+			bool normalizeLuminance = GetModelNormalizeLuminance(unit);
+			ApplyMaterialOverridesToNode(unit, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor, true);
+			if (!ignorePlayerColor)
 			{
-				ApplyMaterialOverridesToNode(unit, brightness, tint, generateNormals);
+				unit.UpdatePlayerColorVisual();
 			}
 		}
 		else if (objOrNode is Prop3D prop && GodotObject.IsInstanceValid(prop))
 		{
+			float globalScale = GetModelScale(prop);
+			prop.UpdateVisualScale(globalScale);
+
 			float yOffset = GetModelYOffset(prop);
 			prop.UpdateVisualYOffset(yOffset);
 
@@ -508,30 +695,69 @@ public partial class GameHost
 				}
 			}
 
+			if (prop.IsPreview) return;
+
 			float brightness = GetModelBrightness(prop);
 			Color tint = GetModelColorTint(prop);
-			bool generateNormals = GetModelGenerateNormals(prop);
-			if (MathF.Abs(brightness - 1.0f) > 0.001f || generateNormals || tint != new Color(1.0f, 1.0f, 1.0f))
-			{
-				ApplyMaterialOverridesToNode(prop, brightness, tint, generateNormals);
-			}
+			ModelNormalMode normalMode = GetModelNormalMode(prop);
+			bool ignorePlayerColor = GetModelIgnorePlayerColor(prop);
+			bool normalizeLuminance = GetModelNormalizeLuminance(prop);
+			ApplyMaterialOverridesToNode(prop, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor, false);
 		}
 	}
 
-	private static readonly Dictionary<ulong, ArrayMesh> _normalGeneratedMeshCache = new();
+	private static readonly Dictionary<(ulong MeshId, ModelNormalMode Mode), ArrayMesh> _normalGeneratedMeshCache = new();
 
 	public static void ClearNormalGeneratedMeshCache()
 	{
 		_normalGeneratedMeshCache.Clear();
 	}
 
+	public static ArrayMesh GetOrCreateNormalMesh(ArrayMesh arrayMesh, ModelNormalMode normalMode)
+	{
+		if (arrayMesh == null) return null;
+		if (normalMode == ModelNormalMode.Original) return arrayMesh;
+
+		ulong baseId = arrayMesh.GetInstanceId();
+		var cacheKey = (baseId, normalMode);
+		if (_normalGeneratedMeshCache.TryGetValue(cacheKey, out var cachedMesh) && GodotObject.IsInstanceValid(cachedMesh))
+		{
+			return cachedMesh;
+		}
+
+		var toolMesh = new ArrayMesh();
+		for (int i = 0; i < arrayMesh.GetSurfaceCount(); i++)
+		{
+			var surfaceTool = new SurfaceTool();
+			surfaceTool.CreateFrom(arrayMesh, i);
+			if (normalMode == ModelNormalMode.Flat)
+			{
+				surfaceTool.Deindex();
+				surfaceTool.GenerateNormals();
+			}
+			else if (normalMode == ModelNormalMode.Smooth)
+			{
+				surfaceTool.Index();
+				surfaceTool.GenerateNormals();
+			}
+			toolMesh = surfaceTool.Commit(toolMesh);
+		}
+		_normalGeneratedMeshCache[cacheKey] = toolMesh;
+		return toolMesh;
+	}
+
 	public static void ApplyMaterialOverridesToNode(
 		Node node,
-		float brightness = 1.0f,
+		float brightness = 0.5f,
 		Color? colorTint = null,
-		bool generateNormals = false)
+		ModelNormalMode normalMode = ModelNormalMode.Flat,
+		bool normalizeLuminance = true,
+		bool? ignorePlayerColor = null,
+		bool? isUnitOrBuilding = null)
 	{
 		if (node == null || !GodotObject.IsInstanceValid(node)) return;
+
+		bool isUnit = isUnitOrBuilding ?? (node is Unit3D || node.GetParent() is Unit3D || node.Owner is Unit3D);
 
 		Color tint = colorTint ?? new Color(1.0f, 1.0f, 1.0f);
 		float multR = brightness * tint.R;
@@ -542,6 +768,14 @@ public partial class GameHost
 		if (!isDefaultColor)
 		{
 			Realm.Godot.Utils.PlayerColorShaderManager.SetBrightnessAndTint(node, brightness, tint);
+		}
+
+		Realm.Godot.Utils.PlayerColorShaderManager.RefreshShaderMaterialsForNode(node, normalizeLuminance);
+		Realm.Godot.Utils.PlayerColorShaderManager.SetNormalMode(node, (float)normalMode);
+		Realm.Godot.Utils.PlayerColorShaderManager.SetUnitReadability(node, isUnit);
+		if (ignorePlayerColor.HasValue)
+		{
+			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(node, ignorePlayerColor.Value);
 		}
 
 		var meshNodes = FindMeshInstancesRecursive(node);
@@ -557,42 +791,31 @@ public partial class GameHost
 				|| nameStr.Contains("SelectionRing", StringComparison.OrdinalIgnoreCase)
 				|| nameStr.Contains("HoverRing", StringComparison.OrdinalIgnoreCase)) continue;
 
-			if (generateNormals)
+			if (!meshInst.HasMeta("original_mesh") && meshInst.Mesh != null)
 			{
-				if (!meshInst.HasMeta("original_mesh") && meshInst.Mesh != null)
-				{
-					meshInst.SetMeta("original_mesh", meshInst.Mesh);
-				}
+				meshInst.SetMeta("original_mesh", meshInst.Mesh);
+			}
 
-				Mesh baseMesh = meshInst.HasMeta("original_mesh") ? meshInst.GetMeta("original_mesh").As<Mesh>() : meshInst.Mesh;
-				if (baseMesh is ArrayMesh arrayMesh)
+			Mesh baseMesh = meshInst.HasMeta("original_mesh") ? meshInst.GetMeta("original_mesh").As<Mesh>() : meshInst.Mesh;
+
+			if (normalMode == ModelNormalMode.Original)
+			{
+				if (baseMesh != null)
 				{
-					ulong baseId = arrayMesh.GetInstanceId();
-					if (_normalGeneratedMeshCache.TryGetValue(baseId, out var cachedMesh) && GodotObject.IsInstanceValid(cachedMesh))
-					{
-						meshInst.Mesh = cachedMesh;
-					}
-					else
-					{
-						var toolMesh = new ArrayMesh();
-						var surfaceTool = new SurfaceTool();
-						for (int i = 0; i < arrayMesh.GetSurfaceCount(); i++)
-						{
-							surfaceTool.CreateFrom(arrayMesh, i);
-							surfaceTool.GenerateNormals();
-							toolMesh = surfaceTool.Commit(toolMesh);
-						}
-						_normalGeneratedMeshCache[baseId] = toolMesh;
-						meshInst.Mesh = toolMesh;
-					}
+					meshInst.Mesh = baseMesh;
 				}
 			}
-			else
+			else if (baseMesh is ArrayMesh arrayMesh)
 			{
-				if (meshInst.HasMeta("original_mesh"))
-				{
-					meshInst.Mesh = meshInst.GetMeta("original_mesh").As<Mesh>();
-				}
+				meshInst.Mesh = GetOrCreateNormalMesh(arrayMesh, normalMode);
+			}
+
+			meshInst.SetInstanceShaderParameter(new StringName("normal_mode"), (float)normalMode);
+			meshInst.SetInstanceShaderParameter(new StringName("unit_ambient_boost"), isUnit ? 0.10f : 0.0f);
+			meshInst.SetInstanceShaderParameter(new StringName("unit_rim_intensity"), isUnit ? 0.25f : 0.0f);
+			if (ignorePlayerColor.HasValue)
+			{
+				meshInst.SetInstanceShaderParameter(new StringName("ignore_player_color"), ignorePlayerColor.Value ? 1.0f : 0.0f);
 			}
 
 			if (!isDefaultColor)
@@ -714,12 +937,24 @@ public partial class GameHost
 	private const float MaxSafeModelYOffset = 50f;
 	private const float MinSafeModelCollisionRatio = 0.1f;
 	private const float MaxSafeModelCollisionRatio = 10f;
+	private const float MinSafeModelScale = 0.01f;
+	private const float MaxSafeModelScale = 20f;
 
 	private bool IsValidModelYOffset(string assetKey, float val)
 	{
 		if (!float.IsFinite(val) || Math.Abs(val) > MaxSafeModelYOffset)
 		{
 			GD.PushWarning($"Ignoring invalid y_offset {val} for model '{assetKey}' (|offset| > {MaxSafeModelYOffset}).");
+			return false;
+		}
+		return true;
+	}
+
+	private bool IsValidModelScale(string assetKey, float val)
+	{
+		if (!float.IsFinite(val) || val < MinSafeModelScale || val > MaxSafeModelScale)
+		{
+			GD.PushWarning($"Ignoring invalid scale {val} for model '{assetKey}' (expected {MinSafeModelScale}..{MaxSafeModelScale}).");
 			return false;
 		}
 		return true;
@@ -755,11 +990,13 @@ public partial class GameHost
 			if (root == null) return;
 
 			ModelYOffsets.Clear();
+			ModelScales.Clear();
 			ModelCollisionCircleRatios.Clear();
 			ModelObstacleRadii.Clear();
 			ModelBrightness.Clear();
-			ModelGenerateNormals.Clear();
+			ModelNormalModes.Clear();
 			ModelIgnorePlayerColor.Clear();
+			ModelNormalizeLuminance.Clear();
 
 			if (root.ContainsKey("ModelOffsets") && root["ModelOffsets"] is System.Text.Json.Nodes.JsonObject offsetsObj)
 			{
@@ -768,6 +1005,17 @@ public partial class GameHost
 					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float val) && IsValidModelYOffset(kvp.Key, val))
 					{
 						ModelYOffsets[NormalizeModelAssetKey(kvp.Key)] = val;
+					}
+				}
+			}
+
+			if (root.ContainsKey("ModelScales") && root["ModelScales"] is System.Text.Json.Nodes.JsonObject scalesObj)
+			{
+				foreach (var kvp in scalesObj)
+				{
+					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float val) && IsValidModelScale(kvp.Key, val))
+					{
+						ModelScales[NormalizeModelAssetKey(kvp.Key)] = val;
 					}
 				}
 			}
@@ -805,13 +1053,25 @@ public partial class GameHost
 				}
 			}
 
-			if (root.ContainsKey("ModelGenerateNormals") && root["ModelGenerateNormals"] is System.Text.Json.Nodes.JsonObject gnObj)
+			if (root.ContainsKey("ModelNormalModes") && root["ModelNormalModes"] is System.Text.Json.Nodes.JsonObject nmObj)
 			{
-				foreach (var kvp in gnObj)
+				foreach (var kvp in nmObj)
+				{
+					if (kvp.Value != null && Enum.TryParse<ModelNormalMode>(kvp.Value.ToString(), true, out var modeVal))
+					{
+						string nKey = NormalizeModelAssetKey(kvp.Key);
+						ModelNormalModes[nKey] = modeVal;
+					}
+				}
+			}
+
+			if (root.ContainsKey("ModelNormalizeLuminance") && root["ModelNormalizeLuminance"] is System.Text.Json.Nodes.JsonObject nlObj)
+			{
+				foreach (var kvp in nlObj)
 				{
 					if (kvp.Value != null && bool.TryParse(kvp.Value.ToString(), out bool val))
 					{
-						ModelGenerateNormals[NormalizeModelAssetKey(kvp.Key)] = val;
+						ModelNormalizeLuminance[NormalizeModelAssetKey(kvp.Key)] = val;
 					}
 				}
 			}
@@ -842,6 +1102,34 @@ public partial class GameHost
 							{
 								ModelYOffsets[normKey] = yVal;
 							}
+							if (uObj.ContainsKey("Scale") && float.TryParse(uObj["Scale"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float sVal) && sVal > 0f)
+							{
+								ModelScales[normKey] = sVal;
+							}
+							else if (uObj.ContainsKey("ModelScale") && float.TryParse(uObj["ModelScale"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float msVal) && msVal > 0f)
+							{
+								ModelScales[normKey] = msVal;
+							}
+							else if (!ModelScales.ContainsKey(normKey))
+							{
+								float defaultScale = arrKey switch
+								{
+									"CustomResources" => 2.75f,
+									"CustomBuildings" => 1.2f,
+									"CustomProps" => 1.0f,
+									"CustomUnits" => 1.5f,
+									_ => 1.5f
+								};
+								ModelScales[normKey] = defaultScale;
+							}
+							if (uObj.ContainsKey("ModelPath") && uObj["ModelPath"]?.ToString() is string mPath && !string.IsNullOrEmpty(mPath))
+							{
+								string normModel = NormalizeModelAssetKey(mPath);
+								if (ModelScales.TryGetValue(normKey, out float assignedScale) && !ModelScales.ContainsKey(normModel))
+								{
+									ModelScales[normModel] = assignedScale;
+								}
+							}
 							if (uObj.ContainsKey("CollisionCircle") && float.TryParse(uObj["CollisionCircle"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float rVal))
 							{
 								ModelCollisionCircleRatios[normKey] = rVal;
@@ -854,9 +1142,17 @@ public partial class GameHost
 							{
 								ModelColorTint[normKey] = Color.FromString(tintStr, new Color(1, 1, 1));
 							}
-							if (uObj.ContainsKey("RecalculateNormals") && bool.TryParse(uObj["RecalculateNormals"]?.ToString(), out bool gnVal))
+							if (uObj.ContainsKey("NormalMode") && Enum.TryParse<ModelNormalMode>(uObj["NormalMode"]?.ToString(), true, out var nmVal))
 							{
-								ModelGenerateNormals[normKey] = gnVal;
+								ModelNormalModes[normKey] = nmVal;
+							}
+							else if (!ModelNormalModes.ContainsKey(normKey))
+							{
+								ModelNormalModes[normKey] = ModelNormalMode.Flat;
+							}
+							if (uObj.ContainsKey("NormalizeLuminance") && bool.TryParse(uObj["NormalizeLuminance"]?.ToString(), out bool nlVal))
+							{
+								ModelNormalizeLuminance[normKey] = nlVal;
 							}
 							if (uObj.ContainsKey("IgnorePlayerColor") && bool.TryParse(uObj["IgnorePlayerColor"]?.ToString(), out bool ipcVal))
 							{
@@ -865,6 +1161,10 @@ public partial class GameHost
 							else if (uObj.ContainsKey("ignore_player_color") && bool.TryParse(uObj["ignore_player_color"]?.ToString(), out bool ipcVal2))
 							{
 								ModelIgnorePlayerColor[normKey] = ipcVal2;
+							}
+							else if (arrKey == "CustomProps" || arrKey == "CustomResources")
+							{
+								ModelIgnorePlayerColor[normKey] = true;
 							}
 						}
 					}
@@ -888,6 +1188,20 @@ public partial class GameHost
 										ModelYOffsets[NormalizeModelAssetKey(itemKvp.Key)] = yVal;
 									}
 								}
+								if (itemObj.ContainsKey("scale") && float.TryParse(itemObj["scale"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float sVal))
+								{
+									if (IsValidModelScale(itemKvp.Key, sVal))
+									{
+										ModelScales[NormalizeModelAssetKey(itemKvp.Key)] = sVal;
+									}
+								}
+								else if (itemObj.ContainsKey("model_scale") && float.TryParse(itemObj["model_scale"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float msVal))
+								{
+									if (IsValidModelScale(itemKvp.Key, msVal))
+									{
+										ModelScales[NormalizeModelAssetKey(itemKvp.Key)] = msVal;
+									}
+								}
 								if (itemObj.ContainsKey("collision_circle_ratio") && float.TryParse(itemObj["collision_circle_ratio"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float rVal))
 								{
 									if (IsValidModelCollisionRatio(itemKvp.Key, rVal))
@@ -903,11 +1217,19 @@ public partial class GameHost
 								{
 									ModelBrightness[NormalizeModelAssetKey(itemKvp.Key)] = brightVal;
 								}
-								if (itemObj.ContainsKey("generate_normals") && bool.TryParse(itemObj["generate_normals"]?.ToString(), out bool gnVal))
-								{
-									ModelGenerateNormals[NormalizeModelAssetKey(itemKvp.Key)] = gnVal;
-								}
 								string normKey = NormalizeModelAssetKey(itemKvp.Key);
+								if (itemObj.ContainsKey("normal_mode") && Enum.TryParse<ModelNormalMode>(itemObj["normal_mode"]?.ToString(), true, out var nmVal))
+								{
+									ModelNormalModes[normKey] = nmVal;
+								}
+								else if (!ModelNormalModes.ContainsKey(normKey))
+								{
+									ModelNormalModes[normKey] = ModelNormalMode.Flat;
+								}
+								if (itemObj.ContainsKey("normalize_luminance") && bool.TryParse(itemObj["normalize_luminance"]?.ToString(), out bool nlVal))
+								{
+									ModelNormalizeLuminance[normKey] = nlVal;
+								}
 								if (itemObj.ContainsKey("ignore_player_color") && bool.TryParse(itemObj["ignore_player_color"]?.ToString(), out bool ipcVal))
 								{
 									ModelIgnorePlayerColor[normKey] = ipcVal;
@@ -915,6 +1237,10 @@ public partial class GameHost
 								else if (itemObj.ContainsKey("IgnorePlayerColor") && bool.TryParse(itemObj["IgnorePlayerColor"]?.ToString(), out bool ipcVal2))
 								{
 									ModelIgnorePlayerColor[normKey] = ipcVal2;
+								}
+								else if (catKvp.Key == "props" || catKvp.Key == "resources" || (itemObj.ContainsKey("default_asset_type") && (itemObj["default_asset_type"]?.ToString() == "props" || itemObj["default_asset_type"]?.ToString() == "resources")))
+								{
+									ModelIgnorePlayerColor[normKey] = true;
 								}
 								else
 								{
@@ -933,7 +1259,8 @@ public partial class GameHost
 			}
 
 			foreach (var key in ModelBrightness.Keys
-				.Concat(ModelGenerateNormals.Keys)
+				.Concat(ModelNormalModes.Keys)
+				.Concat(ModelNormalizeLuminance.Keys)
 				.Concat(ModelIgnorePlayerColor.Keys)
 				.Distinct())
 			{
@@ -942,8 +1269,22 @@ public partial class GameHost
 		}
 		catch (Exception ex)
 		{
-			GD.PrintErr($"LoadModelYOffsetsFromMetadataJson error: {ex.Message}");
+			GD.PrintErr($"Failed to load metadata overrides from JSON: {ex.Message}");
 		}
+	}
+
+	public void ClearMapEditorState()
+	{
+		ModelYOffsets.Clear();
+		ModelScales.Clear();
+		ModelCollisionCircleRatios.Clear();
+		ModelObstacleRadii.Clear();
+		ModelBrightness.Clear();
+		ModelColorTint.Clear();
+		ModelNormalModes.Clear();
+		ModelNormalizeLuminance.Clear();
+		ModelIgnorePlayerColor.Clear();
+		ClearNormalGeneratedMeshCache();
 	}
 
 	public void RefreshAllPlacedObjectModels(string targetId = null)
@@ -1019,6 +1360,10 @@ public partial class GameHost
 			foreach (var kvp in ModelYOffsets) offsetsObj[kvp.Key] = kvp.Value;
 			root["ModelOffsets"] = offsetsObj;
 
+			System.Text.Json.Nodes.JsonObject scalesObj = new System.Text.Json.Nodes.JsonObject();
+			foreach (var kvp in ModelScales) scalesObj[kvp.Key] = kvp.Value;
+			root["ModelScales"] = scalesObj;
+
 			System.Text.Json.Nodes.JsonObject circlesObj = new System.Text.Json.Nodes.JsonObject();
 			foreach (var kvp in ModelCollisionCircleRatios) circlesObj[kvp.Key] = kvp.Value;
 			root["ModelCollisionCircleRatios"] = circlesObj;
@@ -1033,9 +1378,13 @@ public partial class GameHost
 			foreach (var kvp in ModelBrightness) mbObj[kvp.Key] = kvp.Value;
 			root["ModelBrightness"] = mbObj;
 
-			System.Text.Json.Nodes.JsonObject gnObj = new System.Text.Json.Nodes.JsonObject();
-			foreach (var kvp in ModelGenerateNormals) gnObj[kvp.Key] = kvp.Value;
-			root["ModelGenerateNormals"] = gnObj;
+			System.Text.Json.Nodes.JsonObject nmObj = new System.Text.Json.Nodes.JsonObject();
+			foreach (var kvp in ModelNormalModes) nmObj[kvp.Key] = kvp.Value.ToString();
+			root["ModelNormalModes"] = nmObj;
+
+			System.Text.Json.Nodes.JsonObject nlObj = new System.Text.Json.Nodes.JsonObject();
+			foreach (var kvp in ModelNormalizeLuminance) nlObj[kvp.Key] = kvp.Value;
+			root["ModelNormalizeLuminance"] = nlObj;
 
 			System.Text.Json.Nodes.JsonObject ipcObj = new System.Text.Json.Nodes.JsonObject();
 			foreach (var kvp in ModelIgnorePlayerColor) ipcObj[kvp.Key] = kvp.Value;
@@ -1053,10 +1402,15 @@ public partial class GameHost
 							string uId = uObj["UnitId"]?.ToString() ?? "";
 							string normKey = NormalizeModelAssetKey(uId);
 							if (ModelYOffsets.TryGetValue(normKey, out float yVal)) uObj["YOffset"] = yVal;
+							if (ModelScales.TryGetValue(normKey, out float sVal)) uObj["Scale"] = sVal;
 							if (ModelCollisionCircleRatios.TryGetValue(normKey, out float rVal)) uObj["CollisionCircle"] = rVal;
 							if (ModelBrightness.TryGetValue(normKey, out float bVal)) uObj["Brightness"] = bVal;
 							if (ModelColorTint.TryGetValue(normKey, out Color tColor)) uObj["Tint"] = "#" + tColor.ToHtml(false);
-							if (ModelGenerateNormals.TryGetValue(normKey, out bool gnVal)) uObj["RecalculateNormals"] = gnVal;
+							if (ModelNormalModes.TryGetValue(normKey, out var nmVal))
+							{
+								uObj["NormalMode"] = nmVal.ToString();
+							}
+							if (ModelNormalizeLuminance.TryGetValue(normKey, out bool nlVal)) uObj["NormalizeLuminance"] = nlVal;
 							if (ModelIgnorePlayerColor.TryGetValue(normKey, out bool ipcVal)) uObj["IgnorePlayerColor"] = ipcVal;
 						}
 					}
@@ -1073,22 +1427,26 @@ public partial class GameHost
 						{
 							string normKey = NormalizeModelAssetKey(key);
 							bool hasY = ModelYOffsets.TryGetValue(normKey, out float yVal);
+							bool hasScale = ModelScales.TryGetValue(normKey, out float sVal);
 							bool hasRatio = ModelCollisionCircleRatios.TryGetValue(normKey, out float rVal);
 							bool hasRadius = ModelObstacleRadii.TryGetValue(normKey, out float radVal);
 							bool hasBright = ModelBrightness.TryGetValue(normKey, out float brightVal);
-							bool hasGn = ModelGenerateNormals.TryGetValue(normKey, out bool gnVal);
+							bool hasNm = ModelNormalModes.TryGetValue(normKey, out var nmVal);
+							bool hasNl = ModelNormalizeLuminance.TryGetValue(normKey, out bool nlVal);
 							bool hasIpc = ModelIgnorePlayerColor.TryGetValue(normKey, out bool ipcVal);
 
-							if (hasY || hasRatio || hasRadius || hasBright || hasGn || hasIpc)
+							if (hasY || hasScale || hasRatio || hasRadius || hasBright || hasNm || hasNl || hasIpc)
 							{
 								var nodeVal = catDict[key];
 								if (nodeVal is System.Text.Json.Nodes.JsonObject itemObj)
 								{
 									if (hasY) itemObj["y_offset"] = yVal;
+									if (hasScale) itemObj["scale"] = sVal;
 									if (hasRatio) itemObj["collision_circle_ratio"] = rVal;
 									if (hasRadius) itemObj["collision_radius"] = radVal;
 									if (hasBright) itemObj["brightness"] = brightVal;
-									if (hasGn) itemObj["generate_normals"] = gnVal;
+									if (hasNm) itemObj["normal_mode"] = nmVal.ToString();
+									if (hasNl) itemObj["normalize_luminance"] = nlVal;
 									if (hasIpc) itemObj["ignore_player_color"] = ipcVal;
 								}
 								else if (nodeVal != null)
@@ -1099,10 +1457,12 @@ public partial class GameHost
 										["hash"] = hashStr
 									};
 									if (hasY) newItemObj["y_offset"] = yVal;
+									if (hasScale) newItemObj["scale"] = sVal;
 									if (hasRatio) newItemObj["collision_circle_ratio"] = rVal;
 									if (hasRadius) newItemObj["collision_radius"] = radVal;
 									if (hasBright) newItemObj["brightness"] = brightVal;
-									if (hasGn) newItemObj["generate_normals"] = gnVal;
+									if (hasNm) newItemObj["normal_mode"] = nmVal.ToString();
+									if (hasNl) newItemObj["normalize_luminance"] = nlVal;
 									if (hasIpc) newItemObj["ignore_player_color"] = ipcVal;
 									catDict[key] = newItemObj;
 								}
@@ -1112,7 +1472,7 @@ public partial class GameHost
 				}
 			}
 
-			System.IO.File.WriteAllText(metadataPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 		}
 		catch (Exception ex)
 		{
@@ -1161,64 +1521,65 @@ public partial class GameHost
 			}
 		}
 		
-		if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null)
+		if (GroundTerrain != null)
 		{
 			int width = GroundTerrain.Width;
 			int depth = GroundTerrain.Depth;
 
-			var heights = GroundTerrain.Heights;
-			var splatMap = GroundTerrain.SplatMap;
-			var cliffSplatMap = GroundTerrain.CliffSplatMap;
-			var pathingCodes = GroundTerrain.PathingCodes;
+			if (GroundTerrain.Cells == null || GroundTerrain.Cells.GetLength(0) != width || GroundTerrain.Cells.GetLength(1) != depth)
+			{
+				GroundTerrain.Cells = new Realm.Ecs.Components.Terrain.TerrainCell[width, depth];
+			}
+			var cells = GroundTerrain.Cells;
 
-			if (heights == null || heights.GetLength(0) != width || heights.GetLength(1) != depth)
+			if (GroundTerrain.SplatMap == null || GroundTerrain.SplatMap.GetLength(0) < width + 1 || GroundTerrain.SplatMap.GetLength(1) < depth + 1)
 			{
-				heights = new float[width, depth];
+				GroundTerrain.SplatMap = new TerrainSplatWeights[width + 1, depth + 1];
 			}
-			if (splatMap == null || splatMap.GetLength(0) < width + 1 || splatMap.GetLength(1) < depth + 1)
+			var splatMap = GroundTerrain.SplatMap;
+
+			if (GroundTerrain.CliffSplatMap == null || GroundTerrain.CliffSplatMap.GetLength(0) < width + 1 || GroundTerrain.CliffSplatMap.GetLength(1) < depth + 1)
 			{
-				splatMap = new TerrainSplatWeights[width + 1, depth + 1];
-				GroundTerrain.SplatMap = splatMap;
+				GroundTerrain.CliffSplatMap = new TerrainSplatWeights[width + 1, depth + 1];
 			}
-			if (cliffSplatMap == null || cliffSplatMap.GetLength(0) < width + 1 || cliffSplatMap.GetLength(1) < depth + 1)
-			{
-				cliffSplatMap = new TerrainSplatWeights[width + 1, depth + 1];
-				GroundTerrain.CliffSplatMap = cliffSplatMap;
-			}
+			var cliffSplatMap = GroundTerrain.CliffSplatMap;
+
+			var pathingCodes = GroundTerrain.PathingCodes;
 			if (pathingCodes == null || pathingCodes.GetLength(0) != width || pathingCodes.GetLength(1) != depth)
 			{
 				pathingCodes = new int[width, depth];
+			}
+
+			int defaultPathing = EditableTerrain.GetDefaultPathingCode(Realm.Ecs.Components.Terrain.WaterType.None);
+			for (int z = 0; z < depth; z++)
+			{
+				for (int x = 0; x < width; x++)
+				{
+					cells[x, z] = new Realm.Ecs.Components.Terrain.TerrainCell(0.0f);
+					pathingCodes[x, z] = defaultPathing;
+				}
 			}
 
 			for (int z = 0; z <= depth; z++)
 			{
 				for (int x = 0; x <= width; x++)
 				{
-					if (x < width && z < depth)
-					{
-						heights[x, z] = 0.0f;
-						pathingCodes[x, z] = EditableTerrain.GetDefaultPathingCode(GroundTerrain.Cells[x, z]);
-					}
 					splatMap[x, z] = TerrainSplatWeights.CreateSolid(0);
-					cliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(GroundTerrain.CliffTextureIndex);
+					cliffSplatMap[x, z] = TerrainSplatWeights.CreateSolid(1);
 				}
 			}
-
-			GroundTerrain.SetHeights(heights);
 
 			if (EcsWorld != null && EcsWorld.IsAlive(WorldEntity) && EcsWorld.Has<Realm.Ecs.Components.Terrain.TerrainState>(WorldEntity))
 			{
 				ref var ts = ref EcsWorld.Get<Realm.Ecs.Components.Terrain.TerrainState>(WorldEntity);
-				ts.SetHeights(heights);
+				ts.Cells = cells;
 				ts.PathingCodes = pathingCodes;
 				EcsWorld.Set(WorldEntity, ts);
 			}
 
 			GroundTerrain.UpdateMeshAndPhysics(true, true);
-			if (PathingOverlayVisible)
-			{
-				RebuildPathingOverlay();
-			}
+			GroundTerrain.UpdatePathingTexture();
+			UpdatePathingOverlay();
 		}
 
 		_editorService?.ResetAllState();
@@ -1631,33 +1992,52 @@ public partial class GameHost
 			{
 				var pos = unit.GlobalPosition;
 				if (!IsInRegion(pos)) continue;
-				pos.Y = _editorService.GetTerrainHeightAt(pos);
-				unit.GlobalPosition = pos;
-				if (EcsWorld.IsAlive(unit.Entity))
+				float targetY = _editorService.GetTerrainHeightAt(pos);
+				if (MathF.Abs(pos.Y - targetY) > 0.001f)
 				{
-					EcsWorld.Set(unit.Entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));
+					pos.Y = targetY;
+					unit.GlobalPosition = pos;
+					if (EcsWorld.IsAlive(unit.Entity))
+					{
+						EcsWorld.Set(unit.Entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));
+					}
 				}
 			}
 		}
 
+		bool anyPropMoved = false;
 		foreach (var child in GetChildren())
 		{
 			if (child is Prop3D prop && GodotObject.IsInstanceValid(prop))
 			{
 				var pos = prop.GlobalPosition;
 				if (!IsInRegion(pos)) continue;
-				pos.Y = _editorService.GetTerrainHeightAt(pos);
-				prop.GlobalPosition = pos;
+				float targetY = _editorService.GetTerrainHeightAt(pos);
+				if (MathF.Abs(pos.Y - targetY) > 0.001f)
+				{
+					pos.Y = targetY;
+					prop.GlobalPosition = pos;
+					anyPropMoved = true;
+					PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
+				}
 			}
 			else if (child is Decal decal && GodotObject.IsInstanceValid(decal))
 			{
 				var pos = decal.GlobalPosition;
 				if (!IsInRegion(pos)) continue;
-				pos.Y = _editorService.GetTerrainHeightAt(pos);
-				decal.GlobalPosition = pos;
+				float targetY = _editorService.GetTerrainHeightAt(pos);
+				if (MathF.Abs(pos.Y - targetY) > 0.001f)
+				{
+					pos.Y = targetY;
+					decal.GlobalPosition = pos;
+				}
 			}
 		}
-		PropMultiMeshManager.Instance?.MarkAllDirty();
+
+		if (!affectedRegion.HasValue && anyPropMoved)
+		{
+			PropMultiMeshManager.Instance?.MarkAllDirty();
+		}
 	}
 
 	private void DeleteObjectAt(Node collider, Vector3 hitPos)
@@ -1749,6 +2129,7 @@ public partial class GameHost
 		if (!UnitRegistry.ContainsKey(unitId))
 		{
 			string resolvedModelPath = GetFallbackModelPath(unitId, unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower"));
+			bool isBld = unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower");
 			var dynamicMeta = new UnitMetadata
 			{
 				Name = System.IO.Path.GetFileNameWithoutExtension(unitId).Replace("_", " "),
@@ -1756,7 +2137,8 @@ public partial class GameHost
 				Damage = 10f,
 				Range = 2f,
 				Armor = 2f,
-				Speed = (unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower")) ? 0f : 6.0f,
+				Speed = isBld ? 0f : 6.0f,
+				Scale = isBld ? 1.2f : 1.5f,
 				ProductionTime = 10f,
 				ModelPath = resolvedModelPath
 			};
@@ -2105,9 +2487,9 @@ public partial class GameHost
 		return null;
 	}
 
-	public void AlignAllEntitiesToTerrainExternal()
+	public void AlignAllEntitiesToTerrainExternal(Rect2I? affectedRegion = null)
 	{
-		AlignAllEntitiesToTerrain();
+		AlignAllEntitiesToTerrain(affectedRegion);
 	}
 
 	private void UpdateEditorPreview(Vector3 position)
@@ -2143,6 +2525,7 @@ public partial class GameHost
 				if (!UnitRegistry.ContainsKey(reqId))
 				{
 					string resolvedModelPath = GetFallbackModelPath(reqId, reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower"));
+					bool isBld = reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower");
 					var dynamicMeta = new UnitMetadata
 					{
 						Name = System.IO.Path.GetFileNameWithoutExtension(reqId).Replace("_", " "),
@@ -2150,7 +2533,8 @@ public partial class GameHost
 						Damage = 10f,
 						Range = 2f,
 						Armor = 2f,
-						Speed = (reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower")) ? 0f : 6.0f,
+						Speed = isBld ? 0f : 6.0f,
+						Scale = isBld ? 1.2f : 1.5f,
 						ProductionTime = 10f,
 						ModelPath = resolvedModelPath
 					};
@@ -2583,7 +2967,7 @@ public partial class GameHost
 				}
 			}
 
-			if (Input.IsMouseButtonPressed(MouseButton.Left) && !_leftClickInitiatedOverUI && !IsMouseOverUI())
+			if (Input.IsMouseButtonPressed(MouseButton.Left) && !_leftClickInitiatedOverUI && !IsMouseOverUI() && !FloatingDialogBase.HasAnyDialogOpen)
 			{
 				if ((ActiveEditorTool == EditorTool.PlaceUnit || ActiveEditorTool == EditorTool.PlaceProp || ActiveEditorTool == EditorTool.PlaceDecal) && EditorClumpMode)
 				{
@@ -2648,7 +3032,7 @@ public partial class GameHost
 						ActiveEditorTool,
 						EditorBlockMode,
 						EditorBlockLevelHeight,
-						GroundTerrain.Heights,
+						null,
 						GroundTerrain.SplatMap,
 						GroundTerrain.PathingCodes,
 						GroundTerrain.CliffSplatMap);
@@ -2704,10 +3088,10 @@ public partial class GameHost
 				}
 				if (_editorService.IsDrawingTerrain)
 				{
-					if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
+					if (GroundTerrain != null && GroundTerrain.Cells != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
 					{
 						var action = _editorService.EndTerrainDraw(
-							GroundTerrain.Heights,
+							null,
 							GroundTerrain.SplatMap,
 							GroundTerrain.PathingCodes,
 							GroundTerrain.CliffSplatMap);
@@ -2777,10 +3161,10 @@ public partial class GameHost
 			}
 			if (_editorService.IsDrawingTerrain)
 			{
-				if (GroundTerrain != null && GroundTerrain.Heights != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
+				if (GroundTerrain != null && GroundTerrain.Cells != null && GroundTerrain.SplatMap != null && GroundTerrain.PathingCodes != null)
 				{
 					var action = _editorService.EndTerrainDraw(
-						GroundTerrain.Heights,
+						null,
 						GroundTerrain.SplatMap,
 						GroundTerrain.PathingCodes,
 						GroundTerrain.CliffSplatMap);
@@ -3120,7 +3504,6 @@ public partial class GameHost
 		int splatW = GroundTerrain.SplatMap.GetLength(0);
 		int splatD = GroundTerrain.SplatMap.GetLength(1);
 
-		float[,] heightsBefore = GroundTerrain.Heights != null ? (float[,])GroundTerrain.Heights.Clone() : null;
 		TerrainSplatWeights[,] splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
 		TerrainSplatWeights[,] cliffBefore = GroundTerrain.CliffSplatMap != null ? (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone() : null;
 
@@ -3398,7 +3781,7 @@ public partial class GameHost
 
 	public void RebuildCameraBoundsOverlay()
 	{
-		if (_cameraBoundsOverlayMesh == null || GroundTerrain == null || GroundTerrain.Heights == null) return;
+		if (_cameraBoundsOverlayMesh == null || GroundTerrain == null || GroundTerrain.Cells == null) return;
 		if (!EditorCameraBoundsVisible) return;
 
 		int width = GroundTerrain.Width;
@@ -3422,7 +3805,7 @@ public partial class GameHost
 
 		float GetTerrainHeightAtCoord(float worldX, float worldZ)
 		{
-			if (GroundTerrain == null || GroundTerrain.Heights == null) return 0f;
+			if (GroundTerrain == null || GroundTerrain.Cells == null) return 0f;
 			float gridX = worldX / quadSize + halfW;
 			float gridZ = worldZ / quadSize + halfD;
 			int x0 = Mathf.Clamp((int)Mathf.Floor(gridX), 0, width - 1);
@@ -3433,10 +3816,11 @@ public partial class GameHost
 			float tx = gridX - x0;
 			float tz = gridZ - z0;
 			
-			float h00 = GroundTerrain.Heights[x0, z0];
-			float h10 = GroundTerrain.Heights[x1, z0];
-			float h01 = GroundTerrain.Heights[x0, z1];
-			float h11 = GroundTerrain.Heights[x1, z1];
+			var cells = GroundTerrain.Cells;
+			float h00 = EditableTerrain.GetGridNodeHeight(x0, z0, cells, width, depth);
+			float h10 = EditableTerrain.GetGridNodeHeight(x1, z0, cells, width, depth);
+			float h01 = EditableTerrain.GetGridNodeHeight(x0, z1, cells, width, depth);
+			float h11 = EditableTerrain.GetGridNodeHeight(x1, z1, cells, width, depth);
 			
 			float h0 = Mathf.Lerp(h00, h10, tx);
 			float h1 = Mathf.Lerp(h01, h11, tx);
@@ -3558,7 +3942,7 @@ public partial class GameHost
 
 	private void RebuildPathingOverlay()
 	{
-		if (GroundTerrain == null || GroundTerrain.PathingCodes == null || GroundTerrain.Heights == null) return;
+		if (GroundTerrain == null || GroundTerrain.PathingCodes == null || GroundTerrain.Cells == null) return;
 		GroundTerrain.UpdatePathingTexture();
 	}
 
@@ -3578,20 +3962,19 @@ public partial class GameHost
 
 	public void PerformFloodFill(Vector3 clickPos, int fillTextureIndex, bool isCliff = false)
 	{
-		if (GroundTerrain == null || GroundTerrain.Heights == null || GroundTerrain.SplatMap == null) return;
+		if (GroundTerrain == null || GroundTerrain.Cells == null || GroundTerrain.SplatMap == null) return;
 
 		if (GroundTerrain.CliffSplatMap == null)
 		{
 			GroundTerrain.CliffSplatMap = new TerrainSplatWeights[GroundTerrain.Width + 1, GroundTerrain.Depth + 1];
 		}
 
-		var heightsBefore = (float[,])GroundTerrain.Heights.Clone();
 		var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
 		var cliffBefore = (TerrainSplatWeights[,])GroundTerrain.CliffSplatMap.Clone();
 		int cliffTextureIndex = EditorCliffPaintTextureIndex;
 
 		var result = _editorService.PerformFloodFill(clickPos, fillTextureIndex, cliffTextureIndex, EditorMirrorMode, isCliff);
-		if (result.Heights == null || result.SplatMap == null) return;
+		if (result.SplatMap == null) return;
 
 		if (result.IsCliff)
 		{
@@ -3654,31 +4037,61 @@ public partial class GameHost
 		_selectionHighlightMesh.Visible = false;
 	}
 
+	private int _lastSelectionMinX = -1;
+	private int _lastSelectionMinZ = -1;
+	private int _lastSelectionMaxX = -1;
+	private int _lastSelectionMaxZ = -1;
+
+	public void InvalidateSelectionHighlightMesh()
+	{
+		_lastSelectionMinX = -1;
+		_lastSelectionMinZ = -1;
+		_lastSelectionMaxX = -1;
+		_lastSelectionMaxZ = -1;
+	}
+
 	private void RebuildSelectionHighlightMesh(int minX, int minZ, int maxX, int maxZ)
 	{
-		if (_selectionHighlightMesh == null || GroundTerrain == null || GroundTerrain.Heights == null) return;
+		if (_selectionHighlightMesh == null || GroundTerrain == null || GroundTerrain.Cells == null) return;
 		int selWidth = maxX - minX + 1;
 		int selDepth = maxZ - minZ + 1;
 		if (selWidth < 2 || selDepth < 2)
 		{
 			_selectionHighlightMesh.Visible = false;
+			_lastSelectionMinX = -1;
 			return;
 		}
+
+		if (minX == _lastSelectionMinX && minZ == _lastSelectionMinZ && maxX == _lastSelectionMaxX && maxZ == _lastSelectionMaxZ && _selectionHighlightMesh.Visible)
+		{
+			return;
+		}
+		_lastSelectionMinX = minX;
+		_lastSelectionMinZ = minZ;
+		_lastSelectionMaxX = maxX;
+		_lastSelectionMaxZ = maxZ;
+
 		int vertexCount = selWidth * selDepth;
 		var vertices = new Vector3[vertexCount];
 		int width = GroundTerrain.Width;
 		int depth = GroundTerrain.Depth;
 		float quadSize = GroundTerrain.QuadSize;
+		var cells = GroundTerrain.Cells;
+		float halfW = (width - 1) * 0.5f;
+		float halfD = (depth - 1) * 0.5f;
+
 		for (int sz = 0; sz < selDepth; sz++)
 		{
+			int mapZ = minZ + sz;
+			float lz = (mapZ - halfD) * quadSize;
+			int rowOffset = sz * selWidth;
 			for (int sx = 0; sx < selWidth; sx++)
 			{
 				int mapX = minX + sx;
-				int mapZ = minZ + sz;
-				int idx = sz * selWidth + sx;
-				float lx = (mapX - (width - 1) / 2.0f) * quadSize;
-				float lz = (mapZ - (depth - 1) / 2.0f) * quadSize;
-				vertices[idx] = new Vector3(lx, GroundTerrain.Heights[mapX, mapZ] + 0.05f, lz);
+				int idx = rowOffset + sx;
+				float lx = (mapX - halfW) * quadSize;
+				float h = EditableTerrain.GetGridNodeHeight(mapX, mapZ, cells, width, depth);
+				vertices[idx] = new Vector3(lx, h + 0.05f, lz);
 			}
 		}
 		int cellWidth = selWidth - 1;
@@ -3688,12 +4101,14 @@ public partial class GameHost
 		int iIdx = 0;
 		for (int sz = 0; sz < cellDepth; sz++)
 		{
+			int row0 = sz * selWidth;
+			int row1 = (sz + 1) * selWidth;
 			for (int sx = 0; sx < cellWidth; sx++)
 			{
-				int v00 = sz * selWidth + sx;
-				int v10 = sz * selWidth + (sx + 1);
-				int v01 = (sz + 1) * selWidth + sx;
-				int v11 = (sz + 1) * selWidth + (sx + 1);
+				int v00 = row0 + sx;
+				int v10 = row0 + (sx + 1);
+				int v01 = row1 + sx;
+				int v11 = row1 + (sx + 1);
 				indices[iIdx++] = v00;
 				indices[iIdx++] = v10;
 				indices[iIdx++] = v01;
@@ -3740,7 +4155,7 @@ public partial class GameHost
 
 	private void RebuildCoordinateMeshInstance(MeshInstance3D meshInstance, int minX, int minZ, int maxX, int maxZ, Color color, float yOffset = 0.15f)
 	{
-		if (meshInstance == null || GroundTerrain == null || GroundTerrain.Heights == null) return;
+		if (meshInstance == null || GroundTerrain == null || GroundTerrain.Cells == null) return;
 		int selWidth = maxX - minX + 1;
 		int selDepth = maxZ - minZ + 1;
 		if (selWidth < 2 || selDepth < 2)
@@ -3753,16 +4168,22 @@ public partial class GameHost
 		int width = GroundTerrain.Width;
 		int depth = GroundTerrain.Depth;
 		float quadSize = GroundTerrain.QuadSize;
+		var cells = GroundTerrain.Cells;
+		float halfW = (width - 1) * 0.5f;
+		float halfD = (depth - 1) * 0.5f;
+
 		for (int sz = 0; sz < selDepth; sz++)
 		{
+			int mapZ = minZ + sz;
+			float lz = (mapZ - halfD) * quadSize;
+			int rowOffset = sz * selWidth;
 			for (int sx = 0; sx < selWidth; sx++)
 			{
 				int mapX = minX + sx;
-				int mapZ = minZ + sz;
-				int idx = sz * selWidth + sx;
-				float lx = (mapX - (width - 1) / 2.0f) * quadSize;
-				float lz = (mapZ - (depth - 1) / 2.0f) * quadSize;
-				vertices[idx] = new Vector3(lx, GroundTerrain.Heights[mapX, mapZ] + yOffset, lz);
+				int idx = rowOffset + sx;
+				float lx = (mapX - halfW) * quadSize;
+				float h = EditableTerrain.GetGridNodeHeight(mapX, mapZ, cells, width, depth);
+				vertices[idx] = new Vector3(lx, h + yOffset, lz);
 			}
 		}
 		int cellWidth = selWidth - 1;
@@ -3774,12 +4195,14 @@ public partial class GameHost
 		int iIdx = 0;
 		for (int sz = 0; sz < cellDepth; sz++)
 		{
+			int row0 = sz * selWidth;
+			int row1 = (sz + 1) * selWidth;
 			for (int sx = 0; sx < cellWidth; sx++)
 			{
-				int v00 = sz * selWidth + sx;
-				int v10 = sz * selWidth + (sx + 1);
-				int v01 = (sz + 1) * selWidth + sx;
-				int v11 = (sz + 1) * selWidth + (sx + 1);
+				int v00 = row0 + sx;
+				int v10 = row0 + (sx + 1);
+				int v01 = row1 + sx;
+				int v11 = row1 + (sx + 1);
 				indices[iIdx++] = v00;
 				indices[iIdx++] = v10;
 				indices[iIdx++] = v01;
@@ -3879,7 +4302,7 @@ public partial class GameHost
 			return;
 		}
 
-		if (GroundTerrain == null || GroundTerrain.Heights == null) return;
+		if (GroundTerrain == null || GroundTerrain.Cells == null) return;
 
 		int width = GroundTerrain.Width;
 		int depth = GroundTerrain.Depth;
@@ -3914,7 +4337,7 @@ public partial class GameHost
 			return;
 		}
 
-		if (GroundTerrain == null || GroundTerrain.Heights == null) return;
+		if (GroundTerrain == null || GroundTerrain.Cells == null) return;
 
 		EditorCoordinate? found = null;
 		foreach (var r in EditorCoordinates)
@@ -4094,7 +4517,7 @@ public partial class GameHost
 
 	private List<IEditorAction> PerformEraseArea(bool recordToHistory = true)
 	{
-		if (GroundTerrain == null || GroundTerrain.Heights == null || GroundTerrain.SplatMap == null || _editorService.SelectionStart == null || _editorService.SelectionEnd == null)
+		if (GroundTerrain == null || GroundTerrain.Cells == null || GroundTerrain.SplatMap == null || _editorService.SelectionStart == null || _editorService.SelectionEnd == null)
 		{
 			MapEditorHUD.Instance?.ShowFeedbackExternal("Nothing to Erase (select an area first)");
 			return new List<IEditorAction>();
@@ -4120,12 +4543,13 @@ public partial class GameHost
 
 		if (eraseResult.TerrainModified)
 		{
-			GroundTerrain.UpdateMeshAndPhysics(eraseResult.HeightsModified, false);
+			Rect2I affected = new Rect2I(minX - 2, minZ - 2, maxX - minX + 4, maxZ - minZ + 4);
 			if (eraseResult.HeightsModified)
 			{
-				Rect2I affected = new Rect2I(minX - 2, minZ - 2, maxX - minX + 4, maxZ - minZ + 4);
+				GroundTerrain.SanitizeCornerHeights();
 				AlignAllEntitiesToTerrain(affected);
 			}
+			GroundTerrain.UpdateMeshAndPhysics(eraseResult.HeightsModified, false, affected, eraseResult.HeightsModified);
 			if (eraseResult.PathingModified)
 			{
 				UpdatePathingOverlay();
@@ -4168,7 +4592,7 @@ public partial class GameHost
 
 	private List<IEditorAction> PerformPasteArea(int startX, int startZ, float rotationDegrees, bool recordToHistory = true)
 	{
-		if (GroundTerrain == null || GroundTerrain.Heights == null || GroundTerrain.SplatMap == null || !_editorService.HasCopiedArea) return new List<IEditorAction>();
+		if (GroundTerrain == null || GroundTerrain.Cells == null || GroundTerrain.SplatMap == null || !_editorService.HasCopiedArea) return new List<IEditorAction>();
 
 		var cellsBefore = (Realm.Ecs.Components.Terrain.TerrainCell[,])GroundTerrain.Cells.Clone();
 		var splatBefore = (TerrainSplatWeights[,])GroundTerrain.SplatMap.Clone();
@@ -4183,11 +4607,16 @@ public partial class GameHost
 
 		if (pasteResult.TerrainModified)
 		{
-			GroundTerrain.UpdateMeshAndPhysics(pasteResult.HeightsModified, false);
+			int pasteW = Math.Max(_editorService.CopiedAreaWidth, _editorService.CopiedAreaDepth);
+			int pasteD = pasteW;
+			Rect2I affected = new Rect2I(startX - 2, startZ - 2, pasteW + 4, pasteD + 4);
+
 			if (pasteResult.HeightsModified)
 			{
-				AlignAllEntitiesToTerrain();
+				GroundTerrain.SanitizeCornerHeights();
+				AlignAllEntitiesToTerrain(affected);
 			}
+			GroundTerrain.UpdateMeshAndPhysics(pasteResult.HeightsModified, false, affected, pasteResult.HeightsModified);
 			if (pasteResult.PathingModified)
 			{
 				UpdatePathingOverlay();

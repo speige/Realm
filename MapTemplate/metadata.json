@@ -28,9 +28,12 @@
       "Description": "",
       "ModelPath": "fantasy_warrior_unit_1.glb",
       "Name": "Kevin",
+      "NormalMode": "Flat",
+      "NormalizeLuminance": true,
       "PathingType": 9,
-      "RecalculateNormals": true,
-      "UnitId": "fantasy_warrior_unit_1"
+      "Scale": 1,
+      "UnitId": "fantasy_warrior_unit_1",
+      "YOffset": 1.4901163E-07
     },
     {
       "Animations": {
@@ -59,9 +62,12 @@
       "Description": "",
       "ModelPath": "orc_warrior_7.glb",
       "Name": "Chad",
+      "NormalMode": "Flat",
+      "NormalizeLuminance": true,
       "PathingType": 9,
-      "RecalculateNormals": true,
-      "UnitId": "orc_warrior_7"
+      "Scale": 1,
+      "UnitId": "orc_warrior_7",
+      "YOffset": 1.4901163E-07
     }
   ],
   "CustomBuildings": [
@@ -70,104 +76,118 @@
       "Description": "",
       "ModelPath": "ice_castle_1.glb",
       "Name": "Castle",
+      "NormalMode": "Flat",
+      "NormalizeLuminance": true,
       "PathingType": 32,
-      "RecalculateNormals": true,
-      "UnitId": "ice_castle_1"
+      "Scale": 1.5,
+      "UnitId": "ice_castle_1",
+      "YOffset": 1.4901163E-07
     },
     {
       "Animations": {},
       "Description": "",
       "ModelPath": "timber_framed_house.glb",
       "Name": "House",
+      "NormalMode": "Flat",
+      "NormalizeLuminance": true,
       "PathingType": 32,
-      "RecalculateNormals": true,
-      "UnitId": "timber_framed_house"
+      "Scale": 1.5,
+      "UnitId": "timber_framed_house",
+      "YOffset": 1.4901163E-07
     }
   ],
   "CustomResources": [
     {
       "Animations": {},
-      "CollisionCircle": 0.3,
       "Description": "",
       "ModelPath": "coniferous_tree_1.glb",
       "Name": "Tree",
+      "NormalMode": "Flat",
+      "NormalizeLuminance": true,
       "PathingType": 255,
-      "RecalculateNormals": true,
+      "Scale": 2.75,
       "UnitId": "coniferous_tree_1",
-      "YOffset": 3.0000002
+      "YOffset": 2.7491,
+      "IgnorePlayerColor": true
     },
     {
       "Animations": {},
-      "CollisionCircle": 0.25,
       "Description": "",
       "ModelPath": "palm_tree.glb",
       "Name": "Palm Tree",
+      "NormalMode": "Flat",
+      "NormalizeLuminance": true,
       "PathingType": 255,
-      "RecalculateNormals": true,
+      "Scale": 2.75,
       "UnitId": "palm_tree",
-      "YOffset": 3.15
+      "YOffset": 2.7498,
+      "IgnorePlayerColor": true
     }
   ],
   "CustomProps": [
     {
       "Animations": {},
-      "CollisionCircle": 0.75,
       "Description": "",
       "ModelPath": "crystal_cluster_5.glb",
       "Name": "Crystals",
+      "NormalMode": "Flat",
+      "NormalizeLuminance": true,
       "PathingType": 255,
-      "RecalculateNormals": true,
+      "Scale": 1.25,
       "UnitId": "crystal_cluster_5",
-      "YOffset": 1.0500002
+      "YOffset": 1.3000002,
+      "IgnorePlayerColor": true
     },
     {
       "Animations": {},
-      "CollisionCircle": 0.4,
       "Description": "",
       "ModelPath": "spiked_wooden_stake.glb",
       "Name": "Spike Pole",
+      "NormalMode": "Flat",
+      "NormalizeLuminance": true,
       "PathingType": 255,
-      "RecalculateNormals": true,
+      "Scale": 1.25,
       "UnitId": "spiked_wooden_stake",
-      "YOffset": 0.7500002
+      "YOffset": 1.2000002,
+      "IgnorePlayerColor": true
     }
   ],
   "CustomAbilities": [
     {
       "AbilityId": "fireball",
-      "Name": "Bola de fuego",
-      "Description": "[X] Bola de fuego — Daño 50 en área (radio 4)",
       "AbilityType": "target_spell",
+      "AreaOfEffectRadius": 4,
+      "Cooldown": 12,
+      "Damage": 50,
+      "Description": "[X] Bola de fuego \u2014 Da\u00F1o 50 en \u00E1rea (radio 4)",
       "IconPath": "res://Assets/UI/fire_spell.png",
       "ManaCost": 0,
-      "Cooldown": 12,
-      "TargetRange": 12,
-      "AreaOfEffectRadius": 4,
-      "Damage": 50
-    },
-    {
-      "AbilityId": "lightning",
-      "Name": "Rayo",
-      "Description": "[X] Rayo — Daño 80 en área (radio 2)",
-      "AbilityType": "target_spell",
-      "IconPath": "res://Assets/UI/lightning_spell.png",
-      "ManaCost": 0,
-      "Cooldown": 18,
-      "TargetRange": 12,
-      "AreaOfEffectRadius": 2,
-      "Damage": 80
+      "Name": "Bola de fuego",
+      "TargetRange": 12
     },
     {
       "AbilityId": "holylight",
-      "Name": "Luz sagrada",
-      "Description": "[X] Luz sagrada — Cura 60 en área (radio 4)",
       "AbilityType": "target_spell",
+      "AreaOfEffectRadius": 4,
+      "Cooldown": 15,
+      "Description": "[X] Luz sagrada \u2014 Cura 60 en \u00E1rea (radio 4)",
+      "Healing": 60,
       "IconPath": "res://Assets/UI/magic_upgrade_arrow.png",
       "ManaCost": 0,
-      "Cooldown": 15,
-      "TargetRange": 12,
-      "AreaOfEffectRadius": 4,
-      "Healing": 60
+      "Name": "Luz sagrada",
+      "TargetRange": 12
+    },
+    {
+      "AbilityId": "lightning",
+      "AbilityType": "target_spell",
+      "AreaOfEffectRadius": 2,
+      "Cooldown": 18,
+      "Damage": 80,
+      "Description": "[X] Rayo \u2014 Da\u00F1o 80 en \u00E1rea (radio 2)",
+      "IconPath": "res://Assets/UI/lightning_spell.png",
+      "ManaCost": 0,
+      "Name": "Rayo",
+      "TargetRange": 12
     }
   ],
   "CustomUpgrades": [],
@@ -191,57 +211,85 @@
       "buildings": {
         "ice_castle_1.glb": {
           "default_asset_type": "buildings",
-          "generate_normals": true,
-          "hash": "52d8e8d854c45d08f04f15f6d352e368e6ebe2915efc7fe733e835be1ac52195"
+          "hash": "d75f5dbd3a36029bff588dd6fa96331238841c2650365db5efb944c8b8fbdb5d",
+          "min_y": -0.990670979,
+          "normal_mode": "Flat",
+          "normalize_luminance": true,
+          "scale": 1.5,
+          "y_offset": 1.4901163E-07
         },
         "timber_framed_house.glb": {
           "default_asset_type": "buildings",
-          "generate_normals": true,
-          "hash": "fb72c8a4c9bc36a262197392675d55e73aa8646beb752d8fd9ea7b2dcdaf14cf"
+          "hash": "f3243d9307ac881b60e4b309e4e326eda6e1a3ede7dbe8b80003f56abf4d31d7",
+          "min_y": -0.997538984,
+          "normal_mode": "Flat",
+          "normalize_luminance": true,
+          "scale": 1.5,
+          "y_offset": 1.4901163E-07
         }
       },
       "props": {
         "crystal_cluster_5.glb": {
-          "collision_circle_ratio": 0.75,
           "default_asset_type": "props",
-          "generate_normals": true,
-          "hash": "f3a50db94ab0264ac77c279a1fd7f88612467dffa0ce6d3ab2d0d0ba14393244",
-          "y_offset": 1.0500002
+          "hash": "2fc26051412295cee64fe78c203394cedbdfc623444dbff8521f61746f14d19d",
+          "min_y": -0.888354003,
+          "normal_mode": "Flat",
+          "normalize_luminance": true,
+          "scale": 1.25,
+          "y_offset": 1.3000002,
+          "ignore_player_color": true
         },
         "spiked_wooden_stake.glb": {
-          "collision_circle_ratio": 0.4,
           "default_asset_type": "props",
-          "generate_normals": true,
-          "hash": "b67bd5617dff8b4329c121ca9761f6218d28f0b08324279c426cbe1642f16d1d",
-          "y_offset": 0.7500002
+          "hash": "8b962fe2eb87c38a0f3496f7fe4bdfe2b4958d4bfcf07ff34db35c0e19ecb47e",
+          "min_y": -0.998519003,
+          "normal_mode": "Flat",
+          "normalize_luminance": true,
+          "scale": 1.25,
+          "y_offset": 1.2000002,
+          "ignore_player_color": true
         }
       },
       "resources": {
         "coniferous_tree_1.glb": {
-          "collision_circle_ratio": 0.3,
           "default_asset_type": "resources",
-          "generate_normals": true,
-          "hash": "3c2de41b9a1ff7b653c6cc359032ae3712c520df25bf175a82968652bbee94bf",
-          "y_offset": 3.0000002
+          "hash": "eb281b6bf8802d96c4a929faf6a69727c6aa4b3502a67904f41f42e9ea693bdf",
+          "min_y": -0.999657989,
+          "normal_mode": "Flat",
+          "normalize_luminance": true,
+          "scale": 2.75,
+          "y_offset": 2.7491,
+          "ignore_player_color": true
         },
         "palm_tree.glb": {
-          "collision_circle_ratio": 0.25,
           "default_asset_type": "resources",
-          "generate_normals": true,
-          "hash": "59d40a05d2b97ade867b377279f092542a0956884022502554763e22e0d6e83f",
-          "y_offset": 3.15
+          "hash": "1e7ad6d0711aa1e7e26c7d4cb6f243e04e45db57d636240a01c4154e68547741",
+          "min_y": -0.999924004,
+          "normal_mode": "Flat",
+          "normalize_luminance": true,
+          "scale": 2.75,
+          "y_offset": 2.7498,
+          "ignore_player_color": true
         }
       },
       "units": {
         "fantasy_warrior_unit_1.glb": {
           "default_asset_type": "units",
-          "generate_normals": true,
-          "hash": "71b2b318523e49a8f33d501fe49a84adc03460e688bb47fe40d41c98aaa98625"
+          "hash": "f8f4199045a183663dcf69a2611a5acdab158c043af396724e14db114d4682b9",
+          "min_y": -0.909040391,
+          "normal_mode": "Flat",
+          "normalize_luminance": true,
+          "scale": 1,
+          "y_offset": 1.4901163E-07
         },
         "orc_warrior_7.glb": {
           "default_asset_type": "units",
-          "generate_normals": true,
-          "hash": "3dc8e5aa020f3a826a82dc95fdcab3eabd9b4a0ec9dd4b20f36ca34185416b99"
+          "hash": "02e8fb0186491be3f51c0869a5169f20186b7e3f991bcbff0600dfa9a4b21258",
+          "min_y": -0.836685061,
+          "normal_mode": "Flat",
+          "normalize_luminance": true,
+          "scale": 1,
+          "y_offset": 1.4901163E-07
         }
       }
     },
@@ -281,20 +329,39 @@
     }
   },
   "ModelOffsets": {
-    "coniferous_tree_1.glb": 3.0000002,
-    "palm_tree.glb": 3.15,
-    "crystal_cluster_5.glb": 1.0500002,
-    "spiked_wooden_stake.glb": 0.7500002
+    "fantasy_warrior_unit_1.glb": 1.4901163E-07,
+    "orc_warrior_7.glb": 1.4901163E-07,
+    "ice_castle_1.glb": 1.4901163E-07,
+    "timber_framed_house.glb": 1.4901163E-07,
+    "coniferous_tree_1.glb": 2.7491,
+    "palm_tree.glb": 2.7498,
+    "crystal_cluster_5.glb": 1.3000002,
+    "spiked_wooden_stake.glb": 1.2000002
   },
-  "ModelCollisionCircleRatios": {
-    "coniferous_tree_1.glb": 0.3,
-    "palm_tree.glb": 0.25,
-    "crystal_cluster_5.glb": 0.75,
-    "spiked_wooden_stake.glb": 0.4
+  "ModelScales": {
+    "fantasy_warrior_unit_1.glb": 1,
+    "orc_warrior_7.glb": 1,
+    "ice_castle_1.glb": 1.5,
+    "timber_framed_house.glb": 1.5,
+    "coniferous_tree_1.glb": 2.75,
+    "palm_tree.glb": 2.75,
+    "crystal_cluster_5.glb": 1.25,
+    "spiked_wooden_stake.glb": 1.25
   },
+  "ModelCollisionCircleRatios": {},
   "ModelObstacleRadii": {},
   "ModelBrightness": {},
-  "ModelGenerateNormals": {
+  "ModelNormalModes": {
+    "fantasy_warrior_unit_1.glb": "Flat",
+    "orc_warrior_7.glb": "Flat",
+    "ice_castle_1.glb": "Flat",
+    "timber_framed_house.glb": "Flat",
+    "coniferous_tree_1.glb": "Flat",
+    "palm_tree.glb": "Flat",
+    "crystal_cluster_5.glb": "Flat",
+    "spiked_wooden_stake.glb": "Flat"
+  },
+  "ModelNormalizeLuminance": {
     "fantasy_warrior_unit_1.glb": true,
     "orc_warrior_7.glb": true,
     "ice_castle_1.glb": true,
@@ -304,5 +371,10 @@
     "crystal_cluster_5.glb": true,
     "spiked_wooden_stake.glb": true
   },
-  "ModelIgnorePlayerColor": {}
+  "ModelIgnorePlayerColor": {
+    "coniferous_tree_1.glb": true,
+    "palm_tree.glb": true,
+    "crystal_cluster_5.glb": true,
+    "spiked_wooden_stake.glb": true
+  }
 }

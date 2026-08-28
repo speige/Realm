@@ -8,6 +8,11 @@
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
+    },
+    "Realm.Tools.Cli": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false
     }
   }
 }
