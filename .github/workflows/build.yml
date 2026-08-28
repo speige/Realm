@@ -94,7 +94,7 @@ jobs:
             }
           }
           if (-not $rawVersion -or $rawVersion.Trim() -eq "") {
-            $rawVersion = "0.1.0-alpha"
+            $rawVersion = "0.0.1_Pre-Alpha"
           }
           $version = $rawVersion.Split('+')[0].Trim()
           $archiveName = "Realm-${osPlatform}-${systemArchitecture}_${version}.7z"

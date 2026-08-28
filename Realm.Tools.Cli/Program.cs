@@ -74,6 +74,40 @@ public class FbxToRanimOptions
 	public bool Recursive { get; set; }
 }
 
+[Verb("ranim_render", HelpText = "Render .ranim skeletal animation files to animated GIF or PNG spritesheet.")]
+public class RanimRenderOptions
+{
+	[Option('i', "input", Required = true, HelpText = "Path to input .ranim file or directory.")]
+	public string Input { get; set; } = string.Empty;
+
+	[Option('o', "output", Required = false, HelpText = "Output destination file or directory.")]
+	public string? Output { get; set; }
+
+	[Option('f', "format", Required = false, Default = "auto", HelpText = "Output format: auto (default), gif, spritesheet.")]
+	public string Format { get; set; } = "auto";
+
+	[Option("fps", Required = false, Default = 12.0f, HelpText = "Target frames per second (default 12).")]
+	public float Fps { get; set; } = 12.0f;
+
+	[Option("max-frames", Required = false, HelpText = "Maximum frame count (uses modulus to skip intermediate frames).")]
+	public int? MaxFrames { get; set; }
+
+	[Option("size", Required = false, Default = 128, HelpText = "Frame width and height in pixels (default 128).")]
+	public int Size { get; set; } = 128;
+
+	[Option("scale", Required = false, Default = 1.0f, HelpText = "Model scale factor (default 1.0).")]
+	public float Scale { get; set; } = 1.0f;
+
+	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
+	public bool Recursive { get; set; }
+
+	[Option("no-border", Required = false, Default = false, HelpText = "Disable frame border.")]
+	public bool NoBorder { get; set; }
+
+	[Option("no-shadow", Required = false, Default = false, HelpText = "Disable floor shadow.")]
+	public bool NoShadow { get; set; }
+}
+
 [Verb("metadata_read", HelpText = "Extract and display embedded metadata from .glb, .png, .ktx2, .ranim, or .ogg files.")]
 public class MetadataReadOptions
 {
@@ -114,15 +148,77 @@ public static class Program
 {
 	public static int Main(string[] args)
 	{
-		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, FbxToRanimOptions, MetadataReadOptions, MetadataAddOptions, MetadataRemoveOptions>(args)
+		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataReadOptions, MetadataAddOptions, MetadataRemoveOptions>(args)
 			.MapResult(
 				(GlbOptimizeOptions options) => ExecuteGlbOptimize(options),
 				(TextureConvertOptions options) => ExecuteTextureConvert(options),
 				(FbxToRanimOptions options) => ExecuteFbxToRanim(options),
+				(RanimRenderOptions options) => ExecuteRanimRender(options),
 				(MetadataReadOptions options) => ExecuteMetadataRead(options),
 				(MetadataAddOptions options) => ExecuteMetadataAdd(options),
 				(MetadataRemoveOptions options) => ExecuteMetadataRemove(options),
 				errors => 1);
+	}
+
+	private static int ExecuteRanimRender(RanimRenderOptions options)
+	{
+		RanimOutputFormat outputFormat = RanimOutputFormat.Gif;
+		if (options.Format.Equals("spritesheet", StringComparison.OrdinalIgnoreCase) || options.Format.Equals("png", StringComparison.OrdinalIgnoreCase))
+		{
+			outputFormat = RanimOutputFormat.Spritesheet;
+		}
+		else if (options.Format.Equals("auto", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(options.Output))
+		{
+			if (options.Output.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+			{
+				outputFormat = RanimOutputFormat.Spritesheet;
+			}
+			else
+			{
+				outputFormat = RanimOutputFormat.Gif;
+			}
+		}
+
+		var renderOptions = new Realm.Shared.Animation.RanimRenderOptions
+		{
+			Width = options.Size,
+			Height = options.Size,
+			Fps = options.Fps,
+			MaxFrameCount = options.MaxFrames,
+			Format = outputFormat,
+			Scale = options.Scale,
+			DrawBorder = !options.NoBorder,
+			DrawShadow = !options.NoShadow
+		};
+
+		if (File.Exists(options.Input))
+		{
+			string extension = outputFormat == RanimOutputFormat.Spritesheet ? ".png" : ".gif";
+			string target = string.IsNullOrEmpty(options.Output)
+				? Path.ChangeExtension(options.Input, extension)
+				: options.Output;
+
+			var result = RanimRenderer.ExportFile(options.Input, target, renderOptions);
+			if (result.Success)
+			{
+				Console.WriteLine($"Successfully rendered ({result.FrameCount} frames): {options.Input} -> {target}");
+				return 0;
+			}
+			else
+			{
+				Console.Error.WriteLine($"Failed to render {options.Input}: {result.ErrorMessage}");
+				return 1;
+			}
+		}
+		else if (Directory.Exists(options.Input))
+		{
+			return RanimRenderer.ExportDirectory(options.Input, options.Output, renderOptions, options.Recursive);
+		}
+		else
+		{
+			Console.Error.WriteLine($"Error: Input path does not exist: {options.Input}");
+			return 1;
+		}
 	}
 
 	private static int ExecuteMetadataRead(MetadataReadOptions options)

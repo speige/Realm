@@ -12,11 +12,11 @@ using System.Threading.Tasks;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using SharpToken;
+using Realm.Shared;
 
 public partial class LobbyManager : Node
 {
     public static LobbyManager Instance { get; private set; }
-    public static readonly string GameBinaryVersion = GetGameBinaryVersion();
     public bool IsSinglePlayer { get; set; } = false;
 
     private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
@@ -47,60 +47,6 @@ public partial class LobbyManager : Node
 
         return System.IO.Path.Combine(baseDir, "versions", targetVersion, fileName);
     }
-
-    private static string GetGameBinaryVersion()
-    {
-        const string defaultVersionString = "0.0.1_Pre-Alpha";
-        try
-        {
-            var assembly = typeof(LobbyManager).Assembly;
-
-            var infoVerAttr = (System.Reflection.AssemblyInformationalVersionAttribute)System.Attribute.GetCustomAttribute(
-                assembly, typeof(System.Reflection.AssemblyInformationalVersionAttribute));
-            if (infoVerAttr != null && !string.IsNullOrWhiteSpace(infoVerAttr.InformationalVersion))
-            {
-                string infoVer = infoVerAttr.InformationalVersion;
-                int plusIdx = infoVer.IndexOf('+');
-                if (plusIdx > 0)
-                {
-                    infoVer = infoVer.Substring(0, plusIdx);
-                }
-                if (!string.IsNullOrWhiteSpace(infoVer))
-                {
-                    return infoVer.Trim();
-                }
-            }
-
-            var ver = assembly.GetName().Version;
-            if (ver != null && (ver.Major > 0 || ver.Minor > 0 || ver.Build > 0))
-            {
-                return $"v{ver.Major}.{ver.Minor}.{Math.Max(0, ver.Build)}";
-            }
-
-            var fileVerAttr = (System.Reflection.AssemblyFileVersionAttribute)System.Attribute.GetCustomAttribute(
-                assembly, typeof(System.Reflection.AssemblyFileVersionAttribute));
-            if (fileVerAttr != null && !string.IsNullOrWhiteSpace(fileVerAttr.Version))
-            {
-                return $"v{fileVerAttr.Version.Trim()}";
-            }
-
-            if (!string.IsNullOrEmpty(assembly.Location) && System.IO.File.Exists(assembly.Location))
-            {
-                var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
-                if (!string.IsNullOrEmpty(versionInfo.ProductVersion))
-                {
-                    return versionInfo.ProductVersion.Trim();
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            GD.PrintErr($"Failed to read version from assembly: {ex.Message}");
-        }
-
-        return defaultVersionString;
-    }
-
 
     public class PlayerInfo
     {
@@ -436,7 +382,7 @@ public partial class LobbyManager : Node
             Latency = "0 ms",
             Jitter = "0 ms",
             PacketLoss = "0%",
-            BinaryVersion = GameBinaryVersion
+            BinaryVersion = RealmVersion.GameBinaryVersion
         };
         PlayerList.Add(LocalPlayer);
         
@@ -466,7 +412,7 @@ public partial class LobbyManager : Node
             Latency = "0 ms",
             Jitter = "0 ms",
             PacketLoss = "0%",
-            BinaryVersion = GameBinaryVersion
+            BinaryVersion = RealmVersion.GameBinaryVersion
         };
         PlayerList.Add(LocalPlayer);
 
@@ -559,7 +505,7 @@ public partial class LobbyManager : Node
                 MaxPlayers = MaxPlayers,
                 SlotsUsed = PlayerList.Count,
                 HostPingBaseline = hostPingBaseline,
-                GameVersion = GameBinaryVersion,
+                GameVersion = RealmVersion.GameBinaryVersion,
                 LocalIP = localIpAddress,
                 MapVersion = mapVersion,
                 Signature = signature,
@@ -653,7 +599,7 @@ public partial class LobbyManager : Node
             Team = "Team 1",
             Color = PlayerColorConfig.GetColor(2),
             IsHost = false,
-            BinaryVersion = GameBinaryVersion
+            BinaryVersion = RealmVersion.GameBinaryVersion
         };
 
 
@@ -927,7 +873,7 @@ public partial class LobbyManager : Node
                 Team = "Team 1",
                 Color = GetNextColor(),
                 IsHost = false,
-                BinaryVersion = GameBinaryVersion
+                BinaryVersion = RealmVersion.GameBinaryVersion
             };
             PlayerList.Add(newPlayer);
             SendChatMessage("System", string.Format(Tr("{0} joined the lobby."), newPlayer.Name));
@@ -1681,7 +1627,7 @@ public partial class LobbyManager : Node
                 Latency = "0 ms",
                 Jitter = "0 ms",
                 PacketLoss = "0%",
-                BinaryVersion = GameBinaryVersion
+                BinaryVersion = RealmVersion.GameBinaryVersion
             };
             PlayerList.Add(botPlayer);
             BroadcastPlayerList();

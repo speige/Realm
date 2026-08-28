@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using NSec.Cryptography;
 using System.Threading.Tasks;
 using Realm.Godot;
+using Realm.Shared;
 
 
 public partial class LobbyRoom : Control
@@ -817,7 +818,7 @@ private void UpdateSelectedMapUI()
 			if (host != null)
 			{
 				string hostVersion = host.BinaryVersion;
-				string clientVersion = LobbyManager.GameBinaryVersion;
+				string clientVersion = RealmVersion.GameBinaryVersion;
 				if (hostVersion != clientVersion)
 				{
 					_versionMismatchDetected = true;

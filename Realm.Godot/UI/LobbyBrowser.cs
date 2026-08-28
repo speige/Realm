@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Timer = Godot.Timer;
+using Realm.Shared;
 
 public partial class LobbyBrowser : Control
 {
@@ -655,7 +656,7 @@ public partial class LobbyBrowser : Control
 		lblVersion.Text = $"v{data.GameVersion}  ";
 		lblVersion.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		lblVersion.HorizontalAlignment = HorizontalAlignment.Right;
-		lblVersion.AddThemeColorOverride("font_color", data.GameVersion == LobbyManager.GameBinaryVersion ? new Color(0.3f, 0.8f, 0.4f) : new Color(0.85f, 0.3f, 0.3f));
+		lblVersion.AddThemeColorOverride("font_color", data.GameVersion == RealmVersion.GameBinaryVersion ? new Color(0.3f, 0.8f, 0.4f) : new Color(0.85f, 0.3f, 0.3f));
 		lblVersion.AddThemeFontSizeOverride("font_size", 15);
 		lblVersion.VerticalAlignment = VerticalAlignment.Center;
 		hBox.AddChild(lblVersion);
@@ -673,9 +674,9 @@ public partial class LobbyBrowser : Control
 			{
 				UIManager.Instance.PlayClickSound();
 				
-				if (!string.IsNullOrEmpty(data.GameVersion) && data.GameVersion != LobbyManager.GameBinaryVersion)
+				if (!string.IsNullOrEmpty(data.GameVersion) && data.GameVersion != RealmVersion.GameBinaryVersion)
 				{
-					ShowVersionMismatchPopup(data.GameVersion, LobbyManager.GameBinaryVersion);
+					ShowVersionMismatchPopup(data.GameVersion, RealmVersion.GameBinaryVersion);
 					return;
 				}
 

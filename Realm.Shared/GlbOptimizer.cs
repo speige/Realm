@@ -97,7 +97,6 @@ public class GlbOptimizer
 
 		byte[] finalBytes = GlbManifestUtils.InjectOptimizationMetadata(
 			workingBytes,
-			"0.1.0-alpha",
 			new Dictionary<string, object>
 			{
 				{ "original_size", result.OriginalSize },

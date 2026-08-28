@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using Realm.Shared;
 
 public partial class MainMenu : Control
 {
@@ -358,7 +359,7 @@ public partial class MainMenu : Control
 					string latestTag = tagProp.GetString() ?? "";
 					if (latestTag.StartsWith("v")) latestTag = latestTag.Substring(1);
 					
-					if (latestTag != LobbyManager.GameBinaryVersion)
+					if (latestTag != RealmVersion.GameBinaryVersion)
 					{
 						_outdatedLabel.Visible = true;
 					}
@@ -374,7 +375,7 @@ public partial class MainMenu : Control
 	private void PopulateVersionDropdown()
 	{
 		_versionDropdown.Clear();
-		_versionDropdown.AddItem(LobbyManager.GameBinaryVersion);
+		_versionDropdown.AddItem(RealmVersion.GameBinaryVersion);
 		_versionDropdown.SetItemMetadata(0, "current");
 
 		if (!OS.HasFeature("editor"))
@@ -387,7 +388,7 @@ public partial class MainMenu : Control
 				foreach (var dir in dirs)
 				{
 					string ver = System.IO.Path.GetFileName(dir);
-					if (ver != LobbyManager.GameBinaryVersion)
+					if (ver != RealmVersion.GameBinaryVersion)
 					{
 						_versionDropdown.AddItem(ver);
 						_versionDropdown.SetItemMetadata(_versionDropdown.ItemCount - 1, ver);

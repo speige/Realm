@@ -10,6 +10,7 @@ using System.Linq;
 
 using MirrorMode = Realm.Ecs.Components.Core.MirrorMode;
 using WaterType = Realm.Ecs.Components.Terrain.WaterType;
+using Realm.Shared;
 
 public partial class MapEditorHUD : Control
 {
@@ -3184,7 +3185,7 @@ public partial class MapEditorHUD : Control
 					}
 					mapDoc["Attributions"] = attributionsArr;
 					
-					mapDoc["EngineVersion"] = LobbyManager.GameBinaryVersion;
+					mapDoc["EngineVersion"] = RealmVersion.GameBinaryVersion;
 					
 					string updatedMapJson = mapDoc.ToJsonString(options);
 					System.IO.File.WriteAllText(mapJsonPath, updatedMapJson);
@@ -3909,7 +3910,7 @@ public partial class MapEditorHUD : Control
 							attributionsArr.Add(a);
 						}
 						mapDoc["Attributions"] = attributionsArr;
-						mapDoc["EngineVersion"] = LobbyManager.GameBinaryVersion;
+						mapDoc["EngineVersion"] = RealmVersion.GameBinaryVersion;
 						
 						mapDoc["author_key"] = pubKeyStr;
 						if (mapDoc.ContainsKey("signature"))

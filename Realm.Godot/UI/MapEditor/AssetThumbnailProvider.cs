@@ -102,22 +102,18 @@ public static class AssetThumbnailProvider
 
 		try
 		{
-			var animData = RealmAnimationSerializer.LoadFromFile(asset.FilePath);
-			if (animData != null)
+			var animThumb = RanimSkeletonThumbnailGenerator.GenerateAnimatedThumbnail(asset.FilePath);
+			if (animThumb != null && animThumb.Frames.Count > 0)
 			{
-				var animThumb = RanimSkeletonThumbnailGenerator.GenerateAnimatedThumbnail(animData);
-				if (animThumb != null && animThumb.Frames.Count > 0)
+				lock (_animatedThumbnailCache)
 				{
-					lock (_animatedThumbnailCache)
+					if (_animatedThumbnailCache.Count >= MaxCacheEntries)
 					{
-						if (_animatedThumbnailCache.Count >= MaxCacheEntries)
-						{
-							_animatedThumbnailCache.Clear();
-						}
-						_animatedThumbnailCache[asset.FilePath] = animThumb;
+						_animatedThumbnailCache.Clear();
 					}
-					return animThumb;
+					_animatedThumbnailCache[asset.FilePath] = animThumb;
 				}
+				return animThumb;
 			}
 		}
 		catch (Exception ex)

@@ -7,6 +7,7 @@ using GdUnit4;
 using Godot;
 using Realm.Ecs.Services;
 using Realm.Godot.Utils;
+using Realm.Shared;
 
 namespace Realm.Godot.Tests;
 
@@ -1128,7 +1129,7 @@ public class CustomProjMap : IWasmModule
             Team = "Team 1",
             Color = new global::Godot.Color(0.2f, 0.6f, 1.0f),
             IsHost = true,
-            BinaryVersion = LobbyManager.GameBinaryVersion
+            BinaryVersion = RealmVersion.GameBinaryVersion
         };
         PropertyInfo localPlayerProp = typeof(LobbyManager).GetProperty("LocalPlayer", BindingFlags.Public | BindingFlags.Instance);
         localPlayerProp?.SetValue(LobbyManager.Instance, playerInfo);

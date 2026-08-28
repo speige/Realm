@@ -128,7 +128,6 @@ public static class GlbManifestUtils
 
 	public static byte[] InjectOptimizationMetadata(
 		byte[] glbBytes,
-		string version = "0.1.0-alpha",
 		Dictionary<string, object>? extraStats = null)
 	{
 		var (json, bin, glbVer) = ParseGlb(glbBytes);
@@ -146,7 +145,7 @@ public static class GlbManifestUtils
 		}
 
 		extras["realm_optimized"] = true;
-		extras["realm_version"] = version;
+		extras["realm_version"] = RealmVersion.GameBinaryVersion;
 		extras["decimation_completed"] = true;
 		extras["optimization_timestamp"] = DateTime.UtcNow.ToString("o");
 
