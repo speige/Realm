@@ -142,6 +142,28 @@ public static class UIStyle
 		return CreateStonePanel(true);
 	}
 
+	public static StyleBox CreateAgreementPanel()
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/map_editor_agreement.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 32;
+			style.TextureMarginRight = 32;
+			style.TextureMarginTop = 32;
+			style.TextureMarginBottom = 32;
+			style.ContentMarginLeft = 35;
+			style.ContentMarginRight = 35;
+			style.ContentMarginTop = 35;
+			style.ContentMarginBottom = 35;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			return style;
+		}
+		return CreateStonePanel(true);
+	}
+
 	public static StyleBox CreateBackdropPanel()
 	{
 		var style = new StyleBoxFlat();
@@ -303,6 +325,57 @@ public static class UIStyle
 		style.ContentMarginBottom = 10;
 		
 		style.ModulateColor = new Color(0.85f, 0.82f, 0.75f);
+		return style;
+	}
+
+	public static StyleBox CreateOptionButtonNormal()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.18f, 0.16f, 0.14f, 0.95f);
+		style.BorderColor = new Color(0.42f, 0.36f, 0.26f, 0.85f);
+		style.SetBorderWidthAll(1);
+		style.CornerRadiusTopLeft = 4;
+		style.CornerRadiusTopRight = 4;
+		style.CornerRadiusBottomLeft = 4;
+		style.CornerRadiusBottomRight = 4;
+		style.ContentMarginLeft = 8;
+		style.ContentMarginRight = 8;
+		style.ContentMarginTop = 5;
+		style.ContentMarginBottom = 5;
+		return style;
+	}
+
+	public static StyleBox CreateOptionButtonHover()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.28f, 0.24f, 0.18f, 0.98f);
+		style.BorderColor = ColorGold;
+		style.SetBorderWidthAll(1);
+		style.CornerRadiusTopLeft = 4;
+		style.CornerRadiusTopRight = 4;
+		style.CornerRadiusBottomLeft = 4;
+		style.CornerRadiusBottomRight = 4;
+		style.ContentMarginLeft = 8;
+		style.ContentMarginRight = 8;
+		style.ContentMarginTop = 5;
+		style.ContentMarginBottom = 5;
+		return style;
+	}
+
+	public static StyleBox CreateOptionButtonPressed()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.36f, 0.30f, 0.20f, 0.98f);
+		style.BorderColor = ColorGold;
+		style.SetBorderWidthAll(1);
+		style.CornerRadiusTopLeft = 4;
+		style.CornerRadiusTopRight = 4;
+		style.CornerRadiusBottomLeft = 4;
+		style.CornerRadiusBottomRight = 4;
+		style.ContentMarginLeft = 8;
+		style.ContentMarginRight = 8;
+		style.ContentMarginTop = 5;
+		style.ContentMarginBottom = 5;
 		return style;
 	}
 

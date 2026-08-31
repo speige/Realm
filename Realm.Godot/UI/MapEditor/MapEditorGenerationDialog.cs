@@ -25,8 +25,10 @@ public class MapEditorGenerationDialog
 	{
 		var overlay = new ColorRect();
 		overlay.Name = "GenerationOverlay";
-		overlay.Color = new Color(0, 0, 0, 0.5f);
+		overlay.Color = new Color(0, 0, 0, 0.65f);
 		overlay.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		overlay.MouseFilter = Control.MouseFilterEnum.Stop;
+		overlay.ZIndex = 1000;
 		_hud.AddChild(overlay);
 
 		var panel = new PanelContainer();

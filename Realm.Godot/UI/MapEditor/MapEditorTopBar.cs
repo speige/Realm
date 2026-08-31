@@ -46,7 +46,7 @@ public class MapEditorTopBar
 		if (_statusLabel != null && viewModel != null && viewModel.StatusText != _lastStatusText)
 		{
 			_lastStatusText = viewModel.StatusText;
-			_statusLabel.Text = TranslationServer.Translate(viewModel.StatusText);
+			_statusLabel.Text = viewModel.StatusText;
 		}
 	}
 

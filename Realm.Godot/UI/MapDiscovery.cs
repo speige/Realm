@@ -27,14 +27,37 @@ public partial class MapDiscovery : Control
 	private string _selectedCategory = "All";
 	private string _searchQuery = "";
 
-	private static readonly Font FontMedieval = GD.Load<Font>("res://Assets/UI/BlackwoodCastle.ttf");
-	private static readonly Font FontCinzel = GD.Load<Font>("res://Assets/UI/Norse-Bold.otf");
-	private static readonly Font FontMedievalShadow = GD.Load<Font>("res://Assets/UI/BlackwoodCastle-Shadow.ttf");
-	private static readonly Font FontOutfit = GD.Load<Font>("res://Assets/UI/Norse-Bold.otf");
-	private static readonly Font FontNorseBold = GD.Load<Font>("res://Assets/UI/Norse-Bold.otf");
+	private static Font _fontNorseBold;
+	private static Font _fontCinzel;
+	private static Font _fontOutfit;
+	private static Font _fontOutfitBold;
+
+	private static void EnsureFontsLoaded()
+	{
+		_fontNorseBold ??= LoadFont("res://Assets/UI/Norse-Bold.otf");
+		_fontCinzel ??= LoadFont("res://Assets/UI/Cinzel-Bold.ttf") ?? _fontNorseBold;
+		_fontOutfit ??= LoadFont("res://Assets/UI/Outfit-Medium.ttf") ?? _fontNorseBold;
+		_fontOutfitBold ??= LoadFont("res://Assets/UI/Outfit-Bold.ttf") ?? _fontNorseBold;
+	}
+
+	private static Font LoadFont(string path)
+	{
+		try
+		{
+			if (ResourceLoader.Exists(path))
+			{
+				var font = GD.Load<Font>(path);
+				if (font != null) return font;
+			}
+		}
+		catch { }
+		return null;
+	}
 
 	public override void _Ready()
 	{
+		EnsureFontsLoaded();
+
 		_bgPanel = GetNode<Panel>("Background");
 		_leftPillar = GetNode<Panel>("LeftPillar");
 		_rightPillar = GetNode<Panel>("RightPillar");
@@ -120,7 +143,7 @@ public partial class MapDiscovery : Control
 		_mapListPanel.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
 
 		_discoveryTitle.Text = TranslationServer.Translate("MAP DISCOVERY");
-		_discoveryTitle.AddThemeFontOverride("font", FontNorseBold);
+		if (_fontNorseBold != null) _discoveryTitle.AddThemeFontOverride("font", _fontNorseBold);
 		_discoveryTitle.AddThemeFontSizeOverride("font_size", 24);
 		_discoveryTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 		_discoveryTitle.AddThemeColorOverride("font_outline_color", new Color(0.06f, 0.06f, 0.08f));
@@ -138,8 +161,10 @@ public partial class MapDiscovery : Control
 		MoveChild(_discoveryTitle, -1);
 
 		_backButton.Text = TranslationServer.Translate("MAIN MENU");
-		_backButton.AddThemeFontOverride("font", FontNorseBold);
-		_backButton.AddThemeFontSizeOverride("font_size", 18);
+		if (_fontNorseBold != null) _backButton.AddThemeFontOverride("font", _fontNorseBold);
+		_backButton.AddThemeFontSizeOverride("font_size", 19);
+		_backButton.AddThemeConstantOverride("outline_size", 4);
+		_backButton.AddThemeColorOverride("font_outline_color", new Color(0.06f, 0.06f, 0.08f));
 		_backButton.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		_backButton.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
 		_backButton.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
@@ -178,7 +203,7 @@ public partial class MapDiscovery : Control
 
 		_searchBar.AddThemeStyleboxOverride("normal", searchStyle);
 		_searchBar.AddThemeStyleboxOverride("focus", searchStyle);
-		_searchBar.AddThemeFontOverride("font", FontNorseBold);
+		if (_fontNorseBold != null) _searchBar.AddThemeFontOverride("font", _fontNorseBold);
 		_searchBar.AddThemeFontSizeOverride("font_size", 17);
 		_searchBar.AddThemeColorOverride("font_color", new Color(0.95f, 0.9f, 0.8f));
 		_searchBar.AddThemeColorOverride("font_placeholder_color", new Color(0.6f, 0.55f, 0.45f));
@@ -194,7 +219,7 @@ public partial class MapDiscovery : Control
 			var searchLabel = new Label();
 			searchLabel.Name = "SearchLabel";
 			searchLabel.Text = TranslationServer.Translate("Search");
-			searchLabel.AddThemeFontOverride("font", FontNorseBold);
+			if (_fontNorseBold != null) searchLabel.AddThemeFontOverride("font", _fontNorseBold);
 			searchLabel.AddThemeFontSizeOverride("font_size", 20);
 			searchLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 			searchLabel.HorizontalAlignment = HorizontalAlignment.Center;
@@ -214,9 +239,11 @@ public partial class MapDiscovery : Control
 	private void SetupCategoryButton(Button button, string text, string categoryValue)
 	{
 		button.Text = TranslationServer.Translate(text);
-		button.AddThemeFontOverride("font", FontNorseBold);
-		button.AddThemeFontSizeOverride("font_size", 17);
-		button.CustomMinimumSize = new Vector2(0, 52);
+		if (_fontNorseBold != null) button.AddThemeFontOverride("font", _fontNorseBold);
+		button.AddThemeFontSizeOverride("font_size", 19);
+		button.AddThemeConstantOverride("outline_size", 4);
+		button.AddThemeColorOverride("font_outline_color", new Color(0.06f, 0.06f, 0.08f));
+		button.CustomMinimumSize = new Vector2(0, 76);
 		button.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
 		
 		button.Pressed += () =>
@@ -246,26 +273,29 @@ public partial class MapDiscovery : Control
 		if (highlight)
 		{
 			button.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-			button.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+			button.AddThemeColorOverride("font_hover_color", new Color(1.0f, 0.94f, 0.75f));
 			button.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
 			button.AddThemeColorOverride("font_focus_color", UIStyle.ColorGold);
+			button.AddThemeConstantOverride("outline_size", 5);
+			button.AddThemeColorOverride("font_outline_color", new Color(0.22f, 0.16f, 0.04f));
 			
 			var activeStyle = new StyleBoxTexture();
-			activeStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/procedural_btn_normal_selected.png");
+			activeStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/procedural_btn_normal.png");
 			activeStyle.TextureMarginLeft = 0;
 			activeStyle.TextureMarginRight = 0;
 			activeStyle.TextureMarginTop = 0;
 			activeStyle.TextureMarginBottom = 0;
 			activeStyle.ContentMarginLeft = 16;
 			activeStyle.ContentMarginRight = 16;
-			activeStyle.ContentMarginTop = 10;
-			activeStyle.ContentMarginBottom = 10;
+			activeStyle.ContentMarginTop = 18;
+			activeStyle.ContentMarginBottom = 14;
+			activeStyle.ModulateColor = new Color(1.30f, 1.20f, 0.88f);
 			
 			var activeHover = (StyleBoxTexture)activeStyle.Duplicate();
-			activeHover.ModulateColor = new Color(1.1f, 1.1f, 1.15f);
+			activeHover.ModulateColor = new Color(1.42f, 1.30f, 0.95f);
 			
 			var activePressed = (StyleBoxTexture)activeStyle.Duplicate();
-			activePressed.ModulateColor = new Color(0.8f, 0.8f, 0.85f);
+			activePressed.ModulateColor = new Color(1.08f, 1.00f, 0.75f);
 			
 			button.AddThemeStyleboxOverride("normal", activeStyle);
 			button.AddThemeStyleboxOverride("hover", activeHover);
@@ -277,6 +307,8 @@ public partial class MapDiscovery : Control
 			button.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
 			button.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
 			button.AddThemeColorOverride("font_focus_color", UIStyle.ColorGold);
+			button.AddThemeConstantOverride("outline_size", 4);
+			button.AddThemeColorOverride("font_outline_color", new Color(0.06f, 0.06f, 0.08f));
 			
 			var normalStyle = new StyleBoxTexture();
 			normalStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/procedural_btn_normal.png");
@@ -286,22 +318,15 @@ public partial class MapDiscovery : Control
 			normalStyle.TextureMarginBottom = 0;
 			normalStyle.ContentMarginLeft = 16;
 			normalStyle.ContentMarginRight = 16;
-			normalStyle.ContentMarginTop = 10;
-			normalStyle.ContentMarginBottom = 10;
+			normalStyle.ContentMarginTop = 18;
+			normalStyle.ContentMarginBottom = 14;
+			normalStyle.ModulateColor = new Color(0.85f, 0.85f, 0.88f);
 			
-			var hoverStyle = new StyleBoxTexture();
-			hoverStyle.Texture = GD.Load<Texture2D>("res://Assets/UI/procedural_btn_normal_hover.png");
-			hoverStyle.TextureMarginLeft = 0;
-			hoverStyle.TextureMarginRight = 0;
-			hoverStyle.TextureMarginTop = 0;
-			hoverStyle.TextureMarginBottom = 0;
-			hoverStyle.ContentMarginLeft = 16;
-			hoverStyle.ContentMarginRight = 16;
-			hoverStyle.ContentMarginTop = 10;
-			hoverStyle.ContentMarginBottom = 10;
+			var hoverStyle = (StyleBoxTexture)normalStyle.Duplicate();
+			hoverStyle.ModulateColor = new Color(1.12f, 1.08f, 0.92f);
 			
-			var pressedStyle = (StyleBoxTexture)hoverStyle.Duplicate();
-			pressedStyle.ModulateColor = new Color(0.85f, 0.85f, 0.9f);
+			var pressedStyle = (StyleBoxTexture)normalStyle.Duplicate();
+			pressedStyle.ModulateColor = new Color(0.75f, 0.75f, 0.78f);
 			
 			button.AddThemeStyleboxOverride("normal", normalStyle);
 			button.AddThemeStyleboxOverride("hover", hoverStyle);
@@ -367,6 +392,8 @@ public partial class MapDiscovery : Control
 
 	private Control CreateMapCard(MapData map)
 	{
+		EnsureFontsLoaded();
+
 		var card = new PanelContainer();
 		card.CustomMinimumSize = new Vector2(560, 220);
 		card.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
@@ -387,9 +414,17 @@ public partial class MapDiscovery : Control
 		hBox.AddThemeConstantOverride("separation", 16);
 		card.AddChild(hBox);
 
+		var imgContainer = new Control();
+		imgContainer.CustomMinimumSize = new Vector2(180, 144);
+		imgContainer.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+		imgContainer.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+
 		var thumbnail = new TextureRect();
-		thumbnail.CustomMinimumSize = new Vector2(150, 110);
-		thumbnail.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+		thumbnail.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		thumbnail.OffsetLeft = 12;
+		thumbnail.OffsetTop = 12;
+		thumbnail.OffsetRight = -12;
+		thumbnail.OffsetBottom = -12;
 		thumbnail.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		thumbnail.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
 		thumbnail.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
@@ -401,7 +436,17 @@ public partial class MapDiscovery : Control
 		{
 			thumbnail.Texture = GD.Load<Texture2D>("res://icon.svg");
 		}
-		hBox.AddChild(thumbnail);
+		imgContainer.AddChild(thumbnail);
+
+		var frameOverlay = new TextureRect();
+		frameOverlay.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		frameOverlay.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		frameOverlay.StretchMode = TextureRect.StretchModeEnum.Scale;
+		frameOverlay.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+		frameOverlay.Texture = GD.Load<Texture2D>("res://Assets/UI/procedural_card_img.png");
+		imgContainer.AddChild(frameOverlay);
+
+		hBox.AddChild(imgContainer);
 
 		var vBox = new VBoxContainer();
 		vBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
@@ -415,33 +460,37 @@ public partial class MapDiscovery : Control
 
 		var title = new Label();
 		title.Text = map.Title;
-		title.AddThemeFontOverride("font", FontNorseBold);
+		if (_fontNorseBold != null) title.AddThemeFontOverride("font", _fontNorseBold);
 		title.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		title.AddThemeFontSizeOverride("font_size", 18);
+		title.AddThemeFontSizeOverride("font_size", 22);
+		title.AddThemeConstantOverride("outline_size", 4);
+		title.AddThemeColorOverride("font_outline_color", new Color(0.06f, 0.06f, 0.08f));
 		title.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		headerBox.AddChild(title);
 
 		var ratingLabel = new Label();
 		ratingLabel.Text = $"★ {map.RatingStars:F1}";
-		ratingLabel.AddThemeFontOverride("font", FontNorseBold);
+		if (_fontNorseBold != null) ratingLabel.AddThemeFontOverride("font", _fontNorseBold);
 		ratingLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		ratingLabel.AddThemeFontSizeOverride("font_size", 15);
+		ratingLabel.AddThemeFontSizeOverride("font_size", 17);
+		ratingLabel.AddThemeConstantOverride("outline_size", 4);
+		ratingLabel.AddThemeColorOverride("font_outline_color", new Color(0.06f, 0.06f, 0.08f));
 		headerBox.AddChild(ratingLabel);
 
 		var creator = new Label();
 		creator.Text = $"By: {map.Creator}  •  {map.Genre}";
-		creator.AddThemeFontOverride("font", FontNorseBold);
+		if (_fontNorseBold != null) creator.AddThemeFontOverride("font", _fontNorseBold);
 		creator.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
-		creator.AddThemeFontSizeOverride("font_size", 12);
+		creator.AddThemeFontSizeOverride("font_size", 14);
 		vBox.AddChild(creator);
 
 		var desc = new Label();
 		desc.Text = map.Description;
 		desc.AutowrapMode = TextServer.AutowrapMode.WordSmart;
 		desc.SizeFlagsVertical = SizeFlags.ExpandFill;
-		desc.AddThemeFontOverride("font", FontNorseBold);
-		desc.AddThemeColorOverride("font_color", new Color(0.92f, 0.92f, 0.94f));
-		desc.AddThemeFontSizeOverride("font_size", 12);
+		if (_fontNorseBold != null) desc.AddThemeFontOverride("font", _fontNorseBold);
+		desc.AddThemeColorOverride("font_color", new Color(0.94f, 0.94f, 0.96f));
+		desc.AddThemeFontSizeOverride("font_size", 14);
 		vBox.AddChild(desc);
 
 		var footer = new HBoxContainer();
@@ -451,8 +500,10 @@ public partial class MapDiscovery : Control
 		var btnDetails = new Button();
 		btnDetails.CustomMinimumSize = new Vector2(110, 32);
 		btnDetails.Text = TranslationServer.Translate("DETAILS");
-		btnDetails.AddThemeFontOverride("font", FontNorseBold);
-		btnDetails.AddThemeFontSizeOverride("font_size", 14);
+		if (_fontNorseBold != null) btnDetails.AddThemeFontOverride("font", _fontNorseBold);
+		btnDetails.AddThemeFontSizeOverride("font_size", 16);
+		btnDetails.AddThemeConstantOverride("outline_size", 4);
+		btnDetails.AddThemeColorOverride("font_outline_color", new Color(0.06f, 0.06f, 0.08f));
 		btnDetails.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
 		btnDetails.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
 		btnDetails.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);

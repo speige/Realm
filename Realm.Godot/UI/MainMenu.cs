@@ -91,7 +91,7 @@ public partial class MainMenu : Control
 		SetupMenuButton(_mapDiscoveryButton, "MAP DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.MapDiscovery), "res://Assets/UI/menu_discovery_button.png");
 		if (_creatorDiscoveryButton != null)
 		{
-			SetupMenuButton(_creatorDiscoveryButton, "CREATOR DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.CreatorDiscovery), "res://Assets/UI/menu_discovery_button.png");
+			SetupMenuButton(_creatorDiscoveryButton, "CREATOR DISCOVERY", () => UIManager.Instance.TransitionTo(GameScreen.CreatorDiscovery), "res://Assets/UI/menu_creator_button.png");
 			_creatorDiscoveryButton.AddThemeConstantOverride("icon_max_width", 28);
 		}
 		SetupMenuButton(_mapEditorButton, "MAP EDITOR", () => OnMapEditorPressed(), "res://Assets/UI/menu_editor_button.png");
@@ -148,6 +148,20 @@ public partial class MainMenu : Control
 			if (_profileButton != null) _profileButton.Visible = false;
 			if (_seedNodeButton != null) _seedNodeButton.Visible = false;
 		}
+	}
+
+	private void ToggleSocialPopover()
+	{
+		if (_socialPopover == null || _socialPopoverOverlay == null) return;
+		bool isVisible = !_socialPopover.Visible;
+		_socialPopover.Visible = isVisible;
+		_socialPopoverOverlay.Visible = isVisible;
+	}
+
+	private void HideSocialPopover()
+	{
+		if (_socialPopover != null) _socialPopover.Visible = false;
+		if (_socialPopoverOverlay != null) _socialPopoverOverlay.Visible = false;
 	}
 
 	private void SetupButton(Button button, string text, Action onClick)
@@ -276,20 +290,6 @@ public partial class MainMenu : Control
 		};
 
 		button.MouseEntered += () => PlayHoverSound();
-	}
-
-	private void ToggleSocialPopover()
-	{
-		if (_socialPopover == null || _socialPopoverOverlay == null) return;
-		bool isVisible = !_socialPopover.Visible;
-		_socialPopover.Visible = isVisible;
-		_socialPopoverOverlay.Visible = isVisible;
-	}
-
-	private void HideSocialPopover()
-	{
-		if (_socialPopover != null) _socialPopover.Visible = false;
-		if (_socialPopoverOverlay != null) _socialPopoverOverlay.Visible = false;
 	}
 
 	private void CreateVersionSelector()
