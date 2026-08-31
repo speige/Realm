@@ -129,6 +129,20 @@ public class CommandPanel
 
 					if (!string.IsNullOrEmpty(item.AbilityId))
 					{
+						var def = GameHost.Instance?.GetAbilityDefinition(item.AbilityId);
+						if (def != null)
+						{
+							string transTooltip = !string.IsNullOrEmpty(def.Tooltip) ? TranslationServer.Translate(def.Tooltip) : "";
+							if (!string.IsNullOrEmpty(transTooltip) && btn.TooltipText != transTooltip)
+							{
+								btn.TooltipText = transTooltip;
+							}
+
+							if (!string.IsNullOrEmpty(def.IconPath) && btn.Icon?.ResourcePath != def.IconPath)
+							{
+								btn.Icon = GD.Load<Texture2D>(def.IconPath);
+							}
+						}
 						UpdateAbilityButtonVisuals(btn, item);
 					}
 					else

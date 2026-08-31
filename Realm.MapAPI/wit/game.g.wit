@@ -71,6 +71,7 @@ interface game-api {
     random-float: func(min: f32, max: f32) -> f32;
     random-int: func(min: s32, max: s32) -> s32;
     read-saved-data: func(file-name: string) -> string;
+    register-ability: func(ability-id: string, display-name: string, tooltip: string, icon-path: string, is-instant: bool);
     register-buff-modifier: func(buff-id: string, stat-name: string, is-percentage: bool, value: f32);
     remove-buff: func(unit-id: s32, buff-id: string);
     resource-node-count: func() -> s32;
@@ -86,6 +87,10 @@ interface game-api {
     send-message-to-player: func(player-index: s32, message: string);
     set-ability-auto-cast: func(unit-id: s32, ability-id: string, active: bool);
     set-ability-cooldown: func(unit-id: s32, ability-id: string, cooldown: f32);
+    set-ability-grid-position: func(ability-id: string, x: s32, y: s32);
+    set-ability-icon: func(ability-id: string, icon-path: string);
+    set-ability-instant: func(ability-id: string, is-instant: bool);
+    set-ability-tooltip: func(ability-id: string, tooltip: string);
     set-countdown-timer-label: func(label: string);
     set-day-night-cycle-enabled: func(enabled: bool);
     set-gold: func(val: f32);
