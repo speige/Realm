@@ -2,13 +2,38 @@ using System.Numerics;
 
 namespace Realm.MapAPI;
 
+/// <summary>
+/// Configuration settings for tower defense combat behavior, including range, damage, cooldowns, and visual effects.
+/// </summary>
 public readonly struct TowerDefenseConfig
 {
+    /// <summary>
+    /// Gets the attack range of the tower defense unit.
+    /// </summary>
     public float Range { get; }
+
+    /// <summary>
+    /// Gets the base attack damage dealt by the tower defense unit.
+    /// </summary>
     public float Damage { get; }
+
+    /// <summary>
+    /// Gets the cooldown interval between attacks in seconds.
+    /// </summary>
     public float AttackCooldownSeconds { get; }
+
+    /// <summary>
+    /// Gets the identifier of the visual effect spawned when attacking.
+    /// </summary>
     public string VisualEffectId { get; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TowerDefenseConfig"/> struct.
+    /// </summary>
+    /// <param name="range">The attack range of the tower.</param>
+    /// <param name="damage">The damage dealt per attack.</param>
+    /// <param name="attackCooldownSeconds">The cooldown duration in seconds between attacks.</param>
+    /// <param name="visualEffectId">The identifier of the visual effect to spawn when attacking, or an empty string for none.</param>
     public TowerDefenseConfig(float range, float damage, float attackCooldownSeconds, string visualEffectId)
     {
         Range = range;
@@ -18,22 +43,52 @@ public readonly struct TowerDefenseConfig
     }
 }
 
+/// <summary>
+/// Configuration settings for automated waypoint navigation and lane combat behavior.
+/// </summary>
 public readonly struct WaypointMarchConfig
 {
+    /// <summary>
+    /// Gets the squared distance threshold within which a unit is considered to have arrived at a waypoint.
+    /// </summary>
     public float WaypointArrivalRadiusSquared { get; }
+
+    /// <summary>
+    /// Gets the cooldown interval in seconds between attacks during a march.
+    /// </summary>
     public float AttackCooldownSeconds { get; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="WaypointMarchConfig"/> struct.
+    /// </summary>
+    /// <param name="waypointArrivalRadiusSquared">The squared arrival radius used to determine when a waypoint is reached.</param>
+    /// <param name="attackCooldownSeconds">The attack cooldown duration in seconds.</param>
     public WaypointMarchConfig(float waypointArrivalRadiusSquared, float attackCooldownSeconds)
     {
         WaypointArrivalRadiusSquared = waypointArrivalRadiusSquared;
         AttackCooldownSeconds = attackCooldownSeconds;
     }
 
+    /// <summary>
+    /// Gets the default waypoint march configuration.
+    /// </summary>
     public static WaypointMarchConfig Default => new(4f, 1.2f);
 }
 
+/// <summary>
+/// Provides helper methods for common map script gameplay mechanics, such as automated tower defense updates.
+/// </summary>
 public static class MapScriptHelpers
 {
+    /// <summary>
+    /// Runs a single simulation tick of tower defense logic for a tower unit, acquiring the nearest valid enemy target within range and performing an attack if the cooldown has elapsed.
+    /// </summary>
+    /// <param name="api">The game API instance used to query targets and spawn visual effects.</param>
+    /// <param name="tower">The defending tower unit.</param>
+    /// <param name="config">The tower defense configuration specifying range, damage, cooldown, and visual effects.</param>
+    /// <param name="cooldownRemaining">A reference to the remaining attack cooldown in seconds, which will be updated.</param>
+    /// <param name="delta">The time elapsed since the previous simulation tick, in seconds.</param>
+    /// <returns><see langword="true"/> if the tower attacked a target during this tick; otherwise, <see langword="false"/>.</returns>
     public static bool RunTowerDefenseTick(
         IGameAPI api,
         IUnit tower,
@@ -65,7 +120,10 @@ public static class MapScriptHelpers
     }
 }
 
-public sealed class WaypointMarcher
+/// <summary>
+/// Manages automated lane movement and combat engagement for a unit marching along a sequence of waypoints.
+/// </summary>
+public class WaypointMarcher
 {
     private readonly IUnit _unit;
     private readonly IReadOnlyList<Vector3> _waypoints;
@@ -78,6 +136,12 @@ public sealed class WaypointMarcher
     private Vector3? _orderedDestination;
     private IUnit? _activeCombatTarget;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="WaypointMarcher"/> class.
+    /// </summary>
+    /// <param name="unit">The unit to navigate along the waypoint sequence.</param>
+    /// <param name="waypoints">The ordered list of waypoint positions to march through.</param>
+    /// <param name="config">Optional configuration settings for arrival thresholds and attack cooldowns. If <see langword="null"/>, default settings are used.</param>
     public WaypointMarcher(
         IUnit unit,
         IReadOnlyList<Vector3> waypoints,
@@ -89,8 +153,16 @@ public sealed class WaypointMarcher
         _config = config ?? WaypointMarchConfig.Default;
     }
 
+    /// <summary>
+    /// Gets a value indicating whether the managed unit is currently alive.
+    /// </summary>
     public bool IsAlive => !_unit.IsDead;
 
+    /// <summary>
+    /// Updates the unit's march and combat behavior for the current simulation tick.
+    /// </summary>
+    /// <param name="api">The game API instance used to query targets and issue orders.</param>
+    /// <param name="delta">The time elapsed since the previous simulation tick, in seconds.</param>
     public void Update(IGameAPI api, float delta)
     {
         if (!IsAlive || _waypointIndex >= _waypoints.Count)
@@ -168,3 +240,4 @@ public sealed class WaypointMarcher
         return dx * dx + dz * dz;
     }
 }
+
