@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Realm.Ecs\Realm.Ecs.csproj" />
+    <ProjectReference Include="..\Realm.MapAPI\Realm.MapAPI.csproj" />
   </ItemGroup>
 
   <ItemGroup>
