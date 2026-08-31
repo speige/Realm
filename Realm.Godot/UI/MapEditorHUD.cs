@@ -3661,14 +3661,21 @@ public partial class MapEditorHUD : Control
 					bool hasNewerCsFile = false;
 					foreach (var dir in sourceDirs)
 					{
-						var csFiles = System.IO.Directory.GetFiles(dir, "*.cs", System.IO.SearchOption.AllDirectories)
+						var dependencyFiles = System.IO.Directory.GetFiles(dir, "*.cs", System.IO.SearchOption.AllDirectories)
 							.Where(f => {
 								string rel = f.Substring(dir.Length).TrimStart(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
 								return !rel.StartsWith("bin", System.StringComparison.OrdinalIgnoreCase) && !rel.StartsWith("obj", System.StringComparison.OrdinalIgnoreCase);
 							})
-							.Concat(System.IO.Directory.GetFiles(dir, "*.csproj", System.IO.SearchOption.TopDirectoryOnly));
+							.Concat(System.IO.Directory.GetFiles(dir, "*.csproj", System.IO.SearchOption.TopDirectoryOnly))
+							.Concat(System.IO.Directory.GetFiles(dir, "metadata.json", System.IO.SearchOption.TopDirectoryOnly))
+							.Concat(System.IO.Directory.Exists(System.IO.Path.Combine(dir, "lib"))
+								? System.IO.Directory.GetFiles(System.IO.Path.Combine(dir, "lib"), "*.dll", System.IO.SearchOption.TopDirectoryOnly)
+								: System.Array.Empty<string>())
+							.Concat(System.IO.Directory.Exists(System.IO.Path.Combine(dir, "wit"))
+								? System.IO.Directory.GetFiles(System.IO.Path.Combine(dir, "wit"), "*.wit", System.IO.SearchOption.TopDirectoryOnly)
+								: System.Array.Empty<string>());
 
-						if (csFiles.Any(f => System.IO.File.GetLastWriteTimeUtc(f) > wasmTime))
+						if (dependencyFiles.Any(f => System.IO.File.GetLastWriteTimeUtc(f) > wasmTime))
 						{
 							hasNewerCsFile = true;
 							break;
