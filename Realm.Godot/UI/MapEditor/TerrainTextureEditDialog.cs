@@ -11,7 +11,9 @@ public class TerrainTextureSnapshot
 	public float HeightScale { get; set; } = 1.0f;
 	public float HeightOffset { get; set; } = 0.0f;
 	public float CrevicePower { get; set; } = 1.0f;
-	public string TileMode { get; set; } = "Grid";
+	public float NormalScale { get; set; } = 1.0f;
+	public float RoughnessScale { get; set; } = 1.0f;
+	public string TileMode { get; set; } = "Stochastic";
 	public float UvScale { get; set; } = 1.0f;
 	public float StochasticTileSize { get; set; } = 1.0f;
 	public float CrossFade { get; set; } = 0.0f;
@@ -25,6 +27,8 @@ public class TerrainTextureSnapshot
 			HeightScale = this.HeightScale,
 			HeightOffset = this.HeightOffset,
 			CrevicePower = this.CrevicePower,
+			NormalScale = this.NormalScale,
+			RoughnessScale = this.RoughnessScale,
 			TileMode = this.TileMode,
 			UvScale = this.UvScale,
 			StochasticTileSize = this.StochasticTileSize,
@@ -75,7 +79,8 @@ public class TerrainTextureUndoAction : IEditorAction
 				snapshot.HeightScale,
 				snapshot.HeightOffset,
 				snapshot.CrevicePower,
-				1.0f
+				snapshot.NormalScale,
+				snapshot.RoughnessScale
 			);
 		}
 
@@ -102,6 +107,8 @@ public class TerrainTextureUndoAction : IEditorAction
 								sObj["Height_Scale"] = snapshot.HeightScale;
 								sObj["Height_Offset"] = snapshot.HeightOffset;
 								sObj["Crevice_Power"] = snapshot.CrevicePower;
+								sObj["Normal_Scale"] = snapshot.NormalScale;
+								sObj["Roughness_Scale"] = snapshot.RoughnessScale;
 								sObj["Tile_Mode"] = snapshot.TileMode;
 								sObj["UV_Scale"] = snapshot.UvScale;
 								sObj["Stochastic_Tile_Size"] = snapshot.StochasticTileSize;
@@ -126,7 +133,9 @@ public partial class TerrainTextureEditDialog : FloatingDialogBase
 	private float _heightScale = 1.0f;
 	private float _heightOffset = 0.0f;
 	private float _crevicePower = 1.0f;
-	private string _tileMode = "Grid";
+	private float _normalScale = 1.0f;
+	private float _roughnessScale = 1.0f;
+	private string _tileMode = "Stochastic";
 	private float _uvScale = 1.0f;
 	private float _stochasticTileSize = 1.0f;
 	private float _crossFade = 0.0f;
@@ -138,6 +147,11 @@ public partial class TerrainTextureEditDialog : FloatingDialogBase
 	private HSlider _sldBrightness;
 	private Label _lblBrightness;
 	private ColorPickerButton _btnTint;
+	private HSlider _sldRoughnessScale;
+	private Label _lblRoughnessScale;
+	private HSlider _sldNormalScale;
+	private Label _lblNormalScale;
+	private Label _iconHelpNormalScale;
 	private HSlider _sldHeightScale;
 	private Label _lblHeightScale;
 	private Label _iconHelpHeightScale;
@@ -156,14 +170,14 @@ public partial class TerrainTextureEditDialog : FloatingDialogBase
 	private Label _lblCrossFade;
 
 	public TerrainTextureEditDialog(MapEditorHUD hud)
-		: base(hud, TranslationServer.Translate("Edit Terrain Texture Swatch"), new Vector2(460, 600))
+		: base(hud, TranslationServer.Translate("Edit Terrain Texture Swatch"), new Vector2(460, 640))
 	{
 		BuildControls();
 	}
 
 	private void BuildControls()
 	{
-		var scrollBody = CreateScrollBody(480);
+		var scrollBody = CreateScrollBody(520);
 		var contentVBox = new VBoxContainer();
 		contentVBox.AddThemeConstantOverride("separation", 10);
 		contentVBox.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
@@ -207,8 +221,41 @@ public partial class TerrainTextureEditDialog : FloatingDialogBase
 		rowTint.AddChild(_btnTint);
 		contentVBox.AddChild(rowTint);
 
+		(_sldRoughnessScale, _lblRoughnessScale) = AddSlider(
+			contentVBox,
+			TranslationServer.Translate("Roughness Scale:"),
+			0.1f,
+			3.0f,
+			0.05f,
+			_roughnessScale,
+			(val) =>
+			{
+				_roughnessScale = val;
+				ApplyLiveTerrainUpdate();
+			},
+			"0.00x",
+			140f
+		);
+
 		// SECTION 2: HEIGHTMAP & CREVICE BLENDING
 		AddSectionHeader(contentVBox, "🏔️ " + TranslationServer.Translate("HEIGHTMAP & CREVICES"), new Color(0.4f, 0.85f, 0.5f));
+
+		(_sldNormalScale, _lblNormalScale) = AddSlider(
+			contentVBox,
+			TranslationServer.Translate("Normal Strength:"),
+			0.0f,
+			3.0f,
+			0.05f,
+			_normalScale,
+			(val) =>
+			{
+				_normalScale = val;
+				ApplyLiveTerrainUpdate();
+			},
+			"0.00x",
+			140f
+		);
+		_iconHelpNormalScale = CreateHelpTooltipIcon(_sldNormalScale);
 
 		(_sldHeightScale, _lblHeightScale) = AddSlider(
 			contentVBox,
@@ -368,6 +415,7 @@ public partial class TerrainTextureEditDialog : FloatingDialogBase
 			}
 		}
 
+		SetSliderQuality(_sldNormalScale, _lblNormalScale, _iconHelpNormalScale);
 		SetSliderQuality(_sldHeightScale, _lblHeightScale, _iconHelpHeightScale);
 		SetSliderQuality(_sldHeightOffset, _lblHeightOffset, _iconHelpHeightOffset);
 		SetSliderQuality(_sldCrevicePower, _lblCrevicePower, _iconHelpCrevicePower);
@@ -404,7 +452,8 @@ public partial class TerrainTextureEditDialog : FloatingDialogBase
 				_heightScale,
 				_heightOffset,
 				_crevicePower,
-				1.0f
+				_normalScale,
+				_roughnessScale
 			);
 		}
 	}
@@ -416,23 +465,116 @@ public partial class TerrainTextureEditDialog : FloatingDialogBase
 
 		TitleLabel.Text = $"{TranslationServer.Translate("Edit Texture Swatch")} - {_textureFileName}";
 
-		_brightness = textureData?["Brightness"] != null ? (float)textureData["Brightness"] : 1.0f;
-		string tintStr = textureData?["Tint"]?.ToString() ?? "#ffffff";
-		_tint = Color.FromHtml(tintStr);
+		RuntimeTerrain.ActiveSwatchConfig activeConfig = default;
+		if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+		{
+			activeConfig = GameHost.Instance.GroundTerrain.GetActiveSwatchConfig(_textureFileName);
+		}
+		else
+		{
+			activeConfig = new RuntimeTerrain.ActiveSwatchConfig
+			{
+				TileMode = "Stochastic",
+				UvScale = 1.0f,
+				StochasticTileSize = 1.0f,
+				CrossFade = 0.0f,
+				HeightScale = 1.0f,
+				HeightOffset = 0.0f,
+				CrevicePower = 1.0f,
+				NormalScale = 1.0f,
+				RoughnessScale = 1.0f,
+				Brightness = 1.0f,
+				Tint = Colors.White
+			};
+		}
 
-		_heightScale = textureData?["Height_Scale"] != null ? (float)textureData["Height_Scale"] : (textureData?["height_scale"] != null ? (float)textureData["height_scale"] : 1.0f);
-		_heightOffset = textureData?["Height_Offset"] != null ? (float)textureData["Height_Offset"] : (textureData?["height_offset"] != null ? (float)textureData["height_offset"] : 0.0f);
-		_crevicePower = textureData?["Crevice_Power"] != null ? (float)textureData["Crevice_Power"] : (textureData?["crevice_power"] != null ? (float)textureData["crevice_power"] : 1.0f);
+		_brightness = activeConfig.Brightness;
+		_tint = activeConfig.Tint;
+		_roughnessScale = activeConfig.RoughnessScale;
+		_normalScale = activeConfig.NormalScale;
+		_heightScale = activeConfig.HeightScale;
+		_heightOffset = activeConfig.HeightOffset;
+		_crevicePower = activeConfig.CrevicePower;
+		_tileMode = activeConfig.TileMode;
+		_uvScale = activeConfig.UvScale;
+		_stochasticTileSize = activeConfig.StochasticTileSize;
+		_crossFade = activeConfig.CrossFade;
 
-		_tileMode = textureData?["Tile_Mode"]?.ToString() ?? textureData?["tile_mode"]?.ToString() ?? "Grid";
-		_uvScale = textureData?["UV_Scale"] != null ? (float)textureData["UV_Scale"] : (textureData?["uv_scale"] != null ? (float)textureData["uv_scale"] : 1.0f);
-		_stochasticTileSize = textureData?["Stochastic_Tile_Size"] != null ? (float)textureData["Stochastic_Tile_Size"] : (textureData?["stochastic_tile_size"] != null ? (float)textureData["stochastic_tile_size"] : 1.0f);
-		_crossFade = textureData?["Cross_Fade"] != null ? (float)textureData["Cross_Fade"] : (textureData?["cross_fade"] != null ? (float)textureData["cross_fade"] : 0.0f);
+		if (textureData != null)
+		{
+			string brightStr = textureData["Brightness"]?.ToString() ?? textureData["brightness"]?.ToString();
+			if (!string.IsNullOrEmpty(brightStr) && float.TryParse(brightStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedB))
+			{
+				_brightness = parsedB;
+			}
+
+			string tintStr = textureData["Tint"]?.ToString() ?? textureData["tint"]?.ToString();
+			if (!string.IsNullOrEmpty(tintStr) && Color.HtmlIsValid(tintStr))
+			{
+				_tint = Color.FromHtml(tintStr);
+			}
+
+			string roughStr = textureData["Roughness_Scale"]?.ToString() ?? textureData["roughness_scale"]?.ToString() ?? textureData["roughnessScale"]?.ToString();
+			if (!string.IsNullOrEmpty(roughStr) && float.TryParse(roughStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedR))
+			{
+				_roughnessScale = parsedR;
+			}
+
+			string normStr = textureData["Normal_Scale"]?.ToString() ?? textureData["normal_scale"]?.ToString() ?? textureData["normalScale"]?.ToString();
+			if (!string.IsNullOrEmpty(normStr) && float.TryParse(normStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedN))
+			{
+				_normalScale = parsedN;
+			}
+
+			string hsStr = textureData["Height_Scale"]?.ToString() ?? textureData["height_scale"]?.ToString() ?? textureData["heightScale"]?.ToString();
+			if (!string.IsNullOrEmpty(hsStr) && float.TryParse(hsStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHs))
+			{
+				_heightScale = parsedHs;
+			}
+
+			string hoStr = textureData["Height_Offset"]?.ToString() ?? textureData["height_offset"]?.ToString() ?? textureData["heightOffset"]?.ToString();
+			if (!string.IsNullOrEmpty(hoStr) && float.TryParse(hoStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHo))
+			{
+				_heightOffset = parsedHo;
+			}
+
+			string cpStr = textureData["Crevice_Power"]?.ToString() ?? textureData["crevice_power"]?.ToString() ?? textureData["crevicePower"]?.ToString();
+			if (!string.IsNullOrEmpty(cpStr) && float.TryParse(cpStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCp))
+			{
+				_crevicePower = parsedCp;
+			}
+
+			string tmStr = textureData["Tile_Mode"]?.ToString() ?? textureData["tile_mode"]?.ToString() ?? textureData["tileMode"]?.ToString();
+			if (!string.IsNullOrEmpty(tmStr))
+			{
+				_tileMode = string.Equals(tmStr, "Grid", StringComparison.OrdinalIgnoreCase) ? "Grid" : "Stochastic";
+			}
+
+			string uvStr = textureData["UV_Scale"]?.ToString() ?? textureData["uv_scale"]?.ToString() ?? textureData["uvScale"]?.ToString();
+			if (!string.IsNullOrEmpty(uvStr) && float.TryParse(uvStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedUv))
+			{
+				_uvScale = parsedUv;
+			}
+
+			string stochStr = textureData["Stochastic_Tile_Size"]?.ToString() ?? textureData["stochastic_tile_size"]?.ToString() ?? textureData["stochasticTileSize"]?.ToString();
+			if (!string.IsNullOrEmpty(stochStr) && float.TryParse(stochStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedStoch))
+			{
+				_stochasticTileSize = parsedStoch;
+			}
+
+			string cfStr = textureData["Cross_Fade"]?.ToString() ?? textureData["cross_fade"]?.ToString() ?? textureData["Grid_Cross_Fade"]?.ToString() ?? textureData["grid_cross_fade"]?.ToString() ?? textureData["crossFade"]?.ToString();
+			if (!string.IsNullOrEmpty(cfStr) && float.TryParse(cfStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCf))
+			{
+				_crossFade = parsedCf <= 0.10f && parsedCf > 0.0f ? parsedCf * 100.0f : parsedCf;
+			}
+		}
 
 		_initialSnapshot = new TerrainTextureSnapshot
 		{
 			Brightness = _brightness,
 			Tint = _tint,
+			RoughnessScale = _roughnessScale,
+			NormalScale = _normalScale,
 			HeightScale = _heightScale,
 			HeightOffset = _heightOffset,
 			CrevicePower = _crevicePower,
@@ -444,6 +586,8 @@ public partial class TerrainTextureEditDialog : FloatingDialogBase
 
 		if (_sldBrightness != null) _sldBrightness.Value = _brightness;
 		if (_btnTint != null) _btnTint.Color = _tint;
+		if (_sldRoughnessScale != null) _sldRoughnessScale.Value = _roughnessScale;
+		if (_sldNormalScale != null) _sldNormalScale.Value = _normalScale;
 		if (_sldHeightScale != null) _sldHeightScale.Value = _heightScale;
 		if (_sldHeightOffset != null) _sldHeightOffset.Value = _heightOffset;
 		if (_sldCrevicePower != null) _sldCrevicePower.Value = _crevicePower;
@@ -469,6 +613,8 @@ public partial class TerrainTextureEditDialog : FloatingDialogBase
 		{
 			Brightness = _brightness,
 			Tint = _tint,
+			RoughnessScale = _roughnessScale,
+			NormalScale = _normalScale,
 			HeightScale = _heightScale,
 			HeightOffset = _heightOffset,
 			CrevicePower = _crevicePower,
@@ -488,6 +634,8 @@ public partial class TerrainTextureEditDialog : FloatingDialogBase
 		{
 			["Brightness"] = _brightness,
 			["Tint"] = $"#{_tint.ToHtml(false)}",
+			["Roughness_Scale"] = _roughnessScale,
+			["Normal_Scale"] = _normalScale,
 			["Height_Scale"] = _heightScale,
 			["Height_Offset"] = _heightOffset,
 			["Crevice_Power"] = _crevicePower,
@@ -507,6 +655,8 @@ public partial class TerrainTextureEditDialog : FloatingDialogBase
 		{
 			_brightness = _initialSnapshot.Brightness;
 			_tint = _initialSnapshot.Tint;
+			_roughnessScale = _initialSnapshot.RoughnessScale;
+			_normalScale = _initialSnapshot.NormalScale;
 			_heightScale = _initialSnapshot.HeightScale;
 			_heightOffset = _initialSnapshot.HeightOffset;
 			_crevicePower = _initialSnapshot.CrevicePower;

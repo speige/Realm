@@ -1,1 +1,13 @@
-{"Width":128,"Depth":128,"Units":[],"Props":[],"Decals":[],"CameraBoundsLeft":-95,"CameraBoundsRight":95,"CameraBoundsTop":-95,"CameraBoundsBottom":125,"SkyboxPath":"Assets/skyboxes/jade_shrine.png","Coordinates":[]}
+{
+	"CameraBoundsBottom": 125,
+	"CameraBoundsLeft": -95,
+	"CameraBoundsRight": 95,
+	"CameraBoundsTop": -95,
+	"Coordinates": [],
+	"Decals": [],
+	"Depth": 128,
+	"Props": [],
+	"SkyboxPath": "Assets/skyboxes/jade_shrine.png",
+	"Units": [],
+	"Width": 128
+}

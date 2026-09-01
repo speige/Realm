@@ -12,4 +12,8 @@
     <PackageReference Include="NSec.Cryptography" Version="26.4.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Realm.Shared\Realm.Shared.csproj" />
+  </ItemGroup>
+
 </Project>

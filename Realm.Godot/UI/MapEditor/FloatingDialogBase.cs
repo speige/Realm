@@ -27,6 +27,7 @@ public partial class FloatingDialogBase : PanelContainer
 	{
 		Hud = hud;
 		CustomMinimumSize = minSize;
+		Visible = false;
 		AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 
 		MainVBox = new VBoxContainer();

@@ -270,6 +270,49 @@ public class VSCodeManager
 	public static extern bool BringWindowToTop(IntPtr hWnd);
 
 	[DllImport("user32.dll")]
+	public static extern void SwitchToThisWindow(IntPtr hWnd, bool fUnknown);
+
+	public static void RestoreAndFocusGodotWindow()
+	{
+		Callable.From(() =>
+		{
+			try
+			{
+				var currentMode = DisplayServer.WindowGetMode();
+				if (currentMode == DisplayServer.WindowMode.Minimized)
+				{
+					var targetMode = GameSettings.WindowModeIdx switch
+					{
+						WindowMode.Fullscreen => DisplayServer.WindowMode.ExclusiveFullscreen,
+						WindowMode.Borderless => DisplayServer.WindowMode.Windowed,
+						_ => DisplayServer.WindowMode.Windowed
+					};
+					DisplayServer.WindowSetMode(targetMode);
+				}
+
+				DisplayServer.WindowMoveToForeground();
+
+				if (OperatingSystem.IsWindows())
+				{
+					long rawHandle = DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+					if (rawHandle != 0)
+					{
+						IntPtr hWnd = (IntPtr)rawHandle;
+						ShowWindow(hWnd, 9); // SW_RESTORE
+						SwitchToThisWindow(hWnd, true);
+						SetForegroundWindow(hWnd);
+						BringWindowToTop(hWnd);
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[VSCodeManager] RestoreAndFocusGodotWindow error: {ex.Message}");
+			}
+		}).CallDeferred();
+	}
+
+	[DllImport("user32.dll")]
 	public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
 	[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "RegisterClassExW")]
@@ -642,6 +685,11 @@ public class VSCodeManager
 			string body = await reader.ReadToEndAsync();
 			var node = System.Text.Json.Nodes.JsonNode.Parse(body);
 			string action = node?["action"]?.ToString() ?? node?["type"]?.ToString();
+			if (action == "openVfxDialog" || action == "openModelPicker" || action == "openAbilityVfxDialog" || action == "openAnimationStudio" || action == "openAnimationPreview" || action == "openEditAnimations" || (node?["focusGodot"]?.GetValue<bool>() ?? false))
+			{
+				RestoreAndFocusGodotWindow();
+			}
+
 			var responseObj = new System.Text.Json.Nodes.JsonObject();
 
 			if (action == "openVfxDialog")

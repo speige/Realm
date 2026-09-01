@@ -654,9 +654,31 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 			{
 				if (!string.IsNullOrWhiteSpace(candidate) && System.IO.File.Exists(candidate))
 				{
-					var img = Image.LoadFromFile(candidate);
+					Image? img = null;
+					if (candidate.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase))
+					{
+						byte[] rtexBytes = System.IO.File.ReadAllBytes(candidate);
+						byte[]? webpBytes = Realm.Shared.Textures.RtexFile.GetLayer(rtexBytes, 0);
+						if (webpBytes != null && webpBytes.Length > 0)
+						{
+							img = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+							if (img.LoadWebpFromBuffer(webpBytes) != Error.Ok)
+							{
+								img.LoadPngFromBuffer(webpBytes);
+							}
+						}
+					}
+					else
+					{
+						img = Image.LoadFromFile(candidate);
+					}
+
 					if (img != null)
 					{
+						if (!img.HasMipmaps())
+						{
+							img.GenerateMipmaps();
+						}
 						return ImageTexture.CreateFromImage(img);
 					}
 				}

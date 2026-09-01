@@ -36,29 +36,42 @@ public class GlbOptimizeOptions
 	public bool Force { get; set; }
 }
 
-[Verb("texture_convert", HelpText = "Convert textures between PNG (albedo) and KTX2 format.")]
+[Verb("texture_convert", HelpText = "Convert textures between standard image formats and .rtex format.")]
 public class TextureConvertOptions
 {
-	[Option('i', "input", Required = true, HelpText = "Path to input .png / .ktx2 file or directory.")]
+	[Option('i', "input", Required = true, HelpText = "Path to input image / .rtex file or directory.")]
 	public string Input { get; set; } = string.Empty;
 
 	[Option('o', "output", Required = false, HelpText = "Output destination file or directory.")]
 	public string? Output { get; set; }
 
-	[Option('m', "mode", Required = false, Default = "auto", HelpText = "Conversion mode: auto (default), to_ktx2, to_png, extract, encode.")]
-	public string Mode { get; set; } = "auto";
+	[Option('t', "type", Required = false, HelpText = "Asset type for textures: Decal, Icon, Ribbon, Skybox, SpellSpritesheet, Tilesheet. If omitted, attempts to read type from image metadata.")]
+	public string? AssetType { get; set; }
 
-	[Option("format", Required = false, Default = "R8G8B8A8_UNORM", HelpText = "KTX2 compression format (default: R8G8B8A8_UNORM).")]
-	public string Format { get; set; } = "R8G8B8A8_UNORM";
+	[Option("columns", Required = false, Default = 4, HelpText = "Number of grid columns for spritesheets (default 4).")]
+	public int Columns { get; set; } = 4;
+
+	[Option("rows", Required = false, Default = 4, HelpText = "Number of grid rows for spritesheets (default 4).")]
+	public int Rows { get; set; } = 4;
 
 	[Option("in-place", Required = false, Default = false, HelpText = "Write output alongside input file.")]
 	public bool InPlace { get; set; }
 
 	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
 	public bool Recursive { get; set; }
+}
 
-	[Option("no-mipmaps", Required = false, Default = false, HelpText = "Disable mipmap generation.")]
-	public bool NoMipmaps { get; set; }
+[Verb("audio_convert", HelpText = "Convert audio files (mp3, wav, flac, aac, etc.) to .ogg format.")]
+public class AudioConvertOptions
+{
+	[Option('i', "input", Required = true, HelpText = "Path to input audio file or directory containing audio files.")]
+	public string Input { get; set; } = string.Empty;
+
+	[Option('o', "output", Required = false, HelpText = "Output destination file or directory.")]
+	public string? Output { get; set; }
+
+	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
+	public bool Recursive { get; set; }
 }
 
 [Verb("fbx_to_ranim", HelpText = "Convert Mixamo FBX skeletal animation files to .ranim format.")]
@@ -108,55 +121,51 @@ public class RanimRenderOptions
 	public bool NoShadow { get; set; }
 }
 
-[Verb("metadata_read", HelpText = "Extract and display embedded metadata from .glb, .png, .ktx2, .ranim, or .ogg files.")]
-public class MetadataReadOptions
+[Verb("metadata", HelpText = "Manage embedded Realm metadata (read, add, remove) in .glb, .rtex, .ranim, or .ogg files.")]
+public class MetadataOptions
 {
+	[Option('m', "mode", Required = false, Default = "read", HelpText = "Operation mode: read (default), add, update, remove.")]
+	public string Mode { get; set; } = "read";
+
 	[Option('i', "input", Required = true, HelpText = "Path to asset file or directory containing asset files.")]
 	public string Input { get; set; } = string.Empty;
 
-	[Option('o', "output", Required = false, HelpText = "Output destination file to write extracted JSON.")]
+	[Option('d', "data", Required = false, HelpText = "JSON string or path to JSON file containing metadata to embed (for add/update mode).")]
+	public string? Data { get; set; }
+
+	[Option('o', "output", Required = false, HelpText = "Output destination file to write extracted JSON (for read mode).")]
 	public string? Output { get; set; }
 
 	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
 	public bool Recursive { get; set; }
 }
 
-[Verb("metadata_add", HelpText = "Embed metadata JSON into .glb, .png, .ktx2, .ranim, or .ogg files.")]
-public class MetadataAddOptions
-{
-	[Option('i', "input", Required = true, HelpText = "Path to asset file or directory containing asset files.")]
-	public string Input { get; set; } = string.Empty;
-
-	[Option('d', "data", Required = true, HelpText = "JSON string or path to JSON file containing metadata to embed.")]
-	public string Data { get; set; } = string.Empty;
-
-	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
-	public bool Recursive { get; set; }
-}
-
-[Verb("metadata_remove", HelpText = "Remove embedded metadata from .glb, .png, .ktx2, .ranim, or .ogg files.")]
-public class MetadataRemoveOptions
+[Verb("blake3", HelpText = "Calculate canonical BLAKE3 hash of an asset file or directory (with Realm metadata stripped ephemerally in RAM).")]
+public class Blake3Options
 {
 	[Option('i', "input", Required = true, HelpText = "Path to asset file or directory containing asset files.")]
 	public string Input { get; set; } = string.Empty;
 
 	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
 	public bool Recursive { get; set; }
+
+	[Option("raw", Required = false, Default = false, HelpText = "Calculate raw BLAKE3 hash without stripping metadata.")]
+	public bool Raw { get; set; }
 }
 
 public static class Program
 {
 	public static int Main(string[] args)
 	{
-		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataReadOptions, MetadataAddOptions, MetadataRemoveOptions>(args)
+		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options>(args)
 			.MapResult(
 				(GlbOptimizeOptions options) => ExecuteGlbOptimize(options),
 				(TextureConvertOptions options) => ExecuteTextureConvert(options),
+				(AudioConvertOptions options) => ExecuteAudioConvert(options),
 				(FbxToRanimOptions options) => ExecuteFbxToRanim(options),
 				(RanimRenderOptions options) => ExecuteRanimRender(options),
-				(MetadataReadOptions options) => ExecuteMetadataRead(options),
-				(MetadataAddOptions options) => ExecuteMetadataAdd(options),
-				(MetadataRemoveOptions options) => ExecuteMetadataRemove(options),
+				(MetadataOptions options) => ExecuteMetadata(options),
+				(Blake3Options options) => ExecuteBlake3(options),
 				errors => 1);
 	}
 
@@ -221,7 +230,39 @@ public static class Program
 		}
 	}
 
-	private static int ExecuteMetadataRead(MetadataReadOptions options)
+	private static int ExecuteMetadata(MetadataOptions options)
+	{
+		string mode = options.Mode?.ToLowerInvariant() ?? "read";
+
+		switch (mode)
+		{
+			case "add":
+			case "update":
+			case "set":
+			case "write":
+			case "embed":
+				return ExecuteMetadataAdd(options);
+
+			case "remove":
+			case "delete":
+			case "clear":
+			case "strip":
+				return ExecuteMetadataRemove(options);
+
+			case "blake3":
+			case "hash":
+				return ExecuteBlake3(new Blake3Options { Input = options.Input, Recursive = options.Recursive });
+
+			case "read":
+			case "get":
+			case "extract":
+			case "show":
+			default:
+				return ExecuteMetadataRead(options);
+		}
+	}
+
+	private static int ExecuteMetadataRead(MetadataOptions options)
 	{
 		if (File.Exists(options.Input))
 		{
@@ -251,6 +292,9 @@ public static class Program
 			int foundCount = 0;
 			foreach (var file in files)
 			{
+				string ext = Path.GetExtension(file).ToLowerInvariant();
+				if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) continue;
+
 				string? meta = RealmMetadataHelper.ExtractMetadata(file);
 				if (meta != null)
 				{
@@ -269,8 +313,49 @@ public static class Program
 		}
 	}
 
-	private static int ExecuteMetadataAdd(MetadataAddOptions options)
+	private static bool ValidateAndNormalizeMetadataJson(string targetPath, ref string jsonContent, out string error)
 	{
+		error = string.Empty;
+		string ext = Path.GetExtension(targetPath).ToLowerInvariant();
+		try
+		{
+			var node = System.Text.Json.Nodes.JsonNode.Parse(jsonContent);
+			if (node is System.Text.Json.Nodes.JsonObject jsonObj)
+			{
+				string? rawAssetType = jsonObj["asset_type"]?.ToString()
+					?? jsonObj["AssetType"]?.ToString()
+					?? jsonObj["default_asset_type"]?.ToString()
+					?? jsonObj["type"]?.ToString();
+
+				if (!string.IsNullOrEmpty(rawAssetType))
+				{
+					if (!RealmMetadataHelper.IsValidAssetTypeForExtension(ext, rawAssetType, out string canonical, out var validTypes))
+					{
+						error = $"Invalid asset_type '{rawAssetType}' for format '{ext}'. Valid asset_type values for {ext} are: {string.Join(", ", validTypes)}.";
+						return false;
+					}
+
+					jsonObj["asset_type"] = canonical;
+					jsonContent = jsonObj.ToJsonString();
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			error = $"Invalid JSON metadata: {ex.Message}";
+			return false;
+		}
+		return true;
+	}
+
+	private static int ExecuteMetadataAdd(MetadataOptions options)
+	{
+		if (string.IsNullOrEmpty(options.Data))
+		{
+			Console.Error.WriteLine("Error: --data (-d) option is required for add mode.");
+			return 1;
+		}
+
 		string jsonContent = options.Data;
 		if (File.Exists(options.Data))
 		{
@@ -279,6 +364,12 @@ public static class Program
 
 		if (File.Exists(options.Input))
 		{
+			if (!ValidateAndNormalizeMetadataJson(options.Input, ref jsonContent, out string error))
+			{
+				Console.Error.WriteLine($"Error: {error}");
+				return 1;
+			}
+
 			bool success = RealmMetadataHelper.AddMetadata(options.Input, jsonContent);
 			if (success)
 			{
@@ -301,9 +392,17 @@ public static class Program
 			foreach (var file in files)
 			{
 				string ext = Path.GetExtension(file).ToLowerInvariant();
-				if (ext is not (".glb" or ".png" or ".ktx2" or ".ktx" or ".ranim" or ".ogg")) continue;
+				if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) continue;
 
-				if (RealmMetadataHelper.AddMetadata(file, jsonContent))
+				string fileJson = jsonContent;
+				if (!ValidateAndNormalizeMetadataJson(file, ref fileJson, out string error))
+				{
+					Console.Error.WriteLine($"Failed to add metadata to {file}: {error}");
+					failCount++;
+					continue;
+				}
+
+				if (RealmMetadataHelper.AddMetadata(file, fileJson))
 				{
 					Console.WriteLine($"Added metadata to: {file}");
 					successCount++;
@@ -325,7 +424,7 @@ public static class Program
 		}
 	}
 
-	private static int ExecuteMetadataRemove(MetadataRemoveOptions options)
+	private static int ExecuteMetadataRemove(MetadataOptions options)
 	{
 		if (File.Exists(options.Input))
 		{
@@ -351,7 +450,7 @@ public static class Program
 			foreach (var file in files)
 			{
 				string ext = Path.GetExtension(file).ToLowerInvariant();
-				if (ext is not (".glb" or ".png" or ".ktx2" or ".ktx" or ".ranim" or ".ogg")) continue;
+				if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) continue;
 
 				if (RealmMetadataHelper.RemoveMetadata(file))
 				{
@@ -377,13 +476,77 @@ public static class Program
 
 	private static int ExecuteTextureConvert(TextureConvertOptions options)
 	{
+		try
+		{
+			if (!string.IsNullOrWhiteSpace(options.AssetType))
+			{
+				if (!RealmMetadataHelper.IsValidAssetTypeForExtension(".rtex", options.AssetType, out string canonical, out var validTypes))
+				{
+					Console.Error.WriteLine($"Error: Invalid asset_type '{options.AssetType}' for textures. Valid asset_type values for textures (.rtex/.png) are: {string.Join(", ", validTypes)}.");
+					return 1;
+				}
+				options.AssetType = canonical;
+			}
+
+			if (File.Exists(options.Input))
+			{
+				string fileExt = Path.GetExtension(options.Input).ToLowerInvariant();
+				string defaultExt = fileExt == ".rtex" ? ".webp" : ".rtex";
+
+				string target = options.InPlace || string.IsNullOrEmpty(options.Output)
+					? Path.ChangeExtension(options.Input, defaultExt)
+					: options.Output;
+
+				var res = TextureConverter.ConvertTextureFile(
+					options.Input,
+					target,
+					options.AssetType,
+					options.Columns,
+					options.Rows);
+
+				if (res.Success)
+				{
+					Console.WriteLine($"Successfully converted: {options.Input} -> {target}");
+					return 0;
+				}
+				else
+				{
+					Console.Error.WriteLine($"Failed to convert {options.Input}: {res.ErrorMessage}");
+					return 1;
+				}
+			}
+			else if (Directory.Exists(options.Input))
+			{
+				return TextureConverter.ConvertTextureDirectory(
+					options.Input,
+					options.Output,
+					options.AssetType,
+					options.Recursive,
+					options.Columns,
+					options.Rows);
+			}
+			else
+			{
+				Console.Error.WriteLine($"Error: Input path does not exist: {options.Input}");
+				return 1;
+			}
+		}
+		catch (Exception ex)
+		{
+			Console.Error.WriteLine($"Error: {ex.Message}");
+			return 1;
+		}
+	}
+
+	private static int ExecuteAudioConvert(AudioConvertOptions options)
+	{
 		if (File.Exists(options.Input))
 		{
-			string target = options.InPlace || string.IsNullOrEmpty(options.Output)
-				? Path.ChangeExtension(options.Input, options.Input.EndsWith(".ktx2", StringComparison.OrdinalIgnoreCase) ? ".png" : ".ktx2")
+			string target = string.IsNullOrEmpty(options.Output)
+				? Path.ChangeExtension(options.Input, ".ogg")
 				: options.Output;
 
-			var res = TextureConverter.ConvertTextureFile(options.Input, target, options.Mode);
+			var res = Realm.Shared.Audio.AudioConverter.ConvertToOgg(options.Input, target);
 			if (res.Success)
 			{
 				Console.WriteLine($"Successfully converted: {options.Input} -> {target}");
@@ -397,7 +560,7 @@ public static class Program
 		}
 		else if (Directory.Exists(options.Input))
 		{
-			return TextureConverter.ConvertTextureDirectory(options.Input, options.Output, options.Mode, options.Recursive);
+			return Realm.Shared.Audio.AudioConverter.ConvertAudioDirectory(options.Input, options.Output, options.Recursive);
 		}
 		else
 		{
@@ -557,5 +720,37 @@ public static class Program
 
 		Console.WriteLine($"Finished. Processed: {successCount} succeeded, {failCount} failed.");
 		return failCount > 0 ? 1 : 0;
+	}
+
+	private static int ExecuteBlake3(Blake3Options options)
+	{
+		if (File.Exists(options.Input))
+		{
+			byte[] bytes = File.ReadAllBytes(options.Input);
+			string hash = options.Raw
+				? Blake3.Hasher.Hash(bytes).ToString()
+				: RealmMetadataHelper.ComputeBlake3(bytes, options.Input);
+			Console.WriteLine($"{hash}  {options.Input}");
+			return 0;
+		}
+		else if (Directory.Exists(options.Input))
+		{
+			var searchOpt = options.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+			string[] files = Directory.GetFiles(options.Input, "*.*", searchOpt);
+			foreach (var file in files)
+			{
+				byte[] bytes = File.ReadAllBytes(file);
+				string hash = options.Raw
+					? Blake3.Hasher.Hash(bytes).ToString()
+					: RealmMetadataHelper.ComputeBlake3(bytes, file);
+				Console.WriteLine($"{hash}  {file}");
+			}
+			return 0;
+		}
+		else
+		{
+			Console.Error.WriteLine($"Error: Input path does not exist: {options.Input}");
+			return 1;
+		}
 	}
 }

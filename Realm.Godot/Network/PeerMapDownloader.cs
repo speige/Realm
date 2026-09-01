@@ -122,8 +122,10 @@ public class PeerMapDownloader
                         return false;
                     }
 
-                    string computedHash = MapAssetManager.ComputeBlake3(fileData);
-                    if (computedHash != hash)
+                    string ext = Path.GetExtension(hash);
+                    string canonicalBlake3 = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(fileData, ext);
+                    string computedHash = string.IsNullOrEmpty(ext) ? canonicalBlake3 : $"{canonicalBlake3}{ext}";
+                    if (!computedHash.Equals(hash, StringComparison.OrdinalIgnoreCase) && !canonicalBlake3.Equals(hash, StringComparison.OrdinalIgnoreCase))
                     {
                         GD.PrintErr($"[PeerDownloader] BLAKE3 verification failed for file {hash}. Computed: {computedHash}");
                         CleanupSockets();

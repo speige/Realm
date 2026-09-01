@@ -1,33 +1,17 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Blake3;
 
 namespace Realm.Shared.Metadata;
 
 public static class RealmMetadataHelper
 {
-	private static readonly uint[] CrcTable = InitializeCrcTable();
 	private static readonly uint[] OggCrcTable = InitializeOggCrcTable();
-
-	private static uint[] InitializeCrcTable()
-	{
-		uint[] table = new uint[256];
-		for (uint i = 0; i < 256; i++)
-		{
-			uint c = i;
-			for (int k = 0; k < 8; k++)
-			{
-				if ((c & 1) != 0) c = 0xEDB88320 ^ (c >> 1);
-				else c >>= 1;
-			}
-			table[i] = c;
-		}
-		return table;
-	}
 
 	private static uint[] InitializeOggCrcTable()
 	{
@@ -45,14 +29,6 @@ public static class RealmMetadataHelper
 		return table;
 	}
 
-	public static uint CalculatePngCrc(ReadOnlySpan<byte> typeBytes, ReadOnlySpan<byte> dataBytes)
-	{
-		uint crc = 0xFFFFFFFF;
-		foreach (byte b in typeBytes) crc = CrcTable[(crc ^ b) & 0xFF] ^ (crc >> 8);
-		foreach (byte b in dataBytes) crc = CrcTable[(crc ^ b) & 0xFF] ^ (crc >> 8);
-		return crc ^ 0xFFFFFFFF;
-	}
-
 	public static uint CalculateOggCrc(ReadOnlySpan<byte> data)
 	{
 		uint crc = 0;
@@ -67,45 +43,187 @@ public static class RealmMetadataHelper
 		return ext switch
 		{
 			".glb" => ExtractMetadataFromGlb(filePath),
-			".png" => ExtractMetadataFromPng(filePath),
-			".ktx2" or ".ktx" => ExtractMetadataFromKtx2(filePath),
+			".rtex" => ExtractMetadataFromRtex(filePath),
 			".ranim" => ExtractMetadataFromRanim(filePath),
 			".ogg" => ExtractMetadataFromOgg(filePath),
-			_ => null
+			_ => throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rtex, .ogg, .ranim")
 		};
+	}
+
+	public static bool HasRealmMetadata(string filePath)
+	{
+		if (!File.Exists(filePath)) return false;
+		try
+		{
+			string? meta = ExtractMetadata(filePath);
+			return !string.IsNullOrWhiteSpace(meta);
+		}
+		catch
+		{
+			return false;
+		}
+	}
+
+	public static bool EnsureMetadata(string filePath, string? defaultMetadataJson = null)
+	{
+		if (!File.Exists(filePath)) return false;
+		if (HasRealmMetadata(filePath)) return true;
+
+		string ext = Path.GetExtension(filePath).ToLowerInvariant();
+		string meta = !string.IsNullOrEmpty(defaultMetadataJson)
+			? defaultMetadataJson
+			: $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"format\":\"{ext.TrimStart('.')}\"}}";
+
+		try
+		{
+			return AddMetadata(filePath, meta);
+		}
+		catch
+		{
+			return false;
+		}
+	}
+
+	private static readonly Dictionary<string, string[]> ValidAssetTypesByExtension = new(StringComparer.OrdinalIgnoreCase)
+	{
+		[".rtex"] = new[] { "Decal", "Icon", "Ribbon", "Skybox", "SpellSpritesheet", "Tilesheet" },
+		[".glb"] = new[] { "Character", "Building", "Environment", "Projectile", "Prop" },
+		[".ranim"] = new[] { "Animation" },
+		[".ogg"] = new[] { "Music", "SoundEffect" }
+	};
+
+	public static string[] GetValidAssetTypesForExtension(string extensionOrPath)
+	{
+		string ext = Path.GetExtension(extensionOrPath).ToLowerInvariant();
+		if (string.IsNullOrEmpty(ext) && extensionOrPath.StartsWith('.')) ext = extensionOrPath.ToLowerInvariant();
+		if (ValidAssetTypesByExtension.TryGetValue(ext, out var types))
+		{
+			return types;
+		}
+		return Array.Empty<string>();
+	}
+
+	public static bool IsValidAssetTypeForExtension(string extensionOrPath, string? assetType, out string canonicalType, out string[] validTypes)
+	{
+		validTypes = GetValidAssetTypesForExtension(extensionOrPath);
+		canonicalType = string.Empty;
+		if (string.IsNullOrWhiteSpace(assetType)) return false;
+
+		string norm = assetType.Trim().Replace("_", "").ToLowerInvariant();
+
+		string ext = Path.GetExtension(extensionOrPath).ToLowerInvariant();
+		if (string.IsNullOrEmpty(ext) && extensionOrPath.StartsWith('.')) ext = extensionOrPath.ToLowerInvariant();
+
+		if (ext is ".rtex")
+		{
+			if (norm is "decal" or "decals") { canonicalType = "Decal"; return true; }
+			if (norm is "icon" or "icons") { canonicalType = "Icon"; return true; }
+			if (norm is "ribbon" or "ribbons" or "ribbontexture" or "ribbontextures") { canonicalType = "Ribbon"; return true; }
+			if (norm is "skybox" or "skyboxes") { canonicalType = "Skybox"; return true; }
+			if (norm is "spellspritesheet" or "spritesheet" or "spritesheets" or "vfxspritesheet" or "vfxspritesheets" or "vfx") { canonicalType = "SpellSpritesheet"; return true; }
+			if (norm is "tilesheet" or "tilesheets" or "terrain" or "terraintexture" or "terraintextures" or "textures" or "texture") { canonicalType = "Tilesheet"; return true; }
+			return false;
+		}
+		else if (ext is ".glb")
+		{
+			if (norm is "character" or "unit" or "units" or "customunits") { canonicalType = "Character"; return true; }
+			if (norm is "building" or "buildings" or "custombuildings") { canonicalType = "Building"; return true; }
+			if (norm is "environment" or "resource" or "resources" or "nature" or "customresources") { canonicalType = "Environment"; return true; }
+			if (norm is "projectile" or "projectiles") { canonicalType = "Projectile"; return true; }
+			if (norm is "prop" or "props" or "customprops") { canonicalType = "Prop"; return true; }
+			return false;
+		}
+		else if (ext is ".ranim")
+		{
+			if (norm is "animation" or "animations" or "anim" or "ranim") { canonicalType = "Animation"; return true; }
+			return false;
+		}
+		else if (ext is ".ogg")
+		{
+			if (norm is "music") { canonicalType = "Music"; return true; }
+			if (norm is "soundeffect" or "sfx" or "sound" or "audio") { canonicalType = "SoundEffect"; return true; }
+			return false;
+		}
+
+		return false;
+	}
+
+	public static string? ExtractAssetType(string filePath)
+	{
+		string? metaJson = ExtractMetadata(filePath);
+		if (string.IsNullOrEmpty(metaJson)) return null;
+		try
+		{
+			var node = JsonNode.Parse(metaJson);
+			if (node is JsonObject obj)
+			{
+				string? typeVal = obj["asset_type"]?.ToString()
+					?? obj["AssetType"]?.ToString()
+					?? obj["type"]?.ToString()
+					?? obj["default_asset_type"]?.ToString();
+				if (!string.IsNullOrEmpty(typeVal) && IsValidAssetTypeForExtension(filePath, typeVal, out string canonical, out _))
+				{
+					return canonical;
+				}
+			}
+		}
+		catch { }
+		return null;
+	}
+
+	public static bool SetAssetType(string filePath, string assetType)
+	{
+		if (!File.Exists(filePath)) return false;
+		if (!IsValidAssetTypeForExtension(filePath, assetType, out string canonical, out _))
+		{
+			return false;
+		}
+
+		string? existingMeta = ExtractMetadata(filePath);
+		JsonObject metaObj;
+		if (!string.IsNullOrEmpty(existingMeta))
+		{
+			try
+			{
+				metaObj = JsonNode.Parse(existingMeta)?.AsObject() ?? new JsonObject();
+			}
+			catch
+			{
+				metaObj = new JsonObject();
+			}
+		}
+		else
+		{
+			metaObj = new JsonObject();
+			string ext = Path.GetExtension(filePath).ToLowerInvariant();
+			metaObj["created_utc"] = DateTime.UtcNow.ToString("O");
+			metaObj["format"] = ext.TrimStart('.');
+		}
+
+		metaObj["asset_type"] = canonical;
+		return AddMetadata(filePath, metaObj.ToJsonString());
 	}
 
 	public static bool AddMetadata(string filePath, string realmMetadataJson)
 	{
 		if (!File.Exists(filePath)) return false;
 		string ext = Path.GetExtension(filePath).ToLowerInvariant();
-		try
+		switch (ext)
 		{
-			switch (ext)
-			{
-				case ".glb":
-					AddMetadataToGlb(filePath, realmMetadataJson);
-					return true;
-				case ".png":
-					AddMetadataToPng(filePath, realmMetadataJson);
-					return true;
-				case ".ktx2" or ".ktx":
-					AddMetadataToKtx2(filePath, realmMetadataJson);
-					return true;
-				case ".ranim":
-					AddMetadataToRanim(filePath, realmMetadataJson);
-					return true;
-				case ".ogg":
-					AddMetadataToOgg(filePath, realmMetadataJson);
-					return true;
-				default:
-					return false;
-			}
-		}
-		catch (Exception ex)
-		{
-			Console.Error.WriteLine($"Failed to add metadata to '{filePath}': {ex.Message}");
-			return false;
+			case ".glb":
+				AddMetadataToGlb(filePath, realmMetadataJson);
+				return true;
+			case ".rtex":
+				AddMetadataToRtex(filePath, realmMetadataJson);
+				return true;
+			case ".ranim":
+				AddMetadataToRanim(filePath, realmMetadataJson);
+				return true;
+			case ".ogg":
+				AddMetadataToOgg(filePath, realmMetadataJson);
+				return true;
+			default:
+				throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rtex, .ogg, .ranim");
 		}
 	}
 
@@ -113,33 +231,22 @@ public static class RealmMetadataHelper
 	{
 		if (!File.Exists(filePath)) return false;
 		string ext = Path.GetExtension(filePath).ToLowerInvariant();
-		try
+		switch (ext)
 		{
-			switch (ext)
-			{
-				case ".glb":
-					RemoveMetadataFromGlb(filePath);
-					return true;
-				case ".png":
-					RemoveMetadataFromPng(filePath);
-					return true;
-				case ".ktx2" or ".ktx":
-					RemoveMetadataFromKtx2(filePath);
-					return true;
-				case ".ranim":
-					RemoveMetadataFromRanim(filePath);
-					return true;
-				case ".ogg":
-					RemoveMetadataFromOgg(filePath);
-					return true;
-				default:
-					return false;
-			}
-		}
-		catch (Exception ex)
-		{
-			Console.Error.WriteLine($"Failed to remove metadata from '{filePath}': {ex.Message}");
-			return false;
+			case ".glb":
+				RemoveMetadataFromGlb(filePath);
+				return true;
+			case ".rtex":
+				RemoveMetadataFromRtex(filePath);
+				return true;
+			case ".ranim":
+				RemoveMetadataFromRanim(filePath);
+				return true;
+			case ".ogg":
+				RemoveMetadataFromOgg(filePath);
+				return true;
+			default:
+				throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rtex, .ogg, .ranim");
 		}
 	}
 
@@ -153,11 +260,11 @@ public static class RealmMetadataHelper
 	public static string? ExtractMetadataFromGlbBytes(ReadOnlySpan<byte> bytes)
 	{
 		if (bytes.Length < 20) return null;
-		uint magic = BitConverter.ToUInt32(bytes.Slice(0, 4));
+		uint magic = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(0, 4));
 		if (magic != 0x46546C67) return null;
 
-		uint chunk0Length = BitConverter.ToUInt32(bytes.Slice(12, 4));
-		uint chunk0Type = BitConverter.ToUInt32(bytes.Slice(16, 4));
+		uint chunk0Length = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(12, 4));
+		uint chunk0Type = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(16, 4));
 		if (chunk0Type != 0x4E4F534A) return null;
 		if (bytes.Length < 20 + chunk0Length) return null;
 
@@ -195,12 +302,12 @@ public static class RealmMetadataHelper
 	public static byte[] AddMetadataToGlbBytes(byte[] bytes, string realmMetadataJson)
 	{
 		if (bytes.Length < 20) throw new InvalidOperationException("Invalid GLB file.");
-		uint magic = BitConverter.ToUInt32(bytes, 0);
+		uint magic = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0, 4));
 		if (magic != 0x46546C67) throw new InvalidOperationException("Invalid GLB magic header.");
 
-		uint version = BitConverter.ToUInt32(bytes, 4);
-		uint chunk0Length = BitConverter.ToUInt32(bytes, 12);
-		uint chunk0Type = BitConverter.ToUInt32(bytes, 16);
+		uint version = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4, 4));
+		uint chunk0Length = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(12, 4));
+		uint chunk0Type = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(16, 4));
 		if (chunk0Type != 0x4E4F534A) throw new InvalidOperationException("First GLB chunk is not JSON.");
 
 		string jsonText = Encoding.UTF8.GetString(bytes, 20, (int)chunk0Length);
@@ -230,17 +337,23 @@ public static class RealmMetadataHelper
 		int chunk1RemainingLength = bytes.Length - chunk1Offset;
 
 		uint newTotalLength = 12 + 8 + (uint)paddedJson.Length + (uint)chunk1RemainingLength;
-		using var ms = new MemoryStream();
-		using var writer = new BinaryWriter(ms);
-		writer.Write(magic);
-		writer.Write(version);
-		writer.Write(newTotalLength);
-		writer.Write((uint)paddedJson.Length);
-		writer.Write(chunk0Type);
-		writer.Write(paddedJson);
+		using var ms = new MemoryStream((int)newTotalLength);
+		Span<byte> uintBuffer = stackalloc byte[4];
+
+		BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, magic);
+		ms.Write(uintBuffer);
+		BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, version);
+		ms.Write(uintBuffer);
+		BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, newTotalLength);
+		ms.Write(uintBuffer);
+		BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, (uint)paddedJson.Length);
+		ms.Write(uintBuffer);
+		BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, chunk0Type);
+		ms.Write(uintBuffer);
+		ms.Write(paddedJson, 0, paddedJson.Length);
 		if (chunk1RemainingLength > 0)
 		{
-			writer.Write(bytes, chunk1Offset, chunk1RemainingLength);
+			ms.Write(bytes, chunk1Offset, chunk1RemainingLength);
 		}
 		return ms.ToArray();
 	}
@@ -255,12 +368,12 @@ public static class RealmMetadataHelper
 	public static byte[] RemoveMetadataFromGlbBytes(byte[] bytes)
 	{
 		if (bytes.Length < 20) return bytes;
-		uint magic = BitConverter.ToUInt32(bytes, 0);
+		uint magic = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0, 4));
 		if (magic != 0x46546C67) return bytes;
 
-		uint version = BitConverter.ToUInt32(bytes, 4);
-		uint chunk0Length = BitConverter.ToUInt32(bytes, 12);
-		uint chunk0Type = BitConverter.ToUInt32(bytes, 16);
+		uint version = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4, 4));
+		uint chunk0Length = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(12, 4));
+		uint chunk0Type = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(16, 4));
 		if (chunk0Type != 0x4E4F534A) return bytes;
 
 		string jsonText = Encoding.UTF8.GetString(bytes, 20, (int)chunk0Length);
@@ -304,548 +417,48 @@ public static class RealmMetadataHelper
 		int chunk1RemainingLength = bytes.Length - chunk1Offset;
 
 		uint newTotalLength = 12 + 8 + (uint)paddedJson.Length + (uint)chunk1RemainingLength;
-		using var ms = new MemoryStream();
-		using var writer = new BinaryWriter(ms);
-		writer.Write(magic);
-		writer.Write(version);
-		writer.Write(newTotalLength);
-		writer.Write((uint)paddedJson.Length);
-		writer.Write(chunk0Type);
-		writer.Write(paddedJson);
+		using var ms = new MemoryStream((int)newTotalLength);
+		Span<byte> uintBuffer = stackalloc byte[4];
+
+		BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, magic);
+		ms.Write(uintBuffer);
+		BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, version);
+		ms.Write(uintBuffer);
+		BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, newTotalLength);
+		ms.Write(uintBuffer);
+		BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, (uint)paddedJson.Length);
+		ms.Write(uintBuffer);
+		BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, chunk0Type);
+		ms.Write(uintBuffer);
+		ms.Write(paddedJson, 0, paddedJson.Length);
 		if (chunk1RemainingLength > 0)
 		{
-			writer.Write(bytes, chunk1Offset, chunk1RemainingLength);
+			ms.Write(bytes, chunk1Offset, chunk1RemainingLength);
 		}
 		return ms.ToArray();
 	}
 
-	public static string? ExtractMetadataFromPng(string filePath)
+
+
+	public static string? ExtractMetadataFromRtex(string filePath)
 	{
 		if (!File.Exists(filePath)) return null;
 		byte[] bytes = File.ReadAllBytes(filePath);
-		return ExtractMetadataFromPngBytes(bytes);
+		return Realm.Shared.Textures.RtexFile.ExtractMetadata(bytes);
 	}
 
-	public static string? ExtractMetadataFromPngBytes(ReadOnlySpan<byte> bytes)
-	{
-		if (bytes.Length < 8) return null;
-		ReadOnlySpan<byte> pngSig = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
-		if (!bytes.Slice(0, 8).SequenceEqual(pngSig)) return null;
-
-		int offset = 8;
-		while (offset + 8 <= bytes.Length)
-		{
-			int length = (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
-			string chunkType = Encoding.ASCII.GetString(bytes.Slice(offset + 4, 4));
-			int dataOffset = offset + 8;
-			if (dataOffset + length + 4 > bytes.Length) break;
-
-			if (chunkType == "tEXt" && length > 0)
-			{
-				var dataSpan = bytes.Slice(dataOffset, length);
-				int nullIdx = dataSpan.IndexOf((byte)0);
-				if (nullIdx > 0)
-				{
-					string keyword = Encoding.ASCII.GetString(dataSpan.Slice(0, nullIdx));
-					if (keyword.Equals("Realm", StringComparison.OrdinalIgnoreCase))
-					{
-						return Encoding.UTF8.GetString(dataSpan.Slice(nullIdx + 1));
-					}
-				}
-			}
-			else if (chunkType == "iTXt" && length > 5)
-			{
-				var dataSpan = bytes.Slice(dataOffset, length);
-				int nullIdx = dataSpan.IndexOf((byte)0);
-				if (nullIdx > 0)
-				{
-					string keyword = Encoding.ASCII.GetString(dataSpan.Slice(0, nullIdx));
-					if (keyword.Equals("Realm", StringComparison.OrdinalIgnoreCase))
-					{
-						int cur = nullIdx + 1;
-						if (cur + 2 <= dataSpan.Length)
-						{
-							byte compFlag = dataSpan[cur];
-							cur += 2;
-							while (cur < dataSpan.Length && dataSpan[cur] != 0) cur++;
-							cur++;
-							while (cur < dataSpan.Length && dataSpan[cur] != 0) cur++;
-							cur++;
-
-							if (cur <= dataSpan.Length)
-							{
-								var textBytes = dataSpan.Slice(cur);
-								if (compFlag == 0)
-								{
-									return Encoding.UTF8.GetString(textBytes);
-								}
-								else
-								{
-									try
-									{
-										using var compMs = new MemoryStream(textBytes.ToArray());
-										using var zlib = new ZLibStream(compMs, CompressionMode.Decompress);
-										using var outMs = new MemoryStream();
-										zlib.CopyTo(outMs);
-										return Encoding.UTF8.GetString(outMs.ToArray());
-									}
-									catch { }
-								}
-							}
-						}
-					}
-				}
-			}
-			else if (chunkType == "IEND")
-			{
-				break;
-			}
-
-			offset += 8 + length + 4;
-		}
-		return null;
-	}
-
-	public static void AddMetadataToPng(string filePath, string realmMetadataJson)
+	public static void AddMetadataToRtex(string filePath, string realmMetadataJson)
 	{
 		byte[] bytes = File.ReadAllBytes(filePath);
-		byte[] updated = AddMetadataToPngBytes(bytes, realmMetadataJson);
+		byte[] updated = Realm.Shared.Textures.RtexFile.SetMetadata(bytes, realmMetadataJson);
 		File.WriteAllBytes(filePath, updated);
 	}
 
-	public static byte[] AddMetadataToPngBytes(byte[] bytes, string realmMetadataJson)
-	{
-		if (bytes.Length < 8) throw new InvalidOperationException("Invalid PNG file.");
-		byte[] pngSig = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
-		for (int i = 0; i < 8; i++)
-			if (bytes[i] != pngSig[i]) throw new InvalidOperationException("Invalid PNG signature.");
-
-		byte[] keyBytes = Encoding.ASCII.GetBytes("Realm\0");
-		byte[] jsonBytes = Encoding.UTF8.GetBytes(realmMetadataJson);
-		byte[] textChunkData = new byte[keyBytes.Length + jsonBytes.Length];
-		Buffer.BlockCopy(keyBytes, 0, textChunkData, 0, keyBytes.Length);
-		Buffer.BlockCopy(jsonBytes, 0, textChunkData, keyBytes.Length, jsonBytes.Length);
-
-		var chunks = new List<(string Type, byte[] Data)>();
-		int offset = 8;
-		bool inserted = false;
-
-		while (offset + 8 <= bytes.Length)
-		{
-			int length = (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
-			string chunkType = Encoding.ASCII.GetString(bytes, offset + 4, 4);
-			int dataOffset = offset + 8;
-			if (dataOffset + length + 4 > bytes.Length) break;
-
-			byte[] chunkData = new byte[length];
-			Buffer.BlockCopy(bytes, dataOffset, chunkData, 0, length);
-
-			bool isOldRealm = false;
-			if (chunkType == "tEXt" || chunkType == "iTXt")
-			{
-				int nullIdx = Array.IndexOf(chunkData, (byte)0);
-				if (nullIdx > 0 && Encoding.ASCII.GetString(chunkData, 0, nullIdx).Equals("Realm", StringComparison.OrdinalIgnoreCase))
-				{
-					isOldRealm = true;
-				}
-			}
-
-			if (!isOldRealm)
-			{
-				if (!inserted && (chunkType == "IDAT" || chunkType == "IEND"))
-				{
-					chunks.Add(("tEXt", textChunkData));
-					inserted = true;
-				}
-				chunks.Add((chunkType, chunkData));
-			}
-
-			offset += 8 + length + 4;
-		}
-
-		if (!inserted)
-		{
-			chunks.Add(("tEXt", textChunkData));
-		}
-
-		using var ms = new MemoryStream();
-		ms.Write(pngSig, 0, 8);
-		foreach (var chunk in chunks)
-		{
-			byte[] chunkTypeBytes = Encoding.ASCII.GetBytes(chunk.Type);
-			uint crc = CalculatePngCrc(chunkTypeBytes, chunk.Data);
-
-			byte[] lenBytes = new byte[4] {
-				(byte)((chunk.Data.Length >> 24) & 0xFF),
-				(byte)((chunk.Data.Length >> 16) & 0xFF),
-				(byte)((chunk.Data.Length >> 8) & 0xFF),
-				(byte)(chunk.Data.Length & 0xFF)
-			};
-			byte[] crcBytes = new byte[4] {
-				(byte)((crc >> 24) & 0xFF),
-				(byte)((crc >> 16) & 0xFF),
-				(byte)((crc >> 8) & 0xFF),
-				(byte)(crc & 0xFF)
-			};
-
-			ms.Write(lenBytes, 0, 4);
-			ms.Write(chunkTypeBytes, 0, 4);
-			ms.Write(chunk.Data, 0, chunk.Data.Length);
-			ms.Write(crcBytes, 0, 4);
-		}
-		return ms.ToArray();
-	}
-
-	public static void RemoveMetadataFromPng(string filePath)
+	public static void RemoveMetadataFromRtex(string filePath)
 	{
 		byte[] bytes = File.ReadAllBytes(filePath);
-		byte[] updated = RemoveMetadataFromPngBytes(bytes);
+		byte[] updated = Realm.Shared.Textures.RtexFile.SetMetadata(bytes, null);
 		File.WriteAllBytes(filePath, updated);
-	}
-
-	public static byte[] RemoveMetadataFromPngBytes(byte[] bytes)
-	{
-		if (bytes.Length < 8) return bytes;
-		byte[] pngSig = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
-		for (int i = 0; i < 8; i++)
-			if (bytes[i] != pngSig[i]) return bytes;
-
-		var chunks = new List<(string Type, byte[] Data)>();
-		int offset = 8;
-		bool changed = false;
-
-		while (offset + 8 <= bytes.Length)
-		{
-			int length = (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
-			string chunkType = Encoding.ASCII.GetString(bytes, offset + 4, 4);
-			int dataOffset = offset + 8;
-			if (dataOffset + length + 4 > bytes.Length) break;
-
-			byte[] chunkData = new byte[length];
-			Buffer.BlockCopy(bytes, dataOffset, chunkData, 0, length);
-
-			bool isOldRealm = false;
-			if (chunkType == "tEXt" || chunkType == "iTXt")
-			{
-				int nullIdx = Array.IndexOf(chunkData, (byte)0);
-				if (nullIdx > 0 && Encoding.ASCII.GetString(chunkData, 0, nullIdx).Equals("Realm", StringComparison.OrdinalIgnoreCase))
-				{
-					isOldRealm = true;
-					changed = true;
-				}
-			}
-
-			if (!isOldRealm)
-			{
-				chunks.Add((chunkType, chunkData));
-			}
-
-			offset += 8 + length + 4;
-		}
-
-		if (!changed) return bytes;
-
-		using var ms = new MemoryStream();
-		ms.Write(pngSig, 0, 8);
-		foreach (var chunk in chunks)
-		{
-			byte[] chunkTypeBytes = Encoding.ASCII.GetBytes(chunk.Type);
-			uint crc = CalculatePngCrc(chunkTypeBytes, chunk.Data);
-
-			byte[] lenBytes = new byte[4] {
-				(byte)((chunk.Data.Length >> 24) & 0xFF),
-				(byte)((chunk.Data.Length >> 16) & 0xFF),
-				(byte)((chunk.Data.Length >> 8) & 0xFF),
-				(byte)(chunk.Data.Length & 0xFF)
-			};
-			byte[] crcBytes = new byte[4] {
-				(byte)((crc >> 24) & 0xFF),
-				(byte)((crc >> 16) & 0xFF),
-				(byte)((crc >> 8) & 0xFF),
-				(byte)(crc & 0xFF)
-			};
-
-			ms.Write(lenBytes, 0, 4);
-			ms.Write(chunkTypeBytes, 0, 4);
-			ms.Write(chunk.Data, 0, chunk.Data.Length);
-			ms.Write(crcBytes, 0, 4);
-		}
-		return ms.ToArray();
-	}
-
-	public static string? ExtractMetadataFromKtx2(string filePath)
-	{
-		if (!File.Exists(filePath)) return null;
-		byte[] bytes = File.ReadAllBytes(filePath);
-		return ExtractMetadataFromKtx2Bytes(bytes);
-	}
-
-	public static string? ExtractMetadataFromKtx2Bytes(ReadOnlySpan<byte> bytes)
-	{
-		if (bytes.Length < 80) return null;
-		ReadOnlySpan<byte> ktx2Sig = new byte[] { 0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A };
-		if (!bytes.Slice(0, 12).SequenceEqual(ktx2Sig)) return null;
-
-		uint kvdByteOffset = BitConverter.ToUInt32(bytes.Slice(60, 4));
-		uint kvdByteLength = BitConverter.ToUInt32(bytes.Slice(64, 4));
-
-		if (kvdByteLength == 0 || kvdByteOffset == 0 || kvdByteOffset + kvdByteLength > bytes.Length)
-			return null;
-
-		var kvdSpan = bytes.Slice((int)kvdByteOffset, (int)kvdByteLength);
-		int cur = 0;
-		while (cur + 4 <= kvdSpan.Length)
-		{
-			uint keyAndValueByteLength = BitConverter.ToUInt32(kvdSpan.Slice(cur, 4));
-			cur += 4;
-			if (cur + keyAndValueByteLength > kvdSpan.Length) break;
-
-			var entry = kvdSpan.Slice(cur, (int)keyAndValueByteLength);
-			int nullIdx = entry.IndexOf((byte)0);
-			if (nullIdx > 0)
-			{
-				string key = Encoding.UTF8.GetString(entry.Slice(0, nullIdx));
-				if (key.Equals("Realm", StringComparison.OrdinalIgnoreCase))
-				{
-					return Encoding.UTF8.GetString(entry.Slice(nullIdx + 1));
-				}
-			}
-
-			cur += (int)keyAndValueByteLength;
-			int padding = (4 - (cur % 4)) % 4;
-			cur += padding;
-		}
-		return null;
-	}
-
-	public static void AddMetadataToKtx2(string filePath, string realmMetadataJson)
-	{
-		byte[] bytes = File.ReadAllBytes(filePath);
-		byte[] updated = AddMetadataToKtx2Bytes(bytes, realmMetadataJson);
-		File.WriteAllBytes(filePath, updated);
-	}
-
-	public static byte[] AddMetadataToKtx2Bytes(byte[] bytes, string realmMetadataJson)
-	{
-		if (bytes.Length < 80) throw new InvalidOperationException("Invalid KTX2 file.");
-		byte[] ktx2Sig = new byte[] { 0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A };
-		for (int i = 0; i < 12; i++)
-			if (bytes[i] != ktx2Sig[i]) throw new InvalidOperationException("Invalid KTX2 signature.");
-
-		uint kvdByteOffset = BitConverter.ToUInt32(bytes, 60);
-		uint kvdByteLength = BitConverter.ToUInt32(bytes, 64);
-		ulong sgdByteOffset = BitConverter.ToUInt64(bytes, 68);
-		uint levelCount = BitConverter.ToUInt32(bytes, 32);
-		if (levelCount == 0) levelCount = 1;
-
-		var existingEntries = new List<byte[]>();
-		if (kvdByteLength > 0 && kvdByteOffset > 0 && kvdByteOffset + kvdByteLength <= (uint)bytes.Length)
-		{
-			int cur = (int)kvdByteOffset;
-			int end = (int)(kvdByteOffset + kvdByteLength);
-			while (cur + 4 <= end)
-			{
-				uint keyAndValueByteLength = BitConverter.ToUInt32(bytes, cur);
-				if (cur + 4 + keyAndValueByteLength > end) break;
-				byte[] entry = new byte[keyAndValueByteLength];
-				Buffer.BlockCopy(bytes, cur + 4, entry, 0, (int)keyAndValueByteLength);
-
-				int nullIdx = Array.IndexOf(entry, (byte)0);
-				bool isRealm = false;
-				if (nullIdx > 0)
-				{
-					string key = Encoding.UTF8.GetString(entry, 0, nullIdx);
-					if (key.Equals("Realm", StringComparison.OrdinalIgnoreCase))
-						isRealm = true;
-				}
-				if (!isRealm)
-				{
-					existingEntries.Add(entry);
-				}
-
-				cur += 4 + (int)keyAndValueByteLength;
-				int padding = (4 - (cur % 4)) % 4;
-				cur += padding;
-			}
-		}
-
-		byte[] keyBytes = Encoding.UTF8.GetBytes("Realm\0");
-		byte[] valBytes = Encoding.UTF8.GetBytes(realmMetadataJson);
-		byte[] realmEntry = new byte[keyBytes.Length + valBytes.Length];
-		Buffer.BlockCopy(keyBytes, 0, realmEntry, 0, keyBytes.Length);
-		Buffer.BlockCopy(valBytes, 0, realmEntry, keyBytes.Length, valBytes.Length);
-		existingEntries.Add(realmEntry);
-
-		using var kvdMs = new MemoryStream();
-		foreach (var entry in existingEntries)
-		{
-			uint len = (uint)entry.Length;
-			kvdMs.Write(BitConverter.GetBytes(len), 0, 4);
-			kvdMs.Write(entry, 0, entry.Length);
-			int pad = (4 - (int)(kvdMs.Position % 4)) % 4;
-			for (int p = 0; p < pad; p++) kvdMs.WriteByte(0);
-		}
-		byte[] newKvdBytes = kvdMs.ToArray();
-
-		if (kvdByteOffset == 0 || kvdByteLength == 0)
-		{
-			uint targetOffset = (uint)bytes.Length;
-			byte[] resultNoPrev = new byte[bytes.Length + newKvdBytes.Length];
-			Buffer.BlockCopy(bytes, 0, resultNoPrev, 0, bytes.Length);
-			Buffer.BlockCopy(newKvdBytes, 0, resultNoPrev, (int)targetOffset, newKvdBytes.Length);
-
-			Buffer.BlockCopy(BitConverter.GetBytes(targetOffset), 0, resultNoPrev, 60, 4);
-			Buffer.BlockCopy(BitConverter.GetBytes((uint)newKvdBytes.Length), 0, resultNoPrev, 64, 4);
-			return resultNoPrev;
-		}
-
-		int delta = newKvdBytes.Length - (int)kvdByteLength;
-		byte[] result = new byte[bytes.Length + delta];
-
-		Buffer.BlockCopy(bytes, 0, result, 0, (int)kvdByteOffset);
-		Buffer.BlockCopy(newKvdBytes, 0, result, (int)kvdByteOffset, newKvdBytes.Length);
-		int afterKvdOffset = (int)(kvdByteOffset + kvdByteLength);
-		if (afterKvdOffset < bytes.Length && kvdByteOffset > 0)
-		{
-			Buffer.BlockCopy(bytes, afterKvdOffset, result, (int)kvdByteOffset + newKvdBytes.Length, bytes.Length - afterKvdOffset);
-		}
-
-		Buffer.BlockCopy(BitConverter.GetBytes(kvdByteOffset), 0, result, 60, 4);
-		Buffer.BlockCopy(BitConverter.GetBytes((uint)newKvdBytes.Length), 0, result, 64, 4);
-
-		if (delta != 0)
-		{
-			if (sgdByteOffset > kvdByteOffset)
-			{
-				ulong newSgd = sgdByteOffset + (ulong)delta;
-				Buffer.BlockCopy(BitConverter.GetBytes(newSgd), 0, result, 68, 8);
-			}
-
-			for (int l = 0; l < (int)levelCount; l++)
-			{
-				int lvlEntryOffset = 80 + (l * 24);
-				if (lvlEntryOffset + 24 <= result.Length)
-				{
-					ulong lvlByteOffset = BitConverter.ToUInt64(result, lvlEntryOffset);
-					if (lvlByteOffset > kvdByteOffset)
-					{
-						lvlByteOffset += (ulong)delta;
-						Buffer.BlockCopy(BitConverter.GetBytes(lvlByteOffset), 0, result, lvlEntryOffset, 8);
-					}
-				}
-			}
-		}
-
-		return result;
-	}
-
-	public static void RemoveMetadataFromKtx2(string filePath)
-	{
-		byte[] bytes = File.ReadAllBytes(filePath);
-		byte[] updated = RemoveMetadataFromKtx2Bytes(bytes);
-		File.WriteAllBytes(filePath, updated);
-	}
-
-	public static byte[] RemoveMetadataFromKtx2Bytes(byte[] bytes)
-	{
-		if (bytes.Length < 80) return bytes;
-		byte[] ktx2Sig = new byte[] { 0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A };
-		for (int i = 0; i < 12; i++)
-			if (bytes[i] != ktx2Sig[i]) return bytes;
-
-		uint kvdByteOffset = BitConverter.ToUInt32(bytes, 60);
-		uint kvdByteLength = BitConverter.ToUInt32(bytes, 64);
-		ulong sgdByteOffset = BitConverter.ToUInt64(bytes, 68);
-		uint levelCount = BitConverter.ToUInt32(bytes, 32);
-		if (levelCount == 0) levelCount = 1;
-
-		if (kvdByteLength == 0 || kvdByteOffset == 0 || kvdByteOffset + kvdByteLength > (uint)bytes.Length)
-			return bytes;
-
-		var existingEntries = new List<byte[]>();
-		int cur = (int)kvdByteOffset;
-		int end = (int)(kvdByteOffset + kvdByteLength);
-		bool removed = false;
-
-		while (cur + 4 <= end)
-		{
-			uint keyAndValueByteLength = BitConverter.ToUInt32(bytes, cur);
-			if (cur + 4 + keyAndValueByteLength > end) break;
-			byte[] entry = new byte[keyAndValueByteLength];
-			Buffer.BlockCopy(bytes, cur + 4, entry, 0, (int)keyAndValueByteLength);
-
-			int nullIdx = Array.IndexOf(entry, (byte)0);
-			bool isRealm = false;
-			if (nullIdx > 0)
-			{
-				string key = Encoding.UTF8.GetString(entry, 0, nullIdx);
-				if (key.Equals("Realm", StringComparison.OrdinalIgnoreCase))
-				{
-					isRealm = true;
-					removed = true;
-				}
-			}
-			if (!isRealm)
-			{
-				existingEntries.Add(entry);
-			}
-
-			cur += 4 + (int)keyAndValueByteLength;
-			int padding = (4 - (cur % 4)) % 4;
-			cur += padding;
-		}
-
-		if (!removed) return bytes;
-
-		using var kvdMs = new MemoryStream();
-		foreach (var entry in existingEntries)
-		{
-			uint len = (uint)entry.Length;
-			kvdMs.Write(BitConverter.GetBytes(len), 0, 4);
-			kvdMs.Write(entry, 0, entry.Length);
-			int pad = (4 - (int)(kvdMs.Position % 4)) % 4;
-			for (int p = 0; p < pad; p++) kvdMs.WriteByte(0);
-		}
-		byte[] newKvdBytes = kvdMs.ToArray();
-
-		int delta = newKvdBytes.Length - (int)kvdByteLength;
-		byte[] result = new byte[bytes.Length + delta];
-
-		Buffer.BlockCopy(bytes, 0, result, 0, (int)kvdByteOffset);
-		Buffer.BlockCopy(newKvdBytes, 0, result, (int)kvdByteOffset, newKvdBytes.Length);
-		int afterKvdOffset = (int)(kvdByteOffset + kvdByteLength);
-		if (afterKvdOffset < bytes.Length && kvdByteOffset > 0)
-		{
-			Buffer.BlockCopy(bytes, afterKvdOffset, result, (int)kvdByteOffset + newKvdBytes.Length, bytes.Length - afterKvdOffset);
-		}
-
-		Buffer.BlockCopy(BitConverter.GetBytes(kvdByteOffset), 0, result, 60, 4);
-		Buffer.BlockCopy(BitConverter.GetBytes((uint)newKvdBytes.Length), 0, result, 64, 4);
-
-		if (delta != 0)
-		{
-			if (sgdByteOffset > kvdByteOffset)
-			{
-				ulong newSgd = sgdByteOffset + (ulong)delta;
-				Buffer.BlockCopy(BitConverter.GetBytes(newSgd), 0, result, 68, 8);
-			}
-
-			for (int l = 0; l < (int)levelCount; l++)
-			{
-				int lvlEntryOffset = 80 + (l * 24);
-				if (lvlEntryOffset + 24 <= result.Length)
-				{
-					ulong lvlByteOffset = BitConverter.ToUInt64(result, lvlEntryOffset);
-					if (lvlByteOffset > kvdByteOffset)
-					{
-						lvlByteOffset += (ulong)delta;
-						Buffer.BlockCopy(BitConverter.GetBytes(lvlByteOffset), 0, result, lvlEntryOffset, 8);
-					}
-				}
-			}
-		}
-
-		return result;
 	}
 
 	public static string? ExtractMetadataFromRanim(string filePath)
@@ -881,7 +494,7 @@ public static class RealmMetadataHelper
 				bytes[bytes.Length - 2] == (byte)'E' &&
 				bytes[bytes.Length - 1] == (byte)'T')
 			{
-				uint metaLen = BitConverter.ToUInt32(bytes.Slice(bytes.Length - 8, 4));
+				uint metaLen = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(bytes.Length - 8, 4));
 				if (metaLen > 0 && bytes.Length >= 8 + metaLen)
 				{
 					int metaStart = bytes.Length - 8 - (int)metaLen;
@@ -921,7 +534,7 @@ public static class RealmMetadataHelper
 			bytes[bytes.Length - 2] == (byte)'E' &&
 			bytes[bytes.Length - 1] == (byte)'T')
 		{
-			uint oldLen = BitConverter.ToUInt32(bytes, bytes.Length - 8);
+			uint oldLen = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(bytes.Length - 8, 4));
 			if (baseLength >= 8 + (int)oldLen)
 			{
 				baseLength = baseLength - 8 - (int)oldLen;
@@ -932,7 +545,7 @@ public static class RealmMetadataHelper
 		byte[] result = new byte[baseLength + jsonBytes.Length + 4 + 4];
 		Buffer.BlockCopy(bytes, 0, result, 0, baseLength);
 		Buffer.BlockCopy(jsonBytes, 0, result, baseLength, jsonBytes.Length);
-		Buffer.BlockCopy(BitConverter.GetBytes((uint)jsonBytes.Length), 0, result, baseLength + jsonBytes.Length, 4);
+		BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(baseLength + jsonBytes.Length, 4), (uint)jsonBytes.Length);
 		result[result.Length - 4] = (byte)'R';
 		result[result.Length - 3] = (byte)'M';
 		result[result.Length - 2] = (byte)'E';
@@ -972,7 +585,7 @@ public static class RealmMetadataHelper
 			bytes[bytes.Length - 2] == (byte)'E' &&
 			bytes[bytes.Length - 1] == (byte)'T')
 		{
-			uint oldLen = BitConverter.ToUInt32(bytes, bytes.Length - 8);
+			uint oldLen = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(bytes.Length - 8, 4));
 			if (bytes.Length >= 8 + (int)oldLen)
 			{
 				int baseLength = bytes.Length - 8 - (int)oldLen;
@@ -985,6 +598,443 @@ public static class RealmMetadataHelper
 		return bytes;
 	}
 
+	private class OggPageData
+	{
+		public int Offset { get; set; }
+		public int TotalLength { get; set; }
+		public byte Version { get; set; }
+		public byte HeaderType { get; set; }
+		public ulong GranulePosition { get; set; }
+		public uint BitstreamSerialNumber { get; set; }
+		public uint PageSequenceNumber { get; set; }
+		public uint CrcChecksum { get; set; }
+		public byte[] SegmentTable { get; set; } = Array.Empty<byte>();
+		public byte[] Payload { get; set; } = Array.Empty<byte>();
+	}
+
+	private static List<OggPageData> ParseOggPages(byte[] bytes)
+	{
+		var pages = new List<OggPageData>();
+		int pos = 0;
+		while (pos + 27 <= bytes.Length)
+		{
+			if (bytes[pos] != 0x4F || bytes[pos + 1] != 0x67 || bytes[pos + 2] != 0x67 || bytes[pos + 3] != 0x53)
+			{
+				break;
+			}
+
+			byte version = bytes[pos + 4];
+			byte headerType = bytes[pos + 5];
+			ulong granule = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(pos + 6, 8));
+			uint serial = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(pos + 14, 4));
+			uint seq = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(pos + 18, 4));
+			uint crc = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(pos + 22, 4));
+			int numSegments = bytes[pos + 26];
+
+			if (pos + 27 + numSegments > bytes.Length) break;
+
+			byte[] segmentTable = new byte[numSegments];
+			Buffer.BlockCopy(bytes, pos + 27, segmentTable, 0, numSegments);
+
+			int payloadLength = 0;
+			for (int i = 0; i < numSegments; i++) payloadLength += segmentTable[i];
+
+			int headerLength = 27 + numSegments;
+			int totalLength = headerLength + payloadLength;
+			if (pos + totalLength > bytes.Length) break;
+
+			byte[] payload = new byte[payloadLength];
+			Buffer.BlockCopy(bytes, pos + headerLength, payload, 0, payloadLength);
+
+			pages.Add(new OggPageData
+			{
+				Offset = pos,
+				TotalLength = totalLength,
+				Version = version,
+				HeaderType = headerType,
+				GranulePosition = granule,
+				BitstreamSerialNumber = serial,
+				PageSequenceNumber = seq,
+				CrcChecksum = crc,
+				SegmentTable = segmentTable,
+				Payload = payload
+			});
+
+			pos += totalLength;
+		}
+		return pages;
+	}
+
+	private static bool TryExtractHeaderPackets(
+		List<OggPageData> pages,
+		out string codecType,
+		out List<byte[]> headerPackets,
+		out int headerPageCount)
+	{
+		codecType = string.Empty;
+		headerPackets = new List<byte[]>();
+		headerPageCount = 0;
+
+		if (pages.Count == 0) return false;
+
+		byte[] firstPagePayload = pages[0].Payload;
+		int expectedPackets;
+		if (firstPagePayload.Length >= 7 &&
+			firstPagePayload[0] == 0x01 && firstPagePayload[1] == (byte)'v' && firstPagePayload[2] == (byte)'o' &&
+			firstPagePayload[3] == (byte)'r' && firstPagePayload[4] == (byte)'b' && firstPagePayload[5] == (byte)'i' && firstPagePayload[6] == (byte)'s')
+		{
+			codecType = "vorbis";
+			expectedPackets = 3;
+		}
+		else if (firstPagePayload.Length >= 8 &&
+			firstPagePayload[0] == (byte)'O' && firstPagePayload[1] == (byte)'p' && firstPagePayload[2] == (byte)'u' &&
+			firstPagePayload[3] == (byte)'s' && firstPagePayload[4] == (byte)'H' && firstPagePayload[5] == (byte)'e' &&
+			firstPagePayload[6] == (byte)'a' && firstPagePayload[7] == (byte)'d')
+		{
+			codecType = "opus";
+			expectedPackets = 2;
+		}
+		else
+		{
+			return false;
+		}
+
+		headerPackets.Add(firstPagePayload);
+		int collectedPackets = 1;
+		int pagesUsed = 1;
+
+		using var currentPacket = new MemoryStream();
+
+		for (int p = 1; p < pages.Count; p++)
+		{
+			var page = pages[p];
+			pagesUsed++;
+			int payloadOffset = 0;
+
+			for (int s = 0; s < page.SegmentTable.Length; s++)
+			{
+				int segmentLength = page.SegmentTable[s];
+				currentPacket.Write(page.Payload, payloadOffset, segmentLength);
+				payloadOffset += segmentLength;
+
+				if (segmentLength < 255)
+				{
+					headerPackets.Add(currentPacket.ToArray());
+					currentPacket.SetLength(0);
+					collectedPackets++;
+
+					if (collectedPackets == expectedPackets)
+					{
+						headerPageCount = pagesUsed;
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
+	}
+
+	private static bool TryExtractCommentsFromPacket(
+		byte[] packet,
+		out string vendor,
+		out List<string> comments,
+		out string codecType)
+	{
+		vendor = string.Empty;
+		comments = new List<string>();
+		codecType = string.Empty;
+
+		if (packet.Length >= 7 &&
+			packet[0] == 0x03 && packet[1] == (byte)'v' && packet[2] == (byte)'o' &&
+			packet[3] == (byte)'r' && packet[4] == (byte)'b' && packet[5] == (byte)'i' && packet[6] == (byte)'s')
+		{
+			codecType = "vorbis";
+			int cur = 7;
+			if (cur + 4 > packet.Length) return false;
+			uint vendorLen = BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(cur, 4));
+			cur += 4;
+			if (cur + vendorLen > (uint)packet.Length) return false;
+			vendor = Encoding.UTF8.GetString(packet, cur, (int)vendorLen);
+			cur += (int)vendorLen;
+
+			if (cur + 4 > packet.Length) return false;
+			uint commentCount = BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(cur, 4));
+			cur += 4;
+
+			for (uint i = 0; i < commentCount; i++)
+			{
+				if (cur + 4 > packet.Length) return false;
+				uint cLen = BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(cur, 4));
+				cur += 4;
+				if (cur + cLen > (uint)packet.Length) return false;
+				string c = Encoding.UTF8.GetString(packet, cur, (int)cLen);
+				cur += (int)cLen;
+				comments.Add(c);
+			}
+
+			return true;
+		}
+
+		if (packet.Length >= 8 &&
+			packet[0] == (byte)'O' && packet[1] == (byte)'p' && packet[2] == (byte)'u' &&
+			packet[3] == (byte)'s' && packet[4] == (byte)'T' && packet[5] == (byte)'a' &&
+			packet[6] == (byte)'g' && packet[7] == (byte)'s')
+		{
+			codecType = "opus";
+			int cur = 8;
+			if (cur + 4 > packet.Length) return false;
+			uint vendorLen = BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(cur, 4));
+			cur += 4;
+			if (cur + vendorLen > (uint)packet.Length) return false;
+			vendor = Encoding.UTF8.GetString(packet, cur, (int)vendorLen);
+			cur += (int)vendorLen;
+
+			if (cur + 4 > packet.Length) return false;
+			uint commentCount = BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(cur, 4));
+			cur += 4;
+
+			for (uint i = 0; i < commentCount; i++)
+			{
+				if (cur + 4 > packet.Length) return false;
+				uint cLen = BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(cur, 4));
+				cur += 4;
+				if (cur + cLen > (uint)packet.Length) return false;
+				string c = Encoding.UTF8.GetString(packet, cur, (int)cLen);
+				cur += (int)cLen;
+				comments.Add(c);
+			}
+
+			return true;
+		}
+
+		return false;
+	}
+
+	private static byte[] BuildVorbisCommentPacket(string vendor, List<string> comments)
+	{
+		using var ms = new MemoryStream();
+		byte[] magic = new byte[] { 0x03, (byte)'v', (byte)'o', (byte)'r', (byte)'b', (byte)'i', (byte)'s' };
+		ms.Write(magic, 0, 7);
+
+		Span<byte> uintBuffer = stackalloc byte[4];
+		byte[] vendorBytes = Encoding.UTF8.GetBytes(vendor);
+		BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, (uint)vendorBytes.Length);
+		ms.Write(uintBuffer);
+		ms.Write(vendorBytes, 0, vendorBytes.Length);
+
+		BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, (uint)comments.Count);
+		ms.Write(uintBuffer);
+		foreach (var comment in comments)
+		{
+			byte[] commentBytes = Encoding.UTF8.GetBytes(comment);
+			BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, (uint)commentBytes.Length);
+			ms.Write(uintBuffer);
+			ms.Write(commentBytes, 0, commentBytes.Length);
+		}
+
+		ms.WriteByte(0x01);
+		return ms.ToArray();
+	}
+
+	private static byte[] BuildOpusCommentPacket(string vendor, List<string> comments)
+	{
+		using var ms = new MemoryStream();
+		byte[] magic = Encoding.ASCII.GetBytes("OpusTags");
+		ms.Write(magic, 0, 8);
+
+		Span<byte> uintBuffer = stackalloc byte[4];
+		byte[] vendorBytes = Encoding.UTF8.GetBytes(vendor);
+		BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, (uint)vendorBytes.Length);
+		ms.Write(uintBuffer);
+		ms.Write(vendorBytes, 0, vendorBytes.Length);
+
+		BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, (uint)comments.Count);
+		ms.Write(uintBuffer);
+		foreach (var comment in comments)
+		{
+			byte[] commentBytes = Encoding.UTF8.GetBytes(comment);
+			BinaryPrimitives.WriteUInt32LittleEndian(uintBuffer, (uint)commentBytes.Length);
+			ms.Write(uintBuffer);
+			ms.Write(commentBytes, 0, commentBytes.Length);
+		}
+
+		return ms.ToArray();
+	}
+
+	private static List<byte[]> PackPacketsIntoPages(
+		List<byte[]> packets,
+		uint serial,
+		uint startSeq)
+	{
+		var pages = new List<byte[]>();
+		var currentSegments = new List<byte>();
+		using var currentPayload = new MemoryStream();
+		bool isContinued = false;
+		uint seq = startSeq;
+
+		void FlushPage(bool packetContinues)
+		{
+			byte headerType = (byte)(isContinued ? 0x01 : 0x00);
+			byte[] pageBytes = CreateOggPageBytes(
+				headerType,
+				0UL,
+				serial,
+				seq++,
+				currentSegments,
+				currentPayload.ToArray());
+			pages.Add(pageBytes);
+			currentSegments.Clear();
+			currentPayload.SetLength(0);
+			isContinued = packetContinues;
+		}
+
+		foreach (var packet in packets)
+		{
+			if (packet.Length == 0)
+			{
+				if (currentSegments.Count == 255)
+				{
+					FlushPage(false);
+				}
+				currentSegments.Add(0);
+				isContinued = false;
+				continue;
+			}
+
+			int offset = 0;
+			int remaining = packet.Length;
+
+			while (remaining > 0)
+			{
+				if (currentSegments.Count == 255)
+				{
+					FlushPage(true);
+				}
+
+				int segLen = Math.Min(remaining, 255);
+				currentSegments.Add((byte)segLen);
+				currentPayload.Write(packet, offset, segLen);
+				offset += segLen;
+				remaining -= segLen;
+
+				if (segLen < 255)
+				{
+					isContinued = false;
+					break;
+				}
+				else if (remaining == 0)
+				{
+					if (currentSegments.Count == 255)
+					{
+						FlushPage(true);
+					}
+					currentSegments.Add(0);
+					isContinued = false;
+					break;
+				}
+			}
+		}
+
+		if (currentSegments.Count > 0)
+		{
+			FlushPage(false);
+		}
+
+		return pages;
+	}
+
+	private static byte[] CreateOggPageBytes(
+		byte headerType,
+		ulong granulePos,
+		uint serial,
+		uint seq,
+		List<byte> segments,
+		byte[] payload)
+	{
+		int numSegments = segments.Count;
+		byte[] pageBytes = new byte[27 + numSegments + payload.Length];
+
+		pageBytes[0] = 0x4F;
+		pageBytes[1] = 0x67;
+		pageBytes[2] = 0x67;
+		pageBytes[3] = 0x53;
+
+		pageBytes[4] = 0;
+		pageBytes[5] = headerType;
+
+		BinaryPrimitives.WriteUInt64LittleEndian(pageBytes.AsSpan(6, 8), granulePos);
+		BinaryPrimitives.WriteUInt32LittleEndian(pageBytes.AsSpan(14, 4), serial);
+		BinaryPrimitives.WriteUInt32LittleEndian(pageBytes.AsSpan(18, 4), seq);
+
+		pageBytes[26] = (byte)numSegments;
+
+		for (int i = 0; i < numSegments; i++)
+		{
+			pageBytes[27 + i] = segments[i];
+		}
+
+		Buffer.BlockCopy(payload, 0, pageBytes, 27 + numSegments, payload.Length);
+
+		uint crc = CalculateOggCrc(pageBytes);
+		BinaryPrimitives.WriteUInt32LittleEndian(pageBytes.AsSpan(22, 4), crc);
+
+		return pageBytes;
+	}
+
+	private static byte[] ReassembleOggStream(
+		byte[] originalBytes,
+		List<OggPageData> originalPages,
+		int originalHeaderPageCount,
+		List<byte[]> newHeaderPages)
+	{
+		using var outputMs = new MemoryStream();
+
+		outputMs.Write(originalBytes, originalPages[0].Offset, originalPages[0].TotalLength);
+
+		foreach (var pageBytes in newHeaderPages)
+		{
+			outputMs.Write(pageBytes, 0, pageBytes.Length);
+		}
+
+		int newHeaderPageCountTotal = 1 + newHeaderPages.Count;
+		int seqDelta = newHeaderPageCountTotal - originalHeaderPageCount;
+
+		if (seqDelta == 0)
+		{
+			if (originalHeaderPageCount < originalPages.Count)
+			{
+				int audioStartOffset = originalPages[originalHeaderPageCount].Offset;
+				int audioLength = originalBytes.Length - audioStartOffset;
+				outputMs.Write(originalBytes, audioStartOffset, audioLength);
+			}
+		}
+		else
+		{
+			for (int p = originalHeaderPageCount; p < originalPages.Count; p++)
+			{
+				var page = originalPages[p];
+				byte[] pageBytes = new byte[page.TotalLength];
+				Buffer.BlockCopy(originalBytes, page.Offset, pageBytes, 0, page.TotalLength);
+
+				uint newSeq = (uint)((long)page.PageSequenceNumber + seqDelta);
+				BinaryPrimitives.WriteUInt32LittleEndian(pageBytes.AsSpan(18, 4), newSeq);
+
+				pageBytes[22] = 0;
+				pageBytes[23] = 0;
+				pageBytes[24] = 0;
+				pageBytes[25] = 0;
+
+				uint crc = CalculateOggCrc(pageBytes);
+				BinaryPrimitives.WriteUInt32LittleEndian(pageBytes.AsSpan(22, 4), crc);
+
+				outputMs.Write(pageBytes, 0, pageBytes.Length);
+			}
+		}
+
+		return outputMs.ToArray();
+	}
+
 	public static string? ExtractMetadataFromOgg(string filePath)
 	{
 		if (!File.Exists(filePath)) return null;
@@ -994,58 +1044,87 @@ public static class RealmMetadataHelper
 
 	public static string? ExtractMetadataFromOggBytes(ReadOnlySpan<byte> bytes)
 	{
-		if (bytes.Length < 4) return null;
+		if (bytes.Length < 27) return null;
+		int pos = 0;
+		int pageIndex = 0;
+		uint targetSerial = 0;
+		using var commentBuffer = new MemoryStream();
+		int packetIndex = 0;
+		int expectedHeaderPackets = 0;
 
-		byte[] vorbisCommentTag = new byte[] { 0x03, (byte)'v', (byte)'o', (byte)'r', (byte)'b', (byte)'i', (byte)'s' };
-		byte[] opusTags = Encoding.ASCII.GetBytes("OpusTags");
-
-		int tagIdx = bytes.IndexOf(vorbisCommentTag);
-		int headerLen = 7;
-		if (tagIdx < 0)
+		while (pos + 27 <= bytes.Length)
 		{
-			tagIdx = bytes.IndexOf(opusTags);
-			headerLen = 8;
-		}
+			if (bytes[pos] != 0x4F || bytes[pos + 1] != 0x67 || bytes[pos + 2] != 0x67 || bytes[pos + 3] != 0x53)
+				break;
 
-		if (tagIdx >= 0)
-		{
-			int cur = tagIdx + headerLen;
-			if (cur + 4 <= bytes.Length)
+			uint serial = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(pos + 14, 4));
+			int numSegments = bytes[pos + 26];
+			if (pos + 27 + numSegments > bytes.Length) break;
+
+			var segTable = bytes.Slice(pos + 27, numSegments);
+			int payloadLen = 0;
+			for (int s = 0; s < numSegments; s++) payloadLen += segTable[s];
+
+			int headerLen = 27 + numSegments;
+			if (pos + headerLen + payloadLen > bytes.Length) break;
+
+			var payload = bytes.Slice(pos + headerLen, payloadLen);
+
+			if (pageIndex == 0)
 			{
-				uint vendorLen = BitConverter.ToUInt32(bytes.Slice(cur, 4));
-				cur += 4 + (int)vendorLen;
-				if (cur + 4 <= bytes.Length)
+				targetSerial = serial;
+				if (payload.Length >= 7 && payload.Slice(0, 7).SequenceEqual("\x01vorbis"u8))
 				{
-					uint commentCount = BitConverter.ToUInt32(bytes.Slice(cur, 4));
-					cur += 4;
-					for (uint i = 0; i < commentCount && cur + 4 <= bytes.Length; i++)
+					expectedHeaderPackets = 3;
+				}
+				else if (payload.Length >= 8 && payload.Slice(0, 8).SequenceEqual("OpusHead"u8))
+				{
+					expectedHeaderPackets = 2;
+				}
+				else
+				{
+					return null;
+				}
+				packetIndex = 1;
+			}
+			else if (serial == targetSerial)
+			{
+				int payloadOffset = 0;
+				for (int s = 0; s < numSegments; s++)
+				{
+					int segLen = segTable[s];
+					if (packetIndex == 1)
 					{
-						uint cLen = BitConverter.ToUInt32(bytes.Slice(cur, 4));
-						cur += 4;
-						if (cur + cLen > bytes.Length) break;
-						string comment = Encoding.UTF8.GetString(bytes.Slice(cur, (int)cLen));
-						cur += (int)cLen;
+						commentBuffer.Write(payload.Slice(payloadOffset, segLen));
+					}
+					payloadOffset += segLen;
 
-						if (comment.StartsWith("REALM=", StringComparison.OrdinalIgnoreCase))
+					if (segLen < 255)
+					{
+						if (packetIndex == 1)
 						{
-							return comment.Substring(6);
+							byte[] commentPacket = commentBuffer.ToArray();
+							if (TryExtractCommentsFromPacket(commentPacket, out _, out var comments, out _))
+							{
+								foreach (var comment in comments)
+								{
+									if (comment.StartsWith("REALM=", StringComparison.OrdinalIgnoreCase))
+									{
+										return comment.Substring(6);
+									}
+								}
+							}
+							return null;
 						}
+						packetIndex++;
+						if (packetIndex >= expectedHeaderPackets)
+							return null;
 					}
 				}
 			}
-		}
 
-		byte[] realmTag = Encoding.UTF8.GetBytes("REALM=");
-		int maxSearch = Math.Min(bytes.Length, 65536);
-		int rIdx = bytes.Slice(0, maxSearch).IndexOf(realmTag);
-		if (rIdx >= 0)
-		{
-			int start = rIdx + 6;
-			int end = start;
-			while (end < maxSearch && bytes[end] != 0 && bytes[end] != '\r' && bytes[end] != '\n') end++;
-			string val = Encoding.UTF8.GetString(bytes.Slice(start, end - start));
-			if (val.TrimStart().StartsWith("{") || val.TrimStart().StartsWith("["))
-				return val;
+			pos += headerLen + payloadLen;
+			pageIndex++;
 		}
 
 		return null;
@@ -1060,128 +1139,49 @@ public static class RealmMetadataHelper
 
 	public static byte[] AddMetadataToOggBytes(byte[] bytes, string realmMetadataJson)
 	{
-		byte[] vorbisCommentTag = new byte[] { 0x03, (byte)'v', (byte)'o', (byte)'r', (byte)'b', (byte)'i', (byte)'s' };
-		byte[] opusTags = Encoding.ASCII.GetBytes("OpusTags");
+		if (bytes == null || bytes.Length < 27) return bytes ?? Array.Empty<byte>();
 
-		int tagIdx = bytes.AsSpan().IndexOf(vorbisCommentTag);
-		string headerType = "vorbis";
-		int headerLen = 7;
+		var pages = ParseOggPages(bytes);
+		if (pages.Count == 0) return bytes;
 
-		if (tagIdx < 0)
-		{
-			tagIdx = bytes.AsSpan().IndexOf(opusTags);
-			headerType = "opus";
-			headerLen = 8;
-		}
-
-		if (tagIdx < 0)
+		if (!TryExtractHeaderPackets(pages, out string codecType, out var headerPackets, out int headerPageCount))
 		{
 			return bytes;
 		}
 
-		int pageStart = tagIdx;
-		while (pageStart >= 0)
+		if (headerPackets.Count < 2) return bytes;
+		byte[] oldCommentPacket = headerPackets[1];
+
+		if (!TryExtractCommentsFromPacket(oldCommentPacket, out string vendor, out var comments, out _))
 		{
-			if (pageStart + 4 <= bytes.Length &&
-				bytes[pageStart] == 0x4F && bytes[pageStart + 1] == 0x67 &&
-				bytes[pageStart + 2] == 0x67 && bytes[pageStart + 3] == 0x53)
-			{
-				break;
-			}
-			pageStart--;
+			return bytes;
 		}
-		if (pageStart < 0) return bytes;
 
-		int numSegments = bytes[pageStart + 26];
-		int pageHeaderLen = 27 + numSegments;
-		int payloadLen = 0;
-		for (int s = 0; s < numSegments; s++) payloadLen += bytes[pageStart + 27 + s];
-		int pageEnd = pageStart + pageHeaderLen + payloadLen;
-
-		int cur = tagIdx + headerLen;
-		uint vendorLen = BitConverter.ToUInt32(bytes, cur);
-		string vendorString = Encoding.UTF8.GetString(bytes, cur + 4, (int)vendorLen);
-		cur += 4 + (int)vendorLen;
-
-		uint commentCount = BitConverter.ToUInt32(bytes, cur);
-		cur += 4;
-
-		var comments = new List<string>();
-		for (uint i = 0; i < commentCount && cur + 4 <= bytes.Length; i++)
+		var updatedComments = new List<string>();
+		foreach (var comment in comments)
 		{
-			uint cLen = BitConverter.ToUInt32(bytes, cur);
-			cur += 4;
-			if (cur + cLen > bytes.Length) break;
-			string comment = Encoding.UTF8.GetString(bytes, cur, (int)cLen);
-			cur += (int)cLen;
-
 			if (!comment.StartsWith("REALM=", StringComparison.OrdinalIgnoreCase))
 			{
-				comments.Add(comment);
+				updatedComments.Add(comment);
 			}
 		}
+		updatedComments.Add("REALM=" + realmMetadataJson);
 
-		comments.Add("REALM=" + realmMetadataJson);
+		byte[] newCommentPacket = codecType == "vorbis"
+			? BuildVorbisCommentPacket(vendor, updatedComments)
+			: BuildOpusCommentPacket(vendor, updatedComments);
 
-		using var packetMs = new MemoryStream();
-		if (headerType == "vorbis")
-			packetMs.Write(vorbisCommentTag, 0, 7);
-		else
-			packetMs.Write(opusTags, 0, 8);
-
-		byte[] vendorBytes = Encoding.UTF8.GetBytes(vendorString);
-		packetMs.Write(BitConverter.GetBytes((uint)vendorBytes.Length), 0, 4);
-		packetMs.Write(vendorBytes, 0, vendorBytes.Length);
-
-		packetMs.Write(BitConverter.GetBytes((uint)comments.Count), 0, 4);
-		foreach (var c in comments)
+		var newHeaderPacketsToPack = new List<byte[]>();
+		newHeaderPacketsToPack.Add(newCommentPacket);
+		for (int i = 2; i < headerPackets.Count; i++)
 		{
-			byte[] cBytes = Encoding.UTF8.GetBytes(c);
-			packetMs.Write(BitConverter.GetBytes((uint)cBytes.Length), 0, 4);
-			packetMs.Write(cBytes, 0, cBytes.Length);
-		}
-		packetMs.WriteByte(1);
-
-		byte[] newPacketData = packetMs.ToArray();
-
-		var segments = new List<byte>();
-		int rem = newPacketData.Length;
-		while (rem >= 255)
-		{
-			segments.Add(255);
-			rem -= 255;
-		}
-		segments.Add((byte)rem);
-
-		if (segments.Count > 255)
-		{
-			return bytes;
+			newHeaderPacketsToPack.Add(headerPackets[i]);
 		}
 
-		using var newPageMs = new MemoryStream();
-		newPageMs.Write(bytes, pageStart, 26);
-		newPageMs.WriteByte((byte)segments.Count);
-		foreach (var seg in segments) newPageMs.WriteByte(seg);
-		newPageMs.Write(newPacketData, 0, newPacketData.Length);
+		uint serial = pages[0].BitstreamSerialNumber;
+		var newHeaderPages = PackPacketsIntoPages(newHeaderPacketsToPack, serial, 1);
 
-		byte[] newPageBytes = newPageMs.ToArray();
-
-		newPageBytes[22] = 0;
-		newPageBytes[23] = 0;
-		newPageBytes[24] = 0;
-		newPageBytes[25] = 0;
-
-		uint pageCrc = CalculateOggCrc(newPageBytes);
-		Buffer.BlockCopy(BitConverter.GetBytes(pageCrc), 0, newPageBytes, 22, 4);
-
-		using var finalMs = new MemoryStream();
-		finalMs.Write(bytes, 0, pageStart);
-		finalMs.Write(newPageBytes, 0, newPageBytes.Length);
-		if (pageEnd < bytes.Length)
-		{
-			finalMs.Write(bytes, pageEnd, bytes.Length - pageEnd);
-		}
-		return finalMs.ToArray();
+		return ReassembleOggStream(bytes, pages, headerPageCount, newHeaderPages);
 	}
 
 	public static void RemoveMetadataFromOgg(string filePath)
@@ -1193,132 +1193,176 @@ public static class RealmMetadataHelper
 
 	public static byte[] RemoveMetadataFromOggBytes(byte[] bytes)
 	{
-		byte[] vorbisCommentTag = new byte[] { 0x03, (byte)'v', (byte)'o', (byte)'r', (byte)'b', (byte)'i', (byte)'s' };
-		byte[] opusTags = Encoding.ASCII.GetBytes("OpusTags");
+		if (bytes == null || bytes.Length < 27) return bytes ?? Array.Empty<byte>();
 
-		int tagIdx = bytes.AsSpan().IndexOf(vorbisCommentTag);
-		string headerType = "vorbis";
-		int headerLen = 7;
+		var pages = ParseOggPages(bytes);
+		if (pages.Count == 0) return bytes;
 
-		if (tagIdx < 0)
-		{
-			tagIdx = bytes.AsSpan().IndexOf(opusTags);
-			headerType = "opus";
-			headerLen = 8;
-		}
-
-		if (tagIdx < 0)
+		if (!TryExtractHeaderPackets(pages, out string codecType, out var headerPackets, out int headerPageCount))
 		{
 			return bytes;
 		}
 
-		int pageStart = tagIdx;
-		while (pageStart >= 0)
+		if (headerPackets.Count < 2) return bytes;
+		byte[] oldCommentPacket = headerPackets[1];
+
+		if (!TryExtractCommentsFromPacket(oldCommentPacket, out string vendor, out var comments, out _))
 		{
-			if (pageStart + 4 <= bytes.Length &&
-				bytes[pageStart] == 0x4F && bytes[pageStart + 1] == 0x67 &&
-				bytes[pageStart + 2] == 0x67 && bytes[pageStart + 3] == 0x53)
-			{
-				break;
-			}
-			pageStart--;
+			return bytes;
 		}
-		if (pageStart < 0) return bytes;
 
-		int numSegments = bytes[pageStart + 26];
-		int pageHeaderLen = 27 + numSegments;
-		int payloadLen = 0;
-		for (int s = 0; s < numSegments; s++) payloadLen += bytes[pageStart + 27 + s];
-		int pageEnd = pageStart + pageHeaderLen + payloadLen;
-
-		int cur = tagIdx + headerLen;
-		uint vendorLen = BitConverter.ToUInt32(bytes, cur);
-		string vendorString = Encoding.UTF8.GetString(bytes, cur + 4, (int)vendorLen);
-		cur += 4 + (int)vendorLen;
-
-		uint commentCount = BitConverter.ToUInt32(bytes, cur);
-		cur += 4;
-
-		var comments = new List<string>();
-		bool removed = false;
-		for (uint i = 0; i < commentCount && cur + 4 <= bytes.Length; i++)
+		bool hasRealmComment = false;
+		var updatedComments = new List<string>();
+		foreach (var comment in comments)
 		{
-			uint cLen = BitConverter.ToUInt32(bytes, cur);
-			cur += 4;
-			if (cur + cLen > bytes.Length) break;
-			string comment = Encoding.UTF8.GetString(bytes, cur, (int)cLen);
-			cur += (int)cLen;
-
-			if (!comment.StartsWith("REALM=", StringComparison.OrdinalIgnoreCase))
+			if (comment.StartsWith("REALM=", StringComparison.OrdinalIgnoreCase))
 			{
-				comments.Add(comment);
+				hasRealmComment = true;
 			}
 			else
 			{
-				removed = true;
+				updatedComments.Add(comment);
 			}
 		}
 
-		if (!removed) return bytes;
+		if (!hasRealmComment) return bytes;
 
-		using var packetMs = new MemoryStream();
-		if (headerType == "vorbis")
-			packetMs.Write(vorbisCommentTag, 0, 7);
-		else
-			packetMs.Write(opusTags, 0, 8);
+		byte[] newCommentPacket = codecType == "vorbis"
+			? BuildVorbisCommentPacket(vendor, updatedComments)
+			: BuildOpusCommentPacket(vendor, updatedComments);
 
-		byte[] vendorBytes = Encoding.UTF8.GetBytes(vendorString);
-		packetMs.Write(BitConverter.GetBytes((uint)vendorBytes.Length), 0, 4);
-		packetMs.Write(vendorBytes, 0, vendorBytes.Length);
-
-		packetMs.Write(BitConverter.GetBytes((uint)comments.Count), 0, 4);
-		foreach (var c in comments)
+		var newHeaderPacketsToPack = new List<byte[]>();
+		newHeaderPacketsToPack.Add(newCommentPacket);
+		for (int i = 2; i < headerPackets.Count; i++)
 		{
-			byte[] cBytes = Encoding.UTF8.GetBytes(c);
-			packetMs.Write(BitConverter.GetBytes((uint)cBytes.Length), 0, 4);
-			packetMs.Write(cBytes, 0, cBytes.Length);
+			newHeaderPacketsToPack.Add(headerPackets[i]);
 		}
-		packetMs.WriteByte(1);
 
-		byte[] newPacketData = packetMs.ToArray();
+		uint serial = pages[0].BitstreamSerialNumber;
+		var newHeaderPages = PackPacketsIntoPages(newHeaderPacketsToPack, serial, 1);
 
-		var segments = new List<byte>();
-		int rem = newPacketData.Length;
-		while (rem >= 255)
+		return ReassembleOggStream(bytes, pages, headerPageCount, newHeaderPages);
+	}
+
+	public static bool IsGlbBytes(ReadOnlySpan<byte> bytes)
+	{
+		if (bytes.Length < 20) return false;
+		return BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(0, 4)) == 0x46546C67;
+	}
+
+	public static bool IsRtexBytes(ReadOnlySpan<byte> bytes)
+	{
+		return Realm.Shared.Textures.RtexFile.IsRtexBytes(bytes);
+	}
+
+	public static bool IsOggBytes(ReadOnlySpan<byte> bytes)
+	{
+		if (bytes.Length < 4) return false;
+		return bytes[0] == 0x4F && bytes[1] == 0x67 && bytes[2] == 0x67 && bytes[3] == 0x53;
+	}
+
+	public static bool IsRanimBytes(ReadOnlySpan<byte> bytes)
+	{
+		if (bytes.Length == 0) return false;
+		if (bytes.Length >= 8 &&
+			bytes[bytes.Length - 4] == (byte)'R' &&
+			bytes[bytes.Length - 3] == (byte)'M' &&
+			bytes[bytes.Length - 2] == (byte)'E' &&
+			bytes[bytes.Length - 1] == (byte)'T')
 		{
-			segments.Add(255);
-			rem -= 255;
+			return true;
 		}
-		segments.Add((byte)rem);
 
-		if (segments.Count > 255)
+		if (bytes[0] == (byte)'{' || bytes[0] == (byte)'[')
+		{
+			try
+			{
+				string json = Encoding.UTF8.GetString(bytes);
+				using var doc = JsonDocument.Parse(json);
+				var root = doc.RootElement;
+				if (root.TryGetProperty("AnimationName", out _) ||
+					root.TryGetProperty("animationName", out _) ||
+					root.TryGetProperty("Tracks", out _) ||
+					root.TryGetProperty("tracks", out _) ||
+					root.TryGetProperty("FrameRate", out _) ||
+					root.TryGetProperty("frameRate", out _))
+				{
+					return true;
+				}
+			}
+			catch { }
+		}
+
+		return false;
+	}
+
+	public static byte[] StripMetadataEphemeral(byte[] bytes, string? extensionOrPath = null)
+	{
+		if (bytes == null || bytes.Length == 0) return bytes ?? Array.Empty<byte>();
+
+		string extension = string.Empty;
+		if (!string.IsNullOrEmpty(extensionOrPath))
+		{
+			extension = Path.GetExtension(extensionOrPath).ToLowerInvariant();
+		}
+
+		try
+		{
+			if (extension == ".glb" || (string.IsNullOrEmpty(extension) && IsGlbBytes(bytes)))
+			{
+				return RemoveMetadataFromGlbBytes(bytes);
+			}
+			if (extension == ".rtex" || (string.IsNullOrEmpty(extension) && IsRtexBytes(bytes)))
+			{
+				return Realm.Shared.Textures.RtexFile.SetMetadata(bytes, null);
+			}
+			if (extension == ".ranim" || (string.IsNullOrEmpty(extension) && IsRanimBytes(bytes)))
+			{
+				return RemoveMetadataFromRanimBytes(bytes);
+			}
+			if (extension == ".ogg" || (string.IsNullOrEmpty(extension) && IsOggBytes(bytes)))
+			{
+				return RemoveMetadataFromOggBytes(bytes);
+			}
+		}
+		catch
 		{
 			return bytes;
 		}
 
-		using var newPageMs = new MemoryStream();
-		newPageMs.Write(bytes, pageStart, 26);
-		newPageMs.WriteByte((byte)segments.Count);
-		foreach (var seg in segments) newPageMs.WriteByte(seg);
-		newPageMs.Write(newPacketData, 0, newPacketData.Length);
+		return bytes;
+	}
 
-		byte[] newPageBytes = newPageMs.ToArray();
-
-		newPageBytes[22] = 0;
-		newPageBytes[23] = 0;
-		newPageBytes[24] = 0;
-		newPageBytes[25] = 0;
-
-		uint pageCrc = CalculateOggCrc(newPageBytes);
-		Buffer.BlockCopy(BitConverter.GetBytes(pageCrc), 0, newPageBytes, 22, 4);
-
-		using var finalMs = new MemoryStream();
-		finalMs.Write(bytes, 0, pageStart);
-		finalMs.Write(newPageBytes, 0, newPageBytes.Length);
-		if (pageEnd < bytes.Length)
+	public static string ComputeBlake3(byte[] bytes, string? extensionOrPath = null)
+	{
+		if (bytes == null || bytes.Length == 0)
 		{
-			finalMs.Write(bytes, pageEnd, bytes.Length - pageEnd);
+			return Hasher.Hash(ReadOnlySpan<byte>.Empty).ToString();
 		}
-		return finalMs.ToArray();
+
+		byte[] canonicalBytes = StripMetadataEphemeral(bytes, extensionOrPath);
+		var hash = Hasher.Hash(canonicalBytes);
+		return hash.ToString();
+	}
+
+	public static string ComputeBlake3(string filePath)
+	{
+		if (!File.Exists(filePath)) return string.Empty;
+		byte[] bytes = File.ReadAllBytes(filePath);
+		return ComputeBlake3(bytes, filePath);
+	}
+
+	public static string ComputeBlake3(Stream stream, string? extensionOrPath = null)
+	{
+		using var memoryStream = new MemoryStream();
+		stream.CopyTo(memoryStream);
+		return ComputeBlake3(memoryStream.ToArray(), extensionOrPath);
+	}
+
+	public static string ComputeCanonicalAssetIdentifier(byte[] bytes, string extensionOrPath)
+	{
+		string extension = Path.GetExtension(extensionOrPath).ToLowerInvariant();
+		string blake3Hash = ComputeBlake3(bytes, extension);
+		return string.IsNullOrEmpty(extension) ? blake3Hash : $"{blake3Hash}{extension}";
 	}
 }

@@ -312,7 +312,8 @@
                         entityId: unit.UnitId || unit.Id || selectedUnitId,
                         field: field,
                         domain: domain,
-                        currentPath: currentPath
+                        currentPath: currentPath,
+                        focusGodot: true
                     })
                 }).catch(() => {});
             }
@@ -329,7 +330,8 @@
                 body: JSON.stringify({
                     action: 'openAnimationStudio',
                     unitId: unit.UnitId || unit.Id || selectedUnitId,
-                    modelPath: unit.ModelPath || ''
+                    modelPath: unit.ModelPath || '',
+                    focusGodot: true
                 })
             }).catch(() => {});
         }
@@ -1335,7 +1337,8 @@
                         action: 'openVfxDialog',
                         weaponId: item.WeaponId || '',
                         weaponIndex: idx,
-                        weaponData: item
+                        weaponData: item,
+                        focusGodot: true
                     })
                 }).catch(() => {});
             });
@@ -1576,7 +1579,8 @@
                         action: 'openAbilityVfxDialog',
                         abilityId: item.AbilityId || '',
                         abilityIndex: idx,
-                        abilityData: item
+                        abilityData: item,
+                        focusGodot: true
                     })
                 }).catch(() => {});
             });

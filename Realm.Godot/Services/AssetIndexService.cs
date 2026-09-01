@@ -1,5 +1,6 @@
 using Godot;
 using LiteDB;
+using SharpCompress.Archives;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -20,6 +21,8 @@ public class IndexedAsset
 	public DateTime LastModifiedUtc { get; set; }
 	public List<string> Tags { get; set; } = new();
 	public string MetadataJson { get; set; } = string.Empty;
+	public bool HasRealmMetadata { get; set; }
+	public string? AssetType { get; set; }
 }
 
 public class IndexedFolder
@@ -82,21 +85,46 @@ public class AssetIndexService : IDisposable
 	{
 		lock (_syncLock)
 		{
-			if (_folderCollection.Count() == 0)
+			var forbiddenFolders = _folderCollection.FindAll()
+				.Where(f => IsForbiddenPath(f.DirectoryPath))
+				.ToList();
+			foreach (var f in forbiddenFolders)
 			{
-				string tempWorkspaceAssets = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
-				if (Directory.Exists(tempWorkspaceAssets))
-				{
-					AddDirectory(tempWorkspaceAssets);
-				}
-
-				string templatePath = PathUtils.FindPath("MapTemplate/Assets");
-				if (!string.IsNullOrEmpty(templatePath) && Directory.Exists(templatePath))
-				{
-					AddDirectory(templatePath);
-				}
+				_folderCollection.Delete(f.Id);
 			}
+
+			var validFolders = _folderCollection.FindAll()
+				.Select(f => f.DirectoryPath)
+				.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+			var orphanedAssets = _assetCollection.FindAll()
+				.Where(a => !validFolders.Contains(a.DirectoryPath) || IsForbiddenPath(a.DirectoryPath) || IsForbiddenPath(a.FilePath))
+				.ToList();
+			foreach (var orphan in orphanedAssets)
+			{
+				_assetCollection.Delete(orphan.Id);
+			}
+
+			string globalArchive = NormalizePath(MapAssetManager.GlobalArchiveFile);
+			var existing = _folderCollection.FindOne(x => x.DirectoryPath == globalArchive);
+			if (existing == null)
+			{
+				_folderCollection.Insert(new IndexedFolder
+				{
+					DirectoryPath = globalArchive,
+					LastScannedUtc = DateTime.MinValue
+				});
+			}
+
+			_database.Checkpoint();
 		}
+	}
+
+	private static bool IsForbiddenPath(string path)
+	{
+		if (string.IsNullOrWhiteSpace(path)) return true;
+		string norm = path.Replace('\\', '/').ToLowerInvariant();
+		return norm.Contains("temp_map_workspace") || norm.Contains("maptemplate");
 	}
 
 	public bool IsDirectoryIndexing(string directoryPath)
@@ -121,12 +149,35 @@ public class AssetIndexService : IDisposable
 
 	public void AddDirectory(string directoryPath)
 	{
-		if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
+		if (string.IsNullOrWhiteSpace(directoryPath))
 		{
 			return;
 		}
 
 		string normalizedPath = NormalizePath(directoryPath);
+		if (IsForbiddenPath(normalizedPath))
+		{
+			return;
+		}
+
+		bool isGlobalArchive = string.Equals(normalizedPath, NormalizePath(MapAssetManager.GlobalArchiveFile), StringComparison.OrdinalIgnoreCase);
+		if (!isGlobalArchive)
+		{
+			if (!Directory.Exists(normalizedPath))
+			{
+				return;
+			}
+
+			if (normalizedPath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase) ||
+				normalizedPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
+				normalizedPath.EndsWith(".rar", StringComparison.OrdinalIgnoreCase) ||
+				normalizedPath.EndsWith(".tar", StringComparison.OrdinalIgnoreCase) ||
+				normalizedPath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
+			{
+				return;
+			}
+		}
+
 		lock (_syncLock)
 		{
 			var existingFolder = _folderCollection.FindOne(x => x.DirectoryPath == normalizedPath);
@@ -138,6 +189,7 @@ public class AssetIndexService : IDisposable
 					LastScannedUtc = DateTime.MinValue
 				};
 				_folderCollection.Insert(existingFolder);
+				_database.Checkpoint();
 			}
 
 			if (_indexingDirectories.Contains(normalizedPath))
@@ -182,8 +234,25 @@ public class AssetIndexService : IDisposable
 		lock (_syncLock)
 		{
 			_indexingDirectories.Remove(normalizedPath);
-			_folderCollection.DeleteMany(x => x.DirectoryPath == normalizedPath);
-			_assetCollection.DeleteMany(x => x.DirectoryPath == normalizedPath);
+
+			var foldersToDelete = _folderCollection.FindAll()
+				.Where(f => string.Equals(f.DirectoryPath, normalizedPath, StringComparison.OrdinalIgnoreCase))
+				.ToList();
+			foreach (var f in foldersToDelete)
+			{
+				_folderCollection.Delete(f.Id);
+			}
+
+			var assetsToDelete = _assetCollection.FindAll()
+				.Where(a => string.Equals(a.DirectoryPath, normalizedPath, StringComparison.OrdinalIgnoreCase) ||
+							a.FilePath.StartsWith(normalizedPath + "/", StringComparison.OrdinalIgnoreCase))
+				.ToList();
+			foreach (var a in assetsToDelete)
+			{
+				_assetCollection.Delete(a.Id);
+			}
+
+			_database.Checkpoint();
 		}
 
 		DirectoryIndexingStateChanged?.Invoke(normalizedPath, false);
@@ -191,12 +260,23 @@ public class AssetIndexService : IDisposable
 
 	public void RescanDirectory(string directoryPath)
 	{
-		if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
+		if (string.IsNullOrWhiteSpace(directoryPath))
 		{
 			return;
 		}
 
 		string normalizedPath = NormalizePath(directoryPath);
+		if (IsForbiddenPath(normalizedPath))
+		{
+			return;
+		}
+
+		bool isGlobalArchive = string.Equals(normalizedPath, NormalizePath(MapAssetManager.GlobalArchiveFile), StringComparison.OrdinalIgnoreCase);
+		if (!isGlobalArchive && !Directory.Exists(normalizedPath))
+		{
+			return;
+		}
+
 		lock (_syncLock)
 		{
 			if (_indexingDirectories.Contains(normalizedPath))
@@ -235,15 +315,29 @@ public class AssetIndexService : IDisposable
 		List<string> dirsToScan;
 		lock (_syncLock)
 		{
+			var validFolders = _folderCollection.FindAll()
+				.Select(f => f.DirectoryPath)
+				.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+			var orphanedAssets = _assetCollection.FindAll()
+				.Where(a => !validFolders.Contains(a.DirectoryPath) || IsForbiddenPath(a.DirectoryPath))
+				.ToList();
+			foreach (var orphan in orphanedAssets)
+			{
+				_assetCollection.Delete(orphan.Id);
+			}
+
 			dirsToScan = _folderCollection.FindAll()
 				.Select(f => f.DirectoryPath)
-				.Where(p => Directory.Exists(p) && !_indexingDirectories.Contains(p))
+				.Where(p => (Directory.Exists(p) || (File.Exists(p) && p.EndsWith(".7z", StringComparison.OrdinalIgnoreCase))) && !_indexingDirectories.Contains(p))
 				.ToList();
 
 			foreach (var dir in dirsToScan)
 			{
 				_indexingDirectories.Add(dir);
 			}
+
+			_database.Checkpoint();
 		}
 
 		foreach (var dir in dirsToScan)
@@ -278,6 +372,12 @@ public class AssetIndexService : IDisposable
 
 	private void ScanDirectoryInternal(string normalizedDirectoryPath)
 	{
+		if (normalizedDirectoryPath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase) || File.Exists(normalizedDirectoryPath))
+		{
+			Scan7zArchiveInternal(normalizedDirectoryPath);
+			return;
+		}
+
 		if (!Directory.Exists(normalizedDirectoryPath))
 		{
 			return;
@@ -330,6 +430,8 @@ public class AssetIndexService : IDisposable
 					asset.LastModifiedUtc = fileInfo.LastWriteTimeUtc;
 					asset.Tags = tags;
 					asset.MetadataJson = JsonSerializer.Serialize(new AssetMetadataModel { Tags = tags });
+					asset.HasRealmMetadata = Realm.Shared.Metadata.RealmMetadataHelper.HasRealmMetadata(normalizedFilePath);
+					asset.AssetType = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(normalizedFilePath);
 
 					_assetCollection.Upsert(asset);
 				}
@@ -342,7 +444,13 @@ public class AssetIndexService : IDisposable
 
 		lock (_syncLock)
 		{
-			_assetCollection.DeleteMany(x => x.DirectoryPath == normalizedDirectoryPath && !discoveredFiles.Contains(x.FilePath));
+			var toDelete = _assetCollection.FindAll()
+				.Where(x => string.Equals(x.DirectoryPath, normalizedDirectoryPath, StringComparison.OrdinalIgnoreCase) && !discoveredFiles.Contains(x.FilePath))
+				.ToList();
+			foreach (var d in toDelete)
+			{
+				_assetCollection.Delete(d.Id);
+			}
 
 			var folderRecord = _folderCollection.FindOne(x => x.DirectoryPath == normalizedDirectoryPath);
 			if (folderRecord != null)
@@ -350,6 +458,126 @@ public class AssetIndexService : IDisposable
 				folderRecord.LastScannedUtc = DateTime.UtcNow;
 				_folderCollection.Update(folderRecord);
 			}
+
+			_database.Checkpoint();
+		}
+	}
+
+	private void Scan7zArchiveInternal(string normalizedArchivePath)
+	{
+		if (!File.Exists(normalizedArchivePath))
+		{
+			lock (_syncLock)
+			{
+				var toDelete = _assetCollection.FindAll()
+					.Where(x => string.Equals(x.DirectoryPath, normalizedArchivePath, StringComparison.OrdinalIgnoreCase))
+					.ToList();
+				foreach (var d in toDelete)
+				{
+					_assetCollection.Delete(d.Id);
+				}
+				_database.Checkpoint();
+			}
+			return;
+		}
+
+		string extractedDir = Path.Combine(MapAssetManager.GlobalArchiveDirectory, "extracted");
+		Directory.CreateDirectory(extractedDir);
+
+		var discoveredFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		try
+		{
+			using (var archive = ArchiveFactory.OpenArchive(normalizedArchivePath, null))
+			{
+				foreach (var entry in archive.Entries)
+				{
+					if (entry.IsDirectory || string.IsNullOrWhiteSpace(entry.Key))
+					{
+						continue;
+					}
+
+					string entryKey = Path.GetFileName(entry.Key);
+					string extension = Path.GetExtension(entryKey).ToLowerInvariant();
+
+					if (extension == ".cache" || extension == ".log" || extension == ".tmp" || extension == ".uid" || extension == ".json")
+					{
+						continue;
+					}
+
+					string targetExtractedPath = NormalizePath(Path.Combine(extractedDir, entryKey));
+					discoveredFiles.Add(targetExtractedPath);
+
+					try
+					{
+						bool needsExtraction = !File.Exists(targetExtractedPath) ||
+											   (new FileInfo(targetExtractedPath).Length != entry.Size);
+
+						if (needsExtraction)
+						{
+							using var entryStream = entry.OpenEntryStream();
+							using var fs = File.Create(targetExtractedPath);
+							entryStream.CopyTo(fs);
+						}
+
+						var fileInfo = new FileInfo(targetExtractedPath);
+
+						lock (_syncLock)
+						{
+							var existingAsset = _assetCollection.FindOne(x => x.FilePath == targetExtractedPath);
+
+							if (existingAsset != null &&
+								existingAsset.FileSizeBytes == fileInfo.Length &&
+								existingAsset.LastModifiedUtc == fileInfo.LastWriteTimeUtc)
+							{
+								continue;
+							}
+
+							var tags = LoadTagsForFile(targetExtractedPath, extractedDir);
+
+							var asset = existingAsset ?? new IndexedAsset();
+							asset.FilePath = targetExtractedPath;
+							asset.FileName = entryKey;
+							asset.Extension = extension;
+							asset.DirectoryPath = normalizedArchivePath;
+							asset.FileSizeBytes = fileInfo.Length;
+							asset.LastModifiedUtc = fileInfo.LastWriteTimeUtc;
+							asset.Tags = tags;
+							asset.MetadataJson = JsonSerializer.Serialize(new AssetMetadataModel { Tags = tags });
+
+							_assetCollection.Upsert(asset);
+						}
+					}
+					catch (Exception ex)
+					{
+						GD.PrintErr($"[AssetIndexService] Scan error on archive entry {entryKey}: {ex.Message}");
+					}
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[AssetIndexService] Scan7zArchiveInternal error: {ex.Message}");
+		}
+
+		lock (_syncLock)
+		{
+			var toDelete = _assetCollection.FindAll()
+				.Where(x => string.Equals(x.DirectoryPath, normalizedArchivePath, StringComparison.OrdinalIgnoreCase) && !discoveredFiles.Contains(x.FilePath))
+				.ToList();
+			foreach (var d in toDelete)
+			{
+				_assetCollection.Delete(d.Id);
+			}
+
+			var folderRecord = _folderCollection.FindOne(x => x.DirectoryPath == normalizedArchivePath);
+			if (folderRecord != null)
+			{
+				folderRecord.LastScannedUtc = DateTime.UtcNow;
+				_folderCollection.Update(folderRecord);
+			}
+
+			_database.Checkpoint();
 		}
 	}
 
@@ -448,7 +676,7 @@ public class AssetIndexService : IDisposable
 				return;
 			}
 
-			asset.Tags = newTags.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+			asset.Tags = newTags.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim().ToLowerInvariant()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 			asset.MetadataJson = JsonSerializer.Serialize(new AssetMetadataModel { Tags = asset.Tags });
 			_assetCollection.Update(asset);
 
@@ -465,10 +693,35 @@ public class AssetIndexService : IDisposable
 			{
 				GD.PrintErr($"[AssetIndexService] UpdateAssetTags error writing sidecar: {ex.Message}");
 			}
+
+			_database.Checkpoint();
 		}
 	}
 
-	public List<IndexedAsset> SearchAssets(string? searchTerm, IReadOnlyCollection<string>? allowedExtensions = null, string? directoryFilter = null)
+	public void UpdateAssetType(string filePath, string newAssetType)
+	{
+		if (string.IsNullOrWhiteSpace(filePath))
+		{
+			return;
+		}
+
+		string normalizedFilePath = NormalizePath(filePath);
+		lock (_syncLock)
+		{
+			var asset = _assetCollection.FindOne(x => x.FilePath == normalizedFilePath);
+			if (asset == null)
+			{
+				return;
+			}
+
+			asset.AssetType = newAssetType;
+			asset.HasRealmMetadata = true;
+			_assetCollection.Update(asset);
+			_database.Checkpoint();
+		}
+	}
+
+	public List<IndexedAsset> SearchAssets(string? searchTerm, IReadOnlyCollection<string>? allowedExtensions = null, string? directoryFilter = null, bool requireRealmMetadata = false, string? requiredAssetType = null)
 	{
 		lock (_syncLock)
 		{
@@ -492,6 +745,28 @@ public class AssetIndexService : IDisposable
 
 			var candidateList = query.ToList();
 
+			if (requireRealmMetadata)
+			{
+				candidateList = candidateList.Where(a => a.HasRealmMetadata || Realm.Shared.Metadata.RealmMetadataHelper.HasRealmMetadata(a.FilePath)).ToList();
+			}
+
+			if (!string.IsNullOrWhiteSpace(requiredAssetType))
+			{
+				candidateList = candidateList.Where(a =>
+				{
+					string? type = a.AssetType;
+					if (string.IsNullOrEmpty(type))
+					{
+						type = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(a.FilePath);
+						if (!string.IsNullOrEmpty(type))
+						{
+							a.AssetType = type;
+						}
+					}
+					return string.Equals(type, requiredAssetType, StringComparison.OrdinalIgnoreCase);
+				}).ToList();
+			}
+
 			if (string.IsNullOrWhiteSpace(searchTerm))
 			{
 				return candidateList.OrderBy(x => x.FileName, StringComparer.OrdinalIgnoreCase).ToList();
@@ -510,7 +785,7 @@ public class AssetIndexService : IDisposable
 
 	private static string NormalizePath(string path)
 	{
-		return Path.GetFullPath(path).Replace('\\', '/');
+		return Path.GetFullPath(path).Replace('\\', '/').TrimEnd('/');
 	}
 
 	public void Dispose()

@@ -1,380 +1,429 @@
 {
-  "MapProperties": {},
-  "CustomUnits": [
-    {
-      "Animations": {
-        "Attack": [
-          "upward_thrust___upward_weapon_thrust.ranim"
-        ],
-        "Dance": [
-          "northern_soul_floor_spin___northern_soul_dance_spin_on_floor.ranim"
-        ],
-        "Death": [
-          "death___death_from_standing_idle.ranim"
-        ],
-        "Idle": [
-          "bored___standing_around_bored_idle.ranim"
-        ],
-        "Labor": [
-          "heavy_weapon_swing___two_handed_heavy_weapon_swing.ranim"
-        ],
-        "Spell_Cast": [
-          "magic_spell_casting___casting_a_spell_with_one_hand.ranim"
-        ],
-        "Walk": [
-          "standard_walk___standard_walk.ranim"
-        ]
-      },
-      "Description": "",
-      "ModelPath": "fantasy_warrior_unit_1.glb",
-      "Name": "Kevin",
-      "NormalMode": "Flat",
-      "NormalizeLuminance": true,
-      "PathingType": 9,
-      "Scale": 1,
-      "UnitId": "fantasy_warrior_unit_1",
-      "YOffset": 1.4901163E-07
-    },
-    {
-      "Animations": {
-        "Attack": [
-          "upward_thrust___upward_weapon_thrust.ranim"
-        ],
-        "Dance": [
-          "northern_soul_floor_spin___northern_soul_dance_spin_on_floor.ranim"
-        ],
-        "Death": [
-          "death___death_from_standing_idle.ranim"
-        ],
-        "Idle": [
-          "bored___standing_around_bored_idle.ranim"
-        ],
-        "Labor": [
-          "heavy_weapon_swing___two_handed_heavy_weapon_swing.ranim"
-        ],
-        "Spell_Cast": [
-          "magic_spell_casting___casting_a_spell_with_one_hand.ranim"
-        ],
-        "Walk": [
-          "standard_walk___standard_walk.ranim"
-        ]
-      },
-      "Description": "",
-      "ModelPath": "orc_warrior_7.glb",
-      "Name": "Chad",
-      "NormalMode": "Flat",
-      "NormalizeLuminance": true,
-      "PathingType": 9,
-      "Scale": 1,
-      "UnitId": "orc_warrior_7",
-      "YOffset": 1.4901163E-07
-    }
-  ],
-  "CustomBuildings": [
-    {
-      "Animations": {},
-      "Description": "",
-      "ModelPath": "ice_castle_1.glb",
-      "Name": "Castle",
-      "NormalMode": "Flat",
-      "NormalizeLuminance": true,
-      "PathingType": 32,
-      "Scale": 1.5,
-      "UnitId": "ice_castle_1",
-      "YOffset": 1.4901163E-07
-    },
-    {
-      "Animations": {},
-      "Description": "",
-      "ModelPath": "timber_framed_house.glb",
-      "Name": "House",
-      "NormalMode": "Flat",
-      "NormalizeLuminance": true,
-      "PathingType": 32,
-      "Scale": 1.5,
-      "UnitId": "timber_framed_house",
-      "YOffset": 1.4901163E-07
-    }
-  ],
-  "CustomResources": [
-    {
-      "Animations": {},
-      "Description": "",
-      "ModelPath": "coniferous_tree_1.glb",
-      "Name": "Tree",
-      "NormalMode": "Flat",
-      "NormalizeLuminance": true,
-      "PathingType": 255,
-      "Scale": 2.75,
-      "UnitId": "coniferous_tree_1",
-      "YOffset": 2.7491,
-      "IgnorePlayerColor": true
-    },
-    {
-      "Animations": {},
-      "Description": "",
-      "ModelPath": "palm_tree.glb",
-      "Name": "Palm Tree",
-      "NormalMode": "Flat",
-      "NormalizeLuminance": true,
-      "PathingType": 255,
-      "Scale": 2.75,
-      "UnitId": "palm_tree",
-      "YOffset": 2.7498,
-      "IgnorePlayerColor": true
-    }
-  ],
-  "CustomProps": [
-    {
-      "Animations": {},
-      "Description": "",
-      "ModelPath": "crystal_cluster_5.glb",
-      "Name": "Crystals",
-      "NormalMode": "Flat",
-      "NormalizeLuminance": true,
-      "PathingType": 255,
-      "Scale": 1.25,
-      "UnitId": "crystal_cluster_5",
-      "YOffset": 1.3000002,
-      "IgnorePlayerColor": true
-    },
-    {
-      "Animations": {},
-      "Description": "",
-      "ModelPath": "spiked_wooden_stake.glb",
-      "Name": "Spike Pole",
-      "NormalMode": "Flat",
-      "NormalizeLuminance": true,
-      "PathingType": 255,
-      "Scale": 1.25,
-      "UnitId": "spiked_wooden_stake",
-      "YOffset": 1.2000002,
-      "IgnorePlayerColor": true
-    }
-  ],
-  "CustomAbilities": [
-    {
-      "AbilityId": "fireball",
-      "AbilityType": "target_spell",
-      "AreaOfEffectRadius": 4,
-      "Cooldown": 12,
-      "Damage": 50,
-      "Description": "[X] Bola de fuego \u2014 Da\u00F1o 50 en \u00E1rea (radio 4)",
-      "IconPath": "res://Assets/UI/fire_spell.png",
-      "ManaCost": 0,
-      "Name": "Bola de fuego",
-      "TargetRange": 12
-    },
-    {
-      "AbilityId": "holylight",
-      "AbilityType": "target_spell",
-      "AreaOfEffectRadius": 4,
-      "Cooldown": 15,
-      "Description": "[X] Luz sagrada \u2014 Cura 60 en \u00E1rea (radio 4)",
-      "Healing": 60,
-      "IconPath": "res://Assets/UI/magic_upgrade_arrow.png",
-      "ManaCost": 0,
-      "Name": "Luz sagrada",
-      "TargetRange": 12
-    },
-    {
-      "AbilityId": "lightning",
-      "AbilityType": "target_spell",
-      "AreaOfEffectRadius": 2,
-      "Cooldown": 18,
-      "Damage": 80,
-      "Description": "[X] Rayo \u2014 Da\u00F1o 80 en \u00E1rea (radio 2)",
-      "IconPath": "res://Assets/UI/lightning_spell.png",
-      "ManaCost": 0,
-      "Name": "Rayo",
-      "TargetRange": 12
-    }
-  ],
-  "CustomUpgrades": [],
-  "CustomItems": [],
-  "CustomWeapons": [],
-  "Assets": {
-    "animations": {
-      "bored___standing_around_bored_idle.ranim": "18f12b05e4fec0ea63d87859b85f21cd5a2b24f202eb688ee919881a45a5f999",
-      "death___death_from_standing_idle.ranim": "e3359b33a523e7256861e32639056ff0edbf441979a4ccc200ec9f9de6a5a482",
-      "heavy_weapon_swing___two_handed_heavy_weapon_swing.ranim": "e5cd8587cc810ee7c42ab6274c86592ca30376aead1dc78d5bf75c3469c540a3",
-      "magic_spell_casting___casting_a_spell_with_one_hand.ranim": "c34fedc5df2e49885453bc20e2199a4f1924e25cfe1460781eab5022abeb7813",
-      "northern_soul_floor_spin___northern_soul_dance_spin_on_floor.ranim": "193a74c2f1246ca1b6411efd722e281bdc012cc791a96a59210f6c8607ba772f",
-      "standard_walk___standard_walk.ranim": "5941c8332db13407e3f0edbd47884fc773ddc6b89678360f7637f0b1f050f004",
-      "upward_thrust___upward_weapon_thrust.ranim": "fbbefae0cc7b6d156a4e1eed936f73bf668fdf79fb7b714443e15c9677aa7639"
-    },
-    "decals": {
-      "acid_drip.png": "e1ae4c43637d45fdfc0a927f1ca214ee7a030e464939219bd2170141600f3c64",
-      "arcane_spark.png": "b44e0bbea2ed1d70380381a37bec49db7881509c38225688c70b2539de58ad4f"
-    },
-    "glb": {
-      "buildings": {
-        "ice_castle_1.glb": {
-          "default_asset_type": "buildings",
-          "hash": "d75f5dbd3a36029bff588dd6fa96331238841c2650365db5efb944c8b8fbdb5d",
-          "min_y": -0.990670979,
-          "normal_mode": "Flat",
-          "normalize_luminance": true,
-          "scale": 1.5,
-          "y_offset": 1.4901163E-07
-        },
-        "timber_framed_house.glb": {
-          "default_asset_type": "buildings",
-          "hash": "f3243d9307ac881b60e4b309e4e326eda6e1a3ede7dbe8b80003f56abf4d31d7",
-          "min_y": -0.997538984,
-          "normal_mode": "Flat",
-          "normalize_luminance": true,
-          "scale": 1.5,
-          "y_offset": 1.4901163E-07
-        }
-      },
-      "props": {
-        "crystal_cluster_5.glb": {
-          "default_asset_type": "props",
-          "hash": "2fc26051412295cee64fe78c203394cedbdfc623444dbff8521f61746f14d19d",
-          "min_y": -0.888354003,
-          "normal_mode": "Flat",
-          "normalize_luminance": true,
-          "scale": 1.25,
-          "y_offset": 1.3000002,
-          "ignore_player_color": true
-        },
-        "spiked_wooden_stake.glb": {
-          "default_asset_type": "props",
-          "hash": "8b962fe2eb87c38a0f3496f7fe4bdfe2b4958d4bfcf07ff34db35c0e19ecb47e",
-          "min_y": -0.998519003,
-          "normal_mode": "Flat",
-          "normalize_luminance": true,
-          "scale": 1.25,
-          "y_offset": 1.2000002,
-          "ignore_player_color": true
-        }
-      },
-      "resources": {
-        "coniferous_tree_1.glb": {
-          "default_asset_type": "resources",
-          "hash": "eb281b6bf8802d96c4a929faf6a69727c6aa4b3502a67904f41f42e9ea693bdf",
-          "min_y": -0.999657989,
-          "normal_mode": "Flat",
-          "normalize_luminance": true,
-          "scale": 2.75,
-          "y_offset": 2.7491,
-          "ignore_player_color": true
-        },
-        "palm_tree.glb": {
-          "default_asset_type": "resources",
-          "hash": "1e7ad6d0711aa1e7e26c7d4cb6f243e04e45db57d636240a01c4154e68547741",
-          "min_y": -0.999924004,
-          "normal_mode": "Flat",
-          "normalize_luminance": true,
-          "scale": 2.75,
-          "y_offset": 2.7498,
-          "ignore_player_color": true
-        }
-      },
-      "units": {
-        "fantasy_warrior_unit_1.glb": {
-          "default_asset_type": "units",
-          "hash": "f8f4199045a183663dcf69a2611a5acdab158c043af396724e14db114d4682b9",
-          "min_y": -0.909040391,
-          "normal_mode": "Flat",
-          "normalize_luminance": true,
-          "scale": 1,
-          "y_offset": 1.4901163E-07
-        },
-        "orc_warrior_7.glb": {
-          "default_asset_type": "units",
-          "hash": "02e8fb0186491be3f51c0869a5169f20186b7e3f991bcbff0600dfa9a4b21258",
-          "min_y": -0.836685061,
-          "normal_mode": "Flat",
-          "normalize_luminance": true,
-          "scale": 1,
-          "y_offset": 1.4901163E-07
-        }
-      }
-    },
-    "icons": {
-      "victory_flag.png": "9229018b139ea0e269a8e1cb2c1f5130107056ddde81bacbd759a7f74eee51e1",
-      "wood_logs.png": "9282ac3b62682d82e3139f30a384823058b3423ade551a53edcf14092c076d51"
-    },
-    "skyboxes": {
-      "jade_shrine.png": "07d819f01cbbada5d711ca37c3041ecbdf4e91f9db99a0e6348ab7e575a038ed",
-      "star_reach.png": "48cb6f7411f929a3d06d602bb525536894bc5a19681d72282760d359c1af97d0"
-    },
-    "textures": {
-      "whispering_woods_soft_grass.ktx2": "2db615712c6bff191d48f97428e3e9bc80c74cdb8ff9f63ab41fdae6a8d1d33a",
-      "ancient_jungle_mossy_stone.ktx2": "8ce9002a1e6d4d802e5ddf2f537e1a705abbef3c580ff0aaeb8cb0966e00f190",
-      "ancient_jungle_overgrown_path.ktx2": "82817a46e4f4ad1fde83c2b3ce852a052e544a3926f8f6143d4b9dba5ebd8424",
-      "deep_trench_dense_mud.ktx2": "27bd88d3c661a25f068f8b253ba2eb1c49051f77a12173e92b395c78fb12e291",
-      "dusty_canyon_granite_basin.ktx2": "476933287507388fac7c5823cd4089a4e1913a87d9fe7d1a30d1d6ab77447996",
-      "frozen_tundra_mud.ktx2": "223a936936e7de901eb618a081d46e2296c0c9681b41794c3094f31d31e57107",
-      "mangrove_swamp_bog_grass.ktx2": "dbfeb5a3c6d9deac441f1944eb7eecef4b085a8123a4d9db7b97e6165d07e0ee",
-      "petrified_forest_gray_granite.ktx2": "4f2cc6d36258a2ee8bdc4225b707d8cb5dc09938e1d95391c8482d4a25c40f40",
-      "sunken_ruins_crushed_granite.ktx2": "3ce20b1553713a2c1482e6dcb66f93447fc6472458d053bdaba7232a1484c7a8",
-      "sunken_ruins_mossy_stone.ktx2": "bd3b13cf2dd187275f48b76e0742d34eaaa17812d6a4cd95a7cceed99e611646",
-      "sunken_ruins_reef_stone.ktx2": "30772f8d743d3ded66c572aa5b81b3e57e54079a9622159b5c8b807105682660",
-      "dusty_canyon_scarce_soil.ktx2": "018b8a6f2374d080d22a9ea49cad869707d193f5571241a696a4b7cc3fc1958a"
-    },
-    "vfx_spritesheets": {
-      "arcane_surge_sheet.png": {
-        "columns": 4,
-        "hash": "5dc4b22b6c5f4c5c40f91cf4929d04667bae13e642f0ad4813b6b83dd4255059",
-        "rows": 4
-      },
-      "solar_flare_sheet.png": {
-        "columns": 4,
-        "hash": "9dc2f9b91f8af2eee0d174fa246ab818fc626201f629a175f173e9b01d9147c1",
-        "rows": 4
-      }
-    }
-  },
-  "ModelOffsets": {
-    "fantasy_warrior_unit_1.glb": 1.4901163E-07,
-    "orc_warrior_7.glb": 1.4901163E-07,
-    "ice_castle_1.glb": 1.4901163E-07,
-    "timber_framed_house.glb": 1.4901163E-07,
-    "coniferous_tree_1.glb": 2.7491,
-    "palm_tree.glb": 2.7498,
-    "crystal_cluster_5.glb": 1.3000002,
-    "spiked_wooden_stake.glb": 1.2000002
-  },
-  "ModelScales": {
-    "fantasy_warrior_unit_1.glb": 1,
-    "orc_warrior_7.glb": 1,
-    "ice_castle_1.glb": 1.5,
-    "timber_framed_house.glb": 1.5,
-    "coniferous_tree_1.glb": 2.75,
-    "palm_tree.glb": 2.75,
-    "crystal_cluster_5.glb": 1.25,
-    "spiked_wooden_stake.glb": 1.25
-  },
-  "ModelCollisionCircleRatios": {},
-  "ModelObstacleRadii": {},
-  "ModelBrightness": {},
-  "ModelNormalModes": {
-    "fantasy_warrior_unit_1.glb": "Flat",
-    "orc_warrior_7.glb": "Flat",
-    "ice_castle_1.glb": "Flat",
-    "timber_framed_house.glb": "Flat",
-    "coniferous_tree_1.glb": "Flat",
-    "palm_tree.glb": "Flat",
-    "crystal_cluster_5.glb": "Flat",
-    "spiked_wooden_stake.glb": "Flat"
-  },
-  "ModelNormalizeLuminance": {
-    "fantasy_warrior_unit_1.glb": true,
-    "orc_warrior_7.glb": true,
-    "ice_castle_1.glb": true,
-    "timber_framed_house.glb": true,
-    "coniferous_tree_1.glb": true,
-    "palm_tree.glb": true,
-    "crystal_cluster_5.glb": true,
-    "spiked_wooden_stake.glb": true
-  },
-  "ModelIgnorePlayerColor": {
-    "coniferous_tree_1.glb": true,
-    "palm_tree.glb": true,
-    "crystal_cluster_5.glb": true,
-    "spiked_wooden_stake.glb": true
-  }
+	"Assets": {
+		"animations": {
+			"bored___standing_around_bored_idle.ranim": "18f12b05e4fec0ea63d87859b85f21cd5a2b24f202eb688ee919881a45a5f999",
+			"death___death_from_standing_idle.ranim": "e3359b33a523e7256861e32639056ff0edbf441979a4ccc200ec9f9de6a5a482",
+			"heavy_weapon_swing___two_handed_heavy_weapon_swing.ranim": "e5cd8587cc810ee7c42ab6274c86592ca30376aead1dc78d5bf75c3469c540a3",
+			"magic_spell_casting___casting_a_spell_with_one_hand.ranim": "c34fedc5df2e49885453bc20e2199a4f1924e25cfe1460781eab5022abeb7813",
+			"northern_soul_floor_spin___northern_soul_dance_spin_on_floor.ranim": "193a74c2f1246ca1b6411efd722e281bdc012cc791a96a59210f6c8607ba772f",
+			"standard_walk___standard_walk.ranim": "5941c8332db13407e3f0edbd47884fc773ddc6b89678360f7637f0b1f050f004",
+			"upward_thrust___upward_weapon_thrust.ranim": "fbbefae0cc7b6d156a4e1eed936f73bf668fdf79fb7b714443e15c9677aa7639"
+		},
+		"decals": {
+			"acid_drip.rtex": "254ece5f5a4b02b1e99589b1bc3ff2611866b57d9754b23e538a49290e9c7ec9",
+			"arcane_spark.rtex": "23ccb7883cc1a68287c29c3d2d740e31861c820d8c83f46edfe7880f4290d775"
+		},
+		"glb": {
+			"buildings": {
+				"ice_castle_1.glb": {
+					"default_asset_type": "buildings",
+					"hash": "060d2de4fd905afce8952d80d2b997f524c2f2c5329a6c15ffab8347be0ebb60",
+					"min_y": -0.990670979,
+					"normal_mode": "Flat",
+					"normalize_luminance": true,
+					"scale": 1.5,
+					"y_offset": 1.4901163e-07
+				},
+				"timber_framed_house.glb": {
+					"default_asset_type": "buildings",
+					"hash": "99a13c79004911556e24bbbf41edf093396261e4b9192cee7ad0dd455315892f",
+					"min_y": -0.997538984,
+					"normal_mode": "Flat",
+					"normalize_luminance": true,
+					"scale": 1.5,
+					"y_offset": 1.4901163e-07
+				}
+			},
+			"props": {
+				"crystal_cluster_5.glb": {
+					"default_asset_type": "props",
+					"hash": "822de7345fd1459ab3777f476e4ac6eff952d141c759c3ff867528245a2a93ac",
+					"ignore_player_color": true,
+					"min_y": -0.888354003,
+					"normal_mode": "Flat",
+					"normalize_luminance": true,
+					"scale": 1.25,
+					"y_offset": 1.3000002
+				},
+				"spiked_wooden_stake.glb": {
+					"default_asset_type": "props",
+					"hash": "757df0e03faa00f75430d384281df8ef277d75cfaf72497b900f647b93a511e0",
+					"ignore_player_color": true,
+					"min_y": -0.998519003,
+					"normal_mode": "Flat",
+					"normalize_luminance": true,
+					"scale": 1.25,
+					"y_offset": 1.2000002
+				}
+			},
+			"resources": {
+				"coniferous_tree_1.glb": {
+					"default_asset_type": "resources",
+					"hash": "e21cdda01cca232acdecb7bb907000822306d63a9f3a87df4ddb839a57708c48",
+					"ignore_player_color": true,
+					"min_y": -0.999657989,
+					"normal_mode": "Flat",
+					"normalize_luminance": true,
+					"scale": 2.75,
+					"y_offset": 2.7491
+				},
+				"palm_tree.glb": {
+					"default_asset_type": "resources",
+					"hash": "60858499921d8da1ecd2c07b1ec1431b4e4ac13d5642d37952aaddbe5e24cf07",
+					"ignore_player_color": true,
+					"min_y": -0.999924004,
+					"normal_mode": "Flat",
+					"normalize_luminance": true,
+					"scale": 2.75,
+					"y_offset": 2.7498
+				}
+			},
+			"units": {
+				"fantasy_warrior_unit_1.glb": {
+					"default_asset_type": "units",
+					"hash": "039cf4f69945cd836618153a5ce3275e0915d72971a789e62e1901be29b10367",
+					"min_y": -0.909040391,
+					"normal_mode": "Flat",
+					"normalize_luminance": true,
+					"scale": 1,
+					"y_offset": 1.4901163e-07
+				},
+				"orc_warrior_7.glb": {
+					"default_asset_type": "units",
+					"hash": "d563769445d83b8566c779d09131d72da25a1e3b05ab916d50be3716f6b7568b",
+					"min_y": -0.836685061,
+					"normal_mode": "Flat",
+					"normalize_luminance": true,
+					"scale": 1,
+					"y_offset": 1.4901163e-07
+				}
+			}
+		},
+		"icons": {
+			"victory_flag.rtex": "c75053b32e61012661294adfe81f829a1f050944be28e59ca7d6fab52bf3e035",
+			"wood_logs.rtex": "8bca34e59d38c84093234b4c265a154b280687dad4d7f8b2bee70b3829f345c5"
+		},
+		"skyboxes": {
+			"jade_shrine.rtex": "e731a047f223e140a15463ecd247f89829df3faa5f061927116c66db1c52e751",
+			"star_reach.rtex": "4d91a6b90712e9f4b7f346f7b7a67437961ba82fba113802e2416cb96878e394"
+		},
+		"textures": {
+			"ancient_jungle_mossy_stone.rtex": {
+				"hash": "97e66803ecea81feac7be403cdb2a70a70e4aef77e7a94c65c62b466fc6c6c29",
+				"scale_factor": 2.2,
+				"swatchIndex": 0
+			},
+			"ancient_jungle_overgrown_path.rtex": {
+				"hash": "fee9fc0d5415156d75fb90b3380520afc971954f87533de7c699c874079282cb",
+				"scale_factor": 2.2,
+				"swatchIndex": 1
+			},
+			"deep_trench_dense_mud.rtex": {
+				"hash": "d500ea9b12e605f4b409b8d7e6a49f2b1ac4b2bfacc2446493c6788c03d03bfb",
+				"scale_factor": 2.2,
+				"swatchIndex": 2
+			},
+			"dusty_canyon_granite_basin.rtex": {
+				"hash": "1c3c1fd3c81d9743cc408ffb81800e6abeb76a227315e539d7c4c084d3c5183c",
+				"scale_factor": 2.1004,
+				"swatchIndex": 3
+			},
+			"dusty_canyon_scarce_soil.rtex": {
+				"hash": "72c84a690c7bef4b4528dd5a8cb8784c5219de6029a80ee4e5c8ced53550ad25",
+				"scale_factor": 0.875,
+				"swatchIndex": 4
+			},
+			"frozen_tundra_mud.rtex": {
+				"hash": "bc7117eb4143aa2d5908302c8708daed9be5d35a395eb3c28f046b8edfff75eb",
+				"scale_factor": 1.204,
+				"swatchIndex": 5
+			},
+			"mangrove_swamp_bog_grass.rtex": {
+				"hash": "9b95c20baf3ce0f1c71ee62bc2a24e3e6be7c8c24fffb05e6fe3d7d955d29e50",
+				"scale_factor": 2.2,
+				"swatchIndex": 6
+			},
+			"petrified_forest_gray_granite.rtex": {
+				"hash": "cf57c778235474e09c9614beb0bc0bfeeb358c7b47ac011228c58e79700963fb",
+				"scale_factor": 1.7806,
+				"swatchIndex": 7
+			},
+			"sunken_ruins_crushed_granite.rtex": {
+				"hash": "4819c8d62fbd83be1cdeb7811da5fa0bdf321aa69c9e2a6c33336a2eb3d7f227",
+				"scale_factor": 2.2,
+				"swatchIndex": 8
+			},
+			"sunken_ruins_mossy_stone.rtex": {
+				"hash": "95964e4677331c1fcc9ad53ee5f5279e26c31f527a08352082e97a328cd6612e",
+				"scale_factor": 2.2,
+				"swatchIndex": 9
+			},
+			"sunken_ruins_reef_stone.rtex": {
+				"hash": "17911885a4831a638101c819617225a1de03a93aa1748044c1878e5d5d412392",
+				"scale_factor": 1.2814,
+				"swatchIndex": 10
+			},
+			"whispering_woods_soft_grass.rtex": {
+				"hash": "7bfd9208f4aa51f7fa082ff493c6614f82bf46803b45ea55290614dc1561247d",
+				"scale_factor": 1.2631,
+				"swatchIndex": 11
+			}
+		},
+		"vfx_spritesheets": {
+			"arcane_surge_sheet.rtex": {
+				"columns": 4,
+				"hash": "02341e7afcbdfcfe527fd5059ae84da860d25096a34e816379905faeb7bab245",
+				"rows": 4
+			},
+			"solar_flare_sheet.rtex": {
+				"columns": 4,
+				"hash": "d4f20eca758be097d6a398f477c841be7b658d62b3beef0a17b93fd08b025925",
+				"rows": 4
+			}
+		}
+	},
+	"CustomAbilities": [
+		{
+			"AbilityId": "fireball",
+			"AbilityType": "target_spell",
+			"AreaOfEffectRadius": 4,
+			"Cooldown": 12,
+			"Damage": 50,
+			"Description": "[X] Bola de fuego — Daño 50 en área (radio 4)",
+			"IconPath": "res://Assets/UI/fire_spell.png",
+			"ManaCost": 0,
+			"Name": "Bola de fuego",
+			"TargetRange": 12
+		},
+		{
+			"AbilityId": "holylight",
+			"AbilityType": "target_spell",
+			"AreaOfEffectRadius": 4,
+			"Cooldown": 15,
+			"Description": "[X] Luz sagrada — Cura 60 en área (radio 4)",
+			"Healing": 60,
+			"IconPath": "res://Assets/UI/magic_upgrade_arrow.png",
+			"ManaCost": 0,
+			"Name": "Luz sagrada",
+			"TargetRange": 12
+		},
+		{
+			"AbilityId": "lightning",
+			"AbilityType": "target_spell",
+			"AreaOfEffectRadius": 2,
+			"Cooldown": 18,
+			"Damage": 80,
+			"Description": "[X] Rayo — Daño 80 en área (radio 2)",
+			"IconPath": "res://Assets/UI/lightning_spell.png",
+			"ManaCost": 0,
+			"Name": "Rayo",
+			"TargetRange": 12
+		}
+	],
+	"CustomBuildings": [
+		{
+			"Animations": {},
+			"Description": "",
+			"ModelPath": "ice_castle_1.glb",
+			"Name": "Castle",
+			"NormalMode": "Flat",
+			"NormalizeLuminance": true,
+			"PathingType": 32,
+			"Scale": 1.5,
+			"UnitId": "ice_castle_1",
+			"YOffset": 1.4901163e-07
+		},
+		{
+			"Animations": {},
+			"Description": "",
+			"ModelPath": "timber_framed_house.glb",
+			"Name": "House",
+			"NormalMode": "Flat",
+			"NormalizeLuminance": true,
+			"PathingType": 32,
+			"Scale": 1.5,
+			"UnitId": "timber_framed_house",
+			"YOffset": 1.4901163e-07
+		}
+	],
+	"CustomItems": [],
+	"CustomProps": [
+		{
+			"Animations": {},
+			"Description": "",
+			"IgnorePlayerColor": true,
+			"ModelPath": "crystal_cluster_5.glb",
+			"Name": "Crystals",
+			"NormalMode": "Flat",
+			"NormalizeLuminance": true,
+			"PathingType": 255,
+			"Scale": 1.25,
+			"UnitId": "crystal_cluster_5",
+			"YOffset": 1.3000002
+		},
+		{
+			"Animations": {},
+			"Description": "",
+			"IgnorePlayerColor": true,
+			"ModelPath": "spiked_wooden_stake.glb",
+			"Name": "Spike Pole",
+			"NormalMode": "Flat",
+			"NormalizeLuminance": true,
+			"PathingType": 255,
+			"Scale": 1.25,
+			"UnitId": "spiked_wooden_stake",
+			"YOffset": 1.2000002
+		}
+	],
+	"CustomResources": [
+		{
+			"Animations": {},
+			"Description": "",
+			"IgnorePlayerColor": true,
+			"ModelPath": "coniferous_tree_1.glb",
+			"Name": "Tree",
+			"NormalMode": "Flat",
+			"NormalizeLuminance": true,
+			"PathingType": 255,
+			"Scale": 2.75,
+			"UnitId": "coniferous_tree_1",
+			"YOffset": 2.7491
+		},
+		{
+			"Animations": {},
+			"Description": "",
+			"IgnorePlayerColor": true,
+			"ModelPath": "palm_tree.glb",
+			"Name": "Palm Tree",
+			"NormalMode": "Flat",
+			"NormalizeLuminance": true,
+			"PathingType": 255,
+			"Scale": 2.75,
+			"UnitId": "palm_tree",
+			"YOffset": 2.7498
+		}
+	],
+	"CustomUnits": [
+		{
+			"Animations": {
+				"Attack": [
+					"upward_thrust___upward_weapon_thrust.ranim"
+				],
+				"Dance": [
+					"northern_soul_floor_spin___northern_soul_dance_spin_on_floor.ranim"
+				],
+				"Death": [
+					"death___death_from_standing_idle.ranim"
+				],
+				"Idle": [
+					"bored___standing_around_bored_idle.ranim"
+				],
+				"Labor": [
+					"heavy_weapon_swing___two_handed_heavy_weapon_swing.ranim"
+				],
+				"Spell_Cast": [
+					"magic_spell_casting___casting_a_spell_with_one_hand.ranim"
+				],
+				"Walk": [
+					"standard_walk___standard_walk.ranim"
+				]
+			},
+			"Description": "",
+			"ModelPath": "fantasy_warrior_unit_1.glb",
+			"Name": "Kevin",
+			"NormalMode": "Flat",
+			"NormalizeLuminance": true,
+			"PathingType": 9,
+			"Scale": 1,
+			"UnitId": "fantasy_warrior_unit_1",
+			"YOffset": 1.4901163e-07
+		},
+		{
+			"Animations": {
+				"Attack": [
+					"upward_thrust___upward_weapon_thrust.ranim"
+				],
+				"Dance": [
+					"northern_soul_floor_spin___northern_soul_dance_spin_on_floor.ranim"
+				],
+				"Death": [
+					"death___death_from_standing_idle.ranim"
+				],
+				"Idle": [
+					"bored___standing_around_bored_idle.ranim"
+				],
+				"Labor": [
+					"heavy_weapon_swing___two_handed_heavy_weapon_swing.ranim"
+				],
+				"Spell_Cast": [
+					"magic_spell_casting___casting_a_spell_with_one_hand.ranim"
+				],
+				"Walk": [
+					"standard_walk___standard_walk.ranim"
+				]
+			},
+			"Description": "",
+			"ModelPath": "orc_warrior_7.glb",
+			"Name": "Chad",
+			"NormalMode": "Flat",
+			"NormalizeLuminance": true,
+			"PathingType": 9,
+			"Scale": 1,
+			"Tint": "#ffffff",
+			"UnitId": "orc_warrior_7",
+			"YOffset": 1.4901163e-07
+		}
+	],
+	"CustomUpgrades": [],
+	"CustomWeapons": [],
+	"MapProperties": {},
+	"ModelBrightness": {},
+	"ModelCollisionCircleRatios": {},
+	"ModelIgnorePlayerColor": {
+		"coniferous_tree_1.glb": true,
+		"crystal_cluster_5.glb": true,
+		"palm_tree.glb": true,
+		"spiked_wooden_stake.glb": true
+	},
+	"ModelNormalModes": {
+		"coniferous_tree_1.glb": "Flat",
+		"crystal_cluster_5.glb": "Flat",
+		"fantasy_warrior_unit_1.glb": "Flat",
+		"ice_castle_1.glb": "Flat",
+		"orc_warrior_7.glb": "Flat",
+		"palm_tree.glb": "Flat",
+		"spiked_wooden_stake.glb": "Flat",
+		"timber_framed_house.glb": "Flat"
+	},
+	"ModelNormalizeLuminance": {
+		"coniferous_tree_1.glb": true,
+		"crystal_cluster_5.glb": true,
+		"fantasy_warrior_unit_1.glb": true,
+		"ice_castle_1.glb": true,
+		"orc_warrior_7.glb": true,
+		"palm_tree.glb": true,
+		"spiked_wooden_stake.glb": true,
+		"timber_framed_house.glb": true
+	},
+	"ModelObstacleRadii": {},
+	"ModelOffsets": {
+		"coniferous_tree_1.glb": 2.7491,
+		"crystal_cluster_5.glb": 1.3000002,
+		"fantasy_warrior_unit_1.glb": 1.4901163e-07,
+		"ice_castle_1.glb": 1.4901163e-07,
+		"orc_warrior_7.glb": 1.4901163e-07,
+		"palm_tree.glb": 2.7498,
+		"spiked_wooden_stake.glb": 1.2000002,
+		"timber_framed_house.glb": 1.4901163e-07
+	},
+	"ModelScales": {
+		"coniferous_tree_1.glb": 2.75,
+		"crystal_cluster_5.glb": 1.25,
+		"fantasy_warrior_unit_1.glb": 1,
+		"ice_castle_1.glb": 1.5,
+		"orc_warrior_7.glb": 1,
+		"palm_tree.glb": 2.75,
+		"spiked_wooden_stake.glb": 1.25,
+		"timber_framed_house.glb": 1.5
+	}
 }

@@ -85,12 +85,12 @@ public class MapEditorUxTests
         var files = Directory.GetFiles(@"C:\temp\Realm\Realm.Godot\Assets\2d\TileSheets", "*.png");
         foreach (var file in files)
         {
-            string ktx2Path = file.Replace(".png", ".ktx2");
-            System.Console.WriteLine($"Converting {file} to {ktx2Path}");
-            terrain.ProcessAndSaveRawTexture(file, ktx2Path);
-            if (!File.Exists(ktx2Path))
+            string rtexPath = file.Replace(".png", ".rtex");
+            System.Console.WriteLine($"Converting {file} to {rtexPath}");
+            terrain.ProcessAndSaveRawTexture(file, rtexPath);
+            if (!File.Exists(rtexPath))
             {
-                throw new System.Exception($"Failed to convert {file} to {ktx2Path}.");
+                throw new System.Exception($"Failed to convert {file} to {rtexPath}.");
             }
         }
     }

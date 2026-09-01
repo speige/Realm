@@ -1,5 +1,14 @@
 using System;
+using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.IO;
+using System.Text.Json.Nodes;
+using Realm.Shared.Metadata;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Formats.Webp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace Realm.Shared.Textures;
 
@@ -9,177 +18,950 @@ public class TextureConversionResult
 	public string InputPath { get; set; } = string.Empty;
 	public string OutputPath { get; set; } = string.Empty;
 	public string ErrorMessage { get; set; } = string.Empty;
+	public float ScaleFactor { get; set; } = 1.0f;
 }
 
 public static class TextureConverter
 {
-	public static TextureConversionResult ConvertPngToKtx2(
-		string inputPngPath,
-		string outputKtx2Path,
-		string format = "R8G8B8A8_UNORM",
-		bool generateMipmaps = true)
+	private static readonly float[] SrgbToLinearLut = InitializeSrgbToLinearLut();
+
+	private static float[] InitializeSrgbToLinearLut()
 	{
-		var result = new TextureConversionResult
+		float[] lut = new float[256];
+		for (int i = 0; i < 256; i++)
 		{
-			InputPath = inputPngPath,
-			OutputPath = outputKtx2Path
-		};
+			float s = i / 255.0f;
+			lut[i] = s <= 0.04045f ? s / 12.92f : MathF.Pow((s + 0.055f) / 1.055f, 2.4f);
+		}
+		return lut;
+	}
 
-		if (!File.Exists(inputPngPath))
+	private static byte LinearToSrgbByte(float lin)
+	{
+		if (lin <= 0.0f) return 0;
+		if (lin >= 1.0f) return 255;
+		float srgb = lin <= 0.0031308f ? lin * 12.92f : 1.055f * MathF.Pow(lin, 1.0f / 2.4f) - 0.055f;
+		return (byte)Math.Clamp((int)Math.Round(srgb * 255.0f), 0, 255);
+	}
+
+	public static float CalculateLuminanceScaleFactor(
+		Image<Rgba32> sourceImage,
+		float targetLinearLuminance = 0.1133f,
+		float minScaleFactor = 0.2f,
+		float maxScaleFactor = 4.0f)
+	{
+		int width = sourceImage.Width;
+		int height = sourceImage.Height;
+		double totalReshapedLuminance = 0.0;
+		long validPixelCount = 0;
+
+		for (int y = 0; y < height; y++)
 		{
-			result.Success = false;
-			result.ErrorMessage = $"Input file not found: {inputPngPath}";
-			return result;
+			for (int x = 0; x < width; x++)
+			{
+				Rgba32 pixel = sourceImage[x, y];
+				if (pixel.A < 13 || (pixel.R == 0 && pixel.G == 0 && pixel.B == 0))
+				{
+					continue;
+				}
+
+				float rLinear = SrgbToLinearLut[pixel.R];
+				float gLinear = SrgbToLinearLut[pixel.G];
+				float bLinear = SrgbToLinearLut[pixel.B];
+
+				float rPow = rLinear * rLinear;
+				float gPow = gLinear * gLinear;
+				float bPow = bLinear * bLinear;
+
+				float lum = (0.2126f * rPow) + (0.7152f * gPow) + (0.0722f * bPow);
+				totalReshapedLuminance += lum;
+				validPixelCount++;
+			}
 		}
 
-		string? ktxTool = NativeToolRunner.FindKtxPath();
-		if (string.IsNullOrEmpty(ktxTool))
+		if (validPixelCount == 0)
 		{
-			result.Success = false;
-			result.ErrorMessage = "ktx executable not found.";
-			return result;
+			for (int y = 0; y < height; y++)
+			{
+				for (int x = 0; x < width; x++)
+				{
+					Rgba32 pixel = sourceImage[x, y];
+					if (pixel.A < 13) continue;
+
+					float rLinear = SrgbToLinearLut[pixel.R];
+					float gLinear = SrgbToLinearLut[pixel.G];
+					float bLinear = SrgbToLinearLut[pixel.B];
+
+					float rPow = rLinear * rLinear;
+					float gPow = gLinear * gLinear;
+					float bPow = bLinear * bLinear;
+
+					float lum = (0.2126f * rPow) + (0.7152f * gPow) + (0.0722f * bPow);
+					totalReshapedLuminance += lum;
+					validPixelCount++;
+				}
+			}
 		}
 
-		string? outDir = Path.GetDirectoryName(outputKtx2Path);
-		if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
+		if (validPixelCount > 0)
 		{
-			Directory.CreateDirectory(outDir);
+			float avgLuminance = (float)(totalReshapedLuminance / validPixelCount);
+			if (avgLuminance > 0.0001f)
+			{
+				float rawScaleFactor = targetLinearLuminance / avgLuminance;
+				return Math.Clamp(rawScaleFactor, minScaleFactor, maxScaleFactor);
+			}
 		}
 
-		string mipmapFlag = generateMipmaps ? "--generate-mipmap" : "";
-		string args = $"create --format {format} --encode basis-lz {mipmapFlag} \"{inputPngPath}\" \"{outputKtx2Path}\"";
+		return 1.0f;
+	}
 
-		var runResult = NativeToolRunner.RunTool(ktxTool, args);
-		if (runResult.ExitCode == 0 && File.Exists(outputKtx2Path))
+	public static float CalculateLuminanceScaleFactor(
+		string imagePath,
+		float targetLinearLuminance = 0.1133f,
+		float minScaleFactor = 0.2f,
+		float maxScaleFactor = 4.0f)
+	{
+		if (!File.Exists(imagePath)) return 1.0f;
+		try
 		{
-			result.Success = true;
-			return result;
+			string ext = Path.GetExtension(imagePath).ToLowerInvariant();
+			if (ext == ".rtex")
+			{
+				using var rtexImg = ExtractImageFromRtex(imagePath, layer: 0);
+				if (rtexImg != null)
+				{
+					return CalculateLuminanceScaleFactor(rtexImg, targetLinearLuminance, minScaleFactor, maxScaleFactor);
+				}
+			}
+
+			using var img = Image.Load<Rgba32>(imagePath);
+			return CalculateLuminanceScaleFactor(img, targetLinearLuminance, minScaleFactor, maxScaleFactor);
+		}
+		catch
+		{
+			return 1.0f;
+		}
+	}
+
+	public static Image<Rgba32> NormalizeLuminance(Image<Rgba32> sourceImage, float scaleFactor)
+	{
+		int width = sourceImage.Width;
+		int height = sourceImage.Height;
+		var result = new Image<Rgba32>(width, height);
+
+		byte[] scaledLut = new byte[256];
+		for (int i = 0; i < 256; i++)
+		{
+			float lin = SrgbToLinearLut[i] * scaleFactor;
+			scaledLut[i] = LinearToSrgbByte(lin);
 		}
 
-		result.Success = false;
-		result.ErrorMessage = $"ktx create failed (exit code {runResult.ExitCode}): {runResult.Stderr}\n{runResult.Stdout}";
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				Rgba32 pixel = sourceImage[x, y];
+				if (pixel.A < 13)
+				{
+					result[x, y] = pixel;
+					continue;
+				}
+
+				byte r = scaledLut[pixel.R];
+				byte g = scaledLut[pixel.G];
+				byte b = scaledLut[pixel.B];
+
+				result[x, y] = new Rgba32(r, g, b, pixel.A);
+			}
+		}
+
 		return result;
 	}
 
-	public static TextureConversionResult ExtractPngFromKtx2(
-		string inputKtx2Path,
-		string outputPngPath,
-		int layer = 0,
-		int level = 0)
+	public static void ProcessTerrainPbr(
+		Image<Rgba32> sourceImage,
+		bool isDecal,
+		out Image<Rgba32> layer0,
+		out Image<Rgba32> layer1)
+	{
+		int width = sourceImage.Width;
+		int height = sourceImage.Height;
+
+		float[,] luminance = new float[width, height];
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				Rgba32 p = sourceImage[x, y];
+				luminance[x, y] = (0.299f * p.R + 0.587f * p.G + 0.114f * p.B) / 255.0f;
+			}
+		}
+
+		float[,] fineMean = ComputeSeparableBoxBlur(luminance, width, height, 3);
+		float[,] coarseMean = ComputeSeparableBoxBlur(luminance, width, height, 14);
+
+		float[,] rawHeight = new float[width, height];
+		float[] flatHeights = new float[width * height];
+		int idx = 0;
+
+		float normalStrength = isDecal ? 2.5f : 2.5f;
+
+		for (int y = 0; y < height; y++)
+		{
+			int py = y > 0 ? y - 1 : height - 1;
+			int ny = y < height - 1 ? y + 1 : 0;
+
+			for (int x = 0; x < width; x++)
+			{
+				int px = x > 0 ? x - 1 : width - 1;
+				int nx = x < width - 1 ? x + 1 : 0;
+
+				float lum = luminance[x, y];
+				float highFreq = lum - fineMean[x, y];
+				float midFreq = fineMean[x, y] - coarseMean[x, y];
+
+				float dx = (luminance[nx, y] - luminance[px, y]) * 0.5f;
+				float dy = (luminance[x, ny] - luminance[x, py]) * 0.5f;
+				float gradMag = MathF.Sqrt(dx * dx + dy * dy);
+				float laplacian = luminance[nx, y] + luminance[px, y] + luminance[x, ny] + luminance[x, py] - 4.0f * lum;
+
+				float structuralValue = 0.5f + (highFreq * 2.2f) + (midFreq * 1.4f) + (laplacian * 0.5f) - (gradMag * 0.25f);
+				rawHeight[x, y] = structuralValue;
+				flatHeights[idx++] = structuralValue;
+			}
+		}
+
+		Array.Sort(flatHeights);
+		int totalPixels = flatHeights.Length;
+		int p1Index = Math.Clamp((int)(totalPixels * 0.01f), 0, totalPixels - 1);
+		int p99Index = Math.Clamp((int)(totalPixels * 0.99f), 0, totalPixels - 1);
+		float lowPercentile = flatHeights[p1Index];
+		float highPercentile = flatHeights[p99Index];
+
+		float normRange = highPercentile - lowPercentile;
+		float invNormRange = normRange > 1e-5f ? 1.0f / normRange : 0.0f;
+		float[,] normalizedHeight = new float[width, height];
+
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				float normH = (rawHeight[x, y] - lowPercentile) * invNormRange;
+				normalizedHeight[x, y] = Math.Clamp(normH, 0.0f, 1.0f);
+			}
+		}
+
+		layer0 = new Image<Rgba32>(width, height);
+		layer1 = new Image<Rgba32>(width, height);
+
+		for (int y = 0; y < height; y++)
+		{
+			int py = y > 0 ? y - 1 : height - 1;
+			int ny = y < height - 1 ? y + 1 : 0;
+
+			for (int x = 0; x < width; x++)
+			{
+				int px = x > 0 ? x - 1 : width - 1;
+				int nx = x < width - 1 ? x + 1 : 0;
+
+				Rgba32 albedoCol = sourceImage[x, y];
+				float heightVal = normalizedHeight[x, y];
+				byte heightByte = (byte)Math.Clamp((int)Math.Round(heightVal * 255.0f), 0, 255);
+				byte alphaVal = isDecal ? albedoCol.A : (byte)255;
+
+				layer0[x, y] = new Rgba32(albedoCol.R, albedoCol.G, albedoCol.B, alphaVal);
+
+				float dX = (normalizedHeight[nx, y] - normalizedHeight[px, y]) * normalStrength;
+				float dY = (normalizedHeight[x, ny] - normalizedHeight[x, py]) * normalStrength;
+
+				float len = MathF.Sqrt(dX * dX + dY * dY + 1.0f);
+				float invLen = 1.0f / len;
+				float normX = -dX * invLen;
+				float normY = -dY * invLen;
+
+				byte normR = (byte)Math.Clamp((int)Math.Round((normX * 0.5f + 0.5f) * 255.0f), 0, 255);
+				byte normG = (byte)Math.Clamp((int)Math.Round((normY * 0.5f + 0.5f) * 255.0f), 0, 255);
+				byte normB = heightByte;
+
+				float contrastHeight = Math.Clamp((heightVal - 0.5f) * 1.4f + 0.5f, 0.0f, 1.0f);
+				float highDetail = Math.Abs(luminance[x, y] - fineMean[x, y]);
+				float lerpVal = 0.85f + (0.45f - 0.85f) * contrastHeight;
+				float roughness = Math.Clamp(lerpVal + highDetail * 0.8f, 0.15f, 0.95f);
+				byte normA = (byte)Math.Clamp((int)Math.Round(roughness * 255.0f), 0, 255);
+
+				layer1[x, y] = new Rgba32(normR, normG, normB, normA);
+			}
+		}
+	}
+
+	public static byte[] EncodeWebp(Image<Rgba32> image, bool lossless = false, int quality = 90)
+	{
+		using var ms = new MemoryStream();
+		var encoder = new WebpEncoder
+		{
+			FileFormat = lossless ? WebpFileFormatType.Lossless : WebpFileFormatType.Lossy,
+			Quality = lossless ? 100 : quality
+		};
+		image.Save(ms, encoder);
+		return ms.ToArray();
+	}
+
+	private static bool EncodeTwoLayerPbrRtex(
+		Image<Rgba32> layer0,
+		Image<Rgba32> layer1,
+		string outputRtexPath,
+		string metadataJson,
+		out string errorMessage,
+		bool compressAlbedo = true)
+	{
+		errorMessage = string.Empty;
+		try
+		{
+			byte[] l0Bytes = EncodeWebp(layer0, lossless: !compressAlbedo, quality: 90);
+			byte[] l1Bytes = EncodeWebp(layer1, lossless: true); // Always lossless for PBR normal/height/roughness
+
+			byte[] rtexBytes = RtexFile.Build(metadataJson, [l0Bytes, l1Bytes]);
+			string? dir = Path.GetDirectoryName(outputRtexPath);
+			if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+			File.WriteAllBytes(outputRtexPath, rtexBytes);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			errorMessage = ex.Message;
+			return false;
+		}
+	}
+
+	private static bool EncodeSingleLayerRtex(
+		Image<Rgba32> image,
+		string outputRtexPath,
+		string metadataJson,
+		out string errorMessage,
+		bool lossless = false,
+		int quality = 90)
+	{
+		errorMessage = string.Empty;
+		try
+		{
+			byte[] l0Bytes = EncodeWebp(image, lossless: lossless, quality: quality);
+			byte[] rtexBytes = RtexFile.Build(metadataJson, [l0Bytes]);
+			string? dir = Path.GetDirectoryName(outputRtexPath);
+			if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+			File.WriteAllBytes(outputRtexPath, rtexBytes);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			errorMessage = ex.Message;
+			return false;
+		}
+	}
+
+	public static TextureConversionResult ProcessAndSaveTerrainTexture(
+		string rawImagePath,
+		string outputRtexPath,
+		float? forcedScaleFactor = null,
+		bool enableRdo = true)
 	{
 		var result = new TextureConversionResult
 		{
-			InputPath = inputKtx2Path,
-			OutputPath = outputPngPath
+			InputPath = Path.GetFullPath(rawImagePath),
+			OutputPath = Path.GetFullPath(outputRtexPath)
 		};
 
-		if (!File.Exists(inputKtx2Path))
+		if (!File.Exists(result.InputPath))
 		{
 			result.Success = false;
-			result.ErrorMessage = $"Input file not found: {inputKtx2Path}";
+			result.ErrorMessage = $"Input file not found: {rawImagePath}";
 			return result;
 		}
 
-		string? ktxTool = NativeToolRunner.FindKtxPath();
-		if (string.IsNullOrEmpty(ktxTool))
+		try
 		{
-			result.Success = false;
-			result.ErrorMessage = "ktx executable not found.";
-			return result;
-		}
+			byte[] originalBits = File.ReadAllBytes(result.InputPath);
+			string originalBlake3 = RealmMetadataHelper.ComputeBlake3(originalBits, Path.GetExtension(result.InputPath));
 
-		string? outDir = Path.GetDirectoryName(outputPngPath);
-		if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
-		{
-			Directory.CreateDirectory(outDir);
-		}
+			using var sourceImage = Image.Load<Rgba32>(result.InputPath);
+			float scaleFactor = forcedScaleFactor ?? CalculateLuminanceScaleFactor(sourceImage);
+			result.ScaleFactor = scaleFactor;
 
-		string args = $"extract --layer {layer} --level {level} --transcode rgba8 \"{inputKtx2Path}\" \"{outputPngPath}\"";
+			ProcessTerrainPbr(sourceImage, isDecal: false, out var layer0, out var layer1);
 
-		var runResult = NativeToolRunner.RunTool(ktxTool, args);
-		if (runResult.ExitCode == 0 && File.Exists(outputPngPath))
-		{
+			using (layer0)
+			using (layer1)
+			{
+				string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"terrain_texture\",\"canonical_blake3\":\"{originalBlake3}\",\"scale_factor\":{scaleFactor.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)},\"layers\":2}}";
+				bool encodeOk = EncodeTwoLayerPbrRtex(
+					layer0,
+					layer1,
+					result.OutputPath,
+					metadataJson,
+					out string errorMsg,
+					compressAlbedo: true);
+
+				if (!encodeOk)
+				{
+					result.Success = false;
+					result.ErrorMessage = errorMsg;
+					return result;
+				}
+			}
+
 			result.Success = true;
 			return result;
 		}
+		catch (Exception ex)
+		{
+			result.Success = false;
+			result.ErrorMessage = ex.Message;
+			return result;
+		}
+	}
 
-		result.Success = false;
-		result.ErrorMessage = $"ktx extract failed (exit code {runResult.ExitCode}): {runResult.Stderr}\n{runResult.Stdout}";
-		return result;
+	public static TextureConversionResult ProcessAndSaveDecalTexture(
+		string rawImagePath,
+		string outputRtexPath,
+		float? forcedScaleFactor = null,
+		bool enableRdo = true)
+	{
+		var result = new TextureConversionResult
+		{
+			InputPath = Path.GetFullPath(rawImagePath),
+			OutputPath = Path.GetFullPath(outputRtexPath)
+		};
+
+		if (!File.Exists(result.InputPath))
+		{
+			result.Success = false;
+			result.ErrorMessage = $"Input file not found: {rawImagePath}";
+			return result;
+		}
+
+		try
+		{
+			byte[] originalBits = File.ReadAllBytes(result.InputPath);
+			string originalBlake3 = RealmMetadataHelper.ComputeBlake3(originalBits, Path.GetExtension(result.InputPath));
+
+			using var sourceImage = Image.Load<Rgba32>(result.InputPath);
+			float scaleFactor = forcedScaleFactor ?? CalculateLuminanceScaleFactor(sourceImage);
+			result.ScaleFactor = scaleFactor;
+
+			ProcessTerrainPbr(sourceImage, isDecal: true, out var layer0, out var layer1);
+
+			using (layer0)
+			using (layer1)
+			{
+				string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"decal\",\"canonical_blake3\":\"{originalBlake3}\",\"scale_factor\":{scaleFactor.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)},\"layers\":2}}";
+				bool encodeOk = EncodeTwoLayerPbrRtex(
+					layer0,
+					layer1,
+					result.OutputPath,
+					metadataJson,
+					out string errorMsg,
+					compressAlbedo: true);
+
+				if (!encodeOk)
+				{
+					result.Success = false;
+					result.ErrorMessage = errorMsg;
+					return result;
+				}
+			}
+
+			result.Success = true;
+			return result;
+		}
+		catch (Exception ex)
+		{
+			result.Success = false;
+			result.ErrorMessage = ex.Message;
+			return result;
+		}
+	}
+
+	public static TextureConversionResult ProcessAndSaveSpritesheet(
+		string rawImagePath,
+		string outputRtexPath,
+		int columns = 4,
+		int rows = 4,
+		bool enableRdo = false)
+	{
+		var result = new TextureConversionResult
+		{
+			InputPath = Path.GetFullPath(rawImagePath),
+			OutputPath = Path.GetFullPath(outputRtexPath)
+		};
+
+		if (!File.Exists(result.InputPath))
+		{
+			result.Success = false;
+			result.ErrorMessage = $"Input file not found: {rawImagePath}";
+			return result;
+		}
+
+		try
+		{
+			byte[] originalBits = File.ReadAllBytes(result.InputPath);
+			string originalBlake3 = RealmMetadataHelper.ComputeBlake3(originalBits, Path.GetExtension(result.InputPath));
+
+			using var sourceImage = Image.Load<Rgba32>(result.InputPath);
+			string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"vfx_spritesheet\",\"canonical_blake3\":\"{originalBlake3}\",\"columns\":{columns},\"rows\":{rows},\"layers\":1}}";
+
+			bool encodeOk = EncodeSingleLayerRtex(
+				sourceImage,
+				result.OutputPath,
+				metadataJson,
+				out string errorMsg,
+				lossless: false,
+				quality: 90);
+
+			if (!encodeOk)
+			{
+				result.Success = false;
+				result.ErrorMessage = errorMsg;
+				return result;
+			}
+
+			result.Success = true;
+			return result;
+		}
+		catch (Exception ex)
+		{
+			result.Success = false;
+			result.ErrorMessage = ex.Message;
+			return result;
+		}
+	}
+
+	public static TextureConversionResult ProcessAndSaveSkybox(
+		string rawImagePath,
+		string outputRtexPath,
+		bool enableRdo = false)
+	{
+		var result = new TextureConversionResult
+		{
+			InputPath = Path.GetFullPath(rawImagePath),
+			OutputPath = Path.GetFullPath(outputRtexPath)
+		};
+
+		if (!File.Exists(result.InputPath))
+		{
+			result.Success = false;
+			result.ErrorMessage = $"Input file not found: {rawImagePath}";
+			return result;
+		}
+
+		try
+		{
+			byte[] originalBits = File.ReadAllBytes(result.InputPath);
+			string originalBlake3 = RealmMetadataHelper.ComputeBlake3(originalBits, Path.GetExtension(result.InputPath));
+
+			using var sourceImage = Image.Load<Rgba32>(result.InputPath);
+			string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"skybox\",\"canonical_blake3\":\"{originalBlake3}\",\"layers\":1}}";
+
+			bool encodeOk = EncodeSingleLayerRtex(
+				sourceImage,
+				result.OutputPath,
+				metadataJson,
+				out string errorMsg,
+				lossless: false,
+				quality: 95);
+
+			if (!encodeOk)
+			{
+				result.Success = false;
+				result.ErrorMessage = errorMsg;
+				return result;
+			}
+
+			result.Success = true;
+			return result;
+		}
+		catch (Exception ex)
+		{
+			result.Success = false;
+			result.ErrorMessage = ex.Message;
+			return result;
+		}
+	}
+
+	public static TextureConversionResult ProcessAndSaveRibbonTexture(
+		string rawImagePath,
+		string outputRtexPath,
+		bool enableRdo = false)
+	{
+		return ProcessAndSaveSingleLayerTexture(rawImagePath, outputRtexPath, "ribbon_texture", enableRdo);
+	}
+
+	public static TextureConversionResult ProcessAndSaveIconTexture(
+		string rawImagePath,
+		string outputRtexPath,
+		bool enableRdo = true)
+	{
+		return ProcessAndSaveSingleLayerTexture(rawImagePath, outputRtexPath, "icon", enableRdo);
+	}
+
+	public static TextureConversionResult ProcessAndSaveSingleLayerTexture(
+		string rawImagePath,
+		string outputRtexPath,
+		string assetType,
+		bool enableRdo = false)
+	{
+		var result = new TextureConversionResult
+		{
+			InputPath = Path.GetFullPath(rawImagePath),
+			OutputPath = Path.GetFullPath(outputRtexPath)
+		};
+
+		if (!File.Exists(result.InputPath))
+		{
+			result.Success = false;
+			result.ErrorMessage = $"Input file not found: {rawImagePath}";
+			return result;
+		}
+
+		try
+		{
+			byte[] originalBits = File.ReadAllBytes(result.InputPath);
+			string originalBlake3 = RealmMetadataHelper.ComputeBlake3(originalBits, Path.GetExtension(result.InputPath));
+
+			using var sourceImage = Image.Load<Rgba32>(result.InputPath);
+			string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"{assetType}\",\"canonical_blake3\":\"{originalBlake3}\",\"layers\":1}}";
+
+			bool encodeOk = EncodeSingleLayerRtex(
+				sourceImage,
+				result.OutputPath,
+				metadataJson,
+				out string errorMsg,
+				lossless: false,
+				quality: 90);
+
+			if (!encodeOk)
+			{
+				result.Success = false;
+				result.ErrorMessage = errorMsg;
+				return result;
+			}
+
+			result.Success = true;
+			return result;
+		}
+		catch (Exception ex)
+		{
+			result.Success = false;
+			result.ErrorMessage = ex.Message;
+			return result;
+		}
+	}
+
+	public static Image<Rgba32>? ExtractImageFromRtex(string rtexPath, int layer = 0)
+	{
+		if (!File.Exists(rtexPath)) return null;
+		byte[] bytes = File.ReadAllBytes(rtexPath);
+		return ExtractImageFromRtexBytes(bytes, layer);
+	}
+
+	public static Image<Rgba32>? ExtractImageFromRtexBytes(ReadOnlySpan<byte> rtexBytes, int layer = 0)
+	{
+		byte[]? webpBytes = RtexFile.GetLayer(rtexBytes, layer);
+		if (webpBytes == null || webpBytes.Length == 0) return null;
+		return Image.Load<Rgba32>(webpBytes);
+	}
+
+	public static byte[]? ExtractWebpFromRtex(string rtexPath, int layer = 0)
+	{
+		if (!File.Exists(rtexPath)) return null;
+		byte[] bytes = File.ReadAllBytes(rtexPath);
+		return RtexFile.GetLayer(bytes, layer);
+	}
+
+	public static TextureConversionResult ExtractPngFromRtex(
+		string inputRtexPath,
+		string outputPngPath,
+		int layer = 0)
+	{
+		string fullInput = Path.GetFullPath(inputRtexPath);
+		string fullOutput = Path.GetFullPath(outputPngPath);
+
+		var result = new TextureConversionResult
+		{
+			InputPath = fullInput,
+			OutputPath = fullOutput
+		};
+
+		if (!File.Exists(fullInput))
+		{
+			result.Success = false;
+			result.ErrorMessage = $"Input file not found: {inputRtexPath}";
+			return result;
+		}
+
+		try
+		{
+			using var image = ExtractImageFromRtex(fullInput, layer);
+			if (image == null)
+			{
+				result.Success = false;
+				result.ErrorMessage = $"Failed to extract layer {layer} from RTEX '{inputRtexPath}'.";
+				return result;
+			}
+
+			string? dir = Path.GetDirectoryName(fullOutput);
+			if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+			image.SaveAsPng(fullOutput);
+
+			result.Success = true;
+			return result;
+		}
+		catch (Exception ex)
+		{
+			result.Success = false;
+			result.ErrorMessage = ex.Message;
+			return result;
+		}
+	}
+
+	public static TextureConversionResult ExtractWebpFromRtex(
+		string inputRtexPath,
+		string outputWebpPath,
+		int layer = 0)
+	{
+		string fullInput = Path.GetFullPath(inputRtexPath);
+		string fullOutput = Path.GetFullPath(outputWebpPath);
+
+		var result = new TextureConversionResult
+		{
+			InputPath = fullInput,
+			OutputPath = fullOutput
+		};
+
+		if (!File.Exists(fullInput))
+		{
+			result.Success = false;
+			result.ErrorMessage = $"Input file not found: {inputRtexPath}";
+			return result;
+		}
+
+		try
+		{
+			byte[]? webpBytes = ExtractWebpFromRtex(fullInput, layer);
+			if (webpBytes == null || webpBytes.Length == 0)
+			{
+				result.Success = false;
+				result.ErrorMessage = $"Failed to extract layer {layer} from RTEX '{inputRtexPath}'.";
+				return result;
+			}
+
+			string? dir = Path.GetDirectoryName(fullOutput);
+			if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+			File.WriteAllBytes(fullOutput, webpBytes);
+
+			result.Success = true;
+			return result;
+		}
+		catch (Exception ex)
+		{
+			result.Success = false;
+			result.ErrorMessage = ex.Message;
+			return result;
+		}
 	}
 
 	public static TextureConversionResult ConvertTextureFile(
 		string inputPath,
 		string? outputPath,
-		string mode = "auto")
+		string? assetType = null,
+		int columns = 4,
+		int rows = 4)
 	{
-		string ext = Path.GetExtension(inputPath).ToLowerInvariant();
-		bool isExtract = mode.Equals("extract", StringComparison.OrdinalIgnoreCase) ||
-						 mode.Equals("to_png", StringComparison.OrdinalIgnoreCase) ||
-						 (mode.Equals("auto", StringComparison.OrdinalIgnoreCase) && ext == ".ktx2");
+		string fullInput = Path.GetFullPath(inputPath);
+		string ext = Path.GetExtension(fullInput).ToLowerInvariant();
 
-		if (isExtract)
+		if (ext == ".rtex")
 		{
-			string targetPng = string.IsNullOrEmpty(outputPath)
-				? Path.ChangeExtension(inputPath, ".png")
-				: outputPath;
-			return ExtractPngFromKtx2(inputPath, targetPng);
+			string targetWebp = string.IsNullOrEmpty(outputPath)
+				? Path.ChangeExtension(fullInput, ".webp")
+				: Path.GetFullPath(outputPath);
+			return targetWebp.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+				? ExtractPngFromRtex(fullInput, targetWebp)
+				: ExtractWebpFromRtex(fullInput, targetWebp);
 		}
-		else
+
+		string normType = (assetType ?? string.Empty).Trim().ToLowerInvariant();
+
+		if (string.IsNullOrEmpty(normType))
 		{
-			string targetKtx2 = string.IsNullOrEmpty(outputPath)
-				? Path.ChangeExtension(inputPath, ".ktx2")
-				: outputPath;
-			return ConvertPngToKtx2(inputPath, targetKtx2);
+			string? meta = RealmMetadataHelper.ExtractMetadata(fullInput);
+			if (!string.IsNullOrEmpty(meta))
+			{
+				try
+				{
+					var node = JsonNode.Parse(meta);
+					string? metaType = node?["type"]?.GetValue<string>();
+					if (!string.IsNullOrEmpty(metaType))
+					{
+						normType = metaType.Trim().ToLowerInvariant();
+					}
+				}
+				catch { }
+			}
 		}
+
+		if (string.IsNullOrEmpty(normType))
+		{
+			throw new InvalidOperationException($"Asset type was not specified and could not be detected from image metadata in '{inputPath}'. Please specify -t / --type (terrain, decal, spritesheet, skybox, ribbon, noise, icon).");
+		}
+
+		string targetRtex = string.IsNullOrEmpty(outputPath)
+			? Path.ChangeExtension(fullInput, ".rtex")
+			: Path.GetFullPath(outputPath);
+
+		if (normType is "terrain" or "terrain_texture" or "terrain_textures" or "tilesheet" or "tilesheets")
+		{
+			return ProcessAndSaveTerrainTexture(fullInput, targetRtex);
+		}
+
+		if (normType is "decal" or "decals")
+		{
+			return ProcessAndSaveDecalTexture(fullInput, targetRtex);
+		}
+
+		if (normType is "spritesheet" or "vfx_spritesheet" or "vfx_spritesheets" or "spritesheets")
+		{
+			return ProcessAndSaveSpritesheet(fullInput, targetRtex, columns, rows);
+		}
+
+		if (normType is "skybox" or "skyboxes")
+		{
+			return ProcessAndSaveSkybox(fullInput, targetRtex);
+		}
+
+		if (normType is "ribbon" or "ribbon_texture" or "ribbon_textures" or "ribbons")
+		{
+			return ProcessAndSaveRibbonTexture(fullInput, targetRtex);
+		}
+
+		if (normType is "noise" or "noise_texture" or "noise_textures")
+		{
+			return ProcessAndSaveSingleLayerTexture(fullInput, targetRtex, "noise_texture");
+		}
+
+		if (normType is "icon" or "icons")
+		{
+			return ProcessAndSaveIconTexture(fullInput, targetRtex);
+		}
+
+		throw new InvalidOperationException($"Unsupported asset type '{normType}'. Supported types: terrain, decal, spritesheet, skybox, ribbon, noise, icon.");
 	}
 
 	public static int ConvertTextureDirectory(
 		string inputDir,
 		string? outputDir,
-		string mode,
-		bool recursive)
+		string? assetType,
+		bool recursive,
+		int columns = 4,
+		int rows = 4)
 	{
-		var searchOpt = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-		string searchPattern = mode.Equals("extract", StringComparison.OrdinalIgnoreCase) || mode.Equals("to_png", StringComparison.OrdinalIgnoreCase)
-			? "*.ktx2"
-			: (mode.Equals("encode", StringComparison.OrdinalIgnoreCase) || mode.Equals("to_ktx2", StringComparison.OrdinalIgnoreCase) ? "*.png" : "*.*");
+		string fullInputDir = Path.GetFullPath(inputDir);
+		string? fullOutputDir = !string.IsNullOrEmpty(outputDir) ? Path.GetFullPath(outputDir) : null;
 
-		string[] files = Directory.GetFiles(inputDir, searchPattern, searchOpt);
+		var searchOpt = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+		string[] files = Directory.GetFiles(fullInputDir, "*.*", searchOpt);
 		int successCount = 0;
 		int failCount = 0;
 
 		foreach (var file in files)
 		{
-			string fileExt = Path.GetExtension(file).ToLowerInvariant();
-			if (fileExt != ".png" && fileExt != ".ktx2") continue;
+			if (!ImageFormatConverter.IsImageFile(file)) continue;
 
-			string targetExt = fileExt == ".png" ? ".ktx2" : ".png";
+			string fileExt = Path.GetExtension(file).ToLowerInvariant();
+			string targetExt = fileExt == ".rtex" ? ".webp" : ".rtex";
+
 			string target;
-			if (string.IsNullOrEmpty(outputDir))
+			if (string.IsNullOrEmpty(fullOutputDir))
 			{
 				target = Path.ChangeExtension(file, targetExt);
 			}
 			else
 			{
-				string rel = Path.GetRelativePath(inputDir, file);
-				target = Path.Combine(outputDir, Path.ChangeExtension(rel, targetExt));
+				string rel = Path.GetRelativePath(fullInputDir, file);
+				target = Path.Combine(fullOutputDir, Path.ChangeExtension(rel, targetExt));
 			}
 
-			var res = ConvertTextureFile(file, target, mode);
-			if (res.Success)
+			try
 			{
-				Console.WriteLine($"Converted: {file} -> {target}");
-				successCount++;
+				var res = ConvertTextureFile(file, target, assetType, columns, rows);
+				if (res.Success)
+				{
+					Console.WriteLine($"Converted: {file} -> {target}");
+					successCount++;
+				}
+				else
+				{
+					Console.Error.WriteLine($"Failed to convert {file}: {res.ErrorMessage}");
+					failCount++;
+				}
 			}
-			else
+			catch (Exception ex)
 			{
-				Console.Error.WriteLine($"Failed to convert {file}: {res.ErrorMessage}");
+				Console.Error.WriteLine($"Failed to convert {file}: {ex.Message}");
 				failCount++;
 			}
 		}
 
 		Console.WriteLine($"Finished texture conversion. {successCount} succeeded, {failCount} failed.");
 		return failCount > 0 ? 1 : 0;
+	}
+
+	private static float[,] ComputeSeparableBoxBlur(float[,] input, int w, int h, int radius)
+	{
+		float[,] temp = new float[w, h];
+		float[,] result = new float[w, h];
+		int windowSize = 2 * radius + 1;
+		float invWindow = 1.0f / windowSize;
+
+		for (int y = 0; y < h; y++)
+		{
+			float sum = 0.0f;
+			for (int k = -radius; k <= radius; k++)
+			{
+				int px = (k % w + w) % w;
+				sum += input[px, y];
+			}
+			temp[0, y] = sum * invWindow;
+
+			for (int x = 1; x < w; x++)
+			{
+				int removeX = ((x - 1 - radius) % w + w) % w;
+				int addX = ((x + radius) % w + w) % w;
+				sum += input[addX, y] - input[removeX, y];
+				temp[x, y] = sum * invWindow;
+			}
+		}
+
+		for (int x = 0; x < w; x++)
+		{
+			float sum = 0.0f;
+			for (int k = -radius; k <= radius; k++)
+			{
+				int py = (k % h + h) % h;
+				sum += temp[x, py];
+			}
+			result[x, 0] = sum * invWindow;
+
+			for (int y = 1; y < h; y++)
+			{
+				int removeY = ((y - 1 - radius) % h + h) % h;
+				int addY = ((y + radius) % h + h) % h;
+				sum += temp[x, addY] - temp[x, removeY];
+				result[x, y] = sum * invWindow;
+			}
+		}
+
+		return result;
 	}
 }

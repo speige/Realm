@@ -3188,38 +3188,7 @@ public class {mapName} : IMapScript
 
 		if (_activeMapScript == null)
 		{
-			bool hasCustomTerrain = false;
-			if (isCustomPath)
-			{
-				string checkDir = normalizedRaw;
-				if (normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://"))
-				{
-					checkDir = ProjectSettings.GlobalizePath(normalizedRaw);
-				}
-				if (System.IO.Directory.Exists(checkDir) && System.IO.File.Exists(System.IO.Path.Combine(checkDir, "terrain.json")))
-				{
-					hasCustomTerrain = true;
-				}
-			}
-			else
-			{
-				string lowercaseMapName = mapName.ToLower().Trim();
-				string mapDir = $"res://Maps/{lowercaseMapName}";
-				string targetDir = ProjectSettings.GlobalizePath(mapDir);
-				if (System.IO.Directory.Exists(targetDir) && System.IO.File.Exists(System.IO.Path.Combine(targetDir, "terrain.json")))
-				{
-					hasCustomTerrain = true;
-				}
-			}
-
-			if (hasCustomTerrain)
-			{
-				_activeMapScript = new EmptyMapScript();
-			}
-			else
-			{
-				_activeMapScript = new Realm.Maps.MeleeMap();
-			}
+			_activeMapScript = new EmptyMapScript();
 		}
 	}
 
@@ -3833,6 +3802,15 @@ public class {mapName} : IMapScript
 					{
 						fullPath = System.IO.Path.Combine(wsPath, "Assets", "skyboxes", System.IO.Path.GetFileName(path));
 					}
+					if (!System.IO.File.Exists(fullPath))
+					{
+						string rtexName = System.IO.Path.GetFileNameWithoutExtension(path) + ".rtex";
+						string rtexCandidate = System.IO.Path.Combine(wsPath, "Assets", "skyboxes", rtexName);
+						if (System.IO.File.Exists(rtexCandidate))
+						{
+							fullPath = rtexCandidate;
+						}
+					}
 				}
 
 				Texture2D? skyTexture = null;
@@ -3845,10 +3823,27 @@ public class {mapName} : IMapScript
 				}
 				else if (System.IO.File.Exists(fullPath))
 				{
-					var img = Image.LoadFromFile(fullPath);
-					if (img != null)
+					if (fullPath.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase))
 					{
-						skyTexture = ImageTexture.CreateFromImage(img);
+						byte[] rtexBytes = System.IO.File.ReadAllBytes(fullPath);
+						byte[]? webpBytes = Realm.Shared.Textures.RtexFile.GetLayer(rtexBytes, 0);
+						if (webpBytes != null && webpBytes.Length > 0)
+						{
+							var img = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+							if (img.LoadWebpFromBuffer(webpBytes) != Error.Ok)
+							{
+								img.LoadPngFromBuffer(webpBytes);
+							}
+							skyTexture = ImageTexture.CreateFromImage(img);
+						}
+					}
+					else
+					{
+						var img = Image.LoadFromFile(fullPath);
+						if (img != null)
+						{
+							skyTexture = ImageTexture.CreateFromImage(img);
+						}
 					}
 				}
 
@@ -4414,6 +4409,10 @@ public class {mapName} : IMapScript
 				alpha *= alpha;
 				img.SetPixel(x, y, new Color(0f, 0f, 0f, alpha));
 			}
+		}
+		if (!img.HasMipmaps())
+		{
+			img.GenerateMipmaps();
 		}
 		_sharedShadowGradient = ImageTexture.CreateFromImage(img);
 		return _sharedShadowGradient;
