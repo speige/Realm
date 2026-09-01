@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using Realm.Shared.Metadata;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
 public class IndexedAsset
@@ -585,44 +586,53 @@ public class AssetIndexService : IDisposable
 	{
 		var tagSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-		string sidecarJsonWithExt = filePath + ".json";
-		string sidecarJsonNoExt = Path.Combine(Path.GetDirectoryName(filePath)!, Path.GetFileNameWithoutExtension(filePath) + ".json");
-
-		string? foundMetadataPath = null;
-		if (File.Exists(sidecarJsonWithExt))
+		var embeddedTags = RealmMetadataHelper.ExtractTags(filePath);
+		foreach (var tag in embeddedTags)
 		{
-			foundMetadataPath = sidecarJsonWithExt;
-		}
-		else if (File.Exists(sidecarJsonNoExt) && !string.Equals(sidecarJsonNoExt, filePath, StringComparison.OrdinalIgnoreCase))
-		{
-			foundMetadataPath = sidecarJsonNoExt;
+			tagSet.Add(tag);
 		}
 
-		if (foundMetadataPath != null)
+		if (tagSet.Count == 0)
 		{
-			try
+			string sidecarJsonWithExt = filePath + ".json";
+			string sidecarJsonNoExt = Path.Combine(Path.GetDirectoryName(filePath)!, Path.GetFileNameWithoutExtension(filePath) + ".json");
+
+			string? foundMetadataPath = null;
+			if (File.Exists(sidecarJsonWithExt))
 			{
-				string jsonContent = File.ReadAllText(foundMetadataPath);
-				var rootNode = JsonNode.Parse(jsonContent);
-				if (rootNode is JsonObject jsonObject)
+				foundMetadataPath = sidecarJsonWithExt;
+			}
+			else if (File.Exists(sidecarJsonNoExt) && !string.Equals(sidecarJsonNoExt, filePath, StringComparison.OrdinalIgnoreCase))
+			{
+				foundMetadataPath = sidecarJsonNoExt;
+			}
+
+			if (foundMetadataPath != null)
+			{
+				try
 				{
-					if (jsonObject["tags"] is JsonArray tagsArray)
+					string jsonContent = File.ReadAllText(foundMetadataPath);
+					var rootNode = JsonNode.Parse(jsonContent);
+					if (rootNode is JsonObject jsonObject)
 					{
-						foreach (var item in tagsArray)
+						if (jsonObject["tags"] is JsonArray tagsArray)
 						{
-							if (item != null)
+							foreach (var item in tagsArray)
 							{
-								string tagStr = item.ToString().Trim();
-								if (!string.IsNullOrEmpty(tagStr))
+								if (item != null)
 								{
-									tagSet.Add(tagStr);
+									string tagStr = item.ToString().Trim();
+									if (!string.IsNullOrEmpty(tagStr))
+									{
+										tagSet.Add(tagStr);
+									}
 								}
 							}
 						}
 					}
 				}
+				catch { }
 			}
-			catch { }
 		}
 
 		if (tagSet.Count == 0)
@@ -679,6 +689,8 @@ public class AssetIndexService : IDisposable
 			asset.Tags = newTags.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim().ToLowerInvariant()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 			asset.MetadataJson = JsonSerializer.Serialize(new AssetMetadataModel { Tags = asset.Tags });
 			_assetCollection.Update(asset);
+
+			RealmMetadataHelper.SetTags(normalizedFilePath, asset.Tags);
 
 			try
 			{

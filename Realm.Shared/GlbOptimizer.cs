@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Nodes;
+using Realm.Shared.Metadata;
 using Realm.Shared.ModelOptimization;
 
 namespace Realm.Shared;
@@ -148,6 +149,7 @@ public class GlbOptimizer
 			}
 
 			File.WriteAllBytes(target, result.OutputGlbBytes);
+			RealmMetadataHelper.SyncBlake3Metadata(target);
 			result.OutputFilePath = target;
 		}
 
@@ -201,6 +203,7 @@ public class GlbOptimizer
 			}
 
 			File.WriteAllBytes(target, result.OutputGlbBytes);
+			RealmMetadataHelper.SyncBlake3Metadata(target);
 			result.OutputFilePath = target;
 		}
 

@@ -1,7 +1,9 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using Realm.Shared.Metadata;
 
 public partial class TagEditorDialog : FloatingDialogBase
 {
@@ -18,9 +20,17 @@ public partial class TagEditorDialog : FloatingDialogBase
 		_asset = asset;
 		_onSaveCallback = onSaveCallback;
 
-		if (_asset?.Tags != null)
+		if (_asset != null)
 		{
-			_workingTags.AddRange(_asset.Tags);
+			var embeddedTags = RealmMetadataHelper.ExtractTags(_asset.FilePath);
+			if (embeddedTags.Count > 0)
+			{
+				_workingTags.AddRange(embeddedTags);
+			}
+			else if (_asset.Tags != null)
+			{
+				_workingTags.AddRange(_asset.Tags);
+			}
 		}
 
 		BuildTagEditorControls();
@@ -158,7 +168,23 @@ public partial class TagEditorDialog : FloatingDialogBase
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.ToList();
 
-		_onSaveCallback?.Invoke(finalTags);
+		if (_asset != null && File.Exists(_asset.FilePath))
+		{
+			bool success = RealmMetadataHelper.SetTags(_asset.FilePath, finalTags);
+			if (success)
+			{
+				_onSaveCallback?.Invoke(finalTags);
+			}
+			else
+			{
+				Hud?.ShowFeedback(TranslationServer.Translate("Failed to update embedded asset tags."));
+			}
+		}
+		else
+		{
+			_onSaveCallback?.Invoke(finalTags);
+		}
+
 		CloseDialog();
 	}
 }

@@ -2,10 +2,12 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Blake3;
+using Realm.Shared.Textures;
 
 namespace Realm.Shared.Metadata;
 
@@ -70,13 +72,30 @@ public static class RealmMetadataHelper
 		if (HasRealmMetadata(filePath)) return true;
 
 		string ext = Path.GetExtension(filePath).ToLowerInvariant();
-		string meta = !string.IsNullOrEmpty(defaultMetadataJson)
-			? defaultMetadataJson
-			: $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"format\":\"{ext.TrimStart('.')}\"}}";
+		string canonicalBlake3 = ComputeBlake3(filePath);
+		JsonObject metaObj;
+		if (!string.IsNullOrEmpty(defaultMetadataJson))
+		{
+			try
+			{
+				metaObj = JsonNode.Parse(defaultMetadataJson)?.AsObject() ?? new JsonObject();
+			}
+			catch
+			{
+				metaObj = new JsonObject();
+			}
+		}
+		else
+		{
+			metaObj = new JsonObject();
+			metaObj["created_utc"] = DateTime.UtcNow.ToString("O");
+			metaObj["format"] = ext.TrimStart('.');
+		}
+		metaObj["blake3"] = canonicalBlake3;
 
 		try
 		{
-			return AddMetadata(filePath, meta);
+			return AddMetadata(filePath, metaObj.ToJsonString());
 		}
 		catch
 		{
@@ -201,6 +220,69 @@ public static class RealmMetadataHelper
 		}
 
 		metaObj["asset_type"] = canonical;
+		metaObj["blake3"] = ComputeBlake3(filePath);
+		return AddMetadata(filePath, metaObj.ToJsonString());
+	}
+
+	public static List<string> ExtractTags(string filePath)
+	{
+		var result = new List<string>();
+		string? metaJson = ExtractMetadata(filePath);
+		if (string.IsNullOrEmpty(metaJson)) return result;
+		try
+		{
+			var node = JsonNode.Parse(metaJson);
+			if (node is JsonObject obj && obj["tags"] is JsonArray tagsArray)
+			{
+				foreach (var tagNode in tagsArray)
+				{
+					string? tag = tagNode?.ToString()?.Trim();
+					if (!string.IsNullOrEmpty(tag) && !result.Contains(tag, StringComparer.OrdinalIgnoreCase))
+					{
+						result.Add(tag);
+					}
+				}
+			}
+		}
+		catch { }
+		return result;
+	}
+
+	public static bool SetTags(string filePath, IEnumerable<string> tags)
+	{
+		if (!File.Exists(filePath)) return false;
+		string ext = Path.GetExtension(filePath).ToLowerInvariant();
+		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) return false;
+
+		string? existingMeta = ExtractMetadata(filePath);
+		JsonObject metaObj;
+		if (!string.IsNullOrEmpty(existingMeta))
+		{
+			try
+			{
+				metaObj = JsonNode.Parse(existingMeta)?.AsObject() ?? new JsonObject();
+			}
+			catch
+			{
+				metaObj = new JsonObject();
+			}
+		}
+		else
+		{
+			metaObj = new JsonObject();
+			metaObj["created_utc"] = DateTime.UtcNow.ToString("O");
+			metaObj["format"] = ext.TrimStart('.');
+		}
+
+		var cleanTags = (tags ?? Array.Empty<string>())
+			.Where(t => !string.IsNullOrWhiteSpace(t))
+			.Select(t => t.Trim().ToLowerInvariant())
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.Select(t => (JsonNode)JsonValue.Create(t)!)
+			.ToArray();
+
+		metaObj["tags"] = new JsonArray(cleanTags);
+		metaObj["blake3"] = ComputeBlake3(filePath);
 		return AddMetadata(filePath, metaObj.ToJsonString());
 	}
 
@@ -1364,5 +1446,96 @@ public static class RealmMetadataHelper
 		string extension = Path.GetExtension(extensionOrPath).ToLowerInvariant();
 		string blake3Hash = ComputeBlake3(bytes, extension);
 		return string.IsNullOrEmpty(extension) ? blake3Hash : $"{blake3Hash}{extension}";
+	}
+
+	public static bool SyncBlake3Metadata(string filePath)
+	{
+		if (!File.Exists(filePath)) return false;
+		string ext = Path.GetExtension(filePath).ToLowerInvariant();
+		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) return false;
+
+		try
+		{
+			string canonicalBlake3 = ComputeBlake3(filePath);
+			string? existingMeta = ExtractMetadata(filePath);
+			JsonObject metaObj;
+			if (!string.IsNullOrWhiteSpace(existingMeta))
+			{
+				try
+				{
+					metaObj = JsonNode.Parse(existingMeta) as JsonObject ?? new JsonObject();
+				}
+				catch
+				{
+					metaObj = new JsonObject();
+				}
+			}
+			else
+			{
+				metaObj = new JsonObject();
+				metaObj["created_utc"] = DateTime.UtcNow.ToString("O");
+				metaObj["format"] = ext.TrimStart('.');
+			}
+
+			metaObj["blake3"] = canonicalBlake3;
+			return AddMetadata(filePath, metaObj.ToJsonString());
+		}
+		catch
+		{
+			return false;
+		}
+	}
+
+	public static byte[] SyncBlake3MetadataBytes(byte[] bytes, string extensionOrPath)
+	{
+		if (bytes == null || bytes.Length == 0) return bytes ?? Array.Empty<byte>();
+		string ext = Path.GetExtension(extensionOrPath).ToLowerInvariant();
+		if (string.IsNullOrEmpty(ext) && extensionOrPath.StartsWith('.')) ext = extensionOrPath.ToLowerInvariant();
+		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) return bytes;
+
+		try
+		{
+			string canonicalBlake3 = ComputeBlake3(bytes, ext);
+			string? existingMeta = null;
+			if (ext == ".glb") existingMeta = ExtractMetadataFromGlbBytes(bytes);
+			else if (ext == ".rtex") existingMeta = RtexFile.ExtractMetadata(bytes);
+			else if (ext == ".ranim") existingMeta = ExtractMetadataFromRanimBytes(bytes);
+			else if (ext == ".ogg") existingMeta = ExtractMetadataFromOggBytes(bytes);
+
+			JsonObject metaObj;
+			if (!string.IsNullOrWhiteSpace(existingMeta))
+			{
+				try
+				{
+					metaObj = JsonNode.Parse(existingMeta) as JsonObject ?? new JsonObject();
+				}
+				catch
+				{
+					metaObj = new JsonObject();
+				}
+			}
+			else
+			{
+				metaObj = new JsonObject();
+				metaObj["created_utc"] = DateTime.UtcNow.ToString("O");
+				metaObj["format"] = ext.TrimStart('.');
+			}
+
+			metaObj["blake3"] = canonicalBlake3;
+			string newMetaJson = metaObj.ToJsonString();
+
+			return ext switch
+			{
+				".glb" => AddMetadataToGlbBytes(bytes, newMetaJson),
+				".rtex" => RtexFile.SetMetadata(bytes, newMetaJson),
+				".ranim" => AddMetadataToRanimBytes(bytes, newMetaJson),
+				".ogg" => AddMetadataToOggBytes(bytes, newMetaJson),
+				_ => bytes
+			};
+		}
+		catch
+		{
+			return bytes;
+		}
 	}
 }

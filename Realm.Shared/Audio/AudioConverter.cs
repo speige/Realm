@@ -66,6 +66,7 @@ public static class AudioConverter
 					string defaultMeta = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"format\":\"ogg_vorbis\"}}";
 					RealmMetadataHelper.AddMetadataToOgg(targetOgg, defaultMeta);
 				}
+				RealmMetadataHelper.SyncBlake3Metadata(targetOgg);
 			}
 			catch
 			{
@@ -94,6 +95,7 @@ public static class AudioConverter
 					: $"{{\"original_format\":\"{ext}\",\"created_utc\":\"{DateTime.UtcNow:O}\"}}";
 
 				RealmMetadataHelper.AddMetadataToOgg(targetOgg, metaToEmbed);
+				RealmMetadataHelper.SyncBlake3Metadata(targetOgg);
 			}
 			catch
 			{

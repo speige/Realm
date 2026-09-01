@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using CommandLine;
 using Realm.Shared;
 using Realm.Shared.Animation;
@@ -266,21 +268,48 @@ public static class Program
 	{
 		if (File.Exists(options.Input))
 		{
-			string? meta = RealmMetadataHelper.ExtractMetadata(options.Input);
-			if (meta == null)
+			string ext = Path.GetExtension(options.Input).ToLowerInvariant();
+			if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg"))
 			{
-				Console.WriteLine($"No embedded Realm metadata found in: {options.Input}");
-				return 0;
+				Console.Error.WriteLine($"Error: Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rtex, .ogg, .ranim");
+				return 1;
 			}
 
+			string? rawMeta = RealmMetadataHelper.ExtractMetadata(options.Input);
+			JsonObject metaObj;
+			if (!string.IsNullOrWhiteSpace(rawMeta))
+			{
+				try
+				{
+					metaObj = JsonNode.Parse(rawMeta) as JsonObject ?? new JsonObject();
+				}
+				catch
+				{
+					metaObj = new JsonObject();
+					metaObj["raw"] = rawMeta;
+				}
+			}
+			else
+			{
+				metaObj = new JsonObject();
+			}
+
+			if (!metaObj.ContainsKey("blake3") || string.IsNullOrWhiteSpace(metaObj["blake3"]?.ToString()))
+			{
+				string canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(options.Input);
+				metaObj["blake3"] = canonicalBlake3;
+			}
+
+			string metaToDisplay = metaObj.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+
 			Console.WriteLine($"Metadata for {options.Input}:");
-			Console.WriteLine(meta);
+			Console.WriteLine(metaToDisplay);
 
 			if (!string.IsNullOrEmpty(options.Output))
 			{
 				string? dir = Path.GetDirectoryName(options.Output);
 				if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
-				File.WriteAllText(options.Output, meta);
+				File.WriteAllText(options.Output, metaToDisplay);
 				Console.WriteLine($"Saved metadata to: {options.Output}");
 			}
 			return 0;
@@ -295,13 +324,36 @@ public static class Program
 				string ext = Path.GetExtension(file).ToLowerInvariant();
 				if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) continue;
 
-				string? meta = RealmMetadataHelper.ExtractMetadata(file);
-				if (meta != null)
+				string? rawMeta = RealmMetadataHelper.ExtractMetadata(file);
+				JsonObject metaObj;
+				if (!string.IsNullOrWhiteSpace(rawMeta))
 				{
-					Console.WriteLine($"--- {file} ---");
-					Console.WriteLine(meta);
-					foundCount++;
+					try
+					{
+						metaObj = JsonNode.Parse(rawMeta) as JsonObject ?? new JsonObject();
+					}
+					catch
+					{
+						metaObj = new JsonObject();
+						metaObj["raw"] = rawMeta;
+					}
 				}
+				else
+				{
+					metaObj = new JsonObject();
+				}
+
+				if (!metaObj.ContainsKey("blake3") || string.IsNullOrWhiteSpace(metaObj["blake3"]?.ToString()))
+				{
+					string canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(file);
+					metaObj["blake3"] = canonicalBlake3;
+				}
+
+				string metaToDisplay = metaObj.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+
+				Console.WriteLine($"--- {file} ---");
+				Console.WriteLine(metaToDisplay);
+				foundCount++;
 			}
 			Console.WriteLine($"Extracted metadata from {foundCount} file(s).");
 			return 0;
@@ -313,39 +365,76 @@ public static class Program
 		}
 	}
 
-	private static bool ValidateAndNormalizeMetadataJson(string targetPath, ref string jsonContent, out string error)
+	private static bool PrepareMetadataJsonForFile(string targetPath, ref string inputJsonContent, bool isUpdate, out string error)
 	{
 		error = string.Empty;
 		string ext = Path.GetExtension(targetPath).ToLowerInvariant();
 		try
 		{
-			var node = System.Text.Json.Nodes.JsonNode.Parse(jsonContent);
-			if (node is System.Text.Json.Nodes.JsonObject jsonObj)
+			var parsedNode = JsonNode.Parse(inputJsonContent);
+			if (parsedNode is not JsonObject inputObj)
 			{
-				string? rawAssetType = jsonObj["asset_type"]?.ToString()
-					?? jsonObj["AssetType"]?.ToString()
-					?? jsonObj["default_asset_type"]?.ToString()
-					?? jsonObj["type"]?.ToString();
+				error = "Metadata must be a valid JSON object.";
+				return false;
+			}
 
-				if (!string.IsNullOrEmpty(rawAssetType))
+			string? rawAssetType = inputObj["asset_type"]?.ToString()
+				?? inputObj["AssetType"]?.ToString()
+				?? inputObj["default_asset_type"]?.ToString()
+				?? inputObj["type"]?.ToString();
+
+			if (!string.IsNullOrEmpty(rawAssetType))
+			{
+				if (!RealmMetadataHelper.IsValidAssetTypeForExtension(ext, rawAssetType, out string canonical, out var validTypes))
 				{
-					if (!RealmMetadataHelper.IsValidAssetTypeForExtension(ext, rawAssetType, out string canonical, out var validTypes))
-					{
-						error = $"Invalid asset_type '{rawAssetType}' for format '{ext}'. Valid asset_type values for {ext} are: {string.Join(", ", validTypes)}.";
-						return false;
-					}
+					error = $"Invalid asset_type '{rawAssetType}' for format '{ext}'. Valid asset_type values for {ext} are: {string.Join(", ", validTypes)}.";
+					return false;
+				}
 
-					jsonObj["asset_type"] = canonical;
-					jsonContent = jsonObj.ToJsonString();
+				inputObj["asset_type"] = canonical;
+			}
+
+			JsonObject finalObj;
+			if (isUpdate)
+			{
+				string? existingMeta = RealmMetadataHelper.ExtractMetadata(targetPath);
+				if (!string.IsNullOrEmpty(existingMeta))
+				{
+					try
+					{
+						finalObj = JsonNode.Parse(existingMeta) as JsonObject ?? new JsonObject();
+					}
+					catch
+					{
+						finalObj = new JsonObject();
+					}
+				}
+				else
+				{
+					finalObj = new JsonObject();
+				}
+
+				foreach (var property in inputObj)
+				{
+					finalObj[property.Key] = property.Value?.DeepClone();
 				}
 			}
+			else
+			{
+				finalObj = inputObj;
+			}
+
+			string canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(targetPath);
+			finalObj["blake3"] = canonicalBlake3;
+
+			inputJsonContent = finalObj.ToJsonString();
+			return true;
 		}
 		catch (Exception ex)
 		{
 			error = $"Invalid JSON metadata: {ex.Message}";
 			return false;
 		}
-		return true;
 	}
 
 	private static int ExecuteMetadataAdd(MetadataOptions options)
@@ -362,15 +451,19 @@ public static class Program
 			jsonContent = File.ReadAllText(options.Data);
 		}
 
+		string mode = options.Mode?.ToLowerInvariant() ?? "add";
+		bool isUpdate = mode is "update" or "set";
+
 		if (File.Exists(options.Input))
 		{
-			if (!ValidateAndNormalizeMetadataJson(options.Input, ref jsonContent, out string error))
+			string processedJson = jsonContent;
+			if (!PrepareMetadataJsonForFile(options.Input, ref processedJson, isUpdate, out string error))
 			{
 				Console.Error.WriteLine($"Error: {error}");
 				return 1;
 			}
 
-			bool success = RealmMetadataHelper.AddMetadata(options.Input, jsonContent);
+			bool success = RealmMetadataHelper.AddMetadata(options.Input, processedJson);
 			if (success)
 			{
 				Console.WriteLine($"Successfully added metadata to: {options.Input}");
@@ -395,7 +488,7 @@ public static class Program
 				if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) continue;
 
 				string fileJson = jsonContent;
-				if (!ValidateAndNormalizeMetadataJson(file, ref fileJson, out string error))
+				if (!PrepareMetadataJsonForFile(file, ref fileJson, isUpdate, out string error))
 				{
 					Console.Error.WriteLine($"Failed to add metadata to {file}: {error}");
 					failCount++;
@@ -428,7 +521,18 @@ public static class Program
 	{
 		if (File.Exists(options.Input))
 		{
-			bool success = RealmMetadataHelper.RemoveMetadata(options.Input);
+			string ext = Path.GetExtension(options.Input).ToLowerInvariant();
+			if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg"))
+			{
+				Console.Error.WriteLine($"Error: Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rtex, .ogg, .ranim");
+				return 1;
+			}
+
+			RealmMetadataHelper.RemoveMetadata(options.Input);
+			string canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(options.Input);
+			var metaObj = new JsonObject { ["blake3"] = canonicalBlake3 };
+			bool success = RealmMetadataHelper.AddMetadata(options.Input, metaObj.ToJsonString());
+
 			if (success)
 			{
 				Console.WriteLine($"Successfully removed metadata from: {options.Input}");
@@ -452,7 +556,11 @@ public static class Program
 				string ext = Path.GetExtension(file).ToLowerInvariant();
 				if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) continue;
 
-				if (RealmMetadataHelper.RemoveMetadata(file))
+				RealmMetadataHelper.RemoveMetadata(file);
+				string canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(file);
+				var metaObj = new JsonObject { ["blake3"] = canonicalBlake3 };
+
+				if (RealmMetadataHelper.AddMetadata(file, metaObj.ToJsonString()))
 				{
 					Console.WriteLine($"Removed metadata from: {file}");
 					successCount++;
@@ -506,6 +614,10 @@ public static class Program
 
 				if (res.Success)
 				{
+					if (Path.GetExtension(target).Equals(".rtex", StringComparison.OrdinalIgnoreCase))
+					{
+						RealmMetadataHelper.SyncBlake3Metadata(target);
+					}
 					Console.WriteLine($"Successfully converted: {options.Input} -> {target}");
 					return 0;
 				}
@@ -549,6 +661,10 @@ public static class Program
 			var res = Realm.Shared.Audio.AudioConverter.ConvertToOgg(options.Input, target);
 			if (res.Success)
 			{
+				if (Path.GetExtension(target).Equals(".ogg", StringComparison.OrdinalIgnoreCase))
+				{
+					RealmMetadataHelper.SyncBlake3Metadata(target);
+				}
 				Console.WriteLine($"Successfully converted: {options.Input} -> {target}");
 				return 0;
 			}
@@ -580,6 +696,17 @@ public static class Program
 			var res = MixamoFbxConverter.ConvertFbxFile(options.Input, target);
 			if (res.Success)
 			{
+				if (File.Exists(res.OutputPath) && Path.GetExtension(res.OutputPath).Equals(".ranim", StringComparison.OrdinalIgnoreCase))
+				{
+					RealmMetadataHelper.SyncBlake3Metadata(res.OutputPath);
+				}
+				else if (Directory.Exists(target))
+				{
+					foreach (var ranimFile in Directory.GetFiles(target, "*.ranim"))
+					{
+						RealmMetadataHelper.SyncBlake3Metadata(ranimFile);
+					}
+				}
 				Console.WriteLine($"Successfully converted: {options.Input} -> {res.OutputPath} ({string.Join(", ", res.ConvertedAnimationNames)})");
 				return 0;
 			}
@@ -651,6 +778,7 @@ public static class Program
 			var unopt = optimizer.UnoptimizeFile(filePath, target);
 			if (unopt.Success)
 			{
+				RealmMetadataHelper.SyncBlake3Metadata(target);
 				Console.WriteLine($"Successfully unoptimized: {target} (WasOptimized: {unopt.WasOptimized})");
 				return 0;
 			}
@@ -666,6 +794,7 @@ public static class Program
 			var result = optimizer.OptimizeFile(filePath, target, options);
 			if (result.Success)
 			{
+				RealmMetadataHelper.SyncBlake3Metadata(target);
 				if (result.DecimationSkipped)
 				{
 					Console.WriteLine($"Skipped (already optimized): {filePath}");

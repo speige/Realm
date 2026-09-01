@@ -2,6 +2,7 @@ using Assimp;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Realm.Shared.Metadata;
 
 namespace Realm.Shared.Animation;
 
@@ -154,6 +155,7 @@ public static class MixamoFbxConverter
 						: $"{originalBaseName}_{i}.ranim";
 					string fullOut = Path.Combine(targetBase, outName);
 					RealmAnimationSerializer.SaveToFile(fullOut, anims[i].Data);
+					RealmMetadataHelper.SyncBlake3Metadata(fullOut);
 					result.ConvertedAnimationNames.Add(anims[i].AnimationName);
 					result.OutputPath = fullOut;
 				}
@@ -163,6 +165,7 @@ public static class MixamoFbxConverter
 				if (anims.Count == 1)
 				{
 					RealmAnimationSerializer.SaveToFile(targetBase, anims[0].Data);
+					RealmMetadataHelper.SyncBlake3Metadata(targetBase);
 					result.ConvertedAnimationNames.Add(anims[0].AnimationName);
 					result.OutputPath = targetBase;
 				}
@@ -174,6 +177,7 @@ public static class MixamoFbxConverter
 						string outName = $"{originalBaseName}_{i}.ranim";
 						string fullOut = Path.Combine(dir, outName);
 						RealmAnimationSerializer.SaveToFile(fullOut, anims[i].Data);
+						RealmMetadataHelper.SyncBlake3Metadata(fullOut);
 						result.ConvertedAnimationNames.Add(anims[i].AnimationName);
 						result.OutputPath = fullOut;
 					}

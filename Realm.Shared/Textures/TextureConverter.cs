@@ -325,6 +325,7 @@ public static class TextureConverter
 			string? dir = Path.GetDirectoryName(outputRtexPath);
 			if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
 			File.WriteAllBytes(outputRtexPath, rtexBytes);
+			RealmMetadataHelper.SyncBlake3Metadata(outputRtexPath);
 			return true;
 		}
 		catch (Exception ex)
@@ -350,6 +351,7 @@ public static class TextureConverter
 			string? dir = Path.GetDirectoryName(outputRtexPath);
 			if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
 			File.WriteAllBytes(outputRtexPath, rtexBytes);
+			RealmMetadataHelper.SyncBlake3Metadata(outputRtexPath);
 			return true;
 		}
 		catch (Exception ex)
@@ -801,7 +803,9 @@ public static class TextureConverter
 				try
 				{
 					var node = JsonNode.Parse(meta);
-					string? metaType = node?["type"]?.GetValue<string>();
+					string? metaType = node?["type"]?.GetValue<string>()
+						?? node?["asset_type"]?.GetValue<string>()
+						?? node?["AssetType"]?.GetValue<string>();
 					if (!string.IsNullOrEmpty(metaType))
 					{
 						normType = metaType.Trim().ToLowerInvariant();
@@ -813,14 +817,14 @@ public static class TextureConverter
 
 		if (string.IsNullOrEmpty(normType))
 		{
-			throw new InvalidOperationException($"Asset type was not specified and could not be detected from image metadata in '{inputPath}'. Please specify -t / --type (terrain, decal, spritesheet, skybox, ribbon, noise, icon).");
+			throw new InvalidOperationException($"Asset type was not specified and could not be detected from image metadata in '{inputPath}'. Please specify -t / --type (terrain, decal, spellspritesheet, skybox, ribbon, noise, icon).");
 		}
 
 		string targetRtex = string.IsNullOrEmpty(outputPath)
 			? Path.ChangeExtension(fullInput, ".rtex")
 			: Path.GetFullPath(outputPath);
 
-		if (normType is "terrain" or "terrain_texture" or "terrain_textures" or "tilesheet" or "tilesheets")
+		if (normType is "terrain" or "terrain_texture" or "terrain_textures" or "tilesheet" or "tilesheets" or "terraintexture" or "terraintextures" or "textures" or "texture")
 		{
 			return ProcessAndSaveTerrainTexture(fullInput, targetRtex);
 		}
@@ -830,7 +834,7 @@ public static class TextureConverter
 			return ProcessAndSaveDecalTexture(fullInput, targetRtex);
 		}
 
-		if (normType is "spritesheet" or "vfx_spritesheet" or "vfx_spritesheets" or "spritesheets")
+		if (normType is "spritesheet" or "vfx_spritesheet" or "vfx_spritesheets" or "spritesheets" or "spellspritesheet" or "spellspritesheets" or "spell_spritesheet" or "spell_spritesheets" or "vfxspritesheet" or "vfxspritesheets" or "vfx")
 		{
 			return ProcessAndSaveSpritesheet(fullInput, targetRtex, columns, rows);
 		}
@@ -840,12 +844,12 @@ public static class TextureConverter
 			return ProcessAndSaveSkybox(fullInput, targetRtex);
 		}
 
-		if (normType is "ribbon" or "ribbon_texture" or "ribbon_textures" or "ribbons")
+		if (normType is "ribbon" or "ribbon_texture" or "ribbon_textures" or "ribbons" or "ribbontexture" or "ribbontextures")
 		{
 			return ProcessAndSaveRibbonTexture(fullInput, targetRtex);
 		}
 
-		if (normType is "noise" or "noise_texture" or "noise_textures")
+		if (normType is "noise" or "noise_texture" or "noise_textures" or "noisetexture" or "noisetextures")
 		{
 			return ProcessAndSaveSingleLayerTexture(fullInput, targetRtex, "noise_texture");
 		}
@@ -855,7 +859,7 @@ public static class TextureConverter
 			return ProcessAndSaveIconTexture(fullInput, targetRtex);
 		}
 
-		throw new InvalidOperationException($"Unsupported asset type '{normType}'. Supported types: terrain, decal, spritesheet, skybox, ribbon, noise, icon.");
+		throw new InvalidOperationException($"Unsupported asset type '{normType}'. Supported types: terrain, decal, spellspritesheet, skybox, ribbon, noise, icon.");
 	}
 
 	public static int ConvertTextureDirectory(
