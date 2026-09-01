@@ -22,9 +22,11 @@ public partial class MainMenu : Control
 	private Button _socialButton;
 	private Control _socialPopoverOverlay;
 	private Control _socialPopover;
+	private Button _websiteButton;
 	private Button _discordButton;
+	private Button _youtubeButton;
+	private Button _githubButton;
 	private Button _donateButton;
-	private Button _contributeButton;
 	private Button _bugReportButton;
 	private Button _seedNodeButton;
 	private Control _profilePopup;
@@ -64,9 +66,11 @@ public partial class MainMenu : Control
 		_socialButton = GetNodeOrNull<Button>("SocialButton");
 		_socialPopoverOverlay = GetNodeOrNull<Control>("SocialPopoverOverlay");
 		_socialPopover = GetNodeOrNull<Control>("SocialPopover");
+		_websiteButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/WebsiteButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/WebsiteButton");
 		_discordButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/DiscordButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/DiscordButton");
+		_youtubeButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/YoutubeButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/YoutubeButton");
+		_githubButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/GithubButton") ?? GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/ContributeButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/GithubButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/ContributeButton");
 		_donateButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/DonateButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/DonateButton");
-		_contributeButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/ContributeButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/ContributeButton");
 		_bugReportButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/BugReportButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/BugReportButton");
 		_seedNodeButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/SeedNodeButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/SeedNodeButton");
 
@@ -116,11 +120,13 @@ public partial class MainMenu : Control
 				popoverBg.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
 			}
 
-			if (_discordButton != null) SetupMenuButton(_discordButton, "DISCORD", () => { OS.ShellOpen("https://discord.com/servers/realm"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png");
-			if (_donateButton != null) SetupMenuButton(_donateButton, "DONATE", () => { OS.ShellOpen("https://github.com/sponsors/speige"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png");
-			if (_contributeButton != null) SetupMenuButton(_contributeButton, "CONTRIBUTE", () => { OS.ShellOpen("https://github.com/speige/realm"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png");
-			if (_bugReportButton != null) SetupMenuButton(_bugReportButton, "BUG REPORT", () => { OS.ShellOpen("https://github.com/speige/Realm/issues"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png");
-			if (_seedNodeButton != null) SetupMenuButton(_seedNodeButton, "HOST A SEED NODE (ADVANCED)", () => { OS.ShellOpen("https://github.com/speige/Realm/blob/main/Seed_Node_Setup.md"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png");
+			if (_websiteButton != null) SetupMenuButton(_websiteButton, "WEBSITE", () => { OS.ShellOpen("https://www.realm-game.com/"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/globe_icon.png");
+			if (_discordButton != null) SetupMenuButton(_discordButton, "DISCORD", () => { OS.ShellOpen("http://discord.realm-game.com"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/discord_icon.png");
+			if (_youtubeButton != null) SetupMenuButton(_youtubeButton, "YOUTUBE", () => { OS.ShellOpen("https://www.youtube.com/@Realm-Game"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/youtube_icon.png");
+			if (_githubButton != null) SetupMenuButton(_githubButton, "GITHUB", () => { OS.ShellOpen("https://github.com/speige/realm"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/github_icon.png");
+			if (_donateButton != null) SetupMenuButton(_donateButton, "DONATE", () => { OS.ShellOpen("https://github.com/sponsors/speige"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/donate_icon.png");
+			if (_bugReportButton != null) SetupMenuButton(_bugReportButton, "BUG REPORT", () => { OS.ShellOpen("https://github.com/speige/Realm/issues"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/bug_icon.png");
+			if (_seedNodeButton != null) SetupMenuButton(_seedNodeButton, "HOST A SEED NODE (ADVANCED)", () => { OS.ShellOpen("https://github.com/speige/Realm/blob/main/Seed_Node_Setup.md"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/seed_node_icon.png");
 
 			_socialPopoverOverlay.GuiInput += (@event) =>
 			{
@@ -212,12 +218,33 @@ public partial class MainMenu : Control
 		};
 	}
 
-	private void SetupMenuButton(Button button, string text, Action onClick, string texturePath = null, Vector2? minSize = null)
+	private void SetupMenuButton(Button button, string text, Action onClick, string texturePath = null, Vector2? minSize = null, string iconPath = null)
 	{
 		button.Flat = false;
-		button.Icon = null;
 		button.Text = TranslationServer.Translate(text);
 		button.CustomMinimumSize = minSize ?? (texturePath != null ? new Vector2(240, 59) : new Vector2(240, 40));
+
+		if (!string.IsNullOrEmpty(iconPath))
+		{
+			button.Icon = LoadTrimmedTexture(iconPath);
+			button.ExpandIcon = true;
+			button.IconAlignment = HorizontalAlignment.Left;
+			button.VerticalIconAlignment = VerticalAlignment.Center;
+			button.AddThemeConstantOverride("icon_max_width", 24);
+			button.AddThemeConstantOverride("h_separation", 10);
+		}
+		else if (button.Icon != null)
+		{
+			button.ExpandIcon = true;
+			button.IconAlignment = HorizontalAlignment.Left;
+			button.VerticalIconAlignment = VerticalAlignment.Center;
+			button.AddThemeConstantOverride("icon_max_width", 24);
+			button.AddThemeConstantOverride("h_separation", 10);
+		}
+		else
+		{
+			button.Icon = null;
+		}
 
 		button.AddThemeFontOverride("font", _norseBoldFont);
 		button.AddThemeFontSizeOverride("font_size", 20);
@@ -744,7 +771,10 @@ public partial class MainMenu : Control
 				{
 					img = img.GetRegion(usedRect);
 				}
-				img.GenerateMipmaps();
+				if (!img.HasMipmaps())
+				{
+					img.GenerateMipmaps();
+				}
 				return ImageTexture.CreateFromImage(img);
 			}
 		}

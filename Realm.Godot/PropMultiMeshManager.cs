@@ -374,7 +374,7 @@ public partial class PropMultiMeshManager : Node3D
 				{
 					var prop = chunkProps[i];
 					Vector3 pos = prop.Position;
-					pos.Y += yOffset;
+					pos.Y += yOffset * prop.Scale;
 
 					float propScale = Mathf.Max(0.01f, prop.Scale * globalModelScale);
 					Basis basis = Basis.Identity.Rotated(Vector3.Up, Mathf.DegToRad(prop.RotationY)).Scaled(Vector3.One * propScale);
@@ -468,7 +468,7 @@ public partial class PropMultiMeshManager : Node3D
 				{
 					var prop = chunkProps[i];
 					Vector3 pos = prop.Position;
-					pos.Y += yOffset;
+					pos.Y += yOffset * prop.Scale;
 
 					float propScale = Mathf.Max(0.01f, prop.Scale * globalModelScale);
 					Basis basis = Basis.Identity.Rotated(Vector3.Up, Mathf.DegToRad(prop.RotationY)).Scaled(Vector3.One * propScale);

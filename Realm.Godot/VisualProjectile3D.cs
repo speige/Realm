@@ -939,63 +939,50 @@ public partial class VisualProjectile3D : Node3D
 		string resolvedPath = ModelCache.ResolveModelPath(path);
 		if (!string.IsNullOrEmpty(resolvedPath) && System.IO.File.Exists(resolvedPath))
 		{
-			if (resolvedPath.EndsWith(".ktx2", StringComparison.OrdinalIgnoreCase))
+			if (resolvedPath.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase))
 			{
-				var img = LoadKtx2Layer0(resolvedPath);
-				if (img != null) return ImageTexture.CreateFromImage(img);
+				var img = LoadImageFromRtex(resolvedPath);
+				if (img != null)
+				{
+					img.GenerateMipmaps();
+					return ImageTexture.CreateFromImage(img);
+				}
 			}
 			else
 			{
 				var img = Image.LoadFromFile(resolvedPath);
-				if (img != null) return ImageTexture.CreateFromImage(img);
+				if (img != null)
+				{
+					img.GenerateMipmaps();
+					return ImageTexture.CreateFromImage(img);
+				}
 			}
 		}
 
 		return null;
 	}
 
-	private static Image LoadKtx2Layer0(string ktx2Path)
+	private static Image? LoadImageFromRtex(string rtexPath, int layer = 0)
 	{
-		string globalKtx2 = ProjectSettings.GlobalizePath(ktx2Path);
-		string cacheDir = ProjectSettings.GlobalizePath("user://ktx_layer_cache");
-		System.IO.Directory.CreateDirectory(cacheDir);
+		string globalPath = ProjectSettings.GlobalizePath(rtexPath);
+		if (!System.IO.File.Exists(globalPath)) return null;
 
-		string baseName = System.IO.Path.GetFileNameWithoutExtension(ktx2Path);
-		string tempOut = System.IO.Path.Combine(cacheDir, $"{baseName}_ribbon_l0.png");
-
-		if (System.IO.File.Exists(globalKtx2))
-		{
-			DateTime ktxTime = System.IO.File.GetLastWriteTimeUtc(globalKtx2);
-			if (System.IO.File.Exists(tempOut) && System.IO.File.GetLastWriteTimeUtc(tempOut) >= ktxTime)
-			{
-				return Image.LoadFromFile(tempOut);
-			}
-		}
-
-		string ktxCmd = EditableTerrain.GetKtxCmdPath();
 		try
 		{
-			var startInfo = new System.Diagnostics.ProcessStartInfo
+			byte[] bytes = System.IO.File.ReadAllBytes(globalPath);
+			byte[]? layerData = Realm.Shared.Textures.RtexFile.GetLayer(bytes, layer);
+			if (layerData == null || layerData.Length == 0) return null;
+
+			var img = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+			if (img.LoadWebpFromBuffer(layerData) != Error.Ok)
 			{
-				FileName = ktxCmd,
-				WorkingDirectory = System.IO.Path.GetDirectoryName(ktxCmd),
-				Arguments = $"extract --layer 0 --level 0 --transcode rgba8 \"{globalKtx2}\" \"{tempOut}\"",
-				UseShellExecute = false,
-				CreateNoWindow = true,
-				RedirectStandardOutput = true,
-				RedirectStandardError = true
-			};
-			using var process = System.Diagnostics.Process.Start(startInfo);
-			process?.WaitForExit();
-			if (process != null && process.ExitCode == 0 && System.IO.File.Exists(tempOut))
-			{
-				return Image.LoadFromFile(tempOut);
+				img.LoadPngFromBuffer(layerData);
 			}
+			return img;
 		}
 		catch
 		{
+			return null;
 		}
-
-		return null;
 	}
 }

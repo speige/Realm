@@ -269,8 +269,7 @@ public partial class Unit3D : Prop3D
 		}
 	}
 
-	private float _baseModelYOffset = 0f;
-	public float BaseModelYOffset => _baseModelYOffset;
+	public float BaseModelYOffset => 0f;
 	public string ModelPath { get; private set; }
 	public Node3D ModelNode => _modelNode;
 
@@ -278,7 +277,7 @@ public partial class Unit3D : Prop3D
 	{
 		if (_modelNode != null)
 		{
-			_modelNode.Position = new Vector3(_modelNode.Position.X, _baseModelYOffset + yOffset, _modelNode.Position.Z);
+			_modelNode.Position = new Vector3(_modelNode.Position.X, yOffset, _modelNode.Position.Z);
 		}
 	}
 
@@ -287,11 +286,9 @@ public partial class Unit3D : Prop3D
 		if (_modelNode != null && GodotObject.IsInstanceValid(_modelNode))
 		{
 			_modelNode.Scale = new Vector3(globalScale, globalScale, globalScale);
-			float minY = GetMinY(_modelNode, Transform3D.Identity);
-			_baseModelYOffset = -minY * _modelNode.Scale.Y;
 			string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(ModelPath ?? UnitId) : "";
 			float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
-			_modelNode.Position = new Vector3(0f, _baseModelYOffset + yOffset, 0f);
+			_modelNode.Position = new Vector3(0f, yOffset, 0f);
 			UpdateLodVisibility();
 		}
 	}
@@ -325,10 +322,8 @@ public partial class Unit3D : Prop3D
 
 				UpdateLodVisibility();
 
-				float minY = GetMinY(_modelNode, Transform3D.Identity);
-				_baseModelYOffset = -minY * _modelNode.Scale.Y;
 				float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
-				_modelNode.Position = new Vector3(0f, _baseModelYOffset + yOffset, 0f);
+				_modelNode.Position = new Vector3(0f, yOffset, 0f);
 
 				if (!IsPreview)
 				{

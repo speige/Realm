@@ -1,5 +1,6 @@
 using Arch.Core;
 using Realm.Ecs.Components.Terrain;
+using Realm.Shared.Textures;
 using DotRecast.Detour;
 using Godot;
 using System;
@@ -16,170 +17,16 @@ public partial class EditableTerrain : RuntimeTerrain
 
 	protected override bool IsRuntimeOnly => false;
 
-	public override void ProcessAndSaveRawTexture(string rawPngPath, string outputKtx2Path)
+	public override void ProcessAndSaveRawTexture(string rawPngPath, string outputRtexPath)
 	{
-		var img = Godot.Image.LoadFromFile(rawPngPath);
-		if (img == null) return;
-		img = AutoCropToPowerOfTwoSquare(img);
-		
-		int w = img.GetWidth();
-		int h = img.GetHeight();
-		if (img.GetFormat() != Godot.Image.Format.Rgba8)
+		string globalInput = Godot.ProjectSettings.GlobalizePath(rawPngPath);
+		string globalOutput = Godot.ProjectSettings.GlobalizePath(outputRtexPath);
+
+		var result = TextureConverter.ProcessAndSaveTerrainTexture(globalInput, globalOutput);
+		if (!result.Success)
 		{
-			img.Convert(Godot.Image.Format.Rgba8);
-		}
-
-		img = NormalizeAlbedoLuminance(img);
-		
-		var layer0 = Godot.Image.CreateEmpty(w, h, false, Godot.Image.Format.Rgba8);
-		var layer1 = Godot.Image.CreateEmpty(w, h, false, Godot.Image.Format.Rgba8);
-
-		float[,] luminance = new float[w, h];
-		for (int y = 0; y < h; y++)
-		{
-			for (int x = 0; x < w; x++)
-			{
-				var color = img.GetPixel(x, y);
-				luminance[x, y] = 0.299f * color.R + 0.587f * color.G + 0.114f * color.B;
-			}
-		}
-
-		float[,] fineMean = ComputeSeparableBoxBlur(luminance, w, h, 3);
-		float[,] coarseMean = ComputeSeparableBoxBlur(luminance, w, h, 14);
-
-		float[,] rawHeight = new float[w, h];
-		int totalPixels = w * h;
-		float[] flatHeights = new float[totalPixels];
-		int flatIdx = 0;
-
-		for (int y = 0; y < h; y++)
-		{
-			int py = y > 0 ? y - 1 : h - 1;
-			int ny = y < h - 1 ? y + 1 : 0;
-
-			for (int x = 0; x < w; x++)
-			{
-				int px = x > 0 ? x - 1 : w - 1;
-				int nx = x < w - 1 ? x + 1 : 0;
-
-				float lum = luminance[x, y];
-				float highFreq = lum - fineMean[x, y];
-				float midFreq = fineMean[x, y] - coarseMean[x, y];
-
-				float dx = (luminance[nx, y] - luminance[px, y]) * 0.5f;
-				float dy = (luminance[x, ny] - luminance[x, py]) * 0.5f;
-				float gradMag = MathF.Sqrt(dx * dx + dy * dy);
-				float laplacian = luminance[nx, y] + luminance[px, y] + luminance[x, ny] + luminance[x, py] - 4.0f * lum;
-
-				float structuralValue = 0.5f + (highFreq * 2.2f) + (midFreq * 1.4f) + (laplacian * 0.5f) - (gradMag * 0.25f);
-				rawHeight[x, y] = structuralValue;
-				flatHeights[flatIdx++] = structuralValue;
-			}
-		}
-
-		Array.Sort(flatHeights);
-		int p1Index = Math.Clamp((int)(totalPixels * 0.01f), 0, totalPixels - 1);
-		int p99Index = Math.Clamp((int)(totalPixels * 0.99f), 0, totalPixels - 1);
-		float lowPercentile = flatHeights[p1Index];
-		float highPercentile = flatHeights[p99Index];
-
-		float normRange = highPercentile - lowPercentile;
-		float invNormRange = normRange > 1e-5f ? 1.0f / normRange : 0.0f;
-		float[,] normalizedHeight = new float[w, h];
-
-		for (int y = 0; y < h; y++)
-		{
-			for (int x = 0; x < w; x++)
-			{
-				float normH = (rawHeight[x, y] - lowPercentile) * invNormRange;
-				normalizedHeight[x, y] = Godot.Mathf.Clamp(normH, 0.0f, 1.0f);
-			}
-		}
-
-		for (int y = 0; y < h; y++)
-		{
-			int py = y > 0 ? y - 1 : h - 1;
-			int ny = y < h - 1 ? y + 1 : 0;
-
-			for (int x = 0; x < w; x++)
-			{
-				int px = x > 0 ? x - 1 : w - 1;
-				int nx = x < w - 1 ? x + 1 : 0;
-
-				var albedoCol = img.GetPixel(x, y);
-				float height = normalizedHeight[x, y];
-				layer0.SetPixel(x, y, new Godot.Color(albedoCol.R, albedoCol.G, albedoCol.B, height));
-
-				float dX = (normalizedHeight[nx, y] - normalizedHeight[px, y]) * 2.5f;
-				float dY = (normalizedHeight[x, ny] - normalizedHeight[x, py]) * 2.5f;
-
-				Vector3 norm = new Vector3(-dX, -dY, 1.0f).Normalized();
-				float r = norm.X * 0.5f + 0.5f;
-				float g = norm.Y * 0.5f + 0.5f;
-				float b = norm.Z * 0.5f + 0.5f;
-
-				float contrastHeight = (height - 0.5f) * 1.4f + 0.5f;
-				contrastHeight = Godot.Mathf.Clamp(contrastHeight, 0.0f, 1.0f);
-				float highDetail = Math.Abs(luminance[x, y] - fineMean[x, y]);
-				float roughness = Godot.Mathf.Clamp(Godot.Mathf.Lerp(0.85f, 0.45f, contrastHeight) + highDetail * 0.8f, 0.15f, 0.95f);
-
-				layer1.SetPixel(x, y, new Godot.Color(r, g, b, roughness));
-			}
-		}
-		
-		string tempL0 = $"user://temp_l0_{System.Guid.NewGuid()}.png";
-		string tempL1 = $"user://temp_l1_{System.Guid.NewGuid()}.png";
-		
-		layer0.SavePng(tempL0);
-		layer1.SavePng(tempL1);
-		
-		string globalTempL0 = Godot.ProjectSettings.GlobalizePath(tempL0);
-		string globalTempL1 = Godot.ProjectSettings.GlobalizePath(tempL1);
-		string globalOutput = Godot.ProjectSettings.GlobalizePath(outputKtx2Path);
-		
-		string dir = System.IO.Path.GetDirectoryName(globalOutput);
-		if (!System.IO.Directory.Exists(dir))
-		{
-			System.IO.Directory.CreateDirectory(dir);
-		}
-		
-		string ktxCmd = GetKtxCmdPath();
-		
-		try
-		{
-			string ktxDir = System.IO.Path.GetDirectoryName(ktxCmd);
-			var startInfo = new System.Diagnostics.ProcessStartInfo
-			{
-				FileName = ktxCmd,
-				WorkingDirectory = ktxDir,
-				Arguments = $"create --format R8G8B8A8_UNORM --layers 2 --encode basis-lz --generate-mipmap \"{globalTempL0}\" \"{globalTempL1}\" \"{globalOutput}\"",
-				UseShellExecute = false,
-				CreateNoWindow = true,
-				RedirectStandardOutput = true,
-				RedirectStandardError = true
-			};
-			
-			using (var process = System.Diagnostics.Process.Start(startInfo))
-			{
-				string stdout = process.StandardOutput.ReadToEnd();
-				string stderr = process.StandardError.ReadToEnd();
-				process.WaitForExit();
-				if (process.ExitCode != 0)
-				{
-					throw new System.Exception($"ktx create failed with exit code {process.ExitCode}. Stderr: {stderr}. Stdout: {stdout}");
-				}
-			}
-		}
-		catch (System.Exception ex)
-		{
-			System.Console.Error.WriteLine($"Failed to execute ktx create: {ex.Message}");
-			Godot.GD.PrintErr($"Failed to execute ktx create: {ex.Message}");
-			throw;
-		}
-		finally
-		{
-			if (System.IO.File.Exists(globalTempL0)) System.IO.File.Delete(globalTempL0);
-			if (System.IO.File.Exists(globalTempL1)) System.IO.File.Delete(globalTempL1);
+			Godot.GD.PrintErr($"Failed to process terrain texture '{rawPngPath}': {result.ErrorMessage}");
+			throw new InvalidOperationException($"Failed to process terrain texture: {result.ErrorMessage}");
 		}
 	}
 

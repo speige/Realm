@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json.Nodes;
+using Realm.Shared.Metadata;
 using GAnimation = global::Godot.Animation;
 
 namespace Realm.Godot.Animation;
@@ -103,7 +104,7 @@ public static class MixamoAnimationImporter
 		}
 
 		byte[] newBytes = RealmAnimationSerializer.Serialize(animData);
-		string newHash = MapAssetManager.ComputeBlake3(newBytes);
+		string newHash = RealmMetadataHelper.ComputeBlake3(newBytes, ".ranim");
 
 		string cleanBase = baseAnimName.ToLowerInvariant().Replace(' ', '_');
 		if (cleanBase.EndsWith(".ranim"))
@@ -121,7 +122,7 @@ public static class MixamoAnimationImporter
 		}
 
 		byte[] existingBytes = File.ReadAllBytes(targetPath);
-		string existingHash = MapAssetManager.ComputeBlake3(existingBytes);
+		string existingHash = RealmMetadataHelper.ComputeBlake3(existingBytes, ".ranim");
 		if (existingHash.Equals(newHash, StringComparison.OrdinalIgnoreCase))
 		{
 			return (targetFileName, newHash, true);
@@ -138,7 +139,7 @@ public static class MixamoAnimationImporter
 			}
 
 			byte[] varBytes = File.ReadAllBytes(varPath);
-			string varHash = MapAssetManager.ComputeBlake3(varBytes);
+			string varHash = RealmMetadataHelper.ComputeBlake3(varBytes, ".ranim");
 			if (varHash.Equals(newHash, StringComparison.OrdinalIgnoreCase))
 			{
 				return (varFileName, newHash, true);

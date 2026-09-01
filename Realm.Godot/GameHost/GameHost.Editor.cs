@@ -1472,6 +1472,7 @@ public partial class GameHost
 				}
 			}
 
+			MapWorkspaceService.NormalizeTextureEntries(root);
 			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 		}
 		catch (Exception ex)
@@ -1875,6 +1876,8 @@ public partial class GameHost
 			candidatePaths.Add(System.IO.Path.Combine(wsPath, decalId));
 			if (!filename.Contains('.'))
 			{
+				candidatePaths.Add(System.IO.Path.Combine(wsPath, "Assets", "decals", filename + ".rtex"));
+				candidatePaths.Add(System.IO.Path.Combine(wsPath, "Assets", "decals", filename + ".webp"));
 				candidatePaths.Add(System.IO.Path.Combine(wsPath, "Assets", "decals", filename + ".png"));
 			}
 			candidatePaths.Add(decalId);
@@ -1886,9 +1889,31 @@ public partial class GameHost
 			{
 				try
 				{
-					var img = Image.LoadFromFile(path);
+					Image? img = null;
+					if (path.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase))
+					{
+						byte[] rtexBytes = System.IO.File.ReadAllBytes(path);
+						byte[]? webpBytes = Realm.Shared.Textures.RtexFile.GetLayer(rtexBytes, 0);
+						if (webpBytes != null && webpBytes.Length > 0)
+						{
+							img = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+							if (img.LoadWebpFromBuffer(webpBytes) != Error.Ok)
+							{
+								img.LoadPngFromBuffer(webpBytes);
+							}
+						}
+					}
+					else
+					{
+						img = Image.LoadFromFile(path);
+					}
+
 					if (img != null)
 					{
+						if (!img.HasMipmaps())
+						{
+							img.GenerateMipmaps();
+						}
 						return ImageTexture.CreateFromImage(img);
 					}
 				}

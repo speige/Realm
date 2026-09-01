@@ -98,6 +98,7 @@ public partial class GameHost
 			if (ensureGlbOptimized)
 			{
 				MapWorkspaceService.EnsureGlbAssetsOptimized(CurrentMapDirectory);
+				MapWorkspaceService.EnsurePngAssetsConverted(CurrentMapDirectory);
 			}
 
 			if (clearUnits)

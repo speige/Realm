@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Nodes;
+using Realm.Shared.ModelOptimization;
 
 namespace Realm.Shared;
 
@@ -68,6 +69,11 @@ public class GlbOptimizer
 			OutputGlbBytes = glbBytes
 		};
 
+		if (options.MaxTextureResolution <= 0)
+		{
+			options = new OptimizationOptions();
+		}
+
 		if (glbBytes == null || glbBytes.Length == 0)
 		{
 			result.ErrorMessage = "Empty or null GLB buffer.";
@@ -84,16 +90,24 @@ public class GlbOptimizer
 
 		byte[] sanitized = GlbManifestUtils.SanitizeMaterials(glbBytes);
 
+		var (lodSuccess, lodGlbBytes, lodError) = GlbLodGenerator.GenerateLods(sanitized);
+		byte[] meshWithLods = lodSuccess && lodGlbBytes.Length > 0 ? lodGlbBytes : sanitized;
+
 		var (toolSuccess, toolBytes, toolError) = NativeToolRunner.RunGltfPack(
-			sanitized,
-			options.SimplificationRatio,
+			meshWithLods,
+			1.0f,
 			options.MaxTextureResolution,
 			options.CompressTextures
 		);
 
 		byte[] workingBytes = (toolSuccess && toolBytes != null && toolBytes.Length > 0)
 			? toolBytes
-			: sanitized;
+			: meshWithLods;
+
+		if (options.CompressTextures)
+		{
+			workingBytes = GlbManifestUtils.EncodeGlbTexturesWebp(workingBytes, options.MaxTextureResolution);
+		}
 
 		byte[] finalBytes = GlbManifestUtils.InjectOptimizationMetadata(
 			workingBytes,

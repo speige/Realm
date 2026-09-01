@@ -1,5 +1,6 @@
 using Blake3;
 using Godot;
+using Realm.Shared.Metadata;
 using SharpCompress.Archives;
 using SharpCompress.Common;
 using SharpCompress.Writers.SevenZip;
@@ -79,22 +80,14 @@ public static class MapAssetManager
 
     public static string GlobalArchiveFile => Path.Combine(GlobalArchiveDirectory, "global_assets.7z");
 
-    public static string ComputeBlake3(byte[] bytes)
+    public static string ComputeBlake3(byte[] bytes, string? extensionOrPath = null)
     {
-        var hash = Hasher.Hash(bytes);
-        return hash.ToString();
+        return RealmMetadataHelper.ComputeBlake3(bytes, extensionOrPath);
     }
 
-    public static string ComputeBlake3(Stream stream)
+    public static string ComputeBlake3(Stream stream, string? extensionOrPath = null)
     {
-        using var hasher = Hasher.New();
-        byte[] buffer = new byte[8192];
-        int read;
-        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
-        {
-            hasher.Update(new ReadOnlySpan<byte>(buffer, 0, read));
-        }
-        return hasher.Finalize().ToString();
+        return RealmMetadataHelper.ComputeBlake3(stream, extensionOrPath);
     }
 
     public static List<string> GetMissingHashes(IEnumerable<string> hashes)
@@ -212,27 +205,13 @@ public static class MapAssetManager
                                 {
                                     if (entry.IsDirectory) continue;
                                     
-                                    if (newFilesByHash.ContainsKey(entry.Key))
+                                    if (!writtenKeys.Contains(entry.Key))
                                     {
-                                        if (!writtenKeys.Contains(entry.Key))
+                                        using (var oldStream = entry.OpenEntryStream())
                                         {
-                                            using (var ms = new MemoryStream(newFilesByHash[entry.Key]))
-                                            {
-                                                writer.Write(entry.Key, ms, DateTime.UtcNow);
-                                            }
-                                            writtenKeys.Add(entry.Key);
+                                            writer.Write(entry.Key, oldStream, entry.LastModifiedTime ?? DateTime.UtcNow);
                                         }
-                                    }
-                                    else
-                                    {
-                                        if (!writtenKeys.Contains(entry.Key))
-                                        {
-                                            using (var oldStream = entry.OpenEntryStream())
-                                            {
-                                                writer.Write(entry.Key, oldStream, entry.LastModifiedTime ?? DateTime.UtcNow);
-                                            }
-                                            writtenKeys.Add(entry.Key);
-                                        }
+                                        writtenKeys.Add(entry.Key);
                                     }
                                 }
                             }
@@ -470,26 +449,30 @@ public static class MapAssetManager
                 }
 
                 byte[] bytes = File.ReadAllBytes(file);
-                string hash = ComputeBlake3(bytes);
-                newFiles[hash] = bytes;
+                string ext = Path.GetExtension(file).ToLowerInvariant();
+                string blake3 = RealmMetadataHelper.ComputeBlake3(bytes, ext);
+                string assetKey = string.IsNullOrEmpty(ext) ? blake3 : $"{blake3}{ext}";
+                newFiles[assetKey] = bytes;
 
                 string virtualPath = "res://" + relativePath;
-                manifest.Files[virtualPath] = hash;
+                manifest.Files[virtualPath] = assetKey;
             }
         }
         else if (File.Exists(mapPath))
         {
             byte[] bytes = File.ReadAllBytes(mapPath);
-            string hash = ComputeBlake3(bytes);
-            newFiles[hash] = bytes;
-            manifest.Files["res://map.json"] = hash;
+            string blake3 = RealmMetadataHelper.ComputeBlake3(bytes, ".json");
+            string assetKey = $"{blake3}.json";
+            newFiles[assetKey] = bytes;
+            manifest.Files["res://map.json"] = assetKey;
         }
         else
         {
             byte[] bytes = Encoding.UTF8.GetBytes("{\"units\": []}");
-            string hash = ComputeBlake3(bytes);
-            newFiles[hash] = bytes;
-            manifest.Files["res://map.json"] = hash;
+            string blake3 = RealmMetadataHelper.ComputeBlake3(bytes, ".json");
+            string assetKey = $"{blake3}.json";
+            newFiles[assetKey] = bytes;
+            manifest.Files["res://map.json"] = assetKey;
         }
 
         AddOrUpdateGlobalArchive(newFiles);

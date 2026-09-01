@@ -1,6 +1,7 @@
 using Godot;
 using Realm.Godot.Animation;
 using Realm.Shared;
+using Realm.Shared.Textures;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -134,9 +135,9 @@ public static class AssetThumbnailProvider
 	{
 		string ext = asset.Extension.ToLowerInvariant();
 
-		if (ext == ".ktx2")
+		if (ext == ".rtex")
 		{
-			return LoadKtx2AlbedoThumbnail(asset.FilePath, asset.LastModifiedUtc);
+			return LoadRtexAlbedoThumbnail(asset.FilePath, asset.LastModifiedUtc);
 		}
 
 		if (ext == ".glb" || ext == ".gltf")
@@ -173,72 +174,63 @@ public static class AssetThumbnailProvider
 		return GetPlaceholderTexture("GLB");
 	}
 
-	private static Texture2D? LoadKtx2AlbedoThumbnail(string ktx2Path, DateTime lastModifiedUtc)
+	private static Texture2D? LoadRtexAlbedoThumbnail(string rtexPath, DateTime lastModifiedUtc)
 	{
-		if (!File.Exists(ktx2Path))
+		if (!File.Exists(rtexPath))
 		{
 			return null;
 		}
 
-		string cacheDirectory = ProjectSettings.GlobalizePath("user://ktx_layer_cache");
-		if (!Directory.Exists(cacheDirectory))
+		try
 		{
-			Directory.CreateDirectory(cacheDirectory);
-		}
-
-		string baseName = Path.GetFileNameWithoutExtension(ktx2Path);
-		string cachedPngPath = Path.Combine(cacheDirectory, $"{baseName}_thumb_l0_{lastModifiedUtc.Ticks}.png");
-
-		bool needsExtraction = true;
-		if (File.Exists(cachedPngPath))
-		{
-			needsExtraction = false;
-		}
-
-		if (needsExtraction)
-		{
-			string? ktxCommandPath = NativeToolRunner.FindKtxPath();
-			if (!string.IsNullOrEmpty(ktxCommandPath))
+			byte[] bytes = File.ReadAllBytes(rtexPath);
+			byte[]? layer0Bytes = null;
+			if (Realm.Shared.Textures.RtexFile.IsRtexBytes(bytes))
 			{
-				try
-				{
-					string tempExtractionPng = Path.Combine(cacheDirectory, $"{baseName}_raw_{Guid.NewGuid():N}.png");
-					var runResult = NativeToolRunner.RunTool(ktxCommandPath, $"extract --layer 0 --level 0 --transcode rgba8 \"{ktx2Path}\" \"{tempExtractionPng}\"", 10000);
-					if (runResult.ExitCode == 0 && File.Exists(tempExtractionPng))
-					{
-						var img = Image.LoadFromFile(tempExtractionPng);
-						if (img != null)
-						{
-							if (img.GetWidth() > 128 || img.GetHeight() > 128)
-							{
-								img.Resize(128, 128, Image.Interpolation.Bilinear);
-							}
-							img.SavePng(cachedPngPath);
-						}
-						try { File.Delete(tempExtractionPng); } catch { }
-					}
-				}
-				catch (Exception ex)
-				{
-					GD.PrintErr($"[AssetThumbnailProvider] KTX extraction error on {ktx2Path}: {ex.Message}");
-				}
+				layer0Bytes = Realm.Shared.Textures.RtexFile.GetLayer(bytes, 0);
 			}
-		}
-
-		if (File.Exists(cachedPngPath))
-		{
-			try
+			else
 			{
-				var image = Image.LoadFromFile(cachedPngPath);
-				if (image != null)
-				{
-					return ImageTexture.CreateFromImage(image);
-				}
+				layer0Bytes = bytes;
 			}
-			catch { }
-		}
 
-		return null;
+			if (layer0Bytes == null || layer0Bytes.Length == 0) return null;
+
+			var img = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+			Error err = img.LoadWebpFromBuffer(layer0Bytes);
+			if (err != Error.Ok)
+			{
+				err = img.LoadPngFromBuffer(layer0Bytes);
+			}
+			if (err != Error.Ok)
+			{
+				err = img.LoadJpgFromBuffer(layer0Bytes);
+			}
+			if (err != Error.Ok)
+			{
+				err = img.LoadTgaFromBuffer(layer0Bytes);
+			}
+			if (err != Error.Ok)
+			{
+				err = img.LoadBmpFromBuffer(layer0Bytes);
+			}
+			if (err != Error.Ok)
+			{
+				return null;
+			}
+
+			if (img.GetWidth() > 128 || img.GetHeight() > 128)
+			{
+				img.Resize(128, 128, Image.Interpolation.Bilinear);
+			}
+
+			return ImageTexture.CreateFromImage(img);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[AssetThumbnailProvider] RTEX thumbnail error on {rtexPath}: {ex.Message}");
+			return null;
+		}
 	}
 
 	private static Texture2D? LoadRasterImageThumbnail(string imagePath)
@@ -408,7 +400,7 @@ public static class AssetThumbnailProvider
 				"GLB" or "GLTF" or "FBX" => new Color(0.18f, 0.28f, 0.42f, 1.0f),
 				"RANIM" or "ANIM" => new Color(0.38f, 0.22f, 0.45f, 1.0f),
 				"OGG" or "WAV" or "MP3" => new Color(0.20f, 0.42f, 0.30f, 1.0f),
-				"KTX2" or "PNG" or "JPG" or "JPEG" => new Color(0.35f, 0.32f, 0.18f, 1.0f),
+				"RTEX" or "KTX2" or "PNG" or "JPG" or "JPEG" or "WEBP" => new Color(0.35f, 0.32f, 0.18f, 1.0f),
 				"JSON" or "TXT" => new Color(0.28f, 0.28f, 0.30f, 1.0f),
 				_ => new Color(0.20f, 0.22f, 0.26f, 1.0f)
 			};

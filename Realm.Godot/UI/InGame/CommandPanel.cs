@@ -1,9 +1,10 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Arch.Core;
 
-public class CommandPanel
+public partial class CommandPanel
 {
 	private GridContainer _commandGrid;
 	private List<Button> _dynamicBuildButtons = new();
@@ -45,6 +46,9 @@ public class CommandPanel
 		}
 		return s_whiteTexture;
 	}
+
+	[GeneratedRegex(@"^\[.*?\] ")]
+	private static partial Regex HotkeyPrefixRegex();
 
 	public class CommandCardItem
 	{
@@ -332,7 +336,7 @@ public class CommandPanel
 			if (localIdx >= 0 && localIdx < 12)
 			{
 				_activeItems[i].Hotkey = gridHotkeys[localIdx];
-				_activeItems[i].Tooltip = System.Text.RegularExpressions.Regex.Replace(_activeItems[i].Tooltip, @"^\[.*?\] ", "[" + gridHotkeys[localIdx].ToString() + "] ");
+				_activeItems[i].Tooltip = HotkeyPrefixRegex().Replace(_activeItems[i].Tooltip, "[" + gridHotkeys[localIdx].ToString() + "] ");
 			}
 			else
 			{

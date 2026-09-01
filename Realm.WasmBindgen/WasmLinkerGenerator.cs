@@ -2,13 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 
 namespace Realm.WasmBindgen;
 
 [Generator]
-public class WasmLinkerGenerator : IIncrementalGenerator
+public partial class WasmLinkerGenerator : IIncrementalGenerator
 {
     private enum PrmKind
     {
@@ -76,7 +77,7 @@ public class WasmLinkerGenerator : IIncrementalGenerator
         string manualFunctions = "";
         if (!string.IsNullOrEmpty(staticWit))
         {
-            var match = System.Text.RegularExpressions.Regex.Match(staticWit, @"interface\s+game-api\s*\{(.*?)\}", System.Text.RegularExpressions.RegexOptions.Singleline);
+            var match = GameApiInterfaceRegex().Match(staticWit);
             if (match.Success)
             {
                 manualFunctions = match.Groups[1].Value.Trim();
@@ -2058,4 +2059,7 @@ public class WasmLinkerGenerator : IIncrementalGenerator
         }
         return set;
     }
+
+    [GeneratedRegex(@"interface\s+game-api\s*\{(.*?)\}", RegexOptions.Singleline)]
+    private static partial Regex GameApiInterfaceRegex();
 }
