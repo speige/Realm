@@ -135,9 +135,14 @@ public partial class AssetGridCell : PanelContainer
 
 	private void OnThumbnailGenerated(string filePath, Texture2D texture)
 	{
-		if (_currentAsset != null && string.Equals(_currentAsset.FilePath, filePath, StringComparison.OrdinalIgnoreCase))
+		if (_currentAsset != null)
 		{
-			_thumbnailRect.Texture = texture;
+			string currentNorm = AssetThumbnailProvider.NormalizePath(_currentAsset.FilePath);
+			string eventNorm = AssetThumbnailProvider.NormalizePath(filePath);
+			if (string.Equals(currentNorm, eventNorm, StringComparison.OrdinalIgnoreCase))
+			{
+				_thumbnailRect.Texture = texture;
+			}
 		}
 	}
 

@@ -23,6 +23,12 @@ public static class AssetThumbnailProvider
 	private static readonly List<string> _lruOrder = new();
 	private const int MaxCacheEntries = 400;
 
+	public static string NormalizePath(string path)
+	{
+		if (string.IsNullOrEmpty(path)) return string.Empty;
+		return Path.GetFullPath(path).Replace('\\', '/').TrimEnd('/');
+	}
+
 	static AssetThumbnailProvider()
 	{
 		GlbThumbnailRenderer.Instance.ThumbnailGenerated += OnGlbThumbnailGenerated;
@@ -30,12 +36,13 @@ public static class AssetThumbnailProvider
 
 	private static void OnGlbThumbnailGenerated(string filePath, Texture2D texture)
 	{
+		string normPath = NormalizePath(filePath);
 		lock (_thumbnailCache)
 		{
-			_thumbnailCache[filePath] = texture;
-			TouchLru(filePath);
+			_thumbnailCache[normPath] = texture;
+			TouchLru(normPath);
 		}
-		ThumbnailGenerated?.Invoke(filePath, texture);
+		ThumbnailGenerated?.Invoke(normPath, texture);
 	}
 
 	public static Texture2D? GetThumbnail(IndexedAsset asset)
@@ -45,6 +52,7 @@ public static class AssetThumbnailProvider
 			return GetPlaceholderTexture("?");
 		}
 
+		string normPath = NormalizePath(asset.FilePath);
 		string ext = asset.Extension.ToLowerInvariant();
 		if (ext == ".ranim")
 		{
@@ -58,42 +66,43 @@ public static class AssetThumbnailProvider
 
 		lock (_thumbnailCache)
 		{
-			if (_thumbnailCache.TryGetValue(asset.FilePath, out var cachedTexture) && cachedTexture != null)
+			if (_thumbnailCache.TryGetValue(normPath, out var cachedTexture) && cachedTexture != null)
 			{
-				TouchLru(asset.FilePath);
+				TouchLru(normPath);
 				return cachedTexture;
 			}
 		}
 
 		Texture2D? generatedTexture = GenerateThumbnailDirect(asset);
-		if (generatedTexture == null)
+		if (generatedTexture != null)
 		{
-			generatedTexture = GetPlaceholderTexture(asset.Extension.TrimStart('.').ToUpperInvariant());
-		}
-
-		lock (_thumbnailCache)
-		{
-			if (_thumbnailCache.Count >= MaxCacheEntries && _lruOrder.Count > 0)
+			lock (_thumbnailCache)
 			{
-				string oldestKey = _lruOrder[0];
-				_lruOrder.RemoveAt(0);
-				_thumbnailCache.Remove(oldestKey);
+				if (_thumbnailCache.Count >= MaxCacheEntries && _lruOrder.Count > 0)
+				{
+					string oldestKey = _lruOrder[0];
+					_lruOrder.RemoveAt(0);
+					_thumbnailCache.Remove(oldestKey);
+				}
+
+				_thumbnailCache[normPath] = generatedTexture;
+				TouchLru(normPath);
 			}
 
-			_thumbnailCache[asset.FilePath] = generatedTexture;
-			TouchLru(asset.FilePath);
+			return generatedTexture;
 		}
 
-		return generatedTexture;
+		return GetPlaceholderTexture(asset.Extension.TrimStart('.').ToUpperInvariant());
 	}
 
 	public static AnimatedThumbnail? GetAnimatedThumbnail(IndexedAsset asset)
 	{
 		if (asset == null || string.IsNullOrEmpty(asset.FilePath)) return null;
 
+		string normPath = NormalizePath(asset.FilePath);
 		lock (_animatedThumbnailCache)
 		{
-			if (_animatedThumbnailCache.TryGetValue(asset.FilePath, out var cachedAnim) && cachedAnim != null)
+			if (_animatedThumbnailCache.TryGetValue(normPath, out var cachedAnim) && cachedAnim != null)
 			{
 				return cachedAnim;
 			}
@@ -112,7 +121,7 @@ public static class AssetThumbnailProvider
 					{
 						_animatedThumbnailCache.Clear();
 					}
-					_animatedThumbnailCache[asset.FilePath] = animThumb;
+					_animatedThumbnailCache[normPath] = animThumb;
 				}
 				return animThumb;
 			}
@@ -165,13 +174,14 @@ public static class AssetThumbnailProvider
 
 	private static Texture2D? LoadGlbThumbnail(string glbPath, DateTime lastModifiedUtc)
 	{
-		if (GlbThumbnailRenderer.Instance.TryGetDiskCached(glbPath, lastModifiedUtc, out var cachedTexture))
+		string normPath = NormalizePath(glbPath);
+		if (GlbThumbnailRenderer.Instance.TryGetDiskCached(normPath, lastModifiedUtc, out var cachedTexture))
 		{
 			return cachedTexture;
 		}
 
-		GlbThumbnailRenderer.Instance.EnqueueRequest(glbPath, lastModifiedUtc);
-		return GetPlaceholderTexture("GLB");
+		GlbThumbnailRenderer.Instance.EnqueueRequest(normPath, lastModifiedUtc);
+		return null;
 	}
 
 	private static Texture2D? LoadRtexAlbedoThumbnail(string rtexPath, DateTime lastModifiedUtc)

@@ -463,22 +463,20 @@
                 for (const [key, val] of Object.entries(units)) {
                     if (!knownTopKeys.includes(key) && val && typeof val === 'object' && !Array.isArray(val) && (val.UnitId || val.MaxHp !== undefined || val.CostGold !== undefined || val.AttackType !== undefined || val.PathingCapabilities || val.MovementType)) {
                         if (!val.UnitId) val.UnitId = key;
-                        const armorType = (val.ArmorType || '').toLowerCase();
-                        if (armorType === 'building') units.CustomBuildings.push(val);
-                        else units.CustomUnits.push(val);
+                        units.CustomUnits.push(val);
                         delete units[key];
                         migrated = true;
                     }
                 }
 
-                for (const u of getAllEntities()) {
+                const applyEntityMigration = (u, defaultPathing) => {
                     if (u.PathingType === undefined || u.PathingType === null) {
                         if (u.MovementType === 'air' || u.MovementType === 'flying') {
                             u.PathingType = 4;
                         } else if (u.MovementType === 'amphibious') {
                             u.PathingType = 9;
                         } else {
-                            u.PathingType = (u.ArmorType === 'building') ? 32 : 8;
+                            u.PathingType = defaultPathing;
                         }
                     }
                     if (u.NormalMode === undefined || u.NormalMode === null) {
@@ -488,7 +486,9 @@
                     delete u.MovementType;
                     delete u.PathingCapabilities;
                     delete u.DefaultAssetType;
-                }
+                };
+                for (const u of (units.CustomBuildings || [])) applyEntityMigration(u, 32);
+                for (const u of [...(units.CustomUnits || []), ...(units.CustomResources || []), ...(units.CustomProps || [])]) applyEntityMigration(u, 8);
 
                 if (migrated) {
                     saveChanges();

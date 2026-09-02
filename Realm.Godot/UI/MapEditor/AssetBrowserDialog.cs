@@ -100,9 +100,14 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 
 	private void OnThumbnailGenerated(string filePath, Texture2D texture)
 	{
-		if (_selectedAsset != null && string.Equals(_selectedAsset.FilePath, filePath, StringComparison.OrdinalIgnoreCase))
+		if (_selectedAsset != null)
 		{
-			_bottomThumbnail.Texture = texture;
+			string selectedNorm = AssetThumbnailProvider.NormalizePath(_selectedAsset.FilePath);
+			string eventNorm = AssetThumbnailProvider.NormalizePath(filePath);
+			if (string.Equals(selectedNorm, eventNorm, StringComparison.OrdinalIgnoreCase))
+			{
+				_bottomThumbnail.Texture = texture;
+			}
 		}
 	}
 
@@ -740,7 +745,7 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			"",
 			false,
 			DisplayServer.FileDialogMode.OpenFile,
-			new[] { "*.png,*.jpg,*.jpeg,*.bmp,*.gif,*.webp,*.dds,*.tiff,*.tif,*.svg,*.rtex,*.exr,*.hdr ; Image Files (*.*)" },
+			new[] { "*.png,*.jpg,*.jpeg,*.bmp,*.gif,*.webp,*.dds,*.tiff,*.tif,*.svg,*.ktx2,*.rtex,*.exr,*.hdr ; Image Files (*.*)" },
 			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) =>
 			{
 				if (status && selectedPaths.Length > 0)

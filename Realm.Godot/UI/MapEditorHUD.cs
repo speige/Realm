@@ -1453,6 +1453,7 @@ public partial class MapEditorHUD : Control
 				if (_contentInspector != null) _contentInspector.Visible = true;
 			}
 			string nameStr = selected.Name;
+			string idStr = null;
 			Vector3 pos = Vector3.Zero;
 			Vector3 rot = Vector3.Zero;
 			Vector3 scale = Vector3.One;
@@ -1466,7 +1467,15 @@ public partial class MapEditorHUD : Control
 			if (selected is Unit3D unit)
 			{
 				typeStr = unit.IsBuilding ? "BUILDING" : "UNIT";
-				nameStr = System.IO.Path.GetFileName(unit.UnitId).ToUpper();
+				idStr = System.IO.Path.GetFileName(unit.UnitId).ToUpper();
+				if (unit.IsResource && GameHost.ResourceRegistry.TryGetValue(unit.UnitId, out var resMeta) && !string.IsNullOrEmpty(resMeta.Name))
+					nameStr = resMeta.Name.ToUpper();
+				else if (unit.IsBuilding && GameHost.BuildingRegistry.TryGetValue(unit.UnitId, out var bldMeta) && !string.IsNullOrEmpty(bldMeta.Name))
+					nameStr = bldMeta.Name.ToUpper();
+				else if (GameHost.UnitRegistry.TryGetValue(unit.UnitId, out var unitMeta) && !string.IsNullOrEmpty(unitMeta.Name))
+					nameStr = unitMeta.Name.ToUpper();
+				else
+					nameStr = idStr;
 				if (_playerOwnerContainer != null && _optPlayerOwner != null)
 				{
 					_playerOwnerContainer.Visible = true;
@@ -1485,7 +1494,13 @@ public partial class MapEditorHUD : Control
 				if (selected is Prop3D prop)
 				{
 					typeStr = "PROP";
-					nameStr = System.IO.Path.GetFileName(prop.PropId).ToUpper();
+					idStr = System.IO.Path.GetFileName(prop.PropId).ToUpper();
+					if (GameHost.ResourceRegistry.TryGetValue(prop.PropId, out var propResMeta) && !string.IsNullOrEmpty(propResMeta.Name))
+						nameStr = propResMeta.Name.ToUpper();
+					else if (GameHost.PropRegistry.TryGetValue(prop.PropId, out var propMeta) && !string.IsNullOrEmpty(propMeta.Name))
+						nameStr = propMeta.Name.ToUpper();
+					else
+						nameStr = idStr;
 				}
 				else if (selected is Decal decal)
 				{
@@ -1508,7 +1523,9 @@ public partial class MapEditorHUD : Control
 			if (_viewModel != null)
 			{
 				_viewModel.HasInspectorSelection = true;
-				_viewModel.InspectorTitle = $"SELECTED: {nameStr}\n[{typeStr}]";
+				_viewModel.InspectorTitle = idStr != null
+					? $"SELECTED: {nameStr}\n({idStr})\n[{typeStr}]"
+					: $"SELECTED: {nameStr}\n[{typeStr}]";
 				_viewModel.InspectorPos = $"Pos: {pos.X:F2}, {pos.Y:F2}, {pos.Z:F2}\nRot: {rot.Y:F1}° | Scale: {scale.X:F2}x";
 			}
 

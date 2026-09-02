@@ -296,7 +296,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		_vfxSprite = new AnimatedSprite3D
 		{
-			Position = new Vector3(0, 1.0f, 0),
+			Position = Vector3.Zero,
 			Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
 			Transparent = true,
 			AlphaCut = SpriteBase3D.AlphaCutMode.Disabled,
@@ -461,7 +461,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				_ => "Prop"
 			};
 		}
-		else if (ext is ".rtex" or ".ktx2" or ".png")
+		else if (ext is ".rtex")
 		{
 			return subCategoryOrFolder switch
 			{
@@ -501,7 +501,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			}
 			return path;
 		}
-		else if (ext is ".rtex" or ".ktx2" or ".png")
+		else if (ext is ".rtex")
 		{
 			string sub = subCategoryOrFolder switch
 			{
@@ -827,6 +827,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			_vfxSprite.Visible = false;
 			_vfxSprite.Stop();
+			_vfxSprite.SpriteFrames = null;
 		}
 	}
 
@@ -928,39 +929,134 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 	}
 
+	private static Texture2D? LoadTextureFromFileOrRtex(string filePath)
+	{
+		if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) return null;
+
+		try
+		{
+			Image? img = null;
+			if (filePath.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase))
+			{
+				byte[] rtexBytes = File.ReadAllBytes(filePath);
+				byte[]? layer0Bytes = Realm.Shared.Textures.RtexFile.IsRtexBytes(rtexBytes)
+					? Realm.Shared.Textures.RtexFile.GetLayer(rtexBytes, 0)
+					: rtexBytes;
+				if (layer0Bytes != null && layer0Bytes.Length > 0)
+				{
+					img = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+					if (img.LoadWebpFromBuffer(layer0Bytes) != Error.Ok)
+					{
+						if (img.LoadPngFromBuffer(layer0Bytes) != Error.Ok)
+						{
+							if (img.LoadJpgFromBuffer(layer0Bytes) != Error.Ok)
+							{
+								if (img.LoadTgaFromBuffer(layer0Bytes) != Error.Ok)
+								{
+									img.LoadBmpFromBuffer(layer0Bytes);
+								}
+							}
+						}
+					}
+				}
+			}
+			else
+			{
+				img = Image.LoadFromFile(filePath);
+			}
+
+			if (img != null)
+			{
+				if (!img.HasMipmaps())
+				{
+					img.GenerateMipmaps();
+				}
+				return ImageTexture.CreateFromImage(img);
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[AssetManagerDialog] Failed to load texture from '{filePath}': {ex.Message}");
+		}
+
+		return null;
+	}
+
 	private void LoadVfxSpritesheet(string key)
 	{
 		Clear3DModelPreview();
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
-		string vfxPath = Path.Combine(wsPath, "Assets", "vfx", key);
-		if (!File.Exists(vfxPath)) return;
+		string cleanPath = key.Replace("\\", "/").TrimStart('/');
+		string fileName = Path.GetFileName(key);
+		string cleanBase = Path.GetFileNameWithoutExtension(key);
 
-		var img = Image.LoadFromFile(vfxPath);
-		if (img == null) return;
-		if (!img.HasMipmaps())
+		var candidatePaths = new List<string?>
 		{
-			img.GenerateMipmaps();
+			Path.Combine(wsPath, "Assets", "vfx", fileName),
+			Path.Combine(wsPath, "Assets", "vfx", key),
+			Path.Combine(wsPath, "Assets", cleanPath),
+		};
+
+		if (!fileName.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase))
+		{
+			candidatePaths.Add(Path.Combine(wsPath, "Assets", "vfx", cleanBase + ".rtex"));
 		}
-		var texture = ImageTexture.CreateFromImage(img);
+		if (!fileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+		{
+			candidatePaths.Add(Path.Combine(wsPath, "Assets", "vfx", cleanBase + ".png"));
+		}
+
+		Texture2D? texture = null;
+		foreach (var candidate in candidatePaths)
+		{
+			if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
+			{
+				texture = LoadTextureFromFileOrRtex(candidate);
+				if (texture != null) break;
+			}
+		}
+
 		if (texture == null) return;
 
 		int cols = 4;
 		int rows = 4;
-		string metaPath = Path.Combine(wsPath, "metadata.json");
-		if (File.Exists(metaPath))
+		string[] metaPaths = new[]
 		{
-			try
+			Path.Combine(wsPath, "metadata.json"),
+		};
+
+		foreach (var metaPath in metaPaths)
+		{
+			if (!string.IsNullOrWhiteSpace(metaPath) && File.Exists(metaPath))
 			{
-				var root = JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject();
-				var vfxObj = root?["Assets"]?["vfx_spritesheets"]?[key]?.AsObject();
-				if (vfxObj != null)
+				try
 				{
-					if (vfxObj.ContainsKey("columns")) cols = (int)vfxObj["columns"];
-					if (vfxObj.ContainsKey("rows")) rows = (int)vfxObj["rows"];
+					var root = JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject();
+					var vfxSheets = (root?["Assets"]?["vfx_spritesheets"] ?? root?["MapProperties"]?["Assets"]?["vfx_spritesheets"])?.AsObject();
+					if (vfxSheets != null)
+					{
+						JsonObject? sheetObj = null;
+						if (vfxSheets.TryGetPropertyValue(fileName, out var s1) && s1 is JsonObject so1) sheetObj = so1;
+						else if (vfxSheets.TryGetPropertyValue(key, out var s2) && s2 is JsonObject so2) sheetObj = so2;
+						else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.rtex", out var s3) && s3 is JsonObject so3) sheetObj = so3;
+						else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.png", out var s4) && s4 is JsonObject so4) sheetObj = so4;
+
+						if (sheetObj != null)
+						{
+							if (sheetObj.TryGetPropertyValue("columns", out var cNode) && int.TryParse(cNode?.ToString(), out int parsedCols) && parsedCols > 0)
+								cols = parsedCols;
+							if (sheetObj.TryGetPropertyValue("rows", out var rNode) && int.TryParse(rNode?.ToString(), out int parsedRows) && parsedRows > 0)
+								rows = parsedRows;
+							break;
+						}
+					}
 				}
+				catch { }
 			}
-			catch { }
 		}
+
+		if (cols <= 0) cols = 1;
+		if (rows <= 0) rows = 1;
 
 		int totalFrames = cols * rows;
 		var frames = new SpriteFrames();
@@ -968,8 +1064,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		frames.SetAnimationLoopMode("play", SpriteFrames.LoopMode.Linear);
 		frames.SetAnimationSpeed("play", 20.0f);
 
-		int frameWidth = texture.GetWidth() / cols;
-		int frameHeight = texture.GetHeight() / rows;
+		int frameWidth = Math.Max(1, (int)texture.GetWidth() / cols);
+		int frameHeight = Math.Max(1, (int)texture.GetHeight() / rows);
 
 		for (int frameIndex = 0; frameIndex < totalFrames; frameIndex++)
 		{
@@ -983,11 +1079,21 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			frames.AddFrame("play", atlasFrame);
 		}
 
-		_vfxSprite.SpriteFrames = frames;
-		_vfxSprite.Animation = "play";
-		_vfxSprite.PixelSize = 4.0f / frameWidth;
-		_vfxSprite.Visible = true;
-		_vfxSprite.Play("play");
+		if (_vfxSprite != null)
+		{
+			_vfxSprite.SpriteFrames = frames;
+			_vfxSprite.Animation = "play";
+			_vfxSprite.PixelSize = 6.0f / frameWidth;
+			_vfxSprite.Position = Vector3.Zero;
+			_vfxSprite.Visible = true;
+			_vfxSprite.Play("play");
+		}
+
+		_defaultDistance = 3.5f;
+		_defaultYaw = 0f;
+		_defaultPitch = 0f;
+		_targetPosition = Vector3.Zero;
+		ResetCameraDefault();
 	}
 
 	private void LoadStatic2DTexture(string key, string category)
@@ -1012,45 +1118,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		if (!File.Exists(filePath)) return;
 
-		Texture2D tex = null;
-		if (filePath.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
-			filePath.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
-			filePath.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
-			filePath.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
-		{
-			var img = Image.LoadFromFile(filePath);
-			if (img != null)
-			{
-				if (!img.HasMipmaps())
-				{
-					img.GenerateMipmaps();
-				}
-				tex = ImageTexture.CreateFromImage(img);
-			}
-		}
-		else if (filePath.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase))
-		{
-			try
-			{
-				byte[] bytes = File.ReadAllBytes(filePath);
-				byte[]? webpBytes = Realm.Shared.Textures.RtexFile.GetLayer(bytes, 0);
-				if (webpBytes != null && webpBytes.Length > 0)
-				{
-					var img = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
-					if (img.LoadWebpFromBuffer(webpBytes) != Error.Ok)
-					{
-						img.LoadPngFromBuffer(webpBytes);
-					}
-					if (!img.HasMipmaps())
-					{
-						img.GenerateMipmaps();
-					}
-					tex = ImageTexture.CreateFromImage(img);
-				}
-			}
-			catch { }
-		}
-
+		Texture2D? tex = LoadTextureFromFileOrRtex(filePath);
 		if (_preview2DImage != null) _preview2DImage.Texture = tex;
 		if (_lblPreview2DInfo != null)
 		{
@@ -1185,11 +1253,6 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		// 1. Scan metadata.json from temp workspace and fallback template
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
 		string metaPath = Path.Combine(wsPath, "metadata.json");
-		if (!File.Exists(metaPath))
-		{
-			string tPath = PathUtils.FindPath("MapTemplate/metadata.json");
-			if (File.Exists(tPath)) metaPath = tPath;
-		}
 
 		if (File.Exists(metaPath))
 		{
@@ -1243,7 +1306,6 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		var unitDirs = new List<string>
 		{
 			Path.Combine(wsPath, "Assets", "models", "units"),
-			PathUtils.FindPath("MapTemplate/Assets/models/units")
 		};
 
 		foreach (var dir in unitDirs)
@@ -1278,23 +1340,16 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				else
 				{
 					string resolvedPath = Path.Combine(wsPath, "Assets", "models", "units", modelFile);
-					if (!File.Exists(resolvedPath))
-					{
-						resolvedPath = PathUtils.FindPath($"MapTemplate/Assets/models/units/{modelFile}");
-					}
 
-					if (File.Exists(resolvedPath))
+					var doc = new GltfDocument();
+					var state = new GltfState();
+					if (doc.AppendFromFile(resolvedPath, state) == Error.Ok)
 					{
-						var doc = new GltfDocument();
-						var state = new GltfState();
-						if (doc.AppendFromFile(resolvedPath, state) == Error.Ok)
+						var scene = doc.GenerateScene(state);
+						if (scene != null)
 						{
-							var scene = doc.GenerateScene(state);
-							if (scene != null)
-							{
-								hasSkeleton = SkeletonValidator.FindSkeleton(scene) != null;
-								scene.QueueFree();
-							}
+							hasSkeleton = SkeletonValidator.FindSkeleton(scene) != null;
+							scene.QueueFree();
 						}
 					}
 				}
@@ -1586,11 +1641,11 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				Directory.CreateDirectory(destDir);
 				string ext = Path.GetExtension(fileName).ToLowerInvariant();
 
-				string destFileName = ext == ".ktx2" ? fileName : $"{cleanBase}.ktx2";
+				string destFileName = ext == ".rtex" ? fileName : $"{cleanBase}.rtex";
 				string destPath = Path.Combine(destDir, destFileName);
 
 				float calculatedScaleFactor = 1.0f;
-				if (ext == ".ktx2")
+				if (ext == ".rtex")
 				{
 					File.Copy(sourceFilePath, destPath, true);
 					Realm.Shared.Metadata.RealmMetadataHelper.EnsureMetadata(destPath);
@@ -1606,8 +1661,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					calculatedScaleFactor = convResult.ScaleFactor;
 				}
 
-				byte[] ktx2Bytes = File.ReadAllBytes(destPath);
-				hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(ktx2Bytes, ".ktx2");
+				byte[] rtexBytes = File.ReadAllBytes(destPath);
+				hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(rtexBytes, ".rtex");
 
 				if (!assetsObj.ContainsKey("textures") || assetsObj["textures"] == null) assetsObj["textures"] = new JsonObject();
 				var texDict = assetsObj["textures"].AsObject();
@@ -2052,12 +2107,24 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		try
 		{
 			var root = JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject();
-			var vfxObj = root?["Assets"]?["vfx_spritesheets"]?[key]?.AsObject();
-			if (vfxObj != null)
+			var vfxSheets = (root?["Assets"]?["vfx_spritesheets"] ?? root?["MapProperties"]?["Assets"]?["vfx_spritesheets"])?.AsObject();
+			if (vfxSheets != null)
 			{
-				vfxObj["columns"] = columns;
-				vfxObj["rows"] = rows;
-				MapJsonFormatter.SaveFormattedJson(metaPath, root);
+				string fileName = Path.GetFileName(key);
+				string cleanBase = Path.GetFileNameWithoutExtension(key);
+
+				JsonObject? sheetObj = null;
+				if (vfxSheets.TryGetPropertyValue(fileName, out var s1) && s1 is JsonObject so1) sheetObj = so1;
+				else if (vfxSheets.TryGetPropertyValue(key, out var s2) && s2 is JsonObject so2) sheetObj = so2;
+				else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.rtex", out var s3) && s3 is JsonObject so3) sheetObj = so3;
+				else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.png", out var s4) && s4 is JsonObject so4) sheetObj = so4;
+
+				if (sheetObj != null)
+				{
+					sheetObj["columns"] = columns;
+					sheetObj["rows"] = rows;
+					MapJsonFormatter.SaveFormattedJson(metaPath, root);
+				}
 			}
 		}
 		catch (Exception ex)

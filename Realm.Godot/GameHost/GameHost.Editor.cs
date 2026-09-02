@@ -240,14 +240,16 @@ public partial class GameHost
 		if (!string.IsNullOrEmpty(primaryKey))
 		{
 			if (ResourceRegistry.ContainsKey(primaryKey)) return 2.75f;
-			if (UnitRegistry.TryGetValue(primaryKey, out var u)) return u.Speed == 0f ? 1.5f : 1.0f;
+			if (BuildingRegistry.ContainsKey(primaryKey)) return 1.5f;
+			if (UnitRegistry.ContainsKey(primaryKey)) return 1.0f;
 			if (PropRegistry.ContainsKey(primaryKey)) return 1.25f;
 		}
 
 		if (!string.IsNullOrEmpty(normAsset))
 		{
 			if (ResourceRegistry.ContainsKey(normAsset)) return 2.75f;
-			if (UnitRegistry.TryGetValue(normAsset, out var u)) return u.Speed == 0f ? 1.5f : 1.0f;
+			if (BuildingRegistry.ContainsKey(normAsset)) return 1.5f;
+			if (UnitRegistry.ContainsKey(normAsset)) return 1.0f;
 			if (PropRegistry.ContainsKey(normAsset)) return 1.25f;
 		}
 
@@ -1301,7 +1303,11 @@ public partial class GameHost
 				if (UnitRegistry.TryGetValue(unit.UnitId, out var meta) && !string.IsNullOrEmpty(meta.ModelPath))
 				{
 					targetModel = meta.ModelPath;
-					if (meta.Speed == 0f) isBuilding = true;
+				}
+				else if (BuildingRegistry.TryGetValue(unit.UnitId, out var bldMeta) && !string.IsNullOrEmpty(bldMeta.ModelPath))
+				{
+					targetModel = bldMeta.ModelPath;
+					isBuilding = true;
 				}
 				else if (ResourceRegistry.TryGetValue(unit.UnitId, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath))
 				{
@@ -1757,11 +1763,8 @@ public partial class GameHost
 		if (PropRegistry.ContainsKey(propIdOrEntityId) || ResourceRegistry.ContainsKey(propIdOrEntityId))
 			return true;
 
-		if (UnitRegistry.TryGetValue(propIdOrEntityId, out var unitMeta))
-		{
-			if (unitMeta.ArmorType == "building") return false;
+		if (UnitRegistry.ContainsKey(propIdOrEntityId) || BuildingRegistry.ContainsKey(propIdOrEntityId))
 			return false;
-		}
 
 		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
 		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
@@ -2147,40 +2150,30 @@ public partial class GameHost
 		// that want feet-on-terrain snap the Y to the terrain before calling this method.
 		int playerIndex = player >= 0 ? player : 0;
 		bool actualIsEnemy = player >= 0 ? NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, playerIndex) : isEnemy;
-		if (!UnitRegistry.ContainsKey(unitId))
+		bool isBuilding = false;
+		if (!UnitRegistry.ContainsKey(unitId) && !BuildingRegistry.ContainsKey(unitId))
 		{
 			LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace"));
 		}
-		if (!UnitRegistry.ContainsKey(unitId))
-		{
-			string resolvedModelPath = GetFallbackModelPath(unitId, unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower"));
-			bool isBld = unitId.Contains("Buildings") || unitId.Contains("castle") || unitId.Contains("tower");
-			var dynamicMeta = new UnitMetadata
-			{
-				Name = System.IO.Path.GetFileNameWithoutExtension(unitId).Replace("_", " "),
-				MaxHp = 100f,
-				Damage = 10f,
-				Range = 2f,
-				Armor = 2f,
-				Speed = isBld ? 0f : 6.0f,
-				Scale = isBld ? 1.2f : 1.5f,
-				ProductionTime = 10f,
-				ModelPath = resolvedModelPath
-			};
-			UnitRegistry[unitId] = dynamicMeta;
-		}
 
-		if (!UnitRegistry.TryGetValue(unitId, out var meta)) return null;
+		UnitMetadata meta;
+		if (!UnitRegistry.TryGetValue(unitId, out meta))
+		{
+			if (BuildingRegistry.TryGetValue(unitId, out meta))
+				isBuilding = true;
+			else
+				return null;
+		}
 
 		var playerOwner = GetPlayerEntityForPlayerIndex(playerIndex).AsPlayerEntity(EcsWorld);
 		
 		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitId;
-		string modelPath = GetFallbackModelPath(targetModel, meta.Speed == 0f);
+		string modelPath = GetFallbackModelPath(targetModel, isBuilding);
 
 		string name = meta.Name;
 		var entity = CreateEcsUnit(unitId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, position, playerOwner);
 
-		var unit3D = SpawnUnit3D(entity, unitId, modelPath, position, meta.Speed == 0f, actualIsEnemy, false, playerIndex);
+		var unit3D = SpawnUnit3D(entity, unitId, modelPath, position, isBuilding, actualIsEnemy, false, playerIndex);
 		unit3D.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
 		unit3D.Scale = Vector3.One * scale;
 
@@ -2543,37 +2536,24 @@ public partial class GameHost
 
 			if (ActiveEditorTool == EditorTool.PlaceUnit)
 			{
-				if (!UnitRegistry.ContainsKey(reqId))
+				if (!UnitRegistry.ContainsKey(reqId) && !BuildingRegistry.ContainsKey(reqId))
 				{
 					LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace"));
 				}
-				if (!UnitRegistry.ContainsKey(reqId))
-				{
-					string resolvedModelPath = GetFallbackModelPath(reqId, reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower"));
-					bool isBld = reqId.Contains("Buildings") || reqId.Contains("castle") || reqId.Contains("tower");
-					var dynamicMeta = new UnitMetadata
-					{
-						Name = System.IO.Path.GetFileNameWithoutExtension(reqId).Replace("_", " "),
-						MaxHp = 100f,
-						Damage = 10f,
-						Range = 2f,
-						Armor = 2f,
-						Speed = isBld ? 0f : 6.0f,
-						Scale = isBld ? 1.2f : 1.5f,
-						ProductionTime = 10f,
-						ModelPath = resolvedModelPath
-					};
-					UnitRegistry[reqId] = dynamicMeta;
-				}
 
-				if (UnitRegistry.TryGetValue(reqId, out var meta))
+				bool isBuilding = false;
+				UnitMetadata meta;
+				if (!UnitRegistry.TryGetValue(reqId, out meta) && BuildingRegistry.TryGetValue(reqId, out meta))
+					isBuilding = true;
+
+				if (meta.UnitId != null)
 				{
 					string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : reqId;
-					string modelPath = GetFallbackModelPath(targetModel, meta.Speed == 0f);
+					string modelPath = GetFallbackModelPath(targetModel, isBuilding);
 
 					var previewUnit = new Unit3D();
 					previewUnit.UnitId = reqId;
-					previewUnit.IsBuilding = meta.Speed == 0f;
+					previewUnit.IsBuilding = isBuilding;
 					previewUnit.IsEnemy = reqIsEnemy;
 					previewUnit.IsPreview = true;
 					AddChild(previewUnit);

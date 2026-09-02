@@ -934,6 +934,7 @@ public partial class GameHost : Node3D, IGameAPI
 
 
 	public static readonly Dictionary<string, UnitMetadata> UnitRegistry = new();
+	public static readonly Dictionary<string, UnitMetadata> BuildingRegistry = new();
 	public static readonly Dictionary<string, PropMetadata> PropRegistry = new();
 	public static readonly Dictionary<string, ResourceMetadata> ResourceRegistry = new();
 	public static readonly Dictionary<string, WeaponMetadata> WeaponRegistry = new(StringComparer.OrdinalIgnoreCase);
@@ -1130,9 +1131,13 @@ public partial class GameHost : Node3D, IGameAPI
 	{
 		var pos = new Vector3(position.X, position.Y, position.Z);
 		pos.Y = GetTerrainHeightAt(pos);
+		bool isBuilding = false;
 		if (!UnitRegistry.TryGetValue(unitTypeId, out var meta))
 		{
-			throw new ArgumentException($"Unit ID '{unitTypeId}' not found in registry.");
+			if (BuildingRegistry.TryGetValue(unitTypeId, out meta))
+				isBuilding = true;
+			else
+				throw new ArgumentException($"Unit ID '{unitTypeId}' not found in registry.");
 		}
 		int ownerPeerId = _localPeerId;
 		if (isEnemy)
@@ -1165,7 +1170,7 @@ public partial class GameHost : Node3D, IGameAPI
 		var playerOwner = playerOwnerEntity.AsPlayerEntity(EcsWorld);
 		
 		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitTypeId;
-		string modelPath = _unitSpawnService.GetFallbackModelPath(targetModel, meta.Speed == 0f);
+		string modelPath = _unitSpawnService.GetFallbackModelPath(targetModel, isBuilding);
 
 		string name = actualIsEnemy ? _unitSpawnService.GetEnemyUnitName(unitTypeId, meta.Name) : meta.Name;
 
@@ -1174,7 +1179,7 @@ public partial class GameHost : Node3D, IGameAPI
 		{
 			EcsWorld.Add(entity, new BypassPopulationTag());
 		}
-		SpawnUnit3D(entity, unitTypeId, modelPath, pos, meta.Speed == 0f, actualIsEnemy, bypassPopulation);
+		SpawnUnit3D(entity, unitTypeId, modelPath, pos, isBuilding, actualIsEnemy, bypassPopulation);
 		
 		return GetUnitWrapper(entity);
 	}
@@ -2557,302 +2562,6 @@ public class {mapName} : IMapScript
 		}
 	}
 
-
-
-
-	private static readonly Dictionary<string, UnitMetadata> DefaultRegistryFallback = new()
-	{
-		{
-			"worker", new UnitMetadata {
-				UnitId = "worker",
-				Name = "Worker",
-				Description = "Dedicated worker. Can gather resources from Goldmines, Trees, and Rocks, and construct buildings.",
-				MaxHp = 70f,
-				Damage = 5f,
-				Range = 1.8f,
-				Armor = 0f,
-				Speed = 7.0f,
-				AttackCooldown = 1.5f,
-				ScanRadius = 10.0f,
-				CostGold = 75f,
-				CostWood = 0f,
-				CostStone = 0f,
-				ProductionTime = 4.0f,
-				PopCost = 1,
-				Scale = 1.5f,
-				AttackType = "melee",
-				ArmorType = "light",
-				GoldBounty = 15f,
-				BuildOptions = new[] { "castle", "tower" },
-				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
-			}
-		},
-		{
-			"soldier", new UnitMetadata {
-				UnitId = "soldier",
-				Name = "Soldier",
-				Description = "Heavy armored infantry. Slow but tanky front-line fighter.",
-				MaxHp = 150f,
-				Damage = 15f,
-				Range = 2.0f,
-				Armor = 5f,
-				Speed = 6.0f,
-				AttackCooldown = 1.5f,
-				ScanRadius = 14.0f,
-				CostGold = 100f,
-				CostWood = 0f,
-				CostStone = 0f,
-				ProductionTime = 5.0f,
-				PopCost = 1,
-				Scale = 1.5f,
-				AttackType = "melee",
-				ArmorType = "heavy",
-				GoldBounty = 20f,
-				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
-			}
-		},
-		{
-			"archer", new UnitMetadata {
-				UnitId = "archer",
-				Name = "Elf Archer",
-				Description = "Nimble elven ranged unit. High range and speed but fragile.",
-				MaxHp = 90f,
-				Damage = 12f,
-				Range = 18.0f,
-				Armor = 2f,
-				Speed = 8.0f,
-				AttackCooldown = 1.2f,
-				ScanRadius = 20.0f,
-				CostGold = 120f,
-				CostWood = 40f,
-				CostStone = 0f,
-				ProductionTime = 7.0f,
-				PopCost = 1,
-				Scale = 1.5f,
-				AttackType = "ranged",
-				ArmorType = "light",
-				GoldBounty = 25f,
-				Weapons = new[] { "arrow" },
-				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
-			}
-		},
-		{
-			"priest", new UnitMetadata {
-				UnitId = "priest",
-				Name = "Cleric Priest",
-				Description = "Holy support unit. Automatically heals nearby damaged friendly units.",
-				MaxHp = 80f,
-				Damage = 25f,
-				Range = 12.0f,
-				Armor = 1f,
-				Speed = 7.0f,
-				AttackCooldown = 2.0f,
-				ScanRadius = 15.0f,
-				CostGold = 140f,
-				CostWood = 20f,
-				CostStone = 0f,
-				ProductionTime = 8.0f,
-				PopCost = 1,
-				Scale = 1.5f,
-				AttackType = "ranged",
-				ArmorType = "light",
-				GoldBounty = 30f,
-				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
-			}
-		},
-		{
-			"castle", new UnitMetadata {
-				UnitId = "castle",
-				Name = "Town Castle",
-				Description = "Your fortress and command center. Produces units and upgrades. Guard it well!",
-				MaxHp = 1000f,
-				Damage = 0f,
-				Range = 0f,
-				Armor = 15f,
-				Speed = 0f,
-				AttackCooldown = 0f,
-				ScanRadius = 0f,
-				CostGold = 400f,
-				CostWood = 300f,
-				CostStone = 200f,
-				ProductionTime = 15.0f,
-				PopCost = 0,
-				Scale = 1.2f,
-				AttackType = "none",
-				ArmorType = "building",
-				GoldBounty = 0f,
-				BuildOptions = new[] { "soldier", "archer", "priest", "worker" },
-				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Buildable,
-				ObstacleRadius = 2.0f
-			}
-		},
-		{
-			"tower", new UnitMetadata {
-				UnitId = "tower",
-				Name = "Spell Tower",
-				Description = "Defensive structure that auto-attacks nearby enemies. Upgradeable for +HP/+DMG.",
-				MaxHp = 500f,
-				Damage = 25f,
-				Range = 25.0f,
-				Armor = 8f,
-				Speed = 0f,
-				AttackCooldown = 2.0f,
-				ScanRadius = 25.0f,
-				CostGold = 200f,
-				CostWood = 150f,
-				CostStone = 100f,
-				ProductionTime = 10.0f,
-				PopCost = 0,
-				Scale = 1.2f,
-				AttackType = "ranged",
-				ArmorType = "building",
-				GoldBounty = 0f,
-				Weapons = new[] { "catapult_rock" },
-				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Buildable,
-				ObstacleRadius = 1.5f
-			}
-		},
-		{
-			"turtle", new UnitMetadata {
-				UnitId = "turtle",
-				Name = "Amphibious Turtle",
-				Description = "Slow but sturdy amphibious beast that can travel on both ground and shallow water.",
-				MaxHp = 120f,
-				Damage = 10f,
-				Range = 1.5f,
-				Armor = 4f,
-				Speed = 5.0f,
-				AttackCooldown = 1.8f,
-				ScanRadius = 12.0f,
-				CostGold = 90f,
-				CostWood = 10f,
-				CostStone = 0f,
-				ProductionTime = 5.0f,
-				PopCost = 1,
-				Scale = 1.5f,
-				AttackType = "melee",
-				ArmorType = "heavy",
-				GoldBounty = 18f,
-				PathingType = (int)(Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground | Realm.Ecs.Components.Terrain.TerrainPathingFlags.ShallowWater)
-			}
-		}
-	};
-
-	private static readonly Dictionary<string, WeaponMetadata> DefaultWeaponFallback = new()
-	{
-		{
-			"arrow", new WeaponMetadata {
-				WeaponId = "arrow",
-				Name = "Arrow",
-				Damage = 12f,
-				Range = 18f,
-				AttackCooldown = 1.2f,
-				AttackType = "ranged",
-				ProjectileSpeed = 35f,
-				OrientToTrajectory = true,
-				RibbonColor = "#ffaa33",
-				RibbonWidth = 0.3f,
-				RibbonLifetime = 0.4f,
-				RibbonTaper = true,
-				RibbonAdditive = true
-			}
-		},
-		{
-			"catapult_rock", new WeaponMetadata {
-				WeaponId = "catapult_rock",
-				Name = "Catapult Rock",
-				Damage = 40f,
-				Range = 22f,
-				AttackCooldown = 3.0f,
-				AttackType = "ranged",
-				ProjectileModelPath = "spiked_orb_projectile.glb",
-				ProjectileSpeed = 20f,
-				ArcHeight = 4.5f,
-				TumbleAngularVelocity = new Vector3(3f, 2f, 1f),
-				OrientToTrajectory = false,
-				ShaderEffectType = "fire",
-				BaseColor = "#261e19",
-				EmissionColor = "#ff5500",
-				EmissionEnergy = 5.0f,
-				FresnelPower = 2.5f,
-				FresnelColor = "#ff9922",
-				FresnelFactor = 2.0f,
-				NoiseScale = 3.5f,
-				UvScrollSpeed1 = new Vector2(0.4f, 0.2f),
-				UvScrollSpeed2 = new Vector2(-0.3f, 0.4f),
-				ThresholdCutoff = 0.45f,
-				ThresholdSmoothness = 0.1f,
-				RibbonColor = "#ff7711",
-				RibbonWidth = 0.45f,
-				RibbonLifetime = 0.6f,
-				RibbonTaper = true,
-				RibbonAdditive = true
-			}
-		},
-		{
-			"frost_bolt", new WeaponMetadata {
-				WeaponId = "frost_bolt",
-				Name = "Frost Bolt",
-				Damage = 18f,
-				Range = 16f,
-				AttackCooldown = 1.5f,
-				AttackType = "ranged",
-				ProjectileSpeed = 28f,
-				OrientToTrajectory = true,
-				SpiralRadius = 0.35f,
-				SpiralFrequency = 2.0f,
-				ShaderEffectType = "frost",
-				BaseColor = "#0a1c2a",
-				EmissionColor = "#33ccff",
-				EmissionEnergy = 4.5f,
-				FresnelPower = 3.0f,
-				FresnelColor = "#88eeff",
-				FresnelFactor = 2.2f,
-				NoiseScale = 4.0f,
-				UvScrollSpeed1 = new Vector2(0.2f, 0.5f),
-				UvScrollSpeed2 = new Vector2(-0.2f, -0.3f),
-				ThresholdCutoff = 0.5f,
-				ThresholdSmoothness = 0.08f,
-				RibbonColor = "#44ddff",
-				RibbonWidth = 0.35f,
-				RibbonLifetime = 0.5f,
-				RibbonTaper = true,
-				RibbonAdditive = true
-			}
-		},
-		{
-			"poison_dart", new WeaponMetadata {
-				WeaponId = "poison_dart",
-				Name = "Poison Dart",
-				Damage = 10f,
-				Range = 15f,
-				AttackCooldown = 1.0f,
-				AttackType = "ranged",
-				ProjectileSpeed = 30f,
-				OrientToTrajectory = true,
-				ZigzagAmplitude = 0.4f,
-				ZigzagFrequency = 3.0f,
-				ShaderEffectType = "poison",
-				BaseColor = "#112010",
-				EmissionColor = "#33ff33",
-				EmissionEnergy = 4.0f,
-				FresnelPower = 3.5f,
-				FresnelColor = "#88ff44",
-				FresnelFactor = 1.8f,
-				NoiseScale = 3.0f,
-				UvScrollSpeed1 = new Vector2(-0.1f, 0.4f),
-				UvScrollSpeed2 = new Vector2(0.3f, 0.2f),
-				ThresholdCutoff = 0.55f,
-				ThresholdSmoothness = 0.12f,
-				RibbonColor = "#44ff22",
-				RibbonWidth = 0.4f,
-				RibbonLifetime = 0.5f,
-				RibbonTaper = true,
-				RibbonAdditive = true
-			}
-		}
-	};
-
 	public void LoadUnitMetadata(string mapName = null)
 	{
 		ResetAbilityCatalog();
@@ -2887,17 +2596,10 @@ public class {mapName} : IMapScript
 				if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
 				{
 					var newUnits = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
-					foreach (var kvp in DefaultRegistryFallback)
-					{
-						newUnits[kvp.Key] = kvp.Value;
-					}
+					var newBuildings = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newProps = new Dictionary<string, PropMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newWeapons = new Dictionary<string, WeaponMetadata>(StringComparer.OrdinalIgnoreCase);
-					foreach (var kvp in DefaultWeaponFallback)
-					{
-						newWeapons[kvp.Key] = kvp.Value;
-					}
 
 					bool hasStructuredArrays = false;
 
@@ -2944,7 +2646,7 @@ public class {mapName} : IMapScript
 								{
 									var copy = meta;
 									if (copy.Scale <= 0f) copy.Scale = 1.5f;
-									newUnits[copy.UnitId] = copy;
+									newBuildings[copy.UnitId] = copy;
 								}
 							}
 						}
@@ -3019,6 +2721,9 @@ public class {mapName} : IMapScript
 
 					UnitRegistry.Clear();
 					foreach (var kvp in newUnits) UnitRegistry[kvp.Key] = kvp.Value;
+
+					BuildingRegistry.Clear();
+					foreach (var kvp in newBuildings) BuildingRegistry[kvp.Key] = kvp.Value;
 
 					PropRegistry.Clear();
 					foreach (var kvp in newProps) PropRegistry[kvp.Key] = kvp.Value;
@@ -4071,12 +3776,19 @@ public class {mapName} : IMapScript
 		if (isBuilding)
 		{
 			var spawnOffset = new System.Numerics.Vector3(0f, 0f, 8f);
-			EcsWorld.Add(entity, new BuildingSpawnOffset(spawnOffset));
+			if (EcsWorld.Has<BuildingSpawnOffset>(entity))
+				EcsWorld.Set(entity, new BuildingSpawnOffset(spawnOffset));
+			else
+				EcsWorld.Add(entity, new BuildingSpawnOffset(spawnOffset));
 
 			float autoDetectedRadius = GetOrCalculateObstacleRadius(id, unit3D, isBuilding);
 			string unitAssetKey = GetModelAssetKey(unit3D);
 			float baseRadius = autoDetectedRadius * GetModelCollisionCircleRatio(unitAssetKey);
-			EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+			if (EcsWorld.Has<Realm.Ecs.Components.Core.CollisionRadius>(entity))
+				EcsWorld.Set(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+			else
+				EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+
 			if (!IsMapEditorMode)
 			{
 				CarveObstacle(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z), baseRadius);

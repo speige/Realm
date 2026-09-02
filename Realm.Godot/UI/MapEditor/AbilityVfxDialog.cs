@@ -424,35 +424,27 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 		// Detect columns and rows from metadata if available
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
 		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
-		if (!System.IO.File.Exists(metadataPath))
-		{
-			string tPath = PathUtils.FindPath("MapTemplate/metadata.json");
-			if (System.IO.File.Exists(tPath)) metadataPath = tPath;
-		}
 
-		if (System.IO.File.Exists(metadataPath))
+		try
 		{
-			try
+			string json = System.IO.File.ReadAllText(metadataPath);
+			var root = JsonNode.Parse(json)?.AsObject();
+			var vfxSheets = (root?["Assets"]?["vfx_spritesheets"] ?? root?["MapProperties"]?["Assets"]?["vfx_spritesheets"])?.AsObject();
+			string fName = System.IO.Path.GetFileName(_currentVisualEffect);
+			if (vfxSheets != null)
 			{
-				string json = System.IO.File.ReadAllText(metadataPath);
-				var root = JsonNode.Parse(json)?.AsObject();
-				var vfxSheets = (root?["Assets"]?["vfx_spritesheets"] ?? root?["MapProperties"]?["Assets"]?["vfx_spritesheets"])?.AsObject();
-				string fName = System.IO.Path.GetFileName(_currentVisualEffect);
-				if (vfxSheets != null)
-				{
-					JsonObject sheetObj = null;
-					if (vfxSheets.ContainsKey(fName) && vfxSheets[fName] is JsonObject so1) sheetObj = so1;
-					else if (vfxSheets.ContainsKey(_currentVisualEffect) && vfxSheets[_currentVisualEffect] is JsonObject so2) sheetObj = so2;
+				JsonObject sheetObj = null;
+				if (vfxSheets.ContainsKey(fName) && vfxSheets[fName] is JsonObject so1) sheetObj = so1;
+				else if (vfxSheets.ContainsKey(_currentVisualEffect) && vfxSheets[_currentVisualEffect] is JsonObject so2) sheetObj = so2;
 
-					if (sheetObj != null)
-					{
-						if (sheetObj.ContainsKey("columns")) cols = (int)sheetObj["columns"];
-						if (sheetObj.ContainsKey("rows")) rows = (int)sheetObj["rows"];
-					}
+				if (sheetObj != null)
+				{
+					if (sheetObj.ContainsKey("columns")) cols = (int)sheetObj["columns"];
+					if (sheetObj.ContainsKey("rows")) rows = (int)sheetObj["rows"];
 				}
 			}
-			catch { }
 		}
+		catch { }
 
 		if (cols <= 0) cols = 1;
 		if (rows <= 0) rows = 1;
@@ -555,11 +547,6 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 				System.IO.Path.Combine(wsPath, "Assets", "audio", "music", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "audio", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "sounds", fileName),
-				PathUtils.FindPath("MapTemplate/" + cleanPath),
-				PathUtils.FindPath("MapTemplate/Assets/" + cleanPath),
-				PathUtils.FindPath("MapTemplate/Assets/audio/sfx/" + fileName),
-				PathUtils.FindPath("MapTemplate/Assets/audio/music/" + fileName),
-				PathUtils.FindPath("MapTemplate/Assets/audio/" + fileName)
 			};
 
 			AudioStream stream = null;
@@ -642,12 +629,6 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 				System.IO.Path.Combine(wsPath, "Assets", "textures", "noise", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "skyboxes", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "UI", fileName),
-				PathUtils.FindPath("MapTemplate/" + cleanPath),
-				PathUtils.FindPath("MapTemplate/Assets/" + cleanPath),
-				PathUtils.FindPath("MapTemplate/Assets/vfx/" + fileName),
-				PathUtils.FindPath("MapTemplate/Assets/icons/" + fileName),
-				PathUtils.FindPath("MapTemplate/Assets/decals/" + fileName),
-				PathUtils.FindPath("MapTemplate/Assets/textures/" + fileName)
 			};
 
 			foreach (var candidate in candidatePaths)

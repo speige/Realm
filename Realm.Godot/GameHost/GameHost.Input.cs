@@ -3142,13 +3142,13 @@ public partial class GameHost
 	public bool CanProduceUnits(Unit3D unit)
 	{
 		if (unit == null || !unit.IsBuilding) return false;
-		if (UnitRegistry.TryGetValue(unit.UnitId, out var meta))
+		if (BuildingRegistry.TryGetValue(unit.UnitId, out var meta))
 		{
 			if (meta.BuildOptions != null)
 			{
 				foreach (var opt in meta.BuildOptions)
 				{
-					if (UnitRegistry.TryGetValue(opt, out var optMeta) && !optMeta.ArmorType.Contains("building"))
+					if (UnitRegistry.ContainsKey(opt))
 					{
 						return true;
 					}
@@ -3698,7 +3698,7 @@ public partial class GameHost
 		var playerOwner = playerOwnerEntity.AsPlayerEntity(EcsWorld);
 
 		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitId;
-		string modelPath = GetFallbackModelPath(targetModel, meta.Speed == 0f);
+		string modelPath = GetFallbackModelPath(targetModel, false);
 
 		string name = actualIsEnemy ? _unitSpawnService.GetEnemyUnitName(unitId, meta.Name) : meta.Name;
 
@@ -3712,7 +3712,7 @@ public partial class GameHost
 			actualIsEnemy = NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, parentPlayer);
 		}
 
-		var unit3D = SpawnUnit3D(entity, unitId, modelPath, godotPosition, meta.Speed == 0f, actualIsEnemy, isFromQueue, parentPlayer);
+		var unit3D = SpawnUnit3D(entity, unitId, modelPath, godotPosition, false, actualIsEnemy, isFromQueue, parentPlayer);
 
 		if (meta.Speed > 0f)
 		{

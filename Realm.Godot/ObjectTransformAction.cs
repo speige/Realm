@@ -1,4 +1,6 @@
 using Godot;
+using Realm.Ecs.Components.Core;
+using Realm.Ecs.Components.Meta;
 using Vector3 = Godot.Vector3;
 
 public class ObjectTransformAction : IEditorAction
@@ -45,9 +47,25 @@ public class ObjectTransformAction : IEditorAction
 			if (_targetNode is Unit3D unit)
 			{
 				GameHost.Instance?.SetUnitPlayerExternal(unit, _beforePlayer);
+				if (GameHost.Instance?.EcsWorld != null && unit.Entity != Arch.Core.Entity.Null && GameHost.Instance.EcsWorld.IsAlive(unit.Entity))
+				{
+					GameHost.Instance.EcsWorld.Set(unit.Entity, new Position(new System.Numerics.Vector3(_beforePos.X, _beforePos.Y, _beforePos.Z)));
+					if (GameHost.Instance.EcsWorld.Has<RotationY>(unit.Entity))
+						GameHost.Instance.EcsWorld.Set(unit.Entity, new RotationY(_beforeRot.Y));
+					if (GameHost.Instance.EcsWorld.Has<ModelScale>(unit.Entity))
+						GameHost.Instance.EcsWorld.Set(unit.Entity, new ModelScale(_beforeScale.X));
+				}
 			}
 			else if (_targetNode is Prop3D prop)
 			{
+				if (GameHost.Instance?.EcsWorld != null && prop.Entity != Arch.Core.Entity.Null && GameHost.Instance.EcsWorld.IsAlive(prop.Entity))
+				{
+					GameHost.Instance.EcsWorld.Set(prop.Entity, new Position(new System.Numerics.Vector3(_beforePos.X, _beforePos.Y, _beforePos.Z)));
+					if (GameHost.Instance.EcsWorld.Has<RotationY>(prop.Entity))
+						GameHost.Instance.EcsWorld.Set(prop.Entity, new RotationY(_beforeRot.Y));
+					if (GameHost.Instance.EcsWorld.Has<ModelScale>(prop.Entity))
+						GameHost.Instance.EcsWorld.Set(prop.Entity, new ModelScale(_beforeScale.X));
+				}
 				PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
 			}
 			MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
@@ -64,9 +82,25 @@ public class ObjectTransformAction : IEditorAction
 			if (_targetNode is Unit3D unit)
 			{
 				GameHost.Instance?.SetUnitPlayerExternal(unit, _afterPlayer);
+				if (GameHost.Instance?.EcsWorld != null && unit.Entity != Arch.Core.Entity.Null && GameHost.Instance.EcsWorld.IsAlive(unit.Entity))
+				{
+					GameHost.Instance.EcsWorld.Set(unit.Entity, new Position(new System.Numerics.Vector3(_afterPos.X, _afterPos.Y, _afterPos.Z)));
+					if (GameHost.Instance.EcsWorld.Has<RotationY>(unit.Entity))
+						GameHost.Instance.EcsWorld.Set(unit.Entity, new RotationY(_afterRot.Y));
+					if (GameHost.Instance.EcsWorld.Has<ModelScale>(unit.Entity))
+						GameHost.Instance.EcsWorld.Set(unit.Entity, new ModelScale(_afterScale.X));
+				}
 			}
 			else if (_targetNode is Prop3D prop)
 			{
+				if (GameHost.Instance?.EcsWorld != null && prop.Entity != Arch.Core.Entity.Null && GameHost.Instance.EcsWorld.IsAlive(prop.Entity))
+				{
+					GameHost.Instance.EcsWorld.Set(prop.Entity, new Position(new System.Numerics.Vector3(_afterPos.X, _afterPos.Y, _afterPos.Z)));
+					if (GameHost.Instance.EcsWorld.Has<RotationY>(prop.Entity))
+						GameHost.Instance.EcsWorld.Set(prop.Entity, new RotationY(_afterRot.Y));
+					if (GameHost.Instance.EcsWorld.Has<ModelScale>(prop.Entity))
+						GameHost.Instance.EcsWorld.Set(prop.Entity, new ModelScale(_afterScale.X));
+				}
 				PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
 			}
 			MapEditorHUD.Instance?.UpdateSelectedObjectInfo();

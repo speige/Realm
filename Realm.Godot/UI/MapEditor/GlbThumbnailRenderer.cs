@@ -126,14 +126,22 @@ public partial class GlbThumbnailRenderer : Node
 		AddChild(_subViewport);
 	}
 
+	public static string NormalizePath(string path)
+	{
+		if (string.IsNullOrEmpty(path)) return string.Empty;
+		return Path.GetFullPath(path).Replace('\\', '/').TrimEnd('/');
+	}
+
 	public bool TryGetDiskCached(string glbPath, DateTime lastModifiedUtc, out Texture2D? texture)
 	{
 		texture = null;
-		if (string.IsNullOrEmpty(glbPath) || !File.Exists(glbPath)) return false;
+		string normPath = NormalizePath(glbPath);
+		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath)) return false;
 
 		string cacheDirectory = ProjectSettings.GlobalizePath("user://model_thumb_cache");
-		string fileName = Path.GetFileNameWithoutExtension(glbPath);
-		string cacheKey = $"{SanitizeFileName(fileName)}_{lastModifiedUtc.Ticks}";
+		string fileName = Path.GetFileNameWithoutExtension(normPath);
+		string pathHash = Math.Abs(normPath.ToLowerInvariant().GetHashCode()).ToString("X8");
+		string cacheKey = $"{SanitizeFileName(fileName)}_{pathHash}_{lastModifiedUtc.Ticks}";
 		string cachedPngPath = Path.Combine(cacheDirectory, $"{cacheKey}.png");
 
 		if (File.Exists(cachedPngPath))
@@ -150,21 +158,39 @@ public partial class GlbThumbnailRenderer : Node
 			catch { }
 		}
 
+		string legacyPngPath = Path.Combine(cacheDirectory, $"{SanitizeFileName(fileName)}_{lastModifiedUtc.Ticks}.png");
+		if (File.Exists(legacyPngPath))
+		{
+			try
+			{
+				var img = Image.LoadFromFile(legacyPngPath);
+				if (img != null)
+				{
+					texture = ImageTexture.CreateFromImage(img);
+					return true;
+				}
+			}
+			catch { }
+		}
+
 		return false;
 	}
 
 	public void EnqueueRequest(string glbPath, DateTime lastModifiedUtc, Action<string, Texture2D>? callback = null)
 	{
-		if (string.IsNullOrEmpty(glbPath) || !File.Exists(glbPath)) return;
+		string normPath = NormalizePath(glbPath);
+		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath)) return;
 
-		string normPath = Path.GetFullPath(glbPath);
+		EnsureInTree(this);
+
 		lock (_requestQueue)
 		{
 			if (_pendingPaths.Contains(normPath)) return;
 			_pendingPaths.Add(normPath);
 
-			string fileName = Path.GetFileNameWithoutExtension(glbPath);
-			string cacheKey = $"{SanitizeFileName(fileName)}_{lastModifiedUtc.Ticks}";
+			string fileName = Path.GetFileNameWithoutExtension(normPath);
+			string pathHash = Math.Abs(normPath.ToLowerInvariant().GetHashCode()).ToString("X8");
+			string cacheKey = $"{SanitizeFileName(fileName)}_{pathHash}_{lastModifiedUtc.Ticks}";
 
 			_requestQueue.Enqueue(new GlbRequest
 			{
@@ -204,6 +230,7 @@ public partial class GlbThumbnailRenderer : Node
 
 		foreach (var child in _modelContainer.GetChildren())
 		{
+			_modelContainer.RemoveChild(child);
 			child.QueueFree();
 		}
 
@@ -299,6 +326,7 @@ public partial class GlbThumbnailRenderer : Node
 		{
 			foreach (var child in _modelContainer.GetChildren())
 			{
+				_modelContainer.RemoveChild(child);
 				child.QueueFree();
 			}
 			_pendingPaths.Remove(_currentRequest.FilePath);

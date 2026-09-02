@@ -220,43 +220,6 @@ public class MapEditorEntityPaletteController
 								}
 							}
 						}
-
-						string subCat = category switch
-						{
-							"Units" or "Characters" => "units",
-							"Buildings" => "buildings",
-							"Resources" or "Environment" => "resources",
-							"Props" => "props",
-							_ => "units"
-						};
-
-						if (rootNode.ContainsKey("Assets") && rootNode["Assets"] is System.Text.Json.Nodes.JsonObject assets &&
-							assets.ContainsKey("glb") && assets["glb"] is System.Text.Json.Nodes.JsonObject glbObj &&
-							glbObj.ContainsKey(subCat) && glbObj[subCat] is System.Text.Json.Nodes.JsonObject subCatGlbs)
-						{
-							foreach (var kvp in subCatGlbs)
-							{
-								string modelFile = kvp.Key;
-								string uId = System.IO.Path.GetFileNameWithoutExtension(modelFile);
-								if (!string.IsNullOrEmpty(uId) && !_categoryFiles.Contains(uId))
-								{
-									_categoryFiles.Add(uId);
-								}
-							}
-						}
-
-						string modelDir = System.IO.Path.Combine(globalWs, "Assets", "models", subCat);
-						if (System.IO.Directory.Exists(modelDir))
-						{
-							foreach (var file in System.IO.Directory.GetFiles(modelDir, "*.glb"))
-							{
-								string uId = System.IO.Path.GetFileNameWithoutExtension(file);
-								if (!string.IsNullOrEmpty(uId) && !_categoryFiles.Contains(uId))
-								{
-									_categoryFiles.Add(uId);
-								}
-							}
-						}
 					}
 				}
 			}
@@ -322,11 +285,9 @@ public class MapEditorEntityPaletteController
 			placeId = _categoryFiles[selectedIndex];
 		}
 
-		if (string.IsNullOrEmpty(placeId))
+		if (string.IsNullOrEmpty(placeId) && _categoryFiles.Count > 0)
 		{
-			if (targetTool == GameHost.EditorTool.PlaceUnit) placeId = "worker";
-			else if (targetTool == GameHost.EditorTool.PlaceDecal) placeId = "acid_drip.png";
-			else placeId = "wooden_box";
+			placeId = _categoryFiles[0];
 		}
 
 		_hud.TriggerToolSelection(targetTool, _btnAddObject, placeId);
@@ -355,7 +316,7 @@ public class MapEditorEntityPaletteController
 		else
 		{
 			GameHost.EditorTool targetTool = GameHost.EditorTool.PlaceProp;
-			if (category == "Units" || category == "Characters" || category == "Buildings")
+			if (category == "Characters" || category == "Buildings")
 			{
 				targetTool = GameHost.EditorTool.PlaceUnit;
 			}

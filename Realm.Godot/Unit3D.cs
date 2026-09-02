@@ -46,8 +46,8 @@ public partial class Unit3D : Prop3D
 		{
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && Entity != default && GameHost.Instance.EcsWorld.IsAlive(Entity))
 				return GameHost.Instance.EcsWorld.Has<Building>(Entity);
-			if (GameHost.UnitRegistry != null && !string.IsNullOrEmpty(UnitId) && GameHost.UnitRegistry.TryGetValue(UnitId, out var meta))
-				return meta.Speed == 0f;
+			if (GameHost.BuildingRegistry != null && !string.IsNullOrEmpty(UnitId) && GameHost.BuildingRegistry.ContainsKey(UnitId))
+				return true;
 			return _isBuilding;
 		}
 		set
