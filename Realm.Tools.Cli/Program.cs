@@ -186,11 +186,33 @@ public class GlbPlayerColorCliOptions
 	public int DilationRadius { get; set; } = 3;
 }
 
+[Verb("rig_humanoid", HelpText = "Auto-rig a humanoid .glb model with a Mixamo skeleton using the Make-It-Animatable pipeline.")]
+public class RigHumanoidOptions
+{
+	[Option('i', "input", Required = true, HelpText = "Path to input .glb file.")]
+	public string Input { get; set; } = string.Empty;
+
+	[Option('o', "output", Required = true, HelpText = "Path for output rigged .glb file.")]
+	public string Output { get; set; } = string.Empty;
+
+	[Option("no-fingers", Required = false, Default = true, HelpText = "Model does not have ten separate fingers (default: true).")]
+	public bool NoFingers { get; set; } = true;
+
+	[Option("use-normals", Required = false, Default = false, HelpText = "Use normals to improve skinning when limbs are close together (default: false).")]
+	public bool UseNormals { get; set; } = false;
+
+	[Option("weight-postprocess", Required = false, Default = true, HelpText = "Apply empirical post-processing to blend weights (default: true).")]
+	public bool WeightPostprocess { get; set; } = true;
+
+	[Option("mia-dir", Required = false, HelpText = "Path to the ComfyUI_Make-It-Animatable directory. Falls back to MIA_DIR env var, then searches common relative paths.")]
+	public string? MiaDir { get; set; }
+}
+
 public static class Program
 {
 	public static int Main(string[] args)
 	{
-		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options, GlbPlayerColorCliOptions>(args)
+		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options, GlbPlayerColorCliOptions, RigHumanoidOptions>(args)
 			.MapResult(
 				(GlbOptimizeOptions options) => ExecuteGlbOptimize(options),
 				(TextureConvertOptions options) => ExecuteTextureConvert(options),
@@ -200,6 +222,7 @@ public static class Program
 				(MetadataOptions options) => ExecuteMetadata(options),
 				(Blake3Options options) => ExecuteBlake3(options),
 				(GlbPlayerColorCliOptions options) => ExecuteGlbPlayerColor(options),
+				(RigHumanoidOptions options) => ExecuteRigHumanoid(options),
 				errors => 1);
 	}
 
@@ -1043,5 +1066,162 @@ public static class Program
 		string dir = Path.GetDirectoryName(inputPath) ?? string.Empty;
 		string nameWithoutExt = Path.GetFileNameWithoutExtension(inputPath);
 		return Path.Combine(dir, nameWithoutExt + "_masked.glb");
+	}
+
+	private static int ExecuteRigHumanoid(RigHumanoidOptions options)
+	{
+		if (!File.Exists(options.Input))
+		{
+			Console.Error.WriteLine($"Error: Input file does not exist: {options.Input}");
+			return 1;
+		}
+
+		string inputPath = Path.GetFullPath(options.Input);
+		string outputPath = Path.GetFullPath(options.Output);
+
+		try
+		{
+			MakeItAnimatableSetup.EnsureSetup();
+		}
+		catch (Exception ex)
+		{
+			Console.Error.WriteLine($"Error: Make-It-Animatable setup failed: {ex.Message}");
+			return 1;
+		}
+
+		string? outputDir = Path.GetDirectoryName(outputPath);
+		if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
+		{
+			Directory.CreateDirectory(outputDir);
+		}
+
+		var optimizer = new GlbOptimizer();
+		byte[] sourceBytes = File.ReadAllBytes(inputPath);
+		bool wasOptimized = optimizer.IsOptimized(sourceBytes);
+
+		string rigSourcePath = inputPath;
+		string? tempUnoptimizedPath = null;
+
+		try
+		{
+			if (wasOptimized)
+			{
+				Console.WriteLine($"  Detected pre-optimized GLB — unoptimizing first to restore mesh topology...");
+				var unoptResult = optimizer.Unoptimize(sourceBytes);
+				if (!unoptResult.Success || unoptResult.OutputGlbBytes == null)
+				{
+					Console.Error.WriteLine($"  Failed to unoptimize {inputPath}: {unoptResult.ErrorMessage}");
+					return 1;
+				}
+
+				tempUnoptimizedPath = Path.Combine(
+					Path.GetDirectoryName(inputPath) ?? string.Empty,
+					$"__tmp_unopt_rig_{Path.GetFileName(inputPath)}");
+				File.WriteAllBytes(tempUnoptimizedPath, unoptResult.OutputGlbBytes);
+				rigSourcePath = tempUnoptimizedPath;
+			}
+
+			var kwargs = new System.Text.Json.Nodes.JsonObject
+			{
+				["is_gs"] = false,
+				["no_fingers"] = options.NoFingers,
+				["input_normal"] = options.UseNormals,
+				["bw_fix"] = options.WeightPostprocess,
+				["reset_to_rest"] = true,
+				["inplace"] = true,
+				["animation_file"] = System.Text.Json.Nodes.JsonValue.Create<string?>(null)
+			};
+			string kwargsJson = kwargs.ToJsonString();
+
+			Console.WriteLine();
+			Console.WriteLine($"Rigging: {inputPath}");
+			Console.WriteLine($"  Output:             {outputPath}");
+			Console.WriteLine($"  no_fingers:         {options.NoFingers}");
+			Console.WriteLine($"  use_normals:        {options.UseNormals}");
+			Console.WriteLine($"  weight_postprocess: {options.WeightPostprocess}");
+			Console.WriteLine();
+
+			var psi = new System.Diagnostics.ProcessStartInfo
+			{
+				FileName = MakeItAnimatableSetup.PythonExePath,
+				WorkingDirectory = MakeItAnimatableSetup.NodeDir,
+				CreateNoWindow = true,
+				UseShellExecute = false,
+				RedirectStandardInput = true,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true
+			};
+			psi.Environment["PYTHONUNBUFFERED"] = "1";
+			psi.Environment["PYTHONIOENCODING"] = "utf-8";
+			psi.ArgumentList.Add("-u");
+			psi.ArgumentList.Add(MakeItAnimatableSetup.ServerScriptPath);
+			psi.ArgumentList.Add("--input");
+			psi.ArgumentList.Add(rigSourcePath);
+			psi.ArgumentList.Add("--output");
+			psi.ArgumentList.Add(outputPath);
+			psi.ArgumentList.Add("--kwargs");
+			psi.ArgumentList.Add(kwargsJson);
+
+			int exitCode = RunPipelineProcess(psi);
+
+			if (exitCode != 0)
+			{
+				Console.Error.WriteLine($"Error: Make-It-Animatable pipeline exited with code {exitCode}.");
+				return 1;
+			}
+
+			if (!File.Exists(outputPath))
+			{
+				Console.Error.WriteLine($"Error: Output file was not created: {outputPath}");
+				return 1;
+			}
+		}
+		finally
+		{
+			if (tempUnoptimizedPath != null && File.Exists(tempUnoptimizedPath))
+			{
+				File.Delete(tempUnoptimizedPath);
+			}
+		}
+
+		Console.WriteLine($"  Re-optimizing output (LODs regenerated from rigged bone structure)...");
+		var optimizeResult = optimizer.OptimizeFile(
+			outputPath,
+			outputPath,
+			new OptimizationOptions { ForceReDecimate = true });
+
+		if (!optimizeResult.Success)
+		{
+			Console.Error.WriteLine($"  Warning: Re-optimization failed: {optimizeResult.ErrorMessage}");
+			Console.Error.WriteLine($"  Output saved without optimization: {outputPath}");
+			return 1;
+		}
+
+		Console.WriteLine($"  Successfully optimized: {outputPath} ({optimizeResult.OriginalSize} -> {optimizeResult.OptimizedSize} bytes)");
+		return 0;
+	}
+
+	private static int RunPipelineProcess(System.Diagnostics.ProcessStartInfo psi)
+	{
+		using var proc = new System.Diagnostics.Process { StartInfo = psi };
+		proc.OutputDataReceived += (_, e) => { if (e.Data != null) Console.WriteLine(e.Data); };
+		proc.ErrorDataReceived += (_, e) => { if (e.Data != null) Console.Error.WriteLine(e.Data); };
+
+		if (!proc.Start())
+		{
+			Console.Error.WriteLine("Error: Failed to start Python process.");
+			return -1;
+		}
+
+		if (psi.RedirectStandardInput)
+		{
+			proc.StandardInput.Close();
+		}
+
+		proc.BeginOutputReadLine();
+		proc.BeginErrorReadLine();
+		proc.WaitForExit();
+
+		return proc.ExitCode;
 	}
 }

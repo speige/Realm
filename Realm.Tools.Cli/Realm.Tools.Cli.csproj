@@ -38,6 +38,15 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\ComfyUI_Make-It-Animatable\server.py">
+      <Link>MiaSetup\server.py</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\ComfyUI_Make-It-Animatable\patches\**\*">
+      <Link>MiaSetup\patches\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <Target Name="PublishSingleFileAfterBuild" AfterTargets="Build" Condition="'$(IsPublishingSingleFile)' != 'true'">
     <MSBuild Projects="$(MSBuildProjectFullPath)"
              Targets="Publish"
