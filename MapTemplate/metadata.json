@@ -477,22 +477,14 @@
 	},
 	"ModelObstacleRadii": {},
 	"ModelOffsets": {
-		"buildings:ice_castle_1": 1.5000001,
-		"buildings:timber_framed_house": 1.5000001,
 		"coniferous_tree_1.glb": 2.7491,
 		"crystal_cluster_29.glb": 1.2500001,
 		"fantasy_warrior_unit_1.glb": 0.8000002,
 		"ice_castle_1.glb": 1.5000001,
 		"orc_warrior_7.glb": 0.7500002,
 		"palm_tree.glb": 2.7498,
-		"props:crystal_cluster_29": 1.2500001,
-		"props:spiked_wooden_stake": 1.2000002,
-		"resources:coniferous_tree_1": 2.7491,
-		"resources:palm_tree": 2.7498,
 		"spiked_wooden_stake.glb": 1.2000002,
-		"timber_framed_house.glb": 1.5000001,
-		"units:fantasy_warrior_unit_1": 0.8000002,
-		"units:orc_warrior_7": 0.7500002
+		"timber_framed_house.glb": 1.5000001
 	},
 	"ModelScales": {
 		"coniferous_tree_1.glb": 2.75,
