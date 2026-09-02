@@ -155,11 +155,42 @@ public class Blake3Options
 	public bool Raw { get; set; }
 }
 
+[Verb("glb_player_color", HelpText = "Extract #FF00FF prompt artifacts from a .glb model, isolate the player-color area via 3D face-topology clustering, desaturate the albedo, and pack the mask into the Red channel of the ORM texture.")]
+public class GlbPlayerColorCliOptions
+{
+	[Option('i', "input", Required = true, HelpText = "Path to .glb file or directory containing .glb files.")]
+	public string Input { get; set; } = string.Empty;
+
+	[Option('o', "output", Required = false, HelpText = "Output destination file or directory. Defaults to <input>_masked.glb alongside the source.")]
+	public string? Output { get; set; }
+
+	[Option("in-place", Required = false, Default = false, HelpText = "Overwrite the source file directly.")]
+	public bool InPlace { get; set; }
+
+	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
+	public bool Recursive { get; set; }
+
+	[Option("target-hex", Required = false, Default = "#FF00FF", HelpText = "Target prompt color in hex (default: #FF00FF).")]
+	public string TargetHex { get; set; } = "#FF00FF";
+
+	[Option("core-threshold", Required = false, Default = 0.35f, HelpText = "Chromaticity dot-product threshold for high-confidence core texels (default: 0.35).")]
+	public float CoreThreshold { get; set; } = 0.35f;
+
+	[Option("fringe-threshold", Required = false, Default = 0.12f, HelpText = "Chromaticity dot-product threshold for fringe/edge expansion (default: 0.12).")]
+	public float FringeThreshold { get; set; } = 0.12f;
+
+	[Option("min-cluster-faces", Required = false, Default = 10, HelpText = "Minimum connected 3D face count to keep a cluster (default: 10).")]
+	public int MinClusterFaces { get; set; } = 10;
+
+	[Option("dilation-radius", Required = false, Default = 3, HelpText = "UV gutter dilation radius in pixels (default: 3).")]
+	public int DilationRadius { get; set; } = 3;
+}
+
 public static class Program
 {
 	public static int Main(string[] args)
 	{
-		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options>(args)
+		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options, GlbPlayerColorCliOptions>(args)
 			.MapResult(
 				(GlbOptimizeOptions options) => ExecuteGlbOptimize(options),
 				(TextureConvertOptions options) => ExecuteTextureConvert(options),
@@ -168,6 +199,7 @@ public static class Program
 				(RanimRenderOptions options) => ExecuteRanimRender(options),
 				(MetadataOptions options) => ExecuteMetadata(options),
 				(Blake3Options options) => ExecuteBlake3(options),
+				(GlbPlayerColorCliOptions options) => ExecuteGlbPlayerColor(options),
 				errors => 1);
 	}
 
@@ -881,5 +913,135 @@ public static class Program
 			Console.Error.WriteLine($"Error: Input path does not exist: {options.Input}");
 			return 1;
 		}
+	}
+
+	private static int ExecuteGlbPlayerColor(GlbPlayerColorCliOptions options)
+	{
+		var processorOptions = new Realm.Shared.GlbPlayerColorOptions
+		{
+			TargetHex = options.TargetHex,
+			CoreThreshold = options.CoreThreshold,
+			FringeThreshold = options.FringeThreshold,
+			MinClusterFaces = options.MinClusterFaces,
+			DilationRadius = options.DilationRadius
+		};
+
+		if (File.Exists(options.Input))
+		{
+			string target = ResolveOutputPath(options.Input, options.Output, options.InPlace);
+			return ProcessSingleGlbPlayerColor(options.Input, target, processorOptions);
+		}
+		else if (Directory.Exists(options.Input))
+		{
+			var searchOpt = options.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+			string[] files = Directory.GetFiles(options.Input, "*.glb", searchOpt);
+			Console.WriteLine($"Found {files.Length} .glb file(s) in {options.Input}");
+
+			int successCount = 0;
+			int failCount = 0;
+
+			foreach (var file in files)
+			{
+				string target;
+				if (options.InPlace || string.IsNullOrEmpty(options.Output))
+				{
+					target = ResolveOutputPath(file, null, options.InPlace);
+				}
+				else
+				{
+					string rel = Path.GetRelativePath(options.Input, file);
+					target = Path.Combine(options.Output, rel);
+				}
+
+				int res = ProcessSingleGlbPlayerColor(file, target, processorOptions);
+				if (res == 0) successCount++;
+				else failCount++;
+			}
+
+			Console.WriteLine($"Finished. {successCount} succeeded, {failCount} failed.");
+			return failCount > 0 ? 1 : 0;
+		}
+		else
+		{
+			Console.Error.WriteLine($"Error: Input path does not exist: {options.Input}");
+			return 1;
+		}
+	}
+
+	private static int ProcessSingleGlbPlayerColor(
+		string inputPath,
+		string outputPath,
+		Realm.Shared.GlbPlayerColorOptions processorOptions)
+	{
+		Console.WriteLine($"Processing: {inputPath} -> {outputPath}");
+
+		var optimizer = new GlbOptimizer();
+
+		byte[] sourceBytes = File.ReadAllBytes(inputPath);
+		bool wasOptimized = optimizer.IsOptimized(sourceBytes);
+
+		string colorSourcePath = inputPath;
+		string? tempUnoptimizedPath = null;
+
+		try
+		{
+			if (wasOptimized)
+			{
+				Console.WriteLine($"  Detected pre-optimized GLB — unoptimizing first to restore mesh topology...");
+				var unoptResult = optimizer.Unoptimize(sourceBytes);
+				if (!unoptResult.Success || unoptResult.OutputGlbBytes == null)
+				{
+					Console.Error.WriteLine($"  Failed to unoptimize {inputPath}: {unoptResult.ErrorMessage}");
+					return 1;
+				}
+
+				tempUnoptimizedPath = Path.Combine(
+					Path.GetDirectoryName(inputPath) ?? string.Empty,
+					$"__tmp_unopt_{Path.GetFileName(inputPath)}");
+				File.WriteAllBytes(tempUnoptimizedPath, unoptResult.OutputGlbBytes);
+				colorSourcePath = tempUnoptimizedPath;
+			}
+
+			var colorResult = Realm.Shared.GlbPlayerColorProcessor.ProcessFile(colorSourcePath, outputPath, processorOptions);
+			if (!colorResult.Success)
+			{
+				Console.Error.WriteLine($"  Failed player-color processing: {colorResult.ErrorMessage}");
+				return 1;
+			}
+
+			Console.WriteLine($"  Player-color mask applied (masked faces: {colorResult.MaskedFaceCount}/{colorResult.TotalFaceCount})");
+		}
+		finally
+		{
+			if (tempUnoptimizedPath != null && File.Exists(tempUnoptimizedPath))
+			{
+				File.Delete(tempUnoptimizedPath);
+			}
+		}
+
+		Console.WriteLine($"  Re-optimizing output (LODs regenerated from corrected textures)...");
+		var optimizeResult = optimizer.OptimizeFile(
+			outputPath,
+			outputPath,
+			new OptimizationOptions { ForceReDecimate = true });
+
+		if (!optimizeResult.Success)
+		{
+			Console.Error.WriteLine($"  Warning: Re-optimization failed: {optimizeResult.ErrorMessage}");
+			Console.Error.WriteLine($"  Output saved without optimization: {outputPath}");
+			return 1;
+		}
+
+		Console.WriteLine($"  Successfully optimized: {outputPath} ({optimizeResult.OriginalSize} -> {optimizeResult.OptimizedSize} bytes)");
+		return 0;
+	}
+
+	private static string ResolveOutputPath(string inputPath, string? explicitOutput, bool inPlace)
+	{
+		if (inPlace) return inputPath;
+		if (!string.IsNullOrEmpty(explicitOutput)) return explicitOutput;
+		string dir = Path.GetDirectoryName(inputPath) ?? string.Empty;
+		string nameWithoutExt = Path.GetFileNameWithoutExtension(inputPath);
+		return Path.Combine(dir, nameWithoutExt + "_masked.glb");
 	}
 }
