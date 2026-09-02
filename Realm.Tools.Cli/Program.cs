@@ -1038,7 +1038,18 @@ public static class Program
 		{
 			if (tempUnoptimizedPath != null && File.Exists(tempUnoptimizedPath))
 			{
-				File.Delete(tempUnoptimizedPath);
+				try { File.Delete(tempUnoptimizedPath); } catch { }
+			}
+
+			if (tempUnoptimizedPath != null)
+			{
+				string tempUnoptDir = Path.Combine(
+					Path.GetDirectoryName(tempUnoptimizedPath) ?? string.Empty,
+					Path.GetFileNameWithoutExtension(tempUnoptimizedPath));
+				if (Directory.Exists(tempUnoptDir))
+				{
+					try { Directory.Delete(tempUnoptDir, true); } catch { }
+				}
 			}
 		}
 
@@ -1164,13 +1175,15 @@ public static class Program
 
 			int exitCode = RunPipelineProcess(psi);
 
-			if (exitCode != 0)
+			bool outputCreated = File.Exists(outputPath) && new FileInfo(outputPath).Length > 0;
+
+			if (exitCode != 0 && exitCode != -1073741819 && exitCode != unchecked((int)0xC0000005))
 			{
 				Console.Error.WriteLine($"Error: Make-It-Animatable pipeline exited with code {exitCode}.");
 				return 1;
 			}
 
-			if (!File.Exists(outputPath))
+			if (!outputCreated)
 			{
 				Console.Error.WriteLine($"Error: Output file was not created: {outputPath}");
 				return 1;
@@ -1180,7 +1193,26 @@ public static class Program
 		{
 			if (tempUnoptimizedPath != null && File.Exists(tempUnoptimizedPath))
 			{
-				File.Delete(tempUnoptimizedPath);
+				try { File.Delete(tempUnoptimizedPath); } catch { }
+			}
+
+			if (tempUnoptimizedPath != null)
+			{
+				string tempUnoptDir = Path.Combine(
+					Path.GetDirectoryName(tempUnoptimizedPath) ?? string.Empty,
+					Path.GetFileNameWithoutExtension(tempUnoptimizedPath));
+				if (Directory.Exists(tempUnoptDir))
+				{
+					try { Directory.Delete(tempUnoptDir, true); } catch { }
+				}
+			}
+
+			string inputDirWithoutExt = Path.Combine(
+				Path.GetDirectoryName(inputPath) ?? string.Empty,
+				Path.GetFileNameWithoutExtension(inputPath));
+			if (Directory.Exists(inputDirWithoutExt))
+			{
+				try { Directory.Delete(inputDirWithoutExt, true); } catch { }
 			}
 		}
 

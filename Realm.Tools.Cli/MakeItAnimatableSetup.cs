@@ -46,6 +46,9 @@ internal static class MakeItAnimatableSetup
 
     internal static void EnsureSetup()
     {
+        Directory.CreateDirectory(NodeDir);
+        ExtractWrapperFiles();
+
         if (IsSetupComplete())
         {
             Console.WriteLine("[MIA] Make-It-Animatable environment is ready.");
@@ -56,9 +59,6 @@ internal static class MakeItAnimatableSetup
         Console.WriteLine($"[MIA] Install directory: {NodeDir}");
         Console.WriteLine();
 
-        Directory.CreateDirectory(NodeDir);
-
-        ExtractWrapperFiles();
         CloneRepo();
         ApplyPatches();
         EnsureVenv();
