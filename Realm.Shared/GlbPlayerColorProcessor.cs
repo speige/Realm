@@ -21,8 +21,8 @@ public class GlbPlayerColorResult
 public class GlbPlayerColorOptions
 {
     public string TargetHex { get; set; } = "#FF00FF";
-    public float CoreThreshold { get; set; } = 0.35f;
-    public float FringeThreshold { get; set; } = 0.12f;
+    public float CoreThreshold { get; set; } = 0.88f;
+    public float FringeThreshold { get; set; } = 0.80f;
     public int MinClusterFaces { get; set; } = 10;
     public int DilationRadius { get; set; } = 3;
 }
@@ -112,6 +112,7 @@ public static class GlbPlayerColorProcessor
 
         int ormImageIndex = FindOrmImageIndex(textures, materials);
 
+        (float targetR, float targetG, float targetB) = HexToRgb(options.TargetHex);
         (float targetCb, float targetCr) = HexToBt601CbCr(options.TargetHex);
 
         byte[] albedoRaw = ExtractImageBytes(albedoImageIndex, images, bufferViews, binChunk);
@@ -134,8 +135,9 @@ public static class GlbPlayerColorProcessor
 
         var coreMask = new bool[texW * texH];
         var fringeMask = new bool[texW * texH];
+        var globalMask = new float[texW * texH];
 
-        ScoreTexelsByTarget(albedoImg, targetCb, targetCr, options.CoreThreshold, options.FringeThreshold, coreMask, fringeMask);
+        ScoreTexelsByTarget(albedoImg, targetR, targetG, targetB, targetCb, targetCr, options.CoreThreshold, options.FringeThreshold, coreMask, fringeMask);
 
         int totalFaces = 0;
         int maskedFaces = 0;
@@ -160,11 +162,12 @@ public static class GlbPlayerColorProcessor
 
                 maskedFaces += confirmedFaces.Count;
 
-                RasterizeMaskFromFaces(confirmedFaces, faceUvCoords, coreMask, fringeMask, texW, texH, ormImg, options.DilationRadius);
+                RasterizeMaskFromFaces(confirmedFaces, faceUvCoords, coreMask, fringeMask, texW, texH, globalMask, options.DilationRadius);
             }
         }
 
-        DesaturateAlbedoUnderMask(albedoImg, coreMask);
+        ApplyMaskToOrm(ormImg, globalMask, texW, texH);
+        DesaturateAlbedoUnderMask(albedoImg, globalMask);
 
         using var newBinStream = new MemoryStream();
         var newBufferViewsList = CloneNonImageBufferViews(bufferViews, binChunk, newBinStream);
@@ -205,13 +208,19 @@ public static class GlbPlayerColorProcessor
         return (true, outputBytes, null, maskedFaces, totalFaces);
     }
 
-    private static (float Cb, float Cr) HexToBt601CbCr(string hex)
+    private static (float R, float G, float B) HexToRgb(string hex)
     {
         hex = hex.TrimStart('#');
         byte r = Convert.ToByte(hex[..2], 16);
         byte g = Convert.ToByte(hex[2..4], 16);
         byte b = Convert.ToByte(hex[4..6], 16);
-        return RgbToBt601CbCr(r / 255f, g / 255f, b / 255f);
+        return (r / 255f, g / 255f, b / 255f);
+    }
+
+    private static (float Cb, float Cr) HexToBt601CbCr(string hex)
+    {
+        var (r, g, b) = HexToRgb(hex);
+        return RgbToBt601CbCr(r, g, b);
     }
 
     private static (float Cb, float Cr) RgbToBt601CbCr(float r, float g, float b)
@@ -223,11 +232,13 @@ public static class GlbPlayerColorProcessor
 
     private static void ScoreTexelsByTarget(
         Image<Rgba32> albedoImg,
+        float targetR, float targetG, float targetB,
         float targetCb, float targetCr,
         float coreThreshold, float fringeThreshold,
         bool[] coreMask, bool[] fringeMask)
     {
         float targetMagnitude = MathF.Sqrt(targetCb * targetCb + targetCr * targetCr);
+        bool isMagentaTarget = targetR > 0.5f && targetB > 0.5f && targetG < 0.2f;
 
         albedoImg.ProcessPixelRows(accessor =>
         {
@@ -246,24 +257,75 @@ public static class GlbPlayerColorProcessor
 
                     (float cb, float cr) = RgbToBt601CbCr(r, g, bVal);
                     float pixelMagnitude = MathF.Sqrt(cb * cb + cr * cr);
-                    if (pixelMagnitude < 1e-6f) continue;
+                    if (pixelMagnitude < 0.02f) continue;
 
                     float dot = (cb * targetCb + cr * targetCr) / (pixelMagnitude * targetMagnitude);
+                    float chromaRatio = targetMagnitude > 1e-6f ? pixelMagnitude / targetMagnitude : 0f;
 
                     int idx = y * accessor.Width + x;
-                    if (dot >= coreThreshold && lum >= 0.10f)
+
+                    if (isMagentaTarget)
                     {
-                        coreMask[idx] = true;
-                        fringeMask[idx] = true;
+                        float minRb = MathF.Min(r, bVal);
+                        float maxRb = MathF.Max(r, bVal);
+                        float rbBalance = maxRb > 1e-4f ? minRb / maxRb : 0f;
+
+                        bool isCore = dot >= coreThreshold &&
+                                      chromaRatio >= 0.35f &&
+                                      lum >= 0.08f &&
+                                      (minRb - g) >= 0.25f &&
+                                      g <= 0.45f &&
+                                      rbBalance >= 0.50f;
+
+                        bool isFringe = dot >= fringeThreshold &&
+                                        chromaRatio >= 0.20f &&
+                                        lum >= 0.05f &&
+                                        (minRb - g) >= 0.15f &&
+                                        g <= 0.55f &&
+                                        rbBalance >= 0.40f;
+
+                        if (isCore)
+                        {
+                            coreMask[idx] = true;
+                            fringeMask[idx] = true;
+                        }
+                        else if (isFringe)
+                        {
+                            fringeMask[idx] = true;
+                        }
                     }
-                    else if (dot >= fringeThreshold)
+                    else
                     {
-                        fringeMask[idx] = true;
+                        float dr = r - targetR;
+                        float dg = g - targetG;
+                        float db = bVal - targetB;
+                        float rgbDist = MathF.Sqrt(dr * dr + dg * dg + db * db);
+
+                        bool isCore = dot >= coreThreshold &&
+                                      chromaRatio >= 0.35f &&
+                                      lum >= 0.08f &&
+                                      rgbDist <= 0.65f;
+
+                        bool isFringe = dot >= fringeThreshold &&
+                                        chromaRatio >= 0.20f &&
+                                        lum >= 0.05f &&
+                                        rgbDist <= 0.80f;
+
+                        if (isCore)
+                        {
+                            coreMask[idx] = true;
+                            fringeMask[idx] = true;
+                        }
+                        else if (isFringe)
+                        {
+                            fringeMask[idx] = true;
+                        }
                     }
                 }
             }
         });
     }
+
 
     private static List<(Vector2 UV0, Vector2 UV1, Vector2 UV2)> ExtractFaceUvData(
         JsonObject primObj,
@@ -381,9 +443,22 @@ public static class GlbPlayerColorProcessor
                 }
             }
 
-            if (totalSampled > 0 && coreHits > 0 && (float)coreHits / totalSampled >= 0.05f)
+            if (totalSampled > 0)
             {
-                candidates.Add(faceIdx);
+                if ((float)coreHits / totalSampled >= 0.20f)
+                {
+                    candidates.Add(faceIdx);
+                }
+            }
+            else
+            {
+                Vector2 centroid = (uv0 + uv1 + uv2) / 3f;
+                int cx = Math.Clamp((int)(centroid.X * texW), 0, texW - 1);
+                int cy = Math.Clamp((int)(centroid.Y * texH), 0, texH - 1);
+                if (coreMask[cy * texW + cx])
+                {
+                    candidates.Add(faceIdx);
+                }
             }
         }
 
@@ -508,10 +583,10 @@ public static class GlbPlayerColorProcessor
         bool[] fringeMask,
         int texW,
         int texH,
-        Image<Rgba32> ormImg,
+        float[] globalMask,
         int dilationRadius)
     {
-        var finalMask = new float[texW * texH];
+        var localFaceMask = new float[texW * texH];
 
         foreach (int faceIdx in confirmedFaces)
         {
@@ -532,27 +607,29 @@ public static class GlbPlayerColorProcessor
                     int idx = py * texW + px;
                     if (coreMask[idx])
                     {
-                        finalMask[idx] = 1.0f;
+                        localFaceMask[idx] = 1.0f;
                     }
                     else if (fringeMask[idx])
                     {
-                        finalMask[idx] = Math.Max(finalMask[idx], 0.5f);
-                    }
-                    else
-                    {
-                        finalMask[idx] = Math.Max(finalMask[idx], 0.25f);
+                        localFaceMask[idx] = Math.Max(localFaceMask[idx], 0.7f);
                     }
                 }
             }
         }
 
-        var dilatedMask = DilateFloat(finalMask, texW, texH, dilationRadius);
+        var dilatedMask = DilateFloat(localFaceMask, texW, texH, dilationRadius);
 
         for (int i = 0; i < dilatedMask.Length; i++)
         {
-            if (dilatedMask[i] > 0f) coreMask[i] = true;
+            if (dilatedMask[i] > 0f)
+            {
+                globalMask[i] = Math.Max(globalMask[i], dilatedMask[i]);
+            }
         }
+    }
 
+    private static void ApplyMaskToOrm(Image<Rgba32> ormImg, float[] globalMask, int texW, int texH)
+    {
         int ormW = ormImg.Width;
         int ormH = ormImg.Height;
 
@@ -565,13 +642,10 @@ public static class GlbPlayerColorProcessor
                 {
                     int srcX = Math.Clamp((int)((x / (float)ormW) * texW), 0, texW - 1);
                     int srcY = Math.Clamp((int)((y / (float)ormH) * texH), 0, texH - 1);
-                    float maskValue = dilatedMask[srcY * texW + srcX];
-                    if (maskValue > 0f)
-                    {
-                        byte maskByte = (byte)Math.Clamp((int)(maskValue * 255f + 0.5f), 0, 255);
-                        var pixel = row[x];
-                        row[x] = new Rgba32(maskByte, pixel.G, pixel.B, pixel.A);
-                    }
+                    float maskValue = globalMask[srcY * texW + srcX];
+                    byte maskByte = (byte)Math.Clamp((int)(maskValue * 255f + 0.5f), 0, 255);
+                    var pixel = row[x];
+                    row[x] = new Rgba32(maskByte, pixel.G, pixel.B, pixel.A);
                 }
             }
         });
@@ -605,7 +679,7 @@ public static class GlbPlayerColorProcessor
         return dilated;
     }
 
-    private static void DesaturateAlbedoUnderMask(Image<Rgba32> albedoImg, bool[] coreMask)
+    private static void DesaturateAlbedoUnderMask(Image<Rgba32> albedoImg, float[] globalMask)
     {
         albedoImg.ProcessPixelRows(accessor =>
         {
@@ -615,15 +689,20 @@ public static class GlbPlayerColorProcessor
                 for (int x = 0; x < accessor.Width; x++)
                 {
                     int idx = y * accessor.Width + x;
-                    if (!coreMask[idx]) continue;
+                    float maskValue = globalMask[idx];
+                    if (maskValue <= 0.01f) continue;
 
                     var pixel = row[x];
-                    byte gray = (byte)(0.299f * pixel.R + 0.587f * pixel.G + 0.114f * pixel.B);
-                    row[x] = new Rgba32(gray, gray, gray, pixel.A);
+                    float gray = 0.299f * pixel.R + 0.587f * pixel.G + 0.114f * pixel.B;
+                    byte newR = (byte)Math.Clamp((int)((1f - maskValue) * pixel.R + maskValue * gray + 0.5f), 0, 255);
+                    byte newG = (byte)Math.Clamp((int)((1f - maskValue) * pixel.G + maskValue * gray + 0.5f), 0, 255);
+                    byte newB = (byte)Math.Clamp((int)((1f - maskValue) * pixel.B + maskValue * gray + 0.5f), 0, 255);
+                    row[x] = new Rgba32(newR, newG, newB, pixel.A);
                 }
             }
         });
     }
+
 
     private static int FindAlbedoImageIndex(JsonArray textures, JsonArray materials)
     {

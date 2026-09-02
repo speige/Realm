@@ -173,11 +173,11 @@ public class GlbPlayerColorCliOptions
 	[Option("target-hex", Required = false, Default = "#FF00FF", HelpText = "Target prompt color in hex (default: #FF00FF).")]
 	public string TargetHex { get; set; } = "#FF00FF";
 
-	[Option("core-threshold", Required = false, Default = 0.35f, HelpText = "Chromaticity dot-product threshold for high-confidence core texels (default: 0.35).")]
-	public float CoreThreshold { get; set; } = 0.35f;
+	[Option("core-threshold", Required = false, Default = 0.88f, HelpText = "Chromaticity dot-product threshold for high-confidence core texels (default: 0.88).")]
+	public float CoreThreshold { get; set; } = 0.88f;
 
-	[Option("fringe-threshold", Required = false, Default = 0.12f, HelpText = "Chromaticity dot-product threshold for fringe/edge expansion (default: 0.12).")]
-	public float FringeThreshold { get; set; } = 0.12f;
+	[Option("fringe-threshold", Required = false, Default = 0.80f, HelpText = "Chromaticity dot-product threshold for fringe/edge expansion (default: 0.80).")]
+	public float FringeThreshold { get; set; } = 0.80f;
 
 	[Option("min-cluster-faces", Required = false, Default = 10, HelpText = "Minimum connected 3D face count to keep a cluster (default: 10).")]
 	public int MinClusterFaces { get; set; } = 10;
