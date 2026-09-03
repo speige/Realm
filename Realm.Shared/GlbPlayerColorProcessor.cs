@@ -899,9 +899,21 @@ public static class GlbPlayerColorProcessor
             }
         }
 
-        foreach (var tex in textures)
+        for (int i = 0; i < textures.Count; i++)
         {
-            if (tex is not JsonObject texObj) continue;
+            if (textures[i] is not JsonObject texObj) continue;
+            if (!texObj.ContainsKey("source") || texObj["source"] == null)
+            {
+                int src = ResolveTextureToImage(i, textures);
+                if (src >= 0 && src < images.Count)
+                {
+                    texObj["source"] = src;
+                }
+                else if (images.Count > 0)
+                {
+                    texObj["source"] = 0;
+                }
+            }
             if (texObj.ContainsKey("extensions"))
             {
                 texObj.Remove("extensions");

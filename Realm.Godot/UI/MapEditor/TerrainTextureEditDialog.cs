@@ -86,7 +86,7 @@ public class TerrainTextureUndoAction : IEditorAction
 
 		try
 		{
-			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 			string metadataPath = Path.Combine(wsPath, "metadata.json");
 			if (File.Exists(metadataPath))
 			{

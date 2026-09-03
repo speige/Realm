@@ -1,5 +1,8 @@
 using Godot;
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using Realm.Godot.Utils;
 
 public class GlobalObjectOverridesUndoAction : IEditorAction
 {
@@ -36,6 +39,8 @@ public class GlobalObjectOverridesUndoAction : IEditorAction
 		GameHost.Instance.SetModelNormalMode(_assetKey, snapshot.NormalMode);
 		GameHost.Instance.SetModelNormalizeLuminance(_assetKey, snapshot.NormalizeLuminance);
 		GameHost.Instance.SetModelIgnorePlayerColor(_assetKey, snapshot.IgnorePlayerColor);
+		GameHost.Instance.SetModelSpawnShader(_assetKey, snapshot.SpawnShader);
+		GameHost.Instance.SetModelDeathShader(_assetKey, snapshot.DeathShader);
 
 		GameHost.Instance.RefreshAllPlacedObjectModels(_assetKey);
 		GameHost.Instance.FlushModelYOffsetSave();
@@ -55,6 +60,8 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 		public GameHost.ModelNormalMode NormalMode;
 		public bool NormalizeLuminance;
 		public bool IgnorePlayerColor;
+		public string SpawnShader;
+		public string DeathShader;
 	}
 
 	private string _currentAssetKey = "";
@@ -75,9 +82,11 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 	private OptionButton _optNormalMode;
 	private CheckBox _chkNormalizeLuminance;
 	private CheckBox _chkIgnorePlayerColor;
+	private OptionButton _optSpawnShader;
+	private OptionButton _optDeathShader;
 
 	public GlobalObjectOverridesDialog(MapEditorHUD hud)
-		: base(hud, TranslationServer.Translate("Global Object Overrides"), new Vector2(380, 420))
+		: base(hud, TranslationServer.Translate("Global Object Overrides"), new Vector2(400, 490))
 	{
 		BuildControls();
 	}
@@ -144,6 +153,27 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 			GameHost.Instance.SetModelIgnorePlayerColor(_currentAssetKey, pressed);
 			GameHost.Instance.RefreshAllPlacedObjectModels(_currentAssetKey);
 		});
+
+		var shaders = SpawnDeathShaderManager.LoadAllCustomShaders();
+		var shaderOptions = new List<string> { TranslationServer.Translate("(None)") };
+		foreach (var s in shaders.Values)
+		{
+			shaderOptions.Add(s.Name);
+		}
+
+		_optSpawnShader = AddOptionDropdown(grid, TranslationServer.Translate("Spawn Shader:"), shaderOptions.ToArray(), 0, (idx) =>
+		{
+			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
+			string selectedKey = idx > 0 ? shaders.ElementAt(idx - 1).Key : "";
+			GameHost.Instance.SetModelSpawnShader(_currentAssetKey, selectedKey);
+		});
+
+		_optDeathShader = AddOptionDropdown(grid, TranslationServer.Translate("Death Shader:"), shaderOptions.ToArray(), 0, (idx) =>
+		{
+			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
+			string selectedKey = idx > 0 ? shaders.ElementAt(idx - 1).Key : "";
+			GameHost.Instance.SetModelDeathShader(_currentAssetKey, selectedKey);
+		});
 	}
 
 	public void OpenForObject(Node selectedObject)
@@ -163,7 +193,9 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 			ColorTint = GameHost.Instance.GetModelColorTint(_currentAssetKey),
 			NormalMode = GameHost.Instance.GetModelNormalMode(_currentAssetKey),
 			NormalizeLuminance = GameHost.Instance.GetModelNormalizeLuminance(_currentAssetKey),
-			IgnorePlayerColor = GameHost.Instance.GetModelIgnorePlayerColor(_currentAssetKey)
+			IgnorePlayerColor = GameHost.Instance.GetModelIgnorePlayerColor(_currentAssetKey),
+			SpawnShader = GameHost.Instance.GetModelSpawnShader(_currentAssetKey),
+			DeathShader = GameHost.Instance.GetModelDeathShader(_currentAssetKey)
 		};
 
 		TitleLabel.Text = $"{TranslationServer.Translate("Global Overrides")} - {_currentAssetKey}";
@@ -194,6 +226,26 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 		_optNormalMode.Selected = (int)_initialSnapshot.NormalMode;
 		_chkNormalizeLuminance.ButtonPressed = _initialSnapshot.NormalizeLuminance;
 		_chkIgnorePlayerColor.ButtonPressed = _initialSnapshot.IgnorePlayerColor;
+
+		var allShaders = SpawnDeathShaderManager.LoadAllCustomShaders();
+		int spawnIdx = 0;
+		int deathIdx = 0;
+		int sIdx = 1;
+		foreach (var s in allShaders)
+		{
+			if (string.Equals(s.Key, _initialSnapshot.SpawnShader, StringComparison.OrdinalIgnoreCase))
+			{
+				spawnIdx = sIdx;
+			}
+			if (string.Equals(s.Key, _initialSnapshot.DeathShader, StringComparison.OrdinalIgnoreCase))
+			{
+				deathIdx = sIdx;
+			}
+			sIdx++;
+		}
+		if (_optSpawnShader != null) _optSpawnShader.Selected = spawnIdx;
+		if (_optDeathShader != null) _optDeathShader.Selected = deathIdx;
+
 		_isUpdatingUI = false;
 
 		OpenDialog();
@@ -202,6 +254,18 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 	protected override void OnApply()
 	{
 		if (GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
+
+		var allShaders = SpawnDeathShaderManager.LoadAllCustomShaders();
+		string spawnKey = "";
+		if (_optSpawnShader != null && _optSpawnShader.Selected > 0 && _optSpawnShader.Selected - 1 < allShaders.Count)
+		{
+			spawnKey = allShaders.ElementAt(_optSpawnShader.Selected - 1).Key;
+		}
+		string deathKey = "";
+		if (_optDeathShader != null && _optDeathShader.Selected > 0 && _optDeathShader.Selected - 1 < allShaders.Count)
+		{
+			deathKey = allShaders.ElementAt(_optDeathShader.Selected - 1).Key;
+		}
 
 		var currentSnapshot = new GlobalOverridesSnapshot
 		{
@@ -212,8 +276,13 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 			ColorTint = _cpkColorTint.Color,
 			NormalMode = (GameHost.ModelNormalMode)_optNormalMode.Selected,
 			NormalizeLuminance = _chkNormalizeLuminance.ButtonPressed,
-			IgnorePlayerColor = _chkIgnorePlayerColor.ButtonPressed
+			IgnorePlayerColor = _chkIgnorePlayerColor.ButtonPressed,
+			SpawnShader = spawnKey,
+			DeathShader = deathKey
 		};
+
+		GameHost.Instance.SetModelSpawnShader(_currentAssetKey, spawnKey);
+		GameHost.Instance.SetModelDeathShader(_currentAssetKey, deathKey);
 
 		var action = new GlobalObjectOverridesUndoAction(_currentAssetKey, _initialSnapshot, currentSnapshot);
 		EditorHistoryManager.RecordAction(action);
@@ -235,6 +304,8 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 		GameHost.Instance.SetModelNormalMode(_currentAssetKey, _initialSnapshot.NormalMode);
 		GameHost.Instance.SetModelNormalizeLuminance(_currentAssetKey, _initialSnapshot.NormalizeLuminance);
 		GameHost.Instance.SetModelIgnorePlayerColor(_currentAssetKey, _initialSnapshot.IgnorePlayerColor);
+		GameHost.Instance.SetModelSpawnShader(_currentAssetKey, _initialSnapshot.SpawnShader);
+		GameHost.Instance.SetModelDeathShader(_currentAssetKey, _initialSnapshot.DeathShader);
 
 		GameHost.Instance.RefreshAllPlacedObjectModels(_currentAssetKey);
 		GameHost.Instance.FlushModelYOffsetSave();

@@ -656,7 +656,7 @@ public partial class WeaponVfxDialog : FloatingDialogBase
 			}
 			else
 			{
-				string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+				string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 				string fullPath = System.IO.Path.Combine(wsPath, "Assets", "audio", soundPath);
 				if (!System.IO.File.Exists(fullPath))
 				{

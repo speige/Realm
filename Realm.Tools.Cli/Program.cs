@@ -1081,179 +1081,22 @@ public static class Program
 
 	private static int ExecuteRigHumanoid(RigHumanoidOptions options)
 	{
-		if (!File.Exists(options.Input))
+		var result = GlbAutoRigger.RigHumanoid(
+			options.Input,
+			options.Output,
+			new GlbAutoRiggerOptions
+			{
+				NoFingers = options.NoFingers,
+				UseNormals = options.UseNormals,
+				WeightPostprocess = options.WeightPostprocess
+			});
+
+		if (!result.Success)
 		{
-			Console.Error.WriteLine($"Error: Input file does not exist: {options.Input}");
+			Console.Error.WriteLine($"Error: {result.ErrorMessage}");
 			return 1;
 		}
 
-		string inputPath = Path.GetFullPath(options.Input);
-		string outputPath = Path.GetFullPath(options.Output);
-
-		try
-		{
-			MakeItAnimatableSetup.EnsureSetup();
-		}
-		catch (Exception ex)
-		{
-			Console.Error.WriteLine($"Error: Make-It-Animatable setup failed: {ex.Message}");
-			return 1;
-		}
-
-		string? outputDir = Path.GetDirectoryName(outputPath);
-		if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
-		{
-			Directory.CreateDirectory(outputDir);
-		}
-
-		var optimizer = new GlbOptimizer();
-		byte[] sourceBytes = File.ReadAllBytes(inputPath);
-		bool wasOptimized = optimizer.IsOptimized(sourceBytes);
-
-		string rigSourcePath = inputPath;
-		string? tempUnoptimizedPath = null;
-
-		try
-		{
-			if (wasOptimized)
-			{
-				Console.WriteLine($"  Detected pre-optimized GLB — unoptimizing first to restore mesh topology...");
-				var unoptResult = optimizer.Unoptimize(sourceBytes);
-				if (!unoptResult.Success || unoptResult.OutputGlbBytes == null)
-				{
-					Console.Error.WriteLine($"  Failed to unoptimize {inputPath}: {unoptResult.ErrorMessage}");
-					return 1;
-				}
-
-				tempUnoptimizedPath = Path.Combine(
-					Path.GetDirectoryName(inputPath) ?? string.Empty,
-					$"__tmp_unopt_rig_{Path.GetFileName(inputPath)}");
-				File.WriteAllBytes(tempUnoptimizedPath, unoptResult.OutputGlbBytes);
-				rigSourcePath = tempUnoptimizedPath;
-			}
-
-			var kwargs = new System.Text.Json.Nodes.JsonObject
-			{
-				["is_gs"] = false,
-				["no_fingers"] = options.NoFingers,
-				["input_normal"] = options.UseNormals,
-				["bw_fix"] = options.WeightPostprocess,
-				["reset_to_rest"] = true,
-				["inplace"] = true,
-				["animation_file"] = System.Text.Json.Nodes.JsonValue.Create<string?>(null)
-			};
-			string kwargsJson = kwargs.ToJsonString();
-
-			Console.WriteLine();
-			Console.WriteLine($"Rigging: {inputPath}");
-			Console.WriteLine($"  Output:             {outputPath}");
-			Console.WriteLine($"  no_fingers:         {options.NoFingers}");
-			Console.WriteLine($"  use_normals:        {options.UseNormals}");
-			Console.WriteLine($"  weight_postprocess: {options.WeightPostprocess}");
-			Console.WriteLine();
-
-			var psi = new System.Diagnostics.ProcessStartInfo
-			{
-				FileName = MakeItAnimatableSetup.PythonExePath,
-				WorkingDirectory = MakeItAnimatableSetup.NodeDir,
-				CreateNoWindow = true,
-				UseShellExecute = false,
-				RedirectStandardInput = true,
-				RedirectStandardOutput = true,
-				RedirectStandardError = true
-			};
-			psi.Environment["PYTHONUNBUFFERED"] = "1";
-			psi.Environment["PYTHONIOENCODING"] = "utf-8";
-			psi.ArgumentList.Add("-u");
-			psi.ArgumentList.Add(MakeItAnimatableSetup.ServerScriptPath);
-			psi.ArgumentList.Add("--input");
-			psi.ArgumentList.Add(rigSourcePath);
-			psi.ArgumentList.Add("--output");
-			psi.ArgumentList.Add(outputPath);
-			psi.ArgumentList.Add("--kwargs");
-			psi.ArgumentList.Add(kwargsJson);
-
-			int exitCode = RunPipelineProcess(psi);
-
-			bool outputCreated = File.Exists(outputPath) && new FileInfo(outputPath).Length > 0;
-
-			if (exitCode != 0 && exitCode != -1073741819 && exitCode != unchecked((int)0xC0000005))
-			{
-				Console.Error.WriteLine($"Error: Make-It-Animatable pipeline exited with code {exitCode}.");
-				return 1;
-			}
-
-			if (!outputCreated)
-			{
-				Console.Error.WriteLine($"Error: Output file was not created: {outputPath}");
-				return 1;
-			}
-		}
-		finally
-		{
-			if (tempUnoptimizedPath != null && File.Exists(tempUnoptimizedPath))
-			{
-				try { File.Delete(tempUnoptimizedPath); } catch { }
-			}
-
-			if (tempUnoptimizedPath != null)
-			{
-				string tempUnoptDir = Path.Combine(
-					Path.GetDirectoryName(tempUnoptimizedPath) ?? string.Empty,
-					Path.GetFileNameWithoutExtension(tempUnoptimizedPath));
-				if (Directory.Exists(tempUnoptDir))
-				{
-					try { Directory.Delete(tempUnoptDir, true); } catch { }
-				}
-			}
-
-			string inputDirWithoutExt = Path.Combine(
-				Path.GetDirectoryName(inputPath) ?? string.Empty,
-				Path.GetFileNameWithoutExtension(inputPath));
-			if (Directory.Exists(inputDirWithoutExt))
-			{
-				try { Directory.Delete(inputDirWithoutExt, true); } catch { }
-			}
-		}
-
-		Console.WriteLine($"  Re-optimizing output (LODs regenerated from rigged bone structure)...");
-		var optimizeResult = optimizer.OptimizeFile(
-			outputPath,
-			outputPath,
-			new OptimizationOptions { ForceReDecimate = true });
-
-		if (!optimizeResult.Success)
-		{
-			Console.Error.WriteLine($"  Warning: Re-optimization failed: {optimizeResult.ErrorMessage}");
-			Console.Error.WriteLine($"  Output saved without optimization: {outputPath}");
-			return 1;
-		}
-
-		Console.WriteLine($"  Successfully optimized: {outputPath} ({optimizeResult.OriginalSize} -> {optimizeResult.OptimizedSize} bytes)");
 		return 0;
-	}
-
-	private static int RunPipelineProcess(System.Diagnostics.ProcessStartInfo psi)
-	{
-		using var proc = new System.Diagnostics.Process { StartInfo = psi };
-		proc.OutputDataReceived += (_, e) => { if (e.Data != null) Console.WriteLine(e.Data); };
-		proc.ErrorDataReceived += (_, e) => { if (e.Data != null) Console.Error.WriteLine(e.Data); };
-
-		if (!proc.Start())
-		{
-			Console.Error.WriteLine("Error: Failed to start Python process.");
-			return -1;
-		}
-
-		if (psi.RedirectStandardInput)
-		{
-			proc.StandardInput.Close();
-		}
-
-		proc.BeginOutputReadLine();
-		proc.BeginErrorReadLine();
-		proc.WaitForExit();
-
-		return proc.ExitCode;
 	}
 }

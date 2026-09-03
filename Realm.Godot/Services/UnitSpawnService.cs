@@ -32,7 +32,7 @@ internal class UnitSpawnService
 			return modelPathOrId;
 		}
 
-		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 		string filename = System.IO.Path.GetFileName(modelPathOrId);
 		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
 		{

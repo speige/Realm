@@ -281,8 +281,7 @@ public partial class GlbThumbnailRenderer : Node
 			float fovRad = Mathf.DegToRad(_camera.Fov * 0.5f);
 			float dist = (maxDim * 0.85f) / MathF.Tan(fovRad);
 			Vector3 camDir = new Vector3(1.2f, 0.8f, 1.4f).Normalized();
-			_camera.Position = center + camDir * dist;
-			_camera.LookAt(center, Vector3.Up);
+			_camera.LookAtFromPosition(center + camDir * dist, center, Vector3.Up);
 			_camera.Current = true;
 
 			_framesRemainingForCapture = 3;

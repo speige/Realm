@@ -165,6 +165,7 @@ public class ModelOptimizerService
 			bool alreadyDecimated = !options.ForceReDecimate && HasDecimationCompletedFlag(glbBytes);
 			result.DecimationSkipped = alreadyDecimated;
 
+			glbBytes = GlbManifestUtils.SanitizeMaterials(glbBytes);
 			List<string> originalImageNames = GetOriginalImageNames(glbBytes);
 
 			var gltfDocument = new GltfDocument();

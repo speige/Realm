@@ -4,7 +4,7 @@ using Godot;
 
 namespace Realm.Godot.Utils;
 
-public static class PlayerColorShaderManager
+public static class ModelShaderManager
 {
 	private static Shader _sharedShader;
 	private static readonly Dictionary<string, ShaderMaterial> _materialCache = new(StringComparer.Ordinal);
@@ -21,7 +21,7 @@ public static class PlayerColorShaderManager
 
 	private const string ShaderPath = "res://Assets/shaders/player_color_spatial.gdshader";
 
-	static PlayerColorShaderManager()
+	static ModelShaderManager()
 	{
 		for (int i = 0; i < 256; i++)
 		{

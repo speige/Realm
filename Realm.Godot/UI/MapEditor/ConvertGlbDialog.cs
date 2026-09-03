@@ -1,0 +1,550 @@
+using System;
+using System.IO;
+using System.Text.Json.Nodes;
+using System.Threading.Tasks;
+using Godot;
+using Realm.Ecs.Services;
+using Realm.Godot.Services;
+using Realm.Godot.Services.ModelOptimization;
+using Realm.Godot.Utils;
+using Realm.Shared;
+using Realm.Shared.Animation;
+using Realm.Shared.Metadata;
+
+public partial class ConvertGlbDialog : FloatingDialogBase
+{
+	private LineEdit _txtSourceFile;
+	private Button _btnSelectFile;
+	private OptionButton _optSubCategory;
+	private LineEdit _txtAssetName;
+
+	private CheckBox _chkTeamColorMask;
+	private HBoxContainer _colorPickerRow;
+	private ColorPickerButton _colorPicker;
+
+	private CheckBox _chkAutoRig;
+	private VBoxContainer _autoRigRow;
+
+	private Label _lblStatus;
+	private ProgressBar _progressBar;
+	private bool _isConverting;
+	private Action<string>? _onConvertedCallback;
+
+	public ConvertGlbDialog(MapEditorHUD hud) : base(hud, TranslationServer.Translate("Convert 3D Model to Realm Format"), new Vector2(580, 480))
+	{
+		BuildDialogUi();
+	}
+
+	private void BuildDialogUi()
+	{
+		var scroll = new ScrollContainer();
+		scroll.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		scroll.SizeFlagsVertical = SizeFlags.ExpandFill;
+		BodyContainer.AddChild(scroll);
+
+		var vbox = new VBoxContainer();
+		vbox.AddThemeConstantOverride("separation", 10);
+		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		scroll.AddChild(vbox);
+
+		AddSectionHeader(vbox, TranslationServer.Translate("SOURCE 3D MODEL"));
+
+		var fileRow = new HBoxContainer();
+		fileRow.AddThemeConstantOverride("separation", 6);
+
+		var lblFile = new Label();
+		lblFile.Text = TranslationServer.Translate("Model File:");
+		lblFile.CustomMinimumSize = new Vector2(120, 0);
+		lblFile.AddThemeFontSizeOverride("font_size", 11);
+		fileRow.AddChild(lblFile);
+
+		_txtSourceFile = new LineEdit();
+		_txtSourceFile.PlaceholderText = TranslationServer.Translate("Select a .glb, .gltf, .fbx, or .obj file...");
+		_txtSourceFile.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_txtSourceFile.AddThemeFontSizeOverride("font_size", 11);
+		_txtSourceFile.TextChanged += OnSourceFileChanged;
+		fileRow.AddChild(_txtSourceFile);
+
+		_btnSelectFile = new Button();
+		_btnSelectFile.Set("icon_max_width", 0);
+		_btnSelectFile.Text = "📂 " + TranslationServer.Translate("Browse...");
+		_btnSelectFile.AddThemeFontSizeOverride("font_size", 11);
+		_btnSelectFile.CustomMinimumSize = new Vector2(90, 24);
+		_btnSelectFile.FocusMode = FocusModeEnum.None;
+		_btnSelectFile.Pressed += OnSelectFilePressed;
+		fileRow.AddChild(_btnSelectFile);
+
+		vbox.AddChild(fileRow);
+
+		AddSectionHeader(vbox, TranslationServer.Translate("TARGET ASSET PROPERTIES"));
+
+		string[] subCats = new string[]
+		{
+			TranslationServer.Translate("Units (models/units)").ToString(),
+			TranslationServer.Translate("Buildings (models/buildings)").ToString(),
+			TranslationServer.Translate("Resources (models/resources)").ToString(),
+			TranslationServer.Translate("Props (models/props)").ToString(),
+			TranslationServer.Translate("Projectiles (models/projectiles)").ToString()
+		};
+		_optSubCategory = AddOptionDropdown(vbox, TranslationServer.Translate("Category:"), subCats, 3, (_) => ApplyCategoryDefaults(), 120f);
+		_txtAssetName = AddTextInput(vbox, TranslationServer.Translate("Asset Name:"), "", (_) => { }, TranslationServer.Translate("e.g. orc_warrior"), 120f);
+
+		AddSectionHeader(vbox, TranslationServer.Translate("TEAM COLOR MASKING"));
+
+		_chkTeamColorMask = AddCheckBox(vbox, TranslationServer.Translate("Apply team color mask"), false, (enabled) =>
+		{
+			if (_colorPickerRow != null) _colorPickerRow.Visible = enabled;
+		}, TranslationServer.Translate("Masks target color in textures to receive dynamic player team colors in-game"));
+
+		_colorPickerRow = new HBoxContainer();
+		_colorPickerRow.AddThemeConstantOverride("separation", 8);
+		_colorPickerRow.Visible = false;
+
+		var lblColor = new Label();
+		lblColor.Text = TranslationServer.Translate("Mask Color:");
+		lblColor.CustomMinimumSize = new Vector2(120, 0);
+		lblColor.AddThemeFontSizeOverride("font_size", 11);
+		_colorPickerRow.AddChild(lblColor);
+
+		_colorPicker = new ColorPickerButton();
+		_colorPicker.CustomMinimumSize = new Vector2(40, 24);
+		_colorPicker.EditAlpha = false;
+		_colorPicker.Color = new Color(1.0f, 0.0f, 1.0f);
+		_colorPickerRow.AddChild(_colorPicker);
+
+		var lblColorHint = new Label();
+		lblColorHint.Text = TranslationServer.Translate("(Default: Hot Pink #FF00FF)");
+		lblColorHint.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		lblColorHint.AddThemeFontSizeOverride("font_size", 10);
+		_colorPickerRow.AddChild(lblColorHint);
+
+		vbox.AddChild(_colorPickerRow);
+
+		AddSectionHeader(vbox, TranslationServer.Translate("SKELETAL AUTO-RIGGING"));
+
+		_chkAutoRig = AddCheckBox(vbox, TranslationServer.Translate("Auto-Rig Humanoid"), false, (enabled) =>
+		{
+			if (_autoRigRow != null) _autoRigRow.Visible = enabled;
+		}, TranslationServer.Translate("Automatically generates a Mixamo-compatible humanoid skeleton and skin weights"));
+
+		_autoRigRow = new VBoxContainer();
+		_autoRigRow.AddThemeConstantOverride("separation", 4);
+		_autoRigRow.Visible = false;
+
+		var lblRigDesc = new Label();
+		lblRigDesc.Text = TranslationServer.Translate("Attaches a humanoid bone skeleton to unrigged humanoid meshes for compatibility with Realm animations.");
+		lblRigDesc.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		lblRigDesc.AddThemeFontSizeOverride("font_size", 10);
+		lblRigDesc.AutowrapMode = TextServer.AutowrapMode.Word;
+		_autoRigRow.AddChild(lblRigDesc);
+
+		vbox.AddChild(_autoRigRow);
+
+		_progressBar = new ProgressBar();
+		_progressBar.MinValue = 0;
+		_progressBar.MaxValue = 100;
+		_progressBar.Value = 0;
+		_progressBar.ShowPercentage = true;
+		_progressBar.CustomMinimumSize = new Vector2(0, 18);
+		_progressBar.Visible = false;
+		BodyContainer.AddChild(_progressBar);
+
+		_lblStatus = new Label();
+		_lblStatus.AddThemeFontSizeOverride("font_size", 11);
+		_lblStatus.AddThemeColorOverride("font_color", new Color(0.9f, 0.4f, 0.4f));
+		_lblStatus.AutowrapMode = TextServer.AutowrapMode.Word;
+		_lblStatus.Visible = false;
+		BodyContainer.AddChild(_lblStatus);
+
+		ApplyButton.Text = "🔄 " + TranslationServer.Translate("Convert & Import");
+	}
+
+	private void OnSelectFilePressed()
+	{
+		var err = DisplayServer.FileDialogShow(
+			TranslationServer.Translate("Select 3D Model File to Convert to Realm Format"),
+			PathUtils.GetProjectRoot(),
+			"",
+			false,
+			DisplayServer.FileDialogMode.OpenFile,
+			new[] { "*.glb,*.gltf,*.fbx,*.obj ; 3D Model Files (*.glb, *.gltf, *.fbx, *.obj)" },
+			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) =>
+			{
+				if (status && selectedPaths.Length > 0)
+				{
+					_txtSourceFile.Text = selectedPaths[0];
+					OnSourceFileChanged(selectedPaths[0]);
+				}
+			})
+		);
+
+		if (err != Error.Ok)
+		{
+			Hud?.ShowFeedback(TranslationServer.Translate("Failed to show file dialog"));
+		}
+	}
+
+	private void OnSourceFileChanged(string path)
+	{
+		if (string.IsNullOrWhiteSpace(path)) return;
+
+		string fileNameWithoutExt = Path.GetFileNameWithoutExtension(path);
+		string cleanBase = fileNameWithoutExt.ToLowerInvariant().Replace(' ', '_');
+		_txtAssetName.Text = cleanBase;
+
+		string lower = path.ToLowerInvariant();
+		if (lower.Contains("unit") || lower.Contains("character") || lower.Contains("soldier") || lower.Contains("worker"))
+		{
+			_optSubCategory.Selected = 0;
+		}
+		else if (lower.Contains("build") || lower.Contains("house") || lower.Contains("tower") || lower.Contains("barracks"))
+		{
+			_optSubCategory.Selected = 1;
+		}
+		else if (lower.Contains("tree") || lower.Contains("rock") || lower.Contains("gold") || lower.Contains("resource"))
+		{
+			_optSubCategory.Selected = 2;
+		}
+		else if (lower.Contains("proj") || lower.Contains("bullet") || lower.Contains("arrow") || lower.Contains("missile"))
+		{
+			_optSubCategory.Selected = 4;
+		}
+
+		ApplyCategoryDefaults();
+	}
+
+	public void OpenWithPreset(string? initialFilePath = null, string? initialSubCat = null, Action<string>? onConverted = null)
+	{
+		_onConvertedCallback = onConverted;
+		_lblStatus.Visible = false;
+		_progressBar.Visible = false;
+		_progressBar.Value = 0;
+
+		if (!string.IsNullOrEmpty(initialSubCat))
+		{
+			_optSubCategory.Selected = initialSubCat switch
+			{
+				"units" => 0,
+				"buildings" => 1,
+				"resources" => 2,
+				"props" => 3,
+				"projectiles" => 4,
+				_ => 3
+			};
+		}
+
+		if (!string.IsNullOrEmpty(initialFilePath))
+		{
+			_txtSourceFile.Text = initialFilePath;
+			OnSourceFileChanged(initialFilePath);
+		}
+
+		ApplyCategoryDefaults();
+		OpenDialog();
+	}
+
+	private void ApplyCategoryDefaults()
+	{
+		if (_optSubCategory == null) return;
+
+		string subCat = _optSubCategory.Selected switch
+		{
+			0 => "units",
+			1 => "buildings",
+			2 => "resources",
+			3 => "props",
+			4 => "projectiles",
+			_ => "props"
+		};
+
+		bool teamColor = subCat is "units" or "buildings";
+		bool autoRig = subCat == "units";
+
+		if (_chkTeamColorMask != null)
+		{
+			_chkTeamColorMask.ButtonPressed = teamColor;
+			if (_colorPickerRow != null) _colorPickerRow.Visible = teamColor;
+		}
+		if (_chkAutoRig != null)
+		{
+			_chkAutoRig.ButtonPressed = autoRig;
+			if (_autoRigRow != null) _autoRigRow.Visible = autoRig;
+		}
+	}
+
+	private void SetProgressStatus(string message, float progressPercent, bool isError = false)
+	{
+		CallDeferred(nameof(ApplyProgressOnMainThread), message, progressPercent, isError);
+	}
+
+	private void ApplyProgressOnMainThread(string message, float progressPercent, bool isError)
+	{
+		if (_lblStatus != null)
+		{
+			_lblStatus.Text = message;
+			_lblStatus.Visible = !string.IsNullOrEmpty(message);
+			_lblStatus.AddThemeColorOverride("font_color", isError
+				? new Color(0.9f, 0.35f, 0.35f)
+				: new Color(0.6f, 0.9f, 0.6f));
+		}
+		if (_progressBar != null)
+		{
+			_progressBar.Value = progressPercent;
+		}
+	}
+
+	private void SetConvertingState(bool converting)
+	{
+		_isConverting = converting;
+		if (ApplyButton != null) ApplyButton.Disabled = converting;
+		if (CancelButton != null) CancelButton.Disabled = converting;
+		if (CloseButton != null) CloseButton.Disabled = converting;
+		if (_progressBar != null) _progressBar.Visible = converting;
+	}
+
+	public override void ApplyAndClose()
+	{
+		CommitPendingInputFocus();
+		OnApply();
+		// Do NOT call CloseDialog() here — the dialog closes itself via
+		// OnConversionFinished once the background conversion task is done.
+	}
+
+	protected override void OnApply()
+	{
+		if (_isConverting) return;
+
+		string sourcePath = _txtSourceFile.Text?.Trim() ?? string.Empty;
+		if (string.IsNullOrEmpty(sourcePath) || !File.Exists(sourcePath))
+		{
+			_lblStatus.Text = TranslationServer.Translate("Please select a valid source 3D model file.");
+			_lblStatus.AddThemeColorOverride("font_color", new Color(0.9f, 0.35f, 0.35f));
+			_lblStatus.Visible = true;
+			return;
+		}
+
+		string assetName = _txtAssetName.Text?.Trim() ?? string.Empty;
+		if (string.IsNullOrEmpty(assetName))
+		{
+			assetName = Path.GetFileNameWithoutExtension(sourcePath).ToLowerInvariant().Replace(' ', '_');
+		}
+		string cleanBase = assetName.ToLowerInvariant().Replace(' ', '_').Replace(".glb", "");
+		string fileName = $"{cleanBase}.glb";
+
+		string subCategory = _optSubCategory.Selected switch
+		{
+			0 => "units",
+			1 => "buildings",
+			2 => "resources",
+			3 => "props",
+			4 => "projectiles",
+			_ => "props"
+		};
+
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+		string destDir = Path.Combine(wsPath, "Assets", "models", subCategory);
+		Directory.CreateDirectory(destDir);
+		string destPath = Path.Combine(destDir, fileName);
+
+		bool doAutoRig = _chkAutoRig.ButtonPressed;
+		bool doTeamColor = _chkTeamColorMask.ButtonPressed;
+		Color maskColor = _colorPicker.Color;
+
+		SetConvertingState(true);
+		SetProgressStatus(TranslationServer.Translate("Starting conversion..."), 2, false);
+
+		Task.Run(() =>
+		{
+			string tempWorkingDir = Path.Combine(Path.GetTempPath(), $"realm_glb_conv_{Guid.NewGuid():N}");
+			Directory.CreateDirectory(tempWorkingDir);
+			string? errorMessage = null;
+			string? resultPath = null;
+
+			try
+			{
+				string currentPath = Path.Combine(tempWorkingDir, Path.GetFileName(sourcePath));
+				File.Copy(sourcePath, currentPath, true);
+
+				if (doAutoRig)
+				{
+					SetProgressStatus(TranslationServer.Translate("Step 1/4: Auto-rigging skeleton..."), 10, false);
+					string riggedPath = Path.Combine(tempWorkingDir, $"{cleanBase}_rigged.glb");
+					var rigResult = GlbAutoRigger.RigHumanoid(currentPath, riggedPath, new GlbAutoRiggerOptions
+					{
+						LogCallback = (msg) => GD.Print($"[ConvertGlb] {msg}")
+					});
+
+					if (!rigResult.Success)
+					{
+						errorMessage = string.Format(TranslationServer.Translate("Auto-rigging failed: {0}"), rigResult.ErrorMessage);
+						return;
+					}
+					currentPath = riggedPath;
+				}
+
+				if (doTeamColor)
+				{
+					SetProgressStatus(TranslationServer.Translate("Step 2/4: Applying team color mask..."), doAutoRig ? 25 : 15, false);
+					string maskedPath = Path.Combine(tempWorkingDir, $"{cleanBase}_masked.glb");
+					string hexColor = $"#{maskColor.ToHtml(false)}";
+					var maskResult = GlbPlayerColorProcessor.ProcessFile(currentPath, maskedPath, new GlbPlayerColorOptions
+					{
+						TargetHex = hexColor
+					});
+
+					if (!maskResult.Success)
+					{
+						errorMessage = string.Format(TranslationServer.Translate("Team color mask failed: {0}"), maskResult.ErrorMessage);
+						return;
+					}
+					currentPath = maskedPath;
+				}
+
+				SetProgressStatus(TranslationServer.Translate("Step 3/4: Optimizing geometry & textures..."), 40, false);
+				byte[] srcBytes = File.ReadAllBytes(currentPath);
+
+				var glbOpt = new GlbOptimizer();
+				var res = glbOpt.Optimize(srcBytes, new Realm.Shared.OptimizationOptions
+				{
+					ForceReDecimate = true
+				});
+
+				if (res.Success && res.OutputGlbBytes != null)
+				{
+					File.WriteAllBytes(destPath, res.OutputGlbBytes);
+				}
+				else
+				{
+					File.Copy(currentPath, destPath, true);
+				}
+
+				SetProgressStatus(TranslationServer.Translate("Step 4/4: Computing bounds & saving metadata..."), 80, false);
+
+				float defaultScale = subCategory switch
+				{
+					"resources" => 2.75f,
+					"buildings" => 1.5f,
+					"props" => 1.25f,
+					"units" => 1.0f,
+					_ => 1.0f
+				};
+
+				byte[] finalBytes = File.ReadAllBytes(destPath);
+				string hash = RealmMetadataHelper.ComputeBlake3(finalBytes, ".glb");
+				bool isPropOrRes = subCategory == "resources" || subCategory == "props";
+
+				string metaPath = Path.Combine(wsPath, "metadata.json");
+				JsonObject root = File.Exists(metaPath)
+					? (JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject() ?? new JsonObject())
+					: new JsonObject();
+
+				if (!root.ContainsKey("Assets") || root["Assets"] == null) root["Assets"] = new JsonObject();
+				var assetsObj = root["Assets"].AsObject();
+				if (!assetsObj.ContainsKey("glb") || assetsObj["glb"] == null) assetsObj["glb"] = new JsonObject();
+				var glbObj = assetsObj["glb"].AsObject();
+				if (!glbObj.ContainsKey(subCategory) || glbObj[subCategory] == null) glbObj[subCategory] = new JsonObject();
+
+				var modelEntry = new JsonObject
+				{
+					["hash"] = hash,
+					["scale"] = defaultScale,
+					["y_offset"] = 0.0f,
+					["min_y"] = 0.0f,
+					["default_asset_type"] = subCategory,
+					["normal_mode"] = "Flat",
+					["normalize_luminance"] = true,
+					["ignore_player_color"] = isPropOrRes
+				};
+
+				glbObj[subCategory]![fileName] = modelEntry;
+				MapJsonFormatter.SaveFormattedJson(metaPath, root);
+
+				resultPath = destPath;
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[ConvertGlbDialog] Conversion error: {ex.Message}");
+				errorMessage = string.Format(TranslationServer.Translate("Conversion error: {0}"), ex.Message);
+			}
+			finally
+			{
+				try
+				{
+					if (Directory.Exists(tempWorkingDir))
+						Directory.Delete(tempWorkingDir, true);
+				}
+				catch { }
+			}
+
+			CallDeferred(nameof(OnConversionFinished), resultPath ?? string.Empty, errorMessage ?? string.Empty);
+		});
+	}
+
+	private void OnConversionFinished(string resultPath, string errorMessage)
+	{
+		SetConvertingState(false);
+
+		if (!string.IsNullOrEmpty(errorMessage))
+		{
+			_lblStatus.Text = errorMessage;
+			_lblStatus.AddThemeColorOverride("font_color", new Color(0.9f, 0.35f, 0.35f));
+			_lblStatus.Visible = true;
+			_progressBar.Visible = false;
+			return;
+		}
+
+		_progressBar.Value = 100;
+
+		string fileName = Path.GetFileName(resultPath);
+		string subCategory = _optSubCategory.Selected switch
+		{
+			0 => "units",
+			1 => "buildings",
+			2 => "resources",
+			3 => "props",
+			4 => "projectiles",
+			_ => "props"
+		};
+		float defaultScale = subCategory switch
+		{
+			"resources" => 2.75f,
+			"buildings" => 1.5f,
+			"props" => 1.25f,
+			"units" => 1.0f,
+			_ => 1.0f
+		};
+
+		try
+		{
+			var (minY, autoYOffset) = ModelCache.CalculateModelBounds(resultPath, defaultScale);
+			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+			string metaPath = Path.Combine(wsPath, "metadata.json");
+			if (File.Exists(metaPath))
+			{
+				var root = JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject();
+				if (root != null)
+				{
+					var entry = root?["Assets"]?["glb"]?[subCategory]?[fileName]?.AsObject();
+					if (entry != null)
+					{
+						entry["min_y"] = minY;
+						entry["y_offset"] = autoYOffset;
+						MapJsonFormatter.SaveFormattedJson(metaPath, root);
+					}
+				}
+			}
+
+			GameHost.Instance?.SetModelYOffset(fileName, autoYOffset);
+			GameHost.Instance?.SetModelScale(fileName, defaultScale);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[ConvertGlbDialog] Bounds calculation error: {ex.Message}");
+		}
+
+		Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Converted and imported 3D model '{0}'!"), fileName));
+		AssetIndexService.Instance.RescanAllDirectories();
+		_onConvertedCallback?.Invoke(resultPath);
+		CloseDialog();
+	}
+}

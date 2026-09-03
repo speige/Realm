@@ -9,6 +9,8 @@ using System.Runtime.CompilerServices;
 public partial class RuntimeTerrain : StaticBody3D
 {
 	public const uint TerrainCollisionLayer = 2;
+	public const uint TerrainVisualLayer = 1 | (1 << 2);
+	public const uint TerrainDecalCullMask = 1 << 2;
 	public static RuntimeTerrain Instance { get; protected set; }
 	public static bool IsMinimapRendering { get; set; } = false;
 
@@ -497,6 +499,7 @@ void fragment() {
 				chunk.ShallowWaterMesh = new MeshInstance3D();
 				chunk.ShallowWaterMesh.Name = $"ShallowWaterChunk_{chunk.StartX}_{chunk.StartZ}";
 				chunk.ShallowWaterMesh.Mesh = chunk.ShallowWaterArrayMesh;
+				chunk.ShallowWaterMesh.Layers = TerrainVisualLayer;
 				if (_shallowWaterMaterial != null) chunk.ShallowWaterMesh.MaterialOverride = _shallowWaterMaterial;
 				AddChild(chunk.ShallowWaterMesh);
 			}
@@ -511,6 +514,7 @@ void fragment() {
 				chunk.DeepWaterMesh = new MeshInstance3D();
 				chunk.DeepWaterMesh.Name = $"DeepWaterChunk_{chunk.StartX}_{chunk.StartZ}";
 				chunk.DeepWaterMesh.Mesh = chunk.DeepWaterArrayMesh;
+				chunk.DeepWaterMesh.Layers = TerrainVisualLayer;
 				if (_deepWaterMaterial != null) chunk.DeepWaterMesh.MaterialOverride = _deepWaterMaterial;
 				AddChild(chunk.DeepWaterMesh);
 			}
@@ -1689,9 +1693,7 @@ void fragment() {
 				currentTint = existingOver2.Tint.Value;
 			}
 
-			string mapDir = GameHost.Instance != null && !string.IsNullOrEmpty(GameHost.Instance.CurrentMapDirectory)
-				? GameHost.Instance.CurrentMapDirectory
-				: Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+			string mapDir = MapWorkspaceService.GetActiveWorkspacePath();
 			try
 			{
 				string metadataPath = System.IO.Path.Combine(mapDir, "metadata.json");
@@ -1904,9 +1906,7 @@ void fragment() {
 	public void ReloadTerrainTextures(bool forceReload = false)
 	{
 		if (_material == null) return;
-		string mapDir = GameHost.Instance != null && !string.IsNullOrEmpty(GameHost.Instance.CurrentMapDirectory)
-			? GameHost.Instance.CurrentMapDirectory
-			: Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string mapDir = MapWorkspaceService.GetActiveWorkspacePath();
 
 		var textureList = new List<string>();
 		System.Text.Json.Nodes.JsonObject? texturesObj = null;
@@ -2313,12 +2313,14 @@ void fragment() {
 				chunk.MeshInstance.Name = $"TerrainChunk_{x}_{z}";
 				chunk.MeshInstance.Mesh = chunk.ArrayMesh;
 				chunk.MeshInstance.MaterialOverride = _material;
+				chunk.MeshInstance.Layers = TerrainVisualLayer;
 				AddChild(chunk.MeshInstance);
 
 				chunk.ShallowWaterArrayMesh = new ArrayMesh();
 				chunk.ShallowWaterMesh = new MeshInstance3D();
 				chunk.ShallowWaterMesh.Name = $"ShallowWaterChunk_{x}_{z}";
 				chunk.ShallowWaterMesh.Mesh = chunk.ShallowWaterArrayMesh;
+				chunk.ShallowWaterMesh.Layers = TerrainVisualLayer;
 				if (_shallowWaterMaterial != null) chunk.ShallowWaterMesh.MaterialOverride = _shallowWaterMaterial;
 				AddChild(chunk.ShallowWaterMesh);
 
@@ -2326,6 +2328,7 @@ void fragment() {
 				chunk.DeepWaterMesh = new MeshInstance3D();
 				chunk.DeepWaterMesh.Name = $"DeepWaterChunk_{x}_{z}";
 				chunk.DeepWaterMesh.Mesh = chunk.DeepWaterArrayMesh;
+				chunk.DeepWaterMesh.Layers = TerrainVisualLayer;
 				if (_deepWaterMaterial != null) chunk.DeepWaterMesh.MaterialOverride = _deepWaterMaterial;
 				AddChild(chunk.DeepWaterMesh);
 

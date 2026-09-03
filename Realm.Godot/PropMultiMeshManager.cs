@@ -603,7 +603,7 @@ public partial class PropMultiMeshManager : Node3D
 
 					if (baseMatToUse != null)
 					{
-						var shaderMat = Realm.Godot.Utils.PlayerColorShaderManager.GetOrCreateShaderMaterial(baseMatToUse, normalizeLuminance);
+						var shaderMat = Realm.Godot.Utils.ModelShaderManager.GetOrCreateShaderMaterial(baseMatToUse, normalizeLuminance);
 						mmNode.MaterialOverride = shaderMat;
 						mmNode.SetInstanceShaderParameter(_snModelBrightness, brightness);
 						mmNode.SetInstanceShaderParameter(_snModelColorTint, tint);
@@ -670,7 +670,7 @@ public partial class PropMultiMeshManager : Node3D
 
 		string wsPath = GameHost.Instance != null && !string.IsNullOrEmpty(GameHost.Instance.CurrentMapDirectory)
 			? GameHost.Instance.CurrentMapDirectory
-			: Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+			: MapWorkspaceService.GetDefaultWorkspaceGlobalPath();
 		string filename = System.IO.Path.GetFileName(targetModel);
 		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
 		{

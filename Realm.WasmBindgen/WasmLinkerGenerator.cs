@@ -117,7 +117,10 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
         }
         if (System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(mapApiWitPath)))
         {
-            System.IO.File.WriteAllText(mapApiWitPath, witContent, Encoding.UTF8);
+            if (!System.IO.File.Exists(mapApiWitPath) || System.IO.File.ReadAllText(mapApiWitPath, Encoding.UTF8) != witContent)
+            {
+                System.IO.File.WriteAllText(mapApiWitPath, witContent, Encoding.UTF8);
+            }
         }
 
         string assemblyName = compilation.AssemblyName ?? "";

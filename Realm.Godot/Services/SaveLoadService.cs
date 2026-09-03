@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Arch.Core;
 using Godot;
 using Realm.Ecs.Common;
@@ -10,6 +13,7 @@ using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Services;
+using Realm.Godot.Utils;
 
 public class SaveLoadService
 {
@@ -30,7 +34,7 @@ public class SaveLoadService
 		string[] htmlColors,
 		(Entity Entity, float RotationY, float Scale)[] unitsData,
 		(Entity Entity, float RotationY, float Scale)[] propsData,
-		(string DecalId, System.Numerics.Vector3 Position, float RotationY, float Scale)[] decalsData,
+		(Entity Entity, System.Numerics.Vector3 Position, float RotationY, float Scale)[] decalsData,
 		List<CoordinateSaveData> coordinatesData = null,
 		string[] cliffHtmlColors = null)
 	{
@@ -58,7 +62,11 @@ public class SaveLoadService
 				{
 					if (EcsWorld.Has<RotationY>(u.Entity))
 					{
-						EcsWorld.Set(u.Entity, new RotationY(u.RotationY));
+						float existing = EcsWorld.Get<RotationY>(u.Entity).Value;
+						if (MathF.Abs(existing - u.RotationY) > 0.001f && MathF.Abs(MathF.Abs(existing - u.RotationY) - 360f) > 0.001f)
+						{
+							EcsWorld.Set(u.Entity, new RotationY(u.RotationY));
+						}
 					}
 					else
 					{
@@ -67,7 +75,11 @@ public class SaveLoadService
 
 					if (EcsWorld.Has<ModelScale>(u.Entity))
 					{
-						EcsWorld.Set(u.Entity, new ModelScale(u.Scale));
+						float existing = EcsWorld.Get<ModelScale>(u.Entity).Value;
+						if (MathF.Abs(existing - u.Scale) > 0.0001f)
+						{
+							EcsWorld.Set(u.Entity, new ModelScale(u.Scale));
+						}
 					}
 					else
 					{
@@ -82,7 +94,11 @@ public class SaveLoadService
 				{
 					if (EcsWorld.Has<RotationY>(p.Entity))
 					{
-						EcsWorld.Set(p.Entity, new RotationY(p.RotationY));
+						float existing = EcsWorld.Get<RotationY>(p.Entity).Value;
+						if (MathF.Abs(existing - p.RotationY) > 0.001f && MathF.Abs(MathF.Abs(existing - p.RotationY) - 360f) > 0.001f)
+						{
+							EcsWorld.Set(p.Entity, new RotationY(p.RotationY));
+						}
 					}
 					else
 					{
@@ -91,7 +107,11 @@ public class SaveLoadService
 
 					if (EcsWorld.Has<ModelScale>(p.Entity))
 					{
-						EcsWorld.Set(p.Entity, new ModelScale(p.Scale));
+						float existing = EcsWorld.Get<ModelScale>(p.Entity).Value;
+						if (MathF.Abs(existing - p.Scale) > 0.0001f)
+						{
+							EcsWorld.Set(p.Entity, new ModelScale(p.Scale));
+						}
 					}
 					else
 					{
@@ -100,15 +120,56 @@ public class SaveLoadService
 				}
 			}
 
-			var tempDecals = new List<Entity>();
-			foreach (var d in decalsData)
+			var validDecalEntities = decalsData != null
+				? new HashSet<Entity>(decalsData.Select(d => d.Entity))
+				: null;
+
+			if (decalsData != null)
 			{
-				var ent = EcsWorld.Create();
-				EcsWorld.Add(ent, new DecalIdentity(d.DecalId));
-				EcsWorld.Add(ent, new Position(d.Position));
-				EcsWorld.Add(ent, new RotationY(d.RotationY));
-				EcsWorld.Add(ent, new ModelScale(d.Scale));
-				tempDecals.Add(ent);
+				foreach (var d in decalsData)
+				{
+					if (EcsWorld.IsAlive(d.Entity))
+					{
+						if (EcsWorld.Has<Position>(d.Entity))
+						{
+							var existingPos = EcsWorld.Get<Position>(d.Entity).Value;
+							if ((d.Position - existingPos).Length() > 0.0001f)
+							{
+								EcsWorld.Set(d.Entity, new Position(d.Position));
+							}
+						}
+						else
+						{
+							EcsWorld.Add(d.Entity, new Position(d.Position));
+						}
+
+						if (EcsWorld.Has<RotationY>(d.Entity))
+						{
+							float existing = EcsWorld.Get<RotationY>(d.Entity).Value;
+							if (MathF.Abs(existing - d.RotationY) > 0.001f && MathF.Abs(MathF.Abs(existing - d.RotationY) - 360f) > 0.001f)
+							{
+								EcsWorld.Set(d.Entity, new RotationY(d.RotationY));
+							}
+						}
+						else
+						{
+							EcsWorld.Add(d.Entity, new RotationY(d.RotationY));
+						}
+
+						if (EcsWorld.Has<ModelScale>(d.Entity))
+						{
+							float existing = EcsWorld.Get<ModelScale>(d.Entity).Value;
+							if (MathF.Abs(existing - d.Scale) > 0.0001f)
+							{
+								EcsWorld.Set(d.Entity, new ModelScale(d.Scale));
+							}
+						}
+						else
+						{
+							EcsWorld.Add(d.Entity, new ModelScale(d.Scale));
+						}
+					}
+				}
 			}
 
 			TerrainState terrain = default;
@@ -142,6 +203,11 @@ public class SaveLoadService
 			if (!Directory.Exists(directory))
 			{
 				Directory.CreateDirectory(directory);
+			}
+			else
+			{
+				int maxBackups = EditorSettingsDialog.CurrentSettings?.MaxBackupSnapshots ?? 3;
+				CreateWorkspaceBackup(directory, maxBackups);
 			}
 
 			string heightsPath = Path.Combine(directory, "terrain_heights.exr");
@@ -337,13 +403,28 @@ public class SaveLoadService
 
 			saveData.Decals = new List<DecalSaveData>();
 			var decalQuery = Realm.Ecs.Common.QueryCache.AllDecalIdentityAndPositionQuery;
+			var orphanedDecalEntities = new List<Entity>();
+			var savedDecalFingerprints = new HashSet<string>();
 			EcsWorld.Query(in decalQuery, (Entity entity, ref DecalIdentity decalId, ref Position pos) =>
 			{
+				if (validDecalEntities != null && !validDecalEntities.Contains(entity))
+				{
+					orphanedDecalEntities.Add(entity);
+					return;
+				}
+
 				float rotY = 0f;
 				if (EcsWorld.Has<RotationY>(entity)) rotY = EcsWorld.Get<RotationY>(entity).Value;
 
 				float scale = 1f;
 				if (EcsWorld.Has<ModelScale>(entity)) scale = EcsWorld.Get<ModelScale>(entity).Value;
+
+				string fingerprint = $"{decalId.DecalId}_{pos.Value.X:F3}_{pos.Value.Y:F3}_{pos.Value.Z:F3}_{rotY:F2}_{scale:F3}";
+				if (!savedDecalFingerprints.Add(fingerprint))
+				{
+					orphanedDecalEntities.Add(entity);
+					return;
+				}
 
 				saveData.Decals.Add(new DecalSaveData
 				{
@@ -356,16 +437,45 @@ public class SaveLoadService
 				});
 			});
 
-			string json = JsonSerializer.Serialize(saveData);
-			MapJsonFormatter.SaveFormattedJson(absolutePath, json);
+			foreach (var orphan in orphanedDecalEntities)
+			{
+				if (EcsWorld.IsAlive(orphan))
+				{
+					EcsWorld.Destroy(orphan);
+				}
+			}
+
+			SortMapSaveData(saveData);
+
+			var saveDoc = JsonSerializer.SerializeToNode(saveData) as JsonObject;
+			if (saveDoc != null)
+			{
+				CleanTerrainJsonSchema(saveDoc);
+				MapJsonFormatter.SaveFormattedJson(absolutePath, saveDoc);
+			}
+			else
+			{
+				string json = JsonSerializer.Serialize(saveData);
+				MapJsonFormatter.SaveFormattedJson(absolutePath, json);
+			}
 
 			GameHost.Instance?.SaveModelYOffsetsToMetadataJson(directory);
 
-			foreach (var ent in tempDecals)
+			string metaPath = Path.Combine(directory, "metadata.json");
+			if (File.Exists(metaPath))
 			{
-				if (EcsWorld.IsAlive(ent))
+				try
 				{
-					EcsWorld.Destroy(ent);
+					var metaRoot = JsonNode.Parse(File.ReadAllText(metaPath)) as JsonObject;
+					if (metaRoot != null)
+					{
+						CleanMetadataJsonSchema(metaRoot);
+						MapJsonFormatter.SaveFormattedJson(metaPath, metaRoot);
+					}
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"[SaveLoadService] CleanMetadataJson error: {ex.Message}");
 				}
 			}
 
@@ -732,8 +842,15 @@ public class SaveLoadService
 
 				if (saveData.Decals != null)
 				{
+					var loadedDecalFingerprints = new HashSet<string>();
 					foreach (var d in saveData.Decals)
 					{
+						string fingerprint = $"{d.DecalId}_{d.PosX:F3}_{d.PosY:F3}_{d.PosZ:F3}_{d.RotationY:F2}_{d.Scale:F3}";
+						if (!loadedDecalFingerprints.Add(fingerprint))
+						{
+							continue;
+						}
+
 						var reqEnt = EcsWorld.Create();
 						EcsWorld.Add(reqEnt, new DecalSpawnRequest(
 							d.DecalId,
@@ -808,6 +925,974 @@ public class SaveLoadService
 				}
 			}
 		}
+	}
+
+	public static void SortMapSaveData(MapSaveData saveData)
+	{
+		if (saveData == null) return;
+
+		int width = saveData.Width > 0 ? saveData.Width : 128;
+		int depth = saveData.Depth > 0 ? saveData.Depth : 128;
+		float topLeftX = -width / 2.0f;
+		float topLeftZ = -depth / 2.0f;
+
+		if (saveData.Units != null)
+		{
+			saveData.Units.Sort((a, b) =>
+			{
+				int comparison = string.Compare(a.UnitId, b.UnitId, StringComparison.OrdinalIgnoreCase);
+				if (comparison != 0) return comparison;
+				comparison = string.Compare(a.UnitId, b.UnitId, StringComparison.Ordinal);
+				if (comparison != 0) return comparison;
+
+				float distanceA = MathF.Sqrt(MathF.Pow(a.PosX - topLeftX, 2) + MathF.Pow(a.PosZ - topLeftZ, 2));
+				float distanceB = MathF.Sqrt(MathF.Pow(b.PosX - topLeftX, 2) + MathF.Pow(b.PosZ - topLeftZ, 2));
+				comparison = distanceA.CompareTo(distanceB);
+				if (comparison != 0) return comparison;
+
+				comparison = a.PosX.CompareTo(b.PosX);
+				if (comparison != 0) return comparison;
+				comparison = a.PosZ.CompareTo(b.PosZ);
+				if (comparison != 0) return comparison;
+				comparison = a.PosY.CompareTo(b.PosY);
+				if (comparison != 0) return comparison;
+				comparison = a.RotationY.CompareTo(b.RotationY);
+				if (comparison != 0) return comparison;
+				comparison = a.Scale.CompareTo(b.Scale);
+				if (comparison != 0) return comparison;
+				comparison = a.Player.CompareTo(b.Player);
+				if (comparison != 0) return comparison;
+				return a.IsEnemy.CompareTo(b.IsEnemy);
+			});
+		}
+
+		if (saveData.Props != null)
+		{
+			saveData.Props.Sort((a, b) =>
+			{
+				int comparison = string.Compare(a.PropId, b.PropId, StringComparison.OrdinalIgnoreCase);
+				if (comparison != 0) return comparison;
+				comparison = string.Compare(a.PropId, b.PropId, StringComparison.Ordinal);
+				if (comparison != 0) return comparison;
+
+				float distanceA = MathF.Sqrt(MathF.Pow(a.PosX - topLeftX, 2) + MathF.Pow(a.PosZ - topLeftZ, 2));
+				float distanceB = MathF.Sqrt(MathF.Pow(b.PosX - topLeftX, 2) + MathF.Pow(b.PosZ - topLeftZ, 2));
+				comparison = distanceA.CompareTo(distanceB);
+				if (comparison != 0) return comparison;
+
+				comparison = a.PosX.CompareTo(b.PosX);
+				if (comparison != 0) return comparison;
+				comparison = a.PosZ.CompareTo(b.PosZ);
+				if (comparison != 0) return comparison;
+				comparison = a.PosY.CompareTo(b.PosY);
+				if (comparison != 0) return comparison;
+				comparison = a.RotationY.CompareTo(b.RotationY);
+				if (comparison != 0) return comparison;
+				return a.Scale.CompareTo(b.Scale);
+			});
+		}
+
+		if (saveData.Decals != null)
+		{
+			saveData.Decals.Sort((a, b) =>
+			{
+				int comparison = string.Compare(a.DecalId, b.DecalId, StringComparison.OrdinalIgnoreCase);
+				if (comparison != 0) return comparison;
+				comparison = string.Compare(a.DecalId, b.DecalId, StringComparison.Ordinal);
+				if (comparison != 0) return comparison;
+
+				float distanceA = MathF.Sqrt(MathF.Pow(a.PosX - topLeftX, 2) + MathF.Pow(a.PosZ - topLeftZ, 2));
+				float distanceB = MathF.Sqrt(MathF.Pow(b.PosX - topLeftX, 2) + MathF.Pow(b.PosZ - topLeftZ, 2));
+				comparison = distanceA.CompareTo(distanceB);
+				if (comparison != 0) return comparison;
+
+				comparison = a.PosX.CompareTo(b.PosX);
+				if (comparison != 0) return comparison;
+				comparison = a.PosZ.CompareTo(b.PosZ);
+				if (comparison != 0) return comparison;
+				comparison = a.PosY.CompareTo(b.PosY);
+				if (comparison != 0) return comparison;
+				comparison = a.RotationY.CompareTo(b.RotationY);
+				if (comparison != 0) return comparison;
+				return a.Scale.CompareTo(b.Scale);
+			});
+		}
+
+		if (saveData.Coordinates != null)
+		{
+			saveData.Coordinates.Sort((a, b) =>
+			{
+				int comparison = string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+				if (comparison != 0) return comparison;
+				comparison = string.Compare(a.Name, b.Name, StringComparison.Ordinal);
+				if (comparison != 0) return comparison;
+
+				float centerAX = (a.MinX + a.MaxX) * 0.5f;
+				float centerAZ = (a.MinZ + a.MaxZ) * 0.5f;
+				float centerBX = (b.MinX + b.MaxX) * 0.5f;
+				float centerBZ = (b.MinZ + b.MaxZ) * 0.5f;
+
+				float distanceA = MathF.Sqrt(MathF.Pow(centerAX - topLeftX, 2) + MathF.Pow(centerAZ - topLeftZ, 2));
+				float distanceB = MathF.Sqrt(MathF.Pow(centerBX - topLeftX, 2) + MathF.Pow(centerBZ - topLeftZ, 2));
+				comparison = distanceA.CompareTo(distanceB);
+				if (comparison != 0) return comparison;
+
+				comparison = a.MinX.CompareTo(b.MinX);
+				if (comparison != 0) return comparison;
+				comparison = a.MinZ.CompareTo(b.MinZ);
+				if (comparison != 0) return comparison;
+				comparison = a.MaxX.CompareTo(b.MaxX);
+				if (comparison != 0) return comparison;
+				return a.MaxZ.CompareTo(b.MaxZ);
+			});
+		}
+	}
+
+	public static string CreateWorkspaceBackup(string workspacePath, int maxBackups = 3)
+	{
+		if (string.IsNullOrEmpty(workspacePath) || !Directory.Exists(workspacePath))
+			return string.Empty;
+
+		try
+		{
+			string wsName = Path.GetFileName(workspacePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+			if (string.IsNullOrEmpty(wsName)) wsName = MapWorkspaceService.DefaultWorkspaceFolder;
+
+			string backupsRoot = Path.Combine(OS.GetUserDataDir(), "map_backups", wsName);
+			if (!Directory.Exists(backupsRoot))
+			{
+				Directory.CreateDirectory(backupsRoot);
+			}
+
+			string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+			string targetBackupDir = Path.Combine(backupsRoot, $"backup_{timestamp}");
+
+			Directory.CreateDirectory(targetBackupDir);
+
+			CopyDirectoryContentsSafe(workspacePath, targetBackupDir);
+
+			PruneOldBackups(backupsRoot, maxBackups);
+
+			return targetBackupDir;
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[SaveLoadService] Failed to create workspace backup: {ex.Message}");
+			return string.Empty;
+		}
+	}
+
+	private static void CopyDirectoryContentsSafe(string sourceDir, string targetDir)
+	{
+		var source = new DirectoryInfo(sourceDir);
+		if (!source.Exists) return;
+
+		var excludedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+		{
+			".git", "bin", "obj", ".godot", ".vs", ".vscode"
+		};
+
+		foreach (var dir in source.GetDirectories())
+		{
+			if (excludedFolders.Contains(dir.Name)) continue;
+			string destSubDir = Path.Combine(targetDir, dir.Name);
+			Directory.CreateDirectory(destSubDir);
+			CopyDirectoryContentsSafe(dir.FullName, destSubDir);
+		}
+
+		foreach (var file in source.GetFiles())
+		{
+			if (file.Extension.Equals(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
+			string destFile = Path.Combine(targetDir, file.Name);
+			file.CopyTo(destFile, true);
+		}
+	}
+
+	private static void PruneOldBackups(string backupsRoot, int maxBackups)
+	{
+		if (maxBackups < 1) maxBackups = 1;
+		try
+		{
+			var rootDir = new DirectoryInfo(backupsRoot);
+			if (!rootDir.Exists) return;
+
+			var backupDirs = rootDir.GetDirectories("backup_*")
+				.OrderBy(d => d.CreationTimeUtc)
+				.ThenBy(d => d.Name)
+				.ToList();
+
+			while (backupDirs.Count > maxBackups)
+			{
+				var oldest = backupDirs[0];
+				backupDirs.RemoveAt(0);
+				try
+				{
+					oldest.Delete(true);
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"[SaveLoadService] Failed to prune old backup {oldest.FullName}: {ex.Message}");
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[SaveLoadService] PruneOldBackups error: {ex.Message}");
+		}
+	}
+
+	private static HashSet<string>? _cachedAllowedTerrainTopLevel;
+	private static HashSet<string>? _cachedAllowedTerrainUnitProperties;
+	private static HashSet<string>? _cachedAllowedTerrainPropProperties;
+	private static HashSet<string>? _cachedAllowedTerrainDecalProperties;
+	private static HashSet<string>? _cachedAllowedTerrainCoordinateProperties;
+
+	private static HashSet<string>? _cachedAllowedMetadataTopLevel;
+	private static HashSet<string>? _cachedAllowedAssetCategories;
+	private static HashSet<string>? _cachedAllowedGlbSubCategories;
+	private static HashSet<string>? _cachedAllowedGlbItemProperties;
+	private static HashSet<string>? _cachedAllowedTextureItemProperties;
+	private static HashSet<string>? _cachedAllowedDecalItemProperties;
+	private static HashSet<string>? _cachedAllowedVfxItemProperties;
+	private static HashSet<string>? _cachedAllowedShaderItemProperties;
+	private static HashSet<string>? _cachedAllowedMapProperties;
+	private static HashSet<string>? _cachedAllowedEntityItemProperties;
+	private static HashSet<string>? _cachedAllowedAbilityItemProperties;
+	private static HashSet<string>? _cachedAllowedWeaponItemProperties;
+	private static HashSet<string>? _cachedAllowedUpgradeItemProperties;
+	private static HashSet<string>? _cachedAllowedCustomItemProperties;
+
+	private static void AddTypeMembersToSet(Type type, HashSet<string> destination)
+	{
+		foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+		{
+			destination.Add(property.Name);
+			destination.Add(property.Name.ToLowerInvariant());
+			destination.Add(ConvertToSnakeCase(property.Name));
+		}
+		foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
+		{
+			destination.Add(field.Name);
+			destination.Add(field.Name.ToLowerInvariant());
+			destination.Add(ConvertToSnakeCase(field.Name));
+		}
+	}
+
+	private static string ConvertToSnakeCase(string input)
+	{
+		if (string.IsNullOrEmpty(input)) return input;
+		var stringBuilder = new System.Text.StringBuilder();
+		for (int index = 0; index < input.Length; index++)
+		{
+			char character = input[index];
+			if (char.IsUpper(character))
+			{
+				if (index > 0 && input[index - 1] != '_')
+				{
+					stringBuilder.Append('_');
+				}
+				stringBuilder.Append(char.ToLowerInvariant(character));
+			}
+			else
+			{
+				stringBuilder.Append(character);
+			}
+		}
+		return stringBuilder.ToString();
+	}
+
+	private static JsonObject? LoadMapSchemaJson()
+	{
+		string[] candidatePaths = new[]
+		{
+			PathUtils.FindPath("Realm.MapEditorExtension/map_schema.json"),
+			PathUtils.FindPath("MapTemplate/.vscode/map_schema.json"),
+			PathUtils.FindPath(".vscode/map_schema.json")
+		};
+
+		foreach (var candidatePath in candidatePaths)
+		{
+			if (!string.IsNullOrEmpty(candidatePath) && File.Exists(candidatePath))
+			{
+				try
+				{
+					return JsonNode.Parse(File.ReadAllText(candidatePath)) as JsonObject;
+				}
+				catch
+				{
+				}
+			}
+		}
+
+		return null;
+	}
+
+	private static void ExtractPropertiesFromSchemaNode(JsonNode? node, HashSet<string> destination)
+	{
+		if (node is JsonObject jsonObject)
+		{
+			if (jsonObject.TryGetPropertyValue("properties", out var propertiesNode) && propertiesNode is JsonObject propertiesObject)
+			{
+				foreach (var property in propertiesObject)
+				{
+					destination.Add(property.Key);
+					destination.Add(ConvertToSnakeCase(property.Key));
+				}
+			}
+			if (jsonObject.TryGetPropertyValue("items", out var itemsNode))
+			{
+				ExtractPropertiesFromSchemaNode(itemsNode, destination);
+			}
+		}
+	}
+
+	private static HashSet<string> GetAllowedTerrainTopLevel()
+	{
+		if (_cachedAllowedTerrainTopLevel != null) return _cachedAllowedTerrainTopLevel;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		AddTypeMembersToSet(typeof(MapSaveData), set);
+		_cachedAllowedTerrainTopLevel = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedTerrainUnitProperties()
+	{
+		if (_cachedAllowedTerrainUnitProperties != null) return _cachedAllowedTerrainUnitProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		AddTypeMembersToSet(typeof(UnitSaveData), set);
+		_cachedAllowedTerrainUnitProperties = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedTerrainPropProperties()
+	{
+		if (_cachedAllowedTerrainPropProperties != null) return _cachedAllowedTerrainPropProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		AddTypeMembersToSet(typeof(PropSaveData), set);
+		_cachedAllowedTerrainPropProperties = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedTerrainDecalProperties()
+	{
+		if (_cachedAllowedTerrainDecalProperties != null) return _cachedAllowedTerrainDecalProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		AddTypeMembersToSet(typeof(DecalSaveData), set);
+		_cachedAllowedTerrainDecalProperties = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedTerrainCoordinateProperties()
+	{
+		if (_cachedAllowedTerrainCoordinateProperties != null) return _cachedAllowedTerrainCoordinateProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		AddTypeMembersToSet(typeof(CoordinateSaveData), set);
+		_cachedAllowedTerrainCoordinateProperties = set;
+		return set;
+	}
+
+	public static void CleanTerrainJsonSchema(JsonObject root)
+	{
+		if (root == null) return;
+
+		var allowedTopLevel = GetAllowedTerrainTopLevel();
+		var topKeysToRemove = root.Select(keyValuePair => keyValuePair.Key).Where(key => !allowedTopLevel.Contains(key)).ToList();
+		foreach (var key in topKeysToRemove)
+		{
+			root.Remove(key);
+		}
+
+		var allowedUnitProperties = GetAllowedTerrainUnitProperties();
+		if (root.TryGetPropertyValue("Units", out var unitsNode) && unitsNode is JsonArray unitsArray)
+		{
+			foreach (var item in unitsArray.OfType<JsonObject>())
+			{
+				var propertiesToRemove = item.Select(property => property.Key).Where(property => !allowedUnitProperties.Contains(property)).ToList();
+				foreach (var property in propertiesToRemove) item.Remove(property);
+			}
+		}
+
+		var allowedPropProperties = GetAllowedTerrainPropProperties();
+		if (root.TryGetPropertyValue("Props", out var propsNode) && propsNode is JsonArray propsArray)
+		{
+			foreach (var item in propsArray.OfType<JsonObject>())
+			{
+				var propertiesToRemove = item.Select(property => property.Key).Where(property => !allowedPropProperties.Contains(property)).ToList();
+				foreach (var property in propertiesToRemove) item.Remove(property);
+			}
+		}
+
+		var allowedDecalProperties = GetAllowedTerrainDecalProperties();
+		if (root.TryGetPropertyValue("Decals", out var decalsNode) && decalsNode is JsonArray decalsArray)
+		{
+			foreach (var item in decalsArray.OfType<JsonObject>())
+			{
+				var propertiesToRemove = item.Select(property => property.Key).Where(property => !allowedDecalProperties.Contains(property)).ToList();
+				foreach (var property in propertiesToRemove) item.Remove(property);
+			}
+		}
+
+		var allowedCoordinateProperties = GetAllowedTerrainCoordinateProperties();
+		if (root.TryGetPropertyValue("Coordinates", out var coordinatesNode) && coordinatesNode is JsonArray coordinatesArray)
+		{
+			foreach (var item in coordinatesArray.OfType<JsonObject>())
+			{
+				var propertiesToRemove = item.Select(property => property.Key).Where(property => !allowedCoordinateProperties.Contains(property)).ToList();
+				foreach (var property in propertiesToRemove) item.Remove(property);
+			}
+		}
+	}
+
+	private static void AddEnumNamesToSet<T>(HashSet<string> destination) where T : struct, Enum
+	{
+		foreach (var name in Enum.GetNames<T>())
+		{
+			destination.Add(name);
+			destination.Add(name.ToLowerInvariant());
+			destination.Add(ConvertToSnakeCase(name));
+		}
+	}
+
+	private static HashSet<string> GetAllowedMetadataTopLevel(JsonObject? schemaRoot)
+	{
+		if (_cachedAllowedMetadataTopLevel != null) return _cachedAllowedMetadataTopLevel;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		AddTypeMembersToSet(typeof(Realm.Ecs.Definitions.MapProperties), set);
+		set.Add(nameof(Realm.Ecs.Definitions.MapProperties));
+		set.Add("map_name");
+		set.Add("name");
+
+		foreach (var field in typeof(GameHost).GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
+		{
+			if (field.Name.StartsWith("Model", StringComparison.OrdinalIgnoreCase))
+			{
+				set.Add(field.Name);
+				set.Add(field.Name.ToLowerInvariant());
+				set.Add(ConvertToSnakeCase(field.Name));
+			}
+		}
+		set.Add("ModelOffsets");
+
+		Type[] entityTypes = new[]
+		{
+			typeof(GameHost.UnitMetadata),
+			typeof(GameHost.PropMetadata),
+			typeof(GameHost.ResourceMetadata),
+			typeof(GameHost.WeaponMetadata),
+			typeof(GameHost.AbilityMetadata),
+			typeof(GameHost.UpgradeMetadata),
+			typeof(GameHost.ItemMetadata)
+		};
+
+		foreach (var t in entityTypes)
+		{
+			string baseName = t.Name;
+			if (baseName.EndsWith("Metadata", StringComparison.OrdinalIgnoreCase))
+			{
+				baseName = baseName[..^"Metadata".Length];
+			}
+
+			string plural = baseName.EndsWith("y", StringComparison.OrdinalIgnoreCase)
+				? baseName[..^1] + "ies"
+				: baseName + "s";
+
+			set.Add(baseName);
+			set.Add(plural);
+			set.Add("Custom" + baseName);
+			set.Add("Custom" + plural);
+		}
+
+		foreach (var field in typeof(GameHost).GetFields(BindingFlags.Public | BindingFlags.Static))
+		{
+			if (field.Name.EndsWith("Registry", StringComparison.OrdinalIgnoreCase))
+			{
+				string baseName = field.Name[..^"Registry".Length];
+				string plural = baseName.EndsWith("y", StringComparison.OrdinalIgnoreCase)
+					? baseName[..^1] + "ies"
+					: baseName + "s";
+
+				set.Add(baseName);
+				set.Add(plural);
+				set.Add("Custom" + baseName);
+				set.Add("Custom" + plural);
+			}
+		}
+
+		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("properties", out var propertiesNode) && propertiesNode is JsonObject propertiesObject)
+		{
+			foreach (var property in propertiesObject)
+			{
+				set.Add(property.Key);
+				set.Add(ConvertToSnakeCase(property.Key));
+			}
+		}
+
+		_cachedAllowedMetadataTopLevel = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedAssetCategories(JsonObject? schemaRoot)
+	{
+		if (_cachedAllowedAssetCategories != null) return _cachedAllowedAssetCategories;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		AddEnumNamesToSet<GameHost.AssetCategory>(set);
+
+		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("properties", out var propertiesNode) && propertiesNode is JsonObject propertiesObject)
+		{
+			if (propertiesObject.TryGetPropertyValue("Assets", out var assetsDefinition))
+			{
+				ExtractPropertiesFromSchemaNode(assetsDefinition, set);
+			}
+		}
+
+		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
+		{
+			if (definitionsObject.TryGetPropertyValue("Assets", out var assetsDefinition))
+			{
+				ExtractPropertiesFromSchemaNode(assetsDefinition, set);
+			}
+		}
+
+		_cachedAllowedAssetCategories = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedGlbSubCategories(JsonObject? schemaRoot)
+	{
+		if (_cachedAllowedGlbSubCategories != null) return _cachedAllowedGlbSubCategories;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		AddEnumNamesToSet<GameHost.GlbSubCategory>(set);
+
+		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
+		{
+			if (definitionsObject.TryGetPropertyValue("Assets", out var assetsDefinition) && assetsDefinition is JsonObject assetsObj)
+			{
+				if (assetsObj.TryGetPropertyValue("properties", out var assetsProps) && assetsProps is JsonObject assetsPropsObj)
+				{
+					if (assetsPropsObj.TryGetPropertyValue("glb", out var glbDefinition))
+					{
+						ExtractPropertiesFromSchemaNode(glbDefinition, set);
+					}
+				}
+			}
+		}
+
+		_cachedAllowedGlbSubCategories = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedGlbItemProperties(JsonObject? schemaRoot)
+	{
+		if (_cachedAllowedGlbItemProperties != null) return _cachedAllowedGlbItemProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		AddTypeMembersToSet(typeof(GameHost.GlbItemMetadata), set);
+		AddTypeMembersToSet(typeof(GameHost.UnitMetadata), set);
+		AddTypeMembersToSet(typeof(GameHost.PropMetadata), set);
+		AddTypeMembersToSet(typeof(GameHost.ResourceMetadata), set);
+		AddTypeMembersToSet(typeof(GameHost.WeaponMetadata), set);
+
+		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
+		{
+			if (definitionsObject.TryGetPropertyValue("EntityItem", out var entityDefinition))
+			{
+				ExtractPropertiesFromSchemaNode(entityDefinition, set);
+			}
+		}
+
+		_cachedAllowedGlbItemProperties = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedTextureItemProperties()
+	{
+		if (_cachedAllowedTextureItemProperties != null) return _cachedAllowedTextureItemProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		AddTypeMembersToSet(typeof(GameHost.TextureMetadata), set);
+		AddTypeMembersToSet(typeof(TerrainTextureSnapshot), set);
+		_cachedAllowedTextureItemProperties = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedDecalItemProperties()
+	{
+		if (_cachedAllowedDecalItemProperties != null) return _cachedAllowedDecalItemProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		AddTypeMembersToSet(typeof(GameHost.DecalMetadata), set);
+		AddTypeMembersToSet(typeof(DecalSnapshot), set);
+		_cachedAllowedDecalItemProperties = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedVfxItemProperties()
+	{
+		if (_cachedAllowedVfxItemProperties != null) return _cachedAllowedVfxItemProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		AddTypeMembersToSet(typeof(GameHost.VfxMetadata), set);
+		_cachedAllowedVfxItemProperties = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedShaderItemProperties()
+	{
+		if (_cachedAllowedShaderItemProperties != null) return _cachedAllowedShaderItemProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		AddTypeMembersToSet(typeof(CustomShaderConfig), set);
+		_cachedAllowedShaderItemProperties = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedMapProperties(JsonObject? schemaRoot)
+	{
+		if (_cachedAllowedMapProperties != null) return _cachedAllowedMapProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		AddTypeMembersToSet(typeof(Realm.Ecs.Definitions.MapProperties), set);
+
+		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("properties", out var propertiesNode) && propertiesNode is JsonObject propertiesObject)
+		{
+			if (propertiesObject.TryGetPropertyValue("MapProperties", out var mapPropertiesDefinition))
+			{
+				ExtractPropertiesFromSchemaNode(mapPropertiesDefinition, set);
+			}
+		}
+
+		_cachedAllowedMapProperties = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedEntityItemProperties(JsonObject? schemaRoot)
+	{
+		if (_cachedAllowedEntityItemProperties != null) return _cachedAllowedEntityItemProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		AddTypeMembersToSet(typeof(GameHost.UnitMetadata), set);
+		AddTypeMembersToSet(typeof(GameHost.PropMetadata), set);
+		AddTypeMembersToSet(typeof(GameHost.ResourceMetadata), set);
+
+		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
+		{
+			if (definitionsObject.TryGetPropertyValue("EntityItem", out var entityDefinition))
+			{
+				ExtractPropertiesFromSchemaNode(entityDefinition, set);
+			}
+		}
+
+		_cachedAllowedEntityItemProperties = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedAbilityItemProperties(JsonObject? schemaRoot)
+	{
+		if (_cachedAllowedAbilityItemProperties != null) return _cachedAllowedAbilityItemProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		AddTypeMembersToSet(typeof(GameHost.AbilityMetadata), set);
+
+		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
+		{
+			if (definitionsObject.TryGetPropertyValue("CustomAbilities", out var abilityDefinition))
+			{
+				ExtractPropertiesFromSchemaNode(abilityDefinition, set);
+			}
+		}
+
+		_cachedAllowedAbilityItemProperties = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedWeaponItemProperties(JsonObject? schemaRoot)
+	{
+		if (_cachedAllowedWeaponItemProperties != null) return _cachedAllowedWeaponItemProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		AddTypeMembersToSet(typeof(GameHost.WeaponMetadata), set);
+
+		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
+		{
+			if (definitionsObject.TryGetPropertyValue("CustomWeapons", out var weaponDefinition))
+			{
+				ExtractPropertiesFromSchemaNode(weaponDefinition, set);
+			}
+		}
+
+		_cachedAllowedWeaponItemProperties = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedUpgradeItemProperties(JsonObject? schemaRoot)
+	{
+		if (_cachedAllowedUpgradeItemProperties != null) return _cachedAllowedUpgradeItemProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		AddTypeMembersToSet(typeof(GameHost.UpgradeMetadata), set);
+
+		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
+		{
+			if (definitionsObject.TryGetPropertyValue("CustomUpgrades", out var upgradeDefinition))
+			{
+				ExtractPropertiesFromSchemaNode(upgradeDefinition, set);
+			}
+		}
+
+		_cachedAllowedUpgradeItemProperties = set;
+		return set;
+	}
+
+	private static HashSet<string> GetAllowedCustomItemProperties(JsonObject? schemaRoot)
+	{
+		if (_cachedAllowedCustomItemProperties != null) return _cachedAllowedCustomItemProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		AddTypeMembersToSet(typeof(GameHost.ItemMetadata), set);
+
+		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
+		{
+			if (definitionsObject.TryGetPropertyValue("CustomItems", out var itemDefinition))
+			{
+				ExtractPropertiesFromSchemaNode(itemDefinition, set);
+			}
+		}
+
+		_cachedAllowedCustomItemProperties = set;
+		return set;
+	}
+
+	private static void CleanJsonArrayObjects(JsonArray array, HashSet<string> allowedProperties)
+	{
+		foreach (var item in array.OfType<JsonObject>())
+		{
+			var propertiesToRemove = item.Select(property => property.Key).Where(property => !allowedProperties.Contains(property)).ToList();
+			foreach (var property in propertiesToRemove)
+			{
+				item.Remove(property);
+			}
+		}
+	}
+
+	private static void CleanAssetsObject(JsonObject root, JsonObject? schemaRoot)
+	{
+		if (!root.TryGetPropertyValue("Assets", out var assetsNode) || assetsNode is not JsonObject assetsObject)
+		{
+			return;
+		}
+
+		var allowedCategories = GetAllowedAssetCategories(schemaRoot);
+		var categoryKeysToRemove = assetsObject.Select(keyValuePair => keyValuePair.Key).Where(key => !allowedCategories.Contains(key)).ToList();
+		foreach (var key in categoryKeysToRemove)
+		{
+			assetsObject.Remove(key);
+		}
+
+		if (assetsObject.TryGetPropertyValue("glb", out var glbNode) && glbNode is JsonObject glbObject)
+		{
+			var allowedGlbSubCategories = GetAllowedGlbSubCategories(schemaRoot);
+			var subCategoryKeysToRemove = glbObject.Select(keyValuePair => keyValuePair.Key).Where(key => !allowedGlbSubCategories.Contains(key)).ToList();
+			foreach (var key in subCategoryKeysToRemove)
+			{
+				glbObject.Remove(key);
+			}
+
+			var allowedGlbItemProperties = GetAllowedGlbItemProperties(schemaRoot);
+			foreach (var subCategoryKeyValuePair in glbObject)
+			{
+				if (subCategoryKeyValuePair.Value is JsonObject subCategoryDictionary)
+				{
+					foreach (var itemKeyValuePair in subCategoryDictionary)
+					{
+						if (itemKeyValuePair.Value is JsonObject itemObject)
+						{
+							var itemPropertiesToRemove = itemObject.Select(property => property.Key).Where(property => !allowedGlbItemProperties.Contains(property)).ToList();
+							foreach (var property in itemPropertiesToRemove) itemObject.Remove(property);
+						}
+					}
+				}
+			}
+		}
+
+		if (assetsObject.TryGetPropertyValue("textures", out var texturesNode) && texturesNode is JsonObject texturesObject)
+		{
+			var allowedTextureItemProperties = GetAllowedTextureItemProperties();
+			foreach (var keyValuePair in texturesObject)
+			{
+				if (keyValuePair.Value is JsonObject itemObject)
+				{
+					var propertiesToRemove = itemObject.Select(property => property.Key).Where(property => !allowedTextureItemProperties.Contains(property)).ToList();
+					foreach (var property in propertiesToRemove) itemObject.Remove(property);
+				}
+			}
+		}
+
+		if (assetsObject.TryGetPropertyValue("decals", out var decalsNode) && decalsNode is JsonObject decalsObject)
+		{
+			var allowedDecalItemProperties = GetAllowedDecalItemProperties();
+			foreach (var keyValuePair in decalsObject)
+			{
+				if (keyValuePair.Value is JsonObject itemObject)
+				{
+					var propertiesToRemove = itemObject.Select(property => property.Key).Where(property => !allowedDecalItemProperties.Contains(property)).ToList();
+					foreach (var property in propertiesToRemove) itemObject.Remove(property);
+				}
+			}
+		}
+
+		if (assetsObject.TryGetPropertyValue("vfx_spritesheets", out var vfxNode) && vfxNode is JsonObject vfxObject)
+		{
+			var allowedVfxItemProperties = GetAllowedVfxItemProperties();
+			foreach (var keyValuePair in vfxObject)
+			{
+				if (keyValuePair.Value is JsonObject itemObject)
+				{
+					var propertiesToRemove = itemObject.Select(property => property.Key).Where(property => !allowedVfxItemProperties.Contains(property)).ToList();
+					foreach (var property in propertiesToRemove) itemObject.Remove(property);
+				}
+			}
+		}
+
+		if (assetsObject.TryGetPropertyValue("shaders", out var shadersNode) && shadersNode is JsonObject shadersObject)
+		{
+			var allowedShaderItemProperties = GetAllowedShaderItemProperties();
+			foreach (var keyValuePair in shadersObject)
+			{
+				if (keyValuePair.Value is JsonObject itemObject)
+				{
+					var propertiesToRemove = itemObject.Select(property => property.Key).Where(property => !allowedShaderItemProperties.Contains(property)).ToList();
+					foreach (var property in propertiesToRemove) itemObject.Remove(property);
+				}
+			}
+		}
+	}
+
+	private static void CleanMapPropertiesObject(JsonObject mapPropertiesObject, JsonObject? schemaRoot)
+	{
+		var allowedMapProperties = GetAllowedMapProperties(schemaRoot);
+		var propertiesToRemove = mapPropertiesObject.Select(property => property.Key).Where(property => !allowedMapProperties.Contains(property)).ToList();
+		foreach (var property in propertiesToRemove)
+		{
+			mapPropertiesObject.Remove(property);
+		}
+
+		if (mapPropertiesObject.TryGetPropertyValue("Assets", out var nestedAssetsNode) && nestedAssetsNode is JsonObject nestedAssetsObject)
+		{
+			CleanAssetsObject(mapPropertiesObject, schemaRoot);
+		}
+	}
+
+	public static void CleanMetadataJsonSchema(JsonObject root)
+	{
+		if (root == null) return;
+
+		var schemaRoot = LoadMapSchemaJson();
+		var allowedTopLevel = GetAllowedMetadataTopLevel(schemaRoot);
+
+		var topKeysToRemove = root.Select(keyValuePair => keyValuePair.Key)
+			.Where(key => !allowedTopLevel.Contains(key))
+			.ToList();
+
+		foreach (var key in topKeysToRemove)
+		{
+			root.Remove(key);
+		}
+
+		CleanAssetsObject(root, schemaRoot);
+
+		string mapPropsName = nameof(Realm.Ecs.Definitions.MapProperties);
+		if (root.TryGetPropertyValue(mapPropsName, out var mapPropertiesNode) && mapPropertiesNode is JsonObject mapPropertiesObject)
+		{
+			CleanMapPropertiesObject(mapPropertiesObject, schemaRoot);
+		}
+
+		var allowedEntityProperties = GetAllowedEntityItemProperties(schemaRoot);
+		foreach (var arrayName in GetMetadataEntityArrayNames())
+		{
+			if (root.TryGetPropertyValue(arrayName, out var node) && node is JsonArray array)
+			{
+				CleanJsonArrayObjects(array, allowedEntityProperties);
+			}
+		}
+
+		string baseAbilityName = nameof(GameHost.AbilityMetadata)[..^"Metadata".Length];
+		string abilityPlural = baseAbilityName.EndsWith("y", StringComparison.OrdinalIgnoreCase) ? baseAbilityName[..^1] + "ies" : baseAbilityName + "s";
+		var allowedAbilityProperties = GetAllowedAbilityItemProperties(schemaRoot);
+		foreach (var arrayName in new[] { "Custom" + abilityPlural, abilityPlural })
+		{
+			if (root.TryGetPropertyValue(arrayName, out var abilitiesNode) && abilitiesNode is JsonArray abilitiesArray)
+			{
+				CleanJsonArrayObjects(abilitiesArray, allowedAbilityProperties);
+			}
+		}
+
+		string baseWeaponName = nameof(GameHost.WeaponMetadata)[..^"Metadata".Length];
+		string weaponPlural = baseWeaponName + "s";
+		var allowedWeaponProperties = GetAllowedWeaponItemProperties(schemaRoot);
+		foreach (var arrayName in new[] { "Custom" + weaponPlural, weaponPlural })
+		{
+			if (root.TryGetPropertyValue(arrayName, out var weaponsNode) && weaponsNode is JsonArray weaponsArray)
+			{
+				CleanJsonArrayObjects(weaponsArray, allowedWeaponProperties);
+			}
+		}
+
+		string baseUpgradeName = nameof(GameHost.UpgradeMetadata)[..^"Metadata".Length];
+		string upgradePlural = baseUpgradeName + "s";
+		var allowedUpgradeProperties = GetAllowedUpgradeItemProperties(schemaRoot);
+		foreach (var arrayName in new[] { "Custom" + upgradePlural, upgradePlural })
+		{
+			if (root.TryGetPropertyValue(arrayName, out var upgradesNode) && upgradesNode is JsonArray upgradesArray)
+			{
+				CleanJsonArrayObjects(upgradesArray, allowedUpgradeProperties);
+			}
+		}
+
+		string baseItemName = nameof(GameHost.ItemMetadata)[..^"Metadata".Length];
+		string itemPlural = baseItemName + "s";
+		var allowedCustomItemProperties = GetAllowedCustomItemProperties(schemaRoot);
+		foreach (var arrayName in new[] { "Custom" + itemPlural, itemPlural })
+		{
+			if (root.TryGetPropertyValue(arrayName, out var customItemsNode) && customItemsNode is JsonArray customItemsArray)
+			{
+				CleanJsonArrayObjects(customItemsArray, allowedCustomItemProperties);
+			}
+		}
+	}
+
+	private static string[] GetMetadataEntityArrayNames()
+	{
+		var list = new List<string>();
+		Type[] types = new[]
+		{
+			typeof(GameHost.UnitMetadata),
+			typeof(GameHost.PropMetadata),
+			typeof(GameHost.ResourceMetadata)
+		};
+
+		foreach (var t in types)
+		{
+			string name = t.Name;
+			if (name.EndsWith("Metadata", StringComparison.OrdinalIgnoreCase))
+			{
+				name = name[..^"Metadata".Length];
+			}
+			string plural = name + "s";
+			list.Add("Custom" + plural);
+			list.Add(plural);
+		}
+
+		foreach (var field in typeof(GameHost).GetFields(BindingFlags.Public | BindingFlags.Static))
+		{
+			if (field.Name.EndsWith("Registry", StringComparison.OrdinalIgnoreCase) && !field.Name.StartsWith("Weapon", StringComparison.OrdinalIgnoreCase))
+			{
+				string name = field.Name[..^"Registry".Length];
+				string plural = name + "s";
+				if (!list.Contains("Custom" + plural)) list.Add("Custom" + plural);
+				if (!list.Contains(plural)) list.Add(plural);
+			}
+		}
+
+		return list.ToArray();
 	}
 }
 

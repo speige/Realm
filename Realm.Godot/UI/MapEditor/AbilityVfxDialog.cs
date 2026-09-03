@@ -422,7 +422,7 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 		int rows = 4;
 
 		// Detect columns and rows from metadata if available
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 
 		try
@@ -534,7 +534,7 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 				}
 			}
 
-			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 			string cleanPath = soundPath.Trim().TrimStart('/', '\\').Replace('\\', '/');
 			string fileName = System.IO.Path.GetFileName(cleanPath);
 
@@ -612,7 +612,7 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 				}
 			}
 
-			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 			string cleanPath = path.Trim().TrimStart('/', '\\').Replace('\\', '/');
 			string fileName = System.IO.Path.GetFileName(cleanPath);
 
@@ -625,6 +625,7 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 				System.IO.Path.Combine(wsPath, "Assets", "icons", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "decals", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "textures", fileName),
+				System.IO.Path.Combine(wsPath, "Assets", "ribbons", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "textures", "ribbons", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "textures", "noise", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "skyboxes", fileName),

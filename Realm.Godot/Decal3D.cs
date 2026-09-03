@@ -35,8 +35,10 @@ public partial class Decal3D : Decal
 	
 	public override void _Ready()
 	{
+		CullMask = RuntimeTerrain.TerrainDecalCullMask;
+		bool isEditor = GameHost.Instance?.IsMapEditorMode == true;
 		_staticBody = new StaticBody3D();
-		_staticBody.CollisionLayer = 1; // Or appropriate editor layer
+		_staticBody.CollisionLayer = isEditor ? 1u : 0u;
 		_staticBody.CollisionMask = 0;
 		AddChild(_staticBody);
 
@@ -47,6 +49,14 @@ public partial class Decal3D : Decal
 		_staticBody.AddChild(_collisionShape);
 
 		SetProcess(false);
+	}
+
+	public void SetEditorCollisionEnabled(bool enabled)
+	{
+		if (_staticBody != null && GodotObject.IsInstanceValid(_staticBody))
+		{
+			_staticBody.CollisionLayer = enabled ? 1u : 0u;
+		}
 	}
 
 	public void UpdateCollisionShape()

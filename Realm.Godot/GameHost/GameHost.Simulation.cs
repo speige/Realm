@@ -12,6 +12,7 @@ using Realm.MapAPI;
 using System;
 using System.Collections.Generic;
 using static Realm.Ecs.Common.ResourceConstants;
+using Realm.Godot.Utils;
 
 public partial class GameHost
 {
@@ -113,11 +114,22 @@ public partial class GameHost
 			EcsWorld.Destroy(unit.Entity);
 		}
 
-		var tween = CreateTween();
-		tween.SetParallel(true);
-		tween.TweenProperty(unit, "position:y", -3.0f, 1.0f);
-		tween.TweenProperty(unit, "scale", Vector3.Zero, 1.0f);
-		tween.Chain().TweenCallback(Callable.From(unit.QueueFree));
+		string deathShader = GetModelDeathShader(unitId);
+		if (!string.IsNullOrEmpty(deathShader))
+		{
+			SpawnDeathShaderManager.AnimateTransition(unit, deathShader, false, null, () =>
+			{
+				if (GodotObject.IsInstanceValid(unit)) unit.QueueFree();
+			});
+		}
+		else
+		{
+			var tween = CreateTween();
+			tween.SetParallel(true);
+			tween.TweenProperty(unit, "position:y", -3.0f, 1.0f);
+			tween.TweenProperty(unit, "scale", Vector3.Zero, 1.0f);
+			tween.Chain().TweenCallback(Callable.From(unit.QueueFree));
+		}
 
 		if (unitId == "castle")
 		{
@@ -152,8 +164,20 @@ public partial class GameHost
 				EcsWorld.Destroy(prop.Entity);
 			}
 			PropMultiMeshManager.Instance?.MarkDirty(propId);
-			prop.QueueFree();
 			UncarveObstacle(propPos, radius);
+
+			string deathShader = GetModelDeathShader(propId);
+			if (!string.IsNullOrEmpty(deathShader))
+			{
+				SpawnDeathShaderManager.AnimateTransition(prop, deathShader, false, null, () =>
+				{
+					if (GodotObject.IsInstanceValid(prop)) prop.QueueFree();
+				});
+			}
+			else
+			{
+				prop.QueueFree();
+			}
 		}
 	}
 
@@ -286,6 +310,7 @@ public partial class GameHost
 			if (TryGetUnit3D(buildingEntity, out var buildingNode) && GodotObject.IsInstanceValid(buildingNode))
 			{
 				buildingNode.Modulate = new Godot.Color(1f, 1f, 1f, 1f);
+				SpawnDeathShaderManager.ClearShaderOverride(buildingNode);
 			}
 
 			InGameHUD.Instance?.ShowFeedbackText("Construction complete!", new Godot.Color(0.3f, 0.9f, 0.4f));

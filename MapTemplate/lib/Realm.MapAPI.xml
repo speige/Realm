@@ -32,6 +32,71 @@
             <param name="min">The minimum corner of the bounding region.</param>
             <param name="max">The maximum corner of the bounding region.</param>
         </member>
+        <member name="T:Realm.MapAPI.CoordinateResolver">
+            <summary>
+            Generic named-point lookup. Maps pass coordinate names; this type does not know MOBA lanes.
+            </summary>
+        </member>
+        <member name="T:Realm.MapAPI.HeroProgressionConfig">
+            <summary>
+            Defines progression configuration settings for heroes, including experience curves, kill rewards, and starting resources.
+            </summary>
+        </member>
+        <member name="P:Realm.MapAPI.HeroProgressionConfig.XpPerLevel">
+            <summary>
+            Gets the amount of experience required to advance one hero level.
+            </summary>
+        </member>
+        <member name="P:Realm.MapAPI.HeroProgressionConfig.KillGold">
+            <summary>
+            Gets the amount of gold awarded for killing an enemy unit.
+            </summary>
+        </member>
+        <member name="P:Realm.MapAPI.HeroProgressionConfig.KillXp">
+            <summary>
+            Gets the amount of experience awarded for killing an enemy unit.
+            </summary>
+        </member>
+        <member name="P:Realm.MapAPI.HeroProgressionConfig.PlayerIndex">
+            <summary>
+            Gets the zero-based player index associated with this progression configuration.
+            </summary>
+        </member>
+        <member name="P:Realm.MapAPI.HeroProgressionConfig.MinStartingGold">
+            <summary>
+            Gets the minimum starting gold allocated to the player.
+            </summary>
+        </member>
+        <member name="P:Realm.MapAPI.HeroProgressionConfig.LeaderboardId">
+            <summary>
+            Gets the identifier of the leaderboard associated with this hero progression.
+            </summary>
+        </member>
+        <member name="M:Realm.MapAPI.HeroProgressionConfig.#ctor(System.Single,System.Single,System.Single,System.Int32,System.Single,System.String)">
+            <summary>
+            Initializes a new instance of the <see cref="T:Realm.MapAPI.HeroProgressionConfig"/> struct.
+            </summary>
+            <param name="xpPerLevel">The amount of experience required per hero level.</param>
+            <param name="killGold">The amount of gold awarded per enemy kill.</param>
+            <param name="killXp">The amount of experience awarded per enemy kill.</param>
+            <param name="playerIndex">The zero-based player index.</param>
+            <param name="minStartingGold">The minimum starting gold amount.</param>
+            <param name="leaderboardId">The identifier of the leaderboard.</param>
+        </member>
+        <member name="T:Realm.MapAPI.HeroKillReward">
+            <summary>
+            Provides utility calculations for hero kill rewards and level progression.
+            </summary>
+        </member>
+        <member name="M:Realm.MapAPI.HeroKillReward.AfterKill(Realm.MapAPI.HeroProgressionConfig,System.Single,System.Single)">
+            <summary>
+            Calculates the resulting gold, experience, and level after an enemy kill based on the specified progression configuration.
+            </summary>
+            <param name="config">The hero progression configuration settings.</param>
+            <param name="currentGold">The current amount of gold held prior to the kill.</param>
+            <param name="currentXp">The current amount of experience accumulated prior to the kill.</param>
+            <returns>A tuple containing the updated gold, updated experience, and calculated level.</returns>
+        </member>
         <member name="T:Realm.MapAPI.IGameAPI">
             <summary>
             Defines the safe, public API exposed to map scripts to interact with the game engine.
@@ -1358,6 +1423,108 @@
             </summary>
             <param name="key">The data key to check.</param>
             <returns>True if the data exists, false otherwise.</returns>
+        </member>
+        <member name="T:Realm.MapAPI.TowerDefenseConfig">
+            <summary>
+            Configuration settings for tower defense combat behavior, including range, damage, cooldowns, and visual effects.
+            </summary>
+        </member>
+        <member name="P:Realm.MapAPI.TowerDefenseConfig.Range">
+            <summary>
+            Gets the attack range of the tower defense unit.
+            </summary>
+        </member>
+        <member name="P:Realm.MapAPI.TowerDefenseConfig.Damage">
+            <summary>
+            Gets the base attack damage dealt by the tower defense unit.
+            </summary>
+        </member>
+        <member name="P:Realm.MapAPI.TowerDefenseConfig.AttackCooldownSeconds">
+            <summary>
+            Gets the cooldown interval between attacks in seconds.
+            </summary>
+        </member>
+        <member name="P:Realm.MapAPI.TowerDefenseConfig.VisualEffectId">
+            <summary>
+            Gets the identifier of the visual effect spawned when attacking.
+            </summary>
+        </member>
+        <member name="M:Realm.MapAPI.TowerDefenseConfig.#ctor(System.Single,System.Single,System.Single,System.String)">
+            <summary>
+            Initializes a new instance of the <see cref="T:Realm.MapAPI.TowerDefenseConfig"/> struct.
+            </summary>
+            <param name="range">The attack range of the tower.</param>
+            <param name="damage">The damage dealt per attack.</param>
+            <param name="attackCooldownSeconds">The cooldown duration in seconds between attacks.</param>
+            <param name="visualEffectId">The identifier of the visual effect to spawn when attacking, or an empty string for none.</param>
+        </member>
+        <member name="T:Realm.MapAPI.WaypointMarchConfig">
+            <summary>
+            Configuration settings for automated waypoint navigation and lane combat behavior.
+            </summary>
+        </member>
+        <member name="P:Realm.MapAPI.WaypointMarchConfig.WaypointArrivalRadiusSquared">
+            <summary>
+            Gets the squared distance threshold within which a unit is considered to have arrived at a waypoint.
+            </summary>
+        </member>
+        <member name="P:Realm.MapAPI.WaypointMarchConfig.AttackCooldownSeconds">
+            <summary>
+            Gets the cooldown interval in seconds between attacks during a march.
+            </summary>
+        </member>
+        <member name="M:Realm.MapAPI.WaypointMarchConfig.#ctor(System.Single,System.Single)">
+            <summary>
+            Initializes a new instance of the <see cref="T:Realm.MapAPI.WaypointMarchConfig"/> struct.
+            </summary>
+            <param name="waypointArrivalRadiusSquared">The squared arrival radius used to determine when a waypoint is reached.</param>
+            <param name="attackCooldownSeconds">The attack cooldown duration in seconds.</param>
+        </member>
+        <member name="P:Realm.MapAPI.WaypointMarchConfig.Default">
+            <summary>
+            Gets the default waypoint march configuration.
+            </summary>
+        </member>
+        <member name="T:Realm.MapAPI.MapScriptHelpers">
+            <summary>
+            Provides helper methods for common map script gameplay mechanics, such as automated tower defense updates.
+            </summary>
+        </member>
+        <member name="M:Realm.MapAPI.MapScriptHelpers.RunTowerDefenseTick(Realm.MapAPI.IGameAPI,Realm.MapAPI.IUnit,Realm.MapAPI.TowerDefenseConfig,System.Single@,System.Single)">
+            <summary>
+            Runs a single simulation tick of tower defense logic for a tower unit, acquiring the nearest valid enemy target within range and performing an attack if the cooldown has elapsed.
+            </summary>
+            <param name="api">The game API instance used to query targets and spawn visual effects.</param>
+            <param name="tower">The defending tower unit.</param>
+            <param name="config">The tower defense configuration specifying range, damage, cooldown, and visual effects.</param>
+            <param name="cooldownRemaining">A reference to the remaining attack cooldown in seconds, which will be updated.</param>
+            <param name="delta">The time elapsed since the previous simulation tick, in seconds.</param>
+            <returns><see langword="true"/> if the tower attacked a target during this tick; otherwise, <see langword="false"/>.</returns>
+        </member>
+        <member name="T:Realm.MapAPI.WaypointMarcher">
+            <summary>
+            Manages automated lane movement and combat engagement for a unit marching along a sequence of waypoints.
+            </summary>
+        </member>
+        <member name="M:Realm.MapAPI.WaypointMarcher.#ctor(Realm.MapAPI.IUnit,System.Collections.Generic.IReadOnlyList{System.Numerics.Vector3},System.Nullable{Realm.MapAPI.WaypointMarchConfig})">
+            <summary>
+            Initializes a new instance of the <see cref="T:Realm.MapAPI.WaypointMarcher"/> class.
+            </summary>
+            <param name="unit">The unit to navigate along the waypoint sequence.</param>
+            <param name="waypoints">The ordered list of waypoint positions to march through.</param>
+            <param name="config">Optional configuration settings for arrival thresholds and attack cooldowns. If <see langword="null"/>, default settings are used.</param>
+        </member>
+        <member name="P:Realm.MapAPI.WaypointMarcher.IsAlive">
+            <summary>
+            Gets a value indicating whether the managed unit is currently alive.
+            </summary>
+        </member>
+        <member name="M:Realm.MapAPI.WaypointMarcher.Update(Realm.MapAPI.IGameAPI,System.Single)">
+            <summary>
+            Updates the unit's march and combat behavior for the current simulation tick.
+            </summary>
+            <param name="api">The game API instance used to query targets and issue orders.</param>
+            <param name="delta">The time elapsed since the previous simulation tick, in seconds.</param>
         </member>
     </members>
 </doc>
