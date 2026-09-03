@@ -12,6 +12,7 @@ using MirrorMode = Realm.Ecs.Components.Core.MirrorMode;
 using WaterType = Realm.Ecs.Components.Terrain.WaterType;
 using Realm.Shared;
 using Realm.Shared.Metadata;
+using Realm.Godot.Utils;
 
 public partial class MapEditorHUD : Control
 {
@@ -203,6 +204,14 @@ public partial class MapEditorHUD : Control
 	private AbilityVfxDialog _abilityVfxDialog;
 	private AssetManagerDialog _assetManagerDialog;
 	private AssetBrowserDialog _assetBrowserDialog;
+	private NoiseTextureDialog _noiseTextureDialog;
+	private ConvertGlbDialog _convertGlbDialog;
+	private EditorSettingsDialog _editorSettingsDialog;
+	private ShaderEditorDialog _shaderEditorDialog;
+	private Button _btnEditorSettings;
+	private PanelContainer _mapNameHeaderPanel;
+	private Label _lblMapNameHeader;
+	private double _mapNameUpdateTimer = 0.0;
 	private Button _btnOpenGlobalOverrides;
 	private Button _btnOpenAnimationPreview;
 	private Button _btnAssetsManager;
@@ -224,6 +233,7 @@ public partial class MapEditorHUD : Control
 	private Control _stepBox;
 	private Button _btnToggleSnap;
 	private Button _btnToggleGrid;
+	private Button _btnToggleWireframe;
 	private Button _btnBrushShape;
 	private Button _btnResetMap;
 	private Button _btnGenerateMap;
@@ -331,9 +341,9 @@ public partial class MapEditorHUD : Control
 	private bool _wasmHasErrors = false;
 	private string _wasmCompileLogPath = "";
 
-	public const string TempWorkspaceGodotPath = "user://temp_map_workspace";
+	public const string TempWorkspaceGodotPath = MapWorkspaceService.DefaultWorkspaceGodotPath;
 
-	private string _tempWorkspacePath;
+	private string _tempWorkspacePath = MapWorkspaceService.GetDefaultWorkspaceGlobalPath();
 	public string TempWorkspacePath => _tempWorkspacePath;
 	private EditorService _editorService;
 	private long _lastTerrainSyncTime = 0;
@@ -358,6 +368,29 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	private double _autoBackupElapsedSeconds = 0;
+
+	public void PerformAutoBackup()
+	{
+		try
+		{
+			if (GameHost.Instance == null || GameHost.Instance.GroundTerrain == null) return;
+			string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
+			if (string.IsNullOrEmpty(wsPath) || !System.IO.Directory.Exists(wsPath)) return;
+
+			string tempTerrainPath = System.IO.Path.Combine(wsPath, "terrain.json");
+			GameHost.Instance.SaveMapToFile(tempTerrainPath, performReload: false);
+			int maxBackups = EditorSettingsDialog.CurrentSettings?.MaxBackupSnapshots ?? 3;
+			SaveLoadService.CreateWorkspaceBackup(wsPath, maxBackups);
+			ShowFeedback(TranslationServer.Translate("Auto-backup snapshot saved."));
+			GD.Print("[MapEditorHUD] Auto-backup snapshot saved.");
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] Auto-backup failed: {ex.Message}");
+		}
+	}
+
 	public void UpdateFPSVisibility()
 	{
 		var fpsLabel = (GameHost.Instance != null ? GameHost.Instance.MainNode?.GetNodeOrNull<Label>("CanvasLayer/FPS") : null);
@@ -375,7 +408,7 @@ public partial class MapEditorHUD : Control
 			Instance = this;
 			_editorService = ServiceLocator.TryGet<EditorService>();
 			UpdateFPSVisibility();
-			_tempWorkspacePath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+			_tempWorkspacePath = MapWorkspaceService.GetDefaultWorkspaceGlobalPath();
 
 			_camera3D = (GameHost.Instance?.MainCamera);
 
@@ -405,6 +438,7 @@ public partial class MapEditorHUD : Control
 			frameRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 			frameRect.StretchMode = TextureRect.StretchModeEnum.Scale;
 			frameRect.MouseFilter = Control.MouseFilterEnum.Ignore;
+			frameRect.Visible = !EditorSettingsDialog.CurrentSettings.HideChromeBorderOverlay;
 			AddChild(frameRect);
 			MoveChild(frameRect, 0);
 		}
@@ -440,6 +474,46 @@ public partial class MapEditorHUD : Control
 		_btnBackToHub = GetNode<Button>("TopLeftBox/BtnBack");
 		SetupButton(_btnBackToHub, "\uf2f5 BACK TO HUB", () => BackToHubAction(), 13, "Exit editor and return to game lobby");
 		StyleMapEditorTopButton(_btnBackToHub);
+
+		_mapNameHeaderPanel = new PanelContainer();
+		_mapNameHeaderPanel.Name = "MapNameHeaderPanel";
+		_mapNameHeaderPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateLightInnerPanel());
+		_mapNameHeaderPanel.CustomMinimumSize = new Vector2(160, 32);
+		_mapNameHeaderPanel.MouseFilter = Control.MouseFilterEnum.Stop;
+		_mapNameHeaderPanel.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
+		_mapNameHeaderPanel.TooltipText = TranslationServer.Translate("Click to open Map Settings");
+		_mapNameHeaderPanel.GuiInput += (ev) =>
+		{
+			if (ev is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+			{
+				_mapSettingsDialog?.OpenDialog();
+			}
+		};
+
+		var mapNameHBox = new HBoxContainer();
+		mapNameHBox.Alignment = BoxContainer.AlignmentMode.Center;
+		mapNameHBox.AddThemeConstantOverride("separation", 6);
+		_mapNameHeaderPanel.AddChild(mapNameHBox);
+
+		_lblMapNameHeader = new Label();
+		_lblMapNameHeader.Name = "LblMapNameHeader";
+		_lblMapNameHeader.Text = "🗺️ Map";
+		_lblMapNameHeader.AddThemeFontSizeOverride("font_size", 12);
+		_lblMapNameHeader.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		_lblMapNameHeader.HorizontalAlignment = HorizontalAlignment.Center;
+		_lblMapNameHeader.VerticalAlignment = VerticalAlignment.Center;
+		_lblMapNameHeader.MouseFilter = Control.MouseFilterEnum.Pass;
+		mapNameHBox.AddChild(_lblMapNameHeader);
+
+		var topLeftBoxNode = GetNodeOrNull<HBoxContainer>("TopLeftBox");
+		if (topLeftBoxNode != null)
+		{
+			topLeftBoxNode.AddChild(_mapNameHeaderPanel);
+			int backIdx = _btnBackToHub.GetIndex();
+			topLeftBoxNode.MoveChild(_mapNameHeaderPanel, backIdx + 1);
+		}
+
+		UpdateMapNameHeader();
 
 		var btnHelp = GetNode<Button>("TopLeftBox/BtnHelp");
 		SetupButton(btnHelp, "\uf059 HELP / HOTKEYS", () => ToggleHelpPanelExternal(), 13, "Toggle the hotkeys and editor guide overlay (H)");
@@ -484,7 +558,11 @@ public partial class MapEditorHUD : Control
 		_btnSettings = GetNodeOrNull<Button>("TopLeftBox/BtnSettings");
 		if (_btnSettings != null)
 		{
-			SetupIconButton(_btnSettings, "res://Assets/UI/gear_icon.png", () => UIManager.Instance?.OpenSettingsOverlay(), "Settings");
+			SetupIconButton(_btnSettings, "res://Assets/UI/gear_icon.png", () =>
+			{
+				if (_editorSettingsDialog != null) _editorSettingsDialog.OpenDialog();
+				else UIManager.Instance?.OpenSettingsOverlay();
+			}, "Editor Settings");
 			StyleMapEditorTopButton(_btnSettings);
 		}
 
@@ -565,6 +643,12 @@ public partial class MapEditorHUD : Control
 		SetupOptionButton(_btnMapSettings, "\uf303 MAP SETTINGS", () => _mapSettingsDialog?.OpenDialog(), 13, "Open Map Settings dialog");
 		_contentFile.AddChild(_btnMapSettings);
 
+		_btnEditorSettings = new Button();
+		_btnEditorSettings.Name = "BtnEditorSettings";
+		_btnEditorSettings.Set("icon_max_width", 0);
+		SetupOptionButton(_btnEditorSettings, "⚙️ " + TranslationServer.Translate("EDITOR SETTINGS"), () => _editorSettingsDialog?.OpenDialog(), 13, "Configure editor preferences, chrome border, and display overlays");
+		_contentFile.AddChild(_btnEditorSettings);
+
 		_accordionViewport = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion");
 		_btnHeaderViewport = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/BtnHeaderViewport");
 		_contentViewport = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport");
@@ -602,6 +686,17 @@ public partial class MapEditorHUD : Control
 				UpdateCameraBoundsOverlayExternal(GameHost.Instance.EditorCameraBoundsVisible);
 			}
 		}, 12, "Toggle camera bounds overlay (B)");
+
+		_btnToggleWireframe = GetNodeOrNull<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnToggleWireframe") ?? new Button();
+		SetupButton(_btnToggleWireframe, "\uf5ee", () =>
+		{
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+			{
+				GameHost.Instance.GroundTerrain.ToggleWireframeMode();
+				bool isWireframe = GetViewport()?.DebugDraw == Viewport.DebugDrawEnum.Wireframe;
+				UpdateWireframeOverlayExternal(isWireframe);
+			}
+		}, 12, "Toggle wireframe mode (F7)");
 
 		_btnRotate = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnRotate");
 		SetupButton(_btnRotate, "\uf01e", () =>
@@ -945,19 +1040,48 @@ public partial class MapEditorHUD : Control
 		SetupTextureSwatches(true);
 
 		_containerPathingSettings = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing");
-		_chkShallowWater = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent/ChkShallowWater");
-		UIStyle.ApplyCheckboxStyle(_chkShallowWater);
-		_chkDeepWater = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent/ChkDeepWater");
-		UIStyle.ApplyCheckboxStyle(_chkDeepWater);
-		_chkFlying = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent/ChkFlying");
-		UIStyle.ApplyCheckboxStyle(_chkFlying);
-		_chkGround = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent/ChkGround");
-		UIStyle.ApplyCheckboxStyle(_chkGround);
-		_chkBuildable = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent/ChkBuildable");
-		UIStyle.ApplyCheckboxStyle(_chkBuildable);
+		var pathingContent = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent");
+		_chkShallowWater = pathingContent.GetNode<CheckBox>("ChkShallowWater");
+		_chkDeepWater = pathingContent.GetNode<CheckBox>("ChkDeepWater");
+		_chkFlying = pathingContent.GetNode<CheckBox>("ChkFlying");
+		_chkGround = pathingContent.GetNode<CheckBox>("ChkGround");
+		_chkBuildable = pathingContent.GetNode<CheckBox>("ChkBuildable");
+
+		SetupPathingCheckBoxRow(pathingContent, _chkShallowWater, new Color(0.2f, 0.6f, 1.0f), "Shallow Water");
+		SetupPathingCheckBoxRow(pathingContent, _chkDeepWater, new Color(0.0f, 0.15f, 0.7f), "Deep Water");
+		SetupPathingCheckBoxRow(pathingContent, _chkFlying, new Color(0.85f, 0.85f, 0.0f), "Flying");
+		SetupPathingCheckBoxRow(pathingContent, _chkGround, new Color(0.2f, 0.85f, 0.2f), "Ground");
+		SetupPathingCheckBoxRow(pathingContent, _chkBuildable, new Color(0.6f, 0.2f, 0.8f), "Buildable");
 		_chkGround.ButtonPressed = true;
 
-		_optPathingMode = GetNode<OptionButton>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent/PathingModeRow/OptPathingMode");
+		var pathingModeRow = pathingContent.GetNodeOrNull<HBoxContainer>("PathingModeRow");
+		if (pathingModeRow != null)
+		{
+			var modePanel = new PanelContainer();
+			modePanel.Name = "ModeRowPanel";
+			modePanel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+			var modeStyle = new StyleBoxFlat();
+			modeStyle.BgColor = new Color(0.12f, 0.13f, 0.16f, 0.82f);
+			modeStyle.BorderColor = new Color(0.35f, 0.33f, 0.28f, 0.75f);
+			modeStyle.SetBorderWidthAll(1);
+			modeStyle.CornerRadiusTopLeft = 4;
+			modeStyle.CornerRadiusTopRight = 4;
+			modeStyle.CornerRadiusBottomLeft = 4;
+			modeStyle.CornerRadiusBottomRight = 4;
+			modeStyle.ContentMarginLeft = 8;
+			modeStyle.ContentMarginRight = 8;
+			modeStyle.ContentMarginTop = 4;
+			modeStyle.ContentMarginBottom = 4;
+			modePanel.AddThemeStyleboxOverride("panel", modeStyle);
+
+			int modeIdx = pathingModeRow.GetIndex();
+			pathingContent.RemoveChild(pathingModeRow);
+			modePanel.AddChild(pathingModeRow);
+			pathingContent.AddChild(modePanel);
+			pathingContent.MoveChild(modePanel, modeIdx);
+		}
+
+		_optPathingMode = pathingContent.GetNode<OptionButton>("ModeRowPanel/PathingModeRow/OptPathingMode");
 		_optPathingMode.AddItem(TranslationServer.Translate("Add Pathing Attribute"), 0);
 		_optPathingMode.AddItem(TranslationServer.Translate("Clear Pathing Attribute"), 1);
 		_optPathingMode.Selected = 0;
@@ -1227,6 +1351,25 @@ public partial class MapEditorHUD : Control
 					if (_btnHeaderInspector != null) _btnHeaderInspector.Text = "▼ " + TranslationServer.Translate("Selected Object Inspector");
 				}
 				_accordionContainer?.QueueSort();
+			}
+		}
+
+		_mapNameUpdateTimer += delta;
+		if (_mapNameUpdateTimer >= 0.2)
+		{
+			_mapNameUpdateTimer = 0.0;
+			UpdateMapNameHeader();
+		}
+
+		int intervalMins = EditorSettingsDialog.CurrentSettings?.AutoBackupIntervalMinutes ?? 30;
+		if (intervalMins > 0)
+		{
+			_autoBackupElapsedSeconds += delta;
+			double targetSeconds = intervalMins * 60.0;
+			if (_autoBackupElapsedSeconds >= targetSeconds)
+			{
+				_autoBackupElapsedSeconds = 0;
+				PerformAutoBackup();
 			}
 		}
 	}
@@ -1575,7 +1718,8 @@ public partial class MapEditorHUD : Control
 			}
 
 			string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(selected);
-			if (!string.IsNullOrEmpty(assetKey))
+			bool isDecal = selected is Decal || (GameHost.Instance != null && GameHost.Instance.FindDecalInParentChain(selected) != null);
+			if (!string.IsNullOrEmpty(assetKey) && !isDecal)
 			{
 				if (_btnOpenGlobalOverrides != null)
 				{
@@ -1698,6 +1842,16 @@ public partial class MapEditorHUD : Control
 			_btnToggleCameraBounds.Text = "📹";
 			_btnToggleCameraBounds.TooltipText = TranslationServer.Translate($"Camera Bounds: {(visible ? "ON" : "OFF")} (B)");
 			_btnToggleCameraBounds.Modulate = visible ? new Color(1.3f, 1.15f, 0.7f) : new Color(1f, 1f, 1f);
+		}
+	}
+
+	public void UpdateWireframeOverlayExternal(bool enabled)
+	{
+		if (_btnToggleWireframe != null)
+		{
+			_btnToggleWireframe.Text = "\uf5ee";
+			_btnToggleWireframe.TooltipText = TranslationServer.Translate($"Wireframe Mode: {(enabled ? "ON" : "OFF")} (F7)");
+			_btnToggleWireframe.Modulate = enabled ? new Color(1.8f, 1.45f, 0.5f) : new Color(1.1f, 1.1f, 1.1f);
 		}
 	}
 
@@ -4758,6 +4912,72 @@ public partial class MapEditorHUD : Control
 		chk.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
 	}
 
+	private void SetupPathingCheckBoxRow(VBoxContainer parent, CheckBox chk, Color color, string labelText)
+	{
+		if (chk == null || parent == null) return;
+
+		chk.Text = TranslationServer.Translate(labelText);
+		chk.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		UIStyle.ApplyCheckboxStyle(chk);
+		StyleCheckBoxRow(chk);
+
+		var rowPanel = new PanelContainer();
+		rowPanel.Name = "RowPanel" + chk.Name;
+		rowPanel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+		var rowStyle = new StyleBoxFlat();
+		rowStyle.BgColor = new Color(0.12f, 0.13f, 0.16f, 0.82f);
+		rowStyle.BorderColor = new Color(0.35f, 0.33f, 0.28f, 0.75f);
+		rowStyle.SetBorderWidthAll(1);
+		rowStyle.CornerRadiusTopLeft = 4;
+		rowStyle.CornerRadiusTopRight = 4;
+		rowStyle.CornerRadiusBottomLeft = 4;
+		rowStyle.CornerRadiusBottomRight = 4;
+		rowStyle.ContentMarginLeft = 8;
+		rowStyle.ContentMarginRight = 8;
+		rowStyle.ContentMarginTop = 3;
+		rowStyle.ContentMarginBottom = 3;
+		rowPanel.AddThemeStyleboxOverride("panel", rowStyle);
+
+		var row = new HBoxContainer();
+		row.Name = "Row" + chk.Name;
+		row.AddThemeConstantOverride("separation", 8);
+		row.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+		int originalIndex = chk.GetIndex();
+		parent.RemoveChild(chk);
+		row.AddChild(chk);
+
+		var colorBox = new Panel();
+		colorBox.Name = "ColorBox" + chk.Name;
+		colorBox.CustomMinimumSize = new Vector2(18, 18);
+		colorBox.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+		colorBox.TooltipText = TranslationServer.Translate(labelText);
+
+		var boxStyle = new StyleBoxFlat();
+		boxStyle.BgColor = color;
+		boxStyle.BorderColor = new Color(0.95f, 0.95f, 1.0f, 0.85f);
+		boxStyle.SetBorderWidthAll(1);
+		boxStyle.CornerRadiusTopLeft = 3;
+		boxStyle.CornerRadiusTopRight = 3;
+		boxStyle.CornerRadiusBottomLeft = 3;
+		boxStyle.CornerRadiusBottomRight = 3;
+		colorBox.AddThemeStyleboxOverride("panel", boxStyle);
+
+		colorBox.GuiInput += (@event) =>
+		{
+			if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+			{
+				chk.ButtonPressed = !chk.ButtonPressed;
+			}
+		};
+
+		row.AddChild(colorBox);
+		rowPanel.AddChild(row);
+		parent.AddChild(rowPanel);
+		parent.MoveChild(rowPanel, originalIndex);
+	}
+
 	private FontVariation _faFontVariation;
 	private FontVariation GetFontAwesomeFont()
 	{
@@ -5072,6 +5292,7 @@ public partial class MapEditorHUD : Control
 
 			StyleIconButton(_btnToggleGrid, "\uf84c", "Toggle alignment grid lines overlay (V)");
 			StyleIconButton(_btnToggleCameraBounds, "\uf06e", "Toggle camera bounds overlay (B)");
+			StyleIconButton(_btnToggleWireframe, "\uf5ee", "Toggle wireframe mode (F7)");
 			StyleIconButton(_btnRotate, "\uf01e", "Rotate camera 90 degrees (R)");
 			StyleIconButton(_btnCameraAngle, "\uf1b2", "Toggle perspective vs top-down angle (C)");
 			StyleIconButton(_btnSkybox, "\uf185", "Cycle map environment lighting (L)");
@@ -5080,6 +5301,7 @@ public partial class MapEditorHUD : Control
 
 			SafeReparent(_btnToggleGrid, vpRow);
 			SafeReparent(_btnToggleCameraBounds, vpRow);
+			SafeReparent(_btnToggleWireframe, vpRow);
 			SafeReparent(_btnRotate, vpRow);
 			SafeReparent(_btnCameraAngle, vpRow);
 			SafeReparent(_btnSkybox, vpRow);
@@ -5693,6 +5915,8 @@ public partial class MapEditorHUD : Control
 				if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 				{
 					GameHost.Instance.GroundTerrain.ToggleWireframeMode();
+					bool isWireframe = GetViewport()?.DebugDraw == Viewport.DebugDrawEnum.Wireframe;
+					UpdateWireframeOverlayExternal(isWireframe);
 				}
 				GetViewport().SetInputAsHandled();
 			}
@@ -6200,7 +6424,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 			if (System.IO.File.Exists(metadataPath))
@@ -6886,6 +7110,11 @@ public partial class MapEditorHUD : Control
 		_abilityVfxDialog = new AbilityVfxDialog(this);
 		_assetManagerDialog = new AssetManagerDialog(this);
 		_assetBrowserDialog = new AssetBrowserDialog(this);
+		_noiseTextureDialog = new NoiseTextureDialog(this);
+		_convertGlbDialog = new ConvertGlbDialog(this);
+		_editorSettingsDialog = new EditorSettingsDialog(this);
+		_shaderEditorDialog = new ShaderEditorDialog(this);
+		ApplyEditorPreferences(EditorSettingsDialog.CurrentSettings);
 
 		_btnOpenAnimationPreview = new Button();
 		_btnOpenAnimationPreview.Name = "BtnOpenAnimationPreview";
@@ -6938,7 +7167,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 			if (!System.IO.File.Exists(metadataPath)) return;
@@ -6995,7 +7224,7 @@ public partial class MapEditorHUD : Control
 			}
 
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 			if (!System.IO.File.Exists(metadataPath)) return;
@@ -7026,6 +7255,15 @@ public partial class MapEditorHUD : Control
 		{
 			GD.PrintErr($"[MapEditorHUD] SaveCustomUnitAnimations error: {ex.Message}");
 		}
+	}
+
+	public void OpenShaderEditorDialog(string shaderKey = "", Action<CustomShaderConfig> onSaved = null)
+	{
+		if (_shaderEditorDialog == null)
+		{
+			_shaderEditorDialog = new ShaderEditorDialog(this);
+		}
+		_shaderEditorDialog.OpenForShader(shaderKey, onSaved);
 	}
 
 	public void OpenModelPickerDialog(string entityId, string fieldName, string domain, string currentPath, Action<string> onApplied = null)
@@ -7069,7 +7307,7 @@ public partial class MapEditorHUD : Control
 			}
 
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 			if (!System.IO.File.Exists(metadataPath)) return;
@@ -7139,7 +7377,7 @@ public partial class MapEditorHUD : Control
 			if (string.IsNullOrEmpty(abilityId)) return;
 
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 			if (!System.IO.File.Exists(metadataPath)) return;
@@ -7377,7 +7615,7 @@ public partial class MapEditorHUD : Control
 	private Texture2D LoadSwatchTextureInternal(int i)
 	{
 		string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-			? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+			? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 			: _tempWorkspacePath;
 		string texName = (i >= 0 && i < _swatchDisplayNames.Count) ? _swatchDisplayNames[i] : $"swatch_{i}";
 		string cleanName = texName.ToLowerInvariant().Replace(" ", "_") + ".rtex";
@@ -7435,7 +7673,7 @@ public partial class MapEditorHUD : Control
 		string rawName = (index >= 0 && index < _swatchDisplayNames.Count) ? _swatchDisplayNames[index] : $"swatch_{index}";
 		string name = rawName.ToLowerInvariant().Replace(" ", "_");
 		string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-			? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+			? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 			: _tempWorkspacePath;
 		string texDir = System.IO.Path.Combine(wsPath, "Assets", "textures");
 		System.IO.Directory.CreateDirectory(texDir);
@@ -7464,6 +7702,140 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public void OpenNoiseTextureDialog(Action<string> onSaved = null)
+	{
+		_noiseTextureDialog?.OpenWithCallback(onSaved);
+	}
+
+	public void OpenConvertGlbDialog(string? initialPath = null, string? initialSubCat = null, Action<string>? onConverted = null)
+	{
+		Action<string> chainedCallback = (resultPath) =>
+		{
+			onConverted?.Invoke(resultPath);
+			_assetManagerDialog?.RefreshAssetListAndPreview(resultPath);
+		};
+		_convertGlbDialog?.OpenWithPreset(initialPath, initialSubCat, chainedCallback);
+	}
+
+	public void OpenEditorSettingsDialog()
+	{
+		_editorSettingsDialog?.OpenDialog();
+	}
+
+	public void ApplyEditorPreferences(EditorPreferencesData prefs)
+	{
+		if (prefs == null) return;
+
+		var screenFrame = GetNodeOrNull<TextureRect>("MapEditorScreenFrame");
+		if (screenFrame != null)
+		{
+			screenFrame.Visible = !prefs.HideChromeBorderOverlay;
+		}
+
+		var leftPanel = GetNodeOrNull<Panel>("LeftSlidePanel");
+		var rightPanel = GetNodeOrNull<Panel>("RightSlidePanel");
+		var topBar = GetNodeOrNull<PanelContainer>("TopBar");
+		var minimap = GetNodeOrNull<PanelContainer>("MinimapFrame");
+
+		if (prefs.HideChromeBorderOverlay)
+		{
+			if (leftPanel != null) leftPanel.SelfModulate = new Color(1, 1, 1, 0.45f);
+			if (rightPanel != null) rightPanel.SelfModulate = new Color(1, 1, 1, 0.45f);
+			if (topBar != null) topBar.SelfModulate = new Color(1, 1, 1, 0.0f);
+			if (minimap != null) minimap.SelfModulate = new Color(1, 1, 1, 0.5f);
+		}
+		else
+		{
+			if (leftPanel != null) leftPanel.SelfModulate = Colors.White;
+			if (rightPanel != null) rightPanel.SelfModulate = Colors.White;
+			if (topBar != null) topBar.SelfModulate = Colors.White;
+			if (minimap != null) minimap.SelfModulate = Colors.White;
+		}
+
+		UpdateFPSVisibility();
+
+		if (leftPanel != null && !prefs.HideChromeBorderOverlay)
+		{
+			leftPanel.Modulate = new Color(1, 1, 1, prefs.PanelOpacity);
+		}
+		if (rightPanel != null && !prefs.HideChromeBorderOverlay)
+		{
+			rightPanel.Modulate = new Color(1, 1, 1, prefs.PanelOpacity);
+		}
+	}
+
+
+
+	public string GetMapNameFromMetadata()
+	{
+		try
+		{
+			string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
+			string metaPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (System.IO.File.Exists(metaPath))
+			{
+				string json = System.IO.File.ReadAllText(metaPath);
+				var root = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
+				if (root != null)
+				{
+					if (root.TryGetPropertyValue("Name", out var n1) && !string.IsNullOrWhiteSpace(n1?.ToString()))
+						return n1.ToString().Trim();
+					if (root.TryGetPropertyValue("map_name", out var n2) && !string.IsNullOrWhiteSpace(n2?.ToString()))
+						return n2.ToString().Trim();
+					if (root.TryGetPropertyValue("MapName", out var n3) && !string.IsNullOrWhiteSpace(n3?.ToString()))
+						return n3.ToString().Trim();
+					if (root.TryGetPropertyValue("Title", out var n4) && !string.IsNullOrWhiteSpace(n4?.ToString()))
+						return n4.ToString().Trim();
+					if (root.TryGetPropertyValue("MapProperties", out var mp) && mp is System.Text.Json.Nodes.JsonObject mpObj)
+					{
+						if (mpObj.TryGetPropertyValue("Name", out var mpN1) && !string.IsNullOrWhiteSpace(mpN1?.ToString()))
+							return mpN1.ToString().Trim();
+						if (mpObj.TryGetPropertyValue("MapName", out var mpN2) && !string.IsNullOrWhiteSpace(mpN2?.ToString()))
+							return mpN2.ToString().Trim();
+					}
+				}
+			}
+
+			string mapJsonPath = System.IO.Path.Combine(wsPath, "map.json");
+			if (System.IO.File.Exists(mapJsonPath))
+			{
+				var mapDoc = System.Text.Json.Nodes.JsonNode.Parse(System.IO.File.ReadAllText(mapJsonPath)) as System.Text.Json.Nodes.JsonObject;
+				if (mapDoc != null && mapDoc.TryGetPropertyValue("MapProperties", out var mp) && mp is System.Text.Json.Nodes.JsonObject mpObj)
+				{
+					if (mpObj.TryGetPropertyValue("Name", out var n) && !string.IsNullOrWhiteSpace(n?.ToString()))
+						return n.ToString().Trim();
+				}
+			}
+
+			if (!string.IsNullOrEmpty(GameHost.Instance?.ActiveMapName))
+			{
+				return System.IO.Path.GetFileNameWithoutExtension(GameHost.Instance.ActiveMapName);
+			}
+
+			return System.IO.Path.GetFileName(wsPath);
+		}
+		catch
+		{
+			return "Untitled Map";
+		}
+	}
+
+	public void UpdateMapNameHeader()
+	{
+		if (_lblMapNameHeader == null) return;
+		string mapName = GetMapNameFromMetadata();
+		bool hasUnsaved = GameHost.Instance?.EditorHasUnsavedChanges ?? false;
+
+		string displayText = hasUnsaved ? $"🗺️ {mapName} *" : $"🗺️ {mapName}";
+		if (_lblMapNameHeader.Text != displayText)
+		{
+			_lblMapNameHeader.Text = displayText;
+			_lblMapNameHeader.TooltipText = hasUnsaved
+				? $"{mapName} * ({TranslationServer.Translate("Unsaved changes — Press Ctrl+S to save")})"
+				: $"{mapName} ({TranslationServer.Translate("All changes saved")})";
+		}
+	}
+
 	private void RefreshSkyboxList()
 	{
 		_mapSettingsDialog?.RefreshSkyboxList();
@@ -7474,7 +7846,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 			JsonObject root = new JsonObject();
@@ -7526,12 +7898,50 @@ public partial class MapEditorHUD : Control
 				JsonObject catObj = assetsObj[category] as JsonObject ?? new JsonObject();
 				if (!catObj.ContainsKey(subCategory)) catObj[subCategory] = new JsonObject();
 				JsonObject subObj = catObj[subCategory] as JsonObject ?? new JsonObject();
-				subObj[fileName] = blake3Hash;
-				catObj[subCategory] = subObj;
-				assetsObj[category] = catObj;
-
 				if (category == "glb")
 				{
+					float defaultScale = subCategory.ToLowerInvariant() switch
+					{
+						"resources" => 2.75f,
+						"buildings" => 1.5f,
+						"props" => 1.25f,
+						"units" => 1.0f,
+						_ => 1.0f
+					};
+
+					string modelFullPath = System.IO.Path.Combine(wsPath, "Assets", "models", subCategory, fileName);
+					if (!System.IO.File.Exists(modelFullPath))
+					{
+						modelFullPath = System.IO.Path.Combine(wsPath, "Assets", "glb", subCategory, fileName);
+					}
+
+					var (minY, autoYOffset) = Realm.Godot.Utils.ModelCache.CalculateModelBounds(modelFullPath, defaultScale);
+					bool isPropOrRes = subCategory.ToLowerInvariant() == "props" || subCategory.ToLowerInvariant() == "resources";
+
+					var glbMetaObj = new JsonObject
+					{
+						["hash"] = blake3Hash,
+						["min_y"] = minY,
+						["scale"] = defaultScale,
+						["y_offset"] = autoYOffset,
+						["default_asset_type"] = subCategory.ToLowerInvariant(),
+						["normal_mode"] = "Flat",
+						["normalize_luminance"] = true,
+						["ignore_player_color"] = isPropOrRes
+					};
+					subObj[fileName] = glbMetaObj;
+					catObj[subCategory] = subObj;
+					assetsObj[category] = catObj;
+
+					if (!root.ContainsKey("ModelOffsets") || root["ModelOffsets"] is not JsonObject) root["ModelOffsets"] = new JsonObject();
+					((JsonObject)root["ModelOffsets"])[fileName] = autoYOffset;
+
+					if (!root.ContainsKey("ModelScales") || root["ModelScales"] is not JsonObject) root["ModelScales"] = new JsonObject();
+					((JsonObject)root["ModelScales"])[fileName] = defaultScale;
+
+					GameHost.Instance?.SetModelYOffset(fileName, autoYOffset);
+					GameHost.Instance?.SetModelScale(fileName, defaultScale);
+
 					string unitId = System.IO.Path.GetFileNameWithoutExtension(fileName);
 					string targetArrayKey = subCategory.ToLowerInvariant() switch
 					{
@@ -7547,7 +7957,17 @@ public partial class MapEditorHUD : Control
 						root[targetArrayKey] = new JsonArray();
 					}
 					JsonArray targetArr = (JsonArray)root[targetArrayKey];
-					bool exists = targetArr.Any(node => node is JsonObject obj && obj.ContainsKey("UnitId") && obj["UnitId"]?.ToString() == unitId);
+					bool exists = false;
+					foreach (var item in targetArr)
+					{
+						if (item is JsonObject uObj && (uObj["UnitId"]?.ToString() == unitId || uObj["ModelPath"]?.ToString() == fileName))
+						{
+							exists = true;
+							if (autoYOffset != 0f) uObj["YOffset"] = autoYOffset;
+							break;
+						}
+					}
+
 					if (!exists)
 					{
 						int defaultPathing = subCategory.ToLowerInvariant() switch
@@ -7559,43 +7979,13 @@ public partial class MapEditorHUD : Control
 							_ => (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 						};
 
-						float defaultScale = subCategory.ToLowerInvariant() switch
-						{
-							"resources" => 2.75f,
-							"buildings" => 1.5f,
-							"props" => 1.25f,
-							"units" => 1.0f,
-							_ => 1.0f
-						};
-
-						float defaultYOffset = 0.0f;
-						string modelFullPath = System.IO.Path.Combine(wsPath, "Assets", "models", subCategory, fileName);
-						if (System.IO.File.Exists(modelFullPath))
-						{
-							try
-							{
-								var modelNode = Realm.Godot.Utils.ModelCache.GetModel(modelFullPath) as Node3D;
-								if (modelNode != null)
-								{
-									float minY = Unit3D.GetMinY(modelNode, Transform3D.Identity);
-									if (minY < 0f)
-									{
-										defaultYOffset = (float)Math.Round(-minY * defaultScale, 4);
-									}
-									modelNode.QueueFree();
-								}
-							}
-							catch { }
-						}
-
-						bool isPropOrRes = subCategory.ToLowerInvariant() == "props" || subCategory.ToLowerInvariant() == "resources";
 						var newUnitObj = new JsonObject
 						{
 							["UnitId"] = unitId,
 							["Name"] = unitId,
 							["Description"] = "",
 							["Scale"] = defaultScale,
-							["YOffset"] = defaultYOffset,
+							["YOffset"] = autoYOffset,
 							["PathingType"] = defaultPathing,
 							["ModelPath"] = fileName,
 							["NormalMode"] = "Flat",
@@ -7603,13 +7993,13 @@ public partial class MapEditorHUD : Control
 							["IgnorePlayerColor"] = isPropOrRes
 						};
 						targetArr.Add(newUnitObj);
-
-						if (!root.ContainsKey("ModelOffsets") || root["ModelOffsets"] is not JsonObject) root["ModelOffsets"] = new JsonObject();
-						((JsonObject)root["ModelOffsets"])[fileName] = defaultYOffset;
-
-						if (!root.ContainsKey("ModelScales") || root["ModelScales"] is not JsonObject) root["ModelScales"] = new JsonObject();
-						((JsonObject)root["ModelScales"])[fileName] = defaultScale;
 					}
+				}
+				else
+				{
+					subObj[fileName] = blake3Hash;
+					catObj[subCategory] = subObj;
+					assetsObj[category] = catObj;
 				}
 			}
 			else
@@ -7759,7 +8149,7 @@ public partial class MapEditorHUD : Control
 			string rawName = (slotIndex >= 0 && slotIndex < _swatchDisplayNames.Count) ? _swatchDisplayNames[slotIndex] : $"swatch_{slotIndex}";
 			string name = rawName.ToLowerInvariant().Replace(" ", "_");
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string texDir = System.IO.Path.Combine(wsPath, "Assets", "textures");
 			System.IO.Directory.CreateDirectory(texDir);
@@ -7842,7 +8232,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 			if (!System.IO.File.Exists(metadataPath)) return;
@@ -7880,7 +8270,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string ext = System.IO.Path.GetExtension(sourceFilePath).ToLowerInvariant();
 			string animsDir = System.IO.Path.Combine(wsPath, "Assets", "animations");
@@ -7981,7 +8371,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string fileName = System.IO.Path.GetFileName(sourceFilePath);
 			string subCat = category.ToLowerInvariant();
@@ -8036,7 +8426,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string baseName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
 			string fileName = baseName + ".png";
@@ -8072,7 +8462,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string fileName = System.IO.Path.GetFileName(sourceFilePath);
 			string skyboxesDir = System.IO.Path.Combine(wsPath, "Assets", "skyboxes");
@@ -8100,7 +8490,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string baseName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
 			string fileName = baseName + ".png";
@@ -8136,7 +8526,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string baseName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
 			string fileName = baseName + ".png";
@@ -8172,7 +8562,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string baseName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
 			string fileName = baseName + ".ogg";

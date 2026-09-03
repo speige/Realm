@@ -16,6 +16,21 @@ using Realm.Ecs.Services;
 
 public static partial class MapWorkspaceService
 {
+	public const string DefaultWorkspaceFolder = "temp_map_workspace";
+	public const string DefaultWorkspaceGodotPath = "user://temp_map_workspace";
+
+	public static string GetDefaultWorkspaceGlobalPath() =>
+		Godot.ProjectSettings.GlobalizePath(DefaultWorkspaceGodotPath);
+
+	public static string GetActiveWorkspacePath()
+	{
+		if (!string.IsNullOrEmpty(MapEditorHUD.Instance?.TempWorkspacePath))
+			return MapEditorHUD.Instance.TempWorkspacePath;
+		if (GameHost.Instance != null && !string.IsNullOrEmpty(GameHost.Instance.CurrentMapDirectory))
+			return GameHost.Instance.CurrentMapDirectory;
+		return GetDefaultWorkspaceGlobalPath();
+	}
+
 	private static string _cachedRepoRoot;
 	private static bool _repoRootResolved;
 
@@ -89,6 +104,12 @@ public static partial class MapWorkspaceService
 		NormalizeMetadataTextureEntries(directory);
 		EnsureGlbAssetsOptimized(directory);
 		EnsurePngAssetsConverted(directory);
+		EnsureNoiseTexturesGenerated(directory);
+	}
+
+	public static void EnsureNoiseTexturesGenerated(string directory)
+	{
+		Realm.Godot.Services.NoiseTextureGenerator.EnsureAllNoiseTexturesGenerated(directory);
 	}
 
 	public static void CleanWorkspaceBinaries(string directory)
@@ -291,7 +312,22 @@ public static partial class MapWorkspaceService
 			{
 				try
 				{
-					File.Copy(source, Path.Combine(libDir, fileName), true);
+					string dest = Path.Combine(libDir, fileName);
+					if (File.Exists(dest))
+					{
+						var srcInfo = new FileInfo(source);
+						var dstInfo = new FileInfo(dest);
+						if (srcInfo.Length == dstInfo.Length)
+						{
+							byte[] srcBytes = File.ReadAllBytes(source);
+							byte[] dstBytes = File.ReadAllBytes(dest);
+							if (srcBytes.AsSpan().SequenceEqual(dstBytes))
+							{
+								continue;
+							}
+						}
+					}
+					File.Copy(source, dest, true);
 				}
 				catch (IOException)
 				{
@@ -375,12 +411,12 @@ public static partial class MapWorkspaceService
 
 	public static void EnsureSolutionFile(string directory, string mapName)
 	{
-		string slnPath = Path.Combine(directory, "temp_map_workspace.slnx");
+		string slnPath = Path.Combine(directory, $"{DefaultWorkspaceFolder}.slnx");
 		if (!File.Exists(slnPath))
 		{
 			try
 			{
-				Realm.Shared.NativeToolRunner.RunTool("dotnet", "new sln -n temp_map_workspace", timeoutMs: 15000, workingDir: directory);
+				Realm.Shared.NativeToolRunner.RunTool("dotnet", $"new sln -n {DefaultWorkspaceFolder}", timeoutMs: 15000, workingDir: directory);
 				Realm.Shared.NativeToolRunner.RunTool("dotnet", $"sln add {mapName}.csproj", timeoutMs: 15000, workingDir: directory);
 			}
 			catch
@@ -792,7 +828,8 @@ public static partial class MapWorkspaceService
 					}
 				}
 
-				if (assetsObj["ribbon_textures"] is JsonObject ribbons && (ribbons.ContainsKey(fileName) || ribbons.ContainsKey($"{cleanName}.rtex")))
+				if ((assetsObj["ribbons"] is JsonObject r1 && (r1.ContainsKey(fileName) || r1.ContainsKey($"{cleanName}.rtex")))
+					|| (assetsObj["ribbon_textures"] is JsonObject r2 && (r2.ContainsKey(fileName) || r2.ContainsKey($"{cleanName}.rtex"))))
 					return ("ribbon_texture", 4, 4);
 
 				if (assetsObj["noise_textures"] is JsonObject noise && (noise.ContainsKey(fileName) || noise.ContainsKey($"{cleanName}.rtex")))
@@ -812,7 +849,7 @@ public static partial class MapWorkspaceService
 		if (normalized.Contains("/assets/vfx/") || normalized.Contains("/vfx/") || normalized.Contains("/spritesheets/"))
 			return ("vfx_spritesheet", 4, 4);
 
-		if (normalized.Contains("/textures/ribbons/") || normalized.Contains("/ribbons/"))
+		if (normalized.Contains("/assets/ribbons/") || normalized.Contains("/ribbons/") || normalized.Contains("/textures/ribbons/"))
 			return ("ribbon_texture", 4, 4);
 
 		if (normalized.Contains("/textures/noise/") || normalized.Contains("/noise/"))
@@ -860,7 +897,7 @@ public static partial class MapWorkspaceService
 				"icon" or "icons" => "icons",
 				"skybox" or "skyboxes" => "skyboxes",
 				"vfx_spritesheet" or "spritesheet" or "spritesheets" => "vfx_spritesheets",
-				"ribbon_texture" or "ribbon" or "ribbons" => "ribbon_textures",
+				"ribbon_texture" or "ribbon" or "ribbons" => "ribbons",
 				"noise_texture" or "noise" => "noise_textures",
 				_ => "textures"
 			};
@@ -1152,7 +1189,7 @@ public static partial class MapWorkspaceService
 			? wsPath
 			: (GameHost.Instance != null && !string.IsNullOrEmpty(GameHost.Instance.CurrentMapDirectory)
 				? GameHost.Instance.CurrentMapDirectory
-				: ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace"));
+				: ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath));
 
 		void CleanTexturesObject(JsonObject texturesObj)
 		{

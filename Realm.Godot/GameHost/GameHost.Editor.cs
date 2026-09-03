@@ -24,6 +24,9 @@ public partial class GameHost
 	public readonly Dictionary<string, ModelNormalMode> ModelNormalModes = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, bool> ModelIgnorePlayerColor = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, bool> ModelNormalizeLuminance = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, string> ModelSpawnShaders = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, string> ModelDeathShaders = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, bool> ModelGenerateNormals = new(StringComparer.OrdinalIgnoreCase);
 	private bool _modelYOffsetSavePending = false;
 	private bool _modelCollisionCircleSavePending = false;
 
@@ -496,6 +499,74 @@ public partial class GameHost
 		EditorHasUnsavedChanges = true;
 	}
 
+	public string GetModelSpawnShader(object objOrId)
+	{
+		if (objOrId == null) return "";
+		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
+		string normPrimary = NormalizeModelAssetKey(primaryKey);
+		if (!string.IsNullOrEmpty(normPrimary) && ModelSpawnShaders.TryGetValue(normPrimary, out string s1))
+			return s1;
+
+		string assetKey = GetModelAssetKey(objOrId);
+		string normAsset = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(normAsset) && ModelSpawnShaders.TryGetValue(normAsset, out string s2))
+			return s2;
+
+		return "";
+	}
+
+	public void SetModelSpawnShader(string assetKey, string shaderKey)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (string.IsNullOrEmpty(norm)) return;
+
+		if (string.IsNullOrWhiteSpace(shaderKey))
+		{
+			ModelSpawnShaders.Remove(norm);
+		}
+		else
+		{
+			ModelSpawnShaders[norm] = shaderKey.Trim();
+		}
+
+		_modelYOffsetSavePending = true;
+		EditorHasUnsavedChanges = true;
+	}
+
+	public string GetModelDeathShader(object objOrId)
+	{
+		if (objOrId == null) return "";
+		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
+		string normPrimary = NormalizeModelAssetKey(primaryKey);
+		if (!string.IsNullOrEmpty(normPrimary) && ModelDeathShaders.TryGetValue(normPrimary, out string d1))
+			return d1;
+
+		string assetKey = GetModelAssetKey(objOrId);
+		string normAsset = NormalizeModelAssetKey(assetKey);
+		if (!string.IsNullOrEmpty(normAsset) && ModelDeathShaders.TryGetValue(normAsset, out string d2))
+			return d2;
+
+		return "";
+	}
+
+	public void SetModelDeathShader(string assetKey, string shaderKey)
+	{
+		string norm = NormalizeModelAssetKey(assetKey);
+		if (string.IsNullOrEmpty(norm)) return;
+
+		if (string.IsNullOrWhiteSpace(shaderKey))
+		{
+			ModelDeathShaders.Remove(norm);
+		}
+		else
+		{
+			ModelDeathShaders[norm] = shaderKey.Trim();
+		}
+
+		_modelYOffsetSavePending = true;
+		EditorHasUnsavedChanges = true;
+	}
+
 	public bool IsPropOrResourceKey(string key)
 	{
 		if (string.IsNullOrEmpty(key)) return false;
@@ -575,7 +646,7 @@ public partial class GameHost
 		if (!string.IsNullOrEmpty(lookupKey))
 		{
 			var modelNode = ModelCache.GetModel(lookupKey) as Node;
-			if (modelNode != null && !PlayerColorShaderManager.ModelHasPlayerMask(modelNode))
+			if (modelNode != null && !ModelShaderManager.ModelHasPlayerMask(modelNode))
 			{
 				ModelIgnorePlayerColor[lookupKey] = true;
 				_modelYOffsetSavePending = true;
@@ -769,15 +840,15 @@ public partial class GameHost
 
 		if (!isDefaultColor)
 		{
-			Realm.Godot.Utils.PlayerColorShaderManager.SetBrightnessAndTint(node, brightness, tint);
+			Realm.Godot.Utils.ModelShaderManager.SetBrightnessAndTint(node, brightness, tint);
 		}
 
-		Realm.Godot.Utils.PlayerColorShaderManager.RefreshShaderMaterialsForNode(node, normalizeLuminance);
-		Realm.Godot.Utils.PlayerColorShaderManager.SetNormalMode(node, (float)normalMode);
-		Realm.Godot.Utils.PlayerColorShaderManager.SetUnitReadability(node, isUnit);
+		Realm.Godot.Utils.ModelShaderManager.RefreshShaderMaterialsForNode(node, normalizeLuminance);
+		Realm.Godot.Utils.ModelShaderManager.SetNormalMode(node, (float)normalMode);
+		Realm.Godot.Utils.ModelShaderManager.SetUnitReadability(node, isUnit);
 		if (ignorePlayerColor.HasValue)
 		{
-			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(node, ignorePlayerColor.Value);
+			Realm.Godot.Utils.ModelShaderManager.SetIgnorePlayerColor(node, ignorePlayerColor.Value);
 		}
 
 		var meshNodes = FindMeshInstancesRecursive(node);
@@ -979,7 +1050,7 @@ public partial class GameHost
 			string mapDir = !string.IsNullOrEmpty(directory) ? directory : CurrentMapDirectory;
 			if (string.IsNullOrEmpty(mapDir))
 			{
-				mapDir = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+				mapDir = Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 			}
 			LoadUnitMetadata(mapDir);
 			string metadataPath = System.IO.Path.Combine(mapDir, "metadata.json");
@@ -1247,12 +1318,21 @@ public partial class GameHost
 								else
 								{
 									var modelNode = ModelCache.GetModel(normKey) as Node;
-									if (modelNode != null && !PlayerColorShaderManager.ModelHasPlayerMask(modelNode))
+									if (modelNode != null && !ModelShaderManager.ModelHasPlayerMask(modelNode))
 									{
 										ModelIgnorePlayerColor[normKey] = true;
 										_modelYOffsetSavePending = true;
 										EditorHasUnsavedChanges = true;
 									}
+								}
+
+								if (itemObj.ContainsKey("spawn_shader") && !string.IsNullOrWhiteSpace(itemObj["spawn_shader"]?.ToString()))
+								{
+									ModelSpawnShaders[normKey] = itemObj["spawn_shader"]!.ToString().Trim();
+								}
+								if (itemObj.ContainsKey("death_shader") && !string.IsNullOrWhiteSpace(itemObj["death_shader"]?.ToString()))
+								{
+									ModelDeathShaders[normKey] = itemObj["death_shader"]!.ToString().Trim();
 								}
 							}
 						}
@@ -1348,7 +1428,7 @@ public partial class GameHost
 			string mapDir = !string.IsNullOrEmpty(directory) ? directory : CurrentMapDirectory;
 			if (string.IsNullOrEmpty(mapDir))
 			{
-				mapDir = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+				mapDir = Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 			}
 			string metadataPath = System.IO.Path.Combine(mapDir, "metadata.json");
 
@@ -1359,67 +1439,6 @@ public partial class GameHost
 				if (!string.IsNullOrWhiteSpace(text))
 				{
 					root = System.Text.Json.Nodes.JsonNode.Parse(text) as System.Text.Json.Nodes.JsonObject ?? new System.Text.Json.Nodes.JsonObject();
-				}
-			}
-
-			System.Text.Json.Nodes.JsonObject offsetsObj = new System.Text.Json.Nodes.JsonObject();
-			foreach (var kvp in ModelYOffsets) offsetsObj[kvp.Key] = kvp.Value;
-			root["ModelOffsets"] = offsetsObj;
-
-			System.Text.Json.Nodes.JsonObject scalesObj = new System.Text.Json.Nodes.JsonObject();
-			foreach (var kvp in ModelScales) scalesObj[kvp.Key] = kvp.Value;
-			root["ModelScales"] = scalesObj;
-
-			System.Text.Json.Nodes.JsonObject circlesObj = new System.Text.Json.Nodes.JsonObject();
-			foreach (var kvp in ModelCollisionCircleRatios) circlesObj[kvp.Key] = kvp.Value;
-			root["ModelCollisionCircleRatios"] = circlesObj;
-
-			System.Text.Json.Nodes.JsonObject radiiObj = new System.Text.Json.Nodes.JsonObject();
-			foreach (var kvp in ModelObstacleRadii) radiiObj[kvp.Key] = kvp.Value;
-			root["ModelObstacleRadii"] = radiiObj;
-
-
-
-			System.Text.Json.Nodes.JsonObject mbObj = new System.Text.Json.Nodes.JsonObject();
-			foreach (var kvp in ModelBrightness) mbObj[kvp.Key] = kvp.Value;
-			root["ModelBrightness"] = mbObj;
-
-			System.Text.Json.Nodes.JsonObject nmObj = new System.Text.Json.Nodes.JsonObject();
-			foreach (var kvp in ModelNormalModes) nmObj[kvp.Key] = kvp.Value.ToString();
-			root["ModelNormalModes"] = nmObj;
-
-			System.Text.Json.Nodes.JsonObject nlObj = new System.Text.Json.Nodes.JsonObject();
-			foreach (var kvp in ModelNormalizeLuminance) nlObj[kvp.Key] = kvp.Value;
-			root["ModelNormalizeLuminance"] = nlObj;
-
-			System.Text.Json.Nodes.JsonObject ipcObj = new System.Text.Json.Nodes.JsonObject();
-			foreach (var kvp in ModelIgnorePlayerColor) ipcObj[kvp.Key] = kvp.Value;
-			root["ModelIgnorePlayerColor"] = ipcObj;
-
-			string[] entitySaveArrays = new[] { "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps" };
-			foreach (var arrKey in entitySaveArrays)
-			{
-				if (root.ContainsKey(arrKey) && root[arrKey] is System.Text.Json.Nodes.JsonArray arr)
-				{
-					foreach (var item in arr)
-					{
-						if (item is System.Text.Json.Nodes.JsonObject uObj && uObj.ContainsKey("UnitId"))
-						{
-							string uId = uObj["UnitId"]?.ToString() ?? "";
-							string normKey = NormalizeModelAssetKey(uId);
-							if (ModelYOffsets.TryGetValue(normKey, out float yVal)) uObj["YOffset"] = yVal;
-							if (ModelScales.TryGetValue(normKey, out float sVal)) uObj["Scale"] = sVal;
-							if (ModelCollisionCircleRatios.TryGetValue(normKey, out float rVal)) uObj["CollisionCircle"] = rVal;
-							if (ModelBrightness.TryGetValue(normKey, out float bVal)) uObj["Brightness"] = bVal;
-							if (ModelColorTint.TryGetValue(normKey, out Color tColor)) uObj["Tint"] = "#" + tColor.ToHtml(false);
-							if (ModelNormalModes.TryGetValue(normKey, out var nmVal))
-							{
-								uObj["NormalMode"] = nmVal.ToString();
-							}
-							if (ModelNormalizeLuminance.TryGetValue(normKey, out bool nlVal)) uObj["NormalizeLuminance"] = nlVal;
-							if (ModelIgnorePlayerColor.TryGetValue(normKey, out bool ipcVal)) uObj["IgnorePlayerColor"] = ipcVal;
-						}
-					}
 				}
 			}
 
@@ -1440,20 +1459,56 @@ public partial class GameHost
 							bool hasNm = ModelNormalModes.TryGetValue(normKey, out var nmVal);
 							bool hasNl = ModelNormalizeLuminance.TryGetValue(normKey, out bool nlVal);
 							bool hasIpc = ModelIgnorePlayerColor.TryGetValue(normKey, out bool ipcVal);
+							bool hasSpawnShader = ModelSpawnShaders.TryGetValue(normKey, out string spawnShaderVal) && !string.IsNullOrWhiteSpace(spawnShaderVal);
+							bool hasDeathShader = ModelDeathShaders.TryGetValue(normKey, out string deathShaderVal) && !string.IsNullOrWhiteSpace(deathShaderVal);
 
-							if (hasY || hasScale || hasRatio || hasRadius || hasBright || hasNm || hasNl || hasIpc)
+							if (hasY || hasScale || hasRatio || hasRadius || hasBright || hasNm || hasNl || hasIpc || hasSpawnShader || hasDeathShader)
 							{
 								var nodeVal = catDict[key];
 								if (nodeVal is System.Text.Json.Nodes.JsonObject itemObj)
 								{
-									if (hasY) itemObj["y_offset"] = yVal;
-									if (hasScale) itemObj["scale"] = sVal;
-									if (hasRatio) itemObj["collision_circle_ratio"] = rVal;
-									if (hasRadius) itemObj["collision_radius"] = radVal;
-									if (hasBright) itemObj["brightness"] = brightVal;
+									if (hasY)
+									{
+										if (!itemObj.TryGetPropertyValue("y_offset", out var existingYNode) || existingYNode == null || !float.TryParse(existingYNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float existingY) || MathF.Abs(existingY - yVal) >= 0.0001f)
+										{
+											itemObj["y_offset"] = yVal;
+										}
+									}
+									if (hasScale)
+									{
+										if (!itemObj.TryGetPropertyValue("scale", out var existingScaleNode) || existingScaleNode == null || !float.TryParse(existingScaleNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float existingScale) || MathF.Abs(existingScale - sVal) >= 0.0001f)
+										{
+											itemObj["scale"] = sVal;
+										}
+									}
+									if (hasRatio)
+									{
+										if (!itemObj.TryGetPropertyValue("collision_circle_ratio", out var existingRatioNode) || existingRatioNode == null || !float.TryParse(existingRatioNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float existingRatio) || MathF.Abs(existingRatio - rVal) >= 0.0001f)
+										{
+											itemObj["collision_circle_ratio"] = rVal;
+										}
+									}
+									if (hasRadius)
+									{
+										if (!itemObj.TryGetPropertyValue("collision_radius", out var existingRadiusNode) || existingRadiusNode == null || !float.TryParse(existingRadiusNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float existingRadius) || MathF.Abs(existingRadius - radVal) >= 0.0001f)
+										{
+											itemObj["collision_radius"] = radVal;
+										}
+									}
+									if (hasBright)
+									{
+										if (!itemObj.TryGetPropertyValue("brightness", out var existingBrightNode) || existingBrightNode == null || !float.TryParse(existingBrightNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float existingBright) || MathF.Abs(existingBright - brightVal) >= 0.0001f)
+										{
+											itemObj["brightness"] = brightVal;
+										}
+									}
 									if (hasNm) itemObj["normal_mode"] = nmVal.ToString();
 									if (hasNl) itemObj["normalize_luminance"] = nlVal;
 									if (hasIpc) itemObj["ignore_player_color"] = ipcVal;
+									if (hasSpawnShader) itemObj["spawn_shader"] = spawnShaderVal;
+									else itemObj.Remove("spawn_shader");
+									if (hasDeathShader) itemObj["death_shader"] = deathShaderVal;
+									else itemObj.Remove("death_shader");
 								}
 								else if (nodeVal != null)
 								{
@@ -1470,6 +1525,8 @@ public partial class GameHost
 									if (hasNm) newItemObj["normal_mode"] = nmVal.ToString();
 									if (hasNl) newItemObj["normalize_luminance"] = nlVal;
 									if (hasIpc) newItemObj["ignore_player_color"] = ipcVal;
+									if (hasSpawnShader) newItemObj["spawn_shader"] = spawnShaderVal;
+									if (hasDeathShader) newItemObj["death_shader"] = deathShaderVal;
 									catDict[key] = newItemObj;
 								}
 							}
@@ -1479,6 +1536,7 @@ public partial class GameHost
 			}
 
 			MapWorkspaceService.NormalizeTextureEntries(root);
+			SaveLoadService.CleanMetadataJsonSchema(root);
 			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 		}
 		catch (Exception ex)
@@ -1766,7 +1824,7 @@ public partial class GameHost
 		if (UnitRegistry.ContainsKey(propIdOrEntityId) || BuildingRegistry.ContainsKey(propIdOrEntityId))
 			return false;
 
-		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		string wsPath = Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 		if (System.IO.File.Exists(metadataPath))
 		{
@@ -1865,7 +1923,7 @@ public partial class GameHost
 		}
 
 		string filename = System.IO.Path.GetFileName(decalId);
-		string wsPath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 
 		List<string> candidatePaths = new List<string>();
 
@@ -1939,7 +1997,7 @@ public partial class GameHost
 		if (decalId.StartsWith("res://")) return decalId;
 
 		string filename = System.IO.Path.GetFileName(decalId);
-		string wsPath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 
 		string candidate1 = System.IO.Path.Combine(wsPath, "Assets", "decals", filename);
 		if (System.IO.File.Exists(candidate1)) return candidate1;
@@ -1970,6 +2028,7 @@ public partial class GameHost
 		decal.TextureAlbedo = GD.Load<Texture2D>("res://icon.svg");
 		decal.Size = new Vector3(6.0f, 20.0f, 6.0f);
 		decal.AlbedoMix = 1.0f;
+		decal.CullMask = RuntimeTerrain.TerrainDecalCullMask;
 		AddChild(decal);
 		AllDecals.Add(decal);
 		
@@ -2116,6 +2175,7 @@ public partial class GameHost
 
 		private Decal3D FindDecal3DInParentChain(Node node)
 	{
+		if (!IsMapEditorMode) return null;
 		Node current = node;
 		while (current != null && current != this)
 		{
@@ -2153,7 +2213,7 @@ public partial class GameHost
 		bool isBuilding = false;
 		if (!UnitRegistry.ContainsKey(unitId) && !BuildingRegistry.ContainsKey(unitId))
 		{
-			LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace"));
+			LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath));
 		}
 
 		UnitMetadata meta;
@@ -2184,6 +2244,24 @@ public partial class GameHost
 		else
 		{
 			EcsWorld.Add(entity, new CollisionScale(scale));
+		}
+
+		if (EcsWorld.Has<RotationY>(entity))
+		{
+			EcsWorld.Set(entity, new RotationY(rotationY));
+		}
+		else
+		{
+			EcsWorld.Add(entity, new RotationY(rotationY));
+		}
+
+		if (EcsWorld.Has<ModelScale>(entity))
+		{
+			EcsWorld.Set(entity, new ModelScale(scale));
+		}
+		else
+		{
+			EcsWorld.Add(entity, new ModelScale(scale));
 		}
 
 		return unit3D;
@@ -2257,6 +2335,7 @@ public partial class GameHost
 		decal.TextureAlbedo = LoadDecalTexture(decalId);
 		decal.Size = new Vector3(6.0f, 20.0f, 6.0f) * scale;
 		decal.AlbedoMix = 1.0f;
+		decal.CullMask = RuntimeTerrain.TerrainDecalCullMask;
 		AddChild(decal);
 		AllDecals.Add(decal);
 		
@@ -2268,8 +2347,270 @@ public partial class GameHost
 		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(position.X, position.Y, position.Z)));
 		EcsWorld.Add(entity, new RotationY(rotationY));
 		EcsWorld.Add(entity, new ModelScale(scale));
+
+		ApplyDecalPropertiesFromMetadata(decal, decalId);
 		
 		return decal;
+	}
+
+	private readonly System.Collections.Generic.Dictionary<(int, int), ImageTexture> _decalOrmCache = new();
+	private readonly System.Collections.Generic.Dictionary<string, ImageTexture> _decalNormalCache = new();
+
+	public ImageTexture GetOrCreateOrmTexture(float roughness, float metallic)
+	{
+		int rKey = Mathf.RoundToInt(Mathf.Clamp(roughness, 0f, 1f) * 100f);
+		int mKey = Mathf.RoundToInt(Mathf.Clamp(metallic, 0f, 1f) * 100f);
+		if (_decalOrmCache.TryGetValue((rKey, mKey), out var cached) && GodotObject.IsInstanceValid(cached))
+		{
+			return cached;
+		}
+
+		var img = Image.CreateEmpty(4, 4, false, Image.Format.Rgba8);
+		img.Fill(new Color(1.0f, rKey / 100f, mKey / 100f, 1.0f));
+		var tex = ImageTexture.CreateFromImage(img);
+		_decalOrmCache[(rKey, mKey)] = tex;
+		return tex;
+	}
+
+	public ImageTexture GetOrCreateNormalTexture(Texture2D albedoTex, float normalStrength, string decalKey)
+	{
+		if (albedoTex == null || normalStrength <= 0.01f) return null;
+		int sKey = Mathf.RoundToInt(Mathf.Clamp(normalStrength, 0.05f, 2.0f) * 20f);
+		string cacheKey = $"{decalKey}_{albedoTex.GetInstanceId()}_{sKey}";
+		if (_decalNormalCache.TryGetValue(cacheKey, out var cached) && GodotObject.IsInstanceValid(cached))
+		{
+			return cached;
+		}
+
+		var albedoImg = albedoTex.GetImage();
+		if (albedoImg == null) return null;
+
+		int w = Math.Min(albedoImg.GetWidth(), 512);
+		int h = Math.Min(albedoImg.GetHeight(), 512);
+		var workImg = albedoImg.Duplicate() as Image;
+		if (workImg == null) return null;
+		if (workImg.GetWidth() != w || workImg.GetHeight() != h)
+		{
+			workImg.Resize(w, h, Image.Interpolation.Bilinear);
+		}
+		workImg.Convert(Image.Format.Rgba8);
+
+		var normImg = Image.CreateEmpty(w, h, false, Image.Format.Rgba8);
+		float scale = (sKey / 20f) * 4.0f;
+
+		for (int y = 0; y < h; y++)
+		{
+			int yPrev = y > 0 ? y - 1 : y;
+			int yNext = y < h - 1 ? y + 1 : y;
+			for (int x = 0; x < w; x++)
+			{
+				int xPrev = x > 0 ? x - 1 : x;
+				int xNext = x < w - 1 ? x + 1 : x;
+
+				float lLeft = workImg.GetPixel(xPrev, y).Luminance;
+				float lRight = workImg.GetPixel(xNext, y).Luminance;
+				float lUp = workImg.GetPixel(x, yPrev).Luminance;
+				float lDown = workImg.GetPixel(x, yNext).Luminance;
+
+				float dx = (lRight - lLeft) * scale;
+				float dy = (lDown - lUp) * scale;
+				float dz = 1.0f;
+				float len = Mathf.Sqrt(dx * dx + dy * dy + dz * dz);
+
+				float nx = (-dx / len) * 0.5f + 0.5f;
+				float ny = (-dy / len) * 0.5f + 0.5f;
+				float nz = (dz / len) * 0.5f + 0.5f;
+
+				normImg.SetPixel(x, y, new Color(nx, ny, nz, 1.0f));
+			}
+		}
+
+		var normTex = ImageTexture.CreateFromImage(normImg);
+		_decalNormalCache[cacheKey] = normTex;
+		return normTex;
+	}
+
+	public void ApplyDecalRenderingProperties(
+		Decal decal,
+		float brightness,
+		Color tint,
+		float contrast,
+		float saturation,
+		float opacity,
+		float albedoMix,
+		float normalStrength,
+		float roughness,
+		float metallic,
+		string blendMode,
+		string decalKey = "")
+	{
+		if (decal == null || !GodotObject.IsInstanceValid(decal)) return;
+
+		decal.CullMask = RuntimeTerrain.TerrainDecalCullMask;
+
+		// 1. Color Modulation with Brightness, Tint, Contrast, and Saturation
+		float r = tint.R * brightness;
+		float g = tint.G * brightness;
+		float b = tint.B * brightness;
+
+		float lum = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+		r = lum + (r - lum) * saturation;
+		g = lum + (g - lum) * saturation;
+		b = lum + (b - lum) * saturation;
+
+		r = (r - 0.5f) * contrast + 0.5f;
+		g = (g - 0.5f) * contrast + 0.5f;
+		b = (b - 0.5f) * contrast + 0.5f;
+
+		decal.Modulate = new Color(Mathf.Clamp(r, 0f, 4f), Mathf.Clamp(g, 0f, 4f), Mathf.Clamp(b, 0f, 4f), Mathf.Clamp(opacity, 0f, 1f));
+
+		// 2. ORM (Roughness and Metallic)
+		if (roughness >= 0.99f && metallic <= 0.01f)
+		{
+			decal.TextureOrm = null;
+		}
+		else
+		{
+			decal.TextureOrm = GetOrCreateOrmTexture(roughness, metallic);
+		}
+
+		// 3. Normal Depth
+		if (normalStrength > 0.01f && decal.TextureAlbedo != null)
+		{
+			decal.TextureNormal = GetOrCreateNormalTexture(decal.TextureAlbedo, normalStrength, decalKey);
+		}
+		else
+		{
+			decal.TextureNormal = null;
+		}
+
+		// 4. Blend Mode & Albedo Mix
+		switch (blendMode?.ToLowerInvariant())
+		{
+			case "additive":
+				decal.AlbedoMix = 0.0f;
+				decal.TextureEmission = decal.TextureAlbedo;
+				decal.EmissionEnergy = brightness * albedoMix * 2.0f;
+				break;
+			case "screen":
+				decal.AlbedoMix = albedoMix * 0.4f;
+				decal.TextureEmission = decal.TextureAlbedo;
+				decal.EmissionEnergy = brightness * albedoMix * 1.5f;
+				break;
+			case "multiply":
+				decal.AlbedoMix = albedoMix;
+				decal.TextureEmission = null;
+				decal.EmissionEnergy = 0.0f;
+				break;
+			case "mix":
+			default:
+				decal.AlbedoMix = albedoMix;
+				decal.TextureEmission = null;
+				decal.EmissionEnergy = 0.0f;
+				break;
+		}
+	}
+
+	public void ApplyDecalPropertiesFromMetadata(Decal decal, string decalId)
+	{
+		if (decal == null || !GodotObject.IsInstanceValid(decal) || string.IsNullOrEmpty(decalId)) return;
+		try
+		{
+			string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
+			string metaPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metaPath)) return;
+
+			var root = System.Text.Json.Nodes.JsonNode.Parse(System.IO.File.ReadAllText(metaPath))?.AsObject();
+			var decalsObj = (root?["Assets"]?["decals"] ?? root?["MapProperties"]?["Assets"]?["decals"])?.AsObject();
+			if (decalsObj == null) return;
+
+			string key = System.IO.Path.GetFileName(decalId);
+			string baseKey = System.IO.Path.GetFileNameWithoutExtension(decalId);
+
+			System.Text.Json.Nodes.JsonObject? meta = null;
+			if (decalsObj.TryGetPropertyValue(key, out var n1) && n1 is System.Text.Json.Nodes.JsonObject o1) meta = o1;
+			else if (decalsObj.TryGetPropertyValue(baseKey, out var n2) && n2 is System.Text.Json.Nodes.JsonObject o2) meta = o2;
+			else if (decalsObj.TryGetPropertyValue($"{baseKey}.rtex", out var n3) && n3 is System.Text.Json.Nodes.JsonObject o3) meta = o3;
+			else if (decalsObj.TryGetPropertyValue($"{baseKey}.png", out var n4) && n4 is System.Text.Json.Nodes.JsonObject o4) meta = o4;
+
+			if (meta != null)
+			{
+				float brightness = meta.TryGetPropertyValue("brightness", out var bNode) && float.TryParse(bNode?.ToString(), out float b) ? b : 1.0f;
+				Color tint = Colors.White;
+				if (meta.TryGetPropertyValue("tint", out var tNode) && tNode != null)
+				{
+					string tStr = tNode.ToString();
+					if (tStr.StartsWith("#")) tint = Color.FromHtml(tStr);
+				}
+				float contrast = meta.TryGetPropertyValue("contrast", out var cNode) && float.TryParse(cNode?.ToString(), out float c) ? c : 1.0f;
+				float saturation = meta.TryGetPropertyValue("saturation", out var sNode) && float.TryParse(sNode?.ToString(), out float s) ? s : 1.0f;
+				float opacity = meta.TryGetPropertyValue("opacity", out var oNode) && float.TryParse(oNode?.ToString(), out float o) ? o : 1.0f;
+				float albedoMix = meta.TryGetPropertyValue("albedo_mix", out var mNode) && float.TryParse(mNode?.ToString(), out float m) ? m : 1.0f;
+				float normalStrength = meta.TryGetPropertyValue("normal_strength", out var nNode) && float.TryParse(nNode?.ToString(), out float n) ? n : 1.0f;
+				float roughness = meta.TryGetPropertyValue("roughness", out var rNode) && float.TryParse(rNode?.ToString(), out float r) ? r : 1.0f;
+				float metallic = meta.TryGetPropertyValue("metallic", out var metNode) && float.TryParse(metNode?.ToString(), out float met) ? met : 0.0f;
+				string blendMode = meta.TryGetPropertyValue("blend_mode", out var bmNode) ? bmNode?.ToString() ?? "Mix" : "Mix";
+
+				ApplyDecalRenderingProperties(
+					decal,
+					brightness,
+					tint,
+					contrast,
+					saturation,
+					opacity,
+					albedoMix,
+					normalStrength,
+					roughness,
+					metallic,
+					blendMode,
+					decalId
+				);
+			}
+		}
+		catch { }
+	}
+
+	public void RefreshDecalsLive(
+		string decalKey,
+		float brightness,
+		Color tint,
+		float contrast,
+		float saturation,
+		float opacity,
+		float albedoMix,
+		float normalStrength,
+		float roughness,
+		float metallic,
+		string blendMode)
+	{
+		if (string.IsNullOrEmpty(decalKey) || AllDecals == null) return;
+		string baseKey = System.IO.Path.GetFileNameWithoutExtension(decalKey);
+
+		foreach (var decal in AllDecals)
+		{
+			if (decal != null && GodotObject.IsInstanceValid(decal))
+			{
+				string dId = decal is Decal3D d3d ? d3d.DecalId : "";
+				string dBase = System.IO.Path.GetFileNameWithoutExtension(dId);
+				if (dId.Equals(decalKey, StringComparison.OrdinalIgnoreCase) || dBase.Equals(baseKey, StringComparison.OrdinalIgnoreCase))
+				{
+					ApplyDecalRenderingProperties(
+						decal,
+						brightness,
+						tint,
+						contrast,
+						saturation,
+						opacity,
+						albedoMix,
+						normalStrength,
+						roughness,
+						metallic,
+						blendMode,
+						decalKey
+					);
+				}
+			}
+		}
 	}
 
 	public void DeleteNodeExternal(Node node)
@@ -2322,6 +2663,7 @@ public partial class GameHost
 			{
 				SelectedEditorObject = null;
 			}
+			AllDecals.Remove(decal);
 			if (decal is Decal3D decal3D && EcsWorld.IsAlive(decal3D.Entity))
 			{
 				EcsWorld.Destroy(decal3D.Entity);
@@ -2379,6 +2721,7 @@ public partial class GameHost
 			if (decal == _selectedEditorObject || FindDecalInParentChain(_selectedEditorObject) == decal) SelectedEditorObject = null;
 			string decalId = decal is Decal3D d3d ? d3d.DecalId : "logo";
 			var action = new ObjectDeleteAction("decal", decalId, decal.Position, decal.RotationDegrees.Y, decal.Scale.X, false, decal);
+			AllDecals.Remove(decal);
 			if (decal is Decal3D d3 && EcsWorld.IsAlive(d3.Entity)) EcsWorld.Destroy(d3.Entity);
 			decal.QueueFree();
 			return action;
@@ -2495,6 +2838,7 @@ public partial class GameHost
 				if (closestDecal == _selectedEditorObject) SelectedEditorObject = null;
 				string decalId = closestDecal is Decal3D d3d ? d3d.DecalId : "logo";
 				var action = new ObjectDeleteAction("decal", decalId, closestDecal.Position, closestDecal.RotationDegrees.Y, closestDecal.Scale.X, false, closestDecal);
+				AllDecals.Remove(closestDecal);
 				if (closestDecal is Decal3D d3 && EcsWorld.IsAlive(d3.Entity)) EcsWorld.Destroy(d3.Entity);
 				closestDecal.QueueFree();
 				return action;
@@ -2538,7 +2882,7 @@ public partial class GameHost
 			{
 				if (!UnitRegistry.ContainsKey(reqId) && !BuildingRegistry.ContainsKey(reqId))
 				{
-					LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace"));
+					LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath));
 				}
 
 				bool isBuilding = false;
@@ -2578,6 +2922,7 @@ public partial class GameHost
 			else if (ActiveEditorTool == EditorTool.PlaceDecal)
 			{
 				var previewDecal = new Decal3D();
+				previewDecal.CullMask = RuntimeTerrain.TerrainDecalCullMask;
 				previewDecal.TextureAlbedo = LoadDecalTexture(reqId);
 				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * EditorPlacementScale;
 				AddChild(previewDecal);
@@ -2721,13 +3066,17 @@ public partial class GameHost
 	private void UpdateDecalSelectionRing(Decal decal, bool selected)
 	{
 		if (!GodotObject.IsInstanceValid(decal)) return;
-		var existing = decal.GetNodeOrNull<MeshInstance3D>("EditorSelectionRing");
-		if (existing != null)
+		var existingNodes = decal.GetChildren()
+			.Where(child => child is MeshInstance3D mesh && (mesh.Name == "_selection_ring_decal" || mesh.Name == "EditorSelectionRing"))
+			.ToList();
+		foreach (var node in existingNodes)
 		{
-			existing.QueueFree();
+			decal.RemoveChild(node);
+			node.QueueFree();
 		}
 		if (selected)
 		{
+			UpdateDecalHoverRing(decal, false);
 			var ring = new MeshInstance3D();
 			ring.Name = "_selection_ring_decal";
 			ring.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
@@ -2751,10 +3100,13 @@ public partial class GameHost
 	private void UpdateDecalHoverRing(Decal decal, bool hovered)
 	{
 		if (!GodotObject.IsInstanceValid(decal)) return;
-		var existing = decal.GetNodeOrNull<MeshInstance3D>("_hover_ring_decal");
-		if (existing != null)
+		var existingNodes = decal.GetChildren()
+			.Where(child => child is MeshInstance3D mesh && mesh.Name == "_hover_ring_decal")
+			.ToList();
+		foreach (var node in existingNodes)
 		{
-			existing.QueueFree();
+			decal.RemoveChild(node);
+			node.QueueFree();
 		}
 		if (hovered && SelectedEditorObject != decal)
 		{
@@ -3014,7 +3366,15 @@ public partial class GameHost
 						}
 						else if (SelectedEditorObject is Prop3D prop)
 						{
+							if (EcsWorld.IsAlive(prop.Entity))
+							{
+								EcsWorld.Set(prop.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
+							}
 							PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
+						}
+						else if (SelectedEditorObject is Decal3D decal3D && EcsWorld.IsAlive(decal3D.Entity))
+						{
+							EcsWorld.Set(decal3D.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
 						}
 						MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 					}

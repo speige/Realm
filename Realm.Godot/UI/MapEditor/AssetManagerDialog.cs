@@ -12,6 +12,8 @@ using Realm.Godot.Utils;
 using Realm.Godot.Services.ModelOptimization;
 using Realm.Ecs.Services;
 using Realm.Shared.Textures;
+using Realm.Shared.Audio;
+using Realm.Shared.Metadata;
 
 public partial class AssetManagerDialog : FloatingDialogBase
 {
@@ -42,13 +44,24 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private OptionButton _optAssetCategory;
 	private Label _lblModelTypeDescription;
 	private Button _btnImportAsset;
+	private Button _btnConvert3DModel;
+	private Button _btnConvertImage;
+	private Button _btnConvertAudio;
+	private Button _btnConvertMixamo;
+	private Button _btnGenerateNoise;
 	private Button _btnPruneUnused;
 	private LineEdit _txtSearchFilter;
 	private VBoxContainer _listVBox;
 
+	private CustomShaderConfig _currentShaderConfig;
+	private float _shaderPreviewTime = 0f;
+	private bool _shaderPreviewForward = true;
+
 	private SpritesheetAssetEditDialog _spritesheetEditDialog;
 	private TerrainTextureEditDialog _textureEditDialog;
+	private DecalSettingsDialog _decalEditDialog;
 	private ChangeAssetTypeDialog _changeTypeDialog;
+	private ShaderEditorDialog _shaderEditDialog;
 
 	private string _currentCategory = "glb_units";
 	private string _searchFilter = "";
@@ -72,7 +85,9 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	{
 		_spritesheetEditDialog = new SpritesheetAssetEditDialog(hud);
 		_textureEditDialog = new TerrainTextureEditDialog(hud);
+		_decalEditDialog = new DecalSettingsDialog(hud);
 		_changeTypeDialog = new ChangeAssetTypeDialog(hud);
+		_shaderEditDialog = new ShaderEditorDialog(hud);
 
 		_audioPlayer = new AudioStreamPlayer();
 		_audioPlayer.Finished += OnAudioFinished;
@@ -172,7 +187,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		BodyContainer.AddChild(_cameraPresetRow);
 
-		// 3. RANIM BASE MODEL DROPDOWN ROW (Visible only for .ranim)
+		// 3. RANIM BASE MODEL DROPDOWN ROW (Visible for .ranim and shaders)
 		_ranimBaseModelRow = new HBoxContainer();
 		_ranimBaseModelRow.AddThemeConstantOverride("separation", 6);
 		_ranimBaseModelRow.Visible = false;
@@ -181,16 +196,16 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			_ranimBaseModelRow,
 			TranslationServer.Translate("Preview Mesh:"),
 			_selectedRanimBaseModel,
-			(all) => GetRiggedGlbModels(),
+			(all) => GetPreviewMeshModels(),
 			(val) =>
 			{
 				_selectedRanimBaseModel = val ?? string.Empty;
-				if (_currentCategory == "animations" && !string.IsNullOrEmpty(_currentPreviewAssetKey))
+				if ((_currentCategory == "animations" || _currentCategory == "shaders") && !string.IsNullOrEmpty(_currentPreviewAssetKey))
 				{
-					LoadPreviewForAsset("animations", _currentPreviewAssetKey);
+					LoadPreviewForAsset(_currentCategory, _currentPreviewAssetKey);
 				}
 			},
-			TranslationServer.Translate("Select rigged GLB base mesh for animation preview..."),
+			TranslationServer.Translate("Select GLB base mesh for preview..."),
 			100f
 		);
 		BodyContainer.AddChild(_ranimBaseModelRow);
@@ -233,11 +248,13 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		_optAssetCategory.AddItem(TranslationServer.Translate("Decals"), 11);
 		_optAssetCategory.SetItemMetadata(11, "decals");
 		_optAssetCategory.AddItem(TranslationServer.Translate("Ribbon Textures"), 12);
-		_optAssetCategory.SetItemMetadata(12, "ribbon_textures");
+		_optAssetCategory.SetItemMetadata(12, "ribbons");
 		_optAssetCategory.AddItem(TranslationServer.Translate("Noise Textures"), 13);
 		_optAssetCategory.SetItemMetadata(13, "noise_textures");
 		_optAssetCategory.AddItem(TranslationServer.Translate("Skyboxes"), 14);
 		_optAssetCategory.SetItemMetadata(14, "skyboxes");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Custom Shaders"), 15);
+		_optAssetCategory.SetItemMetadata(15, "shaders");
 
 		_optAssetCategory.ItemSelected += (idx) =>
 		{
@@ -247,6 +264,24 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		catRow.AddChild(_optAssetCategory);
 
 		_btnImportAsset = AddButton(catRow, "📥 " + TranslationServer.Translate("Import Asset"), () => OpenImportFileDialog(), "Import a new asset for the selected category", 11, new Vector2(120, 26));
+		_btnConvert3DModel = AddButton(catRow, "🔄 " + TranslationServer.Translate("Convert 3D Model (.glb)"), () =>
+		{
+			IsGlbCategory(_currentCategory, out string glbSub);
+			Hud?.OpenConvertGlbDialog(null, glbSub, (_) => RefreshAssetList());
+		}, "Select a 3D model (.glb, .gltf, .fbx, .obj) to optimize with LODs and convert to Realm format", 11, new Vector2(200, 26));
+		_btnConvert3DModel.Visible = false;
+
+		_btnConvertImage = AddButton(catRow, "🔄 " + TranslationServer.Translate("Convert Image to Realm format"), () => OnConvertImagePressed(), "Convert an image file (PNG, JPG, BMP, WEBP, DDS, SVG, etc.) to Realm format (RTEX)", 11, new Vector2(230, 26));
+		_btnConvertImage.Visible = false;
+
+		_btnConvertAudio = AddButton(catRow, "🔄 " + TranslationServer.Translate("Convert Audio to .ogg"), () => OnConvertAudioPressed(), "Convert an audio file (MP3, WAV, AIFF, FLAC, AAC, etc.) to .ogg format", 11, new Vector2(190, 26));
+		_btnConvertAudio.Visible = false;
+
+		_btnConvertMixamo = AddButton(catRow, "🔄 " + TranslationServer.Translate("Convert Mixamo FBX/GLB to .ranim"), () => OnConvertMixamoPressed(), "Select a Mixamo .fbx or .glb file from disk to extract and convert into .ranim animations", 11, new Vector2(230, 26));
+		_btnConvertMixamo.Visible = false;
+
+		_btnGenerateNoise = AddButton(catRow, "🎲 " + TranslationServer.Translate("Generate Noise"), () => Hud?.OpenNoiseTextureDialog((_) => RefreshAssetList()), "Create procedural noise texture on CPU using FastNoiseLite", 11, new Vector2(130, 26));
+		_btnGenerateNoise.Visible = false;
 		_btnPruneUnused = AddButton(catRow, "🧹 " + TranslationServer.Translate("Prune Unused"), () => PruneUnusedAssets(), "Remove assets not referenced anywhere in the map", 11, new Vector2(110, 26));
 
 		BodyContainer.AddChild(catRow);
@@ -355,18 +390,49 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 
 		bool isRanim = _currentCategory == "animations";
+		bool isShader = _currentCategory == "shaders";
+		bool isRtexCategory = category is "textures" or "vfx_spritesheets" or "decals" or "ribbons" or "ribbon_textures" or "noise_textures" or "skyboxes" or "icons";
+		bool isAudioCategory = category is "sfx" or "music";
+
 		if (_ranimBaseModelRow != null)
 		{
-			_ranimBaseModelRow.Visible = isRanim;
-			if (isRanim && string.IsNullOrEmpty(_selectedRanimBaseModel))
+			_ranimBaseModelRow.Visible = (isRanim || isShader);
+			if (isRanim || isShader)
 			{
-				var riggedModels = GetRiggedGlbModels();
-				if (riggedModels.Count > 0)
+				var models = GetPreviewMeshModels();
+				if (string.IsNullOrEmpty(_selectedRanimBaseModel) || !models.Contains(_selectedRanimBaseModel))
 				{
-					_selectedRanimBaseModel = riggedModels[0];
+					_selectedRanimBaseModel = models.Count > 0 ? models[0] : string.Empty;
 					_setRanimBaseModelValue?.Invoke(_selectedRanimBaseModel);
 				}
 			}
+		}
+
+		if (_btnGenerateNoise != null)
+		{
+			_btnGenerateNoise.Visible = category == "noise_textures";
+		}
+		if (_btnConvert3DModel != null)
+		{
+			_btnConvert3DModel.Visible = IsGlbCategory(category, out _);
+		}
+		if (_btnConvertImage != null)
+		{
+			_btnConvertImage.Visible = isRtexCategory;
+		}
+		if (_btnConvertAudio != null)
+		{
+			_btnConvertAudio.Visible = isAudioCategory;
+		}
+		if (_btnConvertMixamo != null)
+		{
+			_btnConvertMixamo.Visible = isRanim;
+		}
+		if (_btnImportAsset != null)
+		{
+			_btnImportAsset.Text = category == "shaders"
+				? "✨ " + TranslationServer.Translate("Create Shader")
+				: "📥 " + TranslationServer.Translate("Import Asset");
 		}
 
 		RefreshAssetList();
@@ -383,7 +449,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 	}
 
-	private void RefreshAssetList()
+	public void RefreshAssetList()
 	{
 		if (_listVBox == null) return;
 
@@ -415,6 +481,67 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 	}
 
+	public void RefreshAssetListAndPreview(string preferredAssetKey)
+	{
+		if (_listVBox == null) return;
+
+		foreach (Node child in _listVBox.GetChildren())
+		{
+			child.QueueFree();
+		}
+
+		var items = GetAssetsForCategory(_currentCategory);
+		if (!string.IsNullOrEmpty(_searchFilter))
+		{
+			items = items.Where(i => i.Key.IndexOf(_searchFilter, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+		}
+
+		if (items.Count == 0)
+		{
+			var lblEmpty = new Label();
+			lblEmpty.Text = TranslationServer.Translate("No assets found for this category.");
+			lblEmpty.AddThemeFontSizeOverride("font_size", 11);
+			lblEmpty.AddThemeColorOverride("font_color", new Color(0.65f, 0.65f, 0.70f));
+			_listVBox.AddChild(lblEmpty);
+			return;
+		}
+
+		string targetKey = string.IsNullOrEmpty(preferredAssetKey) ? null
+			: System.IO.Path.GetFileName(preferredAssetKey);
+
+		Control targetRow = null;
+		foreach (var item in items)
+		{
+			var row = CreateAssetRow(item.Category, item.Key, item.SubCategory, item.ExtraData);
+			_listVBox.AddChild(row);
+			if (targetKey != null && (string.Equals(item.Key, targetKey, StringComparison.OrdinalIgnoreCase) ||
+				string.Equals(System.IO.Path.GetFileName(item.Key), targetKey, StringComparison.OrdinalIgnoreCase)))
+			{
+				targetRow = row;
+			}
+		}
+
+		if (targetRow != null && _listVBox.GetParent() is ScrollContainer scroll)
+		{
+			scroll.EnsureControlVisible(targetRow);
+		}
+
+		// Auto-preview the newly imported asset, falling back to the first item
+		var match = items.FirstOrDefault(i =>
+			string.Equals(i.Key, targetKey, StringComparison.OrdinalIgnoreCase) ||
+			string.Equals(System.IO.Path.GetFileName(i.Key), targetKey, StringComparison.OrdinalIgnoreCase));
+
+		var toPreview = match.Key != null ? match : (items.Count > 0 ? items[0] : default);
+		if (toPreview.Key != null)
+		{
+			LoadPreviewForAsset(toPreview.Category, toPreview.Key, toPreview.SubCategory);
+			if (toPreview.Category == "sfx" || toPreview.Category == "music")
+			{
+				PlayCurrentAudio();
+			}
+		}
+	}
+
 	private struct AssetItemInfo
 	{
 		public string Category;
@@ -437,7 +564,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			}
 		}
 
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string filePath = ResolveAssetFilePath(wsPath, fileName, subCategoryOrFolder);
 		if (File.Exists(filePath))
 		{
@@ -469,7 +596,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				"vfx_spritesheets" or "vfx" => "SpellSpritesheet",
 				"icons" => "Icon",
 				"decals" => "Decal",
-				"ribbon_textures" or "ribbon" => "Ribbon",
+				"ribbon_textures" or "ribbons" or "ribbon" => "Ribbon",
 				"skyboxes" => "Skybox",
 				"noise_textures" or "noise" => "Noise",
 				_ => "Tilesheet"
@@ -506,7 +633,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			string sub = subCategoryOrFolder switch
 			{
 				"vfx_spritesheets" => "vfx",
-				"ribbon_textures" => "ribbon",
+				"ribbon_textures" or "ribbons" => "ribbons",
 				"noise_textures" => "noise",
 				_ => subCategoryOrFolder
 			};
@@ -531,7 +658,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private List<AssetItemInfo> GetAssetsForCategory(string category)
 	{
 		var result = new List<AssetItemInfo>();
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string metaPath = Path.Combine(wsPath, "metadata.json");
 		if (!File.Exists(metaPath)) return result;
 
@@ -556,7 +683,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				"music" => "Music",
 				"icons" => "Icon",
 				"decals" => "Decal",
-				"ribbon_textures" => "Ribbon",
+				"ribbons" or "ribbon_textures" => "Ribbon",
 				"noise_textures" => "Noise",
 				"skyboxes" => "Skybox",
 				_ => category
@@ -600,9 +727,9 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					}
 				}
 			}
-			else if (category is "textures" or "vfx_spritesheets" or "icons" or "decals" or "ribbon_textures" or "noise_textures" or "skyboxes")
+			else if (category is "textures" or "vfx_spritesheets" or "icons" or "decals" or "ribbons" or "ribbon_textures" or "noise_textures" or "skyboxes")
 			{
-				foreach (var catName in new[] { "textures", "vfx_spritesheets", "icons", "decals", "ribbon_textures", "noise_textures", "skyboxes" })
+				foreach (var catName in new[] { "textures", "vfx_spritesheets", "icons", "decals", "ribbons", "ribbon_textures", "noise_textures", "skyboxes" })
 				{
 					if (assetsObj[catName] is JsonObject catObj)
 					{
@@ -647,6 +774,20 @@ public partial class AssetManagerDialog : FloatingDialogBase
 							result.Add(new AssetItemInfo { Category = "animations", SubCategory = "", Key = anim.Key, ExtraData = anim.Value });
 						}
 					}
+				}
+			}
+			else if (category == "shaders")
+			{
+				var shaders = SpawnDeathShaderManager.LoadAllCustomShaders(wsPath);
+				foreach (var kvp in shaders)
+				{
+					result.Add(new AssetItemInfo
+					{
+						Category = "shaders",
+						SubCategory = "shaders",
+						Key = kvp.Key,
+						ExtraData = kvp.Value.ToJsonObject()
+					});
 				}
 			}
 		}
@@ -708,8 +849,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			hBox.AddChild(btnPlay);
 		}
 
-		// Action 3: Edit Button (Spritesheets and Textures)
-		bool hasEditDialog = category == "vfx_spritesheets" || category == "textures";
+		// Action 3: Edit Button (Spritesheets, Textures, Decals, Shaders)
+		bool hasEditDialog = category == "vfx_spritesheets" || category == "textures" || category == "decals" || category == "shaders" || (extraData is JsonObject edObj && edObj.ContainsKey("asset_type") && (edObj["asset_type"]?.ToString() == "Decal" || edObj["asset_type"]?.ToString() == "Shader"));
 		if (hasEditDialog)
 		{
 			var btnEdit = new Button();
@@ -762,12 +903,12 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		Clear3DModelPreview();
 		StopCurrentAudio();
 
-		if (IsGlbCategory(category, out string glbSub) || category == "animations" || category == "vfx_spritesheets")
+		if (IsGlbCategory(category, out string glbSub) || category == "animations" || category == "vfx_spritesheets" || category == "shaders")
 		{
 			_viewportContainer.Visible = true;
 			_preview2DContainer.Visible = false;
 			_previewAudioContainer.Visible = false;
-			if (_cameraPresetRow != null) _cameraPresetRow.Visible = (IsGlbCategory(category, out _) || category == "animations");
+			if (_cameraPresetRow != null) _cameraPresetRow.Visible = (IsGlbCategory(category, out _) || category == "animations" || category == "shaders");
 
 			if (IsGlbCategory(category, out glbSub))
 			{
@@ -780,6 +921,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			else if (category == "vfx_spritesheets")
 			{
 				LoadVfxSpritesheet(key);
+			}
+			else if (category == "shaders")
+			{
+				LoadCustomShaderPreview(key);
 			}
 		}
 		else if (category == "sfx" || category == "music")
@@ -807,6 +952,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private void ClearPreview()
 	{
 		_currentPreviewAssetKey = "";
+		_currentShaderConfig = null;
 		Clear3DModelPreview();
 		StopCurrentAudio();
 		if (_preview2DImage != null) _preview2DImage.Texture = null;
@@ -816,6 +962,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private void Clear3DModelPreview()
 	{
+		_currentShaderConfig = null;
 		if (_currentModelRoot != null)
 		{
 			foreach (Node child in _currentModelRoot.GetChildren())
@@ -834,7 +981,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private void Load3DGlbModel(string key, string subCategory)
 	{
 		Clear3DModelPreview();
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string modelPath = Path.Combine(wsPath, "Assets", "models", subCategory ?? "props", key);
 		if (!File.Exists(modelPath))
 		{
@@ -868,15 +1015,16 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private void LoadRanimAnimation(string ranimKey)
 	{
 		Clear3DModelPreview();
-		if (string.IsNullOrEmpty(_selectedRanimBaseModel))
+		var rigged = GetRiggedGlbModels();
+		if (string.IsNullOrEmpty(_selectedRanimBaseModel) || !rigged.Contains(_selectedRanimBaseModel))
 		{
-			var rigged = GetRiggedGlbModels();
-			if (rigged.Count > 0) _selectedRanimBaseModel = rigged[0];
+			_selectedRanimBaseModel = rigged.Count > 0 ? rigged[0] : string.Empty;
+			_setRanimBaseModelValue?.Invoke(_selectedRanimBaseModel);
 		}
 
 		if (string.IsNullOrEmpty(_selectedRanimBaseModel)) return;
 
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string modelPath = Path.Combine(wsPath, "Assets", "models", "units", _selectedRanimBaseModel);
 		if (!File.Exists(modelPath))
 		{
@@ -985,7 +1133,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private void LoadVfxSpritesheet(string key)
 	{
 		Clear3DModelPreview();
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string cleanPath = key.Replace("\\", "/").TrimStart('/');
 		string fileName = Path.GetFileName(key);
 		string cleanBase = Path.GetFileNameWithoutExtension(key);
@@ -1096,15 +1244,106 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		ResetCameraDefault();
 	}
 
+	private void LoadCustomShaderPreview(string shaderKey)
+	{
+		Clear3DModelPreview();
+		_currentShaderConfig = SpawnDeathShaderManager.GetShaderConfig(shaderKey);
+		if (_currentShaderConfig == null) return;
+
+		_shaderPreviewTime = 0f;
+		_shaderPreviewForward = true;
+
+		var models = GetPreviewMeshModels();
+		if (string.IsNullOrEmpty(_selectedRanimBaseModel) || !models.Contains(_selectedRanimBaseModel))
+		{
+			_selectedRanimBaseModel = models.Count > 0 ? models[0] : string.Empty;
+			_setRanimBaseModelValue?.Invoke(_selectedRanimBaseModel);
+		}
+
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+		string modelPath = null;
+		if (!string.IsNullOrEmpty(_selectedRanimBaseModel))
+		{
+			foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles" })
+			{
+				string p = Path.Combine(wsPath, "Assets", "models", sub, _selectedRanimBaseModel);
+				if (File.Exists(p)) { modelPath = p; break; }
+			}
+			if (modelPath == null)
+			{
+				string p = Path.Combine(wsPath, "Assets", "models", _selectedRanimBaseModel);
+				if (File.Exists(p)) modelPath = p;
+			}
+		}
+
+		if (modelPath != null && File.Exists(modelPath))
+		{
+			var gltfDoc = new GltfDocument();
+			var gltfState = new GltfState();
+			if (gltfDoc.AppendFromFile(modelPath, gltfState) == Error.Ok)
+			{
+				var node = gltfDoc.GenerateScene(gltfState);
+				if (node is Node3D node3D)
+				{
+					_currentModelRoot.AddChild(node3D);
+					CenterAndFrameNode(node3D);
+					SpawnDeathShaderManager.ApplyShaderPreview(_currentModelRoot, _currentShaderConfig, 0.5f);
+				}
+			}
+		}
+		else
+		{
+			var meshInst = new MeshInstance3D
+			{
+				Mesh = new CapsuleMesh { Radius = 0.5f, Height = 1.8f },
+				Position = new Vector3(0, 0.9f, 0)
+			};
+			var mat = new StandardMaterial3D { AlbedoColor = new Color(0.8f, 0.7f, 0.5f) };
+			meshInst.MaterialOverride = mat;
+			_currentModelRoot.AddChild(meshInst);
+			CenterAndFrameNode(_currentModelRoot);
+			SpawnDeathShaderManager.ApplyShaderPreview(_currentModelRoot, _currentShaderConfig, 0.5f);
+		}
+	}
+
+	public override void _Process(double delta)
+	{
+		base._Process(delta);
+		if (_currentPreviewAssetCategory == "shaders" && _currentShaderConfig != null && _currentModelRoot != null && Visible)
+		{
+			float dur = _currentShaderConfig.Duration > 0.05f ? _currentShaderConfig.Duration : 1.5f;
+			if (_shaderPreviewForward)
+			{
+				_shaderPreviewTime += (float)delta;
+				if (_shaderPreviewTime >= dur)
+				{
+					_shaderPreviewTime = dur;
+					_shaderPreviewForward = false;
+				}
+			}
+			else
+			{
+				_shaderPreviewTime -= (float)delta;
+				if (_shaderPreviewTime <= 0f)
+				{
+					_shaderPreviewTime = 0f;
+					_shaderPreviewForward = true;
+				}
+			}
+			float prog = Mathf.Clamp(_shaderPreviewTime / dur, 0f, 1f);
+			SpawnDeathShaderManager.ApplyShaderPreview(_currentModelRoot, _currentShaderConfig, prog);
+		}
+	}
+
 	private void LoadStatic2DTexture(string key, string category)
 	{
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string subFolder = category switch
 		{
 			"textures" => "textures",
 			"icons" => "icons",
 			"decals" => "decals",
-			"ribbon_textures" => Path.Combine("textures", "ribbons"),
+			"ribbons" or "ribbon_textures" => "ribbons",
 			"noise_textures" => Path.Combine("textures", "noise"),
 			"skyboxes" => "skyboxes",
 			_ => "textures"
@@ -1130,7 +1369,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private void LoadAudioStream(string key, string category)
 	{
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string audioPath = Path.Combine(wsPath, "Assets", "audio", category == "music" ? "music" : "sfx", key);
 		if (!File.Exists(audioPath))
 		{
@@ -1251,7 +1490,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		var candidateModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
 		// 1. Scan metadata.json from temp workspace and fallback template
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string metaPath = Path.Combine(wsPath, "metadata.json");
 
 		if (File.Exists(metaPath))
@@ -1372,6 +1611,62 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		return riggedList;
 	}
 
+	private List<string> GetPreviewMeshModels()
+	{
+		if (_currentCategory == "animations")
+		{
+			return GetRiggedGlbModels();
+		}
+		return GetAllGlbModels();
+	}
+
+	private List<string> GetAllGlbModels()
+	{
+		var models = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+		string metaPath = Path.Combine(wsPath, "metadata.json");
+
+		if (File.Exists(metaPath))
+		{
+			try
+			{
+				var root = JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject();
+				if (root?["Assets"]?["glb"] is JsonObject glbObj)
+				{
+					foreach (var sub in glbObj)
+					{
+						if (sub.Value is JsonObject subObj)
+						{
+							foreach (var model in subObj)
+							{
+								if (!string.IsNullOrEmpty(model.Key))
+								{
+									models.Add(Path.GetFileName(model.Key));
+								}
+							}
+						}
+					}
+				}
+			}
+			catch { }
+		}
+
+		foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles" })
+		{
+			string dir = Path.Combine(wsPath, "Assets", "models", sub);
+			if (Directory.Exists(dir))
+			{
+				foreach (var file in Directory.GetFiles(dir, "*.glb"))
+				{
+					models.Add(Path.GetFileName(file));
+				}
+			}
+		}
+
+		var list = models.OrderBy(m => m, StringComparer.OrdinalIgnoreCase).ToList();
+		return list.Count > 0 ? list : GetRiggedGlbModels();
+	}
+
 	private string? GetRequiredAssetTypeForCategory(string category)
 	{
 		if (IsGlbCategory(category, out string glbSub))
@@ -1393,7 +1688,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			"vfx_spritesheets" => "SpellSpritesheet",
 			"icons" => "Icon",
 			"decals" => "Decal",
-			"ribbon_textures" => "Ribbon",
+			"ribbons" or "ribbon_textures" => "Ribbon",
 			"skyboxes" => "Skybox",
 			"animations" => "Animation",
 			"music" => "Music",
@@ -1404,6 +1699,12 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private void OpenImportFileDialog()
 	{
+		if (_currentCategory == "shaders")
+		{
+			_shaderEditDialog.OpenForShader("", (_) => RefreshAssetList());
+			return;
+		}
+
 		bool requireRealmMetadata = true;
 		string[] extensions;
 		string? requiredAssetType = GetRequiredAssetTypeForCategory(_currentCategory);
@@ -1419,6 +1720,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				case "textures":
 				case "vfx_spritesheets":
 				case "decals":
+				case "ribbons":
 				case "ribbon_textures":
 				case "noise_textures":
 				case "skyboxes":
@@ -1442,12 +1744,354 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		Hud?.OpenAssetBrowser($"Import Asset ({_currentCategory})", extensions, OnImportFileSelected, requireRealmMetadata, requiredAssetType);
 	}
 
+	private void OnConvertImagePressed()
+	{
+		var err = DisplayServer.FileDialogShow(
+			TranslationServer.Translate("Select Image File to Convert to Realm format"),
+			PathUtils.GetProjectRoot(),
+			"",
+			false,
+			DisplayServer.FileDialogMode.OpenFile,
+			new[] { "*.png,*.jpg,*.jpeg,*.bmp,*.webp,*.tga,*.dds,*.rtex ; Supported Image Files (*.png, *.jpg, *.jpeg, *.bmp, *.webp, *.tga, *.dds, *.rtex)" },
+			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) =>
+			{
+				if (status && selectedPaths.Length > 0)
+				{
+					string sourceFilePath = selectedPaths[0];
+					ConvertImageToRealmFormat(sourceFilePath);
+				}
+			})
+		);
+
+		if (err != Error.Ok)
+		{
+			Hud?.ShowFeedback(TranslationServer.Translate("Failed to show file dialog"));
+		}
+	}
+
+	private void ConvertImageToRealmFormat(string sourceFilePath)
+	{
+		if (string.IsNullOrEmpty(sourceFilePath) || !File.Exists(sourceFilePath)) return;
+
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+		string cleanBase = Path.GetFileNameWithoutExtension(sourceFilePath).ToLowerInvariant().Replace(' ', '_');
+		string ext = Path.GetExtension(sourceFilePath).ToLowerInvariant();
+
+		try
+		{
+			string metaPath = Path.Combine(wsPath, "metadata.json");
+			JsonObject root = File.Exists(metaPath)
+				? (JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject() ?? new JsonObject())
+				: new JsonObject();
+
+			if (!root.ContainsKey("Assets") || root["Assets"] == null) root["Assets"] = new JsonObject();
+			var assetsObj = root["Assets"].AsObject();
+
+			string targetCategory = _currentCategory;
+			string subDir = targetCategory switch
+			{
+				"decals" => "decals",
+				"icons" => "icons",
+				"vfx_spritesheets" => "vfx",
+				"ribbons" or "ribbon_textures" => "ribbons",
+				"noise_textures" => Path.Combine("textures", "noise"),
+				"skyboxes" => "skyboxes",
+				_ => "textures"
+			};
+
+			string destDir = Path.Combine(wsPath, "Assets", subDir);
+			Directory.CreateDirectory(destDir);
+			string destPath = Path.Combine(destDir, $"{cleanBase}.rtex");
+
+			bool isRtexWithMeta = ext == ".rtex" && RealmMetadataHelper.HasRealmMetadata(sourceFilePath);
+			TextureConversionResult convResult = default;
+
+			if (isRtexWithMeta)
+			{
+				File.Copy(sourceFilePath, destPath, true);
+			}
+			else
+			{
+				if (targetCategory == "skyboxes")
+				{
+					convResult = TextureConverter.ProcessAndSaveSkybox(sourceFilePath, destPath);
+				}
+				else if (targetCategory == "decals")
+				{
+					convResult = TextureConverter.ProcessAndSaveDecalTexture(sourceFilePath, destPath);
+				}
+				else if (targetCategory == "icons")
+				{
+					convResult = TextureConverter.ProcessAndSaveIconTexture(sourceFilePath, destPath);
+				}
+				else if (targetCategory == "vfx_spritesheets")
+				{
+					convResult = TextureConverter.ProcessAndSaveSpritesheet(sourceFilePath, destPath, 4, 4);
+				}
+				else if (targetCategory is "ribbons" or "ribbon_textures")
+				{
+					convResult = TextureConverter.ProcessAndSaveRibbonTexture(sourceFilePath, destPath);
+				}
+				else if (targetCategory == "noise_textures")
+				{
+					convResult = TextureConverter.ProcessAndSaveSingleLayerTexture(sourceFilePath, destPath, "noise_texture");
+				}
+				else
+				{
+					convResult = TextureConverter.ProcessAndSaveTerrainTexture(sourceFilePath, destPath);
+				}
+
+				if (!convResult.Success)
+				{
+					Hud?.ShowFeedback($"Failed to convert image: {convResult.ErrorMessage}");
+					return;
+				}
+			}
+
+			byte[] bytes = File.ReadAllBytes(destPath);
+			string hash = RealmMetadataHelper.ComputeBlake3(bytes, ".rtex");
+
+			if (!assetsObj.ContainsKey(targetCategory) || assetsObj[targetCategory] == null)
+			{
+				assetsObj[targetCategory] = new JsonObject();
+			}
+
+			if (targetCategory == "vfx_spritesheets")
+			{
+				assetsObj["vfx_spritesheets"].AsObject()[$"{cleanBase}.rtex"] = new JsonObject
+				{
+					["columns"] = 4,
+					["rows"] = 4,
+					["hash"] = hash
+				};
+			}
+			else if (targetCategory == "textures")
+			{
+				float calculatedScaleFactor = isRtexWithMeta
+					? TextureConverter.CalculateLuminanceScaleFactor(destPath)
+					: convResult.ScaleFactor;
+
+				var texDict = assetsObj["textures"].AsObject();
+				string destFileName = $"{cleanBase}.rtex";
+				int nextSwatchIdx = 0;
+				foreach (var kvp in texDict)
+				{
+					if (kvp.Value is JsonObject sObj && sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && int.TryParse(idxNode?.ToString(), out int s))
+					{
+						if (s >= nextSwatchIdx) nextSwatchIdx = s + 1;
+					}
+				}
+
+				texDict[destFileName] = new JsonObject
+				{
+					["hash"] = hash,
+					["swatchIndex"] = nextSwatchIdx,
+					["Scale_Factor"] = calculatedScaleFactor
+				};
+
+				if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+				{
+					GameHost.Instance.GroundTerrain.ReloadTerrainTextures(true);
+					Hud?.SetupTextureSwatches(false);
+				}
+			}
+			else
+			{
+				assetsObj[targetCategory].AsObject()[$"{cleanBase}.rtex"] = hash;
+			}
+
+			MapJsonFormatter.SaveFormattedJson(metaPath, root);
+			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Converted and imported {0}.rtex"), cleanBase));
+
+			AssetIndexService.Instance?.RescanAllDirectories();
+			RefreshAssetListAndPreview($"{cleanBase}.rtex");
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[AssetManagerDialog] ConvertImageToRealmFormat error: {ex.Message}");
+			Hud?.ShowFeedback($"Error converting image: {ex.Message}");
+		}
+	}
+
+	private void OnConvertAudioPressed()
+	{
+		var err = DisplayServer.FileDialogShow(
+			TranslationServer.Translate("Select Audio File to Convert to .ogg"),
+			PathUtils.GetProjectRoot(),
+			"",
+			false,
+			DisplayServer.FileDialogMode.OpenFile,
+			new[] { "*.mp3,*.wav,*.aiff,*.aif,*.flac,*.aac,*.m4a,*.wma,*.ogg ; Audio Files (*.mp3, *.wav, *.aiff, *.aif, *.flac, *.aac, *.m4a, *.wma, *.ogg)" },
+			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) =>
+			{
+				if (status && selectedPaths.Length > 0)
+				{
+					string sourceFilePath = selectedPaths[0];
+					ConvertAudioToRealmFormat(sourceFilePath);
+				}
+			})
+		);
+
+		if (err != Error.Ok)
+		{
+			Hud?.ShowFeedback(TranslationServer.Translate("Failed to show file dialog"));
+		}
+	}
+
+	private void ConvertAudioToRealmFormat(string sourceFilePath)
+	{
+		if (string.IsNullOrEmpty(sourceFilePath) || !File.Exists(sourceFilePath)) return;
+
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+		string cleanBase = Path.GetFileNameWithoutExtension(sourceFilePath).ToLowerInvariant().Replace(' ', '_');
+
+		try
+		{
+			string targetCategory = _currentCategory == "music" ? "music" : "sfx";
+			string sub = targetCategory == "music" ? "music" : "sfx";
+			string destDir = Path.Combine(wsPath, "Assets", "audio", sub);
+			Directory.CreateDirectory(destDir);
+			string destPath = Path.Combine(destDir, $"{cleanBase}.ogg");
+
+			var res = AudioConverter.ConvertToOgg(sourceFilePath, destPath);
+			if (!res.Success)
+			{
+				Hud?.ShowFeedback($"Failed to convert audio: {res.ErrorMessage}");
+				return;
+			}
+
+			string metaPath = Path.Combine(wsPath, "metadata.json");
+			var root = File.Exists(metaPath)
+				? (JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject() ?? new JsonObject())
+				: new JsonObject();
+
+			if (!root.ContainsKey("Assets") || root["Assets"] == null) root["Assets"] = new JsonObject();
+			var assetsObj = root["Assets"].AsObject();
+			if (!assetsObj.ContainsKey(targetCategory) || assetsObj[targetCategory] == null)
+			{
+				assetsObj[targetCategory] = new JsonObject();
+			}
+
+			byte[] bytes = File.ReadAllBytes(destPath);
+			string hash = RealmMetadataHelper.ComputeBlake3(bytes, ".ogg");
+			assetsObj[targetCategory].AsObject()[$"{cleanBase}.ogg"] = hash;
+
+			MapJsonFormatter.SaveFormattedJson(metaPath, root);
+			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Converted and imported audio {0}.ogg"), cleanBase));
+
+			AssetIndexService.Instance?.RescanAllDirectories();
+			RefreshAssetListAndPreview($"{cleanBase}.ogg");
+			PlayCurrentAudio();
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[AssetManagerDialog] ConvertAudioToRealmFormat error: {ex.Message}");
+			Hud?.ShowFeedback($"Error converting audio: {ex.Message}");
+		}
+	}
+
+	private void OnConvertMixamoPressed()
+	{
+		var err = DisplayServer.FileDialogShow(
+			TranslationServer.Translate("Select Mixamo FBX or GLB File to Convert to .ranim"),
+			PathUtils.GetProjectRoot(),
+			"",
+			false,
+			DisplayServer.FileDialogMode.OpenFile,
+			new[] { "*.fbx,*.glb,*.gltf ; 3D Animation Files (*.fbx, *.glb, *.gltf)" },
+			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) =>
+			{
+				if (status && selectedPaths.Length > 0)
+				{
+					string sourceFilePath = selectedPaths[0];
+					ConvertMixamoFileToRanim(sourceFilePath);
+				}
+			})
+		);
+
+		if (err != Error.Ok)
+		{
+			Hud?.ShowFeedback(TranslationServer.Translate("Failed to show file dialog"));
+		}
+	}
+
+	private void ConvertMixamoFileToRanim(string sourceFilePath)
+	{
+		if (string.IsNullOrEmpty(sourceFilePath) || !File.Exists(sourceFilePath)) return;
+
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+		string animsDir = Path.Combine(wsPath, "Assets", "animations");
+		Directory.CreateDirectory(animsDir);
+
+		try
+		{
+			string originalFileName = Path.GetFileNameWithoutExtension(sourceFilePath);
+			var extracted = MixamoAnimationImporter.ExtractAnimationsFromFile(sourceFilePath, originalFileName);
+			if (extracted.Count == 0)
+			{
+				Hud?.ShowFeedback(TranslationServer.Translate("No skeletal animations found in the selected file."));
+				return;
+			}
+
+			string metaPath = Path.Combine(wsPath, "metadata.json");
+			JsonObject root = File.Exists(metaPath)
+				? (JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject() ?? new JsonObject())
+				: new JsonObject();
+
+			if (!root.ContainsKey("Assets") || root["Assets"] == null) root["Assets"] = new JsonObject();
+			var assetsObj = root["Assets"].AsObject();
+			if (!assetsObj.ContainsKey("animations") || assetsObj["animations"] == null)
+			{
+				assetsObj["animations"] = new JsonObject();
+			}
+			var animsObj = assetsObj["animations"].AsObject();
+
+			int importedCount = 0;
+			int skippedCount = 0;
+			string firstSavedFileName = null;
+
+			foreach (var (animName, animData) in extracted)
+			{
+				var (savedFileName, blake3, alreadyExisted) = MixamoAnimationImporter.SaveAnimationWithDeduplication(animsDir, animName, animData);
+				animsObj[savedFileName] = blake3;
+				if (alreadyExisted) skippedCount++;
+				else importedCount++;
+				if (firstSavedFileName == null) firstSavedFileName = savedFileName;
+			}
+
+			MapJsonFormatter.SaveFormattedJson(metaPath, root);
+
+			if (importedCount > 0)
+			{
+				Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Successfully converted and imported {0} .ranim animation(s)!"), importedCount));
+			}
+			else
+			{
+				Hud?.ShowFeedback(TranslationServer.Translate("Animation(s) already existed in map workspace (identical BLAKE3 hash)."));
+			}
+
+			AssetIndexService.Instance?.RescanAllDirectories();
+			if (!string.IsNullOrEmpty(firstSavedFileName))
+			{
+				RefreshAssetListAndPreview(firstSavedFileName);
+			}
+			else
+			{
+				RefreshAssetList();
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[AssetManagerDialog] ConvertMixamoFileToRanim error: {ex.Message}");
+			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Error converting animation: {0}"), ex.Message));
+		}
+	}
 
 	private void ConvertGlbToRealmFormat(string sourceFilePath)
 	{
 		if (string.IsNullOrEmpty(sourceFilePath) || !File.Exists(sourceFilePath)) return;
 
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string cleanBase = Path.GetFileNameWithoutExtension(sourceFilePath).ToLowerInvariant().Replace(' ', '_');
 
 		try
@@ -1511,7 +2155,99 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 			byte[] finalBytes = File.ReadAllBytes(destPath);
 			string hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(finalBytes, ".glb");
-			glbObj[subCat].AsObject()[$"{cleanBase}.glb"] = hash;
+
+			float defaultScale = subCat switch
+			{
+				"resources" => 2.75f,
+				"buildings" => 1.5f,
+				"props" => 1.25f,
+				"units" => 1.0f,
+				_ => 1.0f
+			};
+
+			var (minY, autoYOffset) = Realm.Godot.Utils.ModelCache.CalculateModelBounds(destPath, defaultScale);
+			bool isPropOrRes = subCat == "resources" || subCat == "props";
+
+			var glbMetaObj = new JsonObject
+			{
+				["hash"] = hash,
+				["min_y"] = minY,
+				["scale"] = defaultScale,
+				["y_offset"] = autoYOffset,
+				["default_asset_type"] = subCat,
+				["normal_mode"] = "Flat",
+				["normalize_luminance"] = true,
+				["ignore_player_color"] = isPropOrRes
+			};
+			glbObj[subCat].AsObject()[$"{cleanBase}.glb"] = glbMetaObj;
+
+			if (!root.ContainsKey("ModelOffsets") || root["ModelOffsets"] == null) root["ModelOffsets"] = new JsonObject();
+			root["ModelOffsets"].AsObject()[$"{cleanBase}.glb"] = autoYOffset;
+
+			if (!root.ContainsKey("ModelScales") || root["ModelScales"] == null) root["ModelScales"] = new JsonObject();
+			root["ModelScales"].AsObject()[$"{cleanBase}.glb"] = defaultScale;
+
+			GameHost.Instance?.SetModelYOffset($"{cleanBase}.glb", autoYOffset);
+			GameHost.Instance?.SetModelScale($"{cleanBase}.glb", defaultScale);
+
+			string unitId = cleanBase;
+			string? targetArrayKey = subCat switch
+			{
+				"units" => "CustomUnits",
+				"buildings" => "CustomBuildings",
+				"resources" => "CustomResources",
+				"props" => "CustomProps",
+				_ => null
+			};
+
+			if (targetArrayKey != null)
+			{
+				if (!root.ContainsKey(targetArrayKey) || root[targetArrayKey] == null) root[targetArrayKey] = new JsonArray();
+				var targetArray = root[targetArrayKey].AsArray();
+				bool exists = false;
+				foreach (var item in targetArray)
+				{
+					if (item is JsonObject uObj && (uObj["UnitId"]?.ToString() == unitId || uObj["ModelPath"]?.ToString() == $"{cleanBase}.glb"))
+					{
+						exists = true;
+						if (autoYOffset != 0f) uObj["YOffset"] = autoYOffset;
+						break;
+					}
+				}
+
+				if (!exists)
+				{
+					int defaultPathing = subCat switch
+					{
+						"units" => 9,
+						"buildings" => 32,
+						"resources" => 255,
+						"props" => 255,
+						_ => 9
+					};
+
+					var defaultEntity = new JsonObject
+					{
+						["UnitId"] = unitId,
+						["Name"] = unitId,
+						["Description"] = "",
+						["ModelPath"] = $"{cleanBase}.glb",
+						["Scale"] = defaultScale,
+						["YOffset"] = autoYOffset,
+						["PathingType"] = defaultPathing,
+						["NormalMode"] = "Flat",
+						["NormalizeLuminance"] = true,
+						["Animations"] = new JsonObject()
+					};
+
+					if (subCat == "resources" || subCat == "props")
+					{
+						defaultEntity["IgnorePlayerColor"] = true;
+					}
+
+					targetArray.Add(defaultEntity);
+				}
+			}
 
 			MapJsonFormatter.SaveFormattedJson(metaPath, root);
 			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Converted and imported 3D model {0}.glb"), cleanBase));
@@ -1531,7 +2267,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	{
 		if (string.IsNullOrEmpty(sourceFilePath) || !File.Exists(sourceFilePath)) return;
 
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string fileName = Path.GetFileName(sourceFilePath);
 
 		try
@@ -1551,7 +2287,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			{
 				if (!ModelOptimizerService.HasOptimizationCompletedFlag(sourceFilePath))
 				{
-					ConvertGlbToRealmFormat(sourceFilePath);
+					Hud?.OpenConvertGlbDialog(sourceFilePath, subCategory, (_) => RefreshAssetList());
 					return;
 				}
 				string destDir = Path.Combine(wsPath, "Assets", "models", subCategory);
@@ -1562,10 +2298,43 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				byte[] finalBytes = File.ReadAllBytes(destPath);
 				hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(finalBytes, ".glb");
 
+				float defaultScale = subCategory switch
+				{
+					"resources" => 2.75f,
+					"buildings" => 1.5f,
+					"props" => 1.25f,
+					"units" => 1.0f,
+					_ => 1.0f
+				};
+
+				var (minY, autoYOffset) = Realm.Godot.Utils.ModelCache.CalculateModelBounds(destPath, defaultScale);
+				bool isPropOrRes = subCategory == "resources" || subCategory == "props";
+
 				if (!assetsObj.ContainsKey("glb") || assetsObj["glb"] == null) assetsObj["glb"] = new JsonObject();
 				var glbObj = assetsObj["glb"].AsObject();
 				if (!glbObj.ContainsKey(subCategory) || glbObj[subCategory] == null) glbObj[subCategory] = new JsonObject();
-				glbObj[subCategory].AsObject()[fileName] = hash;
+
+				var glbMetaObj = new JsonObject
+				{
+					["hash"] = hash,
+					["min_y"] = minY,
+					["scale"] = defaultScale,
+					["y_offset"] = autoYOffset,
+					["default_asset_type"] = subCategory,
+					["normal_mode"] = "Flat",
+					["normalize_luminance"] = true,
+					["ignore_player_color"] = isPropOrRes
+				};
+				glbObj[subCategory].AsObject()[fileName] = glbMetaObj;
+
+				if (!root.ContainsKey("ModelOffsets") || root["ModelOffsets"] == null) root["ModelOffsets"] = new JsonObject();
+				root["ModelOffsets"].AsObject()[fileName] = autoYOffset;
+
+				if (!root.ContainsKey("ModelScales") || root["ModelScales"] == null) root["ModelScales"] = new JsonObject();
+				root["ModelScales"].AsObject()[fileName] = defaultScale;
+
+				GameHost.Instance?.SetModelYOffset(fileName, autoYOffset);
+				GameHost.Instance?.SetModelScale(fileName, defaultScale);
 
 				string unitId = Path.GetFileNameWithoutExtension(fileName);
 				string targetArrayKey = subCategory switch
@@ -1587,21 +2356,13 @@ public partial class AssetManagerDialog : FloatingDialogBase
 						if (item is JsonObject uObj && (uObj["UnitId"]?.ToString() == unitId || uObj["ModelPath"]?.ToString() == fileName))
 						{
 							exists = true;
+							if (autoYOffset != 0f) uObj["YOffset"] = autoYOffset;
 							break;
 						}
 					}
 
 					if (!exists)
 					{
-						float defaultScale = subCategory switch
-						{
-							"resources" => 2.75f,
-							"buildings" => 1.5f,
-							"props" => 1.25f,
-							"units" => 1.0f,
-							_ => 1.0f
-						};
-
 						int defaultPathing = subCategory switch
 						{
 							"units" => 9,
@@ -1618,7 +2379,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 							["Description"] = "",
 							["ModelPath"] = fileName,
 							["Scale"] = defaultScale,
-							["YOffset"] = 0.0f,
+							["YOffset"] = autoYOffset,
 							["PathingType"] = defaultPathing,
 							["NormalMode"] = "Flat",
 							["NormalizeLuminance"] = true,
@@ -1828,7 +2589,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				{
 					"decals" => "decals",
 					"icons" => "icons",
-					"ribbon_textures" => Path.Combine("textures", "ribbons"),
+					"ribbons" or "ribbon_textures" => "ribbons",
 					"noise_textures" => Path.Combine("textures", "noise"),
 					"skyboxes" => "skyboxes",
 					_ => _currentCategory
@@ -1883,7 +2644,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		try
 		{
-			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 			string srcDir = Path.Combine(wsPath, "Assets", "models", fromSubCat);
 			string srcPath = Path.Combine(srcDir, key);
 			string dstDir = Path.Combine(wsPath, "Assets", "models", toSubCat);
@@ -2096,11 +2857,69 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				RefreshAssetList();
 			});
 		}
+		else if (category == "decals" || (extraData is JsonObject edObj && edObj.ContainsKey("asset_type") && edObj["asset_type"]?.ToString() == "Decal"))
+		{
+			var decalData = extraData as JsonObject ?? new JsonObject();
+			_decalEditDialog.OpenForDecal(key, decalData, (updatedData) =>
+			{
+				SaveDecalMetadata(key, updatedData);
+				RefreshAssetList();
+			});
+		}
+		else if (category == "shaders" || (extraData is JsonObject shObj && shObj.ContainsKey("asset_type") && shObj["asset_type"]?.ToString() == "Shader"))
+		{
+			_shaderEditDialog.OpenForShader(key, (updatedConfig) =>
+			{
+				RefreshAssetList();
+			});
+		}
+	}
+
+	private void SaveDecalMetadata(string key, JsonObject updatedData)
+	{
+		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
+		string metaPath = Path.Combine(wsPath, "metadata.json");
+		if (!File.Exists(metaPath)) return;
+
+		try
+		{
+			var root = JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject();
+			if (root != null)
+			{
+				if (!root.ContainsKey("Assets") || root["Assets"] == null) root["Assets"] = new JsonObject();
+				var assetsObj = root["Assets"].AsObject();
+				if (!assetsObj.ContainsKey("decals") || assetsObj["decals"] == null) assetsObj["decals"] = new JsonObject();
+				var decalsDict = assetsObj["decals"].AsObject();
+
+				JsonObject newObj;
+				if (decalsDict.TryGetPropertyValue(key, out var exNode) && exNode is JsonObject exObj)
+				{
+					newObj = exObj;
+				}
+				else
+				{
+					newObj = new JsonObject();
+					if (exNode is JsonValue v) newObj["hash"] = v.ToString();
+				}
+
+				foreach (var prop in updatedData)
+				{
+					newObj[prop.Key] = prop.Value?.DeepClone();
+				}
+
+				decalsDict[key] = newObj;
+				MapJsonFormatter.SaveFormattedJson(metaPath, root);
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[AssetManagerDialog] SaveDecalMetadata error: {ex.Message}");
+		}
 	}
 
 	private void SaveSpritesheetGrid(string key, int columns, int rows)
 	{
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string metaPath = Path.Combine(wsPath, "metadata.json");
 		if (!File.Exists(metaPath)) return;
 
@@ -2135,7 +2954,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private void SaveTextureSwatch(string key, JsonObject updatedData)
 	{
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string metaPath = Path.Combine(wsPath, "metadata.json");
 		if (!File.Exists(metaPath)) return;
 
@@ -2204,7 +3023,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			string.Format(TranslationServer.Translate("Are you sure you want to delete asset '{0}'?"), key),
 			() =>
 			{
-				string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+				string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 				string metaPath = Path.Combine(wsPath, "metadata.json");
 				if (File.Exists(metaPath))
 				{
@@ -2286,6 +3105,13 @@ public partial class AssetManagerDialog : FloatingDialogBase
 									SaveLoadService.RemapSplatExrFiles(wsPath, remap);
 								}
 							}
+							else if (category == "shaders")
+							{
+								if (assetsObj.ContainsKey("shaders") && assetsObj["shaders"] is JsonObject shObj)
+								{
+									shObj.Remove(key);
+								}
+							}
 							else
 							{
 								assetsObj[category]?.AsObject()?.Remove(key);
@@ -2297,7 +3123,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 									"music" => Path.Combine("audio", "music"),
 									"icons" => "icons",
 									"decals" => "decals",
-									"ribbon_textures" => Path.Combine("textures", "ribbons"),
+									"ribbons" or "ribbon_textures" => "ribbons",
 									"noise_textures" => Path.Combine("textures", "noise"),
 									"skyboxes" => "skyboxes",
 									_ => category
@@ -2341,7 +3167,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		"music" => TranslationServer.Translate("Music"),
 		"icons" => TranslationServer.Translate("Icons"),
 		"decals" => TranslationServer.Translate("Decals"),
-		"ribbon_textures" => TranslationServer.Translate("Ribbon Textures"),
+		"ribbons" or "ribbon_textures" => TranslationServer.Translate("Ribbon Textures"),
 		"noise_textures" => TranslationServer.Translate("Noise Textures"),
 		"skyboxes" => TranslationServer.Translate("Skyboxes"),
 		_ => cat
@@ -2358,7 +3184,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private void PerformPruneUnused()
 	{
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string metaPath = Path.Combine(wsPath, "metadata.json");
 		if (!File.Exists(metaPath)) return;
 
@@ -2620,7 +3446,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 						"music" => Path.Combine("audio", "music"),
 						"icons" => "icons",
 						"decals" => "decals",
-						"ribbon_textures" => Path.Combine("textures", "ribbons"),
+						"ribbons" or "ribbon_textures" => "ribbons",
 						"noise_textures" => Path.Combine("textures", "noise"),
 						"skyboxes" => "skyboxes",
 						_ => _currentCategory

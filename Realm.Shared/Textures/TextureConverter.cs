@@ -609,7 +609,8 @@ public static class TextureConverter
 		string rawImagePath,
 		string outputRtexPath,
 		string assetType,
-		bool enableRdo = false)
+		bool enableRdo = false,
+		string? customMetadataJson = null)
 	{
 		var result = new TextureConversionResult
 		{
@@ -630,7 +631,27 @@ public static class TextureConverter
 			string originalBlake3 = RealmMetadataHelper.ComputeBlake3(originalBits, Path.GetExtension(result.InputPath));
 
 			using var sourceImage = Image.Load<Rgba32>(result.InputPath);
-			string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"{assetType}\",\"canonical_blake3\":\"{originalBlake3}\",\"layers\":1}}";
+			string metadataJson;
+			if (!string.IsNullOrWhiteSpace(customMetadataJson))
+			{
+				try
+				{
+					var metaObj = System.Text.Json.Nodes.JsonNode.Parse(customMetadataJson)?.AsObject() ?? new System.Text.Json.Nodes.JsonObject();
+					metaObj["created_utc"] = $"{DateTime.UtcNow:O}";
+					metaObj["type"] = assetType;
+					metaObj["canonical_blake3"] = originalBlake3;
+					metaObj["layers"] = 1;
+					metadataJson = metaObj.ToJsonString();
+				}
+				catch
+				{
+					metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"{assetType}\",\"canonical_blake3\":\"{originalBlake3}\",\"layers\":1}}";
+				}
+			}
+			else
+			{
+				metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"{assetType}\",\"canonical_blake3\":\"{originalBlake3}\",\"layers\":1}}";
+			}
 
 			bool encodeOk = EncodeSingleLayerRtex(
 				sourceImage,

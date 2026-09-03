@@ -274,6 +274,43 @@ public static class GlbManifestUtils
 		var (json, bin, glbVer) = ParseGlb(glbBytes);
 		if (json is not JsonObject root) return glbBytes;
 
+		// 1. Ensure every texture in textures array has a valid source property
+		if (root.TryGetPropertyValue("textures", out var texNode) && texNode is JsonArray texArray)
+		{
+			int imageCount = (root.TryGetPropertyValue("images", out var imgNode) && imgNode is JsonArray imgArray) ? imgArray.Count : 0;
+			foreach (var t in texArray)
+			{
+				if (t is JsonObject texObj)
+				{
+					if (!texObj.ContainsKey("source") || texObj["source"] == null)
+					{
+						int src = -1;
+						if (texObj.TryGetPropertyValue("extensions", out var extVal) && extVal is JsonObject extObj)
+						{
+							if (extObj.TryGetPropertyValue("EXT_texture_webp", out var webpVal) && webpVal is JsonObject webpObj)
+							{
+								src = webpObj["source"]?.GetValue<int>() ?? -1;
+							}
+							if (src < 0 && extObj.TryGetPropertyValue("KHR_texture_basisu", out var basVal) && basVal is JsonObject basObj)
+							{
+								src = basObj["source"]?.GetValue<int>() ?? -1;
+							}
+						}
+
+						if (src >= 0 && src < imageCount)
+						{
+							texObj["source"] = src;
+						}
+						else if (imageCount > 0)
+						{
+							texObj["source"] = 0;
+						}
+					}
+				}
+			}
+		}
+
+		// 2. Ensure baseColorFactor exists when baseColorTexture is present
 		if (root.TryGetPropertyValue("materials", out var matNode) && matNode is JsonArray matArray)
 		{
 			foreach (var m in matArray)

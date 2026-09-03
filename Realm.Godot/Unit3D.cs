@@ -93,8 +93,6 @@ public partial class Unit3D : Prop3D
 	private Node3D _modelNode;
 	private AnimationPlayer _animationPlayer;
 	private string _currentAnimation = string.Empty;
-	private MeshInstance3D _selectionRing;
-	private bool _isSelected = false;
 	private Node3D _pathVisualsContainer;
 	private readonly System.Collections.Generic.List<MeshInstance3D> _pathMarkersPool = new();
 	private readonly System.Collections.Generic.List<MeshInstance3D> _pathLinesPool = new();
@@ -144,8 +142,8 @@ public partial class Unit3D : Prop3D
 		if (_modelNode != null && GodotObject.IsInstanceValid(_modelNode))
 		{
 			bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(ModelPath) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
-			Realm.Godot.Utils.PlayerColorShaderManager.SetPlayerColor(_modelNode, color);
-			Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_modelNode, ignorePlayerColor);
+			Realm.Godot.Utils.ModelShaderManager.SetPlayerColor(_modelNode, color);
+			Realm.Godot.Utils.ModelShaderManager.SetIgnorePlayerColor(_modelNode, ignorePlayerColor);
 		}
 	}
 
@@ -162,7 +160,7 @@ public partial class Unit3D : Prop3D
 		{
 			if (_modelNode != null && GodotObject.IsInstanceValid(_modelNode))
 			{
-				Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_modelNode, true);
+				Realm.Godot.Utils.ModelShaderManager.SetIgnorePlayerColor(_modelNode, true);
 			}
 			return;
 		}
@@ -329,14 +327,14 @@ public partial class Unit3D : Prop3D
 				{
 					bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(modelPath) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
 					bool normalizeLuminance = GameHost.Instance != null && (GameHost.Instance.GetModelNormalizeLuminance(modelPath) || GameHost.Instance.GetModelNormalizeLuminance(UnitId));
-					Realm.Godot.Utils.PlayerColorShaderManager.ApplyPlayerColorShader(_modelNode, PlayerColor, ignorePlayerColor, normalizeLuminance);
+					Realm.Godot.Utils.ModelShaderManager.ApplyPlayerColorShader(_modelNode, PlayerColor, ignorePlayerColor, normalizeLuminance);
 					if (!ignorePlayerColor)
 					{
 						UpdatePlayerColorVisual();
 					}
 					else
 					{
-						Realm.Godot.Utils.PlayerColorShaderManager.SetIgnorePlayerColor(_modelNode, true);
+						Realm.Godot.Utils.ModelShaderManager.SetIgnorePlayerColor(_modelNode, true);
 					}
 
 					GameHost.Instance?.ApplyAllGlobalOverridesToObject(this);
@@ -372,53 +370,13 @@ public partial class Unit3D : Prop3D
 		UpdateDropShadow();
 	}
 
-	private Aabb GetCombinedAabb(Node root)
+	public override float GetBaseObstacleRadius()
 	{
-		Aabb totalAabb = new Aabb();
-		bool first = true;
-		CollectAabbRecursive(root, Transform3D.Identity, ref totalAabb, ref first);
-		return totalAabb;
-	}
-
-	private void CollectAabbRecursive(Node node, Transform3D currentTransform, ref Aabb totalAabb, ref bool first)
-	{
-		if (node is MeshInstance3D mi && mi.Mesh != null)
+		if (GameHost.Instance != null)
 		{
-			Aabb localAabb = mi.Mesh.GetAabb();
-			Vector3[] corners = new Vector3[8]
-			{
-				new Vector3(localAabb.Position.X, localAabb.Position.Y, localAabb.Position.Z),
-				new Vector3(localAabb.Position.X + localAabb.Size.X, localAabb.Position.Y, localAabb.Position.Z),
-				new Vector3(localAabb.Position.X, localAabb.Position.Y + localAabb.Size.Y, localAabb.Position.Z),
-				new Vector3(localAabb.Position.X, localAabb.Position.Y, localAabb.Position.Z + localAabb.Size.Z),
-				new Vector3(localAabb.Position.X + localAabb.Size.X, localAabb.Position.Y + localAabb.Size.Y, localAabb.Position.Z),
-				new Vector3(localAabb.Position.X + localAabb.Size.X, localAabb.Position.Y, localAabb.Position.Z + localAabb.Size.Z),
-				new Vector3(localAabb.Position.X, localAabb.Position.Y + localAabb.Size.Y, localAabb.Position.Z + localAabb.Size.Z),
-				new Vector3(localAabb.Position.X + localAabb.Size.X, localAabb.Position.Y + localAabb.Size.Y, localAabb.Position.Z + localAabb.Size.Z)
-			};
-
-			foreach (var c in corners)
-			{
-				Vector3 transformed = currentTransform * c;
-				if (first)
-				{
-					totalAabb = new Aabb(transformed, Vector3.Zero);
-					first = false;
-				}
-				else
-				{
-					totalAabb = totalAabb.Expand(transformed);
-				}
-			}
+			return GameHost.Instance.GetOrCalculateObstacleRadius(UnitId, this, IsBuilding);
 		}
-
-		foreach (var child in node.GetChildren())
-		{
-			if (child is Node3D child3D)
-			{
-				CollectAabbRecursive(child, currentTransform * child3D.Transform, ref totalAabb, ref first);
-			}
-		}
+		return 1.4f;
 	}
 
 	/// <summary>
@@ -458,8 +416,7 @@ public partial class Unit3D : Prop3D
 		shadowDecal.Position = Vector3.Zero;
 		// Decals project along local -Z; tilt the node down so the shadow lands on the terrain.
 		shadowDecal.RotationDegrees = new Vector3(-90f, 0f, 0f);
-		// Project only onto the terrain layer so the shadow does not bleed onto other units.
-		shadowDecal.CullMask = 1;
+		shadowDecal.CullMask = RuntimeTerrain.TerrainDecalCullMask;
 
 		AddChild(shadowDecal);
 	}

@@ -1,4 +1,4 @@
-﻿using Godot;
+using Godot;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 
 public partial class MapSettingsDialog : FloatingDialogBase
 {
+	private LineEdit _txtMapName;
 	private OptionButton _optMapType;
 	private GridContainer _tagsGrid;
 	private readonly List<CheckBox> _activeTagCheckboxes = new();
@@ -45,6 +46,16 @@ public partial class MapSettingsDialog : FloatingDialogBase
 		contentVBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		contentVBox.AddThemeConstantOverride("separation", 8);
 		scroll.AddChild(contentVBox);
+
+		var namePanel = CreateSectionBox(contentVBox, "🏷️ " + TranslationServer.Translate("Map Name"));
+		_txtMapName = new LineEdit();
+		_txtMapName.PlaceholderText = TranslationServer.Translate("Enter map name...");
+		_txtMapName.TextChanged += (txt) =>
+		{
+			SaveMapProperties();
+			Hud?.UpdateMapNameHeader();
+		};
+		namePanel.AddChild(_txtMapName);
 
 		var mapTypePanel = CreateSectionBox(contentVBox, TranslationServer.Translate("Map Type"));
 		_optMapType = new OptionButton();
@@ -339,7 +350,29 @@ public partial class MapSettingsDialog : FloatingDialogBase
 
 	public void LoadMapProperties()
 	{
-		string mapJsonPath = ProjectSettings.GlobalizePath("user://temp_map_workspace/map.json");
+		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
+		string metaPath = Path.Combine(wsPath, "metadata.json");
+		if (File.Exists(metaPath))
+		{
+			try
+			{
+				var metaDoc = JsonNode.Parse(File.ReadAllText(metaPath)) as JsonObject;
+				if (metaDoc != null)
+				{
+					if (metaDoc.TryGetPropertyValue("Name", out var n) && n != null && _txtMapName != null)
+					{
+						_txtMapName.Text = n.ToString();
+					}
+					else if (metaDoc.TryGetPropertyValue("map_name", out var mn) && mn != null && _txtMapName != null)
+					{
+						_txtMapName.Text = mn.ToString();
+					}
+				}
+			}
+			catch { }
+		}
+
+		string mapJsonPath = Path.Combine(wsPath, "map.json");
 		if (File.Exists(mapJsonPath))
 		{
 			try
@@ -351,6 +384,11 @@ public partial class MapSettingsDialog : FloatingDialogBase
 					var props = mapDoc["MapProperties"] as JsonObject;
 					if (props != null)
 					{
+						if (_txtMapName != null && string.IsNullOrEmpty(_txtMapName.Text) && props.ContainsKey("Name"))
+						{
+							_txtMapName.Text = props["Name"]?.GetValue<string>() ?? "";
+						}
+
 						if (_optMapType != null && props.ContainsKey("MapType"))
 						{
 							string mapType = props["MapType"]?.GetValue<string>() ?? "";
@@ -384,7 +422,26 @@ public partial class MapSettingsDialog : FloatingDialogBase
 
 	public void SaveMapProperties()
 	{
-		string mapJsonPath = ProjectSettings.GlobalizePath("user://temp_map_workspace/map.json");
+		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
+
+		// Save to metadata.json
+		string metaPath = Path.Combine(wsPath, "metadata.json");
+		if (File.Exists(metaPath) && _txtMapName != null)
+		{
+			try
+			{
+				var metaDoc = JsonNode.Parse(File.ReadAllText(metaPath)) as JsonObject ?? new JsonObject();
+				metaDoc["Name"] = _txtMapName.Text.Trim();
+				MapJsonFormatter.SaveFormattedJson(metaPath, metaDoc);
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"Failed to save metadata.json map name: {ex.Message}");
+			}
+		}
+
+		// Save to map.json
+		string mapJsonPath = Path.Combine(wsPath, "map.json");
 		if (File.Exists(mapJsonPath))
 		{
 			try
@@ -397,6 +454,7 @@ public partial class MapSettingsDialog : FloatingDialogBase
 					var props = mapDoc["MapProperties"] as JsonObject;
 					if (props != null)
 					{
+						if (_txtMapName != null) props["Name"] = _txtMapName.Text.Trim();
 						if (_optMapType != null) props["MapType"] = _optMapType.Selected == 0 ? "Arcade Custom Map" : "Asset Pack";
 						var tagsArr = new JsonArray();
 						foreach (var chk in _activeTagCheckboxes)
@@ -478,7 +536,7 @@ public partial class MapSettingsDialog : FloatingDialogBase
 		_skyboxFiles.Clear();
 		_optSkybox.Clear();
 
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string metadataPath = Path.Combine(wsPath, "metadata.json");
 
 		if (File.Exists(metadataPath))

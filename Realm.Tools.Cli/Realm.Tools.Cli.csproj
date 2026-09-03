@@ -28,19 +28,8 @@
     <ProjectReference Include="..\Realm.Shared\Realm.Shared.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <EmbeddedResource Include="..\ThirdPartyBinaries\**\*.*">
-      <Link>ThirdPartyBinaries\%(RecursiveDir)%(Filename)%(Extension)</Link>
-    </EmbeddedResource>
-    <None Include="..\ThirdPartyBinaries\**\*.*">
-      <Link>ThirdPartyBinaries\%(RecursiveDir)%(Filename)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
 
-  <ItemGroup>
-    <EmbeddedResource Include="MiaSetup\**\*.*" />
-  </ItemGroup>
+
 
   <Target Name="PublishSingleFileAfterBuild" AfterTargets="Build" Condition="'$(IsPublishingSingleFile)' != 'true'">
     <MSBuild Projects="$(MSBuildProjectFullPath)"

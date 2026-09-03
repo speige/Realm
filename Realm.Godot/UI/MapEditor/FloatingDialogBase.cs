@@ -737,7 +737,7 @@ public partial class FloatingDialogBase : PanelContainer
 	public static List<string> ScanAvailableAssets(string category, bool includeAllFolders = false, string subFolder = null)
 	{
 		var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 
 		if (!System.IO.File.Exists(metadataPath))
@@ -844,7 +844,7 @@ public partial class FloatingDialogBase : PanelContainer
 					}
 					else if (category == "ribbons" || category == "ribbon_textures")
 					{
-						foreach (var key in new[] { "ribbon_textures", "ribbons" })
+						foreach (var key in new[] { "ribbons", "ribbon_textures" })
 						{
 							if (assetsObj[key] is System.Text.Json.Nodes.JsonObject rObj)
 							{
@@ -858,7 +858,7 @@ public partial class FloatingDialogBase : PanelContainer
 										}
 										else
 										{
-											result.Add($"Assets/textures/ribbons/{prop.Key}");
+											result.Add($"Assets/ribbons/{prop.Key}");
 											result.Add(prop.Key);
 										}
 									}

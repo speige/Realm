@@ -9,9 +9,9 @@ using System.Linq;
 
 public partial class GameHost
 {
-	public string CurrentMapDirectory { get; set; } = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+	public string CurrentMapDirectory { get; set; } = MapWorkspaceService.GetDefaultWorkspaceGlobalPath();
 
-	public void SaveMapToFile(string customPath = "")
+	public void SaveMapToFile(string customPath = "", bool performReload = true)
 	{
 		if (GroundTerrain == null) return;
 
@@ -33,7 +33,27 @@ public partial class GameHost
 		{
 			if (GodotObject.IsInstanceValid(unit) && EcsWorld.IsAlive(unit.Entity))
 			{
-				unitsData.Add((unit.Entity, unit.RotationDegrees.Y, unit.Scale.X));
+				float rotY = unit.RotationDegrees.Y;
+				if (EcsWorld.Has<RotationY>(unit.Entity))
+				{
+					float existingRotY = EcsWorld.Get<RotationY>(unit.Entity).Value;
+					if (MathF.Abs(rotY - existingRotY) < 0.001f || MathF.Abs(MathF.Abs(rotY - existingRotY) - 360f) < 0.001f)
+					{
+						rotY = existingRotY;
+					}
+				}
+
+				float scale = unit.Scale.X;
+				if (EcsWorld.Has<ModelScale>(unit.Entity))
+				{
+					float existingScale = EcsWorld.Get<ModelScale>(unit.Entity).Value;
+					if (MathF.Abs(scale - existingScale) < 0.0001f)
+					{
+						scale = existingScale;
+					}
+				}
+
+				unitsData.Add((unit.Entity, rotY, scale));
 			}
 		}
 
@@ -42,17 +62,78 @@ public partial class GameHost
 		{
 			if (GodotObject.IsInstanceValid(prop) && EcsWorld.IsAlive(prop.Entity))
 			{
-				propsData.Add((prop.Entity, prop.RotationDegrees.Y, prop.Scale.X));
+				float rotY = prop.RotationDegrees.Y;
+				if (EcsWorld.Has<RotationY>(prop.Entity))
+				{
+					float existingRotY = EcsWorld.Get<RotationY>(prop.Entity).Value;
+					if (MathF.Abs(rotY - existingRotY) < 0.001f || MathF.Abs(MathF.Abs(rotY - existingRotY) - 360f) < 0.001f)
+					{
+						rotY = existingRotY;
+					}
+				}
+
+				float scale = prop.Scale.X;
+				if (EcsWorld.Has<ModelScale>(prop.Entity))
+				{
+					float existingScale = EcsWorld.Get<ModelScale>(prop.Entity).Value;
+					if (MathF.Abs(scale - existingScale) < 0.0001f)
+					{
+						scale = existingScale;
+					}
+				}
+
+				propsData.Add((prop.Entity, rotY, scale));
 			}
 		}
 
-		var decalsData = new List<(string DecalId, System.Numerics.Vector3 Position, float RotationY, float Scale)>();
-		foreach (var child in GetChildren())
+		var decalsData = new List<(Entity Entity, System.Numerics.Vector3 Position, float RotationY, float Scale)>();
+		foreach (var decal in AllDecals)
 		{
-			if (child is Decal decal && GodotObject.IsInstanceValid(decal))
+			if (GodotObject.IsInstanceValid(decal) && decal is Decal3D decal3D)
 			{
-				string decalId = decal is Decal3D decal3D ? decal3D.DecalId : "logo";
-				decalsData.Add((decalId, new System.Numerics.Vector3(decal.Position.X, decal.Position.Y, decal.Position.Z), decal.RotationDegrees.Y, decal.Scale.X));
+				if (!EcsWorld.IsAlive(decal3D.Entity))
+				{
+					var newEnt = EcsWorld.Create();
+					decal3D.Entity = newEnt;
+					EcsWorld.Add(newEnt, new DecalIdentity(decal3D.DecalId));
+					EcsWorld.Add(newEnt, new Position(new System.Numerics.Vector3(decal.Position.X, decal.Position.Y, decal.Position.Z)));
+					EcsWorld.Add(newEnt, new RotationY(decal.RotationDegrees.Y));
+					EcsWorld.Add(newEnt, new ModelScale(decal.Scale.X));
+				}
+
+				float rotY = decal.RotationDegrees.Y;
+				if (EcsWorld.Has<RotationY>(decal3D.Entity))
+				{
+					float existingRotY = EcsWorld.Get<RotationY>(decal3D.Entity).Value;
+					if (MathF.Abs(rotY - existingRotY) < 0.001f || MathF.Abs(MathF.Abs(rotY - existingRotY) - 360f) < 0.001f)
+					{
+						rotY = existingRotY;
+					}
+				}
+
+				float scale = decal.Scale.X != 1.0f
+					? decal.Scale.X
+					: (EcsWorld.Has<ModelScale>(decal3D.Entity) ? EcsWorld.Get<ModelScale>(decal3D.Entity).Value : (decal.Size.X / 6.0f));
+				if (EcsWorld.Has<ModelScale>(decal3D.Entity))
+				{
+					float existingScale = EcsWorld.Get<ModelScale>(decal3D.Entity).Value;
+					if (MathF.Abs(scale - existingScale) < 0.0001f)
+					{
+						scale = existingScale;
+					}
+				}
+
+				var pos = new System.Numerics.Vector3(decal.Position.X, decal.Position.Y, decal.Position.Z);
+				if (EcsWorld.Has<Position>(decal3D.Entity))
+				{
+					var existingPos = EcsWorld.Get<Position>(decal3D.Entity).Value;
+					if ((pos - existingPos).Length() < 0.0001f)
+					{
+						pos = existingPos;
+					}
+				}
+
+				decalsData.Add((decal3D.Entity, pos, rotY, scale));
 			}
 		}
 
@@ -84,7 +165,20 @@ public partial class GameHost
 			}
 		}
 
-		_saveLoadService.SaveMapToFile(absolutePath, splatData, unitsData.ToArray(), propsData.ToArray(), decalsData.ToArray(), coordinatesData, cliffSplatData);
+		bool success = _saveLoadService.SaveMapToFile(absolutePath, splatData, unitsData.ToArray(), propsData.ToArray(), decalsData.ToArray(), coordinatesData, cliffSplatData);
+		if (success)
+		{
+			if (performReload)
+			{
+				LoadMapFromFile(absolutePath, terrainOnly: false, clearUnits: true, ensureGlbOptimized: false);
+				MapEditorHUD.Instance?.UpdateMapNameHeader();
+				MapEditorHUD.Instance?.ShowFeedback(TranslationServer.Translate("Map saved & round-trip verified!"));
+			}
+			else
+			{
+				MapEditorHUD.Instance?.UpdateMapNameHeader();
+			}
+		}
 	}
 
 	public bool LoadMapFromFile(string customPath = "", bool terrainOnly = false, bool clearUnits = true, bool ensureGlbOptimized = true)

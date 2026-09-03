@@ -186,6 +186,50 @@ namespace Realm.Godot.Utils
 			}
 		}
 
+		public static (float MinY, float YOffset) CalculateModelBounds(string modelPath, float scale = 1.0f)
+		{
+			if (string.IsNullOrEmpty(modelPath)) return (0f, 0f);
+
+			try
+			{
+				string resolved = ResolveModelPath(modelPath);
+				Node node = null;
+				if (!string.IsNullOrEmpty(resolved) && System.IO.File.Exists(resolved))
+				{
+					var doc = new GltfDocument();
+					var state = new GltfState();
+					var err = doc.AppendFromFile(resolved, state);
+					if (err == Error.Ok)
+					{
+						node = doc.GenerateScene(state);
+					}
+				}
+
+				if (node == null)
+				{
+					node = GetModel(modelPath);
+				}
+
+				if (node != null)
+				{
+					float minY = Unit3D.GetMinY(node, Transform3D.Identity);
+					node.Free();
+
+					if (float.IsFinite(minY) && Math.Abs(minY) > 0.0001f)
+					{
+						float yOffset = (float)Math.Round(-minY * scale, 4);
+						return (minY, yOffset);
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[ModelCache] CalculateModelBounds error for '{modelPath}': {ex.Message}");
+			}
+
+			return (0f, 0f);
+		}
+
 		public static void Clear()
 		{
 			_cachedScenes.Clear();

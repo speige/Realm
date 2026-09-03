@@ -306,7 +306,7 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 			{
 				try
 				{
-					string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+					string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 					string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 					if (!System.IO.File.Exists(metadataPath))
 					{
@@ -376,7 +376,7 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		{
 			try
 			{
-				string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+				string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 				string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 				if (!System.IO.File.Exists(metadataPath))
 				{

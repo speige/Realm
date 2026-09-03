@@ -11,7 +11,7 @@ public partial class Prop3D : StaticBody3D
 	public Entity Entity { get; set; }
 	public Vector3 Velocity { get; set; } = Vector3.Zero;
 
-	private string _propId = "tree";
+	private string _propId = string.Empty;
 
 	[Export]
 	public virtual string PropId
@@ -82,6 +82,67 @@ public partial class Prop3D : StaticBody3D
 	private MeshInstance3D _hoverRing;
 	private bool _isHovered = false;
 
+	private static readonly Dictionary<string, TorusMesh> _sharedTorusMeshes = new(StringComparer.OrdinalIgnoreCase);
+	private static StandardMaterial3D _sharedSelectionMaterial;
+	private static StandardMaterial3D _sharedHoverMaterial;
+
+	public virtual float GetBaseObstacleRadius()
+	{
+		if (GameHost.Instance != null)
+		{
+			return GameHost.Instance.GetOrCalculateObstacleRadius(PropId, this);
+		}
+		return 1.4f;
+	}
+
+	private static TorusMesh GetOrCreateTorusMesh(float radius)
+	{
+		float r = Mathf.Max(0.4f, (float)Math.Round(radius, 1));
+		string key = r.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+		if (!_sharedTorusMeshes.TryGetValue(key, out var mesh) || !GodotObject.IsInstanceValid(mesh))
+		{
+			mesh = new TorusMesh
+			{
+				InnerRadius = Mathf.Max(0.1f, r - 0.25f),
+				OuterRadius = r
+			};
+			_sharedTorusMeshes[key] = mesh;
+		}
+		return mesh;
+	}
+
+	private static StandardMaterial3D GetOrCreateSelectionMaterial(Color color)
+	{
+		if (_sharedSelectionMaterial == null || !GodotObject.IsInstanceValid(_sharedSelectionMaterial))
+		{
+			_sharedSelectionMaterial = new StandardMaterial3D
+			{
+				AlbedoColor = color,
+				Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+				DisableReceiveShadows = true,
+				EmissionEnabled = false,
+				ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded
+			};
+		}
+		return _sharedSelectionMaterial;
+	}
+
+	private static StandardMaterial3D GetOrCreateHoverMaterial()
+	{
+		if (_sharedHoverMaterial == null || !GodotObject.IsInstanceValid(_sharedHoverMaterial))
+		{
+			_sharedHoverMaterial = new StandardMaterial3D
+			{
+				AlbedoColor = new Color(0.88f, 0.88f, 0.88f, 0.22f),
+				Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+				DisableReceiveShadows = true,
+				EmissionEnabled = false,
+				ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded
+			};
+		}
+		return _sharedHoverMaterial;
+	}
+
 	public bool IsHovered
 	{
 		get => _isHovered;
@@ -101,42 +162,20 @@ public partial class Prop3D : StaticBody3D
 
 	private void CreateHoverRing()
 	{
-		_hoverRing = new MeshInstance3D();
-		_hoverRing.Name = "_hover_ring";
-		var torusMesh = new TorusMesh();
-		if (PropId == "goldmine")
+		if (_hoverRing != null) return;
+		float baseRadius = GetBaseObstacleRadius();
+		_hoverRing = new MeshInstance3D
 		{
-			torusMesh.InnerRadius = 3.2f;
-			torusMesh.OuterRadius = 3.5f;
-		}
-		else if (PropId == "rock")
-		{
-			torusMesh.InnerRadius = 1.8f;
-			torusMesh.OuterRadius = 2.0f;
-		}
-		else if (PropId == "pillar")
-		{
-			torusMesh.InnerRadius = 1.0f;
-			torusMesh.OuterRadius = 1.2f;
-		}
-		else
-		{
-			torusMesh.InnerRadius = 1.2f;
-			torusMesh.OuterRadius = 1.4f;
-		}
-		_hoverRing.Mesh = torusMesh;
-		_hoverRing.Position = new Vector3(0, 0.05f, 0);
-		_hoverRing.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
-		_hoverRing.GIMode = GeometryInstance3D.GIModeEnum.Disabled;
-		var material = new StandardMaterial3D();
-		material.AlbedoColor = new Color(0.88f, 0.88f, 0.88f, 0.22f);
-		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-		material.DisableReceiveShadows = true;
-		material.EmissionEnabled = false;
-		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-		_hoverRing.MaterialOverride = material;
+			Name = "_hover_ring",
+			Mesh = GetOrCreateTorusMesh(baseRadius),
+			Position = new Vector3(0, 0.05f, 0),
+			CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+			GIMode = GeometryInstance3D.GIModeEnum.Disabled,
+			MaterialOverride = GetOrCreateHoverMaterial()
+		};
 		float ratio = GameHost.Instance != null ? GameHost.Instance.GetModelCollisionCircleRatio(GameHost.Instance.GetModelAssetKey(this)) : 1.0f;
 		_hoverRing.Scale = new Vector3(ratio, 1.0f, ratio);
+		_hoverRing.Visible = _isHovered && !IsSelected;
 		AddChild(_hoverRing);
 	}
 
@@ -195,49 +234,114 @@ public partial class Prop3D : StaticBody3D
 	protected virtual void CreateSelectionRing()
 	{
 		if (_selectionRing != null) return;
-		_selectionRing = new MeshInstance3D();
-		_selectionRing.Name = "_selection_ring";
-		_selectionRing.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
-		_selectionRing.GIMode = GeometryInstance3D.GIModeEnum.Disabled;
-		var torusMesh = new TorusMesh();
-		
-		if (PropId == "goldmine")
+		float baseRadius = GetBaseObstacleRadius();
+		_selectionRing = new MeshInstance3D
 		{
-			torusMesh.InnerRadius = 3.2f;
-			torusMesh.OuterRadius = 3.5f;
-		}
-		else if (PropId == "rock")
-		{
-			torusMesh.InnerRadius = 1.8f;
-			torusMesh.OuterRadius = 2.0f;
-		}
-		else if (PropId == "pillar")
-		{
-			torusMesh.InnerRadius = 1.0f;
-			torusMesh.OuterRadius = 1.2f;
-		}
-		else
-		{
-			torusMesh.InnerRadius = 1.2f;
-			torusMesh.OuterRadius = 1.4f;
-		}
-		
-		_selectionRing.Mesh = torusMesh;
-		_selectionRing.Position = new Vector3(0, 0.05f, 0);
-
-		var material = new StandardMaterial3D();
-		Color color = GetSelectionRingColor();
-		material.AlbedoColor = color;
-		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-		material.DisableReceiveShadows = true;
-		material.EmissionEnabled = false;
-		material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-		
-		_selectionRing.MaterialOverride = material;
+			Name = "_selection_ring",
+			CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+			GIMode = GeometryInstance3D.GIModeEnum.Disabled,
+			Mesh = GetOrCreateTorusMesh(baseRadius),
+			Position = new Vector3(0, 0.05f, 0),
+			MaterialOverride = GetOrCreateSelectionMaterial(GetSelectionRingColor())
+		};
 		float ratio = GameHost.Instance != null ? GameHost.Instance.GetModelCollisionCircleRatio(GameHost.Instance.GetModelAssetKey(this)) : 1.0f;
 		_selectionRing.Scale = new Vector3(ratio, 1.0f, ratio);
 		_selectionRing.Visible = _isSelected;
 		AddChild(_selectionRing);
+	}
+
+	private static readonly Dictionary<string, (Shape3D Shape, Vector3 Offset)> _modelShapeCache = new(StringComparer.OrdinalIgnoreCase);
+
+	protected static Aabb GetCombinedAabb(Node root)
+	{
+		Aabb totalAabb = new Aabb();
+		bool first = true;
+		CollectAabbRecursive(root, Transform3D.Identity, ref totalAabb, ref first);
+		return totalAabb;
+	}
+
+	private static void CollectAabbRecursive(Node node, Transform3D currentTransform, ref Aabb totalAabb, ref bool first)
+	{
+		if (node == null) return;
+
+		if (node is MeshInstance3D mi && mi.Mesh != null)
+		{
+			Aabb localAabb = mi.Mesh.GetAabb();
+			if (localAabb.Size != Vector3.Zero)
+			{
+				for (int i = 0; i < 8; i++)
+				{
+					Vector3 corner = currentTransform * localAabb.GetEndpoint(i);
+					if (first)
+					{
+						totalAabb = new Aabb(corner, Vector3.Zero);
+						first = false;
+					}
+					else
+					{
+						totalAabb = totalAabb.Expand(corner);
+					}
+				}
+			}
+		}
+
+		foreach (var child in node.GetChildren())
+		{
+			if (child is Node3D child3D)
+			{
+				CollectAabbRecursive(child, currentTransform * child3D.Transform, ref totalAabb, ref first);
+			}
+		}
+	}
+
+	private (Shape3D Shape, Vector3 Offset) GetOrCreateCollisionShape()
+	{
+		string modelPath = ResolvePropModelPath(PropId);
+		if (!string.IsNullOrEmpty(modelPath) && _modelShapeCache.TryGetValue(modelPath, out var cached))
+		{
+			return cached;
+		}
+
+		if (!string.IsNullOrEmpty(modelPath))
+		{
+			try
+			{
+				Node modelNode = ModelCache.GetModel(modelPath);
+				if (modelNode != null)
+				{
+					Aabb modelAabb = GetCombinedAabb(modelNode);
+					modelNode.Free();
+
+					if (modelAabb.Size.LengthSquared() > 0.01f)
+					{
+						var (analShape, analOffset) = Realm.Godot.Services.ModelOptimization.ModelOptimizerService.GenerateAnalyticalCollisionShape(modelAabb, isBuilding: true);
+						if (analShape != null)
+						{
+							var result = (analShape, analOffset);
+							_modelShapeCache[modelPath] = result;
+							return result;
+						}
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"Failed to compute analytical collision shape for '{PropId}': {ex.Message}");
+			}
+		}
+
+		float radius = GetBaseObstacleRadius();
+		float height = Math.Max(1.0f, radius * 2.5f);
+		var fallbackBox = new BoxShape3D
+		{
+			Size = new Vector3(radius * 2.0f, height, radius * 2.0f)
+		};
+		var fallbackResult = (fallbackBox, new Vector3(0, height * 0.5f, 0));
+		if (!string.IsNullOrEmpty(modelPath))
+		{
+			_modelShapeCache[modelPath] = fallbackResult;
+		}
+		return fallbackResult;
 	}
 
 	public bool IsPreview { get; set; } = false;
@@ -258,33 +362,9 @@ public partial class Prop3D : StaticBody3D
 		collisionShape.Name = "CollisionShape";
 		AddChild(collisionShape);
 		
-		var boxShape = new BoxShape3D();
-		if (PropId == "goldmine")
-		{
-			boxShape.Size = new Vector3(4.0f, 2.5f, 4.0f);
-			collisionShape.Position = new Vector3(0, 1.25f, 0);
-		}
-		else if (PropId == "rock")
-		{
-			boxShape.Size = new Vector3(2.4f, 1.8f, 2.4f);
-			collisionShape.Position = new Vector3(0, 0.9f, 0);
-		}
-		else if (PropId == "pillar")
-		{
-			boxShape.Size = new Vector3(1.2f, 5.0f, 1.2f);
-			collisionShape.Position = new Vector3(0, 2.5f, 0);
-		}
-		else if (PropId == "flag")
-		{
-			boxShape.Size = new Vector3(0.5f, 6.0f, 2.0f);
-			collisionShape.Position = new Vector3(0.8f, 3.0f, 0);
-		}
-		else
-		{
-			boxShape.Size = new Vector3(1.5f, 4.5f, 1.5f);
-			collisionShape.Position = new Vector3(0, 2.25f, 0);
-		}
-		collisionShape.Shape = boxShape;
+		var (shape, offset) = GetOrCreateCollisionShape();
+		collisionShape.Shape = shape;
+		collisionShape.Position = offset;
 
 		CreatePropVisual();
 	}
@@ -387,7 +467,7 @@ public partial class Prop3D : StaticBody3D
 	private string ResolvePropModelPath(string propId)
 	{
 		if (string.IsNullOrEmpty(propId))
-			propId = "wooden_box.glb";
+			return string.Empty;
 
 		if (_resolvedModelPathCache.TryGetValue(propId, out string cachedPath))
 			return cachedPath;
@@ -400,12 +480,14 @@ public partial class Prop3D : StaticBody3D
 	public static void ClearModelPathCache()
 	{
 		_resolvedModelPathCache.Clear();
+		_modelShapeCache.Clear();
+		_sharedTorusMeshes.Clear();
 	}
 
 	private string ResolvePropModelPathInternal(string propId)
 	{
 		if (string.IsNullOrEmpty(propId))
-			propId = "wooden_box.glb";
+			return string.Empty;
 
 		string targetModel = propId;
 		if (GameHost.PropRegistry != null && GameHost.PropRegistry.TryGetValue(propId, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath))
@@ -424,7 +506,7 @@ public partial class Prop3D : StaticBody3D
 		if (targetModel.StartsWith("res://") || System.IO.File.Exists(targetModel))
 			return targetModel;
 
-		string wsPath = Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 		string filename = System.IO.Path.GetFileName(targetModel);
 		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
 		{

@@ -18,6 +18,7 @@
       <Link>ThirdPartyBinaries\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <EmbeddedResource Include="MiaSetup\**\*.*" />
   </ItemGroup>
 
   <ItemGroup>

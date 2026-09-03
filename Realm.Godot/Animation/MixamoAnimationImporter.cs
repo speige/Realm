@@ -350,7 +350,7 @@ public static class MixamoAnimationImporter
 			}
 
 			string ws = string.IsNullOrEmpty(workspacePath)
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace")
+				? ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath)
 				: workspacePath;
 
 			string fileName = Path.GetFileName(sourceGlbPath);

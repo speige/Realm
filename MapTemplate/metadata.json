@@ -126,7 +126,7 @@
 		"music": {
 			"dragon_tavern.ogg": "1aaeec899bd5cd3f4e47c731f29659b6131dc040d47bebc017ac62067ec5fdf6"
 		},
-		"ribbon_textures": {
+		"ribbons": {
 			"frost_shard_beam.rtex": "3198dfd32712e0320181acad17118d917cc66430c09b727178921a0f45639764",
 			"magma_flow_lava_vein.rtex": "6861e18a80ce59081a25d4a76809eb61e3f6c2cd407a3f71d730941c2ec58844"
 		},

@@ -572,7 +572,7 @@ public partial class GameHost : Node3D, IGameAPI
 				{
 					oldProp.IsSelected = false;
 				}
-				else if (_selectedEditorObject is Decal oldDecal)
+				else if ((_selectedEditorObject as Decal ?? FindDecalInParentChain(_selectedEditorObject)) is Decal oldDecal)
 				{
 					UpdateDecalSelectionRing(oldDecal, false);
 				}
@@ -588,9 +588,19 @@ public partial class GameHost : Node3D, IGameAPI
 				{
 					newProp.IsSelected = true;
 				}
-				else if (_selectedEditorObject is Decal newDecal)
+				else if ((_selectedEditorObject as Decal ?? FindDecalInParentChain(_selectedEditorObject)) is Decal newDecal)
 				{
 					UpdateDecalSelectionRing(newDecal, true);
+				}
+			}
+			else
+			{
+				foreach (var decal in AllDecals)
+				{
+					if (GodotObject.IsInstanceValid(decal))
+					{
+						UpdateDecalSelectionRing(decal, false);
+					}
 				}
 			}
 			MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
@@ -687,6 +697,10 @@ public partial class GameHost : Node3D, IGameAPI
 		public string[]? Weapons { get; set; }
 		public Dictionary<string, string[]>? Animations { get; set; }
 		public UnitSoundsMetadata? Sounds { get; set; }
+		public string[]? StartingItems { get; set; }
+		public string[]? Upgrades { get; set; }
+		public string[]? StatusEffects { get; set; }
+		public string[]? SoundEvents { get; set; }
 	}
 
 	public struct UnitSoundsMetadata
@@ -862,6 +876,174 @@ public partial class GameHost : Node3D, IGameAPI
 		public string IconPath { get; set; }
 		public float ManaCost { get; set; }
 		public float Cooldown { get; set; }
+		public float TargetRange { get; set; }
+		public string? VisualEffect { get; set; }
+		public string? CastSound { get; set; }
+		public string[]? AppliedStatusEffects { get; set; }
+		public float AreaOfEffectRadius { get; set; }
+		public float Damage { get; set; }
+		public float Healing { get; set; }
+		public string? SummonedUnitId { get; set; }
+		public int SummonCount { get; set; }
+		public float SummonDuration { get; set; }
+	}
+
+	public struct UpgradeMetadata
+	{
+		public string UpgradeId { get; set; }
+		public string Name { get; set; }
+		public string Description { get; set; }
+		public float CostGold { get; set; }
+		public float CostWood { get; set; }
+		public float CostStone { get; set; }
+		public float ResearchTime { get; set; }
+		public string Requirement { get; set; }
+		public int MaxLevel { get; set; }
+		public string[]? AffectedUnitIds { get; set; }
+		public float MaxHpBonus { get; set; }
+		public float DamageBonus { get; set; }
+		public float ArmorBonus { get; set; }
+		public float SpeedBonus { get; set; }
+	}
+
+	public struct ItemMetadata
+	{
+		public string ItemId { get; set; }
+		public string Name { get; set; }
+		public string Description { get; set; }
+		public string ItemClass { get; set; }
+		public float CostGold { get; set; }
+		public string UseAbility { get; set; }
+		public int ChargeCount { get; set; }
+		public string CooldownLink { get; set; }
+		public bool CanDrop { get; set; }
+		public int ItemLevel { get; set; }
+		public string IconPath { get; set; }
+		public string[]? PassiveStatusEffects { get; set; }
+		public string[]? GrantedWeapons { get; set; }
+		public bool IsContainer { get; set; }
+		public int ContainerSize { get; set; }
+		public string Requirements { get; set; }
+	}
+
+	public struct TextureMetadata
+	{
+		public string Hash { get; set; }
+		public int SwatchIndex { get; set; }
+		public float ScaleFactor { get; set; }
+		public string AssetType { get; set; }
+		public int TextureSize { get; set; }
+		public string NoiseConfig { get; set; }
+		public float Brightness { get; set; }
+		public string Tint { get; set; }
+		public float RoughnessScale { get; set; }
+		public float NormalScale { get; set; }
+		public float HeightScale { get; set; }
+		public float HeightOffset { get; set; }
+		public float CrevicePower { get; set; }
+		public string TileMode { get; set; }
+		public float UvScale { get; set; }
+		public float StochasticTileSize { get; set; }
+		public float CrossFade { get; set; }
+		public float Contrast { get; set; }
+		public float Saturation { get; set; }
+		public float Specular { get; set; }
+		public float Roughness { get; set; }
+		public float Metallic { get; set; }
+	}
+
+	public struct DecalMetadata
+	{
+		public string Hash { get; set; }
+		public string Tint { get; set; }
+		public float Brightness { get; set; }
+		public float Contrast { get; set; }
+		public float Saturation { get; set; }
+		public float Opacity { get; set; }
+		public float AlbedoMix { get; set; }
+		public float NormalStrength { get; set; }
+		public float Roughness { get; set; }
+		public float Metallic { get; set; }
+		public string BlendMode { get; set; }
+		public string AssetType { get; set; }
+		public string TextureNormal { get; set; }
+		public string TextureOrm { get; set; }
+		public string TextureEmission { get; set; }
+		public float EmissionEnergy { get; set; }
+	}
+
+	public struct VfxMetadata
+	{
+		public string Hash { get; set; }
+		public int Columns { get; set; }
+		public int Rows { get; set; }
+		public float Fps { get; set; }
+		public string AssetType { get; set; }
+	}
+
+	public struct GlbItemMetadata
+	{
+		public string Hash { get; set; }
+		public string DefaultAssetType { get; set; }
+		public float MinY { get; set; }
+		public float YOffset { get; set; }
+		public float Scale { get; set; }
+		public float CollisionCircleRatio { get; set; }
+		public float CollisionRadius { get; set; }
+		public float Brightness { get; set; }
+		public float Contrast { get; set; }
+		public float Saturation { get; set; }
+		public bool NormalizeLuminance { get; set; }
+		public ModelNormalMode NormalMode { get; set; }
+		public bool GenerateNormals { get; set; }
+		public bool RecalculateNormals { get; set; }
+		public float RotX { get; set; }
+		public float RotY { get; set; }
+		public float RotZ { get; set; }
+		public object WeaponLayers { get; set; }
+		public string WeaponPreset { get; set; }
+		public string WeaponRibbon { get; set; }
+		public bool IgnorePlayerColor { get; set; }
+		public string TeamColorMask { get; set; }
+		public string SpawnShader { get; set; }
+		public string DeathShader { get; set; }
+	}
+
+	public enum AssetCategory
+	{
+		Glb,
+		Animations,
+		Audio,
+		Sfx,
+		Music,
+		Textures,
+		NoiseTextures,
+		Noise,
+		Decals,
+		VfxSpritesheets,
+		Vfx,
+		Skyboxes,
+		Ribbons,
+		RibbonTextures,
+		Icons,
+		Ui,
+		Shaders
+	}
+
+	public enum GlbSubCategory
+	{
+		Units,
+		Buildings,
+		Resources,
+		Props,
+		Projectiles,
+		Character,
+		Characters,
+		Building,
+		Resource,
+		Environment,
+		Prop,
+		Projectile
 	}
 
 	public static int GetUnitPathingFlags(UnitMetadata meta)
@@ -1513,9 +1695,31 @@ public class {mapName} : IMapScript
 		{
 			if (System.IO.File.Exists(dllPath))
 			{
-				System.IO.File.Copy(dllPath, System.IO.Path.Combine(libDir, "Realm.MapAPI.dll"), true);
+				void CopyIfDifferent(string src, string dst)
+				{
+					if (System.IO.File.Exists(dst))
+					{
+						var sInfo = new System.IO.FileInfo(src);
+						var dInfo = new System.IO.FileInfo(dst);
+						if (sInfo.Length == dInfo.Length)
+						{
+							byte[] sBytes = System.IO.File.ReadAllBytes(src);
+							byte[] dBytes = System.IO.File.ReadAllBytes(dst);
+							if (sBytes.AsSpan().SequenceEqual(dBytes))
+							{
+								return;
+							}
+						}
+					}
+					System.IO.File.Copy(src, dst, true);
+				}
+
+				CopyIfDifferent(dllPath, System.IO.Path.Combine(libDir, "Realm.MapAPI.dll"));
 				if (System.IO.File.Exists(xmlPath))
-					System.IO.File.Copy(xmlPath, System.IO.Path.Combine(libDir, "Realm.MapAPI.xml"), true);
+					CopyIfDifferent(xmlPath, System.IO.Path.Combine(libDir, "Realm.MapAPI.xml"));
+				string pdbPath = System.IO.Path.ChangeExtension(dllPath, ".pdb");
+				if (System.IO.File.Exists(pdbPath))
+					CopyIfDifferent(pdbPath, System.IO.Path.Combine(libDir, "Realm.MapAPI.pdb"));
 				return true;
 			}
 			return false;
@@ -2567,7 +2771,7 @@ public class {mapName} : IMapScript
 		ResetAbilityCatalog();
 		if (string.IsNullOrEmpty(mapName))
 		{
-			mapName = !string.IsNullOrEmpty(ActiveMapName) ? ActiveMapName : "temp_map_workspace";
+			mapName = !string.IsNullOrEmpty(ActiveMapName) ? ActiveMapName : MapWorkspaceService.DefaultWorkspaceFolder;
 		}
 		ActiveMapName = mapName;
 		LocalizationManager.CurrentMapName = mapName;
@@ -3501,7 +3705,7 @@ public class {mapName} : IMapScript
 				string fullPath = path;
 				if (!path.StartsWith("res://") && !System.IO.File.Exists(path))
 				{
-					string wsPath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+					string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 					fullPath = System.IO.Path.Combine(wsPath, path.Replace('/', System.IO.Path.DirectorySeparatorChar));
 					if (!System.IO.File.Exists(fullPath))
 					{

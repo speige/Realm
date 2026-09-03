@@ -802,12 +802,12 @@ public class VSCodeManager
 
 				if (string.IsNullOrEmpty(filePath))
 				{
-					string wsPath = MapEditorHUD.Instance?.TempWorkspacePath ?? Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+					string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 					filePath = System.IO.Path.Combine(wsPath, action == "saveTerrain" ? "terrain.json" : "metadata.json");
 				}
 				else if (!System.IO.Path.IsPathRooted(filePath))
 				{
-					string wsPath = MapEditorHUD.Instance?.TempWorkspacePath ?? Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+					string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 					filePath = System.IO.Path.Combine(wsPath, filePath);
 				}
 

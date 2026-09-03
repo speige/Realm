@@ -25,7 +25,7 @@ public class FXService
 		string fullPath = texturePath;
 		if (!texturePath.StartsWith("res://") && !System.IO.File.Exists(texturePath))
 		{
-			string wsPath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+			string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 			fullPath = System.IO.Path.Combine(wsPath, texturePath.Replace('/', System.IO.Path.DirectorySeparatorChar));
 			if (!System.IO.File.Exists(fullPath))
 			{

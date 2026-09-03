@@ -2168,8 +2168,9 @@ public partial class GameHost
 		return null;
 	}
 
-	private Decal FindDecalInParentChain(Node node)
+	public Decal FindDecalInParentChain(Node node)
 	{
+		if (!IsMapEditorMode) return null;
 		while (node != null)
 		{
 			if (node is Decal decal)

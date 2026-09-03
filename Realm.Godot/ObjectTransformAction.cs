@@ -68,6 +68,17 @@ public class ObjectTransformAction : IEditorAction
 				}
 				PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
 			}
+			else if (_targetNode is Decal3D decal3D)
+			{
+				if (GameHost.Instance?.EcsWorld != null && decal3D.Entity != Arch.Core.Entity.Null && GameHost.Instance.EcsWorld.IsAlive(decal3D.Entity))
+				{
+					GameHost.Instance.EcsWorld.Set(decal3D.Entity, new Position(new System.Numerics.Vector3(_beforePos.X, _beforePos.Y, _beforePos.Z)));
+					if (GameHost.Instance.EcsWorld.Has<RotationY>(decal3D.Entity))
+						GameHost.Instance.EcsWorld.Set(decal3D.Entity, new RotationY(_beforeRot.Y));
+					if (GameHost.Instance.EcsWorld.Has<ModelScale>(decal3D.Entity))
+						GameHost.Instance.EcsWorld.Set(decal3D.Entity, new ModelScale(_beforeScale.X));
+				}
+			}
 			MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 		}
 	}
@@ -102,6 +113,17 @@ public class ObjectTransformAction : IEditorAction
 						GameHost.Instance.EcsWorld.Set(prop.Entity, new ModelScale(_afterScale.X));
 				}
 				PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
+			}
+			else if (_targetNode is Decal3D decal3D)
+			{
+				if (GameHost.Instance?.EcsWorld != null && decal3D.Entity != Arch.Core.Entity.Null && GameHost.Instance.EcsWorld.IsAlive(decal3D.Entity))
+				{
+					GameHost.Instance.EcsWorld.Set(decal3D.Entity, new Position(new System.Numerics.Vector3(_afterPos.X, _afterPos.Y, _afterPos.Z)));
+					if (GameHost.Instance.EcsWorld.Has<RotationY>(decal3D.Entity))
+						GameHost.Instance.EcsWorld.Set(decal3D.Entity, new RotationY(_afterRot.Y));
+					if (GameHost.Instance.EcsWorld.Has<ModelScale>(decal3D.Entity))
+						GameHost.Instance.EcsWorld.Set(decal3D.Entity, new ModelScale(_afterScale.X));
+				}
 			}
 			MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 		}
