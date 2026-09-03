@@ -47,7 +47,7 @@ public class TextureConvertOptions
 	[Option('o', "output", Required = false, HelpText = "Output destination file or directory.")]
 	public string? Output { get; set; }
 
-	[Option('t', "type", Required = false, HelpText = "Asset type for textures: Decal, Icon, Ribbon, Skybox, SpellSpritesheet, Tilesheet. If omitted, attempts to read type from image metadata.")]
+	[Option('t', "type", Required = false, HelpText = "Asset type for textures: Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet. If omitted, attempts to read type from image metadata.")]
 	public string? AssetType { get; set; }
 
 	[Option("columns", Required = false, Default = 4, HelpText = "Number of grid columns for spritesheets (default 4).")]

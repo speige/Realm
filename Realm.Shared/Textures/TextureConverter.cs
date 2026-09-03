@@ -817,7 +817,7 @@ public static class TextureConverter
 
 		if (string.IsNullOrEmpty(normType))
 		{
-			throw new InvalidOperationException($"Asset type was not specified and could not be detected from image metadata in '{inputPath}'. Please specify -t / --type (terrain, decal, spellspritesheet, skybox, ribbon, noise, icon).");
+			throw new InvalidOperationException($"Asset type was not specified and could not be detected from image metadata in '{inputPath}'. Please specify -t / --type (Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet).");
 		}
 
 		string targetRtex = string.IsNullOrEmpty(outputPath)
@@ -859,7 +859,7 @@ public static class TextureConverter
 			return ProcessAndSaveIconTexture(fullInput, targetRtex);
 		}
 
-		throw new InvalidOperationException($"Unsupported asset type '{normType}'. Supported types: terrain, decal, spellspritesheet, skybox, ribbon, noise, icon.");
+		throw new InvalidOperationException($"Unsupported asset type '{normType}'. Supported types: Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet.");
 	}
 
 	public static int ConvertTextureDirectory(

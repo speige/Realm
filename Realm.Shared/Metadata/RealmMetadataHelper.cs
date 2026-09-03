@@ -38,6 +38,13 @@ public static class RealmMetadataHelper
 		return crc;
 	}
 
+	public static bool SupportsMetadata(string extensionOrPath)
+	{
+		string ext = Path.GetExtension(extensionOrPath).ToLowerInvariant();
+		if (string.IsNullOrEmpty(ext) && extensionOrPath.StartsWith('.')) ext = extensionOrPath.ToLowerInvariant();
+		return ext is ".glb" or ".rtex" or ".ranim" or ".ogg";
+	}
+
 	public static string? ExtractMetadata(string filePath)
 	{
 		if (!File.Exists(filePath)) return null;
@@ -48,7 +55,7 @@ public static class RealmMetadataHelper
 			".rtex" => ExtractMetadataFromRtex(filePath),
 			".ranim" => ExtractMetadataFromRanim(filePath),
 			".ogg" => ExtractMetadataFromOgg(filePath),
-			_ => throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rtex, .ogg, .ranim")
+			_ => null
 		};
 	}
 
@@ -105,7 +112,7 @@ public static class RealmMetadataHelper
 
 	private static readonly Dictionary<string, string[]> ValidAssetTypesByExtension = new(StringComparer.OrdinalIgnoreCase)
 	{
-		[".rtex"] = new[] { "Decal", "Icon", "Ribbon", "Skybox", "SpellSpritesheet", "Tilesheet" },
+		[".rtex"] = new[] { "Decal", "Icon", "Noise", "Ribbon", "Skybox", "SpellSpritesheet", "Tilesheet" },
 		[".glb"] = new[] { "Character", "Building", "Environment", "Projectile", "Prop" },
 		[".ranim"] = new[] { "Animation" },
 		[".ogg"] = new[] { "Music", "SoundEffect" }
@@ -137,6 +144,7 @@ public static class RealmMetadataHelper
 		{
 			if (norm is "decal" or "decals") { canonicalType = "Decal"; return true; }
 			if (norm is "icon" or "icons") { canonicalType = "Icon"; return true; }
+			if (norm is "noise" or "noises" or "noisetexture" or "noisetextures") { canonicalType = "Noise"; return true; }
 			if (norm is "ribbon" or "ribbons" or "ribbontexture" or "ribbontextures") { canonicalType = "Ribbon"; return true; }
 			if (norm is "skybox" or "skyboxes") { canonicalType = "Skybox"; return true; }
 			if (norm is "spellspritesheet" or "spritesheet" or "spritesheets" or "vfxspritesheet" or "vfxspritesheets" or "vfx") { canonicalType = "SpellSpritesheet"; return true; }
