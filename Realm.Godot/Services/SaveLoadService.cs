@@ -14,6 +14,7 @@ using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Services;
 using Realm.Godot.Utils;
+using Realm.Shared.Metadata;
 
 public class SaveLoadService
 {
@@ -349,6 +350,11 @@ public class SaveLoadService
 			var unitQuery = Realm.Ecs.Common.QueryCache.AllDefinitionIdAndPositionAndOwnerQuery;
 			EcsWorld.Query(in unitQuery, (Entity entity, ref DefinitionId defId, ref Position pos, ref Owner owner) =>
 			{
+				if (!IsValidUnitObjectId(defId.Value, directory))
+				{
+					return;
+				}
+
 				float rotY = 0f;
 				if (EcsWorld.Has<RotationY>(entity)) rotY = EcsWorld.Get<RotationY>(entity).Value;
 
@@ -384,6 +390,11 @@ public class SaveLoadService
 			var propQuery = Realm.Ecs.Common.QueryCache.AllPropIdentityAndPositionQuery;
 			EcsWorld.Query(in propQuery, (Entity entity, ref PropIdentity propId, ref Position pos) =>
 			{
+				if (!IsValidPropObjectId(propId.PropId, directory))
+				{
+					return;
+				}
+
 				float rotY = 0f;
 				if (EcsWorld.Has<RotationY>(entity)) rotY = EcsWorld.Get<RotationY>(entity).Value;
 
@@ -461,6 +472,8 @@ public class SaveLoadService
 
 			GameHost.Instance?.SaveModelYOffsetsToMetadataJson(directory);
 
+			SyncMetadataAssetsAndPrune(directory);
+
 			string metaPath = Path.Combine(directory, "metadata.json");
 			if (File.Exists(metaPath))
 			{
@@ -520,6 +533,7 @@ public class SaveLoadService
 			if (saveData == null) return false;
 
 			string mapDir = Path.GetDirectoryName(absolutePath);
+			SyncMetadataAssetsAndPrune(mapDir);
 			GameHost.Instance?.LoadModelYOffsetsFromMetadataJson(mapDir);
 
 			_lastLoadedCoordinates = saveData.Coordinates ?? new List<CoordinateSaveData>();
@@ -813,6 +827,12 @@ public class SaveLoadService
 					foreach (var u in saveData.Units)
 					{
 						string cleanUnitId = StripIdPath(u.UnitId);
+						if (!IsValidUnitObjectId(cleanUnitId, mapDir))
+						{
+							GD.PushWarning($"[SaveLoadService] Ignored invalid unit '{u.UnitId}' in terrain.json because it does not exist as an Object ID in metadata.json.");
+							continue;
+						}
+
 						var reqEnt = EcsWorld.Create();
 						EcsWorld.Add(reqEnt, new UnitSpawnRequest(
 							cleanUnitId,
@@ -830,6 +850,12 @@ public class SaveLoadService
 					foreach (var p in saveData.Props)
 					{
 						string cleanPropId = StripIdPath(p.PropId);
+						if (!IsValidPropObjectId(cleanPropId, mapDir))
+						{
+							GD.PushWarning($"[SaveLoadService] Ignored invalid prop '{p.PropId}' in terrain.json because it does not exist as an Object ID in metadata.json.");
+							continue;
+						}
+
 						var reqEnt = EcsWorld.Create();
 						EcsWorld.Add(reqEnt, new PropSpawnRequest(
 							cleanPropId,
@@ -1341,6 +1367,108 @@ public class SaveLoadService
 				foreach (var property in propertiesToRemove) item.Remove(property);
 			}
 		}
+	}
+
+	public static bool IsValidPropObjectId(string propId, string mapDirectory = null)
+	{
+		if (string.IsNullOrWhiteSpace(propId)) return false;
+
+		if (GameHost.PropRegistry != null && GameHost.PropRegistry.ContainsKey(propId)) return true;
+		if (GameHost.ResourceRegistry != null && GameHost.ResourceRegistry.ContainsKey(propId)) return true;
+
+		string metaPath = !string.IsNullOrEmpty(mapDirectory)
+			? Path.Combine(mapDirectory, "metadata.json")
+			: Path.Combine(MapWorkspaceService.GetActiveWorkspacePath(), "metadata.json");
+
+		if (File.Exists(metaPath))
+		{
+			try
+			{
+				string json = File.ReadAllText(metaPath);
+				using var doc = JsonDocument.Parse(json);
+				if (doc.RootElement.ValueKind == JsonValueKind.Object)
+				{
+					if (doc.RootElement.TryGetProperty("CustomProps", out var propsProp) && propsProp.ValueKind == JsonValueKind.Array)
+					{
+						foreach (var el in propsProp.EnumerateArray())
+						{
+							if (el.TryGetProperty("UnitId", out var idProp) && propId.Equals(idProp.GetString(), StringComparison.OrdinalIgnoreCase))
+								return true;
+						}
+					}
+					if (doc.RootElement.TryGetProperty("CustomResources", out var resProp) && resProp.ValueKind == JsonValueKind.Array)
+					{
+						foreach (var el in resProp.EnumerateArray())
+						{
+							if (el.TryGetProperty("UnitId", out var idProp) && propId.Equals(idProp.GetString(), StringComparison.OrdinalIgnoreCase))
+								return true;
+						}
+					}
+				}
+			}
+			catch { }
+		}
+
+		return false;
+	}
+
+	public static bool IsValidUnitObjectId(string unitId, string mapDirectory = null)
+	{
+		if (string.IsNullOrWhiteSpace(unitId)) return false;
+
+		if (GameHost.UnitRegistry != null && GameHost.UnitRegistry.ContainsKey(unitId)) return true;
+		if (GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.ContainsKey(unitId)) return true;
+
+		string metaPath = !string.IsNullOrEmpty(mapDirectory)
+			? Path.Combine(mapDirectory, "metadata.json")
+			: Path.Combine(MapWorkspaceService.GetActiveWorkspacePath(), "metadata.json");
+
+		if (File.Exists(metaPath))
+		{
+			try
+			{
+				string json = File.ReadAllText(metaPath);
+				using var doc = JsonDocument.Parse(json);
+				if (doc.RootElement.ValueKind == JsonValueKind.Object)
+				{
+					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == JsonValueKind.Array)
+					{
+						foreach (var el in unitsProp.EnumerateArray())
+						{
+							if (el.TryGetProperty("UnitId", out var idProp) && unitId.Equals(idProp.GetString(), StringComparison.OrdinalIgnoreCase))
+								return true;
+						}
+					}
+					if (doc.RootElement.TryGetProperty("CustomBuildings", out var bldProp) && bldProp.ValueKind == JsonValueKind.Array)
+					{
+						foreach (var el in bldProp.EnumerateArray())
+						{
+							if (el.TryGetProperty("UnitId", out var idProp) && unitId.Equals(idProp.GetString(), StringComparison.OrdinalIgnoreCase))
+								return true;
+						}
+					}
+					bool hasStructuredArrays = doc.RootElement.TryGetProperty("CustomUnits", out _)
+						|| doc.RootElement.TryGetProperty("CustomBuildings", out _)
+						|| doc.RootElement.TryGetProperty("CustomProps", out _)
+						|| doc.RootElement.TryGetProperty("CustomResources", out _);
+					if (!hasStructuredArrays)
+					{
+						foreach (var prop in doc.RootElement.EnumerateObject())
+						{
+							if (!prop.Name.Equals("MapProperties", StringComparison.OrdinalIgnoreCase) &&
+								!prop.Name.Equals("Assets", StringComparison.OrdinalIgnoreCase) &&
+								unitId.Equals(prop.Name, StringComparison.OrdinalIgnoreCase))
+							{
+								return true;
+							}
+						}
+					}
+				}
+			}
+			catch { }
+		}
+
+		return false;
 	}
 
 	private static void AddEnumNamesToSet<T>(HashSet<string> destination) where T : struct, Enum
@@ -1893,6 +2021,189 @@ public class SaveLoadService
 		}
 
 		return list.ToArray();
+	}
+
+	public static void SyncMetadataAssetsAndPrune(string mapDirectory)
+	{
+		if (string.IsNullOrEmpty(mapDirectory) || !Directory.Exists(mapDirectory)) return;
+
+		string metaPath = Path.Combine(mapDirectory, "metadata.json");
+		if (!File.Exists(metaPath)) return;
+
+		try
+		{
+			string json = File.ReadAllText(metaPath);
+			var root = JsonNode.Parse(json)?.AsObject();
+			if (root == null) return;
+
+			var assetsObj = root["Assets"]?.AsObject() ?? root["MapProperties"]?["Assets"]?.AsObject();
+			if (assetsObj == null) return;
+
+			bool metadataModified = false;
+			string assetsDir = Path.Combine(mapDirectory, "Assets");
+
+			var includedRelativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			var assetsToSync = new List<(string RelativePath, JsonNode? EntryNode, JsonObject ParentObj, string PropertyKey)>();
+
+			foreach (var categoryKvp in assetsObj)
+			{
+				string category = categoryKvp.Key.ToLowerInvariant();
+				if (category == "glb" && categoryKvp.Value is JsonObject glbObj)
+				{
+					foreach (var subKvp in glbObj)
+					{
+						string subCategory = subKvp.Key.ToLowerInvariant();
+						if (subKvp.Value is JsonObject subCatObj)
+						{
+							foreach (var itemKvp in subCatObj)
+							{
+								string fileName = itemKvp.Key;
+								string relPath = Path.Combine("Assets", "models", subCategory, fileName).Replace('\\', '/');
+								includedRelativePaths.Add(relPath);
+								assetsToSync.Add((relPath, itemKvp.Value, subCatObj, fileName));
+							}
+						}
+					}
+				}
+				else if (categoryKvp.Value is JsonObject catObj)
+				{
+					string subFolder = category switch
+					{
+						"vfx" or "vfx_spritesheets" => "vfx",
+						"animations" => "animations",
+						"sfx" => "sfx",
+						"music" => "music",
+						"icons" => "icons",
+						"decals" => "decals",
+						"ribbons" or "ribbon_textures" => "ribbons",
+						"noise" or "noise_textures" => "noise",
+						"skyboxes" => "skyboxes",
+						"textures" => "textures",
+						_ => category
+					};
+
+					foreach (var itemKvp in catObj)
+					{
+						string fileName = itemKvp.Key;
+						string relPath = Path.Combine("Assets", subFolder, fileName).Replace('\\', '/');
+						includedRelativePaths.Add(relPath);
+
+						if (subFolder is "sfx" or "music")
+						{
+							includedRelativePaths.Add(Path.Combine("Assets", "audio", subFolder, fileName).Replace('\\', '/'));
+						}
+
+						assetsToSync.Add((relPath, itemKvp.Value, catObj, fileName));
+					}
+				}
+			}
+
+			if (Directory.Exists(assetsDir))
+			{
+				string[] diskFiles = Directory.GetFiles(assetsDir, "*", SearchOption.AllDirectories);
+				foreach (var diskFile in diskFiles)
+				{
+					string relPath = Path.GetRelativePath(mapDirectory, diskFile).Replace('\\', '/');
+
+					if (relPath.EndsWith(".import", StringComparison.OrdinalIgnoreCase))
+					{
+						string baseRelPath = relPath.Substring(0, relPath.Length - 7);
+						if (includedRelativePaths.Contains(baseRelPath))
+						{
+							continue;
+						}
+					}
+
+					if (!includedRelativePaths.Contains(relPath))
+					{
+						try
+						{
+							File.Delete(diskFile);
+							string importFile = diskFile + ".import";
+							if (File.Exists(importFile))
+							{
+								File.Delete(importFile);
+							}
+						}
+						catch { }
+					}
+				}
+
+				DeleteEmptyDirectoriesRecursive(assetsDir);
+			}
+
+			foreach (var (relPath, entryNode, parentObj, propertyKey) in assetsToSync)
+			{
+				string fullDiskPath = Path.Combine(mapDirectory, relPath);
+				if (!File.Exists(fullDiskPath))
+				{
+					string fileName = Path.GetFileName(relPath);
+					string? altPath = FindAssetFileByName(assetsDir, fileName);
+					if (altPath != null && File.Exists(altPath))
+					{
+						fullDiskPath = altPath;
+					}
+				}
+
+				if (File.Exists(fullDiskPath))
+				{
+					string canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(fullDiskPath);
+					if (!string.IsNullOrEmpty(canonicalBlake3))
+					{
+						if (entryNode is JsonObject itemObj)
+						{
+							string existingHash = itemObj["hash"]?.ToString() ?? "";
+							if (!string.Equals(existingHash, canonicalBlake3, StringComparison.OrdinalIgnoreCase))
+							{
+								itemObj["hash"] = canonicalBlake3;
+								metadataModified = true;
+							}
+						}
+						else if (entryNode is JsonValue)
+						{
+							string existingHash = entryNode.ToString();
+							if (!string.Equals(existingHash, canonicalBlake3, StringComparison.OrdinalIgnoreCase))
+							{
+								parentObj[propertyKey] = canonicalBlake3;
+								metadataModified = true;
+							}
+						}
+
+						RealmMetadataHelper.SyncBlake3Metadata(fullDiskPath);
+					}
+				}
+			}
+
+			if (metadataModified)
+			{
+				CleanMetadataJsonSchema(root);
+				MapJsonFormatter.SaveFormattedJson(metaPath, root);
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[SaveLoadService] SyncMetadataAssetsAndPrune error: {ex.Message}");
+		}
+	}
+
+	private static string? FindAssetFileByName(string searchDir, string fileName)
+	{
+		if (!Directory.Exists(searchDir)) return null;
+		string[] matches = Directory.GetFiles(searchDir, fileName, SearchOption.AllDirectories);
+		return matches.Length > 0 ? matches[0] : null;
+	}
+
+	private static void DeleteEmptyDirectoriesRecursive(string directory)
+	{
+		if (!Directory.Exists(directory)) return;
+		foreach (var sub in Directory.GetDirectories(directory))
+		{
+			DeleteEmptyDirectoriesRecursive(sub);
+		}
+		if (Directory.GetFiles(directory).Length == 0 && Directory.GetDirectories(directory).Length == 0)
+		{
+			try { Directory.Delete(directory, false); } catch { }
+		}
 	}
 }
 

@@ -336,7 +336,7 @@ public static class AnimationRetargetingService
 		}
 		player.AddAnimationLibrary(string.Empty, new AnimationLibrary());
 
-		Dictionary<string, string[]>? customAnimations = null;
+		Dictionary<string, List<GameHost.UnitAnimationEntry>>? customAnimations = null;
 		if (!string.IsNullOrEmpty(unitId) && GameHost.Instance != null && GameHost.UnitRegistry.TryGetValue(unitId, out var meta))
 		{
 			customAnimations = meta.Animations;
@@ -345,11 +345,11 @@ public static class AnimationRetargetingService
 		string[] standardAnimations = new[] { "Idle", "Walk", "Attack", "Death", "Labor", "Spell_Cast", "Dance" };
 		foreach (var animType in standardAnimations)
 		{
-			if (customAnimations != null && customAnimations.TryGetValue(animType, out var animFiles) && animFiles != null && animFiles.Length > 0)
+			if (customAnimations != null && customAnimations.TryGetValue(animType, out var animFiles) && animFiles != null && animFiles.Count > 0)
 			{
-				for (int i = 0; i < animFiles.Length; i++)
+				for (int i = 0; i < animFiles.Count; i++)
 				{
-					string animFile = animFiles[i];
+					string animFile = animFiles[i].Animation;
 					string variantName = $"{animType}_{i}";
 					string filePath = ResolveAnimationFilePath(animFile, unitId);
 					if (!string.IsNullOrEmpty(filePath))

@@ -232,7 +232,7 @@ public static class NoiseTextureGenerator
 				return;
 			}
 
-			string noiseDir = Path.Combine(workspacePath, "Assets", "textures", "noise");
+			string noiseDir = Path.Combine(workspacePath, "Assets", "noise");
 			Directory.CreateDirectory(noiseDir);
 
 			bool metadataModified = false;

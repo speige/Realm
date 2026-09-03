@@ -45,6 +45,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private Label _lblModelTypeDescription;
 	private Button _btnImportAsset;
 	private Button _btnConvert3DModel;
+	private Button _btnAiGenerate3D;
 	private Button _btnConvertImage;
 	private Button _btnConvertAudio;
 	private Button _btnConvertMixamo;
@@ -233,28 +234,30 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		_optAssetCategory.SetItemMetadata(3, "glb_props");
 		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (projectiles)"), 4);
 		_optAssetCategory.SetItemMetadata(4, "glb_projectiles");
-		_optAssetCategory.AddItem(TranslationServer.Translate("Terrain Textures"), 5);
-		_optAssetCategory.SetItemMetadata(5, "textures");
-		_optAssetCategory.AddItem(TranslationServer.Translate("VFX Spritesheets"), 6);
-		_optAssetCategory.SetItemMetadata(6, "vfx_spritesheets");
-		_optAssetCategory.AddItem(TranslationServer.Translate("Animations (.ranim)"), 7);
-		_optAssetCategory.SetItemMetadata(7, "animations");
-		_optAssetCategory.AddItem(TranslationServer.Translate("Sound Effects (SFX)"), 8);
-		_optAssetCategory.SetItemMetadata(8, "sfx");
-		_optAssetCategory.AddItem(TranslationServer.Translate("Music"), 9);
-		_optAssetCategory.SetItemMetadata(9, "music");
-		_optAssetCategory.AddItem(TranslationServer.Translate("Icons"), 10);
-		_optAssetCategory.SetItemMetadata(10, "icons");
-		_optAssetCategory.AddItem(TranslationServer.Translate("Decals"), 11);
-		_optAssetCategory.SetItemMetadata(11, "decals");
-		_optAssetCategory.AddItem(TranslationServer.Translate("Ribbon Textures"), 12);
-		_optAssetCategory.SetItemMetadata(12, "ribbons");
-		_optAssetCategory.AddItem(TranslationServer.Translate("Noise Textures"), 13);
-		_optAssetCategory.SetItemMetadata(13, "noise_textures");
-		_optAssetCategory.AddItem(TranslationServer.Translate("Skyboxes"), 14);
-		_optAssetCategory.SetItemMetadata(14, "skyboxes");
-		_optAssetCategory.AddItem(TranslationServer.Translate("Custom Shaders"), 15);
-		_optAssetCategory.SetItemMetadata(15, "shaders");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Object Attachments"), 5);
+		_optAssetCategory.SetItemMetadata(5, "glb_attachments");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Terrain Textures"), 6);
+		_optAssetCategory.SetItemMetadata(6, "textures");
+		_optAssetCategory.AddItem(TranslationServer.Translate("VFX Spritesheets"), 7);
+		_optAssetCategory.SetItemMetadata(7, "vfx_spritesheets");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Animations (.ranim)"), 8);
+		_optAssetCategory.SetItemMetadata(8, "animations");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Sound Effects (SFX)"), 9);
+		_optAssetCategory.SetItemMetadata(9, "sfx");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Music"), 10);
+		_optAssetCategory.SetItemMetadata(10, "music");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Icons"), 11);
+		_optAssetCategory.SetItemMetadata(11, "icons");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Decals"), 12);
+		_optAssetCategory.SetItemMetadata(12, "decals");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Ribbon Textures"), 13);
+		_optAssetCategory.SetItemMetadata(13, "ribbons");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Noise Textures"), 14);
+		_optAssetCategory.SetItemMetadata(14, "noise_textures");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Skyboxes"), 15);
+		_optAssetCategory.SetItemMetadata(15, "skyboxes");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Custom Shaders"), 16);
+		_optAssetCategory.SetItemMetadata(16, "shaders");
 
 		_optAssetCategory.ItemSelected += (idx) =>
 		{
@@ -264,12 +267,35 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		catRow.AddChild(_optAssetCategory);
 
 		_btnImportAsset = AddButton(catRow, "📥 " + TranslationServer.Translate("Import Asset"), () => OpenImportFileDialog(), "Import a new asset for the selected category", 11, new Vector2(120, 26));
-		_btnConvert3DModel = AddButton(catRow, "🔄 " + TranslationServer.Translate("Convert 3D Model (.glb)"), () =>
+		_btnConvert3DModel = AddButton(catRow, "🔄 " + TranslationServer.Translate("Convert 3D Model to Realm Format"), () =>
 		{
 			IsGlbCategory(_currentCategory, out string glbSub);
 			Hud?.OpenConvertGlbDialog(null, glbSub, (_) => RefreshAssetList());
-		}, "Select a 3D model (.glb, .gltf, .fbx, .obj) to optimize with LODs and convert to Realm format", 11, new Vector2(200, 26));
+		}, "Select a 3D model (.glb, .gltf, .fbx, .obj) to optimize with LODs and convert to Realm format", 11, new Vector2(230, 26));
 		_btnConvert3DModel.Visible = false;
+
+		_btnAiGenerate3D = new Button();
+		_btnAiGenerate3D.Set("icon_max_width", 16);
+		_btnAiGenerate3D.AddThemeConstantOverride("icon_max_width", 16);
+		_btnAiGenerate3D.ExpandIcon = false;
+		_btnAiGenerate3D.IconAlignment = HorizontalAlignment.Center;
+		_btnAiGenerate3D.VerticalIconAlignment = VerticalAlignment.Center;
+		if (ResourceLoader.Exists("res://Assets/UI/globe_icon.png"))
+		{
+			_btnAiGenerate3D.Icon = GD.Load<Texture2D>("res://Assets/UI/globe_icon.png");
+		}
+		else
+		{
+			_btnAiGenerate3D.Text = "🌐";
+		}
+		_btnAiGenerate3D.TooltipText = TranslationServer.Translate("Generate 3D Model with AI Online");
+		_btnAiGenerate3D.CustomMinimumSize = new Vector2(26, 26);
+		_btnAiGenerate3D.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+		_btnAiGenerate3D.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+		_btnAiGenerate3D.FocusMode = FocusModeEnum.None;
+		_btnAiGenerate3D.Pressed += () => OS.ShellOpen("https://3d.hunyuanglobal.com");
+		catRow.AddChild(_btnAiGenerate3D);
+		_btnAiGenerate3D.Visible = false;
 
 		_btnConvertImage = AddButton(catRow, "🔄 " + TranslationServer.Translate("Convert Image to Realm format"), () => OnConvertImagePressed(), "Convert an image file (PNG, JPG, BMP, WEBP, DDS, SVG, etc.) to Realm format (RTEX)", 11, new Vector2(230, 26));
 		_btnConvertImage.Visible = false;
@@ -415,6 +441,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		if (_btnConvert3DModel != null)
 		{
 			_btnConvert3DModel.Visible = IsGlbCategory(category, out _);
+		}
+		if (_btnAiGenerate3D != null)
+		{
+			_btnAiGenerate3D.Visible = IsGlbCategory(category, out _);
 		}
 		if (_btnConvertImage != null)
 		{
@@ -585,6 +615,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				"resources" => "Environment",
 				"projectiles" => "Projectile",
 				"props" => "Prop",
+				"attachments" => "Attachment",
 				_ => "Prop"
 			};
 		}
@@ -650,7 +681,9 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			string sub = subCategoryOrFolder == "music" ? "music" : "sfx";
 			string path = Path.Combine(wsPath, "Assets", "audio", sub, fileName);
 			if (File.Exists(path)) return path;
-			return Path.Combine(wsPath, "Assets", "audio", fileName);
+			string pathDirect = Path.Combine(wsPath, "Assets", sub, fileName);
+			if (File.Exists(pathDirect)) return pathDirect;
+			return path;
 		}
 		return Path.Combine(wsPath, "Assets", fileName);
 	}
@@ -676,6 +709,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				"glb_resources" => "Environment",
 				"glb_props" => "Prop",
 				"glb_projectiles" => "Projectile",
+				"glb_attachments" => "Attachment",
 				"textures" => "Tilesheet",
 				"vfx_spritesheets" => "SpellSpritesheet",
 				"animations" => "Animation",
@@ -864,22 +898,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			hBox.AddChild(btnEdit);
 		}
 
-		// Action 4: Change Type Button (3D Models only)
-		if (IsGlbCategory(category, out string glbSubCat) || category == "glb")
-		{
-			var btnChangeType = new Button();
-			btnChangeType.Set("icon_max_width", 0);
-			btnChangeType.Text = "🔄";
-			btnChangeType.AddThemeFontSizeOverride("font_size", 11);
-			btnChangeType.FocusMode = FocusModeEnum.None;
-			btnChangeType.CustomMinimumSize = new Vector2(26, 22);
-			btnChangeType.TooltipText = TranslationServer.Translate("Change Asset Type");
-			string rowSub = !string.IsNullOrEmpty(subCategory) ? subCategory : glbSubCat;
-			btnChangeType.Pressed += () => OpenChangeTypeDialog(category, key, rowSub);
-			hBox.AddChild(btnChangeType);
-		}
-
-		// Action 5: Delete Button
+		// Action 4: Delete Button
 		var btnDelete = new Button();
 		btnDelete.Set("icon_max_width", 0);
 		btnDelete.Text = "❌";
@@ -1264,15 +1283,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		string modelPath = null;
 		if (!string.IsNullOrEmpty(_selectedRanimBaseModel))
 		{
-			foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles" })
+			foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles", "attachments" })
 			{
 				string p = Path.Combine(wsPath, "Assets", "models", sub, _selectedRanimBaseModel);
 				if (File.Exists(p)) { modelPath = p; break; }
-			}
-			if (modelPath == null)
-			{
-				string p = Path.Combine(wsPath, "Assets", "models", _selectedRanimBaseModel);
-				if (File.Exists(p)) modelPath = p;
 			}
 		}
 
@@ -1344,17 +1358,12 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			"icons" => "icons",
 			"decals" => "decals",
 			"ribbons" or "ribbon_textures" => "ribbons",
-			"noise_textures" => Path.Combine("textures", "noise"),
+			"noise_textures" => "noise",
 			"skyboxes" => "skyboxes",
 			_ => "textures"
 		};
 
 		string filePath = Path.Combine(wsPath, "Assets", subFolder, key);
-		if (!File.Exists(filePath))
-		{
-			filePath = Path.Combine(wsPath, "Assets", "textures", key);
-		}
-
 		if (!File.Exists(filePath)) return;
 
 		Texture2D? tex = LoadTextureFromFileOrRtex(filePath);
@@ -1370,10 +1379,11 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private void LoadAudioStream(string key, string category)
 	{
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-		string audioPath = Path.Combine(wsPath, "Assets", "audio", category == "music" ? "music" : "sfx", key);
+		string sub = category == "music" ? "music" : "sfx";
+		string audioPath = Path.Combine(wsPath, "Assets", "audio", sub, key);
 		if (!File.Exists(audioPath))
 		{
-			audioPath = Path.Combine(wsPath, "Assets", "audio", key);
+			audioPath = Path.Combine(wsPath, "Assets", sub, key);
 		}
 
 		if (File.Exists(audioPath) && _audioPlayer != null)
@@ -1794,7 +1804,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				"icons" => "icons",
 				"vfx_spritesheets" => "vfx",
 				"ribbons" or "ribbon_textures" => "ribbons",
-				"noise_textures" => Path.Combine("textures", "noise"),
+				"noise_textures" => "noise",
 				"skyboxes" => "skyboxes",
 				_ => "textures"
 			};
@@ -2590,7 +2600,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					"decals" => "decals",
 					"icons" => "icons",
 					"ribbons" or "ribbon_textures" => "ribbons",
-					"noise_textures" => Path.Combine("textures", "noise"),
+					"noise_textures" => "noise",
 					"skyboxes" => "skyboxes",
 					_ => _currentCategory
 				};
@@ -3039,6 +3049,13 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								assetsObj["glb"]?[targetSub]?.AsObject()?.Remove(key);
 								string p = Path.Combine(wsPath, "Assets", "models", targetSub ?? "props", key);
 								if (File.Exists(p)) File.Delete(p);
+								if (File.Exists(p + ".import")) File.Delete(p + ".import");
+								foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles" })
+								{
+									string cand = Path.Combine(wsPath, "Assets", "models", sub, key);
+									if (File.Exists(cand)) File.Delete(cand);
+									if (File.Exists(cand + ".import")) File.Delete(cand + ".import");
+								}
 
 								string oldArrayKey = targetSub switch
 								{
@@ -3119,20 +3136,28 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								{
 									"vfx_spritesheets" => "vfx",
 									"animations" => "animations",
-									"sfx" => Path.Combine("audio", "sfx"),
-									"music" => Path.Combine("audio", "music"),
+									"sfx" => "sfx",
+									"music" => "music",
 									"icons" => "icons",
 									"decals" => "decals",
 									"ribbons" or "ribbon_textures" => "ribbons",
-									"noise_textures" => Path.Combine("textures", "noise"),
+									"noise_textures" or "noise" => "noise",
 									"skyboxes" => "skyboxes",
 									_ => category
 								};
 								string p = Path.Combine(wsPath, "Assets", sub, key);
 								if (File.Exists(p)) File.Delete(p);
+								if (File.Exists(p + ".import")) File.Delete(p + ".import");
+								if (category is "sfx" or "music")
+								{
+									string pAudio = Path.Combine(wsPath, "Assets", "audio", sub, key);
+									if (File.Exists(pAudio)) File.Delete(pAudio);
+									if (File.Exists(pAudio + ".import")) File.Delete(pAudio + ".import");
+								}
 							}
 
 							MapJsonFormatter.SaveFormattedJson(metaPath, root);
+							SaveLoadService.SyncMetadataAssetsAndPrune(wsPath);
 							if (category == "textures")
 							{
 								GameHost.Instance?.GroundTerrain?.ReloadTerrainTextures(true);
@@ -3159,6 +3184,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		"glb_resources" => TranslationServer.Translate("3D Models (resources)"),
 		"glb_props" => TranslationServer.Translate("3D Models (props)"),
 		"glb_projectiles" => TranslationServer.Translate("3D Models (projectiles)"),
+		"glb_attachments" => TranslationServer.Translate("Object Attachments"),
 		"glb" => TranslationServer.Translate("3D Models (GLB)"),
 		"textures" => TranslationServer.Translate("Terrain Textures"),
 		"vfx_spritesheets" => TranslationServer.Translate("VFX Spritesheets"),
@@ -3442,12 +3468,12 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					{
 						"vfx_spritesheets" => "vfx",
 						"animations" => "animations",
-						"sfx" => Path.Combine("audio", "sfx"),
-						"music" => Path.Combine("audio", "music"),
+						"sfx" => "sfx",
+						"music" => "music",
 						"icons" => "icons",
 						"decals" => "decals",
 						"ribbons" or "ribbon_textures" => "ribbons",
-						"noise_textures" => Path.Combine("textures", "noise"),
+						"noise_textures" or "noise" => "noise",
 						"skyboxes" => "skyboxes",
 						_ => _currentCategory
 					};
@@ -3459,6 +3485,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 							catObj.Remove(itemProp.Key);
 							string p = Path.Combine(wsPath, "Assets", subDir, itemProp.Key);
 							if (File.Exists(p)) File.Delete(p);
+							if (File.Exists(p + ".import")) File.Delete(p + ".import");
 							prunedCount++;
 						}
 					}
@@ -3468,6 +3495,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			if (prunedCount > 0)
 			{
 				MapJsonFormatter.SaveFormattedJson(metaPath, root);
+				SaveLoadService.SyncMetadataAssetsAndPrune(wsPath);
 				if (_currentCategory == "textures")
 				{
 					GameHost.Instance?.GroundTerrain?.ReloadTerrainTextures(true);

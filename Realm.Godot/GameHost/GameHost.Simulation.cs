@@ -230,15 +230,18 @@ public partial class GameHost
 			if (EcsWorld.Has<DefinitionId>(buildTask.BuildingEntity))
 			{
 				string bType = EcsWorld.Get<DefinitionId>(buildTask.BuildingEntity).Value;
-				if (UnitRegistry.TryGetValue(bType, out var m) && !TryGetUnit3D(buildTask.BuildingEntity, out _))
+				if ((UnitRegistry.TryGetValue(bType, out var m) || BuildingRegistry.TryGetValue(bType, out m)) && !TryGetUnit3D(buildTask.BuildingEntity, out _))
 				{
-					string targetModel = !string.IsNullOrEmpty(m.ModelPath) ? m.ModelPath : bType;
-					string modelPath = GetFallbackModelPath(targetModel, true);
-					SpawnUnit3D(buildTask.BuildingEntity, bType, modelPath, new Godot.Vector3(buildingPos.X, buildingPos.Y, buildingPos.Z), true, false);
-
-					if (TryGetUnit3D(buildTask.BuildingEntity, out var bNode) && GodotObject.IsInstanceValid(bNode))
+					string targetModel = m.ModelPath;
+					if (!string.IsNullOrEmpty(targetModel))
 					{
-						bNode.Modulate = new Godot.Color(1f, 1f, 1f, 0.4f);
+						string modelPath = GetFallbackModelPath(targetModel, true);
+						SpawnUnit3D(buildTask.BuildingEntity, bType, modelPath, new Godot.Vector3(buildingPos.X, buildingPos.Y, buildingPos.Z), true, false);
+
+						if (TryGetUnit3D(buildTask.BuildingEntity, out var bNode) && GodotObject.IsInstanceValid(bNode))
+						{
+							bNode.Modulate = new Godot.Color(1f, 1f, 1f, 0.4f);
+						}
 					}
 				}
 			}
@@ -484,11 +487,12 @@ public partial class GameHost
 
 	internal void AssignBuildTaskToWorker(Entity workerEntity, string buildType, System.Numerics.Vector3 targetPos)
 	{
-		if (!UnitRegistry.TryGetValue(buildType, out var meta)) return;
+		if (!UnitRegistry.TryGetValue(buildType, out var meta) && !BuildingRegistry.TryGetValue(buildType, out meta)) return;
+		string targetModel = meta.ModelPath;
+		if (string.IsNullOrEmpty(targetModel)) return;
 		float buildTime = meta.ProductionTime > 0f ? meta.ProductionTime : 30f;
 
 		var playerOwner = _playerEntity.AsPlayerEntity(EcsWorld);
-		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : buildType;
 		string modelPath = GetFallbackModelPath(targetModel, true);
 
 		var bldEntity = CreateEcsUnit(buildType, meta.Name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, 0f,

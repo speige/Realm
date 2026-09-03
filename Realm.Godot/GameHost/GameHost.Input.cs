@@ -3099,7 +3099,7 @@ public partial class GameHost
 				else
 				{
 					var playerOwner = _playerEntity.AsPlayerEntity(EcsWorld);
-					string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : type;
+					string targetModel = meta.ModelPath;
 					string modelPath = GetFallbackModelPath(targetModel, true);
 
 					var bldEntity = CreateEcsUnit(type, meta.Name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, 0f, position, playerOwner);
@@ -3698,7 +3698,7 @@ public partial class GameHost
 		}
 		var playerOwner = playerOwnerEntity.AsPlayerEntity(EcsWorld);
 
-		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitId;
+		string targetModel = meta.ModelPath;
 		string modelPath = GetFallbackModelPath(targetModel, false);
 
 		string name = actualIsEnemy ? _unitSpawnService.GetEnemyUnitName(unitId, meta.Name) : meta.Name;

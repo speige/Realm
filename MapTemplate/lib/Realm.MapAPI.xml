@@ -1049,8 +1049,18 @@
         </member>
         <member name="M:Realm.MapAPI.IGameAPI.SetUnitAnimation(Realm.MapAPI.IUnit,System.String)">
             <summary>
-            Plays a named visual animation on the unit's 3D model.
+            Plays a named visual animation on the unit's 3D model and equips any configured hand attachments for that animation.
             </summary>
+            <param name="unit">The unit to animate.</param>
+            <param name="animationName">The animation name (e.g., "Idle", "Labor", "Attack").</param>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.SetUnitHandAttachment(Realm.MapAPI.IUnit,System.String,System.String)">
+            <summary>
+            Attaches or removes a 3D model object on the specified hand bone of the unit's rigged skeleton.
+            </summary>
+            <param name="unit">The target unit.</param>
+            <param name="hand">The target hand ("RightHand" or "LeftHand").</param>
+            <param name="attachmentId">The attachment identifier or model filename, or null/empty to clear the hand attachment.</param>
         </member>
         <member name="M:Realm.MapAPI.IGameAPI.MoveUnit(Realm.MapAPI.IUnit,System.Numerics.Vector3)">
             <summary>

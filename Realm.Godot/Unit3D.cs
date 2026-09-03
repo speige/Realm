@@ -93,6 +93,10 @@ public partial class Unit3D : Prop3D
 	private Node3D _modelNode;
 	private AnimationPlayer _animationPlayer;
 	private string _currentAnimation = string.Empty;
+	private BoneAttachment3D? _rightHandAttachment;
+	private BoneAttachment3D? _leftHandAttachment;
+	private string? _currentRightAttachmentId;
+	private string? _currentLeftAttachmentId;
 	private Node3D _pathVisualsContainer;
 	private readonly System.Collections.Generic.List<MeshInstance3D> _pathMarkersPool = new();
 	private readonly System.Collections.Generic.List<MeshInstance3D> _pathLinesPool = new();
@@ -303,6 +307,10 @@ public partial class Unit3D : Prop3D
 				RemoveChild(_modelNode);
 				_modelNode.QueueFree();
 				_modelNode = null;
+				_rightHandAttachment = null;
+				_leftHandAttachment = null;
+				_currentRightAttachmentId = null;
+				_currentLeftAttachmentId = null;
 			}
 
 			_modelNode = Realm.Godot.Utils.ModelCache.GetModel(modelPath) as Node3D;
@@ -429,6 +437,8 @@ public partial class Unit3D : Prop3D
 		StringName resolved = ResolveAnimationName(animName);
 		if (resolved == null) return;
 
+		UpdateHandAttachmentsForAnimation(animName, resolved.ToString());
+
 		if (_currentAnimation == resolved.ToString() && _animationPlayer.IsPlaying()) return;
 
 		_currentAnimation = resolved.ToString();
@@ -454,9 +464,243 @@ public partial class Unit3D : Prop3D
 		if (_animationPlayer == null || !GodotObject.IsInstanceValid(_animationPlayer)) return;
 		StringName idleAnim = ResolveAnimationName("Idle");
 		if (idleAnim == null) return;
+		UpdateHandAttachmentsForAnimation("Idle", idleAnim.ToString());
 		_animationPlayer.Play(idleAnim);
 		_animationPlayer.Seek(0.0, true);
 		_animationPlayer.Stop(true);
+	}
+
+	public static Skeleton3D? FindSkeleton(Node? root)
+	{
+		if (root == null || !GodotObject.IsInstanceValid(root)) return null;
+		if (root is Skeleton3D skeleton) return skeleton;
+		int childCount = root.GetChildCount();
+		for (int i = 0; i < childCount; i++)
+		{
+			var found = FindSkeleton(root.GetChild(i));
+			if (found != null) return found;
+		}
+		return null;
+	}
+
+	public void SetHandAttachment(
+		Realm.Godot.Animation.HumanoidBone hand,
+		string? attachmentId,
+		Vector3? posOffsetOverride = null,
+		Vector3? rotOffsetOverride = null,
+		float? scaleOverride = null)
+	{
+		if (_modelNode == null || !GodotObject.IsInstanceValid(_modelNode)) return;
+
+		var skeleton = FindSkeleton(_modelNode);
+		if (skeleton == null) return;
+
+		int boneIdx = Realm.Godot.Animation.HumanoidBoneMapper.FindBoneInSkeleton(skeleton, hand);
+		if (boneIdx < 0) return;
+
+		bool isRight = hand == Realm.Godot.Animation.HumanoidBone.RightHand;
+
+		if (string.IsNullOrEmpty(attachmentId) ||
+			attachmentId.Equals("null", StringComparison.OrdinalIgnoreCase) ||
+			attachmentId.Equals("none", StringComparison.OrdinalIgnoreCase))
+		{
+			if (isRight) _currentRightAttachmentId = null;
+			else _currentLeftAttachmentId = null;
+
+			var existingAttachment = isRight ? _rightHandAttachment : _leftHandAttachment;
+			if (existingAttachment != null && GodotObject.IsInstanceValid(existingAttachment))
+			{
+				foreach (Node child in existingAttachment.GetChildren())
+				{
+					child.QueueFree();
+				}
+			}
+			return;
+		}
+
+		string? currentId = isRight ? _currentRightAttachmentId : _currentLeftAttachmentId;
+		var currentAttachment = isRight ? _rightHandAttachment : _leftHandAttachment;
+
+		if (currentId == attachmentId &&
+			currentAttachment != null &&
+			GodotObject.IsInstanceValid(currentAttachment) &&
+			currentAttachment.GetChildCount() > 0 &&
+			!posOffsetOverride.HasValue &&
+			!rotOffsetOverride.HasValue &&
+			!scaleOverride.HasValue)
+		{
+			return;
+		}
+
+		if (isRight) _currentRightAttachmentId = attachmentId;
+		else _currentLeftAttachmentId = attachmentId;
+
+		if (currentAttachment == null || !GodotObject.IsInstanceValid(currentAttachment) || currentAttachment.GetParent() != skeleton)
+		{
+			string boneName = skeleton.GetBoneName(boneIdx);
+			string nodeName = $"BoneAttachment_{hand}";
+			currentAttachment = skeleton.GetNodeOrNull<BoneAttachment3D>(nodeName);
+			if (currentAttachment == null)
+			{
+				currentAttachment = new BoneAttachment3D
+				{
+					Name = nodeName,
+					BoneName = boneName,
+					BoneIdx = boneIdx
+				};
+				skeleton.AddChild(currentAttachment);
+			}
+
+			if (isRight) _rightHandAttachment = currentAttachment;
+			else _leftHandAttachment = currentAttachment;
+		}
+
+		foreach (Node child in currentAttachment.GetChildren())
+		{
+			child.QueueFree();
+		}
+
+		Node3D? model = ResolveAndInstantiateAttachment(attachmentId, out float defScale, out Vector3 defPos, out Vector3 defRot);
+		if (model != null)
+		{
+			float effectiveScale = scaleOverride ?? defScale;
+			Vector3 effectivePos = posOffsetOverride ?? defPos;
+			Vector3 effectiveRot = rotOffsetOverride ?? defRot;
+
+			if (!string.IsNullOrEmpty(UnitId) && GameHost.UnitRegistry.TryGetValue(UnitId, out var uMeta) &&
+				uMeta.TryGetObjectAttachment(hand, attachmentId, out var unitOrient))
+			{
+				if (!scaleOverride.HasValue && unitOrient.Scale > 0f) effectiveScale = unitOrient.Scale;
+				if (!posOffsetOverride.HasValue) effectivePos = unitOrient.Position;
+				if (!rotOffsetOverride.HasValue) effectiveRot = unitOrient.RotationDegrees;
+			}
+
+			model.Position = effectivePos;
+			model.RotationDegrees = effectiveRot;
+			model.Scale = Vector3.One * (effectiveScale <= 0f ? 1.0f : effectiveScale);
+
+			currentAttachment.AddChild(model);
+
+			bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(attachmentId) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
+			if (!ignorePlayerColor)
+			{
+				Realm.Godot.Utils.ModelShaderManager.ApplyPlayerColorShader(model, PlayerColor, false, true);
+			}
+		}
+	}
+
+	public static Node3D? ResolveAndInstantiateAttachment(string attachmentId, out float defaultScale, out Vector3 defaultPos, out Vector3 defaultRot)
+	{
+		defaultScale = 1.0f;
+		defaultPos = Vector3.Zero;
+		defaultRot = Vector3.Zero;
+
+		if (string.IsNullOrEmpty(attachmentId)) return null;
+
+		string modelPath = string.Empty;
+
+		if (GameHost.AttachmentRegistry.TryGetValue(attachmentId, out var meta))
+		{
+			modelPath = meta.ModelPath;
+			defaultScale = meta.Scale <= 0f ? 1.0f : meta.Scale;
+			defaultPos = meta.PositionOffset;
+			defaultRot = meta.RotationOffset;
+		}
+		else if (GameHost.PropRegistry.TryGetValue(attachmentId, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath))
+		{
+			modelPath = propMeta.ModelPath;
+			defaultScale = propMeta.Scale <= 0f ? 1.0f : propMeta.Scale;
+			defaultPos = new Vector3(0f, propMeta.YOffset, 0f);
+		}
+		else if (GameHost.ResourceRegistry.TryGetValue(attachmentId, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath))
+		{
+			modelPath = resMeta.ModelPath;
+			defaultScale = resMeta.Scale <= 0f ? 1.0f : resMeta.Scale;
+			defaultPos = new Vector3(0f, resMeta.YOffset, 0f);
+		}
+		else
+		{
+			string clean = attachmentId;
+			if (!clean.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+			{
+				clean += ".glb";
+			}
+			modelPath = System.IO.Path.Combine("Assets", "models", "attachments", clean).Replace('\\', '/');
+		}
+
+		Node? loaded = Realm.Godot.Utils.ModelCache.GetModel(modelPath);
+		if (loaded == null)
+		{
+			loaded = Realm.Godot.Utils.ModelCache.GetModel(attachmentId);
+		}
+
+		return loaded as Node3D;
+	}
+
+	public void UpdateHandAttachmentsForAnimation(string animName, string resolvedName)
+	{
+		if (string.IsNullOrEmpty(UnitId) || !GameHost.UnitRegistry.TryGetValue(UnitId, out var uMeta))
+		{
+			return;
+		}
+
+		if (uMeta.Animations == null || uMeta.Animations.Count == 0)
+		{
+			return;
+		}
+
+		string actionType = animName;
+		int variantIndex = 0;
+
+		int underscoreIdx = animName.LastIndexOf('_');
+		if (underscoreIdx > 0 && int.TryParse(animName.Substring(underscoreIdx + 1), out int parsedIdx))
+		{
+			actionType = animName.Substring(0, underscoreIdx);
+			variantIndex = parsedIdx;
+		}
+
+		GameHost.UnitAnimationEntry? matchedEntry = null;
+
+		foreach (var kvp in uMeta.Animations)
+		{
+			if (kvp.Key.Equals(actionType, StringComparison.OrdinalIgnoreCase))
+			{
+				if (kvp.Value != null && kvp.Value.Count > 0)
+				{
+					int clampedIndex = Math.Clamp(variantIndex, 0, kvp.Value.Count - 1);
+					matchedEntry = kvp.Value[clampedIndex];
+				}
+				break;
+			}
+		}
+
+		if (!matchedEntry.HasValue)
+		{
+			foreach (var kvp in uMeta.Animations)
+			{
+				if (kvp.Value != null)
+				{
+					for (int i = 0; i < kvp.Value.Count; i++)
+					{
+						var entry = kvp.Value[i];
+						if (!string.IsNullOrEmpty(entry.Animation) &&
+							(entry.Animation.Equals(animName, StringComparison.OrdinalIgnoreCase) ||
+							 entry.Animation.Equals(resolvedName, StringComparison.OrdinalIgnoreCase)))
+						{
+							matchedEntry = entry;
+							break;
+						}
+					}
+					if (matchedEntry.HasValue) break;
+				}
+			}
+		}
+
+		if (matchedEntry.HasValue)
+		{
+			SetHandAttachment(Realm.Godot.Animation.HumanoidBone.RightHand, matchedEntry.Value.RightHandAttachment);
+			SetHandAttachment(Realm.Godot.Animation.HumanoidBone.LeftHand, matchedEntry.Value.LeftHandAttachment);
+		}
 	}
 
 	private StringName ResolveAnimationName(string animName)

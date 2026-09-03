@@ -808,9 +808,9 @@ public partial class FloatingDialogBase : PanelContainer
 							}
 						}
 					}
-					else if (category == "models" || category == "glb")
+					else if (category == "models" || category == "glb" || category == "attachments")
 					{
-						string defaultFolder = !string.IsNullOrEmpty(subFolder) ? subFolder : "projectiles";
+						string defaultFolder = !string.IsNullOrEmpty(subFolder) ? subFolder : (category == "attachments" ? "attachments" : "projectiles");
 						foreach (var modelKey in new[] { "glb", "models" })
 						{
 							if (assetsObj[modelKey] is System.Text.Json.Nodes.JsonObject glbObj)
