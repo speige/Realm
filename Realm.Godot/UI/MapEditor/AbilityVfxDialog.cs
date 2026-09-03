@@ -626,8 +626,7 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 				System.IO.Path.Combine(wsPath, "Assets", "decals", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "textures", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "ribbons", fileName),
-				System.IO.Path.Combine(wsPath, "Assets", "textures", "ribbons", fileName),
-				System.IO.Path.Combine(wsPath, "Assets", "textures", "noise", fileName),
+				System.IO.Path.Combine(wsPath, "Assets", "noise", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "skyboxes", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "UI", fileName),
 			};

@@ -2888,15 +2888,15 @@ public partial class MapEditorHUD : Control
 
 		if (terrainModifiedOnDisk || metadataModifiedOnDisk)
 		{
-			if (terrainModifiedOnDisk)
-			{
-				GameHost.Instance.LoadMapFromFile(terrainPath);
-				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
-			}
 			if (metadataModifiedOnDisk)
 			{
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 				ReadMetadataAndRefreshTextures();
+			}
+			if (terrainModifiedOnDisk)
+			{
+				GameHost.Instance.LoadMapFromFile(terrainPath);
+				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
 			}
 			
 			GameHost.Instance.EditorHasUnsavedChanges = false;
@@ -4296,20 +4296,113 @@ public partial class MapEditorHUD : Control
 		GameHost.Instance.AlignTerrainSplatMapExternal();
 		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics();
 
-		foreach (var child in GameHost.Instance.GetChildren())
+		List<string> treeModels = new();
+		string wsPath = !string.IsNullOrEmpty(_tempWorkspacePath) 
+			? _tempWorkspacePath 
+			: ProjectSettings.GlobalizePath(TempWorkspaceGodotPath);
+		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+
+		if (System.IO.File.Exists(metadataPath))
 		{
-			if (child is Prop3D prop && GodotObject.IsInstanceValid(prop))
+			try
 			{
-				if (prop.PropId == "tree")
+				string json = System.IO.File.ReadAllText(metadataPath);
+				var root = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
+				if (root != null)
 				{
-					prop.QueueFree();
+					if (root["CustomResources"] is System.Text.Json.Nodes.JsonArray resArray)
+					{
+						foreach (var node in resArray)
+						{
+							if (node is System.Text.Json.Nodes.JsonObject rObj)
+							{
+								string uId = rObj["UnitId"]?.ToString() ?? "";
+								string name = rObj["Name"]?.ToString() ?? "";
+								string mPath = rObj["ModelPath"]?.ToString() ?? "";
+								if (!string.IsNullOrEmpty(uId))
+								{
+									if (uId.Contains("tree", StringComparison.OrdinalIgnoreCase) ||
+									    name.Contains("tree", StringComparison.OrdinalIgnoreCase) ||
+									    mPath.Contains("tree", StringComparison.OrdinalIgnoreCase))
+									{
+										treeModels.Add(uId);
+									}
+								}
+							}
+						}
+
+						if (treeModels.Count == 0)
+						{
+							foreach (var node in resArray)
+							{
+								if (node is System.Text.Json.Nodes.JsonObject rObj)
+								{
+									string uId = rObj["UnitId"]?.ToString() ?? "";
+									if (!string.IsNullOrEmpty(uId))
+									{
+										treeModels.Add(uId);
+									}
+								}
+							}
+						}
+					}
+
+					if (treeModels.Count == 0 && root["Assets"]?["glb"]?["resources"] is System.Text.Json.Nodes.JsonObject glbRes)
+					{
+						foreach (var kvp in glbRes)
+						{
+							string key = kvp.Key;
+							if (key.Contains("tree", StringComparison.OrdinalIgnoreCase))
+							{
+								treeModels.Add(System.IO.Path.GetFileNameWithoutExtension(key));
+							}
+						}
+
+						if (treeModels.Count == 0)
+						{
+							foreach (var kvp in glbRes)
+							{
+								treeModels.Add(System.IO.Path.GetFileNameWithoutExtension(kvp.Key));
+							}
+						}
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"Failed to read tree models from metadata.json: {ex.Message}");
+			}
+		}
+
+		if (treeModels.Count == 0 && GameHost.ResourceRegistry != null && GameHost.ResourceRegistry.Count > 0)
+		{
+			foreach (var kvp in GameHost.ResourceRegistry)
+			{
+				if (kvp.Key.Contains("tree", StringComparison.OrdinalIgnoreCase) ||
+				    (!string.IsNullOrEmpty(kvp.Value.Name) && kvp.Value.Name.Contains("tree", StringComparison.OrdinalIgnoreCase)) ||
+				    (!string.IsNullOrEmpty(kvp.Value.ModelPath) && kvp.Value.ModelPath.Contains("tree", StringComparison.OrdinalIgnoreCase)))
+				{
+					treeModels.Add(kvp.Key);
+				}
+			}
+
+			if (treeModels.Count == 0)
+			{
+				foreach (var kvp in GameHost.ResourceRegistry)
+				{
+					treeModels.Add(kvp.Key);
 				}
 			}
 		}
 
-		foreach (var (x, y, z, rot, scale) in treePositions)
+		if (treeModels.Count > 0)
 		{
-			GameHost.Instance.SpawnPropExternalWithParams("tree", new Vector3(x, y, z), rot, scale);
+			var random = new Random();
+			foreach (var (x, y, z, rot, scale) in treePositions)
+			{
+				string treePropId = treeModels[random.Next(treeModels.Count)];
+				GameHost.Instance.SpawnPropExternalWithParams(treePropId, new Vector3(x, y, z), rot, scale);
+			}
 		}
 
 		ShowFeedback(TranslationServer.Translate("Terrain imported from minimap image successfully!"));
@@ -7119,7 +7212,7 @@ public partial class MapEditorHUD : Control
 		_btnOpenAnimationPreview = new Button();
 		_btnOpenAnimationPreview.Name = "BtnOpenAnimationPreview";
 		_btnOpenAnimationPreview.Set("icon_max_width", 0);
-		_btnOpenAnimationPreview.Text = "✏️ " + TranslationServer.Translate("Preview Animations...");
+		_btnOpenAnimationPreview.Text = "✏️ " + TranslationServer.Translate("Edit Animations");
 		_btnOpenAnimationPreview.AddThemeFontSizeOverride("font_size", 11);
 		_btnOpenAnimationPreview.FocusMode = Control.FocusModeEnum.None;
 		_btnOpenAnimationPreview.CustomMinimumSize = new Vector2(0, 28);
@@ -7136,7 +7229,7 @@ public partial class MapEditorHUD : Control
 		_btnOpenGlobalOverrides = new Button();
 		_btnOpenGlobalOverrides.Name = "BtnOpenGlobalOverrides";
 		_btnOpenGlobalOverrides.Set("icon_max_width", 0);
-		_btnOpenGlobalOverrides.Text = "✏️ " + TranslationServer.Translate("Global Overrides...");
+		_btnOpenGlobalOverrides.Text = "✏️ " + TranslationServer.Translate("Global Overrides");
 		_btnOpenGlobalOverrides.AddThemeFontSizeOverride("font_size", 11);
 		_btnOpenGlobalOverrides.FocusMode = Control.FocusModeEnum.None;
 		_btnOpenGlobalOverrides.CustomMinimumSize = new Vector2(0, 28);
@@ -7160,6 +7253,121 @@ public partial class MapEditorHUD : Control
 			_weaponVfxDialog = new WeaponVfxDialog(this);
 		}
 		_weaponVfxDialog.OpenForWeapon(weaponId, weapon, onApplied);
+	}
+
+	private ObjectAttachmentDialog _objectAttachmentDialog;
+
+	public void OpenObjectAttachmentDialog(
+		string unitId = null, 
+		string attachmentId = null, 
+		string hand = "RightHand", 
+		Node3D sourceModel = null, 
+		Action<GameHost.HandAttachmentOrientation> onApplied = null)
+	{
+		if (_objectAttachmentDialog == null)
+		{
+			_objectAttachmentDialog = new ObjectAttachmentDialog(this);
+		}
+		_objectAttachmentDialog.OpenForUnitAndAttachment(unitId, attachmentId, hand, sourceModel, onApplied);
+	}
+
+	public void SaveUnitObjectAttachment(string unitId, Realm.Godot.Animation.HumanoidBone hand, string attachmentId, GameHost.HandAttachmentOrientation orientation)
+	{
+		try
+		{
+			if (string.IsNullOrEmpty(unitId) || string.IsNullOrEmpty(attachmentId)) return;
+
+			if (GameHost.UnitRegistry.TryGetValue(unitId, out var uMeta))
+			{
+				uMeta.SetObjectAttachment(hand, attachmentId, orientation);
+				GameHost.UnitRegistry[unitId] = uMeta;
+			}
+
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metadataPath)) return;
+
+			string jsonStr = System.IO.File.ReadAllText(metadataPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
+			if (root == null) return;
+
+			var unitsArray = root["CustomUnits"]?.AsArray() ?? root["Units"]?.AsArray();
+			if (unitsArray != null)
+			{
+				for (int i = 0; i < unitsArray.Count; i++)
+				{
+					var uObj = unitsArray[i]?.AsObject();
+					if (uObj != null && (uObj["UnitId"]?.ToString() == unitId || uObj["unitId"]?.ToString() == unitId || uObj["Id"]?.ToString() == unitId))
+					{
+						var objAttsNode = uObj["ObjectAttachments"]?.AsObject();
+						if (objAttsNode == null)
+						{
+							objAttsNode = new System.Text.Json.Nodes.JsonObject();
+							uObj["ObjectAttachments"] = objAttsNode;
+						}
+
+						string handKey = hand == Realm.Godot.Animation.HumanoidBone.LeftHand ? "left_hand" : "right_hand";
+						var handArr = objAttsNode[handKey]?.AsArray();
+						if (handArr == null)
+						{
+							handArr = new System.Text.Json.Nodes.JsonArray();
+							objAttsNode[handKey] = handArr;
+						}
+
+						string cleanId = System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+						var orientNode = new System.Text.Json.Nodes.JsonObject
+						{
+							["PositionX"] = orientation.PositionX,
+							["PositionY"] = orientation.PositionY,
+							["PositionZ"] = orientation.PositionZ,
+							["PitchX"] = orientation.PitchX,
+							["YawY"] = orientation.YawY,
+							["RollZ"] = orientation.RollZ,
+							["Scale"] = orientation.Scale <= 0f ? 1.0f : orientation.Scale
+						};
+
+						bool updated = false;
+						for (int j = 0; j < handArr.Count; j++)
+						{
+							if (handArr[j] is System.Text.Json.Nodes.JsonObject itemObj)
+							{
+								foreach (var prop in itemObj)
+								{
+									if (prop.Key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+										prop.Key.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+										System.IO.Path.GetFileNameWithoutExtension(prop.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+									{
+										itemObj[prop.Key] = orientNode;
+										updated = true;
+										break;
+									}
+								}
+								if (updated) break;
+							}
+						}
+
+						if (!updated)
+						{
+							var newEntry = new System.Text.Json.Nodes.JsonObject
+							{
+								[cleanId] = orientNode
+							};
+							handArr.Add(newEntry);
+						}
+						break;
+					}
+				}
+			}
+
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] SaveUnitObjectAttachment error: {ex.Message}");
+		}
 	}
 
 	public void SaveCustomWeaponToMetadata(string weaponId, GameHost.WeaponMetadata weapon)
@@ -7211,7 +7419,7 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
-	public void SaveCustomUnitAnimations(string unitId, Dictionary<string, string[]> animations)
+	public void SaveCustomUnitAnimations(string unitId, Dictionary<string, List<GameHost.UnitAnimationEntry>> animations)
 	{
 		try
 		{
@@ -7255,6 +7463,21 @@ public partial class MapEditorHUD : Control
 		{
 			GD.PrintErr($"[MapEditorHUD] SaveCustomUnitAnimations error: {ex.Message}");
 		}
+	}
+
+	public void SaveCustomUnitAnimations(string unitId, Dictionary<string, string[]> animations)
+	{
+		var converted = new Dictionary<string, List<GameHost.UnitAnimationEntry>>(StringComparer.OrdinalIgnoreCase);
+		if (animations != null)
+		{
+			foreach (var kvp in animations)
+			{
+				converted[kvp.Key] = (kvp.Value ?? Array.Empty<string>())
+					.Select(s => new GameHost.UnitAnimationEntry { Animation = s })
+					.ToList();
+			}
+		}
+		SaveCustomUnitAnimations(unitId, converted);
 	}
 
 	public void OpenShaderEditorDialog(string shaderKey = "", Action<CustomShaderConfig> onSaved = null)

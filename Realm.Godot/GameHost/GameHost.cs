@@ -15,6 +15,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Realm.Godot.Animation;
 
 public partial class GameHost : Node3D, IGameAPI
 {
@@ -644,6 +646,204 @@ public partial class GameHost : Node3D, IGameAPI
 		Flat = 2
 	}
 
+	public struct AttachmentMetadata
+	{
+		public AttachmentMetadata()
+		{
+			Scale = 1.0f;
+			PositionOffset = Vector3.Zero;
+			RotationOffset = Vector3.Zero;
+			DefaultHand = "RightHand";
+		}
+
+		public string AttachmentId { get; set; }
+		public string Name { get; set; }
+		public string ModelPath { get; set; }
+		public float Scale { get; set; } = 1.0f;
+		public Vector3 PositionOffset { get; set; }
+		public Vector3 RotationOffset { get; set; }
+		public string DefaultHand { get; set; } = "RightHand";
+	}
+
+	public struct HandAttachmentOrientation
+	{
+		public float PositionX { get; set; }
+		public float PositionY { get; set; }
+		public float PositionZ { get; set; }
+		public float PitchX { get; set; }
+		public float YawY { get; set; }
+		public float RollZ { get; set; }
+		public float Scale { get; set; }
+
+		[JsonIgnore]
+		public Vector3 Position => new Vector3(PositionX, PositionY, PositionZ);
+		[JsonIgnore]
+		public Vector3 RotationDegrees => new Vector3(PitchX, YawY, RollZ);
+	}
+
+	public struct UnitObjectAttachments
+	{
+		public List<Dictionary<string, HandAttachmentOrientation>>? right_hand { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? left_hand { get; set; }
+
+		public bool TryGetOrientation(HumanoidBone hand, string attachmentId, out HandAttachmentOrientation orientation)
+		{
+			var list = hand == HumanoidBone.LeftHand ? left_hand : right_hand;
+			if (list != null && !string.IsNullOrEmpty(attachmentId))
+			{
+				string cleanId = System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+				foreach (var dict in list)
+				{
+					if (dict != null)
+					{
+						foreach (var kvp in dict)
+						{
+							if (kvp.Key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+								kvp.Key.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+								System.IO.Path.GetFileNameWithoutExtension(kvp.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+							{
+								orientation = kvp.Value;
+								return true;
+							}
+						}
+					}
+				}
+			}
+			orientation = default;
+			return false;
+		}
+
+		public void SetOrientation(HumanoidBone hand, string attachmentId, HandAttachmentOrientation orientation)
+		{
+			string cleanId = System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+			if (hand == HumanoidBone.LeftHand)
+			{
+				left_hand ??= new List<Dictionary<string, HandAttachmentOrientation>>();
+				UpdateList(left_hand, cleanId, orientation);
+			}
+			else
+			{
+				right_hand ??= new List<Dictionary<string, HandAttachmentOrientation>>();
+				UpdateList(right_hand, cleanId, orientation);
+			}
+		}
+
+		private static void UpdateList(List<Dictionary<string, HandAttachmentOrientation>> list, string attachmentId, HandAttachmentOrientation orientation)
+		{
+			foreach (var dict in list)
+			{
+				if (dict != null)
+				{
+					foreach (var key in dict.Keys.ToList())
+					{
+						if (key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+							System.IO.Path.GetFileNameWithoutExtension(key).Equals(attachmentId, StringComparison.OrdinalIgnoreCase))
+						{
+							dict[key] = orientation;
+							return;
+						}
+					}
+				}
+			}
+			list.Add(new Dictionary<string, HandAttachmentOrientation>(StringComparer.OrdinalIgnoreCase)
+			{
+				[attachmentId] = orientation
+			});
+		}
+	}
+
+	[JsonConverter(typeof(UnitAnimationEntryJsonConverter))]
+	public struct UnitAnimationEntry
+	{
+		public string Animation { get; set; }
+		public string? RightHandAttachment { get; set; }
+		public string? LeftHandAttachment { get; set; }
+	}
+
+	public class UnitAnimationEntryJsonConverter : JsonConverter<UnitAnimationEntry>
+	{
+		public override UnitAnimationEntry Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+		{
+			if (reader.TokenType == JsonTokenType.String)
+			{
+				return new UnitAnimationEntry
+				{
+					Animation = reader.GetString() ?? string.Empty
+				};
+			}
+
+			if (reader.TokenType == JsonTokenType.StartObject)
+			{
+				using var doc = JsonDocument.ParseValue(ref reader);
+				var root = doc.RootElement;
+				string anim = string.Empty;
+				string? right = null;
+				string? left = null;
+
+				foreach (var prop in root.EnumerateObject())
+				{
+					if (prop.Name.Equals("Animation", StringComparison.OrdinalIgnoreCase) ||
+						prop.Name.Equals("Name", StringComparison.OrdinalIgnoreCase) ||
+						prop.Name.Equals("Path", StringComparison.OrdinalIgnoreCase))
+					{
+						anim = prop.Value.GetString() ?? string.Empty;
+					}
+					else if (prop.Name.Equals("RightHandAttachment", StringComparison.OrdinalIgnoreCase) ||
+							 prop.Name.Equals("RightHand", StringComparison.OrdinalIgnoreCase) ||
+							 prop.Name.Equals("AttachmentRight", StringComparison.OrdinalIgnoreCase))
+					{
+						right = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
+					}
+					else if (prop.Name.Equals("LeftHandAttachment", StringComparison.OrdinalIgnoreCase) ||
+							 prop.Name.Equals("LeftHand", StringComparison.OrdinalIgnoreCase) ||
+							 prop.Name.Equals("AttachmentLeft", StringComparison.OrdinalIgnoreCase))
+					{
+						left = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
+					}
+				}
+
+				return new UnitAnimationEntry
+				{
+					Animation = anim,
+					RightHandAttachment = right,
+					LeftHandAttachment = left
+				};
+			}
+
+			return default;
+		}
+
+		public override void Write(Utf8JsonWriter writer, UnitAnimationEntry value, JsonSerializerOptions options)
+		{
+			if (string.IsNullOrEmpty(value.RightHandAttachment) && string.IsNullOrEmpty(value.LeftHandAttachment))
+			{
+				writer.WriteStringValue(value.Animation ?? string.Empty);
+			}
+			else
+			{
+				writer.WriteStartObject();
+				writer.WriteString("Animation", value.Animation ?? string.Empty);
+				if (value.RightHandAttachment != null)
+				{
+					writer.WriteString("RightHandAttachment", value.RightHandAttachment);
+				}
+				else
+				{
+					writer.WriteNull("RightHandAttachment");
+				}
+				if (value.LeftHandAttachment != null)
+				{
+					writer.WriteString("LeftHandAttachment", value.LeftHandAttachment);
+				}
+				else
+				{
+					writer.WriteNull("LeftHandAttachment");
+				}
+				writer.WriteEndObject();
+			}
+		}
+	}
+
 	public struct UnitMetadata
 	{
 		public UnitMetadata()
@@ -695,12 +895,31 @@ public partial class GameHost : Node3D, IGameAPI
 		public float? ObstacleRadius { get; set; }
 		public string[]? Targets { get; set; }
 		public string[]? Weapons { get; set; }
-		public Dictionary<string, string[]>? Animations { get; set; }
+		public string? ProjectileModelPath { get; set; }
+		public Dictionary<string, List<UnitAnimationEntry>>? Animations { get; set; }
+		public UnitObjectAttachments? ObjectAttachments { get; set; }
 		public UnitSoundsMetadata? Sounds { get; set; }
 		public string[]? StartingItems { get; set; }
 		public string[]? Upgrades { get; set; }
 		public string[]? StatusEffects { get; set; }
 		public string[]? SoundEvents { get; set; }
+
+		public bool TryGetObjectAttachment(HumanoidBone hand, string attachmentId, out HandAttachmentOrientation orientation)
+		{
+			if (ObjectAttachments.HasValue)
+			{
+				return ObjectAttachments.Value.TryGetOrientation(hand, attachmentId, out orientation);
+			}
+			orientation = default;
+			return false;
+		}
+
+		public void SetObjectAttachment(HumanoidBone hand, string attachmentId, HandAttachmentOrientation orientation)
+		{
+			var atts = ObjectAttachments ?? new UnitObjectAttachments();
+			atts.SetOrientation(hand, attachmentId, orientation);
+			ObjectAttachments = atts;
+		}
 	}
 
 	public struct UnitSoundsMetadata
@@ -1120,6 +1339,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public static readonly Dictionary<string, PropMetadata> PropRegistry = new();
 	public static readonly Dictionary<string, ResourceMetadata> ResourceRegistry = new();
 	public static readonly Dictionary<string, WeaponMetadata> WeaponRegistry = new(StringComparer.OrdinalIgnoreCase);
+	public static readonly Dictionary<string, AttachmentMetadata> AttachmentRegistry = new(StringComparer.OrdinalIgnoreCase);
 
 	public string GetFallbackModelPath(string unitId, bool isBuilding)
 	{
@@ -1351,7 +1571,11 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 		var playerOwner = playerOwnerEntity.AsPlayerEntity(EcsWorld);
 		
-		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitTypeId;
+		string targetModel = meta.ModelPath;
+		if (string.IsNullOrEmpty(targetModel))
+		{
+			throw new ArgumentException($"Unit ID '{unitTypeId}' has no assigned 3D model asset in registry.");
+		}
 		string modelPath = _unitSpawnService.GetFallbackModelPath(targetModel, isBuilding);
 
 		string name = actualIsEnemy ? _unitSpawnService.GetEnemyUnitName(unitTypeId, meta.Name) : meta.Name;
@@ -2106,6 +2330,33 @@ public class {mapName} : IMapScript
 		DayNightCycleEnabled = enabled;
 	}
 
+	void IGameAPI.SetUnitAnimation(IUnit unit, string animationName)
+	{
+		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
+		{
+			if (GameHost.TryGetUnit3D(wrapper.Entity, out var unit3D) && GodotObject.IsInstanceValid(unit3D))
+			{
+				unit3D.PlayAnimation(animationName);
+			}
+		}
+	}
+
+	void IGameAPI.SetUnitHandAttachment(IUnit unit, string hand, string? attachmentId)
+	{
+		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
+		{
+			if (GameHost.TryGetUnit3D(wrapper.Entity, out var unit3D) && GodotObject.IsInstanceValid(unit3D))
+			{
+				var boneHand = Realm.Godot.Animation.HumanoidBone.RightHand;
+				if (!string.IsNullOrEmpty(hand) && (hand.Equals("LeftHand", StringComparison.OrdinalIgnoreCase) || hand.Equals("left", StringComparison.OrdinalIgnoreCase) || hand.Equals("hand_l", StringComparison.OrdinalIgnoreCase)))
+				{
+					boneHand = Realm.Godot.Animation.HumanoidBone.LeftHand;
+				}
+				unit3D.SetHandAttachment(boneHand, attachmentId);
+			}
+		}
+	}
+
 	void IGameAPI.KillUnit(IUnit unit)
 	{
 		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
@@ -2804,6 +3055,7 @@ public class {mapName} : IMapScript
 					var newProps = new Dictionary<string, PropMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newWeapons = new Dictionary<string, WeaponMetadata>(StringComparer.OrdinalIgnoreCase);
+					var newAttachments = new Dictionary<string, AttachmentMetadata>(StringComparer.OrdinalIgnoreCase);
 
 					bool hasStructuredArrays = false;
 
@@ -2817,6 +3069,65 @@ public class {mapName} : IMapScript
 								if (!string.IsNullOrEmpty(meta.WeaponId))
 									newWeapons[meta.WeaponId] = meta;
 							}
+						}
+					}
+
+					if (doc.RootElement.TryGetProperty("CustomAttachments", out var attachProp) && attachProp.ValueKind == JsonValueKind.Array)
+					{
+						hasStructuredArrays = true;
+						var list = JsonSerializer.Deserialize<List<AttachmentMetadata>>(attachProp.GetRawText(), Options);
+						if (list != null)
+						{
+							foreach (var meta in list)
+							{
+								if (!string.IsNullOrEmpty(meta.AttachmentId))
+								{
+									newAttachments[meta.AttachmentId] = meta;
+								}
+							}
+						}
+					}
+
+					var assetsRoot = doc.RootElement.TryGetProperty("Assets", out var aProp) 
+						? aProp 
+						: (doc.RootElement.TryGetProperty("MapProperties", out var mpProp) && mpProp.TryGetProperty("Assets", out var mpaProp) ? mpaProp : default);
+					if (assetsRoot.ValueKind == JsonValueKind.Object && assetsRoot.TryGetProperty("glb", out var glbProp) && glbProp.TryGetProperty("attachments", out var attGlbProp) && attGlbProp.ValueKind == JsonValueKind.Object)
+					{
+						foreach (var itemProp in attGlbProp.EnumerateObject())
+						{
+							string fileName = itemProp.Name;
+							string id = System.IO.Path.GetFileNameWithoutExtension(fileName);
+							float scale = 1.0f;
+							Vector3 posOffset = Vector3.Zero;
+							Vector3 rotOffset = Vector3.Zero;
+							string hand = "RightHand";
+							if (itemProp.Value.ValueKind == JsonValueKind.Object)
+							{
+								if (itemProp.Value.TryGetProperty("scale", out var sc) && sc.TryGetSingle(out var sVal)) scale = sVal;
+								if (itemProp.Value.TryGetProperty("position_offset", out var po) && po.ValueKind == JsonValueKind.Array)
+								{
+									var arr = po.EnumerateArray().ToArray();
+									if (arr.Length >= 3) posOffset = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
+								}
+								if (itemProp.Value.TryGetProperty("rotation_offset", out var ro) && ro.ValueKind == JsonValueKind.Array)
+								{
+									var arr = ro.EnumerateArray().ToArray();
+									if (arr.Length >= 3) rotOffset = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
+								}
+								if (itemProp.Value.TryGetProperty("default_hand", out var dh)) hand = dh.GetString() ?? "RightHand";
+							}
+							var meta = new AttachmentMetadata
+							{
+								AttachmentId = id,
+								Name = id,
+								ModelPath = System.IO.Path.Combine("Assets", "models", "attachments", fileName).Replace('\\', '/'),
+								Scale = scale,
+								PositionOffset = posOffset,
+								RotationOffset = rotOffset,
+								DefaultHand = hand
+							};
+							newAttachments[id] = meta;
+							newAttachments[fileName] = meta;
 						}
 					}
 
@@ -2938,6 +3249,9 @@ public class {mapName} : IMapScript
 					WeaponRegistry.Clear();
 					foreach (var kvp in newWeapons) WeaponRegistry[kvp.Key] = kvp.Value;
 
+					AttachmentRegistry.Clear();
+					foreach (var kvp in newAttachments) AttachmentRegistry[kvp.Key] = kvp.Value;
+
 					Prop3D.ClearModelPathCache();
 				}
 			}
@@ -2945,6 +3259,91 @@ public class {mapName} : IMapScript
 			{
 				GD.PrintErr($"Failed to load custom unit registry: {ex.Message}");
 			}
+		}
+	}
+
+	public void SaveAttachmentDefaultsToMetadata(string fileName, AttachmentMetadata meta)
+	{
+		try
+		{
+			string dir = !string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+			string metaPath = System.IO.Path.Combine(dir, "metadata.json");
+			if (!System.IO.File.Exists(metaPath)) return;
+
+			string json = System.IO.File.ReadAllText(metaPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(json)?.AsObject();
+			if (root == null) return;
+
+			var assetsObj = root["Assets"]?.AsObject() ?? root["MapProperties"]?["Assets"]?.AsObject();
+			if (assetsObj == null)
+			{
+				assetsObj = new System.Text.Json.Nodes.JsonObject();
+				root["Assets"] = assetsObj;
+			}
+			var glbObj = assetsObj["glb"]?.AsObject();
+			if (glbObj == null)
+			{
+				glbObj = new System.Text.Json.Nodes.JsonObject();
+				assetsObj["glb"] = glbObj;
+			}
+			var attObj = glbObj["attachments"]?.AsObject();
+			if (attObj == null)
+			{
+				attObj = new System.Text.Json.Nodes.JsonObject();
+				glbObj["attachments"] = attObj;
+			}
+
+			var itemNode = attObj[fileName]?.AsObject() ?? new System.Text.Json.Nodes.JsonObject();
+			itemNode["scale"] = meta.Scale;
+			var posArr = new System.Text.Json.Nodes.JsonArray { meta.PositionOffset.X, meta.PositionOffset.Y, meta.PositionOffset.Z };
+			itemNode["position_offset"] = posArr;
+			var rotArr = new System.Text.Json.Nodes.JsonArray { meta.RotationOffset.X, meta.RotationOffset.Y, meta.RotationOffset.Z };
+			itemNode["rotation_offset"] = rotArr;
+			itemNode["default_hand"] = meta.DefaultHand ?? "RightHand";
+			attObj[fileName] = itemNode;
+
+			MapJsonFormatter.SaveFormattedJson(metaPath, root);
+			LoadUnitMetadata(dir);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[GameHost] SaveAttachmentDefaultsToMetadata error: {ex.Message}");
+		}
+	}
+
+	public void SaveUnitAnimationsToMetadata(string unitId, Dictionary<string, List<UnitAnimationEntry>> animations)
+	{
+		try
+		{
+			string dir = !string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+			string metaPath = System.IO.Path.Combine(dir, "metadata.json");
+			if (!System.IO.File.Exists(metaPath)) return;
+
+			string json = System.IO.File.ReadAllText(metaPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(json)?.AsObject();
+			if (root == null) return;
+
+			var unitsArr = root["CustomUnits"]?.AsArray();
+			if (unitsArr != null)
+			{
+				for (int i = 0; i < unitsArr.Count; i++)
+				{
+					var uObj = unitsArr[i]?.AsObject();
+					if (uObj != null && uObj["UnitId"]?.ToString() == unitId)
+					{
+						var animsJson = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(animations, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+						uObj["Animations"] = animsJson;
+						break;
+					}
+				}
+			}
+
+			MapJsonFormatter.SaveFormattedJson(metaPath, root);
+			LoadUnitMetadata(dir);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[GameHost] SaveUnitAnimationsToMetadata error: {ex.Message}");
 		}
 	}
 

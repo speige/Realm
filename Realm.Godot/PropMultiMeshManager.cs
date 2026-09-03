@@ -497,6 +497,7 @@ public partial class PropMultiMeshManager : Node3D
 	private PropModelGroup CreateGroupForAsset(string normAssetKey)
 	{
 		string modelPath = ResolveModelPathForAssetKey(normAssetKey);
+		if (string.IsNullOrEmpty(modelPath)) return null;
 		Node prototype = Realm.Godot.Utils.ModelCache.GetModel(modelPath);
 		if (prototype == null) return null;
 
@@ -649,21 +650,30 @@ public partial class PropMultiMeshManager : Node3D
 	private static string ResolveModelPathForAssetKey(string normAssetKey)
 	{
 		if (string.IsNullOrEmpty(normAssetKey))
-			return "wooden_box.glb";
+			return string.Empty;
 
 		string targetModel = normAssetKey;
-		if (GameHost.PropRegistry != null && GameHost.PropRegistry.TryGetValue(normAssetKey, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath))
+		string cleanId = System.IO.Path.GetFileNameWithoutExtension(normAssetKey);
+
+		if (GameHost.PropRegistry != null && ((GameHost.PropRegistry.TryGetValue(normAssetKey, out var propMeta) || GameHost.PropRegistry.TryGetValue(cleanId, out propMeta)) && !string.IsNullOrEmpty(propMeta.ModelPath)))
 		{
 			targetModel = propMeta.ModelPath;
 		}
-		else if (GameHost.ResourceRegistry != null && GameHost.ResourceRegistry.TryGetValue(normAssetKey, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath))
+		else if (GameHost.ResourceRegistry != null && ((GameHost.ResourceRegistry.TryGetValue(normAssetKey, out var resMeta) || GameHost.ResourceRegistry.TryGetValue(cleanId, out resMeta)) && !string.IsNullOrEmpty(resMeta.ModelPath)))
 		{
 			targetModel = resMeta.ModelPath;
 		}
-		else if (GameHost.UnitRegistry != null && GameHost.UnitRegistry.TryGetValue(normAssetKey, out var unitMeta) && !string.IsNullOrEmpty(unitMeta.ModelPath))
+		else if (GameHost.UnitRegistry != null && ((GameHost.UnitRegistry.TryGetValue(normAssetKey, out var unitMeta) || GameHost.UnitRegistry.TryGetValue(cleanId, out unitMeta)) && !string.IsNullOrEmpty(unitMeta.ModelPath)))
 		{
 			targetModel = unitMeta.ModelPath;
 		}
+		else if (GameHost.BuildingRegistry != null && ((GameHost.BuildingRegistry.TryGetValue(normAssetKey, out var bldMeta) || GameHost.BuildingRegistry.TryGetValue(cleanId, out bldMeta)) && !string.IsNullOrEmpty(bldMeta.ModelPath)))
+		{
+			targetModel = bldMeta.ModelPath;
+		}
+
+		if (string.IsNullOrEmpty(targetModel))
+			return string.Empty;
 
 		if (targetModel.StartsWith("res://") || System.IO.File.Exists(targetModel))
 			return targetModel;

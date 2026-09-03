@@ -418,7 +418,7 @@ public partial class NoiseTextureDialog : FloatingDialogBase
 		string fileName = $"{cleanBase}.rtex";
 
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-		string outputRtex = Path.Combine(wsPath, "Assets", "textures", "noise", fileName);
+		string outputRtex = Path.Combine(wsPath, "Assets", "noise", fileName);
 
 		try
 		{

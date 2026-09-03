@@ -36,6 +36,9 @@ public class GlbOptimizeOptions
 
 	[Option('f', "force", Required = false, Default = false, HelpText = "Force re-optimization even if already optimized.")]
 	public bool Force { get; set; }
+
+	[Option('t', "type", Required = false, HelpText = "Asset type for GLB: Attachment, Character, Building, Environment, Projectile, Prop. If specified, sets or updates the embedded asset_type metadata.")]
+	public string? AssetType { get; set; }
 }
 
 [Verb("texture_convert", HelpText = "Convert textures between standard image formats and .rtex format.")]
@@ -134,6 +137,9 @@ public class MetadataOptions
 
 	[Option('d', "data", Required = false, HelpText = "JSON string or path to JSON file containing metadata to embed (for add/update mode).")]
 	public string? Data { get; set; }
+
+	[Option('t', "type", Required = false, HelpText = "Asset type to embed: Attachment, Character, Building, Environment, Projectile, Prop, Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet, Animation, Music, SoundEffect.")]
+	public string? AssetType { get; set; }
 
 	[Option('o', "output", Required = false, HelpText = "Output destination file to write extracted JSON (for read mode).")]
 	public string? Output { get; set; }
@@ -420,7 +426,7 @@ public static class Program
 		}
 	}
 
-	private static bool PrepareMetadataJsonForFile(string targetPath, ref string inputJsonContent, bool isUpdate, out string error)
+	private static bool PrepareMetadataJsonForFile(string targetPath, ref string inputJsonContent, bool isUpdate, string? explicitAssetType, out string error)
 	{
 		error = string.Empty;
 		string ext = Path.GetExtension(targetPath).ToLowerInvariant();
@@ -433,10 +439,12 @@ public static class Program
 				return false;
 			}
 
-			string? rawAssetType = inputObj["asset_type"]?.ToString()
-				?? inputObj["AssetType"]?.ToString()
-				?? inputObj["default_asset_type"]?.ToString()
-				?? inputObj["type"]?.ToString();
+			string? rawAssetType = !string.IsNullOrWhiteSpace(explicitAssetType)
+				? explicitAssetType
+				: inputObj["asset_type"]?.ToString()
+					?? inputObj["AssetType"]?.ToString()
+					?? inputObj["default_asset_type"]?.ToString()
+					?? inputObj["type"]?.ToString();
 
 			if (!string.IsNullOrEmpty(rawAssetType))
 			{
@@ -496,8 +504,15 @@ public static class Program
 	{
 		if (string.IsNullOrEmpty(options.Data))
 		{
-			Console.Error.WriteLine("Error: --data (-d) option is required for add mode.");
-			return 1;
+			if (!string.IsNullOrWhiteSpace(options.AssetType))
+			{
+				options.Data = new JsonObject { ["asset_type"] = options.AssetType }.ToJsonString();
+			}
+			else
+			{
+				Console.Error.WriteLine("Error: --data (-d) or --type (-t) option is required for add mode.");
+				return 1;
+			}
 		}
 
 		string jsonContent = options.Data;
@@ -512,7 +527,7 @@ public static class Program
 		if (File.Exists(options.Input))
 		{
 			string processedJson = jsonContent;
-			if (!PrepareMetadataJsonForFile(options.Input, ref processedJson, isUpdate, out string error))
+			if (!PrepareMetadataJsonForFile(options.Input, ref processedJson, isUpdate, options.AssetType, out string error))
 			{
 				Console.Error.WriteLine($"Error: {error}");
 				return 1;
@@ -543,7 +558,7 @@ public static class Program
 				if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) continue;
 
 				string fileJson = jsonContent;
-				if (!PrepareMetadataJsonForFile(file, ref fileJson, isUpdate, out string error))
+				if (!PrepareMetadataJsonForFile(file, ref fileJson, isUpdate, options.AssetType, out string error))
 				{
 					Console.Error.WriteLine($"Failed to add metadata to {file}: {error}");
 					failCount++;
@@ -784,6 +799,16 @@ public static class Program
 
 	private static int ExecuteGlbOptimize(GlbOptimizeOptions options)
 	{
+		if (!string.IsNullOrWhiteSpace(options.AssetType))
+		{
+			if (!RealmMetadataHelper.IsValidAssetTypeForExtension(".glb", options.AssetType, out string canonical, out var validTypes))
+			{
+				Console.Error.WriteLine($"Error: Invalid asset_type '{options.AssetType}' for GLB. Valid asset_type values for .glb are: {string.Join(", ", validTypes)}.");
+				return 1;
+			}
+			options.AssetType = canonical;
+		}
+
 		var optimizer = new GlbOptimizer();
 		var optimizationOptions = new OptimizationOptions
 		{
@@ -794,11 +819,11 @@ public static class Program
 
 		if (File.Exists(options.Input))
 		{
-			return ProcessSingleFile(optimizer, options.Input, options.Output, options.InPlace, options.Mode, optimizationOptions);
+			return ProcessSingleFile(optimizer, options.Input, options.Output, options.InPlace, options.Mode, optimizationOptions, options.AssetType);
 		}
 		else if (Directory.Exists(options.Input))
 		{
-			return ProcessDirectory(optimizer, options.Input, options.Output, options.InPlace, options.Mode, options.Recursive, optimizationOptions);
+			return ProcessDirectory(optimizer, options.Input, options.Output, options.InPlace, options.Mode, options.Recursive, optimizationOptions, options.AssetType);
 		}
 		else
 		{
@@ -813,7 +838,8 @@ public static class Program
 		string? outputPath,
 		bool inPlace,
 		string mode,
-		OptimizationOptions options)
+		OptimizationOptions options,
+		string? assetType = null)
 	{
 		string target = inPlace || string.IsNullOrEmpty(outputPath) ? filePath : outputPath;
 
@@ -833,7 +859,14 @@ public static class Program
 			var unopt = optimizer.UnoptimizeFile(filePath, target);
 			if (unopt.Success)
 			{
-				RealmMetadataHelper.SyncBlake3Metadata(target);
+				if (!string.IsNullOrEmpty(assetType))
+				{
+					RealmMetadataHelper.SetAssetType(target, assetType);
+				}
+				else
+				{
+					RealmMetadataHelper.SyncBlake3Metadata(target);
+				}
 				Console.WriteLine($"Successfully unoptimized: {target} (WasOptimized: {unopt.WasOptimized})");
 				return 0;
 			}
@@ -849,7 +882,14 @@ public static class Program
 			var result = optimizer.OptimizeFile(filePath, target, options);
 			if (result.Success)
 			{
-				RealmMetadataHelper.SyncBlake3Metadata(target);
+				if (!string.IsNullOrEmpty(assetType))
+				{
+					RealmMetadataHelper.SetAssetType(target, assetType);
+				}
+				else
+				{
+					RealmMetadataHelper.SyncBlake3Metadata(target);
+				}
 				if (result.DecimationSkipped)
 				{
 					Console.WriteLine($"Skipped (already optimized): {filePath}");
@@ -875,7 +915,8 @@ public static class Program
 		bool inPlace,
 		string mode,
 		bool recursive,
-		OptimizationOptions options)
+		OptimizationOptions options,
+		string? assetType = null)
 	{
 		var searchOpt = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
 		string[] files = Directory.GetFiles(dirPath, "*.glb", searchOpt);
@@ -897,7 +938,7 @@ public static class Program
 				target = Path.Combine(outputDir, rel);
 			}
 
-			int res = ProcessSingleFile(optimizer, file, target, false, mode, options);
+			int res = ProcessSingleFile(optimizer, file, target, false, mode, options, assetType);
 			if (res == 0) successCount++;
 			else failCount++;
 		}

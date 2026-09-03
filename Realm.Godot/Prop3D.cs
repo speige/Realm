@@ -418,13 +418,16 @@ public partial class Prop3D : StaticBody3D
 				string modelPath = ResolvePropModelPath(PropId);
 				try
 				{
-					Node node = ModelCache.GetModel(modelPath);
-					if (node != null)
+					if (!string.IsNullOrEmpty(modelPath))
 					{
-						visual.AddChild(node);
-						if (!IsPreview)
+						Node node = ModelCache.GetModel(modelPath);
+						if (node != null)
 						{
-							GameHost.Instance?.ApplyAllGlobalOverridesToObject(this);
+							visual.AddChild(node);
+							if (!IsPreview)
+							{
+								GameHost.Instance?.ApplyAllGlobalOverridesToObject(this);
+							}
 						}
 					}
 				}
@@ -490,18 +493,27 @@ public partial class Prop3D : StaticBody3D
 			return string.Empty;
 
 		string targetModel = propId;
-		if (GameHost.PropRegistry != null && GameHost.PropRegistry.TryGetValue(propId, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath))
+		string cleanId = System.IO.Path.GetFileNameWithoutExtension(propId);
+
+		if (GameHost.PropRegistry != null && ((GameHost.PropRegistry.TryGetValue(propId, out var propMeta) || GameHost.PropRegistry.TryGetValue(cleanId, out propMeta)) && !string.IsNullOrEmpty(propMeta.ModelPath)))
 		{
 			targetModel = propMeta.ModelPath;
 		}
-		else if (GameHost.ResourceRegistry != null && GameHost.ResourceRegistry.TryGetValue(propId, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath))
+		else if (GameHost.ResourceRegistry != null && ((GameHost.ResourceRegistry.TryGetValue(propId, out var resMeta) || GameHost.ResourceRegistry.TryGetValue(cleanId, out resMeta)) && !string.IsNullOrEmpty(resMeta.ModelPath)))
 		{
 			targetModel = resMeta.ModelPath;
 		}
-		else if (GameHost.UnitRegistry != null && GameHost.UnitRegistry.TryGetValue(propId, out var unitMeta) && !string.IsNullOrEmpty(unitMeta.ModelPath))
+		else if (GameHost.UnitRegistry != null && ((GameHost.UnitRegistry.TryGetValue(propId, out var unitMeta) || GameHost.UnitRegistry.TryGetValue(cleanId, out unitMeta)) && !string.IsNullOrEmpty(unitMeta.ModelPath)))
 		{
 			targetModel = unitMeta.ModelPath;
 		}
+		else if (GameHost.BuildingRegistry != null && ((GameHost.BuildingRegistry.TryGetValue(propId, out var bldMeta) || GameHost.BuildingRegistry.TryGetValue(cleanId, out bldMeta)) && !string.IsNullOrEmpty(bldMeta.ModelPath)))
+		{
+			targetModel = bldMeta.ModelPath;
+		}
+
+		if (string.IsNullOrEmpty(targetModel))
+			return string.Empty;
 
 		if (targetModel.StartsWith("res://") || System.IO.File.Exists(targetModel))
 			return targetModel;
@@ -521,7 +533,6 @@ public partial class Prop3D : StaticBody3D
 				return candidate;
 		}
 
-		// Fallback check root workspace
 		string rootCandidate = System.IO.Path.Combine(wsPath, filename);
 		if (System.IO.File.Exists(rootCandidate))
 			return rootCandidate;

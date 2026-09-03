@@ -977,7 +977,7 @@ public class MapEditorUxTests
 
         // 2. Prepare Asset folders and copy assets
         string projectilesDir = Path.Combine(tempMapDir, "Assets", "models", "projectiles");
-        string ribbonsDir = Path.Combine(tempMapDir, "Assets", "textures", "ribbons");
+        string ribbonsDir = Path.Combine(tempMapDir, "Assets", "ribbons");
         Directory.CreateDirectory(projectilesDir);
         Directory.CreateDirectory(ribbonsDir);
 
@@ -1023,7 +1023,7 @@ public class MapEditorUxTests
       ""UvScrollSpeed2"": { ""X"": -0.3, ""Y"": 0.4 },
       ""ThresholdCutoff"": 0.45,
       ""ThresholdSmoothness"": 0.1,
-      ""RibbonTexture"": ""Assets/textures/ribbons/void_whisper_shadow_veil.png"",
+      ""RibbonTexture"": ""Assets/ribbons/void_whisper_shadow_veil.png"",
       ""RibbonColor"": ""#ff7711"",
       ""RibbonWidth"": 0.45,
       ""RibbonLifetime"": 0.6,

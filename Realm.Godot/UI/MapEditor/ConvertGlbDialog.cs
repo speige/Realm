@@ -37,6 +37,29 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 
 	private void BuildDialogUi()
 	{
+		var btnWebAi = new Button();
+		btnWebAi.Set("icon_max_width", 16);
+		btnWebAi.AddThemeConstantOverride("icon_max_width", 16);
+		btnWebAi.ExpandIcon = false;
+		btnWebAi.IconAlignment = HorizontalAlignment.Center;
+		btnWebAi.VerticalIconAlignment = VerticalAlignment.Center;
+		if (ResourceLoader.Exists("res://Assets/UI/globe_icon.png"))
+		{
+			btnWebAi.Icon = GD.Load<Texture2D>("res://Assets/UI/globe_icon.png");
+		}
+		else
+		{
+			btnWebAi.Text = "🌐";
+		}
+		btnWebAi.TooltipText = TranslationServer.Translate("Generate 3D Model with AI Online");
+		btnWebAi.CustomMinimumSize = new Vector2(24, 24);
+		btnWebAi.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+		btnWebAi.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+		btnWebAi.FocusMode = FocusModeEnum.None;
+		btnWebAi.Pressed += () => OS.ShellOpen("https://3d.hunyuanglobal.com");
+		HeaderHBox.AddChild(btnWebAi);
+		HeaderHBox.MoveChild(btnWebAi, HeaderHBox.GetChildCount() - 2);
+
 		var scroll = new ScrollContainer();
 		scroll.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		scroll.SizeFlagsVertical = SizeFlags.ExpandFill;
@@ -84,7 +107,8 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 			TranslationServer.Translate("Buildings (models/buildings)").ToString(),
 			TranslationServer.Translate("Resources (models/resources)").ToString(),
 			TranslationServer.Translate("Props (models/props)").ToString(),
-			TranslationServer.Translate("Projectiles (models/projectiles)").ToString()
+			TranslationServer.Translate("Projectiles (models/projectiles)").ToString(),
+			TranslationServer.Translate("Object Attachments (models/attachments)").ToString()
 		};
 		_optSubCategory = AddOptionDropdown(vbox, TranslationServer.Translate("Category:"), subCats, 3, (_) => ApplyCategoryDefaults(), 120f);
 		_txtAssetName = AddTextInput(vbox, TranslationServer.Translate("Asset Name:"), "", (_) => { }, TranslationServer.Translate("e.g. orc_warrior"), 120f);
@@ -229,6 +253,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 				"resources" => 2,
 				"props" => 3,
 				"projectiles" => 4,
+				"attachments" => 5,
 				_ => 3
 			};
 		}
@@ -254,6 +279,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 			2 => "resources",
 			3 => "props",
 			4 => "projectiles",
+			5 => "attachments",
 			_ => "props"
 		};
 
@@ -338,6 +364,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 			2 => "resources",
 			3 => "props",
 			4 => "projectiles",
+			5 => "attachments",
 			_ => "props"
 		};
 
@@ -431,6 +458,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 
 				byte[] finalBytes = File.ReadAllBytes(destPath);
 				string hash = RealmMetadataHelper.ComputeBlake3(finalBytes, ".glb");
+				RealmMetadataHelper.SyncBlake3Metadata(destPath);
 				bool isPropOrRes = subCategory == "resources" || subCategory == "props";
 
 				string metaPath = Path.Combine(wsPath, "metadata.json");
@@ -503,6 +531,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 			2 => "resources",
 			3 => "props",
 			4 => "projectiles",
+			5 => "attachments",
 			_ => "props"
 		};
 		float defaultScale = subCategory switch
@@ -511,6 +540,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 			"buildings" => 1.5f,
 			"props" => 1.25f,
 			"units" => 1.0f,
+			"attachments" => 1.0f,
 			_ => 1.0f
 		};
 

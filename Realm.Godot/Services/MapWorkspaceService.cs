@@ -832,30 +832,31 @@ public static partial class MapWorkspaceService
 					|| (assetsObj["ribbon_textures"] is JsonObject r2 && (r2.ContainsKey(fileName) || r2.ContainsKey($"{cleanName}.rtex"))))
 					return ("ribbon_texture", 4, 4);
 
-				if (assetsObj["noise_textures"] is JsonObject noise && (noise.ContainsKey(fileName) || noise.ContainsKey($"{cleanName}.rtex")))
+				if ((assetsObj["noise"] is JsonObject n1 && (n1.ContainsKey(fileName) || n1.ContainsKey($"{cleanName}.rtex")))
+					|| (assetsObj["noise_textures"] is JsonObject n2 && (n2.ContainsKey(fileName) || n2.ContainsKey($"{cleanName}.rtex"))))
 					return ("noise_texture", 4, 4);
 			}
 		}
 
-		if (normalized.Contains("/assets/decals/") || normalized.Contains("/decals/"))
+		if (normalized.Contains("/assets/decals/"))
 			return ("decal", 4, 4);
 
-		if (normalized.Contains("/assets/icons/") || normalized.Contains("/icons/"))
+		if (normalized.Contains("/assets/icons/"))
 			return ("icon", 4, 4);
 
-		if (normalized.Contains("/assets/skyboxes/") || normalized.Contains("/skyboxes/"))
+		if (normalized.Contains("/assets/skyboxes/"))
 			return ("skybox", 4, 4);
 
-		if (normalized.Contains("/assets/vfx/") || normalized.Contains("/vfx/") || normalized.Contains("/spritesheets/"))
+		if (normalized.Contains("/assets/vfx/"))
 			return ("vfx_spritesheet", 4, 4);
 
-		if (normalized.Contains("/assets/ribbons/") || normalized.Contains("/ribbons/") || normalized.Contains("/textures/ribbons/"))
+		if (normalized.Contains("/assets/ribbons/"))
 			return ("ribbon_texture", 4, 4);
 
-		if (normalized.Contains("/textures/noise/") || normalized.Contains("/noise/"))
+		if (normalized.Contains("/assets/noise/"))
 			return ("noise_texture", 4, 4);
 
-		if (normalized.Contains("/assets/textures/") || normalized.Contains("/tilesheets/"))
+		if (normalized.Contains("/assets/textures/"))
 			return ("terrain_texture", 4, 4);
 
 		return ("terrain_texture", 4, 4);
@@ -897,8 +898,8 @@ public static partial class MapWorkspaceService
 				"icon" or "icons" => "icons",
 				"skybox" or "skyboxes" => "skyboxes",
 				"vfx_spritesheet" or "spritesheet" or "spritesheets" => "vfx_spritesheets",
-				"ribbon_texture" or "ribbon" or "ribbons" => "ribbons",
-				"noise_texture" or "noise" => "noise_textures",
+				"ribbon_texture" or "ribbon" or "ribbons" => (assetsObj.ContainsKey("ribbon_textures") && !assetsObj.ContainsKey("ribbons")) ? "ribbon_textures" : "ribbons",
+				"noise_texture" or "noise" => (assetsObj.ContainsKey("noise") && !assetsObj.ContainsKey("noise_textures")) ? "noise" : "noise_textures",
 				_ => "textures"
 			};
 

@@ -59,7 +59,9 @@ public partial class GameHost
 				return NormalizeModelAssetKey(unit.ModelPath);
 			if (UnitRegistry.TryGetValue(unit.UnitId, out var meta) && !string.IsNullOrEmpty(meta.ModelPath))
 				return NormalizeModelAssetKey(meta.ModelPath);
-			return NormalizeModelAssetKey(unit.UnitId);
+			if (BuildingRegistry.TryGetValue(unit.UnitId, out var bldMeta) && !string.IsNullOrEmpty(bldMeta.ModelPath))
+				return NormalizeModelAssetKey(bldMeta.ModelPath);
+			return "";
 		}
 		if (objOrId is Prop3D prop)
 		{
@@ -69,9 +71,9 @@ public partial class GameHost
 				return NormalizeModelAssetKey(resMeta.ModelPath);
 			if (UnitRegistry.TryGetValue(prop.PropId, out var unitMeta) && !string.IsNullOrEmpty(unitMeta.ModelPath))
 				return NormalizeModelAssetKey(unitMeta.ModelPath);
-			if (!string.IsNullOrEmpty(prop.ModelAssetPath))
-				return NormalizeModelAssetKey(prop.ModelAssetPath);
-			return NormalizeModelAssetKey(prop.PropId);
+			if (BuildingRegistry.TryGetValue(prop.PropId, out var bldMeta) && !string.IsNullOrEmpty(bldMeta.ModelPath))
+				return NormalizeModelAssetKey(bldMeta.ModelPath);
+			return "";
 		}
 		if (objOrId is string str)
 		{
@@ -81,11 +83,23 @@ public partial class GameHost
 				return NormalizeModelAssetKey(resMeta.ModelPath);
 			if (UnitRegistry.TryGetValue(str, out var unitMeta) && !string.IsNullOrEmpty(unitMeta.ModelPath))
 				return NormalizeModelAssetKey(unitMeta.ModelPath);
+			if (BuildingRegistry.TryGetValue(str, out var bldMeta) && !string.IsNullOrEmpty(bldMeta.ModelPath))
+				return NormalizeModelAssetKey(bldMeta.ModelPath);
+
+			string clean = System.IO.Path.GetFileNameWithoutExtension(str);
+			if (!string.IsNullOrEmpty(clean) && !clean.Equals(str, StringComparison.OrdinalIgnoreCase))
+			{
+				if (PropRegistry.TryGetValue(clean, out propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath))
+					return NormalizeModelAssetKey(propMeta.ModelPath);
+				if (ResourceRegistry.TryGetValue(clean, out resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath))
+					return NormalizeModelAssetKey(resMeta.ModelPath);
+				if (UnitRegistry.TryGetValue(clean, out unitMeta) && !string.IsNullOrEmpty(unitMeta.ModelPath))
+					return NormalizeModelAssetKey(unitMeta.ModelPath);
+				if (BuildingRegistry.TryGetValue(clean, out bldMeta) && !string.IsNullOrEmpty(bldMeta.ModelPath))
+					return NormalizeModelAssetKey(bldMeta.ModelPath);
+			}
+
 			return NormalizeModelAssetKey(str);
-		}
-		if (objOrId is Node node)
-		{
-			return NormalizeModelAssetKey(node.Name.ToString());
 		}
 		return "";
 	}
@@ -1378,7 +1392,7 @@ public partial class GameHost
 			if (!GodotObject.IsInstanceValid(unit)) continue;
 			if (string.IsNullOrEmpty(targetId) || string.Equals(unit.UnitId, targetId, StringComparison.OrdinalIgnoreCase))
 			{
-				string targetModel = unit.UnitId;
+				string targetModel = null;
 				bool isBuilding = unit.IsBuilding;
 				if (UnitRegistry.TryGetValue(unit.UnitId, out var meta) && !string.IsNullOrEmpty(meta.ModelPath))
 				{
@@ -1401,8 +1415,12 @@ public partial class GameHost
 				{
 					targetModel = unit.ModelPath;
 				}
-				string modelPath = GetFallbackModelPath(targetModel, isBuilding);
-				unit.LoadModel(modelPath);
+
+				if (!string.IsNullOrEmpty(targetModel))
+				{
+					string modelPath = GetFallbackModelPath(targetModel, isBuilding);
+					unit.LoadModel(modelPath);
+				}
 			}
 		}
 
@@ -1821,55 +1839,7 @@ public partial class GameHost
 		if (PropRegistry.ContainsKey(propIdOrEntityId) || ResourceRegistry.ContainsKey(propIdOrEntityId))
 			return true;
 
-		if (UnitRegistry.ContainsKey(propIdOrEntityId) || BuildingRegistry.ContainsKey(propIdOrEntityId))
-			return false;
-
-		string wsPath = Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
-		if (System.IO.File.Exists(metadataPath))
-		{
-			try
-			{
-				string json = System.IO.File.ReadAllText(metadataPath);
-				using var doc = System.Text.Json.JsonDocument.Parse(json);
-				if (doc.RootElement.TryGetProperty("Assets", out var assets) && assets.TryGetProperty("glb", out var glb))
-				{
-					foreach (var catProp in glb.EnumerateObject())
-					{
-						string catName = catProp.Name.ToLowerInvariant();
-						if (catProp.Value.ValueKind == System.Text.Json.JsonValueKind.Object)
-						{
-							foreach (var modelProp in catProp.Value.EnumerateObject())
-							{
-								string modelName = modelProp.Name;
-								string modelWithoutExt = System.IO.Path.GetFileNameWithoutExtension(modelName);
-								if (modelName.Equals(propIdOrEntityId, StringComparison.OrdinalIgnoreCase) ||
-									modelWithoutExt.Equals(propIdOrEntityId, StringComparison.OrdinalIgnoreCase))
-								{
-									if (catName == "units" || catName == "buildings") return false;
-									if (catName == "resources" || catName == "props" || catName == "prop") return true;
-								}
-							}
-						}
-					}
-				}
-			}
-			catch { }
-		}
-
-		string filename = System.IO.Path.GetFileName(propIdOrEntityId);
-		if (!filename.EndsWith(".glb") && !filename.EndsWith(".gltf")) filename += ".glb";
-		string[] subDirs = new[] { "resources", "props", "units", "building" };
-		foreach (var sub in subDirs)
-		{
-			string candidate = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
-			if (System.IO.File.Exists(candidate))
-			{
-				return sub == "resources" || sub == "props";
-			}
-		}
-
-		return true;
+		return false;
 	}
 
 	public void DeleteStaticPropAtPosition(string propId, Vector3 hitPos)
@@ -2227,8 +2197,12 @@ public partial class GameHost
 
 		var playerOwner = GetPlayerEntityForPlayerIndex(playerIndex).AsPlayerEntity(EcsWorld);
 		
-		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitId;
-		string modelPath = GetFallbackModelPath(targetModel, isBuilding);
+		if (string.IsNullOrEmpty(meta.ModelPath))
+		{
+			return null;
+		}
+
+		string modelPath = GetFallbackModelPath(meta.ModelPath, isBuilding);
 
 		string name = meta.Name;
 		var entity = CreateEcsUnit(unitId, name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, meta.Speed, position, playerOwner);
@@ -2269,6 +2243,18 @@ public partial class GameHost
 
 	public Prop3D SpawnPropExternalWithParams(string propId, Vector3 position, float rotationY, float scale)
 	{
+		if (string.IsNullOrEmpty(propId)) return null;
+
+		if (!PropRegistry.ContainsKey(propId) && !ResourceRegistry.ContainsKey(propId))
+		{
+			LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath));
+		}
+
+		if (!PropRegistry.ContainsKey(propId) && !ResourceRegistry.ContainsKey(propId))
+		{
+			return null;
+		}
+
 		float defaultAmount = propId switch
 		{
 			"goldmine" => 2000f,
@@ -2910,14 +2896,22 @@ public partial class GameHost
 			}
 			else if (ActiveEditorTool == EditorTool.PlaceProp)
 			{
-				var previewProp = new Prop3D();
-				previewProp.PropId = reqId;
-				previewProp.IsPreview = true;
-				AddChild(previewProp);
+				if (!PropRegistry.ContainsKey(reqId) && !ResourceRegistry.ContainsKey(reqId))
+				{
+					LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath));
+				}
 
-				Color color = new Color(0.95f, 0.82f, 0.15f);
-				MakeHologramRecursive(previewProp, color);
-				_editorPreviewNode = previewProp;
+				if (PropRegistry.ContainsKey(reqId) || ResourceRegistry.ContainsKey(reqId))
+				{
+					var previewProp = new Prop3D();
+					previewProp.PropId = reqId;
+					previewProp.IsPreview = true;
+					AddChild(previewProp);
+
+					Color color = new Color(0.95f, 0.82f, 0.15f);
+					MakeHologramRecursive(previewProp, color);
+					_editorPreviewNode = previewProp;
+				}
 			}
 			else if (ActiveEditorTool == EditorTool.PlaceDecal)
 			{

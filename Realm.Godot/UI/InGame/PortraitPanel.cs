@@ -90,8 +90,13 @@ public class PortraitPanel
 			{
 				_statsContainer.Visible = true;
 				_armyCompositionLabel?.Hide();
-				
-				_unitNameLabel.Text = TranslationServer.Translate(viewModel.SelectedProp.PropId.ToUpper());
+				string propDisplayName = viewModel.SelectedProp.PropId.ToUpper();
+				if (GameHost.ResourceRegistry.TryGetValue(viewModel.SelectedProp.PropId, out var rMeta) && !string.IsNullOrEmpty(rMeta.Name))
+					propDisplayName = rMeta.Name.ToUpper();
+				else if (GameHost.PropRegistry.TryGetValue(viewModel.SelectedProp.PropId, out var pMeta) && !string.IsNullOrEmpty(pMeta.Name))
+					propDisplayName = pMeta.Name.ToUpper();
+
+				_unitNameLabel.Text = TranslationServer.Translate(propDisplayName);
 				if (_portraitTexture != null)
 				{
 					string iconPath = viewModel.SelectedProp.PropId switch

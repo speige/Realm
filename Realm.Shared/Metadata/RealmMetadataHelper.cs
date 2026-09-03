@@ -113,7 +113,7 @@ public static class RealmMetadataHelper
 	private static readonly Dictionary<string, string[]> ValidAssetTypesByExtension = new(StringComparer.OrdinalIgnoreCase)
 	{
 		[".rtex"] = new[] { "Decal", "Icon", "Noise", "Ribbon", "Skybox", "SpellSpritesheet", "Tilesheet" },
-		[".glb"] = new[] { "Character", "Building", "Environment", "Projectile", "Prop" },
+		[".glb"] = new[] { "Character", "Building", "Environment", "Projectile", "Prop", "Attachment" },
 		[".ranim"] = new[] { "Animation" },
 		[".ogg"] = new[] { "Music", "SoundEffect" }
 	};
@@ -158,6 +158,7 @@ public static class RealmMetadataHelper
 			if (norm is "environment" or "resource" or "resources" or "nature" or "customresources") { canonicalType = "Environment"; return true; }
 			if (norm is "projectile" or "projectiles") { canonicalType = "Projectile"; return true; }
 			if (norm is "prop" or "props" or "customprops") { canonicalType = "Prop"; return true; }
+			if (norm is "attachment" or "attachments" or "objectattachment" or "objectattachments" or "customattachments" or "glbattachment" or "glbattachments") { canonicalType = "Attachment"; return true; }
 			return false;
 		}
 		else if (ext is ".ranim")

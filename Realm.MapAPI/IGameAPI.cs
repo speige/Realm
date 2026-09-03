@@ -1061,9 +1061,19 @@ public interface IGameAPI
     void SetAbilityManaCost(IUnit unit, string abilityId, float manaCost) { }
 
     /// <summary>
-    /// Plays a named visual animation on the unit's 3D model.
+    /// Plays a named visual animation on the unit's 3D model and equips any configured hand attachments for that animation.
     /// </summary>
+    /// <param name="unit">The unit to animate.</param>
+    /// <param name="animationName">The animation name (e.g., "Idle", "Labor", "Attack").</param>
     void SetUnitAnimation(IUnit unit, string animationName) { }
+
+    /// <summary>
+    /// Attaches or removes a 3D model object on the specified hand bone of the unit's rigged skeleton.
+    /// </summary>
+    /// <param name="unit">The target unit.</param>
+    /// <param name="hand">The target hand ("RightHand" or "LeftHand").</param>
+    /// <param name="attachmentId">The attachment identifier or model filename, or null/empty to clear the hand attachment.</param>
+    void SetUnitHandAttachment(IUnit unit, string hand, string? attachmentId) { }
 
     /// <summary>
     /// Orders the unit to move to a world position without attacking along the way.

@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Realm.Godot.Animation;
 using Realm.Godot.Utils;
 
@@ -37,8 +38,15 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 
 	private LineEdit _txtPreviewRanim;
 	private Action<string> _setPreviewRanimValue;
+	private OptionButton _optPreviewRightHand;
+	private OptionButton _optPreviewLeftHand;
 	private OptionButton _optTargetAction;
 	private VBoxContainer _actionListContainer;
+
+	private BoneAttachment3D _rightHandBoneAttachment;
+	private BoneAttachment3D _leftHandBoneAttachment;
+	private Node3D _rightHandModelNode;
+	private Node3D _leftHandModelNode;
 
 	private Node _sourceSelectedObject;
 	private string _currentUnitId = "";
@@ -46,8 +54,8 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 	private float _currentSpeed = 1.0f;
 	private bool _isUpdatingUI;
 
-	private Dictionary<string, List<string>> _workingAnimations = new(StringComparer.OrdinalIgnoreCase);
-	private Dictionary<string, List<string>> _initialAnimations = new(StringComparer.OrdinalIgnoreCase);
+	private Dictionary<string, List<GameHost.UnitAnimationEntry>> _workingAnimations = new(StringComparer.OrdinalIgnoreCase);
+	private Dictionary<string, List<GameHost.UnitAnimationEntry>> _initialAnimations = new(StringComparer.OrdinalIgnoreCase);
 
 	private Vector3 _modelCenter = Vector3.Zero;
 	private Vector3 _targetPosition = Vector3.Zero;
@@ -127,6 +135,62 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 			130f
 		);
 
+		var rightHandRow = new HBoxContainer();
+		rightHandRow.AddThemeConstantOverride("separation", 6);
+
+		var lblRightHand = new Label();
+		lblRightHand.Text = TranslationServer.Translate("Preview Right Hand:");
+		lblRightHand.CustomMinimumSize = new Vector2(130, 0);
+		lblRightHand.AddThemeFontSizeOverride("font_size", 11);
+		lblRightHand.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		rightHandRow.AddChild(lblRightHand);
+
+		_optPreviewRightHand = new OptionButton();
+		_optPreviewRightHand.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		_optPreviewRightHand.AddThemeFontSizeOverride("font_size", 11);
+		_optPreviewRightHand.ItemSelected += (idx) => OnPreviewHandSelectionChanged(HumanoidBone.RightHand);
+		rightHandRow.AddChild(_optPreviewRightHand);
+
+		var btnEditRight = new Button();
+		btnEditRight.Set("icon_max_width", 0);
+		btnEditRight.AddThemeConstantOverride("icon_max_width", 0);
+		btnEditRight.Text = "✏️";
+		btnEditRight.CustomMinimumSize = new Vector2(28, 22);
+		btnEditRight.FocusMode = FocusModeEnum.None;
+		btnEditRight.TooltipText = TranslationServer.Translate("Edit Object Attachment");
+		btnEditRight.Pressed += () => OpenEditAttachmentForHand(HumanoidBone.RightHand);
+		rightHandRow.AddChild(btnEditRight);
+
+		animInputSection.AddChild(rightHandRow);
+
+		var leftHandRow = new HBoxContainer();
+		leftHandRow.AddThemeConstantOverride("separation", 6);
+
+		var lblLeftHand = new Label();
+		lblLeftHand.Text = TranslationServer.Translate("Preview Left Hand:");
+		lblLeftHand.CustomMinimumSize = new Vector2(130, 0);
+		lblLeftHand.AddThemeFontSizeOverride("font_size", 11);
+		lblLeftHand.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		leftHandRow.AddChild(lblLeftHand);
+
+		_optPreviewLeftHand = new OptionButton();
+		_optPreviewLeftHand.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		_optPreviewLeftHand.AddThemeFontSizeOverride("font_size", 11);
+		_optPreviewLeftHand.ItemSelected += (idx) => OnPreviewHandSelectionChanged(HumanoidBone.LeftHand);
+		leftHandRow.AddChild(_optPreviewLeftHand);
+
+		var btnEditLeft = new Button();
+		btnEditLeft.Set("icon_max_width", 0);
+		btnEditLeft.AddThemeConstantOverride("icon_max_width", 0);
+		btnEditLeft.Text = "✏️";
+		btnEditLeft.CustomMinimumSize = new Vector2(28, 22);
+		btnEditLeft.FocusMode = FocusModeEnum.None;
+		btnEditLeft.TooltipText = TranslationServer.Translate("Edit Object Attachment");
+		btnEditLeft.Pressed += () => OpenEditAttachmentForHand(HumanoidBone.LeftHand);
+		leftHandRow.AddChild(btnEditLeft);
+
+		animInputSection.AddChild(leftHandRow);
+
 		// ADD TO ACTION ROW
 		var addActionRow = new HBoxContainer();
 		addActionRow.AddThemeConstantOverride("separation", 6);
@@ -154,7 +218,7 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		topControlsVBox.AddChild(animInputSection);
 
 		// ACTION TYPES & CONFIGURED ANIMATIONS LIST
-		AddSectionHeader(BodyContainer, "📋 " + TranslationServer.Translate("CONFIGURED UNIT ANIMATIONS (RANDOM SELECTION)"), new Color(0.85f, 0.75f, 0.4f));
+		AddSectionHeader(BodyContainer, "📋 " + TranslationServer.Translate("CONFIGURED UNIT ANIMATIONS"), new Color(0.85f, 0.75f, 0.4f));
 
 		var scrollBody = CreateScrollBody(250);
 		_actionListContainer = new VBoxContainer();
@@ -281,6 +345,7 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		TitleLabel.Text = $"{TranslationServer.Translate("Unit Animation Studio")} - {selectedObject.Name}";
 
 		InitWorkingAnimations();
+		PopulateHandAttachmentDropdowns();
 		ClearPreviewModel();
 		OpenDialog();
 		ResetCameraDefault();
@@ -336,6 +401,7 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		}
 
 		InitWorkingAnimations();
+		PopulateHandAttachmentDropdowns();
 		ClearPreviewModel();
 
 		OpenDialog();
@@ -366,9 +432,11 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		{
 			foreach (var kvp in uMeta.Animations)
 			{
-				var list = new List<string>(kvp.Value ?? Array.Empty<string>());
+				var list = kvp.Value != null
+					? new List<GameHost.UnitAnimationEntry>(kvp.Value)
+					: new List<GameHost.UnitAnimationEntry>();
 				_workingAnimations[kvp.Key] = list;
-				_initialAnimations[kvp.Key] = new List<string>(list);
+				_initialAnimations[kvp.Key] = new List<GameHost.UnitAnimationEntry>(list);
 			}
 		}
 
@@ -399,20 +467,30 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 								{
 									foreach (var prop in anims)
 									{
-										var list = new List<string>();
+										var list = new List<GameHost.UnitAnimationEntry>();
 										if (prop.Value is System.Text.Json.Nodes.JsonArray arr)
 										{
 											foreach (var item in arr)
 											{
-												if (item != null) list.Add(item.ToString());
+												if (item is System.Text.Json.Nodes.JsonObject obj)
+												{
+													string a = obj["Animation"]?.ToString() ?? obj["Name"]?.ToString() ?? string.Empty;
+													string? r = obj["RightHandAttachment"]?.ToString() ?? obj["RightHand"]?.ToString();
+													string? l = obj["LeftHandAttachment"]?.ToString() ?? obj["LeftHand"]?.ToString();
+													list.Add(new GameHost.UnitAnimationEntry { Animation = a, RightHandAttachment = r, LeftHandAttachment = l });
+												}
+												else if (item != null)
+												{
+													list.Add(new GameHost.UnitAnimationEntry { Animation = item.ToString() });
+												}
 											}
 										}
 										else if (prop.Value != null)
 										{
-											list.Add(prop.Value.ToString());
+											list.Add(new GameHost.UnitAnimationEntry { Animation = prop.Value.ToString() });
 										}
 										_workingAnimations[prop.Key] = list;
-										_initialAnimations[prop.Key] = new List<string>(list);
+										_initialAnimations[prop.Key] = new List<GameHost.UnitAnimationEntry>(list);
 									}
 								}
 								break;
@@ -425,15 +503,118 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		}
 	}
 
+	private void PopulateHandAttachmentDropdowns()
+	{
+		var available = ObjectAttachmentDialog.GetAvailableObjectAttachmentIds();
+
+		if (_optPreviewRightHand != null)
+		{
+			_optPreviewRightHand.Clear();
+			_optPreviewRightHand.AddItem("<None>", 0);
+			_optPreviewRightHand.SetItemMetadata(0, string.Empty);
+			int idx = 1;
+			foreach (var id in available)
+			{
+				_optPreviewRightHand.AddItem(id, idx);
+				_optPreviewRightHand.SetItemMetadata(idx, id);
+				idx++;
+			}
+			_optPreviewRightHand.Selected = 0;
+		}
+
+		if (_optPreviewLeftHand != null)
+		{
+			_optPreviewLeftHand.Clear();
+			_optPreviewLeftHand.AddItem("<None>", 0);
+			_optPreviewLeftHand.SetItemMetadata(0, string.Empty);
+			int idx = 1;
+			foreach (var id in available)
+			{
+				_optPreviewLeftHand.AddItem(id, idx);
+				_optPreviewLeftHand.SetItemMetadata(idx, id);
+				idx++;
+			}
+			_optPreviewLeftHand.Selected = 0;
+		}
+	}
+
+	private string GetSelectedHandAttachment(HumanoidBone hand)
+	{
+		var opt = hand == HumanoidBone.RightHand ? _optPreviewRightHand : _optPreviewLeftHand;
+		if (opt == null || opt.ItemCount == 0 || opt.Selected < 0) return string.Empty;
+		return opt.GetItemMetadata(opt.Selected).AsString();
+	}
+
+	private void SetSelectedHandAttachment(HumanoidBone hand, string? attachmentId)
+	{
+		var opt = hand == HumanoidBone.RightHand ? _optPreviewRightHand : _optPreviewLeftHand;
+		if (opt == null || opt.ItemCount == 0) return;
+
+		if (string.IsNullOrEmpty(attachmentId) || attachmentId.Equals("<None>", StringComparison.OrdinalIgnoreCase) || attachmentId.Equals("none", StringComparison.OrdinalIgnoreCase))
+		{
+			opt.Selected = 0;
+			return;
+		}
+
+		string clean = System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+		for (int i = 0; i < opt.ItemCount; i++)
+		{
+			string meta = opt.GetItemMetadata(i).AsString();
+			if (meta.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+				meta.Equals(clean, StringComparison.OrdinalIgnoreCase) ||
+				System.IO.Path.GetFileNameWithoutExtension(meta).Equals(clean, StringComparison.OrdinalIgnoreCase))
+			{
+				opt.Selected = i;
+				return;
+			}
+		}
+
+		int newIdx = opt.ItemCount;
+		opt.AddItem(clean, newIdx);
+		opt.SetItemMetadata(newIdx, clean);
+		opt.Selected = newIdx;
+	}
+
+	private void OnPreviewHandSelectionChanged(HumanoidBone hand)
+	{
+		string attId = GetSelectedHandAttachment(hand);
+		AttachModelToPreviewHand(hand, attId);
+	}
+
+	private void OpenEditAttachmentForHand(HumanoidBone hand)
+	{
+		string attId = GetSelectedHandAttachment(hand);
+		if (string.IsNullOrEmpty(attId) || attId.Equals("<None>", StringComparison.OrdinalIgnoreCase))
+		{
+			Hud?.ShowFeedback(TranslationServer.Translate("Please select an attachment model to edit."));
+			return;
+		}
+
+		string handStr = hand == HumanoidBone.LeftHand ? "LeftHand" : "RightHand";
+		Hud?.OpenObjectAttachmentDialog(
+			_currentUnitId,
+			attId,
+			handStr,
+			_previewModelRoot,
+			(orientation) =>
+			{
+				UpdatePreviewHandAttachments();
+			}
+		);
+	}
+
 	private void SelectFirstAvailableOrAssignedAnimation()
 	{
-		// Try to find the first assigned animation, or first available from metadata
 		foreach (var act in StandardActionTypes)
 		{
 			if (_workingAnimations.TryGetValue(act, out var list) && list.Count > 0)
 			{
-				_currentPreviewRanim = list[0];
+				var entry = list[0];
+				_currentPreviewRanim = entry.Animation;
 				_setPreviewRanimValue?.Invoke(_currentPreviewRanim);
+				SetSelectedHandAttachment(HumanoidBone.RightHand, entry.RightHandAttachment);
+				SetSelectedHandAttachment(HumanoidBone.LeftHand, entry.LeftHandAttachment);
+				UpdatePreviewHandAttachments();
 				PlayAnimationFile(_currentPreviewRanim);
 				return;
 			}
@@ -444,6 +625,9 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		{
 			_currentPreviewRanim = allAvailable[0];
 			_setPreviewRanimValue?.Invoke(_currentPreviewRanim);
+			SetSelectedHandAttachment(HumanoidBone.RightHand, null);
+			SetSelectedHandAttachment(HumanoidBone.LeftHand, null);
+			UpdatePreviewHandAttachments();
 			PlayAnimationFile(_currentPreviewRanim);
 		}
 	}
@@ -500,14 +684,15 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 				for (int i = 0; i < animList.Count; i++)
 				{
 					int index = i;
-					string animFile = animList[i];
+					var entry = animList[i];
+					string animFile = entry.Animation;
 
 					var itemRow = new HBoxContainer();
 					itemRow.AddThemeConstantOverride("separation", 6);
 
 					var badge = new Label();
 					badge.Text = $"{actionType}_{index}";
-					badge.CustomMinimumSize = new Vector2(65, 0);
+					badge.CustomMinimumSize = new Vector2(55, 0);
 					badge.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
 					badge.AddThemeFontSizeOverride("font_size", 10);
 					itemRow.AddChild(badge);
@@ -519,12 +704,41 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 					nameLbl.ClipText = true;
 					itemRow.AddChild(nameLbl);
 
+					var lblRight = new Label();
+					lblRight.Text = !string.IsNullOrEmpty(entry.RightHandAttachment) ? $"R: {entry.RightHandAttachment}" : "R: -";
+					lblRight.CustomMinimumSize = new Vector2(75, 0);
+					lblRight.AddThemeFontSizeOverride("font_size", 10);
+					lblRight.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+					lblRight.ClipText = true;
+					itemRow.AddChild(lblRight);
+
+					var lblLeft = new Label();
+					lblLeft.Text = !string.IsNullOrEmpty(entry.LeftHandAttachment) ? $"L: {entry.LeftHandAttachment}" : "L: -";
+					lblLeft.CustomMinimumSize = new Vector2(75, 0);
+					lblLeft.AddThemeFontSizeOverride("font_size", 10);
+					lblLeft.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+					lblLeft.ClipText = true;
+					itemRow.AddChild(lblLeft);
+
 					AddButton(itemRow, "▶ " + TranslationServer.Translate("Preview"), () =>
 					{
-						_currentPreviewRanim = animFile;
-						_setPreviewRanimValue?.Invoke(animFile);
-						PlayAnimationFile(animFile);
-					}, "Preview this animation on loop", 10, new Vector2(65, 22));
+						_currentPreviewRanim = entry.Animation;
+						_setPreviewRanimValue?.Invoke(entry.Animation);
+						SetSelectedHandAttachment(HumanoidBone.RightHand, entry.RightHandAttachment);
+						SetSelectedHandAttachment(HumanoidBone.LeftHand, entry.LeftHandAttachment);
+						UpdatePreviewHandAttachments();
+
+						for (int a = 0; a < StandardActionTypes.Length; a++)
+						{
+							if (StandardActionTypes[a].Equals(actionType, StringComparison.OrdinalIgnoreCase))
+							{
+								_optTargetAction.Selected = a;
+								break;
+							}
+						}
+
+						PlayAnimationFile(entry.Animation);
+					}, "Preview this animation and attachments", 10, new Vector2(65, 22));
 
 					AddButton(itemRow, "✕ " + TranslationServer.Translate("Remove"), () =>
 					{
@@ -554,12 +768,34 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 
 		if (!_workingAnimations.TryGetValue(actionType, out var list) || list == null)
 		{
-			list = new List<string>();
+			list = new List<GameHost.UnitAnimationEntry>();
 			_workingAnimations[actionType] = list;
 		}
 
-		list.Add(animFile);
-		Hud?.ShowFeedback(TranslationServer.Translate($"Added {animFile} to {actionType}"));
+		string right = GetSelectedHandAttachment(HumanoidBone.RightHand);
+		string left = GetSelectedHandAttachment(HumanoidBone.LeftHand);
+		string? rightVal = string.IsNullOrEmpty(right) ? null : right;
+		string? leftVal = string.IsNullOrEmpty(left) ? null : left;
+
+		bool exists = list.Any(e =>
+			e.Animation.Equals(animFile, StringComparison.OrdinalIgnoreCase) &&
+			string.Equals(e.RightHandAttachment ?? "", rightVal ?? "", StringComparison.OrdinalIgnoreCase) &&
+			string.Equals(e.LeftHandAttachment ?? "", leftVal ?? "", StringComparison.OrdinalIgnoreCase));
+
+		if (exists)
+		{
+			Hud?.ShowFeedback(TranslationServer.Translate("This animation and attachment combination already exists in this action."));
+			return;
+		}
+
+		list.Add(new GameHost.UnitAnimationEntry
+		{
+			Animation = animFile,
+			RightHandAttachment = rightVal,
+			LeftHandAttachment = leftVal
+		});
+
+		Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Added {0} to {1}"), animFile, actionType));
 		RebuildActionListUI();
 	}
 
@@ -567,13 +803,13 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 	{
 		if (_workingAnimations.TryGetValue(actionType, out var list) && list != null && index >= 0 && index < list.Count)
 		{
-			string removed = list[index];
+			var removed = list[index];
 			list.RemoveAt(index);
 			if (list.Count == 0)
 			{
 				_workingAnimations.Remove(actionType);
 			}
-			Hud?.ShowFeedback(TranslationServer.Translate($"Removed {removed} from {actionType}"));
+			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Removed {0} from {1}"), removed.Animation, actionType));
 			RebuildActionListUI();
 		}
 	}
@@ -590,6 +826,10 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 			_previewModelRoot = null;
 			_animPlayer = null;
 		}
+		_rightHandBoneAttachment = null;
+		_leftHandBoneAttachment = null;
+		_rightHandModelNode = null;
+		_leftHandModelNode = null;
 	}
 
 	private void SetupPreviewModel(Node sourceModelRoot)
@@ -598,6 +838,8 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 
 		var clonedNode = (Node3D)sourceModelRoot.Duplicate((int)Node.DuplicateFlags.UseInstantiation);
 		if (clonedNode == null) return;
+
+		RemoveAllBoneAttachments(clonedNode);
 
 		clonedNode.Position = Vector3.Zero;
 		clonedNode.Rotation = Vector3.Zero;
@@ -613,7 +855,115 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 
 		FrameCameraOnModel(_previewModelRoot);
 
+		var skeleton = SkeletonValidator.FindSkeleton(_previewModelRoot);
+		if (skeleton != null)
+		{
+			int rightIdx = HumanoidBoneMapper.FindBoneInSkeleton(skeleton, HumanoidBone.RightHand);
+			if (rightIdx >= 0)
+			{
+				_rightHandBoneAttachment = new BoneAttachment3D
+				{
+					Name = "BoneAttachment_RightHand",
+					BoneName = skeleton.GetBoneName(rightIdx),
+					BoneIdx = rightIdx
+				};
+				skeleton.AddChild(_rightHandBoneAttachment);
+			}
+
+			int leftIdx = HumanoidBoneMapper.FindBoneInSkeleton(skeleton, HumanoidBone.LeftHand);
+			if (leftIdx >= 0)
+			{
+				_leftHandBoneAttachment = new BoneAttachment3D
+				{
+					Name = "BoneAttachment_LeftHand",
+					BoneName = skeleton.GetBoneName(leftIdx),
+					BoneIdx = leftIdx
+				};
+				skeleton.AddChild(_leftHandBoneAttachment);
+			}
+		}
+
+		UpdatePreviewHandAttachments();
+
 		_animPlayer = AnimationRetargetingService.FindOrCreateAnimationPlayer(_previewModelRoot);
+	}
+
+	private void UpdatePreviewHandAttachments()
+	{
+		string rightId = GetSelectedHandAttachment(HumanoidBone.RightHand);
+		string leftId = GetSelectedHandAttachment(HumanoidBone.LeftHand);
+
+		AttachModelToPreviewHand(HumanoidBone.RightHand, rightId);
+		AttachModelToPreviewHand(HumanoidBone.LeftHand, leftId);
+	}
+
+	private static void RemoveAllBoneAttachments(Node node)
+	{
+		if (node == null) return;
+		var boneAttachments = new List<BoneAttachment3D>();
+		CollectBoneAttachmentsRecursive(node, boneAttachments);
+		foreach (var ba in boneAttachments)
+		{
+			ba.GetParent()?.RemoveChild(ba);
+			ba.QueueFree();
+		}
+	}
+
+	private static void CollectBoneAttachmentsRecursive(Node node, List<BoneAttachment3D> list)
+	{
+		if (node is BoneAttachment3D ba)
+		{
+			list.Add(ba);
+			return;
+		}
+		foreach (Node child in node.GetChildren())
+		{
+			CollectBoneAttachmentsRecursive(child, list);
+		}
+	}
+
+	private void AttachModelToPreviewHand(HumanoidBone hand, string attachmentId)
+	{
+		var targetBone = hand == HumanoidBone.RightHand ? _rightHandBoneAttachment : _leftHandBoneAttachment;
+		if (targetBone == null || !GodotObject.IsInstanceValid(targetBone)) return;
+
+		foreach (Node child in targetBone.GetChildren())
+		{
+			targetBone.RemoveChild(child);
+			child.QueueFree();
+		}
+
+		if (hand == HumanoidBone.RightHand) _rightHandModelNode = null;
+		else _leftHandModelNode = null;
+
+		if (string.IsNullOrEmpty(attachmentId) || attachmentId.Equals("<None>", StringComparison.OrdinalIgnoreCase) || attachmentId.Equals("none", StringComparison.OrdinalIgnoreCase))
+		{
+			return;
+		}
+
+		Node3D loaded = Unit3D.ResolveAndInstantiateAttachment(attachmentId, out float defScale, out Vector3 defPos, out Vector3 defRot);
+		if (loaded != null)
+		{
+			float scale = defScale;
+			Vector3 pos = defPos;
+			Vector3 rot = defRot;
+
+			if (!string.IsNullOrEmpty(_currentUnitId) && GameHost.UnitRegistry.TryGetValue(_currentUnitId, out var uMeta) &&
+				uMeta.TryGetObjectAttachment(hand, attachmentId, out var unitOrient))
+			{
+				if (unitOrient.Scale > 0f) scale = unitOrient.Scale;
+				pos = unitOrient.Position;
+				rot = unitOrient.RotationDegrees;
+			}
+
+			loaded.Position = pos;
+			loaded.RotationDegrees = rot;
+			loaded.Scale = Vector3.One * (scale <= 0f ? 1.0f : scale);
+			targetBone.AddChild(loaded);
+
+			if (hand == HumanoidBone.RightHand) _rightHandModelNode = loaded;
+			else _leftHandModelNode = loaded;
+		}
 	}
 
 	private void FrameCameraOnModel(Node3D modelRoot)
@@ -773,16 +1123,7 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 	{
 		if (!string.IsNullOrEmpty(_currentUnitId))
 		{
-			var finalDict = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-			foreach (var kvp in _workingAnimations)
-			{
-				if (kvp.Value != null && kvp.Value.Count > 0)
-				{
-					finalDict[kvp.Key] = kvp.Value.ToArray();
-				}
-			}
-
-			Hud?.SaveCustomUnitAnimations(_currentUnitId, finalDict);
+			Hud?.SaveCustomUnitAnimations(_currentUnitId, _workingAnimations);
 			Hud?.ShowFeedback(TranslationServer.Translate("Unit animations applied successfully."));
 		}
 
