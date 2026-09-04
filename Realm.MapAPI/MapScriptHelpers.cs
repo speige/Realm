@@ -131,10 +131,7 @@ public class WaypointMarcher
     private readonly WaypointMarchConfig _config;
     private int _waypointIndex = 1;
     private bool _hasMovementOrder;
-    private bool _wasFighting;
-    private float _attackCooldown;
     private Vector3? _orderedDestination;
-    private IUnit? _activeCombatTarget;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WaypointMarcher"/> class.
@@ -168,42 +165,10 @@ public class WaypointMarcher
         if (!IsAlive || _waypointIndex >= _waypoints.Count)
             return;
 
-        _attackCooldown = MathF.Max(0f, _attackCooldown - delta);
-        var attackRange = _unit.Range > 0 ? _unit.Range : 1.5f;
-
-        var target = api.GetUnitsInRadius(_unit.Position, attackRange + 1.25f)
-            .Where(candidate => !candidate.IsDead && candidate.IsEnemy != _unit.IsEnemy)
-            .OrderBy(candidate => HorizontalDistanceSquared(candidate.Position, _unit.Position))
-            .FirstOrDefault();
-
-        if (target != null)
-        {
-            _wasFighting = true;
-
-            if (!ReferenceEquals(_activeCombatTarget, target))
-            {
-                _unit.Attack(target);
-                _activeCombatTarget = target;
-                _orderedDestination = null;
-                _hasMovementOrder = false;
-            }
-
-            var distSq = HorizontalDistanceSquared(_unit.Position, target.Position);
-            if (distSq <= attackRange * attackRange && _attackCooldown <= 0f)
-            {
-                _unit.Attack(target);
-                _attackCooldown = _config.AttackCooldownSeconds;
-            }
-
-            return;
-        }
-
-        _activeCombatTarget = null;
         AdvanceWaypointIfReached();
-        if (!_hasMovementOrder || _wasFighting)
+        if (!_hasMovementOrder)
         {
             IssueLanePush(api);
-            _wasFighting = false;
         }
     }
 

@@ -70,6 +70,25 @@ public static class AnimationRetargetingService
 		string activeMap = GameHost.Instance?.ActiveMapName ?? LobbyManager.Instance?.ActiveMapName;
 		if (!string.IsNullOrEmpty(activeMap))
 		{
+			if (Directory.Exists(activeMap))
+			{
+				foreach (var candName in candidateNames)
+				{
+					string p = Path.Combine(activeMap, "Assets", "animations", candName);
+					if (File.Exists(p)) return p;
+				}
+			}
+
+			string currentMapDir = GameHost.Instance?.CurrentMapDirectory;
+			if (!string.IsNullOrEmpty(currentMapDir) && Directory.Exists(currentMapDir))
+			{
+				foreach (var candName in candidateNames)
+				{
+					string p = Path.Combine(currentMapDir, "Assets", "animations", candName);
+					if (File.Exists(p)) return p;
+				}
+			}
+
 			string mapDir = ProjectSettings.GlobalizePath($"user://maps/{activeMap}");
 			foreach (var candName in candidateNames)
 			{
@@ -123,7 +142,8 @@ public static class AnimationRetargetingService
 	public static GAnimation RetargetAnimation(
 		RealmAnimationData animData,
 		Skeleton3D targetSkeleton,
-		NodePath skeletonRelativePath)
+		NodePath skeletonRelativePath,
+		string? animationName = null)
 	{
 		if (animData == null || targetSkeleton == null) return null;
 
@@ -154,6 +174,8 @@ public static class AnimationRetargetingService
 				hipHeightRatio = targetHipHeight / 1.0f;
 			}
 		}
+
+		bool isDeath = !string.IsNullOrEmpty(animationName) && animationName.StartsWith("Death", StringComparison.OrdinalIgnoreCase);
 
 		foreach (var track in animData.Tracks)
 		{
@@ -191,13 +213,27 @@ public static class AnimationRetargetingService
 				godotAnim.TrackSetPath(posTrackIdx, boneTrackPath);
 				godotAnim.TrackSetInterpolationType(posTrackIdx, GAnimation.InterpolationType.Linear);
 
+				var firstKey = track.PositionKeys[0];
+				var lastKey = track.PositionKeys[^1];
+				float driftX = (!isDeath && track.PositionKeys.Length > 1) ? (lastKey.X - firstKey.X) : 0f;
+				float driftZ = (!isDeath && track.PositionKeys.Length > 1) ? (lastKey.Z - firstKey.Z) : 0f;
+
+				float totalDuration = lastKey.Time - firstKey.Time;
+				if (totalDuration <= 0f && animData.Duration > 0f)
+				{
+					totalDuration = animData.Duration;
+				}
+
 				var basePos = track.PositionKeys[0];
 				float posScale = hipHeightRatio;
 				foreach (var key in track.PositionKeys)
 				{
-					float dx = (key.X - basePos.X) * posScale;
+					float progress = totalDuration > 0.0001f ? Math.Clamp((key.Time - firstKey.Time) / totalDuration, 0f, 1f) : 0f;
+					float localX = (key.X - basePos.X) - driftX * progress;
+					float localZ = (key.Z - basePos.Z) - driftZ * progress;
+					float dx = localX * posScale;
 					float dy = (key.Y - basePos.Y) * posScale;
-					float dz = (key.Z - basePos.Z) * posScale;
+					float dz = localZ * posScale;
 					godotAnim.PositionTrackInsertKey(posTrackIdx, key.Time, new Vector3(dx, dy, dz));
 				}
 			}
@@ -292,7 +328,7 @@ public static class AnimationRetargetingService
 		}
 
 		NodePath relativeSkelPath = animMixerRoot.GetPathTo(validation.Skeleton);
-		var godotAnim = RetargetAnimation(animData, validation.Skeleton, relativeSkelPath);
+		var godotAnim = RetargetAnimation(animData, validation.Skeleton, relativeSkelPath, animationName);
 		if (godotAnim == null)
 		{
 			errorMessage = "Failed to generate retargeted Godot Animation resource in RAM.";
