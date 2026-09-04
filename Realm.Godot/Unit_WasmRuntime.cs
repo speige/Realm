@@ -680,7 +680,8 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 			{
 				if (GodotObject.IsInstanceValid(u3d))
 				{
-					u3d.Scale = new Vector3(value, value, value);
+					float safeScale = Mathf.Max(0.001f, value);
+					u3d.Scale = new Vector3(safeScale, safeScale, safeScale);
 				}
 			}
 		}

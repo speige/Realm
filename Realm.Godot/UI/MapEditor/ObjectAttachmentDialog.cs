@@ -348,7 +348,9 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 		}
 
 		Basis handBasis = targetBone.GlobalTransform.Basis.Orthonormalized();
-		Basis desiredLocalBasis = (handBasis.Inverse() * desiredWorldBasis).Orthonormalized();
+		Basis desiredLocalBasis = Mathf.Abs(handBasis.Determinant()) < 0.0001f 
+			? desiredWorldBasis.Orthonormalized() 
+			: (handBasis.Inverse() * desiredWorldBasis).Orthonormalized();
 
 		Vector3 rotEulerRad = desiredLocalBasis.GetEuler();
 		_currentRotOffset = new Vector3(
@@ -372,11 +374,16 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 	{
 		Aabb combinedAabb = new Aabb();
 		bool hasAabb = false;
+		if (root == null || Mathf.Abs(root.GlobalTransform.Basis.Determinant()) < 0.0001f)
+		{
+			return combinedAabb;
+		}
 
 		void Collect(Node current)
 		{
 			if (current is MeshInstance3D meshInst && meshInst.Mesh != null)
 			{
+				if (Mathf.Abs(meshInst.GlobalTransform.Basis.Determinant()) < 0.0001f) return;
 				Transform3D relXform = root.GlobalTransform.AffineInverse() * meshInst.GlobalTransform;
 				Aabb mAabb = meshInst.Mesh.GetAabb();
 				Vector3 min = mAabb.Position;
@@ -844,6 +851,11 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 		) * _cameraDistance;
 
 		Vector3 newPos = _targetPosition + offset;
-		_camera.LookAtFromPosition(newPos, _targetPosition, Vector3.Up);
+		if (newPos.DistanceSquaredTo(_targetPosition) > 0.0001f)
+		{
+			Vector3 dir = (_targetPosition - newPos).Normalized();
+			Vector3 up = Mathf.Abs(dir.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
+			_camera.LookAtFromPosition(newPos, _targetPosition, up);
+		}
 	}
 }

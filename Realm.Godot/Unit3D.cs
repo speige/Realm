@@ -70,8 +70,7 @@ public partial class Unit3D : Prop3D
 		}
 	}
 
-	private bool _isResource;
-	public bool IsResource
+	public override bool IsResource
 	{
 		get
 		{
@@ -82,11 +81,11 @@ public partial class Unit3D : Prop3D
 			}
 			if (GameHost.ResourceRegistry != null && !string.IsNullOrEmpty(UnitId) && GameHost.ResourceRegistry.ContainsKey(UnitId))
 				return true;
-			return _isResource;
+			return base.IsResource;
 		}
 		set
 		{
-			_isResource = value;
+			base.IsResource = value;
 		}
 	}
 
@@ -287,7 +286,8 @@ public partial class Unit3D : Prop3D
 	{
 		if (_modelNode != null && GodotObject.IsInstanceValid(_modelNode))
 		{
-			_modelNode.Scale = new Vector3(globalScale, globalScale, globalScale);
+			float safeScale = globalScale <= 0.001f ? 1.0f : globalScale;
+			_modelNode.Scale = new Vector3(safeScale, safeScale, safeScale);
 			string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(ModelPath ?? UnitId) : "";
 			float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
 			_modelNode.Position = new Vector3(0f, yOffset, 0f);
@@ -324,7 +324,8 @@ public partial class Unit3D : Prop3D
 
 				string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(modelPath) : "";
 				float globalScale = GameHost.Instance != null ? GameHost.Instance.GetModelScale(this) : 1.0f;
-				_modelNode.Scale = new Vector3(globalScale, globalScale, globalScale);
+				float safeScale = globalScale <= 0.001f ? 1.0f : globalScale;
+				_modelNode.Scale = new Vector3(safeScale, safeScale, safeScale);
 
 				UpdateLodVisibility();
 
@@ -407,20 +408,22 @@ public partial class Unit3D : Prop3D
 		if (existing != null)
 		{
 			float updatedRadius = GameHost.Instance.GetOrCalculateObstacleRadius(UnitId, this, IsBuilding) * GameHost.Instance.GetModelCollisionCircleRatio(ModelPath);
-			if (updatedRadius > 0f)
+			if (updatedRadius > 0.001f)
 			{
-				existing.Size = new Vector3(updatedRadius * 2.5f, 3f, updatedRadius * 2.5f);
+				float safeRadius = Mathf.Max(0.1f, updatedRadius * 2.5f);
+				existing.Size = new Vector3(safeRadius, 3f, safeRadius);
 			}
 			return;
 		}
 
 		float radius = GameHost.Instance.GetOrCalculateObstacleRadius(UnitId, this, IsBuilding) * GameHost.Instance.GetModelCollisionCircleRatio(ModelPath);
-		if (radius <= 0f) radius = 1f;
+		if (radius <= 0.001f) radius = 1f;
 
 		Decal shadowDecal = new Decal();
 		shadowDecal.Name = "DropShadow";
 		shadowDecal.TextureAlbedo = GameHost.Instance.GetSharedShadowGradient();
-		shadowDecal.Size = new Vector3(radius * 2.5f, 3f, radius * 2.5f);
+		float decalSize = Mathf.Max(0.1f, radius * 2.5f);
+		shadowDecal.Size = new Vector3(decalSize, 3f, decalSize);
 		shadowDecal.Position = Vector3.Zero;
 		// Decals project along local -Z; tilt the node down so the shadow lands on the terrain.
 		shadowDecal.RotationDegrees = new Vector3(-90f, 0f, 0f);

@@ -1455,11 +1455,16 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	{
 		Aabb aabb = new Aabb();
 		bool hasAabb = false;
+		if (root == null || Mathf.Abs(root.GlobalTransform.Basis.Determinant()) < 0.0001f)
+		{
+			return;
+		}
 
 		void CalculateAabb(Node node)
 		{
 			if (node is VisualInstance3D visual)
 			{
+				if (Mathf.Abs(visual.GlobalTransform.Basis.Determinant()) < 0.0001f) return;
 				Aabb itemAabb = visual.GetAabb();
 				if (itemAabb.Size.LengthSquared() > 0.001f)
 				{
@@ -3660,7 +3665,12 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		Vector3 newPos = _targetPosition + offset;
 		_camera.Position = newPos;
-		_camera.LookAtFromPosition(newPos, _targetPosition, Vector3.Up);
+		if (newPos.DistanceSquaredTo(_targetPosition) > 0.0001f)
+		{
+			Vector3 dir = (_targetPosition - newPos).Normalized();
+			Vector3 up = Mathf.Abs(dir.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
+			_camera.LookAtFromPosition(newPos, _targetPosition, up);
+		}
 	}
 
 	public override void CloseDialog()

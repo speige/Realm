@@ -456,6 +456,8 @@ public partial class MapEditorHUD : Control
 
 		_panelLeft = GetNode<Panel>("LeftSlidePanel");
 		_panelRight = GetNode<Panel>("RightSlidePanel");
+		if (_panelLeft != null) _panelLeft.MouseFilter = Control.MouseFilterEnum.Ignore;
+		if (_panelRight != null) _panelRight.MouseFilter = Control.MouseFilterEnum.Ignore;
 
 		_btnLeftTab = GetNodeOrNull<Button>("LeftSlidePanel/LeftTabButton");
 		if (_btnLeftTab != null)
@@ -583,10 +585,12 @@ public partial class MapEditorHUD : Control
 		_statusLabel = GetNode<Label>("TopBar/HBox/StatusLabel");
 		_feedbackLabel = GetNode<Label>("FeedbackLabel");
 		_feedbackLabel.Modulate = new Color(1, 1, 1, 0);
+		_feedbackLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
 
 		var leftScroll = GetNodeOrNull<ScrollContainer>("LeftSlidePanel/LeftScroll");
 		if (leftScroll != null)
 		{
+			leftScroll.MouseFilter = Control.MouseFilterEnum.Ignore;
 			leftScroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
 			leftScroll.VerticalScrollMode = ScrollContainer.ScrollMode.Disabled;
 		}
@@ -594,6 +598,7 @@ public partial class MapEditorHUD : Control
 		var rightScroll = GetNodeOrNull<ScrollContainer>("RightSlidePanel/RightScroll");
 		if (rightScroll != null)
 		{
+			rightScroll.MouseFilter = Control.MouseFilterEnum.Ignore;
 			rightScroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
 			rightScroll.VerticalScrollMode = ScrollContainer.ScrollMode.Disabled;
 		}
@@ -1416,14 +1421,36 @@ public partial class MapEditorHUD : Control
 
 	private void ApplyThemeStyles()
 	{
-		if (_panelLeft != null) _panelLeft.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
-		if (_panelRight != null) _panelRight.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		if (_panelLeft != null)
+		{
+			_panelLeft.MouseFilter = Control.MouseFilterEnum.Ignore;
+			_panelLeft.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		}
+		if (_panelRight != null)
+		{
+			_panelRight.MouseFilter = Control.MouseFilterEnum.Ignore;
+			_panelRight.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		}
+
+		var leftScroll = GetNodeOrNull<ScrollContainer>("LeftSlidePanel/LeftScroll");
+		if (leftScroll != null) leftScroll.MouseFilter = Control.MouseFilterEnum.Ignore;
+
+		var rightScroll = GetNodeOrNull<ScrollContainer>("RightSlidePanel/RightScroll");
+		if (rightScroll != null) rightScroll.MouseFilter = Control.MouseFilterEnum.Ignore;
 
 		var leftVBox = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox");
-		if (leftVBox != null) leftVBox.AddThemeConstantOverride("separation", 14);
+		if (leftVBox != null)
+		{
+			leftVBox.MouseFilter = Control.MouseFilterEnum.Ignore;
+			leftVBox.AddThemeConstantOverride("separation", 14);
+		}
 
 		var rightVBox = GetNodeOrNull<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer");
-		if (rightVBox != null) rightVBox.AddThemeConstantOverride("separation", 14);
+		if (rightVBox != null)
+		{
+			rightVBox.MouseFilter = Control.MouseFilterEnum.Ignore;
+			rightVBox.AddThemeConstantOverride("separation", 14);
+		}
 
 		if (_accordionFile != null) _accordionFile.CustomMinimumSize = new Vector2(260, 0);
 		if (_accordionViewport != null) _accordionViewport.CustomMinimumSize = new Vector2(260, 0);
@@ -6836,7 +6863,17 @@ public partial class MapEditorHUD : Control
 		var hoveredControl = GetViewport().GuiGetHoveredControl();
 		if (hoveredControl != null && hoveredControl != this)
 		{
-			return true;
+			if (hoveredControl != _panelLeft &&
+				hoveredControl != _panelRight &&
+				hoveredControl.Name != "LeftScroll" &&
+				hoveredControl.Name != "RightScroll" &&
+				hoveredControl.Name != "LeftVBox" &&
+				hoveredControl.Name != "AccordionContainer" &&
+				hoveredControl.Name != "FeedbackLabel" &&
+				hoveredControl.Name != "MapEditorScreenFrame")
+			{
+				return true;
+			}
 		}
 		if (_optModule != null && _optModule.GetPopup() != null && _optModule.GetPopup().Visible)
 		{

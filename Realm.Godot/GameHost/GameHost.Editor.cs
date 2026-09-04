@@ -2455,7 +2455,7 @@ public partial class GameHost
 
 		var unit3D = SpawnUnit3D(entity, unitId, modelPath, position, isBuilding, actualIsEnemy, false, playerIndex);
 		unit3D.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
-		unit3D.Scale = Vector3.One * scale;
+		unit3D.Scale = Vector3.One * (scale <= 0.001f ? 1.0f : scale);
 
 		if (EcsWorld.Has<CollisionScale>(entity))
 		{
@@ -2548,7 +2548,7 @@ public partial class GameHost
 		prop.PropId = propId;
 		prop.Position = position;
 		prop.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
-		prop.Scale = Vector3.One * scale;
+		prop.Scale = Vector3.One * (scale <= 0.001f ? 1.0f : scale);
 		AddChild(prop);
 		AllProps.Add(prop);
 		PropMultiMeshManager.Instance?.MarkDirty(propId);
@@ -2565,7 +2565,7 @@ public partial class GameHost
 		decal.Entity = entity;
 		decal.DecalId = string.IsNullOrEmpty(decalId) ? "logo" : decalId;
 		decal.TextureAlbedo = LoadDecalTexture(decalId);
-		decal.Size = new Vector3(6.0f, 20.0f, 6.0f) * scale;
+		decal.Size = new Vector3(6.0f, 20.0f, 6.0f) * (scale <= 0.001f ? 1.0f : scale);
 		decal.AlbedoMix = 1.0f;
 		decal.CullMask = RuntimeTerrain.TerrainDecalCullMask;
 		AddChild(decal);
@@ -3208,14 +3208,15 @@ public partial class GameHost
 			}
 			_editorPreviewNode.Position = previewPos;
 			_editorPreviewNode.RotationDegrees = new Vector3(0.0f, previewRot, 0.0f);
+			float safePreviewScale = previewScaleVal <= 0.001f ? 1.0f : previewScaleVal;
 			if (_editorPreviewNode is Decal previewDecal)
 			{
-				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * previewScaleVal;
+				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * safePreviewScale;
 				previewDecal.Scale = Vector3.One;
 			}
 			else
 			{
-				_editorPreviewNode.Scale = Vector3.One * previewScaleVal;
+				_editorPreviewNode.Scale = Vector3.One * safePreviewScale;
 			}
 			_editorPreviewNode.Visible = true;
 		}

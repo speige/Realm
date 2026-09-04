@@ -76,6 +76,30 @@ public partial class Prop3D : StaticBody3D
 		}
 	}
 
+	private bool _isResource;
+	public virtual bool IsResource
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && Entity != default && GameHost.Instance.EcsWorld.IsAlive(Entity))
+			{
+				if (GameHost.Instance.EcsWorld.Has<ResourceNode>(Entity))
+					return true;
+			}
+			if (GameHost.ResourceRegistry != null && !string.IsNullOrEmpty(PropId))
+			{
+				if (GameHost.ResourceRegistry.ContainsKey(PropId)) return true;
+				string cleanId = System.IO.Path.GetFileNameWithoutExtension(PropId);
+				if (!string.IsNullOrEmpty(cleanId) && GameHost.ResourceRegistry.ContainsKey(cleanId)) return true;
+			}
+			return _isResource;
+		}
+		set
+		{
+			_isResource = value;
+		}
+	}
+
 	private MeshInstance3D _selectionRing;
 	private bool _isSelected = false;
 
