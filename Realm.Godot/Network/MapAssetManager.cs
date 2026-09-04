@@ -420,12 +420,6 @@ public static class MapAssetManager
             try
             {
                 MapAssetManager.Log("[MapAssetManager] Starting background pruning process...");
-                
-                if (!File.Exists(archiveFile))
-                {
-                    MapAssetManager.Log("[MapAssetManager] Global archive does not exist, skipping pruning.");
-                    return;
-                }
 
                 if (!Directory.Exists(archiveDir))
                 {
@@ -433,7 +427,7 @@ public static class MapAssetManager
                 }
 
                 var manifestFiles = Directory.GetFiles(archiveDir, "*.json");
-                var referencedHashes = new HashSet<string>();
+                var referencedHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var file in manifestFiles)
                 {
@@ -448,6 +442,7 @@ public static class MapAssetManager
                             foreach (var hash in manifest.Files.Values)
                             {
                                 referencedHashes.Add(hash);
+                                referencedHashes.Add(Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash));
                             }
                         }
                     }
@@ -458,6 +453,36 @@ public static class MapAssetManager
                 }
 
                 MapAssetManager.Log($"[MapAssetManager] Total referenced BLAKE3 hashes found in manifests: {referencedHashes.Count}");
+
+                if (Directory.Exists(Storage.AssetsDirectory))
+                {
+                    var casFiles = Directory.GetFiles(Storage.AssetsDirectory, "*.*", SearchOption.AllDirectories);
+                    foreach (var casFile in casFiles)
+                    {
+                        string fileHash = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(Path.GetFileName(casFile));
+                        if (!referencedHashes.Contains(fileHash))
+                        {
+                            try
+                            {
+                                File.Delete(casFile);
+                                string sidecarShard = Path.Combine(Storage.SidecarCacheDirectory, fileHash.Substring(0, 2));
+                                string sidecarFile = Path.Combine(sidecarShard, $"{fileHash}.json");
+                                if (File.Exists(sidecarFile))
+                                {
+                                    File.Delete(sidecarFile);
+                                }
+                                MapAssetManager.Log($"[MapAssetManager] Pruned CAS asset: {casFile}");
+                            }
+                            catch { }
+                        }
+                    }
+                }
+
+                if (!File.Exists(archiveFile))
+                {
+                    MapAssetManager.Log("[MapAssetManager] CAS pruning completed. Global 7z archive does not exist, skipping 7z pruning.");
+                    return;
+                }
 
                 bool needsPruning = false;
                 using (var archive = ArchiveFactory.OpenArchive(archiveFile, null))

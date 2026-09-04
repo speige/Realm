@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Realm.Shared.Distribution;
@@ -431,5 +432,131 @@ public class DistributionScenarioTests
         byte[] bytes = await resp.Content.ReadAsByteArrayAsync();
         var res = storage.StoreAsset(bytes, ".bin");
         return res.Success;
+    }
+
+    [Test]
+    public async Task Scenario6_BloomFilterSidecarHeaderSync_MergesHeadersBetweenSeeders()
+    {
+        string seeder1StorageDir = Path.Combine(_scenarioRoot, "s1_cas");
+        string seeder2StorageDir = Path.Combine(_scenarioRoot, "s2_cas");
+
+        var s1Cas = new ContentAddressableStorage(seeder1StorageDir);
+        var s2Cas = new ContentAddressableStorage(seeder2StorageDir);
+
+        int s1Port = GetAvailablePort();
+        int s2Port = GetAvailablePort();
+
+        var s1Server = new DistributionServer(s1Cas, "seeder_1", 100);
+        s1Server.Start(s1Port);
+        _runningServers.Add(s1Server);
+
+        var s2Server = new DistributionServer(s2Cas, "seeder_2", 100);
+        s2Server.Start(s2Port);
+        _runningServers.Add(s2Server);
+
+        byte[] sharedFileBytes = Encoding.UTF8.GetBytes("Shared canonical asset payload across seeders");
+        string s1Meta = "{\"tags\":[\"grass\"],\"author\":\"Alice\"}";
+        string s2Meta = "{\"tags\":[\"rock\"],\"description\":\"Terrain\"}";
+
+        var s1StoreResult = s1Cas.StoreAsset(sharedFileBytes, ".bin", s1Meta);
+        var s2StoreResult = s2Cas.StoreAsset(sharedFileBytes, ".bin", s2Meta);
+
+        Assert.That(s1StoreResult.Success, Is.True);
+        Assert.That(s2StoreResult.Success, Is.True);
+        Assert.That(s1StoreResult.Blake3Hash, Is.EqualTo(s2StoreResult.Blake3Hash));
+
+        string assetHash = s1StoreResult.Blake3Hash;
+
+        using var httpClient = new HttpClient();
+        var s1Engine = new SeederPropagationEngine("seeder_1", 100, s1Cas, $"http://127.0.0.1:{s1Port}", httpClient);
+
+        var s2BloomFilter = await s1Engine.FetchPeerHeaderBloomFilterAsync("127.0.0.1", s2Port);
+        Assert.That(s2BloomFilter, Is.Not.Null);
+
+        string s1HeaderKey = BloomFilter.CreateHeaderKey(assetHash, s1Cas.GetAssetMetadata(assetHash));
+        Assert.That(s2BloomFilter!.Contains(s1HeaderKey), Is.False);
+
+        var peerList = new List<SeederNodeDto>
+        {
+            new SeederNodeDto { SeederId = "seeder_2", IP = "127.0.0.1", Port = s2Port, CapacityPercentage = 100 }
+        };
+
+        int syncedCount = await s1Engine.RunBloomFilterHeaderSyncWithSeedersAsync(peerList);
+        Assert.That(syncedCount, Is.GreaterThanOrEqualTo(1));
+
+        string? s1FinalMeta = s1Cas.GetAssetMetadata(assetHash);
+        string? s2FinalMeta = s2Cas.GetAssetMetadata(assetHash);
+
+        Assert.That(s1FinalMeta, Is.Not.Null);
+        Assert.That(s2FinalMeta, Is.Not.Null);
+
+        Assert.That(s1FinalMeta, Does.Contain("grass"));
+        Assert.That(s1FinalMeta, Does.Contain("rock"));
+        Assert.That(s1FinalMeta, Does.Contain("Alice"));
+        Assert.That(s1FinalMeta, Does.Contain("Terrain"));
+
+        Assert.That(s2FinalMeta, Does.Contain("grass"));
+        Assert.That(s2FinalMeta, Does.Contain("rock"));
+        Assert.That(s2FinalMeta, Does.Contain("Alice"));
+        Assert.That(s2FinalMeta, Does.Contain("Terrain"));
+
+        var s2UpdatedBloomFilter = await s1Engine.FetchPeerHeaderBloomFilterAsync("127.0.0.1", s2Port);
+        Assert.That(s2UpdatedBloomFilter, Is.Not.Null);
+
+        string s1FinalHeaderKey = BloomFilter.CreateHeaderKey(assetHash, s1FinalMeta);
+        Assert.That(s2UpdatedBloomFilter!.Contains(s1FinalHeaderKey), Is.True);
+
+        int secondCycleSynced = await s1Engine.RunBloomFilterHeaderSyncWithSeedersAsync(peerList);
+        Assert.That(secondCycleSynced, Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task Scenario7_BloomFilterHeaderSync_AuthorSignatureOverwritesExistingHeaders()
+    {
+        string seeder1StorageDir = Path.Combine(_scenarioRoot, "s1_cas");
+        string seeder2StorageDir = Path.Combine(_scenarioRoot, "s2_cas");
+
+        var s1Cas = new ContentAddressableStorage(seeder1StorageDir);
+        var s2Cas = new ContentAddressableStorage(seeder2StorageDir);
+
+        int s1Port = GetAvailablePort();
+        int s2Port = GetAvailablePort();
+
+        var s1Server = new DistributionServer(s1Cas, "seeder_1", 100);
+        s1Server.Start(s1Port);
+        _runningServers.Add(s1Server);
+
+        var s2Server = new DistributionServer(s2Cas, "seeder_2", 100);
+        s2Server.Start(s2Port);
+        _runningServers.Add(s2Server);
+
+        var (authorPriv, authorPub) = AuthorSignatureHelper.GenerateKeyPair();
+        byte[] fileBytes = Encoding.UTF8.GetBytes("Author signature verified payload");
+        string assetHash = ContentAddressableStorage.NormalizeBlake3Hash(RealmMetadataHelper.ComputeBlake3(fileBytes, ".bin"));
+        string signature = AuthorSignatureHelper.SignMessage(authorPriv, assetHash);
+
+        string initialMeta = "{\"tags\":[\"old_tag\"],\"version\":\"1.0\"}";
+        s2Cas.StoreAsset(fileBytes, ".bin", initialMeta, authorPub, signature);
+
+        string updatedMeta = "{\"tags\":[\"new_author_tag\"],\"version\":\"2.0\"}";
+        string updatedSignature = AuthorSignatureHelper.SignMessage(authorPriv, assetHash);
+        s1Cas.StoreAsset(fileBytes, ".bin", updatedMeta, authorPub, updatedSignature);
+
+        using var httpClient = new HttpClient();
+        var s1Engine = new SeederPropagationEngine("seeder_1", 100, s1Cas, $"http://127.0.0.1:{s1Port}", httpClient);
+
+        var peerList = new List<SeederNodeDto>
+        {
+            new SeederNodeDto { SeederId = "seeder_2", IP = "127.0.0.1", Port = s2Port, CapacityPercentage = 100 }
+        };
+
+        int synced = await s1Engine.RunBloomFilterHeaderSyncWithSeedersAsync(peerList);
+        Assert.That(synced, Is.GreaterThanOrEqualTo(1));
+
+        string? s2UpdatedMeta = s2Cas.GetAssetMetadata(assetHash);
+        Assert.That(s2UpdatedMeta, Is.Not.Null);
+        Assert.That(s2UpdatedMeta, Does.Contain("new_author_tag"));
+        Assert.That(s2UpdatedMeta, Does.Contain("2.0"));
+        Assert.That(s2UpdatedMeta, Does.Not.Contain("old_tag"));
     }
 }

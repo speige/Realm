@@ -2279,6 +2279,35 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string fileName = Path.GetFileName(sourceFilePath);
+		string sourceExtension = Path.GetExtension(sourceFilePath).ToLowerInvariant();
+
+		var indexedAsset = AssetIndexService.Instance.GetAssetByPath(sourceFilePath);
+		if (indexedAsset != null && !string.IsNullOrWhiteSpace(indexedAsset.FileName) && !string.Equals(indexedAsset.FileName, Path.GetFileName(sourceFilePath), StringComparison.OrdinalIgnoreCase))
+		{
+			string clean = Path.GetFileName(indexedAsset.FileName.Trim());
+			fileName = clean.EndsWith(sourceExtension, StringComparison.OrdinalIgnoreCase) ? clean : $"{clean}{sourceExtension}";
+		}
+		else
+		{
+			string? metaJson = Realm.Shared.Metadata.RealmMetadataHelper.ExtractMetadata(sourceFilePath);
+			if (!string.IsNullOrEmpty(metaJson))
+			{
+				try
+				{
+					var metaObj = JsonNode.Parse(metaJson)?.AsObject();
+					string? friendly = metaObj?["asset_name"]?.ToString()
+						?? metaObj?["name"]?.ToString()
+						?? metaObj?["original_filename"]?.ToString()
+						?? metaObj?["FileName"]?.ToString();
+					if (!string.IsNullOrWhiteSpace(friendly))
+					{
+						string clean = Path.GetFileName(friendly.Trim());
+						fileName = clean.EndsWith(sourceExtension, StringComparison.OrdinalIgnoreCase) ? clean : $"{clean}{sourceExtension}";
+					}
+				}
+				catch { }
+			}
+		}
 
 		try
 		{

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -53,12 +54,12 @@ public static class AuthorSignatureHelper
     {
         if (string.IsNullOrWhiteSpace(existingMetadataJson))
         {
-            return incomingMetadataJson;
+            return CanonicalizeJson(incomingMetadataJson);
         }
 
         if (isAuthorizedOverwrite)
         {
-            return incomingMetadataJson;
+            return CanonicalizeJson(incomingMetadataJson);
         }
 
         JsonNode? existingNode;
@@ -71,12 +72,12 @@ public static class AuthorSignatureHelper
         }
         catch
         {
-            return existingMetadataJson;
+            return CanonicalizeJson(existingMetadataJson);
         }
 
         if (existingNode is not JsonObject existingObject || incomingNode is not JsonObject incomingObject)
         {
-            return existingMetadataJson;
+            return CanonicalizeJson(existingMetadataJson);
         }
 
         foreach (var property in incomingObject)
@@ -122,6 +123,71 @@ public static class AuthorSignatureHelper
             }
         }
 
-        return existingObject.ToJsonString();
+        return CanonicalizeJson(existingObject.ToJsonString());
+    }
+
+    public static string CanonicalizeJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var node = JsonNode.Parse(json);
+            if (node == null)
+            {
+                return json;
+            }
+
+            var sortedNode = SortJsonNode(node);
+            return sortedNode.ToJsonString();
+        }
+        catch
+        {
+            return json;
+        }
+    }
+
+    private static JsonNode SortJsonNode(JsonNode node)
+    {
+        if (node is JsonObject obj)
+        {
+            var sortedObj = new JsonObject();
+            foreach (var kvp in obj.OrderBy(k => k.Key, StringComparer.Ordinal))
+            {
+                sortedObj[kvp.Key] = kvp.Value != null ? SortJsonNode(kvp.Value.DeepClone()) : null;
+            }
+            return sortedObj;
+        }
+        else if (node is JsonArray arr)
+        {
+            bool allPrimitives = arr.All(item => item is JsonValue);
+            if (allPrimitives)
+            {
+                var sortedItems = arr
+                    .Select(item => item?.DeepClone())
+                    .OrderBy(item => item?.ToJsonString(), StringComparer.Ordinal)
+                    .ToList();
+                var sortedArr = new JsonArray();
+                foreach (var item in sortedItems)
+                {
+                    sortedArr.Add(item);
+                }
+                return sortedArr;
+            }
+            else
+            {
+                var sortedArr = new JsonArray();
+                foreach (var item in arr)
+                {
+                    sortedArr.Add(item != null ? SortJsonNode(item.DeepClone()) : null);
+                }
+                return sortedArr;
+            }
+        }
+
+        return node.DeepClone();
     }
 }

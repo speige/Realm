@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -88,7 +89,8 @@ public class SeederPropagationEngine
             }
         }
 
-        return propagatedCount;
+        int syncedHeaders = await RunBloomFilterHeaderSyncWithSeedersAsync(seeders, cancellationToken);
+        return propagatedCount + syncedHeaders;
     }
 
     public void StartBackgroundWorker(TimeSpan interval, CancellationToken cancellationToken = default)
@@ -207,5 +209,179 @@ public class SeederPropagationEngine
         {
             return false;
         }
+    }
+
+    public async Task<int> RunBloomFilterHeaderSyncAsync(CancellationToken cancellationToken = default)
+    {
+        var seeders = await FetchOtherSeedersAsync(cancellationToken);
+        if (seeders.Count == 0)
+        {
+            return 0;
+        }
+
+        return await RunBloomFilterHeaderSyncWithSeedersAsync(seeders, cancellationToken);
+    }
+
+    public async Task<int> RunBloomFilterHeaderSyncWithSeedersAsync(List<SeederNodeDto> seeders, CancellationToken cancellationToken = default)
+    {
+        int syncedHeadersCount = 0;
+        var localHashes = _storage.GetAllStoredHashes().ToList();
+        if (localHashes.Count == 0)
+        {
+            return 0;
+        }
+
+        foreach (var peerSeeder in seeders)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            if (string.Equals(peerSeeder.SeederId, _seederId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var peerFilter = await FetchPeerHeaderBloomFilterAsync(peerSeeder.IP, peerSeeder.Port, cancellationToken);
+            if (peerFilter == null)
+            {
+                continue;
+            }
+
+            foreach (string hash in localHashes)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                string? localMetadataJson = _storage.GetAssetMetadata(hash);
+                string headerKey = BloomFilter.CreateHeaderKey(hash, localMetadataJson);
+
+                if (!peerFilter.Contains(headerKey))
+                {
+                    bool synced = await SyncHeaderWithPeerAsync(peerSeeder.IP, peerSeeder.Port, hash, localMetadataJson, cancellationToken);
+                    if (synced)
+                    {
+                        syncedHeadersCount++;
+                    }
+                }
+            }
+        }
+
+        return syncedHeadersCount;
+    }
+
+    public async Task<BloomFilter?> FetchPeerHeaderBloomFilterAsync(string ip, int port, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            string url = $"http://{ip}:{port}/api/seeders/bloom_headers";
+            var response = await _httpClient.GetAsync(url, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            string json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var dto = JsonSerializer.Deserialize<BloomHeadersResponseDto>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (dto == null || string.IsNullOrEmpty(dto.FilterDataBase64))
+            {
+                return null;
+            }
+
+            return BloomFilter.FromBase64(dto.FilterDataBase64, dto.BitCount, dto.HashCount, dto.ItemCount);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task<bool> SyncHeaderWithPeerAsync(
+        string ip,
+        int port,
+        string blake3Hash,
+        string? localMetadataJson,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            string? authorPublicKey = ExtractAuthorPublicKey(localMetadataJson);
+            string? authorSignature = ExtractAuthorSignature(localMetadataJson);
+
+            var requestDto = new HeaderSyncRequestDto
+            {
+                Blake3Hash = blake3Hash,
+                MetadataHeadersJson = localMetadataJson,
+                AuthorPublicKey = authorPublicKey,
+                AuthorSignature = authorSignature
+            };
+
+            string requestJson = JsonSerializer.Serialize(requestDto);
+            var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+
+            string url = $"http://{ip}:{port}/api/seeders/sync_headers";
+            var response = await _httpClient.PostAsync(url, content, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return false;
+            }
+
+            string responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+            var syncResponse = JsonSerializer.Deserialize<HeaderSyncResponseDto>(responseJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            if (syncResponse != null && !string.IsNullOrWhiteSpace(syncResponse.CurrentMetadataHeadersJson))
+            {
+                string returnedMeta = syncResponse.CurrentMetadataHeadersJson;
+                if (!string.Equals(returnedMeta, localMetadataJson, StringComparison.Ordinal))
+                {
+                    byte[] existingBytes = _storage.GetAssetBytes(blake3Hash) ?? Array.Empty<byte>();
+                    string? filePath = _storage.FindAssetFilePath(blake3Hash);
+                    string extension = filePath != null ? System.IO.Path.GetExtension(filePath) : ".bin";
+
+                    _storage.StoreAsset(
+                        existingBytes,
+                        extension,
+                        returnedMeta,
+                        ExtractAuthorPublicKey(returnedMeta),
+                        ExtractAuthorSignature(returnedMeta));
+                    return true;
+                }
+            }
+
+            return syncResponse?.Updated ?? false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string? ExtractAuthorPublicKey(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(metadataJson);
+            if (doc.RootElement.TryGetProperty("AuthorPublicKey", out var prop)) return prop.GetString();
+            if (doc.RootElement.TryGetProperty("author_public_key", out var sProp)) return sProp.GetString();
+        }
+        catch { }
+        return null;
+    }
+
+    private static string? ExtractAuthorSignature(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(metadataJson);
+            if (doc.RootElement.TryGetProperty("AuthorSignature", out var prop)) return prop.GetString();
+            if (doc.RootElement.TryGetProperty("author_signature", out var sProp)) return sProp.GetString();
+        }
+        catch { }
+        return null;
     }
 }

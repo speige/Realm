@@ -33,7 +33,7 @@ public class PeerSeederManager
 
     private TokenBucket? _tokenBucket;
 
-    public int CapacityPercentage { get; set; } = 100;
+    public int CapacityPercentage { get; set; } = 1;
     public bool AcceptingUploads { get; set; } = true;
 
     private PeerSeederManager()

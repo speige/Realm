@@ -346,7 +346,7 @@ public class ContentAddressableStorage
         return Path.Combine(shardDirectory, $"{normalizedHash}.json");
     }
 
-    private void UpdateSidecarCache(string normalizedHash, string metadataJson)
+    public void UpdateSidecarCache(string normalizedHash, string metadataJson)
     {
         try
         {

@@ -134,6 +134,12 @@ public class DistributionServer
                 return;
             }
 
+            if (path.Equals("/api/seeders/bloom_headers", StringComparison.OrdinalIgnoreCase) && method == "GET")
+            {
+                await HandleBloomHeadersEndpointAsync(response);
+                return;
+            }
+
             if (path.Equals("/api/seeders/sync_headers", StringComparison.OrdinalIgnoreCase) && method == "POST")
             {
                 await HandleHeaderSyncEndpointAsync(request, response);
@@ -402,6 +408,34 @@ public class DistributionServer
         };
 
         byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(catalog));
+        response.ContentType = "application/json";
+        response.StatusCode = (int)HttpStatusCode.OK;
+        await response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
+        response.Close();
+    }
+
+    private async Task HandleBloomHeadersEndpointAsync(HttpListenerResponse response)
+    {
+        var hashes = _storage.GetAllStoredHashes().ToList();
+        var bloomFilter = new BloomFilter(Math.Max(100, hashes.Count), 0.01);
+
+        foreach (string hash in hashes)
+        {
+            string? metadataJson = _storage.GetAssetMetadata(hash);
+            string key = BloomFilter.CreateHeaderKey(hash, metadataJson);
+            bloomFilter.Add(key);
+        }
+
+        var dto = new BloomHeadersResponseDto
+        {
+            SeederId = _seederId,
+            BitCount = bloomFilter.BitCount,
+            HashCount = bloomFilter.HashCount,
+            ItemCount = bloomFilter.ItemCount,
+            FilterDataBase64 = Convert.ToBase64String(bloomFilter.BitArray)
+        };
+
+        byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(dto));
         response.ContentType = "application/json";
         response.StatusCode = (int)HttpStatusCode.OK;
         await response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
