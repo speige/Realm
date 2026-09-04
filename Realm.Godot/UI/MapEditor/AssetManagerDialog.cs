@@ -616,6 +616,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				"projectiles" => "Projectile",
 				"props" => "Prop",
 				"attachments" => "Attachment",
+				"weapons" => "Weapon",
 				_ => "Prop"
 			};
 		}
@@ -652,7 +653,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			string path = Path.Combine(wsPath, "Assets", "models", subCategoryOrFolder, fileName);
 			if (File.Exists(path)) return path;
-			foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles" })
+			foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles", "attachments", "weapons" })
 			{
 				string p = Path.Combine(wsPath, "Assets", "models", sub, fileName);
 				if (File.Exists(p)) return p;
@@ -709,6 +710,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				"glb_props" => "Prop",
 				"glb_projectiles" => "Projectile",
 				"glb_attachments" => "Attachment",
+				"glb_weapons" => "Weapon",
 				"textures" => "Tilesheet",
 				"vfx_spritesheets" => "SpellSpritesheet",
 				"animations" => "Animation",
@@ -1693,6 +1695,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				"resources" => "Environment",
 				"projectiles" => "Projectile",
 				"props" => "Prop",
+				"attachments" => "Attachment",
+				"weapons" => "Weapon",
 				_ => "Prop"
 			};
 		}
@@ -2739,6 +2743,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				"resources" => "Environment",
 				"projectiles" => "Projectile",
 				"props" => "Prop",
+				"attachments" => "Attachment",
+				"weapons" => "Weapon",
 				_ => "Prop"
 			};
 
@@ -3239,6 +3245,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		"glb_props" => TranslationServer.Translate("3D Models (props)"),
 		"glb_projectiles" => TranslationServer.Translate("3D Models (projectiles)"),
 		"glb_attachments" => TranslationServer.Translate("Object Attachments"),
+		"glb_weapons" => TranslationServer.Translate("Weapons"),
 		"glb" => TranslationServer.Translate("3D Models (GLB)"),
 		"textures" => TranslationServer.Translate("Terrain Textures"),
 		"vfx_spritesheets" => TranslationServer.Translate("VFX Spritesheets"),

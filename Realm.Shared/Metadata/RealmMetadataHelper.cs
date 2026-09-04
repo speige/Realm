@@ -113,7 +113,7 @@ public static class RealmMetadataHelper
 	private static readonly Dictionary<string, string[]> ValidAssetTypesByExtension = new(StringComparer.OrdinalIgnoreCase)
 	{
 		[".rtex"] = new[] { "Decal", "Icon", "Noise", "Ribbon", "Skybox", "SpellSpritesheet", "Tilesheet" },
-		[".glb"] = new[] { "Character", "Building", "Environment", "Projectile", "Prop", "Attachment" },
+		[".glb"] = new[] { "Character", "Building", "Environment", "Projectile", "Prop", "Attachment", "Weapon" },
 		[".ranim"] = new[] { "Animation" },
 		[".ogg"] = new[] { "Music", "SoundEffect" }
 	};
@@ -142,34 +142,35 @@ public static class RealmMetadataHelper
 
 		if (ext is ".rtex")
 		{
-			if (norm is "decal" or "decals") { canonicalType = "Decal"; return true; }
-			if (norm is "icon" or "icons") { canonicalType = "Icon"; return true; }
-			if (norm is "noise" or "noises" or "noisetexture" or "noisetextures") { canonicalType = "Noise"; return true; }
-			if (norm is "ribbon" or "ribbons" or "ribbontexture" or "ribbontextures") { canonicalType = "Ribbon"; return true; }
-			if (norm is "skybox" or "skyboxes") { canonicalType = "Skybox"; return true; }
-			if (norm is "spellspritesheet" or "spritesheet" or "spritesheets" or "vfxspritesheet" or "vfxspritesheets" or "vfx") { canonicalType = "SpellSpritesheet"; return true; }
-			if (norm is "tilesheet" or "tilesheets" or "terrain" or "terraintexture" or "terraintextures" or "textures" or "texture") { canonicalType = "Tilesheet"; return true; }
+			if (norm.Contains("decal")) { canonicalType = "Decal"; return true; }
+			if (norm.Contains("icon")) { canonicalType = "Icon"; return true; }
+			if (norm.Contains("noise")) { canonicalType = "Noise"; return true; }
+			if (norm.Contains("ribbon")) { canonicalType = "Ribbon"; return true; }
+			if (norm.Contains("skybox")) { canonicalType = "Skybox"; return true; }
+			if (norm.Contains("sprite") || norm.Contains("vfx") || norm.Contains("sheet") || norm.Contains("spell")) { canonicalType = "SpellSpritesheet"; return true; }
+			if (norm.Contains("tile") || norm.Contains("terrain")) { canonicalType = "Tilesheet"; return true; }
 			return false;
 		}
 		else if (ext is ".glb")
 		{
-			if (norm is "character" or "unit" or "units" or "customunits") { canonicalType = "Character"; return true; }
-			if (norm is "building" or "buildings" or "custombuildings") { canonicalType = "Building"; return true; }
-			if (norm is "environment" or "resource" or "resources" or "nature" or "customresources") { canonicalType = "Environment"; return true; }
-			if (norm is "projectile" or "projectiles") { canonicalType = "Projectile"; return true; }
-			if (norm is "prop" or "props" or "customprops") { canonicalType = "Prop"; return true; }
-			if (norm is "attachment" or "attachments" or "objectattachment" or "objectattachments" or "customattachments" or "glbattachment" or "glbattachments") { canonicalType = "Attachment"; return true; }
+			if (norm.Contains("character") || norm.Contains("unit")) { canonicalType = "Character"; return true; }
+			if (norm.Contains("building")) { canonicalType = "Building"; return true; }
+			if (norm.Contains("environment") || norm.Contains("resource")) { canonicalType = "Environment"; return true; }
+			if (norm.Contains("projectile")) { canonicalType = "Projectile"; return true; }
+			if (norm.Contains("prop")) { canonicalType = "Prop"; return true; }
+			if (norm.Contains("attachment") || norm.Contains("object")) { canonicalType = "Attachment"; return true; }
+			if (norm.Contains("weapon")) { canonicalType = "Weapon"; return true; }
 			return false;
 		}
 		else if (ext is ".ranim")
 		{
-			if (norm is "animation" or "animations" or "anim" or "ranim") { canonicalType = "Animation"; return true; }
-			return false;
+			canonicalType = "Animation";
+			return true;
 		}
 		else if (ext is ".ogg")
 		{
-			if (norm is "music") { canonicalType = "Music"; return true; }
-			if (norm is "soundeffect" or "sfx" or "sound" or "audio") { canonicalType = "SoundEffect"; return true; }
+			if (norm.Contains("music")) { canonicalType = "Music"; return true; }
+			if (norm.Contains("sound") || norm.Contains("sfx")) { canonicalType = "SoundEffect"; return true; }
 			return false;
 		}
 

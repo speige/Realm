@@ -663,9 +663,11 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 										?? mObj["type"]?.ToString();
 									if (!string.IsNullOrEmpty(at) && (
 										at.Equals("Attachment", StringComparison.OrdinalIgnoreCase) ||
+										at.Equals("Weapon", StringComparison.OrdinalIgnoreCase) ||
 										at.Equals("Object Attachments", StringComparison.OrdinalIgnoreCase) ||
 										at.Equals("glb_attachments", StringComparison.OrdinalIgnoreCase) ||
-										at.Equals("attachments", StringComparison.OrdinalIgnoreCase)))
+										at.Equals("attachments", StringComparison.OrdinalIgnoreCase) ||
+										at.Equals("weapons", StringComparison.OrdinalIgnoreCase)))
 									{
 										isAttachment = true;
 									}
@@ -751,6 +753,7 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 					string? embeddedType = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(file);
 					if (!string.IsNullOrEmpty(embeddedType) && (
 						embeddedType.Equals("Attachment", StringComparison.OrdinalIgnoreCase) ||
+						embeddedType.Equals("Weapon", StringComparison.OrdinalIgnoreCase) ||
 						embeddedType.Equals("Object Attachments", StringComparison.OrdinalIgnoreCase)))
 					{
 						if (seen.Add(id))
