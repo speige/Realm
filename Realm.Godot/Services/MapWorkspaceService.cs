@@ -1442,7 +1442,8 @@ public static partial class MapWorkspaceService
 			if (jsonNode is not JsonObject root) return;
 
 			bool modified = false;
-			if (root["Assets"] is JsonObject assetsObj && assetsObj["glb"] is JsonObject glbObj)
+			var assetsObj = root["Assets"] as JsonObject ?? root["MapProperties"]?["Assets"] as JsonObject;
+			if (assetsObj != null && assetsObj["glb"] is JsonObject glbObj)
 			{
 				foreach (var subCatKvp in glbObj)
 				{
@@ -1450,7 +1451,7 @@ public static partial class MapWorkspaceService
 					{
 						if (subCatObj.ContainsKey(fileName))
 						{
-							if (subCatObj[fileName] is JsonObject entryObj && entryObj.ContainsKey("hash"))
+							if (subCatObj[fileName] is JsonObject entryObj)
 							{
 								entryObj["hash"] = newHash;
 							}

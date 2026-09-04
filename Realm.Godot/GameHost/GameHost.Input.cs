@@ -1666,7 +1666,7 @@ public partial class GameHost
 							IssueFollowCommand(clickedUnit, shiftHeld);
 						}
 					}
-					else if (clickedProp != null && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
+					else if (clickedProp != null && clickedProp.Visible && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
 					{
 						IssueGatherCommand(clickedProp, shiftHeld);
 					}
@@ -1859,7 +1859,7 @@ public partial class GameHost
 							IssueFollowCommand(clickedUnit);
 						}
 					}
-					else if (clickedProp != null && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
+					else if (clickedProp != null && clickedProp.Visible && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
 					{
 						IssueGatherCommand(clickedProp);
 					}
@@ -1947,7 +1947,7 @@ public partial class GameHost
 			else
 			{
 				var clickedProp = FindProp3DInParentChain(collider);
-				if (clickedProp != null && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
+				if (clickedProp != null && clickedProp.Visible && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
 				{
 					ClearSelection();
 					SelectedProp = clickedProp;
@@ -3875,7 +3875,7 @@ public partial class GameHost
 				IssueFollowCommand(clickedUnit, shiftHeld);
 			}
 		}
-		else if (clickedProp != null && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
+		else if (clickedProp != null && clickedProp.Visible && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
 		{
 			IssueGatherCommand(clickedProp, shiftHeld);
 		}

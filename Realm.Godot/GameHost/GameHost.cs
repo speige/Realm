@@ -904,6 +904,13 @@ public partial class GameHost : Node3D, IGameAPI
 		public string[]? Upgrades { get; set; }
 		public string[]? StatusEffects { get; set; }
 		public string[]? SoundEvents { get; set; }
+		public string SpawnShader { get; set; }
+		public string DeathShader { get; set; }
+		public string DespawnShader
+		{
+			get => DeathShader;
+			set => DeathShader = value;
+		}
 
 		public bool TryGetObjectAttachment(HumanoidBone hand, string attachmentId, out HandAttachmentOrientation orientation)
 		{
@@ -1050,6 +1057,13 @@ public partial class GameHost : Node3D, IGameAPI
 		public bool NormalizeLuminance { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; } = true;
 		public int PathingType { get; set; }
+		public string SpawnShader { get; set; }
+		public string DeathShader { get; set; }
+		public string DespawnShader
+		{
+			get => DeathShader;
+			set => DeathShader = value;
+		}
 	}
 
 	public struct ResourceMetadata
@@ -1085,6 +1099,13 @@ public partial class GameHost : Node3D, IGameAPI
 		public bool NormalizeLuminance { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; } = true;
 		public int PathingType { get; set; }
+		public string SpawnShader { get; set; }
+		public string DeathShader { get; set; }
+		public string DespawnShader
+		{
+			get => DeathShader;
+			set => DeathShader = value;
+		}
 	}
 
 	public struct AbilityMetadata
@@ -1227,6 +1248,11 @@ public partial class GameHost : Node3D, IGameAPI
 		public string TeamColorMask { get; set; }
 		public string SpawnShader { get; set; }
 		public string DeathShader { get; set; }
+		public string DespawnShader
+		{
+			get => DeathShader;
+			set => DeathShader = value;
+		}
 	}
 
 	public enum AssetCategory

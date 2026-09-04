@@ -1502,6 +1502,12 @@ public class SaveLoadService
 			}
 		}
 		set.Add("ModelOffsets");
+		set.Add("ModelSpawnShaders");
+		set.Add("model_spawn_shaders");
+		set.Add("ModelDeathShaders");
+		set.Add("model_death_shaders");
+		set.Add("ModelDespawnShaders");
+		set.Add("model_despawn_shaders");
 
 		Type[] entityTypes = new[]
 		{
@@ -1624,6 +1630,16 @@ public class SaveLoadService
 		AddTypeMembersToSet(typeof(GameHost.ResourceMetadata), set);
 		AddTypeMembersToSet(typeof(GameHost.WeaponMetadata), set);
 
+		set.Add("spawn_shader");
+		set.Add("spawnshader");
+		set.Add("SpawnShader");
+		set.Add("death_shader");
+		set.Add("deathshader");
+		set.Add("DeathShader");
+		set.Add("despawn_shader");
+		set.Add("despawnshader");
+		set.Add("DespawnShader");
+
 		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
 		{
 			if (definitionsObject.TryGetPropertyValue("EntityItem", out var entityDefinition))
@@ -1701,6 +1717,16 @@ public class SaveLoadService
 		AddTypeMembersToSet(typeof(GameHost.UnitMetadata), set);
 		AddTypeMembersToSet(typeof(GameHost.PropMetadata), set);
 		AddTypeMembersToSet(typeof(GameHost.ResourceMetadata), set);
+
+		set.Add("spawn_shader");
+		set.Add("spawnshader");
+		set.Add("SpawnShader");
+		set.Add("death_shader");
+		set.Add("deathshader");
+		set.Add("DeathShader");
+		set.Add("despawn_shader");
+		set.Add("despawnshader");
+		set.Add("DespawnShader");
 
 		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
 		{

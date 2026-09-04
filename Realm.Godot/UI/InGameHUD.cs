@@ -1374,6 +1374,32 @@ public partial class InGameHUD : Control
 		}
 	}
 
+	public bool IsMouseOverUI(Vector2 mousePos)
+	{
+		var hoveredControl = GetViewport().GuiGetHoveredControl();
+		if (hoveredControl != null && hoveredControl != this)
+		{
+			return true;
+		}
+
+		if (_bottomConsole != null && _bottomConsole.Visible && _bottomConsole.GetGlobalRect().HasPoint(mousePos))
+		{
+			return true;
+		}
+
+		if (_resourceContainer != null && _resourceContainer.Visible && _resourceContainer.GetGlobalRect().HasPoint(mousePos))
+		{
+			return true;
+		}
+
+		if (_devPanel != null && _devPanel.Visible && _devPanel.GetGlobalRect().HasPoint(mousePos))
+		{
+			return true;
+		}
+
+		return false;
+	}
+
 	public void UpdateDragBox(Vector2 start, Vector2 end, bool isVisible)
 	{
 		_dragStart = start;

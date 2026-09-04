@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using CommandLine;
@@ -232,8 +233,29 @@ public static class Program
 				errors => 1);
 	}
 
+	private static bool _assetAgreementAccepted = false;
+
+	private static void EnsureAssetAgreementAccepted()
+	{
+		if (_assetAgreementAccepted) return;
+
+		Console.WriteLine("The Realm Asset Agreement states that files cannot be used outside the Realm UGC platform unless you are the original author of the asset. Do you understand? Y/N");
+		string? response = Console.ReadLine()?.Trim();
+		if (string.Equals(response, "Y", StringComparison.OrdinalIgnoreCase))
+		{
+			_assetAgreementAccepted = true;
+		}
+		else
+		{
+			Console.WriteLine("Task cancelled.");
+			Environment.Exit(0);
+		}
+	}
+
 	private static int ExecuteRanimRender(RanimRenderOptions options)
 	{
+		EnsureAssetAgreementAccepted();
+
 		RanimOutputFormat outputFormat = RanimOutputFormat.Gif;
 		if (options.Format.Equals("spritesheet", StringComparison.OrdinalIgnoreCase) || options.Format.Equals("png", StringComparison.OrdinalIgnoreCase))
 		{
@@ -675,6 +697,11 @@ public static class Program
 					? Path.ChangeExtension(options.Input, defaultExt)
 					: options.Output;
 
+				if (fileExt == ".rtex" && !Path.GetExtension(target).Equals(".rtex", StringComparison.OrdinalIgnoreCase))
+				{
+					EnsureAssetAgreementAccepted();
+				}
+
 				var res = TextureConverter.ConvertTextureFile(
 					options.Input,
 					target,
@@ -699,6 +726,12 @@ public static class Program
 			}
 			else if (Directory.Exists(options.Input))
 			{
+				var searchOpt = options.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+				if (Directory.EnumerateFiles(options.Input, "*.rtex", searchOpt).Any())
+				{
+					EnsureAssetAgreementAccepted();
+				}
+
 				return TextureConverter.ConvertTextureDirectory(
 					options.Input,
 					options.Output,

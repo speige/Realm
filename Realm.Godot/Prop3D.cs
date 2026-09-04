@@ -174,6 +174,7 @@ public partial class Prop3D : StaticBody3D
 			MaterialOverride = GetOrCreateHoverMaterial()
 		};
 		float ratio = GameHost.Instance != null ? GameHost.Instance.GetModelCollisionCircleRatio(GameHost.Instance.GetModelAssetKey(this)) : 1.0f;
+		if (ratio <= 0.001f) ratio = 1.0f;
 		_hoverRing.Scale = new Vector3(ratio, 1.0f, ratio);
 		_hoverRing.Visible = _isHovered && !IsSelected;
 		AddChild(_hoverRing);
@@ -181,6 +182,7 @@ public partial class Prop3D : StaticBody3D
 
 	public virtual void UpdateCollisionCircleScale(float ratio)
 	{
+		if (ratio <= 0.001f) ratio = 1.0f;
 		Vector3 ringScale = new Vector3(ratio, 1.0f, ratio);
 		if (_selectionRing != null)
 		{
@@ -245,6 +247,7 @@ public partial class Prop3D : StaticBody3D
 			MaterialOverride = GetOrCreateSelectionMaterial(GetSelectionRingColor())
 		};
 		float ratio = GameHost.Instance != null ? GameHost.Instance.GetModelCollisionCircleRatio(GameHost.Instance.GetModelAssetKey(this)) : 1.0f;
+		if (ratio <= 0.001f) ratio = 1.0f;
 		_selectionRing.Scale = new Vector3(ratio, 1.0f, ratio);
 		_selectionRing.Visible = _isSelected;
 		AddChild(_selectionRing);
@@ -383,7 +386,8 @@ public partial class Prop3D : StaticBody3D
 		var visual = GetNodeOrNull<Node3D>("VisualModel");
 		if (visual != null && GodotObject.IsInstanceValid(visual))
 		{
-			visual.Scale = new Vector3(globalScale, globalScale, globalScale);
+			float safeScale = globalScale <= 0.001f ? 1.0f : globalScale;
+			visual.Scale = new Vector3(safeScale, safeScale, safeScale);
 			UpdateLodVisibility();
 		}
 	}
@@ -411,8 +415,9 @@ public partial class Prop3D : StaticBody3D
 				string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(PropId) : "";
 				float yOffset = GameHost.Instance != null ? GameHost.Instance.GetModelYOffset(assetKey) : 0f;
 				float globalScale = GameHost.Instance != null ? GameHost.Instance.GetModelScale(this) : 1.0f;
+				float safeScale = globalScale <= 0.001f ? 1.0f : globalScale;
 				visual.Position = new Vector3(0, yOffset, 0);
-				visual.Scale = new Vector3(globalScale, globalScale, globalScale);
+				visual.Scale = new Vector3(safeScale, safeScale, safeScale);
 				AddChild(visual);
 
 				string modelPath = ResolvePropModelPath(PropId);
@@ -428,6 +433,7 @@ public partial class Prop3D : StaticBody3D
 							{
 								GameHost.Instance?.ApplyAllGlobalOverridesToObject(this);
 							}
+							ModelShaderManager.SetHideInShroud(node, true);
 						}
 					}
 				}

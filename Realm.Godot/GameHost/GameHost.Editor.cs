@@ -526,6 +526,14 @@ public partial class GameHost
 		if (!string.IsNullOrEmpty(normAsset) && ModelSpawnShaders.TryGetValue(normAsset, out string s2))
 			return s2;
 
+		if (!string.IsNullOrEmpty(primaryKey))
+		{
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && !string.IsNullOrWhiteSpace(meta.SpawnShader)) return meta.SpawnShader;
+			if (BuildingRegistry.TryGetValue(primaryKey, out var bldMeta) && !string.IsNullOrWhiteSpace(bldMeta.SpawnShader)) return bldMeta.SpawnShader;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && !string.IsNullOrWhiteSpace(resMeta.SpawnShader)) return resMeta.SpawnShader;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && !string.IsNullOrWhiteSpace(propMeta.SpawnShader)) return propMeta.SpawnShader;
+		}
+
 		return "";
 	}
 
@@ -534,13 +542,46 @@ public partial class GameHost
 		string norm = NormalizeModelAssetKey(assetKey);
 		if (string.IsNullOrEmpty(norm)) return;
 
+		string modelAsset = GetModelAssetKey(assetKey);
+		string normModel = !string.IsNullOrEmpty(modelAsset) ? NormalizeModelAssetKey(modelAsset) : null;
+
 		if (string.IsNullOrWhiteSpace(shaderKey))
 		{
 			ModelSpawnShaders.Remove(norm);
+			if (!string.IsNullOrEmpty(normModel))
+			{
+				ModelSpawnShaders.Remove(normModel);
+			}
 		}
 		else
 		{
-			ModelSpawnShaders[norm] = shaderKey.Trim();
+			string trimmedShader = shaderKey.Trim();
+			ModelSpawnShaders[norm] = trimmedShader;
+			if (!string.IsNullOrEmpty(normModel))
+			{
+				ModelSpawnShaders[normModel] = trimmedShader;
+			}
+		}
+
+		if (UnitRegistry.TryGetValue(assetKey, out var unitMeta))
+		{
+			unitMeta.SpawnShader = string.IsNullOrWhiteSpace(shaderKey) ? null : shaderKey.Trim();
+			UnitRegistry[assetKey] = unitMeta;
+		}
+		if (BuildingRegistry.TryGetValue(assetKey, out var bldMeta))
+		{
+			bldMeta.SpawnShader = string.IsNullOrWhiteSpace(shaderKey) ? null : shaderKey.Trim();
+			BuildingRegistry[assetKey] = bldMeta;
+		}
+		if (PropRegistry.TryGetValue(assetKey, out var propMeta))
+		{
+			propMeta.SpawnShader = string.IsNullOrWhiteSpace(shaderKey) ? null : shaderKey.Trim();
+			PropRegistry[assetKey] = propMeta;
+		}
+		if (ResourceRegistry.TryGetValue(assetKey, out var resMeta))
+		{
+			resMeta.SpawnShader = string.IsNullOrWhiteSpace(shaderKey) ? null : shaderKey.Trim();
+			ResourceRegistry[assetKey] = resMeta;
 		}
 
 		_modelYOffsetSavePending = true;
@@ -560,6 +601,14 @@ public partial class GameHost
 		if (!string.IsNullOrEmpty(normAsset) && ModelDeathShaders.TryGetValue(normAsset, out string d2))
 			return d2;
 
+		if (!string.IsNullOrEmpty(primaryKey))
+		{
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta) && !string.IsNullOrWhiteSpace(meta.DeathShader)) return meta.DeathShader;
+			if (BuildingRegistry.TryGetValue(primaryKey, out var bldMeta) && !string.IsNullOrWhiteSpace(bldMeta.DeathShader)) return bldMeta.DeathShader;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta) && !string.IsNullOrWhiteSpace(resMeta.DeathShader)) return resMeta.DeathShader;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta) && !string.IsNullOrWhiteSpace(propMeta.DeathShader)) return propMeta.DeathShader;
+		}
+
 		return "";
 	}
 
@@ -568,13 +617,46 @@ public partial class GameHost
 		string norm = NormalizeModelAssetKey(assetKey);
 		if (string.IsNullOrEmpty(norm)) return;
 
+		string modelAsset = GetModelAssetKey(assetKey);
+		string normModel = !string.IsNullOrEmpty(modelAsset) ? NormalizeModelAssetKey(modelAsset) : null;
+
 		if (string.IsNullOrWhiteSpace(shaderKey))
 		{
 			ModelDeathShaders.Remove(norm);
+			if (!string.IsNullOrEmpty(normModel))
+			{
+				ModelDeathShaders.Remove(normModel);
+			}
 		}
 		else
 		{
-			ModelDeathShaders[norm] = shaderKey.Trim();
+			string trimmedShader = shaderKey.Trim();
+			ModelDeathShaders[norm] = trimmedShader;
+			if (!string.IsNullOrEmpty(normModel))
+			{
+				ModelDeathShaders[normModel] = trimmedShader;
+			}
+		}
+
+		if (UnitRegistry.TryGetValue(assetKey, out var unitMeta))
+		{
+			unitMeta.DeathShader = string.IsNullOrWhiteSpace(shaderKey) ? null : shaderKey.Trim();
+			UnitRegistry[assetKey] = unitMeta;
+		}
+		if (BuildingRegistry.TryGetValue(assetKey, out var bldMeta))
+		{
+			bldMeta.DeathShader = string.IsNullOrWhiteSpace(shaderKey) ? null : shaderKey.Trim();
+			BuildingRegistry[assetKey] = bldMeta;
+		}
+		if (PropRegistry.TryGetValue(assetKey, out var propMeta))
+		{
+			propMeta.DeathShader = string.IsNullOrWhiteSpace(shaderKey) ? null : shaderKey.Trim();
+			PropRegistry[assetKey] = propMeta;
+		}
+		if (ResourceRegistry.TryGetValue(assetKey, out var resMeta))
+		{
+			resMeta.DeathShader = string.IsNullOrWhiteSpace(shaderKey) ? null : shaderKey.Trim();
+			ResourceRegistry[assetKey] = resMeta;
 		}
 
 		_modelYOffsetSavePending = true;
@@ -1081,9 +1163,34 @@ public partial class GameHost
 			ModelCollisionCircleRatios.Clear();
 			ModelObstacleRadii.Clear();
 			ModelBrightness.Clear();
+			ModelColorTint.Clear();
 			ModelNormalModes.Clear();
 			ModelIgnorePlayerColor.Clear();
 			ModelNormalizeLuminance.Clear();
+			ModelSpawnShaders.Clear();
+			ModelDeathShaders.Clear();
+
+			if (root.ContainsKey("ModelSpawnShaders") && root["ModelSpawnShaders"] is System.Text.Json.Nodes.JsonObject mssObj)
+			{
+				foreach (var kvp in mssObj)
+				{
+					if (kvp.Value != null && !string.IsNullOrWhiteSpace(kvp.Value.ToString()))
+					{
+						ModelSpawnShaders[NormalizeModelAssetKey(kvp.Key)] = kvp.Value.ToString().Trim();
+					}
+				}
+			}
+
+			if (root.ContainsKey("ModelDeathShaders") && root["ModelDeathShaders"] is System.Text.Json.Nodes.JsonObject mdsObj)
+			{
+				foreach (var kvp in mdsObj)
+				{
+					if (kvp.Value != null && !string.IsNullOrWhiteSpace(kvp.Value.ToString()))
+					{
+						ModelDeathShaders[NormalizeModelAssetKey(kvp.Key)] = kvp.Value.ToString().Trim();
+					}
+				}
+			}
 
 			if (root.ContainsKey("ModelOffsets") && root["ModelOffsets"] is System.Text.Json.Nodes.JsonObject offsetsObj)
 			{
@@ -1253,12 +1360,33 @@ public partial class GameHost
 							{
 								ModelIgnorePlayerColor[normKey] = true;
 							}
+							string? entityModelPath = uObj["ModelPath"]?.ToString();
+							string spawnShader = uObj["spawn_shader"]?.ToString() ?? uObj["SpawnShader"]?.ToString();
+							if (!string.IsNullOrWhiteSpace(spawnShader))
+							{
+								ModelSpawnShaders[normKey] = spawnShader.Trim();
+								if (!string.IsNullOrEmpty(entityModelPath))
+								{
+									ModelSpawnShaders[NormalizeModelAssetKey(entityModelPath)] = spawnShader.Trim();
+								}
+							}
+							string deathShader = uObj["death_shader"]?.ToString() ?? uObj["DeathShader"]?.ToString() ?? uObj["despawn_shader"]?.ToString() ?? uObj["DespawnShader"]?.ToString();
+							if (!string.IsNullOrWhiteSpace(deathShader))
+							{
+								ModelDeathShaders[normKey] = deathShader.Trim();
+								if (!string.IsNullOrEmpty(entityModelPath))
+								{
+									ModelDeathShaders[NormalizeModelAssetKey(entityModelPath)] = deathShader.Trim();
+								}
+							}
 						}
 					}
 				}
 			}
 
-			if (root.ContainsKey("Assets") && root["Assets"] is System.Text.Json.Nodes.JsonObject assetsObj && assetsObj.ContainsKey("glb") && assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
+			var assetsObj = (root.ContainsKey("Assets") ? root["Assets"] as System.Text.Json.Nodes.JsonObject : null)
+				?? (root.ContainsKey("MapProperties") && root["MapProperties"] is System.Text.Json.Nodes.JsonObject mpObj && mpObj.ContainsKey("Assets") ? mpObj["Assets"] as System.Text.Json.Nodes.JsonObject : null);
+			if (assetsObj != null && assetsObj.ContainsKey("glb") && assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
 			{
 				foreach (var catKvp in glbObj)
 				{
@@ -1340,13 +1468,15 @@ public partial class GameHost
 									}
 								}
 
-								if (itemObj.ContainsKey("spawn_shader") && !string.IsNullOrWhiteSpace(itemObj["spawn_shader"]?.ToString()))
+								string itemSpawn = itemObj["spawn_shader"]?.ToString() ?? itemObj["SpawnShader"]?.ToString();
+								if (!string.IsNullOrWhiteSpace(itemSpawn))
 								{
-									ModelSpawnShaders[normKey] = itemObj["spawn_shader"]!.ToString().Trim();
+									ModelSpawnShaders[normKey] = itemSpawn.Trim();
 								}
-								if (itemObj.ContainsKey("death_shader") && !string.IsNullOrWhiteSpace(itemObj["death_shader"]?.ToString()))
+								string itemDeath = itemObj["death_shader"]?.ToString() ?? itemObj["DeathShader"]?.ToString() ?? itemObj["despawn_shader"]?.ToString() ?? itemObj["DespawnShader"]?.ToString();
+								if (!string.IsNullOrWhiteSpace(itemDeath))
 								{
-									ModelDeathShaders[normKey] = itemObj["death_shader"]!.ToString().Trim();
+									ModelDeathShaders[normKey] = itemDeath.Trim();
 								}
 							}
 						}
@@ -1380,6 +1510,8 @@ public partial class GameHost
 		ModelNormalModes.Clear();
 		ModelNormalizeLuminance.Clear();
 		ModelIgnorePlayerColor.Clear();
+		ModelSpawnShaders.Clear();
+		ModelDeathShaders.Clear();
 		ClearNormalGeneratedMeshCache();
 	}
 
@@ -1460,7 +1592,9 @@ public partial class GameHost
 				}
 			}
 
-			if (root.ContainsKey("Assets") && root["Assets"] is System.Text.Json.Nodes.JsonObject assetsObj && assetsObj.ContainsKey("glb") && assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
+			var assetsObj = (root.ContainsKey("Assets") ? root["Assets"] as System.Text.Json.Nodes.JsonObject : null)
+				?? (root.ContainsKey("MapProperties") && root["MapProperties"] is System.Text.Json.Nodes.JsonObject mpObj && mpObj.ContainsKey("Assets") ? mpObj["Assets"] as System.Text.Json.Nodes.JsonObject : null);
+			if (assetsObj != null && assetsObj.ContainsKey("glb") && assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
 			{
 				foreach (var catKvp in glbObj)
 				{
@@ -1478,7 +1612,50 @@ public partial class GameHost
 							bool hasNl = ModelNormalizeLuminance.TryGetValue(normKey, out bool nlVal);
 							bool hasIpc = ModelIgnorePlayerColor.TryGetValue(normKey, out bool ipcVal);
 							bool hasSpawnShader = ModelSpawnShaders.TryGetValue(normKey, out string spawnShaderVal) && !string.IsNullOrWhiteSpace(spawnShaderVal);
+							if (!hasSpawnShader)
+							{
+								string fallbackSpawn = GetModelSpawnShader(key);
+								if (!string.IsNullOrWhiteSpace(fallbackSpawn))
+								{
+									hasSpawnShader = true;
+									spawnShaderVal = fallbackSpawn;
+								}
+								else
+								{
+									foreach (var kvp in ModelSpawnShaders)
+									{
+										if (!string.IsNullOrWhiteSpace(kvp.Value) && MatchesEntityOrAssetKey(kvp.Key, normKey))
+										{
+											hasSpawnShader = true;
+											spawnShaderVal = kvp.Value;
+											break;
+										}
+									}
+								}
+							}
+
 							bool hasDeathShader = ModelDeathShaders.TryGetValue(normKey, out string deathShaderVal) && !string.IsNullOrWhiteSpace(deathShaderVal);
+							if (!hasDeathShader)
+							{
+								string fallbackDeath = GetModelDeathShader(key);
+								if (!string.IsNullOrWhiteSpace(fallbackDeath))
+								{
+									hasDeathShader = true;
+									deathShaderVal = fallbackDeath;
+								}
+								else
+								{
+									foreach (var kvp in ModelDeathShaders)
+									{
+										if (!string.IsNullOrWhiteSpace(kvp.Value) && MatchesEntityOrAssetKey(kvp.Key, normKey))
+										{
+											hasDeathShader = true;
+											deathShaderVal = kvp.Value;
+											break;
+										}
+									}
+								}
+							}
 
 							if (hasY || hasScale || hasRatio || hasRadius || hasBright || hasNm || hasNl || hasIpc || hasSpawnShader || hasDeathShader)
 							{
@@ -1523,10 +1700,30 @@ public partial class GameHost
 									if (hasNm) itemObj["normal_mode"] = nmVal.ToString();
 									if (hasNl) itemObj["normalize_luminance"] = nlVal;
 									if (hasIpc) itemObj["ignore_player_color"] = ipcVal;
-									if (hasSpawnShader) itemObj["spawn_shader"] = spawnShaderVal;
-									else itemObj.Remove("spawn_shader");
-									if (hasDeathShader) itemObj["death_shader"] = deathShaderVal;
-									else itemObj.Remove("death_shader");
+									if (hasSpawnShader)
+									{
+										itemObj["spawn_shader"] = spawnShaderVal;
+										itemObj.Remove("SpawnShader");
+									}
+									else
+									{
+										itemObj.Remove("spawn_shader");
+										itemObj.Remove("SpawnShader");
+									}
+									if (hasDeathShader)
+									{
+										itemObj["death_shader"] = deathShaderVal;
+										itemObj.Remove("DeathShader");
+										itemObj.Remove("despawn_shader");
+										itemObj.Remove("DespawnShader");
+									}
+									else
+									{
+										itemObj.Remove("death_shader");
+										itemObj.Remove("DeathShader");
+										itemObj.Remove("despawn_shader");
+										itemObj.Remove("DespawnShader");
+									}
 								}
 								else if (nodeVal != null)
 								{
@@ -1547,6 +1744,60 @@ public partial class GameHost
 									if (hasDeathShader) newItemObj["death_shader"] = deathShaderVal;
 									catDict[key] = newItemObj;
 								}
+							}
+						}
+					}
+				}
+			}
+
+			string[] entityArrays = new[] { "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps" };
+			foreach (var arrKey in entityArrays)
+			{
+				if (root.ContainsKey(arrKey) && root[arrKey] is System.Text.Json.Nodes.JsonArray arr)
+				{
+					foreach (var item in arr)
+					{
+						if (item is System.Text.Json.Nodes.JsonObject uObj && uObj.ContainsKey("UnitId"))
+						{
+							string uId = uObj["UnitId"]?.ToString() ?? "";
+							string normKey = NormalizeModelAssetKey(uId);
+							string mPath = uObj.ContainsKey("ModelPath") ? uObj["ModelPath"]?.ToString() : null;
+							string normModel = !string.IsNullOrEmpty(mPath) ? NormalizeModelAssetKey(mPath) : "";
+
+							string sVal = "";
+							if (!string.IsNullOrEmpty(normKey) && ModelSpawnShaders.TryGetValue(normKey, out string sv1)) sVal = sv1;
+							else if (!string.IsNullOrEmpty(normModel) && ModelSpawnShaders.TryGetValue(normModel, out string sv2)) sVal = sv2;
+							else sVal = GetModelSpawnShader(uId);
+
+							if (!string.IsNullOrWhiteSpace(sVal))
+							{
+								uObj["spawn_shader"] = sVal;
+								uObj.Remove("SpawnShader");
+							}
+							else
+							{
+								uObj.Remove("spawn_shader");
+								uObj.Remove("SpawnShader");
+							}
+
+							string dVal = "";
+							if (!string.IsNullOrEmpty(normKey) && ModelDeathShaders.TryGetValue(normKey, out string dv1)) dVal = dv1;
+							else if (!string.IsNullOrEmpty(normModel) && ModelDeathShaders.TryGetValue(normModel, out string dv2)) dVal = dv2;
+							else dVal = GetModelDeathShader(uId);
+
+							if (!string.IsNullOrWhiteSpace(dVal))
+							{
+								uObj["death_shader"] = dVal;
+								uObj.Remove("DeathShader");
+								uObj.Remove("despawn_shader");
+								uObj.Remove("DespawnShader");
+							}
+							else
+							{
+								uObj.Remove("death_shader");
+								uObj.Remove("DeathShader");
+								uObj.Remove("despawn_shader");
+								uObj.Remove("DespawnShader");
 							}
 						}
 					}
@@ -1702,22 +1953,17 @@ public partial class GameHost
 			return MapEditorHUD.Instance.IsMouseOverUI(GetViewport().GetMousePosition());
 		}
 
+		if (GodotObject.IsInstanceValid(InGameHUD.Instance))
+		{
+			return InGameHUD.Instance.IsMouseOverUI(GetViewport().GetMousePosition());
+		}
+
 		var hoveredControl = GetViewport().GuiGetHoveredControl();
-		if (hoveredControl != null && (InGameHUD.Instance == null || hoveredControl != InGameHUD.Instance))
+		if (hoveredControl != null)
 		{
 			return true;
 		}
 
-		var mousePos = GetViewport().GetMousePosition();
-		var viewportSize = GetViewport().GetVisibleRect().Size;
-		
-		if (mousePos.Y < 75) return true;
-		if (mousePos.Y > viewportSize.Y - 245) return true;
-		if (mousePos.X < 225 || mousePos.X > viewportSize.X - 225) return true;
-		
-		// In-game HUD relies on Godot's built-in Control input consumption.
-		// If an event reaches _UnhandledInput, it means the UI did not consume it,
-		// so it is a valid world click. Hardcoded bounds here falsely block clicks.
 		return false;
 	}
 
@@ -2012,7 +2258,7 @@ public partial class GameHost
 		if (IsMapEditorMode)
 		{
 			decal.RotationDegrees = new Vector3(0.0f, EditorPlacementRotation, 0.0f);
-			decal.Size = new Vector3(6.0f, 20.0f, 6.0f) * EditorPlacementScale;
+			decal.Size = new Vector3(6.0f, 20.0f, 6.0f) * (EditorPlacementScale <= 0.001f ? 1.0f : EditorPlacementScale);
 			decal.Scale = Vector3.One;
 			EcsWorld.Set(entity, new RotationY(EditorPlacementRotation));
 			EcsWorld.Set(entity, new ModelScale(EditorPlacementScale));
