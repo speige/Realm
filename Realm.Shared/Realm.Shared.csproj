@@ -25,6 +25,7 @@
     <PackageReference Include="AssimpNet" Version="4.1.0" />
     <PackageReference Include="Blake3" Version="2.2.1" />
     <PackageReference Include="MemoryPack" Version="1.21.4" />
+    <PackageReference Include="NSec.Cryptography" Version="26.4.0" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.8" />
     <PackageReference Include="System.IO.Hashing" Version="10.0.11" />
   </ItemGroup>

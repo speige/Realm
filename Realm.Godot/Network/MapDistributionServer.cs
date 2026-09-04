@@ -106,7 +106,39 @@ public class MapDistributionServer
 
         try
         {
-            if (request.HttpMethod == "GET" && (path == "/map" || path == "/map/manifest"))
+            if (request.HttpMethod == "GET" && path.StartsWith("/api/assets/"))
+            {
+                string hash = path.Substring("/api/assets/".Length);
+                string normalizedHash = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
+                byte[]? assetBytes = MapAssetManager.Storage.GetAssetBytes(normalizedHash);
+
+                if (assetBytes == null)
+                {
+                    response.StatusCode = (int)HttpStatusCode.NotFound;
+                    response.Close();
+                    return;
+                }
+
+                string? metadata = MapAssetManager.Storage.GetAssetMetadata(normalizedHash);
+                if (!string.IsNullOrEmpty(metadata))
+                {
+                    response.AddHeader("X-Asset-Metadata", Convert.ToBase64String(Encoding.UTF8.GetBytes(metadata)));
+                }
+
+                response.ContentType = "application/octet-stream";
+                response.ContentLength64 = assetBytes.Length;
+                response.StatusCode = (int)HttpStatusCode.OK;
+
+                using (var outputStream = response.OutputStream)
+                {
+                    await outputStream.WriteAsync(assetBytes, 0, assetBytes.Length);
+                }
+
+                MapAssetManager.Log($"[MapDistributionServer] Served CAS asset {normalizedHash} ({assetBytes.Length} bytes)");
+                return;
+            }
+
+            if (request.HttpMethod == "GET" && (path == "/map" || path == "/map/manifest" || path.StartsWith("/api/manifests")))
             {
 
                 if (_currentManifest == null)
@@ -127,6 +159,7 @@ public class MapDistributionServer
                 }
 
                 MapAssetManager.Log($"[MapDistributionServer] Served map manifest ({rawBytes.Length} bytes)");
+                return;
             }
             else if (request.HttpMethod == "POST" && path == "/map/delta")
             {

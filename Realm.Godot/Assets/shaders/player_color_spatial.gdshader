@@ -27,6 +27,11 @@ uniform float alpha_scissor_threshold : hint_range(0.0, 1.0) = 0.5;
 uniform vec3 uv1_scale = vec3(1.0, 1.0, 1.0);
 uniform vec3 uv1_offset = vec3(0.0, 0.0, 0.0);
 
+uniform sampler2D shroud_texture : hint_default_white, filter_linear_mipmap, repeat_disable;
+uniform vec2 shroud_world_min = vec2(-125.0, -125.0);
+uniform vec2 shroud_world_size = vec2(250.0, 250.0);
+uniform bool shroud_enabled = false;
+
 instance uniform vec4 player_color : source_color = vec4(0.620, 0.541, 0.431, 1.0);
 instance uniform float model_brightness : hint_range(0.10, 2.0) = 0.5;
 instance uniform vec4 model_color_tint : source_color = vec4(1.0, 1.0, 1.0, 1.0);
@@ -34,11 +39,14 @@ instance uniform float ignore_player_color : hint_range(0.0, 1.0) = 0.0;
 instance uniform float normal_mode : hint_range(0.0, 2.0) = 0.0;
 instance uniform float unit_ambient_boost : hint_range(0.0, 0.5) = 0.0;
 instance uniform float unit_rim_intensity : hint_range(0.0, 1.0) = 0.0;
+instance uniform float hide_in_shroud : hint_range(0.0, 1.0) = 0.0;
 
 varying vec2 base_uv;
+varying vec3 v_world_pos;
 
 void vertex() {
 	base_uv = UV * uv1_scale.xy + uv1_offset.xy;
+	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 vec3 perturb_normal_cotangent(vec3 view_normal, vec3 view_pos, vec2 uv, vec3 normal_sample, float scale) {
@@ -62,6 +70,14 @@ vec3 perturb_normal_cotangent(vec3 view_normal, vec3 view_pos, vec2 uv, vec3 nor
 }
 
 void fragment() {
+	if (shroud_enabled && hide_in_shroud > 0.5) {
+		vec2 shroud_uv = (v_world_pos.xz - shroud_world_min) / shroud_world_size;
+		float shroud_factor = texture(shroud_texture, clamp(shroud_uv, 0.0, 1.0)).r;
+		if (shroud_factor > 0.2) {
+			discard;
+		}
+	}
+
 	if (!FRONT_FACING) {
 		NORMAL = -NORMAL;
 	}

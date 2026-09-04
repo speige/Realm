@@ -92,8 +92,11 @@ public class TerrainTextureUndoAction : IEditorAction
 			{
 				string json = File.ReadAllText(metadataPath);
 				var root = JsonNode.Parse(json)?.AsObject();
-				var texturesObj = root?["Assets"]?["textures"]?.AsObject() ?? root?["textures"]?.AsObject();
-				if (texturesObj != null)
+				var targetObjects = new System.Collections.Generic.List<JsonObject>();
+				if (root?["textures"] is JsonObject tObj) targetObjects.Add(tObj);
+				if (root?["Assets"]?["textures"] is JsonObject aObj) targetObjects.Add(aObj);
+				bool anyUpdated = false;
+				foreach (var texturesObj in targetObjects)
 				{
 					foreach (var kvp in texturesObj)
 					{
@@ -113,11 +116,15 @@ public class TerrainTextureUndoAction : IEditorAction
 								sObj["UV_Scale"] = snapshot.UvScale;
 								sObj["Stochastic_Tile_Size"] = snapshot.StochasticTileSize;
 								sObj["Cross_Fade"] = snapshot.CrossFade;
-								MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+								anyUpdated = true;
 								break;
 							}
 						}
 					}
+				}
+				if (anyUpdated)
+				{
+					MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 				}
 			}
 		}

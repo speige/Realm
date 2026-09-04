@@ -1490,6 +1490,7 @@ public class SaveLoadService
 		set.Add(nameof(Realm.Ecs.Definitions.MapProperties));
 		set.Add("map_name");
 		set.Add("name");
+		set.Add("textures");
 
 		foreach (var field in typeof(GameHost).GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
 		{
@@ -1501,6 +1502,12 @@ public class SaveLoadService
 			}
 		}
 		set.Add("ModelOffsets");
+		set.Add("ModelSpawnShaders");
+		set.Add("model_spawn_shaders");
+		set.Add("ModelDeathShaders");
+		set.Add("model_death_shaders");
+		set.Add("ModelDespawnShaders");
+		set.Add("model_despawn_shaders");
 
 		Type[] entityTypes = new[]
 		{
@@ -1623,6 +1630,16 @@ public class SaveLoadService
 		AddTypeMembersToSet(typeof(GameHost.ResourceMetadata), set);
 		AddTypeMembersToSet(typeof(GameHost.WeaponMetadata), set);
 
+		set.Add("spawn_shader");
+		set.Add("spawnshader");
+		set.Add("SpawnShader");
+		set.Add("death_shader");
+		set.Add("deathshader");
+		set.Add("DeathShader");
+		set.Add("despawn_shader");
+		set.Add("despawnshader");
+		set.Add("DespawnShader");
+
 		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
 		{
 			if (definitionsObject.TryGetPropertyValue("EntityItem", out var entityDefinition))
@@ -1700,6 +1717,16 @@ public class SaveLoadService
 		AddTypeMembersToSet(typeof(GameHost.UnitMetadata), set);
 		AddTypeMembersToSet(typeof(GameHost.PropMetadata), set);
 		AddTypeMembersToSet(typeof(GameHost.ResourceMetadata), set);
+
+		set.Add("spawn_shader");
+		set.Add("spawnshader");
+		set.Add("SpawnShader");
+		set.Add("death_shader");
+		set.Add("deathshader");
+		set.Add("DeathShader");
+		set.Add("despawn_shader");
+		set.Add("despawnshader");
+		set.Add("DespawnShader");
 
 		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
 		{
@@ -1801,6 +1828,22 @@ public class SaveLoadService
 		}
 	}
 
+	private static void CleanTexturesObject(JsonObject texturesObject)
+	{
+		var allowedTextureItemProperties = GetAllowedTextureItemProperties();
+		foreach (var keyValuePair in texturesObject)
+		{
+			if (keyValuePair.Value is JsonObject itemObject)
+			{
+				var propertiesToRemove = itemObject.Select(property => property.Key).Where(property => !allowedTextureItemProperties.Contains(property)).ToList();
+				foreach (var property in propertiesToRemove)
+				{
+					itemObject.Remove(property);
+				}
+			}
+		}
+	}
+
 	private static void CleanAssetsObject(JsonObject root, JsonObject? schemaRoot)
 	{
 		if (!root.TryGetPropertyValue("Assets", out var assetsNode) || assetsNode is not JsonObject assetsObject)
@@ -1843,15 +1886,7 @@ public class SaveLoadService
 
 		if (assetsObject.TryGetPropertyValue("textures", out var texturesNode) && texturesNode is JsonObject texturesObject)
 		{
-			var allowedTextureItemProperties = GetAllowedTextureItemProperties();
-			foreach (var keyValuePair in texturesObject)
-			{
-				if (keyValuePair.Value is JsonObject itemObject)
-				{
-					var propertiesToRemove = itemObject.Select(property => property.Key).Where(property => !allowedTextureItemProperties.Contains(property)).ToList();
-					foreach (var property in propertiesToRemove) itemObject.Remove(property);
-				}
-			}
+			CleanTexturesObject(texturesObject);
 		}
 
 		if (assetsObject.TryGetPropertyValue("decals", out var decalsNode) && decalsNode is JsonObject decalsObject)
@@ -1926,6 +1961,11 @@ public class SaveLoadService
 		}
 
 		CleanAssetsObject(root, schemaRoot);
+
+		if (root.TryGetPropertyValue("textures", out var rootTexturesNode) && rootTexturesNode is JsonObject rootTexturesObj)
+		{
+			CleanTexturesObject(rootTexturesObj);
+		}
 
 		string mapPropsName = nameof(Realm.Ecs.Definitions.MapProperties);
 		if (root.TryGetPropertyValue(mapPropsName, out var mapPropertiesNode) && mapPropertiesNode is JsonObject mapPropertiesObject)

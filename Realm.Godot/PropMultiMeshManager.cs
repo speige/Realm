@@ -52,6 +52,7 @@ public partial class PropMultiMeshManager : Node3D
 	private static readonly StringName _snNormalMode = new("normal_mode");
 	private static readonly StringName _snUnitAmbientBoost = new("unit_ambient_boost");
 	private static readonly StringName _snUnitRimIntensity = new("unit_rim_intensity");
+	private static readonly StringName _snHideInShroud = new("hide_in_shroud");
 
 	private readonly Dictionary<string, PropModelGroup> _groups = new(StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _dirtyAssetKeys = new(StringComparer.OrdinalIgnoreCase);
@@ -612,6 +613,7 @@ public partial class PropMultiMeshManager : Node3D
 						mmNode.SetInstanceShaderParameter(_snNormalMode, (float)normalMode);
 						mmNode.SetInstanceShaderParameter(_snUnitAmbientBoost, 0.0f);
 						mmNode.SetInstanceShaderParameter(_snUnitRimIntensity, 0.0f);
+						mmNode.SetInstanceShaderParameter(_snHideInShroud, 1.0f);
 					}
 				}
 			}

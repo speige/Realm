@@ -164,14 +164,16 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 		_optSpawnShader = AddOptionDropdown(grid, TranslationServer.Translate("Spawn Shader:"), shaderOptions.ToArray(), 0, (idx) =>
 		{
 			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
-			string selectedKey = idx > 0 ? shaders.ElementAt(idx - 1).Key : "";
+			var currentShaders = SpawnDeathShaderManager.LoadAllCustomShaders();
+			string selectedKey = idx > 0 && idx - 1 < currentShaders.Count ? currentShaders.ElementAt(idx - 1).Key : "";
 			GameHost.Instance.SetModelSpawnShader(_currentAssetKey, selectedKey);
 		});
 
 		_optDeathShader = AddOptionDropdown(grid, TranslationServer.Translate("Death Shader:"), shaderOptions.ToArray(), 0, (idx) =>
 		{
 			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
-			string selectedKey = idx > 0 ? shaders.ElementAt(idx - 1).Key : "";
+			var currentShaders = SpawnDeathShaderManager.LoadAllCustomShaders();
+			string selectedKey = idx > 0 && idx - 1 < currentShaders.Count ? currentShaders.ElementAt(idx - 1).Key : "";
 			GameHost.Instance.SetModelDeathShader(_currentAssetKey, selectedKey);
 		});
 	}
@@ -228,6 +230,25 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 		_chkIgnorePlayerColor.ButtonPressed = _initialSnapshot.IgnorePlayerColor;
 
 		var allShaders = SpawnDeathShaderManager.LoadAllCustomShaders();
+		if (_optSpawnShader != null)
+		{
+			_optSpawnShader.Clear();
+			_optSpawnShader.AddItem(TranslationServer.Translate("(None)"));
+			foreach (var s in allShaders.Values)
+			{
+				_optSpawnShader.AddItem(s.Name);
+			}
+		}
+		if (_optDeathShader != null)
+		{
+			_optDeathShader.Clear();
+			_optDeathShader.AddItem(TranslationServer.Translate("(None)"));
+			foreach (var s in allShaders.Values)
+			{
+				_optDeathShader.AddItem(s.Name);
+			}
+		}
+
 		int spawnIdx = 0;
 		int deathIdx = 0;
 		int sIdx = 1;

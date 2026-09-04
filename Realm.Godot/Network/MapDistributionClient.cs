@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Text;
@@ -50,13 +51,46 @@ public class MapDistributionClient
 
             if (missingHashes.Count > 0)
             {
+                string hostBaseUrl = $"http://{hostIp}:{port}";
+                bool casSuccess = false;
 
-                string deltaUrl = $"http://{hostIp}:{port}/map/delta";
-                MapAssetManager.Log($"[MapDistributionClient] Requesting delta archive from {deltaUrl}");
+                try
+                {
+                    var distClient = new Realm.Shared.Distribution.DistributionClient(hostBaseUrl);
+                    var sharedManifest = new Realm.Shared.Distribution.MapManifest
+                    {
+                        MapName = manifest.MapName ?? mapName,
+                        Files = manifest.Files
+                    };
 
-                var requestMessage = new HttpRequestMessage(HttpMethod.Post, deltaUrl);
-                requestMessage.Content = new StringContent(JsonSerializer.Serialize(missingHashes), Encoding.UTF8, "application/json");
-                using (var deltaResponse = await _httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead))
+                    var seeders = new List<Realm.Shared.Distribution.SeederNodeDto>();
+
+                    casSuccess = await distClient.DownloadMissingAssetsMultiThreadedAsync(
+                        sharedManifest,
+                        MapAssetManager.Storage,
+                        seeders,
+                        fallbackHostUrl: hostBaseUrl,
+                        progressCallback: p =>
+                        {
+                            progressCallback?.Invoke(p);
+                            DownloadProgressChanged?.Invoke(p);
+                        },
+                        maximumConcurrency: 6);
+                }
+                catch (Exception casEx)
+                {
+                    MapAssetManager.Log($"[MapDistributionClient] CAS download exception: {casEx.Message}. Will attempt delta fallback.");
+                }
+
+                var remainingMissing = MapAssetManager.GetMissingHashes(manifest.Files.Values);
+                if (remainingMissing.Count > 0)
+                {
+                    string deltaUrl = $"http://{hostIp}:{port}/map/delta";
+                    MapAssetManager.Log($"[MapDistributionClient] Requesting delta archive for {remainingMissing.Count} missing hashes from {deltaUrl}");
+
+                    var requestMessage = new HttpRequestMessage(HttpMethod.Post, deltaUrl);
+                    requestMessage.Content = new StringContent(JsonSerializer.Serialize(remainingMissing), Encoding.UTF8, "application/json");
+                    using (var deltaResponse = await _httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead))
                 {
                     if (!deltaResponse.IsSuccessStatusCode)
                     {
@@ -98,10 +132,10 @@ public class MapDistributionClient
 
                     try { File.Delete(tempDeltaPath); } catch { }
                 }
+                }
             }
             else
             {
-
                 progressCallback?.Invoke(1.0f);
                 DownloadProgressChanged?.Invoke(1.0f);
             }

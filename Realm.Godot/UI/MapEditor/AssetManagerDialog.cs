@@ -699,8 +699,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			string json = File.ReadAllText(metaPath);
 			var root = JsonNode.Parse(json)?.AsObject();
-			var assetsObj = root?["Assets"]?.AsObject();
-			if (assetsObj == null) return result;
+			var assetsObj = root?["Assets"]?.AsObject() ?? new JsonObject();
 
 			string expectedAssetType = category switch
 			{
@@ -765,7 +764,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			{
 				foreach (var catName in new[] { "textures", "vfx_spritesheets", "icons", "decals", "ribbons", "ribbon_textures", "noise_textures", "skyboxes" })
 				{
-					if (assetsObj[catName] is JsonObject catObj)
+					JsonObject? catObj = (assetsObj.ContainsKey(catName) ? assetsObj[catName] as JsonObject : null) ?? (root != null && root.ContainsKey(catName) ? root[catName] as JsonObject : null);
+					if (catObj != null)
 					{
 						foreach (var item in catObj)
 						{
@@ -2279,6 +2279,35 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string fileName = Path.GetFileName(sourceFilePath);
+		string sourceExtension = Path.GetExtension(sourceFilePath).ToLowerInvariant();
+
+		var indexedAsset = AssetIndexService.Instance.GetAssetByPath(sourceFilePath);
+		if (indexedAsset != null && !string.IsNullOrWhiteSpace(indexedAsset.FileName) && !string.Equals(indexedAsset.FileName, Path.GetFileName(sourceFilePath), StringComparison.OrdinalIgnoreCase))
+		{
+			string clean = Path.GetFileName(indexedAsset.FileName.Trim());
+			fileName = clean.EndsWith(sourceExtension, StringComparison.OrdinalIgnoreCase) ? clean : $"{clean}{sourceExtension}";
+		}
+		else
+		{
+			string? metaJson = Realm.Shared.Metadata.RealmMetadataHelper.ExtractMetadata(sourceFilePath);
+			if (!string.IsNullOrEmpty(metaJson))
+			{
+				try
+				{
+					var metaObj = JsonNode.Parse(metaJson)?.AsObject();
+					string? friendly = metaObj?["asset_name"]?.ToString()
+						?? metaObj?["name"]?.ToString()
+						?? metaObj?["original_filename"]?.ToString()
+						?? metaObj?["FileName"]?.ToString();
+					if (!string.IsNullOrWhiteSpace(friendly))
+					{
+						string clean = Path.GetFileName(friendly.Trim());
+						fileName = clean.EndsWith(sourceExtension, StringComparison.OrdinalIgnoreCase) ? clean : $"{clean}{sourceExtension}";
+					}
+				}
+				catch { }
+			}
+		}
 
 		try
 		{
@@ -2971,7 +3000,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		try
 		{
 			var root = JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject();
-			if (root != null && root["Assets"]?["textures"]?[key] is JsonNode node)
+			var node = (root?.ContainsKey("textures") == true && root["textures"]?[key] != null)
+				? root["textures"]![key]
+				: root?["Assets"]?["textures"]?[key];
+			if (root != null && node is JsonNode)
 			{
 				string hash = node is JsonObject o && o.ContainsKey("hash") ? o["hash"]?.ToString() : (node is JsonValue v ? v.ToString() : "");
 				int swatchIdx = -1;
@@ -2988,7 +3020,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					swatchIdx = parsedIdx3;
 				}
 
-				if (swatchIdx < 0 && root["Assets"]?["textures"] is JsonObject texturesDict)
+				var texturesDict = (root.ContainsKey("textures") && root["textures"] is JsonObject rTex) ? rTex : root["Assets"]?["textures"] as JsonObject;
+				if (swatchIdx < 0 && texturesDict != null)
 				{
 					var usedIndices = new HashSet<int>();
 					foreach (var kvp in texturesDict)
@@ -3017,7 +3050,12 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					if (prop.Key.Equals("swatch_index", StringComparison.OrdinalIgnoreCase) || prop.Key.Equals("swatchIndex", StringComparison.OrdinalIgnoreCase)) continue;
 					newObj[prop.Key] = prop.Value?.DeepClone();
 				}
-				root["Assets"]["textures"][key] = newObj;
+				if (!root.ContainsKey("textures") || root["textures"] is not JsonObject) root["textures"] = new JsonObject();
+				((JsonObject)root["textures"])[key] = newObj;
+				if (root.ContainsKey("Assets") && root["Assets"] is JsonObject aObj && aObj.ContainsKey("textures") && aObj["textures"] is JsonObject aTex)
+				{
+					aTex[key] = newObj.DeepClone();
+				}
 				MapJsonFormatter.SaveFormattedJson(metaPath, root);
 			}
 		}
@@ -3083,43 +3121,54 @@ public partial class AssetManagerDialog : FloatingDialogBase
 									}
 								}
 							}
-							else if (category == "textures" && assetsObj["textures"] is JsonObject texturesObj)
+							else if (category == "textures")
 							{
-								int deletedIdx = -1;
-								if (texturesObj.ContainsKey(key) && texturesObj[key] is JsonObject delObj)
+								JsonObject? texturesObj = (root["textures"] ?? assetsObj["textures"]) as JsonObject;
+								if (texturesObj != null)
 								{
-									if (delObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
+									int deletedIdx = -1;
+									if (texturesObj.ContainsKey(key) && texturesObj[key] is JsonObject delObj)
 									{
-										deletedIdx = parsed;
-									}
-								}
-								texturesObj.Remove(key);
-								string p = Path.Combine(wsPath, "Assets", "textures", key);
-								if (File.Exists(p)) File.Delete(p);
-
-								if (deletedIdx >= 0)
-								{
-									var remap = new Dictionary<int, int>();
-									remap[deletedIdx] = 0;
-
-									foreach (var kvp in texturesObj)
-									{
-										if (kvp.Value is JsonObject sObj)
+										if (delObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
 										{
-											if (sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsedIdx))
+											deletedIdx = parsed;
+										}
+									}
+									if (root["textures"] is JsonObject rTex) rTex.Remove(key);
+									if (assetsObj["textures"] is JsonObject aTex) aTex.Remove(key);
+									string p = Path.Combine(wsPath, "Assets", "textures", key);
+									if (File.Exists(p)) File.Delete(p);
+
+									if (deletedIdx >= 0)
+									{
+										var remap = new Dictionary<int, int>();
+										remap[deletedIdx] = 0;
+
+										void RemapDict(JsonObject dict)
+										{
+											foreach (var kvp in dict)
 											{
-												if (parsedIdx > deletedIdx)
+												if (kvp.Value is JsonObject sObj)
 												{
-													int newIdx = parsedIdx - 1;
-													sObj["swatchIndex"] = newIdx;
-													remap[parsedIdx] = newIdx;
+													if (sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsedIdx))
+													{
+														if (parsedIdx > deletedIdx)
+														{
+															int newIdx = parsedIdx - 1;
+															sObj["swatchIndex"] = newIdx;
+															remap[parsedIdx] = newIdx;
+														}
+													}
 												}
 											}
 										}
-									}
 
-									GameHost.Instance?.GroundTerrain?.RemapSplatIndices(remap);
-									SaveLoadService.RemapSplatExrFiles(wsPath, remap);
+										if (root["textures"] is JsonObject rT) RemapDict(rT);
+										if (assetsObj["textures"] is JsonObject aT) RemapDict(aT);
+
+										GameHost.Instance?.GroundTerrain?.RemapSplatIndices(remap);
+										SaveLoadService.RemapSplatExrFiles(wsPath, remap);
+									}
 								}
 							}
 							else if (category == "shaders")

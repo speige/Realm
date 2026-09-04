@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="Realm.Shared/Realm.Shared.csproj" />
   <Project Path="Realm.Ecs.Tests/Realm.Ecs.Tests.csproj" />
+  <Project Path="Realm.Distribution.Tests/Realm.Distribution.Tests.csproj" />
   <Project Path="Realm.Ecs/Realm.Ecs.csproj" />
   <Project Path="Realm.Godot/Realm.Godot.csproj" />
   <Project Path="Realm.Lobby/Realm.Lobby.csproj" />

@@ -412,7 +412,10 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		for (int i = 0; i < indexedDirs.Count; i++)
 		{
 			string dirPath = indexedDirs[i];
-			string folderName = Path.GetFileName(dirPath.TrimEnd('/', '\\'));
+			bool isGlobalCas = string.Equals(dirPath, AssetIndexService.GlobalCasAssetsDirectory, StringComparison.OrdinalIgnoreCase);
+			string folderName = isGlobalCas
+				? TranslationServer.Translate("Global Assets (CAS)")
+				: Path.GetFileName(dirPath.TrimEnd('/', '\\'));
 			if (string.IsNullOrEmpty(folderName))
 			{
 				folderName = dirPath;
@@ -450,20 +453,23 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			lblName.AddThemeColorOverride("font_color", isIndexing ? UIStyle.ColorCyanGlow : UIStyle.ColorGold);
 			chipHBox.AddChild(lblName);
 
-			var btnRemove = new Button();
-			btnRemove.Set("icon_max_width", 0);
-			btnRemove.Text = "✕";
-			btnRemove.AddThemeFontSizeOverride("font_size", 9);
-			btnRemove.CustomMinimumSize = new Vector2(16, 16);
-			btnRemove.FocusMode = FocusModeEnum.None;
-			btnRemove.TooltipText = $"{TranslationServer.Translate("Remove folder from index")}: {dirPath}";
-			btnRemove.Pressed += () =>
+			if (!isGlobalCas)
 			{
-				AssetIndexService.Instance.RemoveDirectory(dirPath);
-				RefreshFolderChips();
-				RefreshSearchResults();
-			};
-			chipHBox.AddChild(btnRemove);
+				var btnRemove = new Button();
+				btnRemove.Set("icon_max_width", 0);
+				btnRemove.Text = "✕";
+				btnRemove.AddThemeFontSizeOverride("font_size", 9);
+				btnRemove.CustomMinimumSize = new Vector2(16, 16);
+				btnRemove.FocusMode = FocusModeEnum.None;
+				btnRemove.TooltipText = $"{TranslationServer.Translate("Remove folder from index")}: {dirPath}";
+				btnRemove.Pressed += () =>
+				{
+					AssetIndexService.Instance.RemoveDirectory(dirPath);
+					RefreshFolderChips();
+					RefreshSearchResults();
+				};
+				chipHBox.AddChild(btnRemove);
+			}
 
 			_folderChipsContainer.AddChild(chip);
 		}

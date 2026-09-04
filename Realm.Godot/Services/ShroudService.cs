@@ -176,6 +176,7 @@ void fragment() {
 					_shroudTexture.Update(_shroudImage);
 				}
 				GameHost.Instance.GroundTerrain.SetShroudTexture(_shroudTexture);
+				Realm.Godot.Utils.ModelShaderManager.SetShroudParameters(null, Vector2.Zero, Vector2.Zero, false);
 			}
 			return;
 		}
@@ -326,7 +327,7 @@ void fragment() {
 					Vector3 pos = prop.GlobalPosition;
 					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
 					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-					bool shouldBeVisible = (shroudGrid[gx, gz] != ShroudState.ExplorationShroud);
+					bool shouldBeVisible = (shroudGrid[gx, gz] == ShroudState.Visible);
 					if (prop.Visible != shouldBeVisible)
 					{
 						prop.Visible = shouldBeVisible;
@@ -444,7 +445,7 @@ void fragment() {
 				Vector3 pos = prop.GlobalPosition;
 				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
 				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
-				bool shouldBeVisible = (shroudGrid[gx, gz] != ShroudState.ExplorationShroud);
+				bool shouldBeVisible = (shroudGrid[gx, gz] == ShroudState.Visible);
 				if (prop.Visible != shouldBeVisible)
 				{
 					prop.Visible = shouldBeVisible;
@@ -518,10 +519,19 @@ void fragment() {
 			_shroudTexture.Update(_shroudImage);
 		}
 
+		float halfW = 125.0f;
+		float halfD = 125.0f;
 		if (GameHost.Instance?.GroundTerrain != null)
 		{
+			halfW = (GameHost.Instance.GroundTerrain.Width * GameHost.Instance.GroundTerrain.QuadSize) * 0.5f;
+			halfD = (GameHost.Instance.GroundTerrain.Depth * GameHost.Instance.GroundTerrain.QuadSize) * 0.5f;
 			GameHost.Instance.GroundTerrain.SetShroudTexture(_shroudTexture);
 		}
+
+		Vector2 worldMin = new Vector2(-halfW, -halfD);
+		Vector2 worldSize = new Vector2(halfW * 2f, halfD * 2f);
+		bool shroudEnabled = GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode;
+		Realm.Godot.Utils.ModelShaderManager.SetShroudParameters(_shroudTexture, worldMin, worldSize, shroudEnabled);
 
 		_shroudMeshMaterial?.SetShaderParameter("shroud_texture", _shroudTexture);
 	}
