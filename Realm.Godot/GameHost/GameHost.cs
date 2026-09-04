@@ -17,6 +17,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Realm.Godot.Animation;
+using Realm.Godot.Utils;
 
 public partial class GameHost : Node3D, IGameAPI
 {
@@ -1415,9 +1416,9 @@ public partial class GameHost : Node3D, IGameAPI
 		OnPlayerChatMessage?.Invoke(message, selected);
 	}
 
-	public void TriggerKillUnit(Unit3D unit)
+	public void TriggerKillUnit(Unit3D unit, bool executeDespawnShader = true, bool playDeathAnimation = true)
 	{
-		KillUnit(unit);
+		KillUnit(unit, executeDespawnShader, playDeathAnimation);
 	}
 
 	private void InitializePlayerResources(Entity playerEntity)
@@ -1529,7 +1530,7 @@ public partial class GameHost : Node3D, IGameAPI
 
 	float IGameAPI.GameElapsedTime => GameElapsedTime;
 
-	IUnit IGameAPI.SpawnUnit(string unitTypeId, System.Numerics.Vector3 position, bool isEnemy, bool bypassPopulation)
+	IUnit IGameAPI.SpawnUnit(string unitTypeId, System.Numerics.Vector3 position, bool isEnemy, bool bypassPopulation, bool executeSpawnShader)
 	{
 		var pos = new Vector3(position.X, position.Y, position.Z);
 		pos.Y = GetTerrainHeightAt(pos);
@@ -1585,7 +1586,7 @@ public partial class GameHost : Node3D, IGameAPI
 		{
 			EcsWorld.Add(entity, new BypassPopulationTag());
 		}
-		SpawnUnit3D(entity, unitTypeId, modelPath, pos, isBuilding, actualIsEnemy, bypassPopulation);
+		SpawnUnit3D(entity, unitTypeId, modelPath, pos, isBuilding, actualIsEnemy, bypassPopulation, -1, executeSpawnShader);
 		
 		return GetUnitWrapper(entity);
 	}
@@ -2357,7 +2358,7 @@ public class {mapName} : IMapScript
 		}
 	}
 
-	void IGameAPI.KillUnit(IUnit unit)
+	void IGameAPI.KillUnit(IUnit unit, bool executeDespawnShader, bool playDeathAnimation)
 	{
 		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
 		{
@@ -2368,14 +2369,14 @@ public class {mapName} : IMapScript
 					if (!EcsWorld.Has<Dead>(wrapper.Entity))
 					{
 						EcsWorld.Add<Dead>(wrapper.Entity);
-						this.CallDeferred(nameof(KillUnit), unit3D);
+						Callable.From(() => KillUnit(unit3D, executeDespawnShader, playDeathAnimation)).CallDeferred();
 					}
 				}
 			}
 		}
 	}
 
-	void IGameAPI.DestroyUnit(IUnit unit)
+	void IGameAPI.DestroyUnit(IUnit unit, bool executeDespawnShader, bool playDeathAnimation)
 	{
 		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
 		{
@@ -2390,10 +2391,57 @@ public class {mapName} : IMapScript
 					{
 						_castlesList.Remove(unit3D);
 					}
+					if (unit3D.IsBuilding)
+					{
+						float radius = EcsWorld.Has<CollisionRadius>(wrapper.Entity) ? EcsWorld.Get<CollisionRadius>(wrapper.Entity).Value : 2.0f;
+						var unitPos = EcsWorld.Has<Position>(wrapper.Entity) ? EcsWorld.Get<Position>(wrapper.Entity).Value : new System.Numerics.Vector3(unit3D.Position.X, unit3D.Position.Y, unit3D.Position.Z);
+						UncarveObstacle(unitPos, radius);
+					}
+					if (_multiplayerActive)
+					{
+						if (_clientToServerEntityMap.TryGetValue(unit3D.Entity.Id, out int serverId))
+						{
+							_serverToClientEntityMap.Remove(serverId);
+						}
+						_clientToServerEntityMap.Remove(unit3D.Entity.Id);
+					}
 					int id = wrapper.Entity.Id;
 					_unitWrapperCache.Remove(id);
 					EcsWorld.Destroy(wrapper.Entity);
-					unit3D.QueueFree();
+
+					unit3D.CollisionLayer = 0;
+					unit3D.CollisionMask = 0;
+
+					if (playDeathAnimation)
+					{
+						unit3D.PlayAnimation("Death");
+					}
+
+					string deathShader = executeDespawnShader ? GetModelDeathShader(unit3D.UnitId) : "";
+					if (executeDespawnShader && string.IsNullOrEmpty(deathShader))
+					{
+						deathShader = GetModelDeathShader(unit3D);
+					}
+
+					if (!string.IsNullOrEmpty(deathShader))
+					{
+						SpawnDeathShaderManager.AnimateTransition(unit3D, deathShader, false, null, () =>
+						{
+							if (GodotObject.IsInstanceValid(unit3D)) unit3D.QueueFree();
+						});
+					}
+					else if (playDeathAnimation)
+					{
+						var tween = CreateTween();
+						tween.SetParallel(true);
+						tween.TweenProperty(unit3D, "position:y", -3.0f, 1.0f);
+						tween.TweenProperty(unit3D, "scale", Vector3.Zero, 1.0f);
+						tween.Chain().TweenCallback(Callable.From(unit3D.QueueFree));
+					}
+					else
+					{
+						unit3D.QueueFree();
+					}
 				}
 			}
 		}
@@ -2476,10 +2524,10 @@ public class {mapName} : IMapScript
 		}
 	}
 
-	IUnit IGameAPI.SpawnUnitForPlayer(string unitTypeId, System.Numerics.Vector3 position, int playerIndex)
+	IUnit IGameAPI.SpawnUnitForPlayer(string unitTypeId, System.Numerics.Vector3 position, int playerIndex, bool executeSpawnShader)
 	{
 		bool isEnemy = NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, playerIndex);
-		var unit = ((IGameAPI)this).SpawnUnit(unitTypeId, position, isEnemy);
+		var unit = ((IGameAPI)this).SpawnUnit(unitTypeId, position, isEnemy, false, executeSpawnShader);
 		unit.Player = playerIndex;
 		return unit;
 	}
@@ -4325,7 +4373,7 @@ public class {mapName} : IMapScript
 		return entity;
 	}
 
-	private Unit3D SpawnUnit3D(Entity entity, string id, string modelPath, Vector3 pos, bool isBuilding, bool isEnemy, bool isFromQueue = false, int player = -1)
+	private Unit3D SpawnUnit3D(Entity entity, string id, string modelPath, Vector3 pos, bool isBuilding, bool isEnemy, bool isFromQueue = false, int player = -1, bool executeSpawnShader = false)
 	{
 		int playerIndex = player >= 0 ? player : 0;
 		bool actualIsEnemy = player >= 0 ? NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, playerIndex) : isEnemy;
@@ -4423,6 +4471,20 @@ public class {mapName} : IMapScript
 		{
 			_castlesList.Add(unit3D);
 		}
+
+		if (executeSpawnShader)
+		{
+			string spawnShader = GetModelSpawnShader(unit3D);
+			if (string.IsNullOrEmpty(spawnShader))
+			{
+				spawnShader = GetModelSpawnShader(id);
+			}
+			if (!string.IsNullOrEmpty(spawnShader))
+			{
+				SpawnDeathShaderManager.AnimateTransition(unit3D, spawnShader, true);
+			}
+		}
+
 		return unit3D;
 	}
 

@@ -390,6 +390,20 @@ public static class SpawnDeathShaderManager
 		return mat;
 	}
 
+	private static bool IsExcludedMesh(Node node)
+	{
+		if (node == null) return true;
+		string nodeName = node.Name.ToString();
+		return nodeName.StartsWith("_selection", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("Selection", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("_hover", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("Hover", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("BrushIndicator", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("DropShadow", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.Contains("SelectionRing", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.Contains("HoverRing", StringComparison.OrdinalIgnoreCase);
+	}
+
 	public static Aabb CalculateNodeAabb(Node3D root)
 	{
 		Aabb combined = new Aabb(Vector3.Zero, Vector3.One);
@@ -397,6 +411,7 @@ public static class SpawnDeathShaderManager
 
 		void Traverse(Node node)
 		{
+			if (IsExcludedMesh(node)) return;
 			if (node is MeshInstance3D mesh && mesh.Mesh != null)
 			{
 				var aabb = mesh.GetAabb();
@@ -432,6 +447,7 @@ public static class SpawnDeathShaderManager
 
 		void ApplyToMesh(Node node)
 		{
+			if (IsExcludedMesh(node)) return;
 			if (node is MeshInstance3D mesh)
 			{
 				ShaderMaterial mat = mesh.MaterialOverride as ShaderMaterial;
@@ -442,9 +458,20 @@ public static class SpawnDeathShaderManager
 					{
 						albedo = stdMat.AlbedoTexture;
 					}
+					else if (mesh.GetActiveMaterial(0) is OrmMaterial3D ormMat)
+					{
+						albedo = ormMat.AlbedoTexture;
+					}
 					else if (mesh.GetActiveMaterial(0) is ShaderMaterial sMat)
 					{
 						albedo = sMat.GetShaderParameter("texture_albedo").As<Texture2D>();
+					}
+					else if (mesh.Mesh != null && mesh.Mesh.GetSurfaceCount() > 0)
+					{
+						var surfMat = mesh.Mesh.SurfaceGetMaterial(0);
+						if (surfMat is StandardMaterial3D sm) albedo = sm.AlbedoTexture;
+						else if (surfMat is OrmMaterial3D om) albedo = om.AlbedoTexture;
+						else if (surfMat is ShaderMaterial shm) albedo = shm.GetShaderParameter("texture_albedo").As<Texture2D>();
 					}
 					mat = CreateShaderMaterial(config, aabb, albedo);
 					mesh.MaterialOverride = mat;
@@ -480,6 +507,7 @@ public static class SpawnDeathShaderManager
 
 		void ClearMesh(Node node)
 		{
+			if (IsExcludedMesh(node)) return;
 			if (node is MeshInstance3D mesh)
 			{
 				mesh.MaterialOverride = null;

@@ -624,8 +624,14 @@ public partial class FloatingDialogBase : PanelContainer
 		lbl.AddThemeFontSizeOverride("font_size", 11);
 		row.AddChild(lbl);
 
+		string committedValue = initialText ?? string.Empty;
+		bool isUpdatingTextProgrammatically = false;
+		bool isPopupOpening = false;
+		bool isPopupSelectionInProgress = false;
+		bool isShowingAll = false;
+
 		var txt = new LineEdit();
-		txt.Text = initialText ?? string.Empty;
+		txt.Text = committedValue;
 		txt.PlaceholderText = placeholder;
 		txt.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 		txt.AddThemeFontSizeOverride("font_size", 11);
@@ -669,53 +675,175 @@ public partial class FloatingDialogBase : PanelContainer
 
 		var popup = new PopupMenu();
 		popup.AddThemeFontSizeOverride("font_size", 11);
+		popup.Unfocusable = true;
 		AddChild(popup);
 
 		var currentFilteredItems = new List<string>();
 
+		void CommitSelection(string selected)
+		{
+			string safeSelected = selected ?? string.Empty;
+			isUpdatingTextProgrammatically = true;
+			try
+			{
+				txt.Text = safeSelected;
+			}
+			finally
+			{
+				isUpdatingTextProgrammatically = false;
+			}
+
+			if (!string.Equals(committedValue, safeSelected, StringComparison.Ordinal))
+			{
+				committedValue = safeSelected;
+				onChanged(safeSelected);
+			}
+		}
+
+		void PositionAndShowPopup()
+		{
+			if (!txt.IsInsideTree()) return;
+
+			isPopupOpening = true;
+			try
+			{
+				Vector2 globalPos = txt.GlobalPosition;
+				Vector2 txtSize = txt.Size;
+				popup.Position = new Vector2I((int)globalPos.X, (int)(globalPos.Y + txtSize.Y + 2));
+				popup.ResetSize();
+				if (popup.Size.X < (int)txtSize.X)
+				{
+					popup.Size = new Vector2I((int)txtSize.X, popup.Size.Y);
+				}
+				popup.Popup();
+			}
+			finally
+			{
+				Callable.From(() =>
+				{
+					isPopupOpening = false;
+					if (GodotObject.IsInstanceValid(txt) && !txt.HasFocus())
+					{
+						txt.GrabFocus();
+					}
+				}).CallDeferred();
+			}
+		}
+
 		void ShowAssetPopup(bool showAll = false)
 		{
+			isShowingAll = showAll;
 			popup.Clear();
 			currentFilteredItems.Clear();
 
 			var allItems = itemsProvider(includeAllFolders);
-			string currentText = txt.Text?.Trim() ?? "";
-			string query = (showAll || allItems.Contains(currentText))
-				? ""
-				: currentText.ToLowerInvariant();
+			if (allItems == null || allItems.Count == 0)
+			{
+				popup.AddItem(TranslationServer.Translate("No matching assets found"), 0);
+				popup.SetItemDisabled(0, true);
+				PositionAndShowPopup();
+				return;
+			}
 
-			var matched = string.IsNullOrEmpty(query)
-				? allItems
-				: allItems.FindAll(s => s.ToLowerInvariant().Contains(query));
+			string currentText = txt.Text?.Trim() ?? string.Empty;
+			string query = (showAll || (string.IsNullOrEmpty(currentText) && !showAll))
+				? string.Empty
+				: currentText;
 
-			if (matched.Count == 0)
+			List<string> displayItems;
+			if (showAll || string.IsNullOrEmpty(query))
+			{
+				displayItems = allItems;
+			}
+			else
+			{
+				var lev = new Fastenshtein.Levenshtein(query.ToLowerInvariant());
+				var scoredItems = new List<(string Item, int Score)>();
+				for (int i = 0; i < allItems.Count; i++)
+				{
+					string item = allItems[i];
+					int score = ComputeMatchScore(item, query, lev);
+					scoredItems.Add((item, score));
+				}
+
+				scoredItems.Sort((a, b) =>
+				{
+					int cmp = a.Score.CompareTo(b.Score);
+					return cmp != 0 ? cmp : string.Compare(a.Item, b.Item, StringComparison.OrdinalIgnoreCase);
+				});
+
+				var genuineMatches = new List<string>();
+				for (int i = 0; i < scoredItems.Count; i++)
+				{
+					if (scoredItems[i].Score < 1000)
+					{
+						genuineMatches.Add(scoredItems[i].Item);
+					}
+				}
+
+				if (genuineMatches.Count > 0)
+				{
+					displayItems = genuineMatches;
+				}
+				else
+				{
+					displayItems = new List<string>();
+					int takeCount = Math.Min(5, scoredItems.Count);
+					for (int i = 0; i < takeCount; i++)
+					{
+						displayItems.Add(scoredItems[i].Item);
+					}
+				}
+			}
+
+			if (displayItems.Count == 0)
 			{
 				popup.AddItem(TranslationServer.Translate("No matching assets found"), 0);
 				popup.SetItemDisabled(0, true);
 			}
 			else
 			{
-				int maxItems = Math.Min(matched.Count, 35);
+				int maxItems = Math.Min(displayItems.Count, 35);
 				for (int i = 0; i < maxItems; i++)
 				{
-					currentFilteredItems.Add(matched[i]);
-					popup.AddItem(matched[i], i);
+					currentFilteredItems.Add(displayItems[i]);
+					popup.AddItem(displayItems[i], i);
 				}
-				if (matched.Count > 35)
+				if (displayItems.Count > 35)
 				{
-					popup.AddItem($"... ({matched.Count - 35} more)", 35);
+					popup.AddItem($"... ({displayItems.Count - 35} more)", 35);
 					popup.SetItemDisabled(35, true);
 				}
 			}
 
-			Vector2 globalPos = txt.GlobalPosition;
-			Vector2 txtSize = txt.Size;
-			popup.Position = new Vector2I((int)globalPos.X, (int)(globalPos.Y + txtSize.Y + 2));
-			popup.ResetSize();
-			popup.Popup();
+			PositionAndShowPopup();
 		}
 
-		btnDropdown.Pressed += () => ShowAssetPopup(true);
+		void ResolveClosestMatch()
+		{
+			var allItems = itemsProvider(includeAllFolders);
+			string closest = FindClosestMatch(txt.Text, allItems, committedValue);
+			CommitSelection(closest);
+			popup.Hide();
+		}
+
+		btnDropdown.Pressed += () =>
+		{
+			if (popup.Visible && isShowingAll)
+			{
+				popup.Hide();
+				isShowingAll = false;
+			}
+			else
+			{
+				ShowAssetPopup(showAll: true);
+			}
+		};
+
+		popup.PopupHide += () =>
+		{
+			isShowingAll = false;
+		};
 
 		popup.IdPressed += (long id) =>
 		{
@@ -723,15 +851,178 @@ public partial class FloatingDialogBase : PanelContainer
 			if (idx >= 0 && idx < currentFilteredItems.Count)
 			{
 				string selected = currentFilteredItems[idx];
-				txt.Text = selected;
-				onChanged(selected);
+				isPopupSelectionInProgress = true;
+				CommitSelection(selected);
+				popup.Hide();
+				Callable.From(() => isPopupSelectionInProgress = false).CallDeferred();
 			}
 		};
 
-		txt.TextChanged += (val) => onChanged(val);
+		txt.FocusEntered += () =>
+		{
+			Callable.From(txt.SelectAll).CallDeferred();
+		};
+
+		txt.TextChanged += (val) =>
+		{
+			if (isUpdatingTextProgrammatically) return;
+			ShowAssetPopup(showAll: false);
+		};
+
+		txt.FocusExited += () =>
+		{
+			if (isPopupOpening) return;
+
+			Callable.From(() =>
+			{
+				if (isPopupSelectionInProgress) return;
+				if (string.Equals(txt.Text, committedValue, StringComparison.Ordinal))
+				{
+					popup.Hide();
+					return;
+				}
+
+				ResolveClosestMatch();
+			}).CallDeferred();
+		};
+
+		txt.TextSubmitted += (newText) =>
+		{
+			ResolveClosestMatch();
+			txt.ReleaseFocus();
+		};
 
 		parent.AddChild(row);
-		return (txt, (val) => txt.Text = val ?? string.Empty);
+		return (txt, (val) =>
+		{
+			string safeVal = val ?? string.Empty;
+			committedValue = safeVal;
+			isUpdatingTextProgrammatically = true;
+			try
+			{
+				txt.Text = safeVal;
+			}
+			finally
+			{
+				isUpdatingTextProgrammatically = false;
+			}
+		});
+	}
+
+	public static string FindClosestMatch(string query, List<string> allItems, string fallbackValue = "")
+	{
+		if (allItems == null || allItems.Count == 0)
+		{
+			return fallbackValue ?? string.Empty;
+		}
+
+		if (string.IsNullOrWhiteSpace(query))
+		{
+			if (!string.IsNullOrEmpty(fallbackValue) && allItems.Exists(s => s.Equals(fallbackValue, StringComparison.OrdinalIgnoreCase)))
+			{
+				return fallbackValue;
+			}
+			return allItems[0];
+		}
+
+		string cleanQuery = query.Trim();
+		string bestItem = allItems[0];
+		int bestScore = int.MaxValue;
+		var lev = new Fastenshtein.Levenshtein(cleanQuery.ToLowerInvariant());
+
+		for (int i = 0; i < allItems.Count; i++)
+		{
+			string item = allItems[i];
+			int score = ComputeMatchScore(item, cleanQuery, lev);
+			if (score < bestScore)
+			{
+				bestScore = score;
+				bestItem = item;
+				if (score == 0) break;
+			}
+		}
+
+		return bestItem;
+	}
+
+	public static int ComputeMatchScore(string item, string query, Fastenshtein.Levenshtein? lev = null)
+	{
+		if (string.IsNullOrEmpty(item)) return int.MaxValue;
+		if (string.IsNullOrEmpty(query)) return 0;
+
+		string itemFull = item.Trim();
+		string itemLower = itemFull.ToLowerInvariant();
+		string q = query.Trim().ToLowerInvariant();
+
+		if (itemLower == q) return 0;
+
+		string fileName = System.IO.Path.GetFileName(itemFull).ToLowerInvariant();
+		if (fileName == q) return 1;
+
+		string nameNoExt = System.IO.Path.GetFileNameWithoutExtension(itemFull).ToLowerInvariant();
+		if (nameNoExt == q) return 2;
+
+		if (nameNoExt.StartsWith(q)) return 10 + (nameNoExt.Length - q.Length);
+		if (fileName.StartsWith(q)) return 20 + (fileName.Length - q.Length);
+		if (itemLower.StartsWith(q)) return 30 + (itemLower.Length - q.Length);
+
+		string[] queryWords = q.Split(new[] { ' ', '_', '-', '.' }, StringSplitOptions.RemoveEmptyEntries);
+		if (queryWords.Length > 1)
+		{
+			bool allWordsMatch = true;
+			for (int i = 0; i < queryWords.Length; i++)
+			{
+				if (!itemLower.Contains(queryWords[i]))
+				{
+					allWordsMatch = false;
+					break;
+				}
+			}
+			if (allWordsMatch)
+			{
+				return 25 + Math.Abs(nameNoExt.Length - q.Length);
+			}
+		}
+
+		string[] tokens = nameNoExt.Split(new[] { '_', '-', ' ', '.', '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
+		for (int i = 0; i < tokens.Length; i++)
+		{
+			string token = tokens[i];
+			if (token == q) return 40 + (nameNoExt.Length - q.Length);
+			if (token.StartsWith(q)) return 50 + (nameNoExt.Length - q.Length);
+		}
+
+		if (nameNoExt.Contains(q))
+		{
+			int idx = nameNoExt.IndexOf(q);
+			return 100 + idx * 5 + (nameNoExt.Length - q.Length);
+		}
+
+		if (fileName.Contains(q))
+		{
+			int idx = fileName.IndexOf(q);
+			return 200 + idx * 5 + (fileName.Length - q.Length);
+		}
+
+		if (itemLower.Contains(q))
+		{
+			int idx = itemLower.IndexOf(q);
+			return 300 + idx * 2 + (itemLower.Length - q.Length);
+		}
+
+		int bestTokenDist = int.MaxValue;
+		for (int i = 0; i < tokens.Length; i++)
+		{
+			int dist = lev != null ? lev.DistanceFrom(tokens[i]) : Fastenshtein.Levenshtein.Distance(q, tokens[i]);
+			if (dist < bestTokenDist) bestTokenDist = dist;
+		}
+		if (bestTokenDist <= 2)
+		{
+			return 500 + bestTokenDist * 50 + Math.Abs(nameNoExt.Length - q.Length);
+		}
+
+		int distName = lev != null ? lev.DistanceFrom(nameNoExt) : Fastenshtein.Levenshtein.Distance(q, nameNoExt);
+		return 1000 + distName * 20 + Math.Abs(nameNoExt.Length - q.Length);
 	}
 
 	public static List<string> ScanAvailableAssets(string category, bool includeAllFolders = false, string subFolder = null)

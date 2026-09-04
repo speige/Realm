@@ -40,6 +40,11 @@ public partial class GameHost
 
 	private void KillUnit(Unit3D unit)
 	{
+		KillUnit(unit, true, true);
+	}
+
+	private void KillUnit(Unit3D unit, bool executeDespawnShader, bool playDeathAnimation)
+	{
 		IUnit killer = null;
 		if (EcsWorld.IsAlive(unit.Entity))
 		{
@@ -114,7 +119,23 @@ public partial class GameHost
 			EcsWorld.Destroy(unit.Entity);
 		}
 
-		string deathShader = GetModelDeathShader(unitId);
+		if (playDeathAnimation && GodotObject.IsInstanceValid(unit))
+		{
+			unit.PlayAnimation("Death");
+		}
+
+		if (GodotObject.IsInstanceValid(unit))
+		{
+			unit.CollisionLayer = 0;
+			unit.CollisionMask = 0;
+		}
+
+		string deathShader = executeDespawnShader ? GetModelDeathShader(unitId) : "";
+		if (executeDespawnShader && string.IsNullOrEmpty(deathShader))
+		{
+			deathShader = GetModelDeathShader(unit);
+		}
+
 		if (!string.IsNullOrEmpty(deathShader))
 		{
 			SpawnDeathShaderManager.AnimateTransition(unit, deathShader, false, null, () =>
@@ -122,13 +143,17 @@ public partial class GameHost
 				if (GodotObject.IsInstanceValid(unit)) unit.QueueFree();
 			});
 		}
-		else
+		else if (playDeathAnimation)
 		{
 			var tween = CreateTween();
 			tween.SetParallel(true);
 			tween.TweenProperty(unit, "position:y", -3.0f, 1.0f);
 			tween.TweenProperty(unit, "scale", Vector3.Zero, 1.0f);
 			tween.Chain().TweenCallback(Callable.From(unit.QueueFree));
+		}
+		else
+		{
+			if (GodotObject.IsInstanceValid(unit)) unit.QueueFree();
 		}
 
 		if (unitId == "castle")

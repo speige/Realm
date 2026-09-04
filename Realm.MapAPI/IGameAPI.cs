@@ -34,8 +34,9 @@ public interface IGameAPI
     /// <param name="position">The spawn coordinates in 3D world space.</param>
     /// <param name="isEnemy">True if the unit should belong to the enemy, false if friendly.</param>
     /// <param name="bypassPopulation">True to spawn the unit without consuming the player's population limit, false to consume it normally.</param>
+    /// <param name="executeSpawnShader">True to play the spawn shader effect if configured, false to skip.</param>
     /// <returns>A reference to the spawned unit.</returns>
-    IUnit SpawnUnit(string unitTypeId, Vector3 position, bool isEnemy, bool bypassPopulation = false);
+    IUnit SpawnUnit(string unitTypeId, Vector3 position, bool isEnemy, bool bypassPopulation = false, bool executeSpawnShader = true);
 
 
     /// <summary>
@@ -347,13 +348,17 @@ public interface IGameAPI
     /// Kills the specified unit naturally, triggering death animations and bounties.
     /// </summary>
     /// <param name="unit">The unit to kill.</param>
-    void KillUnit(IUnit unit);
+    /// <param name="executeDespawnShader">True to execute the despawn or death shader effect if configured, false to skip.</param>
+    /// <param name="playDeathAnimation">True to play the death animation if available, false to skip.</param>
+    void KillUnit(IUnit unit, bool executeDespawnShader = true, bool playDeathAnimation = true);
 
     /// <summary>
     /// Instantly removes the specified unit from the game.
     /// </summary>
     /// <param name="unit">The unit to destroy.</param>
-    void DestroyUnit(IUnit unit);
+    /// <param name="executeDespawnShader">True to execute the despawn or death shader effect if configured, false to skip.</param>
+    /// <param name="playDeathAnimation">True to play the death animation if available, false to skip.</param>
+    void DestroyUnit(IUnit unit, bool executeDespawnShader = true, bool playDeathAnimation = true);
 
 
 
@@ -402,8 +407,9 @@ public interface IGameAPI
     /// <param name="unitTypeId">The type identifier of the unit to spawn.</param>
     /// <param name="position">The spawn coordinates in 3D world space.</param>
     /// <param name="playerIndex">Zero-based player slot index that will own the unit.</param>
+    /// <param name="executeSpawnShader">True to play the spawn shader effect if configured, false to skip.</param>
     /// <returns>A reference to the spawned unit.</returns>
-    IUnit SpawnUnitForPlayer(string unitTypeId, Vector3 position, int playerIndex);
+    IUnit SpawnUnitForPlayer(string unitTypeId, Vector3 position, int playerIndex, bool executeSpawnShader = true);
 
     /// <summary>
     /// Retrieves all alive units owned by the specified player slot.

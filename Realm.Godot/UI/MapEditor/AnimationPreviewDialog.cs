@@ -758,7 +758,7 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		string animFile = _currentPreviewRanim?.Trim() ?? string.Empty;
 		if (string.IsNullOrEmpty(animFile))
 		{
-			Hud?.ShowFeedback(TranslationServer.Translate("Please select or type an animation in the preview field first."));
+			Hud?.ShowFeedback(TranslationServer.Translate("Please select an animation in the preview field first."));
 			return;
 		}
 
