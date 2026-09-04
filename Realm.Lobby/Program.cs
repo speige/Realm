@@ -1,5 +1,6 @@
 using Realm.Lobby.Models;
 using Realm.Lobby.Services;
+using Realm.Shared.Distribution;
 using Realm.Shared.Metadata;
 
 using System.Collections.Concurrent;
@@ -9,11 +10,18 @@ using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
-
 builder.Services.AddSingleton<LobbyRegistry>();
 builder.Services.AddSingleton<GeoIpService>();
 builder.Services.AddSingleton<SeederRegistry>();
 builder.Services.AddSingleton<DataStoreService>();
+
+var storagePath = builder.Configuration.GetValue<string>("storage-path") ?? builder.Configuration.GetValue<string>("StorageDirectory") ?? ".data/cas";
+var adminPublicKey = builder.Configuration.GetValue<string>("AdminPublicKey") ?? "";
+var capacityPercent = builder.Configuration.GetValue<int?>("CapacityPercentage") ?? 100;
+var seederId = builder.Configuration.GetValue<string>("SeederId") ?? "seed_node_server";
+
+var cas = new ContentAddressableStorage(storagePath);
+builder.Services.AddSingleton(cas);
 builder.Services.AddHttpClient();
 
 
@@ -612,7 +620,9 @@ app.MapPost("/seeders/register", (SeederRegisterRequest req, SeederRegistry regi
         SeederId = req.SeederId,
         IP = ip,
         Port = req.Port,
-        MapIds = req.MapIds
+        MapIds = req.MapIds,
+        CapacityPercentage = req.CapacityPercentage,
+        AcceptingUploads = req.AcceptingUploads
     };
     registry.Register(info);
     return Results.Ok(new { Status = "Registered" });
@@ -630,9 +640,178 @@ app.MapGet("/seeders", (SeederRegistry registry) =>
     {
         ip = s.IP,
         port = s.Port,
-        mapIds = s.MapIds
+        mapIds = s.MapIds,
+        capacityPercentage = s.CapacityPercentage,
+        acceptingUploads = s.AcceptingUploads
     });
     return Results.Ok(list);
+});
+
+app.MapGet("/api/seeders", (SeederRegistry registry) =>
+{
+    var list = registry.GetAll().Select(s => new SeederNodeDto
+    {
+        SeederId = s.SeederId,
+        IP = s.IP,
+        Port = s.Port,
+        CapacityPercentage = s.CapacityPercentage,
+        AcceptingUploads = s.AcceptingUploads,
+        MapIds = s.MapIds
+    });
+    return Results.Ok(list);
+});
+
+app.MapGet("/api/seeders/catalog", (ContentAddressableStorage cas) =>
+{
+    return Results.Ok(new SeederCatalogResponseDto
+    {
+        SeederId = seederId,
+        CapacityPercentage = capacityPercent,
+        AssetHashes = cas.GetAllStoredHashes().ToList()
+    });
+});
+
+app.MapMethods("/api/assets/{hash}", new[] { "HEAD" }, (string hash, ContentAddressableStorage cas) =>
+{
+    string normalized = ContentAddressableStorage.NormalizeBlake3Hash(hash);
+    return cas.HasAsset(normalized) ? Results.Ok() : Results.NotFound();
+});
+
+app.MapGet("/api/assets/{hash}", (string hash, ContentAddressableStorage cas, HttpContext context) =>
+{
+    string normalized = ContentAddressableStorage.NormalizeBlake3Hash(hash);
+    var bytes = cas.GetAssetBytes(normalized);
+    if (bytes == null) return Results.NotFound();
+
+    string? meta = cas.GetAssetMetadata(normalized);
+    if (!string.IsNullOrWhiteSpace(meta))
+    {
+        context.Response.Headers["X-Asset-Metadata"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(meta));
+    }
+
+    string? filePath = cas.FindAssetFilePath(normalized);
+    string fileName = filePath != null ? Path.GetFileName(filePath) : $"{normalized}.bin";
+    return Results.File(bytes, "application/octet-stream", fileDownloadName: fileName, enableRangeProcessing: true);
+});
+
+app.MapPost("/api/assets/{hash}", async (string hash, HttpRequest request, ContentAddressableStorage cas) =>
+{
+    string normalized = ContentAddressableStorage.NormalizeBlake3Hash(hash);
+    if (!DistributionSharding.SeederAcceptsHash(seederId, capacityPercent, normalized))
+    {
+        return Results.StatusCode(403);
+    }
+
+    if (!cas.CheckFreeDiskSpaceAcceptingUploads())
+    {
+        return Results.StatusCode(507);
+    }
+
+    byte[] fileBytes;
+    string? metadata = request.Headers["X-Asset-Metadata"];
+    string? authorPub = request.Headers["X-Author-Public-Key"];
+    string? authorSig = request.Headers["X-Author-Signature"];
+    string ext = request.Headers["X-File-Extension"].ToString();
+    if (string.IsNullOrEmpty(ext)) ext = ".bin";
+
+    if (request.HasFormContentType)
+    {
+        var form = await request.ReadFormAsync();
+        var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
+        if (file != null)
+        {
+            using var ms = new MemoryStream();
+            await file.CopyToAsync(ms);
+            fileBytes = ms.ToArray();
+            ext = Path.GetExtension(file.FileName);
+        }
+        else
+        {
+            using var ms = new MemoryStream();
+            await request.Body.CopyToAsync(ms);
+            fileBytes = ms.ToArray();
+        }
+
+        if (form.TryGetValue("metadata", out var formMeta)) metadata = formMeta;
+        if (form.TryGetValue("authorPublicKey", out var formPub)) authorPub = formPub;
+        if (form.TryGetValue("authorSignature", out var formSig)) authorSig = formSig;
+    }
+    else
+    {
+        using var ms = new MemoryStream();
+        await request.Body.CopyToAsync(ms);
+        fileBytes = ms.ToArray();
+    }
+
+    var storeResult = cas.StoreAsset(fileBytes, ext, metadata, authorPub, authorSig);
+    return Results.Ok(new AssetUploadResponseDto
+    {
+        Success = storeResult.Success,
+        Message = storeResult.Message,
+        Deduplicated = storeResult.Deduplicated,
+        Merged = storeResult.Merged,
+        Blake3Hash = storeResult.Blake3Hash
+    });
+});
+
+app.MapGet("/api/manifests/{mapId}", (string mapId, ContentAddressableStorage cas) =>
+{
+    string manifestDir = Path.Combine(cas.RootDirectory, "manifests");
+    string manifestPath = Path.Combine(manifestDir, $"{mapId}_manifest.json");
+    if (!File.Exists(manifestPath))
+    {
+        manifestPath = Path.Combine(manifestDir, $"{mapId}.json");
+    }
+    if (!File.Exists(manifestPath)) return Results.NotFound();
+    return Results.File(File.ReadAllBytes(manifestPath), "application/json");
+});
+
+app.MapPost("/api/manifests", async (HttpRequest request, ContentAddressableStorage cas, DataStoreService db) =>
+{
+    using var reader = new StreamReader(request.Body, Encoding.UTF8);
+    string manifestJson = await reader.ReadToEndAsync();
+    var manifest = MapManifest.LoadFromJson(manifestJson);
+    if (manifest == null || string.IsNullOrWhiteSpace(manifest.MapName))
+    {
+        return Results.BadRequest(new { Message = "Invalid manifest" });
+    }
+
+    var stats = db.Get<MapStats>("map_stats", manifest.MapName);
+    bool isGreenlit = stats != null && stats.IsGreenlit;
+    string? bypassToken = request.Headers["X-Admin-Bypass"];
+
+    if (!isGreenlit)
+    {
+        bool bypassValid = !string.IsNullOrEmpty(adminPublicKey) &&
+                           AdminBypassAuth.VerifyBypassToken(adminPublicKey, manifest.MapName, manifest.Version, bypassToken);
+        if (!bypassValid)
+        {
+            return Results.StatusCode(403);
+        }
+    }
+
+    string manifestDir = Path.Combine(cas.RootDirectory, "manifests");
+    Directory.CreateDirectory(manifestDir);
+    string manifestPath = Path.Combine(manifestDir, $"{manifest.MapName}_manifest.json");
+    await File.WriteAllTextAsync(manifestPath, manifestJson);
+
+    var missing = new List<string>();
+    foreach (var pair in manifest.Files)
+    {
+        string h = ContentAddressableStorage.NormalizeBlake3Hash(pair.Value);
+        if (!cas.HasAsset(h))
+        {
+            missing.Add(h);
+        }
+    }
+
+    return Results.Ok(new MapPublishResponseDto
+    {
+        Success = true,
+        Status = "Published",
+        MapId = $"{manifest.MapName}_{manifest.Version}",
+        MissingAssetHashes = missing
+    });
 });
 
 app.MapPost("/seeders/download", async (SeederDownloadRequest req, SeederRegistry registry) =>

@@ -1399,19 +1399,19 @@ public static class RealmMetadataHelper
 
 		try
 		{
-			if (extension == ".glb" || (string.IsNullOrEmpty(extension) && IsGlbBytes(bytes)))
+			if (extension == ".glb" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && IsGlbBytes(bytes)))
 			{
 				return RemoveMetadataFromGlbBytes(bytes);
 			}
-			if (extension == ".rtex" || (string.IsNullOrEmpty(extension) && IsRtexBytes(bytes)))
+			if (extension == ".rtex" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && IsRtexBytes(bytes)))
 			{
 				return Realm.Shared.Textures.RtexFile.SetMetadata(bytes, null);
 			}
-			if (extension == ".ranim" || (string.IsNullOrEmpty(extension) && IsRanimBytes(bytes)))
+			if (extension == ".ranim" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && IsRanimBytes(bytes)))
 			{
 				return RemoveMetadataFromRanimBytes(bytes);
 			}
-			if (extension == ".ogg" || (string.IsNullOrEmpty(extension) && IsOggBytes(bytes)))
+			if (extension == ".ogg" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && IsOggBytes(bytes)))
 			{
 				return RemoveMetadataFromOggBytes(bytes);
 			}

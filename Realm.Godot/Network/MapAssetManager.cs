@@ -49,6 +49,54 @@ public static class MapAssetManager
         set => AsyncLocalArchiveDirectory.Value = value;
     }
 
+    private static string? _configuredStoragePath;
+
+    public static string? ConfiguredStoragePath
+    {
+        get
+        {
+            if (_configuredStoragePath != null)
+            {
+                return _configuredStoragePath;
+            }
+
+            try
+            {
+                string[] args = System.Environment.GetCommandLineArgs();
+                for (int i = 0; i < args.Length; i++)
+                {
+                    if (args[i].StartsWith("--storage-path=", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _configuredStoragePath = args[i].Substring("--storage-path=".Length).Trim('"');
+                        return _configuredStoragePath;
+                    }
+                    if (string.Equals(args[i], "--storage-path", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                    {
+                        _configuredStoragePath = args[i + 1].Trim('"');
+                        return _configuredStoragePath;
+                    }
+                }
+            }
+            catch { }
+
+            return null;
+        }
+        set
+        {
+            _configuredStoragePath = value;
+            _storage = null;
+        }
+    }
+
+    private static Realm.Shared.Distribution.ContentAddressableStorage? _storage;
+    public static Realm.Shared.Distribution.ContentAddressableStorage Storage
+    {
+        get
+        {
+            return _storage ??= new Realm.Shared.Distribution.ContentAddressableStorage(GlobalArchiveDirectory);
+        }
+    }
+
     public static string GlobalArchiveDirectory
     {
         get
@@ -60,6 +108,16 @@ public static class MapAssetManager
                     Directory.CreateDirectory(ThreadLocalArchiveDirectory);
                 }
                 return ThreadLocalArchiveDirectory;
+            }
+
+            string? configured = ConfiguredStoragePath;
+            if (!string.IsNullOrEmpty(configured))
+            {
+                if (!Directory.Exists(configured))
+                {
+                    Directory.CreateDirectory(configured);
+                }
+                return configured;
             }
 
             if (IsGodotEngineRunning)
@@ -93,17 +151,33 @@ public static class MapAssetManager
     public static List<string> GetMissingHashes(IEnumerable<string> hashes)
     {
         var missing = new List<string>();
+        var hashesToCheckArchive = new List<string>();
+
+        foreach (var hash in hashes)
+        {
+            string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
+            if (!Storage.HasAsset(norm))
+            {
+                hashesToCheckArchive.Add(hash);
+            }
+        }
+
+        if (hashesToCheckArchive.Count == 0)
+        {
+            return missing;
+        }
+
         lock (ArchiveLock)
         {
             if (!File.Exists(GlobalArchiveFile))
             {
-                missing.AddRange(hashes);
+                missing.AddRange(hashesToCheckArchive);
                 return missing;
             }
 
             try
             {
-                var existingHashes = new HashSet<string>();
+                var existingHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 using (var archive = ArchiveFactory.OpenArchive(GlobalArchiveFile, null))
                 {
                     foreach (var entry in archive.Entries)
@@ -111,13 +185,16 @@ public static class MapAssetManager
                         if (!entry.IsDirectory)
                         {
                             existingHashes.Add(entry.Key);
+                            string normKey = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(entry.Key);
+                            existingHashes.Add(normKey);
                         }
                     }
                 }
 
-                foreach (var hash in hashes)
+                foreach (var hash in hashesToCheckArchive)
                 {
-                    if (!existingHashes.Contains(hash))
+                    string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
+                    if (!existingHashes.Contains(hash) && !existingHashes.Contains(norm))
                     {
                         missing.Add(hash);
                     }
@@ -126,7 +203,7 @@ public static class MapAssetManager
             catch (Exception ex)
             {
                 MapAssetManager.LogErr($"[MapAssetManager] Error checking missing hashes: {ex.Message}");
-                missing.AddRange(hashes);
+                missing.AddRange(hashesToCheckArchive);
             }
         }
         return missing;
@@ -178,6 +255,12 @@ public static class MapAssetManager
     public static void AddOrUpdateGlobalArchive(Dictionary<string, byte[]> newFilesByHash)
     {
         if (newFilesByHash == null || newFilesByHash.Count == 0) return;
+
+        foreach (var kvp in newFilesByHash)
+        {
+            string ext = Path.GetExtension(kvp.Key);
+            Storage.StoreAsset(kvp.Value, ext);
+        }
 
         if (!Directory.Exists(GlobalArchiveDirectory))
         {
@@ -263,17 +346,14 @@ public static class MapAssetManager
         {
             try
             {
-                if (!File.Exists(GlobalArchiveFile))
-                {
-                    throw new FileNotFoundException("Global archive does not exist on host.");
-                }
-
                 using (var newFs = File.Create(tempDeltaPath))
                 using (var writer = new SevenZipWriter(newFs, new SevenZipWriterOptions() { CompressionType = CompressionType.LZMA }))
                 {
-                    using (var hostArchive = ArchiveFactory.OpenArchive(GlobalArchiveFile, null))
+                    var entryMap = new Dictionary<string, IArchiveEntry>();
+                    IArchive? hostArchive = null;
+                    if (File.Exists(GlobalArchiveFile))
                     {
-                        var entryMap = new Dictionary<string, IArchiveEntry>();
+                        hostArchive = ArchiveFactory.OpenArchive(GlobalArchiveFile, null);
                         foreach (var entry in hostArchive.Entries)
                         {
                             if (!entry.IsDirectory)
@@ -281,10 +361,20 @@ public static class MapAssetManager
                                 entryMap[entry.Key] = entry;
                             }
                         }
+                    }
 
+                    try
+                    {
                         foreach (var hash in missingHashes)
                         {
-                            if (entryMap.TryGetValue(hash, out var hostEntry))
+                            string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
+                            byte[]? casBytes = Storage.GetAssetBytes(norm);
+                            if (casBytes != null)
+                            {
+                                using var ms = new MemoryStream(casBytes);
+                                writer.Write(hash, ms, DateTime.UtcNow);
+                            }
+                            else if (entryMap.TryGetValue(hash, out var hostEntry))
                             {
                                 using (var entryStream = hostEntry.OpenEntryStream())
                                 {
@@ -293,9 +383,13 @@ public static class MapAssetManager
                             }
                             else
                             {
-                                MapAssetManager.LogErr($"[MapAssetManager] Requested hash {hash} not found in host global archive.");
+                                MapAssetManager.LogErr($"[MapAssetManager] Requested hash {hash} not found in host storage or archive.");
                             }
                         }
+                    }
+                    finally
+                    {
+                        hostArchive?.Dispose();
                     }
                 }
                 return tempDeltaPath;
