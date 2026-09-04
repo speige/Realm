@@ -150,7 +150,8 @@
     "CustomWeapons": { "$ref": "#/definitions/CustomWeapons" },
     "CustomUpgrades": { "$ref": "#/definitions/CustomUpgrades" },
     "CustomItems": { "$ref": "#/definitions/CustomItems" },
-    "Assets": { "$ref": "#/definitions/Assets" }
+    "Assets": { "$ref": "#/definitions/Assets" },
+    "textures": { "type": "object" }
   },
   "definitions": {
     "EntityItem": {

@@ -1490,6 +1490,7 @@ public class SaveLoadService
 		set.Add(nameof(Realm.Ecs.Definitions.MapProperties));
 		set.Add("map_name");
 		set.Add("name");
+		set.Add("textures");
 
 		foreach (var field in typeof(GameHost).GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
 		{
@@ -1801,6 +1802,22 @@ public class SaveLoadService
 		}
 	}
 
+	private static void CleanTexturesObject(JsonObject texturesObject)
+	{
+		var allowedTextureItemProperties = GetAllowedTextureItemProperties();
+		foreach (var keyValuePair in texturesObject)
+		{
+			if (keyValuePair.Value is JsonObject itemObject)
+			{
+				var propertiesToRemove = itemObject.Select(property => property.Key).Where(property => !allowedTextureItemProperties.Contains(property)).ToList();
+				foreach (var property in propertiesToRemove)
+				{
+					itemObject.Remove(property);
+				}
+			}
+		}
+	}
+
 	private static void CleanAssetsObject(JsonObject root, JsonObject? schemaRoot)
 	{
 		if (!root.TryGetPropertyValue("Assets", out var assetsNode) || assetsNode is not JsonObject assetsObject)
@@ -1843,15 +1860,7 @@ public class SaveLoadService
 
 		if (assetsObject.TryGetPropertyValue("textures", out var texturesNode) && texturesNode is JsonObject texturesObject)
 		{
-			var allowedTextureItemProperties = GetAllowedTextureItemProperties();
-			foreach (var keyValuePair in texturesObject)
-			{
-				if (keyValuePair.Value is JsonObject itemObject)
-				{
-					var propertiesToRemove = itemObject.Select(property => property.Key).Where(property => !allowedTextureItemProperties.Contains(property)).ToList();
-					foreach (var property in propertiesToRemove) itemObject.Remove(property);
-				}
-			}
+			CleanTexturesObject(texturesObject);
 		}
 
 		if (assetsObject.TryGetPropertyValue("decals", out var decalsNode) && decalsNode is JsonObject decalsObject)
@@ -1926,6 +1935,11 @@ public class SaveLoadService
 		}
 
 		CleanAssetsObject(root, schemaRoot);
+
+		if (root.TryGetPropertyValue("textures", out var rootTexturesNode) && rootTexturesNode is JsonObject rootTexturesObj)
+		{
+			CleanTexturesObject(rootTexturesObj);
+		}
 
 		string mapPropsName = nameof(Realm.Ecs.Definitions.MapProperties);
 		if (root.TryGetPropertyValue(mapPropsName, out var mapPropertiesNode) && mapPropertiesNode is JsonObject mapPropertiesObject)

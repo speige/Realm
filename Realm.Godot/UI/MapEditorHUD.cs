@@ -6527,17 +6527,17 @@ public partial class MapEditorHUD : Control
 				if (root != null)
 				{
 					JsonObject? texturesObj = null;
-					if (root.ContainsKey("Assets") && root["Assets"] is JsonObject assets && assets.ContainsKey("textures") && assets["textures"] is JsonObject tObj1)
+					if (root.ContainsKey("textures") && root["textures"] is JsonObject tObj3)
+					{
+						texturesObj = tObj3;
+					}
+					else if (root.ContainsKey("Assets") && root["Assets"] is JsonObject assets && assets.ContainsKey("textures") && assets["textures"] is JsonObject tObj1)
 					{
 						texturesObj = tObj1;
 					}
 					else if (root.ContainsKey("MapProperties") && root["MapProperties"] is JsonObject mp && mp.ContainsKey("Assets") && mp["Assets"] is JsonObject mpAssets && mpAssets.ContainsKey("textures") && mpAssets["textures"] is JsonObject tObj2)
 					{
 						texturesObj = tObj2;
-					}
-					else if (root.ContainsKey("textures") && root["textures"] is JsonObject tObj3)
-					{
-						texturesObj = tObj3;
 					}
 
 					if (texturesObj != null)
@@ -6605,7 +6605,12 @@ public partial class MapEditorHUD : Control
 							{
 								string cleanDisplayName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(item.BaseName.Replace("_", " "));
 								_swatchDisplayNames.Add(cleanDisplayName);
-								_swatchPaths.Add(System.IO.Path.Combine(wsPath, item.Filename));
+								string resolvedPath = System.IO.Path.Combine(wsPath, "Assets", "textures", item.Filename);
+								if (!System.IO.File.Exists(resolvedPath))
+								{
+									resolvedPath = System.IO.Path.Combine(wsPath, item.Filename);
+								}
+								_swatchPaths.Add(resolvedPath);
 								_swatchColors.Add(new Color(0.6f, 0.6f, 0.6f));
 							}
 						}
@@ -7840,12 +7845,20 @@ public partial class MapEditorHUD : Control
 		string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 			? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 			: _tempWorkspacePath;
-		string texName = (i >= 0 && i < _swatchDisplayNames.Count) ? _swatchDisplayNames[i] : $"swatch_{i}";
-		string cleanName = texName.ToLowerInvariant().Replace(" ", "_") + ".rtex";
-		string localRtex = System.IO.Path.Combine(wsPath, "Assets", "textures", cleanName);
-		if (!System.IO.File.Exists(localRtex))
+		string localRtex = "";
+		if (i >= 0 && i < _swatchPaths.Count && System.IO.File.Exists(_swatchPaths[i]))
 		{
-			localRtex = System.IO.Path.Combine(wsPath, cleanName);
+			localRtex = _swatchPaths[i];
+		}
+		else
+		{
+			string texName = (i >= 0 && i < _swatchDisplayNames.Count) ? _swatchDisplayNames[i] : $"swatch_{i}";
+			string cleanName = texName.ToLowerInvariant().Replace(" ", "_") + ".rtex";
+			localRtex = System.IO.Path.Combine(wsPath, "Assets", "textures", cleanName);
+			if (!System.IO.File.Exists(localRtex))
+			{
+				localRtex = System.IO.Path.Combine(wsPath, cleanName);
+			}
 		}
 		if (System.IO.File.Exists(localRtex))
 		{
@@ -7868,7 +7881,7 @@ public partial class MapEditorHUD : Control
 				GD.PrintErr($"Failed to load swatch preview: {ex.Message}");
 			}
 		}
-		if (ResourceLoader.Exists(_swatchPaths[i]))
+		if (i >= 0 && i < _swatchPaths.Count && ResourceLoader.Exists(_swatchPaths[i]))
 		{
 			return GD.Load<Texture2D>(_swatchPaths[i]);
 		}
@@ -8231,6 +8244,13 @@ public partial class MapEditorHUD : Control
 				JsonObject catObj = assetsObj[category] as JsonObject ?? new JsonObject();
 				if (category == "textures")
 				{
+					if (catObj.Count == 0 && root.ContainsKey("textures") && root["textures"] is JsonObject rootTexExisting)
+					{
+						foreach (var kvp in rootTexExisting)
+						{
+							catObj[kvp.Key] = kvp.Value?.DeepClone();
+						}
+					}
 					var parsedItems = new List<(string Key, int SwatchIndex, JsonNode? Node)>();
 					foreach (var kvp in catObj)
 					{
@@ -8338,6 +8358,8 @@ public partial class MapEditorHUD : Control
 					}
 
 					catObj[fileName] = texEntry;
+					if (!root.ContainsKey("textures") || root["textures"] is not JsonObject) root["textures"] = new JsonObject();
+					((JsonObject)root["textures"])[fileName] = texEntry.DeepClone();
 				}
 				else if (columns > 0 && rows > 0)
 				{

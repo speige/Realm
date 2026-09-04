@@ -1377,17 +1377,28 @@ public static partial class MapWorkspaceService
 			}
 		}
 
-		if (root["Assets"] is JsonObject assets && assets["textures"] is JsonObject tex1)
+		if (root["textures"] is not JsonObject && root["Assets"] is JsonObject assets && assets["textures"] is JsonObject tex1)
 		{
-			CleanTexturesObject(tex1);
+			root["textures"] = tex1.DeepClone();
+			modified = true;
 		}
-		if (root["MapProperties"] is JsonObject mp && mp["Assets"] is JsonObject mpAssets && mpAssets["textures"] is JsonObject tex2)
+		else if (root["textures"] is not JsonObject && root["MapProperties"] is JsonObject mp && mp["Assets"] is JsonObject mpAssets && mpAssets["textures"] is JsonObject tex2)
 		{
-			CleanTexturesObject(tex2);
+			root["textures"] = tex2.DeepClone();
+			modified = true;
 		}
-		if (root["textures"] is JsonObject tex3)
+
+		if (root["Assets"] is JsonObject assetsObj && assetsObj["textures"] is JsonObject t1)
 		{
-			CleanTexturesObject(tex3);
+			CleanTexturesObject(t1);
+		}
+		if (root["MapProperties"] is JsonObject mpObj && mpObj["Assets"] is JsonObject mpAssetsObj && mpAssetsObj["textures"] is JsonObject t2)
+		{
+			CleanTexturesObject(t2);
+		}
+		if (root["textures"] is JsonObject t3)
+		{
+			CleanTexturesObject(t3);
 		}
 
 		return modified;
@@ -1406,7 +1417,7 @@ public static partial class MapWorkspaceService
 			var jsonNode = JsonNode.Parse(jsonText);
 			if (jsonNode is not JsonObject root) return;
 
-			bool modified = NormalizeTextureEntries(root);
+			bool modified = NormalizeTextureEntries(root, workspacePath);
 
 			if (modified)
 			{
