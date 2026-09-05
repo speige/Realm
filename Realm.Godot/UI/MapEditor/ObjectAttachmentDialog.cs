@@ -641,7 +641,7 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 			{
 				string jsonStr = System.IO.File.ReadAllText(metadataPath);
 				var root = JsonNode.Parse(jsonStr)?.AsObject();
-				var assetsObj = root?["Assets"]?.AsObject() ?? (root?["MapProperties"]?["Assets"]?.AsObject());
+				var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
 				var glbObj = assetsObj?["glb"]?.AsObject();
 				if (glbObj != null)
 				{

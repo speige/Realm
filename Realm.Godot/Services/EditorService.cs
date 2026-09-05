@@ -2906,7 +2906,7 @@ public class EditorService
 	private void OnWorkspaceFileChanged(string fullPath, Action? onMetadataChanged, Action? onTerrainChanged)
 	{
 		string fileName = Path.GetFileName(fullPath).ToLowerInvariant();
-		if (fileName != "metadata.json" && fileName != "terrain.json")
+		if (fileName != "metadata.json" && fileName != "manifest.json" && fileName != "terrain.json")
 		{
 			return;
 		}
@@ -2934,7 +2934,7 @@ public class EditorService
 
 			long writeTime = File.GetLastWriteTimeUtc(fullPath).Ticks;
 
-			if (fileName == "metadata.json")
+			if (fileName == "metadata.json" || fileName == "manifest.json")
 			{
 				if (writeTime <= _lastProcessedMetadataWriteTime) return;
 				_lastProcessedMetadataWriteTime = writeTime;
@@ -2963,10 +2963,11 @@ public class EditorService
 
 	private void HandleExternalMetadataChange(string fullPath, Action? customCallback)
 	{
+		string name = Path.GetFileName(fullPath);
 		if (FloatingDialogBase.HasAnyDialogOpen)
 		{
 			MapEditorHUD.Instance?.ShowConfirmationDialog(
-				"External edits detected in metadata.json. Reload external changes or keep current dialog changes?",
+				$"External edits detected in {name}. Reload external changes or keep current dialog changes?",
 				onConfirm: () =>
 				{
 					ExecuteMetadataReload(fullPath, customCallback);
@@ -2986,10 +2987,11 @@ public class EditorService
 		try
 		{
 			string dir = Path.GetDirectoryName(fullPath);
+			string name = Path.GetFileName(fullPath);
 			GameHost.Instance?.LoadUnitMetadata(dir);
 			GameHost.Instance?.LoadModelYOffsetsFromMetadataJson(dir);
 			MapEditorHUD.Instance?.ReadMetadataAndRefreshTextures();
-			MapEditorHUD.Instance?.ShowFeedback(TranslationServer.Translate("metadata.json updated externally — reloaded."));
+			MapEditorHUD.Instance?.ShowFeedback(string.Format(TranslationServer.Translate("{0} updated externally — reloaded."), name));
 			customCallback?.Invoke();
 		}
 		catch (Exception ex)

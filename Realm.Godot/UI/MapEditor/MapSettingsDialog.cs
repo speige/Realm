@@ -366,75 +366,75 @@ public partial class MapSettingsDialog : FloatingDialogBase
 	}
 
 	public void LoadMapProperties()
-	{
-		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
-		string metaPath = Path.Combine(wsPath, "metadata.json");
-		if (File.Exists(metaPath))
 		{
-			try
+			string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
+			string metaPath = Path.Combine(wsPath, "metadata.json");
+			if (File.Exists(metaPath))
 			{
-				var metaDoc = JsonNode.Parse(File.ReadAllText(metaPath)) as JsonObject;
-				if (metaDoc != null)
+				try
 				{
+					var metaDoc = JsonNode.Parse(File.ReadAllText(metaPath)) as JsonObject;
+					if (metaDoc != null)
+					{
 					if (metaDoc.TryGetPropertyValue("Name", out var n) && n != null && _txtMapName != null)
-					{
-						_txtMapName.Text = n.ToString().Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
-					}
-					else if (metaDoc.TryGetPropertyValue("map_name", out var mn) && mn != null && _txtMapName != null)
-					{
-						_txtMapName.Text = mn.ToString().Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
-					}
-				}
-			}
-			catch { }
-		}
-
-		string mapJsonPath = Path.Combine(wsPath, "map.json");
-		if (File.Exists(mapJsonPath))
-		{
-			try
-			{
-				string mapJsonContent = File.ReadAllText(mapJsonPath);
-				var mapDoc = JsonNode.Parse(mapJsonContent) as JsonObject;
-				if (mapDoc != null && mapDoc.ContainsKey("MapProperties"))
-				{
-					var props = mapDoc["MapProperties"] as JsonObject;
-					if (props != null)
-					{
-						if (_txtMapName != null && string.IsNullOrEmpty(_txtMapName.Text) && props.ContainsKey("Name"))
 						{
-							_txtMapName.Text = (props["Name"]?.GetValue<string>() ?? "").Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+						_txtMapName.Text = n.ToString().Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
 						}
+					else if (metaDoc.TryGetPropertyValue("map_name", out var mn) && mn != null && _txtMapName != null)
+								{
+						_txtMapName.Text = mn.ToString().Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+								}
+							}
+						}
+			catch { }
+			}
+
+			string mapJsonPath = Path.Combine(wsPath, "map.json");
+			if (File.Exists(mapJsonPath))
+			{
+				try
+				{
+					string mapJsonContent = File.ReadAllText(mapJsonPath);
+					var mapDoc = JsonNode.Parse(mapJsonContent) as JsonObject;
+					if (mapDoc != null && mapDoc.ContainsKey("MapProperties"))
+					{
+						var props = mapDoc["MapProperties"] as JsonObject;
+						if (props != null)
+						{
+						if (_txtMapName != null && string.IsNullOrEmpty(_txtMapName.Text) && props.ContainsKey("Name"))
+							{
+							_txtMapName.Text = (props["Name"]?.GetValue<string>() ?? "").Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+							}
 
 						if (_optMapType != null && props.ContainsKey("MapType"))
-						{
+							{
 							string mapType = props["MapType"]?.GetValue<string>() ?? "";
 							_optMapType.Selected = (mapType == "Asset Pack") ? 1 : 0;
-						}
+							}
 
 						RebuildTagsUI();
 
 						if (props.ContainsKey("Tags") && props["Tags"] is JsonArray tagsArr)
-						{
-							var activeTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-							foreach (var tagNode in tagsArr)
 							{
+							var activeTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+								foreach (var tagNode in tagsArr)
+								{
 								if (tagNode != null) activeTags.Add(tagNode.GetValue<string>());
 							}
 
 							foreach (var chk in _activeTagCheckboxes)
-							{
+									{
 								chk.ButtonPressed = activeTags.Contains(chk.Text);
+								}
 							}
 						}
 					}
 				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"Failed to load map properties: {ex.Message}");
+				}
 			}
-			catch (Exception ex)
-			{
-				GD.PrintErr($"Failed to load map properties: {ex.Message}");
-			}
-		}
 	}
 
 	public void SaveMapProperties()
@@ -555,50 +555,28 @@ public partial class MapSettingsDialog : FloatingDialogBase
 		_optSkybox.Clear();
 
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-		string metadataPath = Path.Combine(wsPath, "metadata.json");
-
-		if (File.Exists(metadataPath))
+		try
 		{
-			try
+			var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+			var skyboxesObj = unionedAssets?["skyboxes"] as JsonObject;
+			if (skyboxesObj != null)
 			{
-				string text = File.ReadAllText(metadataPath);
-				var root = JsonNode.Parse(text) as JsonObject;
-				if (root != null)
+				foreach (var kvp in skyboxesObj)
 				{
-					JsonObject? skyboxesObj = null;
-					if (root.ContainsKey("Assets") && root["Assets"] is JsonObject assets && assets.ContainsKey("skyboxes") && assets["skyboxes"] is JsonObject sObj1)
+					string filename = kvp.Key;
+					if (!_skyboxFiles.Contains(filename))
 					{
-						skyboxesObj = sObj1;
-					}
-					else if (root.ContainsKey("MapProperties") && root["MapProperties"] is JsonObject mp && mp.ContainsKey("Assets") && mp["Assets"] is JsonObject mpAssets && mpAssets.ContainsKey("skyboxes") && mpAssets["skyboxes"] is JsonObject sObj2)
-					{
-						skyboxesObj = sObj2;
-					}
-					else if (root.ContainsKey("skyboxes") && root["skyboxes"] is JsonObject sObj3)
-					{
-						skyboxesObj = sObj3;
-					}
-
-					if (skyboxesObj != null)
-					{
-						foreach (var kvp in skyboxesObj)
-						{
-							string filename = kvp.Key;
-							if (!_skyboxFiles.Contains(filename))
-							{
-								_skyboxFiles.Add(filename);
-								string cleanName = Path.GetFileNameWithoutExtension(filename).Replace("_", " ");
-								cleanName = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(cleanName);
-								_optSkybox.AddItem(TranslationServer.Translate(cleanName));
-							}
-						}
+						_skyboxFiles.Add(filename);
+						string cleanName = Path.GetFileNameWithoutExtension(filename).Replace("_", " ");
+						cleanName = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(cleanName);
+						_optSkybox.AddItem(TranslationServer.Translate(cleanName));
 					}
 				}
 			}
-			catch (Exception ex)
-			{
-				GD.PrintErr($"RefreshSkyboxList error parsing metadata.json: {ex.Message}");
-			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"RefreshSkyboxList error: {ex.Message}");
 		}
 
 		if (_skyboxFiles.Count == 0)

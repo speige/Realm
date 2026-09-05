@@ -428,13 +428,11 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 
 		// Detect columns and rows from metadata if available
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 
 		try
 		{
-			string json = System.IO.File.ReadAllText(metadataPath);
-			var root = JsonNode.Parse(json)?.AsObject();
-			var vfxSheets = (root?["Assets"]?["vfx_spritesheets"] ?? root?["MapProperties"]?["Assets"]?["vfx_spritesheets"])?.AsObject();
+			var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+			var vfxSheets = unionedAssets?["vfx_spritesheets"] as JsonObject;
 			string fName = System.IO.Path.GetFileName(_currentVisualEffect);
 			if (vfxSheets != null)
 			{

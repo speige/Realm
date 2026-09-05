@@ -3341,19 +3341,7 @@ public class {mapName} : IMapScript
 		try
 		{
 			string dir = !string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-			string metaPath = System.IO.Path.Combine(dir, "metadata.json");
-			if (!System.IO.File.Exists(metaPath)) return;
-
-			string json = System.IO.File.ReadAllText(metaPath);
-			var root = System.Text.Json.Nodes.JsonNode.Parse(json)?.AsObject();
-			if (root == null) return;
-
-			var assetsObj = root["Assets"]?.AsObject() ?? root["MapProperties"]?["Assets"]?.AsObject();
-			if (assetsObj == null)
-			{
-				assetsObj = new System.Text.Json.Nodes.JsonObject();
-				root["Assets"] = assetsObj;
-			}
+			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(dir) ?? new System.Text.Json.Nodes.JsonObject();
 			var glbObj = assetsObj["glb"]?.AsObject();
 			if (glbObj == null)
 			{
@@ -3376,7 +3364,7 @@ public class {mapName} : IMapScript
 			itemNode["default_hand"] = meta.DefaultHand ?? "RightHand";
 			attObj[fileName] = itemNode;
 
-			MapJsonFormatter.SaveFormattedJson(metaPath, root);
+			Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(dir, assetsObj, removeFromMetadata: true);
 			LoadUnitMetadata(dir);
 		}
 		catch (Exception ex)

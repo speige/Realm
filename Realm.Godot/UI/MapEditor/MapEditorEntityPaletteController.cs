@@ -170,7 +170,8 @@ public class MapEditorEntityPaletteController
 				{
 					if (category == "Decals")
 					{
-						if (rootNode.ContainsKey("Assets") && rootNode["Assets"] is System.Text.Json.Nodes.JsonObject assets && assets.ContainsKey("decals") && assets["decals"] is System.Text.Json.Nodes.JsonObject decalsObj)
+						var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(globalWs);
+						if (unionedAssets.ContainsKey("decals") && unionedAssets["decals"] is System.Text.Json.Nodes.JsonObject decalsObj)
 						{
 							foreach (var kvp in decalsObj)
 							{
@@ -185,6 +186,10 @@ public class MapEditorEntityPaletteController
 									else if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, decalFile)))
 									{
 										_categoryFiles.Add(decalFile);
+									}
+									else
+									{
+										_categoryFiles.Add(relDecalPath);
 									}
 								}
 							}

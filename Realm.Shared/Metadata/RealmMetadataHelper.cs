@@ -142,13 +142,13 @@ public static class RealmMetadataHelper
 
 		if (ext is ".rtex")
 		{
+			if (norm.Contains("tile") || norm.Contains("terrain")) { canonicalType = "Tilesheet"; return true; }
 			if (norm.Contains("decal")) { canonicalType = "Decal"; return true; }
 			if (norm.Contains("icon")) { canonicalType = "Icon"; return true; }
 			if (norm.Contains("noise")) { canonicalType = "Noise"; return true; }
 			if (norm.Contains("ribbon")) { canonicalType = "Ribbon"; return true; }
 			if (norm.Contains("skybox")) { canonicalType = "Skybox"; return true; }
-			if (norm.Contains("sprite") || norm.Contains("vfx") || norm.Contains("sheet") || norm.Contains("spell")) { canonicalType = "SpellSpritesheet"; return true; }
-			if (norm.Contains("tile") || norm.Contains("terrain")) { canonicalType = "Tilesheet"; return true; }
+			if (norm.Contains("sprite") || norm.Contains("vfx") || norm.Contains("spell")) { canonicalType = "SpellSpritesheet"; return true; }
 			return false;
 		}
 		else if (ext is ".glb")
