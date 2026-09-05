@@ -403,6 +403,10 @@ public partial class CameraControl : Camera3D
 		if (what == NotificationApplicationFocusOut)
 		{
 			_isDraggingMouse = false;
+			if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+			{
+				MapEditorHUD.Instance?.Set3DInteractionActive(false);
+			}
 		}
 	}
 
@@ -440,11 +444,19 @@ public partial class CameraControl : Camera3D
 				{
 					_isDraggingMouse = true;
 					_lastMousePosition = mouseBtn.Position;
+					if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+					{
+						MapEditorHUD.Instance?.Set3DInteractionActive(true);
+					}
 				}
 			}
 			else if (mouseBtn.ButtonIndex == MouseButton.Middle)
 			{
 				_isDraggingMouse = false;
+				if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+				{
+					MapEditorHUD.Instance?.Set3DInteractionActive(false);
+				}
 			}
 		}
 		else if (@event is InputEventMouseMotion mouseMotion && _isDraggingMouse)

@@ -19,6 +19,9 @@ public partial class GameHost
 	private InputService _inputService;
 	private PhysicsRayQueryParameters3D? _cachedRaycastQuery;
 	private bool _leftClickInitiatedOverUI = false;
+	private bool _is3DLeftClickDown = false;
+	private Vector2 _leftClick3DStartPos = Vector2.Zero;
+	private bool _is3DDragOperationActive = false;
 
 	public override void _UnhandledInput(InputEvent @event)
 	{
@@ -36,10 +39,25 @@ public partial class GameHost
 				{
 					_leftClickInitiatedOverUI = true;
 				}
+				else
+				{
+					_leftClickInitiatedOverUI = false;
+					if (IsMapEditorMode && !FloatingDialogBase.HasAnyDialogOpen)
+					{
+						_is3DLeftClickDown = true;
+						_leftClick3DStartPos = globalMb.Position;
+					}
+				}
 			}
 			else
 			{
 				_leftClickInitiatedOverUI = false;
+				_is3DLeftClickDown = false;
+				if (IsMapEditorMode && _is3DDragOperationActive)
+				{
+					_is3DDragOperationActive = false;
+					MapEditorHUD.Instance?.Set3DInteractionActive(false);
+				}
 			}
 		}
 
@@ -50,6 +68,18 @@ public partial class GameHost
 
 		if (IsMapEditorMode)
 		{
+			if (@event is InputEventMouseMotion editorMm)
+			{
+				if (_is3DLeftClickDown && !_is3DDragOperationActive)
+				{
+					if (editorMm.Position.DistanceTo(_leftClick3DStartPos) > 3.0f)
+					{
+						_is3DDragOperationActive = true;
+						MapEditorHUD.Instance?.Set3DInteractionActive(true);
+					}
+				}
+			}
+
 			if (@event is InputEventKey editorKeyEvent && editorKeyEvent.Pressed && !editorKeyEvent.Echo)
 			{
 				bool ctrlPressed = Input.IsKeyPressed(Key.Ctrl);
@@ -57,6 +87,12 @@ public partial class GameHost
 				
 				if (editorKeyEvent.Keycode == Key.Escape)
 				{
+					if (_is3DDragOperationActive)
+					{
+						_is3DDragOperationActive = false;
+						_is3DLeftClickDown = false;
+						MapEditorHUD.Instance?.Set3DInteractionActive(false);
+					}
 					if (_editorService.RampStartPos != null)
 					{
 						_editorService.SetRampStartPos(null);
@@ -746,6 +782,13 @@ public partial class GameHost
 
 			if (@event is InputEventMouseButton releaseEvent && !releaseEvent.Pressed && releaseEvent.ButtonIndex == MouseButton.Left)
 			{
+				if (_is3DDragOperationActive)
+				{
+					_is3DDragOperationActive = false;
+					_is3DLeftClickDown = false;
+					MapEditorHUD.Instance?.Set3DInteractionActive(false);
+				}
+
 				if (FloatingDialogBase.HasAnyDialogOpen)
 				{
 					return;
@@ -1666,7 +1709,7 @@ public partial class GameHost
 							IssueFollowCommand(clickedUnit, shiftHeld);
 						}
 					}
-					else if (clickedProp != null && clickedProp.Visible && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
+					else if (clickedProp != null && clickedProp.Visible && clickedProp.IsResource)
 					{
 						IssueGatherCommand(clickedProp, shiftHeld);
 					}
@@ -1859,7 +1902,7 @@ public partial class GameHost
 							IssueFollowCommand(clickedUnit);
 						}
 					}
-					else if (clickedProp != null && clickedProp.Visible && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
+					else if (clickedProp != null && clickedProp.Visible && clickedProp.IsResource)
 					{
 						IssueGatherCommand(clickedProp);
 					}
@@ -1947,7 +1990,7 @@ public partial class GameHost
 			else
 			{
 				var clickedProp = FindProp3DInParentChain(collider);
-				if (clickedProp != null && clickedProp.Visible && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
+				if (clickedProp != null && clickedProp.Visible && clickedProp.IsResource)
 				{
 					ClearSelection();
 					SelectedProp = clickedProp;
@@ -1985,7 +2028,7 @@ public partial class GameHost
 
 		var friendlyUnits = new List<Unit3D>();
 		var enemyUnits = new List<Unit3D>();
-		var goldMines = new List<Prop3D>();
+		var resourceProps = new List<Prop3D>();
 
 		foreach (var unit in AllUnits)
 		{
@@ -2008,12 +2051,12 @@ public partial class GameHost
 		foreach (var prop in AllProps)
 		{
 			if (prop == null || !GodotObject.IsInstanceValid(prop) || !prop.Visible) continue;
-			if (prop.PropId == "goldmine")
+			if (prop.IsResource)
 			{
 				var screenPos = camera.UnprojectPosition(prop.GlobalPosition);
 				if (dragRect.HasPoint(screenPos))
 				{
-					goldMines.Add(prop);
+					resourceProps.Add(prop);
 				}
 			}
 		}
@@ -2032,10 +2075,10 @@ public partial class GameHost
 				SelectUnit(unit);
 			}
 		}
-		else if (goldMines.Count > 0)
+		else if (resourceProps.Count > 0)
 		{
 			ClearSelection();
-			SelectedProp = goldMines[0];
+			SelectedProp = resourceProps[0];
 			SelectedProp.IsSelected = true;
 		}
 
@@ -2053,7 +2096,7 @@ public partial class GameHost
 
 		var friendlyUnits = new List<Unit3D>();
 		var enemyUnits = new List<Unit3D>();
-		var goldMines = new List<Prop3D>();
+		var resourceProps = new List<Prop3D>();
 
 		foreach (var unit in AllUnits)
 		{
@@ -2078,13 +2121,13 @@ public partial class GameHost
 		foreach (var prop in AllProps)
 		{
 			if (prop == null || !GodotObject.IsInstanceValid(prop) || !prop.Visible) continue;
-			if (prop.PropId == "goldmine")
+			if (prop.IsResource)
 			{
 				var screenPos = camera.UnprojectPosition(prop.GlobalPosition);
 				bool isInside = dragRect.HasPoint(screenPos);
 				if (isInside)
 				{
-					goldMines.Add(prop);
+					resourceProps.Add(prop);
 				}
 				prop.SetTemporarySelectionHighlight(false);
 			}
@@ -2104,9 +2147,9 @@ public partial class GameHost
 				unit.SetTemporarySelectionHighlight(true);
 			}
 		}
-		else if (goldMines.Count > 0)
+		else if (resourceProps.Count > 0)
 		{
-			goldMines[0].SetTemporarySelectionHighlight(true);
+			resourceProps[0].SetTemporarySelectionHighlight(true);
 		}
 	}
 
@@ -2121,7 +2164,7 @@ public partial class GameHost
 		}
 		foreach (var prop in AllProps)
 		{
-			if (prop != null && GodotObject.IsInstanceValid(prop) && prop.PropId == "goldmine")
+			if (prop != null && GodotObject.IsInstanceValid(prop) && prop.IsResource)
 			{
 				prop.SetTemporarySelectionHighlight(false);
 			}
@@ -3875,7 +3918,7 @@ public partial class GameHost
 				IssueFollowCommand(clickedUnit, shiftHeld);
 			}
 		}
-		else if (clickedProp != null && clickedProp.Visible && (clickedProp.PropId == "goldmine" || clickedProp.PropId == "tree" || clickedProp.PropId == "rock"))
+		else if (clickedProp != null && clickedProp.Visible && clickedProp.IsResource)
 		{
 			IssueGatherCommand(clickedProp, shiftHeld);
 		}

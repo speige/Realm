@@ -50,8 +50,25 @@ public partial class MapSettingsDialog : FloatingDialogBase
 		var namePanel = CreateSectionBox(contentVBox, "🏷️ " + TranslationServer.Translate("Map Name"));
 		_txtMapName = new LineEdit();
 		_txtMapName.PlaceholderText = TranslationServer.Translate("Enter map name...");
+		bool isSanitizingMapName = false;
 		_txtMapName.TextChanged += (txt) =>
 		{
+			if (isSanitizingMapName) return;
+			if (txt.Contains(MapWorkspaceService.DefaultWorkspaceFolder, StringComparison.OrdinalIgnoreCase))
+			{
+				isSanitizingMapName = true;
+				try
+				{
+					int previousCaretPosition = _txtMapName.CaretColumn;
+					string sanitizedText = txt.Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase);
+					_txtMapName.Text = sanitizedText;
+					_txtMapName.CaretColumn = Math.Clamp(previousCaretPosition - MapWorkspaceService.DefaultWorkspaceFolder.Length, 0, sanitizedText.Length);
+				}
+				finally
+				{
+					isSanitizingMapName = false;
+				}
+			}
 			SaveMapProperties();
 			Hud?.UpdateMapNameHeader();
 		};
@@ -361,11 +378,11 @@ public partial class MapSettingsDialog : FloatingDialogBase
 				{
 					if (metaDoc.TryGetPropertyValue("Name", out var n) && n != null && _txtMapName != null)
 					{
-						_txtMapName.Text = n.ToString();
+						_txtMapName.Text = n.ToString().Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
 					}
 					else if (metaDoc.TryGetPropertyValue("map_name", out var mn) && mn != null && _txtMapName != null)
 					{
-						_txtMapName.Text = mn.ToString();
+						_txtMapName.Text = mn.ToString().Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
 					}
 				}
 			}
@@ -386,7 +403,7 @@ public partial class MapSettingsDialog : FloatingDialogBase
 					{
 						if (_txtMapName != null && string.IsNullOrEmpty(_txtMapName.Text) && props.ContainsKey("Name"))
 						{
-							_txtMapName.Text = props["Name"]?.GetValue<string>() ?? "";
+							_txtMapName.Text = (props["Name"]?.GetValue<string>() ?? "").Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
 						}
 
 						if (_optMapType != null && props.ContainsKey("MapType"))
@@ -423,6 +440,7 @@ public partial class MapSettingsDialog : FloatingDialogBase
 	public void SaveMapProperties()
 	{
 		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
+		string cleanMapName = (_txtMapName?.Text ?? string.Empty).Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
 
 		// Save to metadata.json
 		string metaPath = Path.Combine(wsPath, "metadata.json");
@@ -431,7 +449,7 @@ public partial class MapSettingsDialog : FloatingDialogBase
 			try
 			{
 				var metaDoc = JsonNode.Parse(File.ReadAllText(metaPath)) as JsonObject ?? new JsonObject();
-				metaDoc["Name"] = _txtMapName.Text.Trim();
+				metaDoc["Name"] = cleanMapName;
 				MapJsonFormatter.SaveFormattedJson(metaPath, metaDoc);
 			}
 			catch (Exception ex)
@@ -454,7 +472,7 @@ public partial class MapSettingsDialog : FloatingDialogBase
 					var props = mapDoc["MapProperties"] as JsonObject;
 					if (props != null)
 					{
-						if (_txtMapName != null) props["Name"] = _txtMapName.Text.Trim();
+						if (_txtMapName != null) props["Name"] = cleanMapName;
 						if (_optMapType != null) props["MapType"] = _optMapType.Selected == 0 ? "Arcade Custom Map" : "Asset Pack";
 						var tagsArr = new JsonArray();
 						foreach (var chk in _activeTagCheckboxes)

@@ -2455,7 +2455,7 @@ public partial class GameHost
 
 		var unit3D = SpawnUnit3D(entity, unitId, modelPath, position, isBuilding, actualIsEnemy, false, playerIndex);
 		unit3D.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
-		unit3D.Scale = Vector3.One * scale;
+		unit3D.Scale = Vector3.One * (scale <= 0.001f ? 1.0f : scale);
 
 		if (EcsWorld.Has<CollisionScale>(entity))
 		{
@@ -2548,7 +2548,7 @@ public partial class GameHost
 		prop.PropId = propId;
 		prop.Position = position;
 		prop.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
-		prop.Scale = Vector3.One * scale;
+		prop.Scale = Vector3.One * (scale <= 0.001f ? 1.0f : scale);
 		AddChild(prop);
 		AllProps.Add(prop);
 		PropMultiMeshManager.Instance?.MarkDirty(propId);
@@ -2565,7 +2565,7 @@ public partial class GameHost
 		decal.Entity = entity;
 		decal.DecalId = string.IsNullOrEmpty(decalId) ? "logo" : decalId;
 		decal.TextureAlbedo = LoadDecalTexture(decalId);
-		decal.Size = new Vector3(6.0f, 20.0f, 6.0f) * scale;
+		decal.Size = new Vector3(6.0f, 20.0f, 6.0f) * (scale <= 0.001f ? 1.0f : scale);
 		decal.AlbedoMix = 1.0f;
 		decal.CullMask = RuntimeTerrain.TerrainDecalCullMask;
 		AddChild(decal);
@@ -3208,14 +3208,15 @@ public partial class GameHost
 			}
 			_editorPreviewNode.Position = previewPos;
 			_editorPreviewNode.RotationDegrees = new Vector3(0.0f, previewRot, 0.0f);
+			float safePreviewScale = previewScaleVal <= 0.001f ? 1.0f : previewScaleVal;
 			if (_editorPreviewNode is Decal previewDecal)
 			{
-				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * previewScaleVal;
+				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * safePreviewScale;
 				previewDecal.Scale = Vector3.One;
 			}
 			else
 			{
-				_editorPreviewNode.Scale = Vector3.One * previewScaleVal;
+				_editorPreviewNode.Scale = Vector3.One * safePreviewScale;
 			}
 			_editorPreviewNode.Visible = true;
 		}
@@ -3564,90 +3565,109 @@ public partial class GameHost
 				}
 			}
 
-			if (Input.IsMouseButtonPressed(MouseButton.Left) && !_leftClickInitiatedOverUI && !IsMouseOverUI() && !FloatingDialogBase.HasAnyDialogOpen)
+			if (Input.IsMouseButtonPressed(MouseButton.Left) && !_leftClickInitiatedOverUI && !FloatingDialogBase.HasAnyDialogOpen)
 			{
-				if ((ActiveEditorTool == EditorTool.PlaceUnit || ActiveEditorTool == EditorTool.PlaceProp || ActiveEditorTool == EditorTool.PlaceDecal) && EditorClumpMode)
+				if (_is3DLeftClickDown && !_is3DDragOperationActive && mousePos.DistanceTo(_leftClick3DStartPos) > 3.0f)
 				{
-					if (!_editorService.IsDrawingClump)
-					{
-						_editorService.BeginClumpSession();
-					}
-					if (_editorService.CanSpawnClump())
-					{
-						ApplyGeneralClumpSpawn(hitPos);
-						_editorService.SetClumpCooldown(0.15f);
-					}
+					_is3DDragOperationActive = true;
+					MapEditorHUD.Instance?.Set3DInteractionActive(true);
 				}
 
-				if (ActiveEditorTool == EditorTool.SelectMove && _isDraggingObject && GodotObject.IsInstanceValid(SelectedEditorObject))
+				if (!IsMouseOverUI())
 				{
-					float mouseDistPx = mousePos.DistanceTo(_dragStartMousePos);
-					if (!_dragObjectHasMoved && mouseDistPx > 4.0f)
+					if ((ActiveEditorTool == EditorTool.PlaceUnit || ActiveEditorTool == EditorTool.PlaceProp || ActiveEditorTool == EditorTool.PlaceDecal) && EditorClumpMode)
 					{
-						_dragObjectHasMoved = true;
+						if (!_editorService.IsDrawingClump)
+						{
+							_editorService.BeginClumpSession();
+						}
+						if (_editorService.CanSpawnClump())
+						{
+							ApplyGeneralClumpSpawn(hitPos);
+							_editorService.SetClumpCooldown(0.15f);
+						}
 					}
 
-					if (_dragObjectHasMoved)
+					if (ActiveEditorTool == EditorTool.SelectMove && _isDraggingObject && GodotObject.IsInstanceValid(SelectedEditorObject))
 					{
-						var node3D = SelectedEditorObject as Node3D;
-						Vector3 delta = hitPos - _dragStartGroundPos;
-						Vector3 dragPos = _dragObjectStartPos + delta;
-						if (EditorSnapToGrid && GroundTerrain != null)
+						float mouseDistPx = mousePos.DistanceTo(_dragStartMousePos);
+						if (!_dragObjectHasMoved && mouseDistPx > 4.0f)
 						{
-							dragPos = _editorService.SnapToGrid(dragPos);
-						}
-						float authoredYOffset = _dragObjectStartPos.Y - _editorService.GetTerrainHeightAt(_dragObjectStartPos);
-						dragPos.Y = _editorService.GetTerrainHeightAt(dragPos) + (Mathf.Abs(authoredYOffset) < 0.05f ? 0f : authoredYOffset);
-						node3D.Position = dragPos;
-						if (SelectedEditorObject is Unit3D unit && EcsWorld.IsAlive(unit.Entity))
-						{
-							EcsWorld.Set(unit.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
-							UpdateEditorCoverageOverlay();
-						}
-						else if (SelectedEditorObject is Prop3D prop)
-						{
-							if (EcsWorld.IsAlive(prop.Entity))
+							_dragObjectHasMoved = true;
+							if (!_is3DDragOperationActive)
 							{
-								EcsWorld.Set(prop.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
+								_is3DDragOperationActive = true;
+								MapEditorHUD.Instance?.Set3DInteractionActive(true);
 							}
-							PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
 						}
-						else if (SelectedEditorObject is Decal3D decal3D && EcsWorld.IsAlive(decal3D.Entity))
+
+						if (_dragObjectHasMoved)
 						{
-							EcsWorld.Set(decal3D.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
+							var node3D = SelectedEditorObject as Node3D;
+							Vector3 delta = hitPos - _dragStartGroundPos;
+							Vector3 dragPos = _dragObjectStartPos + delta;
+							if (EditorSnapToGrid && GroundTerrain != null)
+							{
+								dragPos = _editorService.SnapToGrid(dragPos);
+							}
+							float authoredYOffset = _dragObjectStartPos.Y - _editorService.GetTerrainHeightAt(_dragObjectStartPos);
+							dragPos.Y = _editorService.GetTerrainHeightAt(dragPos) + (Mathf.Abs(authoredYOffset) < 0.05f ? 0f : authoredYOffset);
+							node3D.Position = dragPos;
+							if (SelectedEditorObject is Unit3D unit && EcsWorld.IsAlive(unit.Entity))
+							{
+								EcsWorld.Set(unit.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
+								UpdateEditorCoverageOverlay();
+							}
+							else if (SelectedEditorObject is Prop3D prop)
+							{
+								if (EcsWorld.IsAlive(prop.Entity))
+								{
+									EcsWorld.Set(prop.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
+								}
+								PropMultiMeshManager.Instance?.MarkDirty(prop.PropId);
+							}
+							else if (SelectedEditorObject is Decal3D decal3D && EcsWorld.IsAlive(decal3D.Entity))
+							{
+								EcsWorld.Set(decal3D.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
+							}
+							MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 						}
-						MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 					}
+
+					bool isTerrainTool = ActiveEditorTool == EditorTool.Raise ||
+										 ActiveEditorTool == EditorTool.Lower ||
+										 ActiveEditorTool == EditorTool.Smooth ||
+										 ActiveEditorTool == EditorTool.Plateau ||
+										 ActiveEditorTool == EditorTool.PaintTexture ||
+										 ActiveEditorTool == EditorTool.Noise ||
+										 ActiveEditorTool == EditorTool.PaintPathing;
+
+					bool firstClick = false;
+					if (isTerrainTool && !_editorService.IsDrawingTerrain && GroundTerrain != null)
+					{
+						firstClick = true;
+						_editorService.BeginTerrainDraw(
+							hitPos,
+							ActiveEditorTool,
+							EditorBlockMode,
+							EditorBlockLevelHeight,
+							null,
+							GroundTerrain.SplatMap,
+							GroundTerrain.PathingCodes,
+							GroundTerrain.CliffSplatMap);
+					}
+
+					ApplyContinuousTerrainEditing(hitPos, fDelta, firstClick);
 				}
-
-				bool isTerrainTool = ActiveEditorTool == EditorTool.Raise ||
-									 ActiveEditorTool == EditorTool.Lower ||
-									 ActiveEditorTool == EditorTool.Smooth ||
-									 ActiveEditorTool == EditorTool.Plateau ||
-									 ActiveEditorTool == EditorTool.PaintTexture ||
-									 ActiveEditorTool == EditorTool.Noise ||
-									 ActiveEditorTool == EditorTool.PaintPathing;
-
-				bool firstClick = false;
-				if (isTerrainTool && !_editorService.IsDrawingTerrain && GroundTerrain != null)
-				{
-					firstClick = true;
-					_editorService.BeginTerrainDraw(
-						hitPos,
-						ActiveEditorTool,
-						EditorBlockMode,
-						EditorBlockLevelHeight,
-						null,
-						GroundTerrain.SplatMap,
-						GroundTerrain.PathingCodes,
-						GroundTerrain.CliffSplatMap);
-				}
-
-
-				ApplyContinuousTerrainEditing(hitPos, fDelta, firstClick);
 			}
 			else
 			{
+				if (_is3DDragOperationActive)
+				{
+					_is3DDragOperationActive = false;
+					_is3DLeftClickDown = false;
+					MapEditorHUD.Instance?.Set3DInteractionActive(false);
+				}
 				if (_editorService.IsDrawingClump)
 				{
 					var composite = _editorService.EndClumpSession();
@@ -3726,6 +3746,13 @@ public partial class GameHost
 		}
 		else
 		{
+			if (_is3DDragOperationActive)
+			{
+				_is3DDragOperationActive = false;
+				_is3DLeftClickDown = false;
+				MapEditorHUD.Instance?.Set3DInteractionActive(false);
+			}
+
 			if (_brushIndicatorMesh != null)
 				_brushIndicatorMesh.Visible = false;
 			ClearEditorPreview();

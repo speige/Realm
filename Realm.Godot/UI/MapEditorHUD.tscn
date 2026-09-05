@@ -127,6 +127,7 @@ anchors_preset = 9
 anchor_bottom = 1.0
 offset_right = 325.0
 grow_vertical = 2
+mouse_filter = 2
 
 [node name="LeftTabButton" type="Button" parent="LeftSlidePanel"]
 visible = false
@@ -158,6 +159,7 @@ offset_right = -10.0
 offset_bottom = -10.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 horizontal_scroll_mode = 3
 vertical_scroll_mode = 3
 
@@ -165,6 +167,7 @@ vertical_scroll_mode = 3
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
+mouse_filter = 2
 
 [node name="FileAccordion" type="VBoxContainer" parent="LeftSlidePanel/LeftScroll/LeftVBox"]
 layout_mode = 2
@@ -288,6 +291,7 @@ anchor_bottom = 1.0
 offset_left = -300.0
 grow_horizontal = 0
 grow_vertical = 2
+mouse_filter = 2
 
 [node name="RightTabButton" type="Button" parent="RightSlidePanel"]
 visible = false
@@ -315,6 +319,7 @@ offset_right = -10.0
 offset_bottom = -10.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 horizontal_scroll_mode = 3
 vertical_scroll_mode = 3
 
@@ -322,6 +327,7 @@ vertical_scroll_mode = 3
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
+mouse_filter = 2
 
 [node name="ToolAccordion" type="VBoxContainer" parent="RightSlidePanel/RightScroll/AccordionContainer"]
 layout_mode = 2

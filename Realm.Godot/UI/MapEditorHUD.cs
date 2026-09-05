@@ -151,6 +151,12 @@ public partial class MapEditorHUD : Control
 	private PanelContainer _topBar;
 	private HBoxContainer _topToolbar;
 	private VBoxContainer _middleRightBox;
+	private HBoxContainer _topLeftBox;
+	private TextureRect _screenFrameRect;
+	private Tween _hudFadeTween;
+	private bool _is3DInteractionActive = false;
+	public bool Is3DInteractionActive => _is3DInteractionActive;
+	private readonly Dictionary<Control, Control.MouseFilterEnum> _savedMouseFilters = new();
 	
 	private PanelContainer _panelTextures;
 	private PanelContainer _panelEntityPalette;
@@ -366,6 +372,18 @@ public partial class MapEditorHUD : Control
 		{
 			_swatchCliffHighlightPanel.QueueFree();
 		}
+		if (_hudFadeTween != null && _hudFadeTween.IsValid())
+		{
+			_hudFadeTween.Kill();
+		}
+		foreach (var (ctrl, filter) in _savedMouseFilters)
+		{
+			if (GodotObject.IsInstanceValid(ctrl))
+			{
+				ctrl.MouseFilter = filter;
+			}
+		}
+		_savedMouseFilters.Clear();
 	}
 
 	private double _autoBackupElapsedSeconds = 0;
@@ -441,7 +459,11 @@ public partial class MapEditorHUD : Control
 			frameRect.Visible = !EditorSettingsDialog.CurrentSettings.HideChromeBorderOverlay;
 			AddChild(frameRect);
 			MoveChild(frameRect, 0);
+			_screenFrameRect = frameRect;
 		}
+
+		_topLeftBox = GetNodeOrNull<HBoxContainer>("TopLeftBox");
+		_topBar = GetNodeOrNull<PanelContainer>("TopBar");
 
 		_leftPillar = new Panel();
 		_rightPillar = new Panel();
@@ -456,6 +478,8 @@ public partial class MapEditorHUD : Control
 
 		_panelLeft = GetNode<Panel>("LeftSlidePanel");
 		_panelRight = GetNode<Panel>("RightSlidePanel");
+		if (_panelLeft != null) _panelLeft.MouseFilter = Control.MouseFilterEnum.Ignore;
+		if (_panelRight != null) _panelRight.MouseFilter = Control.MouseFilterEnum.Ignore;
 
 		_btnLeftTab = GetNodeOrNull<Button>("LeftSlidePanel/LeftTabButton");
 		if (_btnLeftTab != null)
@@ -497,7 +521,7 @@ public partial class MapEditorHUD : Control
 
 		_lblMapNameHeader = new Label();
 		_lblMapNameHeader.Name = "LblMapNameHeader";
-		_lblMapNameHeader.Text = "🗺️ Map";
+		_lblMapNameHeader.Text = "";
 		_lblMapNameHeader.AddThemeFontSizeOverride("font_size", 12);
 		_lblMapNameHeader.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 		_lblMapNameHeader.HorizontalAlignment = HorizontalAlignment.Center;
@@ -583,10 +607,12 @@ public partial class MapEditorHUD : Control
 		_statusLabel = GetNode<Label>("TopBar/HBox/StatusLabel");
 		_feedbackLabel = GetNode<Label>("FeedbackLabel");
 		_feedbackLabel.Modulate = new Color(1, 1, 1, 0);
+		_feedbackLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
 
 		var leftScroll = GetNodeOrNull<ScrollContainer>("LeftSlidePanel/LeftScroll");
 		if (leftScroll != null)
 		{
+			leftScroll.MouseFilter = Control.MouseFilterEnum.Ignore;
 			leftScroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
 			leftScroll.VerticalScrollMode = ScrollContainer.ScrollMode.Disabled;
 		}
@@ -594,6 +620,7 @@ public partial class MapEditorHUD : Control
 		var rightScroll = GetNodeOrNull<ScrollContainer>("RightSlidePanel/RightScroll");
 		if (rightScroll != null)
 		{
+			rightScroll.MouseFilter = Control.MouseFilterEnum.Ignore;
 			rightScroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
 			rightScroll.VerticalScrollMode = ScrollContainer.ScrollMode.Disabled;
 		}
@@ -1416,14 +1443,36 @@ public partial class MapEditorHUD : Control
 
 	private void ApplyThemeStyles()
 	{
-		if (_panelLeft != null) _panelLeft.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
-		if (_panelRight != null) _panelRight.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		if (_panelLeft != null)
+		{
+			_panelLeft.MouseFilter = Control.MouseFilterEnum.Ignore;
+			_panelLeft.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		}
+		if (_panelRight != null)
+		{
+			_panelRight.MouseFilter = Control.MouseFilterEnum.Ignore;
+			_panelRight.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		}
+
+		var leftScroll = GetNodeOrNull<ScrollContainer>("LeftSlidePanel/LeftScroll");
+		if (leftScroll != null) leftScroll.MouseFilter = Control.MouseFilterEnum.Ignore;
+
+		var rightScroll = GetNodeOrNull<ScrollContainer>("RightSlidePanel/RightScroll");
+		if (rightScroll != null) rightScroll.MouseFilter = Control.MouseFilterEnum.Ignore;
 
 		var leftVBox = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox");
-		if (leftVBox != null) leftVBox.AddThemeConstantOverride("separation", 14);
+		if (leftVBox != null)
+		{
+			leftVBox.MouseFilter = Control.MouseFilterEnum.Ignore;
+			leftVBox.AddThemeConstantOverride("separation", 14);
+		}
 
 		var rightVBox = GetNodeOrNull<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer");
-		if (rightVBox != null) rightVBox.AddThemeConstantOverride("separation", 14);
+		if (rightVBox != null)
+		{
+			rightVBox.MouseFilter = Control.MouseFilterEnum.Ignore;
+			rightVBox.AddThemeConstantOverride("separation", 14);
+		}
 
 		if (_accordionFile != null) _accordionFile.CustomMinimumSize = new Vector2(260, 0);
 		if (_accordionViewport != null) _accordionViewport.CustomMinimumSize = new Vector2(260, 0);
@@ -6824,6 +6873,14 @@ public partial class MapEditorHUD : Control
 		{
 			return true;
 		}
+		if (FloatingDialogBase.HasAnyDialogOpen)
+		{
+			return true;
+		}
+		if (_is3DInteractionActive)
+		{
+			return false;
+		}
 
 		if (_minimapController != null && _minimapController.IsDragging)
 		{
@@ -6836,7 +6893,17 @@ public partial class MapEditorHUD : Control
 		var hoveredControl = GetViewport().GuiGetHoveredControl();
 		if (hoveredControl != null && hoveredControl != this)
 		{
-			return true;
+			if (hoveredControl != _panelLeft &&
+				hoveredControl != _panelRight &&
+				hoveredControl.Name != "LeftScroll" &&
+				hoveredControl.Name != "RightScroll" &&
+				hoveredControl.Name != "LeftVBox" &&
+				hoveredControl.Name != "AccordionContainer" &&
+				hoveredControl.Name != "FeedbackLabel" &&
+				hoveredControl.Name != "MapEditorScreenFrame")
+			{
+				return true;
+			}
 		}
 		if (_optModule != null && _optModule.GetPopup() != null && _optModule.GetPopup().Visible)
 		{
@@ -6885,15 +6952,6 @@ public partial class MapEditorHUD : Control
 			}
 		}
 
-		// Check side panels
-		if (_leftPanelExpanded && _panelLeft != null && _panelLeft.IsVisibleInTree() && _panelLeft.GetGlobalRect().HasPoint(mousePos))
-		{
-			return true;
-		}
-		if (_rightPanelExpanded && _panelRight != null && _panelRight.IsVisibleInTree() && _panelRight.GetGlobalRect().HasPoint(mousePos))
-		{
-			return true;
-		}
 		if (_btnLeftTab != null && _btnLeftTab.Visible && _btnLeftTab.GetGlobalRect().HasPoint(mousePos))
 		{
 			return true;
@@ -6931,6 +6989,103 @@ public partial class MapEditorHUD : Control
 		}
 
 		return false;
+	}
+
+	public void Set3DInteractionActive(bool active)
+	{
+		if (_is3DInteractionActive == active) return;
+		_is3DInteractionActive = active;
+
+		if (active)
+		{
+			_savedMouseFilters.Clear();
+			ApplyMouseFilterIgnoreRecursive(_panelLeft);
+			ApplyMouseFilterIgnoreRecursive(_panelRight);
+			ApplyMouseFilterIgnoreRecursive(_topLeftBox);
+			if (GodotObject.IsInstanceValid(_topBar))
+			{
+				ApplyMouseFilterIgnoreRecursive(_topBar);
+			}
+			foreach (var card in _cardDragMap.Keys)
+			{
+				if (GodotObject.IsInstanceValid(card))
+				{
+					ApplyMouseFilterIgnoreRecursive(card);
+				}
+			}
+		}
+		else
+		{
+			foreach (var (ctrl, filter) in _savedMouseFilters)
+			{
+				if (GodotObject.IsInstanceValid(ctrl))
+				{
+					ctrl.MouseFilter = filter;
+				}
+			}
+			_savedMouseFilters.Clear();
+		}
+
+		if (_hudFadeTween != null && _hudFadeTween.IsValid())
+		{
+			_hudFadeTween.Kill();
+		}
+
+		_hudFadeTween = CreateTween();
+		_hudFadeTween.SetParallel(true);
+		float targetAlpha = active ? 0.0f : 1.0f;
+		float duration = 0.35f;
+
+		if (GodotObject.IsInstanceValid(_topLeftBox))
+		{
+			_hudFadeTween.TweenProperty(_topLeftBox, "modulate:a", targetAlpha, duration)
+				.SetTrans(Tween.TransitionType.Cubic)
+				.SetEase(Tween.EaseType.Out);
+		}
+		if (GodotObject.IsInstanceValid(_panelLeft))
+		{
+			_hudFadeTween.TweenProperty(_panelLeft, "modulate:a", targetAlpha, duration)
+				.SetTrans(Tween.TransitionType.Cubic)
+				.SetEase(Tween.EaseType.Out);
+		}
+		if (GodotObject.IsInstanceValid(_panelRight))
+		{
+			_hudFadeTween.TweenProperty(_panelRight, "modulate:a", targetAlpha, duration)
+				.SetTrans(Tween.TransitionType.Cubic)
+				.SetEase(Tween.EaseType.Out);
+		}
+		if (GodotObject.IsInstanceValid(_screenFrameRect) && !EditorSettingsDialog.CurrentSettings.HideChromeBorderOverlay)
+		{
+			_hudFadeTween.TweenProperty(_screenFrameRect, "modulate:a", targetAlpha, duration)
+				.SetTrans(Tween.TransitionType.Cubic)
+				.SetEase(Tween.EaseType.Out);
+		}
+		foreach (var card in _cardDragMap.Keys)
+		{
+			if (GodotObject.IsInstanceValid(card) && (card.TopLevel || card.GetParent() == this))
+			{
+				_hudFadeTween.TweenProperty(card, "modulate:a", targetAlpha, duration)
+					.SetTrans(Tween.TransitionType.Cubic)
+					.SetEase(Tween.EaseType.Out);
+			}
+		}
+	}
+
+	private void ApplyMouseFilterIgnoreRecursive(Node node)
+	{
+		if (node == null) return;
+		if (node is Control ctrl)
+		{
+			if (ctrl.MouseFilter != Control.MouseFilterEnum.Ignore)
+			{
+				_savedMouseFilters[ctrl] = ctrl.MouseFilter;
+				ctrl.MouseFilter = Control.MouseFilterEnum.Ignore;
+			}
+		}
+		foreach (Node child in node.GetChildren())
+		{
+			ApplyMouseFilterIgnoreRecursive(child);
+		}
 	}
 
 	private void UpdateBlockStepVisibility()
@@ -8002,53 +8157,91 @@ public partial class MapEditorHUD : Control
 
 
 
+	public static string SanitizeMapName(string? candidateName)
+	{
+		if (string.IsNullOrWhiteSpace(candidateName))
+		{
+			return "Untitled Map";
+		}
+
+		string sanitized = candidateName.Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+		return string.IsNullOrEmpty(sanitized) ? "Untitled Map" : sanitized;
+	}
+
+	private static bool TrySanitizeCandidate(string? candidateName, out string sanitizedMapName)
+	{
+		sanitizedMapName = string.Empty;
+		if (string.IsNullOrWhiteSpace(candidateName))
+		{
+			return false;
+		}
+
+		string cleaned = candidateName.Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+		if (string.IsNullOrEmpty(cleaned))
+		{
+			return false;
+		}
+
+		sanitizedMapName = cleaned;
+		return true;
+	}
+
 	public string GetMapNameFromMetadata()
 	{
 		try
 		{
-			string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
-			string metaPath = System.IO.Path.Combine(wsPath, "metadata.json");
-			if (System.IO.File.Exists(metaPath))
+			string workspacePath = MapWorkspaceService.GetActiveWorkspacePath();
+			string metadataPath = System.IO.Path.Combine(workspacePath, "metadata.json");
+			if (System.IO.File.Exists(metadataPath))
 			{
-				string json = System.IO.File.ReadAllText(metaPath);
+				string json = System.IO.File.ReadAllText(metadataPath);
 				var root = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
 				if (root != null)
 				{
-					if (root.TryGetPropertyValue("Name", out var n1) && !string.IsNullOrWhiteSpace(n1?.ToString()))
-						return n1.ToString().Trim();
-					if (root.TryGetPropertyValue("map_name", out var n2) && !string.IsNullOrWhiteSpace(n2?.ToString()))
-						return n2.ToString().Trim();
-					if (root.TryGetPropertyValue("MapName", out var n3) && !string.IsNullOrWhiteSpace(n3?.ToString()))
-						return n3.ToString().Trim();
-					if (root.TryGetPropertyValue("Title", out var n4) && !string.IsNullOrWhiteSpace(n4?.ToString()))
-						return n4.ToString().Trim();
+					if (root.TryGetPropertyValue("Name", out var n1) && TrySanitizeCandidate(n1?.ToString(), out var name1))
+						return name1;
+					if (root.TryGetPropertyValue("map_name", out var n2) && TrySanitizeCandidate(n2?.ToString(), out var name2))
+						return name2;
+					if (root.TryGetPropertyValue("MapName", out var n3) && TrySanitizeCandidate(n3?.ToString(), out var name3))
+						return name3;
+					if (root.TryGetPropertyValue("Title", out var n4) && TrySanitizeCandidate(n4?.ToString(), out var name4))
+						return name4;
 					if (root.TryGetPropertyValue("MapProperties", out var mp) && mp is System.Text.Json.Nodes.JsonObject mpObj)
 					{
-						if (mpObj.TryGetPropertyValue("Name", out var mpN1) && !string.IsNullOrWhiteSpace(mpN1?.ToString()))
-							return mpN1.ToString().Trim();
-						if (mpObj.TryGetPropertyValue("MapName", out var mpN2) && !string.IsNullOrWhiteSpace(mpN2?.ToString()))
-							return mpN2.ToString().Trim();
+						if (mpObj.TryGetPropertyValue("Name", out var mpN1) && TrySanitizeCandidate(mpN1?.ToString(), out var mpName1))
+							return mpName1;
+						if (mpObj.TryGetPropertyValue("MapName", out var mpN2) && TrySanitizeCandidate(mpN2?.ToString(), out var mpName2))
+							return mpName2;
 					}
 				}
 			}
 
-			string mapJsonPath = System.IO.Path.Combine(wsPath, "map.json");
+			string mapJsonPath = System.IO.Path.Combine(workspacePath, "map.json");
 			if (System.IO.File.Exists(mapJsonPath))
 			{
 				var mapDoc = System.Text.Json.Nodes.JsonNode.Parse(System.IO.File.ReadAllText(mapJsonPath)) as System.Text.Json.Nodes.JsonObject;
 				if (mapDoc != null && mapDoc.TryGetPropertyValue("MapProperties", out var mp) && mp is System.Text.Json.Nodes.JsonObject mpObj)
 				{
-					if (mpObj.TryGetPropertyValue("Name", out var n) && !string.IsNullOrWhiteSpace(n?.ToString()))
-						return n.ToString().Trim();
+					if (mpObj.TryGetPropertyValue("Name", out var n) && TrySanitizeCandidate(n?.ToString(), out var mapDocName))
+						return mapDocName;
 				}
 			}
 
 			if (!string.IsNullOrEmpty(GameHost.Instance?.ActiveMapName))
 			{
-				return System.IO.Path.GetFileNameWithoutExtension(GameHost.Instance.ActiveMapName);
+				string candidate = System.IO.Path.GetFileNameWithoutExtension(GameHost.Instance.ActiveMapName);
+				if (TrySanitizeCandidate(candidate, out var activeMapName))
+					return activeMapName;
 			}
 
-			return System.IO.Path.GetFileName(wsPath);
+			if (!string.IsNullOrEmpty(workspacePath))
+			{
+				string candidate = System.IO.Path.GetFileName(workspacePath);
+				if (TrySanitizeCandidate(candidate, out var workspaceName))
+					return workspaceName;
+			}
+
+			return "Untitled Map";
 		}
 		catch
 		{
@@ -8060,15 +8253,22 @@ public partial class MapEditorHUD : Control
 	{
 		if (_lblMapNameHeader == null) return;
 		string mapName = GetMapNameFromMetadata();
+		string displayMapName = mapName == "Untitled Map" ? TranslationServer.Translate("Untitled Map") : mapName;
 		bool hasUnsaved = GameHost.Instance?.EditorHasUnsavedChanges ?? false;
 
-		string displayText = hasUnsaved ? $"🗺️ {mapName} *" : $"🗺️ {mapName}";
+		string displayText = hasUnsaved ? $"🗺️ {displayMapName} *" : $"🗺️ {displayMapName}";
+		string tooltipText = hasUnsaved
+			? $"{displayMapName} * ({TranslationServer.Translate("Unsaved changes — Press Ctrl+S to save")})"
+			: $"{displayMapName} ({TranslationServer.Translate("All changes saved")})";
+
 		if (_lblMapNameHeader.Text != displayText)
 		{
 			_lblMapNameHeader.Text = displayText;
-			_lblMapNameHeader.TooltipText = hasUnsaved
-				? $"{mapName} * ({TranslationServer.Translate("Unsaved changes — Press Ctrl+S to save")})"
-				: $"{mapName} ({TranslationServer.Translate("All changes saved")})";
+		}
+
+		if (_lblMapNameHeader.TooltipText != tooltipText)
+		{
+			_lblMapNameHeader.TooltipText = tooltipText;
 		}
 	}
 
