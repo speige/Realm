@@ -1384,8 +1384,7 @@ public partial class GameHost
 				}
 			}
 
-			var assetsObj = (root.ContainsKey("Assets") ? root["Assets"] as System.Text.Json.Nodes.JsonObject : null)
-				?? (root.ContainsKey("MapProperties") && root["MapProperties"] is System.Text.Json.Nodes.JsonObject mpObj && mpObj.ContainsKey("Assets") ? mpObj["Assets"] as System.Text.Json.Nodes.JsonObject : null);
+			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(mapDir);
 			if (assetsObj != null && assetsObj.ContainsKey("glb") && assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
 			{
 				foreach (var catKvp in glbObj)
@@ -1592,162 +1591,74 @@ public partial class GameHost
 				}
 			}
 
-			var assetsObj = (root.ContainsKey("Assets") ? root["Assets"] as System.Text.Json.Nodes.JsonObject : null)
-				?? (root.ContainsKey("MapProperties") && root["MapProperties"] is System.Text.Json.Nodes.JsonObject mpObj && mpObj.ContainsKey("Assets") ? mpObj["Assets"] as System.Text.Json.Nodes.JsonObject : null);
-			if (assetsObj != null && assetsObj.ContainsKey("glb") && assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
+			if (!root.ContainsKey("ModelOffsets") || root["ModelOffsets"] is not System.Text.Json.Nodes.JsonObject) root["ModelOffsets"] = new System.Text.Json.Nodes.JsonObject();
+			var offsetsObj = root["ModelOffsets"]!.AsObject();
+			foreach (var kvp in ModelYOffsets)
 			{
-				foreach (var catKvp in glbObj)
-				{
-					if (catKvp.Value is System.Text.Json.Nodes.JsonObject catDict)
-					{
-						foreach (var key in catDict.Select(kvp => kvp.Key).ToList())
-						{
-							string normKey = NormalizeModelAssetKey(key);
-							bool hasY = ModelYOffsets.TryGetValue(normKey, out float yVal);
-							bool hasScale = ModelScales.TryGetValue(normKey, out float sVal);
-							bool hasRatio = ModelCollisionCircleRatios.TryGetValue(normKey, out float rVal);
-							bool hasRadius = ModelObstacleRadii.TryGetValue(normKey, out float radVal);
-							bool hasBright = ModelBrightness.TryGetValue(normKey, out float brightVal);
-							bool hasNm = ModelNormalModes.TryGetValue(normKey, out var nmVal);
-							bool hasNl = ModelNormalizeLuminance.TryGetValue(normKey, out bool nlVal);
-							bool hasIpc = ModelIgnorePlayerColor.TryGetValue(normKey, out bool ipcVal);
-							bool hasSpawnShader = ModelSpawnShaders.TryGetValue(normKey, out string spawnShaderVal) && !string.IsNullOrWhiteSpace(spawnShaderVal);
-							if (!hasSpawnShader)
-							{
-								string fallbackSpawn = GetModelSpawnShader(key);
-								if (!string.IsNullOrWhiteSpace(fallbackSpawn))
-								{
-									hasSpawnShader = true;
-									spawnShaderVal = fallbackSpawn;
-								}
-								else
-								{
-									foreach (var kvp in ModelSpawnShaders)
-									{
-										if (!string.IsNullOrWhiteSpace(kvp.Value) && MatchesEntityOrAssetKey(kvp.Key, normKey))
-										{
-											hasSpawnShader = true;
-											spawnShaderVal = kvp.Value;
-											break;
-										}
-									}
-								}
-							}
+				offsetsObj[kvp.Key] = kvp.Value;
+			}
 
-							bool hasDeathShader = ModelDeathShaders.TryGetValue(normKey, out string deathShaderVal) && !string.IsNullOrWhiteSpace(deathShaderVal);
-							if (!hasDeathShader)
-							{
-								string fallbackDeath = GetModelDeathShader(key);
-								if (!string.IsNullOrWhiteSpace(fallbackDeath))
-								{
-									hasDeathShader = true;
-									deathShaderVal = fallbackDeath;
-								}
-								else
-								{
-									foreach (var kvp in ModelDeathShaders)
-									{
-										if (!string.IsNullOrWhiteSpace(kvp.Value) && MatchesEntityOrAssetKey(kvp.Key, normKey))
-										{
-											hasDeathShader = true;
-											deathShaderVal = kvp.Value;
-											break;
-										}
-									}
-								}
-							}
+			if (!root.ContainsKey("ModelScales") || root["ModelScales"] is not System.Text.Json.Nodes.JsonObject) root["ModelScales"] = new System.Text.Json.Nodes.JsonObject();
+			var scalesObj = root["ModelScales"]!.AsObject();
+			foreach (var kvp in ModelScales)
+			{
+				scalesObj[kvp.Key] = kvp.Value;
+			}
 
-							if (hasY || hasScale || hasRatio || hasRadius || hasBright || hasNm || hasNl || hasIpc || hasSpawnShader || hasDeathShader)
-							{
-								var nodeVal = catDict[key];
-								if (nodeVal is System.Text.Json.Nodes.JsonObject itemObj)
-								{
-									if (hasY)
-									{
-										if (!itemObj.TryGetPropertyValue("y_offset", out var existingYNode) || existingYNode == null || !float.TryParse(existingYNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float existingY) || MathF.Abs(existingY - yVal) >= 0.0001f)
-										{
-											itemObj["y_offset"] = yVal;
-										}
-									}
-									if (hasScale)
-									{
-										if (!itemObj.TryGetPropertyValue("scale", out var existingScaleNode) || existingScaleNode == null || !float.TryParse(existingScaleNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float existingScale) || MathF.Abs(existingScale - sVal) >= 0.0001f)
-										{
-											itemObj["scale"] = sVal;
-										}
-									}
-									if (hasRatio)
-									{
-										if (!itemObj.TryGetPropertyValue("collision_circle_ratio", out var existingRatioNode) || existingRatioNode == null || !float.TryParse(existingRatioNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float existingRatio) || MathF.Abs(existingRatio - rVal) >= 0.0001f)
-										{
-											itemObj["collision_circle_ratio"] = rVal;
-										}
-									}
-									if (hasRadius)
-									{
-										if (!itemObj.TryGetPropertyValue("collision_radius", out var existingRadiusNode) || existingRadiusNode == null || !float.TryParse(existingRadiusNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float existingRadius) || MathF.Abs(existingRadius - radVal) >= 0.0001f)
-										{
-											itemObj["collision_radius"] = radVal;
-										}
-									}
-									if (hasBright)
-									{
-										if (!itemObj.TryGetPropertyValue("brightness", out var existingBrightNode) || existingBrightNode == null || !float.TryParse(existingBrightNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float existingBright) || MathF.Abs(existingBright - brightVal) >= 0.0001f)
-										{
-											itemObj["brightness"] = brightVal;
-										}
-									}
-									if (hasNm) itemObj["normal_mode"] = nmVal.ToString();
-									if (hasNl) itemObj["normalize_luminance"] = nlVal;
-									if (hasIpc) itemObj["ignore_player_color"] = ipcVal;
-									if (hasSpawnShader)
-									{
-										itemObj["spawn_shader"] = spawnShaderVal;
-										itemObj.Remove("SpawnShader");
-									}
-									else
-									{
-										itemObj.Remove("spawn_shader");
-										itemObj.Remove("SpawnShader");
-									}
-									if (hasDeathShader)
-									{
-										itemObj["death_shader"] = deathShaderVal;
-										itemObj.Remove("DeathShader");
-										itemObj.Remove("despawn_shader");
-										itemObj.Remove("DespawnShader");
-									}
-									else
-									{
-										itemObj.Remove("death_shader");
-										itemObj.Remove("DeathShader");
-										itemObj.Remove("despawn_shader");
-										itemObj.Remove("DespawnShader");
-									}
-								}
-								else if (nodeVal != null)
-								{
-									string hashStr = nodeVal.ToString();
-									var newItemObj = new System.Text.Json.Nodes.JsonObject
-									{
-										["hash"] = hashStr
-									};
-									if (hasY) newItemObj["y_offset"] = yVal;
-									if (hasScale) newItemObj["scale"] = sVal;
-									if (hasRatio) newItemObj["collision_circle_ratio"] = rVal;
-									if (hasRadius) newItemObj["collision_radius"] = radVal;
-									if (hasBright) newItemObj["brightness"] = brightVal;
-									if (hasNm) newItemObj["normal_mode"] = nmVal.ToString();
-									if (hasNl) newItemObj["normalize_luminance"] = nlVal;
-									if (hasIpc) newItemObj["ignore_player_color"] = ipcVal;
-									if (hasSpawnShader) newItemObj["spawn_shader"] = spawnShaderVal;
-									if (hasDeathShader) newItemObj["death_shader"] = deathShaderVal;
-									catDict[key] = newItemObj;
-								}
-							}
-						}
-					}
-				}
+			if (!root.ContainsKey("ModelCollisionCircleRatios") || root["ModelCollisionCircleRatios"] is not System.Text.Json.Nodes.JsonObject) root["ModelCollisionCircleRatios"] = new System.Text.Json.Nodes.JsonObject();
+			var circleObj = root["ModelCollisionCircleRatios"]!.AsObject();
+			foreach (var kvp in ModelCollisionCircleRatios)
+			{
+				circleObj[kvp.Key] = kvp.Value;
+			}
+
+			if (!root.ContainsKey("ModelObstacleRadii") || root["ModelObstacleRadii"] is not System.Text.Json.Nodes.JsonObject) root["ModelObstacleRadii"] = new System.Text.Json.Nodes.JsonObject();
+			var radiiObj = root["ModelObstacleRadii"]!.AsObject();
+			foreach (var kvp in ModelObstacleRadii)
+			{
+				radiiObj[kvp.Key] = kvp.Value;
+			}
+
+			if (!root.ContainsKey("ModelBrightness") || root["ModelBrightness"] is not System.Text.Json.Nodes.JsonObject) root["ModelBrightness"] = new System.Text.Json.Nodes.JsonObject();
+			var brightObj = root["ModelBrightness"]!.AsObject();
+			foreach (var kvp in ModelBrightness)
+			{
+				brightObj[kvp.Key] = kvp.Value;
+			}
+
+			if (!root.ContainsKey("ModelNormalModes") || root["ModelNormalModes"] is not System.Text.Json.Nodes.JsonObject) root["ModelNormalModes"] = new System.Text.Json.Nodes.JsonObject();
+			var normalObj = root["ModelNormalModes"]!.AsObject();
+			foreach (var kvp in ModelNormalModes)
+			{
+				normalObj[kvp.Key] = kvp.Value.ToString();
+			}
+
+			if (!root.ContainsKey("ModelNormalizeLuminance") || root["ModelNormalizeLuminance"] is not System.Text.Json.Nodes.JsonObject) root["ModelNormalizeLuminance"] = new System.Text.Json.Nodes.JsonObject();
+			var lumObj = root["ModelNormalizeLuminance"]!.AsObject();
+			foreach (var kvp in ModelNormalizeLuminance)
+			{
+				lumObj[kvp.Key] = kvp.Value;
+			}
+
+			if (!root.ContainsKey("ModelIgnorePlayerColor") || root["ModelIgnorePlayerColor"] is not System.Text.Json.Nodes.JsonObject) root["ModelIgnorePlayerColor"] = new System.Text.Json.Nodes.JsonObject();
+			var ipcObj = root["ModelIgnorePlayerColor"]!.AsObject();
+			foreach (var kvp in ModelIgnorePlayerColor)
+			{
+				ipcObj[kvp.Key] = kvp.Value;
+			}
+
+			if (!root.ContainsKey("ModelSpawnShaders") || root["ModelSpawnShaders"] is not System.Text.Json.Nodes.JsonObject) root["ModelSpawnShaders"] = new System.Text.Json.Nodes.JsonObject();
+			var spawnObj = root["ModelSpawnShaders"]!.AsObject();
+			foreach (var kvp in ModelSpawnShaders)
+			{
+				if (!string.IsNullOrWhiteSpace(kvp.Value)) spawnObj[kvp.Key] = kvp.Value;
+			}
+
+			if (!root.ContainsKey("ModelDeathShaders") || root["ModelDeathShaders"] is not System.Text.Json.Nodes.JsonObject) root["ModelDeathShaders"] = new System.Text.Json.Nodes.JsonObject();
+			var deathObj = root["ModelDeathShaders"]!.AsObject();
+			foreach (var kvp in ModelDeathShaders)
+			{
+				if (!string.IsNullOrWhiteSpace(kvp.Value)) deathObj[kvp.Key] = kvp.Value;
 			}
 
 			string[] entityArrays = new[] { "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps" };
@@ -1804,7 +1715,11 @@ public partial class GameHost
 				}
 			}
 
-			MapWorkspaceService.NormalizeTextureEntries(root);
+			root.Remove("Assets");
+			if (root.TryGetPropertyValue("MapProperties", out var mpNode) && mpNode is System.Text.Json.Nodes.JsonObject mpObj2)
+			{
+				mpObj2.Remove("Assets");
+			}
 			SaveLoadService.CleanMetadataJsonSchema(root);
 			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 		}
@@ -2749,11 +2664,8 @@ public partial class GameHost
 		try
 		{
 			string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
-			string metaPath = System.IO.Path.Combine(wsPath, "metadata.json");
-			if (!System.IO.File.Exists(metaPath)) return;
-
-			var root = System.Text.Json.Nodes.JsonNode.Parse(System.IO.File.ReadAllText(metaPath))?.AsObject();
-			var decalsObj = (root?["Assets"]?["decals"] ?? root?["MapProperties"]?["Assets"]?["decals"])?.AsObject();
+			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+			var decalsObj = assetsObj?["decals"] as System.Text.Json.Nodes.JsonObject;
 			if (decalsObj == null) return;
 
 			string key = System.IO.Path.GetFileName(decalId);

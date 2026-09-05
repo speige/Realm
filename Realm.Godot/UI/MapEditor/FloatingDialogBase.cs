@@ -1029,28 +1029,12 @@ public partial class FloatingDialogBase : PanelContainer
 	{
 		var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
-
-		if (!System.IO.File.Exists(metadataPath))
-		{
-			string tPath = PathUtils.FindPath("MapTemplate/metadata.json");
-			if (System.IO.File.Exists(tPath)) metadataPath = tPath;
-		}
-
-		if (!System.IO.File.Exists(metadataPath))
-		{
-			return new List<string>();
-		}
 
 		try
 		{
-			string jsonStr = System.IO.File.ReadAllText(metadataPath);
-			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
-			if (root != null)
+			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+			if (assetsObj != null)
 			{
-				var assetsObj = root["Assets"]?.AsObject() ?? (root["MapProperties"]?["Assets"]?.AsObject());
-				if (assetsObj != null)
-				{
 					if (category == "audio" || category == "sound" || category == "sfx" || category == "music")
 					{
 						foreach (var key in new[] { "sfx", "music", "audio", "sound", "sounds" })
@@ -1229,7 +1213,6 @@ public partial class FloatingDialogBase : PanelContainer
 							}
 						}
 					}
-				}
 			}
 		}
 		catch (Exception ex)

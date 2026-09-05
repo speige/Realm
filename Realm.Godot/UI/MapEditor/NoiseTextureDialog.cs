@@ -426,19 +426,13 @@ public partial class NoiseTextureDialog : FloatingDialogBase
 			string blake3Hash = NoiseTextureGenerator.GenerateAndSaveRtex(config, outputRtex);
 			config["hash"] = blake3Hash;
 
-			string metaPath = Path.Combine(wsPath, "metadata.json");
-			JsonObject root = File.Exists(metaPath)
-				? (JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject() ?? new JsonObject())
-				: new JsonObject();
-
-			if (!root.ContainsKey("Assets") || root["Assets"] == null) root["Assets"] = new JsonObject();
-			var assetsObj = root["Assets"].AsObject();
+			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath) ?? new JsonObject();
 			if (!assetsObj.ContainsKey("noise_textures") || assetsObj["noise_textures"] == null) assetsObj["noise_textures"] = new JsonObject();
 			var noiseObj = assetsObj["noise_textures"].AsObject();
 
 			noiseObj[fileName] = config;
 
-			MapJsonFormatter.SaveFormattedJson(metaPath, root);
+			Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj, removeFromMetadata: true);
 			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Generated noise texture '{0}' ({1}x{1})!"), fileName, config["width"]));
 
 			Hud?.ReadMetadataAndRefreshTextures();

@@ -4396,7 +4396,8 @@ public partial class MapEditorHUD : Control
 						}
 					}
 
-					if (treeModels.Count == 0 && root["Assets"]?["glb"]?["resources"] is System.Text.Json.Nodes.JsonObject glbRes)
+					var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+					if (treeModels.Count == 0 && assetsObj?["glb"]?["resources"] is System.Text.Json.Nodes.JsonObject glbRes)
 					{
 						foreach (var kvp in glbRes)
 						{
@@ -6575,19 +6576,8 @@ public partial class MapEditorHUD : Control
 				var root = System.Text.Json.Nodes.JsonNode.Parse(content) as JsonObject;
 				if (root != null)
 				{
-					JsonObject? texturesObj = null;
-					if (root.ContainsKey("textures") && root["textures"] is JsonObject tObj3)
-					{
-						texturesObj = tObj3;
-					}
-					else if (root.ContainsKey("Assets") && root["Assets"] is JsonObject assets && assets.ContainsKey("textures") && assets["textures"] is JsonObject tObj1)
-					{
-						texturesObj = tObj1;
-					}
-					else if (root.ContainsKey("MapProperties") && root["MapProperties"] is JsonObject mp && mp.ContainsKey("Assets") && mp["Assets"] is JsonObject mpAssets && mpAssets.ContainsKey("textures") && mpAssets["textures"] is JsonObject tObj2)
-					{
-						texturesObj = tObj2;
-					}
+					var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+					JsonObject? texturesObj = unionedAssets?["textures"] as JsonObject;
 
 					if (texturesObj != null)
 					{
@@ -8191,6 +8181,20 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string workspacePath = MapWorkspaceService.GetActiveWorkspacePath();
+			string manifestPath = System.IO.Path.Combine(workspacePath, "manifest.json");
+			if (System.IO.File.Exists(manifestPath))
+			{
+				string json = System.IO.File.ReadAllText(manifestPath);
+				var root = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
+				if (root != null)
+				{
+					if (root.TryGetPropertyValue("MapName", out var n) && TrySanitizeCandidate(n?.ToString(), out var manifestMapName))
+					{
+						return manifestMapName;
+					}
+				}
+			}
+
 			string metadataPath = System.IO.Path.Combine(workspacePath, "metadata.json");
 			if (System.IO.File.Exists(metadataPath))
 			{
@@ -8323,10 +8327,7 @@ public partial class MapEditorHUD : Control
 				}
 			}
 
-			if (!root.ContainsKey("MapProperties")) root["MapProperties"] = new JsonObject();
-			if (!root.ContainsKey("Assets")) root["Assets"] = new JsonObject();
-
-			JsonObject assetsObj = root["Assets"] as JsonObject ?? new JsonObject();
+			JsonObject assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath) ?? new JsonObject();
 
 			if (!string.IsNullOrEmpty(subCategory))
 			{
@@ -8558,8 +8559,6 @@ public partial class MapEditorHUD : Control
 					}
 
 					catObj[fileName] = texEntry;
-					if (!root.ContainsKey("textures") || root["textures"] is not JsonObject) root["textures"] = new JsonObject();
-					((JsonObject)root["textures"])[fileName] = texEntry.DeepClone();
 				}
 				else if (columns > 0 && rows > 0)
 				{
@@ -8578,7 +8577,9 @@ public partial class MapEditorHUD : Control
 				assetsObj[category] = catObj;
 			}
 
-			root["Assets"] = assetsObj;
+			Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj, removeFromMetadata: true);
+			root.Remove("Assets");
+			SaveLoadService.CleanMetadataJsonSchema(root);
 			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 		}
 		catch (Exception ex)

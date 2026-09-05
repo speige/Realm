@@ -461,13 +461,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 				RealmMetadataHelper.SyncBlake3Metadata(destPath);
 				bool isPropOrRes = subCategory == "resources" || subCategory == "props";
 
-				string metaPath = Path.Combine(wsPath, "metadata.json");
-				JsonObject root = File.Exists(metaPath)
-					? (JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject() ?? new JsonObject())
-					: new JsonObject();
-
-				if (!root.ContainsKey("Assets") || root["Assets"] == null) root["Assets"] = new JsonObject();
-				var assetsObj = root["Assets"].AsObject();
+				var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath) ?? new JsonObject();
 				if (!assetsObj.ContainsKey("glb") || assetsObj["glb"] == null) assetsObj["glb"] = new JsonObject();
 				var glbObj = assetsObj["glb"].AsObject();
 				if (!glbObj.ContainsKey(subCategory) || glbObj[subCategory] == null) glbObj[subCategory] = new JsonObject();
@@ -485,7 +479,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 				};
 
 				glbObj[subCategory]![fileName] = modelEntry;
-				MapJsonFormatter.SaveFormattedJson(metaPath, root);
+				Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj, removeFromMetadata: true);
 
 				resultPath = destPath;
 			}
@@ -548,24 +542,18 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 		{
 			var (minY, autoYOffset) = ModelCache.CalculateModelBounds(resultPath, defaultScale);
 			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-			string metaPath = Path.Combine(wsPath, "metadata.json");
-			if (File.Exists(metaPath))
+			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+			var entry = assetsObj?["glb"]?[subCategory]?[fileName]?.AsObject();
+			if (entry != null)
 			{
-				var root = JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject();
-				if (root != null)
-				{
-					var entry = root?["Assets"]?["glb"]?[subCategory]?[fileName]?.AsObject();
-					if (entry != null)
-					{
-						entry["min_y"] = minY;
-						entry["y_offset"] = autoYOffset;
-						MapJsonFormatter.SaveFormattedJson(metaPath, root);
-					}
-				}
+				entry["min_y"] = minY;
+				entry["y_offset"] = autoYOffset;
+				Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj, removeFromMetadata: true);
 			}
 
 			GameHost.Instance?.SetModelYOffset(fileName, autoYOffset);
 			GameHost.Instance?.SetModelScale(fileName, defaultScale);
+			GameHost.Instance?.FlushModelYOffsetSave();
 		}
 		catch (Exception ex)
 		{

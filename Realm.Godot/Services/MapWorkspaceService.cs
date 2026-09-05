@@ -100,6 +100,7 @@ public static partial class MapWorkspaceService
 		EnsureMapScript(directory, mapName);
 		EnsureWasmEntryPoint(directory);
 		EnsureMetadataJson(directory);
+		Realm.Godot.Utils.MapAssetHelper.EnsureManifestJson(directory);
 		EnsureSolutionFile(directory, mapName);
 		NormalizeMetadataTextureEntries(directory);
 		EnsureGlbAssetsOptimized(directory);
@@ -789,14 +790,19 @@ public static partial class MapWorkspaceService
 			catch { }
 		}
 
+		JsonObject? assetsObj = null;
 		if (metadataRoot != null)
 		{
-			JsonObject? assetsObj = null;
 			if (metadataRoot["Assets"] is JsonObject a1) assetsObj = a1;
 			else if (metadataRoot["MapProperties"] is JsonObject mp && mp["Assets"] is JsonObject a2) assetsObj = a2;
+		}
+		if (assetsObj == null)
+		{
+			assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(workspacePath);
+		}
 
-			if (assetsObj != null)
-			{
+		if (assetsObj != null)
+		{
 				if (assetsObj["decals"] is JsonObject decals && (decals.ContainsKey(fileName) || decals.ContainsKey($"{cleanName}.rtex")))
 					return ("decal", 4, 4);
 
@@ -836,7 +842,6 @@ public static partial class MapWorkspaceService
 					|| (assetsObj["noise_textures"] is JsonObject n2 && (n2.ContainsKey(fileName) || n2.ContainsKey($"{cleanName}.rtex"))))
 					return ("noise_texture", 4, 4);
 			}
-		}
 
 		if (normalized.Contains("/assets/decals/"))
 			return ("decal", 4, 4);
@@ -873,24 +878,7 @@ public static partial class MapWorkspaceService
 	{
 		try
 		{
-			string metadataPath = Path.Combine(workspacePath, "metadata.json");
-			if (!File.Exists(metadataPath)) return;
-
-			string jsonText = File.ReadAllText(metadataPath);
-			var jsonNode = JsonNode.Parse(jsonText);
-			if (jsonNode is not JsonObject root) return;
-
-			bool modified = false;
-			JsonObject? assetsObj = null;
-			if (root["Assets"] is JsonObject a1) assetsObj = a1;
-			else if (root["MapProperties"] is JsonObject mp && mp["Assets"] is JsonObject a2) assetsObj = a2;
-
-			if (assetsObj == null)
-			{
-				assetsObj = new JsonObject();
-				root["Assets"] = assetsObj;
-				modified = true;
-			}
+			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(workspacePath);
 
 			string categoryKey = assetType switch
 			{
@@ -906,7 +894,6 @@ public static partial class MapWorkspaceService
 			if (!assetsObj.ContainsKey(categoryKey) || assetsObj[categoryKey] is not JsonObject)
 			{
 				assetsObj[categoryKey] = new JsonObject();
-				modified = true;
 			}
 
 			if (assetsObj[categoryKey] is JsonObject targetCatObj)
@@ -924,7 +911,6 @@ public static partial class MapWorkspaceService
 						preservedProps = oldEntry.DeepClone() as JsonObject;
 					}
 					targetCatObj.Remove(pngFileName);
-					modified = true;
 				}
 
 				if (categoryKey == "vfx_spritesheets")
@@ -935,7 +921,6 @@ public static partial class MapWorkspaceService
 						["rows"] = rows,
 						["hash"] = newHash
 					};
-					modified = true;
 				}
 				else if (categoryKey == "textures")
 				{
@@ -946,64 +931,81 @@ public static partial class MapWorkspaceService
 						texEntry["swatchIndex"] = existingSwatchIndex;
 					}
 					targetCatObj[rtexFileName] = texEntry;
-					modified = true;
 				}
 				else
 				{
 					targetCatObj[rtexFileName] = newHash;
-					modified = true;
 				}
 			}
 
-			void ReplacePngReferences(JsonNode? node)
+			Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(workspacePath, assetsObj, removeFromMetadata: true);
+
+			string metadataPath = Path.Combine(workspacePath, "metadata.json");
+			if (File.Exists(metadataPath))
 			{
-				if (node is JsonObject obj)
+				string jsonText = File.ReadAllText(metadataPath);
+				var jsonNode = JsonNode.Parse(jsonText);
+				if (jsonNode is JsonObject root)
 				{
-					var propList = obj.ToList();
-					foreach (var prop in propList)
+					bool modified = false;
+
+					void ReplacePngReferences(JsonNode? node)
 					{
-						if (prop.Value is JsonValue val && val.TryGetValue<string>(out string strVal))
+						if (node is JsonObject obj)
 						{
-							if (strVal.EndsWith(pngFileName, StringComparison.OrdinalIgnoreCase))
+							var propList = obj.ToList();
+							foreach (var prop in propList)
 							{
-								string updated = strVal.Substring(0, strVal.Length - pngFileName.Length) + rtexFileName;
-								obj[prop.Key] = updated;
-								modified = true;
+								if (prop.Value is JsonValue val && val.TryGetValue<string>(out string strVal))
+								{
+									if (strVal.EndsWith(pngFileName, StringComparison.OrdinalIgnoreCase))
+									{
+										string updated = strVal.Substring(0, strVal.Length - pngFileName.Length) + rtexFileName;
+										obj[prop.Key] = updated;
+										modified = true;
+									}
+								}
+								else if (prop.Value is JsonObject or JsonArray)
+								{
+									ReplacePngReferences(prop.Value);
+								}
 							}
 						}
-						else if (prop.Value is JsonObject or JsonArray)
+						else if (node is JsonArray arr)
 						{
-							ReplacePngReferences(prop.Value);
-						}
-					}
-				}
-				else if (node is JsonArray arr)
-				{
-					for (int i = 0; i < arr.Count; i++)
-					{
-						if (arr[i] is JsonValue val && val.TryGetValue<string>(out string strVal))
-						{
-							if (strVal.EndsWith(pngFileName, StringComparison.OrdinalIgnoreCase))
+							for (int i = 0; i < arr.Count; i++)
 							{
-								string updated = strVal.Substring(0, strVal.Length - pngFileName.Length) + rtexFileName;
-								arr[i] = updated;
-								modified = true;
+								if (arr[i] is JsonValue val && val.TryGetValue<string>(out string strVal))
+								{
+									if (strVal.EndsWith(pngFileName, StringComparison.OrdinalIgnoreCase))
+									{
+										string updated = strVal.Substring(0, strVal.Length - pngFileName.Length) + rtexFileName;
+										arr[i] = updated;
+										modified = true;
+									}
+								}
+								else if (arr[i] is JsonObject or JsonArray)
+								{
+									ReplacePngReferences(arr[i]);
+								}
 							}
 						}
-						else if (arr[i] is JsonObject or JsonArray)
-						{
-							ReplacePngReferences(arr[i]);
-						}
+					}
+
+					ReplacePngReferences(root);
+
+					if (root.ContainsKey("Assets"))
+					{
+						root.Remove("Assets");
+						modified = true;
+					}
+
+					if (modified)
+					{
+						SaveLoadService.CleanMetadataJsonSchema(root);
+						MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 					}
 				}
-			}
-
-			ReplacePngReferences(root);
-
-			if (modified)
-			{
-				NormalizeTextureEntries(root);
-				MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 			}
 		}
 		catch (Exception ex)
@@ -1377,17 +1379,6 @@ public static partial class MapWorkspaceService
 			}
 		}
 
-		if (root["textures"] is not JsonObject && root["Assets"] is JsonObject assets && assets["textures"] is JsonObject tex1)
-		{
-			root["textures"] = tex1.DeepClone();
-			modified = true;
-		}
-		else if (root["textures"] is not JsonObject && root["MapProperties"] is JsonObject mp && mp["Assets"] is JsonObject mpAssets && mpAssets["textures"] is JsonObject tex2)
-		{
-			root["textures"] = tex2.DeepClone();
-			modified = true;
-		}
-
 		if (root["Assets"] is JsonObject assetsObj && assetsObj["textures"] is JsonObject t1)
 		{
 			CleanTexturesObject(t1);
@@ -1410,19 +1401,13 @@ public static partial class MapWorkspaceService
 
 		try
 		{
-			string metadataPath = Path.Combine(workspacePath, "metadata.json");
-			if (!File.Exists(metadataPath)) return;
-
-			string jsonText = File.ReadAllText(metadataPath);
-			var jsonNode = JsonNode.Parse(jsonText);
-			if (jsonNode is not JsonObject root) return;
-
-			bool modified = NormalizeTextureEntries(root, workspacePath);
-
-			if (modified)
+			var assets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(workspacePath);
+			if (assets["textures"] is JsonObject)
 			{
-				MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+				NormalizeTextureEntries(assets, workspacePath);
 			}
+
+			Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(workspacePath, assets, removeFromMetadata: true);
 		}
 		catch (Exception ex)
 		{
@@ -1434,45 +1419,11 @@ public static partial class MapWorkspaceService
 	{
 		try
 		{
-			string metadataPath = Path.Combine(workspacePath, "metadata.json");
-			if (!File.Exists(metadataPath)) return;
-
-			string jsonText = File.ReadAllText(metadataPath);
-			var jsonNode = JsonNode.Parse(jsonText);
-			if (jsonNode is not JsonObject root) return;
-
-			bool modified = false;
-			var assetsObj = root["Assets"] as JsonObject ?? root["MapProperties"]?["Assets"] as JsonObject;
-			if (assetsObj != null && assetsObj["glb"] is JsonObject glbObj)
-			{
-				foreach (var subCatKvp in glbObj)
-				{
-					if (subCatKvp.Value is JsonObject subCatObj)
-					{
-						if (subCatObj.ContainsKey(fileName))
-						{
-							if (subCatObj[fileName] is JsonObject entryObj)
-							{
-								entryObj["hash"] = newHash;
-							}
-							else
-							{
-								subCatObj[fileName] = newHash;
-							}
-							modified = true;
-						}
-					}
-				}
-			}
-
-			if (modified)
-			{
-				MapJsonFormatter.SaveFormattedJson(metadataPath, root);
-			}
+			Realm.Godot.Utils.MapAssetHelper.UpdateManifestAsset(workspacePath, "glb", fileName, newHash, null);
 		}
 		catch (Exception ex)
 		{
-			GD.PrintErr($"[MapWorkspaceService] Failed to update metadata.json for {fileName}: {ex.Message}");
+			GD.PrintErr($"[MapWorkspaceService] Failed to update manifest.json for {fileName}: {ex.Message}");
 		}
 	}
 
@@ -1480,31 +1431,11 @@ public static partial class MapWorkspaceService
 	{
 		try
 		{
-			string metadataPath = Path.Combine(workspacePath, "metadata.json");
-			if (!File.Exists(metadataPath)) return;
-
-			string jsonText = File.ReadAllText(metadataPath);
-			var jsonNode = JsonNode.Parse(jsonText);
-			if (jsonNode is not JsonObject root) return;
-
-			bool modified = false;
-			if (root["Assets"] is JsonObject assetsObj && assetsObj["animations"] is JsonObject animsObj)
-			{
-				if (animsObj.ContainsKey(animFileName))
-				{
-					animsObj[animFileName] = newHash;
-					modified = true;
-				}
-			}
-
-			if (modified)
-			{
-				MapJsonFormatter.SaveFormattedJson(metadataPath, root);
-			}
+			Realm.Godot.Utils.MapAssetHelper.UpdateManifestAsset(workspacePath, "animations", animFileName, newHash);
 		}
 		catch (Exception ex)
 		{
-			GD.PrintErr($"[MapWorkspaceService] Failed to update metadata.json for {animFileName}: {ex.Message}");
+			GD.PrintErr($"[MapWorkspaceService] Failed to update manifest.json for {animFileName}: {ex.Message}");
 		}
 	}
 }

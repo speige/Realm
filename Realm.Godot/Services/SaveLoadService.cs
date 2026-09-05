@@ -533,7 +533,6 @@ public class SaveLoadService
 			if (saveData == null) return false;
 
 			string mapDir = Path.GetDirectoryName(absolutePath);
-			SyncMetadataAssetsAndPrune(mapDir);
 			GameHost.Instance?.LoadModelYOffsetsFromMetadataJson(mapDir);
 
 			_lastLoadedCoordinates = saveData.Coordinates ?? new List<CoordinateSaveData>();
@@ -1490,7 +1489,6 @@ public class SaveLoadService
 		set.Add(nameof(Realm.Ecs.Definitions.MapProperties));
 		set.Add("map_name");
 		set.Add("name");
-		set.Add("textures");
 
 		foreach (var field in typeof(GameHost).GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
 		{
@@ -1503,11 +1501,12 @@ public class SaveLoadService
 		}
 		set.Add("ModelOffsets");
 		set.Add("ModelSpawnShaders");
-		set.Add("model_spawn_shaders");
 		set.Add("ModelDeathShaders");
-		set.Add("model_death_shaders");
 		set.Add("ModelDespawnShaders");
-		set.Add("model_despawn_shaders");
+		set.Add("textures");
+		set.Add("decals");
+		set.Add("vfx_spritesheets");
+		set.Add("noise_textures");
 
 		Type[] entityTypes = new[]
 		{
@@ -1515,6 +1514,7 @@ public class SaveLoadService
 			typeof(GameHost.PropMetadata),
 			typeof(GameHost.ResourceMetadata),
 			typeof(GameHost.WeaponMetadata),
+			typeof(GameHost.AttachmentMetadata),
 			typeof(GameHost.AbilityMetadata),
 			typeof(GameHost.UpgradeMetadata),
 			typeof(GameHost.ItemMetadata)
@@ -1844,7 +1844,7 @@ public class SaveLoadService
 		}
 	}
 
-	private static void CleanAssetsObject(JsonObject root, JsonObject? schemaRoot)
+	internal static void CleanAssetsObject(JsonObject root, JsonObject? schemaRoot)
 	{
 		if (!root.TryGetPropertyValue("Assets", out var assetsNode) || assetsNode is not JsonObject assetsObject)
 		{
@@ -1938,15 +1938,65 @@ public class SaveLoadService
 			mapPropertiesObject.Remove(property);
 		}
 
-		if (mapPropertiesObject.TryGetPropertyValue("Assets", out var nestedAssetsNode) && nestedAssetsNode is JsonObject nestedAssetsObject)
-		{
-			CleanAssetsObject(mapPropertiesObject, schemaRoot);
-		}
+		mapPropertiesObject.Remove("Assets");
 	}
 
 	public static void CleanMetadataJsonSchema(JsonObject root)
 	{
 		if (root == null) return;
+
+		root.Remove("Assets");
+
+		if (root.TryGetPropertyValue("textures", out var texturesNode) && texturesNode is JsonObject texturesObject)
+		{
+			CleanTexturesObject(texturesObject);
+			foreach (var keyValuePair in texturesObject)
+			{
+				if (keyValuePair.Value is JsonObject itemObject)
+				{
+					itemObject.Remove("hash");
+				}
+			}
+		}
+
+		if (root.TryGetPropertyValue("decals", out var decalsNode) && decalsNode is JsonObject decalsObject)
+		{
+			var allowedDecalProperties = GetAllowedDecalItemProperties();
+			foreach (var keyValuePair in decalsObject)
+			{
+				if (keyValuePair.Value is JsonObject itemObject)
+				{
+					itemObject.Remove("hash");
+					var propertiesToRemove = itemObject.Select(property => property.Key).Where(property => !allowedDecalProperties.Contains(property)).ToList();
+					foreach (var property in propertiesToRemove) itemObject.Remove(property);
+				}
+			}
+		}
+
+		if (root.TryGetPropertyValue("vfx_spritesheets", out var vfxNode) && vfxNode is JsonObject vfxObject)
+		{
+			var allowedVfxProperties = GetAllowedVfxItemProperties();
+			foreach (var keyValuePair in vfxObject)
+			{
+				if (keyValuePair.Value is JsonObject itemObject)
+				{
+					itemObject.Remove("hash");
+					var propertiesToRemove = itemObject.Select(property => property.Key).Where(property => !allowedVfxProperties.Contains(property)).ToList();
+					foreach (var property in propertiesToRemove) itemObject.Remove(property);
+				}
+			}
+		}
+
+		if (root.TryGetPropertyValue("noise_textures", out var noiseNode) && noiseNode is JsonObject noiseObject)
+		{
+			foreach (var keyValuePair in noiseObject)
+			{
+				if (keyValuePair.Value is JsonObject itemObject)
+				{
+					itemObject.Remove("hash");
+				}
+			}
+		}
 
 		var schemaRoot = LoadMapSchemaJson();
 		var allowedTopLevel = GetAllowedMetadataTopLevel(schemaRoot);
@@ -1958,13 +2008,6 @@ public class SaveLoadService
 		foreach (var key in topKeysToRemove)
 		{
 			root.Remove(key);
-		}
-
-		CleanAssetsObject(root, schemaRoot);
-
-		if (root.TryGetPropertyValue("textures", out var rootTexturesNode) && rootTexturesNode is JsonObject rootTexturesObj)
-		{
-			CleanTexturesObject(rootTexturesObj);
 		}
 
 		string mapPropsName = nameof(Realm.Ecs.Definitions.MapProperties);
@@ -2067,19 +2110,9 @@ public class SaveLoadService
 	{
 		if (string.IsNullOrEmpty(mapDirectory) || !Directory.Exists(mapDirectory)) return;
 
-		string metaPath = Path.Combine(mapDirectory, "metadata.json");
-		if (!File.Exists(metaPath)) return;
-
 		try
 		{
-			string json = File.ReadAllText(metaPath);
-			var root = JsonNode.Parse(json)?.AsObject();
-			if (root == null) return;
-
-			var assetsObj = root["Assets"]?.AsObject() ?? root["MapProperties"]?["Assets"]?.AsObject();
-			if (assetsObj == null) return;
-
-			bool metadataModified = false;
+			var assetsObj = MapAssetHelper.LoadUnionedAssets(mapDirectory);
 			string assetsDir = Path.Combine(mapDirectory, "Assets");
 
 			var includedRelativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -2092,7 +2125,7 @@ public class SaveLoadService
 				{
 					foreach (var subKvp in glbObj)
 					{
-						string subCategory = subKvp.Key.ToLowerInvariant();
+						string subCategory = MapAssetHelper.NormalizeGlbSubCategory(subKvp.Key);
 						if (subKvp.Value is JsonObject subCatObj)
 						{
 							foreach (var itemKvp in subCatObj)
@@ -2140,30 +2173,15 @@ public class SaveLoadService
 
 			if (Directory.Exists(assetsDir))
 			{
-				string[] diskFiles = Directory.GetFiles(assetsDir, "*", SearchOption.AllDirectories);
-				foreach (var diskFile in diskFiles)
+				string[] importFiles = Directory.GetFiles(assetsDir, "*.import", SearchOption.AllDirectories);
+				foreach (var importFile in importFiles)
 				{
-					string relPath = Path.GetRelativePath(mapDirectory, diskFile).Replace('\\', '/');
-
-					if (relPath.EndsWith(".import", StringComparison.OrdinalIgnoreCase))
-					{
-						string baseRelPath = relPath.Substring(0, relPath.Length - 7);
-						if (includedRelativePaths.Contains(baseRelPath))
-						{
-							continue;
-						}
-					}
-
-					if (!includedRelativePaths.Contains(relPath))
+					string sourceFile = importFile.Substring(0, importFile.Length - ".import".Length);
+					if (!File.Exists(sourceFile))
 					{
 						try
 						{
-							File.Delete(diskFile);
-							string importFile = diskFile + ".import";
-							if (File.Exists(importFile))
-							{
-								File.Delete(importFile);
-							}
+							File.Delete(importFile);
 						}
 						catch { }
 					}
@@ -2196,7 +2214,6 @@ public class SaveLoadService
 							if (!string.Equals(existingHash, canonicalBlake3, StringComparison.OrdinalIgnoreCase))
 							{
 								itemObj["hash"] = canonicalBlake3;
-								metadataModified = true;
 							}
 						}
 						else if (entryNode is JsonValue)
@@ -2205,7 +2222,6 @@ public class SaveLoadService
 							if (!string.Equals(existingHash, canonicalBlake3, StringComparison.OrdinalIgnoreCase))
 							{
 								parentObj[propertyKey] = canonicalBlake3;
-								metadataModified = true;
 							}
 						}
 
@@ -2214,11 +2230,7 @@ public class SaveLoadService
 				}
 			}
 
-			if (metadataModified)
-			{
-				CleanMetadataJsonSchema(root);
-				MapJsonFormatter.SaveFormattedJson(metaPath, root);
-			}
+			MapAssetHelper.SaveAssetsToManifest(mapDirectory, assetsObj, removeFromMetadata: true);
 		}
 		catch (Exception ex)
 		{

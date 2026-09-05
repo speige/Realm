@@ -3808,14 +3808,7 @@
             const wLine = `    ${JSON.stringify(sortedW)}${wIdx === sortedWeapons.length - 1 ? '' : ','}`;
             lines.push(wLine);
         });
-        lines.push('  ],');
-
-        // 7. Assets
-        if (data.Assets) {
-            lines.push(`  "Assets": ${JSON.stringify(sortObjectKeys(data.Assets))}`);
-        } else {
-            lines.push('  "Assets": {}');
-        }
+        lines.push('  ]');
 
         lines.push('}');
         return lines.join('\n');

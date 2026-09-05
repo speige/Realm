@@ -549,19 +549,27 @@ public partial class Prop3D : StaticBody3D
 			return targetModel;
 
 		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
+		string directCandidate = System.IO.Path.Combine(wsPath, targetModel);
+		if (System.IO.File.Exists(directCandidate))
+			return directCandidate;
+
 		string filename = System.IO.Path.GetFileName(targetModel);
 		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
 		{
 			filename += ".glb";
 		}
 
-		string[] subDirs = new[] { "props", "resources", "buildings", "units" };
+		string[] subDirs = new[] { "props", "resources", "buildings", "units", "attachments", "projectiles", "weapons" };
 		foreach (var sub in subDirs)
 		{
 			string candidate = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
 			if (System.IO.File.Exists(candidate))
 				return candidate;
 		}
+
+		string modelsCandidate = System.IO.Path.Combine(wsPath, "Assets", "models", filename);
+		if (System.IO.File.Exists(modelsCandidate))
+			return modelsCandidate;
 
 		string rootCandidate = System.IO.Path.Combine(wsPath, filename);
 		if (System.IO.File.Exists(rootCandidate))
