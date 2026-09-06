@@ -15,6 +15,9 @@ public class DecalSnapshot
 	public float Roughness { get; set; } = 1.0f;
 	public float Metallic { get; set; } = 0.0f;
 	public string BlendMode { get; set; } = "Mix";
+	public int Columns { get; set; } = 1;
+	public int Rows { get; set; } = 1;
+	public float Fps { get; set; } = 12.0f;
 
 	public DecalSnapshot Clone()
 	{
@@ -29,7 +32,10 @@ public class DecalSnapshot
 			NormalStrength = this.NormalStrength,
 			Roughness = this.Roughness,
 			Metallic = this.Metallic,
-			BlendMode = this.BlendMode
+			BlendMode = this.BlendMode,
+			Columns = this.Columns,
+			Rows = this.Rows,
+			Fps = this.Fps
 		};
 	}
 }
@@ -47,7 +53,16 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 	private float _roughness = 1.0f;
 	private float _metallic = 0.0f;
 	private string _blendMode = "Mix";
+	private int _columns = 1;
+	private int _rows = 1;
+	private float _fps = 12.0f;
 	private bool _isSyncingControls = false;
+	private SpinBox _spinCols;
+	private SpinBox _spinRows;
+	private SpinBox _spinFps;
+	private Texture2D[]? _previewFrames;
+	private int _previewFrameIndex = 0;
+	private double _previewTimer = 0.0;
 
 	private struct DecalNodeState
 	{
@@ -315,6 +330,108 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			},
 			140f
 		);
+
+		AddSectionHeader(contentVBox, "🎞 " + TranslationServer.Translate("SPRITESHEET ANIMATION (OPTIONAL)"), new Color(0.4f, 0.8f, 0.95f));
+
+		var rowCols = new HBoxContainer();
+		rowCols.AddThemeConstantOverride("separation", 8);
+		var lblCols = new Label();
+		lblCols.Text = TranslationServer.Translate("Columns:");
+		lblCols.CustomMinimumSize = new Vector2(140, 0);
+		lblCols.AddThemeFontSizeOverride("font_size", 11);
+		rowCols.AddChild(lblCols);
+
+		_spinCols = new SpinBox();
+		_spinCols.MinValue = 1;
+		_spinCols.MaxValue = 32;
+		_spinCols.Step = 1;
+		_spinCols.Value = _columns;
+		_spinCols.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		_spinCols.ValueChanged += (val) =>
+		{
+			if (_isSyncingControls) return;
+			_columns = (int)val;
+			UpdatePreviewFrames();
+			UpdateLivePreviewAndWorld();
+		};
+		_spinCols.GetLineEdit().TextChanged += (text) =>
+		{
+			if (_isSyncingControls) return;
+			if (int.TryParse(text, out int v))
+			{
+				_columns = Math.Clamp(v, (int)_spinCols.MinValue, (int)_spinCols.MaxValue);
+				UpdatePreviewFrames();
+				UpdateLivePreviewAndWorld();
+			}
+		};
+		rowCols.AddChild(_spinCols);
+		contentVBox.AddChild(rowCols);
+
+		var rowRows = new HBoxContainer();
+		rowRows.AddThemeConstantOverride("separation", 8);
+		var lblRows = new Label();
+		lblRows.Text = TranslationServer.Translate("Rows:");
+		lblRows.CustomMinimumSize = new Vector2(140, 0);
+		lblRows.AddThemeFontSizeOverride("font_size", 11);
+		rowRows.AddChild(lblRows);
+
+		_spinRows = new SpinBox();
+		_spinRows.MinValue = 1;
+		_spinRows.MaxValue = 32;
+		_spinRows.Step = 1;
+		_spinRows.Value = _rows;
+		_spinRows.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		_spinRows.ValueChanged += (val) =>
+		{
+			if (_isSyncingControls) return;
+			_rows = (int)val;
+			UpdatePreviewFrames();
+			UpdateLivePreviewAndWorld();
+		};
+		_spinRows.GetLineEdit().TextChanged += (text) =>
+		{
+			if (_isSyncingControls) return;
+			if (int.TryParse(text, out int v))
+			{
+				_rows = Math.Clamp(v, (int)_spinRows.MinValue, (int)_spinRows.MaxValue);
+				UpdatePreviewFrames();
+				UpdateLivePreviewAndWorld();
+			}
+		};
+		rowRows.AddChild(_spinRows);
+		contentVBox.AddChild(rowRows);
+
+		var rowFps = new HBoxContainer();
+		rowFps.AddThemeConstantOverride("separation", 8);
+		var lblFps = new Label();
+		lblFps.Text = TranslationServer.Translate("Animation FPS:");
+		lblFps.CustomMinimumSize = new Vector2(140, 0);
+		lblFps.AddThemeFontSizeOverride("font_size", 11);
+		rowFps.AddChild(lblFps);
+
+		_spinFps = new SpinBox();
+		_spinFps.MinValue = 1;
+		_spinFps.MaxValue = 60;
+		_spinFps.Step = 1;
+		_spinFps.Value = _fps;
+		_spinFps.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		_spinFps.ValueChanged += (val) =>
+		{
+			if (_isSyncingControls) return;
+			_fps = (float)val;
+			UpdateLivePreviewAndWorld();
+		};
+		_spinFps.GetLineEdit().TextChanged += (text) =>
+		{
+			if (_isSyncingControls) return;
+			if (float.TryParse(text, out float v))
+			{
+				_fps = Math.Clamp(v, (float)_spinFps.MinValue, (float)_spinFps.MaxValue);
+				UpdateLivePreviewAndWorld();
+			}
+		};
+		rowFps.AddChild(_spinFps);
+		contentVBox.AddChild(rowFps);
 	}
 
 	public static JsonObject ResolveDecalMetadata(string decalKey, JsonObject? providedData = null)
@@ -438,6 +555,28 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 					}
 				}
 			}
+
+			if (!result.ContainsKey("columns"))
+			{
+				foreach (var d in GameHost.Instance.AllDecals)
+				{
+					if (d != null && GodotObject.IsInstanceValid(d))
+					{
+						string dId = d is Decal3D d3d ? d3d.DecalId : "";
+						string dBase = Path.GetFileNameWithoutExtension(dId);
+						if (dId.Equals(decalKey, StringComparison.OrdinalIgnoreCase) || dBase.Equals(baseKey, StringComparison.OrdinalIgnoreCase))
+						{
+							if (d is Decal3D d3dNode)
+							{
+								result["columns"] = d3dNode.Columns;
+								result["rows"] = d3dNode.Rows;
+								result["fps"] = d3dNode.Fps;
+							}
+							break;
+						}
+					}
+				}
+			}
 		}
 
 		return result;
@@ -460,6 +599,9 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 		_roughness = resolvedData.TryGetPropertyValue("roughness", out var rNode) && float.TryParse(rNode?.ToString(), out float r) ? r : 1.0f;
 		_metallic = resolvedData.TryGetPropertyValue("metallic", out var metNode) && float.TryParse(metNode?.ToString(), out float met) ? met : 0.0f;
 		_blendMode = resolvedData.TryGetPropertyValue("blend_mode", out var bmNode) ? bmNode?.ToString() ?? "Mix" : "Mix";
+		_columns = resolvedData.TryGetPropertyValue("columns", out var colNode) && int.TryParse(colNode?.ToString(), out int parsedCols) && parsedCols > 0 ? parsedCols : 1;
+		_rows = resolvedData.TryGetPropertyValue("rows", out var rowNode) && int.TryParse(rowNode?.ToString(), out int parsedRows) && parsedRows > 0 ? parsedRows : 1;
+		_fps = resolvedData.TryGetPropertyValue("fps", out var fpsNode) && float.TryParse(fpsNode?.ToString(), out float parsedFps) && parsedFps > 0.001f ? parsedFps : 12.0f;
 
 		_tint = Colors.White;
 		if (resolvedData.TryGetPropertyValue("tint", out var tNode) && tNode != null)
@@ -505,7 +647,10 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			NormalStrength = _normalStrength,
 			Roughness = _roughness,
 			Metallic = _metallic,
-			BlendMode = _blendMode
+			BlendMode = _blendMode,
+			Columns = _columns,
+			Rows = _rows,
+			Fps = _fps
 		};
 
 		SyncControlsWithValues();
@@ -522,6 +667,7 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			}
 		}
 
+		UpdatePreviewFrames();
 		UpdateLivePreviewAndWorld();
 		OpenDialog();
 	}
@@ -556,10 +702,76 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 				"Screen" => 3,
 				_ => 0
 			};
+
+			if (_spinCols != null) _spinCols.Value = _columns;
+			if (_spinRows != null) _spinRows.Value = _rows;
+			if (_spinFps != null) _spinFps.Value = _fps;
 		}
 		finally
 		{
 			_isSyncingControls = false;
+		}
+	}
+
+	private void UpdatePreviewFrames()
+	{
+		if (_baseTexture == null) return;
+		if (_columns > 1 || _rows > 1)
+		{
+			var img = _baseTexture.GetImage();
+			if (img != null)
+			{
+				int frameW = Math.Max(1, img.GetWidth() / _columns);
+				int frameH = Math.Max(1, img.GetHeight() / _rows);
+				int total = _columns * _rows;
+				_previewFrames = new Texture2D[total];
+				for (int i = 0; i < total; i++)
+				{
+					int c = i % _columns;
+					int r = i / _columns;
+					var region = img.GetRegion(new Rect2I(c * frameW, r * frameH, frameW, frameH));
+					_previewFrames[i] = ImageTexture.CreateFromImage(region);
+				}
+				_previewFrameIndex = 0;
+				_previewTimer = 0.0;
+				if (_previewRect != null && _previewFrames.Length > 0)
+				{
+					_previewRect.Texture = _previewFrames[0];
+				}
+				return;
+			}
+		}
+
+		_previewFrames = null;
+		if (_previewRect != null)
+		{
+			_previewRect.Texture = _baseTexture;
+		}
+	}
+
+	public override void _Process(double delta)
+	{
+		base._Process(delta);
+		if (!Visible || _previewRect == null) return;
+
+		if (_columns > 1 || _rows > 1)
+		{
+			if (_previewFrames != null && _previewFrames.Length > 1)
+			{
+				_previewTimer += delta;
+				double duration = 1.0 / (_fps > 0.001f ? _fps : 12.0f);
+				if (_previewTimer >= duration)
+				{
+					_previewTimer -= duration;
+					if (_previewTimer >= duration) _previewTimer %= duration;
+					_previewFrameIndex = (_previewFrameIndex + 1) % _previewFrames.Length;
+					_previewRect.Texture = _previewFrames[_previewFrameIndex];
+				}
+			}
+		}
+		else if (_previewRect.Texture != _baseTexture)
+		{
+			_previewRect.Texture = _baseTexture;
 		}
 	}
 
@@ -576,7 +788,14 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 
 		if (_previewRect != null)
 		{
-			_previewRect.Texture = _baseTexture;
+			if (_columns > 1 || _rows > 1)
+			{
+				_previewRect.Texture = (_previewFrames != null && _previewFrames.Length > _previewFrameIndex) ? _previewFrames[_previewFrameIndex] : _baseTexture;
+			}
+			else
+			{
+				_previewRect.Texture = _baseTexture;
+			}
 
 			float r = _tint.R * _brightness;
 			float g = _tint.G * _brightness;
@@ -618,7 +837,10 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			_normalStrength,
 			_roughness,
 			_metallic,
-			_blendMode
+			_blendMode,
+			_columns,
+			_rows,
+			_fps
 		);
 	}
 
@@ -636,6 +858,9 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			["roughness"] = Math.Round(_roughness, 3),
 			["metallic"] = Math.Round(_metallic, 3),
 			["blend_mode"] = _blendMode,
+			["columns"] = _columns,
+			["rows"] = _rows,
+			["fps"] = Math.Round(_fps, 2),
 			["asset_type"] = "Decal"
 		};
 
@@ -673,7 +898,11 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			_roughness = _initialSnapshot.Roughness;
 			_metallic = _initialSnapshot.Metallic;
 			_blendMode = _initialSnapshot.BlendMode;
+			_columns = _initialSnapshot.Columns;
+			_rows = _initialSnapshot.Rows;
+			_fps = _initialSnapshot.Fps;
 
+			UpdatePreviewFrames();
 			UpdateLivePreviewAndWorld();
 		}
 		base.OnCancel();

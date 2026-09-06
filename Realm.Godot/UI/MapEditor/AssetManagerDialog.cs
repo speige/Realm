@@ -635,6 +635,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			return subCategoryOrFolder switch
 			{
 				"textures" => "Tilesheet",
+				"vfx_radial" or "vfx_radials" or "radial" => "vfx_radial",
+				"vfx_vertical" or "vfx_verticals" or "vertical" => "vfx_vertical",
 				"vfx_spritesheets" or "vfx" => "SpellSpritesheet",
 				"icons" => "Icon",
 				"decals" => "Decal",
@@ -718,6 +720,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				"glb_attachments" => "Attachment",
 				"glb_weapons" => "Weapon",
 				"textures" => "Tilesheet",
+				"vfx_radial" or "vfx_radials" => "vfx_radial",
+				"vfx_vertical" or "vfx_verticals" => "vfx_vertical",
 				"vfx_spritesheets" => "SpellSpritesheet",
 				"animations" => "Animation",
 				"sfx" => "SoundEffect",
@@ -1695,6 +1699,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		return category switch
 		{
 			"textures" => "Tilesheet",
+			"vfx_radial" or "vfx_radials" => "vfx_radial",
+			"vfx_vertical" or "vfx_verticals" => "vfx_vertical",
 			"vfx_spritesheets" => "SpellSpritesheet",
 			"icons" => "Icon",
 			"decals" => "Decal",
@@ -1809,6 +1815,33 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 			bool isRtexWithMeta = ext == ".rtex" && RealmMetadataHelper.HasRealmMetadata(sourceFilePath);
 			TextureConversionResult convResult = default;
+			int decalCols = 1;
+			int decalRows = 1;
+			int vfxCols = 4;
+			int vfxRows = 4;
+
+			if (targetCategory == "decals" || targetCategory == "vfx_spritesheets")
+			{
+				string? sourceMeta = RealmMetadataHelper.ExtractMetadata(sourceFilePath);
+				if (!string.IsNullOrEmpty(sourceMeta))
+				{
+					try
+					{
+						var node = JsonNode.Parse(sourceMeta);
+						if (node?["columns"] != null && int.TryParse(node["columns"]?.ToString(), out int c) && c > 0)
+						{
+							if (targetCategory == "decals") decalCols = c;
+							else vfxCols = c;
+						}
+						if (node?["rows"] != null && int.TryParse(node["rows"]?.ToString(), out int r) && r > 0)
+						{
+							if (targetCategory == "decals") decalRows = r;
+							else vfxRows = r;
+						}
+					}
+					catch { }
+				}
+			}
 
 			if (isRtexWithMeta)
 			{
@@ -1822,7 +1855,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				}
 				else if (targetCategory == "decals")
 				{
-					convResult = TextureConverter.ProcessAndSaveDecalTexture(sourceFilePath, destPath);
+					convResult = TextureConverter.ProcessAndSaveDecalTexture(sourceFilePath, destPath, columns: decalCols, rows: decalRows);
 				}
 				else if (targetCategory == "icons")
 				{
@@ -1830,7 +1863,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				}
 				else if (targetCategory == "vfx_spritesheets")
 				{
-					convResult = TextureConverter.ProcessAndSaveSpritesheet(sourceFilePath, destPath, 4, 4);
+					convResult = TextureConverter.ProcessAndSaveSpritesheet(sourceFilePath, destPath, vfxCols, vfxRows);
 				}
 				else if (targetCategory is "ribbons" or "ribbon_textures")
 				{
@@ -1864,10 +1897,23 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			{
 				assetsObj["vfx_spritesheets"].AsObject()[$"{cleanBase}.rtex"] = new JsonObject
 				{
-					["columns"] = 4,
-					["rows"] = 4,
+					["columns"] = vfxCols,
+					["rows"] = vfxRows,
 					["hash"] = hash
 				};
+			}
+			else if (targetCategory == "decals")
+			{
+				var decalDict = assetsObj["decals"].AsObject();
+				string destFileName = $"{cleanBase}.rtex";
+				var decalObj = (decalDict.ContainsKey(destFileName) && decalDict[destFileName] is JsonObject exObj) ? (exObj.DeepClone() as JsonObject) : new JsonObject();
+				decalObj["hash"] = hash;
+				if (decalCols > 1 || decalRows > 1 || decalObj.ContainsKey("columns") || decalObj.ContainsKey("rows"))
+				{
+					decalObj["columns"] = decalCols;
+					decalObj["rows"] = decalRows;
+				}
+				decalDict[destFileName] = decalObj;
 			}
 			else if (targetCategory == "textures")
 			{

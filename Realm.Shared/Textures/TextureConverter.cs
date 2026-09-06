@@ -426,7 +426,9 @@ public static class TextureConverter
 		string rawImagePath,
 		string outputRtexPath,
 		float? forcedScaleFactor = null,
-		bool enableRdo = true)
+		bool enableRdo = true,
+		int columns = 1,
+		int rows = 1)
 	{
 		var result = new TextureConversionResult
 		{
@@ -450,12 +452,15 @@ public static class TextureConverter
 			float scaleFactor = forcedScaleFactor ?? CalculateLuminanceScaleFactor(sourceImage);
 			result.ScaleFactor = scaleFactor;
 
+			int safeCols = Math.Max(1, columns);
+			int safeRows = Math.Max(1, rows);
+
 			ProcessTerrainPbr(sourceImage, isDecal: true, out var layer0, out var layer1);
 
 			using (layer0)
 			using (layer1)
 			{
-				string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"decal\",\"canonical_blake3\":\"{originalBlake3}\",\"scale_factor\":{scaleFactor.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)},\"layers\":2}}";
+				string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"decal\",\"canonical_blake3\":\"{originalBlake3}\",\"scale_factor\":{scaleFactor.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)},\"columns\":{safeCols},\"rows\":{safeRows},\"layers\":2}}";
 				bool encodeOk = EncodeTwoLayerPbrRtex(
 					layer0,
 					layer1,
@@ -619,6 +624,22 @@ public static class TextureConverter
 		bool enableRdo = true)
 	{
 		return ProcessAndSaveSingleLayerTexture(rawImagePath, outputRtexPath, "icon", enableRdo);
+	}
+
+	public static TextureConversionResult ProcessAndSaveVfxRadialTexture(
+		string rawImagePath,
+		string outputRtexPath,
+		bool enableRdo = false)
+	{
+		return ProcessAndSaveSingleLayerTexture(rawImagePath, outputRtexPath, "vfx_radial", enableRdo);
+	}
+
+	public static TextureConversionResult ProcessAndSaveVfxVerticalTexture(
+		string rawImagePath,
+		string outputRtexPath,
+		bool enableRdo = false)
+	{
+		return ProcessAndSaveSingleLayerTexture(rawImagePath, outputRtexPath, "vfx_vertical", enableRdo);
 	}
 
 	public static TextureConversionResult ProcessAndSaveSingleLayerTexture(
@@ -814,8 +835,8 @@ public static class TextureConverter
 		string inputPath,
 		string? outputPath,
 		string? assetType = null,
-		int columns = 4,
-		int rows = 4)
+		int? columns = null,
+		int? rows = null)
 	{
 		string fullInput = Path.GetFullPath(inputPath);
 		string ext = Path.GetExtension(fullInput).ToLowerInvariant();
@@ -847,6 +868,14 @@ public static class TextureConverter
 					{
 						normType = metaType.Trim().ToLowerInvariant();
 					}
+					if (node?["columns"] != null && int.TryParse(node["columns"]?.ToString(), out int c) && c > 0)
+					{
+						columns ??= c;
+					}
+					if (node?["rows"] != null && int.TryParse(node["rows"]?.ToString(), out int r) && r > 0)
+					{
+						rows ??= r;
+					}
 				}
 				catch { }
 			}
@@ -854,7 +883,7 @@ public static class TextureConverter
 
 		if (string.IsNullOrEmpty(normType))
 		{
-			throw new InvalidOperationException($"Asset type was not specified and could not be detected from image metadata in '{inputPath}'. Please specify -t / --type (Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet).");
+			throw new InvalidOperationException($"Asset type was not specified and could not be detected from image metadata in '{inputPath}'. Please specify -t / --type (Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet, vfx_radial, vfx_vertical).");
 		}
 
 		string targetRtex = string.IsNullOrEmpty(outputPath)
@@ -868,12 +897,12 @@ public static class TextureConverter
 
 		if (normType is "decal" or "decals")
 		{
-			return ProcessAndSaveDecalTexture(fullInput, targetRtex);
+			return ProcessAndSaveDecalTexture(fullInput, targetRtex, columns: columns ?? 1, rows: rows ?? 1);
 		}
 
 		if (normType is "spritesheet" or "vfx_spritesheet" or "vfx_spritesheets" or "spritesheets" or "spellspritesheet" or "spellspritesheets" or "spell_spritesheet" or "spell_spritesheets" or "vfxspritesheet" or "vfxspritesheets" or "vfx")
 		{
-			return ProcessAndSaveSpritesheet(fullInput, targetRtex, columns, rows);
+			return ProcessAndSaveSpritesheet(fullInput, targetRtex, columns ?? 4, rows ?? 4);
 		}
 
 		if (normType is "skybox" or "skyboxes")
@@ -902,7 +931,17 @@ public static class TextureConverter
 			return ProcessAndSaveIconTexture(fullInput, targetRtex);
 		}
 
-		throw new InvalidOperationException($"Unsupported asset type '{normType}'. Supported types: Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet.");
+		if (normType is "vfx_radial" or "vfxradial" or "radial" or "radial_mask" or "radialmask")
+		{
+			return ProcessAndSaveVfxRadialTexture(fullInput, targetRtex);
+		}
+
+		if (normType is "vfx_vertical" or "vfxvertical" or "vertical" or "vertical_fin" or "verticalfin")
+		{
+			return ProcessAndSaveVfxVerticalTexture(fullInput, targetRtex);
+		}
+
+		throw new InvalidOperationException($"Unsupported asset type '{normType}'. Supported types: Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet, vfx_radial, vfx_vertical.");
 	}
 
 	public static int ConvertTextureDirectory(
@@ -910,8 +949,8 @@ public static class TextureConverter
 		string? outputDir,
 		string? assetType,
 		bool recursive,
-		int columns = 4,
-		int rows = 4)
+		int? columns = null,
+		int? rows = null)
 	{
 		string fullInputDir = Path.GetFullPath(inputDir);
 		string? fullOutputDir = !string.IsNullOrEmpty(outputDir) ? Path.GetFullPath(outputDir) : null;
