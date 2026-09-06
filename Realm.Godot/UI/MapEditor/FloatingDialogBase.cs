@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using Realm.Godot.VFX;
 
 public partial class FloatingDialogBase : PanelContainer
 {
@@ -1087,6 +1088,18 @@ public partial class FloatingDialogBase : PanelContainer
 					}
 					else if (category == "vfx" || category == "vfx_spritesheets" || category == "spritesheets")
 					{
+						foreach (var prim in Enum.GetValues<VfxPrimitiveType>())
+						{
+							result.Add($"vfx:{prim}");
+						}
+						if (GameHost.VfxRegistry != null)
+						{
+							foreach (var kvp in GameHost.VfxRegistry)
+							{
+								result.Add(kvp.Key.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase) ? kvp.Key : $"vfx:{kvp.Key}");
+							}
+						}
+
 						foreach (var key in new[] { "vfx_spritesheets", "vfx", "spritesheets" })
 						{
 							if (assetsObj[key] is System.Text.Json.Nodes.JsonObject vObj)
@@ -1119,6 +1132,21 @@ public partial class FloatingDialogBase : PanelContainer
 					}
 					else if (category == "models" || category == "glb" || category == "attachments")
 					{
+						if (category == "attachments")
+						{
+							foreach (var prim in Enum.GetValues<VfxPrimitiveType>())
+							{
+								result.Add($"vfx:{prim}");
+							}
+							if (GameHost.VfxRegistry != null)
+							{
+								foreach (var kvp in GameHost.VfxRegistry)
+								{
+									result.Add(kvp.Key.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase) ? kvp.Key : $"vfx:{kvp.Key}");
+								}
+							}
+						}
+
 						string defaultFolder = !string.IsNullOrEmpty(subFolder) ? subFolder : (category == "attachments" ? "attachments" : "projectiles");
 						foreach (var modelKey in new[] { "glb", "models" })
 						{

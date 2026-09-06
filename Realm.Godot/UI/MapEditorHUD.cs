@@ -13,6 +13,7 @@ using WaterType = Realm.Ecs.Components.Terrain.WaterType;
 using Realm.Shared;
 using Realm.Shared.Metadata;
 using Realm.Godot.Utils;
+using Realm.Godot.VFX;
 
 public partial class MapEditorHUD : Control
 {
@@ -214,12 +215,14 @@ public partial class MapEditorHUD : Control
 	private ConvertGlbDialog _convertGlbDialog;
 	private EditorSettingsDialog _editorSettingsDialog;
 	private ShaderEditorDialog _shaderEditorDialog;
+	private VfxStudioDialog _vfxStudioDialog;
 	private Button _btnEditorSettings;
 	private PanelContainer _mapNameHeaderPanel;
 	private Label _lblMapNameHeader;
 	private double _mapNameUpdateTimer = 0.0;
 	private Button _btnOpenGlobalOverrides;
 	private Button _btnOpenAnimationPreview;
+	private Button _btnEditVfx;
 	private Button _btnAssetsManager;
 	private bool _isUpdatingInspectorUI;
 
@@ -1699,6 +1702,12 @@ public partial class MapEditorHUD : Control
 					typeStr = "DECAL";
 					nameStr = System.IO.Path.GetFileName(decal.Name).ToUpper();
 				}
+				else if (selected is ProceduralVfxInstance3D vfx)
+				{
+					typeStr = "VFX";
+					nameStr = (!string.IsNullOrEmpty(vfx.Config?.Name) ? vfx.Config.Name : vfx.Config?.PrimitiveType.ToString() ?? "VFX").ToUpper();
+					idStr = vfx.Config?.VfxId?.ToUpper() ?? "";
+				}
 			}
 
 			if (_btnShowCoverage != null)
@@ -1776,9 +1785,17 @@ public partial class MapEditorHUD : Control
 					_btnOpenGlobalOverrides.TooltipText = string.Format(TranslationServer.Translate("Edit global model scale, offsets, and shaders for {0}"), assetKey);
 				}
 			}
+			if (selected is ProceduralVfxInstance3D)
+			{
+				if (_btnEditVfx != null)
+				{
+					_btnEditVfx.Visible = true;
+					_btnEditVfx.TooltipText = TranslationServer.Translate("Open Procedural VFX Studio to edit this effect");
+				}
+			}
 			else
 			{
-				if (_btnOpenGlobalOverrides != null) _btnOpenGlobalOverrides.Visible = false;
+				if (_btnEditVfx != null) _btnEditVfx.Visible = false;
 			}
 		}
 		else
@@ -1786,6 +1803,7 @@ public partial class MapEditorHUD : Control
 			if (_playerOwnerContainer != null) _playerOwnerContainer.Visible = false;
 			if (_btnOpenGlobalOverrides != null) _btnOpenGlobalOverrides.Visible = false;
 			if (_btnOpenAnimationPreview != null) _btnOpenAnimationPreview.Visible = false;
+			if (_btnEditVfx != null) _btnEditVfx.Visible = false;
 			if (_rigStatusContainer != null) _rigStatusContainer.Visible = false;
 			if (_btnShowCoverage != null) _btnShowCoverage.Visible = false;
 			if (_lblInfoText != null) _lblInfoText.Visible = true;
@@ -5983,7 +6001,8 @@ public partial class MapEditorHUD : Control
 		bool isPlacement = (tool == GameHost.EditorTool.PlaceUnit ||
 							tool == GameHost.EditorTool.PlaceProp ||
 							tool == GameHost.EditorTool.PlacePropClump ||
-							tool == GameHost.EditorTool.PlaceDecal);
+							tool == GameHost.EditorTool.PlaceDecal ||
+							tool == GameHost.EditorTool.PlaceVfx);
 		
 		bool categorySelectorVisible = _containerCategorySelector != null && isPlacement;
 		if (_containerCategorySelector != null) _containerCategorySelector.Visible = categorySelectorVisible;
@@ -7362,6 +7381,7 @@ public partial class MapEditorHUD : Control
 		_convertGlbDialog = new ConvertGlbDialog(this);
 		_editorSettingsDialog = new EditorSettingsDialog(this);
 		_shaderEditorDialog = new ShaderEditorDialog(this);
+		_vfxStudioDialog = new VfxStudioDialog(this);
 		ApplyEditorPreferences(EditorSettingsDialog.CurrentSettings);
 
 		_btnOpenAnimationPreview = new Button();
@@ -7397,6 +7417,26 @@ public partial class MapEditorHUD : Control
 			}
 		};
 		inspectorVBox.AddChild(_btnOpenGlobalOverrides);
+
+		_btnEditVfx = new Button();
+		_btnEditVfx.Name = "BtnEditVfx";
+		_btnEditVfx.Set("icon_max_width", 0);
+		_btnEditVfx.Text = "✨ " + TranslationServer.Translate("Edit VFX");
+		_btnEditVfx.AddThemeFontSizeOverride("font_size", 11);
+		_btnEditVfx.FocusMode = Control.FocusModeEnum.None;
+		_btnEditVfx.CustomMinimumSize = new Vector2(0, 28);
+		_btnEditVfx.Visible = false;
+		_btnEditVfx.Pressed += () =>
+		{
+			if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject) && GameHost.Instance.SelectedEditorObject is ProceduralVfxInstance3D vfx)
+			{
+				OpenVfxStudioDialog(vfx.Config, (newCfg) =>
+				{
+					vfx.UpdateConfig(newCfg);
+				});
+			}
+		};
+		inspectorVBox.AddChild(_btnEditVfx);
 	}
 
 	public WeaponVfxDialog WeaponVfxDialog => _weaponVfxDialog;
@@ -7408,6 +7448,15 @@ public partial class MapEditorHUD : Control
 			_weaponVfxDialog = new WeaponVfxDialog(this);
 		}
 		_weaponVfxDialog.OpenForWeapon(weaponId, weapon, onApplied);
+	}
+
+	public void OpenVfxStudioDialog(VfxAttachmentConfig initialConfig = null, Action<VfxAttachmentConfig> onApplied = null)
+	{
+		if (_vfxStudioDialog == null)
+		{
+			_vfxStudioDialog = new VfxStudioDialog(this);
+		}
+		_vfxStudioDialog.OpenForConfig(initialConfig, onApplied);
 	}
 
 	private ObjectAttachmentDialog _objectAttachmentDialog;
@@ -7463,7 +7512,17 @@ public partial class MapEditorHUD : Control
 							uObj["ObjectAttachments"] = objAttsNode;
 						}
 
-						string handKey = hand == Realm.Godot.Animation.HumanoidBone.LeftHand ? "left_hand" : "right_hand";
+						string handKey = hand switch
+						{
+							Realm.Godot.Animation.HumanoidBone.LeftHand => "left_hand",
+							Realm.Godot.Animation.HumanoidBone.RightHand => "right_hand",
+							Realm.Godot.Animation.HumanoidBone.Chest => "chest",
+							Realm.Godot.Animation.HumanoidBone.Hips => "root",
+							Realm.Godot.Animation.HumanoidBone.Head => "head",
+							Realm.Godot.Animation.HumanoidBone.LeftFoot => "left_foot",
+							Realm.Godot.Animation.HumanoidBone.RightFoot => "right_foot",
+							_ => "right_hand"
+						};
 						var handArr = objAttsNode[handKey]?.AsArray();
 						if (handArr == null)
 						{
@@ -7471,7 +7530,9 @@ public partial class MapEditorHUD : Control
 							objAttsNode[handKey] = handArr;
 						}
 
-						string cleanId = System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+						string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
+							? attachmentId
+							: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
 						var orientNode = new System.Text.Json.Nodes.JsonObject
 						{
 							["PositionX"] = orientation.PositionX,
@@ -7480,7 +7541,11 @@ public partial class MapEditorHUD : Control
 							["PitchX"] = orientation.PitchX,
 							["YawY"] = orientation.YawY,
 							["RollZ"] = orientation.RollZ,
-							["Scale"] = orientation.Scale <= 0f ? 1.0f : orientation.Scale
+							["Scale"] = orientation.Scale <= 0f ? 1.0f : orientation.Scale,
+							["ScaleX"] = orientation.ScaleX <= 0f ? 1.0f : orientation.ScaleX,
+							["ScaleY"] = orientation.ScaleY <= 0f ? 1.0f : orientation.ScaleY,
+							["ScaleZ"] = orientation.ScaleZ <= 0f ? 1.0f : orientation.ScaleZ,
+							["NormalOffset"] = orientation.NormalOffset
 						};
 
 						bool updated = false;
@@ -7571,6 +7636,60 @@ public partial class MapEditorHUD : Control
 		catch (Exception ex)
 		{
 			GD.PrintErr($"[MapEditorHUD] SaveCustomWeaponToMetadata error: {ex.Message}");
+		}
+	}
+
+	public void SaveCustomVfxToMetadata(string vfxId, VfxAttachmentConfig config)
+	{
+		try
+		{
+			if (string.IsNullOrEmpty(vfxId) || config == null) return;
+
+			GameHost.VfxRegistry[vfxId] = config.Clone();
+
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metadataPath)) return;
+
+			string jsonStr = System.IO.File.ReadAllText(metadataPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
+			if (root == null) return;
+
+			var vfxArray = root["CustomVfx"]?.AsArray();
+			if (vfxArray == null)
+			{
+				vfxArray = new System.Text.Json.Nodes.JsonArray();
+				root["CustomVfx"] = vfxArray;
+			}
+
+			bool found = false;
+			var vfxJson = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(config, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+
+			for (int i = 0; i < vfxArray.Count; i++)
+			{
+				var vObj = vfxArray[i]?.AsObject();
+				if (vObj != null && (vObj["VfxId"]?.ToString() == vfxId || vObj["vfxId"]?.ToString() == vfxId))
+				{
+					vfxArray[i] = vfxJson;
+					found = true;
+					break;
+				}
+			}
+
+			if (!found && vfxJson != null)
+			{
+				vfxArray.Add(vfxJson);
+			}
+
+			SaveLoadService.CleanMetadataJsonSchema(root);
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] SaveCustomVfxToMetadata error: {ex.Message}");
 		}
 	}
 

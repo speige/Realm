@@ -11,6 +11,7 @@ using Realm.MapAPI;
 using Realm.Godot.ReplaySystem;
 using System;
 using System.Collections.Generic;
+using Realm.Godot.VFX;
 
 public partial class GameHost
 {
@@ -970,6 +971,84 @@ public partial class GameHost
 						_editorService.SetIsPastingObject(false);
 						GetViewport().SetInputAsHandled();
 					}
+					else if (ActiveEditorTool == EditorTool.PlaceVfx)
+					{
+						if (EditorClumpMode) return;
+						if (!_editorService.HasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
+						float placementRot = (EditorRandomRotation && !_editorService.IsPastingObject) ? _editorService.CachedRandomRotation : EditorPlacementRotation;
+						float scaleVal = (EditorRandomScale && !_editorService.IsPastingObject) ? _editorService.CachedRandomScale : EditorPlacementScale;
+						float safeScale = scaleVal <= 0.001f ? 1.0f : scaleVal;
+
+						VfxAttachmentConfig config;
+						if (VfxRegistry.TryGetValue(ActivePlaceId, out var regCfg))
+						{
+							config = regCfg.Clone();
+						}
+						else if (Enum.TryParse<VfxPrimitiveType>(ActivePlaceId, true, out var primType))
+						{
+							config = new VfxAttachmentConfig { VfxId = ActivePlaceId, PrimitiveType = primType };
+						}
+						else
+						{
+							config = VfxAttachmentConfig.CreatePreset(ActivePlaceId);
+						}
+
+						Vector3 spawnPos = hitPos;
+						Vector3 spawnRot = new Vector3(0f, placementRot, 0f);
+						float normalOffset = config.SurfaceNormalOffset;
+
+						if (config.PlacementMode == VfxPlacementMode.SurfaceSnap)
+						{
+							Vector3 hitNormal = hit.ContainsKey("normal") ? hit["normal"].AsVector3() : GetTerrainNormalAt(hitPos);
+							Basis alignedBasis = CreateAlignedBasis(hitNormal);
+							alignedBasis = alignedBasis.Rotated(hitNormal, Mathf.DegToRad(placementRot));
+							spawnRot = alignedBasis.GetEuler() * (180f / MathF.PI);
+							spawnPos = hitPos + hitNormal * normalOffset;
+						}
+						else
+						{
+							spawnPos = hitPos + Vector3.Up * normalOffset;
+						}
+
+						var vfx = SpawnVfxExternalWithParams(ActivePlaceId, spawnPos, spawnRot, Vector3.One * safeScale, normalOffset, config);
+						if (vfx != null)
+						{
+							var actions = new List<IEditorAction> {
+								new ObjectSpawnAction("vfx", ActivePlaceId, spawnPos, spawnRot.Y, safeScale, false, vfx)
+							};
+							if (EditorMirrorMode != MirrorMode.None)
+							{
+								foreach (var t in GetMirroredTransforms(hitPos, placementRot))
+								{
+									Vector3 mPos = t.Position;
+									mPos.Y = GetTerrainHeightAt(mPos);
+									Vector3 mRot = new Vector3(0f, t.Rotation, 0f);
+									if (config.PlacementMode == VfxPlacementMode.SurfaceSnap)
+									{
+										Vector3 mNormal = GetTerrainNormalAt(mPos);
+										Basis mBasis = CreateAlignedBasis(mNormal).Rotated(mNormal, Mathf.DegToRad(t.Rotation));
+										mRot = mBasis.GetEuler() * (180f / MathF.PI);
+										mPos += mNormal * normalOffset;
+									}
+									else
+									{
+										mPos += Vector3.Up * normalOffset;
+									}
+									var mVfx = SpawnVfxExternalWithParams(ActivePlaceId, mPos, mRot, Vector3.One * safeScale, normalOffset, config);
+									if (mVfx != null)
+									{
+										actions.Add(new ObjectSpawnAction("vfx", ActivePlaceId, mPos, mRot.Y, safeScale, false, mVfx));
+									}
+								}
+							}
+							var composite = new CompositeAction(actions);
+							EditorHistoryManager.RecordAction(composite);
+							EditorHasUnsavedChanges = true;
+						}
+						GenerateNewRandomPlacementRotationAndScale();
+						_editorService.SetIsPastingObject(false);
+						GetViewport().SetInputAsHandled();
+					}
 					else if (ActiveEditorTool == EditorTool.DeleteObject)
 					{
 						var collider = hit["collider"].As<Node>();
@@ -1112,6 +1191,11 @@ public partial class GameHost
 									ActiveEditorTool = EditorTool.PlaceDecal;
 								}
 							}
+							else if (clickedNode is ProceduralVfxInstance3D vfxInst)
+							{
+								ActivePlaceId = vfxInst.Config?.VfxId ?? "vfx";
+								ActiveEditorTool = EditorTool.PlaceVfx;
+							}
 						}
 						else
 						{
@@ -1191,6 +1275,10 @@ public partial class GameHost
 							{
 								clickedNode = FindDecalInParentChain(collider);
 							}
+							if (clickedNode == null)
+							{
+								clickedNode = FindVfxInParentChain(collider);
+							}
 						}
 						if (clickedNode == null)
 						{
@@ -1211,6 +1299,27 @@ public partial class GameHost
 							if (closestDecal != null)
 							{
 								clickedNode = closestDecal;
+							}
+						}
+						if (clickedNode == null)
+						{
+							ProceduralVfxInstance3D closestVfx = null;
+							float closestDist = 3.0f;
+							foreach (var vfx in AllVfx)
+							{
+								if (vfx != null && GodotObject.IsInstanceValid(vfx))
+								{
+									float d = vfx.GlobalPosition.DistanceTo(hitPos);
+									if (d < closestDist)
+									{
+										closestDist = d;
+										closestVfx = vfx;
+									}
+								}
+							}
+							if (closestVfx != null)
+							{
+								clickedNode = closestVfx;
 							}
 						}
 						if (clickedNode != null)
@@ -2212,6 +2321,20 @@ public partial class GameHost
 			if (node is Decal decal)
 			{
 				return decal;
+			}
+			node = node.GetParent();
+		}
+		return null;
+	}
+
+	public ProceduralVfxInstance3D FindVfxInParentChain(Node node)
+	{
+		if (!IsMapEditorMode) return null;
+		while (node != null)
+		{
+			if (node is ProceduralVfxInstance3D vfx)
+			{
+				return vfx;
 			}
 			node = node.GetParent();
 		}

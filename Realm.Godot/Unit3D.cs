@@ -5,6 +5,7 @@ using Godot;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Tags;
 using Realm.Ecs.Components.Terrain;
+using Realm.Godot.VFX;
 
 public partial class Unit3D : Prop3D
 {
@@ -96,6 +97,8 @@ public partial class Unit3D : Prop3D
 	private BoneAttachment3D? _leftHandAttachment;
 	private string? _currentRightAttachmentId;
 	private string? _currentLeftAttachmentId;
+	private readonly Dictionary<Realm.Godot.Animation.HumanoidBone, Node3D> _boneAttachments = new();
+	private readonly Dictionary<Realm.Godot.Animation.HumanoidBone, string> _currentBoneAttachmentIds = new();
 	private Node3D _pathVisualsContainer;
 	private readonly System.Collections.Generic.List<MeshInstance3D> _pathMarkersPool = new();
 	private readonly System.Collections.Generic.List<MeshInstance3D> _pathLinesPool = new();
@@ -311,6 +314,8 @@ public partial class Unit3D : Prop3D
 				_leftHandAttachment = null;
 				_currentRightAttachmentId = null;
 				_currentLeftAttachmentId = null;
+				_boneAttachments.Clear();
+				_currentBoneAttachmentIds.Clear();
 			}
 
 			_modelNode = Realm.Godot.Utils.ModelCache.GetModel(modelPath) as Node3D;
@@ -321,6 +326,7 @@ public partial class Unit3D : Prop3D
 				_animationPlayer = Realm.Godot.Animation.AnimationRetargetingService.FindOrCreateAnimationPlayer(_modelNode);
 				Realm.Godot.Animation.AnimationRetargetingService.LoadAndBindUnitAnimations(_modelNode, UnitId, modelPath);
 				SeekToIdleFirstFrame();
+				ApplyAllConfiguredAttachments();
 
 				string assetKey = GameHost.Instance != null ? GameHost.Instance.GetModelAssetKey(modelPath) : "";
 				float globalScale = GameHost.Instance != null ? GameHost.Instance.GetModelScale(this) : 1.0f;
@@ -493,27 +499,36 @@ public partial class Unit3D : Prop3D
 		Vector3? rotOffsetOverride = null,
 		float? scaleOverride = null)
 	{
-		if (_modelNode == null || !GodotObject.IsInstanceValid(_modelNode)) return;
+		SetSocketAttachment(hand, attachmentId, posOffsetOverride, rotOffsetOverride, scaleOverride, null, null);
+	}
 
-		var skeleton = FindSkeleton(_modelNode);
-		if (skeleton == null) return;
+	public void SetSocketAttachment(
+		Realm.Godot.Animation.HumanoidBone bone,
+		string? attachmentId,
+		Vector3? posOffsetOverride = null,
+		Vector3? rotOffsetOverride = null,
+		float? scaleOverride = null,
+		Vector3? scaleVectorOverride = null,
+		float? normalOffsetOverride = null)
+	{
+		var parentNode = (_modelNode != null && GodotObject.IsInstanceValid(_modelNode)) ? _modelNode : (Node3D)this;
+		var skeleton = FindSkeleton(parentNode);
+		int boneIdx = skeleton != null ? Realm.Godot.Animation.HumanoidBoneMapper.FindBoneInSkeleton(skeleton, bone) : -1;
 
-		int boneIdx = Realm.Godot.Animation.HumanoidBoneMapper.FindBoneInSkeleton(skeleton, hand);
-		if (boneIdx < 0) return;
-
-		bool isRight = hand == Realm.Godot.Animation.HumanoidBone.RightHand;
+		bool isRight = bone == Realm.Godot.Animation.HumanoidBone.RightHand;
+		bool isLeft = bone == Realm.Godot.Animation.HumanoidBone.LeftHand;
 
 		if (string.IsNullOrEmpty(attachmentId) ||
 			attachmentId.Equals("null", StringComparison.OrdinalIgnoreCase) ||
 			attachmentId.Equals("none", StringComparison.OrdinalIgnoreCase))
 		{
 			if (isRight) _currentRightAttachmentId = null;
-			else _currentLeftAttachmentId = null;
+			else if (isLeft) _currentLeftAttachmentId = null;
+			_currentBoneAttachmentIds.Remove(bone);
 
-			var existingAttachment = isRight ? _rightHandAttachment : _leftHandAttachment;
-			if (existingAttachment != null && GodotObject.IsInstanceValid(existingAttachment))
+			if (_boneAttachments.TryGetValue(bone, out var existing) && GodotObject.IsInstanceValid(existing))
 			{
-				foreach (Node child in existingAttachment.GetChildren())
+				foreach (Node child in existing.GetChildren())
 				{
 					child.QueueFree();
 				}
@@ -521,44 +536,59 @@ public partial class Unit3D : Prop3D
 			return;
 		}
 
-		string? currentId = isRight ? _currentRightAttachmentId : _currentLeftAttachmentId;
-		var currentAttachment = isRight ? _rightHandAttachment : _leftHandAttachment;
-
-		if (currentId == attachmentId &&
-			currentAttachment != null &&
+		if (_currentBoneAttachmentIds.TryGetValue(bone, out var currentId) &&
+			currentId == attachmentId &&
+			_boneAttachments.TryGetValue(bone, out var currentAttachment) &&
 			GodotObject.IsInstanceValid(currentAttachment) &&
 			currentAttachment.GetChildCount() > 0 &&
 			!posOffsetOverride.HasValue &&
 			!rotOffsetOverride.HasValue &&
-			!scaleOverride.HasValue)
+			!scaleOverride.HasValue &&
+			!scaleVectorOverride.HasValue &&
+			!normalOffsetOverride.HasValue)
 		{
 			return;
 		}
 
 		if (isRight) _currentRightAttachmentId = attachmentId;
-		else _currentLeftAttachmentId = attachmentId;
+		else if (isLeft) _currentLeftAttachmentId = attachmentId;
+		_currentBoneAttachmentIds[bone] = attachmentId;
 
-		if (currentAttachment == null || !GodotObject.IsInstanceValid(currentAttachment) || currentAttachment.GetParent() != skeleton)
+		Node3D attachTarget;
+		if (skeleton != null && boneIdx >= 0)
 		{
 			string boneName = skeleton.GetBoneName(boneIdx);
-			string nodeName = $"BoneAttachment_{hand}";
-			currentAttachment = skeleton.GetNodeOrNull<BoneAttachment3D>(nodeName);
-			if (currentAttachment == null)
+			string nodeName = $"BoneAttachment_{bone}";
+			var boneAttachment = skeleton.GetNodeOrNull<BoneAttachment3D>(nodeName);
+			if (boneAttachment == null)
 			{
-				currentAttachment = new BoneAttachment3D
+				boneAttachment = new BoneAttachment3D
 				{
 					Name = nodeName,
 					BoneName = boneName,
 					BoneIdx = boneIdx
 				};
-				skeleton.AddChild(currentAttachment);
+				skeleton.AddChild(boneAttachment);
 			}
-
-			if (isRight) _rightHandAttachment = currentAttachment;
-			else _leftHandAttachment = currentAttachment;
+			_boneAttachments[bone] = boneAttachment;
+			if (isRight) _rightHandAttachment = boneAttachment;
+			else if (isLeft) _leftHandAttachment = boneAttachment;
+			attachTarget = boneAttachment;
+		}
+		else
+		{
+			string nodeName = $"SocketAttachment_{bone}";
+			var socketNode = parentNode.GetNodeOrNull<Node3D>(nodeName);
+			if (socketNode == null)
+			{
+				socketNode = new Node3D { Name = nodeName };
+				parentNode.AddChild(socketNode);
+			}
+			_boneAttachments[bone] = socketNode;
+			attachTarget = socketNode;
 		}
 
-		foreach (Node child in currentAttachment.GetChildren())
+		foreach (Node child in attachTarget.GetChildren())
 		{
 			child.QueueFree();
 		}
@@ -569,25 +599,69 @@ public partial class Unit3D : Prop3D
 			float effectiveScale = scaleOverride ?? defScale;
 			Vector3 effectivePos = posOffsetOverride ?? defPos;
 			Vector3 effectiveRot = rotOffsetOverride ?? defRot;
+			Vector3 effectiveScaleVec = scaleVectorOverride ?? (Vector3.One * (effectiveScale <= 0f ? 1.0f : effectiveScale));
+			float effectiveNormalOffset = normalOffsetOverride ?? 0.0f;
 
 			if (!string.IsNullOrEmpty(UnitId) && GameHost.UnitRegistry.TryGetValue(UnitId, out var uMeta) &&
-				uMeta.TryGetObjectAttachment(hand, attachmentId, out var unitOrient))
+				uMeta.TryGetObjectAttachment(bone, attachmentId, out var unitOrient))
 			{
-				if (!scaleOverride.HasValue && unitOrient.Scale > 0f) effectiveScale = unitOrient.Scale;
+				if (!scaleOverride.HasValue && !scaleVectorOverride.HasValue)
+				{
+					effectiveScaleVec = unitOrient.ScaleVector;
+				}
 				if (!posOffsetOverride.HasValue) effectivePos = unitOrient.Position;
 				if (!rotOffsetOverride.HasValue) effectiveRot = unitOrient.RotationDegrees;
+				if (!normalOffsetOverride.HasValue) effectiveNormalOffset = unitOrient.NormalOffset;
+			}
+
+			if (effectiveNormalOffset != 0.0f)
+			{
+				effectivePos += Vector3.Up * effectiveNormalOffset;
 			}
 
 			model.Position = effectivePos;
 			model.RotationDegrees = effectiveRot;
-			model.Scale = Vector3.One * (effectiveScale <= 0f ? 1.0f : effectiveScale);
+			model.Scale = effectiveScaleVec;
 
-			currentAttachment.AddChild(model);
+			attachTarget.AddChild(model);
 
-			bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(attachmentId) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
-			if (!ignorePlayerColor)
+			if (model is not ProceduralVfxInstance3D)
 			{
-				Realm.Godot.Utils.ModelShaderManager.ApplyPlayerColorShader(model, PlayerColor, false, true);
+				bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(attachmentId) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
+				if (!ignorePlayerColor)
+				{
+					Realm.Godot.Utils.ModelShaderManager.ApplyPlayerColorShader(model, PlayerColor, false, true);
+				}
+			}
+		}
+	}
+
+	public void ApplyAllConfiguredAttachments()
+	{
+		if (string.IsNullOrEmpty(UnitId) || !GameHost.UnitRegistry.TryGetValue(UnitId, out var uMeta) || !uMeta.ObjectAttachments.HasValue)
+		{
+			return;
+		}
+
+		var atts = uMeta.ObjectAttachments.Value;
+		ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone.RightHand, atts.right_hand);
+		ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone.LeftHand, atts.left_hand);
+		ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone.Chest, atts.chest);
+		ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone.Hips, atts.root);
+		ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone.Head, atts.head);
+		ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone.LeftFoot, atts.left_foot);
+		ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone.RightFoot, atts.right_foot);
+	}
+
+	private void ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone bone, List<Dictionary<string, GameHost.HandAttachmentOrientation>>? list)
+	{
+		if (list == null) return;
+		foreach (var dict in list)
+		{
+			if (dict == null) continue;
+			foreach (var kvp in dict)
+			{
+				SetSocketAttachment(bone, kvp.Key, kvp.Value.Position, kvp.Value.RotationDegrees, kvp.Value.Scale, kvp.Value.ScaleVector, kvp.Value.NormalOffset);
 			}
 		}
 	}
@@ -599,6 +673,49 @@ public partial class Unit3D : Prop3D
 		defaultRot = Vector3.Zero;
 
 		if (string.IsNullOrEmpty(attachmentId)) return null;
+
+		if (attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase))
+		{
+			string vfxKey = attachmentId.Substring(4);
+			VfxAttachmentConfig config;
+			if (GameHost.VfxRegistry.TryGetValue(vfxKey, out var regCfg))
+			{
+				config = regCfg.Clone();
+			}
+			else if (Enum.TryParse<VfxPrimitiveType>(vfxKey, true, out var primType))
+			{
+				config = new VfxAttachmentConfig { VfxId = vfxKey, PrimitiveType = primType };
+			}
+			else
+			{
+				config = VfxAttachmentConfig.CreatePreset(vfxKey);
+			}
+
+			var vfxInstance = new ProceduralVfxInstance3D(config);
+			defaultScale = 1.0f;
+			defaultPos = config.PositionOffset;
+			defaultRot = config.RotationOffset;
+			return vfxInstance;
+		}
+
+		if (GameHost.VfxRegistry.TryGetValue(attachmentId, out var vfxCfg))
+		{
+			var vfxInstance = new ProceduralVfxInstance3D(vfxCfg.Clone());
+			defaultScale = 1.0f;
+			defaultPos = vfxCfg.PositionOffset;
+			defaultRot = vfxCfg.RotationOffset;
+			return vfxInstance;
+		}
+
+		if (Enum.TryParse<VfxPrimitiveType>(attachmentId, true, out var parsedPrim))
+		{
+			var cfg = new VfxAttachmentConfig { VfxId = attachmentId, PrimitiveType = parsedPrim };
+			var vfxInstance = new ProceduralVfxInstance3D(cfg);
+			defaultScale = 1.0f;
+			defaultPos = cfg.PositionOffset;
+			defaultRot = cfg.RotationOffset;
+			return vfxInstance;
+		}
 
 		string modelPath = string.Empty;
 

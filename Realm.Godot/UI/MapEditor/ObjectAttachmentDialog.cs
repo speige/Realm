@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using Realm.Godot.Animation;
 using Realm.Godot.Utils;
+using Realm.Godot.VFX;
 
 public partial class ObjectAttachmentDialog : FloatingDialogBase
 {
@@ -16,14 +17,12 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 	private Node3D _previewSceneRoot;
 	private Node3D _previewModel;
 
-	private BoneAttachment3D _rightHandBoneAttachment;
-	private BoneAttachment3D _leftHandBoneAttachment;
-	private Node3D _rightHandModelNode;
-	private Node3D _leftHandModelNode;
+	private readonly Dictionary<HumanoidBone, BoneAttachment3D> _boneAttachments = new();
+	private readonly Dictionary<HumanoidBone, Node3D> _boneModelNodes = new();
 
 	private Label _lblUnitValue;
-	private Label _lblHandValue;
-	private Label _lblAttachmentValue;
+	private OptionButton _optSocket;
+	private OptionButton _optAttachmentPicker;
 
 	private HSlider _sliderPosX;
 	private HSlider _sliderPosY;
@@ -39,16 +38,27 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 	private Label _lblRotY;
 	private Label _lblRotZ;
 
-	private HSlider _sliderScale;
-	private Label _lblScale;
+	private HSlider _sliderScaleX;
+	private HSlider _sliderScaleY;
+	private HSlider _sliderScaleZ;
+	private Label _lblScaleX;
+	private Label _lblScaleY;
+	private Label _lblScaleZ;
+
+	private HSlider _sliderNormalOffset;
+	private Label _lblNormalOffset;
 
 	private string _currentUnitId = string.Empty;
 	private string _currentAttachmentId = string.Empty;
-	private HumanoidBone _currentEditingHand = HumanoidBone.RightHand;
+	private HumanoidBone _currentEditingSocket = HumanoidBone.RightHand;
 
 	private Vector3 _currentPosOffset = Vector3.Zero;
 	private Vector3 _currentRotOffset = Vector3.Zero;
-	private float _currentScale = 1.0f;
+	private Vector3 _currentScaleOffset = Vector3.One;
+	private float _currentNormalOffset = 0.0f;
+
+	private List<string> _availableAttachments = new();
+	private bool _isUpdatingUI;
 
 	private bool _isOrbiting;
 	private bool _isPanning;
@@ -61,15 +71,26 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 
 	private Action<GameHost.HandAttachmentOrientation> _onApplied;
 
+	private static readonly (HumanoidBone Bone, string DisplayName)[] SupportedSockets = new[]
+	{
+		(HumanoidBone.RightHand, "Right Hand (Weapon)"),
+		(HumanoidBone.LeftHand, "Left Hand (Offhand/Shield)"),
+		(HumanoidBone.Chest, "Chest (Torso Aura)"),
+		(HumanoidBone.Hips, "Hips (Root/Foot Ring)"),
+		(HumanoidBone.Head, "Head (Crown Glow)"),
+		(HumanoidBone.LeftFoot, "Left Foot"),
+		(HumanoidBone.RightFoot, "Right Foot")
+	};
+
 	public ObjectAttachmentDialog(MapEditorHUD hud)
-		: base(hud, TranslationServer.Translate("Hand Object Attachment Studio"), new Vector2(540, 520))
+		: base(hud, TranslationServer.Translate("Socket & VFX Attachment Studio"), new Vector2(560, 620))
 	{
 		BuildControls();
 	}
 
 	private void BuildControls()
 	{
-		_viewportContainer = Add3DViewportContainer(BodyContainer, new Vector2(510, 230), out _subViewport, out _camera, out _light);
+		_viewportContainer = Add3DViewportContainer(BodyContainer, new Vector2(530, 230), out _subViewport, out _camera, out _light);
 		_viewportContainer.GuiInput += OnViewportGuiInput;
 		_viewportContainer.MouseDefaultCursorShape = CursorShape.Cross;
 
@@ -93,7 +114,7 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 		topControlsVBox.AddChild(presetRow);
 
 		var infoRow = new HBoxContainer();
-		infoRow.AddThemeConstantOverride("separation", 10);
+		infoRow.AddThemeConstantOverride("separation", 8);
 
 		var lblUnitTitle = new Label { Text = TranslationServer.Translate("Unit:") };
 		lblUnitTitle.AddThemeFontSizeOverride("font_size", 11);
@@ -105,29 +126,67 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 		_lblUnitValue.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
 		infoRow.AddChild(_lblUnitValue);
 
-		var lblHandTitle = new Label { Text = TranslationServer.Translate("Editing Hand:") };
-		lblHandTitle.AddThemeFontSizeOverride("font_size", 11);
-		lblHandTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		infoRow.AddChild(lblHandTitle);
+		var lblSocketTitle = new Label { Text = TranslationServer.Translate("Socket:") };
+		lblSocketTitle.AddThemeFontSizeOverride("font_size", 11);
+		lblSocketTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		infoRow.AddChild(lblSocketTitle);
 
-		_lblHandValue = new Label { Text = "-" };
-		_lblHandValue.AddThemeFontSizeOverride("font_size", 11);
-		_lblHandValue.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
-		infoRow.AddChild(_lblHandValue);
-
-		var lblAttTitle = new Label { Text = TranslationServer.Translate("Attachment Model:") };
-		lblAttTitle.AddThemeFontSizeOverride("font_size", 11);
-		lblAttTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		infoRow.AddChild(lblAttTitle);
-
-		_lblAttachmentValue = new Label { Text = "-" };
-		_lblAttachmentValue.AddThemeFontSizeOverride("font_size", 11);
-		_lblAttachmentValue.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
-		infoRow.AddChild(_lblAttachmentValue);
+		_optSocket = new OptionButton();
+		_optSocket.AddThemeFontSizeOverride("font_size", 11);
+		_optSocket.CustomMinimumSize = new Vector2(160, 24);
+		for (int i = 0; i < SupportedSockets.Length; i++)
+		{
+			_optSocket.AddItem(TranslationServer.Translate(SupportedSockets[i].DisplayName), i);
+		}
+		_optSocket.ItemSelected += (idx) =>
+		{
+			if (_isUpdatingUI) return;
+			_currentEditingSocket = SupportedSockets[(int)idx].Bone;
+			LoadAttachmentOrientationIntoSliders(_currentUnitId, _currentEditingSocket, _currentAttachmentId);
+			AttachModelToSocket(_currentEditingSocket, _currentAttachmentId, _currentPosOffset, _currentRotOffset, _currentScaleOffset, _currentNormalOffset);
+		};
+		infoRow.AddChild(_optSocket);
 
 		topControlsVBox.AddChild(infoRow);
 
-		AddSectionHeader(BodyContainer, "🗡️ " + TranslationServer.Translate("HAND ATTACHMENT ORIENTATION"));
+		var pickerRow = new HBoxContainer();
+		pickerRow.AddThemeConstantOverride("separation", 6);
+
+		var lblAttTitle = new Label { Text = TranslationServer.Translate("Attachment / VFX:") };
+		lblAttTitle.AddThemeFontSizeOverride("font_size", 11);
+		lblAttTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		pickerRow.AddChild(lblAttTitle);
+
+		_optAttachmentPicker = new OptionButton();
+		_optAttachmentPicker.AddThemeFontSizeOverride("font_size", 11);
+		_optAttachmentPicker.CustomMinimumSize = new Vector2(220, 24);
+		_optAttachmentPicker.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		_optAttachmentPicker.ItemSelected += (idx) =>
+		{
+			if (_isUpdatingUI) return;
+			if (idx >= 0 && idx < _availableAttachments.Count)
+			{
+				_currentAttachmentId = _availableAttachments[(int)idx];
+				LoadAttachmentOrientationIntoSliders(_currentUnitId, _currentEditingSocket, _currentAttachmentId);
+				AttachModelToSocket(_currentEditingSocket, _currentAttachmentId, _currentPosOffset, _currentRotOffset, _currentScaleOffset, _currentNormalOffset);
+			}
+		};
+		pickerRow.AddChild(_optAttachmentPicker);
+
+		AddButton(pickerRow, "✨ " + TranslationServer.Translate("VFX Studio"), () =>
+		{
+			Hud?.OpenVfxStudioDialog(null, (cfg) =>
+			{
+				RefreshAttachmentList();
+				_currentAttachmentId = cfg.VfxId;
+				LoadAttachmentOrientationIntoSliders(_currentUnitId, _currentEditingSocket, _currentAttachmentId);
+				AttachModelToSocket(_currentEditingSocket, _currentAttachmentId, _currentPosOffset, _currentRotOffset, _currentScaleOffset, _currentNormalOffset);
+			});
+		}, "Open Procedural VFX Studio", 10, new Vector2(100, 24));
+
+		topControlsVBox.AddChild(pickerRow);
+
+		AddSectionHeader(BodyContainer, "🗡️ " + TranslationServer.Translate("TRANSFORM & NORMAL OFFSET"));
 
 		var transformCols = new HBoxContainer();
 		transformCols.AddThemeConstantOverride("separation", 12);
@@ -155,8 +214,17 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 		var rotResultZ = AddSlider(rightCol, TranslationServer.Translate("Roll Z (deg):"), -180f, 180f, 1f, 0f, (v) => { _currentRotOffset.Z = v; UpdateActiveAttachmentTransform(); }, "0", 95f);
 		_sliderRotZ = rotResultZ.Slider; _lblRotZ = rotResultZ.ValueLabel;
 
-		var scaleResult = AddSlider(leftCol, TranslationServer.Translate("Scale:"), 0.05f, 5.0f, 0.05f, 1.0f, (v) => { _currentScale = v; UpdateActiveAttachmentTransform(); }, "0.00", 90f);
-		_sliderScale = scaleResult.Slider; _lblScale = scaleResult.ValueLabel;
+		var scaleResultX = AddSlider(leftCol, TranslationServer.Translate("Scale X:"), 0.05f, 5.0f, 0.05f, 1.0f, (v) => { _currentScaleOffset.X = v; UpdateActiveAttachmentTransform(); }, "0.00", 90f);
+		_sliderScaleX = scaleResultX.Slider; _lblScaleX = scaleResultX.ValueLabel;
+
+		var scaleResultY = AddSlider(leftCol, TranslationServer.Translate("Scale Y:"), 0.05f, 5.0f, 0.05f, 1.0f, (v) => { _currentScaleOffset.Y = v; UpdateActiveAttachmentTransform(); }, "0.00", 90f);
+		_sliderScaleY = scaleResultY.Slider; _lblScaleY = scaleResultY.ValueLabel;
+
+		var scaleResultZ = AddSlider(leftCol, TranslationServer.Translate("Scale Z:"), 0.05f, 5.0f, 0.05f, 1.0f, (v) => { _currentScaleOffset.Z = v; UpdateActiveAttachmentTransform(); }, "0.00", 90f);
+		_sliderScaleZ = scaleResultZ.Slider; _lblScaleZ = scaleResultZ.ValueLabel;
+
+		var normalResult = AddSlider(rightCol, TranslationServer.Translate("Normal Offset:"), -0.5f, 0.5f, 0.005f, 0.0f, (v) => { _currentNormalOffset = v; UpdateActiveAttachmentTransform(); }, "0.000", 95f);
+		_sliderNormalOffset = normalResult.Slider; _lblNormalOffset = normalResult.ValueLabel;
 
 		var btnRow = new HBoxContainer();
 		btnRow.AddThemeConstantOverride("separation", 8);
@@ -169,7 +237,7 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 		BodyContainer.AddChild(transformCols);
 
 		CancelButton.Text = TranslationServer.Translate("CANCEL");
-		ApplyButton.Text = TranslationServer.Translate("Apply");
+		ApplyButton.Text = TranslationServer.Translate("APPLY");
 	}
 
 	public void OpenForUnitAndAttachment(
@@ -187,45 +255,94 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 		}
 		_currentUnitId = unitId ?? string.Empty;
 
-		_currentEditingHand = (!string.IsNullOrEmpty(hand) && hand.Equals("LeftHand", StringComparison.OrdinalIgnoreCase))
-			? HumanoidBone.LeftHand
-			: HumanoidBone.RightHand;
-
+		_currentEditingSocket = ParseBoneSafe(hand);
 		_currentAttachmentId = attachmentId ?? string.Empty;
 
 		_lblUnitValue.Text = !string.IsNullOrEmpty(_currentUnitId) ? _currentUnitId : "-";
-		_lblHandValue.Text = _currentEditingHand == HumanoidBone.LeftHand
-			? TranslationServer.Translate("Left Hand")
-			: TranslationServer.Translate("Right Hand");
-		_lblAttachmentValue.Text = !string.IsNullOrEmpty(_currentAttachmentId) ? _currentAttachmentId : "-";
 
-		LoadAttachmentOrientationIntoSliders(_currentUnitId, _currentEditingHand, _currentAttachmentId);
+		RefreshAttachmentList();
+		UpdateSocketPickerIndex();
+
+		LoadAttachmentOrientationIntoSliders(_currentUnitId, _currentEditingSocket, _currentAttachmentId);
 		LoadUnitModelAndRig(_currentUnitId, sourceModel);
 
 		ResetCameraDefault();
 		OpenDialog();
 	}
 
-	private void LoadAttachmentOrientationIntoSliders(string unitId, HumanoidBone hand, string attachmentId)
+	private static HumanoidBone ParseBoneSafe(string name)
+	{
+		if (string.IsNullOrEmpty(name)) return HumanoidBone.RightHand;
+		if (name.Equals("LeftHand", StringComparison.OrdinalIgnoreCase) || name.Equals("left_hand", StringComparison.OrdinalIgnoreCase)) return HumanoidBone.LeftHand;
+		if (name.Equals("Chest", StringComparison.OrdinalIgnoreCase)) return HumanoidBone.Chest;
+		if (name.Equals("Root", StringComparison.OrdinalIgnoreCase) || name.Equals("Hips", StringComparison.OrdinalIgnoreCase)) return HumanoidBone.Hips;
+		if (name.Equals("Head", StringComparison.OrdinalIgnoreCase)) return HumanoidBone.Head;
+		if (name.Equals("LeftFoot", StringComparison.OrdinalIgnoreCase)) return HumanoidBone.LeftFoot;
+		if (name.Equals("RightFoot", StringComparison.OrdinalIgnoreCase)) return HumanoidBone.RightFoot;
+		return HumanoidBone.RightHand;
+	}
+
+	private void UpdateSocketPickerIndex()
+	{
+		if (_optSocket == null) return;
+		_isUpdatingUI = true;
+		for (int i = 0; i < SupportedSockets.Length; i++)
+		{
+			if (SupportedSockets[i].Bone == _currentEditingSocket)
+			{
+				_optSocket.Selected = i;
+				break;
+			}
+		}
+		_isUpdatingUI = false;
+	}
+
+	private void RefreshAttachmentList()
+	{
+		_availableAttachments = GetAvailableObjectAttachmentIds();
+		if (_optAttachmentPicker != null)
+		{
+			_isUpdatingUI = true;
+			_optAttachmentPicker.Clear();
+			int selectedIdx = 0;
+			for (int i = 0; i < _availableAttachments.Count; i++)
+			{
+				string item = _availableAttachments[i];
+				string display = item.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase) ? $"✨ {item.Substring(4)}" : item;
+				_optAttachmentPicker.AddItem(display, i);
+				if (item.Equals(_currentAttachmentId, StringComparison.OrdinalIgnoreCase))
+				{
+					selectedIdx = i;
+				}
+			}
+			_optAttachmentPicker.Selected = selectedIdx;
+			_isUpdatingUI = false;
+		}
+	}
+
+	private void LoadAttachmentOrientationIntoSliders(string unitId, HumanoidBone socket, string attachmentId)
 	{
 		if (!string.IsNullOrEmpty(unitId) && GameHost.UnitRegistry.TryGetValue(unitId, out var uMeta) &&
-			uMeta.TryGetObjectAttachment(hand, attachmentId, out var unitOrient))
+			uMeta.TryGetObjectAttachment(socket, attachmentId, out var unitOrient))
 		{
 			_currentPosOffset = unitOrient.Position;
 			_currentRotOffset = unitOrient.RotationDegrees;
-			_currentScale = unitOrient.Scale <= 0f ? 1.0f : unitOrient.Scale;
+			_currentScaleOffset = unitOrient.ScaleVector;
+			_currentNormalOffset = unitOrient.NormalOffset;
 		}
 		else if (!string.IsNullOrEmpty(attachmentId) && GameHost.AttachmentRegistry.TryGetValue(attachmentId, out var attMeta))
 		{
 			_currentPosOffset = attMeta.PositionOffset;
 			_currentRotOffset = attMeta.RotationOffset;
-			_currentScale = attMeta.Scale <= 0f ? 1.0f : attMeta.Scale;
+			_currentScaleOffset = Vector3.One * (attMeta.Scale <= 0f ? 1.0f : attMeta.Scale);
+			_currentNormalOffset = 0.0f;
 		}
 		else
 		{
 			_currentPosOffset = Vector3.Zero;
 			_currentRotOffset = Vector3.Zero;
-			_currentScale = 1.0f;
+			_currentScaleOffset = Vector3.One;
+			_currentNormalOffset = 0.0f;
 		}
 
 		UpdateSliderDisplayValues();
@@ -241,28 +358,33 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 		if (_sliderRotY != null) { _sliderRotY.Value = _currentRotOffset.Y; _lblRotY.Text = _currentRotOffset.Y.ToString("F0"); }
 		if (_sliderRotZ != null) { _sliderRotZ.Value = _currentRotOffset.Z; _lblRotZ.Text = _currentRotOffset.Z.ToString("F0"); }
 
-		if (_sliderScale != null) { _sliderScale.Value = _currentScale; _lblScale.Text = _currentScale.ToString("F2"); }
+		if (_sliderScaleX != null) { _sliderScaleX.Value = _currentScaleOffset.X; _lblScaleX.Text = _currentScaleOffset.X.ToString("F2"); }
+		if (_sliderScaleY != null) { _sliderScaleY.Value = _currentScaleOffset.Y; _lblScaleY.Text = _currentScaleOffset.Y.ToString("F2"); }
+		if (_sliderScaleZ != null) { _sliderScaleZ.Value = _currentScaleOffset.Z; _lblScaleZ.Text = _currentScaleOffset.Z.ToString("F2"); }
+
+		if (_sliderNormalOffset != null) { _sliderNormalOffset.Value = _currentNormalOffset; _lblNormalOffset.Text = _currentNormalOffset.ToString("F3"); }
 	}
 
 	private void ResetTransformValues()
 	{
 		_currentPosOffset = Vector3.Zero;
 		_currentRotOffset = Vector3.Zero;
-		_currentScale = 1.0f;
+		_currentScaleOffset = Vector3.One;
+		_currentNormalOffset = 0.0f;
 		UpdateSliderDisplayValues();
 		UpdateActiveAttachmentTransform();
 	}
 
 	private void AutoCalculateAttachmentOrientation()
 	{
-		var targetBone = _currentEditingHand == HumanoidBone.RightHand ? _rightHandBoneAttachment : _leftHandBoneAttachment;
+		_boneAttachments.TryGetValue(_currentEditingSocket, out var targetBone);
 		if (targetBone == null || !GodotObject.IsInstanceValid(targetBone)) return;
 
-		var targetNode = _currentEditingHand == HumanoidBone.RightHand ? _rightHandModelNode : _leftHandModelNode;
+		_boneModelNodes.TryGetValue(_currentEditingSocket, out var targetNode);
 		if (targetNode == null || !GodotObject.IsInstanceValid(targetNode))
 		{
-			AttachModelToHand(_currentEditingHand, _currentAttachmentId, _currentPosOffset, _currentRotOffset, _currentScale);
-			targetNode = _currentEditingHand == HumanoidBone.RightHand ? _rightHandModelNode : _leftHandModelNode;
+			AttachModelToSocket(_currentEditingSocket, _currentAttachmentId, _currentPosOffset, _currentRotOffset, _currentScaleOffset, _currentNormalOffset);
+			_boneModelNodes.TryGetValue(_currentEditingSocket, out targetNode);
 			if (targetNode == null || !GodotObject.IsInstanceValid(targetNode)) return;
 		}
 
@@ -309,7 +431,7 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 		if (skeleton != null)
 		{
 			int lowerArmIdx = HumanoidBoneMapper.FindBoneInSkeleton(skeleton, 
-				_currentEditingHand == HumanoidBone.RightHand ? HumanoidBone.RightLowerArm : HumanoidBone.LeftLowerArm);
+				_currentEditingSocket == HumanoidBone.RightHand ? HumanoidBone.RightLowerArm : HumanoidBone.LeftLowerArm);
 			if (lowerArmIdx >= 0)
 			{
 				Vector3 lowerArmPos = skeleton.GlobalTransform * skeleton.GetBoneGlobalPose(lowerArmIdx).Origin;
@@ -326,7 +448,7 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 			desiredRight = desiredTopDir.Cross(camRight).Normalized();
 		}
 
-		if (_currentEditingHand == HumanoidBone.LeftHand)
+		if (_currentEditingSocket == HumanoidBone.LeftHand)
 		{
 			desiredRight = -desiredRight;
 		}
@@ -441,10 +563,8 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 			_previewModel.QueueFree();
 			_previewModel = null;
 		}
-		_rightHandBoneAttachment = null;
-		_leftHandBoneAttachment = null;
-		_rightHandModelNode = null;
-		_leftHandModelNode = null;
+		_boneAttachments.Clear();
+		_boneModelNodes.Clear();
 	}
 
 	private void LoadUnitModelAndRig(string unitId, Node3D sourceModel)
@@ -495,32 +615,24 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 				}
 			}
 
-			int rightIdx = HumanoidBoneMapper.FindBoneInSkeleton(skeleton, HumanoidBone.RightHand);
-			if (rightIdx >= 0)
+			foreach (var sock in SupportedSockets)
 			{
-				_rightHandBoneAttachment = new BoneAttachment3D
+				int boneIdx = HumanoidBoneMapper.FindBoneInSkeleton(skeleton, sock.Bone);
+				if (boneIdx >= 0)
 				{
-					Name = "BoneAttachment_RightHand",
-					BoneName = skeleton.GetBoneName(rightIdx),
-					BoneIdx = rightIdx
-				};
-				skeleton.AddChild(_rightHandBoneAttachment);
-			}
-
-			int leftIdx = HumanoidBoneMapper.FindBoneInSkeleton(skeleton, HumanoidBone.LeftHand);
-			if (leftIdx >= 0)
-			{
-				_leftHandBoneAttachment = new BoneAttachment3D
-				{
-					Name = "BoneAttachment_LeftHand",
-					BoneName = skeleton.GetBoneName(leftIdx),
-					BoneIdx = leftIdx
-				};
-				skeleton.AddChild(_leftHandBoneAttachment);
+					var ba = new BoneAttachment3D
+					{
+						Name = $"BoneAttachment_{sock.Bone}",
+						BoneName = skeleton.GetBoneName(boneIdx),
+						BoneIdx = boneIdx
+					};
+					skeleton.AddChild(ba);
+					_boneAttachments[sock.Bone] = ba;
+				}
 			}
 		}
 
-		AttachModelToHand(_currentEditingHand, _currentAttachmentId, _currentPosOffset, _currentRotOffset, _currentScale);
+		AttachModelToSocket(_currentEditingSocket, _currentAttachmentId, _currentPosOffset, _currentRotOffset, _currentScaleOffset, _currentNormalOffset);
 	}
 
 	private static void RemoveAllBoneAttachments(Node node)
@@ -548,9 +660,9 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 		}
 	}
 
-	private void AttachModelToHand(HumanoidBone hand, string attachmentId, Vector3 pos, Vector3 rot, float scale)
+	private void AttachModelToSocket(HumanoidBone socket, string attachmentId, Vector3 pos, Vector3 rot, Vector3 scale, float normalOffset)
 	{
-		var targetBone = hand == HumanoidBone.RightHand ? _rightHandBoneAttachment : _leftHandBoneAttachment;
+		_boneAttachments.TryGetValue(socket, out var targetBone);
 		if (targetBone == null || !GodotObject.IsInstanceValid(targetBone)) return;
 
 		foreach (Node child in targetBone.GetChildren())
@@ -559,32 +671,29 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 			child.QueueFree();
 		}
 
-		if (hand == HumanoidBone.RightHand) _rightHandModelNode = null;
-		else _leftHandModelNode = null;
+		_boneModelNodes.Remove(socket);
 
 		if (string.IsNullOrEmpty(attachmentId) || attachmentId.Equals("null", StringComparison.OrdinalIgnoreCase)) return;
 
 		Node3D loaded = Unit3D.ResolveAndInstantiateAttachment(attachmentId, out _, out _, out _);
 		if (loaded != null)
 		{
-			loaded.Position = pos;
+			loaded.Position = pos + (loaded.Transform.Basis.Y * normalOffset);
 			loaded.RotationDegrees = rot;
-			loaded.Scale = Vector3.One * (scale <= 0f ? 1.0f : scale);
+			loaded.Scale = scale;
 			targetBone.AddChild(loaded);
-
-			if (hand == HumanoidBone.RightHand) _rightHandModelNode = loaded;
-			else _leftHandModelNode = loaded;
+			_boneModelNodes[socket] = loaded;
 		}
 	}
 
 	private void UpdateActiveAttachmentTransform()
 	{
-		var node = _currentEditingHand == HumanoidBone.RightHand ? _rightHandModelNode : _leftHandModelNode;
+		_boneModelNodes.TryGetValue(_currentEditingSocket, out var node);
 		if (node != null && GodotObject.IsInstanceValid(node))
 		{
-			node.Position = _currentPosOffset;
+			node.Position = _currentPosOffset + (node.Transform.Basis.Y * _currentNormalOffset);
 			node.RotationDegrees = _currentRotOffset;
-			node.Scale = Vector3.One * (_currentScale <= 0f ? 1.0f : _currentScale);
+			node.Scale = _currentScaleOffset;
 		}
 	}
 
@@ -600,12 +709,16 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 				PitchX = _currentRotOffset.X,
 				YawY = _currentRotOffset.Y,
 				RollZ = _currentRotOffset.Z,
-				Scale = _currentScale
+				Scale = _currentScaleOffset.X,
+				ScaleX = _currentScaleOffset.X,
+				ScaleY = _currentScaleOffset.Y,
+				ScaleZ = _currentScaleOffset.Z,
+				NormalOffset = _currentNormalOffset
 			};
 
-			Hud?.SaveUnitObjectAttachment(_currentUnitId, _currentEditingHand, _currentAttachmentId, orientation);
+			Hud?.SaveUnitObjectAttachment(_currentUnitId, _currentEditingSocket, _currentAttachmentId, orientation);
 			_onApplied?.Invoke(orientation);
-			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Applied {0} orientation to {1}."), _currentAttachmentId, _currentUnitId));
+			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Applied {0} to {1} on socket {2}."), _currentAttachmentId, _currentUnitId, _currentEditingSocket));
 		}
 
 		ClearPreviewModel();
@@ -626,6 +739,27 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 	{
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var result = new List<string>();
+
+		foreach (var primType in Enum.GetNames<VfxPrimitiveType>())
+		{
+			string vfxKey = $"vfx:{primType}";
+			if (seen.Add(vfxKey))
+			{
+				result.Add(vfxKey);
+			}
+		}
+
+		if (GameHost.VfxRegistry != null)
+		{
+			foreach (var kvp in GameHost.VfxRegistry)
+			{
+				string vfxKey = $"vfx:{kvp.Key}";
+				if (seen.Add(vfxKey))
+				{
+					result.Add(vfxKey);
+				}
+			}
+		}
 
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
@@ -700,6 +834,25 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 						}
 					}
 				}
+
+				if (root?["CustomVfx"] is JsonArray customVfxArr)
+				{
+					foreach (var node in customVfxArr)
+					{
+						if (node is JsonObject vfxObj)
+						{
+							string? vId = vfxObj["VfxId"]?.ToString() ?? vfxObj["vfxId"]?.ToString();
+							if (!string.IsNullOrEmpty(vId))
+							{
+								string vfxKey = $"vfx:{vId}";
+								if (seen.Add(vfxKey))
+								{
+									result.Add(vfxKey);
+								}
+							}
+						}
+					}
+				}
 			}
 			catch (Exception ex)
 			{
@@ -742,30 +895,6 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 			}
 		}
 
-		string modelsDir = System.IO.Path.Combine(wsPath, "Assets", "models");
-		if (System.IO.Directory.Exists(modelsDir))
-		{
-			foreach (var file in System.IO.Directory.GetFiles(modelsDir, "*.glb", SearchOption.AllDirectories))
-			{
-				string id = System.IO.Path.GetFileNameWithoutExtension(file);
-				if (!seen.Contains(id))
-				{
-					string? embeddedType = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(file);
-					if (!string.IsNullOrEmpty(embeddedType) && (
-						embeddedType.Equals("Attachment", StringComparison.OrdinalIgnoreCase) ||
-						embeddedType.Equals("Weapon", StringComparison.OrdinalIgnoreCase) ||
-						embeddedType.Equals("Object Attachments", StringComparison.OrdinalIgnoreCase)))
-					{
-						if (seen.Add(id))
-						{
-							result.Add(id);
-						}
-					}
-				}
-			}
-		}
-
-		result.Sort(StringComparer.OrdinalIgnoreCase);
 		return result;
 	}
 

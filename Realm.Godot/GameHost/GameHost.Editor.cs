@@ -12,6 +12,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Realm.Godot.Utils;
+using Realm.Godot.VFX;
 
 public partial class GameHost
 {
@@ -1746,9 +1747,11 @@ public partial class GameHost
 		AllProps.Clear();
 		PropMultiMeshManager.Instance?.Clear();
 		AllDecals.Clear();
+		AllVfx.Clear();
 		ActivePings.Clear();
 		EntityToUnit3D.Clear();
 		EntityToProp3D.Clear();
+		EntityToVfx3D.Clear();
 		if (_controlGroups != null)
 		{
 			for (int i = 0; i < _controlGroups.Length; i++)
@@ -1767,6 +1770,10 @@ public partial class GameHost
 			else if (child is Decal decal && GodotObject.IsInstanceValid(decal))
 			{
 				DeleteNodeExternal(decal);
+			}
+			else if (child is ProceduralVfxInstance3D vfx && GodotObject.IsInstanceValid(vfx))
+			{
+				DeleteNodeExternal(vfx);
 			}
 		}
 		
@@ -2500,6 +2507,74 @@ public partial class GameHost
 		return decal;
 	}
 
+	public ProceduralVfxInstance3D SpawnVfxExternalWithParams(
+		string vfxId,
+		Vector3 position,
+		Vector3 rotationDegrees,
+		Vector3 scale,
+		float normalOffset = 0f,
+		VfxAttachmentConfig customConfig = null)
+	{
+		var entity = EcsWorld.Create();
+		VfxAttachmentConfig config;
+		if (customConfig != null)
+		{
+			config = customConfig.Clone();
+		}
+		else if (VfxRegistry.TryGetValue(vfxId, out var regCfg))
+		{
+			config = regCfg.Clone();
+		}
+		else if (Enum.TryParse<VfxPrimitiveType>(vfxId, true, out var primType))
+		{
+			config = new VfxAttachmentConfig { VfxId = vfxId, PrimitiveType = primType };
+		}
+		else
+		{
+			config = VfxAttachmentConfig.CreatePreset(vfxId);
+		}
+
+		if (normalOffset != 0f)
+		{
+			config.SurfaceNormalOffset = normalOffset;
+		}
+
+		var vfx = new ProceduralVfxInstance3D(config);
+		vfx.Entity = entity;
+		AddChild(vfx);
+		AllVfx.Add(vfx);
+		EntityToVfx3D[entity] = vfx;
+
+		vfx.Position = position;
+		vfx.RotationDegrees = rotationDegrees;
+		vfx.Scale = scale;
+
+		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(position.X, position.Y, position.Z)));
+		EcsWorld.Add(entity, new RotationY(rotationDegrees.Y));
+		EcsWorld.Add(entity, new ModelScale(scale.X));
+
+		return vfx;
+	}
+
+	public static Basis CreateAlignedBasis(Vector3 normal)
+	{
+		Vector3 up = normal.Normalized();
+		Vector3 tangent = (Mathf.Abs(up.Dot(Vector3.Up)) > 0.9f) ? Vector3.Right : Vector3.Up;
+		Vector3 right = tangent.Cross(up).Normalized();
+		Vector3 forward = up.Cross(right).Normalized();
+		return new Basis(right, up, forward);
+	}
+
+	public Vector3 GetTerrainNormalAt(Vector3 pos)
+	{
+		float step = 0.5f;
+		float hL = _editorService.GetTerrainHeightAt(new Vector3(pos.X - step, 0f, pos.Z));
+		float hR = _editorService.GetTerrainHeightAt(new Vector3(pos.X + step, 0f, pos.Z));
+		float hD = _editorService.GetTerrainHeightAt(new Vector3(pos.X, 0f, pos.Z - step));
+		float hU = _editorService.GetTerrainHeightAt(new Vector3(pos.X, 0f, pos.Z + step));
+		return new Vector3(hL - hR, 2f * step, hD - hU).Normalized();
+	}
+
 	private readonly System.Collections.Generic.Dictionary<(int, int), ImageTexture> _decalOrmCache = new();
 	private readonly System.Collections.Generic.Dictionary<string, ImageTexture> _decalNormalCache = new();
 
@@ -2815,6 +2890,22 @@ public partial class GameHost
 			decal.QueueFree();
 			return;
 		}
+		var vfx = (node as ProceduralVfxInstance3D) ?? FindVfxInParentChain(node);
+		if (vfx != null && GodotObject.IsInstanceValid(vfx))
+		{
+			if (vfx == _selectedEditorObject || FindVfxInParentChain(_selectedEditorObject) == vfx)
+			{
+				SelectedEditorObject = null;
+			}
+			AllVfx.Remove(vfx);
+			EntityToVfx3D.Remove(vfx.Entity);
+			if (EcsWorld.IsAlive(vfx.Entity))
+			{
+				EcsWorld.Destroy(vfx.Entity);
+			}
+			vfx.QueueFree();
+			return;
+		}
 
 		if (_selectedEditorObject == node)
 		{
@@ -2868,6 +2959,19 @@ public partial class GameHost
 			AllDecals.Remove(decal);
 			if (decal is Decal3D d3 && EcsWorld.IsAlive(d3.Entity)) EcsWorld.Destroy(d3.Entity);
 			decal.QueueFree();
+			return action;
+		}
+
+		var vfx = (collider as ProceduralVfxInstance3D) ?? FindVfxInParentChain(collider);
+		if (vfx != null && GodotObject.IsInstanceValid(vfx))
+		{
+			if (vfx == _selectedEditorObject || FindVfxInParentChain(_selectedEditorObject) == vfx) SelectedEditorObject = null;
+			string vfxId = vfx.Config?.VfxId ?? "vfx";
+			var action = new ObjectDeleteAction("vfx", vfxId, vfx.Position, vfx.RotationDegrees.Y, vfx.Scale.X, false, vfx);
+			AllVfx.Remove(vfx);
+			EntityToVfx3D.Remove(vfx.Entity);
+			if (EcsWorld.IsAlive(vfx.Entity)) EcsWorld.Destroy(vfx.Entity);
+			vfx.QueueFree();
 			return action;
 		}
 
@@ -2944,7 +3048,22 @@ public partial class GameHost
 			}
 		}
 
-		float minDistance = Mathf.Min(closestUnitDist, Mathf.Min(closestPropDist, Mathf.Min(closestStaticPropDist, closestDecalDist)));
+		ProceduralVfxInstance3D closestVfx = null;
+		float closestVfxDist = 2.0f;
+		foreach (var vfxObj in AllVfx)
+		{
+			if (GodotObject.IsInstanceValid(vfxObj))
+			{
+				float d = vfxObj.GlobalPosition.DistanceTo(hitPos);
+				if (d < closestVfxDist)
+				{
+					closestVfxDist = d;
+					closestVfx = vfxObj;
+				}
+			}
+		}
+
+		float minDistance = Mathf.Min(closestUnitDist, Mathf.Min(closestPropDist, Mathf.Min(closestStaticPropDist, Mathf.Min(closestDecalDist, closestVfxDist))));
 		if (minDistance < 2.0f)
 		{
 			if (closestUnit != null && minDistance == closestUnitDist)
@@ -2987,6 +3106,17 @@ public partial class GameHost
 				closestDecal.QueueFree();
 				return action;
 			}
+			else if (closestVfx != null && minDistance == closestVfxDist)
+			{
+				if (closestVfx == _selectedEditorObject) SelectedEditorObject = null;
+				string vfxId = closestVfx.Config?.VfxId ?? "vfx";
+				var action = new ObjectDeleteAction("vfx", vfxId, closestVfx.Position, closestVfx.RotationDegrees.Y, closestVfx.Scale.X, false, closestVfx);
+				AllVfx.Remove(closestVfx);
+				EntityToVfx3D.Remove(closestVfx.Entity);
+				if (EcsWorld.IsAlive(closestVfx.Entity)) EcsWorld.Destroy(closestVfx.Entity);
+				closestVfx.QueueFree();
+				return action;
+			}
 		}
 
 		MapEditorHUD.Instance?.ShowFeedbackExternal("[Debug] DeleteObjectAtWithUndo returned NULL (no direct or proximity match)");
@@ -3002,7 +3132,8 @@ public partial class GameHost
 	{
 		bool needsPreview = ActiveEditorTool == EditorTool.PlaceUnit ||
 							ActiveEditorTool == EditorTool.PlaceProp ||
-							ActiveEditorTool == EditorTool.PlaceDecal;
+							ActiveEditorTool == EditorTool.PlaceDecal ||
+							ActiveEditorTool == EditorTool.PlaceVfx;
 
 		if (!needsPreview)
 		{
@@ -3087,6 +3218,26 @@ public partial class GameHost
 				previewDecal.AlbedoMix = 0.5f;
 				_editorPreviewNode = previewDecal;
 			}
+			else if (ActiveEditorTool == EditorTool.PlaceVfx)
+			{
+				VfxAttachmentConfig config;
+				if (VfxRegistry.TryGetValue(reqId, out var regCfg))
+				{
+					config = regCfg.Clone();
+				}
+				else if (Enum.TryParse<VfxPrimitiveType>(reqId, true, out var primType))
+				{
+					config = new VfxAttachmentConfig { VfxId = reqId, PrimitiveType = primType };
+				}
+				else
+				{
+					config = VfxAttachmentConfig.CreatePreset(reqId);
+				}
+
+				var previewVfx = new ProceduralVfxInstance3D(config);
+				AddChild(previewVfx);
+				_editorPreviewNode = previewVfx;
+			}
 		}
 
 		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode))
@@ -3118,16 +3269,37 @@ public partial class GameHost
 					previewPos = finalPos.Value;
 				}
 			}
-			_editorPreviewNode.Position = previewPos;
-			_editorPreviewNode.RotationDegrees = new Vector3(0.0f, previewRot, 0.0f);
+
 			float safePreviewScale = previewScaleVal <= 0.001f ? 1.0f : previewScaleVal;
-			if (_editorPreviewNode is Decal previewDecal)
+			if (_editorPreviewNode is ProceduralVfxInstance3D previewVfxNode)
 			{
+				float normalOffset = previewVfxNode.Config?.SurfaceNormalOffset ?? 0.02f;
+				if (previewVfxNode.Config?.PlacementMode == VfxPlacementMode.SurfaceSnap)
+				{
+					Vector3 hitNormal = GetTerrainNormalAt(previewPos);
+					Basis alignedBasis = CreateAlignedBasis(hitNormal);
+					previewVfxNode.Basis = alignedBasis;
+					previewVfxNode.RotateObjectLocal(Vector3.Up, Mathf.DegToRad(previewRot));
+					previewVfxNode.Position = previewPos + hitNormal * normalOffset;
+				}
+				else
+				{
+					previewVfxNode.Position = previewPos + Vector3.Up * normalOffset;
+					previewVfxNode.RotationDegrees = new Vector3(0.0f, previewRot, 0.0f);
+				}
+				previewVfxNode.Scale = Vector3.One * safePreviewScale;
+			}
+			else if (_editorPreviewNode is Decal previewDecal)
+			{
+				previewDecal.Position = previewPos;
+				previewDecal.RotationDegrees = new Vector3(0.0f, previewRot, 0.0f);
 				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * safePreviewScale;
 				previewDecal.Scale = Vector3.One;
 			}
 			else
 			{
+				_editorPreviewNode.Position = previewPos;
+				_editorPreviewNode.RotationDegrees = new Vector3(0.0f, previewRot, 0.0f);
 				_editorPreviewNode.Scale = Vector3.One * safePreviewScale;
 			}
 			_editorPreviewNode.Visible = true;
@@ -3458,6 +3630,10 @@ public partial class GameHost
 				{
 					newHovered = FindDecal3DInParentChain(collider);
 				}
+				if (newHovered == null)
+				{
+					newHovered = FindVfxInParentChain(collider);
+				}
 			}
 
 			if (_hoveredEditorObject != newHovered)
@@ -3467,6 +3643,7 @@ public partial class GameHost
 					if (_hoveredEditorObject is Unit3D u) u.IsHovered = false;
 					else if (_hoveredEditorObject is Prop3D p) p.IsHovered = false;
 					else if (_hoveredEditorObject is Decal d) UpdateDecalHoverRing(d, false);
+					else if (_hoveredEditorObject is ProceduralVfxInstance3D v) v.IsHovered = false;
 				}
 				_hoveredEditorObject = newHovered;
 				if (GodotObject.IsInstanceValid(_hoveredEditorObject))
@@ -3474,6 +3651,7 @@ public partial class GameHost
 					if (_hoveredEditorObject is Unit3D u) u.IsHovered = true;
 					else if (_hoveredEditorObject is Prop3D p) p.IsHovered = true;
 					else if (_hoveredEditorObject is Decal d) UpdateDecalHoverRing(d, true);
+					else if (_hoveredEditorObject is ProceduralVfxInstance3D v) v.IsHovered = true;
 				}
 			}
 
@@ -3541,6 +3719,10 @@ public partial class GameHost
 							else if (SelectedEditorObject is Decal3D decal3D && EcsWorld.IsAlive(decal3D.Entity))
 							{
 								EcsWorld.Set(decal3D.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
+							}
+							else if (SelectedEditorObject is ProceduralVfxInstance3D vfxInst && EcsWorld.IsAlive(vfxInst.Entity))
+							{
+								EcsWorld.Set(vfxInst.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
 							}
 							MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 						}

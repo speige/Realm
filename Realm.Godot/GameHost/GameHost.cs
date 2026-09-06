@@ -18,6 +18,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Realm.Godot.Animation;
 using Realm.Godot.Utils;
+using Realm.Godot.VFX;
 
 public partial class GameHost : Node3D, IGameAPI
 {
@@ -145,10 +146,13 @@ public partial class GameHost : Node3D, IGameAPI
 	public List<Unit3D> AllUnits { get; } = new List<Unit3D>();
 	public List<Prop3D> AllProps { get; } = new List<Prop3D>();
 	public List<Decal> AllDecals { get; } = new List<Decal>();
+	public List<ProceduralVfxInstance3D> AllVfx { get; } = new List<ProceduralVfxInstance3D>();
 	private readonly List<Unit3D> _castlesList = new();
 
 	public static readonly Dictionary<Entity, Unit3D> EntityToUnit3D = new();
 	public static readonly Dictionary<Entity, Prop3D> EntityToProp3D = new();
+	public static readonly Dictionary<Entity, ProceduralVfxInstance3D> EntityToVfx3D = new();
+	public static readonly Dictionary<string, VfxAttachmentConfig> VfxRegistry = new(VfxPresets.GetAllPresets(), StringComparer.OrdinalIgnoreCase);
 
 	public static bool TryGetUnit3D(Entity entity, out Unit3D unit)
 	{
@@ -158,6 +162,11 @@ public partial class GameHost : Node3D, IGameAPI
 	public static bool TryGetProp3D(Entity entity, out Prop3D prop)
 	{
 		return EntityToProp3D.TryGetValue(entity, out prop);
+	}
+
+	public static bool TryGetVfx3D(Entity entity, out ProceduralVfxInstance3D vfx)
+	{
+		return EntityToVfx3D.TryGetValue(entity, out vfx);
 	}
 
 	private Entity _playerEntity
@@ -324,6 +333,7 @@ public partial class GameHost : Node3D, IGameAPI
 		PlaceUnit,
 		PlaceProp,
 		PlaceDecal,
+		PlaceVfx,
 		DeleteObject,
 		SelectMove,
 		Eyedropper,
@@ -579,6 +589,10 @@ public partial class GameHost : Node3D, IGameAPI
 				{
 					UpdateDecalSelectionRing(oldDecal, false);
 				}
+				else if (_selectedEditorObject is ProceduralVfxInstance3D oldVfx)
+				{
+					oldVfx.IsSelected = false;
+				}
 			}
 			_selectedEditorObject = value;
 			if (GodotObject.IsInstanceValid(_selectedEditorObject))
@@ -594,6 +608,10 @@ public partial class GameHost : Node3D, IGameAPI
 				else if ((_selectedEditorObject as Decal ?? FindDecalInParentChain(_selectedEditorObject)) is Decal newDecal)
 				{
 					UpdateDecalSelectionRing(newDecal, true);
+				}
+				else if (_selectedEditorObject is ProceduralVfxInstance3D newVfx)
+				{
+					newVfx.IsSelected = true;
 				}
 			}
 			else
@@ -675,21 +693,66 @@ public partial class GameHost : Node3D, IGameAPI
 		public float YawY { get; set; }
 		public float RollZ { get; set; }
 		public float Scale { get; set; }
+		public float ScaleX { get; set; }
+		public float ScaleY { get; set; }
+		public float ScaleZ { get; set; }
+		public float NormalOffset { get; set; }
 
 		[JsonIgnore]
 		public Vector3 Position => new Vector3(PositionX, PositionY, PositionZ);
 		[JsonIgnore]
 		public Vector3 RotationDegrees => new Vector3(PitchX, YawY, RollZ);
+		[JsonIgnore]
+		public Vector3 ScaleVector => new Vector3(
+			ScaleX > 0.0001f ? ScaleX : (Scale > 0f ? Scale : 1.0f),
+			ScaleY > 0.0001f ? ScaleY : (Scale > 0f ? Scale : 1.0f),
+			ScaleZ > 0.0001f ? ScaleZ : (Scale > 0f ? Scale : 1.0f));
 	}
 
 	public struct UnitObjectAttachments
 	{
 		public List<Dictionary<string, HandAttachmentOrientation>>? right_hand { get; set; }
 		public List<Dictionary<string, HandAttachmentOrientation>>? left_hand { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? chest { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? root { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? head { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? left_foot { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? right_foot { get; set; }
+
+		public List<Dictionary<string, HandAttachmentOrientation>>? GetBoneList(HumanoidBone bone)
+		{
+			return bone switch
+			{
+				HumanoidBone.LeftHand => left_hand,
+				HumanoidBone.RightHand => right_hand,
+				HumanoidBone.Chest or HumanoidBone.Spine => chest,
+				HumanoidBone.Hips => root,
+				HumanoidBone.Head => head,
+				HumanoidBone.LeftFoot => left_foot,
+				HumanoidBone.RightFoot => right_foot,
+				_ => right_hand
+			};
+		}
+
+		public void SetBoneList(HumanoidBone bone, List<Dictionary<string, HandAttachmentOrientation>> list)
+		{
+			switch (bone)
+			{
+				case HumanoidBone.LeftHand: left_hand = list; break;
+				case HumanoidBone.RightHand: right_hand = list; break;
+				case HumanoidBone.Chest:
+				case HumanoidBone.Spine: chest = list; break;
+				case HumanoidBone.Hips: root = list; break;
+				case HumanoidBone.Head: head = list; break;
+				case HumanoidBone.LeftFoot: left_foot = list; break;
+				case HumanoidBone.RightFoot: right_foot = list; break;
+				default: right_hand = list; break;
+			}
+		}
 
 		public bool TryGetOrientation(HumanoidBone hand, string attachmentId, out HandAttachmentOrientation orientation)
 		{
-			var list = hand == HumanoidBone.LeftHand ? left_hand : right_hand;
+			var list = GetBoneList(hand);
 			if (list != null && !string.IsNullOrEmpty(attachmentId))
 			{
 				string cleanId = System.IO.Path.GetFileNameWithoutExtension(attachmentId);
@@ -717,16 +780,13 @@ public partial class GameHost : Node3D, IGameAPI
 		public void SetOrientation(HumanoidBone hand, string attachmentId, HandAttachmentOrientation orientation)
 		{
 			string cleanId = System.IO.Path.GetFileNameWithoutExtension(attachmentId);
-			if (hand == HumanoidBone.LeftHand)
+			var list = GetBoneList(hand);
+			if (list == null)
 			{
-				left_hand ??= new List<Dictionary<string, HandAttachmentOrientation>>();
-				UpdateList(left_hand, cleanId, orientation);
+				list = new List<Dictionary<string, HandAttachmentOrientation>>();
+				SetBoneList(hand, list);
 			}
-			else
-			{
-				right_hand ??= new List<Dictionary<string, HandAttachmentOrientation>>();
-				UpdateList(right_hand, cleanId, orientation);
-			}
+			UpdateList(list, cleanId, orientation);
 		}
 
 		private static void UpdateList(List<Dictionary<string, HandAttachmentOrientation>> list, string attachmentId, HandAttachmentOrientation orientation)
@@ -3130,6 +3190,7 @@ public class {mapName} : IMapScript
 					var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newWeapons = new Dictionary<string, WeaponMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newAttachments = new Dictionary<string, AttachmentMetadata>(StringComparer.OrdinalIgnoreCase);
+					var newVfx = new Dictionary<string, VfxAttachmentConfig>(VfxPresets.GetAllPresets(), StringComparer.OrdinalIgnoreCase);
 
 					bool hasStructuredArrays = false;
 
@@ -3289,6 +3350,22 @@ public class {mapName} : IMapScript
 						}
 					}
 
+					if (doc.RootElement.TryGetProperty("CustomVfx", out var vfxProp) && vfxProp.ValueKind == JsonValueKind.Array)
+					{
+						hasStructuredArrays = true;
+						var list = JsonSerializer.Deserialize<List<VfxAttachmentConfig>>(vfxProp.GetRawText(), Options);
+						if (list != null)
+						{
+							foreach (var cfg in list)
+							{
+								if (!string.IsNullOrEmpty(cfg.VfxId))
+								{
+									newVfx[cfg.VfxId] = cfg;
+								}
+							}
+						}
+					}
+
 					if (!hasStructuredArrays)
 					{
 						var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
@@ -3296,7 +3373,7 @@ public class {mapName} : IMapScript
 						{
 							var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 							{
-								"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades", "CustomItems", "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps", "Assets"
+								"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades", "CustomItems", "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps", "CustomVfx", "Assets"
 							};
 							foreach (var kvp in loadedRegistry)
 							{
@@ -3325,6 +3402,9 @@ public class {mapName} : IMapScript
 
 					AttachmentRegistry.Clear();
 					foreach (var kvp in newAttachments) AttachmentRegistry[kvp.Key] = kvp.Value;
+
+					VfxRegistry.Clear();
+					foreach (var kvp in newVfx) VfxRegistry[kvp.Key] = kvp.Value;
 
 					Prop3D.ClearModelPathCache();
 				}
