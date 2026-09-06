@@ -338,6 +338,86 @@ public class InGameHUDViewModel
 		}
 	}
 
+	public bool SummaryTableVisible
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<SummaryTableState>(GameHost.Instance.WorldEntity))
+				{
+					return world.Get<SummaryTableState>(GameHost.Instance.WorldEntity).Visible;
+				}
+			}
+			return false;
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity))
+				{
+					if (!world.Has<SummaryTableState>(GameHost.Instance.WorldEntity))
+					{
+						world.Add(GameHost.Instance.WorldEntity, new SummaryTableState(value, "Stats", new Dictionary<string, (string Damage, string Income, string Score)>()));
+					}
+					else
+					{
+						ref var st = ref world.Get<SummaryTableState>(GameHost.Instance.WorldEntity);
+						st.Visible = value;
+					}
+				}
+			}
+		}
+	}
+
+	public string SummaryTableTitle
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<SummaryTableState>(GameHost.Instance.WorldEntity))
+				{
+					return world.Get<SummaryTableState>(GameHost.Instance.WorldEntity).Title;
+				}
+			}
+			return "Stats";
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<SummaryTableState>(GameHost.Instance.WorldEntity))
+				{
+					ref var st = ref world.Get<SummaryTableState>(GameHost.Instance.WorldEntity);
+					st.Title = value;
+				}
+			}
+		}
+	}
+
+	public Dictionary<string, (string Damage, string Income, string Score)> SummaryTableRows
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<SummaryTableState>(GameHost.Instance.WorldEntity))
+				{
+					return world.Get<SummaryTableState>(GameHost.Instance.WorldEntity).Rows;
+				}
+			}
+			return _cachedEmptySummaryRows;
+		}
+	}
+	private static readonly Dictionary<string, (string Damage, string Income, string Score)> _cachedEmptySummaryRows = new();
+
 	public List<SelectedUnitInfo> SelectedUnits { get; } = new();
 	public Prop3D SelectedProp { get; set; }
 	public int CycleSelectionIndex { get; set; }

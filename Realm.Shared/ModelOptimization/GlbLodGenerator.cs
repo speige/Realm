@@ -23,9 +23,14 @@ public static unsafe class GlbLodGenerator
 			return (false, inputGlbBytes ?? Array.Empty<byte>(), "Invalid GLB buffer");
 		}
 
-		lodRatios ??= DefaultLodRatios;
-		visBegins ??= DefaultVisibilityBegins;
-		visEnds ??= DefaultVisibilityEnds;
+		if (lodRatios == null || visBegins == null || visEnds == null ||
+			lodRatios.Length < 2 || visBegins.Length != lodRatios.Length || visEnds.Length != lodRatios.Length ||
+			!IsDecreasingRatios(lodRatios))
+		{
+			lodRatios = DefaultLodRatios;
+			visBegins = DefaultVisibilityBegins;
+			visEnds = DefaultVisibilityEnds;
+		}
 
 		try
 		{
@@ -33,6 +38,47 @@ public static unsafe class GlbLodGenerator
 			if (jsonNode is not JsonObject root)
 			{
 				return (false, inputGlbBytes, "Failed to parse glTF JSON root");
+			}
+
+			// Early-out: if the model already contains MSFT_lod in extensions, do not duplicate or re-simplify
+			if (root["extensionsUsed"] is JsonArray extUsedEarly)
+			{
+				foreach (var ext in extUsedEarly)
+				{
+					if (ext?.GetValue<string>() == "MSFT_lod") return (true, inputGlbBytes, string.Empty);
+				}
+			}
+			if (root["extensionsRequired"] is JsonArray extReqEarly)
+			{
+				foreach (var ext in extReqEarly)
+				{
+					if (ext?.GetValue<string>() == "MSFT_lod") return (true, inputGlbBytes, string.Empty);
+				}
+			}
+
+			// Early-out: if any node ends with _LOD0..3 or has MSFT_lod extension
+			if (root["nodes"] is JsonArray allNodes)
+			{
+				foreach (var node in allNodes)
+				{
+					if (node is JsonObject nodeObj)
+					{
+						string nodeName = nodeObj["name"]?.GetValue<string>() ?? string.Empty;
+						if (nodeName.EndsWith("_LOD0", StringComparison.OrdinalIgnoreCase) ||
+							nodeName.EndsWith("_LOD1", StringComparison.OrdinalIgnoreCase) ||
+							nodeName.EndsWith("_LOD2", StringComparison.OrdinalIgnoreCase) ||
+							nodeName.EndsWith("_LOD3", StringComparison.OrdinalIgnoreCase))
+						{
+							return (true, inputGlbBytes, string.Empty);
+						}
+
+						if (nodeObj.TryGetPropertyValue("extensions", out var extNode) && extNode is JsonObject nodeExts &&
+							nodeExts.ContainsKey("MSFT_lod"))
+						{
+							return (true, inputGlbBytes, string.Empty);
+						}
+					}
+				}
 			}
 
 			if (root["meshes"] is not JsonArray meshes || meshes.Count == 0 ||
@@ -67,24 +113,48 @@ public static unsafe class GlbLodGenerator
 					for (int p = 0; p < primitives.Count; p++)
 					{
 						if (primitives[p] is not JsonObject primObj) continue;
+
+						// Only process standard TRIANGLES (mode 4 or default/omitted)
+						if (primObj.TryGetPropertyValue("mode", out var modeVal) && modeVal != null && modeVal.GetValue<int>() != 4)
+						{
+							newPrimitives.Add(primObj.DeepClone());
+							continue;
+						}
+
+						// Do not attempt manual decimation on compressed primitives (Draco, Meshopt, etc.)
+						if (primObj.ContainsKey("extensions") && primObj["extensions"] != null)
+						{
+							newPrimitives.Add(primObj.DeepClone());
+							continue;
+						}
+
 						if (primObj["attributes"] is not JsonObject attributes) continue;
 						if (!attributes.ContainsKey("POSITION")) continue;
 
 						int posAccIdx = attributes["POSITION"]!.GetValue<int>();
 						if (posAccIdx < 0 || posAccIdx >= accessors.Count) continue;
 						var posAcc = accessors[posAccIdx] as JsonObject;
-						if (posAcc == null) continue;
+						if (posAcc == null || posAcc.ContainsKey("sparse")) continue;
 
-						int posBvIdx = posAcc["bufferView"]!.GetValue<int>();
+						string posType = posAcc["type"]?.GetValue<string>() ?? string.Empty;
+						int posCompType = posAcc["componentType"]?.GetValue<int>() ?? 0;
+						if (posType != "VEC3" || posCompType != 5126) continue;
+
+						int posBvIdx = posAcc["bufferView"]?.GetValue<int>() ?? -1;
+						if (posBvIdx < 0 || posBvIdx >= bufferViews.Count) continue;
 						var posBv = bufferViews[posBvIdx] as JsonObject;
 						if (posBv == null) continue;
 
 						int posByteOffset = (posAcc["byteOffset"]?.GetValue<int>() ?? 0) +
 											(posBv["byteOffset"]?.GetValue<int>() ?? 0);
-						int posCount = posAcc["count"]!.GetValue<int>();
+						int posCount = posAcc["count"]?.GetValue<int>() ?? 0;
 						int posStride = posBv["byteStride"]?.GetValue<int>() ?? 12;
 
-						if (posCount < 3 || posByteOffset + (posCount * posStride) > binBytes.Length) continue;
+						if (posByteOffset < 0 || posCount < 3 || posStride < 12 || (posStride % 4) != 0 || posStride > 256)
+							continue;
+
+						if ((long)posByteOffset + ((long)posCount * posStride) > binBytes.Length)
+							continue;
 
 						uint[] originalIndices;
 						if (primObj.ContainsKey("indices"))
@@ -92,16 +162,31 @@ public static unsafe class GlbLodGenerator
 							int indAccIdx = primObj["indices"]!.GetValue<int>();
 							if (indAccIdx < 0 || indAccIdx >= accessors.Count) continue;
 							var indAcc = accessors[indAccIdx] as JsonObject;
-							if (indAcc == null) continue;
+							if (indAcc == null || indAcc.ContainsKey("sparse")) continue;
 
-							int indBvIdx = indAcc["bufferView"]!.GetValue<int>();
+							string indType = indAcc["type"]?.GetValue<string>() ?? string.Empty;
+							if (indType != "SCALAR") continue;
+
+							int indBvIdx = indAcc["bufferView"]?.GetValue<int>() ?? -1;
+							if (indBvIdx < 0 || indBvIdx >= bufferViews.Count) continue;
 							var indBv = bufferViews[indBvIdx] as JsonObject;
 							if (indBv == null) continue;
 
 							int indByteOffset = (indAcc["byteOffset"]?.GetValue<int>() ?? 0) +
 												(indBv["byteOffset"]?.GetValue<int>() ?? 0);
-							int indCount = indAcc["count"]!.GetValue<int>();
-							int componentType = indAcc["componentType"]!.GetValue<int>();
+							int indCount = indAcc["count"]?.GetValue<int>() ?? 0;
+							int componentType = indAcc["componentType"]?.GetValue<int>() ?? 0;
+
+							if (indByteOffset < 0 || indCount < 3 || (indCount % 3) != 0) continue;
+
+							int elemSize = componentType switch
+							{
+								5121 => 1,
+								5123 => 2,
+								5125 => 4,
+								_ => 0
+							};
+							if (elemSize == 0 || (long)indByteOffset + ((long)indCount * elemSize) > binBytes.Length) continue;
 
 							originalIndices = new uint[indCount];
 							if (componentType == 5123) // UNSIGNED_SHORT
@@ -132,6 +217,7 @@ public static unsafe class GlbLodGenerator
 						}
 						else
 						{
+							if (posCount % 3 != 0) continue;
 							originalIndices = new uint[posCount];
 							for (uint i = 0; i < posCount; i++) originalIndices[i] = i;
 						}
@@ -143,7 +229,29 @@ public static unsafe class GlbLodGenerator
 							continue;
 						}
 
-						int targetIndexCount = Math.Max(3, (int)(originalIndices.Length * ratio) / 3 * 3);
+						// Validate that all indices are within posCount bounds
+						bool hasInvalidIndex = false;
+						for (int i = 0; i < originalIndices.Length; i++)
+						{
+							if (originalIndices[i] >= (uint)posCount)
+							{
+								hasInvalidIndex = true;
+								break;
+							}
+						}
+						if (hasInvalidIndex)
+						{
+							newPrimitives.Add(primObj.DeepClone());
+							continue;
+						}
+
+						int targetIndexCount = (int)(originalIndices.Length * ratio) / 3 * 3;
+						if (targetIndexCount < 3 || targetIndexCount >= originalIndices.Length)
+						{
+							newPrimitives.Add(primObj.DeepClone());
+							continue;
+						}
+
 						uint[] simplifiedIndices = new uint[originalIndices.Length];
 						nuint simplifiedCount = 0;
 
@@ -180,13 +288,13 @@ public static unsafe class GlbLodGenerator
 									&resultError);
 							}
 
-							if (simplifiedCount > 0 && simplifiedCount < (nuint)originalIndices.Length)
+							if (simplifiedCount >= 3 && (simplifiedCount % 3) == 0 && simplifiedCount < (nuint)originalIndices.Length)
 							{
 								MeshOptimizerNative.meshopt_optimizeVertexCache(pDest, pDest, simplifiedCount, (nuint)posCount);
 							}
 						}
 
-						if (simplifiedCount == 0 || simplifiedCount >= (nuint)originalIndices.Length)
+						if (simplifiedCount < 3 || (simplifiedCount % 3) != 0 || simplifiedCount >= (nuint)originalIndices.Length)
 						{
 							newPrimitives.Add(primObj.DeepClone());
 							continue;
@@ -198,8 +306,17 @@ public static unsafe class GlbLodGenerator
 							newBinStream.WriteByte(0);
 						}
 
+						uint maxSimplifiedIdx = 0;
+						for (int i = 0; i < (int)simplifiedCount; i++)
+						{
+							if (simplifiedIndices[i] > maxSimplifiedIdx)
+							{
+								maxSimplifiedIdx = simplifiedIndices[i];
+							}
+						}
+
 						int newIndByteOffset = (int)newBinStream.Position;
-						bool useShort = posCount <= 65535;
+						bool useShort = maxSimplifiedIdx <= 65535;
 						int newIndByteLength = (int)simplifiedCount * (useShort ? 2 : 4);
 
 						for (int i = 0; i < (int)simplifiedCount; i++)
@@ -397,5 +514,17 @@ public static unsafe class GlbLodGenerator
 		{
 			return (false, inputGlbBytes, $"Failed to generate LODs: {ex.Message}");
 		}
+	}
+
+	private static bool IsDecreasingRatios(float[] ratios)
+	{
+		for (int i = 0; i < ratios.Length; i++)
+		{
+			if (float.IsNaN(ratios[i]) || float.IsInfinity(ratios[i]) || ratios[i] <= 0f || ratios[i] > 1.0f)
+				return false;
+			if (i > 0 && ratios[i] >= ratios[i - 1])
+				return false;
+		}
+		return true;
 	}
 }

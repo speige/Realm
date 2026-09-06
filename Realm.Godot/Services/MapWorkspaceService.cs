@@ -524,7 +524,18 @@ public static partial class MapWorkspaceService
 					GD.PrintErr($"[MapWorkspaceService] Animation extraction error for {fileName}: {ex.Message}");
 				}
 
-				var optResult = optimizer.Optimize(glbBytes, options);
+				Realm.Shared.OptimizationResult optResult = default;
+				try
+				{
+					optResult = optimizer.Optimize(glbBytes, options);
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"[MapWorkspaceService] Exception ({ex.GetType().Name}) optimizing {fileName}: {ex.Message}");
+					_optimizedFlagCache[glbPath] = (lastWrite, true);
+					continue;
+				}
+
 				if (optResult.Success && optResult.OutputGlbBytes != null && optResult.OutputGlbBytes.Length > 0)
 				{
 					try

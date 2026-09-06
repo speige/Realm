@@ -110,6 +110,27 @@ public static class GlbManifestUtils
 		return ms.ToArray();
 	}
 
+	private static bool TryGetTrue(JsonObject? container, string propertyName)
+	{
+		if (container == null || !container.TryGetPropertyValue(propertyName, out var node) || node == null)
+			return false;
+		try
+		{
+			if (node.GetValueKind() == System.Text.Json.JsonValueKind.True) return true;
+			if (node is JsonValue jv)
+			{
+				if (jv.TryGetValue<bool>(out var b)) return b;
+				if (jv.TryGetValue<int>(out var num)) return num != 0;
+				if (jv.TryGetValue<string>(out var str) && bool.TryParse(str, out var parsedB)) return parsedB;
+			}
+			return false;
+		}
+		catch
+		{
+			return false;
+		}
+	}
+
 	public static bool HasOptimizationFlag(byte[] glbBytes)
 	{
 		var (json, _, _) = ParseGlb(glbBytes);
@@ -117,13 +138,31 @@ public static class GlbManifestUtils
 
 		if (root.TryGetPropertyValue("extras", out var extrasNode) && extrasNode is JsonObject extras)
 		{
-			if (extras.TryGetPropertyValue("realm_optimize_completed", out var optComp) && optComp != null && optComp.GetValue<bool>() == true) return true;
+			if (TryGetTrue(extras, "realm_optimize_completed")) return true;
+			if (TryGetTrue(extras, "realm_decimate_completed")) return true;
 		}
 
 		if (root.TryGetPropertyValue("asset", out var assetNode) && assetNode is JsonObject asset &&
 			asset.TryGetPropertyValue("extras", out var assetExtrasNode) && assetExtrasNode is JsonObject assetExtras)
 		{
-			if (assetExtras.TryGetPropertyValue("realm_optimize_completed", out var optComp2) && optComp2 != null && optComp2.GetValue<bool>() == true) return true;
+			if (TryGetTrue(assetExtras, "realm_optimize_completed")) return true;
+			if (TryGetTrue(assetExtras, "realm_decimate_completed")) return true;
+		}
+
+		if (root.TryGetPropertyValue("extensionsUsed", out var extUsedNode) && extUsedNode is JsonArray extUsed)
+		{
+			foreach (var ext in extUsed)
+			{
+				if (ext?.GetValue<string>() == "MSFT_lod") return true;
+			}
+		}
+
+		if (root.TryGetPropertyValue("extensionsRequired", out var extReqNode) && extReqNode is JsonArray extReq)
+		{
+			foreach (var ext in extReq)
+			{
+				if (ext?.GetValue<string>() == "MSFT_lod") return true;
+			}
 		}
 
 		return false;

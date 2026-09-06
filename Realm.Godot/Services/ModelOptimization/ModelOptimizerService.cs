@@ -447,17 +447,23 @@ public class ModelOptimizerService
 
 			if (root.TryGetProperty("asset", out var assetElement) &&
 				assetElement.TryGetProperty("extras", out var assetExtras) &&
-				assetExtras.TryGetProperty("realm_optimize_completed", out var f1) &&
-				f1.GetBoolean())
+				(IsTrueProperty(assetExtras, "realm_optimize_completed") || IsTrueProperty(assetExtras, "realm_decimate_completed")))
 			{
 				return true;
 			}
 
 			if (root.TryGetProperty("extras", out var rootExtras) &&
-				rootExtras.TryGetProperty("realm_optimize_completed", out var f2) &&
-				f2.GetBoolean())
+				(IsTrueProperty(rootExtras, "realm_optimize_completed") || IsTrueProperty(rootExtras, "realm_decimate_completed")))
 			{
 				return true;
+			}
+
+			if (root.TryGetProperty("extensionsUsed", out var extUsed) && extUsed.ValueKind == JsonValueKind.Array)
+			{
+				foreach (var ext in extUsed.EnumerateArray())
+				{
+					if (ext.ValueKind == JsonValueKind.String && ext.GetString() == "MSFT_lod") return true;
+				}
 			}
 
 			return false;
@@ -466,6 +472,17 @@ public class ModelOptimizerService
 		{
 			return false;
 		}
+	}
+
+	private static bool IsTrueProperty(JsonElement element, string propName)
+	{
+		if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty(propName, out var prop))
+		{
+			if (prop.ValueKind == JsonValueKind.True) return true;
+			if (prop.ValueKind == JsonValueKind.String && bool.TryParse(prop.GetString(), out var b)) return b;
+			if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var n)) return n != 0;
+		}
+		return false;
 	}
 
 	public static bool HasDecimationCompletedFlag(string filePath) => HasOptimizationCompletedFlag(filePath);
@@ -504,17 +521,23 @@ public class ModelOptimizerService
 
 					if (root.TryGetProperty("asset", out var assetElement) &&
 						assetElement.TryGetProperty("extras", out var assetExtras) &&
-						assetExtras.TryGetProperty("realm_optimize_completed", out var f1) &&
-						f1.GetBoolean())
+						(IsTrueProperty(assetExtras, "realm_optimize_completed") || IsTrueProperty(assetExtras, "realm_decimate_completed")))
 					{
 						return true;
 					}
 
 					if (root.TryGetProperty("extras", out var rootExtras) &&
-						rootExtras.TryGetProperty("realm_optimize_completed", out var f2) &&
-						f2.GetBoolean())
+						(IsTrueProperty(rootExtras, "realm_optimize_completed") || IsTrueProperty(rootExtras, "realm_decimate_completed")))
 					{
 						return true;
+					}
+
+					if (root.TryGetProperty("extensionsUsed", out var extUsed) && extUsed.ValueKind == JsonValueKind.Array)
+					{
+						foreach (var ext in extUsed.EnumerateArray())
+						{
+							if (ext.ValueKind == JsonValueKind.String && ext.GetString() == "MSFT_lod") return true;
+						}
 					}
 
 					return false;
