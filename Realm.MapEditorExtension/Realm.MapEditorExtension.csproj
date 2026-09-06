@@ -6,6 +6,10 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);node_modules\**;dist\**</DefaultItemExcludes>
   </PropertyGroup>
 
+  <Target Name="SyncVersion" BeforeTargets="NpmBuild">
+    <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)/../scripts/sync-version.ps1&quot;" ContinueOnError="true" />
+  </Target>
+
   <Target Name="NpmInstall" BeforeTargets="Build" Condition="!Exists('node_modules')">
     <Exec Command="npm install" />
   </Target>
@@ -25,10 +29,5 @@
     <Copy SourceFiles="@(DistFiles)" DestinationFiles="@(DistFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_extensions_dist/speige.realm-map-editor/dist/%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(MediaFiles)" DestinationFiles="@(MediaFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_extensions_dist/speige.realm-map-editor/media/%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(RootFiles)" DestinationFiles="@(RootFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_extensions_dist/speige.realm-map-editor/%(Filename)%(Extension)')" />
-
-    <!-- 2. Auto-update installed extension inside user-data-dir/extensions if present -->
-    <Copy SourceFiles="@(DistFiles)" DestinationFiles="@(DistFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0/dist/%(RecursiveDir)%(Filename)%(Extension)')" Condition="Exists('$(MSBuildProjectDirectory)/../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0')" />
-    <Copy SourceFiles="@(MediaFiles)" DestinationFiles="@(MediaFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0/media/%(RecursiveDir)%(Filename)%(Extension)')" Condition="Exists('$(MSBuildProjectDirectory)/../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0')" />
-    <Copy SourceFiles="@(RootFiles)" DestinationFiles="@(RootFiles->'$(MSBuildProjectDirectory)/../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0/%(Filename)%(Extension)')" Condition="Exists('$(MSBuildProjectDirectory)/../Realm.Godot/vscode_embedded/user-data-dir/extensions/speige.realm-map-editor-1.0.0')" />
   </Target>
 </Project>

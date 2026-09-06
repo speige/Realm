@@ -13,6 +13,59 @@ public static class WasiSdkResolver
 
 		try
 		{
+			string appDataDir = Godot.OS.GetUserDataDir();
+			if (!string.IsNullOrWhiteSpace(appDataDir))
+			{
+				string versionedPath = Path.Combine(appDataDir, "wasi_sdk", "wasi-sdk-30");
+				if (IsValidWasiSdkDirectory(versionedPath))
+				{
+					return NormalizeDirectoryPath(versionedPath);
+				}
+
+				string wasiSdkParentDir = Path.Combine(appDataDir, "wasi_sdk");
+				if (Directory.Exists(wasiSdkParentDir))
+				{
+					foreach (string candidate in Directory.GetDirectories(wasiSdkParentDir, "wasi-sdk-*"))
+					{
+						if (IsValidWasiSdkDirectory(candidate))
+						{
+							return NormalizeDirectoryPath(candidate);
+						}
+					}
+				}
+			}
+		}
+		catch
+		{
+		}
+
+		try
+		{
+			string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+			string appDataFallback = Path.Combine(appData, "Godot", "app_userdata", "Realm.Godot", "wasi_sdk", "wasi-sdk-30");
+			if (IsValidWasiSdkDirectory(appDataFallback))
+			{
+				return NormalizeDirectoryPath(appDataFallback);
+			}
+
+			string fallbackSdkParent = Path.Combine(appData, "Godot", "app_userdata", "Realm.Godot", "wasi_sdk");
+			if (Directory.Exists(fallbackSdkParent))
+			{
+				foreach (string candidate in Directory.GetDirectories(fallbackSdkParent, "wasi-sdk-*"))
+				{
+					if (IsValidWasiSdkDirectory(candidate))
+					{
+						return NormalizeDirectoryPath(candidate);
+					}
+				}
+			}
+		}
+		catch
+		{
+		}
+
+		try
+		{
 			string foundPath = PathUtils.FindPath("wasi_sdk_embedded");
 			if (!string.IsNullOrWhiteSpace(foundPath) && IsValidWasiSdkDirectory(foundPath))
 			{
@@ -70,7 +123,8 @@ public static class WasiSdkResolver
 
 		string clangExecutablePath = Path.Combine(directoryPath, "bin", "clang.exe");
 		string clangUnixPath = Path.Combine(directoryPath, "bin", "clang");
-		return File.Exists(clangExecutablePath) || File.Exists(clangUnixPath);
+		return (File.Exists(clangExecutablePath) && new FileInfo(clangExecutablePath).Length > 0)
+			|| (File.Exists(clangUnixPath) && new FileInfo(clangUnixPath).Length > 0);
 	}
 
 	private static string NormalizeDirectoryPath(string path)

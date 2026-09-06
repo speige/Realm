@@ -3565,10 +3565,15 @@ public partial class MapEditorHUD : Control
 
 		var btnCancel = new Button();
 		btnCancel.Set("icon_max_width", 0);
-		SetupButton(btnCancel, TranslationServer.Translate(cancelText), () =>
+		Action cancelAction = () =>
 		{
 			overlay.QueueFree();
 			onCancel?.Invoke();
+		};
+		overlay.SetMeta("CancelAction", Callable.From(cancelAction));
+		SetupButton(btnCancel, TranslationServer.Translate(cancelText), () =>
+		{
+			cancelAction();
 		}, 13);
 		btnCancel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
 		hbox.AddChild(btnCancel);
@@ -3689,7 +3694,7 @@ public partial class MapEditorHUD : Control
 		AddHelpSectionHeader(grid, TranslationServer.Translate("GENERAL OPERATIONS"));
 		AddHelpShortcutRow(grid, "Ctrl + Z / Ctrl + Y", TranslationServer.Translate("Undo / Redo editor actions"));
 		AddHelpShortcutRow(grid, "Ctrl + S / Ctrl + O", TranslationServer.Translate("Save Map File / Load Map File"));
-		AddHelpShortcutRow(grid, "Escape Key", TranslationServer.Translate("Clear selection or cancel active tool"));
+		AddHelpShortcutRow(grid, "Escape Key", TranslationServer.Translate("Close open dialog"));
 
 		var btnClose = new Button();
 		btnClose.Set("icon_max_width", 0);
@@ -7785,10 +7790,93 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public bool CloseCurrentlyOpenDialog()
+	{
+		var confirmOverlay = GetNodeOrNull<Control>("ConfirmationOverlay") ?? UIManager.Instance?.GetNodeOrNull<Control>("ConfirmationOverlay");
+		if (confirmOverlay != null && GodotObject.IsInstanceValid(confirmOverlay) && confirmOverlay.IsInsideTree() && !confirmOverlay.IsQueuedForDeletion())
+		{
+			if (confirmOverlay.HasMeta("CancelAction"))
+			{
+				var action = confirmOverlay.GetMeta("CancelAction").AsCallable();
+				action.Call();
+			}
+			else
+			{
+				confirmOverlay.QueueFree();
+			}
+			return true;
+		}
+
+		var genOverlay = GetNodeOrNull<Control>("GenerationOverlay");
+		if (genOverlay != null && GodotObject.IsInstanceValid(genOverlay) && genOverlay.IsInsideTree() && !genOverlay.IsQueuedForDeletion())
+		{
+			genOverlay.QueueFree();
+			return true;
+		}
+
+		if (_scaleMapDialog != null && GodotObject.IsInstanceValid(_scaleMapDialog) && _scaleMapDialog.IsInsideTree() && !_scaleMapDialog.IsQueuedForDeletion())
+		{
+			CloseScaleMapDialog();
+			return true;
+		}
+
+		var pubOverlay = GetNodeOrNull<Control>("PublishInstructionsOverlay");
+		if (pubOverlay != null && GodotObject.IsInstanceValid(pubOverlay) && pubOverlay.IsInsideTree() && !pubOverlay.IsQueuedForDeletion())
+		{
+			pubOverlay.QueueFree();
+			return true;
+		}
+
+		var creatorOverlay = GetNodeOrNull<Control>("CreatorRegistrationOverlay");
+		if (creatorOverlay != null && GodotObject.IsInstanceValid(creatorOverlay) && creatorOverlay.IsInsideTree() && !creatorOverlay.IsQueuedForDeletion())
+		{
+			creatorOverlay.QueueFree();
+			return true;
+		}
+
+		var agreementOverlay = GetNodeOrNull<Control>("AgreementOverlay");
+		if (agreementOverlay != null && GodotObject.IsInstanceValid(agreementOverlay) && agreementOverlay.IsInsideTree() && !agreementOverlay.IsQueuedForDeletion())
+		{
+			agreementOverlay.QueueFree();
+			UIManager.Instance?.TransitionTo(GameScreen.MainMenu);
+			return true;
+		}
+
+		if (_helpOverlayPanel != null && GodotObject.IsInstanceValid(_helpOverlayPanel) && _helpOverlayPanel.IsInsideTree() && !_helpOverlayPanel.IsQueuedForDeletion())
+		{
+			_helpOverlayPanel.QueueFree();
+			_helpOverlayPanel = null;
+			return true;
+		}
+
+		if (FloatingDialogBase.HasAnyDialogOpen)
+		{
+			return FloatingDialogBase.CloseTopmostDialog();
+		}
+
+		return false;
+	}
+
 	public override void _Input(InputEvent @event)
 	{
 		if (@event is InputEventKey keyEvent)
 		{
+			if (keyEvent.Pressed && !keyEvent.Echo && keyEvent.Keycode == Godot.Key.Escape)
+			{
+				if (SettingsMenu.IsOpen)
+				{
+					return;
+				}
+
+				if (CloseCurrentlyOpenDialog())
+				{
+					GetViewport().SetInputAsHandled();
+					return;
+				}
+
+				GetViewport().SetInputAsHandled();
+				return;
+			}
 			if (keyEvent.Keycode == Godot.Key.Tab)
 			{
 				if (FloatingDialogBase.HasAnyDialogOpen)

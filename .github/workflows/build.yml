@@ -26,6 +26,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Apply Version
+        run: powershell -ExecutionPolicy Bypass -File scripts/sync-version.ps1
+
       - name: Restore
         run: dotnet restore Realm.slnx
 

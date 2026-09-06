@@ -107,13 +107,6 @@ public partial class GameHost
 						GetViewport().SetInputAsHandled();
 						return;
 					}
-					else if (ActiveEditorTool != EditorTool.SelectMove)
-					{
-						ActiveEditorTool = EditorTool.SelectMove;
-						MapEditorHUD.Instance?.SelectToolFromHotkey(EditorTool.SelectMove);
-						GetViewport().SetInputAsHandled();
-						return;
-					}
 				}
 				if (editorKeyEvent.Keycode == Key.Z && !ctrlPressed && !shiftPressed)
 				{

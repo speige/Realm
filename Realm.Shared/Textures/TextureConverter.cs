@@ -540,7 +540,12 @@ public static class TextureConverter
 	public static TextureConversionResult ProcessAndSaveSkybox(
 		string rawImagePath,
 		string outputRtexPath,
-		bool enableRdo = false)
+		bool enableRdo = false,
+		float horizonBlendStart = 0.5f,
+		Rgba32? horizonColor = null,
+		float wrapBlendWidth = 0.05f,
+		float zenithBlendEnd = 0.08f,
+		Rgba32? zenithColor = null)
 	{
 		var result = new TextureConversionResult
 		{
@@ -560,11 +565,22 @@ public static class TextureConverter
 			byte[] originalBits = File.ReadAllBytes(result.InputPath);
 			string originalBlake3 = RealmMetadataHelper.ComputeBlake3(originalBits, Path.GetExtension(result.InputPath));
 
-			using var sourceImage = Image.Load<Rgba32>(result.InputPath);
+			using var sourceImage = Path.GetExtension(result.InputPath).Equals(".rtex", StringComparison.OrdinalIgnoreCase)
+				? ExtractImageFromRtex(result.InputPath, 0) ?? throw new InvalidOperationException($"Failed to load image from RTEX: {result.InputPath}")
+				: Image.Load<Rgba32>(originalBits);
+
+			using var processedImage = SkyboxProcessor.ProcessSkybox(
+				sourceImage,
+				horizonBlendStart,
+				horizonColor,
+				wrapBlendWidth,
+				zenithBlendEnd,
+				zenithColor);
+
 			string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"skybox\",\"canonical_blake3\":\"{originalBlake3}\",\"layers\":1}}";
 
 			bool encodeOk = EncodeSingleLayerRtex(
-				sourceImage,
+				processedImage,
 				result.OutputPath,
 				metadataJson,
 				out string errorMsg,

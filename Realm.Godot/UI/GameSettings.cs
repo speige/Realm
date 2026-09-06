@@ -112,7 +112,7 @@ public static class GameSettings
 	public static GameLanguage Language { get; set; } = GameLanguage.English;
 	public static bool DisplayFps { get; set; } = false;
 	public static bool RecordReplays { get; set; } = false;
-	public static bool SeedMapFiles { get; set; } = true;
+	public static bool SeedMapFiles { get; set; } = false;
 	public static bool DisableShadows { get; set; } = false;
 	public static bool DisableDayNightLighting { get; set; } = false;
 
@@ -155,7 +155,7 @@ public static class GameSettings
 		Language = GameLanguage.English;
 		DisplayFps = false;
 		RecordReplays = false;
-		SeedMapFiles = true;
+		SeedMapFiles = false;
 	}
 
 	public static void InitializeResolutions()
@@ -497,7 +497,7 @@ public static class GameSettings
 		public GameLanguage Language { get; set; } = GameLanguage.English;
 		public bool DisplayFps { get; set; } = false;
 		public bool RecordReplays { get; set; } = false;
-		public bool SeedMapFiles { get; set; } = true;
+		public bool SeedMapFiles { get; set; } = false;
 		public bool DisableShadows { get; set; } = false;
 		public bool DisableDayNightLighting { get; set; } = false;
 	}

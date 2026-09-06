@@ -6,8 +6,6 @@
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DebugType>embedded</DebugType>
-    <Version>0.0.1-Pre-Alpha</Version>
-    <InformationalVersion>0.0.1_Pre-Alpha</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>
