@@ -232,8 +232,9 @@ public static class SkyboxProcessor
 					zenithColor);
 			}
 
-			byte[] inputBytes = File.ReadAllBytes(fullInput);
-			using var sourceImage = Image.Load<Rgba32>(inputBytes);
+			using var sourceImage = Path.GetExtension(fullInput).Equals(".rtex", StringComparison.OrdinalIgnoreCase)
+				? TextureConverter.ExtractImageFromRtex(fullInput, 0) ?? throw new InvalidOperationException($"Failed to load image from RTEX: {fullInput}")
+				: Image.Load<Rgba32>(File.ReadAllBytes(fullInput));
 			using var processedImage = ProcessSkybox(
 				sourceImage,
 				horizonBlendStart,

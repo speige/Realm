@@ -215,21 +215,11 @@ public class RigHumanoidOptions
 	public string? MiaDir { get; set; }
 }
 
-[Verb("process_skybox", HelpText = "Post-process skybox images with horizon blending, zenith pole correction, and seamless wrapping.")]
-public class ProcessSkyboxOptions
-{
-	[Option('i', "input", Required = true, HelpText = "Input skybox image path.")]
-	public string Input { get; set; } = string.Empty;
-
-	[Option('o', "output", Required = true, HelpText = "Output skybox image path (.png, .webp, or .rtex).")]
-	public string Output { get; set; } = string.Empty;
-}
-
 public static class Program
 {
 	public static int Main(string[] args)
 	{
-		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options, GlbPlayerColorCliOptions, RigHumanoidOptions, ProcessSkyboxOptions>(args)
+		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options, GlbPlayerColorCliOptions, RigHumanoidOptions>(args)
 			.MapResult(
 				(GlbOptimizeOptions options) => ExecuteGlbOptimize(options),
 				(TextureConvertOptions options) => ExecuteTextureConvert(options),
@@ -240,7 +230,6 @@ public static class Program
 				(Blake3Options options) => ExecuteBlake3(options),
 				(GlbPlayerColorCliOptions options) => ExecuteGlbPlayerColor(options),
 				(RigHumanoidOptions options) => ExecuteRigHumanoid(options),
-				(ProcessSkyboxOptions options) => ExecuteProcessSkybox(options),
 				errors => 1);
 	}
 
@@ -1183,33 +1172,5 @@ public static class Program
 		}
 
 		return 0;
-	}
-
-	private static int ExecuteProcessSkybox(ProcessSkyboxOptions options)
-	{
-		if (!File.Exists(options.Input))
-		{
-			Console.Error.WriteLine($"Error: Input file does not exist: {options.Input}");
-			return 1;
-		}
-
-		var result = SkyboxProcessor.ProcessSkyboxFile(
-			options.Input,
-			options.Output);
-
-		if (result.Success)
-		{
-			if (Path.GetExtension(options.Output).Equals(".rtex", StringComparison.OrdinalIgnoreCase))
-			{
-				RealmMetadataHelper.SyncBlake3Metadata(options.Output);
-			}
-			Console.WriteLine($"Successfully processed skybox: {options.Input} -> {options.Output}");
-			return 0;
-		}
-		else
-		{
-			Console.Error.WriteLine($"Failed to process skybox {options.Input}: {result.ErrorMessage}");
-			return 1;
-		}
 	}
 }

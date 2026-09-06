@@ -878,6 +878,12 @@ public static class TextureConverter
 
 		if (normType is "skybox" or "skyboxes")
 		{
+			string outExt = Path.GetExtension(targetRtex).ToLowerInvariant();
+			if (outExt is not ".rtex")
+			{
+				return SkyboxProcessor.ProcessSkyboxFile(fullInput, targetRtex);
+			}
+
 			return ProcessAndSaveSkybox(fullInput, targetRtex);
 		}
 
