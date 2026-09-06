@@ -86,45 +86,38 @@ public class TerrainTextureUndoAction : IEditorAction
 
 		try
 		{
-			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-			string metadataPath = Path.Combine(wsPath, "metadata.json");
-			if (File.Exists(metadataPath))
+			string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
+			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+			if (assetsObj?["textures"] is JsonObject texturesObj)
 			{
-				string json = File.ReadAllText(metadataPath);
-				var root = JsonNode.Parse(json)?.AsObject();
-				var targetObjects = new System.Collections.Generic.List<JsonObject>();
-				if (root?["textures"] is JsonObject tObj) targetObjects.Add(tObj);
-				if (root?["Assets"]?["textures"] is JsonObject aObj) targetObjects.Add(aObj);
 				bool anyUpdated = false;
-				foreach (var texturesObj in targetObjects)
+				foreach (var kvp in texturesObj)
 				{
-					foreach (var kvp in texturesObj)
+					if (string.Equals(kvp.Key, _textureFileName, StringComparison.OrdinalIgnoreCase) ||
+						string.Equals(Path.GetFileName(kvp.Key), _textureFileName, StringComparison.OrdinalIgnoreCase) ||
+						string.Equals(Path.GetFileNameWithoutExtension(kvp.Key), Path.GetFileNameWithoutExtension(_textureFileName), StringComparison.OrdinalIgnoreCase))
 					{
-						if (string.Equals(kvp.Key, _textureFileName, StringComparison.OrdinalIgnoreCase) ||
-							string.Equals(Path.GetFileName(kvp.Key), _textureFileName, StringComparison.OrdinalIgnoreCase))
+						if (kvp.Value is JsonObject sObj)
 						{
-							if (kvp.Value is JsonObject sObj)
-							{
-								sObj["Brightness"] = snapshot.Brightness;
-								sObj["Tint"] = tintHex;
-								sObj["Height_Scale"] = snapshot.HeightScale;
-								sObj["Height_Offset"] = snapshot.HeightOffset;
-								sObj["Crevice_Power"] = snapshot.CrevicePower;
-								sObj["Normal_Scale"] = snapshot.NormalScale;
-								sObj["Roughness_Scale"] = snapshot.RoughnessScale;
-								sObj["Tile_Mode"] = snapshot.TileMode;
-								sObj["UV_Scale"] = snapshot.UvScale;
-								sObj["Stochastic_Tile_Size"] = snapshot.StochasticTileSize;
-								sObj["Cross_Fade"] = snapshot.CrossFade;
-								anyUpdated = true;
-								break;
-							}
+							sObj["Brightness"] = snapshot.Brightness;
+							sObj["Tint"] = tintHex;
+							sObj["Height_Scale"] = snapshot.HeightScale;
+							sObj["Height_Offset"] = snapshot.HeightOffset;
+							sObj["Crevice_Power"] = snapshot.CrevicePower;
+							sObj["Normal_Scale"] = snapshot.NormalScale;
+							sObj["Roughness_Scale"] = snapshot.RoughnessScale;
+							sObj["Tile_Mode"] = snapshot.TileMode;
+							sObj["UV_Scale"] = snapshot.UvScale;
+							sObj["Stochastic_Tile_Size"] = snapshot.StochasticTileSize;
+							sObj["Cross_Fade"] = snapshot.CrossFade;
+							anyUpdated = true;
+							break;
 						}
 					}
 				}
 				if (anyUpdated)
 				{
-					MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+					Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj, removeFromMetadata: true);
 				}
 			}
 		}

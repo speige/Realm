@@ -371,7 +371,12 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 
 		Vector3 newPos = _targetPosition + offset;
 		_camera.Position = newPos;
-		_camera.LookAtFromPosition(newPos, _targetPosition, Vector3.Up);
+		if (newPos.DistanceSquaredTo(_targetPosition) > 0.0001f)
+		{
+			Vector3 dir = (_targetPosition - newPos).Normalized();
+			Vector3 up = Mathf.Abs(dir.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
+			_camera.LookAtFromPosition(newPos, _targetPosition, up);
+		}
 	}
 
 	private void UpdateAoEIndicator(float radius)
@@ -423,13 +428,11 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 
 		// Detect columns and rows from metadata if available
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 
 		try
 		{
-			string json = System.IO.File.ReadAllText(metadataPath);
-			var root = JsonNode.Parse(json)?.AsObject();
-			var vfxSheets = (root?["Assets"]?["vfx_spritesheets"] ?? root?["MapProperties"]?["Assets"]?["vfx_spritesheets"])?.AsObject();
+			var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+			var vfxSheets = unionedAssets?["vfx_spritesheets"] as JsonObject;
 			string fName = System.IO.Path.GetFileName(_currentVisualEffect);
 			if (vfxSheets != null)
 			{

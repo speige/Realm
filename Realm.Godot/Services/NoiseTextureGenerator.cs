@@ -217,16 +217,9 @@ public static class NoiseTextureGenerator
 	{
 		if (string.IsNullOrEmpty(workspacePath)) return;
 
-		string metadataPath = Path.Combine(workspacePath, "metadata.json");
-		if (!File.Exists(metadataPath)) return;
-
 		try
 		{
-			string jsonText = File.ReadAllText(metadataPath);
-			var root = JsonNode.Parse(jsonText)?.AsObject();
-			if (root == null) return;
-
-			var assetsObj = root["Assets"]?.AsObject() ?? root["MapProperties"]?["Assets"]?.AsObject();
+			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(workspacePath);
 			if (assetsObj == null || !assetsObj.ContainsKey("noise_textures") || assetsObj["noise_textures"] is not JsonObject noiseObj)
 			{
 				return;
@@ -235,7 +228,7 @@ public static class NoiseTextureGenerator
 			string noiseDir = Path.Combine(workspacePath, "Assets", "noise");
 			Directory.CreateDirectory(noiseDir);
 
-			bool metadataModified = false;
+			bool manifestModified = false;
 
 			foreach (var kvp in noiseObj)
 			{
@@ -260,7 +253,7 @@ public static class NoiseTextureGenerator
 								string hash = GenerateAndSaveRtex(itemConfig, rtexPath);
 								itemConfig["hash"] = hash;
 								itemConfig["generator"] = "FastNoiseLite";
-								metadataModified = true;
+								manifestModified = true;
 								GD.Print($"[NoiseTextureGenerator] Idempotently generated procedural noise texture: {fileName}");
 							}
 							catch (Exception ex)
@@ -272,9 +265,9 @@ public static class NoiseTextureGenerator
 				}
 			}
 
-			if (metadataModified)
+			if (manifestModified)
 			{
-				MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+				Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(workspacePath, assetsObj, removeFromMetadata: true);
 			}
 		}
 		catch (Exception ex)

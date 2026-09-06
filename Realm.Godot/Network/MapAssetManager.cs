@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
 public static class MapAssetManager
@@ -557,6 +558,45 @@ public static class MapAssetManager
         
         if (Directory.Exists(mapDir))
         {
+            string manifestJsonPath = Path.Combine(mapDir, "manifest.json");
+            if (File.Exists(manifestJsonPath))
+            {
+                try
+                {
+                    var existing = MapManifest.LoadFromFile(manifestJsonPath);
+                    if (existing != null)
+                    {
+                        if (!string.IsNullOrEmpty(existing.MapName))
+                        {
+                            manifest.MapName = existing.MapName;
+                        }
+                        if (!string.IsNullOrEmpty(existing.Author))
+                        {
+                            manifest.Author = existing.Author;
+                        }
+                        if (!string.IsNullOrEmpty(existing.Version))
+                        {
+                            manifest.Version = existing.Version;
+                        }
+                        if (!string.IsNullOrEmpty(existing.Description))
+                        {
+                            manifest.Description = existing.Description;
+                        }
+                        if (existing.Tags != null && existing.Tags.Count > 0)
+                        {
+                            manifest.Tags = new List<string>(existing.Tags);
+                        }
+                        if (existing.Assets != null)
+                        {
+                            manifest.Assets = existing.Assets.DeepClone() as JsonObject;
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
             var files = Directory.GetFiles(mapDir, "*.*", SearchOption.AllDirectories);
             foreach (var file in files)
             {
@@ -816,7 +856,10 @@ public static class MapAssetManager
                 string tempFilePath = Path.Combine(tempDir, hash);
                 if (File.Exists(tempFilePath))
                 {
-                    packer.AddFile(virtualPath, tempFilePath);
+                    string pckVirtualPath = virtualPath.StartsWith("res://", StringComparison.OrdinalIgnoreCase)
+                        ? virtualPath
+                        : $"res://{virtualPath.TrimStart('/')}";
+                    packer.AddFile(pckVirtualPath, tempFilePath);
                 }
             }
             packer.Flush();

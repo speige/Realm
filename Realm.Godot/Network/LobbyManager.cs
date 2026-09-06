@@ -87,7 +87,7 @@ public partial class LobbyManager : Node
     public string? ActiveLobbyId { get; private set; }
     public bool IsGameStarted { get; set; }
     public DateTime? GameSessionStartTime { get; private set; }
-    public string ActiveMapName { get; set; } = "green_td";
+    public string ActiveMapName { get; set; }
     public bool SpectatorDelay { get; set; } = false;
     public string? LobbyJoinError { get; set; }
     public string HostStability { get; set; } = "Excellent";

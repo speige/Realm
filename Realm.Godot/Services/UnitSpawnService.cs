@@ -33,6 +33,9 @@ internal class UnitSpawnService
 		}
 
 		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
+		string directCandidate = System.IO.Path.Combine(wsPath, modelPathOrId);
+		if (System.IO.File.Exists(directCandidate)) return directCandidate;
+
 		string filename = System.IO.Path.GetFileName(modelPathOrId);
 		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
 		{
@@ -43,12 +46,18 @@ internal class UnitSpawnService
 		string cand = System.IO.Path.Combine(wsPath, "Assets", "models", primarySub, filename);
 		if (System.IO.File.Exists(cand)) return cand;
 
-		string[] subDirs = new[] { "units", "buildings", "resources", "props", "projectiles" };
+		string[] subDirs = new[] { "units", "buildings", "resources", "props", "projectiles", "attachments", "weapons" };
 		foreach (var sub in subDirs)
 		{
 			cand = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
 			if (System.IO.File.Exists(cand)) return cand;
 		}
+
+		string modelsCand = System.IO.Path.Combine(wsPath, "Assets", "models", filename);
+		if (System.IO.File.Exists(modelsCand)) return modelsCand;
+
+		string rootCand = System.IO.Path.Combine(wsPath, filename);
+		if (System.IO.File.Exists(rootCand)) return rootCand;
 
 		foreach (var sub in subDirs)
 		{

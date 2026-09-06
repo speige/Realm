@@ -267,8 +267,18 @@ public partial class VisualProjectile3D : Node3D
 		);
 
 		Vector3 baseScale = (_weapon.MeshScaleOffset == Vector3.Zero) ? Vector3.One : _weapon.MeshScaleOffset;
-		float initialScaleFactor = CalculateScaleOverLifetime(0.0f, _weapon.ScaleCurve);
-		_visualTransformContainer.Scale = baseScale * initialScaleFactor;
+		baseScale = SafeScale(baseScale);
+		float initialScaleFactor = Mathf.Max(0.001f, CalculateScaleOverLifetime(0.0f, _weapon.ScaleCurve));
+		_visualTransformContainer.Scale = SafeScale(baseScale * initialScaleFactor);
+	}
+
+	private static Vector3 SafeScale(Vector3 scale)
+	{
+		return new Vector3(
+			Mathf.Max(0.001f, Mathf.Abs(scale.X)),
+			Mathf.Max(0.001f, Mathf.Abs(scale.Y)),
+			Mathf.Max(0.001f, Mathf.Abs(scale.Z))
+		);
 	}
 
 	private static Vector3 GetForwardAxisEulerDegrees(string preset)
@@ -680,7 +690,9 @@ public partial class VisualProjectile3D : Node3D
 			Vector3 velocityDelta = nextPos - GlobalPosition;
 			if (velocityDelta.LengthSquared() > 0.0001f)
 			{
-				LookAtFromPosition(nextPos, nextPos + velocityDelta.Normalized(), Vector3.Up);
+				Vector3 dir = velocityDelta.Normalized();
+				Vector3 upVector = Mathf.Abs(dir.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
+				LookAtFromPosition(nextPos, nextPos + dir, upVector);
 			}
 			else
 			{
@@ -695,8 +707,9 @@ public partial class VisualProjectile3D : Node3D
 		_meshContainer.RotateObjectLocal(_tumbleAxis, _tumbleSpeed * dt);
 
 		Vector3 baseScale = (_weapon.MeshScaleOffset == Vector3.Zero) ? Vector3.One : _weapon.MeshScaleOffset;
-		float lifetimeScale = CalculateScaleOverLifetime(rawT, _weapon.ScaleCurve);
-		_visualTransformContainer.Scale = baseScale * lifetimeScale;
+		baseScale = SafeScale(baseScale);
+		float lifetimeScale = Mathf.Max(0.001f, CalculateScaleOverLifetime(rawT, _weapon.ScaleCurve));
+		_visualTransformContainer.Scale = SafeScale(baseScale * lifetimeScale);
 
 		Vector3 trailPos = GlobalPosition + GlobalTransform.Basis * _weapon.TrailOffset;
 		UpdateTrail(dt, trailPos);
@@ -875,21 +888,21 @@ public partial class VisualProjectile3D : Node3D
 		switch (scaleCurve.ToLowerInvariant())
 		{
 			case "grow":
-				return Mathf.Clamp(t * 1.5f, 0.0f, 1.0f);
+				return Mathf.Clamp(t * 1.5f, 0.001f, 1.0f);
 			case "shrink":
-				return Mathf.Clamp(1.0f - t, 0.0f, 1.0f);
+				return Mathf.Clamp(1.0f - t, 0.001f, 1.0f);
 			case "grow_shrink":
-				return Mathf.Sin(Mathf.Clamp(t, 0.0f, 1.0f) * Mathf.Pi);
+				return Mathf.Max(0.001f, Mathf.Sin(Mathf.Clamp(t, 0.0f, 1.0f) * Mathf.Pi));
 			case "squash_stretch":
 				if (t < 0.2f)
-					return (t / 0.2f) * 1.2f;
+					return Mathf.Max(0.001f, (t / 0.2f) * 1.2f);
 				else if (t < 0.4f)
-					return 1.2f - ((t - 0.2f) / 0.2f) * 0.2f;
+					return Mathf.Max(0.001f, 1.2f - ((t - 0.2f) / 0.2f) * 0.2f);
 				else if (t > 0.85f)
-					return Mathf.Max(0.0f, (1.0f - t) / 0.15f);
+					return Mathf.Max(0.001f, (1.0f - t) / 0.15f);
 				return 1.0f;
 			case "impact_shrink":
-				return t > 0.8f ? Mathf.Clamp((1.0f - t) / 0.2f, 0.0f, 1.0f) : 1.0f;
+				return t > 0.8f ? Mathf.Clamp((1.0f - t) / 0.2f, 0.001f, 1.0f) : 1.0f;
 			default:
 				return 1.0f;
 		}

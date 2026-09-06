@@ -38,7 +38,7 @@ public class GlbOptimizeOptions
 	[Option('f', "force", Required = false, Default = false, HelpText = "Force re-optimization even if already optimized.")]
 	public bool Force { get; set; }
 
-	[Option('t', "type", Required = false, HelpText = "Asset type for GLB: Attachment, Character, Building, Environment, Projectile, Prop. If specified, sets or updates the embedded asset_type metadata.")]
+	[Option('t', "type", Required = false, HelpText = "Asset type for GLB: Attachment, Character, Building, Environment, Projectile, Prop, Weapon. If specified, sets or updates the embedded asset_type metadata.")]
 	public string? AssetType { get; set; }
 }
 
@@ -139,7 +139,7 @@ public class MetadataOptions
 	[Option('d', "data", Required = false, HelpText = "JSON string or path to JSON file containing metadata to embed (for add/update mode).")]
 	public string? Data { get; set; }
 
-	[Option('t', "type", Required = false, HelpText = "Asset type to embed: Attachment, Character, Building, Environment, Projectile, Prop, Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet, Animation, Music, SoundEffect.")]
+	[Option('t', "type", Required = false, HelpText = "Asset type to embed: Attachment, Character, Building, Environment, Projectile, Prop, Weapon, Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet, Animation, Music, SoundEffect.")]
 	public string? AssetType { get; set; }
 
 	[Option('o', "output", Required = false, HelpText = "Output destination file to write extracted JSON (for read mode).")]

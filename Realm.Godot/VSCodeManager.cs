@@ -6,7 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-
+using System.Text.Json.Nodes;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -817,20 +817,57 @@ public class VSCodeManager
 
 				try
 				{
+					string fileName = System.IO.Path.GetFileName(filePath).ToLowerInvariant();
+					if (fileName == "metadata.json")
+					{
+						try
+						{
+							var rootObj = JsonNode.Parse(content)?.AsObject();
+							if (rootObj != null && (rootObj.ContainsKey("Assets") || rootObj.ContainsKey("textures")))
+							{
+								string mapDir = System.IO.Path.GetDirectoryName(filePath) ?? MapWorkspaceService.GetActiveWorkspacePath();
+								var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(mapDir) ?? new JsonObject();
+								if (rootObj.TryGetPropertyValue("Assets", out var aNode) && aNode is JsonObject aObj)
+								{
+									foreach (var kvp in aObj)
+									{
+										if (kvp.Value != null)
+										{
+											unionedAssets[kvp.Key] = kvp.Value.DeepClone();
+										}
+									}
+								}
+								if (rootObj.TryGetPropertyValue("textures", out var tNode) && tNode is JsonObject tObj)
+								{
+									var existingTextures = unionedAssets["textures"] as JsonObject ?? new JsonObject();
+									foreach (var kvp in tObj)
+									{
+										if (kvp.Value != null) existingTextures[kvp.Key] = kvp.Value.DeepClone();
+									}
+									unionedAssets["textures"] = existingTextures;
+								}
+								Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(mapDir, unionedAssets, removeFromMetadata: true);
+								SaveLoadService.CleanMetadataJsonSchema(rootObj);
+								content = rootObj.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+							}
+						}
+						catch { }
+					}
+
 					formattedContent = MapJsonFormatter.FormatJson(content);
 					EditorService.LastInternalSaveTimeUtc = DateTime.UtcNow;
 					MapJsonFormatter.SaveFormattedJson(filePath, formattedContent);
 					success = true;
 
-					string fileName = System.IO.Path.GetFileName(filePath).ToLowerInvariant();
 					Callable.From(() =>
 					{
-						if (fileName == "metadata.json")
+						if (fileName == "metadata.json" || fileName == "manifest.json")
 						{
 							if (MapEditorHUD.Instance != null)
 							{
 								MapEditorHUD.Instance.ReadMetadataAndRefreshTextures();
-								MapEditorHUD.Instance.ShowFeedback(TranslationServer.Translate("metadata.json updated externally — reloaded."));
+								string display = fileName == "manifest.json" ? "manifest.json" : "metadata.json";
+								MapEditorHUD.Instance.ShowFeedback(string.Format(TranslationServer.Translate("{0} updated externally — reloaded."), display));
 							}
 							else if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 							{

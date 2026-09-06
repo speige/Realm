@@ -334,12 +334,9 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			try
 			{
 				string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
-				string metaPath = Path.Combine(wsPath, "metadata.json");
-				if (File.Exists(metaPath))
-				{
-					var root = JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject();
-					var decalsObj = (root?["Assets"]?["decals"] ?? root?["MapProperties"]?["Assets"]?["decals"])?.AsObject();
-					if (decalsObj != null)
+				var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+				var decalsObj = assetsObj?["decals"] as JsonObject;
+				if (decalsObj != null)
 					{
 						string key = Path.GetFileName(decalKey);
 						string baseKey = Path.GetFileNameWithoutExtension(decalKey);
@@ -362,7 +359,6 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 							}
 						}
 					}
-				}
 			}
 			catch { }
 		}

@@ -254,26 +254,21 @@ public static class SpawnDeathShaderManager
 			? workspacePath
 			: MapWorkspaceService.GetActiveWorkspacePath();
 
-		string metadataPath = Path.Combine(wsPath, "metadata.json");
-		if (File.Exists(metadataPath))
+		try
 		{
-			try
+			var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+			var shadersObj = unionedAssets?["shaders"]?.AsObject();
+			if (shadersObj != null)
 			{
-				string json = File.ReadAllText(metadataPath);
-				var root = JsonNode.Parse(json)?.AsObject();
-				var shadersObj = root?["Assets"]?["shaders"]?.AsObject();
-				if (shadersObj != null)
+				foreach (var item in shadersObj)
 				{
-					foreach (var item in shadersObj)
-					{
-						result[item.Key] = CustomShaderConfig.FromJson(item.Key, item.Value);
-					}
+					result[item.Key] = CustomShaderConfig.FromJson(item.Key, item.Value);
 				}
 			}
-			catch (Exception ex)
-			{
-				GD.PrintErr($"[SpawnDeathShaderManager] LoadAllCustomShaders error: {ex.Message}");
-			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[SpawnDeathShaderManager] LoadAllCustomShaders error: {ex.Message}");
 		}
 
 		return result;
@@ -302,33 +297,15 @@ public static class SpawnDeathShaderManager
 			? workspacePath
 			: MapWorkspaceService.GetActiveWorkspacePath();
 
-		string metadataPath = Path.Combine(wsPath, "metadata.json");
-		JsonObject root = new JsonObject();
-		if (File.Exists(metadataPath))
-		{
-			try
-			{
-				root = JsonNode.Parse(File.ReadAllText(metadataPath))?.AsObject() ?? new JsonObject();
-			}
-			catch { root = new JsonObject(); }
-		}
-
-		if (!root.ContainsKey("Assets") || root["Assets"] is not JsonObject)
-		{
-			root["Assets"] = new JsonObject();
-		}
-		var assetsObj = root["Assets"]!.AsObject();
-
+		var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath) ?? new JsonObject();
 		if (!assetsObj.ContainsKey("shaders") || assetsObj["shaders"] is not JsonObject)
 		{
 			assetsObj["shaders"] = new JsonObject();
 		}
 		var shadersObj = assetsObj["shaders"]!.AsObject();
-
 		shadersObj[config.Key] = config.ToJsonObject();
 
-		SaveLoadService.CleanMetadataJsonSchema(root);
-		MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+		Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj, removeFromMetadata: true);
 	}
 
 	public static void DeleteCustomShader(string shaderKey, string workspacePath = null)
@@ -339,19 +316,9 @@ public static class SpawnDeathShaderManager
 			? workspacePath
 			: MapWorkspaceService.GetActiveWorkspacePath();
 
-		string metadataPath = Path.Combine(wsPath, "metadata.json");
-		if (!File.Exists(metadataPath)) return;
-
 		try
 		{
-			var root = JsonNode.Parse(File.ReadAllText(metadataPath))?.AsObject();
-			var shadersObj = root?["Assets"]?["shaders"]?.AsObject();
-			if (shadersObj != null && shadersObj.ContainsKey(shaderKey))
-			{
-				shadersObj.Remove(shaderKey);
-				SaveLoadService.CleanMetadataJsonSchema(root);
-				MapJsonFormatter.SaveFormattedJson(metadataPath, root);
-			}
+			Realm.Godot.Utils.MapAssetHelper.RemoveManifestAsset(wsPath, "shaders", shaderKey);
 		}
 		catch (Exception ex)
 		{

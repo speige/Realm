@@ -29,13 +29,27 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             if (e.document.uri.toString() === document.uri.toString()) {
                 webviewPanel.webview.postMessage({
                     type: 'update',
-                    text: e.document.getText()
+                    text: this.getMergedDocumentText(document)
                 });
             }
         });
 
+        const manifestWatcher = vscode.workspace.createFileSystemWatcher(
+            new vscode.RelativePattern(path.dirname(document.uri.fsPath), 'manifest.json')
+        );
+        const onManifestChange = () => {
+            webviewPanel.webview.postMessage({
+                type: 'update',
+                text: this.getMergedDocumentText(document)
+            });
+        };
+        manifestWatcher.onDidChange(onManifestChange);
+        manifestWatcher.onDidCreate(onManifestChange);
+        manifestWatcher.onDidDelete(onManifestChange);
+
         webviewPanel.onDidDispose(() => {
             changeDocumentSubscription.dispose();
+            manifestWatcher.dispose();
         });
 
         webviewPanel.webview.onDidReceiveMessage(async e => {
@@ -43,7 +57,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 case 'ready':
                     webviewPanel.webview.postMessage({
                         type: 'update',
-                        text: document.getText()
+                        text: this.getMergedDocumentText(document)
                     });
                     break;
                 case 'change':
@@ -52,7 +66,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         console.warn('WorkspaceEdit was not applied, resyncing webview');
                         webviewPanel.webview.postMessage({
                             type: 'update',
-                            text: document.getText()
+                            text: this.getMergedDocumentText(document)
                         });
                     }
                     break;
@@ -1186,6 +1200,26 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
     <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
+    }
+
+    private getMergedDocumentText(document: vscode.TextDocument): string {
+        const text = document.getText();
+        try {
+            const parsed = JSON.parse(text);
+            if (!parsed.Assets || Object.keys(parsed.Assets).length === 0) {
+                const docDir = path.dirname(document.uri.fsPath);
+                const manifestPath = path.join(docDir, 'manifest.json');
+                if (fs.existsSync(manifestPath)) {
+                    const manifestData = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+                    if (manifestData && manifestData.Assets) {
+                        parsed.Assets = manifestData.Assets;
+                        return JSON.stringify(parsed);
+                    }
+                }
+            }
+        } catch {
+        }
+        return text;
     }
 
     private getNonce(): string {

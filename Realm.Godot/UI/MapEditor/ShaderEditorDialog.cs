@@ -640,7 +640,12 @@ public partial class ShaderEditorDialog : FloatingDialogBase
 		float z = _cameraDistance * Mathf.Cos(_cameraPitch) * Mathf.Cos(_cameraYaw);
 
 		Vector3 newPos = _targetPosition + new Vector3(x, y, z);
-		_camera.LookAtFromPosition(newPos, _targetPosition, Vector3.Up);
+		if (newPos.DistanceSquaredTo(_targetPosition) > 0.0001f)
+		{
+			Vector3 dir = (_targetPosition - newPos).Normalized();
+			Vector3 up = Mathf.Abs(dir.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
+			_camera.LookAtFromPosition(newPos, _targetPosition, up);
+		}
 	}
 
 	private void OnViewportGuiInput(InputEvent @event)

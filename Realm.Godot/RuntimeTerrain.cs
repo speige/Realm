@@ -1696,20 +1696,8 @@ void fragment() {
 			string mapDir = MapWorkspaceService.GetActiveWorkspacePath();
 			try
 			{
-				string metadataPath = System.IO.Path.Combine(mapDir, "metadata.json");
-				if (System.IO.File.Exists(metadataPath))
-				{
-					var root = System.Text.Json.Nodes.JsonNode.Parse(System.IO.File.ReadAllText(metadataPath)) as System.Text.Json.Nodes.JsonObject;
-					System.Text.Json.Nodes.JsonObject? texturesObj = null;
-					if (root != null)
-					{
-						if (root.ContainsKey("textures") && root["textures"] is System.Text.Json.Nodes.JsonObject tObj3)
-							texturesObj = tObj3;
-						else if (root.ContainsKey("Assets") && root["Assets"] is System.Text.Json.Nodes.JsonObject assets && assets.ContainsKey("textures") && assets["textures"] is System.Text.Json.Nodes.JsonObject tObj1)
-							texturesObj = tObj1;
-						else if (root.ContainsKey("MapProperties") && root["MapProperties"] is System.Text.Json.Nodes.JsonObject mp && mp.ContainsKey("Assets") && mp["Assets"] is System.Text.Json.Nodes.JsonObject mpAssets && mpAssets.ContainsKey("textures") && mpAssets["textures"] is System.Text.Json.Nodes.JsonObject tObj2)
-							texturesObj = tObj2;
-					}
+				var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(mapDir);
+				var texturesObj = unionedAssets?["textures"] as System.Text.Json.Nodes.JsonObject;
 					if (texturesObj != null)
 					{
 						foreach (var kvp in texturesObj)
@@ -1726,7 +1714,6 @@ void fragment() {
 							}
 						}
 					}
-				}
 			}
 			catch { }
 
@@ -1913,25 +1900,8 @@ void fragment() {
 
 		try
 		{
-			string metadataPath = System.IO.Path.Combine(mapDir, "metadata.json");
-			if (System.IO.File.Exists(metadataPath))
-			{
-				string text = System.IO.File.ReadAllText(metadataPath);
-				var root = System.Text.Json.Nodes.JsonNode.Parse(text) as System.Text.Json.Nodes.JsonObject;
-				if (root != null)
-				{
-					if (root.ContainsKey("textures") && root["textures"] is System.Text.Json.Nodes.JsonObject tObj3)
-					{
-						texturesObj = tObj3;
-					}
-					else if (root.ContainsKey("Assets") && root["Assets"] is System.Text.Json.Nodes.JsonObject assets && assets.ContainsKey("textures") && assets["textures"] is System.Text.Json.Nodes.JsonObject tObj1)
-					{
-						texturesObj = tObj1;
-					}
-					else if (root.ContainsKey("MapProperties") && root["MapProperties"] is System.Text.Json.Nodes.JsonObject mp && mp.ContainsKey("Assets") && mp["Assets"] is System.Text.Json.Nodes.JsonObject mpAssets && mpAssets.ContainsKey("textures") && mpAssets["textures"] is System.Text.Json.Nodes.JsonObject tObj2)
-					{
-						texturesObj = tObj2;
-					}
+			var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(mapDir);
+			texturesObj = unionedAssets?["textures"] as System.Text.Json.Nodes.JsonObject;
 
 					if (texturesObj != null)
 					{
@@ -2001,8 +1971,6 @@ void fragment() {
 							}
 						}
 					}
-				}
-			}
 		}
 		catch { }
 

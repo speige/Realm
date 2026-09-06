@@ -189,7 +189,12 @@ public partial class ModelPickerDialog : FloatingDialogBase
 
 		Vector3 newPos = _targetPosition + offset;
 		_camera.Position = newPos;
-		_camera.LookAtFromPosition(newPos, _targetPosition, Vector3.Up);
+		if (newPos.DistanceSquaredTo(_targetPosition) > 0.0001f)
+		{
+			Vector3 dir = (_targetPosition - newPos).Normalized();
+			Vector3 up = Mathf.Abs(dir.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
+			_camera.LookAtFromPosition(newPos, _targetPosition, up);
+		}
 	}
 
 	public void OpenForEntity(string entityId, string fieldName, string domain, string currentPath, Action<string> onApplied = null)
