@@ -2,6 +2,7 @@ using Arch.Core;
 using Godot;
 using Realm.Ecs.Components.Core;
 using Realm.Godot.Utils;
+using Realm.Godot.VFX;
 using System;
 
 public partial class VisualProjectile3D : Node3D
@@ -328,13 +329,27 @@ public partial class VisualProjectile3D : Node3D
 			}
 
 			_currentLoadedModelPath = modelPath;
-			var loaded = ModelCache.GetModel(modelPath);
-			if (loaded is Node3D node3D)
+			Node3D node3D = null;
+			if (modelPath.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase) ||
+				(GameHost.VfxRegistry != null && GameHost.VfxRegistry.ContainsKey(modelPath)))
+			{
+				node3D = Unit3D.ResolveAndInstantiateAttachment(modelPath, out _, out _, out _);
+			}
+			else
+			{
+				var loaded = ModelCache.GetModel(modelPath);
+				if (loaded is Node3D n) node3D = n;
+			}
+
+			if (node3D != null)
 			{
 				_customModelInstance = node3D;
 				_visualTransformContainer.AddChild(_customModelInstance);
 				_fallbackMeshInstance.Visible = false;
-				ApplyUberMaterialRecursively(_customModelInstance);
+				if (node3D is not ProceduralVfxInstance3D)
+				{
+					ApplyUberMaterialRecursively(_customModelInstance);
+				}
 			}
 			else
 			{
@@ -346,7 +361,10 @@ public partial class VisualProjectile3D : Node3D
 		else
 		{
 			_fallbackMeshInstance.Visible = false;
-			ApplyUberMaterialRecursively(_customModelInstance);
+			if (_customModelInstance is not ProceduralVfxInstance3D)
+			{
+				ApplyUberMaterialRecursively(_customModelInstance);
+			}
 		}
 	}
 

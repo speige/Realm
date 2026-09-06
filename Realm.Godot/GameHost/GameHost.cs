@@ -673,6 +673,7 @@ public partial class GameHost : Node3D, IGameAPI
 			PositionOffset = Vector3.Zero;
 			RotationOffset = Vector3.Zero;
 			DefaultHand = "RightHand";
+			ChildVfxScale = Vector3.One;
 		}
 
 		public string AttachmentId { get; set; }
@@ -682,6 +683,10 @@ public partial class GameHost : Node3D, IGameAPI
 		public Vector3 PositionOffset { get; set; }
 		public Vector3 RotationOffset { get; set; }
 		public string DefaultHand { get; set; } = "RightHand";
+		public string? ChildVfxId { get; set; }
+		public Vector3 ChildVfxPosition { get; set; }
+		public Vector3 ChildVfxRotation { get; set; }
+		public Vector3 ChildVfxScale { get; set; } = Vector3.One;
 	}
 
 	public struct HandAttachmentOrientation
@@ -697,6 +702,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public float ScaleY { get; set; }
 		public float ScaleZ { get; set; }
 		public float NormalOffset { get; set; }
+		public string? ParentAttachmentId { get; set; }
 
 		[JsonIgnore]
 		public Vector3 Position => new Vector3(PositionX, PositionY, PositionZ);
@@ -718,6 +724,84 @@ public partial class GameHost : Node3D, IGameAPI
 		public List<Dictionary<string, HandAttachmentOrientation>>? head { get; set; }
 		public List<Dictionary<string, HandAttachmentOrientation>>? left_foot { get; set; }
 		public List<Dictionary<string, HandAttachmentOrientation>>? right_foot { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? ground { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? center { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? overhead { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? pivot { get; set; }
+
+		public List<Dictionary<string, HandAttachmentOrientation>>? GetSocketList(string socket)
+		{
+			if (string.IsNullOrEmpty(socket)) return right_hand;
+			string s = socket.ToLowerInvariant().Replace("_", "").Replace(" ", "");
+			return s switch
+			{
+				"ground" or "footprint" or "base" => ground,
+				"center" or "centerofmass" => center,
+				"overhead" or "top" or "crown" or "roof" => overhead,
+				"pivot" or "origin" => pivot,
+				"root" or "hips" => root,
+				"chest" or "spine" => chest,
+				"head" => head,
+				"lefthand" => left_hand,
+				"righthand" => right_hand,
+				"leftfoot" => left_foot,
+				"rightfoot" => right_foot,
+				_ => right_hand
+			};
+		}
+
+		public void SetSocketList(string socket, List<Dictionary<string, HandAttachmentOrientation>> list)
+		{
+			string s = (socket ?? "righthand").ToLowerInvariant().Replace("_", "").Replace(" ", "");
+			switch (s)
+			{
+				case "ground":
+				case "footprint":
+				case "base":
+					ground = list;
+					break;
+				case "center":
+				case "centerofmass":
+					center = list;
+					break;
+				case "overhead":
+				case "top":
+				case "crown":
+				case "roof":
+					overhead = list;
+					break;
+				case "pivot":
+				case "origin":
+					pivot = list;
+					break;
+				case "root":
+				case "hips":
+					root = list;
+					break;
+				case "chest":
+				case "spine":
+					chest = list;
+					break;
+				case "head":
+					head = list;
+					break;
+				case "lefthand":
+					left_hand = list;
+					break;
+				case "righthand":
+					right_hand = list;
+					break;
+				case "leftfoot":
+					left_foot = list;
+					break;
+				case "rightfoot":
+					right_foot = list;
+					break;
+				default:
+					right_hand = list;
+					break;
+			}
+		}
 
 		public List<Dictionary<string, HandAttachmentOrientation>>? GetBoneList(HumanoidBone bone)
 		{
@@ -755,7 +839,9 @@ public partial class GameHost : Node3D, IGameAPI
 			var list = GetBoneList(hand);
 			if (list != null && !string.IsNullOrEmpty(attachmentId))
 			{
-				string cleanId = System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+				string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
+					? attachmentId
+					: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
 				foreach (var dict in list)
 				{
 					if (dict != null)
@@ -779,12 +865,57 @@ public partial class GameHost : Node3D, IGameAPI
 
 		public void SetOrientation(HumanoidBone hand, string attachmentId, HandAttachmentOrientation orientation)
 		{
-			string cleanId = System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+			string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
+				? attachmentId
+				: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
 			var list = GetBoneList(hand);
 			if (list == null)
 			{
 				list = new List<Dictionary<string, HandAttachmentOrientation>>();
 				SetBoneList(hand, list);
+			}
+			UpdateList(list, cleanId, orientation);
+		}
+
+		public bool TryGetSocketOrientation(string socket, string attachmentId, out HandAttachmentOrientation orientation)
+		{
+			var list = GetSocketList(socket);
+			if (list != null && !string.IsNullOrEmpty(attachmentId))
+			{
+				string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
+					? attachmentId
+					: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+				foreach (var dict in list)
+				{
+					if (dict != null)
+					{
+						foreach (var kvp in dict)
+						{
+							if (kvp.Key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+								kvp.Key.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+								System.IO.Path.GetFileNameWithoutExtension(kvp.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+							{
+								orientation = kvp.Value;
+								return true;
+							}
+						}
+					}
+				}
+			}
+			orientation = default;
+			return false;
+		}
+
+		public void SetSocketOrientation(string socket, string attachmentId, HandAttachmentOrientation orientation)
+		{
+			string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
+				? attachmentId
+				: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+			var list = GetSocketList(socket);
+			if (list == null)
+			{
+				list = new List<Dictionary<string, HandAttachmentOrientation>>();
+				SetSocketList(socket, list);
 			}
 			UpdateList(list, cleanId, orientation);
 		}
@@ -800,8 +931,11 @@ public partial class GameHost : Node3D, IGameAPI
 						if (key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
 							System.IO.Path.GetFileNameWithoutExtension(key).Equals(attachmentId, StringComparison.OrdinalIgnoreCase))
 						{
-							dict[key] = orientation;
-							return;
+							if (string.Equals(dict[key].ParentAttachmentId, orientation.ParentAttachmentId, StringComparison.OrdinalIgnoreCase))
+							{
+								dict[key] = orientation;
+								return;
+							}
 						}
 					}
 				}
@@ -810,6 +944,52 @@ public partial class GameHost : Node3D, IGameAPI
 			{
 				[attachmentId] = orientation
 			});
+		}
+
+		public bool RemoveSocketAttachment(string socket, string attachmentId, string? parentAttachmentId = null)
+		{
+			var list = GetSocketList(socket);
+			if (list == null || string.IsNullOrEmpty(attachmentId)) return false;
+			string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
+				? attachmentId
+				: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+			bool removed = false;
+			for (int i = list.Count - 1; i >= 0; i--)
+			{
+				var dict = list[i];
+				if (dict != null)
+				{
+					var keysToRemove = dict.Keys.Where(k =>
+					{
+						bool keyMatch = k.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+							k.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+							System.IO.Path.GetFileNameWithoutExtension(k).Equals(cleanId, StringComparison.OrdinalIgnoreCase);
+
+						if (!string.IsNullOrEmpty(parentAttachmentId))
+						{
+							return keyMatch && string.Equals(dict[k].ParentAttachmentId, parentAttachmentId, StringComparison.OrdinalIgnoreCase);
+						}
+
+						bool isChildOfThis = dict[k].ParentAttachmentId != null &&
+							(dict[k].ParentAttachmentId.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+							 dict[k].ParentAttachmentId.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+							 System.IO.Path.GetFileNameWithoutExtension(dict[k].ParentAttachmentId).Equals(cleanId, StringComparison.OrdinalIgnoreCase));
+
+						return (keyMatch && string.IsNullOrEmpty(dict[k].ParentAttachmentId)) || isChildOfThis;
+					}).ToList();
+
+					foreach (var k in keysToRemove)
+					{
+						dict.Remove(k);
+						removed = true;
+					}
+					if (dict.Count == 0)
+					{
+						list.RemoveAt(i);
+					}
+				}
+			}
+			return removed;
 		}
 	}
 
@@ -982,11 +1162,40 @@ public partial class GameHost : Node3D, IGameAPI
 			return false;
 		}
 
+		public bool TryGetObjectAttachment(string socket, string attachmentId, out HandAttachmentOrientation orientation)
+		{
+			if (ObjectAttachments.HasValue)
+			{
+				return ObjectAttachments.Value.TryGetSocketOrientation(socket, attachmentId, out orientation);
+			}
+			orientation = default;
+			return false;
+		}
+
 		public void SetObjectAttachment(HumanoidBone hand, string attachmentId, HandAttachmentOrientation orientation)
 		{
 			var atts = ObjectAttachments ?? new UnitObjectAttachments();
 			atts.SetOrientation(hand, attachmentId, orientation);
 			ObjectAttachments = atts;
+		}
+
+		public void SetObjectAttachment(string socket, string attachmentId, HandAttachmentOrientation orientation)
+		{
+			var atts = ObjectAttachments ?? new UnitObjectAttachments();
+			atts.SetSocketOrientation(socket, attachmentId, orientation);
+			ObjectAttachments = atts;
+		}
+
+		public bool RemoveObjectAttachment(string socket, string attachmentId, string? parentAttachmentId = null)
+		{
+			if (ObjectAttachments.HasValue)
+			{
+				var atts = ObjectAttachments.Value;
+				bool removed = atts.RemoveSocketAttachment(socket, attachmentId, parentAttachmentId);
+				ObjectAttachments = atts;
+				return removed;
+			}
+			return false;
 		}
 	}
 
@@ -1421,12 +1630,52 @@ public partial class GameHost : Node3D, IGameAPI
 
 
 
-	public static readonly Dictionary<string, UnitMetadata> UnitRegistry = new();
-	public static readonly Dictionary<string, UnitMetadata> BuildingRegistry = new();
-	public static readonly Dictionary<string, PropMetadata> PropRegistry = new();
-	public static readonly Dictionary<string, ResourceMetadata> ResourceRegistry = new();
+	public static readonly Dictionary<string, UnitMetadata> UnitRegistry = new(StringComparer.OrdinalIgnoreCase);
+	public static readonly Dictionary<string, UnitMetadata> BuildingRegistry = new(StringComparer.OrdinalIgnoreCase);
+	public static readonly Dictionary<string, PropMetadata> PropRegistry = new(StringComparer.OrdinalIgnoreCase);
+	public static readonly Dictionary<string, ResourceMetadata> ResourceRegistry = new(StringComparer.OrdinalIgnoreCase);
 	public static readonly Dictionary<string, WeaponMetadata> WeaponRegistry = new(StringComparer.OrdinalIgnoreCase);
 	public static readonly Dictionary<string, AttachmentMetadata> AttachmentRegistry = new(StringComparer.OrdinalIgnoreCase);
+
+	public static bool TryGetUnitOrBuildingMetadata(string? unitId, out UnitMetadata meta)
+	{
+		meta = default;
+		if (string.IsNullOrEmpty(unitId)) return false;
+
+		if (UnitRegistry.TryGetValue(unitId, out meta)) return true;
+		if (BuildingRegistry != null && BuildingRegistry.TryGetValue(unitId, out meta)) return true;
+
+		string cleanId = System.IO.Path.GetFileNameWithoutExtension(unitId);
+		if (UnitRegistry.TryGetValue(cleanId, out meta)) return true;
+		if (BuildingRegistry != null && BuildingRegistry.TryGetValue(cleanId, out meta)) return true;
+
+		foreach (var kvp in UnitRegistry)
+		{
+			if (kvp.Key.Equals(unitId, StringComparison.OrdinalIgnoreCase) ||
+				kvp.Key.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+				System.IO.Path.GetFileNameWithoutExtension(kvp.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+			{
+				meta = kvp.Value;
+				return true;
+			}
+		}
+
+		if (BuildingRegistry != null)
+		{
+			foreach (var kvp in BuildingRegistry)
+			{
+				if (kvp.Key.Equals(unitId, StringComparison.OrdinalIgnoreCase) ||
+					kvp.Key.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+					System.IO.Path.GetFileNameWithoutExtension(kvp.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+				{
+					meta = kvp.Value;
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
 
 	public string GetFallbackModelPath(string unitId, bool isBuilding)
 	{

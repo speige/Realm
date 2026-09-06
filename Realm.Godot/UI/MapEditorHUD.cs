@@ -223,6 +223,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnOpenGlobalOverrides;
 	private Button _btnOpenAnimationPreview;
 	private Button _btnEditVfx;
+	private Button _btnEditAttachments;
 	private Button _btnAssetsManager;
 	private bool _isUpdatingInspectorUI;
 
@@ -1797,6 +1798,16 @@ public partial class MapEditorHUD : Control
 			{
 				if (_btnEditVfx != null) _btnEditVfx.Visible = false;
 			}
+
+			if (_btnEditAttachments != null)
+			{
+				bool canAttach = selected is Unit3D;
+				_btnEditAttachments.Visible = canAttach;
+				if (canAttach)
+				{
+					_btnEditAttachments.TooltipText = TranslationServer.Translate("Open Socket & VFX Attachment Studio for this unit or building");
+				}
+			}
 		}
 		else
 		{
@@ -1804,6 +1815,7 @@ public partial class MapEditorHUD : Control
 			if (_btnOpenGlobalOverrides != null) _btnOpenGlobalOverrides.Visible = false;
 			if (_btnOpenAnimationPreview != null) _btnOpenAnimationPreview.Visible = false;
 			if (_btnEditVfx != null) _btnEditVfx.Visible = false;
+			if (_btnEditAttachments != null) _btnEditAttachments.Visible = false;
 			if (_rigStatusContainer != null) _rigStatusContainer.Visible = false;
 			if (_btnShowCoverage != null) _btnShowCoverage.Visible = false;
 			if (_lblInfoText != null) _lblInfoText.Visible = true;
@@ -7437,6 +7449,32 @@ public partial class MapEditorHUD : Control
 			}
 		};
 		inspectorVBox.AddChild(_btnEditVfx);
+
+		_btnEditAttachments = new Button();
+		_btnEditAttachments.Name = "BtnEditAttachments";
+		_btnEditAttachments.Set("icon_max_width", 0);
+		_btnEditAttachments.Text = "📎 " + TranslationServer.Translate("Sockets & VFX");
+		_btnEditAttachments.AddThemeFontSizeOverride("font_size", 11);
+		_btnEditAttachments.FocusMode = Control.FocusModeEnum.None;
+		_btnEditAttachments.CustomMinimumSize = new Vector2(0, 28);
+		_btnEditAttachments.Visible = false;
+		_btnEditAttachments.Pressed += () =>
+		{
+			if (GameHost.Instance != null && GodotObject.IsInstanceValid(GameHost.Instance.SelectedEditorObject))
+			{
+				var sel = GameHost.Instance.SelectedEditorObject;
+				if (sel is Unit3D u)
+				{
+					bool isBuilding = u.IsBuilding || (GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.ContainsKey(u.UnitId));
+					string defaultSocket = isBuilding ? "Center" : "RightHand";
+					OpenObjectAttachmentDialog(u.UnitId, null, defaultSocket, u, (orient) =>
+					{
+						u.ApplyAllConfiguredAttachments();
+					});
+				}
+			}
+		};
+		inspectorVBox.AddChild(_btnEditAttachments);
 	}
 
 	public WeaponVfxDialog WeaponVfxDialog => _weaponVfxDialog;
@@ -7477,14 +7515,87 @@ public partial class MapEditorHUD : Control
 
 	public void SaveUnitObjectAttachment(string unitId, Realm.Godot.Animation.HumanoidBone hand, string attachmentId, GameHost.HandAttachmentOrientation orientation)
 	{
+		string handKey = hand switch
+		{
+			Realm.Godot.Animation.HumanoidBone.LeftHand => "left_hand",
+			Realm.Godot.Animation.HumanoidBone.RightHand => "right_hand",
+			Realm.Godot.Animation.HumanoidBone.Chest => "chest",
+			Realm.Godot.Animation.HumanoidBone.Hips => "root",
+			Realm.Godot.Animation.HumanoidBone.Head => "head",
+			Realm.Godot.Animation.HumanoidBone.LeftFoot => "left_foot",
+			Realm.Godot.Animation.HumanoidBone.RightFoot => "right_foot",
+			_ => "right_hand"
+		};
+		SaveUnitObjectAttachment(unitId, handKey, attachmentId, orientation);
+	}
+
+	public void SaveUnitObjectAttachment(string unitId, string socket, string attachmentId, GameHost.HandAttachmentOrientation orientation)
+	{
 		try
 		{
 			if (string.IsNullOrEmpty(unitId) || string.IsNullOrEmpty(attachmentId)) return;
 
-			if (GameHost.UnitRegistry.TryGetValue(unitId, out var uMeta))
+			string regKey = unitId;
+			bool isBuildingMeta = false;
+			if (GameHost.UnitRegistry.ContainsKey(unitId))
 			{
-				uMeta.SetObjectAttachment(hand, attachmentId, orientation);
-				GameHost.UnitRegistry[unitId] = uMeta;
+				regKey = unitId;
+			}
+			else if (GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.ContainsKey(unitId))
+			{
+				regKey = unitId;
+				isBuildingMeta = true;
+			}
+			else
+			{
+				string cleanId = System.IO.Path.GetFileNameWithoutExtension(unitId);
+				if (GameHost.UnitRegistry.ContainsKey(cleanId))
+				{
+					regKey = cleanId;
+				}
+				else if (GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.ContainsKey(cleanId))
+				{
+					regKey = cleanId;
+					isBuildingMeta = true;
+				}
+				else
+				{
+					foreach (var k in GameHost.UnitRegistry.Keys)
+					{
+						if (k.Equals(unitId, StringComparison.OrdinalIgnoreCase) ||
+							k.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+							System.IO.Path.GetFileNameWithoutExtension(k).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+						{
+							regKey = k;
+							break;
+						}
+					}
+					if (GameHost.BuildingRegistry != null)
+					{
+						foreach (var k in GameHost.BuildingRegistry.Keys)
+						{
+							if (k.Equals(unitId, StringComparison.OrdinalIgnoreCase) ||
+								k.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+								System.IO.Path.GetFileNameWithoutExtension(k).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+							{
+								regKey = k;
+								isBuildingMeta = true;
+								break;
+							}
+						}
+					}
+				}
+			}
+
+			if (isBuildingMeta && GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.TryGetValue(regKey, out var bMeta))
+			{
+				bMeta.SetObjectAttachment(socket, attachmentId, orientation);
+				GameHost.BuildingRegistry[regKey] = bMeta;
+			}
+			else if (GameHost.UnitRegistry.TryGetValue(regKey, out var uMeta))
+			{
+				uMeta.SetObjectAttachment(socket, attachmentId, orientation);
+				GameHost.UnitRegistry[regKey] = uMeta;
 			}
 
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
@@ -7498,6 +7609,9 @@ public partial class MapEditorHUD : Control
 			if (root == null) return;
 
 			var unitsArray = root["CustomUnits"]?.AsArray() ?? root["Units"]?.AsArray();
+			var buildingsArray = root["CustomBuildings"]?.AsArray() ?? root["Buildings"]?.AsArray();
+
+			System.Text.Json.Nodes.JsonObject targetObj = null;
 			if (unitsArray != null)
 			{
 				for (int i = 0; i < unitsArray.Count; i++)
@@ -7505,88 +7619,366 @@ public partial class MapEditorHUD : Control
 					var uObj = unitsArray[i]?.AsObject();
 					if (uObj != null && (uObj["UnitId"]?.ToString() == unitId || uObj["unitId"]?.ToString() == unitId || uObj["Id"]?.ToString() == unitId))
 					{
-						var objAttsNode = uObj["ObjectAttachments"]?.AsObject();
-						if (objAttsNode == null)
-						{
-							objAttsNode = new System.Text.Json.Nodes.JsonObject();
-							uObj["ObjectAttachments"] = objAttsNode;
-						}
+						targetObj = uObj;
+						break;
+					}
+				}
+			}
 
-						string handKey = hand switch
-						{
-							Realm.Godot.Animation.HumanoidBone.LeftHand => "left_hand",
-							Realm.Godot.Animation.HumanoidBone.RightHand => "right_hand",
-							Realm.Godot.Animation.HumanoidBone.Chest => "chest",
-							Realm.Godot.Animation.HumanoidBone.Hips => "root",
-							Realm.Godot.Animation.HumanoidBone.Head => "head",
-							Realm.Godot.Animation.HumanoidBone.LeftFoot => "left_foot",
-							Realm.Godot.Animation.HumanoidBone.RightFoot => "right_foot",
-							_ => "right_hand"
-						};
-						var handArr = objAttsNode[handKey]?.AsArray();
-						if (handArr == null)
-						{
-							handArr = new System.Text.Json.Nodes.JsonArray();
-							objAttsNode[handKey] = handArr;
-						}
+			if (targetObj == null && buildingsArray != null)
+			{
+				for (int i = 0; i < buildingsArray.Count; i++)
+				{
+					var bObj = buildingsArray[i]?.AsObject();
+					if (bObj != null && (bObj["UnitId"]?.ToString() == unitId || bObj["unitId"]?.ToString() == unitId || bObj["Id"]?.ToString() == unitId))
+					{
+						targetObj = bObj;
+						break;
+					}
+				}
+			}
 
+			if (targetObj != null)
+			{
+				var objAttsNode = targetObj["ObjectAttachments"]?.AsObject();
+				if (objAttsNode == null)
+				{
+					objAttsNode = new System.Text.Json.Nodes.JsonObject();
+					targetObj["ObjectAttachments"] = objAttsNode;
+				}
+
+				string norm = (socket ?? "right_hand").ToLowerInvariant().Replace("_", "").Replace(" ", "");
+				string socketKey = norm switch
+				{
+					"ground" or "footprint" or "base" => "ground",
+					"center" or "centerofmass" => "center",
+					"overhead" or "top" or "crown" or "roof" => "overhead",
+					"pivot" or "origin" => "pivot",
+					"root" or "hips" => "root",
+					"chest" or "spine" => "chest",
+					"head" => "head",
+					"lefthand" => "left_hand",
+					"righthand" => "right_hand",
+					"leftfoot" => "left_foot",
+					"rightfoot" => "right_foot",
+					_ => socket.ToLowerInvariant()
+				};
+
+				var socketArr = objAttsNode[socketKey]?.AsArray();
+				if (socketArr == null)
+				{
+					socketArr = new System.Text.Json.Nodes.JsonArray();
+					objAttsNode[socketKey] = socketArr;
+				}
+
+				string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
+					? attachmentId
+					: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+				var orientNode = new System.Text.Json.Nodes.JsonObject
+				{
+					["PositionX"] = orientation.PositionX,
+					["PositionY"] = orientation.PositionY,
+					["PositionZ"] = orientation.PositionZ,
+					["PitchX"] = orientation.PitchX,
+					["YawY"] = orientation.YawY,
+					["RollZ"] = orientation.RollZ,
+					["Scale"] = orientation.Scale <= 0f ? 1.0f : orientation.Scale,
+					["ScaleX"] = orientation.ScaleX <= 0f ? 1.0f : orientation.ScaleX,
+					["ScaleY"] = orientation.ScaleY <= 0f ? 1.0f : orientation.ScaleY,
+					["ScaleZ"] = orientation.ScaleZ <= 0f ? 1.0f : orientation.ScaleZ,
+					["NormalOffset"] = orientation.NormalOffset
+				};
+				if (!string.IsNullOrEmpty(orientation.ParentAttachmentId))
+				{
+					orientNode["ParentAttachmentId"] = orientation.ParentAttachmentId;
+				}
+
+				bool updated = false;
+				for (int j = 0; j < socketArr.Count; j++)
+				{
+					if (socketArr[j] is System.Text.Json.Nodes.JsonObject itemObj)
+					{
+						foreach (var prop in itemObj)
+						{
+							if (prop.Key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+								prop.Key.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+								System.IO.Path.GetFileNameWithoutExtension(prop.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+							{
+								string existingParent = itemObj[prop.Key]?["ParentAttachmentId"]?.ToString();
+								if (string.Equals(existingParent, orientation.ParentAttachmentId, StringComparison.OrdinalIgnoreCase))
+								{
+									itemObj[prop.Key] = orientNode;
+									updated = true;
+									break;
+								}
+							}
+						}
+						if (updated) break;
+					}
+				}
+
+				if (!updated)
+				{
+					var newEntry = new System.Text.Json.Nodes.JsonObject
+					{
+						[cleanId] = orientNode
+					};
+					socketArr.Add(newEntry);
+				}
+			}
+
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+
+			if (GameHost.Instance != null)
+			{
+				if (GameHost.Instance.AllUnits != null)
+				{
+					foreach (var u in GameHost.Instance.AllUnits)
+					{
+						if (u != null && (u.UnitId == unitId || u.UnitId == regKey || System.IO.Path.GetFileNameWithoutExtension(u.UnitId ?? "").Equals(System.IO.Path.GetFileNameWithoutExtension(unitId), StringComparison.OrdinalIgnoreCase)))
+						{
+							u.ApplyAllConfiguredAttachments();
+						}
+					}
+				}
+
+				if (GameHost.Instance.SelectedEditorObject is Unit3D selUnit)
+				{
+					if (selUnit.UnitId == unitId || selUnit.UnitId == regKey || System.IO.Path.GetFileNameWithoutExtension(selUnit.UnitId ?? "").Equals(System.IO.Path.GetFileNameWithoutExtension(unitId), StringComparison.OrdinalIgnoreCase))
+					{
+						selUnit.ApplyAllConfiguredAttachments();
+					}
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] SaveUnitObjectAttachment error: {ex.Message}");
+		}
+	}
+
+	public void RemoveUnitObjectAttachment(string unitId, string socket, string attachmentId, string? parentAttachmentId = null)
+	{
+		try
+		{
+			if (string.IsNullOrEmpty(unitId) || string.IsNullOrEmpty(attachmentId)) return;
+
+			string regKey = unitId;
+			bool isBuildingMeta = false;
+			if (GameHost.UnitRegistry.ContainsKey(unitId))
+			{
+				regKey = unitId;
+			}
+			else if (GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.ContainsKey(unitId))
+			{
+				regKey = unitId;
+				isBuildingMeta = true;
+			}
+			else
+			{
+				string cleanId = System.IO.Path.GetFileNameWithoutExtension(unitId);
+				if (GameHost.UnitRegistry.ContainsKey(cleanId))
+				{
+					regKey = cleanId;
+				}
+				else if (GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.ContainsKey(cleanId))
+				{
+					regKey = cleanId;
+					isBuildingMeta = true;
+				}
+				else
+				{
+					foreach (var k in GameHost.UnitRegistry.Keys)
+					{
+						if (k.Equals(unitId, StringComparison.OrdinalIgnoreCase) ||
+							k.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+							System.IO.Path.GetFileNameWithoutExtension(k).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+						{
+							regKey = k;
+							break;
+						}
+					}
+					if (GameHost.BuildingRegistry != null)
+					{
+						foreach (var k in GameHost.BuildingRegistry.Keys)
+						{
+							if (k.Equals(unitId, StringComparison.OrdinalIgnoreCase) ||
+								k.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+								System.IO.Path.GetFileNameWithoutExtension(k).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+							{
+								regKey = k;
+								isBuildingMeta = true;
+								break;
+							}
+						}
+					}
+				}
+			}
+
+			if (isBuildingMeta && GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.TryGetValue(regKey, out var bMeta))
+			{
+				bMeta.RemoveObjectAttachment(socket, attachmentId, parentAttachmentId);
+				GameHost.BuildingRegistry[regKey] = bMeta;
+			}
+			else if (GameHost.UnitRegistry.TryGetValue(regKey, out var uMeta))
+			{
+				uMeta.RemoveObjectAttachment(socket, attachmentId, parentAttachmentId);
+				GameHost.UnitRegistry[regKey] = uMeta;
+			}
+
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metadataPath)) return;
+
+			string jsonStr = System.IO.File.ReadAllText(metadataPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
+			if (root == null) return;
+
+			var unitsArray = root["CustomUnits"]?.AsArray() ?? root["Units"]?.AsArray();
+			var buildingsArray = root["CustomBuildings"]?.AsArray() ?? root["Buildings"]?.AsArray();
+
+			System.Text.Json.Nodes.JsonObject targetObj = null;
+			if (unitsArray != null)
+			{
+				for (int i = 0; i < unitsArray.Count; i++)
+				{
+					var uObj = unitsArray[i]?.AsObject();
+					if (uObj != null && (uObj["UnitId"]?.ToString() == unitId || uObj["unitId"]?.ToString() == unitId || uObj["Id"]?.ToString() == unitId))
+					{
+						targetObj = uObj;
+						break;
+					}
+				}
+			}
+
+			if (targetObj == null && buildingsArray != null)
+			{
+				for (int i = 0; i < buildingsArray.Count; i++)
+				{
+					var bObj = buildingsArray[i]?.AsObject();
+					if (bObj != null && (bObj["UnitId"]?.ToString() == unitId || bObj["unitId"]?.ToString() == unitId || bObj["Id"]?.ToString() == unitId))
+					{
+						targetObj = bObj;
+						break;
+					}
+				}
+			}
+
+			if (targetObj != null)
+			{
+				var objAttsNode = targetObj["ObjectAttachments"]?.AsObject();
+				if (objAttsNode != null)
+				{
+					string norm = (socket ?? "right_hand").ToLowerInvariant().Replace("_", "").Replace(" ", "");
+					string socketKey = norm switch
+					{
+						"ground" or "footprint" or "base" => "ground",
+						"center" or "centerofmass" => "center",
+						"overhead" or "top" or "crown" or "roof" => "overhead",
+						"pivot" or "origin" => "pivot",
+						"root" or "hips" => "root",
+						"chest" or "spine" => "chest",
+						"head" => "head",
+						"lefthand" => "left_hand",
+						"righthand" => "right_hand",
+						"leftfoot" => "left_foot",
+						"rightfoot" => "right_foot",
+						_ => socket.ToLowerInvariant()
+					};
+
+					var socketArr = objAttsNode[socketKey]?.AsArray();
+					if (socketArr != null)
+					{
 						string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
 							? attachmentId
 							: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
-						var orientNode = new System.Text.Json.Nodes.JsonObject
-						{
-							["PositionX"] = orientation.PositionX,
-							["PositionY"] = orientation.PositionY,
-							["PositionZ"] = orientation.PositionZ,
-							["PitchX"] = orientation.PitchX,
-							["YawY"] = orientation.YawY,
-							["RollZ"] = orientation.RollZ,
-							["Scale"] = orientation.Scale <= 0f ? 1.0f : orientation.Scale,
-							["ScaleX"] = orientation.ScaleX <= 0f ? 1.0f : orientation.ScaleX,
-							["ScaleY"] = orientation.ScaleY <= 0f ? 1.0f : orientation.ScaleY,
-							["ScaleZ"] = orientation.ScaleZ <= 0f ? 1.0f : orientation.ScaleZ,
-							["NormalOffset"] = orientation.NormalOffset
-						};
 
-						bool updated = false;
-						for (int j = 0; j < handArr.Count; j++)
+						for (int j = socketArr.Count - 1; j >= 0; j--)
 						{
-							if (handArr[j] is System.Text.Json.Nodes.JsonObject itemObj)
+							if (socketArr[j] is System.Text.Json.Nodes.JsonObject itemObj)
 							{
+								bool match = false;
 								foreach (var prop in itemObj)
 								{
-									if (prop.Key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+									bool keyMatch = prop.Key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
 										prop.Key.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
-										System.IO.Path.GetFileNameWithoutExtension(prop.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+										System.IO.Path.GetFileNameWithoutExtension(prop.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase);
+
+									string? pId = (prop.Value is System.Text.Json.Nodes.JsonObject valObj && valObj["ParentAttachmentId"] != null)
+										? valObj["ParentAttachmentId"].ToString()
+										: null;
+
+									if (!string.IsNullOrEmpty(parentAttachmentId))
 									{
-										itemObj[prop.Key] = orientNode;
-										updated = true;
-										break;
+										if (keyMatch && string.Equals(pId, parentAttachmentId, StringComparison.OrdinalIgnoreCase))
+										{
+											match = true;
+											break;
+										}
+									}
+									else
+									{
+										if (keyMatch && string.IsNullOrEmpty(pId))
+										{
+											match = true;
+											break;
+										}
+										if (!string.IsNullOrEmpty(pId) &&
+											(pId.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+											 pId.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+											 System.IO.Path.GetFileNameWithoutExtension(pId).Equals(cleanId, StringComparison.OrdinalIgnoreCase)))
+										{
+											match = true;
+											break;
+										}
 									}
 								}
-								if (updated) break;
+								if (match)
+								{
+									socketArr.RemoveAt(j);
+								}
 							}
 						}
 
-						if (!updated)
+						if (socketArr.Count == 0)
 						{
-							var newEntry = new System.Text.Json.Nodes.JsonObject
-							{
-								[cleanId] = orientNode
-							};
-							handArr.Add(newEntry);
+							objAttsNode.Remove(socketKey);
 						}
-						break;
 					}
 				}
 			}
 
 			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+
+			if (GameHost.Instance != null)
+			{
+				if (GameHost.Instance.AllUnits != null)
+				{
+					foreach (var u in GameHost.Instance.AllUnits)
+					{
+						if (u != null && (u.UnitId == unitId || u.UnitId == regKey || System.IO.Path.GetFileNameWithoutExtension(u.UnitId ?? "").Equals(System.IO.Path.GetFileNameWithoutExtension(unitId), StringComparison.OrdinalIgnoreCase)))
+						{
+							u.ApplyAllConfiguredAttachments();
+						}
+					}
+				}
+
+				if (GameHost.Instance.SelectedEditorObject is Unit3D selUnit)
+				{
+					if (selUnit.UnitId == unitId || selUnit.UnitId == regKey || System.IO.Path.GetFileNameWithoutExtension(selUnit.UnitId ?? "").Equals(System.IO.Path.GetFileNameWithoutExtension(unitId), StringComparison.OrdinalIgnoreCase))
+					{
+						selUnit.ApplyAllConfiguredAttachments();
+					}
+				}
+			}
 		}
 		catch (Exception ex)
 		{
-			GD.PrintErr($"[MapEditorHUD] SaveUnitObjectAttachment error: {ex.Message}");
+			GD.PrintErr($"[MapEditorHUD] RemoveUnitObjectAttachment error: {ex.Message}");
 		}
 	}
 

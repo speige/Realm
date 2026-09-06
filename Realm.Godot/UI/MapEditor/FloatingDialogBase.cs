@@ -1132,7 +1132,7 @@ public partial class FloatingDialogBase : PanelContainer
 					}
 					else if (category == "models" || category == "glb" || category == "attachments")
 					{
-						if (category == "attachments")
+						if (category == "attachments" || includeAllFolders)
 						{
 							foreach (var prim in Enum.GetValues<VfxPrimitiveType>())
 							{
@@ -1288,7 +1288,7 @@ public partial class FloatingDialogBase : PanelContainer
 	}
 
 	public Button AddButton(
-		HBoxContainer parent,
+		Control parent,
 		string text,
 		Action onClick,
 		string tooltip = "",

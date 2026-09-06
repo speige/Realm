@@ -47,6 +47,7 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 	private BoneAttachment3D _leftHandBoneAttachment;
 	private Node3D _rightHandModelNode;
 	private Node3D _leftHandModelNode;
+	private readonly Dictionary<string, Node3D> _previewPseudoSockets = new(StringComparer.OrdinalIgnoreCase);
 
 	private Node _sourceSelectedObject;
 	private string _currentUnitId = "";
@@ -190,6 +191,13 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 		leftHandRow.AddChild(btnEditLeft);
 
 		animInputSection.AddChild(leftHandRow);
+
+		var studioBtnRow = new HBoxContainer();
+		studioBtnRow.AddThemeConstantOverride("separation", 6);
+		var studioSpacer = new Control { CustomMinimumSize = new Vector2(130, 0) };
+		studioBtnRow.AddChild(studioSpacer);
+		AddButton(studioBtnRow, "📎 " + TranslationServer.Translate("Open Sockets & VFX Studio..."), () => OpenFullSocketStudio(), "Open full Socket & VFX studio to configure attachments, ground auras, overhead effects, and non-hand sockets", 11, new Vector2(0, 24));
+		animInputSection.AddChild(studioBtnRow);
 
 		// ADD TO ACTION ROW
 		var addActionRow = new HBoxContainer();
@@ -604,6 +612,27 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 			(orientation) =>
 			{
 				UpdatePreviewHandAttachments();
+				ClearPreviewPseudoSockets();
+				ApplyPreviewPseudoSockets();
+			}
+		);
+	}
+
+	private void OpenFullSocketStudio()
+	{
+		string selRight = GetSelectedHandAttachment(HumanoidBone.RightHand);
+		string initialAtt = !string.IsNullOrEmpty(selRight) && !selRight.Equals("<None>", StringComparison.OrdinalIgnoreCase) ? selRight : null;
+		Hud?.OpenObjectAttachmentDialog(
+			_currentUnitId,
+			initialAtt,
+			"RightHand",
+			_previewModelRoot,
+			(orientation) =>
+			{
+				PopulateHandAttachmentDropdowns();
+				UpdatePreviewHandAttachments();
+				ClearPreviewPseudoSockets();
+				ApplyPreviewPseudoSockets();
 			}
 		);
 	}
@@ -821,6 +850,7 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 
 	private void ClearPreviewModel()
 	{
+		ClearPreviewPseudoSockets();
 		if (_previewModelRoot != null && GodotObject.IsInstanceValid(_previewModelRoot))
 		{
 			if (_animPlayer != null && GodotObject.IsInstanceValid(_animPlayer))
@@ -888,9 +918,152 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 			}
 		}
 
+		ApplyPreviewPseudoSockets();
 		UpdatePreviewHandAttachments();
 
 		_animPlayer = AnimationRetargetingService.FindOrCreateAnimationPlayer(_previewModelRoot);
+	}
+
+	private void ApplyPreviewPseudoSockets()
+	{
+		if (_previewModelRoot == null || string.IsNullOrEmpty(_currentUnitId)) return;
+		if (!GameHost.UnitRegistry.TryGetValue(_currentUnitId, out var uMeta) || !uMeta.ObjectAttachments.HasValue) return;
+
+		var atts = uMeta.ObjectAttachments.Value;
+		ApplyPreviewPseudoSocketList("ground", atts.ground);
+		ApplyPreviewPseudoSocketList("center", atts.center);
+		ApplyPreviewPseudoSocketList("overhead", atts.overhead);
+	}
+
+	private void ApplyPreviewPseudoSocketList(string socket, List<Dictionary<string, GameHost.HandAttachmentOrientation>>? list)
+	{
+		if (list == null || _previewModelRoot == null) return;
+		foreach (var dict in list)
+		{
+			if (dict == null) continue;
+			foreach (var kvp in dict)
+			{
+				AttachPreviewPseudoSocket(socket, kvp.Key, kvp.Value, false);
+			}
+		}
+	}
+
+	private void AttachPreviewPseudoSocket(string socket, string attachmentId, GameHost.HandAttachmentOrientation orientation, bool clearExisting = false)
+	{
+		if (_previewModelRoot == null || string.IsNullOrEmpty(attachmentId)) return;
+		string normSocket = socket.ToLowerInvariant().Replace("_", "").Replace(" ", "");
+		string nodeName = $"PreviewPseudoSocket_{normSocket}";
+
+		var socketAnchor = _previewModelRoot.GetNodeOrNull<Node3D>(nodeName);
+		if (socketAnchor == null)
+		{
+			socketAnchor = new Node3D { Name = nodeName };
+			_previewModelRoot.AddChild(socketAnchor);
+		}
+		_previewPseudoSockets[normSocket] = socketAnchor;
+
+		if (clearExisting)
+		{
+			foreach (Node child in socketAnchor.GetChildren())
+			{
+				socketAnchor.RemoveChild(child);
+				child.QueueFree();
+			}
+		}
+
+		Aabb aabb = CalculatePreviewModelAabb(_previewModelRoot);
+		Vector3 anchorPos = normSocket switch
+		{
+			"ground" or "footprint" or "base" => new Vector3(aabb.GetCenter().X, aabb.Position.Y, aabb.GetCenter().Z),
+			"overhead" or "top" or "crown" or "roof" => new Vector3(aabb.GetCenter().X, aabb.End.Y, aabb.GetCenter().Z),
+			_ => aabb.GetCenter()
+		};
+
+		socketAnchor.Position = anchorPos;
+		socketAnchor.Rotation = Vector3.Zero;
+		socketAnchor.Scale = Vector3.One;
+
+		var loaded = Unit3D.ResolveAndInstantiateAttachment(attachmentId, out float defScale, out Vector3 defPos, out Vector3 defRot);
+		if (loaded != null)
+		{
+			Vector3 effPos = orientation.Position;
+			Vector3 effRot = orientation.RotationDegrees;
+			Vector3 effScale = orientation.ScaleVector;
+			if (effScale == Vector3.Zero) effScale = Vector3.One * (orientation.Scale <= 0f ? 1.0f : orientation.Scale);
+			if (orientation.NormalOffset != 0f) effPos += Vector3.Up * orientation.NormalOffset;
+
+			loaded.Position = effPos;
+			loaded.RotationDegrees = effRot;
+			loaded.Scale = effScale;
+			socketAnchor.AddChild(loaded);
+		}
+	}
+
+	private void ClearPreviewPseudoSockets()
+	{
+		foreach (var kvp in _previewPseudoSockets)
+		{
+			if (kvp.Value != null && GodotObject.IsInstanceValid(kvp.Value))
+			{
+				kvp.Value.QueueFree();
+			}
+		}
+		_previewPseudoSockets.Clear();
+	}
+
+	private static Aabb CalculatePreviewModelAabb(Node3D root)
+	{
+		Aabb combinedAabb = new Aabb();
+		bool hasAabb = false;
+
+		void Collect(Node current)
+		{
+			if (current is MeshInstance3D meshInst && meshInst.Mesh != null && meshInst.Visible)
+			{
+				Transform3D relXform = root.GlobalTransform.AffineInverse() * meshInst.GlobalTransform;
+				Aabb mAabb = meshInst.Mesh.GetAabb();
+				Vector3 min = mAabb.Position;
+				Vector3 max = mAabb.End;
+				Vector3[] corners = new[]
+				{
+					new Vector3(min.X, min.Y, min.Z),
+					new Vector3(min.X, min.Y, max.Z),
+					new Vector3(min.X, max.Y, min.Z),
+					new Vector3(min.X, max.Y, max.Z),
+					new Vector3(max.X, min.Y, min.Z),
+					new Vector3(max.X, min.Y, max.Z),
+					new Vector3(max.X, max.Y, min.Z),
+					new Vector3(max.X, max.Y, max.Z)
+				};
+				for (int i = 0; i < 8; i++)
+				{
+					Vector3 pt = relXform * corners[i];
+					if (!hasAabb)
+					{
+						combinedAabb = new Aabb(pt, Vector3.Zero);
+						hasAabb = true;
+					}
+					else
+					{
+						combinedAabb = combinedAabb.Expand(pt);
+					}
+				}
+			}
+			foreach (Node child in current.GetChildren())
+			{
+				if (child is not BoneAttachment3D && !child.Name.ToString().StartsWith("PreviewPseudoSocket_"))
+				{
+					Collect(child);
+				}
+			}
+		}
+
+		Collect(root);
+		if (!hasAabb)
+		{
+			combinedAabb = new Aabb(new Vector3(-0.5f, 0f, -0.5f), new Vector3(1.0f, 1.8f, 1.0f));
+		}
+		return combinedAabb;
 	}
 
 	private void UpdatePreviewHandAttachments()
