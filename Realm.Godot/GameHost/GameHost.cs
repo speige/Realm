@@ -1480,6 +1480,20 @@ public partial class GameHost : Node3D, IGameAPI
 		public string TextureOrm { get; set; }
 		public string TextureEmission { get; set; }
 		public float EmissionEnergy { get; set; }
+		public bool AnimateOpacity { get; set; }
+		public float OpacityPulseSpeed { get; set; }
+		public float MinOpacity { get; set; }
+		public float MaxOpacity { get; set; }
+		public bool AnimateEmission { get; set; }
+		public float EmissionPulseSpeed { get; set; }
+		public float MinEmission { get; set; }
+		public float MaxEmission { get; set; }
+		public bool AnimateScale { get; set; }
+		public float ScalePulseSpeed { get; set; }
+		public float MinScaleRatio { get; set; }
+		public float MaxScaleRatio { get; set; }
+		public float UpperFade { get; set; }
+		public float LowerFade { get; set; }
 	}
 
 	public struct VfxMetadata

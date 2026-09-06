@@ -5,6 +5,8 @@ using System.Text.Json.Serialization;
 
 namespace Realm.Godot.VFX;
 
+
+
 public enum VfxBlendMode
 {
 	Additive,
@@ -23,6 +25,7 @@ public class VfxAttachmentConfig
 	public string Name { get; set; } = "VFX Effect";
 
 	public VfxPrimitiveType PrimitiveType { get; set; } = VfxPrimitiveType.VortexDisc;
+	public SpellParticleConfig? ParticleConfig { get; set; }
 	public VfxBlendMode BlendMode { get; set; } = VfxBlendMode.Additive;
 	public VfxPlacementMode PlacementMode { get; set; } = VfxPlacementMode.SurfaceSnap;
 	public string TargetSocket { get; set; } = "Root";
@@ -125,7 +128,8 @@ public class VfxAttachmentConfig
 			SurfaceNormalOffset = SurfaceNormalOffset,
 			PositionOffset = PositionOffset,
 			RotationOffset = RotationOffset,
-			ScaleOffset = ScaleOffset
+			ScaleOffset = ScaleOffset,
+			ParticleConfig = ParticleConfig?.Clone()
 		};
 	}
 
@@ -293,6 +297,71 @@ public class VfxAttachmentConfig
 				EnableDepthFade = true,
 				SurfaceNormalOffset = 0.01f
 			},
+			"projected_rune" or "projected_volume" or "projector" => new VfxAttachmentConfig
+			{
+				VfxId = "vfx_projected_rune",
+				Name = "Projected Ground Rune",
+				PrimitiveType = VfxPrimitiveType.ProjectedVolumeCube,
+				BlendMode = VfxBlendMode.Additive,
+				TargetSocket = "Root",
+				BaseColor = "#ff8800",
+				SecondaryColor = "#aa2200",
+				CoreColor = "#ffffaa",
+				EmissionBoost = 3.0f,
+				CoreThreshold = 0.6f,
+				DistortionStrength = 0.15f,
+				BaseUvScroll = new Vector2(0.0f, 0.0f),
+				NoiseUvScroll = new Vector2(0.05f, 0.05f),
+				EnableRadialFalloff = true,
+				RadialFalloffStart = 0.8f,
+				RadialFalloffEnd = 1.0f,
+				ScaleOffset = new Vector3(4.0f, 3.0f, 4.0f)
+			},
+			"fire_sparks" or "sparks" => new VfxAttachmentConfig
+			{
+				VfxId = "vfx_fire_sparks",
+				Name = "Fire Sparks Particles",
+				PrimitiveType = VfxPrimitiveType.ParticleSystem,
+				BlendMode = VfxBlendMode.Additive,
+				TargetSocket = "RightHand",
+				ParticleConfig = SpellParticleConfig.CreatePreset("fire_sparks")
+			},
+			"arcane_burst" or "burst" => new VfxAttachmentConfig
+			{
+				VfxId = "vfx_arcane_burst",
+				Name = "Arcane Burst Particles",
+				PrimitiveType = VfxPrimitiveType.ParticleSystem,
+				BlendMode = VfxBlendMode.Additive,
+				TargetSocket = "Root",
+				ParticleConfig = SpellParticleConfig.CreatePreset("arcane_burst")
+			},
+			"frost_nova" => new VfxAttachmentConfig
+			{
+				VfxId = "vfx_frost_nova",
+				Name = "Frost Nova Particles",
+				PrimitiveType = VfxPrimitiveType.ParticleSystem,
+				BlendMode = VfxBlendMode.Additive,
+				TargetSocket = "Root",
+				ParticleConfig = SpellParticleConfig.CreatePreset("frost_nova")
+			},
+			"poison_spores" => new VfxAttachmentConfig
+			{
+				VfxId = "vfx_poison_spores",
+				Name = "Poison Spores Particles",
+				PrimitiveType = VfxPrimitiveType.ParticleSystem,
+				BlendMode = VfxBlendMode.AlphaBlend,
+				TargetSocket = "Root",
+				ParticleConfig = SpellParticleConfig.CreatePreset("poison_spores")
+			},
+			"holy_motes" => new VfxAttachmentConfig
+			{
+				VfxId = "vfx_holy_motes",
+				Name = "Holy Motes Particles",
+				PrimitiveType = VfxPrimitiveType.ParticleSystem,
+				BlendMode = VfxBlendMode.Additive,
+				TargetSocket = "Chest",
+				ParticleConfig = SpellParticleConfig.CreatePreset("holy_motes")
+			},
 			_ => new VfxAttachmentConfig()
 		};
 	}
@@ -307,7 +376,13 @@ public class VfxAttachmentConfig
 			{ "vfx_divine_shield", CreatePreset("divine_shield") },
 			{ "vfx_frost_rune", CreatePreset("frost_rune") },
 			{ "vfx_poison_ring", CreatePreset("poison_ring") },
-			{ "vfx_light_shaft", CreatePreset("light_shaft") }
+			{ "vfx_light_shaft", CreatePreset("light_shaft") },
+			{ "vfx_projected_rune", CreatePreset("projected_rune") },
+			{ "vfx_fire_sparks", CreatePreset("fire_sparks") },
+			{ "vfx_arcane_burst", CreatePreset("arcane_burst") },
+			{ "vfx_frost_nova", CreatePreset("frost_nova") },
+			{ "vfx_poison_spores", CreatePreset("poison_spores") },
+			{ "vfx_holy_motes", CreatePreset("holy_motes") }
 		};
 	}
 }

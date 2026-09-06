@@ -8,6 +8,7 @@ public partial class ProceduralVfxInstance3D : Node3D
 {
 	private MeshInstance3D _meshInstance;
 	private ShaderMaterial _material;
+	private SpellParticleInstance3D _particleInstance;
 	private StaticBody3D _editorStaticBody;
 	private CollisionShape3D _editorCollisionShape;
 
@@ -36,6 +37,26 @@ public partial class ProceduralVfxInstance3D : Node3D
 
 	private void EnsureMeshAndMaterial()
 	{
+		if (_config.PrimitiveType == VfxPrimitiveType.ParticleSystem)
+		{
+			if (_meshInstance != null) _meshInstance.Visible = false;
+			if (_particleInstance == null)
+			{
+				_particleInstance = new SpellParticleInstance3D();
+				_particleInstance.Name = "VfxParticleInstance";
+				AddChild(_particleInstance);
+			}
+			_particleInstance.Visible = true;
+			var pConfig = _config.ParticleConfig ?? SpellParticleConfig.CreatePreset(_config.VfxId);
+			_particleInstance.UpdateConfig(pConfig);
+			return;
+		}
+
+		if (_particleInstance != null)
+		{
+			_particleInstance.Visible = false;
+		}
+
 		if (_meshInstance == null)
 		{
 			_meshInstance = new MeshInstance3D();
@@ -43,6 +64,7 @@ public partial class ProceduralVfxInstance3D : Node3D
 			_meshInstance.LodBias = 100.0f;
 			AddChild(_meshInstance);
 		}
+		_meshInstance.Visible = true;
 
 		if (_material == null)
 		{
@@ -55,6 +77,12 @@ public partial class ProceduralVfxInstance3D : Node3D
 
 	private void UpdateMesh()
 	{
+		if (_config.PrimitiveType == VfxPrimitiveType.ParticleSystem)
+		{
+			UpdateCollisionShapeBounds();
+			return;
+		}
+
 		if (_meshInstance != null)
 		{
 			_meshInstance.Mesh = ProceduralVfxMeshGenerator.GetMesh(_config.PrimitiveType);
@@ -68,7 +96,10 @@ public partial class ProceduralVfxInstance3D : Node3D
 		VfxId = _config.VfxId;
 
 		EnsureMeshAndMaterial();
-		VfxShaderManager.ApplyConfigToMaterial(_material, _config);
+		if (_config.PrimitiveType != VfxPrimitiveType.ParticleSystem && _material != null)
+		{
+			VfxShaderManager.ApplyConfigToMaterial(_material, _config);
+		}
 		UpdateMesh();
 
 		Position = _config.PositionOffset;
@@ -87,16 +118,24 @@ public partial class ProceduralVfxInstance3D : Node3D
 
 		EnsureMeshAndMaterial();
 
-		if (blendChanged)
+		if (_config.PrimitiveType != VfxPrimitiveType.ParticleSystem)
 		{
-			_material.Shader = VfxShaderManager.GetShader(_config.BlendMode);
+			if (blendChanged || meshChanged)
+			{
+				_material.Shader = VfxShaderManager.GetShader(_config.BlendMode, _config.PrimitiveType);
+			}
+
+			VfxShaderManager.ApplyConfigToMaterial(_material, _config);
+
+			if (meshChanged)
+			{
+				UpdateMesh();
+			}
 		}
-
-		VfxShaderManager.ApplyConfigToMaterial(_material, _config);
-
-		if (meshChanged)
+		else if (_particleInstance != null)
 		{
-			UpdateMesh();
+			var pConfig = _config.ParticleConfig ?? SpellParticleConfig.CreatePreset(_config.VfxId);
+			_particleInstance.UpdateConfig(pConfig);
 		}
 	}
 

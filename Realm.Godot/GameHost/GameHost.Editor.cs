@@ -2225,59 +2225,21 @@ public partial class GameHost
 
 					if (albedoImg != null)
 					{
-						int cols = Math.Max(1, overrideCols > 0 ? overrideCols : detectedCols);
-						int rows = Math.Max(1, overrideRows > 0 ? overrideRows : detectedRows);
-						float fps = overrideFps > 0.001f ? overrideFps : detectedFps;
-						int totalFrames = cols * rows;
-
 						var assetData = new DecalAssetData
 						{
 							DecalId = decalId,
-							Columns = cols,
-							Rows = rows,
-							Fps = fps,
-							SubframeBlend = overrideSubframeBlend ?? detectedSubframeBlend
+							Columns = 1,
+							Rows = 1,
+							Fps = 12.0f,
+							SubframeBlend = false
 						};
 
-						if (totalFrames > 1)
+						if (!albedoImg.HasMipmaps()) albedoImg.GenerateMipmaps();
+						assetData.PrimaryTexture = ImageTexture.CreateFromImage(albedoImg);
+						if (normalImg != null)
 						{
-							int frameW = Math.Max(1, albedoImg.GetWidth() / cols);
-							int frameH = Math.Max(1, albedoImg.GetHeight() / rows);
-							var albedoFrames = new Texture2D[totalFrames];
-							Texture2D[]? normalFrames = normalImg != null ? new Texture2D[totalFrames] : null;
-
-							for (int i = 0; i < totalFrames; i++)
-							{
-								int col = i % cols;
-								int row = i / cols;
-								var rect = new Rect2I(col * frameW, row * frameH, frameW, frameH);
-
-								var aFrame = albedoImg.GetRegion(rect);
-								if (!aFrame.HasMipmaps()) aFrame.GenerateMipmaps();
-								albedoFrames[i] = ImageTexture.CreateFromImage(aFrame);
-
-								if (normalImg != null && normalFrames != null)
-								{
-									var nFrame = normalImg.GetRegion(rect);
-									if (!nFrame.HasMipmaps()) nFrame.GenerateMipmaps();
-									normalFrames[i] = ImageTexture.CreateFromImage(nFrame);
-								}
-							}
-
-							assetData.AlbedoFrames = albedoFrames;
-							assetData.NormalFrames = normalFrames;
-							assetData.PrimaryTexture = albedoFrames[0];
-							assetData.PrimaryNormal = normalFrames?[0];
-						}
-						else
-						{
-							if (!albedoImg.HasMipmaps()) albedoImg.GenerateMipmaps();
-							assetData.PrimaryTexture = ImageTexture.CreateFromImage(albedoImg);
-							if (normalImg != null)
-							{
-								if (!normalImg.HasMipmaps()) normalImg.GenerateMipmaps();
-								assetData.PrimaryNormal = ImageTexture.CreateFromImage(normalImg);
-							}
+							if (!normalImg.HasMipmaps()) normalImg.GenerateMipmaps();
+							assetData.PrimaryNormal = ImageTexture.CreateFromImage(normalImg);
 						}
 
 						_decalAssetCache[cacheKey] = assetData;
@@ -2917,6 +2879,11 @@ public partial class GameHost
 				decal.EmissionEnergy = 0.0f;
 				break;
 		}
+
+		if (decal is Decal3D decal3DNode)
+		{
+			decal3DNode.SetBaseProperties(decal.Modulate, decal.EmissionEnergy);
+		}
 	}
 
 	public void ApplyDecalPropertiesFromMetadata(Decal decal, string decalId)
@@ -2925,24 +2892,8 @@ public partial class GameHost
 		try
 		{
 			var assetData = LoadDecalAsset(decalId);
-			if (decal is Decal3D d3d)
-			{
-				if (assetData.IsAnimated)
-				{
-					d3d.SetAnimationFrames(assetData.AlbedoFrames, assetData.NormalFrames, assetData.Columns, assetData.Rows, assetData.Fps, assetData.SubframeBlend);
-				}
-				else
-				{
-					d3d.SetAnimationFrames(null, null, 1, 1, assetData.Fps, assetData.SubframeBlend);
-					decal.TextureAlbedo = assetData.PrimaryTexture;
-					if (assetData.PrimaryNormal != null) decal.TextureNormal = assetData.PrimaryNormal;
-				}
-			}
-			else
-			{
-				decal.TextureAlbedo = assetData.PrimaryTexture;
-				if (assetData.PrimaryNormal != null) decal.TextureNormal = assetData.PrimaryNormal;
-			}
+			decal.TextureAlbedo = assetData.PrimaryTexture;
+			if (assetData.PrimaryNormal != null) decal.TextureNormal = assetData.PrimaryNormal;
 
 			string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
@@ -2976,6 +2927,24 @@ public partial class GameHost
 			float metallic = meta != null && meta.TryGetPropertyValue("metallic", out var metNode) && float.TryParse(metNode?.ToString(), out float met) ? met : 0.0f;
 			string blendMode = meta != null && meta.TryGetPropertyValue("blend_mode", out var bmNode) ? bmNode?.ToString() ?? "Mix" : "Mix";
 
+			bool animateOpacity = meta != null && meta.TryGetPropertyValue("animate_opacity", out var aoNode) && bool.TryParse(aoNode?.ToString(), out bool ao) && ao;
+			float opacityPulseSpeed = meta != null && meta.TryGetPropertyValue("opacity_pulse_speed", out var opsNode) && float.TryParse(opsNode?.ToString(), out float ops) ? ops : 1.0f;
+			float minOpacity = meta != null && meta.TryGetPropertyValue("min_opacity", out var minONode) && float.TryParse(minONode?.ToString(), out float minO) ? minO : 0.2f;
+			float maxOpacity = meta != null && meta.TryGetPropertyValue("max_opacity", out var maxONode) && float.TryParse(maxONode?.ToString(), out float maxO) ? maxO : 1.0f;
+
+			bool animateEmission = meta != null && meta.TryGetPropertyValue("animate_emission", out var aeNode) && bool.TryParse(aeNode?.ToString(), out bool ae) && ae;
+			float emissionPulseSpeed = meta != null && meta.TryGetPropertyValue("emission_pulse_speed", out var epsNode) && float.TryParse(epsNode?.ToString(), out float eps) ? eps : 1.0f;
+			float minEmission = meta != null && meta.TryGetPropertyValue("min_emission", out var minENode) && float.TryParse(minENode?.ToString(), out float minE) ? minE : 0.0f;
+			float maxEmission = meta != null && meta.TryGetPropertyValue("max_emission", out var maxENode) && float.TryParse(maxENode?.ToString(), out float maxE) ? maxE : 2.0f;
+
+			bool animateScale = meta != null && meta.TryGetPropertyValue("animate_scale", out var asNode) && bool.TryParse(asNode?.ToString(), out bool aSc) && aSc;
+			float scalePulseSpeed = meta != null && meta.TryGetPropertyValue("scale_pulse_speed", out var scpsNode) && float.TryParse(scpsNode?.ToString(), out float scps) ? scps : 1.0f;
+			float minScaleRatio = meta != null && meta.TryGetPropertyValue("min_scale_ratio", out var minScNode) && float.TryParse(minScNode?.ToString(), out float minSc) ? minSc : 0.8f;
+			float maxScaleRatio = meta != null && meta.TryGetPropertyValue("max_scale_ratio", out var maxScNode) && float.TryParse(maxScNode?.ToString(), out float maxSc) ? maxSc : 1.2f;
+
+			float upperFade = meta != null && meta.TryGetPropertyValue("upper_fade", out var ufNode) && float.TryParse(ufNode?.ToString(), out float uf) ? uf : 0.3f;
+			float lowerFade = meta != null && meta.TryGetPropertyValue("lower_fade", out var lfNode) && float.TryParse(lfNode?.ToString(), out float lf) ? lf : 0.3f;
+
 			ApplyDecalRenderingProperties(
 				decal,
 				brightness,
@@ -2990,6 +2959,21 @@ public partial class GameHost
 				blendMode,
 				decalId
 			);
+
+			if (decal is Decal3D d3d)
+			{
+				d3d.SetPropertyAnimation(
+					animateOpacity, opacityPulseSpeed, minOpacity, maxOpacity,
+					animateEmission, emissionPulseSpeed, minEmission, maxEmission,
+					animateScale, scalePulseSpeed, minScaleRatio, maxScaleRatio,
+					upperFade, lowerFade
+				);
+			}
+			else
+			{
+				decal.UpperFade = upperFade;
+				decal.LowerFade = lowerFade;
+			}
 		}
 		catch { }
 	}
@@ -3006,24 +2990,23 @@ public partial class GameHost
 		float roughness,
 		float metallic,
 		string blendMode,
-		int columns = 0,
-		int rows = 0,
-		float fps = 0f,
-		bool? subframeBlend = null)
+		bool animateOpacity = false,
+		float opacityPulseSpeed = 1.0f,
+		float minOpacity = 0.2f,
+		float maxOpacity = 1.0f,
+		bool animateEmission = false,
+		float emissionPulseSpeed = 1.0f,
+		float minEmission = 0.0f,
+		float maxEmission = 2.0f,
+		bool animateScale = false,
+		float scalePulseSpeed = 1.0f,
+		float minScaleRatio = 0.8f,
+		float maxScaleRatio = 1.2f,
+		float upperFade = 0.3f,
+		float lowerFade = 0.3f)
 	{
 		if (string.IsNullOrEmpty(decalKey) || AllDecals == null) return;
 		string baseKey = System.IO.Path.GetFileNameWithoutExtension(decalKey);
-
-		if (columns > 0 || rows > 0 || fps > 0f || subframeBlend.HasValue)
-		{
-			InvalidateDecalCache(decalKey);
-		}
-
-		DecalAssetData? assetData = null;
-		if (columns > 0 || rows > 0 || fps > 0f || subframeBlend.HasValue)
-		{
-			assetData = LoadDecalAsset(decalKey, overrideCols: columns, overrideRows: rows, overrideFps: fps, overrideSubframeBlend: subframeBlend, forceReload: true);
-		}
 
 		foreach (var decal in AllDecals)
 		{
@@ -3033,20 +3016,6 @@ public partial class GameHost
 				string dBase = System.IO.Path.GetFileNameWithoutExtension(dId);
 				if (dId.Equals(decalKey, StringComparison.OrdinalIgnoreCase) || dBase.Equals(baseKey, StringComparison.OrdinalIgnoreCase))
 				{
-					if (assetData != null && decal is Decal3D targetD3d)
-					{
-						if (assetData.IsAnimated)
-						{
-							targetD3d.SetAnimationFrames(assetData.AlbedoFrames, assetData.NormalFrames, assetData.Columns, assetData.Rows, assetData.Fps, assetData.SubframeBlend);
-						}
-						else
-						{
-							targetD3d.SetAnimationFrames(null, null, 1, 1, assetData.Fps, assetData.SubframeBlend);
-							decal.TextureAlbedo = assetData.PrimaryTexture;
-							if (assetData.PrimaryNormal != null) decal.TextureNormal = assetData.PrimaryNormal;
-						}
-					}
-
 					ApplyDecalRenderingProperties(
 						decal,
 						brightness,
@@ -3061,6 +3030,21 @@ public partial class GameHost
 						blendMode,
 						decalKey
 					);
+
+					if (decal is Decal3D targetD3d)
+					{
+						targetD3d.SetPropertyAnimation(
+							animateOpacity, opacityPulseSpeed, minOpacity, maxOpacity,
+							animateEmission, emissionPulseSpeed, minEmission, maxEmission,
+							animateScale, scalePulseSpeed, minScaleRatio, maxScaleRatio,
+							upperFade, lowerFade
+						);
+					}
+					else
+					{
+						decal.UpperFade = upperFade;
+						decal.LowerFade = lowerFade;
+					}
 				}
 			}
 		}

@@ -1467,54 +1467,14 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			Texture2D? baseTex = LoadTextureFromFileOrRtex(filePath);
 			if (baseTex != null)
 			{
-				int cols = 1;
-				int rows = 1;
-				float fps = 12.0f;
-				var meta = DecalSettingsDialog.ResolveDecalMetadata(key);
-				if (meta.TryGetPropertyValue("columns", out var cNode) && int.TryParse(cNode?.ToString(), out int c) && c > 0) cols = c;
-				if (meta.TryGetPropertyValue("rows", out var rowNode) && int.TryParse(rowNode?.ToString(), out int r) && r > 0) rows = r;
-				if (meta.TryGetPropertyValue("fps", out var fNode) && float.TryParse(fNode?.ToString(), out float f) && f > 0.001f) fps = f;
-
-				int totalFrames = cols * rows;
-				if (totalFrames > 1)
+				assetData = new GameHost.DecalAssetData
 				{
-					var img = baseTex.GetImage();
-					if (img != null)
-					{
-						int frameW = Math.Max(1, img.GetWidth() / cols);
-						int frameH = Math.Max(1, img.GetHeight() / rows);
-						var frames = new Texture2D[totalFrames];
-						for (int i = 0; i < totalFrames; i++)
-						{
-							int col = i % cols;
-							int row = i / cols;
-							var region = img.GetRegion(new Rect2I(col * frameW, row * frameH, frameW, frameH));
-							frames[i] = ImageTexture.CreateFromImage(region);
-						}
-
-						assetData = new GameHost.DecalAssetData
-						{
-							DecalId = key,
-							PrimaryTexture = frames[0],
-							AlbedoFrames = frames,
-							Columns = cols,
-							Rows = rows,
-							Fps = fps
-						};
-					}
-				}
-
-				if (assetData == null)
-				{
-					assetData = new GameHost.DecalAssetData
-					{
-						DecalId = key,
-						PrimaryTexture = baseTex,
-						Columns = 1,
-						Rows = 1,
-						Fps = fps
-					};
-				}
+					DecalId = key,
+					PrimaryTexture = baseTex,
+					Columns = 1,
+					Rows = 1,
+					Fps = 12.0f
+				};
 			}
 		}
 
@@ -1536,40 +1496,15 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			float mg = Mathf.Clamp(tint.G * brightness, 0f, 2f);
 			float mb = Mathf.Clamp(tint.B * brightness, 0f, 2f);
 			_preview2DImage.Modulate = new Color(mr, mg, mb, Mathf.Clamp(opacity, 0f, 1f));
+			_preview2DImage.Texture = assetData.PrimaryTexture;
 		}
 
-		if (assetData.IsAnimated && assetData.AlbedoFrames != null && assetData.AlbedoFrames.Length > 1)
+		if (_lblPreview2DInfo != null)
 		{
-			_preview2DFrames = assetData.AlbedoFrames;
-			_preview2DFrameIndex = 0;
-			_preview2DFrameTimer = 0.0;
-			_preview2DFps = assetData.Fps > 0.001f ? assetData.Fps : 12.0f;
-
-			if (_preview2DImage != null && _preview2DFrames.Length > 0)
-			{
-				_preview2DImage.Texture = _preview2DFrames[0];
-			}
-			if (_lblPreview2DInfo != null)
-			{
-				var baseTex = assetData.PrimaryTexture;
-				_lblPreview2DInfo.Text = baseTex != null
-					? $"{key} ({baseTex.GetWidth()}x{baseTex.GetHeight()}) [{assetData.Columns}x{assetData.Rows} @ {assetData.Fps:F0} FPS]"
-					: $"{key} [{assetData.Columns}x{assetData.Rows}]";
-			}
-		}
-		else
-		{
-			if (_preview2DImage != null)
-			{
-				_preview2DImage.Texture = assetData.PrimaryTexture;
-			}
-			if (_lblPreview2DInfo != null)
-			{
-				var baseTex = assetData.PrimaryTexture;
-				_lblPreview2DInfo.Text = baseTex != null
-					? $"{key} ({baseTex.GetWidth()}x{baseTex.GetHeight()})"
-					: key;
-			}
+			var baseTex = assetData.PrimaryTexture;
+			_lblPreview2DInfo.Text = baseTex != null
+				? $"{key} ({baseTex.GetWidth()}x{baseTex.GetHeight()})"
+				: key;
 		}
 	}
 

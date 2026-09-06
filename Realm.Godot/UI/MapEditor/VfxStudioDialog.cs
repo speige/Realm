@@ -23,6 +23,15 @@ public partial class VfxStudioDialog : FloatingDialogBase
 	private OptionButton _optBlendMode;
 	private OptionButton _optPlacementMode;
 	private OptionButton _optSocket;
+	private VBoxContainer _uberShaderContainer;
+	private VBoxContainer _particleContainer;
+
+	private OptionButton _optParticleShape;
+	private OptionButton _optParticleRenderMode;
+	private LineEdit _txtParticleTexture;
+	private LineEdit _txtParticleMesh;
+	private Action<string> _setParticleTextureVal;
+	private Action<string> _setParticleMeshVal;
 
 	private VfxAttachmentConfig _currentConfig = new();
 	private VfxAttachmentConfig _initialConfig = new();
@@ -83,7 +92,7 @@ public partial class VfxStudioDialog : FloatingDialogBase
 
 		var presetsRow = new HBoxContainer();
 		presetsRow.AddThemeConstantOverride("separation", 4);
-		AddLabel(presetsRow, TranslationServer.Translate("Presets:"), 11, UIStyle.ColorGoldDull);
+		AddLabel(presetsRow, TranslationServer.Translate("Mesh VFX:"), 11, UIStyle.ColorGoldDull);
 		AddButton(presetsRow, "🔥 " + TranslationServer.Translate("Fire Blade"), () => ApplyPreset("fire_blade"), "Fire blade preset", 10);
 		AddButton(presetsRow, "🌀 " + TranslationServer.Translate("Arcane Portal"), () => ApplyPreset("arcane_portal"), "Arcane portal preset", 10);
 		AddButton(presetsRow, "⚡ " + TranslationServer.Translate("Lightning"), () => ApplyPreset("lightning_blade"), "Lightning blade preset", 10);
@@ -91,7 +100,18 @@ public partial class VfxStudioDialog : FloatingDialogBase
 		AddButton(presetsRow, "❄️ " + TranslationServer.Translate("Frost Rune"), () => ApplyPreset("frost_rune"), "Frost rune preset", 10);
 		AddButton(presetsRow, "🧪 " + TranslationServer.Translate("Poison"), () => ApplyPreset("poison_ring"), "Poison ring preset", 10);
 		AddButton(presetsRow, "💡 " + TranslationServer.Translate("Light Shaft"), () => ApplyPreset("light_shaft"), "Light shaft preset", 10);
+		AddButton(presetsRow, "📦 " + TranslationServer.Translate("Projected Rune"), () => ApplyPreset("projected_rune"), "Projected volume cube rune preset", 10);
 		scrollBody.AddChild(presetsRow);
+
+		var particlePresetsRow = new HBoxContainer();
+		particlePresetsRow.AddThemeConstantOverride("separation", 4);
+		AddLabel(particlePresetsRow, TranslationServer.Translate("Particles:"), 11, UIStyle.ColorGoldDull);
+		AddButton(particlePresetsRow, "✨ " + TranslationServer.Translate("Sparks"), () => ApplyPreset("fire_sparks"), "Fire sparks particle preset", 10);
+		AddButton(particlePresetsRow, "🔮 " + TranslationServer.Translate("Arcane"), () => ApplyPreset("arcane_burst"), "Arcane burst particle preset", 10);
+		AddButton(particlePresetsRow, "❄️ " + TranslationServer.Translate("Frost Nova"), () => ApplyPreset("frost_nova"), "Frost nova burst particle preset", 10);
+		AddButton(particlePresetsRow, "🍄 " + TranslationServer.Translate("Spores"), () => ApplyPreset("poison_spores"), "Poison spores particle preset", 10);
+		AddButton(particlePresetsRow, "🌟 " + TranslationServer.Translate("Holy Motes"), () => ApplyPreset("holy_motes"), "Holy motes upward particle preset", 10);
+		scrollBody.AddChild(particlePresetsRow);
 
 		_txtVfxId = AddTextInput(scrollBody, TranslationServer.Translate("VFX ID:"), _currentConfig.VfxId, (val) =>
 		{
@@ -110,6 +130,7 @@ public partial class VfxStudioDialog : FloatingDialogBase
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.PrimitiveType = (VfxPrimitiveType)idx;
+			UpdateSectionVisibilities();
 			RestartPreviewVfx();
 		}, 140f);
 
@@ -118,6 +139,10 @@ public partial class VfxStudioDialog : FloatingDialogBase
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.BlendMode = (VfxBlendMode)idx;
+			if (_currentConfig.ParticleConfig != null)
+			{
+				_currentConfig.ParticleConfig.BlendMode = (VfxBlendMode)idx;
+			}
 			RestartPreviewVfx();
 		}, 140f);
 
@@ -136,10 +161,20 @@ public partial class VfxStudioDialog : FloatingDialogBase
 			_currentConfig.TargetSocket = GetSocketKeyFromIndex(idx);
 		}, 140f);
 
-		AddSectionHeader(scrollBody, "🖼️ " + TranslationServer.Translate("SLOT 1: BASE SHAPE MASK (SILHOUETTE)"), new Color(0.85f, 0.6f, 0.35f));
+		_uberShaderContainer = new VBoxContainer();
+		_uberShaderContainer.AddThemeConstantOverride("separation", 8);
+		scrollBody.AddChild(_uberShaderContainer);
+
+		_particleContainer = new VBoxContainer();
+		_particleContainer.AddThemeConstantOverride("separation", 8);
+		scrollBody.AddChild(_particleContainer);
+
+		BuildParticleControls(_particleContainer);
+
+		AddSectionHeader(_uberShaderContainer, "🖼️ " + TranslationServer.Translate("SLOT 1: BASE SHAPE MASK (SILHOUETTE)"), new Color(0.85f, 0.6f, 0.35f));
 
 		AddAssetFilterDropdown(
-			scrollBody,
+			_uberShaderContainer,
 			TranslationServer.Translate("Base Texture (.rtex)"),
 			_currentConfig.BaseTexture,
 			(all) => ScanTextureAssets(true),
@@ -154,66 +189,66 @@ public partial class VfxStudioDialog : FloatingDialogBase
 			true
 		);
 
-		AddCheckBox(scrollBody, TranslationServer.Translate("Luminance to Alpha"), _currentConfig.LuminanceToAlpha, (pressed) =>
+		AddCheckBox(_uberShaderContainer, TranslationServer.Translate("Luminance to Alpha"), _currentConfig.LuminanceToAlpha, (pressed) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.LuminanceToAlpha = pressed;
 			RestartPreviewVfx();
 		}, "Derive transparency from texture brightness to strip black/dark backgrounds automatically");
 
-		AddSlider(scrollBody, TranslationServer.Translate("Luminance Threshold"), 0.0f, 1.0f, 0.01f, _currentConfig.LuminanceThreshold, (val) =>
+		AddSlider(_uberShaderContainer, TranslationServer.Translate("Luminance Threshold"), 0.0f, 1.0f, 0.01f, _currentConfig.LuminanceThreshold, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.LuminanceThreshold = val;
 			RestartPreviewVfx();
 		}, "0.00", 140f);
 
-		AddSlider(scrollBody, TranslationServer.Translate("Threshold Smoothness"), 0.001f, 0.5f, 0.01f, _currentConfig.LuminanceSmoothness, (val) =>
+		AddSlider(_uberShaderContainer, TranslationServer.Translate("Threshold Smoothness"), 0.001f, 0.5f, 0.01f, _currentConfig.LuminanceSmoothness, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.LuminanceSmoothness = val;
 			RestartPreviewVfx();
 		}, "0.00", 140f);
 
-		AddCheckBox(scrollBody, TranslationServer.Translate("Convert to Grayscale"), _currentConfig.UseGrayscale, (pressed) =>
+		AddCheckBox(_uberShaderContainer, TranslationServer.Translate("Convert to Grayscale"), _currentConfig.UseGrayscale, (pressed) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.UseGrayscale = pressed;
 			RestartPreviewVfx();
 		});
 
-		AddCheckBox(scrollBody, TranslationServer.Translate("Invert Mask Colors"), _currentConfig.InvertMask, (pressed) =>
+		AddCheckBox(_uberShaderContainer, TranslationServer.Translate("Invert Mask Colors"), _currentConfig.InvertMask, (pressed) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.InvertMask = pressed;
 			RestartPreviewVfx();
 		});
 
-		AddSlider(scrollBody, TranslationServer.Translate("High-Pass Cutoff"), 0.0f, 1.0f, 0.02f, _currentConfig.HighPassCutoff, (val) =>
+		AddSlider(_uberShaderContainer, TranslationServer.Translate("High-Pass Cutoff"), 0.0f, 1.0f, 0.02f, _currentConfig.HighPassCutoff, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.HighPassCutoff = val;
 			RestartPreviewVfx();
 		}, "0.00", 140f);
 
-		AddVector2Input(scrollBody, TranslationServer.Translate("Base UV Scroll (X, Y)"), _currentConfig.BaseUvScroll, (val) =>
+		AddVector2Input(_uberShaderContainer, TranslationServer.Translate("Base UV Scroll (X, Y)"), _currentConfig.BaseUvScroll, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.BaseUvScroll = val;
 			RestartPreviewVfx();
 		}, 140f);
 
-		AddVector2Input(scrollBody, TranslationServer.Translate("Base UV Scale (X, Y)"), _currentConfig.BaseUvScale, (val) =>
+		AddVector2Input(_uberShaderContainer, TranslationServer.Translate("Base UV Scale (X, Y)"), _currentConfig.BaseUvScale, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.BaseUvScale = val;
 			RestartPreviewVfx();
 		}, 140f);
 
-		AddSectionHeader(scrollBody, "🌪️ " + TranslationServer.Translate("SLOT 2: DISTORTION & NOISE MASK"), new Color(0.35f, 0.75f, 0.85f));
+		AddSectionHeader(_uberShaderContainer, "🌪️ " + TranslationServer.Translate("SLOT 2: DISTORTION & NOISE MASK"), new Color(0.35f, 0.75f, 0.85f));
 
 		AddAssetFilterDropdown(
-			scrollBody,
+			_uberShaderContainer,
 			TranslationServer.Translate("Noise Texture (.rtex)"),
 			_currentConfig.NoiseTexture,
 			(all) => ScanNoiseAssets(),
@@ -227,144 +262,144 @@ public partial class VfxStudioDialog : FloatingDialogBase
 			140f
 		);
 
-		AddSlider(scrollBody, TranslationServer.Translate("Distortion Strength"), 0.0f, 2.0f, 0.02f, _currentConfig.DistortionStrength, (val) =>
+		AddSlider(_uberShaderContainer, TranslationServer.Translate("Distortion Strength"), 0.0f, 2.0f, 0.02f, _currentConfig.DistortionStrength, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.DistortionStrength = val;
 			RestartPreviewVfx();
 		}, "0.00", 140f);
 
-		AddVector2Input(scrollBody, TranslationServer.Translate("Noise UV Scroll (X, Y)"), _currentConfig.NoiseUvScroll, (val) =>
+		AddVector2Input(_uberShaderContainer, TranslationServer.Translate("Noise UV Scroll (X, Y)"), _currentConfig.NoiseUvScroll, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.NoiseUvScroll = val;
 			RestartPreviewVfx();
 		}, 140f);
 
-		AddVector2Input(scrollBody, TranslationServer.Translate("Noise UV Scale (X, Y)"), _currentConfig.NoiseUvScale, (val) =>
+		AddVector2Input(_uberShaderContainer, TranslationServer.Translate("Noise UV Scale (X, Y)"), _currentConfig.NoiseUvScale, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.NoiseUvScale = val;
 			RestartPreviewVfx();
 		}, 140f);
 
-		AddSectionHeader(scrollBody, "🔥 " + TranslationServer.Translate("COLOR & HEAT HIERARCHY"), new Color(0.95f, 0.45f, 0.25f));
+		AddSectionHeader(_uberShaderContainer, "🔥 " + TranslationServer.Translate("COLOR & HEAT HIERARCHY"), new Color(0.95f, 0.45f, 0.25f));
 
-		AddColorPicker(scrollBody, TranslationServer.Translate("Base Color"), VfxShaderManager.ParseColorSafe(_currentConfig.BaseColor, Colors.Orange), (c) =>
+		AddColorPicker(_uberShaderContainer, TranslationServer.Translate("Base Color"), VfxShaderManager.ParseColorSafe(_currentConfig.BaseColor, Colors.Orange), (c) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.BaseColor = "#" + c.ToHtml(false);
 			RestartPreviewVfx();
 		}, 140f);
 
-		AddColorPicker(scrollBody, TranslationServer.Translate("Secondary / Rim Color"), VfxShaderManager.ParseColorSafe(_currentConfig.SecondaryColor, Colors.DarkRed), (c) =>
+		AddColorPicker(_uberShaderContainer, TranslationServer.Translate("Secondary / Rim Color"), VfxShaderManager.ParseColorSafe(_currentConfig.SecondaryColor, Colors.DarkRed), (c) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.SecondaryColor = "#" + c.ToHtml(false);
 			RestartPreviewVfx();
 		}, 140f);
 
-		AddColorPicker(scrollBody, TranslationServer.Translate("Inner Core Color"), VfxShaderManager.ParseColorSafe(_currentConfig.CoreColor, Colors.White), (c) =>
+		AddColorPicker(_uberShaderContainer, TranslationServer.Translate("Inner Core Color"), VfxShaderManager.ParseColorSafe(_currentConfig.CoreColor, Colors.White), (c) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.CoreColor = "#" + c.ToHtml(false);
 			RestartPreviewVfx();
 		}, 140f);
 
-		AddSlider(scrollBody, TranslationServer.Translate("Emission Boost"), 0.0f, 15.0f, 0.2f, _currentConfig.EmissionBoost, (val) =>
+		AddSlider(_uberShaderContainer, TranslationServer.Translate("Emission Boost"), 0.0f, 15.0f, 0.2f, _currentConfig.EmissionBoost, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.EmissionBoost = val;
 			RestartPreviewVfx();
 		}, "0.0", 140f);
 
-		AddSlider(scrollBody, TranslationServer.Translate("Core Threshold"), 0.0f, 1.0f, 0.02f, _currentConfig.CoreThreshold, (val) =>
+		AddSlider(_uberShaderContainer, TranslationServer.Translate("Core Threshold"), 0.0f, 1.0f, 0.02f, _currentConfig.CoreThreshold, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.CoreThreshold = val;
 			RestartPreviewVfx();
 		}, "0.00", 140f);
 
-		AddSectionHeader(scrollBody, "🌊 " + TranslationServer.Translate("FADING & DISSOLVE SUITE"), new Color(0.5f, 0.85f, 0.65f));
+		AddSectionHeader(_uberShaderContainer, "🌊 " + TranslationServer.Translate("FADING & DISSOLVE SUITE"), new Color(0.5f, 0.85f, 0.65f));
 
-		AddCheckBox(scrollBody, TranslationServer.Translate("Radial Falloff (Edge Fade)"), _currentConfig.EnableRadialFalloff, (pressed) =>
+		AddCheckBox(_uberShaderContainer, TranslationServer.Translate("Radial Falloff (Edge Fade)"), _currentConfig.EnableRadialFalloff, (pressed) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.EnableRadialFalloff = pressed;
 			RestartPreviewVfx();
 		}, "Softens perimeter edges of discs and quads to prevent hard clipping");
 
-		AddSlider(scrollBody, TranslationServer.Translate("Radial Falloff Start"), 0.0f, 1.0f, 0.02f, _currentConfig.RadialFalloffStart, (val) =>
+		AddSlider(_uberShaderContainer, TranslationServer.Translate("Radial Falloff Start"), 0.0f, 1.0f, 0.02f, _currentConfig.RadialFalloffStart, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.RadialFalloffStart = val;
 			RestartPreviewVfx();
 		}, "0.00", 140f);
 
-		AddSlider(scrollBody, TranslationServer.Translate("Radial Falloff End"), 0.0f, 1.0f, 0.02f, _currentConfig.RadialFalloffEnd, (val) =>
+		AddSlider(_uberShaderContainer, TranslationServer.Translate("Radial Falloff End"), 0.0f, 1.0f, 0.02f, _currentConfig.RadialFalloffEnd, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.RadialFalloffEnd = val;
 			RestartPreviewVfx();
 		}, "0.00", 140f);
 
-		AddCheckBox(scrollBody, TranslationServer.Translate("Length Fade (Erosion)"), _currentConfig.EnableLengthFade, (pressed) =>
+		AddCheckBox(_uberShaderContainer, TranslationServer.Translate("Length Fade (Erosion)"), _currentConfig.EnableLengthFade, (pressed) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.EnableLengthFade = pressed;
 			RestartPreviewVfx();
 		}, "Gradient falloff along UV length to pinch off flame tongues and dissolve trails");
 
-		AddSlider(scrollBody, TranslationServer.Translate("Length Fade Start"), 0.0f, 1.0f, 0.02f, _currentConfig.LengthFadeStart, (val) =>
+		AddSlider(_uberShaderContainer, TranslationServer.Translate("Length Fade Start"), 0.0f, 1.0f, 0.02f, _currentConfig.LengthFadeStart, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.LengthFadeStart = val;
 			RestartPreviewVfx();
 		}, "0.00", 140f);
 
-		AddSlider(scrollBody, TranslationServer.Translate("Length Fade End"), 0.0f, 1.0f, 0.02f, _currentConfig.LengthFadeEnd, (val) =>
+		AddSlider(_uberShaderContainer, TranslationServer.Translate("Length Fade End"), 0.0f, 1.0f, 0.02f, _currentConfig.LengthFadeEnd, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.LengthFadeEnd = val;
 			RestartPreviewVfx();
 		}, "0.00", 140f);
 
-		AddSlider(scrollBody, TranslationServer.Translate("Erosion Progress"), 0.0f, 1.0f, 0.02f, _currentConfig.ErosionProgress, (val) =>
+		AddSlider(_uberShaderContainer, TranslationServer.Translate("Erosion Progress"), 0.0f, 1.0f, 0.02f, _currentConfig.ErosionProgress, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.ErosionProgress = val;
 			RestartPreviewVfx();
 		}, "0.00", 140f);
 
-		AddCheckBox(scrollBody, TranslationServer.Translate("Fresnel / Rim Glow"), _currentConfig.EnableFresnel, (pressed) =>
+		AddCheckBox(_uberShaderContainer, TranslationServer.Translate("Fresnel / Rim Glow"), _currentConfig.EnableFresnel, (pressed) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.EnableFresnel = pressed;
 			RestartPreviewVfx();
 		}, "View-angle falloff for luminous shields, force fields, and domes");
 
-		AddSlider(scrollBody, TranslationServer.Translate("Fresnel Power"), 0.1f, 10.0f, 0.1f, _currentConfig.FresnelPower, (val) =>
+		AddSlider(_uberShaderContainer, TranslationServer.Translate("Fresnel Power"), 0.1f, 10.0f, 0.1f, _currentConfig.FresnelPower, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.FresnelPower = val;
 			RestartPreviewVfx();
 		}, "0.0", 140f);
 
-		AddSlider(scrollBody, TranslationServer.Translate("Fresnel Intensity"), 0.0f, 10.0f, 0.2f, _currentConfig.FresnelIntensity, (val) =>
+		AddSlider(_uberShaderContainer, TranslationServer.Translate("Fresnel Intensity"), 0.0f, 10.0f, 0.2f, _currentConfig.FresnelIntensity, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.FresnelIntensity = val;
 			RestartPreviewVfx();
 		}, "0.0", 140f);
 
-		AddCheckBox(scrollBody, TranslationServer.Translate("Depth Fade (Soft Intersect)"), _currentConfig.EnableDepthFade, (pressed) =>
+		AddCheckBox(_uberShaderContainer, TranslationServer.Translate("Depth Fade (Soft Intersect)"), _currentConfig.EnableDepthFade, (pressed) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.EnableDepthFade = pressed;
 			RestartPreviewVfx();
 		}, "Eliminates hard seams where VFX intersects terrain or geometry");
 
-		AddSlider(scrollBody, TranslationServer.Translate("Depth Fade Distance"), 0.0f, 5.0f, 0.05f, _currentConfig.DepthFadeDistance, (val) =>
+		AddSlider(_uberShaderContainer, TranslationServer.Translate("Depth Fade Distance"), 0.0f, 5.0f, 0.05f, _currentConfig.DepthFadeDistance, (val) =>
 		{
 			if (_isUpdatingUI) return;
 			_currentConfig.DepthFadeDistance = val;
@@ -441,6 +476,250 @@ public partial class VfxStudioDialog : FloatingDialogBase
 		RestartPreviewVfx();
 	}
 
+	private void UpdateSectionVisibilities()
+	{
+		bool isParticle = _currentConfig.PrimitiveType == VfxPrimitiveType.ParticleSystem;
+		if (_uberShaderContainer != null) _uberShaderContainer.Visible = !isParticle;
+		if (_particleContainer != null) _particleContainer.Visible = isParticle;
+	}
+
+	private void BuildParticleControls(VBoxContainer parent)
+	{
+		AddSectionHeader(parent, "✨ " + TranslationServer.Translate("PARTICLE EMISSION & DYNAMICS"), new Color(0.95f, 0.75f, 0.35f));
+
+		string[] shapeNames = Enum.GetNames<SpellParticleShape>();
+		_optParticleShape = AddOptionDropdown(parent, TranslationServer.Translate("Emitter Shape"), shapeNames, 0, (idx) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.EmitterShape = (SpellParticleShape)idx;
+			RestartPreviewVfx();
+		}, 140f);
+
+		string[] renderModes = Enum.GetNames<SpellParticleRenderMode>();
+		_optParticleRenderMode = AddOptionDropdown(parent, TranslationServer.Translate("Render Mode"), renderModes, 0, (idx) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.RenderMode = (SpellParticleRenderMode)idx;
+			RestartPreviewVfx();
+		}, 140f);
+
+		AddSlider(parent, TranslationServer.Translate("Particle Count"), 1f, 512f, 1f, 32f, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.Amount = (int)val;
+			RestartPreviewVfx();
+		}, "0", 140f);
+
+		AddSlider(parent, TranslationServer.Translate("Lifetime (sec)"), 0.1f, 10.0f, 0.1f, 1.0f, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.Lifetime = val;
+			RestartPreviewVfx();
+		}, "0.0", 140f);
+
+		AddSlider(parent, TranslationServer.Translate("Explosiveness"), 0.0f, 1.0f, 0.05f, 0.0f, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.Explosiveness = val;
+			RestartPreviewVfx();
+		}, "0.00", 140f);
+
+		AddCheckBox(parent, TranslationServer.Translate("Local Coordinates"), false, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.LocalCoords = val;
+			RestartPreviewVfx();
+		}, "Particles move with parent rather than drifting in world space");
+
+		AddSectionHeader(parent, "💨 " + TranslationServer.Translate("VELOCITY, SPREAD & FORCES"), new Color(0.45f, 0.85f, 0.95f));
+
+		AddVector3Input(parent, TranslationServer.Translate("Emitter Direction"), Vector3.Up, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.Direction = val;
+			RestartPreviewVfx();
+		}, 140f);
+
+		AddSlider(parent, TranslationServer.Translate("Spread (Degrees)"), 0.0f, 180.0f, 1.0f, 45.0f, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.SpreadDegrees = val;
+			RestartPreviewVfx();
+		}, "0", 140f);
+
+		AddSlider(parent, TranslationServer.Translate("Velocity Min"), 0.0f, 50.0f, 0.2f, 1.0f, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.InitialVelocityMin = val;
+			RestartPreviewVfx();
+		}, "0.0", 140f);
+
+		AddSlider(parent, TranslationServer.Translate("Velocity Max"), 0.0f, 50.0f, 0.2f, 3.0f, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.InitialVelocityMax = val;
+			RestartPreviewVfx();
+		}, "0.0", 140f);
+
+		AddVector3Input(parent, TranslationServer.Translate("Gravity"), new Vector3(0, -4f, 0), (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.Gravity = val;
+			RestartPreviewVfx();
+		}, 140f);
+
+		AddSlider(parent, TranslationServer.Translate("Linear Damping"), 0.0f, 20.0f, 0.1f, 0.5f, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.Damping = val;
+			RestartPreviewVfx();
+		}, "0.0", 140f);
+
+		AddSlider(parent, TranslationServer.Translate("Radial Acceleration"), -50.0f, 50.0f, 0.5f, 0.0f, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.RadialAccel = val;
+			RestartPreviewVfx();
+		}, "0.0", 140f);
+
+		AddSlider(parent, TranslationServer.Translate("Tangential Accel"), -50.0f, 50.0f, 0.5f, 0.0f, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.TangentialAccel = val;
+			RestartPreviewVfx();
+		}, "0.0", 140f);
+
+		AddSectionHeader(parent, "🎨 " + TranslationServer.Translate("PARTICLE APPEARANCE & RAMP"), new Color(0.95f, 0.55f, 0.45f));
+
+		AddSlider(parent, TranslationServer.Translate("Initial Scale Min"), 0.01f, 5.0f, 0.05f, 0.2f, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.InitialScaleMin = val;
+			RestartPreviewVfx();
+		}, "0.00", 140f);
+
+		AddSlider(parent, TranslationServer.Translate("Initial Scale Max"), 0.01f, 5.0f, 0.05f, 0.4f, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.InitialScaleMax = val;
+			RestartPreviewVfx();
+		}, "0.00", 140f);
+
+		AddSlider(parent, TranslationServer.Translate("End Scale Ratio"), 0.0f, 3.0f, 0.05f, 0.0f, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.EndScaleRatio = val;
+			RestartPreviewVfx();
+		}, "0.00", 140f);
+
+		AddColorPicker(parent, TranslationServer.Translate("Color Start"), Colors.Gold, (c) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.ColorStart = "#" + c.ToHtml(false);
+			RestartPreviewVfx();
+		}, 140f);
+
+		AddColorPicker(parent, TranslationServer.Translate("Color Mid"), Colors.DarkOrange, (c) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.ColorMid = "#" + c.ToHtml(false);
+			RestartPreviewVfx();
+		}, 140f);
+
+		AddColorPicker(parent, TranslationServer.Translate("Color End"), Colors.Maroon, (c) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.ColorEnd = "#" + c.ToHtml(false);
+			RestartPreviewVfx();
+		}, 140f);
+
+		AddSlider(parent, TranslationServer.Translate("Emission Energy"), 0.0f, 20.0f, 0.2f, 3.0f, (val) =>
+		{
+			if (_isUpdatingUI) return;
+			EnsureParticleConfig();
+			_currentConfig.ParticleConfig.EmissionEnergy = val;
+			RestartPreviewVfx();
+		}, "0.0", 140f);
+
+		var texTuple = AddAssetFilterDropdown(
+			parent,
+			TranslationServer.Translate("Particle Texture"),
+			"",
+			(all) => ScanTextureAssets(true),
+			(val) =>
+			{
+				if (_isUpdatingUI) return;
+				EnsureParticleConfig();
+				_currentConfig.ParticleConfig.ParticleTexture = val;
+				RestartPreviewVfx();
+			},
+			TranslationServer.Translate("Select billboard texture..."),
+			140f,
+			true
+		);
+		_txtParticleTexture = texTuple.Input;
+		_setParticleTextureVal = texTuple.SetValue;
+
+		var meshTuple = AddAssetFilterDropdown(
+			parent,
+			TranslationServer.Translate("Projectile Mesh"),
+			"",
+			(all) => ScanProjectileMeshAssets(),
+			(val) =>
+			{
+				if (_isUpdatingUI) return;
+				EnsureParticleConfig();
+				_currentConfig.ParticleConfig.MeshAssetPath = val;
+				if (!string.IsNullOrEmpty(val))
+				{
+					_currentConfig.ParticleConfig.RenderMode = SpellParticleRenderMode.Mesh;
+					if (_optParticleRenderMode != null)
+					{
+						_optParticleRenderMode.Selected = (int)SpellParticleRenderMode.Mesh;
+					}
+				}
+				RestartPreviewVfx();
+			},
+			TranslationServer.Translate("Select projectile/prop mesh (.glb)..."),
+			140f,
+			true
+		);
+		_txtParticleMesh = meshTuple.Input;
+		_setParticleMeshVal = meshTuple.SetValue;
+	}
+
+	private void EnsureParticleConfig()
+	{
+		if (_currentConfig.ParticleConfig == null)
+		{
+			_currentConfig.ParticleConfig = new SpellParticleConfig
+			{
+				ParticleId = _currentConfig.VfxId,
+				Name = _currentConfig.Name
+			};
+		}
+	}
+
 	private void UpdateUIFromCurrentConfig()
 	{
 		_isUpdatingUI = true;
@@ -452,6 +731,16 @@ public partial class VfxStudioDialog : FloatingDialogBase
 			if (_optBlendMode != null) _optBlendMode.Selected = (int)_currentConfig.BlendMode;
 			if (_optPlacementMode != null) _optPlacementMode.Selected = (int)_currentConfig.PlacementMode;
 			if (_optSocket != null) _optSocket.Selected = GetSocketIndex(_currentConfig.TargetSocket);
+
+			if (_currentConfig.ParticleConfig != null)
+			{
+				if (_optParticleShape != null) _optParticleShape.Selected = (int)_currentConfig.ParticleConfig.EmitterShape;
+				if (_optParticleRenderMode != null) _optParticleRenderMode.Selected = (int)_currentConfig.ParticleConfig.RenderMode;
+				if (_setParticleTextureVal != null) _setParticleTextureVal(_currentConfig.ParticleConfig.ParticleTexture ?? string.Empty);
+				if (_setParticleMeshVal != null) _setParticleMeshVal(_currentConfig.ParticleConfig.MeshAssetPath ?? string.Empty);
+			}
+
+			UpdateSectionVisibilities();
 		}
 		finally
 		{
@@ -556,6 +845,81 @@ public partial class VfxStudioDialog : FloatingDialogBase
 				}
 			}
 		}
+
+		return results.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+	}
+
+	private List<string> ScanProjectileMeshAssets()
+	{
+		var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+
+		string metaPath = Path.Combine(wsPath, "metadata.json");
+		if (File.Exists(metaPath))
+		{
+			try
+			{
+				string json = File.ReadAllText(metaPath);
+				var root = JsonNode.Parse(json) as JsonObject;
+				if (root?["assets"] is JsonObject assetsObj)
+				{
+					foreach (var cat in assetsObj)
+					{
+						if (cat.Value is JsonObject subCats)
+						{
+							foreach (var subCat in subCats)
+							{
+								if (subCat.Value is JsonObject modelsObj)
+								{
+									foreach (var modelProp in modelsObj)
+									{
+										string fileName = modelProp.Key;
+										bool isProjectile = subCat.Key.Equals("projectiles", StringComparison.OrdinalIgnoreCase);
+
+										if (!isProjectile && modelProp.Value is JsonObject mObj)
+										{
+											string? at = mObj["asset_type"]?.ToString()
+												?? mObj["AssetType"]?.ToString()
+												?? mObj["default_asset_type"]?.ToString()
+												?? mObj["type"]?.ToString();
+											if (!string.IsNullOrEmpty(at) && (
+												at.Equals("Projectile", StringComparison.OrdinalIgnoreCase) ||
+												at.Equals("projectiles", StringComparison.OrdinalIgnoreCase) ||
+												at.Equals("projectile", StringComparison.OrdinalIgnoreCase)))
+											{
+												isProjectile = true;
+											}
+										}
+
+										if (isProjectile)
+										{
+											results.Add(fileName);
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			catch { }
+		}
+
+		void ScanFolder(string folderPath)
+		{
+			if (Directory.Exists(folderPath))
+			{
+				foreach (var file in Directory.GetFiles(folderPath, "*.glb"))
+				{
+					results.Add(Path.GetFileName(file));
+				}
+			}
+		}
+
+		ScanFolder(Path.Combine(wsPath, "Assets", "models", "projectiles"));
+		ScanFolder(Path.Combine(wsPath, "Assets", "models", "props"));
+		string templateDir = PathUtils.FindPath("MapTemplate/Assets/models/projectiles");
+		if (!string.IsNullOrEmpty(templateDir)) ScanFolder(templateDir);
 
 		return results.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
 	}

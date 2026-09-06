@@ -9,6 +9,8 @@ public class VfxShaderManager
 {
 	private static Shader _shaderAdd;
 	private static Shader _shaderMix;
+	private static Shader _shaderProjectorAdd;
+	private static Shader _shaderProjectorMix;
 	private static readonly Dictionary<string, Texture2D> TextureCache = new(StringComparer.OrdinalIgnoreCase);
 	private static readonly object SyncLock = new();
 
@@ -18,14 +20,36 @@ public class VfxShaderManager
 		{
 			_shaderAdd = null;
 			_shaderMix = null;
+			_shaderProjectorAdd = null;
+			_shaderProjectorMix = null;
 			TextureCache.Clear();
 		}
 	}
 
-	public static Shader GetShader(VfxBlendMode blendMode)
+	public static Shader GetShader(VfxBlendMode blendMode, VfxPrimitiveType primitiveType = VfxPrimitiveType.VortexDisc)
 	{
 		lock (SyncLock)
 		{
+			if (primitiveType == VfxPrimitiveType.ProjectedVolumeCube)
+			{
+				if (blendMode == VfxBlendMode.Additive)
+				{
+					if (_shaderProjectorAdd == null)
+					{
+						_shaderProjectorAdd = LoadShaderFromFile("res://Assets/shaders/vfx_projector_add.gdshader", "Assets/shaders/vfx_projector_add.gdshader");
+					}
+					return _shaderProjectorAdd;
+				}
+				else
+				{
+					if (_shaderProjectorMix == null)
+					{
+						_shaderProjectorMix = LoadShaderFromFile("res://Assets/shaders/vfx_projector_mix.gdshader", "Assets/shaders/vfx_projector_mix.gdshader");
+					}
+					return _shaderProjectorMix;
+				}
+			}
+
 			if (blendMode == VfxBlendMode.Additive)
 			{
 				if (_shaderAdd == null)
@@ -84,7 +108,7 @@ public class VfxShaderManager
 	public static ShaderMaterial CreateMaterial(VfxAttachmentConfig config)
 	{
 		var material = new ShaderMaterial();
-		material.Shader = GetShader(config.BlendMode);
+		material.Shader = GetShader(config.BlendMode, config.PrimitiveType);
 		ApplyConfigToMaterial(material, config);
 		return material;
 	}
@@ -93,7 +117,7 @@ public class VfxShaderManager
 	{
 		if (material == null || config == null) return;
 
-		var targetShader = GetShader(config.BlendMode);
+		var targetShader = GetShader(config.BlendMode, config.PrimitiveType);
 		if (material.Shader != targetShader)
 		{
 			material.Shader = targetShader;

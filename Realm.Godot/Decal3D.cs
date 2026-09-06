@@ -7,29 +7,31 @@ public partial class Decal3D : Decal
 {
 	public Entity Entity { get; set; }
 	private string _decalId = "logo";
-	
+
 	private StaticBody3D _staticBody;
 	private CollisionShape3D _collisionShape;
-
-	private Texture2D[]? _albedoFrames;
-	private Texture2D[]? _normalFrames;
-	private int _columns = 1;
-	private int _rows = 1;
-	private float _fps = 12.0f;
-	private bool _subframeBlend = true;
-	private int _currentFrame = 0;
-	private double _frameTimer = 0.0;
 	private bool _normalEnabled = true;
 
-	public int Columns => _columns;
-	public int Rows => _rows;
-	public float Fps => _fps;
-	public bool SubframeBlend
-	{
-		get => _subframeBlend;
-		set => _subframeBlend = value;
-	}
-	public bool IsAnimated => _columns > 1 || _rows > 1;
+	private Vector3 _baseSize;
+	private Color _baseModulate = Colors.White;
+	private float _baseEmissionEnergy = 0.0f;
+	private double _animTime = 0.0;
+
+	public bool AnimateOpacity { get; set; } = false;
+	public float OpacityPulseSpeed { get; set; } = 1.0f;
+	public float MinOpacity { get; set; } = 0.2f;
+	public float MaxOpacity { get; set; } = 1.0f;
+
+	public bool AnimateEmission { get; set; } = false;
+	public float EmissionPulseSpeed { get; set; } = 1.0f;
+	public float MinEmission { get; set; } = 0.0f;
+	public float MaxEmission { get; set; } = 2.0f;
+
+	public bool AnimateScale { get; set; } = false;
+	public float ScalePulseSpeed { get; set; } = 1.0f;
+	public float MinScaleRatio { get; set; } = 0.8f;
+	public float MaxScaleRatio { get; set; } = 1.2f;
+
 	public bool NormalEnabled
 	{
 		get => _normalEnabled;
@@ -58,10 +60,14 @@ public partial class Decal3D : Decal
 			}
 		}
 	}
-	
+
 	public override void _Ready()
 	{
 		CullMask = RuntimeTerrain.TerrainDecalCullMask;
+		_baseSize = Size;
+		_baseModulate = Modulate;
+		_baseEmissionEnergy = EmissionEnergy;
+
 		bool isEditor = GameHost.Instance?.IsMapEditorMode == true;
 		_staticBody = new StaticBody3D();
 		_staticBody.CollisionLayer = isEditor ? 1u : 0u;
@@ -74,76 +80,107 @@ public partial class Decal3D : Decal
 		_collisionShape.Shape = box;
 		_staticBody.AddChild(_collisionShape);
 
-		SetProcess(_albedoFrames != null && _albedoFrames.Length > 1);
+		UpdateProcessState();
 	}
 
-	public void SetAnimationFrames(Texture2D[]? albedoFrames, Texture2D[]? normalFrames, int columns, int rows, float fps = 12.0f, bool subframeBlend = true)
+	public void SetBaseProperties(Color modulate, float emissionEnergy, Vector3? baseSize = null)
 	{
-		_columns = Math.Max(1, columns);
-		_rows = Math.Max(1, rows);
-		_fps = fps > 0.001f ? fps : 12.0f;
-		_subframeBlend = subframeBlend;
-		_albedoFrames = albedoFrames;
-		_normalFrames = normalFrames;
-		_currentFrame = 0;
-		_frameTimer = 0.0;
-
-		if (_albedoFrames != null && _albedoFrames.Length > 1)
+		_baseModulate = modulate;
+		_baseEmissionEnergy = emissionEnergy;
+		if (baseSize.HasValue && baseSize.Value.X > 0.001f)
 		{
-			TextureAlbedo = _albedoFrames[0];
-			if (_normalEnabled && _normalFrames != null && _normalFrames.Length > 0)
-			{
-				TextureNormal = _normalFrames[0];
-			}
-			SetProcess(true);
+			_baseSize = baseSize.Value;
 		}
-		else
+		else if (_baseSize.X <= 0.001f)
 		{
-			if (_albedoFrames != null && _albedoFrames.Length == 1)
+			_baseSize = Size;
+		}
+		UpdateProcessState();
+	}
+
+	public void SetPropertyAnimation(
+		bool animateOpacity, float opacityPulseSpeed, float minOpacity, float maxOpacity,
+		bool animateEmission, float emissionPulseSpeed, float minEmission, float maxEmission,
+		bool animateScale, float scalePulseSpeed, float minScaleRatio, float maxScaleRatio,
+		float upperFade = 0.3f, float lowerFade = 0.3f)
+	{
+		AnimateOpacity = animateOpacity;
+		OpacityPulseSpeed = opacityPulseSpeed;
+		MinOpacity = minOpacity;
+		MaxOpacity = maxOpacity;
+
+		AnimateEmission = animateEmission;
+		EmissionPulseSpeed = emissionPulseSpeed;
+		MinEmission = minEmission;
+		MaxEmission = maxEmission;
+
+		AnimateScale = animateScale;
+		ScalePulseSpeed = scalePulseSpeed;
+		MinScaleRatio = minScaleRatio;
+		MaxScaleRatio = maxScaleRatio;
+
+		UpperFade = upperFade;
+		LowerFade = lowerFade;
+
+		UpdateProcessState();
+	}
+
+	public void UpdateProcessState()
+	{
+		bool shouldProcess = AnimateOpacity || AnimateEmission || AnimateScale;
+		SetProcess(shouldProcess);
+		if (!shouldProcess)
+		{
+			Modulate = _baseModulate;
+			EmissionEnergy = _baseEmissionEnergy;
+			if (_baseSize.X > 0.001f && _baseSize.Z > 0.001f)
 			{
-				TextureAlbedo = _albedoFrames[0];
+				Size = _baseSize;
+				UpdateCollisionShape();
 			}
-			if (_normalEnabled && _normalFrames != null && _normalFrames.Length == 1)
-			{
-				TextureNormal = _normalFrames[0];
-			}
-			SetProcess(false);
 		}
 	}
 
 	public override void _Process(double delta)
 	{
-		if (_albedoFrames == null || _albedoFrames.Length <= 1)
+		if (!AnimateOpacity && !AnimateEmission && !AnimateScale)
 		{
 			SetProcess(false);
 			return;
 		}
 
-		_frameTimer += delta;
-		double frameDuration = 1.0 / (_fps > 0.001f ? _fps : 12.0f);
-		if (_frameTimer >= frameDuration)
+		_animTime += delta;
+		float time = (float)_animTime;
+
+		if (AnimateOpacity)
 		{
-			_frameTimer -= frameDuration;
-			if (_frameTimer >= frameDuration)
-			{
-				_frameTimer %= frameDuration;
-			}
+			float sine = (MathF.Sin(time * OpacityPulseSpeed * MathF.PI * 2.0f) + 1.0f) * 0.5f;
+			float alpha = Mathf.Lerp(MinOpacity, MaxOpacity, sine);
+			var col = _baseModulate;
+			col.A = Mathf.Clamp(alpha, 0.0f, 1.0f);
+			Modulate = col;
+		}
+		else
+		{
+			Modulate = _baseModulate;
+		}
 
-			_currentFrame = (_currentFrame + 1) % _albedoFrames.Length;
-			TextureAlbedo = _albedoFrames[_currentFrame];
-			if (_normalEnabled && _normalFrames != null && _normalFrames.Length > _currentFrame)
-			{
-				TextureNormal = _normalFrames[_currentFrame];
-			}
-			else if (!_normalEnabled && TextureNormal != null)
-			{
-				TextureNormal = null;
-			}
+		if (AnimateEmission)
+		{
+			float sine = (MathF.Sin(time * EmissionPulseSpeed * MathF.PI * 2.0f) + 1.0f) * 0.5f;
+			EmissionEnergy = Mathf.Lerp(MinEmission, MaxEmission, sine);
+		}
+		else
+		{
+			EmissionEnergy = _baseEmissionEnergy;
+		}
 
-			if (TextureEmission != null)
-			{
-				TextureEmission = TextureAlbedo;
-			}
+		if (AnimateScale && _baseSize.X > 0.001f)
+		{
+			float sine = (MathF.Sin(time * ScalePulseSpeed * MathF.PI * 2.0f) + 1.0f) * 0.5f;
+			float ratio = Mathf.Lerp(MinScaleRatio, MaxScaleRatio, sine);
+			Size = new Vector3(_baseSize.X * ratio, _baseSize.Y, _baseSize.Z * ratio);
+			UpdateCollisionShape();
 		}
 	}
 

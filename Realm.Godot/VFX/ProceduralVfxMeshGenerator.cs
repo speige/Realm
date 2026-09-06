@@ -16,7 +16,9 @@ public enum VfxPrimitiveType
 	SlashArc,
 	LightShaft,
 	AuraCapsule,
-	AuraSphere
+	AuraSphere,
+	ProjectedVolumeCube,
+	ParticleSystem
 }
 
 public class ProceduralVfxMeshGenerator
@@ -62,8 +64,95 @@ public class ProceduralVfxMeshGenerator
 			VfxPrimitiveType.LightShaft => BuildLightShaftMesh(),
 			VfxPrimitiveType.AuraCapsule => BuildAuraCapsuleMesh(),
 			VfxPrimitiveType.AuraSphere => BuildAuraSphereMesh(),
+			VfxPrimitiveType.ProjectedVolumeCube => BuildProjectedVolumeCubeMesh(),
 			_ => BuildVortexDiscMesh()
 		};
+	}
+
+	private static ArrayMesh BuildProjectedVolumeCubeMesh()
+	{
+		var surfaceTool = new SurfaceTool();
+		surfaceTool.Begin(Mesh.PrimitiveType.Triangles);
+
+		Vector3[] vertices = new Vector3[]
+		{
+			// Front face (Z = 0.5)
+			new Vector3(-0.5f, -0.5f,  0.5f),
+			new Vector3( 0.5f, -0.5f,  0.5f),
+			new Vector3( 0.5f,  0.5f,  0.5f),
+			new Vector3(-0.5f,  0.5f,  0.5f),
+
+			// Back face (Z = -0.5)
+			new Vector3( 0.5f, -0.5f, -0.5f),
+			new Vector3(-0.5f, -0.5f, -0.5f),
+			new Vector3(-0.5f,  0.5f, -0.5f),
+			new Vector3( 0.5f,  0.5f, -0.5f),
+
+			// Left face (X = -0.5)
+			new Vector3(-0.5f, -0.5f, -0.5f),
+			new Vector3(-0.5f, -0.5f,  0.5f),
+			new Vector3(-0.5f,  0.5f,  0.5f),
+			new Vector3(-0.5f,  0.5f, -0.5f),
+
+			// Right face (X = 0.5)
+			new Vector3( 0.5f, -0.5f,  0.5f),
+			new Vector3( 0.5f, -0.5f, -0.5f),
+			new Vector3( 0.5f,  0.5f, -0.5f),
+			new Vector3( 0.5f,  0.5f,  0.5f),
+
+			// Top face (Y = 0.5)
+			new Vector3(-0.5f,  0.5f,  0.5f),
+			new Vector3( 0.5f,  0.5f,  0.5f),
+			new Vector3( 0.5f,  0.5f, -0.5f),
+			new Vector3(-0.5f,  0.5f, -0.5f),
+
+			// Bottom face (Y = -0.5)
+			new Vector3(-0.5f, -0.5f, -0.5f),
+			new Vector3( 0.5f, -0.5f, -0.5f),
+			new Vector3( 0.5f, -0.5f,  0.5f),
+			new Vector3(-0.5f, -0.5f,  0.5f)
+		};
+
+		Vector3[] normals = new Vector3[]
+		{
+			-Vector3.Back,    -Vector3.Back,    -Vector3.Back,    -Vector3.Back,
+			-Vector3.Forward, -Vector3.Forward, -Vector3.Forward, -Vector3.Forward,
+			-Vector3.Left,    -Vector3.Left,    -Vector3.Left,    -Vector3.Left,
+			-Vector3.Right,   -Vector3.Right,   -Vector3.Right,   -Vector3.Right,
+			-Vector3.Up,      -Vector3.Up,      -Vector3.Up,      -Vector3.Up,
+			-Vector3.Down,    -Vector3.Down,    -Vector3.Down,    -Vector3.Down
+		};
+
+		Vector2[] uvs = new Vector2[]
+		{
+			new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1),
+			new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1),
+			new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1),
+			new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1),
+			new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1),
+			new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1)
+		};
+
+		for (int i = 0; i < vertices.Length; i++)
+		{
+			surfaceTool.SetNormal(normals[i]);
+			surfaceTool.SetUV(uvs[i]);
+			surfaceTool.AddVertex(vertices[i]);
+		}
+
+		for (int face = 0; face < 6; face++)
+		{
+			int baseIdx = face * 4;
+			surfaceTool.AddIndex(baseIdx + 0);
+			surfaceTool.AddIndex(baseIdx + 1);
+			surfaceTool.AddIndex(baseIdx + 2);
+
+			surfaceTool.AddIndex(baseIdx + 0);
+			surfaceTool.AddIndex(baseIdx + 2);
+			surfaceTool.AddIndex(baseIdx + 3);
+		}
+
+		return surfaceTool.Commit();
 	}
 
 	private static ArrayMesh BuildVortexDiscMesh()
