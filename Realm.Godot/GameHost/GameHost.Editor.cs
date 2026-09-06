@@ -2061,13 +2061,31 @@ public partial class GameHost
 
 	private readonly System.Collections.Generic.Dictionary<string, DecalAssetData> _decalAssetCache = new();
 
-	public DecalAssetData LoadDecalAsset(string decalId)
+	public void InvalidateDecalCache(string decalId)
+	{
+		if (string.IsNullOrEmpty(decalId)) return;
+		string baseKey = System.IO.Path.GetFileNameWithoutExtension(decalId);
+		_decalAssetCache.Remove(decalId);
+		_decalAssetCache.Remove(baseKey);
+		_decalAssetCache.Remove($"{baseKey}.rtex");
+		_decalAssetCache.Remove($"{baseKey}.png");
+	}
+
+	public DecalAssetData LoadDecalAsset(
+		string decalId,
+		int overrideCols = 0,
+		int overrideRows = 0,
+		float overrideFps = 0f,
+		bool forceReload = false)
 	{
 		if (string.IsNullOrEmpty(decalId)) decalId = "logo";
 		string cacheKey = decalId;
-		if (_decalAssetCache.TryGetValue(cacheKey, out var cachedData) && cachedData != null && GodotObject.IsInstanceValid(cachedData.PrimaryTexture))
+		if (!forceReload && overrideCols <= 0 && overrideRows <= 0 && overrideFps <= 0.001f)
 		{
-			return cachedData;
+			if (_decalAssetCache.TryGetValue(cacheKey, out var cachedData) && cachedData != null && GodotObject.IsInstanceValid(cachedData.PrimaryTexture))
+			{
+				return cachedData;
+			}
 		}
 
 		if (decalId.StartsWith("res://"))
@@ -2203,8 +2221,9 @@ public partial class GameHost
 
 					if (albedoImg != null)
 					{
-						int cols = Math.Max(1, detectedCols);
-						int rows = Math.Max(1, detectedRows);
+						int cols = Math.Max(1, overrideCols > 0 ? overrideCols : detectedCols);
+						int rows = Math.Max(1, overrideRows > 0 ? overrideRows : detectedRows);
+						float fps = overrideFps > 0.001f ? overrideFps : detectedFps;
 						int totalFrames = cols * rows;
 
 						var assetData = new DecalAssetData
@@ -2212,7 +2231,7 @@ public partial class GameHost
 							DecalId = decalId,
 							Columns = cols,
 							Rows = rows,
-							Fps = detectedFps
+							Fps = fps
 						};
 
 						if (totalFrames > 1)
@@ -2991,16 +3010,13 @@ public partial class GameHost
 
 		if (columns > 0 || rows > 0 || fps > 0f)
 		{
-			_decalAssetCache.Remove(decalKey);
-			_decalAssetCache.Remove(baseKey);
-			_decalAssetCache.Remove($"{baseKey}.rtex");
-			_decalAssetCache.Remove($"{baseKey}.png");
+			InvalidateDecalCache(decalKey);
 		}
 
 		DecalAssetData? assetData = null;
 		if (columns > 0 || rows > 0 || fps > 0f)
 		{
-			assetData = LoadDecalAsset(decalKey);
+			assetData = LoadDecalAsset(decalKey, overrideCols: columns, overrideRows: rows, overrideFps: fps, forceReload: true);
 		}
 
 		foreach (var decal in AllDecals)

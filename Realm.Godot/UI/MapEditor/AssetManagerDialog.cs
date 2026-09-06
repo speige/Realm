@@ -29,6 +29,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private PanelContainer _preview2DContainer;
 	private TextureRect _preview2DImage;
 	private Label _lblPreview2DInfo;
+	private Texture2D[]? _preview2DFrames;
+	private int _preview2DFrameIndex;
+	private double _preview2DFrameTimer;
+	private float _preview2DFps = 12.0f;
 
 	private PanelContainer _previewAudioContainer;
 	private Label _lblAudioInfo;
@@ -932,6 +936,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		// 1. Clear previous previews
 		Clear3DModelPreview();
 		StopCurrentAudio();
+		_preview2DFrames = null;
+		_preview2DFrameIndex = 0;
+		_preview2DFrameTimer = 0.0;
+		if (_preview2DImage != null) _preview2DImage.Modulate = Colors.White;
 
 		if (IsGlbCategory(category, out string glbSub) || category == "animations" || category == "vfx_spritesheets" || category == "shaders")
 		{
@@ -969,13 +977,20 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 		else
 		{
-			// 2D Static Images (textures, icons, decals, ribbon, noise, skyboxes)
 			_viewportContainer.Visible = false;
 			_preview2DContainer.Visible = true;
 			_previewAudioContainer.Visible = false;
 			if (_cameraPresetRow != null) _cameraPresetRow.Visible = false;
 
-			LoadStatic2DTexture(key, category);
+			bool isDecal = category == "decals" || IsDecalAsset(key, category, subCategory);
+			if (isDecal)
+			{
+				LoadDecal2DPreview(key, category);
+			}
+			else
+			{
+				LoadStatic2DTexture(key, category);
+			}
 		}
 	}
 
@@ -983,9 +998,16 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	{
 		_currentPreviewAssetKey = "";
 		_currentShaderConfig = null;
+		_preview2DFrames = null;
+		_preview2DFrameIndex = 0;
+		_preview2DFrameTimer = 0.0;
 		Clear3DModelPreview();
 		StopCurrentAudio();
-		if (_preview2DImage != null) _preview2DImage.Texture = null;
+		if (_preview2DImage != null)
+		{
+			_preview2DImage.Texture = null;
+			_preview2DImage.Modulate = Colors.White;
+		}
 		if (_lblPreview2DInfo != null) _lblPreview2DInfo.Text = "";
 		if (_cameraPresetRow != null) _cameraPresetRow.Visible = false;
 	}
@@ -1198,6 +1220,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		int cols = 4;
 		int rows = 4;
+		float fps = 20.0f;
 
 		try
 		{
@@ -1217,6 +1240,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 						cols = parsedCols;
 					if (sheetObj.TryGetPropertyValue("rows", out var rNode) && int.TryParse(rNode?.ToString(), out int parsedRows) && parsedRows > 0)
 						rows = parsedRows;
+					if (sheetObj.TryGetPropertyValue("fps", out var fNode) && float.TryParse(fNode?.ToString(), out float parsedFps) && parsedFps > 0.001f)
+						fps = parsedFps;
 				}
 			}
 		}
@@ -1229,7 +1254,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		var frames = new SpriteFrames();
 		frames.AddAnimation("play");
 		frames.SetAnimationLoopMode("play", SpriteFrames.LoopMode.Linear);
-		frames.SetAnimationSpeed("play", 20.0f);
+		frames.SetAnimationSpeed("play", fps);
 
 		int frameWidth = Math.Max(1, (int)texture.GetWidth() / cols);
 		int frameHeight = Math.Max(1, (int)texture.GetHeight() / rows);
@@ -1347,10 +1372,214 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			float prog = Mathf.Clamp(_shaderPreviewTime / dur, 0f, 1f);
 			SpawnDeathShaderManager.ApplyShaderPreview(_currentModelRoot, _currentShaderConfig, prog);
 		}
+
+		if (Visible && _preview2DContainer != null && _preview2DContainer.Visible && _preview2DFrames != null && _preview2DFrames.Length > 1 && _preview2DImage != null)
+		{
+			_preview2DFrameTimer += delta;
+			double duration = 1.0 / (_preview2DFps > 0.001f ? _preview2DFps : 12.0f);
+			if (_preview2DFrameTimer >= duration)
+			{
+				_preview2DFrameTimer -= duration;
+				if (_preview2DFrameTimer >= duration)
+				{
+					_preview2DFrameTimer %= duration;
+				}
+				_preview2DFrameIndex = (_preview2DFrameIndex + 1) % _preview2DFrames.Length;
+				_preview2DImage.Texture = _preview2DFrames[_preview2DFrameIndex];
+			}
+		}
+	}
+
+	private bool IsDecalAsset(string key, string category, string subCategory)
+	{
+		if (category == "decals") return true;
+		try
+		{
+			string wsPath = GetWorkspacePath();
+			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
+			if (assetsObj != null)
+			{
+				if (assetsObj["decals"] is JsonObject decalsObj)
+				{
+					string clean = Path.GetFileName(key);
+					string cleanBase = Path.GetFileNameWithoutExtension(key);
+					if (decalsObj.ContainsKey(clean) || decalsObj.ContainsKey($"{cleanBase}.rtex") || decalsObj.ContainsKey(cleanBase))
+						return true;
+				}
+
+				if (assetsObj.TryGetPropertyValue(category, out var catNode) && catNode is JsonObject catObj)
+				{
+					if (catObj.TryGetPropertyValue(key, out var itemNode) && itemNode is JsonObject itemObj)
+					{
+						string? aType = itemObj["asset_type"]?.ToString() ?? itemObj["AssetType"]?.ToString() ?? itemObj["type"]?.ToString();
+						if (string.Equals(aType, "Decal", StringComparison.OrdinalIgnoreCase)) return true;
+					}
+				}
+			}
+
+			string filePath = ResolveAssetFilePath(wsPath, key, category);
+			if (File.Exists(filePath))
+			{
+				string? embeddedType = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(filePath);
+				if (string.Equals(embeddedType, "Decal", StringComparison.OrdinalIgnoreCase)) return true;
+			}
+		}
+		catch { }
+
+		return false;
+	}
+
+	private void LoadDecal2DPreview(string key, string category)
+	{
+		_preview2DFrames = null;
+		_preview2DFrameIndex = 0;
+		_preview2DFrameTimer = 0.0;
+		if (_preview2DImage != null) _preview2DImage.Modulate = Colors.White;
+
+		string wsPath = GetWorkspacePath();
+		string subFolder = category switch
+		{
+			"decals" => "decals",
+			_ => category
+		};
+
+		string filePath = ResolveAssetFilePath(wsPath, key, subFolder);
+		if (!File.Exists(filePath) && subFolder != "decals")
+		{
+			string altPath = ResolveAssetFilePath(wsPath, key, "decals");
+			if (File.Exists(altPath)) filePath = altPath;
+		}
+
+		GameHost.DecalAssetData? assetData = null;
+		if (GameHost.Instance != null)
+		{
+			GameHost.Instance.InvalidateDecalCache(key);
+			assetData = GameHost.Instance.LoadDecalAsset(key, forceReload: true);
+			if ((assetData == null || assetData.PrimaryTexture == null || assetData.PrimaryTexture.ResourcePath == "res://icon.svg") && File.Exists(filePath))
+			{
+				GameHost.Instance.InvalidateDecalCache(filePath);
+				assetData = GameHost.Instance.LoadDecalAsset(filePath, forceReload: true);
+			}
+		}
+
+		if (assetData == null && File.Exists(filePath))
+		{
+			Texture2D? baseTex = LoadTextureFromFileOrRtex(filePath);
+			if (baseTex != null)
+			{
+				int cols = 1;
+				int rows = 1;
+				float fps = 12.0f;
+				var meta = DecalSettingsDialog.ResolveDecalMetadata(key);
+				if (meta.TryGetPropertyValue("columns", out var cNode) && int.TryParse(cNode?.ToString(), out int c) && c > 0) cols = c;
+				if (meta.TryGetPropertyValue("rows", out var rowNode) && int.TryParse(rowNode?.ToString(), out int r) && r > 0) rows = r;
+				if (meta.TryGetPropertyValue("fps", out var fNode) && float.TryParse(fNode?.ToString(), out float f) && f > 0.001f) fps = f;
+
+				int totalFrames = cols * rows;
+				if (totalFrames > 1)
+				{
+					var img = baseTex.GetImage();
+					if (img != null)
+					{
+						int frameW = Math.Max(1, img.GetWidth() / cols);
+						int frameH = Math.Max(1, img.GetHeight() / rows);
+						var frames = new Texture2D[totalFrames];
+						for (int i = 0; i < totalFrames; i++)
+						{
+							int col = i % cols;
+							int row = i / cols;
+							var region = img.GetRegion(new Rect2I(col * frameW, row * frameH, frameW, frameH));
+							frames[i] = ImageTexture.CreateFromImage(region);
+						}
+
+						assetData = new GameHost.DecalAssetData
+						{
+							DecalId = key,
+							PrimaryTexture = frames[0],
+							AlbedoFrames = frames,
+							Columns = cols,
+							Rows = rows,
+							Fps = fps
+						};
+					}
+				}
+
+				if (assetData == null)
+				{
+					assetData = new GameHost.DecalAssetData
+					{
+						DecalId = key,
+						PrimaryTexture = baseTex,
+						Columns = 1,
+						Rows = 1,
+						Fps = fps
+					};
+				}
+			}
+		}
+
+		if (assetData == null) return;
+
+		var metaObj = DecalSettingsDialog.ResolveDecalMetadata(key);
+		float brightness = metaObj.TryGetPropertyValue("brightness", out var bNode) && float.TryParse(bNode?.ToString(), out float b) ? b : 1.0f;
+		float opacity = metaObj.TryGetPropertyValue("opacity", out var oNode) && float.TryParse(oNode?.ToString(), out float o) ? o : 1.0f;
+		Color tint = Colors.White;
+		if (metaObj.TryGetPropertyValue("tint", out var tNode) && tNode != null)
+		{
+			string tStr = tNode.ToString();
+			if (tStr.StartsWith("#")) tint = Color.FromHtml(tStr);
+		}
+
+		if (_preview2DImage != null)
+		{
+			float mr = Mathf.Clamp(tint.R * brightness, 0f, 2f);
+			float mg = Mathf.Clamp(tint.G * brightness, 0f, 2f);
+			float mb = Mathf.Clamp(tint.B * brightness, 0f, 2f);
+			_preview2DImage.Modulate = new Color(mr, mg, mb, Mathf.Clamp(opacity, 0f, 1f));
+		}
+
+		if (assetData.IsAnimated && assetData.AlbedoFrames != null && assetData.AlbedoFrames.Length > 1)
+		{
+			_preview2DFrames = assetData.AlbedoFrames;
+			_preview2DFrameIndex = 0;
+			_preview2DFrameTimer = 0.0;
+			_preview2DFps = assetData.Fps > 0.001f ? assetData.Fps : 12.0f;
+
+			if (_preview2DImage != null && _preview2DFrames.Length > 0)
+			{
+				_preview2DImage.Texture = _preview2DFrames[0];
+			}
+			if (_lblPreview2DInfo != null)
+			{
+				var baseTex = assetData.PrimaryTexture;
+				_lblPreview2DInfo.Text = baseTex != null
+					? $"{key} ({baseTex.GetWidth()}x{baseTex.GetHeight()}) [{assetData.Columns}x{assetData.Rows} @ {assetData.Fps:F0} FPS]"
+					: $"{key} [{assetData.Columns}x{assetData.Rows}]";
+			}
+		}
+		else
+		{
+			if (_preview2DImage != null)
+			{
+				_preview2DImage.Texture = assetData.PrimaryTexture;
+			}
+			if (_lblPreview2DInfo != null)
+			{
+				var baseTex = assetData.PrimaryTexture;
+				_lblPreview2DInfo.Text = baseTex != null
+					? $"{key} ({baseTex.GetWidth()}x{baseTex.GetHeight()})"
+					: key;
+			}
+		}
 	}
 
 	private void LoadStatic2DTexture(string key, string category)
 	{
+		_preview2DFrames = null;
+		_preview2DFrameIndex = 0;
+		_preview2DFrameTimer = 0.0;
+		if (_preview2DImage != null) _preview2DImage.Modulate = Colors.White;
+
 		string wsPath = GetWorkspacePath();
 		string subFolder = category switch
 		{
@@ -1819,6 +2048,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			int decalRows = 1;
 			int vfxCols = 4;
 			int vfxRows = 4;
+			float vfxFps = 20.0f;
 
 			if (targetCategory == "decals" || targetCategory == "vfx_spritesheets")
 			{
@@ -1837,6 +2067,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 						{
 							if (targetCategory == "decals") decalRows = r;
 							else vfxRows = r;
+						}
+						if (node?["fps"] != null && float.TryParse(node["fps"]?.ToString(), out float f) && f > 0.001f)
+						{
+							if (targetCategory == "vfx_spritesheets") vfxFps = f;
 						}
 					}
 					catch { }
@@ -1863,7 +2097,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				}
 				else if (targetCategory == "vfx_spritesheets")
 				{
-					convResult = TextureConverter.ProcessAndSaveSpritesheet(sourceFilePath, destPath, vfxCols, vfxRows);
+					convResult = TextureConverter.ProcessAndSaveSpritesheet(sourceFilePath, destPath, vfxCols, vfxRows, vfxFps);
 				}
 				else if (targetCategory is "ribbons" or "ribbon_textures")
 				{
@@ -1899,6 +2133,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				{
 					["columns"] = vfxCols,
 					["rows"] = vfxRows,
+					["fps"] = Math.Round(vfxFps, 2),
 					["hash"] = hash
 				};
 			}
@@ -2911,15 +3146,17 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			int cols = 4;
 			int rows = 4;
+			float fps = 20.0f;
 			if (extraData is JsonObject obj)
 			{
 				if (obj.ContainsKey("columns")) cols = (int)obj["columns"];
 				if (obj.ContainsKey("rows")) rows = (int)obj["rows"];
+				if (obj.ContainsKey("fps") && float.TryParse(obj["fps"]?.ToString(), out float f) && f > 0.001f) fps = f;
 			}
 
-			_spritesheetEditDialog.OpenForSheet(key, cols, rows, (newCols, newRows) =>
+			_spritesheetEditDialog.OpenForSheet(key, cols, rows, fps, (newCols, newRows, newFps) =>
 			{
-				SaveSpritesheetGrid(key, newCols, newRows);
+				SaveSpritesheetGrid(key, newCols, newRows, newFps);
 				LoadVfxSpritesheet(key);
 				RefreshAssetList();
 			});
@@ -2939,6 +3176,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			_decalEditDialog.OpenForDecal(key, decalData, (updatedData) =>
 			{
 				SaveDecalMetadata(key, updatedData);
+				LoadPreviewForAsset(category, key);
 				RefreshAssetList();
 			});
 		}
@@ -2978,6 +3216,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 			decalsDict[key] = newObj;
 			MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
+			GameHost.Instance?.InvalidateDecalCache(key);
 		}
 		catch (Exception ex)
 		{
@@ -2985,7 +3224,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 	}
 
-	private void SaveSpritesheetGrid(string key, int columns, int rows)
+	private void SaveSpritesheetGrid(string key, int columns, int rows, float fps = 20.0f)
 	{
 		string wsPath = GetWorkspacePath();
 
@@ -3008,6 +3247,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				{
 					sheetObj["columns"] = columns;
 					sheetObj["rows"] = rows;
+					sheetObj["fps"] = Math.Round(fps, 2);
 					MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
 				}
 			}

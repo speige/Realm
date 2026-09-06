@@ -846,6 +846,8 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 
 	protected override void OnApply()
 	{
+		GameHost.Instance?.InvalidateDecalCache(_decalKey);
+
 		var result = new JsonObject
 		{
 			["brightness"] = Math.Round(_brightness, 3),
