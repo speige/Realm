@@ -5,6 +5,11 @@ uniform sampler2D base_texture : source_color, filter_linear_mipmap, repeat_enab
 uniform bool use_base_texture = false;
 uniform vec2 base_uv_scroll = vec2(0.0, 0.0);
 uniform vec2 base_uv_scale = vec2(1.0, 1.0);
+uniform bool use_flipbook = false;
+uniform int flipbook_columns = 1;
+uniform int flipbook_rows = 1;
+uniform float flipbook_fps = 12.0;
+uniform bool flipbook_subframe_blend = true;
 
 uniform bool luminance_to_alpha = true;
 uniform float luminance_threshold : hint_range(0.0, 1.0) = 0.0;
@@ -76,7 +81,33 @@ void fragment() {
 
 	float mask = 1.0;
 	if (use_base_texture) {
-		vec4 base_sample = texture(base_texture, final_base_uv);
+		vec4 base_sample;
+		if (use_flipbook && flipbook_columns > 0 && flipbook_rows > 0 && (flipbook_columns > 1 || flipbook_rows > 1)) {
+			int total_frames = flipbook_columns * flipbook_rows;
+			float progress = fract(TIME * flipbook_fps / float(total_frames)) * float(total_frames);
+			int frame_curr = int(floor(progress)) % total_frames;
+			int frame_next = (frame_curr + 1) % total_frames;
+			float blend_weight = fract(progress);
+
+			vec2 sheet_size = vec2(float(flipbook_columns), float(flipbook_rows));
+			vec2 wrapped_uv = fract(final_base_uv);
+
+			vec2 col_row_curr = vec2(float(frame_curr % flipbook_columns), float(frame_curr / flipbook_columns));
+			vec2 uv_curr = (wrapped_uv + col_row_curr) / sheet_size;
+
+			vec4 sample_curr = texture(base_texture, uv_curr);
+			if (flipbook_subframe_blend) {
+				vec2 col_row_next = vec2(float(frame_next % flipbook_columns), float(frame_next / flipbook_columns));
+				vec2 uv_next = (wrapped_uv + col_row_next) / sheet_size;
+				vec4 sample_next = texture(base_texture, uv_next);
+				base_sample = mix(sample_curr, sample_next, blend_weight);
+			} else {
+				base_sample = sample_curr;
+			}
+		} else {
+			base_sample = texture(base_texture, final_base_uv);
+		}
+
 		if (luminance_to_alpha || use_grayscale) {
 			float lum = dot(base_sample.rgb, vec3(0.299, 0.587, 0.114));
 			mask = luminance_to_alpha ? lum : base_sample.a;

@@ -18,6 +18,7 @@ public class DecalSnapshot
 	public int Columns { get; set; } = 1;
 	public int Rows { get; set; } = 1;
 	public float Fps { get; set; } = 12.0f;
+	public bool SubframeBlend { get; set; } = true;
 
 	public DecalSnapshot Clone()
 	{
@@ -35,7 +36,8 @@ public class DecalSnapshot
 			BlendMode = this.BlendMode,
 			Columns = this.Columns,
 			Rows = this.Rows,
-			Fps = this.Fps
+			Fps = this.Fps,
+			SubframeBlend = this.SubframeBlend
 		};
 	}
 }
@@ -56,10 +58,14 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 	private int _columns = 1;
 	private int _rows = 1;
 	private float _fps = 12.0f;
+	private bool _subframeBlend = true;
 	private bool _isSyncingControls = false;
 	private SpinBox _spinCols;
 	private SpinBox _spinRows;
 	private SpinBox _spinFps;
+	private CheckBox _chkSubframeBlend;
+	private ShaderMaterial? _previewShaderMaterial;
+	private double _previewAnimTime = 0.0;
 	private Texture2D[]? _previewFrames;
 	private int _previewFrameIndex = 0;
 	private double _previewTimer = 0.0;
@@ -432,6 +438,25 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 		};
 		rowFps.AddChild(_spinFps);
 		contentVBox.AddChild(rowFps);
+
+		var rowBlend = new HBoxContainer();
+		rowBlend.AddThemeConstantOverride("separation", 8);
+		var lblBlend = new Label();
+		lblBlend.Text = TranslationServer.Translate("Sub-frame Blend:");
+		lblBlend.CustomMinimumSize = new Vector2(140, 0);
+		lblBlend.AddThemeFontSizeOverride("font_size", 11);
+		rowBlend.AddChild(lblBlend);
+
+		_chkSubframeBlend = new CheckBox();
+		_chkSubframeBlend.ButtonPressed = _subframeBlend;
+		_chkSubframeBlend.Toggled += (toggled) =>
+		{
+			if (_isSyncingControls) return;
+			_subframeBlend = toggled;
+			UpdateLivePreviewAndWorld();
+		};
+		rowBlend.AddChild(_chkSubframeBlend);
+		contentVBox.AddChild(rowBlend);
 	}
 
 	public static JsonObject ResolveDecalMetadata(string decalKey, JsonObject? providedData = null)
@@ -571,6 +596,7 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 								result["columns"] = d3dNode.Columns;
 								result["rows"] = d3dNode.Rows;
 								result["fps"] = d3dNode.Fps;
+								result["subframe_blend"] = d3dNode.SubframeBlend;
 							}
 							break;
 						}
@@ -602,6 +628,7 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 		_columns = resolvedData.TryGetPropertyValue("columns", out var colNode) && int.TryParse(colNode?.ToString(), out int parsedCols) && parsedCols > 0 ? parsedCols : 1;
 		_rows = resolvedData.TryGetPropertyValue("rows", out var rowNode) && int.TryParse(rowNode?.ToString(), out int parsedRows) && parsedRows > 0 ? parsedRows : 1;
 		_fps = resolvedData.TryGetPropertyValue("fps", out var fpsNode) && float.TryParse(fpsNode?.ToString(), out float parsedFps) && parsedFps > 0.001f ? parsedFps : 12.0f;
+		_subframeBlend = !resolvedData.TryGetPropertyValue("subframe_blend", out var sbNode) || (bool.TryParse(sbNode?.ToString(), out bool parsedSb) ? parsedSb : true);
 
 		_tint = Colors.White;
 		if (resolvedData.TryGetPropertyValue("tint", out var tNode) && tNode != null)
@@ -650,7 +677,8 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			BlendMode = _blendMode,
 			Columns = _columns,
 			Rows = _rows,
-			Fps = _fps
+			Fps = _fps,
+			SubframeBlend = _subframeBlend
 		};
 
 		SyncControlsWithValues();
@@ -706,6 +734,7 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			if (_spinCols != null) _spinCols.Value = _columns;
 			if (_spinRows != null) _spinRows.Value = _rows;
 			if (_spinFps != null) _spinFps.Value = _fps;
+			if (_chkSubframeBlend != null) _chkSubframeBlend.ButtonPressed = _subframeBlend;
 		}
 		finally
 		{
@@ -713,9 +742,52 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 		}
 	}
 
+	private const string FlipbookCanvasShaderCode = @"shader_type canvas_item;
+render_mode blend_mix;
+
+uniform sampler2D sheet_texture : source_color, filter_linear_mipmap, repeat_enable;
+uniform int columns = 1;
+uniform int rows = 1;
+uniform float fps = 12.0;
+uniform bool subframe_blend = true;
+uniform float anim_time = 0.0;
+uniform int blend_mode_index = 0;
+
+void fragment() {
+	vec4 base_sample;
+	if (columns > 0 && rows > 0 && (columns > 1 || rows > 1)) {
+		int total_frames = columns * rows;
+		float progress = mod(anim_time * fps, float(total_frames));
+		int frame_curr = int(floor(progress)) % total_frames;
+		int frame_next = (frame_curr + 1) % total_frames;
+		float blend_weight = fract(progress);
+
+		vec2 sheet_size = vec2(float(columns), float(rows));
+		vec2 wrapped_uv = fract(UV);
+
+		vec2 col_row_curr = vec2(float(frame_curr % columns), float(frame_curr / columns));
+		vec2 uv_curr = (wrapped_uv + col_row_curr) / sheet_size;
+
+		vec4 sample_curr = texture(sheet_texture, uv_curr);
+		if (subframe_blend) {
+			vec2 col_row_next = vec2(float(frame_next % columns), float(frame_next / columns));
+			vec2 uv_next = (wrapped_uv + col_row_next) / sheet_size;
+			vec4 sample_next = texture(sheet_texture, uv_next);
+			base_sample = mix(sample_curr, sample_next, blend_weight);
+		} else {
+			base_sample = sample_curr;
+		}
+	} else {
+		base_sample = texture(sheet_texture, UV);
+	}
+
+	COLOR = base_sample * COLOR;
+}";
+
 	private void UpdatePreviewFrames()
 	{
 		if (_baseTexture == null) return;
+
 		if (_columns > 1 || _rows > 1)
 		{
 			var img = _baseTexture.GetImage();
@@ -734,19 +806,12 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 				}
 				_previewFrameIndex = 0;
 				_previewTimer = 0.0;
-				if (_previewRect != null && _previewFrames.Length > 0)
-				{
-					_previewRect.Texture = _previewFrames[0];
-				}
+				_previewAnimTime = 0.0;
 				return;
 			}
 		}
 
 		_previewFrames = null;
-		if (_previewRect != null)
-		{
-			_previewRect.Texture = _baseTexture;
-		}
 	}
 
 	public override void _Process(double delta)
@@ -756,7 +821,13 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 
 		if (_columns > 1 || _rows > 1)
 		{
-			if (_previewFrames != null && _previewFrames.Length > 1)
+			_previewAnimTime += delta;
+			if (_previewShaderMaterial != null)
+			{
+				_previewShaderMaterial.SetShaderParameter("anim_time", (float)_previewAnimTime);
+			}
+
+			if (!_subframeBlend && _previewFrames != null && _previewFrames.Length > 1)
 			{
 				_previewTimer += delta;
 				double duration = 1.0 / (_fps > 0.001f ? _fps : 12.0f);
@@ -765,7 +836,10 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 					_previewTimer -= duration;
 					if (_previewTimer >= duration) _previewTimer %= duration;
 					_previewFrameIndex = (_previewFrameIndex + 1) % _previewFrames.Length;
-					_previewRect.Texture = _previewFrames[_previewFrameIndex];
+					if (_previewRect.Material is not ShaderMaterial)
+					{
+						_previewRect.Texture = _previewFrames[_previewFrameIndex];
+					}
 				}
 			}
 		}
@@ -788,15 +862,6 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 
 		if (_previewRect != null)
 		{
-			if (_columns > 1 || _rows > 1)
-			{
-				_previewRect.Texture = (_previewFrames != null && _previewFrames.Length > _previewFrameIndex) ? _previewFrames[_previewFrameIndex] : _baseTexture;
-			}
-			else
-			{
-				_previewRect.Texture = _baseTexture;
-			}
-
 			float r = _tint.R * _brightness;
 			float g = _tint.G * _brightness;
 			float b = _tint.B * _brightness;
@@ -812,18 +877,41 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 
 			_previewRect.Modulate = new Color(Mathf.Clamp(r, 0f, 4f), Mathf.Clamp(g, 0f, 4f), Mathf.Clamp(b, 0f, 4f), Mathf.Clamp(_opacity, 0f, 1f));
 
-			if (_previewRect.Material is not CanvasItemMaterial mat)
+			if ((_columns > 1 || _rows > 1) && _baseTexture != null)
 			{
-				mat = new CanvasItemMaterial();
-				_previewRect.Material = mat;
+				if (_previewShaderMaterial == null)
+				{
+					var shader = new Shader();
+					shader.Code = FlipbookCanvasShaderCode;
+					_previewShaderMaterial = new ShaderMaterial { Shader = shader };
+				}
+
+				_previewShaderMaterial.SetShaderParameter("sheet_texture", _baseTexture);
+				_previewShaderMaterial.SetShaderParameter("columns", _columns);
+				_previewShaderMaterial.SetShaderParameter("rows", _rows);
+				_previewShaderMaterial.SetShaderParameter("fps", _fps > 0.001f ? _fps : 12.0f);
+				_previewShaderMaterial.SetShaderParameter("subframe_blend", _subframeBlend);
+				_previewShaderMaterial.SetShaderParameter("anim_time", (float)_previewAnimTime);
+
+				_previewRect.Texture = _baseTexture;
+				_previewRect.Material = _previewShaderMaterial;
 			}
-			mat.BlendMode = _blendMode switch
+			else
 			{
-				"Additive" => CanvasItemMaterial.BlendModeEnum.Add,
-				"Multiply" => CanvasItemMaterial.BlendModeEnum.Mul,
-				"Screen" => CanvasItemMaterial.BlendModeEnum.Add,
-				_ => CanvasItemMaterial.BlendModeEnum.Mix
-			};
+				_previewRect.Texture = _baseTexture;
+				if (_previewRect.Material is not CanvasItemMaterial mat)
+				{
+					mat = new CanvasItemMaterial();
+					_previewRect.Material = mat;
+				}
+				mat.BlendMode = _blendMode switch
+				{
+					"Additive" => CanvasItemMaterial.BlendModeEnum.Add,
+					"Multiply" => CanvasItemMaterial.BlendModeEnum.Mul,
+					"Screen" => CanvasItemMaterial.BlendModeEnum.Add,
+					_ => CanvasItemMaterial.BlendModeEnum.Mix
+				};
+			}
 		}
 
 		GameHost.Instance?.RefreshDecalsLive(
@@ -840,7 +928,8 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			_blendMode,
 			_columns,
 			_rows,
-			_fps
+			_fps,
+			_subframeBlend
 		);
 	}
 
@@ -863,6 +952,7 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			["columns"] = _columns,
 			["rows"] = _rows,
 			["fps"] = Math.Round(_fps, 2),
+			["subframe_blend"] = _subframeBlend,
 			["asset_type"] = "Decal"
 		};
 
@@ -903,6 +993,7 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			_columns = _initialSnapshot.Columns;
 			_rows = _initialSnapshot.Rows;
 			_fps = _initialSnapshot.Fps;
+			_subframeBlend = _initialSnapshot.SubframeBlend;
 
 			UpdatePreviewFrames();
 			UpdateLivePreviewAndWorld();

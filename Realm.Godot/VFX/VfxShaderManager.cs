@@ -108,6 +108,11 @@ public class VfxShaderManager
 
 		material.SetShaderParameter("base_uv_scroll", config.BaseUvScroll);
 		material.SetShaderParameter("base_uv_scale", config.BaseUvScale);
+		material.SetShaderParameter("use_flipbook", config.UseFlipbook);
+		material.SetShaderParameter("flipbook_columns", Math.Max(1, config.FlipbookColumns));
+		material.SetShaderParameter("flipbook_rows", Math.Max(1, config.FlipbookRows));
+		material.SetShaderParameter("flipbook_fps", config.FlipbookFps > 0.001f ? config.FlipbookFps : 12.0f);
+		material.SetShaderParameter("flipbook_subframe_blend", config.FlipbookSubframeBlend);
 
 		material.SetShaderParameter("luminance_to_alpha", config.LuminanceToAlpha);
 		material.SetShaderParameter("luminance_threshold", Mathf.Clamp(config.LuminanceThreshold, 0.0f, 1.0f));

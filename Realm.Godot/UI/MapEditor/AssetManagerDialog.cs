@@ -899,7 +899,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 
 		// Action 3: Edit Button (Spritesheets, Textures, Decals, Shaders)
-		bool hasEditDialog = category == "vfx_spritesheets" || category == "textures" || category == "decals" || category == "shaders" || (extraData is JsonObject edObj && edObj.ContainsKey("asset_type") && (edObj["asset_type"]?.ToString() == "Decal" || edObj["asset_type"]?.ToString() == "Shader"));
+		bool hasEditDialog = category == "vfx_spritesheets" || category == "vfx" || category == "textures" || category == "decals" || category == "shaders" || (extraData is JsonObject edObj && edObj.ContainsKey("asset_type") && (edObj["asset_type"]?.ToString() == "SpellSpritesheet" || edObj["asset_type"]?.ToString() == "Decal" || edObj["asset_type"]?.ToString() == "Shader"));
 		if (hasEditDialog)
 		{
 			var btnEdit = new Button();
@@ -3142,21 +3142,70 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private void OpenEditSubDialog(string category, string key, JsonNode extraData)
 	{
-		if (category == "vfx_spritesheets")
+		if (category == "vfx_spritesheets" || category == "vfx" || (extraData is JsonObject edObjVfx && edObjVfx.ContainsKey("asset_type") && edObjVfx["asset_type"]?.ToString() == "SpellSpritesheet"))
 		{
 			int cols = 4;
 			int rows = 4;
 			float fps = 20.0f;
-			if (extraData is JsonObject obj)
+			bool subframeBlend = true;
+
+			string wsPath = GetWorkspacePath();
+			try
 			{
-				if (obj.ContainsKey("columns")) cols = (int)obj["columns"];
-				if (obj.ContainsKey("rows")) rows = (int)obj["rows"];
-				if (obj.ContainsKey("fps") && float.TryParse(obj["fps"]?.ToString(), out float f) && f > 0.001f) fps = f;
+				var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
+				var vfxSheets = assetsObj["vfx_spritesheets"]?.AsObject();
+				if (vfxSheets != null)
+				{
+					string fileName = Path.GetFileName(key);
+					string cleanBase = Path.GetFileNameWithoutExtension(key);
+
+					JsonObject? sheetObj = null;
+					if (vfxSheets.TryGetPropertyValue(fileName, out var s1) && s1 is JsonObject so1) sheetObj = so1;
+					else if (vfxSheets.TryGetPropertyValue(key, out var s2) && s2 is JsonObject so2) sheetObj = so2;
+					else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.rtex", out var s3) && s3 is JsonObject so3) sheetObj = so3;
+					else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.png", out var s4) && s4 is JsonObject so4) sheetObj = so4;
+
+					if (sheetObj != null)
+					{
+						if (sheetObj.TryGetPropertyValue("columns", out var cNode) && int.TryParse(cNode?.ToString(), out int parsedCols) && parsedCols > 0)
+							cols = parsedCols;
+						if (sheetObj.TryGetPropertyValue("rows", out var rNode) && int.TryParse(rNode?.ToString(), out int parsedRows) && parsedRows > 0)
+							rows = parsedRows;
+						if (sheetObj.TryGetPropertyValue("fps", out var fNode) && float.TryParse(fNode?.ToString(), out float parsedFps) && parsedFps > 0.001f)
+							fps = parsedFps;
+						if (sheetObj.TryGetPropertyValue("subframe_blend", out var sbNode) && bool.TryParse(sbNode?.ToString(), out bool parsedSb))
+							subframeBlend = parsedSb;
+					}
+					else if (extraData is JsonObject obj)
+					{
+						if (obj.ContainsKey("columns")) cols = (int)obj["columns"];
+						if (obj.ContainsKey("rows")) rows = (int)obj["rows"];
+						if (obj.ContainsKey("fps") && float.TryParse(obj["fps"]?.ToString(), out float f) && f > 0.001f) fps = f;
+						if (obj.ContainsKey("subframe_blend") && bool.TryParse(obj["subframe_blend"]?.ToString(), out bool sb)) subframeBlend = sb;
+					}
+				}
+				else if (extraData is JsonObject obj)
+				{
+					if (obj.ContainsKey("columns")) cols = (int)obj["columns"];
+					if (obj.ContainsKey("rows")) rows = (int)obj["rows"];
+					if (obj.ContainsKey("fps") && float.TryParse(obj["fps"]?.ToString(), out float f) && f > 0.001f) fps = f;
+					if (obj.ContainsKey("subframe_blend") && bool.TryParse(obj["subframe_blend"]?.ToString(), out bool sb)) subframeBlend = sb;
+				}
+			}
+			catch
+			{
+				if (extraData is JsonObject obj)
+				{
+					if (obj.ContainsKey("columns")) cols = (int)obj["columns"];
+					if (obj.ContainsKey("rows")) rows = (int)obj["rows"];
+					if (obj.ContainsKey("fps") && float.TryParse(obj["fps"]?.ToString(), out float f) && f > 0.001f) fps = f;
+					if (obj.ContainsKey("subframe_blend") && bool.TryParse(obj["subframe_blend"]?.ToString(), out bool sb)) subframeBlend = sb;
+				}
 			}
 
-			_spritesheetEditDialog.OpenForSheet(key, cols, rows, fps, (newCols, newRows, newFps) =>
+			_spritesheetEditDialog.OpenForSheet(key, cols, rows, fps, subframeBlend, (newCols, newRows, newFps, newSubframeBlend) =>
 			{
-				SaveSpritesheetGrid(key, newCols, newRows, newFps);
+				SaveSpritesheetGrid(key, newCols, newRows, newFps, newSubframeBlend);
 				LoadVfxSpritesheet(key);
 				RefreshAssetList();
 			});
@@ -3224,33 +3273,50 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 	}
 
-	private void SaveSpritesheetGrid(string key, int columns, int rows, float fps = 20.0f)
+	private void SaveSpritesheetGrid(string key, int columns, int rows, float fps = 20.0f, bool subframeBlend = true)
 	{
 		string wsPath = GetWorkspacePath();
 
 		try
 		{
 			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
-			var vfxSheets = assetsObj["vfx_spritesheets"]?.AsObject();
-			if (vfxSheets != null)
+			if (!assetsObj.ContainsKey("vfx_spritesheets") || assetsObj["vfx_spritesheets"] == null)
 			{
-				string fileName = Path.GetFileName(key);
-				string cleanBase = Path.GetFileNameWithoutExtension(key);
+				assetsObj["vfx_spritesheets"] = new JsonObject();
+			}
 
-				JsonObject? sheetObj = null;
-				if (vfxSheets.TryGetPropertyValue(fileName, out var s1) && s1 is JsonObject so1) sheetObj = so1;
-				else if (vfxSheets.TryGetPropertyValue(key, out var s2) && s2 is JsonObject so2) sheetObj = so2;
-				else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.rtex", out var s3) && s3 is JsonObject so3) sheetObj = so3;
-				else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.png", out var s4) && s4 is JsonObject so4) sheetObj = so4;
+			var vfxSheets = assetsObj["vfx_spritesheets"]!.AsObject();
+			string fileName = Path.GetFileName(key);
+			string cleanBase = Path.GetFileNameWithoutExtension(key);
 
-				if (sheetObj != null)
+			string targetKey = fileName;
+			JsonNode? existingNode = null;
+			if (vfxSheets.TryGetPropertyValue(fileName, out var s1)) { targetKey = fileName; existingNode = s1; }
+			else if (vfxSheets.TryGetPropertyValue(key, out var s2)) { targetKey = key; existingNode = s2; }
+			else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.rtex", out var s3)) { targetKey = $"{cleanBase}.rtex"; existingNode = s3; }
+			else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.png", out var s4)) { targetKey = $"{cleanBase}.png"; existingNode = s4; }
+
+			JsonObject newSheetObj;
+			if (existingNode is JsonObject exObj)
+			{
+				newSheetObj = exObj;
+			}
+			else
+			{
+				newSheetObj = new JsonObject();
+				if (existingNode is JsonValue v)
 				{
-					sheetObj["columns"] = columns;
-					sheetObj["rows"] = rows;
-					sheetObj["fps"] = Math.Round(fps, 2);
-					MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
+					newSheetObj["hash"] = v.ToString();
 				}
 			}
+
+			newSheetObj["columns"] = columns;
+			newSheetObj["rows"] = rows;
+			newSheetObj["fps"] = Math.Round(fps, 2);
+			newSheetObj["subframe_blend"] = subframeBlend;
+
+			vfxSheets[targetKey] = newSheetObj;
+			MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
 		}
 		catch (Exception ex)
 		{

@@ -1488,6 +1488,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public int Columns { get; set; }
 		public int Rows { get; set; }
 		public float Fps { get; set; }
+		public bool SubframeBlend { get; set; }
 		public string AssetType { get; set; }
 	}
 

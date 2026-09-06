@@ -8,11 +8,13 @@ public partial class SpritesheetAssetEditDialog : FloatingDialogBase
 	private int _columns = 4;
 	private int _rows = 4;
 	private float _fps = 20.0f;
-	private Action<int, int, float> _onApplied;
+	private bool _subframeBlend = true;
+	private Action<int, int, float, bool> _onApplied;
 
 	private SpinBox _spinCols;
 	private SpinBox _spinRows;
 	private SpinBox _spinFps;
+	private CheckBox _chkSubframeBlend;
 
 	public SpritesheetAssetEditDialog(MapEditorHUD hud)
 		: base(hud, TranslationServer.Translate("Edit VFX Spritesheet"), new Vector2(340, 280))
@@ -102,14 +104,29 @@ public partial class SpritesheetAssetEditDialog : FloatingDialogBase
 		};
 		rowFps.AddChild(_spinFps);
 		contentVBox.AddChild(rowFps);
+
+		var rowBlend = new HBoxContainer();
+		rowBlend.AddThemeConstantOverride("separation", 8);
+		var lblBlend = new Label();
+		lblBlend.Text = TranslationServer.Translate("Sub-frame Blend:");
+		lblBlend.CustomMinimumSize = new Vector2(100, 0);
+		lblBlend.AddThemeFontSizeOverride("font_size", 11);
+		rowBlend.AddChild(lblBlend);
+
+		_chkSubframeBlend = new CheckBox();
+		_chkSubframeBlend.ButtonPressed = _subframeBlend;
+		_chkSubframeBlend.Toggled += (toggled) => _subframeBlend = toggled;
+		rowBlend.AddChild(_chkSubframeBlend);
+		contentVBox.AddChild(rowBlend);
 	}
 
-	public void OpenForSheet(string fileName, int initialCols, int initialRows, float initialFps, Action<int, int, float> onApplied)
+	public void OpenForSheet(string fileName, int initialCols, int initialRows, float initialFps, bool initialSubframeBlend, Action<int, int, float, bool> onApplied)
 	{
 		_sheetFileName = fileName ?? string.Empty;
 		_columns = Math.Max(1, initialCols);
 		_rows = Math.Max(1, initialRows);
 		_fps = initialFps > 0.001f ? initialFps : 20.0f;
+		_subframeBlend = initialSubframeBlend;
 		_onApplied = onApplied;
 
 		TitleLabel.Text = $"{TranslationServer.Translate("Edit Spritesheet")} - {_sheetFileName}";
@@ -117,8 +134,14 @@ public partial class SpritesheetAssetEditDialog : FloatingDialogBase
 		if (_spinCols != null) _spinCols.Value = _columns;
 		if (_spinRows != null) _spinRows.Value = _rows;
 		if (_spinFps != null) _spinFps.Value = _fps;
+		if (_chkSubframeBlend != null) _chkSubframeBlend.ButtonPressed = _subframeBlend;
 
 		OpenDialog();
+	}
+
+	public void OpenForSheet(string fileName, int initialCols, int initialRows, float initialFps, Action<int, int, float> onApplied)
+	{
+		OpenForSheet(fileName, initialCols, initialRows, initialFps, true, (cols, rows, fps, subframeBlend) => onApplied?.Invoke(cols, rows, fps));
 	}
 
 	public void OpenForSheet(string fileName, int initialCols, int initialRows, Action<int, int> onApplied)
@@ -155,7 +178,12 @@ public partial class SpritesheetAssetEditDialog : FloatingDialogBase
 				_fps = (float)_spinFps.Value;
 		}
 
-		_onApplied?.Invoke(_columns, _rows, _fps);
+		if (_chkSubframeBlend != null)
+		{
+			_subframeBlend = _chkSubframeBlend.ButtonPressed;
+		}
+
+		_onApplied?.Invoke(_columns, _rows, _fps, _subframeBlend);
 		Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Spritesheet {0} updated to {1}x{2} @ {3} FPS."), _sheetFileName, _columns, _rows, _fps));
 	}
 }

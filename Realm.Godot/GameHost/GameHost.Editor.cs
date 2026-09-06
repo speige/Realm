@@ -2056,6 +2056,7 @@ public partial class GameHost
 		public int Columns { get; set; } = 1;
 		public int Rows { get; set; } = 1;
 		public float Fps { get; set; } = 12.0f;
+		public bool SubframeBlend { get; set; } = true;
 		public bool IsAnimated => Columns > 1 || Rows > 1;
 	}
 
@@ -2076,11 +2077,12 @@ public partial class GameHost
 		int overrideCols = 0,
 		int overrideRows = 0,
 		float overrideFps = 0f,
+		bool? overrideSubframeBlend = null,
 		bool forceReload = false)
 	{
 		if (string.IsNullOrEmpty(decalId)) decalId = "logo";
 		string cacheKey = decalId;
-		if (!forceReload && overrideCols <= 0 && overrideRows <= 0 && overrideFps <= 0.001f)
+		if (!forceReload && overrideCols <= 0 && overrideRows <= 0 && overrideFps <= 0.001f && !overrideSubframeBlend.HasValue)
 		{
 			if (_decalAssetCache.TryGetValue(cacheKey, out var cachedData) && cachedData != null && GodotObject.IsInstanceValid(cachedData.PrimaryTexture))
 			{
@@ -2134,6 +2136,7 @@ public partial class GameHost
 		int detectedCols = 1;
 		int detectedRows = 1;
 		float detectedFps = 12.0f;
+		bool detectedSubframeBlend = true;
 
 		try
 		{
@@ -2153,6 +2156,7 @@ public partial class GameHost
 					if (meta.TryGetPropertyValue("rows", out var rNode) && int.TryParse(rNode?.ToString(), out int r) && r > 0) detectedRows = r;
 					if (meta.TryGetPropertyValue("fps", out var fNode) && float.TryParse(fNode?.ToString(), out float f) && f > 0.001f) detectedFps = f;
 					else if (meta.TryGetPropertyValue("seconds_per_frame", out var sNode) && float.TryParse(sNode?.ToString(), out float spf) && spf > 0.001f) detectedFps = 1.0f / spf;
+					if (meta.TryGetPropertyValue("subframe_blend", out var sbNode) && bool.TryParse(sbNode?.ToString(), out bool sb)) detectedSubframeBlend = sb;
 				}
 			}
 		}
@@ -2231,7 +2235,8 @@ public partial class GameHost
 							DecalId = decalId,
 							Columns = cols,
 							Rows = rows,
-							Fps = fps
+							Fps = fps,
+							SubframeBlend = overrideSubframeBlend ?? detectedSubframeBlend
 						};
 
 						if (totalFrames > 1)
@@ -2924,11 +2929,11 @@ public partial class GameHost
 			{
 				if (assetData.IsAnimated)
 				{
-					d3d.SetAnimationFrames(assetData.AlbedoFrames, assetData.NormalFrames, assetData.Columns, assetData.Rows, assetData.Fps);
+					d3d.SetAnimationFrames(assetData.AlbedoFrames, assetData.NormalFrames, assetData.Columns, assetData.Rows, assetData.Fps, assetData.SubframeBlend);
 				}
 				else
 				{
-					d3d.SetAnimationFrames(null, null, 1, 1, assetData.Fps);
+					d3d.SetAnimationFrames(null, null, 1, 1, assetData.Fps, assetData.SubframeBlend);
 					decal.TextureAlbedo = assetData.PrimaryTexture;
 					if (assetData.PrimaryNormal != null) decal.TextureNormal = assetData.PrimaryNormal;
 				}
@@ -3003,20 +3008,21 @@ public partial class GameHost
 		string blendMode,
 		int columns = 0,
 		int rows = 0,
-		float fps = 0f)
+		float fps = 0f,
+		bool? subframeBlend = null)
 	{
 		if (string.IsNullOrEmpty(decalKey) || AllDecals == null) return;
 		string baseKey = System.IO.Path.GetFileNameWithoutExtension(decalKey);
 
-		if (columns > 0 || rows > 0 || fps > 0f)
+		if (columns > 0 || rows > 0 || fps > 0f || subframeBlend.HasValue)
 		{
 			InvalidateDecalCache(decalKey);
 		}
 
 		DecalAssetData? assetData = null;
-		if (columns > 0 || rows > 0 || fps > 0f)
+		if (columns > 0 || rows > 0 || fps > 0f || subframeBlend.HasValue)
 		{
-			assetData = LoadDecalAsset(decalKey, overrideCols: columns, overrideRows: rows, overrideFps: fps, forceReload: true);
+			assetData = LoadDecalAsset(decalKey, overrideCols: columns, overrideRows: rows, overrideFps: fps, overrideSubframeBlend: subframeBlend, forceReload: true);
 		}
 
 		foreach (var decal in AllDecals)
@@ -3031,11 +3037,11 @@ public partial class GameHost
 					{
 						if (assetData.IsAnimated)
 						{
-							targetD3d.SetAnimationFrames(assetData.AlbedoFrames, assetData.NormalFrames, assetData.Columns, assetData.Rows, assetData.Fps);
+							targetD3d.SetAnimationFrames(assetData.AlbedoFrames, assetData.NormalFrames, assetData.Columns, assetData.Rows, assetData.Fps, assetData.SubframeBlend);
 						}
 						else
 						{
-							targetD3d.SetAnimationFrames(null, null, 1, 1, assetData.Fps);
+							targetD3d.SetAnimationFrames(null, null, 1, 1, assetData.Fps, assetData.SubframeBlend);
 							decal.TextureAlbedo = assetData.PrimaryTexture;
 							if (assetData.PrimaryNormal != null) decal.TextureNormal = assetData.PrimaryNormal;
 						}

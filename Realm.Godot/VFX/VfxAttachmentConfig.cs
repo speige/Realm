@@ -32,6 +32,11 @@ public class VfxAttachmentConfig
 
 	public Vector2 BaseUvScroll { get; set; } = new Vector2(0.2f, 0.0f);
 	public Vector2 BaseUvScale { get; set; } = Vector2.One;
+	public bool UseFlipbook { get; set; } = false;
+	public int FlipbookColumns { get; set; } = 1;
+	public int FlipbookRows { get; set; } = 1;
+	public float FlipbookFps { get; set; } = 12.0f;
+	public bool FlipbookSubframeBlend { get; set; } = true;
 	public Vector2 NoiseUvScroll { get; set; } = new Vector2(-0.15f, 0.25f);
 	public Vector2 NoiseUvScale { get; set; } = Vector2.One;
 
@@ -86,6 +91,11 @@ public class VfxAttachmentConfig
 			NoiseTexture = NoiseTexture,
 			BaseUvScroll = BaseUvScroll,
 			BaseUvScale = BaseUvScale,
+			UseFlipbook = UseFlipbook,
+			FlipbookColumns = FlipbookColumns,
+			FlipbookRows = FlipbookRows,
+			FlipbookFps = FlipbookFps,
+			FlipbookSubframeBlend = FlipbookSubframeBlend,
 			NoiseUvScroll = NoiseUvScroll,
 			NoiseUvScale = NoiseUvScale,
 			DistortionStrength = DistortionStrength,

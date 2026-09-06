@@ -16,6 +16,7 @@ public partial class Decal3D : Decal
 	private int _columns = 1;
 	private int _rows = 1;
 	private float _fps = 12.0f;
+	private bool _subframeBlend = true;
 	private int _currentFrame = 0;
 	private double _frameTimer = 0.0;
 	private bool _normalEnabled = true;
@@ -23,6 +24,11 @@ public partial class Decal3D : Decal
 	public int Columns => _columns;
 	public int Rows => _rows;
 	public float Fps => _fps;
+	public bool SubframeBlend
+	{
+		get => _subframeBlend;
+		set => _subframeBlend = value;
+	}
 	public bool IsAnimated => _columns > 1 || _rows > 1;
 	public bool NormalEnabled
 	{
@@ -71,11 +77,12 @@ public partial class Decal3D : Decal
 		SetProcess(_albedoFrames != null && _albedoFrames.Length > 1);
 	}
 
-	public void SetAnimationFrames(Texture2D[]? albedoFrames, Texture2D[]? normalFrames, int columns, int rows, float fps = 12.0f)
+	public void SetAnimationFrames(Texture2D[]? albedoFrames, Texture2D[]? normalFrames, int columns, int rows, float fps = 12.0f, bool subframeBlend = true)
 	{
 		_columns = Math.Max(1, columns);
 		_rows = Math.Max(1, rows);
 		_fps = fps > 0.001f ? fps : 12.0f;
+		_subframeBlend = subframeBlend;
 		_albedoFrames = albedoFrames;
 		_normalFrames = normalFrames;
 		_currentFrame = 0;
