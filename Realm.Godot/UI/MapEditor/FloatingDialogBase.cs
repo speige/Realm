@@ -1,11 +1,37 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using Realm.Godot.VFX;
 
 public partial class FloatingDialogBase : PanelContainer
 {
-	private static readonly HashSet<FloatingDialogBase> _openDialogs = new();
+	private static readonly List<FloatingDialogBase> _openDialogs = new();
 	public static bool HasAnyDialogOpen => _openDialogs.Count > 0;
+
+	public static bool CloseTopmostDialog()
+	{
+		for (int i = _openDialogs.Count - 1; i >= 0; i--)
+		{
+			var dialog = _openDialogs[i];
+			if (dialog != null && GodotObject.IsInstanceValid(dialog) && dialog.IsOpen)
+			{
+				dialog.CancelAndClose();
+				return true;
+			}
+			else
+			{
+				_openDialogs.RemoveAt(i);
+			}
+		}
+		return false;
+	}
+
+	public void BringToFront()
+	{
+		MoveToFront();
+		_openDialogs.Remove(this);
+		_openDialogs.Add(this);
+	}
 
 	protected readonly MapEditorHUD Hud;
 	protected VBoxContainer MainVBox;
@@ -29,6 +55,13 @@ public partial class FloatingDialogBase : PanelContainer
 		CustomMinimumSize = minSize;
 		Visible = false;
 		AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		GuiInput += (ev) =>
+		{
+			if (ev is InputEventMouseButton mb && mb.Pressed)
+			{
+				BringToFront();
+			}
+		};
 
 		MainVBox = new VBoxContainer();
 		MainVBox.AddThemeConstantOverride("separation", 10);
@@ -224,6 +257,7 @@ public partial class FloatingDialogBase : PanelContainer
 
 		Visible = true;
 		MoveToFront();
+		_openDialogs.Remove(this);
 		_openDialogs.Add(this);
 
 		Vector2 parentSize = Hud != null ? Hud.GetViewportRect().Size : GetViewportRect().Size;
@@ -314,6 +348,7 @@ public partial class FloatingDialogBase : PanelContainer
 			_isDragging = mouseButton.Pressed;
 			if (_isDragging)
 			{
+				BringToFront();
 				_dragStartMousePosition = mouseButton.GlobalPosition;
 				_dragStartPosition = Position;
 			}
@@ -1106,6 +1141,18 @@ public partial class FloatingDialogBase : PanelContainer
 					}
 					else if (category == "vfx" || category == "vfx_spritesheets" || category == "spritesheets")
 					{
+						foreach (var prim in Enum.GetValues<VfxPrimitiveType>())
+						{
+							result.Add($"vfx:{prim}");
+						}
+						if (GameHost.VfxRegistry != null)
+						{
+							foreach (var kvp in GameHost.VfxRegistry)
+							{
+								result.Add(kvp.Key.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase) ? kvp.Key : $"vfx:{kvp.Key}");
+							}
+						}
+
 						foreach (var key in new[] { "vfx_spritesheets", "vfx", "spritesheets" })
 						{
 							if (assetsObj[key] is System.Text.Json.Nodes.JsonObject vObj)
@@ -1138,6 +1185,21 @@ public partial class FloatingDialogBase : PanelContainer
 					}
 					else if (category == "models" || category == "glb" || category == "attachments")
 					{
+						if (category == "attachments" || includeAllFolders)
+						{
+							foreach (var prim in Enum.GetValues<VfxPrimitiveType>())
+							{
+								result.Add($"vfx:{prim}");
+							}
+							if (GameHost.VfxRegistry != null)
+							{
+								foreach (var kvp in GameHost.VfxRegistry)
+								{
+									result.Add(kvp.Key.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase) ? kvp.Key : $"vfx:{kvp.Key}");
+								}
+							}
+						}
+
 						string defaultFolder = !string.IsNullOrEmpty(subFolder) ? subFolder : (category == "attachments" ? "attachments" : "projectiles");
 						foreach (var modelKey in new[] { "glb", "models" })
 						{
@@ -1279,7 +1341,7 @@ public partial class FloatingDialogBase : PanelContainer
 	}
 
 	public Button AddButton(
-		HBoxContainer parent,
+		Control parent,
 		string text,
 		Action onClick,
 		string tooltip = "",

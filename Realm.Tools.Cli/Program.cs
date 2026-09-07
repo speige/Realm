@@ -51,14 +51,14 @@ public class TextureConvertOptions
 	[Option('o', "output", Required = false, HelpText = "Output destination file or directory.")]
 	public string? Output { get; set; }
 
-	[Option('t', "type", Required = false, HelpText = "Asset type for textures: Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet. If omitted, attempts to read type from image metadata.")]
+	[Option('t', "type", Required = false, HelpText = "Asset type for textures: Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet, vfx_radial, vfx_vertical. If omitted, attempts to read type from image metadata.")]
 	public string? AssetType { get; set; }
 
-	[Option("columns", Required = false, Default = 4, HelpText = "Number of grid columns for spritesheets (default 4).")]
-	public int Columns { get; set; } = 4;
+	[Option("columns", Required = false, HelpText = "Number of grid columns for spritesheets or animated decals (default 4 for spritesheets, 1 for decals).")]
+	public int? Columns { get; set; }
 
-	[Option("rows", Required = false, Default = 4, HelpText = "Number of grid rows for spritesheets (default 4).")]
-	public int Rows { get; set; } = 4;
+	[Option("rows", Required = false, HelpText = "Number of grid rows for spritesheets or animated decals (default 4 for spritesheets, 1 for decals).")]
+	public int? Rows { get; set; }
 
 	[Option("in-place", Required = false, Default = false, HelpText = "Write output alongside input file.")]
 	public bool InPlace { get; set; }
@@ -139,7 +139,7 @@ public class MetadataOptions
 	[Option('d', "data", Required = false, HelpText = "JSON string or path to JSON file containing metadata to embed (for add/update mode).")]
 	public string? Data { get; set; }
 
-	[Option('t', "type", Required = false, HelpText = "Asset type to embed: Attachment, Character, Building, Environment, Projectile, Prop, Weapon, Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet, Animation, Music, SoundEffect.")]
+	[Option('t', "type", Required = false, HelpText = "Asset type to embed: Attachment, Character, Building, Environment, Projectile, Prop, Weapon, Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet, vfx_radial, vfx_vertical, Animation, Music, SoundEffect.")]
 	public string? AssetType { get; set; }
 
 	[Option('o', "output", Required = false, HelpText = "Output destination file to write extracted JSON (for read mode).")]

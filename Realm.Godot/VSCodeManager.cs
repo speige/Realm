@@ -37,7 +37,8 @@ public class VSCodeManager
 		"Gruntfuggly.todo-tree",
 		"mechatroner.rainbow-json",
 		"patcx.vscode-nuget-gallery",
-		"AykutSarac.jsoncrack-vscode"
+		"AykutSarac.jsoncrack-vscode",
+		"akondratiuk1-dev.texture-viewer"
 	};
 
 	public bool IsInstalling
@@ -62,37 +63,149 @@ public class VSCodeManager
 		}
 	}
 
-	public bool IsInstalled()
+	public static string GetVSCodeDirectory()
 	{
-		string embedDir = PathUtils.FindPath("vscode_embedded");
-		string binPath = Path.Combine(embedDir, "bin");
-		string exePath = Path.Combine(binPath, "code.exe");
-		string completedMarkerPath = Path.Combine(embedDir, "install_completed.marker");
-		string bypassMarkerPath = Path.Combine(embedDir, "bypass_completed.marker");
-		string wasiDir = PathUtils.FindPath("wasi_sdk_embedded");
-		string wasiClangPath = Path.Combine(wasiDir, "bin", "clang.exe");
-		return File.Exists(exePath)
-			&& (File.Exists(completedMarkerPath) || File.Exists(bypassMarkerPath))
-			&& Directory.Exists(wasiDir)
-			&& File.Exists(wasiClangPath)
-			&& new FileInfo(wasiClangPath).Length > 0;
+		try
+		{
+			string appDataDir = OS.GetUserDataDir();
+			if (!string.IsNullOrWhiteSpace(appDataDir))
+			{
+				string appDataVSCode = Path.Combine(appDataDir, "vscode");
+				if (Directory.Exists(appDataVSCode))
+				{
+					return appDataVSCode;
+				}
+			}
+		}
+		catch
+		{
+		}
+
+		try
+		{
+			string appData = System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData);
+			string appDataFallback = Path.Combine(appData, "Godot", "app_userdata", "Realm.Godot", "vscode");
+			if (Directory.Exists(appDataFallback))
+			{
+				return appDataFallback;
+			}
+		}
+		catch
+		{
+		}
+
+		string legacy = PathUtils.FindPath("vscode_embedded");
+		if (!string.IsNullOrEmpty(legacy) && Directory.Exists(legacy))
+		{
+			return legacy;
+		}
+
+		try
+		{
+			string appDataDir = OS.GetUserDataDir();
+			if (!string.IsNullOrWhiteSpace(appDataDir))
+			{
+				return Path.Combine(appDataDir, "vscode");
+			}
+		}
+		catch
+		{
+		}
+
+		return Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData), "Godot", "app_userdata", "Realm.Godot", "vscode");
 	}
 
-	public void StartInstallIfNeeded()
+	public static string GetRealmMapEditorVersion()
+	{
+		try
+		{
+			string distPkg = Path.Combine(PathUtils.GetProjectRoot(), "vscode_extensions_dist", "speige.realm-map-editor", "package.json");
+			if (File.Exists(distPkg))
+			{
+				var jsonNode = JsonNode.Parse(File.ReadAllText(distPkg));
+				string version = jsonNode?["version"]?.GetValue<string>();
+				if (!string.IsNullOrWhiteSpace(version))
+				{
+					return version;
+				}
+			}
+
+			string srcPkg = Path.GetFullPath(Path.Combine(PathUtils.GetProjectRoot(), "..", "Realm.MapEditorExtension", "package.json"));
+			if (File.Exists(srcPkg))
+			{
+				var jsonNode = JsonNode.Parse(File.ReadAllText(srcPkg));
+				string version = jsonNode?["version"]?.GetValue<string>();
+				if (!string.IsNullOrWhiteSpace(version))
+				{
+					return version;
+				}
+			}
+
+			string versionJson = Path.GetFullPath(Path.Combine(PathUtils.GetProjectRoot(), "..", "version.json"));
+			if (File.Exists(versionJson))
+			{
+				var jsonNode = JsonNode.Parse(File.ReadAllText(versionJson));
+				string version = jsonNode?["extensionVersion"]?.GetValue<string>();
+				if (!string.IsNullOrWhiteSpace(version))
+				{
+					return version;
+				}
+			}
+		}
+		catch
+		{
+		}
+		return "0.0.1";
+	}
+
+	public bool IsInstalled()
+	{
+		string embedDir = GetVSCodeDirectory();
+		string binPath = Path.Combine(embedDir, "bin");
+		string exePath = Path.Combine(binPath, "code.exe");
+		string editorExe = Path.Combine(embedDir, "editor", "code.exe");
+		string completedMarkerPath = Path.Combine(embedDir, "install_completed.marker");
+		string bypassMarkerPath = Path.Combine(embedDir, "bypass_completed.marker");
+		string wasiPath = WasiSdkResolver.ResolveWasiSdkPath();
+		string wasiClangPath = !string.IsNullOrEmpty(wasiPath) ? Path.Combine(wasiPath, "bin", "clang.exe") : string.Empty;
+		string extVersion = GetRealmMapEditorVersion();
+		string extDir = Path.Combine(embedDir, "user-data-dir", "extensions", $"speige.realm-map-editor-{extVersion}");
+
+		return File.Exists(exePath)
+			&& new FileInfo(exePath).Length > 0
+			&& File.Exists(editorExe)
+			&& new FileInfo(editorExe).Length > 0
+			&& (File.Exists(completedMarkerPath) || File.Exists(bypassMarkerPath))
+			&& !string.IsNullOrEmpty(wasiClangPath)
+			&& File.Exists(wasiClangPath)
+			&& new FileInfo(wasiClangPath).Length > 0
+			&& Directory.Exists(extDir);
+	}
+
+	public void ForceReinstall()
+	{
+		StartInstallIfNeeded(force: true);
+	}
+
+	public void StartInstallIfNeeded(bool force = false)
 	{
 		lock (_installLock)
 		{
-			if (_isInstalling || _installCompleted)
+			if (_isInstalling)
 			{
 				return;
 			}
 
-			string projectRoot = PathUtils.GetProjectRoot();
-			string embedDir = PathUtils.FindPath("vscode_embedded");
+			if (!force && _installCompleted)
+			{
+				return;
+			}
+
+			string embedDir = GetVSCodeDirectory();
 			string binPath = Path.Combine(embedDir, "bin");
 			string exePath = Path.Combine(binPath, "code.exe");
 
-			if (IsInstalled())
+			if (!force && IsInstalled())
 			{
 				_installCompleted = true;
 				System.Threading.Tasks.Task.Run(() => InstallMissingExtensions(exePath, embedDir));
@@ -100,6 +213,7 @@ public class VSCodeManager
 			}
 
 			_isInstalling = true;
+			_installCompleted = false;
 			_installTask = System.Threading.Tasks.Task.Run(() =>
 			{
 				try
@@ -111,7 +225,8 @@ public class VSCodeManager
 						using (var installProcess = new Process())
 						{
 							installProcess.StartInfo.FileName = "powershell.exe";
-							installProcess.StartInfo.Arguments = $"-ExecutionPolicy Bypass -File \"{scriptPath}\"";
+							string forceArg = force ? " -Force" : string.Empty;
+							installProcess.StartInfo.Arguments = $"-ExecutionPolicy Bypass -File \"{scriptPath}\"{forceArg}";
 							installProcess.StartInfo.CreateNoWindow = true;
 							installProcess.StartInfo.UseShellExecute = false;
 							installProcess.StartInfo.RedirectStandardOutput = true;
@@ -143,7 +258,7 @@ public class VSCodeManager
 						GD.PrintErr("VS Code installer script not found at: " + scriptPath);
 					}
 
-					embedDir = PathUtils.FindPath("vscode_embedded");
+					embedDir = GetVSCodeDirectory();
 					binPath = Path.Combine(embedDir, "bin");
 					exePath = Path.Combine(binPath, "code.exe");
 
@@ -238,6 +353,9 @@ public class VSCodeManager
 
 	[DllImport("user32.dll")]
 	public static extern IntPtr DispatchMessage(ref MSG lpMsg);
+
+	[DllImport("user32.dll")]
+	public static extern short GetKeyState(int nVirtKey);
 
 	[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "CreateWindowExW")]
 	public static extern IntPtr CreateWindowEx(
@@ -505,7 +623,7 @@ public class VSCodeManager
 		try
 		{
 			string projectRoot = PathUtils.GetProjectRoot();
-			string embedDir = PathUtils.FindPath("vscode_embedded");
+			string embedDir = GetVSCodeDirectory();
 			string binPath = Path.Combine(embedDir, "bin");
 			string exePath = Path.Combine(binPath, "code.exe");
 
@@ -1028,7 +1146,7 @@ public class VSCodeManager
 		try
 		{
 			string projectRoot = PathUtils.GetProjectRoot();
-			string embedDir = PathUtils.FindPath("vscode_embedded");
+			string embedDir = GetVSCodeDirectory();
 			string serverDataDir = Path.Combine(embedDir, "user-data-dir");
 			string cachePath = Path.Combine(serverDataDir, "webview-cache");
 
@@ -1050,15 +1168,20 @@ public class VSCodeManager
 						PostMessage(_childHwnd, WM_WAKEUP, IntPtr.Zero, IntPtr.Zero);
 					}
 				}
-				else if (args.VirtualKey == 0x7B) // VK_F12
+				else
 				{
-					if (args.KeyEventKind == CoreWebView2KeyEventKind.KeyDown)
+					bool isControlPressed = (GetKeyState(0x11) & 0x8000) != 0;
+					bool isShiftPressed = (GetKeyState(0x10) & 0x8000) != 0;
+					if (isControlPressed && isShiftPressed && (args.VirtualKey == 0x49 || args.VirtualKey == 0x7B))
 					{
-						args.Handled = true;
-						_actionQueue.Enqueue(() =>
+						if (args.KeyEventKind == CoreWebView2KeyEventKind.KeyDown)
 						{
-							_controller?.CoreWebView2?.OpenDevToolsWindow();
-						});
+							args.Handled = true;
+							_actionQueue.Enqueue(() =>
+							{
+								_controller?.CoreWebView2?.OpenDevToolsWindow();
+							});
+						}
 					}
 				}
 			};
@@ -1693,14 +1816,18 @@ public class VSCodeManager
 			}
 
 			string realmMapEditorId = "speige.realm-map-editor";
+			string extVersion = GetRealmMapEditorVersion();
 			string srcPath = PathUtils.FindPath("Realm.MapEditorExtension");
 			if (!Directory.Exists(srcPath))
 			{
 				srcPath = Path.GetFullPath(Path.Combine(PathUtils.GetProjectRoot(), "..", "Realm.MapEditorExtension"));
 			}
-			string dstPath = Path.Combine(extensionsDir, $"{realmMapEditorId}-1.0.0");
+			if (!Directory.Exists(srcPath))
+			{
+				srcPath = Path.Combine(PathUtils.GetProjectRoot(), "vscode_extensions_dist", realmMapEditorId);
+			}
+			string dstPath = Path.Combine(extensionsDir, $"{realmMapEditorId}-{extVersion}");
 
-			// Always sync compiled extension files on launch so updates take effect without deleting vscode_embedded
 			try
 			{
 				if (Directory.Exists(srcPath))
@@ -1717,81 +1844,90 @@ public class VSCodeManager
 				GD.PrintErr("VS Code: Failed to sync Realm Map Editor extension files: " + ex.Message);
 			}
 
-			if (!IsExtensionInstalled(extensionsDir, realmMapEditorId))
+			try
 			{
-				GD.Print("VS Code: Registering Realm Map Editor extension...");
-				try
+				if (Directory.Exists(srcPath) || Directory.Exists(dstPath))
 				{
-					if (Directory.Exists(srcPath))
+					string obsoletePath = Path.Combine(extensionsDir, ".obsolete");
+					if (File.Exists(obsoletePath))
 					{
-
-						string obsoletePath = Path.Combine(extensionsDir, ".obsolete");
-						if (File.Exists(obsoletePath))
+						var obsoleteJson = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, bool>>(File.ReadAllText(obsoletePath));
+						if (obsoleteJson != null)
 						{
-							var obsoleteJson = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, bool>>(File.ReadAllText(obsoletePath));
-							if (obsoleteJson != null && obsoleteJson.Remove("speige.realm-map-editor-1.0.0"))
+							bool changed = obsoleteJson.Remove($"{realmMapEditorId}-{extVersion}") | obsoleteJson.Remove("speige.realm-map-editor-1.0.0");
+							if (changed)
 							{
 								File.WriteAllText(obsoletePath, System.Text.Json.JsonSerializer.Serialize(obsoleteJson));
 								GD.Print("VS Code: Removed Realm Map Editor from .obsolete.");
 							}
 						}
+					}
 
-						string extensionsJsonPath = Path.Combine(extensionsDir, "extensions.json");
-						if (File.Exists(extensionsJsonPath))
+					string extensionsJsonPath = Path.Combine(extensionsDir, "extensions.json");
+					if (File.Exists(extensionsJsonPath))
+					{
+						var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(extensionsJsonPath));
+						if (jsonNode is System.Text.Json.Nodes.JsonArray jsonArray)
 						{
-							var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(extensionsJsonPath));
-							if (jsonNode is System.Text.Json.Nodes.JsonArray jsonArray)
+							System.Text.Json.Nodes.JsonObject existingEntry = null;
+							foreach (var item in jsonArray)
 							{
-								bool alreadyExists = false;
-								foreach (var item in jsonArray)
+								if (item?["identifier"]?["id"]?.GetValue<string>() == realmMapEditorId)
 								{
-									if (item?["identifier"]?["id"]?.GetValue<string>() == "speige.realm-map-editor")
-									{
-										alreadyExists = true;
-										break;
-									}
-								}
-
-								if (!alreadyExists)
-								{
-									string dstAbsPath = Path.GetFullPath(dstPath).Replace("\\", "/");
-									var newEntry = new System.Text.Json.Nodes.JsonObject
-									{
-										["identifier"] = new System.Text.Json.Nodes.JsonObject { ["id"] = "speige.realm-map-editor" },
-										["version"] = "1.0.0",
-										["location"] = new System.Text.Json.Nodes.JsonObject
-										{
-											["$mid"] = 1,
-											["path"] = "/" + dstAbsPath,
-											["scheme"] = "file"
-										},
-										["relativeLocation"] = "speige.realm-map-editor-1.0.0",
-										["metadata"] = new System.Text.Json.Nodes.JsonObject
-										{
-											["installedTimestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-											["source"] = "local",
-											["isApplicationScoped"] = false,
-											["isMachineScoped"] = false
-										}
-									};
-									jsonArray.Add(newEntry);
-									File.WriteAllText(extensionsJsonPath, jsonNode.ToJsonString());
-									GD.Print("VS Code: Registered Realm Map Editor in extensions.json.");
+									existingEntry = item as System.Text.Json.Nodes.JsonObject;
+									break;
 								}
 							}
-						}
 
-						GD.Print("VS Code: Realm Map Editor extension installed successfully.");
+							string dstAbsPath = Path.GetFullPath(dstPath).Replace("\\", "/");
+							if (existingEntry != null)
+							{
+								existingEntry["version"] = extVersion;
+								existingEntry["relativeLocation"] = $"{realmMapEditorId}-{extVersion}";
+								if (existingEntry["location"] is System.Text.Json.Nodes.JsonObject locObj)
+								{
+									locObj["path"] = "/" + dstAbsPath;
+								}
+								File.WriteAllText(extensionsJsonPath, jsonNode.ToJsonString());
+							}
+							else
+							{
+								var newEntry = new System.Text.Json.Nodes.JsonObject
+								{
+									["identifier"] = new System.Text.Json.Nodes.JsonObject { ["id"] = realmMapEditorId },
+									["version"] = extVersion,
+									["location"] = new System.Text.Json.Nodes.JsonObject
+									{
+										["$mid"] = 1,
+										["path"] = "/" + dstAbsPath,
+										["scheme"] = "file"
+									},
+									["relativeLocation"] = $"{realmMapEditorId}-{extVersion}",
+									["metadata"] = new System.Text.Json.Nodes.JsonObject
+									{
+										["installedTimestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+										["source"] = "local",
+										["isApplicationScoped"] = false,
+										["isMachineScoped"] = false
+									}
+								};
+								jsonArray.Add(newEntry);
+								File.WriteAllText(extensionsJsonPath, jsonNode.ToJsonString());
+								GD.Print("VS Code: Registered Realm Map Editor in extensions.json.");
+							}
+						}
 					}
-					else
-					{
-						GD.PrintErr("VS Code: Realm Map Editor extension source not found at " + srcPath);
-					}
+
+					GD.Print("VS Code: Realm Map Editor extension installed successfully.");
 				}
-				catch (Exception ex)
+				else
 				{
-					GD.PrintErr("VS Code: Failed to install Realm Map Editor extension: " + ex.Message);
+					GD.PrintErr("VS Code: Realm Map Editor extension source not found at " + srcPath);
 				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr("VS Code: Failed to install Realm Map Editor extension: " + ex.Message);
 			}
 		}
 		catch (Exception ex)

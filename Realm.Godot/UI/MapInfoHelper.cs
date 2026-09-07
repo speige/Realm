@@ -39,7 +39,7 @@ public static class MapInfoHelper
 	public static MapBriefingDetails LoadMapDetails(string mapFolder, string basePath = "res://Maps")
 	{
 		string displayName = FormatMapDisplayName(mapFolder);
-		string description = "Map info - Situate in [color=#ff5555]" + displayName + "[/color], a treacherous valley once controlled by ancient lords. Guard the gates and gather resources to secure the valley. Supports melee conflict and co-op campaign modes. Defeat enemy bases to win.";
+		string description = "";
 		
 		string path = $"{basePath}/{mapFolder}/map.json";
 		if (!FileAccess.FileExists(path))
@@ -67,7 +67,7 @@ public static class MapInfoHelper
 						}
 						if (mapProps.TryGetProperty("MapDescription", out var descProp) && descProp.ValueKind == JsonValueKind.String)
 						{
-							description = descProp.GetString();
+							description = descProp.GetString() ?? "";
 						}
 					}
 				}

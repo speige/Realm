@@ -14,6 +14,7 @@ using Realm.Ecs.Components.Meta;
 using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Services;
 using Realm.Godot.Utils;
+using Realm.Godot.VFX;
 using Realm.Shared.Metadata;
 
 public class SaveLoadService
@@ -456,6 +457,32 @@ public class SaveLoadService
 				}
 			}
 
+			saveData.Vfx = new List<VfxSaveData>();
+			if (GameHost.Instance?.AllVfx != null)
+			{
+				foreach (var vfx in GameHost.Instance.AllVfx)
+				{
+					if (vfx != null && GodotObject.IsInstanceValid(vfx))
+					{
+						saveData.Vfx.Add(new VfxSaveData
+						{
+							VfxId = vfx.Config?.VfxId ?? "vfx",
+							PosX = vfx.Position.X,
+							PosY = vfx.Position.Y,
+							PosZ = vfx.Position.Z,
+							RotationX = vfx.RotationDegrees.X,
+							RotationY = vfx.RotationDegrees.Y,
+							RotationZ = vfx.RotationDegrees.Z,
+							ScaleX = vfx.Scale.X,
+							ScaleY = vfx.Scale.Y,
+							ScaleZ = vfx.Scale.Z,
+							NormalOffset = vfx.Config?.SurfaceNormalOffset ?? 0f,
+							Config = vfx.Config?.Clone()
+						});
+					}
+				}
+			}
+
 			SortMapSaveData(saveData);
 
 			var saveDoc = JsonSerializer.SerializeToNode(saveData) as JsonObject;
@@ -885,6 +912,21 @@ public class SaveLoadService
 						));
 					}
 				}
+
+				if (saveData.Vfx != null && GameHost.Instance != null)
+				{
+					foreach (var v in saveData.Vfx)
+					{
+						GameHost.Instance.SpawnVfxExternalWithParams(
+							v.VfxId,
+							new Vector3(v.PosX, v.PosY, v.PosZ),
+							new Vector3(v.RotationX, v.RotationY, v.RotationZ),
+							new Vector3(v.ScaleX <= 0f ? 1f : v.ScaleX, v.ScaleY <= 0f ? 1f : v.ScaleY, v.ScaleZ <= 0f ? 1f : v.ScaleZ),
+							v.NormalOffset,
+							v.Config
+						);
+					}
+				}
 			}
 
 			return true;
@@ -1040,6 +1082,32 @@ public class SaveLoadService
 				comparison = a.RotationY.CompareTo(b.RotationY);
 				if (comparison != 0) return comparison;
 				return a.Scale.CompareTo(b.Scale);
+			});
+		}
+
+		if (saveData.Vfx != null)
+		{
+			saveData.Vfx.Sort((a, b) =>
+			{
+				int comparison = string.Compare(a.VfxId, b.VfxId, StringComparison.OrdinalIgnoreCase);
+				if (comparison != 0) return comparison;
+				comparison = string.Compare(a.VfxId, b.VfxId, StringComparison.Ordinal);
+				if (comparison != 0) return comparison;
+
+				float distanceA = MathF.Sqrt(MathF.Pow(a.PosX - topLeftX, 2) + MathF.Pow(a.PosZ - topLeftZ, 2));
+				float distanceB = MathF.Sqrt(MathF.Pow(b.PosX - topLeftX, 2) + MathF.Pow(b.PosZ - topLeftZ, 2));
+				comparison = distanceA.CompareTo(distanceB);
+				if (comparison != 0) return comparison;
+
+				comparison = a.PosX.CompareTo(b.PosX);
+				if (comparison != 0) return comparison;
+				comparison = a.PosZ.CompareTo(b.PosZ);
+				if (comparison != 0) return comparison;
+				comparison = a.PosY.CompareTo(b.PosY);
+				if (comparison != 0) return comparison;
+				comparison = a.RotationY.CompareTo(b.RotationY);
+				if (comparison != 0) return comparison;
+				return a.ScaleX.CompareTo(b.ScaleX);
 			});
 		}
 
@@ -1316,6 +1384,17 @@ public class SaveLoadService
 		return set;
 	}
 
+	private static HashSet<string>? _cachedAllowedTerrainVfxProperties;
+
+	private static HashSet<string> GetAllowedTerrainVfxProperties()
+	{
+		if (_cachedAllowedTerrainVfxProperties != null) return _cachedAllowedTerrainVfxProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		AddTypeMembersToSet(typeof(VfxSaveData), set);
+		_cachedAllowedTerrainVfxProperties = set;
+		return set;
+	}
+
 	public static void CleanTerrainJsonSchema(JsonObject root)
 	{
 		if (root == null) return;
@@ -1363,6 +1442,16 @@ public class SaveLoadService
 			foreach (var item in coordinatesArray.OfType<JsonObject>())
 			{
 				var propertiesToRemove = item.Select(property => property.Key).Where(property => !allowedCoordinateProperties.Contains(property)).ToList();
+				foreach (var property in propertiesToRemove) item.Remove(property);
+			}
+		}
+
+		var allowedVfxProperties = GetAllowedTerrainVfxProperties();
+		if (root.TryGetPropertyValue("Vfx", out var vfxNode) && vfxNode is JsonArray vfxArray)
+		{
+			foreach (var item in vfxArray.OfType<JsonObject>())
+			{
+				var propertiesToRemove = item.Select(property => property.Key).Where(property => !allowedVfxProperties.Contains(property)).ToList();
 				foreach (var property in propertiesToRemove) item.Remove(property);
 			}
 		}
@@ -1816,6 +1905,27 @@ public class SaveLoadService
 		return set;
 	}
 
+	private static HashSet<string>? _cachedAllowedVfxConfigProperties;
+
+	private static HashSet<string> GetAllowedVfxConfigProperties(JsonObject? schemaRoot)
+	{
+		if (_cachedAllowedVfxConfigProperties != null) return _cachedAllowedVfxConfigProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		AddTypeMembersToSet(typeof(VfxAttachmentConfig), set);
+
+		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
+		{
+			if (definitionsObject.TryGetPropertyValue("CustomVfx", out var vfxDefinition))
+			{
+				ExtractPropertiesFromSchemaNode(vfxDefinition, set);
+			}
+		}
+
+		_cachedAllowedVfxConfigProperties = set;
+		return set;
+	}
+
 	private static void CleanJsonArrayObjects(JsonArray array, HashSet<string> allowedProperties)
 	{
 		foreach (var item in array.OfType<JsonObject>())
@@ -2066,6 +2176,15 @@ public class SaveLoadService
 			if (root.TryGetPropertyValue(arrayName, out var customItemsNode) && customItemsNode is JsonArray customItemsArray)
 			{
 				CleanJsonArrayObjects(customItemsArray, allowedCustomItemProperties);
+			}
+		}
+
+		var allowedVfxConfigProperties = GetAllowedVfxConfigProperties(schemaRoot);
+		foreach (var arrayName in new[] { "CustomVfx", "Vfx" })
+		{
+			if (root.TryGetPropertyValue(arrayName, out var vfxConfigsNode) && vfxConfigsNode is JsonArray vfxConfigsArray)
+			{
+				CleanJsonArrayObjects(vfxConfigsArray, allowedVfxConfigProperties);
 			}
 		}
 	}

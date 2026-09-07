@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using Realm.Godot.VFX;
 
 public class MapEditorEntityPaletteController
 {
@@ -17,6 +18,15 @@ public class MapEditorEntityPaletteController
 	{
 		if (_idToDisplayName.TryGetValue(file, out var name) && !string.IsNullOrEmpty(name))
 			return name;
+		if (file.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase))
+		{
+			string sub = file.Substring(4);
+			if (GameHost.VfxRegistry != null && GameHost.VfxRegistry.TryGetValue(sub, out var vReg) && !string.IsNullOrEmpty(vReg.Name))
+				return "✨ " + vReg.Name;
+			return "✨ " + sub;
+		}
+		if (GameHost.VfxRegistry != null && GameHost.VfxRegistry.TryGetValue(file, out var vMeta) && !string.IsNullOrEmpty(vMeta.Name))
+			return "✨ " + vMeta.Name;
 		if (GameHost.UnitRegistry != null && GameHost.UnitRegistry.TryGetValue(file, out var uMeta) && !string.IsNullOrEmpty(uMeta.Name))
 			return uMeta.Name;
 		if (GameHost.PropRegistry != null && GameHost.PropRegistry.TryGetValue(file, out var pMeta) && !string.IsNullOrEmpty(pMeta.Name))
@@ -31,6 +41,7 @@ public class MapEditorEntityPaletteController
 	private Button _btnEnv;
 	private Button _btnProps;
 	private Button _btnDecals;
+	private Button _btnVfx;
 
 	public string CurrentCategory => _currentCategory;
 	public List<string> CategoryFiles => _categoryFiles;
@@ -88,6 +99,11 @@ public class MapEditorEntityPaletteController
 		SetupButton(_btnDecals, "🎨 Decals", () => SelectCategory("Decals"), 12, "Select Decals category");
 		categoryGrid.AddChild(_btnDecals);
 
+		_btnVfx = new Button();
+		_btnVfx.Set("icon_max_width", 0);
+		SetupButton(_btnVfx, "✨ VFX", () => SelectCategory("VFX"), 12, "Select VFX category");
+		categoryGrid.AddChild(_btnVfx);
+
 		SelectCategory("Units", triggerAddObject: false);
 	}
 
@@ -130,6 +146,7 @@ public class MapEditorEntityPaletteController
 		_btnEnv.RemoveThemeStyleboxOverride("normal");
 		_btnProps.RemoveThemeStyleboxOverride("normal");
 		_btnDecals.RemoveThemeStyleboxOverride("normal");
+		_btnVfx.RemoveThemeStyleboxOverride("normal");
 
 		if (category == "Units" || category == "Characters") _btnChars.AddThemeStyleboxOverride("normal", activeStyle);
 		else _btnChars.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
@@ -145,6 +162,9 @@ public class MapEditorEntityPaletteController
 
 		if (category == "Decals") _btnDecals.AddThemeStyleboxOverride("normal", activeStyle);
 		else _btnDecals.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+
+		if (category == "VFX") _btnVfx.AddThemeStyleboxOverride("normal", activeStyle);
+		else _btnVfx.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 
 		string previousSelectedId = null;
 		if (_optCategoryItems != null && _optCategoryItems.Selected >= 0 && _optCategoryItems.Selected < _categoryFiles.Count)
@@ -168,7 +188,52 @@ public class MapEditorEntityPaletteController
 				var rootNode = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
 				if (rootNode != null)
 				{
-					if (category == "Decals")
+					if (category == "VFX")
+					{
+						foreach (var prim in Enum.GetValues<VfxPrimitiveType>())
+						{
+							string primKey = $"vfx:{prim}";
+							if (!_categoryFiles.Contains(primKey))
+							{
+								_categoryFiles.Add(primKey);
+								_idToDisplayName[primKey] = "✨ " + prim.ToString();
+							}
+						}
+
+						if (GameHost.VfxRegistry != null)
+						{
+							foreach (var kvp in GameHost.VfxRegistry)
+							{
+								string vfxKey = kvp.Key;
+								if (!_categoryFiles.Contains(vfxKey))
+								{
+									_categoryFiles.Add(vfxKey);
+									_idToDisplayName[vfxKey] = "✨ " + (!string.IsNullOrEmpty(kvp.Value.Name) ? kvp.Value.Name : kvp.Key);
+								}
+							}
+						}
+
+						if (rootNode.ContainsKey("CustomVfx") && rootNode["CustomVfx"] is System.Text.Json.Nodes.JsonArray customVfxArr)
+						{
+							foreach (var node in customVfxArr)
+							{
+								if (node is System.Text.Json.Nodes.JsonObject vObj && vObj.ContainsKey("VfxId"))
+								{
+									string vId = vObj["VfxId"]?.ToString() ?? "";
+									string name = vObj.ContainsKey("Name") ? vObj["Name"]?.ToString() ?? "" : "";
+									if (!string.IsNullOrEmpty(vId) && !_categoryFiles.Contains(vId))
+									{
+										_categoryFiles.Add(vId);
+										if (!string.IsNullOrEmpty(name))
+										{
+											_idToDisplayName[vId] = "✨ " + name;
+										}
+									}
+								}
+							}
+						}
+					}
+					else if (category == "Decals")
 					{
 						var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(globalWs);
 						if (unionedAssets.ContainsKey("decals") && unionedAssets["decals"] is System.Text.Json.Nodes.JsonObject decalsObj)
@@ -231,6 +296,32 @@ public class MapEditorEntityPaletteController
 		}
 		catch { }
 
+		if (category == "VFX" && _categoryFiles.Count == 0)
+		{
+			foreach (var prim in Enum.GetValues<VfxPrimitiveType>())
+			{
+				string primKey = $"vfx:{prim}";
+				if (!_categoryFiles.Contains(primKey))
+				{
+					_categoryFiles.Add(primKey);
+					_idToDisplayName[primKey] = "✨ " + prim.ToString();
+				}
+			}
+
+			if (GameHost.VfxRegistry != null)
+			{
+				foreach (var kvp in GameHost.VfxRegistry)
+				{
+					string vfxKey = kvp.Key;
+					if (!_categoryFiles.Contains(vfxKey))
+					{
+						_categoryFiles.Add(vfxKey);
+						_idToDisplayName[vfxKey] = "✨ " + (!string.IsNullOrEmpty(kvp.Value.Name) ? kvp.Value.Name : kvp.Key);
+					}
+				}
+			}
+		}
+
 		_categoryFiles.Sort((a, b) => string.Compare(GetDisplayNameForId(a), GetDisplayNameForId(b), StringComparison.OrdinalIgnoreCase));
 
 		foreach (var file in _categoryFiles)
@@ -282,6 +373,10 @@ public class MapEditorEntityPaletteController
 		{
 			targetTool = GameHost.EditorTool.PlaceDecal;
 		}
+		else if (_currentCategory == "VFX")
+		{
+			targetTool = GameHost.EditorTool.PlaceVfx;
+		}
 
 		string placeId = "";
 		int selectedIndex = _optCategoryItems != null ? _optCategoryItems.Selected : -1;
@@ -328,6 +423,10 @@ public class MapEditorEntityPaletteController
 			else if (category == "Decals")
 			{
 				targetTool = GameHost.EditorTool.PlaceDecal;
+			}
+			else if (category == "VFX")
+			{
+				targetTool = GameHost.EditorTool.PlaceVfx;
 			}
 
 			_hud.TriggerToolSelection(targetTool, _btnAddObject, filename);

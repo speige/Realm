@@ -29,6 +29,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private PanelContainer _preview2DContainer;
 	private TextureRect _preview2DImage;
 	private Label _lblPreview2DInfo;
+	private Texture2D[]? _preview2DFrames;
+	private int _preview2DFrameIndex;
+	private double _preview2DFrameTimer;
+	private float _preview2DFps = 12.0f;
 
 	private PanelContainer _previewAudioContainer;
 	private Label _lblAudioInfo;
@@ -643,6 +647,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			return subCategoryOrFolder switch
 			{
 				"textures" => "Tilesheet",
+				"vfx_radial" or "vfx_radials" or "radial" => "vfx_radial",
+				"vfx_vertical" or "vfx_verticals" or "vertical" => "vfx_vertical",
 				"vfx_spritesheets" or "vfx" => "SpellSpritesheet",
 				"icons" => "Icon",
 				"decals" => "Decal",
@@ -726,6 +732,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				"glb_attachments" => "Attachment",
 				"glb_weapons" => "Weapon",
 				"textures" => "Tilesheet",
+				"vfx_radial" or "vfx_radials" => "vfx_radial",
+				"vfx_vertical" or "vfx_verticals" => "vfx_vertical",
 				"vfx_spritesheets" => "SpellSpritesheet",
 				"animations" => "Animation",
 				"sfx" => "SoundEffect",
@@ -903,7 +911,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 
 		// Action 3: Edit Button (Spritesheets, Textures, Decals, Shaders)
-		bool hasEditDialog = category == "vfx_spritesheets" || category == "textures" || category == "decals" || category == "shaders" || (extraData is JsonObject edObj && edObj.ContainsKey("asset_type") && (edObj["asset_type"]?.ToString() == "Decal" || edObj["asset_type"]?.ToString() == "Shader"));
+		bool hasEditDialog = category == "vfx_spritesheets" || category == "vfx" || category == "textures" || category == "decals" || category == "shaders" || (extraData is JsonObject edObj && edObj.ContainsKey("asset_type") && (edObj["asset_type"]?.ToString() == "SpellSpritesheet" || edObj["asset_type"]?.ToString() == "Decal" || edObj["asset_type"]?.ToString() == "Shader"));
 		if (hasEditDialog)
 		{
 			var btnEdit = new Button();
@@ -959,6 +967,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		// 1. Clear previous previews
 		Clear3DModelPreview();
 		StopCurrentAudio();
+		_preview2DFrames = null;
+		_preview2DFrameIndex = 0;
+		_preview2DFrameTimer = 0.0;
+		if (_preview2DImage != null) _preview2DImage.Modulate = Colors.White;
 
 		if (IsGlbCategory(category, out string glbSub) || category == "animations" || category == "vfx_spritesheets" || category == "shaders")
 		{
@@ -996,13 +1008,20 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 		else
 		{
-			// 2D Static Images (textures, icons, decals, ribbon, noise, skyboxes)
 			_viewportContainer.Visible = false;
 			_preview2DContainer.Visible = true;
 			_previewAudioContainer.Visible = false;
 			if (_cameraPresetRow != null) _cameraPresetRow.Visible = false;
 
-			LoadStatic2DTexture(key, category);
+			bool isDecal = category == "decals" || IsDecalAsset(key, category, subCategory);
+			if (isDecal)
+			{
+				LoadDecal2DPreview(key, category);
+			}
+			else
+			{
+				LoadStatic2DTexture(key, category);
+			}
 		}
 	}
 
@@ -1010,9 +1029,16 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	{
 		_currentPreviewAssetKey = "";
 		_currentShaderConfig = null;
+		_preview2DFrames = null;
+		_preview2DFrameIndex = 0;
+		_preview2DFrameTimer = 0.0;
 		Clear3DModelPreview();
 		StopCurrentAudio();
-		if (_preview2DImage != null) _preview2DImage.Texture = null;
+		if (_preview2DImage != null)
+		{
+			_preview2DImage.Texture = null;
+			_preview2DImage.Modulate = Colors.White;
+		}
 		if (_lblPreview2DInfo != null) _lblPreview2DInfo.Text = "";
 		if (_cameraPresetRow != null) _cameraPresetRow.Visible = false;
 	}
@@ -1225,6 +1251,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		int cols = 4;
 		int rows = 4;
+		float fps = 20.0f;
 
 		try
 		{
@@ -1244,6 +1271,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 						cols = parsedCols;
 					if (sheetObj.TryGetPropertyValue("rows", out var rNode) && int.TryParse(rNode?.ToString(), out int parsedRows) && parsedRows > 0)
 						rows = parsedRows;
+					if (sheetObj.TryGetPropertyValue("fps", out var fNode) && float.TryParse(fNode?.ToString(), out float parsedFps) && parsedFps > 0.001f)
+						fps = parsedFps;
 				}
 			}
 		}
@@ -1256,7 +1285,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		var frames = new SpriteFrames();
 		frames.AddAnimation("play");
 		frames.SetAnimationLoopMode("play", SpriteFrames.LoopMode.Linear);
-		frames.SetAnimationSpeed("play", 20.0f);
+		frames.SetAnimationSpeed("play", fps);
 
 		int frameWidth = Math.Max(1, (int)texture.GetWidth() / cols);
 		int frameHeight = Math.Max(1, (int)texture.GetHeight() / rows);
@@ -1374,10 +1403,149 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			float prog = Mathf.Clamp(_shaderPreviewTime / dur, 0f, 1f);
 			SpawnDeathShaderManager.ApplyShaderPreview(_currentModelRoot, _currentShaderConfig, prog);
 		}
+
+		if (Visible && _preview2DContainer != null && _preview2DContainer.Visible && _preview2DFrames != null && _preview2DFrames.Length > 1 && _preview2DImage != null)
+		{
+			_preview2DFrameTimer += delta;
+			double duration = 1.0 / (_preview2DFps > 0.001f ? _preview2DFps : 12.0f);
+			if (_preview2DFrameTimer >= duration)
+			{
+				_preview2DFrameTimer -= duration;
+				if (_preview2DFrameTimer >= duration)
+				{
+					_preview2DFrameTimer %= duration;
+				}
+				_preview2DFrameIndex = (_preview2DFrameIndex + 1) % _preview2DFrames.Length;
+				_preview2DImage.Texture = _preview2DFrames[_preview2DFrameIndex];
+			}
+		}
+	}
+
+	private bool IsDecalAsset(string key, string category, string subCategory)
+	{
+		if (category == "decals") return true;
+		try
+		{
+			string wsPath = GetWorkspacePath();
+			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
+			if (assetsObj != null)
+			{
+				if (assetsObj["decals"] is JsonObject decalsObj)
+				{
+					string clean = Path.GetFileName(key);
+					string cleanBase = Path.GetFileNameWithoutExtension(key);
+					if (decalsObj.ContainsKey(clean) || decalsObj.ContainsKey($"{cleanBase}.rtex") || decalsObj.ContainsKey(cleanBase))
+						return true;
+				}
+
+				if (assetsObj.TryGetPropertyValue(category, out var catNode) && catNode is JsonObject catObj)
+				{
+					if (catObj.TryGetPropertyValue(key, out var itemNode) && itemNode is JsonObject itemObj)
+					{
+						string? aType = itemObj["asset_type"]?.ToString() ?? itemObj["AssetType"]?.ToString() ?? itemObj["type"]?.ToString();
+						if (string.Equals(aType, "Decal", StringComparison.OrdinalIgnoreCase)) return true;
+					}
+				}
+			}
+
+			string filePath = ResolveAssetFilePath(wsPath, key, category);
+			if (File.Exists(filePath))
+			{
+				string? embeddedType = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(filePath);
+				if (string.Equals(embeddedType, "Decal", StringComparison.OrdinalIgnoreCase)) return true;
+			}
+		}
+		catch { }
+
+		return false;
+	}
+
+	private void LoadDecal2DPreview(string key, string category)
+	{
+		_preview2DFrames = null;
+		_preview2DFrameIndex = 0;
+		_preview2DFrameTimer = 0.0;
+		if (_preview2DImage != null) _preview2DImage.Modulate = Colors.White;
+
+		string wsPath = GetWorkspacePath();
+		string subFolder = category switch
+		{
+			"decals" => "decals",
+			_ => category
+		};
+
+		string filePath = ResolveAssetFilePath(wsPath, key, subFolder);
+		if (!File.Exists(filePath) && subFolder != "decals")
+		{
+			string altPath = ResolveAssetFilePath(wsPath, key, "decals");
+			if (File.Exists(altPath)) filePath = altPath;
+		}
+
+		GameHost.DecalAssetData? assetData = null;
+		if (GameHost.Instance != null)
+		{
+			GameHost.Instance.InvalidateDecalCache(key);
+			assetData = GameHost.Instance.LoadDecalAsset(key, forceReload: true);
+			if ((assetData == null || assetData.PrimaryTexture == null || assetData.PrimaryTexture.ResourcePath == "res://icon.svg") && File.Exists(filePath))
+			{
+				GameHost.Instance.InvalidateDecalCache(filePath);
+				assetData = GameHost.Instance.LoadDecalAsset(filePath, forceReload: true);
+			}
+		}
+
+		if (assetData == null && File.Exists(filePath))
+		{
+			Texture2D? baseTex = LoadTextureFromFileOrRtex(filePath);
+			if (baseTex != null)
+			{
+				assetData = new GameHost.DecalAssetData
+				{
+					DecalId = key,
+					PrimaryTexture = baseTex,
+					Columns = 1,
+					Rows = 1,
+					Fps = 12.0f
+				};
+			}
+		}
+
+		if (assetData == null) return;
+
+		var metaObj = DecalSettingsDialog.ResolveDecalMetadata(key);
+		float brightness = metaObj.TryGetPropertyValue("brightness", out var bNode) && float.TryParse(bNode?.ToString(), out float b) ? b : 1.0f;
+		float opacity = metaObj.TryGetPropertyValue("opacity", out var oNode) && float.TryParse(oNode?.ToString(), out float o) ? o : 1.0f;
+		Color tint = Colors.White;
+		if (metaObj.TryGetPropertyValue("tint", out var tNode) && tNode != null)
+		{
+			string tStr = tNode.ToString();
+			if (tStr.StartsWith("#")) tint = Color.FromHtml(tStr);
+		}
+
+		if (_preview2DImage != null)
+		{
+			float mr = Mathf.Clamp(tint.R * brightness, 0f, 2f);
+			float mg = Mathf.Clamp(tint.G * brightness, 0f, 2f);
+			float mb = Mathf.Clamp(tint.B * brightness, 0f, 2f);
+			_preview2DImage.Modulate = new Color(mr, mg, mb, Mathf.Clamp(opacity, 0f, 1f));
+			_preview2DImage.Texture = assetData.PrimaryTexture;
+		}
+
+		if (_lblPreview2DInfo != null)
+		{
+			var baseTex = assetData.PrimaryTexture;
+			_lblPreview2DInfo.Text = baseTex != null
+				? $"{key} ({baseTex.GetWidth()}x{baseTex.GetHeight()})"
+				: key;
+		}
 	}
 
 	private void LoadStatic2DTexture(string key, string category)
 	{
+		_preview2DFrames = null;
+		_preview2DFrameIndex = 0;
+		_preview2DFrameTimer = 0.0;
+		if (_preview2DImage != null) _preview2DImage.Modulate = Colors.White;
+
 		string wsPath = GetWorkspacePath();
 		string subFolder = category switch
 		{
@@ -1726,6 +1894,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		return category switch
 		{
 			"textures" => "Tilesheet",
+			"vfx_radial" or "vfx_radials" => "vfx_radial",
+			"vfx_vertical" or "vfx_verticals" => "vfx_vertical",
 			"vfx_spritesheets" => "SpellSpritesheet",
 			"icons" => "Icon",
 			"decals" => "Decal",
@@ -1840,6 +2010,38 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 			bool isRtexWithMeta = ext == ".rtex" && RealmMetadataHelper.HasRealmMetadata(sourceFilePath);
 			TextureConversionResult convResult = default;
+			int decalCols = 1;
+			int decalRows = 1;
+			int vfxCols = 4;
+			int vfxRows = 4;
+			float vfxFps = 20.0f;
+
+			if (targetCategory == "decals" || targetCategory == "vfx_spritesheets")
+			{
+				string? sourceMeta = RealmMetadataHelper.ExtractMetadata(sourceFilePath);
+				if (!string.IsNullOrEmpty(sourceMeta))
+				{
+					try
+					{
+						var node = JsonNode.Parse(sourceMeta);
+						if (node?["columns"] != null && int.TryParse(node["columns"]?.ToString(), out int c) && c > 0)
+						{
+							if (targetCategory == "decals") decalCols = c;
+							else vfxCols = c;
+						}
+						if (node?["rows"] != null && int.TryParse(node["rows"]?.ToString(), out int r) && r > 0)
+						{
+							if (targetCategory == "decals") decalRows = r;
+							else vfxRows = r;
+						}
+						if (node?["fps"] != null && float.TryParse(node["fps"]?.ToString(), out float f) && f > 0.001f)
+						{
+							if (targetCategory == "vfx_spritesheets") vfxFps = f;
+						}
+					}
+					catch { }
+				}
+			}
 
 			if (isRtexWithMeta)
 			{
@@ -1853,7 +2055,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				}
 				else if (targetCategory == "decals")
 				{
-					convResult = TextureConverter.ProcessAndSaveDecalTexture(sourceFilePath, destPath);
+					convResult = TextureConverter.ProcessAndSaveDecalTexture(sourceFilePath, destPath, columns: decalCols, rows: decalRows);
 				}
 				else if (targetCategory == "icons")
 				{
@@ -1861,7 +2063,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				}
 				else if (targetCategory == "vfx_spritesheets")
 				{
-					convResult = TextureConverter.ProcessAndSaveSpritesheet(sourceFilePath, destPath, 4, 4);
+					convResult = TextureConverter.ProcessAndSaveSpritesheet(sourceFilePath, destPath, vfxCols, vfxRows, vfxFps);
 				}
 				else if (targetCategory is "ribbons" or "ribbon_textures")
 				{
@@ -1895,10 +2097,24 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			{
 				assetsObj["vfx_spritesheets"].AsObject()[$"{cleanBase}.rtex"] = new JsonObject
 				{
-					["columns"] = 4,
-					["rows"] = 4,
+					["columns"] = vfxCols,
+					["rows"] = vfxRows,
+					["fps"] = Math.Round(vfxFps, 2),
 					["hash"] = hash
 				};
+			}
+			else if (targetCategory == "decals")
+			{
+				var decalDict = assetsObj["decals"].AsObject();
+				string destFileName = $"{cleanBase}.rtex";
+				var decalObj = (decalDict.ContainsKey(destFileName) && decalDict[destFileName] is JsonObject exObj) ? (exObj.DeepClone() as JsonObject) : new JsonObject();
+				decalObj["hash"] = hash;
+				if (decalCols > 1 || decalRows > 1 || decalObj.ContainsKey("columns") || decalObj.ContainsKey("rows"))
+				{
+					decalObj["columns"] = decalCols;
+					decalObj["rows"] = decalRows;
+				}
+				decalDict[destFileName] = decalObj;
 			}
 			else if (targetCategory == "textures")
 			{
@@ -2892,19 +3108,70 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private void OpenEditSubDialog(string category, string key, JsonNode extraData)
 	{
-		if (category == "vfx_spritesheets")
+		if (category == "vfx_spritesheets" || category == "vfx" || (extraData is JsonObject edObjVfx && edObjVfx.ContainsKey("asset_type") && edObjVfx["asset_type"]?.ToString() == "SpellSpritesheet"))
 		{
 			int cols = 4;
 			int rows = 4;
-			if (extraData is JsonObject obj)
+			float fps = 20.0f;
+			bool subframeBlend = true;
+
+			string wsPath = GetWorkspacePath();
+			try
 			{
-				if (obj.ContainsKey("columns")) cols = (int)obj["columns"];
-				if (obj.ContainsKey("rows")) rows = (int)obj["rows"];
+				var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
+				var vfxSheets = assetsObj["vfx_spritesheets"]?.AsObject();
+				if (vfxSheets != null)
+				{
+					string fileName = Path.GetFileName(key);
+					string cleanBase = Path.GetFileNameWithoutExtension(key);
+
+					JsonObject? sheetObj = null;
+					if (vfxSheets.TryGetPropertyValue(fileName, out var s1) && s1 is JsonObject so1) sheetObj = so1;
+					else if (vfxSheets.TryGetPropertyValue(key, out var s2) && s2 is JsonObject so2) sheetObj = so2;
+					else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.rtex", out var s3) && s3 is JsonObject so3) sheetObj = so3;
+					else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.png", out var s4) && s4 is JsonObject so4) sheetObj = so4;
+
+					if (sheetObj != null)
+					{
+						if (sheetObj.TryGetPropertyValue("columns", out var cNode) && int.TryParse(cNode?.ToString(), out int parsedCols) && parsedCols > 0)
+							cols = parsedCols;
+						if (sheetObj.TryGetPropertyValue("rows", out var rNode) && int.TryParse(rNode?.ToString(), out int parsedRows) && parsedRows > 0)
+							rows = parsedRows;
+						if (sheetObj.TryGetPropertyValue("fps", out var fNode) && float.TryParse(fNode?.ToString(), out float parsedFps) && parsedFps > 0.001f)
+							fps = parsedFps;
+						if (sheetObj.TryGetPropertyValue("subframe_blend", out var sbNode) && bool.TryParse(sbNode?.ToString(), out bool parsedSb))
+							subframeBlend = parsedSb;
+					}
+					else if (extraData is JsonObject obj)
+					{
+						if (obj.ContainsKey("columns")) cols = (int)obj["columns"];
+						if (obj.ContainsKey("rows")) rows = (int)obj["rows"];
+						if (obj.ContainsKey("fps") && float.TryParse(obj["fps"]?.ToString(), out float f) && f > 0.001f) fps = f;
+						if (obj.ContainsKey("subframe_blend") && bool.TryParse(obj["subframe_blend"]?.ToString(), out bool sb)) subframeBlend = sb;
+					}
+				}
+				else if (extraData is JsonObject obj)
+				{
+					if (obj.ContainsKey("columns")) cols = (int)obj["columns"];
+					if (obj.ContainsKey("rows")) rows = (int)obj["rows"];
+					if (obj.ContainsKey("fps") && float.TryParse(obj["fps"]?.ToString(), out float f) && f > 0.001f) fps = f;
+					if (obj.ContainsKey("subframe_blend") && bool.TryParse(obj["subframe_blend"]?.ToString(), out bool sb)) subframeBlend = sb;
+				}
+			}
+			catch
+			{
+				if (extraData is JsonObject obj)
+				{
+					if (obj.ContainsKey("columns")) cols = (int)obj["columns"];
+					if (obj.ContainsKey("rows")) rows = (int)obj["rows"];
+					if (obj.ContainsKey("fps") && float.TryParse(obj["fps"]?.ToString(), out float f) && f > 0.001f) fps = f;
+					if (obj.ContainsKey("subframe_blend") && bool.TryParse(obj["subframe_blend"]?.ToString(), out bool sb)) subframeBlend = sb;
+				}
 			}
 
-			_spritesheetEditDialog.OpenForSheet(key, cols, rows, (newCols, newRows) =>
+			_spritesheetEditDialog.OpenForSheet(key, cols, rows, fps, subframeBlend, (newCols, newRows, newFps, newSubframeBlend) =>
 			{
-				SaveSpritesheetGrid(key, newCols, newRows);
+				SaveSpritesheetGrid(key, newCols, newRows, newFps, newSubframeBlend);
 				LoadVfxSpritesheet(key);
 				RefreshAssetList();
 			});
@@ -2924,6 +3191,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			_decalEditDialog.OpenForDecal(key, decalData, (updatedData) =>
 			{
 				SaveDecalMetadata(key, updatedData);
+				LoadPreviewForAsset(category, key);
 				RefreshAssetList();
 			});
 		}
@@ -2963,6 +3231,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 			decalsDict[key] = newObj;
 			MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
+			GameHost.Instance?.InvalidateDecalCache(key);
 		}
 		catch (Exception ex)
 		{
@@ -2970,32 +3239,50 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 	}
 
-	private void SaveSpritesheetGrid(string key, int columns, int rows)
+	private void SaveSpritesheetGrid(string key, int columns, int rows, float fps = 20.0f, bool subframeBlend = true)
 	{
 		string wsPath = GetWorkspacePath();
 
 		try
 		{
 			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
-			var vfxSheets = assetsObj["vfx_spritesheets"]?.AsObject();
-			if (vfxSheets != null)
+			if (!assetsObj.ContainsKey("vfx_spritesheets") || assetsObj["vfx_spritesheets"] == null)
 			{
-				string fileName = Path.GetFileName(key);
-				string cleanBase = Path.GetFileNameWithoutExtension(key);
+				assetsObj["vfx_spritesheets"] = new JsonObject();
+			}
 
-				JsonObject? sheetObj = null;
-				if (vfxSheets.TryGetPropertyValue(fileName, out var s1) && s1 is JsonObject so1) sheetObj = so1;
-				else if (vfxSheets.TryGetPropertyValue(key, out var s2) && s2 is JsonObject so2) sheetObj = so2;
-				else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.rtex", out var s3) && s3 is JsonObject so3) sheetObj = so3;
-				else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.png", out var s4) && s4 is JsonObject so4) sheetObj = so4;
+			var vfxSheets = assetsObj["vfx_spritesheets"]!.AsObject();
+			string fileName = Path.GetFileName(key);
+			string cleanBase = Path.GetFileNameWithoutExtension(key);
 
-				if (sheetObj != null)
+			string targetKey = fileName;
+			JsonNode? existingNode = null;
+			if (vfxSheets.TryGetPropertyValue(fileName, out var s1)) { targetKey = fileName; existingNode = s1; }
+			else if (vfxSheets.TryGetPropertyValue(key, out var s2)) { targetKey = key; existingNode = s2; }
+			else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.rtex", out var s3)) { targetKey = $"{cleanBase}.rtex"; existingNode = s3; }
+			else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.png", out var s4)) { targetKey = $"{cleanBase}.png"; existingNode = s4; }
+
+			JsonObject newSheetObj;
+			if (existingNode is JsonObject exObj)
+			{
+				newSheetObj = exObj;
+			}
+			else
+			{
+				newSheetObj = new JsonObject();
+				if (existingNode is JsonValue v)
 				{
-					sheetObj["columns"] = columns;
-					sheetObj["rows"] = rows;
-					MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
+					newSheetObj["hash"] = v.ToString();
 				}
 			}
+
+			newSheetObj["columns"] = columns;
+			newSheetObj["rows"] = rows;
+			newSheetObj["fps"] = Math.Round(fps, 2);
+			newSheetObj["subframe_blend"] = subframeBlend;
+
+			vfxSheets[targetKey] = newSheetObj;
+			MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
 		}
 		catch (Exception ex)
 		{
