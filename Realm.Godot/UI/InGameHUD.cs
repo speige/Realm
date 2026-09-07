@@ -544,15 +544,18 @@ public partial class InGameHUD : Control
 		_customUIPanel = new VBoxContainer();
 		_customUIPanel.Name = "CustomUIPanel";
 		_customUIPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.TopRight);
-		_customUIPanel.OffsetLeft = -260;
+		_customUIPanel.GrowHorizontal = Control.GrowDirection.Begin;
+		_customUIPanel.OffsetLeft = -440;
+		_customUIPanel.OffsetRight = -20;
 		_customUIPanel.OffsetTop = 20;
-		_customUIPanel.CustomMinimumSize = new Vector2(240, 0);
+		_customUIPanel.CustomMinimumSize = new Vector2(420, 0);
 		_customUIPanel.AddThemeConstantOverride("separation", 10);
 		AddChild(_customUIPanel);
 
 		_countdownPanel = new PanelContainer();
 		_countdownPanel.Name = "CountdownPanel";
 		_countdownPanel.Visible = false;
+		_countdownPanel.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd;
 		var countdownStyle = new StyleBoxFlat();
 		countdownStyle.BgColor = new Color(0.12f, 0.12f, 0.12f, 0.85f);
 		countdownStyle.SetBorderWidthAll(1);
@@ -579,6 +582,7 @@ public partial class InGameHUD : Control
 		_leaderboardPanel = new PanelContainer();
 		_leaderboardPanel.Name = "LeaderboardPanel";
 		_leaderboardPanel.Visible = false;
+		_leaderboardPanel.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd;
 		var leaderboardStyle = new StyleBoxFlat();
 		leaderboardStyle.BgColor = new Color(0.12f, 0.12f, 0.12f, 0.85f);
 		leaderboardStyle.SetBorderWidthAll(1);
@@ -611,6 +615,7 @@ public partial class InGameHUD : Control
 		_summaryPanel = new PanelContainer();
 		_summaryPanel.Name = "SummaryTablePanel";
 		_summaryPanel.Visible = false;
+		_summaryPanel.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd;
 		var summaryStyle = new StyleBoxFlat();
 		summaryStyle.BgColor = new Color(0.1f, 0.1f, 0.14f, 0.92f);
 		summaryStyle.SetBorderWidthAll(2);
@@ -940,16 +945,22 @@ public partial class InGameHUD : Control
 		_statsContainer.LayoutMode = 2;
 		_statsContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		_statsContainer.SizeFlagsVertical = SizeFlags.ExpandFill;
+		_statsContainer.CustomMinimumSize = new Vector2(0, 0);
+		_statsContainer.ClipContents = true;
 		_statsContainer.AddThemeConstantOverride("separation", 20);
 		_selectionFrame.AddChild(_statsContainer);
 		_statsContainer.Visible = false;
 
 		var statsVBox = new VBoxContainer();
 		statsVBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		statsVBox.CustomMinimumSize = new Vector2(0, 0);
 		statsVBox.Alignment = BoxContainer.AlignmentMode.Center;
 		_statsContainer.AddChild(statsVBox);
 
 		_statsLabel = new Label();
+		_statsLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+		_statsLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_statsLabel.CustomMinimumSize = new Vector2(0, 0);
 		_statsLabel.Text = TranslationServer.Translate("HP: 100/100\nDamage: 10\nArmor: 2\nSpeed: 5");
 		_statsLabel.AddThemeFontSizeOverride("font_size", 14);
 		_statsLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
@@ -1142,6 +1153,7 @@ public partial class InGameHUD : Control
 		_minimapFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		_portraitFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		_selectionFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_selectionFrame.ClipContents = true;
 		
 		var commandFrameStyle = (StyleBoxTexture)UIStyle.CreateStonePanel(true).Duplicate();
 		commandFrameStyle.ContentMarginLeft = 2;
