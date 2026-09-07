@@ -274,6 +274,10 @@ public partial class InGameHUD : Control
 	private MinimapPanel _minimapPanelController;
 	private ChatPanel _chatPanelController;
 	private LeaderboardPanel _leaderboardPanelController;
+	private PanelContainer _summaryPanel;
+	private Label _summaryTitleLabel;
+	private VBoxContainer _summaryContent;
+	private SummaryTablePanel _summaryTablePanelController;
 	private PortraitPanel _portraitPanelController;
 	private CommandPanel _commandPanelController;
 	private InventoryPanel _inventoryPanelController;
@@ -540,15 +544,18 @@ public partial class InGameHUD : Control
 		_customUIPanel = new VBoxContainer();
 		_customUIPanel.Name = "CustomUIPanel";
 		_customUIPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.TopRight);
-		_customUIPanel.OffsetLeft = -260;
+		_customUIPanel.GrowHorizontal = Control.GrowDirection.Begin;
+		_customUIPanel.OffsetLeft = -440;
+		_customUIPanel.OffsetRight = -20;
 		_customUIPanel.OffsetTop = 20;
-		_customUIPanel.CustomMinimumSize = new Vector2(240, 0);
+		_customUIPanel.CustomMinimumSize = new Vector2(420, 0);
 		_customUIPanel.AddThemeConstantOverride("separation", 10);
 		AddChild(_customUIPanel);
 
 		_countdownPanel = new PanelContainer();
 		_countdownPanel.Name = "CountdownPanel";
 		_countdownPanel.Visible = false;
+		_countdownPanel.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd;
 		var countdownStyle = new StyleBoxFlat();
 		countdownStyle.BgColor = new Color(0.12f, 0.12f, 0.12f, 0.85f);
 		countdownStyle.SetBorderWidthAll(1);
@@ -575,6 +582,7 @@ public partial class InGameHUD : Control
 		_leaderboardPanel = new PanelContainer();
 		_leaderboardPanel.Name = "LeaderboardPanel";
 		_leaderboardPanel.Visible = false;
+		_leaderboardPanel.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd;
 		var leaderboardStyle = new StyleBoxFlat();
 		leaderboardStyle.BgColor = new Color(0.12f, 0.12f, 0.12f, 0.85f);
 		leaderboardStyle.SetBorderWidthAll(1);
@@ -603,6 +611,39 @@ public partial class InGameHUD : Control
 		_leaderboardContent.Name = "LeaderboardContent";
 		lbVBox.AddChild(_leaderboardContent);
 		_customUIPanel.AddChild(_leaderboardPanel);
+
+		_summaryPanel = new PanelContainer();
+		_summaryPanel.Name = "SummaryTablePanel";
+		_summaryPanel.Visible = false;
+		_summaryPanel.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd;
+		var summaryStyle = new StyleBoxFlat();
+		summaryStyle.BgColor = new Color(0.1f, 0.1f, 0.14f, 0.92f);
+		summaryStyle.SetBorderWidthAll(2);
+		summaryStyle.BorderColor = UIStyle.ColorGold;
+		summaryStyle.CornerRadiusTopLeft = 4;
+		summaryStyle.CornerRadiusTopRight = 4;
+		summaryStyle.CornerRadiusBottomLeft = 4;
+		summaryStyle.CornerRadiusBottomRight = 4;
+		summaryStyle.ContentMarginLeft = 14;
+		summaryStyle.ContentMarginRight = 14;
+		summaryStyle.ContentMarginTop = 10;
+		summaryStyle.ContentMarginBottom = 10;
+		_summaryPanel.AddThemeStyleboxOverride("panel", summaryStyle);
+
+		var summaryVBox = new VBoxContainer();
+		_summaryPanel.AddChild(summaryVBox);
+
+		_summaryTitleLabel = new Label();
+		_summaryTitleLabel.Name = "SummaryTitle";
+		_summaryTitleLabel.Text = TranslationServer.Translate("SUMMARY");
+		UIStyle.ApplyTitle(_summaryTitleLabel, TranslationServer.Translate("SUMMARY"), 14);
+		_summaryTitleLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		summaryVBox.AddChild(_summaryTitleLabel);
+
+		_summaryContent = new VBoxContainer();
+		_summaryContent.Name = "SummaryContent";
+		summaryVBox.AddChild(_summaryContent);
+		_customUIPanel.AddChild(_summaryPanel);
 
 		CreateStatsContainer();
 		ApplyThemeStyles();
@@ -656,6 +697,7 @@ public partial class InGameHUD : Control
 		_minimapPanelController = new MinimapPanel(_minimapFrame, _minimapArea, _cameraIndicator, _camera3D);
 		_chatPanelController = new ChatPanel(_chatPanel, _chatInput, _chatLog);
 		_leaderboardPanelController = new LeaderboardPanel(_customUIPanel, _countdownPanel, _countdownLabel, _leaderboardPanel, _leaderboardTitleLabel, _leaderboardContent);
+		_summaryTablePanelController = new SummaryTablePanel(_summaryPanel, _summaryTitleLabel, _summaryContent);
 		
 		_portraitPanelController = new PortraitPanel(
 			_portraitFrame, _selectionFrame, _unitsContainer, _unitButtons, _statsContainer,
@@ -903,16 +945,22 @@ public partial class InGameHUD : Control
 		_statsContainer.LayoutMode = 2;
 		_statsContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		_statsContainer.SizeFlagsVertical = SizeFlags.ExpandFill;
+		_statsContainer.CustomMinimumSize = new Vector2(0, 0);
+		_statsContainer.ClipContents = true;
 		_statsContainer.AddThemeConstantOverride("separation", 20);
 		_selectionFrame.AddChild(_statsContainer);
 		_statsContainer.Visible = false;
 
 		var statsVBox = new VBoxContainer();
 		statsVBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		statsVBox.CustomMinimumSize = new Vector2(0, 0);
 		statsVBox.Alignment = BoxContainer.AlignmentMode.Center;
 		_statsContainer.AddChild(statsVBox);
 
 		_statsLabel = new Label();
+		_statsLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+		_statsLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_statsLabel.CustomMinimumSize = new Vector2(0, 0);
 		_statsLabel.Text = TranslationServer.Translate("HP: 100/100\nDamage: 10\nArmor: 2\nSpeed: 5");
 		_statsLabel.AddThemeFontSizeOverride("font_size", 14);
 		_statsLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
@@ -1105,6 +1153,7 @@ public partial class InGameHUD : Control
 		_minimapFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		_portraitFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		_selectionFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		_selectionFrame.ClipContents = true;
 		
 		var commandFrameStyle = (StyleBoxTexture)UIStyle.CreateStonePanel(true).Duplicate();
 		commandFrameStyle.ContentMarginLeft = 2;
@@ -1189,6 +1238,7 @@ public partial class InGameHUD : Control
 		_commandPanelController?.Update(_viewModel);
 		_resourcePanelController?.Update(_viewModel);
 		_leaderboardPanelController?.Update(_viewModel);
+		_summaryTablePanelController?.Update(_viewModel);
 
 		if (_connectionWarningLabel != null)
 		{
@@ -1679,6 +1729,22 @@ public partial class InGameHUD : Control
 	public void SetLeaderboardValue(string label, string value)
 	{
 		_viewModel.LeaderboardValues[label] = value;
+	}
+
+	public void ShowSummaryTable(string title, bool visible)
+	{
+		_viewModel.SummaryTableTitle = title;
+		_viewModel.SummaryTableVisible = visible;
+	}
+
+	public void ClearSummaryTable()
+	{
+		_viewModel.SummaryTableRows.Clear();
+	}
+
+	public void SetSummaryTableRow(string playerName, string damage, string income, string score)
+	{
+		_viewModel.SummaryTableRows[playerName] = (damage, income, score);
 	}
 
 

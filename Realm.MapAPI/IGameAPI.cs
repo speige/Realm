@@ -307,6 +307,42 @@ public interface IGameAPI
     void ClearLeaderboard();
 
     /// <summary>
+    /// Displays or hides the multi-column stats summary table on all players' screens.
+    /// </summary>
+    /// <param name="title">Header title of the summary table.</param>
+    /// <param name="visible">True to display the table, false to hide it.</param>
+    void ShowSummaryTable(string title, bool visible);
+
+    /// <summary>
+    /// Sets or updates a row in the stats summary table.
+    /// </summary>
+    /// <param name="playerName">Name or label of the player for this row.</param>
+    /// <param name="damage">Total damage metric string.</param>
+    /// <param name="income">Total income metric string.</param>
+    /// <param name="score">Overall score metric string.</param>
+    void SetSummaryTableRow(string playerName, string damage, string income, string score);
+
+    /// <summary>
+    /// Clears all rows from the active stats summary table.
+    /// </summary>
+    void ClearSummaryTable();
+
+    /// <summary>
+    /// Retrieves the preferred language code of the specified player (e.g. "en", "es").
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player index.</param>
+    /// <returns>ISO language code string.</returns>
+    string GetPlayerLanguage(int playerIndex);
+
+    /// <summary>
+    /// Translates a localization key using the player's preferred language with English fallback.
+    /// </summary>
+    /// <param name="key">Localization translation key.</param>
+    /// <param name="playerIndex">Zero-based player index, or -1 for current local player.</param>
+    /// <returns>Translated text string.</returns>
+    string Translate(string key, int playerIndex);
+
+    /// <summary>
     /// Starts a countdown timer UI on the screen.
     /// </summary>
     /// <param name="duration">The duration in seconds.</param>

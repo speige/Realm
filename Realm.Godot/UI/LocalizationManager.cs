@@ -40,7 +40,9 @@ public static class LocalizationManager
 
 			if (!string.IsNullOrEmpty(CurrentMapName))
 			{
-				string mapPath = $"res://Maps/{CurrentMapName}/locale/{locale}.json";
+				string mapPath = (CurrentMapName.StartsWith("user://") || CurrentMapName.StartsWith("res://"))
+					? $"{CurrentMapName.TrimEnd('/')}/locale/{locale}.json"
+					: $"res://Maps/{CurrentMapName}/locale/{locale}.json";
 				if (FileAccess.FileExists(mapPath))
 				{
 					using var file = FileAccess.Open(mapPath, FileAccess.ModeFlags.Read);
@@ -128,5 +130,24 @@ public static class LocalizationManager
 	public static bool IsLocaleRtl(string locale)
 	{
 		return locale == "ar";
+	}
+
+	public static string GetCurrentLanguageCode()
+	{
+		return TranslationServer.GetLocale();
+	}
+
+	public static string TranslateKey(string key, string fallback = "")
+	{
+		if (string.IsNullOrEmpty(key)) return "";
+		string translated = TranslationServer.Translate(key);
+		if (string.IsNullOrEmpty(translated) || translated == key)
+		{
+			var enDict = GetDictionary("en");
+			if (enDict != null && enDict.TryGetValue(key, out var enVal))
+				return enVal;
+			return !string.IsNullOrEmpty(fallback) ? fallback : key;
+		}
+		return translated;
 	}
 }

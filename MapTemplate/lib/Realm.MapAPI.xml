@@ -37,6 +37,26 @@
             Generic named-point lookup. Maps pass coordinate names; this type does not know MOBA lanes.
             </summary>
         </member>
+        <member name="T:Realm.MapAPI.GameAPIExtensions">
+            <summary>
+            Provides convenience extension methods for map authors using the <see cref="T:Realm.MapAPI.IGameAPI"/> interface.
+            </summary>
+        </member>
+        <member name="M:Realm.MapAPI.GameAPIExtensions.GetPlayerLanguage(Realm.MapAPI.IGameAPI)">
+            <summary>
+            Retrieves the preferred language code of the primary local player.
+            </summary>
+            <param name="api">The game API instance.</param>
+            <returns>ISO language code string (e.g. "en", "es").</returns>
+        </member>
+        <member name="M:Realm.MapAPI.GameAPIExtensions.Translate(Realm.MapAPI.IGameAPI,System.String)">
+            <summary>
+            Translates a localization key for the current local player with English fallback.
+            </summary>
+            <param name="api">The game API instance.</param>
+            <param name="key">Localization translation key.</param>
+            <returns>Translated text string.</returns>
+        </member>
         <member name="T:Realm.MapAPI.HeroProgressionConfig">
             <summary>
             Defines progression configuration settings for heroes, including experience curves, kill rewards, and starting resources.
@@ -394,6 +414,42 @@
             <summary>
             Clears all entries from the current leaderboard.
             </summary>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.ShowSummaryTable(System.String,System.Boolean)">
+            <summary>
+            Displays or hides the multi-column stats summary table on all players' screens.
+            </summary>
+            <param name="title">Header title of the summary table.</param>
+            <param name="visible">True to display the table, false to hide it.</param>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.SetSummaryTableRow(System.String,System.String,System.String,System.String)">
+            <summary>
+            Sets or updates a row in the stats summary table.
+            </summary>
+            <param name="playerName">Name or label of the player for this row.</param>
+            <param name="damage">Total damage metric string.</param>
+            <param name="income">Total income metric string.</param>
+            <param name="score">Overall score metric string.</param>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.ClearSummaryTable">
+            <summary>
+            Clears all rows from the active stats summary table.
+            </summary>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.GetPlayerLanguage(System.Int32)">
+            <summary>
+            Retrieves the preferred language code of the specified player (e.g. "en", "es").
+            </summary>
+            <param name="playerIndex">Zero-based player index.</param>
+            <returns>ISO language code string.</returns>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.Translate(System.String,System.Int32)">
+            <summary>
+            Translates a localization key using the player's preferred language with English fallback.
+            </summary>
+            <param name="key">Localization translation key.</param>
+            <param name="playerIndex">Zero-based player index, or -1 for current local player.</param>
+            <returns>Translated text string.</returns>
         </member>
         <member name="M:Realm.MapAPI.IGameAPI.StartCountdownTimer(System.Single,System.String)">
             <summary>

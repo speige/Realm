@@ -2,6 +2,7 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using Arch.Core;
+using Realm.Godot.Utils;
 
 public class PortraitPanel
 {
@@ -108,7 +109,7 @@ public class PortraitPanel
 					};
 					// Fallback to placeholder if icon doesn't exist
 					if (!ResourceLoader.Exists(iconPath)) iconPath = "res://Assets/UI/unit_placeholder.png";
-					_portraitTexture.Texture = GD.Load<Texture2D>(iconPath);
+					_portraitTexture.Texture = RtexIconLoader.Load(iconPath);
 				}
 
 				float remainingAmount = 0f;
@@ -131,7 +132,7 @@ public class PortraitPanel
 				_unitNameLabel.Text = TranslationServer.Translate("No Selection");
 				if (_portraitTexture != null)
 				{
-					_portraitTexture.Texture = GD.Load<Texture2D>("res://Assets/UI/alliance_flag.png");
+					_portraitTexture.Texture = RtexIconLoader.Load("res://Assets/UI/alliance_flag.png");
 				}
 			}
 		}
@@ -145,7 +146,7 @@ public class PortraitPanel
 			_unitNameLabel.Text = info.Name;
 			if (_portraitTexture != null)
 			{
-				_portraitTexture.Texture = GD.Load<Texture2D>(GetUnitIcon(info.UnitId));
+				_portraitTexture.Texture = RtexIconLoader.Load(GetUnitIcon(info.UnitId));
 			}
 
 			string statsText = $"{TranslationServer.Translate("HP")}: {info.Health:F0} / {info.MaxHealth:F0}";
@@ -162,7 +163,13 @@ public class PortraitPanel
 			if (info.Speed > 0) statsText += $"   {TranslationServer.Translate("Speed")}: {info.Speed:F0}";
 			
 			statsText += $"\n{info.StateText}";
-			if (!string.IsNullOrEmpty(info.Description)) statsText += $"\n\n{info.Description}";
+			if (!string.IsNullOrEmpty(info.Description))
+			{
+				string description = info.Description.Length > 200
+					? string.Concat(info.Description.AsSpan(0, 197), "...")
+					: info.Description;
+				statsText += $"\n\n{description}";
+			}
 			_statsLabel.Text = statsText;
 
 			if (!info.IsBuilding)
@@ -275,7 +282,7 @@ public class PortraitPanel
 			_unitNameLabel.Text = string.Format(TranslationServer.Translate("{0} Units Selected"), viewModel.SelectedUnits.Count);
 			if (_portraitTexture != null)
 			{
-				_portraitTexture.Texture = GD.Load<Texture2D>("res://Assets/UI/alliance_flag.png");
+				_portraitTexture.Texture = RtexIconLoader.Load("res://Assets/UI/alliance_flag.png");
 			}
 
 			if (_armyCompositionLabel != null)
@@ -309,7 +316,7 @@ public class PortraitPanel
 				{
 					var uInfo = viewModel.SelectedUnits[i];
 					btn.Visible = true;
-					btn.Icon = GD.Load<Texture2D>(GetUnitIcon(uInfo.UnitId));
+					btn.Icon = RtexIconLoader.Load(GetUnitIcon(uInfo.UnitId));
 					btn.TooltipText = uInfo.UnitId.ToUpper();
 
 					bool isFocused = i == viewModel.CycleSelectionIndex;
@@ -416,7 +423,7 @@ public class PortraitPanel
 
 			var icon = new TextureRect();
 			icon.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-			icon.Texture = GD.Load<Texture2D>(GetUnitIcon(unitIds[i]));
+			icon.Texture = RtexIconLoader.Load(GetUnitIcon(unitIds[i]));
 			slot.AddChild(icon);
 
 			var btnCancel = new Button();
