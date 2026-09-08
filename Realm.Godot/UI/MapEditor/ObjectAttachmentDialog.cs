@@ -80,6 +80,7 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 	private Vector3 _targetPosition = new Vector3(0f, 1.0f, 0f);
 
 	private Action<GameHost.HandAttachmentOrientation> _onApplied;
+	private GameHost.UnitObjectAttachments? _initialSnapshot;
 
 	public struct SocketDefinition
 	{
@@ -357,6 +358,15 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 
 		_targetObjectId = targetId ?? string.Empty;
 		_isTargetBuilding = GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.ContainsKey(_targetObjectId);
+
+		if (GameHost.TryGetUnitOrBuildingMetadata(_targetObjectId, out var meta))
+		{
+			_initialSnapshot = meta.ObjectAttachments?.Clone();
+		}
+		else
+		{
+			_initialSnapshot = null;
+		}
 
 		string defaultSocket = _isTargetBuilding ? "Center" : "RightHand";
 		_currentSocketId = NormalizeSocketId(string.IsNullOrEmpty(socket) ? defaultSocket : socket);
@@ -1258,7 +1268,8 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 			Node3D attachTarget = targetAnchor;
 			if (!string.IsNullOrEmpty(parentAttachmentId))
 			{
-				var parentMesh = Unit3D.FindAttachmentInNode(targetAnchor, parentAttachmentId);
+				var parentMesh = Unit3D.FindAttachmentInNode(targetAnchor, parentAttachmentId)
+					?? (_previewModel != null ? Unit3D.FindAttachmentInNode(_previewModel, parentAttachmentId) : null);
 				if (parentMesh != null)
 				{
 					attachTarget = parentMesh;
@@ -1550,6 +1561,10 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 	protected override void OnCancel()
 	{
 		ClearPreviewModel();
+		if (!string.IsNullOrEmpty(_targetObjectId))
+		{
+			Hud?.RestoreUnitObjectAttachments(_targetObjectId, _initialSnapshot);
+		}
 	}
 
 	public override void CloseDialog()
@@ -1610,7 +1625,7 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 							{
 								string fileName = modelProp.Key;
 								string id = System.IO.Path.GetFileNameWithoutExtension(fileName);
-								bool isAttachment = subCat.Key.Equals("attachments", StringComparison.OrdinalIgnoreCase);
+								bool isAttachment = subCat.Key.Equals("attachments", StringComparison.OrdinalIgnoreCase) || subCat.Key.Equals("items", StringComparison.OrdinalIgnoreCase);
 
 								if (!isAttachment && modelProp.Value is JsonObject mObj)
 								{
@@ -1619,10 +1634,14 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 										?? mObj["default_asset_type"]?.ToString()
 										?? mObj["type"]?.ToString();
 									if (!string.IsNullOrEmpty(at) && (
+										at.Equals("Item", StringComparison.OrdinalIgnoreCase) ||
 										at.Equals("Attachment", StringComparison.OrdinalIgnoreCase) ||
 										at.Equals("Weapon", StringComparison.OrdinalIgnoreCase) ||
+										at.Equals("Projectile", StringComparison.OrdinalIgnoreCase) ||
 										at.Equals("Object Attachments", StringComparison.OrdinalIgnoreCase) ||
+										at.Equals("glb_items", StringComparison.OrdinalIgnoreCase) ||
 										at.Equals("glb_attachments", StringComparison.OrdinalIgnoreCase) ||
+										at.Equals("items", StringComparison.OrdinalIgnoreCase) ||
 										at.Equals("attachments", StringComparison.OrdinalIgnoreCase) ||
 										at.Equals("weapons", StringComparison.OrdinalIgnoreCase)))
 									{

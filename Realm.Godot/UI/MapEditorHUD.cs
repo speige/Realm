@@ -8047,6 +8047,161 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public void RestoreUnitObjectAttachments(string targetId, GameHost.UnitObjectAttachments? snapshot)
+	{
+		try
+		{
+			if (string.IsNullOrEmpty(targetId)) return;
+
+			string regKey = targetId;
+			bool isBuildingMeta = false;
+			if (GameHost.UnitRegistry.ContainsKey(targetId))
+			{
+				regKey = targetId;
+			}
+			else if (GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.ContainsKey(targetId))
+			{
+				regKey = targetId;
+				isBuildingMeta = true;
+			}
+			else
+			{
+				string cleanId = System.IO.Path.GetFileNameWithoutExtension(targetId);
+				if (GameHost.UnitRegistry.ContainsKey(cleanId))
+				{
+					regKey = cleanId;
+				}
+				else if (GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.ContainsKey(cleanId))
+				{
+					regKey = cleanId;
+					isBuildingMeta = true;
+				}
+				else
+				{
+					foreach (var k in GameHost.UnitRegistry.Keys)
+					{
+						if (k.Equals(targetId, StringComparison.OrdinalIgnoreCase) ||
+							k.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+							System.IO.Path.GetFileNameWithoutExtension(k).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+						{
+							regKey = k;
+							break;
+						}
+					}
+					if (GameHost.BuildingRegistry != null)
+					{
+						foreach (var k in GameHost.BuildingRegistry.Keys)
+						{
+							if (k.Equals(targetId, StringComparison.OrdinalIgnoreCase) ||
+								k.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+								System.IO.Path.GetFileNameWithoutExtension(k).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+							{
+								regKey = k;
+								isBuildingMeta = true;
+								break;
+							}
+						}
+					}
+				}
+			}
+
+			if (isBuildingMeta && GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.TryGetValue(regKey, out var bMeta))
+			{
+				bMeta.ObjectAttachments = snapshot?.Clone();
+				GameHost.BuildingRegistry[regKey] = bMeta;
+			}
+			else if (GameHost.UnitRegistry.TryGetValue(regKey, out var uMeta))
+			{
+				uMeta.ObjectAttachments = snapshot?.Clone();
+				GameHost.UnitRegistry[regKey] = uMeta;
+			}
+
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (System.IO.File.Exists(metadataPath))
+			{
+				string jsonStr = System.IO.File.ReadAllText(metadataPath);
+				var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
+				if (root != null)
+				{
+					var unitsArray = root["CustomUnits"]?.AsArray() ?? root["Units"]?.AsArray();
+					var buildingsArray = root["CustomBuildings"]?.AsArray() ?? root["Buildings"]?.AsArray();
+
+					System.Text.Json.Nodes.JsonObject targetObj = null;
+					if (unitsArray != null)
+					{
+						for (int i = 0; i < unitsArray.Count; i++)
+						{
+							var uObj = unitsArray[i]?.AsObject();
+							if (uObj != null && (uObj["UnitId"]?.ToString() == targetId || uObj["unitId"]?.ToString() == targetId || uObj["Id"]?.ToString() == targetId || uObj["UnitId"]?.ToString() == regKey))
+							{
+								targetObj = uObj;
+								break;
+							}
+						}
+					}
+
+					if (targetObj == null && buildingsArray != null)
+					{
+						for (int i = 0; i < buildingsArray.Count; i++)
+						{
+							var bObj = buildingsArray[i]?.AsObject();
+							if (bObj != null && (bObj["UnitId"]?.ToString() == targetId || bObj["unitId"]?.ToString() == targetId || bObj["Id"]?.ToString() == targetId || bObj["UnitId"]?.ToString() == regKey))
+							{
+								targetObj = bObj;
+								break;
+							}
+						}
+					}
+
+					if (targetObj != null)
+					{
+						if (snapshot.HasValue)
+						{
+							var serializedSnapshot = System.Text.Json.JsonSerializer.SerializeToNode(snapshot.Value);
+							targetObj["ObjectAttachments"] = serializedSnapshot;
+						}
+						else
+						{
+							targetObj.Remove("ObjectAttachments");
+						}
+
+						MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+						_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+					}
+				}
+			}
+
+			if (GameHost.Instance != null)
+			{
+				if (GameHost.Instance.AllUnits != null)
+				{
+					foreach (var u in GameHost.Instance.AllUnits)
+					{
+						if (u != null && (u.UnitId == targetId || u.UnitId == regKey || System.IO.Path.GetFileNameWithoutExtension(u.UnitId ?? "").Equals(System.IO.Path.GetFileNameWithoutExtension(targetId), StringComparison.OrdinalIgnoreCase)))
+						{
+							u.ApplyAllConfiguredAttachments();
+						}
+					}
+				}
+
+				if (GameHost.Instance.SelectedEditorObject is Unit3D selUnit)
+				{
+					if (selUnit.UnitId == targetId || selUnit.UnitId == regKey || System.IO.Path.GetFileNameWithoutExtension(selUnit.UnitId ?? "").Equals(System.IO.Path.GetFileNameWithoutExtension(targetId), StringComparison.OrdinalIgnoreCase))
+					{
+						selUnit.ApplyAllConfiguredAttachments();
+					}
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] RestoreUnitObjectAttachments error: {ex.Message}");
+		}
+	}
+
 	public void SaveCustomWeaponToMetadata(string weaponId, GameHost.WeaponMetadata weapon)
 	{
 		try
@@ -8449,9 +8604,6 @@ public partial class MapEditorHUD : Control
 					GetViewport().SetInputAsHandled();
 					return;
 				}
-
-				GetViewport().SetInputAsHandled();
-				return;
 			}
 			if (keyEvent.Keycode == Godot.Key.Tab)
 			{

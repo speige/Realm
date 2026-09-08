@@ -84,10 +84,10 @@ void fragment() {
 		vec4 base_sample;
 		if (use_flipbook && flipbook_columns > 0 && flipbook_rows > 0 && (flipbook_columns > 1 || flipbook_rows > 1)) {
 			int total_frames = flipbook_columns * flipbook_rows;
-			float progress = fract(TIME * flipbook_fps / float(total_frames)) * float(total_frames);
-			int frame_curr = int(floor(progress)) % total_frames;
+			float raw_frame = mod(TIME * flipbook_fps, float(total_frames));
+			int frame_curr = int(floor(raw_frame)) % total_frames;
 			int frame_next = (frame_curr + 1) % total_frames;
-			float blend_weight = fract(progress);
+			float blend_weight = fract(raw_frame);
 
 			vec2 sheet_size = vec2(float(flipbook_columns), float(flipbook_rows));
 			vec2 wrapped_uv = fract(final_base_uv);

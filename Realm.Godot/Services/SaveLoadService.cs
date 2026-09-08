@@ -1718,6 +1718,7 @@ public class SaveLoadService
 		AddTypeMembersToSet(typeof(GameHost.PropMetadata), set);
 		AddTypeMembersToSet(typeof(GameHost.ResourceMetadata), set);
 		AddTypeMembersToSet(typeof(GameHost.WeaponMetadata), set);
+		AddTypeMembersToSet(typeof(GameHost.AttachmentMetadata), set);
 
 		set.Add("spawn_shader");
 		set.Add("spawnshader");
@@ -1902,6 +1903,27 @@ public class SaveLoadService
 		}
 
 		_cachedAllowedCustomItemProperties = set;
+		return set;
+	}
+
+	private static HashSet<string>? _cachedAllowedAttachmentItemProperties;
+
+	private static HashSet<string> GetAllowedAttachmentItemProperties(JsonObject? schemaRoot)
+	{
+		if (_cachedAllowedAttachmentItemProperties != null) return _cachedAllowedAttachmentItemProperties;
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		AddTypeMembersToSet(typeof(GameHost.AttachmentMetadata), set);
+
+		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
+		{
+			if (definitionsObject.TryGetPropertyValue("CustomAttachments", out var attachDefinition))
+			{
+				ExtractPropertiesFromSchemaNode(attachDefinition, set);
+			}
+		}
+
+		_cachedAllowedAttachmentItemProperties = set;
 		return set;
 	}
 
@@ -2176,6 +2198,17 @@ public class SaveLoadService
 			if (root.TryGetPropertyValue(arrayName, out var customItemsNode) && customItemsNode is JsonArray customItemsArray)
 			{
 				CleanJsonArrayObjects(customItemsArray, allowedCustomItemProperties);
+			}
+		}
+
+		string baseAttachmentName = nameof(GameHost.AttachmentMetadata)[..^"Metadata".Length];
+		string attachmentPlural = baseAttachmentName + "s";
+		var allowedAttachmentProperties = GetAllowedAttachmentItemProperties(schemaRoot);
+		foreach (var arrayName in new[] { "Custom" + attachmentPlural, attachmentPlural })
+		{
+			if (root.TryGetPropertyValue(arrayName, out var attachmentsNode) && attachmentsNode is JsonArray attachmentsArray)
+			{
+				CleanJsonArrayObjects(attachmentsArray, allowedAttachmentProperties);
 			}
 		}
 

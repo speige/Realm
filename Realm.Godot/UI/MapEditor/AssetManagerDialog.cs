@@ -69,7 +69,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private ChangeAssetTypeDialog _changeTypeDialog;
 	private ShaderEditorDialog _shaderEditDialog;
 
-	private string _currentCategory = "glb_units";
+	private string _currentCategory = "glb_characters";
 	private string _searchFilter = "";
 	private string _currentPreviewAssetKey = "";
 	private string _currentPreviewAssetCategory = "";
@@ -236,22 +236,22 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		_optAssetCategory = new OptionButton();
 		_optAssetCategory.AddThemeFontSizeOverride("font_size", 11);
 		_optAssetCategory.CustomMinimumSize = new Vector2(170, 26);
-		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (units)"), 0);
-		_optAssetCategory.SetItemMetadata(0, "glb_units");
-		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (buildings)"), 1);
+		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (Characters)"), 0);
+		_optAssetCategory.SetItemMetadata(0, "glb_characters");
+		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (Buildings)"), 1);
 		_optAssetCategory.SetItemMetadata(1, "glb_buildings");
-		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (resources)"), 2);
-		_optAssetCategory.SetItemMetadata(2, "glb_resources");
-		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (props)"), 3);
-		_optAssetCategory.SetItemMetadata(3, "glb_props");
-		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (projectiles)"), 4);
-		_optAssetCategory.SetItemMetadata(4, "glb_projectiles");
-		_optAssetCategory.AddItem(TranslationServer.Translate("Object Attachments"), 5);
-		_optAssetCategory.SetItemMetadata(5, "glb_attachments");
-		_optAssetCategory.AddItem(TranslationServer.Translate("Terrain Textures"), 6);
-		_optAssetCategory.SetItemMetadata(6, "textures");
-		_optAssetCategory.AddItem(TranslationServer.Translate("VFX Spritesheets"), 7);
-		_optAssetCategory.SetItemMetadata(7, "vfx_spritesheets");
+		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (Props)"), 2);
+		_optAssetCategory.SetItemMetadata(2, "glb_props");
+		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (Items)"), 3);
+		_optAssetCategory.SetItemMetadata(3, "glb_items");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Terrain"), 4);
+		_optAssetCategory.SetItemMetadata(4, "textures");
+		_optAssetCategory.AddItem(TranslationServer.Translate("Spritesheets"), 5);
+		_optAssetCategory.SetItemMetadata(5, "vfx_spritesheets");
+		_optAssetCategory.AddItem(TranslationServer.Translate("VFX Radial"), 6);
+		_optAssetCategory.SetItemMetadata(6, "vfx_radial");
+		_optAssetCategory.AddItem(TranslationServer.Translate("VFX Vertical"), 7);
+		_optAssetCategory.SetItemMetadata(7, "vfx_vertical");
 		_optAssetCategory.AddItem(TranslationServer.Translate("Animations (.ranim)"), 8);
 		_optAssetCategory.SetItemMetadata(8, "animations");
 		_optAssetCategory.AddItem(TranslationServer.Translate("Sound Effects (SFX)"), 9);
@@ -430,7 +430,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		bool isRanim = _currentCategory == "animations";
 		bool isShader = _currentCategory == "shaders";
-		bool isRtexCategory = category is "textures" or "vfx_spritesheets" or "decals" or "ribbons" or "ribbon_textures" or "noise_textures" or "skyboxes" or "icons";
+		bool isRtexCategory = category is "textures" or "vfx_spritesheets" or "vfx_radial" or "vfx_vertical" or "decals" or "ribbons" or "ribbon_textures" or "noise_textures" or "skyboxes" or "icons";
 		bool isAudioCategory = category is "sfx" or "music";
 
 		if (_ranimBaseModelRow != null)
@@ -646,16 +646,16 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			return subCategoryOrFolder switch
 			{
-				"textures" => "Tilesheet",
+				"textures" => "Terrain",
 				"vfx_radial" or "vfx_radials" or "radial" => "vfx_radial",
 				"vfx_vertical" or "vfx_verticals" or "vertical" => "vfx_vertical",
-				"vfx_spritesheets" or "vfx" => "SpellSpritesheet",
+				"vfx_spritesheets" or "vfx" => "Spritesheet",
 				"icons" => "Icon",
 				"decals" => "Decal",
 				"ribbon_textures" or "ribbons" or "ribbon" => "Ribbon",
 				"skyboxes" => "Skybox",
 				"noise_textures" or "noise" => "Noise",
-				_ => "Tilesheet"
+				_ => "Terrain"
 			};
 		}
 		else if (ext == ".ranim")
@@ -689,6 +689,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			string sub = subCategoryOrFolder switch
 			{
 				"vfx_spritesheets" => "vfx",
+				"vfx_radial" or "vfx_radials" => "vfx",
+				"vfx_vertical" or "vfx_verticals" => "vfx",
 				"ribbon_textures" or "ribbons" => "ribbons",
 				"noise_textures" => "noise",
 				_ => subCategoryOrFolder
@@ -724,17 +726,14 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 			string expectedAssetType = category switch
 			{
-				"glb_units" => "Character",
+				"glb_characters" or "glb_units" => "Character",
 				"glb_buildings" => "Building",
-				"glb_resources" => "Environment",
-				"glb_props" => "Prop",
-				"glb_projectiles" => "Projectile",
-				"glb_attachments" => "Attachment",
-				"glb_weapons" => "Weapon",
-				"textures" => "Tilesheet",
+				"glb_props" or "glb_resources" => "Prop",
+				"glb_items" or "glb_attachments" or "glb_weapons" or "glb_projectiles" => "Item",
+				"textures" => "Terrain",
 				"vfx_radial" or "vfx_radials" => "vfx_radial",
 				"vfx_vertical" or "vfx_verticals" => "vfx_vertical",
-				"vfx_spritesheets" => "SpellSpritesheet",
+				"vfx_spritesheets" => "Spritesheet",
 				"animations" => "Animation",
 				"sfx" => "SoundEffect",
 				"music" => "Music",
@@ -784,9 +783,9 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					}
 				}
 			}
-			else if (category is "textures" or "vfx_spritesheets" or "icons" or "decals" or "ribbons" or "ribbon_textures" or "noise_textures" or "skyboxes")
+			else if (category is "textures" or "vfx_spritesheets" or "vfx_radial" or "vfx_vertical" or "icons" or "decals" or "ribbons" or "ribbon_textures" or "noise_textures" or "skyboxes")
 			{
-				foreach (var catName in new[] { "textures", "vfx_spritesheets", "icons", "decals", "ribbons", "ribbon_textures", "noise_textures", "skyboxes" })
+				foreach (var catName in new[] { "textures", "vfx_spritesheets", "vfx_radial", "vfx_vertical", "vfx", "icons", "decals", "ribbons", "ribbon_textures", "noise_textures", "skyboxes" })
 				{
 					if (assetsObj[catName] is JsonObject catObj)
 					{
@@ -911,7 +910,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 
 		// Action 3: Edit Button (Spritesheets, Textures, Decals, Shaders)
-		bool hasEditDialog = category == "vfx_spritesheets" || category == "vfx" || category == "textures" || category == "decals" || category == "shaders" || (extraData is JsonObject edObj && edObj.ContainsKey("asset_type") && (edObj["asset_type"]?.ToString() == "SpellSpritesheet" || edObj["asset_type"]?.ToString() == "Decal" || edObj["asset_type"]?.ToString() == "Shader"));
+		bool hasEditDialog = category == "vfx_spritesheets" || category == "vfx" || category == "textures" || category == "decals" || category == "shaders" || (extraData is JsonObject edObj && edObj.ContainsKey("asset_type") && (edObj["asset_type"]?.ToString() is "Spritesheet" or "SpellSpritesheet" || edObj["asset_type"]?.ToString() == "Decal" || edObj["asset_type"]?.ToString() == "Shader"));
 		if (hasEditDialog)
 		{
 			var btnEdit = new Button();
@@ -1893,10 +1892,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		return category switch
 		{
-			"textures" => "Tilesheet",
+			"textures" => "Terrain",
 			"vfx_radial" or "vfx_radials" => "vfx_radial",
 			"vfx_vertical" or "vfx_verticals" => "vfx_vertical",
-			"vfx_spritesheets" => "SpellSpritesheet",
+			"vfx_spritesheets" => "Spritesheet",
 			"icons" => "Icon",
 			"decals" => "Decal",
 			"ribbons" or "ribbon_textures" => "Ribbon",
@@ -1930,6 +1929,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			{
 				case "textures":
 				case "vfx_spritesheets":
+				case "vfx_radial":
+				case "vfx_vertical":
 				case "decals":
 				case "ribbons":
 				case "ribbon_textures":
@@ -1998,6 +1999,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				"decals" => "decals",
 				"icons" => "icons",
 				"vfx_spritesheets" => "vfx",
+				"vfx_radial" => "vfx",
+				"vfx_vertical" => "vfx",
 				"ribbons" or "ribbon_textures" => "ribbons",
 				"noise_textures" => "noise",
 				"skyboxes" => "skyboxes",
@@ -2064,6 +2067,14 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				else if (targetCategory == "vfx_spritesheets")
 				{
 					convResult = TextureConverter.ProcessAndSaveSpritesheet(sourceFilePath, destPath, vfxCols, vfxRows, vfxFps);
+				}
+				else if (targetCategory == "vfx_radial")
+				{
+					convResult = TextureConverter.ProcessAndSaveVfxRadialTexture(sourceFilePath, destPath);
+				}
+				else if (targetCategory == "vfx_vertical")
+				{
+					convResult = TextureConverter.ProcessAndSaveVfxVerticalTexture(sourceFilePath, destPath);
 				}
 				else if (targetCategory is "ribbons" or "ribbon_textures")
 				{
@@ -3540,16 +3551,15 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private string GetCategoryDisplayName(string cat) => cat switch
 	{
-		"glb_units" => TranslationServer.Translate("3D Models (units)"),
-		"glb_buildings" => TranslationServer.Translate("3D Models (buildings)"),
-		"glb_resources" => TranslationServer.Translate("3D Models (resources)"),
-		"glb_props" => TranslationServer.Translate("3D Models (props)"),
-		"glb_projectiles" => TranslationServer.Translate("3D Models (projectiles)"),
-		"glb_attachments" => TranslationServer.Translate("Object Attachments"),
-		"glb_weapons" => TranslationServer.Translate("Weapons"),
+		"glb_characters" or "glb_units" => TranslationServer.Translate("3D Models (Characters)"),
+		"glb_buildings" => TranslationServer.Translate("3D Models (Buildings)"),
+		"glb_props" or "glb_resources" => TranslationServer.Translate("3D Models (Props)"),
+		"glb_items" or "glb_attachments" or "glb_weapons" or "glb_projectiles" => TranslationServer.Translate("3D Models (Items)"),
 		"glb" => TranslationServer.Translate("3D Models (GLB)"),
-		"textures" => TranslationServer.Translate("Terrain Textures"),
-		"vfx_spritesheets" => TranslationServer.Translate("VFX Spritesheets"),
+		"textures" => TranslationServer.Translate("Terrain"),
+		"vfx_spritesheets" => TranslationServer.Translate("Spritesheets"),
+		"vfx_radial" => TranslationServer.Translate("VFX Radial"),
+		"vfx_vertical" => TranslationServer.Translate("VFX Vertical"),
 		"animations" => TranslationServer.Translate("Animations (.ranim)"),
 		"sfx" => TranslationServer.Translate("Sound Effects (SFX)"),
 		"music" => TranslationServer.Translate("Music"),

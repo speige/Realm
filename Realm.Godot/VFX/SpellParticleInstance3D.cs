@@ -47,6 +47,7 @@ public partial class SpellParticleInstance3D : Node3D
 		{
 			_billboardMaterial = new StandardMaterial3D();
 			_billboardMaterial.BillboardMode = BaseMaterial3D.BillboardModeEnum.Particles;
+			_billboardMaterial.BillboardKeepScale = true;
 			_billboardMaterial.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 			_billboardMaterial.VertexColorUseAsAlbedo = true;
 		}
@@ -225,9 +226,7 @@ public partial class SpellParticleInstance3D : Node3D
 
 		if (_billboardMaterial != null)
 		{
-			_billboardMaterial.Transparency = _config.BlendMode == VfxBlendMode.Additive 
-				? BaseMaterial3D.TransparencyEnum.Alpha 
-				: BaseMaterial3D.TransparencyEnum.Alpha;
+			_billboardMaterial.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
 			_billboardMaterial.BlendMode = _config.BlendMode == VfxBlendMode.Additive 
 				? BaseMaterial3D.BlendModeEnum.Add 
 				: BaseMaterial3D.BlendModeEnum.Mix;
@@ -236,6 +235,43 @@ public partial class SpellParticleInstance3D : Node3D
 				? VfxShaderManager.LoadTextureSafe(_config.ParticleTexture) 
 				: null;
 			_billboardMaterial.AlbedoTexture = particleTex;
+
+			var sheetMeta = !string.IsNullOrEmpty(_config.ParticleTexture)
+				? VfxShaderManager.GetSpritesheetMetadataSafe(_config.ParticleTexture)
+				: null;
+
+			bool isAnimatedFlipbook = sheetMeta != null && (sheetMeta.Value.Columns > 1 || sheetMeta.Value.Rows > 1);
+			_billboardMaterial.BillboardMode = BaseMaterial3D.BillboardModeEnum.Particles;
+			_billboardMaterial.BillboardKeepScale = true;
+
+			if (isAnimatedFlipbook)
+			{
+				int cols = Math.Max(1, sheetMeta!.Value.Columns);
+				int rows = Math.Max(1, sheetMeta.Value.Rows);
+				int totalFrames = cols * rows;
+
+				_billboardMaterial.ParticlesAnimHFrames = cols;
+				_billboardMaterial.ParticlesAnimVFrames = rows;
+				_billboardMaterial.ParticlesAnimLoop = true;
+
+				float lifetime = Math.Max(0.05f, _config.Lifetime);
+				float fps = sheetMeta.Value.Fps > 0.001f ? sheetMeta.Value.Fps : 20.0f;
+				float speed = (fps / totalFrames) * lifetime;
+
+				_processMaterial.AnimSpeedMin = speed;
+				_processMaterial.AnimSpeedMax = speed;
+				_processMaterial.AnimOffsetMin = 0.0f;
+				_processMaterial.AnimOffsetMax = 0.0f;
+			}
+			else
+			{
+				_billboardMaterial.ParticlesAnimHFrames = 1;
+				_billboardMaterial.ParticlesAnimVFrames = 1;
+				_billboardMaterial.ParticlesAnimLoop = false;
+
+				_processMaterial.AnimSpeedMin = 0.0f;
+				_processMaterial.AnimSpeedMax = 0.0f;
+			}
 
 			if (_config.EmissionEnergy > 0.01f)
 			{

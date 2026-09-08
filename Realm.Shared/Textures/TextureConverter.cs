@@ -889,7 +889,7 @@ public static class TextureConverter
 
 		if (string.IsNullOrEmpty(normType))
 		{
-			throw new InvalidOperationException($"Asset type was not specified and could not be detected from image metadata in '{inputPath}'. Please specify -t / --type (Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet, vfx_radial, vfx_vertical).");
+			throw new InvalidOperationException($"Asset type was not specified and could not be detected from image metadata in '{inputPath}'. Please specify -t / --type (Decal, Icon, Noise, Ribbon, Skybox, Spritesheet, Terrain, vfx_radial, vfx_vertical).");
 		}
 
 		string targetRtex = string.IsNullOrEmpty(outputPath)
@@ -947,7 +947,7 @@ public static class TextureConverter
 			return ProcessAndSaveVfxVerticalTexture(fullInput, targetRtex);
 		}
 
-		throw new InvalidOperationException($"Unsupported asset type '{normType}'. Supported types: Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet, vfx_radial, vfx_vertical.");
+		throw new InvalidOperationException($"Unsupported asset type '{normType}'. Supported types: Decal, Icon, Noise, Ribbon, Skybox, Spritesheet, Terrain, vfx_radial, vfx_vertical.");
 	}
 
 	public static int ConvertTextureDirectory(

@@ -147,6 +147,8 @@ public partial class VfxStudioDialog : FloatingDialogBase
 	private string? _tempGeneratedNoiseFileName;
 	private JsonObject? _tempGeneratedNoiseConfig;
 
+	private SpritesheetAssetEditDialog _spritesheetEditDialog;
+
 	private VfxAttachmentConfig _currentConfig = new();
 	private VfxAttachmentConfig _initialConfig = new();
 	private Action<VfxAttachmentConfig> _onAppliedCallback;
@@ -164,6 +166,7 @@ public partial class VfxStudioDialog : FloatingDialogBase
 	public VfxStudioDialog(MapEditorHUD hud)
 		: base(hud, TranslationServer.Translate("Procedural VFX Studio (Uber-Shader & Attachments)"), new Vector2(560, 780))
 	{
+		_spritesheetEditDialog = new SpritesheetAssetEditDialog(hud);
 		BuildControls();
 	}
 
@@ -315,6 +318,34 @@ public partial class VfxStudioDialog : FloatingDialogBase
 		_txtParticleTexture = particleTexTuple.Input;
 		_setParticleTextureVal = particleTexTuple.SetValue;
 		_rowParticleTexture = particleTexTuple.Input.GetParent() as Control;
+
+		if (_rowParticleTexture is HBoxContainer pTexRow)
+		{
+			var btnEditSheet = AddButton(
+				pTexRow,
+				"🎞️",
+				() =>
+				{
+					string tex = _currentConfig.ParticleConfig?.ParticleTexture;
+					if (string.IsNullOrEmpty(tex)) return;
+					var meta = VfxShaderManager.GetSpritesheetMetadataSafe(tex) ?? (Columns: 4, Rows: 4, Fps: 20.0f, SubframeBlend: true);
+					_spritesheetEditDialog?.OpenForSheet(
+						tex,
+						meta.Columns,
+						meta.Rows,
+						meta.Fps,
+						(cols, rows, fps) =>
+						{
+							VfxShaderManager.ClearCache();
+							RestartPreviewVfx();
+						}
+					);
+				},
+				"Configure Spritesheet Animation (Grid & FPS)",
+				11,
+				new Vector2(24, 22)
+			);
+		}
 
 		var particleMeshTuple = AddAssetFilterDropdown(
 			scrollBody,
@@ -1125,6 +1156,7 @@ public partial class VfxStudioDialog : FloatingDialogBase
 		CollectFromDir("ribbons");
 		CollectFromDir("decals");
 		CollectFromDir("textures");
+		CollectFromDir("vfx");
 
 		return results.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
 	}

@@ -1139,21 +1139,31 @@ public partial class FloatingDialogBase : PanelContainer
 							}
 						}
 					}
-					else if (category == "vfx" || category == "vfx_spritesheets" || category == "spritesheets")
+					else if (category == "vfx" || category == "vfx_spritesheets" || category == "spritesheets" || category == "vfx_radial" || category == "vfx_vertical")
 					{
-						foreach (var prim in Enum.GetValues<VfxPrimitiveType>())
+						if (category is "vfx" or "vfx_spritesheets" or "spritesheets")
 						{
-							result.Add($"vfx:{prim}");
-						}
-						if (GameHost.VfxRegistry != null)
-						{
-							foreach (var kvp in GameHost.VfxRegistry)
+							foreach (var prim in Enum.GetValues<VfxPrimitiveType>())
 							{
-								result.Add(kvp.Key.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase) ? kvp.Key : $"vfx:{kvp.Key}");
+								result.Add($"vfx:{prim}");
+							}
+							if (GameHost.VfxRegistry != null)
+							{
+								foreach (var kvp in GameHost.VfxRegistry)
+								{
+									result.Add(kvp.Key.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase) ? kvp.Key : $"vfx:{kvp.Key}");
+								}
 							}
 						}
 
-						foreach (var key in new[] { "vfx_spritesheets", "vfx", "spritesheets" })
+						string[] searchKeys = category switch
+						{
+							"vfx_radial" => new[] { "vfx_radial", "vfx" },
+							"vfx_vertical" => new[] { "vfx_vertical", "vfx" },
+							_ => new[] { "vfx_spritesheets", "vfx", "spritesheets", "vfx_radial", "vfx_vertical" }
+						};
+
+						foreach (var key in searchKeys)
 						{
 							if (assetsObj[key] is System.Text.Json.Nodes.JsonObject vObj)
 							{
@@ -1183,9 +1193,9 @@ public partial class FloatingDialogBase : PanelContainer
 							}
 						}
 					}
-					else if (category == "models" || category == "glb" || category == "attachments")
+					else if (category == "models" || category == "glb" || category == "attachments" || category == "items" || category == "weapons" || category == "projectiles")
 					{
-						if (category == "attachments" || includeAllFolders)
+						if (category is "attachments" or "items" || includeAllFolders)
 						{
 							foreach (var prim in Enum.GetValues<VfxPrimitiveType>())
 							{
@@ -1200,7 +1210,7 @@ public partial class FloatingDialogBase : PanelContainer
 							}
 						}
 
-						string defaultFolder = !string.IsNullOrEmpty(subFolder) ? subFolder : (category == "attachments" ? "attachments" : "projectiles");
+						string defaultFolder = !string.IsNullOrEmpty(subFolder) ? subFolder : (category is "attachments" or "items" ? "items" : "projectiles");
 						foreach (var modelKey in new[] { "glb", "models" })
 						{
 							if (assetsObj[modelKey] is System.Text.Json.Nodes.JsonObject glbObj)
@@ -1312,7 +1322,7 @@ public partial class FloatingDialogBase : PanelContainer
 							}
 						}
 					}
-					else if (category == "textures")
+					else if (category == "textures" || category == "terrain")
 					{
 						foreach (var key in new[] { "textures" })
 						{

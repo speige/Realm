@@ -998,6 +998,37 @@ public partial class GameHost : Node3D, IGameAPI
 			}
 			return removed;
 		}
+
+		public UnitObjectAttachments Clone()
+		{
+			static List<Dictionary<string, HandAttachmentOrientation>>? CloneList(List<Dictionary<string, HandAttachmentOrientation>>? src)
+			{
+				if (src == null) return null;
+				var res = new List<Dictionary<string, HandAttachmentOrientation>>(src.Count);
+				foreach (var dict in src)
+				{
+					if (dict == null) continue;
+					var d = new Dictionary<string, HandAttachmentOrientation>(dict, StringComparer.OrdinalIgnoreCase);
+					res.Add(d);
+				}
+				return res;
+			}
+
+			return new UnitObjectAttachments
+			{
+				right_hand = CloneList(right_hand),
+				left_hand = CloneList(left_hand),
+				chest = CloneList(chest),
+				root = CloneList(root),
+				head = CloneList(head),
+				left_foot = CloneList(left_foot),
+				right_foot = CloneList(right_foot),
+				ground = CloneList(ground),
+				center = CloneList(center),
+				overhead = CloneList(overhead),
+				pivot = CloneList(pivot)
+			};
+		}
 	}
 
 	[JsonConverter(typeof(UnitAnimationEntryJsonConverter))]
@@ -3507,6 +3538,10 @@ public class {mapName} : IMapScript
 							Vector3 posOffset = Vector3.Zero;
 							Vector3 rotOffset = Vector3.Zero;
 							string hand = "RightHand";
+							string? childVfxId = null;
+							Vector3 childVfxPos = Vector3.Zero;
+							Vector3 childVfxRot = Vector3.Zero;
+							Vector3 childVfxScale = Vector3.One;
 							if (itemProp.Value.ValueKind == JsonValueKind.Object)
 							{
 								if (itemProp.Value.TryGetProperty("scale", out var sc) && sc.TryGetSingle(out var sVal)) scale = sVal;
@@ -3521,6 +3556,23 @@ public class {mapName} : IMapScript
 									if (arr.Length >= 3) rotOffset = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
 								}
 								if (itemProp.Value.TryGetProperty("default_hand", out var dh)) hand = dh.GetString() ?? "RightHand";
+								if (itemProp.Value.TryGetProperty("child_vfx_id", out var cvid)) childVfxId = cvid.GetString();
+								else if (itemProp.Value.TryGetProperty("ChildVfxId", out var cvid2)) childVfxId = cvid2.GetString();
+								if (itemProp.Value.TryGetProperty("child_vfx_position", out var cvp) && cvp.ValueKind == JsonValueKind.Array)
+								{
+									var arr = cvp.EnumerateArray().ToArray();
+									if (arr.Length >= 3) childVfxPos = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
+								}
+								if (itemProp.Value.TryGetProperty("child_vfx_rotation", out var cvr) && cvr.ValueKind == JsonValueKind.Array)
+								{
+									var arr = cvr.EnumerateArray().ToArray();
+									if (arr.Length >= 3) childVfxRot = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
+								}
+								if (itemProp.Value.TryGetProperty("child_vfx_scale", out var cvs) && cvs.ValueKind == JsonValueKind.Array)
+								{
+									var arr = cvs.EnumerateArray().ToArray();
+									if (arr.Length >= 3) childVfxScale = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
+								}
 							}
 							var meta = new AttachmentMetadata
 							{
@@ -3530,7 +3582,11 @@ public class {mapName} : IMapScript
 								Scale = scale,
 								PositionOffset = posOffset,
 								RotationOffset = rotOffset,
-								DefaultHand = hand
+								DefaultHand = hand,
+								ChildVfxId = childVfxId,
+								ChildVfxPosition = childVfxPos,
+								ChildVfxRotation = childVfxRot,
+								ChildVfxScale = childVfxScale
 							};
 							newAttachments[id] = meta;
 							newAttachments[fileName] = meta;

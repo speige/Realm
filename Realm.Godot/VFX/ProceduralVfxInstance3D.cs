@@ -208,6 +208,7 @@ public partial class ProceduralVfxInstance3D : Node3D
 		{
 			var pConfig = _config.ParticleConfig ?? SpellParticleConfig.CreatePreset(_config.VfxId);
 			_particleInstance.UpdateConfig(pConfig);
+			UpdateCollisionShapeBounds();
 		}
 		UpdateSelectionRingRadius();
 	}
@@ -237,7 +238,19 @@ public partial class ProceduralVfxInstance3D : Node3D
 
 	private void UpdateCollisionShapeBounds()
 	{
-		if (_editorCollisionShape == null || _meshInstance?.Mesh == null) return;
+		if (_editorCollisionShape == null) return;
+
+		if (_config.PrimitiveType == VfxPrimitiveType.ParticleSystem)
+		{
+			float radius = GetSelectionRadius();
+			var particleBox = new BoxShape3D();
+			particleBox.Size = new Vector3(radius * 2.0f, MathF.Max(0.8f, radius * 1.5f), radius * 2.0f);
+			_editorCollisionShape.Shape = particleBox;
+			_editorCollisionShape.Position = new Vector3(0.0f, particleBox.Size.Y * 0.5f, 0.0f);
+			return;
+		}
+
+		if (_meshInstance?.Mesh == null) return;
 
 		Aabb bounds = _meshInstance.Mesh.GetAabb();
 		Vector3 size = bounds.Size;

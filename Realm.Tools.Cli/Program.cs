@@ -23,22 +23,13 @@ public class GlbOptimizeOptions
 	[Option("in-place", Required = false, Default = false, HelpText = "Modify files in-place.")]
 	public bool InPlace { get; set; }
 
-	[Option('m', "mode", Required = false, Default = "optimize", HelpText = "Operation mode: optimize (default), unoptimize, revert, info.")]
-	public string Mode { get; set; } = "optimize";
-
-	[Option('q', "quality", Required = false, Default = 0.5f, HelpText = "Mesh simplification ratio (default 0.5).")]
-	public float Quality { get; set; } = 0.5f;
-
-	[Option("max-res", Required = false, Default = 1024, HelpText = "Maximum texture resolution (default 1024).")]
-	public int MaxResolution { get; set; } = 1024;
-
 	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
 	public bool Recursive { get; set; }
 
 	[Option('f', "force", Required = false, Default = false, HelpText = "Force re-optimization even if already optimized.")]
 	public bool Force { get; set; }
 
-	[Option('t', "type", Required = false, HelpText = "Asset type for GLB: Attachment, Character, Building, Environment, Projectile, Prop, Weapon. If specified, sets or updates the embedded asset_type metadata.")]
+	[Option('t', "type", Required = false, HelpText = "Asset type for GLB: Character, Building, Prop, Item. If specified, sets or updates the embedded asset_type metadata and determines automatic optimization parameters.")]
 	public string? AssetType { get; set; }
 }
 
@@ -51,7 +42,7 @@ public class TextureConvertOptions
 	[Option('o', "output", Required = false, HelpText = "Output destination file or directory.")]
 	public string? Output { get; set; }
 
-	[Option('t', "type", Required = false, HelpText = "Asset type for textures: Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet, vfx_radial, vfx_vertical. If omitted, attempts to read type from image metadata.")]
+	[Option('t', "type", Required = false, HelpText = "Asset type for textures: Decal, Icon, Noise, Ribbon, Skybox, Spritesheet, Terrain, vfx_radial, vfx_vertical. If omitted, attempts to read type from image metadata.")]
 	public string? AssetType { get; set; }
 
 	[Option("columns", Required = false, HelpText = "Number of grid columns for spritesheets or animated decals (default 4 for spritesheets, 1 for decals).")]
@@ -139,7 +130,7 @@ public class MetadataOptions
 	[Option('d', "data", Required = false, HelpText = "JSON string or path to JSON file containing metadata to embed (for add/update mode).")]
 	public string? Data { get; set; }
 
-	[Option('t', "type", Required = false, HelpText = "Asset type to embed: Attachment, Character, Building, Environment, Projectile, Prop, Weapon, Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet, vfx_radial, vfx_vertical, Animation, Music, SoundEffect.")]
+	[Option('t', "type", Required = false, HelpText = "Asset type to embed: Character, Building, Prop, Item, Decal, Icon, Noise, Ribbon, Skybox, Spritesheet, Terrain, vfx_radial, vfx_vertical, Animation, Music, SoundEffect.")]
 	public string? AssetType { get; set; }
 
 	[Option('o', "output", Required = false, HelpText = "Output destination file to write extracted JSON (for read mode).")]
@@ -843,20 +834,14 @@ public static class Program
 		}
 
 		var optimizer = new GlbOptimizer();
-		var optimizationOptions = new OptimizationOptions
-		{
-			SimplificationRatio = options.Quality,
-			MaxTextureResolution = options.MaxResolution,
-			ForceReDecimate = options.Force
-		};
 
 		if (File.Exists(options.Input))
 		{
-			return ProcessSingleFile(optimizer, options.Input, options.Output, options.InPlace, options.Mode, optimizationOptions, options.AssetType);
+			return ProcessSingleFile(optimizer, options.Input, options.Output, options.InPlace, options.Force, options.AssetType);
 		}
 		else if (Directory.Exists(options.Input))
 		{
-			return ProcessDirectory(optimizer, options.Input, options.Output, options.InPlace, options.Mode, options.Recursive, optimizationOptions, options.AssetType);
+			return ProcessDirectory(optimizer, options.Input, options.Output, options.InPlace, options.Recursive, options.Force, options.AssetType);
 		}
 		else
 		{
@@ -865,79 +850,90 @@ public static class Program
 		}
 	}
 
+	private static OptimizationOptions GetAutomaticOptimizationOptions(string? assetType, bool forceReDecimate)
+	{
+		int maxRes = 1024;
+		if (string.Equals(assetType, "Item", StringComparison.OrdinalIgnoreCase))
+		{
+			maxRes = 512;
+		}
+
+		return new OptimizationOptions
+		{
+			SimplificationRatio = 0.5f,
+			MaxTextureResolution = maxRes,
+			ForceReDecimate = forceReDecimate
+		};
+	}
+
 	private static int ProcessSingleFile(
 		GlbOptimizer optimizer,
 		string filePath,
 		string? outputPath,
 		bool inPlace,
-		string mode,
-		OptimizationOptions options,
+		bool force,
 		string? assetType = null)
 	{
 		string target = inPlace || string.IsNullOrEmpty(outputPath) ? filePath : outputPath;
 
-		if (mode.Equals("info", StringComparison.OrdinalIgnoreCase))
+		string? effectiveAssetType = assetType;
+		if (string.IsNullOrEmpty(effectiveAssetType))
 		{
-			byte[] bytes = File.ReadAllBytes(filePath);
-			var meta = optimizer.GetMetadata(bytes);
-			Console.WriteLine($"File: {filePath}");
-			Console.WriteLine($"  Optimized: {meta.IsOptimized}");
-			Console.WriteLine($"  Realm Version: {meta.RealmVersion ?? "N/A"}");
-			Console.WriteLine($"  Meshes: {meta.MeshCount}, Nodes: {meta.NodeCount}, Materials: {meta.MaterialCount}, Images: {meta.ImageCount}");
-			return 0;
-		}
-		else if (mode.Equals("unoptimize", StringComparison.OrdinalIgnoreCase) || mode.Equals("revert", StringComparison.OrdinalIgnoreCase))
-		{
-			Console.WriteLine($"Unoptimizing: {filePath} -> {target}");
-			var unopt = optimizer.UnoptimizeFile(filePath, target);
-			if (unopt.Success)
+			string? embedded = RealmMetadataHelper.ExtractAssetType(filePath);
+			if (!string.IsNullOrEmpty(embedded) && RealmMetadataHelper.IsValidAssetTypeForExtension(".glb", embedded, out string canonical, out _))
 			{
-				if (!string.IsNullOrEmpty(assetType))
-				{
-					RealmMetadataHelper.SetAssetType(target, assetType);
-				}
-				else
-				{
-					RealmMetadataHelper.SyncBlake3Metadata(target);
-				}
-				Console.WriteLine($"Successfully unoptimized: {target} (WasOptimized: {unopt.WasOptimized})");
-				return 0;
+				effectiveAssetType = canonical;
 			}
 			else
 			{
-				Console.Error.WriteLine($"Failed to unoptimize {filePath}: {unopt.ErrorMessage}");
-				return 1;
+				string lower = filePath.ToLowerInvariant().Replace('\\', '/');
+				if (lower.Contains("/items/") || lower.Contains("/attachments/") || lower.Contains("/weapons/") || lower.Contains("/projectiles/"))
+				{
+					effectiveAssetType = "Item";
+				}
+				else if (lower.Contains("/units/") || lower.Contains("/characters/"))
+				{
+					effectiveAssetType = "Character";
+				}
+				else if (lower.Contains("/buildings/"))
+				{
+					effectiveAssetType = "Building";
+				}
+				else
+				{
+					effectiveAssetType = "Prop";
+				}
 			}
+		}
+
+		var optimizationOptions = GetAutomaticOptimizationOptions(effectiveAssetType, force);
+
+		Console.WriteLine($"Optimizing: {filePath} -> {target} [Type: {effectiveAssetType}, MaxRes: {optimizationOptions.MaxTextureResolution}, Ratio: {optimizationOptions.SimplificationRatio}]");
+		var result = optimizer.OptimizeFile(filePath, target, optimizationOptions);
+		if (result.Success)
+		{
+			if (!string.IsNullOrEmpty(effectiveAssetType))
+			{
+				RealmMetadataHelper.SetAssetType(target, effectiveAssetType);
+			}
+			else
+			{
+				RealmMetadataHelper.SyncBlake3Metadata(target);
+			}
+			if (result.DecimationSkipped)
+			{
+				Console.WriteLine($"Skipped (already optimized): {filePath}");
+			}
+			else
+			{
+				Console.WriteLine($"Successfully optimized: {target} ({result.OriginalSize} -> {result.OptimizedSize} bytes)");
+			}
+			return 0;
 		}
 		else
 		{
-			Console.WriteLine($"Optimizing: {filePath} -> {target}");
-			var result = optimizer.OptimizeFile(filePath, target, options);
-			if (result.Success)
-			{
-				if (!string.IsNullOrEmpty(assetType))
-				{
-					RealmMetadataHelper.SetAssetType(target, assetType);
-				}
-				else
-				{
-					RealmMetadataHelper.SyncBlake3Metadata(target);
-				}
-				if (result.DecimationSkipped)
-				{
-					Console.WriteLine($"Skipped (already optimized): {filePath}");
-				}
-				else
-				{
-					Console.WriteLine($"Successfully optimized: {target} ({result.OriginalSize} -> {result.OptimizedSize} bytes)");
-				}
-				return 0;
-			}
-			else
-			{
-				Console.Error.WriteLine($"Failed to optimize {filePath}: {result.ErrorMessage}");
-				return 1;
-			}
+			Console.Error.WriteLine($"Failed to optimize {filePath}: {result.ErrorMessage}");
+			return 1;
 		}
 	}
 
@@ -946,9 +942,8 @@ public static class Program
 		string dirPath,
 		string? outputDir,
 		bool inPlace,
-		string mode,
 		bool recursive,
-		OptimizationOptions options,
+		bool force,
 		string? assetType = null)
 	{
 		var searchOpt = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
@@ -971,7 +966,7 @@ public static class Program
 				target = Path.Combine(outputDir, rel);
 			}
 
-			int res = ProcessSingleFile(optimizer, file, target, false, mode, options, assetType);
+			int res = ProcessSingleFile(optimizer, file, target, false, force, assetType);
 			if (res == 0) successCount++;
 			else failCount++;
 		}

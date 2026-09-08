@@ -2,6 +2,8 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json.Nodes;
+using Realm.Shared.Metadata;
 
 namespace Realm.Godot.VFX;
 
@@ -12,6 +14,7 @@ public class VfxShaderManager
 	private static Shader _shaderProjectorAdd;
 	private static Shader _shaderProjectorMix;
 	private static readonly Dictionary<string, Texture2D> TextureCache = new(StringComparer.OrdinalIgnoreCase);
+	private static readonly Dictionary<string, (int Columns, int Rows, float Fps, bool SubframeBlend)> SpritesheetMetaCache = new(StringComparer.OrdinalIgnoreCase);
 	private static readonly object SyncLock = new();
 
 	public static void ClearCache()
@@ -23,6 +26,7 @@ public class VfxShaderManager
 			_shaderProjectorAdd = null;
 			_shaderProjectorMix = null;
 			TextureCache.Clear();
+			SpritesheetMetaCache.Clear();
 		}
 	}
 
@@ -213,11 +217,13 @@ public class VfxShaderManager
 				Path.Combine(wsPath, "Assets", "textures", path),
 				Path.Combine(wsPath, "Assets", "decals", path),
 				Path.Combine(wsPath, "Assets", "ribbons", path),
+				Path.Combine(wsPath, "Assets", "vfx", path),
 				Path.Combine(wsPath, "Assets", "noise", path),
 				Path.Combine("MapTemplate", path),
 				Path.Combine("MapTemplate", "Assets", "textures", path),
 				Path.Combine("MapTemplate", "Assets", "decals", path),
 				Path.Combine("MapTemplate", "Assets", "ribbons", path),
+				Path.Combine("MapTemplate", "Assets", "vfx", path),
 				Path.Combine("MapTemplate", "Assets", "noise", path)
 			};
 
@@ -284,6 +290,95 @@ public class VfxShaderManager
 			GD.PrintErr($"[VfxShaderManager] Error loading texture {fullPath}: {ex.Message}");
 		}
 		return null;
+	}
+
+	public static (int Columns, int Rows, float Fps, bool SubframeBlend)? GetSpritesheetMetadataSafe(string path)
+	{
+		if (string.IsNullOrEmpty(path)) return null;
+
+		lock (SyncLock)
+		{
+			if (SpritesheetMetaCache.TryGetValue(path, out var cachedMeta))
+			{
+				return cachedMeta;
+			}
+
+			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+			string[] candidates = new[]
+			{
+				path,
+				Path.Combine(wsPath, path),
+				Path.Combine(wsPath, "Assets", "vfx", path),
+				Path.Combine(wsPath, "Assets", "textures", path),
+				Path.Combine(wsPath, "Assets", "decals", path),
+				Path.Combine(wsPath, "Assets", "ribbons", path),
+				Path.Combine(wsPath, "Assets", "noise", path),
+				Path.Combine("MapTemplate", path),
+				Path.Combine("MapTemplate", "Assets", "vfx", path),
+				Path.Combine("MapTemplate", "Assets", "textures", path),
+				Path.Combine("MapTemplate", "Assets", "decals", path),
+				Path.Combine("MapTemplate", "Assets", "ribbons", path),
+				Path.Combine("MapTemplate", "Assets", "noise", path)
+			};
+
+			foreach (var candidate in candidates)
+			{
+				string clean = candidate;
+				if (!File.Exists(clean))
+				{
+					if (!clean.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase) && File.Exists(clean + ".rtex"))
+					{
+						clean += ".rtex";
+					}
+					else if (!clean.EndsWith(".png", StringComparison.OrdinalIgnoreCase) && File.Exists(clean + ".png"))
+					{
+						clean += ".png";
+					}
+				}
+
+				if (File.Exists(clean))
+				{
+					string? metaJson = RealmMetadataHelper.ExtractMetadata(clean);
+					if (!string.IsNullOrEmpty(metaJson))
+					{
+						try
+						{
+							var node = JsonNode.Parse(metaJson);
+							if (node is JsonObject obj)
+							{
+								int cols = 1;
+								int rows = 1;
+								float fps = 20.0f;
+								bool subframeBlend = true;
+
+								if (obj.TryGetPropertyValue("columns", out var cNode) && int.TryParse(cNode?.ToString(), out int parsedCols) && parsedCols > 0)
+									cols = parsedCols;
+								if (obj.TryGetPropertyValue("rows", out var rNode) && int.TryParse(rNode?.ToString(), out int parsedRows) && parsedRows > 0)
+									rows = parsedRows;
+								if (obj.TryGetPropertyValue("fps", out var fNode) && float.TryParse(fNode?.ToString(), out float parsedFps) && parsedFps > 0.001f)
+									fps = parsedFps;
+								if (obj.TryGetPropertyValue("subframe_blend", out var sbNode) && bool.TryParse(sbNode?.ToString(), out bool parsedSb))
+									subframeBlend = parsedSb;
+
+								string? assetType = obj["asset_type"]?.ToString() ?? obj["type"]?.ToString();
+								bool isSpritesheet = string.Equals(assetType, "Spritesheet", StringComparison.OrdinalIgnoreCase) || cols > 1 || rows > 1;
+
+								if (isSpritesheet)
+								{
+									var result = (cols, rows, fps, subframeBlend);
+									SpritesheetMetaCache[path] = result;
+									return result;
+								}
+							}
+						}
+						catch { }
+					}
+					break;
+				}
+			}
+
+			return null;
+		}
 	}
 
 	public static Color ParseColorSafe(string hex, Color fallback)

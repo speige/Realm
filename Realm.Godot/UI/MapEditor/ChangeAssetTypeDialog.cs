@@ -40,16 +40,14 @@ public partial class ChangeAssetTypeDialog : FloatingDialogBase
 		_optTargetType = new OptionButton();
 		_optTargetType.AddThemeFontSizeOverride("font_size", 11);
 		_optTargetType.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-		_optTargetType.AddItem(TranslationServer.Translate("3D Models (units)"), 0);
+		_optTargetType.AddItem(TranslationServer.Translate("3D Models (Characters)"), 0);
 		_optTargetType.SetItemMetadata(0, "units");
-		_optTargetType.AddItem(TranslationServer.Translate("3D Models (buildings)"), 1);
+		_optTargetType.AddItem(TranslationServer.Translate("3D Models (Buildings)"), 1);
 		_optTargetType.SetItemMetadata(1, "buildings");
-		_optTargetType.AddItem(TranslationServer.Translate("3D Models (resources)"), 2);
-		_optTargetType.SetItemMetadata(2, "resources");
-		_optTargetType.AddItem(TranslationServer.Translate("3D Models (props)"), 3);
-		_optTargetType.SetItemMetadata(3, "props");
-		_optTargetType.AddItem(TranslationServer.Translate("3D Models (projectiles)"), 4);
-		_optTargetType.SetItemMetadata(4, "projectiles");
+		_optTargetType.AddItem(TranslationServer.Translate("3D Models (Props)"), 2);
+		_optTargetType.SetItemMetadata(2, "props");
+		_optTargetType.AddItem(TranslationServer.Translate("3D Models (Items)"), 3);
+		_optTargetType.SetItemMetadata(3, "attachments");
 		rowType.AddChild(_optTargetType);
 
 		contentVBox.AddChild(rowType);
